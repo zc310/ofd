@@ -1,0 +1,4 @@
+[Thumbnailer Entry]
+TryExec=ofd-thumbnailer
+Exec=/usr/bin/ofd-thumbnailer %i %o %s
+MimeType=application/ofd;application/zip;
