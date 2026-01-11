@@ -77,3 +77,16 @@ err := converter.Image("input.ofd",
 - 支持效果见 `input.ofd` 转换结果
 - 不支持 OFD 文件内字体
 - 不支持 `GBT 33190-2016` 很多标准😅。。。
+
+
+## 特别感谢
+
+本项目的开发离不开以下开源项目的启发和帮助：
+
+- [国家标准化管理委员会发布的 GB/T 33190-2016 标准](http://std.samr.gov.cn/)
+- https://github.com/GreenYun/OFD-Schema
+- https://github.com/itlabers/ofd-go-reference
+- https://github.com/itlabers/ofd-go
+- https://github.com/xiaoqidun
+
+感谢所有为开源社区做出贡献的开发者！
