@@ -1,4 +1,4 @@
-# OFD Converter
+# OFD Converter [![GoDoc](https://godoc.org/github.com/zc310/fastjsonrpc?status.svg)](http://godoc.org/github.com/zc310/ofd) [![Go Report](https://goreportcard.com/badge/github.com/zc310/ofd)](https://goreportcard.com/report/github.com/zc310/ofd)
 
 一个用于将 OFD 文件转换为 PDF 和图像格式的 Go 语言工具包。
 
@@ -87,6 +87,6 @@ err := converter.Image("input.ofd",
 - https://github.com/GreenYun/OFD-Schema
 - https://github.com/itlabers/ofd-go-reference
 - https://github.com/itlabers/ofd-go
-- https://github.com/xiaoqidun
+- https://github.com/xiaoqidun/ofdgo
 
 感谢所有为开源社区做出贡献的开发者！
