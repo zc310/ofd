@@ -27,7 +27,7 @@ type Fonts struct {
 func NewFonts(doc *parser.Document) *Fonts {
 	onceFonts.Do(func() {
 		fontFamily = canvas.NewFontFamily("default")
-		for _, name := range []string{"仿宋", "楷体", "黑体", "Cantarell", "Noto Sans"} {
+		for _, name := range []string{"仿宋", "楷体", "黑体", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Serif", "Times"} {
 			if err := fontFamily.LoadSystemFont(name, canvas.FontRegular); err == nil {
 				break
 			}
