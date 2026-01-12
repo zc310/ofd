@@ -1,8 +1,6 @@
 package render
 
 import (
-	"log/slog"
-
 	"github.com/tdewolff/canvas"
 
 	"github.com/zc310/ofd/internal/models"
@@ -71,11 +69,6 @@ func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *model
 	bx, by := object.Boundary.X, object.Boundary.Y
 	h := pb.Height
 
-	if len(object.CGTransform) > 0 {
-		for _, transform := range object.CGTransform {
-			slog.Info("text", "transform", transform)
-		}
-	}
 	for _, code := range object.TextCode {
 		posX, posY := code.X, code.Y
 		for i, r := range []rune(code.Value) {
