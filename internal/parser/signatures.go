@@ -9,6 +9,15 @@ import (
 	"strings"
 )
 
+// 检查文件类型是否为支持的格式
+var supportedTypes = map[string]bool{
+	"png":  true,
+	"ofd":  true,
+	"jpg":  true,
+	"jpeg": true,
+	"bmp":  true,
+}
+
 // SealData 存储提取的签章数据
 type SealData struct {
 	FileType string // 文件类型: png, ofd, jpg, jpeg
@@ -176,14 +185,6 @@ func (e *ASN1Extractor) extractFromValidSequence(children []asn1.RawValue) bool 
 		return false
 	}
 
-	// 检查文件类型是否为支持的格式
-	supportedTypes := map[string]bool{
-		"png":  true,
-		"ofd":  true,
-		"jpg":  true,
-		"jpeg": true,
-	}
-
 	fileTypeLower := strings.ToLower(fileType)
 	if !supportedTypes[fileTypeLower] {
 		return false
@@ -192,11 +193,6 @@ func (e *ASN1Extractor) extractFromValidSequence(children []asn1.RawValue) bool 
 	// 第二个元素：OCTET STRING，提取数据
 	octetData, err := e.getOctetStringValue(&children[1])
 	if err != nil {
-		return false
-	}
-
-	// 检查文件大小限制（50MB）
-	if len(octetData) > 50*1024*1024 {
 		return false
 	}
 
@@ -426,14 +422,6 @@ func (e *ASN1Extractor) tryExtractFromSequence(children []asn1.RawValue) *SealDa
 	fileType := e.getIA5StringValue(&children[0])
 	if fileType == "" {
 		return nil
-	}
-
-	// 检查文件类型是否为支持的格式
-	supportedTypes := map[string]bool{
-		"png":  true,
-		"ofd":  true,
-		"jpg":  true,
-		"jpeg": true,
 	}
 
 	fileTypeLower := strings.ToLower(fileType)

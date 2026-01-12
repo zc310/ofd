@@ -237,7 +237,7 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 			}
 		} else {
 			if len(sig.SignedInfo.StampAnnot) > 0 {
-				if buf, err = p.FileCache.ParseContent(sig.SignedValue.String()); err != nil {
+				if buf, err = p.FileCache.ParseContent(sig.SignedValue.Resolve(seDir).String()); err != nil {
 					return err
 				}
 				if sealData, err = ExtractSealData(buf); err != nil {
