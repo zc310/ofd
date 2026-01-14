@@ -19,8 +19,12 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 	return &Document{background: background, fonts: NewFonts(doc), Document: doc}
 }
 
-func (p *Document) Draw(ctx *canvas.Context, page int) error {
+func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
+	box := page.Area.PhysicalBox
+	ctx.SetFillColor(p.background)
+	ctx.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
 
+	p.PageContent(ctx, page, true)
 	return nil
 }
 
