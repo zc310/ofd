@@ -3,7 +3,6 @@ package models
 import (
 	"encoding/xml"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -51,9 +50,9 @@ func (e *Extension) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				e.Date = &t
 			}
 		case "RefId":
-			if id, err := strconv.ParseUint(attr.Value, 10, 32); err == nil {
-				e.RefID = StRefID(id)
-			}
+			var id StID
+			_ = id.UnmarshalText([]byte(attr.Value))
+			e.RefID = StRefID(id)
 		}
 	}
 
