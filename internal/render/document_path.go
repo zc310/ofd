@@ -85,7 +85,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 	pa := &canvas.Path{}
 	for _, cmd := range cp.AbbreviatedData {
 		switch cmd.Type {
-		case models.MoveTo, "S":
+		case models.MoveTo, models.Start:
 			x, y := transform(cmd.Points[0])
 			pa.MoveTo(x, y)
 
