@@ -143,13 +143,22 @@ func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StB
 		return
 	}
 	for _, object := range annot.Appearance.ImageObject {
+		box := object.Boundary
+		object.Boundary = box.CopyAndShift(annot.Appearance.Boundary)
 		p.Image(ctx, object, nil, pb)
+		object.Boundary = box
 	}
 	for _, object := range annot.Appearance.PathObject {
+		box := object.Boundary
+		object.Boundary = box.CopyAndShift(annot.Appearance.Boundary)
 		p.Path(ctx, object, nil, pb)
+		object.Boundary = box
 	}
 	for _, object := range annot.Appearance.TextObject {
+		box := object.Boundary
+		object.Boundary = box.CopyAndShift(annot.Appearance.Boundary)
 		p.Text(ctx, object, nil, pb)
+		object.Boundary = box
 	}
 
 }
