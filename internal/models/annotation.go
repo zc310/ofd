@@ -134,6 +134,15 @@ func (p *StBox) IsPortrait() bool {
 	return p.Height > p.Width
 }
 
+func (p *StBox) CopyAndShift(box *StBox) StBox {
+	return StBox{
+		X:      p.X + box.X,
+		Y:      p.Y + box.Y,
+		Width:  p.Width,
+		Height: p.Height,
+	}
+}
+
 // UnmarshalXMLAttr  自定义AnnotType解析
 func (a *AnnotType) UnmarshalXMLAttr(attr xml.Attr) error {
 	switch attr.Value {
