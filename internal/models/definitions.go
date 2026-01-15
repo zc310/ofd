@@ -3,7 +3,9 @@ package models
 import (
 	"encoding/xml"
 	"fmt"
+	"hash/crc64"
 	"image/color"
+	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -19,13 +21,24 @@ func (p *StID) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		return err
 	}
 
-	val, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
+	val := p.parseUint(s)
 
 	*p = StID(val)
 	return nil
+}
+func (p *StID) UnmarshalText(text []byte) error {
+	val := p.parseUint(string(text))
+	*p = StID(val)
+	return nil
+}
+func (p *StID) parseUint(s string) uint64 {
+	val, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		table := crc64.MakeTable(crc64.ISO)
+		val = crc64.Checksum([]byte(s), table)
+		slog.Error("Error parsing StID value", slog.String("value", s), slog.Uint64("val", val))
+	}
+	return val
 }
 func (p *StID) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	// 将无符号整型转换为字符串
@@ -352,6 +365,19 @@ func (c Color) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
 		Value: c.String(),
 	}, nil
 }
+func (c *Color) parseInt(s string) (int, error) {
+	s = strings.TrimSpace(s)
+
+	// 处理 # 开头的
+	if strings.HasPrefix(s, "#") {
+		val, err := strconv.ParseInt(s[1:], 16, 0)
+		return int(val), err
+	}
+
+	// 其他情况让 ParseInt 自动检测
+	val, err := strconv.ParseInt(s, 0, 0)
+	return int(val), err
+}
 
 // 解析字符串 "156 82 35" 或 "156 82 35 255"
 func (c *Color) parse(s string) error {
@@ -371,7 +397,7 @@ func (c *Color) parse(s string) error {
 	// 解析 RGB
 	values := [4]uint8{0, 0, 0, 255}
 	for i := 0; i < len(parts); i++ {
-		val, err := strconv.Atoi(parts[i])
+		val, err := c.parseInt(parts[i])
 		if err != nil {
 			return fmt.Errorf("invalid number '%s' in color: %v", parts[i], err)
 		}
