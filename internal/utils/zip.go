@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -111,4 +112,52 @@ func (p *ZipFileCache) ParseContent(fileName string) ([]byte, error) {
 	defer rc.Close()
 
 	return io.ReadAll(rc)
+}
+
+func ExtractFirstImage(file string) (image.Image, error) {
+	r, err := zip.OpenReader(file)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		// 简单的扩展名检查
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if IsImageExtension(ext) {
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
+			defer rc.Close()
+
+			// 使用通用解码器
+			img, format, err := image.Decode(rc)
+			if err != nil {
+				fmt.Printf("解码失败 %s: %v\n", f.Name, err)
+				continue
+			}
+
+			fmt.Printf("成功解码: %s (格式: %s)\n", f.Name, format)
+			return img, nil
+		}
+	}
+
+	return nil, fmt.Errorf("未找到图片")
+}
+
+// 支持的图片格式
+var imageExtensions = map[string]bool{
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+	".gif":  true,
+	".bmp":  true,
+	".webp": true,
+	".tiff": true,
+	".tif":  true,
+}
+
+func IsImageExtension(ext string) bool {
+	return imageExtensions[ext]
 }
