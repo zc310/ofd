@@ -135,7 +135,7 @@ func (p *Document) parse(body models.DocBody) error {
 	p.Res = make(map[models.StID]*models.MultiMedia)
 	p.FontRes = make(map[models.StID]*models.Font)
 	if err = p.parsePublicRes(); err != nil {
-		return err
+		slog.Error(err.Error())
 	}
 	if err = p.parseDocumentRes(); err != nil {
 		return err
