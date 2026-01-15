@@ -9,15 +9,17 @@ import (
 )
 
 // CommandType 定义路径命令类型
-// M: 移动到 (Move to)
-// L: 直线到 (Line to)
-// B: 三次贝塞尔曲线 (Cubic Bezier curve)
-// Q: 二次贝塞尔曲线 (Quadratic Bezier curve)
-// A: 椭圆弧 (Elliptical arc)
-// C: 闭合路径 (Close path)
+// S: SubPath起点 (Start point of SubPath) - 定义子路径的起始点坐标(x,y)
+// M: 移动到 (Move to) - 移动画笔到指定点，不绘制线条
+// L: 直线到 (Line to) - 从当前点到指定点绘制直线
+// B: 三次贝塞尔曲线 (Cubic Bezier curve) - 需要两个控制点和一个终点的曲线
+// Q: 二次贝塞尔曲线 (Quadratic Bezier curve) - 需要一个控制点和一个终点的曲线
+// A: 椭圆弧 (Elliptical arc) - 绘制椭圆弧线
+// C: 闭合路径 (Close path) - 从当前点绘制直线回到子路径起点
 type CommandType string
 
 const (
+	Start       CommandType = "S" // 子路径起点
 	MoveTo      CommandType = "M" // 移动到命令
 	LineTo      CommandType = "L" // 直线命令
 	CubicBezier CommandType = "B" // 三次贝塞尔曲线命令
@@ -95,7 +97,7 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 		token := tokens[index]
 
 		switch token {
-		case "M":
+		case "M", "S":
 			cmd, nextIdx, err := p.parseMoveCommand(tokens, index)
 			if err != nil {
 				return nil, err
