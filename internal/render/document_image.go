@@ -14,7 +14,7 @@ func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *mod
 		return
 	}
 
-	img, err := p.Document.Common.FileCache.ParseImage(string(media.MediaFile))
+	img, err := p.Document.Common.FileCache.ParseImage(string(media.MediaFile.Clean()))
 	if err != nil {
 		slog.Error(err.Error())
 		return

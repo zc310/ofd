@@ -115,7 +115,7 @@ func (p *Document) parseDocumentRes() error {
 
 func (p *Document) parse(body models.DocBody) error {
 	var err error
-	if err = p.FileCache.ParseXMLContent(body.DocRoot.String(), &p.Document); err != nil {
+	if err = p.FileCache.ParseXMLContent(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
 		return err
 	}
 	for _, page := range p.Document.Pages.Pages {
