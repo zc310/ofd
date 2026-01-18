@@ -46,13 +46,16 @@ func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool
 	}
 
 	var backgroundLayers, otherLayers []*models.Layer
-	for _, layer := range page.Content.Layer {
-		if layer.Type == "Background" {
-			backgroundLayers = append(backgroundLayers, layer)
-		} else {
-			otherLayers = append(otherLayers, layer)
+	if page.Content != nil {
+		for _, layer := range page.Content.Layer {
+			if layer.Type == "Background" {
+				backgroundLayers = append(backgroundLayers, layer)
+			} else {
+				otherLayers = append(otherLayers, layer)
+			}
 		}
 	}
+
 	for _, layer := range backgroundLayers {
 		p.Layer(ctx, layer, pb)
 	}

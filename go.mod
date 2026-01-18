@@ -11,7 +11,7 @@ require (
 	github.com/tdewolff/canvas v0.0.0-20260109131636-69e1540379c6
 	github.com/tdewolff/font v0.0.0-20250902141222-fb72ecc1bc0a
 	github.com/xiaoqidun/jbig2 v0.0.0-20260105091040-9b571ff5b839
-	golang.org/x/image v0.34.0
+	golang.org/x/image v0.35.0
 )
 
 require (
@@ -48,7 +48,7 @@ require (
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
 	gonum.org/v1/plot v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/knuth v0.5.5 // indirect
