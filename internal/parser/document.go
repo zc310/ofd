@@ -62,7 +62,7 @@ func (p *Document) parsePublicRes() error {
 		if pr.Fonts != nil {
 			for _, font := range pr.Fonts.Font {
 				if font.FontFile != "" {
-					font.FontFile = models.StLoc(p.BaseLoc) + "/" + pr.BaseLoc + "/" + font.FontFile
+					font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
 				}
 				p.FontRes[font.ID] = &font
 			}
@@ -104,7 +104,7 @@ func (p *Document) parseDocumentRes() error {
 		if pr.Fonts != nil {
 			for _, font := range pr.Fonts.Font {
 				if font.FontFile != "" {
-					font.FontFile = models.StLoc(p.BaseLoc) + "/" + pr.BaseLoc + "/" + font.FontFile
+					font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
 				}
 				p.FontRes[font.ID] = &font
 			}

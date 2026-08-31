@@ -107,7 +107,8 @@ type CTGraphicUnit struct {
 }
 
 type Clips struct {
-	Clip []CtClip `xml:"Clip"`
+	TransFlag *bool    `xml:"TransFlag,attr,omitempty"`
+	Clip      []CtClip `xml:"Clip"`
 }
 
 type CtText struct {
