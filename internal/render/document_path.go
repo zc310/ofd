@@ -1,6 +1,8 @@
 package render
 
 import (
+	"image/color"
+
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 )
@@ -8,75 +10,162 @@ import (
 func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
 	ctx.Push()
 	defer ctx.Pop()
-	box := object.Boundary
-
-	height := pb.Height
-	offsetX, offsetY := box.X, box.Y
-
-	pa := p.newPath(&object.CtPath, func(pt models.StPos) (float64, float64) {
-		if object.CTM == nil {
-			return pt.X + offsetX, height - (pt.Y + offsetY)
-		}
-		tx, ty := object.CTM.TransformPoint(pt)
-		return tx + offsetX, height - (ty + offsetY)
-	})
+	pa := p.buildObjectPath(object, pb.Height)
 
 	p.updateCtPathStyle(ctx, &object.CtPath, dp)
-	ctx.DrawPath(0, 0, pa)
+	p.updatePathGradients(ctx, &object, dp, pb.Height)
 
-	if object.Clips == nil || len(object.Clips.Clip) == 0 {
+	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM)
+	if clipPath == nil {
+		ctx.DrawPath(0, 0, pa)
 		return
 	}
+	p.drawClippedPath(ctx, pa, clipPath, object)
+}
 
-	for _, clip := range object.Clips.Clip {
-		var paR canvas.Paths
-		for _, area := range clip.Area {
-			if area.Path != nil {
-				if area.DrawParam != nil {
-					p.updateCtPathStyle(ctx, area.Path, p.Document.GetDrawParam(models.StID(*area.DrawParam)))
-				} else {
-					p.updateCtPathStyle(ctx, area.Path, nil)
-				}
+func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *canvas.Path {
+	box := object.Boundary
+	transform := func(pt models.StPos) (float64, float64) {
+		if object.CTM != nil {
+			pt.X, pt.Y = object.CTM.TransformPoint(pt)
+		}
+		return pt.X + box.X, pageHeight - (pt.Y + box.Y)
+	}
+	return p.newPath(&object.CtPath, transform)
+}
 
-				paa := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
-					if area.CTM == nil {
-						return pt.X + offsetX, height - (pt.Y + offsetY)
-					}
-					tx, ty := area.CTM.TransformPoint(pt)
-					return tx + offsetX, height - (ty + offsetY)
-				})
+func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM *models.CTM) *canvas.Path {
+	if clips == nil || len(clips.Clip) == 0 {
+		return nil
+	}
 
-				box = area.Path.Boundary
+	objectMatrix := models.IdentityMatrix
+	if objectCTM != nil {
+		objectMatrix = *objectCTM
+	}
 
-				cp := models.CtPath{}
-				cp.AbbreviatedData.AddCommand(models.PathCommand{Type: models.MoveTo, Points: []models.StPos{{X: box.X, Y: box.Y}}})
-				cp.AbbreviatedData.AddCommand(models.PathCommand{Type: models.LineTo, Points: []models.StPos{{X: box.X + box.Width, Y: box.Y}}})
-				cp.AbbreviatedData.AddCommand(models.PathCommand{Type: models.LineTo, Points: []models.StPos{{X: box.X + box.Width, Y: box.Y + box.Height}}})
-				cp.AbbreviatedData.AddCommand(models.PathCommand{Type: models.LineTo, Points: []models.StPos{{X: box.X, Y: box.Y + box.Height}}})
-				cp.AbbreviatedData.AddCommand(models.PathCommand{Type: models.Close})
+	var result *canvas.Path
+	for _, clip := range clips.Clip {
+		region := p.buildClipRegion(clip, clips.TransFlag, objectMatrix, box, pageHeight)
+		if region == nil {
+			continue
+		}
+		if result == nil {
+			result = region
+		} else {
+			result = result.And(region)
+		}
+	}
+	return result
+}
 
-				p1 := p.newPath(&cp, func(pt models.StPos) (float64, float64) {
-					if area.CTM == nil {
-						return pt.X + offsetX, height - (pt.Y + offsetY)
-					}
-					tx, ty := area.CTM.TransformPoint(pt)
-					return tx + offsetX, height - (ty + offsetY)
-				})
-				paR = append(paR, paa.And(p1))
+func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCTM models.CTM, box models.StBox, pageHeight float64) *canvas.Path {
+	var result *canvas.Path
+	for _, area := range clip.Area {
+		if area.Path == nil {
+			continue
+		}
 
-			}
+		areaCTM := models.IdentityMatrix
+		if area.CTM != nil {
+			areaCTM = *area.CTM
+		}
+		if transFlag == nil || *transFlag {
+			areaCTM = *objectCTM.Multiply(&areaCTM)
+		}
+		pathCTM := areaCTM
+		if area.Path.CTM != nil {
+			pathCTM = *areaCTM.Multiply(area.Path.CTM)
+		}
 
-			if len(paR) > 0 {
-				var p0 *canvas.Path
-				for i, p2 := range paR {
-					if i == 0 {
-						p0 = p2
-					} else {
-						p0 = p0.And(p2)
-					}
-				}
-				ctx.DrawPath(0, 0, p0)
-			}
+		areaPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
+			pt.X += area.Path.Boundary.X
+			pt.Y += area.Path.Boundary.Y
+			x, y := pathCTM.TransformPoint(pt)
+			return x + box.X, pageHeight - (y + box.Y)
+		})
+		// Clip 区域用于填充，参与布尔运算前必须闭合。
+		areaPath.Close()
+		if result == nil {
+			result = areaPath
+		} else {
+			result = result.Or(areaPath)
+		}
+	}
+	return result
+}
+
+func (p *Document) drawClippedPath(ctx *canvas.Context, path, clip *canvas.Path, object models.PathObject) {
+	if object.Fill {
+		// OFD 允许填充路径省略末尾闭合命令，布尔运算前需要补齐。
+		fillPath := path.Copy()
+		fillPath.Close()
+		ctx.Push()
+		ctx.SetStrokeColor(canvas.Transparent)
+		ctx.DrawPath(0, 0, fillPath.And(clip))
+		ctx.Pop()
+	}
+	if object.Stroke != "false" {
+		// 描边路径可能是开放路径，先转换为描边区域再执行裁剪。
+		strokePath := path.Stroke(ctx.Style.StrokeWidth, ctx.Style.StrokeCapper, ctx.Style.StrokeJoiner, canvas.Tolerance)
+		ctx.Push()
+		ctx.SetFill(ctx.Style.Stroke)
+		ctx.SetStrokeColor(canvas.Transparent)
+		ctx.DrawPath(0, 0, strokePath.And(clip))
+		ctx.Pop()
+	}
+}
+
+func (p *Document) updatePathGradients(ctx *canvas.Context, object *models.PathObject, dp *models.DrawParam, pageHeight float64) {
+	fillColor := object.FillColor
+	strokeColor := object.StrokeColor
+	if fillColor == nil && dp != nil {
+		fillColor = dp.FillColor
+	}
+	if strokeColor == nil && dp != nil {
+		strokeColor = dp.StrokeColor
+	}
+
+	transform := func(point models.StPos) canvas.Point {
+		if object.CTM != nil {
+			point.X, point.Y = object.CTM.TransformPoint(point)
+		}
+		return canvas.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
+	}
+	if object.Fill && fillColor != nil {
+		if gradient := pathGradient(fillColor, transform); gradient != nil {
+			ctx.SetFillGradient(gradient)
+		}
+	}
+	if object.Stroke != "false" && strokeColor != nil {
+		if gradient := pathGradient(strokeColor, transform); gradient != nil {
+			ctx.SetStrokeGradient(gradient)
+		}
+	}
+}
+
+func pathGradient(ctColor *models.CTColor, transform func(models.StPos) canvas.Point) canvas.Gradient {
+	if ctColor == nil {
+		return nil
+	}
+	if shd := ctColor.AxialShd; shd != nil {
+		gradient := canvas.NewLinearGradient(transform(shd.StartPoint), transform(shd.EndPoint))
+		addGradientStops(gradient, shd.Segment)
+		return gradient
+	}
+	if shd := ctColor.RadialShd; shd != nil {
+		start, end := transform(shd.StartPoint), transform(shd.EndPoint)
+		gradient := canvas.NewRadialGradient(start, shd.StartRadius, end, shd.EndRadius)
+		addGradientStops(gradient, shd.Segment)
+		return gradient
+	}
+	return nil
+}
+
+func addGradientStops(gradient interface{ Add(float64, color.RGBA) }, segments []models.Segment) {
+	for _, segment := range segments {
+		if segment.Color.Value != nil {
+			gradient.Add(segment.Position, segment.Color.Value.RGBA)
 		}
 	}
 }
