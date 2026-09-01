@@ -1,8 +1,6 @@
 package render
 
 import (
-	"image/color"
-
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 )
@@ -11,7 +9,11 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 	ctx.Push()
 	defer ctx.Pop()
 	pa := p.buildObjectPath(object, pb.Height)
-	pattern := pathFillPattern(object, dp)
+	fillColor := pathFillColor(object, dp)
+	var pattern *models.CtPattern
+	if fillColor != nil {
+		pattern = fillColor.Pattern
+	}
 
 	p.updateCtPathStyle(ctx, &object.CtPath, dp)
 	p.updatePathGradients(ctx, &object, dp, pb.Height)
@@ -23,8 +25,9 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
-		p.drawPatternPath(ctx, fillPath, pattern, object.Boundary, pb)
-		object.Fill = false
+		if p.drawPatternPath(ctx, fillPath, pattern, object.Boundary, pb, fillColor.Alpha) {
+			object.Fill = false
+		}
 	}
 	if clipPath == nil {
 		ctx.DrawPath(0, 0, pa)
@@ -33,12 +36,12 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 	p.drawClippedPath(ctx, pa, clipPath, object)
 }
 
-func pathFillPattern(object models.PathObject, dp *models.DrawParam) *models.CtPattern {
+func pathFillColor(object models.PathObject, dp *models.DrawParam) *models.CTColor {
 	if object.FillColor != nil && object.FillColor.Pattern != nil {
-		return object.FillColor.Pattern
+		return object.FillColor
 	}
 	if dp != nil && dp.FillColor != nil {
-		return dp.FillColor.Pattern
+		return dp.FillColor
 	}
 	return nil
 }
@@ -169,25 +172,12 @@ func pathGradient(ctColor *models.CTColor, transform func(models.StPos) canvas.P
 		return nil
 	}
 	if shd := ctColor.AxialShd; shd != nil {
-		gradient := canvas.NewLinearGradient(transform(shd.StartPoint), transform(shd.EndPoint))
-		addGradientStops(gradient, shd.Segment)
-		return gradient
+		return newOFDLinearGradient(shd, transform)
 	}
 	if shd := ctColor.RadialShd; shd != nil {
-		start, end := transform(shd.StartPoint), transform(shd.EndPoint)
-		gradient := canvas.NewRadialGradient(start, shd.StartRadius, end, shd.EndRadius)
-		addGradientStops(gradient, shd.Segment)
-		return gradient
+		return newOFDRadialGradient(shd, transform)
 	}
 	return nil
-}
-
-func addGradientStops(gradient interface{ Add(float64, color.RGBA) }, segments []models.Segment) {
-	for _, segment := range segments {
-		if segment.Color.Value != nil {
-			gradient.Add(segment.Position, segment.Color.Value.RGBA)
-		}
-	}
 }
 
 func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *canvas.Path {

@@ -17,9 +17,9 @@ const maxPatternTiles = 100000
 // drawPatternPath 将 OFD Pattern 单元栅格化后平铺到页面，再用路径作为蒙版。
 // canvas 当前没有可直接承载任意 OFD CellContent 的图案类型，因此在渲染边界
 // 内使用图片平铺，仍然保留路径的填充边界和对象坐标。
-func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, pattern *models.CtPattern, objectBox models.StBox, pb models.StBox) {
+func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, pattern *models.CtPattern, objectBox models.StBox, pb models.StBox, alpha *uint8) bool {
 	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || path == nil {
-		return
+		return false
 	}
 
 	cell := canvas.New(pattern.Width, pattern.Height)
@@ -31,7 +31,7 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 
 	cellImage := rasterizer.Draw(cell, canvas.DPI(patternDPI), canvas.DefaultColorSpace)
 	if cellImage == nil || cellImage.Bounds().Empty() {
-		return
+		return false
 	}
 
 	page := canvas.New(pb.Width, pb.Height)
@@ -55,7 +55,7 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 	if endX-startX+1 <= 0 || endY-startY+1 <= 0 ||
 		(endX-startX+1) > maxPatternTiles || (endY-startY+1) > maxPatternTiles ||
 		(endX-startX+1)*(endY-startY+1) > maxPatternTiles {
-		return
+		return false
 	}
 
 	for row, iy := 0, startY; iy <= endY; iy, row = iy+1, row+1 {
@@ -70,10 +70,16 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 
 	patternImage := rasterizer.Draw(page, canvas.DPI(patternDPI), canvas.DefaultColorSpace)
 	if patternImage == nil || patternImage.Bounds().Empty() {
-		return
+		return false
 	}
 	pageMatrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, patternImage, models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
-	ctx.RenderImage(imageWithClip(patternImage, path, pageMatrix), ctx.CoordSystemView().Mul(ctx.View()).Mul(pageMatrix))
+	var output image.Image = imageWithClip(patternImage, path, pageMatrix)
+	if alpha != nil {
+		// OFD Alpha 表示透明度，0 为不透明，255 为完全透明。
+		output = applyImageAlpha(output, 255-*alpha)
+	}
+	ctx.RenderImage(output, ctx.CoordSystemView().Mul(ctx.View()).Mul(pageMatrix))
+	return true
 }
 
 // patternTile 返回反射模式下当前行列使用的单元图像。
