@@ -56,36 +56,16 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 
 // linearGradient 创建轴向渐变。
 func (p *Document) linearGradient(shd *models.CTAxialShd) canvas.Gradient {
-	gradient := canvas.NewLinearGradient(
-		canvas.Point{X: shd.StartPoint.X, Y: shd.StartPoint.Y},
-		canvas.Point{X: shd.EndPoint.X, Y: shd.EndPoint.Y},
-	)
-	segments := shd.Segment
-	if len(segments) == 2 && segments[0].Position == 0 && segments[1].Position == 0 {
-		segments = append([]models.Segment(nil), segments...)
-		segments[1].Position = 1
-	}
-	p.addGradientStops(gradient, segments)
-	return gradient
+	return newOFDLinearGradient(shd, func(point models.StPos) canvas.Point {
+		return canvas.Point{X: point.X, Y: point.Y}
+	})
 }
 
 // radialGradient 创建径向渐变。
 func (p *Document) radialGradient(shd *models.CTRadialShd) canvas.Gradient {
-	gradient := canvas.NewRadialGradient(
-		canvas.Point{X: shd.StartPoint.X, Y: shd.StartPoint.Y}, shd.StartRadius,
-		canvas.Point{X: shd.EndPoint.X, Y: shd.EndPoint.Y}, shd.EndRadius,
-	)
-	p.addGradientStops(gradient, shd.Segment)
-	return gradient
-}
-
-// addGradientStops 添加有效的渐变色标。
-func (p *Document) addGradientStops(gradient interface{ Add(float64, color.RGBA) }, segments []models.Segment) {
-	for _, segment := range segments {
-		if segment.Color.Value != nil {
-			gradient.Add(segment.Position, segment.Color.Value.RGBA)
-		}
-	}
+	return newOFDRadialGradient(shd, func(point models.StPos) canvas.Point {
+		return canvas.Point{X: point.X, Y: point.Y}
+	})
 }
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
