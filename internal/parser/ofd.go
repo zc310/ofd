@@ -70,7 +70,7 @@ func (p *OFD) openFromFile(filePath string) error {
 	p.file = cleanPath
 	p.reader = zr
 
-	return p.parse()
+	return p.parseDocument()
 }
 
 // openFromBytes 从字节数据打开OFD文件
@@ -95,7 +95,7 @@ func (p *OFD) openFromZipReader(zipReader *zip.Reader) error {
 	p.file = ""
 	p.reader = nil
 
-	return p.parse()
+	return p.parseDocument()
 }
 
 // Close 关闭OFD解析器并释放资源
@@ -110,29 +110,17 @@ func (p *OFD) Close() error {
 	return nil
 }
 
-func (p *OFD) parse() error {
-	var err error
-	if err = p.parseDocument(); err != nil {
-		return err
-	}
-
-	return nil
-}
 func (p *OFD) parseDocument() error {
-	var err error
 	for _, body := range p.OFD.DocBodies {
 		var document Document
 		document.Init(p.fileCache, body.DocRoot)
-		if err = document.parse(body); err != nil {
+		if err := document.parse(body); err != nil {
 			return err
 		}
-		if err = document.ParseSigns(body.Signatures); err != nil {
+		if err := document.ParseSigns(body.Signatures); err != nil {
 			return err
 		}
-
 		p.Documents = append(p.Documents, &document)
-
 	}
-
 	return nil
 }

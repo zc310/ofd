@@ -24,16 +24,28 @@ func (p *Common) Init(fileCache *utils.ZipFileCache, dir models.StLoc) {
 type Document struct {
 	Common
 	models.Document
-	Pages       []*Page
-	Templates   map[models.StID]*models.PageContent
-	DrawParams  map[models.StID]*models.DrawParam
-	Res         map[models.StID]*models.MultiMedia
-	FontRes     map[models.StID]*models.Font
-	PublicRes   []*models.Res
-	DocumentRes []*models.Res
-	Signs       map[models.StID]*models.Signature
-	Seals       map[models.StID][]*SealInfo
-	Annotations map[models.StID]*models.PageAnnot
+	Pages          []*Page
+	Templates      map[models.StID]*models.PageContent
+	DrawParams     map[models.StID]*models.DrawParam
+	Res            map[models.StID]*models.MultiMedia
+	FontRes        map[models.StID]*models.Font
+	CompositeUnits map[models.StID]*models.CompositeGraphicUnit
+	PublicRes      []*models.Res
+	DocumentRes    []*models.Res
+	Signs          map[models.StID]*models.Signature
+	Seals          map[models.StID][]*SealInfo
+	Annotations    map[models.StID]*models.PageAnnot
+}
+
+// collectCompositeUnits 收集资源中的复合图元定义。
+func (p *Document) collectCompositeUnits(pr *models.Res) {
+	if pr.CompositeGraphicUnits == nil {
+		return
+	}
+	for _, unit := range pr.CompositeGraphicUnits.CompositeGraphicUnit {
+		u := unit
+		p.CompositeUnits[u.ID] = &u
+	}
 }
 
 func (p *Document) parsePublicRes() error {
@@ -41,32 +53,12 @@ func (p *Document) parsePublicRes() error {
 		return nil
 	}
 	p.PublicRes = make([]*models.Res, len(p.CommonData.PublicRes))
-	var err error
 	for i, res := range p.CommonData.PublicRes {
-		var pr models.Res
-		if err = p.FileCache.ParseXMLContent(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
+		pr, err := p.parseResourceFile(res, false)
+		if err != nil {
 			return err
 		}
-		p.PublicRes[i] = &pr
-		if pr.MultiMedias != nil {
-			for _, media := range pr.MultiMedias.MultiMedia {
-				p.Res[media.ID] = media
-			}
-		}
-
-		if pr.DrawParams != nil {
-			for _, param := range pr.DrawParams.DrawParam {
-				p.DrawParams[param.ID] = param
-			}
-		}
-		if pr.Fonts != nil {
-			for _, font := range pr.Fonts.Font {
-				if font.FontFile != "" {
-					font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
-				}
-				p.FontRes[font.ID] = &font
-			}
-		}
+		p.PublicRes[i] = pr
 	}
 	return nil
 }
@@ -75,42 +67,54 @@ func (p *Document) parseDocumentRes() error {
 		return nil
 	}
 	p.DocumentRes = make([]*models.Res, len(p.CommonData.DocumentRes))
-	var err error
 	for i, res := range p.CommonData.DocumentRes {
-		var pr models.Res
-		if err = p.FileCache.ParseXMLContent(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
+		pr, err := p.parseResourceFile(res, true)
+		if err != nil {
 			return err
 		}
-		p.DocumentRes[i] = &pr
-		if pr.MultiMedias != nil {
-			for _, media := range pr.MultiMedias.MultiMedia {
-				if !strings.HasPrefix(media.MediaFile.String(), "/") {
-					if pr.BaseLoc == "" {
-						media.MediaFile = models.StLoc(p.BaseLoc) + "/" + media.MediaFile
-					} else {
-						media.MediaFile = models.StLoc(p.BaseLoc) + "/" + pr.BaseLoc + "/" + media.MediaFile
-					}
-				}
-
-				p.Res[media.ID] = media
-			}
-		}
-
-		if pr.DrawParams != nil {
-			for _, param := range pr.DrawParams.DrawParam {
-				p.DrawParams[param.ID] = param
-			}
-		}
-		if pr.Fonts != nil {
-			for _, font := range pr.Fonts.Font {
-				if font.FontFile != "" {
-					font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
-				}
-				p.FontRes[font.ID] = &font
-			}
-		}
+		p.DocumentRes[i] = pr
 	}
 	return nil
+}
+
+// parseResourceFile 解析单个资源文件，并把其中的图片、复合图元、绘制参数与字体登记到
+// 对应表中。resolveMedia 控制是否把图片的相对路径转换为绝对路径（Document 资源需要，
+// Public 资源不需要）。
+func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*models.Res, error) {
+	var pr models.Res
+	if err := p.FileCache.ParseXMLContent(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
+		return nil, err
+	}
+
+	if pr.MultiMedias != nil {
+		for _, media := range pr.MultiMedias.MultiMedia {
+			if resolveMedia && !strings.HasPrefix(media.MediaFile.String(), "/") {
+				if pr.BaseLoc == "" {
+					media.MediaFile = models.StLoc(p.BaseLoc) + "/" + media.MediaFile
+				} else {
+					media.MediaFile = models.StLoc(p.BaseLoc) + "/" + pr.BaseLoc + "/" + media.MediaFile
+				}
+			}
+			p.Res[media.ID] = media
+		}
+	}
+
+	p.collectCompositeUnits(&pr)
+
+	if pr.DrawParams != nil {
+		for _, param := range pr.DrawParams.DrawParam {
+			p.DrawParams[param.ID] = param
+		}
+	}
+	if pr.Fonts != nil {
+		for _, font := range pr.Fonts.Font {
+			if font.FontFile != "" {
+				font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
+			}
+			p.FontRes[font.ID] = &font
+		}
+	}
+	return &pr, nil
 }
 
 func (p *Document) parse(body models.DocBody) error {
@@ -134,6 +138,7 @@ func (p *Document) parse(body models.DocBody) error {
 	p.DrawParams = make(map[models.StID]*models.DrawParam)
 	p.Res = make(map[models.StID]*models.MultiMedia)
 	p.FontRes = make(map[models.StID]*models.Font)
+	p.CompositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
 	if err = p.parsePublicRes(); err != nil {
 		slog.Error(err.Error())
 	}
@@ -161,44 +166,44 @@ func (p *Document) parseTemplates() error {
 }
 
 func (p *Document) GetDrawParam(id models.StID) *models.DrawParam {
-	var dp *models.DrawParam
-	var ok bool
-	if dp, ok = p.DrawParams[id]; ok {
-		if dp.Relative > 0 {
-			r := p.GetDrawParam(models.StID(dp.Relative))
-			if r == nil {
-				return dp
-			}
-			t := *dp
-			if dp.Join != "" {
-				t.Join = dp.Join
-			}
-			if dp.LineWidth > 0 {
-				t.LineWidth = dp.LineWidth
-			}
-			if dp.DashOffset > 0 {
-				t.DashOffset = dp.DashOffset
-			}
-			if dp.DashPattern != nil {
-				dp.DashPattern = t.DashPattern
-			}
-			if dp.Cap != "" {
-				t.Cap = dp.Cap
-			}
-			if dp.MiterLimit > 0 {
-				t.MiterLimit = dp.MiterLimit
-			}
-			if dp.FillColor != nil {
-				t.FillColor = dp.FillColor
-			}
-			if dp.StrokeColor != nil {
-				t.StrokeColor = dp.StrokeColor
-			}
-			return &t
-		}
+	dp, ok := p.DrawParams[id]
+	if !ok {
+		return nil
+	}
+	if dp.Relative <= 0 {
 		return dp
 	}
-	return nil
+
+	r := p.GetDrawParam(models.StID(dp.Relative))
+	if r == nil {
+		return dp
+	}
+	t := *dp
+	if dp.Join != "" {
+		t.Join = dp.Join
+	}
+	if dp.LineWidth > 0 {
+		t.LineWidth = dp.LineWidth
+	}
+	if dp.DashOffset > 0 {
+		t.DashOffset = dp.DashOffset
+	}
+	if dp.DashPattern != nil {
+		t.DashPattern = dp.DashPattern
+	}
+	if dp.Cap != "" {
+		t.Cap = dp.Cap
+	}
+	if dp.MiterLimit > 0 {
+		t.MiterLimit = dp.MiterLimit
+	}
+	if dp.FillColor != nil {
+		t.FillColor = dp.FillColor
+	}
+	if dp.StrokeColor != nil {
+		t.StrokeColor = dp.StrokeColor
+	}
+	return &t
 }
 func (p *Document) ParseSigns(file *models.StLoc) error {
 	p.Signs = make(map[models.StID]*models.Signature)

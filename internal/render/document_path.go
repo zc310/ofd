@@ -11,16 +11,36 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 	ctx.Push()
 	defer ctx.Pop()
 	pa := p.buildObjectPath(object, pb.Height)
+	pattern := pathFillPattern(object, dp)
 
 	p.updateCtPathStyle(ctx, &object.CtPath, dp)
 	p.updatePathGradients(ctx, &object, dp, pb.Height)
 
 	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM)
+	if object.Fill && pattern != nil {
+		fillPath := pa.Copy()
+		fillPath.Close()
+		if clipPath != nil {
+			fillPath = fillPath.And(clipPath)
+		}
+		p.drawPatternPath(ctx, fillPath, pattern, object.Boundary, pb)
+		object.Fill = false
+	}
 	if clipPath == nil {
 		ctx.DrawPath(0, 0, pa)
 		return
 	}
 	p.drawClippedPath(ctx, pa, clipPath, object)
+}
+
+func pathFillPattern(object models.PathObject, dp *models.DrawParam) *models.CtPattern {
+	if object.FillColor != nil && object.FillColor.Pattern != nil {
+		return object.FillColor.Pattern
+	}
+	if dp != nil && dp.FillColor != nil {
+		return dp.FillColor.Pattern
+	}
+	return nil
 }
 
 func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *canvas.Path {

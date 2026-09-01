@@ -60,7 +60,7 @@ func TestRender_JPG(t *testing.T) {
 		}),
 		converter.BgColor(color.White),
 		converter.JPG(),
-		converter.Page(3),
+		converter.Page(14),
 		converter.DPI(300),
 	))
 }
