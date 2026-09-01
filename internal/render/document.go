@@ -98,29 +98,30 @@ func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StB
 	if layer.DrawParam > 0 {
 		dp = p.Document.GetDrawParam(models.StID(layer.DrawParam))
 	}
-	p.drawPageBlocks(ctx, layer.PageBlock, dp, pb)
-	p.drawObjects(ctx, layer.PathObject, layer.ImageObject, layer.TextObject, dp, pb)
+	p.drawItems(ctx, layer.Items, dp, pb)
 }
 
-// drawPageBlocks 递归绘制 PageBlock，保持子块先于当前块的顺序。
-func (p *Document) drawPageBlocks(ctx *canvas.Context, blocks []models.PageBlock, dp *models.DrawParam, pb models.StBox) {
-	for _, block := range blocks {
-		p.drawPageBlocks(ctx, block.PageBlock, dp, pb)
-		p.drawObjects(ctx, block.PathObject, block.ImageObject, block.TextObject, dp, pb)
+// drawItems 按文档顺序绘制页面块中的图形对象。
+func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox) {
+	for _, item := range items {
+		switch item.Kind {
+		case models.PageItemPath:
+			p.Path(ctx, item.Path, dp, pb)
+		case models.PageItemImage:
+			p.Image(ctx, item.Image, dp, pb)
+		case models.PageItemText:
+			p.Text(ctx, item.Text, dp, pb)
+		case models.PageItemBlock:
+			p.drawPageBlock(ctx, item.Block, dp, pb)
+		case models.PageItemComposite:
+			// 复合图元当前未渲染
+		}
 	}
 }
 
-// drawObjects 按路径、图片、文字的顺序绘制图形对象。
-func (p *Document) drawObjects(ctx *canvas.Context, paths []models.PathObject, images []models.ImageObject, texts []models.TextObject, dp *models.DrawParam, pb models.StBox) {
-	for _, object := range paths {
-		p.Path(ctx, object, dp, pb)
-	}
-	for _, object := range images {
-		p.Image(ctx, object, dp, pb)
-	}
-	for _, object := range texts {
-		p.Text(ctx, object, dp, pb)
-	}
+// drawPageBlock 递归绘制 PageBlock，保持子块先于当前块的顺序。
+func (p *Document) drawPageBlock(ctx *canvas.Context, block models.PageBlock, dp *models.DrawParam, pb models.StBox) {
+	p.drawItems(ctx, block.Items, dp, pb)
 }
 
 func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StBox) {
@@ -128,16 +129,20 @@ func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StB
 		return
 	}
 	box := *annot.Appearance.Boundary
-	for _, object := range annot.Appearance.ImageObject {
-		object.Boundary = object.Boundary.CopyAndShift(&box)
-		p.Image(ctx, object, nil, pb)
-	}
-	for _, object := range annot.Appearance.PathObject {
-		object.Boundary = object.Boundary.CopyAndShift(&box)
-		p.Path(ctx, object, nil, pb)
-	}
-	for _, object := range annot.Appearance.TextObject {
-		object.Boundary = object.Boundary.CopyAndShift(&box)
-		p.Text(ctx, object, nil, pb)
+	for _, item := range annot.Appearance.Items {
+		switch item.Kind {
+		case models.PageItemImage:
+			object := item.Image
+			object.Boundary = object.Boundary.CopyAndShift(&box)
+			p.Image(ctx, object, nil, pb)
+		case models.PageItemPath:
+			object := item.Path
+			object.Boundary = object.Boundary.CopyAndShift(&box)
+			p.Path(ctx, object, nil, pb)
+		case models.PageItemText:
+			object := item.Text
+			object.Boundary = object.Boundary.CopyAndShift(&box)
+			p.Text(ctx, object, nil, pb)
+		}
 	}
 }
