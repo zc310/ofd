@@ -11,8 +11,9 @@ import (
 
 type Document struct {
 	*parser.Document
-	background color.Color
-	fonts      *Fonts
+	background     color.Color
+	fonts          *Fonts
+	compositeDepth int
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
@@ -20,18 +21,21 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 }
 
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
-	p.drawPageBackground(ctx, page.Area.PhysicalBox)
-	p.PageContent(ctx, page, true)
+	p.drawPage(ctx, page)
 	return nil
 }
 
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
 	box := page.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
-	ctx := canvas.NewContext(c)
-	p.drawPageBackground(ctx, box)
-	p.PageContent(ctx, page, true)
+	p.drawPage(canvas.NewContext(c), page)
 	return c, nil
+}
+
+// drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
+func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page) {
+	p.drawPageBackground(ctx, page.Area.PhysicalBox)
+	p.PageContent(ctx, page, true)
 }
 
 // drawPageBackground 绘制页面背景。
@@ -69,6 +73,9 @@ func (p *Document) Template(ctx *canvas.Context, template models.Template, pb mo
 
 // drawLayers 先绘制背景层，再绘制其他图层。
 func (p *Document) drawLayers(ctx *canvas.Context, layers []*models.Layer, pb models.StBox) {
+	if len(layers) == 0 {
+		return
+	}
 	for _, layer := range layers {
 		if layer != nil && layer.Type == "Background" {
 			p.Layer(ctx, layer, pb)
@@ -114,7 +121,7 @@ func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *m
 		case models.PageItemBlock:
 			p.drawPageBlock(ctx, item.Block, dp, pb)
 		case models.PageItemComposite:
-			// 复合图元当前未渲染
+			p.Composite(ctx, item.Composite, dp, pb)
 		}
 	}
 }

@@ -109,6 +109,11 @@ func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pag
 		}
 
 		clipPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
+			// Path 的 AbbreviatedData 使用 Path 自身的局部坐标，必须先加上
+			// Boundary 偏移，再应用 Area/Path CTM。忽略 Boundary 会让裁剪区
+			// 在复合图元等场景中整体偏移，通常表现为右侧或左侧露出一条边。
+			pt.X += area.Path.Boundary.X
+			pt.Y += area.Path.Boundary.Y
 			x, y := pathCTM.TransformPoint(pt)
 			return x + bx, pageH - (y + by)
 		})

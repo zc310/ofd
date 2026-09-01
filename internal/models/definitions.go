@@ -65,11 +65,22 @@ func (p *StArray) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return nil
 }
 
+// UnmarshalXMLAttr 从 XML 属性解析空格分隔的字符串数组。
+func (p *StArray) UnmarshalXMLAttr(attr xml.Attr) error {
+	*p = strings.Fields(attr.Value)
+	return nil
+}
+
 // MarshalXML 将StArray序列化为XML字符串
 func (p *StArray) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	// 用空格拼接字符串数组
 	str := strings.Join(*p, " ")
 	return e.EncodeElement(str, start)
+}
+
+// MarshalXMLAttr 将字符串数组编码为 XML 属性。
+func (p StArray) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
+	return xml.Attr{Name: name, Value: strings.Join(p, " ")}, nil
 }
 
 // StPos 位置坐标类型
