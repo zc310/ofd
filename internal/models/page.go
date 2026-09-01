@@ -1,9 +1,12 @@
 package models
 
+import "encoding/xml"
+
 type Page struct {
 	ID      StID  `xml:"ID,attr"`
 	BaseLoc StLoc `xml:"BaseLoc,attr"`
 }
+
 type PageContent struct {
 	Template []Template  `xml:"Template"`
 	PageRes  []StLoc     `xml:"PageRes"`
@@ -25,12 +28,24 @@ type Layer struct {
 	ID        StID    `xml:"ID,attr"`
 	Type      string  `xml:"Type,attr,omitempty"` // Body, Background, Foreground, Custom
 	DrawParam StRefID `xml:"DrawParam,attr,omitempty"`
-	// CTPageBlock 内容
-	TextObject      []TextObject      `xml:"TextObject"`
-	PathObject      []PathObject      `xml:"PathObject"`
-	ImageObject     []ImageObject     `xml:"ImageObject"`
-	CompositeObject []CompositeObject `xml:"CompositeObject"`
-	PageBlock       []PageBlock       `xml:"PageBlock"`
+	CTPageBlock
+}
+
+// UnmarshalXML 解析 Layer，除了图层属性外，还需按文档顺序记录其中的图形对象。
+func (l *Layer) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "ID":
+			_ = l.ID.UnmarshalText([]byte(attr.Value))
+		case "Type":
+			l.Type = attr.Value
+		case "DrawParam":
+			var id StID
+			_ = id.UnmarshalText([]byte(attr.Value))
+			l.DrawParam = StRefID(id)
+		}
+	}
+	return l.CTPageBlock.UnmarshalXML(d, start)
 }
 
 type Actions struct {
@@ -48,12 +63,102 @@ type ClipArea struct {
 	CTM       *CTM     `xml:"CTM,attr,omitempty"`
 }
 
+// PageItemKind 页面块中对象的种类。
+type PageItemKind int
+
+const (
+	_ PageItemKind = iota
+	PageItemText
+	PageItemPath
+	PageItemImage
+	PageItemComposite
+	PageItemBlock
+)
+
+// PageItem 按文档顺序保存页面块中的一个图形对象。
+type PageItem struct {
+	Kind      PageItemKind
+	Text      TextObject
+	Path      PathObject
+	Image     ImageObject
+	Composite CompositeObject
+	Block     PageBlock
+}
+
+// CTPageBlock 页面内容块，除了按类型分组保存外，还按文档顺序记录到 Items 中。
 type CTPageBlock struct {
 	TextObject      []TextObject      `xml:"TextObject"`
 	PathObject      []PathObject      `xml:"PathObject"`
 	ImageObject     []ImageObject     `xml:"ImageObject"`
 	CompositeObject []CompositeObject `xml:"CompositeObject"`
 	PageBlock       []PageBlock       `xml:"PageBlock"`
+	Items           []PageItem
+}
+
+// UnmarshalXML 按文档顺序解析页面块中的图形对象，保证绘制时各对象保持原始先后顺序。
+func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+		switch elem := token.(type) {
+		case xml.StartElement:
+			var item PageItem
+			switch elem.Name.Local {
+			case "TextObject":
+				var o TextObject
+				if err := d.DecodeElement(&o, &elem); err != nil {
+					return err
+				}
+				p.TextObject = append(p.TextObject, o)
+				item.Kind = PageItemText
+				item.Text = o
+			case "PathObject":
+				var o PathObject
+				if err := d.DecodeElement(&o, &elem); err != nil {
+					return err
+				}
+				p.PathObject = append(p.PathObject, o)
+				item.Kind = PageItemPath
+				item.Path = o
+			case "ImageObject":
+				var o ImageObject
+				if err := d.DecodeElement(&o, &elem); err != nil {
+					return err
+				}
+				p.ImageObject = append(p.ImageObject, o)
+				item.Kind = PageItemImage
+				item.Image = o
+			case "CompositeObject":
+				var o CompositeObject
+				if err := d.DecodeElement(&o, &elem); err != nil {
+					return err
+				}
+				p.CompositeObject = append(p.CompositeObject, o)
+				item.Kind = PageItemComposite
+				item.Composite = o
+			case "PageBlock":
+				var o PageBlock
+				if err := d.DecodeElement(&o, &elem); err != nil {
+					return err
+				}
+				p.PageBlock = append(p.PageBlock, o)
+				item.Kind = PageItemBlock
+				item.Block = o
+			default:
+				if err := d.Skip(); err != nil {
+					return err
+				}
+				continue
+			}
+			p.Items = append(p.Items, item)
+		case xml.EndElement:
+			if elem == start.End() {
+				return nil
+			}
+		}
+	}
 }
 
 type TextObject struct {
@@ -79,6 +184,16 @@ type CompositeObject struct {
 type PageBlock struct {
 	ID          StID `xml:"ID,attr"`
 	CTPageBlock      // 嵌入CT_PageBlock
+}
+
+// UnmarshalXML 解析 PageBlock，读取 ID 属性后按文档顺序解析其内容。
+func (p *PageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "ID" {
+			_ = p.ID.UnmarshalText([]byte(attr.Value))
+		}
+	}
+	return p.CTPageBlock.UnmarshalXML(d, start)
 }
 
 type CtLayer struct {
