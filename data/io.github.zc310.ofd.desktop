@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=OFD Viewer
 Comment=View OFD documents
-Exec=ofd-viewer @@ %F @@
+Exec=ofd-viewer %F
 Icon=io.github.zc310.ofd
 Terminal=false
 Type=Application
