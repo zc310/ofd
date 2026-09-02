@@ -16,6 +16,49 @@
 go get github.com/zc310/ofd
 ```
 
+## 命令行程序打包
+
+根目录 `Makefile` 可以将命令行程序分别编译并打包为独立 ZIP 文件。`ofd-thumbnailer` 仅编译 Linux 版本：
+
+```bash
+# 生成 dist/ofd-viewer-linux-amd64.zip
+# 生成 dist/ofd-converter-linux-amd64.zip
+# 生成 dist/ofd-thumbnailer-linux-amd64.zip
+make package
+```
+
+Linux 下会生成三个 ZIP；Windows 和 macOS 下只生成 `ofd-viewer` 与 `ofd-converter` 两个 ZIP，不会编译 `ofd-thumbnailer`。
+
+每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
+
+```bash
+cd ofd-thumbnailer
+sudo ./install.sh
+```
+
+可以通过 `GOOS`、`GOARCH` 和 `CGO_ENABLED` 指定目标平台，例如：
+
+```bash
+GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make package
+```
+
+Windows 交叉编译示例：
+
+```bash
+# Debian/Ubuntu
+sudo apt install gcc-mingw-w64-x86-64
+
+GOOS=windows CGO_ENABLED=1 GOARCH=amd64 make package
+```
+
+Windows 目标必须使用 MinGW-w64，不能使用 Linux 的 `gcc`。如果交叉编译器不在默认路径，可以显式指定：
+
+```bash
+CC=x86_64-w64-mingw32-gcc GOOS=windows CGO_ENABLED=1 GOARCH=amd64 make package
+```
+
+Fyne 查看器需要目标平台的图形开发库。Windows 版查看器使用 `-H=windowsgui` 编译，不显示命令行窗口。
+
 
 ## 快速开始
 

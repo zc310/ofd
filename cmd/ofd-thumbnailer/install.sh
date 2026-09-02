@@ -35,6 +35,7 @@ rm -f "$THUMBNAILER_CONF" 2>/dev/null && echo "已移除: $THUMBNAILER_CONF"
 
 # 安装新文件
 echo "安装新文件..."
+install -d /usr/share/thumbnailers
 install -m 755 "${SCRIPT_DIR}/ofd-thumbnailer" "$THUMBNAILER_BIN" && echo "安装: $THUMBNAILER_BIN"
 install -m 644 "${SCRIPT_DIR}/ofd.thumbnailer" "$THUMBNAILER_CONF" && echo "安装: $THUMBNAILER_CONF"
 
