@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.zc310.ofd</id>
+  <name>OFD Viewer</name>
+  <summary>View and export OFD documents</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Unlicense</project_license>
+  <description>
+    <p>OFD Viewer is a desktop application for reading and exporting OFD documents.</p>
+    <p>It supports continuous reading, single-page and two-page views, lazy page rendering, thumbnails, and export to PDF, PNG, JPEG, SVG, EPS, and TeX.</p>
+  </description>
+  <launchable type="desktop-id">io.github.zc310.ofd.desktop</launchable>
+  <provides>
+    <binary>ofd-viewer</binary>
+  </provides>
+  <releases>
+    <release version="0.0.5" />
+  </releases>
+  <url type="homepage">https://github.com/zc310/ofd</url>
+  <url type="bugtracker">https://github.com/zc310/ofd/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/zc310/ofd/main/docs/screenshots/viewer/linux.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1" />
+</component>

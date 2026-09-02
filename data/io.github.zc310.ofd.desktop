@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=OFD Viewer
+Comment=View OFD documents
+Exec=ofd-viewer @@ %F @@
+Icon=io.github.zc310.ofd
+Terminal=false
+Type=Application
+Categories=Office;Viewer;
+MimeType=application/ofd;
+Keywords=OFD;document;viewer;
+StartupNotify=true

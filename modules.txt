@@ -1,0 +1,443 @@
+# codeberg.org/go-latex/latex v0.3.0
+## explicit; go 1.25.0
+codeberg.org/go-latex/latex
+codeberg.org/go-latex/latex/ast
+codeberg.org/go-latex/latex/drawtex
+codeberg.org/go-latex/latex/font
+codeberg.org/go-latex/latex/font/ttf
+codeberg.org/go-latex/latex/internal/tex2unicode
+codeberg.org/go-latex/latex/mtex
+codeberg.org/go-latex/latex/mtex/symbols
+codeberg.org/go-latex/latex/tex
+codeberg.org/go-latex/latex/token
+# codeberg.org/go-pdf/fpdf v0.12.0
+## explicit; go 1.25.0
+codeberg.org/go-pdf/fpdf
+# fyne.io/fyne/v2 v2.8.1
+## explicit; go 1.22.0
+fyne.io/fyne/v2
+fyne.io/fyne/v2/app
+fyne.io/fyne/v2/canvas
+fyne.io/fyne/v2/container
+fyne.io/fyne/v2/data/binding
+fyne.io/fyne/v2/dialog
+fyne.io/fyne/v2/driver
+fyne.io/fyne/v2/driver/desktop
+fyne.io/fyne/v2/driver/embedded
+fyne.io/fyne/v2/driver/mobile
+fyne.io/fyne/v2/driver/software
+fyne.io/fyne/v2/internal
+fyne.io/fyne/v2/internal/animation
+fyne.io/fyne/v2/internal/app
+fyne.io/fyne/v2/internal/async
+fyne.io/fyne/v2/internal/build
+fyne.io/fyne/v2/internal/cache
+fyne.io/fyne/v2/internal/color
+fyne.io/fyne/v2/internal/driver
+fyne.io/fyne/v2/internal/driver/common
+fyne.io/fyne/v2/internal/driver/embedded
+fyne.io/fyne/v2/internal/driver/glfw
+fyne.io/fyne/v2/internal/driver/mobile
+fyne.io/fyne/v2/internal/driver/mobile/app
+fyne.io/fyne/v2/internal/driver/mobile/app/callfn
+fyne.io/fyne/v2/internal/driver/mobile/event/key
+fyne.io/fyne/v2/internal/driver/mobile/event/lifecycle
+fyne.io/fyne/v2/internal/driver/mobile/event/paint
+fyne.io/fyne/v2/internal/driver/mobile/event/size
+fyne.io/fyne/v2/internal/driver/mobile/event/touch
+fyne.io/fyne/v2/internal/driver/mobile/gl
+fyne.io/fyne/v2/internal/driver/mobile/mobileinit
+fyne.io/fyne/v2/internal/metadata
+fyne.io/fyne/v2/internal/painter
+fyne.io/fyne/v2/internal/painter/gl
+fyne.io/fyne/v2/internal/painter/software
+fyne.io/fyne/v2/internal/repository
+fyne.io/fyne/v2/internal/repository/mime
+fyne.io/fyne/v2/internal/scale
+fyne.io/fyne/v2/internal/scheduler
+fyne.io/fyne/v2/internal/svg
+fyne.io/fyne/v2/internal/test
+fyne.io/fyne/v2/internal/theme
+fyne.io/fyne/v2/internal/widget
+fyne.io/fyne/v2/lang
+fyne.io/fyne/v2/layout
+fyne.io/fyne/v2/storage
+fyne.io/fyne/v2/storage/repository
+fyne.io/fyne/v2/test
+fyne.io/fyne/v2/theme
+fyne.io/fyne/v2/widget
+# fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
+## explicit; go 1.19
+fyne.io/systray
+fyne.io/systray/internal/generated/menu
+fyne.io/systray/internal/generated/notifier
+# github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298
+## explicit
+github.com/BurntSushi/freetype-go/freetype
+github.com/BurntSushi/freetype-go/freetype/raster
+github.com/BurntSushi/freetype-go/freetype/truetype
+# github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966
+## explicit
+github.com/BurntSushi/graphics-go/graphics
+github.com/BurntSushi/graphics-go/graphics/convolve
+github.com/BurntSushi/graphics-go/graphics/interp
+# github.com/BurntSushi/toml v1.6.0
+## explicit; go 1.18
+github.com/BurntSushi/toml
+github.com/BurntSushi/toml/internal
+# github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
+## explicit
+github.com/BurntSushi/xgb
+github.com/BurntSushi/xgb/shape
+github.com/BurntSushi/xgb/xinerama
+github.com/BurntSushi/xgb/xproto
+# github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046
+## explicit
+github.com/BurntSushi/xgbutil
+github.com/BurntSushi/xgbutil/ewmh
+github.com/BurntSushi/xgbutil/icccm
+github.com/BurntSushi/xgbutil/keybind
+github.com/BurntSushi/xgbutil/mousebind
+github.com/BurntSushi/xgbutil/xevent
+github.com/BurntSushi/xgbutil/xgraphics
+github.com/BurntSushi/xgbutil/xprop
+github.com/BurntSushi/xgbutil/xrect
+github.com/BurntSushi/xgbutil/xwindow
+# github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
+## explicit
+github.com/ByteArena/poly2tri-go
+# github.com/FyshOS/fancyfs v0.0.1
+## explicit; go 1.19
+github.com/FyshOS/fancyfs
+# github.com/Kagami/go-avif v0.1.0
+## explicit
+github.com/Kagami/go-avif
+# github.com/andybalholm/brotli v1.2.3
+## explicit; go 1.22
+github.com/andybalholm/brotli
+github.com/andybalholm/brotli/matchfinder
+# github.com/anthonynsimon/bild v0.17.0
+## explicit; go 1.25.0
+github.com/anthonynsimon/bild/blur
+github.com/anthonynsimon/bild/clone
+github.com/anthonynsimon/bild/convolution
+github.com/anthonynsimon/bild/parallel
+# github.com/benoitkugler/textlayout v0.3.2
+## explicit; go 1.17
+github.com/benoitkugler/textlayout/language
+github.com/benoitkugler/textlayout/unicodedata
+# github.com/benoitkugler/textprocessing v0.0.6
+## explicit; go 1.16
+github.com/benoitkugler/textprocessing/fribidi
+# github.com/clipperhouse/uax29/v2 v2.7.0
+## explicit; go 1.18
+github.com/clipperhouse/uax29/v2/graphemes
+# github.com/fsnotify/fsnotify v1.10.1
+## explicit; go 1.23
+github.com/fsnotify/fsnotify
+github.com/fsnotify/fsnotify/internal
+# github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
+## explicit; go 1.19
+github.com/fyne-io/gl-js
+# github.com/fyne-io/glfw-js v0.4.0
+## explicit; go 1.19
+github.com/fyne-io/glfw-js
+# github.com/fyne-io/image v0.1.1
+## explicit; go 1.19
+github.com/fyne-io/image/ico
+# github.com/fyne-io/oksvg v0.2.0
+## explicit; go 1.19
+github.com/fyne-io/oksvg
+# github.com/go-fonts/latin-modern v0.3.3
+## explicit; go 1.19
+github.com/go-fonts/latin-modern/lmmath
+github.com/go-fonts/latin-modern/lmmono10italic
+github.com/go-fonts/latin-modern/lmmono10regular
+github.com/go-fonts/latin-modern/lmmono12regular
+github.com/go-fonts/latin-modern/lmmono8regular
+github.com/go-fonts/latin-modern/lmmono9regular
+github.com/go-fonts/latin-modern/lmmonocaps10regular
+github.com/go-fonts/latin-modern/lmmonoslant10regular
+github.com/go-fonts/latin-modern/lmroman10bold
+github.com/go-fonts/latin-modern/lmroman10bolditalic
+github.com/go-fonts/latin-modern/lmroman10italic
+github.com/go-fonts/latin-modern/lmroman10regular
+github.com/go-fonts/latin-modern/lmroman12bold
+github.com/go-fonts/latin-modern/lmroman12italic
+github.com/go-fonts/latin-modern/lmroman12regular
+github.com/go-fonts/latin-modern/lmroman17regular
+github.com/go-fonts/latin-modern/lmroman5bold
+github.com/go-fonts/latin-modern/lmroman5regular
+github.com/go-fonts/latin-modern/lmroman6bold
+github.com/go-fonts/latin-modern/lmroman6regular
+github.com/go-fonts/latin-modern/lmroman7bold
+github.com/go-fonts/latin-modern/lmroman7italic
+github.com/go-fonts/latin-modern/lmroman7regular
+github.com/go-fonts/latin-modern/lmroman8bold
+github.com/go-fonts/latin-modern/lmroman8italic
+github.com/go-fonts/latin-modern/lmroman8regular
+github.com/go-fonts/latin-modern/lmroman9bold
+github.com/go-fonts/latin-modern/lmroman9italic
+github.com/go-fonts/latin-modern/lmroman9regular
+github.com/go-fonts/latin-modern/lmromancaps10regular
+github.com/go-fonts/latin-modern/lmromandunh10regular
+github.com/go-fonts/latin-modern/lmromanslant10bold
+github.com/go-fonts/latin-modern/lmromanslant10regular
+github.com/go-fonts/latin-modern/lmromanslant12regular
+github.com/go-fonts/latin-modern/lmromanslant17regular
+github.com/go-fonts/latin-modern/lmromanslant8regular
+github.com/go-fonts/latin-modern/lmromanslant9regular
+github.com/go-fonts/latin-modern/lmromanunsl10regular
+github.com/go-fonts/latin-modern/lmsans10bold
+github.com/go-fonts/latin-modern/lmsans10oblique
+github.com/go-fonts/latin-modern/lmsans10regular
+github.com/go-fonts/latin-modern/lmsans12oblique
+github.com/go-fonts/latin-modern/lmsans12regular
+github.com/go-fonts/latin-modern/lmsans17oblique
+github.com/go-fonts/latin-modern/lmsans17regular
+github.com/go-fonts/latin-modern/lmsans8oblique
+github.com/go-fonts/latin-modern/lmsans8regular
+github.com/go-fonts/latin-modern/lmsans9oblique
+github.com/go-fonts/latin-modern/lmsans9regular
+github.com/go-fonts/latin-modern/lmsansdemicond10regular
+github.com/go-fonts/latin-modern/lmsansquot8oblique
+github.com/go-fonts/latin-modern/lmsansquot8regular
+# github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
+## explicit; go 1.12
+github.com/go-gl/gl/v2.1/gl
+github.com/go-gl/gl/v2.1/gl/KHR
+github.com/go-gl/gl/v3.1/gles2
+github.com/go-gl/gl/v3.1/gles2/KHR
+# github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260707082822-2a407d02d01a
+## explicit; go 1.19
+github.com/go-gl/glfw/v3.4/glfw
+github.com/go-gl/glfw/v3.4/glfw/glfw/deps
+github.com/go-gl/glfw/v3.4/glfw/glfw/deps/glad
+github.com/go-gl/glfw/v3.4/glfw/glfw/deps/mingw
+github.com/go-gl/glfw/v3.4/glfw/glfw/deps/wayland
+github.com/go-gl/glfw/v3.4/glfw/glfw/include
+github.com/go-gl/glfw/v3.4/glfw/glfw/include/GLFW
+github.com/go-gl/glfw/v3.4/glfw/glfw/src
+# github.com/go-text/render v0.2.1
+## explicit; go 1.19
+github.com/go-text/render
+# github.com/go-text/typesetting v0.3.4
+## explicit; go 1.19
+github.com/go-text/typesetting/di
+github.com/go-text/typesetting/font
+github.com/go-text/typesetting/font/cff
+github.com/go-text/typesetting/font/cff/interpreter
+github.com/go-text/typesetting/font/opentype
+github.com/go-text/typesetting/font/opentype/tables
+github.com/go-text/typesetting/fontscan
+github.com/go-text/typesetting/harfbuzz
+github.com/go-text/typesetting/internal/unicodedata
+github.com/go-text/typesetting/language
+github.com/go-text/typesetting/segmenter
+github.com/go-text/typesetting/shaping
+# github.com/godbus/dbus/v5 v5.2.2
+## explicit; go 1.20
+github.com/godbus/dbus/v5
+github.com/godbus/dbus/v5/introspect
+github.com/godbus/dbus/v5/prop
+# github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+## explicit
+github.com/golang/freetype/raster
+github.com/golang/freetype/truetype
+# github.com/h2non/filetype v1.1.3
+## explicit; go 1.13
+github.com/h2non/filetype
+github.com/h2non/filetype/matchers
+github.com/h2non/filetype/matchers/isobmff
+github.com/h2non/filetype/types
+# github.com/hack-pad/go-indexeddb v0.3.2
+## explicit; go 1.18
+github.com/hack-pad/go-indexeddb/idb
+github.com/hack-pad/go-indexeddb/idb/internal/jscache
+# github.com/hack-pad/safejs v0.1.1
+## explicit; go 1.18
+github.com/hack-pad/safejs
+github.com/hack-pad/safejs/internal/catch
+github.com/hack-pad/safejs/internal/stackerr
+# github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
+## explicit; go 1.18
+github.com/jeandeaual/go-locale
+# github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
+## explicit
+github.com/jsummers/gobmp
+# github.com/kolesa-team/go-webp v1.0.5
+## explicit; go 1.10
+github.com/kolesa-team/go-webp/encoder
+# github.com/mattn/go-runewidth v0.0.27
+## explicit; go 1.23
+github.com/mattn/go-runewidth
+# github.com/nao1215/imaging v1.0.10
+## explicit; go 1.25.0
+github.com/nao1215/imaging
+# github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+## explicit
+github.com/nfnt/resize
+# github.com/nicksnyder/go-i18n/v2 v2.6.1
+## explicit; go 1.24.0
+github.com/nicksnyder/go-i18n/v2/i18n
+github.com/nicksnyder/go-i18n/v2/i18n/template
+github.com/nicksnyder/go-i18n/v2/internal
+github.com/nicksnyder/go-i18n/v2/internal/plural
+# github.com/rymdport/portal v0.4.2
+## explicit; go 1.19
+github.com/rymdport/portal
+github.com/rymdport/portal/filechooser
+github.com/rymdport/portal/internal/apis
+github.com/rymdport/portal/internal/convert
+github.com/rymdport/portal/internal/request
+github.com/rymdport/portal/notification
+github.com/rymdport/portal/openuri
+github.com/rymdport/portal/settings
+github.com/rymdport/portal/settings/appearance
+# github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+## explicit; go 1.17
+github.com/srwiley/oksvg
+# github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+## explicit; go 1.17
+github.com/srwiley/rasterx
+# github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
+## explicit
+github.com/srwiley/scanx
+# github.com/stretchr/testify v1.12.1
+## explicit; go 1.17
+github.com/stretchr/testify/assert
+github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
+github.com/stretchr/testify/require
+# github.com/tdewolff/canvas v0.0.0-20260820161200-72985dc66d4e
+## explicit; go 1.26.4
+github.com/tdewolff/canvas
+github.com/tdewolff/canvas/color
+github.com/tdewolff/canvas/image
+github.com/tdewolff/canvas/renderers
+github.com/tdewolff/canvas/renderers/fyne
+github.com/tdewolff/canvas/renderers/pdf
+github.com/tdewolff/canvas/renderers/ps
+github.com/tdewolff/canvas/renderers/rasterizer
+github.com/tdewolff/canvas/renderers/svg
+github.com/tdewolff/canvas/renderers/tex
+github.com/tdewolff/canvas/text
+# github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
+## explicit; go 1.22
+github.com/tdewolff/font
+# github.com/tdewolff/minify/v2 v2.24.17
+## explicit; go 1.25.0
+github.com/tdewolff/minify/v2
+# github.com/tdewolff/parse/v2 v2.8.16
+## explicit; go 1.11
+github.com/tdewolff/parse/v2
+github.com/tdewolff/parse/v2/buffer
+github.com/tdewolff/parse/v2/css
+github.com/tdewolff/parse/v2/strconv
+github.com/tdewolff/parse/v2/xml
+# github.com/wcharczuk/go-chart/v2 v2.1.2
+## explicit; go 1.15
+github.com/wcharczuk/go-chart/v2
+github.com/wcharczuk/go-chart/v2/drawing
+github.com/wcharczuk/go-chart/v2/matrix
+github.com/wcharczuk/go-chart/v2/roboto
+# github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059
+## explicit; go 1.25.0
+github.com/xiaoqidun/jbig2
+# github.com/yuin/goldmark v1.8.5
+## explicit; go 1.22
+github.com/yuin/goldmark
+github.com/yuin/goldmark/ast
+github.com/yuin/goldmark/extension
+github.com/yuin/goldmark/extension/ast
+github.com/yuin/goldmark/parser
+github.com/yuin/goldmark/renderer
+github.com/yuin/goldmark/renderer/html
+github.com/yuin/goldmark/text
+github.com/yuin/goldmark/util
+# go.yaml.in/yaml/v3 v3.0.5
+## explicit; go 1.16
+go.yaml.in/yaml/v3
+# golang.org/x/image v0.45.0
+## explicit; go 1.25.0
+golang.org/x/image/bmp
+golang.org/x/image/ccitt
+golang.org/x/image/colornames
+golang.org/x/image/draw
+golang.org/x/image/font
+golang.org/x/image/font/gofont/gobold
+golang.org/x/image/font/gofont/gobolditalic
+golang.org/x/image/font/gofont/goitalic
+golang.org/x/image/font/gofont/goregular
+golang.org/x/image/font/opentype
+golang.org/x/image/font/sfnt
+golang.org/x/image/internal/safemath
+golang.org/x/image/math/f64
+golang.org/x/image/math/fixed
+golang.org/x/image/riff
+golang.org/x/image/tiff
+golang.org/x/image/tiff/lzw
+golang.org/x/image/vector
+golang.org/x/image/vp8
+golang.org/x/image/vp8l
+golang.org/x/image/webp
+# golang.org/x/net v0.58.0
+## explicit; go 1.25.0
+golang.org/x/net/html
+golang.org/x/net/html/atom
+golang.org/x/net/html/charset
+# golang.org/x/sync v0.22.0
+## explicit; go 1.25.0
+golang.org/x/sync/errgroup
+# golang.org/x/sys v0.47.0
+## explicit; go 1.25.0
+golang.org/x/sys/cpu
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+golang.org/x/sys/windows/registry
+# golang.org/x/text v0.41.0
+## explicit; go 1.25.0
+golang.org/x/text/encoding
+golang.org/x/text/encoding/charmap
+golang.org/x/text/encoding/htmlindex
+golang.org/x/text/encoding/internal
+golang.org/x/text/encoding/internal/identifier
+golang.org/x/text/encoding/japanese
+golang.org/x/text/encoding/korean
+golang.org/x/text/encoding/simplifiedchinese
+golang.org/x/text/encoding/traditionalchinese
+golang.org/x/text/encoding/unicode
+golang.org/x/text/internal/language
+golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/tag
+golang.org/x/text/internal/utf8internal
+golang.org/x/text/language
+golang.org/x/text/runes
+golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm
+# gonum.org/v1/plot v0.17.0
+## explicit; go 1.24.0
+gonum.org/v1/plot/font
+gonum.org/v1/plot/text
+gonum.org/v1/plot/vg
+gonum.org/v1/plot/vg/draw
+# modernc.org/knuth v0.6.0
+## explicit; go 1.25
+modernc.org/knuth
+modernc.org/knuth/tex
+# modernc.org/token v1.1.0
+## explicit
+modernc.org/token
+# star-tex.org/x/tex v0.7.1
+## explicit; go 1.23.0
+star-tex.org/x/tex
+star-tex.org/x/tex/dvi
+star-tex.org/x/tex/dvi/dvipdf
+star-tex.org/x/tex/font/afm
+star-tex.org/x/tex/font/fixed
+star-tex.org/x/tex/font/tfm
+star-tex.org/x/tex/internal/iobuf
+star-tex.org/x/tex/internal/tds
+star-tex.org/x/tex/kpath
