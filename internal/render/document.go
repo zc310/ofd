@@ -20,6 +20,11 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 	return &Document{background: background, fonts: NewFonts(doc), Document: doc}
 }
 
+// annotationVisible 判断注解是否可见。OFD 未指定 Visible 时默认为可见。
+func annotationVisible(annot *models.Annot) bool {
+	return annot != nil && annot.Visible.Value(true)
+}
+
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 	p.drawPage(ctx, page)
 	return nil
@@ -132,7 +137,7 @@ func (p *Document) drawPageBlock(ctx *canvas.Context, block models.PageBlock, dp
 }
 
 func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StBox) {
-	if annot == nil || annot.Appearance == nil || annot.Appearance.Boundary == nil {
+	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
 	box := *annot.Appearance.Boundary

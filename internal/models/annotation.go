@@ -16,19 +16,20 @@ type PageAnnot struct {
 
 // Annot 单个注解定义
 type Annot struct {
-	ID          string      `xml:"ID,attr"`
-	Type        AnnotType   `xml:"Type,attr"`
-	Creator     string      `xml:"Creator,attr"`
-	LastModDate DateTime    `xml:"LastModDate,attr"`
-	Visible     bool        `xml:"Visible,attr,omitempty"`
-	Subtype     string      `xml:"Subtype,attr,omitempty"`
-	Print       bool        `xml:"Print,attr,omitempty"`
-	NoZoom      bool        `xml:"NoZoom,attr,omitempty"`
-	NoRotate    bool        `xml:"NoRotate,attr,omitempty"`
-	ReadOnly    bool        `xml:"ReadOnly,attr,omitempty"`
-	Remark      *string     `xml:"Remark,omitempty"`
-	Parameters  *Params     `xml:"Parameters,omitempty"`
-	Appearance  *Appearance `xml:"Appearance"`
+	ID          string    `xml:"ID,attr"`
+	Type        AnnotType `xml:"Type,attr"`
+	Creator     string    `xml:"Creator,attr"`
+	LastModDate DateTime  `xml:"LastModDate,attr"`
+	// Visible 表示该注释对象是否显示，未指定时默认为 true。
+	Visible    OptionalBool `xml:"Visible,attr,omitempty"`
+	Subtype    string       `xml:"Subtype,attr,omitempty"`
+	Print      bool         `xml:"Print,attr,omitempty"`
+	NoZoom     bool         `xml:"NoZoom,attr,omitempty"`
+	NoRotate   bool         `xml:"NoRotate,attr,omitempty"`
+	ReadOnly   bool         `xml:"ReadOnly,attr,omitempty"`
+	Remark     *string      `xml:"Remark,omitempty"`
+	Parameters *Params      `xml:"Parameters,omitempty"`
+	Appearance *Appearance  `xml:"Appearance"`
 }
 
 // AnnotType 注解类型枚举
