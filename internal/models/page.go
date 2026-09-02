@@ -203,14 +203,15 @@ type CtLayer struct {
 }
 
 type CTGraphicUnit struct {
-	Actions   *Actions `xml:"Actions"`
-	Clips     *Clips   `xml:"Clips"`
-	Boundary  StBox    `xml:"Boundary,attr"`
-	Name      string   `xml:"Name,attr,omitempty"`
-	Visible   bool     `xml:"Visible,attr,omitempty"`
-	CTM       *CTM     `xml:"CTM,attr,omitempty"`
-	DrawParam StRefID  `xml:"DrawParam,attr,omitempty"`
-	LineWidth float64  `xml:"LineWidth,attr,omitempty"`
+	Actions  *Actions `xml:"Actions"`
+	Clips    *Clips   `xml:"Clips"`
+	Boundary StBox    `xml:"Boundary,attr"`
+	Name     string   `xml:"Name,attr,omitempty"`
+	// Visible 像素是否可见，未指定时默认为 true。
+	Visible   OptionalBool `xml:"Visible,attr,omitempty"`
+	CTM       *CTM         `xml:"CTM,attr,omitempty"`
+	DrawParam StRefID      `xml:"DrawParam,attr,omitempty"`
+	LineWidth float64      `xml:"LineWidth,attr,omitempty"`
 	// 线端点样式，枚举值，指定了一条线的端点样式。默认值为 Butt
 	Cap  string `xml:"Cap,attr,omitempty"`  // Butt, Round, Square
 	Join string `xml:"Join,attr,omitempty"` // Miter, Round, Bevel
@@ -219,6 +220,11 @@ type CTGraphicUnit struct {
 	DashOffset  float64   `xml:"DashOffset,attr,omitempty"`
 	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
 	Alpha       *uint8    `xml:"Alpha,attr,omitempty"`
+}
+
+// VisibleValue 返回图元是否可见。OFD 未指定 Visible 时默认为可见。
+func (g CTGraphicUnit) VisibleValue() bool {
+	return g.Visible.Value(true)
 }
 
 type Clips struct {
