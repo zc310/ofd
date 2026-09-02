@@ -11,8 +11,7 @@
     "--share=ipc",
     "--socket=wayland",
     "--socket=fallback-x11",
-    "--device=dri",
-    "--file-forwarding"
+    "--device=dri"
   ],
   "modules": [
     {
@@ -34,7 +33,7 @@
         {
           "type": "git",
           "url": "https://github.com/zc310/ofd.git",
-          "commit": "32089e7522f1040c07fff70cb7c21047a735883d"
+          "commit": "0908166d22f3a17f8a0f72661770c52e96eaa496"
         },
         "go.mod.json",
         {
