@@ -6,6 +6,9 @@ import (
 )
 
 func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
+	if !object.VisibleValue() {
+		return
+	}
 	ctx.Push()
 	defer ctx.Pop()
 	pa := p.buildObjectPath(object, pb.Height)

@@ -18,6 +18,9 @@ const maxCompositeDepth = 32
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
 func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
+	if !object.VisibleValue() {
+		return
+	}
 	if p.compositeDepth >= maxCompositeDepth {
 		return
 	}
