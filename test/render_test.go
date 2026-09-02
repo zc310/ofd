@@ -18,6 +18,12 @@ import (
 
 var tmpDir = filepath.Join(os.TempDir(), "ofd_test")
 
+type bufferWriteCloser struct {
+	*bytes.Buffer
+}
+
+func (bufferWriteCloser) Close() error { return nil }
+
 func init() {
 	_ = os.Mkdir(tmpDir, 0777)
 }
@@ -76,6 +82,46 @@ func TestRender_JPG(t *testing.T) {
 		converter.DPI(300),
 	))
 }
+
+func TestRender_SVG(t *testing.T) {
+	var output bytes.Buffer
+	err := converter.Image("testdata/helloworld.ofd",
+		converter.Writer(func(int) (io.WriteCloser, error) {
+			return bufferWriteCloser{Buffer: &output}, nil
+		}),
+		converter.SVG(),
+		converter.Page(1),
+	)
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "<svg")
+}
+
+func TestRender_EPS(t *testing.T) {
+	var output bytes.Buffer
+	err := converter.Image("testdata/helloworld.ofd",
+		converter.Writer(func(int) (io.WriteCloser, error) {
+			return bufferWriteCloser{Buffer: &output}, nil
+		}),
+		converter.EPS(),
+		converter.Page(1),
+	)
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "%!PS-Adobe-3.0 EPSF-3.0")
+}
+
+func TestRender_TeX(t *testing.T) {
+	var output bytes.Buffer
+	err := converter.Image("testdata/helloworld.ofd",
+		converter.Writer(func(int) (io.WriteCloser, error) {
+			return bufferWriteCloser{Buffer: &output}, nil
+		}),
+		converter.TeX(),
+		converter.Page(1),
+	)
+	assert.Nil(t, err)
+	assert.Contains(t, output.String(), "\\begin{pgfpicture}")
+}
+
 func TestRender_Image(t *testing.T) {
 	assert.Nil(t, converter.Image("testdata/ano.ofd",
 		converter.ImageWriter(func(page int, img image.Image) error {
