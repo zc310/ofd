@@ -1,0 +1,47 @@
+{
+  "id": "io.github.zc310.ofd",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "25.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.golang"
+  ],
+  "command": "ofd-viewer",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--file-forwarding"
+  ],
+  "modules": [
+    {
+      "name": "ofd-viewer",
+      "buildsystem": "simple",
+      "build-options": {
+        "append-path": "/usr/lib/sdk/golang/bin"
+      },
+      "build-commands": [
+        "go build -tags flatpak -mod=vendor -trimpath -ldflags '-s -w' -o /app/bin/ofd-viewer ./cmd/ofd-viewer",
+        "install -Dm644 data/io.github.zc310.ofd.desktop /app/share/applications/io.github.zc310.ofd.desktop",
+        "install -Dm644 data/io.github.zc310.ofd.metainfo.xml /app/share/metainfo/io.github.zc310.ofd.metainfo.xml",
+        "install -Dm644 data/icons/hicolor/scalable/apps/io.github.zc310.ofd.svg /app/share/icons/hicolor/scalable/apps/io.github.zc310.ofd.svg",
+        "install -Dm644 data/mime/packages/io.github.zc310.ofd.xml /app/share/mime/packages/io.github.zc310.ofd.xml",
+        "update-mime-database /app/share/mime",
+        "install -Dm644 LICENSE /app/share/licenses/io.github.zc310.ofd/LICENSE"
+      ],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://github.com/zc310/ofd.git",
+          "commit": "32089e7522f1040c07fff70cb7c21047a735883d"
+        },
+        "go.mod.json",
+        {
+          "type": "dir",
+          "path": "data"
+        }
+      ]
+    }
+  ]
+}

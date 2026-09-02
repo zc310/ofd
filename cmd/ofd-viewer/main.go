@@ -21,9 +21,9 @@ import (
 	fyneCanvas "fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/ncruces/zenity"
 	ofdcanvas "github.com/tdewolff/canvas"
 	canvasFyne "github.com/tdewolff/canvas/renderers/fyne"
 	canvasPDF "github.com/tdewolff/canvas/renderers/pdf"
@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	applicationID      = "zc310.tech.ofd.viewer"
+	applicationID      = "io.github.zc310.ofd"
 	applicationVersion = "v0.0.5"
 	projectURL         = "https://github.com/zc310/ofd"
 	windowWidth        = 800
@@ -76,7 +76,7 @@ func main() {
 	w.Show()
 
 	if initialFile != "" {
-		viewer.load(initialFile)
+		viewer.load(initialFile, filepath.Base(initialFile), "")
 	}
 	a.Run()
 }
@@ -105,6 +105,8 @@ type viewer struct {
 	documentArea    *container.Split
 
 	filePath            string
+	fileName            string
+	temporaryFile       string
 	ofd                 *parser.OFD
 	doc                 *render.Document
 	currentPage         int
@@ -528,23 +530,61 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 	} else if !strings.EqualFold(format, "PDF") {
 		extension = strings.ToLower(format)
 	}
-	path, err := zenity.SelectFileSave(
-		zenity.Title("导出 OFD"),
-		zenity.Filename(strings.TrimSuffix(filepath.Base(v.filePath), filepath.Ext(v.filePath))+"."+extension),
-		zenity.ConfirmOverwrite(),
-		zenity.FileFilter{Name: exportFileTypeName(format, v.totalPages), Patterns: []string{"*." + extension}},
-	)
-	if err != nil {
-		return
-	}
+	fileDialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if err != nil {
+			dialog.ShowInformation("导出失败", err.Error(), v.window)
+			return
+		}
+		if writer == nil {
+			return
+		}
+		v.exportToWriter(writer, format, dpi, background, extension)
+	}, v.window)
+	fileDialog.SetTitleText("导出 OFD")
+	fileDialog.SetFileName(strings.TrimSuffix(v.fileName, filepath.Ext(v.fileName)) + "." + extension)
+	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{"." + extension}))
+	fileDialog.SetConfirmText("导出")
+	fileDialog.SetDismissText("取消")
+	fileDialog.Show()
+}
+
+func (v *viewer) exportToWriter(writer fyne.URIWriteCloser, format string, dpi int, background color.Color, extension string) {
 	v.exporting = true
 	v.updateControls()
 	v.showExportLoading()
 	doc := v.doc
 	go func() {
-		v.renderMu.Lock()
-		err := exportDocument(doc, path, format, dpi, background)
-		v.renderMu.Unlock()
+		var temporaryFile *os.File
+		var temporaryPath string
+		var err error
+		temporaryFile, err = os.CreateTemp("", "ofd-export-*."+extension)
+		if err == nil {
+			temporaryPath = temporaryFile.Name()
+			err = temporaryFile.Close()
+		}
+		if err == nil {
+			v.renderMu.Lock()
+			err = exportDocument(doc, temporaryPath, format, dpi, background)
+			v.renderMu.Unlock()
+		}
+		if err == nil {
+			var input *os.File
+			input, err = os.Open(temporaryPath)
+			if err == nil {
+				_, err = io.Copy(writer, input)
+				closeErr := input.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
+		}
+		closeErr := writer.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if temporaryPath != "" {
+			_ = os.Remove(temporaryPath)
+		}
 		fyne.Do(func() {
 			v.hideExportLoading()
 			v.exporting = false
@@ -553,7 +593,7 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 				dialog.ShowInformation("导出失败", err.Error(), v.window)
 				return
 			}
-			dialog.ShowInformation("导出完成", "文件已导出到:\n"+path, v.window)
+			dialog.ShowInformation("导出完成", "文件已成功导出。", v.window)
 		})
 	}()
 }
@@ -716,35 +756,54 @@ func (v *viewer) chooseFile() {
 	if v.loading {
 		return
 	}
-	v.loading = true
-	v.updateControls()
-
-	go func() {
-		selectedFile, err := zenity.SelectFile(
-			zenity.Title("选择 OFD 文件"),
-			zenity.FileFilter{
-				Name:     "OFD 文件",
-				Patterns: []string{"*.ofd"},
-				CaseFold: false,
-			},
-		)
+	fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 		if err != nil {
-			if err != zenity.ErrCanceled {
-				log.Printf("文件选择错误: %v", err)
-			}
-			fyne.Do(func() {
-				v.loading = false
-				v.updateControls()
-			})
+			dialog.ShowInformation("打开失败", err.Error(), v.window)
 			return
 		}
-		fyne.Do(func() {
-			v.load(selectedFile)
-		})
-	}()
+		if reader == nil {
+			return
+		}
+		v.loading = true
+		v.updateControls()
+		fileName := reader.URI().Name()
+		go func() {
+			temporaryFile, copyErr := os.CreateTemp("", "ofd-viewer-*.ofd")
+			var temporaryPath string
+			if copyErr == nil {
+				temporaryPath = temporaryFile.Name()
+				_, copyErr = io.Copy(temporaryFile, reader)
+				closeErr := temporaryFile.Close()
+				if copyErr == nil {
+					copyErr = closeErr
+				}
+			}
+			closeErr := reader.Close()
+			if copyErr == nil {
+				copyErr = closeErr
+			}
+			if copyErr != nil && temporaryPath != "" {
+				_ = os.Remove(temporaryPath)
+			}
+			fyne.Do(func() {
+				if copyErr != nil {
+					v.loading = false
+					v.updateControls()
+					dialog.ShowInformation("打开失败", copyErr.Error(), v.window)
+					return
+				}
+				v.load(temporaryPath, fileName, temporaryPath)
+			})
+		}()
+	}, v.window)
+	fileDialog.SetTitleText("选择 OFD 文件")
+	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".ofd"}))
+	fileDialog.SetConfirmText("打开")
+	fileDialog.SetDismissText("取消")
+	fileDialog.Show()
 }
 
-func (v *viewer) load(filePath string) {
+func (v *viewer) load(filePath, fileName, temporaryFile string) {
 	v.hidePageLoading(0)
 	operation := v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
@@ -764,11 +823,17 @@ func (v *viewer) load(filePath string) {
 				if ofd != nil {
 					_ = ofd.Close()
 				}
+				if temporaryFile != "" {
+					_ = os.Remove(temporaryFile)
+				}
 				return
 			}
 			if err != nil {
 				if ofd != nil {
 					_ = ofd.Close()
+				}
+				if temporaryFile != "" {
+					_ = os.Remove(temporaryFile)
 				}
 				v.loading = false
 				log.Printf("打开失败: %v", err)
@@ -780,6 +845,8 @@ func (v *viewer) load(filePath string) {
 			v.ofd = ofd
 			v.doc = render.NewDocument(color.Transparent, ofd.Documents[0])
 			v.filePath = filePath
+			v.fileName = fileName
+			v.temporaryFile = temporaryFile
 			v.currentPage = 0
 			v.totalPages = len(v.doc.Pages)
 			v.pageEntry.SetText("1")
@@ -1094,7 +1161,10 @@ func (v *viewer) updateTitle() {
 		v.window.SetTitle(applicationTitle())
 		return
 	}
-	fileName := filepath.Base(v.filePath)
+	fileName := v.fileName
+	if fileName == "" {
+		fileName = filepath.Base(v.filePath)
+	}
 	if runtime.GOOS == "windows" {
 		v.window.SetTitle(fmt.Sprintf("%s - 第 %d/%d 页 - %s", fileName, v.currentPage+1, v.totalPages, applicationTitle()))
 		return
@@ -1131,6 +1201,10 @@ func (v *viewer) closeDocument() {
 	if v.ofd != nil {
 		_ = v.ofd.Close()
 		v.ofd = nil
+	}
+	if v.temporaryFile != "" {
+		_ = os.Remove(v.temporaryFile)
+		v.temporaryFile = ""
 	}
 }
 
