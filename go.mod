@@ -1,6 +1,6 @@
 module github.com/zc310/ofd
 
-go 1.26.0
+go 1.26.4
 
 require (
 	gioui.org v0.10.2
@@ -8,8 +8,8 @@ require (
 	github.com/nao1215/imaging v1.0.10
 	github.com/ncruces/zenity v0.10.15
 	github.com/stretchr/testify v1.12.1
-	github.com/tdewolff/canvas v0.0.0-20260508100355-63a7228e682d
-	github.com/tdewolff/font v0.0.0-20260424075104-b5eeb1e23189
+	github.com/tdewolff/canvas v0.0.0-20260820161200-72985dc66d4e
+	github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
 	github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059
 	golang.org/x/image v0.45.0
 )
