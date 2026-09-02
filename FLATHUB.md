@@ -22,4 +22,6 @@ The application uses Fyne's file dialog. The manifest builds with the `flatpak` 
 
 The desktop entry uses Flatpak file forwarding so OFD files opened from a file manager are exposed to the sandbox.
 
+The viewer reads system fonts when OFD documents do not embed their fonts. The manifest grants read-only access to the real user font directory `~/.local/share/fonts` and read-only `host-os` access. Host `/usr/share/fonts` is available inside the sandbox at `/run/host/usr/share/fonts` through `XDG_DATA_DIRS`; `/usr` cannot be granted directly because it is a Flatpak reserved path.
+
 The ID follows Flathub's GitHub application ID convention for `https://github.com/zc310/ofd`.

@@ -70,6 +70,7 @@ flatpak run io.github.zc310.ofd
 
 正式提交 Flathub 前，需要将 manifest 中的源码 commit 更新为包含当前 Flatpak 文件的 `v0.0.5` 发布 commit，并在本机安装 `flatpak-builder`、`appstreamcli` 后完成元数据检查。
 
+Flatpak 版本以只读方式访问真实的 `~/.local/share/fonts` 用户字体目录和宿主机系统目录（`host-os`），用于渲染未内嵌字体的 OFD 文档。
 
 ## 快速开始
 

@@ -11,7 +11,10 @@
     "--share=ipc",
     "--socket=wayland",
     "--socket=fallback-x11",
-    "--device=dri"
+    "--device=dri",
+    "--filesystem=host-os:ro",
+    "--filesystem=~/.local/share/fonts:ro",
+    "--env=XDG_DATA_DIRS=/run/host/usr/share"
   ],
   "modules": [
     {
@@ -33,7 +36,7 @@
         {
           "type": "git",
           "url": "https://github.com/zc310/ofd.git",
-          "commit": "0908166d22f3a17f8a0f72661770c52e96eaa496"
+          "commit": "bb44c563d3109088d3ed9515b8b52b8782555e00"
         },
         "go.mod.json",
         {
