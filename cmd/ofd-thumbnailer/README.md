@@ -1,5 +1,7 @@
 # Linux OFD文件缩略图
 
+本程序仅支持 Linux。
+
 ## 安装
 
 - 编译 `go build .`
