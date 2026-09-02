@@ -13,7 +13,8 @@ import (
 	"github.com/zc310/ofd/internal/render"
 )
 
-func PDF(input interface{}, output io.Writer, opts ...interface{}) error {
+func PDF(input interface{}, output io.Writer, opts ...Option) error {
+	conv := newConverter(opts...)
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		return err
@@ -31,14 +32,23 @@ func PDF(input interface{}, output io.Writer, opts ...interface{}) error {
 	if len(doc.Pages) == 0 {
 		return errors.New("文档没有页面")
 	}
+	pageStart, pageEnd := 0, len(doc.Pages)
+	if conv.page > 0 {
+		if conv.page > len(doc.Pages) {
+			return nil
+		}
+		pageStart = conv.page - 1
+		pageEnd = conv.page
+	}
 	var pdfDoc *pdf.PDF
 	var c *canvas.Canvas
-	for i, page := range doc.Pages {
+	for i := pageStart; i < pageEnd; i++ {
+		page := doc.Pages[i]
 		c, err = doc.Page(page)
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", i+1, err)
 		}
-		if i == 0 {
+		if pdfDoc == nil {
 			pdfDoc = pdf.New(output, c.W, c.H, nil)
 		} else {
 			pdfDoc.NewPage(c.W, c.H)
