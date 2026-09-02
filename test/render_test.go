@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -44,6 +45,17 @@ func TestRender_PDF_intro(t *testing.T) {
 	defer f.Close()
 	assert.Nil(t, converter.PDF("testdata/intro.ofd", f))
 }
+func TestRender_PDF_huawei(t *testing.T) {
+	var output bytes.Buffer
+	assert.Nil(t, converter.PDF("testdata/huawei.ofd", &output))
+	assert.Contains(t, output.String(), "/ShadingType 2")
+}
+func TestRender_PDF_intro_page7(t *testing.T) {
+	f, err := os.Create(filepath.Join(tmpDir, "intro_page_7.pdf"))
+	assert.Nil(t, err)
+	defer f.Close()
+	assert.Nil(t, converter.PDF("testdata/intro.ofd", f, converter.Page(40)))
+}
 func TestRender_PNG(t *testing.T) {
 	assert.Nil(t, converter.Image("testdata/ano.ofd",
 		converter.Writer(func(page int) (io.WriteCloser, error) {
@@ -56,11 +68,11 @@ func TestRender_PNG(t *testing.T) {
 func TestRender_JPG(t *testing.T) {
 	assert.Nil(t, converter.Image("testdata/intro.ofd",
 		converter.Writer(func(page int) (io.WriteCloser, error) {
-			return os.Create(filepath.Join(tmpDir, fmt.Sprintf("intro_%d.png", page)))
+			return os.Create(filepath.Join(tmpDir, fmt.Sprintf("intro_%d.jpg", page)))
 		}),
 		converter.BgColor(color.White),
 		converter.JPG(),
-		converter.Page(14),
+		converter.Page(40),
 		converter.DPI(300),
 	))
 }

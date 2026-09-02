@@ -14,6 +14,9 @@ import (
 )
 
 func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
+	if !object.VisibleValue() {
+		return
+	}
 	media, ok := p.Res[models.StID(object.ResourceID)]
 	if !ok {
 		return

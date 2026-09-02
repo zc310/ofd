@@ -28,7 +28,7 @@ func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (
 
 type CTColor struct {
 	Value    *color.RGBA
-	AxialShd canvas.Gradient
+	Gradient canvas.Gradient
 }
 
 func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
@@ -46,10 +46,10 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	}
 
 	if source.AxialShd != nil {
-		cc.AxialShd = p.linearGradient(source.AxialShd)
+		cc.Gradient = p.linearGradient(source.AxialShd)
 	}
 	if source.RadialShd != nil {
-		cc.AxialShd = p.radialGradient(source.RadialShd)
+		cc.Gradient = p.radialGradient(source.RadialShd)
 	}
 	return cc
 }
@@ -130,6 +130,7 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 
 func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
 	if fill == nil {
+		ctx.SetFillColor(canvas.Transparent)
 		return
 	}
 	if fill.Value != nil {
@@ -138,22 +139,22 @@ func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
 			value.A = 255 - *alpha
 		}
 		ctx.SetFillColor(value)
+		return
 	}
-	if fill.AxialShd != nil {
-		ctx.SetFillGradient(fill.AxialShd)
+	if fill.Gradient != nil {
+		ctx.SetFillGradient(fill.Gradient)
+		return
 	}
+	ctx.SetFillColor(canvas.Transparent)
 }
 
 func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *models.CtPath) {
-	if stroke != nil {
-		if stroke.Value != nil {
-			ctx.SetStrokeColor(*stroke.Value)
-		}
-		if stroke.AxialShd != nil {
-			ctx.SetStrokeGradient(stroke.AxialShd)
-		}
-	} else {
+	if stroke == nil || (stroke.Value == nil && stroke.Gradient == nil) {
 		ctx.SetStrokeColor(canvas.Black)
+	} else if stroke.Gradient != nil {
+		ctx.SetStrokeGradient(stroke.Gradient)
+	} else {
+		ctx.SetStrokeColor(*stroke.Value)
 	}
 	ctx.SetStrokeCapper(getLineCap(object.Cap))
 	joiner := getLineJoin(object.Join)

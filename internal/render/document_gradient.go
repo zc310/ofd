@@ -84,9 +84,17 @@ func mapGradientValue(value float64, mapType string) float64 {
 }
 
 func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) canvas.Point) canvas.Gradient {
+	start := transform(shd.StartPoint)
+	end := transform(shd.EndPoint)
+	if shd.MapType != "Repeat" && shd.MapType != "Reflect" {
+		gradient := canvas.NewLinearGradient(start, end)
+		addOFDGradientStops(&gradient.Grad, shd.Segment)
+		return gradient
+	}
+
 	gradient := &ofdLinearGradient{
-		start:   transform(shd.StartPoint),
-		end:     transform(shd.EndPoint),
+		start:   start,
+		end:     end,
 		mapType: shd.MapType,
 		mapUnit: shd.MapUnit,
 		extend:  shd.Extend,
@@ -96,10 +104,18 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) c
 }
 
 func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) canvas.Point) canvas.Gradient {
+	c0 := transform(shd.StartPoint)
+	c1 := transform(shd.EndPoint)
+	if shd.MapType != "Repeat" && shd.MapType != "Reflect" {
+		gradient := canvas.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
+		addOFDGradientStops(&gradient.Grad, shd.Segment)
+		return gradient
+	}
+
 	gradient := &ofdRadialGradient{
-		c0:      transform(shd.StartPoint),
+		c0:      c0,
 		r0:      shd.StartRadius,
-		c1:      transform(shd.EndPoint),
+		c1:      c1,
 		r1:      shd.EndRadius,
 		mapType: shd.MapType,
 		mapUnit: shd.MapUnit,
