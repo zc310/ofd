@@ -3,7 +3,6 @@ package render
 import (
 	"fmt"
 	"log/slog"
-
 	"strings"
 	"sync"
 
@@ -27,8 +26,17 @@ type Fonts struct {
 func NewFonts(doc *parser.Document) *Fonts {
 	onceFonts.Do(func() {
 		defaultFontFamily = canvas.NewFontFamily("default")
-		for _, name := range []string{"仿宋", "楷体", "黑体", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Serif", "DejaVu Sans", "Times"} {
+		var filepath string
+		var err error
+		if filepath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
+			if err = defaultFontFamily.LoadFontFile(filepath, canvas.FontRegular); err == nil {
+				slog.Info("load default font: " + filepath)
+				return
+			}
+		}
+		for _, name := range []string{"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times"} {
 			if err := defaultFontFamily.LoadSystemFont(name, canvas.FontRegular); err == nil {
+				slog.Info("load default font: " + name)
 				break
 			}
 		}

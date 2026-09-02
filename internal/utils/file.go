@@ -12,9 +12,14 @@ import (
 	"time"
 )
 
-func FindFirstFileInDirs(dirs []string, targetFile string) (string, error) {
+func FindFirstFileInDirs(dirs []string, targetFiles ...string) (string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	targetNames := make(map[string]struct{}, len(targetFiles))
+	for _, targetFile := range targetFiles {
+		targetNames[strings.ToLower(targetFile)] = struct{}{}
+	}
 
 	var wg sync.WaitGroup
 	resultChan := make(chan string, 1)
@@ -46,7 +51,11 @@ func FindFirstFileInDirs(dirs []string, targetFile string) (string, error) {
 					return nil
 				}
 
-				if !d.IsDir() && strings.EqualFold(filepath.Base(path), targetFile) {
+				if !d.IsDir() {
+					if _, ok := targetNames[strings.ToLower(filepath.Base(path))]; !ok {
+						return nil
+					}
+
 					if atomic.CompareAndSwapInt32(&found, 0, 1) {
 						select {
 						case resultChan <- path:
@@ -74,7 +83,7 @@ func FindFirstFileInDirs(dirs []string, targetFile string) (string, error) {
 		if ok {
 			return result, nil
 		}
-		return "", fmt.Errorf("未找到 %s", targetFile)
+		return "", fmt.Errorf("未找到 %s", strings.Join(targetFiles, ", "))
 	case <-time.After(30 * time.Second): // 添加超时防止永久阻塞
 		cancel()
 		return "", fmt.Errorf("搜索超时")

@@ -33,3 +33,4 @@ go.work.sum
 gp.sum
 .build/
 dist/
+build-dir/
