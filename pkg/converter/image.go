@@ -19,7 +19,7 @@ import (
 // Converter 配置转换器
 type Converter struct {
 	dpi         canvas.Resolution
-	format      string // png, jpeg
+	format      string // png, jpeg, svg, eps, tex
 	bgColor     color.Color
 	page        int
 	thumbnail   int
@@ -97,6 +97,27 @@ func JPG() Option {
 	}
 }
 
+// SVG 设置为 SVG 格式
+func SVG() Option {
+	return func(c *Converter) {
+		c.format = "svg"
+	}
+}
+
+// EPS 设置为 Encapsulated PostScript 格式
+func EPS() Option {
+	return func(c *Converter) {
+		c.format = "eps"
+	}
+}
+
+// TeX 设置为 TeX/PGF 格式
+func TeX() Option {
+	return func(c *Converter) {
+		c.format = "tex"
+	}
+}
+
 // BgColor 设置背景颜色
 func BgColor(bg color.Color) Option {
 	return func(c *Converter) {
@@ -125,9 +146,18 @@ func (c *Converter) renderPage(pageIndex int, page *canvas.Canvas) error {
 			}
 		}()
 
-		renderer := renderers.PNG(c.dpi)
-		if c.format == "jpeg" {
+		var renderer canvas.Writer
+		switch c.format {
+		case "jpeg":
 			renderer = renderers.JPEG(c.dpi)
+		case "svg":
+			renderer = renderers.SVG()
+		case "eps":
+			renderer = renderers.EPS()
+		case "tex":
+			renderer = renderers.TeX()
+		default:
+			renderer = renderers.PNG(c.dpi)
 		}
 
 		if err := page.Write(w, renderer); err != nil {
@@ -203,11 +233,24 @@ func Image(input interface{}, opts ...Option) error {
 		return errors.New("文档没有页面")
 	}
 
-	// 处理特定页码或所有页面
-	if conv.page > 0 {
-		return conv.renderSpecificPage(doc, conv.page)
+	return conv.renderDocument(doc)
+}
+
+// ImageDocument 将已解析的 OFD 文档渲染为图像或矢量格式。
+func ImageDocument(doc *render.Document, opts ...Option) error {
+	conv := newConverter(opts...)
+	if doc == nil || len(doc.Pages) == 0 {
+		return errors.New("文档没有页面")
 	}
-	return conv.renderAllPages(doc)
+	return conv.renderDocument(doc)
+}
+
+func (c *Converter) renderDocument(doc *render.Document) error {
+	// 处理特定页码或所有页面
+	if c.page > 0 {
+		return c.renderSpecificPage(doc, c.page)
+	}
+	return c.renderAllPages(doc)
 }
 
 // renderSpecificPage 渲染特定页面
