@@ -31,6 +31,7 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 }
 
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
+	page.EnsurePhysicalBox()
 	box := page.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
 	p.drawPage(canvas.NewContext(c), page)

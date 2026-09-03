@@ -15,6 +15,17 @@ type PageContent struct {
 	Actions  *Actions    `xml:"Actions"`
 }
 
+// EnsurePhysicalBox 确保页面区域存在且物理区域有效。
+func (p *PageContent) EnsurePhysicalBox() {
+	if p == nil {
+		return
+	}
+	if p.Area == nil {
+		p.Area = &CtPageArea{}
+	}
+	p.Area.EnsurePhysicalBox()
+}
+
 type Template struct {
 	TemplateID StRefID `xml:"TemplateID,attr"`
 	ZOrder     string  `xml:"ZOrder,attr,omitempty"` // Background or Foreground
@@ -238,7 +249,7 @@ type CtText struct {
 	StrokeColor *CTColor        `xml:"StrokeColor"`
 	CGTransform []CTCGTransform `xml:"CGTransform"`
 	TextCode    []TextCode      `xml:"TextCode"`
-	Font        StRefID         `xml:"Font,attr"`
+	Font StRefID `xml:"Font,attr"`
 	// Size 字号，单位为毫米
 	Size float64 `xml:"Size,attr"`
 	// Stroke 是否描边。默认值为 false 当文字对象被裁剪区引用时此属性被忽略
