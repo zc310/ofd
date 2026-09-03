@@ -20,8 +20,9 @@ const (
 )
 
 var (
-	ErrInvalidFormat = errors.New("不支持的输出格式")
-	ErrNoInput       = errors.New("未指定输入文件")
+	ErrInvalidFormat   = errors.New("不支持的输出格式")
+	ErrNoInput         = errors.New("未指定输入文件")
+	ErrInputOutputSame = errors.New("输入文件和输出路径不能相同")
 )
 
 type options struct {
@@ -58,7 +59,7 @@ func parseArgs(args []string) (*options, error) {
 	fs.StringVar(&output, "output", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
 	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, png, jpg, svg, eps, tex")
 	fs.IntVar(&opts.dpi, "dpi", defaultDPI, "输出分辨率 (1-1200)")
-	fs.IntVar(&opts.page, "page", 0, "指定转换的页码 (从 1 开始)，0 表示全部页面")
+	fs.IntVar(&opts.page, "page", 0, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	fs.StringVar(&opts.bg, "bg", defaultBgColor, "背景颜色: transparent, white, black")
 	fs.BoolVar(&opts.dir, "dir", false, "不压缩，将多页图片直接保存到输出目录下的多个文件")
 	fs.Usage = func() {
@@ -107,6 +108,12 @@ func run(opts *options) error {
 	if opts.dpi < 1 || opts.dpi > 1200 {
 		return errors.New("dpi 必须在 1-1200 之间")
 	}
+	if opts.page < 0 {
+		return errors.New("page 不能小于 0")
+	}
+	if err := validateOutputPath(opts, format); err != nil {
+		return err
+	}
 	if format == "pdf" {
 		return convertToPDF(opts, format)
 	}
@@ -137,34 +144,71 @@ func formatFromExtension(output string) string {
 	}
 }
 
+func validateOutputPath(opts *options, format string) error {
+	if opts.output == "" || opts.output == "-" {
+		return nil
+	}
+	output := opts.output
+	if format == "txt" {
+		output = ensureExtension(output, "txt")
+	} else if format != "pdf" && opts.page > 0 {
+		output = ensureExtension(output, format)
+	}
+	if sameFilePath(opts.input, output) {
+		return ErrInputOutputSame
+	}
+	return nil
+}
+
+func sameFilePath(left, right string) bool {
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	if leftErr == nil && rightErr == nil {
+		return os.SameFile(leftInfo, rightInfo)
+	}
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
+}
+
 func convertToText(opts *options) error {
 	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
 	if opts.output != "" && opts.output != "-" {
-		file, err := os.Create(ensureExtension(opts.output, "txt"))
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		output = file
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "txt")}
+		output = fileOutput
 	}
 	var option []converter.Option
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	return converter.Text(opts.input, output, option...)
+	err := converter.Text(opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func convertToPDF(opts *options, _ string) error {
 	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
 	if opts.output != "" && opts.output != "-" {
-		file, err := os.Create(opts.output)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		output = file
+		fileOutput = &lazyFileWriter{path: opts.output}
+		output = fileOutput
 	}
-	return converter.PDF(opts.input, output)
+	var option []converter.Option
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	err := converter.PDF(opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func convertToImage(opts *options, format string) error {
@@ -210,31 +254,45 @@ func convertAllPages(opts *options, format string, option []converter.Option) er
 }
 
 func convertToZip(opts *options, format string, option []converter.Option) error {
-	file, err := os.Create(opts.output)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	archive := zip.NewWriter(file)
-	err = converter.Image(opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
+	var file *os.File
+	var archive *zip.Writer
+	err := converter.Image(opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
+		if archive == nil {
+			var err error
+			file, err = os.Create(opts.output)
+			if err != nil {
+				return nil, err
+			}
+			archive = zip.NewWriter(file)
+		}
 		entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, format))
 		if err != nil {
 			return nil, err
 		}
 		return nopWriteCloser{Writer: entry}, nil
 	}))...)
-	if err != nil {
-		archive.Close()
-		return err
+	if archive != nil {
+		closeErr := archive.Close()
+		fileErr := file.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			err = fileErr
+		}
 	}
-	return archive.Close()
+	return err
 }
 
 func convertToDirectory(opts *options, format string, option []converter.Option) error {
-	if err := os.MkdirAll(opts.output, 0755); err != nil {
-		return err
-	}
+	created := false
 	return converter.Image(opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
+		if !created {
+			if err := os.MkdirAll(opts.output, 0755); err != nil {
+				return nil, err
+			}
+			created = true
+		}
 		path := filepath.Join(opts.output, fmt.Sprintf("page-%04d.%s", page, format))
 		return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	}))...)
@@ -281,4 +339,36 @@ type nopWriteCloser struct {
 
 func (nopWriteCloser) Close() error {
 	return nil
+}
+
+type lazyFileWriter struct {
+	path string
+	file *os.File
+}
+
+func (w *lazyFileWriter) Write(data []byte) (int, error) {
+	if w.file == nil {
+		file, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return 0, err
+		}
+		w.file = file
+	}
+	return w.file.Write(data)
+}
+
+func (w *lazyFileWriter) Finish(createEmpty bool) error {
+	if createEmpty && w.file == nil {
+		file, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
+		w.file = file
+	}
+	if w.file == nil {
+		return nil
+	}
+	err := w.file.Close()
+	w.file = nil
+	return err
 }

@@ -26,36 +26,65 @@ func Text(input interface{}, output io.Writer, opts ...Option) error {
 	if len(ofd.Documents) == 0 {
 		return errors.New("没有文档")
 	}
-	return TextDocument(ofd.Documents[0], output, opts...)
+	return TextDocuments(ofd.Documents, output, opts...)
 }
 
 // TextDocument 提取已解析 OFD 文档中的文字并写入 output。
 func TextDocument(doc *parser.Document, output io.Writer, opts ...Option) error {
-	if doc == nil || len(doc.Pages) == 0 {
-		return errors.New("文档没有页面")
-	}
+	return TextDocuments([]*parser.Document{doc}, output, opts...)
+}
+
+// TextDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 output。
+func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Option) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
-	conv := newConverter(opts...)
-	pageStart, pageEnd := 0, len(doc.Pages)
-	if conv.page > 0 {
-		if conv.page > len(doc.Pages) {
-			return nil
+	pageCount := 0
+	for _, doc := range documents {
+		if doc != nil {
+			for _, page := range doc.Pages {
+				if page != nil {
+					pageCount++
+				}
+			}
 		}
-		pageStart = conv.page - 1
-		pageEnd = conv.page
+	}
+	conv := newConverter(opts...)
+	if pageCount == 0 {
+		return errors.New("文档没有页面")
+	}
+	pageStart, pageEnd, err := pageRange(pageCount, conv.page)
+	if err != nil {
+		return err
 	}
 
 	pages := make([]string, 0, pageEnd-pageStart)
-	for _, page := range doc.Pages[pageStart:pageEnd] {
-		pages = append(pages, extractPageText(doc, page))
+	globalPage := 0
+	for _, doc := range documents {
+		if doc == nil {
+			continue
+		}
+		for _, page := range doc.Pages {
+			if page == nil {
+				continue
+			}
+			if globalPage >= pageStart && globalPage < pageEnd {
+				pages = append(pages, extractPageText(doc, page))
+			}
+			globalPage++
+			if globalPage >= pageEnd {
+				break
+			}
+		}
+		if globalPage >= pageEnd {
+			break
+		}
 	}
 	text := strings.Join(pages, "\n\f\n")
 	if text != "" {
 		text += "\n"
 	}
-	_, err := io.WriteString(output, text)
+	_, err = io.WriteString(output, text)
 	return err
 }
 
