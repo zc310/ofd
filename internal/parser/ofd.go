@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -16,7 +17,6 @@ type OFD struct {
 	models.OFD
 	reader    *zip.ReadCloser
 	fileCache *utils.ZipFileCache
-	file      string
 
 	Documents []*Document
 }
@@ -25,20 +25,27 @@ const (
 	rootDocument = "OFD.xml"
 )
 
-func NewOFD(file interface{}) (*OFD, error) {
+func NewOFD(input any) (*OFD, error) {
 	var ofd OFD
-	return &ofd, ofd.Open(file)
+	return &ofd, ofd.Open(input)
 }
 
-// Open 打开OFD文件，支持文件路径或字节数据
-func (p *OFD) Open(input interface{}) error {
+// Open 打开OFD文件，支持文件路径、字节数据或通用 io.Reader。
+// 对于 io.Reader，Open 会读取全部内容，但不会关闭传入的 reader。
+func (p *OFD) Open(input any) error {
 	switch v := input.(type) {
 	case string:
 		return p.openFromFile(v)
 	case []byte:
 		return p.openFromBytes(v)
+	case io.Reader:
+		data, err := io.ReadAll(v)
+		if err != nil {
+			return fmt.Errorf("读取OFD内容失败: %w", err)
+		}
+		return p.openFromBytes(data)
 	default:
-		return fmt.Errorf("不支持的类型: %T, 请提供文件路径(string)或文件数据([]byte)", input)
+		return fmt.Errorf("不支持的类型: %T, 请提供文件路径(string)、文件数据([]byte)或 io.Reader", input)
 	}
 }
 
@@ -54,73 +61,79 @@ func (p *OFD) openFromFile(filePath string) error {
 		return fmt.Errorf("打开OFD文件失败: %w", err)
 	}
 
-	defer func() {
-		if err != nil {
-			_ = zr.Close()
-		}
-	}()
-
-	p.fileCache = utils.NewZipFileCache(&zr.Reader)
-	// 查找根文档
-	if err = p.fileCache.ParseXMLContent(rootDocument, &p.OFD); err != nil {
-		return err
-	}
-
-	// 所有操作成功后才赋值
-	p.file = cleanPath
-	p.reader = zr
-
-	return p.parseDocument()
+	return p.openZipReader(&zr.Reader, zr)
 }
 
 // openFromBytes 从字节数据打开OFD文件
 func (p *OFD) openFromBytes(data []byte) error {
-	// 创建zip.Reader
 	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return fmt.Errorf("从字节数据创建zip reader失败: %w", err)
 	}
 
-	return p.openFromZipReader(zipReader)
+	return p.openZipReader(zipReader, nil)
 }
 
-// 从zip.Reader打开
-func (p *OFD) openFromZipReader(zipReader *zip.Reader) error {
-	p.fileCache = utils.NewZipFileCache(zipReader)
-	// 查找根文档
-	if err := p.fileCache.ParseXMLContent(rootDocument, &p.OFD); err != nil {
+// openZipReader 解析候选 ZIP，并在成功后一次性替换当前文档状态。
+// 这样重复调用 Open 时，解析失败不会破坏当前已打开的文档。
+func (p *OFD) openZipReader(zipReader *zip.Reader, reader *zip.ReadCloser) (err error) {
+	if reader != nil {
+		defer func() {
+			if err != nil {
+				_ = reader.Close()
+			}
+		}()
+	}
+
+	root, documents, fileCache, err := parseZipReader(zipReader)
+	if err != nil {
+		return err
+	}
+	if err = p.Close(); err != nil {
 		return err
 	}
 
-	p.file = ""
-	p.reader = nil
-
-	return p.parseDocument()
+	p.OFD = root
+	p.Documents = documents
+	p.fileCache = fileCache
+	p.reader = reader
+	return nil
 }
 
 // Close 关闭OFD解析器并释放资源
 func (p *OFD) Close() error {
+	var err error
 	if p.reader != nil {
-		if err := p.reader.Close(); err != nil {
-			return fmt.Errorf("关闭OFD文件失败: %w", err)
-		}
+		err = p.reader.Close()
 		p.reader = nil
-		p.file = ""
+	}
+	p.fileCache = nil
+	p.Documents = nil
+	p.OFD = models.OFD{}
+	if err != nil {
+		return fmt.Errorf("关闭OFD文件失败: %w", err)
 	}
 	return nil
 }
 
-func (p *OFD) parseDocument() error {
-	for _, body := range p.OFD.DocBodies {
-		var document Document
-		document.Init(p.fileCache, body.DocRoot)
+func parseZipReader(zipReader *zip.Reader) (models.OFD, []*Document, *utils.ZipFileCache, error) {
+	fileCache := utils.NewZipFileCache(zipReader)
+	var root models.OFD
+	if err := fileCache.ParseXMLContent(rootDocument, &root); err != nil {
+		return models.OFD{}, nil, nil, err
+	}
+
+	documents := make([]*Document, 0, len(root.DocBodies))
+	for _, body := range root.DocBodies {
+		document := &Document{}
+		document.Init(fileCache, body.DocRoot)
 		if err := document.parse(body); err != nil {
-			return err
+			return models.OFD{}, nil, nil, err
 		}
 		if err := document.ParseSigns(body.Signatures); err != nil {
-			return err
+			return models.OFD{}, nil, nil, err
 		}
-		p.Documents = append(p.Documents, &document)
+		documents = append(documents, document)
 	}
-	return nil
+	return root, documents, fileCache, nil
 }
