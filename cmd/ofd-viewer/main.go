@@ -369,7 +369,12 @@ func newViewer(window fyne.Window) *viewer {
 	v.thumbnailList = widget.NewList(
 		func() int { return v.thumbnailRowCount() },
 		func() fyne.CanvasObject {
-			return container.NewHBox(newThumbnailCell(), newThumbnailCell())
+			firstCell := newThumbnailCell()
+			secondCell := newThumbnailCell()
+			if !v.isDoublePage() {
+				secondCell.Hide()
+			}
+			return container.NewHBox(firstCell, secondCell)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
 			row := item.(*fyne.Container)
@@ -732,6 +737,7 @@ func (v *viewer) createPageSlots(doc *render.Document) {
 	v.pageLayout.slots = v.pageSlots
 	objects := make([]fyne.CanvasObject, len(doc.Pages))
 	for i, page := range doc.Pages {
+		page.EnsurePhysicalBox()
 		box := page.Area.PhysicalBox
 		aspect := float32(1)
 		if box.Height > 0 {
@@ -889,6 +895,7 @@ func (v *viewer) requestPageRender(operation uint64, pageIndex int) {
 	}
 	doc := v.doc
 	page := doc.Pages[pageIndex]
+	page.EnsurePhysicalBox()
 	go v.renderPage(operation, doc, pageIndex, page, slot)
 }
 
@@ -929,6 +936,7 @@ func (v *viewer) requestThumbnailRender(pageIndex int) {
 	}
 	doc := v.doc
 	page := doc.Pages[pageIndex]
+	page.EnsurePhysicalBox()
 	go func() {
 		img, err := v.renderPageImage(doc, page, ofdcanvas.DPI(thumbnailDPI), func() bool {
 			return generation == v.thumbnailGeneration.Load()
@@ -953,6 +961,7 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 	if !valid() {
 		return nil, nil
 	}
+	page.EnsurePhysicalBox()
 	box := page.Area.PhysicalBox
 	pageCanvas := canvasFyne.New(box.Width, box.Height, resolution)
 	ctx := ofdcanvas.NewContext(pageCanvas.Canvas)
