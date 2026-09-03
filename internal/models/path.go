@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// CommandType 定义路径命令类型
+// CommandType 定义路径命令类型。
 // S: SubPath起点 (Start point of SubPath) - 定义子路径的起始点坐标(x,y)
 // M: 移动到 (Move to) - 移动画笔到指定点，不绘制线条
 // L: 直线到 (Line to) - 从当前点到指定点绘制直线
@@ -19,37 +19,54 @@ import (
 type CommandType string
 
 const (
-	Start       CommandType = "S" // 子路径起点
-	MoveTo      CommandType = "M" // 移动到命令
-	LineTo      CommandType = "L" // 直线命令
-	CubicBezier CommandType = "B" // 三次贝塞尔曲线命令
-	QuadTo      CommandType = "Q" // 二次贝塞尔曲线命令
-	ArcTo       CommandType = "A" // 椭圆弧命令
-	Close       CommandType = "C" // 闭合路径命令
+	// Start 表示子路径的起点。
+	Start CommandType = "S"
+	// MoveTo 表示移动到指定点但不绘制线条。
+	MoveTo CommandType = "M"
+	// LineTo 表示从当前点绘制直线到指定点。
+	LineTo CommandType = "L"
+	// CubicBezier 表示三次贝塞尔曲线，需要两个控制点和一个终点。
+	CubicBezier CommandType = "B"
+	// QuadTo 表示二次贝塞尔曲线，需要一个控制点和一个终点。
+	QuadTo CommandType = "Q"
+	// ArcTo 表示椭圆弧线。
+	ArcTo CommandType = "A"
+	// Close 表示闭合路径，从当前点绘制直线回到子路径起点。
+	Close CommandType = "C"
 )
 
-// ArcData 定义椭圆弧参数
+// ArcData 定义椭圆弧参数。
 type ArcData struct {
-	RX, RY        float64 // 椭圆半径
-	XAxisRotation float64 // x轴旋转角度（度）
-	LargeArcFlag  bool    // 大弧标志
-	SweepFlag     bool    // 扫过标志
-	EndPoint      StPos   // 终点坐标
+	// RX 椭圆在 X 轴方向的半径。
+	RX float64
+	// RY 椭圆在 Y 轴方向的半径。
+	RY float64
+	// XAxisRotation 椭圆相对于 X 轴的旋转角度，单位为度。
+	XAxisRotation float64
+	// LargeArcFlag 是否选择大于或等于 180 度的弧段。
+	LargeArcFlag bool
+	// SweepFlag 是否沿正向角度方向绘制弧段。
+	SweepFlag bool
+	// EndPoint 椭圆弧的终点坐标。
+	EndPoint StPos
 }
 
-// PathCommand 定义路径命令
+// PathCommand 定义一条路径命令及其参数。
 type PathCommand struct {
-	Type   CommandType
+	// Type 路径命令类型。
+	Type CommandType
+	// Points 命令使用的坐标点；弧命令使用 Arc 保存参数。
 	Points []StPos
-	Arc    *ArcData // 仅当Type为ArcTo时有意义
+	// Arc 椭圆弧参数，仅当 Type 为 ArcTo 时有效。
+	Arc *ArcData
 }
 
-// SVGPath 定义SVG路径，是PathCommand的切片类型
-// 可以用于直接解析和编码XML
+// SVGPath 定义 SVG 路径，是 PathCommand 的切片类型。
+// SVGPath 实现了 XML 编解码接口，可直接解析和编码 OFD 的路径数据。
 type SVGPath []PathCommand
 
-// UnmarshalXML 实现xml.Unmarshaler接口
-// 支持解析如: <path>M 10 20 L 30 40</path>
+// UnmarshalXML 从 XML 元素的文本内容中解析路径命令。
+// 路径数据由命令字母和空格分隔的数值参数组成，例如 M 10 20 L 30 40。
 func (p *SVGPath) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	// 读取字符数据
 	var data string
@@ -73,7 +90,7 @@ func (p *SVGPath) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return nil
 }
 
-// MarshalXML 实现xml.Marshaler接口
+// MarshalXML 将路径命令编码为 XML 元素文本。
 func (p SVGPath) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	// 构建路径字符串
 	pathStr := p.String()
@@ -82,7 +99,8 @@ func (p SVGPath) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(pathStr, start)
 }
 
-// parsePathData 解析路径字符串为SVGPath
+// parsePathData 将路径字符串解析为 SVGPath。
+// 除显式命令外，M 和 L 命令支持连续坐标对的隐式形式。
 func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 	tokens := strings.Fields(data)
 	if len(tokens) == 0 {
@@ -177,7 +195,7 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 	return commands, nil
 }
 
-// parseMoveCommand 解析M命令
+// parseMoveCommand 解析 M 或 S 命令及其坐标参数。
 func (p *SVGPath) parseMoveCommand(tokens []string, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
 	if err != nil {
@@ -186,7 +204,7 @@ func (p *SVGPath) parseMoveCommand(tokens []string, startIdx int) (PathCommand, 
 	return PathCommand{Type: MoveTo, Points: points}, nextIdx, nil
 }
 
-// parseLineCommand 解析L命令
+// parseLineCommand 解析 L 命令及其坐标参数。
 func (p *SVGPath) parseLineCommand(tokens []string, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
 	if err != nil {
@@ -195,7 +213,7 @@ func (p *SVGPath) parseLineCommand(tokens []string, startIdx int) (PathCommand, 
 	return PathCommand{Type: LineTo, Points: points}, nextIdx, nil
 }
 
-// parseBezierCommand 解析B命令
+// parseBezierCommand 解析 B 命令及其三个坐标点参数。
 func (p *SVGPath) parseBezierCommand(tokens []string, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 3)
 	if err != nil {
@@ -204,7 +222,7 @@ func (p *SVGPath) parseBezierCommand(tokens []string, startIdx int) (PathCommand
 	return PathCommand{Type: CubicBezier, Points: points}, nextIdx, nil
 }
 
-// parseQuadToCommand 解析Q命令
+// parseQuadToCommand 解析 Q 命令及其两个坐标点参数。
 func (p *SVGPath) parseQuadToCommand(tokens []string, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 2)
 	if err != nil {
@@ -213,7 +231,8 @@ func (p *SVGPath) parseQuadToCommand(tokens []string, startIdx int) (PathCommand
 	return PathCommand{Type: QuadTo, Points: points}, nextIdx, nil
 }
 
-// parseArcCommand 解析A命令（椭圆弧）
+// parseArcCommand 解析 A 命令及其椭圆弧参数。
+// A 命令参数依次为 RX、RY、旋转角度、大弧标志、扫过标志和终点坐标。
 func (p *SVGPath) parseArcCommand(tokens []string, startIdx int) (PathCommand, int, error) {
 	if startIdx+7 >= len(tokens) {
 		return PathCommand{}, startIdx, fmt.Errorf("A命令需要7个参数")
@@ -274,7 +293,7 @@ func (p *SVGPath) parseArcCommand(tokens []string, startIdx int) (PathCommand, i
 	}, startIdx + 8, nil
 }
 
-// parseImplicitCommand 解析隐式命令
+// parseImplicitCommand 根据上一条命令解析省略命令字母的坐标参数。
 func (p *SVGPath) parseImplicitCommand(tokens []string, startIdx int, lastCmd PathCommand) (PathCommand, int, error) {
 	switch lastCmd.Type {
 	case MoveTo, LineTo:
@@ -288,7 +307,7 @@ func (p *SVGPath) parseImplicitCommand(tokens []string, startIdx int, lastCmd Pa
 	}
 }
 
-// parsePoints 解析点坐标
+// parsePoints 从令牌列表中解析指定数量的坐标点。
 func (p *SVGPath) parsePoints(tokens []string, startIdx, numPoints int) ([]StPos, int, error) {
 	var points []StPos
 	idx := startIdx
@@ -315,13 +334,14 @@ func (p *SVGPath) parsePoints(tokens []string, startIdx, numPoints int) ([]StPos
 	return points, idx, nil
 }
 
-// isCoordinatePair 检查是否为坐标对
+// isCoordinatePair 检查令牌是否为可解析的数值坐标。
 func (p *SVGPath) isCoordinatePair(token string) bool {
 	_, err := strconv.ParseFloat(token, 64)
 	return err == nil
 }
 
-// ParsePathData 解析路径字符串为SVGPath (公开的工厂函数)
+// ParsePathData 解析路径字符串并返回 SVGPath。
+// 输入为空或仅包含空白字符时返回空路径。
 func ParsePathData(data string) (SVGPath, error) {
 	var path SVGPath
 	commands, err := path.parsePathData(data)
@@ -331,7 +351,8 @@ func ParsePathData(data string) (SVGPath, error) {
 	return commands, nil
 }
 
-// String 返回路径的字符串表示
+// String 返回路径的规范化字符串表示。
+// 坐标和弧参数统一保留两位小数，命令之间使用单个空格分隔。
 func (p SVGPath) String() string {
 	var builder strings.Builder
 
@@ -371,7 +392,8 @@ func (p SVGPath) String() string {
 	return builder.String()
 }
 
-// Format 格式化输出命令
+// Format 按易读格式返回路径命令列表。
+// 每条命令单独占一行，并包含坐标或椭圆弧参数。
 func (p SVGPath) Format() string {
 	var builder strings.Builder
 
@@ -401,7 +423,8 @@ func (p SVGPath) Format() string {
 	return builder.String()
 }
 
-// CalculateBoundingBox 计算边界框
+// CalculateBoundingBox 计算路径中坐标点的轴对齐边界框。
+// 返回值依次为最小 X、最小 Y、最大 X 和最大 Y；空路径返回四个零值。
 func (p SVGPath) CalculateBoundingBox() (minX, minY, maxX, maxY float64) {
 	if len(p) == 0 {
 		return 0, 0, 0, 0
@@ -457,7 +480,7 @@ func (p SVGPath) CalculateBoundingBox() (minX, minY, maxX, maxY float64) {
 	return
 }
 
-// CountCommands 统计命令数量
+// CountCommands 统计路径中各类命令的数量。
 func (p SVGPath) CountCommands() map[CommandType]int {
 	counts := make(map[CommandType]int)
 	for _, cmd := range p {
@@ -466,7 +489,8 @@ func (p SVGPath) CountCommands() map[CommandType]int {
 	return counts
 }
 
-// GetStartPoint 获取指定命令的起始点（用于弧计算）
+// GetStartPoint 获取指定命令之前最近的有效终点，作为该命令的起始点。
+// 对于首条命令或找不到有效点的情况返回错误。
 func (p SVGPath) GetStartPoint(cmdIndex int) (StPos, error) {
 	if cmdIndex < 0 || cmdIndex >= len(p) {
 		return StPos{}, fmt.Errorf("命令索引超出范围")
@@ -487,22 +511,23 @@ func (p SVGPath) GetStartPoint(cmdIndex int) (StPos, error) {
 	return StPos{}, fmt.Errorf("未找到有效的起始点")
 }
 
-// AddCommand 添加路径命令
+// AddCommand 将一条路径命令追加到路径末尾。
 func (p *SVGPath) AddCommand(cmd PathCommand) {
 	*p = append(*p, cmd)
 }
 
-// Clear 清空路径
+// Clear 清空路径中的全部命令。
 func (p *SVGPath) Clear() {
 	*p = SVGPath{}
 }
 
-// Length 获取路径中的命令数量
+// Length 返回路径中的命令数量。
 func (p SVGPath) Length() int {
 	return len(p)
 }
 
-// GetCommand 获取指定索引的命令
+// GetCommand 获取指定索引处的路径命令。
+// 当索引越界时返回错误。
 func (p SVGPath) GetCommand(index int) (PathCommand, error) {
 	if index < 0 || index >= len(p) {
 		return PathCommand{}, fmt.Errorf("索引超出范围")

@@ -1,83 +1,141 @@
 package models
 
+// Res OFD 资源文件定义。
 type Res struct {
-	BaseLoc               StLoc                  `xml:"BaseLoc,attr"`
-	ColorSpaces           *ColorSpaces           `xml:"ColorSpaces"`
-	DrawParams            *DrawParams            `xml:"DrawParams"`
-	Fonts                 *Fonts                 `xml:"Fonts"`
-	MultiMedias           *MultiMedias           `xml:"MultiMedias"`
+	// BaseLoc 资源文件的基础路径。
+	BaseLoc StLoc `xml:"BaseLoc,attr"`
+	// ColorSpaces 颜色空间资源集合。
+	ColorSpaces *ColorSpaces `xml:"ColorSpaces"`
+	// DrawParams 绘制参数资源集合。
+	DrawParams *DrawParams `xml:"DrawParams"`
+	// Fonts 字体资源集合。
+	Fonts *Fonts `xml:"Fonts"`
+	// MultiMedias 多媒体资源集合。
+	MultiMedias *MultiMedias `xml:"MultiMedias"`
+	// CompositeGraphicUnits 复合图形资源集合。
 	CompositeGraphicUnits *CompositeGraphicUnits `xml:"CompositeGraphicUnits"`
 }
 
+// ColorSpaces 颜色空间资源集合。
 type ColorSpaces struct {
+	// ColorSpace 颜色空间资源列表。
 	ColorSpace []ColorSpace `xml:"ColorSpace"`
 }
 
+// ColorSpace 颜色空间资源定义。
 type ColorSpace struct {
-	ID               StID     `xml:"ID,attr"`
-	Type             string   `xml:"Type,attr"` // GRAY, RGB, CMYK
-	BitsPerComponent int      `xml:"BitsPerComponent,attr,omitempty"`
-	Profile          StLoc    `xml:"Profile,attr,omitempty"`
-	Palette          *Palette `xml:"Palette"`
+	// ID 颜色空间标识，在资源文件内唯一。
+	ID StID `xml:"ID,attr"`
+	// Type 颜色空间类型，可为 GRAY、RGB 或 CMYK。
+	Type string `xml:"Type,attr"`
+	// BitsPerComponent 每个颜色分量的位数。
+	BitsPerComponent int `xml:"BitsPerComponent,attr,omitempty"`
+	// Profile 颜色空间配置文件的位置。
+	Profile StLoc `xml:"Profile,attr,omitempty"`
+	// Palette 颜色空间使用的调色板。
+	Palette *Palette `xml:"Palette"`
 }
 
+// Palette 颜色空间的调色板定义。
 type Palette struct {
+	// CV 调色板中的颜色值列表。
 	CV []StArray `xml:"CV"`
 }
 
+// DrawParams 绘制参数资源集合。
 type DrawParams struct {
+	// DrawParam 绘制参数资源列表。
 	DrawParam []*DrawParam `xml:"DrawParam"`
 }
 
+// DrawParam 绘制参数资源定义。
 type DrawParam struct {
-	ID          StID      `xml:"ID,attr"`
-	Relative    StRefID   `xml:"Relative,attr,omitempty"`
-	LineWidth   float64   `xml:"LineWidth,attr,omitempty"`
-	Join        string    `xml:"Join,attr,omitempty"` // Miter, Round, Bevel
-	Cap         string    `xml:"Cap,attr,omitempty"`  // Butt, Round, Square
-	DashOffset  float64   `xml:"DashOffset,attr,omitempty"`
+	// ID 绘制参数标识，在资源文件内唯一。
+	ID StID `xml:"ID,attr"`
+	// Relative 继承的绘制参数资源引用。
+	Relative StRefID `xml:"Relative,attr,omitempty"`
+	// LineWidth 线宽，单位为毫米。
+	LineWidth float64 `xml:"LineWidth,attr,omitempty"`
+	// Join 线连接样式，可为 Miter、Round 或 Bevel。
+	Join string `xml:"Join,attr,omitempty"`
+	// Cap 线端点样式，可为 Butt、Round 或 Square。
+	Cap string `xml:"Cap,attr,omitempty"`
+	// DashOffset 虚线模式的起始偏移量。
+	DashOffset float64 `xml:"DashOffset,attr,omitempty"`
+	// DashPattern 虚线模式中实线段和空白段的长度数组。
 	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
-	MiterLimit  float64   `xml:"MiterLimit,attr,omitempty"`
-	FillColor   *CTColor  `xml:"FillColor"`
-	StrokeColor *CTColor  `xml:"StrokeColor"`
+	// MiterLimit 斜接连接的长度限制。
+	MiterLimit float64 `xml:"MiterLimit,attr,omitempty"`
+	// FillColor 填充颜色。
+	FillColor *CTColor `xml:"FillColor"`
+	// StrokeColor 描边颜色。
+	StrokeColor *CTColor `xml:"StrokeColor"`
 }
 
+// Fonts 字体资源集合。
 type Fonts struct {
+	// Font 字体资源列表。
 	Font []Font `xml:"Font"`
 }
 
+// Font 字体资源定义。
 type Font struct {
-	ID         StID   `xml:"ID,attr"`
-	FontName   string `xml:"FontName,attr"`
+	// ID 字体标识，在资源文件内唯一。
+	ID StID `xml:"ID,attr"`
+	// FontName 字体名称。
+	FontName string `xml:"FontName,attr"`
+	// FamilyName 字体族名称。
 	FamilyName string `xml:"FamilyName,attr,omitempty"`
-	Charset    string `xml:"Charset,attr,omitempty"` // symbol, prc, big5, shift-jis, wansung, johab, unicode
-	Italic     bool   `xml:"Italic,attr,omitempty"`
-	Bold       bool   `xml:"Bold,attr,omitempty"`
-	Serif      bool   `xml:"Serif,attr,omitempty"`
-	FixedWidth bool   `xml:"FixedWidth,attr,omitempty"`
-	FontFile   StLoc  `xml:"FontFile,omitempty"`
+	// Charset 字符集，可为 symbol、prc、big5、shift-jis、wansung、johab 或 unicode。
+	Charset string `xml:"Charset,attr,omitempty"`
+	// Italic 是否为斜体字体。
+	Italic bool `xml:"Italic,attr,omitempty"`
+	// Bold 是否为粗体字体。
+	Bold bool `xml:"Bold,attr,omitempty"`
+	// Serif 是否为衬线字体。
+	Serif bool `xml:"Serif,attr,omitempty"`
+	// FixedWidth 是否为等宽字体。
+	FixedWidth bool `xml:"FixedWidth,attr,omitempty"`
+	// FontFile 字体文件的位置。
+	FontFile StLoc `xml:"FontFile,omitempty"`
 }
 
+// MultiMedias 多媒体资源集合。
 type MultiMedias struct {
+	// MultiMedia 多媒体资源列表。
 	MultiMedia []*MultiMedia `xml:"MultiMedia"`
 }
 
+// MultiMedia 多媒体资源定义。
 type MultiMedia struct {
-	ID        StID   `xml:"ID,attr"`
-	Type      string `xml:"Type,attr"` // Image, Audio, Video
-	Format    string `xml:"Format,attr,omitempty"`
-	MediaFile StLoc  `xml:"MediaFile"`
+	// ID 多媒体资源标识，在资源文件内唯一。
+	ID StID `xml:"ID,attr"`
+	// Type 多媒体类型，可为 Image、Audio 或 Video。
+	Type string `xml:"Type,attr"`
+	// Format 多媒体文件格式。
+	Format string `xml:"Format,attr,omitempty"`
+	// MediaFile 多媒体文件的位置。
+	MediaFile StLoc `xml:"MediaFile"`
 }
 
+// CompositeGraphicUnits 复合图形资源集合。
 type CompositeGraphicUnits struct {
+	// CompositeGraphicUnit 复合图形资源列表。
 	CompositeGraphicUnit []CompositeGraphicUnit `xml:"CompositeGraphicUnit"`
 }
 
+// CompositeGraphicUnit 复合图形资源定义。
 type CompositeGraphicUnit struct {
-	ID           StID        `xml:"ID,attr"`
-	Width        float64     `xml:"Width,attr"`
-	Height       float64     `xml:"Height,attr"`
-	Thumbnail    StRefID     `xml:"Thumbnail,omitempty"`
-	Substitution StRefID     `xml:"Substitution,omitempty"`
-	Content      CTPageBlock `xml:"Content"`
+	// ID 复合图形资源标识，在资源文件内唯一。
+	ID StID `xml:"ID,attr"`
+	// Width 复合图形的宽度，单位为毫米。
+	Width float64 `xml:"Width,attr"`
+	// Height 复合图形的高度，单位为毫米。
+	Height float64 `xml:"Height,attr"`
+	// Thumbnail 复合图形缩略图资源引用。
+	Thumbnail StRefID `xml:"Thumbnail,omitempty"`
+	// Substitution 复合图形替代资源引用。
+	Substitution StRefID `xml:"Substitution,omitempty"`
+	// Content 复合图形包含的页面对象内容。
+	Content CTPageBlock `xml:"Content"`
 }
