@@ -7,6 +7,7 @@
 - ✅ **OFD 转 PDF** - 支持将 OFD 文档转换为标准的 PDF 文件
 - ✅ **OFD 转纯文本** - 支持提取 OFD 文档中的文字内容
 - ✅ **OFD 转 图像** - 支持将 OFD 页面转换为 PNG、JPG 等图像格式
+- ✅ **多文档体** - 按文档体顺序合并页面，并使用全局页码
 - ✅ **多页面支持** - 支持多页面 OFD 文档的转换
 - ✅ **灵活配置** - 支持自定义 DPI、背景颜色、页面选择等参数
 - ✅ **高效处理** - 基于 Go 语言开发，性能优异
@@ -75,6 +76,8 @@ Flatpak 版本以只读方式访问真实的 `~/.local/share/fonts` 用户字体
 
 ## 快速开始
 
+OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。
+
 ### OFD 转 PDF
 
 ```go
@@ -131,7 +134,7 @@ err := converter.Image("input.ofd",
     }),
     converter.BgColor(color.White),
     converter.JPG(),
-    converter.Page(3),        // 指定转换特定页面
+    converter.Page(3),        // 指定全局第 3 页
     converter.DPI(300),       // 设置输出分辨率
 )
 ```

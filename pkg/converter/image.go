@@ -125,7 +125,7 @@ func BgColor(bg color.Color) Option {
 	}
 }
 
-// Page 设置特定页码
+// Page 设置全局页码，从 1 开始；0 表示处理全部页面。
 func Page(page int) Option {
 	return func(c *Converter) {
 		c.page = page
@@ -133,10 +133,10 @@ func Page(page int) Option {
 }
 
 // renderPage 渲染单个页面
-func (c *Converter) renderPage(pageIndex int, page *canvas.Canvas) error {
+func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 	// 文件写入器处理
 	if c.fileWriter != nil {
-		w, err := c.fileWriter(pageIndex + 1)
+		w, err := c.fileWriter(pageNumber)
 		if err != nil {
 			return fmt.Errorf("创建文件写入器失败: %w", err)
 		}
@@ -161,7 +161,7 @@ func (c *Converter) renderPage(pageIndex int, page *canvas.Canvas) error {
 		}
 
 		if err := page.Write(w, renderer); err != nil {
-			return fmt.Errorf("写入第%d页失败: %w", pageIndex+1, err)
+			return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 		}
 	}
 
@@ -175,8 +175,8 @@ func (c *Converter) renderPage(pageIndex int, page *canvas.Canvas) error {
 			img = c.resizeThumbnail(img)
 		}
 
-		if err := c.imageWriter(pageIndex+1, img); err != nil {
-			return fmt.Errorf("写入第%d页图像失败: %w", pageIndex+1, err)
+		if err := c.imageWriter(pageNumber, img); err != nil {
+			return fmt.Errorf("写入第%d页图像失败: %w", pageNumber, err)
 		}
 	}
 
@@ -227,56 +227,61 @@ func Image(input interface{}, opts ...Option) error {
 		return errors.New("没有文档")
 	}
 
-	// 创建渲染文档
-	doc := render.NewDocument(conv.bgColor, ofd.Documents[0])
-	if len(doc.Pages) == 0 {
+	// 创建渲染文档。每个文档体保留独立的资源上下文。
+	documents := make([]*render.Document, 0, len(ofd.Documents))
+	for _, document := range ofd.Documents {
+		documents = append(documents, render.NewDocument(conv.bgColor, document))
+	}
+	if len(collectDocumentPages(documents)) == 0 {
 		return errors.New("文档没有页面")
 	}
 
-	return conv.renderDocument(doc)
+	return conv.renderDocuments(documents)
 }
 
 // ImageDocument 将已解析的 OFD 文档渲染为图像或矢量格式。
 func ImageDocument(doc *render.Document, opts ...Option) error {
 	conv := newConverter(opts...)
-	if doc == nil || len(doc.Pages) == 0 {
+	if len(collectDocumentPages([]*render.Document{doc})) == 0 {
 		return errors.New("文档没有页面")
 	}
-	return conv.renderDocument(doc)
+	return conv.renderDocuments([]*render.Document{doc})
+}
+
+// ImageDocuments 将多个已解析的 OFD 文档体按全局页码渲染为图像或矢量格式。
+func ImageDocuments(documents []*render.Document, opts ...Option) error {
+	conv := newConverter(opts...)
+	if len(collectDocumentPages(documents)) == 0 {
+		return errors.New("文档没有页面")
+	}
+	if err := conv.validateConfig(); err != nil {
+		return err
+	}
+	return conv.renderDocuments(documents)
 }
 
 func (c *Converter) renderDocument(doc *render.Document) error {
-	// 处理特定页码或所有页面
-	if c.page > 0 {
-		return c.renderSpecificPage(doc, c.page)
-	}
-	return c.renderAllPages(doc)
+	return c.renderDocuments([]*render.Document{doc})
 }
 
-// renderSpecificPage 渲染特定页面
-func (c *Converter) renderSpecificPage(doc *render.Document, pageNum int) error {
-	if pageNum > len(doc.Pages) {
-		return nil // 页码超出范围，静默返回
+func (c *Converter) renderDocuments(documents []*render.Document) error {
+	pages := collectDocumentPages(documents)
+	if len(pages) == 0 {
+		return errors.New("文档没有页面")
 	}
-
-	pageIndex := pageNum - 1
-	canvasPage, err := doc.Page(doc.Pages[pageIndex])
+	pageStart, pageEnd, err := pageRange(len(pages), c.page)
 	if err != nil {
-		return fmt.Errorf("处理第%d页失败: %w", pageNum, err)
+		return err
 	}
+	pages = pages[pageStart:pageEnd]
 
-	return c.renderPage(pageIndex, canvasPage)
-}
-
-// renderAllPages 渲染所有页面
-func (c *Converter) renderAllPages(doc *render.Document) error {
-	for i := range doc.Pages {
-		canvasPage, err := doc.Page(doc.Pages[i])
+	for _, page := range pages {
+		canvasPage, err := page.document.Page(page.document.Pages[page.pageIndex])
 		if err != nil {
-			return fmt.Errorf("处理第%d页失败: %w", i+1, err)
+			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 
-		if err := c.renderPage(i, canvasPage); err != nil {
+		if err := c.renderPage(page.pageNumber, canvasPage); err != nil {
 			return err
 		}
 	}

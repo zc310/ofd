@@ -53,6 +53,42 @@ func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 	}
 }
 
+func TestTextDocumentsRejectInvalidGlobalPage(t *testing.T) {
+	documents := []*parser.Document{{Pages: []*parser.Page{{}}}}
+	for _, page := range []int{-1, 2} {
+		var output bytes.Buffer
+		if err := TextDocuments(documents, &output, Page(page)); err == nil {
+			t.Fatalf("Page(%d) returned nil error", page)
+		}
+	}
+}
+
+func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
+	documents := []*parser.Document{
+		{Pages: []*parser.Page{{PageContent: models.PageContent{Content: textContent("文档一第一页")}}}},
+		{Pages: []*parser.Page{
+			{PageContent: models.PageContent{Content: textContent("文档二第一页")}},
+			{PageContent: models.PageContent{Content: textContent("文档二第二页")}},
+		}},
+	}
+
+	var output bytes.Buffer
+	if err := TextDocuments(documents, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), "文档一第一页\n\f\n文档二第一页\n\f\n文档二第二页\n"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
+	}
+
+	output.Reset()
+	if err := TextDocuments(documents, &output, Page(2)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), "文档二第一页\n"; got != want {
+		t.Fatalf("selected text = %q, want %q", got, want)
+	}
+}
+
 func TestTextDocumentSkipsInvisibleText(t *testing.T) {
 	content := &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
 		Items: []models.PageItem{

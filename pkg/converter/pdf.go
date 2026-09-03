@@ -7,14 +7,12 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 )
 
 func PDF(input interface{}, output io.Writer, opts ...Option) error {
-	conv := newConverter(opts...)
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		return err
@@ -28,25 +26,34 @@ func PDF(input interface{}, output io.Writer, opts ...Option) error {
 		return errors.New("没有文档")
 	}
 
-	doc := render.NewDocument(color.Transparent, ofd.Documents[0])
-	if len(doc.Pages) == 0 {
+	documents := make([]*render.Document, 0, len(ofd.Documents))
+	for _, document := range ofd.Documents {
+		documents = append(documents, render.NewDocument(color.Transparent, document))
+	}
+	return PDFDocuments(documents, output, opts...)
+}
+
+// PDFDocuments 将多个已解析的 OFD 文档体按全局页码写入同一个 PDF。
+func PDFDocuments(documents []*render.Document, output io.Writer, opts ...Option) error {
+	if output == nil {
+		return errors.New("未设置 PDF 输出参数")
+	}
+	conv := newConverter(opts...)
+	pages := collectDocumentPages(documents)
+	if len(pages) == 0 {
 		return errors.New("文档没有页面")
 	}
-	pageStart, pageEnd := 0, len(doc.Pages)
-	if conv.page > 0 {
-		if conv.page > len(doc.Pages) {
-			return nil
-		}
-		pageStart = conv.page - 1
-		pageEnd = conv.page
+	pageStart, pageEnd, err := pageRange(len(pages), conv.page)
+	if err != nil {
+		return err
 	}
+	pages = pages[pageStart:pageEnd]
+
 	var pdfDoc *pdf.PDF
-	var c *canvas.Canvas
-	for i := pageStart; i < pageEnd; i++ {
-		page := doc.Pages[i]
-		c, err = doc.Page(page)
+	for _, page := range pages {
+		c, err := page.document.Page(page.document.Pages[page.pageIndex])
 		if err != nil {
-			return fmt.Errorf("处理第%d页失败: %w", i+1, err)
+			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 		if pdfDoc == nil {
 			pdfDoc = pdf.New(output, c.W, c.H, nil)
