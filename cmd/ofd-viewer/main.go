@@ -26,7 +26,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 	ofdcanvas "github.com/tdewolff/canvas"
 	canvasFyne "github.com/tdewolff/canvas/renderers/fyne"
-	canvasPDF "github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
@@ -77,7 +76,7 @@ func main() {
 	w.Show()
 
 	if initialFile != "" {
-		viewer.load(initialFile, filepath.Base(initialFile), "")
+		viewer.load(initialFile, filepath.Base(initialFile), initialFile)
 	}
 	a.Run()
 }
@@ -107,9 +106,9 @@ type viewer struct {
 
 	filePath            string
 	fileName            string
-	temporaryFile       string
 	ofd                 *parser.OFD
-	doc                 *render.Document
+	documents           []*render.Document
+	pages               []viewerPage
 	currentPage         int
 	totalPages          int
 	loading             bool
@@ -118,6 +117,7 @@ type viewer struct {
 	thumbnailGeneration atomic.Uint64
 	thumbnailImages     map[int]image.Image
 	thumbnailRendering  []atomic.Bool
+	closed              atomic.Bool
 	renderMu            sync.Mutex
 }
 
@@ -142,6 +142,12 @@ type pageSlot struct {
 	image     *fyneCanvas.Image
 	aspect    float32
 	rendering atomic.Bool
+}
+
+// viewerPage 将全局页码映射到所属文档体中的页面，同时保留独立资源上下文。
+type viewerPage struct {
+	document *render.Document
+	page     *parser.Page
 }
 
 type pageBound struct {
@@ -336,6 +342,33 @@ func (v *viewer) isDoublePage() bool {
 	return v.pageLayout != nil && v.pageLayout.mode == viewDoublePage
 }
 
+func (v *viewer) hasPages() bool {
+	return len(v.pages) > 0
+}
+
+func (v *viewer) pageAt(index int) (viewerPage, bool) {
+	if index < 0 || index >= len(v.pages) {
+		return viewerPage{}, false
+	}
+	return v.pages[index], true
+}
+
+func collectViewerPages(documents []*render.Document) []viewerPage {
+	pages := make([]viewerPage, 0)
+	for _, document := range documents {
+		if document == nil || document.Document == nil {
+			continue
+		}
+		for _, page := range document.Pages {
+			if page == nil {
+				continue
+			}
+			pages = append(pages, viewerPage{document: document, page: page})
+		}
+	}
+	return pages
+}
+
 func (v *viewer) thumbnailRowCount() int {
 	if !v.isDoublePage() {
 		return v.totalPages
@@ -467,7 +500,7 @@ func newViewer(window fyne.Window) *viewer {
 }
 
 func (v *viewer) showExportDialog() {
-	if v.doc == nil || v.totalPages == 0 || v.loading || v.exporting {
+	if v.closed.Load() || !v.hasPages() || v.loading || v.exporting {
 		return
 	}
 	dpiEntry := widget.NewEntry()
@@ -530,7 +563,7 @@ func exportFormatCode(label string) string {
 }
 
 func (v *viewer) export(format string, dpi int, background color.Color) {
-	if v.doc == nil || v.exporting {
+	if v.closed.Load() || v.loading || !v.hasPages() || v.exporting {
 		return
 	}
 	extension := "pdf"
@@ -560,10 +593,20 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 }
 
 func (v *viewer) exportToWriter(writer fyne.URIWriteCloser, format string, dpi int, background color.Color, extension string) {
+	if writer == nil {
+		return
+	}
+	if v.closed.Load() || v.loading || !v.hasPages() || v.exporting {
+		_ = writer.Close()
+		return
+	}
 	v.exporting = true
 	v.updateControls()
 	v.showExportLoading()
-	doc := v.doc
+	exportOperation := v.operation.Load()
+	v.renderMu.Lock()
+	documents := append([]*render.Document(nil), v.documents...)
+	v.renderMu.Unlock()
 	go func() {
 		var temporaryFile *os.File
 		var temporaryPath string
@@ -575,7 +618,11 @@ func (v *viewer) exportToWriter(writer fyne.URIWriteCloser, format string, dpi i
 		}
 		if err == nil {
 			v.renderMu.Lock()
-			err = exportDocument(doc, temporaryPath, format, dpi, background)
+			if exportOperation != v.operation.Load() {
+				err = fmt.Errorf("文档已更改")
+			} else {
+				err = exportDocuments(documents, temporaryPath, format, dpi, background)
+			}
 			v.renderMu.Unlock()
 		}
 		if err == nil {
@@ -597,6 +644,9 @@ func (v *viewer) exportToWriter(writer fyne.URIWriteCloser, format string, dpi i
 			_ = os.Remove(temporaryPath)
 		}
 		fyne.Do(func() {
+			if v.closed.Load() {
+				return
+			}
 			v.hideExportLoading()
 			v.exporting = false
 			v.updateControls()
@@ -629,15 +679,38 @@ func (v *viewer) hideExportLoading() {
 	v.exportLoading = nil
 }
 
-func exportDocument(doc *render.Document, path, format string, dpi int, background color.Color) error {
-	exportDoc := render.NewDocument(background, doc.Document)
+func exportDocuments(documents []*render.Document, path, format string, dpi int, background color.Color) error {
+	if len(documents) == 0 {
+		return fmt.Errorf("文档没有页面")
+	}
+	exportDocs := make([]*render.Document, 0, len(documents))
+	pageCount := 0
+	for _, doc := range documents {
+		if doc == nil || doc.Document == nil {
+			continue
+		}
+		exportDoc := render.NewDocument(background, doc.Document)
+		exportDocs = append(exportDocs, exportDoc)
+		for _, page := range exportDoc.Pages {
+			if page != nil {
+				pageCount++
+			}
+		}
+	}
+	if pageCount == 0 {
+		return fmt.Errorf("文档没有页面")
+	}
 	if strings.EqualFold(format, "txt") {
 		file, err := os.Create(path)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		return canvasConverter.TextDocument(exportDoc.Document, file)
+		parsedDocs := make([]*parser.Document, 0, len(exportDocs))
+		for _, doc := range exportDocs {
+			parsedDocs = append(parsedDocs, doc.Document)
+		}
+		return canvasConverter.TextDocuments(parsedDocs, file)
 	}
 	if strings.EqualFold(format, "pdf") {
 		file, err := os.Create(path)
@@ -645,33 +718,18 @@ func exportDocument(doc *render.Document, path, format string, dpi int, backgrou
 			return err
 		}
 		defer file.Close()
-		var pdfDoc *canvasPDF.PDF
-		for i, page := range exportDoc.Pages {
-			canvasPage, err := exportDoc.Page(page)
-			if err != nil {
-				return fmt.Errorf("处理第 %d 页失败: %w", i+1, err)
-			}
-			if pdfDoc == nil {
-				pdfDoc = canvasPDF.New(file, canvasPage.W, canvasPage.H, nil)
-			} else {
-				pdfDoc.NewPage(canvasPage.W, canvasPage.H)
-			}
-			canvasPage.RenderTo(pdfDoc)
-		}
-		if pdfDoc == nil {
-			return fmt.Errorf("文档没有页面")
-		}
-		return pdfDoc.Close()
+		return canvasConverter.PDFDocuments(exportDocs, file)
 	}
 	option := exportImageOption(format)
-	if len(exportDoc.Pages) == 1 {
-		return canvasConverter.ImageDocument(exportDoc,
-			canvasConverter.DPI(float64(dpi)),
-			option,
-			canvasConverter.Page(1),
-			canvasConverter.Writer(func(int) (io.WriteCloser, error) {
+	imageOptions := []canvasConverter.Option{
+		canvasConverter.DPI(float64(dpi)),
+		option,
+	}
+	if pageCount == 1 {
+		return canvasConverter.ImageDocuments(exportDocs,
+			append(imageOptions, canvasConverter.Writer(func(int) (io.WriteCloser, error) {
 				return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-			}),
+			}))...,
 		)
 	}
 
@@ -682,16 +740,15 @@ func exportDocument(doc *render.Document, path, format string, dpi int, backgrou
 	defer file.Close()
 	archive := zip.NewWriter(file)
 	extension := strings.ToLower(format)
-	err = canvasConverter.ImageDocument(exportDoc,
-		canvasConverter.DPI(float64(dpi)),
-		option,
-		canvasConverter.Writer(func(page int) (io.WriteCloser, error) {
-			entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, extension))
-			if err != nil {
-				return nil, err
-			}
-			return &zipEntryWriter{Writer: entry}, nil
-		}),
+	err = canvasConverter.ImageDocuments(exportDocs,
+		append(imageOptions,
+			canvasConverter.Writer(func(page int) (io.WriteCloser, error) {
+				entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, extension))
+				if err != nil {
+					return nil, err
+				}
+				return &zipEntryWriter{Writer: entry}, nil
+			}))...,
 	)
 	if err != nil {
 		archive.Close()
@@ -746,13 +803,13 @@ func (v *viewer) showAppInfo() {
 	dialog.NewCustom("关于 OFD Viewer", "关闭", content, v.window).Show()
 }
 
-func (v *viewer) createPageSlots(doc *render.Document) {
-	v.pageSlots = make([]*pageSlot, len(doc.Pages))
+func (v *viewer) createPageSlots(pages []viewerPage) {
+	v.pageSlots = make([]*pageSlot, len(pages))
 	v.pageLayout.slots = v.pageSlots
-	objects := make([]fyne.CanvasObject, len(doc.Pages))
-	for i, page := range doc.Pages {
-		page.EnsurePhysicalBox()
-		box := page.Area.PhysicalBox
+	objects := make([]fyne.CanvasObject, len(pages))
+	for i, pageRef := range pages {
+		pageRef.page.EnsurePhysicalBox()
+		box := pageRef.page.Area.PhysicalBox
 		aspect := float32(1)
 		if box.Height > 0 {
 			aspect = float32(box.Width / box.Height)
@@ -773,7 +830,7 @@ func (v *viewer) createPageSlots(doc *render.Document) {
 }
 
 func (v *viewer) chooseFile() {
-	if v.loading {
+	if v.closed.Load() || v.loading || v.exporting {
 		return
 	}
 	fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -784,37 +841,23 @@ func (v *viewer) chooseFile() {
 		if reader == nil {
 			return
 		}
-		v.loading = true
-		v.updateControls()
-		fileName := reader.URI().Name()
-		go func() {
-			temporaryFile, copyErr := os.CreateTemp("", "ofd-viewer-*.ofd")
-			var temporaryPath string
-			if copyErr == nil {
-				temporaryPath = temporaryFile.Name()
-				_, copyErr = io.Copy(temporaryFile, reader)
-				closeErr := temporaryFile.Close()
-				if copyErr == nil {
-					copyErr = closeErr
-				}
-			}
-			closeErr := reader.Close()
-			if copyErr == nil {
-				copyErr = closeErr
-			}
-			if copyErr != nil && temporaryPath != "" {
-				_ = os.Remove(temporaryPath)
-			}
-			fyne.Do(func() {
-				if copyErr != nil {
-					v.loading = false
-					v.updateControls()
-					dialog.ShowInformation("打开失败", copyErr.Error(), v.window)
-					return
-				}
-				v.load(temporaryPath, fileName, temporaryPath)
-			})
-		}()
+		if v.closed.Load() || v.loading || v.exporting {
+			_ = reader.Close()
+			return
+		}
+		uri := reader.URI()
+		if uri == nil || !strings.EqualFold(uri.Scheme(), "file") || uri.Path() == "" {
+			_ = reader.Close()
+			dialog.ShowInformation("打开失败", "只能打开本地 OFD 文件。", v.window)
+			return
+		}
+		filePath := filepath.Clean(uri.Path())
+		if _, statErr := os.Stat(filePath); statErr != nil {
+			_ = reader.Close()
+			dialog.ShowInformation("打开失败", statErr.Error(), v.window)
+			return
+		}
+		v.load(filePath, uri.Name(), reader)
 	}, v.window)
 	fileDialog.SetTitleText("选择 OFD 文件")
 	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".ofd"}))
@@ -823,7 +866,13 @@ func (v *viewer) chooseFile() {
 	fileDialog.Show()
 }
 
-func (v *viewer) load(filePath, fileName, temporaryFile string) {
+func (v *viewer) load(filePath, fileName string, input interface{}) {
+	if v.closed.Load() {
+		if closer, ok := input.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		return
+	}
 	v.hidePageLoading(0)
 	operation := v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
@@ -832,7 +881,13 @@ func (v *viewer) load(filePath, fileName, temporaryFile string) {
 
 	go func() {
 		log.Printf("正在打开文件: %s", filePath)
-		ofd, err := parser.NewOFD(filePath)
+		ofd, err := parser.NewOFD(input)
+		if closer, ok := input.(io.Closer); ok {
+			closeErr := closer.Close()
+			if err == nil {
+				err = closeErr
+			}
+		}
 		if err == nil && len(ofd.Documents) == 0 {
 			_ = ofd.Close()
 			err = fmt.Errorf("没有文档")
@@ -843,8 +898,11 @@ func (v *viewer) load(filePath, fileName, temporaryFile string) {
 				if ofd != nil {
 					_ = ofd.Close()
 				}
-				if temporaryFile != "" {
-					_ = os.Remove(temporaryFile)
+				return
+			}
+			if v.closed.Load() {
+				if ofd != nil {
+					_ = ofd.Close()
 				}
 				return
 			}
@@ -852,27 +910,41 @@ func (v *viewer) load(filePath, fileName, temporaryFile string) {
 				if ofd != nil {
 					_ = ofd.Close()
 				}
-				if temporaryFile != "" {
-					_ = os.Remove(temporaryFile)
-				}
 				v.loading = false
 				log.Printf("打开失败: %v", err)
 				v.updateControls()
 				return
 			}
 
-			v.closeDocument()
+			v.renderMu.Lock()
+			v.closeDocumentLocked()
 			v.ofd = ofd
-			v.doc = render.NewDocument(color.Transparent, ofd.Documents[0])
+			v.documents = make([]*render.Document, 0, len(ofd.Documents))
+			for _, document := range ofd.Documents {
+				renderDoc := render.NewDocument(color.Transparent, document)
+				v.documents = append(v.documents, renderDoc)
+			}
+			v.pages = collectViewerPages(v.documents)
+			if len(v.pages) == 0 {
+				_ = v.ofd.Close()
+				v.ofd = nil
+				v.documents = nil
+				v.pages = nil
+				v.renderMu.Unlock()
+				v.loading = false
+				log.Printf("打开失败: 文档没有页面")
+				v.updateControls()
+				return
+			}
+			v.renderMu.Unlock()
 			v.filePath = filePath
 			v.fileName = fileName
-			v.temporaryFile = temporaryFile
 			v.currentPage = 0
-			v.totalPages = len(v.doc.Pages)
+			v.totalPages = len(v.pages)
 			v.pageEntry.SetText("1")
 			v.thumbnailImages = make(map[int]image.Image)
 			v.thumbnailRendering = make([]atomic.Bool, v.totalPages)
-			v.createPageSlots(v.doc)
+			v.createPageSlots(v.pages)
 			v.pageScroll.ScrollToTop()
 			v.thumbnailList.Refresh()
 			v.thumbnailList.Select(0)
@@ -886,7 +958,7 @@ func (v *viewer) load(filePath, fileName, temporaryFile string) {
 }
 
 func (v *viewer) renderVisiblePages(operation uint64) {
-	if operation == 0 || v.doc == nil || len(v.pageLayout.pageBounds) != len(v.pageSlots) {
+	if operation == 0 || !v.hasPages() || len(v.pageLayout.pageBounds) != len(v.pageSlots) {
 		return
 	}
 	top := v.pageScroll.Offset.Y
@@ -900,17 +972,20 @@ func (v *viewer) renderVisiblePages(operation uint64) {
 }
 
 func (v *viewer) requestPageRender(operation uint64, pageIndex int) {
-	if operation == 0 || v.doc == nil || pageIndex < 0 || pageIndex >= len(v.pageSlots) {
+	if operation == 0 || !v.hasPages() || pageIndex < 0 || pageIndex >= len(v.pageSlots) {
 		return
 	}
 	slot := v.pageSlots[pageIndex]
 	if slot.image.Image != nil || !slot.rendering.CompareAndSwap(false, true) {
 		return
 	}
-	doc := v.doc
-	page := doc.Pages[pageIndex]
-	page.EnsurePhysicalBox()
-	go v.renderPage(operation, doc, pageIndex, page, slot)
+	pageRef, ok := v.pageAt(pageIndex)
+	if !ok {
+		slot.rendering.Store(false)
+		return
+	}
+	pageRef.page.EnsurePhysicalBox()
+	go v.renderPage(operation, pageRef.document, pageIndex, pageRef.page, slot)
 }
 
 func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex int, page *parser.Page, slot *pageSlot) {
@@ -942,20 +1017,24 @@ func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex in
 
 func (v *viewer) requestThumbnailRender(pageIndex int) {
 	generation := v.thumbnailGeneration.Load()
-	if generation == 0 || v.doc == nil || pageIndex < 0 || pageIndex >= len(v.doc.Pages) || pageIndex >= len(v.thumbnailRendering) {
+	if generation == 0 || !v.hasPages() || pageIndex < 0 || pageIndex >= len(v.pages) || pageIndex >= len(v.thumbnailRendering) {
 		return
 	}
 	if v.thumbnailImages[pageIndex] != nil || !v.thumbnailRendering[pageIndex].CompareAndSwap(false, true) {
 		return
 	}
-	doc := v.doc
-	page := doc.Pages[pageIndex]
-	page.EnsurePhysicalBox()
+	rendering := &v.thumbnailRendering[pageIndex]
+	pageRef, ok := v.pageAt(pageIndex)
+	if !ok {
+		rendering.Store(false)
+		return
+	}
+	pageRef.page.EnsurePhysicalBox()
 	go func() {
-		img, err := v.renderPageImage(doc, page, ofdcanvas.DPI(thumbnailDPI), func() bool {
+		img, err := v.renderPageImage(pageRef.document, pageRef.page, ofdcanvas.DPI(thumbnailDPI), func() bool {
 			return generation == v.thumbnailGeneration.Load()
 		})
-		v.thumbnailRendering[pageIndex].Store(false)
+		rendering.Store(false)
 		if err != nil || img == nil {
 			return
 		}
@@ -990,7 +1069,7 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 }
 
 func (v *viewer) changePage(delta int) {
-	if v.loading || v.doc == nil || v.totalPages == 0 {
+	if v.loading || !v.hasPages() || v.totalPages == 0 {
 		return
 	}
 	next := v.currentPage + delta
@@ -1027,7 +1106,7 @@ func (v *viewer) handleKey(event *fyne.KeyEvent) {
 }
 
 func (v *viewer) goToPage(page int, showLoading bool) {
-	if v.loading || v.doc == nil || page < 0 || page >= v.totalPages {
+	if v.loading || !v.hasPages() || page < 0 || page >= v.totalPages {
 		return
 	}
 	if page == v.currentPage && len(v.pageLayout.pageBounds) <= page {
@@ -1106,7 +1185,7 @@ func (v *viewer) hidePageLoading(operation uint64) {
 }
 
 func (v *viewer) jumpToPage() {
-	if v.loading || v.doc == nil || v.totalPages == 0 {
+	if v.loading || !v.hasPages() || v.totalPages == 0 {
 		return
 	}
 	page, err := strconv.Atoi(strings.TrimSpace(v.pageEntry.Text))
@@ -1160,7 +1239,7 @@ func (v *viewer) updateControls() {
 		return
 	}
 	v.openButton.Enable()
-	if v.doc == nil || v.totalPages == 0 || v.exporting {
+	if !v.hasPages() || v.totalPages == 0 || v.exporting {
 		v.exportButton.Disable()
 	} else {
 		v.exportButton.Enable()
@@ -1168,7 +1247,7 @@ func (v *viewer) updateControls() {
 	v.pageEntry.Enable()
 	v.jumpButton.Enable()
 	v.viewModeSelect.Enable()
-	if v.doc == nil || v.totalPages == 0 {
+	if !v.hasPages() || v.totalPages == 0 {
 		v.pageLabel.SetText("/ 未加载文档")
 		v.pageEntry.SetText("")
 		return
@@ -1196,7 +1275,7 @@ func (v *viewer) updateTitle() {
 }
 
 func applicationTitle() string {
-	return "OFD Viewer " + applicationVersion + " on " + platformName()
+	return "OFD Viewer on " + platformName()
 }
 
 func platformName() string {
@@ -1213,6 +1292,9 @@ func platformName() string {
 }
 
 func (v *viewer) close() {
+	if v.closed.Swap(true) {
+		return
+	}
 	v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
 	v.closeDocument()
@@ -1221,14 +1303,32 @@ func (v *viewer) close() {
 func (v *viewer) closeDocument() {
 	v.renderMu.Lock()
 	defer v.renderMu.Unlock()
+	v.closeDocumentLocked()
+}
+
+func (v *viewer) closeDocumentLocked() {
 	if v.ofd != nil {
 		_ = v.ofd.Close()
 		v.ofd = nil
 	}
-	if v.temporaryFile != "" {
-		_ = os.Remove(v.temporaryFile)
-		v.temporaryFile = ""
-	}
+	v.documents = nil
+	v.pages = nil
+	v.pageSlots = nil
+	v.pageContent.Objects = nil
+	v.pageLayout.pageBounds = nil
+	v.pageLayout.slots = nil
+	v.pageLayout.minSize = fyne.Size{}
+	v.totalPages = 0
+	v.currentPage = 0
+	v.thumbnailImages = nil
+	v.thumbnailRendering = nil
+	v.filePath = ""
+	v.fileName = ""
+	v.pageContent.Refresh()
+	v.pageScroll.Refresh()
+	v.thumbnailList.Refresh()
+	v.updateTitle()
+	v.updateControls()
 }
 
 func validOFDFile(filePath string) string {
