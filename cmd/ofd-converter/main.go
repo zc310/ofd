@@ -56,7 +56,7 @@ func parseArgs(args []string) (*options, error) {
 	var output, format string
 	fs.StringVar(&output, "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
 	fs.StringVar(&output, "output", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
-	fs.StringVar(&format, "format", "", "输出格式: pdf, png, jpg, svg, eps, tex")
+	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, png, jpg, svg, eps, tex")
 	fs.IntVar(&opts.dpi, "dpi", defaultDPI, "输出分辨率 (1-1200)")
 	fs.IntVar(&opts.page, "page", 0, "指定转换的页码 (从 1 开始)，0 表示全部页面")
 	fs.StringVar(&opts.bg, "bg", defaultBgColor, "背景颜色: transparent, white, black")
@@ -100,7 +100,7 @@ func run(opts *options) error {
 		format = "jpg"
 	}
 	switch format {
-	case "pdf", "png", "jpg", "svg", "eps", "tex":
+	case "pdf", "txt", "png", "jpg", "svg", "eps", "tex":
 	default:
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
 	}
@@ -110,6 +110,9 @@ func run(opts *options) error {
 	if format == "pdf" {
 		return convertToPDF(opts, format)
 	}
+	if format == "txt" {
+		return convertToText(opts)
+	}
 	return convertToImage(opts, format)
 }
 
@@ -117,6 +120,8 @@ func formatFromExtension(output string) string {
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".pdf":
 		return "pdf"
+	case ".txt":
+		return "txt"
 	case ".png":
 		return "png"
 	case ".jpg", ".jpeg":
@@ -130,6 +135,23 @@ func formatFromExtension(output string) string {
 	default:
 		return "pdf"
 	}
+}
+
+func convertToText(opts *options) error {
+	var output io.Writer = os.Stdout
+	if opts.output != "" && opts.output != "-" {
+		file, err := os.Create(ensureExtension(opts.output, "txt"))
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		output = file
+	}
+	var option []converter.Option
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	return converter.Text(opts.input, output, option...)
 }
 
 func convertToPDF(opts *options, _ string) error {

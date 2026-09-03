@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF 和图像格式。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本和图像格式。
 
 ## 编译
 
@@ -19,7 +19,7 @@ ofd-converter [选项] <输入文件> [输出文件或目录]
 | 选项 | 说明 |
 | --- | --- |
 | `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录 |
-| `-format` | 输出格式: `pdf`, `png`, `jpg`, `svg`, `eps`, `tex` |
+| `-format` | 输出格式: `pdf`, `txt`, `png`, `jpg`, `svg`, `eps`, `tex` |
 | `-dpi` | 输出分辨率 (1-1200)，默认 150 |
 | `-page` | 指定转换的页码 (从 1 开始)，0 表示全部页面 |
 | `-bg` | 背景颜色: `transparent`, `white`, `black`，默认 `white` |
@@ -33,6 +33,15 @@ ofd-converter [选项] <输入文件> [输出文件或目录]
 
 ```bash
 ofd-converter input.ofd output.pdf
+```
+
+### OFD 转纯文本
+
+只提取页面中的文字内容，不保留字体、颜色和页面布局。不同文字对象按行输出，不同页面使用分页符分隔。
+
+```bash
+ofd-converter input.ofd output.txt
+ofd-converter -format txt input.ofd output.txt
 ```
 
 ### 转换为指定格式的图片
@@ -61,6 +70,7 @@ ofd-converter -format png -dir -o pages input.ofd
 
 ```bash
 ofd-converter input.ofd - > output.pdf
+ofd-converter -format txt input.ofd - > output.txt
 ofd-converter -format png -page 1 input.ofd - > page1.png
 ```
 

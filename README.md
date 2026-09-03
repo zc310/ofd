@@ -1,10 +1,11 @@
 # OFD Converter [![GoDoc](https://godoc.org/github.com/zc310/fastjsonrpc?status.svg)](http://godoc.org/github.com/zc310/ofd)
 
-一个用于将 OFD 文件转换为 PDF 和图像格式的 Go 语言工具包。
+一个用于将 OFD 文件转换为 PDF、纯文本和图像格式的 Go 语言工具包。
 
 ## 功能特性
 
 - ✅ **OFD 转 PDF** - 支持将 OFD 文档转换为标准的 PDF 文件
+- ✅ **OFD 转纯文本** - 支持提取 OFD 文档中的文字内容
 - ✅ **OFD 转 图像** - 支持将 OFD 页面转换为 PNG、JPG 等图像格式
 - ✅ **多页面支持** - 支持多页面 OFD 文档的转换
 - ✅ **灵活配置** - 支持自定义 DPI、背景颜色、页面选择等参数
@@ -108,6 +109,17 @@ err := converter.Image("input.ofd",
     converter.BgColor(color.White),
     converter.PNG(),
 )
+```
+
+### OFD 转纯文本
+
+纯文本转换只提取文字内容，不保留字体、颜色和页面布局。不同文字对象按行输出，不同页面使用分页符分隔。
+
+```go
+import "bytes"
+
+var output bytes.Buffer
+err := converter.Text("input.ofd", &output)
 ```
 
 #### 转换为 JPG
