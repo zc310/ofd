@@ -45,6 +45,7 @@ const (
 
 const (
 	exportFormatPDF = ".pdf（Portable Document Format）"
+	exportFormatTXT = ".txt（纯文本）"
 	exportFormatJPG = ".jpg（JPEG 图片）"
 	exportFormatPNG = ".png（Portable Network Graphics）"
 	exportFormatSVG = ".svg（Scalable Vector Graphics）"
@@ -473,6 +474,7 @@ func (v *viewer) showExportDialog() {
 	dpiEntry.SetText(strconv.Itoa(exportDPI))
 	formatSelect := widget.NewSelect([]string{
 		exportFormatPDF,
+		exportFormatTXT,
 		exportFormatJPG,
 		exportFormatPNG,
 		exportFormatSVG,
@@ -510,6 +512,8 @@ func exportBackgroundColor(label string) color.Color {
 
 func exportFormatCode(label string) string {
 	switch label {
+	case exportFormatTXT:
+		return "txt"
 	case exportFormatJPG:
 		return "jpg"
 	case exportFormatPNG:
@@ -530,7 +534,9 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 		return
 	}
 	extension := "pdf"
-	if !strings.EqualFold(format, "PDF") && v.totalPages > 1 {
+	if strings.EqualFold(format, "txt") {
+		extension = "txt"
+	} else if !strings.EqualFold(format, "PDF") && v.totalPages > 1 {
 		extension = "zip"
 	} else if !strings.EqualFold(format, "PDF") {
 		extension = strings.ToLower(format)
@@ -625,6 +631,14 @@ func (v *viewer) hideExportLoading() {
 
 func exportDocument(doc *render.Document, path, format string, dpi int, background color.Color) error {
 	exportDoc := render.NewDocument(background, doc.Document)
+	if strings.EqualFold(format, "txt") {
+		file, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		return canvasConverter.TextDocument(exportDoc.Document, file)
+	}
 	if strings.EqualFold(format, "pdf") {
 		file, err := os.Create(path)
 		if err != nil {
@@ -702,7 +716,7 @@ func exportImageOption(format string) canvasConverter.Option {
 }
 
 func exportFileTypeName(format string, pages int) string {
-	if !strings.EqualFold(format, "pdf") && pages > 1 {
+	if !strings.EqualFold(format, "pdf") && !strings.EqualFold(format, "txt") && pages > 1 {
 		return "ZIP 压缩包"
 	}
 	return strings.ToUpper(format) + " 文件"
