@@ -120,10 +120,20 @@ func textFontStyle(weight int, italic bool) canvas.FontStyle {
 
 // drawTextCode 按字符间距绘制一段文字。
 func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
+	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
+		return
+	}
+
 	posX, posY := code.X, code.Y
-	for i, r := range []rune(code.Value) {
+	runes := []rune(code.Value)
+	for i, r := range runes {
 		if i > 0 {
-			posX += valueAt(code.DeltaX, i-1)
+			if len(code.DeltaX) > 0 {
+				posX += valueAt(code.DeltaX, i-1)
+			} else {
+				posX += face.TextWidth(string(runes[i-1])) * textHScale(object)
+			}
 			posY += valueAt(code.DeltaY, i-1)
 		}
 		p.drawTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight)
