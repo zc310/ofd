@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// StID 标识符类型
+// StID 标识，无符号整数，应在文档内唯一。0 表示无效
 type StID uint64
 
 func (p *StID) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -21,11 +21,27 @@ func (p *StID) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		return err
 	}
 
-	val := p.parseUint(s)
+	val, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		slog.Error("解析 StID 失败", slog.String("value", s), slog.Any("error", err))
+		val = 0
+	}
 
 	*p = StID(val)
 	return nil
 }
+
+func (p *StID) UnmarshalXMLAttr(attr xml.Attr) error {
+	val, err := strconv.ParseUint(attr.Value, 10, 64)
+	if err != nil {
+		slog.Error("解析 StID 属性失败", slog.String("value", attr.Value), slog.Any("error", err))
+		val = 0
+	}
+
+	*p = StID(val)
+	return nil
+}
+
 func (p *StID) UnmarshalText(text []byte) error {
 	val := p.parseUint(string(text))
 	*p = StID(val)
@@ -48,6 +64,15 @@ func (p *StID) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 // StRefID 引用ID类型
 type StRefID StID
+
+func (p *StRefID) UnmarshalXMLAttr(attr xml.Attr) error {
+	id := StID(*p)
+	if err := id.UnmarshalXMLAttr(attr); err != nil {
+		return err
+	}
+	*p = StRefID(id)
+	return nil
+}
 
 // StArray 数组字符串类型
 type StArray []string
@@ -155,10 +180,26 @@ type CtDest struct {
 
 // CtPageArea 页面区域定义
 type CtPageArea struct {
-	PhysicalBox    StBox  `xml:"PhysicalBox"`
+	// PhysicalBox 页面物理区域，定义页面的实际大小。
+	PhysicalBox StBox `xml:"PhysicalBox"`
+	// ApplicationBox 应用区域，定义应用程序可使用的页面区域。
 	ApplicationBox *StBox `xml:"ApplicationBox,omitempty"`
-	ContentBox     *StBox `xml:"ContentBox,omitempty"`
-	BleedBox       *StBox `xml:"BleedBox,omitempty"`
+	// ContentBox 内容区域，定义页面主要内容所在的区域。
+	ContentBox *StBox `xml:"ContentBox,omitempty"`
+	// BleedBox 出血区域，定义超出页面成品边界的扩展区域。
+	BleedBox *StBox `xml:"BleedBox,omitempty"`
+}
+
+// EnsurePhysicalBox 确保页面物理区域有效，无效时使用 A4 尺寸。
+func (p *CtPageArea) EnsurePhysicalBox() {
+	if p == nil {
+		return
+	}
+	if p.PhysicalBox.Width <= 0 || p.PhysicalBox.Height <= 0 ||
+		math.IsNaN(p.PhysicalBox.Width) || math.IsNaN(p.PhysicalBox.Height) ||
+		math.IsInf(p.PhysicalBox.Width, 0) || math.IsInf(p.PhysicalBox.Height, 0) {
+		p.PhysicalBox = StBox{Width: 210, Height: 297}
+	}
 }
 
 // ActionEvent 动作事件类型
