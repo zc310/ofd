@@ -2,11 +2,13 @@ package models
 
 import "encoding/xml"
 
+// Page OFD 页面定义。
 type Page struct {
 	ID      StID  `xml:"ID,attr"`
 	BaseLoc StLoc `xml:"BaseLoc,attr"`
 }
 
+// PageContent OFD 页面内容，包含页面区域、资源、模板和内容对象。
 type PageContent struct {
 	Template []Template  `xml:"Template"`
 	PageRes  []StLoc     `xml:"PageRes"`
@@ -26,15 +28,18 @@ func (p *PageContent) EnsurePhysicalBox() {
 	p.Area.EnsurePhysicalBox()
 }
 
+// Template 页面使用的模板引用。
 type Template struct {
 	TemplateID StRefID `xml:"TemplateID,attr"`
 	ZOrder     string  `xml:"ZOrder,attr,omitempty"` // Background or Foreground
 }
 
+// Content 页面内容容器。
 type Content struct {
 	Layer []*Layer `xml:"Layer"`
 }
 
+// Layer 页面图层，包含按文档顺序排列的页面对象。
 type Layer struct {
 	ID        StID    `xml:"ID,attr"`
 	Type      string  `xml:"Type,attr,omitempty"` // Body, Background, Foreground, Custom
@@ -59,14 +64,17 @@ func (l *Layer) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return l.CTPageBlock.UnmarshalXML(d, start)
 }
 
+// Actions 动作集合。
 type Actions struct {
 	Action []CtAction `xml:"Action"`
 }
 
+// CtClip 裁剪定义。
 type CtClip struct {
 	Area []ClipArea `xml:"Area"`
 }
 
+// ClipArea 单个裁剪区域，可以由路径或文字对象定义。
 type ClipArea struct {
 	Path      *CtPath  `xml:"Path"`
 	Text      *CtText  `xml:"Text"`
@@ -172,26 +180,31 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 	}
 }
 
+// TextObject 页面中的文字对象。
 type TextObject struct {
 	ID     StID `xml:"ID,attr"`
 	CtText      // 嵌入CT_Text
 }
 
+// PathObject 页面中的路径对象。
 type PathObject struct {
 	ID     StID `xml:"ID,attr"`
 	CtPath      // 嵌入CT_Path
 }
 
+// ImageObject 页面中的图像对象。
 type ImageObject struct {
 	ID      StID `xml:"ID,attr"`
 	CtImage      // 嵌入CT_Image
 }
 
+// CompositeObject 页面中的复合对象。
 type CompositeObject struct {
 	ID          StID `xml:"ID,attr"`
 	CtComposite      // 嵌入CT_Composite
 }
 
+// PageBlock 页面对象块，可以包含嵌套的页面对象。
 type PageBlock struct {
 	ID          StID `xml:"ID,attr"`
 	CTPageBlock      // 嵌入CT_PageBlock
@@ -207,12 +220,14 @@ func (p *PageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return p.CTPageBlock.UnmarshalXML(d, start)
 }
 
+// CtLayer 图层内容定义。
 type CtLayer struct {
 	Type      string  `xml:"Type,attr,omitempty"`
 	DrawParam StRefID `xml:"DrawParam,attr,omitempty"`
 	CTPageBlock
 }
 
+// CTGraphicUnit 图元通用属性定义。
 type CTGraphicUnit struct {
 	Actions  *Actions `xml:"Actions"`
 	Clips    *Clips   `xml:"Clips"`
@@ -238,18 +253,20 @@ func (g CTGraphicUnit) VisibleValue() bool {
 	return g.Visible.Value(true)
 }
 
+// Clips 图元裁剪集合。
 type Clips struct {
 	TransFlag *bool    `xml:"TransFlag,attr,omitempty"`
 	Clip      []CtClip `xml:"Clip"`
 }
 
+// CtText 文字图元定义。
 type CtText struct {
 	CTGraphicUnit
 	FillColor   *CTColor        `xml:"FillColor"`
 	StrokeColor *CTColor        `xml:"StrokeColor"`
 	CGTransform []CTCGTransform `xml:"CGTransform"`
 	TextCode    []TextCode      `xml:"TextCode"`
-	Font StRefID `xml:"Font,attr"`
+	Font        StRefID         `xml:"Font,attr"`
 	// Size 字号，单位为毫米
 	Size float64 `xml:"Size,attr"`
 	// Stroke 是否描边。默认值为 false 当文字对象被裁剪区引用时此属性被忽略
@@ -268,6 +285,7 @@ type CtText struct {
 	Italic bool `xml:"Italic,attr,omitempty"`
 }
 
+// CTCGTransform 字符图形变换定义。
 type CTCGTransform struct {
 	// Glyphs 变换关系中字型索引列表
 	Glyphs       StArrayI `xml:"Glyphs"`
@@ -276,6 +294,7 @@ type CTCGTransform struct {
 	GlyphCount   int      `xml:"GlyphCount,attr,omitempty"`
 }
 
+// TextCode 文字编码及其定位信息。
 type TextCode struct {
 	Value  string   `xml:",chardata"`
 	X      float64  `xml:"X,attr,omitempty"`
@@ -284,6 +303,7 @@ type TextCode struct {
 	DeltaY StArrayF `xml:"DeltaY,attr,omitempty"`
 }
 
+// CtImage 图像图元定义。
 type CtImage struct {
 	CTGraphicUnit
 	Border       *Border `xml:"Border"`
@@ -292,6 +312,7 @@ type CtImage struct {
 	ImageMask    StRefID `xml:"ImageMask,attr,omitempty"`
 }
 
+// Border 图像边框定义。
 type Border struct {
 	BorderColor           *CTColor `xml:"BorderColor"`
 	LineWidth             float64  `xml:"LineWidth,attr,omitempty"`
@@ -301,11 +322,13 @@ type Border struct {
 	DashPattern           StArray  `xml:"DashPattern,attr,omitempty"`
 }
 
+// CtComposite 复合图元定义。
 type CtComposite struct {
 	CTGraphicUnit
 	ResourceID StRefID `xml:"ResourceID,attr"`
 }
 
+// CtPath 路径图元定义。
 type CtPath struct {
 	CTGraphicUnit
 	StrokeColor     *CTColor `xml:"StrokeColor"`
@@ -317,6 +340,7 @@ type CtPath struct {
 	Rule   string `xml:"Rule,attr,omitempty"` // NonZero, Even-Odd
 }
 
+// CtPattern 图案填充定义。
 type CtPattern struct {
 	CellContent   CellContent `xml:"CellContent"`
 	Width         float64     `xml:"Width,attr"`
@@ -328,11 +352,13 @@ type CtPattern struct {
 	CTM           StArray     `xml:"CTM,attr,omitempty"`
 }
 
+// CellContent 图案填充单元的内容。
 type CellContent struct {
 	Thumbnail StRefID `xml:"Thumbnail,attr,omitempty"`
 	CTPageBlock
 }
 
+// CTAxialShd 轴向渐变填充定义。
 type CTAxialShd struct {
 	Segment    []Segment `xml:"Segment"`
 	MapType    string    `xml:"MapType,attr,omitempty"` // Direct, Repeat, Reflect
@@ -342,6 +368,7 @@ type CTAxialShd struct {
 	EndPoint   StPos     `xml:"EndPoint,attr"`
 }
 
+// CTRadialShd 径向渐变填充定义。
 type CTRadialShd struct {
 	Segment      []Segment `xml:"Segment"`
 	MapType      string    `xml:"MapType,attr,omitempty"` // Direct, Repeat, Reflect
@@ -355,12 +382,14 @@ type CTRadialShd struct {
 	Extend       int       `xml:"Extend,attr,omitempty"`
 }
 
+// CTGouraudShd Gouraud 三角网格渐变填充定义。
 type CTGouraudShd struct {
 	Point     []GouraudPoint `xml:"Point"`
 	BackColor *CTColor       `xml:"BackColor,omitempty"`
 	Extend    int            `xml:"Extend,attr,omitempty"`
 }
 
+// GouraudPoint Gouraud 渐变控制点。
 type GouraudPoint struct {
 	Color    CTColor `xml:"Color"`
 	X        float64 `xml:"X,attr"`
@@ -368,6 +397,7 @@ type GouraudPoint struct {
 	EdgeFlag int     `xml:"EdgeFlag,attr"` // 0,1,2
 }
 
+// CTLaGouraudShd Gouraud 网格渐变填充定义。
 type CTLaGouraudShd struct {
 	Point          []LaGouraudPoint `xml:"Point"`
 	BackColor      *CTColor         `xml:"BackColor,omitempty"`
@@ -375,12 +405,14 @@ type CTLaGouraudShd struct {
 	Extend         int              `xml:"Extend,attr,omitempty"`
 }
 
+// LaGouraudPoint Gouraud 网格渐变控制点。
 type LaGouraudPoint struct {
 	Color CTColor `xml:"Color"`
 	X     float64 `xml:"X,attr,omitempty"`
 	Y     float64 `xml:"Y,attr,omitempty"`
 }
 
+// CTColor 颜色及颜色填充定义。
 type CTColor struct {
 	Pattern      *CtPattern      `xml:"Pattern"`
 	AxialShd     *CTAxialShd     `xml:"AxialShd"`
@@ -403,6 +435,7 @@ type CTColor struct {
 	Alpha *uint8 `xml:"Alpha,attr,omitempty"`
 }
 
+// Segment 渐变中的颜色分段。
 type Segment struct {
 	Color    CTColor `xml:"Color"`
 	Position float64 `xml:"Position,attr,omitempty"`
