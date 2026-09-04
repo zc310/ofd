@@ -201,6 +201,25 @@ func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
 	}
 }
 
+func TestGraphicOpacityUsesTransparencySemantics(t *testing.T) {
+	if got := graphicOpacity(nil); got != 255 {
+		t.Fatalf("nil transparency = %d, want 255", got)
+	}
+	if got := graphicOpacity(uint8ptr(0)); got != 255 {
+		t.Fatalf("zero transparency = %d, want 255", got)
+	}
+	if got := graphicOpacity(uint8ptr(51)); got != 204 {
+		t.Fatalf("51 transparency = %d, want 204", got)
+	}
+	if got := graphicOpacity(uint8ptr(255)); got != 0 {
+		t.Fatalf("full transparency = %d, want 0", got)
+	}
+}
+
+func uint8ptr(value uint8) *uint8 {
+	return &value
+}
+
 func basicMeshColor(value color.RGBA) models.CTColor {
 	return models.CTColor{Value: &models.Color{RGBA: value}}
 }
