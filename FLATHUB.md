@@ -18,7 +18,7 @@ The manifest is pinned to the current source commit while the `v0.0.5` release i
 
 The application ID is `io.github.zc310.ofd` and must remain identical in the Go application, manifest, desktop file, icon, and AppStream metadata.
 
-The application uses Fyne's file dialog. The manifest builds with the `flatpak` build tag so Fyne uses the XDG Desktop Portal file chooser inside the sandbox.
+The viewer uses `github.com/rymdport/portal` for open and save file choosers when built with the `flatpak` build tag. Other builds use `github.com/ncruces/zenity`.
 
 The desktop entry uses Flatpak file forwarding so OFD files opened from a file manager are exposed to the sandbox.
 
