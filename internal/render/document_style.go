@@ -15,7 +15,11 @@ func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (
 	if dp.StrokeColor != nil {
 		p.setColor(ctx.SetStrokeColor, dp.StrokeColor)
 	}
-	ctx.SetStrokeWidth(max(dp.LineWidth, 1))
+	lineWidth := dp.LineWidth
+	if lineWidth == 0 {
+		lineWidth = 0.353
+	}
+	ctx.SetStrokeWidth(lineWidth)
 	if dp.DashPattern != nil {
 		ctx.SetDashes(dp.DashOffset, *dp.DashPattern...)
 	}
@@ -81,6 +85,27 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 		return
 	}
 	fill, stroke := p.updateDrawParams(ctx, dp)
+	effective := *object
+	if effective.LineWidth == 0 {
+		if dp != nil && dp.LineWidth != 0 {
+			effective.LineWidth = dp.LineWidth
+		} else {
+			effective.LineWidth = 0.353
+		}
+	}
+	if effective.Cap == "" && dp != nil {
+		effective.Cap = dp.Cap
+	}
+	if effective.Join == "" && dp != nil {
+		effective.Join = dp.Join
+	}
+	if effective.MiterLimit == 0 && dp != nil {
+		effective.MiterLimit = dp.MiterLimit
+	}
+	if effective.DashPattern == nil && dp != nil {
+		effective.DashPattern = dp.DashPattern
+		effective.DashOffset = dp.DashOffset
+	}
 
 	if object.FillColor != nil {
 		fill = p.updateCtColor(object.FillColor)
@@ -98,14 +123,14 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Stroke != "false" {
-		ctx.SetStrokeWidth(max(object.LineWidth, 1) * 0.353)
-		p.applyStroke(ctx, stroke, object)
+		ctx.SetStrokeWidth(effective.LineWidth)
+		p.applyStroke(ctx, stroke, &effective)
 	} else {
 		ctx.SetStrokeWidth(-1)
 	}
 
-	if object.DashPattern != nil {
-		ctx.SetDashes(object.DashOffset, *object.DashPattern...)
+	if effective.DashPattern != nil {
+		ctx.SetDashes(effective.DashOffset, *effective.DashPattern...)
 	}
 }
 
@@ -140,10 +165,18 @@ func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *mod
 	ctx.SetStrokeCapper(getLineCap(object.Cap))
 	joiner := getLineJoin(object.Join)
 	if joiner == canvas.MiterJoin {
-		if object.MiterLimit == 0 {
-			object.MiterLimit = 3.528
+		miterLimit := object.MiterLimit
+		if miterLimit == 0 {
+			miterLimit = 3.528
 		}
-		joiner = canvas.MiterJoiner{GapJoiner: canvas.BevelJoin, Limit: object.MiterLimit}
+		// OFD 将 MiterLimit 定义为以毫米为单位的绝对长度。
+		// Canvas 使用相对于中心线测量的斜接长度进行比较，
+		// 因此这里需要换算为相对于半线宽的倍率。
+		lineWidth := ctx.Style.StrokeWidth
+		if lineWidth > 0 {
+			miterLimit /= lineWidth / 2
+		}
+		joiner = canvas.MiterJoiner{GapJoiner: canvas.BevelJoin, Limit: miterLimit}
 	}
 	ctx.SetStrokeJoiner(joiner)
 }
