@@ -21,7 +21,6 @@ import (
 	fyneCanvas "fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ofdcanvas "github.com/tdewolff/canvas"
@@ -574,75 +573,52 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 	} else if !strings.EqualFold(format, "PDF") {
 		extension = strings.ToLower(format)
 	}
-	fileDialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
-		if err != nil {
-			dialog.ShowInformation("导出失败", err.Error(), v.window)
-			return
-		}
-		if writer == nil {
-			return
-		}
-		v.exportToWriter(writer, format, dpi, background, extension)
-	}, v.window)
-	fileDialog.SetTitleText("导出 OFD")
-	fileDialog.SetFileName(strings.TrimSuffix(v.fileName, filepath.Ext(v.fileName)) + "." + extension)
-	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{"." + extension}))
-	fileDialog.SetConfirmText("导出")
-	fileDialog.SetDismissText("取消")
-	fileDialog.Show()
-}
-
-func (v *viewer) exportToWriter(writer fyne.URIWriteCloser, format string, dpi int, background color.Color, extension string) {
-	if writer == nil {
-		return
-	}
-	if v.closed.Load() || v.loading || !v.hasPages() || v.exporting {
-		_ = writer.Close()
-		return
-	}
+	fileName := strings.TrimSuffix(v.fileName, filepath.Ext(v.fileName)) + "." + extension
 	v.exporting = true
 	v.updateControls()
+	go func() {
+		path, err := chooseSaveFile("导出 OFD", fileName, extension)
+		fyne.Do(func() {
+			if v.closed.Load() {
+				return
+			}
+			if err != nil {
+				v.exporting = false
+				v.updateControls()
+				dialog.ShowInformation("导出失败", err.Error(), v.window)
+				return
+			}
+			if path == "" {
+				v.exporting = false
+				v.updateControls()
+				return
+			}
+			v.exportToPath(path, format, dpi, background)
+		})
+	}()
+}
+
+func (v *viewer) exportToPath(path, format string, dpi int, background color.Color) {
+	if path == "" {
+		return
+	}
+	if v.closed.Load() || v.loading || !v.hasPages() {
+		return
+	}
 	v.showExportLoading()
 	exportOperation := v.operation.Load()
 	v.renderMu.Lock()
 	documents := append([]*render.Document(nil), v.documents...)
 	v.renderMu.Unlock()
 	go func() {
-		var temporaryFile *os.File
-		var temporaryPath string
+		v.renderMu.Lock()
 		var err error
-		temporaryFile, err = os.CreateTemp("", "ofd-export-*."+extension)
-		if err == nil {
-			temporaryPath = temporaryFile.Name()
-			err = temporaryFile.Close()
+		if exportOperation != v.operation.Load() {
+			err = fmt.Errorf("文档已更改")
+		} else {
+			err = exportDocuments(documents, path, format, dpi, background)
 		}
-		if err == nil {
-			v.renderMu.Lock()
-			if exportOperation != v.operation.Load() {
-				err = fmt.Errorf("文档已更改")
-			} else {
-				err = exportDocuments(documents, temporaryPath, format, dpi, background)
-			}
-			v.renderMu.Unlock()
-		}
-		if err == nil {
-			var input *os.File
-			input, err = os.Open(temporaryPath)
-			if err == nil {
-				_, err = io.Copy(writer, input)
-				closeErr := input.Close()
-				if err == nil {
-					err = closeErr
-				}
-			}
-		}
-		closeErr := writer.Close()
-		if err == nil {
-			err = closeErr
-		}
-		if temporaryPath != "" {
-			_ = os.Remove(temporaryPath)
-		}
+		v.renderMu.Unlock()
 		fyne.Do(func() {
 			if v.closed.Load() {
 				return
@@ -833,37 +809,28 @@ func (v *viewer) chooseFile() {
 	if v.closed.Load() || v.loading || v.exporting {
 		return
 	}
-	fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-		if err != nil {
-			dialog.ShowInformation("打开失败", err.Error(), v.window)
-			return
-		}
-		if reader == nil {
-			return
-		}
-		if v.closed.Load() || v.loading || v.exporting {
-			_ = reader.Close()
-			return
-		}
-		uri := reader.URI()
-		if uri == nil || !strings.EqualFold(uri.Scheme(), "file") || uri.Path() == "" {
-			_ = reader.Close()
-			dialog.ShowInformation("打开失败", "只能打开本地 OFD 文件。", v.window)
-			return
-		}
-		filePath := filepath.Clean(uri.Path())
-		if _, statErr := os.Stat(filePath); statErr != nil {
-			_ = reader.Close()
-			dialog.ShowInformation("打开失败", statErr.Error(), v.window)
-			return
-		}
-		v.load(filePath, uri.Name(), reader)
-	}, v.window)
-	fileDialog.SetTitleText("选择 OFD 文件")
-	fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".ofd"}))
-	fileDialog.SetConfirmText("打开")
-	fileDialog.SetDismissText("取消")
-	fileDialog.Show()
+	v.loading = true
+	v.updateControls()
+	go func() {
+		filePath, err := chooseOpenFile("选择 OFD 文件")
+		fyne.Do(func() {
+			if v.closed.Load() {
+				return
+			}
+			if err != nil {
+				v.loading = false
+				v.updateControls()
+				dialog.ShowInformation("打开失败", err.Error(), v.window)
+				return
+			}
+			if filePath == "" {
+				v.loading = false
+				v.updateControls()
+				return
+			}
+			v.load(filePath, filepath.Base(filePath), filePath)
+		})
+	}()
 }
 
 func (v *viewer) load(filePath, fileName string, input interface{}) {

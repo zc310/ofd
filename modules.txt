@@ -112,6 +112,11 @@ github.com/FyshOS/fancyfs
 # github.com/Kagami/go-avif v0.1.0
 ## explicit
 github.com/Kagami/go-avif
+# github.com/akavel/rsrc v0.10.2
+## explicit; go 1.12
+github.com/akavel/rsrc/binutil
+github.com/akavel/rsrc/coff
+github.com/akavel/rsrc/ico
 # github.com/andybalholm/brotli v1.2.3
 ## explicit; go 1.22
 github.com/andybalholm/brotli
@@ -132,6 +137,9 @@ github.com/benoitkugler/textprocessing/fribidi
 # github.com/clipperhouse/uax29/v2 v2.7.0
 ## explicit; go 1.18
 github.com/clipperhouse/uax29/v2/graphemes
+# github.com/dchest/jsmin v1.0.0
+## explicit; go 1.23.1
+github.com/dchest/jsmin
 # github.com/fsnotify/fsnotify v1.10.1
 ## explicit; go 1.23
 github.com/fsnotify/fsnotify
@@ -262,6 +270,9 @@ github.com/hack-pad/safejs/internal/stackerr
 # github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
 ## explicit; go 1.18
 github.com/jeandeaual/go-locale
+# github.com/josephspurrier/goversioninfo v1.7.0
+## explicit; go 1.19
+github.com/josephspurrier/goversioninfo
 # github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
 ## explicit
 github.com/jsummers/gobmp
@@ -274,6 +285,11 @@ github.com/mattn/go-runewidth
 # github.com/nao1215/imaging v1.0.10
 ## explicit; go 1.25.0
 github.com/nao1215/imaging
+# github.com/ncruces/zenity v0.10.15
+## explicit; go 1.25.0
+github.com/ncruces/zenity
+github.com/ncruces/zenity/internal/win
+github.com/ncruces/zenity/internal/zenutil
 # github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 ## explicit
 github.com/nfnt/resize
@@ -283,6 +299,9 @@ github.com/nicksnyder/go-i18n/v2/i18n
 github.com/nicksnyder/go-i18n/v2/i18n/template
 github.com/nicksnyder/go-i18n/v2/internal
 github.com/nicksnyder/go-i18n/v2/internal/plural
+# github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7
+## explicit; go 1.13
+github.com/randall77/makefat
 # github.com/rymdport/portal v0.4.2
 ## explicit; go 1.19
 github.com/rymdport/portal
