@@ -1,35 +1,84 @@
 package render
 
 import (
+	"image"
+
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 )
 
+const meshGradientDPI = 300.0
+
 func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
+	p.path(ctx, object, dp, pb, nil, nil)
+}
+
+// path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
+// 相同的渲染器，并将图块变换作为父级变换传入。
+func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() {
 		return
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	pa := p.buildObjectPath(object, pb.Height)
-	fillColor := pathFillColor(object, dp)
-	var pattern *models.CtPattern
-	if fillColor != nil {
-		pattern = fillColor.Pattern
-	}
+	pa := p.buildObjectPathWithTransform(object, pb.Height, parentCTM)
 
 	p.updateCtPathStyle(ctx, &object.CtPath, dp)
 	p.updatePathGradients(ctx, &object, dp, pb.Height)
 
-	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM)
+	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM, parentCTM)
+	if parentClip != nil {
+		if clipPath == nil {
+			clipPath = parentClip
+		} else {
+			clipPath = clipPath.And(parentClip)
+		}
+	}
+	fillSource := object.FillColor
+	var pattern *models.CtPattern
+	if fillSource == nil && dp != nil {
+		fillSource = dp.FillColor
+	}
+	if fillSource != nil {
+		pattern = fillSource.Pattern
+	}
+	if object.Fill && isMeshColor(fillSource) {
+		fillPath := pa.Copy()
+		fillPath.Close()
+		if clipPath != nil {
+			fillPath = fillPath.And(clipPath)
+		}
+		if p.drawMeshPaint(ctx, fillPath, fillSource, object, pb) {
+			object.Fill = false
+			ctx.SetFill(nil)
+		}
+	}
+	if object.Stroke != "false" {
+		strokeSource := object.StrokeColor
+		if strokeSource == nil && dp != nil {
+			strokeSource = dp.StrokeColor
+		}
+		if isMeshColor(strokeSource) {
+			strokePath := pa.Stroke(ctx.Style.StrokeWidth, ctx.Style.StrokeCapper, ctx.Style.StrokeJoiner, canvas.Tolerance)
+			if clipPath != nil {
+				strokePath = strokePath.And(clipPath)
+			}
+			if p.drawMeshPaint(ctx, strokePath, strokeSource, object, pb) {
+				object.Stroke = "false"
+				ctx.SetStroke(nil)
+			}
+		}
+	}
 	if object.Fill && pattern != nil {
 		fillPath := pa.Copy()
 		fillPath.Close()
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
-		if p.drawPatternPath(ctx, fillPath, pattern, object.Boundary, pb, fillColor.Alpha) {
+		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM) {
 			object.Fill = false
+			ctx.SetFill(nil)
 		}
 	}
 	if clipPath == nil {
@@ -39,19 +88,72 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 	p.drawClippedPath(ctx, pa, clipPath, object)
 }
 
-func pathFillColor(object models.PathObject, dp *models.DrawParam) *models.CTColor {
-	if object.FillColor != nil && object.FillColor.Pattern != nil {
-		return object.FillColor
+func isMeshColor(color *models.CTColor) bool {
+	return color != nil && (color.GouraudShd != nil || color.LaGourandShd != nil || color.LaGouraudShd != nil)
+}
+
+// drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。
+// canvas 的 PDF 和 SVG 渲染器不支持自定义渐变，使用图像回退可以保证
+// Gouraud/LaGourand 在不同输出格式下都能保留视觉效果。
+func (p *Document) drawMeshPaint(ctx *canvas.Context, paintPath *canvas.Path, source *models.CTColor, object models.PathObject, pb models.StBox) bool {
+	if paintPath == nil || source == nil {
+		return false
 	}
-	if dp != nil && dp.FillColor != nil {
-		return dp.FillColor
+	transform := func(point models.StPos) canvas.Point {
+		if object.CTM != nil {
+			point.X, point.Y = object.CTM.TransformPoint(point)
+		}
+		return canvas.Point{X: point.X + object.Boundary.X, Y: pb.Height - (point.Y + object.Boundary.Y)}
 	}
-	return nil
+	gradient := p.pathGradient(source, transform)
+	if gradient == nil {
+		return false
+	}
+	return p.drawMeshPaintGradient(ctx, paintPath, gradient, pb, object.Alpha)
+}
+
+func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.Path, gradient canvas.Gradient, pb models.StBox, alpha *uint8) bool {
+	if paintPath == nil || gradient == nil || pb.Width <= 0 || pb.Height <= 0 {
+		return false
+	}
+
+	// 使用与页面等大的离屏画布，让网格渐变直接以页面坐标采样，
+	// 与 drawMeshText 保持一致，避免局部画布带来的坐标翻转与渐变平移问题。
+	page := canvas.New(pb.Width, pb.Height)
+	pageCtx := canvas.NewContext(page)
+	pageCtx.SetFillGradient(gradient)
+	pageCtx.DrawPath(0, 0, paintPath)
+	var meshImage image.Image = rasterizer.Draw(page, canvas.DPI(meshGradientDPI), canvas.DefaultColorSpace)
+	if meshImage == nil || meshImage.Bounds().Empty() {
+		return false
+	}
+
+	if alpha != nil {
+		meshImage = applyImageAlpha(meshImage, *alpha)
+	}
+	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, meshImage,
+		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
+	ctx.RenderImage(meshImage, ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix))
+	return true
 }
 
 func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *canvas.Path {
+	return p.buildObjectPathWithTransform(object, pageHeight, nil)
+}
+
+func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *canvas.Path {
 	box := object.Boundary
 	transform := func(pt models.StPos) (float64, float64) {
+		if parentCTM != nil {
+			ctm := parentCTM
+			if object.CTM != nil {
+				ctm = parentCTM.Multiply(object.CTM)
+			}
+			// Pattern 的 CellContent 边界属于父级图块的坐标系，
+			// 与 ofdgo 中 boundaryInCTM=false 的行为一致。
+			x, y := ctm.Transform(pt.X, pt.Y)
+			return x + box.X, pageHeight - (y + box.Y)
+		}
 		if object.CTM != nil {
 			pt.X, pt.Y = object.CTM.TransformPoint(pt)
 		}
@@ -60,7 +162,7 @@ func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64)
 	return p.newPath(&object.CtPath, transform)
 }
 
-func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM *models.CTM) *canvas.Path {
+func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *canvas.Path {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil
 	}
@@ -68,6 +170,9 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 	objectMatrix := models.IdentityMatrix
 	if objectCTM != nil {
 		objectMatrix = *objectCTM
+	}
+	if parentCTM != nil {
+		objectMatrix = *parentCTM.Multiply(&objectMatrix)
 	}
 
 	var result *canvas.Path
@@ -159,28 +264,44 @@ func (p *Document) updatePathGradients(ctx *canvas.Context, object *models.PathO
 		return canvas.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
 	}
 	if object.Fill && fillColor != nil {
-		if gradient := pathGradient(fillColor, transform); gradient != nil {
+		if gradient := p.pathGradient(fillColor, transform); gradient != nil {
 			ctx.SetFillGradient(gradient)
 		}
 	}
 	if object.Stroke != "false" && strokeColor != nil {
-		if gradient := pathGradient(strokeColor, transform); gradient != nil {
+		if gradient := p.pathGradient(strokeColor, transform); gradient != nil {
 			ctx.SetStrokeGradient(gradient)
 		}
 	}
 }
 
-func pathGradient(ctColor *models.CTColor, transform func(models.StPos) canvas.Point) canvas.Gradient {
+func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) canvas.Point) canvas.Gradient {
 	if ctColor == nil {
 		return nil
 	}
+	var gradient canvas.Gradient
 	if shd := ctColor.AxialShd; shd != nil {
-		return newOFDLinearGradient(shd, transform)
+		gradient = newOFDLinearGradient(shd, transform)
 	}
 	if shd := ctColor.RadialShd; shd != nil {
-		return newOFDRadialGradient(shd, transform)
+		gradient = newOFDRadialGradient(shd, transform)
 	}
-	return nil
+	if shd := ctColor.GouraudShd; shd != nil {
+		gradient = newOFDGouraudGradient(shd, transform)
+	}
+	if shd := ctColor.LaGourandShd; shd != nil {
+		gradient = newOFDLaGouraudGradient(shd, transform)
+	}
+	if shd := ctColor.LaGouraudShd; shd != nil {
+		gradient = newOFDLaGouraudGradient(shd, transform)
+	}
+	if gradient == nil {
+		return nil
+	}
+	if ctColor.Alpha != nil {
+		gradient = scaleGradientOpacity(gradient, *ctColor.Alpha)
+	}
+	return gradient
 }
 
 func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *canvas.Path {
@@ -213,7 +334,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				cmd.Arc.RY,
 				cmd.Arc.XAxisRotation,
 				cmd.Arc.LargeArcFlag,
-				cmd.Arc.SweepFlag,
+				!cmd.Arc.SweepFlag,
 				endX,
 				endY,
 			)

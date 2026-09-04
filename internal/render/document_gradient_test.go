@@ -123,3 +123,84 @@ func TestOFDLinearGradientExtend(t *testing.T) {
 		t.Fatalf("expected end extension, got %v", got)
 	}
 }
+
+func TestOFDGouraudGradientInterpolatesTriangleColors(t *testing.T) {
+	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+		Point: []models.GouraudPoint{
+			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
+			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
+		},
+	}, identityGradientTransform)
+
+	if got := gradient.At(0, 0); got != (color.RGBA{R: 255, A: 255}) {
+		t.Fatalf("vertex color = %v", got)
+	}
+	got := gradient.At(10.0/3, 10.0/3)
+	if got.R < 80 || got.R > 90 || got.G < 80 || got.G > 90 || got.B < 80 || got.B > 90 {
+		t.Fatalf("center interpolation = %v, want approximately equal channels", got)
+	}
+}
+
+func TestOFDGouraudGradientUsesEdgeFlags(t *testing.T) {
+	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+		Point: []models.GouraudPoint{
+			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
+			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
+			{X: 10, Y: 10, EdgeFlag: 1, Color: basicMeshColor(color.RGBA{A: 255})},
+		},
+	}, identityGradientTransform).(*ofdMeshGradient)
+	if len(gradient.triangles) != 2 {
+		t.Fatalf("triangle count = %d, want 2", len(gradient.triangles))
+	}
+	if got := gradient.At(8, 8); got.A == 0 {
+		t.Fatalf("edge-flag triangle was not rendered: %v", got)
+	}
+}
+
+func TestOFDLaGouraudGradientBuildsLattice(t *testing.T) {
+	gradient := newOFDLaGouraudGradient(&models.CTLaGouraudShd{
+		VerticesPerRow: 2,
+		Point: []models.LaGouraudPoint{
+			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
+			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
+			{X: 10, Y: 10, Color: basicMeshColor(color.RGBA{A: 255})},
+		},
+	}, identityGradientTransform).(*ofdMeshGradient)
+	if len(gradient.triangles) != 2 {
+		t.Fatalf("triangle count = %d, want 2", len(gradient.triangles))
+	}
+	if got := gradient.At(5, 5); got.A == 0 {
+		t.Fatalf("lattice center was not rendered: %v", got)
+	}
+}
+
+func TestOFDMeshGradientUsesBackColorOutsideMesh(t *testing.T) {
+	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+		Extend:    1,
+		BackColor: &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}},
+		Point: []models.GouraudPoint{
+			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+			{X: 1, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+			{X: 0, Y: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
+		},
+	}, identityGradientTransform)
+	if got := gradient.At(2, 2); got != (color.RGBA{G: 255, A: 255}) {
+		t.Fatalf("outside color = %v, want back color", got)
+	}
+}
+
+func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
+	value := models.Color{RGBA: color.RGBA{R: 255, A: 255}}
+	alpha := uint8(128)
+	got := ofdColorRGBA(models.CTColor{Value: &value, Alpha: &alpha})
+	if got.R != 255 || got.A < 127 || got.A > 128 {
+		t.Fatalf("color = %v, want straight red with approximately 128 alpha", got)
+	}
+}
+
+func basicMeshColor(value color.RGBA) models.CTColor {
+	return models.CTColor{Value: &models.Color{RGBA: value}}
+}

@@ -37,41 +37,22 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	}
 	cc := &CTColor{}
 	if source.Value != nil {
-		value := source.Value.RGBA
-		// 颜色透明度，在 0~255 之间取值。默认为 255，表示完可选全不透明
-		if source.Alpha != nil && *source.Alpha < 255 {
-			value.A = 255 - *source.Alpha
-		}
+		value := ofdColorRGBA(*source)
 		cc.Value = &value
 	}
 
-	if source.AxialShd != nil {
-		cc.Gradient = p.linearGradient(source.AxialShd)
-	}
-	if source.RadialShd != nil {
-		cc.Gradient = p.radialGradient(source.RadialShd)
-	}
+	cc.Gradient = p.pathGradient(source, identityGradientTransform)
 	return cc
 }
 
-// linearGradient 创建轴向渐变。
-func (p *Document) linearGradient(shd *models.CTAxialShd) canvas.Gradient {
-	return newOFDLinearGradient(shd, func(point models.StPos) canvas.Point {
-		return canvas.Point{X: point.X, Y: point.Y}
-	})
-}
-
-// radialGradient 创建径向渐变。
-func (p *Document) radialGradient(shd *models.CTRadialShd) canvas.Gradient {
-	return newOFDRadialGradient(shd, func(point models.StPos) canvas.Point {
-		return canvas.Point{X: point.X, Y: point.Y}
-	})
+func identityGradientTransform(point models.StPos) canvas.Point {
+	return canvas.Point{X: point.X, Y: point.Y}
 }
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
 func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
 	if source != nil && source.Value != nil {
-		set(source.Value.RGBA)
+		set(ofdColorRGBA(*source))
 	}
 }
 
@@ -136,7 +117,7 @@ func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
 	if fill.Value != nil {
 		value := *fill.Value
 		if alpha != nil {
-			value.A = 255 - *alpha
+			value.A = uint8(uint16(value.A) * uint16(*alpha) / 255)
 		}
 		ctx.SetFillColor(value)
 		return

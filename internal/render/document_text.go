@@ -1,14 +1,20 @@
 package render
 
 import (
+	"image"
 	"strings"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 
 	"github.com/zc310/ofd/internal/models"
 )
 
 func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
+	p.text(ctx, object, dp, pb, nil, nil)
+}
+
+func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() {
 		return
 	}
@@ -42,6 +48,11 @@ func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *model
 		// 破坏内容流，直接跳过绘制。
 		return
 	}
+	if source := textFillColor(object, dp); isMeshColor(source) {
+		if p.drawMeshText(ctx, face, source, object, pb) {
+			return
+		}
+	}
 	if stroke != nil && stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else if stroke != nil && stroke.Value != nil {
@@ -50,8 +61,89 @@ func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *model
 		ctx.SetStrokeColor(canvas.Black)
 	}
 	for _, code := range object.TextCode {
-		p.drawTextCode(ctx, face, object, code, pb.Height)
+		p.drawTextCode(ctx, face, object, code, pb.Height, parentCTM)
 	}
+}
+
+func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
+	if object.FillColor != nil {
+		return object.FillColor
+	}
+	if dp != nil {
+		return dp.FillColor
+	}
+	return nil
+}
+
+// drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
+func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox) bool {
+	if pb.Width <= 0 || pb.Height <= 0 {
+		return false
+	}
+	transform := func(point models.StPos) canvas.Point {
+		if object.CTM != nil {
+			point.X, point.Y = object.CTM.TransformPoint(point)
+		}
+		return canvas.Point{X: point.X + object.Boundary.X, Y: pb.Height - (point.Y + object.Boundary.Y)}
+	}
+	gradient := p.pathGradient(source, transform)
+	if gradient == nil {
+		return false
+	}
+	page := canvas.New(pb.Width, pb.Height)
+	pageCtx := canvas.NewContext(page)
+	pageCtx.SetFillGradient(gradient)
+	for _, code := range object.TextCode {
+		p.drawMeshTextCode(pageCtx, face, object, code, pb.Height)
+	}
+	var textImage image.Image = rasterizer.Draw(page, canvas.DPI(meshGradientDPI), canvas.DefaultColorSpace)
+	if textImage == nil || textImage.Bounds().Empty() {
+		return false
+	}
+	if object.Alpha != nil {
+		textImage = applyImageAlpha(textImage, *object.Alpha)
+	}
+	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, textImage,
+		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
+	ctx.RenderImage(textImage, ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix))
+	return true
+}
+
+func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
+	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
+		return
+	}
+
+	posX, posY := code.X, code.Y
+	runes := []rune(code.Value)
+	for i, r := range runes {
+		if i > 0 {
+			if len(code.DeltaX) > 0 {
+				posX += valueAt(code.DeltaX, i-1)
+			} else {
+				posX += face.TextWidth(string(runes[i-1])) * textHScale(object)
+			}
+			posY += valueAt(code.DeltaY, i-1)
+		}
+		p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight)
+	}
+}
+
+func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
+	path, _ := face.ToPath(value)
+	if path == nil || path.Empty() {
+		return
+	}
+	if object.CTM != nil {
+		x, y = object.CTM.Transform(x, y)
+	}
+	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
+		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	}
+	matrix = matrix.Scale(textHScale(object), 1)
+	ctx.DrawPath(0, 0, path.Transform(matrix))
 }
 
 // buildTextFace 根据文字对象样式创建字体面。
@@ -119,9 +211,9 @@ func textFontStyle(weight int, italic bool) canvas.FontStyle {
 }
 
 // drawTextCode 按字符间距绘制一段文字。
-func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
+func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM) {
 	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
+		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
 
@@ -136,12 +228,26 @@ func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, obje
 			}
 			posY += valueAt(code.DeltaY, i-1)
 		}
-		p.drawTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight)
+		p.drawTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, parentCTM)
 	}
 }
 
-func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
+func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
 	hScale := textHScale(object)
+	if parentCTM != nil {
+		if object.CTM != nil {
+			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
+		} else {
+			x, y = parentCTM.Transform(x, y)
+		}
+		// 对于 CellContent，Boundary 定义在父级坐标系中。
+		ctx.Push()
+		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+		ctx.Scale(hScale, 1)
+		ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
+		ctx.Pop()
+		return
+	}
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		tx, ty := object.CTM.Transform(x, y)
 		ctx.Push()

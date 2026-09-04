@@ -14,6 +14,10 @@ import (
 )
 
 func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
+	p.image(ctx, object, dp, pb, nil, nil)
+}
+
+func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() {
 		return
 	}
@@ -32,10 +36,16 @@ func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *mod
 	}
 
 	ctm := imageCTM(object)
+	if parentCTM != nil {
+		ctm = *parentCTM.Multiply(&ctm)
+	}
 	m := imageMatrix(object.Boundary, img, ctm, pb.Height)
 
 	if clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, ctm); clip != nil {
 		img = imageWithClip(img, clip, m)
+	}
+	if parentClip != nil {
+		img = imageWithClip(img, parentClip, m)
 	}
 	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
 }
