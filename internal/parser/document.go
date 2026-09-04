@@ -166,44 +166,39 @@ func (p *Document) parseTemplates() error {
 }
 
 func (p *Document) GetDrawParam(id models.StID) *models.DrawParam {
+	return p.resolveDrawParam(id, make(map[models.StID]bool))
+}
+
+func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bool) *models.DrawParam {
 	dp, ok := p.DrawParams[id]
-	if !ok {
+	if !ok || resolving[id] {
 		return nil
 	}
-	if dp.Relative <= 0 {
-		return dp
-	}
+	resolving[id] = true
+	defer delete(resolving, id)
 
-	r := p.GetDrawParam(models.StID(dp.Relative))
-	if r == nil {
-		return dp
+	result := models.DrawParam{}
+	if dp.Relative > 0 {
+		if relative := p.resolveDrawParam(models.StID(dp.Relative), resolving); relative != nil {
+			result = *relative
+		}
 	}
-	t := *dp
-	if dp.Join != "" {
-		t.Join = dp.Join
+	result.ID = dp.ID
+	result.Relative = dp.Relative
+	result.Override(dp)
+	if !result.HasLineWidth() {
+		result.LineWidth = 0.353
 	}
-	if dp.LineWidth > 0 {
-		t.LineWidth = dp.LineWidth
+	if result.Join == "" {
+		result.Join = "Miter"
 	}
-	if dp.DashOffset > 0 {
-		t.DashOffset = dp.DashOffset
+	if result.Cap == "" {
+		result.Cap = "Butt"
 	}
-	if dp.DashPattern != nil {
-		t.DashPattern = dp.DashPattern
+	if !result.HasMiterLimit() {
+		result.MiterLimit = 3.528
 	}
-	if dp.Cap != "" {
-		t.Cap = dp.Cap
-	}
-	if dp.MiterLimit > 0 {
-		t.MiterLimit = dp.MiterLimit
-	}
-	if dp.FillColor != nil {
-		t.FillColor = dp.FillColor
-	}
-	if dp.StrokeColor != nil {
-		t.StrokeColor = dp.StrokeColor
-	}
-	return &t
+	return &result
 }
 func (p *Document) ParseSigns(file *models.StLoc) error {
 	p.Signs = make(map[models.StID]*models.Signature)

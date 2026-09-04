@@ -1,5 +1,7 @@
 package models
 
+import "encoding/xml"
+
 // Res OFD 资源文件定义。
 type Res struct {
 	// BaseLoc 资源文件的基础路径。
@@ -70,6 +72,79 @@ type DrawParam struct {
 	FillColor *CTColor `xml:"FillColor"`
 	// StrokeColor 描边颜色。
 	StrokeColor *CTColor `xml:"StrokeColor"`
+
+	lineWidthSet  bool
+	dashOffsetSet bool
+	miterLimitSet bool
+}
+
+// UnmarshalXML 解析绘制参数，并记录显式出现的数值属性。
+// 这些标记用于区分未指定与合法的零值，以便正确处理 Relative 继承。
+func (p *DrawParam) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type drawParam DrawParam
+	var value drawParam
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+	*p = DrawParam(value)
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "LineWidth":
+			p.lineWidthSet = true
+		case "DashOffset":
+			p.dashOffsetSet = true
+		case "MiterLimit":
+			p.miterLimitSet = true
+		}
+	}
+	return nil
+}
+
+func (p DrawParam) HasLineWidth() bool {
+	return p.lineWidthSet || p.LineWidth != 0
+}
+
+func (p DrawParam) HasDashOffset() bool {
+	return p.dashOffsetSet || p.DashOffset != 0
+}
+
+func (p DrawParam) HasMiterLimit() bool {
+	return p.miterLimitSet || p.MiterLimit != 0
+}
+
+// Override 使用 source 中明确指定的属性覆盖当前绘制参数。
+// 对数值属性保留明确指定的零值。
+func (p *DrawParam) Override(source *DrawParam) {
+	if source == nil {
+		return
+	}
+	if source.HasLineWidth() {
+		p.LineWidth = source.LineWidth
+		p.lineWidthSet = true
+	}
+	if source.Join != "" {
+		p.Join = source.Join
+	}
+	if source.HasDashOffset() {
+		p.DashOffset = source.DashOffset
+		p.dashOffsetSet = true
+	}
+	if source.DashPattern != nil {
+		p.DashPattern = source.DashPattern
+	}
+	if source.Cap != "" {
+		p.Cap = source.Cap
+	}
+	if source.HasMiterLimit() {
+		p.MiterLimit = source.MiterLimit
+		p.miterLimitSet = true
+	}
+	if source.FillColor != nil {
+		p.FillColor = source.FillColor
+	}
+	if source.StrokeColor != nil {
+		p.StrokeColor = source.StrokeColor
+	}
 }
 
 // Fonts 字体资源集合。

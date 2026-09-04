@@ -123,17 +123,26 @@ func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.Pa
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:
-			p.path(ctx, item.Path, dp, pb, parentCTM, parentClip)
+			p.path(ctx, item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemImage:
-			p.image(ctx, item.Image, dp, pb, parentCTM, parentClip)
+			p.image(ctx, item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemText:
-			p.text(ctx, item.Text, dp, pb, parentCTM, parentClip)
+			p.text(ctx, item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemBlock:
 			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip)
 		case models.PageItemComposite:
-			p.composite(ctx, item.Composite, dp, pb, parentCTM, parentClip)
+			p.composite(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip)
 		}
 	}
+}
+
+func (p *Document) objectDrawParam(id models.StRefID, inherited *models.DrawParam) *models.DrawParam {
+	if id > 0 {
+		if dp := p.Document.GetDrawParam(models.StID(id)); dp != nil {
+			return dp
+		}
+	}
+	return inherited
 }
 
 // drawPageBlock 递归绘制 PageBlock，保持子块先于当前块的顺序。
@@ -151,15 +160,15 @@ func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StB
 		case models.PageItemImage:
 			object := item.Image
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Image(ctx, object, nil, pb)
+			p.Image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
 		case models.PageItemPath:
 			object := item.Path
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Path(ctx, object, nil, pb)
+			p.Path(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
 		case models.PageItemText:
 			object := item.Text
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Text(ctx, object, nil, pb)
+			p.Text(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
 		}
 	}
 }

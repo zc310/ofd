@@ -167,6 +167,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
+				o.CtText.CTGraphicUnit.normalizeDrawParams()
 				p.TextObject = append(p.TextObject, o)
 				item.Kind = PageItemText
 				item.Text = o
@@ -175,6 +176,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
+				o.CtPath.CTGraphicUnit.normalizeDrawParams()
 				p.PathObject = append(p.PathObject, o)
 				item.Kind = PageItemPath
 				item.Path = o
@@ -183,6 +185,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
+				o.CtImage.CTGraphicUnit.normalizeDrawParams()
 				p.ImageObject = append(p.ImageObject, o)
 				item.Kind = PageItemImage
 				item.Image = o
@@ -191,6 +194,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
+				o.CtComposite.CTGraphicUnit.normalizeDrawParams()
 				p.CompositeObject = append(p.CompositeObject, o)
 				item.Kind = PageItemComposite
 				item.Composite = o
@@ -306,6 +310,40 @@ type CTGraphicUnit struct {
 	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
 	// Alpha 图元整体透明度，取值范围为 0 到 255。
 	Alpha *uint8 `xml:"Alpha,attr,omitempty"`
+
+	// 兼容将这些属性编码为子元素的文档。
+	DrawParamElement   *StID     `xml:"DrawParam,omitempty"`
+	LineWidthElement   *float64  `xml:"LineWidth,omitempty"`
+	CapElement         *string   `xml:"Cap,omitempty"`
+	JoinElement        *string   `xml:"Join,omitempty"`
+	MiterLimitElement  *float64  `xml:"MiterLimit,omitempty"`
+	DashOffsetElement  *float64  `xml:"DashOffset,omitempty"`
+	DashPatternElement *StArrayF `xml:"DashPattern,omitempty"`
+}
+
+// normalizeDrawParams 将子元素形式的绘制参数复制到渲染器使用的通用属性中。
+func (g *CTGraphicUnit) normalizeDrawParams() {
+	if g.DrawParamElement != nil {
+		g.DrawParam = StRefID(*g.DrawParamElement)
+	}
+	if g.LineWidthElement != nil {
+		g.LineWidth = *g.LineWidthElement
+	}
+	if g.CapElement != nil {
+		g.Cap = *g.CapElement
+	}
+	if g.JoinElement != nil {
+		g.Join = *g.JoinElement
+	}
+	if g.MiterLimitElement != nil {
+		g.MiterLimit = *g.MiterLimitElement
+	}
+	if g.DashOffsetElement != nil {
+		g.DashOffset = *g.DashOffsetElement
+	}
+	if g.DashPatternElement != nil {
+		g.DashPattern = g.DashPatternElement
+	}
 }
 
 // VisibleValue 返回图元是否可见。OFD 未指定 Visible 时默认为可见。
