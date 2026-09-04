@@ -75,14 +75,11 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	}
 	img := cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
-	if object.CTM != nil {
-		ctm = *object.CTM
-	}
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
 	}
-	// imageMatrix 在组合后的 CTM 之后追加 Boundary，与 CellContent 对象使用的
-	// boundaryInCTM=false 行为一致。
+	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
+	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
 	m := imageMatrix(box, img, ctm, pb.Height)
 	// Clip 的 Area/Path 坐标经过自身 CTM 后位于页面坐标系。buildImageClip
 	// 会依据 TransFlag 决定是否叠加 CompositeObject 的 CTM，避免在 false
@@ -109,7 +106,6 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
 }
 
-// compositeCTM 返回复合对象的单元坐标变换。
 // contentImageBounds 返回离屏复合单元中非透明内容的像素包围盒。
 func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
 	b := img.Bounds()
