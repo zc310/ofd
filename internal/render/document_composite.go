@@ -18,6 +18,10 @@ const maxCompositeDepth = 32
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
 func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
+	p.composite(ctx, object, dp, pb, nil, nil)
+}
+
+func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() {
 		return
 	}
@@ -71,6 +75,14 @@ func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject,
 	}
 	img := cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
+	if object.CTM != nil {
+		ctm = *object.CTM
+	}
+	if parentCTM != nil {
+		ctm = *parentCTM.Multiply(&ctm)
+	}
+	// imageMatrix 在组合后的 CTM 之后追加 Boundary，与 CellContent 对象使用的
+	// boundaryInCTM=false 行为一致。
 	m := imageMatrix(box, img, ctm, pb.Height)
 	// Clip 的 Area/Path 坐标经过自身 CTM 后位于页面坐标系。buildImageClip
 	// 会依据 TransFlag 决定是否叠加 CompositeObject 的 CTM，避免在 false
@@ -79,8 +91,14 @@ func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject,
 	if object.CTM != nil {
 		clipCTM = *object.CTM
 	}
+	if parentCTM != nil {
+		clipCTM = *parentCTM.Multiply(&clipCTM)
+	}
 	if clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM); clip != nil {
 		img = imageWithClip(img, clip, m)
+	}
+	if parentClip != nil {
+		img = imageWithClip(img, parentClip, m)
 	}
 
 	if object.Alpha != nil {

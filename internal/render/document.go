@@ -116,18 +116,22 @@ func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StB
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
 func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox) {
+	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil)
+}
+
+func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:
-			p.Path(ctx, item.Path, dp, pb)
+			p.path(ctx, item.Path, dp, pb, parentCTM, parentClip)
 		case models.PageItemImage:
-			p.Image(ctx, item.Image, dp, pb)
+			p.image(ctx, item.Image, dp, pb, parentCTM, parentClip)
 		case models.PageItemText:
-			p.Text(ctx, item.Text, dp, pb)
+			p.text(ctx, item.Text, dp, pb, parentCTM, parentClip)
 		case models.PageItemBlock:
-			p.drawPageBlock(ctx, item.Block, dp, pb)
+			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip)
 		case models.PageItemComposite:
-			p.Composite(ctx, item.Composite, dp, pb)
+			p.composite(ctx, item.Composite, dp, pb, parentCTM, parentClip)
 		}
 	}
 }
