@@ -142,7 +142,7 @@ func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
 	if fill.Value != nil {
 		value := *fill.Value
 		if alpha != nil {
-			value.A = uint8(uint16(value.A) * uint16(*alpha) / 255)
+			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(alpha)) / 255)
 		}
 		ctx.SetFillColor(value)
 		return
@@ -152,6 +152,14 @@ func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
 		return
 	}
 	ctx.SetFillColor(canvas.Transparent)
+}
+
+// graphicOpacity 将 OFD 图形透明度转换为图像不透明度。
+func graphicOpacity(transparency *uint8) uint8 {
+	if transparency == nil {
+		return 255
+	}
+	return 255 - *transparency
 }
 
 func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *models.CtPath) {

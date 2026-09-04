@@ -8,6 +8,7 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/utils"
@@ -43,6 +44,7 @@ func NewFonts(doc *parser.Document) *Fonts {
 	})
 	return &Fonts{Document: doc, Fonts: make(map[models.StRefID]*canvas.FontFamily)}
 }
+
 func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	var err error
 	var f *canvas.FontFamily
@@ -56,27 +58,47 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		return defaultFontFamily, nil
 	}
 	fontName := ft.FontName
-	f = canvas.NewFontFamily(fontName)
 
 	fontStyle := canvas.FontRegular
 	if ft.Italic {
-		fontStyle = fontStyle | canvas.FontItalic
+		fontStyle |= canvas.FontItalic
 	}
 	if ft.Bold {
-		fontStyle = fontStyle | canvas.FontBold
+		fontStyle |= canvas.FontBold
 	}
 	if ft.FontFile != "" {
+		f = canvas.NewFontFamily(fontName)
 		var buf []byte
 		if buf, err = p.FileCache.ParseContent(string(ft.FontFile)); err != nil {
 			return nil, err
 		}
-
+		if fixed, fixErr := fontfix.Repair(buf); fixErr == nil {
+			buf = fixed
+		}
 		if err = f.LoadFont(buf, 0, fontStyle); err == nil && fontFamilyUsable(f) {
 			p.Fonts[id] = f
 			return f, nil
 		}
-		slog.Error(fmt.Sprintf("load font %s %s: %s", ft.FontName, ft.FontFile, err))
+		slog.Error(fmt.Sprintf("load font %s %s: %v", ft.FontName, ft.FontFile, err))
 	}
+	for candidateID, candidate := range p.FontRes {
+		if candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
+			continue
+		}
+		buf, parseErr := p.FileCache.ParseContent(string(candidate.FontFile))
+		if parseErr != nil {
+			continue
+		}
+		if fixed, fixErr := fontfix.Repair(buf); fixErr == nil {
+			buf = fixed
+		}
+		f = canvas.NewFontFamily(fontName)
+		if err = f.LoadFont(buf, 0, fontStyle); err == nil && fontFamilyUsable(f) {
+			p.Fonts[id] = f
+			return f, nil
+		}
+	}
+	f = canvas.NewFontFamily(fontName)
 
 	if err = f.LoadSystemFont(fontName, fontStyle); err == nil {
 		p.Fonts[id] = f
@@ -105,8 +127,14 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		p.Fonts[id] = defaultFontFamily
 		return defaultFontFamily, nil
 	}
-
 	return defaultFontFamily, nil
+}
+
+func sameFontName(left, right models.Font) bool {
+	if left.FontName != "" && left.FontName == right.FontName {
+		return true
+	}
+	return left.FamilyName != "" && left.FamilyName == right.FamilyName
 }
 
 // fontFamilyUsable 确保字体包含 canvas 绘制文字所需的基本字形表。
@@ -116,7 +144,6 @@ func fontFamilyUsable(family *canvas.FontFamily) bool {
 	}
 	face := family.Face(1, canvas.Black)
 	return face != nil && face.Font != nil && face.Font.SFNT != nil &&
-		!face.Font.SFNT.IsCFF &&
 		face.Font.SFNT.Head != nil && face.Font.SFNT.Hhea != nil &&
 		face.Font.SFNT.OS2 != nil && face.Font.SFNT.Cmap != nil &&
 		face.Font.SFNT.Maxp != nil

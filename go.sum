@@ -137,13 +137,13 @@ github.com/wcharczuk/go-chart/v2 v2.1.2 h1:Y17/oYNuXwZg6TFag06qe8sBajwwsuvPiJJXc
 github.com/wcharczuk/go-chart/v2 v2.1.2/go.mod h1:Zi4hbaqlWpYajnXB2K22IUYVXRXaLfSGNNR7P4ukyyQ=
 github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059 h1:/JXxWbNTePSVfshS7BVRm75Kh1/5rixvLpgTRw7MMv8=
 github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059/go.mod h1:mdoUQnVPIA4yS0/+ZrtxJNiDdbphI0RMu+DPfxXfVhE=
-github.com/xiaoqidun/ofdgo v0.0.0-20260824013721-0887ff1a04e7 h1:xm0aWM1UdTZwJSiduu93MXGvzDar5j0BuTsZXxolTIU=
-github.com/xiaoqidun/ofdgo v0.0.0-20260824013721-0887ff1a04e7/go.mod h1:nknYtXq2v6mjxO1jEYpoArJYs3U3tQGM7pY2pbH4acA=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.5 h1:r6N5afV5qj/5S4UTch8agZHJ8UxNCMwX7WjkkJam2NA=
 github.com/yuin/goldmark v1.8.5/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
+github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb h1:yDwzZAniMYd/Trlu9tEpoFfuv8kp1piGggto5EQIi9E=
+github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb/go.mod h1:3hylLInJRjFJ2owde6LLz2yarfpV6ecO7aV6CqQGGIk=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=

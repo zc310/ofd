@@ -99,9 +99,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	}
 
 	if object.Alpha != nil {
-		// OFD Alpha 表示透明度：0 为不透明，255 为完全透明。
-		// applyImageAlpha 接收的是图像不透明度，因此需要转换一次。
-		img = applyImageAlpha(img, 255-*object.Alpha)
+		img = applyImageAlpha(img, graphicOpacity(object.Alpha))
 	}
 	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
 }

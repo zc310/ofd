@@ -129,7 +129,7 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 	}
 
 	if alpha != nil {
-		meshImage = applyImageAlpha(meshImage, *alpha)
+		meshImage = applyImageAlpha(meshImage, graphicOpacity(alpha))
 	}
 	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, meshImage,
 		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)

@@ -6,7 +6,9 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/tdewolff/font"
 
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -42,6 +44,11 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	if object.StrokeColor != nil {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
+	if object.Alpha != nil && fill != nil && fill.Value != nil {
+		value := *fill.Value
+		value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
+		fill = &CTColor{Value: &value, Gradient: fill.Gradient}
+	}
 	face := buildTextFace(fontFamily, object, fill)
 	if !face.Fill.Has() {
 		// 颜色透明（Alpha=0）时文字不可见，且 PDF 渲染器会因此输出非法的 NaN 颜色值
@@ -60,8 +67,10 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	} else {
 		ctx.SetStrokeColor(canvas.Black)
 	}
+	codePosition := 0
 	for _, code := range object.TextCode {
-		p.drawTextCode(ctx, face, object, code, pb.Height, parentCTM)
+		p.drawTextCode(ctx, face, object, code, pb.Height, parentCTM, codePosition)
+		codePosition += len([]rune(code.Value))
 	}
 }
 
@@ -101,7 +110,7 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 		return false
 	}
 	if object.Alpha != nil {
-		textImage = applyImageAlpha(textImage, *object.Alpha)
+		textImage = applyImageAlpha(textImage, graphicOpacity(object.Alpha))
 	}
 	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, textImage,
 		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
@@ -131,7 +140,10 @@ func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, 
 }
 
 func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
-	path, _ := face.ToPath(value)
+	path := directTextPath(face, value)
+	if path == nil {
+		path, _ = face.ToPath(value)
+	}
 	if path == nil || path.Empty() {
 		return
 	}
@@ -211,29 +223,87 @@ func textFontStyle(weight int, italic bool) canvas.FontStyle {
 }
 
 // drawTextCode 按字符间距绘制一段文字。
-func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM) {
-	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+type textGlyph struct {
+	value string
+}
+
+func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+	runes := []rune(code.Value)
+	glyphs := textCodeGlyphs(runes, object.CGTransform, codePosition)
+	if len(glyphs) == 0 {
+		return
+	}
+	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
 
 	posX, posY := code.X, code.Y
-	runes := []rune(code.Value)
-	for i, r := range runes {
+	for i, glyph := range glyphs {
 		if i > 0 {
 			if len(code.DeltaX) > 0 {
 				posX += valueAt(code.DeltaX, i-1)
 			} else {
-				posX += face.TextWidth(string(runes[i-1])) * textHScale(object)
+				posX += textGlyphWidth(face, glyphs[i-1]) * textHScale(object)
 			}
 			posY += valueAt(code.DeltaY, i-1)
 		}
-		p.drawTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, parentCTM)
+		p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
 	}
+}
+
+func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
+	if len(transforms) == 0 {
+		glyphs := make([]textGlyph, len(runes))
+		for i, r := range runes {
+			glyphs[i] = textGlyph{value: string(r)}
+		}
+		return glyphs
+	}
+	byPosition := make(map[int]models.CTCGTransform, len(transforms))
+	for _, transform := range transforms {
+		byPosition[transform.CodePosition] = transform
+	}
+	glyphs := make([]textGlyph, 0, len(runes))
+	for i := 0; i < len(runes); {
+		transform, ok := byPosition[codePosition+i]
+		if !ok {
+			glyphs = append(glyphs, textGlyph{value: string(runes[i])})
+			i++
+			continue
+		}
+		ids := transform.Glyphs
+		if transform.GlyphCount > 0 && transform.GlyphCount < len(ids) {
+			ids = ids[:transform.GlyphCount]
+		}
+		for _, id := range ids {
+			if id >= 0 && id <= 0xffff {
+				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
+			}
+		}
+		codeCount := transform.CodeCount
+		if codeCount <= 0 {
+			codeCount = 1
+		}
+		i += codeCount
+	}
+	return glyphs
+}
+
+func textGlyphWidth(face *canvas.FontFace, glyph textGlyph) float64 {
+	return face.TextWidth(glyph.value)
 }
 
 func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
 	hScale := textHScale(object)
+	if face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF {
+		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
+		return
+	}
+	if path := directTextPath(face, value); path != nil {
+		p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+		return
+	}
 	if parentCTM != nil {
 		if object.CTM != nil {
 			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
@@ -266,6 +336,76 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	ctx.Scale(hScale, 1)
 	ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
 	ctx.Pop()
+}
+
+// drawCFFTextPath avoids handing repaired bare-CFF fonts to the PDF font
+// subsetter, which cannot safely serialize some embedded CFF programs.
+func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	path := directTextPath(face, value)
+	if path == nil {
+		path, _ = face.ToPath(value)
+	}
+	if path == nil || path.Empty() {
+		return
+	}
+	p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+}
+
+// directTextPath handles subset fonts whose cmap is usable by GlyphIndex but
+// not by the text shaper. Normal text still uses Canvas shaping below.
+func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
+	path, _ := face.ToPath(value)
+	if path != nil && !path.Empty() {
+		return nil
+	}
+	if face.Font == nil || face.Font.SFNT == nil {
+		return nil
+	}
+	path = &canvas.Path{}
+	advance := 0.0
+	for _, r := range []rune(value) {
+		glyphID := face.Font.GlyphIndex(r)
+		if glyphID == 0 {
+			return nil
+		}
+		if err := face.Font.GlyphPath(path, glyphID, face.PPEM(canvas.DefaultResolution), face.MmPerEm*advance, 0, face.MmPerEm, font.NoHinting); err != nil {
+			return nil
+		}
+		advance += float64(face.Font.SFNT.GlyphAdvance(glyphID))
+	}
+	if path.Empty() {
+		return nil
+	}
+	return path
+}
+
+func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	// ToPath returns geometry only; unlike DrawText it does not apply the
+	// FontFace paint, so copy the text fill to the path drawing state.
+	ctx.SetFill(face.Fill)
+	ctx.SetStroke(nil)
+	if parentCTM != nil {
+		if object.CTM != nil {
+			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
+		} else {
+			x, y = parentCTM.Transform(x, y)
+		}
+		ctx.Push()
+		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+		ctx.Scale(hScale, 1)
+		ctx.DrawPath(0, 0, path)
+		ctx.Pop()
+		return
+	}
+	if object.CTM != nil {
+		x, y = object.CTM.Transform(x, y)
+	}
+	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
+		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	}
+	matrix = matrix.Scale(hScale, 1)
+	ctx.DrawPath(0, 0, path.Transform(matrix))
 }
 
 func valueAt(values models.StArrayF, index int) float64 {
