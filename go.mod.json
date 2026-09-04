@@ -48,10 +48,10 @@
   },
   {
     "dest": "vendor/github.com/tdewolff/canvas",
-    "sha256": "07dc8e96b87b2d1ea60472b4fb34594a3c7cb27f288f46d3783ec98fafb07840",
+    "sha256": "e2811357787fd729114e0496ca90979aad808da41239bdd3881ba93bf12b8f54",
     "strip-components": 3,
     "type": "archive",
-    "url": "https://proxy.golang.org/github.com/tdewolff/canvas/@v/v0.0.0-20260820161200-72985dc66d4e.zip"
+    "url": "https://proxy.golang.org/github.com/tdewolff/canvas/@v/v0.0.0-20260822211237-56e622de465a.zip"
   },
   {
     "dest": "vendor/github.com/tdewolff/font",
@@ -328,10 +328,10 @@
   },
   {
     "dest": "vendor/github.com/mattn/go-runewidth",
-    "sha256": "78b1690bd2506faeeecff9cce615e5710c12fe25a5393abe3c2503d0ea4ee2ea",
+    "sha256": "7e8df69a8b9ccb1e05a8d6e8cbce89be7a2b1031b6155903594aef24a7e28825",
     "strip-components": 3,
     "type": "archive",
-    "url": "https://proxy.golang.org/github.com/mattn/go-runewidth/@v/v0.0.27.zip"
+    "url": "https://proxy.golang.org/github.com/mattn/go-runewidth/@v/v0.0.28.zip"
   },
   {
     "dest": "vendor/github.com/nfnt/resize",
@@ -402,6 +402,13 @@
     "strip-components": 3,
     "type": "archive",
     "url": "https://proxy.golang.org/github.com/yuin/goldmark/@v/v1.8.5.zip"
+  },
+  {
+    "dest": "vendor/github.com/zc310/fontfix",
+    "sha256": "1c00d0a1edd3c8832c1878040b2d92468a01523bc26c4f0b724ae1567348b3a1",
+    "strip-components": 3,
+    "type": "archive",
+    "url": "https://proxy.golang.org/github.com/zc310/fontfix/@v/v0.0.0-20260904112842-ae26c05e79fb.zip"
   },
   {
     "dest": "vendor/go.yaml.in/yaml/v3",

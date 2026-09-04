@@ -34,3 +34,6 @@ gp.sum
 .build/
 dist/
 build-dir/
+.flatpak-builder/
+*-demo/
+vendor/

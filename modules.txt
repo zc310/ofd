@@ -279,7 +279,7 @@ github.com/jsummers/gobmp
 # github.com/kolesa-team/go-webp v1.0.5
 ## explicit; go 1.10
 github.com/kolesa-team/go-webp/encoder
-# github.com/mattn/go-runewidth v0.0.27
+# github.com/mattn/go-runewidth v0.0.28
 ## explicit; go 1.23
 github.com/mattn/go-runewidth
 # github.com/nao1215/imaging v1.0.10
@@ -329,8 +329,8 @@ github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/internal/difflib
 github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
-# github.com/tdewolff/canvas v0.0.0-20260820161200-72985dc66d4e
-## explicit; go 1.26.4
+# github.com/tdewolff/canvas v0.0.0-20260822211237-56e622de465a
+## explicit; go 1.26.0
 github.com/tdewolff/canvas
 github.com/tdewolff/canvas/color
 github.com/tdewolff/canvas/image
@@ -375,6 +375,9 @@ github.com/yuin/goldmark/renderer
 github.com/yuin/goldmark/renderer/html
 github.com/yuin/goldmark/text
 github.com/yuin/goldmark/util
+# github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb
+## explicit; go 1.26.4
+github.com/zc310/fontfix
 # go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
