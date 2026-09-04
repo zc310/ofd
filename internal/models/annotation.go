@@ -85,6 +85,20 @@ type Appearance struct {
 	CTPageBlock
 }
 
+// UnmarshalXML 先解析外观边界，再将其内容交由共享的页面块解析器处理。
+func (a *Appearance) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "Boundary" {
+			var boundary StBox
+			if err := boundary.UnmarshalXMLAttr(attr); err != nil {
+				return err
+			}
+			a.Boundary = &boundary
+		}
+	}
+	return a.CTPageBlock.UnmarshalXML(d, start)
+}
+
 // StBox 盒子区域定义，字段顺序为 X、Y、Width、Height。
 type StBox struct {
 	// X 盒子左上角的横坐标。

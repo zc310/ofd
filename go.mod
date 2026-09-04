@@ -62,8 +62,8 @@ require (
 	github.com/tdewolff/minify/v2 v2.24.17 // indirect
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
-	github.com/xiaoqidun/ofdgo v0.0.0-20260824013721-0887ff1a04e7 // indirect
 	github.com/yuin/goldmark v1.8.5 // indirect
+	github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
