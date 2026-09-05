@@ -5,14 +5,12 @@ import (
 	"image/color"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/tdewolff/canvas"
 	pdfrenderer "github.com/tdewolff/canvas/renderers/pdf"
-	fontpkg "github.com/tdewolff/font"
 )
 
 // PDFOptions 配置 PDF 报告的字体。
@@ -335,7 +333,7 @@ func RenderPDF(w io.Writer, report Report, options PDFOptions) error {
 						drawPDFRect(ctx, x, y, 3, height, accent, transparent, 0)
 						lineY := y + cardTopPadding
 						for _, line := range lines {
-							drawPDFText(ctx, x+10, lineY, line.face, line.text, canvas.Left)
+							drawPDFText(ctx, x+10, lineY-2, line.face, line.text, canvas.Left)
 							lineY += line.lineHeight
 						}
 					}
@@ -473,7 +471,7 @@ func loadReportFont(explicit string) (*canvas.FontFamily, error) {
 	}
 
 	for _, name := range []string{
-		"SimSun", "宋体", "NSimSun", "Microsoft YaHei", "微软雅黑",
+		"仿宋", "楷体", "黑体", "SimSun", "宋体", "等线", "NSimSun", "Microsoft YaHei", "微软雅黑",
 		"Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
 	} {
 		family := canvas.NewFontFamily("ofd-report")
@@ -481,58 +479,7 @@ func loadReportFont(explicit string) (*canvas.FontFamily, error) {
 			return family, nil
 		}
 	}
-
-	for _, candidate := range preferredSystemFontFiles() {
-		if family, err := loadCJKFontFile(candidate); err == nil {
-			return family, nil
-		}
-	}
 	return nil, fmt.Errorf("未找到可用于 PDF 输出的中文字体")
-}
-
-func preferredSystemFontFiles() []string {
-	needles := []string{
-		"simsun", "song", "yahei", "msyh", "notoSansCJKsc", "notosanscjk", "sourcehansanssc",
-		"sourcehansans", "wenquanyi", "wqy", "cjk", "hanserif", "hansans",
-	}
-	var paths []string
-	seen := make(map[string]struct{})
-	fontDirs := fontpkg.DefaultFontDirs()
-	addFontFiles := func(onlyPreferred bool) {
-		for _, dir := range fontDirs {
-			_ = filepath.WalkDir(dir, func(filename string, entry os.DirEntry, err error) error {
-				if err != nil || entry.IsDir() {
-					return nil
-				}
-				extension := strings.ToLower(filepath.Ext(filename))
-				if extension != ".ttf" && extension != ".ttc" && extension != ".otf" {
-					return nil
-				}
-				if onlyPreferred {
-					base := strings.ToLower(filepath.Base(filename))
-					preferred := false
-					for _, needle := range needles {
-						if strings.Contains(base, strings.ToLower(needle)) {
-							preferred = true
-							break
-						}
-					}
-					if !preferred {
-						return nil
-					}
-				}
-				if _, ok := seen[filename]; !ok {
-					seen[filename] = struct{}{}
-					paths = append(paths, filename)
-				}
-				return nil
-			})
-		}
-	}
-	// 先尝试常见中文字体，再扫描全部字体，兼容自定义名称的字体文件。
-	addFontFiles(true)
-	addFontFiles(false)
-	return paths
 }
 
 func loadCJKFontFile(filename string) (*canvas.FontFamily, error) {
@@ -545,7 +492,7 @@ func loadCJKFontFile(filename string) (*canvas.FontFamily, error) {
 	if family := tryFontFile(filename, false, 0); family != nil {
 		return family, nil
 	}
-	for index := 0; index < 16; index++ {
+	for index := range 16 {
 		if family := tryFontFile(filename, true, index); family != nil {
 			return family, nil
 		}
