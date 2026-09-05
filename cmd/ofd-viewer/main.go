@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,13 +91,10 @@ type viewer struct {
 	pageSlots       []*pageSlot
 	thumbnailList   *widget.List
 	openButton      *widget.Button
-	exportButton    *widget.Button
+	menuButton      *widget.Button
 	pageLabel       *widget.Label
 	pageEntry       *widget.Entry
-	jumpButton      *widget.Button
-	thumbnailToggle *widget.Check
-	viewModeSelect  *widget.Select
-	infoButton      *widget.Button
+	thumbnailToggle *widget.Button
 	pageLoading     *widget.PopUp
 	pageLoadingOp   uint64
 	exportLoading   *widget.PopUp
@@ -445,48 +443,32 @@ func newViewer(window fyne.Window) *viewer {
 		v.renderVisiblePages(v.operation.Load())
 	}
 
-	v.openButton = widget.NewButton("打开 OFD (O)", func() {
+	v.openButton = widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
 		v.chooseFile()
-	})
-	v.exportButton = widget.NewButton("导出", func() {
-		v.showExportDialog()
 	})
 	v.pageLabel = widget.NewLabel("/ 未加载文档")
 	v.pageEntry = widget.NewEntry()
 	v.pageEntry.SetPlaceHolder("页码")
-	v.jumpButton = widget.NewButton("跳转", func() {
-		v.jumpToPage()
-	})
 	v.pageEntry.OnSubmitted = func(string) {
 		v.jumpToPage()
 	}
-	v.thumbnailToggle = widget.NewCheck("显示缩略图", func(checked bool) {
-		v.setThumbnailVisible(checked)
+	v.thumbnailToggle = widget.NewButtonWithIcon("", theme.ListIcon(), func() {
+		v.setThumbnailVisible(!v.thumbnailPanel.Visible())
 	})
-	v.thumbnailToggle.Checked = false
-	v.viewModeSelect = widget.NewSelect([]string{viewFitPageLabel, viewFitWidthLabel, viewFitHeightLabel, viewDoublePageLabel}, func(selected string) {
-		v.setViewMode(selected)
+	v.thumbnailToggle.Importance = widget.LowImportance
+	v.menuButton = widget.NewButtonWithIcon("", theme.MenuIcon(), func() {
+		v.showMenu()
 	})
-	v.viewModeSelect.SetSelected(viewFitWidthLabel)
-	v.infoButton = widget.NewButtonWithIcon("", theme.InfoIcon(), func() {
-		v.showAppInfo()
-	})
-	v.infoButton.Importance = widget.LowImportance
 
 	toolbarContent := container.NewHBox(
 		v.openButton,
-		v.exportButton,
 		widget.NewSeparator(),
 		v.pageEntry,
 		v.pageLabel,
-		v.jumpButton,
-		widget.NewSeparator(),
-		widget.NewLabel("视图:"),
-		v.viewModeSelect,
 		widget.NewSeparator(),
 		v.thumbnailToggle,
 	)
-	toolbar := container.NewBorder(nil, nil, nil, v.infoButton, toolbarContent)
+	toolbar := container.NewBorder(nil, nil, nil, v.menuButton, toolbarContent)
 	thumbnailPanel := container.NewBorder(widget.NewLabel("页面"), nil, nil, nil, v.thumbnailList)
 	thumbnailPanel.Hide()
 	documentArea := container.NewHSplit(thumbnailPanel, v.pageScroll)
@@ -496,6 +478,34 @@ func newViewer(window fyne.Window) *viewer {
 	v.content = container.NewBorder(toolbar, nil, nil, nil, documentArea)
 	v.updateControls()
 	return v
+}
+
+func (v *viewer) showMenu() {
+	if v.closed.Load() {
+		return
+	}
+	exportItem := fyne.NewMenuItemWithIcon("导出", theme.DocumentSaveIcon(), v.showExportDialog)
+	exportItem.Disabled = !v.hasPages() || v.loading || v.exporting
+	viewItems := []*fyne.MenuItem{
+		fyne.NewMenuItem(viewFitPageLabel, func() { v.setViewMode(viewFitPageLabel) }),
+		fyne.NewMenuItem(viewFitWidthLabel, func() { v.setViewMode(viewFitWidthLabel) }),
+		fyne.NewMenuItem(viewFitHeightLabel, func() { v.setViewMode(viewFitHeightLabel) }),
+		fyne.NewMenuItem(viewDoublePageLabel, func() { v.setViewMode(viewDoublePageLabel) }),
+	}
+	viewModes := []pageViewMode{viewFitPage, viewFitWidth, viewFitHeight, viewDoublePage}
+	for i, item := range viewItems {
+		item.Checked = v.pageLayout.mode == viewModes[i]
+		item.Disabled = v.loading || v.exporting
+	}
+	viewItem := fyne.NewMenuItem("视图", nil)
+	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
+	menu := fyne.NewMenu("菜单",
+		exportItem,
+		viewItem,
+		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo),
+	)
+	canvas := v.window.Canvas()
+	widget.ShowPopUpMenuAtRelativePosition(menu, canvas, fyne.NewPos(0, v.menuButton.Size().Height), v.menuButton)
 }
 
 func (v *viewer) showExportDialog() {
@@ -577,9 +587,12 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 	v.exporting = true
 	v.updateControls()
 	go func() {
-		path, err := chooseSaveFile("导出 OFD", fileName, extension)
+		selection, err := chooseSaveFile("导出 OFD", fileName, extension, v.window)
 		fyne.Do(func() {
 			if v.closed.Load() {
+				if selection.output != nil {
+					_ = selection.output.Close()
+				}
 				return
 			}
 			if err != nil {
@@ -588,12 +601,16 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 				dialog.ShowInformation("导出失败", err.Error(), v.window)
 				return
 			}
-			if path == "" {
+			if selection.path == "" && selection.output == nil {
 				v.exporting = false
 				v.updateControls()
 				return
 			}
-			v.exportToPath(path, format, dpi, background)
+			if selection.output != nil {
+				v.exportToWriter(selection.output, format, dpi, background)
+			} else {
+				v.exportToPath(selection.path, format, dpi, background)
+			}
 		})
 	}()
 }
@@ -602,7 +619,25 @@ func (v *viewer) exportToPath(path, format string, dpi int, background color.Col
 	if path == "" {
 		return
 	}
+	v.exportToOutput(func() (io.WriteCloser, error) {
+		return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	}, nil, format, dpi, background)
+}
+
+func (v *viewer) exportToWriter(writer io.WriteCloser, format string, dpi int, background color.Color) {
+	if writer == nil {
+		return
+	}
+	v.exportToOutput(func() (io.WriteCloser, error) {
+		return writer, nil
+	}, writer, format, dpi, background)
+}
+
+func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending io.WriteCloser, format string, dpi int, background color.Color) {
 	if v.closed.Load() || v.loading || !v.hasPages() {
+		if pending != nil {
+			_ = pending.Close()
+		}
 		return
 	}
 	v.showExportLoading()
@@ -615,8 +650,18 @@ func (v *viewer) exportToPath(path, format string, dpi int, background color.Col
 		var err error
 		if exportOperation != v.operation.Load() {
 			err = fmt.Errorf("文档已更改")
+			if pending != nil {
+				_ = pending.Close()
+			}
 		} else {
-			err = exportDocuments(documents, path, format, dpi, background)
+			var writer io.WriteCloser
+			writer, err = create()
+			if err == nil {
+				err = exportDocumentsToWriter(documents, writer, format, dpi, background)
+				if closeErr := writer.Close(); err == nil {
+					err = closeErr
+				}
+			}
 		}
 		v.renderMu.Unlock()
 		fyne.Do(func() {
@@ -656,8 +701,20 @@ func (v *viewer) hideExportLoading() {
 }
 
 func exportDocuments(documents []*render.Document, path, format string, dpi int, background color.Color) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return exportDocumentsToWriter(documents, file, format, dpi, background)
+}
+
+func exportDocumentsToWriter(documents []*render.Document, output io.Writer, format string, dpi int, background color.Color) error {
 	if len(documents) == 0 {
 		return fmt.Errorf("文档没有页面")
+	}
+	if output == nil {
+		return fmt.Errorf("未设置导出输出")
 	}
 	exportDocs := make([]*render.Document, 0, len(documents))
 	pageCount := 0
@@ -677,24 +734,14 @@ func exportDocuments(documents []*render.Document, path, format string, dpi int,
 		return fmt.Errorf("文档没有页面")
 	}
 	if strings.EqualFold(format, "txt") {
-		file, err := os.Create(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
 		parsedDocs := make([]*parser.Document, 0, len(exportDocs))
 		for _, doc := range exportDocs {
 			parsedDocs = append(parsedDocs, doc.Document)
 		}
-		return canvasConverter.TextDocuments(parsedDocs, file)
+		return canvasConverter.TextDocuments(parsedDocs, output)
 	}
 	if strings.EqualFold(format, "pdf") {
-		file, err := os.Create(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		return canvasConverter.PDFDocuments(exportDocs, file)
+		return canvasConverter.PDFDocuments(exportDocs, output)
 	}
 	option := exportImageOption(format)
 	imageOptions := []canvasConverter.Option{
@@ -704,19 +751,14 @@ func exportDocuments(documents []*render.Document, path, format string, dpi int,
 	if pageCount == 1 {
 		return canvasConverter.ImageDocuments(exportDocs,
 			append(imageOptions, canvasConverter.Writer(func(int) (io.WriteCloser, error) {
-				return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+				return &nonClosingWriter{Writer: output}, nil
 			}))...,
 		)
 	}
 
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	archive := zip.NewWriter(file)
+	archive := zip.NewWriter(output)
 	extension := strings.ToLower(format)
-	err = canvasConverter.ImageDocuments(exportDocs,
+	err := canvasConverter.ImageDocuments(exportDocs,
 		append(imageOptions,
 			canvasConverter.Writer(func(page int) (io.WriteCloser, error) {
 				entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, extension))
@@ -763,12 +805,24 @@ func (w *zipEntryWriter) Close() error {
 	return nil
 }
 
+type nonClosingWriter struct {
+	io.Writer
+}
+
+func (w *nonClosingWriter) Close() error {
+	return nil
+}
+
 func (v *viewer) showAppInfo() {
 	link, err := url.Parse(projectURL)
 	if err != nil {
 		return
 	}
+	icon := fyneCanvas.NewImageFromResource(viewerIcon)
+	icon.FillMode = fyneCanvas.ImageFillContain
+	icon.SetMinSize(fyne.NewSize(96, 96))
 	content := container.NewVBox(
+		container.NewCenter(icon),
 		widget.NewLabelWithStyle("OFD Viewer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		widget.NewLabel("版本: "+applicationVersion),
 		widget.NewLabel("OFD 文档查看器"),
@@ -776,7 +830,7 @@ func (v *viewer) showAppInfo() {
 		widget.NewLabel("项目地址:"),
 		widget.NewHyperlink(projectURL, link),
 	)
-	dialog.NewCustom("关于 OFD Viewer", "关闭", content, v.window).Show()
+	dialog.NewCustom("关于", "关闭", content, v.window).Show()
 }
 
 func (v *viewer) createPageSlots(pages []viewerPage) {
@@ -812,9 +866,14 @@ func (v *viewer) chooseFile() {
 	v.loading = true
 	v.updateControls()
 	go func() {
-		filePath, err := chooseOpenFile("选择 OFD 文件")
+		selection, err := chooseOpenFile("选择 OFD 文件", v.window)
 		fyne.Do(func() {
 			if v.closed.Load() {
+				if selection.input != nil {
+					if closer, ok := selection.input.(io.Closer); ok {
+						_ = closer.Close()
+					}
+				}
 				return
 			}
 			if err != nil {
@@ -823,21 +882,22 @@ func (v *viewer) chooseFile() {
 				dialog.ShowInformation("打开失败", err.Error(), v.window)
 				return
 			}
-			if filePath == "" {
+			if selection.path == "" && selection.input == nil {
 				v.loading = false
 				v.updateControls()
 				return
 			}
-			v.load(filePath, filepath.Base(filePath), filePath)
+			v.load(selection.path, selection.name, selection.input)
 		})
 	}()
 }
 
 func (v *viewer) load(filePath, fileName string, input interface{}) {
 	if v.closed.Load() {
-		if closer, ok := input.(io.Closer); ok {
-			_ = closer.Close()
-		}
+		_ = closeInput(input)
+		return
+	}
+	if input == nil && filePath == "" {
 		return
 	}
 	v.hidePageLoading(0)
@@ -848,12 +908,14 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 
 	go func() {
 		log.Printf("正在打开文件: %s", filePath)
-		ofd, err := parser.NewOFD(input)
-		if closer, ok := input.(io.Closer); ok {
-			closeErr := closer.Close()
+		ofd, err := openOFD(input)
+		if closeErr := closeInput(input); closeErr != nil {
 			if err == nil {
 				err = closeErr
 			}
+		}
+		if err == nil && ofd == nil {
+			err = fmt.Errorf("打开 OFD 失败: 解析器为空")
 		}
 		if err == nil && len(ofd.Documents) == 0 {
 			_ = ofd.Close()
@@ -861,6 +923,20 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 		}
 
 		fyne.Do(func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					if ofd != nil {
+						_ = ofd.Close()
+					}
+					if operation == v.operation.Load() && !v.closed.Load() {
+						v.loading = false
+						v.updateControls()
+						err := fmt.Errorf("处理 OFD 文件失败: %v", recovered)
+						log.Printf("打开 OFD panic: %v\n%s", recovered, debug.Stack())
+						dialog.ShowInformation("打开失败", err.Error(), v.window)
+					}
+				}
+			}()
 			if operation != v.operation.Load() {
 				if ofd != nil {
 					_ = ofd.Close()
@@ -880,6 +956,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 				v.loading = false
 				log.Printf("打开失败: %v", err)
 				v.updateControls()
+				dialog.ShowInformation("打开失败", err.Error(), v.window)
 				return
 			}
 
@@ -1015,13 +1092,53 @@ func (v *viewer) requestThumbnailRender(pageIndex int) {
 	}()
 }
 
-func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolution ofdcanvas.Resolution, valid func() bool) (image.Image, error) {
+func openOFD(input any) (ofd *parser.OFD, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if ofd != nil {
+				_ = ofd.Close()
+				ofd = nil
+			}
+			log.Printf("解析 OFD panic: %v\n%s", recovered, debug.Stack())
+			err = fmt.Errorf("打开 OFD 失败: %v", recovered)
+		}
+	}()
+	return parser.NewOFD(input)
+}
+
+func closeInput(input any) (err error) {
+	closer, ok := input.(io.Closer)
+	if !ok || closer == nil {
+		return nil
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("关闭文件失败: %v", recovered)
+		}
+	}()
+	return closer.Close()
+}
+
+func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolution ofdcanvas.Resolution, valid func() bool) (img image.Image, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			img = nil
+			log.Printf("渲染页面 panic: %v\n%s", recovered, debug.Stack())
+			err = fmt.Errorf("渲染页面失败: %v", recovered)
+		}
+	}()
+	if doc == nil || doc.Document == nil || page == nil {
+		return nil, fmt.Errorf("页面数据为空")
+	}
 	v.renderMu.Lock()
 	defer v.renderMu.Unlock()
 	if !valid() {
 		return nil, nil
 	}
 	page.EnsurePhysicalBox()
+	if page.Area == nil {
+		return nil, fmt.Errorf("页面区域为空")
+	}
 	box := page.Area.PhysicalBox
 	pageCanvas := canvasFyne.New(box.Width, box.Height, resolution)
 	ctx := ofdcanvas.NewContext(pageCanvas.Canvas)
@@ -1166,9 +1283,12 @@ func (v *viewer) jumpToPage() {
 func (v *viewer) setThumbnailVisible(visible bool) {
 	if visible {
 		v.thumbnailPanel.Show()
+		v.thumbnailToggle.Importance = widget.HighImportance
 	} else {
 		v.thumbnailPanel.Hide()
+		v.thumbnailToggle.Importance = widget.LowImportance
 	}
+	v.thumbnailToggle.Refresh()
 	v.documentArea.Refresh()
 }
 
@@ -1199,21 +1319,11 @@ func (v *viewer) setViewMode(selected string) {
 func (v *viewer) updateControls() {
 	if v.loading || v.exporting {
 		v.openButton.Disable()
-		v.exportButton.Disable()
 		v.pageEntry.Disable()
-		v.jumpButton.Disable()
-		v.viewModeSelect.Disable()
 		return
 	}
 	v.openButton.Enable()
-	if !v.hasPages() || v.totalPages == 0 || v.exporting {
-		v.exportButton.Disable()
-	} else {
-		v.exportButton.Enable()
-	}
 	v.pageEntry.Enable()
-	v.jumpButton.Enable()
-	v.viewModeSelect.Enable()
 	if !v.hasPages() || v.totalPages == 0 {
 		v.pageLabel.SetText("/ 未加载文档")
 		v.pageEntry.SetText("")

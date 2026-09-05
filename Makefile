@@ -1,5 +1,6 @@
 GO ?= go
 ZIP ?= zip
+FYNE ?= fyne
 
 GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
@@ -33,16 +34,22 @@ THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
+ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
+ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
+ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
+ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-.PHONY: all build package package-viewer package-converter package-thumbnailer clean help FORCE
+.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer clean help FORCE
 
 all: package
 
 help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
-		'make package                  Build three independent ZIP packages' \
+		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-viewer           Build the OFD viewer package' \
+		'make package-viewer-android   Build the OFD viewer Android APK' \
+		'make package-viewer-android-zip Build the OFD viewer Android ZIP package' \
 		'make package-converter       Build the OFD converter package' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
 		'make clean                   Remove generated build files and packages' \
@@ -69,7 +76,7 @@ $(THUMBNAILER): FORCE
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-thumbnailer
 endif
 
-package: package-viewer package-converter $(if $(filter linux,$(GOOS)),package-thumbnailer)
+package: package-viewer package-converter package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
 
 package-viewer: $(VIEWER_PACKAGE)
 
@@ -81,6 +88,23 @@ $(VIEWER_PACKAGE): $(VIEWER) cmd/ofd-viewer/README.md
 	@cp "$(VIEWER)" "$(PACKAGE_DIR)/ofd-viewer/ofd-viewer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-viewer/README.md" "$(PACKAGE_DIR)/ofd-viewer/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer"
+
+package-viewer-android: $(ANDROID_VIEWER_PACKAGE)
+
+$(ANDROID_VIEWER_PACKAGE): $(ANDROID_VIEWER_SOURCES) cmd/ofd-viewer/Icon.png
+	@mkdir -p "$(DIST_DIR)"
+	@rm -f "$@" "cmd/ofd-viewer/ofd_viewer.apk"
+	@cd cmd/ofd-viewer && "$(FYNE)" package -os android -appID "$(ANDROID_VIEWER_APP_ID)"
+	@mv "cmd/ofd-viewer/ofd_viewer.apk" "$@"
+
+package-viewer-android-zip: $(ANDROID_VIEWER_ZIP)
+
+$(ANDROID_VIEWER_ZIP): $(ANDROID_VIEWER_PACKAGE)
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-viewer-android" "$@"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-viewer-android"
+	@cp "$(ANDROID_VIEWER_PACKAGE)" "$(PACKAGE_DIR)/ofd-viewer-android/ofd-viewer-android.apk"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer-android"
 
 package-converter: $(CONVERTER_PACKAGE)
 

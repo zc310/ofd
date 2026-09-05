@@ -9,9 +9,10 @@ require (
 	github.com/ncruces/zenity v0.10.15
 	github.com/rymdport/portal v0.4.2
 	github.com/stretchr/testify v1.12.1
-	github.com/tdewolff/canvas v0.0.0-20260822211237-56e622de465a
+	github.com/tdewolff/canvas v0.0.0-20260901160717-dae8cd8e19a7
 	github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
 	github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059
+	github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb
 	golang.org/x/image v0.45.0
 )
 
@@ -41,7 +42,7 @@ require (
 	github.com/fyne-io/oksvg v0.2.0 // indirect
 	github.com/go-fonts/latin-modern v0.3.3 // indirect
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
-	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260707082822-2a407d02d01a // indirect
+	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
@@ -52,7 +53,7 @@ require (
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
-	github.com/mattn/go-runewidth v0.0.28 // indirect
+	github.com/mattn/go-runewidth v0.0.29 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7 // indirect
@@ -62,8 +63,7 @@ require (
 	github.com/tdewolff/minify/v2 v2.24.17 // indirect
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
-	github.com/yuin/goldmark v1.8.5 // indirect
-	github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb // indirect
+	github.com/yuin/goldmark v1.8.6 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

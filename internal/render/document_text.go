@@ -24,7 +24,7 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	defer ctx.Pop()
 
 	fontFamily, err := p.fonts.LoadFont(object.Font)
-	if err != nil {
+	if err != nil || fontFamily == nil {
 		return
 	}
 
@@ -338,8 +338,8 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	ctx.Pop()
 }
 
-// drawCFFTextPath avoids handing repaired bare-CFF fonts to the PDF font
-// subsetter, which cannot safely serialize some embedded CFF programs.
+// drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
+// 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
 func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
 	path := directTextPath(face, value)
 	if path == nil {

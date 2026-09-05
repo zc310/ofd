@@ -1,10 +1,15 @@
-//go:build !flatpak
+//go:build !flatpak && !android
 
 package main
 
-import "github.com/ncruces/zenity"
+import (
+	"path/filepath"
 
-func chooseOpenFile(title string) (string, error) {
+	"fyne.io/fyne/v2"
+	"github.com/ncruces/zenity"
+)
+
+func chooseOpenFile(title string, _ fyne.Window) (fileSelection, error) {
 	path, err := zenity.SelectFile(
 		zenity.Title(title),
 		zenity.FileFilter{
@@ -14,12 +19,12 @@ func chooseOpenFile(title string) (string, error) {
 		},
 	)
 	if err == zenity.ErrCanceled {
-		return "", nil
+		return fileSelection{}, nil
 	}
-	return path, err
+	return fileSelection{path: path, name: filepath.Base(path), input: path}, err
 }
 
-func chooseSaveFile(title, fileName, extension string) (string, error) {
+func chooseSaveFile(title, fileName, extension string, _ fyne.Window) (fileSelection, error) {
 	path, err := zenity.SelectFileSave(
 		zenity.Title(title),
 		zenity.Filename(fileName),
@@ -31,7 +36,7 @@ func chooseSaveFile(title, fileName, extension string) (string, error) {
 		},
 	)
 	if err == zenity.ErrCanceled {
-		return "", nil
+		return fileSelection{}, nil
 	}
-	return path, err
+	return fileSelection{path: path, name: filepath.Base(path)}, err
 }
