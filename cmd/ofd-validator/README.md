@@ -67,26 +67,26 @@ ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.o
 
 ## 命令选项
 
-| 选项 | 默认值 | 说明 |
-| --- | --- | --- |
-| `--format text\|markdown\|json\|pdf` | `text` | 报告格式 |
-| `--mode strict\|compat\|structural` | `strict` | 校验模式 |
-| `-o`, `--output PATH` | 标准输出 | 报告输出路径，使用 `-` 输出到标准输出 |
-| `--font PATH` | 自动查找 | PDF 使用的中文字体文件；只能与 `--format pdf` 一起使用 |
-| `--pretty` | 关闭 | 缩进 JSON 输出 |
-| `--skip-xsd` | 关闭 | 跳过 XSD 校验 |
-| `--no-digest` | 关闭 | 跳过签名摘要校验 |
-| `--no-scan-xml` | 关闭 | 只解析由 OFD 引用到的 XML 文件 |
-| `--fail-on-warning` | 关闭 | 有警告时也返回退出码 `1` |
-| `--max-errors N` | `100` | 最多记录的校验错误数量；`0` 表示不限制 |
-| `--max-file-size BYTES` | `67108864` | 单个 ZIP 条目解压后的最大字节数，即 64 MiB |
-| `--max-total-size BYTES` | `536870912` | OFD 包解压后的最大总字节数，即 512 MiB |
-| `--max-entries N` | `10000` | ZIP 条目的最大数量 |
-| `--max-xml-bytes BYTES` | `67108864` | 单个 XML 文件的最大字节数，即 64 MiB |
-| `--max-xml-nodes N` | `2000000` | 单个 XML 文件的最大节点数量 |
-| `--max-xml-depth N` | `1000` | 单个 XML 文件的最大嵌套深度 |
-| `--version` | 关闭 | 输出工具版本 |
-| `-h`, `--help` | 关闭 | 显示命令帮助 |
+| 选项                                 | 默认值      | 说明                                                   |
+|--------------------------------------|-------------|--------------------------------------------------------|
+| `--format text\|markdown\|json\|pdf` | `text`      | 报告格式                                               |
+| `--mode strict\|compat\|structural`  | `strict`    | 校验模式                                               |
+| `-o`, `--output PATH`                | 标准输出    | 报告输出路径，使用 `-` 输出到标准输出                  |
+| `--font PATH`                        | 自动查找    | PDF 使用的中文字体文件；只能与 `--format pdf` 一起使用 |
+| `--pretty`                           | 关闭        | 缩进 JSON 输出                                         |
+| `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
+| `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
+| `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
+| `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |
+| `--max-errors N`                     | `100`       | 最多记录的校验错误数量；`0` 表示不限制                 |
+| `--max-file-size BYTES`              | `67108864`  | 单个 ZIP 条目解压后的最大字节数，即 64 MiB             |
+| `--max-total-size BYTES`             | `536870912` | OFD 包解压后的最大总字节数，即 512 MiB                 |
+| `--max-entries N`                    | `10000`     | ZIP 条目的最大数量                                     |
+| `--max-xml-bytes BYTES`              | `67108864`  | 单个 XML 文件的最大字节数，即 64 MiB                   |
+| `--max-xml-nodes N`                  | `2000000`   | 单个 XML 文件的最大节点数量                            |
+| `--max-xml-depth N`                  | `1000`      | 单个 XML 文件的最大嵌套深度                            |
+| `--version`                          | 关闭        | 输出工具版本                                           |
+| `-h`, `--help`                       | 关闭        | 显示命令帮助                                           |
 
 大小参数使用字节数，不支持 `64M`、`512M` 等单位后缀。限制参数不能为负数。
 
