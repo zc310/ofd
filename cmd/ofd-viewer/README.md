@@ -15,6 +15,8 @@ OFD 桌面查看器，当前版本为 `v0.0.5`，支持连续阅读和按需渲�
 - 导出支持 PDF、TXT、JPG、PNG、SVG、EPS、TeX
 - 多页图片/矢量格式导出为 ZIP，单页直接保存对应文件
 - 导出支持 DPI 和透明/白色背景设置
+- 支持 Android 文件选择、文档查看和 APK 打包
+- Android 返回键连续按两次后确认退出程序
 - 信息按钮查看应用信息和 GitHub 项目地址
 
 ## 使用
@@ -24,6 +26,8 @@ OFD 桌面查看器，当前版本为 `v0.0.5`，支持连续阅读和按需渲�
 ```bash
 go run . path/to/document.ofd
 ```
+
+Android 版本可通过系统文件选择器打开 OFD 文件。右侧菜单中的“关闭文档”用于返回未加载状态；未加载文档时选择“退出程序”，或连续按两次 Android 返回键并确认，即可退出应用。
 
 快捷键：
 
@@ -73,7 +77,20 @@ Fyne 桌面程序依赖 CGO 和目标平台的图形开发库。Linux 目标需�
 
 Windows 版本使用 `-H=windowsgui` 编译，不显示命令行窗口。
 
+Android APK 需要安装 Fyne 命令行工具、Android SDK 和 NDK：
+
+```bash
+make package-viewer-android
+```
+
+如果只需要 Android 压缩包，可执行：
+
+```bash
+make package-viewer-android-zip
+```
+
 ## 截图
 
 ![linux.png](../../docs/screenshots/viewer/linux.png)
 ![windows.png](../../docs/screenshots/viewer/windows.png)
+![android.png](../../docs/screenshots/viewer/android.png)
