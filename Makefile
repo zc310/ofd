@@ -37,6 +37,9 @@ THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
+ANDROID_VIEWER_NAME := OFD Viewer
+ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
+VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
 .PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer clean help FORCE
@@ -93,9 +96,9 @@ package-viewer-android: $(ANDROID_VIEWER_PACKAGE)
 
 $(ANDROID_VIEWER_PACKAGE): $(ANDROID_VIEWER_SOURCES) cmd/ofd-viewer/Icon.png
 	@mkdir -p "$(DIST_DIR)"
-	@rm -f "$@" "cmd/ofd-viewer/ofd_viewer.apk"
-	@cd cmd/ofd-viewer && "$(FYNE)" package -os android -appID "$(ANDROID_VIEWER_APP_ID)"
-	@mv "cmd/ofd-viewer/ofd_viewer.apk" "$@"
+	@rm -f "$@" "cmd/ofd-viewer/$(ANDROID_VIEWER_OUTPUT)"
+	@cd cmd/ofd-viewer && "$(FYNE)" package -os android -appID "$(ANDROID_VIEWER_APP_ID)" -name "$(ANDROID_VIEWER_NAME)" -appVersion "$(VIEWER_VERSION)"
+	@mv "cmd/ofd-viewer/$(ANDROID_VIEWER_OUTPUT)" "$@"
 
 package-viewer-android-zip: $(ANDROID_VIEWER_ZIP)
 
