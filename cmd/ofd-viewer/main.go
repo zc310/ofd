@@ -1423,6 +1423,11 @@ func (v *viewer) exitApplication() {
 	v.close()
 	if driver, ok := fyne.CurrentApp().Driver().(mobile.Driver); ok {
 		driver.GoBack()
+		// Android 的 Activity 结束后进程可能仍被系统保留，重新启动时会复用
+		// 已结束的 Fyne 状态。资源已在 v.close 中释放，因此这里确保进程退出。
+		if runtime.GOOS == "android" {
+			os.Exit(0)
+		}
 		return
 	}
 	v.window.Close()
