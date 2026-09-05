@@ -111,8 +111,8 @@ github.com/josephspurrier/goversioninfo v1.7.0 h1:LQzXOlVm/CtbwJ9/UHl5a2HT0BjcLA
 github.com/josephspurrier/goversioninfo v1.7.0/go.mod h1:z9y0r2G6g5jwSJaFE0cxW9to0aeIibK7UYeLx53aQRU=
 github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 h1:YLvr1eE6cdCqjOe972w/cYF+FjW34v27+9Vo5106B4M=
 github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25/go.mod h1:kLgvv7o6UM+0QSf0QjAse3wReFDsb9qbZJdfexWlrQw=
-github.com/knroy/go-xml v1.2.1 h1:u2BgUaVjmLZg30s2kXd/gxsrdO4N9gHswgmJJCT4uiw=
-github.com/knroy/go-xml v1.2.1/go.mod h1:nsAVaCUOCSZlR6U2UsbXH1VMYu+FNxkYuKEZzCfy4+Y=
+github.com/knroy/go-xml v1.2.2 h1:8saBOKzEQxram8M2zoguk/KWxYpsVBCu7cCPRrb+rJ4=
+github.com/knroy/go-xml v1.2.2/go.mod h1:nsAVaCUOCSZlR6U2UsbXH1VMYu+FNxkYuKEZzCfy4+Y=
 github.com/kolesa-team/go-webp v1.0.5 h1:GZQHJBaE8dsNKZltfwqsL0qVJ7vqHXsfA+4AHrQW3pE=
 github.com/kolesa-team/go-webp v1.0.5/go.mod h1:QmJu0YHXT3ex+4SgUvs+a+1SFCDcCqyZg+LbIuNNTnE=
 github.com/mattn/go-runewidth v0.0.29 h1:3oGF3R/S2N9DQ3ptftzVIvg2eicmojCzlwBEmqEPDfQ=
@@ -166,8 +166,6 @@ github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3i
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
-github.com/yuin/goldmark/v2 v2.0.1 h1:Os0APQLbfXBzA7pc8qF8HBSTO8LOIvhQHX6pEA5/0CY=
-github.com/yuin/goldmark/v2 v2.0.1/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
 github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb h1:yDwzZAniMYd/Trlu9tEpoFfuv8kp1piGggto5EQIi9E=
 github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb/go.mod h1:3hylLInJRjFJ2owde6LLz2yarfpV6ecO7aV6CqQGGIk=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
