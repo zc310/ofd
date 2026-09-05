@@ -10,6 +10,7 @@ import (
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
 	_ "github.com/xiaoqidun/jbig2"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -80,7 +81,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 		}
 		return rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace), nil
 	}
-	return p.Document.Common.FileCache.ParseImage(file.String())
+	return media.Decode(p.Document.Common.FileCache, file.String())
 }
 
 func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *canvas.Path {

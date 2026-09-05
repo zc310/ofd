@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nao1215/imaging"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/parser"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
@@ -91,7 +91,7 @@ func isOFDFile(filename string) bool {
 }
 
 func generateImageThumbnail(inputFile, outputFile string, size int) error {
-	firstImage, err := utils.ExtractFirstImage(inputFile)
+	firstImage, err := media.ExtractFirstImage(inputFile)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrNoSupportedImg, err)
 	}
