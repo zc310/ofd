@@ -36,7 +36,7 @@
         {
           "type": "git",
           "url": "https://github.com/zc310/ofd.git",
-          "commit": "bb44c563d3109088d3ed9515b8b52b8782555e00"
+          "commit": "a0bd625a19347ce79e116a609961f3d742e5a9b7"
         },
         "go.mod.json",
         {

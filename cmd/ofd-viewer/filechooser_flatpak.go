@@ -1,4 +1,4 @@
-//go:build flatpak
+//go:build flatpak && !android
 
 package main
 
@@ -7,10 +7,11 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"fyne.io/fyne/v2"
 	"github.com/rymdport/portal/filechooser"
 )
 
-func chooseOpenFile(title string) (string, error) {
+func chooseOpenFile(title string, _ fyne.Window) (fileSelection, error) {
 	uris, err := filechooser.OpenFile("", title, &filechooser.OpenFileOptions{
 		AcceptLabel: "打开",
 		Filters: []*filechooser.Filter{{
@@ -22,12 +23,16 @@ func chooseOpenFile(title string) (string, error) {
 		}},
 	})
 	if err != nil {
-		return "", err
+		return fileSelection{}, err
 	}
-	return portalURIPath(uris)
+	path, err := portalURIPath(uris)
+	if err != nil || path == "" {
+		return fileSelection{}, err
+	}
+	return fileSelection{path: path, name: filepath.Base(path), input: path}, nil
 }
 
-func chooseSaveFile(title, fileName, extension string) (string, error) {
+func chooseSaveFile(title, fileName, extension string, _ fyne.Window) (fileSelection, error) {
 	uris, err := filechooser.SaveFile("", title, &filechooser.SaveFileOptions{
 		AcceptLabel: "保存",
 		CurrentName: fileName,
@@ -40,9 +45,13 @@ func chooseSaveFile(title, fileName, extension string) (string, error) {
 		}},
 	})
 	if err != nil {
-		return "", err
+		return fileSelection{}, err
 	}
-	return portalURIPath(uris)
+	path, err := portalURIPath(uris)
+	if err != nil || path == "" {
+		return fileSelection{}, err
+	}
+	return fileSelection{path: path, name: filepath.Base(path)}, nil
 }
 
 func portalURIPath(uris []string) (string, error) {
