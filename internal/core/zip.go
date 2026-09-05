@@ -1,4 +1,4 @@
-package utils
+package core
 
 import (
 	"archive/zip"
@@ -10,20 +10,21 @@ import (
 	"sync"
 )
 
+// ZipFileCache 提供 OFD ZIP 包内文件的索引和读取能力。
 type ZipFileCache struct {
 	reader  *zip.Reader
 	fileMap map[string]*zip.File
 	once    sync.Once
 }
 
-// NewZipFileCache 创建ZIP文件缓存
+// NewZipFileCache 创建 ZIP 文件缓存。
 func NewZipFileCache(reader *zip.Reader) *ZipFileCache {
 	return &ZipFileCache{
 		reader: reader,
 	}
 }
 
-// GetOrCreateFileMap 获取或创建文件映射
+// GetOrCreateFileMap 获取或创建文件映射。
 func (p *ZipFileCache) GetOrCreateFileMap() map[string]*zip.File {
 	p.once.Do(func() {
 		if p.reader == nil {
@@ -39,7 +40,7 @@ func (p *ZipFileCache) GetOrCreateFileMap() map[string]*zip.File {
 	return p.fileMap
 }
 
-// FindFile 查找文件（使用缓存映射）
+// FindFile 查找 ZIP 包内文件（使用缓存映射）。
 func (p *ZipFileCache) FindFile(fileName string) (*zip.File, error) {
 	fileMap := p.GetOrCreateFileMap()
 	name := strings.TrimLeft(fileName, "/")
@@ -50,7 +51,7 @@ func (p *ZipFileCache) FindFile(fileName string) (*zip.File, error) {
 	return nil, fmt.Errorf("%w: %s", os.ErrNotExist, name)
 }
 
-// ParseXMLContent 解析XML文件内容
+// ParseXMLContent 解析 ZIP 包内的 XML 文件。
 func (p *ZipFileCache) ParseXMLContent(fileName string, target interface{}) error {
 	zf, err := p.FindFile(fileName)
 	if err != nil {
@@ -64,12 +65,13 @@ func (p *ZipFileCache) ParseXMLContent(fileName string, target interface{}) erro
 
 	decoder := xml.NewDecoder(io.LimitReader(rc, xmlReadLimit(zf.UncompressedSize64)))
 	if err = decoder.Decode(target); err != nil {
-		return fmt.Errorf("解析XML失败: %w", err)
+		return fmt.Errorf("解析 XML 失败: %w", err)
 	}
 
 	return nil
 }
 
+// ParseContent 读取 ZIP 包内文件的解压后内容。
 func (p *ZipFileCache) ParseContent(fileName string) ([]byte, error) {
 	zf, err := p.FindFile(fileName)
 	if err != nil {

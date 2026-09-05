@@ -7,16 +7,16 @@ import (
 	"path"
 	"strings"
 
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 type Common struct {
 	BaseLoc   models.StLoc
-	FileCache *utils.ZipFileCache
+	FileCache *core.ZipFileCache
 }
 
-func (p *Common) Init(fileCache *utils.ZipFileCache, dir models.StLoc) {
+func (p *Common) Init(fileCache *core.ZipFileCache, dir models.StLoc) {
 	p.FileCache = fileCache
 	p.BaseLoc = models.StLoc(path.Dir(dir.String()))
 }

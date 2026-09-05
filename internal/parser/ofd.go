@@ -8,15 +8,15 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // OFD 表示一个OFD文档解析器
 type OFD struct {
 	models.OFD
 	reader    *zip.ReadCloser
-	fileCache *utils.ZipFileCache
+	fileCache *core.ZipFileCache
 
 	Documents []*Document
 }
@@ -116,8 +116,8 @@ func (p *OFD) Close() error {
 	return nil
 }
 
-func parseZipReader(zipReader *zip.Reader) (models.OFD, []*Document, *utils.ZipFileCache, error) {
-	fileCache := utils.NewZipFileCache(zipReader)
+func parseZipReader(zipReader *zip.Reader) (models.OFD, []*Document, *core.ZipFileCache, error) {
+	fileCache := core.NewZipFileCache(zipReader)
 	var root models.OFD
 	if err := fileCache.ParseXMLContent(rootDocument, &root); err != nil {
 		return models.OFD{}, nil, nil, err
