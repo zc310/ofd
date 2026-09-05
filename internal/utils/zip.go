@@ -4,19 +4,10 @@ import (
 	"archive/zip"
 	"encoding/xml"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-
-	_ "golang.org/x/image/bmp"
-	_ "golang.org/x/image/tiff"
-	_ "golang.org/x/image/webp"
 )
 
 type ZipFileCache struct {
@@ -79,24 +70,6 @@ func (p *ZipFileCache) ParseXMLContent(fileName string, target interface{}) erro
 	return nil
 }
 
-func (p *ZipFileCache) ParseImage(fileName string) (image.Image, error) {
-	zf, err := p.FindFile(fileName)
-	if err != nil {
-		return nil, fmt.Errorf("查找图像失败: %w", err)
-	}
-	rc, err := zf.Open()
-	if err != nil {
-		return nil, fmt.Errorf("打开文档失败: %w", err)
-	}
-	defer rc.Close()
-
-	var img image.Image
-	img, _, err = image.Decode(rc)
-	if err != nil {
-		return nil, err
-	}
-	return img, nil
-}
 func (p *ZipFileCache) ParseContent(fileName string) ([]byte, error) {
 	zf, err := p.FindFile(fileName)
 	if err != nil {
@@ -118,50 +91,4 @@ func xmlReadLimit(size uint64) int64 {
 		return int64(maxInt64)
 	}
 	return int64(size + extra)
-}
-
-func ExtractFirstImage(file string) (image.Image, error) {
-	r, err := zip.OpenReader(file)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if IsImageExtension(ext) {
-			if img, ok := decodeZipImage(f); ok {
-				return img, nil
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("未找到图片")
-}
-
-func decodeZipImage(file *zip.File) (img image.Image, ok bool) {
-	rc, err := file.Open()
-	if err != nil {
-		return nil, false
-	}
-	defer rc.Close()
-	img, _, err = image.Decode(rc)
-	return img, err == nil
-}
-
-// 支持的图片格式
-var imageExtensions = map[string]struct{}{
-	".jpg":  {},
-	".jpeg": {},
-	".png":  {},
-	".gif":  {},
-	".bmp":  {},
-	".webp": {},
-	".tiff": {},
-	".tif":  {},
-}
-
-func IsImageExtension(ext string) bool {
-	_, ok := imageExtensions[strings.ToLower(ext)]
-	return ok
 }
