@@ -22,6 +22,7 @@ import (
 	fyneCanvas "fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	ofdcanvas "github.com/tdewolff/canvas"
@@ -1186,7 +1187,7 @@ func (v *viewer) handleKey(event *fyne.KeyEvent) {
 	case fyne.KeyEnd:
 		v.goToPage(v.totalPages-1, false)
 	case fyne.KeyEscape:
-		v.window.Close()
+		v.exitApplication()
 	default:
 		switch strings.ToLower(string(event.Name)) {
 		case "o":
@@ -1196,7 +1197,7 @@ func (v *viewer) handleKey(event *fyne.KeyEvent) {
 		case "d":
 			v.changePage(1)
 		case "q":
-			v.window.Close()
+			v.exitApplication()
 		}
 	}
 }
@@ -1413,6 +1414,15 @@ func (v *viewer) closeDocumentOrExit() {
 		v.operation.Add(1)
 		v.thumbnailGeneration.Add(1)
 		v.closeDocument()
+		return
+	}
+	v.exitApplication()
+}
+
+func (v *viewer) exitApplication() {
+	v.close()
+	if driver, ok := fyne.CurrentApp().Driver().(mobile.Driver); ok {
+		driver.GoBack()
 		return
 	}
 	v.window.Close()
