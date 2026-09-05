@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://www.ofdspec.org/2016" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.ofdspec.org/2016" elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+    <xs:include schemaLocation="Definitions.xsd" />
+    <xs:element name="CustomTags">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="CustomTag" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="SchemaLoc" type="ST_Loc" minOccurs="0" />
+                            <xs:element name="FileLoc" type="ST_Loc" />
+                        </xs:sequence>
+                        <xs:attribute name="NameSpace" type="xs:string" use="required" />
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

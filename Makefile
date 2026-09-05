@@ -30,10 +30,12 @@ PACKAGE_DIR := $(BUILD_DIR)/packages/$(PLATFORM)
 VIEWER := $(BIN_DIR)/ofd-viewer$(BIN_SUFFIX)
 CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
+VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
+VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
@@ -42,7 +44,7 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer clean help FORCE
+.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator clean help FORCE
 
 all: package
 
@@ -54,6 +56,7 @@ help:
 		'make package-viewer-android   Build the OFD viewer Android APK' \
 		'make package-viewer-android-zip Build the OFD viewer Android ZIP package' \
 		'make package-converter       Build the OFD converter package' \
+		'make package-validator       Build the OFD validator' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
 		'make clean                   Remove generated build files and packages' \
 		'' \
@@ -61,7 +64,7 @@ help:
 		'  GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make package' \
 		'  ofd-thumbnailer is built only when GOOS=linux'
 
-build: $(VIEWER) $(CONVERTER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+build: $(VIEWER) $(CONVERTER) $(VALIDATOR) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
 
 $(VIEWER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -73,13 +76,17 @@ $(CONVERTER): FORCE
 	@if [ "$(GOOS)" = "windows" ] && ! command -v "$(CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows CGO 编译器 $(CC)，请安装 MinGW-w64 或通过 CC 指定编译器。" >&2; exit 1; fi
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-converter
 
+$(VALIDATOR): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-validator
+
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-thumbnailer
 endif
 
-package: package-viewer package-converter package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
+package: package-viewer package-converter package-validator package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
 
 package-viewer: $(VIEWER_PACKAGE)
 
@@ -110,6 +117,17 @@ $(ANDROID_VIEWER_ZIP): $(ANDROID_VIEWER_PACKAGE)
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer-android"
 
 package-converter: $(CONVERTER_PACKAGE)
+
+package-validator: $(VALIDATOR_PACKAGE)
+
+$(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-validator"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-validator"
+	@rm -f "$@"
+	@cp "$(VALIDATOR)" "$(PACKAGE_DIR)/ofd-validator/ofd-validator$(BIN_SUFFIX)"
+	@cp "cmd/ofd-validator/README.md" "$(PACKAGE_DIR)/ofd-validator/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-validator"
 
 $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@mkdir -p "$(DIST_DIR)"
