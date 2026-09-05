@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -119,6 +120,7 @@ type viewer struct {
 	thumbnailRendering  []atomic.Bool
 	closed              atomic.Bool
 	renderMu            sync.Mutex
+	backDeadline        time.Time
 }
 
 type pageViewMode int
@@ -1186,6 +1188,12 @@ func (v *viewer) handleKey(event *fyne.KeyEvent) {
 		v.goToPage(0, false)
 	case fyne.KeyEnd:
 		v.goToPage(v.totalPages-1, false)
+	case mobile.KeyBack:
+		if runtime.GOOS == "android" {
+			v.handleAndroidBack()
+		} else {
+			v.exitApplication()
+		}
 	case fyne.KeyEscape:
 		v.exitApplication()
 	default:
@@ -1200,6 +1208,44 @@ func (v *viewer) handleKey(event *fyne.KeyEvent) {
 			v.exitApplication()
 		}
 	}
+}
+
+const androidBackPressWindow = 2 * time.Second
+
+func (v *viewer) handleAndroidBack() {
+	if v.closed.Load() || v.loading || v.exporting {
+		return
+	}
+	now := time.Now()
+	if now.Before(v.backDeadline) {
+		v.backDeadline = time.Time{}
+		dialog.ShowConfirm("退出程序", "确定要退出 OFD Viewer 吗？", func(confirmed bool) {
+			if confirmed {
+				v.exitApplication()
+				return
+			}
+			v.documentTitle.SetText("未加载文档")
+		}, v.window)
+		return
+	}
+
+	v.backDeadline = now.Add(androidBackPressWindow)
+	if v.ofd != nil || v.hasPages() {
+		v.operation.Add(1)
+		v.thumbnailGeneration.Add(1)
+		v.closeDocument()
+	}
+	v.documentTitle.SetText("再次按返回键退出")
+	deadline := v.backDeadline
+	time.AfterFunc(androidBackPressWindow, func() {
+		fyne.Do(func() {
+			if v.closed.Load() || v.backDeadline != deadline || v.hasPages() {
+				return
+			}
+			v.backDeadline = time.Time{}
+			v.documentTitle.SetText("未加载文档")
+		})
+	})
 }
 
 func (v *viewer) goToPage(page int, showLoading bool) {
