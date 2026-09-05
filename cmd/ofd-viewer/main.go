@@ -92,6 +92,8 @@ type viewer struct {
 	thumbnailList   *widget.List
 	openButton      *widget.Button
 	menuButton      *widget.Button
+	documentTitle   *widget.Label
+	pageToolbar     *fyne.Container
 	pageLabel       *widget.Label
 	pageEntry       *widget.Entry
 	thumbnailToggle *widget.Button
@@ -446,6 +448,7 @@ func newViewer(window fyne.Window) *viewer {
 	v.openButton = widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
 		v.chooseFile()
 	})
+	v.documentTitle = widget.NewLabelWithStyle("未加载文档", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	v.pageLabel = widget.NewLabel("/ 未加载文档")
 	v.pageEntry = widget.NewEntry()
 	v.pageEntry.SetPlaceHolder("页码")
@@ -460,15 +463,16 @@ func newViewer(window fyne.Window) *viewer {
 		v.showMenu()
 	})
 
-	toolbarContent := container.NewHBox(
+	leftToolbar := container.NewHBox(
 		v.openButton,
-		widget.NewSeparator(),
-		v.pageEntry,
-		v.pageLabel,
 		widget.NewSeparator(),
 		v.thumbnailToggle,
 	)
-	toolbar := container.NewBorder(nil, nil, nil, v.menuButton, toolbarContent)
+	pageToolbar := container.NewHBox(v.pageEntry, v.pageLabel)
+	pageToolbar.Hide()
+	v.pageToolbar = pageToolbar
+	rightToolbar := container.NewHBox(pageToolbar, v.menuButton)
+	toolbar := container.NewBorder(nil, nil, leftToolbar, rightToolbar, container.NewCenter(v.documentTitle))
 	thumbnailPanel := container.NewBorder(widget.NewLabel("页面"), nil, nil, nil, v.thumbnailList)
 	thumbnailPanel.Hide()
 	documentArea := container.NewHSplit(thumbnailPanel, v.pageScroll)
@@ -499,9 +503,16 @@ func (v *viewer) showMenu() {
 	}
 	viewItem := fyne.NewMenuItem("视图", nil)
 	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
+	closeLabel := "退出程序"
+	if v.hasPages() {
+		closeLabel = "关闭文档"
+	}
+	closeItem := fyne.NewMenuItemWithIcon(closeLabel, theme.CancelIcon(), v.closeDocumentOrExit)
+	closeItem.Disabled = v.loading || v.exporting
 	menu := fyne.NewMenu("菜单",
 		exportItem,
 		viewItem,
+		closeItem,
 		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo),
 	)
 	canvas := v.window.Canvas()
@@ -963,6 +974,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 			v.renderMu.Lock()
 			v.closeDocumentLocked()
 			v.ofd = ofd
+			v.documentTitle.SetText(documentTitle(ofd, fileName))
 			v.documents = make([]*render.Document, 0, len(ofd.Documents))
 			for _, document := range ofd.Documents {
 				renderDoc := render.NewDocument(color.Transparent, document)
@@ -1320,19 +1332,39 @@ func (v *viewer) updateControls() {
 	if v.loading || v.exporting {
 		v.openButton.Disable()
 		v.pageEntry.Disable()
+		v.pageToolbar.Hide()
 		return
 	}
 	v.openButton.Enable()
 	v.pageEntry.Enable()
 	if !v.hasPages() || v.totalPages == 0 {
+		v.pageToolbar.Hide()
+		v.documentTitle.SetText("未加载文档")
 		v.pageLabel.SetText("/ 未加载文档")
 		v.pageEntry.SetText("")
 		return
 	}
+	v.pageToolbar.Show()
 	v.pageLabel.SetText(fmt.Sprintf("/ %d", v.totalPages))
 	if v.pageEntry.Text != strconv.Itoa(v.currentPage+1) {
 		v.pageEntry.SetText(strconv.Itoa(v.currentPage + 1))
 	}
+}
+
+func documentTitle(ofd *parser.OFD, fileName string) string {
+	if ofd != nil {
+		for _, body := range ofd.DocBodies {
+			if body.DocInfo.Title != nil {
+				if title := strings.TrimSpace(*body.DocInfo.Title); title != "" {
+					return title
+				}
+			}
+		}
+	}
+	if title := strings.TrimSpace(fileName); title != "" {
+		return title
+	}
+	return "未加载文档"
 }
 
 func (v *viewer) updateTitle() {
@@ -1344,11 +1376,7 @@ func (v *viewer) updateTitle() {
 	if fileName == "" {
 		fileName = filepath.Base(v.filePath)
 	}
-	if runtime.GOOS == "windows" {
-		v.window.SetTitle(fmt.Sprintf("%s - 第 %d/%d 页 - %s", fileName, v.currentPage+1, v.totalPages, applicationTitle()))
-		return
-	}
-	v.window.SetTitle(fmt.Sprintf("%s - %d/%d - %s", fileName, v.currentPage+1, v.totalPages, applicationTitle()))
+	v.window.SetTitle(fmt.Sprintf("%s - %s", fileName, applicationTitle()))
 }
 
 func applicationTitle() string {
@@ -1377,6 +1405,19 @@ func (v *viewer) close() {
 	v.closeDocument()
 }
 
+func (v *viewer) closeDocumentOrExit() {
+	if v.closed.Load() || v.loading || v.exporting {
+		return
+	}
+	if v.ofd != nil || v.hasPages() {
+		v.operation.Add(1)
+		v.thumbnailGeneration.Add(1)
+		v.closeDocument()
+		return
+	}
+	v.window.Close()
+}
+
 func (v *viewer) closeDocument() {
 	v.renderMu.Lock()
 	defer v.renderMu.Unlock()
@@ -1401,6 +1442,7 @@ func (v *viewer) closeDocumentLocked() {
 	v.thumbnailRendering = nil
 	v.filePath = ""
 	v.fileName = ""
+	v.documentTitle.SetText("未加载文档")
 	v.pageContent.Refresh()
 	v.pageScroll.Refresh()
 	v.thumbnailList.Refresh()
