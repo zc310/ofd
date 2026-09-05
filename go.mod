@@ -5,12 +5,14 @@ go 1.26.4
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/h2non/filetype v1.1.3
+	github.com/knroy/go-xml v1.2.1
 	github.com/nao1215/imaging v1.0.10
 	github.com/ncruces/zenity v0.10.15
 	github.com/rymdport/portal v0.4.2
 	github.com/stretchr/testify v1.12.1
 	github.com/tdewolff/canvas v0.0.0-20260901160717-dae8cd8e19a7
 	github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
+	github.com/tjfoc/gmsm v1.4.1
 	github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059
 	github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb
 	golang.org/x/image v0.45.0
@@ -64,6 +66,7 @@ require (
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
 	github.com/yuin/goldmark v1.8.6 // indirect
+	github.com/yuin/goldmark/v2 v2.0.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

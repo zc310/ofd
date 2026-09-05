@@ -1,16 +1,16 @@
-# OFD Converter [![GoDoc](https://godoc.org/github.com/zc310/fastjsonrpc?status.svg)](http://godoc.org/github.com/zc310/ofd)
+# OFD Converter [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd)
 
 一个用于将 OFD 文件转换为 PDF、纯文本和图像格式的 Go 语言工具包。
 
 ## 功能特性
 
-- ✅ **OFD 转 PDF** - 支持将 OFD 文档转换为标准的 PDF 文件
-- ✅ **OFD 转纯文本** - 支持提取 OFD 文档中的文字内容
-- ✅ **OFD 转 图像** - 支持将 OFD 页面转换为 PNG、JPG 等图像格式
-- ✅ **多文档体** - 按文档体顺序合并页面，并使用全局页码
-- ✅ **多页面支持** - 支持多页面 OFD 文档的转换
-- ✅ **灵活配置** - 支持自定义 DPI、背景颜色、页面选择等参数
-- ✅ **高效处理** - 基于 Go 语言开发，性能优异
+| 类别         | 功能                                                     |
+|--------------|----------------------------------------------------------|
+| **文档转换** | OFD 转 PDF、纯文本和 PNG/JPG 等图像格式                  |
+| **页面处理** | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码 |
+| **灵活配置** | 支持自定义 DPI、背景颜色和页面选择                       |
+| **OFD 校验** | 提供基于 `OFD-Schema` 的 ZIP、XML、引用和 XSD 校验命令   |
+| **处理性能** | 基于 Go 语言开发，支持高效处理                           |
 
 ## 安装
 
@@ -29,7 +29,14 @@ go get github.com/zc310/ofd
 make package
 ```
 
-Linux 下会生成三个 ZIP；Windows 和 macOS 下只生成 `ofd-viewer` 与 `ofd-converter` 两个 ZIP，不会编译 `ofd-thumbnailer`。
+单独构建 OFD 校验工具：
+
+```bash
+make package-validator
+```
+
+Linux 下会生成四个 ZIP；Windows 和 macOS 下会生成 `ofd-viewer`、`ofd-converter` 和
+`ofd-validator` 三个 ZIP，不会编译 `ofd-thumbnailer`。
 
 每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
 
@@ -75,6 +82,29 @@ flatpak run io.github.zc310.ofd
 Flatpak 版本以只读方式访问真实的 `~/.local/share/fonts` 用户字体目录和宿主机系统目录（`host-os`），用于渲染未内嵌字体的 OFD 文档。
 
 ## 快速开始
+
+### OFD 文件校验
+
+校验工具位于 `cmd/ofd-validator`。它检查 OFD ZIP 容器、XML 命名空间、包内文件引用、语义 ID、摘要，
+并使用通过 `go:embed` 内置的 `OFD-Schema` XSD。运行时不依赖 `xmllint`、外部模式文件或网络：
+
+```bash
+go run ./cmd/ofd-validator --format text test/testdata/helloworld.ofd
+```
+
+报告支持文本、Markdown、JSON 和 PDF 四种格式：
+
+```bash
+go run ./cmd/ofd-validator --format json --pretty test/testdata/helloworld.ofd > report.json
+go run ./cmd/ofd-validator --format markdown -o report.md test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
+  -o report.pdf test/testdata/helloworld.ofd
+```
+
+默认使用 `strict` 模式；`compat` 模式会将 XSD 错误降级为警告，`structural` 模式跳过 XSD。
+使用 `--skip-xsd` 等价于 `structural` 模式。报告正文和 CLI 提示使用中文，JSON 同时保留机器可读
+的英文枚举和 `*_zh` 中文字段。退出码 `0` 表示没有错误，`1` 表示存在校验错误（使用
+`--fail-on-warning` 时警告也会导致退出码 1），`2` 表示工具配置或输入错误。
 
 OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。
 
