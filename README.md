@@ -4,13 +4,14 @@
 
 ## 功能特性
 
-| 类别         | 功能                                                     |
-|--------------|----------------------------------------------------------|
-| **文档转换** | OFD 转 PDF、纯文本和 PNG/JPG 等图像格式                  |
-| **页面处理** | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码 |
-| **灵活配置** | 支持自定义 DPI、背景颜色和页面选择                       |
-| **OFD 校验** | 提供基于 `OFD-Schema` 的 ZIP、XML、引用和 XSD 校验命令   |
-| **处理性能** | 基于 Go 语言开发，支持高效处理                           |
+| 类别         | 功能                                                           |
+|--------------|----------------------------------------------------------------|
+| **文档转换** | OFD 转 PDF、纯文本和 PNG/JPG 等图像格式                        |
+| **页面处理** | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码       |
+| **灵活配置** | 支持自定义 DPI、背景颜色和页面选择                             |
+| **OFD 校验** | 提供基于 `OFD-Schema` 的 ZIP、XML、引用和 XSD 校验命令         |
+| **OFD 分析** | 输出文档结构、对象、文字、资源、附件、注解和引用关系 JSON 报告 |
+| **处理性能** | 基于 Go 语言开发，支持高效处理                                 |
 
 ## 安装
 
@@ -26,6 +27,7 @@ go get github.com/zc310/ofd
 # 生成 dist/ofd-viewer-linux-amd64.zip
 # 生成 dist/ofd-converter-linux-amd64.zip
 # 生成 dist/ofd-thumbnailer-linux-amd64.zip
+# 生成 dist/ofd-analyzer-linux-amd64.zip
 make package
 ```
 
@@ -35,8 +37,8 @@ make package
 make package-validator
 ```
 
-Linux 下会生成四个 ZIP；Windows 和 macOS 下会生成 `ofd-viewer`、`ofd-converter` 和
-`ofd-validator` 三个 ZIP，不会编译 `ofd-thumbnailer`。
+Linux 下会生成五个 ZIP；Windows 和 macOS 下会生成 `ofd-viewer`、`ofd-converter`、
+`ofd-validator` 和 `ofd-analyzer` 四个 ZIP，不会编译 `ofd-thumbnailer`。
 
 每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
 
@@ -105,6 +107,29 @@ go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
 使用 `--skip-xsd` 等价于 `structural` 模式。报告正文和 CLI 提示使用中文，JSON 同时保留机器可读
 的英文枚举和 `*_zh` 中文字段。退出码 `0` 表示没有错误，`1` 表示存在校验错误（使用
 `--fail-on-warning` 时警告也会导致退出码 1），`2` 表示工具配置或输入错误。
+
+### OFD 文件分析
+
+分析工具位于 `cmd/ofd-analyzer`，默认输出纯文本报告，也支持 Markdown、JSON 和 PDF：
+
+```bash
+go run ./cmd/ofd-analyzer test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format json test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --pretty -o analyzer-report.json test/testdata/multi_demo.ofd
+go run ./cmd/ofd-analyzer --format text -o analyzer-report.txt test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format markdown -o analyzer-report.md test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf test/testdata/helloworld.ofd
+```
+
+报告包含文档体、页面、对象和文字统计，以及资源、附件、注解、签名和文件/ID 引用关系。
+其中绘制参数同时统计定义数、引用次数、无法解析引用和 `Relative` 继承循环。
+`resources` 总汇总包含图片、字体、绘制参数、复合图元、颜色空间、模板和 Pattern；各类别也通过独立字段提供详细统计。
+其中 `embedded` 仅用于字体，`inheritance_cycles` 仅用于绘制参数。
+模板、复合图元和 Pattern 默认只统计定义和引用，不展开定义内部对象，避免重复计数。
+使用 `--no-templates` 可以关闭模板定义、模板引用和模板 `PageRes` 资源分析；文档元数据中的模板数量和文档到模板文件的结构引用仍会保留。
+资源引用使用 `doc[n]/kind:id` 形式区分不同文档体中的相同 ID。使用 `--no-package` 可以跳过 ZIP
+条目大小统计；使用 `--fail-on-warning` 可以在发现分析警告时返回退出码 `1`。详见
+`cmd/ofd-analyzer/README.md`。
 
 OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。
 
@@ -175,7 +200,6 @@ err := converter.Image("input.ofd",
 
 - 背景颜色默认为白色，可根据需要调整
 - 支持效果见 `input.ofd` 转换结果
-- 不支持 OFD 文件内字体
 - 不支持 `GBT 33190-2016` 很多标准😅。。。
 
 
