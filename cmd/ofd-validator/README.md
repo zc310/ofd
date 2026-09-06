@@ -5,6 +5,7 @@
 ## 功能
 
 - 校验 ZIP 容器、路径穿越、重复条目、条目数量和解压大小限制。
+- 分别限制 ZIP 原始输入大小、单个条目解压大小和整个包解压后的总大小。
 - 解析 XML，并校验根元素、OFD 命名空间、节点数量和嵌套深度。
 - 使用内置 XSD 校验 OFD、Document、Page、Res、Signature 等 XML 文件。
 - 校验 OFD 包内的文档、页面、资源、附件、注解和签名文件引用。
@@ -79,6 +80,7 @@ ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.o
 | `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
 | `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |
 | `--max-errors N`                     | `100`       | 最多记录的校验错误数量；`0` 表示不限制                 |
+| `--max-input-size BYTES`             | `536870912` | ZIP 原始输入数据的最大字节数，即 512 MiB               |
 | `--max-file-size BYTES`              | `67108864`  | 单个 ZIP 条目解压后的最大字节数，即 64 MiB             |
 | `--max-total-size BYTES`             | `536870912` | OFD 包解压后的最大总字节数，即 512 MiB                 |
 | `--max-entries N`                    | `10000`     | ZIP 条目的最大数量                                     |

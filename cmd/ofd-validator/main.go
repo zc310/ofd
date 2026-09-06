@@ -26,6 +26,7 @@ type options struct {
 	mode          string
 	font          string
 	maxErrors     int
+	maxInputSize  int64
 	maxFileSize   int64
 	maxTotalSize  int64
 	maxEntries    int
@@ -68,6 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	validatorOptions := []validator.Option{
 		validator.WithMode(validator.Mode(opts.mode)),
 		validator.WithMaxErrors(opts.maxErrors),
+		validator.WithMaxInputSize(opts.maxInputSize),
 		validator.WithMaxFileSize(opts.maxFileSize),
 		validator.WithMaxTotalSize(opts.maxTotalSize),
 		validator.WithMaxEntries(opts.maxEntries),
@@ -97,6 +99,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		format:       "text",
 		mode:         string(validator.ModeStrict),
 		maxErrors:    100,
+		maxInputSize: 512 << 20,
 		maxFileSize:  64 << 20,
 		maxTotalSize: 512 << 20,
 		maxEntries:   10000,
@@ -112,6 +115,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.mode, "mode", opts.mode, "校验模式：strict、compat 或 structural")
 	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的中文字体文件")
 	flags.IntVar(&opts.maxErrors, "max-errors", opts.maxErrors, "最多记录的校验错误数")
+	flags.Int64Var(&opts.maxInputSize, "max-input-size", opts.maxInputSize, "ZIP 原始输入数据的最大字节数")
 	flags.Int64Var(&opts.maxFileSize, "max-file-size", opts.maxFileSize, "ZIP 条目解压后的最大字节数")
 	flags.Int64Var(&opts.maxTotalSize, "max-total-size", opts.maxTotalSize, "OFD 包解压后的最大总字节数")
 	flags.IntVar(&opts.maxEntries, "max-entries", opts.maxEntries, "ZIP 条目的最大数量")
@@ -165,7 +169,7 @@ func validateOptions(opts *options) error {
 	if opts.skipXSD && opts.mode == string(validator.ModeStrict) {
 		opts.mode = string(validator.ModeStructural)
 	}
-	if opts.maxErrors < 0 || opts.maxFileSize < 0 || opts.maxTotalSize < 0 || opts.maxEntries < 0 || opts.maxXMLBytes < 0 || opts.maxXMLNodes < 0 || opts.maxXMLDepth < 0 {
+	if opts.maxErrors < 0 || opts.maxInputSize < 0 || opts.maxFileSize < 0 || opts.maxTotalSize < 0 || opts.maxEntries < 0 || opts.maxXMLBytes < 0 || opts.maxXMLNodes < 0 || opts.maxXMLDepth < 0 {
 		return errors.New("大小和错误数量限制不能为负数")
 	}
 	if opts.font != "" && opts.format != "pdf" {

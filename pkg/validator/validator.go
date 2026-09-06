@@ -37,6 +37,7 @@ const (
 type Options struct {
 	Mode          Mode
 	MaxErrors     int
+	MaxInputSize  int64
 	MaxFileSize   int64
 	MaxTotalSize  int64
 	MaxEntries    int
@@ -55,6 +56,9 @@ type Option func(*Options)
 
 // WithMaxErrors 设置最多记录的错误数量；传入 0 表示不限制。
 func WithMaxErrors(value int) Option { return func(o *Options) { o.MaxErrors = value } }
+
+// WithMaxInputSize 设置 ZIP 原始输入数据的大小上限；传入 0 表示不限制。
+func WithMaxInputSize(value int64) Option { return func(o *Options) { o.MaxInputSize = value } }
 
 // WithMaxFileSize 设置单个 ZIP 条目解压后的大小上限。
 func WithMaxFileSize(value int64) Option { return func(o *Options) { o.MaxFileSize = value } }
@@ -104,6 +108,7 @@ func New(options ...Option) (*Validator, error) {
 	opts := Options{
 		Mode:         ModeStrict,
 		MaxErrors:    100,
+		MaxInputSize: 512 << 20,
 		MaxFileSize:  64 << 20,
 		MaxTotalSize: 512 << 20,
 		MaxEntries:   10000,
@@ -119,7 +124,7 @@ func New(options ...Option) (*Validator, error) {
 			option(&opts)
 		}
 	}
-	if opts.MaxErrors < 0 || opts.MaxFileSize < 0 || opts.MaxTotalSize < 0 || opts.MaxEntries < 0 || opts.MaxXMLBytes < 0 || opts.MaxXMLNodes < 0 || opts.MaxXMLDepth < 0 {
+	if opts.MaxErrors < 0 || opts.MaxInputSize < 0 || opts.MaxFileSize < 0 || opts.MaxTotalSize < 0 || opts.MaxEntries < 0 || opts.MaxXMLBytes < 0 || opts.MaxXMLNodes < 0 || opts.MaxXMLDepth < 0 {
 		return nil, errors.New("大小、节点、深度和错误数量限制不能为负数")
 	}
 	if opts.Mode != ModeStrict && opts.Mode != ModeCompat && opts.Mode != ModeStructural {
@@ -228,7 +233,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		report.setCheck("zip", "failed")
 		return
 	}
-	data, err := readLimit(reader, v.opts.MaxTotalSize)
+	data, err := readLimit(reader, v.opts.MaxInputSize)
 	if err != nil {
 		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.read", Message: fmt.Sprintf("读取 ZIP 数据失败：%v", err)}, v.opts.MaxErrors)
 		report.setCheck("zip", "failed")

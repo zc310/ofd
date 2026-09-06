@@ -95,6 +95,41 @@ func TestValidateRejectsTooManyEntries(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsRawInputOverLimit(t *testing.T) {
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`,
+	})
+	validator, err := New(WithMode(ModeStructural), WithMaxInputSize(int64(len(archiveData)-1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "input-limit.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.read" {
+			return
+		}
+	}
+	t.Fatalf("missing raw input size issue: %+v", report.Issues)
+}
+
+func TestValidateDoesNotUseTotalLimitForRawInput(t *testing.T) {
+	ofdXML := `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`
+	archiveData := makeArchive(t, map[string]string{"OFD.xml": ofdXML})
+	if len(archiveData) <= len(ofdXML) {
+		t.Fatalf("test archive size = %d, want greater than decompressed size %d", len(archiveData), len(ofdXML))
+	}
+	validator, err := New(WithMode(ModeStructural), WithMaxTotalSize(int64(len(ofdXML))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "raw-vs-total.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.read" || issue.Code == "zip.total_too_large" {
+			t.Fatalf("unexpected size issue: %+v", report.Issues)
+		}
+	}
+}
+
 func TestValidateRejectsDecompressedTotalOverLimit(t *testing.T) {
 	archiveData := makeArchive(t, map[string]string{
 		"OFD.xml": strings.Repeat("A", 16<<10),
