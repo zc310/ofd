@@ -112,6 +112,20 @@ func TestValidateRejectsRawInputOverLimit(t *testing.T) {
 	t.Fatalf("missing raw input size issue: %+v", report.Issues)
 }
 
+func TestValidateAcceptsExactRawInputLimit(t *testing.T) {
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`,
+	})
+	validator, err := New(WithMode(ModeStructural), WithMaxInputSize(int64(len(archiveData))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "exact-input-limit.ofd")
+	if report.Checks[0].Status != "passed" || report.Input.Size != int64(len(archiveData)) {
+		t.Fatalf("exact input limit rejected: %+v", report)
+	}
+}
+
 func TestValidateDoesNotUseTotalLimitForRawInput(t *testing.T) {
 	ofdXML := `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`
 	archiveData := makeArchive(t, map[string]string{"OFD.xml": ofdXML})
@@ -164,6 +178,28 @@ func TestValidateRejectsOversizedEntry(t *testing.T) {
 	t.Fatalf("missing oversized entry issue: %+v", report.Issues)
 }
 
+func TestValidateAcceptsExactDecompressedLimits(t *testing.T) {
+	ofdXML := `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`
+	archiveData := makeArchive(t, map[string]string{"OFD.xml": ofdXML})
+	validator, err := New(
+		WithMode(ModeStructural),
+		WithMaxFileSize(int64(len(ofdXML))),
+		WithMaxTotalSize(int64(len(ofdXML))),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "exact-decompressed-limits.ofd")
+	if report.Checks[0].Status != "passed" {
+		t.Fatalf("exact decompressed limits rejected: %+v", report)
+	}
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.file_too_large" || issue.Code == "zip.total_too_large" {
+			t.Fatalf("exact decompressed limits produced a size issue: %+v", report.Issues)
+		}
+	}
+}
+
 func TestValidateRejectsDuplicateEntries(t *testing.T) {
 	archiveData := makeArchiveEntries(t,
 		archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
@@ -181,6 +217,25 @@ func TestValidateRejectsDuplicateEntries(t *testing.T) {
 		}
 	}
 	t.Fatalf("missing duplicate entry issue: %+v", report.Issues)
+}
+
+func TestValidateRejectsNormalizedDuplicateEntries(t *testing.T) {
+	archiveData := makeArchiveEntries(t,
+		archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
+		archiveEntry{name: "a//b", content: "first"},
+		archiveEntry{name: "a/./b", content: "second"},
+	)
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "normalized-duplicate.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.duplicate_entry" && issue.File == "a/b" {
+			return
+		}
+	}
+	t.Fatalf("missing normalized duplicate entry issue: %+v", report.Issues)
 }
 
 func TestValidateReportsInvalidEntryPath(t *testing.T) {
@@ -219,6 +274,29 @@ func TestValidateRejectsWindowsDriveEntryPath(t *testing.T) {
 		}
 	}
 	t.Fatalf("missing Windows drive path issue: %+v", report.Issues)
+}
+
+func TestValidateReportsOtherInvalidEntryPaths(t *testing.T) {
+	t.Setenv("GODEBUG", "zipinsecurepath=0")
+	for _, name := range []string{"/absolute", `dir\file`, "bad\x00name"} {
+		t.Run(name, func(t *testing.T) {
+			archiveData := makeArchiveEntries(t,
+				archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
+				archiveEntry{name: name, content: "content"},
+			)
+			validator, err := New(WithMode(ModeStructural))
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "invalid-path-variant.ofd")
+			for _, issue := range report.Issues {
+				if issue.Code == "zip.invalid_path" && issue.File == name {
+					return
+				}
+			}
+			t.Fatalf("missing invalid path issue for %q: %+v", name, report.Issues)
+		})
+	}
 }
 
 func TestValidateSkipsDirectoryEntries(t *testing.T) {

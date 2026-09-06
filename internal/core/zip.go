@@ -44,16 +44,21 @@ type Entry struct {
 	// IsDir 表示条目是否为目录。
 	IsDir bool
 
-	owner *Package
-	file  *zip.File
+	token *packageToken
+	index int
+}
+
+type packageToken struct {
+	_ byte
 }
 
 // Package 提供 OFD ZIP 包的条目索引和内容读取能力。
 type Package struct {
 	reader *zip.Reader
 	closer io.Closer
+	token  *packageToken
 
-	fileMap map[string]*zip.File
+	fileMap map[string]int
 	entries []Entry
 	once    sync.Once
 
@@ -63,7 +68,7 @@ type Package struct {
 }
 
 func newPackage(reader *zip.Reader, closer io.Closer) *Package {
-	return &Package{reader: reader, closer: closer}
+	return &Package{reader: reader, closer: closer, token: &packageToken{}}
 }
 
 // OpenFile 从文件路径打开 OFD ZIP 包。
@@ -132,15 +137,15 @@ func (p *Package) ensureIndex() {
 	}
 	p.once.Do(func() {
 		if p.reader == nil {
-			p.fileMap = map[string]*zip.File{}
+			p.fileMap = map[string]int{}
 			p.entries = []Entry{}
 			return
 		}
-		fileMap := make(map[string]*zip.File, len(p.reader.File))
+		fileMap := make(map[string]int, len(p.reader.File))
 		entries := make([]Entry, 0, len(p.reader.File))
-		for _, file := range p.reader.File {
-			fileMap[lookupName(file.Name)] = file
-			entries = append(entries, entryFromZipFile(p, file))
+		for index, file := range p.reader.File {
+			fileMap[lookupName(file.Name)] = index
+			entries = append(entries, entryFromZipFile(p.token, index, file))
 		}
 		p.fileMap = fileMap
 		p.entries = entries
@@ -161,16 +166,16 @@ func (p *Package) Entries() []Entry {
 // Lookup 查找指定名称的 ZIP 条目元数据。
 // 如果多个条目规范化后路径相同，返回 ZIP 中最后出现的条目；全部条目可通过 Entries 获取。
 func (p *Package) Lookup(fileName string) (Entry, bool) {
-	file, ok := p.lookupFile(fileName)
+	index, ok := p.lookupIndex(fileName)
 	if !ok {
 		return Entry{}, false
 	}
-	return entryFromZipFile(p, file), true
+	return p.entries[index], true
 }
 
 // Has 判断 ZIP 包中是否存在指定名称的条目。
 func (p *Package) Has(fileName string) bool {
-	_, ok := p.lookupFile(fileName)
+	_, ok := p.lookupIndex(fileName)
 	return ok
 }
 
@@ -191,10 +196,11 @@ func (p *Package) Open(fileName string) (io.ReadCloser, error) {
 	if p.closed {
 		return nil, ErrPackageClosed
 	}
-	file, ok := p.fileMap[lookupName(fileName)]
+	index, ok := p.fileMap[lookupName(fileName)]
 	if !ok {
 		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, lookupName(fileName))
 	}
+	file := p.reader.File[index]
 	if file.FileInfo().IsDir() {
 		return nil, fmt.Errorf("打开文件失败: %s 是目录", lookupName(fileName))
 	}
@@ -216,13 +222,14 @@ func (p *Package) OpenEntry(entry Entry) (io.ReadCloser, error) {
 	if p.closed {
 		return nil, ErrPackageClosed
 	}
-	if entry.owner != p || entry.file == nil {
+	if entry.token != p.token || p.reader == nil || entry.index < 0 || entry.index >= len(p.reader.File) {
 		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, entry.Path)
 	}
-	if entry.IsDir {
+	file := p.reader.File[entry.index]
+	if file.FileInfo().IsDir() {
 		return nil, fmt.Errorf("打开文件失败: %s 是目录", entry.Path)
 	}
-	reader, err := entry.file.Open()
+	reader, err := file.Open()
 	if err != nil {
 		return nil, fmt.Errorf("打开文件失败: %w", err)
 	}
@@ -316,20 +323,20 @@ func (p *Package) ReadXMLLimit(fileName string, target any, limit int64) error {
 	return nil
 }
 
-func (p *Package) lookupFile(fileName string) (*zip.File, bool) {
+func (p *Package) lookupIndex(fileName string) (int, bool) {
 	if p == nil {
-		return nil, false
+		return 0, false
 	}
 	p.ensureIndex()
-	file, ok := p.fileMap[lookupName(fileName)]
-	return file, ok
+	index, ok := p.fileMap[lookupName(fileName)]
+	return index, ok
 }
 
 func lookupName(fileName string) string {
 	return strings.TrimLeft(fileName, "/")
 }
 
-func entryFromZipFile(owner *Package, file *zip.File) Entry {
+func entryFromZipFile(token *packageToken, index int, file *zip.File) Entry {
 	if file == nil {
 		return Entry{}
 	}
@@ -344,8 +351,8 @@ func entryFromZipFile(owner *Package, file *zip.File) Entry {
 		Modified:         file.Modified,
 		Mode:             info.Mode(),
 		IsDir:            info.IsDir(),
-		owner:            owner,
-		file:             file,
+		token:            token,
+		index:            index,
 	}
 }
 
