@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -921,7 +921,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 	v.updateControls()
 
 	go func() {
-		log.Printf("正在打开文件: %s", filePath)
+		slog.Info("正在打开文件", "path", filePath)
 		ofd, err := openOFD(input)
 		if closeErr := closeInput(input); closeErr != nil {
 			if err == nil {
@@ -946,7 +946,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 						v.loading = false
 						v.updateControls()
 						err := fmt.Errorf("处理 OFD 文件失败: %v", recovered)
-						log.Printf("打开 OFD panic: %v\n%s", recovered, debug.Stack())
+						slog.Error("打开 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
 						dialog.ShowInformation("打开失败", err.Error(), v.window)
 					}
 				}
@@ -968,7 +968,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 					_ = ofd.Close()
 				}
 				v.loading = false
-				log.Printf("打开失败: %v", err)
+				slog.Error("打开 OFD 失败", "error", err)
 				v.updateControls()
 				dialog.ShowInformation("打开失败", err.Error(), v.window)
 				return
@@ -991,7 +991,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 				v.pages = nil
 				v.renderMu.Unlock()
 				v.loading = false
-				log.Printf("打开失败: 文档没有页面")
+				slog.Error("打开 OFD 失败", slog.String("error", "文档没有页面"))
 				v.updateControls()
 				return
 			}
@@ -1114,7 +1114,7 @@ func openOFD(input any) (ofd *parser.OFD, err error) {
 				_ = ofd.Close()
 				ofd = nil
 			}
-			log.Printf("解析 OFD panic: %v\n%s", recovered, debug.Stack())
+			slog.Error("解析 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
 			err = fmt.Errorf("打开 OFD 失败: %v", recovered)
 		}
 	}()
@@ -1138,7 +1138,7 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			img = nil
-			log.Printf("渲染页面 panic: %v\n%s", recovered, debug.Stack())
+			slog.Error("渲染页面发生 panic", "error", recovered, "stack", string(debug.Stack()))
 			err = fmt.Errorf("渲染页面失败: %v", recovered)
 		}
 	}()
