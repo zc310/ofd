@@ -31,11 +31,13 @@ VIEWER := $(BIN_DIR)/ofd-viewer$(BIN_SUFFIX)
 CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
 VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
+ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
 VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
+ANALYZER_PACKAGE := $(DIST_DIR)/ofd-analyzer-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
@@ -44,7 +46,7 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator clean help FORCE
+.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer clean help FORCE
 
 all: package
 
@@ -57,6 +59,7 @@ help:
 		'make package-viewer-android-zip Build the OFD viewer Android ZIP package' \
 		'make package-converter       Build the OFD converter package' \
 		'make package-validator       Build the OFD validator' \
+		'make package-analyzer        Build the OFD analyzer' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
 		'make clean                   Remove generated build files and packages' \
 		'' \
@@ -64,7 +67,7 @@ help:
 		'  GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make package' \
 		'  ofd-thumbnailer is built only when GOOS=linux'
 
-build: $(VIEWER) $(CONVERTER) $(VALIDATOR) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+build: $(VIEWER) $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
 
 $(VIEWER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -80,13 +83,17 @@ $(VALIDATOR): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-validator
 
+$(ANALYZER): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-analyzer
+
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-thumbnailer
 endif
 
-package: package-viewer package-converter package-validator package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
+package: package-viewer package-converter package-validator package-analyzer package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
 
 package-viewer: $(VIEWER_PACKAGE)
 
@@ -120,6 +127,8 @@ package-converter: $(CONVERTER_PACKAGE)
 
 package-validator: $(VALIDATOR_PACKAGE)
 
+package-analyzer: $(ANALYZER_PACKAGE)
+
 $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
 	@mkdir -p "$(DIST_DIR)"
 	@rm -rf "$(PACKAGE_DIR)/ofd-validator"
@@ -128,6 +137,15 @@ $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
 	@cp "$(VALIDATOR)" "$(PACKAGE_DIR)/ofd-validator/ofd-validator$(BIN_SUFFIX)"
 	@cp "cmd/ofd-validator/README.md" "$(PACKAGE_DIR)/ofd-validator/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-validator"
+
+$(ANALYZER_PACKAGE): $(ANALYZER) cmd/ofd-analyzer/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-analyzer"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-analyzer"
+	@rm -f "$@"
+	@cp "$(ANALYZER)" "$(PACKAGE_DIR)/ofd-analyzer/ofd-analyzer$(BIN_SUFFIX)"
+	@cp "cmd/ofd-analyzer/README.md" "$(PACKAGE_DIR)/ofd-analyzer/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-analyzer"
 
 $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@mkdir -p "$(DIST_DIR)"

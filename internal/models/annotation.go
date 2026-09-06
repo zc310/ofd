@@ -32,7 +32,7 @@ type Annot struct {
 	// Subtype 注解子类型。
 	Subtype string `xml:"Subtype,attr,omitempty"`
 	// Print 是否在打印文档时显示该注解。
-	Print bool `xml:"Print,attr,omitempty"`
+	Print OptionalBool `xml:"Print,attr,omitempty"`
 	// NoZoom 是否在缩放页面时保持注解大小不变。
 	NoZoom bool `xml:"NoZoom,attr,omitempty"`
 	// NoRotate 是否在旋转页面时保持注解方向不变。
