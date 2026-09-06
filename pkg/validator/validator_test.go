@@ -95,6 +95,127 @@ func TestValidateRejectsTooManyEntries(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsDecompressedTotalOverLimit(t *testing.T) {
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml": strings.Repeat("A", 16<<10),
+	})
+	validator, err := New(WithMode(ModeStructural), WithMaxTotalSize(8<<10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "total-limit.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.total_too_large" {
+			return
+		}
+	}
+	t.Fatalf("missing decompressed total-size issue: %+v", report.Issues)
+}
+
+func TestValidateRejectsOversizedEntry(t *testing.T) {
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml": "long content",
+	})
+	validator, err := New(WithMaxFileSize(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "file-limit.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.file_too_large" && issue.File == "OFD.xml" {
+			return
+		}
+	}
+	t.Fatalf("missing oversized entry issue: %+v", report.Issues)
+}
+
+func TestValidateRejectsDuplicateEntries(t *testing.T) {
+	archiveData := makeArchiveEntries(t,
+		archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
+		archiveEntry{name: "data", content: "first"},
+		archiveEntry{name: "data", content: "second"},
+	)
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "duplicate.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.duplicate_entry" && issue.File == "data" {
+			return
+		}
+	}
+	t.Fatalf("missing duplicate entry issue: %+v", report.Issues)
+}
+
+func TestValidateReportsInvalidEntryPath(t *testing.T) {
+	t.Setenv("GODEBUG", "zipinsecurepath=0")
+	archiveData := makeArchiveEntries(t,
+		archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
+		archiveEntry{name: "../data", content: "content"},
+	)
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "invalid-path.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.invalid_path" && issue.File == "../data" {
+			return
+		}
+	}
+	t.Fatalf("missing invalid path issue: %+v", report.Issues)
+}
+
+func TestValidateRejectsWindowsDriveEntryPath(t *testing.T) {
+	t.Setenv("GODEBUG", "zipinsecurepath=0")
+	archiveData := makeArchiveEntries(t,
+		archiveEntry{name: "OFD.xml", content: `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`},
+		archiveEntry{name: "C:/data", content: "content"},
+	)
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "drive-path.ofd")
+	for _, issue := range report.Issues {
+		if issue.Code == "zip.invalid_path" && issue.File == "C:/data" {
+			return
+		}
+	}
+	t.Fatalf("missing Windows drive path issue: %+v", report.Issues)
+}
+
+func TestValidateSkipsDirectoryEntries(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	root, err := writer.Create("OFD.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.Write([]byte(`<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"/>`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Create("directory/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(buffer.Bytes()), "directory.ofd")
+	if report.HasErrors() {
+		t.Fatalf("directory entry caused validation errors: %+v", report.Issues)
+	}
+	if report.Summary.Files != 2 {
+		t.Fatalf("file count = %d, want 2", report.Summary.Files)
+	}
+}
+
 func TestSemanticChecksUnresolvedResourceID(t *testing.T) {
 	archiveData := makeArchive(t, map[string]string{
 		"OFD.xml":      `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>Document.xml</DocRoot></DocBody></OFD>`,
@@ -277,14 +398,28 @@ func TestSM3DigestHash(t *testing.T) {
 
 func makeArchive(t *testing.T, files map[string]string) []byte {
 	t.Helper()
+	entries := make([]archiveEntry, 0, len(files))
+	for name, content := range files {
+		entries = append(entries, archiveEntry{name: name, content: content})
+	}
+	return makeArchiveEntries(t, entries...)
+}
+
+type archiveEntry struct {
+	name    string
+	content string
+}
+
+func makeArchiveEntries(t *testing.T, entries ...archiveEntry) []byte {
+	t.Helper()
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
-	for name, content := range files {
-		file, err := writer.Create(name)
+	for _, item := range entries {
+		file, err := writer.Create(item.name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := file.Write([]byte(content)); err != nil {
+		if _, err := file.Write([]byte(item.content)); err != nil {
 			t.Fatal(err)
 		}
 	}

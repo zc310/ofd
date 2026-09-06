@@ -43,6 +43,9 @@ type Entry struct {
 	Mode fs.FileMode
 	// IsDir 表示条目是否为目录。
 	IsDir bool
+
+	owner *Package
+	file  *zip.File
 }
 
 // Package 提供 OFD ZIP 包的条目索引和内容读取能力。
@@ -137,7 +140,7 @@ func (p *Package) ensureIndex() {
 		entries := make([]Entry, 0, len(p.reader.File))
 		for _, file := range p.reader.File {
 			fileMap[lookupName(file.Name)] = file
-			entries = append(entries, entryFromZipFile(file))
+			entries = append(entries, entryFromZipFile(p, file))
 		}
 		p.fileMap = fileMap
 		p.entries = entries
@@ -162,7 +165,7 @@ func (p *Package) Lookup(fileName string) (Entry, bool) {
 	if !ok {
 		return Entry{}, false
 	}
-	return entryFromZipFile(file), true
+	return entryFromZipFile(p, file), true
 }
 
 // Has 判断 ZIP 包中是否存在指定名称的条目。
@@ -196,6 +199,30 @@ func (p *Package) Open(fileName string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("打开文件失败: %s 是目录", lookupName(fileName))
 	}
 	reader, err := file.Open()
+	if err != nil {
+		return nil, fmt.Errorf("打开文件失败: %w", err)
+	}
+	return reader, nil
+}
+
+// OpenEntry 打开 Entries 返回的指定 ZIP 条目。
+// 与 Open 不同，OpenEntry 不会因条目名称重复而切换到其他条目。
+func (p *Package) OpenEntry(entry Entry) (io.ReadCloser, error) {
+	if p == nil {
+		return nil, fmt.Errorf("打开文件失败: %w", os.ErrNotExist)
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed {
+		return nil, ErrPackageClosed
+	}
+	if entry.owner != p || entry.file == nil {
+		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, entry.Path)
+	}
+	if entry.IsDir {
+		return nil, fmt.Errorf("打开文件失败: %s 是目录", entry.Path)
+	}
+	reader, err := entry.file.Open()
 	if err != nil {
 		return nil, fmt.Errorf("打开文件失败: %w", err)
 	}
@@ -302,7 +329,7 @@ func lookupName(fileName string) string {
 	return strings.TrimLeft(fileName, "/")
 }
 
-func entryFromZipFile(file *zip.File) Entry {
+func entryFromZipFile(owner *Package, file *zip.File) Entry {
 	if file == nil {
 		return Entry{}
 	}
@@ -317,6 +344,8 @@ func entryFromZipFile(file *zip.File) Entry {
 		Modified:         file.Modified,
 		Mode:             info.Mode(),
 		IsDir:            info.IsDir(),
+		owner:            owner,
+		file:             file,
 	}
 }
 
