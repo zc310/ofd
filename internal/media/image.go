@@ -7,6 +7,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -22,20 +23,27 @@ type ContentReader interface {
 	Read(string) ([]byte, error)
 }
 
+type contentOpener interface {
+	Open(string) (io.ReadCloser, error)
+}
+
 // Decode 从包内容读取器中读取并解码栅格图像。
 func Decode(reader ContentReader, filename string) (image.Image, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("图像内容读取器为空")
 	}
+	if opener, ok := reader.(contentOpener); ok {
+		content, err := opener.Open(filename)
+		if err != nil {
+			return nil, fmt.Errorf("读取图像失败: %w", err)
+		}
+		return decodeOpenedImage(content)
+	}
 	data, err := reader.Read(filename)
 	if err != nil {
 		return nil, fmt.Errorf("读取图像失败: %w", err)
 	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	return img, nil
+	return decodeImage(bytes.NewReader(data))
 }
 
 // ExtractFirstImage 从基于 ZIP 的文件中提取第一张可以解码的图片。
@@ -52,7 +60,12 @@ func ExtractFirstImage(filename string) (image.Image, error) {
 		if !IsImageExtension(filepath.Ext(entry.Name)) {
 			return true
 		}
-		if img, ok := decodePackageImage(archive, entry); ok {
+		reader, openErr := archive.OpenEntry(entry)
+		if openErr != nil {
+			return true
+		}
+		img, decodeErr := decodeOpenedImage(reader)
+		if decodeErr == nil {
 			first = img
 			found = true
 			return false
@@ -69,15 +82,21 @@ func ExtractFirstImage(filename string) (image.Image, error) {
 	return nil, fmt.Errorf("未找到图片")
 }
 
-func decodePackageImage(archive *core.Package, entry core.Entry) (img image.Image, ok bool) {
-	reader, err := archive.OpenEntry(entry)
-	if err != nil {
-		return nil, false
-	}
-	defer reader.Close()
+func decodeImage(reader io.Reader) (image.Image, error) {
+	img, _, err := image.Decode(reader)
+	return img, err
+}
 
-	img, _, err = image.Decode(reader)
-	return img, err == nil
+func decodeOpenedImage(reader io.ReadCloser) (image.Image, error) {
+	img, decodeErr := decodeImage(reader)
+	closeErr := reader.Close()
+	if decodeErr != nil {
+		return nil, decodeErr
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("关闭图像失败: %w", closeErr)
+	}
+	return img, nil
 }
 
 // IsImageExtension 判断扩展名是否为支持的栅格图片格式。
