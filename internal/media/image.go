@@ -1,7 +1,6 @@
 package media
 
 import (
-	"archive/zip"
 	"bytes"
 	"fmt"
 	"image"
@@ -10,6 +9,8 @@ import (
 	_ "image/png"
 	"path/filepath"
 	"strings"
+
+	"github.com/zc310/ofd/internal/core"
 
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -39,29 +40,37 @@ func Decode(reader ContentReader, filename string) (image.Image, error) {
 
 // ExtractFirstImage 从基于 ZIP 的文件中提取第一张可以解码的图片。
 func ExtractFirstImage(filename string) (image.Image, error) {
-	archive, err := zip.OpenReader(filename)
+	archive, err := core.OpenFile(filename)
 	if err != nil {
-		if archive != nil {
-			_ = archive.Close()
-		}
 		return nil, err
 	}
 	defer archive.Close()
 
-	for _, entry := range archive.File {
+	var first image.Image
+	found := false
+	err = archive.WalkEntries(func(entry core.Entry) bool {
 		if !IsImageExtension(filepath.Ext(entry.Name)) {
-			continue
+			return true
 		}
-		if img, ok := decodeZipImage(entry); ok {
-			return img, nil
+		if img, ok := decodePackageImage(archive, entry); ok {
+			first = img
+			found = true
+			return false
 		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return first, nil
 	}
 
 	return nil, fmt.Errorf("未找到图片")
 }
 
-func decodeZipImage(entry *zip.File) (img image.Image, ok bool) {
-	reader, err := entry.Open()
+func decodePackageImage(archive *core.Package, entry core.Entry) (img image.Image, ok bool) {
+	reader, err := archive.OpenEntry(entry)
 	if err != nil {
 		return nil, false
 	}

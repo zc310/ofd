@@ -163,6 +163,40 @@ func (p *Package) Entries() []Entry {
 	return entries
 }
 
+// WalkEntries 按 ZIP 条目顺序遍历条目元数据。
+// 回调返回 false 时停止遍历；该方法不会创建完整的条目快照或查找索引。
+func (p *Package) WalkEntries(fn func(Entry) bool) error {
+	if p == nil {
+		return fmt.Errorf("遍历 ZIP 条目失败: %w", os.ErrNotExist)
+	}
+	if fn == nil {
+		return errors.New("遍历 ZIP 条目的回调为空")
+	}
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return ErrPackageClosed
+	}
+	reader, token := p.reader, p.token
+	p.mu.RUnlock()
+	if reader == nil {
+		return nil
+	}
+
+	for index, file := range reader.File {
+		if !fn(entryFromZipFile(token, index, file)) {
+			return nil
+		}
+		p.mu.RLock()
+		closed := p.closed
+		p.mu.RUnlock()
+		if closed {
+			return ErrPackageClosed
+		}
+	}
+	return nil
+}
+
 // Lookup 查找指定名称的 ZIP 条目元数据。
 // 如果多个条目规范化后路径相同，返回 ZIP 中最后出现的条目；全部条目可通过 Entries 获取。
 func (p *Package) Lookup(fileName string) (Entry, bool) {

@@ -72,6 +72,44 @@ func TestPackageExposesEntryMetadataAndLookup(t *testing.T) {
 	}
 }
 
+func TestPackageWalkEntriesStopsEarlyWithoutBuildingIndex(t *testing.T) {
+	archive, err := OpenBytes(newTestZip(t, map[string][]byte{
+		"first":  []byte("first"),
+		"second": []byte("second"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	count := 0
+	if err := archive.WalkEntries(func(entry Entry) bool {
+		count++
+		return false
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("walk callback count = %d, want 1", count)
+	}
+	if archive.entries != nil || archive.fileMap != nil {
+		t.Fatal("WalkEntries built the full package index")
+	}
+}
+
+func TestPackageWalkEntriesRejectsClosedPackage(t *testing.T) {
+	archive, err := OpenBytes(newTestZip(t, map[string][]byte{"data": []byte("content")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.WalkEntries(func(Entry) bool { return true }); !errors.Is(err, ErrPackageClosed) {
+		t.Fatalf("WalkEntries error = %v, want ErrPackageClosed", err)
+	}
+}
+
 func TestPackageOpenEntryUsesExactEntry(t *testing.T) {
 	var data bytes.Buffer
 	writer := zip.NewWriter(&data)
