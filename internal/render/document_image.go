@@ -71,7 +71,7 @@ func imageMatrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight f
 
 func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
 	if strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg") {
-		data, err := p.Document.Common.FileCache.ParseContent(file.String())
+		data, err := p.Document.Common.FileCache.Read(file.String())
 		if err != nil {
 			return nil, err
 		}

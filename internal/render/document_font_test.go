@@ -103,7 +103,7 @@ func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	data, err := ofd.Documents[0].FileCache.ParseContent("Doc_0/Res/font_13132.ttf")
+	data, err := ofd.Documents[0].FileCache.Read("Doc_0/Res/font_13132.ttf")
 	if err != nil {
 		t.Fatal(err)
 	}

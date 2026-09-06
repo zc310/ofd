@@ -18,7 +18,7 @@ import (
 
 // ContentReader 提供读取文件解压后内容的能力。
 type ContentReader interface {
-	ParseContent(string) ([]byte, error)
+	Read(string) ([]byte, error)
 }
 
 // Decode 从包内容读取器中读取并解码栅格图像。
@@ -26,7 +26,7 @@ func Decode(reader ContentReader, filename string) (image.Image, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("图像内容读取器为空")
 	}
-	data, err := reader.ParseContent(filename)
+	data, err := reader.Read(filename)
 	if err != nil {
 		return nil, fmt.Errorf("读取图像失败: %w", err)
 	}
@@ -41,6 +41,9 @@ func Decode(reader ContentReader, filename string) (image.Image, error) {
 func ExtractFirstImage(filename string) (image.Image, error) {
 	archive, err := zip.OpenReader(filename)
 	if err != nil {
+		if archive != nil {
+			_ = archive.Close()
+		}
 		return nil, err
 	}
 	defer archive.Close()

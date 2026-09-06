@@ -13,10 +13,10 @@ import (
 
 type Common struct {
 	BaseLoc   models.StLoc
-	FileCache *core.ZipFileCache
+	FileCache *core.Package
 }
 
-func (p *Common) Init(fileCache *core.ZipFileCache, dir models.StLoc) {
+func (p *Common) Init(fileCache *core.Package, dir models.StLoc) {
 	p.FileCache = fileCache
 	p.BaseLoc = models.StLoc(path.Dir(dir.String()))
 }
@@ -82,7 +82,7 @@ func (p *Document) parseDocumentRes() error {
 // Public 资源不需要）。
 func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*models.Res, error) {
 	var pr models.Res
-	if err := p.FileCache.ParseXMLContent(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
+	if err := p.FileCache.ReadXML(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
 		return nil, err
 	}
 
@@ -119,12 +119,12 @@ func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*mode
 
 func (p *Document) parse(body models.DocBody) error {
 	var err error
-	if err = p.FileCache.ParseXMLContent(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
+	if err = p.FileCache.ReadXML(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
 		return err
 	}
 	for _, page := range p.Document.Pages.Pages {
 		var pc models.PageContent
-		if err = p.FileCache.ParseXMLContent(page.BaseLoc.Resolve(p.BaseLoc).String(), &pc); err != nil {
+		if err = p.FileCache.ReadXML(page.BaseLoc.Resolve(p.BaseLoc).String(), &pc); err != nil {
 			return err
 		}
 		if pc.Area == nil {
@@ -157,7 +157,7 @@ func (p *Document) parseTemplates() error {
 	var err error
 	for _, page := range p.Document.CommonData.TemplatePages {
 		var pc models.PageContent
-		if err = p.FileCache.ParseXMLContent(page.BaseLoc.Resolve(p.BaseLoc).String(), &pc); err != nil {
+		if err = p.FileCache.ReadXML(page.BaseLoc.Resolve(p.BaseLoc).String(), &pc); err != nil {
 			return err
 		}
 		p.Templates[page.ID] = &pc
@@ -209,13 +209,13 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 	var err error
 	var signatures Signatures
 	dir := file.Dir()
-	if err = p.FileCache.ParseXMLContent(file.String(), &signatures); err != nil {
+	if err = p.FileCache.ReadXML(file.String(), &signatures); err != nil {
 		return err
 	}
 
 	for _, body := range signatures.Signatures {
 		var sig models.Signature
-		if err = p.FileCache.ParseXMLContent(body.BaseLoc.Resolve(dir).String(), &sig); err != nil {
+		if err = p.FileCache.ReadXML(body.BaseLoc.Resolve(dir).String(), &sig); err != nil {
 			return err
 		}
 		seDir := body.BaseLoc.Resolve(dir).Dir()
@@ -224,7 +224,7 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		var buf []byte
 		if sig.SignedInfo.Seal != nil {
 			seFile := sig.SignedInfo.Seal.BaseLoc.Resolve(seDir).String()
-			if buf, err = p.FileCache.ParseContent(seFile); err != nil {
+			if buf, err = p.FileCache.Read(seFile); err != nil {
 				return err
 			}
 
@@ -237,7 +237,7 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 			}
 		} else {
 			if len(sig.SignedInfo.StampAnnot) > 0 {
-				if buf, err = p.FileCache.ParseContent(sig.SignedValue.Resolve(seDir).String()); err != nil {
+				if buf, err = p.FileCache.Read(sig.SignedValue.Resolve(seDir).String()); err != nil {
 					return err
 				}
 				if sealData, err = ExtractSealData(buf); err != nil {
@@ -260,7 +260,7 @@ func (p *Document) parseAnnotations() error {
 	var err error
 	var annot models.Annotations
 	fileName := p.Document.Annotations.Resolve(p.BaseLoc)
-	if err = p.FileCache.ParseXMLContent(fileName.String(), &annot); err != nil {
+	if err = p.FileCache.ReadXML(fileName.String(), &annot); err != nil {
 		return err
 	}
 	dir := fileName.Dir()
@@ -271,7 +271,7 @@ func (p *Document) parseAnnotations() error {
 		} else {
 			fileName = models.StLoc.Join(dir, page.FileLoc.String())
 		}
-		if err = p.FileCache.ParseXMLContent(fileName.String(), &pa); err != nil {
+		if err = p.FileCache.ReadXML(fileName.String(), &pa); err != nil {
 			slog.Error(err.Error())
 			continue
 		}

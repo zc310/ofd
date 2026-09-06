@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"archive/zip"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -15,8 +13,7 @@ import (
 // OFD 表示一个OFD文档解析器
 type OFD struct {
 	models.OFD
-	reader    *zip.ReadCloser
-	fileCache *core.ZipFileCache
+	fileCache *core.Package
 
 	Documents []*Document
 }
@@ -39,11 +36,11 @@ func (p *OFD) Open(input any) error {
 	case []byte:
 		return p.openFromBytes(v)
 	case io.Reader:
-		data, err := io.ReadAll(v)
+		fileCache, err := core.OpenReader(v)
 		if err != nil {
 			return fmt.Errorf("读取OFD内容失败: %w", err)
 		}
-		return p.openFromBytes(data)
+		return p.openPackage(fileCache)
 	default:
 		return fmt.Errorf("不支持的类型: %T, 请提供文件路径(string)、文件数据([]byte)或 io.Reader", input)
 	}
@@ -56,58 +53,53 @@ func (p *OFD) openFromFile(filePath string) error {
 		return fmt.Errorf("文件路径验证失败: %w", err)
 	}
 
-	zr, err := zip.OpenReader(cleanPath)
+	fileCache, err := core.OpenFile(cleanPath)
 	if err != nil {
 		return fmt.Errorf("打开OFD文件失败: %w", err)
 	}
 
-	return p.openZipReader(&zr.Reader, zr)
+	return p.openPackage(fileCache)
 }
 
 // openFromBytes 从字节数据打开OFD文件
 func (p *OFD) openFromBytes(data []byte) error {
-	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	fileCache, err := core.OpenBytes(data)
 	if err != nil {
-		return fmt.Errorf("从字节数据创建zip reader失败: %w", err)
+		return fmt.Errorf("从字节数据创建 ZIP 包失败: %w", err)
 	}
 
-	return p.openZipReader(zipReader, nil)
+	return p.openPackage(fileCache)
 }
 
-// openZipReader 解析候选 ZIP，并在成功后一次性替换当前文档状态。
+// openPackage 解析候选 ZIP，并在成功后一次性替换当前文档状态。
 // 这样重复调用 Open 时，解析失败不会破坏当前已打开的文档。
-func (p *OFD) openZipReader(zipReader *zip.Reader, reader *zip.ReadCloser) (err error) {
-	if reader != nil {
-		defer func() {
-			if err != nil {
-				_ = reader.Close()
-			}
-		}()
+func (p *OFD) openPackage(fileCache *core.Package) (err error) {
+	if fileCache == nil {
+		return fmt.Errorf("打开OFD文件失败: 包访问对象为空")
 	}
-
-	root, documents, fileCache, err := parseZipReader(zipReader)
+	root, documents, err := parsePackage(fileCache)
 	if err != nil {
+		_ = fileCache.Close()
 		return err
 	}
 	if err = p.Close(); err != nil {
+		_ = fileCache.Close()
 		return err
 	}
 
 	p.OFD = root
 	p.Documents = documents
 	p.fileCache = fileCache
-	p.reader = reader
 	return nil
 }
 
 // Close 关闭OFD解析器并释放资源
 func (p *OFD) Close() error {
 	var err error
-	if p.reader != nil {
-		err = p.reader.Close()
-		p.reader = nil
+	if p.fileCache != nil {
+		err = p.fileCache.Close()
+		p.fileCache = nil
 	}
-	p.fileCache = nil
 	p.Documents = nil
 	p.OFD = models.OFD{}
 	if err != nil {
@@ -116,11 +108,10 @@ func (p *OFD) Close() error {
 	return nil
 }
 
-func parseZipReader(zipReader *zip.Reader) (models.OFD, []*Document, *core.ZipFileCache, error) {
-	fileCache := core.NewZipFileCache(zipReader)
+func parsePackage(fileCache *core.Package) (models.OFD, []*Document, error) {
 	var root models.OFD
-	if err := fileCache.ParseXMLContent(rootDocument, &root); err != nil {
-		return models.OFD{}, nil, nil, err
+	if err := fileCache.ReadXML(rootDocument, &root); err != nil {
+		return models.OFD{}, nil, err
 	}
 
 	documents := make([]*Document, 0, len(root.DocBodies))
@@ -128,12 +119,12 @@ func parseZipReader(zipReader *zip.Reader) (models.OFD, []*Document, *core.ZipFi
 		document := &Document{}
 		document.Init(fileCache, body.DocRoot)
 		if err := document.parse(body); err != nil {
-			return models.OFD{}, nil, nil, err
+			return models.OFD{}, nil, err
 		}
 		if err := document.ParseSigns(body.Signatures); err != nil {
-			return models.OFD{}, nil, nil, err
+			return models.OFD{}, nil, err
 		}
 		documents = append(documents, document)
 	}
-	return root, documents, fileCache, nil
+	return root, documents, nil
 }

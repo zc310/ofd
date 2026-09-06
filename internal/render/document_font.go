@@ -159,7 +159,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	if ft.FontFile != "" {
 		f = canvas.NewFontFamily(fontName)
 		var buf []byte
-		if buf, err = p.FileCache.ParseContent(string(ft.FontFile)); err != nil {
+		if buf, err = p.FileCache.Read(string(ft.FontFile)); err != nil {
 			return nil, err
 		}
 		if fixed, fixErr := fontfix.Repair(buf); fixErr == nil {
@@ -175,7 +175,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		if candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
 			continue
 		}
-		buf, parseErr := p.FileCache.ParseContent(string(candidate.FontFile))
+		buf, parseErr := p.FileCache.Read(string(candidate.FontFile))
 		if parseErr != nil {
 			continue
 		}
