@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nao1215/imaging"
@@ -78,6 +79,21 @@ func TestRender_PDF_intro_page7(t *testing.T) {
 	defer f.Close()
 	assert.Nil(t, converter.PDF("testdata/intro.ofd", f, converter.Page(40)))
 }
+
+func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
+	var output bytes.Buffer
+	err := converter.Image("testdata/intro.ofd",
+		converter.Writer(func(int) (io.WriteCloser, error) {
+			return bufferWriteCloser{Buffer: &output}, nil
+		}),
+		converter.SVG(),
+		converter.Page(15),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, strings.Count(output.String(), "<image "))
+	assert.Contains(t, output.String(), `fill-opacity=".6"`)
+}
+
 func Example_png() {
 	err := converter.Image("testdata/ano.ofd",
 		converter.Writer(func(page int) (io.WriteCloser, error) {
