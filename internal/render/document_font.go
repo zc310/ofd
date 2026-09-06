@@ -41,14 +41,12 @@ func NewFonts(doc *parser.Document) *Fonts {
 		if fontPath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
 			if err = defaultFontFamily.LoadFontFile(fontPath, canvas.FontRegular); err == nil {
 				defaultFontFamilyReady = true
-				slog.Info("load default font: " + fontPath)
 				return
 			}
 		}
 		for _, name := range []string{"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times"} {
 			if err := defaultFontFamily.LoadSystemFont(name, canvas.FontRegular); err == nil {
 				defaultFontFamilyReady = true
-				slog.Info("load default font: " + name)
 				break
 			}
 		}
@@ -75,7 +73,6 @@ func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 				continue
 			}
 			if loadFontFileSafely(family, path) {
-				slog.Info("load Android default font: " + path)
 				return true
 			}
 		}
@@ -98,7 +95,6 @@ func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 			}
 			if loadFontFileSafely(family, path) {
 				found = true
-				slog.Info("load Android fallback font: " + path)
 				return fs.SkipAll
 			}
 			return nil
@@ -144,7 +140,6 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 			return nil, fmt.Errorf("字体 %d 不存在且没有可用的默认字体", id)
 		}
 		p.Fonts[id] = defaultFontFamily
-		slog.Error(fmt.Sprintf("font %d not exist", id))
 		return defaultFontFamily, nil
 	}
 	fontName := ft.FontName
@@ -169,7 +164,6 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 			p.Fonts[id] = f
 			return f, nil
 		}
-		slog.Error(fmt.Sprintf("load font %s %s: %v", ft.FontName, ft.FontFile, err))
 	}
 	for candidateID, candidate := range p.FontRes {
 		if candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
@@ -220,11 +214,11 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 			}
 		}
 	}
-	slog.Info(fmt.Sprintf("font %d %s %s not exist", id, ft.FontName, ft.FontFile))
 	if defaultFontFamily != nil {
 		if !defaultFontFamilyReady {
 			return nil, fmt.Errorf("字体 %d 无法加载且没有可用的默认字体", id)
 		}
+		slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName)
 		p.Fonts[id] = defaultFontFamily
 		return defaultFontFamily, nil
 	}
