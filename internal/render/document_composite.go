@@ -44,6 +44,10 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 		}
 	}
 
+	if p.renderSimpleCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip) {
+		return
+	}
+
 	// 在单元自身的坐标系中绘制全部内容。
 	cc := canvas.New(w, h)
 	cctx := canvas.NewContext(cc)
@@ -62,7 +66,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if dpi < 10 {
 		dpi = 10
 	}
-	raster := rasterizer.Draw(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)
+	var raster image.Image = rasterizer.Draw(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)
 	if raster == nil || raster.Bounds().Empty() {
 		return
 	}
@@ -102,6 +106,68 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 		img = applyImageAlpha(img, graphicOpacity(object.Alpha))
 	}
 	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
+}
+
+// renderSimpleCompositeVector 将常见的单路径复合图元保持为矢量绘制。
+// 裁剪、图像、渐变、嵌套复合图元以及其他需要独立绘制表面的情况，
+// 仍然交由下面的栅格化回退逻辑处理。
+func (p *Document) renderSimpleCompositeVector(ctx *canvas.Context, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) bool {
+	if len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath {
+		return false
+	}
+	pathObject := unit.Content.Items[0].Path
+	if parentCTM != nil || parentClip != nil || !simpleCompositePath(pathObject) {
+		return false
+	}
+
+	path := p.buildObjectPathWithTransform(pathObject, unit.Height, nil)
+	pathBounds := path.Bounds()
+	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 {
+		return false
+	}
+
+	widthScale := object.Boundary.Width / pathBounds.W()
+	heightScale := object.Boundary.Height / pathBounds.H()
+	path.Transform(canvas.Matrix{
+		{widthScale, 0, object.Boundary.X - pathBounds.X0*widthScale},
+		{0, heightScale, pb.Height - object.Boundary.Y - object.Boundary.Height - pathBounds.Y0*heightScale},
+	})
+
+	// Composite Alpha 表示复合图元整体透明度。当前情况只有一个纯色填充，
+	// 因此可以直接合并到填充颜色中，不需要创建独立的透明度分组。
+	if object.Alpha != nil {
+		pathObject.FillColor = cloneCompositeColor(pathObject.FillColor, graphicOpacity(object.Alpha))
+	}
+	ctx.Push()
+	defer ctx.Pop()
+	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp)
+	ctx.DrawPath(0, 0, path)
+	return true
+}
+
+func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
+	if source == nil || source.Value == nil {
+		return source
+	}
+	copy := *source
+	copy.Value = &models.Color{RGBA: source.Value.RGBA}
+	copy.Value.A = uint8(uint16(copy.Value.A) * uint16(alpha) / 255)
+	return &copy
+}
+
+func simpleCompositePath(object models.PathObject) bool {
+	if !object.VisibleValue() || object.Clips != nil || !object.Fill || object.Stroke != "false" {
+		return false
+	}
+	if object.FillColor == nil || object.FillColor.Value == nil {
+		return false
+	}
+	return object.FillColor.Pattern == nil &&
+		object.FillColor.AxialShd == nil &&
+		object.FillColor.RadialShd == nil &&
+		object.FillColor.GouraudShd == nil &&
+		object.FillColor.LaGourandShd == nil &&
+		object.FillColor.LaGouraudShd == nil
 }
 
 // contentImageBounds 返回离屏复合单元中非透明内容的像素包围盒。
