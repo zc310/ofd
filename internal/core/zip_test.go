@@ -72,6 +72,68 @@ func TestPackageExposesEntryMetadataAndLookup(t *testing.T) {
 	}
 }
 
+func TestPackageOpenEntryUsesExactEntry(t *testing.T) {
+	var data bytes.Buffer
+	writer := zip.NewWriter(&data)
+	for _, content := range []string{"first", "second"} {
+		entry, err := writer.Create("data")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	archive, err := OpenBytes(data.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	entries := archive.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	for i, want := range []string{"first", "second"} {
+		reader, err := archive.OpenEntry(entries[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if string(content) != want {
+			t.Fatalf("entry %d content = %q, want %q", i, content, want)
+		}
+	}
+}
+
+func TestPackageOpenEntryRejectsEntryFromAnotherPackage(t *testing.T) {
+	first, err := OpenBytes(newTestZip(t, map[string][]byte{"data": []byte("first")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := OpenBytes(newTestZip(t, map[string][]byte{"data": []byte("second")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	entry := first.Entries()[0]
+	if _, err := second.OpenEntry(entry); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("OpenEntry error = %v, want os.ErrNotExist", err)
+	}
+}
+
 func TestPackageReadLimit(t *testing.T) {
 	archiveData := newTestZip(t, map[string][]byte{"data": []byte("content")})
 	archive, err := OpenBytes(archiveData)

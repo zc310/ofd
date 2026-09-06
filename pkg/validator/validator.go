@@ -1,7 +1,6 @@
 package validator
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -19,6 +18,7 @@ import (
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
 	"github.com/tjfoc/gmsm/sm3"
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"
 )
 
@@ -172,8 +172,9 @@ func (v *Validator) ValidateReader(ctx context.Context, reader io.Reader, name s
 }
 
 type packageFile struct {
-	name string
-	data []byte
+	name  string
+	data  []byte
+	isDir bool
 }
 
 type packageIndex struct {
@@ -233,7 +234,14 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		report.setCheck("zip", "failed")
 		return
 	}
-	archive, err := v.indexArchive(data, report)
+	packageReader, err := core.OpenBytes(data)
+	if err != nil {
+		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.invalid", Message: fmt.Sprintf("ZIP 容器无效：%v", err)}, v.opts.MaxErrors)
+		report.setCheck("zip", "failed")
+		return
+	}
+	defer packageReader.Close()
+	archive, err := v.indexArchive(packageReader, report)
 	if err != nil {
 		report.setCheck("zip", "failed")
 		return
@@ -324,7 +332,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	if v.opts.ScanXML {
 		for _, name := range sortedPackageNames(archive.files) {
 			file := archive.files[name]
-			if path.Ext(name) != ".xml" || name == "OFD.xml" {
+			if file.isDir || path.Ext(name) != ".xml" || name == "OFD.xml" {
 				continue
 			}
 			if _, exists := documents[name]; exists {
@@ -362,42 +370,46 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	}
 }
 
-func (v *Validator) indexArchive(data []byte, report *Report) (*packageIndex, error) {
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.invalid", Message: fmt.Sprintf("ZIP 容器无效：%v", err)}, v.opts.MaxErrors)
-		return nil, err
-	}
-	if v.opts.MaxEntries > 0 && len(reader.File) > v.opts.MaxEntries {
-		err = fmt.Errorf("ZIP 包含 %d 个条目，不能超过 %d 个", len(reader.File), v.opts.MaxEntries)
+// indexArchive 使用 core 读取 ZIP 条目；条目限制、路径判断和问题报告由 validator 负责。
+func (v *Validator) indexArchive(packageReader *core.Package, report *Report) (*packageIndex, error) {
+	entries := packageReader.Entries()
+	if v.opts.MaxEntries > 0 && len(entries) > v.opts.MaxEntries {
+		err := fmt.Errorf("ZIP 包含 %d 个条目，不能超过 %d 个", len(entries), v.opts.MaxEntries)
 		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.too_many_entries", Message: err.Error()}, v.opts.MaxErrors)
 		return nil, err
 	}
-	index := &packageIndex{files: make(map[string]packageFile, len(reader.File))}
+	index := &packageIndex{files: make(map[string]packageFile, len(entries))}
+	seenNames := make(map[string]struct{}, len(entries))
 	var total uint64
 	hadError := false
-	for _, entry := range reader.File {
+	for _, entry := range entries {
 		name, nameErr := cleanEntryName(entry.Name)
 		if nameErr != nil {
 			hadError = true
 			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.invalid_path", File: entry.Name, Message: nameErr.Error()}, v.opts.MaxErrors)
 			continue
 		}
-		if _, exists := index.files[name]; exists {
+		if _, exists := seenNames[name]; exists {
 			hadError = true
 			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.duplicate_entry", File: name, Message: "ZIP 中存在重复条目"}, v.opts.MaxErrors)
 			continue
 		}
-		if entry.FileInfo().IsDir() {
-			index.files[name] = packageFile{name: name}
+		seenNames[name] = struct{}{}
+		if entry.IsDir {
+			if entry.UncompressedSize > 0 {
+				hadError = true
+				report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.invalid_directory", File: name, Message: fmt.Sprintf("目录条目不能包含解压后数据：%s", name)}, v.opts.MaxErrors)
+				continue
+			}
+			index.files[name] = packageFile{name: name, isDir: true}
 			continue
 		}
-		if v.opts.MaxFileSize > 0 && entry.UncompressedSize64 > uint64(v.opts.MaxFileSize) {
+		if v.opts.MaxFileSize > 0 && entry.UncompressedSize > uint64(v.opts.MaxFileSize) {
 			hadError = true
-			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.file_too_large", File: name, Message: fmt.Sprintf("解压后文件大小 %d 字节超过上限 %d 字节", entry.UncompressedSize64, v.opts.MaxFileSize)}, v.opts.MaxErrors)
+			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.file_too_large", File: name, Message: fmt.Sprintf("解压后文件大小 %d 字节超过上限 %d 字节", entry.UncompressedSize, v.opts.MaxFileSize)}, v.opts.MaxErrors)
 			continue
 		}
-		if v.opts.MaxTotalSize > 0 && entry.UncompressedSize64 > uint64(v.opts.MaxTotalSize)-minUint64(total, uint64(v.opts.MaxTotalSize)) {
+		if v.opts.MaxTotalSize > 0 && entry.UncompressedSize > uint64(v.opts.MaxTotalSize)-minUint64(total, uint64(v.opts.MaxTotalSize)) {
 			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.total_too_large", File: name, Message: fmt.Sprintf("ZIP 解压后总大小超过上限 %d 字节", v.opts.MaxTotalSize)}, v.opts.MaxErrors)
 			return nil, fmt.Errorf("ZIP 解压后总大小超过上限")
 		}
@@ -408,7 +420,7 @@ func (v *Validator) indexArchive(data []byte, report *Report) (*packageIndex, er
 				entryLimit = remaining
 			}
 		}
-		fileReader, openErr := entry.Open()
+		fileReader, openErr := packageReader.OpenEntry(entry)
 		if openErr != nil {
 			hadError = true
 			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.entry_open", File: name, Message: fmt.Sprintf("打开 ZIP 条目失败：%v", openErr)}, v.opts.MaxErrors)
@@ -987,7 +999,7 @@ func (v *Validator) checkDigests(documents map[string]*xmlDocument, archive *pac
 				continue
 			}
 			target, ok := archive.get(resolved)
-			if !ok {
+			if !ok || target.isDir {
 				continue
 			}
 			hashFunc, ok := digestHash(method)
@@ -1077,6 +1089,9 @@ func cleanEntryName(name string) (string, error) {
 	if strings.Contains(name, "\\") {
 		return "", fmt.Errorf("ZIP 路径必须使用 '/' 分隔符：%s", name)
 	}
+	if isWindowsDrivePath(name) {
+		return "", fmt.Errorf("ZIP 路径不能包含 Windows 驱动器前缀：%s", name)
+	}
 	for _, segment := range strings.Split(name, "/") {
 		if segment == ".." {
 			return "", fmt.Errorf("ZIP 路径越过包根目录：%s", name)
@@ -1087,6 +1102,11 @@ func cleanEntryName(name string) (string, error) {
 		return "", fmt.Errorf("ZIP 路径越过包根目录：%s", name)
 	}
 	return strings.TrimSuffix(cleaned, "/"), nil
+}
+
+func isWindowsDrivePath(name string) bool {
+	return len(name) >= 2 && name[1] == ':' &&
+		((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z'))
 }
 
 func resolvePackagePath(from, value string) (string, error) {
