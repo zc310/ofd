@@ -3,9 +3,11 @@ package media
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"testing"
 
@@ -27,10 +29,49 @@ func TestDecodePackageImage(t *testing.T) {
 	}
 	defer archive.Close()
 
-	entries := archive.Entries()
-	decoded, ok := decodePackageImage(archive, entries[0])
-	if !ok {
-		t.Fatal("decodePackageImage returned false")
+	decoded, err := Decode(archive, "image.png")
+	if err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if decoded.Bounds() != img.Bounds() {
+		t.Fatalf("image bounds = %v, want %v", decoded.Bounds(), img.Bounds())
+	}
+}
+
+func TestDecodeUsesOpenForStreamableReader(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	reader := &streamableContentReader{data: encoded.Bytes()}
+
+	decoded, err := Decode(reader, "image.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reader.opened {
+		t.Fatal("Decode did not use Open")
+	}
+	if reader.read {
+		t.Fatal("Decode used Read instead of Open")
+	}
+	if decoded.Bounds() != img.Bounds() {
+		t.Fatalf("image bounds = %v, want %v", decoded.Bounds(), img.Bounds())
+	}
+}
+
+func TestDecodeUsesReadForNonStreamableReader(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := Decode(readOnlyContentReader{data: encoded.Bytes()}, "image.png")
+	if err != nil {
+		t.Fatal(err)
 	}
 	if decoded.Bounds() != img.Bounds() {
 		t.Fatalf("image bounds = %v, want %v", decoded.Bounds(), img.Bounds())
@@ -77,7 +118,7 @@ func TestExtractFirstImageUsesExactEntry(t *testing.T) {
 	}
 }
 
-func TestDecodePackageImageRejectsClosedPackage(t *testing.T) {
+func TestDecodeRejectsClosedPackage(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, img); err != nil {
@@ -92,8 +133,8 @@ func TestDecodePackageImageRejectsClosedPackage(t *testing.T) {
 	if err := archive.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := decodePackageImage(archive, entry); ok {
-		t.Fatal("decodePackageImage succeeded for a closed package")
+	if _, err := Decode(archive, entry.Path); err == nil {
+		t.Fatal("Decode succeeded for a closed package")
 	}
 }
 
@@ -143,4 +184,28 @@ func writeTestZip(t *testing.T, files map[string][]byte) string {
 		t.Fatal(err)
 	}
 	return filename
+}
+
+type streamableContentReader struct {
+	data   []byte
+	opened bool
+	read   bool
+}
+
+func (r *streamableContentReader) Open(string) (io.ReadCloser, error) {
+	r.opened = true
+	return io.NopCloser(bytes.NewReader(r.data)), nil
+}
+
+func (r *streamableContentReader) Read(string) ([]byte, error) {
+	r.read = true
+	return nil, errors.New("Read should not be called")
+}
+
+type readOnlyContentReader struct {
+	data []byte
+}
+
+func (r readOnlyContentReader) Read(string) ([]byte, error) {
+	return r.data, nil
 }
