@@ -6,19 +6,35 @@ GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
 ARM64_GOOS ?= linux
 WINDOWS_CC ?= x86_64-w64-mingw32-gcc
+WINDOWS_ARM64_CC ?= aarch64-w64-mingw32-clang
+WINDOWS_ARM64_CXX ?= aarch64-w64-mingw32-clang++
 CGO_ENABLED ?= 1
+ifeq ($(origin CC),default)
 CC := $(shell $(GO) env CC)
+endif
+ifeq ($(origin CXX),default)
+CXX := $(shell $(GO) env CXX)
+endif
 GOHOSTOS := $(shell $(GO) env GOHOSTOS)
 
 ifeq ($(GOOS),windows)
 ifeq ($(GOARCH),amd64)
+ifeq ($(origin CC),file)
 CC := x86_64-w64-mingw32-gcc
 endif
+endif
 ifeq ($(GOARCH),386)
+ifeq ($(origin CC),file)
 CC := i686-w64-mingw32-gcc
 endif
+endif
 ifeq ($(GOARCH),arm64)
-CC := aarch64-w64-mingw32-gcc
+ifeq ($(origin CC),file)
+CC := $(WINDOWS_ARM64_CC)
+endif
+ifeq ($(origin CXX),file)
+CXX := $(WINDOWS_ARM64_CXX)
+endif
 endif
 endif
 
@@ -59,6 +75,8 @@ DARWIN_CROSS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter li
 DARWIN_CROSS_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-darwin-arm64 package-darwin-amd64,)
 WINDOWS_ARM64_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-arm64,)
 WINDOWS_ARM64_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-windows-arm64,)
+WINDOWS_ARM64_BUILD_CC := $(if $(or $(filter command line,$(origin CC)),$(filter environment%,$(origin CC))),$(CC),$(WINDOWS_ARM64_CC))
+WINDOWS_ARM64_BUILD_CXX := $(if $(or $(filter command line,$(origin CXX)),$(filter environment%,$(origin CXX))),$(CXX),$(WINDOWS_ARM64_CXX))
 LINUX_ARM64_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-arm64,)
 LINUX_ARM64_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-arm64,)
 DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
@@ -98,7 +116,9 @@ help:
 		'  make package-darwin-arm64   (macOS Apple Silicon)' \
 		'  make package-darwin-amd64   (macOS Intel)' \
 		'  Linux default make also builds macOS ARM64/x86_64 and Windows x86_64/ARM64' \
-		'  Linux ARM64 and Linux to macOS builds omit ofd-viewer' \
+		'  Windows ARM64 uses aarch64-w64-mingw32-clang/clang++ for ofd-viewer' \
+		'  CC=aarch64-w64-mingw32-clang CXX=aarch64-w64-mingw32-clang++ make package-windows-arm64' \
+		'  Override Windows ARM64 defaults with WINDOWS_ARM64_CC/CXX=...' \
 		'  Android is included in the default package target' \
 		'  ofd-thumbnailer is built only when GOOS=linux'
 
@@ -120,12 +140,14 @@ build-windows-amd64:
 	$(MAKE) GOOS=windows GOARCH=amd64 CC=$(WINDOWS_CC) build
 
 build-windows-arm64:
-	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=0 CC= build-tools
+	@if ! command -v "$(WINDOWS_ARM64_BUILD_CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows ARM64 CGO 编译器 $(WINDOWS_ARM64_BUILD_CC)，请安装 LLVM MinGW 或通过 CC/WINDOWS_ARM64_CC 指定编译器。" >&2; exit 1; fi
+	@if ! command -v "$(WINDOWS_ARM64_BUILD_CXX)" >/dev/null 2>&1; then echo "错误: 找不到 Windows ARM64 C++ 编译器 $(WINDOWS_ARM64_BUILD_CXX)，请安装 LLVM MinGW 或通过 CXX/WINDOWS_ARM64_CXX 指定编译器。" >&2; exit 1; fi
+	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=1 CC=$(WINDOWS_ARM64_BUILD_CC) CXX=$(WINDOWS_ARM64_BUILD_CXX) build
 
 $(VIEWER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	@if [ "$(GOOS)" = "windows" ] && ! command -v "$(CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows CGO 编译器 $(CC)，请安装 MinGW-w64 或通过 CC 指定编译器。" >&2; exit 1; fi
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(VIEWER_LDFLAGS) -o "$@" ./cmd/ofd-viewer
+	CC=$(CC) CXX=$(CXX) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(VIEWER_LDFLAGS) -o "$@" ./cmd/ofd-viewer
 
 $(CONVERTER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -165,7 +187,9 @@ package-windows-amd64:
 	$(MAKE) GOOS=windows GOARCH=amd64 CC=$(WINDOWS_CC) package-desktop
 
 package-windows-arm64:
-	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=0 CC= package-tools
+	@if ! command -v "$(WINDOWS_ARM64_BUILD_CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows ARM64 CGO 编译器 $(WINDOWS_ARM64_BUILD_CC)，请安装 LLVM MinGW 或通过 CC/WINDOWS_ARM64_CC 指定编译器。" >&2; exit 1; fi
+	@if ! command -v "$(WINDOWS_ARM64_BUILD_CXX)" >/dev/null 2>&1; then echo "错误: 找不到 Windows ARM64 C++ 编译器 $(WINDOWS_ARM64_BUILD_CXX)，请安装 LLVM MinGW 或通过 CXX/WINDOWS_ARM64_CXX 指定编译器。" >&2; exit 1; fi
+	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=1 CC=$(WINDOWS_ARM64_BUILD_CC) CXX=$(WINDOWS_ARM64_BUILD_CXX) package-desktop
 
 package-viewer: $(VIEWER_PACKAGE)
 
