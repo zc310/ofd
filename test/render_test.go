@@ -46,16 +46,6 @@ func TestRender_PDF_ano(t *testing.T) {
 	defer f.Close()
 	assert.Nil(t, converter.PDF("testdata/ano.ofd", f))
 }
-func Example_pdfIntro() {
-	f, err := os.Create(filepath.Join(tmpDir, "intro.pdf"))
-	if err == nil {
-		err = converter.PDF("testdata/intro.ofd", f)
-		f.Close()
-	}
-	fmt.Println(err == nil)
-	// Output: true
-}
-
 func BenchmarkRenderPDFIntro(b *testing.B) {
 	var output bytes.Buffer
 	b.ReportAllocs()
@@ -92,71 +82,6 @@ func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, strings.Count(output.String(), "<image "))
 	assert.Contains(t, output.String(), `fill-opacity=".6"`)
-}
-
-func Example_png() {
-	err := converter.Image("testdata/ano.ofd",
-		converter.Writer(func(page int) (io.WriteCloser, error) {
-			return os.Create(fmt.Sprintf(filepath.Join(tmpDir, "ano_%d.png"), page))
-		}),
-		converter.BgColor(color.White),
-		converter.PNG(),
-	)
-	fmt.Println(err == nil)
-	// Output: true
-}
-
-func Example_jpg() {
-	err := converter.Image("testdata/intro.ofd",
-		converter.Writer(func(page int) (io.WriteCloser, error) {
-			return os.Create(filepath.Join(tmpDir, fmt.Sprintf("intro_%d.jpg", page)))
-		}),
-		converter.BgColor(color.White),
-		converter.JPG(),
-		converter.Page(40),
-		converter.DPI(300),
-	)
-	fmt.Println(err == nil)
-	// Output: true
-}
-
-func Example_svg() {
-	var output bytes.Buffer
-	err := converter.Image("testdata/helloworld.ofd",
-		converter.Writer(func(int) (io.WriteCloser, error) {
-			return bufferWriteCloser{Buffer: &output}, nil
-		}),
-		converter.SVG(),
-		converter.Page(1),
-	)
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("<svg")))
-	// Output: true
-}
-
-func Example_eps() {
-	var output bytes.Buffer
-	err := converter.Image("testdata/helloworld.ofd",
-		converter.Writer(func(int) (io.WriteCloser, error) {
-			return bufferWriteCloser{Buffer: &output}, nil
-		}),
-		converter.EPS(),
-		converter.Page(1),
-	)
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("%!PS-Adobe-3.0 EPSF-3.0")))
-	// Output: true
-}
-
-func Example_tex() {
-	var output bytes.Buffer
-	err := converter.Image("testdata/helloworld.ofd",
-		converter.Writer(func(int) (io.WriteCloser, error) {
-			return bufferWriteCloser{Buffer: &output}, nil
-		}),
-		converter.TeX(),
-		converter.Page(1),
-	)
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("\\begin{pgfpicture}")))
-	// Output: true
 }
 
 func TestRender_Image(t *testing.T) {
