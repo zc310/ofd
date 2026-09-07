@@ -4,8 +4,11 @@ FYNE ?= fyne
 
 GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
+ARM64_GOOS ?= linux
+WINDOWS_CC ?= x86_64-w64-mingw32-gcc
 CGO_ENABLED ?= 1
 CC := $(shell $(GO) env CC)
+GOHOSTOS := $(shell $(GO) env GOHOSTOS)
 
 ifeq ($(GOOS),windows)
 ifeq ($(GOARCH),amd64)
@@ -46,7 +49,23 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-.PHONY: all build package package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer clean help FORCE
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer $(if $(filter linux,$(GOOS)),package-thumbnailer)
+VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
+VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
+WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
+WINDOWS_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-windows-amd64,)
+DARWIN_CROSS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-darwin-arm64 build-darwin-amd64,)
+DARWIN_CROSS_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-darwin-arm64 package-darwin-amd64,)
+WINDOWS_ARM64_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-arm64,)
+WINDOWS_ARM64_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-windows-arm64,)
+LINUX_ARM64_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-arm64,)
+LINUX_ARM64_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),package-arm64,)
+DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
+DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
+DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
+
+.PHONY: all build build-tools build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer clean help FORCE
 
 all: package
 
@@ -61,13 +80,47 @@ help:
 		'make package-validator       Build the OFD validator' \
 		'make package-analyzer        Build the OFD analyzer' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
+		'make build-arm64             Build Linux ARM64 command programs' \
+		'make package-arm64           Build Linux ARM64 packages' \
+		'make build-darwin-arm64      Build macOS ARM64 command programs' \
+		'make package-darwin-arm64    Build macOS ARM64 packages' \
+		'make build-darwin-amd64      Build macOS x86_64 command programs' \
+		'make package-darwin-amd64    Build macOS x86_64 packages' \
+		'make build-windows-amd64     Build Windows x86_64 command programs' \
+		'make package-windows-amd64   Build Windows x86_64 packages' \
+		'make build-windows-arm64     Build Windows ARM64 command programs' \
+		'make package-windows-arm64   Build Windows ARM64 packages' \
 		'make clean                   Remove generated build files and packages' \
 		'' \
 		'Cross compilation variables:' \
 		'  GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make package' \
+		'  make package-arm64          (default: GOOS=linux GOARCH=arm64)' \
+		'  make package-darwin-arm64   (macOS Apple Silicon)' \
+		'  make package-darwin-amd64   (macOS Intel)' \
+		'  Linux default make also builds macOS ARM64/x86_64 and Windows x86_64/ARM64' \
+		'  Linux ARM64 and Linux to macOS builds omit ofd-viewer' \
+		'  Android is included in the default package target' \
 		'  ofd-thumbnailer is built only when GOOS=linux'
 
-build: $(VIEWER) $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(DARWIN_CROSS_BUILD_TARGETS) $(WINDOWS_ARM64_BUILD_TARGETS) $(LINUX_ARM64_BUILD_TARGETS)
+
+build-tools: $(TOOL_BUILD_TARGETS)
+
+build-arm64:
+	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 build-tools
+
+build-darwin-arm64:
+	$(MAKE) GOOS=darwin GOARCH=arm64 CGO_ENABLED=$(DARWIN_CGO_ENABLED) $(DARWIN_BUILD_TARGET)
+
+build-darwin-amd64:
+	$(MAKE) GOOS=darwin GOARCH=amd64 CGO_ENABLED=$(DARWIN_CGO_ENABLED) $(DARWIN_BUILD_TARGET)
+
+build-windows-amd64:
+	@if ! command -v "$(WINDOWS_CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows x86_64 CGO 编译器 $(WINDOWS_CC)，请安装 MinGW-w64 或通过 WINDOWS_CC 指定编译器。" >&2; exit 1; fi
+	$(MAKE) GOOS=windows GOARCH=amd64 CC=$(WINDOWS_CC) build
+
+build-windows-arm64:
+	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=0 CC= build-tools
 
 $(VIEWER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -76,7 +129,6 @@ $(VIEWER): FORCE
 
 $(CONVERTER): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	@if [ "$(GOOS)" = "windows" ] && ! command -v "$(CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows CGO 编译器 $(CC)，请安装 MinGW-w64 或通过 CC 指定编译器。" >&2; exit 1; fi
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-converter
 
 $(VALIDATOR): FORCE
@@ -93,7 +145,27 @@ $(THUMBNAILER): FORCE
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-thumbnailer
 endif
 
-package: package-viewer package-converter package-validator package-analyzer package-viewer-android-zip $(if $(filter linux,$(GOOS)),package-thumbnailer)
+package: package-desktop package-viewer-android-zip $(WINDOWS_PACKAGE_TARGETS) $(DARWIN_CROSS_PACKAGE_TARGETS) $(WINDOWS_ARM64_PACKAGE_TARGETS) $(LINUX_ARM64_PACKAGE_TARGETS)
+
+package-desktop: $(VIEWER_PACKAGE_TARGETS) $(TOOL_PACKAGE_TARGETS)
+
+package-tools: $(TOOL_PACKAGE_TARGETS)
+
+package-arm64:
+	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 package-tools
+
+package-darwin-arm64:
+	$(MAKE) GOOS=darwin GOARCH=arm64 CGO_ENABLED=$(DARWIN_CGO_ENABLED) $(DARWIN_PACKAGE_TARGET)
+
+package-darwin-amd64:
+	$(MAKE) GOOS=darwin GOARCH=amd64 CGO_ENABLED=$(DARWIN_CGO_ENABLED) $(DARWIN_PACKAGE_TARGET)
+
+package-windows-amd64:
+	@if ! command -v "$(WINDOWS_CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows x86_64 CGO 编译器 $(WINDOWS_CC)，请安装 MinGW-w64 或通过 WINDOWS_CC 指定编译器。" >&2; exit 1; fi
+	$(MAKE) GOOS=windows GOARCH=amd64 CC=$(WINDOWS_CC) package-desktop
+
+package-windows-arm64:
+	$(MAKE) GOOS=windows GOARCH=arm64 CGO_ENABLED=0 CC= package-tools
 
 package-viewer: $(VIEWER_PACKAGE)
 
