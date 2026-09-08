@@ -42,59 +42,93 @@ const (
 
 // InputInfo 描述被校验的输入文件。
 type InputInfo struct {
+	// Path 是被校验的输入文件路径或名称。
 	Path string `json:"path"`
-	Size int64  `json:"size"`
+	// Size 是输入数据的字节数。
+	Size int64 `json:"size"`
 }
 
 // Summary 汇总报告中的问题和文件数量。
 type Summary struct {
-	Errors   int `json:"errors"`
+	// Errors 是错误数量。
+	Errors int `json:"errors"`
+	// Warnings 是警告数量。
 	Warnings int `json:"warnings"`
-	Infos    int `json:"infos"`
-	Files    int `json:"files"`
+	// Infos 是提示数量。
+	Infos int `json:"infos"`
+	// Files 是包内文件数量。
+	Files int `json:"files"`
 }
 
 // CheckResult 描述一个校验阶段的结果。
 type CheckResult struct {
-	Name     string `json:"name"`
-	NameZh   string `json:"name_zh,omitempty"`
-	Status   string `json:"status"`
+	// Name 是校验阶段的英文名称。
+	Name string `json:"name"`
+	// NameZh 是校验阶段的中文名称。
+	NameZh string `json:"name_zh,omitempty"`
+	// Status 是校验阶段的英文状态。
+	Status string `json:"status"`
+	// StatusZh 是校验阶段的中文状态。
 	StatusZh string `json:"status_zh,omitempty"`
 }
 
 // Issue 描述一条可定位、可机器读取的校验问题。
 type Issue struct {
-	Severity   Severity `json:"severity"`
-	SeverityZh string   `json:"severity_zh,omitempty"`
-	Stage      Stage    `json:"stage"`
-	StageZh    string   `json:"stage_zh,omitempty"`
-	Code       string   `json:"code"`
-	EngineCode string   `json:"engine_code,omitempty"`
-	Message    string   `json:"message"`
-	Hint       string   `json:"hint,omitempty"`
-	File       string   `json:"file,omitempty"`
-	Path       string   `json:"path,omitempty"`
-	Line       int      `json:"line,omitempty"`
-	Column     int      `json:"column,omitempty"`
+	// Severity 是问题的英文严重程度。
+	Severity Severity `json:"severity"`
+	// SeverityZh 是问题严重程度的中文名称。
+	SeverityZh string `json:"severity_zh,omitempty"`
+	// Stage 是问题所属校验阶段的英文名称。
+	Stage Stage `json:"stage"`
+	// StageZh 是问题所属校验阶段的中文名称。
+	StageZh string `json:"stage_zh,omitempty"`
+	// Code 是问题的机器可读代码。
+	Code string `json:"code"`
+	// EngineCode 是底层校验引擎提供的问题代码。
+	EngineCode string `json:"engine_code,omitempty"`
+	// Message 是问题的详细描述。
+	Message string `json:"message"`
+	// Hint 是针对问题的处理提示。
+	Hint string `json:"hint,omitempty"`
+	// File 是问题所在的包内文件路径。
+	File string `json:"file,omitempty"`
+	// Path 是问题所在的 XML 路径。
+	Path string `json:"path,omitempty"`
+	// Line 是问题所在的行号。
+	Line int `json:"line,omitempty"`
+	// Column 是问题所在的列号。
+	Column int `json:"column,omitempty"`
 }
 
 // Report 是校验器的统一报告模型。
 type Report struct {
-	SchemaVersion string        `json:"schema_version"`
-	Tool          ToolInfo      `json:"tool"`
-	Input         InputInfo     `json:"input"`
-	Status        Status        `json:"status"`
-	StatusZh      string        `json:"status_zh,omitempty"`
-	Summary       Summary       `json:"summary"`
-	Checks        []CheckResult `json:"checks"`
-	Issues        []Issue       `json:"issues"`
-	StartedAt     time.Time     `json:"started_at"`
-	DurationMS    int64         `json:"duration_ms"`
+	// SchemaVersion 是报告模型的版本号。
+	SchemaVersion string `json:"schema_version"`
+	// Tool 是生成报告的工具信息。
+	Tool ToolInfo `json:"tool"`
+	// Input 是被校验的输入文件信息。
+	Input InputInfo `json:"input"`
+	// Status 是整个 OFD 包的校验结论。
+	Status Status `json:"status"`
+	// StatusZh 是校验结论的中文名称。
+	StatusZh string `json:"status_zh,omitempty"`
+	// Summary 是报告中的问题和文件数量汇总。
+	Summary Summary `json:"summary"`
+	// Checks 是各校验阶段的结果列表。
+	Checks []CheckResult `json:"checks"`
+	// Issues 是校验发现的问题列表。
+	Issues []Issue `json:"issues"`
+	// StartedAt 是校验开始时间。
+	StartedAt time.Time `json:"started_at"`
+	// DurationMS 是校验耗时，单位为毫秒。
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // ToolInfo 描述生成报告的工具版本。
 type ToolInfo struct {
-	Name    string `json:"name"`
+	// Name 是生成报告的工具名称。
+	Name string `json:"name"`
+	// Version 是生成报告的工具版本。
 	Version string `json:"version"`
 }
 

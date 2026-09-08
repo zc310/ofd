@@ -1,3 +1,4 @@
+// Package core 提供 OFD ZIP 包的索引、读取和安全访问能力。
 package core
 
 import (

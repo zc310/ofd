@@ -1,3 +1,4 @@
+// 命令 ofd-thumbnailer 从 OFD 或图像文件生成缩略图。
 package main
 
 import (
