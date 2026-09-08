@@ -90,3 +90,77 @@ func TestTextFillDisabled(t *testing.T) {
 		t.Fatal("expected missing Fill to keep text fill enabled")
 	}
 }
+
+func TestNormalizeTextDirection(t *testing.T) {
+	tests := []struct {
+		input int
+		want  int
+	}{
+		{0, 0},
+		{90, 90},
+		{180, 180},
+		{270, 270},
+		{360, 0},
+		{-90, 270},
+		{44, 0},
+		{45, 90},
+		{315, 0},
+	}
+	for _, test := range tests {
+		if got := normalizeTextDirection(test.input); got != test.want {
+			t.Errorf("normalizeTextDirection(%d) = %d, want %d", test.input, got, test.want)
+		}
+	}
+}
+
+func TestTextReadAdvance(t *testing.T) {
+	for _, test := range []struct {
+		direction int
+		wantX     float64
+		wantY     float64
+	}{
+		{0, 3, 0},
+		{90, 0, 3},
+		{180, -3, 0},
+		{270, 0, -3},
+	} {
+		gotX, gotY := textReadAdvance(3, test.direction)
+		if gotX != test.wantX || gotY != test.wantY {
+			t.Errorf("textReadAdvance(%d) = (%v, %v), want (%v, %v)", test.direction, gotX, gotY, test.wantX, test.wantY)
+		}
+	}
+}
+
+func TestTextCharDirectionDegrees(t *testing.T) {
+	for _, test := range []struct {
+		direction int
+		want      float64
+	}{
+		{0, 0},
+		{90, 90},
+		{180, 180},
+		{270, 270},
+		{-90, 270},
+		{450, 90},
+	} {
+		object := models.TextObject{CtText: models.CtText{CharDirection: test.direction}}
+		if got := textCharDirectionDegrees(object); got != test.want {
+			t.Errorf("textCharDirectionDegrees(%d) = %v, want %v", test.direction, got, test.want)
+		}
+	}
+}
+
+func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
+	object := models.TextObject{CtText: models.CtText{ReadDirection: 90}}
+	code := models.TextCode{DeltaX: models.StArrayF{2}, DeltaY: models.StArrayF{4}}
+	gotX, gotY := textAdvance(10, object, code, 0)
+	if gotX != 2 || gotY != 4 {
+		t.Fatalf("textAdvance with explicit deltas = (%v, %v), want (2, 4)", gotX, gotY)
+	}
+
+	code = models.TextCode{}
+	gotX, gotY = textAdvance(10, object, code, 0)
+	if gotX != 0 || gotY != 10 {
+		t.Fatalf("textAdvance with ReadDirection=90 = (%v, %v), want (0, 10)", gotX, gotY)
+	}
+}

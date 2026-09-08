@@ -124,7 +124,7 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 }
 
 func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
-	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
 		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
 		return
 	}
@@ -133,12 +133,9 @@ func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, 
 	runes := []rune(code.Value)
 	for i, r := range runes {
 		if i > 0 {
-			if len(code.DeltaX) > 0 {
-				posX += valueAt(code.DeltaX, i-1)
-			} else {
-				posX += face.TextWidth(string(runes[i-1])) * textHScale(object)
-			}
-			posY += valueAt(code.DeltaY, i-1)
+			deltaX, deltaY := textAdvance(face.TextWidth(string(runes[i-1])), object, code, i-1)
+			posX += deltaX
+			posY += deltaY
 		}
 		p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight)
 	}
@@ -158,6 +155,9 @@ func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace,
 	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	}
+	if direction := textCharDirectionDegrees(object); direction != 0 {
+		matrix = matrix.Rotate(-direction)
 	}
 	matrix = matrix.Scale(textHScale(object), 1)
 	ctx.DrawPath(0, 0, path.Transform(matrix))
@@ -192,6 +192,63 @@ func textHScale(object models.TextObject) float64 {
 		return object.HScale
 	}
 	return 1
+}
+
+// normalizeTextDirection 将 OFD 方向归一化为最接近的标准象限方向。
+// OFD 标准使用 0、90、180、270 度；对非标准输入采用邻近象限，避免
+// 产生未定义的斜向排版结果。
+func normalizeTextDirection(direction int) int {
+	direction %= 360
+	if direction < 0 {
+		direction += 360
+	}
+	switch {
+	case direction >= 45 && direction < 135:
+		return 90
+	case direction >= 135 && direction < 225:
+		return 180
+	case direction >= 225 && direction < 315:
+		return 270
+	default:
+		return 0
+	}
+}
+
+func textDirectionsZero(object models.TextObject) bool {
+	return normalizeTextDirection(object.ReadDirection) == 0 && normalizeTextDirection(object.CharDirection) == 0
+}
+
+func textReadAdvance(advance float64, direction int) (float64, float64) {
+	switch normalizeTextDirection(direction) {
+	case 90:
+		return 0, advance
+	case 180:
+		return -advance, 0
+	case 270:
+		return 0, -advance
+	default:
+		return advance, 0
+	}
+}
+
+func textCharDirectionDegrees(object models.TextObject) float64 {
+	return float64(normalizeTextDirection(object.CharDirection))
+}
+
+// textAdvance 返回当前字形到下一个字形的 OFD 坐标增量。显式 DeltaX/
+// DeltaY 优先；两者都未指定时，按 ReadDirection 使用字体字宽作为默认步进。
+func textAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, index int) (float64, float64) {
+	if len(code.DeltaX) > 0 || len(code.DeltaY) > 0 {
+		var deltaX, deltaY float64
+		if len(code.DeltaX) > 0 {
+			deltaX = valueAt(code.DeltaX, index)
+		}
+		if len(code.DeltaY) > 0 {
+			deltaY = valueAt(code.DeltaY, index)
+		}
+		return deltaX, deltaY
+	}
+	return textReadAdvance(glyphWidth*textHScale(object), object.ReadDirection)
 }
 
 // textFontStyle 将 OFD 字重映射为 canvas 支持的标准字重。
@@ -238,7 +295,7 @@ func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, obje
 	if len(glyphs) == 0 {
 		return
 	}
-	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
 		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
@@ -246,12 +303,9 @@ func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, obje
 	posX, posY := code.X, code.Y
 	for i, glyph := range glyphs {
 		if i > 0 {
-			if len(code.DeltaX) > 0 {
-				posX += valueAt(code.DeltaX, i-1)
-			} else {
-				posX += textGlyphWidth(face, glyphs[i-1]) * textHScale(object)
-			}
-			posY += valueAt(code.DeltaY, i-1)
+			deltaX, deltaY := textAdvance(textGlyphWidth(face, glyphs[i-1]), object, code, i-1)
+			posX += deltaX
+			posY += deltaY
 		}
 		p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
 	}
@@ -309,6 +363,14 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
+	// CharDirection 需要逐字旋转，Canvas 的文字排版接口不能对单个字形
+	// 应用该变换，因此退回到路径绘制。
+	if textCharDirectionDegrees(object) != 0 {
+		if path, _ := face.ToPath(value); path != nil && !path.Empty() {
+			p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			return
+		}
+	}
 	// 空心字必须走路径绘制才能描边，DrawText 无法单独描边。
 	if textFillDisabled(object) && object.Stroke {
 		if path, _ := face.ToPath(value); path != nil && !path.Empty() {
@@ -325,6 +387,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		// 对于 CellContent，Boundary 定义在父级坐标系中。
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
 		ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
 		ctx.Pop()
@@ -335,6 +398,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		ctx.Push()
 		ctx.Translate(tx+object.Boundary.X, pageHeight-(ty+object.Boundary.Y))
 		ctx.Rotate(-object.CTM.RotationAngleDegrees())
+		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
 		ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
 		ctx.Pop()
@@ -345,6 +409,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	}
 	ctx.Push()
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	ctx.Rotate(-textCharDirectionDegrees(object))
 	ctx.Scale(hScale, 1)
 	ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
 	ctx.Pop()
@@ -363,8 +428,8 @@ func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, o
 	p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
 }
 
-// directTextPath handles subset fonts whose cmap is usable by GlyphIndex but
-// not by the text shaper. Normal text still uses Canvas shaping below.
+// directTextPath 处理 cmap 可通过 GlyphIndex 使用、但无法被文字整形器使用的
+// 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能。
 func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 	path, _ := face.ToPath(value)
 	if path != nil && !path.Empty() {
@@ -392,8 +457,8 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 }
 
 func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
-	// ToPath returns geometry only; unlike DrawText it does not apply the
-	// FontFace paint, so copy the text fill to the path drawing state.
+	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
+	// 因此需要将文字填充样式复制到路径绘制状态。
 	if textFillDisabled(object) && object.Stroke {
 		// 空心字：仅描边，不填充。
 		ctx.SetFill(nil)
@@ -420,6 +485,9 @@ func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path
 	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	}
+	if direction := textCharDirectionDegrees(object); direction != 0 {
+		matrix = matrix.Rotate(-direction)
 	}
 	matrix = matrix.Scale(hScale, 1)
 	ctx.DrawPath(0, 0, path.Transform(matrix))
