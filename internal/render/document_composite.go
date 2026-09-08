@@ -22,7 +22,7 @@ func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject,
 }
 
 func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
-	if !object.VisibleValue() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
 	if compositeDepth >= maxCompositeDepth {
@@ -79,6 +79,9 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
+		if !ctm.IsFinite() {
+			return
+		}
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
@@ -88,10 +91,16 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	// 时重复缩放裁剪区域，同时保留 true 时的对象变换。
 	clipCTM := models.IdentityMatrix
 	if object.CTM != nil {
+		if !object.CTM.IsFinite() {
+			return
+		}
 		clipCTM = *object.CTM
 	}
 	if parentCTM != nil {
 		clipCTM = *parentCTM.Multiply(&clipCTM)
+		if !clipCTM.IsFinite() {
+			return
+		}
 	}
 	if clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM); clip != nil {
 		img = imageWithClip(img, clip, m)
@@ -154,7 +163,7 @@ func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
 }
 
 func simpleCompositePath(object models.PathObject) bool {
-	if !object.VisibleValue() || object.Clips != nil || !object.Fill || object.Stroke != "false" {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || object.Clips != nil || !object.Fill || object.Stroke != "false" {
 		return false
 	}
 	if object.FillColor == nil || object.FillColor.Value == nil {

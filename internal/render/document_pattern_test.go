@@ -125,6 +125,11 @@ func TestPatternCTMParse(t *testing.T) {
 			wantOK: false,
 		},
 		{
+			name:   "non-finite",
+			ctm:    models.StArray{"1", "0", "0", "1", "NaN", "0"},
+			wantOK: false,
+		},
+		{
 			name:   "nil",
 			ctm:    nil,
 			want:   models.IdentityMatrix,

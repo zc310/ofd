@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/xml"
+	"math"
 	"testing"
 )
 
@@ -36,6 +37,30 @@ func TestStRefIDUnmarshalXMLAttrInvalidValueUsesZero(t *testing.T) {
 	}
 	if document.RefID != 0 {
 		t.Fatalf("StRefID = %d, want 0", document.RefID)
+	}
+}
+
+func TestCTMUnmarshalXMLAttrRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		t.Run(value, func(t *testing.T) {
+			var document struct {
+				CTM CTM `xml:"CTM,attr"`
+			}
+			if err := xml.Unmarshal([]byte(`<Document CTM="1 0 0 1 `+value+` 0"/>`), &document); err == nil {
+				t.Fatal("expected non-finite CTM value to be rejected")
+			}
+		})
+	}
+}
+
+func TestCTMIsFinite(t *testing.T) {
+	finite := CTM{1, 0, 0, 1, 10, 20}
+	if !finite.IsFinite() {
+		t.Fatal("finite CTM reported as invalid")
+	}
+	nonFinite := CTM{1, 0, 0, 1, math.NaN(), 0}
+	if nonFinite.IsFinite() {
+		t.Fatal("non-finite CTM reported as valid")
 	}
 }
 
