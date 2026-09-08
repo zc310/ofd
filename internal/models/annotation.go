@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -111,6 +112,14 @@ type StBox struct {
 	Height float64 `xml:"Height,attr"`
 }
 
+// IsFinite 判断盒子的所有坐标和尺寸是否都是有限数值。
+func (b StBox) IsFinite() bool {
+	return !math.IsNaN(b.X) && !math.IsInf(b.X, 0) &&
+		!math.IsNaN(b.Y) && !math.IsInf(b.Y, 0) &&
+		!math.IsNaN(b.Width) && !math.IsInf(b.Width, 0) &&
+		!math.IsNaN(b.Height) && !math.IsInf(b.Height, 0)
+}
+
 // parseFromString 从字符串解析盒子数据（私有方法）
 func (b *StBox) parseFromString(value string) error {
 	// 移除首尾空格并按空格分割
@@ -127,6 +136,9 @@ func (b *StBox) parseFromString(value string) error {
 		val, err := strconv.ParseFloat(part, 64)
 		if err != nil {
 			return fmt.Errorf("%s解析失败: %w", fieldNames[i], err)
+		}
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return fmt.Errorf("%s必须是有限数值", fieldNames[i])
 		}
 		*fields[i] = val
 	}

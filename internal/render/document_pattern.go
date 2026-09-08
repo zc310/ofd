@@ -15,7 +15,8 @@ const maxPatternTiles = 100000
 // 左上角坐标系，而目标画布使用左下角坐标系；应用图块 CTM 后，页面高度转换
 // 由对象绘制函数完成。
 func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM) bool {
-	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || path == nil || len(pattern.CellContent.Items) == 0 {
+	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
+		!pb.IsFinite() || path == nil || len(pattern.CellContent.Items) == 0 {
 		return false
 	}
 
@@ -58,6 +59,9 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 	// 将裁剪边界从画布坐标（Y 轴向上）转换为 OFD 坐标（Y 轴向下），然后在
 	// 单元坐标系中计算所需的图块索引。
 	bounds := path.FastBounds()
+	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) {
+		return false
+	}
 	points := []models.StPos{
 		{X: bounds.X0, Y: pb.Height - bounds.Y0},
 		{X: bounds.X1, Y: pb.Height - bounds.Y0},
@@ -68,6 +72,9 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 	minY, maxY := math.Inf(1), math.Inf(-1)
 	for _, point := range points {
 		x, y := inverse.TransformPoint(point)
+		if !finiteFloat(x) || !finiteFloat(y) {
+			return false
+		}
 		minX = math.Min(minX, x)
 		maxX = math.Max(maxX, x)
 		minY = math.Min(minY, y)

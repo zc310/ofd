@@ -19,7 +19,8 @@ func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *mod
 }
 
 func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
+		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
 	}
 	media, ok := p.Res[models.StID(object.ResourceID)]
@@ -44,6 +45,9 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *mod
 		}
 	}
 	m := imageMatrix(object.Boundary, img, ctm, pb.Height)
+	if !finiteMatrix(m) {
+		return
+	}
 
 	if clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, ctm); clip != nil {
 		img = imageWithClip(img, clip, m)
@@ -51,7 +55,11 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *mod
 	if parentClip != nil {
 		img = imageWithClip(img, parentClip, m)
 	}
-	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
+	m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
+	if !finiteMatrix(m) {
+		return
+	}
+	ctx.RenderImage(img, m)
 }
 
 // imageCTM 返回图片对象使用的变换矩阵。
@@ -70,6 +78,17 @@ func imageMatrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight f
 		{ctm[0] / imgW, -ctm[2] / imgH, box.X + ctm[2] + ctm[4]},
 		{-ctm[1] / imgW, ctm[3] / imgH, pageHeight - box.Y - ctm[3] - ctm[5]},
 	}
+}
+
+func finiteMatrix(matrix canvas.Matrix) bool {
+	for _, row := range matrix {
+		for _, value := range row {
+			if !finiteFloat(value) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
@@ -154,7 +173,7 @@ func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pag
 }
 
 func imageWithClip(img image.Image, clip *canvas.Path, m canvas.Matrix) image.Image {
-	if img == nil || clip == nil || canvas.Equal(m.Det(), 0) {
+	if img == nil || clip == nil || !finiteMatrix(m) || canvas.Equal(m.Det(), 0) {
 		return img
 	}
 	bounds := img.Bounds()
@@ -168,7 +187,11 @@ func imageWithClip(img image.Image, clip *canvas.Path, m canvas.Matrix) image.Im
 
 // imageClipMask 将页面裁剪路径转换为图片像素掩码。
 func imageClipMask(clip *canvas.Path, m canvas.Matrix, width, height int) *image.RGBA {
-	maskPath := clip.Copy().Transform(m.Inv())
+	inverse := m.Inv()
+	if !finiteMatrix(inverse) {
+		return image.NewRGBA(image.Rect(0, 0, width, height))
+	}
+	maskPath := clip.Copy().Transform(inverse)
 	maskCanvas := canvas.New(float64(width), float64(height))
 	maskCtx := canvas.NewContext(maskCanvas)
 	maskCtx.SetFillColor(color.White)

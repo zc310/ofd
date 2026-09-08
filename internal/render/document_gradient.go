@@ -239,6 +239,9 @@ func mapGradientValue(value float64, mapType string) float64 {
 func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) canvas.Point) canvas.Gradient {
 	start := transform(shd.StartPoint)
 	end := transform(shd.EndPoint)
+	if !finitePoint(start) || !finitePoint(end) || !finiteFloat(shd.MapUnit) {
+		return nil
+	}
 	if shd.MapType != "Repeat" && shd.MapType != "Reflect" {
 		gradient := canvas.NewLinearGradient(start, end)
 		addOFDGradientStops(&gradient.Grad, shd.Segment)
@@ -259,6 +262,9 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) c
 func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) canvas.Point) canvas.Gradient {
 	c0 := transform(shd.StartPoint)
 	c1 := transform(shd.EndPoint)
+	if !finitePoint(c0) || !finitePoint(c1) || !finiteFloat(shd.StartRadius) || !finiteFloat(shd.EndRadius) || !finiteFloat(shd.Eccentricity) || !finiteFloat(shd.Angle) || !finiteFloat(shd.MapUnit) || shd.Eccentricity >= 1 {
+		return nil
+	}
 	hasElliptical := shd.Eccentricity > 0 || shd.Angle != 0
 	hasMapType := shd.MapType == "Repeat" || shd.MapType == "Reflect"
 
@@ -394,6 +400,14 @@ func makeMeshTriangle(p0, p1, p2 ofdMeshVertex) ofdMeshTriangle {
 }
 
 func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, extend bool) canvas.Gradient {
+	if len(triangles) == 0 {
+		return nil
+	}
+	for _, triangle := range triangles {
+		if !finitePoint(triangle.p0) || !finitePoint(triangle.p1) || !finitePoint(triangle.p2) {
+			return nil
+		}
+	}
 	gradient := &ofdMeshGradient{
 		triangles: triangles,
 		backColor: color.RGBA{A: 255},
@@ -403,6 +417,10 @@ func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, ext
 		gradient.backColor = meshColor(*backColor)
 	}
 	return gradient
+}
+
+func finitePoint(point canvas.Point) bool {
+	return finiteFloat(point.X) && finiteFloat(point.Y)
 }
 
 func meshColor(source models.CTColor) color.RGBA {

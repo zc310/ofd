@@ -17,7 +17,8 @@ func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *model
 }
 
 func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
+		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) || !finiteFloat(object.Size) {
 		return
 	}
 	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {
@@ -40,6 +41,9 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 		if scale := object.CTM.YScale(); scale > 0 {
 			object.Size *= scale
 		}
+	}
+	if !finiteFloat(object.Size) {
+		return
 	}
 	// 空心字（仅描边，不填充）：将填充置空，保留描边颜色。
 	if textFillDisabled(object) && object.Stroke {
@@ -77,6 +81,9 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	}
 	codePosition := 0
 	for _, code := range object.TextCode {
+		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
+			continue
+		}
 		p.drawTextCode(ctx, face, object, code, pb.Height, parentCTM, codePosition)
 		codePosition += len([]rune(code.Value))
 	}
@@ -94,7 +101,7 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 
 // drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
 func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox) bool {
-	if pb.Width <= 0 || pb.Height <= 0 {
+	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
 		return false
 	}
 	transform := func(point models.StPos) canvas.Point {
@@ -111,7 +118,13 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 	pageCtx := canvas.NewContext(page)
 	pageCtx.SetFillGradient(gradient)
 	for _, code := range object.TextCode {
+		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
+			continue
+		}
 		p.drawMeshTextCode(pageCtx, face, object, code, pb.Height)
+	}
+	if !finiteFloat(pb.Width) || !finiteFloat(pb.Height) {
+		return false
 	}
 	var textImage image.Image = rasterizer.Draw(page, canvas.DPI(meshGradientDPI), canvas.DefaultColorSpace)
 	if textImage == nil || textImage.Bounds().Empty() {
@@ -122,7 +135,11 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 	}
 	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, textImage,
 		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
-	ctx.RenderImage(textImage, ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix))
+	matrix = ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix)
+	if !finiteMatrix(matrix) {
+		return false
+	}
+	ctx.RenderImage(textImage, matrix)
 	return true
 }
 
@@ -145,6 +162,10 @@ func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, 
 }
 
 func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) ||
+		!object.Boundary.IsFinite() || !object.CTM.IsFinite() {
+		return
+	}
 	path := directTextPath(face, value)
 	if path == nil {
 		path, _ = face.ToPath(value)
@@ -155,6 +176,9 @@ func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace,
 	if object.CTM != nil {
 		x, y = object.CTM.Transform(x, y)
 	}
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+		return
+	}
 	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
@@ -163,6 +187,9 @@ func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace,
 		matrix = matrix.Rotate(-direction)
 	}
 	matrix = matrix.Scale(textHScale(object), 1)
+	if !finiteMatrix(matrix) {
+		return
+	}
 	ctx.DrawPath(0, 0, path.Transform(matrix))
 }
 
@@ -362,6 +389,10 @@ func textGlyphWidth(face *canvas.FontFace, glyph textGlyph) float64 {
 
 func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
 	hScale := textHScale(object)
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
+		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+		return
+	}
 	if face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF {
 		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
@@ -391,6 +422,9 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		} else {
 			x, y = parentCTM.Transform(x, y)
 		}
+		if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+			return
+		}
 		// 对于 CellContent，Boundary 定义在父级坐标系中。
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
@@ -402,6 +436,9 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	}
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		tx, ty := object.CTM.Transform(x, y)
+		if !finiteFloat(tx) || !finiteFloat(ty) || !finiteFloat(tx+object.Boundary.X) || !finiteFloat(pageHeight-(ty+object.Boundary.Y)) {
+			return
+		}
 		ctx.Push()
 		ctx.Translate(tx+object.Boundary.X, pageHeight-(ty+object.Boundary.Y))
 		ctx.Rotate(-object.CTM.RotationAngleDegrees())
@@ -413,6 +450,9 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	}
 	if object.CTM != nil {
 		x, y = object.CTM.Transform(x, y)
+	}
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+		return
 	}
 	ctx.Push()
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
@@ -464,6 +504,10 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 }
 
 func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
+		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+		return
+	}
 	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
 	// 因此需要将文字填充样式复制到路径绘制状态。
 	if textFillDisabled(object) && object.Stroke {
@@ -479,6 +523,9 @@ func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path
 		} else {
 			x, y = parentCTM.Transform(x, y)
 		}
+		if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+			return
+		}
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 		ctx.Scale(hScale, 1)
@@ -489,6 +536,9 @@ func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path
 	if object.CTM != nil {
 		x, y = object.CTM.Transform(x, y)
 	}
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+		return
+	}
 	matrix := canvas.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
 		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
@@ -497,7 +547,19 @@ func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path
 		matrix = matrix.Rotate(-direction)
 	}
 	matrix = matrix.Scale(hScale, 1)
+	if !finiteMatrix(matrix) {
+		return
+	}
 	ctx.DrawPath(0, 0, path.Transform(matrix))
+}
+
+func finiteArray(values models.StArrayF) bool {
+	for _, value := range values {
+		if !finiteFloat(value) {
+			return false
+		}
+	}
+	return true
 }
 
 func valueAt(values models.StArrayF, index int) float64 {

@@ -22,7 +22,8 @@ func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject,
 }
 
 func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
+		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
 	}
 	if compositeDepth >= maxCompositeDepth {
@@ -35,7 +36,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 
 	w, h := unit.Width, unit.Height
 	box := object.Boundary
-	if w <= 0 || h <= 0 || box.Width <= 0 || box.Height <= 0 {
+	if w <= 0 || h <= 0 || box.Width <= 0 || box.Height <= 0 || !finiteFloat(w) || !finiteFloat(h) {
 		return
 	}
 	if object.DrawParam > 0 {
@@ -86,6 +87,9 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
 	m := imageMatrix(box, img, ctm, pb.Height)
+	if !finiteMatrix(m) {
+		return
+	}
 	// Clip 的 Area/Path 坐标经过自身 CTM 后位于页面坐标系。buildImageClip
 	// 会依据 TransFlag 决定是否叠加 CompositeObject 的 CTM，避免在 false
 	// 时重复缩放裁剪区域，同时保留 true 时的对象变换。
@@ -112,7 +116,11 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if object.Alpha != nil {
 		img = applyImageAlpha(img, graphicOpacity(object.Alpha))
 	}
-	ctx.RenderImage(img, ctx.CoordSystemView().Mul(ctx.View()).Mul(m))
+	m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
+	if !finiteMatrix(m) {
+		return
+	}
+	ctx.RenderImage(img, m)
 }
 
 // renderSimpleCompositeVector 将常见的单路径复合图元保持为矢量绘制。
@@ -129,16 +137,21 @@ func (p *Document) renderSimpleCompositeVector(ctx *canvas.Context, object model
 
 	path := p.buildObjectPathWithTransform(pathObject, unit.Height, nil)
 	pathBounds := path.Bounds()
-	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 {
+	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 ||
+		!finiteFloat(pathBounds.X0) || !finiteFloat(pathBounds.Y0) || !finiteFloat(pathBounds.X1) || !finiteFloat(pathBounds.Y1) {
 		return false
 	}
 
 	widthScale := object.Boundary.Width / pathBounds.W()
 	heightScale := object.Boundary.Height / pathBounds.H()
-	path.Transform(canvas.Matrix{
+	matrix := canvas.Matrix{
 		{widthScale, 0, object.Boundary.X - pathBounds.X0*widthScale},
 		{0, heightScale, pb.Height - object.Boundary.Y - object.Boundary.Height - pathBounds.Y0*heightScale},
-	})
+	}
+	if !finiteFloat(widthScale) || !finiteFloat(heightScale) || !finiteMatrix(matrix) {
+		return false
+	}
+	path.Transform(matrix)
 
 	// Composite Alpha 表示复合图元整体透明度。当前情况只有一个纯色填充，
 	// 因此可以直接合并到填充颜色中，不需要创建独立的透明度分组。
