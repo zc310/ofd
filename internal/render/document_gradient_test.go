@@ -103,6 +103,21 @@ func TestOFDLinearGradientUsesCanvasGradientForPDF(t *testing.T) {
 	}
 }
 
+func TestTranslatedGradientPreservesPageCoordinates(t *testing.T) {
+	gradient := newOFDLinearGradient(&models.CTAxialShd{
+		StartPoint: models.StPos{X: 10, Y: 20},
+		EndPoint:   models.StPos{X: 20, Y: 20},
+		Segment: []models.Segment{
+			{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		},
+	}, identityGradientTransform)
+	local := translateGradient(gradient, 10, 20)
+	if got, want := local.At(5, 0), gradient.At(15, 20); got != want {
+		t.Fatalf("translated gradient = %v, want %v", got, want)
+	}
+}
+
 func TestOFDLinearGradientExtend(t *testing.T) {
 	shd := &models.CTAxialShd{
 		StartPoint: models.StPos{X: 0, Y: 0},

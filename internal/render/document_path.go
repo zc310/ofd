@@ -117,13 +117,24 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 		return false
 	}
 
-	// 使用与页面等大的离屏画布，让网格渐变直接以页面坐标采样，
-	// 与 drawMeshText 保持一致，避免局部画布带来的坐标翻转与渐变平移问题。
-	page := canvas.New(pb.Width, pb.Height)
+	// 只为实际路径创建离屏画布。网格渐变最终会作为图片嵌入 PDF，
+	// 创建整页 A4 位图会让每个网格对象都承担整页的栅格化和压缩成本。
+	bounds := paintPath.Bounds()
+	if bounds.Empty() || bounds.W() <= 0 || bounds.H() <= 0 {
+		return false
+	}
+	resolution := canvas.DPI(meshGradientDPI)
+	padding := 1.0 / resolution.DPMM()
+	bounds.X0 -= padding
+	bounds.Y0 -= padding
+	bounds.X1 += padding
+	bounds.Y1 += padding
+	width, height := bounds.W(), bounds.H()
+	page := canvas.New(width, height)
 	pageCtx := canvas.NewContext(page)
-	pageCtx.SetFillGradient(gradient)
-	pageCtx.DrawPath(0, 0, paintPath)
-	var meshImage image.Image = rasterizer.Draw(page, canvas.DPI(meshGradientDPI), canvas.DefaultColorSpace)
+	pageCtx.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
+	pageCtx.DrawPath(0, 0, paintPath.Copy().Translate(-bounds.X0, -bounds.Y0))
+	var meshImage image.Image = rasterizer.Draw(page, resolution, canvas.DefaultColorSpace)
 	if meshImage == nil || meshImage.Bounds().Empty() {
 		return false
 	}
@@ -131,8 +142,16 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 	if alpha != nil {
 		meshImage = applyImageAlpha(meshImage, graphicOpacity(alpha))
 	}
-	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, meshImage,
-		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
+	// imageMatrix 的 Y 坐标是图片左上角在 PDF 页面坐标中的位置；
+	// bounds 使用的是画布左下角坐标，因此这里需要先翻转到页面顶部坐标。
+	box := models.StBox{
+		X:      bounds.X0,
+		Y:      pb.Height - bounds.Y1,
+		Width:  width,
+		Height: height,
+	}
+	matrix := imageMatrix(box, meshImage,
+		models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
 	ctx.RenderImage(meshImage, ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix))
 	return true
 }
