@@ -27,6 +27,7 @@ var (
 type Fonts struct {
 	*parser.Document
 	Fonts map[models.StRefID]*canvas.FontFamily
+	mu    sync.Mutex
 }
 
 func NewFonts(doc *parser.Document) *Fonts {
@@ -129,6 +130,9 @@ func fontFamilySupportsCJK(family *canvas.FontFamily) bool {
 }
 
 func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	var err error
 	var f *canvas.FontFamily
 	if f = p.Fonts[id]; f != nil {

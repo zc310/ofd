@@ -4,6 +4,7 @@ package render
 import (
 	"image/color"
 	"log/slog"
+	"sync"
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
@@ -12,9 +13,9 @@ import (
 
 type Document struct {
 	*parser.Document
-	background     color.Color
-	fonts          *Fonts
-	compositeDepth int
+	background color.Color
+	fonts      *Fonts
+	renderMu   sync.Mutex
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
@@ -27,11 +28,16 @@ func annotationVisible(annot *models.Annot) bool {
 }
 
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
+	p.renderMu.Lock()
+	defer p.renderMu.Unlock()
+	page.EnsurePhysicalBox()
 	p.drawPage(ctx, page)
 	return nil
 }
 
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
+	p.renderMu.Lock()
+	defer p.renderMu.Unlock()
 	page.EnsurePhysicalBox()
 	box := page.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
@@ -117,10 +123,10 @@ func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StB
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
 func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox) {
-	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil)
+	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0)
 }
 
-func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:
@@ -130,9 +136,9 @@ func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.Pa
 		case models.PageItemText:
 			p.text(ctx, item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemBlock:
-			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip)
+			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip, compositeDepth)
 		case models.PageItemComposite:
-			p.composite(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip)
+			p.composite(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth)
 		}
 	}
 }

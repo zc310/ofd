@@ -2,6 +2,8 @@ package render
 
 import (
 	"image/color"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
@@ -27,4 +29,35 @@ func TestPageUsesA4ForInvalidPhysicalBox(t *testing.T) {
 	if page.Area.PhysicalBox != (models.StBox{Width: 210, Height: 297}) {
 		t.Fatalf("PhysicalBox = %+v, want A4", page.Area.PhysicalBox)
 	}
+}
+
+func TestDocumentPageIsSafeForConcurrentCalls(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	page := doc.Pages[0]
+	const workers = 8
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 3; j++ {
+				canvasPage, err := doc.Page(page)
+				if err != nil {
+					t.Errorf("render page: %v", err)
+					return
+				}
+				if canvasPage == nil || canvasPage.W <= 0 || canvasPage.H <= 0 {
+					t.Errorf("invalid canvas size: %#v", canvasPage)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

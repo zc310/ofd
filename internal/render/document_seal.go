@@ -56,9 +56,6 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 	}
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	oldFonts := p.fonts
-	p.fonts = doc.fonts
-	defer func() { p.fonts = oldFonts }()
 
 	page := ofd.Documents[0].Pages[0]
 	if page.PageContent.Area == nil {
@@ -73,6 +70,6 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 	defer ctx.Pop()
 	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
 	ctx.Scale(box.Width/sealBox.Width, box.Height/sealBox.Height)
-	p.PageContent(ctx, page, false)
+	doc.PageContent(ctx, page, false)
 	return nil
 }
