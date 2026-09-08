@@ -329,6 +329,7 @@ func (t *DateTime) UnmarshalXMLAttr(attr xml.Attr) error {
 
 // parseTime 解析时间的通用方法
 func (t *DateTime) parseTime(v string) error {
+	v = strings.TrimSpace(v)
 	// 尝试解析多种可能的时间格式
 	formats := []string{
 		"2006-01-02",

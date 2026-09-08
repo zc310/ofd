@@ -1,0 +1,212 @@
+# ofd-creator gradient showcase
+# Run:
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gradients.toml -o gradients.ofd --validate
+
+version = 1
+
+[document]
+id = "gradient-showcase"
+title = "OFD Gradient Showcase"
+creator = "ofd-creator"
+creatorVersion = "1"
+
+[document.pageSize]
+width = 210.0
+height = 297.0
+
+[[pages]]
+
+# Axial gradient: left-to-right multi-stop color transition.
+[[pages.items]]
+type = "path"
+x = 15.0
+y = 15.0
+width = 180.0
+height = 45.0
+fill = true
+data = "M 0 0 L 180 0 L 180 45 L 0 45 C"
+
+[pages.items.fillColor.axial]
+mapType = "Direct"
+startPoint = "0 0"
+endPoint = "180 0"
+extend = 0
+
+[[pages.items.fillColor.axial.segments]]
+position = 0.0
+
+[pages.items.fillColor.axial.segments.color]
+b = 180
+
+[[pages.items.fillColor.axial.segments]]
+position = 0.5
+
+[pages.items.fillColor.axial.segments.color]
+b = 210
+
+[[pages.items.fillColor.axial.segments]]
+position = 1.0
+
+[pages.items.fillColor.axial.segments.color]
+b = 55
+
+# Radial gradient: bright center fading into a dark edge.
+[[pages.items]]
+type = "path"
+x = 15.0
+y = 70.0
+width = 85.0
+height = 70.0
+fill = true
+data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
+
+[pages.items.fillColor.radial]
+mapType = "Direct"
+startPoint = "42.5 35"
+startRadius = 0.0
+endPoint = "42.5 35"
+endRadius = 55.0
+extend = 0
+
+[[pages.items.fillColor.radial.segments]]
+position = 0.0
+
+[pages.items.fillColor.radial.segments.color]
+b = 180
+
+[[pages.items.fillColor.radial.segments]]
+position = 0.45
+
+[pages.items.fillColor.radial.segments.color]
+b = 45
+
+[[pages.items.fillColor.radial.segments]]
+position = 1.0
+
+[pages.items.fillColor.radial.segments.color]
+b = 95
+
+# Gouraud triangular mesh gradient.
+[[pages.items]]
+type = "path"
+x = 110.0
+y = 70.0
+width = 85.0
+height = 70.0
+fill = true
+data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
+
+[pages.items.fillColor.gouraud]
+
+[[pages.items.fillColor.gouraud.points]]
+x = 0.0
+y = 0.0
+edgeFlag = 0
+
+[pages.items.fillColor.gouraud.points.color]
+b = 80
+
+[[pages.items.fillColor.gouraud.points]]
+x = 85.0
+y = 0.0
+edgeFlag = 1
+
+[pages.items.fillColor.gouraud.points.color]
+b = 245
+
+[[pages.items.fillColor.gouraud.points]]
+x = 85.0
+y = 70.0
+edgeFlag = 2
+
+[pages.items.fillColor.gouraud.points.color]
+b = 125
+
+[[pages.items.fillColor.gouraud.points]]
+x = 0.0
+y = 70.0
+edgeFlag = 2
+
+[pages.items.fillColor.gouraud.points.color]
+b = 60
+
+# LaGouraud quadrilateral mesh gradient.
+[[pages.items]]
+type = "path"
+x = 15.0
+y = 150.0
+width = 85.0
+height = 70.0
+fill = true
+data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
+
+[pages.items.fillColor.laGouraud]
+verticesPerRow = 2
+extend = 0
+
+[[pages.items.fillColor.laGouraud.points]]
+x = 0.0
+y = 0.0
+
+[pages.items.fillColor.laGouraud.points.color]
+b = 220
+
+[[pages.items.fillColor.laGouraud.points]]
+x = 85.0
+y = 0.0
+
+[pages.items.fillColor.laGouraud.points.color]
+b = 160
+
+[[pages.items.fillColor.laGouraud.points]]
+x = 0.0
+y = 70.0
+
+[pages.items.fillColor.laGouraud.points.color]
+b = 130
+
+[[pages.items.fillColor.laGouraud.points]]
+x = 85.0
+y = 70.0
+
+[pages.items.fillColor.laGouraud.points.color]
+b = 45
+
+# Pattern containing a small diagonal accent path.
+[[pages.items]]
+type = "path"
+x = 110.0
+y = 150.0
+width = 85.0
+height = 70.0
+fill = true
+data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
+
+[pages.items.fillColor.pattern]
+width = 12.0
+height = 12.0
+xStep = 12.0
+yStep = 12.0
+relativeTo = "Object"
+
+[[pages.items.fillColor.pattern.items]]
+type = "path"
+width = 12.0
+height = 12.0
+stroke = true
+fill = false
+lineWidth = 0.8
+data = "M 0 12 L 12 0 C"
+
+[pages.items.fillColor.pattern.items.strokeColor]
+b = 140
+
+[[pages.items.fillColor.pattern.items]]
+type = "path"
+width = 12.0
+height = 12.0
+fill = true
+data = "M 0 0 L 4 0 L 4 4 L 0 4 C"
+
+[pages.items.fillColor.pattern.items.fillColor]
+b = 40

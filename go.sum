@@ -40,6 +40,8 @@ github.com/andybalholm/brotli v1.2.3 h1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA
 github.com/andybalholm/brotli v1.2.3/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/anthonynsimon/bild v0.17.0 h1:kmPJOZpUgvrM2uoS7KMesbDU5+QTvZ92zIBjHM/oa18=
 github.com/anthonynsimon/bild v0.17.0/go.mod h1:ULwssBwK+8dLFObGrI3fIydKYQ2l454Y0eo+mqPclto=
+github.com/beevik/etree v1.8.0 h1:TOfpQtMZ3ZuG9f2ZnLvsbOOVxrjTvE0qbYb5D0p44j0=
+github.com/beevik/etree v1.8.0/go.mod h1:bh4zJxiIr62SOf9pRzN7UUYaEDa9HEKafK25+sLc0Gc=
 github.com/benoitkugler/pstokenizer v1.0.0/go.mod h1:l1G2Voirz0q/jj0TQfabNxVsa8HZXh/VMxFSRALWTiE=
 github.com/benoitkugler/textlayout v0.3.2 h1:Y/LTkwpQ9G0Fia9yhPmZA9IR5AnE8Cq30j3C+Gx5/IE=
 github.com/benoitkugler/textlayout v0.3.2/go.mod h1:o+1hFV+JSHBC9qNLIuwVoLedERU7sBPgEFcuSgfvi/w=
@@ -161,6 +163,8 @@ github.com/wcharczuk/go-chart/v2 v2.1.2 h1:Y17/oYNuXwZg6TFag06qe8sBajwwsuvPiJJXc
 github.com/wcharczuk/go-chart/v2 v2.1.2/go.mod h1:Zi4hbaqlWpYajnXB2K22IUYVXRXaLfSGNNR7P4ukyyQ=
 github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059 h1:/JXxWbNTePSVfshS7BVRm75Kh1/5rixvLpgTRw7MMv8=
 github.com/xiaoqidun/jbig2 v0.0.0-20260823111534-2e67bcec7059/go.mod h1:mdoUQnVPIA4yS0/+ZrtxJNiDdbphI0RMu+DPfxXfVhE=
+github.com/xiaoqidun/jbig2 v0.0.0-20260907160805-b4d50cc00e4f h1:m8fvMGp92BCwAVMTS8b9AweYUd2ke7CXUOb4Kk9gPE0=
+github.com/xiaoqidun/jbig2 v0.0.0-20260907160805-b4d50cc00e4f/go.mod h1:mdoUQnVPIA4yS0/+ZrtxJNiDdbphI0RMu+DPfxXfVhE=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
@@ -168,6 +172,8 @@ github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb h1:yDwzZAniMYd/Trlu9tEpoFfuv8kp1piGggto5EQIi9E=
 github.com/zc310/fontfix v0.0.0-20260904112842-ae26c05e79fb/go.mod h1:3hylLInJRjFJ2owde6LLz2yarfpV6ecO7aV6CqQGGIk=
+github.com/zc310/fontfix v0.0.1 h1:rKbpUquolP04+uD45THyuX6TcZRdrjC2DfqsIfCD07k=
+github.com/zc310/fontfix v0.0.1/go.mod h1:3hylLInJRjFJ2owde6LLz2yarfpV6ecO7aV6CqQGGIk=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=

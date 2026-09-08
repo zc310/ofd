@@ -72,7 +72,9 @@
                 </xs:element>
                 <xs:element name="GotoA">
                     <xs:complexType>
-                        <xs:attribute name="AttachID" type="xs:IDREF" use="required" />
+                         <!-- Attachments.xml is validated as a separate document, so this
+                              cross-file reference cannot use xs:IDREF. -->
+                         <xs:attribute name="AttachID" type="xs:string" use="required" />
                         <xs:attribute name="NewWindow" type="xs:boolean" default="true" />
                     </xs:complexType>
                 </xs:element>

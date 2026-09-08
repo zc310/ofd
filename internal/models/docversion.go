@@ -2,7 +2,6 @@ package models
 
 import (
 	"encoding/xml"
-	"time"
 )
 
 // DocVersion 文档版本信息。
@@ -18,7 +17,7 @@ type DocVersion struct {
 	// Name 文档版本名称。
 	Name *string `xml:"Name,attr,omitempty"`
 	// CreationDate 文档版本创建时间。
-	CreationDate *time.Time `xml:"CreationDate,attr,omitempty"`
+	CreationDate *DateTime `xml:"CreationDate,attr,omitempty"`
 	// FileList 文档版本包含的文件列表。
 	FileList FileList `xml:"FileList"`
 	// DocRoot 文档根目录的位置。
