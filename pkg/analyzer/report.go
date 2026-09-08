@@ -32,8 +32,8 @@ type Options struct {
 	IncludeAnnotations bool
 	// IncludeSignatures 是否分析签名清单。默认开启。
 	IncludeSignatures bool
-	// IncludePackage 是否输出 ZIP 条目统计。默认开启。
-	IncludePackage bool
+	// IncludeTree 是否输出 ZIP 包目录树。默认关闭。
+	IncludeTree bool
 }
 
 // Option 配置分析工具。
@@ -55,9 +55,9 @@ func WithSignatures(enabled bool) Option {
 	return func(options *Options) { options.IncludeSignatures = enabled }
 }
 
-// WithPackage 设置是否输出 ZIP 条目统计。
-func WithPackage(enabled bool) Option {
-	return func(options *Options) { options.IncludePackage = enabled }
+// WithTree 设置是否输出 ZIP 包目录树。
+func WithTree(enabled bool) Option {
+	return func(options *Options) { options.IncludeTree = enabled }
 }
 
 // Report 是分析工具的稳定 JSON 报告模型。
@@ -113,12 +113,25 @@ type OFDInfo struct {
 
 // PackageSummary 描述 ZIP 包的基本统计。
 type PackageSummary struct {
-	Entries           int    `json:"entries"`
-	Files             int    `json:"files"`
-	Directories       int    `json:"directories"`
-	XMLFiles          int    `json:"xml_files"`
-	CompressedBytes   uint64 `json:"compressed_bytes"`
-	UncompressedBytes uint64 `json:"uncompressed_bytes"`
+	Entries           int          `json:"entries"`
+	Files             int          `json:"files"`
+	Directories       int          `json:"directories"`
+	XMLFiles          int          `json:"xml_files"`
+	CompressedBytes   uint64       `json:"compressed_bytes"`
+	UncompressedBytes uint64       `json:"uncompressed_bytes"`
+	Tree              *PackageTree `json:"tree,omitempty"`
+}
+
+// PackageTree 描述 ZIP 包目录树中的一个节点。
+type PackageTree struct {
+	Name           string        `json:"name"`
+	Path           string        `json:"path,omitempty"`
+	Kind           string        `json:"kind"`
+	MediaType      string        `json:"media_type,omitempty"`
+	Size           uint64        `json:"size"`
+	CompressedSize uint64        `json:"compressed_size"`
+	Duplicate      bool          `json:"duplicate,omitempty"`
+	Children       []PackageTree `json:"children,omitempty"`
 }
 
 // Summary 是文档级汇总统计。

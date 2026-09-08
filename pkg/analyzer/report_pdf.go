@@ -93,8 +93,15 @@ func pdfReportLines(report Report) []string {
 		fmt.Sprintf("资源文件：%d    缺失资源文件：%d    未解析引用：%d", report.Resources.Files, report.Resources.MissingFiles, report.Resources.Unresolved),
 		fmt.Sprintf("绘制参数：定义数 %d    引用次数 %d    无法解析引用 %d    继承循环 %d", report.DrawParams.Declared, report.DrawParams.References, report.DrawParams.Unresolved, report.DrawParams.InheritanceCycles),
 		fmt.Sprintf("字体：声明 %d    被引用 %d    嵌入 %d", report.Fonts.Declared, report.Fonts.UniqueUsed, report.Fonts.Embedded),
-		"## 文档体",
+		fmt.Sprintf("OFD 包：条目 %d    目录 %d    文件 %d    XML 文件 %d    压缩后 %s    解压后 %s", report.Package.Entries, report.Package.Directories, report.Package.Files, report.Package.XMLFiles, formatPackageSize(report.Package.CompressedBytes), formatPackageSize(report.Package.UncompressedBytes)),
 	}
+	if report.Package.Tree != nil {
+		lines = append(lines,
+			"## OFD 包目录结构",
+		)
+		lines = append(lines, packageTreeLines(*report.Package.Tree)...)
+	}
+	lines = append(lines, "## 文档体")
 	for _, document := range report.Documents {
 		lines = append(lines, fmt.Sprintf("[%d] %s，页面 %d/%d，资源文件 %d，根文件 %s", document.Index, firstNonEmpty(document.Title, document.DocID), document.ParsedPages, document.DeclaredPages, document.ResourceFiles, document.DocRoot))
 	}

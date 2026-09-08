@@ -22,6 +22,12 @@ func RenderText(writer io.Writer, report Report) error {
 	if err := write("汇总：\n  文档体：%d  页面：%d（已解析 %d）  对象：%d\n  文字字符：%d  图片：%d  字体：%d  绘制参数：%d  颜色空间：%d\n  模板：%d  复合图元：%d  图案：%d\n  附件：%d  注解：%d  签名：%d\n\n", report.Summary.DocumentBodies, report.Summary.Pages, report.Summary.ParsedPages, report.Summary.Objects, report.Summary.TextCharacters, report.Summary.Images, report.Summary.Fonts, report.Summary.DrawParams, report.Summary.ColorSpaces, report.Summary.Templates, report.Summary.Composites, report.Summary.Patterns, report.Summary.Attachments, report.Summary.Annotations, report.Summary.Signatures); err != nil {
 		return err
 	}
+	if err := writePackageTreeText(writer, report); err != nil {
+		return err
+	}
+	if err := writePackageSummaryText(writer, report); err != nil {
+		return err
+	}
 	if err := writeResourceText(writer, "", report.Resources); err != nil {
 		return err
 	}
@@ -219,6 +225,12 @@ func RenderMarkdown(writer io.Writer, report Report) error {
 	if err := write("# OFD 分析报告\n\n- 状态：**%s**\n- 输入文件：`%s`\n- OFD 版本：`%s`\n\n## 汇总\n\n| 指标 | 数值 |\n| --- | ---: |\n| 文档体 | %d |\n| 页面 | %d（已解析 %d） |\n| 对象 | %d |\n| 文字字符 | %d |\n| 图片 | %d |\n| 字体 | %d |\n| 绘制参数 | %d |\n| 颜色空间 | %d |\n| 附件 | %d |\n| 注解 | %d |\n| 签名 | %d |\n\n", reportStatusLabel(report.Status), escapeMarkdown(report.Input.Path), escapeMarkdown(report.OFD.Version), report.Summary.DocumentBodies, report.Summary.Pages, report.Summary.ParsedPages, report.Summary.Objects, report.Summary.TextCharacters, report.Summary.Images, report.Summary.Fonts, report.Summary.DrawParams, report.Summary.ColorSpaces, report.Summary.Attachments, report.Summary.Annotations, report.Summary.Signatures); err != nil {
 		return err
 	}
+	if err := writePackageTreeMarkdown(writer, report); err != nil {
+		return err
+	}
+	if err := writePackageSummaryMarkdown(writer, report); err != nil {
+		return err
+	}
 	if err := writeMarkdownResources(writer, report); err != nil {
 		return err
 	}
@@ -276,6 +288,101 @@ func RenderMarkdown(writer io.Writer, report Report) error {
 		}
 	}
 	return nil
+}
+
+func writePackageTreeText(writer io.Writer, report Report) error {
+	if report.Package.Tree == nil {
+		return nil
+	}
+	if _, err := io.WriteString(writer, "OFD 包目录结构：\n"); err != nil {
+		return err
+	}
+	for _, line := range packageTreeLines(*report.Package.Tree) {
+		if _, err := fmt.Fprintf(writer, "  %s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(writer, "\n")
+	return err
+}
+
+func writePackageSummaryText(writer io.Writer, report Report) error {
+	_, err := fmt.Fprintf(writer, "OFD 包：条目 %d，目录 %d，文件 %d，XML 文件 %d，压缩后 %s，解压后 %s\n\n", report.Package.Entries, report.Package.Directories, report.Package.Files, report.Package.XMLFiles, formatPackageSize(report.Package.CompressedBytes), formatPackageSize(report.Package.UncompressedBytes))
+	return err
+}
+
+func writePackageTreeMarkdown(writer io.Writer, report Report) error {
+	if report.Package.Tree == nil {
+		return nil
+	}
+	if _, err := io.WriteString(writer, "## OFD 包目录结构\n\n```text\n"); err != nil {
+		return err
+	}
+	for _, line := range packageTreeLines(*report.Package.Tree) {
+		if _, err := fmt.Fprintf(writer, "%s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(writer, "```\n\n")
+	return err
+}
+
+func writePackageSummaryMarkdown(writer io.Writer, report Report) error {
+	_, err := fmt.Fprintf(writer, "## OFD 包\n\n| 条目 | 目录 | 文件 | XML 文件 | 压缩后大小 | 解压后大小 |\n| ---: | ---: | ---: | ---: | ---: | ---: |\n| %d | %d | %d | %d | %s | %s |\n\n", report.Package.Entries, report.Package.Directories, report.Package.Files, report.Package.XMLFiles, formatPackageSize(report.Package.CompressedBytes), formatPackageSize(report.Package.UncompressedBytes))
+	return err
+}
+
+func packageTreeLines(tree PackageTree) []string {
+	lines := []string{tree.Name}
+	for index, child := range tree.Children {
+		last := index == len(tree.Children)-1
+		appendPackageTreeLines(&lines, child, "", last)
+	}
+	return lines
+}
+
+func appendPackageTreeLines(lines *[]string, tree PackageTree, prefix string, last bool) {
+	branch := "├── "
+	nextPrefix := prefix + "│   "
+	if last {
+		branch = "└── "
+		nextPrefix = prefix + "    "
+	}
+	*lines = append(*lines, prefix+branch+packageTreeLabel(tree))
+	for index, child := range tree.Children {
+		appendPackageTreeLines(lines, child, nextPrefix, index == len(tree.Children)-1)
+	}
+}
+
+func packageTreeLabel(tree PackageTree) string {
+	name := tree.Name
+	if tree.Kind == "directory" {
+		name += "/"
+		return name
+	}
+	labels := make([]string, 0, 3)
+	if tree.MediaType != "" {
+		labels = append(labels, tree.MediaType)
+	}
+	labels = append(labels, formatPackageSize(tree.Size))
+	if tree.Duplicate {
+		labels = append(labels, "重复条目")
+	}
+	return fmt.Sprintf("%s [%s]", name, strings.Join(labels, "，"))
+}
+
+func formatPackageSize(size uint64) string {
+	value := float64(size)
+	for _, suffix := range []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB"} {
+		if value < 1024 || suffix == "PiB" {
+			if suffix == "B" {
+				return fmt.Sprintf("%d B", size)
+			}
+			return fmt.Sprintf("%.2f %s", value, suffix)
+		}
+		value /= 1024
+	}
+	return fmt.Sprintf("%.2f PiB", value)
 }
 
 func writeMarkdownResources(writer io.Writer, report Report) error {

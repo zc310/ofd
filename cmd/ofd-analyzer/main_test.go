@@ -10,11 +10,11 @@ import (
 )
 
 func TestParseArgs(t *testing.T) {
-	opts, err := parseArgs([]string{"--pretty", "--format", "markdown", "--no-package", "-o", "report.md", "input.ofd"}, new(bytes.Buffer))
+	opts, err := parseArgs([]string{"--pretty", "--format", "markdown", "--tree", "-o", "report.md", "input.ofd"}, new(bytes.Buffer))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.pretty || opts.format != "markdown" || !opts.noPackage || opts.output != "report.md" || opts.input != "input.ofd" {
+	if !opts.pretty || opts.format != "markdown" || !opts.tree || opts.output != "report.md" || opts.input != "input.ofd" {
 		t.Fatalf("options = %+v", opts)
 	}
 }
@@ -42,6 +42,9 @@ func TestRunWritesJSONReport(t *testing.T) {
 	if stderr.Len() != 0 || !strings.Contains(stdout.String(), "schema_version") {
 		t.Fatalf("stdout = %s, stderr = %s", stdout.String(), stderr.String())
 	}
+	if !strings.Contains(stdout.String(), `"entries": 9`) {
+		t.Fatalf("JSON report omits package summary: %s", stdout.String())
+	}
 	var report map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatal(err)
@@ -52,6 +55,14 @@ func TestRunDefaultsToTextReport(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.HasPrefix(stdout.String(), "OFD 分析报告") {
+		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunTreeAddsPackageTree(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--tree", "--format", "json", filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")}, &stdout, &stderr)
+	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"tree"`) || !strings.Contains(stdout.String(), `"name":"Doc_0"`) {
 		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
 }
