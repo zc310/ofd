@@ -64,6 +64,26 @@ func TestCTMIsFinite(t *testing.T) {
 	}
 }
 
+func TestStBoxRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		t.Run(value, func(t *testing.T) {
+			var box StBox
+			if err := box.parseFromString("0 0 " + value + " 10"); err == nil {
+				t.Fatal("expected non-finite StBox value to be rejected")
+			}
+		})
+	}
+}
+
+func TestStBoxIsFinite(t *testing.T) {
+	if !(StBox{X: 1, Y: 2, Width: 3, Height: 4}).IsFinite() {
+		t.Fatal("finite StBox reported as invalid")
+	}
+	if (StBox{X: 1, Y: 2, Width: 3, Height: math.Inf(1)}).IsFinite() {
+		t.Fatal("non-finite StBox reported as valid")
+	}
+}
+
 func TestCtPageAreaEnsurePhysicalBoxUsesA4(t *testing.T) {
 	tests := []StBox{
 		{},

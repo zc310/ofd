@@ -2,6 +2,7 @@ package render
 
 import (
 	"image"
+	"math"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
@@ -17,12 +18,16 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
 func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
+		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
 	}
 	ctx.Push()
 	defer ctx.Pop()
 	pa := p.buildObjectPathWithTransform(object, pb.Height, parentCTM)
+	if pa.Empty() {
+		return
+	}
 
 	p.updateCtPathStyle(ctx, &object.CtPath, dp)
 	p.updatePathGradients(ctx, &object, dp, pb.Height)
@@ -113,7 +118,7 @@ func (p *Document) drawMeshPaint(ctx *canvas.Context, paintPath *canvas.Path, so
 }
 
 func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.Path, gradient canvas.Gradient, pb models.StBox, alpha *uint8) bool {
-	if paintPath == nil || gradient == nil || pb.Width <= 0 || pb.Height <= 0 {
+	if paintPath == nil || gradient == nil || !pb.IsFinite() || pb.Width <= 0 || pb.Height <= 0 {
 		return false
 	}
 
@@ -130,6 +135,10 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 	bounds.X1 += padding
 	bounds.Y1 += padding
 	width, height := bounds.W(), bounds.H()
+	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) ||
+		!finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
+		return false
+	}
 	page := canvas.New(width, height)
 	pageCtx := canvas.NewContext(page)
 	pageCtx.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
@@ -152,7 +161,11 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 	}
 	matrix := imageMatrix(box, meshImage,
 		models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
-	ctx.RenderImage(meshImage, ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix))
+	matrix = ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix)
+	if !finiteMatrix(matrix) {
+		return false
+	}
+	ctx.RenderImage(meshImage, matrix)
 	return true
 }
 
@@ -161,7 +174,7 @@ func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64)
 }
 
 func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *canvas.Path {
-	if !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
 		return &canvas.Path{}
 	}
 	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {
@@ -185,6 +198,10 @@ func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHe
 		return pt.X + box.X, pageHeight - (pt.Y + box.Y)
 	}
 	return p.newPath(&object.CtPath, transform)
+}
+
+func finiteFloat(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *canvas.Path {
@@ -361,6 +378,9 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			x, y := transform(cmd.Points[0])
+			if !finiteFloat(x) || !finiteFloat(y) {
+				continue
+			}
 			pa.MoveTo(x, y)
 
 		case models.LineTo:
@@ -368,6 +388,9 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			x, y := transform(cmd.Points[0])
+			if !finiteFloat(x) || !finiteFloat(y) {
+				continue
+			}
 			pa.LineTo(x, y)
 
 		case models.QuadTo:
@@ -376,6 +399,9 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 			}
 			cpx, cpy := transform(cmd.Points[0])
 			x, y := transform(cmd.Points[1])
+			if !finiteFloat(cpx) || !finiteFloat(cpy) || !finiteFloat(x) || !finiteFloat(y) {
+				continue
+			}
 			pa.QuadTo(cpx, cpy, x, y)
 
 		case models.CubicBezier:
@@ -385,6 +411,9 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 			x1, y1 := transform(cmd.Points[0])
 			x2, y2 := transform(cmd.Points[1])
 			x3, y3 := transform(cmd.Points[2])
+			if !finiteFloat(x1) || !finiteFloat(y1) || !finiteFloat(x2) || !finiteFloat(y2) || !finiteFloat(x3) || !finiteFloat(y3) {
+				continue
+			}
 			pa.CubeTo(x1, y1, x2, y2, x3, y3)
 
 		case models.ArcTo:
@@ -392,6 +421,9 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			endX, endY := transform(cmd.Arc.EndPoint)
+			if !finiteFloat(cmd.Arc.RX) || !finiteFloat(cmd.Arc.RY) || !finiteFloat(cmd.Arc.XAxisRotation) || !finiteFloat(endX) || !finiteFloat(endY) {
+				continue
+			}
 			pa.ArcTo(
 				cmd.Arc.RX,
 				cmd.Arc.RY,
