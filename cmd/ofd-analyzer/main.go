@@ -1,3 +1,4 @@
+// 命令 ofd-analyzer 分析 OFD 文件结构并生成分析报告。
 package main
 
 import (

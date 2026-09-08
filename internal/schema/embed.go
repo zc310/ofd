@@ -1,3 +1,4 @@
+// Package schema 提供内置 OFD XSD 模式的加载和查询能力。
 package schema
 
 import (

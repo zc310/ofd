@@ -1,3 +1,4 @@
+// Package utils 提供文件查找等内部通用工具。
 package utils
 
 import (

@@ -1,3 +1,4 @@
+// Package media 提供 OFD 包中图像资源的读取和解码能力。
 package media
 
 import (

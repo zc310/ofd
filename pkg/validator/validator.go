@@ -1,3 +1,4 @@
+// Package validator 提供 OFD 文件结构、资源、XML 和签名的校验能力。
 package validator
 
 import (
@@ -35,20 +36,34 @@ const (
 
 // Options 定义校验器的资源限制和检查开关。
 type Options struct {
-	Mode          Mode
-	MaxErrors     int
-	MaxInputSize  int64
-	MaxFileSize   int64
-	MaxTotalSize  int64
-	MaxEntries    int
-	MaxXMLBytes   int64
-	MaxXMLNodes   int
-	MaxXMLDepth   int
-	CheckXSD      bool
-	ScanXML       bool
-	CheckDigest   bool
+	// Mode 指定校验严格程度。
+	Mode Mode
+	// MaxErrors 指定最多记录的错误数量，0 表示不限制。
+	MaxErrors int
+	// MaxInputSize 指定 ZIP 原始输入数据的大小上限，0 表示不限制。
+	MaxInputSize int64
+	// MaxFileSize 指定单个 ZIP 条目解压后的大小上限。
+	MaxFileSize int64
+	// MaxTotalSize 指定整个 OFD 包解压后的大小上限。
+	MaxTotalSize int64
+	// MaxEntries 指定 ZIP 条目数量上限。
+	MaxEntries int
+	// MaxXMLBytes 指定单个 XML 文件的大小上限。
+	MaxXMLBytes int64
+	// MaxXMLNodes 指定单个 XML 文档的节点数量上限。
+	MaxXMLNodes int
+	// MaxXMLDepth 指定单个 XML 文档的嵌套深度上限。
+	MaxXMLDepth int
+	// CheckXSD 指定是否执行 XSD 校验。
+	CheckXSD bool
+	// ScanXML 指定是否扫描未被主引用链到达的 XML 文件。
+	ScanXML bool
+	// CheckDigest 指定是否校验签名摘要。
+	CheckDigest bool
+	// FailOnWarning 指定是否将警告视为失败。
 	FailOnWarning bool
-	Schemas       *schema.Set
+	// Schemas 指定使用的 XSD 模式集合。
+	Schemas *schema.Set
 }
 
 // Option 修改校验器配置。

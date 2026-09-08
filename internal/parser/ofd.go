@@ -1,3 +1,4 @@
+// Package parser 提供 OFD 文件的打开、解析和文档对象访问能力。
 package parser
 
 import (

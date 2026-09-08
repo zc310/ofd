@@ -1,3 +1,4 @@
+// Package render 将解析后的 OFD 文档渲染为图形内容。
 package render
 
 import (

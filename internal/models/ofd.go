@@ -1,3 +1,4 @@
+// Package models 定义 OFD XML 文档的内部数据模型。
 package models
 
 import (
