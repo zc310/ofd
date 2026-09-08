@@ -164,3 +164,16 @@ func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 		t.Fatalf("textAdvance with ReadDirection=90 = (%v, %v), want (0, 10)", gotX, gotY)
 	}
 }
+
+func TestTextCodeGlyphsClampsExcessiveCodeCount(t *testing.T) {
+	runes := []rune("ab")
+	glyphs := textCodeGlyphs(runes, []models.CTCGTransform{{
+		CodePosition: 0,
+		CodeCount:    int(^uint(0) >> 1),
+		Glyphs:       []int{65},
+	}}, 0)
+
+	if len(glyphs) != 1 {
+		t.Fatalf("glyphs = %+v, want one mapped glyph", glyphs)
+	}
+}

@@ -347,6 +347,10 @@ func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePositio
 		if codeCount <= 0 {
 			codeCount = 1
 		}
+		remaining := len(runes) - i
+		if codeCount >= remaining {
+			break
+		}
 		i += codeCount
 	}
 	return glyphs
