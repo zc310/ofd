@@ -65,7 +65,6 @@ func Analyze(input any, options ...Option) (Report, error) {
 		IncludeTemplates:   true,
 		IncludeAnnotations: true,
 		IncludeSignatures:  true,
-		IncludePackage:     true,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -129,7 +128,7 @@ func Analyze(input any, options ...Option) (Report, error) {
 		usedComposites:      make(map[string]int),
 		usedColorSpaces:     make(map[string]int),
 	}
-	a.indexPackage(ofd.Documents[0].FileCache, configured.IncludePackage)
+	a.indexPackage(ofd.Documents[0].FileCache)
 	a.analyzeDocuments(ofd)
 	a.finish()
 	return a.report, nil
@@ -150,33 +149,133 @@ func inputInfo(input any) (string, int64) {
 	}
 }
 
-func (a *analyzer) indexPackage(packageReader *core.Package, includeReport bool) {
+func (a *analyzer) indexPackage(packageReader *core.Package) {
 	entries := packageReader.Entries()
-	if includeReport {
-		a.report.Package.Entries = len(entries)
+	if a.options.IncludeTree {
+		a.report.Package.Tree = buildPackageTree(entries)
 	}
+	a.report.Package.Entries = len(entries)
 	for _, entry := range entries {
 		name := cleanPackagePath(entry.Path)
 		if name == "" {
 			continue
 		}
 		a.files[name] = entry
-		if includeReport {
-			a.report.Package.CompressedBytes += entry.CompressedSize
-			a.report.Package.UncompressedBytes += entry.UncompressedSize
-		}
+		a.report.Package.CompressedBytes += entry.CompressedSize
+		a.report.Package.UncompressedBytes += entry.UncompressedSize
 		if entry.IsDir {
-			if includeReport {
-				a.report.Package.Directories++
-			}
+			a.report.Package.Directories++
 			continue
 		}
-		if includeReport {
-			a.report.Package.Files++
-			if strings.EqualFold(path.Ext(name), ".xml") {
-				a.report.Package.XMLFiles++
-			}
+		a.report.Package.Files++
+		if strings.EqualFold(path.Ext(name), ".xml") {
+			a.report.Package.XMLFiles++
 		}
+	}
+}
+
+type packageTreeNode struct {
+	tree     PackageTree
+	parent   *packageTreeNode
+	children map[string]*packageTreeNode
+	entry    bool
+}
+
+func buildPackageTree(entries []core.Entry) *PackageTree {
+	root := &packageTreeNode{
+		tree:     PackageTree{Name: ".", Kind: "directory"},
+		children: make(map[string]*packageTreeNode),
+	}
+	for _, entry := range entries {
+		name := cleanPackagePath(entry.Path)
+		if name == "" {
+			continue
+		}
+		parts := strings.Split(name, "/")
+		current := root
+		for index, part := range parts {
+			pathName := strings.Join(parts[:index+1], "/")
+			child, exists := current.children[part]
+			if !exists {
+				child = &packageTreeNode{
+					tree: PackageTree{
+						Name: part,
+						Path: pathName,
+						Kind: "directory",
+					},
+					parent:   current,
+					children: make(map[string]*packageTreeNode),
+				}
+				current.children[part] = child
+				current = child
+				continue
+			}
+			current = child
+		}
+
+		if current.entry {
+			duplicate := &packageTreeNode{tree: current.tree, parent: current.parent, children: make(map[string]*packageTreeNode)}
+			duplicate.tree.Duplicate = true
+			current.parent.children[partTreeKey(parts[len(parts)-1], len(current.parent.children))] = duplicate
+			setPackageTreeEntry(&duplicate.tree, entry)
+			continue
+		}
+		setPackageTreeEntry(&current.tree, entry)
+		current.entry = true
+	}
+	result := packageTreeValue(root)
+	return &result
+}
+
+func setPackageTreeEntry(tree *PackageTree, entry core.Entry) {
+	tree.Kind = "file"
+	if entry.IsDir {
+		tree.Kind = "directory"
+	}
+	tree.MediaType = packageMediaType(tree.Name, tree.Kind)
+	tree.Size = entry.UncompressedSize
+	tree.CompressedSize = entry.CompressedSize
+}
+
+func packageTreeValue(node *packageTreeNode) PackageTree {
+	result := node.tree
+	children := make([]*packageTreeNode, 0, len(node.children))
+	for _, child := range node.children {
+		children = append(children, child)
+	}
+	sort.SliceStable(children, func(i, j int) bool {
+		left, right := children[i].tree, children[j].tree
+		if left.Kind != right.Kind {
+			return left.Kind == "directory"
+		}
+		return left.Name < right.Name
+	})
+	if len(children) > 0 {
+		result.Children = make([]PackageTree, 0, len(children))
+		for _, child := range children {
+			result.Children = append(result.Children, packageTreeValue(child))
+		}
+	}
+	return result
+}
+
+func partTreeKey(name string, index int) string {
+	return fmt.Sprintf("%s#duplicate-%d", name, index)
+}
+
+func packageMediaType(name, kind string) string {
+	if kind == "directory" {
+		return ""
+	}
+	switch strings.ToLower(path.Ext(name)) {
+	case ".xml":
+		return "xml"
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp":
+		return "image"
+	case ".ttf", ".otf", ".ttc", ".cff":
+		return "font"
+	default:
+		return "binary"
 	}
 }
 

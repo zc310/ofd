@@ -32,7 +32,7 @@ ofd-analyzer document.ofd
 ofd-analyzer --format json document.ofd
 
 # 输出缩进后的 JSON 报告文件
-ofd-analyzer --pretty --output report.json document.ofd
+ofd-analyzer --pretty -  document.ofd
 
 # 输出纯文本、Markdown 或 PDF 报告
 ofd-analyzer --format text -o report.txt document.ofd
@@ -41,6 +41,10 @@ ofd-analyzer --format pdf --font /path/to/font.ttf -o report.pdf document.ofd
 
 # 跳过可选分析阶段
 ofd-analyzer --no-annotations --no-signatures document.ofd
+
+# 在报告中附加 OFD ZIP 包目录结构
+ofd-analyzer --tree document.ofd
+ofd-analyzer --tree --format json --pretty document.ofd
 ```
 
 未指定 `-o` 或 `--output` 时，报告输出到标准输出。将输出路径设为 `-` 也表示输出到标准输出。
@@ -57,7 +61,7 @@ ofd-analyzer --no-annotations --no-signatures document.ofd
 | `--no-templates`      | 关闭     | 跳过模板定义、引用和 PageRes 资源分析，但保留模板元数据 |
 | `--no-annotations`    | 关闭     | 跳过注解及 Appearance 分析                              |
 | `--no-signatures`     | 关闭     | 跳过签名清单分析                                        |
-| `--no-package`        | 关闭     | 跳过 ZIP 条目统计，但保留包内路径索引                   |
+| `--tree`              | 关闭     | 输出 OFD ZIP 包目录结构                                 |
 | `--fail-on-warning`   | 关闭     | 有警告时返回退出码 `1`                                  |
 | `--version`           | 关闭     | 输出 analyzer 版本                                      |
 | `-h`, `--help`        | 关闭     | 显示命令帮助                                            |
@@ -67,6 +71,9 @@ ofd-analyzer --no-annotations --no-signatures document.ofd
 报告包含 Schema 版本、输入信息、OFD 和 ZIP 包统计、文档体和页面列表、对象和文字统计、资源定义与使用情况、
 附件、注解、签名以及文件和 ID 引用关系。报告中的资源引用使用文档体作用域，例如
 `doc[0]/font:3`，避免多个文档体使用相同 ID 时发生混淆。
+
+报告始终包含 OFD ZIP 包统计；使用 `--tree` 时，报告会在文本和 Markdown 中附加 ZIP 包目录树，在 JSON 的 `package.tree` 中提供嵌套目录节点。
+目录树只表示包内实际路径，不展开 XML 节点；文件引用关系仍单独输出。目录按目录优先、名称排序，文件节点包含类型和解压后大小。
 
 `resources` 是所有资源类别的总汇总，包含图片、字体、绘制参数、复合图元、颜色空间、模板和 Pattern；
 各资源类别也通过对应的独立字段提供详细统计。字体专用字段为 `embedded`，绘制参数专用字段为

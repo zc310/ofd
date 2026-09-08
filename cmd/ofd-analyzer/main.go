@@ -28,7 +28,7 @@ type options struct {
 	noTemplates   bool
 	noAnnotations bool
 	noSignatures  bool
-	noPackage     bool
+	tree          bool
 	failOnWarning bool
 	version       bool
 	help          bool
@@ -62,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		analyzer.WithTemplates(!opts.noTemplates),
 		analyzer.WithAnnotations(!opts.noAnnotations),
 		analyzer.WithSignatures(!opts.noSignatures),
-		analyzer.WithPackage(!opts.noPackage),
+		analyzer.WithTree(opts.tree),
 	}
 	report, analyzeErr := analyzer.Analyze(opts.input, analysisOptions...)
 	if err := writeReport(opts, report, stdout); err != nil {
@@ -92,7 +92,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.noTemplates, "no-templates", false, "跳过模板定义、引用和 PageRes 资源分析，但保留模板元数据")
 	flags.BoolVar(&opts.noAnnotations, "no-annotations", false, "跳过注解及 Appearance 分析")
 	flags.BoolVar(&opts.noSignatures, "no-signatures", false, "跳过签名清单分析")
-	flags.BoolVar(&opts.noPackage, "no-package", false, "跳过 ZIP 条目统计，但保留包内路径索引")
+	flags.BoolVar(&opts.tree, "tree", false, "输出 OFD ZIP 包目录结构")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出 analyzer 版本")
 	flags.Usage = func() {
