@@ -88,6 +88,9 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 	if countX <= 0 || countY <= 0 || countX > maxPatternTiles || countY > maxPatternTiles || countX > maxPatternTiles/countY {
 		return false
 	}
+	if !p.budget.allowPatternTiles(countX * countY) {
+		return false
+	}
 
 	for ix := startX; ix <= endX; ix++ {
 		for iy := startY; iy <= endY; iy++ {

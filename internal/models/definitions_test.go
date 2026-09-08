@@ -84,6 +84,17 @@ func TestStBoxIsFinite(t *testing.T) {
 	}
 }
 
+func TestStPosRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		t.Run(value, func(t *testing.T) {
+			var position StPos
+			if err := position.parseFromString(value + " 10"); err == nil {
+				t.Fatal("expected non-finite position to be rejected")
+			}
+		})
+	}
+}
+
 func TestCtPageAreaEnsurePhysicalBoxUsesA4(t *testing.T) {
 	tests := []StBox{
 		{},

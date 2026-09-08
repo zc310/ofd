@@ -139,6 +139,9 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 		!finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return false
 	}
+	if !p.budget.allowOffscreenPixels(width, height, meshGradientDPI) {
+		return false
+	}
 	page := canvas.New(width, height)
 	pageCtx := canvas.NewContext(page)
 	pageCtx.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))

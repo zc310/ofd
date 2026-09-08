@@ -74,7 +74,7 @@ func (s *StArrayF) parseMixedSequence(str string) error {
 			gFlag = false
 			continue
 		}
-		v, err := strconv.ParseFloat(p, 64)
+		v, err := parseFiniteFloat(p, "数组元素")
 		if err != nil {
 			return fmt.Errorf("无效的浮点数 %q: %w", p, err)
 		}

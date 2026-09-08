@@ -4,7 +4,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -239,43 +238,43 @@ func (p *SVGPath) parseArcCommand(tokens []string, startIdx int) (PathCommand, i
 	}
 
 	// 解析椭圆半径
-	rx, err := strconv.ParseFloat(tokens[startIdx+1], 64)
+	rx, err := parseFiniteFloat(tokens[startIdx+1], "A命令rx")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令rx解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
-	ry, err := strconv.ParseFloat(tokens[startIdx+2], 64)
+	ry, err := parseFiniteFloat(tokens[startIdx+2], "A命令ry")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令ry解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
 	// 解析x轴旋转角度
-	xAxisRotation, err := strconv.ParseFloat(tokens[startIdx+3], 64)
+	xAxisRotation, err := parseFiniteFloat(tokens[startIdx+3], "A命令x轴旋转角度")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令x轴旋转角度解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
 	// 解析大弧标志
-	largeArcFlag, err := strconv.ParseFloat(tokens[startIdx+4], 64)
+	largeArcFlag, err := parseFiniteFloat(tokens[startIdx+4], "A命令大弧标志")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令大弧标志解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
 	// 解析扫过标志
-	sweepFlag, err := strconv.ParseFloat(tokens[startIdx+5], 64)
+	sweepFlag, err := parseFiniteFloat(tokens[startIdx+5], "A命令扫过标志")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令扫过标志解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
 	// 解析终点坐标
-	endX, err := strconv.ParseFloat(tokens[startIdx+6], 64)
+	endX, err := parseFiniteFloat(tokens[startIdx+6], "A命令终点x坐标")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令终点x坐标解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
-	endY, err := strconv.ParseFloat(tokens[startIdx+7], 64)
+	endY, err := parseFiniteFloat(tokens[startIdx+7], "A命令终点y坐标")
 	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令终点y坐标解析失败: %w", err)
+		return PathCommand{}, startIdx, err
 	}
 
 	arcData := &ArcData{
@@ -317,14 +316,14 @@ func (p *SVGPath) parsePoints(tokens []string, startIdx, numPoints int) ([]StPos
 			return nil, idx, fmt.Errorf("需要%d个点，但只找到%d个坐标", numPoints, len(points)*2)
 		}
 
-		x, err := strconv.ParseFloat(tokens[idx], 64)
+		x, err := parseFiniteFloat(tokens[idx], "x坐标")
 		if err != nil {
-			return nil, idx, fmt.Errorf("x坐标解析失败(%s): %w", tokens[idx], err)
+			return nil, idx, err
 		}
 
-		y, err := strconv.ParseFloat(tokens[idx+1], 64)
+		y, err := parseFiniteFloat(tokens[idx+1], "y坐标")
 		if err != nil {
-			return nil, idx, fmt.Errorf("y坐标解析失败(%s): %w", tokens[idx+1], err)
+			return nil, idx, err
 		}
 
 		points = append(points, StPos{X: x, Y: y})
@@ -336,7 +335,7 @@ func (p *SVGPath) parsePoints(tokens []string, startIdx, numPoints int) ([]StPos
 
 // isCoordinatePair 检查令牌是否为可解析的数值坐标。
 func (p *SVGPath) isCoordinatePair(token string) bool {
-	_, err := strconv.ParseFloat(token, 64)
+	_, err := parseFiniteFloat(token, "路径坐标")
 	return err == nil
 }
 
