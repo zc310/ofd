@@ -327,28 +327,46 @@ func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.S
 
 func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *canvas.Path {
 	pa := &canvas.Path{}
+	if cp == nil || transform == nil {
+		return pa
+	}
 	for _, cmd := range cp.AbbreviatedData {
 		switch cmd.Type {
 		case models.MoveTo, models.Start:
+			if len(cmd.Points) < 1 {
+				continue
+			}
 			x, y := transform(cmd.Points[0])
 			pa.MoveTo(x, y)
 
 		case models.LineTo:
+			if len(cmd.Points) < 1 {
+				continue
+			}
 			x, y := transform(cmd.Points[0])
 			pa.LineTo(x, y)
 
 		case models.QuadTo:
+			if len(cmd.Points) < 2 {
+				continue
+			}
 			cpx, cpy := transform(cmd.Points[0])
 			x, y := transform(cmd.Points[1])
 			pa.QuadTo(cpx, cpy, x, y)
 
 		case models.CubicBezier:
+			if len(cmd.Points) < 3 {
+				continue
+			}
 			x1, y1 := transform(cmd.Points[0])
 			x2, y2 := transform(cmd.Points[1])
 			x3, y3 := transform(cmd.Points[2])
 			pa.CubeTo(x1, y1, x2, y2, x3, y3)
 
 		case models.ArcTo:
+			if cmd.Arc == nil {
+				continue
+			}
 			endX, endY := transform(cmd.Arc.EndPoint)
 			pa.ArcTo(
 				cmd.Arc.RX,
