@@ -18,14 +18,14 @@ const maxCompositeDepth = 32
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
 func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
-	p.composite(ctx, object, dp, pb, nil, nil)
+	p.composite(ctx, object, dp, pb, nil, nil, 0)
 }
 
-func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
 	if !object.VisibleValue() {
 		return
 	}
-	if p.compositeDepth >= maxCompositeDepth {
+	if compositeDepth >= maxCompositeDepth {
 		return
 	}
 	unit, ok := p.CompositeUnits[models.StID(object.ResourceID)]
@@ -51,9 +51,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	// 在单元自身的坐标系中绘制全部内容。
 	cc := canvas.New(w, h)
 	cctx := canvas.NewContext(cc)
-	p.compositeDepth++
-	defer func() { p.compositeDepth-- }()
-	p.drawItems(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h})
+	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1)
 
 	// 栅格化分辨率以最终内容在页面上约 300dpi 为准，避免对超大单元产生过大的位图。
 	dpi := 300.0 * box.Width / w

@@ -85,7 +85,7 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 			})
 			reflection := patternReflection(pattern.ReflectMethod, pattern.Width, pattern.Height, ix, iy)
 			tile = *tile.Multiply(&reflection)
-			p.drawItemsWithTransform(ctx, pattern.CellContent.Items, nil, pb, &tile, path)
+			p.drawItemsWithTransform(ctx, pattern.CellContent.Items, nil, pb, &tile, path, 0)
 		}
 	}
 	return true
