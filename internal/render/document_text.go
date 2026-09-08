@@ -28,8 +28,8 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 		return
 	}
 
-	// OFD 中 Fill=false 表示文字不填充，本实现不绘制文字描边，直接跳过。
-	if textFillDisabled(object) {
+	// OFD 中 Fill=false 表示文字不填充；当 Stroke=true 时仍需绘制描边。
+	if textFillDisabled(object) && !object.Stroke {
 		return
 	}
 	fill, stroke := p.updateDrawParams(ctx, dp)
@@ -38,8 +38,13 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 			object.Size *= scale
 		}
 	}
-	if object.FillColor != nil {
-		fill = p.updateCtColor(object.FillColor)
+	// 空心字（仅描边，不填充）：将填充置空，保留描边颜色。
+	if textFillDisabled(object) && object.Stroke {
+		fill = nil
+	} else {
+		if object.FillColor != nil {
+			fill = p.updateCtColor(object.FillColor)
+		}
 	}
 	if object.StrokeColor != nil {
 		stroke = p.updateCtColor(object.StrokeColor)
@@ -304,6 +309,13 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
+	// 空心字必须走路径绘制才能描边，DrawText 无法单独描边。
+	if textFillDisabled(object) && object.Stroke {
+		if path, _ := face.ToPath(value); path != nil && !path.Empty() {
+			p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			return
+		}
+	}
 	if parentCTM != nil {
 		if object.CTM != nil {
 			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
@@ -382,8 +394,13 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
 	// ToPath returns geometry only; unlike DrawText it does not apply the
 	// FontFace paint, so copy the text fill to the path drawing state.
-	ctx.SetFill(face.Fill)
-	ctx.SetStroke(nil)
+	if textFillDisabled(object) && object.Stroke {
+		// 空心字：仅描边，不填充。
+		ctx.SetFill(nil)
+	} else {
+		ctx.SetFill(face.Fill)
+		ctx.SetStroke(nil)
+	}
 	if parentCTM != nil {
 		if object.CTM != nil {
 			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
