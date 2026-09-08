@@ -17,7 +17,7 @@ func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *model
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
 func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
 	ctx.Push()
@@ -161,6 +161,12 @@ func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64)
 }
 
 func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *canvas.Path {
+	if !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+		return &canvas.Path{}
+	}
+	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {
+		return &canvas.Path{}
+	}
 	box := object.Boundary
 	transform := func(pt models.StPos) (float64, float64) {
 		if parentCTM != nil {
@@ -188,10 +194,19 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 
 	objectMatrix := models.IdentityMatrix
 	if objectCTM != nil {
+		if !objectCTM.IsFinite() {
+			return nil
+		}
 		objectMatrix = *objectCTM
 	}
 	if parentCTM != nil {
+		if !parentCTM.IsFinite() {
+			return nil
+		}
 		objectMatrix = *parentCTM.Multiply(&objectMatrix)
+		if !objectMatrix.IsFinite() {
+			return nil
+		}
 	}
 
 	var result *canvas.Path
@@ -218,6 +233,9 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 
 		areaCTM := models.IdentityMatrix
 		if area.CTM != nil {
+			if !area.CTM.IsFinite() {
+				continue
+			}
 			areaCTM = *area.CTM
 		}
 		if transFlag == nil || *transFlag {
@@ -225,7 +243,13 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 		}
 		pathCTM := areaCTM
 		if area.Path.CTM != nil {
+			if !area.Path.CTM.IsFinite() {
+				continue
+			}
 			pathCTM = *areaCTM.Multiply(area.Path.CTM)
+		}
+		if !pathCTM.IsFinite() {
+			continue
 		}
 
 		areaPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {

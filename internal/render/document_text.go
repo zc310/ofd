@@ -17,7 +17,10 @@ func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *model
 }
 
 func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
+		return
+	}
+	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {
 		return
 	}
 	ctx.Push()

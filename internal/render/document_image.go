@@ -19,7 +19,7 @@ func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *mod
 }
 
 func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
-	if !object.VisibleValue() {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
 	media, ok := p.Res[models.StID(object.ResourceID)]
@@ -39,6 +39,9 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *mod
 	ctm := imageCTM(object)
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
+		if !ctm.IsFinite() {
+			return
+		}
 	}
 	m := imageMatrix(object.Boundary, img, ctm, pb.Height)
 
@@ -112,6 +115,9 @@ func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pag
 
 		areaCTM := models.IdentityMatrix
 		if area.CTM != nil {
+			if !area.CTM.IsFinite() {
+				continue
+			}
 			areaCTM = *area.CTM
 		}
 		if transFlag == nil || *transFlag {
@@ -119,7 +125,13 @@ func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pag
 		}
 		pathCTM := areaCTM
 		if area.Path.CTM != nil {
+			if !area.Path.CTM.IsFinite() {
+				continue
+			}
 			pathCTM = *areaCTM.Multiply(area.Path.CTM)
+		}
+		if !pathCTM.IsFinite() {
+			continue
 		}
 
 		clipPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {

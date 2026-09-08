@@ -127,6 +127,9 @@ func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *m
 }
 
 func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
+	if parentCTM != nil && !parentCTM.IsFinite() {
+		return
+	}
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:

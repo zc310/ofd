@@ -39,11 +39,17 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 	}
 	if object.CTM != nil {
 		base = *base.Multiply(object.CTM)
+		if !base.IsFinite() {
+			return false
+		}
 	}
 	// 对于 CellContent，Boundary 位于对象 CTM 之外，因此要在组合父级变换和
 	// 对象变换后再进行平移。
 	base = *translationMatrix(originX, originY).Multiply(&base)
 	base = *base.Multiply(&patternTransform)
+	if !base.IsFinite() {
+		return false
+	}
 	inverse, ok := invertCTM(base)
 	if !ok {
 		return false
@@ -85,6 +91,9 @@ func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, patte
 			})
 			reflection := patternReflection(pattern.ReflectMethod, pattern.Width, pattern.Height, ix, iy)
 			tile = *tile.Multiply(&reflection)
+			if !tile.IsFinite() {
+				return false
+			}
 			p.drawItemsWithTransform(ctx, pattern.CellContent.Items, nil, pb, &tile, path, 0)
 		}
 	}
@@ -142,27 +151,41 @@ func patternCTM(pattern *models.CtPattern) (models.CTM, bool) {
 		if err != nil {
 			return models.IdentityMatrix, false
 		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return models.IdentityMatrix, false
+		}
 		values = append(values, v)
 	}
-	if len(values) != 6 || values[0]*values[3]-values[1]*values[2] == 0 {
+	if len(values) != 6 {
 		return models.IdentityMatrix, false
 	}
-	return models.CTM{values[0], values[1], values[2], values[3], values[4], values[5]}, true
+	ctm := models.CTM{values[0], values[1], values[2], values[3], values[4], values[5]}
+	if !ctm.IsFinite() || values[0]*values[3]-values[1]*values[2] == 0 {
+		return models.IdentityMatrix, false
+	}
+	return ctm, true
 }
 
 func invertCTM(matrix models.CTM) (models.CTM, bool) {
+	if !matrix.IsFinite() {
+		return models.IdentityMatrix, false
+	}
 	determinant := matrix[0]*matrix[3] - matrix[1]*matrix[2]
 	if determinant == 0 || math.IsNaN(determinant) || math.IsInf(determinant, 0) {
 		return models.IdentityMatrix, false
 	}
-	return models.CTM{
+	inverse := models.CTM{
 		matrix[3] / determinant,
 		-matrix[1] / determinant,
 		-matrix[2] / determinant,
 		matrix[0] / determinant,
 		(matrix[2]*matrix[5] - matrix[3]*matrix[4]) / determinant,
 		(matrix[1]*matrix[4] - matrix[0]*matrix[5]) / determinant,
-	}, true
+	}
+	if !inverse.IsFinite() {
+		return models.IdentityMatrix, false
+	}
+	return inverse, true
 }
 
 // 保留 patternMatrix，供测试以及需要将 OFD CTM 表示为 canvas 矩阵的调用方使用。

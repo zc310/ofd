@@ -499,10 +499,27 @@ func (c *CTM) UnmarshalXMLAttr(attr xml.Attr) error {
 		if err != nil {
 			return fmt.Errorf("解析第 %d 个值 '%s' 失败: %v", i+1, part, err)
 		}
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return fmt.Errorf("第 %d 个值 '%s' 必须是有限数值", i+1, part)
+		}
 		c[i] = val
 	}
 
 	return nil
+}
+
+// IsFinite 判断矩阵的每个分量是否都是有限数值。
+// CTM 也可能由代码直接构造而不是通过 XML 解析，因此传入渲染器前仍需单独校验。
+func (c *CTM) IsFinite() bool {
+	if c == nil {
+		return true
+	}
+	for _, value := range *c {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return false
+		}
+	}
+	return true
 }
 
 // String 返回字符串表示
