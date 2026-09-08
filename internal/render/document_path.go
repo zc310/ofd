@@ -284,11 +284,13 @@ func (p *Document) updatePathGradients(ctx *canvas.Context, object *models.PathO
 	}
 	if object.Fill && fillColor != nil {
 		if gradient := p.pathGradient(fillColor, transform); gradient != nil {
+			gradient = scaleGradientOpacity(gradient, graphicOpacity(object.Alpha))
 			ctx.SetFillGradient(gradient)
 		}
 	}
 	if object.Stroke != "false" && strokeColor != nil {
 		if gradient := p.pathGradient(strokeColor, transform); gradient != nil {
+			gradient = scaleGradientOpacity(gradient, graphicOpacity(object.Alpha))
 			ctx.SetStrokeGradient(gradient)
 		}
 	}
