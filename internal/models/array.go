@@ -2,11 +2,19 @@ package models
 
 import (
 	"encoding/xml"
+	"fmt"
 	"strconv"
 	"strings"
 )
 
 type StArrayF []float64
+
+const (
+	// stArrayFMaxRepeat 限制单个 g 指令的展开数量，避免异常输入导致长时间分配。
+	stArrayFMaxRepeat = 100000
+	// stArrayFMaxElements 限制数组展开后的总元素数量，避免多个 g 指令累积耗尽内存。
+	stArrayFMaxElements = 1000000
+)
 
 // UnmarshalXML 实现 xml.Unmarshaler 接口
 func (s *StArrayF) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -40,28 +48,56 @@ func (s *StArrayF) parseMixedSequence(str string) error {
 	parts := strings.Fields(str)
 
 	gFlag := false
-	gCount := 0
+	hasRepeat := false
+	repeatCount := 0
 	for _, p := range parts {
 		if p == "g" {
+			if gFlag {
+				return fmt.Errorf("重复展开标记 g 缺少重复次数")
+			}
+			if hasRepeat {
+				return fmt.Errorf("展开次数后缺少重复值")
+			}
 			gFlag = true
 			continue
 		}
 		if gFlag {
-			gCount, _ = strconv.Atoi(p)
+			count, err := strconv.Atoi(p)
+			if err != nil {
+				return fmt.Errorf("无效的展开次数 %q: %w", p, err)
+			}
+			if count < 0 || count > stArrayFMaxRepeat {
+				return fmt.Errorf("展开次数 %d 超出允许范围 [0,%d]", count, stArrayFMaxRepeat)
+			}
+			repeatCount = count
+			hasRepeat = true
 			gFlag = false
 			continue
 		}
-		if gCount > 0 {
-			v, _ := strconv.ParseFloat(p, 64)
-			for j := 0; j < gCount; j++ {
-				result = append(result, v)
-			}
-			gCount = 0
-		} else {
-			if v, err := strconv.ParseFloat(p, 64); err == nil {
-				result = append(result, v)
-			}
+		v, err := strconv.ParseFloat(p, 64)
+		if err != nil {
+			return fmt.Errorf("无效的浮点数 %q: %w", p, err)
 		}
+		if hasRepeat {
+			if len(result)+repeatCount > stArrayFMaxElements {
+				return fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+			}
+			for j := 0; j < repeatCount; j++ {
+				result = append(result, v)
+			}
+			hasRepeat = false
+		} else {
+			if len(result) >= stArrayFMaxElements {
+				return fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+			}
+			result = append(result, v)
+		}
+		if len(result) > stArrayFMaxElements {
+			return fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+		}
+	}
+	if gFlag {
+		return fmt.Errorf("展开标记 g 后缺少重复次数")
 	}
 
 	*s = result
