@@ -4,6 +4,7 @@ package render
 import (
 	"image/color"
 	"log/slog"
+	"math"
 	"sync"
 
 	"github.com/tdewolff/canvas"
@@ -16,6 +17,61 @@ type Document struct {
 	background color.Color
 	fonts      *Fonts
 	renderMu   sync.Mutex
+	budget     renderBudget
+}
+
+const (
+	maxCompositeExpansions         = 10000
+	maxCompositeResourceExpansions = 256
+	maxPatternTilesPerRender       = 100000
+	maxOffscreenPixels             = 200000000
+)
+
+type renderBudget struct {
+	compositeExpansions int
+	compositeResources  map[models.StID]int
+	patternTiles        int
+	offscreenPixels     float64
+}
+
+func (b *renderBudget) reset() {
+	b.compositeExpansions = 0
+	b.compositeResources = make(map[models.StID]int)
+	b.patternTiles = 0
+	b.offscreenPixels = 0
+}
+
+func (b *renderBudget) allowComposite(resourceID models.StID) bool {
+	if b.compositeResources == nil {
+		b.compositeResources = make(map[models.StID]int)
+	}
+	if b.compositeExpansions >= maxCompositeExpansions || b.compositeResources[resourceID] >= maxCompositeResourceExpansions {
+		return false
+	}
+	b.compositeExpansions++
+	b.compositeResources[resourceID]++
+	return true
+}
+
+func (b *renderBudget) allowPatternTiles(count int) bool {
+	if count < 0 || b.patternTiles > maxPatternTilesPerRender-count {
+		return false
+	}
+	b.patternTiles += count
+	return true
+}
+
+func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
+	if width <= 0 || height <= 0 || dpi <= 0 || math.IsNaN(width) || math.IsInf(width, 0) ||
+		math.IsNaN(height) || math.IsInf(height, 0) || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
+		return false
+	}
+	pixels := width * height * canvas.DPI(dpi).DPMM() * canvas.DPI(dpi).DPMM()
+	if math.IsNaN(pixels) || math.IsInf(pixels, 0) || b.offscreenPixels > maxOffscreenPixels-pixels {
+		return false
+	}
+	b.offscreenPixels += pixels
+	return true
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
@@ -30,6 +86,7 @@ func annotationVisible(annot *models.Annot) bool {
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
+	p.budget.reset()
 	page.EnsurePhysicalBox()
 	p.drawPage(ctx, page)
 	return nil
@@ -38,6 +95,7 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
+	p.budget.reset()
 	page.EnsurePhysicalBox()
 	box := page.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)

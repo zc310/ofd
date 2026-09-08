@@ -104,6 +104,9 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
 		return false
 	}
+	if !p.budget.allowOffscreenPixels(pb.Width, pb.Height, meshGradientDPI) {
+		return false
+	}
 	transform := func(point models.StPos) canvas.Point {
 		if object.CTM != nil {
 			point.X, point.Y = object.CTM.TransformPoint(point)

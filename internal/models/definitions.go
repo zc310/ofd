@@ -114,6 +114,17 @@ type StPos struct {
 	Y float64
 }
 
+func parseFiniteFloat(value, name string) (float64, error) {
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("解析%s失败: %w", name, err)
+	}
+	if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, fmt.Errorf("%s必须是有限数值", name)
+	}
+	return parsed, nil
+}
+
 // UnmarshalXML 从 XML 字符串解析 StPos
 func (p *StPos) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var s string
@@ -144,14 +155,13 @@ func (p *StPos) parseFromString(s string) error {
 	}
 
 	var err error
-	p.X, err = strconv.ParseFloat(parts[0], 64)
+	p.X, err = parseFiniteFloat(parts[0], "X坐标")
 	if err != nil {
-		return fmt.Errorf("解析X坐标失败: %v", err)
+		return err
 	}
-
-	p.Y, err = strconv.ParseFloat(parts[1], 64)
+	p.Y, err = parseFiniteFloat(parts[1], "Y坐标")
 	if err != nil {
-		return fmt.Errorf("解析Y坐标失败: %v", err)
+		return err
 	}
 	return nil
 }

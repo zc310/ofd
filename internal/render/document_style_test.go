@@ -91,3 +91,35 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 		t.Fatal("different MiterLimit values produced identical stroked paths")
 	}
 }
+
+func TestStrokeParametersRejectInvalidValues(t *testing.T) {
+	ctx := canvas.NewContext(canvas.New(10, 10))
+	var document Document
+	document.updateCtPathStyle(ctx, &models.CtPath{
+		CTGraphicUnit: models.CTGraphicUnit{
+			LineWidth:   -1,
+			MiterLimit:  -1,
+			DashOffset:  -1,
+			DashPattern: &models.StArrayF{0, 0},
+		},
+	}, nil)
+
+	if ctx.Style.StrokeWidth != defaultLineWidth {
+		t.Fatalf("stroke width = %g, want default %g", ctx.Style.StrokeWidth, defaultLineWidth)
+	}
+	if len(ctx.Style.Dashes) != 0 || ctx.Style.DashOffset != 0 {
+		t.Fatalf("invalid dash pattern was retained: offset=%g dashes=%v", ctx.Style.DashOffset, ctx.Style.Dashes)
+	}
+}
+
+func TestValidDashPattern(t *testing.T) {
+	pattern := models.StArrayF{2, 1}
+	if !validDashPattern(0, &pattern) {
+		t.Fatal("valid dash pattern was rejected")
+	}
+	for _, invalid := range []models.StArrayF{{-1, 1}, {0, 0}} {
+		if validDashPattern(0, &invalid) {
+			t.Fatalf("invalid dash pattern was accepted: %v", invalid)
+		}
+	}
+}

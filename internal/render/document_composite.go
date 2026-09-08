@@ -33,6 +33,9 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if !ok || unit == nil {
 		return
 	}
+	if !p.budget.allowComposite(models.StID(object.ResourceID)) {
+		return
+	}
 
 	w, h := unit.Width, unit.Height
 	box := object.Boundary
@@ -49,12 +52,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 		return
 	}
 
-	// 在单元自身的坐标系中绘制全部内容。
-	cc := canvas.New(w, h)
-	cctx := canvas.NewContext(cc)
-	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1)
-
-	// 栅格化分辨率以最终内容在页面上约 300dpi 为准，避免对超大单元产生过大的位图。
+	// 在创建离屏画布前扣除预算，避免异常尺寸先完成分配再被限制。
 	dpi := 300.0 * box.Width / w
 	if dpi <= 0 {
 		dpi = 300.0
@@ -65,6 +63,16 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if dpi < 10 {
 		dpi = 10
 	}
+	if !p.budget.allowOffscreenPixels(w, h, dpi) {
+		return
+	}
+
+	// 在单元自身的坐标系中绘制全部内容。
+	cc := canvas.New(w, h)
+	cctx := canvas.NewContext(cc)
+	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1)
+
+	// 栅格化分辨率以最终内容在页面上约 300dpi 为准，避免对超大单元产生过大的位图。
 	var raster image.Image = rasterizer.Draw(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)
 	if raster == nil || raster.Bounds().Empty() {
 		return

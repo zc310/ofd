@@ -2,9 +2,17 @@ package render
 
 import (
 	"image/color"
+	"math"
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+)
+
+const (
+	defaultLineWidth  = 0.353
+	defaultMiterLimit = 3.528
+	maxStrokeValue    = 1000000
+	maxDashElements   = 1024
 )
 
 func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (*CTColor, *CTColor) {
@@ -16,12 +24,12 @@ func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (
 		p.setColor(ctx.SetStrokeColor, dp.StrokeColor)
 	}
 	lineWidth := dp.LineWidth
-	if lineWidth == 0 {
-		lineWidth = 0.353
-	}
+	lineWidth = normalizedLineWidth(lineWidth)
 	ctx.SetStrokeWidth(lineWidth)
-	if dp.DashPattern != nil {
+	if validDashPattern(dp.DashOffset, dp.DashPattern) {
 		ctx.SetDashes(dp.DashOffset, *dp.DashPattern...)
+	} else {
+		ctx.SetDashes(0)
 	}
 
 	ctx.SetStrokeCapper(getLineCap(dp.Cap))
@@ -90,7 +98,7 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 		if dp != nil && dp.LineWidth != 0 {
 			effective.LineWidth = dp.LineWidth
 		} else {
-			effective.LineWidth = 0.353
+			effective.LineWidth = defaultLineWidth
 		}
 	}
 	if effective.Cap == "" && dp != nil {
@@ -123,6 +131,8 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Stroke != "false" {
+		effective.LineWidth = normalizedLineWidth(effective.LineWidth)
+		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit)
 		ctx.SetStrokeWidth(effective.LineWidth)
 		p.applyStroke(ctx, stroke, &effective)
 	} else {
@@ -130,7 +140,11 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 	}
 
 	if effective.DashPattern != nil {
-		ctx.SetDashes(effective.DashOffset, *effective.DashPattern...)
+		if validDashPattern(effective.DashOffset, effective.DashPattern) {
+			ctx.SetDashes(effective.DashOffset, *effective.DashPattern...)
+		} else {
+			ctx.SetDashes(0)
+		}
 	}
 }
 
@@ -174,9 +188,7 @@ func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *mod
 	joiner := getLineJoin(object.Join)
 	if joiner == canvas.MiterJoin {
 		miterLimit := object.MiterLimit
-		if miterLimit == 0 {
-			miterLimit = 3.528
-		}
+		miterLimit = normalizedMiterLimit(miterLimit)
 		// OFD 将 MiterLimit 定义为以毫米为单位的绝对长度。
 		// Canvas 使用相对于中心线测量的斜接长度进行比较，
 		// 因此这里需要换算为相对于半线宽的倍率。
@@ -187,4 +199,35 @@ func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *mod
 		joiner = canvas.MiterJoiner{GapJoiner: canvas.BevelJoin, Limit: miterLimit}
 	}
 	ctx.SetStrokeJoiner(joiner)
+}
+
+func normalizedLineWidth(value float64) float64 {
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
+		return defaultLineWidth
+	}
+	return value
+}
+
+func normalizedMiterLimit(value float64) float64 {
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
+		return defaultMiterLimit
+	}
+	return value
+}
+
+func validDashPattern(offset float64, pattern *models.StArrayF) bool {
+	if pattern == nil || len(*pattern) == 0 || len(*pattern) > maxDashElements ||
+		offset < 0 || math.IsNaN(offset) || math.IsInf(offset, 0) || offset > maxStrokeValue {
+		return false
+	}
+	hasLength := false
+	for _, value := range *pattern {
+		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
+			return false
+		}
+		if value > 0 {
+			hasLength = true
+		}
+	}
+	return hasLength
 }
