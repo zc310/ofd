@@ -32,9 +32,13 @@ type Document struct {
 	CompositeUnits map[models.StID]*models.CompositeGraphicUnit
 	PublicRes      []*models.Res
 	DocumentRes    []*models.Res
-	Signs          map[models.StID]*models.Signature
+	Signs          map[string]*models.Signature
 	Seals          map[models.StID][]*SealInfo
 	Annotations    map[models.StID]*models.PageAnnot
+	Attachments    *models.Attachments
+	CustomTags     *models.CustomTags
+	Extensions     *models.Extensions
+	Versions       map[string]*models.DocVersion
 }
 
 // collectCompositeUnits 收集资源中的复合图元定义。
@@ -81,19 +85,23 @@ func (p *Document) parseDocumentRes() error {
 // 对应表中。resolveMedia 控制是否把图片的相对路径转换为绝对路径（Document 资源需要，
 // Public 资源不需要）。
 func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*models.Res, error) {
+	return p.parseResourceFilePath(res.Resolve(p.BaseLoc), resolveMedia)
+}
+
+func (p *Document) parseResourceFilePath(path models.StLoc, resolveMedia bool) (*models.Res, error) {
 	var pr models.Res
-	if err := p.FileCache.ReadXML(res.Resolve(p.BaseLoc).String(), &pr); err != nil {
+	if err := p.FileCache.ReadXML(path.String(), &pr); err != nil {
 		return nil, err
 	}
 
 	if pr.MultiMedias != nil {
 		for _, media := range pr.MultiMedias.MultiMedia {
 			if resolveMedia && !strings.HasPrefix(media.MediaFile.String(), "/") {
-				if pr.BaseLoc == "" {
-					media.MediaFile = models.StLoc(p.BaseLoc) + "/" + media.MediaFile
-				} else {
-					media.MediaFile = models.StLoc(p.BaseLoc) + "/" + pr.BaseLoc + "/" + media.MediaFile
+				base := path.Dir()
+				if pr.BaseLoc != "" && pr.BaseLoc != "." {
+					base = base.Join(string(pr.BaseLoc))
 				}
+				media.MediaFile = base.Join(string(media.MediaFile)).Clean()
 			}
 			p.Res[media.ID] = media
 		}
@@ -109,7 +117,7 @@ func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*mode
 	if pr.Fonts != nil {
 		for _, font := range pr.Fonts.Font {
 			if font.FontFile != "" {
-				font.FontFile = font.FontFile.Resolve(p.BaseLoc.Join(string(pr.BaseLoc)))
+				font.FontFile = font.FontFile.Resolve(path.Dir().Join(string(pr.BaseLoc)))
 			}
 			p.FontRes[font.ID] = &font
 		}
@@ -139,6 +147,20 @@ func (p *Document) parse(body models.DocBody) error {
 	p.Res = make(map[models.StID]*models.MultiMedia)
 	p.FontRes = make(map[models.StID]*models.Font)
 	p.CompositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
+	for index, page := range p.Pages {
+		pagePath := p.Document.Pages.Pages[index].BaseLoc.Resolve(p.BaseLoc)
+		for _, resource := range page.PageRes {
+			pr, resourceErr := p.parseResourceFilePath(pagePath.Dir().Join(resource.String()), true)
+			if resourceErr != nil {
+				return resourceErr
+			}
+			if pr.MultiMedias != nil {
+				for _, media := range pr.MultiMedias.MultiMedia {
+					p.Res[media.ID] = media
+				}
+			}
+		}
+	}
 	if err = p.parsePublicRes(); err != nil {
 		slog.Error(err.Error())
 	}
@@ -147,6 +169,41 @@ func (p *Document) parse(body models.DocBody) error {
 	}
 	if err = p.parseAnnotations(); err != nil {
 		return err
+	}
+	if p.Document.Attachments != nil {
+		var attachments models.Attachments
+		attachmentPath := p.Document.Attachments.Resolve(p.BaseLoc)
+		if err := p.FileCache.ReadXML(attachmentPath.String(), &attachments); err != nil {
+			return err
+		}
+		p.Attachments = &attachments
+	}
+	if p.Document.CustomTags != nil {
+		var customTags models.CustomTags
+		customTagsPath := p.Document.CustomTags.Resolve(p.BaseLoc)
+		if err := p.FileCache.ReadXML(customTagsPath.String(), &customTags); err != nil {
+			return err
+		}
+		p.CustomTags = &customTags
+	}
+	if p.Document.Extensions != nil {
+		var extensions models.Extensions
+		extensionsPath := p.Document.Extensions.Resolve(p.BaseLoc)
+		if err := p.FileCache.ReadXML(extensionsPath.String(), &extensions); err != nil {
+			return err
+		}
+		p.Extensions = &extensions
+	}
+	p.Versions = make(map[string]*models.DocVersion)
+	if body.Versions != nil {
+		for _, version := range body.Versions.VersionList {
+			var docVersion models.DocVersion
+			versionPath := version.BaseLoc.Resolve("/")
+			if err := p.FileCache.ReadXML(versionPath.String(), &docVersion); err != nil {
+				return err
+			}
+			p.Versions[version.ID] = &docVersion
+		}
 	}
 
 	return nil
@@ -201,7 +258,7 @@ func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bo
 	return &result
 }
 func (p *Document) ParseSigns(file *models.StLoc) error {
-	p.Signs = make(map[models.StID]*models.Signature)
+	p.Signs = make(map[string]*models.Signature)
 	p.Seals = make(map[models.StID][]*SealInfo)
 	if file == nil {
 		return nil
@@ -287,7 +344,7 @@ type Signatures struct {
 	Signatures []Signature `xml:"Signature,omitempty"`
 }
 type Signature struct {
-	ID      models.StID  `xml:"ID,attr"`
+	ID      string       `xml:"ID,attr"`
 	BaseLoc models.StLoc `xml:"BaseLoc,attr"`
 }
 type SealInfo struct {

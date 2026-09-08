@@ -1,0 +1,224 @@
+# 楷体字体样式与字号示例
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/kaiti-styles.yaml -o kaiti-styles.ofd --validate
+
+version: 1
+
+document:
+  id: kaiti-styles
+  title: 楷体字体样式与字号示例
+  author: ofd-creator
+  creator: ofd-creator
+  creatorVersion: "1"
+  pageSize:
+    name: A4
+
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 15
+        width: 180
+        height: 14
+        value: 楷体字体样式展示
+        font: 楷体
+        size: 10
+        weight: 700
+        fill: true
+        fillColor:
+          r: 25
+          g: 55
+          b: 110
+
+      - type: text
+        x: 15
+        y: 33
+        width: 180
+        height: 8
+        value: 常规 4.23 磅效果
+        font: 楷体
+        size: 4.23
+        fill: true
+        fillColor:
+          r: 45
+          g: 45
+          b: 45
+
+      - type: text
+        x: 15
+        y: 45
+        width: 180
+        height: 10
+        value: 中号 6 磅效果
+        font: 楷体
+        size: 6
+        fill: true
+        fillColor:
+          r: 35
+          g: 95
+          b: 155
+
+      - type: text
+        x: 15
+        y: 60
+        width: 180
+        height: 12
+        value: 大号 8 磅效果
+        font: 楷体
+        size: 8
+        fill: true
+        fillColor:
+          r: 25
+          g: 125
+          b: 95
+
+      - type: text
+        x: 15
+        y: 77
+        width: 180
+        height: 16
+        value: 特大号 12 磅效果
+        font: 楷体
+        size: 12
+        fill: true
+        fillColor:
+          r: 180
+          g: 65
+          b: 55
+
+      - type: text
+        x: 15
+        y: 98
+        width: 180
+        height: 16
+        value: 粗体：楷体 10 磅
+        font: 楷体
+        size: 10
+        weight: 700
+        fill: true
+        fillColor:
+          r: 90
+          g: 35
+          b: 130
+
+      - type: text
+        x: 15
+        y: 119
+        width: 180
+        height: 16
+        value: 特粗体：楷体 10 磅
+        font: 楷体
+        size: 10
+        weight: 900
+        fill: true
+        fillColor:
+          r: 155
+          g: 45
+          b: 95
+
+      - type: text
+        x: 15
+        y: 140
+        width: 180
+        height: 16
+        value: 斜体：楷体 10 磅
+        font: 楷体
+        size: 10
+        italic: true
+        fill: true
+        fillColor:
+          r: 25
+          g: 105
+          b: 125
+
+      - type: text
+        x: 15
+        y: 161
+        width: 180
+        height: 16
+        value: 粗斜体：楷体 10 磅
+        font: 楷体
+        size: 10
+        weight: 700
+        italic: true
+        fill: true
+        fillColor:
+          r: 190
+          g: 100
+          b: 30
+
+      - type: text
+        x: 15
+        y: 182
+        width: 180
+        height: 16
+        value: 空心字：仅描边，不填充
+        font: 楷体
+        size: 9
+        stroke: true
+        fill: false
+        lineWidth: 0.6
+        strokeColor:
+          r: 35
+          g: 75
+          b: 150
+
+      - type: text
+        x: 15
+        y: 203
+        width: 180
+        height: 16
+        value: 压缩字宽：楷体 10 磅
+        font: 楷体
+        size: 10
+        hScale: 0.75
+        fill: true
+        fillColor:
+          r: 60
+          g: 120
+          b: 70
+
+      - type: text
+        x: 15
+        y: 224
+        width: 180
+        height: 16
+        value: 扩展字宽：楷体 10 磅
+        font: 楷体
+        size: 10
+        hScale: 1
+        fill: true
+        fillColor:
+          r: 135
+          g: 60
+          b: 125
+
+      - type: text
+        x: 15
+        y: 245
+        width: 180
+        height: 16
+        value: 字重 300：细体效果
+        font: 楷体
+        size: 9
+        weight: 300
+        fill: true
+        fillColor:
+          r: 75
+          g: 75
+          b: 75
+
+      - type: text
+        x: 15
+        y: 266
+        width: 180
+        height: 16
+        value: 字重 500：中等效果
+        font: 楷体
+        size: 9
+        weight: 500
+        fill: true
+        fillColor:
+          r: 55
+          g: 55
+          b: 55

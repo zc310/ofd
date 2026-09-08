@@ -51,12 +51,14 @@ CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
 VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
+CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
 VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
 ANALYZER_PACKAGE := $(DIST_DIR)/ofd-analyzer-$(PLATFORM).zip
+CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
@@ -65,8 +67,8 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(CREATOR) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-creator $(if $(filter linux,$(GOOS)),package-thumbnailer)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -83,7 +85,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer clean help FORCE
+.PHONY: all build build-tools build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-creator clean help FORCE
 
 all: package
 
@@ -97,6 +99,7 @@ help:
 		'make package-converter       Build the OFD converter package' \
 		'make package-validator       Build the OFD validator' \
 		'make package-analyzer        Build the OFD analyzer' \
+		'make package-creator         Build the OFD creator' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
 		'make build-arm64             Build Linux ARM64 command programs' \
 		'make package-arm64           Build Linux ARM64 packages' \
@@ -160,6 +163,10 @@ $(VALIDATOR): FORCE
 $(ANALYZER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-analyzer
+
+$(CREATOR): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-creator
 
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
@@ -225,6 +232,8 @@ package-validator: $(VALIDATOR_PACKAGE)
 
 package-analyzer: $(ANALYZER_PACKAGE)
 
+package-creator: $(CREATOR_PACKAGE)
+
 $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
 	@mkdir -p "$(DIST_DIR)"
 	@rm -rf "$(PACKAGE_DIR)/ofd-validator"
@@ -242,6 +251,15 @@ $(ANALYZER_PACKAGE): $(ANALYZER) cmd/ofd-analyzer/README.md
 	@cp "$(ANALYZER)" "$(PACKAGE_DIR)/ofd-analyzer/ofd-analyzer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-analyzer/README.md" "$(PACKAGE_DIR)/ofd-analyzer/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-analyzer"
+
+$(CREATOR_PACKAGE): $(CREATOR) cmd/ofd-creator/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-creator"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-creator"
+	@rm -f "$@"
+	@cp "$(CREATOR)" "$(PACKAGE_DIR)/ofd-creator/ofd-creator$(BIN_SUFFIX)"
+	@cp "cmd/ofd-creator/README.md" "$(PACKAGE_DIR)/ofd-creator/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-creator"
 
 $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@mkdir -p "$(DIST_DIR)"

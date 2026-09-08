@@ -1,0 +1,368 @@
+# 现代信息卡片 / 活动海报样式实例
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/modern-info-card.yaml -o modern-info-card.ofd --validate
+
+version: 1
+
+document:
+  id: modern-info-card
+  title: 现代信息卡片
+  author: ofd-creator
+  creator: ofd-creator
+  creatorVersion: "1"
+  pageSize:
+    name: A4
+  preferences:
+    pageMode: None
+    pageLayout: OnePage
+
+pages:
+  - layers:
+      - type: Background
+        items:
+          - type: path
+            x: 0
+            y: 0
+            width: 210
+            height: 297
+            data: M 0 0 L 210 0 L 210 297 L 0 297 C
+            fill: true
+            fillColor:
+              r: 245
+              g: 247
+              b: 250
+
+          - type: path
+            x: 0
+            y: 0
+            width: 210
+            height: 78
+            data: M 0 0 L 210 0 L 210 78 L 0 78 C
+            fill: true
+            fillColor:
+              r: 25
+              g: 42
+              b: 78
+
+          - type: path
+            x: 145
+            y: -18
+            width: 95
+            height: 95
+            data: M 47.5 0 B 73.734 0 95 21.266 95 47.5 B 95 73.734 73.734 95 47.5 95 B 21.266 95 0 73.734 0 47.5 B 0 21.266 21.266 0 47.5 0 C
+            fill: true
+            fillColor:
+              r: 48
+              g: 73
+              b: 125
+
+          - type: path
+            x: -30
+            y: 245
+            width: 95
+            height: 95
+            data: M 47.5 0 B 73.734 0 95 21.266 95 47.5 B 95 73.734 73.734 95 47.5 95 B 21.266 95 0 73.734 0 47.5 B 0 21.266 21.266 0 47.5 0 C
+            fill: true
+            fillColor:
+              r: 225
+              g: 232
+              b: 242
+
+      - type: Body
+        items:
+          - type: text
+            x: 18
+            y: 18
+            width: 160
+            height: 10
+            value: DESIGN / 2026
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 170
+              g: 198
+              b: 235
+
+          - type: text
+            x: 18
+            y: 34
+            width: 150
+            height: 22
+            value: 创意工作坊
+            font: 楷体
+            size: 16
+            weight: 700
+            fill: true
+            fillColor:
+              r: 255
+              g: 255
+              b: 255
+
+          - type: text
+            x: 18
+            y: 59
+            width: 130
+            height: 9
+            value: 让想法变成看得见的作品
+            font: 楷体
+            size: 5
+            fill: true
+            fillColor:
+              r: 215
+              g: 225
+              b: 242
+
+          - type: path
+            x: 18
+            y: 91
+            width: 174
+            height: 53
+            data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 49 B 174 51.209 172.209 53 170 53 L 4 53 B 1.791 53 0 51.209 0 49 L 0 4 B 0 1.791 1.791 0 4 0 C
+            fill: true
+            fillColor:
+              r: 255
+              g: 255
+              b: 255
+            stroke: true
+            lineWidth: 0.8
+            strokeColor:
+              r: 224
+              g: 229
+              b: 238
+
+          - type: text
+            x: 28
+            y: 101
+            width: 145
+            height: 9
+            value: 本期主题
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 75
+              g: 95
+              b: 125
+
+          - type: text
+            x: 28
+            y: 115
+            width: 145
+            height: 14
+            value: 从灵感到落地的设计方法
+            font: 楷体
+            size: 8
+            weight: 700
+            fill: true
+            fillColor:
+              r: 25
+              g: 42
+              b: 78
+
+          - type: text
+            x: 28
+            y: 132
+            width: 145
+            height: 7
+            value: 观察、构思、表达、迭代
+            font: 楷体
+            size: 4.5
+            fill: true
+            fillColor:
+              r: 110
+              g: 120
+              b: 140
+
+          - type: path
+            x: 18
+            y: 158
+            width: 174
+            height: 42
+            data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 38 B 174 40.209 172.209 42 170 42 L 4 42 B 1.791 42 0 40.209 0 38 L 0 4 B 0 1.791 1.791 0 4 0 C
+            fill: true
+            fillColor:
+              r: 232
+              g: 240
+              b: 255
+
+          - type: text
+            x: 28
+            y: 168
+            width: 40
+            height: 8
+            value: 进度
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 45
+              g: 75
+              b: 130
+
+          - type: text
+            x: 157
+            y: 168
+            width: 24
+            height: 8
+            value: 72%
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 45
+              g: 100
+              b: 190
+
+          - type: path
+            x: 28
+            y: 184
+            width: 154
+            height: 5
+            data: M 2.5 0 L 151.5 0 B 152.881 0 154 1.119 154 2.5 B 154 3.881 152.881 5 151.5 5 L 2.5 5 B 1.119 5 0 3.881 0 2.5 B 0 1.119 1.119 0 2.5 0 C
+            fill: true
+            fillColor:
+              r: 205
+              g: 218
+              b: 240
+
+          - type: path
+            x: 28
+            y: 184
+            width: 111
+            height: 5
+            data: M 2.5 0 L 108.5 0 B 109.881 0 111 1.119 111 2.5 B 111 3.881 109.881 5 108.5 5 L 2.5 5 B 1.119 5 0 3.881 0 2.5 B 0 1.119 1.119 0 2.5 0 C
+            fill: true
+            fillColor:
+              r: 55
+              g: 120
+              b: 220
+
+          - type: path
+            x: 18
+            y: 214
+            width: 52
+            height: 25
+            data: M 3 0 L 49 0 B 50.657 0 52 1.343 52 3 L 52 22 B 52 23.657 50.657 25 49 25 L 3 25 B 1.343 25 0 23.657 0 22 L 0 3 B 0 1.343 1.343 0 3 0 C
+            fill: true
+            fillColor:
+              r: 255
+              g: 244
+              b: 218
+
+          - type: text
+            x: 25
+            y: 222
+            width: 40
+            height: 8
+            value: 灵感
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 165
+              g: 105
+              b: 25
+
+          - type: path
+            x: 79
+            y: 214
+            width: 52
+            height: 25
+            data: M 3 0 L 49 0 B 50.657 0 52 1.343 52 3 L 52 22 B 52 23.657 50.657 25 49 25 L 3 25 B 1.343 25 0 23.657 0 22 L 0 3 B 0 1.343 1.343 0 3 0 C
+            fill: true
+            fillColor:
+              r: 220
+              g: 241
+              b: 231
+
+          - type: text
+            x: 86
+            y: 222
+            width: 40
+            height: 8
+            value: 方法
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 35
+              g: 125
+              b: 85
+
+          - type: path
+            x: 140
+            y: 214
+            width: 52
+            height: 25
+            data: M 3 0 L 49 0 B 50.657 0 52 1.343 52 3 L 52 22 B 52 23.657 50.657 25 49 25 L 3 25 B 1.343 25 0 23.657 0 22 L 0 3 B 0 1.343 1.343 0 3 0 C
+            fill: true
+            fillColor:
+              r: 235
+              g: 229
+              b: 250
+
+          - type: text
+            x: 147
+            y: 222
+            width: 40
+            height: 8
+            value: 表达
+            font: 楷体
+            size: 5
+            weight: 700
+            fill: true
+            fillColor:
+              r: 105
+              g: 70
+              b: 165
+
+      - type: Foreground
+        items:
+          - type: path
+            x: 18
+            y: 260
+            width: 174
+            height: 1
+            data: M 0 0.5 L 174 0.5
+            stroke: true
+            lineWidth: 0.8
+            strokeColor:
+              r: 205
+              g: 213
+              b: 226
+
+          - type: text
+            x: 18
+            y: 267
+            width: 120
+            height: 8
+            value: WORKSHOP NOTES / 01
+            font: 楷体
+            size: 4
+            fill: true
+            fillColor:
+              r: 105
+              g: 115
+              b: 135
+
+          - type: text
+            x: 160
+            y: 267
+            width: 32
+            height: 8
+            value: OFD
+            font: 楷体
+            size: 4
+            weight: 700
+            fill: true
+            fillColor:
+              r: 45
+              g: 75
+              b: 130
