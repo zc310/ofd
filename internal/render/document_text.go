@@ -387,7 +387,13 @@ func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePositio
 }
 
 func textGlyphWidth(face *canvas.FontFace, glyph textGlyph) float64 {
-	return face.TextWidth(glyph.value)
+	if width := face.TextWidth(glyph.value); width > 0 {
+		return width
+	}
+	if glyphID, ok := privateGlyphID(glyph.value); ok && face.Font != nil && face.Font.SFNT != nil {
+		return face.MmPerEm * float64(face.Font.SFNT.GlyphAdvance(glyphID))
+	}
+	return 0
 }
 
 func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
@@ -493,6 +499,11 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 	for _, r := range []rune(value) {
 		glyphID := face.Font.GlyphIndex(r)
 		if glyphID == 0 {
+			if mapped, ok := privateGlyphID(string(r)); ok {
+				glyphID = mapped
+			}
+		}
+		if glyphID == 0 {
 			return nil
 		}
 		if err := face.Font.GlyphPath(path, glyphID, face.PPEM(canvas.DefaultResolution), face.MmPerEm*advance, 0, face.MmPerEm, font.NoHinting); err != nil {
@@ -504,6 +515,20 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 		return nil
 	}
 	return path
+}
+
+// privateGlyphID 将 fontfix 使用的私有字符还原为 OFD 字形 ID，
+// 使未修改 cmap 的完整字体也能直接绘制 CGTransform 字形。
+func privateGlyphID(value string) (uint16, bool) {
+	runes := []rune(value)
+	if len(runes) != 1 {
+		return 0, false
+	}
+	id := int(runes[0]) - 0xF0000
+	if id <= 0 || id > 0xffff {
+		return 0, false
+	}
+	return uint16(id), true
 }
 
 func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
