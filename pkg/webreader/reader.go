@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image/color"
 	"image/png"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -219,6 +220,7 @@ func containsFontSource(sources []FontSource, family string, weight int, italic 
 // AddFallbackFont 为没有内嵌 FontFile 的文档字体添加外部字体。
 // 文字和搜索快照会失效，因为它们的字形度量可能使用了不同的回退字体。
 func (r *Reader) AddFallbackFont(source FontSource) error {
+	slog.Info("register fallback font", "name", source.Name, "family", source.Family, "weight", source.Weight, "italic", source.Italic, "bytes", len(source.Data))
 	if r == nil {
 		return errors.New("文档引擎为空")
 	}

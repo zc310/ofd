@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172033">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <title>OFD WASM 阅读器</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
@@ -30,8 +33,21 @@
     .recent-item:hover { background: #e8f1fb; }
     .recent-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-item small { grid-column: 1 / -1; color: #667188; font-size: 12px; }
-    .search-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: flex; min-width: 310px; align-items: center; gap: 6px; padding: 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; }
-    .search-panel[hidden] { display: none; }
+     .search-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: flex; min-width: 310px; align-items: center; gap: 6px; padding: 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; }
+     .search-panel[hidden] { display: none; }
+     .print-dialog { width: min(420px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
+     .print-dialog::backdrop { background: #17203366; }
+     .print-form { display: grid; gap: 16px; padding: 20px; }
+     .print-form h2 { margin: 0; font-size: 18px; }
+     .print-options { display: grid; gap: 10px; }
+     .print-option { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; min-height: 34px; }
+     .print-option input[type="radio"] { min-height: 0; }
+     .print-range-input { grid-column: 2; width: 100%; }
+     .print-hint { margin: -6px 0 0; color: #667188; font-size: 13px; }
+     .print-error { margin: -6px 0 0; color: #a13e3e; font-size: 13px; }
+     .print-error[hidden] { display: none; }
+     .print-actions { display: flex; justify-content: flex-end; gap: 8px; }
+     .print-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
     .file-button { display: inline-flex; min-height: 34px; align-items: center; padding: 6px 11px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
     .file-button:hover { background: #4b95dc; }
     #cancel-open[hidden] { display: none; }
@@ -159,13 +175,13 @@
       #render-progress { flex: 1 1 auto; width: auto; }
       #back-to-top { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
     }
-    @media (max-width: 380px) {
+     @media (max-width: 380px) {
       header { gap: 5px; }
       .page-group, .zoom-group { gap: 4px; }
       .page-group button, .zoom-group button, .file-button { padding-inline: 8px; }
       #page-number { width: 50px; }
-      #back-to-top { min-width: 40px; min-height: 40px; }
-    }
+       #back-to-top { min-width: 40px; min-height: 40px; }
+     }
   </style>
 </head>
 <body>
@@ -232,6 +248,23 @@
     <span id="render-progress-label" hidden></span>
     <button id="cancel-action" type="button" hidden>取消操作</button>
   </div>
+  <dialog id="print-dialog" class="print-dialog" aria-labelledby="print-title">
+    <form id="print-form" class="print-form">
+      <h2 id="print-title">打印范围</h2>
+      <div class="print-options">
+        <label class="print-option"><input type="radio" name="print-range" value="current" checked><span id="print-current-label">当前页</span></label>
+        <label class="print-option"><input type="radio" name="print-range" value="all"><span>全部页面</span></label>
+        <label class="print-option"><input type="radio" name="print-range" value="custom"><span>自定义范围</span></label>
+        <input id="print-range-custom" class="print-range-input" type="text" inputmode="numeric" placeholder="例如：1-3,5,8-10" aria-label="自定义打印范围" disabled>
+      </div>
+      <p class="print-hint">可使用逗号分隔页面，页码从 1 开始。</p>
+      <p id="print-error" class="print-error" role="alert" hidden></p>
+      <div class="print-actions">
+        <button id="print-cancel" type="button">取消</button>
+        <button type="submit">开始打印</button>
+      </div>
+    </form>
+  </dialog>
   <div class="reader">
     <aside id="thumbnails" aria-label="页面缩略图"></aside>
     <main id="pages" tabindex="-1">
