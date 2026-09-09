@@ -67,6 +67,23 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 	}
 }
 
+func TestAnoFont91MapsOFDGlyphs(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	family, err := NewFonts(ofd.Documents[0]).LoadFont(91)
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := family.Face(1, canvas.Black)
+	if path := directTextPath(face, string(fontfix.GlyphRune(2591))); path == nil || path.Empty() {
+		t.Fatal("OFD glyph 2591 has no path")
+	}
+}
+
 func TestAnoAnnotationFontUsesMatchingEmbeddedFont(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
