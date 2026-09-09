@@ -278,7 +278,7 @@ func (p *Fonts) AddFallbackFont(data []byte, family string, style canvas.FontSty
 	if isNew {
 		f = canvas.NewFontFamily(family)
 	}
-	if err := loadEmbeddedFont(f, data, style); err != nil {
+	if err := f.LoadFont(data, 0, style); err != nil {
 		return err
 	}
 	if isNew {
