@@ -1700,6 +1700,9 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 			built := builtItem{id: s.allocate(), item: item}
 			switch value := item.(type) {
 			case Text:
+				value.TextCodes = completeTextCodes(value.TextCodes, value.Value, value.Width, value.Height, value.Size, value.HScale, value.ReadDirection, value.Font, s.document.Fonts, value.Weight, value.Italic)
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				built.item = value
 				if err := validateText(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的文字对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}
@@ -1719,6 +1722,8 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				built.font = s.fontID(font)
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Path:
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				built.item = value
 				if err := validatePath(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的路径对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}
@@ -1733,6 +1738,8 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Image:
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				built.item = value
 				if value.ResourceID != 0 {
 					if !s.pageImageIDs[value.ResourceID] && !s.documentImageID(value.ResourceID) && s.mediaTypes[value.ResourceID] != "Image" {
 						return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的图片资源 ID %d", context, layerIndex+1, itemIndex+1, value.ResourceID)
@@ -1771,6 +1778,8 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Composite:
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				built.item = value
 				if err := validateComposite(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的复合对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}

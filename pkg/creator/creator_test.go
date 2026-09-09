@@ -1122,6 +1122,37 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 	checkGeneratedPackage(t, data)
 }
 
+func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
+	data, err := Marshal(Document{
+		ID: "text-code-delta-test",
+		Pages: []Page{{Items: []Item{
+			Text{X: 1, Y: 2, Width: 30, Height: 10, Size: 10, TextCodes: []TextCode{{Value: "abc"}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	code := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
+	if code.Value != "abc" || len(code.DeltaX) != 2 || len(code.DeltaY) != 2 {
+		t.Fatalf("多字符 TextCode 未自动补全 DeltaX/DeltaY: %+v", code)
+	}
+	if code.X != 0 || code.Y != 10 {
+		t.Fatalf("TextCode 默认基线坐标错误: X=%v Y=%v", code.X, code.Y)
+	}
+	if code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
+		t.Fatalf("TextCode 自动补全值错误: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
+	}
+	face := findTextFace("SimSun", nil, 10, 0, false)
+	if face != nil && (math.Abs(code.DeltaX[0]-face.TextWidth("a")) > 1e-9 || math.Abs(code.DeltaX[1]-face.TextWidth("b")) > 1e-9) {
+		t.Fatalf("TextCode 间距与系统字体度量不一致: DeltaX=%v", code.DeltaX)
+	}
+}
+
 func TestCreateTextCGTransforms(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "cg-transform-test",
