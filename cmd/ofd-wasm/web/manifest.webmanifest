@@ -1,0 +1,19 @@
+{
+  "name": "OFD WASM 阅读器",
+  "short_name": "OFD 阅读器",
+  "description": "在浏览器中查看 OFD 文档",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#cfd5de",
+  "theme_color": "#172033",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
