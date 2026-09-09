@@ -25,7 +25,7 @@ function unwrap(value) {
 async function start() {
   try {
     const go = new Go();
-    const response = await fetch('ofd.wasm');
+    const response = await fetch('ofd.wasm', { cache: 'no-store' });
     if (!response.ok) throw new Error(`加载 ofd.wasm 失败: ${response.status}`);
 
     let result;
