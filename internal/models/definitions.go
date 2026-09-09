@@ -351,6 +351,7 @@ func (t *DateTime) parseTime(v string) error {
 		time.RFC3339,
 		time.RFC3339Nano,
 		"01/02/2006 3:04:05 PM",
+		"2006/01/02 15:04:05",
 	}
 
 	for _, format := range formats {
