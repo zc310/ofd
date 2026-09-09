@@ -188,7 +188,9 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		}
 	}
 	for candidateID, candidate := range p.FontRes {
-		if candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
+		// 没有 FontFile 的资源只是逻辑字体，不能借用同名的 OFD 子集字体。
+		// 子集字体可能只包含部分字形，即使 cmap 存在映射也不保证轮廓完整。
+		if ft.FontFile == "" || candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
 			continue
 		}
 		buf, parseErr := p.FileCache.Read(string(candidate.FontFile))
