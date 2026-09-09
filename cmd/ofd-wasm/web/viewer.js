@@ -228,11 +228,8 @@ const thumbnailCache = new BlobURLCache(16 << 20);
 const fallbackFontURLs = [
   {
     url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
+    alternateURL: 'https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
     weight: 400,
-  },
-  {
-    url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf',
-    weight: 700,
   },
 ];
 const fallbackFontCacheName = 'ofd-fonts-v2';
@@ -599,13 +596,24 @@ async function injectFonts(fonts, generation) {
 }
 
 async function loadCachedFont(url) {
-  const cache = typeof caches === 'undefined' ? null : await caches.open(fallbackFontCacheName);
+  let cache = null;
+  if (typeof caches !== 'undefined') {
+    try {
+      cache = await caches.open(fallbackFontCacheName);
+    } catch (_) {
+      // Cache Storage 不可用时继续从网络加载字体。
+    }
+  }
   if (cache) {
-    const cached = await cache.match(url);
-    if (cached) {
-      const data = await cached.arrayBuffer();
-      if (isSupportedFontData(data)) return data;
-      await cache.delete(url);
+    try {
+      const cached = await cache.match(url);
+      if (cached) {
+        const data = await cached.arrayBuffer();
+        if (isSupportedFontData(data)) return data;
+        await cache.delete(url);
+      }
+    } catch (_) {
+      // 忽略缓存读取错误，网络请求仍可提供字体。
     }
   }
   const controller = new AbortController();
@@ -655,8 +663,7 @@ async function preloadFallbackFonts() {
     const failure = results.find(result => result.status === 'rejected');
     throw failure?.reason || new Error('完整 Noto Sans SC 常规字体无法加载');
   }
-  // 打开文档前等待两种字重，确保成功下载的粗体字体可用于首次渲染，
-  // 避免之后再次重绘。
+  // 打开文档前等待默认字体，确保首屏渲染不依赖浏览器本地字体。
   return loaded;
 }
 
@@ -667,18 +674,32 @@ function loadFallbackFont(source) {
   if (pending) return pending;
 
   const load = (async () => {
-    const data = await loadCachedFont(source.url);
+    let data;
+    let failure;
+    for (const url of [source.url, source.alternateURL].filter(Boolean)) {
+      try {
+        data = await loadCachedFont(url);
+        break;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (!data) throw failure || new Error(`字体加载失败: ${source.weight}`);
     if (typeof FontFace !== 'function' || !document.fonts) {
       fallbackFontData.set(source.weight, data);
       return { ...source, data };
     }
-    const face = new FontFace(fallbackFontFamily, data.slice(0), {
-      style: 'normal',
-      weight: String(source.weight),
-    });
-    await face.load();
-    document.fonts.add(face);
-    injectedFonts.set(`${fallbackFontFamily}:${source.weight}:normal`, face);
+    try {
+      const face = new FontFace(fallbackFontFamily, data.slice(0), {
+        style: 'normal',
+        weight: String(source.weight),
+      });
+      await face.load();
+      document.fonts.add(face);
+      injectedFonts.set(`${fallbackFontFamily}:${source.weight}:normal`, face);
+    } catch (_) {
+      // 浏览器 FontFace 失败时仍将原始数据交给 WASM 渲染器。
+    }
     fallbackFontData.set(source.weight, data);
     return { ...source, data };
   })();
@@ -689,7 +710,9 @@ function loadFallbackFont(source) {
 
 // 阅读器空闲时开始下载字体。之后打开文档时，可以在首个页面渲染前
 // 将已加载的字体数据传给 WASM。
-void preloadFallbackFonts().catch(() => {});
+void preloadFallbackFonts().catch(error => {
+  setStatus(`默认中文字体加载失败：${error.message}`);
+});
 
 function updateNavigation() {
   pageNumber.value = pageInfos.length ? current + 1 : 1;
