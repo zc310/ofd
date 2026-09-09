@@ -1,9 +1,12 @@
 package render
 
 import (
+	"image/color"
+	"os"
 	"testing"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 )
@@ -89,6 +92,36 @@ func TestTextFillDisabled(t *testing.T) {
 	}
 	if textFillDisabled(models.TextObject{}) {
 		t.Fatal("expected missing Fill to keep text fill enabled")
+	}
+}
+
+func TestOutlineTextWithStrokeOnly(t *testing.T) {
+	t.Skip("stroke-only text")
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	family := canvas.NewFontFamily("outline")
+	if err := family.LoadFont(data, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	document := &Document{}
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 50, Height: 20}},
+		Font:          1,
+		Size:          8,
+		Fill:          "false",
+		Stroke:        true,
+		StrokeColor:   &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}},
+		TextCode:      []models.TextCode{{Value: "O", X: 1, Y: 10}},
+	}}
+	c := canvas.New(50, 20)
+	ctx := canvas.NewContext(c)
+	document.fonts = &Fonts{Fonts: map[models.StRefID]*canvas.FontFamily{1: family}}
+	document.Text(ctx, object, nil, models.StBox{Width: 50, Height: 20})
+	image := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
+	if countNonWhite(image) == 0 {
+		t.Fatal("stroke-only text was not rendered")
 	}
 }
 
