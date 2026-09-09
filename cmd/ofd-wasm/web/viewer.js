@@ -199,6 +199,12 @@ const pageCount = document.querySelector('#page-count');
 const previous = document.querySelector('#previous');
 const next = document.querySelector('#next');
 const printPage = document.querySelector('#print-page');
+const printDialog = document.querySelector('#print-dialog');
+const printForm = document.querySelector('#print-form');
+const printCancel = document.querySelector('#print-cancel');
+const printCurrentLabel = document.querySelector('#print-current-label');
+const printCustomRange = document.querySelector('#print-range-custom');
+const printError = document.querySelector('#print-error');
 const downloadPage = document.querySelector('#download-page');
 const copyPageText = document.querySelector('#copy-page-text');
 const copyAllTextButton = document.querySelector('#copy-all-text');
@@ -1623,7 +1629,67 @@ async function downloadDocumentText() {
   }
 }
 
-async function printCurrentPage() {
+function parsePrintRange(value) {
+  const indexes = new Set();
+  for (const part of value.split(',')) {
+    const range = part.trim();
+    if (!range) throw new Error('打印范围不能为空');
+    const values = range.split('-').map(item => item.trim());
+    if (values.length > 2 || values.some(item => !/^\d+$/.test(item))) {
+      throw new Error(`打印范围格式无效：${range}`);
+    }
+    const start = Number(values[0]);
+    const end = values.length === 2 ? Number(values[1]) : start;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+        start < 1 || end < start || end > pageInfos.length) {
+      throw new Error(`打印页码必须在 1 到 ${pageInfos.length} 之间`);
+    }
+    for (let page = start; page <= end; page++) indexes.add(page - 1);
+  }
+  return [...indexes];
+}
+
+function selectedPrintIndexes() {
+  const range = printForm.elements.namedItem('print-range').value;
+  if (range === 'current') return [current];
+  if (range === 'all') return pageInfos.map((_, index) => index);
+  return parsePrintRange(printCustomRange.value);
+}
+
+function updatePrintRangeControl() {
+  const custom = printForm.elements.namedItem('print-range').value === 'custom';
+  printCustomRange.disabled = !custom;
+  if (!custom) printError.hidden = true;
+}
+
+function openPrintDialog() {
+  if (!pageInfos.length || documentActionBusy) return;
+  printCurrentLabel.textContent = `当前页（第 ${current + 1} 页）`;
+  printError.hidden = true;
+  if (typeof printDialog.showModal === 'function') {
+    printDialog.showModal();
+  } else {
+    printDialog.setAttribute('open', '');
+  }
+  updatePrintRangeControl();
+}
+
+function closePrintDialog() {
+  if (typeof printDialog.close === 'function') printDialog.close();
+  else printDialog.removeAttribute('open');
+}
+
+function waitForPrintImages(images) {
+  return Promise.all(images.map(image => {
+    if (image.complete && image.naturalWidth > 0) return undefined;
+    return new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('打印图片加载失败'));
+    });
+  }));
+}
+
+async function printSelectedPages(indexes) {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
   const printWindow = window.open('', '_blank', 'popup,width=900,height=1200');
@@ -1635,23 +1701,30 @@ async function printCurrentPage() {
   printWindow.document.close();
   setDocumentActionBusy(true);
   const generation = documentGeneration;
-  const index = current;
-  const pageNumber = index + 1;
-  setStatus(`正在准备第 ${pageNumber} 页打印内容...`);
+  setStatus(`正在准备 ${indexes.length} 页打印内容...`);
   try {
-    await loadPage(index);
+    await Promise.all(indexes.map(index => loadPage(index)));
     throwIfDocumentActionCancelled(generation);
-    const image = pageCards[index]?.querySelector('.page-image');
-    if (!image?.src || image.hidden) throw new Error('当前页面尚未渲染完成');
+    const images = indexes.map(index => pageCards[index]?.querySelector('.page-image'));
+    if (images.some(image => !image?.src || image.hidden)) throw new Error('选中的页面尚未渲染完成');
     const title = escapeHTML(documentName.textContent || 'OFD 文档');
+    const imageMarkup = images.map((image, index) =>
+      `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${indexes[index] + 1} 页"></section>`
+    ).join('');
     printWindow.document.open();
-    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} - 第 ${pageNumber} 页</title><style>@page{margin:10mm}html,body{margin:0}body{display:grid;place-items:center}img{display:block;max-width:100%;max-height:calc(100vh - 20mm);object-fit:contain}</style></head><body><img id="page" src="${image.src}" alt="第 ${pageNumber} 页"></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}</style></head><body>${imageMarkup}</body></html>`);
     printWindow.document.close();
-    printWindow.onload = () => {
+    printWindow.onload = async () => {
+      try {
+        await waitForPrintImages([...printWindow.document.images]);
+      } catch (error) {
+        setStatus(`打印图片准备失败：${error.message}`);
+        return;
+      }
       printWindow.focus();
       printWindow.print();
     };
-    setStatus(`已准备第 ${pageNumber} 页打印。`);
+    setStatus(`已准备 ${indexes.length} 页打印。`);
   } catch (error) {
     printWindow.close();
     setStatus(documentActionCancelRequested ? '已取消打印。' : `打印准备失败：${error.message}`);
@@ -1741,7 +1814,22 @@ pagesElement.addEventListener('drop', event => {
 previous.addEventListener('click', () => goTo(current - 1));
 next.addEventListener('click', () => goTo(current + 1));
 cancelAction.addEventListener('click', cancelDocumentAction);
-printPage.addEventListener('click', printCurrentPage);
+printPage.addEventListener('click', openPrintDialog);
+printForm.addEventListener('change', updatePrintRangeControl);
+printForm.addEventListener('submit', event => {
+  event.preventDefault();
+  try {
+    const indexes = selectedPrintIndexes();
+    if (!indexes.length) throw new Error('请选择至少一页');
+    closePrintDialog();
+    void printSelectedPages(indexes);
+  } catch (error) {
+    printError.textContent = error.message;
+    printError.hidden = false;
+    if (printForm.elements.namedItem('print-range').value === 'custom') printCustomRange.focus();
+  }
+});
+printCancel.addEventListener('click', closePrintDialog);
 downloadPage.addEventListener('click', downloadCurrentPage);
 copyPageText.addEventListener('click', copyCurrentPageText);
 copyAllTextButton.addEventListener('click', copyDocumentText);
@@ -1776,6 +1864,13 @@ window.addEventListener('resize', () => {
   else if (zoomMode === 'page') fitPageZoom();
 });
 updateBackToTop();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(error => {
+      console.warn('[OFD] Service Worker 注册失败', error);
+    });
+  });
+}
 pagesElement.addEventListener('touchstart', handleTouchStart, { passive: true });
 pagesElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 pagesElement.addEventListener('touchend', handleTouchEnd, { passive: true });
