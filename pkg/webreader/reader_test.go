@@ -1,0 +1,330 @@
+package webreader
+
+import (
+	"bytes"
+	"image"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestOpenAndRenderPage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if reader.PageCount() <= 0 {
+		t.Fatalf("page count = %d, want a positive count", reader.PageCount())
+	}
+	page, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Width <= 0 || page.Height <= 0 {
+		t.Fatalf("invalid page size: %+v", page)
+	}
+	pngData, err := reader.RenderPage(0, RenderOptions{DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pngData) == 0 || !bytes.HasPrefix(pngData, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatal("rendered data is not PNG")
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(pngData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Bounds().Empty() {
+		t.Fatal("rendered image is empty")
+	}
+}
+
+func TestRenderPages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.RenderPages([]int{0, 0}, RenderOptions{DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("rendered pages = %d, want 2", len(pages))
+	}
+	for index, page := range pages {
+		if len(page) == 0 || !bytes.HasPrefix(page, []byte("\x89PNG\r\n\x1a\n")) {
+			t.Fatalf("rendered page %d is not PNG", index)
+		}
+	}
+	if _, err := reader.RenderPages([]int{-1}, RenderOptions{DPI: 36}); err == nil {
+		t.Fatal("negative page index was accepted")
+	}
+	indices := make([]int, 65)
+	if _, err := reader.RenderPages(indices, RenderOptions{DPI: 36}); err == nil {
+		t.Fatal("oversized page batch was accepted")
+	}
+}
+
+func TestRenderPageValidation(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.RenderPage(3, RenderOptions{}); err == nil {
+		t.Fatal("out-of-range page was accepted")
+	}
+	if _, err := reader.RenderPage(0, RenderOptions{DPI: 601}); err == nil {
+		t.Fatal("excessive DPI was accepted")
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Pages(); err == nil {
+		t.Fatal("closed reader returned pages")
+	}
+	if _, err := reader.Search(""); err == nil {
+		t.Fatal("closed reader accepted an empty search")
+	}
+}
+
+func TestFontsClosedReaderReturnsError(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Fonts(); err == nil {
+		t.Fatal("closed reader returned fonts")
+	}
+}
+
+func TestFontsExposeEmbeddedDataAndTextFamily(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.Fonts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("expected at least one embedded font")
+	}
+	for _, font := range fonts {
+		if font.Family == "" || len(font.Data) == 0 || font.Format == "" {
+			t.Fatalf("invalid embedded font resource: %+v", font)
+		}
+	}
+	fontFamilies := make(map[string]struct{}, len(fonts))
+	for _, font := range fonts {
+		fontFamilies[font.Family] = struct{}{}
+	}
+	foundRun := false
+	for page := 0; page < reader.PageCount(); page++ {
+		runs, textErr := reader.Text(page)
+		if textErr != nil {
+			t.Fatal(textErr)
+		}
+		if len(runs) > 0 {
+			foundRun = true
+			if runs[0].FontFamily == "" {
+				t.Fatalf("text run has no browser font family: %+v", runs)
+			}
+			if _, ok := fontFamilies[runs[0].FontFamily]; !ok {
+				t.Fatalf("text run references unknown browser font family %q", runs[0].FontFamily)
+			}
+			break
+		}
+	}
+	if !foundRun {
+		t.Log("embedded-font document has no text run on its parsed pages")
+	}
+}
+
+func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
+	readData := func(name string) []byte {
+		data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	embedded, err := Open(readData("ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer embedded.Close()
+	fonts, err := embedded.Fonts()
+	if err != nil || len(fonts) == 0 {
+		t.Fatalf("embedded fonts = %d, err = %v", len(fonts), err)
+	}
+
+	reader, err := Open(readData("helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := reader.Text(0); err != nil {
+		t.Fatal(err)
+	}
+	const family = "TestFallback"
+	if err := reader.AddFallbackFont(FontSource{Family: family, Data: fonts[0].Data}); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("fallback document has no text runs")
+	}
+	if runs[0].FontFamily != family {
+		t.Fatalf("fallback family = %q, want %q", runs[0].FontFamily, family)
+	}
+}
+
+func TestTextAndSearch(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("page text is empty")
+	}
+	if text[0].X != 31.7 || text[0].Y != 25.4 || text[0].Height != 3 {
+		t.Fatalf("invalid text geometry: %+v", text[0])
+	}
+	if len(text[0].Glyphs) != len([]rune(text[0].Text)) || text[0].Glyphs[0].X != text[0].X || text[0].Glyphs[0].Y != text[0].Y {
+		t.Fatalf("invalid glyph geometry: %+v", text[0].Glyphs)
+	}
+	if text[0].Glyphs[1].X != 34.7 || text[0].Glyphs[1].Y != 25.4 {
+		t.Fatalf("second glyph geometry = %+v, want x=34.7 y=25.4", text[0].Glyphs[1])
+	}
+	query := []rune(text[0].Text)
+	if len(query) == 0 {
+		t.Fatal("first text run is empty")
+	}
+	results, err := reader.Search(string(query[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].Page != 0 {
+		t.Fatalf("search results = %+v, want a hit on page 0", results)
+	}
+	if results[0].End <= results[0].Start {
+		t.Fatalf("search range = %d:%d, want a non-empty range", results[0].Start, results[0].End)
+	}
+	if len(results[0].Rects) != results[0].End-results[0].Start {
+		t.Fatalf("search rects = %+v, want one rect per matched glyph", results[0].Rects)
+	}
+	wholeRun, err := reader.Search(text[0].Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wholeRun) == 0 || wholeRun[0].Start != 0 || wholeRun[0].End != len([]rune(text[0].Text)) {
+		t.Fatalf("whole-run search = %+v, want a match spanning the run", wholeRun)
+	}
+	if len(wholeRun[0].Rects) != len([]rune(text[0].Text)) {
+		t.Fatalf("whole-run rect count = %d, want %d", len(wholeRun[0].Rects), len([]rune(text[0].Text)))
+	}
+}
+
+func TestTextReturnsIndependentSnapshots(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalText, originalX := first[0].Text, first[0].Glyphs[0].X
+	first[0].Text = "changed"
+	first[0].Glyphs[0].X = -1
+
+	second, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second[0].Text != originalText || second[0].Glyphs[0].X != originalX {
+		t.Fatalf("text cache leaked mutations: got %+v", second[0])
+	}
+}
+
+func TestSearchCachesNormalizedPageText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.Search("你"); err != nil {
+		t.Fatal(err)
+	}
+	if !reader.searchSet[0] || len(reader.search[0].runs) == 0 {
+		t.Fatalf("search index was not populated: %+v", reader.search)
+	}
+	if len(reader.search[0].byRune['你']) == 0 {
+		t.Fatalf("rune index was not populated: %+v", reader.search[0].byRune)
+	}
+	indexed := reader.search[0].runs[0]
+	if len(indexed) == 0 {
+		t.Fatal("first indexed run is empty")
+	}
+	if _, err := reader.Search("好"); err != nil {
+		t.Fatal(err)
+	}
+	if &reader.search[0].runs[0][0] != &indexed[0] {
+		t.Fatal("search index was rebuilt instead of reused")
+	}
+}

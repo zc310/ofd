@@ -1,6 +1,7 @@
 package render
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -121,5 +122,30 @@ func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
 	face := family.Face(1, canvas.Black)
 	if got := face.Font.GlyphIndex(fontfix.GlyphRune(1)); got != 1 {
 		t.Fatalf("repaired cmap maps glyph 1 to %d", got)
+	}
+}
+
+func TestFallbackFontKeepsRegularAndBoldFaces(t *testing.T) {
+	regular, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	bold, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans Bold is unavailable: %v", err)
+	}
+
+	fonts := NewFonts(nil)
+	if err := fonts.AddFallbackFont(regular, "fallback", canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	if err := fonts.AddFallbackFont(bold, "fallback", canvas.FontBold); err != nil {
+		t.Fatal(err)
+	}
+
+	regularFace := fonts.fallbacks["fallback"].Face(12, canvas.Black, canvas.FontRegular)
+	boldFace := fonts.fallbacks["fallback"].Face(12, canvas.Black, canvas.FontBold)
+	if regularFace == nil || boldFace == nil || regularFace.Font == boldFace.Font {
+		t.Fatal("regular and bold fallback faces were not kept separately")
 	}
 }

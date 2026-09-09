@@ -2,6 +2,7 @@
 package render
 
 import (
+	"fmt"
 	"image/color"
 	"log/slog"
 	"math"
@@ -76,6 +77,30 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
 	return &Document{background: background, fonts: NewFonts(doc), Document: doc}
+}
+
+// AddFallbackFont 注册在文档字体未内嵌时使用的字体。
+func (p *Document) AddFallbackFont(data []byte, family string, style canvas.FontStyle) error {
+	if p == nil || p.fonts == nil {
+		return fmt.Errorf("字体上下文为空")
+	}
+	return p.fonts.AddFallbackFont(data, family, style)
+}
+
+// FallbackFontFamily 返回为文档字体选择的外部字体族。
+func (p *Document) FallbackFontFamily(id models.StRefID) string {
+	if p == nil || p.fonts == nil {
+		return ""
+	}
+	return p.fonts.FallbackFontFamily(id)
+}
+
+// HasLoadedEmbeddedFont 判断文档字体是否可以作为内嵌字体族提供给浏览器。
+func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
+	if p == nil || p.fonts == nil {
+		return false
+	}
+	return p.fonts.HasLoadedEmbeddedFont(id)
 }
 
 // annotationVisible 判断注解是否可见。OFD 未指定 Visible 时默认为可见。

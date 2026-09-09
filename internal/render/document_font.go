@@ -26,8 +26,16 @@ var (
 
 type Fonts struct {
 	*parser.Document
-	Fonts map[models.StRefID]*canvas.FontFamily
-	mu    sync.Mutex
+	Fonts          map[models.StRefID]*canvas.FontFamily
+	fallbacks      map[string]*canvas.FontFamily
+	fallbackFaces  []fallbackFace
+	fallbackByFont map[models.StRefID]string
+	mu             sync.Mutex
+}
+
+type fallbackFace struct {
+	family *canvas.FontFamily
+	style  canvas.FontStyle
 }
 
 func NewFonts(doc *parser.Document) *Fonts {
@@ -57,7 +65,12 @@ func NewFonts(doc *parser.Document) *Fonts {
 			}
 		}
 	})
-	return &Fonts{Document: doc, Fonts: make(map[models.StRefID]*canvas.FontFamily)}
+	return &Fonts{
+		Document:       doc,
+		Fonts:          make(map[models.StRefID]*canvas.FontFamily),
+		fallbacks:      make(map[string]*canvas.FontFamily),
+		fallbackByFont: make(map[models.StRefID]string),
+	}
 }
 
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
@@ -145,6 +158,9 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	}
 	ft := p.FontRes[models.StID(id)]
 	if ft == nil {
+		if fallback := p.fallbackFont(id, canvas.FontRegular); fallback != nil {
+			return fallback, nil
+		}
 		if !defaultFontFamilyReady {
 			return nil, fmt.Errorf("字体 %d 不存在且没有可用的默认字体", id)
 		}
@@ -164,9 +180,9 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		f = canvas.NewFontFamily(fontName)
 		var buf []byte
 		if buf, err = p.FileCache.Read(string(ft.FontFile)); err != nil {
-			return nil, err
-		}
-		if err = loadEmbeddedFont(f, buf, fontStyle); err == nil {
+			// 继续尝试外部回退字体，避免缺失或无法读取的内嵌字体文件
+			// 导致整个文字对象渲染失败。
+		} else if err = loadEmbeddedFont(f, buf, fontStyle); err == nil {
 			p.Fonts[id] = f
 			return f, nil
 		}
@@ -191,11 +207,17 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	f = canvas.NewFontFamily(fontName)
 
 	if runtime.GOOS == "js" {
+		if fallback := p.fallbackFont(id, fontStyle); fallback != nil {
+			return fallback, nil
+		}
 		if defaultFontFamilyReady {
 			p.Fonts[id] = defaultFontFamily
 			return defaultFontFamily, nil
 		}
 		return nil, fmt.Errorf("浏览器没有可用的字体 %q，请使用内嵌字体", fontName)
+	}
+	if fallback := p.fallbackFont(id, fontStyle); fallback != nil {
+		return fallback, nil
 	}
 	if runtime.GOOS == "android" {
 		// 新版 Android 的系统字体索引可能为空，因此默认字体族已改为
@@ -238,9 +260,98 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	return defaultFontFamily, nil
 }
 
+// AddFallbackFont 为缺失的文档字体注册调用方提供的字体。
+// 主要供 WASM 调用方在浏览器中获取 Web 字体后使用。
+func (p *Fonts) AddFallbackFont(data []byte, family string, style canvas.FontStyle) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(data) == 0 {
+		return fmt.Errorf("回退字体数据为空")
+	}
+	if family == "" {
+		return fmt.Errorf("回退字体族名为空")
+	}
+	f := p.fallbacks[family]
+	isNew := f == nil
+	if isNew {
+		f = canvas.NewFontFamily(family)
+	}
+	if err := loadEmbeddedFont(f, data, style); err != nil {
+		return err
+	}
+	if isNew {
+		p.fallbacks[family] = f
+	}
+	for index, face := range p.fallbackFaces {
+		if face.family == f && face.style == style {
+			p.fallbackFaces[index] = fallbackFace{family: f, style: style}
+			p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
+			p.fallbackByFont = make(map[models.StRefID]string)
+			return nil
+		}
+	}
+	p.fallbackFaces = append(p.fallbackFaces, fallbackFace{family: f, style: style})
+	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
+	p.fallbackByFont = make(map[models.StRefID]string)
+	return nil
+}
+
+func (p *Fonts) fallbackFont(id models.StRefID, style canvas.FontStyle) *canvas.FontFamily {
+	bestScore := int(^uint(0) >> 1)
+	var best *fallbackFace
+	for index := range p.fallbackFaces {
+		face := &p.fallbackFaces[index]
+		score := absInt(face.style.CSS() - style.CSS())
+		if face.style.Italic() != style.Italic() {
+			score += 1000
+		}
+		if score < bestScore {
+			bestScore = score
+			best = face
+		}
+	}
+	if best != nil {
+		name := best.family.Name()
+		p.Fonts[id] = best.family
+		p.fallbackByFont[id] = name
+		return best.family
+	}
+	return nil
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+// FallbackFontFamily 返回为文档字体选择的外部字体族。
+// 必须先调用 LoadFont；TextLayouts 和 Text 会自动完成这一步。
+func (p *Fonts) FallbackFontFamily(id models.StRefID) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.fallbackByFont[id]
+}
+
+// HasLoadedEmbeddedFont 判断文档字体是否解析为可用且已加载的字体族。
+// 仅声明 FontFile 并不够，因为文件可能缺失、格式错误或被字体解析器拒绝。
+func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.FontRes[models.StID(id)] == nil || p.FontRes[models.StID(id)].FontFile == "" {
+		return false
+	}
+	_, ok := p.Fonts[id]
+	return ok && p.fallbackByFont[id] == ""
+}
+
 // loadEmbeddedFont 保留字体原有的 Unicode cmap。只有原始数据无法加载时，
 // 才使用 fontfix 为缺少 glyph 映射的嵌入字体补表。
 func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
+	if converted, err := font.ToSFNT(data); err == nil {
+		data = converted
+	}
 	if err := family.LoadFont(data, 0, style); err == nil && fontFamilyUsable(family) {
 		return nil
 	}

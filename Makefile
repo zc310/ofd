@@ -52,6 +52,8 @@ THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
 VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
+WASM := cmd/ofd-wasm/web/ofd.wasm
+WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
@@ -85,13 +87,14 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-creator clean help FORCE
+.PHONY: all build build-tools build-wasm build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-creator clean help FORCE
 
 all: package
 
 help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
+		'make build-wasm               Build the browser WASM engine' \
 		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-viewer           Build the OFD viewer package' \
 		'make package-viewer-android   Build the OFD viewer Android APK' \
@@ -128,6 +131,16 @@ help:
 build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(DARWIN_CROSS_BUILD_TARGETS) $(WINDOWS_ARM64_BUILD_TARGETS) $(LINUX_ARM64_BUILD_TARGETS)
 
 build-tools: $(TOOL_BUILD_TARGETS)
+
+build-wasm: $(WASM) $(WASM_EXEC)
+
+$(WASM): FORCE
+	@mkdir -p "$(dir $@)"
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build -o "$@" ./cmd/ofd-wasm
+
+$(WASM_EXEC): FORCE
+	@mkdir -p "$(dir $@)"
+	cp "$$(CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) env GOROOT)/lib/wasm/wasm_exec.js" "$@"
 
 build-arm64:
 	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 build-tools
@@ -293,6 +306,6 @@ package-thumbnailer:
 endif
 
 clean:
-	@rm -rf "$(BUILD_DIR)" "$(DIST_DIR)"
+	@rm -rf "$(BUILD_DIR)" "$(DIST_DIR)" "$(WASM)" "$(WASM_EXEC)"
 
 FORCE:

@@ -37,3 +37,8 @@ build-dir/
 .flatpak-builder/
 *-demo/
 vendor/
+*.iml
+
+# Browser WASM build output
+cmd/ofd-wasm/web/ofd.wasm
+cmd/ofd-wasm/web/wasm_exec.js
