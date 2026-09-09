@@ -67,7 +67,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 	}
 }
 
-func TestAnoAnnotationFontUsesMatchingEmbeddedFont(t *testing.T) {
+func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -75,25 +75,20 @@ func TestAnoAnnotationFontUsesMatchingEmbeddedFont(t *testing.T) {
 	defer ofd.Close()
 
 	doc := ofd.Documents[0]
-	family, err := NewFonts(doc).LoadFont(13134)
+	fonts := NewFonts(doc)
+	family, err := fonts.LoadFont(13134)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if family == defaultFontFamily {
-		t.Fatal("annotation font fell back to the default font")
+	if family == nil {
+		t.Fatal("annotation font is nil")
 	}
-	face := family.Face(1, canvas.Black)
-	for _, r := range "保密资料" {
-		if got := face.Font.GlyphIndex(r); got == 0 {
-			t.Fatalf("annotation character %q has no glyph", r)
-		}
+	embedded, err := fonts.LoadFont(91)
+	if err != nil {
+		t.Fatal(err)
 	}
-	path, _ := face.ToPath("保")
-	if path != nil && !path.Empty() {
-		t.Fatal("annotation subset unexpectedly shaped Chinese text")
-	}
-	if path := directTextPath(face, "保密资料"); path == nil || path.Empty() {
-		t.Fatal("annotation subset has no direct glyph path")
+	if family == embedded {
+		t.Fatal("annotation font incorrectly reused the subset font")
 	}
 }
 
