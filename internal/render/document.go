@@ -17,8 +17,15 @@ type Document struct {
 	*parser.Document
 	background color.Color
 	fonts      *Fonts
+	fallbacks  []fallbackFontResource
 	renderMu   sync.Mutex
 	budget     renderBudget
+}
+
+type fallbackFontResource struct {
+	data   []byte
+	family string
+	style  canvas.FontStyle
 }
 
 const (
@@ -84,7 +91,24 @@ func (p *Document) AddFallbackFont(data []byte, family string, style canvas.Font
 	if p == nil || p.fonts == nil {
 		return fmt.Errorf("字体上下文为空")
 	}
-	return p.fonts.AddFallbackFont(data, family, style)
+	if err := p.fonts.AddFallbackFont(data, family, style); err != nil {
+		return err
+	}
+	for index, fallback := range p.fallbacks {
+		if fallback.family == family && fallback.style == style {
+			p.fallbacks[index].data = data
+			return nil
+		}
+	}
+	p.fallbacks = append(p.fallbacks, fallbackFontResource{data: data, family: family, style: style})
+	return nil
+}
+
+func (p *Document) fallbackFontResources() []fallbackFontResource {
+	if p == nil {
+		return nil
+	}
+	return p.fallbacks
 }
 
 // FallbackFontFamily 返回为文档字体选择的外部字体族。
