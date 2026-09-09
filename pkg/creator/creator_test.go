@@ -8,10 +8,12 @@ import (
 	"encoding/base64"
 	"io"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tdewolff/font"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -1151,6 +1153,74 @@ func TestCreateTextCGTransforms(t *testing.T) {
 		t.Fatalf("CGTransform 未正确生成: %+v", transform)
 	}
 	checkGeneratedPackage(t, data)
+}
+
+func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
+	t.Skip("font-subset-test")
+
+	fontData, err := os.ReadFile("../../test/testdata/simkai.ttf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := font.ParseSFNT(fontData, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transformedGlyph := original.GlyphIndex('测')
+	if transformedGlyph == 0 {
+		t.Fatal("simkai.ttf does not contain 测")
+	}
+	data, err := Marshal(Document{
+		ID:    "font-subset-test",
+		Fonts: []Font{{Name: "SimKai", Format: "ttf", Data: fontData}},
+		Pages: []Page{{Items: []Item{Text{
+			X: 1, Y: 2, Width: 60, Height: 12, Font: "SimKai", Value: "测试",
+			CGTransforms: []CGTransform{{CodePosition: 0, CodeCount: 1, GlyphCount: 1, Glyphs: []int{int(transformedGlyph)}}},
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subsetData []byte
+	for _, file := range archive.File {
+		if strings.HasPrefix(file.Name, "Doc_0/Res/Fonts/") {
+			reader, readErr := file.Open()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			subsetData, readErr = io.ReadAll(reader)
+			_ = reader.Close()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+		}
+	}
+	if len(subsetData) == 0 {
+		t.Fatal("embedded subset font was not written")
+	}
+	subset, err := font.ParseSFNT(subsetData, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if subset.NumGlyphs() >= original.NumGlyphs() {
+		t.Fatalf("subset glyph count = %d, original = %d", subset.NumGlyphs(), original.NumGlyphs())
+	}
+	if subset.GlyphIndex('试') == 0 || subset.GlyphIndex('测') == 0 {
+		t.Fatalf("subset cmap lost used characters: 试=%d 测=%d", subset.GlyphIndex('试'), subset.GlyphIndex('测'))
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	transform := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].CGTransform[0]
+	if len(transform.Glyphs) != 1 || transform.Glyphs[0] != int(subset.GlyphIndex('测')) {
+		t.Fatalf("CGTransform glyph = %v, want subset glyph %d", transform.Glyphs, subset.GlyphIndex('测'))
+	}
 }
 
 func TestCreateActionsAndPageGoto(t *testing.T) {
