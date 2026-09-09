@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/tdewolff/canvas"
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -162,6 +163,93 @@ func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 	gotX, gotY = textAdvance(10, object, code, 0)
 	if gotX != 0 || gotY != 10 {
 		t.Fatalf("textAdvance with ReadDirection=90 = (%v, %v), want (0, 10)", gotX, gotY)
+	}
+}
+
+func TestBuildTextLayoutUsesFallbackGlyphWidthsAndDirections(t *testing.T) {
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
+		Size:          4,
+		HScale:        0.5,
+		ReadDirection: 90,
+	}}
+	layout := buildTextLayout(nil, object, models.TextCode{Value: "ab", X: 1, Y: 4}, 0)
+	if len(layout.Glyphs) != 2 {
+		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
+	}
+	if layout.Glyphs[0].X != 11 || layout.Glyphs[0].Y != 20 {
+		t.Fatalf("first glyph = %+v, want x=11 y=20", layout.Glyphs[0])
+	}
+	if layout.Glyphs[0].Width != 3 || layout.Glyphs[0].Height != 4 {
+		t.Fatalf("first glyph size = %.2fx%.2f, want 3x4", layout.Glyphs[0].Width, layout.Glyphs[0].Height)
+	}
+	if layout.Glyphs[1].X != 11 || layout.Glyphs[1].Y != 23 {
+		t.Fatalf("second glyph = %+v, want x=11 y=23", layout.Glyphs[1])
+	}
+}
+
+func TestBuildTextLayoutUsesExplicitDeltas(t *testing.T) {
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4}},
+		Size:          4,
+		ReadDirection: 90,
+	}}
+	layout := buildTextLayout(nil, object, models.TextCode{
+		Value:  "ab",
+		X:      1,
+		Y:      4,
+		DeltaX: models.StArrayF{2},
+		DeltaY: models.StArrayF{3},
+	}, 0)
+	if len(layout.Glyphs) != 2 {
+		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
+	}
+	if layout.Glyphs[1].X != 13 || layout.Glyphs[1].Y != 23 {
+		t.Fatalf("second glyph = %+v, want x=13 y=23", layout.Glyphs[1])
+	}
+}
+
+func TestBuildTextLayoutAppliesCTMScaleToGlyphGeometry(t *testing.T) {
+	ctm := models.CTM{2, 0, 0, 3, 0, 0}
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{
+			Boundary: models.StBox{X: 10, Y: 20, Width: 12, Height: 4},
+			CTM:      &ctm,
+		},
+		Size: 4,
+	}}
+	layout := buildTextLayout(nil, object, models.TextCode{Value: "ab", X: 1, Y: 4}, 0)
+	if len(layout.Glyphs) != 2 {
+		t.Fatalf("glyph count = %d, want 2", len(layout.Glyphs))
+	}
+	if layout.Glyphs[0].X != 12 || layout.Glyphs[0].Y != 20 || layout.Glyphs[0].Width != 6 || layout.Glyphs[0].Height != 12 {
+		t.Fatalf("first glyph = %+v, want x=12 y=20 width=6 height=12", layout.Glyphs[0])
+	}
+	if layout.Glyphs[1].X != 24 || layout.Glyphs[1].Y != 20 {
+		t.Fatalf("second glyph = %+v, want x=24 y=20", layout.Glyphs[1])
+	}
+}
+
+func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
+	widths := []float64{2, 3, 4}
+	runes := []rune("abc")
+	widthOf := func(value string) float64 {
+		if value == string(fontfix.GlyphRune(65)) {
+			return 9
+		}
+		if value == string(fontfix.GlyphRune(66)) {
+			return 6
+		}
+		return 0
+	}
+	applyCGTransformWidths(widths, runes, []models.CTCGTransform{{
+		CodePosition: 1,
+		CodeCount:    2,
+		GlyphCount:   2,
+		Glyphs:       models.StArrayI{65, 66},
+	}}, 0, widthOf)
+	if widths[0] != 2 || widths[1] != 9 || widths[2] != 6 {
+		t.Fatalf("mapped widths = %v, want [2 9 6]", widths)
 	}
 }
 

@@ -1,0 +1,1858 @@
+class OFDWorkerClient {
+  constructor() {
+    this.worker = new Worker('worker.js');
+    this.nextID = 1;
+    this.pending = new Map();
+    this.ready = new Promise((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+    this.worker.onmessage = event => this.handleMessage(event.data || {});
+    this.worker.onerror = error => this.fail(error.message || 'Worker 运行失败');
+  }
+
+  handleMessage(message) {
+    if (message.type === 'ready') {
+      this.resolveReady();
+      return;
+    }
+    if (message.type === 'fatal') {
+      this.fail(message.error);
+      return;
+    }
+    const request = this.pending.get(message.id);
+    if (!request) return;
+    this.pending.delete(message.id);
+    if (message.ok) request.resolve(message.value);
+    else {
+      const error = new Error(message.error);
+      if (message.error === '请求已取消') error.name = 'AbortError';
+      request.reject(error);
+    }
+  }
+
+  fail(message) {
+    const error = new Error(message || 'Worker 运行失败');
+    this.rejectReady(error);
+    for (const request of this.pending.values()) request.reject(error);
+    this.pending.clear();
+  }
+
+  request(command, payload = {}, transfer = []) {
+    let id = 0;
+    let cancelled = false;
+    let rejectRequest;
+    const promise = new Promise((resolve, reject) => {
+      rejectRequest = reject;
+      this.ready.then(() => {
+        if (cancelled) {
+          const error = new Error('请求已取消');
+          error.name = 'AbortError';
+          reject(error);
+          return;
+        }
+        id = this.nextID++;
+        this.pending.set(id, { resolve, reject });
+        this.worker.postMessage({ id, command, ...payload }, transfer);
+      }).catch(reject);
+    });
+    promise.cancel = () => {
+      if (cancelled) return;
+      cancelled = true;
+      const request = id && this.pending.get(id);
+      if (request) {
+        this.pending.delete(id);
+        this.worker.postMessage({ command: 'cancel', target: id });
+        const error = new Error('请求已取消');
+        error.name = 'AbortError';
+        request.reject(error);
+      } else if (!id) {
+        const error = new Error('请求已取消');
+        error.name = 'AbortError';
+        rejectRequest(error);
+      }
+    };
+    return promise;
+  }
+
+  open(data, options = {}) {
+    const documentData = data instanceof ArrayBuffer
+      ? data
+      : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    const transfer = [documentData];
+    const fallbackFonts = (options.fallbackFonts || []).map(font => {
+      if (!font?.data) return font;
+      const source = font.data instanceof ArrayBuffer
+        ? font.data
+        : font.data.buffer.slice(font.data.byteOffset, font.data.byteOffset + font.data.byteLength);
+      const buffer = source.slice(0);
+      transfer.push(buffer);
+      return { ...font, data: buffer };
+    });
+    return this.request('open', {
+      data: documentData,
+      options: { ...options, fallbackFonts },
+    }, transfer);
+  }
+
+  addFallbackFont(data, family, weight = 400, italic = false) {
+    const buffer = data instanceof ArrayBuffer
+      ? data
+      : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    return this.request('addFallbackFont', {
+      data: buffer, family, weight, italic,
+    }, [buffer]);
+  }
+
+  close() {
+    return this.request('close');
+  }
+
+  renderPage(index, options) {
+    return this.request('renderPage', { index, options });
+  }
+
+  renderPages(indices, options) {
+    return this.request('renderPages', { indices, options });
+  }
+
+  text(index) {
+    return this.request('text', { index });
+  }
+
+  search(query) {
+    return this.request('search', { query });
+  }
+}
+
+class BlobURLCache {
+  constructor(maxBytes) {
+    this.maxBytes = maxBytes;
+    this.bytes = 0;
+    this.values = new Map();
+  }
+
+  get(key) {
+    const entry = this.values.get(key);
+    if (entry === undefined) return undefined;
+    this.values.delete(key);
+    this.values.set(key, entry);
+    return entry.url;
+  }
+
+  set(key, url, size) {
+    const old = this.values.get(key);
+    if (old) {
+      this.bytes -= old.size;
+      URL.revokeObjectURL(old.url);
+    }
+    this.values.delete(key);
+    this.values.set(key, { url, size });
+    this.bytes += size;
+    // 即使最新项目超过缓存预算也保留它，避免刚完成渲染的图片被分配到
+    // 已经撤销的 URL。
+    while (this.values.size > 1 && this.bytes > this.maxBytes) {
+      const oldest = this.values.keys().next().value;
+      const entry = this.values.get(oldest);
+      this.bytes -= entry.size;
+      URL.revokeObjectURL(entry.url);
+      this.values.delete(oldest);
+    }
+    return url;
+  }
+
+  delete(key) {
+    const entry = this.values.get(key);
+    if (!entry) return;
+    this.bytes -= entry.size;
+    URL.revokeObjectURL(entry.url);
+    this.values.delete(key);
+  }
+
+  clear() {
+    for (const entry of this.values.values()) URL.revokeObjectURL(entry.url);
+    this.values.clear();
+    this.bytes = 0;
+  }
+}
+
+const status = document.querySelector('#status');
+const statusMessage = document.querySelector('#status-message');
+const cancelAction = document.querySelector('#cancel-action');
+const renderProgress = document.querySelector('#render-progress');
+const renderProgressLabel = document.querySelector('#render-progress-label');
+const file = document.querySelector('#file');
+const documentName = document.querySelector('#document-name');
+const cancelOpen = document.querySelector('#cancel-open');
+const recentToggle = document.querySelector('#recent-toggle');
+const recentPanel = document.querySelector('#recent-panel');
+const recentList = document.querySelector('#recent-list');
+const recentEmpty = document.querySelector('#recent-empty');
+const recentClear = document.querySelector('#recent-clear');
+const pagesElement = document.querySelector('#pages');
+const backToTop = document.querySelector('#back-to-top');
+const thumbnailsElement = document.querySelector('#thumbnails');
+const empty = document.querySelector('#empty');
+const dropHint = document.querySelector('#drop-hint');
+const pageNumber = document.querySelector('#page-number');
+const pageCount = document.querySelector('#page-count');
+const previous = document.querySelector('#previous');
+const next = document.querySelector('#next');
+const printPage = document.querySelector('#print-page');
+const downloadPage = document.querySelector('#download-page');
+const copyPageText = document.querySelector('#copy-page-text');
+const copyAllTextButton = document.querySelector('#copy-all-text');
+const downloadText = document.querySelector('#download-text');
+const zoomOut = document.querySelector('#zoom-out');
+const zoomIn = document.querySelector('#zoom-in');
+const zoomFit = document.querySelector('#zoom-fit');
+const zoomFitPage = document.querySelector('#zoom-fit-page');
+const rotatePageButton = document.querySelector('#rotate-page');
+const readingMode = document.querySelector('#reading-mode');
+const zoomLabel = document.querySelector('#zoom-label');
+const searchInput = document.querySelector('#search');
+const searchToggle = document.querySelector('#search-toggle');
+const searchPanel = document.querySelector('#search-panel');
+const searchButton = document.querySelector('#search-button');
+const searchPrevious = document.querySelector('#search-previous');
+const searchNext = document.querySelector('#search-next');
+const searchStatus = document.querySelector('#search-status');
+const viewToggle = document.querySelector('#view-toggle');
+const viewPanel = document.querySelector('#view-panel');
+const showThumbnails = document.querySelector('#show-thumbnails');
+const showTextLayer = document.querySelector('#show-text-layer');
+const darkReading = document.querySelector('#dark-reading');
+const engine = new OFDWorkerClient();
+const pageCache = new BlobURLCache(64 << 20);
+const thumbnailCache = new BlobURLCache(16 << 20);
+const fallbackFontURLs = [
+  {
+    url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
+    weight: 400,
+  },
+  {
+    url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf',
+    weight: 700,
+  },
+];
+const fallbackFontCacheName = 'ofd-fonts-v2';
+const fallbackFontTimeout = 45_000;
+const fallbackFontFamily = 'OFD-Google-Noto-Sans-SC';
+const fallbackFontLoads = new Map();
+const fallbackFontData = new Map();
+const transparentRenderBackground = '#00000000';
+const recentDatabaseName = 'ofd-reader-v1';
+const recentStoreName = 'files';
+const recentFileLimit = 5;
+const recentFileMaxBytes = 64 << 20;
+const readingPositionStorageKey = 'ofd-reading-positions';
+const pageRequests = new Map();
+const thumbnailRequests = new Map();
+const thumbnailBatchQueue = new Map();
+let thumbnailBatchTimer;
+const textRequests = new Map();
+const textCache = new Map();
+let pageInfos = [];
+let pageCards = [];
+let thumbnailButtons = [];
+let current = 0;
+let documentGeneration = 0;
+let injectedFonts = new Map();
+let pageObserver;
+let activePageObserver;
+let thumbnailObserver;
+let resizeObserver;
+let searchResults = [];
+let activeSearchResult = -1;
+let searchGeneration = 0;
+let searchRequest;
+let openRequest;
+let opening = false;
+let zoom = 1;
+let zoomMode = 'fit';
+let zoomGeneration = 0;
+let thumbnailsVisible = true;
+let textLayerVisible = true;
+let darkReadingVisible = false;
+let pageRotation = 0;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartDistance = 0;
+let touchPinching = false;
+let touchZoomTarget = 0;
+let touchZoomTimer;
+let documentActionBusy = false;
+let documentActionCancelRequested = false;
+let renderedPages = new Set();
+let failedPages = new Set();
+let copyFeedbackTimer;
+let statusBeforeCopy;
+let recentFiles = [];
+let currentDocumentKey = '';
+
+function documentKey(file) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function readReadingPositions() {
+  try {
+    const value = JSON.parse(localStorage.getItem(readingPositionStorageKey) || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveReadingPosition() {
+  if (!currentDocumentKey || !pageInfos.length) return;
+  try {
+    const positions = readReadingPositions();
+    positions[currentDocumentKey] = { page: current, updated: Date.now() };
+    const entries = Object.entries(positions)
+      .sort((left, right) => (right[1].updated || 0) - (left[1].updated || 0))
+      .slice(0, 30);
+    localStorage.setItem(readingPositionStorageKey, JSON.stringify(Object.fromEntries(entries)));
+  } catch (_) {
+    // 阅读位置持久化是可选功能，不能影响正常阅读。
+  }
+}
+
+function restoreReadingPosition(file, pageCount) {
+  const saved = readReadingPositions()[documentKey(file)];
+  if (!saved || !Number.isInteger(saved.page)) return 0;
+  return Math.max(0, Math.min(pageCount - 1, saved.page));
+}
+
+function openRecentDatabase() {
+  if (typeof indexedDB === 'undefined') return Promise.reject(new Error('IndexedDB 不可用'));
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(recentDatabaseName, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(recentStoreName)) {
+        const store = database.createObjectStore(recentStoreName, { keyPath: 'id' });
+        store.createIndex('lastOpened', 'lastOpened');
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('打开最近文件存储失败'));
+  });
+}
+
+function recentTransaction(mode, action) {
+  return openRecentDatabase().then(database => new Promise((resolve, reject) => {
+    const transaction = database.transaction(recentStoreName, mode);
+    const request = action(transaction.objectStore(recentStoreName));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('最近文件存储操作失败'));
+    transaction.onabort = () => reject(transaction.error || new Error('最近文件存储事务失败'));
+    transaction.oncomplete = () => database.close();
+  }));
+}
+
+async function readRecentFiles() {
+  try {
+    const records = await recentTransaction('readonly', store => store.getAll());
+    return (records || []).sort((left, right) => right.lastOpened - left.lastOpened).slice(0, recentFileLimit);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function refreshRecentFiles() {
+  recentFiles = await readRecentFiles();
+  recentList.replaceChildren();
+  recentEmpty.hidden = recentFiles.length > 0;
+  for (const record of recentFiles) {
+    const item = document.createElement('button');
+    item.className = 'recent-item';
+    item.type = 'button';
+    item.dataset.id = record.id;
+    const title = document.createElement('strong');
+    title.textContent = record.name;
+    const detail = document.createElement('small');
+    detail.textContent = `${formatFileSize(record.size)} · ${formatRecentDate(record.lastOpened)}`;
+    item.append(title, detail);
+    item.addEventListener('click', () => openRecentFile(record.id));
+    recentList.append(item);
+  }
+}
+
+function formatFileSize(size) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatRecentDate(timestamp) {
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(timestamp);
+}
+
+async function saveRecentFile(file, data) {
+  if (data.byteLength > recentFileMaxBytes) return;
+  const record = {
+    id: `${file.name}:${file.size}:${file.lastModified}`,
+    name: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+    lastOpened: Date.now(),
+    data,
+  };
+  try {
+    await recentTransaction('readwrite', store => store.put(record));
+    const records = await recentTransaction('readonly', store => store.getAll());
+    records.sort((left, right) => right.lastOpened - left.lastOpened);
+    for (const old of records.slice(recentFileLimit)) {
+      await recentTransaction('readwrite', store => store.delete(old.id));
+    }
+    await refreshRecentFiles();
+  } catch (_) {
+    // 隐私浏览或存储空间已满不能影响文档查看。
+  }
+}
+
+async function openRecentFile(id) {
+  const record = recentFiles.find(item => item.id === id);
+  if (!record?.data) return;
+  setRecentPanelOpen(false);
+  const recent = new File([record.data], record.name, { type: 'application/ofd', lastModified: record.lastModified || record.lastOpened });
+  await openSelectedFile(recent);
+}
+
+async function clearRecentFiles() {
+  try {
+    await recentTransaction('readwrite', store => store.clear());
+  } catch (_) {
+    // 存储可能不可用，但内存中的列表仍然要清空。
+  }
+  recentFiles = [];
+  recentList.replaceChildren();
+  recentEmpty.hidden = false;
+  setStatus('最近打开记录已清空。');
+}
+
+function setStatus(message) {
+  clearTimeout(copyFeedbackTimer);
+  statusBeforeCopy = undefined;
+  statusMessage.classList.remove('copy-feedback');
+  statusMessage.textContent = message;
+}
+
+function updateBackToTop() {
+  backToTop.hidden = window.scrollY < 480;
+}
+
+function scrollToTop() {
+  window.scrollTo({
+    top: 0,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  });
+}
+
+function showCopyFeedback(message) {
+  clearTimeout(copyFeedbackTimer);
+  if (!statusMessage.classList.contains('copy-feedback')) statusBeforeCopy = statusMessage.textContent;
+  statusMessage.textContent = message;
+  statusMessage.classList.add('copy-feedback');
+  copyFeedbackTimer = setTimeout(() => {
+    statusMessage.classList.remove('copy-feedback');
+    if (statusBeforeCopy !== undefined) statusMessage.textContent = statusBeforeCopy;
+    statusBeforeCopy = undefined;
+  }, 1800);
+}
+
+function resetRenderProgress() {
+  renderedPages = new Set();
+  failedPages = new Set();
+  renderProgress.value = 0;
+  renderProgressLabel.textContent = '';
+  renderProgress.hidden = true;
+  renderProgressLabel.hidden = true;
+}
+
+function updateRenderProgress() {
+  const total = pageInfos.length;
+  if (!total) {
+    renderProgress.hidden = true;
+    renderProgressLabel.hidden = true;
+    return;
+  }
+  const loaded = renderedPages.size;
+  const failed = failedPages.size;
+  renderProgress.value = loaded / total;
+  renderProgressLabel.textContent = failed
+    ? `已加载 ${loaded}/${total}，失败 ${failed}`
+    : `已加载 ${loaded}/${total}`;
+  renderProgress.hidden = false;
+  renderProgressLabel.hidden = false;
+}
+
+function markPageLoaded(index) {
+  if (index < 0 || index >= pageInfos.length) return;
+  renderedPages.add(index);
+  failedPages.delete(index);
+  updateRenderProgress();
+}
+
+function markPageFailed(index) {
+  if (index < 0 || index >= pageInfos.length || renderedPages.has(index)) return;
+  failedPages.add(index);
+  updateRenderProgress();
+}
+
+function showPageError(index, message) {
+  const card = pageCards[index];
+  if (!card) return;
+  card.classList.add('render-error');
+  const error = document.createElement('div');
+  error.className = 'page-error';
+  const title = document.createElement('strong');
+  title.textContent = `第 ${index + 1} 页加载失败`;
+  const detail = document.createElement('small');
+  detail.textContent = message;
+  detail.title = message;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.textContent = '重新渲染';
+  retry.addEventListener('click', () => retryPage(index));
+  error.append(title, detail, retry);
+  card.append(error);
+}
+
+function retryPage(index) {
+  const card = pageCards[index];
+  if (!card || index < 0 || index >= pageInfos.length) return;
+  pageCache.delete(cacheKey('page', index, documentGeneration, pageDPI()));
+  failedPages.delete(index);
+  card.classList.remove('render-error');
+  card.querySelector('.page-error')?.remove();
+  const image = card.querySelector('.page-image');
+  image.hidden = true;
+  card.classList.add('loading');
+  loadPage(index);
+}
+
+function showThumbnailError(entry, message) {
+  entry.button.classList.add('render-error');
+  entry.button.querySelector('.thumbnail-error')?.remove();
+  const error = document.createElement('small');
+  error.className = 'thumbnail-error';
+  error.textContent = '加载失败，点击重试';
+  error.title = message;
+  error.addEventListener('click', event => {
+    event.stopPropagation();
+    entry.button.classList.remove('render-error');
+    error.remove();
+    loadThumbnail(entry.index);
+  });
+  entry.button.append(error);
+}
+
+function isCancelledError(error) {
+  return error && error.name === 'AbortError';
+}
+
+function clearInjectedFonts() {
+  for (const [key, face] of injectedFonts.entries()) {
+    if (key.startsWith(`${fallbackFontFamily}:`)) continue;
+    if (!document.fonts) {
+      injectedFonts.delete(key);
+      continue;
+    }
+    document.fonts.delete(face);
+    injectedFonts.delete(key);
+  }
+}
+
+async function injectFonts(fonts, generation) {
+  const loaded = new Map();
+  if (typeof FontFace !== 'function' || !document.fonts) return 0;
+  await Promise.all((fonts || []).map(async resource => {
+    if (!resource.data?.byteLength) return;
+    const descriptors = {
+      style: resource.italic ? 'italic' : 'normal',
+      weight: resource.bold ? '700' : '400',
+    };
+    try {
+      const face = new FontFace(resource.family, resource.data, descriptors);
+      await face.load();
+      if (generation !== documentGeneration) {
+        document.fonts.delete(face);
+        return;
+      }
+      document.fonts.add(face);
+      loaded.set(`${resource.family}:${descriptors.weight}:${descriptors.style}`, face);
+    } catch (_) {
+      // 不支持的内嵌字体不能阻止文档打开。
+    }
+  }));
+  if (generation !== documentGeneration) {
+    for (const face of loaded.values()) document.fonts.delete(face);
+    return 0;
+  }
+  clearInjectedFonts();
+  for (const [key, face] of injectedFonts.entries()) {
+    if (key.startsWith(`${fallbackFontFamily}:`)) loaded.set(key, face);
+  }
+  injectedFonts = loaded;
+  return loaded.size;
+}
+
+async function loadCachedFont(url) {
+  const cache = typeof caches === 'undefined' ? null : await caches.open(fallbackFontCacheName);
+  if (cache) {
+    const cached = await cache.match(url);
+    if (cached) {
+      const data = await cached.arrayBuffer();
+      if (isSupportedFontData(data)) return data;
+      await cache.delete(url);
+    }
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), fallbackFontTimeout);
+  let response;
+  try {
+    response = await fetch(url, { mode: 'cors', cache: 'no-cache', signal: controller.signal });
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('完整 Noto Sans SC 下载超时');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) throw new Error(`加载完整 Noto Sans SC 失败: ${response.status}`);
+  const copy = response.clone();
+  const data = await response.arrayBuffer();
+  if (!isSupportedFontData(data)) {
+    throw new Error('完整 Noto Sans SC 字体大小无效');
+  }
+  if (cache) {
+    try {
+      await cache.put(url, copy);
+    } catch (_) {
+      // 隐私浏览或受限环境可能无法使用 Cache Storage。
+    }
+  }
+  return data;
+}
+
+function isSupportedFontData(data) {
+  if (data.byteLength === 0 || data.byteLength > 32 << 20 || data.byteLength < 4) return false;
+  const signature = new Uint8Array(data, 0, 4);
+  return (signature[0] === 0x4f && signature[1] === 0x54 &&
+      signature[2] === 0x54 && signature[3] === 0x4f) ||
+    (signature[0] === 0x00 && signature[1] === 0x01 &&
+      signature[2] === 0x00 && signature[3] === 0x00) ||
+    (signature[0] === 0x77 && signature[1] === 0x4f &&
+      signature[2] === 0x46 && (signature[3] === 0x46 || signature[3] === 0x32));
+}
+
+async function preloadFallbackFonts() {
+  const results = await Promise.allSettled(fallbackFontURLs.map(source => loadFallbackFont(source)));
+  const loaded = results
+    .filter(result => result.status === 'fulfilled')
+    .map(result => result.value);
+  if (!loaded.some(font => font.weight === 400)) {
+    const failure = results.find(result => result.status === 'rejected');
+    throw failure?.reason || new Error('完整 Noto Sans SC 常规字体无法加载');
+  }
+  // 打开文档前等待两种字重，确保成功下载的粗体字体可用于首次渲染，
+  // 避免之后再次重绘。
+  return loaded;
+}
+
+function loadFallbackFont(source) {
+  const cached = fallbackFontData.get(source.weight);
+  if (cached) return Promise.resolve({ ...source, data: cached });
+  const pending = fallbackFontLoads.get(source.weight);
+  if (pending) return pending;
+
+  const load = (async () => {
+    const data = await loadCachedFont(source.url);
+    if (typeof FontFace !== 'function' || !document.fonts) {
+      fallbackFontData.set(source.weight, data);
+      return { ...source, data };
+    }
+    const face = new FontFace(fallbackFontFamily, data.slice(0), {
+      style: 'normal',
+      weight: String(source.weight),
+    });
+    await face.load();
+    document.fonts.add(face);
+    injectedFonts.set(`${fallbackFontFamily}:${source.weight}:normal`, face);
+    fallbackFontData.set(source.weight, data);
+    return { ...source, data };
+  })();
+  fallbackFontLoads.set(source.weight, load);
+  load.catch(() => fallbackFontLoads.delete(source.weight));
+  return load;
+}
+
+// 阅读器空闲时开始下载字体。之后打开文档时，可以在首个页面渲染前
+// 将已加载的字体数据传给 WASM。
+void preloadFallbackFonts().catch(() => {});
+
+function updateNavigation() {
+  pageNumber.value = pageInfos.length ? current + 1 : 1;
+  pageNumber.max = pageInfos.length || 1;
+  pageCount.textContent = pageInfos.length;
+  pageNumber.disabled = pageInfos.length === 0;
+  previous.disabled = current <= 0 || pageInfos.length === 0;
+  next.disabled = current + 1 >= pageInfos.length || pageInfos.length === 0;
+  printPage.disabled = documentActionBusy || pageInfos.length === 0;
+  downloadPage.disabled = documentActionBusy || pageInfos.length === 0;
+  copyPageText.disabled = documentActionBusy || pageInfos.length === 0;
+  copyAllTextButton.disabled = documentActionBusy || pageInfos.length === 0;
+  downloadText.disabled = documentActionBusy || pageInfos.length === 0;
+  searchInput.disabled = pageInfos.length === 0;
+  searchToggle.disabled = pageInfos.length === 0;
+  searchButton.disabled = pageInfos.length === 0;
+  searchPrevious.disabled = searchResults.length === 0;
+  searchNext.disabled = searchResults.length === 0;
+  zoomOut.disabled = pageInfos.length === 0;
+  zoomIn.disabled = pageInfos.length === 0;
+  zoomFit.disabled = pageInfos.length === 0;
+  zoomFitPage.disabled = pageInfos.length === 0;
+  rotatePageButton.disabled = pageInfos.length === 0;
+  readingMode.disabled = pageInfos.length === 0;
+  viewToggle.disabled = pageInfos.length === 0;
+  zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function setDocumentActionBusy(busy) {
+  documentActionBusy = busy;
+  documentActionCancelRequested = false;
+  cancelAction.hidden = !busy;
+  updateNavigation();
+}
+
+function cancelDocumentAction() {
+  if (!documentActionBusy) return;
+  documentActionCancelRequested = true;
+  cancelRequests(textRequests);
+  cancelRequests(pageRequests);
+  setStatus('正在取消操作...');
+}
+
+function throwIfDocumentActionCancelled(generation) {
+  if (generation !== documentGeneration) throw new Error('文档已切换');
+  if (documentActionCancelRequested) {
+    const error = new Error('操作已取消');
+    error.name = 'ActionCancelled';
+    throw error;
+  }
+}
+
+function updateSearchStatus(message) {
+  searchStatus.textContent = message;
+}
+
+function setCurrent(index) {
+  if (index < 0 || index >= pageInfos.length) return;
+  const changed = current !== index;
+  current = index;
+  saveReadingPosition();
+  thumbnailButtons.forEach((button, buttonIndex) => {
+    const active = buttonIndex === current;
+    button.classList.toggle('active', active);
+    if (active) {
+      button.setAttribute('aria-current', 'page');
+      if (changed) button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
+  if (zoomMode === 'page') fitPageZoom();
+  updateNavigation();
+}
+
+function goTo(index) {
+  if (index < 0 || index >= pageCards.length) return;
+  setCurrent(index);
+  pageCards[index].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadPage(index);
+}
+
+function applyPageWidth() {
+  pageCards.forEach(card => {
+    const index = Number(card.dataset.index);
+    const info = pageInfos[index];
+    if (!info) return;
+    const rotated = pageRotation % 180 !== 0;
+    card.style.width = `${820 * zoom}px`;
+    card.style.aspectRatio = rotated ? `${info.height} / ${info.width}` : `${info.width} / ${info.height}`;
+    const surface = card.querySelector('.page-surface');
+    if (!surface) return;
+    surface.className = 'page-surface';
+    if (pageRotation === 90) surface.classList.add('rotated');
+    if (pageRotation === 180) surface.classList.add('rotated-180');
+    if (pageRotation === 270) surface.classList.add('rotated-270');
+    surface.style.width = rotated ? `${info.width / info.height * 100}%` : '100%';
+    surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
+    thumbnailButtons[index]?.querySelector('img')?.style.setProperty('transform', `rotate(${pageRotation}deg)`);
+  });
+}
+
+function setZoom(value, mode = 'manual') {
+  if (!pageInfos.length) return;
+  const target = Math.max(0.5, Math.min(3, value));
+  if (target === zoom && mode === zoomMode) return;
+  zoom = target;
+  zoomMode = mode;
+  zoomGeneration++;
+  pageCache.clear();
+  resetRenderProgress();
+  cancelRequests(pageRequests);
+  applyPageWidth();
+  pageCards.forEach(card => {
+    card.classList.add('loading');
+    card.querySelector('.page-image').hidden = true;
+  });
+  pageCards.forEach((card, index) => {
+    const bounds = card.getBoundingClientRect();
+    if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
+    if (textCache.has(index)) buildTextLayer(index);
+  });
+  updateNavigation();
+}
+
+function fitWidthZoom() {
+  if (!pageInfos.length || !pagesElement.clientWidth) return;
+  setZoom(Math.max(0.5, Math.min(3, pagesElement.clientWidth / 820)), 'fit');
+}
+
+function fitPageZoom() {
+  const info = pageInfos[current];
+  if (!info || !pagesElement.clientWidth || !info.width || !info.height) return;
+  const readerStyle = getComputedStyle(document.querySelector('.reader'));
+  const horizontalPadding = parseFloat(readerStyle.paddingLeft) + parseFloat(readerStyle.paddingRight);
+  const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
+  const availableWidth = Math.max(1, Math.min(pagesElement.clientWidth - horizontalPadding, window.innerWidth - horizontalPadding));
+  const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
+  const pageRatio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
+  const pageWidth = Math.min(availableWidth, availableHeight * pageRatio);
+  setZoom(Math.max(0.5, Math.min(3, pageWidth / 820)), 'page');
+}
+
+function rotationStorageKey() {
+  return currentDocumentKey ? `ofd-rotation:${currentDocumentKey}` : '';
+}
+
+function restorePageRotation() {
+  pageRotation = 0;
+  try {
+    const value = Number.parseInt(localStorage.getItem(rotationStorageKey()) || '0', 10);
+    if ([0, 90, 180, 270].includes(value)) pageRotation = value;
+  } catch (_) {}
+  rotatePageButton.textContent = `旋转 ${pageRotation}°`;
+}
+
+function rotatePage() {
+  if (!pageInfos.length) return;
+  pageRotation = (pageRotation + 90) % 360;
+  applyPageWidth();
+  if (zoomMode === 'fit') fitWidthZoom();
+  else if (zoomMode === 'page') fitPageZoom();
+  try {
+    localStorage.setItem(rotationStorageKey(), String(pageRotation));
+  } catch (_) {}
+  rotatePageButton.textContent = `旋转 ${pageRotation}°`;
+}
+
+function touchDistance(touches) {
+  const first = touches[0];
+  const second = touches[1];
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+}
+
+function handleTouchStart(event) {
+  if (!pageInfos.length) return;
+  if (event.touches.length === 1) {
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+    touchPinching = false;
+  } else if (event.touches.length === 2) {
+    touchStartDistance = touchDistance(event.touches);
+    touchPinching = true;
+  }
+}
+
+function handleTouchMove(event) {
+  if (event.touches.length !== 2 || !touchStartDistance) return;
+  event.preventDefault();
+  const scale = touchDistance(event.touches) / touchStartDistance;
+  if (Number.isFinite(scale) && scale > 0) {
+    touchZoomTarget = Math.max(0.5, Math.min(3, zoom * scale));
+    if (!touchZoomTimer) {
+      touchZoomTimer = setTimeout(() => {
+        touchZoomTimer = undefined;
+        if (touchZoomTarget) {
+          setZoom(touchZoomTarget);
+          touchZoomTarget = 0;
+        }
+      }, 80);
+    }
+  }
+  touchStartDistance = touchDistance(event.touches);
+}
+
+function handleTouchEnd(event) {
+  if (touchPinching || event.changedTouches.length !== 1 || !pageInfos.length) {
+    touchStartDistance = 0;
+    touchPinching = false;
+    return;
+  }
+  const touch = event.changedTouches[0];
+  const deltaX = touch.clientX - touchStartX;
+  const deltaY = touch.clientY - touchStartY;
+  touchStartDistance = 0;
+  if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+  goTo(current + (deltaX < 0 ? 1 : -1));
+}
+
+function headerHeight() {
+  return document.querySelector('header')?.offsetHeight || 0;
+}
+
+function matchingSearchResults(pageIndex, runIndex) {
+  return searchResults
+    .filter(result => result.page === pageIndex && result.run === runIndex)
+    .sort((left, right) => left.start - right.start);
+}
+
+function buildTextLayer(index) {
+  const card = pageCards[index];
+  const runs = textCache.get(index);
+  const info = pageInfos[index];
+  if (!card || !runs || !info) return;
+
+  const layer = card.querySelector('.text-layer') || document.createElement('div');
+  layer.className = 'text-layer';
+  layer.replaceChildren();
+  runs.forEach((run, runIndex) => {
+    const element = document.createElement('span');
+    element.className = 'text-run';
+    element.style.left = `${run.x / info.width * 100}%`;
+    // TextRun 坐标已经是以页面左上角为原点的覆盖层坐标。
+    // 渲染器只在画布内部翻转 Y 轴，因此这里不能再次翻转文字层。
+    element.style.top = `${run.y / info.height * 100}%`;
+    element.style.width = `${Math.max(run.width / info.width * 100, 0.1)}%`;
+    element.style.height = `${Math.max(run.height / info.height * 100, 0.1)}%`;
+    element.style.fontSize = `${Math.max(run.size * card.clientWidth / info.width, 1)}px`;
+    if (run.fontFamily) element.style.fontFamily = `'${run.fontFamily}', sans-serif`;
+    element.style.fontWeight = run.weight > 0 ? String(run.weight) : (run.bold ? '700' : '400');
+    element.style.fontStyle = run.italic ? 'italic' : 'normal';
+    const runAngle = run.glyphs?.[0]?.angle ?? run.charDirection ?? 0;
+    element.style.transformOrigin = 'top left';
+    element.style.transform = `rotate(${runAngle}deg)`;
+    element.textContent = run.text;
+    layer.append(element);
+    for (const match of matchingSearchResults(index, runIndex)) {
+      for (const rect of match.rects || []) {
+        const highlight = document.createElement('span');
+        highlight.className = 'search-highlight';
+        if (searchResults[activeSearchResult] === match) highlight.classList.add('active');
+        highlight.style.left = `${rect.x / info.width * 100}%`;
+        highlight.style.top = `${rect.y / info.height * 100}%`;
+        highlight.style.width = `${Math.max(rect.width / info.width * 100, 0.1)}%`;
+        highlight.style.height = `${Math.max(rect.height / info.height * 100, 0.1)}%`;
+        if (rect.angle) {
+          highlight.style.transformOrigin = 'top left';
+          highlight.style.transform = `rotate(${rect.angle}deg)`;
+        }
+        highlight.setAttribute('aria-hidden', 'true');
+        layer.append(highlight);
+      }
+    }
+  });
+  if (!layer.parentElement) card.append(layer);
+}
+
+function loadText(index) {
+  const card = pageCards[index];
+  if (!card) return Promise.resolve();
+  if (textCache.has(index)) {
+    buildTextLayer(index);
+    return Promise.resolve();
+  }
+  if (textRequests.has(index)) return textRequests.get(index);
+  const generation = documentGeneration;
+  const engineRequest = engine.text(index);
+  const request = engineRequest
+    .then(runs => {
+      if (generation !== documentGeneration) return;
+      textCache.set(index, runs);
+      buildTextLayer(index);
+    })
+    .catch(error => {
+      if (generation === documentGeneration && !isCancelledError(error)) card.title = error.message;
+    })
+    .finally(() => textRequests.delete(index));
+  request.cancel = () => engineRequest.cancel();
+  textRequests.set(index, request);
+  return request;
+}
+
+function pageDPI() {
+  return Math.max(72, Math.min(300, Math.round(96 * zoom)));
+}
+
+function cacheKey(kind, index, generation, dpi) {
+  return `${generation}:${kind}:${index}:${dpi}`;
+}
+
+function loadImage(index, kind, generation, imageElement, card) {
+  const cache = kind === 'page' ? pageCache : thumbnailCache;
+  const requests = kind === 'page' ? pageRequests : thumbnailRequests;
+  const dpi = kind === 'page' ? pageDPI() : 36;
+  const requestedZoomGeneration = zoomGeneration;
+  const key = cacheKey(kind, index, generation, dpi);
+  const cached = cache.get(key);
+  if (cached) {
+    imageElement.src = cached;
+    imageElement.hidden = false;
+    if (card) card.classList.remove('loading');
+    if (kind === 'page' && generation === documentGeneration) markPageLoaded(index);
+    return Promise.resolve(cached);
+  }
+  if (requests.has(key)) return requests.get(key);
+
+  const engineRequest = engine.renderPage(index, { dpi, background: transparentRenderBackground });
+  const request = engineRequest
+    .then(data => {
+      const url = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
+      if (generation !== documentGeneration ||
+          (kind === 'page' && requestedZoomGeneration !== zoomGeneration)) {
+        URL.revokeObjectURL(url);
+        return null;
+      }
+      cache.set(key, url, data.byteLength);
+      imageElement.src = url;
+      imageElement.hidden = false;
+      if (card) card.classList.remove('loading');
+      if (kind === 'page' && generation === documentGeneration) markPageLoaded(index);
+      return url;
+    })
+    .catch(error => {
+      if (generation === documentGeneration &&
+          (kind !== 'page' || requestedZoomGeneration === zoomGeneration) && card) {
+        if (!isCancelledError(error)) {
+          card.classList.remove('loading');
+          card.title = error.message;
+          if (kind === 'page') markPageFailed(index);
+          if (kind === 'page') showPageError(index, error.message);
+        }
+      }
+      throw error;
+    })
+    .finally(() => requests.delete(key));
+  request.cancel = () => engineRequest.cancel();
+  requests.set(key, request);
+  return request;
+}
+
+function loadPage(index) {
+  const card = pageCards[index];
+  if (!card) return;
+  const generation = documentGeneration;
+  card.classList.remove('render-error');
+  card.querySelector('.page-error')?.remove();
+  card.classList.add('loading');
+  return loadImage(index, 'page', generation, card.querySelector('img'), card)
+    .then(url => url ? loadText(index) : undefined)
+    .catch(error => {
+      if (!isCancelledError(error)) setStatus(`第 ${index + 1} 页渲染失败：${error.message}`);
+    });
+}
+
+function loadThumbnail(index) {
+  const button = thumbnailButtons[index];
+  if (!button) return;
+  const generation = documentGeneration;
+  const image = button.querySelector('img');
+  const key = cacheKey('thumbnail', index, generation, 36);
+  const cached = thumbnailCache.get(key);
+  if (cached) {
+    image.src = cached;
+    image.hidden = false;
+    button.classList.remove('loading');
+    button.classList.remove('render-error');
+    button.querySelector('.thumbnail-error')?.remove();
+    return Promise.resolve(cached);
+  }
+  if (thumbnailRequests.has(key)) return thumbnailRequests.get(key);
+
+  let resolveRequest;
+  let rejectRequest;
+  const request = new Promise((resolve, reject) => {
+    resolveRequest = resolve;
+    rejectRequest = reject;
+  });
+  const entry = { index, generation, key, image, button, resolveRequest, rejectRequest, request };
+  button.classList.add('loading');
+  request.cancel = () => {
+    entry.cancelled = true;
+    thumbnailBatchQueue.delete(key);
+    thumbnailRequests.delete(key);
+    const error = new Error('请求已取消');
+    error.name = 'AbortError';
+    rejectRequest(error);
+  };
+  thumbnailRequests.set(key, request);
+  thumbnailBatchQueue.set(key, entry);
+  if (!thumbnailBatchTimer) thumbnailBatchTimer = setTimeout(flushThumbnailBatch, 0);
+  request.catch(error => {
+    if (!isCancelledError(error)) button.title = error.message;
+  });
+  return request;
+}
+
+function flushThumbnailBatch() {
+  thumbnailBatchTimer = undefined;
+  const entries = Array.from(thumbnailBatchQueue.values()).slice(0, 8);
+  for (const entry of entries) thumbnailBatchQueue.delete(entry.key);
+  if (!entries.length) return;
+
+  const generation = entries[0].generation;
+  const active = entries.filter(entry => !entry.cancelled && entry.generation === generation);
+  if (!active.length) return;
+  const renderRequest = engine.renderPages(
+    active.map(entry => entry.index),
+    { dpi: 36, background: transparentRenderBackground },
+  );
+  for (const entry of active) entry.batchRequest = renderRequest;
+  renderRequest.then(images => {
+    images.forEach((data, index) => {
+      const entry = active[index];
+      if (entry.cancelled || entry.generation !== documentGeneration) return;
+      const url = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
+      thumbnailCache.set(entry.key, url, data.byteLength);
+      entry.image.src = url;
+      entry.image.hidden = false;
+      entry.button.classList.remove('loading');
+      entry.button.classList.remove('render-error');
+      entry.button.querySelector('.thumbnail-error')?.remove();
+      entry.resolveRequest(url);
+    });
+    for (const entry of active) thumbnailRequests.delete(entry.key);
+  }).catch(error => {
+    for (const entry of active) {
+      thumbnailRequests.delete(entry.key);
+      if (!entry.cancelled) {
+        entry.button.classList.remove('loading');
+        showThumbnailError(entry, error.message);
+        entry.rejectRequest(error);
+      }
+    }
+  }).finally(() => {
+    if (thumbnailBatchQueue.size && !thumbnailBatchTimer) {
+      thumbnailBatchTimer = setTimeout(flushThumbnailBatch, 0);
+    }
+  });
+}
+
+function buildPages(generation) {
+  resizeObserver?.disconnect();
+  pagesElement.replaceChildren();
+  thumbnailsElement.replaceChildren();
+  pageCards = [];
+  thumbnailButtons = [];
+
+  pageInfos.forEach((info, index) => {
+    const card = document.createElement('article');
+    card.className = 'page-card loading';
+    card.dataset.index = index;
+    card.style.aspectRatio = `${info.width} / ${info.height}`;
+    const image = document.createElement('img');
+    image.className = 'page-image';
+    image.alt = `第 ${index + 1} 页`;
+    image.hidden = true;
+    const surface = document.createElement('div');
+    surface.className = 'page-surface';
+    const textLayer = document.createElement('div');
+    textLayer.className = 'text-layer';
+    surface.append(image, textLayer);
+    card.append(surface);
+    pagesElement.append(card);
+    pageCards.push(card);
+
+    const thumbnail = document.createElement('button');
+    thumbnail.className = 'thumbnail';
+    thumbnail.type = 'button';
+    thumbnail.dataset.index = index;
+    thumbnail.title = `第 ${index + 1} 页`;
+    thumbnail.setAttribute('aria-label', `第 ${index + 1} 页`);
+    thumbnail.addEventListener('click', () => goTo(index));
+    thumbnail.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const target = event.key === 'ArrowLeft' ? index - 1 : index + 1;
+      if (thumbnailButtons[target]) thumbnailButtons[target].focus();
+    });
+    const thumbnailImage = document.createElement('img');
+    thumbnailImage.alt = `第 ${index + 1} 页缩略图`;
+    thumbnailImage.hidden = true;
+    thumbnail.append(thumbnailImage);
+    const label = document.createElement('span');
+    label.textContent = index + 1;
+    thumbnail.append(label);
+    thumbnailsElement.append(thumbnail);
+    thumbnailButtons.push(thumbnail);
+  });
+
+  pageObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const index = Number(entry.target.dataset.index);
+      loadPage(index);
+    }
+  }, { rootMargin: '800px 0px' });
+  activePageObserver = new IntersectionObserver(entries => {
+    const visible = entries
+      .filter(entry => entry.isIntersecting)
+      .sort((left, right) => right.intersectionRatio - left.intersectionRatio);
+    if (visible.length) setCurrent(Number(visible[0].target.dataset.index));
+  }, { threshold: [0.5] });
+  thumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) loadThumbnail(Number(entry.target.dataset.index));
+    }
+  }, { rootMargin: '240px 0px' });
+  pageCards.forEach(card => pageObserver.observe(card));
+  pageCards.forEach(card => activePageObserver.observe(card));
+  thumbnailButtons.forEach(button => thumbnailObserver.observe(button));
+  resizeObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const index = Number(entry.target.dataset.index);
+      const runs = textCache.get(index);
+      if (runs) buildTextLayer(index);
+    }
+  });
+  pageCards.forEach(card => resizeObserver.observe(card));
+  if (zoomMode === 'fit') {
+    const available = pagesElement.clientWidth;
+    if (available > 0) zoom = Math.max(0.5, Math.min(3, available / 820));
+  }
+  applyPageWidth();
+  empty.hidden = pageInfos.length > 0;
+  setCurrent(current);
+  updateNavigation();
+  if (pageInfos.length) {
+    loadPage(current);
+    loadThumbnail(current);
+    if (current > 0) {
+      pageCards[current].scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+  }
+}
+
+function cancelRequests(requests) {
+  for (const request of requests.values()) {
+    if (typeof request.cancel === 'function') request.cancel();
+  }
+  requests.clear();
+}
+
+async function loadFile() {
+  const selected = file.files[0];
+  return openSelectedFile(selected);
+}
+
+async function openSelectedFile(selected) {
+  if (!selected) return;
+  saveReadingPosition();
+  const generation = ++documentGeneration;
+  opening = true;
+  cancelOpen.hidden = false;
+  openRequest?.cancel();
+  openRequest = undefined;
+  clearInjectedFonts();
+  pageObserver?.disconnect();
+  activePageObserver?.disconnect();
+  thumbnailObserver?.disconnect();
+  pageCache.clear();
+  thumbnailCache.clear();
+  cancelRequests(pageRequests);
+  cancelRequests(thumbnailRequests);
+  cancelRequests(textRequests);
+  searchRequest?.cancel();
+  searchRequest = undefined;
+  textCache.clear();
+  searchResults = [];
+  activeSearchResult = -1;
+  searchGeneration++;
+  updateSearchStatus('');
+  resetRenderProgress();
+  documentName.textContent = selected.name;
+  documentName.title = selected.name;
+  setStatus(`正在打开 ${selected.name}...`);
+  try {
+    const data = await selected.arrayBuffer();
+    if (generation !== documentGeneration) return;
+    const recentData = data.slice(0);
+    let fallbackFonts;
+    try {
+      fallbackFonts = await preloadFallbackFonts();
+    } catch (_) {
+      // 仍然可以使用浏览器本地回退字体打开文档。
+    }
+    if (generation !== documentGeneration) return;
+    const options = fallbackFonts ? {
+      fallbackFonts: fallbackFonts.map(font => ({
+        data: font.data.slice(0),
+        family: fallbackFontFamily,
+        weight: font.weight,
+        italic: false,
+      })),
+    } : {};
+    openRequest = engine.open(data, options);
+    const result = await openRequest;
+    if (generation !== documentGeneration) return;
+    await injectFonts(result.fonts, generation);
+    if (generation !== documentGeneration) return;
+    pageInfos = result.pages;
+    currentDocumentKey = documentKey(selected);
+    current = restoreReadingPosition(selected, pageInfos.length);
+    restorePageRotation();
+    buildPages(generation);
+    setStatus(`${selected.name}，共 ${pageInfos.length} 页。页面进入附近区域时才会渲染。`);
+    updateRenderProgress();
+    void saveRecentFile(selected, recentData);
+  } catch (error) {
+    if (generation !== documentGeneration || isCancelledError(error)) return;
+    pageInfos = [];
+    pagesElement.replaceChildren();
+    thumbnailsElement.replaceChildren();
+    pagesElement.append(empty);
+    empty.hidden = false;
+    resetRenderProgress();
+    currentDocumentKey = '';
+    current = 0;
+    updateNavigation();
+    setStatus(`打开失败：${error.message}`);
+  } finally {
+    if (generation === documentGeneration) {
+      openRequest = undefined;
+      opening = false;
+      cancelOpen.hidden = true;
+    }
+  }
+}
+
+function cancelOpening() {
+  if (!opening) return;
+  documentGeneration++;
+  openRequest?.cancel();
+  openRequest = undefined;
+  pageObserver?.disconnect();
+  activePageObserver?.disconnect();
+  thumbnailObserver?.disconnect();
+  cancelRequests(pageRequests);
+  cancelRequests(thumbnailRequests);
+  cancelRequests(textRequests);
+  searchRequest?.cancel();
+  searchRequest = undefined;
+  pageCache.clear();
+  thumbnailCache.clear();
+  textCache.clear();
+  pageInfos = [];
+  pageCards = [];
+  thumbnailButtons = [];
+  currentDocumentKey = '';
+  current = 0;
+  searchGeneration++;
+  pagesElement.replaceChildren(empty);
+  empty.hidden = false;
+  resetRenderProgress();
+  updateNavigation();
+  documentName.textContent = '未打开文档';
+  documentName.title = '';
+  opening = false;
+  cancelOpen.hidden = true;
+  setStatus('已取消打开文档。');
+}
+
+async function searchDocument() {
+  const generation = ++searchGeneration;
+  const query = searchInput.value.trim();
+  searchRequest?.cancel();
+  searchRequest = undefined;
+  if (!query || !pageInfos.length) {
+    searchResults = [];
+    activeSearchResult = -1;
+    updateSearchStatus('');
+    pageCards.forEach((_, index) => buildTextLayer(index));
+    updateNavigation();
+    return;
+  }
+  searchButton.disabled = true;
+  updateSearchStatus('搜索中...');
+  try {
+    searchRequest = engine.search(query);
+    const results = await searchRequest;
+    if (generation !== searchGeneration) return;
+    searchResults = results;
+    activeSearchResult = results.length ? 0 : -1;
+    if (!results.length) {
+      updateSearchStatus('无匹配');
+      pageCards.forEach((_, index) => buildTextLayer(index));
+      return;
+    }
+    updateSearchStatus(`找到 ${results.length} 处`);
+    pageCards.forEach((_, index) => buildTextLayer(index));
+    if (activeSearchResult >= 0) goTo(results[activeSearchResult].page);
+  } catch (error) {
+    if (generation !== searchGeneration || isCancelledError(error)) return;
+    updateSearchStatus(`搜索失败：${error.message}`);
+    searchResults = [];
+    activeSearchResult = -1;
+  } finally {
+    if (generation === searchGeneration) {
+      searchRequest = undefined;
+      searchButton.disabled = pageInfos.length === 0;
+      updateNavigation();
+    }
+  }
+}
+
+function moveSearchResult(step) {
+  if (!searchResults.length) return;
+  activeSearchResult = (activeSearchResult + step + searchResults.length) % searchResults.length;
+  updateSearchStatus(`第 ${activeSearchResult + 1} / ${searchResults.length} 处`);
+  pageCards.forEach((_, index) => buildTextLayer(index));
+  goTo(searchResults[activeSearchResult].page);
+}
+
+function escapeHTML(value) {
+  return value.replace(/[&<>'"]/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+  }[character]));
+}
+
+function safeDownloadName(value) {
+  return (value || 'ofd-document')
+    .replace(/[/:*?"<>|\x00-\x1f]/g, '_')
+    .replace(/\.+$/, '')
+    .slice(0, 120) || 'ofd-document';
+}
+
+async function downloadCurrentPage() {
+  if (!pageInfos.length) return;
+  if (documentActionBusy) return;
+  setDocumentActionBusy(true);
+  const generation = documentGeneration;
+  const index = current;
+  setStatus(`正在准备第 ${current + 1} 页 PNG...`);
+  try {
+    await loadPage(index);
+    throwIfDocumentActionCancelled(generation);
+    const image = pageCards[index]?.querySelector('.page-image');
+    if (!image?.src || image.hidden) throw new Error('当前页面尚未渲染完成');
+    const link = document.createElement('a');
+    link.href = image.src;
+    link.download = `${safeDownloadName(documentName.textContent)}-第${index + 1}页.png`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setStatus(`已下载第 ${index + 1} 页 PNG。`);
+  } catch (error) {
+    setStatus(`PNG 下载失败：${error.message}`);
+  } finally {
+    setDocumentActionBusy(false);
+  }
+}
+
+function pageText(index) {
+  const runs = textCache.get(index) || [];
+  if (!runs.length) return '';
+  const ordered = runs
+    .filter(run => run.text)
+    .map((run, index) => ({ run, index }))
+    .sort((left, right) => left.run.y - right.run.y || left.run.x - right.run.x || left.index - right.index);
+  const lines = [];
+  for (const entry of ordered) {
+    const previous = lines[lines.length - 1];
+    const tolerance = Math.max(1, Math.min(entry.run.height || 1, previous?.height || entry.run.height || 1) * 0.5);
+    if (previous && Math.abs(entry.run.y - previous.y) <= tolerance) {
+      previous.parts.push(entry.run.text);
+      previous.y = (previous.y + entry.run.y) / 2;
+      previous.height = Math.max(previous.height, entry.run.height || 0);
+    } else {
+      lines.push({ y: entry.run.y, height: entry.run.height || 0, parts: [entry.run.text] });
+    }
+  }
+  return lines.map(line => line.parts.join('')).join('\n').trim();
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      throw new Error('Clipboard API unavailable');
+    }
+  } catch (_) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) {
+      throw new Error('Copy command failed');
+    }
+  }
+}
+
+async function copyCurrentPageText() {
+  if (!pageInfos.length) return;
+  if (documentActionBusy) return;
+  setDocumentActionBusy(true);
+  const generation = documentGeneration;
+  const index = current;
+  try {
+    setStatus(`正在读取第 ${index + 1} 页文字...`);
+    await loadText(index);
+    throwIfDocumentActionCancelled(generation);
+    const text = pageText(index);
+    if (!text) {
+      showCopyFeedback('当前页没有可复制的文字。');
+      return;
+    }
+    await copyTextToClipboard(text);
+  } catch (_) {
+    if (documentActionCancelRequested) {
+      setStatus('已取消复制当前页文字。');
+      return;
+    }
+    showCopyFeedback('复制失败，请检查浏览器剪贴板权限。');
+    return;
+  } finally {
+    setDocumentActionBusy(false);
+  }
+  showCopyFeedback(`已复制第 ${index + 1} 页文字。`);
+}
+
+async function collectDocumentText(generation) {
+  const parts = [];
+  let failed = 0;
+  for (let index = 0; index < pageInfos.length; index += 1) {
+    throwIfDocumentActionCancelled(generation);
+    setStatus(`正在读取第 ${index + 1} / ${pageInfos.length} 页文字...`);
+    await loadText(index);
+    throwIfDocumentActionCancelled(generation);
+    if (!textCache.has(index)) {
+      failed += 1;
+      continue;
+    }
+    const text = pageText(index);
+    if (text) parts.push(text);
+  }
+  return { text: parts.join('\n\n'), failed };
+}
+
+async function copyDocumentText() {
+  if (!pageInfos.length) return;
+  if (documentActionBusy) return;
+  setDocumentActionBusy(true);
+  const generation = documentGeneration;
+  try {
+    const { text, failed } = await collectDocumentText(generation);
+    if (!text) {
+      showCopyFeedback(failed ? `全文读取失败：${failed} 页无法读取。` : '文档没有可复制的文字。');
+      return;
+    }
+    await copyTextToClipboard(text);
+    showCopyFeedback(failed ? `已复制全文，另有 ${failed} 页读取失败。` : `已复制全文 ${text.length} 个字符。`);
+  } catch (_) {
+    showCopyFeedback(documentActionCancelRequested ? '已取消复制全文。' : '复制失败，请检查浏览器剪贴板权限。');
+  } finally {
+    setDocumentActionBusy(false);
+  }
+}
+
+async function downloadDocumentText() {
+  if (!pageInfos.length) return;
+  if (documentActionBusy) return;
+  setDocumentActionBusy(true);
+  const generation = documentGeneration;
+  try {
+    const { text, failed } = await collectDocumentText(generation);
+    if (!text) {
+      showCopyFeedback(failed ? `全文读取失败：${failed} 页无法导出。` : '文档没有可导出的文字。');
+      return;
+    }
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    link.href = url;
+    link.download = `${safeDownloadName(documentName.textContent)}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    showCopyFeedback(failed ? `已导出文字，另有 ${failed} 页读取失败。` : `已下载全文 ${text.length} 个字符。`);
+  } catch (_) {
+    showCopyFeedback(documentActionCancelRequested ? '已取消 TXT 导出。' : 'TXT 导出失败，请重试。');
+  } finally {
+    setDocumentActionBusy(false);
+  }
+}
+
+async function printCurrentPage() {
+  if (!pageInfos.length) return;
+  if (documentActionBusy) return;
+  const printWindow = window.open('', '_blank', 'popup,width=900,height=1200');
+  if (!printWindow) {
+    setStatus('打印窗口被浏览器阻止，请允许弹出窗口后重试。');
+    return;
+  }
+  printWindow.document.write('<!doctype html><title>正在准备打印...</title><p>正在准备打印...</p>');
+  printWindow.document.close();
+  setDocumentActionBusy(true);
+  const generation = documentGeneration;
+  const index = current;
+  const pageNumber = index + 1;
+  setStatus(`正在准备第 ${pageNumber} 页打印内容...`);
+  try {
+    await loadPage(index);
+    throwIfDocumentActionCancelled(generation);
+    const image = pageCards[index]?.querySelector('.page-image');
+    if (!image?.src || image.hidden) throw new Error('当前页面尚未渲染完成');
+    const title = escapeHTML(documentName.textContent || 'OFD 文档');
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} - 第 ${pageNumber} 页</title><style>@page{margin:10mm}html,body{margin:0}body{display:grid;place-items:center}img{display:block;max-width:100%;max-height:calc(100vh - 20mm);object-fit:contain}</style></head><body><img id="page" src="${image.src}" alt="第 ${pageNumber} 页"></body></html>`);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+    setStatus(`已准备第 ${pageNumber} 页打印。`);
+  } catch (error) {
+    printWindow.close();
+    setStatus(documentActionCancelRequested ? '已取消打印。' : `打印准备失败：${error.message}`);
+  } finally {
+    setDocumentActionBusy(false);
+  }
+}
+
+function setSearchPanelOpen(open) {
+  searchPanel.hidden = !open;
+  searchToggle.setAttribute('aria-expanded', String(open));
+  if (open) searchInput.focus();
+}
+
+function setReadingMode(enabled) {
+  document.body.classList.toggle('reading-mode', enabled);
+  readingMode.setAttribute('aria-pressed', String(enabled));
+  readingMode.textContent = enabled ? '退出阅读' : '阅读模式';
+  if (enabled && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else if (!enabled && document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+function setViewPanelOpen(open) {
+  viewPanel.hidden = !open;
+  viewToggle.setAttribute('aria-expanded', String(open));
+}
+
+function setThumbnailsVisible(visible) {
+  thumbnailsVisible = visible;
+  document.body.classList.toggle('hide-thumbnails', !visible);
+  if (!visible) setViewPanelOpen(false);
+}
+
+function setTextLayerVisible(visible) {
+  textLayerVisible = visible;
+  document.body.classList.toggle('hide-text-layer', !visible);
+}
+
+function setDarkReadingVisible(visible) {
+  darkReadingVisible = visible;
+  document.body.classList.toggle('dark-reading', visible);
+  try {
+    localStorage.setItem('ofd-dark-reading', String(visible));
+  } catch (_) {
+    // 隐私浏览环境可能无法使用存储功能。
+  }
+}
+
+try {
+  darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
+  setDarkReadingVisible(darkReading.checked);
+} catch (_) {}
+
+file.addEventListener('change', loadFile);
+cancelOpen.addEventListener('click', cancelOpening);
+recentToggle.addEventListener('click', () => setRecentPanelOpen(recentPanel.hidden));
+recentClear.addEventListener('click', clearRecentFiles);
+for (const eventName of ['dragenter', 'dragover']) {
+  pagesElement.addEventListener(eventName, event => {
+    event.preventDefault();
+    if (!pageInfos.length) {
+      empty.classList.add('drag-over');
+      dropHint.style.display = 'block';
+    }
+  });
+}
+for (const eventName of ['dragleave', 'drop']) {
+  pagesElement.addEventListener(eventName, event => {
+    event.preventDefault();
+    empty.classList.remove('drag-over');
+    dropHint.style.display = 'none';
+  });
+}
+pagesElement.addEventListener('drop', event => {
+  if (pageInfos.length) return;
+  const dropped = Array.from(event.dataTransfer?.files || [])
+    .find(candidate => /\.ofd$/i.test(candidate.name) || candidate.type === 'application/ofd');
+  if (!dropped) {
+    setStatus('请拖入 OFD 文件。');
+    return;
+  }
+  openSelectedFile(dropped);
+});
+previous.addEventListener('click', () => goTo(current - 1));
+next.addEventListener('click', () => goTo(current + 1));
+cancelAction.addEventListener('click', cancelDocumentAction);
+printPage.addEventListener('click', printCurrentPage);
+downloadPage.addEventListener('click', downloadCurrentPage);
+copyPageText.addEventListener('click', copyCurrentPageText);
+copyAllTextButton.addEventListener('click', copyDocumentText);
+downloadText.addEventListener('click', downloadDocumentText);
+pageNumber.addEventListener('change', () => {
+  if (!pageInfos.length) return;
+  const value = Number(pageNumber.value);
+  const page = Number.isFinite(value) ? Math.round(value) : current + 1;
+  const target = Math.max(1, Math.min(pageInfos.length, page));
+  pageNumber.value = target;
+  goTo(target - 1);
+});
+searchButton.addEventListener('click', searchDocument);
+searchInput.addEventListener('keydown', event => { if (event.key === 'Enter') searchDocument(); });
+searchToggle.addEventListener('click', () => setSearchPanelOpen(searchPanel.hidden));
+searchPrevious.addEventListener('click', () => moveSearchResult(-1));
+searchNext.addEventListener('click', () => moveSearchResult(1));
+zoomOut.addEventListener('click', () => setZoom(zoom - 0.25));
+zoomIn.addEventListener('click', () => setZoom(zoom + 0.25));
+zoomFit.addEventListener('click', fitWidthZoom);
+zoomFitPage.addEventListener('click', fitPageZoom);
+rotatePageButton.addEventListener('click', rotatePage);
+readingMode.addEventListener('click', () => setReadingMode(!document.body.classList.contains('reading-mode')));
+viewToggle.addEventListener('click', () => setViewPanelOpen(viewPanel.hidden));
+showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbnails.checked));
+showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
+darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.checked));
+backToTop.addEventListener('click', scrollToTop);
+window.addEventListener('scroll', updateBackToTop, { passive: true });
+window.addEventListener('resize', () => {
+  if (zoomMode === 'fit') fitWidthZoom();
+  else if (zoomMode === 'page') fitPageZoom();
+});
+updateBackToTop();
+pagesElement.addEventListener('touchstart', handleTouchStart, { passive: true });
+pagesElement.addEventListener('touchmove', handleTouchMove, { passive: false });
+pagesElement.addEventListener('touchend', handleTouchEnd, { passive: true });
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && document.body.classList.contains('reading-mode')) {
+    document.body.classList.remove('reading-mode');
+    readingMode.setAttribute('aria-pressed', 'false');
+    readingMode.textContent = '阅读模式';
+  }
+});
+window.addEventListener('keydown', event => {
+  const target = event.target;
+  const editing = target instanceof HTMLElement &&
+    (target.matches('input, textarea, select') || target.isContentEditable);
+  const modifier = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
+  if (modifier && event.shiftKey && key === 'c') {
+    if (!editing && pageInfos.length) {
+      event.preventDefault();
+      copyCurrentPageText();
+    }
+    return;
+  }
+  if (modifier && event.shiftKey && key === 's') {
+    if (!editing && pageInfos.length) {
+      event.preventDefault();
+      downloadCurrentPage();
+    }
+    return;
+  }
+  if (modifier && key === 'f') {
+    if (!pageInfos.length) return;
+    event.preventDefault();
+    setSearchPanelOpen(true);
+    return;
+  }
+  if (editing) {
+    if (event.key === 'Escape' && target === searchInput) setSearchPanelOpen(false);
+    return;
+  }
+  if (event.key === 'Escape') {
+    if (!searchPanel.hidden) setSearchPanelOpen(false);
+    else if (!viewPanel.hidden) setViewPanelOpen(false);
+    else if (document.body.classList.contains('reading-mode')) setReadingMode(false);
+    return;
+  }
+  if (!pageInfos.length) return;
+  switch (event.key) {
+    case 'ArrowLeft':
+    case 'PageUp':
+      event.preventDefault();
+      goTo(current - 1);
+      break;
+    case 'ArrowRight':
+    case 'PageDown':
+      event.preventDefault();
+      goTo(current + 1);
+      break;
+    case 'Home':
+      event.preventDefault();
+      goTo(0);
+      break;
+    case 'End':
+      event.preventDefault();
+      goTo(pageInfos.length - 1);
+      break;
+    case '+':
+    case '=':
+      event.preventDefault();
+      setZoom(zoom + 0.25);
+      break;
+    case '-':
+      event.preventDefault();
+      setZoom(zoom - 0.25);
+      break;
+  }
+});
+document.addEventListener('click', event => {
+  if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
+  if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
+  if (!searchPanel.hidden && !event.target.closest('.search-group')) setSearchPanelOpen(false);
+});
+document.addEventListener('copy', event => {
+  const selection = window.getSelection();
+  if (!selection?.toString().trim() || !selection.anchorNode?.parentElement?.closest('.text-layer')) return;
+  showCopyFeedback(`已复制 ${selection.toString().length} 个字符`);
+});
+window.addEventListener('beforeunload', () => {
+  pageCache.clear();
+  thumbnailCache.clear();
+  engine.worker.terminate();
+});
+
+engine.ready.then(() => setStatus('WASM Worker 已就绪，选择一个 OFD 文件开始阅读。'))
+  .catch(error => setStatus(`WASM Worker 加载失败：${error.message}`));
+
+function setRecentPanelOpen(open) {
+  recentPanel.hidden = !open;
+  recentToggle.setAttribute('aria-expanded', String(open));
+  if (open) void refreshRecentFiles();
+}
+
+void refreshRecentFiles();

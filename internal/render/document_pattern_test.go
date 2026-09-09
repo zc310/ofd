@@ -209,14 +209,14 @@ func TestPatternReflectionRow(t *testing.T) {
 	width := 15.0
 	for iy := 0; iy < 6; iy++ {
 		reflection := patternReflection("Row", width, 20, 0, iy)
-		// Row reflection: flipX for odd iy
+		// Row 模式：iy 为奇数时沿 X 轴翻转。
 		if iy%2 == 0 {
-			// Even row: identity
+			// 偶数行：恒等变换。
 			if reflection != models.IdentityMatrix {
 				t.Fatalf("Row iy=%d: want identity, got %v", iy, reflection)
 			}
 		} else {
-			// Odd row: horizontal flip around width
+			// 奇数行：围绕 width 水平翻转。
 			gotX, _ := reflection.TransformPoint(models.StPos{X: 3, Y: 7})
 			if gotX != width-3 {
 				t.Fatalf("Row iy=%d: flipX(3) = %v, want %v", iy, gotX, width-3)
@@ -297,7 +297,7 @@ func TestInvertCTMRoundTrip(t *testing.T) {
 		if !ok {
 			t.Fatalf("matrix %d: failed to invert", i)
 		}
-		// Forward then inverse should restore original point
+		// 先进行正向变换再进行逆变换，应恢复原始点。
 		for _, pt := range []models.StPos{{X: 0, Y: 0}, {X: 5, Y: 7}, {X: -3, Y: 12}} {
 			fx, fy := matrix.TransformPoint(pt)
 			gotX, gotY := inverse.TransformPoint(models.StPos{X: fx, Y: fy})
@@ -305,7 +305,7 @@ func TestInvertCTMRoundTrip(t *testing.T) {
 				t.Fatalf("matrix %d: round-trip failed for %v: got=(%v,%v)", i, pt, gotX, gotY)
 			}
 		}
-		// Inverse then forward should also restore
+		// 先进行逆变换再进行正向变换，也应恢复原始点。
 		for _, pt := range []models.StPos{{X: 1, Y: 2}, {X: 8, Y: -4}} {
 			ix, iy := inverse.TransformPoint(pt)
 			gotX, gotY := matrix.TransformPoint(models.StPos{X: ix, Y: iy})
@@ -317,66 +317,66 @@ func TestInvertCTMRoundTrip(t *testing.T) {
 }
 
 func TestPatternTileCTMOrder(t *testing.T) {
-	// Verify that the tile CTM composition matches the expected order:
-	// Translate(origin) * parentCTM * objectCTM * patternCTM * tileOffset * reflection
+	// 验证图块 CTM 的组合顺序符合预期：
+	// 变换顺序为 Translate(origin) * parentCTM * objectCTM * patternCTM * tileOffset * reflection。
 
 	originX, originY := 30.0, 104.0
-	objectCTM := models.CTM{2, 0, 0, 2, 0, 0}  // scale 2x
-	patternCTM := models.CTM{1, 0, 0, 1, 5, 5} // translate (5,5)
+	objectCTM := models.CTM{2, 0, 0, 2, 0, 0}  // 缩放 2 倍。
+	patternCTM := models.CTM{1, 0, 0, 1, 5, 5} // 平移 (5, 5)。
 	xStep, yStep := 20.0, 20.0
 
-	// Build the expected CTM manually
+	// 手动构造预期的 CTM。
 	base := objectCTM
 	base = *translationMatrix(originX, originY).Multiply(&base)
 	base = *base.Multiply(&patternCTM)
 
-	// Tile (1, 2) with no reflection
+	// 不带镜像的图块 (1, 2)。
 	tile := *base.Multiply(&models.CTM{
 		1, 0, 0, 1,
 		float64(1) * xStep,
 		float64(2) * yStep,
 	})
 
-	// A cell content point at (0,0) should map to:
-	// 1. patternCTM: (0,0) → (5,5)
-	// 2. objectCTM: (5,5) → (10,10)
-	// 3. origin: (10,10) → (40,114)
-	// 4. tile offset: (40,114) → (60,154)
+	// 单元内容中的点 (0, 0) 应映射为：
+	// 1. patternCTM：(0, 0) → (5, 5)
+	// 2. objectCTM：(5, 5) → (10, 10)
+	// 3. origin：(10, 10) → (40, 114)
+	// 4. 图块偏移：(40, 114) → (60, 154)
 	gotX, gotY := tile.TransformPoint(models.StPos{X: 0, Y: 0})
-	wantX := originX + 0*xStep + 5 + 0 // origin + tileOffset + patternTranslate + objectCTM(0,0).x
+	wantX := originX + 0*xStep + 5 + 0 // 原点 + 图块偏移 + 图案平移 + objectCTM(0, 0) 的 x 坐标。
 	wantY := originY + 2*yStep + 5 + 0
-	// Full computation:
-	// base = Translate(30,104) * Scale(2,2) * Translate(5,5)
-	// base matrix:
+	// 完整计算过程：
+	// base = Translate(30,104) * Scale(2,2) * Translate(5,5)。
+	// base 矩阵：
 	// a = 1*2 = 2, b = 0*2 = 0, c = 0*2 = 0, d = 1*2 = 2
 	// e = 1*0 + 0*0 + 30 = 30, f = 0*0 + 1*0 + 104 = 104
-	// Wait, let me compute more carefully.
+	// 重新仔细计算。
 	// Scale(2,2) = {2,0,0,2,0,0}
 	// Translate(30,104) = {1,0,0,1,30,104}
-	// Translate(30,104).Multiply(Scale(2,2)):
+	// 计算 Translate(30,104).Multiply(Scale(2,2))：
 	//   a = 1*2 + 0*0 = 2
 	//   b = 0*2 + 1*0 = 0
 	//   c = 1*0 + 0*2 = 0
 	//   d = 0*0 + 1*2 = 2
 	//   e = 1*0 + 0*0 + 30 = 30
 	//   f = 0*0 + 1*0 + 104 = 104
-	// So intermediate = {2,0,0,2,30,104}
+	// 因此中间结果为 {2,0,0,2,30,104}。
 	//
-	// Multiply by Translate(5,5):
+	// 乘以 Translate(5,5)：
 	//   a = 2*1 + 0*0 = 2
 	//   b = 0*1 + 2*0 = 0
 	//   c = 2*0 + 0*1 = 0
 	//   d = 0*0 + 2*1 = 2
 	//   e = 2*5 + 0*5 + 30 = 40
 	//   f = 0*5 + 2*5 + 104 = 114
-	// So base = {2,0,0,2,40,114}
+	// 因此 base = {2,0,0,2,40,114}。
 	//
-	// Tile (1,2): base * Translate(20,40)
+	// 图块 (1, 2)：base * Translate(20,40)。
 	//   e = 2*20 + 0*40 + 40 = 80
 	//   f = 0*20 + 2*40 + 114 = 194
-	// So tile = {2,0,0,2,80,194}
+	// 因此 tile = {2,0,0,2,80,194}。
 	//
-	// TransformPoint(0,0) = (80, 194)
+	// TransformPoint(0, 0) = (80, 194)。
 
 	wantX = 80.0
 	wantY = 194.0
