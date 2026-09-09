@@ -37,6 +37,9 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 		return
 	}
 	fill, stroke := p.updateDrawParams(ctx, dp)
+	if dp == nil {
+		ctx.SetStrokeWidth(defaultLineWidth)
+	}
 	if object.CTM != nil {
 		if scale := object.CTM.YScale(); scale > 0 {
 			object.Size *= scale
@@ -56,13 +59,20 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	if object.StrokeColor != nil {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
-	if object.Alpha != nil && fill != nil && fill.Value != nil {
-		value := *fill.Value
-		value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
-		fill = &CTColor{Value: &value, Gradient: fill.Gradient}
+	if object.Alpha != nil {
+		if fill != nil && fill.Value != nil {
+			value := *fill.Value
+			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
+			fill = &CTColor{Value: &value, Gradient: fill.Gradient}
+		}
+		if stroke != nil && stroke.Value != nil {
+			value := *stroke.Value
+			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
+			stroke = &CTColor{Value: &value, Gradient: stroke.Gradient}
+		}
 	}
 	face := buildTextFace(fontFamily, object, fill)
-	if !face.Fill.Has() {
+	if !face.Fill.Has() && !(textFillDisabled(object) && object.Stroke) {
 		// 颜色透明（Alpha=0）时文字不可见，且 PDF 渲染器会因此输出非法的 NaN 颜色值
 		// 破坏内容流，直接跳过绘制。
 		return
