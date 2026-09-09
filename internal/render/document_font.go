@@ -37,6 +37,11 @@ func NewFonts(doc *parser.Document) *Fonts {
 			defaultFontFamilyReady = loadAndroidDefaultFont(defaultFontFamily)
 			return
 		}
+		if runtime.GOOS == "js" {
+			// 浏览器没有可供 canvas 查询的本地字体目录。Web 文档应优先
+			// 使用 OFD 内嵌字体，避免调用系统字体索引导致 WASM panic。
+			return
+		}
 		var fontPath string
 		var err error
 		if fontPath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
@@ -161,10 +166,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		if buf, err = p.FileCache.Read(string(ft.FontFile)); err != nil {
 			return nil, err
 		}
-		if fixed, fixErr := fontfix.Repair(buf); fixErr == nil {
-			buf = fixed
-		}
-		if err = f.LoadFont(buf, 0, fontStyle); err == nil && fontFamilyUsable(f) {
+		if err = loadEmbeddedFont(f, buf, fontStyle); err == nil {
 			p.Fonts[id] = f
 			return f, nil
 		}
@@ -188,6 +190,13 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	}
 	f = canvas.NewFontFamily(fontName)
 
+	if runtime.GOOS == "js" {
+		if defaultFontFamilyReady {
+			p.Fonts[id] = defaultFontFamily
+			return defaultFontFamily, nil
+		}
+		return nil, fmt.Errorf("浏览器没有可用的字体 %q，请使用内嵌字体", fontName)
+	}
 	if runtime.GOOS == "android" {
 		// 新版 Android 的系统字体索引可能为空，因此默认字体族已改为
 		// 直接从 /system/fonts 加载。
@@ -227,6 +236,25 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 		return defaultFontFamily, nil
 	}
 	return defaultFontFamily, nil
+}
+
+// loadEmbeddedFont 保留字体原有的 Unicode cmap。只有原始数据无法加载时，
+// 才使用 fontfix 为缺少 glyph 映射的嵌入字体补表。
+func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
+	if err := family.LoadFont(data, 0, style); err == nil && fontFamilyUsable(family) {
+		return nil
+	}
+	fixed, err := fontfix.Repair(data)
+	if err != nil {
+		return err
+	}
+	if err := family.LoadFont(fixed, 0, style); err != nil {
+		return err
+	}
+	if !fontFamilyUsable(family) {
+		return fmt.Errorf("嵌入字体结构不可用")
+	}
+	return nil
 }
 
 func sameFontName(left, right models.Font) bool {
