@@ -346,26 +346,18 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 	return ok && p.fallbackByFont[id] == ""
 }
 
-// loadEmbeddedFont 保留字体原有的 Unicode cmap。只有原始数据无法加载时，
-// 才使用 fontfix 为缺少 glyph 映射的嵌入字体补表。
+// loadEmbeddedFont 优先使用 fontfix 修复后的内嵌字体，修复失败时再尝试
+// 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
 func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
-	if converted, err := font.ToSFNT(data); err == nil {
-		data = converted
+	if fixed, err := fontfix.Repair(data); err == nil {
+		if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {
+			return nil
+		}
 	}
 	if err := family.LoadFont(data, 0, style); err == nil && fontFamilyUsable(family) {
 		return nil
 	}
-	fixed, err := fontfix.Repair(data)
-	if err != nil {
-		return err
-	}
-	if err := family.LoadFont(fixed, 0, style); err != nil {
-		return err
-	}
-	if !fontFamilyUsable(family) {
-		return fmt.Errorf("嵌入字体结构不可用")
-	}
-	return nil
+	return fmt.Errorf("嵌入字体结构不可用")
 }
 
 func sameFontName(left, right models.Font) bool {
