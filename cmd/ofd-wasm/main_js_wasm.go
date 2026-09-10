@@ -36,6 +36,7 @@ func main() {
 	api.Set("search", js.FuncOf(app.search))
 	api.Set("renderPage", js.FuncOf(app.renderPage))
 	api.Set("renderPages", js.FuncOf(app.renderPages))
+	api.Set("renderPDF", js.FuncOf(app.renderPDF))
 	js.Global().Set("ofd", api)
 
 	select {}
@@ -298,6 +299,31 @@ func (a *wasmApp) renderPages(_ js.Value, args []js.Value) any {
 		js.CopyBytesToJS(image, page)
 		result.SetIndex(index, image)
 	}
+	return result
+}
+
+func (a *wasmApp) renderPDF(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 1 || len(args) > 2 {
+		return errorValue(errors.New("ofd.renderPDF 需要页面索引数组和可选配置"))
+	}
+	indices, err := jsIndices(args[0])
+	if err != nil {
+		return errorValue(err)
+	}
+	options, err := renderOptions(args[1:])
+	if err != nil {
+		return errorValue(err)
+	}
+	data, err := reader.RenderPDF(indices, options)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
 	return result
 }
 

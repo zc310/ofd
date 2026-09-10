@@ -8,6 +8,14 @@
   "display": "standalone",
   "background_color": "#cfd5de",
   "theme_color": "#172033",
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/ofd": [".ofd"]
+      }
+    }
+  ],
   "icons": [
     {
       "src": "icon.svg",

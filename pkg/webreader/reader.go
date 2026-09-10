@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -84,7 +85,7 @@ type Rect struct {
 	Angle  float64
 }
 
-// RenderOptions 控制页面输出。当前支持 PNG 格式。
+// RenderOptions 控制页面输出。DPI 控制 PNG 和 PDF 中页面图像的分辨率。
 type RenderOptions struct {
 	DPI        float64
 	Background color.Color
@@ -483,6 +484,82 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	return results, nil
 }
 
+// RenderPDF 将多个页面按传入顺序栅格化后写入一个 PDF 文档。
+func (r *Reader) RenderPDF(indices []int, options RenderOptions) ([]byte, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	if len(indices) == 0 {
+		return nil, errors.New("PDF 页面列表为空")
+	}
+	if len(indices) > maxRenderPages {
+		return nil, fmt.Errorf("PDF 页面数量超过限制 %d", maxRenderPages)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	background := options.Background
+	if background == nil {
+		background = color.Transparent
+	}
+	dpi := options.DPI
+	if dpi == 0 {
+		dpi = defaultDPI
+	}
+	if dpi < 1 || dpi > maxDPI || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
+		return nil, fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
+	}
+	var output bytes.Buffer
+	var document *pdf.PDF
+	for position, index := range indices {
+		page, err := r.pdfPageLocked(index, background)
+		if err != nil {
+			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, err)
+		}
+		if document == nil {
+			document = pdf.New(&output, page.W, page.H, nil)
+		} else {
+			document.NewPage(page.W, page.H)
+		}
+		resolution := canvas.DPI(dpi)
+		width := page.W * resolution.DPMM()
+		height := page.H * resolution.DPMM()
+		if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(height) || math.IsInf(height, 0) || width*height > maxRenderPixels {
+			return nil, fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
+		}
+		image := rasterizer.Draw(page, resolution, canvas.DefaultColorSpace)
+		document.RenderImage(image, canvas.Identity.Scale(1/resolution.DPMM(), 1/resolution.DPMM()))
+	}
+	if document == nil {
+		return nil, errors.New("PDF 文档创建失败")
+	}
+	if err := document.Close(); err != nil {
+		return nil, fmt.Errorf("关闭 PDF 文档失败: %w", err)
+	}
+	return output.Bytes(), nil
+}
+
+func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canvas, error) {
+	if index < 0 || index >= len(r.pages) {
+		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	ref := r.pages[index]
+	ref.page.EnsurePhysicalBox()
+	document := ref.document
+	if document == nil || document.Document == nil {
+		return nil, errors.New("页面渲染上下文为空")
+	}
+	if !sameColor(background, r.options.Background) {
+		document = render.NewDocument(background, ref.document.Document)
+		for _, source := range r.fallbackFonts {
+			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+		}
+	}
+	return document.Page(ref.page)
+}
+
 func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
@@ -569,10 +646,6 @@ func fontFormat(file models.StLoc) string {
 		return name[index+1:]
 	}
 	return ""
-}
-
-func textRuns(document *render.Document, page *parser.Page, fontScope int) []TextRun {
-	return textRunsWithFallback(document, page, fontScope, "")
 }
 
 func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string) []TextRun {

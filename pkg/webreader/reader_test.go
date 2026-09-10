@@ -3,6 +3,7 @@ package webreader
 import (
 	"bytes"
 	"image"
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,6 +75,41 @@ func TestRenderPages(t *testing.T) {
 	indices := make([]int, 65)
 	if _, err := reader.RenderPages(indices, RenderOptions{DPI: 36}); err == nil {
 		t.Fatal("oversized page batch was accepted")
+	}
+}
+
+func TestRenderPDF(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	pdfData, err := reader.RenderPDF([]int{0}, RenderOptions{Background: color.White})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pdfData) == 0 || !bytes.HasPrefix(pdfData, []byte("%PDF-")) {
+		t.Fatal("rendered data is not PDF")
+	}
+	if !bytes.HasSuffix(bytes.TrimSpace(pdfData), []byte("%%EOF")) {
+		t.Fatal("PDF has no EOF marker")
+	}
+	highDPI, err := reader.RenderPDF([]int{0}, RenderOptions{DPI: 150, Background: color.White})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(pdfData, highDPI) {
+		t.Fatal("PDF DPI did not affect output")
+	}
+	if _, err := reader.RenderPDF(nil, RenderOptions{}); err == nil {
+		t.Fatal("empty PDF page list was accepted")
+	}
+	if _, err := reader.RenderPDF([]int{0}, RenderOptions{DPI: 601}); err == nil {
+		t.Fatal("excessive PDF DPI was accepted")
 	}
 }
 
