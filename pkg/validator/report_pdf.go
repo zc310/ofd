@@ -32,8 +32,8 @@ func drawPDFText(ctx *canvas.Context, x, y float64, face *canvas.FontFace, text 
 }
 
 func drawPDFRect(ctx *canvas.Context, x, y, width, height float64, fill, stroke color.Color, strokeWidth float64) {
-	// CartesianIV uses a top-down user coordinate system, so positive height
-	// extends the rectangle toward the bottom of the page.
+	// CartesianIV 使用顶部向下的用户坐标系，因此正高度会将矩形
+	// 延伸到页面下方。
 	ctx.SetFillColor(fill)
 	ctx.SetStrokeColor(stroke)
 	ctx.SetStrokeWidth(strokeWidth)
