@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ofd-reader-shell-v2';
+const CACHE_NAME = 'ofd-reader-shell-v7';
 const SHELL_FILES = [
   './',
   './index.html',
