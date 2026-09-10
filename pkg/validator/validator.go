@@ -14,11 +14,15 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
+	"github.com/tdewolff/font"
 	"github.com/tjfoc/gmsm/sm3"
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"
 )
@@ -219,6 +223,7 @@ type xmlDocument struct {
 	ofd       bool
 	validated bool
 	baseDir   string
+	scope     string
 }
 
 type queuedXML struct {
@@ -227,6 +232,7 @@ type queuedXML struct {
 	from     string
 	fromNode *xdm.Node
 	baseDir  string
+	scope    string
 }
 
 type fileReference struct {
@@ -237,6 +243,7 @@ type fileReference struct {
 	value        string
 	expected     string
 	checkXML     bool
+	scope        string
 }
 
 func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report *Report) {
@@ -303,6 +310,12 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 				continue
 			}
 			if ref.checkXML && ref.expected != "" {
+				scope := ref.scope
+				if scope == "" && ref.expected == "Document" {
+					// All page and resource XML under a document directory inherit
+					// the same scope as the referenced Document.xml.
+					scope = documentScope(resolved)
+				}
 				if prior, exists := queued[resolved]; exists && prior != ref.expected {
 					report.addIssue(issueAt(ref.node, SeverityError, StageReference, "reference.root_conflict", fmt.Sprintf("文件 %s 同时被引用为 %s 和 %s", resolved, prior, ref.expected), ref.from), v.opts.MaxErrors)
 					continue
@@ -315,6 +328,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 						from:     ref.from,
 						fromNode: ref.node,
 						baseDir:  path.Dir(ref.from),
+						scope:    scope,
 					})
 				}
 			}
@@ -337,7 +351,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 				report.addIssue(Issue{Severity: SeverityError, Stage: StageReference, Code: "reference.missing", File: item.from, Path: nodePath(item.fromNode), Message: fmt.Sprintf("引用的文件不存在：%s", item.path)}, v.opts.MaxErrors)
 				continue
 			}
-			doc, parseRefs, valid := v.parseXML(file, item.expected, item.baseDir, report)
+			doc, parseRefs, valid := v.parseXML(file, item.expected, item.baseDir, item.scope, report)
 			if doc == nil {
 				continue
 			}
@@ -358,7 +372,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 			if _, exists := documents[name]; exists {
 				continue
 			}
-			doc, parseRefs, _ := v.parseXML(file, "", "", report)
+			doc, parseRefs, _ := v.parseXML(file, "", "", "", report)
 			if doc != nil {
 				documents[name] = doc
 				processReferences(parseRefs)
@@ -367,7 +381,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		}
 	}
 
-	v.semanticChecks(documents, report)
+	v.semanticChecks(documents, archive, report)
 	if v.opts.CheckDigest {
 		v.checkDigests(documents, archive, report)
 		if report.hasStageErrors(StageDigest) {
@@ -471,7 +485,7 @@ func (v *Validator) indexArchive(packageReader *core.Package, report *Report) (*
 	return index, nil
 }
 
-func (v *Validator) parseXML(file packageFile, expected, baseDir string, report *Report) (*xmlDocument, []fileReference, bool) {
+func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, report *Report) (*xmlDocument, []fileReference, bool) {
 	if v.opts.MaxXMLBytes > 0 && int64(len(file.data)) > v.opts.MaxXMLBytes {
 		report.addIssue(Issue{Severity: SeverityError, Stage: StageXML, Code: "xml.too_large", File: file.name, Message: fmt.Sprintf("XML 文件大小 %d 字节超过上限 %d 字节", len(file.data), v.opts.MaxXMLBytes)}, v.opts.MaxErrors)
 		report.setCheck("xml", "failed")
@@ -506,7 +520,10 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir string, report 
 		report.setCheck("xml", "failed")
 		return nil, nil, false
 	}
-	doc := &xmlDocument{file: file, tree: tree, root: root, rootName: root.Name.Local, ofd: rootIsOFD, baseDir: baseDir}
+	if scope == "" {
+		scope = documentScope(file.name)
+	}
+	doc := &xmlDocument{file: file, tree: tree, root: root, rootName: root.Name.Local, ofd: rootIsOFD, baseDir: baseDir, scope: scope}
 	var refs []fileReference
 	if rootIsOFD {
 		refs = collectReferences(doc)
@@ -616,7 +633,7 @@ func collectReferences(doc *xmlDocument) []fileReference {
 	addWithBase := func(node *xdm.Node, base, value, expected string, checkXML bool) {
 		value = strings.TrimSpace(value)
 		if value != "" {
-			refs = append(refs, fileReference{from: doc.file.name, base: base, node: node, value: value, expected: expected, checkXML: checkXML})
+			refs = append(refs, fileReference{from: doc.file.name, base: base, node: node, value: value, expected: expected, checkXML: checkXML, scope: doc.scope})
 		}
 	}
 	add := func(node *xdm.Node, value, expected string, checkXML bool) {
@@ -673,8 +690,8 @@ func collectReferences(doc *xmlDocument) []fileReference {
 				if value != "" {
 					fallbackBase := ""
 					if doc.baseDir != "" {
-						// Some producers write FileLoc relative to the document
-						// directory rather than the Attachments.xml directory.
+						// 某些生产者将 FileLoc 写成相对于文档目录的路径，
+						// 而不是相对于 Attachments.xml 所在目录的路径。
 						fallbackBase = path.Join(doc.baseDir, "_document")
 					}
 					refs = append(refs, fileReference{
@@ -699,8 +716,8 @@ func collectReferences(doc *xmlDocument) []fileReference {
 			case "FontFile", "MediaFile":
 				base := doc.file.name
 				if rootBase := strings.TrimSpace(doc.root.AttrValue("BaseLoc")); rootBase != "" {
-					// resolvePackagePath treats base as a file path, so use a
-					// sentinel file to resolve relative to the resource directory.
+					// resolvePackagePath 将 base 视为文件路径，因此使用一个
+					// 占位文件，使路径能够相对于资源目录解析。
 					base = path.Join(path.Dir(doc.file.name), rootBase, "_resource")
 				}
 				addWithBase(node, base, node.StringValue(), "", false)
@@ -785,9 +802,11 @@ func (index *idIndex) hasAny(scopes []string, value string) bool {
 	return false
 }
 
-func (v *Validator) semanticChecks(documents map[string]*xmlDocument, report *Report) {
+func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *packageIndex, report *Report) {
 	knownIDs := newIDIndex()
 	docIDs := make(map[string]string)
+	fontScopes := make(map[string]map[string]struct{})
+	sharedFonts := make(map[string]bool)
 	for _, name := range sortedDocumentNames(documents) {
 		doc := documents[name]
 		if !doc.ofd {
@@ -808,6 +827,18 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, report *Re
 					}
 					values[value] = struct{}{}
 					knownIDs.add(idDeclaration{value: value, scope: scope, file: name})
+					if scope == "font" {
+						knownIDs.add(idDeclaration{value: value, scope: fontIDScope(doc.scope), file: name})
+						if documentScope(doc.file.name) != doc.scope {
+							sharedFonts[value] = true
+						}
+						scopes := fontScopes[value]
+						if scopes == nil {
+							scopes = make(map[string]struct{})
+							fontScopes[value] = scopes
+						}
+						scopes[doc.scope] = struct{}{}
+					}
 				}
 			}
 			if node.Name.Local == "DocID" && doc.rootName == "OFD" {
@@ -820,6 +851,11 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, report *Re
 			}
 		})
 	}
+	for value, scopes := range fontScopes {
+		if sharedFonts[value] && len(scopes) == 1 {
+			knownIDs.add(idDeclaration{value: value, scope: globalFontIDScope()})
+		}
+	}
 
 	for _, name := range sortedDocumentNames(documents) {
 		doc := documents[name]
@@ -828,12 +864,368 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, report *Re
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
 			for _, reference := range semanticIDReferences(node) {
-				if !knownIDs.hasAny(reference.scopes, reference.value) {
+				scopes := reference.scopes
+				if reference.name == "Font" {
+					scopes = []string{fontIDScope(doc.scope), globalFontIDScope()}
+				}
+				if !knownIDs.hasAny(scopes, reference.value) {
 					report.addIssue(issueAt(node, SeverityError, StageSemantic, "semantic.unresolved_id", fmt.Sprintf("%s %s 未在 OFD 包中找到对应的 ID", reference.name, reference.value), doc.file.name), v.opts.MaxErrors)
 				}
 			}
 		})
 	}
+	v.fontChecks(documents, archive, report)
+}
+
+type fontResourceInfo struct {
+	id      string
+	charset string
+	sfnt    *font.SFNT
+	shared  bool
+}
+
+type fontResourceKey struct {
+	scope string
+	id    string
+}
+
+func documentScope(name string) string {
+	directory := path.Dir(name)
+	if directory == "." {
+		return ""
+	}
+	parts := strings.Split(directory, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
+}
+
+func fontIDScope(document string) string {
+	return "font@" + document
+}
+
+func globalFontIDScope() string {
+	return "font@*"
+}
+
+func (v *Validator) fontChecks(documents map[string]*xmlDocument, archive *packageIndex, report *Report) {
+	resources := make(map[fontResourceKey]*fontResourceInfo)
+	for _, name := range sortedDocumentNames(documents) {
+		doc := documents[name]
+		if !doc.ofd {
+			continue
+		}
+		walkOFDElements(doc.root, func(node *xdm.Node) {
+			if node.Name.Local != "Font" {
+				return
+			}
+			id := strings.TrimSpace(node.AttrValue("ID"))
+			if id == "" {
+				return
+			}
+			key := fontResourceKey{scope: doc.scope, id: id}
+			if _, exists := resources[key]; exists {
+				report.addIssue(issueAt(node, SeverityError, StageSemantic, "semantic.duplicate_font_id", fmt.Sprintf("字体 ID %s 在文档资源作用域 %q 内重复", id, doc.scope), name), v.opts.MaxErrors)
+				return
+			}
+			charsetValue := node.AttrValue("Charset")
+			if strings.TrimSpace(charsetValue) == "" {
+				// CharSet is used by some older producers even though the schema
+				// spells the attribute as Charset.
+				charsetValue = node.AttrValue("CharSet")
+			}
+			charset := strings.ToLower(strings.TrimSpace(charsetValue))
+			if charset == "" {
+				charset = "unicode"
+			}
+			resource := &fontResourceInfo{id: id, charset: charset, shared: documentScope(doc.file.name) != doc.scope}
+			fontFile := firstChild(node, "FontFile")
+			if fontFile == nil {
+				resources[key] = resource
+				return
+			}
+			resolved, err := resolveResourcePath(doc, fontFile.StringValue())
+			if err != nil {
+				resources[key] = resource
+				return
+			}
+			file, ok := archive.get(resolved)
+			if !ok || file.isDir {
+				resources[key] = resource
+				return
+			}
+			sfnt, repaired, parseErr := parseValidatorFont(file.data)
+			if parseErr != nil {
+				report.addIssue(issueAt(fontFile, SeverityError, StageSemantic, "semantic.font_parse_failed", fmt.Sprintf("字体文件 %s 无法解析：%v", resolved, parseErr), name), v.opts.MaxErrors)
+			} else {
+				resource.sfnt = sfnt
+				if repaired {
+					report.addIssue(issueAt(fontFile, SeverityWarning, StageSemantic, "semantic.font_repaired", fmt.Sprintf("字体文件 %s 需要修复后才能解析", resolved), name), v.opts.MaxErrors)
+				}
+			}
+			resources[key] = resource
+		})
+	}
+	fallbackResources := make(map[string]*fontResourceInfo)
+	ambiguousResources := make(map[string]bool)
+	for _, resource := range resources {
+		if !resource.shared {
+			continue
+		}
+		if ambiguousResources[resource.id] {
+			continue
+		}
+		if prior, exists := fallbackResources[resource.id]; exists && prior != resource {
+			delete(fallbackResources, resource.id)
+			ambiguousResources[resource.id] = true
+			continue
+		}
+		fallbackResources[resource.id] = resource
+	}
+
+	for _, name := range sortedDocumentNames(documents) {
+		doc := documents[name]
+		if !doc.ofd {
+			continue
+		}
+		walkOFDElements(doc.root, func(node *xdm.Node) {
+			if node.Name.Local != "TextObject" && node.Name.Local != "Text" {
+				return
+			}
+			fontID := strings.TrimSpace(node.AttrValue("Font"))
+			resource := resources[fontResourceKey{scope: doc.scope, id: fontID}]
+			if resource == nil && !ambiguousResources[fontID] {
+				// A resource file outside a document directory can be shared by
+				// multiple documents; use a unique package-wide resource as a
+				// fallback when no document-local declaration exists.
+				resource = fallbackResources[fontID]
+			}
+			if resource == nil {
+				return
+			}
+			v.checkTextFont(node, resource, name, report)
+		})
+	}
+}
+
+func resolveResourcePath(doc *xmlDocument, value string) (string, error) {
+	base := doc.file.name
+	if rootBase := strings.TrimSpace(doc.root.AttrValue("BaseLoc")); rootBase != "" {
+		base = path.Join(path.Dir(doc.file.name), rootBase, "_resource")
+	}
+	return resolvePackagePath(base, value)
+}
+
+func parseValidatorFont(data []byte) (sfnt *font.SFNT, repaired bool, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			sfnt = nil
+			repaired = false
+			err = fmt.Errorf("字体解析器异常：%v", recovered)
+		}
+	}()
+	fixed, repairErr := fontfix.Repair(data)
+	var fixedSFNT *font.SFNT
+	var fixedErr error
+	if repairErr == nil {
+		fixedSFNT, fixedErr = font.ParseSFNT(fixed, 0)
+	}
+	originalSFNT, originalErr := font.ParseSFNT(data, 0)
+	if repairErr == nil && fixedErr == nil {
+		return fixedSFNT, originalErr != nil, nil
+	}
+	if originalErr == nil {
+		return originalSFNT, false, nil
+	}
+	if repairErr != nil {
+		return nil, false, fmt.Errorf("原始字体：%v；修复失败：%v", originalErr, repairErr)
+	}
+	return nil, false, fmt.Errorf("原始字体：%v；修复后仍无法解析：%v", originalErr, fixedErr)
+}
+
+func (v *Validator) checkTextFont(node *xdm.Node, resource *fontResourceInfo, file string, report *Report) {
+	codes := childElements(node, "TextCode")
+	if len(codes) == 0 {
+		return
+	}
+	transforms := childElements(node, "CGTransform")
+	text := strings.Builder{}
+	totalCharacters := 0
+	for _, code := range codes {
+		value := code.StringValue()
+		text.WriteString(value)
+		totalCharacters += len([]rune(value))
+	}
+	if conflict := fontCharsetConflict(resource.charset, text.String()); conflict != "" {
+		report.addIssue(issueAt(node, SeverityWarning, StageSemantic, "semantic.font_charset_conflict", conflict, file), v.opts.MaxErrors)
+	}
+
+	covered := make(map[int]bool)
+	for _, transform := range transforms {
+		position, positionErr := parseIntAttribute(transform, "CodePosition", 0)
+		if positionErr != nil {
+			report.addIssue(issueAt(transform, SeverityError, StageSemantic, "semantic.cgtransform_invalid", fmt.Sprintf("CGTransform 的 CodePosition 无效：%v", positionErr), file), v.opts.MaxErrors)
+			continue
+		}
+		count, countErr := parseIntAttribute(transform, "CodeCount", 1)
+		if countErr != nil {
+			report.addIssue(issueAt(transform, SeverityError, StageSemantic, "semantic.cgtransform_invalid", fmt.Sprintf("CGTransform 的 CodeCount 无效：%v", countErr), file), v.opts.MaxErrors)
+			continue
+		}
+		if count < 0 {
+			report.addIssue(issueAt(transform, SeverityError, StageSemantic, "semantic.cgtransform_invalid", "CGTransform 的 CodeCount 不能为负数", file), v.opts.MaxErrors)
+			continue
+		}
+		if count == 0 {
+			count = 1
+		}
+		if position < 0 || position >= totalCharacters || count > totalCharacters-position {
+			report.addIssue(issueAt(transform, SeverityError, StageSemantic, "semantic.cgtransform_invalid", "CGTransform 的字符范围超出 TextCode", file), v.opts.MaxErrors)
+			continue
+		}
+		glyphsNode := firstChild(transform, "Glyphs")
+		if glyphsNode == nil {
+			continue
+		}
+		glyphs, glyphErr := parseGlyphIDs(glyphsNode.StringValue())
+		if glyphErr != nil {
+			report.addIssue(issueAt(glyphsNode, SeverityError, StageSemantic, "semantic.cgtransform_glyph_invalid", fmt.Sprintf("CGTransform 的 Glyphs 无效：%v", glyphErr), file), v.opts.MaxErrors)
+			continue
+		}
+		glyphCount, glyphCountErr := parseIntAttribute(transform, "GlyphCount", 0)
+		if glyphCountErr != nil || glyphCount < 0 || glyphCount > len(glyphs) {
+			message := "CGTransform 的 GlyphCount 无效"
+			if glyphCountErr != nil {
+				message = fmt.Sprintf("CGTransform 的 GlyphCount 无效：%v", glyphCountErr)
+			} else if glyphCount < 0 {
+				message = "CGTransform 的 GlyphCount 不能为负数"
+			} else {
+				message = fmt.Sprintf("CGTransform 的 GlyphCount %d 超出 Glyphs 数量 %d", glyphCount, len(glyphs))
+			}
+			report.addIssue(issueAt(transform, SeverityError, StageSemantic, "semantic.cgtransform_invalid", message, file), v.opts.MaxErrors)
+			continue
+		}
+		if glyphCount > 0 {
+			glyphs = glyphs[:glyphCount]
+		}
+		for _, glyphID := range glyphs {
+			if resource.sfnt != nil {
+				if glyphErr := validateFontGlyph(resource.sfnt, glyphID); glyphErr != nil {
+					report.addIssue(issueAt(glyphsNode, SeverityError, StageSemantic, "semantic.cgtransform_glyph_missing", fmt.Sprintf("CGTransform 引用的 glyph %d 在字体 %s 中不存在或无法读取：%v", glyphID, resource.id, glyphErr), file), v.opts.MaxErrors)
+				}
+			}
+		}
+		if len(glyphs) == 0 {
+			continue
+		}
+		for offset := 0; offset < count; offset++ {
+			index := position + offset
+			if index >= 0 && index < totalCharacters {
+				covered[index] = true
+			}
+		}
+	}
+
+	if resource.sfnt == nil {
+		return
+	}
+
+	characterPosition := 0
+	missing := make(map[rune]bool)
+	for _, code := range codes {
+		for _, value := range []rune(code.StringValue()) {
+			if !covered[characterPosition] && !unicode.IsControl(value) {
+				glyphID := resource.sfnt.GlyphIndex(value)
+				if glyphID == 0 {
+					if !missing[value] {
+						report.addIssue(issueAt(code, SeverityError, StageSemantic, "semantic.font_missing_glyph", fmt.Sprintf("字体 %s 不包含文本字符 %q（U+%04X）的 glyph", resource.id, value, value), file), v.opts.MaxErrors)
+						missing[value] = true
+					}
+				} else if glyphErr := validateFontGlyph(resource.sfnt, glyphID); glyphErr != nil {
+					report.addIssue(issueAt(code, SeverityError, StageSemantic, "semantic.font_glyph_invalid", fmt.Sprintf("字体 %s 中字符 %q（U+%04X）对应的 glyph %d 无法读取：%v", resource.id, value, value, glyphID, glyphErr), file), v.opts.MaxErrors)
+				}
+			}
+			characterPosition++
+		}
+	}
+}
+
+func childElements(node *xdm.Node, local string) []*xdm.Node {
+	var result []*xdm.Node
+	for _, child := range node.ChildElements() {
+		if child.Name.URI == ofdNamespace && child.Name.Local == local {
+			result = append(result, child)
+		}
+	}
+	return result
+}
+
+func parseIntAttribute(node *xdm.Node, name string, defaultValue int) (int, error) {
+	value := strings.TrimSpace(node.AttrValue(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	return strconv.Atoi(value)
+}
+
+func parseGlyphIDs(value string) ([]uint16, error) {
+	fields := strings.Fields(value)
+	ids := make([]uint16, 0, len(fields))
+	for _, field := range fields {
+		id, err := strconv.ParseUint(field, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("%q 不是有效的 glyph ID", field)
+		}
+		ids = append(ids, uint16(id))
+	}
+	return ids, nil
+}
+
+func validateFontGlyph(sfnt *font.SFNT, glyphID uint16) (err error) {
+	if sfnt == nil {
+		return errors.New("字体未解析")
+	}
+	if glyphID < sfnt.NumGlyphs() {
+		return nil
+	}
+	// fontfix maps OFD glyph IDs outside the native glyph range to a
+	// private-use cmap entry after repairing subset fonts.
+	mappedGlyphID := sfnt.GlyphIndex(fontfix.GlyphRune(glyphID))
+	if mappedGlyphID == 0 || mappedGlyphID >= sfnt.NumGlyphs() {
+		return fmt.Errorf("glyph ID 超出字体范围（共 %d 个 glyph）", sfnt.NumGlyphs())
+	}
+	return nil
+}
+
+func fontCharsetConflict(charset, text string) string {
+	hasHan := false
+	hasKana := false
+	hasHangul := false
+	for _, value := range text {
+		hasHan = hasHan || unicode.Is(unicode.Han, value)
+		hasKana = hasKana || unicode.Is(unicode.Hiragana, value) || unicode.Is(unicode.Katakana, value)
+		hasHangul = hasHangul || unicode.Is(unicode.Hangul, value)
+	}
+	switch strings.ToLower(strings.TrimSpace(charset)) {
+	case "prc", "big5":
+		if hasKana || hasHangul {
+			return fmt.Sprintf("字体 Charset=%s 与文本中的日文假名或韩文明显不匹配", charset)
+		}
+	case "shift-jis":
+		if hasHangul {
+			return "字体 Charset=shift-jis 与文本中的韩文明显不匹配"
+		}
+	case "wansung", "johab":
+		if hasKana {
+			return fmt.Sprintf("字体 Charset=%s 与文本中的日文假名明显不匹配", charset)
+		}
+	case "symbol":
+		if hasHan || hasKana || hasHangul {
+			return "字体 Charset=symbol 与文本中的东亚文字明显不匹配"
+		}
+	}
+	return ""
 }
 
 type semanticIDReference struct {
@@ -884,7 +1276,7 @@ func semanticIDScopes(name string) []string {
 	case "Font":
 		return []string{"font"}
 	case "RefId", "RefID":
-		// Extensions can target any OFD object, so use the package-wide ID scope.
+		// Extensions 可以指向任意 OFD 对象，因此使用整个包范围的 ID 作用域。
 		return []string{""}
 	default:
 		return nil

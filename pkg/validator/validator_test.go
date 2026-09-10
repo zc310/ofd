@@ -5,9 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	fontpkg "github.com/tdewolff/font"
 )
 
 func TestValidateMinimalPackage(t *testing.T) {
@@ -440,6 +445,117 @@ func TestAttachmentFileLocSupportsDocumentDirectoryBase(t *testing.T) {
 	}
 }
 
+func TestFontChecksRejectUnparseableFont(t *testing.T) {
+	archiveData := makeFontArchive(t, `
+    <Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font>`, `<TextObject ID="2" Font="1"><TextCode>A</TextCode></TextObject>`, "bad font")
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "bad-font.ofd")
+	if !hasIssueCode(report, "semantic.font_parse_failed") {
+		t.Fatalf("missing font parse issue: %+v", report.Issues)
+	}
+}
+
+func TestFontChecksAcceptValidGlyphAndHonorGlyphCount(t *testing.T) {
+	fontData, sfnt := testFont(t)
+	archiveData := makeFontArchive(t, `<Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font>`, `<TextObject ID="2" Font="1"><CGTransform CodePosition="0" CodeCount="1" GlyphCount="1"><Glyphs>1 2</Glyphs></CGTransform><TextCode>A</TextCode></TextObject>`, string(fontData))
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "valid-font.ofd")
+	if hasIssueCode(report, "semantic.cgtransform_invalid") {
+		t.Fatalf("valid GlyphCount produced an issue: %+v", report.Issues)
+	}
+	if hasIssueCode(report, "semantic.cgtransform_glyph_missing") || hasIssueCode(report, "semantic.font_missing_glyph") {
+		t.Fatalf("valid glyph produced a font issue: %+v", report.Issues)
+	}
+	if sfnt.NumGlyphs() <= 1 {
+		t.Fatalf("test font has too few glyphs: %d", sfnt.NumGlyphs())
+	}
+}
+
+func TestFontChecksRejectExcessiveGlyphCount(t *testing.T) {
+	fontData, _ := testFont(t)
+	archiveData := makeFontArchive(t, `<Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font>`, `<TextObject ID="2" Font="1"><CGTransform CodePosition="0" CodeCount="1" GlyphCount="3"><Glyphs>1 2</Glyphs></CGTransform><TextCode>A</TextCode></TextObject>`, string(fontData))
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "bad-glyph-count.ofd")
+	if !hasIssueCode(report, "semantic.cgtransform_invalid") {
+		t.Fatalf("missing excessive GlyphCount issue: %+v", report.Issues)
+	}
+}
+
+func TestFontChecksRejectMissingCGTransformGlyph(t *testing.T) {
+	fontData, sfnt := testFont(t)
+	invalidGlyph := sfnt.NumGlyphs()
+	archiveData := makeFontArchive(t, `<Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font>`, fmt.Sprintf(`<TextObject ID="2" Font="1"><CGTransform CodePosition="0" CodeCount="1" GlyphCount="1"><Glyphs>%d</Glyphs></CGTransform><TextCode>A</TextCode></TextObject>`, invalidGlyph), string(fontData))
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "bad-glyph.ofd")
+	if !hasIssueCode(report, "semantic.cgtransform_glyph_missing") {
+		t.Fatalf("missing CGTransform glyph issue: %+v", report.Issues)
+	}
+}
+
+func TestFontChecksRejectMissingTextGlyph(t *testing.T) {
+	fontData, sfnt := testFont(t)
+	missing := missingFontRune(sfnt)
+	archiveData := makeFontArchive(t, `<Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font>`, fmt.Sprintf(`<TextObject ID="2" Font="1"><TextCode>%c</TextCode></TextObject>`, missing), string(fontData))
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "missing-text-glyph.ofd")
+	if !hasIssueCode(report, "semantic.font_missing_glyph") {
+		t.Fatalf("missing text glyph issue: %+v", report.Issues)
+	}
+}
+
+func TestFontChecksAcceptCharSetAliasAndReportConflict(t *testing.T) {
+	archiveData := makeFontArchive(t, `<Font ID="1" FontName="Test" CharSet="prc"/>`, `<TextObject ID="2" Font="1"><TextCode>한</TextCode></TextObject>`, "")
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "charset.ofd")
+	if !hasIssueCode(report, "semantic.font_charset_conflict") {
+		t.Fatalf("missing CharSet conflict warning: %+v", report.Issues)
+	}
+}
+
+func TestFontResourceIDsAreDocumentScoped(t *testing.T) {
+	fontData, _ := testFont(t)
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml":               `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>one</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody><DocBody><DocInfo><DocID>two</DocID></DocInfo><DocRoot>Doc_1/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":    `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>1</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea><DocumentRes>DocumentRes.xml</DocumentRes></CommonData><Pages><Page ID="1" BaseLoc="Page.xml"/></Pages></Document>`,
+		"Doc_1/Document.xml":    `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>1</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea><DocumentRes>DocumentRes.xml</DocumentRes></CommonData><Pages><Page ID="1" BaseLoc="Page.xml"/></Pages></Document>`,
+		"Doc_0/DocumentRes.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><Fonts><Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font></Fonts></Res>`,
+		"Doc_1/DocumentRes.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><Fonts><Font ID="1" FontName="Test"><FontFile>font.ttf</FontFile></Font></Fonts></Res>`,
+		"Doc_0/Page.xml":        `<Page xmlns="http://www.ofdspec.org/2016"><Content><Layer ID="1"><TextObject ID="2" Font="1"><TextCode>A</TextCode></TextObject></Layer></Content></Page>`,
+		"Doc_1/Page.xml":        `<Page xmlns="http://www.ofdspec.org/2016"><Content><Layer ID="1"><TextObject ID="2" Font="1"><TextCode>A</TextCode></TextObject></Layer></Content></Page>`,
+		"Doc_0/Res/font.ttf":    string(fontData),
+		"Doc_1/Res/font.ttf":    "not a font",
+	})
+	validator, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "scoped-fonts.ofd")
+	if hasIssueCode(report, "semantic.duplicate_font_id") {
+		t.Fatalf("font IDs in separate documents were treated as duplicates: %+v", report.Issues)
+	}
+	if !hasIssueFileCode(report, "semantic.font_parse_failed", "Doc_1/DocumentRes.xml") {
+		t.Fatalf("second document font was not checked in its own scope: %+v", report.Issues)
+	}
+}
+
 func TestRenderJSONIncludesChineseLabels(t *testing.T) {
 	archiveData := makeArchive(t, map[string]string{
 		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>../Document.xml</DocRoot></DocBody></OFD>`,
@@ -540,4 +656,86 @@ func makeArchiveEntries(t *testing.T, entries ...archiveEntry) []byte {
 		t.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func makeFontArchive(t *testing.T, fontXML, textXML, fontData string) []byte {
+	t.Helper()
+	files := map[string]string{
+		"OFD.xml":               `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>font-test</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":    `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>2</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea><DocumentRes>DocumentRes.xml</DocumentRes></CommonData><Pages><Page ID="1" BaseLoc="Page.xml"/></Pages></Document>`,
+		"Doc_0/DocumentRes.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><Fonts>` + fontXML + `</Fonts></Res>`,
+		"Doc_0/Page.xml":        `<Page xmlns="http://www.ofdspec.org/2016"><Content><Layer ID="1">` + textXML + `</Layer></Content></Page>`,
+	}
+	if fontData != "" {
+		files["Doc_0/Res/font.ttf"] = fontData
+	}
+	return makeArchive(t, files)
+}
+
+func testFont(t *testing.T) ([]byte, *fontpkg.SFNT) {
+	t.Helper()
+	for _, name := range []string{
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+	} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			continue
+		}
+		sfnt, _, parseErr := parseValidatorFont(data)
+		if parseErr == nil && sfnt != nil && sfnt.NumGlyphs() > 2 && sfnt.GlyphIndex('A') != 0 {
+			return data, sfnt
+		}
+	}
+	if archiveData, err := os.ReadFile("../../test/testdata/intro.ofd"); err == nil {
+		if archive, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData))); err == nil {
+			for _, entry := range archive.File {
+				if !strings.HasSuffix(entry.Name, "font_83_83.cff") {
+					continue
+				}
+				file, openErr := entry.Open()
+				if openErr != nil {
+					continue
+				}
+				data, readErr := io.ReadAll(file)
+				_ = file.Close()
+				if readErr != nil {
+					continue
+				}
+				sfnt, _, parseErr := parseValidatorFont(data)
+				if parseErr == nil && sfnt != nil && sfnt.NumGlyphs() > 2 && sfnt.GlyphIndex('A') != 0 {
+					return data, sfnt
+				}
+			}
+		}
+	}
+	t.Skip("no test TrueType font is available")
+	return nil, nil
+}
+
+func missingFontRune(sfnt *fontpkg.SFNT) rune {
+	for value := rune(0xE000); value <= 0xF8FF; value++ {
+		if sfnt.GlyphIndex(value) == 0 {
+			return value
+		}
+	}
+	return '\uFFFF'
+}
+
+func hasIssueCode(report Report, code string) bool {
+	for _, issue := range report.Issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIssueFileCode(report Report, code, file string) bool {
+	for _, issue := range report.Issues {
+		if issue.Code == code && issue.File == file {
+			return true
+		}
+	}
+	return false
 }
