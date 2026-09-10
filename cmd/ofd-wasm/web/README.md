@@ -45,10 +45,8 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。当前 `service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
-当前示例的 Service Worker 缓存名为 `ofd-reader-shell-v7`，Web Worker 使用 `worker.js?v=7`。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，至少需要执行以下操作之一：
+当前示例的 Service Worker 缓存名为 `ofd-reader-shell-v7`，页面脚本和 Web Worker 使用不带查询参数的固定路径。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，应修改 `service-worker.js` 中的 `CACHE_NAME`，例如改为 `ofd-reader-shell-v8`，以淘汰旧缓存并重新缓存资源。
 
-- 修改 `service-worker.js` 中的 `CACHE_NAME`，例如改为 `ofd-reader-shell-v3`；
-- 同时修改 `viewer.js` 中的 Worker 查询版本，例如改为 `worker.js?v=3`。
 
 建议生产环境配置以下响应头：
 
@@ -81,8 +79,8 @@ performance.getEntriesByType('resource').filter(item => item.name.includes('work
 WASM 启动后会注册 `window.ofd`：
 
 ```javascript
-ofd.open(new Uint8Array(await file.arrayBuffer()), { fallbackFonts: [] })
-ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false)
+ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false) // WASM 生命周期内注册一次
+ofd.open(new Uint8Array(await file.arrayBuffer()))
 ofd.pageCount()
 ofd.pages()
 ofd.pageInfo(0)

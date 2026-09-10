@@ -6,6 +6,9 @@
   <meta name="theme-color" content="#172033">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400..600,0..1,0" rel="stylesheet">
   <title>OFD WASM 阅读器</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
@@ -15,7 +18,7 @@
     .brand { display: flex; min-width: 180px; flex: 1 1 220px; align-items: center; gap: 10px; }
     .brand strong { white-space: nowrap; }
     #document-name { overflow: hidden; max-width: 260px; color: #b9c4d6; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-    .toolbar-group { display: flex; align-items: center; gap: 6px; padding-left: 10px; border-left: 1px solid #ffffff2e; }
+     .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid #ffffff2e; }
     .toolbar-group.search-group { position: relative; min-width: 0; }
     .toolbar-group.view-group { position: relative; }
     .view-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; min-width: 190px; gap: 8px; padding: 10px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
@@ -60,13 +63,15 @@
      .export-error[hidden] { display: none; }
      .export-actions { display: flex; justify-content: flex-end; gap: 8px; }
      .export-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
-    .file-button { display: inline-flex; min-height: 34px; align-items: center; padding: 6px 11px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
+     .file-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
     .file-button:hover { background: #4b95dc; }
     #cancel-open[hidden] { display: none; }
     #cancel-action[hidden] { display: none; }
     #file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
     button, input { font: inherit; }
-    button { min-height: 34px; padding: 6px 11px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
+     button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
+     .material-symbols-outlined { font-size: 19px; line-height: 1; font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
+     .mobile-toolbar-toggle { display: none; }
     header button { border-color: #ffffff38; background: #263552; color: #fff; }
     header button:hover:not(:disabled) { background: #34476c; }
     input { min-height: 34px; padding: 5px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; }
@@ -167,42 +172,46 @@
     #drop-hint { display: none; }
     @keyframes loading-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     @media (max-width: 620px) {
-      header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 8px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
+      header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
       header > * { margin: 0; }
       .brand { grid-column: 1 / -1; min-width: 0; }
       #document-name { max-width: calc(100vw - 150px); }
       .toolbar-group { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; padding: 0 0 3px; border-left: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
       .toolbar-group > * { flex: 0 0 auto; white-space: nowrap; }
       .file-group, .recent-group, .search-group, .view-group { position: relative; width: auto; overflow: visible; }
-      .file-group { grid-column: 1; justify-content: flex-start; }
-      .recent-group { grid-column: 2; justify-content: flex-end; }
-      .page-group, .zoom-group { grid-column: 1 / -1; width: 100%; justify-content: flex-start; }
-      .search-group { grid-column: 1; justify-content: flex-start; }
-      .view-group { grid-column: 2; justify-content: flex-end; }
+       .file-group { grid-column: 1; justify-content: center; }
+       .recent-group { grid-column: 2; justify-content: center; }
+       .search-group { grid-column: 3; justify-content: flex-end; }
+       .view-group { grid-column: 4; justify-content: center; }
+       .mobile-toolbar-toggle { display: inline-flex; grid-column: 5; justify-content: center; }
+       .toolbar-group.recent-group { position: static; }
+       header .recent-panel { top: calc(100% + 8px); right: 10px; left: 10px; z-index: 20; width: auto; max-height: calc(100vh - 120px); max-height: calc(100dvh - 120px); overflow-y: auto; }
+       .page-group, .zoom-group { display: none; grid-column: 1 / -1; width: 100%; justify-content: flex-start; }
+       header.mobile-toolbar-expanded .page-group, header.mobile-toolbar-expanded .zoom-group { display: flex; }
       .page-group > span { display: inline-flex; align-items: center; }
       .view-panel, .recent-panel, .search-panel { position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 0; }
       .search-panel { right: auto; left: 0; }
       .recent-panel, .search-panel { width: min(360px, calc(100vw - 20px)); }
        .view-panel { width: min(240px, calc(100vw - 20px)); }
        .page-spread { justify-content: flex-start; }
-       .reader { grid-template-columns: 1fr; padding: 10px; background: #e0e4e9; }
-      #thumbnails { position: sticky; top: 0; z-index: 3; display: flex; max-height: 112px; padding: 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; background: #cfd5deee; scrollbar-width: thin; }
-       .thumbnail { flex: 0 0 72px; min-height: 96px; }
-       .thumbnail-placeholder { flex: 0 0 72px; min-height: 96px; }
-       .thumbnail img { max-height: 90px; }
+       .reader { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 10px; background: #e0e4e9; }
+      #thumbnails { position: relative; display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: stretch; width: calc(100% + 20px); max-height: 108px; min-height: 108px; margin: -10px -10px 0; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; overscroll-behavior: contain; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
+       #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; height: 96px; min-height: 96px; }
+       #thumbnails .thumbnail img { max-width: 100%; max-height: 90px; }
        body.dark-reading .reader { background: #1f252f; }
-      .page-group button, .zoom-group button, .file-button { min-width: 40px; min-height: 40px; }
-      .page-group, .zoom-group { min-height: 40px; }
+       .page-group button, .zoom-group button, .file-button { min-width: 32px; min-height: 32px; }
+       .page-group, .zoom-group { min-height: 32px; }
       #status { flex-wrap: wrap; padding: 7px 10px; }
       #status-message { flex: 1 1 100%; }
       #render-progress { flex: 1 1 auto; width: auto; }
       #back-to-top { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
     }
      @media (max-width: 380px) {
-      header { gap: 5px; }
-      .page-group, .zoom-group { gap: 4px; }
-      .page-group button, .zoom-group button, .file-button { padding-inline: 8px; }
-      #page-number { width: 50px; }
+       header { gap: 5px; }
+       .page-group, .zoom-group { gap: 4px; }
+        .page-group button, .zoom-group button, .file-button { padding-inline: 6px; }
+       .button-text { display: none; }
+       #page-number { width: 50px; }
        #back-to-top { min-width: 40px; min-height: 40px; }
      }
   </style>
@@ -215,48 +224,30 @@
       <span id="document-name">未打开文档</span>
     </div>
     <div class="toolbar-group file-group">
-      <label class="file-button" for="file">打开文件</label>
+       <label class="file-button" for="file" title="打开文件"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span><span class="button-text">打开</span></label>
       <input id="file" type="file" accept=".ofd,application/ofd">
       <button id="cancel-open" type="button" hidden>取消</button>
     </div>
     <div class="toolbar-group recent-group" aria-label="最近打开">
-      <button id="recent-toggle" type="button" aria-controls="recent-panel" aria-expanded="false">最近</button>
+       <button id="recent-toggle" type="button" title="最近打开" aria-label="最近打开" aria-controls="recent-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">history</span></button>
       <div id="recent-panel" class="recent-panel" hidden>
         <div class="recent-header"><span>最近打开</span><button id="recent-clear" class="recent-clear" type="button">清空</button></div>
         <div id="recent-empty" class="recent-empty">暂无最近打开的文件</div>
         <div id="recent-list"></div>
       </div>
     </div>
-    <div class="toolbar-group page-group" aria-label="页面导航">
-      <button id="previous" type="button" disabled>上一页</button>
-      <span><input id="page-number" type="number" min="1" value="1" size="3" disabled> / <span id="page-count">0</span></span>
-      <button id="next" type="button" disabled>下一页</button>
-      <button id="print-page" type="button" disabled>打印</button>
-      <button id="export-document" type="button" disabled>导出</button>
-      <button id="copy-page-text" type="button" disabled>复制文字</button>
-      <button id="copy-all-text" type="button" disabled>复制全文</button>
-    </div>
-    <div class="toolbar-group zoom-group" aria-label="缩放">
-      <button id="zoom-out" type="button" disabled aria-label="缩小">-</button>
-      <span id="zoom-label">100%</span>
-      <button id="zoom-in" type="button" disabled aria-label="放大">+</button>
-      <button id="zoom-fit" type="button" disabled>适应宽度</button>
-      <button id="zoom-fit-page" type="button" disabled>适应页面</button>
-      <button id="rotate-page" type="button" disabled>旋转</button>
-      <button id="reading-mode" type="button" disabled aria-pressed="false">阅读模式</button>
-    </div>
     <div class="toolbar-group search-group" aria-label="搜索">
-      <button id="search-toggle" type="button" disabled aria-controls="search-panel" aria-expanded="false">搜索</button>
+       <button id="search-toggle" type="button" title="搜索" aria-label="搜索" disabled aria-controls="search-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
       <div id="search-panel" class="search-panel" hidden>
         <input id="search" type="search" placeholder="搜索文字" disabled>
-        <button id="search-button" type="button" disabled>查找</button>
-        <button id="search-previous" type="button" disabled aria-label="上一个搜索结果">‹</button>
-        <button id="search-next" type="button" disabled aria-label="下一个搜索结果">›</button>
+         <button id="search-button" type="button" title="查找" aria-label="查找" disabled><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+         <button id="search-previous" type="button" title="上一个搜索结果" disabled aria-label="上一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+         <button id="search-next" type="button" title="下一个搜索结果" disabled aria-label="下一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
         <span id="search-status" aria-live="polite"></span>
       </div>
     </div>
     <div class="toolbar-group view-group" aria-label="显示设置">
-      <button id="view-toggle" type="button" disabled aria-controls="view-panel" aria-expanded="false">显示</button>
+       <button id="view-toggle" type="button" title="显示设置" aria-label="显示设置" disabled aria-controls="view-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
       <div id="view-panel" class="view-panel" hidden>
          <label class="view-option"><input id="show-thumbnails" type="checkbox" checked>显示缩略图</label>
          <label class="view-option"><input id="show-text-layer" type="checkbox" checked>显示文字层</label>
@@ -267,6 +258,27 @@
            <option value="double-odd-left">双页，奇数页在左</option>
          </select></label>
       </div>
+    </div>
+    <div class="toolbar-group mobile-toolbar-toggle">
+      <button id="mobile-toolbar-toggle" type="button" title="展开工具栏" aria-label="展开工具栏" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button>
+    </div>
+    <div class="toolbar-group page-group" aria-label="页面导航">
+       <button id="previous" type="button" title="上一页" aria-label="上一页" disabled><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+      <span><input id="page-number" type="number" min="1" value="1" size="3" disabled> / <span id="page-count">0</span></span>
+       <button id="next" type="button" title="下一页" aria-label="下一页" disabled><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+       <button id="print-page" type="button" title="打印" aria-label="打印" disabled><span class="material-symbols-outlined" aria-hidden="true">print</span></button>
+       <button id="export-document" type="button" title="导出" aria-label="导出" disabled><span class="material-symbols-outlined" aria-hidden="true">download</span></button>
+       <button id="copy-page-text" type="button" title="复制当前页文字" aria-label="复制当前页文字" disabled><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
+       <button id="copy-all-text" type="button" title="复制全文" aria-label="复制全文" disabled><span class="material-symbols-outlined" aria-hidden="true">text_snippet</span></button>
+    </div>
+    <div class="toolbar-group zoom-group" aria-label="缩放">
+       <button id="zoom-out" type="button" title="缩小" aria-label="缩小" disabled><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
+      <span id="zoom-label">100%</span>
+       <button id="zoom-in" type="button" title="放大" aria-label="放大" disabled><span class="material-symbols-outlined" aria-hidden="true">add</span></button>
+       <button id="zoom-fit" type="button" title="适应宽度" aria-label="适应宽度" disabled><span class="material-symbols-outlined" aria-hidden="true">width</span></button>
+       <button id="zoom-fit-page" type="button" title="适应页面" aria-label="适应页面" disabled><span class="material-symbols-outlined" aria-hidden="true">fit_screen</span></button>
+       <button id="rotate-page" type="button" title="旋转 0°" aria-label="旋转 0°" disabled><span class="material-symbols-outlined" aria-hidden="true">rotate_right</span></button>
+       <button id="reading-mode" type="button" title="阅读模式" aria-label="阅读模式" disabled aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">fullscreen</span></button>
     </div>
   </header>
   <div id="status">
@@ -346,7 +358,7 @@
       </div>
     </main>
   </div>
-  <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部">↑</button>
-  <script src="viewer.js?v=11"></script>
+   <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+  <script src="viewer.js"></script>
 </body>
 </html>
