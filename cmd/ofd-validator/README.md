@@ -21,6 +21,16 @@ JSON 或 PDF 报告。它适合文档排查、兼容性检查、问题归档以�
 校验阶段、错误代码、文件位置和 XML 路径等详细信息。JSON 报告保留机器可读字段，并提供对应的中文
 标签，适合 CI 和脚本处理；Markdown 和 PDF 报告适合归档和阅读。
 
+## 截图
+
+### Markdown 报告
+
+![ofd-validator Markdown 报告](../../docs/screenshots/validator/markdown.png)
+
+### PDF 报告
+
+![ofd-validator PDF 报告](../../docs/screenshots/validator/pdf.png)
+
 ## 构建
 
 在项目根目录执行：
