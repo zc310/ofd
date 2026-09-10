@@ -1,0 +1,301 @@
+{
+  "version":1,
+  "document":{
+    "id":"advanced-features",
+    "title":"OFD 高级图元与资源特性示例",
+    "author":"ofd-creator",
+    "creator":"ofd-creator",
+    "creatorVersion":"1",
+    "pageSize":{"name":"A4"},
+    "annotations":[
+      {
+        "page":6,
+        "items":[
+          {
+            "id":7001,
+            "type":"Stamp",
+            "creator":"ofd-creator",
+            "lastModDate":"2026-01-02",
+            "subtype":"CompositeAndPageBlock",
+            "boundary":{"x":20,"y":100,"width":170,"height":70},
+            "items":[
+              {"type":"composite","x":25,"y":110,"width":70,"height":45,"resourceId":301},
+              {
+                "type":"page-block",
+                "items":[
+                  {"type":"text","x":100,"y":125,"width":75,"height":12,"value":"Appearance / PageBlock","font":"楷体","size":7,"fill":true,"fillColor":{"r":30,"g":70,"b":140}}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "page":7,
+        "items":[
+          {
+            "id":7002,
+            "type":"Highlight",
+            "creator":"ofd-creator",
+            "lastModDate":"2026-01-02",
+            "print":false,
+            "boundary":{"x":25,"y":95,"width":160,"height":35},
+            "remark":"Print=false：用于 PDF 输出时验证注解不打印",
+            "items":[
+              {"type":"path","x":25,"y":95,"width":160,"height":35,"data":"M 0 0 L 160 0 L 160 35 L 0 35 C","fill":true,"fillColor":{"r":255,"g":220,"b":80,"alpha":150}}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "resources":{
+    "images":[{"id":101,"name":"linux.png","format":"PNG","file":"docs/screenshots/viewer/linux.png"},{"id":102,"name":"android.png","format":"PNG","file":"docs/screenshots/viewer/android.png"},{"id":103,"name":"windows.png","format":"PNG","file":"docs/screenshots/viewer/windows.png"}],
+    "public":[],
+    "composites":[
+      {
+        "id":301,
+        "width":120,
+        "height":80,
+        "items":[
+          {"type":"path","x":48,"y":30,"width":35,"height":18,"data":"M 0 0 L 35 0 L 35 18 L 0 18 C","fill":true,"fillColor":{"r":255,"g":120,"b":40}},
+          {"type":"text","x":48,"y":52,"width":60,"height":10,"value":"实际内容偏移","font":"楷体","size":6,"fill":true,"fillColor":{"r":40,"g":50,"b":100}}
+        ]
+      }
+    ]
+  },
+  "templates":[
+    {
+      "id":11,
+      "name":"Background Template",
+      "zOrder":"Background",
+      "items":[
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":242,"g":246,"b":252}},
+        {"type":"text","x":15,"y":12,"width":180,"height":10,"value":"Background Template","font":"楷体","size":5,"fill":true,"fillColor":{"r":150,"g":165,"b":190}}
+      ]
+    },
+    {
+      "id":12,
+      "name":"Foreground Template",
+      "zOrder":"Foreground",
+      "items":[
+        {"type":"path","x":15,"y":278,"width":180,"height":0.8,"data":"M 0 0 L 180 0","stroke":true,"fill":false,"lineWidth":0.6,"strokeColor":{"r":110,"g":130,"b":165}},
+        {"type":"text","x":15,"y":282,"width":180,"height":8,"value":"Foreground Template / ZOrder","font":"楷体","size":4,"fill":true,"fillColor":{"r":90,"g":110,"b":145}}
+      ]
+    }
+  ],
+  "pages":[
+    {
+      "templates":[{"id":11,"zOrder":"Background"},{"id":12,"zOrder":"Foreground"}],
+      "items":[
+        {"type":"text","x":25,"y":75,"width":160,"height":20,"value":"Background + Foreground Template","font":"楷体","size":12,"weight":700,"fill":true,"fillColor":{"r":30,"g":65,"b":125}},
+        {"type":"text","x":25,"y":105,"width":160,"height":12,"value":"页面正文位于两个模板之间","font":"楷体","size":7,"fill":true,"fillColor":{"r":70,"g":80,"b":100}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"path","x":15,"y":35,"width":180,"height":75,"data":"M 0 0 L 180 0 L 180 75 L 0 75 C","fill":true,"fillColor":{"r":235,"g":242,"b":255}},
+        {
+          "type":"text",
+          "x":25,
+          "y":50,
+          "width":160,
+          "height":16,
+          "value":"TextObject + Path Clip",
+          "font":"楷体",
+          "size":10,
+          "fill":true,
+          "fillColor":{"r":30,"g":90,"b":170},
+          "clips":[
+            {
+              "areas":[
+                {
+                  "path":{"boundary":{"x":0,"y":0,"width":85,"height":18},"data":"M 0 0 L 85 0 L 85 18 L 0 18 C","fill":true}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type":"text",
+          "x":25,
+          "y":85,
+          "width":160,
+          "height":16,
+          "value":"TextObject + Text Clip",
+          "font":"楷体",
+          "size":10,
+          "fill":true,
+          "fillColor":{"r":180,"g":70,"b":65},
+          "clips":[
+            {
+              "areas":[
+                {
+                  "text":{"boundary":{"x":0,"y":0,"width":90,"height":16},"font":"楷体","size":10,"value":"Text Clip"}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "items":[
+        {
+          "type":"path",
+          "x":15,
+          "y":35,
+          "width":180,
+          "height":180,
+          "data":"M 0 0 L 180 0 L 180 180 L 0 180 C",
+          "fill":true,
+          "fillColor":{
+            "r":245,
+            "g":245,
+            "b":250,
+            "pattern":{
+              "width":24,
+              "height":24,
+              "xStep":24,
+              "yStep":24,
+              "reflectMethod":"RowAndColumn",
+              "relativeTo":"Object",
+              "items":[
+                {"type":"text","x":1,"y":3,"width":18,"height":7,"value":"P","font":"楷体","size":5,"fill":true,"fillColor":{"r":40,"g":70,"b":145}},
+                {"type":"image","x":16,"y":14,"width":5,"height":5,"resourceId":101},
+                {
+                  "type":"path",
+                  "x":3,
+                  "y":13,
+                  "width":11,
+                  "height":7,
+                  "data":"M 0 0 L 11 0 L 11 7 L 0 7 C",
+                  "fill":true,
+                  "fillColor":{
+                    "axial":{"startPoint":"0 0","endPoint":"1 1","segments":[{"position":0,"color":{"r":40,"g":180,"b":220}},{"position":1,"color":{"r":220,"g":70,"b":160}}]}
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {"type":"text","x":25,"y":20,"width":170,"height":12,"value":"Pattern CellContent: Text + Image + Gradient","font":"楷体","size":7,"fill":true,"fillColor":{"r":30,"g":55,"b":110}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"path","x":15,"y":35,"width":180,"height":80,"data":"M 0 0 L 180 0 L 180 80 L 0 80 C","fill":true,"fillColor":{"r":247,"g":241,"b":232}},
+        {"type":"text","x":35,"y":62,"width":140,"height":25,"value":"Non-uniform Scale + Rotate + Shear CTM","font":"楷体","size":10,"weight":700,"ctm":[1.25,0.35,0.22,0.78,8,4],"fill":true,"fillColor":{"r":150,"g":65,"b":35}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":25,"y":25,"width":165,"height":12,"value":"ImageObject Alpha=128","font":"楷体","size":8,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {"type":"path","x":25,"y":55,"width":150,"height":80,"data":"M 0 0 L 150 0 L 150 80 L 0 80 C","fill":true,"fillColor":{"r":255,"g":210,"b":80}},
+        {"type":"image","x":45,"y":70,"width":110,"height":50,"resourceId":101,"alpha":128}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":22,"width":175,"height":12,"value":"ImageMask + Substitution + Border","font":"楷体","size":8,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {
+          "type":"image",
+          "x":35,
+          "y":65,
+          "width":140,
+          "height":90,
+          "resourceId":101,
+          "imageMask":102,
+          "substitution":103,
+          "border":{"lineWidth":1.2,"horizontalRadius":5,"verticalRadius":5,"dashPattern":[4,2],"color":{"r":35,"g":100,"b":180}}
+        }
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":25,"width":175,"height":14,"value":"Annotation Appearance: CompositeObject + PageBlock","font":"楷体","size":8,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {"type":"path","x":20,"y":70,"width":170,"height":60,"data":"M 0 0 L 170 0 L 170 60 L 0 60 C","fill":true,"fillColor":{"r":238,"g":245,"b":255}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":25,"width":175,"height":14,"value":"Annotation Print=false / PDF output","font":"楷体","size":9,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {"type":"text","x":30,"y":80,"width":155,"height":18,"value":"页面正文：批注 Print=false，不应出现在 PDF 打印结果","font":"楷体","size":7,"fill":true,"fillColor":{"r":70,"g":80,"b":100}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":25,"width":175,"height":14,"value":"Nested PublicRes + relative MediaFile","font":"楷体","size":9,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {
+          "type":"image",
+          "x":35,
+          "y":70,
+          "width":140,
+          "height":85,
+          "resourceId":101,
+          "border":{"lineWidth":0.8,"color":{"r":80,"g":125,"b":190}}
+        },
+        {"type":"text","x":35,"y":170,"width":140,"height":12,"value":"public/SharedRes.xml + Media/relative-public.png","font":"楷体","size":5,"fill":true,"fillColor":{"r":80,"g":90,"b":110}}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":25,"width":175,"height":14,"value":"CompositeGraphicUnit: transparent margin + offset content","font":"楷体","size":8,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {"type":"path","x":25,"y":70,"width":160,"height":110,"data":"M 0 0 L 160 0 L 160 110 L 0 110 C","fill":true,"fillColor":{"r":245,"g":247,"b":250},"stroke":true,"lineWidth":0.6,"strokeColor":{"r":205,"g":215,"b":230}},
+        {"type":"composite","x":45,"y":80,"width":120,"height":80,"resourceId":301}
+      ]
+    },
+    {
+      "items":[
+        {"type":"text","x":20,"y":20,"width":175,"height":14,"value":"High-tile Pattern + oversized Mesh Text","font":"楷体","size":8,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
+        {
+          "type":"path",
+          "x":15,
+          "y":45,
+          "width":180,
+          "height":210,
+          "data":"M 0 0 L 180 0 L 180 210 L 0 210 C",
+          "fill":true,
+          "fillColor":{
+            "r":245,
+            "g":245,
+            "b":248,
+            "pattern":{
+              "width":1,
+              "height":1,
+              "xStep":0.75,
+              "yStep":0.75,
+              "relativeTo":"Page",
+              "items":[
+                {"type":"path","x":0,"y":0,"width":0.5,"height":0.5,"data":"M 0 0 L 0.5 0 L 0.5 0.5 L 0 0.5 C","fill":true,"fillColor":{"r":80,"g":110,"b":180}}
+              ]
+            }
+          }
+        },
+        {
+          "type":"text",
+          "x":25,
+          "y":120,
+          "width":170,
+          "height":100,
+          "value":"Mesh Text 超大网格渐变文字 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ 复杂渐变压力测试",
+          "font":"楷体",
+          "size":42,
+          "weight":700,
+          "fill":true,
+          "fillColor":{
+            "gouraud":{
+              "extend":0,
+              "points":[
+                {"x":0,"y":0,"edgeFlag":0,"color":{"r":20,"g":80,"b":220}},
+                {"x":160,"y":0,"edgeFlag":1,"color":{"r":40,"g":210,"b":150}},
+                {"x":0,"y":45,"edgeFlag":2,"color":{"r":230,"g":80,"b":80}},
+                {"x":160,"y":45,"edgeFlag":2,"color":{"r":210,"g":70,"b":220}}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

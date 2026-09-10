@@ -1,0 +1,45 @@
+# Hello World OFD 示例
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/helloworld.yaml -o helloworld.ofd --validate
+
+version: 1
+
+document:
+  id: helloworld
+  title: Hello World
+  author: ofd-creator
+  creator: ofd-creator
+  creatorVersion: "1"
+  pageSize:
+    name: A4
+
+pages:
+  - items:
+      - type: text
+        x: 35
+        y: 110
+        width: 140
+        height: 24
+        value: Hello, World!
+        font: 楷体
+        size: 18
+        weight: 700
+        fill: true
+        fillColor:
+          r: 30
+          g: 70
+          b: 140
+
+      - type: text
+        x: 35
+        y: 142
+        width: 140
+        height: 12
+        value: 欢迎使用 OFD
+        font: 楷体
+        size: 7
+        fill: true
+        fillColor:
+          r: 90
+          g: 100
+          b: 120

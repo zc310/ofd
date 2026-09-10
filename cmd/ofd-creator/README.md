@@ -135,3 +135,14 @@ ofd-creator -i document.yaml -o - > result.ofd
 ```
 
 错误信息始终写入标准错误，不会污染标准输出中的 OFD 二进制数据。
+
+## 格式化JSON
+
+```shell
+go install github.com/zc310/pretty/cmd/pretty@latest
+
+pretty  -max-depth 10 -min-depth 2 --input text-directions.json -output text-directions.json
+pretty  -max-depth 10 -min-depth 2 --input path-fill-rules.json -output path-fill-rules.json
+pretty  -max-depth 10 -min-depth 2 --input line-styles.json -output line-styles.json
+pretty  -max-depth 10 -min-depth 2 --input advanced-features.json -output advanced-features.json
+```
