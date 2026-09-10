@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=11');
+    this.worker = new Worker('worker.js');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -97,7 +97,7 @@ class OFDWorkerClient {
 
   addFallbackFont(data, family, weight = 400, italic = false) {
     const buffer = data instanceof ArrayBuffer
-      ? data
+      ? data.slice(0)
       : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
     return this.request('addFallbackFont', {
       data: buffer, family, weight, italic,
@@ -232,6 +232,7 @@ const zoomLabel = document.querySelector('#zoom-label');
 const searchInput = document.querySelector('#search');
 const searchToggle = document.querySelector('#search-toggle');
 const searchPanel = document.querySelector('#search-panel');
+const mobileToolbarToggle = document.querySelector('#mobile-toolbar-toggle');
 const searchButton = document.querySelector('#search-button');
 const searchPrevious = document.querySelector('#search-previous');
 const searchNext = document.querySelector('#search-next');
@@ -257,6 +258,7 @@ const fallbackFontTimeout = 45_000;
 const fallbackFontFamily = 'OFD-Google-Noto-Sans-SC';
 const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
+let fallbackFontRegistration;
 const transparentRenderBackground = '#00000000';
 const recentDatabaseName = 'ofd-reader-v1';
 const recentStoreName = 'files';
@@ -862,6 +864,19 @@ function updateSearchStatus(message) {
   searchStatus.textContent = message;
 }
 
+function keepThumbnailVisible(button) {
+  if (!window.matchMedia('(max-width: 620px)').matches) {
+    button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    return;
+  }
+  const left = button.offsetLeft;
+  const right = left + button.offsetWidth;
+  const visibleLeft = thumbnailsElement.scrollLeft;
+  const visibleRight = visibleLeft + thumbnailsElement.clientWidth;
+  if (left < visibleLeft) thumbnailsElement.scrollLeft = left;
+  else if (right > visibleRight) thumbnailsElement.scrollLeft = right - thumbnailsElement.clientWidth;
+}
+
 function setCurrent(index) {
   if (index < 0 || index >= pageInfos.length) return;
   const changed = current !== index;
@@ -872,7 +887,7 @@ function setCurrent(index) {
     button.classList.toggle('active', active);
     if (active) {
       button.setAttribute('aria-current', 'page');
-      if (changed) button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      if (changed) keepThumbnailVisible(button);
     } else {
       button.removeAttribute('aria-current');
     }
@@ -1000,7 +1015,8 @@ function restorePageRotation() {
     const value = Number.parseInt(localStorage.getItem(rotationStorageKey()) || '0', 10);
     if ([0, 90, 180, 270].includes(value)) pageRotation = value;
   } catch (_) {}
-  rotatePageButton.textContent = `旋转 ${pageRotation}°`;
+  rotatePageButton.title = `旋转 ${pageRotation}°`;
+  rotatePageButton.setAttribute('aria-label', `旋转 ${pageRotation}°`);
 }
 
 function rotatePage() {
@@ -1012,7 +1028,8 @@ function rotatePage() {
   try {
     localStorage.setItem(rotationStorageKey(), String(pageRotation));
   } catch (_) {}
-  rotatePageButton.textContent = `旋转 ${pageRotation}°`;
+  rotatePageButton.title = `旋转 ${pageRotation}°`;
+  rotatePageButton.setAttribute('aria-label', `旋转 ${pageRotation}°`);
 }
 
 function touchDistance(touches) {
@@ -1496,22 +1513,25 @@ async function openSelectedFile(selected) {
     const data = await selected.arrayBuffer();
     if (generation !== documentGeneration) return;
     const recentData = data.slice(0);
-    let fallbackFonts;
     try {
-      fallbackFonts = await preloadFallbackFonts();
+      const fallbackFonts = await preloadFallbackFonts();
+      if (!fallbackFontRegistration) {
+        fallbackFontRegistration = Promise.all(fallbackFonts.map(font => engine.addFallbackFont(
+          font.data,
+          fallbackFontFamily,
+          font.weight,
+          false,
+        ))).catch(error => {
+          fallbackFontRegistration = undefined;
+          throw error;
+        });
+      }
+      await fallbackFontRegistration;
     } catch (_) {
       // 仍然可以使用浏览器本地回退字体打开文档。
     }
     if (generation !== documentGeneration) return;
-    const options = fallbackFonts ? {
-      fallbackFonts: fallbackFonts.map(font => ({
-        data: font.data.slice(0),
-        family: fallbackFontFamily,
-        weight: font.weight,
-        italic: false,
-      })),
-    } : {};
-    openRequest = engine.open(data, options);
+    openRequest = engine.open(data);
     const result = await openRequest;
     if (generation !== documentGeneration) return;
     await injectFonts(result.fonts, generation);
@@ -2149,7 +2169,9 @@ function setSearchPanelOpen(open) {
 function setReadingMode(enabled) {
   document.body.classList.toggle('reading-mode', enabled);
   readingMode.setAttribute('aria-pressed', String(enabled));
-  readingMode.textContent = enabled ? '退出阅读' : '阅读模式';
+  const readingLabel = enabled ? '退出阅读' : '阅读模式';
+  readingMode.title = readingLabel;
+  readingMode.setAttribute('aria-label', readingLabel);
   if (enabled && !document.fullscreenElement && document.documentElement.requestFullscreen) {
     document.documentElement.requestFullscreen().catch(() => {});
   } else if (!enabled && document.fullscreenElement && document.exitFullscreen) {
@@ -2160,6 +2182,18 @@ function setReadingMode(enabled) {
 function setViewPanelOpen(open) {
   viewPanel.hidden = !open;
   viewToggle.setAttribute('aria-expanded', String(open));
+}
+
+function setMobileToolbarExpanded(expanded) {
+  const header = document.querySelector('header');
+  header?.classList.toggle('mobile-toolbar-expanded', expanded);
+  mobileToolbarToggle?.setAttribute('aria-expanded', String(expanded));
+  if (mobileToolbarToggle) {
+    mobileToolbarToggle.title = expanded ? '收起工具栏' : '展开工具栏';
+    mobileToolbarToggle.setAttribute('aria-label', expanded ? '收起工具栏' : '展开工具栏');
+    const icon = mobileToolbarToggle.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = expanded ? 'expand_less' : 'expand_more';
+  }
 }
 
 function setThumbnailsVisible(visible) {
@@ -2271,6 +2305,9 @@ zoomFitPage.addEventListener('click', fitPageZoom);
 rotatePageButton.addEventListener('click', rotatePage);
 readingMode.addEventListener('click', () => setReadingMode(!document.body.classList.contains('reading-mode')));
 viewToggle.addEventListener('click', () => setViewPanelOpen(viewPanel.hidden));
+mobileToolbarToggle.addEventListener('click', () => {
+  setMobileToolbarExpanded(!mobileToolbarToggle.matches('[aria-expanded="true"]'));
+});
 showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbnails.checked));
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
 darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.checked));
@@ -2284,7 +2321,7 @@ window.addEventListener('resize', () => {
 updateBackToTop();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js?v=11').catch(error => {
+    navigator.serviceWorker.register('service-worker.js').catch(error => {
       console.warn('[OFD] Service Worker 注册失败', error);
     });
   });
@@ -2307,7 +2344,8 @@ document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement && document.body.classList.contains('reading-mode')) {
     document.body.classList.remove('reading-mode');
     readingMode.setAttribute('aria-pressed', 'false');
-    readingMode.textContent = '阅读模式';
+    readingMode.title = '阅读模式';
+    readingMode.setAttribute('aria-label', '阅读模式');
   }
 });
 window.addEventListener('keydown', event => {

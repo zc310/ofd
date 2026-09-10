@@ -17,8 +17,9 @@ import (
 )
 
 type wasmApp struct {
-	mu     sync.Mutex
-	reader *webreader.Reader
+	mu            sync.Mutex
+	reader        *webreader.Reader
+	fallbackFonts []webreader.FontSource
 }
 
 const wasmMaxRenderPages = 64
@@ -54,6 +55,14 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	if err != nil {
 		return errorValue(err)
 	}
+	a.mu.Lock()
+	for _, source := range a.fallbackFonts {
+		if containsFallbackFont(options.FallbackFonts, source) {
+			continue
+		}
+		options.FallbackFonts = append(options.FallbackFonts, cloneFontSource(source))
+	}
+	a.mu.Unlock()
 	reader, err := webreader.OpenWithOptions(data, options)
 	if err != nil {
 		return errorValue(err)
@@ -157,14 +166,42 @@ func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
 		}
 		source.Italic = args[3].Bool()
 	}
-	reader, err := a.currentReader()
-	if err != nil {
-		return errorValue(err)
+	a.mu.Lock()
+	alreadyRegistered := containsFallbackFont(a.fallbackFonts, source)
+	reader := a.reader
+	a.mu.Unlock()
+	if !alreadyRegistered && reader != nil {
+		if err := reader.AddFallbackFont(source); err != nil {
+			return errorValue(err)
+		}
 	}
-	if err := reader.AddFallbackFont(source); err != nil {
-		return errorValue(err)
+	if !alreadyRegistered {
+		a.mu.Lock()
+		if !containsFallbackFont(a.fallbackFonts, source) {
+			a.fallbackFonts = append(a.fallbackFonts, cloneFontSource(source))
+		}
+		a.mu.Unlock()
 	}
 	return nil
+}
+
+func containsFallbackFont(fonts []webreader.FontSource, source webreader.FontSource) bool {
+	for _, font := range fonts {
+		if font.Family == source.Family && font.Weight == source.Weight && font.Italic == source.Italic {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneFontSource(source webreader.FontSource) webreader.FontSource {
+	return webreader.FontSource{
+		Family: source.Family,
+		Name:   source.Name,
+		Weight: source.Weight,
+		Italic: source.Italic,
+		Data:   append([]byte(nil), source.Data...),
+	}
 }
 
 func (a *wasmApp) close(_ js.Value, _ []js.Value) any {
