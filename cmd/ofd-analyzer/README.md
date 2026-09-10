@@ -75,6 +75,10 @@ ofd-analyzer --tree --format json --pretty document.ofd
 报告始终包含 OFD ZIP 包统计；使用 `--tree` 时，报告会在文本和 Markdown 中附加 ZIP 包目录树，在 JSON 的 `package.tree` 中提供嵌套目录节点。
 目录树只表示包内实际路径，不展开 XML 节点；文件引用关系仍单独输出。目录按目录优先、名称排序，文件节点包含类型和解压后大小。
 
+## 截图
+
+![ofd-analyzer Markdown 报告](../../docs/screenshots/analyzer/markdown.png)
+
 `resources` 是所有资源类别的总汇总，包含图片、字体、绘制参数、复合图元、颜色空间、模板和 Pattern；
 各资源类别也通过对应的独立字段提供详细统计。字体专用字段为 `embedded`，绘制参数专用字段为
 `inheritance_cycles`，不会出现在其他资源类别中。

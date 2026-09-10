@@ -4,6 +4,10 @@
 
 阅读器的“打印”按钮支持打印当前页、全部页面或自定义范围（例如 `1-3,5`）。
 
+## 截图
+
+![OFD WASM 网页阅读器](../../../docs/screenshots/wasm/webreader.png)
+
 示例使用 `worker.js` 将解析和渲染放在 Web Worker 中；页面使用 `IntersectionObserver` 按可视区域附近懒加载，并分别缓存正文页和缩略图的 Blob URL。工具栏支持 50% 到 300% 缩放，页面缩放时按 DPI 重新渲染正文，缩略图保持 36 DPI。
 
 ## 构建

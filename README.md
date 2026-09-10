@@ -238,6 +238,8 @@ text := creator.Text{
 }
 ```
 
+创建器默认不会自动生成 `DeltaX` 和 `DeltaY`。如需根据字体度量补全多字符文字的字符间距，可通过 `CreateOptions{CompleteTextCodeDeltas: true}` 启用；命令行工具对应使用 `--complete-text-code-deltas`。
+
 如果需要指定字形编号映射，可以使用 `CGTransforms`。`CodePosition` 是相对于整个文字对象的字符位置，从 `0` 开始；`Glyphs` 中的编号使用字体字形编号：
 
 ```go
