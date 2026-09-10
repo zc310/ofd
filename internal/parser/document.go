@@ -329,7 +329,7 @@ func (p *Document) parseAnnotations() error {
 			fileName = models.StLoc.Join(dir, page.FileLoc.String())
 		}
 		if err = p.FileCache.ReadXML(fileName.String(), &pa); err != nil {
-			slog.Error(err.Error())
+			slog.Warn("读取页面注释失败", "file", fileName.String(), "page_id", page.PageID, "error", err)
 			continue
 		}
 		p.Annotations[models.StID(page.PageID)] = &pa

@@ -485,7 +485,7 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 }
 
 // RenderPDF 将多个页面按传入顺序栅格化后写入一个 PDF 文档。
-func (r *Reader) RenderPDF(indices []int, options RenderOptions) ([]byte, error) {
+func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []byte, err error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
@@ -513,10 +513,25 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) ([]byte, error)
 	}
 	var output bytes.Buffer
 	var document *pdf.PDF
+	defer func() {
+		if document == nil {
+			return
+		}
+		if closeErr := document.Close(); closeErr != nil {
+			if err == nil {
+				outputBytes = nil
+				err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
+			}
+			return
+		}
+		if err == nil {
+			outputBytes = output.Bytes()
+		}
+	}()
 	for position, index := range indices {
-		page, err := r.pdfPageLocked(index, background)
-		if err != nil {
-			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, err)
+		page, pageErr := r.pdfPageLocked(index, background)
+		if pageErr != nil {
+			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
 		}
 		if document == nil {
 			document = pdf.New(&output, page.W, page.H, nil)
@@ -535,9 +550,6 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) ([]byte, error)
 	if document == nil {
 		return nil, errors.New("PDF 文档创建失败")
 	}
-	if err := document.Close(); err != nil {
-		return nil, fmt.Errorf("关闭 PDF 文档失败: %w", err)
-	}
 	return output.Bytes(), nil
 }
 
@@ -547,15 +559,9 @@ func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canva
 	}
 	ref := r.pages[index]
 	ref.page.EnsurePhysicalBox()
-	document := ref.document
-	if document == nil || document.Document == nil {
-		return nil, errors.New("页面渲染上下文为空")
-	}
-	if !sameColor(background, r.options.Background) {
-		document = render.NewDocument(background, ref.document.Document)
-		for _, source := range r.fallbackFonts {
-			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
-		}
+	document, err := r.pageDocumentLocked(ref, background)
+	if err != nil {
+		return nil, err
 	}
 	return document.Page(ref.page)
 }
@@ -587,15 +593,9 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 		background = color.Transparent
 	}
 	// NewDocument 保证页面背景和渲染内容使用同一个文档级渲染上下文。
-	document := ref.document
-	if document == nil || document.Document == nil {
-		return nil, errors.New("页面渲染上下文为空")
-	}
-	if !sameColor(background, r.options.Background) {
-		document = render.NewDocument(background, ref.document.Document)
-		for _, source := range r.fallbackFonts {
-			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
-		}
+	document, err := r.pageDocumentLocked(ref, background)
+	if err != nil {
+		return nil, err
 	}
 	page, err := document.Page(ref.page)
 	if err != nil {
@@ -608,6 +608,20 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 		return nil, fmt.Errorf("编码第 %d 页失败: %w", index, err)
 	}
 	return output.Bytes(), nil
+}
+
+func (r *Reader) pageDocumentLocked(ref pageRef, background color.Color) (*render.Document, error) {
+	document := ref.document
+	if document == nil || document.Document == nil {
+		return nil, errors.New("页面渲染上下文为空")
+	}
+	if !sameColor(background, r.options.Background) {
+		document = render.NewDocument(background, ref.document.Document)
+		for _, source := range r.fallbackFonts {
+			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+		}
+	}
+	return document, nil
 }
 
 // Close 释放文档资源。Close 可以安全地重复调用。

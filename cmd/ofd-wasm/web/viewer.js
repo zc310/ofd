@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=7');
+    this.worker = new Worker('worker.js?v=11');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -912,7 +912,7 @@ function setPageLayout(value) {
   pageCache.clear();
   thumbnailCache.clear();
   resetRenderProgress();
-  buildPages(documentGeneration);
+  buildPages();
 }
 
 function applyPageWidth() {
@@ -1307,7 +1307,7 @@ function flushThumbnailBatch() {
   });
 }
 
-function buildPages(generation) {
+function buildPages() {
   updateThumbnailLayout();
   resizeObserver?.disconnect();
   pagesElement.replaceChildren();
@@ -1520,7 +1520,7 @@ async function openSelectedFile(selected) {
     currentDocumentKey = documentKey(selected);
     current = restoreReadingPosition(selected, pageInfos.length);
     restorePageRotation();
-    buildPages(generation);
+    buildPages();
     setStatus(`${selected.name}，共 ${pageInfos.length} 页。页面进入附近区域时才会渲染。`);
     updateRenderProgress();
     void saveRecentFile(selected, recentData);
@@ -1653,11 +1653,7 @@ function setExportProgress(completed, total) {
 function exportIndexes() {
   if (exportRange.value === 'current') return [current];
   if (exportRange.value === 'all') return pageInfos.map((_, index) => index);
-  try {
-    return parsePrintRange(exportCustomRange.value);
-  } catch (error) {
-    throw new Error(error.message.replace(/^打印范围/, '导出范围').replace(/^打印页码/, '导出页码'));
-  }
+  return parsePrintRange(exportCustomRange.value, '导出');
 }
 
 function updateExportRangeControl() {
@@ -1708,23 +1704,21 @@ async function decodePNG(data) {
     return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
   }
   const url = URL.createObjectURL(blob);
-  try {
-    const image = await new Promise((resolve, reject) => {
-      const value = new Image();
-      value.onload = () => resolve(value);
-      value.onerror = () => reject(new Error('PNG 图片解码失败'));
-      value.src = url;
-    });
-    return {
-      source: image,
-      width: image.naturalWidth,
-      height: image.naturalHeight,
-      close: () => URL.revokeObjectURL(url),
+  const image = await new Promise((resolve, reject) => {
+    const value = new Image();
+    value.onload = () => resolve(value);
+    value.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('PNG 图片解码失败'));
     };
-  } catch (error) {
-    URL.revokeObjectURL(url);
-    throw error;
-  }
+    value.src = url;
+  });
+  return {
+    source: image,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    close: () => URL.revokeObjectURL(url),
+  };
 }
 
 async function convertImageFormat(data, format, background) {
@@ -1894,13 +1888,21 @@ async function startExport() {
   let dpi;
   try {
     indexes = exportIndexes();
-    dpi = Number(exportDPI.value);
-    if (!Number.isInteger(dpi) || dpi < 1 || dpi > 1200) throw new Error('DPI 必须是 1-1200 之间的整数');
-    if (!indexes.length) throw new Error('请选择至少一页');
   } catch (error) {
     exportError.textContent = error.message;
     exportError.hidden = false;
     if (exportRange.value === 'custom') exportCustomRange.focus();
+    return;
+  }
+  dpi = Number(exportDPI.value);
+  if (!Number.isInteger(dpi) || dpi < 1 || dpi > 1200) {
+    exportError.textContent = 'DPI 必须是 1-1200 之间的整数';
+    exportError.hidden = false;
+    return;
+  }
+  if (!indexes.length) {
+    exportError.textContent = '请选择至少一页';
+    exportError.hidden = false;
     return;
   }
   closeExportDialog();
@@ -1910,13 +1912,15 @@ async function startExport() {
   try {
     await exportDocumentPages(indexes, dpi, exportFormat.value, exportBackgroundColor());
   } catch (error) {
-    if (generation !== documentGeneration) return;
-    if (documentActionCancelRequested || isCancelledError(error)) setStatus('已取消导出。');
-    else setStatus(`导出失败：${error.message}`);
+    if (generation === documentGeneration) {
+      if (documentActionCancelRequested || isCancelledError(error)) setStatus('已取消导出。');
+      else setStatus(`导出失败：${error.message}`);
+    }
   } finally {
-    if (generation !== documentGeneration) return;
-    exportActive = false;
-    setDocumentActionBusy(false);
+    if (generation === documentGeneration) {
+      exportActive = false;
+      setDocumentActionBusy(false);
+    }
   }
 }
 
@@ -1946,23 +1950,20 @@ async function copyTextToClipboard(text) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
-    } else {
-      throw new Error('Clipboard API unavailable');
+      return;
     }
   } catch (_) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.append(textarea);
-    textarea.select();
-    const copied = document.execCommand('copy');
-    textarea.remove();
-    if (!copied) {
-      throw new Error('Copy command failed');
-    }
   }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.append(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('Copy command failed');
 }
 
 async function copyCurrentPageText() {
@@ -2016,9 +2017,8 @@ async function copyDocumentText() {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
   setDocumentActionBusy(true);
-  const generation = documentGeneration;
   try {
-    const { text, failed } = await collectDocumentText(generation);
+    const { text, failed } = await collectDocumentText(documentGeneration);
     if (!text) {
       showCopyFeedback(failed ? `全文读取失败：${failed} 页无法读取。` : '文档没有可复制的文字。');
       return;
@@ -2032,20 +2032,20 @@ async function copyDocumentText() {
   }
 }
 
-function parsePrintRange(value) {
+function parsePrintRange(value, label = '打印') {
   const indexes = new Set();
   for (const part of value.split(',')) {
     const range = part.trim();
-    if (!range) throw new Error('打印范围不能为空');
+    if (!range) throw new Error(`${label}范围不能为空`);
     const values = range.split('-').map(item => item.trim());
     if (values.length > 2 || values.some(item => !/^\d+$/.test(item))) {
-      throw new Error(`打印范围格式无效：${range}`);
+      throw new Error(`${label}范围格式无效：${range}`);
     }
     const start = Number(values[0]);
     const end = values.length === 2 ? Number(values[1]) : start;
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
         start < 1 || end < start || end > pageInfos.length) {
-      throw new Error(`打印页码必须在 1 到 ${pageInfos.length} 之间`);
+      throw new Error(`${label}页码必须在 1 到 ${pageInfos.length} 之间`);
     }
     for (let page = start; page <= end; page++) indexes.add(page - 1);
   }
@@ -2100,7 +2100,7 @@ async function printSelectedPages(indexes) {
     setStatus('打印窗口被浏览器阻止，请允许弹出窗口后重试。');
     return;
   }
-  printWindow.document.write('<!doctype html><title>正在准备打印...</title><p>正在准备打印...</p>');
+  printWindow.document.write('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>正在准备打印...</title></head><body><p>正在准备打印...</p></body></html>');
   printWindow.document.close();
   setDocumentActionBusy(true);
   const generation = documentGeneration;
@@ -2109,13 +2109,17 @@ async function printSelectedPages(indexes) {
     await Promise.all(indexes.map(index => loadPage(index)));
     throwIfDocumentActionCancelled(generation);
     const images = indexes.map(index => pageCards[index]?.querySelector('.page-image'));
-    if (images.some(image => !image?.src || image.hidden)) throw new Error('选中的页面尚未渲染完成');
+    if (images.some(image => !image?.src || image.hidden)) {
+      printWindow.close();
+      setStatus('选中的页面尚未渲染完成。');
+      return;
+    }
     const title = escapeHTML(documentName.textContent || 'OFD 文档');
     const imageMarkup = images.map((image, index) =>
       `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${indexes[index] + 1} 页"></section>`
     ).join('');
     printWindow.document.open();
-    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}</style></head><body>${imageMarkup}</body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}</style></head><body>${imageMarkup}</body></html>`);
     printWindow.document.close();
     printWindow.onload = async () => {
       try {
@@ -2224,7 +2228,11 @@ printForm.addEventListener('submit', event => {
   event.preventDefault();
   try {
     const indexes = selectedPrintIndexes();
-    if (!indexes.length) throw new Error('请选择至少一页');
+    if (!indexes.length) {
+      printError.textContent = '请选择至少一页';
+      printError.hidden = false;
+      return;
+    }
     closePrintDialog();
     void printSelectedPages(indexes);
   } catch (error) {
@@ -2276,7 +2284,7 @@ window.addEventListener('resize', () => {
 updateBackToTop();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(error => {
+    navigator.serviceWorker.register('service-worker.js?v=11').catch(error => {
       console.warn('[OFD] Service Worker 注册失败', error);
     });
   });
@@ -2367,7 +2375,7 @@ document.addEventListener('click', event => {
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
   if (!searchPanel.hidden && !event.target.closest('.search-group')) setSearchPanelOpen(false);
 });
-document.addEventListener('copy', event => {
+document.addEventListener('copy', () => {
   const selection = window.getSelection();
   if (!selection?.toString().trim() || !selection.anchorNode?.parentElement?.closest('.text-layer')) return;
   showCopyFeedback(`已复制 ${selection.toString().length} 个字符`);

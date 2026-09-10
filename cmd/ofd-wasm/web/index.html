@@ -121,13 +121,14 @@
     body:fullscreen { background: #cfd5de; }
     body:fullscreen #status { display: none; }
     body:fullscreen .reader { max-width: 100%; padding: 12px 18px; }
-     .reader { --sidebar-end: 120px; display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: linear-gradient(to right, #c3ccd8 0 var(--sidebar-end), #e0e4e9 var(--sidebar-end) 100%); }
-     .double-thumbnail-layout .reader { --sidebar-end: 206px; grid-template-columns: 190px minmax(0, 1fr); }
-     #thumbnails { position: sticky; top: 16px; display: grid; align-content: start; gap: 10px; max-height: calc(100vh - 32px); padding-left: 8px; overflow: auto; }
+      .reader { --thumbnail-column: 190px; --sidebar-end: 206px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: linear-gradient(to right, #c3ccd8 0 var(--sidebar-end), #e0e4e9 var(--sidebar-end) 100%); }
+      .reader > #thumbnails { grid-column: 1; }
+      .reader > #pages { grid-column: 2; }
+      #thumbnails { position: sticky; top: 16px; display: grid; align-content: start; gap: 10px; width: 100%; min-width: 0; max-height: calc(100vh - 32px); padding-left: 8px; overflow: auto; }
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
      .double-thumbnail-layout .thumbnail { width: auto; min-height: 138px; }
      .thumbnail-placeholder { min-height: 138px; border-radius: 6px; background: transparent; }
-    .thumbnail { position: relative; display: grid; place-items: center; width: 100%; min-height: 112px; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
+     .thumbnail { position: relative; display: grid; place-items: center; width: 100%; min-height: 112px; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
     .thumbnail:hover { border-color: #7da7d5; box-shadow: 0 3px 10px #1720332e; }
     .thumbnail.active { border-color: #2476bd; box-shadow: inset 0 0 0 2px #2476bd, 0 3px 10px #1720332e; }
     .thumbnail img { display: block; max-width: 100%; max-height: 136px; object-fit: contain; }
@@ -185,7 +186,6 @@
        .view-panel { width: min(240px, calc(100vw - 20px)); }
        .page-spread { justify-content: flex-start; }
        .reader { grid-template-columns: 1fr; padding: 10px; background: #e0e4e9; }
-       .double-thumbnail-layout .reader { grid-template-columns: 1fr; }
       #thumbnails { position: sticky; top: 0; z-index: 3; display: flex; max-height: 112px; padding: 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; background: #cfd5deee; scrollbar-width: thin; }
        .thumbnail { flex: 0 0 72px; min-height: 96px; }
        .thumbnail-placeholder { flex: 0 0 72px; min-height: 96px; }
@@ -347,6 +347,6 @@
     </main>
   </div>
   <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部">↑</button>
-  <script src="viewer.js"></script>
+  <script src="viewer.js?v=11"></script>
 </body>
 </html>

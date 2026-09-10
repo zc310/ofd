@@ -1042,7 +1042,8 @@ func (s *buildState) preparePublicResources(values []PublicResource) error {
 		if err := doc.ReadFromBytes(value.Data); err != nil {
 			return fmt.Errorf("公共资源 %s XML 无效: %w", name, err)
 		}
-		if doc.Root() == nil || doc.Root().Tag != "Res" || doc.Root().NamespaceURI() != ofNamespace {
+		root := doc.Root()
+		if root == nil || root.Tag != "Res" || root.NamespaceURI() != ofNamespace {
 			return fmt.Errorf("公共资源 %s 根元素必须是 OFD 命名空间中的 Res", name)
 		}
 		seen[name] = true
@@ -1264,7 +1265,8 @@ func (s *buildState) preparePageResources(pageIndex int, resources []PageResourc
 			if err := doc.ReadFromBytes(resource.Data); err != nil {
 				return fmt.Errorf("页面 %d 资源文件 %d XML 无效: %w", pageIndex+1, resourceIndex+1, err)
 			}
-			if doc.Root() == nil || doc.Root().Tag != "Res" || doc.Root().NamespaceURI() != ofNamespace {
+			root := doc.Root()
+			if root == nil || root.Tag != "Res" || root.NamespaceURI() != ofNamespace {
 				return fmt.Errorf("页面 %d 资源文件 %d 根元素必须是 OFD 命名空间中的 Res", pageIndex+1, resourceIndex+1)
 			}
 			files, err := preparePageResourceFiles(resource.Files, pageIndex, resourceIndex)
