@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=2');
+    this.worker = new Worker('worker.js?v=7');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -241,6 +241,7 @@ const viewPanel = document.querySelector('#view-panel');
 const showThumbnails = document.querySelector('#show-thumbnails');
 const showTextLayer = document.querySelector('#show-text-layer');
 const darkReading = document.querySelector('#dark-reading');
+const pageLayoutSelect = document.querySelector('#page-layout');
 const engine = new OFDWorkerClient();
 const pageCache = new BlobURLCache(64 << 20);
 const thumbnailCache = new BlobURLCache(16 << 20);
@@ -286,6 +287,15 @@ let openRequest;
 let opening = false;
 let zoom = 1;
 let zoomMode = 'fit';
+const pageLayoutStorageKey = 'ofd-page-layout';
+let pageLayout = (() => {
+  try {
+    const value = localStorage.getItem(pageLayoutStorageKey);
+    return ['single', 'double', 'double-odd-left'].includes(value) ? value : 'single';
+  } catch (_) {
+    return 'single';
+  }
+})();
 let zoomGeneration = 0;
 let thumbnailsVisible = true;
 let textLayerVisible = true;
@@ -307,6 +317,65 @@ let copyFeedbackTimer;
 let statusBeforeCopy;
 let recentFiles = [];
 let currentDocumentKey = '';
+let pageSpreads = [];
+
+function pageLayoutIsDouble() {
+  return pageLayout !== 'single';
+}
+
+function updateThumbnailLayout() {
+  document.body.classList.toggle('double-thumbnail-layout', pageLayoutIsDouble());
+}
+
+function pageSpreadGroups() {
+  if (pageLayout === 'single') return pageInfos.map((_, index) => [index]);
+  const groups = [];
+  let index = pageLayout === 'double' ? -1 : 0;
+  if (index === -1) groups.push([-1, 0]);
+  else if (pageInfos.length) groups.push([0, 1 < pageInfos.length ? 1 : -1]);
+  index = pageLayout === 'double' ? 1 : 2;
+  for (; index < pageInfos.length; index += 2) groups.push([index, index + 1 < pageInfos.length ? index + 1 : -1]);
+  return groups;
+}
+
+function spreadPositionForPage(index) {
+  return pageSpreads.findIndex(spread => spread.pages.includes(index));
+}
+
+function firstPageInSpread(position) {
+  return pageSpreads[position]?.pages.find(index => index >= 0) ?? -1;
+}
+
+function currentSpreadPosition() {
+  const position = spreadPositionForPage(current);
+  return position >= 0 ? position : 0;
+}
+
+function moveToSpread(delta) {
+  if (!pageInfos.length) return;
+  const position = currentSpreadPosition() + delta;
+  const target = firstPageInSpread(Math.max(0, Math.min(pageSpreads.length - 1, position)));
+  if (target >= 0) goTo(target);
+}
+
+function layoutBaseWidth() {
+  return pageLayoutIsDouble() ? 2 * 820 + 18 : 820;
+}
+
+function spreadDimensions(position) {
+  const pages = pageSpreads[position]?.pages || [];
+  const heights = pages
+    .filter(index => index >= 0 && pageInfos[index])
+    .map(index => {
+      const info = pageInfos[index];
+      const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
+      return 820 / ratio;
+    });
+  return {
+    width: pageLayoutIsDouble() ? layoutBaseWidth() : 820,
+    height: Math.max(...heights, 180),
+  };
+}
 
 function documentKey(file) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -742,8 +811,8 @@ function updateNavigation() {
   pageNumber.max = pageInfos.length || 1;
   pageCount.textContent = pageInfos.length;
   pageNumber.disabled = pageInfos.length === 0;
-  previous.disabled = current <= 0 || pageInfos.length === 0;
-  next.disabled = current + 1 >= pageInfos.length || pageInfos.length === 0;
+  previous.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() <= 0 : current <= 0);
+  next.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() + 1 >= pageSpreads.length : current + 1 >= pageInfos.length);
   printPage.disabled = documentActionBusy || pageInfos.length === 0;
   exportDocument.disabled = documentActionBusy || pageInfos.length === 0;
   copyPageText.disabled = documentActionBusy || pageInfos.length === 0;
@@ -760,6 +829,7 @@ function updateNavigation() {
   rotatePageButton.disabled = pageInfos.length === 0;
   readingMode.disabled = pageInfos.length === 0;
   viewToggle.disabled = pageInfos.length === 0;
+  pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 }
 
@@ -818,6 +888,33 @@ function goTo(index) {
   loadPage(index);
 }
 
+function navigatePage(delta) {
+  if (pageLayoutIsDouble()) {
+    moveToSpread(delta);
+    return;
+  }
+  goTo(current + delta);
+}
+
+function setPageLayout(value) {
+  if (!['single', 'double', 'double-odd-left'].includes(value) || value === pageLayout) return;
+  pageLayout = value;
+  pageLayoutSelect.value = value;
+  updateThumbnailLayout();
+  try {
+    localStorage.setItem(pageLayoutStorageKey, value);
+  } catch (_) {}
+  pageObserver?.disconnect();
+  activePageObserver?.disconnect();
+  thumbnailObserver?.disconnect();
+  cancelRequests(pageRequests);
+  cancelRequests(thumbnailRequests);
+  pageCache.clear();
+  thumbnailCache.clear();
+  resetRenderProgress();
+  buildPages(documentGeneration);
+}
+
 function applyPageWidth() {
   pageCards.forEach(card => {
     const index = Number(card.dataset.index);
@@ -835,6 +932,20 @@ function applyPageWidth() {
     surface.style.width = rotated ? `${info.width / info.height * 100}%` : '100%';
     surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
     thumbnailButtons[index]?.querySelector('img')?.style.setProperty('transform', `rotate(${pageRotation}deg)`);
+  });
+  pageSpreads.forEach((spread, position) => {
+    const dimensions = spreadDimensions(position);
+    spread.element.style.width = `${dimensions.width * zoom}px`;
+    spread.element.style.minHeight = `${dimensions.height * zoom}px`;
+    spread.element.style.gap = `${18 * zoom}px`;
+    spread.element.querySelectorAll('.page-placeholder').forEach(placeholder => {
+      placeholder.style.width = `${820 * zoom}px`;
+      const index = Number(placeholder.dataset.index);
+      const info = pageInfos[index];
+      if (!info) return;
+      const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
+      placeholder.style.aspectRatio = String(ratio);
+    });
   });
 }
 
@@ -863,20 +974,20 @@ function setZoom(value, mode = 'manual') {
 
 function fitWidthZoom() {
   if (!pageInfos.length || !pagesElement.clientWidth) return;
-  setZoom(Math.max(0.5, Math.min(3, pagesElement.clientWidth / 820)), 'fit');
+  setZoom(Math.max(0.5, Math.min(3, pagesElement.clientWidth / layoutBaseWidth())), 'fit');
 }
 
 function fitPageZoom() {
-  const info = pageInfos[current];
-  if (!info || !pagesElement.clientWidth || !info.width || !info.height) return;
+  const dimensions = spreadDimensions(currentSpreadPosition());
+  if (!dimensions.height || !pagesElement.clientWidth) return;
   const readerStyle = getComputedStyle(document.querySelector('.reader'));
   const horizontalPadding = parseFloat(readerStyle.paddingLeft) + parseFloat(readerStyle.paddingRight);
   const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
   const availableWidth = Math.max(1, Math.min(pagesElement.clientWidth - horizontalPadding, window.innerWidth - horizontalPadding));
   const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
-  const pageRatio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
-  const pageWidth = Math.min(availableWidth, availableHeight * pageRatio);
-  setZoom(Math.max(0.5, Math.min(3, pageWidth / 820)), 'page');
+  const spreadRatio = dimensions.width / dimensions.height;
+  const spreadWidth = Math.min(availableWidth, availableHeight * spreadRatio);
+  setZoom(Math.max(0.5, Math.min(3, spreadWidth / dimensions.width)), 'page');
 }
 
 function rotationStorageKey() {
@@ -952,7 +1063,7 @@ function handleTouchEnd(event) {
   const deltaY = touch.clientY - touchStartY;
   touchStartDistance = 0;
   if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
-  goTo(current + (deltaX < 0 ? 1 : -1));
+  navigatePage(deltaX < 0 ? 1 : -1);
 }
 
 function headerHeight() {
@@ -1197,11 +1308,18 @@ function flushThumbnailBatch() {
 }
 
 function buildPages(generation) {
+  updateThumbnailLayout();
   resizeObserver?.disconnect();
   pagesElement.replaceChildren();
   thumbnailsElement.replaceChildren();
   pageCards = [];
   thumbnailButtons = [];
+  pageSpreads = pageSpreadGroups().map(pages => {
+    const element = document.createElement('div');
+    element.className = 'page-spread';
+    pagesElement.append(element);
+    return { pages, element };
+  });
 
   pageInfos.forEach((info, index) => {
     const card = document.createElement('article');
@@ -1218,7 +1336,8 @@ function buildPages(generation) {
     textLayer.className = 'text-layer';
     surface.append(image, textLayer);
     card.append(surface);
-    pagesElement.append(card);
+    const spread = pageSpreads[spreadPositionForPage(index)];
+    spread?.element.append(card);
     pageCards.push(card);
 
     const thumbnail = document.createElement('button');
@@ -1244,6 +1363,41 @@ function buildPages(generation) {
     thumbnailsElement.append(thumbnail);
     thumbnailButtons.push(thumbnail);
   });
+
+  if (pageLayoutIsDouble()) {
+    const thumbnails = document.createDocumentFragment();
+    pageSpreads.forEach(spread => {
+      spread.pages.forEach(index => {
+        if (index >= 0) {
+          thumbnails.append(thumbnailButtons[index]);
+          return;
+        }
+        const placeholder = document.createElement('div');
+        placeholder.className = 'thumbnail-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        thumbnails.append(placeholder);
+      });
+    });
+    thumbnailsElement.replaceChildren(thumbnails);
+  }
+
+  pageSpreads.forEach(spread => {
+    spread.pages.filter(index => index < 0).forEach(() => {
+      const reference = spread.pages.find(index => index >= 0);
+      const info = pageInfos[reference];
+      const placeholder = document.createElement('div');
+      placeholder.className = 'page-placeholder';
+      placeholder.dataset.index = '-1';
+      if (info) {
+        const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
+        placeholder.style.aspectRatio = String(ratio);
+      }
+      if (spread.pages[0] < 0) spread.element.prepend(placeholder);
+      else spread.element.append(placeholder);
+    });
+  });
+
+  pageLayoutSelect.value = pageLayout;
 
   pageObserver = new IntersectionObserver(entries => {
     for (const entry of entries) {
@@ -1276,7 +1430,7 @@ function buildPages(generation) {
   pageCards.forEach(card => resizeObserver.observe(card));
   if (zoomMode === 'fit') {
     const available = pagesElement.clientWidth;
-    if (available > 0) zoom = Math.max(0.5, Math.min(3, available / 820));
+    if (available > 0) zoom = Math.max(0.5, Math.min(3, available / layoutBaseWidth()));
   }
   applyPageWidth();
   empty.hidden = pageInfos.length > 0;
@@ -2060,8 +2214,8 @@ pagesElement.addEventListener('drop', event => {
   }
   openSelectedFile(dropped);
 });
-previous.addEventListener('click', () => goTo(current - 1));
-next.addEventListener('click', () => goTo(current + 1));
+previous.addEventListener('click', () => navigatePage(-1));
+next.addEventListener('click', () => navigatePage(1));
 cancelAction.addEventListener('click', cancelDocumentAction);
 printPage.addEventListener('click', openPrintDialog);
 exportDocument.addEventListener('click', openExportDialog);
@@ -2112,6 +2266,7 @@ viewToggle.addEventListener('click', () => setViewPanelOpen(viewPanel.hidden));
 showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbnails.checked));
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
 darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.checked));
+pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
 window.addEventListener('resize', () => {
@@ -2181,12 +2336,12 @@ window.addEventListener('keydown', event => {
     case 'ArrowLeft':
     case 'PageUp':
       event.preventDefault();
-      goTo(current - 1);
+      navigatePage(-1);
       break;
     case 'ArrowRight':
     case 'PageDown':
       event.preventDefault();
-      goTo(current + 1);
+      navigatePage(1);
       break;
     case 'Home':
       event.preventDefault();

@@ -4,6 +4,9 @@
 
 阅读器的“打印”按钮支持打印当前页、全部页面或自定义范围（例如 `1-3,5`）。
 “导出”按钮支持选择页面范围、DPI、PNG/JPG/PDF/TXT 格式和背景颜色；单页直接下载，多页图片打包为 ZIP，PDF 按所选 DPI 栅格化并保持页面物理尺寸，TXT 导出为一个文本文档。导出逐页执行并显示进度，可在当前页面完成后取消。
+“显示”菜单中的“页面布局”支持单页、双页和“双页，奇数页在左”。普通双页模式将第 1 页放在右侧，页面排列为“空白+1、2+3”；“奇数页在左”将奇数页放在左侧，页面排列为“1+2、3+4”。布局设置会保存在浏览器本地。
+双页布局下，桌面端左侧缩略图也按两列显示，与页面 spread 对齐；单页布局保持一列，手机端继续使用顶部横向缩略图栏。
+桌面端阅读器使用全宽布局，缩略图栏贴近窗口左侧，右侧阅读区占用剩余屏幕宽度；手机端仍自动切换为顶部缩略图栏。
 
 ## 截图
 
@@ -42,7 +45,7 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。当前 `service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
-当前示例的 Service Worker 缓存名为 `ofd-reader-shell-v2`，Web Worker 使用 `worker.js?v=2`。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，至少需要执行以下操作之一：
+当前示例的 Service Worker 缓存名为 `ofd-reader-shell-v7`，Web Worker 使用 `worker.js?v=7`。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，至少需要执行以下操作之一：
 
 - 修改 `service-worker.js` 中的 `CACHE_NAME`，例如改为 `ofd-reader-shell-v3`；
 - 同时修改 `viewer.js` 中的 Worker 查询版本，例如改为 `worker.js?v=3`。
