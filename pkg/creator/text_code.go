@@ -12,8 +12,8 @@ import (
 
 const defaultTextSize = 4.2333333333
 
-// completeTextCodes 为多字符 TextCode 自动补充字符位置增量。
-func completeTextCodes(codes []TextCode, value string, width, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic bool) []TextCode {
+// completeTextCodes 补充 TextCode 的默认起点，并按选项补充字符位置增量。
+func completeTextCodes(codes []TextCode, value string, width, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) []TextCode {
 	if len(codes) == 0 {
 		if len([]rune(value)) == 0 {
 			return codes
@@ -45,7 +45,7 @@ func completeTextCodes(codes []TextCode, value string, width, height, size, hSca
 			result[index].Y = &y
 			changed = true
 		}
-		if total > 1 && len(runes) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+		if completeDeltas && total > 1 && len(runes) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 			face := findTextFace(fontName, fonts, size, weight, italic)
 			deltaX, deltaY := makeTextCodeDeltas(runes, width, size, hScale, direction, total, face)
 			result[index].DeltaX = deltaX
@@ -190,7 +190,7 @@ func finiteTextCodeNumber(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
-func completeClipsTextCodes(clips *Clips, fonts []Font) *Clips {
+func completeClipsTextCodes(clips *Clips, fonts []Font, completeDeltas bool) *Clips {
 	if clips == nil {
 		return nil
 	}
@@ -203,7 +203,7 @@ func completeClipsTextCodes(clips *Clips, fonts []Font) *Clips {
 				continue
 			}
 			copyText := *text
-			copyText.TextCodes = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Width, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic)
+			copyText.TextCodes = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Width, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic, completeDeltas)
 			result.Items[clipIndex].Areas[areaIndex].Text = &copyText
 		}
 	}

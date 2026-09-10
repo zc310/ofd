@@ -1037,14 +1037,14 @@ func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	font := ofd.Documents[0].FontRes[1]
-	if font == nil {
+	ft := ofd.Documents[0].FontRes[1]
+	if ft == nil {
 		t.Fatal("embedded font was not parsed")
 	}
-	if got := font.FontName; got != "Test Sans" {
+	if got := ft.FontName; got != "Test Sans" {
 		t.Fatalf("font name = %q", got)
 	}
-	if got := string(font.FontFile); !strings.HasPrefix(got, "Doc_0/Res/Fonts/") {
+	if got := string(ft.FontFile); !strings.HasPrefix(got, "Doc_0/Res/Fonts/") {
 		t.Fatalf("font file = %q", got)
 	}
 	checkGeneratedPackage(t, data)
@@ -1123,12 +1123,13 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 }
 
 func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
-	data, err := Marshal(Document{
+	document := Document{
 		ID: "text-code-delta-test",
 		Pages: []Page{{Items: []Item{
 			Text{X: 1, Y: 2, Width: 30, Height: 10, Size: 10, TextCodes: []TextCode{{Value: "abc"}}},
 		}}},
-	})
+	}
+	data, err := Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1138,18 +1139,24 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	}
 	defer ofd.Close()
 	code := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
-	if code.Value != "abc" || len(code.DeltaX) != 2 || len(code.DeltaY) != 2 {
-		t.Fatalf("多字符 TextCode 未自动补全 DeltaX/DeltaY: %+v", code)
+	if code.Value != "abc" || len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
+		t.Fatalf("默认不应自动补全 DeltaX/DeltaY: %+v", code)
 	}
 	if code.X != 0 || code.Y != 10 {
 		t.Fatalf("TextCode 默认基线坐标错误: X=%v Y=%v", code.X, code.Y)
 	}
-	if code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
-		t.Fatalf("TextCode 自动补全值错误: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
+	data, err = MarshalWithOptions(document, CreateOptions{CompleteTextCodeDeltas: true})
+	if err != nil {
+		t.Fatal(err)
 	}
-	face := findTextFace("SimSun", nil, 10, 0, false)
-	if face != nil && (math.Abs(code.DeltaX[0]-face.TextWidth("a")) > 1e-9 || math.Abs(code.DeltaX[1]-face.TextWidth("b")) > 1e-9) {
-		t.Fatalf("TextCode 间距与系统字体度量不一致: DeltaX=%v", code.DeltaX)
+	ofd, err = parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	code = ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
+	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 || code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
+		t.Fatalf("启用参数后 TextCode 自动补全值错误: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
 	}
 }
 

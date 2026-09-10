@@ -9,6 +9,24 @@ import (
 	"github.com/zc310/ofd/pkg/validator"
 )
 
+func TestParseArgsTextCodeDeltaOptionDefaultsOff(t *testing.T) {
+	opts, err := parseArgs([]string{"-i", "input.yaml", "-o", "output.ofd"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.completeTextCodeDeltas {
+		t.Fatal("complete text code deltas should default to false")
+	}
+
+	opts, err = parseArgs([]string{"-i", "input.yaml", "-o", "output.ofd", "--complete-text-code-deltas"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.completeTextCodeDeltas {
+		t.Fatal("complete text code deltas option was not enabled")
+	}
+}
+
 func TestRunCreatesValidatedYAMLDocument(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "document.yaml")

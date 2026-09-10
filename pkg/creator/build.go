@@ -18,7 +18,11 @@ import (
 )
 
 func build(document Document) (*packageState, error) {
-	state, err := prepare(document)
+	return buildWithOptions(document, CreateOptions{})
+}
+
+func buildWithOptions(document Document, options CreateOptions) (*packageState, error) {
+	state, err := prepare(document, options)
 	if err != nil {
 		return nil, err
 	}
@@ -436,22 +440,6 @@ func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) 
 	return documentBytes(doc)
 }
 
-func versionsXML(state *buildState) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("Versions")
-	root.CreateAttr("xmlns", ofNamespace)
-	for _, version := range state.versions {
-		element := root.CreateElement("Version")
-		element.CreateAttr("ID", version.value.ID)
-		element.CreateAttr("Index", strconv.Itoa(version.value.Index))
-		if version.value.Current {
-			element.CreateAttr("Current", "true")
-		}
-		element.CreateAttr("BaseLoc", "Versions/"+version.baseName)
-	}
-	return documentBytes(doc)
-}
-
 func versionXML(resource versionResource) ([]byte, error) {
 	doc := newXMLDocument()
 	root := doc.CreateElement("DocVersion")
@@ -482,7 +470,7 @@ func versionXML(resource versionResource) ([]byte, error) {
 	return documentBytes(doc)
 }
 
-func prepare(document Document) (*buildState, error) {
+func prepare(document Document, options CreateOptions) (*buildState, error) {
 	if err := subsetEmbeddedFonts(&document); err != nil {
 		return nil, err
 	}
@@ -518,25 +506,26 @@ func prepare(document Document) (*buildState, error) {
 	}
 
 	state := &buildState{
-		document:            document,
-		pageSize:            pageSize,
-		drawParamIDs:        make(map[string]uint64),
-		drawParamIndexes:    make(map[string]int),
-		fontIDs:             make(map[string]uint64),
-		compositeIDs:        make(map[uint64]int),
-		nextID:              1,
-		mediaIDs:            make(map[uint64]bool),
-		mediaTypes:          make(map[uint64]string),
-		attachmentIDs:       make(map[string]bool),
-		bookmarkNames:       make(map[string]bool),
-		colorProfiles:       make(map[uint64]colorProfileResource),
-		colorSpaces:         make(map[uint64]colorSpaceInfo),
-		pageImageIDs:        make(map[uint64]bool),
-		pendingPageImageIDs: make(map[uint64]bool),
-		patternSet:          make(map[*Pattern]bool),
-		usedIDs:             make(map[uint64]bool),
-		reservedIDs:         make(map[uint64]string),
-		rawDrawRelations:    make(map[uint64]uint64),
+		document:               document,
+		completeTextCodeDeltas: options.CompleteTextCodeDeltas,
+		pageSize:               pageSize,
+		drawParamIDs:           make(map[string]uint64),
+		drawParamIndexes:       make(map[string]int),
+		fontIDs:                make(map[string]uint64),
+		compositeIDs:           make(map[uint64]int),
+		nextID:                 1,
+		mediaIDs:               make(map[uint64]bool),
+		mediaTypes:             make(map[uint64]string),
+		attachmentIDs:          make(map[string]bool),
+		bookmarkNames:          make(map[string]bool),
+		colorProfiles:          make(map[uint64]colorProfileResource),
+		colorSpaces:            make(map[uint64]colorSpaceInfo),
+		pageImageIDs:           make(map[uint64]bool),
+		pendingPageImageIDs:    make(map[uint64]bool),
+		patternSet:             make(map[*Pattern]bool),
+		usedIDs:                make(map[uint64]bool),
+		reservedIDs:            make(map[uint64]string),
+		rawDrawRelations:       make(map[uint64]uint64),
 	}
 	if err := state.reserveExplicitIDs(document); err != nil {
 		return nil, err
@@ -1700,8 +1689,8 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 			built := builtItem{id: s.allocate(), item: item}
 			switch value := item.(type) {
 			case Text:
-				value.TextCodes = completeTextCodes(value.TextCodes, value.Value, value.Width, value.Height, value.Size, value.HScale, value.ReadDirection, value.Font, s.document.Fonts, value.Weight, value.Italic)
-				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				value.TextCodes = completeTextCodes(value.TextCodes, value.Value, value.Width, value.Height, value.Size, value.HScale, value.ReadDirection, value.Font, s.document.Fonts, value.Weight, value.Italic, s.completeTextCodeDeltas)
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if err := validateText(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的文字对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
@@ -1722,7 +1711,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				built.font = s.fontID(font)
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Path:
-				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if err := validatePath(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的路径对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
@@ -1738,7 +1727,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Image:
-				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if value.ResourceID != 0 {
 					if !s.pageImageIDs[value.ResourceID] && !s.documentImageID(value.ResourceID) && s.mediaTypes[value.ResourceID] != "Image" {
@@ -1778,7 +1767,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Composite:
-				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts)
+				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if err := validateComposite(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的复合对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
