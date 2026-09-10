@@ -27,15 +27,16 @@ const (
 )
 
 type options struct {
-	input         string
-	output        string
-	assetRoot     string
-	format        string
-	compression   string
-	validate      bool
-	check         bool
-	deterministic bool
-	help          bool
+	input                  string
+	output                 string
+	assetRoot              string
+	format                 string
+	compression            string
+	validate               bool
+	check                  bool
+	deterministic          bool
+	completeTextCodeDeltas bool
+	help                   bool
 }
 
 func main() {
@@ -68,7 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitResource
 	}
 	compression := creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression)))
-	data, err := creator.MarshalWithOptions(document, creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic})
+	data, err := creator.MarshalWithOptions(document, creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas})
 	if err != nil {
 		fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitBuild
@@ -109,6 +110,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.validate, "validate", false, "生成后执行严格 OFD 校验")
 	flags.BoolVar(&opts.check, "check", false, "只解析并校验 manifest，不写出 OFD")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
+	flags.BoolVar(&opts.completeTextCodeDeltas, "complete-text-code-deltas", false, "自动补全多字符 TextCode 的 DeltaX 和 DeltaY")
 	flags.BoolVar(&opts.help, "help", false, "显示帮助")
 	flags.Usage = func() {
 		_, _ = fmt.Fprintln(output, "ofd-creator - OFD 文件创建工具")

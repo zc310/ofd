@@ -36,6 +36,8 @@ const (
 type CreateOptions struct {
 	Compression   CompressionMode
 	Deterministic bool
+	// CompleteTextCodeDeltas 按字体度量自动补全缺失的 DeltaX 和 DeltaY。
+	CompleteTextCodeDeltas bool
 }
 
 // Create 将完整的 OFD ZIP 文件包写入 w。
@@ -54,7 +56,7 @@ func CreateWithOptions(document Document, w io.Writer, options CreateOptions) er
 	if options.Compression != CompressionAuto && options.Compression != CompressionDeflate && options.Compression != CompressionStore {
 		return fmt.Errorf("不支持的 ZIP 压缩策略: %q", options.Compression)
 	}
-	state, err := build(document)
+	state, err := buildWithOptions(document, options)
 	if err != nil {
 		return err
 	}
