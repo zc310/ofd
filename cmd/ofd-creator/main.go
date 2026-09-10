@@ -47,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(stderr, "ofd-creator:", err)
+			_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		}
 		return exitUsage
 	}
@@ -55,23 +55,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	if err := validateOptions(opts); err != nil {
-		fmt.Fprintln(stderr, "ofd-creator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitUsage
 	}
 	m, baseDir, err := manifest.Load(opts.input, opts.format)
 	if err != nil {
-		fmt.Fprintln(stderr, "ofd-creator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
 	}
 	document, err := m.Build(baseDir, opts.assetRoot)
 	if err != nil {
-		fmt.Fprintln(stderr, "ofd-creator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
 	}
 	compression := creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression)))
 	data, err := creator.MarshalWithOptions(document, creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas})
 	if err != nil {
-		fmt.Fprintln(stderr, "ofd-creator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitBuild
 	}
 	if opts.check {
@@ -80,7 +80,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if opts.validate {
 		instance, validatorErr := validator.New()
 		if validatorErr != nil {
-			fmt.Fprintln(stderr, "ofd-creator:", validatorErr)
+			_, _ = fmt.Fprintln(stderr, "ofd-creator:", validatorErr)
 			return exitValidate
 		}
 		report := instance.ValidateReader(context.Background(), bytes.NewReader(data), "generated.ofd")
@@ -90,7 +90,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if err := writeOutput(opts.output, data, stdout); err != nil {
-		fmt.Fprintln(stderr, "ofd-creator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitOutput
 	}
 	return exitOK
@@ -171,7 +171,9 @@ func writeOutput(name string, data []byte, stdout io.Writer) error {
 		return fmt.Errorf("创建临时输出文件失败: %w", err)
 	}
 	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
+	defer func() {
+		_ = os.Remove(temporaryName)
+	}()
 	if _, err := temporary.Write(data); err != nil {
 		_ = temporary.Close()
 		return fmt.Errorf("写入临时输出文件失败: %w", err)

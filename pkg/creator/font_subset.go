@@ -256,6 +256,17 @@ func subsetFont(resource *Font, usage *fontUsage) error {
 		// 允许调用方提供自定义字体格式，或在其他位置自行校验字体数据。
 		return nil
 	}
+	if isFontCollection(resource.Data) {
+		// 多字体 CFF 的子程序表无法被当前子集化器安全重排，先提取第一个
+		// 字体面，去掉 TTC 中其他字体，避免原始集合被完整嵌入。
+		resource.Data = sfnt.Write()
+		if sfnt.IsTrueType {
+			resource.Format = "ttf"
+		} else if sfnt.IsCFF {
+			resource.Format = "otf"
+			return nil
+		}
+	}
 	// 字体源数据已解析，重新根据 cmap 获取字符对应的字形编号。
 	glyphs := make([]uint16, 0, len(usage.glyphs))
 	seen := make(map[uint16]bool)
@@ -281,9 +292,6 @@ func subsetFont(resource *Font, usage *fontUsage) error {
 	originalGlyphs := append([]uint16(nil), glyphs...)
 	subset, err := sfnt.Subset(glyphs, font.SubsetOptions{Tables: font.KeepMinTables})
 	if err != nil {
-		if strings.Contains(err.Error(), "only single-font CFFs are supported") {
-			return nil
-		}
 		return err
 	}
 	resource.Data = subset.Write()
@@ -297,6 +305,10 @@ func subsetFont(resource *Font, usage *fontUsage) error {
 		usage.remap[glyphID] = index
 	}
 	return nil
+}
+
+func isFontCollection(data []byte) bool {
+	return len(data) >= 4 && string(data[:4]) == "ttcf"
 }
 
 func rewriteLayersFontGlyphs(layers []Layer, used map[string]*fontUsage) {

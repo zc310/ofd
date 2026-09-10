@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/base64"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/validator"
@@ -989,7 +991,7 @@ func TestCreateImageDocumentWritesImageResource(t *testing.T) {
 }
 
 func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
-	fontData := []byte{0x00, 0x01, 0x00, 0x00, 1, 2, 3, 4}
+	fontData := testEmbeddedFontData(t)
 	data, err := Marshal(Document{
 		ID: "font-test",
 		Fonts: []Font{{
@@ -1046,6 +1048,73 @@ func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
 	}
 	if got := string(ft.FontFile); !strings.HasPrefix(got, "Doc_0/Res/Fonts/") {
 		t.Fatalf("font file = %q", got)
+	}
+	checkGeneratedPackage(t, data)
+}
+
+func TestCreateEmbeddedTTCFontResource(t *testing.T) {
+	fontData, err := os.ReadFile("../../cmd/ofd-creator/examples/NotoSansCJK-Regular.ttc")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("NotoSansCJK-Regular.ttc is not available")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isFontCollection(fontData) {
+		t.Fatal("NotoSansCJK-Regular.ttc is not a TrueType collection")
+	}
+	if _, err := font.ParseSFNT(fontData, 0); err != nil {
+		t.Fatalf("parse TTC font: %v", err)
+	}
+	family := canvas.NewFontFamily("Noto Sans CJK SC")
+	if err := family.LoadFont(fontData, 0, canvas.FontRegular); err != nil {
+		t.Fatalf("load TTC font: %v", err)
+	}
+	face := family.Face(10, canvas.Black)
+	if face == nil || face.Font == nil || face.Font.GlyphIndex('中') == 0 {
+		t.Fatal("TTC font does not provide a usable CJK glyph")
+	}
+
+	data, err := Marshal(Document{
+		ID:    "ttc-font-test",
+		Fonts: []Font{{Name: "Noto Sans CJK SC", Format: "ttc", Data: fontData}},
+		Pages: []Page{{Items: []Item{
+			Text{X: 20, Y: 30, Width: 100, Height: 12, Size: 10, Font: "Noto Sans CJK SC", Value: "你好，OFD"},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readEmbeddedFontData(t, data)
+	t.Logf("TTC input size=%d, extracted font size=%d", len(fontData), len(got))
+	if bytes.Equal(got, fontData) || len(got) >= len(fontData) {
+		t.Fatalf("TTC font was not reduced: got %d bytes, want less than %d", len(got), len(fontData))
+	}
+	if string(got[:4]) != "OTTO" {
+		t.Fatalf("TTC face was not converted to standalone OTF: header=%q", got[:4])
+	}
+	parsed, err := font.ParseSFNT(got, 0)
+	if err != nil {
+		t.Fatalf("parse extracted OTF: %v", err)
+	}
+	if parsed.GlyphIndex('中') == 0 {
+		t.Fatal("extracted OTF does not provide a usable CJK glyph")
+	}
+	extractedFamily := canvas.NewFontFamily("Noto Sans CJK SC")
+	if err := extractedFamily.LoadFont(got, 0, canvas.FontRegular); err != nil {
+		t.Fatalf("load extracted OTF: %v", err)
+	}
+	if face := extractedFamily.Face(10, canvas.Black); face == nil || face.Font == nil || face.Font.GlyphIndex('中') == 0 {
+		t.Fatal("extracted OTF cannot be used by Canvas")
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	fontFile := ofd.Documents[0].FontRes[1].FontFile
+	if !strings.HasSuffix(string(fontFile), ".otf") {
+		t.Fatalf("extracted TTC font resource uses unexpected file name: %q", fontFile)
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -2389,6 +2458,60 @@ func checkGeneratedPackage(t *testing.T, data []byte) {
 	if report.HasErrors() {
 		t.Fatalf("generated OFD failed validation: %+v", report.Issues)
 	}
+}
+
+func testEmbeddedFontData(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile("../../test/testdata/intro.ofd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range archive.File {
+		if file.Name != "Doc_0/Res/font_83_83.cff" {
+			continue
+		}
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fontData, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return fontData
+	}
+	t.Fatal("test embedded font is missing")
+	return nil
+}
+
+func readEmbeddedFontData(t *testing.T, data []byte) []byte {
+	t.Helper()
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range archive.File {
+		if !strings.HasPrefix(file.Name, "Doc_0/Res/Fonts/") {
+			continue
+		}
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fontData, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return fontData
+	}
+	t.Fatal("embedded font is missing")
+	return nil
 }
 
 func readArchiveEntry(t *testing.T, data []byte, name string) []byte {

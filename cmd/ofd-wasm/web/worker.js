@@ -22,11 +22,19 @@ function unwrap(value) {
   return value;
 }
 
+function reportStartFailure(error) {
+  readyReject(error);
+  self.postMessage({ type: 'fatal', error: errorText(error) });
+}
+
 async function start() {
   try {
     const go = new Go();
     const response = await fetch('ofd.wasm', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`加载 ofd.wasm 失败: ${response.status}`);
+    if (!response.ok) {
+      reportStartFailure(new Error(`加载 ofd.wasm 失败: ${response.status}`));
+      return;
+    }
 
     let result;
     try {
@@ -46,8 +54,7 @@ async function start() {
     };
     waitForAPI();
   } catch (error) {
-    readyReject(error);
-    self.postMessage({ type: 'fatal', error: errorText(error) });
+    reportStartFailure(error);
   }
 }
 
