@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js');
+    this.worker = new Worker('worker.js?v=2');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -116,6 +116,10 @@ class OFDWorkerClient {
     return this.request('renderPages', { indices, options });
   }
 
+  renderPDF(indices, options) {
+    return this.request('renderPDF', { indices, options });
+  }
+
   text(index) {
     return this.request('text', { index });
   }
@@ -199,16 +203,25 @@ const pageCount = document.querySelector('#page-count');
 const previous = document.querySelector('#previous');
 const next = document.querySelector('#next');
 const printPage = document.querySelector('#print-page');
+const exportDocument = document.querySelector('#export-document');
+const exportDialog = document.querySelector('#export-dialog');
+const exportForm = document.querySelector('#export-form');
+const exportCancel = document.querySelector('#export-cancel');
+const exportRange = document.querySelector('#export-range');
+const exportCustomRange = document.querySelector('#export-custom-range');
+const exportDPI = document.querySelector('#export-dpi');
+const exportFormat = document.querySelector('#export-format');
+const exportBackground = document.querySelector('#export-background');
+const exportBackgroundField = document.querySelector('#export-background-field');
+const exportError = document.querySelector('#export-error');
 const printDialog = document.querySelector('#print-dialog');
 const printForm = document.querySelector('#print-form');
 const printCancel = document.querySelector('#print-cancel');
 const printCurrentLabel = document.querySelector('#print-current-label');
 const printCustomRange = document.querySelector('#print-range-custom');
 const printError = document.querySelector('#print-error');
-const downloadPage = document.querySelector('#download-page');
 const copyPageText = document.querySelector('#copy-page-text');
 const copyAllTextButton = document.querySelector('#copy-all-text');
-const downloadText = document.querySelector('#download-text');
 const zoomOut = document.querySelector('#zoom-out');
 const zoomIn = document.querySelector('#zoom-in');
 const zoomFit = document.querySelector('#zoom-fit');
@@ -286,6 +299,8 @@ let touchZoomTarget = 0;
 let touchZoomTimer;
 let documentActionBusy = false;
 let documentActionCancelRequested = false;
+let exportRequest;
+let exportActive = false;
 let renderedPages = new Set();
 let failedPages = new Set();
 let copyFeedbackTimer;
@@ -475,11 +490,13 @@ function resetRenderProgress() {
 
 function updateRenderProgress() {
   const total = pageInfos.length;
+  if (exportActive) return;
   if (!total) {
     renderProgress.hidden = true;
     renderProgressLabel.hidden = true;
     return;
   }
+  renderProgress.max = 1;
   const loaded = renderedPages.size;
   const failed = failedPages.size;
   renderProgress.value = loaded / total;
@@ -728,10 +745,9 @@ function updateNavigation() {
   previous.disabled = current <= 0 || pageInfos.length === 0;
   next.disabled = current + 1 >= pageInfos.length || pageInfos.length === 0;
   printPage.disabled = documentActionBusy || pageInfos.length === 0;
-  downloadPage.disabled = documentActionBusy || pageInfos.length === 0;
+  exportDocument.disabled = documentActionBusy || pageInfos.length === 0;
   copyPageText.disabled = documentActionBusy || pageInfos.length === 0;
   copyAllTextButton.disabled = documentActionBusy || pageInfos.length === 0;
-  downloadText.disabled = documentActionBusy || pageInfos.length === 0;
   searchInput.disabled = pageInfos.length === 0;
   searchToggle.disabled = pageInfos.length === 0;
   searchButton.disabled = pageInfos.length === 0;
@@ -759,6 +775,7 @@ function cancelDocumentAction() {
   documentActionCancelRequested = true;
   cancelRequests(textRequests);
   cancelRequests(pageRequests);
+  exportRequest?.cancel();
   setStatus('正在取消操作...');
 }
 
@@ -1303,6 +1320,13 @@ async function openSelectedFile(selected) {
   cancelRequests(pageRequests);
   cancelRequests(thumbnailRequests);
   cancelRequests(textRequests);
+  const wasExporting = exportActive || !!exportRequest;
+  exportRequest?.cancel();
+  exportRequest = undefined;
+  if (wasExporting) {
+    exportActive = false;
+    setDocumentActionBusy(false);
+  }
   searchRequest?.cancel();
   searchRequest = undefined;
   textCache.clear();
@@ -1464,28 +1488,280 @@ function safeDownloadName(value) {
     .slice(0, 120) || 'ofd-document';
 }
 
-async function downloadCurrentPage() {
-  if (!pageInfos.length) return;
-  if (documentActionBusy) return;
-  setDocumentActionBusy(true);
-  const generation = documentGeneration;
-  const index = current;
-  setStatus(`正在准备第 ${current + 1} 页 PNG...`);
+function setExportProgress(completed, total) {
+  renderProgress.max = total;
+  renderProgress.value = completed;
+  renderProgressLabel.textContent = `已导出 ${completed}/${total}`;
+  renderProgress.hidden = false;
+  renderProgressLabel.hidden = false;
+}
+
+function exportIndexes() {
+  if (exportRange.value === 'current') return [current];
+  if (exportRange.value === 'all') return pageInfos.map((_, index) => index);
   try {
-    await loadPage(index);
-    throwIfDocumentActionCancelled(generation);
-    const image = pageCards[index]?.querySelector('.page-image');
-    if (!image?.src || image.hidden) throw new Error('当前页面尚未渲染完成');
-    const link = document.createElement('a');
-    link.href = image.src;
-    link.download = `${safeDownloadName(documentName.textContent)}-第${index + 1}页.png`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setStatus(`已下载第 ${index + 1} 页 PNG。`);
+    return parsePrintRange(exportCustomRange.value);
   } catch (error) {
-    setStatus(`PNG 下载失败：${error.message}`);
+    throw new Error(error.message.replace(/^打印范围/, '导出范围').replace(/^打印页码/, '导出页码'));
+  }
+}
+
+function updateExportRangeControl() {
+  exportCustomRange.disabled = exportRange.value !== 'custom';
+  exportError.hidden = true;
+}
+
+function updateExportFormatControl() {
+  const text = exportFormat.value === 'txt';
+  exportDPI.disabled = text;
+  exportBackground.disabled = text;
+  exportBackgroundField.hidden = text;
+}
+
+function openExportDialog() {
+  if (!pageInfos.length || documentActionBusy) return;
+  exportRange.value = 'current';
+  exportCustomRange.value = '';
+  exportDPI.value = '150';
+  exportFormat.value = 'png';
+  exportBackground.value = 'transparent';
+  exportError.hidden = true;
+  if (typeof exportDialog.showModal === 'function') exportDialog.showModal();
+  else exportDialog.setAttribute('open', '');
+  updateExportRangeControl();
+  updateExportFormatControl();
+}
+
+function closeExportDialog() {
+  if (typeof exportDialog.close === 'function') exportDialog.close();
+  else exportDialog.removeAttribute('open');
+}
+
+function exportBackgroundColor() {
+  if (exportBackground.value === 'white') return '#ffffff';
+  if (exportBackground.value === 'black') return '#000000';
+  return '#00000000';
+}
+
+function imageDataBlob(data, type) {
+  return new Blob([data], { type });
+}
+
+async function decodePNG(data) {
+  const blob = imageDataBlob(data, 'image/png');
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(blob);
+    return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const value = new Image();
+      value.onload = () => resolve(value);
+      value.onerror = () => reject(new Error('PNG 图片解码失败'));
+      value.src = url;
+    });
+    return {
+      source: image,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      close: () => URL.revokeObjectURL(url),
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function convertImageFormat(data, format, background) {
+  if (format === 'png') return imageDataBlob(data, 'image/png');
+  const image = await decodePNG(data);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('浏览器不支持图像导出');
+    context.fillStyle = background === '#00000000' ? '#ffffff' : background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image.source, 0, 0);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('JPG 图片编码失败')), 'image/jpeg', 0.95);
+    });
   } finally {
+    image.close();
+  }
+}
+
+function crc32(data) {
+  let crc = 0xffffffff;
+  for (const value of data) {
+    crc ^= value;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zipStore(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const write16 = (view, position, value) => view.setUint16(position, value, true);
+  const write32 = (view, position, value) => view.setUint32(position, value, true);
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data);
+    const local = new Uint8Array(30 + name.length + data.length);
+    const localView = new DataView(local.buffer);
+    write32(localView, 0, 0x04034b50);
+    write16(localView, 4, 20);
+    write16(localView, 6, 0x800);
+    write16(localView, 8, 0);
+    write16(localView, 10, 0);
+    write16(localView, 12, 0);
+    write32(localView, 14, crc32(data));
+    write32(localView, 18, data.length);
+    write32(localView, 22, data.length);
+    write16(localView, 26, name.length);
+    write16(localView, 28, 0);
+    local.set(name, 30);
+    local.set(data, 30 + name.length);
+    localParts.push(local);
+
+    const central = new Uint8Array(46 + name.length);
+    const centralView = new DataView(central.buffer);
+    write32(centralView, 0, 0x02014b50);
+    write16(centralView, 4, 20);
+    write16(centralView, 6, 20);
+    write16(centralView, 8, 0x800);
+    write16(centralView, 10, 0);
+    write16(centralView, 12, 0);
+    write16(centralView, 14, 0);
+    write32(centralView, 16, crc32(data));
+    write32(centralView, 20, data.length);
+    write32(centralView, 24, data.length);
+    write16(centralView, 28, name.length);
+    write16(centralView, 30, 0);
+    write16(centralView, 32, 0);
+    write16(centralView, 34, 0);
+    write16(centralView, 36, 0);
+    write32(centralView, 38, 0);
+    write32(centralView, 42, offset);
+    central.set(name, 46);
+    centralParts.push(central);
+    offset += local.length;
+  }
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  write32(endView, 0, 0x06054b50);
+  write16(endView, 8, files.length);
+  write16(endView, 10, files.length);
+  write32(endView, 12, centralSize);
+  write32(endView, 16, offset);
+  const parts = [...localParts, ...centralParts, end];
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let position = 0;
+  for (const part of parts) {
+    output.set(part, position);
+    position += part.length;
+  }
+  return output;
+}
+
+function downloadBytes(data, name, type) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function exportDocumentPages(indexes, dpi, format, background) {
+  const generation = documentGeneration;
+  const files = [];
+  const textParts = [];
+  let activeRequest;
+  let cancelled = false;
+  const requestState = { cancel: () => { cancelled = true; activeRequest?.cancel(); } };
+  exportRequest = requestState;
+  try {
+    for (let position = 0; position < indexes.length; position++) {
+      throwIfDocumentActionCancelled(generation);
+      if (cancelled) throw new Error('导出已取消');
+      const index = indexes[position];
+      setStatus(`正在导出第 ${index + 1} / ${indexes.length} 页...`);
+      if (format === 'txt') {
+        await loadText(index);
+        if (!textCache.has(index)) throw new Error(`第 ${index + 1} 页文字读取失败`);
+        const text = pageText(index);
+        if (text) textParts.push(text);
+      } else if (format === 'pdf') {
+        activeRequest = engine.renderPDF(indexes, { dpi, background });
+        const data = await activeRequest;
+        files.push({ name: 'document.pdf', data: new Uint8Array(data) });
+        setExportProgress(indexes.length, indexes.length);
+        break;
+      } else {
+        activeRequest = engine.renderPage(index, { dpi, background });
+        const data = await activeRequest;
+        const blob = await convertImageFormat(new Uint8Array(data), format, background);
+        files.push({ name: `page-${String(index + 1).padStart(4, '0')}.${format}`, data: new Uint8Array(await blob.arrayBuffer()) });
+      }
+      setExportProgress(position + 1, indexes.length);
+    }
+    throwIfDocumentActionCancelled(generation);
+    const baseName = safeDownloadName(documentName.textContent);
+    if (format === 'txt') {
+      if (!textParts.length) throw new Error('选中的页面没有可导出的文字');
+      files.push({ name: 'document.txt', data: new TextEncoder().encode(textParts.join('\n\n')) });
+    }
+    if (files.length === 1) {
+      const type = format === 'txt' ? 'text/plain;charset=utf-8' : format === 'jpg' ? 'image/jpeg' : format === 'pdf' ? 'application/pdf' : 'image/png';
+      downloadBytes(files[0].data, `${baseName}-${files[0].name}`, type);
+    } else {
+      downloadBytes(zipStore(files), `${baseName}-导出.zip`, 'application/zip');
+    }
+    setStatus(`导出完成，共 ${indexes.length} 页。`);
+  } finally {
+    activeRequest = undefined;
+    if (exportRequest === requestState) exportRequest = undefined;
+  }
+}
+
+async function startExport() {
+  if (!pageInfos.length || documentActionBusy) return;
+  const generation = documentGeneration;
+  let indexes;
+  let dpi;
+  try {
+    indexes = exportIndexes();
+    dpi = Number(exportDPI.value);
+    if (!Number.isInteger(dpi) || dpi < 1 || dpi > 1200) throw new Error('DPI 必须是 1-1200 之间的整数');
+    if (!indexes.length) throw new Error('请选择至少一页');
+  } catch (error) {
+    exportError.textContent = error.message;
+    exportError.hidden = false;
+    if (exportRange.value === 'custom') exportCustomRange.focus();
+    return;
+  }
+  closeExportDialog();
+  setDocumentActionBusy(true);
+  exportActive = true;
+  setExportProgress(0, indexes.length);
+  try {
+    await exportDocumentPages(indexes, dpi, exportFormat.value, exportBackgroundColor());
+  } catch (error) {
+    if (generation !== documentGeneration) return;
+    if (documentActionCancelRequested || isCancelledError(error)) setStatus('已取消导出。');
+    else setStatus(`导出失败：${error.message}`);
+  } finally {
+    if (generation !== documentGeneration) return;
+    exportActive = false;
     setDocumentActionBusy(false);
   }
 }
@@ -1597,33 +1873,6 @@ async function copyDocumentText() {
     showCopyFeedback(failed ? `已复制全文，另有 ${failed} 页读取失败。` : `已复制全文 ${text.length} 个字符。`);
   } catch (_) {
     showCopyFeedback(documentActionCancelRequested ? '已取消复制全文。' : '复制失败，请检查浏览器剪贴板权限。');
-  } finally {
-    setDocumentActionBusy(false);
-  }
-}
-
-async function downloadDocumentText() {
-  if (!pageInfos.length) return;
-  if (documentActionBusy) return;
-  setDocumentActionBusy(true);
-  const generation = documentGeneration;
-  try {
-    const { text, failed } = await collectDocumentText(generation);
-    if (!text) {
-      showCopyFeedback(failed ? `全文读取失败：${failed} 页无法导出。` : '文档没有可导出的文字。');
-      return;
-    }
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    link.href = url;
-    link.download = `${safeDownloadName(documentName.textContent)}.txt`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-    showCopyFeedback(failed ? `已导出文字，另有 ${failed} 页读取失败。` : `已下载全文 ${text.length} 个字符。`);
-  } catch (_) {
-    showCopyFeedback(documentActionCancelRequested ? '已取消 TXT 导出。' : 'TXT 导出失败，请重试。');
   } finally {
     setDocumentActionBusy(false);
   }
@@ -1815,6 +2064,7 @@ previous.addEventListener('click', () => goTo(current - 1));
 next.addEventListener('click', () => goTo(current + 1));
 cancelAction.addEventListener('click', cancelDocumentAction);
 printPage.addEventListener('click', openPrintDialog);
+exportDocument.addEventListener('click', openExportDialog);
 printForm.addEventListener('change', updatePrintRangeControl);
 printForm.addEventListener('submit', event => {
   event.preventDefault();
@@ -1830,10 +2080,15 @@ printForm.addEventListener('submit', event => {
   }
 });
 printCancel.addEventListener('click', closePrintDialog);
-downloadPage.addEventListener('click', downloadCurrentPage);
-copyPageText.addEventListener('click', copyCurrentPageText);
-copyAllTextButton.addEventListener('click', copyDocumentText);
-downloadText.addEventListener('click', downloadDocumentText);
+exportRange.addEventListener('change', updateExportRangeControl);
+exportFormat.addEventListener('change', updateExportFormatControl);
+exportForm.addEventListener('submit', event => {
+  event.preventDefault();
+  void startExport();
+});
+exportCancel.addEventListener('click', closeExportDialog);
+ copyPageText.addEventListener('click', copyCurrentPageText);
+ copyAllTextButton.addEventListener('click', copyDocumentText);
 pageNumber.addEventListener('change', () => {
   if (!pageInfos.length) return;
   const value = Number(pageNumber.value);
@@ -1871,6 +2126,17 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+if ('launchQueue' in window && typeof window.launchQueue.setConsumer === 'function') {
+  window.launchQueue.setConsumer(async launchParams => {
+    const [fileHandle] = launchParams.files || [];
+    if (!fileHandle || typeof fileHandle.getFile !== 'function') return;
+    try {
+      await openSelectedFile(await fileHandle.getFile());
+    } catch (error) {
+      setStatus(`打开系统文件失败：${error.message}`);
+    }
+  });
+}
 pagesElement.addEventListener('touchstart', handleTouchStart, { passive: true });
 pagesElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 pagesElement.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -1891,13 +2157,6 @@ window.addEventListener('keydown', event => {
     if (!editing && pageInfos.length) {
       event.preventDefault();
       copyCurrentPageText();
-    }
-    return;
-  }
-  if (modifier && event.shiftKey && key === 's') {
-    if (!editing && pageInfos.length) {
-      event.preventDefault();
-      downloadCurrentPage();
     }
     return;
   }

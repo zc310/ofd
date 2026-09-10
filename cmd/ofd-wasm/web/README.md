@@ -3,6 +3,7 @@
 这个目录是一个不依赖前端框架的网页示例，调用当前目录对应的 `ofd-wasm` 导出的浏览器 API。
 
 阅读器的“打印”按钮支持打印当前页、全部页面或自定义范围（例如 `1-3,5`）。
+“导出”按钮支持选择页面范围、DPI、PNG/JPG/PDF/TXT 格式和背景颜色；单页直接下载，多页图片打包为 ZIP，PDF 按所选 DPI 栅格化并保持页面物理尺寸，TXT 导出为一个文本文档。导出逐页执行并显示进度，可在当前页面完成后取消。
 
 ## 截图
 
@@ -35,6 +36,43 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 然后打开 <http://localhost:8080>，选择一个 `.ofd` 文件。
 
+在支持 File Handling API 的 Chromium 浏览器中，将阅读器安装为 PWA 后，manifest 会将 `.ofd` 注册为可打开的文件类型。用户可以在系统文件管理器中将 `.ofd` 文件设置为使用该阅读器打开；浏览器通过 `launchQueue` 将文件交给页面。未安装为 PWA 或浏览器不支持该 API 时，仍可使用“打开文件”和拖放方式。
+
+## 资源缓存与更新
+
+阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。当前 `service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
+
+当前示例的 Service Worker 缓存名为 `ofd-reader-shell-v2`，Web Worker 使用 `worker.js?v=2`。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，至少需要执行以下操作之一：
+
+- 修改 `service-worker.js` 中的 `CACHE_NAME`，例如改为 `ofd-reader-shell-v3`；
+- 同时修改 `viewer.js` 中的 Worker 查询版本，例如改为 `worker.js?v=3`。
+
+建议生产环境配置以下响应头：
+
+```text
+index.html          Cache-Control: no-cache, must-revalidate
+service-worker.js   Cache-Control: no-cache, must-revalidate
+viewer.js           Cache-Control: no-cache, must-revalidate
+worker.js           Cache-Control: no-cache, must-revalidate
+ofd.wasm            Cache-Control: no-cache, must-revalidate
+wasm_exec.js        Cache-Control: no-cache, must-revalidate
+```
+
+更稳妥的生产方案是给 JavaScript 和 WASM 文件使用内容 hash 文件名，例如 `viewer.8f31c2.js`、`worker.a91d77.js` 和 `ofd.2b9f10.wasm`，并为这些文件设置长期缓存：
+
+```text
+Cache-Control: public, max-age=31536000, immutable
+```
+
+`index.html` 和 `service-worker.js` 应保持可重新验证，页面引用的 hash 文件内容变化时只需更新引用。发布时先上传新的 hash 资源，再更新 `service-worker.js`，最后更新 `index.html`，避免页面先引用尚未上传的资源。
+
+如果浏览器仍然显示旧版本，可以在开发者工具中打开 **Application**，执行 **Service Workers -> Unregister** 和 **Storage -> Clear site data**，然后重新加载页面。也可以在控制台检查当前控制页面的 Service Worker 和 Worker URL：
+
+```javascript
+navigator.serviceWorker.controller?.scriptURL
+performance.getEntriesByType('resource').filter(item => item.name.includes('worker.js'))
+```
+
 ## JavaScript API
 
 WASM 启动后会注册 `window.ofd`：
@@ -49,12 +87,14 @@ ofd.text(0)
 ofd.search('关键词')
 ofd.renderPage(0, { dpi: 96, background: '#00000000' })
 ofd.renderPages([0, 1, 2], { dpi: 36, background: '#00000000' })
+ofd.renderPDF([0, 1], { background: '#ffffff' })
 
 // background omitted or set to #00000000 produces a transparent PNG.
 ofd.close()
 ```
 
 `renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN 的 CSP/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
+`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`，`renderPDF` 返回单个 PDF `Uint8Array`，最多处理 64 页；`renderPages` 按传入索引顺序返回数组。PDF 使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
 
 ## Worker 协议
 
@@ -67,10 +107,11 @@ cancel     target: request id
 addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boolean
 renderPage index: number, options: object
 renderPages indices: number[], options: object
+renderPDF indices: number[], options: object
 text       index: number
 search     query: string
 ```
 
-页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG 数据。正文页缓存上限为 64 MiB，缩略图缓存上限为 16 MiB。缩放或切换文档时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 64 MiB，缩略图缓存上限为 16 MiB。缩放或切换文档时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
 
 `text` 返回页面文字对象，`x/y` 是页面左上角原点的覆盖层坐标，`glyphs` 提供字符级区域；`search` 返回 `{ page, run, text, start, end, rects }` 命中列表。`glyphs`/`rects` 的 `angle` 可直接用于浏览器 CSS 的 `rotate()`。示例页面会将搜索结果所在页面滚动到视口，并使用引擎返回的字符矩形显示高亮。

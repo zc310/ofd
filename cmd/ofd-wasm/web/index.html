@@ -48,11 +48,22 @@
      .print-error[hidden] { display: none; }
      .print-actions { display: flex; justify-content: flex-end; gap: 8px; }
      .print-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
+     .export-dialog { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
+     .export-dialog::backdrop { background: #17203366; }
+     .export-form { display: grid; gap: 14px; padding: 20px; }
+     .export-form h2 { margin: 0; font-size: 18px; }
+     .export-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; }
+     .export-field label { color: #49556a; font-size: 14px; }
+     .export-field input, .export-field select { width: 100%; min-height: 34px; padding: 5px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; font: inherit; }
+     .export-hint { margin: -4px 0 0; color: #667188; font-size: 13px; }
+     .export-error { margin: -4px 0 0; color: #a13e3e; font-size: 13px; }
+     .export-error[hidden] { display: none; }
+     .export-actions { display: flex; justify-content: flex-end; gap: 8px; }
+     .export-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
     .file-button { display: inline-flex; min-height: 34px; align-items: center; padding: 6px 11px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
     .file-button:hover { background: #4b95dc; }
     #cancel-open[hidden] { display: none; }
     #cancel-action[hidden] { display: none; }
-    #download-page[hidden] { display: none; }
     #file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
     button, input { font: inherit; }
     button { min-height: 34px; padding: 6px 11px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
@@ -209,10 +220,9 @@
       <span><input id="page-number" type="number" min="1" value="1" size="3" disabled> / <span id="page-count">0</span></span>
       <button id="next" type="button" disabled>下一页</button>
       <button id="print-page" type="button" disabled>打印</button>
-      <button id="download-page" type="button" disabled>下载 PNG</button>
+      <button id="export-document" type="button" disabled>导出</button>
       <button id="copy-page-text" type="button" disabled>复制文字</button>
       <button id="copy-all-text" type="button" disabled>复制全文</button>
-      <button id="download-text" type="button" disabled>下载 TXT</button>
     </div>
     <div class="toolbar-group zoom-group" aria-label="缩放">
       <button id="zoom-out" type="button" disabled aria-label="缩小">-</button>
@@ -262,6 +272,50 @@
       <div class="print-actions">
         <button id="print-cancel" type="button">取消</button>
         <button type="submit">开始打印</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="export-dialog" class="export-dialog" aria-labelledby="export-title">
+    <form id="export-form" class="export-form">
+      <h2 id="export-title">导出文档</h2>
+      <div class="export-field">
+        <label for="export-range">导出范围</label>
+        <select id="export-range">
+          <option value="current">当前页</option>
+          <option value="all">全部页面</option>
+          <option value="custom">自定义范围</option>
+        </select>
+      </div>
+      <div class="export-field">
+        <label for="export-custom-range">页码</label>
+        <input id="export-custom-range" type="text" inputmode="numeric" placeholder="例如：1-3,5" disabled>
+      </div>
+      <div class="export-field">
+        <label for="export-dpi">DPI</label>
+        <input id="export-dpi" type="number" min="1" max="1200" step="1" value="150">
+      </div>
+      <div class="export-field">
+        <label for="export-format">格式</label>
+        <select id="export-format">
+          <option value="png">PNG 图片</option>
+          <option value="jpg">JPG 图片</option>
+          <option value="pdf">PDF 文档</option>
+          <option value="txt">TXT 文字</option>
+        </select>
+      </div>
+      <div class="export-field" id="export-background-field">
+        <label for="export-background">背景颜色</label>
+        <select id="export-background">
+          <option value="transparent">透明（JPG 使用白色）</option>
+          <option value="white">白色</option>
+          <option value="black">黑色</option>
+        </select>
+      </div>
+      <p class="export-hint">多页图片将导出为 ZIP；PDF 按所选 DPI 栅格化并保持页面物理尺寸；JPG 不支持透明色，选择透明时使用白色背景；TXT 导出不使用 DPI 和背景颜色。</p>
+      <p id="export-error" class="export-error" role="alert" hidden></p>
+      <div class="export-actions">
+        <button id="export-cancel" type="button">取消</button>
+        <button type="submit">开始导出</button>
       </div>
     </form>
   </dialog>

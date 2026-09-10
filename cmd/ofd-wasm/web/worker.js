@@ -76,6 +76,11 @@ async function execute(message) {
       const result = unwrap(self.ofd.renderPages(message.indices || [], message.options || {}));
       return Array.from(result, page => new Uint8Array(page).slice().buffer);
     }
+    case 'renderPDF': {
+      const result = unwrap(self.ofd.renderPDF(message.indices || [], message.options || {}));
+      const data = new Uint8Array(result);
+      return data.slice().buffer;
+    }
     case 'text':
       return unwrap(self.ofd.text(message.index));
     case 'search':
