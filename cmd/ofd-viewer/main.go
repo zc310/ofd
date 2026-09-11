@@ -539,21 +539,39 @@ func (v *viewer) showExportDialog() {
 		exportFormatTeX,
 	}, nil)
 	formatSelect.SetSelected(exportFormatPDF)
+	dpiItem := widget.NewFormItem("DPI", dpiEntry)
 	backgroundSelect := widget.NewSelect([]string{exportBackgroundTransparent, exportBackgroundWhite}, nil)
 	backgroundSelect.SetSelected(exportBackgroundTransparent)
 	content := widget.NewForm(
-		widget.NewFormItem("DPI", dpiEntry),
 		widget.NewFormItem("格式", formatSelect),
 		widget.NewFormItem("背景颜色", backgroundSelect),
 	)
+	dpiVisible := false
+	formatSelect.OnChanged = func(selected string) {
+		visible := selected == exportFormatJPG || selected == exportFormatPNG
+		if visible == dpiVisible {
+			return
+		}
+		dpiVisible = visible
+		if visible {
+			content.Items = append([]*widget.FormItem{dpiItem}, content.Items...)
+		} else {
+			content.RemoveItem(dpiItem)
+		}
+		content.Refresh()
+	}
 	exportDialog := dialog.NewCustomConfirm("导出文档", "导出", "取消", content, func(confirmed bool) {
 		if !confirmed {
 			return
 		}
-		dpi, err := strconv.Atoi(strings.TrimSpace(dpiEntry.Text))
-		if err != nil || dpi < 1 || dpi > 1200 {
-			dialog.ShowInformation("导出失败", "DPI 必须是 1-1200 之间的整数。", v.window)
-			return
+		dpi := exportDPI
+		if formatSelect.Selected == exportFormatJPG || formatSelect.Selected == exportFormatPNG {
+			var err error
+			dpi, err = strconv.Atoi(strings.TrimSpace(dpiEntry.Text))
+			if err != nil || dpi < 1 || dpi > 1200 {
+				dialog.ShowInformation("导出失败", "DPI 必须是 1-1200 之间的整数。", v.window)
+				return
+			}
 		}
 		v.export(exportFormatCode(formatSelect.Selected), dpi, exportBackgroundColor(backgroundSelect.Selected))
 	}, v.window)
