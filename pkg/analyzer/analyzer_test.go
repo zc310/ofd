@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,165 @@ func TestAnalyzeHelloWorld(t *testing.T) {
 	}
 	if report.Resources.Files != 1 || report.Summary.Fonts != 1 {
 		t.Fatalf("resources = %+v, summary = %+v", report.Resources, report.Summary)
+	}
+}
+
+func TestAnalyzeSignatureDigest(t *testing.T) {
+	report, err := Analyze(fixturePath("999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Signatures) != 1 {
+		t.Fatalf("signatures = %d, want 1", len(report.Signatures))
+	}
+	signature := report.Signatures[0]
+	if !signature.DigestChecked || !signature.DigestValid {
+		t.Fatalf("signature digest = %+v", signature)
+	}
+	if signature.DigestMethod != "1.2.156.10197.1.401" || len(signature.DigestReferences) == 0 {
+		t.Fatalf("digest details = %+v", signature)
+	}
+	if signature.SignedValueFormat != "SES" || !signature.SignedValueParsed || signature.SignedValueParseError != "" {
+		t.Fatalf("signed value parsing = %+v", signature)
+	}
+	if signature.SignedValue != "Doc_0/Signs/Sign_0/SignedValue.dat" {
+		t.Fatalf("resolved absolute SignedValue path = %q", signature.SignedValue)
+	}
+	if signature.SealInfo == nil || signature.SealInfo.ID != "50011200000323" || signature.SealInfo.Name != "测试全国统一发票监制章国家税务总局重庆市税务局" || signature.SealInfo.PictureType != "ofd" || signature.SealInfo.PictureWidth != 30 || signature.SealInfo.PictureHeight != 20 {
+		t.Fatalf("seal info = %+v", signature.SealInfo)
+	}
+	if signature.SealInfo.ValidFrom == "" || signature.SealInfo.ValidTo == "" || signature.SealSignatureAlgorithm != "1.2.156.10197.1.501" || signature.OuterSignatureAlgorithm != "1.2.156.10197.1.501" {
+		t.Fatalf("seal timing and algorithms = %+v", signature)
+	}
+	for _, reference := range signature.DigestReferences {
+		if !reference.Exists || !reference.Match || reference.Expected == "" || reference.Actual == "" {
+			t.Fatalf("reference digest = %+v", reference)
+		}
+	}
+	if signature.DataHash == nil || !signature.DataHash.Match || signature.DataHash.Expected == "" || signature.DataHash.Actual == "" {
+		t.Fatalf("data hash = %+v", signature.DataHash)
+	}
+	var text, markdown bytes.Buffer
+	if !signature.VerificationChecked || !signature.VerificationValid || signature.SealVerification == nil || signature.OuterVerification == nil {
+		t.Fatalf("signature verification = %+v", signature)
+	}
+	if !signature.SealVerification.Valid || !signature.OuterVerification.Valid || signature.SealVerification.PublicKey != "SM2" || signature.OuterVerification.PublicKey != "SM2" {
+		t.Fatalf("verification components = %+v, %+v", signature.SealVerification, signature.OuterVerification)
+	}
+	if signature.SealVerification.SignatureFormat != "der" || signature.OuterVerification.SignatureFormat != "der" {
+		t.Fatalf("signature value formats = %+v, %+v", signature.SealVerification, signature.OuterVerification)
+	}
+	if err := RenderText(&text, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text.String(), "印章：ID 50011200000323") || !strings.Contains(text.String(), "签名算法：内部 1.2.156.10197.1.501") {
+		t.Fatalf("signature structure text = %s", text.String())
+	}
+	if err := RenderMarkdown(&markdown, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown.String(), "| 印章 ID |") || !strings.Contains(markdown.String(), "50011200000323") {
+		t.Fatalf("signature structure markdown = %s", markdown.String())
+	}
+	if signature.TrustChecked || signature.Trusted || signature.SealVerification.TrustChecked || signature.OuterVerification.TrustChecked {
+		t.Fatalf("unexpected implicit certificate trust result = %+v, %+v", signature.SealVerification, signature.OuterVerification)
+	}
+	if err := RenderText(&text, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text.String(), "证书信任 未校验") {
+		t.Fatalf("signature trust text = %s", text.String())
+	}
+	if err := RenderMarkdown(&markdown, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown.String(), "| 密码学验证 |") || !strings.Contains(markdown.String(), "| 未校验 |") {
+		t.Fatalf("signature trust markdown = %s", markdown.String())
+	}
+}
+
+func TestAnalyzeMalformedSignedValueAddsSignatureWarning(t *testing.T) {
+	data := replaceArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat", []byte("not-an-asn1-signed-value"))
+	report, err := Analyze(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.ParsedPages == 0 {
+		t.Fatalf("ordinary page analysis stopped: %+v", report.Summary)
+	}
+	if len(report.Signatures) != 1 || report.Signatures[0].SignedValueParsed || report.Signatures[0].SignedValueParseError == "" {
+		t.Fatalf("signed value failure = %+v", report.Signatures)
+	}
+	warningFound := false
+	for _, warning := range report.Warnings {
+		if strings.Contains(warning, "签名[1]") && strings.Contains(warning, "SignedValue 解析失败") {
+			warningFound = true
+			break
+		}
+	}
+	if !warningFound {
+		t.Fatalf("signed value warnings = %v", report.Warnings)
+	}
+}
+
+func TestAnalyzeSignatureOptionsOverrideVerification(t *testing.T) {
+	report, err := Analyze(fixturePath("999.ofd"), WithSignatureFormat("RAW"), WithSignatureUID("non-default-user-id"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Signatures) != 1 {
+		t.Fatalf("signatures = %d", len(report.Signatures))
+	}
+	signature := report.Signatures[0]
+	if !signature.VerificationChecked || signature.VerificationValid || signature.SealVerification == nil || signature.OuterVerification == nil {
+		t.Fatalf("signature options result = %+v", signature)
+	}
+	if signature.SealVerification.Error == "" || signature.OuterVerification.Error == "" {
+		t.Fatalf("signature option errors = %+v, %+v", signature.SealVerification, signature.OuterVerification)
+	}
+}
+
+func TestAnalyzeRejectsInvalidSignatureCRL(t *testing.T) {
+	_, err := Analyze(fixturePath("999.ofd"), WithSignatureCRLsPEM([]byte("not-a-crl")))
+	if err == nil || !strings.Contains(err.Error(), "解析 CRL") {
+		t.Fatalf("invalid CRL error = %v", err)
+	}
+}
+
+func TestAnalyzeMissingSignedValueAddsSignatureWarning(t *testing.T) {
+	data := removeArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	report, err := Analyze(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.ParsedPages == 0 {
+		t.Fatalf("ordinary page analysis stopped: %+v", report.Summary)
+	}
+	if len(report.Signatures) != 1 || report.Signatures[0].SignedValueExists || report.Signatures[0].SignedValueParseError == "" {
+		t.Fatalf("missing signed value = %+v", report.Signatures)
+	}
+	warningFound := false
+	for _, warning := range report.Warnings {
+		if strings.Contains(warning, "签名[1]") && strings.Contains(warning, "SignedValue 解析失败") {
+			warningFound = true
+			break
+		}
+	}
+	if !warningFound {
+		t.Fatalf("missing signed value warnings = %v", report.Warnings)
+	}
+}
+
+func TestAnalyzeResolvesRelativeSignedValuePath(t *testing.T) {
+	signatureXML := readArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml")
+	signatureXML = bytes.Replace(signatureXML, []byte("<ofd:SignedValue>/Doc_0/Signs/Sign_0/SignedValue.dat</ofd:SignedValue>"), []byte("<ofd:SignedValue>SignedValue.dat</ofd:SignedValue>"), 1)
+	data := replaceArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml", signatureXML)
+	report, err := Analyze(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Signatures) != 1 || !report.Signatures[0].SignedValueExists || report.Signatures[0].SignedValueFormat != "SES" || report.Signatures[0].SealInfo == nil {
+		t.Fatalf("relative SignedValue analysis = %+v", report.Signatures)
 	}
 }
 
@@ -521,6 +681,116 @@ func makeArchive(t *testing.T, files map[string]string) []byte {
 			t.Fatal(err)
 		}
 		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func replaceArchiveEntry(t *testing.T, filename, entryName string, replacement []byte) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	archive := zip.NewWriter(&buffer)
+	for _, entry := range reader.File {
+		writer, err := archive.Create(entry.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Name == entryName {
+			if _, err := writer.Write(replacement); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		entryReader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(entryReader)
+		_ = entryReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func readArchiveEntry(t *testing.T, filename, entryName string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range reader.File {
+		if entry.Name != entryName {
+			continue
+		}
+		entryReader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(entryReader)
+		_ = entryReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return content
+	}
+	t.Fatalf("archive entry %q not found", entryName)
+	return nil
+}
+
+func removeArchiveEntry(t *testing.T, filename, entryName string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	archive := zip.NewWriter(&buffer)
+	for _, entry := range reader.File {
+		if entry.Name == entryName {
+			continue
+		}
+		writer, err := archive.Create(entry.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entryReader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(entryReader)
+		_ = entryReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write(content); err != nil {
 			t.Fatal(err)
 		}
 	}

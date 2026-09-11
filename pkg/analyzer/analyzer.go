@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -9,9 +10,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
+	gmx509 "github.com/tjfoc/gmsm/x509"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -98,6 +101,10 @@ func Analyze(input any, options ...Option) (Report, error) {
 		report.Errors = []string{"OFD 没有可分析的文档体"}
 		return report, errors.New(report.Errors[0])
 	}
+	if err := configureSignatureVerification(ofd, configured); err != nil {
+		report.Errors = []string{fmt.Sprintf("配置签名验证失败: %v", err)}
+		return report, err
+	}
 
 	a := &analyzer{
 		options:             configured,
@@ -132,6 +139,93 @@ func Analyze(input any, options ...Option) (Report, error) {
 	a.analyzeDocuments(ofd)
 	a.finish()
 	return a.report, nil
+}
+
+func configureSignatureVerification(ofd *parser.OFD, options Options) error {
+	if len(options.SignatureUID) == 0 && options.SignatureFormat == "" && len(options.SignatureTrustRootsPEM) == 0 && len(options.SignatureCRLsPEM) == 0 && len(options.SignatureRevocationIssuersPEM) == 0 {
+		return nil
+	}
+	var trust *parser.CertificateTrustOptions
+	if len(options.SignatureTrustRootsPEM) > 0 {
+		roots := gmx509.NewCertPool()
+		if !roots.AppendCertsFromPEM(options.SignatureTrustRootsPEM) {
+			return errors.New("信任根 PEM 中没有可解析的证书")
+		}
+		trust = &parser.CertificateTrustOptions{Roots: roots}
+	}
+	var revocation *parser.CertificateRevocationOptions
+	if len(options.SignatureCRLsPEM) > 0 || len(options.SignatureRevocationIssuersPEM) > 0 {
+		crls, err := parsePEMOrDERBlocks(options.SignatureCRLsPEM, "X509 CRL")
+		if err != nil {
+			return fmt.Errorf("CRL: %w", err)
+		}
+		issuers, err := parsePEMOrDERBlocks(options.SignatureRevocationIssuersPEM, "CERTIFICATE")
+		if err != nil {
+			return fmt.Errorf("CRL 签发者证书: %w", err)
+		}
+		for _, crl := range crls {
+			if _, err := gmx509.ParseCRL(crl); err != nil {
+				return fmt.Errorf("解析 CRL 失败: %w", err)
+			}
+		}
+		for _, issuer := range issuers {
+			if _, err := gmx509.ParseCertificate(issuer); err != nil {
+				return fmt.Errorf("解析 CRL 签发者证书失败: %w", err)
+			}
+		}
+		revocation = &parser.CertificateRevocationOptions{CRLs: crls, Issuers: issuers}
+	}
+	verificationOptions := &parser.SignatureVerificationOptions{
+		UID:             append([]byte(nil), options.SignatureUID...),
+		SignatureFormat: parser.SM2SignatureFormat(strings.ToLower(strings.TrimSpace(options.SignatureFormat))),
+		Trust:           trust,
+		Revocation:      revocation,
+	}
+	for _, document := range ofd.Documents {
+		if document == nil {
+			continue
+		}
+		for id, signedValue := range document.SignedValues {
+			if signedValue == nil || signedValue.SES == nil {
+				continue
+			}
+			result, err := parser.VerifySESSignedValueWithOptions(signedValue, verificationOptions)
+			if err != nil {
+				document.VerificationErrors[id] = err
+				delete(document.VerificationResults, id)
+				continue
+			}
+			document.VerificationResults[id] = result
+			delete(document.VerificationErrors, id)
+		}
+	}
+	return nil
+}
+
+func parsePEMOrDERBlocks(data []byte, blockType string) ([][]byte, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var blocks [][]byte
+	remaining := data
+	for {
+		block, rest := pem.Decode(remaining)
+		if block == nil {
+			break
+		}
+		if block.Type != blockType {
+			return nil, fmt.Errorf("PEM 类型为 %q，期望 %q", block.Type, blockType)
+		}
+		blocks = append(blocks, block.Bytes)
+		remaining = rest
+	}
+	if len(blocks) == 0 {
+		return [][]byte{append([]byte(nil), data...)}, nil
+	}
+	if strings.TrimSpace(string(remaining)) != "" {
+		return nil, errors.New("PEM 后包含无法解析的内容")
+	}
+	return blocks, nil
 }
 
 func inputInfo(input any) (string, int64) {
@@ -1023,6 +1117,48 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 		}
 		signedValue := resolveFrom(models.StLoc(path.Dir(signaturePath)), signature.SignedValue)
 		info := SignatureInfo{DocumentIndex: documentIndex, ID: item.ID, Type: item.Type, Path: signaturePath, Provider: signature.SignedInfo.Provider.ProviderName, Company: signature.SignedInfo.Provider.Company, Version: signature.SignedInfo.Provider.Version, Method: signature.SignedInfo.SignatureMethod, Date: signature.SignedInfo.SignatureDateTime, CheckMethod: signature.SignedInfo.References.CheckMethod, ReferenceCount: len(signature.SignedInfo.References.Reference), StampCount: len(signature.SignedInfo.StampAnnot), Pages: pages, SignedValue: signedValue, SignedValueExists: a.fileExists(signedValue)}
+		if signedValueResult := doc.SignedValues[item.ID]; signedValueResult != nil {
+			info.SignedValueFormat = signedValueResult.Format
+			info.SignedValueParsed = signedValueResult.ASN1 != nil
+			if signedValueResult.SES != nil {
+				info.SealInfo = signatureSealInfo(signedValueResult.SES.TBS.Seal.SealInfo)
+				info.SealSignatureAlgorithm = signedValueResult.SES.TBS.Seal.SignatureAlgorithm.String()
+				info.OuterSignatureAlgorithm = signedValueResult.SES.SignatureAlgorithm.String()
+			}
+		}
+		if signedValueErr := doc.SignedValueErrors[item.ID]; signedValueErr != nil {
+			info.SignedValueParseError = signedValueErr.Error()
+			a.addWarning(fmt.Sprintf("签名[%s] SignedValue 解析失败(%s): %v", item.ID, signedValue, signedValueErr))
+		}
+		if digest := doc.DigestResults[item.ID]; digest != nil {
+			info.DigestChecked = true
+			info.DigestValid = digest.Valid
+			info.DigestMethod = digest.Method
+			info.DigestReferences = make([]SignatureDigestInfo, 0, len(digest.References))
+			for _, reference := range digest.References {
+				info.DigestReferences = append(info.DigestReferences, SignatureDigestInfo{FileRef: reference.FileRef, ResolvedPath: reference.ResolvedPath, Exists: reference.Exists, Match: reference.Match, Expected: parser.DigestBase64(reference.Expected), Actual: parser.DigestBase64(reference.Actual), Error: reference.Error})
+			}
+			if digest.DataHash != nil {
+				info.DataHash = &SignatureDataHashInfo{Match: digest.DataHash.Match, Expected: parser.DigestBase64(digest.DataHash.Expected), Actual: parser.DigestBase64(digest.DataHash.Actual), Error: digest.DataHash.Error}
+			}
+		}
+		if verification := doc.VerificationResults[item.ID]; verification != nil {
+			info.VerificationChecked = true
+			info.VerificationValid = verification.Valid
+			info.TrustChecked = verification.TrustChecked
+			info.Trusted = verification.Trusted
+			info.RevocationChecked = verification.RevocationChecked
+			info.RevocationValid = verification.RevocationValid
+			if !verification.VerificationTime.IsZero() {
+				info.VerificationTime = verification.VerificationTime.Format(time.RFC3339)
+			}
+			info.SealVerification = signatureComponentInfo(verification.Seal)
+			info.OuterVerification = signatureComponentInfo(verification.Outer)
+		}
+		if verificationErr := doc.VerificationErrors[item.ID]; verificationErr != nil {
+			info.VerificationChecked = true
+			info.VerificationError = verificationErr.Error()
+		}
 		if signature.SignedInfo.Seal != nil {
 			info.Seal = resolveFrom(models.StLoc(path.Dir(signaturePath)), signature.SignedInfo.Seal.BaseLoc)
 			info.SealExists = a.fileExists(info.Seal)
@@ -1037,6 +1173,44 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 			resolved := resolveFrom(models.StLoc(path.Dir(signaturePath)), reference.FileRef)
 			a.addFileReference(signaturePath, "signature-reference", resolved, a.fileExists(resolved))
 		}
+	}
+}
+
+func signatureComponentInfo(value parser.SignatureComponentResult) *SignatureComponentInfo {
+	result := &SignatureComponentInfo{
+		Valid:             value.Valid,
+		Algorithm:         value.Algorithm,
+		SignatureFormat:   value.SignatureFormat,
+		CertificateValid:  value.CertificateValid,
+		TrustChecked:      value.TrustChecked,
+		Trusted:           value.Trusted,
+		TrustError:        value.TrustError,
+		RevocationChecked: value.RevocationChecked,
+		RevocationStatus:  value.RevocationStatus,
+		RevocationError:   value.RevocationError,
+		Error:             value.Error,
+	}
+	if value.Certificate != nil {
+		result.SerialNumber = value.Certificate.SerialNumber
+		result.Subject = value.Certificate.Subject.String()
+		result.Issuer = value.Certificate.Issuer.String()
+		result.NotBefore = value.Certificate.NotBefore.Format(time.RFC3339)
+		result.NotAfter = value.Certificate.NotAfter.Format(time.RFC3339)
+		result.PublicKey = value.Certificate.PublicKey
+	}
+	return result
+}
+
+func signatureSealInfo(value parser.SESealInfo) *SignatureSealInfo {
+	return &SignatureSealInfo{
+		ID:            value.ESID,
+		Name:          value.Property.Name,
+		CreateTime:    value.Property.CreateTime.Format(time.RFC3339),
+		ValidFrom:     value.Property.ValidFrom.Format(time.RFC3339),
+		ValidTo:       value.Property.ValidTo.Format(time.RFC3339),
+		PictureType:   value.Picture.Type,
+		PictureWidth:  value.Picture.Width,
+		PictureHeight: value.Picture.Height,
 	}
 }
 
