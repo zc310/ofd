@@ -188,7 +188,11 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ofd.Close()
+	defer func() {
+		if err := ofd.Close(); err != nil {
+			t.Errorf("关闭 OFD 失败: %v", err)
+		}
+	}()
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
 	for _, media := range doc.Res {
@@ -223,7 +227,11 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ofd.Close()
+	defer func() {
+		if err := ofd.Close(); err != nil {
+			t.Errorf("关闭 OFD 失败: %v", err)
+		}
+	}()
 	if len(ofd.Documents[0].Pages) == 0 {
 		t.Fatal("expected at least one page")
 	}

@@ -415,7 +415,7 @@ func newViewer(window fyne.Window) *viewer {
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
 			row := item.(*fyne.Container)
-			firstPage := int(id)
+			firstPage := id
 			if v.isDoublePage() {
 				firstPage *= 2
 			}
@@ -733,15 +733,6 @@ func (v *viewer) hideExportLoading() {
 	v.exportLoading = nil
 }
 
-func exportDocuments(documents []*render.Document, path, format string, dpi int, background color.Color) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	return exportDocumentsToWriter(documents, file, format, dpi, background)
-}
-
 func exportDocumentsToWriter(documents []*render.Document, output io.Writer, format string, dpi int, background color.Color) error {
 	if len(documents) == 0 {
 		return fmt.Errorf("文档没有页面")
@@ -821,13 +812,6 @@ func exportImageOption(format string) canvasConverter.Option {
 	default:
 		return canvasConverter.PNG()
 	}
-}
-
-func exportFileTypeName(format string, pages int) string {
-	if !strings.EqualFold(format, "pdf") && !strings.EqualFold(format, "txt") && pages > 1 {
-		return "ZIP 压缩包"
-	}
-	return strings.ToUpper(format) + " 文件"
 }
 
 type zipEntryWriter struct {
