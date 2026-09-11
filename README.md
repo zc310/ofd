@@ -972,6 +972,10 @@ go run ./cmd/ofd-analyzer --format markdown -o analyzer-report.md test/testdata/
 
 # 输出 PDF 报告；PDF 报告需要可用字体
 go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf test/testdata/helloworld.ofd
+
+# 指定 SM2 UID、签名值格式、证书链信任根和离线 CRL
+go run ./cmd/ofd-analyzer --signature-uid custom-id --signature-format auto --signature-roots roots.pem test.ofd
+go run ./cmd/ofd-analyzer --signature-crls revoked.crl --signature-revocation-issuers issuer.pem test.ofd
 ```
 
 分析报告主要包含：
@@ -980,7 +984,7 @@ go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-repo
 - 文档体、页面列表以及页面尺寸等页面结构信息
 - 页面对象、文字对象和字符数量统计
 - 图片、字体、绘制参数、复合图元、颜色空间、模板和 Pattern 等资源统计
-- 附件、注解、签名以及文件引用和 ID 引用关系
+- 附件、注解、签名值结构解析、签名摘要校验、SES 签名密码学验证以及文件引用和 ID 引用关系
 - 绘制参数的定义数、引用次数、无法解析引用数和 `Relative` 继承循环
 - 字符的 Unicode code point、UTF-8 字节、空白字符和 glyph 数量
 
@@ -990,6 +994,7 @@ go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-repo
 - 使用 `--no-templates` 可跳过模板定义、模板引用和模板 `PageRes` 资源分析
 - 使用 `--no-annotations` 可跳过注解及 Appearance 分析
 - 使用 `--no-signatures` 可跳过签名清单分析
+- 使用 `--signature-uid` 和 `--signature-format` 配置 SM2 签名验证；使用 `--signature-roots` 显式启用证书链校验；使用 `--signature-crls` 和 `--signature-revocation-issuers` 启用不联网的离线 CRL 吊销校验
 - 使用 `--no-package` 可跳过 ZIP 条目大小统计，但保留包内路径索引
 - 使用 `--fail-on-warning` 可在发现分析警告时返回退出码 `1`
 
