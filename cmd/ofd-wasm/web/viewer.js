@@ -196,6 +196,7 @@ const recentClear = document.querySelector('#recent-clear');
 const pagesElement = document.querySelector('#pages');
 const backToTop = document.querySelector('#back-to-top');
 const thumbnailsElement = document.querySelector('#thumbnails');
+const readerElement = document.querySelector('.reader');
 const empty = document.querySelector('#empty');
 const dropHint = document.querySelector('#drop-hint');
 const pageNumber = document.querySelector('#page-number');
@@ -299,7 +300,14 @@ let pageLayout = (() => {
   }
 })();
 let zoomGeneration = 0;
-let thumbnailsVisible = true;
+const thumbnailsStorageKey = 'ofd-show-thumbnails';
+let thumbnailsVisible = (() => {
+  try {
+    return localStorage.getItem(thumbnailsStorageKey) !== 'false';
+  } catch (_) {
+    return true;
+  }
+})();
 let textLayerVisible = true;
 let darkReadingVisible = false;
 let pageRotation = 0;
@@ -996,9 +1004,8 @@ function fitPageZoom() {
   const dimensions = spreadDimensions(currentSpreadPosition());
   if (!dimensions.height || !pagesElement.clientWidth) return;
   const readerStyle = getComputedStyle(document.querySelector('.reader'));
-  const horizontalPadding = parseFloat(readerStyle.paddingLeft) + parseFloat(readerStyle.paddingRight);
   const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
-  const availableWidth = Math.max(1, Math.min(pagesElement.clientWidth - horizontalPadding, window.innerWidth - horizontalPadding));
+  const availableWidth = Math.max(1, pagesElement.clientWidth);
   const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
   const spreadRatio = dimensions.width / dimensions.height;
   const spreadWidth = Math.min(availableWidth, availableHeight * spreadRatio);
@@ -1084,7 +1091,9 @@ function handleTouchEnd(event) {
 }
 
 function headerHeight() {
-  return document.querySelector('header')?.offsetHeight || 0;
+  const height = document.querySelector('header')?.offsetHeight || 0;
+  document.documentElement.style.setProperty('--header-height', `${height}px`);
+  return height;
 }
 
 function matchingSearchResults(pageIndex, runIndex) {
@@ -1326,6 +1335,8 @@ function flushThumbnailBatch() {
 
 function buildPages() {
   updateThumbnailLayout();
+  thumbnailsElement.hidden = !thumbnailsVisible;
+  readerElement.classList.toggle('hide-thumbnails', !thumbnailsVisible);
   resizeObserver?.disconnect();
   pagesElement.replaceChildren();
   thumbnailsElement.replaceChildren();
@@ -2161,9 +2172,14 @@ async function printSelectedPages(indexes) {
 }
 
 function setSearchPanelOpen(open) {
+  if (open) headerHeight();
   searchPanel.hidden = !open;
   searchToggle.setAttribute('aria-expanded', String(open));
-  if (open) searchInput.focus();
+  if (open) {
+    setRecentPanelOpen(false);
+    setViewPanelOpen(false);
+    searchInput.focus();
+  }
 }
 
 function setReadingMode(enabled) {
@@ -2182,11 +2198,21 @@ function setReadingMode(enabled) {
 function setViewPanelOpen(open) {
   viewPanel.hidden = !open;
   viewToggle.setAttribute('aria-expanded', String(open));
+  if (open) {
+    setRecentPanelOpen(false);
+    setSearchPanelOpen(false);
+  }
 }
 
 function setMobileToolbarExpanded(expanded) {
   const header = document.querySelector('header');
   header?.classList.toggle('mobile-toolbar-expanded', expanded);
+  if (expanded) {
+    setRecentPanelOpen(false);
+    setSearchPanelOpen(false);
+    setViewPanelOpen(false);
+  }
+  requestAnimationFrame(() => headerHeight());
   mobileToolbarToggle?.setAttribute('aria-expanded', String(expanded));
   if (mobileToolbarToggle) {
     mobileToolbarToggle.title = expanded ? '收起工具栏' : '展开工具栏';
@@ -2198,8 +2224,18 @@ function setMobileToolbarExpanded(expanded) {
 
 function setThumbnailsVisible(visible) {
   thumbnailsVisible = visible;
+  showThumbnails.checked = visible;
+  thumbnailsElement.hidden = !visible;
+  readerElement.classList.toggle('hide-thumbnails', !visible);
   document.body.classList.toggle('hide-thumbnails', !visible);
+  try {
+    localStorage.setItem(thumbnailsStorageKey, String(visible));
+  } catch (_) {}
   if (!visible) setViewPanelOpen(false);
+  requestAnimationFrame(() => {
+    if (zoomMode === 'fit') fitWidthZoom();
+    else if (zoomMode === 'page') fitPageZoom();
+  });
 }
 
 function setTextLayerVisible(visible) {
@@ -2217,6 +2253,12 @@ function setDarkReadingVisible(visible) {
   }
 }
 
+try {
+  showThumbnails.checked = thumbnailsVisible;
+  setThumbnailsVisible(thumbnailsVisible);
+} catch (_) {
+  document.body.classList.toggle('hide-thumbnails', !thumbnailsVisible);
+}
 try {
   darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
   setDarkReadingVisible(darkReading.checked);
