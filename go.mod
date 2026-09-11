@@ -6,6 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.8.0
+	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/h2non/filetype v1.1.3
 	github.com/knroy/go-xml v1.2.2
 	github.com/nao1215/imaging v1.0.10
@@ -15,10 +16,9 @@ require (
 	github.com/tdewolff/canvas v0.0.0-20260901160717-dae8cd8e19a7
 	github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
 	github.com/tjfoc/gmsm v1.4.1
-	github.com/xiaoqidun/jbig2 v0.0.0-20260907160805-b4d50cc00e4f
 	github.com/zc310/fontfix v0.0.1
 	go.yaml.in/yaml/v3 v3.0.5
-	golang.org/x/image v0.45.0
+	golang.org/x/image v0.46.0
 )
 
 require (
@@ -34,7 +34,7 @@ require (
 	github.com/Kagami/go-avif v0.1.0 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/andybalholm/brotli v1.2.3 // indirect
-	github.com/anthonynsimon/bild v0.17.0 // indirect
+	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/benoitkugler/textlayout v0.3.2 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -48,7 +48,7 @@ require (
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-text/render v0.2.1 // indirect
-	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
@@ -57,7 +57,7 @@ require (
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
-	github.com/mattn/go-runewidth v0.0.29 // indirect
+	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7 // indirect
@@ -68,10 +68,11 @@ require (
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
 	github.com/yuin/goldmark v1.8.6 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	gonum.org/v1/plot v0.17.0 // indirect
 	modernc.org/knuth v0.6.0 // indirect
 	modernc.org/token v1.1.0 // indirect
