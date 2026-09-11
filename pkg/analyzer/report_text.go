@@ -197,6 +197,34 @@ func writeSignaturesText(writer io.Writer, report Report) error {
 		if _, err := fmt.Fprintf(writer, "  [%d] 文档体 %d，ID %s，路径 %s，引用 %d，盖章 %d\n", signature.DocumentIndex, signature.DocumentIndex, signature.ID, signature.Path, signature.ReferenceCount, signature.StampCount); err != nil {
 			return err
 		}
+		if signature.DigestChecked {
+			if _, err := fmt.Fprintf(writer, "    摘要：%s，算法 %s，引用通过 %s，DataHash %s\n", yesNoLabel(signature.DigestValid), signature.DigestMethod, digestMatchLabel(signature.DigestReferences), dataHashMatchLabel(signature.DataHash)); err != nil {
+				return err
+			}
+		}
+		if signature.SealInfo != nil {
+			if _, err := fmt.Fprintf(writer, "    印章：ID %s，名称 %s，有效期 %s 至 %s，图片 %s\n", signature.SealInfo.ID, signature.SealInfo.Name, signature.SealInfo.ValidFrom, signature.SealInfo.ValidTo, signature.SealInfo.PictureType); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(writer, "    签名算法：内部 %s（%s），外层 %s（%s）\n", signature.SealSignatureAlgorithm, componentSignatureFormat(signature.SealVerification), signature.OuterSignatureAlgorithm, componentSignatureFormat(signature.OuterVerification)); err != nil {
+				return err
+			}
+		}
+		if signature.VerificationChecked {
+			if _, err := fmt.Fprintf(writer, "    密码学验证：%s，内部签名 %s，外层签名 %s，证书信任 %s，验证时间 %s\n", yesNoLabel(signature.VerificationValid), componentVerificationLabel(signature.SealVerification), componentVerificationLabel(signature.OuterVerification), trustVerificationLabel(signature), signature.VerificationTime); err != nil {
+				return err
+			}
+			if signature.RevocationChecked {
+				if _, err := fmt.Fprintf(writer, "    吊销校验：%s，内部证书 %s，外层证书 %s\n", yesNoLabel(signature.RevocationValid), componentRevocationLabel(signature.SealVerification), componentRevocationLabel(signature.OuterVerification)); err != nil {
+					return err
+				}
+			}
+			if signature.VerificationError != "" {
+				if _, err := fmt.Fprintf(writer, "    验证错误：%s\n", signature.VerificationError); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -517,16 +545,91 @@ func writeMarkdownAnnotations(writer io.Writer, report Report) error {
 }
 
 func writeMarkdownSignatures(writer io.Writer, report Report) error {
-	if _, err := io.WriteString(writer, "## 签名\n\n| 文档体 | ID | 路径 | 引用 | 盖章 |\n| ---: | --- | --- | ---: | ---: |\n"); err != nil {
+	if _, err := io.WriteString(writer, "## 签名\n\n| 文档体 | ID | 路径 | 印章 ID | 印章名称 | 引用 | 盖章 | 摘要 | 算法 | DataHash | 密码学验证 | 内部签名 | 外层签名 | 证书信任 | 吊销校验 |\n| ---: | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- |\n"); err != nil {
 		return err
 	}
 	for _, signature := range report.Signatures {
-		if _, err := fmt.Fprintf(writer, "| %d | `%s` | `%s` | %d | %d |\n", signature.DocumentIndex, escapeMarkdown(signature.ID), escapeMarkdown(signature.Path), signature.ReferenceCount, signature.StampCount); err != nil {
+		sealID, sealName := "", ""
+		if signature.SealInfo != nil {
+			sealID, sealName = signature.SealInfo.ID, signature.SealInfo.Name
+		}
+		if _, err := fmt.Fprintf(writer, "| %d | `%s` | `%s` | `%s` | `%s` | %d | %d | %s | `%s` | %s | %s | %s | %s | %s | %s |\n", signature.DocumentIndex, escapeMarkdown(signature.ID), escapeMarkdown(signature.Path), escapeMarkdown(sealID), escapeMarkdown(sealName), signature.ReferenceCount, signature.StampCount, digestCheckedLabel(signature), escapeMarkdown(signature.DigestMethod), dataHashMatchLabel(signature.DataHash), verificationCheckedLabel(signature), componentVerificationLabel(signature.SealVerification), componentVerificationLabel(signature.OuterVerification), trustVerificationLabel(signature), revocationVerificationLabel(signature)); err != nil {
 			return err
 		}
 	}
 	_, err := io.WriteString(writer, "\n")
 	return err
+}
+
+func componentVerificationLabel(value *SignatureComponentInfo) string {
+	if value == nil {
+		return "未校验"
+	}
+	return yesNoLabel(value.Valid)
+}
+
+func componentSignatureFormat(value *SignatureComponentInfo) string {
+	if value == nil || value.SignatureFormat == "" {
+		return "未知格式"
+	}
+	return value.SignatureFormat
+}
+
+func verificationCheckedLabel(signature SignatureInfo) string {
+	if !signature.VerificationChecked {
+		return "未校验"
+	}
+	return yesNoLabel(signature.VerificationValid)
+}
+
+func trustVerificationLabel(signature SignatureInfo) string {
+	if !signature.TrustChecked {
+		return "未校验"
+	}
+	return yesNoLabel(signature.Trusted)
+}
+
+func revocationVerificationLabel(signature SignatureInfo) string {
+	if !signature.RevocationChecked {
+		return "未校验"
+	}
+	return yesNoLabel(signature.RevocationValid)
+}
+
+func componentRevocationLabel(value *SignatureComponentInfo) string {
+	if value == nil || !value.RevocationChecked {
+		return "未校验"
+	}
+	if value.RevocationStatus == "" {
+		return "未知"
+	}
+	return value.RevocationStatus
+}
+
+func digestCheckedLabel(signature SignatureInfo) string {
+	if !signature.DigestChecked {
+		return "未校验"
+	}
+	return yesNoLabel(signature.DigestValid)
+}
+
+func digestMatchLabel(references []SignatureDigestInfo) string {
+	if len(references) == 0 {
+		return "无引用"
+	}
+	for _, reference := range references {
+		if !reference.Match {
+			return "否"
+		}
+	}
+	return "是"
+}
+
+func dataHashMatchLabel(value *SignatureDataHashInfo) string {
+	if value == nil {
+		return "不适用"
+	}
+	return yesNoLabel(value.Match)
 }
 
 func writeMarkdownReferences(writer io.Writer, name string, references []ReferenceEdge) error {

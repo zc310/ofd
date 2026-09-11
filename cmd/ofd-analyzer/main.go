@@ -21,18 +21,23 @@ const (
 )
 
 type options struct {
-	input         string
-	output        string
-	format        string
-	font          string
-	pretty        bool
-	noTemplates   bool
-	noAnnotations bool
-	noSignatures  bool
-	tree          bool
-	failOnWarning bool
-	version       bool
-	help          bool
+	input            string
+	output           string
+	format           string
+	font             string
+	signatureUID     string
+	signatureFormat  string
+	signatureRoots   string
+	signatureCRLs    string
+	signatureIssuers string
+	pretty           bool
+	noTemplates      bool
+	noAnnotations    bool
+	noSignatures     bool
+	tree             bool
+	failOnWarning    bool
+	version          bool
+	help             bool
 }
 
 func main() {
@@ -65,6 +70,36 @@ func run(args []string, stdout, stderr io.Writer) int {
 		analyzer.WithSignatures(!opts.noSignatures),
 		analyzer.WithTree(opts.tree),
 	}
+	if opts.signatureUID != "" {
+		analysisOptions = append(analysisOptions, analyzer.WithSignatureUID(opts.signatureUID))
+	}
+	if opts.signatureFormat != "" {
+		analysisOptions = append(analysisOptions, analyzer.WithSignatureFormat(opts.signatureFormat))
+	}
+	if opts.signatureRoots != "" {
+		certificates, err := os.ReadFile(opts.signatureRoots)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-analyzer: 读取签名信任根失败:", err)
+			return exitUsage
+		}
+		analysisOptions = append(analysisOptions, analyzer.WithSignatureTrustRootsPEM(certificates))
+	}
+	if opts.signatureCRLs != "" {
+		crls, err := os.ReadFile(opts.signatureCRLs)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-analyzer: 读取签名 CRL 失败:", err)
+			return exitUsage
+		}
+		analysisOptions = append(analysisOptions, analyzer.WithSignatureCRLsPEM(crls))
+	}
+	if opts.signatureIssuers != "" {
+		issuers, err := os.ReadFile(opts.signatureIssuers)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-analyzer: 读取 CRL 签发者证书失败:", err)
+			return exitUsage
+		}
+		analysisOptions = append(analysisOptions, analyzer.WithSignatureRevocationIssuersPEM(issuers))
+	}
 	report, analyzeErr := analyzer.Analyze(opts.input, analysisOptions...)
 	if err := writeReport(opts, report, stdout); err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-analyzer:", err)
@@ -89,6 +124,11 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.output, "output", "", "报告输出路径；使用 - 输出到标准输出")
 	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json 或 pdf；默认为 text")
 	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的字体文件")
+	flags.StringVar(&opts.signatureUID, "signature-uid", "", "SM2 签名用户标识")
+	flags.StringVar(&opts.signatureFormat, "signature-format", "", "SM2 签名值格式：auto、der 或 raw")
+	flags.StringVar(&opts.signatureRoots, "signature-roots", "", "签名证书链校验使用的 PEM 信任根文件")
+	flags.StringVar(&opts.signatureCRLs, "signature-crls", "", "离线签名证书吊销校验使用的 PEM/DER CRL 文件")
+	flags.StringVar(&opts.signatureIssuers, "signature-revocation-issuers", "", "验证 CRL 签名使用的 PEM 签发者证书文件")
 	flags.BoolVar(&opts.pretty, "pretty", false, "缩进 JSON 输出")
 	flags.BoolVar(&opts.noTemplates, "no-templates", false, "跳过模板定义、引用和 PageRes 资源分析，但保留模板元数据")
 	flags.BoolVar(&opts.noAnnotations, "no-annotations", false, "跳过注解及 Appearance 分析")
@@ -130,6 +170,38 @@ func validateOptions(opts *options) error {
 	}
 	if opts.font != "" && opts.format != "pdf" {
 		return errors.New("--font 只能与 --format pdf 一起使用")
+	}
+	if opts.signatureFormat != "" {
+		switch strings.ToLower(strings.TrimSpace(opts.signatureFormat)) {
+		case "auto", "der", "raw":
+			opts.signatureFormat = strings.ToLower(strings.TrimSpace(opts.signatureFormat))
+		default:
+			return fmt.Errorf("不支持的签名值格式 %q", opts.signatureFormat)
+		}
+	}
+	if opts.signatureRoots != "" {
+		if info, err := os.Stat(opts.signatureRoots); err != nil || info.IsDir() {
+			if err != nil {
+				return fmt.Errorf("签名信任根文件：%w", err)
+			}
+			return errors.New("签名信任根路径不能是目录")
+		}
+	}
+	if opts.signatureCRLs != "" {
+		if info, err := os.Stat(opts.signatureCRLs); err != nil || info.IsDir() {
+			if err != nil {
+				return fmt.Errorf("签名 CRL 文件：%w", err)
+			}
+			return errors.New("签名 CRL 路径不能是目录")
+		}
+	}
+	if opts.signatureIssuers != "" {
+		if info, err := os.Stat(opts.signatureIssuers); err != nil || info.IsDir() {
+			if err != nil {
+				return fmt.Errorf("CRL 签发者证书文件：%w", err)
+			}
+			return errors.New("CRL 签发者证书路径不能是目录")
+		}
 	}
 	if err := analyzer.ValidateInputPath(opts.input); err != nil {
 		return fmt.Errorf("输入文件：%w", err)

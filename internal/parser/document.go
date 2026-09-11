@@ -24,21 +24,26 @@ func (p *Common) Init(fileCache *core.Package, dir models.StLoc) {
 type Document struct {
 	Common
 	models.Document
-	Pages          []*Page
-	Templates      map[models.StID]*models.PageContent
-	DrawParams     map[models.StID]*models.DrawParam
-	Res            map[models.StID]*models.MultiMedia
-	FontRes        map[models.StID]*models.Font
-	CompositeUnits map[models.StID]*models.CompositeGraphicUnit
-	PublicRes      []*models.Res
-	DocumentRes    []*models.Res
-	Signs          map[string]*models.Signature
-	Seals          map[models.StID][]*SealInfo
-	Annotations    map[models.StID]*models.PageAnnot
-	Attachments    *models.Attachments
-	CustomTags     *models.CustomTags
-	Extensions     *models.Extensions
-	Versions       map[string]*models.DocVersion
+	Pages               []*Page
+	Templates           map[models.StID]*models.PageContent
+	DrawParams          map[models.StID]*models.DrawParam
+	Res                 map[models.StID]*models.MultiMedia
+	FontRes             map[models.StID]*models.Font
+	CompositeUnits      map[models.StID]*models.CompositeGraphicUnit
+	PublicRes           []*models.Res
+	DocumentRes         []*models.Res
+	Signs               map[string]*models.Signature
+	SignedValues        map[string]*SignedValue
+	SignedValueErrors   map[string]error
+	DigestResults       map[string]*SignatureDigestResult
+	VerificationResults map[string]*SignatureVerificationResult
+	VerificationErrors  map[string]error
+	Seals               map[models.StID][]*SealInfo
+	Annotations         map[models.StID]*models.PageAnnot
+	Attachments         *models.Attachments
+	CustomTags          *models.CustomTags
+	Extensions          *models.Extensions
+	Versions            map[string]*models.DocVersion
 }
 
 // collectCompositeUnits 收集资源中的复合图元定义。
@@ -259,6 +264,11 @@ func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bo
 }
 func (p *Document) ParseSigns(file *models.StLoc) error {
 	p.Signs = make(map[string]*models.Signature)
+	p.SignedValues = make(map[string]*SignedValue)
+	p.SignedValueErrors = make(map[string]error)
+	p.DigestResults = make(map[string]*SignatureDigestResult)
+	p.VerificationResults = make(map[string]*SignatureVerificationResult)
+	p.VerificationErrors = make(map[string]error)
 	p.Seals = make(map[models.StID][]*SealInfo)
 	if file == nil {
 		return nil
@@ -277,6 +287,42 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		}
 		seDir := body.BaseLoc.Resolve(dir).Dir()
 		p.Signs[body.ID] = &sig
+		var signedValue *SignedValue
+		if sig.SignedValue != "" {
+			signedValuePath := sig.SignedValue.Resolve(seDir).String()
+			var signedValueBytes []byte
+			if signedValueBytes, err = p.FileCache.Read(signedValuePath); err != nil {
+				// 签名值属于签名扩展数据。文件缺失只影响当前签名，不能中止普通文档解析。
+				signedValueErr := fmt.Errorf("%s: 读取签名值失败: %w", signedValuePath, err)
+				p.SignedValueErrors[body.ID] = signedValueErr
+				slog.Warn("读取签名值失败", "signature", body.ID, "file", signedValuePath, "error", err)
+			} else if signedValue, err = ParseSignedValue(signedValueBytes); err != nil {
+				// SignedValue 是二进制扩展点。非 ASN.1 生产者数据继续保持历史兼容，
+				// 同时将解析错误保存下来供调用方查看。
+				signedValue = &SignedValue{
+					Raw:    append([]byte(nil), signedValueBytes...),
+					Format: "unknown",
+				}
+				p.SignedValues[body.ID] = signedValue
+				p.SignedValueErrors[body.ID] = fmt.Errorf("%s: %w", signedValuePath, err)
+				slog.Warn("解析签名值失败", "file", signedValuePath, "error", err)
+			} else {
+				p.SignedValues[body.ID] = signedValue
+			}
+		}
+		if digestResult, digestErr := VerifySignatureDigest(p.FileCache, body.BaseLoc.Resolve(dir).String(), &sig, signedValue); digestErr != nil {
+			slog.Warn("校验签名摘要失败", "signature", body.ID, "error", digestErr)
+		} else {
+			p.DigestResults[body.ID] = digestResult
+		}
+		if verification, verificationErr := VerifySESSignedValue(signedValue); verificationErr != nil {
+			if signedValue != nil && signedValue.SES != nil {
+				p.VerificationErrors[body.ID] = verificationErr
+				slog.Warn("验证签名失败", "signature", body.ID, "error", verificationErr)
+			}
+		} else if verification != nil {
+			p.VerificationResults[body.ID] = verification
+		}
 		var sealData *SealData
 		var buf []byte
 		if sig.SignedInfo.Seal != nil {
@@ -295,10 +341,12 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		} else {
 			if len(sig.SignedInfo.StampAnnot) > 0 {
 				if buf, err = p.FileCache.Read(sig.SignedValue.Resolve(seDir).String()); err != nil {
-					return err
+					slog.Warn("读取签名值失败", "signature", body.ID, "file", sig.SignedValue.Resolve(seDir).String(), "error", err)
+					continue
 				}
 				if sealData, err = ExtractSealData(buf); err != nil {
-					return err
+					slog.Warn("提取签章失败", "file", sig.SignedValue.Resolve(seDir).String(), "error", err)
+					continue
 				}
 				for _, annot := range sig.SignedInfo.StampAnnot {
 					p.Seals[models.StID(annot.PageRef)] = append(p.Seals[models.StID(annot.PageRef)], &SealInfo{StampAnnot: annot, SealData: sealData})

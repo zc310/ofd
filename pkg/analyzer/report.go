@@ -34,6 +34,16 @@ type Options struct {
 	IncludeSignatures bool
 	// IncludeTree 是否输出 ZIP 包目录树。默认关闭。
 	IncludeTree bool
+	// SignatureUID 是可选的 SM2 签名用户标识。
+	SignatureUID []byte
+	// SignatureFormat 是 SM2 签名值格式，支持 auto、der 和 raw。
+	SignatureFormat string
+	// SignatureTrustRootsPEM 是可选的 PEM 信任根证书集合。
+	SignatureTrustRootsPEM []byte
+	// SignatureCRLsPEM 是可选的 PEM/DER CRL 集合。
+	SignatureCRLsPEM []byte
+	// SignatureRevocationIssuersPEM 是用于验证 CRL 签名的 PEM 证书集合。
+	SignatureRevocationIssuersPEM []byte
 }
 
 // Option 配置分析工具。
@@ -58,6 +68,33 @@ func WithSignatures(enabled bool) Option {
 // WithTree 设置是否输出 ZIP 包目录树。
 func WithTree(enabled bool) Option {
 	return func(options *Options) { options.IncludeTree = enabled }
+}
+
+// WithSignatureUID 设置 SM2 签名用户标识。
+func WithSignatureUID(uid string) Option {
+	return func(options *Options) { options.SignatureUID = []byte(uid) }
+}
+
+// WithSignatureFormat 设置 SM2 签名值格式。
+func WithSignatureFormat(format string) Option {
+	return func(options *Options) { options.SignatureFormat = format }
+}
+
+// WithSignatureTrustRootsPEM 设置证书链校验使用的 PEM 信任根证书。
+func WithSignatureTrustRootsPEM(certificates []byte) Option {
+	return func(options *Options) { options.SignatureTrustRootsPEM = append([]byte(nil), certificates...) }
+}
+
+// WithSignatureCRLsPEM 设置离线吊销校验使用的 CRL 文件内容。
+func WithSignatureCRLsPEM(crls []byte) Option {
+	return func(options *Options) { options.SignatureCRLsPEM = append([]byte(nil), crls...) }
+}
+
+// WithSignatureRevocationIssuersPEM 设置用于验证 CRL 签名的证书文件内容。
+func WithSignatureRevocationIssuersPEM(certificates []byte) Option {
+	return func(options *Options) {
+		options.SignatureRevocationIssuersPEM = append([]byte(nil), certificates...)
+	}
 }
 
 // Report 是分析工具的稳定 JSON 报告模型。
@@ -546,10 +583,140 @@ type SignatureInfo struct {
 	SignedValue string `json:"signed_value,omitempty"`
 	// SignedValueExists 表示签名值文件是否存在。
 	SignedValueExists bool `json:"signed_value_exists"`
+	// SignedValueFormat 是签名值识别出的格式，例如 SES 或 ASN.1。
+	SignedValueFormat string `json:"signed_value_format,omitempty"`
+	// SignedValueParsed 表示签名值是否成功解析。
+	SignedValueParsed bool `json:"signed_value_parsed"`
+	// SignedValueParseError 是签名值解析失败原因。
+	SignedValueParseError string `json:"signed_value_parse_error,omitempty"`
 	// Seal 是印章文件路径。
 	Seal string `json:"seal,omitempty"`
 	// SealExists 表示印章文件是否存在。
 	SealExists bool `json:"seal_exists"`
+	// SealInfo 是 SignedValue 中解析出的电子印章主体信息。
+	SealInfo *SignatureSealInfo `json:"seal_info,omitempty"`
+	// SealSignatureAlgorithm 是印章内部签名算法 OID。
+	SealSignatureAlgorithm string `json:"seal_signature_algorithm,omitempty"`
+	// OuterSignatureAlgorithm 是 SignedValue 外层签名算法 OID。
+	OuterSignatureAlgorithm string `json:"outer_signature_algorithm,omitempty"`
+	// DigestChecked 表示是否执行了签名引用摘要校验。
+	DigestChecked bool `json:"digest_checked"`
+	// DigestValid 表示签名引用摘要及 DataHash 校验是否全部通过。
+	DigestValid bool `json:"digest_valid"`
+	// DigestMethod 是签名引用声明的摘要算法。
+	DigestMethod string `json:"digest_method,omitempty"`
+	// DigestReferences 是签名引用的逐项摘要结果。
+	DigestReferences []SignatureDigestInfo `json:"digest_references,omitempty"`
+	// DataHash 是 SES 签名中 TBS_Sign.DataHash 的校验结果。
+	DataHash *SignatureDataHashInfo `json:"data_hash,omitempty"`
+	// VerificationChecked 表示是否执行了密码学签名验证。
+	VerificationChecked bool `json:"verification_checked"`
+	// VerificationValid 表示 SES 内外两层签名是否均通过。
+	VerificationValid bool `json:"verification_valid"`
+	// VerificationError 是密码学验证无法执行时的错误。
+	VerificationError string `json:"verification_error,omitempty"`
+	// TrustChecked 表示是否执行了证书链校验。
+	TrustChecked bool `json:"trust_checked"`
+	// Trusted 表示两层签名证书是否均被显式信任根信任。
+	Trusted bool `json:"trusted"`
+	// RevocationChecked 表示是否执行了证书吊销校验。
+	RevocationChecked bool `json:"revocation_checked"`
+	// RevocationValid 表示两层证书均未被 CRL 吊销。
+	RevocationValid bool `json:"revocation_valid"`
+	// VerificationTime 是验证证书有效期使用的签名时间。
+	VerificationTime string `json:"verification_time,omitempty"`
+	// SealVerification 是印章内部签名验证结果。
+	SealVerification *SignatureComponentInfo `json:"seal_verification,omitempty"`
+	// OuterVerification 是 SignedValue 外层签名验证结果。
+	OuterVerification *SignatureComponentInfo `json:"outer_verification,omitempty"`
+}
+
+// SignatureSealInfo 描述 SES SignedValue 中的印章主体信息。
+type SignatureSealInfo struct {
+	// ID 是电子印章标识。
+	ID string `json:"id,omitempty"`
+	// Name 是电子印章名称。
+	Name string `json:"name,omitempty"`
+	// CreateTime 是印章创建时间。
+	CreateTime string `json:"create_time,omitempty"`
+	// ValidFrom 是印章有效期起点。
+	ValidFrom string `json:"valid_from,omitempty"`
+	// ValidTo 是印章有效期终点。
+	ValidTo string `json:"valid_to,omitempty"`
+	// PictureType 是印章图片类型。
+	PictureType string `json:"picture_type,omitempty"`
+	// PictureWidth 是印章图片宽度。
+	PictureWidth int64 `json:"picture_width,omitempty"`
+	// PictureHeight 是印章图片高度。
+	PictureHeight int64 `json:"picture_height,omitempty"`
+}
+
+// SignatureComponentInfo 描述一层签名的证书和验证结果。
+type SignatureComponentInfo struct {
+	// Valid 表示数学签名验证通过。
+	Valid bool `json:"valid"`
+	// Algorithm 是签名算法 OID。
+	Algorithm string `json:"algorithm,omitempty"`
+	// SignatureFormat 是签名值实际使用的编码格式。
+	SignatureFormat string `json:"signature_format,omitempty"`
+	// CertificateValid 表示证书在签名时间点有效。
+	CertificateValid bool `json:"certificate_valid"`
+	// TrustChecked 表示是否执行了证书链校验。
+	TrustChecked bool `json:"trust_checked"`
+	// Trusted 表示证书链校验通过。
+	Trusted bool `json:"trusted"`
+	// TrustError 是证书链校验失败原因。
+	TrustError string `json:"trust_error,omitempty"`
+	// RevocationChecked 表示是否执行了证书吊销校验。
+	RevocationChecked bool `json:"revocation_checked"`
+	// RevocationStatus 是吊销状态：good、revoked、unknown 或 error。
+	RevocationStatus string `json:"revocation_status,omitempty"`
+	// RevocationError 是吊销校验失败原因。
+	RevocationError string `json:"revocation_error,omitempty"`
+	// SerialNumber 是证书序列号。
+	SerialNumber string `json:"serial_number,omitempty"`
+	// Subject 是证书主体。
+	Subject string `json:"subject,omitempty"`
+	// Issuer 是证书颁发者。
+	Issuer string `json:"issuer,omitempty"`
+	// NotBefore 是证书有效期起点。
+	NotBefore string `json:"not_before,omitempty"`
+	// NotAfter 是证书有效期终点。
+	NotAfter string `json:"not_after,omitempty"`
+	// PublicKey 是证书公钥类型。
+	PublicKey string `json:"public_key,omitempty"`
+	// Error 是验证失败原因。
+	Error string `json:"error,omitempty"`
+}
+
+// SignatureDigestInfo 描述一个签名引用的摘要校验结果。
+type SignatureDigestInfo struct {
+	// FileRef 是 Signature.xml 中的原始引用路径。
+	FileRef string `json:"file_ref"`
+	// ResolvedPath 是解析后的包内路径。
+	ResolvedPath string `json:"resolved_path,omitempty"`
+	// Exists 表示被引用文件是否存在。
+	Exists bool `json:"exists"`
+	// Match 表示实际摘要是否与 CheckValue 一致。
+	Match bool `json:"match"`
+	// Expected 是 Signature.xml 中的 Base64 摘要值。
+	Expected string `json:"expected,omitempty"`
+	// Actual 是实际计算得到的 Base64 摘要值。
+	Actual string `json:"actual,omitempty"`
+	// Error 是当前引用的校验错误。
+	Error string `json:"error,omitempty"`
+}
+
+// SignatureDataHashInfo 描述 SES DataHash 的校验结果。
+type SignatureDataHashInfo struct {
+	// Match 表示 DataHash 是否与 Signature.xml 摘要一致。
+	Match bool `json:"match"`
+	// Expected 是 SignedValue.dat 中的 Base64 摘要值。
+	Expected string `json:"expected,omitempty"`
+	// Actual 是实际计算得到的 Base64 摘要值。
+	Actual string `json:"actual,omitempty"`
+	// Error 是 DataHash 的校验错误。
+	Error string `json:"error,omitempty"`
 }
 
 // ReferenceEdge 描述一条文件或逻辑 ID 引用关系。

@@ -1,12 +1,17 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"encoding/pem"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/internal/parser"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -16,6 +21,77 @@ func TestParseArgs(t *testing.T) {
 	}
 	if !opts.pretty || opts.format != "markdown" || !opts.tree || opts.output != "report.md" || opts.input != "input.ofd" {
 		t.Fatalf("options = %+v", opts)
+	}
+}
+
+func TestParseArgsSignatureOptions(t *testing.T) {
+	opts, err := parseArgs([]string{"--signature-uid", "custom-id", "--signature-format", "raw", "--signature-roots", "roots.pem", "--signature-crls", "revoked.crl", "--signature-revocation-issuers", "issuer.pem", "input.ofd"}, new(bytes.Buffer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.signatureUID != "custom-id" || opts.signatureFormat != "raw" || opts.signatureRoots != "roots.pem" || opts.signatureCRLs != "revoked.crl" || opts.signatureIssuers != "issuer.pem" {
+		t.Fatalf("signature options = %+v", opts)
+	}
+}
+
+func TestValidateOptionsRejectsInvalidSignatureFormat(t *testing.T) {
+	opts := &options{input: filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"), format: "text", signatureFormat: "invalid"}
+	if err := validateOptions(opts); err == nil {
+		t.Fatal("expected invalid signature format error")
+	}
+}
+
+func TestRunAcceptsSignatureFormatOption(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--format", "json", "--signature-format", "raw", input}, &stdout, &stderr)
+	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"verification_checked":true`) || !strings.Contains(stdout.String(), `"verification_valid":false`) {
+		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunRejectsInvalidSignatureRoots(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	roots := filepath.Join(t.TempDir(), "roots.pem")
+	if err := os.WriteFile(roots, []byte("not a certificate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--format", "json", "--signature-roots", roots, input}, &stdout, &stderr)
+	if code != exitFailed || !strings.Contains(stderr.String(), "分析失败") || !strings.Contains(stdout.String(), `"status":"failed"`) {
+		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunAcceptsSignatureRoots(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	signedValue := readArchiveEntry(t, input, "Doc_0/Signs/Sign_0/SignedValue.dat")
+	value, err := parser.ParseSignedValue(signedValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := filepath.Join(t.TempDir(), "roots.pem")
+	rootPEM := append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: value.SES.Certificate}), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: value.SES.TBS.Seal.Certificate})...)
+	if err := os.WriteFile(roots, rootPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--format", "json", "--signature-roots", roots, input}, &stdout, &stderr)
+	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"trust_checked":true`) || !strings.Contains(stdout.String(), `"trusted":true`) {
+		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunRejectsInvalidSignatureCRL(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	crl := filepath.Join(t.TempDir(), "revoked.crl")
+	if err := os.WriteFile(crl, []byte("not a CRL"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--format", "json", "--signature-crls", crl, input}, &stdout, &stderr)
+	if code != exitFailed || !strings.Contains(stderr.String(), "分析失败") || !strings.Contains(stdout.String(), `"status":"failed"`) {
+		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -140,4 +216,33 @@ func min(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func readArchiveEntry(t *testing.T, filename, entryName string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range reader.File {
+		if entry.Name != entryName {
+			continue
+		}
+		entryReader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(entryReader)
+		_ = entryReader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return content
+	}
+	t.Fatalf("archive entry %q not found", entryName)
+	return nil
 }
