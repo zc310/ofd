@@ -54,6 +54,9 @@ ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 WASM := cmd/ofd-wasm/web/ofd.wasm
 WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
+WASM_VIEWER := cmd/ofd-wasm/web/viewer.js
+WASM_WORKER := cmd/ofd-wasm/web/worker.js
+WASM_INDEX := cmd/ofd-wasm/web/index.html
 WASM_WEB_DIR := cmd/ofd-wasm/web
 WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
 
@@ -135,7 +138,21 @@ build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(
 
 build-tools: $(TOOL_BUILD_TARGETS)
 
-build-wasm: $(WASM) $(WASM_EXEC)
+build-wasm: $(WASM) $(WASM_EXEC) $(WASM_INDEX)
+
+$(WASM_INDEX): $(WASM_VIEWER) $(WASM_WORKER) $(WASM) FORCE
+	@VIEWER_HASH=$$(sha256sum "$(WASM_VIEWER)" | cut -c1-16); \
+	WORKER_HASH=$$(sha256sum "$(WASM_WORKER)" | cut -c1-16); \
+	WASM_HASH=$$(sha256sum "$(WASM)" | cut -c1-16); \
+	VIEWER_HASH="$$VIEWER_HASH" WORKER_HASH="$$WORKER_HASH" WASM_HASH="$$WASM_HASH" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_INDEX)"); text = path.read_text(); text = re.sub("viewer[.]js[?]v=[^\\x27\\\" ]+", "viewer.js?v=" + os.environ["VIEWER_HASH"], text); text = re.sub("worker[.]js[?]v=[^\\x27\\\" ]+", "worker.js?v=" + os.environ["WORKER_HASH"], text); text = re.sub("ofd[.]wasm[?]v=[^\\x27\\\" ]+", "ofd.wasm?v=" + os.environ["WASM_HASH"], text); path.write_text(text)'
+
+$(WASM_VIEWER): $(WASM_WORKER) FORCE
+	@hash=$$(sha256sum "$(WASM_WORKER)" | cut -c1-16); \
+	WORKER_HASH="$$hash" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_VIEWER)"); text = path.read_text(); text = re.sub("(?<!service-)worker[.]js[?]v=[^\\x27\\\" ]+", "worker.js?v=" + os.environ["WORKER_HASH"], text); path.write_text(text)'
+
+$(WASM_WORKER): $(WASM) FORCE
+	@hash=$$(sha256sum "$(WASM)" | cut -c1-16); \
+	WASM_HASH="$$hash" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_WORKER)"); text = path.read_text(); text = re.sub("ofd[.]wasm[?]v=[^\\x27\\\" ]+", "ofd.wasm?v=" + os.environ["WASM_HASH"], text); path.write_text(text)'
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"

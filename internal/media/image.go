@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	_ "github.com/dkrisman/gobig2"
 	"github.com/zc310/ofd/internal/core"
-
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
@@ -86,6 +86,11 @@ func ExtractFirstImage(filename string) (image.Image, error) {
 func decodeImage(reader io.Reader) (image.Image, error) {
 	img, _, err := image.Decode(reader)
 	return img, err
+}
+
+// DecodeBytes 从内存中的图像字节直接解码栅格图像。
+func DecodeBytes(data []byte) (image.Image, error) {
+	return decodeImage(bytes.NewReader(data))
 }
 
 func decodeOpenedImage(reader io.ReadCloser) (image.Image, error) {

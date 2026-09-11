@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js');
+    this.worker = new Worker('worker.js?v=6ed435133ac60896');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -254,14 +254,14 @@ const fallbackFontURLs = [
     weight: 400,
   },
 ];
-const fallbackFontCacheName = 'ofd-fonts-v2';
+const fallbackFontCacheName = 'ofd-fonts';
 const fallbackFontTimeout = 45_000;
 const fallbackFontFamily = 'OFD-Google-Noto-Sans-SC';
 const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
 let fallbackFontRegistration;
 const transparentRenderBackground = '#00000000';
-const recentDatabaseName = 'ofd-reader-v1';
+const recentDatabaseName = 'ofd-reader';
 const recentStoreName = 'files';
 const recentFileLimit = 5;
 const recentFileMaxBytes = 64 << 20;

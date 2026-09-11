@@ -3,6 +3,7 @@ package render
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"log/slog"
 	"math"
@@ -15,11 +16,14 @@ import (
 
 type Document struct {
 	*parser.Document
-	background color.Color
-	fonts      *Fonts
-	fallbacks  []fallbackFontResource
-	renderMu   sync.Mutex
-	budget     renderBudget
+	background  color.Color
+	fonts       *Fonts
+	fallbacks   []fallbackFontResource
+	renderMu    sync.Mutex
+	budget      renderBudget
+	imageMu     sync.Mutex
+	images      *lruCache[string, image.Image]
+	svgCanvases *lruCache[string, *canvas.Canvas]
 }
 
 type fallbackFontResource struct {
@@ -44,6 +48,7 @@ type renderBudget struct {
 
 func (b *renderBudget) reset() {
 	b.compositeExpansions = 0
+
 	b.compositeResources = make(map[models.StID]int)
 	b.patternTiles = 0
 	b.offscreenPixels = 0
@@ -82,8 +87,19 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 	return true
 }
 
+const (
+	imageCacheCapacity = 128
+	svgCacheCapacity   = 64
+)
+
 func NewDocument(background color.Color, doc *parser.Document) *Document {
-	return &Document{background: background, fonts: NewFonts(doc), Document: doc}
+	return &Document{
+		background:  background,
+		fonts:       NewFonts(doc),
+		Document:    doc,
+		images:      newLRU[string, image.Image](imageCacheCapacity),
+		svgCanvases: newLRU[string, *canvas.Canvas](svgCacheCapacity),
+	}
 }
 
 // AddFallbackFont 注册在文档字体未内嵌时使用的字体。
