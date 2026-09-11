@@ -4,6 +4,15 @@ OFD WASM 将 OFD 文档解析和渲染能力提供给浏览器 JavaScript 使用
 
 浏览器阅读器示例和可直接部署的 Web 页面位于 [`web`](web) 目录。
 
+## 截图
+
+![OFD WASM 网页阅读器](../../docs/screenshots/wasm/webreader_1.png)
+
+![OFD WASM 网页阅读器 双页模式](../../docs/screenshots/wasm/webreader_2.png)
+
+示例使用 `worker.js` 将解析和渲染放在 Web Worker 中；页面使用 `IntersectionObserver` 按可视区域附近懒加载，并分别缓存正文页和缩略图的 Blob URL。工具栏支持 50% 到 300% 缩放，页面缩放时按 DPI 重新渲染正文，缩略图保持 36 DPI。
+
+
 ## 快速开始
 
 在仓库根目录执行：
