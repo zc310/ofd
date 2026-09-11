@@ -302,6 +302,7 @@ func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StB
 			object := item.Text
 			object.Boundary = object.Boundary.CopyAndShift(&box)
 			p.Text(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
+		case models.PageItemComposite, models.PageItemBlock:
 		}
 	}
 }

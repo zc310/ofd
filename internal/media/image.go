@@ -53,8 +53,6 @@ func ExtractFirstImage(filename string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer archive.Close()
-
 	var first image.Image
 	found := false
 	err = archive.WalkEntries(func(entry core.Entry) bool {
@@ -73,8 +71,12 @@ func ExtractFirstImage(filename string) (image.Image, error) {
 		}
 		return true
 	})
+	closeErr := archive.Close()
 	if err != nil {
 		return nil, err
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("关闭图像包失败: %w", closeErr)
 	}
 	if found {
 		return first, nil

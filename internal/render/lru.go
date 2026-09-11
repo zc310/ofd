@@ -42,6 +42,9 @@ func (c *lruCache[K, V]) add(key K, value V) {
 	c.items[key] = c.order.PushFront(lruEntry[K, V]{key: key, value: value})
 	if c.order.Len() > c.capacity {
 		element := c.order.Back()
+		if element == nil {
+			return
+		}
 		delete(c.items, element.Value.(lruEntry[K, V]).key)
 		c.order.Remove(element)
 	}

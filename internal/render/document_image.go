@@ -21,7 +21,7 @@ func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *mod
 	p.image(ctx, object, dp, pb, nil, nil)
 }
 
-func (p *Document) image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -363,7 +363,7 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
 	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
 		yi := (y - src.Rect.Min.Y) * src.YStride
-		ci := (y - src.Rect.Min.Y)
+		ci := y - src.Rect.Min.Y
 		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
 			yy := src.Y[yi+x-src.Rect.Min.X]
 			cidx := cOffset(src, ci, x-src.Rect.Min.X)
