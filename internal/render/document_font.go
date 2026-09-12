@@ -156,7 +156,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 	if f = p.Fonts[id]; f != nil {
 		return f, nil
 	}
-	ft := p.FontRes[models.StID(id)]
+	ft := p.Document.GetFont(models.StID(id))
 	if ft == nil {
 		if fallback := p.fallbackFont(id, canvas.FontRegular); fallback != nil {
 			return fallback, nil
@@ -187,24 +187,30 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 			return f, nil
 		}
 	}
-	for candidateID, candidate := range p.FontRes {
+	var matched *canvas.FontFamily
+	p.Document.ForEachFont(func(candidateID models.StID, candidate *models.Font) bool {
 		// 没有 FontFile 的资源只是逻辑字体，不能借用同名的 OFD 子集字体。
 		// 子集字体可能只包含部分字形，即使 cmap 存在映射也不保证轮廓完整。
 		if ft.FontFile == "" || candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
-			continue
+			return true
 		}
 		buf, parseErr := p.FileCache.Read(string(candidate.FontFile))
 		if parseErr != nil {
-			continue
+			return true
 		}
 		if fixed, fixErr := fontfix.Repair(buf); fixErr == nil {
 			buf = fixed
 		}
-		f = canvas.NewFontFamily(fontName)
-		if err = f.LoadFont(buf, 0, fontStyle); err == nil && fontFamilyUsable(f) {
-			p.Fonts[id] = f
-			return f, nil
+		candidateFont := canvas.NewFontFamily(fontName)
+		if loadErr := candidateFont.LoadFont(buf, 0, fontStyle); loadErr == nil && fontFamilyUsable(candidateFont) {
+			matched = candidateFont
+			return false
 		}
+		return true
+	})
+	if matched != nil {
+		p.Fonts[id] = matched
+		return matched, nil
 	}
 	f = canvas.NewFontFamily(fontName)
 
@@ -341,7 +347,8 @@ func (p *Fonts) FallbackFontFamily(id models.StRefID) string {
 func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.FontRes[models.StID(id)] == nil || p.FontRes[models.StID(id)].FontFile == "" {
+	font := p.Document.GetFont(models.StID(id))
+	if font == nil || font.FontFile == "" {
 		return false
 	}
 	_, ok := p.Fonts[id]

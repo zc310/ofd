@@ -2,6 +2,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -150,34 +151,46 @@ func annotationVisible(annot *models.Annot) bool {
 }
 
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
-	if err := page.EnsureLoaded(); err != nil {
+	lease, err := page.AcquireLease()
+	if err != nil {
 		return err
 	}
+	defer lease.Release()
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
 	p.budget.reset()
-	page.EnsurePhysicalBox()
-	p.drawPage(ctx, page)
+	content := lease.Content()
+	if content == nil {
+		return errors.New("页面内容为空")
+	}
+	content.EnsurePhysicalBox()
+	p.drawPage(ctx, page, content)
 	return nil
 }
 
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
-	if err := page.EnsureLoaded(); err != nil {
+	lease, err := page.AcquireLease()
+	if err != nil {
 		return nil, err
 	}
+	defer lease.Release()
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
 	p.budget.reset()
-	page.EnsurePhysicalBox()
-	box := page.Area.PhysicalBox
+	content := lease.Content()
+	if content == nil {
+		return nil, errors.New("页面内容为空")
+	}
+	content.EnsurePhysicalBox()
+	box := content.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
-	p.drawPage(canvas.NewContext(c), page)
+	p.drawPage(canvas.NewContext(c), page, content)
 	return c, nil
 }
 
 // drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
-func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page) {
-	p.drawPageBackground(ctx, page.Area.PhysicalBox)
+func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page, content *models.PageContent) {
+	p.drawPageBackground(ctx, content.Area.PhysicalBox)
 	p.PageContent(ctx, page, true)
 }
 
@@ -188,23 +201,32 @@ func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
 }
 
 func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
-	if page == nil || page.EnsureLoaded() != nil {
+	if page == nil {
 		return
 	}
-	page.EnsurePhysicalBox()
-	pb := page.Area.PhysicalBox
-	for _, template := range page.Template {
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return
+	}
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return
+	}
+	content.EnsurePhysicalBox()
+	pb := content.Area.PhysicalBox
+	for _, template := range content.Template {
 		p.Template(ctx, template, pb)
 	}
 
-	if page.Content != nil {
-		p.drawLayers(ctx, page.Content.Layer, pb)
+	if content.Content != nil {
+		p.drawLayers(ctx, content.Content.Layer, pb)
 	}
 	if seal {
 		p.drawSeals(ctx, page.ID, pb)
 	}
 
-	if annot := p.Document.Annotations[page.ID]; annot != nil {
+	if annot := p.Document.GetAnnotation(page.ID); annot != nil {
 		for _, item := range annot.Annots {
 			p.Annot(ctx, item, pb)
 		}
@@ -212,7 +234,11 @@ func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool
 }
 
 func (p *Document) Template(ctx *canvas.Context, template models.Template, pb models.StBox) {
-	content := p.Templates[models.StID(template.TemplateID)]
+	content, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
+	if err != nil {
+		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
+		return
+	}
 	if content != nil && content.Content != nil {
 		p.drawLayers(ctx, content.Content.Layer, pb)
 	}
@@ -237,7 +263,7 @@ func (p *Document) drawLayers(ctx *canvas.Context, layers []*models.Layer, pb mo
 
 // drawSeals 绘制当前页面上的电子印章。
 func (p *Document) drawSeals(ctx *canvas.Context, pageID models.StID, pb models.StBox) {
-	for _, info := range p.Document.Seals[pageID] {
+	for _, info := range p.Document.GetSeals(pageID) {
 		if err := p.Seal(ctx, info, pb); err != nil {
 			slog.Error(err.Error())
 		}

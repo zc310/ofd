@@ -29,7 +29,8 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if compositeDepth >= maxCompositeDepth {
 		return
 	}
-	unit, ok := p.CompositeUnits[models.StID(object.ResourceID)]
+	unit := p.Document.GetCompositeUnit(models.StID(object.ResourceID))
+	ok := unit != nil
 	if !ok || unit == nil {
 		return
 	}

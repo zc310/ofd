@@ -90,11 +90,11 @@ func TestDocumentParsesSignedValues(t *testing.T) {
 	if len(ofd.Documents) != 1 {
 		t.Fatalf("documents = %d, want 1", len(ofd.Documents))
 	}
-	value := ofd.Documents[0].SignedValues["1"]
+	value := ofd.Documents[0].GetSignedValue("1")
 	if value == nil || value.SES == nil {
 		t.Fatalf("signed value = %#v", value)
 	}
-	digest := ofd.Documents[0].DigestResults["1"]
+	digest := ofd.Documents[0].GetDigestResult("1")
 	if digest == nil || !digest.Valid || digest.Method != "1.2.156.10197.1.401" {
 		t.Fatalf("digest result = %+v", digest)
 	}
@@ -106,9 +106,9 @@ func TestDocumentParsesSignedValues(t *testing.T) {
 			t.Fatalf("reference digest result = %+v", reference)
 		}
 	}
-	verification := ofd.Documents[0].VerificationResults["1"]
+	verification := ofd.Documents[0].GetVerificationResult("1")
 	if verification == nil || !verification.Valid {
-		t.Fatalf("verification result = %+v, error = %v", verification, ofd.Documents[0].VerificationErrors["1"])
+		t.Fatalf("verification result = %+v, error = %v", verification, ofd.Documents[0].GetVerificationError("1"))
 	}
 	if !verification.Seal.Valid || !verification.Outer.Valid || verification.Seal.Certificate == nil || verification.Outer.Certificate == nil {
 		t.Fatalf("verification components = %+v", verification)
@@ -302,7 +302,7 @@ func TestDocumentKeepsNonASN1SignedValue(t *testing.T) {
 
 	// 该测试保护签名值的存储约定。生产者自定义的非 ASN.1 数据由创建器测试覆盖，
 	// 不能因此中止整个 OFD 包的解析。
-	if ofd.Documents[0].SignedValues == nil || ofd.Documents[0].SignedValueErrors == nil {
+	if ofd.Documents[0].GetSignedValue("1") == nil && ofd.Documents[0].GetSignedValueError("1") == nil {
 		t.Fatal("signed value maps were not initialized")
 	}
 }

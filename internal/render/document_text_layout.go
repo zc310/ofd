@@ -37,17 +37,26 @@ type TextLayout struct {
 // TextLayouts 返回页面文字的字符级布局。字符步进使用渲染器的字体度量、
 // DeltaX/DeltaY、ReadDirection 和 CTM 基础计算，避免网页字体度量造成高亮偏移。
 func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
-	if p == nil || page == nil || page.EnsureLoaded() != nil {
+	if p == nil || page == nil {
 		return nil
 	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return nil
+	}
+	defer lease.Release()
 	layouts := make([]TextLayout, 0)
-	for _, template := range page.Template {
-		if content := p.Templates[models.StID(template.TemplateID)]; content != nil {
+	content := lease.Content()
+	if content == nil {
+		return nil
+	}
+	for _, template := range content.Template {
+		if content := p.Document.GetTemplate(models.StID(template.TemplateID)); content != nil {
 			collectTextLayouts(content.Content, &layouts, p)
 		}
 	}
-	if page.Content != nil {
-		for _, layer := range page.Content.Layer {
+	if content.Content != nil {
+		for _, layer := range content.Content.Layer {
 			if layer != nil {
 				collectTextLayoutBlock(&layer.CTPageBlock, &layouts, p)
 			}

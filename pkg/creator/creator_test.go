@@ -68,7 +68,7 @@ func TestCreateTextDocumentCanBeParsed(t *testing.T) {
 	if err := ofd.Documents[0].Pages[0].EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	if got := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0].Value; got != "你好，OFD" {
+	if got := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0].TextCode[0].Value; got != "你好，OFD" {
 		t.Fatalf("text = %q", got)
 	}
 	checkGeneratedPackage(t, data)
@@ -186,11 +186,11 @@ func TestCreatePageResources(t *testing.T) {
 	}
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[0]
-	if len(page.PageRes) != 1 || page.Content.Layer[0].ImageObject[0].ResourceID != 70 {
-		t.Fatalf("页面资源引用未正确生成: %+v", page.PageRes)
+	if len(page.PageRes()) != 1 || page.Content().Layer[0].ImageObject[0].ResourceID != 70 {
+		t.Fatalf("页面资源引用未正确生成: %+v", page.PageRes())
 	}
-	if ofd.Documents[0].Res[70] == nil || ofd.Documents[0].Res[70].Type != "Image" {
-		t.Fatalf("页面图片资源未加载: %+v", ofd.Documents[0].Res[70])
+	if ofd.Documents[0].GetMedia(70) == nil || ofd.Documents[0].GetMedia(70).Type != "Image" {
+		t.Fatalf("页面图片资源未加载: %+v", ofd.Documents[0].GetMedia(70))
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -342,10 +342,10 @@ func TestCreateAttachments(t *testing.T) {
 	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
-	if document.Attachments == nil || len(document.Attachments.Attachments) != 1 {
-		t.Fatalf("附件清单未生成: %+v", document.Attachments)
+	if document.GetAttachments() == nil || len(document.GetAttachments().Attachments) != 1 {
+		t.Fatalf("附件清单未生成")
 	}
-	attachment := document.Attachments.Attachments[0]
+	attachment := document.GetAttachments().Attachments[0]
 	if attachment.ID != "att-1" || attachment.Name != "说明文本" || attachment.FileLoc.String() != "Files/readme.txt" || attachment.Size == nil || *attachment.Size != 18 {
 		t.Fatalf("附件内容错误: %+v", attachment)
 	}
@@ -370,10 +370,10 @@ func TestCreateCustomTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if ofd.Documents[0].CustomTags == nil || len(ofd.Documents[0].CustomTags.CustomTags) != 1 {
-		t.Fatalf("自定义标签清单未生成: %+v", ofd.Documents[0].CustomTags)
+	if ofd.Documents[0].GetCustomTags() == nil || len(ofd.Documents[0].GetCustomTags().CustomTags) != 1 {
+		t.Fatalf("自定义标签清单未生成: %+v", ofd.Documents[0].GetCustomTags())
 	}
-	tag := ofd.Documents[0].CustomTags.CustomTags[0]
+	tag := ofd.Documents[0].GetCustomTags().CustomTags[0]
 	if tag.NameSpace != "urn:example:tags" || tag.SchemaLoc == nil || tag.FileLoc.String() != "Data/tags.xml" {
 		t.Fatalf("自定义标签内容错误: %+v", tag)
 	}
@@ -398,10 +398,10 @@ func TestCreateExtensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if ofd.Documents[0].Extensions == nil || len(ofd.Documents[0].Extensions.Extensions) != 1 {
-		t.Fatalf("扩展清单未生成: %+v", ofd.Documents[0].Extensions)
+	if ofd.Documents[0].GetExtensions() == nil || len(ofd.Documents[0].GetExtensions().Extensions) != 1 {
+		t.Fatalf("扩展清单未生成: %+v", ofd.Documents[0].GetExtensions())
 	}
-	extension := ofd.Documents[0].Extensions.Extensions[0]
+	extension := ofd.Documents[0].GetExtensions().Extensions[0]
 	if extension.AppName != "creator-test" || extension.RefID != 1 || len(extension.Properties) != 1 || extension.Data == nil {
 		t.Fatalf("扩展内容错误: %+v", extension)
 	}
@@ -424,8 +424,8 @@ func TestCreateExternalExtensionData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if ofd.Documents[0].Extensions == nil || len(ofd.Documents[0].Extensions.Extensions) != 1 || ofd.Documents[0].Extensions.Extensions[0].ExtendData == nil || ofd.Documents[0].Extensions.Extensions[0].ExtendData.String() != "Data/extension.bin" {
-		t.Fatalf("外部扩展数据未生成: %+v", ofd.Documents[0].Extensions)
+	if ofd.Documents[0].GetExtensions() == nil || len(ofd.Documents[0].GetExtensions().Extensions) != 1 || ofd.Documents[0].GetExtensions().Extensions[0].ExtendData == nil || ofd.Documents[0].GetExtensions().Extensions[0].ExtendData.String() != "Data/extension.bin" {
+		t.Fatalf("外部扩展数据未生成: %+v", ofd.Documents[0].GetExtensions())
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -711,8 +711,8 @@ func TestCreateSignatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if ofd.Documents[0].Signs == nil || len(ofd.Documents[0].Signs) != 1 {
-		t.Fatalf("签名未正确解析: %+v", ofd.Documents[0].Signs)
+	if ofd.Documents[0].GetSignature("sig-1") == nil {
+		t.Fatalf("签名未正确解析")
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -894,8 +894,8 @@ func TestCreateDocumentVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if len(ofd.Documents[0].Versions) != 1 || ofd.Documents[0].Versions["version-1"] == nil || ofd.Documents[0].Versions["version-1"].DocRoot.String() != "Files/version-document.xml" {
-		t.Fatalf("文档版本未正确解析: %+v", ofd.Documents[0].Versions)
+	if ofd.Documents[0].GetVersion("version-1") == nil || ofd.Documents[0].GetVersion("version-1").DocRoot.String() != "Files/version-document.xml" {
+		t.Fatalf("文档版本未正确解析")
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -1056,7 +1056,7 @@ func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	ft := ofd.Documents[0].FontRes[1]
+	ft := ofd.Documents[0].GetFont(1)
 	if ft == nil {
 		t.Fatal("embedded font was not parsed")
 	}
@@ -1129,7 +1129,7 @@ func TestCreateEmbeddedTTCFontResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	fontFile := ofd.Documents[0].FontRes[1].FontFile
+	fontFile := ofd.Documents[0].GetFont(1).FontFile
 	if !strings.HasSuffix(string(fontFile), ".otf") {
 		t.Fatalf("extracted TTC font resource uses unexpected file name: %q", fontFile)
 	}
@@ -1166,7 +1166,7 @@ func TestCreateTextWritesStyleAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	text := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0]
+	text := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0]
 	if text.HScale != 0.8 || text.ReadDirection != 1 || text.CharDirection != 2 || text.Weight != 700 || !text.Italic || !text.Stroke || text.Fill != "false" {
 		t.Fatalf("文字样式未正确生成: %+v", text)
 	}
@@ -1198,7 +1198,7 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	text := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0]
+	text := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0]
 	if text.CTM == nil || text.CTM[4] != 3 || text.CTM[5] != 4 {
 		t.Fatalf("CTM 未正确生成: %+v", text.CTM)
 	}
@@ -1224,7 +1224,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	code := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
+	code := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0].TextCode[0]
 	if code.Value != "abc" || len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
 		t.Fatalf("默认不应自动补全 DeltaX/DeltaY: %+v", code)
 	}
@@ -1237,7 +1237,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	}
 	ofd = newTestOFD(t, data)
 	defer ofd.Close()
-	code = ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
+	code = ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0].TextCode[0]
 	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 || code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
 		t.Fatalf("启用参数后 TextCode 自动补全值错误: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
 	}
@@ -1265,7 +1265,7 @@ func TestCreateTextCGTransforms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	text := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0]
+	text := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0]
 	if len(text.CGTransform) != 1 {
 		t.Fatalf("CGTransform 数量 = %d, want 1", len(text.CGTransform))
 	}
@@ -1338,7 +1338,7 @@ func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	transform := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].CGTransform[0]
+	transform := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0].CGTransform[0]
 	if len(transform.Glyphs) != 1 || transform.Glyphs[0] != int(subset.GlyphIndex('测')) {
 		t.Fatalf("CGTransform glyph = %v, want subset glyph %d", transform.Glyphs, subset.GlyphIndex('测'))
 	}
@@ -1382,10 +1382,10 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 	}
 
 	firstPage := document.Pages[0]
-	if firstPage.PageContent.Actions == nil || len(firstPage.PageContent.Actions.Action) != 1 || firstPage.PageContent.Actions.Action[0].URI == nil || firstPage.PageContent.Actions.Action[0].URI.URI != "https://example.com/page" {
-		t.Fatalf("页面动作未正确生成: %+v", firstPage.PageContent.Actions)
+	if firstPage.Actions() == nil || len(firstPage.Actions().Action) != 1 || firstPage.Actions().Action[0].URI == nil || firstPage.Actions().Action[0].URI.URI != "https://example.com/page" {
+		t.Fatalf("页面动作未正确生成: %+v", firstPage.Actions())
 	}
-	textAction := firstPage.PageContent.Content.Layer[0].TextObject[0].Actions
+	textAction := firstPage.Content().Layer[0].TextObject[0].Actions
 	if textAction == nil || len(textAction.Action) != 1 || textAction.Action[0].Goto == nil || textAction.Action[0].Goto.Dest == nil {
 		t.Fatalf("文字跳转动作未正确生成: %+v", textAction)
 	}
@@ -1393,7 +1393,7 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 		t.Fatalf("文字跳转目标未正确生成: %+v", textAction.Action[0].Goto.Dest)
 	}
 
-	pathAction := document.Pages[1].PageContent.Content.Layer[0].PathObject[0].Actions
+	pathAction := document.Pages[1].Content().Layer[0].PathObject[0].Actions
 	if pathAction == nil || len(pathAction.Action) != 1 || pathAction.Action[0].URI == nil || pathAction.Action[0].URI.URI != "https://example.com/path" {
 		t.Fatalf("路径动作未正确生成: %+v", pathAction)
 	}
@@ -1445,16 +1445,16 @@ func TestCreateMediaActions(t *testing.T) {
 	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
-	if len(document.DocumentRes) != 1 || document.DocumentRes[0].MultiMedias == nil || len(document.DocumentRes[0].MultiMedias.MultiMedia) != 2 {
-		t.Fatalf("多媒体资源未生成: %+v", document.DocumentRes)
+	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].MultiMedias == nil || len(document.DocumentResourceList()[0].MultiMedias.MultiMedia) != 2 {
+		t.Fatalf("多媒体资源未生成: %+v", document.DocumentResourceList())
 	}
 	if document.Actions == nil || document.Actions.Actions[0].Sound == nil || uint64(document.Actions.Actions[0].Sound.ResourceID) != 40 || document.Actions.Actions[0].Sound.Volume == nil || *document.Actions.Actions[0].Sound.Volume != volume {
 		t.Fatalf("声音动作未正确生成: %+v", document.Actions)
 	}
-	if document.DocumentRes[0].MultiMedias.MultiMedia[0].Format != "mp3" {
-		t.Fatalf("媒体格式未规范化: %+v", document.DocumentRes[0].MultiMedias.MultiMedia[0])
+	if document.DocumentResourceList()[0].MultiMedias.MultiMedia[0].Format != "mp3" {
+		t.Fatalf("媒体格式未规范化: %+v", document.DocumentResourceList()[0].MultiMedias.MultiMedia[0])
 	}
-	pageActions := document.Pages[0].PageContent.Actions
+	pageActions := document.Pages[0].Actions()
 	if pageActions == nil || pageActions.Action[0].Movie == nil || uint64(pageActions.Action[0].Movie.ResourceID) != 41 || pageActions.Action[0].Movie.Operator != "Play" {
 		t.Fatalf("影片动作未正确生成: %+v", pageActions)
 	}
@@ -1537,7 +1537,7 @@ func TestCreateImageMediaAndCompositeReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	resource := ofd.Documents[0].DocumentRes[0]
+	resource := ofd.Documents[0].DocumentResourceList()[0]
 	if resource.MultiMedias == nil || len(resource.MultiMedias.MultiMedia) != 1 || resource.MultiMedias.MultiMedia[0].Type != "Image" {
 		t.Fatalf("文档级图片多媒体未正确生成: %+v", resource.MultiMedias)
 	}
@@ -1673,14 +1673,17 @@ func TestCreateTemplatePages(t *testing.T) {
 	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
+	if document.GetTemplate(10) == nil {
+		t.Fatal("模板页内容加载失败")
+	}
 	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder == nil || *document.CommonData.TemplatePages[0].ZOrder != "Background" {
 		t.Fatalf("模板页定义未正确生成: %+v", document.CommonData.TemplatePages)
 	}
-	if len(document.Templates) != 1 || document.Templates[10] == nil || document.Templates[10].Content == nil || len(document.Templates[10].Content.Layer) != 1 || len(document.Templates[10].Content.Layer[0].PathObject) != 1 {
-		t.Fatalf("模板页内容未正确生成: %+v", document.Templates)
+	if document.GetTemplate(10) == nil || document.GetTemplate(10).Content == nil || len(document.GetTemplate(10).Content.Layer) != 1 || len(document.GetTemplate(10).Content.Layer[0].PathObject) != 1 {
+		t.Fatalf("模板页内容未正确生成")
 	}
-	if len(document.Pages[0].PageContent.Template) != 1 || uint64(document.Pages[0].PageContent.Template[0].TemplateID) != 10 || document.Pages[0].PageContent.Template[0].ZOrder != "Background" {
-		t.Fatalf("页面模板引用未正确生成: %+v", document.Pages[0].PageContent.Template)
+	if len(document.Pages[0].Template()) != 1 || uint64(document.Pages[0].Template()[0].TemplateID) != 10 || document.Pages[0].Template()[0].ZOrder != "Background" {
+		t.Fatalf("页面模板引用未正确生成: %+v", document.Pages[0].Template())
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -1705,14 +1708,14 @@ func TestCreateCompositeGraphicUnit(t *testing.T) {
 	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
-	if len(document.DocumentRes) != 1 || document.DocumentRes[0].CompositeGraphicUnits == nil || len(document.DocumentRes[0].CompositeGraphicUnits.CompositeGraphicUnit) != 1 {
-		t.Fatalf("复合图元资源未生成: %+v", document.DocumentRes)
+	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].CompositeGraphicUnits == nil || len(document.DocumentResourceList()[0].CompositeGraphicUnits.CompositeGraphicUnit) != 1 {
+		t.Fatalf("复合图元资源未生成: %+v", document.DocumentResourceList())
 	}
-	resource := document.DocumentRes[0].CompositeGraphicUnits.CompositeGraphicUnit[0]
+	resource := document.DocumentResourceList()[0].CompositeGraphicUnits.CompositeGraphicUnit[0]
 	if uint64(resource.ID) != 20 || resource.Width != 40 || resource.Height != 30 || len(resource.Content.PathObject) != 1 {
 		t.Fatalf("复合图元资源内容错误: %+v", resource)
 	}
-	object := document.Pages[0].Content.Layer[0].CompositeObject[0]
+	object := document.Pages[0].Content().Layer[0].CompositeObject[0]
 	if uint64(object.ResourceID) != 20 || object.CTM == nil || object.CTM[4] != 2 {
 		t.Fatalf("复合图元对象错误: %+v", object)
 	}
@@ -1736,11 +1739,11 @@ func TestCreateAdvancedColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	res := ofd.Documents[0].DocumentRes[0]
+	res := ofd.Documents[0].DocumentResourceList()[0]
 	if res.ColorSpaces == nil || len(res.ColorSpaces.ColorSpace) != 1 || uint64(res.ColorSpaces.ColorSpace[0].ID) != 30 {
 		t.Fatalf("颜色空间未正确生成: %+v", res.ColorSpaces)
 	}
-	path := ofd.Documents[0].Pages[0].Content.Layer[0].PathObject[0]
+	path := ofd.Documents[0].Pages[0].Content().Layer[0].PathObject[0]
 	if path.FillColor == nil || uint64(path.FillColor.ColorSpace) != 30 || path.FillColor.Value == nil || path.FillColor.Value.R != 51 {
 		t.Fatalf("高级颜色值未正确生成: %+v", path.FillColor)
 	}
@@ -1807,7 +1810,7 @@ func TestCreateColorSpaceProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	space := ofd.Documents[0].DocumentRes[0].ColorSpaces.ColorSpace[0]
+	space := ofd.Documents[0].DocumentResourceList()[0].ColorSpaces.ColorSpace[0]
 	if space.Profile == "" || !strings.HasPrefix(space.Profile.String(), "Profiles/") {
 		t.Fatalf("颜色空间 Profile 未生成: %+v", space)
 	}
@@ -1888,7 +1891,7 @@ func TestCreatePatternColor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	color := ofd.Documents[0].Pages[0].Content.Layer[0].PathObject[0].FillColor
+	color := ofd.Documents[0].Pages[0].Content().Layer[0].PathObject[0].FillColor
 	if color == nil || color.Pattern == nil || color.Pattern.Width != 10 || color.Pattern.ReflectMethod != "RowAndColumn" || len(color.Pattern.CellContent.PathObject) != 1 {
 		t.Fatalf("图案颜色未正确生成: %+v", color)
 	}
@@ -1947,7 +1950,7 @@ func TestCreateRadialColor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	color := ofd.Documents[0].Pages[0].Content.Layer[0].PathObject[0].FillColor
+	color := ofd.Documents[0].Pages[0].Content().Layer[0].PathObject[0].FillColor
 	if color == nil || color.RadialShd == nil || len(color.RadialShd.Segment) != 2 || color.RadialShd.EndRadius != 10 {
 		t.Fatalf("径向渐变未正确生成: %+v", color)
 	}
@@ -1970,7 +1973,7 @@ func TestCreateMeshColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	color := ofd.Documents[0].Pages[0].Content.Layer[0].PathObject[0].FillColor
+	color := ofd.Documents[0].Pages[0].Content().Layer[0].PathObject[0].FillColor
 	if color == nil || color.GouraudShd == nil || len(color.GouraudShd.Point) != 3 {
 		t.Fatalf("Gouraud 渐变未正确生成: %+v", color)
 	}
@@ -1998,7 +2001,7 @@ func TestCreateAnnotations(t *testing.T) {
 	}
 	defer ofd.Close()
 	pageID := ofd.Documents[0].Pages[0].ID
-	pageAnnot := ofd.Documents[0].Annotations[pageID]
+	pageAnnot := ofd.Documents[0].GetAnnotation(pageID)
 	if pageAnnot == nil || len(pageAnnot.Annots) != 1 {
 		t.Fatalf("页面注解未生成: %+v", pageAnnot)
 	}
@@ -2064,7 +2067,7 @@ func TestCreateGraphicCTMAndPathClips(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	path := ofd.Documents[0].Pages[0].Content.Layer[0].PathObject[0]
+	path := ofd.Documents[0].Pages[0].Content().Layer[0].PathObject[0]
 	if path.CTM == nil || path.CTM[4] != 5 || path.CTM[5] != 6 {
 		t.Fatalf("路径 CTM 未正确生成: %+v", path.CTM)
 	}
@@ -2099,7 +2102,7 @@ func TestCreateTextClip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	text := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0]
+	text := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0]
 	area := text.Clips.Clip[0].Area[0]
 	if area.Text == nil || uint64(area.Text.Font) == 0 || len(area.Text.TextCode) != 1 || area.Text.TextCode[0].Value != "裁剪文字" || area.CTM == nil || area.CTM[5] != 3 || area.Text.CTM == nil || area.Text.CTM[4] != 4 {
 		t.Fatalf("文字裁剪未正确生成: area=%+v text=%+v", area, area.Text)
@@ -2129,7 +2132,7 @@ func TestCreateImageCTMAndClips(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	image := ofd.Documents[0].Pages[0].Content.Layer[0].ImageObject[0]
+	image := ofd.Documents[0].Pages[0].Content().Layer[0].ImageObject[0]
 	if image.CTM == nil || image.CTM[4] != 7 || image.CTM[5] != 8 || image.Clips == nil || image.Clips.Clip[0].Area[0].Path == nil {
 		t.Fatalf("图片 CTM 或裁剪未正确生成: %+v", image)
 	}
@@ -2167,7 +2170,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	layer := ofd.Documents[0].Pages[0].Content.Layer[0]
+	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	path := layer.PathObject[0]
 	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke != "false" || !path.Fill || path.Rule != "Even-Odd" {
 		t.Fatalf("路径属性未正确生成: %+v", path)
@@ -2203,7 +2206,7 @@ func TestCreateImageResourceReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	image := ofd.Documents[0].Pages[0].Content.Layer[0].ImageObject[0]
+	image := ofd.Documents[0].Pages[0].Content().Layer[0].ImageObject[0]
 	if image.Substitution != 70 || image.ImageMask != 70 {
 		t.Fatalf("图片替代资源或蒙版引用未正确生成: %+v", image)
 	}
@@ -2230,7 +2233,7 @@ func TestCreateNestedPageBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	pageBlock := ofd.Documents[0].Pages[0].Content.Layer[0].PageBlock[0]
+	pageBlock := ofd.Documents[0].Pages[0].Content().Layer[0].PageBlock[0]
 	if len(pageBlock.TextObject) != 1 || len(pageBlock.PageBlock) != 1 || len(pageBlock.PageBlock[0].PathObject) != 1 {
 		t.Fatalf("嵌套 PageBlock 未正确生成: %+v", pageBlock)
 	}
@@ -2270,7 +2273,7 @@ func TestCreateWritesColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	layer := ofd.Documents[0].Pages[0].Content.Layer[0]
+	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	text := layer.TextObject[0]
 	if text.FillColor == nil || text.FillColor.Value == nil || text.FillColor.Value.R != 255 || text.FillColor.Value.G != 0 || text.FillColor.Value.B != 0 || text.FillColor.Alpha == nil || *text.FillColor.Alpha != textAlpha {
 		t.Fatalf("文字填充颜色未正确生成: %+v", text.FillColor)
@@ -2317,15 +2320,15 @@ func TestCreateWritesPageAreaAndLayerType(t *testing.T) {
 	}
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[0]
-	if page.PageContent.Area == nil {
+	if page.Area() == nil {
 		t.Fatal("页面区域未生成")
 	}
-	area := page.PageContent.Area
+	area := page.Area()
 	if area.PhysicalBox.Width != 210 || area.PhysicalBox.Height != 297 || area.ApplicationBox == nil || area.ApplicationBox.X != 5 || area.ContentBox == nil || area.ContentBox.Width != 190 || area.BleedBox == nil || area.BleedBox.X != -3 {
 		t.Fatalf("页面区域未正确生成: %+v", area)
 	}
-	if page.PageContent.Content == nil || len(page.PageContent.Content.Layer) != 1 || page.PageContent.Content.Layer[0].Type != LayerForeground {
-		t.Fatalf("图层类型未正确生成: %+v", page.PageContent.Content)
+	if page.Content() == nil || len(page.Content().Layer) != 1 || page.Content().Layer[0].Type != LayerForeground {
+		t.Fatalf("图层类型未正确生成: %+v", page.Content())
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -2391,10 +2394,10 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 		t.Fatalf("MaxUnitID = %d, want 6", document.CommonData.MaxUnitID)
 	}
 	page := document.Pages[0]
-	if page.PageContent.Content == nil || len(page.PageContent.Content.Layer) != 2 {
-		t.Fatalf("图层数量 = %d, want 2", len(page.PageContent.Content.Layer))
+	if page.Content() == nil || len(page.Content().Layer) != 2 {
+		t.Fatalf("图层数量 = %d, want 2", len(page.Content().Layer))
 	}
-	layers := page.PageContent.Content.Layer
+	layers := page.Content().Layer
 	if layers[0].Type != LayerBackground || layers[1].Type != LayerForeground {
 		t.Fatalf("图层顺序 = %q, %q", layers[0].Type, layers[1].Type)
 	}
@@ -2445,14 +2448,14 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
-	if len(document.DocumentRes) != 1 || document.DocumentRes[0].DrawParams == nil || len(document.DocumentRes[0].DrawParams.DrawParam) != 2 {
-		t.Fatalf("绘制参数资源未生成: %+v", document.DocumentRes)
+	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].DrawParams == nil || len(document.DocumentResourceList()[0].DrawParams.DrawParam) != 2 {
+		t.Fatalf("绘制参数资源未生成: %+v", document.DocumentResourceList())
 	}
-	params := document.DocumentRes[0].DrawParams.DrawParam
+	params := document.DocumentResourceList()[0].DrawParams.DrawParam
 	if params[0].LineWidth != 0.5 || params[0].Cap != "Round" || uint64(params[1].Relative) != uint64(params[0].ID) || params[1].Join != "Bevel" {
 		t.Fatalf("绘制参数内容未正确生成: %+v", params)
 	}
-	layer := document.Pages[0].PageContent.Content.Layer[0]
+	layer := document.Pages[0].Content().Layer[0]
 	if uint64(layer.DrawParam) != uint64(params[1].ID) {
 		t.Fatalf("图层 DrawParam = %d, want %d", layer.DrawParam, params[1].ID)
 	}

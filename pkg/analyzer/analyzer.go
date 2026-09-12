@@ -185,19 +185,21 @@ func configureSignatureVerification(ofd *parser.OFD, options Options) error {
 		if document == nil {
 			continue
 		}
-		for id, signedValue := range document.SignedValues {
+		document.ForEachSignedValue(func(id string, signedValue *parser.SignedValue) bool {
 			if signedValue == nil || signedValue.SES == nil {
-				continue
+				return true
 			}
 			result, err := parser.VerifySESSignedValueWithOptions(signedValue, verificationOptions)
 			if err != nil {
-				document.VerificationErrors[id] = err
-				delete(document.VerificationResults, id)
-				continue
+				document.SetVerificationError(id, err)
+				document.DeleteVerificationResult(id)
+				return true
 			}
-			document.VerificationResults[id] = result
-			delete(document.VerificationErrors, id)
-		}
+			document.SetVerificationResult(id, result)
+			document.DeleteVerificationError(id)
+			return true
+		})
+
 	}
 	return nil
 }
@@ -435,8 +437,8 @@ func makeDocumentInfo(index int, body models.DocBody, doc *parser.Document) Docu
 		DocRoot:        body.DocRoot.String(),
 		DeclaredPages:  len(doc.Document.Pages.Pages),
 		ParsedPages:    len(doc.Pages),
-		TemplateCount:  len(doc.Templates),
-		ResourceFiles:  len(doc.PublicRes) + len(doc.DocumentRes),
+		TemplateCount:  len(doc.Document.CommonData.TemplatePages),
+		ResourceFiles:  len(doc.PublicResourceList()) + len(doc.DocumentResourceList()),
 		HasCover:       body.DocInfo.Cover != nil,
 		HasAttachments: doc.Document.Attachments != nil,
 		HasAnnotations: doc.Document.Annotations != nil,
@@ -457,7 +459,20 @@ func makeDocumentInfo(index int, body models.DocBody, doc *parser.Document) Docu
 }
 
 func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, baseLoc string, doc *parser.Document, page *parser.Page) PageInfo {
-	area := page.Area
+	if page == nil {
+		return PageInfo{DocumentIndex: documentIndex, DocumentPage: documentPage, PageNumber: pageNumber}
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		a.addWarning(fmt.Sprintf("页面资源读取失败: %v", err))
+		return PageInfo{DocumentIndex: documentIndex, DocumentPage: documentPage, PageNumber: pageNumber, ID: uint64(page.ID), BaseLoc: baseLoc}
+	}
+	defer lease.Release()
+	content := lease.Content()
+	var area *models.CtPageArea
+	if content != nil {
+		area = content.Area
+	}
 	source := "page"
 	if area == nil {
 		area = &doc.CommonData.PageArea
@@ -482,9 +497,9 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	text := TextSummary{}
 	resources := PageResources{}
 	layers := 0
-	if page.Content != nil {
-		layers = len(page.Content.Layer)
-		for _, layer := range page.Content.Layer {
+	if content != nil && content.Content != nil {
+		layers = len(content.Content.Layer)
+		for _, layer := range content.Content.Layer {
 			if layer == nil {
 				continue
 			}
@@ -500,7 +515,11 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 		}
 	}
 	if a.options.IncludeTemplates {
-		for _, template := range page.Template {
+		var templates []models.Template
+		if content != nil {
+			templates = content.Template
+		}
+		for _, template := range templates {
 			if template.TemplateID > 0 {
 				resources.Templates = appendUnique(resources.Templates, uint64(template.TemplateID))
 			}
@@ -509,7 +528,11 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 	}
 	a.report.Objects.Pages++
 	addObjectSummaryCounts(&a.report.Objects, counts)
-	if depth := maxPageBlockDepth(page.Content); depth > a.report.Objects.MaxPageBlockDepth {
+	var pageContent *models.Content
+	if content != nil {
+		pageContent = content.Content
+	}
+	if depth := maxPageBlockDepth(pageContent); depth > a.report.Objects.MaxPageBlockDepth {
 		a.report.Objects.MaxPageBlockDepth = depth
 	}
 	a.report.Text = addTextSummary(a.report.Text, text)
@@ -531,15 +554,15 @@ func (a *analyzer) analyzePage(documentIndex, documentPage, pageNumber int, base
 }
 
 func (a *analyzer) registerTemplateDefinitions(documentIndex int, doc *parser.Document) {
-	ids := make([]models.StID, 0, len(doc.Templates))
-	for id := range doc.Templates {
-		ids = append(ids, id)
+	ids := make([]models.StID, 0, len(doc.Document.CommonData.TemplatePages))
+	for _, page := range doc.Document.CommonData.TemplatePages {
+		ids = append(ids, page.ID)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
 		key := resourceKey(documentIndex, "template", id)
 		a.templates[key]++
-		if template := doc.Templates[id]; template != nil {
+		if template := doc.GetTemplate(id); template != nil {
 			a.registerPageResourceContent(documentIndex, doc, template, templateSourcePath(doc, id), "template")
 			for _, reference := range template.Template {
 				a.useTemplate(documentIndex, uint64(reference.TemplateID), fmt.Sprintf("template:%d", id))
@@ -724,8 +747,9 @@ func (a *analyzer) registerDocumentResources(documentIndex int, doc *parser.Docu
 		if !exists {
 			a.addMissingFileWarning("资源文件不存在", sourcePath)
 		}
-		if index < len(doc.PublicRes) && doc.PublicRes[index] != nil {
-			a.registerResourceFile(documentIndex, doc, doc.PublicRes[index], "public", sourcePath)
+		publicResources := doc.PublicResourceList()
+		if index < len(publicResources) && publicResources[index] != nil {
+			a.registerResourceFile(documentIndex, doc, publicResources[index], "public", sourcePath)
 		}
 	}
 	for index, location := range doc.Document.CommonData.DocumentRes {
@@ -735,8 +759,9 @@ func (a *analyzer) registerDocumentResources(documentIndex int, doc *parser.Docu
 		if !exists {
 			a.addMissingFileWarning("资源文件不存在", sourcePath)
 		}
-		if index < len(doc.DocumentRes) && doc.DocumentRes[index] != nil {
-			a.registerResourceFile(documentIndex, doc, doc.DocumentRes[index], "document", sourcePath)
+		documentResources := doc.DocumentResourceList()
+		if index < len(documentResources) && documentResources[index] != nil {
+			a.registerResourceFile(documentIndex, doc, documentResources[index], "document", sourcePath)
 		}
 	}
 }
@@ -745,11 +770,13 @@ func (a *analyzer) registerPageResources(documentIndex int, doc *parser.Document
 	if page == nil {
 		return
 	}
-	if err := page.EnsureLoaded(); err != nil {
+	err := page.WithPageContent(func(content *models.PageContent) error {
+		a.registerPageResourceContent(documentIndex, doc, content, pagePath, "page")
+		return nil
+	})
+	if err != nil {
 		a.addWarning(fmt.Sprintf("页面资源读取失败: %v", err))
-		return
 	}
-	a.registerPageResourceContent(documentIndex, doc, &page.PageContent, pagePath, "page")
 }
 
 func (a *analyzer) registerPageResourceContent(documentIndex int, doc *parser.Document, content *models.PageContent, contentPath, scope string) {
@@ -1021,9 +1048,9 @@ func (a *analyzer) analyzeAttachments(documentIndex int, doc *parser.Document) {
 		return
 	}
 	attachmentsPath := resolveFrom(doc.BaseLoc, *doc.Document.Attachments)
-	var attachments models.Attachments
-	if err := doc.FileCache.ReadXML(attachmentsPath, &attachments); err != nil {
-		a.addWarning(fmt.Sprintf("读取附件清单失败(%s): %v", attachmentsPath, err))
+	attachments := doc.GetAttachments()
+	if attachments == nil {
+		a.addWarning(fmt.Sprintf("读取附件清单失败(%s)", attachmentsPath))
 		return
 	}
 	for _, attachment := range attachments.Attachments {
@@ -1069,7 +1096,9 @@ func (a *analyzer) resolveAttachmentAsset(doc *parser.Document, attachmentsPath 
 }
 
 func (a *analyzer) analyzeAnnotations(documentIndex int, doc *parser.Document) {
-	for pageID, pageAnnot := range doc.Annotations {
+	for _, page := range doc.Document.Pages.Pages {
+		pageID := page.ID
+		pageAnnot := doc.GetAnnotation(pageID)
 		if pageAnnot == nil {
 			continue
 		}
@@ -1121,7 +1150,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 		}
 		signedValue := resolveFrom(models.StLoc(path.Dir(signaturePath)), signature.SignedValue)
 		info := SignatureInfo{DocumentIndex: documentIndex, ID: item.ID, Type: item.Type, Path: signaturePath, Provider: signature.SignedInfo.Provider.ProviderName, Company: signature.SignedInfo.Provider.Company, Version: signature.SignedInfo.Provider.Version, Method: signature.SignedInfo.SignatureMethod, Date: signature.SignedInfo.SignatureDateTime, CheckMethod: signature.SignedInfo.References.CheckMethod, ReferenceCount: len(signature.SignedInfo.References.Reference), StampCount: len(signature.SignedInfo.StampAnnot), Pages: pages, SignedValue: signedValue, SignedValueExists: a.fileExists(signedValue)}
-		if signedValueResult := doc.SignedValues[item.ID]; signedValueResult != nil {
+		if signedValueResult := doc.GetSignedValue(item.ID); signedValueResult != nil {
 			info.SignedValueFormat = signedValueResult.Format
 			info.SignedValueParsed = signedValueResult.ASN1 != nil
 			if signedValueResult.SES != nil {
@@ -1130,11 +1159,11 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 				info.OuterSignatureAlgorithm = signedValueResult.SES.SignatureAlgorithm.String()
 			}
 		}
-		if signedValueErr := doc.SignedValueErrors[item.ID]; signedValueErr != nil {
+		if signedValueErr := doc.GetSignedValueError(item.ID); signedValueErr != nil {
 			info.SignedValueParseError = signedValueErr.Error()
 			a.addWarning(fmt.Sprintf("签名[%s] SignedValue 解析失败(%s): %v", item.ID, signedValue, signedValueErr))
 		}
-		if digest := doc.DigestResults[item.ID]; digest != nil {
+		if digest := doc.GetDigestResult(item.ID); digest != nil {
 			info.DigestChecked = true
 			info.DigestValid = digest.Valid
 			info.DigestMethod = digest.Method
@@ -1146,7 +1175,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 				info.DataHash = &SignatureDataHashInfo{Match: digest.DataHash.Match, Expected: parser.DigestBase64(digest.DataHash.Expected), Actual: parser.DigestBase64(digest.DataHash.Actual), Error: digest.DataHash.Error}
 			}
 		}
-		if verification := doc.VerificationResults[item.ID]; verification != nil {
+		if verification := doc.GetVerificationResult(item.ID); verification != nil {
 			info.VerificationChecked = true
 			info.VerificationValid = verification.Valid
 			info.TrustChecked = verification.TrustChecked
@@ -1159,7 +1188,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 			info.SealVerification = signatureComponentInfo(verification.Seal)
 			info.OuterVerification = signatureComponentInfo(verification.Outer)
 		}
-		if verificationErr := doc.VerificationErrors[item.ID]; verificationErr != nil {
+		if verificationErr := doc.GetVerificationError(item.ID); verificationErr != nil {
 			info.VerificationChecked = true
 			info.VerificationError = verificationErr.Error()
 		}

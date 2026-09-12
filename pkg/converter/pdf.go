@@ -13,7 +13,11 @@ import (
 )
 
 func PDF(input interface{}, output io.Writer, opts ...Option) error {
-	ofd, err := parser.NewOFD(input)
+	conv := newConverter(opts...)
+	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
+		PageCacheCapacity: conv.pageCacheCapacity,
+		PageCacheBytes:    conv.pageCacheBytes,
+	})
 	if err != nil {
 		return err
 	}

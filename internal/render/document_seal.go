@@ -51,7 +51,7 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 		return err
 	}
 	defer ofd.Close()
-	if len(ofd.Documents) == 0 || len(ofd.Documents[0].Pages) == 0 {
+	if len(ofd.Documents) == 0 || ofd.Documents[0].PageCount() == 0 {
 		return nil
 	}
 
@@ -62,14 +62,20 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 		}
 	}
 
-	page := ofd.Documents[0].Pages[0]
-	if err := page.EnsureLoaded(); err != nil {
+	page, err := ofd.Documents[0].GetPage(0)
+	if err != nil {
 		return err
 	}
-	if page.PageContent.Area == nil {
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil || content.Area == nil {
 		return nil
 	}
-	sealBox := page.PageContent.Area.PhysicalBox
+	sealBox := content.Area.PhysicalBox
 	if sealBox.Width <= 0 || sealBox.Height <= 0 {
 		return nil
 	}

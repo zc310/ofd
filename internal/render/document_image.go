@@ -26,8 +26,8 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *mode
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
 	}
-	resMedia, ok := p.Res[models.StID(object.ResourceID)]
-	if !ok {
+	resMedia := p.Document.GetMedia(models.StID(object.ResourceID))
+	if resMedia == nil {
 		return
 	}
 
@@ -134,7 +134,7 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 	if !isSVGFormat(format, file) {
 		return nil, errors.New("not SVG")
 	}
-	data, err := p.Document.Common.FileCache.Read(key)
+	data, err := p.Document.FileCache.Read(key)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 		return cached, nil
 	}
 	if strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg") {
-		data, err := p.Document.Common.FileCache.Read(key)
+		data, err := p.Document.FileCache.Read(key)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +166,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 		p.images.Add(key, img)
 		return img, nil
 	}
-	data, err := p.Document.Common.FileCache.Read(key)
+	data, err := p.Document.FileCache.Read(key)
 	if err != nil {
 		return nil, err
 	}
