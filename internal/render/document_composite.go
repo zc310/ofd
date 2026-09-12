@@ -18,10 +18,12 @@ const maxCompositeDepth = 32
 // 先渲染完整单元，再使用 CompositeObject 的 Boundary 和 CTM 映射到页面，
 // 保留单元内部坐标，不根据透明像素重新裁剪内容。
 func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
-	p.composite(ctx, object, dp, pb, nil, nil, 0)
+	var budget renderBudget
+	budget.reset()
+	p.compositeWithBudget(ctx, object, dp, pb, nil, nil, 0, &budget)
 }
 
-func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
+func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -34,7 +36,7 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if !ok || unit == nil {
 		return
 	}
-	if !p.budget.allowComposite(models.StID(object.ResourceID)) {
+	if !budget.allowComposite(models.StID(object.ResourceID)) {
 		return
 	}
 
@@ -64,14 +66,14 @@ func (p *Document) composite(ctx *canvas.Context, object models.CompositeObject,
 	if dpi < 10 {
 		dpi = 10
 	}
-	if !p.budget.allowOffscreenPixels(w, h, dpi) {
+	if !budget.allowOffscreenPixels(w, h, dpi) {
 		return
 	}
 
 	// 在单元自身的坐标系中绘制全部内容。
 	cc := canvas.New(w, h)
 	cctx := canvas.NewContext(cc)
-	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1)
+	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
 
 	// 栅格化分辨率以最终内容在页面上约 300dpi 为准，避免对超大单元产生过大的位图。
 	var raster image.Image = rasterizer.Draw(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)

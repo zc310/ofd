@@ -22,6 +22,7 @@ var (
 	onceFonts              sync.Once
 	defaultFontFamily      *canvas.FontFamily
 	defaultFontFamilyReady bool
+	defaultFontRenderMu    sync.Mutex
 )
 
 type Fonts struct {
@@ -31,6 +32,8 @@ type Fonts struct {
 	fallbackFaces  []fallbackFace
 	fallbackByFont map[models.StRefID]string
 	mu             sync.Mutex
+	renderLocksMu  sync.Mutex
+	renderLocks    map[*canvas.FontFamily]*sync.Mutex
 }
 
 type fallbackFace struct {
@@ -70,7 +73,22 @@ func NewFonts(doc *parser.Document) *Fonts {
 		Fonts:          make(map[models.StRefID]*canvas.FontFamily),
 		fallbacks:      make(map[string]*canvas.FontFamily),
 		fallbackByFont: make(map[models.StRefID]string),
+		renderLocks:    make(map[*canvas.FontFamily]*sync.Mutex),
 	}
+}
+
+func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
+	if family == defaultFontFamily {
+		return &defaultFontRenderMu
+	}
+	p.renderLocksMu.Lock()
+	defer p.renderLocksMu.Unlock()
+	if lock := p.renderLocks[family]; lock != nil {
+		return lock
+	}
+	lock := &sync.Mutex{}
+	p.renderLocks[family] = lock
+	return lock
 }
 
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
@@ -284,7 +302,11 @@ func (p *Fonts) AddFallbackFont(data []byte, family string, style canvas.FontSty
 	if isNew {
 		f = canvas.NewFontFamily(family)
 	}
-	if err := f.LoadFont(data, 0, style); err != nil {
+	renderLock := p.renderLock(f)
+	renderLock.Lock()
+	err := f.LoadFont(data, 0, style)
+	renderLock.Unlock()
+	if err != nil {
 		return err
 	}
 	if isNew {

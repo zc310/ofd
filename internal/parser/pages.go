@@ -183,6 +183,7 @@ func NewPage(content models.PageContent) *Page {
 func (p *Page) setPageContent(content models.PageContent) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	content.EnsurePhysicalBox()
 	p.pageContent = content
 	p.cacheSize.Store(0)
 	p.loaded = true
@@ -205,6 +206,7 @@ func (p *Page) acquire() error {
 	if !p.loaded && p.load != nil {
 		p.loadErr = p.load(p)
 	}
+	p.pageContent.EnsurePhysicalBox()
 	p.loaded = true
 	if p.loadErr != nil {
 		return p.loadErr
@@ -256,6 +258,7 @@ func (p *Page) EnsureLoaded() error {
 	if p.load != nil {
 		p.loadErr = p.load(p)
 	}
+	p.pageContent.EnsurePhysicalBox()
 	p.loaded = true
 	return p.loadErr
 }

@@ -127,7 +127,8 @@ type OpenOptions struct {
 // Reader 是一个已打开的 OFD 文档。
 // Reader 负责持有文档资源，使用完毕后必须调用 Close。
 type Reader struct {
-	mu             sync.Mutex
+	mu             sync.RWMutex
+	cacheMu        sync.Mutex
 	closed         bool
 	ofd            *parser.OFD
 	pages          []pageRef
@@ -279,8 +280,8 @@ func (r *Reader) PageCount() int {
 	if r == nil {
 		return 0
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return 0
 	}
@@ -292,8 +293,8 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -332,8 +333,10 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -349,8 +352,8 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -389,8 +392,10 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 		return nil, errors.New("文档引擎为空")
 	}
 	query = strings.TrimSpace(query)
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -462,8 +467,8 @@ func (r *Reader) RenderPage(index int, options RenderOptions) ([]byte, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -479,8 +484,8 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	if len(indices) > maxRenderPages {
 		return nil, fmt.Errorf("批量渲染页面数量超过限制 %d", maxRenderPages)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -506,8 +511,8 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 	if len(indices) > maxRenderPages {
 		return nil, fmt.Errorf("PDF 页面数量超过限制 %d", maxRenderPages)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -578,7 +583,6 @@ func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canva
 	if content == nil {
 		return nil, errors.New("页面内容为空")
 	}
-	content.EnsurePhysicalBox()
 	document, err := r.pageDocumentLocked(ref, background)
 	if err != nil {
 		return nil, err
@@ -607,7 +611,6 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 	if content == nil {
 		return nil, fmt.Errorf("页面内容为空")
 	}
-	content.EnsurePhysicalBox()
 	box := content.Area.PhysicalBox
 	if !finitePositive(box.Width) || !finitePositive(box.Height) {
 		return nil, fmt.Errorf("第 %d 页尺寸无效", index)

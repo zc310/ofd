@@ -13,10 +13,12 @@ import (
 )
 
 func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
-	p.text(ctx, object, dp, pb, nil, nil)
+	var budget renderBudget
+	budget.reset()
+	p.textWithBudget(ctx, object, dp, pb, nil, nil, &budget)
 }
 
-func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) textWithBudget(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) || !finiteFloat(object.Size) {
 		return
@@ -31,6 +33,9 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 	if err != nil || fontFamily == nil {
 		return
 	}
+	fontLock := p.fonts.renderLock(fontFamily)
+	fontLock.Lock()
+	defer fontLock.Unlock()
 
 	// OFD 中 Fill=false 表示文字不填充；当 Stroke=true 时仍需绘制描边。
 	if textFillDisabled(object) && !object.Stroke {
@@ -78,7 +83,7 @@ func (p *Document) text(ctx *canvas.Context, object models.TextObject, dp *model
 		return
 	}
 	if source := textFillColor(object, dp); isMeshColor(source) {
-		if p.drawMeshText(ctx, face, source, object, pb) {
+		if p.drawMeshText(ctx, face, source, object, pb, budget) {
 			return
 		}
 	}
@@ -110,11 +115,11 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 }
 
 // drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
-func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox) bool {
+func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, budget *renderBudget) bool {
 	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
 		return false
 	}
-	if !p.budget.allowOffscreenPixels(pb.Width, pb.Height, meshGradientDPI) {
+	if !budget.allowOffscreenPixels(pb.Width, pb.Height, meshGradientDPI) {
 		return false
 	}
 	transform := func(point models.StPos) canvas.Point {

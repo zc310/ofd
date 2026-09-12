@@ -12,12 +12,14 @@ import (
 const meshGradientDPI = 300.0
 
 func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
-	p.path(ctx, object, dp, pb, nil, nil)
+	var budget renderBudget
+	budget.reset()
+	p.pathWithBudget(ctx, object, dp, pb, nil, nil, &budget)
 }
 
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
-func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) pathWithBudget(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -54,7 +56,7 @@ func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *model
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
-		if p.drawMeshPaint(ctx, fillPath, fillSource, object, pb) {
+		if p.drawMeshPaint(ctx, fillPath, fillSource, object, pb, budget) {
 			object.Fill = false
 			ctx.SetFill(nil)
 		}
@@ -69,7 +71,7 @@ func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *model
 			if clipPath != nil {
 				strokePath = strokePath.And(clipPath)
 			}
-			if p.drawMeshPaint(ctx, strokePath, strokeSource, object, pb) {
+			if p.drawMeshPaint(ctx, strokePath, strokeSource, object, pb, budget) {
 				object.Stroke = "false"
 				ctx.SetStroke(nil)
 			}
@@ -81,7 +83,7 @@ func (p *Document) path(ctx *canvas.Context, object models.PathObject, dp *model
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
-		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM) {
+		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM, budget) {
 			object.Fill = false
 			ctx.SetFill(nil)
 		}
@@ -100,7 +102,7 @@ func isMeshColor(color *models.CTColor) bool {
 // drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。
 // canvas 的 PDF 和 SVG 渲染器不支持自定义渐变，使用图像回退可以保证
 // Gouraud/LaGourand 在不同输出格式下都能保留视觉效果。
-func (p *Document) drawMeshPaint(ctx *canvas.Context, paintPath *canvas.Path, source *models.CTColor, object models.PathObject, pb models.StBox) bool {
+func (p *Document) drawMeshPaint(ctx *canvas.Context, paintPath *canvas.Path, source *models.CTColor, object models.PathObject, pb models.StBox, budget *renderBudget) bool {
 	if paintPath == nil || source == nil {
 		return false
 	}
@@ -114,10 +116,10 @@ func (p *Document) drawMeshPaint(ctx *canvas.Context, paintPath *canvas.Path, so
 	if gradient == nil {
 		return false
 	}
-	return p.drawMeshPaintGradient(ctx, paintPath, gradient, pb, object.Alpha)
+	return p.drawMeshPaintGradient(ctx, paintPath, gradient, pb, object.Alpha, budget)
 }
 
-func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.Path, gradient canvas.Gradient, pb models.StBox, alpha *uint8) bool {
+func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.Path, gradient canvas.Gradient, pb models.StBox, alpha *uint8, budget *renderBudget) bool {
 	if paintPath == nil || gradient == nil || !pb.IsFinite() || pb.Width <= 0 || pb.Height <= 0 {
 		return false
 	}
@@ -139,7 +141,7 @@ func (p *Document) drawMeshPaintGradient(ctx *canvas.Context, paintPath *canvas.
 		!finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return false
 	}
-	if !p.budget.allowOffscreenPixels(width, height, meshGradientDPI) {
+	if !budget.allowOffscreenPixels(width, height, meshGradientDPI) {
 		return false
 	}
 	page := canvas.New(width, height)
