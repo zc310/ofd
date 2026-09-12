@@ -1163,7 +1163,6 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 	if content == nil {
 		return nil, fmt.Errorf("页面内容为空")
 	}
-	content.EnsurePhysicalBox()
 	if content.Area == nil {
 		return nil, fmt.Errorf("页面区域为空")
 	}

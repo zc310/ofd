@@ -21,9 +21,9 @@ type Document struct {
 	background  color.Color
 	fonts       *Fonts
 	fallbacks   []fallbackFontResource
-	renderMu    sync.Mutex
-	budget      renderBudget
+	fallbackMu  sync.RWMutex
 	imageMu     sync.Mutex
+	svgMu       sync.Mutex
 	images      *utils.LRU[string, image.Image]
 	svgCanvases *utils.LRU[string, *canvas.Canvas]
 }
@@ -112,6 +112,8 @@ func (p *Document) AddFallbackFont(data []byte, family string, style canvas.Font
 	if err := p.fonts.AddFallbackFont(data, family, style); err != nil {
 		return err
 	}
+	p.fallbackMu.Lock()
+	defer p.fallbackMu.Unlock()
 	for index, fallback := range p.fallbacks {
 		if fallback.family == family && fallback.style == style {
 			p.fallbacks[index].data = data
@@ -126,7 +128,14 @@ func (p *Document) fallbackFontResources() []fallbackFontResource {
 	if p == nil {
 		return nil
 	}
-	return p.fallbacks
+	p.fallbackMu.RLock()
+	defer p.fallbackMu.RUnlock()
+	resources := make([]fallbackFontResource, len(p.fallbacks))
+	for index, resource := range p.fallbacks {
+		resources[index] = resource
+		resources[index].data = append([]byte(nil), resource.data...)
+	}
+	return resources
 }
 
 // FallbackFontFamily 返回为文档字体选择的外部字体族。
@@ -156,15 +165,13 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 		return err
 	}
 	defer lease.Release()
-	p.renderMu.Lock()
-	defer p.renderMu.Unlock()
-	p.budget.reset()
+	var budget renderBudget
+	budget.reset()
 	content := lease.Content()
 	if content == nil {
 		return errors.New("页面内容为空")
 	}
-	content.EnsurePhysicalBox()
-	p.drawPage(ctx, page, content)
+	p.drawPage(ctx, page, content, &budget)
 	return nil
 }
 
@@ -174,24 +181,22 @@ func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
 		return nil, err
 	}
 	defer lease.Release()
-	p.renderMu.Lock()
-	defer p.renderMu.Unlock()
-	p.budget.reset()
+	var budget renderBudget
+	budget.reset()
 	content := lease.Content()
 	if content == nil {
 		return nil, errors.New("页面内容为空")
 	}
-	content.EnsurePhysicalBox()
 	box := content.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
-	p.drawPage(canvas.NewContext(c), page, content)
+	p.drawPage(canvas.NewContext(c), page, content, &budget)
 	return c, nil
 }
 
 // drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
-func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page, content *models.PageContent) {
+func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page, content *models.PageContent, budget *renderBudget) {
 	p.drawPageBackground(ctx, content.Area.PhysicalBox)
-	p.PageContent(ctx, page, true)
+	p.pageContent(ctx, page, true, budget)
 }
 
 // drawPageBackground 绘制页面背景。
@@ -201,6 +206,12 @@ func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
 }
 
 func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
+	var budget renderBudget
+	budget.reset()
+	p.pageContent(ctx, page, seal, &budget)
+}
+
+func (p *Document) pageContent(ctx *canvas.Context, page *parser.Page, seal bool, budget *renderBudget) {
 	if page == nil {
 		return
 	}
@@ -213,14 +224,13 @@ func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool
 	if content == nil {
 		return
 	}
-	content.EnsurePhysicalBox()
 	pb := content.Area.PhysicalBox
 	for _, template := range content.Template {
-		p.Template(ctx, template, pb)
+		p.template(ctx, template, pb, budget)
 	}
 
 	if content.Content != nil {
-		p.drawLayers(ctx, content.Content.Layer, pb)
+		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
 	}
 	if seal {
 		p.drawSeals(ctx, page.ID, pb)
@@ -234,29 +244,41 @@ func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool
 }
 
 func (p *Document) Template(ctx *canvas.Context, template models.Template, pb models.StBox) {
+	var budget renderBudget
+	budget.reset()
+	p.template(ctx, template, pb, &budget)
+}
+
+func (p *Document) template(ctx *canvas.Context, template models.Template, pb models.StBox, budget *renderBudget) {
 	content, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
 	if err != nil {
 		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
 		return
 	}
 	if content != nil && content.Content != nil {
-		p.drawLayers(ctx, content.Content.Layer, pb)
+		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
 	}
 }
 
 // drawLayers 先绘制背景层，再绘制其他图层。
 func (p *Document) drawLayers(ctx *canvas.Context, layers []*models.Layer, pb models.StBox) {
+	var budget renderBudget
+	budget.reset()
+	p.drawLayersWithBudget(ctx, layers, pb, &budget)
+}
+
+func (p *Document) drawLayersWithBudget(ctx *canvas.Context, layers []*models.Layer, pb models.StBox, budget *renderBudget) {
 	if len(layers) == 0 {
 		return
 	}
 	for _, layer := range layers {
 		if layer != nil && layer.Type == "Background" {
-			p.Layer(ctx, layer, pb)
+			p.layer(ctx, layer, pb, budget)
 		}
 	}
 	for _, layer := range layers {
 		if layer != nil && layer.Type != "Background" {
-			p.Layer(ctx, layer, pb)
+			p.layer(ctx, layer, pb, budget)
 		}
 	}
 }
@@ -271,6 +293,12 @@ func (p *Document) drawSeals(ctx *canvas.Context, pageID models.StID, pb models.
 }
 
 func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StBox) {
+	var budget renderBudget
+	budget.reset()
+	p.layer(ctx, layer, pb, &budget)
+}
+
+func (p *Document) layer(ctx *canvas.Context, layer *models.Layer, pb models.StBox, budget *renderBudget) {
 	if layer == nil {
 		return
 	}
@@ -278,30 +306,30 @@ func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StB
 	if layer.DrawParam > 0 {
 		dp = p.Document.GetDrawParam(models.StID(layer.DrawParam))
 	}
-	p.drawItems(ctx, layer.Items, dp, pb)
+	p.drawItems(ctx, layer.Items, dp, pb, budget)
 }
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
-func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox) {
-	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0)
+func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, budget *renderBudget) {
+	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0, budget)
 }
 
-func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int) {
+func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
 	if parentCTM != nil && !parentCTM.IsFinite() {
 		return
 	}
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:
-			p.path(ctx, item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip)
+			p.pathWithBudget(ctx, item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemImage:
 			p.image(ctx, item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemText:
-			p.text(ctx, item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip)
+			p.textWithBudget(ctx, item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemBlock:
-			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip, compositeDepth)
+			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip, compositeDepth, budget)
 		case models.PageItemComposite:
-			p.composite(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth)
+			p.compositeWithBudget(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
 		}
 	}
 }
@@ -317,7 +345,9 @@ func (p *Document) objectDrawParam(id models.StRefID, inherited *models.DrawPara
 
 // drawPageBlock 递归绘制 PageBlock，保持子块先于当前块的顺序。
 func (p *Document) drawPageBlock(ctx *canvas.Context, block models.PageBlock, dp *models.DrawParam, pb models.StBox) {
-	p.drawItems(ctx, block.Items, dp, pb)
+	var budget renderBudget
+	budget.reset()
+	p.drawItems(ctx, block.Items, dp, pb, &budget)
 }
 
 func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StBox) {

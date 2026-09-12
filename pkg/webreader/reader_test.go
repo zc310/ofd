@@ -2,10 +2,12 @@ package webreader
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -43,6 +45,80 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 	if decoded.Bounds().Empty() {
 		t.Fatal("rendered image is empty")
+	}
+}
+
+func TestRenderPageConcurrent(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	workers := reader.PageCount()
+	if workers > 4 {
+		workers = 4
+	}
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func(pageIndex int) {
+			defer wg.Done()
+			pngData, renderErr := reader.RenderPage(pageIndex, RenderOptions{DPI: 36})
+			if renderErr != nil {
+				errs <- renderErr
+				return
+			}
+			if len(pngData) == 0 || !bytes.HasPrefix(pngData, []byte("\x89PNG\r\n\x1a\n")) {
+				errs <- errors.New("并发渲染结果不是 PNG")
+			}
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestTextAndSearchConcurrent(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	const workers = 8
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			var operationErr error
+			if index%2 == 0 {
+				_, operationErr = reader.Text(0)
+			} else {
+				_, operationErr = reader.Search("你")
+			}
+			if operationErr != nil {
+				errs <- operationErr
+			}
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
 	}
 }
 

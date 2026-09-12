@@ -519,6 +519,7 @@ func (p *Document) acquirePage(page *Page) error {
 	if page.load != nil {
 		page.loadErr = page.load(page)
 	}
+	page.pageContent.EnsurePhysicalBox()
 	page.loaded = true
 	if page.loadErr != nil {
 		page.pinCount.Add(-1)
@@ -572,6 +573,7 @@ func (p *Document) ensurePageLoaded(page *Page) error {
 	if page.load != nil {
 		page.loadErr = page.load(page)
 	}
+	page.pageContent.EnsurePhysicalBox()
 	page.loaded = true
 	err := page.loadErr
 	page.mu.Unlock()

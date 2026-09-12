@@ -51,7 +51,9 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *mode
 			if finiteMatrix(m) {
 				m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
 				if finiteMatrix(m) {
+					p.svgMu.Lock()
 					svg.RenderViewTo(ctx.Renderer, m)
+					p.svgMu.Unlock()
 					return
 				}
 			}
