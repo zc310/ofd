@@ -295,6 +295,9 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 		if ref.page == nil {
 			return nil, fmt.Errorf("第 %d 页为空", index)
 		}
+		if err := ref.page.EnsureLoaded(); err != nil {
+			return nil, fmt.Errorf("读取第 %d 页失败: %w", index, err)
+		}
 		ref.page.EnsurePhysicalBox()
 		box := ref.page.Area.PhysicalBox
 		if !finitePositive(box.Width) || !finitePositive(box.Height) {
@@ -558,6 +561,9 @@ func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canva
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
 	ref := r.pages[index]
+	if err := ref.page.EnsureLoaded(); err != nil {
+		return nil, err
+	}
 	ref.page.EnsurePhysicalBox()
 	document, err := r.pageDocumentLocked(ref, background)
 	if err != nil {
@@ -578,6 +584,9 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 	}
 
 	ref := r.pages[index]
+	if err := ref.page.EnsureLoaded(); err != nil {
+		return nil, err
+	}
 	ref.page.EnsurePhysicalBox()
 	box := ref.page.Area.PhysicalBox
 	if !finitePositive(box.Width) || !finitePositive(box.Height) {

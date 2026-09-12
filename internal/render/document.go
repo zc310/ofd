@@ -149,6 +149,9 @@ func annotationVisible(annot *models.Annot) bool {
 }
 
 func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
+	if err := page.EnsureLoaded(); err != nil {
+		return err
+	}
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
 	p.budget.reset()
@@ -158,6 +161,9 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 }
 
 func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
+	if err := page.EnsureLoaded(); err != nil {
+		return nil, err
+	}
 	p.renderMu.Lock()
 	defer p.renderMu.Unlock()
 	p.budget.reset()
@@ -181,6 +187,10 @@ func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
 }
 
 func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
+	if page == nil || page.EnsureLoaded() != nil {
+		return
+	}
+	page.EnsurePhysicalBox()
 	pb := page.Area.PhysicalBox
 	for _, template := range page.Template {
 		p.Template(ctx, template, pb)

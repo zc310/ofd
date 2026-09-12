@@ -89,7 +89,7 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 }
 
 func extractPageText(doc *parser.Document, page *parser.Page) string {
-	if page == nil {
+	if page == nil || page.EnsureLoaded() != nil {
 		return ""
 	}
 	lines := make([]string, 0)

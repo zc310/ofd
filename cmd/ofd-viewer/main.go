@@ -855,6 +855,10 @@ func (v *viewer) createPageSlots(pages []viewerPage) {
 	v.pageLayout.slots = v.pageSlots
 	objects := make([]fyne.CanvasObject, len(pages))
 	for i, pageRef := range pages {
+		if err := pageRef.page.EnsureLoaded(); err != nil {
+			slog.Error("读取页面失败", "page", i, "error", err)
+			continue
+		}
 		pageRef.page.EnsurePhysicalBox()
 		box := pageRef.page.Area.PhysicalBox
 		aspect := float32(1)

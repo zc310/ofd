@@ -236,6 +236,9 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 		t.Fatal("expected at least one page")
 	}
 	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
 	pb := page.Area.PhysicalBox
 	rec := &recordingRenderer{width: pb.Width, height: pb.Height}
 	doc := NewDocument(color.Transparent, ofd.Documents[0])

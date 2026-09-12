@@ -44,6 +44,11 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 		}
 	}
 
+	for _, page := range doc.Pages {
+		if err := page.EnsureLoaded(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	path := doc.Pages[0].Content.Layer[0].PathObject[1]
 	if path.LineWidth != 1 {
 		t.Fatalf("PathObject LineWidth = %g, want 1", path.LineWidth)
