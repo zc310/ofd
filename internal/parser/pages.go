@@ -7,12 +7,16 @@ import (
 	"github.com/zc310/ofd/internal/models"
 )
 
+const defaultPageCacheSize = 8
+
 type Page struct {
 	models.PageContent
 	ID models.StID
 
+	document *Document
 	load     func(*Page) error
-	loadOnce sync.Once
+	mu       sync.Mutex
+	loaded   bool
 	loadErr  error
 }
 
@@ -21,10 +25,17 @@ func (p *Page) EnsureLoaded() error {
 	if p == nil {
 		return errors.New("页面为空")
 	}
-	p.loadOnce.Do(func() {
-		if p.load != nil {
-			p.loadErr = p.load(p)
-		}
-	})
+	if p.document != nil {
+		return p.document.ensurePageLoaded(p)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.loaded {
+		return p.loadErr
+	}
+	if p.load != nil {
+		p.loadErr = p.load(p)
+	}
+	p.loaded = true
 	return p.loadErr
 }

@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 type Common struct {
@@ -24,7 +26,11 @@ func (p *Common) Init(fileCache *core.Package, dir models.StLoc) {
 type Document struct {
 	Common
 	models.Document
-	Pages               []*Page
+	Pages         []*Page
+	pageCacheMu   sync.Mutex
+	pageCache     *utils.LRU[*Page, struct{}]
+	pageCacheSize int
+
 	Templates           map[models.StID]*models.PageContent
 	DrawParams          map[models.StID]*models.DrawParam
 	Res                 map[models.StID]*models.MultiMedia
@@ -130,6 +136,41 @@ func (p *Document) parseResourceFilePath(path models.StLoc, resolveMedia bool) (
 	return &pr, nil
 }
 
+func (p *Document) ensurePageLoaded(page *Page) error {
+	p.pageCacheMu.Lock()
+	defer p.pageCacheMu.Unlock()
+	page.mu.Lock()
+	defer page.mu.Unlock()
+	if page.loaded {
+		if p.pageCache != nil {
+			_, _ = p.pageCache.Get(page)
+		}
+		return page.loadErr
+	}
+	if page.load != nil {
+		page.loadErr = page.load(page)
+	}
+	page.loaded = true
+	if page.loadErr != nil {
+		return page.loadErr
+	}
+	if p.pageCache == nil {
+		capacity := p.pageCacheSize
+		if capacity <= 0 {
+			capacity = defaultPageCacheSize
+		}
+		p.pageCache = utils.NewLRU[*Page, struct{}](capacity, func(victim *Page, _ struct{}) {
+			victim.mu.Lock()
+			victim.PageContent = models.PageContent{}
+			victim.loaded = false
+			victim.loadErr = nil
+			victim.mu.Unlock()
+		})
+	}
+	p.pageCache.Add(page, struct{}{})
+	return nil
+}
+
 func (p *Document) parse(body models.DocBody) error {
 	var err error
 	if err = p.FileCache.ReadXML(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
@@ -139,7 +180,8 @@ func (p *Document) parse(body models.DocBody) error {
 	for _, page := range p.Document.Pages.Pages {
 		pageDef := page
 		p.Pages = append(p.Pages, &Page{
-			ID: pageDef.ID,
+			ID:       pageDef.ID,
+			document: p,
 			load: func(target *Page) error {
 				var content models.PageContent
 				if err := p.FileCache.ReadXML(pageDef.BaseLoc.Resolve(p.BaseLoc).String(), &content); err != nil {
