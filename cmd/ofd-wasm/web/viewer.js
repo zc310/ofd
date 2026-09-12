@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=609ed55d890eb91f');
+    this.worker = new Worker('worker.js?v=dc531cc847ec84bb');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -287,7 +287,15 @@ let searchRequest;
 let openRequest;
 let opening = false;
 let zoom = 1;
-let zoomMode = 'fit';
+const zoomModeStorageKey = 'ofd-zoom-mode';
+let zoomMode = (() => {
+  try {
+    const value = localStorage.getItem(zoomModeStorageKey);
+    return ['fit', 'page'].includes(value) ? value : 'fit';
+  } catch (_) {
+    return 'fit';
+  }
+})();
 const pageLayoutStorageKey = 'ofd-page-layout';
 let pageLayout = (() => {
   try {
@@ -1218,9 +1226,14 @@ function applyPageWidth() {
 }
 
 function setZoom(value, mode = 'manual') {
-  if (!pageInfos.length) return;
-  const target = Math.max(0.5, Math.min(3, value));
-  if (target === zoom && mode === zoomMode) return;
+	if (!pageInfos.length) return;
+	const target = Math.max(0.5, Math.min(3, value));
+	if (mode === 'fit' || mode === 'page') {
+		try {
+			localStorage.setItem(zoomModeStorageKey, mode);
+		} catch (_) {}
+	}
+	if (target === zoom && mode === zoomMode) return;
   zoom = target;
   zoomMode = mode;
   zoomGeneration++;
