@@ -141,7 +141,7 @@
       .reader > #thumbnails { grid-column: 1; }
       .reader > #pages { grid-column: 2; }
       .reader.hide-thumbnails > #pages { grid-column: 1; }
-       #thumbnails { position: sticky; top: calc(var(--header-height, 0px) + 16px); display: grid; align-content: start; gap: 10px; width: 100%; min-width: 0; max-height: calc(100vh - var(--header-height, 0px) - 32px); padding-left: 8px; overflow: auto; scrollbar-width: none; }
+      #thumbnails { position: sticky; top: calc(var(--header-height, 0px) + 16px); display: block; width: 100%; min-width: 0; max-height: calc(100vh - var(--header-height, 0px) - 32px); padding-left: 8px; overflow: auto; scrollbar-width: none; }
        @supports (height: 100dvh) {
          #thumbnails { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
        }
@@ -150,7 +150,7 @@
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
      .double-thumbnail-layout .thumbnail { width: auto; min-height: 138px; }
      .thumbnail-placeholder { min-height: 138px; border-radius: 6px; background: transparent; }
-     .thumbnail { position: relative; display: grid; place-items: center; width: 100%; min-height: 112px; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
+      .thumbnail { position: relative; display: grid; place-items: center; width: 100%; min-height: 0; aspect-ratio: 210 / 297; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
     .thumbnail:hover { border-color: #7da7d5; box-shadow: 0 3px 10px #1720332e; }
     .thumbnail.active { border-color: #2476bd; box-shadow: inset 0 0 0 2px #2476bd, 0 3px 10px #1720332e; }
     .thumbnail img { display: block; max-width: 100%; max-height: 136px; object-fit: contain; }
@@ -159,10 +159,12 @@
     .thumbnail.loading img { opacity: .35; }
     .thumbnail.loading span { background: #7b8798cc; }
     .thumbnail span { position: absolute; right: 5px; bottom: 4px; padding: 1px 4px; border-radius: 3px; background: #172033cc; color: #fff; font-size: 12px; }
-      #pages { display: grid; justify-items: center; gap: 18px; width: 100%; min-width: 0; overflow-x: auto; touch-action: pan-x pan-y; }
+      #pages { display: block; position: relative; width: 100%; min-width: 0; overflow-x: auto; touch-action: pan-x pan-y; }
 
      #pages { padding: 4px 0 24px; }
-     .page-spread { display: flex; width: 820px; align-items: flex-start; justify-content: center; gap: 18px; }
+      .page-virtual-track, .thumbnail-virtual-track { position: relative; width: 100%; }
+      .page-spread { position: absolute; left: 50%; display: flex; align-items: flex-start; justify-content: center; gap: 18px; transform: translateX(-50%); }
+      .thumbnail-virtual-track .thumbnail { position: absolute; }
      .page-spread > .page-card, .page-spread .page-placeholder { flex: 0 0 auto; }
      .page-spread .page-placeholder { min-height: 180px; border-radius: 2px; background: transparent; }
      .page-card { position: relative; width: 820px; max-width: none; min-height: 180px; overflow: hidden; background: #e8edf3; box-shadow: 0 4px 20px #17203340; }
@@ -217,10 +219,10 @@
 
 
        .view-panel { width: min(240px, calc(100vw - 20px)); }
-       .page-spread { justify-content: flex-start; }
+         .page-spread { left: 0; justify-content: flex-start; transform: none; }
         .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 10px; background: #e0e4e9; }
 
-      #thumbnails { position: relative; display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: stretch; width: calc(100% + 20px); max-height: 108px; min-height: 108px; margin: -10px -10px 0; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; overscroll-behavior: contain; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
+      #thumbnails { position: relative; display: block; flex: 0 0 auto; width: calc(100% + 20px); max-height: 114px; min-height: 114px; margin: -10px -10px 0; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; overscroll-behavior: contain; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; height: 96px; min-height: 96px; }
        #thumbnails .thumbnail img { max-width: 100%; max-height: 90px; }
        body.dark-reading .reader { background: #1f252f; }
@@ -385,6 +387,6 @@
     </main>
   </div>
    <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-  <script src="viewer.js?v=2b9ecfe58cb09fa0"></script>
+  <script src="viewer.js?v=5cdc467a88fce54d"></script>
 </body>
 </html>
