@@ -122,6 +122,88 @@ func TestTextAndSearchConcurrent(t *testing.T) {
 	}
 }
 
+func TestPageDocumentReusesBackgroundCache(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.pageDocument(reader.pages[0], color.White)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := reader.pageDocument(reader.pages[0], color.White)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("相同背景未复用页面渲染文档")
+	}
+}
+
+func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	backgrounds := []color.Color{
+		color.RGBA{R: 255, A: 255},
+		color.RGBA{G: 255, A: 255},
+		color.RGBA{B: 255, A: 255},
+		color.RGBA{R: 255, G: 255, A: 255},
+		color.RGBA{R: 128, A: 255},
+	}
+	for _, background := range backgrounds {
+		if _, err := reader.pageDocument(reader.pages[0], background); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reader.renderDocs == nil {
+		t.Fatal("临时渲染文档缓存未初始化")
+	}
+	if got := reader.renderDocs.Len(); got != maxRenderDocs {
+		t.Fatalf("临时渲染文档缓存数量 = %d, want %d", got, maxRenderDocs)
+	}
+}
+
+func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.pageDocument(reader.pages[0], color.White)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.AddFallbackFont(FontSource{Family: "CacheInvalidationFallback", Data: []byte("invalid")}); err == nil {
+		t.Fatal("无效回退字体应返回错误")
+	}
+	second, err := reader.pageDocument(reader.pages[0], color.White)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("添加失败的回退字体不应清空有效缓存")
+	}
+}
+
 func TestRenderPages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {

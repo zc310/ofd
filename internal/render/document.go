@@ -18,20 +18,26 @@ import (
 
 type Document struct {
 	*parser.Document
-	background  color.Color
-	fonts       *Fonts
-	fallbacks   []fallbackFontResource
-	fallbackMu  sync.RWMutex
-	imageMu     sync.Mutex
-	svgMu       sync.Mutex
-	images      *utils.LRU[string, image.Image]
-	svgCanvases *utils.LRU[string, *canvas.Canvas]
+	background   color.Color
+	fonts        *Fonts
+	fallbacks    []fallbackFontResource
+	fallbackMu   sync.RWMutex
+	imageLocksMu sync.Mutex
+	imageLocks   map[string]*imageKeyLock
+	svgMu        sync.Mutex
+	images       *utils.LRU[string, image.Image]
+	svgCanvases  *utils.LRU[string, *canvas.Canvas]
 }
 
 type fallbackFontResource struct {
 	data   []byte
 	family string
 	style  canvas.FontStyle
+}
+
+type imageKeyLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 const (
@@ -101,6 +107,33 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 		Document:    doc,
 		images:      utils.NewLRU[string, image.Image](imageCacheCapacity, nil),
 		svgCanvases: utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil),
+		imageLocks:  make(map[string]*imageKeyLock),
+	}
+}
+
+func (p *Document) imageLock(key string) *imageKeyLock {
+	p.imageLocksMu.Lock()
+	defer p.imageLocksMu.Unlock()
+	if p.imageLocks == nil {
+		p.imageLocks = make(map[string]*imageKeyLock)
+	}
+	if lock := p.imageLocks[key]; lock != nil {
+		lock.refs++
+		return lock
+	}
+	lock := &imageKeyLock{refs: 1}
+	p.imageLocks[key] = lock
+	return lock
+}
+
+func (p *Document) releaseImageLock(key string, lock *imageKeyLock) {
+	p.imageLocksMu.Lock()
+	defer p.imageLocksMu.Unlock()
+	if lock.refs > 0 {
+		lock.refs--
+	}
+	if lock.refs == 0 && p.imageLocks[key] == lock {
+		delete(p.imageLocks, key)
 	}
 }
 

@@ -3,6 +3,7 @@ package render
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/tdewolff/canvas"
@@ -10,6 +11,48 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
+
+func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	fonts := NewFonts(ofd.Documents[0])
+	const workers = 16
+	families := make(chan *canvas.FontFamily, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			family, loadErr := fonts.LoadFont(models.StRefID(128))
+			if loadErr != nil {
+				errs <- loadErr
+				return
+			}
+			families <- family
+		}()
+	}
+	wg.Wait()
+	close(families)
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	var first *canvas.FontFamily
+	for family := range families {
+		if first == nil {
+			first = family
+			continue
+		}
+		if family != first {
+			t.Fatal("同一字体的并发加载创建了多个字体族")
+		}
+	}
+}
 
 func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))

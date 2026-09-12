@@ -19,6 +19,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 	maxRenderPixels = 50_000_000
 	maxFontBytes    = 32 << 20
 	maxRenderPages  = 64
+	maxRenderDocs   = 4
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -129,9 +131,11 @@ type OpenOptions struct {
 type Reader struct {
 	mu             sync.RWMutex
 	cacheMu        sync.Mutex
+	renderDocsMu   sync.Mutex
 	closed         bool
 	ofd            *parser.OFD
 	pages          []pageRef
+	renderDocs     *utils.LRU[renderDocumentKey, *render.Document]
 	fallbackFamily string
 	fallbackFonts  []FontSource
 	text           [][]TextRun
@@ -150,6 +154,14 @@ type pageRef struct {
 	document  *render.Document
 	page      *parser.Page
 	fontScope int
+}
+
+type renderDocumentKey struct {
+	base  *render.Document
+	red   uint32
+	green uint32
+	blue  uint32
+	alpha uint32
 }
 
 // Open 从内存中的 OFD 数据创建浏览器文档引擎。
@@ -257,6 +269,9 @@ func (r *Reader) AddFallbackFont(source FontSource) error {
 	}
 	r.fallbackFamily = source.Family
 	r.fallbackFonts = append(r.fallbackFonts, cloneFontSources([]FontSource{source})...)
+	r.renderDocsMu.Lock()
+	r.renderDocs = nil
+	r.renderDocsMu.Unlock()
 	r.text = make([][]TextRun, len(r.pages))
 	r.textSet = make([]bool, len(r.pages))
 	r.search = make([]searchPage, len(r.pages))
@@ -472,7 +487,7 @@ func (r *Reader) RenderPage(index int, options RenderOptions) ([]byte, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
-	return r.renderPageLocked(index, options)
+	return r.renderPage(index, options)
 }
 
 // RenderPages 将多个页面按传入顺序渲染为 PNG 数据。
@@ -491,7 +506,7 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	}
 	results := make([][]byte, 0, len(indices))
 	for _, index := range indices {
-		data, err := r.renderPageLocked(index, options)
+		data, err := r.renderPage(index, options)
 		if err != nil {
 			return nil, err
 		}
@@ -545,7 +560,7 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 		}
 	}()
 	for position, index := range indices {
-		page, pageErr := r.pdfPageLocked(index, background)
+		page, pageErr := r.pdfPage(index, background)
 		if pageErr != nil {
 			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
 		}
@@ -569,7 +584,8 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 	return output.Bytes(), nil
 }
 
-func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canvas, error) {
+// pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。
+func (r *Reader) pdfPage(index int, background color.Color) (*canvas.Canvas, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
@@ -583,14 +599,15 @@ func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canva
 	if content == nil {
 		return nil, errors.New("页面内容为空")
 	}
-	document, err := r.pageDocumentLocked(ref, background)
+	document, err := r.pageDocument(ref, background)
 	if err != nil {
 		return nil, err
 	}
 	return document.Page(ref.page)
 }
 
-func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, error) {
+// renderPage 将页面渲染为 PNG；调用方必须持有 Reader 读锁。
+func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
@@ -625,7 +642,7 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 		background = color.Transparent
 	}
 	// NewDocument 保证页面背景和渲染内容使用同一个文档级渲染上下文。
-	document, err := r.pageDocumentLocked(ref, background)
+	document, err := r.pageDocument(ref, background)
 	if err != nil {
 		return nil, err
 	}
@@ -642,16 +659,30 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 	return output.Bytes(), nil
 }
 
-func (r *Reader) pageDocumentLocked(ref pageRef, background color.Color) (*render.Document, error) {
+// pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。
+func (r *Reader) pageDocument(ref pageRef, background color.Color) (*render.Document, error) {
 	document := ref.document
 	if document == nil || document.Document == nil {
 		return nil, errors.New("页面渲染上下文为空")
 	}
 	if !sameColor(background, r.options.Background) {
+		red, green, blue, alpha := background.RGBA()
+		key := renderDocumentKey{base: document, red: red, green: green, blue: blue, alpha: alpha}
+		r.renderDocsMu.Lock()
+		defer r.renderDocsMu.Unlock()
+		if r.renderDocs != nil {
+			if cached, ok := r.renderDocs.Get(key); ok && cached != nil {
+				return cached, nil
+			}
+		}
 		document = render.NewDocument(background, ref.document.Document)
 		for _, source := range r.fallbackFonts {
 			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
 		}
+		if r.renderDocs == nil {
+			r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, nil)
+		}
+		r.renderDocs.Add(key, document)
 	}
 	return document, nil
 }
@@ -672,6 +703,9 @@ func (r *Reader) Close() error {
 	r.textSet = nil
 	r.search = nil
 	r.searchSet = nil
+	r.renderDocsMu.Lock()
+	r.renderDocs = nil
+	r.renderDocsMu.Unlock()
 	if r.ofd == nil {
 		return nil
 	}
