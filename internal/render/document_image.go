@@ -128,8 +128,10 @@ func isSVGFormat(format string, file models.StLoc) bool {
 
 func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Canvas, error) {
 	key := file.Clean().String()
-	p.imageMu.Lock()
-	defer p.imageMu.Unlock()
+	imageLock := p.imageLock(key)
+	defer p.releaseImageLock(key, imageLock)
+	imageLock.mu.Lock()
+	defer imageLock.mu.Unlock()
 	if cached, ok := p.svgCanvases.Get(key); ok {
 		return cached, nil
 	}
@@ -150,8 +152,10 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 
 func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
 	key := file.Clean().String()
-	p.imageMu.Lock()
-	defer p.imageMu.Unlock()
+	imageLock := p.imageLock(key)
+	defer p.releaseImageLock(key, imageLock)
+	imageLock.mu.Lock()
+	defer imageLock.mu.Unlock()
 	if cached, ok := p.images.Get(key); ok {
 		return cached, nil
 	}

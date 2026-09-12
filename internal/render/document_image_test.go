@@ -2,18 +2,22 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
 	"math"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/tdewolff/canvas"
 	cimage "github.com/tdewolff/canvas/image"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -210,6 +214,388 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 		t.Logf("cached image %s: %dx%d %T", media.MediaFile, img1.Bounds().Dx(), img1.Bounds().Dy(), img1)
 		return true
 	})
+}
+
+func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := ofd.Close(); err != nil {
+			t.Errorf("关闭 OFD 失败: %v", err)
+		}
+	}()
+
+	doc := NewDocument(color.Transparent, ofd.Documents[0])
+	var file models.StLoc
+	var format string
+	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+		file = media.MediaFile.Clean()
+		format = media.Format
+		return false
+	})
+	if file == "" {
+		t.Skip("测试文档没有图片资源")
+	}
+
+	const workers = 16
+	images := make(chan image.Image, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			decoded, decodeErr := doc.decodeImage(file, format)
+			if decodeErr != nil {
+				errs <- decodeErr
+				return
+			}
+			images <- decoded
+		}()
+	}
+	wg.Wait()
+	close(images)
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	var first image.Image
+	for decoded := range images {
+		if first == nil {
+			first = decoded
+			continue
+		}
+		if decoded != first {
+			t.Fatal("同一图片 key 的并发解码创建了多个图片实例")
+		}
+	}
+}
+
+type benchmarkImageMedia struct {
+	file   models.StLoc
+	format string
+}
+
+func benchmarkImageDocument(b *testing.B) (*Document, []benchmarkImageMedia) {
+	b.Helper()
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := ofd.Close(); err != nil {
+			b.Errorf("关闭 OFD 失败: %v", err)
+		}
+	})
+
+	medias := make([]benchmarkImageMedia, 0)
+	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+		medias = append(medias, benchmarkImageMedia{file: media.MediaFile.Clean(), format: media.Format})
+		return true
+	})
+	if len(medias) == 0 {
+		b.Fatal("测试文档没有图片资源")
+	}
+	return NewDocument(color.Transparent, ofd.Documents[0]), medias
+}
+
+func BenchmarkDecodeRasterImage(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	media := medias[0]
+	data, err := doc.Document.FileCache.Read(media.file.String())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		if _, err := decodeRasterImage(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDocumentDecodeImageCached(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	media := medias[0]
+	if _, err := doc.decodeImage(media.file, media.format); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		if _, err := doc.decodeImage(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDocumentDecodeImageCold(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	media := medias[0]
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		b.StopTimer()
+		doc.images = utils.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		b.StartTimer()
+		if _, err := doc.decodeImage(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDocumentDecodeImageSameKeyParallel(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	media := medias[0]
+	if _, err := doc.decodeImage(media.file, media.format); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := doc.decodeImage(media.file, media.format); err != nil {
+				b.Errorf("图片解码失败: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkDocumentDecodeImageDifferentKeysParallel(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	for _, media := range medias {
+		if _, err := doc.decodeImage(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+	var next atomic.Uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			media := medias[(next.Add(1)-1)%uint64(len(medias))]
+			if _, err := doc.decodeImage(media.file, media.format); err != nil {
+				b.Errorf("图片解码失败: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkDocumentDecodeImageColdSameKeyParallel(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	benchmarkColdImageDecodeParallel(b, doc, medias, true)
+}
+
+func BenchmarkDocumentDecodeImageColdDifferentKeysParallel(b *testing.B) {
+	doc, medias := benchmarkImageDocument(b)
+	benchmarkColdImageDecodeParallel(b, doc, medias, false)
+}
+
+func benchmarkColdImageDecodeParallel(b *testing.B, doc *Document, medias []benchmarkImageMedia, sameKey bool) {
+	b.Helper()
+	workers := len(medias)
+	if sameKey {
+		workers = 8
+	}
+	if workers == 0 {
+		b.Fatal("测试文档没有图片资源")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for round := 0; round < b.N; round++ {
+		b.StopTimer()
+		doc.images = utils.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		start := make(chan struct{})
+		errs := make(chan error, workers)
+		var wg sync.WaitGroup
+		for index := 0; index < workers; index++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				<-start
+				media := medias[index%len(medias)]
+				if sameKey {
+					media = medias[0]
+				}
+				if _, err := doc.decodeImage(media.file, media.format); err != nil {
+					errs <- err
+				}
+			}(index)
+		}
+		b.StartTimer()
+		close(start)
+		wg.Wait()
+		b.StopTimer()
+		close(errs)
+		for err := range errs {
+			b.Fatal(err)
+		}
+	}
+}
+
+type benchmarkSVGMedia struct {
+	file   models.StLoc
+	format string
+}
+
+func benchmarkSVGDocument(b *testing.B) (*Document, []benchmarkSVGMedia) {
+	b.Helper()
+	media := make([]creator.Media, 4)
+	for index, fill := range []string{"red", "green", "blue", "gold"} {
+		media[index] = creator.Media{
+			ID:     uint64(90 + index),
+			Type:   "Image",
+			Format: "SVG",
+			Data:   []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="%s"/><circle cx="160" cy="120" r="80" fill="white"/></svg>`, fill)),
+		}
+	}
+	data, err := creator.Marshal(creator.Document{
+		ID:    "svg-benchmark",
+		Media: media,
+		Pages: []creator.Page{{Items: []creator.Item{creator.Image{X: 0, Y: 0, Width: 320, Height: 240, ResourceID: 90}}}},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := ofd.Close(); err != nil {
+			b.Errorf("关闭 OFD 失败: %v", err)
+		}
+	})
+
+	medias := make([]benchmarkSVGMedia, 0, len(media))
+	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
+		medias = append(medias, benchmarkSVGMedia{file: media.MediaFile.Clean(), format: media.Format})
+		return true
+	})
+	if len(medias) == 0 {
+		b.Fatal("SVG 基准文档没有图片资源")
+	}
+	return NewDocument(color.Transparent, ofd.Documents[0]), medias
+}
+
+func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	media := medias[0]
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		b.StopTimer()
+		doc.svgCanvases = utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil)
+		b.StartTimer()
+		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDocumentDecodeSVGCanvasCached(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	media := medias[0]
+	if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDocumentDecodeSVGCanvasSameKeyParallel(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	media := medias[0]
+	if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+				b.Errorf("SVG 解码失败: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkDocumentDecodeSVGCanvasDifferentKeysParallel(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	for _, media := range medias {
+		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+			b.Fatal(err)
+		}
+	}
+	var next atomic.Uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			media := medias[(next.Add(1)-1)%uint64(len(medias))]
+			if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+				b.Errorf("SVG 解码失败: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkDocumentDecodeSVGCanvasColdSameKeyParallel(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	benchmarkColdSVGCanvasDecodeParallel(b, doc, medias, true)
+}
+
+func BenchmarkDocumentDecodeSVGCanvasColdDifferentKeysParallel(b *testing.B) {
+	doc, medias := benchmarkSVGDocument(b)
+	benchmarkColdSVGCanvasDecodeParallel(b, doc, medias, false)
+}
+
+func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []benchmarkSVGMedia, sameKey bool) {
+	b.Helper()
+	workers := len(medias)
+	if sameKey {
+		workers = 8
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for round := 0; round < b.N; round++ {
+		b.StopTimer()
+		doc.svgCanvases = utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil)
+		start := make(chan struct{})
+		errs := make(chan error, workers)
+		var wg sync.WaitGroup
+		for index := 0; index < workers; index++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				<-start
+				media := medias[index%len(medias)]
+				if sameKey {
+					media = medias[0]
+				}
+				if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+					errs <- err
+				}
+			}(index)
+		}
+		b.StartTimer()
+		close(start)
+		wg.Wait()
+		b.StopTimer()
+		close(errs)
+		for err := range errs {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestSVGImageRendersAsVector(t *testing.T) {
