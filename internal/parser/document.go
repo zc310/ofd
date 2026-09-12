@@ -135,15 +135,36 @@ func (p *Document) parse(body models.DocBody) error {
 	if err = p.FileCache.ReadXML(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
 		return err
 	}
+	p.Pages = make([]*Page, 0, len(p.Document.Pages.Pages))
 	for _, page := range p.Document.Pages.Pages {
-		var pc models.PageContent
-		if err = p.FileCache.ReadXML(page.BaseLoc.Resolve(p.BaseLoc).String(), &pc); err != nil {
-			return err
-		}
-		if pc.Area == nil {
-			pc.Area = &p.CommonData.PageArea
-		}
-		p.Pages = append(p.Pages, &Page{ID: page.ID, PageContent: pc})
+		pageDef := page
+		p.Pages = append(p.Pages, &Page{
+			ID: pageDef.ID,
+			load: func(target *Page) error {
+				var content models.PageContent
+				if err := p.FileCache.ReadXML(pageDef.BaseLoc.Resolve(p.BaseLoc).String(), &content); err != nil {
+					return err
+				}
+				if content.Area == nil {
+					content.Area = &p.CommonData.PageArea
+				}
+				target.PageContent = content
+				pagePath := pageDef.BaseLoc.Resolve(p.BaseLoc)
+				for _, resource := range content.PageRes {
+					resourcePath := pagePath.Dir().Join(resource.String())
+					pr, resourceErr := p.parseResourceFilePath(resourcePath, true)
+					if resourceErr != nil {
+						return resourceErr
+					}
+					if pr.MultiMedias != nil {
+						for _, media := range pr.MultiMedias.MultiMedia {
+							p.Res[media.ID] = media
+						}
+					}
+				}
+				return nil
+			},
+		})
 	}
 	if err = p.parseTemplates(); err != nil {
 		return err
@@ -152,20 +173,6 @@ func (p *Document) parse(body models.DocBody) error {
 	p.Res = make(map[models.StID]*models.MultiMedia)
 	p.FontRes = make(map[models.StID]*models.Font)
 	p.CompositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
-	for index, page := range p.Pages {
-		pagePath := p.Document.Pages.Pages[index].BaseLoc.Resolve(p.BaseLoc)
-		for _, resource := range page.PageRes {
-			pr, resourceErr := p.parseResourceFilePath(pagePath.Dir().Join(resource.String()), true)
-			if resourceErr != nil {
-				return resourceErr
-			}
-			if pr.MultiMedias != nil {
-				for _, media := range pr.MultiMedias.MultiMedia {
-					p.Res[media.ID] = media
-				}
-			}
-		}
-	}
 	if err = p.parsePublicRes(); err != nil {
 		slog.Error(err.Error())
 	}

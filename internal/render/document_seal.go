@@ -63,6 +63,9 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 	}
 
 	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		return err
+	}
 	if page.PageContent.Area == nil {
 		return nil
 	}

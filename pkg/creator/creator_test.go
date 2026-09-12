@@ -20,6 +20,22 @@ import (
 	"github.com/zc310/ofd/pkg/validator"
 )
 
+func newTestOFD(t *testing.T, data []byte) *parser.OFD {
+	t.Helper()
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, document := range ofd.Documents {
+		for _, page := range document.Pages {
+			if err := page.EnsureLoaded(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return ofd
+}
+
 func TestCreateTextDocumentCanBeParsed(t *testing.T) {
 	data, err := Marshal(Document{
 		ID:       "creator-test",
@@ -41,13 +57,16 @@ func TestCreateTextDocumentCanBeParsed(t *testing.T) {
 		t.Fatalf("entry count = %d, want 4", len(archive.File))
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
 	if len(ofd.Documents) != 1 || len(ofd.Documents[0].Pages) != 1 {
 		t.Fatalf("documents/pages = %d/%d, want 1/1", len(ofd.Documents), len(ofd.Documents[0].Pages))
+	}
+	if err := ofd.Documents[0].Pages[0].EnsureLoaded(); err != nil {
+		t.Fatal(err)
 	}
 	if got := ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0].Value; got != "你好，OFD" {
 		t.Fatalf("text = %q", got)
@@ -137,7 +156,7 @@ func TestCreateDocumentMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +180,7 @@ func TestCreatePageResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +208,7 @@ func TestCreateAllowsExplicitResourceIDsOutOfOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +336,7 @@ func TestCreateAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +365,7 @@ func TestCreateCustomTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +393,7 @@ func TestCreateExtensions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +419,7 @@ func TestCreateExternalExtensionData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +706,7 @@ func TestCreateSignatures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +889,7 @@ func TestCreateDocumentVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -984,9 +1003,7 @@ func TestCreateImageDocumentWritesImageResource(t *testing.T) {
 	if !found {
 		t.Fatal("PNG resource was not written")
 	}
-	if _, err := parser.NewOFD(data); err != nil {
-		t.Fatal(err)
-	}
+	newTestOFD(t, data)
 	checkGeneratedPackage(t, data)
 }
 
@@ -1034,7 +1051,7 @@ func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
 		t.Fatal("embedded font resource was not written")
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1107,7 +1124,7 @@ func TestCreateEmbeddedTTCFontResource(t *testing.T) {
 	if face := extractedFamily.Face(10, canvas.Black); face == nil || face.Font == nil || face.Font.GlyphIndex('中') == 0 {
 		t.Fatal("extracted OTF cannot be used by Canvas")
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1144,7 +1161,7 @@ func TestCreateTextWritesStyleAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1176,7 +1193,7 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1202,7 +1219,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1218,10 +1235,7 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err = parser.NewOFD(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	ofd = newTestOFD(t, data)
 	defer ofd.Close()
 	code = ofd.Documents[0].Pages[0].Content.Layer[0].TextObject[0].TextCode[0]
 	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 || code.DeltaX[0] <= 0 || code.DeltaX[1] <= 0 || code.DeltaY[0] != 0 || code.DeltaY[1] != 0 {
@@ -1246,7 +1260,7 @@ func TestCreateTextCGTransforms(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1319,7 +1333,7 @@ func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
 	if subset.GlyphIndex('试') == 0 || subset.GlyphIndex('测') == 0 {
 		t.Fatalf("subset cmap lost used characters: 试=%d 测=%d", subset.GlyphIndex('试'), subset.GlyphIndex('测'))
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1357,7 +1371,7 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1396,7 +1410,7 @@ func TestCreateBookmarkGotoAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1425,7 +1439,7 @@ func TestCreateMediaActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1458,7 +1472,7 @@ func TestCreateAttachmentAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1492,7 +1506,7 @@ func TestCreateActionRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1518,7 +1532,7 @@ func TestCreateImageMediaAndCompositeReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1552,7 +1566,7 @@ func TestCreateOutlinesAndBookmarks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1598,7 +1612,7 @@ func TestCreatePermissionsAndViewPreferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1653,7 +1667,7 @@ func TestCreateTemplatePages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1685,7 +1699,7 @@ func TestCreateCompositeGraphicUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1717,7 +1731,7 @@ func TestCreateAdvancedColors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1743,7 +1757,7 @@ func TestCreateDefaultColorSpace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1767,7 +1781,7 @@ func TestCreatePublicResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1788,7 +1802,7 @@ func TestCreateColorSpaceProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1869,7 +1883,7 @@ func TestCreatePatternColor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1928,7 +1942,7 @@ func TestCreateRadialColor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1951,7 +1965,7 @@ func TestCreateMeshColors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1978,7 +1992,7 @@ func TestCreateAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2045,7 +2059,7 @@ func TestCreateGraphicCTMAndPathClips(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2080,7 +2094,7 @@ func TestCreateTextClip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2110,7 +2124,7 @@ func TestCreateImageCTMAndClips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2148,7 +2162,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2184,7 +2198,7 @@ func TestCreateImageResourceReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2211,7 +2225,7 @@ func TestCreateNestedPageBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2251,7 +2265,7 @@ func TestCreateWritesColors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2297,7 +2311,7 @@ func TestCreateWritesPageAreaAndLayerType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2330,7 +2344,7 @@ func TestCreateDocumentPageArea(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2367,7 +2381,7 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2425,7 +2439,7 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ofd, err := parser.NewOFD(data)
+	ofd := newTestOFD(t, data)
 	if err != nil {
 		t.Fatal(err)
 	}

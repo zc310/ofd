@@ -745,6 +745,10 @@ func (a *analyzer) registerPageResources(documentIndex int, doc *parser.Document
 	if page == nil {
 		return
 	}
+	if err := page.EnsureLoaded(); err != nil {
+		a.addWarning(fmt.Sprintf("页面资源读取失败: %v", err))
+		return
+	}
 	a.registerPageResourceContent(documentIndex, doc, &page.PageContent, pagePath, "page")
 }
 
