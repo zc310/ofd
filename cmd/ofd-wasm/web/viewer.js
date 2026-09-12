@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=6ed435133ac60896');
+    this.worker = new Worker('worker.js?v=609ed55d890eb91f');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -261,6 +261,7 @@ const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
 let fallbackFontRegistration;
 const transparentRenderBackground = '#00000000';
+const thumbnailAspectRatio = 210 / 297;
 const recentDatabaseName = 'ofd-reader';
 const recentStoreName = 'files';
 const recentFileLimit = 5;
@@ -278,9 +279,6 @@ let thumbnailButtons = [];
 let current = 0;
 let documentGeneration = 0;
 let injectedFonts = new Map();
-let pageObserver;
-let activePageObserver;
-let thumbnailObserver;
 let resizeObserver;
 let searchResults = [];
 let activeSearchResult = -1;
@@ -328,6 +326,12 @@ let statusBeforeCopy;
 let recentFiles = [];
 let currentDocumentKey = '';
 let pageSpreads = [];
+let pageVirtualTrack;
+let thumbnailVirtualTrack;
+let thumbnailSlots = [];
+let thumbnailSlotByPage = [];
+let virtualUpdateFrame;
+let thumbnailMetrics = { mobile: false, columns: 1, rowHeight: 160, gap: 10, itemWidth: 72, itemHeight: 102 };
 
 function pageLayoutIsDouble() {
   return pageLayout !== 'single';
@@ -385,6 +389,269 @@ function spreadDimensions(position) {
     width: pageLayoutIsDouble() ? layoutBaseWidth() : 820,
     height: Math.max(...heights, 180),
   };
+}
+
+function pageSpreadOffset(position) {
+  return pageSpreads[position]?.offset || 0;
+}
+
+function updatePageVirtualMetrics() {
+  if (!pageVirtualTrack) return;
+  let offset = 0;
+  const gap = 18 * zoom;
+  pageSpreads.forEach((spread, position) => {
+    const dimensions = spreadDimensions(position);
+    spread.offset = offset;
+    spread.height = dimensions.height * zoom;
+    spread.width = dimensions.width * zoom;
+    if (spread.element) {
+      spread.element.style.top = `${offset}px`;
+      spread.element.style.width = `${spread.width}px`;
+      spread.element.style.minHeight = `${spread.height}px`;
+      spread.element.style.gap = `${gap}px`;
+    }
+    offset += spread.height + gap;
+  });
+  pageVirtualTrack.style.height = `${Math.max(0, offset - gap)}px`;
+}
+
+function pageSpreadPositionForPage(index) {
+  return spreadPositionForPage(index);
+}
+
+function thumbnailSlotsForLayout() {
+  if (!pageLayoutIsDouble()) return pageInfos.map((_, index) => index);
+  return pageSpreads.flatMap(spread => spread.pages);
+}
+
+function updateThumbnailMetrics() {
+  if (!thumbnailVirtualTrack) return;
+  const mobile = window.matchMedia('(max-width: 620px)').matches;
+  const double = pageLayoutIsDouble();
+  const columns = mobile ? 1 : double ? 2 : 1;
+  const gap = mobile ? 0 : double ? 8 : 10;
+  const itemWidth = mobile
+    ? 72
+    : Math.max(1, (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns);
+  const itemHeight = itemWidth / thumbnailAspectRatio;
+  thumbnailMetrics = { mobile, columns, gap, itemHeight, itemWidth, rowHeight: itemHeight + gap };
+  const rows = Math.ceil(thumbnailSlots.length / columns);
+  thumbnailVirtualTrack.style.width = mobile ? `${thumbnailSlots.length * itemWidth}px` : '100%';
+  thumbnailVirtualTrack.style.height = mobile
+    ? `${itemHeight}px`
+    : `${Math.max(0, rows * itemHeight + Math.max(0, rows - 1) * gap)}px`;
+}
+
+function thumbnailSlotForPage(index) {
+  return thumbnailSlotByPage[index] ?? -1;
+}
+
+function scheduleVirtualUpdate() {
+  if (virtualUpdateFrame) return;
+  virtualUpdateFrame = requestAnimationFrame(() => {
+    virtualUpdateFrame = undefined;
+    updatePageVirtualWindow();
+    updateThumbnailVirtualWindow();
+  });
+}
+
+function mountPageSpread(position) {
+  const spread = pageSpreads[position];
+  if (!spread || spread.element) return;
+  const element = document.createElement('div');
+  element.className = 'page-spread';
+  element.dataset.position = position;
+  spread.element = element;
+  pageVirtualTrack.append(element);
+  spread.pages.forEach(index => {
+    if (index < 0) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'page-placeholder';
+      placeholder.dataset.index = '-1';
+      const info = pageInfos[spread.pages.find(page => page >= 0)];
+      if (info) {
+        const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
+        placeholder.style.aspectRatio = String(ratio);
+      }
+      element.append(placeholder);
+      return;
+    }
+    const info = pageInfos[index];
+    const card = document.createElement('article');
+    card.className = 'page-card loading';
+    card.dataset.index = index;
+    card.style.aspectRatio = `${info.width} / ${info.height}`;
+    const image = document.createElement('img');
+    image.className = 'page-image';
+    image.alt = `第 ${index + 1} 页`;
+    image.hidden = true;
+    const surface = document.createElement('div');
+    surface.className = 'page-surface';
+    const textLayer = document.createElement('div');
+    textLayer.className = 'text-layer';
+    surface.append(image, textLayer);
+    card.append(surface);
+    element.append(card);
+    pageCards[index] = card;
+    if (textCache.has(index)) buildTextLayer(index);
+    resizeObserver?.observe(card);
+    loadPage(index);
+  });
+  applyPageWidthToSpread(spread);
+  spread.pages.forEach(index => {
+    if (index >= 0 && textCache.has(index)) buildTextLayer(index);
+  });
+}
+
+function ensurePageMounted(index) {
+  const position = pageSpreadPositionForPage(index);
+  if (position < 0) return undefined;
+  mountPageSpread(position);
+  applyPageWidthToSpread(pageSpreads[position]);
+  return pageCards[index];
+}
+
+function unmountPageSpread(position) {
+  const spread = pageSpreads[position];
+  if (!spread?.element) return;
+  spread.pages.forEach(index => {
+    if (index >= 0) {
+      const card = pageCards[index];
+      if (card) resizeObserver?.unobserve(card);
+      delete pageCards[index];
+    }
+  });
+  spread.element.remove();
+  spread.element = undefined;
+}
+
+function applyPageWidthToSpread(spread) {
+  if (!spread?.element) return;
+  spread.element.style.top = `${spread.offset}px`;
+  spread.element.style.width = `${spread.width}px`;
+  spread.element.style.minHeight = `${spread.height}px`;
+  spread.element.style.gap = `${18 * zoom}px`;
+  spread.element.querySelectorAll('.page-placeholder').forEach(placeholder => {
+    placeholder.style.width = `${820 * zoom}px`;
+    placeholder.style.minHeight = `${180 * zoom}px`;
+  });
+  spread.pages.forEach(index => {
+    if (index < 0) return;
+    const card = pageCards[index];
+    const info = pageInfos[index];
+    if (!card || !info) return;
+    const rotated = pageRotation % 180 !== 0;
+    card.style.width = `${820 * zoom}px`;
+    card.style.minHeight = `${180 * zoom}px`;
+    card.style.aspectRatio = rotated ? `${info.height} / ${info.width}` : `${info.width} / ${info.height}`;
+    const surface = card.querySelector('.page-surface');
+    if (surface) {
+      surface.className = 'page-surface';
+      if (pageRotation === 90) surface.classList.add('rotated');
+      if (pageRotation === 180) surface.classList.add('rotated-180');
+      if (pageRotation === 270) surface.classList.add('rotated-270');
+      surface.style.width = rotated ? `${info.width / info.height * 100}%` : '100%';
+      surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
+    }
+  });
+}
+
+function updatePageVirtualWindow(updateCurrent = true) {
+  if (!pageVirtualTrack || !pageSpreads.length) return;
+  const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+  const viewTop = window.scrollY - trackTop - Math.max(window.innerHeight * 2, 1600);
+  const viewBottom = window.scrollY - trackTop + window.innerHeight + Math.max(window.innerHeight * 2, 1600);
+  pageSpreads.forEach((spread, position) => {
+    const visible = spread.offset + spread.height >= viewTop && spread.offset <= viewBottom;
+    if (visible) mountPageSpread(position);
+    else unmountPageSpread(position);
+  });
+  if (!updateCurrent) return;
+  const visible = pageSpreads
+    .map((spread, position) => ({ spread, position }))
+    .filter(({ spread }) => spread.element && spread.offset + spread.height >= window.scrollY - trackTop && spread.offset <= window.scrollY - trackTop + window.innerHeight)
+    .sort((left, right) => Math.abs(left.spread.offset - (window.scrollY - trackTop)) - Math.abs(right.spread.offset - (window.scrollY - trackTop)));
+  const index = firstPageInSpread(visible[0]?.position ?? currentSpreadPosition());
+  if (index >= 0 && index !== current) setCurrent(index);
+}
+
+function createThumbnail(index) {
+  const thumbnail = document.createElement('button');
+  thumbnail.className = 'thumbnail';
+  thumbnail.type = 'button';
+  thumbnail.dataset.index = index;
+  thumbnail.title = `第 ${index + 1} 页`;
+  thumbnail.setAttribute('aria-label', `第 ${index + 1} 页`);
+  thumbnail.addEventListener('click', () => goTo(index));
+  thumbnail.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const target = event.key === 'ArrowLeft' ? index - 1 : index + 1;
+    if (target >= 0 && target < pageInfos.length) {
+      updateThumbnailVirtualWindow(thumbnailSlotForPage(target));
+      thumbnailButtons[target]?.focus();
+    }
+  });
+  const image = document.createElement('img');
+  image.alt = `第 ${index + 1} 页缩略图`;
+  image.hidden = true;
+  thumbnail.append(image);
+  const label = document.createElement('span');
+  label.textContent = index + 1;
+  thumbnail.append(label);
+  thumbnailButtons[index] = thumbnail;
+  thumbnailVirtualTrack.append(thumbnail);
+  resizeThumbnail(index, thumbnail);
+  thumbnail.classList.toggle('active', index === current);
+  if (index === current) thumbnail.setAttribute('aria-current', 'page');
+  loadThumbnail(index);
+}
+
+function resizeThumbnail(index, thumbnail) {
+  const slot = thumbnailSlotForPage(index);
+  if (slot < 0) return;
+  const { mobile, columns, gap, itemHeight, itemWidth } = thumbnailMetrics;
+  if (mobile) {
+    thumbnail.style.left = `${slot * itemWidth}px`;
+    thumbnail.style.top = '0';
+    thumbnail.style.width = `${itemWidth}px`;
+    thumbnail.style.height = `${itemHeight}px`;
+    thumbnail.style.minHeight = '0';
+  } else {
+    const column = slot % columns;
+    const row = Math.floor(slot / columns);
+    const width = (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns;
+    thumbnail.style.left = `${column * (width + gap)}px`;
+    thumbnail.style.top = `${row * (itemHeight + gap)}px`;
+    thumbnail.style.width = `${width}px`;
+    thumbnail.style.height = `${itemHeight}px`;
+    thumbnail.style.minHeight = '0';
+  }
+}
+
+function updateThumbnailVirtualWindow(targetSlot = -1) {
+  if (!thumbnailVirtualTrack || !thumbnailSlots.length || thumbnailsElement.hidden) return;
+  const { mobile, columns, rowHeight, itemWidth } = thumbnailMetrics;
+  const buffer = mobile ? thumbnailsElement.clientWidth * 2 : thumbnailsElement.clientHeight * 2;
+  const start = mobile
+    ? Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / itemWidth))
+    : Math.max(0, Math.floor((thumbnailsElement.scrollTop - buffer) / rowHeight) * columns);
+  const end = mobile
+    ? Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / itemWidth))
+    : Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollTop + thumbnailsElement.clientHeight + buffer) / rowHeight) * columns);
+  const required = new Set();
+  for (let slot = start; slot < end; slot += 1) required.add(slot);
+  if (targetSlot >= 0) required.add(targetSlot);
+  thumbnailSlots.forEach((index, slot) => {
+    if (index < 0 || !required.has(slot)) return;
+    if (!thumbnailButtons[index]) createThumbnail(index);
+    resizeThumbnail(index, thumbnailButtons[index]);
+  });
+  thumbnailSlots.forEach((index, slot) => {
+    if (index < 0 || required.has(slot) || !thumbnailButtons[index]) return;
+    thumbnailButtons[index].remove();
+    delete thumbnailButtons[index];
+  });
 }
 
 function documentKey(file) {
@@ -600,7 +867,7 @@ function markPageFailed(index) {
 }
 
 function showPageError(index, message) {
-  const card = pageCards[index];
+  const card = ensurePageMounted(index);
   if (!card) return;
   card.classList.add('render-error');
   const error = document.createElement('div');
@@ -619,7 +886,7 @@ function showPageError(index, message) {
 }
 
 function retryPage(index) {
-  const card = pageCards[index];
+  const card = ensurePageMounted(index);
   if (!card || index < 0 || index >= pageInfos.length) return;
   pageCache.delete(cacheKey('page', index, documentGeneration, pageDPI()));
   failedPages.delete(index);
@@ -873,16 +1140,16 @@ function updateSearchStatus(message) {
 }
 
 function keepThumbnailVisible(button) {
-  if (!window.matchMedia('(max-width: 620px)').matches) {
-    button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-    return;
-  }
-  const left = button.offsetLeft;
-  const right = left + button.offsetWidth;
-  const visibleLeft = thumbnailsElement.scrollLeft;
-  const visibleRight = visibleLeft + thumbnailsElement.clientWidth;
-  if (left < visibleLeft) thumbnailsElement.scrollLeft = left;
-  else if (right > visibleRight) thumbnailsElement.scrollLeft = right - thumbnailsElement.clientWidth;
+  const start = thumbnailMetrics.mobile ? button.offsetLeft : button.offsetTop;
+  const size = thumbnailMetrics.mobile ? button.offsetWidth : button.offsetHeight;
+  const visibleStart = thumbnailMetrics.mobile ? thumbnailsElement.scrollLeft : thumbnailsElement.scrollTop;
+  const visibleSize = thumbnailMetrics.mobile ? thumbnailsElement.clientWidth : thumbnailsElement.clientHeight;
+  const offset = start < visibleStart ? start : start + size > visibleStart + visibleSize
+    ? start + size - visibleSize
+    : -1;
+  if (offset < 0) return;
+  if (thumbnailMetrics.mobile) thumbnailsElement.scrollLeft = offset;
+  else thumbnailsElement.scrollTop = offset;
 }
 
 function setCurrent(index) {
@@ -890,7 +1157,9 @@ function setCurrent(index) {
   const changed = current !== index;
   current = index;
   saveReadingPosition();
+  if (changed) updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
   thumbnailButtons.forEach((button, buttonIndex) => {
+    if (!button) return;
     const active = buttonIndex === current;
     button.classList.toggle('active', active);
     if (active) {
@@ -905,10 +1174,12 @@ function setCurrent(index) {
 }
 
 function goTo(index) {
-  if (index < 0 || index >= pageCards.length) return;
+  if (index < 0 || index >= pageInfos.length) return;
+  const position = pageSpreadPositionForPage(index);
+  mountPageSpread(position);
   setCurrent(index);
-  pageCards[index].scrollIntoView({ behavior: 'smooth', block: 'start' });
-  loadPage(index);
+  const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+  window.scrollTo({ top: trackTop + pageSpreadOffset(position), behavior: 'smooth' });
 }
 
 function navigatePage(delta) {
@@ -927,9 +1198,6 @@ function setPageLayout(value) {
   try {
     localStorage.setItem(pageLayoutStorageKey, value);
   } catch (_) {}
-  pageObserver?.disconnect();
-  activePageObserver?.disconnect();
-  thumbnailObserver?.disconnect();
   cancelRequests(pageRequests);
   cancelRequests(thumbnailRequests);
   pageCache.clear();
@@ -939,36 +1207,13 @@ function setPageLayout(value) {
 }
 
 function applyPageWidth() {
-  pageCards.forEach(card => {
-    const index = Number(card.dataset.index);
-    const info = pageInfos[index];
-    if (!info) return;
-    const rotated = pageRotation % 180 !== 0;
-    card.style.width = `${820 * zoom}px`;
-    card.style.aspectRatio = rotated ? `${info.height} / ${info.width}` : `${info.width} / ${info.height}`;
-    const surface = card.querySelector('.page-surface');
-    if (!surface) return;
-    surface.className = 'page-surface';
-    if (pageRotation === 90) surface.classList.add('rotated');
-    if (pageRotation === 180) surface.classList.add('rotated-180');
-    if (pageRotation === 270) surface.classList.add('rotated-270');
-    surface.style.width = rotated ? `${info.width / info.height * 100}%` : '100%';
-    surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
-    thumbnailButtons[index]?.querySelector('img')?.style.setProperty('transform', `rotate(${pageRotation}deg)`);
-  });
-  pageSpreads.forEach((spread, position) => {
-    const dimensions = spreadDimensions(position);
-    spread.element.style.width = `${dimensions.width * zoom}px`;
-    spread.element.style.minHeight = `${dimensions.height * zoom}px`;
-    spread.element.style.gap = `${18 * zoom}px`;
-    spread.element.querySelectorAll('.page-placeholder').forEach(placeholder => {
-      placeholder.style.width = `${820 * zoom}px`;
-      const index = Number(placeholder.dataset.index);
-      const info = pageInfos[index];
-      if (!info) return;
-      const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
-      placeholder.style.aspectRatio = String(ratio);
-    });
+  updatePageVirtualMetrics();
+  pageSpreads.forEach(applyPageWidthToSpread);
+  thumbnailButtons.forEach((button, index) => {
+    if (button) {
+      resizeThumbnail(index, button);
+      button.querySelector('img')?.style.setProperty('transform', `rotate(${pageRotation}deg)`);
+    }
   });
 }
 
@@ -992,6 +1237,7 @@ function setZoom(value, mode = 'manual') {
     if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
     if (textCache.has(index)) buildTextLayer(index);
   });
+  scheduleVirtualUpdate();
   updateNavigation();
 }
 
@@ -1152,9 +1398,8 @@ function buildTextLayer(index) {
 
 function loadText(index) {
   const card = pageCards[index];
-  if (!card) return Promise.resolve();
   if (textCache.has(index)) {
-    buildTextLayer(index);
+    if (card) buildTextLayer(index);
     return Promise.resolve();
   }
   if (textRequests.has(index)) return textRequests.get(index);
@@ -1164,10 +1409,12 @@ function loadText(index) {
     .then(runs => {
       if (generation !== documentGeneration) return;
       textCache.set(index, runs);
-      buildTextLayer(index);
+      if (pageCards[index]) buildTextLayer(index);
     })
     .catch(error => {
-      if (generation === documentGeneration && !isCancelledError(error)) card.title = error.message;
+      if (generation === documentGeneration && !isCancelledError(error) && pageCards[index]) {
+        pageCards[index].title = error.message;
+      }
     })
     .finally(() => textRequests.delete(index));
   request.cancel = () => engineRequest.cancel();
@@ -1197,7 +1444,17 @@ function loadImage(index, kind, generation, imageElement, card) {
     if (kind === 'page' && generation === documentGeneration) markPageLoaded(index);
     return Promise.resolve(cached);
   }
-  if (requests.has(key)) return requests.get(key);
+  if (requests.has(key)) {
+    return requests.get(key).then(url => {
+      if (url && generation === documentGeneration &&
+          (kind !== 'page' || requestedZoomGeneration === zoomGeneration)) {
+        imageElement.src = url;
+        imageElement.hidden = false;
+        if (card) card.classList.remove('loading');
+      }
+      return url;
+    });
+  }
 
   const engineRequest = engine.renderPage(index, { dpi, background: transparentRenderBackground });
   const request = engineRequest
@@ -1234,7 +1491,7 @@ function loadImage(index, kind, generation, imageElement, card) {
 }
 
 function loadPage(index) {
-  const card = pageCards[index];
+  const card = ensurePageMounted(index);
   if (!card) return;
   const generation = documentGeneration;
   card.classList.remove('render-error');
@@ -1262,7 +1519,19 @@ function loadThumbnail(index) {
     button.querySelector('.thumbnail-error')?.remove();
     return Promise.resolve(cached);
   }
-  if (thumbnailRequests.has(key)) return thumbnailRequests.get(key);
+  if (thumbnailRequests.has(key)) {
+    return thumbnailRequests.get(key).then(url => {
+      if (url && generation === documentGeneration) {
+        image.src = url;
+        image.hidden = false;
+        button.classList.remove('loading');
+      }
+      return url;
+    }).catch(error => {
+      if (!isCancelledError(error)) button.title = error.message;
+      return null;
+    });
+  }
 
   let resolveRequest;
   let rejectRequest;
@@ -1342,112 +1611,22 @@ function buildPages() {
   thumbnailsElement.replaceChildren();
   pageCards = [];
   thumbnailButtons = [];
-  pageSpreads = pageSpreadGroups().map(pages => {
-    const element = document.createElement('div');
-    element.className = 'page-spread';
-    pagesElement.append(element);
-    return { pages, element };
+  pageSpreads = pageSpreadGroups().map(pages => ({ pages, offset: 0, height: 0, width: 0 }));
+  pageVirtualTrack = document.createElement('div');
+  pageVirtualTrack.className = 'page-virtual-track';
+  pagesElement.append(pageVirtualTrack);
+  thumbnailVirtualTrack = document.createElement('div');
+  thumbnailVirtualTrack.className = 'thumbnail-virtual-track';
+  thumbnailsElement.append(thumbnailVirtualTrack);
+  thumbnailSlots = thumbnailSlotsForLayout();
+  thumbnailSlotByPage = [];
+  thumbnailSlots.forEach((index, slot) => {
+    if (index >= 0) thumbnailSlotByPage[index] = slot;
   });
-
-  pageInfos.forEach((info, index) => {
-    const card = document.createElement('article');
-    card.className = 'page-card loading';
-    card.dataset.index = index;
-    card.style.aspectRatio = `${info.width} / ${info.height}`;
-    const image = document.createElement('img');
-    image.className = 'page-image';
-    image.alt = `第 ${index + 1} 页`;
-    image.hidden = true;
-    const surface = document.createElement('div');
-    surface.className = 'page-surface';
-    const textLayer = document.createElement('div');
-    textLayer.className = 'text-layer';
-    surface.append(image, textLayer);
-    card.append(surface);
-    const spread = pageSpreads[spreadPositionForPage(index)];
-    spread?.element.append(card);
-    pageCards.push(card);
-
-    const thumbnail = document.createElement('button');
-    thumbnail.className = 'thumbnail';
-    thumbnail.type = 'button';
-    thumbnail.dataset.index = index;
-    thumbnail.title = `第 ${index + 1} 页`;
-    thumbnail.setAttribute('aria-label', `第 ${index + 1} 页`);
-    thumbnail.addEventListener('click', () => goTo(index));
-    thumbnail.addEventListener('keydown', event => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      event.preventDefault();
-      const target = event.key === 'ArrowLeft' ? index - 1 : index + 1;
-      if (thumbnailButtons[target]) thumbnailButtons[target].focus();
-    });
-    const thumbnailImage = document.createElement('img');
-    thumbnailImage.alt = `第 ${index + 1} 页缩略图`;
-    thumbnailImage.hidden = true;
-    thumbnail.append(thumbnailImage);
-    const label = document.createElement('span');
-    label.textContent = index + 1;
-    thumbnail.append(label);
-    thumbnailsElement.append(thumbnail);
-    thumbnailButtons.push(thumbnail);
-  });
-
-  if (pageLayoutIsDouble()) {
-    const thumbnails = document.createDocumentFragment();
-    pageSpreads.forEach(spread => {
-      spread.pages.forEach(index => {
-        if (index >= 0) {
-          thumbnails.append(thumbnailButtons[index]);
-          return;
-        }
-        const placeholder = document.createElement('div');
-        placeholder.className = 'thumbnail-placeholder';
-        placeholder.setAttribute('aria-hidden', 'true');
-        thumbnails.append(placeholder);
-      });
-    });
-    thumbnailsElement.replaceChildren(thumbnails);
-  }
-
-  pageSpreads.forEach(spread => {
-    spread.pages.filter(index => index < 0).forEach(() => {
-      const reference = spread.pages.find(index => index >= 0);
-      const info = pageInfos[reference];
-      const placeholder = document.createElement('div');
-      placeholder.className = 'page-placeholder';
-      placeholder.dataset.index = '-1';
-      if (info) {
-        const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
-        placeholder.style.aspectRatio = String(ratio);
-      }
-      if (spread.pages[0] < 0) spread.element.prepend(placeholder);
-      else spread.element.append(placeholder);
-    });
-  });
+  updatePageVirtualMetrics();
+  updateThumbnailMetrics();
 
   pageLayoutSelect.value = pageLayout;
-
-  pageObserver = new IntersectionObserver(entries => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      const index = Number(entry.target.dataset.index);
-      loadPage(index);
-    }
-  }, { rootMargin: '800px 0px' });
-  activePageObserver = new IntersectionObserver(entries => {
-    const visible = entries
-      .filter(entry => entry.isIntersecting)
-      .sort((left, right) => right.intersectionRatio - left.intersectionRatio);
-    if (visible.length) setCurrent(Number(visible[0].target.dataset.index));
-  }, { threshold: [0.5] });
-  thumbnailObserver = new IntersectionObserver(entries => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) loadThumbnail(Number(entry.target.dataset.index));
-    }
-  }, { rootMargin: '240px 0px' });
-  pageCards.forEach(card => pageObserver.observe(card));
-  pageCards.forEach(card => activePageObserver.observe(card));
-  thumbnailButtons.forEach(button => thumbnailObserver.observe(button));
   resizeObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
       const index = Number(entry.target.dataset.index);
@@ -1455,20 +1634,24 @@ function buildPages() {
       if (runs) buildTextLayer(index);
     }
   });
-  pageCards.forEach(card => resizeObserver.observe(card));
   if (zoomMode === 'fit') {
     const available = pagesElement.clientWidth;
     if (available > 0) zoom = Math.max(0.5, Math.min(3, available / layoutBaseWidth()));
   }
   applyPageWidth();
+  updatePageVirtualWindow(false);
+  updateThumbnailVirtualWindow();
   empty.hidden = pageInfos.length > 0;
   setCurrent(current);
   updateNavigation();
   if (pageInfos.length) {
+    ensurePageMounted(current);
     loadPage(current);
+    updateThumbnailVirtualWindow(thumbnailSlotForPage(current));
     loadThumbnail(current);
     if (current > 0) {
-      pageCards[current].scrollIntoView({ behavior: 'auto', block: 'start' });
+      const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: Math.max(0, trackTop + pageSpreadOffset(pageSpreadPositionForPage(current)) - headerHeight()), behavior: 'auto' });
     }
   }
 }
@@ -1494,9 +1677,6 @@ async function openSelectedFile(selected) {
   openRequest?.cancel();
   openRequest = undefined;
   clearInjectedFonts();
-  pageObserver?.disconnect();
-  activePageObserver?.disconnect();
-  thumbnailObserver?.disconnect();
   pageCache.clear();
   thumbnailCache.clear();
   cancelRequests(pageRequests);
@@ -1581,9 +1761,6 @@ function cancelOpening() {
   documentGeneration++;
   openRequest?.cancel();
   openRequest = undefined;
-  pageObserver?.disconnect();
-  activePageObserver?.disconnect();
-  thumbnailObserver?.disconnect();
   cancelRequests(pageRequests);
   cancelRequests(thumbnailRequests);
   cancelRequests(textRequests);
@@ -1595,6 +1772,10 @@ function cancelOpening() {
   pageInfos = [];
   pageCards = [];
   thumbnailButtons = [];
+  pageVirtualTrack = undefined;
+  thumbnailVirtualTrack = undefined;
+  thumbnailSlots = [];
+  thumbnailSlotByPage = [];
   currentDocumentKey = '';
   current = 0;
   searchGeneration++;
@@ -1618,7 +1799,7 @@ async function searchDocument() {
     searchResults = [];
     activeSearchResult = -1;
     updateSearchStatus('');
-    pageCards.forEach((_, index) => buildTextLayer(index));
+    pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
     updateNavigation();
     return;
   }
@@ -1632,11 +1813,11 @@ async function searchDocument() {
     activeSearchResult = results.length ? 0 : -1;
     if (!results.length) {
       updateSearchStatus('无匹配');
-      pageCards.forEach((_, index) => buildTextLayer(index));
+      pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
       return;
     }
     updateSearchStatus(`找到 ${results.length} 处`);
-    pageCards.forEach((_, index) => buildTextLayer(index));
+    pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
     if (activeSearchResult >= 0) goTo(results[activeSearchResult].page);
   } catch (error) {
     if (generation !== searchGeneration || isCancelledError(error)) return;
@@ -1656,7 +1837,7 @@ function moveSearchResult(step) {
   if (!searchResults.length) return;
   activeSearchResult = (activeSearchResult + step + searchResults.length) % searchResults.length;
   updateSearchStatus(`第 ${activeSearchResult + 1} / ${searchResults.length} 处`);
-  pageCards.forEach((_, index) => buildTextLayer(index));
+  pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
   goTo(searchResults[activeSearchResult].page);
 }
 
@@ -2137,17 +2318,16 @@ async function printSelectedPages(indexes) {
   const generation = documentGeneration;
   setStatus(`正在准备 ${indexes.length} 页打印内容...`);
   try {
-    await Promise.all(indexes.map(index => loadPage(index)));
+    const images = await Promise.all(indexes.map(async index => {
+      const image = document.createElement('img');
+      const src = await loadImage(index, 'page', generation, image);
+      if (!src) throw new Error(`第 ${index + 1} 页尚未渲染完成`);
+      return { index, src };
+    }));
     throwIfDocumentActionCancelled(generation);
-    const images = indexes.map(index => pageCards[index]?.querySelector('.page-image'));
-    if (images.some(image => !image?.src || image.hidden)) {
-      printWindow.close();
-      setStatus('选中的页面尚未渲染完成。');
-      return;
-    }
     const title = escapeHTML(documentName.textContent || 'OFD 文档');
-    const imageMarkup = images.map((image, index) =>
-      `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${indexes[index] + 1} 页"></section>`
+    const imageMarkup = images.map(image =>
+      `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${image.index + 1} 页"></section>`
     ).join('');
     printWindow.document.open();
     printWindow.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}</style></head><body>${imageMarkup}</body></html>`);
@@ -2232,6 +2412,8 @@ function setThumbnailsVisible(visible) {
     localStorage.setItem(thumbnailsStorageKey, String(visible));
   } catch (_) {}
   if (!visible) setViewPanelOpen(false);
+  updateThumbnailMetrics();
+  scheduleVirtualUpdate();
   requestAnimationFrame(() => {
     if (zoomMode === 'fit') fitWidthZoom();
     else if (zoomMode === 'page') fitPageZoom();
@@ -2356,9 +2538,14 @@ darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.c
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
+window.addEventListener('scroll', scheduleVirtualUpdate, { passive: true });
+thumbnailsElement.addEventListener('scroll', scheduleVirtualUpdate, { passive: true });
 window.addEventListener('resize', () => {
+  updateThumbnailMetrics();
+  updatePageVirtualMetrics();
   if (zoomMode === 'fit') fitWidthZoom();
   else if (zoomMode === 'page') fitPageZoom();
+  scheduleVirtualUpdate();
 });
 updateBackToTop();
 if ('serviceWorker' in navigator) {

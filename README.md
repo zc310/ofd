@@ -21,7 +21,7 @@ go get github.com/zc310/ofd
 
 ## WASM 浏览器阅读器
 
-项目提供一个无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm/web`](cmd/ofd-wasm/web)。解析和渲染运行在单个 Web Worker 中，使用一个 WASM 实例和一个 Reader 管理文档状态；页面和缩略图按可视区域附近懒加载，并分别缓存渲染结果。
+项目提供一个无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm`](cmd/ofd-wasm)。解析和渲染运行在单个 Web Worker 中，使用一个 WASM 实例和一个 Reader 管理文档状态；页面和缩略图按可视区域附近懒加载，并分别缓存渲染结果。
 
 ### 构建和运行
 
@@ -52,7 +52,7 @@ ofd.renderPage(0, { dpi: 96, background: '#00000000' })
 ofd.renderPages([0, 1, 2], { dpi: 36, background: '#00000000' })
 ```
 
-手机端工具栏按功能分行显示：打开文件和最近文件一行，页面导航和缩放控制各占一行，搜索和显示设置一行。单行内容过长时可以横向滚动，不会挤压页面或撑破屏幕。完整的 WASM API、Worker 协议、字体加载和缓存说明见 [`cmd/ofd-wasm/web/README.md`](cmd/ofd-wasm/web/README.md)。
+手机端工具栏按功能分行显示：打开文件和最近文件一行，页面导航和缩放控制各占一行，搜索和显示设置一行。单行内容过长时可以横向滚动，不会挤压页面或撑破屏幕。完整的 WASM API、Worker 协议、字体加载和缓存说明见 [`cmd/ofd-wasm/README.md`](cmd/ofd-wasm/README.md)。
 
 ## 命令行程序打包
 
