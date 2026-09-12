@@ -855,12 +855,11 @@ func (v *viewer) createPageSlots(pages []viewerPage) {
 	v.pageLayout.slots = v.pageSlots
 	objects := make([]fyne.CanvasObject, len(pages))
 	for i, pageRef := range pages {
-		if err := pageRef.page.EnsureLoaded(); err != nil {
+		box, err := pageRef.page.PhysicalBox()
+		if err != nil {
 			slog.Error("读取页面失败", "page", i, "error", err)
 			continue
 		}
-		pageRef.page.EnsurePhysicalBox()
-		box := pageRef.page.Area.PhysicalBox
 		aspect := float32(1)
 		if box.Height > 0 {
 			aspect = float32(box.Width / box.Height)
@@ -1050,7 +1049,6 @@ func (v *viewer) requestPageRender(operation uint64, pageIndex int) {
 		slot.rendering.Store(false)
 		return
 	}
-	pageRef.page.EnsurePhysicalBox()
 	go v.renderPage(operation, pageRef.document, pageIndex, pageRef.page, slot)
 }
 
@@ -1095,7 +1093,6 @@ func (v *viewer) requestThumbnailRender(pageIndex int) {
 		rendering.Store(false)
 		return
 	}
-	pageRef.page.EnsurePhysicalBox()
 	go func() {
 		img, err := v.renderPageImage(pageRef.document, pageRef.page, ofdcanvas.DPI(thumbnailDPI), func() bool {
 			return generation == v.thumbnailGeneration.Load()
@@ -1157,11 +1154,20 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 	if !valid() {
 		return nil, nil
 	}
-	page.EnsurePhysicalBox()
-	if page.Area == nil {
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return nil, err
+	}
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return nil, fmt.Errorf("页面内容为空")
+	}
+	content.EnsurePhysicalBox()
+	if content.Area == nil {
 		return nil, fmt.Errorf("页面区域为空")
 	}
-	box := page.Area.PhysicalBox
+	box := content.Area.PhysicalBox
 	pageCanvas := canvasFyne.New(box.Width, box.Height, resolution)
 	ctx := ofdcanvas.NewContext(pageCanvas.Canvas)
 	if err := doc.Draw(ctx, page); err != nil {

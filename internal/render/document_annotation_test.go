@@ -18,7 +18,7 @@ func TestAnoStampAnnotationRendersText(t *testing.T) {
 	defer ofd.Close()
 
 	doc := ofd.Documents[0]
-	pageAnnotations := doc.Annotations[1]
+	pageAnnotations := doc.GetAnnotation(1)
 	if pageAnnotations == nil || len(pageAnnotations.Annots) == 0 {
 		t.Fatal("page 1 stamp annotation is missing")
 	}
@@ -52,11 +52,18 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 
 	doc := ofd.Documents[0]
 	page := doc.Pages[0]
-	page.EnsurePhysicalBox()
-	if doc.Annotations[page.ID] == nil {
+	pageContent := page.Content()
+	if pageContent == nil {
+		t.Fatal("页面内容为空")
+	}
+	templates := page.Template()
+	box, err := page.PhysicalBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.GetAnnotation(page.ID) == nil {
 		t.Fatalf("page %d annotations are missing", page.ID)
 	}
-	box := page.Area.PhysicalBox
 	withAnnotation := canvas.New(box.Width, box.Height)
 	withoutAnnotation := canvas.New(box.Width, box.Height)
 	renderDoc := NewDocument(canvas.White, doc)
@@ -67,11 +74,11 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 	withContext.SetFillColor(canvas.White)
 	withContext.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
 	renderDoc.drawPageBackground(withoutContext, box)
-	for _, template := range page.Template {
+	for _, template := range templates {
 		renderDoc.Template(withoutContext, template, box)
 	}
-	if page.Content != nil {
-		renderDoc.drawLayers(withoutContext, page.Content.Layer, box)
+	if pageContent != nil {
+		renderDoc.drawLayers(withoutContext, pageContent.Layer, box)
 	}
 	renderDoc.PageContent(withContext, page, true)
 

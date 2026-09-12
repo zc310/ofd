@@ -18,7 +18,11 @@ func Text(input interface{}, output io.Writer, opts ...Option) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
-	ofd, err := parser.NewOFD(input)
+	conv := newConverter(opts...)
+	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
+		PageCacheCapacity: conv.pageCacheCapacity,
+		PageCacheBytes:    conv.pageCacheBytes,
+	})
 	if err != nil {
 		return fmt.Errorf("解析OFD失败: %w", err)
 	}
@@ -89,17 +93,26 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 }
 
 func extractPageText(doc *parser.Document, page *parser.Page) string {
-	if page == nil || page.EnsureLoaded() != nil {
+	if page == nil {
 		return ""
 	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return ""
+	}
+	defer lease.Release()
 	lines := make([]string, 0)
-	for _, template := range page.Template {
-		if content := doc.Templates[models.StID(template.TemplateID)]; content != nil {
+	content := lease.Content()
+	if content == nil {
+		return ""
+	}
+	for _, template := range content.Template {
+		if content := doc.GetTemplate(models.StID(template.TemplateID)); content != nil {
 			appendPageContentText(doc, content.Content, &lines, 0)
 		}
 	}
-	appendPageContentText(doc, page.Content, &lines, 0)
-	if annot := doc.Annotations[page.ID]; annot != nil {
+	appendPageContentText(doc, content.Content, &lines, 0)
+	if annot := doc.GetAnnotation(page.ID); annot != nil {
 		for _, item := range annot.Annots {
 			if item == nil || !item.Visible.Value(true) || item.Appearance == nil {
 				continue
@@ -150,7 +163,7 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, lines *[]str
 			if !item.Composite.VisibleValue() {
 				continue
 			}
-			unit := doc.CompositeUnits[models.StID(item.Composite.ResourceID)]
+			unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID))
 			if unit != nil {
 				appendTextItems(doc, unit.Content.Items, lines, depth+1)
 			}

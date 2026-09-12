@@ -19,7 +19,10 @@ func Image(input interface{}, opts ...Option) error {
 	}
 
 	// 解析 OFD
-	ofd, err := parser.NewOFD(input)
+	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
+		PageCacheCapacity: conv.pageCacheCapacity,
+		PageCacheBytes:    conv.pageCacheBytes,
+	})
 	if err != nil {
 		return fmt.Errorf("解析OFD失败: %w", err)
 	}

@@ -11,13 +11,15 @@ import (
 
 // Converter 配置转换器
 type Converter struct {
-	dpi         canvas.Resolution
-	format      string // png, jpeg, svg, eps, tex
-	bgColor     color.Color
-	page        int
-	thumbnail   int
-	imageWriter func(page int, img image.Image) error
-	fileWriter  func(page int) (io.WriteCloser, error)
+	dpi               canvas.Resolution
+	format            string // png, jpeg, svg, eps, tex
+	bgColor           color.Color
+	page              int
+	thumbnail         int
+	pageCacheCapacity int
+	pageCacheBytes    int64
+	imageWriter       func(page int, img image.Image) error
+	fileWriter        func(page int) (io.WriteCloser, error)
 }
 
 // Option 配置选项类型
@@ -35,11 +37,13 @@ var defaultConverter = &Converter{
 // newConverter 创建转换器
 func newConverter(options ...Option) *Converter {
 	conv := &Converter{
-		dpi:       defaultConverter.dpi,
-		format:    defaultConverter.format,
-		bgColor:   defaultConverter.bgColor,
-		page:      defaultConverter.page,
-		thumbnail: defaultConverter.thumbnail,
+		dpi:               defaultConverter.dpi,
+		format:            defaultConverter.format,
+		bgColor:           defaultConverter.bgColor,
+		page:              defaultConverter.page,
+		thumbnail:         defaultConverter.thumbnail,
+		pageCacheCapacity: defaultConverter.pageCacheCapacity,
+		pageCacheBytes:    defaultConverter.pageCacheBytes,
 	}
 
 	for _, opt := range options {

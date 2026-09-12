@@ -9,7 +9,7 @@ import (
 )
 
 func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
-	page := &parser.Page{PageContent: models.PageContent{
+	page := parser.NewPage(models.PageContent{
 		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
 			Items: []models.PageItem{
 				textItem("第一段", true),
@@ -19,7 +19,7 @@ func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
 				}}},
 			},
 		}}}},
-	}}
+	})
 
 	var output bytes.Buffer
 	if err := TextDocument(&parser.Document{Pages: []*parser.Page{page}}, &output); err != nil {
@@ -32,8 +32,8 @@ func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
 
 func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{
-		{PageContent: models.PageContent{Content: textContent("第一页")}},
-		{PageContent: models.PageContent{Content: textContent("第二页")}},
+		parser.NewPage(models.PageContent{Content: textContent("第一页")}),
+		parser.NewPage(models.PageContent{Content: textContent("第二页")}),
 	}}
 
 	var output bytes.Buffer
@@ -54,7 +54,7 @@ func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 }
 
 func TestTextDocumentsRejectInvalidGlobalPage(t *testing.T) {
-	documents := []*parser.Document{{Pages: []*parser.Page{{}}}}
+	documents := []*parser.Document{{Pages: []*parser.Page{parser.NewPage(models.PageContent{})}}}
 	for _, page := range []int{-1, 2} {
 		var output bytes.Buffer
 		if err := TextDocuments(documents, &output, Page(page)); err == nil {
@@ -65,10 +65,10 @@ func TestTextDocumentsRejectInvalidGlobalPage(t *testing.T) {
 
 func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
 	documents := []*parser.Document{
-		{Pages: []*parser.Page{{PageContent: models.PageContent{Content: textContent("文档一第一页")}}}},
+		{Pages: []*parser.Page{parser.NewPage(models.PageContent{Content: textContent("文档一第一页")})}},
 		{Pages: []*parser.Page{
-			{PageContent: models.PageContent{Content: textContent("文档二第一页")}},
-			{PageContent: models.PageContent{Content: textContent("文档二第二页")}},
+			parser.NewPage(models.PageContent{Content: textContent("文档二第一页")}),
+			parser.NewPage(models.PageContent{Content: textContent("文档二第二页")}),
 		}},
 	}
 
@@ -98,7 +98,7 @@ func TestTextDocumentSkipsInvisibleText(t *testing.T) {
 	}}}}
 
 	var output bytes.Buffer
-	if err := TextDocument(&parser.Document{Pages: []*parser.Page{{PageContent: models.PageContent{Content: content}}}}, &output); err != nil {
+	if err := TextDocument(&parser.Document{Pages: []*parser.Page{parser.NewPage(models.PageContent{Content: content})}}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "可见\n"; got != want {
@@ -113,7 +113,5 @@ func textItem(value string, visible bool) models.PageItem {
 }
 
 func textContent(value string) *models.Content {
-	return &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
-		Items: []models.PageItem{textItem(value, true)},
-	}}}}
+	return &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{textItem(value, true)}}}}}
 }

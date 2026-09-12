@@ -52,7 +52,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 	defer ofd.Close()
 
 	doc := ofd.Documents[0]
-	if got := string(doc.FontRes[115].FontFile); got != "Doc_0/Res/font_13132_0.ttf" {
+	if got := string(doc.GetFont(115).FontFile); got != "Doc_0/Res/font_13132_0.ttf" {
 		t.Fatalf("font 115 file = %q", got)
 	}
 	family, err := NewFonts(doc).LoadFont(115)

@@ -78,6 +78,14 @@ func BgColor(bg color.Color) Option {
 	}
 }
 
+// PageCache 设置页面缓存的最大页数和估算最大字节数；0 表示使用解析器默认值。
+func PageCache(capacity int, maxBytes int64) Option {
+	return func(c *Converter) {
+		c.pageCacheCapacity = capacity
+		c.pageCacheBytes = maxBytes
+	}
+}
+
 // Page 设置全局页码，从 1 开始；0 表示处理全部页面。
 func Page(page int) Option {
 	return func(c *Converter) {

@@ -22,7 +22,9 @@ func Test999StampSealInheritsFallbackFont(t *testing.T) {
 	}
 
 	page := sealDocument.Documents[0].Pages[0]
-	page.EnsurePhysicalBox()
+	if _, err := page.PhysicalBox(); err != nil {
+		t.Fatal(err)
+	}
 	withFallback := NewDocument(canvas.White, sealDocument.Documents[0])
 	if err := withFallback.AddFallbackFont(fontData, "Noto-Regular-Test", canvas.FontRegular); err != nil {
 		t.Fatal(err)

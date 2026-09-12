@@ -116,7 +116,12 @@ type FontSource struct {
 
 // OpenOptions 配置 OFD 打开行为。
 type OpenOptions struct {
+	// FallbackFonts 是文档未提供可用内嵌字体时使用的回退字体。
 	FallbackFonts []FontSource
+	// PageCacheCapacity 是页面缓存最多保留的页面数量，0 表示使用默认值。
+	PageCacheCapacity int
+	// PageCacheBytes 是页面缓存允许使用的估算最大字节数，0 表示使用默认值。
+	PageCacheBytes int64
 }
 
 // Reader 是一个已打开的 OFD 文档。
@@ -159,7 +164,10 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	if len(data) > maxInputBytes {
 		return nil, fmt.Errorf("OFD 数据超过大小限制 %d MB", maxInputBytes>>20)
 	}
-	ofd, err := parser.NewOFD(data)
+	ofd, err := parser.NewOFDWithOptions(data, parser.Options{
+		PageCacheCapacity: options.PageCacheCapacity,
+		PageCacheBytes:    options.PageCacheBytes,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("解析 OFD 失败: %w", err)
 	}
@@ -295,11 +303,10 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 		if ref.page == nil {
 			return nil, fmt.Errorf("第 %d 页为空", index)
 		}
-		if err := ref.page.EnsureLoaded(); err != nil {
+		box, err := ref.page.PhysicalBox()
+		if err != nil {
 			return nil, fmt.Errorf("读取第 %d 页失败: %w", index, err)
 		}
-		ref.page.EnsurePhysicalBox()
-		box := ref.page.Area.PhysicalBox
 		if !finitePositive(box.Width) || !finitePositive(box.Height) {
 			return nil, fmt.Errorf("第 %d 页尺寸无效", index)
 		}
@@ -350,18 +357,18 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 	resources := make([]FontResource, 0)
 	seen := make(map[string]struct{})
 	for documentIndex, document := range r.ofd.Documents {
-		for id, font := range document.FontRes {
+		document.ForEachFont(func(id models.StID, font *models.Font) bool {
 			if font == nil || font.FontFile == "" {
-				continue
+				return true
 			}
 			key := fmt.Sprintf("%d:%d:%s", documentIndex, id, font.FontFile)
 			if _, ok := seen[key]; ok {
-				continue
+				return true
 			}
 			seen[key] = struct{}{}
 			data, err := document.FileCache.ReadLimit(string(font.FontFile), maxFontBytes)
 			if err != nil {
-				continue
+				return true
 			}
 			if fixed, fixErr := fontfix.Repair(data); fixErr == nil {
 				data = fixed
@@ -370,7 +377,8 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 				ID: uint64(id), Family: browserFontFamily(documentIndex, uint64(id)), Name: font.FontName,
 				Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: append([]byte(nil), data...),
 			})
-		}
+			return true
+		})
 	}
 	return resources, nil
 }
@@ -561,10 +569,16 @@ func (r *Reader) pdfPageLocked(index int, background color.Color) (*canvas.Canva
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
 	ref := r.pages[index]
-	if err := ref.page.EnsureLoaded(); err != nil {
+	lease, err := ref.page.AcquireLease()
+	if err != nil {
 		return nil, err
 	}
-	ref.page.EnsurePhysicalBox()
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return nil, errors.New("页面内容为空")
+	}
+	content.EnsurePhysicalBox()
 	document, err := r.pageDocumentLocked(ref, background)
 	if err != nil {
 		return nil, err
@@ -584,11 +598,17 @@ func (r *Reader) renderPageLocked(index int, options RenderOptions) ([]byte, err
 	}
 
 	ref := r.pages[index]
-	if err := ref.page.EnsureLoaded(); err != nil {
+	lease, err := ref.page.AcquireLease()
+	if err != nil {
 		return nil, err
 	}
-	ref.page.EnsurePhysicalBox()
-	box := ref.page.Area.PhysicalBox
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return nil, fmt.Errorf("页面内容为空")
+	}
+	content.EnsurePhysicalBox()
+	box := content.Area.PhysicalBox
 	if !finitePositive(box.Width) || !finitePositive(box.Height) {
 		return nil, fmt.Errorf("第 %d 页尺寸无效", index)
 	}

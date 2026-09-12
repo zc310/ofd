@@ -195,10 +195,10 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 	}()
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	for _, media := range doc.Res {
+	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
 		img1, err := doc.decodeImage(media.MediaFile.Clean(), media.Format)
 		if err != nil {
-			continue
+			return true
 		}
 		img2, err := doc.decodeImage(media.MediaFile.Clean(), media.Format)
 		if err != nil {
@@ -208,7 +208,8 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 			t.Fatalf("expected cached decode for %s, got different instances", media.MediaFile)
 		}
 		t.Logf("cached image %s: %dx%d %T", media.MediaFile, img1.Bounds().Dx(), img1.Bounds().Dy(), img1)
-	}
+		return true
+	})
 }
 
 func TestSVGImageRendersAsVector(t *testing.T) {
@@ -236,10 +237,10 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 		t.Fatal("expected at least one page")
 	}
 	page := ofd.Documents[0].Pages[0]
-	if err := page.EnsureLoaded(); err != nil {
+	pb, err := page.PhysicalBox()
+	if err != nil {
 		t.Fatal(err)
 	}
-	pb := page.Area.PhysicalBox
 	rec := &recordingRenderer{width: pb.Width, height: pb.Height}
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
 	if err := doc.Draw(canvas.NewContext(rec), page); err != nil {
