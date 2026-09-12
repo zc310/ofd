@@ -12,6 +12,7 @@ import (
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 type Document struct {
@@ -22,8 +23,8 @@ type Document struct {
 	renderMu    sync.Mutex
 	budget      renderBudget
 	imageMu     sync.Mutex
-	images      *lruCache[string, image.Image]
-	svgCanvases *lruCache[string, *canvas.Canvas]
+	images      *utils.LRU[string, image.Image]
+	svgCanvases *utils.LRU[string, *canvas.Canvas]
 }
 
 type fallbackFontResource struct {
@@ -97,8 +98,8 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 		background:  background,
 		fonts:       NewFonts(doc),
 		Document:    doc,
-		images:      newLRU[string, image.Image](imageCacheCapacity),
-		svgCanvases: newLRU[string, *canvas.Canvas](svgCacheCapacity),
+		images:      utils.NewLRU[string, image.Image](imageCacheCapacity, nil),
+		svgCanvases: utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil),
 	}
 }
 

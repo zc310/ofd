@@ -128,7 +128,7 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 	key := file.Clean().String()
 	p.imageMu.Lock()
 	defer p.imageMu.Unlock()
-	if cached, ok := p.svgCanvases.get(key); ok {
+	if cached, ok := p.svgCanvases.Get(key); ok {
 		return cached, nil
 	}
 	if !isSVGFormat(format, file) {
@@ -142,7 +142,7 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 	if err != nil {
 		return nil, err
 	}
-	p.svgCanvases.add(key, svg)
+	p.svgCanvases.Add(key, svg)
 	return svg, nil
 }
 
@@ -150,7 +150,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 	key := file.Clean().String()
 	p.imageMu.Lock()
 	defer p.imageMu.Unlock()
-	if cached, ok := p.images.get(key); ok {
+	if cached, ok := p.images.Get(key); ok {
 		return cached, nil
 	}
 	if strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg") {
@@ -163,7 +163,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 			return nil, err
 		}
 		img := rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace)
-		p.images.add(key, img)
+		p.images.Add(key, img)
 		return img, nil
 	}
 	data, err := p.Document.Common.FileCache.Read(key)
@@ -174,7 +174,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 	if err != nil {
 		return nil, err
 	}
-	p.images.add(key, img)
+	p.images.Add(key, img)
 	return img, nil
 }
 

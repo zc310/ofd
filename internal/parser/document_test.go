@@ -86,6 +86,46 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 	}
 }
 
+func TestPageCacheEvictsOldestLoadedPage(t *testing.T) {
+	doc := &Document{pageCacheSize: 2}
+	loads := make([]int, 3)
+	pages := make([]*Page, 3)
+	for index := range pages {
+		pageIndex := index
+		pages[index] = &Page{
+			document: doc,
+			load: func(page *Page) error {
+				loads[pageIndex]++
+				page.Content = &models.Content{}
+				return nil
+			},
+		}
+	}
+	for _, page := range pages[:2] {
+		if err := page.EnsureLoaded(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pages[2].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if pages[0].loaded || pages[0].Content != nil {
+		t.Fatal("最旧页面未被淘汰")
+	}
+	if !pages[1].loaded || !pages[2].loaded {
+		t.Fatal("最近访问页面不应被淘汰")
+	}
+	if err := pages[0].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if loads[0] != 2 {
+		t.Fatalf("重新访问页面加载次数 = %d, want 2", loads[0])
+	}
+	if pages[1].loaded || pages[1].Content != nil {
+		t.Fatal("重新加载后最旧页面未被淘汰")
+	}
+}
+
 func TestGetDrawParamPreservesExplicitZeroOverrides(t *testing.T) {
 	var params models.DrawParams
 	if err := xml.Unmarshal([]byte(`<DrawParams>
