@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=708e565bbbb9687b');
+    this.worker = new Worker('worker.js?v=32f6734ca514c576');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -449,14 +449,14 @@ function updateThumbnailMetrics() {
   const mobile = window.matchMedia('(max-width: 620px)').matches;
   const double = pageLayoutIsDouble();
   const columns = mobile ? 1 : double ? 2 : 1;
-  const gap = mobile ? 0 : double ? 8 : 10;
+  const gap = mobile ? 8 : double ? 8 : 10;
   const itemWidth = mobile
     ? 72
     : Math.max(1, (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns);
   const itemHeight = itemWidth / thumbnailAspectRatio;
   thumbnailMetrics = { mobile, columns, gap, itemHeight, itemWidth, rowHeight: itemHeight + gap };
   const rows = Math.ceil(thumbnailSlots.length / columns);
-  thumbnailVirtualTrack.style.width = mobile ? `${thumbnailSlots.length * itemWidth}px` : '100%';
+  thumbnailVirtualTrack.style.width = mobile ? `${thumbnailSlots.length * itemWidth + Math.max(0, thumbnailSlots.length - 1) * gap}px` : '100%';
   thumbnailVirtualTrack.style.height = mobile
     ? `${itemHeight}px`
     : `${Math.max(0, rows * itemHeight + Math.max(0, rows - 1) * gap)}px`;
@@ -632,7 +632,7 @@ function resizeThumbnail(index, thumbnail) {
   if (slot < 0) return;
   const { mobile, columns, gap, itemHeight, itemWidth } = thumbnailMetrics;
   if (mobile) {
-    thumbnail.style.left = `${slot * itemWidth}px`;
+    thumbnail.style.left = `${slot * (itemWidth + gap)}px`;
     thumbnail.style.top = '0';
     thumbnail.style.width = `${itemWidth}px`;
     thumbnail.style.height = `${itemHeight}px`;
@@ -651,13 +651,14 @@ function resizeThumbnail(index, thumbnail) {
 
 function updateThumbnailVirtualWindow(targetSlot = -1) {
   if (!thumbnailVirtualTrack || !thumbnailSlots.length || thumbnailsElement.hidden) return;
-  const { mobile, columns, rowHeight, itemWidth } = thumbnailMetrics;
+  const { mobile, columns, rowHeight, itemWidth, gap } = thumbnailMetrics;
   const buffer = mobile ? thumbnailsElement.clientWidth * 2 : thumbnailsElement.clientHeight * 2;
+  const cell = itemWidth + (mobile ? gap : 0);
   const start = mobile
-    ? Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / itemWidth))
+    ? Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / cell))
     : Math.max(0, Math.floor((thumbnailsElement.scrollTop - buffer) / rowHeight) * columns);
   const end = mobile
-    ? Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / itemWidth))
+    ? Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / cell))
     : Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollTop + thumbnailsElement.clientHeight + buffer) / rowHeight) * columns);
   const required = new Set();
   for (let slot = start; slot < end; slot += 1) required.add(slot);
