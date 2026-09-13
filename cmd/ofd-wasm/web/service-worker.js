@@ -8,6 +8,8 @@ const SHELL_FILES = [
   './ofd.wasm',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-512.png',
+  './icon-192.png',
 ];
 
 self.addEventListener('install', event => {
