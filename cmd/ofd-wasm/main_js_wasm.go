@@ -25,11 +25,18 @@ type wasmApp struct {
 const wasmMaxRenderPages = 64
 
 func main() {
+	console := js.Global().Get("console")
+	console.Call("log", "%c╔══════════════════════════════════════════╗", "color: #2476bd; font-weight: bold;")
+	console.Call("log", "%c║       OFD WASM 阅读器 v0.1.1              ║", "color: #2476bd; font-weight: bold;")
+	console.Call("log", "%c╚══════════════════════════════════════════╝", "color: #2476bd; font-weight: bold;")
+	console.Call("log", "%c基于 Go + WebAssembly 构建", "color: #667188;")
+	console.Call("log", "%cGitHub: https://github.com/zc310/ofd", "color: #2f7d4a;")
 	app := &wasmApp{}
 	api := js.Global().Get("Object").New()
 	api.Set("open", js.FuncOf(app.open))
 	api.Set("addFallbackFont", js.FuncOf(app.addFallbackFont))
 	api.Set("close", js.FuncOf(app.close))
+	api.Set("info", js.FuncOf(app.info))
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
@@ -216,6 +223,28 @@ func (a *wasmApp) close(_ js.Value, _ []js.Value) any {
 		return errorValue(err)
 	}
 	return nil
+}
+
+func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	info, err := reader.Info()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{
+		"docID":        info.DocID,
+		"title":        info.Title,
+		"author":       info.Author,
+		"subject":      info.Subject,
+		"abstract":     info.Abstract,
+		"creationDate": info.CreationDate,
+		"modDate":      info.ModDate,
+		"creator":      info.Creator,
+		"version":      info.Version,
+	})
 }
 
 func (a *wasmApp) pageCount(_ js.Value, _ []js.Value) any {

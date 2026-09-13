@@ -30,7 +30,7 @@ function reportStartFailure(error) {
 async function start() {
   try {
     const go = new Go();
-    const response = await fetch('ofd.wasm?v=401165e819ff0e70');
+    const response = await fetch('ofd.wasm?v=0709b57019ea26df');
     if (!response.ok) {
       reportStartFailure(new Error(`加载 ofd.wasm 失败: ${response.status}`));
       return;
@@ -74,6 +74,8 @@ async function execute(message) {
       ));
     case 'close':
       return unwrap(self.ofd.close());
+    case 'info':
+      return unwrap(self.ofd.info());
     case 'renderPage': {
       const result = unwrap(self.ofd.renderPage(message.index, message.options || {}));
       const data = new Uint8Array(result);
