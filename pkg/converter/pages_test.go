@@ -29,6 +29,39 @@ func TestCollectDocumentPagesUsesGlobalPageNumbers(t *testing.T) {
 	}
 }
 
+func TestWalkDocumentPagesUsesGlobalPageNumbersAndRange(t *testing.T) {
+	documents := []*render.Document{
+		testRenderDocument(2),
+		testRenderDocument(3),
+	}
+	var pages []documentPage
+	if err := walkDocumentPages(documents, 1, 4, func(page documentPage) error {
+		pages = append(pages, page)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 3 {
+		t.Fatalf("walked page count = %d, want 3", len(pages))
+	}
+	if pages[0].pageNumber != 2 || pages[1].pageNumber != 3 || pages[2].pageNumber != 4 {
+		t.Fatalf("walked page numbers = %d, %d, %d; want 2, 3, 4", pages[0].pageNumber, pages[1].pageNumber, pages[2].pageNumber)
+	}
+	if pages[0].document != documents[0] || pages[0].pageIndex != 1 || pages[2].document != documents[1] || pages[2].pageIndex != 1 {
+		t.Fatal("walked pages do not preserve document and page indexes")
+	}
+}
+
+func TestCountDocumentPagesSkipsNilPages(t *testing.T) {
+	documents := []*render.Document{
+		render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, nil, {}}}),
+		nil,
+	}
+	if got, want := countDocumentPages(documents), 2; got != want {
+		t.Fatalf("countDocumentPages = %d, want %d", got, want)
+	}
+}
+
 func TestPageRange(t *testing.T) {
 	tests := []struct {
 		total, page int
@@ -51,6 +84,18 @@ func TestPageRange(t *testing.T) {
 		if err != nil || start != test.start || end != test.end {
 			t.Fatalf("pageRange(%d, %d) = (%d, %d, %v), want (%d, %d)", test.total, test.page, start, end, err, test.start, test.end)
 		}
+	}
+}
+
+func TestPDFParallelOption(t *testing.T) {
+	if newConverter().pdfParallel {
+		t.Fatal("PDF 默认应关闭并行渲染")
+	}
+	if newConverter(PDFParallel(false)).pdfParallel {
+		t.Fatal("PDFParallel(false) 未关闭并行渲染")
+	}
+	if !newConverter(PDFParallel(false), PDFParallel(true)).pdfParallel {
+		t.Fatal("PDFParallel(true) 未重新启用并行渲染")
 	}
 }
 

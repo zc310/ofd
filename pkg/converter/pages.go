@@ -37,6 +37,49 @@ func collectDocumentPages(documents []*render.Document) []documentPage {
 	return pages
 }
 
+func countDocumentPages(documents []*render.Document) int {
+	total := 0
+	for _, document := range documents {
+		if document == nil || document.Document == nil {
+			continue
+		}
+		for _, page := range document.Pages {
+			if page != nil {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func walkDocumentPages(documents []*render.Document, start, end int, fn func(documentPage) error) error {
+	pageNumber := 0
+	for _, document := range documents {
+		if document == nil || document.Document == nil {
+			continue
+		}
+		for pageIndex, page := range document.Pages {
+			if page == nil {
+				continue
+			}
+			if pageNumber >= start && pageNumber < end {
+				if err := fn(documentPage{
+					document:   document,
+					pageIndex:  pageIndex,
+					pageNumber: pageNumber + 1,
+				}); err != nil {
+					return err
+				}
+			}
+			pageNumber++
+			if pageNumber >= end {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 func pageRange(total, page int) (int, int, error) {
 	if page < 0 {
 		return 0, 0, fmt.Errorf("%w: %d（页码不能小于 0）", ErrInvalidPage, page)
