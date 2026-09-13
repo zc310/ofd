@@ -1,6 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#172033"/>
-  <path d="M128 64h176l80 80v304H128z" fill="#fff"/>
-  <path d="M304 64v80h80" fill="#b9c4d6"/>
-  <path d="M176 232h160M176 288h160M176 344h112" fill="none" stroke="#2476bd" stroke-linecap="round" stroke-width="28"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#46A0E8"/>
+      <stop offset="1" stop-color="#1550A0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect x="84" y="60" width="352" height="400" rx="12" fill="#000" opacity="0.10"/>
+  <rect x="80" y="56" width="352" height="400" rx="12" fill="#fff"/>
+  <rect x="120" y="148" width="220" height="14" rx="6" fill="#E0E0E0"/>
+  <rect x="120" y="192" width="168" height="14" rx="6" fill="#E0E0E0"/>
+  <rect x="120" y="236" width="128" height="14" rx="6" fill="#E0E0E0"/>
+  <rect x="120" y="280" width="180" height="14" rx="6" fill="#E0E0E0"/>
+  <text x="256" y="395" text-anchor="middle" dominant-baseline="central"
+    font-family="Nimbus Sans, Helvetica Neue, Helvetica, Arial, sans-serif"
+    font-weight="bold" font-size="96" fill="#1550A0">OFD</text>
 </svg>
