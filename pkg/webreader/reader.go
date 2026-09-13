@@ -116,6 +116,19 @@ type FontSource struct {
 	Data   []byte
 }
 
+// DocumentInfo 描述 OFD 文档的元数据信息。
+type DocumentInfo struct {
+	DocID        string
+	Title        string
+	Author       string
+	Subject      string
+	Abstract     string
+	CreationDate string
+	ModDate      string
+	Creator      string
+	Version      string
+}
+
 // OpenOptions 配置 OFD 打开行为。
 type OpenOptions struct {
 	// FallbackFonts 是文档未提供可用内嵌字体时使用的回退字体。
@@ -301,6 +314,49 @@ func (r *Reader) PageCount() int {
 		return 0
 	}
 	return len(r.pages)
+}
+
+// Info 返回 OFD 文档的元数据信息。
+func (r *Reader) Info() (DocumentInfo, error) {
+	if r == nil {
+		return DocumentInfo{}, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return DocumentInfo{}, errors.New("文档引擎已经关闭")
+	}
+	if r.ofd == nil || len(r.ofd.DocBodies) == 0 {
+		return DocumentInfo{}, nil
+	}
+	body := r.ofd.DocBodies[0]
+	info := body.DocInfo
+	result := DocumentInfo{
+		DocID:   info.DocID,
+		Version: r.ofd.Version,
+	}
+	if info.Title != nil {
+		result.Title = *info.Title
+	}
+	if info.Author != nil {
+		result.Author = *info.Author
+	}
+	if info.Subject != nil {
+		result.Subject = *info.Subject
+	}
+	if info.Abstract != nil {
+		result.Abstract = *info.Abstract
+	}
+	if info.Creator != nil {
+		result.Creator = *info.Creator
+	}
+	if info.CreationDate != nil {
+		result.CreationDate = info.CreationDate.String()
+	}
+	if info.ModDate != nil {
+		result.ModDate = info.ModDate.String()
+	}
+	return result, nil
 }
 
 // Pages 返回所有页面的尺寸快照，尺寸单位为毫米。

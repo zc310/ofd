@@ -39,6 +39,17 @@
     .recent-item small { grid-column: 1 / -1; color: #667188; font-size: 12px; }
      .search-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: flex; min-width: 310px; align-items: center; gap: 6px; padding: 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; }
      .search-panel[hidden] { display: none; }
+     .info-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; min-width: 280px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
+     .info-panel[hidden] { display: none; }
+     .info-content { padding: 8px; }
+     .info-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px; border-bottom: 1px solid #d7dce5; color: #667188; font-size: 12px; }
+     .info-header button { min-height: 20px; padding: 0 4px; border: 0; background: transparent; color: #667188; font-size: 14px; cursor: pointer; }
+     .info-header button:hover { color: #172033; }
+     .info-body { padding: 8px 4px; font-size: 13px; line-height: 1.6; }
+     .info-empty { margin: 0; color: #667188; }
+     .info-row { display: flex; gap: 8px; margin: 0 0 4px; }
+     .info-label { min-width: 70px; color: #667188; }
+     .info-value { color: #172033; word-break: break-all; }
      .print-dialog { width: min(420px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
      .print-dialog::backdrop { background: #17203366; }
      .print-form { display: grid; gap: 16px; padding: 20px; }
@@ -64,7 +75,19 @@
      .export-error { margin: -4px 0 0; color: #a13e3e; font-size: 13px; }
      .export-error[hidden] { display: none; }
      .export-actions { display: flex; justify-content: flex-end; gap: 8px; }
-     .export-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
+      .export-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
+      .about-dialog { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
+      .about-dialog::backdrop { background: #17203366; }
+      .about-content { display: grid; gap: 14px; padding: 20px; }
+      .about-content h2 { margin: 0; font-size: 18px; }
+      .about-info { font-size: 14px; line-height: 1.6; }
+      .about-info p { margin: 0 0 8px; }
+      .about-info ul { margin: 0 0 8px; padding-left: 20px; }
+      .about-info li { margin: 0 0 4px; }
+      .about-actions { display: flex; justify-content: flex-end; }
+      body.dark-reading .about-dialog { background: #252c38; color: #e6ebf2; }
+      body.dark-reading .about-dialog::backdrop { background: #17203366; }
+      body.dark-reading #version-link { color: #80b4e5; }
      .file-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
     .file-button:hover { background: #4b95dc; }
     #cancel-open[hidden] { display: none; }
@@ -121,7 +144,7 @@
     body.dark-reading .thumbnail:hover { border-color: #80b4e5; }
     body.dark-reading .thumbnail.active { border-color: #80b4e5; box-shadow: inset 0 0 0 2px #80b4e5, 0 3px 10px #00000050; }
     body.dark-reading .page-card { background: #303947; box-shadow: 0 4px 20px #00000060; }
-    body.dark-reading .search-panel, body.dark-reading .view-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
+    body.dark-reading .search-panel, body.dark-reading .view-panel, body.dark-reading .info-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
     body.dark-reading .search-panel input { border-color: #536074; background: #303947; color: #e6ebf2; }
     body.dark-reading .view-option { color: #e6ebf2; }
     body.dark-reading .recent-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
@@ -130,6 +153,11 @@
     body.dark-reading .recent-item:hover { background: #303f55; }
     body.dark-reading .recent-item small { color: #aeb9ca; }
     body.dark-reading .recent-header { border-color: #475365; color: #aeb9ca; }
+    body.dark-reading .info-header { border-color: #475365; color: #aeb9ca; }
+    body.dark-reading .info-header button { color: #aeb9ca; }
+    body.dark-reading .info-header button:hover { color: #e6ebf2; }
+    body.dark-reading .info-label { color: #aeb9ca; }
+    body.dark-reading .info-value { color: #e6ebf2; }
      body:fullscreen { background: #cfd5de; }
      body:fullscreen #status { display: none; }
      body:fullscreen .reader { max-width: 100%; padding: 12px 18px; }
@@ -192,18 +220,19 @@
     #drop-hint { display: none; }
     @keyframes loading-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     @media (max-width: 620px) {
-      header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
+      header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
       header > * { margin: 0; }
       .brand { grid-column: 1 / -1; min-width: 0; }
       #document-name { max-width: calc(100vw - 150px); }
       .toolbar-group { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; padding: 0 0 3px; border-left: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
       .toolbar-group > * { flex: 0 0 auto; white-space: nowrap; }
-      .file-group, .recent-group, .search-group, .view-group { position: relative; width: auto; overflow: visible; }
+      .file-group, .recent-group, .search-group, .view-group, .info-group { position: relative; width: auto; overflow: visible; }
        .file-group { grid-column: 1; justify-content: center; }
        .recent-group { grid-column: 2; justify-content: center; }
        .search-group { grid-column: 3; justify-content: flex-end; }
        .view-group { grid-column: 4; justify-content: center; }
-       .mobile-toolbar-toggle { display: inline-flex; grid-column: 5; justify-content: center; }
+       .info-group { grid-column: 5; justify-content: center; }
+       .mobile-toolbar-toggle { display: inline-flex; grid-column: 6; justify-content: center; }
        .toolbar-group.recent-group { position: static; }
        header .recent-panel { top: calc(100% + 8px); right: 10px; left: 10px; z-index: 20; width: auto; max-height: calc(100vh - 120px); max-height: calc(100dvh - 120px); overflow-y: auto; }
          .page-group, .zoom-group { display: none; grid-column: 1 / -1; width: 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
@@ -215,14 +244,15 @@
       .page-group > span { display: inline-flex; align-items: center; }
       .view-panel, .recent-panel, .search-panel { position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 0; }
         .search-panel { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; max-width: none; transform: none; }
-        .recent-panel, .search-panel { width: auto; }
+        .info-panel { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; max-width: none; transform: none; }
+        .recent-panel, .search-panel, .info-panel { width: auto; }
 
 
        .view-panel { width: min(240px, calc(100vw - 20px)); }
          .page-spread { left: 0; justify-content: flex-start; transform: none; }
-        .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 10px; background: #e0e4e9; }
+         .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
-      #thumbnails { position: relative; display: block; flex: 0 0 auto; width: calc(100% + 20px); max-height: 114px; min-height: 114px; margin: -10px -10px 0; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; overscroll-behavior: contain; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
+      #thumbnails { position: relative;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: -15px -10px 0; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; height: 96px; min-height: 96px; }
        #thumbnails .thumbnail img { max-width: 100%; max-height: 90px; }
        body.dark-reading .reader { background: #1f252f; }
@@ -248,7 +278,7 @@
   <a class="skip-link" href="#pages">跳到阅读区</a>
   <header>
     <div class="brand">
-      <strong>OFD WASM 阅读器</strong>
+      <strong id="about-link" style="cursor: pointer;" title="关于">OFD WASM 阅读器</strong>
       <span id="document-name">未打开文档</span>
     </div>
     <div class="toolbar-group file-group">
@@ -285,6 +315,17 @@
            <option value="double">双页</option>
            <option value="double-odd-left">双页，奇数页在左</option>
          </select></label>
+      </div>
+    </div>
+    <div class="toolbar-group info-group" aria-label="文档信息">
+       <button id="info-toggle" type="button" title="文档信息" aria-label="文档信息" disabled aria-controls="info-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">info</span></button>
+      <div id="info-panel" class="info-panel" hidden>
+        <div class="info-content">
+          <div class="info-header"><span>文档信息</span><button id="info-close" type="button" title="关闭">✕</button></div>
+          <div id="info-body" class="info-body">
+            <p class="info-empty">未打开文档</p>
+          </div>
+        </div>
       </div>
     </div>
     <div class="toolbar-group mobile-toolbar-toggle">
@@ -376,6 +417,28 @@
       </div>
     </form>
   </dialog>
+  <dialog id="about-dialog" class="about-dialog" aria-labelledby="about-title">
+    <div class="about-content">
+      <h2 id="about-title" tabindex="-1">关于 OFD WASM 阅读器</h2>
+      <div class="about-info">
+        <p><strong>版本：</strong><a id="version-link" href="https://github.com/zc310/ofd" target="_blank" rel="noopener noreferrer" style="color: #2476bd; text-decoration: none;">0.1.1</a></p>
+        <p><strong>说明：</strong>基于 WebAssembly 的 OFD 文档阅读器，支持在浏览器中直接查看 OFD 格式文件。</p>
+        <p><strong>功能特性：</strong></p>
+        <ul>
+          <li>支持 OFD 文档浏览和缩放</li>
+          <li>页面缩略图导航</li>
+          <li>文本搜索和复制</li>
+          <li>打印和导出功能</li>
+          <li>深色阅读模式</li>
+          <li>响应式设计，支持移动端</li>
+        </ul>
+        <p><strong>技术栈：</strong>Go + WebAssembly + JavaScript</p>
+      </div>
+      <div class="about-actions">
+        <button id="about-close" type="button">关闭</button>
+      </div>
+    </div>
+  </dialog>
   <div class="reader">
     <aside id="thumbnails" aria-label="页面缩略图"></aside>
     <main id="pages" tabindex="-1">
@@ -387,6 +450,6 @@
     </main>
   </div>
    <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-  <script src="viewer.js?v=5cdc467a88fce54d"></script>
+  <script src="viewer.js?v=00cfe7214adbbb91"></script>
 </body>
 </html>

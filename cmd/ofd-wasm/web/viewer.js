@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=dc531cc847ec84bb');
+    this.worker = new Worker('worker.js?v=708e565bbbb9687b');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -106,6 +106,10 @@ class OFDWorkerClient {
 
   close() {
     return this.request('close');
+  }
+
+  info() {
+    return this.request('info');
   }
 
   renderPage(index, options) {
@@ -244,6 +248,14 @@ const showThumbnails = document.querySelector('#show-thumbnails');
 const showTextLayer = document.querySelector('#show-text-layer');
 const darkReading = document.querySelector('#dark-reading');
 const pageLayoutSelect = document.querySelector('#page-layout');
+const aboutLink = document.querySelector('#about-link');
+const aboutDialog = document.querySelector('#about-dialog');
+const aboutClose = document.querySelector('#about-close');
+const aboutTitle = document.querySelector('#about-title');
+const infoToggle = document.querySelector('#info-toggle');
+const infoPanel = document.querySelector('#info-panel');
+const infoClose = document.querySelector('#info-close');
+const infoBody = document.querySelector('#info-body');
 const engine = new OFDWorkerClient();
 const pageCache = new BlobURLCache(64 << 20);
 const thumbnailCache = new BlobURLCache(16 << 20);
@@ -1114,6 +1126,7 @@ function updateNavigation() {
   rotatePageButton.disabled = pageInfos.length === 0;
   readingMode.disabled = pageInfos.length === 0;
   viewToggle.disabled = pageInfos.length === 0;
+  infoToggle.disabled = pageInfos.length === 0;
   pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 }
@@ -1783,6 +1796,7 @@ function cancelOpening() {
   thumbnailCache.clear();
   textCache.clear();
   pageInfos = [];
+  if (!infoPanel.hidden) updateDocumentInfo();
   pageCards = [];
   thumbnailButtons = [];
   pageVirtualTrack = undefined;
@@ -1910,6 +1924,59 @@ function openExportDialog() {
 function closeExportDialog() {
   if (typeof exportDialog.close === 'function') exportDialog.close();
   else exportDialog.removeAttribute('open');
+}
+
+function openAboutDialog() {
+  if (typeof aboutDialog.showModal === 'function') aboutDialog.showModal();
+  else aboutDialog.setAttribute('open', '');
+  aboutClose.focus();
+}
+
+function closeAboutDialog() {
+  if (typeof aboutDialog.close === 'function') aboutDialog.close();
+  else aboutDialog.removeAttribute('open');
+}
+
+function setInfoPanelOpen(open) {
+  const show = !!open;
+  infoPanel.hidden = !show;
+  infoToggle.setAttribute('aria-expanded', String(show));
+  if (show) updateDocumentInfo();
+}
+
+function updateDocumentInfo() {
+  if (!pageInfos.length) {
+    infoBody.innerHTML = '<p class="info-empty">未打开文档</p>';
+    return;
+  }
+  engine.info().then(info => {
+    const rows = [];
+    if (info.docID) rows.push(['文档标识', info.docID]);
+    if (info.title) rows.push(['标题', info.title]);
+    if (info.author) rows.push(['作者', info.author]);
+    if (info.subject) rows.push(['主题', info.subject]);
+    if (info.abstract) rows.push(['摘要', info.abstract]);
+    if (info.creationDate) rows.push(['创建时间', info.creationDate]);
+    if (info.modDate) rows.push(['修改时间', info.modDate]);
+    if (info.creator) rows.push(['创建软件', info.creator]);
+    if (info.version) rows.push(['OFD 版本', info.version]);
+    rows.push(['页数', String(pageInfos.length)]);
+    if (rows.length === 0) {
+      infoBody.innerHTML = '<p class="info-empty">无文档信息</p>';
+      return;
+    }
+    infoBody.innerHTML = rows.map(([label, value]) =>
+      `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(value)}</span></div>`
+    ).join('');
+  }).catch(() => {
+    infoBody.innerHTML = '<p class="info-empty">获取信息失败</p>';
+  });
+}
+
+function escapeHTML(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function exportBackgroundColor() {
@@ -2520,6 +2587,10 @@ exportForm.addEventListener('submit', event => {
   void startExport();
 });
 exportCancel.addEventListener('click', closeExportDialog);
+aboutLink.addEventListener('click', openAboutDialog);
+aboutClose.addEventListener('click', closeAboutDialog);
+infoToggle.addEventListener('click', () => setInfoPanelOpen(infoPanel.hidden));
+infoClose.addEventListener('click', () => setInfoPanelOpen(false));
  copyPageText.addEventListener('click', copyCurrentPageText);
  copyAllTextButton.addEventListener('click', copyDocumentText);
 pageNumber.addEventListener('change', () => {
@@ -2654,6 +2725,7 @@ document.addEventListener('click', event => {
   if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
   if (!searchPanel.hidden && !event.target.closest('.search-group')) setSearchPanelOpen(false);
+  if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
 });
 document.addEventListener('copy', () => {
   const selection = window.getSelection();
