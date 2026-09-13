@@ -18,6 +18,7 @@ type Converter struct {
 	thumbnail         int
 	pageCacheCapacity int
 	pageCacheBytes    int64
+	pdfParallel       bool
 	imageWriter       func(page int, img image.Image) error
 	fileWriter        func(page int) (io.WriteCloser, error)
 }
@@ -44,6 +45,7 @@ func newConverter(options ...Option) *Converter {
 		thumbnail:         defaultConverter.thumbnail,
 		pageCacheCapacity: defaultConverter.pageCacheCapacity,
 		pageCacheBytes:    defaultConverter.pageCacheBytes,
+		pdfParallel:       false,
 	}
 
 	for _, opt := range options {

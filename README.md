@@ -331,9 +331,6 @@ document := creator.Document{
 可以通过 `Permissions` 设置编辑、导出、打印和权限有效期，通过 `Preferences` 设置阅读器打开文档时的页面模式、页面布局、界面显示和缩放方式。`ZoomMode` 与具体的 `Zoom` 比例只能二选一：
 
 ```go
-edit := false
-hideToolbar := true
-copies := 2
 document := creator.Document{
 	Permissions: &creator.Permissions{
 		Edit: &edit,

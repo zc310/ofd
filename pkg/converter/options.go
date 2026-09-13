@@ -92,3 +92,10 @@ func Page(page int) Option {
 		c.page = page
 	}
 }
+
+// PDFParallel 控制 PDF 页面是否并行渲染；默认关闭。
+func PDFParallel(enabled bool) Option {
+	return func(c *Converter) {
+		c.pdfParallel = enabled
+	}
+}
