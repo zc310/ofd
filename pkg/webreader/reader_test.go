@@ -48,6 +48,36 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 }
 
+func TestPagesUsesA4PlaceholderAndPageLoadsRealSize(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "GBT_33190-2016.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != reader.PageCount() {
+		t.Fatalf("page count = %d, want %d", len(pages), reader.PageCount())
+	}
+	if pages[0].Width != defaultPageWidth || pages[0].Height != defaultPageHeight {
+		t.Fatalf("Pages()[0] = %+v, want A4 placeholder", pages[0])
+	}
+	actual, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.Width != 209.9733 || actual.Height != 296.9260 {
+		t.Fatalf("Page(0) = %+v, want physical size 209.9733 x 296.9260", actual)
+	}
+}
+
 func TestRenderPageConcurrent(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {

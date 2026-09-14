@@ -23,13 +23,15 @@ import (
 )
 
 const (
-	defaultDPI      = 96
-	maxDPI          = 600
-	maxInputBytes   = 256 << 20
-	maxRenderPixels = 50_000_000
-	maxFontBytes    = 32 << 20
-	maxRenderPages  = 64
-	maxRenderDocs   = 4
+	defaultDPI        = 96
+	defaultPageWidth  = 210
+	defaultPageHeight = 297
+	maxDPI            = 600
+	maxInputBytes     = 256 << 20
+	maxRenderPixels   = 50_000_000
+	maxFontBytes      = 32 << 20
+	maxRenderPages    = 64
+	maxRenderDocs     = 4
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -359,7 +361,8 @@ func (r *Reader) Info() (DocumentInfo, error) {
 	return result, nil
 }
 
-// Pages 返回所有页面的尺寸快照，尺寸单位为毫米。
+// Pages 返回所有页面的尺寸占位快照，尺寸单位为毫米。
+// 为避免打开大文档时加载所有页面内容，尚未渲染的页面统一按 A4 返回。
 func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -375,28 +378,37 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 		if ref.page == nil {
 			return nil, fmt.Errorf("第 %d 页为空", index)
 		}
-		box, err := ref.page.PhysicalBox()
-		if err != nil {
-			return nil, fmt.Errorf("读取第 %d 页失败: %w", index, err)
-		}
-		if !finitePositive(box.Width) || !finitePositive(box.Height) {
-			return nil, fmt.Errorf("第 %d 页尺寸无效", index)
-		}
-		pages[index] = PageInfo{Index: index, Width: box.Width, Height: box.Height}
+		pages[index] = PageInfo{Index: index, Width: defaultPageWidth, Height: defaultPageHeight}
 	}
 	return pages, nil
 }
 
-// Page 返回指定页面的尺寸信息。
+// Page 返回指定页面的真实尺寸信息。
+// 与 Pages 不同，查询单页信息会按需加载该页内容。
 func (r *Reader) Page(index int) (PageInfo, error) {
-	pages, err := r.Pages()
-	if err != nil {
-		return PageInfo{}, err
+	if r == nil {
+		return PageInfo{}, errors.New("文档引擎为空")
 	}
-	if index < 0 || index >= len(pages) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return PageInfo{}, errors.New("文档引擎已经关闭")
+	}
+	if index < 0 || index >= len(r.pages) {
 		return PageInfo{}, fmt.Errorf("页面索引超出范围: %d", index)
 	}
-	return pages[index], nil
+	ref := r.pages[index]
+	if ref.page == nil {
+		return PageInfo{}, fmt.Errorf("第 %d 页为空", index)
+	}
+	box, err := ref.page.PhysicalBox()
+	if err != nil {
+		return PageInfo{}, fmt.Errorf("读取第 %d 页失败: %w", index, err)
+	}
+	if !finitePositive(box.Width) || !finitePositive(box.Height) {
+		return PageInfo{}, fmt.Errorf("第 %d 页尺寸无效", index)
+	}
+	return PageInfo{Index: index, Width: box.Width, Height: box.Height}, nil
 }
 
 // Text 返回指定页面的文字对象快照。文字顺序与 OFD 页面绘制顺序一致。
