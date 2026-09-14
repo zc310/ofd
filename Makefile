@@ -57,6 +57,7 @@ WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
 WASM_VIEWER := cmd/ofd-wasm/web/viewer.js
 WASM_WORKER := cmd/ofd-wasm/web/worker.js
 WASM_INDEX := cmd/ofd-wasm/web/index.html
+WASM_SERVICE_WORKER := cmd/ofd-wasm/web/service-worker.js
 WASM_WEB_DIR := cmd/ofd-wasm/web
 WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
 
@@ -138,21 +139,10 @@ build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(
 
 build-tools: $(TOOL_BUILD_TARGETS)
 
-build-wasm: $(WASM) $(WASM_EXEC) $(WASM_INDEX)
-
-$(WASM_INDEX): $(WASM_VIEWER) $(WASM_WORKER) $(WASM) FORCE
-	@VIEWER_HASH=$$(sha256sum "$(WASM_VIEWER)" | cut -c1-16); \
-	WORKER_HASH=$$(sha256sum "$(WASM_WORKER)" | cut -c1-16); \
-	WASM_HASH=$$(sha256sum "$(WASM)" | cut -c1-16); \
-	VIEWER_HASH="$$VIEWER_HASH" WORKER_HASH="$$WORKER_HASH" WASM_HASH="$$WASM_HASH" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_INDEX)"); text = path.read_text(); text = re.sub("viewer[.]js[?]v=[^\\x27\\\" ]+", "viewer.js?v=" + os.environ["VIEWER_HASH"], text); text = re.sub("worker[.]js[?]v=[^\\x27\\\" ]+", "worker.js?v=" + os.environ["WORKER_HASH"], text); text = re.sub("ofd[.]wasm[?]v=[^\\x27\\\" ]+", "ofd.wasm?v=" + os.environ["WASM_HASH"], text); path.write_text(text)'
-
-$(WASM_VIEWER): $(WASM_WORKER) FORCE
-	@hash=$$(sha256sum "$(WASM_WORKER)" | cut -c1-16); \
-	WORKER_HASH="$$hash" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_VIEWER)"); text = path.read_text(); text = re.sub("(?<!service-)worker[.]js[?]v=[^\\x27\\\" ]+", "worker.js?v=" + os.environ["WORKER_HASH"], text); path.write_text(text)'
-
-$(WASM_WORKER): $(WASM) FORCE
-	@hash=$$(sha256sum "$(WASM)" | cut -c1-16); \
-	WASM_HASH="$$hash" python3 -c 'import os, pathlib, re; path = pathlib.Path("$(WASM_WORKER)"); text = path.read_text(); text = re.sub("ofd[.]wasm[?]v=[^\\x27\\\" ]+", "ofd.wasm?v=" + os.environ["WASM_HASH"], text); path.write_text(text)'
+# 页面脚本、Web Worker、wasm_exec.js 和 ofd.wasm 都使用不带查询参数的固定路径，
+# 缓存版本由 CACHE_NAME 的哈希管理：任一资源内容变化，缓存名变化，新 Service
+# Worker 安装时删除旧缓存并重新缓存全部资源。
+build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
@@ -161,6 +151,10 @@ $(WASM): FORCE
 $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
 	cp "$$(CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) env GOROOT)/lib/wasm/wasm_exec.js" "$@"
+
+$(WASM_SERVICE_WORKER): $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) FORCE
+	@CACHE_NAME=$$(cat "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" | sha256sum | cut -c1-16); \
+	sed -i "s/^const CACHE_NAME = '.*';$$/const CACHE_NAME = 'ofd-reader-shell_$$CACHE_NAME';/" "$(WASM_SERVICE_WORKER)"
 
 build-arm64:
 	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 build-tools

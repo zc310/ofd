@@ -7,7 +7,7 @@
 “显示”菜单中的“页面布局”支持单页、双页和“双页，奇数页在左”。普通双页模式将第 1 页放在右侧，页面排列为“空白+1、2+3”；“奇数页在左”将奇数页放在左侧，页面排列为“1+2、3+4”。布局设置会保存在浏览器本地。
 双页布局下，桌面端左侧缩略图也按两列显示，与页面 spread 对齐；单页布局保持一列，手机端继续使用顶部横向缩略图栏。
 桌面端阅读器使用全宽布局，缩略图栏贴近窗口左侧，右侧阅读区占用剩余屏幕宽度；手机端仍自动切换为顶部缩略图栏。
-页面和缩略图使用窗口化虚拟列表，只保留可视区域附近的 DOM 节点；未挂载节点通过虚拟轨道占位，保持完整文档的滚动位置。
+页面和缩略图使用窗口化虚拟列表，只保留可视区域附近的 DOM 节点；未挂载节点通过虚拟轨道占位，保持完整文档的滚动位置。页面滚动会取消离开窗口的未完成渲染请求，缩略图滚动单独维护自己的虚拟窗口，避免快速拖动主页面滚动条时批量渲染中间页面的缩略图。
 
 
 ## 构建
@@ -25,6 +25,8 @@ cmd/ofd-wasm/web/ofd.wasm
 cmd/ofd-wasm/web/wasm_exec.js
 ```
 
+同时会按 `viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希把 `service-worker.js` 的缓存名写为 `ofd-reader-shell_<hash>`。
+
 ## 运行
 
 浏览器不能直接通过 `file://` 加载 WASM。可以在 `cmd/ofd-wasm/web` 目录启动任意静态 HTTP 服务：
@@ -39,9 +41,15 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 ## 资源缓存与更新
 
-阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。当前 `service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
+阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。`service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
-当前示例的 Service Worker 缓存名为 `ofd-reader-shell`，页面脚本和 Web Worker 使用不带查询参数的固定路径。发布 `index.html`、`viewer.js`、`worker.js`、`ofd.wasm` 或 `wasm_exec.js` 的新版本时，应修改 `service-worker.js` 中的 `CACHE_NAME`，例如改为 `ofd-reader-shell-v8`，以淘汰旧缓存并重新缓存资源。
+页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，把 `service-worker.js` 的 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
+
+客户端已经做了两处兜底，不依赖服务器配置即可保证更新：
+
+- 注册时使用 `{ updateViaCache: 'none' }`（`viewer.js`），浏览器检查 Service Worker 更新时绕过 HTTP 缓存，发布后第一次导航就能检测到新版本。
+- 安装预缓存时通过 `{ cache: 'no-cache' }` 的请求写入新缓存（`service-worker.js`），导航请求同样强制 `no-cache`，确保新缓存写入的是最新字节且 `index.html` 每次导航都会重新校验。
+- 独立的 `ofd-fonts` 缓存（`viewer.js` 维护的回退字体，内容寻址不可变）在应用更新时会被保留，不会被清理；每次构建只淘汰 `ofd-reader-shell_*` 旧缓存。
 
 
 建议生产环境配置以下响应头：
@@ -55,13 +63,7 @@ ofd.wasm            Cache-Control: no-cache, must-revalidate
 wasm_exec.js        Cache-Control: no-cache, must-revalidate
 ```
 
-更稳妥的生产方案是给 JavaScript 和 WASM 文件使用内容 hash 文件名，例如 `viewer.8f31c2.js`、`worker.a91d77.js` 和 `ofd.2b9f10.wasm`，并为这些文件设置长期缓存：
-
-```text
-Cache-Control: public, max-age=31536000, immutable
-```
-
-`index.html` 和 `service-worker.js` 应保持可重新验证，页面引用的 hash 文件内容变化时只需更新引用。发布时先上传新的 hash 资源，再更新 `service-worker.js`，最后更新 `index.html`，避免页面先引用尚未上传的资源。
+如果生产服务器不方便配置上面的响应头，可以改用内容 hash 文件名方案：给 `viewer.js`、`worker.js`、`ofd.wasm` 等生成带内容哈希的文件名并设置长期缓存，但此时不再符合“固定路径 + 哈希缓存名”的默认约定，`service-worker.js` 的预缓存列表也需要同步使用这些文件名。
 
 如果浏览器仍然显示旧版本，可以在开发者工具中打开 **Application**，执行 **Service Workers -> Unregister** 和 **Storage -> Clear site data**，然后重新加载页面。也可以在控制台检查当前控制页面的 Service Worker 和 Worker URL：
 
@@ -109,6 +111,6 @@ text       index: number
 search     query: string
 ```
 
-页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 64 MiB，缩略图缓存上限为 16 MiB。缩放或切换文档时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 128 MiB，缩略图缓存上限为 32 MiB，均由浏览器端使用 LRU 策略管理。页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
 
 `text` 返回页面文字对象，`x/y` 是页面左上角原点的覆盖层坐标，`glyphs` 提供字符级区域；`search` 返回 `{ page, run, text, start, end, rects }` 命中列表。`glyphs`/`rects` 的 `angle` 可直接用于浏览器 CSS 的 `rotate()`。示例页面会将搜索结果所在页面滚动到视口，并使用引擎返回的字符矩形显示高亮。

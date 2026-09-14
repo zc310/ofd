@@ -17,6 +17,14 @@ function errorText(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+self.addEventListener('error', event => {
+  console.error('[OFD Worker] JavaScript 异常', event.error || event.message);
+});
+
+self.addEventListener('unhandledrejection', event => {
+  console.error('[OFD Worker] 未处理的 Promise 异常', event.reason);
+});
+
 function unwrap(value) {
   if (value && value.error) throw new Error(value.error);
   return value;
@@ -30,7 +38,7 @@ function reportStartFailure(error) {
 async function start() {
   try {
     const go = new Go();
-    const response = await fetch('ofd.wasm?v=0709b57019ea26df');
+    const response = await fetch('ofd.wasm');
     if (!response.ok) {
       reportStartFailure(new Error(`加载 ofd.wasm 失败: ${response.status}`));
       return;
@@ -126,6 +134,8 @@ async function drain() {
       if (isCancelled(message.id)) reply(message.id, false, null, '请求已取消');
       else reply(message.id, false, null, errorText(error));
     }
+    // 让取消消息有机会在继续执行下一个同步 WASM 任务前被处理。
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
   running = false;
 }
