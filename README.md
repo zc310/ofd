@@ -16,9 +16,12 @@
 | **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                               |
 | **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                   |
 | **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                    |
+| **性能基准**   | 提供跨语言 OFD 转 PDF 速度、文件大小、文本提取和兼容性对比测试               |
 | **处理性能**   | 基于 Go 语言开发，支持高效处理                                               |
 
 OFD 标准元素和项目能力的详细支持范围见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)。该清单区分了已支持、部分支持和暂不承诺完整支持的能力，不应将项目功能表述为完整符合 GB/T 33190-2016。
+
+性能基准测试见 [`zc310/ofd-benchmark`](https://github.com/zc310/ofd-benchmark)。该项目对比多个语言和实现的 OFD 转 PDF 速度、输出文件大小、文本提取能力及兼容性；测试结果仅供参考，实际表现会受到文档样本、字体、操作系统和运行环境影响。
 
 ## 桌面与 Android 阅读器
 
