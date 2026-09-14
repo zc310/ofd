@@ -96,8 +96,10 @@ func TestTextFillDisabled(t *testing.T) {
 }
 
 func TestOutlineTextWithStrokeOnly(t *testing.T) {
-	t.Skip("stroke-only text")
 	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if os.IsNotExist(err) {
+		t.Skip("DejaVuSans.ttf  is unavailable")
+	}
 	if err != nil {
 		t.Skipf("DejaVu Sans is unavailable: %v", err)
 	}

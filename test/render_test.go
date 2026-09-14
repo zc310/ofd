@@ -44,7 +44,7 @@ func TestRender_PDF_ano(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "ano.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, converter.PDF("testdata/ano.ofd", f))
+	assert.Nil(t, converter.PDF("testdata/intro.ofd", f))
 }
 func BenchmarkRenderPDFIntro(b *testing.B) {
 	var output bytes.Buffer

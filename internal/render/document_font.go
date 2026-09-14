@@ -1,6 +1,7 @@
 package render
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -23,25 +24,58 @@ var (
 	defaultFontFamily      *canvas.FontFamily
 	defaultFontFamilyReady bool
 	defaultFontRenderMu    sync.Mutex
+	fontCacheMu            sync.Mutex
+	systemFontCache        = make(map[systemFontKey]*systemFontCacheEntry)
+	fontRenderLocks        = make(map[*canvas.FontFamily]*sync.Mutex)
+	fallbackFontCache      = make(map[fallbackFontKey]*fallbackFontCacheEntry)
 )
+
+type systemFontKey struct {
+	name  string
+	style canvas.FontStyle
+}
+
+type systemFontCacheEntry struct {
+	family   *canvas.FontFamily
+	renderMu *sync.Mutex
+}
+
+type fallbackFontKey struct {
+	family string
+	digest [sha256.Size]byte
+}
+
+type fallbackFontCacheEntry struct {
+	family   *canvas.FontFamily
+	renderMu *sync.Mutex
+	styles   map[canvas.FontStyle][sha256.Size]byte
+}
 
 type Fonts struct {
 	*parser.Document
-	Fonts          map[models.StRefID]*canvas.FontFamily
-	fallbacks      map[string]*canvas.FontFamily
-	fallbackFaces  []fallbackFace
-	fallbackByFont map[models.StRefID]string
-	mu             sync.Mutex
-	loadLocksMu    sync.Mutex
-	loadLocks      map[models.StRefID]*sync.Mutex
-	generation     uint64
-	renderLocksMu  sync.Mutex
-	renderLocks    map[*canvas.FontFamily]*sync.Mutex
+	Fonts           map[models.StRefID]*canvas.FontFamily
+	fallbacks       map[string]*canvas.FontFamily
+	fallbackFaces   []fallbackFace
+	fallbackSources map[string][]fallbackFontSource
+	fallbackByFont  map[models.StRefID]string
+	mu              sync.Mutex
+	loadLocksMu     sync.Mutex
+	loadLocks       map[models.StRefID]*sync.Mutex
+	generation      uint64
+	renderLocksMu   sync.Mutex
+	renderLocks     map[*canvas.FontFamily]*sync.Mutex
 }
 
 type fallbackFace struct {
 	family *canvas.FontFamily
 	style  canvas.FontStyle
+	name   string
+}
+
+type fallbackFontSource struct {
+	data   []byte
+	style  canvas.FontStyle
+	digest [sha256.Size]byte
 }
 
 func NewFonts(doc *parser.Document) *Fonts {
@@ -59,12 +93,14 @@ func NewFonts(doc *parser.Document) *Fonts {
 		var fontPath string
 		var err error
 		if fontPath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
+			slog.Debug("load default font file", "path", fontPath)
 			if err = defaultFontFamily.LoadFontFile(fontPath, canvas.FontRegular); err == nil {
 				defaultFontFamilyReady = true
 				return
 			}
 		}
 		for _, name := range []string{"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times"} {
+			slog.Debug("load default system font", "family", name, "style", canvas.FontRegular)
 			if err := defaultFontFamily.LoadSystemFont(name, canvas.FontRegular); err == nil {
 				defaultFontFamilyReady = true
 				break
@@ -72,12 +108,13 @@ func NewFonts(doc *parser.Document) *Fonts {
 		}
 	})
 	return &Fonts{
-		Document:       doc,
-		Fonts:          make(map[models.StRefID]*canvas.FontFamily),
-		fallbacks:      make(map[string]*canvas.FontFamily),
-		fallbackByFont: make(map[models.StRefID]string),
-		loadLocks:      make(map[models.StRefID]*sync.Mutex),
-		renderLocks:    make(map[*canvas.FontFamily]*sync.Mutex),
+		Document:        doc,
+		Fonts:           make(map[models.StRefID]*canvas.FontFamily),
+		fallbacks:       make(map[string]*canvas.FontFamily),
+		fallbackSources: make(map[string][]fallbackFontSource),
+		fallbackByFont:  make(map[models.StRefID]string),
+		loadLocks:       make(map[models.StRefID]*sync.Mutex),
+		renderLocks:     make(map[*canvas.FontFamily]*sync.Mutex),
 	}
 }
 
@@ -99,6 +136,12 @@ func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
 	if family == defaultFontFamily {
 		return &defaultFontRenderMu
 	}
+	fontCacheMu.Lock()
+	if lock := fontRenderLocks[family]; lock != nil {
+		fontCacheMu.Unlock()
+		return lock
+	}
+	fontCacheMu.Unlock()
 	p.renderLocksMu.Lock()
 	defer p.renderLocksMu.Unlock()
 	if p.renderLocks == nil {
@@ -110,6 +153,71 @@ func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
 	lock := &sync.Mutex{}
 	p.renderLocks[family] = lock
 	return lock
+}
+
+func loadCachedFallbackFont(data []byte, name string, style canvas.FontStyle) (*canvas.FontFamily, error) {
+	digest := sha256.Sum256(data)
+	key := fallbackFontKey{family: name, digest: digest}
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	entry := fallbackFontCache[key]
+	if entry == nil {
+		entry = &fallbackFontCacheEntry{
+			family:   canvas.NewFontFamily(name),
+			renderMu: &sync.Mutex{},
+			styles:   make(map[canvas.FontStyle][sha256.Size]byte),
+		}
+		fallbackFontCache[key] = entry
+		fontRenderLocks[entry.family] = entry.renderMu
+	}
+	if err := loadFallbackFace(entry, data, style); err != nil {
+		if len(entry.styles) == 0 {
+			delete(fallbackFontCache, key)
+			delete(fontRenderLocks, entry.family)
+		}
+		return nil, err
+	}
+	return entry.family, nil
+}
+
+func loadFallbackFace(entry *fallbackFontCacheEntry, data []byte, style canvas.FontStyle) error {
+	digest := sha256.Sum256(data)
+	if loaded, ok := entry.styles[style]; ok && loaded == digest {
+		return nil
+	}
+	entry.renderMu.Lock()
+	defer entry.renderMu.Unlock()
+	if loaded, ok := entry.styles[style]; ok && loaded == digest {
+		return nil
+	}
+	slog.Debug("load fallback font", "family", entry.family.Name(), "style", style, "bytes", len(data))
+	if err := entry.family.LoadFont(data, 0, style); err != nil {
+		return err
+	}
+	if !fontFamilyUsable(entry.family) {
+		return fmt.Errorf("回退字体结构不可用")
+	}
+	entry.styles[style] = digest
+	return nil
+}
+
+func loadCachedSystemFont(name string, style canvas.FontStyle) (*canvas.FontFamily, bool) {
+	key := systemFontKey{name: name, style: style}
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	if entry := systemFontCache[key]; entry != nil {
+		return entry.family, true
+	}
+
+	family := canvas.NewFontFamily(name)
+	slog.Debug("load system font", "family", name, "style", style)
+	if err := family.LoadSystemFont(name, style); err != nil {
+		return nil, false
+	}
+	entry := &systemFontCacheEntry{family: family, renderMu: &sync.Mutex{}}
+	systemFontCache[key] = entry
+	fontRenderLocks[family] = entry.renderMu
+	return family, true
 }
 
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
@@ -165,6 +273,7 @@ func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 }
 
 func loadFontFileSafely(family *canvas.FontFamily, path string) (loaded bool) {
+	slog.Debug("load android font file", "path", path)
 	defer func() {
 		if recover() != nil {
 			loaded = false
@@ -276,6 +385,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 			data = fixed
 		}
 		candidateFamily := canvas.NewFontFamily(fontName)
+		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(data))
 		if err := candidateFamily.LoadFont(data, 0, fontStyle); err == nil && fontFamilyUsable(candidateFamily) {
 			matched = candidateFamily
 			return false
@@ -286,7 +396,6 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		return matched, "", nil
 	}
 
-	family := canvas.NewFontFamily(fontName)
 	if runtime.GOOS == "js" {
 		if fallback, ok := selectFallback(fallbacks, fontStyle); ok {
 			return fallback.family, fallback.family.Name(), nil
@@ -303,11 +412,13 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if defaultFontFamilyReady {
 			return defaultFontFamily, "", nil
 		}
-	} else if err := family.LoadSystemFont(fontName, fontStyle); err == nil {
+	} else if family, ok := loadCachedSystemFont(fontName, fontStyle); ok {
 		return family, "", nil
 	}
+	family := canvas.NewFontFamily(fontName)
 	if fontName == "宋体" || strings.ToLower(fontName) == "simsun" {
 		if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simsun.ttc"); err == nil {
+			slog.Debug("load fallback system font file", "family", fontName, "path", fontPath, "style", fontStyle)
 			if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
 				return family, "", nil
 			}
@@ -315,6 +426,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	}
 	if fontName == "黑体" || strings.ToLower(fontName) == "simhei" {
 		if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf"); err == nil {
+			slog.Debug("load fallback system font file", "family", fontName, "path", fontPath, "style", fontStyle)
 			if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
 				return family, "", nil
 			}
@@ -359,35 +471,60 @@ func (p *Fonts) AddFallbackFont(data []byte, family string, style canvas.FontSty
 	if family == "" {
 		return fmt.Errorf("回退字体族名为空")
 	}
-	f := p.fallbacks[family]
-	isNew := f == nil
-	if isNew {
-		f = canvas.NewFontFamily(family)
+	digest := sha256.Sum256(data)
+	sources := append([]fallbackFontSource(nil), p.fallbackSources[family]...)
+	for _, source := range sources {
+		if source.style == style && source.digest == digest {
+			p.fallbacks[family] = p.fallbacks[family]
+			return nil
+		}
 	}
-	renderLock := p.renderLock(f)
-	renderLock.Lock()
-	err := f.LoadFont(data, 0, style)
-	renderLock.Unlock()
+	globalFamily, err := loadCachedFallbackFont(data, family, style)
 	if err != nil {
 		return err
 	}
-	if isNew {
-		p.fallbacks[family] = f
+	fontFamily := globalFamily
+	if len(sources) > 0 && !sameFallbackFontData(sources, digest) {
+		fontFamily = canvas.NewFontFamily(family)
+		for _, source := range sources {
+			slog.Debug("load fallback font variant", "family", family, "style", source.style, "bytes", len(source.data))
+			if err := fontFamily.LoadFont(source.data, 0, source.style); err != nil {
+				return err
+			}
+		}
+		slog.Debug("load fallback font variant", "family", family, "style", style, "bytes", len(data))
+		if err := fontFamily.LoadFont(data, 0, style); err != nil {
+			return err
+		}
+		if !fontFamilyUsable(fontFamily) {
+			return fmt.Errorf("回退字体结构不可用")
+		}
 	}
+	p.fallbacks[family] = fontFamily
+	p.fallbackSources[family] = append(sources, fallbackFontSource{data: append([]byte(nil), data...), style: style, digest: digest})
 	for index, face := range p.fallbackFaces {
-		if face.family == f && face.style == style {
-			p.fallbackFaces[index] = fallbackFace{family: f, style: style}
+		if face.name == family && face.style == style {
+			p.fallbackFaces[index] = fallbackFace{family: fontFamily, style: style, name: family}
 			p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
 			p.fallbackByFont = make(map[models.StRefID]string)
 			p.generation++
 			return nil
 		}
 	}
-	p.fallbackFaces = append(p.fallbackFaces, fallbackFace{family: f, style: style})
+	p.fallbackFaces = append(p.fallbackFaces, fallbackFace{family: fontFamily, style: style, name: family})
 	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
 	p.fallbackByFont = make(map[models.StRefID]string)
 	p.generation++
 	return nil
+}
+
+func sameFallbackFontData(sources []fallbackFontSource, digest [sha256.Size]byte) bool {
+	for _, source := range sources {
+		if source.digest != digest {
+			return false
+		}
+	}
+	return true
 }
 
 func absInt(value int) int {
@@ -425,10 +562,12 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
 func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
 	if fixed, err := fontfix.Repair(data); err == nil {
+		slog.Debug("load repaired embedded font", "family", family.Name(), "style", style, "bytes", len(fixed))
 		if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {
 			return nil
 		}
 	}
+	slog.Debug("load original embedded font", "family", family.Name(), "style", style, "bytes", len(data))
 	if err := family.LoadFont(data, 0, style); err == nil && fontFamilyUsable(family) {
 		return nil
 	}

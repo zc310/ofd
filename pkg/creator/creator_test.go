@@ -1277,9 +1277,10 @@ func TestCreateTextCGTransforms(t *testing.T) {
 }
 
 func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
-	t.Skip("font-subset-test")
-
 	fontData, err := os.ReadFile("../../test/testdata/simkai.ttf")
+	if os.IsNotExist(err) {
+		t.Skip("simkai.ttf  is unavailable")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

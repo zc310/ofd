@@ -54,6 +54,71 @@ func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
 	}
 }
 
+func TestSystemFontCacheReusesFamilyAndRenderLock(t *testing.T) {
+	first, ok := loadCachedSystemFont("DejaVu Sans", canvas.FontRegular)
+	if !ok {
+		t.Skip("DejaVu Sans is unavailable")
+	}
+	second, ok := loadCachedSystemFont("DejaVu Sans", canvas.FontRegular)
+	if !ok {
+		t.Fatal("cached DejaVu Sans could not be loaded")
+	}
+	if first != second {
+		t.Fatal("system font cache created multiple font families")
+	}
+
+	firstFonts := NewFonts(nil)
+	secondFonts := NewFonts(nil)
+	if firstFonts.renderLock(first) != secondFonts.renderLock(second) {
+		t.Fatal("system font cache did not share the render lock")
+	}
+}
+
+func TestFallbackFontCacheReusesFamilyAndRenderLock(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	firstFonts := NewFonts(nil)
+	secondFonts := NewFonts(nil)
+	if err := firstFonts.AddFallbackFont(data, "ProcessFallback", canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	if err := secondFonts.AddFallbackFont(data, "ProcessFallback", canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	first := firstFonts.fallbacks["ProcessFallback"]
+	second := secondFonts.fallbacks["ProcessFallback"]
+	if firstFonts.fallbacks["ProcessFallback"] != secondFonts.fallbacks["ProcessFallback"] {
+		t.Fatal("fallback font cache created multiple font families")
+	}
+	if firstFonts.renderLock(first) != secondFonts.renderLock(second) {
+		t.Fatal("fallback font cache did not share the render lock")
+	}
+}
+
+func TestFallbackFontCacheKeepsDifferentStylesInOneFamily(t *testing.T) {
+	regular, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	bold, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans Bold is unavailable: %v", err)
+	}
+	fonts := NewFonts(nil)
+	if err := fonts.AddFallbackFont(regular, "ProcessStyleFallback", canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	if err := fonts.AddFallbackFont(bold, "ProcessStyleFallback", canvas.FontBold); err != nil {
+		t.Fatal(err)
+	}
+	family := fonts.fallbacks["ProcessStyleFallback"]
+	if family.Face(12, canvas.Black, canvas.FontRegular).Font == family.Face(12, canvas.Black, canvas.FontBold).Font {
+		t.Fatal("different fallback styles did not keep separate font faces")
+	}
+}
+
 func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
 	if err != nil {

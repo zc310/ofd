@@ -927,7 +927,7 @@ func (v *viewer) load(filePath, fileName string, input interface{}) {
 	v.updateControls()
 
 	go func() {
-		slog.Info("正在打开文件", "path", filePath)
+		slog.Debug("正在打开文件", "path", filePath)
 		ofd, err := openOFD(input)
 		if closeErr := closeInput(input); closeErr != nil {
 			if err == nil {
