@@ -1,6 +1,6 @@
-# OFD Converter [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd)
+# OFD Go Toolkit [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd)
 
-一个用于将 OFD 文件转换为 PDF、纯文本、Markdown 和图像格式的 Go 语言工具包。
+一个用于解析、创建、转换、渲染、校验和分析 OFD 文档的 Go 工具包。
 
 > 使用本项目及其输出结果前，请阅读 [免责声明](DISCLAIMER.md)。本项目不保证所有 OFD 文件的解析、转换、校验或渲染结果适用于特定业务、法律或合规场景。如发现仓库、文档或示例中可能存在侵权内容，请通过 [GitHub Issues](https://github.com/zc310/ofd/issues/new) 联系维护者。
 
@@ -43,12 +43,6 @@ make package-viewer-android
 ```
 
 Linux 和 Windows 桌面版需要目标平台的图形开发环境；Windows 交叉编译需要 MinGW-w64。Android 版以 APK 形式安装，构建前需要配置 Android SDK、NDK 及 Fyne 命令行工具。
-
-## 安装
-
-```bash
-go get github.com/zc310/ofd
-```
 
 ## WASM 浏览器阅读器
 
@@ -188,6 +182,16 @@ flatpak run io.github.zc310.ofd
 Flatpak 版本以只读方式访问真实的 `~/.local/share/fonts` 用户字体目录和宿主机系统目录（`host-os`），用于渲染未内嵌字体的 OFD 文档。
 
 ## 快速开始
+
+### 作为 Go 库使用
+
+在已有的 Go 项目中添加 OFD 依赖：
+
+```bash
+go get github.com/zc310/ofd@latest
+```
+
+该命令用于将本项目作为 Go 库引入，不会安装桌面阅读器或命令行程序。桌面版和命令行程序请参考上面的构建说明及后续的打包章节。
 
 ### 创建 OFD
 
