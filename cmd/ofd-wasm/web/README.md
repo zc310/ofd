@@ -43,7 +43,7 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。`service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
-页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，把 `service-worker.js` 的 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
+页面入口、页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，把 `service-worker.js` 的 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
 
 客户端已经做了两处兜底，不依赖服务器配置即可保证更新：
 
@@ -92,7 +92,7 @@ ofd.renderPDF([0, 1], { background: '#ffffff' })
 ofd.close()
 ```
 
-`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN 的 CSP/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
+`ofd.pages()` 只返回页数和 A4 占位尺寸，不会加载页面内容；页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取该页的真实尺寸。`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN 的 CSP/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 `renderPage` 和 `renderPages` 返回 PNG `Uint8Array`，`renderPDF` 返回单个 PDF `Uint8Array`，最多处理 64 页；`renderPages` 按传入索引顺序返回数组。PDF 使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
 
 ## Worker 协议
@@ -104,6 +104,7 @@ open       data: ArrayBuffer
 close
 cancel     target: request id
 addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boolean
+pageInfo   index: number
 renderPage index: number, options: object
 renderPages indices: number[], options: object
 renderPDF indices: number[], options: object

@@ -84,6 +84,8 @@ async function execute(message) {
       return unwrap(self.ofd.close());
     case 'info':
       return unwrap(self.ofd.info());
+    case 'pageInfo':
+      return unwrap(self.ofd.pageInfo(message.index));
     case 'renderPage': {
       const result = unwrap(self.ofd.renderPage(message.index, message.options || {}));
       const data = new Uint8Array(result);
