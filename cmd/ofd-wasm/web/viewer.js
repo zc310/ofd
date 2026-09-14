@@ -1,6 +1,6 @@
 class OFDWorkerClient {
   constructor() {
-    this.worker = new Worker('worker.js?v=32f6734ca514c576');
+    this.worker = new Worker('worker.js');
     this.nextID = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -8,7 +8,16 @@ class OFDWorkerClient {
       this.rejectReady = reject;
     });
     this.worker.onmessage = event => this.handleMessage(event.data || {});
-    this.worker.onerror = error => this.fail(error.message || 'Worker 运行失败');
+    this.worker.onerror = error => {
+      console.error('[OFD] Worker 异常', {
+        message: error.message,
+        filename: error.filename,
+        lineno: error.lineno,
+        colno: error.colno,
+        error: error.error,
+      });
+      this.fail(error.message || 'Worker 运行失败');
+    };
   }
 
   handleMessage(message) {
@@ -132,6 +141,20 @@ class OFDWorkerClient {
     return this.request('search', { query });
   }
 }
+
+window.addEventListener('error', event => {
+  console.error('[OFD] JavaScript 异常', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    error: event.error,
+  });
+});
+
+window.addEventListener('unhandledrejection', event => {
+  console.error('[OFD] 未处理的 Promise 异常', event.reason);
+});
 
 class BlobURLCache {
   constructor(maxBytes) {
@@ -257,8 +280,8 @@ const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
 const engine = new OFDWorkerClient();
-const pageCache = new BlobURLCache(64 << 20);
-const thumbnailCache = new BlobURLCache(16 << 20);
+const pageCache = new BlobURLCache(128 << 20);
+const thumbnailCache = new BlobURLCache(32 << 20);
 const fallbackFontURLs = [
   {
     url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
@@ -350,8 +373,65 @@ let pageVirtualTrack;
 let thumbnailVirtualTrack;
 let thumbnailSlots = [];
 let thumbnailSlotByPage = [];
-let virtualUpdateFrame;
+let pageLoadToken = 0;
+let pageVirtualUpdateTimer;
+let thumbnailVirtualUpdateFrame;
+let thumbnailFollowTimer;
 let thumbnailMetrics = { mobile: false, columns: 1, rowHeight: 160, gap: 10, itemWidth: 72, itemHeight: 102 };
+
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = query => {
+    const media = String(query);
+    return {
+      matches: false,
+      media,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() { return false; },
+    };
+  };
+}
+
+if (typeof window.requestAnimationFrame !== 'function') {
+  window.requestAnimationFrame = callback => setTimeout(() => callback(Date.now()), 16);
+  window.cancelAnimationFrame = id => clearTimeout(id);
+}
+
+function createResizeObserver(callback) {
+  if (typeof ResizeObserver === 'function') return new ResizeObserver(callback);
+
+  const observed = new Set();
+  let timer;
+  const notify = () => {
+    timer = undefined;
+    if (!observed.size) return;
+    callback([...observed].map(target => ({ target })));
+  };
+  const schedule = () => {
+    if (timer !== undefined) return;
+    timer = setTimeout(notify, 0);
+  };
+  const onResize = schedule;
+  window.addEventListener('resize', onResize);
+  return {
+    observe(element) {
+      observed.add(element);
+      schedule();
+    },
+    unobserve(element) {
+      observed.delete(element);
+    },
+    disconnect() {
+      observed.clear();
+      clearTimeout(timer);
+      timer = undefined;
+      window.removeEventListener('resize', onResize);
+    },
+  };
+}
 
 function pageLayoutIsDouble() {
   return pageLayout !== 'single';
@@ -466,13 +546,38 @@ function thumbnailSlotForPage(index) {
   return thumbnailSlotByPage[index] ?? -1;
 }
 
-function scheduleVirtualUpdate() {
-  if (virtualUpdateFrame) return;
-  virtualUpdateFrame = requestAnimationFrame(() => {
-    virtualUpdateFrame = undefined;
+function schedulePageVirtualUpdate() {
+  clearTimeout(pageVirtualUpdateTimer);
+  pageVirtualUpdateTimer = setTimeout(() => {
+    pageVirtualUpdateTimer = undefined;
     updatePageVirtualWindow();
+  }, 80);
+}
+
+function scheduleThumbnailVirtualUpdate() {
+  if (thumbnailVirtualUpdateFrame) return;
+  thumbnailVirtualUpdateFrame = requestAnimationFrame(() => {
+    thumbnailVirtualUpdateFrame = undefined;
     updateThumbnailVirtualWindow();
   });
+}
+
+function scheduleThumbnailFollow() {
+  clearTimeout(thumbnailFollowTimer);
+  thumbnailFollowTimer = setTimeout(() => {
+    thumbnailFollowTimer = undefined;
+    if (!pageInfos.length || thumbnailsElement.hidden) return;
+    const slot = thumbnailSlotForPage(current);
+    if (slot < 0) return;
+    updateThumbnailVirtualWindow(slot);
+    const button = thumbnailButtons[current];
+    if (button) keepThumbnailVisible(button);
+  }, 160);
+}
+
+function scheduleVirtualUpdate() {
+  schedulePageVirtualUpdate();
+  scheduleThumbnailVirtualUpdate();
 }
 
 function mountPageSpread(position) {
@@ -537,6 +642,8 @@ function unmountPageSpread(position) {
   spread.pages.forEach(index => {
     if (index >= 0) {
       const card = pageCards[index];
+      cancelPageRequest(index, card);
+      cancelTextRequest(index, card);
       if (card) resizeObserver?.unobserve(card);
       delete pageCards[index];
     }
@@ -579,8 +686,9 @@ function applyPageWidthToSpread(spread) {
 function updatePageVirtualWindow(updateCurrent = true) {
   if (!pageVirtualTrack || !pageSpreads.length) return;
   const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
-  const viewTop = window.scrollY - trackTop - Math.max(window.innerHeight * 2, 1600);
-  const viewBottom = window.scrollY - trackTop + window.innerHeight + Math.max(window.innerHeight * 2, 1600);
+  const buffer = Math.max(window.innerHeight, 800);
+  const viewTop = window.scrollY - trackTop - buffer;
+  const viewBottom = window.scrollY - trackTop + window.innerHeight + buffer;
   pageSpreads.forEach((spread, position) => {
     const visible = spread.offset + spread.height >= viewTop && spread.offset <= viewBottom;
     if (visible) mountPageSpread(position);
@@ -592,7 +700,10 @@ function updatePageVirtualWindow(updateCurrent = true) {
     .filter(({ spread }) => spread.element && spread.offset + spread.height >= window.scrollY - trackTop && spread.offset <= window.scrollY - trackTop + window.innerHeight)
     .sort((left, right) => Math.abs(left.spread.offset - (window.scrollY - trackTop)) - Math.abs(right.spread.offset - (window.scrollY - trackTop)));
   const index = firstPageInSpread(visible[0]?.position ?? currentSpreadPosition());
-  if (index >= 0 && index !== current) setCurrent(index);
+  if (index >= 0 && index !== current) {
+    setCurrent(index, false);
+    scheduleThumbnailFollow();
+  }
 }
 
 function createThumbnail(index) {
@@ -670,6 +781,7 @@ function updateThumbnailVirtualWindow(targetSlot = -1) {
   });
   thumbnailSlots.forEach((index, slot) => {
     if (index < 0 || required.has(slot) || !thumbnailButtons[index]) return;
+    cancelThumbnailRequest(index);
     thumbnailButtons[index].remove();
     delete thumbnailButtons[index];
   });
@@ -800,7 +912,9 @@ async function openRecentFile(id) {
   const record = recentFiles.find(item => item.id === id);
   if (!record?.data) return;
   setRecentPanelOpen(false);
-  const recent = new File([record.data], record.name, { type: 'application/ofd', lastModified: record.lastModified || record.lastOpened });
+  const recent = typeof File === 'function'
+    ? new File([record.data], record.name, { type: 'application/ofd', lastModified: record.lastModified || record.lastOpened })
+    : Object.assign(new Blob([record.data], { type: 'application/ofd' }), { name: record.name });
   await openSelectedFile(recent);
 }
 
@@ -1174,19 +1288,19 @@ function keepThumbnailVisible(button) {
   else thumbnailsElement.scrollTop = offset;
 }
 
-function setCurrent(index) {
+function setCurrent(index, syncThumbnail = true) {
   if (index < 0 || index >= pageInfos.length) return;
   const changed = current !== index;
   current = index;
   saveReadingPosition();
-  if (changed) updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
+  if (changed && syncThumbnail) updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
   thumbnailButtons.forEach((button, buttonIndex) => {
     if (!button) return;
     const active = buttonIndex === current;
     button.classList.toggle('active', active);
     if (active) {
       button.setAttribute('aria-current', 'page');
-      if (changed) keepThumbnailVisible(button);
+      if (changed && syncThumbnail) keepThumbnailVisible(button);
     } else {
       button.removeAttribute('aria-current');
     }
@@ -1423,13 +1537,18 @@ function buildTextLayer(index) {
   if (!layer.parentElement) card.append(layer);
 }
 
-function loadText(index) {
+function loadText(index, pinned = false) {
   const card = pageCards[index];
   if (textCache.has(index)) {
     if (card) buildTextLayer(index);
     return Promise.resolve();
   }
-  if (textRequests.has(index)) return textRequests.get(index);
+  if (textRequests.has(index)) {
+    const existing = textRequests.get(index);
+    if (card) existing.textCards.add(card);
+    if (pinned || !card) existing.textPinned = true;
+    return existing;
+  }
   const generation = documentGeneration;
   const engineRequest = engine.text(index);
   const request = engineRequest
@@ -1443,8 +1562,12 @@ function loadText(index) {
         pageCards[index].title = error.message;
       }
     })
-    .finally(() => textRequests.delete(index));
+    .finally(() => {
+      if (textRequests.get(index) === request) textRequests.delete(index);
+    });
   request.cancel = () => engineRequest.cancel();
+  request.textCards = card ? new Set([card]) : new Set();
+  request.textPinned = pinned || !card;
   textRequests.set(index, request);
   return request;
 }
@@ -1463,6 +1586,9 @@ function loadImage(index, kind, generation, imageElement, card) {
   const dpi = kind === 'page' ? pageDPI() : 36;
   const requestedZoomGeneration = zoomGeneration;
   const key = cacheKey(kind, index, generation, dpi);
+  // 同一 DPI 下缩放变化时，旧请求不能被新页面复用，否则旧请求返回
+  // null 后，新页面会一直保留 loading 状态而不会重新发起渲染。
+  const requestKey = kind === 'page' ? `${key}:${requestedZoomGeneration}` : key;
   const cached = cache.get(key);
   if (cached) {
     imageElement.src = cached;
@@ -1471,8 +1597,13 @@ function loadImage(index, kind, generation, imageElement, card) {
     if (kind === 'page' && generation === documentGeneration) markPageLoaded(index);
     return Promise.resolve(cached);
   }
-  if (requests.has(key)) {
-    return requests.get(key).then(url => {
+  if (requests.has(requestKey)) {
+    const existing = requests.get(requestKey);
+    if (kind === 'page') {
+      if (card) existing.pageCards.add(card);
+      else existing.pagePinned = true;
+    }
+    return existing.then(url => {
       if (url && generation === documentGeneration &&
           (kind !== 'page' || requestedZoomGeneration === zoomGeneration)) {
         imageElement.src = url;
@@ -1511,23 +1642,69 @@ function loadImage(index, kind, generation, imageElement, card) {
       }
       throw error;
     })
-    .finally(() => requests.delete(key));
+    .finally(() => {
+      if (requests.get(requestKey) === request) requests.delete(requestKey);
+    });
   request.cancel = () => engineRequest.cancel();
-  requests.set(key, request);
+  if (kind === 'page') {
+    request.pageIndex = index;
+    request.pageCards = card ? new Set([card]) : new Set();
+    request.pagePinned = !card;
+  }
+  requests.set(requestKey, request);
   return request;
+}
+
+function cancelPageRequest(index, card) {
+  for (const [key, request] of pageRequests.entries()) {
+    if (request.pageIndex !== index) continue;
+    request.pageCards?.delete(card);
+    if (request.pagePinned || request.pageCards?.size) continue;
+    request.cancel?.();
+    if (pageRequests.get(key) === request) pageRequests.delete(key);
+  }
+}
+
+function cancelTextRequest(index, card) {
+  const request = textRequests.get(index);
+  if (!request) return;
+  request.textCards?.delete(card);
+  if (request.textPinned || request.textCards?.size) return;
+  request.cancel?.();
+  if (textRequests.get(index) === request) textRequests.delete(index);
 }
 
 function loadPage(index) {
   const card = ensurePageMounted(index);
   if (!card) return;
   const generation = documentGeneration;
+  const token = String(++pageLoadToken);
+  card.dataset.loadToken = token;
   card.classList.remove('render-error');
   card.querySelector('.page-error')?.remove();
   card.classList.add('loading');
+  const isCurrentCardRequest = () =>
+    generation === documentGeneration && pageCards[index] === card && card.dataset.loadToken === token;
   return loadImage(index, 'page', generation, card.querySelector('img'), card)
-    .then(url => url ? loadText(index) : undefined)
+    .then(url => {
+      // 图片请求完成后立即移除遮罩，不等待文字层请求完成。
+      if (url && isCurrentCardRequest()) card.classList.remove('loading');
+      // 页面离开虚拟窗口后不再为已卸载的页面读取文字层。
+      return url && isCurrentCardRequest() ? loadText(index) : undefined;
+    })
     .catch(error => {
-      if (!isCancelledError(error)) setStatus(`第 ${index + 1} 页渲染失败：${error.message}`);
+      if (isCurrentCardRequest()) {
+        card.classList.remove('loading');
+      }
+      if (isCancelledError(error)) return;
+      if (generation === documentGeneration && pageCards[index] === card) {
+        setStatus(`第 ${index + 1} 页渲染失败：${error.message}`);
+      }
+    })
+    .finally(() => {
+      // 无论图片请求成功、失败、取消还是因缩放过期返回 null，
+      // 当前卡片都不能遗留“正在渲染...”遮罩。
+      if (isCurrentCardRequest()) card.classList.remove('loading');
     });
 }
 
@@ -1572,10 +1749,13 @@ function loadThumbnail(index) {
     entry.cancelled = true;
     thumbnailBatchQueue.delete(key);
     thumbnailRequests.delete(key);
+    const batchEntries = entry.batchRequest?.thumbnailEntries;
+    if (batchEntries?.every(item => item.cancelled)) entry.batchRequest.cancel();
     const error = new Error('请求已取消');
     error.name = 'AbortError';
     rejectRequest(error);
   };
+  request.index = index;
   thumbnailRequests.set(key, request);
   thumbnailBatchQueue.set(key, entry);
   if (!thumbnailBatchTimer) thumbnailBatchTimer = setTimeout(flushThumbnailBatch, 0);
@@ -1583,6 +1763,14 @@ function loadThumbnail(index) {
     if (!isCancelledError(error)) button.title = error.message;
   });
   return request;
+}
+
+function cancelThumbnailRequest(index) {
+  for (const [key, request] of thumbnailRequests.entries()) {
+    if (request.index !== index) continue;
+    request.cancel?.();
+    if (thumbnailRequests.get(key) === request) thumbnailRequests.delete(key);
+  }
 }
 
 function flushThumbnailBatch() {
@@ -1598,6 +1786,7 @@ function flushThumbnailBatch() {
     active.map(entry => entry.index),
     { dpi: 36, background: transparentRenderBackground },
   );
+  renderRequest.thumbnailEntries = active;
   for (const entry of active) entry.batchRequest = renderRequest;
   renderRequest.then(images => {
     images.forEach((data, index) => {
@@ -1654,7 +1843,7 @@ function buildPages() {
   updateThumbnailMetrics();
 
   pageLayoutSelect.value = pageLayout;
-  resizeObserver = new ResizeObserver(entries => {
+  resizeObserver = createResizeObserver(entries => {
     for (const entry of entries) {
       const index = Number(entry.target.dataset.index);
       const runs = textCache.get(index);
@@ -1676,6 +1865,15 @@ function buildPages() {
     loadPage(current);
     updateThumbnailVirtualWindow(thumbnailSlotForPage(current));
     loadThumbnail(current);
+    const currentThumbnail = thumbnailButtons[current];
+    if (currentThumbnail) {
+      keepThumbnailVisible(currentThumbnail);
+      requestAnimationFrame(() => {
+        if (pageInfos.length && thumbnailButtons[current] === currentThumbnail) {
+          keepThumbnailVisible(currentThumbnail);
+        }
+      });
+    }
     if (current > 0) {
       const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
       window.scrollTo({ top: Math.max(0, trackTop + pageSpreadOffset(pageSpreadPositionForPage(current)) - headerHeight()), behavior: 'auto' });
@@ -1950,7 +2148,9 @@ function updateDocumentInfo() {
     infoBody.innerHTML = '<p class="info-empty">未打开文档</p>';
     return;
   }
+  const generation = documentGeneration;
   engine.info().then(info => {
+    if (generation !== documentGeneration) return;
     const rows = [];
     if (info.docID) rows.push(['文档标识', info.docID]);
     if (info.title) rows.push(['标题', info.title]);
@@ -1970,6 +2170,7 @@ function updateDocumentInfo() {
       `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(value)}</span></div>`
     ).join('');
   }).catch(() => {
+    if (generation !== documentGeneration) return;
     infoBody.innerHTML = '<p class="info-empty">获取信息失败</p>';
   });
 }
@@ -2137,7 +2338,7 @@ async function exportDocumentPages(indexes, dpi, format, background) {
       const index = indexes[position];
       setStatus(`正在导出第 ${index + 1} / ${indexes.length} 页...`);
       if (format === 'txt') {
-        await loadText(index);
+        await loadText(index, true);
         if (!textCache.has(index)) throw new Error(`第 ${index + 1} 页文字读取失败`);
         const text = pageText(index);
         if (text) textParts.push(text);
@@ -2267,7 +2468,7 @@ async function copyCurrentPageText() {
   const index = current;
   try {
     setStatus(`正在读取第 ${index + 1} 页文字...`);
-    await loadText(index);
+    await loadText(index, true);
     throwIfDocumentActionCancelled(generation);
     const text = pageText(index);
     if (!text) {
@@ -2294,7 +2495,7 @@ async function collectDocumentText(generation) {
   for (let index = 0; index < pageInfos.length; index += 1) {
     throwIfDocumentActionCancelled(generation);
     setStatus(`正在读取第 ${index + 1} / ${pageInfos.length} 页文字...`);
-    await loadText(index);
+    await loadText(index, true);
     throwIfDocumentActionCancelled(generation);
     if (!textCache.has(index)) {
       failed += 1;
@@ -2623,8 +2824,8 @@ darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.c
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
-window.addEventListener('scroll', scheduleVirtualUpdate, { passive: true });
-thumbnailsElement.addEventListener('scroll', scheduleVirtualUpdate, { passive: true });
+window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });
+thumbnailsElement.addEventListener('scroll', scheduleThumbnailVirtualUpdate, { passive: true });
 window.addEventListener('resize', () => {
   updateThumbnailMetrics();
   updatePageVirtualMetrics();
@@ -2635,7 +2836,7 @@ window.addEventListener('resize', () => {
 updateBackToTop();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(error => {
+    navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).catch(error => {
       console.warn('[OFD] Service Worker 注册失败', error);
     });
   });
