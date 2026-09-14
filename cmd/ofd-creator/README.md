@@ -2,6 +2,8 @@
 
 `ofd-creator` 根据 JSON 或 YAML manifest 创建 OFD 文件包。
 
+使用本工具创建或生成文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。生成结果应根据实际业务、法律和合规要求进行独立复核。
+
 ## 构建
 
 ```bash
