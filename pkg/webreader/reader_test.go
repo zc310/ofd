@@ -1,12 +1,14 @@
 package webreader
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"image"
 	"image/color"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -48,7 +50,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 }
 
-func TestPagesUsesA4PlaceholderAndPageLoadsRealSize(t *testing.T) {
+func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "GBT_33190-2016.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("GBT_33190-2016.ofd  is unavailable")
@@ -69,8 +71,13 @@ func TestPagesUsesA4PlaceholderAndPageLoadsRealSize(t *testing.T) {
 	if len(pages) != reader.PageCount() {
 		t.Fatalf("page count = %d, want %d", len(pages), reader.PageCount())
 	}
-	if pages[0].Width != defaultPageWidth || pages[0].Height != defaultPageHeight {
-		t.Fatalf("Pages()[0] = %+v, want A4 placeholder", pages[0])
+	if pages[0].Width != 209.9733 || pages[0].Height != 296.9260 {
+		t.Fatalf("Pages()[0] = %+v, want document page size 209.9733 x 296.9260", pages[0])
+	}
+	for index, page := range pages {
+		if page.Width != pages[0].Width || page.Height != pages[0].Height {
+			t.Fatalf("Pages()[%d] = %+v, want document page size", index, page)
+		}
 	}
 	actual, err := reader.Page(0)
 	if err != nil {
@@ -79,6 +86,58 @@ func TestPagesUsesA4PlaceholderAndPageLoadsRealSize(t *testing.T) {
 	if actual.Width != 209.9733 || actual.Height != 296.9260 {
 		t.Fatalf("Page(0) = %+v, want physical size 209.9733 x 296.9260", actual)
 	}
+}
+
+func TestPagesUsesDocumentSizeWhenPageMetadataIsMissing(t *testing.T) {
+	data := makeMinimalOFDBundle(t)
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(pages))
+	}
+	if pages[0].Width != 100 || pages[0].Height != 200 {
+		t.Fatalf("Pages()[0] = %+v, want page size 100 x 200", pages[0])
+	}
+	if pages[1].Width != 210 || pages[1].Height != 297 {
+		t.Fatalf("Pages()[1] = %+v, want document size 210 x 297", pages[1])
+	}
+
+	if _, err := reader.Page(1); err == nil {
+		t.Fatal("Page(1) should parse the intentionally invalid full page content")
+	}
+}
+
+func makeMinimalOFDBundle(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	entries := map[string]string{
+		"OFD.xml":                `<OFD Version="1.1"><DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":     `<Document><CommonData><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0.xml"/><Page ID="2" BaseLoc="Pages/Page_1.xml"/></Pages></Document>`,
+		"Doc_0/Pages/Page_0.xml": `<Page><Area><PhysicalBox>0 0 100 200</PhysicalBox></Area><Content><Layer/></Content></Page>`,
+		"Doc_0/Pages/Page_1.xml": `<Page><Content>` + strings.Repeat("<Layer>", 2),
+	}
+	for name, content := range entries {
+		writer, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
 }
 
 func TestRenderPageConcurrent(t *testing.T) {

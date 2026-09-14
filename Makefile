@@ -139,7 +139,7 @@ build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(
 
 build-tools: $(TOOL_BUILD_TARGETS)
 
-# 页面脚本、Web Worker、wasm_exec.js 和 ofd.wasm 都使用不带查询参数的固定路径，
+# 页面入口、页面脚本、Web Worker、wasm_exec.js 和 ofd.wasm 都使用不带查询参数的固定路径，
 # 缓存版本由 CACHE_NAME 的哈希管理：任一资源内容变化，缓存名变化，新 Service
 # Worker 安装时删除旧缓存并重新缓存全部资源。
 build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
@@ -152,8 +152,8 @@ $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
 	cp "$$(CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) env GOROOT)/lib/wasm/wasm_exec.js" "$@"
 
-$(WASM_SERVICE_WORKER): $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) FORCE
-	@CACHE_NAME=$$(cat "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" | sha256sum | cut -c1-16); \
+$(WASM_SERVICE_WORKER): $(WASM_INDEX) $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) FORCE
+	@CACHE_NAME=$$(cat "$(WASM_INDEX)" "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" | sha256sum | cut -c1-16); \
 	sed -i "s/^const CACHE_NAME = '.*';$$/const CACHE_NAME = 'ofd-reader-shell_$$CACHE_NAME';/" "$(WASM_SERVICE_WORKER)"
 
 build-arm64:

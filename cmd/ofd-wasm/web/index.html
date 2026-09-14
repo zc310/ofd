@@ -180,9 +180,9 @@
        #thumbnails::-webkit-scrollbar { display: none; }
 
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-     .double-thumbnail-layout .thumbnail { width: auto; min-height: 138px; }
+      .double-thumbnail-layout .thumbnail { width: auto; }
      .thumbnail-placeholder { min-height: 138px; border-radius: 6px; background: transparent; }
-      .thumbnail { position: relative; display: grid; place-items: center; width: 100%; min-height: 0; aspect-ratio: 210 / 297; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
+     .thumbnail { position: relative; display: grid; place-items: center; box-sizing: border-box; width: 100%; min-height: 0; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
     .thumbnail:hover { border-color: #7da7d5; box-shadow: 0 3px 10px #1720332e; }
     .thumbnail.active { border-color: #2476bd; box-shadow: inset 0 0 0 2px #2476bd, 0 3px 10px #1720332e; }
      .thumbnail img { display: block; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; visibility: hidden; }
@@ -259,7 +259,7 @@
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
       #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
-       #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; height: 96px; min-height: 96px; }
+       #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
         .page-group button, .zoom-group button, .file-button { min-width: 40px; min-height: 40px; }
@@ -319,7 +319,7 @@
           <label class="view-option" for="document-background">文档背景色<select id="document-background" aria-label="文档背景色">
             <option value="white">白色</option>
             <option value="transparent">透明</option>
-            <option value="custom">自定义颜色</option>
+            <option value="custom">自定义</option>
           </select><input id="document-background-color" type="color" value="#ffffff" aria-label="自定义文档背景色" hidden></label>
           <label class="view-option">页面布局<select id="page-layout" aria-label="页面布局">
            <option value="single">单页</option>

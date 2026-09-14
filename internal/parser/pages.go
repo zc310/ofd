@@ -2,14 +2,20 @@ package parser
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"io"
 	"sync"
 	"sync/atomic"
 
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 )
 
-const defaultPageCacheSize = 8
+const (
+	defaultPageCacheSize    = 8
+	maxPageMetadataXMLBytes = 1 << 20
+)
 
 type pageResources struct {
 	media      map[models.StID]*models.MultiMedia
@@ -22,14 +28,108 @@ type Page struct {
 	pageContent models.PageContent
 	ID          models.StID
 
-	document  *Document
-	load      func(*Page) error
-	resources pageResources
-	mu        sync.Mutex
-	loaded    bool
-	loadErr   error
-	pinCount  atomic.Int32
-	cacheSize atomic.Int64
+	document       *Document
+	load           func(*Page) error
+	metadata       func() (models.StBox, error)
+	resources      pageResources
+	mu             sync.Mutex
+	metadataMu     sync.Mutex
+	metadataLoaded bool
+	metadataBox    models.StBox
+	metadataErr    error
+	loaded         bool
+	loadErr        error
+	pinCount       atomic.Int32
+	cacheSize      atomic.Int64
+}
+
+// PhysicalBoxMetadata 只读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
+// 返回零值表示页面没有定义自己的物理区域，由调用方决定回退到文档默认尺寸。
+func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
+	if p == nil {
+		return models.StBox{}, errors.New("页面为空")
+	}
+	p.metadataMu.Lock()
+	defer p.metadataMu.Unlock()
+	if p.metadataLoaded {
+		return p.metadataBox, p.metadataErr
+	}
+	if p.metadata != nil {
+		p.metadataBox, p.metadataErr = p.metadata()
+	} else {
+		p.mu.Lock()
+		if p.pageContent.Area != nil {
+			p.metadataBox = p.pageContent.Area.PhysicalBox
+		}
+		p.mu.Unlock()
+	}
+	p.metadataLoaded = true
+	return p.metadataBox, p.metadataErr
+}
+
+func readPagePhysicalBox(fileCache *core.Package, pagePath models.StLoc) (models.StBox, error) {
+	if fileCache == nil {
+		return models.StBox{}, errors.New("页面文件包为空")
+	}
+	reader, err := fileCache.Open(pagePath.String())
+	if err != nil {
+		return models.StBox{}, err
+	}
+	defer func() { _ = reader.Close() }()
+
+	limited := &io.LimitedReader{R: reader, N: maxPageMetadataXMLBytes + 1}
+	decoder := xml.NewDecoder(limited)
+	var root xml.Name
+	var token xml.Token
+	for {
+		token, err = decoder.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return models.StBox{}, nil
+			}
+			return models.StBox{}, err
+		}
+		if start, ok := token.(xml.StartElement); ok {
+			root = start.Name
+			break
+		}
+	}
+
+	for {
+		token, err = decoder.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if limited.N == 0 {
+					return models.StBox{}, errors.New("页面尺寸元数据超过大小限制")
+				}
+				return models.StBox{}, nil
+			}
+			return models.StBox{}, err
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			if value.Name.Local == "Area" {
+				var area struct {
+					PhysicalBox models.StBox `xml:"PhysicalBox"`
+				}
+				if err := decoder.DecodeElement(&area, &value); err != nil {
+					return models.StBox{}, err
+				}
+				return area.PhysicalBox, nil
+			}
+			// Content 通常是页面 XML 中最大的部分，之后不再需要查找页面区域。
+			if value.Name.Local == "Content" {
+				return models.StBox{}, nil
+			}
+			if err := decoder.Skip(); err != nil {
+				return models.StBox{}, err
+			}
+		case xml.EndElement:
+			if value.Name == root {
+				return models.StBox{}, nil
+			}
+		}
+	}
 }
 
 // PageLease 表示页面的一次使用租约。

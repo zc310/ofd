@@ -291,9 +291,9 @@ const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
 const engine = new OFDWorkerClient();
-const pageCache = new BlobURLCache(128 << 20, url =>
+const pageCache = new BlobURLCache(256 << 20, url =>
   Array.from(document.querySelectorAll('.page-image')).some(image => !image.hidden && image.src === url));
-const thumbnailCache = new BlobURLCache(32 << 20, url =>
+const thumbnailCache = new BlobURLCache(64 << 20, url =>
   Array.from(document.querySelectorAll('.thumbnail img')).some(image => !image.hidden && image.src === url));
 const fallbackFontURLs = [
   {
@@ -309,7 +309,6 @@ const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
 let fallbackFontRegistration;
 const transparentRenderBackground = '#00000000';
-const thumbnailAspectRatio = 210 / 297;
 const recentDatabaseName = 'ofd-reader';
 const recentStoreName = 'files';
 const recentFileLimit = 5;
@@ -396,7 +395,15 @@ const pageInfoRequests = new Map();
 let pageVirtualUpdateTimer;
 let thumbnailVirtualUpdateFrame;
 let thumbnailFollowTimer;
-let thumbnailMetrics = { mobile: false, columns: 1, rowHeight: 160, gap: 10, itemWidth: 72, itemHeight: 102 };
+let thumbnailMetrics = {
+  mobile: false,
+  columns: 1,
+  gap: 10,
+  itemWidth: 72,
+  rowHeights: [],
+  rowOffsets: [],
+  maxHeight: 102,
+};
 
 if (typeof window.matchMedia !== 'function') {
   window.matchMedia = query => {
@@ -552,13 +559,33 @@ function updateThumbnailMetrics() {
   const itemWidth = mobile
     ? 72
     : Math.max(1, (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns);
-  const itemHeight = itemWidth / thumbnailAspectRatio;
-  thumbnailMetrics = { mobile, columns, gap, itemHeight, itemWidth, rowHeight: itemHeight + gap };
   const rows = Math.ceil(thumbnailSlots.length / columns);
+  const rowHeights = Array.from({ length: rows }, (_, row) => {
+    const start = row * columns;
+    const end = Math.min(thumbnailSlots.length, start + columns);
+    return Math.max(...thumbnailSlots.slice(start, end).map(index =>
+      index >= 0 ? thumbnailHeight(index, itemWidth) : 0), 0);
+  });
+  const rowOffsets = [];
+  let offset = 0;
+  rowHeights.forEach(height => {
+    rowOffsets.push(offset);
+    offset += height + gap;
+  });
+  const maxHeight = Math.max(...rowHeights, 0);
+  thumbnailMetrics = { mobile, columns, gap, itemWidth, rowHeights, rowOffsets, maxHeight };
   thumbnailVirtualTrack.style.width = mobile ? `${thumbnailSlots.length * itemWidth + Math.max(0, thumbnailSlots.length - 1) * gap}px` : '100%';
   thumbnailVirtualTrack.style.height = mobile
-    ? `${itemHeight}px`
-    : `${Math.max(0, rows * itemHeight + Math.max(0, rows - 1) * gap)}px`;
+    ? `${maxHeight}px`
+    : `${Math.max(0, offset - gap)}px`;
+}
+
+function thumbnailHeight(index, width) {
+  const info = pageInfos[index];
+  if (!info || info.width <= 0 || info.height <= 0) return width * 297 / 210;
+  const rotated = pageRotation % 180 !== 0;
+  const ratio = rotated ? info.height / info.width : info.width / info.height;
+  return width / ratio;
 }
 
 function thumbnailSlotForPage(index) {
@@ -738,8 +765,11 @@ function updatePageVirtualWindow(updateCurrent = true) {
         const card = pageCards[index];
         const image = card?.querySelector('.page-image');
         const imageFailed = image && !image.hidden && image.complete && image.naturalWidth === 0;
-        if (image && (image.hidden || imageFailed) && !card.classList.contains('render-error') && !pageCardRequests.has(card)) {
-          loadPage(index);
+        if (image && !card.classList.contains('render-error')) {
+          if (!pageImageIsReady(image)) card.classList.add('loading');
+          if ((image.hidden || !image.src || imageFailed) && !pageCardRequests.has(card)) {
+            loadPage(index);
+          }
         }
       });
     }
@@ -794,36 +824,48 @@ function createThumbnail(index) {
 function resizeThumbnail(index, thumbnail) {
   const slot = thumbnailSlotForPage(index);
   if (slot < 0) return;
-  const { mobile, columns, gap, itemHeight, itemWidth } = thumbnailMetrics;
+  const { mobile, columns, gap, itemWidth, rowOffsets, maxHeight } = thumbnailMetrics;
+  const width = mobile
+    ? itemWidth
+    : (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns;
+  const height = thumbnailHeight(index, width);
   if (mobile) {
     thumbnail.style.left = `${slot * (itemWidth + gap)}px`;
-    thumbnail.style.top = '0';
+    thumbnail.style.top = `${(maxHeight - height) / 2}px`;
     thumbnail.style.width = `${itemWidth}px`;
-    thumbnail.style.height = `${itemHeight}px`;
+    thumbnail.style.height = `${height}px`;
     thumbnail.style.minHeight = '0';
   } else {
     const column = slot % columns;
     const row = Math.floor(slot / columns);
-    const width = (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns;
     thumbnail.style.left = `${column * (width + gap)}px`;
-    thumbnail.style.top = `${row * (itemHeight + gap)}px`;
+    thumbnail.style.top = `${rowOffsets[row] || 0}px`;
     thumbnail.style.width = `${width}px`;
-    thumbnail.style.height = `${itemHeight}px`;
+    thumbnail.style.height = `${height}px`;
     thumbnail.style.minHeight = '0';
   }
 }
 
 function updateThumbnailVirtualWindow(targetSlot = -1) {
   if (!thumbnailVirtualTrack || !thumbnailSlots.length || thumbnailsElement.hidden) return;
-  const { mobile, columns, rowHeight, itemWidth, gap } = thumbnailMetrics;
+  const { mobile, columns, itemWidth, gap, rowHeights, rowOffsets } = thumbnailMetrics;
   const buffer = mobile ? thumbnailsElement.clientWidth * 2 : thumbnailsElement.clientHeight * 2;
   const cell = itemWidth + (mobile ? gap : 0);
-  const start = mobile
-    ? Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / cell))
-    : Math.max(0, Math.floor((thumbnailsElement.scrollTop - buffer) / rowHeight) * columns);
-  const end = mobile
-    ? Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / cell))
-    : Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollTop + thumbnailsElement.clientHeight + buffer) / rowHeight) * columns);
+  let start;
+  let end;
+  if (mobile) {
+    start = Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / cell));
+    end = Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / cell));
+  } else {
+    const top = thumbnailsElement.scrollTop - buffer;
+    const bottom = thumbnailsElement.scrollTop + thumbnailsElement.clientHeight + buffer;
+    let startRow = 0;
+    while (startRow < rowHeights.length && rowOffsets[startRow] + rowHeights[startRow] < top) startRow += 1;
+    let endRow = startRow;
+    while (endRow < rowHeights.length && rowOffsets[endRow] < bottom) endRow += 1;
+    start = startRow * columns;
+    end = Math.min(thumbnailSlots.length, endRow * columns);
+  }
   const required = new Set();
   for (let slot = start; slot < end; slot += 1) required.add(slot);
   if (targetSlot >= 0) required.add(targetSlot);
@@ -1400,6 +1442,7 @@ function setPageLayout(value) {
 
 function applyPageWidth() {
   updatePageVirtualMetrics();
+  updateThumbnailMetrics();
   pageSpreads.forEach(applyPageWidthToSpread);
   thumbnailButtons.forEach((button, index) => {
     if (button) {
@@ -1765,8 +1808,8 @@ function loadPage(index) {
         // 缩放期间旧请求会正常返回 null；setZoom 已经负责启动新 DPI 请求。
         return undefined;
       }
-      // 图片请求完成后立即移除遮罩，不等待文字层请求完成。
-      if (isCurrentCardRequest()) card.classList.remove('loading');
+      // WASM 返回 PNG 数据不等于浏览器已经完成图片解码；加载遮罩由
+      // 图片的 load 事件移除，避免滚动期间出现短暂空白页。
       void loadActualPageInfo(index);
       // 页面离开虚拟窗口后不再为已卸载的页面读取文字层。
       return isCurrentCardRequest() ? loadText(index) : undefined;

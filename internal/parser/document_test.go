@@ -198,6 +198,40 @@ func TestPageArchiveSizeIncludesUniqueResourceXML(t *testing.T) {
 	}
 }
 
+func TestReadPagePhysicalBoxOnlyReadsArea(t *testing.T) {
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<Page>
+  <Area><PhysicalBox>0 0 100 200</PhysicalBox></Area>
+  <Content><Layer><TextObject>This content must not be decoded.</TextObject></Layer></Content>
+</Page>`
+	writer, err := archive.Create("Pages/Page_0/Content.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	fileCache, err := core.OpenBytes(data.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fileCache.Close()
+
+	box, err := readPagePhysicalBox(fileCache, models.StLoc("Pages/Page_0/Content.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box != (models.StBox{Width: 100, Height: 200}) {
+		t.Fatalf("页面尺寸 = %+v, want 100 x 200", box)
+	}
+}
+
 func TestPageCacheEvictsPageResources(t *testing.T) {
 	doc := &Document{pageCacheSize: 1, pageCacheBytes: 1 << 20}
 	media := &models.MultiMedia{}

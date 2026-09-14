@@ -361,8 +361,8 @@ func (r *Reader) Info() (DocumentInfo, error) {
 	return result, nil
 }
 
-// Pages 返回所有页面的尺寸占位快照，尺寸单位为毫米。
-// 为避免打开大文档时加载所有页面内容，尚未渲染的页面统一按 A4 返回。
+// Pages 返回所有页面的尺寸快照，尺寸单位为毫米。
+// 优先读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
 func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -375,16 +375,25 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 
 	pages := make([]PageInfo, len(r.pages))
 	for index, ref := range r.pages {
-		if ref.page == nil {
-			return nil, fmt.Errorf("第 %d 页为空", index)
+		if ref.document == nil || ref.document.Document == nil || ref.page == nil {
+			return nil, fmt.Errorf("第 %d 页所属文档为空", index)
 		}
-		pages[index] = PageInfo{Index: index, Width: defaultPageWidth, Height: defaultPageHeight}
+		box := ref.document.CommonData.PageArea.PhysicalBox
+		pageBox, err := ref.page.PhysicalBoxMetadata()
+		if err == nil && finitePositive(pageBox.Width) && finitePositive(pageBox.Height) {
+			box = pageBox
+		}
+		if !finitePositive(box.Width) || !finitePositive(box.Height) {
+			box.Width = defaultPageWidth
+			box.Height = defaultPageHeight
+		}
+		pages[index] = PageInfo{Index: index, Width: box.Width, Height: box.Height}
 	}
 	return pages, nil
 }
 
 // Page 返回指定页面的真实尺寸信息。
-// 与 Pages 不同，查询单页信息会按需加载该页内容。
+// 与 Pages 不同，查询单页信息会按需加载该页完整内容。
 func (r *Reader) Page(index int) (PageInfo, error) {
 	if r == nil {
 		return PageInfo{}, errors.New("文档引擎为空")
@@ -397,6 +406,10 @@ func (r *Reader) Page(index int) (PageInfo, error) {
 	if index < 0 || index >= len(r.pages) {
 		return PageInfo{}, fmt.Errorf("页面索引超出范围: %d", index)
 	}
+	return r.pageInfoLocked(index)
+}
+
+func (r *Reader) pageInfoLocked(index int) (PageInfo, error) {
 	ref := r.pages[index]
 	if ref.page == nil {
 		return PageInfo{}, fmt.Errorf("第 %d 页为空", index)

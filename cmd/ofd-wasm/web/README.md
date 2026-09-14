@@ -126,7 +126,7 @@ ofd.renderPDF([0, 1], { background: '#ffffff' })
 ofd.close()
 ```
 
-`ofd.pages()` 只返回页数和 A4 占位尺寸，不会加载页面内容；页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取该页的真实尺寸。`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN 的 CSP/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
+`ofd.pages()` 返回所有页面的页数和尺寸；尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`，再无效时回退为 A4。多个文档体分别使用各自的尺寸。页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取指定页面的完整内容。`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 `renderPage` 和 `renderPages` 返回 PNG `Uint8Array`，`renderPDF` 返回单个 PDF `Uint8Array`，最多处理 64 页；`renderPages` 按传入索引顺序返回数组。PDF 使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
 
 ## Worker 协议
