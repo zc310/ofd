@@ -5,7 +5,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"image/png"
 	"log/slog"
 	"math"
@@ -13,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers"
 	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/fontfix"
@@ -89,10 +93,24 @@ type Rect struct {
 	Angle  float64
 }
 
-// RenderOptions 控制页面输出。DPI 控制 PNG 和 PDF 中页面图像的分辨率。
+// RenderFormat 是页面输出格式。
+type RenderFormat string
+
+const (
+	// RenderPNG 输出 PNG 位图。为空时也使用该格式。
+	RenderPNG RenderFormat = "png"
+	// RenderSVG 输出 SVG 矢量文档。
+	RenderSVG RenderFormat = "svg"
+	// RenderJPG 输出 JPG 位图。JPG 不支持透明度，透明区域使用白色填充。
+	RenderJPG RenderFormat = "jpg"
+)
+
+// RenderOptions 控制页面输出。DPI 控制 PNG、JPG 和 PDF 中页面图像的分辨率；
+// SVG 主要保留页面中的矢量内容，复杂渐变等仍可能包含栅格回退。
 type RenderOptions struct {
 	DPI        float64
 	Background color.Color
+	Format     RenderFormat
 }
 
 // FontResource 描述文档中可注入浏览器的嵌入字体。
@@ -558,7 +576,7 @@ func minInt(left, right int) int {
 	return right
 }
 
-// RenderPage 将指定页面渲染为 PNG 数据。
+// RenderPage 将指定页面渲染为 PNG、JPG 或 SVG 数据。
 func (r *Reader) RenderPage(index int, options RenderOptions) ([]byte, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -571,7 +589,7 @@ func (r *Reader) RenderPage(index int, options RenderOptions) ([]byte, error) {
 	return r.renderPage(index, options)
 }
 
-// RenderPages 将多个页面按传入顺序渲染为 PNG 数据。
+// RenderPages 将多个页面按传入顺序渲染为 PNG、JPG 或 SVG 数据。
 // 所有页面共享一次 Reader 锁和同一份文档状态；渲染本身仍按顺序执行。
 func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, error) {
 	if r == nil {
@@ -687,7 +705,7 @@ func (r *Reader) pdfPage(index int, background color.Color) (*canvas.Canvas, err
 	return document.Page(ref.page)
 }
 
-// renderPage 将页面渲染为 PNG；调用方必须持有 Reader 读锁。
+// renderPage 将页面渲染为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
 func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
@@ -697,6 +715,13 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	}
 	if options.DPI < 1 || options.DPI > maxDPI || math.IsNaN(options.DPI) || math.IsInf(options.DPI, 0) {
 		return nil, fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
+	}
+	format := RenderFormat(strings.ToLower(strings.TrimSpace(string(options.Format))))
+	if format == "" {
+		format = RenderPNG
+	}
+	if format != RenderPNG && format != RenderSVG && format != RenderJPG {
+		return nil, fmt.Errorf("不支持的页面输出格式: %q", format)
 	}
 
 	ref := r.pages[index]
@@ -733,11 +758,32 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	}
 
 	var output bytes.Buffer
-	image := rasterizer.Draw(page, canvas.DPI(options.DPI), canvas.DefaultColorSpace)
-	if err := png.Encode(&output, image); err != nil {
-		return nil, fmt.Errorf("编码第 %d 页失败: %w", index, err)
+	if format == RenderSVG {
+		if err := page.Write(&output, renderers.SVG()); err != nil {
+			return nil, fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
+		}
+		return output.Bytes(), nil
+	}
+	var rendered image.Image = rasterizer.Draw(page, canvas.DPI(options.DPI), canvas.DefaultColorSpace)
+	if format == RenderJPG {
+		rendered = opaqueImage(rendered, color.White)
+		if err := jpeg.Encode(&output, rendered, &jpeg.Options{Quality: 90}); err != nil {
+			return nil, fmt.Errorf("编码第 %d 页 JPG 失败: %w", index, err)
+		}
+		return output.Bytes(), nil
+	}
+	if err := png.Encode(&output, rendered); err != nil {
+		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
 	}
 	return output.Bytes(), nil
+}
+
+func opaqueImage(source image.Image, background color.Color) image.Image {
+	bounds := source.Bounds()
+	result := image.NewRGBA(bounds)
+	draw.Draw(result, bounds, &image.Uniform{C: background}, image.Point{}, draw.Src)
+	draw.Draw(result, bounds, source, bounds.Min, draw.Over)
+	return result
 }
 
 // pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。

@@ -48,6 +48,35 @@ func TestOpenAndRenderPage(t *testing.T) {
 	if decoded.Bounds().Empty() {
 		t.Fatal("rendered image is empty")
 	}
+	jpgData, err := reader.RenderPage(0, RenderOptions{Format: RenderJPG, DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jpgData) == 0 || !bytes.HasPrefix(jpgData, []byte{0xff, 0xd8, 0xff}) {
+		t.Fatal("rendered data is not JPG")
+	}
+
+	svgData, err := reader.RenderPage(0, RenderOptions{Format: RenderSVG})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(svgData) == 0 || !bytes.Contains(svgData, []byte("<svg")) {
+		t.Fatal("rendered data is not SVG")
+	}
+
+	if _, err := reader.RenderPage(0, RenderOptions{Format: RenderFormat("gif")}); err == nil {
+		t.Fatal("unsupported render format was accepted")
+	}
+
+	svgPages, err := reader.RenderPages([]int{0, 0}, RenderOptions{Format: RenderFormat("SVG")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, page := range svgPages {
+		if len(page) == 0 || !bytes.Contains(page, []byte("<svg")) {
+			t.Fatalf("rendered SVG page %d is empty or invalid", index)
+		}
+	}
 }
 
 func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {

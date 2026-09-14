@@ -279,6 +279,7 @@ const viewPanel = document.querySelector('#view-panel');
 const showThumbnails = document.querySelector('#show-thumbnails');
 const showTextLayer = document.querySelector('#show-text-layer');
 const darkReading = document.querySelector('#dark-reading');
+const renderFormatSelect = document.querySelector('#render-format');
 const documentBackground = document.querySelector('#document-background');
 const documentBackgroundColorPicker = document.querySelector('#document-background-color');
 const pageLayoutSelect = document.querySelector('#page-layout');
@@ -355,6 +356,7 @@ let pageLayout = (() => {
 })();
 let zoomGeneration = 0;
 const thumbnailsStorageKey = 'ofd-show-thumbnails';
+const renderFormatStorageKey = 'ofd-render-format';
 let thumbnailsVisible = (() => {
   try {
     return localStorage.getItem(thumbnailsStorageKey) !== 'false';
@@ -362,10 +364,27 @@ let thumbnailsVisible = (() => {
     return true;
   }
 })();
+let renderFormat = (() => {
+  try {
+    const value = localStorage.getItem(renderFormatStorageKey);
+    return ['png', 'jpg', 'svg'].includes(value) ? value : 'png';
+  } catch (_) {
+    return 'png';
+  }
+})();
 let textLayerVisible = true;
 let darkReadingVisible = false;
 const documentBackgroundModeStorageKey = 'ofd-document-background-mode';
 const documentBackgroundColorStorageKey = 'ofd-document-background-color';
+const documentBackgroundThemes = {
+  'adw-dracula': '#282a36',
+  'adw-everforest': '#f3f1e5',
+  'adw-gruvbox': '#282828',
+  'adw-nord': '#2e3440',
+  'adw-solarized': '#fdf6e3',
+  'Peninsula-dark': '#20252b',
+  Plano2: '#eef2f5',
+};
 let documentBackgroundMode = 'white';
 let documentBackgroundCustomColor = '#ffffff';
 let pageRotation = 0;
@@ -871,8 +890,13 @@ function updateThumbnailVirtualWindow(targetSlot = -1) {
   if (targetSlot >= 0) required.add(targetSlot);
   thumbnailSlots.forEach((index, slot) => {
     if (index < 0 || !required.has(slot)) return;
-    if (!thumbnailButtons[index]) createThumbnail(index);
-    resizeThumbnail(index, thumbnailButtons[index]);
+    if (!thumbnailButtons[index]) {
+      createThumbnail(index);
+    } else {
+      resizeThumbnail(index, thumbnailButtons[index]);
+      const image = thumbnailButtons[index].querySelector('img');
+      if (image?.hidden || !image?.src) loadThumbnail(index);
+    }
   });
   thumbnailSlots.forEach((index, slot) => {
     if (index < 0 || required.has(slot) || !thumbnailButtons[index]) return;
@@ -1118,7 +1142,7 @@ function showPageError(index, message) {
 function retryPage(index) {
   const card = ensurePageMounted(index);
   if (!card || index < 0 || index >= pageInfos.length) return;
-  pageCache.delete(cacheKey('page', index, documentGeneration, pageDPI()));
+  pageCache.delete(cacheKey('page', index, documentGeneration, pageDPI(), renderFormat));
   failedPages.delete(index);
   card.classList.remove('render-error');
   card.querySelector('.page-error')?.remove();
@@ -1338,6 +1362,7 @@ function updateNavigation() {
   viewToggle.disabled = pageInfos.length === 0;
   infoToggle.disabled = pageInfos.length === 0;
   pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
+  renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 }
 
@@ -1694,20 +1719,27 @@ function pageDPI() {
   return Math.max(72, Math.min(300, Math.round(96 * zoom)));
 }
 
-function cacheKey(kind, index, generation, dpi) {
-  return `${generation}:${kind}:${index}:${dpi}`;
+function cacheKey(kind, index, generation, dpi, format = renderFormat) {
+  return `${generation}:${kind}:${index}:${dpi}:${format}`;
+}
+
+function renderMimeType(format) {
+  if (format === 'svg') return 'image/svg+xml';
+  if (format === 'jpg') return 'image/jpeg';
+  return 'image/png';
 }
 
 function loadImage(index, kind, generation, imageElement, card) {
   const cache = kind === 'page' ? pageCache : thumbnailCache;
   const requests = kind === 'page' ? pageRequests : thumbnailRequests;
   const dpi = kind === 'page' ? pageDPI() : 36;
+  const format = renderFormat;
   const requestedZoomGeneration = zoomGeneration;
-  const key = cacheKey(kind, index, generation, dpi);
+  const key = cacheKey(kind, index, generation, dpi, format);
   // 同一 DPI 下缩放变化时，旧请求不能被新页面复用，否则旧请求返回
   // null 后，新页面会一直保留 loading 状态而不会重新发起渲染。
   const requestKey = kind === 'page' ? `${key}:${requestedZoomGeneration}` : key;
-    const cached = cache.get(key);
+  const cached = cache.get(key);
   if (cached) {
     showImageWhenReady(imageElement, cached, card);
     if (kind === 'page' && generation === documentGeneration) markPageLoaded(index);
@@ -1720,7 +1752,7 @@ function loadImage(index, kind, generation, imageElement, card) {
       else existing.pagePinned = true;
     }
     return existing.then(url => {
-      if (url && generation === documentGeneration &&
+      if (url && format === renderFormat && generation === documentGeneration &&
           (kind !== 'page' || requestedZoomGeneration === zoomGeneration)) {
         showImageWhenReady(imageElement, url, card);
       }
@@ -1728,11 +1760,11 @@ function loadImage(index, kind, generation, imageElement, card) {
     });
   }
 
-  const engineRequest = engine.renderPage(index, { dpi, background: transparentRenderBackground });
+  const engineRequest = engine.renderPage(index, { format, dpi, background: transparentRenderBackground });
   const request = engineRequest
     .then(data => {
-      const url = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
-      if (generation !== documentGeneration ||
+      const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
+      if (format !== renderFormat || generation !== documentGeneration ||
           (kind === 'page' && requestedZoomGeneration !== zoomGeneration)) {
         URL.revokeObjectURL(url);
         return null;
@@ -1743,7 +1775,7 @@ function loadImage(index, kind, generation, imageElement, card) {
       return url;
     })
     .catch(error => {
-      if (generation === documentGeneration &&
+      if (format === renderFormat && generation === documentGeneration &&
           (kind !== 'page' || requestedZoomGeneration === zoomGeneration) && card) {
         if (!isCancelledError(error)) {
           card.classList.remove('loading');
@@ -1862,7 +1894,8 @@ function loadThumbnail(index) {
   if (!button) return;
   const generation = documentGeneration;
   const image = button.querySelector('img');
-  const key = cacheKey('thumbnail', index, generation, 36);
+  const format = renderFormat;
+  const key = cacheKey('thumbnail', index, generation, 36, format);
   const cached = thumbnailCache.get(key);
   if (cached) {
     showImageWhenReady(image, cached);
@@ -1873,7 +1906,7 @@ function loadThumbnail(index) {
   }
   if (thumbnailRequests.has(key)) {
     return thumbnailRequests.get(key).then(url => {
-      if (url && generation === documentGeneration) {
+      if (url && format === renderFormat && generation === documentGeneration) {
         showImageWhenReady(image, url);
         button.classList.remove('loading');
       }
@@ -1890,7 +1923,7 @@ function loadThumbnail(index) {
     resolveRequest = resolve;
     rejectRequest = reject;
   });
-  const entry = { index, generation, key, image, button, resolveRequest, rejectRequest, request };
+  const entry = { index, generation, format, key, image, button, resolveRequest, rejectRequest, request };
   button.classList.add('loading');
   request.cancel = () => {
     entry.cancelled = true;
@@ -1929,17 +1962,18 @@ function flushThumbnailBatch() {
   const generation = entries[0].generation;
   const active = entries.filter(entry => !entry.cancelled && entry.generation === generation);
   if (!active.length) return;
+  const format = active[0].format;
   const renderRequest = engine.renderPages(
     active.map(entry => entry.index),
-    { dpi: 36, background: transparentRenderBackground },
+    { format, dpi: 36, background: transparentRenderBackground },
   );
   renderRequest.thumbnailEntries = active;
   for (const entry of active) entry.batchRequest = renderRequest;
   renderRequest.then(images => {
     images.forEach((data, index) => {
       const entry = active[index];
-      if (entry.cancelled || entry.generation !== documentGeneration) return;
-      const url = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
+      if (entry.cancelled || entry.format !== renderFormat || entry.generation !== documentGeneration) return;
+      const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
       thumbnailCache.set(entry.key, url, data.byteLength);
       entry.image.src = url;
       entry.image.hidden = false;
@@ -2871,6 +2905,42 @@ function setThumbnailsVisible(visible) {
   });
 }
 
+function setRenderFormat(value) {
+  if (!['png', 'jpg', 'svg'].includes(value)) value = 'png';
+  const changed = renderFormat !== value;
+  renderFormat = value;
+  renderFormatSelect.value = value;
+  try {
+    localStorage.setItem(renderFormatStorageKey, value);
+  } catch (_) {}
+  if (!changed || !pageInfos.length) return;
+  cancelRequests(pageRequests);
+  cancelRequests(thumbnailRequests);
+  pageCache.clear();
+  thumbnailCache.clear();
+  resetRenderProgress();
+  pageCards.forEach(card => {
+    card.classList.add('loading');
+    const image = card.querySelector('.page-image');
+    image.hidden = true;
+    image.removeAttribute('src');
+  });
+  thumbnailButtons.forEach(button => {
+    const image = button?.querySelector('img');
+    if (image) {
+      image.hidden = true;
+      image.removeAttribute('src');
+    }
+  });
+  pageCards.forEach((card, index) => {
+    if (!card) return;
+    const bounds = card.getBoundingClientRect();
+    if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
+  });
+  scheduleVirtualUpdate();
+  scheduleThumbnailVirtualUpdate();
+}
+
 function setTextLayerVisible(visible) {
   textLayerVisible = visible;
   document.body.classList.toggle('hide-text-layer', !visible);
@@ -2891,11 +2961,15 @@ function validDocumentBackgroundColor(value) {
 }
 
 function setDocumentBackground(mode, color = documentBackgroundCustomColor) {
-  if (!['white', 'transparent', 'custom'].includes(mode)) mode = 'white';
+  if (!['white', 'transparent', 'custom'].includes(mode) && !documentBackgroundThemes[mode]) mode = 'white';
   if (!validDocumentBackgroundColor(color)) color = '#ffffff';
   documentBackgroundMode = mode;
   documentBackgroundCustomColor = color.toLowerCase();
-  const value = mode === 'transparent' ? 'transparent' : mode === 'custom' ? documentBackgroundCustomColor : '#ffffff';
+  const value = mode === 'transparent'
+    ? 'transparent'
+    : mode === 'custom'
+      ? documentBackgroundCustomColor
+      : documentBackgroundThemes[mode] || '#ffffff';
   document.documentElement.style.setProperty('--document-background', value);
   documentBackground.value = mode;
   documentBackgroundColorPicker.value = documentBackgroundCustomColor;
@@ -2914,6 +2988,9 @@ try {
 } catch (_) {
   document.body.classList.toggle('hide-thumbnails', !thumbnailsVisible);
 }
+try {
+  renderFormatSelect.value = renderFormat;
+} catch (_) {}
 try {
   darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
   setDarkReadingVisible(darkReading.checked);
@@ -3024,6 +3101,7 @@ documentBackgroundColorPicker.addEventListener('input', () => {
   if (documentBackgroundMode === 'custom') setDocumentBackground('custom', documentBackgroundColorPicker.value);
 });
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
+renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormatSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });

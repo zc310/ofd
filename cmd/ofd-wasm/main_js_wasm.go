@@ -427,7 +427,7 @@ func bytesFromJS(value js.Value) ([]byte, error) {
 }
 
 func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
-	options := webreader.RenderOptions{DPI: 96, Background: color.Transparent}
+	options := webreader.RenderOptions{DPI: 96, Background: color.Transparent, Format: webreader.RenderPNG}
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
 		return options, nil
 	}
@@ -435,6 +435,21 @@ func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
 		return options, errors.New("renderPage 配置必须是对象")
 	}
 	value := args[0]
+	if format := value.Get("format"); !format.IsUndefined() && !format.IsNull() {
+		if format.Type() != js.TypeString {
+			return options, errors.New("format 必须是 png、jpg 或 svg")
+		}
+		switch strings.ToLower(strings.TrimSpace(format.String())) {
+		case string(webreader.RenderPNG):
+			options.Format = webreader.RenderPNG
+		case string(webreader.RenderSVG):
+			options.Format = webreader.RenderSVG
+		case string(webreader.RenderJPG):
+			options.Format = webreader.RenderJPG
+		default:
+			return options, errors.New("format 必须是 png、jpg 或 svg")
+		}
+	}
 	if dpi := value.Get("dpi"); dpi.Type() == js.TypeNumber && !dpi.IsNaN() {
 		options.DPI = dpi.Float()
 	} else if !dpi.IsUndefined() {

@@ -143,7 +143,7 @@
      body.dark-reading { background: #1b2029; color: #e6ebf2; }
      body.dark-reading .reader { background: #1f252f; }
      body.dark-reading #status { background: #252c38; color: #aeb9ca; }
-    body.dark-reading .thumbnail { border-color: #475365; background: #303947; box-shadow: 0 2px 8px #00000040; }
+    body.dark-reading .thumbnail { border-color: #475365; background: var(--document-background, #303947); box-shadow: 0 2px 8px #00000040; }
     body.dark-reading .thumbnail:hover { border-color: #80b4e5; }
     body.dark-reading .thumbnail.active { border-color: #80b4e5; box-shadow: inset 0 0 0 2px #80b4e5, 0 3px 10px #00000050; }
      body.dark-reading .page-card { box-shadow: 0 4px 20px #00000060; }
@@ -182,12 +182,12 @@
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
       .double-thumbnail-layout .thumbnail { width: auto; }
      .thumbnail-placeholder { min-height: 138px; border-radius: 6px; background: transparent; }
-     .thumbnail { position: relative; display: grid; place-items: center; box-sizing: border-box; width: 100%; min-height: 0; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: #fff; box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
+     .thumbnail { position: relative; display: grid; place-items: center; box-sizing: border-box; width: 100%; min-height: 0; padding: 5px; border: 1px solid #d7dce5; border-radius: 6px; background: var(--document-background, #fff); box-shadow: 0 2px 8px #17203318; transition: border-color .15s, box-shadow .15s, transform .15s; }
     .thumbnail:hover { border-color: #7da7d5; box-shadow: 0 3px 10px #1720332e; }
     .thumbnail.active { border-color: #2476bd; box-shadow: inset 0 0 0 2px #2476bd, 0 3px 10px #1720332e; }
      .thumbnail img { display: block; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; visibility: hidden; }
      .thumbnail img.loaded { visibility: visible; }
-    .thumbnail.loading { overflow: hidden; background: #e8edf3; }
+     .thumbnail.loading { overflow: hidden; background: var(--document-background, #e8edf3); }
     .thumbnail.loading::before, .page-card.loading::before { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, #ffffff80 45%, transparent 60%); content: ""; animation: loading-shimmer 1.4s linear infinite; pointer-events: none; }
     .thumbnail.loading img { opacity: .35; }
     .thumbnail.loading span { background: #7b8798cc; }
@@ -314,13 +314,25 @@
        <button id="view-toggle" type="button" title="显示设置" aria-label="显示设置" disabled aria-controls="view-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
       <div id="view-panel" class="view-panel" hidden>
           <label class="view-option"><input id="show-thumbnails" type="checkbox" checked>显示缩略图</label>
-          <label class="view-option"><input id="show-text-layer" type="checkbox" checked>显示文字层</label>
-          <label class="view-option"><input id="dark-reading" type="checkbox">深色阅读背景</label>
-          <label class="view-option" for="document-background">文档背景色<select id="document-background" aria-label="文档背景色">
-            <option value="white">白色</option>
-            <option value="transparent">透明</option>
-            <option value="custom">自定义</option>
-          </select><input id="document-background-color" type="color" value="#ffffff" aria-label="自定义文档背景色" hidden></label>
+           <label class="view-option"><input id="show-text-layer" type="checkbox" checked>显示文字层</label>
+           <label class="view-option"><input id="dark-reading" type="checkbox">深色阅读背景</label>
+           <label class="view-option" for="render-format">页面渲染格式<select id="render-format" aria-label="页面渲染格式">
+             <option value="png">PNG 位图</option>
+             <option value="svg">SVG 矢量</option>
+             <option value="jpg">JPG 图片</option>
+           </select></label>
+           <label class="view-option" for="document-background">文档背景色<select id="document-background" aria-label="文档背景色">
+             <option value="white">白色</option>
+             <option value="transparent">透明</option>
+             <option value="adw-dracula">暗夜紫灰</option>
+             <option value="adw-everforest">晨雾暖沙</option>
+             <option value="adw-gruvbox">复古深棕</option>
+             <option value="adw-nord">极光钢蓝</option>
+             <option value="adw-solarized">柔光羊皮</option>
+             <option value="Peninsula-dark">半岛墨蓝</option>
+             <option value="Plano2">晴空浅灰</option>
+             <option value="custom">自定义</option>
+           </select><input id="document-background-color" type="color" value="#ffffff" aria-label="自定义文档背景色" hidden></label>
           <label class="view-option">页面布局<select id="page-layout" aria-label="页面布局">
            <option value="single">单页</option>
            <option value="double">双页</option>
