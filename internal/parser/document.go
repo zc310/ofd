@@ -91,6 +91,11 @@ func (p *Document) clearCaches() {
 		if page == nil {
 			continue
 		}
+		page.metadataMu.Lock()
+		page.metadataLoaded = false
+		page.metadataBox = models.StBox{}
+		page.metadataErr = nil
+		page.metadataMu.Unlock()
 		page.mu.Lock()
 		page.pageContent = models.PageContent{}
 		page.cacheSize.Store(0)
@@ -594,11 +599,14 @@ func (p *Document) parse(body models.DocBody) error {
 	p.Pages = make([]*Page, 0, len(p.Document.Pages.Pages))
 	for _, page := range p.Document.Pages.Pages {
 		pageDef := page
+		pagePath := pageDef.BaseLoc.Resolve(p.BaseLoc)
 		p.Pages = append(p.Pages, &Page{
-			ID:       pageDef.ID,
+			ID: pageDef.ID,
+			metadata: func() (models.StBox, error) {
+				return readPagePhysicalBox(p.FileCache, pagePath)
+			},
 			document: p,
 			load: func(target *Page) error {
-				pagePath := pageDef.BaseLoc.Resolve(p.BaseLoc)
 				target.cacheSize.Store(0)
 				var content models.PageContent
 				if err := p.FileCache.ReadXMLLimit(pagePath.String(), &content, maxPageXMLBytes); err != nil {
