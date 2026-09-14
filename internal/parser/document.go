@@ -73,6 +73,8 @@ type Document struct {
 	resourcesMu         sync.RWMutex
 }
 
+const maxPageXMLBytes = 64 << 20
+
 func (p *Document) Init(fileCache *core.Package, dir models.StLoc) {
 	p.FileCache = fileCache
 	p.BaseLoc = models.StLoc(path.Dir(dir.String()))
@@ -599,7 +601,7 @@ func (p *Document) parse(body models.DocBody) error {
 				pagePath := pageDef.BaseLoc.Resolve(p.BaseLoc)
 				target.cacheSize.Store(0)
 				var content models.PageContent
-				if err := p.FileCache.ReadXML(pagePath.String(), &content); err != nil {
+				if err := p.FileCache.ReadXMLLimit(pagePath.String(), &content, maxPageXMLBytes); err != nil {
 					return err
 				}
 				if content.Area == nil {
