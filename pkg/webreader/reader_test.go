@@ -49,8 +49,10 @@ func TestOpenAndRenderPage(t *testing.T) {
 }
 
 func TestPagesUsesA4PlaceholderAndPageLoadsRealSize(t *testing.T) {
-	t.Skip("GBT_33190-2016.ofd")
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "GBT_33190-2016.ofd"))
+	if os.IsNotExist(err) {
+		t.Skip("GBT_33190-2016.ofd  is unavailable")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

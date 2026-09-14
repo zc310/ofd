@@ -12,7 +12,6 @@ import (
 )
 
 func TestCreatedTTCFontRendersEmbeddedCJKText(t *testing.T) {
-	t.Skip("ttc-render-test")
 	ttc, err := os.ReadFile("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
 	if os.IsNotExist(err) {
 		t.Skip("NotoSansCJK-Regular.ttc is not available")
