@@ -30,6 +30,13 @@ func ExamplePDF() {
 	// Output: true
 }
 
+func ExampleMarkdown() {
+	var output bytes.Buffer
+	err := converter.Markdown("../../test/testdata/helloworld.ofd", &output, converter.Page(1))
+	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("## 第 1 页")))
+	// Output: true
+}
+
 func ExamplePNG() {
 	dir, err := os.MkdirTemp("", "ofd-example-")
 	if err == nil {

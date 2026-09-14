@@ -1,4 +1,4 @@
-// 命令 ofd-converter 将 OFD 文档转换为 PDF、文本或图像等格式。
+// 命令 ofd-converter 将 OFD 文档转换为 PDF、文本、Markdown 或图像等格式。
 package main
 
 import (
@@ -58,7 +58,7 @@ func parseArgs(args []string) (*options, error) {
 	var output, format string
 	fs.StringVar(&output, "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
 	fs.StringVar(&output, "output", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
-	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, png, jpg, svg, eps, tex")
+	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, png, jpg, svg, eps, tex")
 	fs.IntVar(&opts.dpi, "dpi", defaultDPI, "输出分辨率 (1-1200)")
 	fs.IntVar(&opts.page, "page", 0, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	fs.StringVar(&opts.bg, "bg", defaultBgColor, "背景颜色: transparent, white, black")
@@ -100,9 +100,11 @@ func run(opts *options) error {
 		format = formatFromExtension(opts.output)
 	case "jpeg":
 		format = "jpg"
+	case "markdown":
+		format = "md"
 	}
 	switch format {
-	case "pdf", "txt", "png", "jpg", "svg", "eps", "tex":
+	case "pdf", "txt", "md", "png", "jpg", "svg", "eps", "tex":
 	default:
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
 	}
@@ -118,8 +120,8 @@ func run(opts *options) error {
 	if format == "pdf" {
 		return convertToPDF(opts, format)
 	}
-	if format == "txt" {
-		return convertToText(opts)
+	if format == "txt" || format == "md" {
+		return convertToText(opts, format)
 	}
 	return convertToImage(opts, format)
 }
@@ -130,6 +132,8 @@ func formatFromExtension(output string) string {
 		return "pdf"
 	case ".txt":
 		return "txt"
+	case ".md", ".markdown":
+		return "md"
 	case ".png":
 		return "png"
 	case ".jpg", ".jpeg":
@@ -150,8 +154,8 @@ func validateOutputPath(opts *options, format string) error {
 		return nil
 	}
 	output := opts.output
-	if format == "txt" {
-		output = ensureExtension(output, "txt")
+	if format == "txt" || format == "md" {
+		output = ensureExtension(output, format)
 	} else if format != "pdf" && opts.page > 0 {
 		output = ensureExtension(output, format)
 	}
@@ -172,18 +176,22 @@ func sameFilePath(left, right string) bool {
 	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
-func convertToText(opts *options) error {
+func convertToText(opts *options, format string) error {
 	var output io.Writer = os.Stdout
 	var fileOutput *lazyFileWriter
 	if opts.output != "" && opts.output != "-" {
-		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "txt")}
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, format)}
 		output = fileOutput
 	}
 	var option []converter.Option
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	err := converter.Text(opts.input, output, option...)
+	convert := converter.Text
+	if format == "md" {
+		convert = converter.Markdown
+	}
+	err := convert(opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr

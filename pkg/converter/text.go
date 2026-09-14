@@ -14,7 +14,7 @@ const maxTextCompositeDepth = 32
 
 // Text 提取 OFD 文档中的文字并写入 output。
 // 不会保留字体、颜色和布局信息；不同文字对象按行输出，不同页面使用分页符分隔。
-func Text(input interface{}, output io.Writer, opts ...Option) error {
+func Text(input any, output io.Writer, opts ...Option) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
@@ -43,6 +43,76 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
+	pages, err := collectPageTexts(documents, newConverter(opts...).page)
+	if err != nil {
+		return err
+	}
+	text := strings.Join(pages, "\n\f\n")
+	if text != "" {
+		text += "\n"
+	}
+	_, err = io.WriteString(output, text)
+	return err
+}
+
+// Markdown 提取 OFD 文档中的文字并写入 Markdown 文档。
+// 每个页面输出为二级标题；文字对象按行输出，并转义 Markdown 特殊字符。
+func Markdown(input any, output io.Writer, opts ...Option) error {
+	if output == nil {
+		return errors.New("未设置Markdown输出参数")
+	}
+	conv := newConverter(opts...)
+	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
+		PageCacheCapacity: conv.pageCacheCapacity,
+		PageCacheBytes:    conv.pageCacheBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("解析OFD失败: %w", err)
+	}
+	defer ofd.Close()
+	if len(ofd.Documents) == 0 {
+		return errors.New("没有文档")
+	}
+	return MarkdownDocuments(ofd.Documents, output, opts...)
+}
+
+// MarkdownDocument 提取已解析 OFD 文档中的文字并写入 Markdown 文档。
+func MarkdownDocument(doc *parser.Document, output io.Writer, opts ...Option) error {
+	return MarkdownDocuments([]*parser.Document{doc}, output, opts...)
+}
+
+// MarkdownDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 Markdown 文档。
+func MarkdownDocuments(documents []*parser.Document, output io.Writer, opts ...Option) error {
+	if output == nil {
+		return errors.New("未设置Markdown输出参数")
+	}
+	conv := newConverter(opts...)
+	pages, err := collectPageTexts(documents, conv.page)
+	if err != nil {
+		return err
+	}
+
+	var markdown strings.Builder
+	markdown.WriteString("# OFD 文档\n")
+	for index, page := range pages {
+		pageNumber := index + 1
+		if conv.page > 0 {
+			pageNumber = conv.page
+		}
+		fmt.Fprintf(&markdown, "\n## 第 %d 页\n\n", pageNumber)
+		if page == "" {
+			continue
+		}
+		for line := range strings.SplitSeq(page, "\n") {
+			markdown.WriteString(escapeMarkdownLine(line))
+			markdown.WriteByte('\n')
+		}
+	}
+	_, err = io.WriteString(output, markdown.String())
+	return err
+}
+
+func collectPageTexts(documents []*parser.Document, page int) ([]string, error) {
 	pageCount := 0
 	for _, doc := range documents {
 		if doc != nil {
@@ -53,13 +123,12 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 			}
 		}
 	}
-	conv := newConverter(opts...)
 	if pageCount == 0 {
-		return errors.New("文档没有页面")
+		return nil, errors.New("文档没有页面")
 	}
-	pageStart, pageEnd, err := pageRange(pageCount, conv.page)
+	pageStart, pageEnd, err := pageRange(pageCount, page)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	pages := make([]string, 0, pageEnd-pageStart)
@@ -84,12 +153,44 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 			break
 		}
 	}
-	text := strings.Join(pages, "\n\f\n")
-	if text != "" {
-		text += "\n"
+	return pages, nil
+}
+
+func escapeMarkdownLine(line string) string {
+	line = strings.NewReplacer(
+		`\`, `\\`,
+		"`", "\\`",
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+		"<", "\\<",
+		">", "\\>",
+		"|", "\\|",
+		"~", "\\~",
+	).Replace(line)
+	if len(line) > 0 {
+		switch line[0] {
+		case '#', '-', '+', '=', '>':
+			line = "\\" + line
+		}
 	}
-	_, err = io.WriteString(output, text)
-	return err
+	if index := strings.Index(line, ". "); index > 0 && allDigits(line[:index]) {
+		line = line[:index] + `\.` + line[index+1:]
+	}
+	return line
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func extractPageText(doc *parser.Document, page *parser.Page) string {
