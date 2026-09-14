@@ -9,7 +9,7 @@
 ### 打印与导出
 
 - **打印**：支持打印当前页、全部页面或自定义范围，例如 `1-3,5`。
-- **导出**：支持选择页面范围、DPI、PNG/JPG/PDF/TXT 格式和背景颜色。
+- **导出**：示例界面支持选择页面范围、DPI、PNG/JPG/PDF/TXT 格式和背景颜色；底层 API 另支持直接输出 SVG。
 - 单页图片直接下载，多页图片打包为 ZIP。
 - PDF 按所选 DPI 栅格化，并保持页面物理尺寸。
 - TXT 导出为一个文本文档。
@@ -20,7 +20,8 @@
 - 显示或隐藏缩略图。
 - 显示或隐藏文字层。
 - 开启深色阅读背景。
-- 设置文档背景色，支持白色、透明和自定义颜色。
+- 页面渲染格式可选 PNG 位图、JPG 图片或 SVG 矢量，默认使用 PNG；JPG 不支持透明度，透明区域使用白色。
+- 设置文档背景色，支持白色、透明、自定义颜色以及暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝和晴空浅灰主题。
 - 选择单页、双页或“双页，奇数页在左”布局。
 - 显示设置和布局设置会保存在浏览器本地。
 
@@ -118,16 +119,18 @@ ofd.pages()
 ofd.pageInfo(0)
 ofd.text(0)
 ofd.search('关键词')
-ofd.renderPage(0, { dpi: 96, background: '#00000000' })
-ofd.renderPages([0, 1, 2], { dpi: 36, background: '#00000000' })
+ofd.renderPage(0, { format: 'png', dpi: 96, background: '#00000000' })
+ofd.renderPage(0, { format: 'jpg', dpi: 96 })
+ofd.renderPage(0, { format: 'svg' })
+ofd.renderPages([0, 1, 2], { format: 'png', dpi: 36, background: '#00000000' })
 ofd.renderPDF([0, 1], { background: '#ffffff' })
 
 // background omitted or set to #00000000 produces a transparent PNG.
 ofd.close()
 ```
 
-`ofd.pages()` 返回所有页面的页数和尺寸；尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`，再无效时回退为 A4。多个文档体分别使用各自的尺寸。页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取指定页面的完整内容。`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多 64 页。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM PNG 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
-`renderPage` 和 `renderPages` 返回 PNG `Uint8Array`，`renderPDF` 返回单个 PDF `Uint8Array`，最多处理 64 页；`renderPages` 按传入索引顺序返回数组。PDF 使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
+`ofd.pages()` 返回所有页面的页数和尺寸；尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`，再无效时回退为 A4。多个文档体分别使用各自的尺寸。页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取指定页面的完整内容。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
+`renderPage` 和 `renderPages` 的配置项 `format` 支持 `png`、`jpg` 和 `svg`，省略时默认为 `png`。PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多处理 64 页。`dpi` 对 PNG 和 JPG 有效，JPG 不支持透明度，透明区域使用白色；SVG 主要保留页面中的矢量内容，但复杂渐变、裁剪或其他不适合直接序列化的效果仍可能包含栅格图像。`renderPDF` 返回单个 PDF `Uint8Array`，使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
 
 ## Worker 协议
 
@@ -146,6 +149,6 @@ text       index: number
 search     query: string
 ```
 
-页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 128 MiB，缩略图缓存上限为 32 MiB，均由浏览器端使用 LRU 策略管理。页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG/SVG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 256 MiB，缩略图缓存上限为 64 MiB，均由浏览器端使用 LRU 策略管理。切换页面渲染格式时会取消未完成的渲染请求并清理两类图片缓存，然后按新格式重新加载可视区域。页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
 
 `text` 返回页面文字对象，`x/y` 是页面左上角原点的覆盖层坐标，`glyphs` 提供字符级区域；`search` 返回 `{ page, run, text, start, end, rects }` 命中列表。`glyphs`/`rects` 的 `angle` 可直接用于浏览器 CSS 的 `rotate()`。示例页面会将搜索结果所在页面滚动到视口，并使用引擎返回的字符矩形显示高亮。
