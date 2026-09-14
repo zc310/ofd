@@ -23,6 +23,8 @@ go get github.com/zc310/ofd
 
 项目提供一个无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm`](cmd/ofd-wasm)。解析和渲染运行在单个 Web Worker 中，使用一个 WASM 实例和一个 Reader 管理文档状态；页面和缩略图按可视区域附近懒加载，并分别缓存渲染结果。
 
+在线预览：<https://zc310.github.io/ofd-wasm/>
+
 ### 构建和运行
 
 在仓库根目录执行：
