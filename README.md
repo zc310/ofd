@@ -13,8 +13,32 @@
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                           |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                      |
 | **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告 |
+| **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                               |
+| **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                   |
 | **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                    |
 | **处理性能**   | 基于 Go 语言开发，支持高效处理                                               |
+
+## 桌面与 Android 阅读器
+
+项目提供基于 Fyne 的 `ofd-viewer` 图形化阅读器，支持 Linux 和 Windows 桌面环境，也支持构建 Android APK 阅读器。阅读器支持打开 OFD 文件、连续阅读、缩放、页面导航、双页显示、文字搜索以及导出 PDF、图片和文本等功能。
+
+桌面版和 Android 版的详细功能、构建要求、Android APK 打包说明及截图见 [`cmd/ofd-viewer/README.md`](cmd/ofd-viewer/README.md)。已经发布的 Linux、Windows 桌面版和 Android APK 可在 [GitHub Releases](https://github.com/zc310/ofd/releases) 下载。
+
+常用构建命令如下：
+
+```bash
+# Linux
+GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make package
+
+# Windows x86_64，需要 MinGW-w64
+make package-windows-amd64
+
+# Android APK，需要 Fyne、Android SDK 和 NDK
+make package-viewer-android
+```
+
+Linux 和 Windows 桌面版需要目标平台的图形开发环境；Windows 交叉编译需要 MinGW-w64。Android 版以 APK 形式安装，构建前需要配置 Android SDK、NDK 及 Fyne 命令行工具。
+
 ## 安装
 
 ```bash
