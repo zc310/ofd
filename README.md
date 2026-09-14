@@ -1,6 +1,6 @@
 # OFD Converter [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd)
 
-一个用于将 OFD 文件转换为 PDF、纯文本和图像格式的 Go 语言工具包。
+一个用于将 OFD 文件转换为 PDF、纯文本、Markdown 和图像格式的 Go 语言工具包。
 
 > 使用本项目及其输出结果前，请阅读 [免责声明](DISCLAIMER.md)。本项目不保证所有 OFD 文件的解析、转换、校验或渲染结果适用于特定业务、法律或合规场景。如发现仓库、文档或示例中可能存在侵权内容，请通过 [GitHub Issues](https://github.com/zc310/ofd/issues/new) 联系维护者。
 
@@ -8,7 +8,7 @@
 
 | 类别           | 功能                                                                         |
 |----------------|------------------------------------------------------------------------------|
-| **文档转换**   | OFD 转 PDF、纯文本和 PNG/JPG 等图像格式                                      |
+| **文档转换**   | OFD 转 PDF、纯文本、Markdown 和 PNG/JPG 等图像格式                           |
 | **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                     |
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                           |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                      |
@@ -1048,6 +1048,15 @@ import "bytes"
 
 var output bytes.Buffer
 err := converter.Text("input.ofd", &output)
+```
+
+### OFD 转 Markdown
+
+Markdown 转换只提取文字内容，不保留字体、颜色和页面布局；每个页面使用二级标题分隔，并转义 Markdown 特殊字符。
+
+```go
+var markdown bytes.Buffer
+err := converter.Markdown("input.ofd", &markdown)
 ```
 
 #### 转换为 JPG

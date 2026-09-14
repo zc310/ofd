@@ -1,4 +1,4 @@
-// Package converter 提供 OFD 文档到 PDF、文本和图像等格式的转换能力。
+// Package converter 提供 OFD 文档到 PDF、文本、Markdown 和图像等格式的转换能力。
 package converter
 
 import (

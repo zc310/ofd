@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本和图像格式。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown 和图像格式。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -18,14 +18,14 @@ ofd-converter [选项] <输入文件> [输出文件或目录]
 
 ## 选项
 
-| 选项 | 说明 |
-| --- | --- |
-| `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录 |
-| `-format` | 输出格式: `pdf`, `txt`, `png`, `jpg`, `svg`, `eps`, `tex` |
-| `-dpi` | 输出分辨率 (1-1200)，默认 150 |
-| `-page` | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面 |
-| `-bg` | 背景颜色: `transparent`, `white`, `black`，默认 `white` |
-| `-dir` | 不压缩，将多页图片直接保存到输出目录下的多个文件 |
+| 选项            | 说明                                                                        |
+|-----------------|-----------------------------------------------------------------------------|
+| `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                        |
+| `-format`       | 输出格式: `pdf`, `txt`, `md`, `markdown`, `png`, `jpg`, `svg`, `eps`, `tex` |
+| `-dpi`          | 输出分辨率 (1-1200)，默认 150                                               |
+| `-page`         | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                            |
+| `-bg`           | 背景颜色: `transparent`, `white`, `black`，默认 `white`                     |
+| `-dir`          | 不压缩，将多页图片直接保存到输出目录下的多个文件                            |
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 
@@ -44,6 +44,15 @@ ofd-converter input.ofd output.pdf
 ```bash
 ofd-converter input.ofd output.txt
 ofd-converter -format txt input.ofd output.txt
+```
+
+### OFD 转 Markdown
+
+Markdown 转换只提取文字内容，不保留字体、颜色和页面布局；每个页面使用二级标题分隔，并转义 Markdown 特殊字符。
+
+```bash
+ofd-converter input.ofd output.md
+ofd-converter -format markdown input.ofd output.md
 ```
 
 ### 转换为指定格式的图片
@@ -73,6 +82,7 @@ ofd-converter -format png -dir -o pages input.ofd
 ```bash
 ofd-converter input.ofd - > output.pdf
 ofd-converter -format txt input.ofd - > output.txt
+ofd-converter -format md input.ofd - > output.md
 ofd-converter -format png -page 1 input.ofd - > page1.png
 ```
 

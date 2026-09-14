@@ -19,9 +19,27 @@ func TestParseArgsSupportsTextFormat(t *testing.T) {
 	}
 }
 
+func TestParseArgsSupportsMarkdownFormat(t *testing.T) {
+	opts, err := parseArgs([]string{"-format", "markdown", "input.ofd", "output.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.format != "markdown" {
+		t.Fatalf("format = %q, want markdown", opts.format)
+	}
+}
+
 func TestFormatFromExtensionSupportsText(t *testing.T) {
 	if got := formatFromExtension("output.txt"); got != "txt" {
 		t.Fatalf("format = %q, want txt", got)
+	}
+}
+
+func TestFormatFromExtensionSupportsMarkdown(t *testing.T) {
+	for _, path := range []string{"output.md", "output.markdown"} {
+		if got := formatFromExtension(path); got != "md" {
+			t.Fatalf("formatFromExtension(%q) = %q, want md", path, got)
+		}
 	}
 }
 

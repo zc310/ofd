@@ -106,6 +106,35 @@ func TestTextDocumentSkipsInvisibleText(t *testing.T) {
 	}
 }
 
+func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
+	doc := &parser.Document{Pages: []*parser.Page{
+		parser.NewPage(models.PageContent{Content: textContent("# 标题")}),
+		parser.NewPage(models.PageContent{Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
+			Items: []models.PageItem{
+				textItem("*强调* [链接]", true),
+				textItem("1. 列表", true),
+			},
+		}}}}}),
+	}}
+
+	var output bytes.Buffer
+	if err := MarkdownDocument(doc, &output); err != nil {
+		t.Fatal(err)
+	}
+	want := "# OFD 文档\n\n## 第 1 页\n\n\\# 标题\n\n## 第 2 页\n\n\\*强调\\* \\[链接\\]\n1\\. 列表\n"
+	if got := output.String(); got != want {
+		t.Fatalf("markdown = %q, want %q", got, want)
+	}
+
+	output.Reset()
+	if err := MarkdownDocument(doc, &output, Page(2)); err != nil {
+		t.Fatal(err)
+	}
+	if want := "# OFD 文档\n\n## 第 2 页\n\n\\*强调\\* \\[链接\\]\n1\\. 列表\n"; output.String() != want {
+		t.Fatalf("selected markdown = %q, want %q", output.String(), want)
+	}
+}
+
 func textItem(value string, visible bool) models.PageItem {
 	object := models.TextObject{CtText: models.CtText{TextCode: []models.TextCode{{Value: value}}}}
 	object.Visible.Set(visible)
