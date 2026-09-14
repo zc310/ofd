@@ -18,6 +18,8 @@
 | **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                    |
 | **处理性能**   | 基于 Go 语言开发，支持高效处理                                               |
 
+OFD 标准元素和项目能力的详细支持范围见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)。该清单区分了已支持、部分支持和暂不承诺完整支持的能力，不应将项目功能表述为完整符合 GB/T 33190-2016。
+
 ## 桌面与 Android 阅读器
 
 项目提供基于 Fyne 的 `ofd-viewer` 图形化阅读器，支持 Linux 和 Windows 桌面环境，也支持构建 Android APK 阅读器。阅读器支持打开 OFD 文件、连续阅读、缩放、页面导航、双页显示、文字搜索以及导出 PDF、图片和文本等功能。
@@ -1103,7 +1105,7 @@ err := converter.Image("input.ofd",
 
 - 背景颜色默认为白色，可根据需要调整
 - 支持效果见 `input.ofd` 转换结果
-- 不支持 `GBT 33190-2016` 很多标准😅。。。
+- 项目尚未完整实现 GB/T 33190-2016 的全部标准能力，具体范围见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)
 
 
 ## 特别感谢
