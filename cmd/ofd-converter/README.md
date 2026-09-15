@@ -14,6 +14,8 @@ go build .
 
 ```
 ofd-converter [选项] <输入文件> [输出文件或目录]
+
+ofd-converter [选项] --input-dir <输入目录> --output-dir <输出目录>
 ```
 
 ## 选项
@@ -21,14 +23,21 @@ ofd-converter [选项] <输入文件> [输出文件或目录]
 | 选项            | 说明                                                                                |
 |-----------------|-------------------------------------------------------------------------------------|
 | `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                |
+| `-input-dir`    | 批量转换的输入目录；需要同时指定 `-output-dir`                                  |
+| `-output-dir`   | 批量转换的输出目录；保留输入目录的相对路径结构                                  |
 | `-format`       | 输出格式: `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `svg`, `eps`, `tex` |
 | `-html-format`  | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                    |
 | `-dpi`          | 输出分辨率 (1-1200)，默认 150                                                       |
 | `-page`         | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                                    |
 | `-bg`           | 背景颜色: `transparent`, `white`, `black`，默认 `white`                             |
 | `-dir`          | 不压缩，将多页图片直接保存到输出目录下的多个文件                                    |
+| `-workers`      | 批量转换并发数，默认 `4`                                                            |
+| `-recursive`    | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                |
+| `-overwrite`    | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败          |
+| `-skip-existing`| 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                |
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
+批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
 
 ## 示例
 
@@ -87,6 +96,30 @@ ofd-converter -format png -o pages.zip input.ofd
 ofd-converter -format png -o pages/ input.ofd
 ofd-converter -format png -dir -o pages input.ofd
 ```
+
+### 批量转换
+
+批量模式递归查找输入目录下扩展名为 `.ofd` 的普通文件，扩展名大小写不敏感。PDF、文本、Markdown、HTML
+每个 OFD 生成一个文件，并保留输入目录的相对路径；图片格式每个 OFD 使用独立目录保存页面图片：
+
+```bash
+# 默认使用 4 个并发任务，递归转换为 PDF
+ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf
+
+# 使用 8 个并发任务转换为 Markdown
+ofd-converter --input-dir ./ofd --output-dir ./markdown --format md --workers 8
+
+# 多页 OFD 转换为 PNG，每个 OFD 一个页面目录
+ofd-converter --input-dir ./ofd --output-dir ./images --format png
+
+# 只扫描输入目录的第一层
+ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf --recursive=false
+```
+
+例如，`input/nested/demo.ofd` 会生成 `output/nested/demo.pdf`；转换为 PNG 时会生成
+`output/nested/demo/page-0001.png` 等页面文件。批量转换不会覆盖输入目录中的同名文件；如果有文件转换失败，
+命令会在所有任务完成后返回退出码 `1`，并列出失败文件及错误原因。默认直接覆盖已有输出；使用
+`-overwrite=false` 时，已有输出会记为失败且不会覆盖；使用 `-skip-existing` 时，已有输出会跳过且不计为失败。
 
 ### 输出到标准输出
 
