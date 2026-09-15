@@ -7,7 +7,7 @@ import (
 	"hash"
 	"strings"
 
-	"github.com/tjfoc/gmsm/sm3"
+	"github.com/emmansun/gmsm/sm3"
 )
 
 func signatureDigest(method string, data []byte) ([]byte, error) {

@@ -18,10 +18,10 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/emmansun/gmsm/sm3"
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
 	"github.com/tdewolff/font"
-	"github.com/tjfoc/gmsm/sm3"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"

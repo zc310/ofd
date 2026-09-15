@@ -10,7 +10,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/tjfoc/gmsm/sm3"
+	"github.com/emmansun/gmsm/sm3"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 )

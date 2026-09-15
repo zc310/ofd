@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tjfoc/gmsm/sm2"
-	gmx509 "github.com/tjfoc/gmsm/x509"
+	gmx509 "github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 )
@@ -202,11 +201,11 @@ func TestVerifySESSignedValueSupportsRawSignatureAndUIDOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealR, sealS, err := sm2.SignDataToSignDigit(value.SES.TBS.Seal.Signature.Bytes)
+	sealR, sealS, _, err := parseSM2DERSignature(value.SES.TBS.Seal.Signature.Bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	outerR, outerS, err := sm2.SignDataToSignDigit(value.SES.Signature.Bytes)
+	outerR, outerS, _, err := parseSM2DERSignature(value.SES.Signature.Bytes)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,7 @@ type pageResources struct {
 type Page struct {
 	pageContent models.PageContent
 	ID          models.StID
+	pageResPath []models.StLoc
 
 	document       *Document
 	load           func(*Page) error
@@ -261,6 +262,19 @@ func (p *Page) PageRes() []models.StLoc {
 		return nil
 	})
 	return resources
+}
+
+// PageResourceLocations 返回已经解析为包内路径的页面资源文件位置。
+func (p *Page) PageResourceLocations() []models.StLoc {
+	if p == nil {
+		return nil
+	}
+	if err := p.EnsureLoaded(); err != nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]models.StLoc(nil), p.pageResPath...)
 }
 
 // Actions 返回页面动作集合。

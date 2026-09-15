@@ -9,8 +9,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/tjfoc/gmsm/sm2"
-	gmx509 "github.com/tjfoc/gmsm/x509"
+	"github.com/emmansun/gmsm/sm2"
+	gmx509 "github.com/emmansun/gmsm/smx509"
 )
 
 const sm2WithSM3OID = "1.2.156.10197.1.501"
@@ -228,7 +228,8 @@ func verifySignatureComponent(certificateDER, signed, signature []byte, algorith
 		return result
 	}
 	result.SignatureFormat = string(format)
-	if !sm2.Sm2Verify(publicKey, signed, signatureUID(verificationOptions), r, s) {
+	digest, err := sm2.CalculateSM2Hash(publicKey, signed, signatureUID(verificationOptions))
+	if err != nil || !sm2.Verify(publicKey, digest, r, s) {
 		result.Error = "SM2 签名验证失败"
 		return result
 	}
@@ -386,30 +387,24 @@ func verifyCertificateChain(certificate *gmx509.Certificate, options *Certificat
 	return true, ""
 }
 
-func sm2PublicKey(value any) (*sm2.PublicKey, error) {
-	switch publicKey := value.(type) {
-	case *sm2.PublicKey:
-		if publicKey == nil {
-			return nil, fmt.Errorf("签名证书公钥为空")
-		}
-		return publicKey, nil
-	case *ecdsa.PublicKey:
+func sm2PublicKey(value any) (*ecdsa.PublicKey, error) {
+	publicKey, ok := value.(*ecdsa.PublicKey)
+	if ok {
 		if publicKey == nil || publicKey.X == nil || publicKey.Y == nil {
 			return nil, fmt.Errorf("签名证书公钥为空")
 		}
-		if publicKey.Curve != sm2.P256Sm2() && publicKey.Curve.Params().Name != sm2.P256Sm2().Params().Name {
+		if !sm2.IsSM2PublicKey(publicKey) {
 			return nil, fmt.Errorf("签名证书公钥曲线不是 SM2")
 		}
-		return &sm2.PublicKey{Curve: sm2.P256Sm2(), X: publicKey.X, Y: publicKey.Y}, nil
-	default:
-		return nil, fmt.Errorf("签名证书公钥不是 SM2 公钥: %T", value)
+		return publicKey, nil
 	}
+	return nil, fmt.Errorf("签名证书公钥不是 SM2 公钥: %T", value)
 }
 
 func certificateInfo(certificate *gmx509.Certificate) *CertificateInfo {
 	publicKey := ""
 	switch certificate.PublicKey.(type) {
-	case *sm2.PublicKey, *ecdsa.PublicKey:
+	case *ecdsa.PublicKey:
 		publicKey = "SM2"
 	default:
 		publicKey = fmt.Sprintf("%T", certificate.PublicKey)

@@ -7,15 +7,15 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.8.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
+	github.com/emmansun/gmsm v0.44.1
 	github.com/h2non/filetype v1.1.3
-	github.com/knroy/go-xml v1.2.2
+	github.com/knroy/go-xml v1.3.0
 	github.com/nao1215/imaging v1.0.10
 	github.com/ncruces/zenity v0.10.15
 	github.com/rymdport/portal v0.4.2
 	github.com/stretchr/testify v1.12.1
-	github.com/tdewolff/canvas v0.0.0-20260901160717-dae8cd8e19a7
-	github.com/tdewolff/font v0.0.0-20260822205238-d0d2f004b117
-	github.com/tjfoc/gmsm v1.4.1
+	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
+	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
 	github.com/zc310/fontfix v0.0.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
@@ -33,7 +33,7 @@ require (
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/Kagami/go-avif v0.1.0 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
-	github.com/andybalholm/brotli v1.2.3 // indirect
+	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/benoitkugler/textlayout v0.3.2 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
