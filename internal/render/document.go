@@ -19,6 +19,7 @@ import (
 type Document struct {
 	*parser.Document
 	background   color.Color
+	dpi          canvas.Resolution
 	fonts        *Fonts
 	fallbacks    []fallbackFontResource
 	fallbackMu   sync.RWMutex
@@ -98,11 +99,22 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 const (
 	imageCacheCapacity = 128
 	svgCacheCapacity   = 64
+	defaultRenderDPI   = 72
 )
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
+	return NewDocumentWithDPI(background, doc, canvas.DPI(defaultRenderDPI))
+}
+
+// NewDocumentWithDPI 创建带有输出分辨率的渲染文档。
+// dpi 用于复合图元等内部离屏栅格化，不改变页面的物理尺寸。
+func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi canvas.Resolution) *Document {
+	if dpi <= 0 {
+		dpi = canvas.DPI(defaultRenderDPI)
+	}
 	return &Document{
 		background:  background,
+		dpi:         dpi,
 		fonts:       NewFonts(doc),
 		Document:    doc,
 		images:      utils.NewLRU[string, image.Image](imageCacheCapacity, nil),

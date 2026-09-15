@@ -427,7 +427,7 @@ func bytesFromJS(value js.Value) ([]byte, error) {
 }
 
 func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
-	options := webreader.RenderOptions{DPI: 96, Background: color.Transparent, Format: webreader.RenderPNG}
+	options := webreader.RenderOptions{DPI: 72, Background: color.Transparent, Format: webreader.RenderPNG}
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
 		return options, nil
 	}

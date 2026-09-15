@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	defaultDPI        = 96
+	defaultDPI        = 72
 	defaultPageWidth  = 210
 	defaultPageHeight = 297
 	maxDPI            = 600
@@ -191,6 +191,7 @@ type pageRef struct {
 
 type renderDocumentKey struct {
 	base  *render.Document
+	dpi   float64
 	red   uint32
 	green uint32
 	blue  uint32
@@ -659,7 +660,7 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 		}
 	}()
 	for position, index := range indices {
-		page, pageErr := r.pdfPage(index, background)
+		page, pageErr := r.pdfPage(index, background, canvas.DPI(dpi))
 		if pageErr != nil {
 			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
 		}
@@ -684,7 +685,7 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。
-func (r *Reader) pdfPage(index int, background color.Color) (*canvas.Canvas, error) {
+func (r *Reader) pdfPage(index int, background color.Color, dpi canvas.Resolution) (*canvas.Canvas, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
@@ -698,7 +699,7 @@ func (r *Reader) pdfPage(index int, background color.Color) (*canvas.Canvas, err
 	if content == nil {
 		return nil, errors.New("页面内容为空")
 	}
-	document, err := r.pageDocument(ref, background)
+	document, err := r.pageDocument(ref, background, dpi)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +749,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		background = color.Transparent
 	}
 	// NewDocument 保证页面背景和渲染内容使用同一个文档级渲染上下文。
-	document, err := r.pageDocument(ref, background)
+	document, err := r.pageDocument(ref, background, canvas.DPI(options.DPI))
 	if err != nil {
 		return nil, err
 	}
@@ -764,7 +765,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
-	var rendered image.Image = rasterizer.Draw(page, canvas.DPI(options.DPI), canvas.DefaultColorSpace)
+	var rendered image.Image = render.Rasterize(page, canvas.DPI(options.DPI), canvas.DefaultColorSpace)
 	if format == RenderJPG {
 		rendered = opaqueImage(rendered, color.White)
 		if err := jpeg.Encode(&output, rendered, &jpeg.Options{Quality: 90}); err != nil {
@@ -787,30 +788,28 @@ func opaqueImage(source image.Image, background color.Color) image.Image {
 }
 
 // pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。
-func (r *Reader) pageDocument(ref pageRef, background color.Color) (*render.Document, error) {
+func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi canvas.Resolution) (*render.Document, error) {
 	document := ref.document
 	if document == nil || document.Document == nil {
 		return nil, errors.New("页面渲染上下文为空")
 	}
-	if !sameColor(background, r.options.Background) {
-		red, green, blue, alpha := background.RGBA()
-		key := renderDocumentKey{base: document, red: red, green: green, blue: blue, alpha: alpha}
-		r.renderDocsMu.Lock()
-		defer r.renderDocsMu.Unlock()
-		if r.renderDocs != nil {
-			if cached, ok := r.renderDocs.Get(key); ok && cached != nil {
-				return cached, nil
-			}
+	red, green, blue, alpha := background.RGBA()
+	key := renderDocumentKey{base: document, dpi: dpi.DPI(), red: red, green: green, blue: blue, alpha: alpha}
+	r.renderDocsMu.Lock()
+	defer r.renderDocsMu.Unlock()
+	if r.renderDocs != nil {
+		if cached, ok := r.renderDocs.Get(key); ok && cached != nil {
+			return cached, nil
 		}
-		document = render.NewDocument(background, ref.document.Document)
-		for _, source := range r.fallbackFonts {
-			_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
-		}
-		if r.renderDocs == nil {
-			r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, nil)
-		}
-		r.renderDocs.Add(key, document)
 	}
+	document = render.NewDocumentWithDPI(background, ref.document.Document, dpi)
+	for _, source := range r.fallbackFonts {
+		_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+	}
+	if r.renderDocs == nil {
+		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, nil)
+	}
+	r.renderDocs.Add(key, document)
 	return document, nil
 }
 

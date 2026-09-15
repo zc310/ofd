@@ -20,6 +20,7 @@
 - 显示或隐藏缩略图。
 - 显示或隐藏文字层。
 - 开启深色阅读背景。
+- 可选“清晰度优先”：未选中时正文始终按 72 DPI 渲染，缩放使用 CSS 放大；选中后按缩放比例重新渲染以提高图像清晰度。
 - 页面渲染格式可选 PNG 位图、JPG 图片或 SVG 矢量，默认使用 PNG；JPG 不支持透明度，透明区域使用白色。
 - 设置文档背景色，支持白色、透明、自定义颜色以及暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝和晴空浅灰主题。
 - 选择单页、双页或“双页，奇数页在左”布局。
@@ -43,6 +44,7 @@
 - 未挂载节点通过虚拟轨道占位，保持完整文档的滚动位置。
 - 页面滚动会取消离开窗口的未完成渲染请求。
 - 缩略图滚动单独维护自己的虚拟窗口，避免快速拖动主页面滚动条时批量渲染中间页面的缩略图。
+- 缩略图使用 15 DPI 渲染，正文页面根据当前缩放比例动态调整 DPI。
 
 
 ## 构建
@@ -119,8 +121,8 @@ ofd.pages()
 ofd.pageInfo(0)
 ofd.text(0)
 ofd.search('关键词')
-ofd.renderPage(0, { format: 'png', dpi: 96, background: '#00000000' })
-ofd.renderPage(0, { format: 'jpg', dpi: 96 })
+ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
+ofd.renderPage(0, { format: 'jpg', dpi: 72 })
 ofd.renderPage(0, { format: 'svg' })
 ofd.renderPages([0, 1, 2], { format: 'png', dpi: 36, background: '#00000000' })
 ofd.renderPDF([0, 1], { background: '#ffffff' })
