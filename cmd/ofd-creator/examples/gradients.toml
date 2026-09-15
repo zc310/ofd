@@ -8,9 +8,9 @@ version = 1
 id = "gradient-showcase"
 title = "OFD Gradient Showcase"
 creator = "ofd-creator"
-creatorVersion = "1"
+creator_version = "1"
 
-[document.pageSize]
+[document.page_size]
 width = 210.0
 height = 297.0
 
@@ -26,28 +26,28 @@ height = 45.0
 fill = true
 data = "M 0 0 L 180 0 L 180 45 L 0 45 C"
 
-[pages.items.fillColor.axial]
-mapType = "Direct"
-startPoint = "0 0"
-endPoint = "180 0"
+[pages.items.fill_color.axial]
+map_type = "Direct"
+start_point = "0 0"
+end_point = "180 0"
 extend = 0
 
-[[pages.items.fillColor.axial.segments]]
+[[pages.items.fill_color.axial.segments]]
 position = 0.0
 
-[pages.items.fillColor.axial.segments.color]
+[pages.items.fill_color.axial.segments.color]
 b = 180
 
-[[pages.items.fillColor.axial.segments]]
+[[pages.items.fill_color.axial.segments]]
 position = 0.5
 
-[pages.items.fillColor.axial.segments.color]
+[pages.items.fill_color.axial.segments.color]
 b = 210
 
-[[pages.items.fillColor.axial.segments]]
+[[pages.items.fill_color.axial.segments]]
 position = 1.0
 
-[pages.items.fillColor.axial.segments.color]
+[pages.items.fill_color.axial.segments.color]
 b = 55
 
 # Radial gradient: bright center fading into a dark edge.
@@ -60,30 +60,30 @@ height = 70.0
 fill = true
 data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
 
-[pages.items.fillColor.radial]
-mapType = "Direct"
-startPoint = "42.5 35"
-startRadius = 0.0
-endPoint = "42.5 35"
-endRadius = 55.0
+[pages.items.fill_color.radial]
+map_type = "Direct"
+start_point = "42.5 35"
+start_radius = 0.0
+end_point = "42.5 35"
+end_radius = 55.0
 extend = 0
 
-[[pages.items.fillColor.radial.segments]]
+[[pages.items.fill_color.radial.segments]]
 position = 0.0
 
-[pages.items.fillColor.radial.segments.color]
+[pages.items.fill_color.radial.segments.color]
 b = 180
 
-[[pages.items.fillColor.radial.segments]]
+[[pages.items.fill_color.radial.segments]]
 position = 0.45
 
-[pages.items.fillColor.radial.segments.color]
+[pages.items.fill_color.radial.segments.color]
 b = 45
 
-[[pages.items.fillColor.radial.segments]]
+[[pages.items.fill_color.radial.segments]]
 position = 1.0
 
-[pages.items.fillColor.radial.segments.color]
+[pages.items.fill_color.radial.segments.color]
 b = 95
 
 # Gouraud triangular mesh gradient.
@@ -96,38 +96,38 @@ height = 70.0
 fill = true
 data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
 
-[pages.items.fillColor.gouraud]
+[pages.items.fill_color.gouraud]
 
-[[pages.items.fillColor.gouraud.points]]
+[[pages.items.fill_color.gouraud.points]]
 x = 0.0
 y = 0.0
-edgeFlag = 0
+edge_flag = 0
 
-[pages.items.fillColor.gouraud.points.color]
+[pages.items.fill_color.gouraud.points.color]
 b = 80
 
-[[pages.items.fillColor.gouraud.points]]
+[[pages.items.fill_color.gouraud.points]]
 x = 85.0
 y = 0.0
-edgeFlag = 1
+edge_flag = 1
 
-[pages.items.fillColor.gouraud.points.color]
+[pages.items.fill_color.gouraud.points.color]
 b = 245
 
-[[pages.items.fillColor.gouraud.points]]
+[[pages.items.fill_color.gouraud.points]]
 x = 85.0
 y = 70.0
-edgeFlag = 2
+edge_flag = 2
 
-[pages.items.fillColor.gouraud.points.color]
+[pages.items.fill_color.gouraud.points.color]
 b = 125
 
-[[pages.items.fillColor.gouraud.points]]
+[[pages.items.fill_color.gouraud.points]]
 x = 0.0
 y = 70.0
-edgeFlag = 2
+edge_flag = 2
 
-[pages.items.fillColor.gouraud.points.color]
+[pages.items.fill_color.gouraud.points.color]
 b = 60
 
 # LaGouraud quadrilateral mesh gradient.
@@ -140,36 +140,36 @@ height = 70.0
 fill = true
 data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
 
-[pages.items.fillColor.laGouraud]
-verticesPerRow = 2
+[pages.items.fill_color.la_gouraud]
+vertices_per_row = 2
 extend = 0
 
-[[pages.items.fillColor.laGouraud.points]]
+[[pages.items.fill_color.la_gouraud.points]]
 x = 0.0
 y = 0.0
 
-[pages.items.fillColor.laGouraud.points.color]
+[pages.items.fill_color.la_gouraud.points.color]
 b = 220
 
-[[pages.items.fillColor.laGouraud.points]]
+[[pages.items.fill_color.la_gouraud.points]]
 x = 85.0
 y = 0.0
 
-[pages.items.fillColor.laGouraud.points.color]
+[pages.items.fill_color.la_gouraud.points.color]
 b = 160
 
-[[pages.items.fillColor.laGouraud.points]]
+[[pages.items.fill_color.la_gouraud.points]]
 x = 0.0
 y = 70.0
 
-[pages.items.fillColor.laGouraud.points.color]
+[pages.items.fill_color.la_gouraud.points.color]
 b = 130
 
-[[pages.items.fillColor.laGouraud.points]]
+[[pages.items.fill_color.la_gouraud.points]]
 x = 85.0
 y = 70.0
 
-[pages.items.fillColor.laGouraud.points.color]
+[pages.items.fill_color.la_gouraud.points.color]
 b = 45
 
 # Pattern containing a small diagonal accent path.
@@ -182,31 +182,31 @@ height = 70.0
 fill = true
 data = "M 0 0 L 85 0 L 85 70 L 0 70 C"
 
-[pages.items.fillColor.pattern]
+[pages.items.fill_color.pattern]
 width = 12.0
 height = 12.0
-xStep = 12.0
-yStep = 12.0
-relativeTo = "Object"
+x_step = 12.0
+y_step = 12.0
+relative_to = "Object"
 
-[[pages.items.fillColor.pattern.items]]
+[[pages.items.fill_color.pattern.items]]
 type = "path"
 width = 12.0
 height = 12.0
 stroke = true
 fill = false
-lineWidth = 0.8
+line_width = 0.8
 data = "M 0 12 L 12 0 C"
 
-[pages.items.fillColor.pattern.items.strokeColor]
+[pages.items.fill_color.pattern.items.stroke_color]
 b = 140
 
-[[pages.items.fillColor.pattern.items]]
+[[pages.items.fill_color.pattern.items]]
 type = "path"
 width = 12.0
 height = 12.0
 fill = true
 data = "M 0 0 L 4 0 L 4 4 L 0 4 C"
 
-[pages.items.fillColor.pattern.items.fillColor]
+[pages.items.fill_color.pattern.items.fill_color]
 b = 40

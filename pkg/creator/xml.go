@@ -131,11 +131,11 @@ func documentXML(state *buildState) ([]byte, error) {
 	if len(state.annotationPages) > 0 {
 		root.CreateElement("Annotations").SetText("Annotations.xml")
 	}
-	if len(state.attachments) > 0 {
-		root.CreateElement("Attachments").SetText("Attachments/Attachments.xml")
-	}
 	if len(state.customTags) > 0 {
 		root.CreateElement("CustomTags").SetText("CustomTags/CustomTags.xml")
+	}
+	if len(state.attachments) > 0 {
+		root.CreateElement("Attachments").SetText("Attachments/Attachments.xml")
 	}
 	if len(state.extensions) > 0 {
 		root.CreateElement("Extensions").SetText("Extensions/Extensions.xml")

@@ -132,6 +132,34 @@ type CT_VPreferences struct {
 	Zoom *ZoomSetting `xml:",omitempty"`
 }
 
+// UnmarshalXML 兼容 OFD 中直接使用 ZoomMode 或 Zoom 子元素的写法。
+func (p *CT_VPreferences) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type preferences struct {
+		PageMode     *PageMode   `xml:"PageMode"`
+		PageLayout   *PageLayout `xml:"PageLayout"`
+		TabDisplay   *TabDisplay `xml:"TabDisplay"`
+		HideToolbar  *bool       `xml:"HideToolbar"`
+		HideMenubar  *bool       `xml:"HideMenubar"`
+		HideWindowUI *bool       `xml:"HideWindowUI"`
+		ZoomMode     *string     `xml:"ZoomMode"`
+		ZoomValue    *float64    `xml:"Zoom"`
+	}
+	var value preferences
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+	p.PageMode = value.PageMode
+	p.PageLayout = value.PageLayout
+	p.TabDisplay = value.TabDisplay
+	p.HideToolbar = value.HideToolbar
+	p.HideMenubar = value.HideMenubar
+	p.HideWindowUI = value.HideWindowUI
+	if value.ZoomMode != nil || value.ZoomValue != nil {
+		p.Zoom = &ZoomSetting{Mode: value.ZoomMode, Value: value.ZoomValue}
+	}
+	return nil
+}
+
 // PageMode 文档打开时的页面显示模式。
 type PageMode string
 
@@ -216,6 +244,8 @@ type CustomTags struct {
 type CustomTag struct {
 	// NameSpace 自定义标签使用的命名空间。
 	NameSpace string `xml:"NameSpace,attr"`
+	// TypeID 兼容历史生产者使用的类型标识属性。
+	TypeID string `xml:"TypeID,attr,omitempty"`
 	// SchemaLoc 自定义标签模式文件的位置。
 	SchemaLoc *StLoc `xml:"SchemaLoc,omitempty"`
 	// FileLoc 自定义标签数据文件的位置。

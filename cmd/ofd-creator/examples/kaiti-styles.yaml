@@ -9,8 +9,8 @@ document:
   title: 楷体字体样式与字号示例
   author: ofd-creator
   creator: ofd-creator
-  creatorVersion: "1"
-  pageSize:
+  creator_version: "1"
+  page_size:
     name: A4
 
 pages:
@@ -25,7 +25,7 @@ pages:
         size: 10
         weight: 700
         fill: true
-        fillColor:
+        fill_color:
           r: 25
           g: 55
           b: 110
@@ -39,7 +39,7 @@ pages:
         font: 楷体
         size: 4.23
         fill: true
-        fillColor:
+        fill_color:
           r: 45
           g: 45
           b: 45
@@ -53,7 +53,7 @@ pages:
         font: 楷体
         size: 6
         fill: true
-        fillColor:
+        fill_color:
           r: 35
           g: 95
           b: 155
@@ -67,7 +67,7 @@ pages:
         font: 楷体
         size: 8
         fill: true
-        fillColor:
+        fill_color:
           r: 25
           g: 125
           b: 95
@@ -81,7 +81,7 @@ pages:
         font: 楷体
         size: 12
         fill: true
-        fillColor:
+        fill_color:
           r: 180
           g: 65
           b: 55
@@ -96,7 +96,7 @@ pages:
         size: 10
         weight: 700
         fill: true
-        fillColor:
+        fill_color:
           r: 90
           g: 35
           b: 130
@@ -111,7 +111,7 @@ pages:
         size: 10
         weight: 900
         fill: true
-        fillColor:
+        fill_color:
           r: 155
           g: 45
           b: 95
@@ -126,7 +126,7 @@ pages:
         size: 10
         italic: true
         fill: true
-        fillColor:
+        fill_color:
           r: 25
           g: 105
           b: 125
@@ -142,7 +142,7 @@ pages:
         weight: 700
         italic: true
         fill: true
-        fillColor:
+        fill_color:
           r: 190
           g: 100
           b: 30
@@ -157,8 +157,8 @@ pages:
         size: 9
         stroke: true
         fill: false
-        lineWidth: 0.6
-        strokeColor:
+        line_width: 0.6
+        stroke_color:
           r: 35
           g: 75
           b: 150
@@ -171,9 +171,9 @@ pages:
         value: 压缩字宽：楷体 10 磅
         font: 楷体
         size: 10
-        hScale: 0.75
+        h_scale: 0.75
         fill: true
-        fillColor:
+        fill_color:
           r: 60
           g: 120
           b: 70
@@ -186,9 +186,9 @@ pages:
         value: 扩展字宽：楷体 10 磅
         font: 楷体
         size: 10
-        hScale: 1
+        h_scale: 1
         fill: true
-        fillColor:
+        fill_color:
           r: 135
           g: 60
           b: 125
@@ -203,7 +203,7 @@ pages:
         size: 9
         weight: 300
         fill: true
-        fillColor:
+        fill_color:
           r: 75
           g: 75
           b: 75
@@ -218,7 +218,7 @@ pages:
         size: 9
         weight: 500
         fill: true
-        fillColor:
+        fill_color:
           r: 55
           g: 55
           b: 55
@@ -235,7 +235,7 @@ pages:
         weight: 700
         fill: true
         alpha: 180
-        fillColor:
+        fill_color:
           r: 25
           g: 55
           b: 110
@@ -251,7 +251,7 @@ pages:
         size: 4.23
         fill: true
         alpha: 150
-        fillColor:
+        fill_color:
           r: 45
           g: 45
           b: 45
@@ -267,7 +267,7 @@ pages:
         size: 6
         fill: true
         alpha: 120
-        fillColor:
+        fill_color:
           r: 35
           g: 95
           b: 155
@@ -283,7 +283,7 @@ pages:
         size: 8
         fill: true
         alpha: 130
-        fillColor:
+        fill_color:
           r: 25
           g: 125
           b: 95
@@ -299,7 +299,7 @@ pages:
         size: 12
         fill: true
         alpha: 190
-        fillColor:
+        fill_color:
           r: 180
           g: 65
           b: 55
@@ -316,7 +316,7 @@ pages:
         weight: 700
         fill: true
         alpha: 110
-        fillColor:
+        fill_color:
           r: 90
           g: 35
           b: 130
@@ -333,7 +333,7 @@ pages:
         weight: 900
         fill: true
         alpha: 130
-        fillColor:
+        fill_color:
           r: 155
           g: 45
           b: 95
@@ -350,7 +350,7 @@ pages:
         italic: true
         fill: true
         alpha: 140
-        fillColor:
+        fill_color:
           r: 25
           g: 105
           b: 125
@@ -368,7 +368,7 @@ pages:
         italic: true
         fill: true
         alpha: 150
-        fillColor:
+        fill_color:
           r: 190
           g: 100
           b: 30
@@ -384,9 +384,9 @@ pages:
         size: 9
         stroke: true
         fill: false
-        lineWidth: 0.6
+        line_width: 0.6
         alpha: 120
-        strokeColor:
+        stroke_color:
           r: 35
           g: 75
           b: 150
@@ -400,10 +400,10 @@ pages:
         value: 压缩字宽：楷体 10 磅 (a:100/120)
         font: 楷体
         size: 10
-        hScale: 0.75
+        h_scale: 0.75
         fill: true
         alpha: 100
-        fillColor:
+        fill_color:
           r: 60
           g: 120
           b: 70
@@ -417,10 +417,10 @@ pages:
         value: 扩展字宽：楷体 10 磅 (a:170/200)
         font: 楷体
         size: 10
-        hScale: 1
+        h_scale: 1
         fill: true
         alpha: 170
-        fillColor:
+        fill_color:
           r: 135
           g: 60
           b: 125
@@ -437,7 +437,7 @@ pages:
         weight: 300
         fill: true
         alpha: 80
-        fillColor:
+        fill_color:
           r: 75
           g: 75
           b: 75
@@ -454,7 +454,7 @@ pages:
         weight: 500
         fill: true
         alpha: 130
-        fillColor:
+        fill_color:
           r: 55
           g: 55
           b: 55

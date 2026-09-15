@@ -1,41 +1,41 @@
 {
   "version":1,
-  "document":{"id":"path-fill-rules","title":"OFD Path 填充规则示例","author":"ofd-creator","creator":"ofd-creator","creatorVersion":"1","pageSize":{"name":"A4"}},
+  "document":{"id":"path-fill-rules","title":"OFD Path 填充规则示例","author":"ofd-creator","creator":"ofd-creator","creator_version":"1","page_size":{"name":"A4"}},
   "pages":[
     {
       "items":[
-        {"type":"text","x":15,"y":12,"width":180,"height":10,"value":"第一页：基础路径与嵌套轮廓","font":"楷体","size":7,"weight":700,"fill":true,"fillColor":{"r":30,"g":55,"b":105}},
-        {"type":"text","x":15,"y":28,"width":55,"height":7,"value":"默认规则","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":15,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":90,"g":165,"b":235},"strokeColor":{"r":30,"g":75,"b":145}},
-        {"type":"text","x":78,"y":28,"width":55,"height":7,"value":"NonZero 同向嵌套","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":78,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C M 27.5 13 B 35.508 13 42 19.492 42 27.5 B 42 35.508 35.508 42 27.5 42 B 19.492 42 13 35.508 13 27.5 B 13 19.492 19.492 13 27.5 13 C","rule":"NonZero","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":245,"g":170,"b":70},"strokeColor":{"r":170,"g":80,"b":25}},
-        {"type":"text","x":141,"y":28,"width":55,"height":7,"value":"Even-Odd 挖空","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":141,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C M 27.5 13 B 35.508 13 42 19.492 42 27.5 B 42 35.508 35.508 42 27.5 42 B 19.492 42 13 35.508 13 27.5 B 13 19.492 19.492 13 27.5 13 C","rule":"Even-Odd","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":105,"g":205,"b":145},"strokeColor":{"r":25,"g":115,"b":70}},
-        {"type":"text","x":15,"y":108,"width":180,"height":8,"value":"NonZero：同向轮廓的填充方向累加；Even-Odd：轮廓交替形成镂空","font":"楷体","size":4,"fill":true,"fillColor":{"r":70,"g":70,"b":70}},
-        {"type":"text","x":15,"y":132,"width":55,"height":7,"value":"NonZero 星形","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":15,"y":143,"width":55,"height":55,"data":"M 27.5 0 L 34 19 L 54 19 L 38 31 L 44 50 L 27.5 39 L 11 50 L 17 31 L 1 19 L 21 19 C","rule":"NonZero","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":245,"g":205,"b":65},"strokeColor":{"r":165,"g":105,"b":20}},
-        {"type":"text","x":78,"y":132,"width":55,"height":7,"value":"Even-Odd 星形","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":78,"y":143,"width":55,"height":55,"data":"M 27.5 0 L 34 19 L 54 19 L 38 31 L 44 50 L 27.5 39 L 11 50 L 17 31 L 1 19 L 21 19 C M 27.5 12 L 30 23 L 41 23 L 32 29 L 35 40 L 27.5 34 L 20 40 L 23 29 L 14 23 L 25 23 C","rule":"Even-Odd","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":220,"g":115,"b":190},"strokeColor":{"r":125,"g":40,"b":115}},
-        {"type":"text","x":141,"y":132,"width":55,"height":7,"value":"NonZero 复合轮廓","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":141,"y":143,"width":55,"height":55,"data":"M 0 0 L 55 0 L 55 55 L 0 55 C M 10 10 L 45 10 L 45 45 L 10 45 C M 20 20 L 35 20 L 35 35 L 20 35 C","rule":"NonZero","fill":true,"stroke":true,"lineWidth":1,"fillColor":{"r":105,"g":160,"b":235},"strokeColor":{"r":40,"g":80,"b":160}}
+        {"type":"text","x":15,"y":12,"width":180,"height":10,"value":"第一页：基础路径与嵌套轮廓","font":"楷体","size":7,"weight":700,"fill":true,"fill_color":{"r":30,"g":55,"b":105}},
+        {"type":"text","x":15,"y":28,"width":55,"height":7,"value":"默认规则","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":15,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":90,"g":165,"b":235},"stroke_color":{"r":30,"g":75,"b":145}},
+        {"type":"text","x":78,"y":28,"width":55,"height":7,"value":"NonZero 同向嵌套","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":78,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C M 27.5 13 B 35.508 13 42 19.492 42 27.5 B 42 35.508 35.508 42 27.5 42 B 19.492 42 13 35.508 13 27.5 B 13 19.492 19.492 13 27.5 13 C","rule":"NonZero","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":245,"g":170,"b":70},"stroke_color":{"r":170,"g":80,"b":25}},
+        {"type":"text","x":141,"y":28,"width":55,"height":7,"value":"Even-Odd 挖空","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":141,"y":38,"width":55,"height":55,"data":"M 27.5 0 B 42.687 0 55 12.313 55 27.5 B 55 42.687 42.687 55 27.5 55 B 12.313 55 0 42.687 0 27.5 B 0 12.313 12.313 0 27.5 0 C M 27.5 13 B 35.508 13 42 19.492 42 27.5 B 42 35.508 35.508 42 27.5 42 B 19.492 42 13 35.508 13 27.5 B 13 19.492 19.492 13 27.5 13 C","rule":"Even-Odd","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":105,"g":205,"b":145},"stroke_color":{"r":25,"g":115,"b":70}},
+        {"type":"text","x":15,"y":108,"width":180,"height":8,"value":"NonZero：同向轮廓的填充方向累加；Even-Odd：轮廓交替形成镂空","font":"楷体","size":4,"fill":true,"fill_color":{"r":70,"g":70,"b":70}},
+        {"type":"text","x":15,"y":132,"width":55,"height":7,"value":"NonZero 星形","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":15,"y":143,"width":55,"height":55,"data":"M 27.5 0 L 34 19 L 54 19 L 38 31 L 44 50 L 27.5 39 L 11 50 L 17 31 L 1 19 L 21 19 C","rule":"NonZero","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":245,"g":205,"b":65},"stroke_color":{"r":165,"g":105,"b":20}},
+        {"type":"text","x":78,"y":132,"width":55,"height":7,"value":"Even-Odd 星形","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":78,"y":143,"width":55,"height":55,"data":"M 27.5 0 L 34 19 L 54 19 L 38 31 L 44 50 L 27.5 39 L 11 50 L 17 31 L 1 19 L 21 19 C M 27.5 12 L 30 23 L 41 23 L 32 29 L 35 40 L 27.5 34 L 20 40 L 23 29 L 14 23 L 25 23 C","rule":"Even-Odd","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":220,"g":115,"b":190},"stroke_color":{"r":125,"g":40,"b":115}},
+        {"type":"text","x":141,"y":132,"width":55,"height":7,"value":"NonZero 复合轮廓","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":141,"y":143,"width":55,"height":55,"data":"M 0 0 L 55 0 L 55 55 L 0 55 C M 10 10 L 45 10 L 45 45 L 10 45 C M 20 20 L 35 20 L 35 35 L 20 35 C","rule":"NonZero","fill":true,"stroke":true,"line_width":1,"fill_color":{"r":105,"g":160,"b":235},"stroke_color":{"r":40,"g":80,"b":160}}
       ]
     },
     {
       "items":[
-        {"type":"text","x":15,"y":12,"width":180,"height":10,"value":"第二页：多轮廓、孔洞和组合路径","font":"楷体","size":7,"weight":700,"fill":true,"fillColor":{"r":30,"g":55,"b":105}},
-        {"type":"text","x":15,"y":30,"width":180,"height":7,"value":"Even-Odd 多孔图形","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":15,"y":42,"width":180,"height":70,"data":"M 0 0 L 180 0 L 180 70 L 0 70 C M 18 15 L 45 15 L 45 55 L 18 55 C M 65 15 L 92 15 L 92 55 L 65 55 C M 112 15 L 139 15 L 139 55 L 112 55 C M 159 15 L 174 15 L 174 55 L 159 55 C","rule":"Even-Odd","fill":true,"stroke":true,"lineWidth":1.2,"fillColor":{"r":80,"g":175,"b":190},"strokeColor":{"r":25,"g":85,"b":105}},
-        {"type":"text","x":15,"y":124,"width":180,"height":7,"value":"NonZero 同向重叠矩形：所有子路径都参与填充","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":15,"y":136,"width":180,"height":60,"data":"M 0 0 L 105 0 L 105 45 L 0 45 C M 75 15 L 180 15 L 180 60 L 75 60 C","rule":"NonZero","fill":true,"stroke":true,"lineWidth":1.5,"fillColor":{"r":245,"g":145,"b":80},"strokeColor":{"r":170,"g":70,"b":30}},
-        {"type":"text","x":15,"y":210,"width":180,"height":7,"value":"Even-Odd 重叠矩形：重叠区域按奇偶规则显示镂空效果","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":40,"g":40,"b":40}},
-        {"type":"path","x":15,"y":222,"width":180,"height":60,"data":"M 0 0 L 105 0 L 105 45 L 0 45 C M 75 15 L 180 15 L 180 60 L 75 60 C","rule":"Even-Odd","fill":true,"stroke":true,"lineWidth":1.5,"fillColor":{"r":130,"g":115,"b":220},"strokeColor":{"r":75,"g":55,"b":145}}
+        {"type":"text","x":15,"y":12,"width":180,"height":10,"value":"第二页：多轮廓、孔洞和组合路径","font":"楷体","size":7,"weight":700,"fill":true,"fill_color":{"r":30,"g":55,"b":105}},
+        {"type":"text","x":15,"y":30,"width":180,"height":7,"value":"Even-Odd 多孔图形","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":15,"y":42,"width":180,"height":70,"data":"M 0 0 L 180 0 L 180 70 L 0 70 C M 18 15 L 45 15 L 45 55 L 18 55 C M 65 15 L 92 15 L 92 55 L 65 55 C M 112 15 L 139 15 L 139 55 L 112 55 C M 159 15 L 174 15 L 174 55 L 159 55 C","rule":"Even-Odd","fill":true,"stroke":true,"line_width":1.2,"fill_color":{"r":80,"g":175,"b":190},"stroke_color":{"r":25,"g":85,"b":105}},
+        {"type":"text","x":15,"y":124,"width":180,"height":7,"value":"NonZero 同向重叠矩形：所有子路径都参与填充","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":15,"y":136,"width":180,"height":60,"data":"M 0 0 L 105 0 L 105 45 L 0 45 C M 75 15 L 180 15 L 180 60 L 75 60 C","rule":"NonZero","fill":true,"stroke":true,"line_width":1.5,"fill_color":{"r":245,"g":145,"b":80},"stroke_color":{"r":170,"g":70,"b":30}},
+        {"type":"text","x":15,"y":210,"width":180,"height":7,"value":"Even-Odd 重叠矩形：重叠区域按奇偶规则显示镂空效果","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":40,"g":40,"b":40}},
+        {"type":"path","x":15,"y":222,"width":180,"height":60,"data":"M 0 0 L 105 0 L 105 45 L 0 45 C M 75 15 L 180 15 L 180 60 L 75 60 C","rule":"Even-Odd","fill":true,"stroke":true,"line_width":1.5,"fill_color":{"r":130,"g":115,"b":220},"stroke_color":{"r":75,"g":55,"b":145}}
       ]
     },
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":248,"g":250,"b":253}},
-        {"type":"text","x":15,"y":14,"width":180,"height":12,"value":"第三页：渐变 Path 的对象级 Alpha","font":"楷体","size":9,"weight":700,"fill":true,"fillColor":{"r":30,"g":60,"b":115}},
-        {"type":"text","x":15,"y":29,"width":180,"height":8,"value":"对比相同渐变在不同 Path Alpha 下的显示效果","font":"楷体","size":4.5,"fill":true,"fillColor":{"r":75,"g":85,"b":105}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":248,"g":250,"b":253}},
+        {"type":"text","x":15,"y":14,"width":180,"height":12,"value":"第三页：渐变 Path 的对象级 Alpha","font":"楷体","size":9,"weight":700,"fill":true,"fill_color":{"r":30,"g":60,"b":115}},
+        {"type":"text","x":15,"y":29,"width":180,"height":8,"value":"对比相同渐变在不同 Path Alpha 下的显示效果","font":"楷体","size":4.5,"fill":true,"fill_color":{"r":75,"g":85,"b":105}},
         {
           "type":"path",
           "x":15,
@@ -45,11 +45,11 @@
           "data":"M 0 0 L 80 0 L 80 55 L 0 55 C",
           "fill":true,
           "stroke":true,
-          "lineWidth":1,
-          "fillColor":{
+          "line_width":1,
+          "fill_color":{
             "axial":{
-              "startPoint":"0 0",
-              "endPoint":"80 0",
+              "start_point":"0 0",
+              "end_point":"80 0",
               "extend":3,
               "segments":[
                 {"position":0,"color":{"r":35,"g":125,"b":230}},
@@ -57,9 +57,9 @@
               ]
             }
           },
-          "strokeColor":{"r":25,"g":75,"b":150}
+          "stroke_color":{"r":25,"g":75,"b":150}
         },
-        {"type":"text","x":15,"y":110,"width":80,"height":9,"value":"Alpha 未设置","font":"楷体","size":5,"fill":true,"fillColor":{"r":35,"g":80,"b":140}},
+        {"type":"text","x":15,"y":110,"width":80,"height":9,"value":"Alpha 未设置","font":"楷体","size":5,"fill":true,"fill_color":{"r":35,"g":80,"b":140}},
         {
           "type":"path",
           "x":115,
@@ -69,12 +69,12 @@
           "data":"M 0 0 L 80 0 L 80 55 L 0 55 C",
           "fill":true,
           "stroke":true,
-          "lineWidth":1,
+          "line_width":1,
           "alpha":128,
-          "fillColor":{
+          "fill_color":{
             "axial":{
-              "startPoint":"0 0",
-              "endPoint":"80 0",
+              "start_point":"0 0",
+              "end_point":"80 0",
               "extend":3,
               "segments":[
                 {"position":0,"color":{"r":35,"g":125,"b":230}},
@@ -82,9 +82,9 @@
               ]
             }
           },
-          "strokeColor":{"r":25,"g":75,"b":150}
+          "stroke_color":{"r":25,"g":75,"b":150}
         },
-        {"type":"text","x":115,"y":110,"width":80,"height":9,"value":"Alpha = 128","font":"楷体","size":5,"fill":true,"fillColor":{"r":35,"g":80,"b":140}},
+        {"type":"text","x":115,"y":110,"width":80,"height":9,"value":"Alpha = 128","font":"楷体","size":5,"fill":true,"fill_color":{"r":35,"g":80,"b":140}},
         {
           "type":"path",
           "x":15,
@@ -94,12 +94,12 @@
           "data":"M 0 0 L 80 0 L 80 55 L 0 55 C",
           "fill":true,
           "stroke":true,
-          "lineWidth":1,
+          "line_width":1,
           "alpha":64,
-          "fillColor":{
+          "fill_color":{
             "axial":{
-              "startPoint":"0 0",
-              "endPoint":"80 0",
+              "start_point":"0 0",
+              "end_point":"80 0",
               "extend":3,
               "segments":[
                 {"position":0,"color":{"r":235,"g":90,"b":55}},
@@ -107,9 +107,9 @@
               ]
             }
           },
-          "strokeColor":{"r":180,"g":65,"b":30}
+          "stroke_color":{"r":180,"g":65,"b":30}
         },
-        {"type":"text","x":15,"y":205,"width":80,"height":9,"value":"Alpha = 64","font":"楷体","size":5,"fill":true,"fillColor":{"r":145,"g":70,"b":35}},
+        {"type":"text","x":15,"y":205,"width":80,"height":9,"value":"Alpha = 64","font":"楷体","size":5,"fill":true,"fill_color":{"r":145,"g":70,"b":35}},
         {
           "type":"path",
           "x":115,
@@ -119,12 +119,12 @@
           "data":"M 0 0 L 80 0 L 80 55 L 0 55 C",
           "fill":false,
           "stroke":true,
-          "lineWidth":5,
+          "line_width":5,
           "alpha":128,
-          "strokeColor":{
+          "stroke_color":{
             "axial":{
-              "startPoint":"0 0",
-              "endPoint":"80 0",
+              "start_point":"0 0",
+              "end_point":"80 0",
               "extend":3,
               "segments":[
                 {"position":0,"color":{"r":125,"g":65,"b":220}},
@@ -133,8 +133,8 @@
             }
           }
         },
-        {"type":"text","x":115,"y":205,"width":80,"height":9,"value":"渐变描边 Alpha = 128","font":"楷体","size":5,"fill":true,"fillColor":{"r":105,"g":55,"b":160}},
-        {"type":"text","x":15,"y":245,"width":180,"height":10,"value":"Path Alpha 作用于渐变填充和渐变描边的整体不透明度","font":"楷体","size":5,"fill":true,"fillColor":{"r":75,"g":85,"b":105}}
+        {"type":"text","x":115,"y":205,"width":80,"height":9,"value":"渐变描边 Alpha = 128","font":"楷体","size":5,"fill":true,"fill_color":{"r":105,"g":55,"b":160}},
+        {"type":"text","x":15,"y":245,"width":180,"height":10,"value":"Path Alpha 作用于渐变填充和渐变描边的整体不透明度","font":"楷体","size":5,"fill":true,"fill_color":{"r":75,"g":85,"b":105}}
       ]
     }
   ]

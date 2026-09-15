@@ -98,6 +98,7 @@ func (p *Document) clearCaches() {
 		page.metadataMu.Unlock()
 		page.mu.Lock()
 		page.pageContent = models.PageContent{}
+		page.pageResPath = nil
 		page.cacheSize.Store(0)
 		page.resources = pageResources{}
 		page.loaded = false
@@ -624,6 +625,7 @@ func (p *Document) parse(body models.DocBody) error {
 				}
 				for _, resource := range content.PageRes {
 					resourcePath := pagePath.Dir().Join(resource.String())
+					target.pageResPath = append(target.pageResPath, resourcePath)
 					if _, resourceErr := p.parsePageResourceFilePath(resourcePath, true, &target.resources); resourceErr != nil {
 						return resourceErr
 					}

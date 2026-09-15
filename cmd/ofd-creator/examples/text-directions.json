@@ -1,22 +1,22 @@
 {
   "version":1,
-  "document":{"id":"text-directions","title":"OFD ReadDirection 与 CharDirection 文字排版示例","author":"ofd-creator","creator":"ofd-creator","creatorVersion":"1","pageSize":{"name":"A4"}},
+  "document":{"id":"text-directions","title":"OFD ReadDirection 与 CharDirection 文字排版示例","author":"ofd-creator","creator":"ofd-creator","creator_version":"1","page_size":{"name":"A4"}},
   "pages":[
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":248,"g":250,"b":253}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":248,"g":250,"b":253}},
         {
           "type":"text",
           "x":15,
           "y":12,
           "width":180,
           "height":12,
-          "textCodes":[{"value":"ReadDirection / CharDirection 文字排版"}],
+          "text_codes":[{"value":"ReadDirection / CharDirection 文字排版"}],
           "font":"楷体",
           "size":9,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":25,"g":55,"b":110}
+          "fill_color":{"r":25,"g":55,"b":110}
         },
         {
           "type":"text",
@@ -24,24 +24,24 @@
           "y":27,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"ReadDirection 控制字间阅读推进方向，CharDirection 控制单个字形方向"}],
+          "text_codes":[{"value":"ReadDirection 控制字间阅读推进方向，CharDirection 控制单个字形方向"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":45,"width":80,"height":55,"data":"M 0 0 L 80 0 L 80 55 L 0 55 C","fill":true,"fillColor":{"r":231,"g":241,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":135,"g":165,"b":215}},
+        {"type":"path","x":15,"y":45,"width":80,"height":55,"data":"M 0 0 L 80 0 L 80 55 L 0 55 C","fill":true,"fill_color":{"r":231,"g":241,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":135,"g":165,"b":215}},
         {
           "type":"text",
           "x":20,
           "y":50,
           "width":70,
           "height":7,
-          "textCodes":[{"value":"ReadDirection = 0"}],
+          "text_codes":[{"value":"ReadDirection = 0"}],
           "font":"楷体",
           "size":4,
           "fill":true,
-          "fillColor":{"r":45,"g":75,"b":135}
+          "fill_color":{"r":45,"g":75,"b":135}
         },
         {
           "type":"text",
@@ -51,24 +51,24 @@
           "height":12,
           "font":"楷体",
           "size":8,
-          "readDirection":0,
-          "charDirection":0,
-          "textCodes":[{"value":"水平阅读"}],
+          "read_direction":0,
+          "char_direction":0,
+          "text_codes":[{"value":"水平阅读"}],
           "fill":true,
-          "fillColor":{"r":25,"g":95,"b":175}
+          "fill_color":{"r":25,"g":95,"b":175}
         },
-        {"type":"path","x":115,"y":45,"width":80,"height":55,"data":"M 0 0 L 80 0 L 80 55 L 0 55 C","fill":true,"fillColor":{"r":236,"g":249,"b":241},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":125,"g":185,"b":145}},
+        {"type":"path","x":115,"y":45,"width":80,"height":55,"data":"M 0 0 L 80 0 L 80 55 L 0 55 C","fill":true,"fill_color":{"r":236,"g":249,"b":241},"stroke":true,"line_width":0.5,"stroke_color":{"r":125,"g":185,"b":145}},
         {
           "type":"text",
           "x":120,
           "y":50,
           "width":70,
           "height":7,
-          "textCodes":[{"value":"ReadDirection = 90"}],
+          "text_codes":[{"value":"ReadDirection = 90"}],
           "font":"楷体",
           "size":4,
           "fill":true,
-          "fillColor":{"r":40,"g":110,"b":75}
+          "fill_color":{"r":40,"g":110,"b":75}
         },
         {
           "type":"text",
@@ -78,24 +78,24 @@
           "height":36,
           "font":"楷体",
           "size":8,
-          "readDirection":90,
-          "charDirection":0,
-          "textCodes":[{"value":"竖向阅读"}],
+          "read_direction":90,
+          "char_direction":0,
+          "text_codes":[{"value":"竖向阅读"}],
           "fill":true,
-          "fillColor":{"r":35,"g":130,"b":85}
+          "fill_color":{"r":35,"g":130,"b":85}
         },
-        {"type":"path","x":15,"y":115,"width":80,"height":75,"data":"M 0 0 L 80 0 L 80 75 L 0 75 C","fill":true,"fillColor":{"r":255,"g":244,"b":232},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":220,"g":165,"b":105}},
+        {"type":"path","x":15,"y":115,"width":80,"height":75,"data":"M 0 0 L 80 0 L 80 75 L 0 75 C","fill":true,"fill_color":{"r":255,"g":244,"b":232},"stroke":true,"line_width":0.5,"stroke_color":{"r":220,"g":165,"b":105}},
         {
           "type":"text",
           "x":20,
           "y":120,
           "width":70,
           "height":7,
-          "textCodes":[{"value":"CharDirection = 90"}],
+          "text_codes":[{"value":"CharDirection = 90"}],
           "font":"楷体",
           "size":4,
           "fill":true,
-          "fillColor":{"r":155,"g":95,"b":35}
+          "fill_color":{"r":155,"g":95,"b":35}
         },
         {
           "type":"text",
@@ -103,26 +103,26 @@
           "y":145,
           "width":35,
           "height":35,
-          "textCodes":[{"value":"字形旋转"}],
+          "text_codes":[{"value":"字形旋转"}],
           "font":"楷体",
           "size":8,
-          "readDirection":0,
-          "charDirection":90,
+          "read_direction":0,
+          "char_direction":90,
           "fill":true,
-          "fillColor":{"r":200,"g":105,"b":30}
+          "fill_color":{"r":200,"g":105,"b":30}
         },
-        {"type":"path","x":115,"y":115,"width":80,"height":75,"data":"M 0 0 L 80 0 L 80 75 L 0 75 C","fill":true,"fillColor":{"r":245,"g":238,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":170,"g":135,"b":210}},
+        {"type":"path","x":115,"y":115,"width":80,"height":75,"data":"M 0 0 L 80 0 L 80 75 L 0 75 C","fill":true,"fill_color":{"r":245,"g":238,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":170,"g":135,"b":210}},
         {
           "type":"text",
           "x":120,
           "y":120,
           "width":70,
           "height":7,
-          "textCodes":[{"value":"ReadDirection = 90 / CharDirection = 90"}],
+          "text_codes":[{"value":"ReadDirection = 90 / CharDirection = 90"}],
           "font":"楷体",
           "size":3.5,
           "fill":true,
-          "fillColor":{"r":100,"g":65,"b":145}
+          "fill_color":{"r":100,"g":65,"b":145}
         },
         {
           "type":"text",
@@ -130,26 +130,26 @@
           "y":135,
           "width":25,
           "height":45,
-          "textCodes":[{"value":"组合方向"}],
+          "text_codes":[{"value":"组合方向"}],
           "font":"楷体",
           "size":8,
-          "readDirection":90,
-          "charDirection":90,
+          "read_direction":90,
+          "char_direction":90,
           "fill":true,
-          "fillColor":{"r":115,"g":65,"b":170}
+          "fill_color":{"r":115,"g":65,"b":170}
         },
-        {"type":"path","x":15,"y":207,"width":180,"height":48,"data":"M 0 0 L 180 0 L 180 48 L 0 48 C","fill":true,"fillColor":{"r":238,"g":242,"b":247},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":155,"g":165,"b":180}},
+        {"type":"path","x":15,"y":207,"width":180,"height":48,"data":"M 0 0 L 180 0 L 180 48 L 0 48 C","fill":true,"fill_color":{"r":238,"g":242,"b":247},"stroke":true,"line_width":0.5,"stroke_color":{"r":155,"g":165,"b":180}},
         {
           "type":"text",
           "x":22,
           "y":215,
           "width":165,
           "height":8,
-          "textCodes":[{"value":"其他阅读方向：180 向左，270 向上"}],
+          "text_codes":[{"value":"其他阅读方向：180 向左，270 向上"}],
           "font":"楷体",
           "size":5,
           "fill":true,
-          "fillColor":{"r":55,"g":70,"b":100}
+          "fill_color":{"r":55,"g":70,"b":100}
         },
         {
           "type":"text",
@@ -157,13 +157,13 @@
           "y":233,
           "width":72,
           "height":12,
-          "textCodes":[{"value":"向左 180"}],
+          "text_codes":[{"value":"向左 180"}],
           "font":"楷体",
           "size":7,
-          "readDirection":180,
-          "charDirection":0,
+          "read_direction":180,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":50,"g":90,"b":155}
+          "fill_color":{"r":50,"g":90,"b":155}
         },
         {
           "type":"text",
@@ -171,31 +171,31 @@
           "y":243,
           "width":72,
           "height":12,
-          "textCodes":[{"value":"向上 270"}],
+          "text_codes":[{"value":"向上 270"}],
           "font":"楷体",
           "size":7,
-          "readDirection":270,
-          "charDirection":0,
+          "read_direction":270,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":50,"g":90,"b":155}
+          "fill_color":{"r":50,"g":90,"b":155}
         }
       ]
     },
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":252,"g":250,"b":245}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":252,"g":250,"b":245}},
         {
           "type":"text",
           "x":15,
           "y":12,
           "width":180,
           "height":12,
-          "textCodes":[{"value":"环形文字与波浪形文字示例"}],
+          "text_codes":[{"value":"环形文字与波浪形文字示例"}],
           "font":"楷体",
           "size":9,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":25,"g":55,"b":110}
+          "fill_color":{"r":25,"g":55,"b":110}
         },
         {
           "type":"text",
@@ -203,13 +203,13 @@
           "y":30,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"通过 CharDirection 旋转字符，实现环形排列效果"}],
+          "text_codes":[{"value":"通过 CharDirection 旋转字符，实现环形排列效果"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":50,"y":85,"width":110,"height":110,"data":"M 0 0 L 110 0 L 110 110 L 0 110 C","fill":true,"fillColor":{"r":240,"g":245,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":180,"g":200,"b":230}},
+        {"type":"path","x":50,"y":85,"width":110,"height":110,"data":"M 0 0 L 110 0 L 110 110 L 0 110 C","fill":true,"fill_color":{"r":240,"g":245,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":180,"g":200,"b":230}},
         {
           "type":"text",
           "x":101.0,
@@ -218,11 +218,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":0,
-          "textCodes":[{"value":"环"}],
+          "read_direction":0,
+          "char_direction":0,
+          "text_codes":[{"value":"环"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -232,11 +232,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":60,
-          "textCodes":[{"value":"形"}],
+          "read_direction":0,
+          "char_direction":60,
+          "text_codes":[{"value":"形"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -246,11 +246,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":120,
-          "textCodes":[{"value":"文"}],
+          "read_direction":0,
+          "char_direction":120,
+          "text_codes":[{"value":"文"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -260,11 +260,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":180,
-          "textCodes":[{"value":"字"}],
+          "read_direction":0,
+          "char_direction":180,
+          "text_codes":[{"value":"字"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -274,11 +274,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":240,
-          "textCodes":[{"value":"效"}],
+          "read_direction":0,
+          "char_direction":240,
+          "text_codes":[{"value":"效"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -288,11 +288,11 @@
           "height":8,
           "font":"楷体",
           "size":7,
-          "readDirection":0,
-          "charDirection":300,
-          "textCodes":[{"value":"果"}],
+          "read_direction":0,
+          "char_direction":300,
+          "text_codes":[{"value":"果"}],
           "fill":true,
-          "fillColor":{"r":180,"g":60,"b":30}
+          "fill_color":{"r":180,"g":60,"b":30}
         },
         {
           "type":"text",
@@ -300,13 +300,13 @@
           "y":205,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"通过 deltaY 正负交替，实现波浪形排列效果"}],
+          "text_codes":[{"value":"通过 delta_y 正负交替，实现波浪形排列效果"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":218,"width":180,"height":35,"data":"M 0 0 L 180 0 L 180 35 L 0 35 C","fill":true,"fillColor":{"r":235,"g":245,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":150,"g":190,"b":230}},
+        {"type":"path","x":15,"y":218,"width":180,"height":35,"data":"M 0 0 L 180 0 L 180 35 L 0 35 C","fill":true,"fill_color":{"r":235,"g":245,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":150,"g":190,"b":230}},
         {
           "type":"text",
           "x":20,
@@ -315,29 +315,29 @@
           "height":20,
           "font":"楷体",
           "size":8,
-          "readDirection":0,
-          "charDirection":0,
-          "textCodes":[{"value":"波浪形文字效果演示"}],
+          "read_direction":0,
+          "char_direction":0,
+          "text_codes":[{"value":"波浪形文字效果演示"}],
           "fill":true,
-          "fillColor":{"r":30,"g":100,"b":180}
+          "fill_color":{"r":30,"g":100,"b":180}
         }
       ]
     },
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":248,"g":250,"b":253}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":248,"g":250,"b":253}},
         {
           "type":"text",
           "x":15,
           "y":12,
           "width":180,
           "height":12,
-          "textCodes":[{"value":"渐变文字与描边文字示例"}],
+          "text_codes":[{"value":"渐变文字与描边文字示例"}],
           "font":"楷体",
           "size":9,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":25,"g":55,"b":110}
+          "fill_color":{"r":25,"g":55,"b":110}
         },
         {
           "type":"text",
@@ -345,28 +345,28 @@
           "y":30,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"通过 fillColor 使用轴向渐变、径向渐变填充文字"}],
+          "text_codes":[{"value":"通过 fill_color 使用轴向渐变、径向渐变填充文字"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":45,"width":180,"height":70,"data":"M 0 0 L 180 0 L 180 70 L 0 70 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":45,"width":180,"height":70,"data":"M 0 0 L 180 0 L 180 70 L 0 70 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":55,
           "width":170,
           "height":18,
-          "textCodes":[{"value":"轴向渐变 A→B"}],
+          "text_codes":[{"value":"轴向渐变 A→B"}],
           "font":"楷体",
           "size":12,
           "weight":700,
           "fill":true,
-          "fillColor":{
+          "fill_color":{
             "axial":{
-              "startPoint":"0 0.5",
-              "endPoint":"1 0.5",
+              "start_point":"0 0.5",
+              "end_point":"1 0.5",
               "segments":[
                 {"position":0,"color":{"r":220,"g":50,"b":50}},
                 {"position":0.5,"color":{"r":50,"g":180,"b":50}},
@@ -381,17 +381,17 @@
           "y":80,
           "width":170,
           "height":18,
-          "textCodes":[{"value":"径向渐变 中心→边缘"}],
+          "text_codes":[{"value":"径向渐变 中心→边缘"}],
           "font":"楷体",
           "size":12,
           "weight":700,
           "fill":true,
-          "fillColor":{
+          "fill_color":{
             "radial":{
-              "startPoint":"0.5 0.5",
-              "startRadius":0,
-              "endPoint":"0.5 0.5",
-              "endRadius":0.7,
+              "start_point":"0.5 0.5",
+              "start_radius":0,
+              "end_point":"0.5 0.5",
+              "end_radius":0.7,
               "segments":[
                 {"position":0,"color":{"r":255,"g":200,"b":50}},
                 {"position":1,"color":{"r":200,"g":50,"b":100}}
@@ -405,27 +405,27 @@
           "y":125,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"通过 stroke:true, fill:false 实现空心描边文字"}],
+          "text_codes":[{"value":"通过 stroke:true, fill:false 实现空心描边文字"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":140,"width":180,"height":60,"data":"M 0 0 L 180 0 L 180 60 L 0 60 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":140,"width":180,"height":60,"data":"M 0 0 L 180 0 L 180 60 L 0 60 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":148,
           "width":170,
           "height":20,
-          "textCodes":[{"value":"描边空心字"}],
+          "text_codes":[{"value":"描边空心字"}],
           "font":"楷体",
           "size":14,
           "weight":700,
           "stroke":true,
           "fill":false,
-          "strokeColor":{"r":30,"g":100,"b":180},
-          "lineWidth":0.8
+          "stroke_color":{"r":30,"g":100,"b":180},
+          "line_width":0.8
         },
         {
           "type":"text",
@@ -433,15 +433,15 @@
           "y":173,
           "width":170,
           "height":20,
-          "textCodes":[{"value":"描边+填充双重效果"}],
+          "text_codes":[{"value":"描边+填充双重效果"}],
           "font":"楷体",
           "size":14,
           "weight":700,
           "stroke":true,
           "fill":true,
-          "strokeColor":{"r":200,"g":50,"b":50},
-          "lineWidth":0.5,
-          "fillColor":{"r":255,"g":220,"b":100}
+          "stroke_color":{"r":200,"g":50,"b":50},
+          "line_width":0.5,
+          "fill_color":{"r":255,"g":220,"b":100}
         },
         {
           "type":"text",
@@ -449,32 +449,32 @@
           "y":210,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"LaGouraud 网格渐变：四角不同颜色混合"}],
+          "text_codes":[{"value":"LaGouraud 网格渐变：四角不同颜色混合"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":225,"width":180,"height":55,"data":"M 0 0 L 180 0 L 180 55 L 0 55 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":225,"width":180,"height":55,"data":"M 0 0 L 180 0 L 180 55 L 0 55 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":235,
           "width":170,
           "height":35,
-          "textCodes":[{"value":"网格渐变"}],
+          "text_codes":[{"value":"网格渐变"}],
           "font":"楷体",
           "size":22,
           "weight":700,
           "fill":true,
-          "fillColor":{
+          "fill_color":{
             "gouraud":{
               "extend":0,
               "points":[
-                {"x":0,"y":0,"edgeFlag":0,"color":{"r":255,"g":100,"b":50}},
-                {"x":160,"y":0,"edgeFlag":1,"color":{"r":50,"g":200,"b":100}},
-                {"x":0,"y":30,"edgeFlag":2,"color":{"r":50,"g":100,"b":255}},
-                {"x":160,"y":30,"edgeFlag":2,"color":{"r":200,"g":50,"b":200}}
+                {"x":0,"y":0,"edge_flag":0,"color":{"r":255,"g":100,"b":50}},
+                {"x":160,"y":0,"edge_flag":1,"color":{"r":50,"g":200,"b":100}},
+                {"x":0,"y":30,"edge_flag":2,"color":{"r":50,"g":100,"b":255}},
+                {"x":160,"y":30,"edge_flag":2,"color":{"r":200,"g":50,"b":200}}
               ]
             }
           }
@@ -483,19 +483,19 @@
     },
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":250,"g":248,"b":252}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":250,"g":248,"b":252}},
         {
           "type":"text",
           "x":15,
           "y":12,
           "width":180,
           "height":12,
-          "textCodes":[{"value":"字重、斜体与水平缩放示例"}],
+          "text_codes":[{"value":"字重、斜体与水平缩放示例"}],
           "font":"楷体",
           "size":9,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":25,"g":55,"b":110}
+          "fill_color":{"r":25,"g":55,"b":110}
         },
         {
           "type":"text",
@@ -503,25 +503,25 @@
           "y":30,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"Weight 100-900 控制字重粗细"}],
+          "text_codes":[{"value":"Weight 100-900 控制字重粗细"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":42,"width":180,"height":120,"data":"M 0 0 L 180 0 L 180 120 L 0 120 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":42,"width":180,"height":120,"data":"M 0 0 L 180 0 L 180 120 L 0 120 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":48,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Thin 100"}],
+          "text_codes":[{"value":"Thin 100"}],
           "font":"楷体",
           "size":10,
           "weight":100,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         },
         {
           "type":"text",
@@ -529,12 +529,12 @@
           "y":63,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Light 300"}],
+          "text_codes":[{"value":"Light 300"}],
           "font":"楷体",
           "size":10,
           "weight":300,
           "fill":true,
-          "fillColor":{"r":80,"g":80,"b":80}
+          "fill_color":{"r":80,"g":80,"b":80}
         },
         {
           "type":"text",
@@ -542,12 +542,12 @@
           "y":78,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Regular 400"}],
+          "text_codes":[{"value":"Regular 400"}],
           "font":"楷体",
           "size":10,
           "weight":400,
           "fill":true,
-          "fillColor":{"r":100,"g":100,"b":100}
+          "fill_color":{"r":100,"g":100,"b":100}
         },
         {
           "type":"text",
@@ -555,12 +555,12 @@
           "y":93,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Medium 500"}],
+          "text_codes":[{"value":"Medium 500"}],
           "font":"楷体",
           "size":10,
           "weight":500,
           "fill":true,
-          "fillColor":{"r":120,"g":120,"b":120}
+          "fill_color":{"r":120,"g":120,"b":120}
         },
         {
           "type":"text",
@@ -568,12 +568,12 @@
           "y":108,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Bold 700"}],
+          "text_codes":[{"value":"Bold 700"}],
           "font":"楷体",
           "size":10,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":150,"g":150,"b":150}
+          "fill_color":{"r":150,"g":150,"b":150}
         },
         {
           "type":"text",
@@ -581,12 +581,12 @@
           "y":123,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"Black 900"}],
+          "text_codes":[{"value":"Black 900"}],
           "font":"楷体",
           "size":10,
           "weight":900,
           "fill":true,
-          "fillColor":{"r":180,"g":180,"b":180}
+          "fill_color":{"r":180,"g":180,"b":180}
         },
         {
           "type":"text",
@@ -594,25 +594,25 @@
           "y":170,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"Italic:true 设置斜体样式"}],
+          "text_codes":[{"value":"Italic:true 设置斜体样式"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":182,"width":180,"height":40,"data":"M 0 0 L 180 0 L 180 40 L 0 40 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":182,"width":180,"height":40,"data":"M 0 0 L 180 0 L 180 40 L 0 40 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":190,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"正体 Regular"}],
+          "text_codes":[{"value":"正体 Regular"}],
           "font":"楷体",
           "size":12,
           "weight":400,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         },
         {
           "type":"text",
@@ -620,13 +620,13 @@
           "y":205,
           "width":170,
           "height":14,
-          "textCodes":[{"value":"斜体 Italic"}],
+          "text_codes":[{"value":"斜体 Italic"}],
           "font":"楷体",
           "size":12,
           "weight":400,
           "italic":true,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         },
         {
           "type":"text",
@@ -634,25 +634,25 @@
           "y":230,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"HScale 0-1 控制水平缩放比例"}],
+          "text_codes":[{"value":"HScale 0-1 控制水平缩放比例"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":242,"width":180,"height":45,"data":"M 0 0 L 180 0 L 180 45 L 0 45 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":242,"width":180,"height":45,"data":"M 0 0 L 180 0 L 180 45 L 0 45 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":248,
           "width":170,
           "height":12,
-          "textCodes":[{"value":"HScale=1.0 正常"}],
+          "text_codes":[{"value":"HScale=1.0 正常"}],
           "font":"楷体",
           "size":9,
-          "hScale":1.0,
+          "h_scale":1.0,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         },
         {
           "type":"text",
@@ -660,12 +660,12 @@
           "y":262,
           "width":170,
           "height":12,
-          "textCodes":[{"value":"HScale=0.5 压缩"}],
+          "text_codes":[{"value":"HScale=0.5 压缩"}],
           "font":"楷体",
           "size":9,
-          "hScale":0.5,
+          "h_scale":0.5,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         },
         {
           "type":"text",
@@ -673,30 +673,30 @@
           "y":276,
           "width":170,
           "height":12,
-          "textCodes":[{"value":"HScale=0.8 稍扁"}],
+          "text_codes":[{"value":"HScale=0.8 稍扁"}],
           "font":"楷体",
           "size":9,
-          "hScale":0.8,
+          "h_scale":0.8,
           "fill":true,
-          "fillColor":{"r":60,"g":60,"b":60}
+          "fill_color":{"r":60,"g":60,"b":60}
         }
       ]
     },
     {
       "items":[
-        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fillColor":{"r":252,"g":250,"b":245}},
+        {"type":"path","x":0,"y":0,"width":210,"height":297,"data":"M 0 0 L 210 0 L 210 297 L 0 297 C","fill":true,"fill_color":{"r":252,"g":250,"b":245}},
         {
           "type":"text",
           "x":15,
           "y":12,
           "width":180,
           "height":12,
-          "textCodes":[{"value":"竖排文字与旋转文字示例"}],
+          "text_codes":[{"value":"竖排文字与旋转文字示例"}],
           "font":"楷体",
           "size":9,
           "weight":700,
           "fill":true,
-          "fillColor":{"r":25,"g":55,"b":110}
+          "fill_color":{"r":25,"g":55,"b":110}
         },
         {
           "type":"text",
@@ -704,26 +704,26 @@
           "y":30,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"ReadDirection=90 实现传统中文竖排"}],
+          "text_codes":[{"value":"ReadDirection=90 实现传统中文竖排"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":42,"width":180,"height":120,"data":"M 0 0 L 180 0 L 180 120 L 0 120 C","fill":true,"fillColor":{"r":255,"g":252,"b":245},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":190,"b":170}},
+        {"type":"path","x":15,"y":42,"width":180,"height":120,"data":"M 0 0 L 180 0 L 180 120 L 0 120 C","fill":true,"fill_color":{"r":255,"g":252,"b":245},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":190,"b":170}},
         {
           "type":"text",
           "x":170,
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"第"}],
+          "text_codes":[{"value":"第"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -731,13 +731,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"一"}],
+          "text_codes":[{"value":"一"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -745,13 +745,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"列"}],
+          "text_codes":[{"value":"列"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -759,13 +759,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"从"}],
+          "text_codes":[{"value":"从"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -773,13 +773,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"右"}],
+          "text_codes":[{"value":"右"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -787,13 +787,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"到"}],
+          "text_codes":[{"value":"到"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -801,13 +801,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"左"}],
+          "text_codes":[{"value":"左"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -815,13 +815,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"阅"}],
+          "text_codes":[{"value":"阅"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -829,13 +829,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"读"}],
+          "text_codes":[{"value":"读"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -843,13 +843,13 @@
           "y":48,
           "width":12,
           "height":105,
-          "textCodes":[{"value":"！"}],
+          "text_codes":[{"value":"！"}],
           "font":"楷体",
           "size":9,
-          "readDirection":90,
-          "charDirection":0,
+          "read_direction":90,
+          "char_direction":0,
           "fill":true,
-          "fillColor":{"r":150,"g":50,"b":50}
+          "fill_color":{"r":150,"g":50,"b":50}
         },
         {
           "type":"text",
@@ -857,25 +857,25 @@
           "y":170,
           "width":180,
           "height":8,
-          "textCodes":[{"value":"CTM 坐标变换矩阵实现任意角度旋转"}],
+          "text_codes":[{"value":"CTM 坐标变换矩阵实现任意角度旋转"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
-          "fillColor":{"r":75,"g":85,"b":105}
+          "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":182,"width":180,"height":100,"data":"M 0 0 L 180 0 L 180 100 L 0 100 C","fill":true,"fillColor":{"r":255,"g":255,"b":255},"stroke":true,"lineWidth":0.5,"strokeColor":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":182,"width":180,"height":100,"data":"M 0 0 L 180 0 L 180 100 L 0 100 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
           "y":195,
           "width":160,
           "height":14,
-          "textCodes":[{"value":"旋转 30°"}],
+          "text_codes":[{"value":"旋转 30°"}],
           "font":"楷体",
           "size":11,
           "fill":true,
           "ctm":[0.866,0.5,-0.5,0.866,0,0],
-          "fillColor":{"r":200,"g":80,"b":50}
+          "fill_color":{"r":200,"g":80,"b":50}
         },
         {
           "type":"text",
@@ -883,12 +883,12 @@
           "y":215,
           "width":160,
           "height":14,
-          "textCodes":[{"value":"旋转 -30°"}],
+          "text_codes":[{"value":"旋转 -30°"}],
           "font":"楷体",
           "size":11,
           "fill":true,
           "ctm":[0.866,-0.5,0.5,0.866,0,0],
-          "fillColor":{"r":50,"g":150,"b":200}
+          "fill_color":{"r":50,"g":150,"b":200}
         },
         {
           "type":"text",
@@ -896,12 +896,12 @@
           "y":245,
           "width":160,
           "height":14,
-          "textCodes":[{"value":"旋转45°+缩放"}],
+          "text_codes":[{"value":"旋转45°+缩放"}],
           "font":"楷体",
           "size":11,
           "fill":true,
           "ctm":[0.707,0.707,-0.354,0.354,0,0],
-          "fillColor":{"r":100,"g":180,"b":80}
+          "fill_color":{"r":100,"g":180,"b":80}
         },
         {
           "type":"text",
@@ -909,12 +909,12 @@
           "y":270,
           "width":160,
           "height":14,
-          "textCodes":[{"value":"水平倾斜效果"}],
+          "text_codes":[{"value":"水平倾斜效果"}],
           "font":"楷体",
           "size":11,
           "fill":true,
           "ctm":[1,0,0.3,1,0,0],
-          "fillColor":{"r":150,"g":100,"b":180}
+          "fill_color":{"r":150,"g":100,"b":180}
         }
       ]
     }
