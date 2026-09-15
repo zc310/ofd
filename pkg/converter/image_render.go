@@ -9,7 +9,6 @@ import (
 	"github.com/nao1215/imaging"
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -49,7 +48,7 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 	// 图像写入器处理
 	if c.imageWriter != nil {
 		var img image.Image
-		img = rasterizer.Draw(page, c.dpi, canvas.DefaultColorSpace)
+		img = render.Rasterize(page, c.dpi, canvas.DefaultColorSpace)
 
 		// 缩略图处理
 		if c.thumbnail > 0 {

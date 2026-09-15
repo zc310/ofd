@@ -6,11 +6,14 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/tdewolff/canvas"
 )
 
 func TestOpenAndRenderPage(t *testing.T) {
@@ -75,6 +78,34 @@ func TestOpenAndRenderPage(t *testing.T) {
 	for index, page := range svgPages {
 		if len(page) == 0 || !bytes.Contains(page, []byte("<svg")) {
 			t.Fatalf("rendered SVG page %d is empty or invalid", index)
+		}
+	}
+}
+
+func TestPagesWithIntroDocument(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 42 {
+		t.Fatalf("page count = %d, want 42", len(pages))
+	}
+	for index, page := range pages {
+		if page.Index != index {
+			t.Errorf("Pages()[%d].Index = %d, want %d", index, page.Index, index)
+		}
+		if math.Abs(page.Width-320.0001) > 0.0001 || math.Abs(page.Height-240) > 0.0001 {
+			t.Errorf("Pages()[%d] = %+v, want 320.0001 x 240 mm", index, page)
 		}
 	}
 }
@@ -254,11 +285,11 @@ func TestPageDocumentReusesBackgroundCache(t *testing.T) {
 	}
 	defer reader.Close()
 
-	first, err := reader.pageDocument(reader.pages[0], color.White)
+	first, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := reader.pageDocument(reader.pages[0], color.White)
+	second, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +317,7 @@ func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
 		color.RGBA{R: 128, A: 255},
 	}
 	for _, background := range backgrounds {
-		if _, err := reader.pageDocument(reader.pages[0], background); err != nil {
+		if _, err := reader.pageDocument(reader.pages[0], background, canvas.DPI(96)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -309,14 +340,14 @@ func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	}
 	defer reader.Close()
 
-	first, err := reader.pageDocument(reader.pages[0], color.White)
+	first, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reader.AddFallbackFont(FontSource{Family: "CacheInvalidationFallback", Data: []byte("invalid")}); err == nil {
 		t.Fatal("无效回退字体应返回错误")
 	}
-	second, err := reader.pageDocument(reader.pages[0], color.White)
+	second, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}

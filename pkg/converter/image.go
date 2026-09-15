@@ -40,7 +40,7 @@ func Image(input interface{}, opts ...Option) error {
 	// 创建渲染文档。每个文档体保留独立的资源上下文。
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(conv.bgColor, document))
+		documents = append(documents, render.NewDocumentWithDPI(conv.bgColor, document, conv.dpi))
 	}
 	if len(collectDocumentPages(documents)) == 0 {
 		return errors.New("文档没有页面")

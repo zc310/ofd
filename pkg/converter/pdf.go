@@ -37,7 +37,7 @@ func PDF(input any, output io.Writer, opts ...Option) error {
 
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocument(color.Transparent, document))
+		documents = append(documents, render.NewDocumentWithDPI(color.Transparent, document, conv.dpi))
 	}
 	return PDFDocuments(documents, output, opts...)
 }

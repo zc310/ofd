@@ -279,6 +279,7 @@ const viewPanel = document.querySelector('#view-panel');
 const showThumbnails = document.querySelector('#show-thumbnails');
 const showTextLayer = document.querySelector('#show-text-layer');
 const darkReading = document.querySelector('#dark-reading');
+const clarityPrioritySelect = document.querySelector('#clarity-priority');
 const renderFormatSelect = document.querySelector('#render-format');
 const documentBackground = document.querySelector('#document-background');
 const documentBackgroundColorPicker = document.querySelector('#document-background-color');
@@ -357,6 +358,7 @@ let pageLayout = (() => {
 let zoomGeneration = 0;
 const thumbnailsStorageKey = 'ofd-show-thumbnails';
 const renderFormatStorageKey = 'ofd-render-format';
+const clarityPriorityStorageKey = 'ofd-clarity-priority';
 let thumbnailsVisible = (() => {
   try {
     return localStorage.getItem(thumbnailsStorageKey) !== 'false';
@@ -370,6 +372,13 @@ let renderFormat = (() => {
     return ['png', 'jpg', 'svg'].includes(value) ? value : 'png';
   } catch (_) {
     return 'png';
+  }
+})();
+let clarityPriority = (() => {
+  try {
+    return localStorage.getItem(clarityPriorityStorageKey) === 'true';
+  } catch (_) {
+    return false;
   }
 })();
 let textLayerVisible = true;
@@ -1486,12 +1495,22 @@ function setZoom(value, mode = 'manual') {
 		} catch (_) {}
 	}
 	if (target === zoom && mode === zoomMode) return;
+	const previousDPI = pageDPI();
   zoom = target;
   zoomMode = mode;
+  applyPageWidth();
+  if (previousDPI !== pageDPI()) reloadPageImages();
+  else pageCards.forEach((card, index) => {
+    if (textCache.has(index)) buildTextLayer(index);
+  });
+  scheduleVirtualUpdate();
+  updateNavigation();
+}
+
+function reloadPageImages() {
   zoomGeneration++;
   resetRenderProgress();
   cancelRequests(pageRequests);
-  applyPageWidth();
   pageCards.forEach(card => {
     card.classList.add('loading');
     card.querySelector('.page-image').hidden = true;
@@ -1501,10 +1520,7 @@ function setZoom(value, mode = 'manual') {
   pageCards.forEach((card, index) => {
     const bounds = card.getBoundingClientRect();
     if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
-    if (textCache.has(index)) buildTextLayer(index);
   });
-  scheduleVirtualUpdate();
-  updateNavigation();
 }
 
 function fitWidthZoom() {
@@ -1716,7 +1732,7 @@ function loadText(index, pinned = false) {
 }
 
 function pageDPI() {
-  return Math.max(72, Math.min(300, Math.round(96 * zoom)));
+  return clarityPriority ? Math.max(72, Math.min(300, Math.round(72 * zoom))) : 72;
 }
 
 function cacheKey(kind, index, generation, dpi, format = renderFormat) {
@@ -1732,7 +1748,7 @@ function renderMimeType(format) {
 function loadImage(index, kind, generation, imageElement, card) {
   const cache = kind === 'page' ? pageCache : thumbnailCache;
   const requests = kind === 'page' ? pageRequests : thumbnailRequests;
-  const dpi = kind === 'page' ? pageDPI() : 36;
+  const dpi = kind === 'page' ? pageDPI() : 15;
   const format = renderFormat;
   const requestedZoomGeneration = zoomGeneration;
   const key = cacheKey(kind, index, generation, dpi, format);
@@ -1895,7 +1911,7 @@ function loadThumbnail(index) {
   const generation = documentGeneration;
   const image = button.querySelector('img');
   const format = renderFormat;
-  const key = cacheKey('thumbnail', index, generation, 36, format);
+  const key = cacheKey('thumbnail', index, generation, 15, format);
   const cached = thumbnailCache.get(key);
   if (cached) {
     showImageWhenReady(image, cached);
@@ -1965,7 +1981,7 @@ function flushThumbnailBatch() {
   const format = active[0].format;
   const renderRequest = engine.renderPages(
     active.map(entry => entry.index),
-    { format, dpi: 36, background: transparentRenderBackground },
+    { format, dpi: 15, background: transparentRenderBackground },
   );
   renderRequest.thumbnailEntries = active;
   for (const entry of active) entry.batchRequest = renderRequest;
@@ -2941,6 +2957,18 @@ function setRenderFormat(value) {
   scheduleThumbnailVirtualUpdate();
 }
 
+function setClarityPriority(enabled) {
+  const previousDPI = pageDPI();
+  clarityPriority = !!enabled;
+  clarityPrioritySelect.checked = clarityPriority;
+  try {
+    localStorage.setItem(clarityPriorityStorageKey, String(clarityPriority));
+  } catch (_) {}
+  if (!pageInfos.length || previousDPI === pageDPI()) return;
+  reloadPageImages();
+  scheduleVirtualUpdate();
+}
+
 function setTextLayerVisible(visible) {
   textLayerVisible = visible;
   document.body.classList.toggle('hide-text-layer', !visible);
@@ -2990,6 +3018,9 @@ try {
 }
 try {
   renderFormatSelect.value = renderFormat;
+} catch (_) {}
+try {
+  clarityPrioritySelect.checked = clarityPriority;
 } catch (_) {}
 try {
   darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
@@ -3101,6 +3132,7 @@ documentBackgroundColorPicker.addEventListener('input', () => {
   if (documentBackgroundMode === 'custom') setDocumentBackground('custom', documentBackgroundColorPicker.value);
 });
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
+clarityPrioritySelect.addEventListener('change', () => setClarityPriority(clarityPrioritySelect.checked));
 renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormatSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });

@@ -5,7 +5,6 @@ import (
 	"image/color"
 
 	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -56,9 +55,9 @@ func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.Compos
 	}
 
 	// 在创建离屏画布前扣除预算，避免异常尺寸先完成分配再被限制。
-	dpi := 300.0 * box.Width / w
+	dpi := p.dpi.DPI() * box.Width / w
 	if dpi <= 0 {
-		dpi = 300.0
+		dpi = defaultRenderDPI
 	}
 	if dpi > 1200 {
 		dpi = 1200
@@ -75,8 +74,9 @@ func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.Compos
 	cctx := canvas.NewContext(cc)
 	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
 
-	// 栅格化分辨率以最终内容在页面上约 300dpi 为准，避免对超大单元产生过大的位图。
-	var raster image.Image = rasterizer.Draw(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)
+	// 这里使用调用方传入的输出分辨率，根据复合单元在页面上的放置宽度
+	// 推算离屏栅格分辨率；实际值还会受到上下限和离屏像素预算限制。
+	var raster image.Image = Rasterize(cc, canvas.DPI(dpi), canvas.DefaultColorSpace)
 	if raster == nil || raster.Bounds().Empty() {
 		return
 	}
