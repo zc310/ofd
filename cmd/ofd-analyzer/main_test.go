@@ -19,8 +19,43 @@ func TestParseArgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.pretty || opts.format != "markdown" || !opts.tree || opts.output != "report.md" || opts.input != "input.ofd" {
+	if !opts.pretty || opts.format != "markdown" || !opts.formatSet || !opts.tree || opts.output != "report.md" || opts.input != "input.ofd" {
 		t.Fatalf("options = %+v", opts)
+	}
+}
+
+func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	for _, test := range []struct {
+		extension string
+		format    string
+	}{
+		{extension: ".txt", format: "text"},
+		{extension: ".md", format: "markdown"},
+		{extension: ".markdown", format: "markdown"},
+		{extension: ".json", format: "json"},
+		{extension: ".pdf", format: "pdf"},
+	} {
+		t.Run(test.extension, func(t *testing.T) {
+			opts := &options{input: input, output: filepath.Join(t.TempDir(), "report"+test.extension), format: "text"}
+			if err := validateOptions(opts); err != nil {
+				t.Fatal(err)
+			}
+			if opts.format != test.format {
+				t.Fatalf("format = %q, want %q", opts.format, test.format)
+			}
+		})
+	}
+}
+
+func TestValidateOptionsPreservesExplicitFormatForOutputExtension(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	opts := &options{input: input, output: filepath.Join(t.TempDir(), "report.json"), format: "text", formatSet: true}
+	if err := validateOptions(opts); err != nil {
+		t.Fatal(err)
+	}
+	if opts.format != "text" {
+		t.Fatalf("explicit format = %q, want text", opts.format)
 	}
 }
 

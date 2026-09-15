@@ -24,6 +24,7 @@ type options struct {
 	input         string
 	output        string
 	format        string
+	formatSet     bool
 	mode          string
 	font          string
 	maxErrors     int
@@ -141,6 +142,11 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		}
 		return nil, err
 	}
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "format" {
+			opts.formatSet = true
+		}
+	})
 	if opts.version {
 		return opts, nil
 	}
@@ -155,6 +161,11 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 }
 
 func validateOptions(opts *options) error {
+	if !opts.formatSet {
+		if format, ok := reportFormatFromOutput(opts.output); ok {
+			opts.format = format
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(opts.format)) {
 	case "text", "markdown", "json", "pdf":
 	default:
@@ -183,6 +194,21 @@ func validateOptions(opts *options) error {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
 	}
 	return nil
+}
+
+func reportFormatFromOutput(output string) (string, bool) {
+	switch strings.ToLower(filepath.Ext(output)) {
+	case ".txt":
+		return "text", true
+	case ".md", ".markdown":
+		return "markdown", true
+	case ".json":
+		return "json", true
+	case ".pdf":
+		return "pdf", true
+	default:
+		return "", false
+	}
 }
 
 func writeReport(opts *options, report validator.Report, stdout io.Writer) error {
