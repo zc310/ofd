@@ -976,9 +976,16 @@ go run ./cmd/ofd-validator --format text test/testdata/helloworld.ofd
 ```bash
 go run ./cmd/ofd-validator --format json --pretty test/testdata/helloworld.ofd > report.json
 go run ./cmd/ofd-validator --format markdown -o report.md test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.md test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.json test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.txt test/testdata/helloworld.ofd
 go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
   -o report.pdf test/testdata/helloworld.ofd
 ```
+
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
+`text`、`markdown`、`json` 和 `pdf`；显式指定的报告格式优先。标准输出、无扩展名或其他扩展名仍默认使用
+`text`。
 
 报告包含输入文件、检测时间、校验状态、错误和警告汇总、各校验阶段状态，以及每条问题的严重级别、
 校验阶段、错误代码、文件位置和 XML 路径等详细信息。JSON 报告适合 CI、脚本和其他程序读取；Markdown
@@ -1009,6 +1016,7 @@ go run ./cmd/ofd-analyzer --format json --pretty \
 # 输出 Markdown 报告
 go run ./cmd/ofd-analyzer --format text -o analyzer-report.txt test/testdata/helloworld.ofd
 go run ./cmd/ofd-analyzer --format markdown -o analyzer-report.md test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer -o analyzer-report.json test/testdata/helloworld.ofd
 
 # 输出 PDF 报告；PDF 报告需要可用字体
 go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf test/testdata/helloworld.ofd
@@ -1041,6 +1049,18 @@ go run ./cmd/ofd-analyzer --signature-crls revoked.crl --signature-revocation-is
 资源引用使用 `doc[n]/kind:id` 形式表示文档体作用域，可以区分不同文档体中重复使用的 ID。完整的命令选项、报告字段和退出码说明见 [`cmd/ofd-analyzer/README.md`](cmd/ofd-analyzer/README.md)。
 
 OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。
+
+`ofd-converter` 支持批量转换目录中的 OFD 文件，默认递归扫描并使用 4 个并发任务，输出目录保留输入目录的
+相对路径结构；图片格式会为每个 OFD 建立独立的页面目录：
+
+```bash
+go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf
+go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./images --format png --workers 8
+# 不覆盖已有输出；已有目标会记为失败
+go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf --overwrite=false
+# 跳过已有输出，不计为失败
+go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf --skip-existing
+```
 
 ### OFD 转 PDF
 
