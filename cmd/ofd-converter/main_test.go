@@ -43,6 +43,36 @@ func TestFormatFromExtensionSupportsMarkdown(t *testing.T) {
 	}
 }
 
+func TestFormatFromExtensionSupportsHTML(t *testing.T) {
+	for _, path := range []string{"output.html", "output.htm"} {
+		if got := formatFromExtension(path); got != "html" {
+			t.Fatalf("formatFromExtension(%q) = %q, want html", path, got)
+		}
+	}
+}
+
+func TestRunRejectsInvalidHTMLFormat(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.ofd")
+	if err := os.WriteFile(input, []byte("input"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := run(&options{input: input, output: filepath.Join(dir, "output.html"), format: "html", htmlFormat: "webp"})
+	if err == nil {
+		t.Fatal("run returned nil error for invalid html-format")
+	}
+}
+
+func TestParseArgsSupportsHTMLFormat(t *testing.T) {
+	opts, err := parseArgs([]string{"-format", "html", "-html-format", "svg", "input.ofd", "output.html"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.format != "html" || opts.htmlFormat != "svg" {
+		t.Fatalf("format = %q, htmlFormat = %q, want html/svg", opts.format, opts.htmlFormat)
+	}
+}
+
 func TestValidateOutputPathRejectsInputFile(t *testing.T) {
 	dir := t.TempDir()
 	input := filepath.Join(dir, "input.ofd")

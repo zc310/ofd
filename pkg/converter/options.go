@@ -57,6 +57,27 @@ func SVG() Option {
 	}
 }
 
+// HTMLPNG 设置 HTML 页面使用内嵌 PNG 图片。
+func HTMLPNG() Option {
+	return func(c *Converter) {
+		c.htmlImageFormat = "png"
+	}
+}
+
+// HTMLJPG 设置 HTML 页面使用内嵌 JPG 图片。
+func HTMLJPG() Option {
+	return func(c *Converter) {
+		c.htmlImageFormat = "jpg"
+	}
+}
+
+// HTMLSVG 设置 HTML 页面使用内嵌 SVG 内容。
+func HTMLSVG() Option {
+	return func(c *Converter) {
+		c.htmlImageFormat = "svg"
+	}
+}
+
 // EPS 设置为 Encapsulated PostScript 格式
 func EPS() Option {
 	return func(c *Converter) {

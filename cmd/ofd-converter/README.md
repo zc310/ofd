@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown 和图像格式。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -18,14 +18,15 @@ ofd-converter [选项] <输入文件> [输出文件或目录]
 
 ## 选项
 
-| 选项            | 说明                                                                        |
-|-----------------|-----------------------------------------------------------------------------|
-| `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                        |
-| `-format`       | 输出格式: `pdf`, `txt`, `md`, `markdown`, `png`, `jpg`, `svg`, `eps`, `tex` |
-| `-dpi`          | 输出分辨率 (1-1200)，默认 150                                               |
-| `-page`         | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                            |
-| `-bg`           | 背景颜色: `transparent`, `white`, `black`，默认 `white`                     |
-| `-dir`          | 不压缩，将多页图片直接保存到输出目录下的多个文件                            |
+| 选项            | 说明                                                                                |
+|-----------------|-------------------------------------------------------------------------------------|
+| `-o`, `-output` | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                |
+| `-format`       | 输出格式: `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `svg`, `eps`, `tex` |
+| `-html-format`  | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                    |
+| `-dpi`          | 输出分辨率 (1-1200)，默认 150                                                       |
+| `-page`         | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                                    |
+| `-bg`           | 背景颜色: `transparent`, `white`, `black`，默认 `white`                             |
+| `-dir`          | 不压缩，将多页图片直接保存到输出目录下的多个文件                                    |
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 
@@ -61,6 +62,16 @@ ofd-converter -format markdown input.ofd output.md
 ofd-converter -format png input.ofd output.png
 ofd-converter -format jpg -bg white input.ofd output.jpg
 ofd-converter -format svg input.ofd output.svg
+```
+
+### OFD 转单文件 HTML
+
+HTML 默认将每页渲染为内嵌 PNG；使用 `-html-format jpg` 或 `-html-format svg` 时则分别使用内嵌 JPG 或 SVG 写入 HTML。三种模式都不依赖外部资源，并保留页面尺寸和浏览器打印分页。HTML 的 `<title>` 优先使用 OFD 第一个文档体的非空 `DocInfo.Title`，没有标题时使用 `OFD 文档`。
+
+```bash
+ofd-converter -format html input.ofd output.html
+ofd-converter -format html -html-format jpg input.ofd output.html
+ofd-converter -format html -html-format svg input.ofd output.html
 ```
 
 ### 转换指定页面

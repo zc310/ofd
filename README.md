@@ -8,13 +8,13 @@
 
 OFD（Open Fixed-layout Document）是中国电子文件领域常用的版式文档格式，主要用于保存版面固定、跨设备显示一致的电子文件。OFD 文件通常以 ZIP 容器组织 XML 文档、页面内容、文字、路径、图片、字体、附件和签名等资源；页面可以包含文字、矢量图形和栅格图像，并保留相应的布局和绘制信息。项目在 [`docs/standards/`](docs/standards/) 目录中附带了 GB/T 33190-2016《电子文件存储与交换格式 版式文档》相关标准资料，供格式学习和开发参考。
 
-OFD 适用于电子证照、电子发票、数字档案、公文和其他需要长期保存或交换的版式文件。本项目围绕 OFD 文档提供解析、创建、渲染、转换、校验、分析和阅读能力，支持将 OFD 内容输出为 PDF、PNG、JPG、SVG、纯文本和 Markdown 等格式。不同厂商生成的 OFD 文件可能存在扩展或兼容性差异，具体支持范围请参见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)。
+OFD 适用于电子证照、电子发票、数字档案、公文和其他需要长期保存或交换的版式文件。本项目围绕 OFD 文档提供解析、创建、渲染、转换、校验、分析和阅读能力，支持将 OFD 内容输出为 PDF、单文件 HTML、PNG、JPG、SVG、纯文本和 Markdown 等格式。不同厂商生成的 OFD 文件可能存在扩展或兼容性差异，具体支持范围请参见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)。
 
 ## 功能特性
 
 | 类别           | 功能                                                                         |
 |----------------|------------------------------------------------------------------------------|
-| **文档转换**   | OFD 转 PDF、纯文本、Markdown 和 PNG/JPG 等图像格式                           |
+| **文档转换**   | OFD 转 PDF、单文件 HTML、纯文本、Markdown 和 PNG/JPG 等图像格式              |
 | **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                     |
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                           |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                      |
@@ -1109,6 +1109,28 @@ err := converter.Image("input.ofd",
     converter.JPG(),
     converter.Page(3),        // 指定全局第 3 页
     converter.DPI(300),       // 设置输出分辨率
+)
+```
+
+### OFD 转单文件 HTML
+
+HTML 默认将每页作为内嵌 PNG 写入单个 HTML 文件，也可以选择内嵌 JPG 或 SVG。三种模式都保留页面物理尺寸，不需要外部资源，并支持浏览器打印分页；HTML 的 `<title>` 使用 OFD 第一个文档体的非空 `DocInfo.Title`，没有标题时使用 `OFD 文档`。
+
+```go
+var htmlOutput bytes.Buffer
+err := converter.HTML("input.ofd", &htmlOutput,
+    converter.DPI(72),
+    converter.HTMLPNG(), // 默认选项
+)
+
+var jpgHTML bytes.Buffer
+err = converter.HTML("input.ofd", &jpgHTML,
+    converter.HTMLJPG(),
+)
+
+var svgHTML bytes.Buffer
+err = converter.HTML("input.ofd", &svgHTML,
+    converter.HTMLSVG(),
 )
 ```
 

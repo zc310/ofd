@@ -84,6 +84,27 @@ func ExampleSVG() {
 	// Output: true
 }
 
+func ExampleHTML() {
+	var output bytes.Buffer
+	err := converter.HTML("../../test/testdata/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
+	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/png;base64,")))
+	// Output: true
+}
+
+func ExampleHTMLSVG() {
+	var output bytes.Buffer
+	err := converter.HTML("../../test/testdata/helloworld.ofd", &output, converter.HTMLSVG(), converter.Page(1))
+	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("<svg")))
+	// Output: true
+}
+
+func ExampleHTMLJPG() {
+	var output bytes.Buffer
+	err := converter.HTML("../../test/testdata/helloworld.ofd", &output, converter.HTMLJPG(), converter.Page(1))
+	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/jpeg;base64,")))
+	// Output: true
+}
+
 func ExampleEPS() {
 	var output bytes.Buffer
 	err := converter.Image("../../test/testdata/helloworld.ofd",

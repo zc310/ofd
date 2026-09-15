@@ -27,14 +27,15 @@ var (
 )
 
 type options struct {
-	input  string
-	output string
-	format string
-	dpi    int
-	page   int
-	bg     string
-	dir    bool
-	help   bool
+	input      string
+	output     string
+	format     string
+	htmlFormat string
+	dpi        int
+	page       int
+	bg         string
+	dir        bool
+	help       bool
 }
 
 func main() {
@@ -58,7 +59,8 @@ func parseArgs(args []string) (*options, error) {
 	var output, format string
 	fs.StringVar(&output, "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
 	fs.StringVar(&output, "output", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
-	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, png, jpg, svg, eps, tex")
+	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
+	fs.StringVar(&opts.htmlFormat, "html-format", "png", "HTML 页面格式: png, jpg, svg")
 	fs.IntVar(&opts.dpi, "dpi", defaultDPI, "输出分辨率 (1-1200)")
 	fs.IntVar(&opts.page, "page", 0, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	fs.StringVar(&opts.bg, "bg", defaultBgColor, "背景颜色: transparent, white, black")
@@ -104,7 +106,7 @@ func run(opts *options) error {
 		format = "md"
 	}
 	switch format {
-	case "pdf", "txt", "md", "png", "jpg", "svg", "eps", "tex":
+	case "pdf", "txt", "md", "html", "png", "jpg", "svg", "eps", "tex":
 	default:
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
 	}
@@ -114,6 +116,13 @@ func run(opts *options) error {
 	if opts.page < 0 {
 		return errors.New("page 不能小于 0")
 	}
+	if format == "html" {
+		htmlFormat := strings.ToLower(strings.TrimSpace(opts.htmlFormat))
+		if htmlFormat != "png" && htmlFormat != "jpg" && htmlFormat != "svg" {
+			return errors.New("html-format 必须是 png、jpg 或 svg")
+		}
+		opts.htmlFormat = htmlFormat
+	}
 	if err := validateOutputPath(opts, format); err != nil {
 		return err
 	}
@@ -122,6 +131,9 @@ func run(opts *options) error {
 	}
 	if format == "txt" || format == "md" {
 		return convertToText(opts, format)
+	}
+	if format == "html" {
+		return convertToHTML(opts)
 	}
 	return convertToImage(opts, format)
 }
@@ -140,6 +152,8 @@ func formatFromExtension(output string) string {
 		return "jpg"
 	case ".svg":
 		return "svg"
+	case ".html", ".htm":
+		return "html"
 	case ".eps":
 		return "eps"
 	case ".tex":
@@ -156,6 +170,8 @@ func validateOutputPath(opts *options, format string) error {
 	output := opts.output
 	if format == "txt" || format == "md" {
 		output = ensureExtension(output, format)
+	} else if format == "html" {
+		output = ensureExtension(output, "html")
 	} else if format != "pdf" && opts.page > 0 {
 		output = ensureExtension(output, format)
 	}
@@ -163,6 +179,36 @@ func validateOutputPath(opts *options, format string) error {
 		return ErrInputOutputSame
 	}
 	return nil
+}
+
+func convertToHTML(opts *options) error {
+	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
+	if opts.output != "" && opts.output != "-" {
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "html")}
+		output = fileOutput
+	}
+	option := []converter.Option{
+		converter.DPI(float64(opts.dpi)),
+		converter.BgColor(parseBgColor(opts.bg)),
+	}
+	if opts.htmlFormat == "svg" {
+		option = append(option, converter.HTMLSVG())
+	} else if opts.htmlFormat == "jpg" {
+		option = append(option, converter.HTMLJPG())
+	} else {
+		option = append(option, converter.HTMLPNG())
+	}
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	err := converter.HTML(opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func sameFilePath(left, right string) bool {
