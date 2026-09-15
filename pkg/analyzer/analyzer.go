@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	gmx509 "github.com/tjfoc/gmsm/x509"
+	gmx509 "github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
