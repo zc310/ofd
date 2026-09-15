@@ -67,6 +67,11 @@ ofd-validator --format json --pretty document.ofd > report.json
 # 输出 Markdown 报告文件
 ofd-validator --format markdown -o report.md document.ofd
 
+# 根据输出文件扩展名自动选择报告格式
+ofd-validator -o report.md document.ofd
+ofd-validator -o report.json document.ofd
+ofd-validator -o report.txt document.ofd
+
 # 输出 PDF 报告；字体必须支持中文
 ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.ofd
 ```
@@ -87,7 +92,7 @@ ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.o
 
 | 选项                                 | 默认值      | 说明                                                   |
 |--------------------------------------|-------------|--------------------------------------------------------|
-| `--format text\|markdown\|json\|pdf` | `text`      | 报告格式                                               |
+| `--format text\|markdown\|json\|pdf` | `text`      | 报告格式；未显式指定时可根据输出扩展名自动推断         |
 | `--mode strict\|compat\|structural`  | `strict`    | 校验模式                                               |
 | `-o`, `--output PATH`                | 标准输出    | 报告输出路径，使用 `-` 输出到标准输出                  |
 | `--font PATH`                        | 自动查找    | PDF 使用的中文字体文件；只能与 `--format pdf` 一起使用 |
@@ -129,6 +134,10 @@ ofd-validator --format pdf \
 
 未指定 `--font` 时，工具会先查找常见中文系统字体，再扫描系统字体目录。如果环境中没有可用中文字体，
 PDF 输出会失败；文本、Markdown 和 JSON 报告不受此限制。
+
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
+`text`、`markdown`、`json` 和 `pdf`；显式指定的格式优先。标准输出、无扩展名或其他扩展名仍默认使用
+`text`。
 
 ## 退出码
 

@@ -41,6 +41,12 @@ ofd-analyzer --format text -o report.txt document.ofd
 ofd-analyzer --format markdown -o report.md document.ofd
 ofd-analyzer --format pdf --font /path/to/font.ttf -o report.pdf document.ofd
 
+# 未指定 --format 时，根据输出文件扩展名自动选择格式
+ofd-analyzer -o report.txt document.ofd
+ofd-analyzer -o report.md document.ofd
+ofd-analyzer -o report.json document.ofd
+ofd-analyzer -o report.pdf --font /path/to/font.ttf document.ofd
+
 # 跳过可选分析阶段
 ofd-analyzer --no-annotations --no-signatures document.ofd
 
@@ -57,7 +63,7 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | 选项                             | 默认值   | 说明                                                    |
 |----------------------------------|----------|---------------------------------------------------------|
 | `-o`, `--output PATH`            | 标准输出 | 报告输出路径，使用 `-` 输出到标准输出                   |
-| `--format FORMAT`                | `text`   | 报告格式：`text`、`markdown`、`json` 或 `pdf`           |
+| `--format FORMAT`                | `text`   | 报告格式；未显式指定时可根据输出扩展名自动推断          |
 | `--font PATH`                    | 自动     | PDF 报告使用的字体文件；仅适用于 PDF                    |
 | `--signature-uid ID`             | 空       | SM2 签名用户标识；为空时使用默认 UID                    |
 | `--signature-format`             | 自动     | SM2 签名值格式：`auto`、`der` 或 `raw`                  |
@@ -72,6 +78,10 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | `--fail-on-warning`              | 关闭     | 有警告时返回退出码 `1`                                  |
 | `--version`                      | 关闭     | 输出 analyzer 版本                                      |
 | `-h`, `--help`                   | 关闭     | 显示命令帮助                                            |
+
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
+`text`、`markdown`、`json` 和 `pdf`；显式指定的格式优先。标准输出、无扩展名或其他扩展名仍默认使用
+`text`。
 
 ## 报告
 
