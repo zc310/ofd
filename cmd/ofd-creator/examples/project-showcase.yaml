@@ -15,17 +15,17 @@ document:
   subject: OFD 文档的创建、阅读、解析、渲染、检测、分析与转换
   abstract: 一个面向 OFD 文档处理的 Go 开源项目，提供创建、阅读、解析、渲染、检测、分析和格式转换能力。
   creator: ofd-creator
-  creatorVersion: "1"
+  creator_version: "1"
   keywords:
     - OFD
     - Go
     - 开源
     - 文档处理
-  pageSize:
+  page_size:
     name: A4
   preferences:
-    pageMode: None
-    pageLayout: OneColumn
+    page_mode: None
+    page_layout: OneColumn
 pages:
   - layers:
       - type: Background
@@ -37,7 +37,7 @@ pages:
             height: 297
             data: M 0 0 L 210 0 L 210 297 L 0 297 C
             fill: true
-            fillColor:
+            fill_color:
               r: 250
               g: 247
               b: 241
@@ -49,7 +49,7 @@ pages:
             height: 86
             data: M 0 0 L 210 0 L 210 86 L 0 86 C
             fill: true
-            fillColor:
+            fill_color:
               r: 38
               g: 61
               b: 54
@@ -61,7 +61,7 @@ pages:
             height: 82
             data: M 41 0 B 63.644 0 82 18.356 82 41 B 82 63.644 63.644 82 41 82 B 18.356 82 0 63.644 0 41 B 0 18.356 18.356 0 41 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 62
               g: 91
               b: 79
@@ -73,7 +73,7 @@ pages:
             height: 78
             data: M 39 0 B 60.539 0 78 17.461 78 39 B 78 60.539 60.539 78 39 78 B 17.461 78 0 60.539 0 39 B 0 17.461 17.461 0 39 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 235
               g: 226
               b: 208
@@ -90,7 +90,7 @@ pages:
             size: 4.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 211
               g: 190
               b: 145
@@ -105,7 +105,7 @@ pages:
             size: 15
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 255
               g: 255
               b: 255
@@ -119,7 +119,7 @@ pages:
             font: Smiley Sans
             size: 5.5
             fill: true
-            fillColor:
+            fill_color:
               r: 226
               g: 218
               b: 198
@@ -131,7 +131,7 @@ pages:
             height: 2
             data: M 0 0 L 34 0 L 34 2 L 0 2 C
             fill: true
-            fillColor:
+            fill_color:
               r: 201
               g: 123
               b: 74
@@ -143,13 +143,13 @@ pages:
             height: 48
             data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 44 B 174 46.209 172.209 48 170 48 L 4 48 B 1.791 48 0 46.209 0 44 L 0 4 B 0 1.791 1.791 0 4 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 255
               g: 255
               b: 255
             stroke: true
-            lineWidth: 0.7
-            strokeColor:
+            line_width: 0.7
+            stroke_color:
               r: 224
               g: 215
               b: 200
@@ -164,7 +164,7 @@ pages:
             size: 5.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 45
               g: 67
               b: 58
@@ -178,7 +178,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -192,7 +192,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 91
               g: 104
               b: 126
@@ -207,7 +207,7 @@ pages:
             size: 4.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 154
               g: 101
               b: 65
@@ -219,7 +219,7 @@ pages:
             height: 35
             data: M 3 0 L 36 0 B 37.657 0 39 1.343 39 3 L 39 32 B 39 33.657 37.657 35 36 35 L 3 35 B 1.343 35 0 33.657 0 32 L 0 3 B 0 1.343 1.343 0 3 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 236
               g: 229
               b: 214
@@ -234,7 +234,7 @@ pages:
             size: 5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 166
               g: 91
               b: 61
@@ -248,7 +248,7 @@ pages:
             font: Smiley Sans
             size: 3.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -260,7 +260,7 @@ pages:
             height: 35
             data: M 3 0 L 36 0 B 37.657 0 39 1.343 39 3 L 39 32 B 39 33.657 37.657 35 36 35 L 3 35 B 1.343 35 0 33.657 0 32 L 0 3 B 0 1.343 1.343 0 3 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 229
               g: 238
               b: 226
@@ -275,7 +275,7 @@ pages:
             size: 5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 67
               g: 112
               b: 76
@@ -289,7 +289,7 @@ pages:
             font: Smiley Sans
             size: 3.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -301,7 +301,7 @@ pages:
             height: 35
             data: M 3 0 L 36 0 B 37.657 0 39 1.343 39 3 L 39 32 B 39 33.657 37.657 35 36 35 L 3 35 B 1.343 35 0 33.657 0 32 L 0 3 B 0 1.343 1.343 0 3 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 247
               g: 231
               b: 204
@@ -316,7 +316,7 @@ pages:
             size: 5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 178
               g: 106
               b: 49
@@ -330,7 +330,7 @@ pages:
             font: Smiley Sans
             size: 3.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -342,7 +342,7 @@ pages:
             height: 35
             data: M 3 0 L 36 0 B 37.657 0 39 1.343 39 3 L 39 32 B 39 33.657 37.657 35 36 35 L 3 35 B 1.343 35 0 33.657 0 32 L 0 3 B 0 1.343 1.343 0 3 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 235
               g: 226
               b: 232
@@ -357,7 +357,7 @@ pages:
             size: 5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 126
               g: 81
               b: 120
@@ -371,7 +371,7 @@ pages:
             font: Smiley Sans
             size: 3.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -385,8 +385,8 @@ pages:
             height: 1
             data: M 0 0.5 L 174 0.5
             stroke: true
-            lineWidth: 0.8
-            strokeColor:
+            line_width: 0.8
+            stroke_color:
               r: 219
               g: 208
               b: 190
@@ -400,7 +400,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -415,7 +415,7 @@ pages:
             size: 5.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 172
               g: 78
               b: 54
@@ -434,7 +434,7 @@ pages:
             font: Smiley Sans
             size: 4
             fill: true
-            fillColor:
+            fill_color:
               r: 139
               g: 128
               b: 110
@@ -449,7 +449,7 @@ pages:
             height: 297
             data: M 0 0 L 210 0 L 210 297 L 0 297 C
             fill: true
-            fillColor:
+            fill_color:
               r: 250
               g: 247
               b: 241
@@ -461,7 +461,7 @@ pages:
             height: 82
             data: M 0 0 L 210 0 L 210 82 L 0 82 C
             fill: true
-            fillColor:
+            fill_color:
               r: 38
               g: 61
               b: 54
@@ -473,7 +473,7 @@ pages:
             height: 70
             data: M 35 0 B 54.33 0 70 15.67 70 35 B 70 54.33 54.33 70 35 70 B 15.67 70 0 54.33 0 35 B 0 15.67 15.67 0 35 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 62
               g: 91
               b: 79
@@ -490,7 +490,7 @@ pages:
             size: 4.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 211
               g: 190
               b: 145
@@ -505,7 +505,7 @@ pages:
             size: 14
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 255
               g: 255
               b: 255
@@ -519,7 +519,7 @@ pages:
             font: Smiley Sans
             size: 5
             fill: true
-            fillColor:
+            fill_color:
               r: 226
               g: 218
               b: 198
@@ -534,7 +534,7 @@ pages:
             size: 4.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 154
               g: 101
               b: 65
@@ -546,7 +546,7 @@ pages:
             height: 34
             data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 30 B 174 32.209 172.209 34 170 34 L 4 34 B 1.791 34 0 32.209 0 30 L 0 4 B 0 1.791 1.791 0 4 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 232
               g: 240
               b: 226
@@ -561,7 +561,7 @@ pages:
             size: 5.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 67
               g: 112
               b: 76
@@ -575,7 +575,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 67
               g: 92
               b: 75
@@ -589,7 +589,7 @@ pages:
             font: Smiley Sans
             size: 3.8
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -601,7 +601,7 @@ pages:
             height: 34
             data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 30 B 174 32.209 172.209 34 170 34 L 4 34 B 1.791 34 0 32.209 0 30 L 0 4 B 0 1.791 1.791 0 4 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 247
               g: 232
               b: 211
@@ -616,7 +616,7 @@ pages:
             size: 5.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 178
               g: 106
               b: 49
@@ -630,7 +630,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 143
               g: 91
               b: 47
@@ -644,7 +644,7 @@ pages:
             font: Smiley Sans
             size: 3.8
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -656,7 +656,7 @@ pages:
             height: 34
             data: M 4 0 L 170 0 B 172.209 0 174 1.791 174 4 L 174 30 B 174 32.209 172.209 34 170 34 L 4 34 B 1.791 34 0 32.209 0 30 L 0 4 B 0 1.791 1.791 0 4 0 C
             fill: true
-            fillColor:
+            fill_color:
               r: 235
               g: 226
               b: 232
@@ -671,7 +671,7 @@ pages:
             size: 5.5
             weight: 700
             fill: true
-            fillColor:
+            fill_color:
               r: 126
               g: 81
               b: 120
@@ -685,7 +685,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 111
               g: 70
               b: 106
@@ -699,7 +699,7 @@ pages:
             font: Smiley Sans
             size: 3.8
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91
@@ -711,8 +711,8 @@ pages:
             height: 1
             data: M 0 0.5 L 174 0.5
             stroke: true
-            lineWidth: 0.8
-            strokeColor:
+            line_width: 0.8
+            stroke_color:
               r: 219
               g: 208
               b: 190
@@ -726,7 +726,7 @@ pages:
             font: Smiley Sans
             size: 4.5
             fill: true
-            fillColor:
+            fill_color:
               r: 113
               g: 105
               b: 91

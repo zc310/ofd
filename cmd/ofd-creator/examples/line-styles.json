@@ -1,25 +1,25 @@
 {
   "version":1,
-  "document":{"id":"line-styles","title":"OFD 线条样式示例","author":"ofd-creator","creator":"ofd-creator","creatorVersion":"1","pageSize":{"name":"A4"}},
+  "document":{"id":"line-styles","title":"OFD 线条样式示例","author":"ofd-creator","creator":"ofd-creator","creator_version":"1","page_size":{"name":"A4"}},
   "pages":[
     {
       "items":[
-        {"type":"path","x":15,"y":18,"width":180,"height":12,"data":"M 0 6 L 180 6","stroke":true,"fill":false,"lineWidth":0.8,"cap":"Butt","strokeColor":{"r":35,"g":65,"b":120}},
-        {"type":"text","x":15,"y":10,"width":180,"height":6,"value":"实线 - Butt 端点 - 线宽 0.8","font":"楷体","size":4,"fill":true,"fillColor":{"r":35,"g":65,"b":120}},
-        {"type":"path","x":15,"y":38,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"lineWidth":3,"cap":"Round","strokeColor":{"r":190,"g":55,"b":55}},
-        {"type":"text","x":15,"y":30,"width":180,"height":6,"value":"粗线 - Round 端点 - 线宽 3","font":"楷体","size":4,"fill":true,"fillColor":{"r":190,"g":55,"b":55}},
-        {"type":"path","x":15,"y":60,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"lineWidth":3,"cap":"Square","strokeColor":{"r":40,"g":135,"b":85}},
-        {"type":"text","x":15,"y":52,"width":180,"height":6,"value":"粗线 - Square 端点 - 线宽 3","font":"楷体","size":4,"fill":true,"fillColor":{"r":40,"g":135,"b":85}},
-        {"type":"path","x":15,"y":82,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"lineWidth":1.5,"dashPattern":[8,4],"dashOffset":0,"cap":"Butt","strokeColor":{"r":110,"g":60,"b":175}},
-        {"type":"text","x":15,"y":74,"width":180,"height":6,"value":"长虚线 - [8, 4]","font":"楷体","size":4,"fill":true,"fillColor":{"r":110,"g":60,"b":175}},
-        {"type":"path","x":15,"y":104,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"lineWidth":1.5,"dashPattern":[2,3],"dashOffset":1,"cap":"Round","strokeColor":{"r":225,"g":125,"b":35}},
-        {"type":"text","x":15,"y":96,"width":180,"height":6,"value":"点划线 - [2, 3] - 偏移 1","font":"楷体","size":4,"fill":true,"fillColor":{"r":225,"g":125,"b":35}},
-        {"type":"path","x":15,"y":126,"width":180,"height":48,"data":"M 5 42 L 45 5 L 90 42 L 135 5 L 175 42","stroke":true,"fill":false,"lineWidth":4,"join":"Miter","cap":"Butt","miterLimit":10,"strokeColor":{"r":45,"g":95,"b":180}},
-        {"type":"text","x":15,"y":119,"width":180,"height":6,"value":"折线 - Miter 连接","font":"楷体","size":4,"fill":true,"fillColor":{"r":45,"g":95,"b":180}},
-        {"type":"path","x":15,"y":184,"width":180,"height":48,"data":"M 5 42 L 45 5 L 90 42 L 135 5 L 175 42","stroke":true,"fill":false,"lineWidth":4,"join":"Round","cap":"Round","strokeColor":{"r":210,"g":70,"b":80}},
-        {"type":"text","x":15,"y":177,"width":180,"height":6,"value":"折线 - Round 连接与端点","font":"楷体","size":4,"fill":true,"fillColor":{"r":210,"g":70,"b":80}},
-        {"type":"path","x":15,"y":242,"width":180,"height":38,"data":"M 5 32 L 45 5 L 90 32 L 135 5 L 175 32","stroke":true,"fill":false,"lineWidth":4,"join":"Bevel","cap":"Square","dashPattern":[5,3],"alpha":210,"strokeColor":{"r":70,"g":70,"b":70}},
-        {"type":"text","x":15,"y":235,"width":180,"height":6,"value":"虚线折线 - Bevel 连接 - 透明度 210","font":"楷体","size":4,"fill":true,"fillColor":{"r":70,"g":70,"b":70}}
+        {"type":"path","x":15,"y":18,"width":180,"height":12,"data":"M 0 6 L 180 6","stroke":true,"fill":false,"line_width":0.8,"cap":"Butt","stroke_color":{"r":35,"g":65,"b":120}},
+        {"type":"text","x":15,"y":10,"width":180,"height":6,"value":"实线 - Butt 端点 - 线宽 0.8","font":"楷体","size":4,"fill":true,"fill_color":{"r":35,"g":65,"b":120}},
+        {"type":"path","x":15,"y":38,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"line_width":3,"cap":"Round","stroke_color":{"r":190,"g":55,"b":55}},
+        {"type":"text","x":15,"y":30,"width":180,"height":6,"value":"粗线 - Round 端点 - 线宽 3","font":"楷体","size":4,"fill":true,"fill_color":{"r":190,"g":55,"b":55}},
+        {"type":"path","x":15,"y":60,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"line_width":3,"cap":"Square","stroke_color":{"r":40,"g":135,"b":85}},
+        {"type":"text","x":15,"y":52,"width":180,"height":6,"value":"粗线 - Square 端点 - 线宽 3","font":"楷体","size":4,"fill":true,"fill_color":{"r":40,"g":135,"b":85}},
+        {"type":"path","x":15,"y":82,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"line_width":1.5,"dash_pattern":[8,4],"dash_offset":0,"cap":"Butt","stroke_color":{"r":110,"g":60,"b":175}},
+        {"type":"text","x":15,"y":74,"width":180,"height":6,"value":"长虚线 - [8, 4]","font":"楷体","size":4,"fill":true,"fill_color":{"r":110,"g":60,"b":175}},
+        {"type":"path","x":15,"y":104,"width":180,"height":14,"data":"M 0 7 L 180 7","stroke":true,"fill":false,"line_width":1.5,"dash_pattern":[2,3],"dash_offset":1,"cap":"Round","stroke_color":{"r":225,"g":125,"b":35}},
+        {"type":"text","x":15,"y":96,"width":180,"height":6,"value":"点划线 - [2, 3] - 偏移 1","font":"楷体","size":4,"fill":true,"fill_color":{"r":225,"g":125,"b":35}},
+        {"type":"path","x":15,"y":126,"width":180,"height":48,"data":"M 5 42 L 45 5 L 90 42 L 135 5 L 175 42","stroke":true,"fill":false,"line_width":4,"join":"Miter","cap":"Butt","miter_limit":10,"stroke_color":{"r":45,"g":95,"b":180}},
+        {"type":"text","x":15,"y":119,"width":180,"height":6,"value":"折线 - Miter 连接","font":"楷体","size":4,"fill":true,"fill_color":{"r":45,"g":95,"b":180}},
+        {"type":"path","x":15,"y":184,"width":180,"height":48,"data":"M 5 42 L 45 5 L 90 42 L 135 5 L 175 42","stroke":true,"fill":false,"line_width":4,"join":"Round","cap":"Round","stroke_color":{"r":210,"g":70,"b":80}},
+        {"type":"text","x":15,"y":177,"width":180,"height":6,"value":"折线 - Round 连接与端点","font":"楷体","size":4,"fill":true,"fill_color":{"r":210,"g":70,"b":80}},
+        {"type":"path","x":15,"y":242,"width":180,"height":38,"data":"M 5 32 L 45 5 L 90 32 L 135 5 L 175 32","stroke":true,"fill":false,"line_width":4,"join":"Bevel","cap":"Square","dash_pattern":[5,3],"alpha":210,"stroke_color":{"r":70,"g":70,"b":70}},
+        {"type":"text","x":15,"y":235,"width":180,"height":6,"value":"虚线折线 - Bevel 连接 - 透明度 210","font":"楷体","size":4,"fill":true,"fill_color":{"r":70,"g":70,"b":70}}
       ]
     }
   ]

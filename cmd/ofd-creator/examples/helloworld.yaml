@@ -9,8 +9,8 @@ document:
   title: Hello World
   author: ofd-creator
   creator: ofd-creator
-  creatorVersion: "1"
-  pageSize:
+  creator_version: "1"
+  page_size:
     name: A4
 
 pages:
@@ -25,7 +25,7 @@ pages:
         size: 18
         weight: 700
         fill: true
-        fillColor:
+        fill_color:
           r: 30
           g: 70
           b: 140
@@ -39,7 +39,7 @@ pages:
         font: 楷体
         size: 7
         fill: true
-        fillColor:
+        fill_color:
           r: 90
           g: 100
           b: 120

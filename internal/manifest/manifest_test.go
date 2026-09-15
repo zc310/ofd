@@ -2,13 +2,66 @@ package manifest
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
+	"go.yaml.in/yaml/v3"
 )
+
+func TestManifestOmitEmptyFieldsAcrossFormats(t *testing.T) {
+	value := Manifest{Version: 1, Document: Document{ID: "compact"}, Pages: []Page{{}}}
+
+	jsonData, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonText := string(jsonData)
+	for _, field := range []string{"title", "templates", "actions", "data_base64"} {
+		if strings.Contains(jsonText, `"`+field+`"`) {
+			t.Fatalf("JSON contains omitted field %q: %s", field, jsonText)
+		}
+	}
+
+	yamlData, err := yaml.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlText := string(yamlData)
+	for _, field := range []string{"title:", "templates:", "actions:", "data_base64:"} {
+		if strings.Contains(yamlText, field) {
+			t.Fatalf("YAML contains omitted field %q: %s", field, yamlText)
+		}
+	}
+
+	tomlData, err := toml.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tomlText := string(tomlData)
+	for _, field := range []string{"title =", "templates =", "actions =", "data_base64 ="} {
+		if strings.Contains(tomlText, field) {
+			t.Fatalf("TOML contains omitted field %q: %s", field, tomlText)
+		}
+	}
+	directory := t.TempDir()
+	input := filepath.Join(directory, "compact.toml")
+	if err := os.WriteFile(input, tomlData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := Load(input, "toml")
+	if err != nil {
+		t.Fatalf("compact TOML did not load: %v\n%s", err, tomlText)
+	}
+	if loaded.Version != 1 || loaded.Document.ID != "compact" || len(loaded.Pages) != 1 {
+		t.Fatalf("compact TOML round trip = %+v", loaded)
+	}
+}
 
 func TestBuildRejectsAssetPathEscape(t *testing.T) {
 	directory := t.TempDir()
@@ -30,7 +83,7 @@ func TestLoadJSONAndBuildAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := filepath.Join(directory, "document.json")
-	if err := os.WriteFile(input, []byte(`{"version":1,"document":{"id":"json-test"},"resources":{"images":[{"id":10,"file":"image.bin"}]},"pages":[{"items":[{"type":"image","resourceId":10}]}]}`), 0600); err != nil {
+	if err := os.WriteFile(input, []byte(`{"version":1,"document":{"id":"json-test"},"resources":{"images":[{"id":10,"file":"image.bin"}]},"pages":[{"items":[{"type":"image","resource_id":10}]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	value, baseDir, err := Load(input, "auto")
@@ -280,7 +333,7 @@ func TestBuildGradientPatternAndAnnotation(t *testing.T) {
 		t.Fatalf("annotations were not converted: %+v", document.Annotations)
 	}
 	if document.Annotations[0].Items[0].ReadOnlyValue == nil || *document.Annotations[0].Items[0].ReadOnlyValue {
-		t.Fatal("annotation readOnly=false was not preserved")
+		t.Fatal("annotation read_only=false was not preserved")
 	}
 	if _, err := creator.Marshal(document); err != nil {
 		t.Fatal(err)

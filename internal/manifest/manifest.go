@@ -21,1135 +21,1135 @@ import (
 // Manifest 是 ofd-creator 支持的声明式输入文件。
 type Manifest struct {
 	// Version 指定 manifest 格式版本。
-	Version int `json:"version" yaml:"version"`
+	Version int `json:"version,omitempty" yaml:"version,omitempty" toml:"version,omitempty"`
 	// Document 定义文档主体及其元数据。
-	Document Document `json:"document" yaml:"document"`
+	Document Document `json:"document" yaml:"document,omitempty" toml:"document,omitempty"`
 	// Resources 汇总文档级资源。
-	Resources Resources `json:"resources" yaml:"resources"`
+	Resources Resources `json:"resources" yaml:"resources,omitempty" toml:"resources,omitempty"`
 	// Templates 定义可供页面引用的模板页。
-	Templates []Template `json:"templates" yaml:"templates"`
+	Templates []Template `json:"templates,omitempty" yaml:"templates,omitempty" toml:"templates,omitempty"`
 	// Pages 定义文档页面。
-	Pages []Page `json:"pages" yaml:"pages"`
+	Pages []Page `json:"pages,omitempty" yaml:"pages,omitempty" toml:"pages,omitempty"`
 }
 
 // Document 描述 OFD 文档及其元数据、资源和页面内容。
 type Document struct {
 	// ID 标识文档。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Title 记录文档标题。
-	Title string `json:"title" yaml:"title"`
+	Title string `json:"title,omitempty" yaml:"title,omitempty" toml:"title,omitempty"`
 	// Author 记录文档作者。
-	Author string `json:"author" yaml:"author"`
+	Author string `json:"author,omitempty" yaml:"author,omitempty" toml:"author,omitempty"`
 	// Subject 记录文档主题。
-	Subject string `json:"subject" yaml:"subject"`
+	Subject string `json:"subject,omitempty" yaml:"subject,omitempty" toml:"subject,omitempty"`
 	// Abstract 记录文档摘要。
-	Abstract string `json:"abstract" yaml:"abstract"`
+	Abstract string `json:"abstract,omitempty" yaml:"abstract,omitempty" toml:"abstract,omitempty"`
 	// Creator 记录创建文档的应用名称。
-	Creator string `json:"creator" yaml:"creator"`
+	Creator string `json:"creator,omitempty" yaml:"creator,omitempty" toml:"creator,omitempty"`
 	// CreatorVersion 记录创建应用的版本。
-	CreatorVersion string `json:"creatorVersion" yaml:"creatorVersion"`
+	CreatorVersion string `json:"creator_version,omitempty" yaml:"creator_version,omitempty" toml:"creator_version,omitempty"`
 	// PageSize 定义默认页面尺寸。
-	PageSize PageSize `json:"pageSize" yaml:"pageSize"`
+	PageSize PageSize `json:"page_size" yaml:"page_size,omitempty" toml:"page_size,omitempty"`
 	// Actions 定义文档级动作。
-	Actions []Action `json:"actions" yaml:"actions"`
+	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 	// Bookmarks 定义文档书签。
-	Bookmarks []Bookmark `json:"bookmarks" yaml:"bookmarks"`
+	Bookmarks []Bookmark `json:"bookmarks,omitempty" yaml:"bookmarks,omitempty" toml:"bookmarks,omitempty"`
 	// Attachments 定义文档附件。
-	Attachments []Attachment `json:"attachments" yaml:"attachments"`
+	Attachments []Attachment `json:"attachments,omitempty" yaml:"attachments,omitempty" toml:"attachments,omitempty"`
 	// Extensions 定义文档扩展信息。
-	Extensions []Extension `json:"extensions" yaml:"extensions"`
+	Extensions []Extension `json:"extensions,omitempty" yaml:"extensions,omitempty" toml:"extensions,omitempty"`
 	// Versions 定义文档版本记录。
-	Versions []Version `json:"versions" yaml:"versions"`
+	Versions []Version `json:"versions,omitempty" yaml:"versions,omitempty" toml:"versions,omitempty"`
 	// Annotations 定义按页面组织的批注。
-	Annotations []AnnotationPage `json:"annotations" yaml:"annotations"`
+	Annotations []AnnotationPage `json:"annotations,omitempty" yaml:"annotations,omitempty" toml:"annotations,omitempty"`
 	// DocUsage 说明文档用途。
-	DocUsage string `json:"docUsage" yaml:"docUsage"`
+	DocUsage string `json:"doc_usage,omitempty" yaml:"doc_usage,omitempty" toml:"doc_usage,omitempty"`
 	// Keywords 记录文档关键词。
-	Keywords []string `json:"keywords" yaml:"keywords"`
+	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty" toml:"keywords,omitempty"`
 	// CustomData 定义文档自定义键值数据。
-	CustomData []CustomData `json:"customData" yaml:"customData"`
+	CustomData []CustomData `json:"custom_data,omitempty" yaml:"custom_data,omitempty" toml:"custom_data,omitempty"`
 	// Cover 指定封面文件路径。
-	Cover string `json:"cover" yaml:"cover"`
+	Cover string `json:"cover,omitempty" yaml:"cover,omitempty" toml:"cover,omitempty"`
 	// CoverBase64 提供 Base64 编码的封面数据。
-	CoverBase64 string `json:"coverBase64" yaml:"coverBase64"`
+	CoverBase64 string `json:"cover_base64,omitempty" yaml:"cover_base64,omitempty" toml:"cover_base64,omitempty"`
 	// CoverName 指定封面在文档中的名称。
-	CoverName string `json:"coverName" yaml:"coverName"`
+	CoverName string `json:"cover_name,omitempty" yaml:"cover_name,omitempty" toml:"cover_name,omitempty"`
 	// CreationDate 记录文档创建时间。
-	CreationDate string `json:"creationDate" yaml:"creationDate"`
+	CreationDate string `json:"creation_date,omitempty" yaml:"creation_date,omitempty" toml:"creation_date,omitempty"`
 	// ModDate 记录文档最后修改时间。
-	ModDate string `json:"modDate" yaml:"modDate"`
+	ModDate string `json:"mod_date,omitempty" yaml:"mod_date,omitempty" toml:"mod_date,omitempty"`
 	// Area 定义文档页面区域。
-	Area *PageArea `json:"area" yaml:"area"`
+	Area *PageArea `json:"area,omitempty" yaml:"area,omitempty" toml:"area,omitempty"`
 	// DefaultCS 指定文档默认颜色空间编号。
-	DefaultCS uint64 `json:"defaultCS" yaml:"defaultCS"`
+	DefaultCS uint64 `json:"default_cs,omitempty" yaml:"default_cs,omitempty" toml:"default_cs,omitempty"`
 	// Preferences 定义文档查看偏好。
-	Preferences *Preferences `json:"preferences" yaml:"preferences"`
+	Preferences *Preferences `json:"preferences,omitempty" yaml:"preferences,omitempty" toml:"preferences,omitempty"`
 	// Permissions 定义文档访问和操作权限。
-	Permissions *Permissions `json:"permissions" yaml:"permissions"`
+	Permissions *Permissions `json:"permissions,omitempty" yaml:"permissions,omitempty" toml:"permissions,omitempty"`
 	// Outlines 定义文档大纲。
-	Outlines []Outline `json:"outlines" yaml:"outlines"`
+	Outlines []Outline `json:"outlines,omitempty" yaml:"outlines,omitempty" toml:"outlines,omitempty"`
 	// Signatures 定义文档数字签名。
-	Signatures []Signature `json:"signatures" yaml:"signatures"`
+	Signatures []Signature `json:"signatures,omitempty" yaml:"signatures,omitempty" toml:"signatures,omitempty"`
 }
 
 // PageSize 描述文档页面尺寸。
 type PageSize struct {
 	// Name 指定预定义页面尺寸名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Width 指定页面宽度。
-	Width float64 `json:"width" yaml:"width"`
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty" toml:"width,omitempty"`
 	// Height 指定页面高度。
-	Height float64 `json:"height" yaml:"height"`
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty" toml:"height,omitempty"`
 }
 
 // Resources 汇总文档级资源。
 type Resources struct {
 	// Fonts 汇总字体资源。
-	Fonts []Font `json:"fonts" yaml:"fonts"`
+	Fonts []Font `json:"fonts,omitempty" yaml:"fonts,omitempty" toml:"fonts,omitempty"`
 	// Images 汇总图像资源。
-	Images []Image `json:"images" yaml:"images"`
+	Images []Image `json:"images,omitempty" yaml:"images,omitempty" toml:"images,omitempty"`
 	// Media 汇总媒体资源。
-	Media []Media `json:"media" yaml:"media"`
+	Media []Media `json:"media,omitempty" yaml:"media,omitempty" toml:"media,omitempty"`
 	// ColorSpaces 汇总颜色空间资源。
-	ColorSpaces []ColorSpace `json:"colorSpaces" yaml:"colorSpaces"`
+	ColorSpaces []ColorSpace `json:"color_spaces,omitempty" yaml:"color_spaces,omitempty" toml:"color_spaces,omitempty"`
 	// DrawParams 汇总图形绘制参数。
-	DrawParams []DrawParam `json:"drawParams" yaml:"drawParams"`
+	DrawParams []DrawParam `json:"draw_params,omitempty" yaml:"draw_params,omitempty" toml:"draw_params,omitempty"`
 	// Composites 汇总复合图形单元资源。
-	Composites []Composite `json:"composites" yaml:"composites"`
+	Composites []Composite `json:"composites,omitempty" yaml:"composites,omitempty" toml:"composites,omitempty"`
 	// Public 汇总公共资源。
-	Public []PublicResource `json:"public" yaml:"public"`
+	Public []PublicResource `json:"public,omitempty" yaml:"public,omitempty" toml:"public,omitempty"`
 	// CustomTags 汇总自定义标签资源。
-	CustomTags []CustomTag `json:"customTags" yaml:"customTags"`
+	CustomTags []CustomTag `json:"custom_tags,omitempty" yaml:"custom_tags,omitempty" toml:"custom_tags,omitempty"`
 }
 
 // Font 描述文档使用的字体资源。
 type Font struct {
 	// Name 指定字体资源名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// FamilyName 指定字体族名称。
-	FamilyName string `json:"familyName" yaml:"familyName"`
+	FamilyName string `json:"family_name,omitempty" yaml:"family_name,omitempty" toml:"family_name,omitempty"`
 	// Charset 指定字体字符集。
-	Charset string `json:"charset" yaml:"charset"`
+	Charset string `json:"charset,omitempty" yaml:"charset,omitempty" toml:"charset,omitempty"`
 	// Format 指定字体文件格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// File 指定字体文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的字体数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// Italic 指示字体是否为斜体。
-	Italic bool `json:"italic" yaml:"italic"`
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty" toml:"italic,omitempty"`
 	// Bold 指示字体是否为粗体。
-	Bold bool `json:"bold" yaml:"bold"`
+	Bold bool `json:"bold,omitempty" yaml:"bold,omitempty" toml:"bold,omitempty"`
 	// Serif 指示字体是否为衬线字体。
-	Serif bool `json:"serif" yaml:"serif"`
+	Serif bool `json:"serif,omitempty" yaml:"serif,omitempty" toml:"serif,omitempty"`
 	// FixedWidth 指示字体是否为等宽字体。
-	FixedWidth bool `json:"fixedWidth" yaml:"fixedWidth"`
+	FixedWidth bool `json:"fixed_width,omitempty" yaml:"fixed_width,omitempty" toml:"fixed_width,omitempty"`
 }
 
 // Image 描述文档中的图像资源。
 type Image struct {
 	// ID 标识图像资源。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Format 指定图像格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// Name 指定图像名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// File 指定图像文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的图像数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 }
 
 // Media 描述文档中的媒体资源。
 type Media struct {
 	// ID 标识媒体资源。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Type 指定媒体类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// Format 指定媒体格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// Name 指定媒体名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// File 指定媒体文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的媒体数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 }
 
 // Page 描述文档页面及其图层、图元和页面资源。
 type Page struct {
 	// Templates 指定页面引用的模板页。
-	Templates []TemplateRef `json:"templates" yaml:"templates"`
+	Templates []TemplateRef `json:"templates,omitempty" yaml:"templates,omitempty" toml:"templates,omitempty"`
 	// Layers 定义页面图层。
-	Layers []Layer `json:"layers" yaml:"layers"`
+	Layers []Layer `json:"layers,omitempty" yaml:"layers,omitempty" toml:"layers,omitempty"`
 	// Items 定义页面图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 	// Area 定义页面区域。
-	Area *PageArea `json:"area" yaml:"area"`
+	Area *PageArea `json:"area,omitempty" yaml:"area,omitempty" toml:"area,omitempty"`
 	// LayerType 指定页面图层类型。
-	LayerType string `json:"layerType" yaml:"layerType"`
+	LayerType string `json:"layer_type,omitempty" yaml:"layer_type,omitempty" toml:"layer_type,omitempty"`
 	// Actions 定义页面级动作。
-	Actions []Action `json:"actions" yaml:"actions"`
+	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 	// Resources 定义页面级资源。
-	Resources []PageResource `json:"resources" yaml:"resources"`
+	Resources []PageResource `json:"resources,omitempty" yaml:"resources,omitempty" toml:"resources,omitempty"`
 }
 
 // PublicResource 描述文档中的公共资源。
 type PublicResource struct {
 	// Name 指定公共资源名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// File 指定公共资源文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的公共资源数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// Files 定义公共资源包中的文件。
-	Files []ResourceFile `json:"files" yaml:"files"`
+	Files []ResourceFile `json:"files,omitempty" yaml:"files,omitempty" toml:"files,omitempty"`
 }
 
 // PageResource 描述页面级资源文件或嵌入式图像。
 type PageResource struct {
 	// File 指定页面资源文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的页面资源数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// Images 定义资源中的图像。
-	Images []PageImage `json:"images" yaml:"images"`
+	Images []PageImage `json:"images,omitempty" yaml:"images,omitempty" toml:"images,omitempty"`
 	// Files 定义页面资源包中的文件。
-	Files []ResourceFile `json:"files" yaml:"files"`
+	Files []ResourceFile `json:"files,omitempty" yaml:"files,omitempty" toml:"files,omitempty"`
 }
 
 // PageImage 描述页面资源中的图像。
 type PageImage struct {
 	// ID 标识页面图像资源。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Format 指定图像格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// Name 指定图像名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// File 指定图像文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的图像数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 }
 
 // ResourceFile 描述资源包中的文件。
 type ResourceFile struct {
 	// Path 指定文件在资源包中的路径。
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty"`
 	// File 指定源文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的文件数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 }
 
 // CustomTag 描述文档自定义标签及其架构和数据。
 type CustomTag struct {
 	// NameSpace 指定自定义标签命名空间。
-	NameSpace string `json:"nameSpace" yaml:"nameSpace"`
+	NameSpace string `json:"name_space,omitempty" yaml:"name_space,omitempty" toml:"name_space,omitempty"`
 	// Schema 指定架构文件路径。
-	Schema string `json:"schema" yaml:"schema"`
+	Schema string `json:"schema,omitempty" yaml:"schema,omitempty" toml:"schema,omitempty"`
 	// SchemaBase64 提供 Base64 编码的架构数据。
-	SchemaBase64 string `json:"schemaBase64" yaml:"schemaBase64"`
+	SchemaBase64 string `json:"schema_base64,omitempty" yaml:"schema_base64,omitempty" toml:"schema_base64,omitempty"`
 	// SchemaName 指定架构在文档中的名称。
-	SchemaName string `json:"schemaName" yaml:"schemaName"`
+	SchemaName string `json:"schema_name,omitempty" yaml:"schema_name,omitempty" toml:"schema_name,omitempty"`
 	// Data 指定自定义数据文件路径或文本数据。
-	Data string `json:"data" yaml:"data"`
+	Data string `json:"data,omitempty" yaml:"data,omitempty" toml:"data,omitempty"`
 	// DataBase64 提供 Base64 编码的自定义数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// DataName 指定自定义数据在文档中的名称。
-	DataName string `json:"dataName" yaml:"dataName"`
+	DataName string `json:"data_name,omitempty" yaml:"data_name,omitempty" toml:"data_name,omitempty"`
 }
 
 // Permissions 描述文档的访问和操作权限。
 type Permissions struct {
 	// Edit 指示是否允许编辑文档。
-	Edit *bool `json:"edit" yaml:"edit"`
+	Edit *bool `json:"edit,omitempty" yaml:"edit,omitempty" toml:"edit,omitempty"`
 	// Annot 指示是否允许添加或修改批注。
-	Annot *bool `json:"annot" yaml:"annot"`
+	Annot *bool `json:"annot,omitempty" yaml:"annot,omitempty" toml:"annot,omitempty"`
 	// Export 指示是否允许导出文档。
-	Export *bool `json:"export" yaml:"export"`
+	Export *bool `json:"export,omitempty" yaml:"export,omitempty" toml:"export,omitempty"`
 	// Signature 指示是否允许签名。
-	Signature *bool `json:"signature" yaml:"signature"`
+	Signature *bool `json:"signature,omitempty" yaml:"signature,omitempty" toml:"signature,omitempty"`
 	// Watermark 指示是否允许修改水印。
-	Watermark *bool `json:"watermark" yaml:"watermark"`
+	Watermark *bool `json:"watermark,omitempty" yaml:"watermark,omitempty" toml:"watermark,omitempty"`
 	// PrintScreen 指示是否允许屏幕截图。
-	PrintScreen *bool `json:"printScreen" yaml:"printScreen"`
+	PrintScreen *bool `json:"print_screen,omitempty" yaml:"print_screen,omitempty" toml:"print_screen,omitempty"`
 	// Print 定义打印权限和设置。
-	Print *PrintSettings `json:"print" yaml:"print"`
+	Print *PrintSettings `json:"print,omitempty" yaml:"print,omitempty" toml:"print,omitempty"`
 	// ValidPeriod 定义权限的有效时间范围。
-	ValidPeriod *ValidPeriod `json:"validPeriod" yaml:"validPeriod"`
+	ValidPeriod *ValidPeriod `json:"valid_period,omitempty" yaml:"valid_period,omitempty" toml:"valid_period,omitempty"`
 }
 
 // PrintSettings 描述文档打印设置。
 type PrintSettings struct {
 	// Printable 指示是否允许打印。
-	Printable bool `json:"printable" yaml:"printable"`
+	Printable bool `json:"printable,omitempty" yaml:"printable,omitempty" toml:"printable,omitempty"`
 	// Copies 指定允许或默认的打印份数。
-	Copies *int `json:"copies" yaml:"copies"`
+	Copies *int `json:"copies,omitempty" yaml:"copies,omitempty" toml:"copies,omitempty"`
 }
 
 // ValidPeriod 描述权限的有效时间范围。
 type ValidPeriod struct {
 	// Start 指定权限生效时间。
-	Start string `json:"start" yaml:"start"`
+	Start string `json:"start,omitempty" yaml:"start,omitempty" toml:"start,omitempty"`
 	// End 指定权限失效时间。
-	End string `json:"end" yaml:"end"`
+	End string `json:"end,omitempty" yaml:"end,omitempty" toml:"end,omitempty"`
 }
 
 // Template 描述可供页面引用的模板页。
 type Template struct {
 	// ID 标识模板页。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Name 指定模板页名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// ZOrder 指定模板页的层叠顺序。
-	ZOrder string `json:"zOrder" yaml:"zOrder"`
+	ZOrder string `json:"z_order,omitempty" yaml:"z_order,omitempty" toml:"z_order,omitempty"`
 	// Layers 定义模板页图层。
-	Layers []Layer `json:"layers" yaml:"layers"`
+	Layers []Layer `json:"layers,omitempty" yaml:"layers,omitempty" toml:"layers,omitempty"`
 	// Items 定义模板页图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 	// Area 定义模板页区域。
-	Area *PageArea `json:"area" yaml:"area"`
+	Area *PageArea `json:"area,omitempty" yaml:"area,omitempty" toml:"area,omitempty"`
 }
 
 // TemplateRef 描述页面对模板页的引用。
 type TemplateRef struct {
 	// ID 指定所引用的模板页。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// ZOrder 指定模板引用的层叠顺序。
-	ZOrder string `json:"zOrder" yaml:"zOrder"`
+	ZOrder string `json:"z_order,omitempty" yaml:"z_order,omitempty" toml:"z_order,omitempty"`
 }
 
 // Layer 描述页面或模板中的图层。
 type Layer struct {
 	// Type 指定图层类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// DrawParam 指定图层使用的绘制参数名称。
-	DrawParam string `json:"drawParam" yaml:"drawParam"`
+	DrawParam string `json:"draw_param,omitempty" yaml:"draw_param,omitempty" toml:"draw_param,omitempty"`
 	// Items 定义图层中的图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 }
 
 // PageArea 描述页面的物理、应用、内容和出血区域。
 type PageArea struct {
 	// PhysicalBox 定义页面物理区域。
-	PhysicalBox *Box `json:"physicalBox" yaml:"physicalBox"`
+	PhysicalBox *Box `json:"physical_box,omitempty" yaml:"physical_box,omitempty" toml:"physical_box,omitempty"`
 	// ApplicationBox 定义页面应用区域。
-	ApplicationBox *Box `json:"applicationBox" yaml:"applicationBox"`
+	ApplicationBox *Box `json:"application_box,omitempty" yaml:"application_box,omitempty" toml:"application_box,omitempty"`
 	// ContentBox 定义页面内容区域。
-	ContentBox *Box `json:"contentBox" yaml:"contentBox"`
+	ContentBox *Box `json:"content_box,omitempty" yaml:"content_box,omitempty" toml:"content_box,omitempty"`
 	// BleedBox 定义页面出血区域。
-	BleedBox *Box `json:"bleedBox" yaml:"bleedBox"`
+	BleedBox *Box `json:"bleed_box,omitempty" yaml:"bleed_box,omitempty" toml:"bleed_box,omitempty"`
 }
 
 // CustomData 描述文档自定义键值数据。
 type CustomData struct {
 	// Name 指定自定义数据名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Value 指定自定义数据值。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 }
 
 // Preferences 描述文档查看偏好设置。
 type Preferences struct {
 	// PageMode 指定页面显示模式。
-	PageMode string `json:"pageMode" yaml:"pageMode"`
+	PageMode string `json:"page_mode,omitempty" yaml:"page_mode,omitempty" toml:"page_mode,omitempty"`
 	// PageLayout 指定页面布局方式。
-	PageLayout string `json:"pageLayout" yaml:"pageLayout"`
+	PageLayout string `json:"page_layout,omitempty" yaml:"page_layout,omitempty" toml:"page_layout,omitempty"`
 	// TabDisplay 指定文档标签页显示方式。
-	TabDisplay string `json:"tabDisplay" yaml:"tabDisplay"`
+	TabDisplay string `json:"tab_display,omitempty" yaml:"tab_display,omitempty" toml:"tab_display,omitempty"`
 	// HideToolbar 指示是否隐藏工具栏。
-	HideToolbar *bool `json:"hideToolbar" yaml:"hideToolbar"`
+	HideToolbar *bool `json:"hide_toolbar,omitempty" yaml:"hide_toolbar,omitempty" toml:"hide_toolbar,omitempty"`
 	// HideMenubar 指示是否隐藏菜单栏。
-	HideMenubar *bool `json:"hideMenubar" yaml:"hideMenubar"`
+	HideMenubar *bool `json:"hide_menubar,omitempty" yaml:"hide_menubar,omitempty" toml:"hide_menubar,omitempty"`
 	// HideWindowUI 指示是否隐藏窗口界面元素。
-	HideWindowUI *bool `json:"hideWindowUI" yaml:"hideWindowUI"`
+	HideWindowUI *bool `json:"hide_window_ui,omitempty" yaml:"hide_window_ui,omitempty" toml:"hide_window_ui,omitempty"`
 	// ZoomMode 指定缩放模式。
-	ZoomMode string `json:"zoomMode" yaml:"zoomMode"`
+	ZoomMode string `json:"zoom_mode,omitempty" yaml:"zoom_mode,omitempty" toml:"zoom_mode,omitempty"`
 	// Zoom 指定页面缩放比例。
-	Zoom *float64 `json:"zoom" yaml:"zoom"`
+	Zoom *float64 `json:"zoom,omitempty" yaml:"zoom,omitempty" toml:"zoom,omitempty"`
 }
 
 // ColorSpace 描述文档使用的颜色空间资源。
 type ColorSpace struct {
 	// ID 标识颜色空间资源。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Type 指定颜色空间类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// BitsPerComponent 指定每个颜色分量的位数。
-	BitsPerComponent int `json:"bitsPerComponent" yaml:"bitsPerComponent"`
+	BitsPerComponent int `json:"bits_per_component,omitempty" yaml:"bits_per_component,omitempty" toml:"bits_per_component,omitempty"`
 	// Palette 定义颜色索引到颜色分量的映射。
-	Palette []string `json:"palette" yaml:"palette"`
+	Palette []string `json:"palette,omitempty" yaml:"palette,omitempty" toml:"palette,omitempty"`
 	// ProfileFile 指定颜色配置文件路径。
-	ProfileFile string `json:"profileFile" yaml:"profileFile"`
+	ProfileFile string `json:"profile_file,omitempty" yaml:"profile_file,omitempty" toml:"profile_file,omitempty"`
 	// ProfileBase64 提供 Base64 编码的颜色配置数据。
-	ProfileBase64 string `json:"profileBase64" yaml:"profileBase64"`
+	ProfileBase64 string `json:"profile_base64,omitempty" yaml:"profile_base64,omitempty" toml:"profile_base64,omitempty"`
 	// ProfileName 指定颜色配置文件名称。
-	ProfileName string `json:"profileName" yaml:"profileName"`
+	ProfileName string `json:"profile_name,omitempty" yaml:"profile_name,omitempty" toml:"profile_name,omitempty"`
 }
 
 // DrawParam 描述图形绘制参数。
 type DrawParam struct {
 	// Name 指定绘制参数名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Relative 指定参数相对的坐标或对象。
-	Relative string `json:"relative" yaml:"relative"`
+	Relative string `json:"relative,omitempty" yaml:"relative,omitempty" toml:"relative,omitempty"`
 	// LineWidth 指定线宽。
-	LineWidth float64 `json:"lineWidth" yaml:"lineWidth"`
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
 	// Join 指定线段连接样式。
-	Join string `json:"join" yaml:"join"`
+	Join string `json:"join,omitempty" yaml:"join,omitempty" toml:"join,omitempty"`
 	// Cap 指定线段端点样式。
-	Cap string `json:"cap" yaml:"cap"`
+	Cap string `json:"cap,omitempty" yaml:"cap,omitempty" toml:"cap,omitempty"`
 	// DashOffset 指定虚线起始偏移量。
-	DashOffset float64 `json:"dashOffset" yaml:"dashOffset"`
+	DashOffset float64 `json:"dash_offset,omitempty" yaml:"dash_offset,omitempty" toml:"dash_offset,omitempty"`
 	// DashPattern 指定虚线长度模式。
-	DashPattern []float64 `json:"dashPattern" yaml:"dashPattern"`
+	DashPattern []float64 `json:"dash_pattern,omitempty" yaml:"dash_pattern,omitempty" toml:"dash_pattern,omitempty"`
 	// MiterLimit 指定斜接长度限制。
-	MiterLimit float64 `json:"miterLimit" yaml:"miterLimit"`
+	MiterLimit float64 `json:"miter_limit,omitempty" yaml:"miter_limit,omitempty" toml:"miter_limit,omitempty"`
 	// FillColor 指定填充颜色。
-	FillColor *Color `json:"fillColor" yaml:"fillColor"`
+	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
 	// StrokeColor 指定描边颜色。
-	StrokeColor *Color `json:"strokeColor" yaml:"strokeColor"`
+	StrokeColor *Color `json:"stroke_color,omitempty" yaml:"stroke_color,omitempty" toml:"stroke_color,omitempty"`
 }
 
 // Composite 描述复合图形单元资源。
 type Composite struct {
 	// ID 标识复合图形单元。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Width 指定复合图形宽度。
-	Width float64 `json:"width" yaml:"width"`
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty" toml:"width,omitempty"`
 	// Height 指定复合图形高度。
-	Height float64 `json:"height" yaml:"height"`
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty" toml:"height,omitempty"`
 	// Thumbnail 指定缩略图资源编号。
-	Thumbnail uint64 `json:"thumbnail" yaml:"thumbnail"`
+	Thumbnail uint64 `json:"thumbnail,omitempty" yaml:"thumbnail,omitempty" toml:"thumbnail,omitempty"`
 	// Substitution 指定替代图形资源编号。
-	Substitution uint64 `json:"substitution" yaml:"substitution"`
+	Substitution uint64 `json:"substitution,omitempty" yaml:"substitution,omitempty" toml:"substitution,omitempty"`
 	// Items 定义复合图形中的图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 }
 
 // Color 描述颜色及其渐变或图案填充信息。
 type Color struct {
 	// R 指定红色分量。
-	R uint8 `json:"r" yaml:"r"`
+	R uint8 `json:"r,omitempty" yaml:"r,omitempty" toml:"r,omitempty"`
 	// G 指定绿色分量。
-	G uint8 `json:"g" yaml:"g"`
+	G uint8 `json:"g,omitempty" yaml:"g,omitempty" toml:"g,omitempty"`
 	// B 指定蓝色分量。
-	B uint8 `json:"b" yaml:"b"`
+	B uint8 `json:"b,omitempty" yaml:"b,omitempty" toml:"b,omitempty"`
 	// Components 指定颜色空间分量值。
-	Components []int `json:"components" yaml:"components"`
+	Components []int `json:"components,omitempty" yaml:"components,omitempty" toml:"components,omitempty"`
 	// ColorSpace 指定颜色空间资源编号。
-	ColorSpace uint64 `json:"colorSpace" yaml:"colorSpace"`
+	ColorSpace uint64 `json:"color_space,omitempty" yaml:"color_space,omitempty" toml:"color_space,omitempty"`
 	// Index 指定调色板颜色索引。
-	Index *int `json:"index" yaml:"index"`
+	Index *int `json:"index,omitempty" yaml:"index,omitempty" toml:"index,omitempty"`
 	// Alpha 指定颜色透明度。
-	Alpha *uint8 `json:"alpha" yaml:"alpha"`
+	Alpha *uint8 `json:"alpha,omitempty" yaml:"alpha,omitempty" toml:"alpha,omitempty"`
 	// Axial 定义轴向渐变。
-	Axial *AxialShading `json:"axial" yaml:"axial"`
+	Axial *AxialShading `json:"axial,omitempty" yaml:"axial,omitempty" toml:"axial,omitempty"`
 	// Radial 定义径向渐变。
-	Radial *RadialShading `json:"radial" yaml:"radial"`
+	Radial *RadialShading `json:"radial,omitempty" yaml:"radial,omitempty" toml:"radial,omitempty"`
 	// Gouraud 定义三角网格渐变。
-	Gouraud *Gouraud `json:"gouraud" yaml:"gouraud"`
+	Gouraud *Gouraud `json:"gouraud,omitempty" yaml:"gouraud,omitempty" toml:"gouraud,omitempty"`
 	// LaGouraud 定义四边形网格渐变。
-	LaGouraud *LaGouraud `json:"laGouraud" yaml:"laGouraud"`
+	LaGouraud *LaGouraud `json:"la_gouraud,omitempty" yaml:"la_gouraud,omitempty" toml:"la_gouraud,omitempty"`
 	// Pattern 定义图案填充。
-	Pattern *Pattern `json:"pattern" yaml:"pattern"`
+	Pattern *Pattern `json:"pattern,omitempty" yaml:"pattern,omitempty" toml:"pattern,omitempty"`
 }
 
 // ColorStop 描述渐变中的颜色停止点。
 type ColorStop struct {
 	// Position 指定颜色在渐变中的位置。
-	Position float64 `json:"position" yaml:"position"`
+	Position float64 `json:"position,omitempty" yaml:"position,omitempty" toml:"position,omitempty"`
 	// Color 指定该位置的颜色。
-	Color Color `json:"color" yaml:"color"`
+	Color Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
 // AxialShading 描述轴向渐变。
 type AxialShading struct {
 	// MapType 指定渐变映射类型。
-	MapType string `json:"mapType" yaml:"mapType"`
+	MapType string `json:"map_type,omitempty" yaml:"map_type,omitempty" toml:"map_type,omitempty"`
 	// MapUnit 指定渐变映射单位。
-	MapUnit float64 `json:"mapUnit" yaml:"mapUnit"`
+	MapUnit float64 `json:"map_unit,omitempty" yaml:"map_unit,omitempty" toml:"map_unit,omitempty"`
 	// Extend 指定渐变端点的延伸方式。
-	Extend int `json:"extend" yaml:"extend"`
+	Extend int `json:"extend,omitempty" yaml:"extend,omitempty" toml:"extend,omitempty"`
 	// StartPoint 指定渐变起点。
-	StartPoint string `json:"startPoint" yaml:"startPoint"`
+	StartPoint string `json:"start_point,omitempty" yaml:"start_point,omitempty" toml:"start_point,omitempty"`
 	// EndPoint 指定渐变终点。
-	EndPoint string `json:"endPoint" yaml:"endPoint"`
+	EndPoint string `json:"end_point,omitempty" yaml:"end_point,omitempty" toml:"end_point,omitempty"`
 	// Segments 定义渐变颜色停止点。
-	Segments []ColorStop `json:"segments" yaml:"segments"`
+	Segments []ColorStop `json:"segments,omitempty" yaml:"segments,omitempty" toml:"segments,omitempty"`
 }
 
 // RadialShading 描述径向渐变。
 type RadialShading struct {
 	// MapType 指定渐变映射类型。
-	MapType string `json:"mapType" yaml:"mapType"`
+	MapType string `json:"map_type,omitempty" yaml:"map_type,omitempty" toml:"map_type,omitempty"`
 	// MapUnit 指定渐变映射单位。
-	MapUnit float64 `json:"mapUnit" yaml:"mapUnit"`
+	MapUnit float64 `json:"map_unit,omitempty" yaml:"map_unit,omitempty" toml:"map_unit,omitempty"`
 	// Eccentricity 指定径向渐变椭圆离心率。
-	Eccentricity float64 `json:"eccentricity" yaml:"eccentricity"`
+	Eccentricity float64 `json:"eccentricity,omitempty" yaml:"eccentricity,omitempty" toml:"eccentricity,omitempty"`
 	// Angle 指定径向渐变旋转角度。
-	Angle float64 `json:"angle" yaml:"angle"`
+	Angle float64 `json:"angle,omitempty" yaml:"angle,omitempty" toml:"angle,omitempty"`
 	// StartPoint 指定渐变起点圆心。
-	StartPoint string `json:"startPoint" yaml:"startPoint"`
+	StartPoint string `json:"start_point,omitempty" yaml:"start_point,omitempty" toml:"start_point,omitempty"`
 	// StartRadius 指定渐变起始半径。
-	StartRadius float64 `json:"startRadius" yaml:"startRadius"`
+	StartRadius float64 `json:"start_radius,omitempty" yaml:"start_radius,omitempty" toml:"start_radius,omitempty"`
 	// EndPoint 指定渐变终点圆心。
-	EndPoint string `json:"endPoint" yaml:"endPoint"`
+	EndPoint string `json:"end_point,omitempty" yaml:"end_point,omitempty" toml:"end_point,omitempty"`
 	// EndRadius 指定渐变结束半径。
-	EndRadius float64 `json:"endRadius" yaml:"endRadius"`
+	EndRadius float64 `json:"end_radius,omitempty" yaml:"end_radius,omitempty" toml:"end_radius,omitempty"`
 	// Extend 指定渐变端点的延伸方式。
-	Extend int `json:"extend" yaml:"extend"`
+	Extend int `json:"extend,omitempty" yaml:"extend,omitempty" toml:"extend,omitempty"`
 	// Segments 定义渐变颜色停止点。
-	Segments []ColorStop `json:"segments" yaml:"segments"`
+	Segments []ColorStop `json:"segments,omitempty" yaml:"segments,omitempty" toml:"segments,omitempty"`
 }
 
 // Gouraud 描述 Gouraud 三角网格渐变。
 type Gouraud struct {
 	// Extend 指定渐变边界的延伸方式。
-	Extend int `json:"extend" yaml:"extend"`
+	Extend int `json:"extend,omitempty" yaml:"extend,omitempty" toml:"extend,omitempty"`
 	// Points 定义三角网格顶点。
-	Points []GouraudPoint `json:"points" yaml:"points"`
+	Points []GouraudPoint `json:"points,omitempty" yaml:"points,omitempty" toml:"points,omitempty"`
 	// BackColor 指定网格背景颜色。
-	BackColor *Color `json:"backColor" yaml:"backColor"`
+	BackColor *Color `json:"back_color,omitempty" yaml:"back_color,omitempty" toml:"back_color,omitempty"`
 }
 
 // GouraudPoint 描述 Gouraud 渐变网格中的顶点。
 type GouraudPoint struct {
 	// X 指定顶点横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定顶点纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// EdgeFlag 指定顶点边标志。
-	EdgeFlag int `json:"edgeFlag" yaml:"edgeFlag"`
+	EdgeFlag int `json:"edge_flag,omitempty" yaml:"edge_flag,omitempty" toml:"edge_flag,omitempty"`
 	// Color 指定顶点颜色。
-	Color Color `json:"color" yaml:"color"`
+	Color Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
 // LaGouraud 描述 LaGouraud 四边形网格渐变。
 type LaGouraud struct {
 	// VerticesPerRow 指定每行顶点数。
-	VerticesPerRow int `json:"verticesPerRow" yaml:"verticesPerRow"`
+	VerticesPerRow int `json:"vertices_per_row,omitempty" yaml:"vertices_per_row,omitempty" toml:"vertices_per_row,omitempty"`
 	// Extend 指定渐变边界的延伸方式。
-	Extend int `json:"extend" yaml:"extend"`
+	Extend int `json:"extend,omitempty" yaml:"extend,omitempty" toml:"extend,omitempty"`
 	// Points 定义四边形网格顶点。
-	Points []LaGouraudPoint `json:"points" yaml:"points"`
+	Points []LaGouraudPoint `json:"points,omitempty" yaml:"points,omitempty" toml:"points,omitempty"`
 	// BackColor 指定网格背景颜色。
-	BackColor *Color `json:"backColor" yaml:"backColor"`
+	BackColor *Color `json:"back_color,omitempty" yaml:"back_color,omitempty" toml:"back_color,omitempty"`
 }
 
 // LaGouraudPoint 描述 LaGouraud 渐变网格中的顶点。
 type LaGouraudPoint struct {
 	// X 指定顶点横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定顶点纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// Color 指定顶点颜色。
-	Color Color `json:"color" yaml:"color"`
+	Color Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
 // Pattern 描述图案填充及其内容。
 type Pattern struct {
 	// Width 指定图案单元宽度。
-	Width float64 `json:"width" yaml:"width"`
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty" toml:"width,omitempty"`
 	// Height 指定图案单元高度。
-	Height float64 `json:"height" yaml:"height"`
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty" toml:"height,omitempty"`
 	// XStep 指定图案在横向的重复步长。
-	XStep float64 `json:"xStep" yaml:"xStep"`
+	XStep float64 `json:"x_step,omitempty" yaml:"x_step,omitempty" toml:"x_step,omitempty"`
 	// YStep 指定图案在纵向的重复步长。
-	YStep float64 `json:"yStep" yaml:"yStep"`
+	YStep float64 `json:"y_step,omitempty" yaml:"y_step,omitempty" toml:"y_step,omitempty"`
 	// ReflectMethod 指定图案反射方式。
-	ReflectMethod string `json:"reflectMethod" yaml:"reflectMethod"`
+	ReflectMethod string `json:"reflect_method,omitempty" yaml:"reflect_method,omitempty" toml:"reflect_method,omitempty"`
 	// RelativeTo 指定图案定位所依据的对象。
-	RelativeTo string `json:"relativeTo" yaml:"relativeTo"`
+	RelativeTo string `json:"relative_to,omitempty" yaml:"relative_to,omitempty" toml:"relative_to,omitempty"`
 	// CTM 指定图案的坐标变换矩阵。
-	CTM []float64 `json:"ctm" yaml:"ctm"`
+	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// Thumbnail 指定图案缩略图资源编号。
-	Thumbnail uint64 `json:"thumbnail" yaml:"thumbnail"`
+	Thumbnail uint64 `json:"thumbnail,omitempty" yaml:"thumbnail,omitempty" toml:"thumbnail,omitempty"`
 	// Items 定义图案中的图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 	// Layers 定义图案中的图层。
-	Layers []Layer `json:"layers" yaml:"layers"`
+	Layers []Layer `json:"layers,omitempty" yaml:"layers,omitempty" toml:"layers,omitempty"`
 }
 
 // TextCode 描述文本内容及其定位信息。
 type TextCode struct {
 	// Value 指定文本内容。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 	// X 指定文本代码横坐标。
-	X *float64 `json:"x" yaml:"x"`
+	X *float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定文本代码纵坐标。
-	Y *float64 `json:"y" yaml:"y"`
+	Y *float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// DeltaX 指定连续字符的横向偏移量。
-	DeltaX []float64 `json:"deltaX" yaml:"deltaX"`
+	DeltaX []float64 `json:"delta_x,omitempty" yaml:"delta_x,omitempty" toml:"delta_x,omitempty"`
 	// DeltaY 指定连续字符的纵向偏移量。
-	DeltaY []float64 `json:"deltaY" yaml:"deltaY"`
+	DeltaY []float64 `json:"delta_y,omitempty" yaml:"delta_y,omitempty" toml:"delta_y,omitempty"`
 }
 
 // Action 描述文档、页面或图元触发的动作。
 type Action struct {
 	// Event 指定触发动作的事件。
-	Event string `json:"event" yaml:"event"`
+	Event string `json:"event,omitempty" yaml:"event,omitempty" toml:"event,omitempty"`
 	// Region 定义动作触发区域。
-	Region *ActionRegion `json:"region" yaml:"region"`
+	Region *ActionRegion `json:"region,omitempty" yaml:"region,omitempty" toml:"region,omitempty"`
 	// URI 定义打开或跳转到 URI 的动作。
-	URI *URIAction `json:"uri" yaml:"uri"`
+	URI *URIAction `json:"uri,omitempty" yaml:"uri,omitempty" toml:"uri,omitempty"`
 	// Goto 定义跳转到页面或位置的动作。
-	Goto *GotoAction `json:"goto" yaml:"goto"`
+	Goto *GotoAction `json:"goto,omitempty" yaml:"goto,omitempty" toml:"goto,omitempty"`
 	// GotoA 定义跳转到附件的动作。
-	GotoA *GotoAAction `json:"gotoA" yaml:"gotoA"`
+	GotoA *GotoAAction `json:"goto_a,omitempty" yaml:"goto_a,omitempty" toml:"goto_a,omitempty"`
 	// Sound 定义播放声音资源的动作。
-	Sound *SoundAction `json:"sound" yaml:"sound"`
+	Sound *SoundAction `json:"sound,omitempty" yaml:"sound,omitempty" toml:"sound,omitempty"`
 	// Movie 定义播放媒体资源的动作。
-	Movie *MovieAction `json:"movie" yaml:"movie"`
+	Movie *MovieAction `json:"movie,omitempty" yaml:"movie,omitempty" toml:"movie,omitempty"`
 }
 
 // ActionRegion 描述动作的触发区域。
 type ActionRegion struct {
 	// Areas 定义动作区域中的路径。
-	Areas []ActionArea `json:"areas" yaml:"areas"`
+	Areas []ActionArea `json:"areas,omitempty" yaml:"areas,omitempty" toml:"areas,omitempty"`
 }
 
 // ActionArea 描述触发区域中的一条路径。
 type ActionArea struct {
 	// Start 指定路径起点。
-	Start Point `json:"start" yaml:"start"`
+	Start Point `json:"start,omitempty" yaml:"start,omitempty" toml:"start,omitempty"`
 	// Commands 定义路径绘制命令。
-	Commands []RegionCommand `json:"commands" yaml:"commands"`
+	Commands []RegionCommand `json:"commands,omitempty" yaml:"commands,omitempty" toml:"commands,omitempty"`
 }
 
 // Point 描述二维坐标点。
 type Point struct {
 	// X 指定横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 }
 
 // RegionCommand 描述动作区域路径中的绘制命令。
 type RegionCommand struct {
 	// Type 指定路径命令类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// X 指定命令终点横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定命令终点纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// ControlX 指定二次贝塞尔曲线控制点横坐标。
-	ControlX float64 `json:"controlX" yaml:"controlX"`
+	ControlX float64 `json:"control_x,omitempty" yaml:"control_x,omitempty" toml:"control_x,omitempty"`
 	// ControlY 指定二次贝塞尔曲线控制点纵坐标。
-	ControlY float64 `json:"controlY" yaml:"controlY"`
+	ControlY float64 `json:"control_y,omitempty" yaml:"control_y,omitempty" toml:"control_y,omitempty"`
 	// Control1X 指定三次贝塞尔曲线第一个控制点横坐标。
-	Control1X float64 `json:"control1X" yaml:"control1X"`
+	Control1X float64 `json:"control_1_x,omitempty" yaml:"control_1_x,omitempty" toml:"control_1_x,omitempty"`
 	// Control1Y 指定三次贝塞尔曲线第一个控制点纵坐标。
-	Control1Y float64 `json:"control1Y" yaml:"control1Y"`
+	Control1Y float64 `json:"control_1_y,omitempty" yaml:"control_1_y,omitempty" toml:"control_1_y,omitempty"`
 	// Control2X 指定三次贝塞尔曲线第二个控制点横坐标。
-	Control2X float64 `json:"control2X" yaml:"control2X"`
+	Control2X float64 `json:"control_2_x,omitempty" yaml:"control_2_x,omitempty" toml:"control_2_x,omitempty"`
 	// Control2Y 指定三次贝塞尔曲线第二个控制点纵坐标。
-	Control2Y float64 `json:"control2Y" yaml:"control2Y"`
+	Control2Y float64 `json:"control_2_y,omitempty" yaml:"control_2_y,omitempty" toml:"control_2_y,omitempty"`
 	// SweepDirection 指定椭圆弧的扫描方向。
-	SweepDirection bool `json:"sweepDirection" yaml:"sweepDirection"`
+	SweepDirection bool `json:"sweep_direction,omitempty" yaml:"sweep_direction,omitempty" toml:"sweep_direction,omitempty"`
 	// LargeArc 指示椭圆弧是否取大弧段。
-	LargeArc bool `json:"largeArc" yaml:"largeArc"`
+	LargeArc bool `json:"large_arc,omitempty" yaml:"large_arc,omitempty" toml:"large_arc,omitempty"`
 	// RotationAngle 指定椭圆弧旋转角度。
-	RotationAngle float64 `json:"rotationAngle" yaml:"rotationAngle"`
+	RotationAngle float64 `json:"rotation_angle,omitempty" yaml:"rotation_angle,omitempty" toml:"rotation_angle,omitempty"`
 	// EllipseWidth 指定椭圆弧椭圆宽度。
-	EllipseWidth float64 `json:"ellipseWidth" yaml:"ellipseWidth"`
+	EllipseWidth float64 `json:"ellipse_width,omitempty" yaml:"ellipse_width,omitempty" toml:"ellipse_width,omitempty"`
 	// EllipseHeight 指定椭圆弧椭圆高度。
-	EllipseHeight float64 `json:"ellipseHeight" yaml:"ellipseHeight"`
+	EllipseHeight float64 `json:"ellipse_height,omitempty" yaml:"ellipse_height,omitempty" toml:"ellipse_height,omitempty"`
 }
 
 // URIAction 描述打开或跳转到 URI 的动作。
 type URIAction struct {
 	// URI 指定目标 URI。
-	URI string `json:"uri" yaml:"uri"`
+	URI string `json:"uri,omitempty" yaml:"uri,omitempty" toml:"uri,omitempty"`
 	// Base 指定 URI 基础地址。
-	Base string `json:"base" yaml:"base"`
+	Base string `json:"base,omitempty" yaml:"base,omitempty" toml:"base,omitempty"`
 	// Target 指定 URI 打开目标。
-	Target string `json:"target" yaml:"target"`
+	Target string `json:"target,omitempty" yaml:"target,omitempty" toml:"target,omitempty"`
 }
 
 // GotoAction 描述跳转到页面、书签或页面位置的动作。
 type GotoAction struct {
 	// Page 指定跳转目标页码。
-	Page int `json:"page" yaml:"page"`
+	Page int `json:"page,omitempty" yaml:"page,omitempty" toml:"page,omitempty"`
 	// Type 指定跳转目标类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// Bookmark 指定跳转目标书签名称。
-	Bookmark string `json:"bookmark" yaml:"bookmark"`
+	Bookmark string `json:"bookmark,omitempty" yaml:"bookmark,omitempty" toml:"bookmark,omitempty"`
 	// Left 指定目标视图左边界。
-	Left *float64 `json:"left" yaml:"left"`
+	Left *float64 `json:"left,omitempty" yaml:"left,omitempty" toml:"left,omitempty"`
 	// Top 指定目标视图上边界。
-	Top *float64 `json:"top" yaml:"top"`
+	Top *float64 `json:"top,omitempty" yaml:"top,omitempty" toml:"top,omitempty"`
 	// Right 指定目标视图右边界。
-	Right *float64 `json:"right" yaml:"right"`
+	Right *float64 `json:"right,omitempty" yaml:"right,omitempty" toml:"right,omitempty"`
 	// Bottom 指定目标视图下边界。
-	Bottom *float64 `json:"bottom" yaml:"bottom"`
+	Bottom *float64 `json:"bottom,omitempty" yaml:"bottom,omitempty" toml:"bottom,omitempty"`
 	// Zoom 指定目标视图缩放比例。
-	Zoom *float64 `json:"zoom" yaml:"zoom"`
+	Zoom *float64 `json:"zoom,omitempty" yaml:"zoom,omitempty" toml:"zoom,omitempty"`
 }
 
 // GotoAAction 描述跳转到附件的动作。
 type GotoAAction struct {
 	// AttachID 指定跳转目标附件标识。
-	AttachID string `json:"attachId" yaml:"attachId"`
+	AttachID string `json:"attach_id,omitempty" yaml:"attach_id,omitempty" toml:"attach_id,omitempty"`
 	// NewWindow 指示是否在新窗口打开附件。
-	NewWindow *bool `json:"newWindow" yaml:"newWindow"`
+	NewWindow *bool `json:"new_window,omitempty" yaml:"new_window,omitempty" toml:"new_window,omitempty"`
 }
 
 // SoundAction 描述播放声音资源的动作。
 type SoundAction struct {
 	// ResourceID 指定声音资源编号。
-	ResourceID uint64 `json:"resourceId" yaml:"resourceId"`
+	ResourceID uint64 `json:"resource_id,omitempty" yaml:"resource_id,omitempty" toml:"resource_id,omitempty"`
 	// Volume 指定播放音量。
-	Volume *int `json:"volume" yaml:"volume"`
+	Volume *int `json:"volume,omitempty" yaml:"volume,omitempty" toml:"volume,omitempty"`
 	// Repeat 指示是否循环播放。
-	Repeat *bool `json:"repeat" yaml:"repeat"`
+	Repeat *bool `json:"repeat,omitempty" yaml:"repeat,omitempty" toml:"repeat,omitempty"`
 	// Synchronous 指示是否同步播放。
-	Synchronous *bool `json:"synchronous" yaml:"synchronous"`
+	Synchronous *bool `json:"synchronous,omitempty" yaml:"synchronous,omitempty" toml:"synchronous,omitempty"`
 }
 
 // MovieAction 描述播放媒体资源的动作。
 type MovieAction struct {
 	// ResourceID 指定媒体资源编号。
-	ResourceID uint64 `json:"resourceId" yaml:"resourceId"`
+	ResourceID uint64 `json:"resource_id,omitempty" yaml:"resource_id,omitempty" toml:"resource_id,omitempty"`
 	// Operator 指定媒体操作类型。
-	Operator string `json:"operator" yaml:"operator"`
+	Operator string `json:"operator,omitempty" yaml:"operator,omitempty" toml:"operator,omitempty"`
 }
 
 // Bookmark 描述文档书签及其跳转目标。
 type Bookmark struct {
 	// Name 指定书签名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Goto 指定书签跳转目标。
-	Goto GotoAction `json:"goto" yaml:"goto"`
+	Goto GotoAction `json:"goto,omitempty" yaml:"goto,omitempty" toml:"goto,omitempty"`
 }
 
 // Attachment 描述文档附件。
 type Attachment struct {
 	// ID 标识附件。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Name 指定附件名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Format 指定附件格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// Usage 说明附件用途。
-	Usage string `json:"usage" yaml:"usage"`
+	Usage string `json:"usage,omitempty" yaml:"usage,omitempty" toml:"usage,omitempty"`
 	// File 指定附件文件路径。
-	File string `json:"file" yaml:"file"`
+	File string `json:"file,omitempty" yaml:"file,omitempty" toml:"file,omitempty"`
 	// DataBase64 提供 Base64 编码的附件数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// FileName 指定附件在文档中的文件名。
-	FileName string `json:"fileName" yaml:"fileName"`
+	FileName string `json:"file_name,omitempty" yaml:"file_name,omitempty" toml:"file_name,omitempty"`
 	// CreationDate 记录附件创建时间。
-	CreationDate string `json:"creationDate" yaml:"creationDate"`
+	CreationDate string `json:"creation_date,omitempty" yaml:"creation_date,omitempty" toml:"creation_date,omitempty"`
 	// ModDate 记录附件最后修改时间。
-	ModDate string `json:"modDate" yaml:"modDate"`
+	ModDate string `json:"mod_date,omitempty" yaml:"mod_date,omitempty" toml:"mod_date,omitempty"`
 	// Visible 指示附件是否可见。
-	Visible *bool `json:"visible" yaml:"visible"`
+	Visible *bool `json:"visible,omitempty" yaml:"visible,omitempty" toml:"visible,omitempty"`
 }
 
 // Extension 描述文档扩展信息。
 type Extension struct {
 	// AppName 指定扩展信息来源应用名称。
-	AppName string `json:"appName" yaml:"appName"`
+	AppName string `json:"app_name,omitempty" yaml:"app_name,omitempty" toml:"app_name,omitempty"`
 	// Company 指定扩展信息来源公司。
-	Company string `json:"company" yaml:"company"`
+	Company string `json:"company,omitempty" yaml:"company,omitempty" toml:"company,omitempty"`
 	// AppVersion 指定来源应用版本。
-	AppVersion string `json:"appVersion" yaml:"appVersion"`
+	AppVersion string `json:"app_version,omitempty" yaml:"app_version,omitempty" toml:"app_version,omitempty"`
 	// Date 记录扩展信息生成时间。
-	Date string `json:"date" yaml:"date"`
+	Date string `json:"date,omitempty" yaml:"date,omitempty" toml:"date,omitempty"`
 	// RefID 指定扩展信息引用标识。
-	RefID uint64 `json:"refId" yaml:"refId"`
+	RefID uint64 `json:"ref_id,omitempty" yaml:"ref_id,omitempty" toml:"ref_id,omitempty"`
 	// Data 指定扩展数据。
-	Data string `json:"data" yaml:"data"`
+	Data string `json:"data,omitempty" yaml:"data,omitempty" toml:"data,omitempty"`
 	// DataXML 指定扩展 XML 数据。
-	DataXML string `json:"dataXml" yaml:"dataXml"`
+	DataXML string `json:"data_xml,omitempty" yaml:"data_xml,omitempty" toml:"data_xml,omitempty"`
 	// DataFile 指定扩展数据文件路径。
-	DataFile string `json:"dataFile" yaml:"dataFile"`
+	DataFile string `json:"data_file,omitempty" yaml:"data_file,omitempty" toml:"data_file,omitempty"`
 	// DataFileBase64 提供 Base64 编码的扩展文件数据。
-	DataFileBase64 string `json:"dataFileBase64" yaml:"dataFileBase64"`
+	DataFileBase64 string `json:"data_file_base64,omitempty" yaml:"data_file_base64,omitempty" toml:"data_file_base64,omitempty"`
 	// DataName 指定扩展数据文件名称。
-	DataName string `json:"dataName" yaml:"dataName"`
+	DataName string `json:"data_name,omitempty" yaml:"data_name,omitempty" toml:"data_name,omitempty"`
 	// Properties 定义扩展属性。
-	Properties []ExtensionProperty `json:"properties" yaml:"properties"`
+	Properties []ExtensionProperty `json:"properties,omitempty" yaml:"properties,omitempty" toml:"properties,omitempty"`
 }
 
 // ExtensionProperty 描述扩展信息的属性。
 type ExtensionProperty struct {
 	// Name 指定属性名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Type 指定属性类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// Value 指定属性值。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 }
 
 // Version 描述文档的一个版本。
 type Version struct {
 	// ID 标识文档版本。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Index 指定版本序号。
-	Index int `json:"index" yaml:"index"`
+	Index int `json:"index,omitempty" yaml:"index,omitempty" toml:"index,omitempty"`
 	// Current 指示是否为当前版本。
-	Current bool `json:"current" yaml:"current"`
+	Current bool `json:"current,omitempty" yaml:"current,omitempty" toml:"current,omitempty"`
 	// Version 指定版本号。
-	Version string `json:"version" yaml:"version"`
+	Version string `json:"version" yaml:"version" toml:"version"`
 	// Name 指定版本名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// CreationDate 记录版本创建时间。
-	CreationDate string `json:"creationDate" yaml:"creationDate"`
+	CreationDate string `json:"creation_date,omitempty" yaml:"creation_date,omitempty" toml:"creation_date,omitempty"`
 	// DocRoot 指定版本文档根文件路径。
-	DocRoot string `json:"docRoot" yaml:"docRoot"`
+	DocRoot string `json:"doc_root,omitempty" yaml:"doc_root,omitempty" toml:"doc_root,omitempty"`
 	// DocRootBase64 提供 Base64 编码的版本文档根数据。
-	DocRootBase64 string `json:"docRootBase64" yaml:"docRootBase64"`
+	DocRootBase64 string `json:"doc_root_base64,omitempty" yaml:"doc_root_base64,omitempty" toml:"doc_root_base64,omitempty"`
 	// DocRootName 指定版本文档根文件名称。
-	DocRootName string `json:"docRootName" yaml:"docRootName"`
+	DocRootName string `json:"doc_root_name,omitempty" yaml:"doc_root_name,omitempty" toml:"doc_root_name,omitempty"`
 	// Files 定义版本包含的文件。
-	Files []VersionFile `json:"files" yaml:"files"`
+	Files []VersionFile `json:"files,omitempty" yaml:"files,omitempty" toml:"files,omitempty"`
 }
 
 // VersionFile 描述文档版本中的文件。
 type VersionFile struct {
 	// ID 标识版本文件。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Path 指定文件在版本中的路径。
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty"`
 }
 
 // Outline 描述文档大纲节点及其子节点。
 type Outline struct {
 	// Title 指定大纲节点标题。
-	Title string `json:"title" yaml:"title"`
+	Title string `json:"title,omitempty" yaml:"title,omitempty" toml:"title,omitempty"`
 	// Count 指定大纲节点包含的条目数。
-	Count *int `json:"count" yaml:"count"`
+	Count *int `json:"count,omitempty" yaml:"count,omitempty" toml:"count,omitempty"`
 	// Expanded 指示大纲节点是否展开。
-	Expanded *bool `json:"expanded" yaml:"expanded"`
+	Expanded *bool `json:"expanded,omitempty" yaml:"expanded,omitempty" toml:"expanded,omitempty"`
 	// Actions 定义大纲节点动作。
-	Actions []Action `json:"actions" yaml:"actions"`
+	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 	// Children 定义大纲子节点。
-	Children []Outline `json:"children" yaml:"children"`
+	Children []Outline `json:"children,omitempty" yaml:"children,omitempty" toml:"children,omitempty"`
 }
 
 // Signature 描述文档数字签名。
 type Signature struct {
 	// ID 标识数字签名。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Type 指定签名类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// ProviderName 指定签名提供方名称。
-	ProviderName string `json:"providerName" yaml:"providerName"`
+	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty" toml:"provider_name,omitempty"`
 	// ProviderVersion 指定签名提供方版本。
-	ProviderVersion string `json:"providerVersion" yaml:"providerVersion"`
+	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty" toml:"provider_version,omitempty"`
 	// Company 指定签名提供方公司。
-	Company string `json:"company" yaml:"company"`
+	Company string `json:"company,omitempty" yaml:"company,omitempty" toml:"company,omitempty"`
 	// Method 指定签名方法。
-	Method string `json:"method" yaml:"method"`
+	Method string `json:"method,omitempty" yaml:"method,omitempty" toml:"method,omitempty"`
 	// Date 记录签名时间。
-	Date string `json:"date" yaml:"date"`
+	Date string `json:"date,omitempty" yaml:"date,omitempty" toml:"date,omitempty"`
 	// CheckMethod 指定签名校验方法。
-	CheckMethod string `json:"checkMethod" yaml:"checkMethod"`
+	CheckMethod string `json:"check_method,omitempty" yaml:"check_method,omitempty" toml:"check_method,omitempty"`
 	// References 定义签名引用及其校验值。
-	References []SignatureReference `json:"references" yaml:"references"`
+	References []SignatureReference `json:"references,omitempty" yaml:"references,omitempty" toml:"references,omitempty"`
 	// StampAnnots 定义签名盖章区域。
-	StampAnnots []SignatureStamp `json:"stampAnnots" yaml:"stampAnnots"`
+	StampAnnots []SignatureStamp `json:"stamp_annots,omitempty" yaml:"stamp_annots,omitempty" toml:"stamp_annots,omitempty"`
 	// SealFile 指定印章文件路径。
-	SealFile string `json:"sealFile" yaml:"sealFile"`
+	SealFile string `json:"seal_file,omitempty" yaml:"seal_file,omitempty" toml:"seal_file,omitempty"`
 	// SealFileBase64 提供 Base64 编码的印章数据。
-	SealFileBase64 string `json:"sealFileBase64" yaml:"sealFileBase64"`
+	SealFileBase64 string `json:"seal_file_base64,omitempty" yaml:"seal_file_base64,omitempty" toml:"seal_file_base64,omitempty"`
 	// SealName 指定印章文件名称。
-	SealName string `json:"sealName" yaml:"sealName"`
+	SealName string `json:"seal_name,omitempty" yaml:"seal_name,omitempty" toml:"seal_name,omitempty"`
 	// SignedValue 提供 Base64 编码的签名值。
-	SignedValue string `json:"signedValue" yaml:"signedValue"`
+	SignedValue string `json:"signed_value,omitempty" yaml:"signed_value,omitempty" toml:"signed_value,omitempty"`
 	// SignedValueName 指定签名值文件名称。
-	SignedValueName string `json:"signedValueName" yaml:"signedValueName"`
+	SignedValueName string `json:"signed_value_name,omitempty" yaml:"signed_value_name,omitempty" toml:"signed_value_name,omitempty"`
 }
 
 // SignatureReference 描述数字签名引用的文件及校验值。
 type SignatureReference struct {
 	// FileRef 指定签名引用的文件路径。
-	FileRef string `json:"fileRef" yaml:"fileRef"`
+	FileRef string `json:"file_ref,omitempty" yaml:"file_ref,omitempty" toml:"file_ref,omitempty"`
 	// CheckValue 提供 Base64 编码的文件校验值。
-	CheckValue string `json:"checkValue" yaml:"checkValue"`
+	CheckValue string `json:"check_value,omitempty" yaml:"check_value,omitempty" toml:"check_value,omitempty"`
 }
 
 // SignatureStamp 描述数字签名在页面上的盖章区域。
 type SignatureStamp struct {
 	// ID 标识签名盖章区域。
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Page 指定盖章所在页码。
-	Page int `json:"page" yaml:"page"`
+	Page int `json:"page,omitempty" yaml:"page,omitempty" toml:"page,omitempty"`
 	// Boundary 指定盖章区域边界。
-	Boundary Box `json:"boundary" yaml:"boundary"`
+	Boundary Box `json:"boundary,omitempty" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
 	// Clip 指定盖章区域裁剪框。
-	Clip *Box `json:"clip" yaml:"clip"`
+	Clip *Box `json:"clip,omitempty" yaml:"clip,omitempty" toml:"clip,omitempty"`
 }
 
 // Box 描述矩形区域。
 type Box struct {
 	// X 指定矩形左上角横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定矩形左上角纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// Width 指定矩形宽度。
-	Width float64 `json:"width" yaml:"width"`
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty" toml:"width,omitempty"`
 	// Height 指定矩形高度。
-	Height float64 `json:"height" yaml:"height"`
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty" toml:"height,omitempty"`
 }
 
 // AnnotationPage 描述某一页面上的批注集合。
 type AnnotationPage struct {
 	// Page 指定批注所属页码。
-	Page int `json:"page" yaml:"page"`
+	Page int `json:"page,omitempty" yaml:"page,omitempty" toml:"page,omitempty"`
 	// Items 定义该页面上的批注。
-	Items []Annotation `json:"items" yaml:"items"`
+	Items []Annotation `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 }
 
 // Annotation 描述文档批注。
 type Annotation struct {
 	// ID 标识批注。
-	ID uint64 `json:"id" yaml:"id"`
+	ID uint64 `json:"id,omitempty" yaml:"id,omitempty" toml:"id,omitempty"`
 	// Type 指定批注类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// Creator 指定批注创建者。
-	Creator string `json:"creator" yaml:"creator"`
+	Creator string `json:"creator,omitempty" yaml:"creator,omitempty" toml:"creator,omitempty"`
 	// LastModDate 记录批注最后修改时间。
-	LastModDate string `json:"lastModDate" yaml:"lastModDate"`
+	LastModDate string `json:"last_mod_date,omitempty" yaml:"last_mod_date,omitempty" toml:"last_mod_date,omitempty"`
 	// Visible 指示批注是否可见。
-	Visible *bool `json:"visible" yaml:"visible"`
+	Visible *bool `json:"visible,omitempty" yaml:"visible,omitempty" toml:"visible,omitempty"`
 	// Subtype 指定批注子类型。
-	Subtype string `json:"subtype" yaml:"subtype"`
+	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty" toml:"subtype,omitempty"`
 	// Print 指示批注是否随文档打印。
-	Print *bool `json:"print" yaml:"print"`
+	Print *bool `json:"print,omitempty" yaml:"print,omitempty" toml:"print,omitempty"`
 	// NoZoom 指示批注是否不随页面缩放。
-	NoZoom bool `json:"noZoom" yaml:"noZoom"`
+	NoZoom bool `json:"no_zoom,omitempty" yaml:"no_zoom,omitempty" toml:"no_zoom,omitempty"`
 	// NoRotate 指示批注是否不随页面旋转。
-	NoRotate bool `json:"noRotate" yaml:"noRotate"`
+	NoRotate bool `json:"no_rotate,omitempty" yaml:"no_rotate,omitempty" toml:"no_rotate,omitempty"`
 	// ReadOnly 指示批注是否只读。
-	ReadOnly *bool `json:"readOnly" yaml:"readOnly"`
+	ReadOnly *bool `json:"read_only,omitempty" yaml:"read_only,omitempty" toml:"read_only,omitempty"`
 	// Remark 记录批注说明。
-	Remark string `json:"remark" yaml:"remark"`
+	Remark string `json:"remark,omitempty" yaml:"remark,omitempty" toml:"remark,omitempty"`
 	// Parameters 定义批注自定义参数。
-	Parameters []AnnotationParameter `json:"parameters" yaml:"parameters"`
+	Parameters []AnnotationParameter `json:"parameters,omitempty" yaml:"parameters,omitempty" toml:"parameters,omitempty"`
 	// Boundary 指定批注边界。
-	Boundary *Box `json:"boundary" yaml:"boundary"`
+	Boundary *Box `json:"boundary,omitempty" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
 	// Items 定义批注包含的图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 }
 
 // AnnotationParameter 描述批注的自定义参数。
 type AnnotationParameter struct {
 	// Name 指定批注参数名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Value 指定批注参数值。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 }
 
 // CGTransform 描述文本代码与字形之间的映射关系。
 type CGTransform struct {
 	// CodePosition 指定文本代码起始位置。
-	CodePosition int `json:"codePosition" yaml:"codePosition"`
+	CodePosition int `json:"code_position,omitempty" yaml:"code_position,omitempty" toml:"code_position,omitempty"`
 	// CodeCount 指定映射的文本代码数量。
-	CodeCount int `json:"codeCount" yaml:"codeCount"`
+	CodeCount int `json:"code_count,omitempty" yaml:"code_count,omitempty" toml:"code_count,omitempty"`
 	// GlyphCount 指定对应的字形数量。
-	GlyphCount int `json:"glyphCount" yaml:"glyphCount"`
+	GlyphCount int `json:"glyph_count,omitempty" yaml:"glyph_count,omitempty" toml:"glyph_count,omitempty"`
 	// Glyphs 指定对应字形编号列表。
-	Glyphs []int `json:"glyphs" yaml:"glyphs"`
+	Glyphs []int `json:"glyphs,omitempty" yaml:"glyphs,omitempty" toml:"glyphs,omitempty"`
 }
 
 // Item 描述页面、模板或复合图形中的图元。
 type Item struct {
 	// Type 指定图元类型。
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// X 指定图元左上角横坐标。
-	X float64 `json:"x" yaml:"x"`
+	X float64 `json:"x,omitempty" yaml:"x,omitempty" toml:"x,omitempty"`
 	// Y 指定图元左上角纵坐标。
-	Y float64 `json:"y" yaml:"y"`
+	Y float64 `json:"y,omitempty" yaml:"y,omitempty" toml:"y,omitempty"`
 	// Width 指定图元宽度。
-	Width float64 `json:"width" yaml:"width"`
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty" toml:"width,omitempty"`
 	// Height 指定图元高度。
-	Height float64 `json:"height" yaml:"height"`
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty" toml:"height,omitempty"`
 	// Value 指定图元文本或其他值。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 	// Font 指定文本图元使用的字体名称。
-	Font string `json:"font" yaml:"font"`
+	Font string `json:"font,omitempty" yaml:"font,omitempty" toml:"font,omitempty"`
 	// Size 指定文本字号。
-	Size float64 `json:"size" yaml:"size"`
+	Size float64 `json:"size,omitempty" yaml:"size,omitempty" toml:"size,omitempty"`
 	// Data 指定图元数据或文件路径。
-	Data string `json:"data" yaml:"data"`
+	Data string `json:"data,omitempty" yaml:"data,omitempty" toml:"data,omitempty"`
 	// DataBase64 提供 Base64 编码的图元数据。
-	DataBase64 string `json:"dataBase64" yaml:"dataBase64"`
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty" toml:"data_base64,omitempty"`
 	// Format 指定图元数据格式。
-	Format string `json:"format" yaml:"format"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// Name 指定图元名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Visible 指示图元是否可见。
-	Visible *bool `json:"visible" yaml:"visible"`
+	Visible *bool `json:"visible,omitempty" yaml:"visible,omitempty" toml:"visible,omitempty"`
 	// ResourceID 指定图元引用的资源编号。
-	ResourceID uint64 `json:"resourceId" yaml:"resourceId"`
+	ResourceID uint64 `json:"resource_id,omitempty" yaml:"resource_id,omitempty" toml:"resource_id,omitempty"`
 	// Stroke 指示是否绘制轮廓线。
-	Stroke bool `json:"stroke" yaml:"stroke"`
+	Stroke bool `json:"stroke,omitempty" yaml:"stroke,omitempty" toml:"stroke,omitempty"`
 	// Fill 指示是否填充图元。
-	Fill *bool `json:"fill" yaml:"fill"`
+	Fill *bool `json:"fill,omitempty" yaml:"fill,omitempty" toml:"fill,omitempty"`
 	// StrokeSet 指示是否显式设置描边属性。
-	StrokeSet *bool `json:"strokeSet" yaml:"strokeSet"`
+	StrokeSet *bool `json:"stroke_set,omitempty" yaml:"stroke_set,omitempty" toml:"stroke_set,omitempty"`
 	// Rule 指定填充规则。
-	Rule string `json:"rule" yaml:"rule"`
+	Rule string `json:"rule,omitempty" yaml:"rule,omitempty" toml:"rule,omitempty"`
 	// LineWidth 指定描边线宽。
-	LineWidth float64 `json:"lineWidth" yaml:"lineWidth"`
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
 	// Cap 指定描边端点样式。
-	Cap string `json:"cap" yaml:"cap"`
+	Cap string `json:"cap,omitempty" yaml:"cap,omitempty" toml:"cap,omitempty"`
 	// Join 指定描边连接样式。
-	Join string `json:"join" yaml:"join"`
+	Join string `json:"join,omitempty" yaml:"join,omitempty" toml:"join,omitempty"`
 	// MiterLimit 指定斜接长度限制。
-	MiterLimit float64 `json:"miterLimit" yaml:"miterLimit"`
+	MiterLimit float64 `json:"miter_limit,omitempty" yaml:"miter_limit,omitempty" toml:"miter_limit,omitempty"`
 	// DashOffset 指定虚线起始偏移量。
-	DashOffset float64 `json:"dashOffset" yaml:"dashOffset"`
+	DashOffset float64 `json:"dash_offset,omitempty" yaml:"dash_offset,omitempty" toml:"dash_offset,omitempty"`
 	// DashPattern 指定虚线长度模式。
-	DashPattern []float64 `json:"dashPattern" yaml:"dashPattern"`
+	DashPattern []float64 `json:"dash_pattern,omitempty" yaml:"dash_pattern,omitempty" toml:"dash_pattern,omitempty"`
 	// Alpha 指定图元透明度。
-	Alpha *uint8 `json:"alpha" yaml:"alpha"`
+	Alpha *uint8 `json:"alpha,omitempty" yaml:"alpha,omitempty" toml:"alpha,omitempty"`
 	// DrawParam 指定图元使用的绘制参数名称。
-	DrawParam string `json:"drawParam" yaml:"drawParam"`
+	DrawParam string `json:"draw_param,omitempty" yaml:"draw_param,omitempty" toml:"draw_param,omitempty"`
 	// CTM 指定图元的坐标变换矩阵。
-	CTM []float64 `json:"ctm" yaml:"ctm"`
+	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// FillColor 指定填充颜色。
-	FillColor *Color `json:"fillColor" yaml:"fillColor"`
+	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
 	// StrokeColor 指定描边颜色。
-	StrokeColor *Color `json:"strokeColor" yaml:"strokeColor"`
+	StrokeColor *Color `json:"stroke_color,omitempty" yaml:"stroke_color,omitempty" toml:"stroke_color,omitempty"`
 	// TextCodes 定义文本代码及其定位信息。
-	TextCodes []TextCode `json:"textCodes" yaml:"textCodes"`
+	TextCodes []TextCode `json:"text_codes,omitempty" yaml:"text_codes,omitempty" toml:"text_codes,omitempty"`
 	// CGTransforms 定义文本代码到字形的映射。
-	CGTransforms []CGTransform `json:"cgTransforms" yaml:"cgTransforms"`
+	CGTransforms []CGTransform `json:"cg_transforms,omitempty" yaml:"cg_transforms,omitempty" toml:"cg_transforms,omitempty"`
 	// Actions 定义图元触发的动作。
-	Actions []Action `json:"actions" yaml:"actions"`
+	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 	// Items 定义复合或页面块图元的子图元。
-	Items []Item `json:"items" yaml:"items"`
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty" toml:"items,omitempty"`
 	// HScale 指定文本水平方向缩放比例。
-	HScale float64 `json:"hScale" yaml:"hScale"`
+	HScale float64 `json:"h_scale,omitempty" yaml:"h_scale,omitempty" toml:"h_scale,omitempty"`
 	// ReadDirection 指定文本阅读方向。
-	ReadDirection int `json:"readDirection" yaml:"readDirection"`
+	ReadDirection int `json:"read_direction,omitempty" yaml:"read_direction,omitempty" toml:"read_direction,omitempty"`
 	// CharDirection 指定字符排列方向。
-	CharDirection int `json:"charDirection" yaml:"charDirection"`
+	CharDirection int `json:"char_direction,omitempty" yaml:"char_direction,omitempty" toml:"char_direction,omitempty"`
 	// Weight 指定文本字重。
-	Weight int `json:"weight" yaml:"weight"`
+	Weight int `json:"weight,omitempty" yaml:"weight,omitempty" toml:"weight,omitempty"`
 	// Italic 指示文本是否为斜体。
-	Italic bool `json:"italic" yaml:"italic"`
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty" toml:"italic,omitempty"`
 	// Clips 定义图元裁剪区域。
-	Clips []Clip `json:"clips" yaml:"clips"`
+	Clips []Clip `json:"clips,omitempty" yaml:"clips,omitempty" toml:"clips,omitempty"`
 	// Substitution 指定图像替代资源编号。
-	Substitution uint64 `json:"substitution" yaml:"substitution"`
+	Substitution uint64 `json:"substitution,omitempty" yaml:"substitution,omitempty" toml:"substitution,omitempty"`
 	// ImageMask 指定图像掩码资源编号。
-	ImageMask uint64 `json:"imageMask" yaml:"imageMask"`
+	ImageMask uint64 `json:"image_mask,omitempty" yaml:"image_mask,omitempty" toml:"image_mask,omitempty"`
 	// Border 定义图像边框样式。
-	Border *ImageBorder `json:"border" yaml:"border"`
+	Border *ImageBorder `json:"border,omitempty" yaml:"border,omitempty" toml:"border,omitempty"`
 }
 
 // Clip 描述图元的裁剪区域集合。
 type Clip struct {
 	// Areas 定义裁剪区域。
-	Areas []ClipArea `json:"areas" yaml:"areas"`
+	Areas []ClipArea `json:"areas,omitempty" yaml:"areas,omitempty" toml:"areas,omitempty"`
 }
 
 // ClipArea 描述裁剪区域中的一个路径或文本区域。
 type ClipArea struct {
 	// DrawParam 指定裁剪区域使用的绘制参数名称。
-	DrawParam string `json:"drawParam" yaml:"drawParam"`
+	DrawParam string `json:"draw_param,omitempty" yaml:"draw_param,omitempty" toml:"draw_param,omitempty"`
 	// CTM 指定裁剪区域的坐标变换矩阵。
-	CTM []float64 `json:"ctm" yaml:"ctm"`
+	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// Path 定义路径裁剪内容。
-	Path *ClipPath `json:"path" yaml:"path"`
+	Path *ClipPath `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty"`
 	// Text 定义文本裁剪内容。
-	Text *ClipText `json:"text" yaml:"text"`
+	Text *ClipText `json:"text,omitempty" yaml:"text,omitempty" toml:"text,omitempty"`
 }
 
 // ClipPath 描述用于裁剪的路径。
 type ClipPath struct {
 	// Boundary 指定裁剪路径边界。
-	Boundary Box `json:"boundary" yaml:"boundary"`
+	Boundary Box `json:"boundary,omitempty" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
 	// Name 指定裁剪路径名称。
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	// Visible 指示裁剪路径是否可见。
-	Visible *bool `json:"visible" yaml:"visible"`
+	Visible *bool `json:"visible,omitempty" yaml:"visible,omitempty" toml:"visible,omitempty"`
 	// CTM 指定裁剪路径的坐标变换矩阵。
-	CTM []float64 `json:"ctm" yaml:"ctm"`
+	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// Data 指定裁剪路径数据。
-	Data string `json:"data" yaml:"data"`
+	Data string `json:"data,omitempty" yaml:"data,omitempty" toml:"data,omitempty"`
 	// Stroke 指示是否绘制裁剪路径轮廓。
-	Stroke bool `json:"stroke" yaml:"stroke"`
+	Stroke bool `json:"stroke,omitempty" yaml:"stroke,omitempty" toml:"stroke,omitempty"`
 	// StrokeSet 指示是否显式设置描边属性。
-	StrokeSet *bool `json:"strokeSet" yaml:"strokeSet"`
+	StrokeSet *bool `json:"stroke_set,omitempty" yaml:"stroke_set,omitempty" toml:"stroke_set,omitempty"`
 	// Fill 指示是否填充裁剪路径。
-	Fill bool `json:"fill" yaml:"fill"`
+	Fill bool `json:"fill,omitempty" yaml:"fill,omitempty" toml:"fill,omitempty"`
 	// Rule 指定裁剪路径填充规则。
-	Rule string `json:"rule" yaml:"rule"`
+	Rule string `json:"rule,omitempty" yaml:"rule,omitempty" toml:"rule,omitempty"`
 	// LineWidth 指定裁剪路径描边线宽。
-	LineWidth float64 `json:"lineWidth" yaml:"lineWidth"`
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
 	// Cap 指定裁剪路径端点样式。
-	Cap string `json:"cap" yaml:"cap"`
+	Cap string `json:"cap,omitempty" yaml:"cap,omitempty" toml:"cap,omitempty"`
 	// Join 指定裁剪路径连接样式。
-	Join string `json:"join" yaml:"join"`
+	Join string `json:"join,omitempty" yaml:"join,omitempty" toml:"join,omitempty"`
 	// MiterLimit 指定斜接长度限制。
-	MiterLimit float64 `json:"miterLimit" yaml:"miterLimit"`
+	MiterLimit float64 `json:"miter_limit,omitempty" yaml:"miter_limit,omitempty" toml:"miter_limit,omitempty"`
 	// DashOffset 指定虚线起始偏移量。
-	DashOffset float64 `json:"dashOffset" yaml:"dashOffset"`
+	DashOffset float64 `json:"dash_offset,omitempty" yaml:"dash_offset,omitempty" toml:"dash_offset,omitempty"`
 	// DashPattern 指定虚线长度模式。
-	DashPattern []float64 `json:"dashPattern" yaml:"dashPattern"`
+	DashPattern []float64 `json:"dash_pattern,omitempty" yaml:"dash_pattern,omitempty" toml:"dash_pattern,omitempty"`
 	// Alpha 指定裁剪路径透明度。
-	Alpha *uint8 `json:"alpha" yaml:"alpha"`
+	Alpha *uint8 `json:"alpha,omitempty" yaml:"alpha,omitempty" toml:"alpha,omitempty"`
 	// StrokeColor 指定裁剪路径描边颜色。
-	StrokeColor *Color `json:"strokeColor" yaml:"strokeColor"`
+	StrokeColor *Color `json:"stroke_color,omitempty" yaml:"stroke_color,omitempty" toml:"stroke_color,omitempty"`
 	// FillColor 指定裁剪路径填充颜色。
-	FillColor *Color `json:"fillColor" yaml:"fillColor"`
+	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
 }
 
 // ClipText 描述用于裁剪的文本。
 type ClipText struct {
 	// Boundary 指定裁剪文本边界。
-	Boundary Box `json:"boundary" yaml:"boundary"`
+	Boundary Box `json:"boundary,omitempty" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
 	// CTM 指定裁剪文本的坐标变换矩阵。
-	CTM []float64 `json:"ctm" yaml:"ctm"`
+	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// Font 指定裁剪文本使用的字体名称。
-	Font string `json:"font" yaml:"font"`
+	Font string `json:"font,omitempty" yaml:"font,omitempty" toml:"font,omitempty"`
 	// Size 指定裁剪文本字号。
-	Size float64 `json:"size" yaml:"size"`
+	Size float64 `json:"size,omitempty" yaml:"size,omitempty" toml:"size,omitempty"`
 	// Value 指定裁剪文本内容。
-	Value string `json:"value" yaml:"value"`
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
 	// TextCodes 定义裁剪文本代码。
-	TextCodes []TextCode `json:"textCodes" yaml:"textCodes"`
+	TextCodes []TextCode `json:"text_codes,omitempty" yaml:"text_codes,omitempty" toml:"text_codes,omitempty"`
 	// Stroke 指示是否绘制文本轮廓。
-	Stroke bool `json:"stroke" yaml:"stroke"`
+	Stroke bool `json:"stroke,omitempty" yaml:"stroke,omitempty" toml:"stroke,omitempty"`
 	// Fill 指示是否填充文本。
-	Fill *bool `json:"fill" yaml:"fill"`
+	Fill *bool `json:"fill,omitempty" yaml:"fill,omitempty" toml:"fill,omitempty"`
 	// HScale 指定文本水平方向缩放比例。
-	HScale float64 `json:"hScale" yaml:"hScale"`
+	HScale float64 `json:"h_scale,omitempty" yaml:"h_scale,omitempty" toml:"h_scale,omitempty"`
 	// ReadDirection 指定文本阅读方向。
-	ReadDirection int `json:"readDirection" yaml:"readDirection"`
+	ReadDirection int `json:"read_direction,omitempty" yaml:"read_direction,omitempty" toml:"read_direction,omitempty"`
 	// CharDirection 指定字符排列方向。
-	CharDirection int `json:"charDirection" yaml:"charDirection"`
+	CharDirection int `json:"char_direction,omitempty" yaml:"char_direction,omitempty" toml:"char_direction,omitempty"`
 	// Weight 指定文本字重。
-	Weight int `json:"weight" yaml:"weight"`
+	Weight int `json:"weight,omitempty" yaml:"weight,omitempty" toml:"weight,omitempty"`
 	// Italic 指示文本是否为斜体。
-	Italic bool `json:"italic" yaml:"italic"`
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty" toml:"italic,omitempty"`
 	// FillColor 指定文本填充颜色。
-	FillColor *Color `json:"fillColor" yaml:"fillColor"`
+	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
 	// StrokeColor 指定文本描边颜色。
-	StrokeColor *Color `json:"strokeColor" yaml:"strokeColor"`
+	StrokeColor *Color `json:"stroke_color,omitempty" yaml:"stroke_color,omitempty" toml:"stroke_color,omitempty"`
 }
 
 // ImageBorder 描述图像边框的绘制样式。
 type ImageBorder struct {
 	// LineWidth 指定图像边框线宽。
-	LineWidth float64 `json:"lineWidth" yaml:"lineWidth"`
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
 	// HorizontalRadius 指定边框水平圆角半径。
-	HorizontalRadius float64 `json:"horizontalRadius" yaml:"horizontalRadius"`
+	HorizontalRadius float64 `json:"horizontal_radius,omitempty" yaml:"horizontal_radius,omitempty" toml:"horizontal_radius,omitempty"`
 	// VerticalRadius 指定边框垂直圆角半径。
-	VerticalRadius float64 `json:"verticalRadius" yaml:"verticalRadius"`
+	VerticalRadius float64 `json:"vertical_radius,omitempty" yaml:"vertical_radius,omitempty" toml:"vertical_radius,omitempty"`
 	// DashOffset 指定边框虚线起始偏移量。
-	DashOffset float64 `json:"dashOffset" yaml:"dashOffset"`
+	DashOffset float64 `json:"dash_offset,omitempty" yaml:"dash_offset,omitempty" toml:"dash_offset,omitempty"`
 	// DashPattern 指定边框虚线长度模式。
-	DashPattern []float64 `json:"dashPattern" yaml:"dashPattern"`
+	DashPattern []float64 `json:"dash_pattern,omitempty" yaml:"dash_pattern,omitempty" toml:"dash_pattern,omitempty"`
 	// Color 指定边框颜色。
-	Color *Color `json:"color" yaml:"color"`
+	Color *Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
 // Load 读取并解析 JSON、YAML 或 TOML manifest。
@@ -1256,11 +1256,11 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	for index, tag := range m.Resources.CustomTags {
 		schema, err := loadData(root, tag.Schema, tag.SchemaBase64)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("resources.customTags[%d].schema: %w", index, err)
+			return creator.Document{}, fmt.Errorf("resources.custom_tags[%d].schema: %w", index, err)
 		}
 		data, err := loadData(root, tag.Data, tag.DataBase64)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("resources.customTags[%d].data: %w", index, err)
+			return creator.Document{}, fmt.Errorf("resources.custom_tags[%d].data: %w", index, err)
 		}
 		document.CustomTags = append(document.CustomTags, creator.CustomTag{NameSpace: tag.NameSpace, Schema: schema, SchemaName: tag.SchemaName, Data: data, DataName: tag.DataName})
 	}
@@ -1274,14 +1274,14 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	if m.Document.CreationDate != "" {
 		date, err := parseDate(m.Document.CreationDate)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("document.creationDate: %w", err)
+			return creator.Document{}, fmt.Errorf("document.creation_date: %w", err)
 		}
 		document.CreationDate = date
 	}
 	if m.Document.ModDate != "" {
 		date, err := parseDate(m.Document.ModDate)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("document.modDate: %w", err)
+			return creator.Document{}, fmt.Errorf("document.mod_date: %w", err)
 		}
 		document.ModDate = date
 	}
@@ -1325,13 +1325,13 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if attachment.CreationDate != "" {
 			value.CreationDate, err = parseDate(attachment.CreationDate)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("document.attachments[%d].creationDate: %w", index, err)
+				return creator.Document{}, fmt.Errorf("document.attachments[%d].creation_date: %w", index, err)
 			}
 		}
 		if attachment.ModDate != "" {
 			value.ModDate, err = parseDate(attachment.ModDate)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("document.attachments[%d].modDate: %w", index, err)
+				return creator.Document{}, fmt.Errorf("document.attachments[%d].mod_date: %w", index, err)
 			}
 		}
 		document.Attachments = append(document.Attachments, value)
@@ -1350,7 +1350,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if extension.DataFile != "" || extension.DataFileBase64 != "" {
 			data, err := loadData(root, extension.DataFile, extension.DataFileBase64)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("document.extensions[%d].dataFile: %w", index, err)
+				return creator.Document{}, fmt.Errorf("document.extensions[%d].data_file: %w", index, err)
 			}
 			value.DataFile = data
 		}
@@ -1361,14 +1361,14 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if version.CreationDate != "" {
 			parsed, err := parseDate(version.CreationDate)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("document.versions[%d].creationDate: %w", index, err)
+				return creator.Document{}, fmt.Errorf("document.versions[%d].creation_date: %w", index, err)
 			}
 			value.CreationDate = parsed
 		}
 		if version.DocRoot != "" || version.DocRootBase64 != "" {
 			data, err := loadData(root, version.DocRoot, version.DocRootBase64)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("document.versions[%d].docRoot: %w", index, err)
+				return creator.Document{}, fmt.Errorf("document.versions[%d].doc_root: %w", index, err)
 			}
 			value.DocRoot = data
 		}
@@ -1381,7 +1381,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if strings.EqualFold(m.Document.PageSize.Name, "A4") {
 			document.PageSize = creator.A4
 		} else {
-			return creator.Document{}, fmt.Errorf("document.pageSize.name: 不支持的页面尺寸 %q，请提供 width 和 height", m.Document.PageSize.Name)
+			return creator.Document{}, fmt.Errorf("document.page_size.name: 不支持的页面尺寸 %q，请提供 width 和 height", m.Document.PageSize.Name)
 		}
 	}
 	for index, font := range m.Resources.Fonts {
@@ -1413,7 +1413,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if space.ProfileFile != "" || space.ProfileBase64 != "" {
 			data, err := loadData(root, space.ProfileFile, space.ProfileBase64)
 			if err != nil {
-				return creator.Document{}, fmt.Errorf("resources.colorSpaces[%d].profileFile: %w", index, err)
+				return creator.Document{}, fmt.Errorf("resources.color_spaces[%d].profile_file: %w", index, err)
 			}
 			value.ProfileData = data
 			profileName := space.ProfileName
@@ -1422,7 +1422,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 			}
 			if profileName != "" {
 				if err := validateLeafName(profileName); err != nil {
-					return creator.Document{}, fmt.Errorf("resources.colorSpaces[%d].profileName: %w", index, err)
+					return creator.Document{}, fmt.Errorf("resources.color_spaces[%d].profile_name: %w", index, err)
 				}
 				value.Profile = filepath.Join("Profiles", profileName)
 			}
@@ -1432,11 +1432,11 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	for index, param := range m.Resources.DrawParams {
 		fill, err := buildColor(param.FillColor)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("resources.drawParams[%d].fillColor: %w", index, err)
+			return creator.Document{}, fmt.Errorf("resources.draw_params[%d].fill_color: %w", index, err)
 		}
 		stroke, err := buildColor(param.StrokeColor)
 		if err != nil {
-			return creator.Document{}, fmt.Errorf("resources.drawParams[%d].strokeColor: %w", index, err)
+			return creator.Document{}, fmt.Errorf("resources.draw_params[%d].stroke_color: %w", index, err)
 		}
 		document.DrawParams = append(document.DrawParams, creator.DrawParam{Name: param.Name, Relative: param.Relative, LineWidth: param.LineWidth, Join: param.Join, Cap: param.Cap, DashOffset: param.DashOffset, DashPattern: param.DashPattern, MiterLimit: param.MiterLimit, FillColor: fill, StrokeColor: stroke})
 	}
@@ -1472,7 +1472,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		converted := creator.Page{Area: buildPageArea(page.Area), LayerType: page.LayerType, Actions: pageActions}
 		for resourceIndex, resource := range page.Resources {
 			if len(resource.Images) > 0 && (resource.File != "" || resource.DataBase64 != "" || len(resource.Files) > 0) {
-				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d]: images 不能与 file、dataBase64 或 files 同时设置", index, resourceIndex)
+				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d]: images 不能与 file、data_base64 或 files 同时设置", index, resourceIndex)
 			}
 			data, err := loadData(root, resource.File, resource.DataBase64)
 			if err != nil {
@@ -1543,11 +1543,11 @@ func (i Item) build() (creator.Item, error) {
 		}
 		fillColor, err := buildColor(i.FillColor)
 		if err != nil {
-			return nil, fmt.Errorf("fillColor: %w", err)
+			return nil, fmt.Errorf("fill_color: %w", err)
 		}
 		strokeColor, err := buildColor(i.StrokeColor)
 		if err != nil {
-			return nil, fmt.Errorf("strokeColor: %w", err)
+			return nil, fmt.Errorf("stroke_color: %w", err)
 		}
 		actions, err := buildActions(i.Actions)
 		if err != nil {
@@ -1561,11 +1561,11 @@ func (i Item) build() (creator.Item, error) {
 	case "path":
 		fillColor, err := buildColor(i.FillColor)
 		if err != nil {
-			return nil, fmt.Errorf("fillColor: %w", err)
+			return nil, fmt.Errorf("fill_color: %w", err)
 		}
 		strokeColor, err := buildColor(i.StrokeColor)
 		if err != nil {
-			return nil, fmt.Errorf("strokeColor: %w", err)
+			return nil, fmt.Errorf("stroke_color: %w", err)
 		}
 		clips, err := buildClips(i.Clips)
 		if err != nil {
@@ -1582,10 +1582,10 @@ func (i Item) build() (creator.Item, error) {
 		return creator.Path{X: i.X, Y: i.Y, Width: i.Width, Height: i.Height, Data: i.Data, Name: i.Name, Visible: i.Visible, Stroke: i.Stroke, StrokeSet: i.StrokeSet, Fill: fill, Rule: i.Rule, LineWidth: i.LineWidth, Cap: i.Cap, Join: i.Join, MiterLimit: i.MiterLimit, DashOffset: i.DashOffset, DashPattern: i.DashPattern, Alpha: i.Alpha, DrawParam: i.DrawParam, CTM: ctm, FillColor: fillColor, StrokeColor: strokeColor, Actions: actions, Clips: clips}, nil
 	case "image":
 		if i.ResourceID == 0 && i.DataBase64 == "" {
-			return nil, errors.New("image.resourceId 或 dataBase64 至少设置一个")
+			return nil, errors.New("image.resource_id 或 data_base64 至少设置一个")
 		}
 		if i.ResourceID != 0 && i.DataBase64 != "" {
-			return nil, errors.New("image.resourceId 不能与 dataBase64 同时设置")
+			return nil, errors.New("image.resource_id 不能与 data_base64 同时设置")
 		}
 		clips, err := buildClips(i.Clips)
 		if err != nil {
@@ -1597,7 +1597,7 @@ func (i Item) build() (creator.Item, error) {
 		}
 		data, err := decodeOptionalBytes(i.DataBase64)
 		if err != nil {
-			return nil, fmt.Errorf("dataBase64: %w", err)
+			return nil, fmt.Errorf("data_base64: %w", err)
 		}
 		actions, err := buildActions(i.Actions)
 		if err != nil {
@@ -1606,7 +1606,7 @@ func (i Item) build() (creator.Item, error) {
 		return creator.Image{X: i.X, Y: i.Y, Width: i.Width, Height: i.Height, Data: data, ResourceID: i.ResourceID, Substitution: i.Substitution, ImageMask: i.ImageMask, Format: i.Format, Name: i.Name, Visible: i.Visible, LineWidth: i.LineWidth, Cap: i.Cap, Join: i.Join, MiterLimit: i.MiterLimit, DashOffset: i.DashOffset, DashPattern: i.DashPattern, Alpha: i.Alpha, DrawParam: i.DrawParam, CTM: ctm, Actions: actions, Clips: clips, Border: border}, nil
 	case "composite":
 		if i.ResourceID == 0 {
-			return nil, errors.New("composite.resourceId 不能为空")
+			return nil, errors.New("composite.resource_id 不能为空")
 		}
 		clips, err := buildClips(i.Clips)
 		if err != nil {
@@ -1749,7 +1749,7 @@ func readOptionalAsset(root, name string) ([]byte, error) {
 
 func loadData(root, file, encoded string) ([]byte, error) {
 	if file != "" && encoded != "" {
-		return nil, errors.New("file 不能与 dataBase64 同时设置")
+		return nil, errors.New("file 不能与 data_base64 同时设置")
 	}
 	if file != "" {
 		return readAsset(root, file)
@@ -1763,7 +1763,7 @@ func decodeOptionalBytes(encoded string) ([]byte, error) {
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("Base64 数据无效: %w", err)
+		return nil, fmt.Errorf("base64 数据无效: %w", err)
 	}
 	return data, nil
 }
@@ -1808,11 +1808,11 @@ func buildPermissions(value *Permissions) (*creator.Permissions, error) {
 	if value.ValidPeriod != nil {
 		start, err := parseDate(value.ValidPeriod.Start)
 		if err != nil {
-			return nil, fmt.Errorf("validPeriod.start: %w", err)
+			return nil, fmt.Errorf("valid_period.start: %w", err)
 		}
 		end, err := parseDate(value.ValidPeriod.End)
 		if err != nil {
-			return nil, fmt.Errorf("validPeriod.end: %w", err)
+			return nil, fmt.Errorf("valid_period.end: %w", err)
 		}
 		result.ValidPeriod = &creator.ValidPeriod{Start: start, End: end}
 	}
@@ -1849,7 +1849,7 @@ func buildColor(value *Color) (*creator.Color, error) {
 		}
 		backColor, err := buildColor(value.Gouraud.BackColor)
 		if err != nil {
-			return nil, fmt.Errorf("gouraud.backColor: %w", err)
+			return nil, fmt.Errorf("gouraud.back_color: %w", err)
 		}
 		result.Gouraud = &creator.GouraudShading{Extend: value.Gouraud.Extend, Points: points, BackColor: backColor}
 	}
@@ -1858,13 +1858,13 @@ func buildColor(value *Color) (*creator.Color, error) {
 		for index, point := range value.LaGouraud.Points {
 			color, err := buildColor(&point.Color)
 			if err != nil {
-				return nil, fmt.Errorf("laGouraud.points[%d].color: %w", index, err)
+				return nil, fmt.Errorf("la_gouraud.points[%d].color: %w", index, err)
 			}
 			points = append(points, creator.LaGouraudPoint{X: point.X, Y: point.Y, Color: *color})
 		}
 		backColor, err := buildColor(value.LaGouraud.BackColor)
 		if err != nil {
-			return nil, fmt.Errorf("laGouraud.backColor: %w", err)
+			return nil, fmt.Errorf("la_gouraud.back_color: %w", err)
 		}
 		result.LaGouraud = &creator.LaGouraudShading{VerticesPerRow: value.LaGouraud.VerticesPerRow, Extend: value.LaGouraud.Extend, Points: points, BackColor: backColor}
 	}
@@ -2010,19 +2010,19 @@ func buildSignature(root string, value Signature) (creator.Signature, error) {
 	if value.SealFile != "" || value.SealFileBase64 != "" {
 		result.SealFile, err = loadData(root, value.SealFile, value.SealFileBase64)
 		if err != nil {
-			return creator.Signature{}, fmt.Errorf("sealFile: %w", err)
+			return creator.Signature{}, fmt.Errorf("seal_file: %w", err)
 		}
 	}
 	if value.SignedValue != "" {
 		result.SignedValue, err = decodeBytes(value.SignedValue)
 		if err != nil {
-			return creator.Signature{}, fmt.Errorf("signedValue: %w", err)
+			return creator.Signature{}, fmt.Errorf("signed_value: %w", err)
 		}
 	}
 	for index, reference := range value.References {
 		checkValue, err := decodeBytes(reference.CheckValue)
 		if err != nil {
-			return creator.Signature{}, fmt.Errorf("references[%d].checkValue: %w", index, err)
+			return creator.Signature{}, fmt.Errorf("references[%d].check_value: %w", index, err)
 		}
 		result.References = append(result.References, creator.SignatureReference{FileRef: reference.FileRef, CheckValue: checkValue})
 	}
@@ -2038,7 +2038,7 @@ func decodeBytes(value string) ([]byte, error) {
 	}
 	data, err := base64.StdEncoding.DecodeString(value)
 	if err != nil {
-		return nil, fmt.Errorf("Base64 数据无效: %w", err)
+		return nil, fmt.Errorf("base64 数据无效: %w", err)
 	}
 	return data, nil
 }
@@ -2056,7 +2056,7 @@ func (value Annotation) build() (creator.Annotation, error) {
 	if value.LastModDate != "" {
 		date, err := parseDate(value.LastModDate)
 		if err != nil {
-			return creator.Annotation{}, fmt.Errorf("lastModDate: %w", err)
+			return creator.Annotation{}, fmt.Errorf("last_mod_date: %w", err)
 		}
 		result.LastModDate = date
 	}
