@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/parser"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -55,6 +57,7 @@ func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 		{extension: ".markdown", format: "markdown"},
 		{extension: ".json", format: "json"},
 		{extension: ".pdf", format: "pdf"},
+		{extension: ".xlsx", format: "xlsx"},
 	} {
 		t.Run(test.extension, func(t *testing.T) {
 			opts := &options{input: input, output: filepath.Join(t.TempDir(), "report"+test.extension), format: "text"}
@@ -263,6 +266,23 @@ func TestRunWritesPDFReport(t *testing.T) {
 	code := run([]string{"--format", "pdf", "--font", font, input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !bytes.HasPrefix(stdout.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("exit code = %d, PDF prefix = %q, stderr = %s", code, stdout.Bytes()[:min(len(stdout.Bytes()), 5)], stderr.String())
+	}
+}
+
+func TestRunWritesXLSXReport(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--format", "xlsx", input}, &stdout, &stderr)
+	if code != exitOK || stderr.Len() != 0 || len(stdout.Bytes()) < 1000 {
+		t.Fatalf("exit code = %d, xlsx bytes = %d, stderr = %s", code, len(stdout.Bytes()), stderr.String())
+	}
+	workbook, err := excelize.OpenReader(bytes.NewReader(stdout.Bytes()))
+	if err != nil {
+		t.Fatalf("invalid XLSX output: %v", err)
+	}
+	defer func() { _ = workbook.Close() }()
+	if title, err := workbook.GetCellValue("汇总", "A1"); err != nil || title != "OFD 分析报告" {
+		t.Fatalf("summary title = %q, err = %v", title, err)
 	}
 }
 

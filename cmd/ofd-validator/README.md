@@ -1,7 +1,7 @@
 # ofd-validator
 
 `ofd-validator` 是用于校验 OFD 文件包完整性和规范性的命令行工具，并将校验结果生成文本、Markdown、
-JSON 或 PDF 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
+JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。校验通过不代表文件内容真实、完整、可信或具有法律效力。
 
@@ -16,7 +16,7 @@ JSON 或 PDF 报告。它适合文档排查、兼容性检查、问题归档以�
 - 校验签名摘要，支持 MD5、SHA1、SM3 和 SM3 OID `1.2.156.10197.1.401`。
 - 可扫描未被主引用链直接引用的 OFD 命名空间 XML；外部命名空间 XML 内容不会参与 OFD
   引用和语义检查。
-- 输出中文文本、Markdown、JSON 和带中文字体的可搜索 PDF 报告。
+- 输出中文文本、Markdown、JSON、PDF 和 XLSX 报告。
 - PDF 报告每页底部显示页码，例如 `第 1 页 / 共 3 页`。
 
 报告包含输入文件、检测时间、校验状态、错误和警告汇总、各校验阶段状态，以及每条问题的严重级别、
@@ -74,6 +74,10 @@ ofd-validator -o report.txt document.ofd
 
 # 输出 PDF 报告；字体必须支持中文
 ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.ofd
+
+# 输出 XLSX 报告
+ofd-validator --format xlsx -o report.xlsx document.ofd
+ofd-validator -o report.xlsx document.ofd
 ```
 
 未指定 `-o` 或 `--output` 时，报告输出到标准输出。将输出路径设为 `-` 也表示输出到标准输出。
@@ -92,7 +96,7 @@ ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.o
 
 | 选项                                 | 默认值      | 说明                                                   |
 |--------------------------------------|-------------|--------------------------------------------------------|
-| `--format text\|markdown\|json\|pdf` | `text`      | 报告格式；未显式指定时可根据输出扩展名自动推断         |
+| `--format text\|markdown\|json\|pdf\|xlsx` | `text` | 报告格式；未显式指定时可根据输出扩展名自动推断         |
 | `--mode strict\|compat\|structural`  | `strict`    | 校验模式                                               |
 | `-o`, `--output PATH`                | 标准输出    | 报告输出路径，使用 `-` 输出到标准输出                  |
 | `--font PATH`                        | 自动查找    | PDF 使用的中文字体文件；只能与 `--format pdf` 一起使用 |
@@ -122,6 +126,9 @@ ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.o
   适合 CI、脚本和其他程序处理。
 - `pdf`：A4 可搜索文本报告。需要能够显示中文的字体；可使用 `--font` 显式指定字体。每一页底部
   会显示当前页码和总页数。
+- `xlsx`：Excel 工作簿报告，包含「汇总」页和「问题」页。汇总页展示校验状态、错误/警告/提示统计和
+  各检查阶段结果；问题页逐条列出问题详情，并带有自动筛选和冻结表头，适合在 Excel 中筛选、归档和
+  二次处理。
 
 PDF 示例：
 
@@ -135,9 +142,9 @@ ofd-validator --format pdf \
 未指定 `--font` 时，工具会先查找常见中文系统字体，再扫描系统字体目录。如果环境中没有可用中文字体，
 PDF 输出会失败；文本、Markdown 和 JSON 报告不受此限制。
 
-未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
-`text`、`markdown`、`json` 和 `pdf`；显式指定的格式优先。标准输出、无扩展名或其他扩展名仍默认使用
-`text`。
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
+分别对应 `text`、`markdown`、`json`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
+其他扩展名仍默认使用 `text`。
 
 ## 退出码
 

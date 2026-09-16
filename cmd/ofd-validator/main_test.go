@@ -22,6 +22,7 @@ func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 		{extension: ".markdown", format: "markdown"},
 		{extension: ".json", format: "json"},
 		{extension: ".PDF", format: "pdf"},
+		{extension: ".xlsx", format: "xlsx"},
 	} {
 		output := "report" + test.extension
 		opts := &options{input: input, output: filepath.Join(t.TempDir(), output), format: "text", mode: "strict"}
