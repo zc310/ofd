@@ -127,9 +127,9 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 	var manifestData bytes.Buffer
 	var exportErr error
 	if opts.document >= 0 {
-		exportErr = ofdexport.ExportDocument(input, opts.document, &manifestData, ofdexport.Options{AssetRoot: assetRoot, AssetPrefix: assetPrefix, Format: opts.format, JSONIndent: opts.jsonIndent})
+		exportErr = ofdexport.WriteDocumentManifest(input, opts.document, &manifestData, ofdexport.Options{AssetRoot: assetRoot, AssetPrefix: assetPrefix, Format: opts.format, JSONIndent: opts.jsonIndent})
 	} else {
-		exportErr = ofdexport.Export(input, &manifestData, ofdexport.Options{AssetRoot: assetRoot, AssetPrefix: assetPrefix, Format: opts.format, JSONIndent: opts.jsonIndent})
+		exportErr = ofdexport.WriteManifest(input, &manifestData, ofdexport.Options{AssetRoot: assetRoot, AssetPrefix: assetPrefix, Format: opts.format, JSONIndent: opts.jsonIndent})
 	}
 	if exportErr != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export:", exportErr)
@@ -168,7 +168,7 @@ func runExportAll(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all:", err)
 		return exitResource
 	}
-	if err := ofdexport.ExportAllWithOptions(input, opts.output, ofdexport.Options{Format: opts.format, JSONIndent: opts.jsonIndent}); err != nil {
+	if err := ofdexport.WriteBundle(input, opts.output, ofdexport.Options{Format: opts.format, JSONIndent: opts.jsonIndent}); err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all:", err)
 		return exitResource
 	}

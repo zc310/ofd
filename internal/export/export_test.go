@@ -19,7 +19,7 @@ func TestExportWritesCreatorManifest(t *testing.T) {
 	assetRoot := t.TempDir()
 	var output bytes.Buffer
 	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
-	if err := Export(input, &output, Options{AssetRoot: assetRoot, AssetPrefix: "assets"}); err != nil {
+	if err := WriteManifest(input, &output, Options{AssetRoot: assetRoot, AssetPrefix: "assets"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "version: 1") || !strings.Contains(output.String(), "pages:") {
@@ -44,7 +44,7 @@ func TestExportWritesJSONAndTOMLManifests(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			var output bytes.Buffer
 			directory := t.TempDir()
-			if err := Export(input, &output, Options{AssetRoot: filepath.Join(directory, "assets"), AssetPrefix: "assets", Format: format}); err != nil {
+			if err := WriteManifest(input, &output, Options{AssetRoot: filepath.Join(directory, "assets"), AssetPrefix: "assets", Format: format}); err != nil {
 				t.Fatal(err)
 			}
 			inputPath := filepath.Join(directory, "document."+format)
@@ -70,7 +70,7 @@ func TestExportJSONIndentOption(t *testing.T) {
 	for _, indent := range []bool{false, true} {
 		t.Run(fmt.Sprintf("indent-%t", indent), func(t *testing.T) {
 			var output bytes.Buffer
-			if err := Export(input, &output, Options{AssetRoot: t.TempDir(), Format: "json", JSONIndent: indent}); err != nil {
+			if err := WriteManifest(input, &output, Options{AssetRoot: t.TempDir(), Format: "json", JSONIndent: indent}); err != nil {
 				t.Fatal(err)
 			}
 			if indent && !bytes.Contains(output.Bytes(), []byte("\n  \"")) {
@@ -88,7 +88,7 @@ func TestExportAllWritesJSONAndTOMLIndexes(t *testing.T) {
 	for _, format := range []string{"json", "toml"} {
 		t.Run(format, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundle")
-			if err := ExportAllWithFormat(input, root, format); err != nil {
+			if err := WriteBundle(input, root, Options{Format: format}); err != nil {
 				t.Fatal(err)
 			}
 			indexData, err := os.ReadFile(filepath.Join(root, "index."+format))
@@ -112,7 +112,7 @@ func TestExportAllWritesJSONAndTOMLIndexes(t *testing.T) {
 
 func TestExportRejectsMultipleDocumentBodies(t *testing.T) {
 	var output bytes.Buffer
-	err := Export(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), &output, Options{AssetRoot: t.TempDir()})
+	err := WriteManifest(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), &output, Options{AssetRoot: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "多个文档体") {
 		t.Fatalf("Export error = %v, want multiple-document error", err)
 	}
@@ -121,7 +121,7 @@ func TestExportRejectsMultipleDocumentBodies(t *testing.T) {
 func TestExportDocumentSelectsDocumentBody(t *testing.T) {
 	var output bytes.Buffer
 	input := filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd")
-	if err := ExportDocument(input, 1, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+	if err := WriteDocumentManifest(input, 1, &output, Options{AssetRoot: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	if output.Len() == 0 {
@@ -142,7 +142,7 @@ func TestExportDocumentSelectsDocumentBody(t *testing.T) {
 
 func TestExportDocumentRejectsInvalidIndex(t *testing.T) {
 	var output bytes.Buffer
-	err := ExportDocument(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), 99, &output, Options{AssetRoot: t.TempDir()})
+	err := WriteDocumentManifest(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), 99, &output, Options{AssetRoot: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "索引超出范围") {
 		t.Fatalf("ExportDocument error = %v, want index error", err)
 	}
@@ -151,7 +151,7 @@ func TestExportDocumentRejectsInvalidIndex(t *testing.T) {
 func TestExportAllWritesIndependentManifests(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundle")
 	input := filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd")
-	if err := ExportAll(input, root); err != nil {
+	if err := WriteBundle(input, root, Options{Format: "yaml"}); err != nil {
 		t.Fatal(err)
 	}
 	indexData, err := os.ReadFile(filepath.Join(root, "index.yaml"))
@@ -182,9 +182,9 @@ func TestExportAllWritesIndependentManifests(t *testing.T) {
 
 func TestExportAllRejectsExistingOutputDirectory(t *testing.T) {
 	root := t.TempDir()
-	err := ExportAll(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), root)
+	err := WriteBundle(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), root, Options{Format: "yaml"})
 	if err == nil || !strings.Contains(err.Error(), "已存在") {
-		t.Fatalf("ExportAll error = %v, want existing-directory error", err)
+		t.Fatalf("WriteBundle error = %v, want existing-directory error", err)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestExportPreservesTemplatesAndActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := Export(data, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+	if err := WriteManifest(data, &output, Options{AssetRoot: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
@@ -254,7 +254,7 @@ func TestExportPreservesDocumentMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := Export(data, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+	if err := WriteManifest(data, &output, Options{AssetRoot: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
@@ -299,7 +299,7 @@ func TestExportPreservesPageResourceXMLAndFiles(t *testing.T) {
 	}
 	assetRoot := t.TempDir()
 	var output bytes.Buffer
-	if err := Export(source, &output, Options{AssetRoot: assetRoot}); err != nil {
+	if err := WriteManifest(source, &output, Options{AssetRoot: assetRoot}); err != nil {
 		t.Fatal(err)
 	}
 	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
