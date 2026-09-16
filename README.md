@@ -19,6 +19,7 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                           |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                      |
 | **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告 |
+| **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证               |
 | **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                               |
 | **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                   |
 | **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                    |
@@ -140,8 +141,8 @@ make package-validator
 ```
 
 Linux amd64 默认会生成 Linux amd64/ARM64、macOS、Windows x86_64/ARM64 程序包以及 Android APK 和 APK ZIP；
-Linux ARM64 会生成四个 Linux 程序包；Windows 和 macOS 下的默认构建会生成
-`ofd-viewer`、`ofd-converter`、`ofd-validator` 和 `ofd-analyzer` 四个 ZIP，不会编译
+Linux ARM64 会生成五个 Linux 程序包；Windows 和 macOS 下的默认构建会生成
+`ofd-viewer`、`ofd-converter`、`ofd-validator`、`ofd-analyzer` 和 `ofd-archive` 五个 ZIP，不会编译
 `ofd-thumbnailer`。
 
 每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
@@ -971,7 +972,7 @@ document := creator.Document{
 go run ./cmd/ofd-validator --format text test/testdata/helloworld.ofd
 ```
 
-报告支持文本、Markdown、JSON 和 PDF 四种格式：
+报告支持文本、Markdown、JSON、PDF 和 XLSX 五种格式：
 
 ```bash
 go run ./cmd/ofd-validator --format json --pretty test/testdata/helloworld.ofd > report.json
@@ -981,15 +982,17 @@ go run ./cmd/ofd-validator -o report.json test/testdata/helloworld.ofd
 go run ./cmd/ofd-validator -o report.txt test/testdata/helloworld.ofd
 go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
   -o report.pdf test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator --format xlsx -o report.xlsx test/testdata/helloworld.ofd
 ```
 
-未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
-`text`、`markdown`、`json` 和 `pdf`；显式指定的报告格式优先。标准输出、无扩展名或其他扩展名仍默认使用
-`text`。
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
+分别对应 `text`、`markdown`、`json`、`pdf` 和 `xlsx`；显式指定的报告格式优先。标准输出、无扩展名
+或其他扩展名仍默认使用 `text`。
 
 报告包含输入文件、检测时间、校验状态、错误和警告汇总、各校验阶段状态，以及每条问题的严重级别、
 校验阶段、错误代码、文件位置和 XML 路径等详细信息。JSON 报告适合 CI、脚本和其他程序读取；Markdown
-适合代码评审和文档归档；PDF 适合打印或发送给其他人员。
+适合代码评审和文档归档；PDF 适合打印或发送给其他人员；XLSX 报告以 Excel 工作簿形式提供「汇总」和
+「问题」两个工作表，适合筛选、归档和二次处理。
 
 默认使用 `strict` 模式；`compat` 模式会将 XSD 错误降级为警告，`structural` 模式跳过 XSD。
 使用 `--skip-xsd` 等价于 `structural` 模式。报告正文和 CLI 提示使用中文，JSON 同时保留机器可读
@@ -1000,7 +1003,7 @@ go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
 
 `ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于快速了解文档组成、资源使用情况和对象引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。
 
-分析工具位于 `cmd/ofd-analyzer`，默认将纯文本报告输出到标准输出，也支持 Markdown、JSON 和 PDF。报告可以直接阅读，也可以使用 JSON 供脚本或其他工具继续处理：
+分析工具位于 `cmd/ofd-analyzer`，默认将纯文本报告输出到标准输出，也支持 Markdown、JSON、PDF 和 XLSX。报告可以直接阅读，也可以使用 JSON 供脚本或其他工具继续处理：
 
 ```bash
 # 默认输出纯文本报告
@@ -1020,6 +1023,9 @@ go run ./cmd/ofd-analyzer -o analyzer-report.json test/testdata/helloworld.ofd
 
 # 输出 PDF 报告；PDF 报告需要可用字体
 go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf test/testdata/helloworld.ofd
+
+# 输出 XLSX 报告
+go run ./cmd/ofd-analyzer --format xlsx -o analyzer-report.xlsx test/testdata/helloworld.ofd
 
 # 指定 SM2 UID、签名值格式、证书链信任根和离线 CRL
 go run ./cmd/ofd-analyzer --signature-uid custom-id --signature-format auto --signature-roots roots.pem test.ofd
@@ -1047,6 +1053,31 @@ go run ./cmd/ofd-analyzer --signature-crls revoked.crl --signature-revocation-is
 - 使用 `--fail-on-warning` 可在发现分析警告时返回退出码 `1`
 
 资源引用使用 `doc[n]/kind:id` 形式表示文档体作用域，可以区分不同文档体中重复使用的 ID。完整的命令选项、报告字段和退出码说明见 [`cmd/ofd-analyzer/README.md`](cmd/ofd-analyzer/README.md)。
+
+### OFD 档案预检和归档准备
+
+`ofd-archive` 在现有校验器和分析器之上提供面向档案处理的预检、技术清单、归档准备目录和固定性验证。它会原样保留输入 OFD，记录档案著录元数据、分析报告、附件副本和 SHA-256 清单，不会自动修改签名文档或删除动作、媒体、注释和附件：
+
+```bash
+go run ./cmd/ofd-archive check --format text test/testdata/helloworld.ofd
+go run ./cmd/ofd-archive check --format markdown test/testdata/helloworld.ofd > /tmp/ofd-check.md
+go run ./cmd/ofd-archive manifest --format json --pretty test/testdata/helloworld.ofd
+go run ./cmd/ofd-archive matrix --mode structural test/testdata/helloworld.ofd > /tmp/ofd-matrix.md
+go run ./cmd/ofd-archive prepare test/testdata/helloworld.ofd \
+  --metadata archive.json --output /tmp/ofd-archive
+go run ./cmd/ofd-archive verify /tmp/ofd-archive
+```
+
+准备目录不是 GB/T 42133-2022 规定的新封装格式，也不等同于法律、合规或档案移交结论。完整用法见 [`cmd/ofd-archive/README.md`](cmd/ofd-archive/README.md)。
+
+`matrix` 命令依据已配置的整理版条款目录逐项生成符合性矩阵，输出每条要求、状态、自动检测器、证据引用、人工确认标记和限制说明。矩阵中的 `passed` 仅表示当前技术证据支持通过，`manual_review`、`not_assessed` 和 `unsupported` 不应解释为符合；正式标准引用仍应以正式发布文本为准。
+
+矩阵支持 Markdown、JSON 和 XLSX 输出。XLSX 文件包含 `汇总` 页和 `条文矩阵` 明细页：
+
+```bash
+go run ./cmd/ofd-archive matrix --mode structural --format xlsx \
+  --output /tmp/ofd-matrix.xlsx test/testdata/helloworld.ofd
+```
 
 OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。
 
