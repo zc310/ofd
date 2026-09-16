@@ -142,7 +142,7 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-func runExportAll(args []string, stdout, stderr io.Writer) int {
+func runExportAll(args []string, _, stderr io.Writer) int {
 	opts, err := parseExportAllArgs(args, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all:", err)

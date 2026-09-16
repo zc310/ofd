@@ -286,13 +286,6 @@ func TestRunWritesXLSXReport(t *testing.T) {
 	}
 }
 
-func min(left, right int) int {
-	if left < right {
-		return left
-	}
-	return right
-}
-
 func readArchiveEntry(t *testing.T, filename, entryName string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(filename)
