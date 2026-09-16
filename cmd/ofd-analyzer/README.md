@@ -1,6 +1,6 @@
 # ofd-analyzer
 
-`ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于分析文档组成、页面对象、文字、资源、附件、注解、签名和引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。默认输出纯文本报告。
+`ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于分析文档组成、页面对象、文字、资源、附件、注解、签名和引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。默认输出纯文本报告，也可输出 Markdown、JSON、PDF 和 XLSX 报告。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。分析结果不构成法律、合规、审计或安全结论。
 
@@ -42,16 +42,18 @@ ofd-analyzer --format json document.ofd
 # 输出缩进后的 JSON 报告文件
 ofd-analyzer --pretty -  document.ofd
 
-# 输出纯文本、Markdown 或 PDF 报告
+# 输出纯文本、Markdown、PDF 或 XLSX 报告
 ofd-analyzer --format text -o report.txt document.ofd
 ofd-analyzer --format markdown -o report.md document.ofd
 ofd-analyzer --format pdf --font /path/to/font.ttf -o report.pdf document.ofd
+ofd-analyzer --format xlsx -o report.xlsx document.ofd
 
 # 未指定 --format 时，根据输出文件扩展名自动选择格式
 ofd-analyzer -o report.txt document.ofd
 ofd-analyzer -o report.md document.ofd
 ofd-analyzer -o report.json document.ofd
 ofd-analyzer -o report.pdf --font /path/to/font.ttf document.ofd
+ofd-analyzer -o report.xlsx document.ofd
 
 # 跳过可选分析阶段
 ofd-analyzer --no-annotations --no-signatures document.ofd
@@ -69,7 +71,7 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | 选项                             | 默认值   | 说明                                                    |
 |----------------------------------|----------|---------------------------------------------------------|
 | `-o`, `--output PATH`            | 标准输出 | 报告输出路径，使用 `-` 输出到标准输出                   |
-| `--format FORMAT`                | `text`   | 报告格式；未显式指定时可根据输出扩展名自动推断          |
+| `--format FORMAT`                | `text`   | 报告格式：`text`、`markdown`、`json`、`pdf` 或 `xlsx`；未显式指定时可根据输出扩展名自动推断 |
 | `--font PATH`                    | 自动     | PDF 报告使用的字体文件；仅适用于 PDF                    |
 | `--signature-uid ID`             | 空       | SM2 签名用户标识；为空时使用默认 UID                    |
 | `--signature-format`             | 自动     | SM2 签名值格式：`auto`、`der` 或 `raw`                  |
@@ -85,11 +87,15 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | `--version`                      | 关闭     | 输出 analyzer 版本                                      |
 | `-h`, `--help`                   | 关闭     | 显示命令帮助                                            |
 
-未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json` 和 `.pdf` 分别对应
-`text`、`markdown`、`json` 和 `pdf`；显式指定的格式优先。标准输出、无扩展名或其他扩展名仍默认使用
-`text`。
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
+分别对应 `text`、`markdown`、`json`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
+其他扩展名仍默认使用 `text`。
 
 ## 报告
+
+XLSX 报告为 Excel 工作簿，包含「汇总」页，以及「文档体」「页面」「资源」「附件」「注解」「签名」
+「目录树」「文件引用」「ID 引用」等明细页。各明细页带有自动筛选和冻结表头，适合在 Excel 中进行
+筛选、归档和二次处理。
 
 报告包含 Schema 版本、输入信息、OFD 和 ZIP 包统计、文档体和页面列表、对象和文字统计、资源定义与使用情况、
 附件、注解、签名值结构解析、签名摘要校验结果、SES 签名密码学验证结果以及文件和 ID 引用关系。签名报告包含印章 ID、名称、有效期、图片类型、

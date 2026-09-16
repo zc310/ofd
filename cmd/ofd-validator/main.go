@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -141,7 +142,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	})
 	flags := root.Flags()
 	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；使用 - 输出到标准输出")
-	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json 或 pdf")
+	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json、pdf 或 xlsx")
 	flags.StringVar(&opts.mode, "mode", opts.mode, "校验模式：strict、compat 或 structural")
 	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的中文字体文件")
 	flags.IntVar(&opts.maxErrors, "max-errors", opts.maxErrors, "最多记录的校验错误数")
@@ -172,12 +173,12 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 
 func validateOptions(opts *options) error {
 	if !opts.formatSet {
-		if format, ok := reportFormatFromOutput(opts.output); ok {
+		if format, ok := utils.ReportFormatFromOutput(opts.output); ok {
 			opts.format = format
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(opts.format)) {
-	case "text", "markdown", "json", "pdf":
+	case "text", "markdown", "json", "pdf", "xlsx":
 	default:
 		return fmt.Errorf("不支持的报告格式 %q", opts.format)
 	}
@@ -206,21 +207,6 @@ func validateOptions(opts *options) error {
 	return nil
 }
 
-func reportFormatFromOutput(output string) (string, bool) {
-	switch strings.ToLower(filepath.Ext(output)) {
-	case ".txt":
-		return "text", true
-	case ".md", ".markdown":
-		return "markdown", true
-	case ".json":
-		return "json", true
-	case ".pdf":
-		return "pdf", true
-	default:
-		return "", false
-	}
-}
-
 func writeReport(opts *options, report validator.Report, stdout io.Writer) error {
 	// 先在内存中完成渲染，避免 PDF 字体加载失败时留下空报告文件。
 	var buffer bytes.Buffer
@@ -236,6 +222,8 @@ func writeReport(opts *options, report validator.Report, stdout io.Writer) error
 		err = validator.RenderJSON(output, report, opts.pretty)
 	case "pdf":
 		err = validator.RenderPDF(output, report, validator.PDFOptions{Font: opts.font})
+	case "xlsx":
+		err = validator.RenderXLSX(output, report)
 	}
 	if err != nil {
 		return err

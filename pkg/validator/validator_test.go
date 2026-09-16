@@ -13,6 +13,7 @@ import (
 	"time"
 
 	fontpkg "github.com/tdewolff/font"
+	"github.com/xuri/excelize/v2"
 )
 
 func TestValidateMinimalPackage(t *testing.T) {
@@ -610,6 +611,50 @@ func TestReportsIncludeDetectionTime(t *testing.T) {
 	}
 	if !strings.Contains(jsonOutput.String(), `"started_at":"2026-09-05T10:20:30Z"`) {
 		t.Fatalf("JSON report lacks detection time: %s", jsonOutput.String())
+	}
+}
+
+func TestRenderXLSXCreatesValidWorkbook(t *testing.T) {
+	archiveData := makeArchive(t, map[string]string{
+		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>../Document.xml</DocRoot></DocBody></OFD>`,
+	})
+	validator, err := New(WithMode(ModeStructural))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "labels.ofd")
+	var output bytes.Buffer
+	if err := RenderXLSX(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	workbook, err := excelize.OpenReader(bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatalf("invalid XLSX workbook: %v", err)
+	}
+	defer func() { _ = workbook.Close() }()
+	if sheets := workbook.GetSheetList(); len(sheets) != 2 || sheets[0] != "汇总" || sheets[1] != "问题" {
+		t.Fatalf("unexpected sheets: %v", sheets)
+	}
+	summary, err := workbook.GetCellValue("汇总", "A1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != "OFD 校验报告" {
+		t.Fatalf("summary title = %q", summary)
+	}
+	status, err := workbook.GetCellValue("汇总", "B5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status == "" {
+		t.Fatal("summary status cell is empty")
+	}
+	issues, err := workbook.GetCellValue("问题", "A4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues != "序号" {
+		t.Fatalf("issues header = %q", issues)
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func fixturePath(name string) string {
@@ -467,6 +469,59 @@ func TestRenderPDF(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(pdfReportLines(report), "\n"), "## OFD 包目录结构") {
 		t.Fatal("PDF report lines omit package tree")
+	}
+}
+
+func TestRenderXLSXCreatesValidWorkbook(t *testing.T) {
+	report, err := Analyze(fixturePath("helloworld.ofd"), WithTree(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := RenderXLSX(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	workbook, err := excelize.OpenReader(bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatalf("invalid XLSX workbook: %v", err)
+	}
+	defer func() { _ = workbook.Close() }()
+	wantSheets := []string{"汇总", "文档体", "页面", "资源", "附件", "注解", "签名", "目录树", "文件引用", "ID 引用"}
+	if sheets := workbook.GetSheetList(); len(sheets) != len(wantSheets) {
+		t.Fatalf("unexpected sheets: %v", sheets)
+	}
+	for index, want := range wantSheets {
+		if sheets := workbook.GetSheetList(); sheets[index] != want {
+			t.Fatalf("sheet %d = %q, want %q", index, sheets[index], want)
+		}
+	}
+	title, err := workbook.GetCellValue("汇总", "A1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "OFD 分析报告" {
+		t.Fatalf("summary title = %q", title)
+	}
+	status, err := workbook.GetCellValue("汇总", "B4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status == "" {
+		t.Fatal("summary status cell is empty")
+	}
+	tree, err := workbook.GetCellValue("目录树", "A4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree != "路径" {
+		t.Fatalf("tree header = %q", tree)
+	}
+	pages, err := workbook.GetCellValue("页面", "A4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages != "全局页码" {
+		t.Fatalf("pages header = %q", pages)
 	}
 }
 
