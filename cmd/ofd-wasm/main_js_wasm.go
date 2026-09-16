@@ -4,6 +4,7 @@
 package main
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
 	"image/color"
@@ -20,6 +21,8 @@ type wasmApp struct {
 	mu            sync.Mutex
 	reader        *webreader.Reader
 	fallbackFonts []webreader.FontSource
+	streamsMu     sync.Mutex
+	streams       map[uint64]*jsChunkWriter
 }
 
 const wasmMaxRenderPages = 64
@@ -44,7 +47,9 @@ func main() {
 	api.Set("search", js.FuncOf(app.search))
 	api.Set("renderPage", js.FuncOf(app.renderPage))
 	api.Set("renderPages", js.FuncOf(app.renderPages))
-	api.Set("renderPDF", js.FuncOf(app.renderPDF))
+	api.Set("renderStream", js.FuncOf(app.renderStream))
+	api.Set("streamAck", js.FuncOf(app.streamAck))
+	api.Set("cancelStream", js.FuncOf(app.cancelStream))
 	js.Global().Set("ofd", api)
 
 	select {}
@@ -150,7 +155,7 @@ func openOptions(args []js.Value) (webreader.OpenOptions, error) {
 }
 
 func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
-	if len(args) < 2 || len(args) > 4 {
+	if len(args) < 3 || len(args) > 4 {
 		return errorValue(errors.New("ofd.addFallbackFont 需要字体数据、字体族名和可选样式"))
 	}
 	data, err := bytesFromJS(args[0])
@@ -368,29 +373,263 @@ func (a *wasmApp) renderPages(_ js.Value, args []js.Value) any {
 	return result
 }
 
-func (a *wasmApp) renderPDF(_ js.Value, args []js.Value) any {
+func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 	reader, err := a.currentReader()
 	if err != nil {
 		return errorValue(err)
 	}
-	if len(args) < 1 || len(args) > 2 {
-		return errorValue(errors.New("ofd.renderPDF 需要页面索引数组和可选配置"))
+	if len(args) < 1 || len(args) > 4 {
+		return errorValue(errors.New("ofd.renderStream 需要页面索引数组、可选配置和输出回调"))
 	}
 	indices, err := jsIndices(args[0])
 	if err != nil {
 		return errorValue(err)
 	}
-	options, err := renderOptions(args[1:])
+	options, err := renderStreamOptions(args[1:2])
 	if err != nil {
 		return errorValue(err)
 	}
-	data, err := reader.RenderPDF(indices, options)
-	if err != nil {
-		return errorValue(err)
+	if options.Format != webreader.RenderFormat("pdf") && len(indices) == 1 {
+		if len(args) > 2 {
+			return errorValue(errors.New("ofd.renderStream 单页时不需要输出回调"))
+		}
+		data, renderErr := reader.RenderPage(indices[0], options)
+		if renderErr != nil {
+			return errorValue(renderErr)
+		}
+		result := js.Global().Get("Uint8Array").New(len(data))
+		js.CopyBytesToJS(result, data)
+		return result
 	}
-	result := js.Global().Get("Uint8Array").New(len(data))
-	js.CopyBytesToJS(result, data)
-	return result
+	if options.Format != webreader.RenderFormat("pdf") && len(indices) < 2 {
+		return errorValue(errors.New("ofd.renderStream 页面列表为空"))
+	}
+	if options.Format != webreader.RenderFormat("pdf") && options.Format != webreader.RenderPNG && options.Format != webreader.RenderJPG {
+		return errorValue(errors.New("ofd.renderStream 多页时只支持 PDF、PNG 或 JPG"))
+	}
+	if len(args) < 3 || args[2].Type() != js.TypeFunction {
+		return errorValue(errors.New("ofd.renderStream 需要输出回调"))
+	}
+	var streamID uint64
+	if len(args) == 4 {
+		if args[3].Type() != js.TypeNumber || args[3].Int() <= 0 {
+			return errorValue(errors.New("ofd.renderStream 的流 ID 无效"))
+		}
+		streamID = uint64(args[3].Int())
+	}
+	writer := newJSChunkWriter(args[2], streamID)
+	if streamID != 0 {
+		a.streamsMu.Lock()
+		if a.streams == nil {
+			a.streams = make(map[uint64]*jsChunkWriter)
+		}
+		a.streams[streamID] = writer
+		a.streamsMu.Unlock()
+	}
+
+	promiseExecutor := js.FuncOf(func(_ js.Value, promiseArgs []js.Value) any {
+		resolve, reject := promiseArgs[0], promiseArgs[1]
+		go func() {
+			var err error
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					err = fmt.Errorf("输出流生成失败: %v", recovered)
+				}
+				if streamID != 0 {
+					a.streamsMu.Lock()
+					delete(a.streams, streamID)
+					a.streamsMu.Unlock()
+				}
+				if err != nil {
+					_ = invokeJSCallback(reject, js.Global().Get("Error").New(err.Error()))
+					return
+				}
+				_ = invokeJSCallback(resolve, js.Null())
+			}()
+			if options.Format == webreader.RenderFormat("pdf") {
+				err = reader.RenderPDFTo(writer, indices, options)
+			} else {
+				archive := zip.NewWriter(writer)
+				for position, index := range indices {
+					data, renderErr := reader.RenderPage(index, options)
+					if renderErr != nil {
+						err = fmt.Errorf("处理图片第 %d 页失败: %w", position+1, renderErr)
+						return
+					}
+					header := &zip.FileHeader{
+						Name:   fmt.Sprintf("page-%04d.%s", index+1, options.Format),
+						Method: zip.Store,
+					}
+					entry, createErr := archive.CreateHeader(header)
+					if createErr != nil {
+						err = fmt.Errorf("创建图片 ZIP 条目失败: %w", createErr)
+						return
+					}
+					if _, writeErr := entry.Write(data); writeErr != nil {
+						err = fmt.Errorf("写入图片 ZIP 条目失败: %w", writeErr)
+						return
+					}
+				}
+				err = archive.Close()
+			}
+			if err == nil {
+				err = writer.flush()
+			}
+		}()
+		return nil
+	})
+	promise := js.Global().Get("Promise").New(promiseExecutor)
+	promiseExecutor.Release()
+	return promise
+}
+
+const wasmOutputChunkSize = 64 << 10
+
+type jsChunkWriter struct {
+	callback   js.Value
+	streamID   uint64
+	buffer     []byte
+	ackMu      sync.Mutex
+	acks       map[uint64]chan error
+	cancelCh   chan struct{}
+	cancelOnce sync.Once
+	sequence   uint64
+}
+
+func newJSChunkWriter(callback js.Value, streamID uint64) *jsChunkWriter {
+	return &jsChunkWriter{
+		callback: callback,
+		streamID: streamID,
+		acks:     make(map[uint64]chan error),
+		cancelCh: make(chan struct{}),
+	}
+}
+
+func (w *jsChunkWriter) Write(data []byte) (int, error) {
+	select {
+	case <-w.cancelCh:
+		return 0, errors.New("输出流已取消")
+	default:
+	}
+	written := len(data)
+	for len(data) > 0 {
+		space := wasmOutputChunkSize - len(w.buffer)
+		count := min(len(data), space)
+		w.buffer = append(w.buffer, data[:count]...)
+		data = data[count:]
+		if len(w.buffer) == wasmOutputChunkSize {
+			if err := w.flush(); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return written, nil
+}
+
+func (w *jsChunkWriter) flush() error {
+	if len(w.buffer) == 0 {
+		return nil
+	}
+	data := js.Global().Get("Uint8Array").New(len(w.buffer))
+	js.CopyBytesToJS(data, w.buffer)
+	w.sequence++
+	sequence := w.sequence
+	var ack chan error
+	if w.streamID != 0 {
+		ack = make(chan error, 1)
+		w.ackMu.Lock()
+		w.acks[sequence] = ack
+		w.ackMu.Unlock()
+	}
+	if err := invokeJSCallback(w.callback, data, js.ValueOf(sequence)); err != nil {
+		w.removeAck(sequence)
+		return err
+	}
+	if ack != nil {
+		select {
+		case err := <-ack:
+			w.removeAck(sequence)
+			if err != nil {
+				return err
+			}
+		case <-w.cancelCh:
+			w.removeAck(sequence)
+			return errors.New("输出流已取消")
+		}
+	}
+	w.buffer = w.buffer[:0]
+	return nil
+}
+
+func (w *jsChunkWriter) removeAck(sequence uint64) {
+	w.ackMu.Lock()
+	delete(w.acks, sequence)
+	w.ackMu.Unlock()
+}
+
+func (w *jsChunkWriter) ack(sequence uint64, err error) {
+	w.ackMu.Lock()
+	ack := w.acks[sequence]
+	w.ackMu.Unlock()
+	if ack != nil {
+		select {
+		case ack <- err:
+		default:
+		}
+	}
+}
+
+func (w *jsChunkWriter) cancel() {
+	w.cancelOnce.Do(func() { close(w.cancelCh) })
+}
+
+func invokeJSCallback(callback js.Value, args ...js.Value) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("输出回调失败: %v", recovered)
+		}
+	}()
+	values := make([]any, len(args))
+	for index, arg := range args {
+		values[index] = arg
+	}
+	callback.Invoke(values...)
+	return nil
+}
+
+func (a *wasmApp) streamAck(_ js.Value, args []js.Value) any {
+	if len(args) < 2 || len(args) > 3 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeNumber {
+		return errorValue(errors.New("ofd.streamAck 参数无效"))
+	}
+	streamID, sequence := uint64(args[0].Int()), uint64(args[1].Int())
+	if streamID == 0 || sequence == 0 {
+		return errorValue(errors.New("ofd.streamAck 的流 ID 或序号无效"))
+	}
+	var err error
+	if len(args) == 3 && !args[2].IsNull() && !args[2].IsUndefined() {
+		err = errors.New(args[2].String())
+	}
+	a.streamsMu.Lock()
+	writer := a.streams[streamID]
+	a.streamsMu.Unlock()
+	if writer == nil {
+		return nil
+	}
+	writer.ack(sequence, err)
+	return nil
+}
+
+func (a *wasmApp) cancelStream(_ js.Value, args []js.Value) any {
+	if len(args) != 1 || args[0].Type() != js.TypeNumber || args[0].Int() <= 0 {
+		return errorValue(errors.New("ofd.cancelStream 参数无效"))
+	}
+	a.streamsMu.Lock()
+	writer := a.streams[uint64(args[0].Int())]
+	a.streamsMu.Unlock()
+	if writer != nil {
+		writer.cancel()
+	}
+	return nil
 }
 
 func (a *wasmApp) currentReader() (*webreader.Reader, error) {
@@ -427,6 +666,14 @@ func bytesFromJS(value js.Value) ([]byte, error) {
 }
 
 func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
+	return parseRenderOptions(args, false)
+}
+
+func renderStreamOptions(args []js.Value) (webreader.RenderOptions, error) {
+	return parseRenderOptions(args, true)
+}
+
+func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions, error) {
 	options := webreader.RenderOptions{DPI: 72, Background: color.Transparent, Format: webreader.RenderPNG}
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
 		return options, nil
@@ -437,9 +684,14 @@ func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
 	value := args[0]
 	if format := value.Get("format"); !format.IsUndefined() && !format.IsNull() {
 		if format.Type() != js.TypeString {
-			return options, errors.New("format 必须是 png、jpg 或 svg")
+			return options, errors.New("format 必须是 pdf、png、jpg 或 svg")
 		}
 		switch strings.ToLower(strings.TrimSpace(format.String())) {
+		case "pdf":
+			if !allowPDF {
+				return options, errors.New("format 必须是 png、jpg 或 svg")
+			}
+			options.Format = webreader.RenderFormat("pdf")
 		case string(webreader.RenderPNG):
 			options.Format = webreader.RenderPNG
 		case string(webreader.RenderSVG):
@@ -447,7 +699,7 @@ func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
 		case string(webreader.RenderJPG):
 			options.Format = webreader.RenderJPG
 		default:
-			return options, errors.New("format 必须是 png、jpg 或 svg")
+			return options, errors.New("format 必须是 pdf、png、jpg 或 svg")
 		}
 	}
 	if dpi := value.Get("dpi"); dpi.Type() == js.TypeNumber && !dpi.IsNaN() {

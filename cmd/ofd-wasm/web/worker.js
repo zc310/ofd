@@ -95,10 +95,21 @@ async function execute(message) {
       const result = unwrap(self.ofd.renderPages(message.indices || [], message.options || {}));
       return Array.from(result, page => new Uint8Array(page).slice().buffer);
     }
-    case 'renderPDF': {
-      const result = unwrap(self.ofd.renderPDF(message.indices || [], message.options || {}));
-      const data = new Uint8Array(result);
-      return data.slice().buffer;
+    case 'renderStream': {
+      if ((message.indices || []).length === 1) {
+        const format = String(message.options?.format || 'png').toLowerCase();
+        if (format !== 'pdf') {
+          const result = unwrap(self.ofd.renderStream(message.indices, message.options || {}));
+          const data = new Uint8Array(result);
+          return data.slice().buffer;
+        }
+      }
+      const emit = (value, sequence) => {
+        const data = new Uint8Array(value);
+        const buffer = data.slice().buffer;
+        self.postMessage({ type: 'stream-chunk', id: message.id, sequence, value: buffer }, [buffer]);
+      };
+      return unwrap(self.ofd.renderStream(message.indices || [], message.options || {}, emit, message.id));
     }
     case 'text':
       return unwrap(self.ofd.text(message.index));
@@ -160,6 +171,15 @@ self.onmessage = event => {
   if (message.command === 'cancel') {
     if (queuedRequests.has(message.target) || activeRequests.has(message.target)) {
       cancelledRequests.add(message.target);
+      if (activeRequests.has(message.target) && self.ofd?.cancelStream) {
+        self.ofd.cancelStream(message.target);
+      }
+    }
+    return;
+  }
+  if (message.command === 'streamAck') {
+    if (self.ofd?.streamAck) {
+      self.ofd.streamAck(message.target, message.sequence, message.error || null);
     }
     return;
   }

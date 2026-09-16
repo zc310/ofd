@@ -411,7 +411,11 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
-	if face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF {
+	// 某些嵌入式 CFF 字体经过 OFD 子集修复后不能安全地交给 PDF
+	// 子集器，因此保留路径回退；外部回退字体通常是完整字体，应保留
+	// 原生文字对象以支持复制和搜索。
+	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
+	if isEmbeddedFont && face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF {
 		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}

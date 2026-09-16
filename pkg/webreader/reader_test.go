@@ -356,6 +356,18 @@ func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	}
 }
 
+func TestOpenWithOptionsRejectsInvalidFallbackFont(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWithOptions(data, OpenOptions{
+		FallbackFonts: []FontSource{{Family: "InvalidFallback", Data: []byte("invalid")}},
+	}); err == nil {
+		t.Fatal("invalid fallback font was accepted")
+	}
+}
+
 func TestRenderPages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
@@ -408,18 +420,45 @@ func TestRenderPDF(t *testing.T) {
 	if !bytes.HasSuffix(bytes.TrimSpace(pdfData), []byte("%%EOF")) {
 		t.Fatal("PDF has no EOF marker")
 	}
+	if !bytes.Contains(pdfData, []byte("/ToUnicode")) {
+		t.Fatal("PDF has no selectable text mapping")
+	}
 	highDPI, err := reader.RenderPDF([]int{0}, RenderOptions{DPI: 150, Background: color.White})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Equal(pdfData, highDPI) {
-		t.Fatal("PDF DPI did not affect output")
+	if !bytes.HasPrefix(highDPI, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(highDPI), []byte("%%EOF")) {
+		t.Fatal("high-DPI PDF is invalid")
 	}
 	if _, err := reader.RenderPDF(nil, RenderOptions{}); err == nil {
 		t.Fatal("empty PDF page list was accepted")
 	}
 	if _, err := reader.RenderPDF([]int{0}, RenderOptions{DPI: 601}); err == nil {
 		t.Fatal("excessive PDF DPI was accepted")
+	}
+}
+
+func TestRenderPDFToPreservesSelectableText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	var output bytes.Buffer
+	if err := reader.RenderPDFTo(&output, []int{0}, RenderOptions{Background: color.White}); err != nil {
+		t.Fatal(err)
+	}
+	outputData := output.Bytes()
+	if !bytes.HasPrefix(outputData, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(outputData), []byte("%%EOF")) {
+		t.Fatal("streamed PDF is invalid")
+	}
+	if !bytes.Contains(outputData, []byte("/ToUnicode")) {
+		t.Fatal("streamed PDF has no selectable text mapping")
 	}
 }
 

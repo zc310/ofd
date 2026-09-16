@@ -29,6 +29,11 @@ class OFDWorkerClient {
       this.fail(message.error);
       return;
     }
+    if (message.type === 'stream-chunk') {
+      const request = this.pending.get(message.id);
+      if (request?.onChunk) request.onChunk(message.value, message.sequence, message.id);
+      return;
+    }
     const request = this.pending.get(message.id);
     if (!request) return;
     this.pending.delete(message.id);
@@ -47,7 +52,7 @@ class OFDWorkerClient {
     this.pending.clear();
   }
 
-  request(command, payload = {}, transfer = []) {
+  request(command, payload = {}, transfer = [], onChunk) {
     let id = 0;
     let cancelled = false;
     let rejectRequest;
@@ -61,7 +66,7 @@ class OFDWorkerClient {
           return;
         }
         id = this.nextID++;
-        this.pending.set(id, { resolve, reject });
+        this.pending.set(id, { resolve, reject, onChunk });
         this.worker.postMessage({ id, command, ...payload }, transfer);
       }).catch(reject);
     });
@@ -133,8 +138,18 @@ class OFDWorkerClient {
     return this.request('renderPages', { indices, options });
   }
 
-  renderPDF(indices, options) {
-    return this.request('renderPDF', { indices, options });
+  renderStream(indices, options, onChunk) {
+    const payload = { indices, options };
+    return this.request('renderStream', payload, [], onChunk);
+  }
+
+  streamAck(id, sequence, error) {
+    this.worker.postMessage({
+      command: 'streamAck',
+      target: id,
+      sequence,
+      error: error ? String(error.message || error) : null,
+    });
   }
 
   text(index) {
@@ -299,14 +314,14 @@ const thumbnailCache = new BlobURLCache(64 << 20, url =>
   Array.from(document.querySelectorAll('.thumbnail img')).some(image => !image.hidden && image.src === url));
 const fallbackFontURLs = [
   {
-    url: 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
-    alternateURL: 'https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
+    url: 'https://raw.githubusercontent.com/google/fonts/2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+    alternateURL: 'https://cdn.jsdelivr.net/gh/google/fonts@2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
     weight: 400,
   },
 ];
 const fallbackFontCacheName = 'ofd-fonts';
 const fallbackFontTimeout = 45_000;
-const fallbackFontFamily = 'OFD-Google-Noto-Sans-SC';
+const fallbackFontFamily = 'OFD-Google-NotoSansSC';
 const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
 let fallbackFontRegistration;
@@ -2138,18 +2153,18 @@ async function openSelectedFile(selected) {
       const fallbackFonts = await preloadFallbackFonts();
       if (!fallbackFontRegistration) {
         fallbackFontRegistration = Promise.all(fallbackFonts.map(font => engine.addFallbackFont(
-          font.data,
-          fallbackFontFamily,
-          font.weight,
-          false,
-        ))).catch(error => {
-          fallbackFontRegistration = undefined;
-          throw error;
-        });
+            font.data,
+            fallbackFontFamily,
+            font.weight,
+            false,
+          ))).catch(error => {
+            fallbackFontRegistration = undefined;
+            throw error;
+          });
       }
       await fallbackFontRegistration;
-    } catch (_) {
-      // 仍然可以使用浏览器本地回退字体打开文档。
+    } catch (error) {
+      throw new Error(`默认中文字体不可用：${error.message}`);
     }
     if (generation !== documentGeneration) return;
     openRequest = engine.open(data);
@@ -2454,83 +2469,6 @@ async function convertImageFormat(data, format, background) {
   }
 }
 
-function crc32(data) {
-  let crc = 0xffffffff;
-  for (const value of data) {
-    crc ^= value;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function zipStore(files) {
-  const encoder = new TextEncoder();
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-  const write16 = (view, position, value) => view.setUint16(position, value, true);
-  const write32 = (view, position, value) => view.setUint32(position, value, true);
-  for (const file of files) {
-    const name = encoder.encode(file.name);
-    const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data);
-    const local = new Uint8Array(30 + name.length + data.length);
-    const localView = new DataView(local.buffer);
-    write32(localView, 0, 0x04034b50);
-    write16(localView, 4, 20);
-    write16(localView, 6, 0x800);
-    write16(localView, 8, 0);
-    write16(localView, 10, 0);
-    write16(localView, 12, 0);
-    write32(localView, 14, crc32(data));
-    write32(localView, 18, data.length);
-    write32(localView, 22, data.length);
-    write16(localView, 26, name.length);
-    write16(localView, 28, 0);
-    local.set(name, 30);
-    local.set(data, 30 + name.length);
-    localParts.push(local);
-
-    const central = new Uint8Array(46 + name.length);
-    const centralView = new DataView(central.buffer);
-    write32(centralView, 0, 0x02014b50);
-    write16(centralView, 4, 20);
-    write16(centralView, 6, 20);
-    write16(centralView, 8, 0x800);
-    write16(centralView, 10, 0);
-    write16(centralView, 12, 0);
-    write16(centralView, 14, 0);
-    write32(centralView, 16, crc32(data));
-    write32(centralView, 20, data.length);
-    write32(centralView, 24, data.length);
-    write16(centralView, 28, name.length);
-    write16(centralView, 30, 0);
-    write16(centralView, 32, 0);
-    write16(centralView, 34, 0);
-    write16(centralView, 36, 0);
-    write32(centralView, 38, 0);
-    write32(centralView, 42, offset);
-    central.set(name, 46);
-    centralParts.push(central);
-    offset += local.length;
-  }
-  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
-  const end = new Uint8Array(22);
-  const endView = new DataView(end.buffer);
-  write32(endView, 0, 0x06054b50);
-  write16(endView, 8, files.length);
-  write16(endView, 10, files.length);
-  write32(endView, 12, centralSize);
-  write32(endView, 16, offset);
-  const parts = [...localParts, ...centralParts, end];
-  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
-  let position = 0;
-  for (const part of parts) {
-    output.set(part, position);
-    position += part.length;
-  }
-  return output;
-}
-
 function downloadBytes(data, name, type) {
   const url = URL.createObjectURL(new Blob([data], { type }));
   const link = document.createElement('a');
@@ -2542,7 +2480,129 @@ function downloadBytes(data, name, type) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-async function exportDocumentPages(indexes, dpi, format, background) {
+function exportFileName(baseName, indexes, format) {
+  if (format === 'pdf') return `${baseName}-document.pdf`;
+  if (format === 'txt') return `${baseName}-document.txt`;
+  if (indexes.length === 1) return `${baseName}-page-${String(indexes[0] + 1).padStart(4, '0')}.${format}`;
+  return `${baseName}-导出.zip`;
+}
+
+async function chooseSaveFile(name, type) {
+  if (typeof window.showSaveFilePicker !== 'function') return undefined;
+  const extension = `.${name.split('.').pop()}`;
+  try {
+    return await window.showSaveFilePicker({
+      suggestedName: name,
+      types: [{ description: type.description, accept: { [type.mime]: [extension] } }],
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') return null;
+    throw error;
+  }
+}
+
+function exportMimeType(format) {
+  switch (format) {
+    case 'pdf': return { description: 'PDF 文档', mime: 'application/pdf' };
+    case 'txt': return { description: '文本文件', mime: 'text/plain' };
+    case 'jpg': return { description: 'JPG 图片', mime: 'image/jpeg' };
+    case 'png': return { description: 'PNG 图片', mime: 'image/png' };
+    default: return { description: 'ZIP 压缩包', mime: 'application/zip' };
+  }
+}
+
+async function saveBytes(data, name, type, saveFile, isCancelled = () => false) {
+  const sink = await openSaveSink(name, type, saveFile);
+  try {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const chunkSize = 1 << 20;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      if (isCancelled()) throw new Error('导出已取消');
+      await sink.write(bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+      setStatus(`正在保存 ${name}...（${Math.round(Math.min(offset + chunkSize, bytes.length) / bytes.length * 100)}%）`);
+    }
+    await sink.close();
+  } catch (error) {
+    await sink.abort();
+    throw error;
+  }
+}
+
+async function openSaveSink(name, type, saveFile) {
+  if (!saveFile) {
+    const chunks = [];
+    return {
+      write(data) {
+        chunks.push(data instanceof Uint8Array ? data.slice() : new Uint8Array(data));
+        return Promise.resolve();
+      },
+      close() {
+        downloadBytes(chunks, name, type);
+        return Promise.resolve();
+      },
+      abort() {
+        chunks.length = 0;
+        return Promise.resolve();
+      },
+    };
+  }
+  const writable = await saveFile.createWritable();
+  let closed = false;
+  return {
+    write(data) {
+      return writable.write(data);
+    },
+    async close() {
+      if (closed) return;
+      closed = true;
+      await writable.close();
+    },
+    async abort() {
+      if (closed) return;
+      closed = true;
+      try {
+        await writable.abort();
+      } catch (_) {
+      }
+    },
+  };
+}
+
+async function saveRenderStream(render, indexes, options, name, type, saveFile, isCancelled) {
+  const sink = await openSaveSink(name, type, saveFile);
+  let writeChain = Promise.resolve();
+  let streamError;
+  let activeRequest;
+  const writeChunk = (value, sequence, requestID) => {
+    if (streamError) return;
+    const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+    writeChain = writeChain.then(async () => {
+      try {
+        if (isCancelled()) throw new Error('导出已取消');
+        await sink.write(chunk);
+        engine.streamAck(requestID, sequence);
+      } catch (error) {
+        streamError ||= error;
+        engine.streamAck(requestID, sequence, error);
+        activeRequest?.cancel();
+      }
+    });
+  };
+  try {
+    activeRequest = render(indexes, options, writeChunk);
+    await activeRequest;
+    await writeChain;
+    if (streamError) throw streamError;
+    if (isCancelled()) throw new Error('导出已取消');
+    await sink.close();
+  } catch (error) {
+    activeRequest?.cancel();
+    await sink.abort();
+    throw error;
+  }
+}
+
+async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
   const generation = documentGeneration;
   const files = [];
   const textParts = [];
@@ -2550,7 +2610,36 @@ async function exportDocumentPages(indexes, dpi, format, background) {
   let cancelled = false;
   const requestState = { cancel: () => { cancelled = true; activeRequest?.cancel(); } };
   exportRequest = requestState;
+  const baseName = safeDownloadName(documentName.textContent);
   try {
+    if (format === 'pdf') {
+      await saveRenderStream(
+         (pages, options, onChunk) => engine.renderStream(pages, { ...options, format: 'pdf' }, onChunk),
+        indexes,
+        { dpi, background },
+        `${baseName}-document.pdf`,
+        'application/pdf',
+        saveFile,
+        () => cancelled || documentActionCancelRequested,
+      );
+      setExportProgress(indexes.length, indexes.length);
+      setStatus(`导出完成，共 ${indexes.length} 页。`);
+      return;
+    }
+    if (format !== 'txt' && indexes.length > 1) {
+      await saveRenderStream(
+         (pages, options, onChunk) => engine.renderStream(pages, options, onChunk),
+        indexes,
+        { dpi, background, format },
+        `${baseName}-导出.zip`,
+        'application/zip',
+        saveFile,
+        () => cancelled || documentActionCancelRequested,
+      );
+      setExportProgress(indexes.length, indexes.length);
+      setStatus(`导出完成，共 ${indexes.length} 页。`);
+      return;
+    }
     for (let position = 0; position < indexes.length; position++) {
       throwIfDocumentActionCancelled(generation);
       if (cancelled) throw new Error('导出已取消');
@@ -2561,31 +2650,23 @@ async function exportDocumentPages(indexes, dpi, format, background) {
         if (!textCache.has(index)) throw new Error(`第 ${index + 1} 页文字读取失败`);
         const text = pageText(index);
         if (text) textParts.push(text);
-      } else if (format === 'pdf') {
-        activeRequest = engine.renderPDF(indexes, { dpi, background });
-        const data = await activeRequest;
-        files.push({ name: 'document.pdf', data: new Uint8Array(data) });
-        setExportProgress(indexes.length, indexes.length);
-        break;
       } else {
         activeRequest = engine.renderPage(index, { dpi, background });
         const data = await activeRequest;
         const blob = await convertImageFormat(new Uint8Array(data), format, background);
-        files.push({ name: `page-${String(index + 1).padStart(4, '0')}.${format}`, data: new Uint8Array(await blob.arrayBuffer()) });
+        const file = { name: `page-${String(index + 1).padStart(4, '0')}.${format}`, data: new Uint8Array(await blob.arrayBuffer()) };
+        files.push(file);
       }
       setExportProgress(position + 1, indexes.length);
     }
     throwIfDocumentActionCancelled(generation);
-    const baseName = safeDownloadName(documentName.textContent);
     if (format === 'txt') {
       if (!textParts.length) throw new Error('选中的页面没有可导出的文字');
       files.push({ name: 'document.txt', data: new TextEncoder().encode(textParts.join('\n\n')) });
     }
     if (files.length === 1) {
       const type = format === 'txt' ? 'text/plain;charset=utf-8' : format === 'jpg' ? 'image/jpeg' : format === 'pdf' ? 'application/pdf' : 'image/png';
-      downloadBytes(files[0].data, `${baseName}-${files[0].name}`, type);
-    } else {
-      downloadBytes(zipStore(files), `${baseName}-导出.zip`, 'application/zip');
+      await saveBytes(files[0].data, `${baseName}-${files[0].name}`, type, saveFile, () => cancelled || documentActionCancelRequested);
     }
     setStatus(`导出完成，共 ${indexes.length} 页。`);
   } finally {
@@ -2618,12 +2699,25 @@ async function startExport() {
     exportError.hidden = false;
     return;
   }
+  const baseName = safeDownloadName(documentName.textContent);
+  let saveFile;
+  try {
+    saveFile = await chooseSaveFile(exportFileName(baseName, indexes, exportFormat.value), exportMimeType(exportFormat.value));
+    if (saveFile === null) {
+      setStatus('已取消保存。');
+      return;
+    }
+  } catch (error) {
+    exportError.textContent = `选择保存位置失败：${error.message}`;
+    exportError.hidden = false;
+    return;
+  }
   closeExportDialog();
   setDocumentActionBusy(true);
   exportActive = true;
   setExportProgress(0, indexes.length);
   try {
-    await exportDocumentPages(indexes, dpi, exportFormat.value, exportBackgroundColor());
+    await exportDocumentPages(indexes, dpi, exportFormat.value, exportBackgroundColor(), saveFile);
   } catch (error) {
     if (generation === documentGeneration) {
       if (documentActionCancelRequested || isCancelledError(error)) setStatus('已取消导出。');
