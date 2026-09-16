@@ -94,18 +94,9 @@ class OFDWorkerClient {
       ? data
       : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
     const transfer = [documentData];
-    const fallbackFonts = (options.fallbackFonts || []).map(font => {
-      if (!font?.data) return font;
-      const source = font.data instanceof ArrayBuffer
-        ? font.data
-        : font.data.buffer.slice(font.data.byteOffset, font.data.byteOffset + font.data.byteLength);
-      const buffer = source.slice(0);
-      transfer.push(buffer);
-      return { ...font, data: buffer };
-    });
     return this.request('open', {
       data: documentData,
-      options: { ...options, fallbackFonts },
+      options,
     }, transfer);
   }
 
@@ -124,6 +115,10 @@ class OFDWorkerClient {
 
   info() {
     return this.request('info');
+  }
+
+  memStats() {
+    return this.request('memStats');
   }
 
   renderPage(index, options) {
@@ -314,6 +309,7 @@ const thumbnailCache = new BlobURLCache(64 << 20, url =>
   Array.from(document.querySelectorAll('.thumbnail img')).some(image => !image.hidden && image.src === url));
 const fallbackFontURLs = [
   {
+    family: '思源黑体',
     url: 'https://raw.githubusercontent.com/google/fonts/2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
     alternateURL: 'https://cdn.jsdelivr.net/gh/google/fonts@2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
     weight: 400,
@@ -321,7 +317,6 @@ const fallbackFontURLs = [
 ];
 const fallbackFontCacheName = 'ofd-fonts';
 const fallbackFontTimeout = 45_000;
-const fallbackFontFamily = 'OFD-Google-NotoSansSC';
 const fallbackFontLoads = new Map();
 const fallbackFontData = new Map();
 let fallbackFontRegistration;
@@ -993,7 +988,10 @@ function recentTransaction(mode, action) {
 async function readRecentFiles() {
   try {
     const records = await recentTransaction('readonly', store => store.getAll());
-    return (records || []).sort((left, right) => right.lastOpened - left.lastOpened).slice(0, recentFileLimit);
+    return (records || [])
+      .sort((left, right) => right.lastOpened - left.lastOpened)
+      .slice(0, recentFileLimit)
+      .map(({ data, ...metadata }) => metadata);
   } catch (_) {
     return [];
   }
@@ -1024,19 +1022,57 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// 内存诊断：打印浏览器侧各缓存与 WASM 运行时内存占用。可在控制台调用
+// window.__readMemory() 手动收集当前数据。
+async function reportMemory(trigger = '手动') {
+  let wasm = null;
+  try {
+    wasm = await engine.memStats();
+  } catch (_) {}
+  let mountedPages = 0;
+  for (const image of document.querySelectorAll('.page-image')) {
+    if (!image.hidden && image.src) mountedPages++;
+  }
+  let fontBytes = 0;
+  for (const data of fallbackFontData.values()) fontBytes += data.byteLength || 0;
+  const summary = {
+    '页面缓存': formatFileSize(pageCache.bytes),
+    '缩略图缓存': formatFileSize(thumbnailCache.bytes),
+    '最近文件(驻留内存)': '按需加载',
+    '回退字体(JS侧)': formatFileSize(fontBytes),
+    '挂载页数(解码位图)': mountedPages,
+  };
+  console.group(`[OFD] 内存报告 ${trigger}`);
+  console.table(summary);
+  if (wasm) {
+    console.log('[OFD] WASM 运行时(Go MemStats)', {
+      WASM线性内存: formatFileSize(wasm.sys),
+      heapSys: formatFileSize(wasm.heapSys),
+      heapInuse: formatFileSize(wasm.heapInuse),
+      heapAlloc: formatFileSize(wasm.heapAlloc),
+      累计分配: formatFileSize(wasm.totalAlloc),
+      GC次数: wasm.numGC,
+    });
+  }
+  console.groupEnd();
+  return { ...summary, wasm };
+}
+
 function formatRecentDate(timestamp) {
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(timestamp);
 }
 
-async function saveRecentFile(file, data) {
-  if (data.byteLength > recentFileMaxBytes) return;
+async function saveRecentFile(file) {
+  if (file.size > recentFileMaxBytes) return;
   const record = {
     id: `${file.name}:${file.size}:${file.lastModified}`,
     name: file.name,
     size: file.size,
     lastModified: file.lastModified,
     lastOpened: Date.now(),
-    data,
+    // IndexedDB 可以直接持久化 Blob/File，避免为最近文件再保留一份
+    // 与传给 WASM 的 ArrayBuffer 相同大小的内存副本。
+    data: file,
   };
   try {
     await recentTransaction('readwrite', store => store.put(record));
@@ -1053,11 +1089,18 @@ async function saveRecentFile(file, data) {
 
 async function openRecentFile(id) {
   const record = recentFiles.find(item => item.id === id);
-  if (!record?.data) return;
+  if (!record) return;
+  let stored;
+  try {
+    stored = await recentTransaction('readonly', store => store.get(id));
+  } catch (_) {
+    return;
+  }
+  if (!stored?.data) return;
   setRecentPanelOpen(false);
   const recent = typeof File === 'function'
-    ? new File([record.data], record.name, { type: 'application/ofd', lastModified: record.lastModified || record.lastOpened })
-    : Object.assign(new Blob([record.data], { type: 'application/ofd' }), { name: record.name });
+    ? new File([stored.data], record.name, { type: 'application/ofd', lastModified: record.lastModified || record.lastOpened })
+    : Object.assign(new Blob([stored.data], { type: 'application/ofd' }), { name: record.name });
   await openSelectedFile(recent);
 }
 
@@ -1198,7 +1241,7 @@ function isCancelledError(error) {
 
 function clearInjectedFonts() {
   for (const [key, face] of injectedFonts.entries()) {
-    if (key.startsWith(`${fallbackFontFamily}:`)) continue;
+    if (fallbackFontURLs.some(source => key.startsWith(`${source.family}:`))) continue;
     if (!document.fonts) {
       injectedFonts.delete(key);
       continue;
@@ -1236,7 +1279,7 @@ async function injectFonts(fonts, generation) {
   }
   clearInjectedFonts();
   for (const [key, face] of injectedFonts.entries()) {
-    if (key.startsWith(`${fallbackFontFamily}:`)) loaded.set(key, face);
+    if (fallbackFontURLs.some(source => key.startsWith(`${source.family}:`))) loaded.set(key, face);
   }
   injectedFonts = loaded;
   return loaded.size;
@@ -1269,16 +1312,16 @@ async function loadCachedFont(url) {
   try {
     response = await fetch(url, { mode: 'cors', cache: 'no-cache', signal: controller.signal });
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('完整 Noto Sans SC 下载超时');
+    if (error.name === 'AbortError') throw new Error('字体下载超时');
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw new Error(`加载完整 Noto Sans SC 失败: ${response.status}`);
+  if (!response.ok) throw new Error(`加载字体失败: ${response.status}`);
   const copy = response.clone();
   const data = await response.arrayBuffer();
   if (!isSupportedFontData(data)) {
-    throw new Error('完整 Noto Sans SC 字体大小无效');
+    throw new Error('字体数据无效');
   }
   if (cache) {
     try {
@@ -1297,6 +1340,8 @@ function isSupportedFontData(data) {
       signature[2] === 0x54 && signature[3] === 0x4f) ||
     (signature[0] === 0x00 && signature[1] === 0x01 &&
       signature[2] === 0x00 && signature[3] === 0x00) ||
+    (signature[0] === 0x74 && signature[1] === 0x74 &&
+      signature[2] === 0x63 && signature[3] === 0x66) ||
     (signature[0] === 0x77 && signature[1] === 0x4f &&
       signature[2] === 0x46 && (signature[3] === 0x46 || signature[3] === 0x32));
 }
@@ -1308,16 +1353,17 @@ async function preloadFallbackFonts() {
     .map(result => result.value);
   if (!loaded.some(font => font.weight === 400)) {
     const failure = results.find(result => result.status === 'rejected');
-    throw failure?.reason || new Error('完整 Noto Sans SC 常规字体无法加载');
+    throw failure?.reason || new Error('没有可用的常规回退字体');
   }
   // 打开文档前等待默认字体，确保首屏渲染不依赖浏览器本地字体。
   return loaded;
 }
 
 function loadFallbackFont(source) {
-  const cached = fallbackFontData.get(source.weight);
+  const key = `${source.family}:${source.weight}`;
+  const cached = fallbackFontData.get(key);
   if (cached) return Promise.resolve({ ...source, data: cached });
-  const pending = fallbackFontLoads.get(source.weight);
+  const pending = fallbackFontLoads.get(key);
   if (pending) return pending;
 
   const load = (async () => {
@@ -1333,25 +1379,25 @@ function loadFallbackFont(source) {
     }
     if (!data) throw failure || new Error(`字体加载失败: ${source.weight}`);
     if (typeof FontFace !== 'function' || !document.fonts) {
-      fallbackFontData.set(source.weight, data);
+      fallbackFontData.set(key, data);
       return { ...source, data };
     }
     try {
-      const face = new FontFace(fallbackFontFamily, data.slice(0), {
+      const face = new FontFace(source.family, data.slice(0), {
         style: 'normal',
         weight: String(source.weight),
       });
       await face.load();
       document.fonts.add(face);
-      injectedFonts.set(`${fallbackFontFamily}:${source.weight}:normal`, face);
+      injectedFonts.set(`${source.family}:${source.weight}:normal`, face);
     } catch (_) {
       // 浏览器 FontFace 失败时仍将原始数据交给 WASM 渲染器。
     }
-    fallbackFontData.set(source.weight, data);
+    fallbackFontData.set(key, data);
     return { ...source, data };
   })();
-  fallbackFontLoads.set(source.weight, load);
-  load.catch(() => fallbackFontLoads.delete(source.weight));
+  fallbackFontLoads.set(key, load);
+  load.catch(() => fallbackFontLoads.delete(key));
   return load;
 }
 
@@ -1747,7 +1793,7 @@ function loadText(index, pinned = false) {
 }
 
 function pageDPI() {
-  return clarityPriority ? Math.max(72, Math.min(300, Math.round(72 * zoom))) : 72;
+  return clarityPriority ? Math.max(96, Math.min(300, Math.round(96 * zoom))) : 96;
 }
 
 function cacheKey(kind, index, generation, dpi, format = renderFormat) {
@@ -1984,6 +2030,14 @@ function cancelThumbnailRequest(index) {
   }
 }
 
+function clearThumbnailBatch() {
+  if (thumbnailBatchTimer) {
+    clearTimeout(thumbnailBatchTimer);
+    thumbnailBatchTimer = undefined;
+  }
+  thumbnailBatchQueue.clear();
+}
+
 function flushThumbnailBatch() {
   thumbnailBatchTimer = undefined;
   const entries = Array.from(thumbnailBatchQueue.values()).slice(0, 8);
@@ -2126,6 +2180,7 @@ async function openSelectedFile(selected) {
   cancelRequests(pageRequests);
   cancelRequests(pageInfoRequests);
   cancelRequests(thumbnailRequests);
+  clearThumbnailBatch();
   cancelRequests(textRequests);
   const wasExporting = exportActive || !!exportRequest;
   exportRequest?.cancel();
@@ -2142,22 +2197,32 @@ async function openSelectedFile(selected) {
   searchGeneration++;
   updateSearchStatus('');
   resetRenderProgress();
+  resizeObserver?.disconnect();
+  pagesElement.replaceChildren(empty);
+  thumbnailsElement.replaceChildren();
+  pageCards = [];
+  thumbnailButtons = [];
+  pageSpreads = [];
+  pageVirtualTrack = undefined;
+  thumbnailVirtualTrack = undefined;
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
   try {
+    // 在读取和解析新文件前释放旧 Reader，避免切换大文档时新旧文档同时驻留。
+    await engine.close();
+    if (generation !== documentGeneration) return;
     const data = await selected.arrayBuffer();
     if (generation !== documentGeneration) return;
-    const recentData = data.slice(0);
     try {
       const fallbackFonts = await preloadFallbackFonts();
       if (!fallbackFontRegistration) {
         fallbackFontRegistration = Promise.all(fallbackFonts.map(font => engine.addFallbackFont(
-            font.data,
-            fallbackFontFamily,
-            font.weight,
-            false,
-          ))).catch(error => {
+          font.data,
+          font.family,
+          font.weight,
+          false,
+        ))).catch(error => {
             fallbackFontRegistration = undefined;
             throw error;
           });
@@ -2188,7 +2253,8 @@ async function openSelectedFile(selected) {
     buildPages();
     setStatus(`${selected.name}，共 ${pageInfos.length} 页。页面进入附近区域时才会渲染。`);
     updateRenderProgress();
-    void saveRecentFile(selected, recentData);
+    void saveRecentFile(selected);
+    void reportMemory('打开文档');
   } catch (error) {
     if (generation !== documentGeneration || isCancelledError(error)) return;
     pageInfos = [];
@@ -2221,9 +2287,13 @@ function cancelOpening() {
   cancelRequests(pageRequests);
   cancelRequests(pageInfoRequests);
   cancelRequests(thumbnailRequests);
+  clearThumbnailBatch();
   cancelRequests(textRequests);
   searchRequest?.cancel();
   searchRequest = undefined;
+  // open 已经进入 Worker 时，取消只会取消前端 Promise；显式 close
+  // 确保 WASM 侧不会留下被取消打开的 Reader。
+  void engine.close().catch(error => console.warn('[OFD] 取消打开时释放 Reader 失败', error));
   pageCache.clear();
   thumbnailCache.clear();
   textCache.clear();
@@ -3246,6 +3316,8 @@ if ('serviceWorker' in navigator) {
       console.warn('[OFD] Service Worker 注册失败', error);
     });
   });
+  window.__readMemory = trigger => reportMemory(trigger || '手动');
+  void reportMemory('启动');
 }
 if ('launchQueue' in window && typeof window.launchQueue.setConsumer === 'function') {
   window.launchQueue.setConsumer(async launchParams => {

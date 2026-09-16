@@ -56,8 +56,8 @@ func (p *Document) drawOFDSeal(ctx *canvas.Context, info *parser.SealInfo, pb mo
 	}
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	for _, fallback := range p.fallbackFontResources() {
-		if err := doc.AddFallbackFont(fallback.data, fallback.family, fallback.style); err != nil {
+	for _, family := range p.fallbackFontFamilies() {
+		if err := doc.UseFallbackFont(family); err != nil {
 			return err
 		}
 	}

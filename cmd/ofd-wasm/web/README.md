@@ -148,8 +148,9 @@ ofd.close()
 - 页面实际展示或调用 `ofd.pageInfo(index)` 时，才按需读取指定页面的完整内容。
 - `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
-- 示例阅读器在页面加载时预加载官方 Google Fonts 的完整 `NotoSansSC[wght].ttf` TrueType 变量字体，并使用 Cache Storage 持久缓存。
-- 后续文档会复用缓存，不受字符数量限制；未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansSC[wght].ttf` 回退。
+- 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
+- 后续文档会复用缓存，不受字符数量限制；未找到可用内嵌字体的文字会优先按 OFD 字体名选择匹配的回退字体，匹配不到时使用第一个适配样式的回退字体。
+- 自托管字体需要允许当前页面跨域访问；HTTPS 页面不能加载 HTTP 字体 URL。
 - 字体下载或注册失败时会停止打开文档，避免静默导出无文字 PDF。
 - 缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。
 - 生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。

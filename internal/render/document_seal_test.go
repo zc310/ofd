@@ -26,16 +26,19 @@ func Test999StampSealInheritsFallbackFont(t *testing.T) {
 		t.Fatal(err)
 	}
 	withFallback := NewDocument(canvas.White, sealDocument.Documents[0])
-	if err := withFallback.AddFallbackFont(fontData, "Noto-Regular-Test", canvas.FontRegular); err != nil {
+	if err := RegisterFallbackFont(fontData, "Noto-Regular-Test", canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	if err := withFallback.UseFallbackFont("Noto-Regular-Test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := withFallback.Page(page); err != nil {
 		t.Fatal(err)
 	}
-	if len(withFallback.fallbackFontResources()) != 1 {
-		t.Fatalf("fallback resources = %d, want 1", len(withFallback.fallbackFontResources()))
+	if len(withFallback.fallbackFontFamilies()) != 1 {
+		t.Fatalf("fallback families = %d, want 1", len(withFallback.fallbackFontFamilies()))
 	}
-	if withFallback.fallbackFontResources()[0].family != "Noto-Regular-Test" {
-		t.Fatalf("fallback family = %q", withFallback.fallbackFontResources()[0].family)
+	if withFallback.fallbackFontFamilies()[0] != "Noto-Regular-Test" {
+		t.Fatalf("fallback family = %q", withFallback.fallbackFontFamilies()[0])
 	}
 }

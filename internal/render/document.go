@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"log/slog"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/tdewolff/canvas"
@@ -21,19 +22,13 @@ type Document struct {
 	background   color.Color
 	dpi          canvas.Resolution
 	fonts        *Fonts
-	fallbacks    []fallbackFontResource
+	fallbacks    []string
 	fallbackMu   sync.RWMutex
 	imageLocksMu sync.Mutex
 	imageLocks   map[string]*imageKeyLock
 	svgMu        sync.Mutex
 	images       *utils.LRU[string, image.Image]
 	svgCanvases  *utils.LRU[string, *canvas.Canvas]
-}
-
-type fallbackFontResource struct {
-	data   []byte
-	family string
-	style  canvas.FontStyle
 }
 
 type imageKeyLock struct {
@@ -149,38 +144,32 @@ func (p *Document) releaseImageLock(key string, lock *imageKeyLock) {
 	}
 }
 
-// AddFallbackFont 注册在文档字体未内嵌时使用的字体。
-func (p *Document) AddFallbackFont(data []byte, family string, style canvas.FontStyle) error {
+// UseFallbackFont 使当前文档缺失字体时使用已全局注册的回退字体族。
+func (p *Document) UseFallbackFont(family string) error {
 	if p == nil || p.fonts == nil {
 		return fmt.Errorf("字体上下文为空")
 	}
-	if err := p.fonts.AddFallbackFont(data, family, style); err != nil {
+	if err := p.fonts.UseFallbackFont(family); err != nil {
 		return err
 	}
 	p.fallbackMu.Lock()
 	defer p.fallbackMu.Unlock()
-	for index, fallback := range p.fallbacks {
-		if fallback.family == family && fallback.style == style {
-			p.fallbacks[index].data = data
-			return nil
-		}
+	if slices.Contains(p.fallbacks, family) {
+		return nil
 	}
-	p.fallbacks = append(p.fallbacks, fallbackFontResource{data: data, family: family, style: style})
+	p.fallbacks = append(p.fallbacks, family)
 	return nil
 }
 
-func (p *Document) fallbackFontResources() []fallbackFontResource {
+func (p *Document) fallbackFontFamilies() []string {
 	if p == nil {
 		return nil
 	}
 	p.fallbackMu.RLock()
 	defer p.fallbackMu.RUnlock()
-	resources := make([]fallbackFontResource, len(p.fallbacks))
-	for index, resource := range p.fallbacks {
-		resources[index] = resource
-		resources[index].data = append([]byte(nil), resource.data...)
-	}
-	return resources
+	families := make([]string, len(p.fallbacks))
+	copy(families, p.fallbacks)
+	return families
 }
 
 // FallbackFontFamily 返回为文档字体选择的外部字体族。

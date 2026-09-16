@@ -82,6 +82,8 @@ async function execute(message) {
       ));
     case 'close':
       return unwrap(self.ofd.close());
+    case 'memStats':
+      return unwrap(self.ofd.memStats());
     case 'info':
       return unwrap(self.ofd.info());
     case 'pageInfo':

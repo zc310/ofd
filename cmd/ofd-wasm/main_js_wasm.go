@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,6 +51,7 @@ func main() {
 	api.Set("renderStream", js.FuncOf(app.renderStream))
 	api.Set("streamAck", js.FuncOf(app.streamAck))
 	api.Set("cancelStream", js.FuncOf(app.cancelStream))
+	api.Set("memStats", js.FuncOf(app.memStats))
 	js.Global().Set("ofd", api)
 
 	select {}
@@ -67,17 +69,21 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	if err != nil {
 		return errorValue(err)
 	}
-	a.mu.Lock()
-	for _, source := range a.fallbackFonts {
-		if containsFallbackFont(options.FallbackFonts, source) {
-			continue
-		}
-		options.FallbackFonts = append(options.FallbackFonts, cloneFontSource(source))
+	if err := a.closeCurrentReader(); err != nil {
+		return errorValue(err)
 	}
-	a.mu.Unlock()
 	reader, err := webreader.OpenWithOptions(data, options)
 	if err != nil {
 		return errorValue(err)
+	}
+	a.mu.Lock()
+	fallbackFonts := append([]webreader.FontSource(nil), a.fallbackFonts...)
+	a.mu.Unlock()
+	for _, source := range fallbackFonts {
+		if err := reader.UseFallbackFont(source.Family); err != nil {
+			_ = reader.Close()
+			return errorValue(err)
+		}
 	}
 	pages, err := reader.Pages()
 	if err != nil {
@@ -91,12 +97,8 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	}
 
 	a.mu.Lock()
-	old := a.reader
 	a.reader = reader
 	a.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
 	return objectValue(map[string]any{
 		"pageCount": len(pages),
 		"pages":     pagesValue(pages),
@@ -111,47 +113,7 @@ func openOptions(args []js.Value) (webreader.OpenOptions, error) {
 	if args[0].Type() != js.TypeObject {
 		return webreader.OpenOptions{}, errors.New("ofd.open 配置必须是对象")
 	}
-	value := args[0].Get("fallbackFonts")
-	if value.IsUndefined() || value.IsNull() {
-		return webreader.OpenOptions{}, nil
-	}
-	if value.Type() != js.TypeObject || value.Get("length").Type() != js.TypeNumber {
-		return webreader.OpenOptions{}, errors.New("fallbackFonts 必须是数组")
-	}
-	length := value.Get("length").Int()
-	if length < 0 || length > 16 {
-		return webreader.OpenOptions{}, errors.New("fallbackFonts 数量无效")
-	}
-	options := webreader.OpenOptions{FallbackFonts: make([]webreader.FontSource, 0, length)}
-	for index := 0; index < length; index++ {
-		item := value.Index(index)
-		if item.IsNull() || item.IsUndefined() || item.Type() != js.TypeObject {
-			return webreader.OpenOptions{}, fmt.Errorf("fallbackFonts[%d] 必须是对象", index)
-		}
-		family := item.Get("family")
-		if family.Type() != js.TypeString || strings.TrimSpace(family.String()) == "" {
-			return webreader.OpenOptions{}, fmt.Errorf("fallbackFonts[%d].family 必须是非空字符串", index)
-		}
-		fontData, err := bytesFromJS(item.Get("data"))
-		if err != nil {
-			return webreader.OpenOptions{}, fmt.Errorf("fallbackFonts[%d].data: %w", index, err)
-		}
-		source := webreader.FontSource{Family: family.String(), Data: fontData}
-		if weight := item.Get("weight"); !weight.IsUndefined() {
-			if weight.Type() != js.TypeNumber || weight.IsNaN() || math.IsInf(weight.Float(), 0) {
-				return webreader.OpenOptions{}, fmt.Errorf("fallbackFonts[%d].weight 必须是有限数字", index)
-			}
-			source.Weight = weight.Int()
-		}
-		if italic := item.Get("italic"); !italic.IsUndefined() {
-			if italic.Type() != js.TypeBoolean {
-				return webreader.OpenOptions{}, fmt.Errorf("fallbackFonts[%d].italic 必须是布尔值", index)
-			}
-			source.Italic = italic.Bool()
-		}
-		options.FallbackFonts = append(options.FallbackFonts, source)
-	}
-	return options, nil
+	return webreader.OpenOptions{}, nil
 }
 
 func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
@@ -182,17 +144,29 @@ func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
 	alreadyRegistered := containsFallbackFont(a.fallbackFonts, source)
 	reader := a.reader
 	a.mu.Unlock()
-	if !alreadyRegistered && reader != nil {
-		if err := reader.AddFallbackFont(source); err != nil {
+	if alreadyRegistered {
+		return nil
+	}
+	// 以 app 持有的唯一副本参与全局注册，注册表只引用同一份字节，不重复持有。
+	a.mu.Lock()
+	if containsFallbackFont(a.fallbackFonts, source) {
+		a.mu.Unlock()
+		return nil
+	}
+	a.fallbackFonts = append(a.fallbackFonts, cloneFontSource(source))
+	stored := a.fallbackFonts[len(a.fallbackFonts)-1]
+	a.mu.Unlock()
+	if err := webreader.RegisterFallbackFont(stored); err != nil {
+		// 失败留下可重试状态：不把失败字体保留为已注册。
+		a.mu.Lock()
+		a.fallbackFonts = a.fallbackFonts[:len(a.fallbackFonts)-1]
+		a.mu.Unlock()
+		return errorValue(err)
+	}
+	if reader != nil {
+		if err := reader.UseFallbackFont(stored.Family); err != nil {
 			return errorValue(err)
 		}
-	}
-	if !alreadyRegistered {
-		a.mu.Lock()
-		if !containsFallbackFont(a.fallbackFonts, source) {
-			a.fallbackFonts = append(a.fallbackFonts, cloneFontSource(source))
-		}
-		a.mu.Unlock()
 	}
 	return nil
 }
@@ -217,17 +191,50 @@ func cloneFontSource(source webreader.FontSource) webreader.FontSource {
 }
 
 func (a *wasmApp) close(_ js.Value, _ []js.Value) any {
+	if err := a.closeCurrentReader(); err != nil {
+		return errorValue(err)
+	}
+	return nil
+}
+
+func (a *wasmApp) closeCurrentReader() error {
+	a.streamsMu.Lock()
+	streams := a.streams
+	a.streams = nil
+	a.streamsMu.Unlock()
+	for _, writer := range streams {
+		writer.cancel()
+	}
+
 	a.mu.Lock()
 	reader := a.reader
 	a.reader = nil
 	a.mu.Unlock()
 	if reader == nil {
+		runtime.GC()
 		return nil
 	}
-	if err := reader.Close(); err != nil {
-		return errorValue(err)
-	}
-	return nil
+	err := reader.Close()
+	reader = nil
+	// WASM 线性内存通常不会归还给浏览器，但强制 GC 可以释放已关闭
+	// Reader 的 Go 对象，避免后续打开文档时继续按峰值增长。
+	runtime.GC()
+	return err
+}
+
+// memStats 返回 Go 运行时内存统计，用于诊断阅读器内存占用。
+func (a *wasmApp) memStats(_ js.Value, _ []js.Value) any {
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return objectValue(map[string]any{
+		"heapAlloc":  stats.HeapAlloc,
+		"heapInuse":  stats.HeapInuse,
+		"heapSys":    stats.HeapSys,
+		"stackSys":   stats.StackSys,
+		"totalAlloc": stats.TotalAlloc,
+		"sys":        stats.Sys,
+		"numGC":      stats.NumGC,
+	})
 }
 
 func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
