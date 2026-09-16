@@ -10,6 +10,7 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"log/slog"
 	"math"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers"
 	"github.com/tdewolff/canvas/renderers/pdf"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	defaultDPI        = 72
+	defaultDPI        = 96
 	defaultPageWidth  = 210
 	defaultPageHeight = 297
 	maxDPI            = 600
@@ -105,8 +105,8 @@ const (
 	RenderJPG RenderFormat = "jpg"
 )
 
-// RenderOptions 控制页面输出。DPI 控制 PNG、JPG 和 PDF 中页面图像的分辨率；
-// SVG 主要保留页面中的矢量内容，复杂渐变等仍可能包含栅格回退。
+// RenderOptions 控制页面输出。DPI 控制 PNG、JPG 以及 PDF 中复杂效果的内部栅格化分辨率；
+// PDF 页面主体保留文字和矢量内容，SVG 复杂渐变等仍可能包含栅格回退。
 type RenderOptions struct {
 	DPI        float64
 	Background color.Color
@@ -229,10 +229,12 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 		renderDocument := render.NewDocument(r.options.Background, document)
 		for _, source := range options.FallbackFonts {
 			if len(source.Data) == 0 || source.Family == "" {
-				continue
+				_ = ofd.Close()
+				return nil, fmt.Errorf("回退字体数据或字体族名为空")
 			}
 			if err := renderDocument.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source)); err != nil {
-				continue
+				_ = ofd.Close()
+				return nil, fmt.Errorf("注册回退字体 %q 失败: %w", source.Family, err)
 			}
 			if !containsFontSource(validFallbacks, source.Family, source.Weight, source.Italic) {
 				validFallbacks = append(validFallbacks, source)
@@ -615,21 +617,35 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	return results, nil
 }
 
-// RenderPDF 将多个页面按传入顺序栅格化后写入一个 PDF 文档。
+// RenderPDF 将多个页面按传入顺序写入一个保留文字和矢量内容的 PDF 文档。
 func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []byte, err error) {
+	var output bytes.Buffer
+	err = r.RenderPDFTo(&output, indices, options)
+	if err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
+}
+
+// RenderPDFTo 将多个页面按传入顺序写入 output，保留文字和矢量内容。
+// output 会在 PDF 生成过程中接收数据，适合流式保存大 PDF。
+func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOptions) (err error) {
 	if r == nil {
-		return nil, errors.New("文档引擎为空")
+		return errors.New("文档引擎为空")
+	}
+	if output == nil {
+		return errors.New("PDF 输出为空")
 	}
 	if len(indices) == 0 {
-		return nil, errors.New("PDF 页面列表为空")
+		return errors.New("PDF 页面列表为空")
 	}
 	if len(indices) > maxRenderPages {
-		return nil, fmt.Errorf("PDF 页面数量超过限制 %d", maxRenderPages)
+		return fmt.Errorf("PDF 页面数量超过限制 %d", maxRenderPages)
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
-		return nil, errors.New("文档引擎已经关闭")
+		return errors.New("文档引擎已经关闭")
 	}
 	background := options.Background
 	if background == nil {
@@ -640,9 +656,12 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 		dpi = defaultDPI
 	}
 	if dpi < 1 || dpi > maxDPI || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
-		return nil, fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
+		return fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
 	}
-	var output bytes.Buffer
+	// TrueType 字体应进行子集化，避免将完整中文字体写入每个 PDF。
+	// CFF/TTC 回退字体暂时不能交给 canvas 的 CFF 子集器；对这类字体
+	// 关闭子集化仍会保留 ToUnicode 和原生文字对象，避免 Close 时 panic。
+	pdfOptions := &pdf.Options{Compress: true, SubsetFonts: !r.hasUnsafeFallbackFontSubset()}
 	var document *pdf.PDF
 	defer func() {
 		if document == nil {
@@ -650,22 +669,17 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 		}
 		if closeErr := document.Close(); closeErr != nil {
 			if err == nil {
-				outputBytes = nil
 				err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
 			}
-			return
-		}
-		if err == nil {
-			outputBytes = output.Bytes()
 		}
 	}()
 	for position, index := range indices {
 		page, pageErr := r.pdfPage(index, background, canvas.DPI(dpi))
 		if pageErr != nil {
-			return nil, fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
+			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
 		}
 		if document == nil {
-			document = pdf.New(&output, page.W, page.H, nil)
+			document = pdf.New(output, page.W, page.H, pdfOptions)
 		} else {
 			document.NewPage(page.W, page.H)
 		}
@@ -673,15 +687,27 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 		width := page.W * resolution.DPMM()
 		height := page.H * resolution.DPMM()
 		if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(height) || math.IsInf(height, 0) || width*height > maxRenderPixels {
-			return nil, fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
+			return fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
 		}
-		image := rasterizer.Draw(page, resolution, canvas.DefaultColorSpace)
-		document.RenderImage(image, canvas.Identity.Scale(1/resolution.DPMM(), 1/resolution.DPMM()))
+		page.RenderTo(document)
 	}
 	if document == nil {
-		return nil, errors.New("PDF 文档创建失败")
+		return errors.New("PDF 文档创建失败")
 	}
-	return output.Bytes(), nil
+	return nil
+}
+
+func (r *Reader) hasUnsafeFallbackFontSubset() bool {
+	for _, source := range r.fallbackFonts {
+		if len(source.Data) < 4 {
+			continue
+		}
+		signature := string(source.Data[:4])
+		if signature == "OTTO" || signature == "ttcf" {
+			return true
+		}
+	}
+	return false
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。

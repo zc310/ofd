@@ -10,8 +10,8 @@
 
 - **打印**：支持打印当前页、全部页面或自定义范围，例如 `1-3,5`。
 - **导出**：示例界面支持选择页面范围、DPI、PNG/JPG/PDF/TXT 格式和背景颜色；底层 API 另支持直接输出 SVG。
-- 单页图片直接下载，多页图片打包为 ZIP。
-- PDF 按所选 DPI 栅格化，并保持页面物理尺寸。
+- 单页图片直接下载，多页图片打包为 ZIP；支持 File System Access API 的浏览器会在保存时让用户选择目标文件并分块写入。
+- PDF 按所选 DPI 渲染复杂效果并保持页面物理尺寸；文字和矢量内容保持为 PDF 原生对象，可复制文字。
 - TXT 导出为一个文本文档。
 - 导出逐页执行并显示进度，可在当前页面完成后取消。
 
@@ -45,6 +45,9 @@
 - 页面滚动会取消离开窗口的未完成渲染请求。
 - 缩略图滚动单独维护自己的虚拟窗口，避免快速拖动主页面滚动条时批量渲染中间页面的缩略图。
 - 缩略图使用 15 DPI 渲染，正文页面根据当前缩放比例动态调整 DPI。
+- 导出 PDF、TXT、图片和 ZIP 时，在支持 File System Access API 的浏览器中会直接分块写入用户选择的文件，避免再创建完整 Blob；其他浏览器继续使用 Blob 下载。
+- 保存完成后会显示保存成功；不支持文件写入流的浏览器会显示已开始下载，用户取消选择保存位置时会显示已取消保存。
+- PDF 由 WASM 按块生成并直接转发到保存流；多页图片 ZIP 逐页写入，Central Directory 在最后写出。浏览器不支持文件写入流时，仍会在导出结束后使用 Blob 下载。
 
 
 ## 构建
@@ -125,14 +128,46 @@ ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
 ofd.renderPage(0, { format: 'jpg', dpi: 72 })
 ofd.renderPage(0, { format: 'svg' })
 ofd.renderPages([0, 1, 2], { format: 'png', dpi: 36, background: '#00000000' })
-ofd.renderPDF([0, 1], { background: '#ffffff' })
+ofd.renderStream([0], { format: 'png', dpi: 36 }) // 单页直接返回图片
+ofd.renderStream([0, 1, 2], { format: 'png', dpi: 36 }, (chunk, sequence) => {
+  // 多页图片 ZIP 按顺序返回分块。
+})
+ofd.renderStream([0, 1], { format: 'pdf', background: '#ffffff' }, (chunk, sequence) => {
+  // PDF 按文件顺序返回分块。
+})
 
-// background omitted or set to #00000000 produces a transparent PNG.
 ofd.close()
 ```
 
-`ofd.pages()` 返回所有页面的页数和尺寸；尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`，再无效时回退为 A4。多个文档体分别使用各自的尺寸。页面实际展示或调用 `ofd.pageInfo(index)` 时才按需读取指定页面的完整内容。`ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式；`ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF/OTF/WOFF/WOFF2 字体，并同时用于 WASM 渲染和文字层。示例阅读器在页面加载时预加载完整的 Noto Sans CJK 简体中文 Regular OTF，并使用 Cache Storage 持久缓存；后续文档复用缓存，不受字符数量限制。所有未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansCJKsc-Regular.otf` 回退。缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。`ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
-`renderPage` 和 `renderPages` 的配置项 `format` 支持 `png`、`jpg` 和 `svg`，省略时默认为 `png`。PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`；`renderPages` 按传入索引顺序返回数组，最多处理 64 页。`dpi` 对 PNG 和 JPG 有效，JPG 不支持透明度，透明区域使用白色；SVG 主要保留页面中的矢量内容，但复杂渐变、裁剪或其他不适合直接序列化的效果仍可能包含栅格图像。`renderPDF` 返回单个 PDF `Uint8Array`，使用页面物理尺寸，DPI 控制嵌入页面图像的分辨率。
+### 页面与字体
+
+- `ofd.pages()` 返回所有页面的页数和尺寸。
+- 页面尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。
+- 页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`；仍无效时回退为 A4。
+- 多个文档体分别使用各自的页面尺寸。
+- 页面实际展示或调用 `ofd.pageInfo(index)` 时，才按需读取指定页面的完整内容。
+- `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
+- `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
+- 示例阅读器在页面加载时预加载官方 Google Fonts 的完整 `NotoSansSC[wght].ttf` TrueType 变量字体，并使用 Cache Storage 持久缓存。
+- 后续文档会复用缓存，不受字符数量限制；未找到可用内嵌字体的文字，包括粗体文字，都使用 `NotoSansSC[wght].ttf` 回退。
+- 字体下载或注册失败时会停止打开文档，避免静默导出无文字 PDF。
+- 缓存内容会校验字体签名，网络失败时下一次打开会重新尝试。
+- 生产环境建议将字体自托管，并配置允许访问字体 CDN/CORS。
+
+### 页面渲染
+
+- `renderPage` 和 `renderPages` 的 `format` 支持 `png`、`jpg` 和 `svg`，省略时默认为 `png`。
+- PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`。
+- `renderPages` 按传入索引顺序返回数组，最多处理 64 页。
+- `renderStream` 单页 PNG/JPG 时直接返回 `Uint8Array`，不需要回调；多页 PNG/JPG 在 WASM 内生成 ZIP 并通过回调返回分块，PDF 始终通过回调返回分块。
+- `dpi` 对 PNG 和 JPG 有效；JPG 不支持透明度，透明区域使用白色。
+- SVG 主要保留页面中的矢量内容，但复杂渐变、裁剪或其他不适合直接序列化的效果仍可能包含栅格图像。
+- `renderStream` 使用 `format: 'pdf'` 时通过回调按顺序返回 PDF 分块，使用页面物理尺寸并保留可复制的文字对象。
+
+### 文字与错误
+
+- `ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。
+- 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 
 ## Worker 协议
 
@@ -146,11 +181,22 @@ addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boole
 pageInfo   index: number
 renderPage index: number, options: object
 renderPages indices: number[], options: object
-renderPDF indices: number[], options: object
+renderStream indices: number[], options: object[, callback: function]
 text       index: number
 search     query: string
 ```
 
-页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG/SVG 数据；PDF 导出结果也以可转移的 `ArrayBuffer` 返回。正文页缓存上限为 256 MiB，缩略图缓存上限为 64 MiB，均由浏览器端使用 LRU 策略管理。切换页面渲染格式时会取消未完成的渲染请求并清理两类图片缓存，然后按新格式重新加载可视区域。页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务；已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+### 数据传输与缓存
+
+- 页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG/SVG 数据。
+- PDF 和多页图片均通过流式接口使用 `stream-chunk` 消息按顺序转发分块。
+- 正文页缓存上限为 256 MiB，缩略图缓存上限为 64 MiB，均由浏览器端使用 LRU 策略管理。
+- 切换页面渲染格式时会取消未完成的渲染请求并清理两类图片缓存，然后按新格式重新加载可视区域。
+- 页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务。
+- 已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+
+`renderStream` 多页或 PDF 的回调参数为 `(chunk, sequence)`；网页 Worker 内部会在目标文件流完成当前块写入后发送 ACK，WASM 才继续生成下一块。多页图片的 ZIP 条目和 Central Directory 均在 WASM 内生成。写入失败或取消会发送错误 ACK，并终止生成。
+
+`streamAck` 和 `cancelStream` 是 Worker 使用的内部控制接口，普通网页调用方不需要直接调用。
 
 `text` 返回页面文字对象，`x/y` 是页面左上角原点的覆盖层坐标，`glyphs` 提供字符级区域；`search` 返回 `{ page, run, text, start, end, rects }` 命中列表。`glyphs`/`rects` 的 `angle` 可直接用于浏览器 CSS 的 `rotate()`。示例页面会将搜索结果所在页面滚动到视口，并使用引擎返回的字符矩形显示高亮。
