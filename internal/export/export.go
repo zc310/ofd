@@ -36,7 +36,7 @@ type Options struct {
 	JSONIndent bool
 }
 
-// BundleIndex 描述 ExportAll 生成的 manifest 集合。
+// BundleIndex 描述 WriteBundle 生成的 manifest 集合。
 type BundleIndex struct {
 	Version   int              `json:"version" yaml:"version"`
 	Documents []BundleDocument `json:"documents" yaml:"documents"`
@@ -52,34 +52,24 @@ type BundleDocument struct {
 	Pages     int    `json:"pages" yaml:"pages"`
 }
 
-// Export 将 OFD 导出为 manifest，并将字体和多媒体资源写入 AssetRoot。
+// WriteManifest 将 OFD 写入 manifest，并将字体和多媒体资源写入 AssetRoot。
 // 导出的 manifest 可以作为 ofd-creator 的输入，但不承诺原始 OFD 的字节级还原。
-func Export(input any, output io.Writer, options Options) error {
+func WriteManifest(input any, output io.Writer, options Options) error {
 	return export(input, output, options, nil)
 }
 
-// ExportDocument 将指定索引的文档体导出为 manifest。
+// WriteDocumentManifest 将指定索引的文档体写入 manifest。
 // index 从 0 开始；该 API 用于 OFD 包含多个文档体时选择其中一个文档。
-func ExportDocument(input any, index int, output io.Writer, options Options) error {
+func WriteDocumentManifest(input any, index int, output io.Writer, options Options) error {
 	if index < 0 {
 		return fmt.Errorf("文档体索引不能为负数: %d", index)
 	}
 	return export(input, output, options, &index)
 }
 
-// ExportAll 将 OFD 的全部文档体导出为一个目录包。
+// WriteBundle 将 OFD 的全部文档体写入一个目录包。
 // 每个文档体拥有独立的 manifest 和资源目录，根目录下同时写入索引文件。
-func ExportAll(input any, outputDir string) error {
-	return ExportAllWithOptions(input, outputDir, Options{Format: "yaml"})
-}
-
-// ExportAllWithFormat 将 OFD 的全部文档体导出为指定格式的目录包。
-func ExportAllWithFormat(input any, outputDir, format string) error {
-	return ExportAllWithOptions(input, outputDir, Options{Format: format})
-}
-
-// ExportAllWithOptions 将 OFD 的全部文档体导出为指定格式的目录包，并应用输出选项。
-func ExportAllWithOptions(input any, outputDir string, options Options) error {
+func WriteBundle(input any, outputDir string, options Options) error {
 	if strings.TrimSpace(outputDir) == "" {
 		return errors.New("未设置批量导出目录")
 	}
