@@ -151,8 +151,6 @@ type DocumentInfo struct {
 
 // OpenOptions 配置 OFD 打开行为。
 type OpenOptions struct {
-	// FallbackFonts 是文档未提供可用内嵌字体时使用的回退字体。
-	FallbackFonts []FontSource
 	// PageCacheCapacity 是页面缓存最多保留的页面数量，0 表示使用默认值。
 	PageCacheCapacity int
 	// PageCacheBytes 是页面缓存允许使用的估算最大字节数，0 表示使用默认值。
@@ -162,20 +160,20 @@ type OpenOptions struct {
 // Reader 是一个已打开的 OFD 文档。
 // Reader 负责持有文档资源，使用完毕后必须调用 Close。
 type Reader struct {
-	mu             sync.RWMutex
-	cacheMu        sync.Mutex
-	renderDocsMu   sync.Mutex
-	closed         bool
-	ofd            *parser.OFD
-	pages          []pageRef
-	renderDocs     *utils.LRU[renderDocumentKey, *render.Document]
-	fallbackFamily string
-	fallbackFonts  []FontSource
-	text           [][]TextRun
-	textSet        []bool
-	search         []searchPage
-	searchSet      []bool
-	options        RenderOptions
+	mu               sync.RWMutex
+	cacheMu          sync.Mutex
+	renderDocsMu     sync.Mutex
+	closed           bool
+	ofd              *parser.OFD
+	pages            []pageRef
+	renderDocs       *utils.LRU[renderDocumentKey, *render.Document]
+	fallbackFamily   string
+	fallbackFamilies []string
+	text             [][]TextRun
+	textSet          []bool
+	search           []searchPage
+	searchSet        []bool
+	options          RenderOptions
 }
 
 type searchPage struct {
@@ -203,7 +201,7 @@ func Open(data []byte) (*Reader, error) {
 	return OpenWithOptions(data, OpenOptions{})
 }
 
-// OpenWithOptions 从内存中的 OFD 数据创建浏览器文档引擎，并注册外部回退字体。
+// OpenWithOptions 从内存中的 OFD 数据创建浏览器文档引擎。
 func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	if len(data) == 0 {
 		return nil, errors.New("OFD 数据为空")
@@ -220,32 +218,15 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	}
 
 	r := &Reader{
-		ofd:           ofd,
-		fallbackFonts: cloneFontSources(options.FallbackFonts),
-		options:       RenderOptions{DPI: defaultDPI, Background: color.Transparent},
+		ofd:     ofd,
+		options: RenderOptions{DPI: defaultDPI, Background: color.Transparent},
 	}
-	validFallbacks := make([]FontSource, 0, len(options.FallbackFonts))
 	for documentIndex, document := range ofd.Documents {
 		renderDocument := render.NewDocument(r.options.Background, document)
-		for _, source := range options.FallbackFonts {
-			if len(source.Data) == 0 || source.Family == "" {
-				_ = ofd.Close()
-				return nil, fmt.Errorf("回退字体数据或字体族名为空")
-			}
-			if err := renderDocument.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source)); err != nil {
-				_ = ofd.Close()
-				return nil, fmt.Errorf("注册回退字体 %q 失败: %w", source.Family, err)
-			}
-			if !containsFontSource(validFallbacks, source.Family, source.Weight, source.Italic) {
-				validFallbacks = append(validFallbacks, source)
-			}
-		}
 		for _, page := range renderDocument.Pages {
 			r.pages = append(r.pages, pageRef{document: renderDocument, page: page, fontScope: documentIndex})
 		}
 	}
-	r.fallbackFonts = cloneFontSources(validFallbacks)
-	r.fallbackFamily = firstFallbackFamily(validFallbacks)
 	if len(r.pages) == 0 {
 		_ = ofd.Close()
 		return nil, errors.New("OFD 文档没有页面")
@@ -257,28 +238,24 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	return r, nil
 }
 
-func firstFallbackFamily(fonts []FontSource) string {
-	for _, font := range fonts {
-		if font.Family != "" && len(font.Data) > 0 {
-			return font.Family
-		}
+// RegisterFallbackFont 在进程内全局注册回退字体，与具体 Reader 无关。
+// 同一字体族只注册一次（幂等）且不复制字体数据；之后可通过
+// Reader.UseFallbackFont 应用到某个文档。
+func RegisterFallbackFont(source FontSource) error {
+	if len(source.Data) == 0 || source.Family == "" {
+		return errors.New("回退字体数据或字体族名为空")
 	}
-	return ""
-}
-
-func containsFontSource(sources []FontSource, family string, weight int, italic bool) bool {
-	for _, source := range sources {
-		if source.Family == family && source.Weight == weight && source.Italic == italic {
-			return true
-		}
+	if len(source.Data) > maxFontBytes {
+		return fmt.Errorf("回退字体超过大小限制 %d MB", maxFontBytes>>20)
 	}
-	return false
-}
-
-// AddFallbackFont 为没有内嵌 FontFile 的文档字体添加外部字体。
-// 文字和搜索快照会失效，因为它们的字形度量可能使用了不同的回退字体。
-func (r *Reader) AddFallbackFont(source FontSource) error {
 	slog.Info("register fallback font", "name", source.Name, "family", source.Family, "weight", source.Weight, "italic", source.Italic, "bytes", len(source.Data))
+	return render.RegisterFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+}
+
+// UseFallbackFont 使当前文档缺失字体时使用已全局注册的回退字体族。
+// 该字体族必须先通过 RegisterFallbackFont 注册。文字和搜索快照会失效，
+// 因为它们的字形度量可能使用了不同的回退字体。
+func (r *Reader) UseFallbackFont(family string) error {
 	if r == nil {
 		return errors.New("文档引擎为空")
 	}
@@ -287,11 +264,11 @@ func (r *Reader) AddFallbackFont(source FontSource) error {
 	if r.closed {
 		return errors.New("文档引擎已经关闭")
 	}
-	if len(source.Data) == 0 || source.Family == "" {
-		return errors.New("回退字体数据或字体族名为空")
+	if family == "" {
+		return errors.New("回退字体族名为空")
 	}
-	if len(source.Data) > maxFontBytes {
-		return fmt.Errorf("回退字体超过大小限制 %d MB", maxFontBytes>>20)
+	if _, ok := render.FallbackFontData(family); !ok {
+		return fmt.Errorf("回退字体族 %q 未注册", family)
 	}
 	seenDocuments := make(map[*render.Document]struct{})
 	for _, ref := range r.pages {
@@ -299,12 +276,12 @@ func (r *Reader) AddFallbackFont(source FontSource) error {
 			continue
 		}
 		seenDocuments[ref.document] = struct{}{}
-		if err := ref.document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source)); err != nil {
+		if err := ref.document.UseFallbackFont(family); err != nil {
 			return err
 		}
 	}
-	r.fallbackFamily = source.Family
-	r.fallbackFonts = append(r.fallbackFonts, cloneFontSources([]FontSource{source})...)
+	r.fallbackFamily = family
+	r.fallbackFamilies = append(r.fallbackFamilies, family)
 	r.renderDocsMu.Lock()
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
@@ -698,11 +675,12 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 }
 
 func (r *Reader) hasUnsafeFallbackFontSubset() bool {
-	for _, source := range r.fallbackFonts {
-		if len(source.Data) < 4 {
+	for _, family := range r.fallbackFamilies {
+		data, ok := render.FallbackFontData(family)
+		if !ok || len(data) < 4 {
 			continue
 		}
-		signature := string(source.Data[:4])
+		signature := string(data[:4])
 		if signature == "OTTO" || signature == "ttcf" {
 			return true
 		}
@@ -829,8 +807,9 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi canvas.Re
 		}
 	}
 	document = render.NewDocumentWithDPI(background, ref.document.Document, dpi)
-	for _, source := range r.fallbackFonts {
-		_ = document.AddFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+	for _, family := range r.fallbackFamilies {
+		// 字体已在打开/注册时全局登记，这里只把已锁定字体族应用到该文档。
+		_ = document.UseFallbackFont(family)
 	}
 	if r.renderDocs == nil {
 		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, nil)
@@ -855,13 +834,17 @@ func (r *Reader) Close() error {
 	r.textSet = nil
 	r.search = nil
 	r.searchSet = nil
+	r.fallbackFamily = ""
+	r.fallbackFamilies = nil
 	r.renderDocsMu.Lock()
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
-	if r.ofd == nil {
+	ofd := r.ofd
+	r.ofd = nil
+	if ofd == nil {
 		return nil
 	}
-	return r.ofd.Close()
+	return ofd.Close()
 }
 
 func finitePositive(value float64) bool {
@@ -919,15 +902,6 @@ func textFontFamily(document *render.Document, scope int, id uint64, fallback st
 		}
 	}
 	return fallback
-}
-
-func cloneFontSources(sources []FontSource) []FontSource {
-	cloned := make([]FontSource, len(sources))
-	for index, source := range sources {
-		cloned[index] = source
-		cloned[index].Data = append([]byte(nil), source.Data...)
-	}
-	return cloned
 }
 
 func (r *Reader) searchAt(index int, runs []TextRun) searchPage {

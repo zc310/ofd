@@ -329,7 +329,7 @@ func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
 	}
 }
 
-func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
+func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -344,8 +344,8 @@ func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reader.AddFallbackFont(FontSource{Family: "CacheInvalidationFallback", Data: []byte("invalid")}); err == nil {
-		t.Fatal("无效回退字体应返回错误")
+	if err := reader.UseFallbackFont("CacheInvalidationFallback"); err == nil {
+		t.Fatal("未注册回退字体应返回错误")
 	}
 	second, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
 	if err != nil {
@@ -353,18 +353,6 @@ func TestAddFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	}
 	if first != second {
 		t.Fatal("添加失败的回退字体不应清空有效缓存")
-	}
-}
-
-func TestOpenWithOptionsRejectsInvalidFallbackFont(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := OpenWithOptions(data, OpenOptions{
-		FallbackFonts: []FontSource{{Family: "InvalidFallback", Data: []byte("invalid")}},
-	}); err == nil {
-		t.Fatal("invalid fallback font was accepted")
 	}
 }
 
@@ -583,7 +571,10 @@ func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
 		t.Fatal(err)
 	}
 	const family = "TestFallback"
-	if err := reader.AddFallbackFont(FontSource{Family: family, Data: fonts[0].Data}); err != nil {
+	if err := RegisterFallbackFont(FontSource{Family: family, Data: fonts[0].Data}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.UseFallbackFont(family); err != nil {
 		t.Fatal(err)
 	}
 	runs, err := reader.Text(0)
