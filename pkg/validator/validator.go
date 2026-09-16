@@ -312,8 +312,8 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 			if ref.checkXML && ref.expected != "" {
 				scope := ref.scope
 				if scope == "" && ref.expected == "Document" {
-					// All page and resource XML under a document directory inherit
-					// the same scope as the referenced Document.xml.
+					// 文档目录下的所有页面和资源 XML 都继承所引用 Document.xml
+					// 的同一作用域。
 					scope = documentScope(resolved)
 				}
 				if prior, exists := queued[resolved]; exists && prior != ref.expected {
@@ -931,8 +931,7 @@ func (v *Validator) fontChecks(documents map[string]*xmlDocument, archive *packa
 			}
 			charsetValue := node.AttrValue("Charset")
 			if strings.TrimSpace(charsetValue) == "" {
-				// CharSet is used by some older producers even though the schema
-				// spells the attribute as Charset.
+				// 部分旧版生产者使用 CharSet，尽管模式中将属性拼写为 Charset。
 				charsetValue = node.AttrValue("CharSet")
 			}
 			charset := strings.ToLower(strings.TrimSpace(charsetValue))
@@ -996,9 +995,8 @@ func (v *Validator) fontChecks(documents map[string]*xmlDocument, archive *packa
 			fontID := strings.TrimSpace(node.AttrValue("Font"))
 			resource := resources[fontResourceKey{scope: doc.scope, id: fontID}]
 			if resource == nil && !ambiguousResources[fontID] {
-				// A resource file outside a document directory can be shared by
-				// multiple documents; use a unique package-wide resource as a
-				// fallback when no document-local declaration exists.
+				// 文档目录外的资源文件可以由多个文档共享；当文档本地没有声明时，
+				// 使用包级唯一资源作为回退。
 				resource = fallbackResources[fontID]
 			}
 			if resource == nil {
@@ -1189,8 +1187,8 @@ func validateFontGlyph(sfnt *font.SFNT, glyphID uint16) (err error) {
 	if glyphID < sfnt.NumGlyphs() {
 		return nil
 	}
-	// fontfix maps OFD glyph IDs outside the native glyph range to a
-	// private-use cmap entry after repairing subset fonts.
+	// fontfix 会在修复子集字体后，将超出原生字体范围的 OFD glyph ID
+	// 映射到私用区 cmap 条目。
 	mappedGlyphID := sfnt.GlyphIndex(fontfix.GlyphRune(glyphID))
 	if mappedGlyphID == 0 || mappedGlyphID >= sfnt.NumGlyphs() {
 		return fmt.Errorf("glyph ID 超出字体范围（共 %d 个 glyph）", sfnt.NumGlyphs())

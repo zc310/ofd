@@ -24,6 +24,26 @@ func TestParseArgs(t *testing.T) {
 	}
 }
 
+func TestParseArgsSupportsHelp(t *testing.T) {
+	for _, arg := range []string{"--help", "-h"} {
+		var output bytes.Buffer
+		opts, err := parseArgs([]string{arg}, &output)
+		if err != nil || !opts.help {
+			t.Fatalf("parseArgs(%s) = %+v, err = %v", arg, opts, err)
+		}
+		if !strings.Contains(output.String(), "ofd-analyzer - OFD 结构分析工具") {
+			t.Fatalf("help output = %s", output.String())
+		}
+	}
+}
+
+func TestParseArgsSupportsVersion(t *testing.T) {
+	opts, err := parseArgs([]string{"--version"}, new(bytes.Buffer))
+	if err != nil || !opts.version {
+		t.Fatalf("options = %+v, err = %v", opts, err)
+	}
+}
+
 func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
 	for _, test := range []struct {

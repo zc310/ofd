@@ -26,6 +26,12 @@ make package-analyzer
 ofd-analyzer [选项] input.ofd
 ```
 
+查看命令帮助：
+
+```bash
+ofd-analyzer --help
+```
+
 ```bash
 # 默认输出纯文本
 ofd-analyzer document.ofd

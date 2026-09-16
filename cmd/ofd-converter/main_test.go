@@ -7,6 +7,26 @@ import (
 	"testing"
 )
 
+func TestParseArgsSupportsHelp(t *testing.T) {
+	for _, arg := range []string{"--help", "-h"} {
+		opts, err := parseArgs([]string{arg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !opts.help {
+			t.Fatalf("%s did not set help", arg)
+		}
+	}
+}
+
+func TestNormalizeConverterArgsPreservesLegacySingleDashFlags(t *testing.T) {
+	args := normalizeConverterArgs([]string{"-format", "txt", "-dpi=300", "-o", "output.txt"})
+	want := []string{"--format", "txt", "--dpi=300", "-o", "output.txt"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+}
+
 func TestParseArgsSupportsBatchMode(t *testing.T) {
 	opts, err := parseArgs([]string{"--input-dir", "input", "--output-dir", "output", "--format", "pdf", "--workers", "8"})
 	if err != nil {

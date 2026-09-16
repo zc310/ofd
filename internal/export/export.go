@@ -36,13 +36,13 @@ type Options struct {
 	JSONIndent bool
 }
 
-// BundleIndex describes the manifests produced by ExportAll.
+// BundleIndex 描述 ExportAll 生成的 manifest 集合。
 type BundleIndex struct {
 	Version   int              `json:"version" yaml:"version"`
 	Documents []BundleDocument `json:"documents" yaml:"documents"`
 }
 
-// BundleDocument identifies one document manifest in an export bundle.
+// BundleDocument 标识导出目录包中的一个文档 manifest。
 type BundleDocument struct {
 	Index     int    `json:"index" yaml:"index"`
 	ID        string `json:"id" yaml:"id"`
@@ -852,8 +852,8 @@ func (e *documentExporter) exportCustomTags() ([]manifest.CustomTag, error) {
 			nameSpace = tag.TypeID
 		}
 		if nameSpace == "" {
-			// The manifest schema requires a stable non-empty key, while some
-			// legacy OFD files leave both namespace attributes empty.
+			// manifest 模式要求键稳定且非空，但部分旧版 OFD 文件的两个
+			// 命名空间属性都为空。
 			nameSpace = fmt.Sprintf("legacy-tag-%d", index)
 		}
 		item := manifest.CustomTag{NameSpace: nameSpace}
@@ -980,8 +980,8 @@ func safeExtension(name string) string {
 	return strings.ToLower(ext)
 }
 
-// readDocumentFile accepts both document-root-relative locations used by
-// existing OFD producers and list-file-relative locations emitted by creator.
+// readDocumentFile 同时支持现有 OFD 生产者使用的相对于文档根目录的路径，
+// 以及 creator 生成的相对于清单文件的路径。
 func (e *documentExporter) readDocumentFile(location models.StLoc, listPath models.StLoc) (models.StLoc, []byte, error) {
 	if location == "" {
 		return "", nil, errors.New("资源文件位置为空")
@@ -1002,8 +1002,8 @@ func (e *documentExporter) readDocumentFile(location models.StLoc, listPath mode
 	return candidates[0], nil, lastErr
 }
 
-// extensionDataXML returns the children of the indexed Extension/Data element.
-// Keeping the XML form preserves vendor-specific extension elements.
+// extensionDataXML 返回指定 Extension/Data 元素的子节点。
+// 保留 XML 形式可以保留厂商自定义的扩展元素。
 func extensionDataXML(data []byte, wanted int) string {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	extensionIndex := -1
@@ -1732,8 +1732,8 @@ func (e *documentExporter) drawParamName(id models.StRefID) string {
 		return ""
 	}
 	if e.document.GetDrawParam(models.StID(id)) == nil {
-		// Some producers leave stale DrawParam references on layers. The
-		// creator manifest cannot represent an unresolved reference safely.
+		// 部分生产者会在图层中留下过期的 DrawParam 引用。
+		// creator manifest 无法安全地表示未解析的引用。
 		return ""
 	}
 	if name, ok := e.pageDrawParams[models.StID(id)]; ok {
@@ -1759,7 +1759,7 @@ func exportBox(box *models.StBox) *manifest.Box {
 		return nil
 	}
 	width, height := box.Width, box.Height
-	// creator requires positive object bounds; some readers emit zero-sized text boxes.
+	// creator 要求对象边界为正数，而部分阅读器会生成零尺寸文本框。
 	if width <= 0 {
 		width = 0.001
 	}
@@ -1802,8 +1802,8 @@ func (e *documentExporter) exportColor(value *models.CTColor) *manifest.Color {
 		}
 	}
 	if value.ColorSpace != 0 && value.Value == nil && value.Index == 0 {
-		// OFD permits an omitted Value, which means the zero components of
-		// the referenced color space. creator requires that meaning explicit.
+		// OFD 允许省略 Value，此时表示所引用颜色空间的零分量。
+		// creator 要求显式表达这一语义。
 		components := 3
 		switch e.colorSpaces[models.StID(value.ColorSpace)] {
 		case "GRAY":

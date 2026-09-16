@@ -133,7 +133,7 @@ type ToolInfo struct {
 }
 
 // ToolVersion 是校验器报告中的工具版本。
-const ToolVersion = "0.1.0"
+const ToolVersion = "0.0.1"
 
 func newReport(input string) Report {
 	return Report{
