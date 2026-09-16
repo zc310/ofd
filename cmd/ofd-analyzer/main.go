@@ -4,13 +4,13 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/analyzer"
 )
 
@@ -48,9 +48,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
-			_, _ = fmt.Fprintln(stderr, "ofd-analyzer:", err)
-		}
+		_, _ = fmt.Fprintln(stderr, "ofd-analyzer:", err)
 		return exitUsage
 	}
 	if opts.help {
@@ -117,12 +115,41 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func parseArgs(args []string, output io.Writer) (*options, error) {
-	opts := &options{}
-	opts.format = "text"
-	flags := flag.NewFlagSet("ofd-analyzer", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&opts.output, "o", "", "报告输出路径；使用 - 输出到标准输出")
-	flags.StringVar(&opts.output, "output", "", "报告输出路径；使用 - 输出到标准输出")
+	opts := &options{format: "text"}
+	root := &cobra.Command{
+		Use:           "ofd-analyzer [flags] input.ofd",
+		Short:         "OFD 结构分析工具",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.version || opts.help {
+				return nil
+			}
+			if len(positional) == 0 {
+				return errors.New("缺少输入 OFD 文件")
+			}
+			if len(positional) != 1 {
+				return errors.New("必须且只能指定一个输入 OFD 文件")
+			}
+			opts.input = positional[0]
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-analyzer - OFD 结构分析工具")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-analyzer [选项] input.ofd")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；使用 - 输出到标准输出")
 	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json 或 pdf；默认为 text")
 	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的字体文件")
 	flags.StringVar(&opts.signatureUID, "signature-uid", "", "SM2 签名用户标识")
@@ -137,33 +164,15 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.tree, "tree", false, "输出 OFD ZIP 包目录结构")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出 analyzer 版本")
-	flags.Usage = func() {
-		_, _ = fmt.Fprintln(output, "ofd-analyzer - OFD 结构分析工具")
-		_, _ = fmt.Fprintln(output, "用法：ofd-analyzer [选项] input.ofd")
-		_, _ = fmt.Fprintln(output)
-		flags.PrintDefaults()
-	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &options{help: true}, nil
-		}
+	if err := root.Execute(); err != nil {
 		return nil, err
 	}
-	flags.Visit(func(flag *flag.Flag) {
-		if flag.Name == "format" {
-			opts.formatSet = true
-		}
-	})
-	if opts.version {
+	if opts.help || opts.version {
 		return opts, nil
 	}
-	if flags.NArg() != 1 {
-		if flags.NArg() == 0 {
-			return nil, errors.New("缺少输入 OFD 文件")
-		}
-		return nil, errors.New("必须且只能指定一个输入 OFD 文件")
+	if flag := root.Flags().Lookup("format"); flag != nil {
+		opts.formatSet = flag.Changed
 	}
-	opts.input = flags.Arg(0)
 	return opts, nil
 }
 

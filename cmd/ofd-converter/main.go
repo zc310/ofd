@@ -4,7 +4,6 @@ package main
 import (
 	"archive/zip"
 	"errors"
-	"flag"
 	"fmt"
 	"image/color"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
@@ -63,61 +63,107 @@ func main() {
 }
 
 func parseArgs(args []string) (*options, error) {
-	opts := &options{dpi: defaultDPI, bg: defaultBgColor}
-	fs := flag.NewFlagSet("ofd-converter", flag.ContinueOnError)
+	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", workers: defaultWorkers, recursive: true, overwrite: true}
 	var output, format string
-	fs.StringVar(&output, "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
-	fs.StringVar(&output, "output", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
-	fs.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
-	fs.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
-	fs.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
-	fs.StringVar(&opts.htmlFormat, "html-format", "png", "HTML 页面格式: png, jpg, svg")
-	fs.IntVar(&opts.dpi, "dpi", defaultDPI, "输出分辨率 (1-1200)")
-	fs.IntVar(&opts.page, "page", 0, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
-	fs.StringVar(&opts.bg, "bg", defaultBgColor, "背景颜色: transparent, white, black")
-	fs.BoolVar(&opts.dir, "dir", false, "不压缩，将多页图片直接保存到输出目录下的多个文件")
-	fs.IntVar(&opts.workers, "workers", defaultWorkers, "批量转换并发数，默认 4")
-	fs.BoolVar(&opts.recursive, "recursive", true, "批量转换时递归扫描输入目录")
-	fs.BoolVar(&opts.overwrite, "overwrite", true, "批量转换时覆盖已有输出文件，默认开启")
-	fs.BoolVar(&opts.skipExisting, "skip-existing", false, "批量转换时跳过已有输出文件")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "ofd-converter - OFD 文档转换命令行工具\n\n用法:\n  ofd-converter [选项] <输入文件> [输出文件或目录]\n  ofd-converter [选项] --input-dir <输入目录> --output-dir <输出目录>\n\n选项:\n")
-		fs.PrintDefaults()
+	args = normalizeConverterArgs(args)
+	root := &cobra.Command{
+		Use:           "ofd-converter [flags] input.ofd [output]",
+		Short:         "OFD 文档转换命令行工具",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			batchMode := opts.inputDir != "" || opts.outputDir != ""
+			if batchMode {
+				if opts.inputDir == "" || opts.outputDir == "" {
+					return errors.New("批量转换必须同时指定 --input-dir 和 --output-dir")
+				}
+				if output != "" {
+					return errors.New("批量转换请使用 --output-dir，不能同时指定 -o 或 --output")
+				}
+				if len(positional) != 0 {
+					return errors.New("批量转换不能再指定位置参数输入文件")
+				}
+			} else {
+				if len(positional) == 0 {
+					return ErrNoInput
+				}
+				if len(positional) > 2 {
+					return errors.New("最多只能指定输入文件和输出路径")
+				}
+				opts.input = positional[0]
+			}
+			if output != "" {
+				opts.output = output
+			} else if len(positional) >= 2 {
+				opts.output = positional[1]
+			}
+			opts.format = format
+			return nil
+		},
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &options{help: true}, nil
+	root.SetArgs(args)
+	root.SetOut(os.Stdout)
+	root.SetErr(io.Discard)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		fmt.Fprintln(cmd.OutOrStdout(), "ofd-converter - OFD 文档转换命令行工具")
+		fmt.Fprintln(cmd.OutOrStdout(), "用法:")
+		fmt.Fprintln(cmd.OutOrStdout(), "  ofd-converter [选项] <输入文件> [输出文件或目录]")
+		fmt.Fprintln(cmd.OutOrStdout(), "  ofd-converter [选项] --input-dir <输入目录> --output-dir <输出目录>")
+		fmt.Fprintln(cmd.OutOrStdout(), "")
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&output, "output", "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
+	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
+	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
+	flags.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
+	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
+	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
+	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
+	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
+	flags.BoolVar(&opts.dir, "dir", opts.dir, "不压缩，将多页图片直接保存到输出目录下的多个文件")
+	flags.IntVar(&opts.workers, "workers", opts.workers, "批量转换并发数，默认 4")
+	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
+	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
+	flags.BoolVar(&opts.skipExisting, "skip-existing", opts.skipExisting, "批量转换时跳过已有输出文件")
+	if err := root.Execute(); err != nil {
+		if strings.Contains(err.Error(), "unknown flag") || strings.Contains(err.Error(), "unknown command") {
+			return nil, err
 		}
 		return nil, err
 	}
-	rest := fs.Args()
-	batchMode := opts.inputDir != "" || opts.outputDir != ""
-	if batchMode {
-		if opts.inputDir == "" || opts.outputDir == "" {
-			return nil, errors.New("批量转换必须同时指定 --input-dir 和 --output-dir")
-		}
-		if output != "" {
-			return nil, errors.New("批量转换请使用 --output-dir，不能同时指定 -o 或 --output")
-		}
-		if len(rest) != 0 {
-			return nil, errors.New("批量转换不能再指定位置参数输入文件")
-		}
-	} else {
-		if len(rest) == 0 {
-			return nil, ErrNoInput
-		}
-		opts.input = rest[0]
-		if len(rest) > 2 {
-			return nil, errors.New("最多只能指定输入文件和输出路径")
-		}
-	}
-	if output != "" {
-		opts.output = output
-	} else if len(rest) >= 2 {
-		opts.output = rest[1]
-	}
-	opts.format = format
 	return opts, nil
+}
+
+func normalizeConverterArgs(args []string) []string {
+	longFlags := map[string]bool{
+		"format": true, "html-format": true, "input-dir": true, "output-dir": true,
+		"output": true,
+		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
+		"recursive": true, "overwrite": true, "skip-existing": true,
+	}
+	result := make([]string, len(args))
+	for index, arg := range args {
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+			name := strings.TrimPrefix(arg, "-")
+			if name != "o" {
+				if base, _, hasValue := strings.Cut(name, "="); longFlags[base] && hasValue {
+					result[index] = "--" + name
+					continue
+				}
+				if longFlags[name] {
+					result[index] = "--" + name
+					continue
+				}
+			}
+		}
+		result[index] = arg
+	}
+	return result
 }
 
 func run(opts *options) error {

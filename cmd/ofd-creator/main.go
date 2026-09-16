@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	ofdexport "github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/pkg/creator"
@@ -53,9 +53,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
-			_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
-		}
+		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitUsage
 	}
 	if opts.help {
@@ -106,9 +104,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 func runExport(args []string, stdout, stderr io.Writer) int {
 	opts, err := parseExportArgs(args, stderr)
 	if err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
-			_, _ = fmt.Fprintln(stderr, "ofd-creator export:", err)
-		}
+		_, _ = fmt.Fprintln(stderr, "ofd-creator export:", err)
 		return exitUsage
 	}
 	if opts.help {
@@ -149,9 +145,7 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 func runExportAll(args []string, stdout, stderr io.Writer) int {
 	opts, err := parseExportAllArgs(args, stderr)
 	if err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
-			_, _ = fmt.Fprintln(stderr, "ofd-creator export-all:", err)
-		}
+		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all:", err)
 		return exitUsage
 	}
 	if opts.help {
@@ -191,32 +185,47 @@ type exportAllOptions struct {
 
 func parseExportAllArgs(args []string, output io.Writer) (*exportAllOptions, error) {
 	opts := &exportAllOptions{format: "yaml"}
-	flags := flag.NewFlagSet("ofd-creator export-all", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&opts.input, "i", "", "OFD 输入文件；使用 - 从标准输入读取")
-	flags.StringVar(&opts.input, "input", "", "OFD 输入文件；使用 - 从标准输入读取")
-	flags.StringVar(&opts.output, "o", "", "批量导出目录")
-	flags.StringVar(&opts.output, "output", "", "批量导出目录")
-	flags.StringVar(&opts.format, "format", "", "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml、json 或 toml")
-	flags.BoolVar(&opts.jsonIndent, "json-indent", false, "JSON 输出使用 2 空格缩进")
-	flags.BoolVar(&opts.help, "help", false, "显示帮助")
-	flags.Usage = func() {
-		_, _ = fmt.Fprintln(output, "ofd-creator export-all - 导出 OFD 的全部文档体")
-		_, _ = fmt.Fprintln(output, "用法：ofd-creator export-all -i input.ofd -o exported/ --format yaml")
-		_, _ = fmt.Fprintln(output)
-		flags.PrintDefaults()
+	root := &cobra.Command{
+		Use:           "ofd-creator export-all",
+		Short:         "导出 OFD 的全部文档体",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.help {
+				return nil
+			}
+			if opts.input == "" && len(positional) > 0 {
+				opts.input = positional[0]
+			}
+			if opts.output == "" && len(positional) > 1 {
+				opts.output = positional[1]
+			}
+			return nil
+		},
 	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &exportAllOptions{help: true}, nil
-		}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator export-all - 导出 OFD 的全部文档体")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator export-all -i input.ofd -o exported/ --format yaml")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.input, "input", "i", "", "OFD 输入文件；使用 - 从标准输入读取")
+	flags.StringVarP(&opts.output, "output", "o", "", "批量导出目录")
+	flags.StringVar(&opts.format, "format", opts.format, "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml、json 或 toml")
+	flags.BoolVar(&opts.jsonIndent, "json-indent", false, "JSON 输出使用 2 空格缩进")
+	if err := root.Execute(); err != nil {
 		return nil, err
 	}
-	if opts.input == "" && flags.NArg() > 0 {
-		opts.input = flags.Arg(0)
-	}
-	if opts.output == "" && flags.NArg() > 1 {
-		opts.output = flags.Arg(1)
+	if opts.help {
+		return opts, nil
 	}
 	format := strings.ToLower(strings.TrimSpace(opts.format))
 	if format == "" {
@@ -244,34 +253,49 @@ type exportOptions struct {
 
 func parseExportArgs(args []string, output io.Writer) (*exportOptions, error) {
 	opts := &exportOptions{assetRoot: "assets", document: -1}
-	flags := flag.NewFlagSet("ofd-creator export", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&opts.input, "i", "", "OFD 输入文件；使用 - 从标准输入读取")
-	flags.StringVar(&opts.input, "input", "", "OFD 输入文件；使用 - 从标准输入读取")
-	flags.StringVar(&opts.output, "o", "", "manifest 输出文件；使用 - 写入标准输出")
-	flags.StringVar(&opts.output, "output", "", "manifest 输出文件；使用 - 写入标准输出")
-	flags.StringVar(&opts.assetRoot, "asset-root", "assets", "资源输出目录")
+	root := &cobra.Command{
+		Use:           "ofd-creator export",
+		Short:         "从 OFD 导出 creator manifest",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.help {
+				return nil
+			}
+			if opts.input == "" && len(positional) > 0 {
+				opts.input = positional[0]
+			}
+			if opts.output == "" && len(positional) > 1 {
+				opts.output = positional[1]
+			}
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator export - 从 OFD 导出 creator manifest")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator export -i input.ofd -o document.yaml --format yaml --asset-root assets")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.input, "input", "i", "", "OFD 输入文件；使用 - 从标准输入读取")
+	flags.StringVarP(&opts.output, "output", "o", "", "manifest 输出文件；使用 - 写入标准输出")
+	flags.StringVar(&opts.assetRoot, "asset-root", opts.assetRoot, "资源输出目录")
 	flags.StringVar(&opts.format, "format", "", "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml、json 或 toml")
 	flags.BoolVar(&opts.jsonIndent, "json-indent", false, "JSON 输出使用 2 空格缩进")
 	flags.IntVar(&opts.document, "document", -1, "要导出的文档体索引，从 0 开始；默认拒绝多文档输入")
-	flags.BoolVar(&opts.help, "help", false, "显示帮助")
-	flags.Usage = func() {
-		_, _ = fmt.Fprintln(output, "ofd-creator export - 从 OFD 导出 creator manifest")
-		_, _ = fmt.Fprintln(output, "用法：ofd-creator export -i input.ofd -o document.yaml --format yaml --asset-root assets")
-		_, _ = fmt.Fprintln(output)
-		flags.PrintDefaults()
-	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &exportOptions{help: true}, nil
-		}
+	if err := root.Execute(); err != nil {
 		return nil, err
 	}
-	if opts.input == "" && flags.NArg() > 0 {
-		opts.input = flags.Arg(0)
-	}
-	if opts.output == "" && flags.NArg() > 1 {
-		opts.output = flags.Arg(1)
+	if opts.help {
+		return opts, nil
 	}
 	return opts, nil
 }
@@ -364,12 +388,40 @@ func exportInput(name string, stdin io.Reader) (any, error) {
 
 func parseArgs(args []string, output io.Writer) (*options, error) {
 	opts := &options{compression: string(creator.CompressionAuto)}
-	flags := flag.NewFlagSet("ofd-creator", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&opts.input, "i", "", "manifest 文件路径；使用 - 从标准输入读取")
-	flags.StringVar(&opts.input, "input", "", "manifest 文件路径；使用 - 从标准输入读取")
-	flags.StringVar(&opts.output, "o", "", "OFD 输出路径；使用 - 写入标准输出")
-	flags.StringVar(&opts.output, "output", "", "OFD 输出路径；使用 - 写入标准输出")
+	root := &cobra.Command{
+		Use:           "ofd-creator [flags]",
+		Short:         "OFD 文件创建工具",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.help {
+				return nil
+			}
+			if opts.input == "" && len(positional) > 0 {
+				opts.input = positional[0]
+			}
+			if opts.output == "" && len(positional) > 1 {
+				opts.output = positional[1]
+			}
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator - OFD 文件创建工具")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator -i document.yaml -o result.ofd [选项]")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.input, "input", "i", "", "manifest 文件路径；使用 - 从标准输入读取")
+	flags.StringVarP(&opts.output, "output", "o", "", "OFD 输出路径；使用 - 写入标准输出")
 	flags.StringVar(&opts.assetRoot, "asset-root", "", "资源根目录，默认使用 manifest 所在目录")
 	flags.StringVar(&opts.format, "format", "auto", "manifest 格式：auto、json、yaml 或 toml")
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
@@ -377,24 +429,11 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.check, "check", false, "只解析并校验 manifest，不写出 OFD")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.completeTextCodeDeltas, "complete-text-code-deltas", false, "自动补全多字符 TextCode 的 DeltaX 和 DeltaY")
-	flags.BoolVar(&opts.help, "help", false, "显示帮助")
-	flags.Usage = func() {
-		_, _ = fmt.Fprintln(output, "ofd-creator - OFD 文件创建工具")
-		_, _ = fmt.Fprintln(output, "用法：ofd-creator -i document.yaml -o result.ofd [选项]")
-		_, _ = fmt.Fprintln(output)
-		flags.PrintDefaults()
-	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &options{help: true}, nil
-		}
+	if err := root.Execute(); err != nil {
 		return nil, err
 	}
-	if opts.input == "" && flags.NArg() > 0 {
-		opts.input = flags.Arg(0)
-	}
-	if opts.output == "" && flags.NArg() > 1 {
-		opts.output = flags.Arg(1)
+	if opts.help {
+		return opts, nil
 	}
 	return opts, nil
 }

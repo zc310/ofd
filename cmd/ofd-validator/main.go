@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -51,9 +51,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(stderr, "ofd-validator:", err)
-		}
+		_, _ = fmt.Fprintln(stderr, "ofd-validator:", err)
 		return exitUsage
 	}
 	if opts.help {
@@ -64,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	if err := validateOptions(opts); err != nil {
-		fmt.Fprintln(stderr, "ofd-validator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-validator:", err)
 		return exitUsage
 	}
 
@@ -85,12 +83,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	instance, err := validator.New(validatorOptions...)
 	if err != nil {
-		fmt.Fprintln(stderr, "ofd-validator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-validator:", err)
 		return exitUsage
 	}
 	report := instance.ValidatePath(context.Background(), opts.input)
 	if err := writeReport(opts, report, stdout); err != nil {
-		fmt.Fprintln(stderr, "ofd-validator:", err)
+		_, _ = fmt.Fprintln(stderr, "ofd-validator:", err)
 		return exitUsage
 	}
 	return report.ExitCode(opts.failOnWarning)
@@ -109,10 +107,40 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		maxXMLNodes:  2_000_000,
 		maxXMLDepth:  1000,
 	}
-	flags := flag.NewFlagSet("ofd-validator", flag.ContinueOnError)
-	flags.SetOutput(output)
-	flags.StringVar(&opts.output, "o", "", "报告输出路径；使用 - 输出到标准输出")
-	flags.StringVar(&opts.output, "output", "", "报告输出路径；使用 - 输出到标准输出")
+	root := &cobra.Command{
+		Use:           "ofd-validator [flags] input.ofd",
+		Short:         "OFD 文件校验工具",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.version || opts.help {
+				return nil
+			}
+			if len(positional) == 0 {
+				return errors.New("缺少输入 OFD 文件")
+			}
+			if len(positional) != 1 {
+				return errors.New("必须且只能指定一个输入 OFD 文件")
+			}
+			opts.input = positional[0]
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-validator - OFD 文件校验工具")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-validator [选项] input.ofd")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；使用 - 输出到标准输出")
 	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json 或 pdf")
 	flags.StringVar(&opts.mode, "mode", opts.mode, "校验模式：strict、compat 或 structural")
 	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的中文字体文件")
@@ -130,33 +158,15 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.noScanXML, "no-scan-xml", false, "只解析由 OFD 引用到的 XML 文件")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出校验器版本")
-	flags.Usage = func() {
-		_, _ = fmt.Fprintln(output, "ofd-validator - OFD 文件校验工具")
-		_, _ = fmt.Fprintln(output, "用法：ofd-validator [选项] input.ofd")
-		_, _ = fmt.Fprintln(output)
-		flags.PrintDefaults()
-	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return &options{help: true}, nil
-		}
+	if err := root.Execute(); err != nil {
 		return nil, err
 	}
-	flags.Visit(func(flag *flag.Flag) {
-		if flag.Name == "format" {
-			opts.formatSet = true
-		}
-	})
-	if opts.version {
+	if opts.help || opts.version {
 		return opts, nil
 	}
-	if flags.NArg() != 1 {
-		if flags.NArg() == 0 {
-			return nil, errors.New("缺少输入 OFD 文件")
-		}
-		return nil, errors.New("必须且只能指定一个输入 OFD 文件")
+	if flag := root.Flags().Lookup("format"); flag != nil {
+		opts.formatSet = flag.Changed
 	}
-	opts.input = flags.Arg(0)
 	return opts, nil
 }
 
