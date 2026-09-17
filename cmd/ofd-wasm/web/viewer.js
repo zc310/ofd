@@ -309,9 +309,9 @@ const thumbnailCache = new BlobURLCache(64 << 20, url =>
   Array.from(document.querySelectorAll('.thumbnail img')).some(image => !image.hidden && image.src === url));
 const fallbackFontURLs = [
   {
-    family: '思源黑体',
-    url: 'https://raw.githubusercontent.com/google/fonts/2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
-    alternateURL: 'https://cdn.jsdelivr.net/gh/google/fonts@2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf',
+    family: 'Smiley Sans',
+    url: 'https://cdn.jsdelivr.net/npm/@xiao-xue-seng/zhuque-fangsong/dist/xxx.woff2',
+    alternateURL: 'https://raw.githubusercontent.com/deepin-community/fonts-smiley-sans/master/SmileySans-Oblique.ttf.woff2',
     weight: 400,
   },
 ];
@@ -368,6 +368,7 @@ let pageLayout = (() => {
 let zoomGeneration = 0;
 const thumbnailsStorageKey = 'ofd-show-thumbnails';
 const renderFormatStorageKey = 'ofd-render-format';
+const thumbnailRenderFormat = 'png';
 const clarityPriorityStorageKey = 'ofd-clarity-priority';
 let thumbnailsVisible = (() => {
   try {
@@ -1433,6 +1434,7 @@ function updateNavigation() {
   infoToggle.disabled = pageInfos.length === 0;
   pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
   renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
+  clarityPrioritySelect.disabled = documentActionBusy || pageInfos.length === 0 || !imageRenderFormat();
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 }
 
@@ -1793,7 +1795,13 @@ function loadText(index, pinned = false) {
 }
 
 function pageDPI() {
-  return clarityPriority ? Math.max(96, Math.min(300, Math.round(96 * zoom))) : 96;
+  return imageRenderFormat() && clarityPriority
+    ? Math.max(96, Math.min(300, Math.round(96 * zoom)))
+    : 96;
+}
+
+function imageRenderFormat() {
+  return renderFormat === 'png' || renderFormat === 'jpg';
 }
 
 function cacheKey(kind, index, generation, dpi, format = renderFormat) {
@@ -1971,7 +1979,7 @@ function loadThumbnail(index) {
   if (!button) return;
   const generation = documentGeneration;
   const image = button.querySelector('img');
-  const format = renderFormat;
+  const format = thumbnailRenderFormat;
   const key = cacheKey('thumbnail', index, generation, 15, format);
   const cached = thumbnailCache.get(key);
   if (cached) {
@@ -1983,7 +1991,7 @@ function loadThumbnail(index) {
   }
   if (thumbnailRequests.has(key)) {
     return thumbnailRequests.get(key).then(url => {
-      if (url && format === renderFormat && generation === documentGeneration) {
+      if (url && generation === documentGeneration) {
         showImageWhenReady(image, url);
         button.classList.remove('loading');
       }
@@ -2047,7 +2055,7 @@ function flushThumbnailBatch() {
   const generation = entries[0].generation;
   const active = entries.filter(entry => !entry.cancelled && entry.generation === generation);
   if (!active.length) return;
-  const format = active[0].format;
+  const format = thumbnailRenderFormat;
   const renderRequest = engine.renderPages(
     active.map(entry => entry.index),
     { format, dpi: 15, background: transparentRenderBackground },
@@ -2057,7 +2065,7 @@ function flushThumbnailBatch() {
   renderRequest.then(images => {
     images.forEach((data, index) => {
       const entry = active[index];
-      if (entry.cancelled || entry.format !== renderFormat || entry.generation !== documentGeneration) return;
+      if (entry.cancelled || entry.generation !== documentGeneration) return;
       const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
       thumbnailCache.set(entry.key, url, data.byteLength);
       entry.image.src = url;
@@ -3090,14 +3098,20 @@ function setRenderFormat(value) {
   const changed = renderFormat !== value;
   renderFormat = value;
   renderFormatSelect.value = value;
+  if (!imageRenderFormat()) {
+    clarityPriority = false;
+    clarityPrioritySelect.checked = false;
+    try {
+      localStorage.setItem(clarityPriorityStorageKey, 'false');
+    } catch (_) {}
+  }
+  updateNavigation();
   try {
     localStorage.setItem(renderFormatStorageKey, value);
   } catch (_) {}
   if (!changed || !pageInfos.length) return;
   cancelRequests(pageRequests);
-  cancelRequests(thumbnailRequests);
   pageCache.clear();
-  thumbnailCache.clear();
   resetRenderProgress();
   pageCards.forEach(card => {
     card.classList.add('loading');
@@ -3105,25 +3119,17 @@ function setRenderFormat(value) {
     image.hidden = true;
     image.removeAttribute('src');
   });
-  thumbnailButtons.forEach(button => {
-    const image = button?.querySelector('img');
-    if (image) {
-      image.hidden = true;
-      image.removeAttribute('src');
-    }
-  });
   pageCards.forEach((card, index) => {
     if (!card) return;
     const bounds = card.getBoundingClientRect();
     if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
   });
   scheduleVirtualUpdate();
-  scheduleThumbnailVirtualUpdate();
 }
 
 function setClarityPriority(enabled) {
   const previousDPI = pageDPI();
-  clarityPriority = !!enabled;
+  clarityPriority = imageRenderFormat() && !!enabled;
   clarityPrioritySelect.checked = clarityPriority;
   try {
     localStorage.setItem(clarityPriorityStorageKey, String(clarityPriority));
@@ -3181,10 +3187,10 @@ try {
   document.body.classList.toggle('hide-thumbnails', !thumbnailsVisible);
 }
 try {
-  renderFormatSelect.value = renderFormat;
+  setRenderFormat(renderFormat);
 } catch (_) {}
 try {
-  clarityPrioritySelect.checked = clarityPriority;
+  setClarityPriority(clarityPriority);
 } catch (_) {}
 try {
   darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
