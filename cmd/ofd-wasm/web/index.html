@@ -4,12 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#172033">
+  <meta name="description" content="OFD 文档在浏览器中直接查看的 WebAssembly 阅读器，支持页面缩放、缩略图、文字搜索与复制、打印与 PDF/PNG/JPG/TXT 导出，无需安装插件。">
+  <meta name="keywords" content="OFD,OFD 阅读器,OFD 在线查看,WASM,WebAssembly,国产版式文件,版式文档,文档浏览,PDF 转换">
+  <meta name="author" content="zc310/ofd">
+  <meta name="application-name" content="OFD WASM 阅读器">
+  <meta name="robots" content="index, follow">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="OFD WASM 阅读器">
+  <meta property="og:description" content="基于 WebAssembly 的 OFD 文档阅读器，在浏览器中直接查看、搜索、打印和导出 OFD 版式文件。">
+  <meta property="og:locale" content="zh_CN">
+  <meta name="twitter:card" content="summary">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400..600,0..1,0" rel="stylesheet">
+  <link rel="preload" href="material-symbols-outlined-subset.woff2" as="font" type="font/woff2" crossorigin>
   <title>OFD WASM 阅读器</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "OFD WASM 阅读器",
+    "alternateName": "OFD 在线阅读器",
+    "applicationCategory": "WebApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "zh-CN",
+    "description": "基于 WebAssembly 的 OFD 文档阅读器，在浏览器中直接查看、缩放、搜索、打印和导出 OFD 版式文件。",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+    "featureList": "页面浏览与缩放,页面缩略图导航,文字搜索与复制,打印与导出 PDF/PNG/JPG/TXT,深色阅读模式,响应式移动端支持"
+  }
+  </script>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
     * { box-sizing: border-box; }
@@ -98,7 +120,8 @@
     #file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
     button, input { font: inherit; }
      button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
-     .material-symbols-outlined { font-size: 19px; line-height: 1; font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
+      @font-face { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: 400; font-display: block; src: url('material-symbols-outlined-subset.woff2') format('woff2'); }
+      .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-size: 19px; line-height: 1; font-feature-settings: 'rlig'; font-variation-settings: 'wght' 500, 'FILL' 0, 'GRAD' 0, 'opsz' 20; }
      .mobile-toolbar-toggle { display: none; }
     header button { border-color: #ffffff38; background: #263552; color: #fff; }
     header button:hover:not(:disabled) { background: #34476c; }
@@ -114,10 +137,16 @@
     #search-status { color: #49556a; font-size: 13px; white-space: nowrap; }
     #status { display: flex; min-height: 1.5em; align-items: center; gap: 10px; padding: 8px 18px; background: #eef1f5; color: #49556a; font-size: 13px; }
     #status-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #status-message.copy-feedback { color: #2f7d4a; }
-    #render-progress { width: 120px; height: 8px; accent-color: #2476bd; }
-    #render-progress-label { min-width: 72px; color: #667188; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    #back-to-top { position: fixed; right: 24px; bottom: 24px; z-index: 9; display: inline-flex; min-width: 42px; min-height: 42px; align-items: center; justify-content: center; border: 1px solid #ffffff66; border-radius: 50%; background: #263552e8; color: #fff; box-shadow: 0 3px 12px #17203340; font-size: 20px; line-height: 1; }
+     #status-message.copy-feedback { color: #2f7d4a; }
+     #render-progress { width: 120px; height: 8px; accent-color: #2476bd; }
+     #render-progress-label { min-width: 72px; color: #667188; font-variant-numeric: tabular-nums; white-space: nowrap; }
+     .startup-screen { position: fixed; inset: 0; z-index: 100; display: grid; place-content: center; gap: 16px; padding: 24px; background: #cfd5de; color: #172033; text-align: center; }
+     .startup-screen[hidden] { display: none; }
+     .startup-screen h1 { margin: 0; font-size: 24px; }
+     .startup-screen p { margin: 0; color: #49556a; font-size: 14px; }
+     #startup-progress { width: min(360px, calc(100vw - 48px)); height: 10px; accent-color: #2476bd; }
+     #startup-progress-label { color: #667188; font-size: 13px; font-variant-numeric: tabular-nums; }
+     #back-to-top { position: fixed; right: 24px; bottom: 24px; z-index: 9; display: inline-flex; min-width: 42px; min-height: 42px; align-items: center; justify-content: center; border: 1px solid #ffffff66; border-radius: 50%; background: #263552e8; color: #fff; box-shadow: 0 3px 12px #17203340; font-size: 20px; line-height: 1; }
     #back-to-top:hover { background: #34476c; }
     #back-to-top[hidden] { display: none; }
     body.dark-reading #render-progress-label { color: #aeb9ca; }
@@ -142,7 +171,9 @@
     .page-surface > .page-image, .page-surface > .text-layer { position: absolute; inset: 0; }
      body.dark-reading { background: #1b2029; color: #e6ebf2; }
      body.dark-reading .reader { background: #1f252f; }
-     body.dark-reading #status { background: #252c38; color: #aeb9ca; }
+       body.dark-reading #status { background: #252c38; color: #aeb9ca; }
+       body.dark-reading .startup-screen { background: #252c38; color: #e6ebf2; }
+       body.dark-reading .startup-screen p, body.dark-reading #startup-progress-label { color: #aeb9ca; }
     body.dark-reading .thumbnail { border-color: #475365; background: var(--document-background, #303947); box-shadow: 0 2px 8px #00000040; }
     body.dark-reading .thumbnail:hover { border-color: #80b4e5; }
     body.dark-reading .thumbnail.active { border-color: #80b4e5; box-shadow: inset 0 0 0 2px #80b4e5, 0 3px 10px #00000050; }
@@ -281,6 +312,19 @@
   </style>
 </head>
 <body>
+  <noscript>
+    <main style="margin: 24px; font-family: system-ui, sans-serif; line-height: 1.7;">
+      <h1>OFD WASM 阅读器</h1>
+      <p>OFD WASM 阅读器是基于 WebAssembly 的 OFD 文档阅读器，可直接在浏览器中查看、搜索、打印和导出 OFD 版式文件（中华人民共和国国家版式文档格式）。</p>
+      <p>本页面需要启用 JavaScript 才能运行。启用 JavaScript 后，点击“打开文件”或直接将 OFD 文件拖入页面即可开始阅读。</p>
+    </main>
+  </noscript>
+  <section id="startup-screen" class="startup-screen" aria-live="polite" aria-label="正在准备阅读器">
+    <h1>OFD WASM 阅读器</h1>
+    <p id="startup-message">正在加载 WASM 模块...</p>
+    <progress id="startup-progress" max="2" value="0"></progress>
+    <span id="startup-progress-label">[1/2] 加载 WASM 模块</span>
+  </section>
   <a class="skip-link" href="#pages">跳到阅读区</a>
   <header>
     <div class="brand">
@@ -376,7 +420,7 @@
   </header>
   <div id="status">
     <span id="status-message">正在加载 WASM Worker...</span>
-    <progress id="render-progress" max="1" value="0" hidden></progress>
+     <progress id="render-progress" max="1" value="0" hidden></progress>
     <span id="render-progress-label" hidden></span>
     <button id="cancel-action" type="button" hidden>取消操作</button>
   </div>

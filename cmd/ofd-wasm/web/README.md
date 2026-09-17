@@ -141,6 +141,8 @@ ofd.close()
 
 ### 页面与字体
 
+- 工具栏图标使用本地 `material-symbols-outlined-subset.woff2`，只包含当前页面使用的 Material Symbols 图标连字，不依赖 Google Fonts 远程加载。
+- 本地 Material Symbols 字体来源于 Google Material Symbols，遵循 Apache License 2.0；第三方声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - `ofd.pages()` 返回所有页面的页数和尺寸。
 - 页面尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。
 - 页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`；仍无效时回退为 A4。

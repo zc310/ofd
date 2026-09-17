@@ -231,6 +231,10 @@ const statusMessage = document.querySelector('#status-message');
 const cancelAction = document.querySelector('#cancel-action');
 const renderProgress = document.querySelector('#render-progress');
 const renderProgressLabel = document.querySelector('#render-progress-label');
+const startupScreen = document.querySelector('#startup-screen');
+const startupMessage = document.querySelector('#startup-message');
+const startupProgress = document.querySelector('#startup-progress');
+const startupProgressLabel = document.querySelector('#startup-progress-label');
 const file = document.querySelector('#file');
 const documentName = document.querySelector('#document-name');
 const cancelOpen = document.querySelector('#cancel-open');
@@ -418,6 +422,10 @@ let documentActionBusy = false;
 let documentActionCancelRequested = false;
 let exportRequest;
 let exportActive = false;
+let startupProgressActive = true;
+let startupWasmReady = false;
+let startupFontReady = false;
+let startupFontError;
 let renderedPages = new Set();
 let failedPages = new Set();
 let copyFeedbackTimer;
@@ -1156,6 +1164,34 @@ function resetRenderProgress() {
   renderProgressLabel.hidden = true;
 }
 
+function updateStartupProgress() {
+  if (!startupProgressActive) return;
+  const completed = Number(startupWasmReady) + Number(startupFontReady);
+  startupProgress.value = completed;
+  if (startupFontError) {
+    startupProgressLabel.textContent = '[2/2] 默认中文字体加载失败';
+    startupMessage.textContent = `默认中文字体加载失败：${startupFontError.message}`;
+    setStatus(`默认中文字体加载失败：${startupFontError.message}`);
+    return;
+  }
+  if (!startupWasmReady) {
+    startupProgressLabel.textContent = '[1/2] 加载 WASM 模块';
+    startupMessage.textContent = '正在加载 WASM 模块...';
+    setStatus('正在加载 WASM 模块...');
+    return;
+  }
+  if (!startupFontReady) {
+    startupProgressLabel.textContent = '[2/2] 加载默认中文字体';
+    startupMessage.textContent = '正在加载默认中文字体...';
+    setStatus('正在加载默认中文字体...');
+    return;
+  }
+  startupProgressLabel.textContent = '[2/2] 已准备就绪';
+  startupMessage.textContent = '已准备就绪，请选择 OFD 文件。';
+  setStatus('已准备就绪，请选择 OFD 文件。');
+  startupScreen.hidden = true;
+}
+
 function updateRenderProgress() {
   const total = pageInfos.length;
   if (exportActive) return;
@@ -1404,8 +1440,13 @@ function loadFallbackFont(source) {
 
 // 阅读器空闲时开始下载字体。之后打开文档时，可以在首个页面渲染前
 // 将已加载的字体数据传给 WASM。
-void preloadFallbackFonts().catch(error => {
-  setStatus(`默认中文字体加载失败：${error.message}`);
+updateStartupProgress();
+void preloadFallbackFonts().then(() => {
+  startupFontReady = true;
+  updateStartupProgress();
+}).catch(error => {
+  startupFontError = error;
+  updateStartupProgress();
 });
 
 function updateNavigation() {
@@ -2176,6 +2217,8 @@ async function loadFile() {
 
 async function openSelectedFile(selected) {
   if (!selected) return;
+  startupProgressActive = false;
+  startupScreen.hidden = true;
   saveReadingPosition();
   const generation = ++documentGeneration;
   opening = true;
@@ -2259,7 +2302,7 @@ async function openSelectedFile(selected) {
     current = restoreReadingPosition(selected, pageInfos.length);
     restorePageRotation();
     buildPages();
-    setStatus(`${selected.name}，共 ${pageInfos.length} 页。页面进入附近区域时才会渲染。`);
+    setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
     void saveRecentFile(selected);
     void reportMemory('打开文档');
@@ -3424,8 +3467,16 @@ window.addEventListener('beforeunload', () => {
   engine.worker.terminate();
 });
 
-engine.ready.then(() => setStatus('WASM Worker 已就绪，选择一个 OFD 文件开始阅读。'))
-  .catch(error => setStatus(`WASM Worker 加载失败：${error.message}`));
+engine.ready.then(() => {
+  startupWasmReady = true;
+  updateStartupProgress();
+}).catch(error => {
+  if (startupProgressActive) {
+    startupProgressLabel.textContent = '[1/2] WASM 模块加载失败';
+    startupMessage.textContent = `WASM Worker 加载失败：${error.message}`;
+    setStatus(`WASM Worker 加载失败：${error.message}`);
+  }
+});
 
 function setRecentPanelOpen(open) {
   recentPanel.hidden = !open;
