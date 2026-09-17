@@ -40,7 +40,9 @@ endif
 
 PLATFORM := $(GOOS)-$(GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
-VIEWER_LDFLAGS := $(if $(filter windows,$(GOOS)),-ldflags "-H=windowsgui",)
+GO_LDFLAGS := -s -w
+GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS)"
+VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 DIST_DIR := dist
 BUILD_DIR := .build
 BIN_DIR := $(BUILD_DIR)/bin/$(PLATFORM)
@@ -149,7 +151,7 @@ build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
-	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build -o "$@" ./cmd/ofd-wasm
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-wasm
 
 $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
@@ -180,32 +182,32 @@ build-windows-arm64:
 $(VIEWER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	@if [ "$(GOOS)" = "windows" ] && ! command -v "$(CC)" >/dev/null 2>&1; then echo "错误: 找不到 Windows CGO 编译器 $(CC)，请安装 MinGW-w64 或通过 CC 指定编译器。" >&2; exit 1; fi
-	CC=$(CC) CXX=$(CXX) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(VIEWER_LDFLAGS) -o "$@" ./cmd/ofd-viewer
+	CC=$(CC) CXX=$(CXX) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(VIEWER_BUILD_FLAGS) -o "$@" ./cmd/ofd-viewer
 
 $(CONVERTER): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-converter
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-converter
 
 $(VALIDATOR): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-validator
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-validator
 
 $(ANALYZER): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-analyzer
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-analyzer
 
 $(ARCHIVE): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-archive
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-archive
 
 $(CREATOR): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-creator
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-creator
 
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
-	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o "$@" ./cmd/ofd-thumbnailer
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-thumbnailer
 endif
 
 package: package-desktop package-viewer-android-zip package-wasm-web $(WINDOWS_PACKAGE_TARGETS) $(DARWIN_CROSS_PACKAGE_TARGETS) $(WINDOWS_ARM64_PACKAGE_TARGETS) $(LINUX_ARM64_PACKAGE_TARGETS)
