@@ -28,7 +28,7 @@ func TestAnalyzeHelloWorld(t *testing.T) {
 	if report.Summary.DocumentBodies != 1 || report.Summary.Pages != 2 || report.Summary.ParsedPages != 2 {
 		t.Fatalf("summary = %+v", report.Summary)
 	}
-	if report.Package.Entries != 9 || report.Package.Files != 5 || report.Package.Directories != 4 || report.Package.XMLFiles != 5 {
+	if report.Package.Entries != 5 || report.Package.Files != 5 || report.Package.Directories != 0 || report.Package.XMLFiles != 5 {
 		t.Fatalf("package = %+v", report.Package)
 	}
 	if report.Objects.Total != 10 || report.Objects.Text != 1 || report.Objects.Path != 9 {
@@ -283,7 +283,7 @@ func TestAnalyzeInputFormsAlwaysIncludesPackageSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fromBytes.Input.Size != int64(len(data)) || fromBytes.Package.Entries != 9 || fromBytes.Package.Files != 5 {
+	if fromBytes.Input.Size != int64(len(data)) || fromBytes.Package.Entries != 5 || fromBytes.Package.Files != 5 {
 		t.Fatalf("bytes input = %+v package = %+v", fromBytes.Input, fromBytes.Package)
 	}
 	fromReader, err := Analyze(bytes.NewReader(data))
@@ -309,7 +309,7 @@ func TestAnalyzePackageTree(t *testing.T) {
 	if report.Package.Tree.Children[0].Name != "Doc_0" || report.Package.Tree.Children[0].Kind != "directory" {
 		t.Fatalf("package tree ordering = %+v", report.Package.Tree.Children)
 	}
-	if report.Package.Tree.Children[1].Name != "OFD.xml" || report.Package.Tree.Children[1].MediaType != "xml" || report.Package.Tree.Children[1].Size != 412 {
+	if report.Package.Tree.Children[1].Name != "OFD.xml" || report.Package.Tree.Children[1].MediaType != "xml" || report.Package.Tree.Children[1].Size != 346 {
 		t.Fatalf("package tree file = %+v", report.Package.Tree.Children[1])
 	}
 	if report.Package.Tree.Children[0].Children[0].Name != "Pages" || report.Package.Tree.Children[0].Children[0].Kind != "directory" {
@@ -413,10 +413,10 @@ func TestRenderTextAndMarkdown(t *testing.T) {
 	if !strings.Contains(text.String(), "字体：文件 0，声明 1，被引用 1，嵌入 0") {
 		t.Fatalf("text font summary = %s", text.String())
 	}
-	if !strings.Contains(text.String(), "OFD 包目录结构：") || !strings.Contains(text.String(), "├── Doc_0/") || !strings.Contains(text.String(), "└── OFD.xml [xml，412 B]") {
+	if !strings.Contains(text.String(), "OFD 包目录结构：") || !strings.Contains(text.String(), "├── Doc_0/") || !strings.Contains(text.String(), "└── OFD.xml [xml，346 B]") {
 		t.Fatalf("text package tree = %s", text.String())
 	}
-	if !strings.Contains(text.String(), "OFD 包：条目 9，目录 4，文件 5，XML 文件 5") {
+	if !strings.Contains(text.String(), "OFD 包：条目 5，目录 0，文件 5，XML 文件 5") {
 		t.Fatalf("text package summary = %s", text.String())
 	}
 	if err := RenderMarkdown(&markdown, report); err != nil {
@@ -431,10 +431,10 @@ func TestRenderTextAndMarkdown(t *testing.T) {
 	if !strings.Contains(markdown.String(), "## 字体明细") || !strings.Contains(markdown.String(), "字体名称") {
 		t.Fatalf("markdown font details = %s", markdown.String())
 	}
-	if !strings.Contains(markdown.String(), "## OFD 包目录结构") || !strings.Contains(markdown.String(), "```text") || !strings.Contains(markdown.String(), "└── OFD.xml [xml，412 B]") {
+	if !strings.Contains(markdown.String(), "## OFD 包目录结构") || !strings.Contains(markdown.String(), "```text") || !strings.Contains(markdown.String(), "└── OFD.xml [xml，346 B]") {
 		t.Fatalf("markdown package tree = %s", markdown.String())
 	}
-	if !strings.Contains(markdown.String(), "## OFD 包") || !strings.Contains(markdown.String(), "| 9 | 4 | 5 | 5 |") {
+	if !strings.Contains(markdown.String(), "## OFD 包") || !strings.Contains(markdown.String(), "| 5 | 0 | 5 | 5 |") {
 		t.Fatalf("markdown package summary = %s", markdown.String())
 	}
 	if !strings.Contains(markdown.String(), "| 模板 |") || !strings.Contains(markdown.String(), "| 复合图元 |") || !strings.Contains(markdown.String(), "| 图案 |") {

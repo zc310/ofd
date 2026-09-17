@@ -38,8 +38,8 @@ type Annot struct {
 	NoZoom bool `xml:"NoZoom,attr,omitempty"`
 	// NoRotate 是否在旋转页面时保持注解方向不变。
 	NoRotate bool `xml:"NoRotate,attr,omitempty"`
-	// ReadOnly 是否禁止修改该注解。
-	ReadOnly bool `xml:"ReadOnly,attr,omitempty"`
+	// ReadOnly 是否禁止修改该注解，未指定时按规范默认为 true。
+	ReadOnly OptionalBool `xml:"ReadOnly,attr,omitempty"`
 	// Remark 注解备注。
 	Remark *string `xml:"Remark,omitempty"`
 	// Parameters 注解参数集合。
