@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"
@@ -276,6 +277,229 @@ func TestExportPreservesDocumentMetadata(t *testing.T) {
 	}
 	if _, err := loaded.Build(baseDir, ""); err != nil {
 		t.Fatalf("build exported metadata manifest: %v", err)
+	}
+}
+
+func TestExportPreservesGradientColors(t *testing.T) {
+	data, err := creator.Marshal(creator.Document{
+		ID: "gradient-export-test",
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Path{X: 10, Y: 60, Width: 140, Height: 40, Data: "M 0 0 L 140 0 L 140 40 L 0 40 C", Fill: true, FillColor: &creator.Color{Axial: &creator.AxialShading{
+				MapType: "Reflect", MapUnit: 25, StartPoint: "0 0", EndPoint: "25 0",
+				Segments: []creator.ColorStop{{Position: 0, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, Color: creator.Color{R: 0, G: 0, B: 255}}},
+			}}},
+			creator.Path{X: 10, Y: 90, Width: 60, Height: 45, Data: "M 0 0 L 60 0 L 60 45 L 0 45 C", Fill: true, FillColor: &creator.Color{Radial: &creator.RadialShading{
+				StartPoint: "12 21", StartRadius: 3, EndPoint: "42 21", EndRadius: 15, Extend: 2,
+				Segments: []creator.ColorStop{{Position: 0, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, Color: creator.Color{R: 0, G: 0, B: 255}}},
+			}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := WriteManifest(data, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
+	if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := loaded.Pages[0].Layers[0].Items
+	if len(items) != 2 {
+		t.Fatalf("exported gradient items = %d, want 2", len(items))
+	}
+	axial := items[0].FillColor.Axial
+	if axial == nil || axial.MapType != "Reflect" || axial.MapUnit != 25 || axial.StartPoint != "0 0" || axial.EndPoint != "25 0" || len(axial.Segments) != 2 {
+		t.Fatalf("axial gradient was not preserved: %+v", items[0].FillColor)
+	}
+	if axial.Segments[0].Color.R != 255 || axial.Segments[1].Color.B != 255 {
+		t.Fatalf("axial segment colors were not preserved: %+v", axial.Segments)
+	}
+	radial := items[1].FillColor.Radial
+	if radial == nil || radial.StartPoint != "12 21" || radial.StartRadius != 3 || radial.EndPoint != "42 21" || radial.EndRadius != 15 || radial.Extend != 2 || len(radial.Segments) != 2 {
+		t.Fatalf("radial gradient was not preserved: %+v", items[1].FillColor)
+	}
+	if _, err := loaded.Build(baseDir, ""); err != nil {
+		t.Fatalf("build exported gradient manifest: %v", err)
+	}
+}
+
+func TestExportPreservesGouraudLaGouraudAndPatternColors(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "shading.ofd")
+	var output bytes.Buffer
+	if err := WriteManifest(input, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
+	if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gouraud, laGouraud, pattern := 0, 0, 0
+	for _, page := range loaded.Pages {
+		for _, layer := range page.Layers {
+			for _, item := range layer.Items {
+				if item.FillColor == nil {
+					continue
+				}
+				switch {
+				case item.FillColor.Gouraud != nil:
+					gouraud++
+					if len(item.FillColor.Gouraud.Points) < 3 {
+						t.Fatalf("gouraud points lost: %+v", item.FillColor.Gouraud)
+					}
+					for _, point := range item.FillColor.Gouraud.Points {
+						if point.Color.R == 0 && point.Color.G == 0 && point.Color.B == 0 {
+							t.Fatalf("gouraud point color lost: %+v", point)
+						}
+					}
+				case item.FillColor.LaGouraud != nil:
+					laGouraud++
+					if item.FillColor.LaGouraud.VerticesPerRow < 2 || len(item.FillColor.LaGouraud.Points) == 0 {
+						t.Fatalf("la_gouraud grid lost: %+v", item.FillColor.LaGouraud)
+					}
+				case item.FillColor.Pattern != nil:
+					pattern++
+					value := item.FillColor.Pattern
+					if value.Width != 20 || value.Height != 20 || len(value.Items) == 0 {
+						t.Fatalf("pattern cell content lost: %+v", value)
+					}
+					if len(value.Items[0].Data) == 0 {
+						t.Fatalf("pattern item data lost: %+v", value.Items[0])
+					}
+				}
+			}
+		}
+	}
+	if gouraud != 3 {
+		t.Fatalf("gouraud fills exported = %d, want 3", gouraud)
+	}
+	if laGouraud != 3 {
+		t.Fatalf("la_gouraud fills exported = %d, want 3", laGouraud)
+	}
+	if pattern != 4 {
+		t.Fatalf("pattern fills exported = %d, want 4", pattern)
+	}
+	if _, err := loaded.Build(baseDir, ""); err != nil {
+		t.Fatalf("build exported shading manifest: %v", err)
+	}
+}
+
+func TestExportPreservesItemClips(t *testing.T) {
+	assetRoot := t.TempDir()
+	var output bytes.Buffer
+	input := filepath.Join("..", "..", "test", "testdata", "intro.ofd")
+	if err := WriteManifest(input, &output, Options{AssetRoot: assetRoot}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(assetRoot, "document.yaml")
+	if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clips, areas := 0, 0
+	for _, page := range loaded.Pages {
+		for _, layer := range page.Layers {
+			for _, item := range layer.Items {
+				clips += len(item.Clips)
+				for _, clip := range item.Clips {
+					areas += len(clip.Areas)
+					for _, area := range clip.Areas {
+						if area.Path != nil && (area.Path.Data == "" || area.Path.Boundary.Width == 0) {
+							t.Fatalf("clip path content lost: %+v", area.Path)
+						}
+					}
+				}
+			}
+		}
+	}
+	if clips == 0 || areas < clips {
+		t.Fatalf("item clips were not preserved: clips=%d areas=%d", clips, areas)
+	}
+	if _, err := loaded.Build(baseDir, ""); err != nil {
+		t.Fatalf("build exported clips manifest: %v", err)
+	}
+}
+
+func TestExportPreservesAnnotationsAndVersions(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	visible := true
+	notReadOnly := false
+	source, err := creator.Marshal(creator.Document{
+		ID: "annotation-version-export",
+		Versions: []creator.DocumentVersion{{
+			ID: "v1", Index: 1, Current: false, Version: "1.0", Name: "审查版本", CreationDate: created,
+			Files: []creator.VersionFile{{ID: "F1", Path: "Document.xml"}},
+		}},
+		Annotations: []creator.AnnotationPage{{
+			Page: 0,
+			Items: []creator.Annotation{{
+				ID: 9001, Type: "Highlight", Creator: "tester", LastModDate: created,
+				Visible: &visible, Subtype: "manual", ReadOnlyValue: &notReadOnly,
+				Remark:     "需要确认",
+				Parameters: []creator.AnnotationParameter{{Name: "author", Value: "tester"}},
+				Boundary:   &creator.Box{X: 10, Y: 10, Width: 80, Height: 20},
+				Items:      []creator.Item{creator.Path{X: 10, Y: 10, Width: 80, Height: 20, Data: "M 0 0 L 80 0 L 80 20 C"}},
+			}},
+		}},
+		Pages: []creator.Page{{
+			Items: []creator.Item{creator.Path{X: 1, Y: 1, Width: 5, Height: 5, Data: "M 0 0 L 5 5"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRoot := t.TempDir()
+	var output bytes.Buffer
+	if err := WriteManifest(source, &output, Options{AssetRoot: assetRoot}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
+	if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Document.Annotations) != 1 {
+		t.Fatalf("annotations = %d", len(loaded.Document.Annotations))
+	}
+	page := loaded.Document.Annotations[0]
+	if page.Page != 0 || len(page.Items) != 1 {
+		t.Fatalf("annotation page = %+v", page)
+	}
+	annotation := page.Items[0]
+	if annotation.ID != 9001 || annotation.Type != "Highlight" || annotation.Creator != "tester" || annotation.Remark != "需要确认" || annotation.Visible == nil || !*annotation.Visible || annotation.ReadOnly == nil || *annotation.ReadOnly || len(annotation.Parameters) != 1 || annotation.Boundary == nil || len(annotation.Items) != 1 {
+		t.Fatalf("annotation was not preserved: %+v", annotation)
+	}
+	if len(loaded.Document.Versions) != 1 {
+		t.Fatalf("versions = %d", len(loaded.Document.Versions))
+	}
+	version := loaded.Document.Versions[0]
+	if version.ID != "v1" || version.Index != 1 || version.Current || version.Version != "1.0" || version.Name != "审查版本" || len(version.Files) != 1 || version.DocRoot == "" || version.DocRootName == "" {
+		t.Fatalf("version was not preserved: %+v", version)
+	}
+	document, err := loaded.Build(baseDir, assetRoot)
+	if err != nil {
+		t.Fatalf("build exported annotation/version manifest: %v", err)
+	}
+	if len(document.Annotations) != 1 || len(document.Annotations[0].Items) != 1 || document.Annotations[0].Items[0].ID != 9001 || document.Annotations[0].Items[0].ReadOnlyValue == nil || *document.Annotations[0].Items[0].ReadOnlyValue {
+		t.Fatalf("built annotations = %+v", document.Annotations)
+	}
+	if len(document.Versions) != 1 || document.Versions[0].ID != "v1" || len(document.Versions[0].Files) != 1 {
+		t.Fatalf("built versions = %+v", document.Versions)
 	}
 }
 

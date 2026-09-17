@@ -94,7 +94,7 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 const (
 	imageCacheCapacity = 128
 	svgCacheCapacity   = 64
-	defaultRenderDPI   = 72
+	defaultRenderDPI   = 96
 )
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -319,30 +320,31 @@ func marshalBundleIndex(value BundleIndex, format string, jsonIndent bool) ([]by
 }
 
 type documentExporter struct {
-	ofd               *parser.OFD
-	document          *parser.Document
-	documentIndex     int
-	assetRoot         string
-	assetPrefix       string
-	fonts             map[models.StID]string
-	fontNames         map[string]bool
-	media             map[models.StID]string
-	drawParams        map[models.StID]string
-	composites        map[models.StID]bool
-	pageIndexes       map[models.StID]int
-	attachmentIDs     map[string]string
-	colorSpaces       map[models.StID]string
-	pageDrawParams    map[models.StID]string
-	pageFonts         map[models.StID]bool
-	pageComposites    map[models.StID]bool
-	pageMedia         map[models.StID]bool
-	pageColorSpaces   map[models.StID]bool
-	publicDrawParams  map[models.StID]bool
-	publicFonts       map[models.StID]bool
-	publicComposites  map[models.StID]bool
-	publicMedia       map[models.StID]bool
-	publicColorSpaces map[models.StID]bool
-	pageResources     []resourceSource
+	ofd                     *parser.OFD
+	document                *parser.Document
+	documentIndex           int
+	assetRoot               string
+	assetPrefix             string
+	fonts                   map[models.StID]string
+	fontNames               map[string]bool
+	media                   map[models.StID]string
+	drawParams              map[models.StID]string
+	composites              map[models.StID]bool
+	pageIndexes             map[models.StID]int
+	attachmentIDs           map[string]string
+	colorSpaces             map[models.StID]string
+	pageDrawParams          map[models.StID]string
+	pageFonts               map[models.StID]bool
+	pageComposites          map[models.StID]bool
+	pageMedia               map[models.StID]bool
+	pageColorSpaces         map[models.StID]bool
+	publicDrawParams        map[models.StID]bool
+	publicFonts             map[models.StID]bool
+	publicComposites        map[models.StID]bool
+	publicMedia             map[models.StID]bool
+	publicColorSpaces       map[models.StID]bool
+	pageResources           []resourceSource
+	skipInvalidDestinations bool
 }
 
 type resourceSource struct {
@@ -498,6 +500,11 @@ func (e *documentExporter) build() (manifest.Manifest, error) {
 	if err := e.exportDrawParams(&result); err != nil {
 		return manifest.Manifest{}, err
 	}
+	annotations, err := e.exportAnnotationPages()
+	if err != nil {
+		return manifest.Manifest{}, err
+	}
+	result.Document.Annotations = annotations
 	if len(result.Pages) == 0 {
 		return manifest.Manifest{}, errors.New("文档没有页面")
 	}
@@ -582,6 +589,14 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 		if param == nil {
 			return fmt.Errorf("绘制参数 %d 不存在", id)
 		}
+		fillColor, err := e.exportColor(param.FillColor)
+		if err != nil {
+			return fmt.Errorf("绘制参数 %s.fill_color: %w", e.drawParamName(models.StRefID(id)), err)
+		}
+		strokeColor, err := e.exportColor(param.StrokeColor)
+		if err != nil {
+			return fmt.Errorf("绘制参数 %s.stroke_color: %w", e.drawParamName(models.StRefID(id)), err)
+		}
 		value := manifest.DrawParam{
 			Name:        e.drawParamName(models.StRefID(id)),
 			LineWidth:   param.LineWidth,
@@ -590,8 +605,8 @@ func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
 			DashOffset:  param.DashOffset,
 			MiterLimit:  param.MiterLimit,
 			DashPattern: exportFloatArray(param.DashPattern),
-			FillColor:   e.exportColor(param.FillColor),
-			StrokeColor: e.exportColor(param.StrokeColor),
+			FillColor:   fillColor,
+			StrokeColor: strokeColor,
 		}
 		if param.Relative != 0 {
 			value.Relative = e.drawParamName(param.Relative)
@@ -749,7 +764,137 @@ func (e *documentExporter) documentInfo() (manifest.Document, error) {
 	if err := e.exportExtensions(&info); err != nil {
 		return manifest.Document{}, err
 	}
+	versions, err := e.exportVersions()
+	if err != nil {
+		return manifest.Document{}, err
+	}
+	info.Versions = versions
 	return info, nil
+}
+
+func (e *documentExporter) exportAnnotationPages() ([]manifest.AnnotationPage, error) {
+	var result []manifest.AnnotationPage
+	for pageIndex, page := range e.document.Pages {
+		if page == nil {
+			continue
+		}
+		annot := e.document.GetAnnotation(page.ID)
+		if annot == nil || len(annot.Annots) == 0 {
+			continue
+		}
+		items := make([]manifest.Annotation, 0, len(annot.Annots))
+		for annotIndex, value := range annot.Annots {
+			converted, err := e.exportAnnotation(value)
+			if err != nil {
+				return nil, fmt.Errorf("页面 %d 注解 %d: %w", pageIndex, annotIndex, err)
+			}
+			if converted != nil {
+				items = append(items, *converted)
+			}
+		}
+		if len(items) == 0 {
+			continue
+		}
+		result = append(result, manifest.AnnotationPage{Page: pageIndex, Items: items})
+	}
+	return result, nil
+}
+
+func (e *documentExporter) exportAnnotation(value *models.Annot) (*manifest.Annotation, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(value.Creator) == "" {
+		slog.Warn("跳过无创建者的注解", "annotation_id", value.ID, "type", value.Type)
+		return nil, nil
+	}
+	id, err := strconv.ParseUint(value.ID, 10, 64)
+	if err != nil {
+		slog.Warn("跳过 ID 非数字的注解", "annotation_id", value.ID, "type", value.Type)
+		return nil, nil
+	}
+	result := &manifest.Annotation{
+		ID:          id,
+		Type:        string(value.Type),
+		Creator:     value.Creator,
+		Subtype:     value.Subtype,
+		NoZoom:      value.NoZoom,
+		NoRotate:    value.NoRotate,
+		Visible:     value.Visible.Bool(),
+		Print:       value.Print.Bool(),
+		Remark:      valueOrEmpty(value.Remark),
+		LastModDate: formatDateTime(value.LastModDate),
+		ReadOnly:    value.ReadOnly.Bool(),
+	}
+	if value.Parameters != nil {
+		for _, parameter := range value.Parameters.Parameters {
+			result.Parameters = append(result.Parameters, manifest.AnnotationParameter{Name: parameter.Name, Value: parameter.Value})
+		}
+	}
+	if value.Appearance != nil {
+		if value.Appearance.Boundary != nil {
+			result.Boundary = exportBox(value.Appearance.Boundary)
+		}
+		previous := e.skipInvalidDestinations
+		e.skipInvalidDestinations = true
+		items, err := e.convertItems(value.Appearance.Items)
+		e.skipInvalidDestinations = previous
+		if err != nil {
+			return nil, fmt.Errorf("转换批注外观对象失败: %w", err)
+		}
+		result.Items = items
+	}
+	return result, nil
+}
+
+func (e *documentExporter) exportVersions() ([]manifest.Version, error) {
+	if e.documentIndex < 0 || e.documentIndex >= len(e.ofd.DocBodies) {
+		return nil, nil
+	}
+	body := e.ofd.DocBodies[e.documentIndex]
+	if body.Versions == nil {
+		return nil, nil
+	}
+	result := make([]manifest.Version, 0, len(body.Versions.VersionList))
+	for _, version := range body.Versions.VersionList {
+		value, err := e.document.LoadVersion(version.ID)
+		if err != nil {
+			return nil, fmt.Errorf("读取文档版本 %s 失败: %w", version.ID, err)
+		}
+		if value == nil {
+			continue
+		}
+		item := manifest.Version{
+			ID:      version.ID,
+			Index:   version.Index,
+			Current: version.Current,
+			Version: valueOrEmpty(value.Version),
+			Name:    valueOrEmpty(value.Name),
+		}
+		if value.CreationDate != nil && !value.CreationDate.IsZero() {
+			item.CreationDate = value.CreationDate.Format(time.RFC3339)
+		}
+		for _, file := range value.FileList.Files {
+			item.Files = append(item.Files, manifest.VersionFile{ID: file.ID, Path: file.Path.String()})
+		}
+		location := version.BaseLoc.Resolve("/")
+		docRoot := value.DocRoot.Resolve(location.Dir())
+		name := docRoot.Base()
+		if !docRoot.IsEmpty() && name != "" && name != "." && name != ".." {
+			data, err := e.document.FileCache.Read(docRoot.String())
+			if err != nil {
+				return nil, fmt.Errorf("读取文档版本 %s 文档根失败: %w", version.ID, err)
+			}
+			asset := filepath.Join("document", fmt.Sprintf("version-%s-%s", version.ID, name))
+			if err := e.writeAsset(asset, data); err != nil {
+				return nil, fmt.Errorf("写出文档版本 %s 文档根失败: %w", version.ID, err)
+			}
+			item.DocRoot = e.assetPath(asset)
+			item.DocRootName = name
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 func (e *documentExporter) exportAttachments(info *manifest.Document) error {
@@ -1090,9 +1235,15 @@ func formatDateTime(value models.DateTime) string {
 	return value.Format(time.RFC3339)
 }
 
+// errSkipAction 表示在批注外观转换中跳过目标页面缺失的无效动作。
+var errSkipAction = errors.New("跳转引用目标页面不存在")
+
 func (e *documentExporter) exportDestination(value models.CtDest) (manifest.GotoAction, error) {
 	page, ok := e.pageIndexes[models.StID(value.PageID)]
 	if !ok {
+		if e.skipInvalidDestinations {
+			return manifest.GotoAction{}, errSkipAction
+		}
 		return manifest.GotoAction{}, fmt.Errorf("跳转引用了不存在的页面 ID %d", value.PageID)
 	}
 	return manifest.GotoAction{Page: page, Type: string(value.Type), Left: value.Left, Top: value.Top, Right: value.Right, Bottom: value.Bottom, Zoom: value.Zoom}, nil
@@ -1492,6 +1643,9 @@ func (e *documentExporter) exportActionList(values []models.CtAction) ([]manifes
 	for index, value := range values {
 		action, err := e.exportAction(value)
 		if err != nil {
+			if e.skipInvalidDestinations && errors.Is(err, errSkipAction) {
+				continue
+			}
 			return nil, fmt.Errorf("[%d]: %w", index, err)
 		}
 		result = append(result, action)
@@ -1522,7 +1676,7 @@ func (e *documentExporter) exportAction(value models.CtAction) (manifest.Action,
 				return manifest.Action{}, err
 			}
 		} else {
-			return manifest.Action{}, errors.New("Goto 动作缺少 Dest 或 Bookmark")
+			return manifest.Action{}, errors.New("goto 动作缺少 Dest 或 Bookmark")
 		}
 		result.Goto = &gotoValue
 	}
@@ -1639,15 +1793,15 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 		result.CharDirection = text.CharDirection
 		result.Weight = text.Weight
 		result.Italic = text.Italic
-		result.FillColor = e.exportColor(text.FillColor)
-		result.StrokeColor = e.exportColor(text.StrokeColor)
-		for _, code := range text.TextCode {
-			if strings.TrimSpace(code.Value) == "" {
-				continue
-			}
-			x, y := code.X, code.Y
-			result.TextCodes = append(result.TextCodes, manifest.TextCode{Value: code.Value, X: &x, Y: &y, DeltaX: append([]float64(nil), code.DeltaX...), DeltaY: append([]float64(nil), code.DeltaY...)})
+		result.FillColor, err = e.exportColor(text.FillColor)
+		if err != nil {
+			return manifest.Item{}, err
 		}
+		result.StrokeColor, err = e.exportColor(text.StrokeColor)
+		if err != nil {
+			return manifest.Item{}, err
+		}
+		result.TextCodes = exportTextCodes(text.TextCode)
 		for _, transform := range text.CGTransform {
 			result.CGTransforms = append(result.CGTransforms, manifest.CGTransform{CodePosition: transform.CodePosition, CodeCount: transform.CodeCount, GlyphCount: transform.GlyphCount, Glyphs: append([]int(nil), transform.Glyphs...)})
 		}
@@ -1667,8 +1821,14 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 		fill := pathValue.Fill
 		result.Fill = &fill
 		result.Rule = pathValue.Rule
-		result.FillColor = e.exportColor(pathValue.FillColor)
-		result.StrokeColor = e.exportColor(pathValue.StrokeColor)
+		result.FillColor, err = e.exportColor(pathValue.FillColor)
+		if err != nil {
+			return manifest.Item{}, err
+		}
+		result.StrokeColor, err = e.exportColor(pathValue.StrokeColor)
+		if err != nil {
+			return manifest.Item{}, err
+		}
 		return result, nil
 	case models.PageItemImage:
 		imageValue := item.Image.CtImage
@@ -1679,7 +1839,10 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 		result.ResourceID = uint64(imageValue.ResourceID)
 		result.Substitution = uint64(imageValue.Substitution)
 		result.ImageMask = uint64(imageValue.ImageMask)
-		result.Border = e.exportImageBorder(imageValue.Border)
+		result.Border, err = e.exportImageBorder(imageValue.Border)
+		if err != nil {
+			return manifest.Item{}, err
+		}
 		return result, nil
 	case models.PageItemComposite:
 		composite := item.Composite.CtComposite
@@ -1703,7 +1866,7 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 func (e *documentExporter) graphicItem(kind string, graphic models.CTGraphicUnit) (manifest.Item, error) {
 	var dashPattern []float64
 	if graphic.DashPattern != nil {
-		dashPattern = append([]float64(nil), (*graphic.DashPattern)...)
+		dashPattern = append([]float64(nil), *graphic.DashPattern...)
 	}
 	boundary := exportBox(&graphic.Boundary)
 	result := manifest.Item{Type: kind, X: boundary.X, Y: boundary.Y, Width: boundary.Width, Height: boundary.Height, Name: graphic.Name, DrawParam: e.drawParamName(graphic.DrawParam), LineWidth: graphic.LineWidth, Cap: graphic.Cap, Join: graphic.Join, MiterLimit: graphic.MiterLimit, DashOffset: graphic.DashOffset, DashPattern: dashPattern, Alpha: graphic.Alpha, CTM: exportCTM(graphic.CTM), Visible: graphic.Visible.Bool()}
@@ -1713,6 +1876,100 @@ func (e *documentExporter) graphicItem(kind string, graphic models.CTGraphicUnit
 			return manifest.Item{}, fmt.Errorf("转换图元动作失败: %w", err)
 		}
 		result.Actions = actions
+	}
+	clips, err := e.convertClips(graphic.Clips)
+	if err != nil {
+		return manifest.Item{}, fmt.Errorf("转换图元裁剪失败: %w", err)
+	}
+	result.Clips = clips
+	return result, nil
+}
+
+// convertClips 将 OFD 图元裁剪区域转换为 manifest 裁剪定义。
+func (e *documentExporter) convertClips(clips *models.Clips) ([]manifest.Clip, error) {
+	if clips == nil || len(clips.Clip) == 0 {
+		return nil, nil
+	}
+	result := make([]manifest.Clip, 0, len(clips.Clip))
+	for clipIndex, clip := range clips.Clip {
+		converted := manifest.Clip{Areas: make([]manifest.ClipArea, 0, len(clip.Area))}
+		for areaIndex, area := range clip.Area {
+			var drawParam models.StRefID
+			if area.DrawParam != nil {
+				drawParam = *area.DrawParam
+			}
+			value := manifest.ClipArea{DrawParam: e.drawParamName(drawParam), CTM: exportCTM(area.CTM)}
+			if area.Path != nil {
+				ctPath := area.Path
+				fillColor, err := e.exportColor(ctPath.FillColor)
+				if err != nil {
+					return nil, fmt.Errorf("clips[%d].areas[%d].path.fill_color: %w", clipIndex, areaIndex, err)
+				}
+				strokeColor, err := e.exportColor(ctPath.StrokeColor)
+				if err != nil {
+					return nil, fmt.Errorf("clips[%d].areas[%d].path.stroke_color: %w", clipIndex, areaIndex, err)
+				}
+				var dashPattern []float64
+				if ctPath.DashPattern != nil {
+					dashPattern = append([]float64(nil), *ctPath.DashPattern...)
+				}
+				stroke := ctPath.Stroke != "false"
+				var strokeSet *bool
+				if ctPath.Stroke != "" {
+					strokeSet = &stroke
+				}
+				value.Path = &manifest.ClipPath{
+					Boundary:    *exportBox(&ctPath.Boundary),
+					Name:        ctPath.Name,
+					Visible:     ctPath.Visible.Bool(),
+					CTM:         exportCTM(ctPath.CTM),
+					Data:        ctPath.AbbreviatedData.String(),
+					Stroke:      stroke,
+					StrokeSet:   strokeSet,
+					Fill:        ctPath.Fill,
+					Rule:        ctPath.Rule,
+					LineWidth:   ctPath.LineWidth,
+					Cap:         ctPath.Cap,
+					Join:        ctPath.Join,
+					MiterLimit:  ctPath.MiterLimit,
+					DashOffset:  ctPath.DashOffset,
+					DashPattern: dashPattern,
+					Alpha:       ctPath.Alpha,
+					StrokeColor: strokeColor,
+					FillColor:   fillColor,
+				}
+			}
+			if area.Text != nil {
+				text := area.Text
+				fillColor, err := e.exportColor(text.FillColor)
+				if err != nil {
+					return nil, fmt.Errorf("clips[%d].areas[%d].text.fill_color: %w", clipIndex, areaIndex, err)
+				}
+				strokeColor, err := e.exportColor(text.StrokeColor)
+				if err != nil {
+					return nil, fmt.Errorf("clips[%d].areas[%d].text.stroke_color: %w", clipIndex, areaIndex, err)
+				}
+				value.Text = &manifest.ClipText{
+					Boundary:      *exportBox(&text.Boundary),
+					CTM:           exportCTM(text.CTM),
+					Font:          e.fonts[models.StID(text.Font)],
+					Size:          text.Size,
+					Value:         textValue(text.TextCode),
+					TextCodes:     exportTextCodes(text.TextCode),
+					Stroke:        text.Stroke,
+					Fill:          optionalFill(text.Fill),
+					HScale:        text.HScale,
+					ReadDirection: text.ReadDirection,
+					CharDirection: text.CharDirection,
+					Weight:        text.Weight,
+					Italic:        text.Italic,
+					FillColor:     fillColor,
+					StrokeColor:   strokeColor,
+				}
+			}
+			converted.Areas = append(converted.Areas, value)
+		}
+		result = append(result, converted)
 	}
 	return result, nil
 }
@@ -1766,9 +2023,9 @@ func exportCTM(ctm *models.CTM) []float64 {
 	return append([]float64(nil), ctm[:]...)
 }
 
-func (e *documentExporter) exportColor(value *models.CTColor) *manifest.Color {
+func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, error) {
 	if value == nil {
-		return nil
+		return nil, nil
 	}
 	result := &manifest.Color{ColorSpace: uint64(value.ColorSpace), Alpha: value.Alpha}
 	if value.Value != nil {
@@ -1807,21 +2064,126 @@ func (e *documentExporter) exportColor(value *models.CTColor) *manifest.Color {
 		index := value.Index
 		result.Index = &index
 	}
-	return result
+	if value.AxialShd != nil {
+		segments, err := e.exportColorStops(value.AxialShd.Segment)
+		if err != nil {
+			return nil, fmt.Errorf("axial.segments: %w", err)
+		}
+		result.Axial = &manifest.AxialShading{
+			MapType:    value.AxialShd.MapType,
+			MapUnit:    value.AxialShd.MapUnit,
+			Extend:     value.AxialShd.Extend,
+			StartPoint: exportPoint(value.AxialShd.StartPoint),
+			EndPoint:   exportPoint(value.AxialShd.EndPoint),
+			Segments:   segments,
+		}
+	}
+	if value.RadialShd != nil {
+		segments, err := e.exportColorStops(value.RadialShd.Segment)
+		if err != nil {
+			return nil, fmt.Errorf("radial.segments: %w", err)
+		}
+		result.Radial = &manifest.RadialShading{
+			MapType:      value.RadialShd.MapType,
+			MapUnit:      value.RadialShd.MapUnit,
+			Eccentricity: value.RadialShd.Eccentricity,
+			Angle:        value.RadialShd.Angle,
+			StartPoint:   exportPoint(value.RadialShd.StartPoint),
+			StartRadius:  value.RadialShd.StartRadius,
+			EndPoint:     exportPoint(value.RadialShd.EndPoint),
+			EndRadius:    value.RadialShd.EndRadius,
+			Extend:       value.RadialShd.Extend,
+			Segments:     segments,
+		}
+	}
+	if value.GouraudShd != nil {
+		points := make([]manifest.GouraudPoint, 0, len(value.GouraudShd.Point))
+		for index, point := range value.GouraudShd.Point {
+			color, err := e.exportColor(&point.Color)
+			if err != nil {
+				return nil, fmt.Errorf("gouraud.points[%d].color: %w", index, err)
+			}
+			points = append(points, manifest.GouraudPoint{X: point.X, Y: point.Y, EdgeFlag: point.EdgeFlag, Color: *color})
+		}
+		backColor, err := e.exportColor(value.GouraudShd.BackColor)
+		if err != nil {
+			return nil, fmt.Errorf("gouraud.back_color: %w", err)
+		}
+		result.Gouraud = &manifest.Gouraud{Extend: value.GouraudShd.Extend, Points: points, BackColor: backColor}
+	}
+	laGouraud := value.LaGouraudShd
+	if laGouraud == nil {
+		laGouraud = value.LaGourandShd
+	}
+	if laGouraud != nil {
+		points := make([]manifest.LaGouraudPoint, 0, len(laGouraud.Point))
+		for index, point := range laGouraud.Point {
+			color, err := e.exportColor(&point.Color)
+			if err != nil {
+				return nil, fmt.Errorf("la_gouraud.points[%d].color: %w", index, err)
+			}
+			points = append(points, manifest.LaGouraudPoint{X: point.X, Y: point.Y, Color: *color})
+		}
+		backColor, err := e.exportColor(laGouraud.BackColor)
+		if err != nil {
+			return nil, fmt.Errorf("la_gouraud.back_color: %w", err)
+		}
+		result.LaGouraud = &manifest.LaGouraud{VerticesPerRow: laGouraud.VerticesPerRow, Extend: laGouraud.Extend, Points: points, BackColor: backColor}
+	}
+	if value.Pattern != nil {
+		items, err := e.convertItems(value.Pattern.CellContent.Items)
+		if err != nil {
+			return nil, fmt.Errorf("pattern.items: %w", err)
+		}
+		result.Pattern = &manifest.Pattern{
+			Width:         value.Pattern.Width,
+			Height:        value.Pattern.Height,
+			XStep:         value.Pattern.XStep,
+			YStep:         value.Pattern.YStep,
+			ReflectMethod: value.Pattern.ReflectMethod,
+			RelativeTo:    value.Pattern.RelativeTo,
+			CTM:           exportStringFloatArray(value.Pattern.CTM),
+			Thumbnail:     uint64(value.Pattern.CellContent.Thumbnail),
+			Items:         items,
+		}
+	}
+	return result, nil
 }
 
-func (e *documentExporter) exportImageBorder(border *models.Border) *manifest.ImageBorder {
-	if border == nil {
-		return nil
+// exportColorStops 将 OFD 渐变分段转换为 manifest 颜色停止点。
+func (e *documentExporter) exportColorStops(values []models.Segment) ([]manifest.ColorStop, error) {
+	result := make([]manifest.ColorStop, 0, len(values))
+	for index, value := range values {
+		color, err := e.exportColor(&value.Color)
+		if err != nil {
+			return nil, fmt.Errorf("[%d].color: %w", index, err)
+		}
+		result = append(result, manifest.ColorStop{Position: value.Position, Color: *color})
 	}
-	return &manifest.ImageBorder{LineWidth: border.LineWidth, HorizontalRadius: border.HorizonalCornerRadius, VerticalRadius: border.VerticalCornerRadius, DashOffset: border.DashOffset, DashPattern: exportStringFloatArray(border.DashPattern), Color: e.exportColor(border.BorderColor)}
+	return result, nil
+}
+
+// exportPoint 将渐变坐标格式化为 "x y" 字符串。
+func exportPoint(value models.StPos) string {
+	return strconv.FormatFloat(value.X, 'g', -1, 64) + " " + strconv.FormatFloat(value.Y, 'g', -1, 64)
+}
+
+func (e *documentExporter) exportImageBorder(border *models.Border) (*manifest.ImageBorder, error) {
+	if border == nil {
+		return nil, nil
+	}
+	color, err := e.exportColor(border.BorderColor)
+	if err != nil {
+		return nil, err
+	}
+	return &manifest.ImageBorder{LineWidth: border.LineWidth, HorizontalRadius: border.HorizonalCornerRadius, VerticalRadius: border.VerticalCornerRadius, DashOffset: border.DashOffset, DashPattern: exportStringFloatArray(border.DashPattern), Color: color}, nil
 }
 
 func exportFloatArray(value *models.StArrayF) []float64 {
 	if value == nil {
 		return nil
 	}
-	return append([]float64(nil), (*value)...)
+	return append([]float64(nil), *value...)
 }
 
 func exportStringFloatArray(value models.StArray) []float64 {
@@ -1870,6 +2232,19 @@ func textValue(codes []models.TextCode) string {
 		result.WriteString(code.Value)
 	}
 	return result.String()
+}
+
+// exportTextCodes 将 OFD 文字代码列表转换为 manifest 文字代码，跳过空白文本。
+func exportTextCodes(values []models.TextCode) []manifest.TextCode {
+	var result []manifest.TextCode
+	for _, code := range values {
+		if strings.TrimSpace(code.Value) == "" {
+			continue
+		}
+		x, y := code.X, code.Y
+		result = append(result, manifest.TextCode{Value: code.Value, X: &x, Y: &y, DeltaX: append([]float64(nil), code.DeltaX...), DeltaY: append([]float64(nil), code.DeltaY...)})
+	}
+	return result
 }
 
 func valueOrEmpty(value *string) string {
