@@ -62,6 +62,7 @@ WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
 WASM_VIEWER := cmd/ofd-wasm/web/viewer.js
 WASM_WORKER := cmd/ofd-wasm/web/worker.js
 WASM_INDEX := cmd/ofd-wasm/web/index.html
+WASM_ICON_FONT := cmd/ofd-wasm/web/material-symbols-outlined-subset.woff2
 WASM_SERVICE_WORKER := cmd/ofd-wasm/web/service-worker.js
 WASM_WEB_DIR := cmd/ofd-wasm/web
 WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
@@ -153,11 +154,12 @@ build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
-	@tmp="$@.tmp"; \
+	@tmp="$@.tmp"; opt="$@.opt"; \
+	trap 'rm -f "$$tmp" "$$opt"' EXIT; \
 	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(GO_BUILD_FLAGS) -o "$$tmp" ./cmd/ofd-wasm; \
 	if command -v "$(WASM_OPT)" >/dev/null 2>&1; then \
-		"$(WASM_OPT)" $(WASM_OPT_FLAGS) "$$tmp" -o "$@.opt"; \
-		mv "$@.opt" "$@"; \
+		"$(WASM_OPT)" $(WASM_OPT_FLAGS) "$$tmp" -o "$$opt"; \
+		mv "$$opt" "$@"; \
 	else \
 		printf '%s\n' '警告: 未找到 wasm-opt，使用未优化的 WASM。' >&2; \
 		mv "$$tmp" "$@"; \
@@ -167,8 +169,8 @@ $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
 	cp "$$(CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) env GOROOT)/lib/wasm/wasm_exec.js" "$@"
 
-$(WASM_SERVICE_WORKER): $(WASM_INDEX) $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) FORCE
-	@CACHE_NAME=$$(cat "$(WASM_INDEX)" "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" | sha256sum | cut -c1-16); \
+$(WASM_SERVICE_WORKER): $(WASM_INDEX) $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) $(WASM_ICON_FONT) FORCE
+	@CACHE_NAME=$$(cat "$(WASM_INDEX)" "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" "$(WASM_ICON_FONT)" | sha256sum | cut -c1-16); \
 	sed -i "s/^const CACHE_NAME = '.*';$$/const CACHE_NAME = 'ofd-reader-shell_$$CACHE_NAME';/" "$(WASM_SERVICE_WORKER)"
 
 build-arm64:
