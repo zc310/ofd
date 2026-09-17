@@ -310,7 +310,7 @@ const thumbnailCache = new BlobURLCache(64 << 20, url =>
 const fallbackFontURLs = [
   {
     family: 'Smiley Sans',
-    url: 'https://cdn.jsdelivr.net/npm/@xiao-xue-seng/zhuque-fangsong/dist/xxx.woff2',
+    url: 'https://cdn.jsdelivr.net/gh/deepin-community/fonts-smiley-sans@master/SmileySans-Oblique.ttf.woff2',
     alternateURL: 'https://raw.githubusercontent.com/deepin-community/fonts-smiley-sans/master/SmileySans-Oblique.ttf.woff2',
     weight: 400,
   },
