@@ -43,6 +43,8 @@ BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
 GO_LDFLAGS := -s -w
 GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS)"
 VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
+WASM_OPT ?= wasm-opt
+WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers
 DIST_DIR := dist
 BUILD_DIR := .build
 BIN_DIR := $(BUILD_DIR)/bin/$(PLATFORM)
@@ -151,7 +153,15 @@ build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
-	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-wasm
+	@tmp="$@.tmp"; \
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(GO_BUILD_FLAGS) -o "$$tmp" ./cmd/ofd-wasm; \
+	if command -v "$(WASM_OPT)" >/dev/null 2>&1; then \
+		"$(WASM_OPT)" $(WASM_OPT_FLAGS) "$$tmp" -o "$@.opt"; \
+		mv "$@.opt" "$@"; \
+	else \
+		printf '%s\n' '警告: 未找到 wasm-opt，使用未优化的 WASM。' >&2; \
+		mv "$$tmp" "$@"; \
+	fi
 
 $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
