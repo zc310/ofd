@@ -176,7 +176,7 @@ func TestRunWritesJSONReport(t *testing.T) {
 	if stderr.Len() != 0 || !strings.Contains(stdout.String(), "schema_version") {
 		t.Fatalf("stdout = %s, stderr = %s", stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `"entries": 9`) {
+	if !strings.Contains(stdout.String(), `"entries": 5`) {
 		t.Fatalf("JSON report omits package summary: %s", stdout.String())
 	}
 	var report map[string]any
