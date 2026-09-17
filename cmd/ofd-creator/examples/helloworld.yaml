@@ -1,45 +1,257 @@
-# Hello World OFD 示例
-# 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/helloworld.yaml -o helloworld.ofd --validate
-
 version: 1
-
 document:
   id: helloworld
   title: Hello World
-  author: ofd-creator
   creator: ofd-creator
-  creator_version: "1"
+  creator_version: 0.0.1
   page_size:
-    name: A4
-
+    width: 210
+    height: 297
+  creation_date: "2026-09-17T00:00:00Z"
+  area:
+    physical_box:
+      width: 210
+      height: 297
+    application_box:
+      width: 210
+      height: 297
 pages:
-  - items:
-      - type: text
-        x: 35
-        y: 110
-        width: 140
-        height: 24
-        value: Hello, World!
-        font: 楷体
-        size: 18
-        weight: 700
-        fill: true
-        fill_color:
-          r: 30
-          g: 70
-          b: 140
-
-      - type: text
-        x: 35
-        y: 142
-        width: 140
-        height: 12
-        value: 欢迎使用 OFD
-        font: 楷体
-        size: 7
-        fill: true
-        fill_color:
-          r: 90
-          g: 100
-          b: 120
+  - layers:
+      - items:
+          - type: text
+            x: 31.7
+            "y": 25.4
+            width: 40.5
+            height: 5
+            value: |-
+              你好呀，OFD
+                                  Reader&Writer！
+            font: 宋体
+            size: 3
+            text_codes:
+              - value: |-
+                  你好呀，OFD
+                                      Reader&Writer！
+                x: 0
+                "y": 3
+                delta_x:
+                  - 3
+                  - 3
+                  - 3
+                  - 3
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+                  - 1.5
+          - type: path
+            x: 10
+            "y": 60
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              axial:
+                start_point: 0 0
+                end_point: 140 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 10
+            "y": 110
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              axial:
+                map_type: Repeat
+                map_unit: 25
+                start_point: 0 0
+                end_point: 140 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 10
+            "y": 160
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              axial:
+                map_type: Reflect
+                map_unit: 25
+                start_point: 0 0
+                end_point: 25 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+      application_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: path
+            x: 10
+            "y": 90
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 3
+                end_point: 42 21
+                end_radius: 15
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 75
+            "y": 90
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 3
+                end_point: 42 21
+                end_radius: 15
+                extend: 1
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - position: 1
+                    color:
+                      b: 255
+          - type: path
+            x: 140
+            "y": 90
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 3
+                end_point: 42 21
+                end_radius: 15
+                extend: 2
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 10
+            "y": 165
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 15
+                end_point: 42 21
+                end_radius: 3
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 75
+            "y": 165
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 15
+                end_point: 42 21
+                end_radius: 3
+                extend: 1
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: path
+            x: 140
+            "y": 165
+            width: 60
+            height: 45
+            data: M 0.00 0.00 L 60.00 0.00 L 60.00 45.00 L 0.00 45.00 C
+            stroke: true
+            fill: true
+            fill_color:
+              radial:
+                start_point: 12 21
+                start_radius: 15
+                end_point: 42 21
+                end_radius: 3
+                extend: 2
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+      application_box:
+        width: 210
+        height: 297
