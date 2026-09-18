@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/zc310/ofd/pkg/converter"
+	_ "github.com/zc310/ofd/pkg/converter/mdimport"
+	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
 )
 
 type exampleBufferWriteCloser struct {
@@ -128,5 +130,26 @@ func ExampleTeX() {
 		converter.Page(1),
 	)
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("\\begin{pgfpicture}")))
+	// Output: true
+}
+
+func ExampleConvert() {
+	var output bytes.Buffer
+	err := converter.Convert("ofd", "pdf", "../../test/testdata/helloworld.ofd", &output)
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("%PDF-")))
+	// Output: true
+}
+
+func ExampleConvert_pdfToOFD() {
+	var output bytes.Buffer
+	err := converter.Convert("pdf", "ofd", "../../test/testdata/pdf/sample0.pdf", &output)
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
+	// Output: true
+}
+
+func ExampleConvert_markdownToOFD() {
+	var output bytes.Buffer
+	err := converter.Convert("md", "ofd", "../../test/testdata/markdown/sample.md", &output)
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
 }
