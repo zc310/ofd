@@ -375,20 +375,21 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	} else if family, ok := loadCachedSystemFont(fontName, fontStyle); ok {
 		return family, "", nil
 	}
-	family := canvas.NewFontFamily(fontName)
-	if fontName == "宋体" || strings.ToLower(fontName) == "simsun" {
-		if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simsun.ttc"); err == nil {
-			slog.Debug("load fallback system font file", "family", fontName, "path", fontPath, "style", fontStyle)
-			if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
-				return family, "", nil
-			}
-		}
+	if family, ok := loadFixedWidthFont(ft, fontStyle); ok {
+		return family, "", nil
 	}
-	if fontName == "黑体" || strings.ToLower(fontName) == "simhei" {
-		if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf"); err == nil {
-			slog.Debug("load fallback system font file", "family", fontName, "path", fontPath, "style", fontStyle)
-			if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
-				return family, "", nil
+	family := canvas.NewFontFamily(fontName)
+	// 逻辑字体没有嵌入数据时按族名匹配系统字体。OFD 的 FontName 通常是
+	// 资源名（如 F0），不能拿来匹配，必须以 FamilyName（如"仿宋_GB2312"、
+	// "方正小标宋_GBK"）为准。
+	group := cjkFontGroup(ft)
+	if group != "" {
+		if files, ok := cjkFontFiles[group]; ok && len(files) > 0 {
+			if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
+				slog.Debug("load fallback system font file", "family", group, "path", fontPath, "style", fontStyle)
+				if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
+					return family, "", nil
+				}
 			}
 		}
 	}
@@ -456,19 +457,20 @@ func normalizeFallbackName(name string) string {
 
 func fallbackNameGroup(name string) string {
 	switch name {
-	case "宋体", "宋体gb2312", "simsun", "nsimsun", "songti", "simsungb2312", "songtigb2312":
+	case "宋体", "宋体gb2312", "simsun", "nsimsun", "songti", "simsungb2312", "songtigb2312",
+		"方正小标宋", "方正小标宋gbk", "方正书宋", "fzxbs":
 		return "simsun"
 	case "华文宋体", "stsong":
 		return "stsong"
-	case "黑体", "黑体gb2312", "simhei", "heiti", "hei", "microsoftheiti", "heitisc":
+	case "黑体", "黑体gb2312", "simhei", "heiti", "hei", "microsoftheiti", "heitisc", "方正黑体", "方正黑体gbk":
 		return "simhei"
 	case "华文黑体", "stheiti":
 		return "stheiti"
-	case "楷体", "楷体gb2312", "simkai", "kaiti", "kaishu", "kaitigb2312":
+	case "楷体", "楷体gb2312", "simkai", "kaiti", "kaishu", "kaitigb2312", "方正楷体", "方正楷体gbk":
 		return "simkai"
 	case "华文楷体", "stkaiti":
 		return "stkaiti"
-	case "仿宋", "仿宋gb2312", "simfang", "fangsong", "fangsonggb2312":
+	case "仿宋", "仿宋gb2312", "simfang", "fangsong", "fangsonggb2312", "方正仿宋", "方正仿宋gbk":
 		return "simfang"
 	case "华文仿宋", "stfangsong":
 		return "stfangsong"
@@ -484,6 +486,120 @@ func fallbackNameGroup(name string) string {
 		return "serifsc"
 	default:
 		return ""
+	}
+}
+
+// cjkFontFiles 把中文字体组映射到系统字体目录中可能存在的字体文件名。
+// 只收录常见宋体/黑体/楷体/仿宋/雅黑；其他字体组没有通用文件名时不映射。
+var cjkFontFiles = map[string][]string{
+	"simsun":  {"simsun.ttc", "simsun.ttf", "simsunb.ttf", "Songti.ttc"},
+	"simhei":  {"simhei.ttf", "simhei.ttc"},
+	"simkai":  {"simkai.ttf"},
+	"simfang": {"simfang.ttf"},
+	"yahei":   {"msyh.ttc", "msyh.ttf", "msyhbd.ttc", "msyhl.ttc"},
+}
+
+// cjkFontGroup 从字体族名和字体名中识别中文字体组；只有该组在
+// cjkFontFiles 中有候选字体文件时才返回组名。
+func cjkFontGroup(ft *models.Font) string {
+	for _, name := range []string{ft.FamilyName, ft.FontName} {
+		group := fallbackNameGroup(normalizeFallbackName(name))
+		if group == "" {
+			continue
+		}
+		if _, ok := cjkFontFiles[group]; ok {
+			return group
+		}
+	}
+	return ""
+}
+
+// fixedWidthFontFamilies 是常见等宽字体的系统族名，按优先级排列。
+var fixedWidthFontFamilies = []string{
+	"Noto Sans Mono CJK SC",
+	"Noto Sans Mono",
+	"DejaVu Sans Mono",
+	"Liberation Mono",
+	"Noto Mono",
+	"Ubuntu Mono",
+	"Menlo",
+	"Monaco",
+	"Consolas",
+	"Courier New",
+	"Source Code Pro",
+	"Fira Code",
+	"JetBrains Mono",
+	"Cascadia Mono",
+	"Roboto Mono",
+	"FreeMono",
+}
+
+// fixedWidthFontFiles 是系统字体目录中常见的等宽字体文件名。
+var fixedWidthFontFiles = []string{
+	"DejaVuSansMono.ttf",
+	"DejaVuSansMono-Bold.ttf",
+	"LiberationMono-Regular.ttf",
+	"LiberationMono-Bold.ttf",
+	"NotoSansMonoCJKsc-Regular.otf",
+	"NotoSansMono-Regular.ttf",
+	"UbuntuMono-R.ttf",
+	"FreeMono.ttf",
+	"SourceCodePro-Regular.ttf",
+}
+
+// loadFixedWidthFont 为逻辑等宽字体选择系统等宽字体。OFD 的 FontName 通常是
+// 资源名，无法直接匹配系统字体，因此这里依据 FixedWidth 标志和族名中的
+// monospace 线索，按族名或常见字体文件加载等宽字体。
+func loadFixedWidthFont(ft *models.Font, style canvas.FontStyle) (*canvas.FontFamily, bool) {
+	if ft == nil || !isFixedWidthFont(ft) {
+		return nil, false
+	}
+	family := canvas.NewFontFamily("fixed-width")
+	if name := strings.TrimSpace(ft.FamilyName); !isGenericFontFamily(name) {
+		if err := family.LoadSystemFont(name, style); err == nil {
+			return family, true
+		}
+	}
+	for _, name := range fixedWidthFontFamilies {
+		if err := family.LoadSystemFont(name, style); err == nil {
+			return family, true
+		}
+	}
+	if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), fixedWidthFontFiles...); err == nil {
+		slog.Debug("load fallback fixed-width font file", "path", path, "style", style)
+		if loadFontFileSafely(family, path) {
+			return family, true
+		}
+	}
+	return nil, false
+}
+
+// isFixedWidthFont 判断逻辑字体是否应按等宽字体处理。
+func isFixedWidthFont(ft *models.Font) bool {
+	if ft.FixedWidth {
+		return true
+	}
+	return isFixedWidthName(ft.FamilyName) || isFixedWidthName(ft.FontName)
+}
+
+func isFixedWidthName(name string) bool {
+	normalized := normalizeFallbackName(name)
+	if normalized == "" {
+		return false
+	}
+	switch normalized {
+	case "monospace", "mono", "fixed", "fixedwidth", "courier", "couriernew", "consolas", "menlo", "monaco":
+		return true
+	}
+	return strings.Contains(normalized, "mono")
+}
+
+func isGenericFontFamily(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "monospace", "mono", "fixed", "fixedwidth", "sans-serif", "sansserif", "serif", "cursive", "fantasy":
+		return true
+	default:
+		return false
 	}
 }
 
