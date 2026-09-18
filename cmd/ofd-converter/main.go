@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/converter"
@@ -19,12 +20,17 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
 	// 注册 Markdown→OFD 导入器（输入格式 "md"）。
 	_ "github.com/zc310/ofd/pkg/converter/mdimport"
+	// 注册 Office（doc/docx/odt/rtf/wps/pptx/xlsx 等）导入器与→PDF 转换器。
+	_ "github.com/zc310/ofd/pkg/converter/officeimport"
+	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
+	_ "github.com/zc310/ofd/pkg/converter/htmlimport"
 )
 
 const (
-	defaultDPI     = 150
-	defaultBgColor = "white"
-	defaultWorkers = 4
+	defaultDPI           = 150
+	defaultBgColor       = "white"
+	defaultWorkers       = 4
+	defaultOfficeWorkers = 2
 )
 
 var (
@@ -34,22 +40,32 @@ var (
 )
 
 type options struct {
-	input        string
-	output       string
-	inputDir     string
-	outputDir    string
-	format       string
-	from         string
-	htmlFormat   string
-	dpi          int
-	page         int
-	bg           string
-	dir          bool
-	workers      int
-	recursive    bool
-	overwrite    bool
-	skipExisting bool
-	help         bool
+	input             string
+	output            string
+	inputDir          string
+	outputDir         string
+	format            string
+	from              string
+	htmlFormat        string
+	dpi               int
+	page              int
+	bg                string
+	dir               bool
+	workers           int
+	externalWorkers   int
+	soffice           string
+	officeTimeout     int
+	chrome            string
+	chromeNoSandbox   bool
+	tempDir           string
+	paper             string
+	landscape         bool
+	noPrintBackground bool
+	allowRemote       bool
+	recursive         bool
+	overwrite         bool
+	skipExisting      bool
+	help              bool
 }
 
 func main() {
@@ -68,7 +84,7 @@ func main() {
 }
 
 func parseArgs(args []string) (*options, error) {
-	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", workers: defaultWorkers, recursive: true, overwrite: true}
+	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", workers: defaultWorkers, externalWorkers: defaultOfficeWorkers, recursive: true, overwrite: true}
 	var output, format string
 	args = normalizeConverterArgs(args)
 	root := &cobra.Command{
@@ -126,13 +142,23 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
 	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
-	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md；缺省按输入文件扩展名推断")
+	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
 	flags.BoolVar(&opts.dir, "dir", opts.dir, "不压缩，将多页图片直接保存到输出目录下的多个文件")
 	flags.IntVar(&opts.workers, "workers", opts.workers, "批量转换并发数，默认 4")
+	flags.IntVar(&opts.externalWorkers, "external-workers", opts.externalWorkers, "外部工具（LibreOffice/Chrome）批量转换并发数，默认 2")
+	flags.StringVar(&opts.soffice, "soffice", "", "LibreOffice 可执行文件路径；缺省按 OFD_SOFFICE、PATH 和常见安装路径查找")
+	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML 文档转换超时秒数；0 表示默认 120 秒")
+	flags.StringVar(&opts.chrome, "chrome", "", "Chrome/Chromium 可执行文件路径；缺省按 OFD_CHROME、PATH 和常见安装路径查找")
+	flags.StringVar(&opts.tempDir, "temp-dir", "", "外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录")
+	flags.StringVar(&opts.paper, "paper", "", "纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4")
+	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印")
+	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
+	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
+	flags.BoolVar(&opts.chromeNoSandbox, "chrome-no-sandbox", false, "禁用 Chrome 沙箱（容器或 root 环境可能需要）")
 	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
 	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
 	flags.BoolVar(&opts.skipExisting, "skip-existing", opts.skipExisting, "批量转换时跳过已有输出文件")
@@ -150,6 +176,9 @@ func normalizeConverterArgs(args []string) []string {
 		"format": true, "from": true, "html-format": true, "input-dir": true, "output-dir": true,
 		"output": true,
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
+		"external-workers": true, "soffice": true, "office-timeout": true,
+		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
+		"allow-remote": true, "chrome-no-sandbox": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
 	result := make([]string, len(args))
@@ -237,6 +266,10 @@ func runBatch(opts *options) error {
 	if opts.workers < 1 {
 		return errors.New("workers 必须大于 0")
 	}
+	// 未显式设置（或传入非正值）时使用默认并发，兼容直接构造 options 的调用方。
+	if opts.externalWorkers < 1 {
+		opts.externalWorkers = defaultOfficeWorkers
+	}
 	if opts.page < 0 {
 		return errors.New("page 不能小于 0")
 	}
@@ -247,8 +280,10 @@ func runBatch(opts *options) error {
 		return errors.New("批量转换必须通过 --format 指定输出格式")
 	}
 	format := normalizeFormat(opts.format)
-	if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
-		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
+	if format != "ofd" {
+		if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
+			return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
+		}
 	}
 	if format == "html" {
 		htmlFormat := strings.ToLower(strings.TrimSpace(opts.htmlFormat))
@@ -285,7 +320,7 @@ func runBatch(opts *options) error {
 		return err
 	}
 	if len(inputs) == 0 {
-		return errors.New("输入目录中没有 OFD 文件")
+		return errors.New("输入目录中没有可转换的文件")
 	}
 
 	jobs := make([]batchJob, 0, len(inputs))
@@ -319,6 +354,9 @@ func runBatch(opts *options) error {
 	}
 
 	workerCount := minInt(opts.workers, len(jobs))
+	// LibreOffice 每次启动都会拉起完整进程，代价高且不宜高并发。用独立信号量
+	// 限制同时进行的 Office 转换数量，普通输入不受影响。
+	externalSemaphore := make(chan struct{}, minInt(opts.externalWorkers, len(jobs)))
 	jobCh := make(chan batchJob)
 	resultCh := make(chan batchResult, len(jobs))
 	var workers sync.WaitGroup
@@ -335,7 +373,10 @@ func runBatch(opts *options) error {
 				jobOptions.input = job.input
 				jobOptions.output = job.output
 				jobOptions.format = format
-				resultCh <- batchResult{job: job, err: runSingle(&jobOptions)}
+				release := acquireExternalSlot(&jobOptions, externalSemaphore)
+				err := runSingle(&jobOptions)
+				release()
+				resultCh <- batchResult{job: job, err: err}
 			}
 		}()
 	}
@@ -371,6 +412,28 @@ func batchError(total int, failed []batchResult, skipped int) error {
 	return errors.New(summary.String())
 }
 
+// acquireExternalSlot 对需要外部工具的输入获取并发槽位，返回释放函数；其他
+// 输入返回空操作。这样可以在不阻塞普通输入的前提下限制 LibreOffice/Chrome 并发数。
+func acquireExternalSlot(opts *options, semaphore chan struct{}) func() {
+	if !isExternalInput(opts) {
+		return func() {}
+	}
+	semaphore <- struct{}{}
+	return func() { <-semaphore }
+}
+
+// isExternalInput 判断输入是否需要外部工具（Office 经 LibreOffice、HTML 经
+// Chrome）。这些格式都注册了到 PDF 的直接转换器。
+func isExternalInput(opts *options) bool {
+	from := resolveInputFormat(opts)
+	imp, ok := converter.ImporterByName(from)
+	if !ok {
+		return false
+	}
+	_, ok = converter.TransformerFor(imp.Name(), "pdf")
+	return ok
+}
+
 func batchOutputExists(output string) bool {
 	_, err := os.Stat(output)
 	return err == nil
@@ -394,7 +457,7 @@ func collectBatchInputs(inputRoot, outputRoot string, recursive bool) ([]string,
 			}
 			return nil
 		}
-		if entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(entry.Name()), ".ofd") {
+		if entry.Type().IsRegular() && batchInputExtension(entry.Name()) {
 			absolute, err := filepath.Abs(path)
 			if err != nil {
 				return err
@@ -408,6 +471,17 @@ func collectBatchInputs(inputRoot, outputRoot string, recursive bool) ([]string,
 	}
 	sort.Strings(inputs)
 	return inputs, nil
+}
+
+// batchInputExtension 判断文件名是否为批量转换支持的输入类型：OFD，或已注册
+// 导入器（PDF、Markdown、Office 等）的扩展名。
+func batchInputExtension(name string) bool {
+	ext := filepath.Ext(name)
+	if strings.EqualFold(ext, ".ofd") {
+		return true
+	}
+	_, ok := converter.ImporterByExtension(ext)
+	return ok
 }
 
 func batchOutputPath(inputRoot, outputRoot, input, format string, imageDirectory bool) string {
@@ -555,6 +629,7 @@ func convertImported(opts *options, from, to string) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
+	option = append(option, officeOptions(opts)...)
 	err := converter.Convert(from, to, opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
@@ -562,6 +637,40 @@ func convertImported(opts *options, from, to string) error {
 		}
 	}
 	return err
+}
+
+// officeOptions 生成外部工具（LibreOffice/Chrome）与纸张相关选项；未设置时
+// 返回空切片。
+func officeOptions(opts *options) []converter.Option {
+	var option []converter.Option
+	if strings.TrimSpace(opts.soffice) != "" {
+		option = append(option, converter.WithSoffice(opts.soffice))
+	}
+	if opts.officeTimeout > 0 {
+		option = append(option, converter.WithOfficeTimeout(time.Duration(opts.officeTimeout)*time.Second))
+	}
+	if strings.TrimSpace(opts.chrome) != "" {
+		option = append(option, converter.WithChrome(opts.chrome))
+	}
+	if strings.TrimSpace(opts.tempDir) != "" {
+		option = append(option, converter.WithTempDir(opts.tempDir))
+	}
+	if strings.TrimSpace(opts.paper) != "" {
+		option = append(option, converter.WithPaperSize(opts.paper))
+	}
+	if opts.landscape {
+		option = append(option, converter.WithLandscape(true))
+	}
+	if opts.noPrintBackground {
+		option = append(option, converter.WithPrintBackground(false))
+	}
+	if opts.allowRemote {
+		option = append(option, converter.WithAllowRemoteResources(true))
+	}
+	if opts.chromeNoSandbox {
+		option = append(option, converter.WithChromeNoSandbox(true))
+	}
+	return option
 }
 
 func validateOutputPath(opts *options, format string) error {

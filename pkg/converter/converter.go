@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"time"
 
 	"github.com/tdewolff/canvas"
 )
@@ -24,6 +25,14 @@ type Converter struct {
 	fileWriter        func(page int) (io.WriteCloser, error)
 	docTitle          string // 文档标题，由 HTML 等编码器使用
 	renderer          canvas.Writer
+	sofficePath       string
+	officeTimeout     time.Duration
+	chromePath        string
+	paper             Paper
+	printBackground   bool
+	allowRemote       bool
+	noSandbox         bool
+	tempDir           string
 }
 
 // Option 配置选项类型
@@ -51,10 +60,77 @@ func newConverter(options ...Option) *Converter {
 		pageCacheCapacity: defaultConverter.pageCacheCapacity,
 		pageCacheBytes:    defaultConverter.pageCacheBytes,
 		pdfParallel:       false,
+		paper:             DefaultPaper(),
+		printBackground:   true,
 	}
 
 	for _, opt := range options {
 		opt(conv)
 	}
 	return conv
+}
+
+// SofficePath 返回配置的 LibreOffice 可执行文件路径；为空表示自动查找。
+func (c *Converter) SofficePath() string {
+	if c == nil {
+		return ""
+	}
+	return c.sofficePath
+}
+
+// OfficeTimeout 返回 Office 文档转换超时时间；为 0 表示使用默认值。
+func (c *Converter) OfficeTimeout() time.Duration {
+	if c == nil {
+		return 0
+	}
+	return c.officeTimeout
+}
+
+// ChromePath 返回配置的 Chrome/Chromium 可执行文件路径；为空表示自动查找。
+func (c *Converter) ChromePath() string {
+	if c == nil {
+		return ""
+	}
+	return c.chromePath
+}
+
+// Paper 返回输出纸张设置。
+func (c *Converter) Paper() Paper {
+	if c == nil {
+		return DefaultPaper()
+	}
+	return c.paper
+}
+
+// PrintBackground 返回是否打印背景。
+func (c *Converter) PrintBackground() bool {
+	if c == nil {
+		return true
+	}
+	return c.printBackground
+}
+
+// AllowRemoteResources 返回是否允许加载外部资源。
+func (c *Converter) AllowRemoteResources() bool {
+	if c == nil {
+		return false
+	}
+	return c.allowRemote
+}
+
+// NoSandbox 返回是否禁用 Chrome 沙箱。
+func (c *Converter) NoSandbox() bool {
+	if c == nil {
+		return false
+	}
+	return c.noSandbox
+}
+
+// TempDir 返回外部工具（LibreOffice/Chrome）转换使用的临时文件根目录；
+// 为空表示使用系统临时目录。
+func (c *Converter) TempDir() string {
+	if c == nil {
+		return ""
+	}
+	return c.tempDir
 }

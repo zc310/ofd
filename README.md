@@ -12,23 +12,27 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 
 ## 功能特性
 
-| 类别           | 功能                                                                                 |
-|----------------|--------------------------------------------------------------------------------------|
-| **文档转换**   | OFD 转 PDF、单文件 HTML、纯文本、Markdown 和 PNG/JPG 等图像格式；PDF/Markdown 转 OFD |
-| **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                             |
-| **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                                   |
-| **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                              |
-| **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告         |
-| **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证                       |
-| **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                                       |
-| **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                           |
-| **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                            |
-| **性能基准**   | 提供跨语言 OFD 转 PDF 速度、文件大小、文本提取和兼容性对比测试                       |
-| **处理性能**   | 基于 Go 语言开发，支持高效处理                                                       |
+| 类别           | 功能                                                                                                 |
+|----------------|------------------------------------------------------------------------------------------------------|
+| **文档转换**   | OFD 转 PDF、单文件 HTML、纯文本、Markdown 和 PNG/JPG 等图像格式；PDF/Markdown/Office/HTML 文档转 OFD |
+| **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                                             |
+| **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                                                   |
+| **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                                              |
+| **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告                         |
+| **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证                                       |
+| **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                                                       |
+| **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                                           |
+| **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                                            |
+| **性能基准**   | 提供跨语言 OFD 转 PDF 速度、文件大小、文本提取和兼容性对比测试                                       |
+| **处理性能**   | 基于 Go 语言开发，支持高效处理                                                                       |
 
 OFD 标准元素和项目能力的详细支持范围见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)。该清单区分了已支持、部分支持和暂不承诺完整支持的能力，不应将项目功能表述为完整符合 GB/T 33190-2016。
 
 PDF 转 OFD 的支持范围（内容流操作符、文字编码与字宽、图像过滤器、容错能力等）见 [`docs/PDF-SUPPORT.md`](docs/PDF-SUPPORT.md)。
+
+Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）转 OFD/PDF 依赖 LibreOffice 命令行，支持范围见 [`docs/OFFICE-SUPPORT.md`](docs/OFFICE-SUPPORT.md)。
+
+HTML/MHTML（html/htm/mhtml/mht）转 OFD/PDF 依赖 Chrome/Chromium（chromedp），支持范围见 [`docs/HTML-SUPPORT.md`](docs/HTML-SUPPORT.md)。
 
 性能基准测试见 [`zc310/ofd-benchmark`](https://github.com/zc310/ofd-benchmark)。该项目对比多个语言和实现的 OFD 转 PDF 速度、输出文件大小、文本提取能力及兼容性；测试结果仅供参考，实际表现会受到文档样本、字体、操作系统和运行环境影响。
 
@@ -1117,7 +1121,7 @@ func main() {
 ```
 
 
-### PDF / Markdown 转 OFD
+### PDF / Markdown / Office / HTML 文档转 OFD
 
 使用统一的 `converter.Convert` 入口，按需空白导入对应的导入器，避免核心库链接不使用的依赖：
 
@@ -1125,8 +1129,10 @@ func main() {
 import (
     "os"
     "github.com/zc310/ofd/pkg/converter"
-    _ "github.com/zc310/ofd/pkg/converter/mdimport"  // Markdown → OFD
-    _ "github.com/zc310/ofd/pkg/converter/pdfimport" // PDF → OFD
+    _ "github.com/zc310/ofd/pkg/converter/mdimport"     // Markdown → OFD
+    _ "github.com/zc310/ofd/pkg/converter/pdfimport"    // PDF → OFD
+    _ "github.com/zc310/ofd/pkg/converter/officeimport" // Office → PDF/OFD（需安装 LibreOffice）
+    _ "github.com/zc310/ofd/pkg/converter/htmlimport"   // HTML/MHTML → PDF/OFD（需安装 Chrome/Chromium）
 )
 
 func main() {
@@ -1141,6 +1147,10 @@ func main() {
 ```
 
 Markdown 输入会重新排版为 A4 固定版式；远程图片不会被抓取，只在日志中给出警告。
+
+Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）通过 LibreOffice 命令行转换：`Convert(from, "pdf", …)` 直接输出 PDF，`Convert(from, "ofd", …)` 先转 PDF 再生成 OFD。运行环境需安装 LibreOffice，否则返回明确错误；可用 `converter.WithSoffice(path)` 与 `converter.WithOfficeTimeout(d)` 指定可执行文件与超时。
+
+HTML/MHTML（html/htm/mhtml/mht）通过 Chrome/Chromium 打印引擎转换，默认禁止加载外部资源，纸张默认 A4；可用 `converter.WithChrome(path)`、`converter.WithPaperSize("A4")`、`converter.WithLandscape(true)`、`converter.WithAllowRemoteResources(true)` 等选项控制。
 
 ### OFD 转图像
 

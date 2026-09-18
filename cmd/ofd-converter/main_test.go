@@ -305,6 +305,31 @@ func TestParseArgsSupportsHTMLFormat(t *testing.T) {
 	}
 }
 
+func TestParseArgsSupportsExternalToolOptions(t *testing.T) {
+	opts, err := parseArgs([]string{
+		"-temp-dir", "/tmp/custom",
+		"-paper", "A3",
+		"-landscape",
+		"-chrome-no-sandbox",
+		"-allow-remote",
+		"-no-print-background",
+		"-external-workers", "3",
+		"input.html", "output.pdf",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.tempDir != "/tmp/custom" {
+		t.Fatalf("tempDir = %q", opts.tempDir)
+	}
+	if opts.paper != "A3" || !opts.landscape || !opts.chromeNoSandbox || !opts.allowRemote || !opts.noPrintBackground {
+		t.Fatalf("外部工具选项解析不正确: %+v", opts)
+	}
+	if opts.externalWorkers != 3 {
+		t.Fatalf("externalWorkers = %d, want 3", opts.externalWorkers)
+	}
+}
+
 func TestValidateOutputPathRejectsInputFile(t *testing.T) {
 	dir := t.TempDir()
 	input := filepath.Join(dir, "input.ofd")
