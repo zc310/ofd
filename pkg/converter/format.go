@@ -1,10 +1,12 @@
 package converter
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -57,6 +59,9 @@ var (
 	registryMu sync.RWMutex
 	formatList = map[string]*Format{} // name → Format
 	extMap     = map[string]*Format{} // ".png" → Format
+
+	importerList   = map[string]Importer{} // name → Importer
+	importerExtMap = map[string]Importer{} // ".pdf" → Importer
 )
 
 // formatAliases 把常见的简写映射到注册名，方便 CLI 等调用方按扩展名或别名分发。
@@ -83,6 +88,160 @@ func Register(enc Encoder) {
 	for _, ext := range f.Extensions {
 		extMap[normalizeExtension(ext)] = f
 	}
+}
+
+// Importer 是非 OFD 输入（如 PDF、DOCX、PPTX）到 OFD 的导入器。
+// 各输入格式包在 init() 中调用 RegisterImporter 注册，并按需空白导入，
+// 使不使用的导入依赖不进最终二进制。
+type Importer interface {
+	// Name 返回输入格式名，如 "pdf"、"docx"、"pptx"。
+	Name() string
+	// Extensions 返回支持的文件扩展名，如 [".pdf"]。
+	Extensions() []string
+	// MIME 返回 MIME 类型，如 "application/pdf"。
+	MIME() string
+	// Import 把 input 读取为 OFD 并写入 output。
+	Import(input any, output io.Writer, conv *Converter) error
+}
+
+// RegisterImporter 注册一个导入器。通常在 init() 中调用。
+func RegisterImporter(imp Importer) {
+	name := strings.ToLower(strings.TrimSpace(imp.Name()))
+	if name == "" {
+		return
+	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	importerList[name] = imp
+	for _, ext := range imp.Extensions() {
+		importerExtMap[normalizeExtension(ext)] = imp
+	}
+}
+
+// ImporterByName 按输入格式名（含别名或扩展名）查找导入器。
+func ImporterByName(name string) (Importer, bool) {
+	key := normalizeFormatName(name)
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	if imp, ok := importerList[key]; ok {
+		return imp, true
+	}
+	if imp, ok := importerExtMap[normalizeExtension(key)]; ok {
+		return imp, true
+	}
+	return nil, false
+}
+
+// ImporterByExtension 按文件扩展名查找导入器。
+func ImporterByExtension(ext string) (Importer, bool) {
+	key := normalizeExtension(ext)
+	if key == "" {
+		return nil, false
+	}
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	imp, ok := importerExtMap[key]
+	return imp, ok
+}
+
+// ImportFormats 返回所有已注册输入格式的名称快照，按名称排序。
+func ImportFormats() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	names := make([]string, 0, len(importerList))
+	for name := range importerList {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Convert 在输入格式 from 与输出格式 to 之间转换。from 为空时按文件扩展名或
+// 内容识别。to 为 "ofd" 时使用导入器（X→OFD）；from 为 "ofd" 时使用导出器
+// （OFD→X）；两者都不是时先导入为 OFD 再导出。
+func Convert(from, to string, input any, output io.Writer, opts ...Option) error {
+	conv := newConverter(opts...)
+	to = normalizeFormatName(to)
+	if to == "" {
+		return errors.New("未指定输出格式")
+	}
+	from = normalizeFormatName(from)
+	if from == "" {
+		detected, err := detectInputFormat(input)
+		if err != nil {
+			return err
+		}
+		from = detected
+	}
+	switch {
+	case from == "ofd" && to == "ofd":
+		return errors.New("输入和输出不能都是 OFD")
+	case to == "ofd":
+		imp, ok := ImporterByName(from)
+		if !ok {
+			return fmt.Errorf("不支持从 %s 转换为 OFD", from)
+		}
+		if output == nil {
+			return errors.New("未设置 OFD 输出参数")
+		}
+		return imp.Import(input, output, conv)
+	case from == "ofd":
+		return encodeWithConverterFormat(to, input, output, conv)
+	default:
+		imp, ok := ImporterByName(from)
+		if !ok {
+			return fmt.Errorf("不支持导入格式: %s", from)
+		}
+		var intermediate bytes.Buffer
+		if err := imp.Import(input, &intermediate, conv); err != nil {
+			return err
+		}
+		return encodeWithConverterFormat(to, intermediate.Bytes(), output, conv)
+	}
+}
+
+// normalizeFormatName 统一格式名的大小写、空格与别名。
+func normalizeFormatName(format string) string {
+	key := strings.ToLower(strings.TrimSpace(format))
+	if alias, ok := formatAliases[key]; ok {
+		key = alias
+	}
+	return key
+}
+
+// detectInputFormat 根据输入的类型、扩展名或魔数识别格式。无法可靠识别时
+// 返回错误，要求调用方显式指定 from。
+func detectInputFormat(input any) (string, error) {
+	switch value := input.(type) {
+	case []*render.Document:
+		return "ofd", nil
+	case string:
+		if ext := filepath.Ext(value); ext != "" {
+			if imp, ok := ImporterByExtension(ext); ok {
+				return imp.Name(), nil
+			}
+			if _, ok := FormatByExtension(ext); ok {
+				return "ofd", nil
+			}
+		}
+		return "", fmt.Errorf("无法从文件名识别输入格式: %s", value)
+	case []byte:
+		return sniffInputFormat(value)
+	default:
+		return "", errors.New("无法识别输入格式，请显式指定 from")
+	}
+}
+
+// sniffInputFormat 通过魔数识别 PDF 与 OFD。OFD 与 DOCX/PPTX 都是 ZIP 容器，
+// 这里只区分 OFD（含 OFD.xml）；其它 ZIP 输入需显式指定 from。
+func sniffInputFormat(data []byte) (string, error) {
+	if len(data) >= 5 && string(data[:5]) == "%PDF-" {
+		return "pdf", nil
+	}
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte("PK\x03\x04")) && bytes.Contains(data, []byte("OFD.xml")) {
+		return "ofd", nil
+	}
+	return "", errors.New("无法识别输入格式，请显式指定 from")
 }
 
 // Encode 解析 input 中的 OFD 文档，并按 format 选择注册的编码器写入 output。

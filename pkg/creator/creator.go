@@ -34,8 +34,9 @@ const (
 
 // CreateOptions 控制 OFD ZIP 包的生成方式。
 type CreateOptions struct {
-	Compression   CompressionMode
-	Deterministic bool
+	Compression           CompressionMode
+	Deterministic         bool
+	PreserveEmbeddedFonts bool
 	// CompleteTextCodeDeltas 按字体度量自动补全缺失的 DeltaX 和 DeltaY。
 	CompleteTextCodeDeltas bool
 }

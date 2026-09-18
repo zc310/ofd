@@ -15,6 +15,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/converter"
+	// 注册 "ofd" 输出格式（PDF→OFD）；按需引入，避免默认链接 pdfcpu。
+	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
+	// 注册 Markdown→OFD 导入器（输入格式 "md"）。
+	_ "github.com/zc310/ofd/pkg/converter/mdimport"
 )
 
 const (
@@ -35,6 +39,7 @@ type options struct {
 	inputDir     string
 	outputDir    string
 	format       string
+	from         string
 	htmlFormat   string
 	dpi          int
 	page         int
@@ -120,7 +125,8 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVarP(&output, "output", "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
-	flags.StringVar(&format, "format", "", "输出格式: pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
+	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
+	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
@@ -141,7 +147,7 @@ func parseArgs(args []string) (*options, error) {
 
 func normalizeConverterArgs(args []string) []string {
 	longFlags := map[string]bool{
-		"format": true, "html-format": true, "input-dir": true, "output-dir": true,
+		"format": true, "from": true, "html-format": true, "input-dir": true, "output-dir": true,
 		"output": true,
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
@@ -177,17 +183,14 @@ func runSingle(opts *options) error {
 	if _, err := os.Stat(opts.input); err != nil {
 		return fmt.Errorf("输入文件: %w", err)
 	}
-	format := strings.ToLower(strings.TrimSpace(opts.format))
-	switch format {
-	case "":
-		if strings.EqualFold(filepath.Ext(opts.output), ".zip") {
-			return errors.New("输出为 .zip 时需要通过 -format 指定图片格式")
-		}
-		format = formatFromExtension(opts.output)
-	case "jpeg":
-		format = "jpg"
-	case "markdown":
-		format = "md"
+	from := resolveInputFormat(opts)
+	format, err := resolveOutputFormat(opts)
+	if err != nil {
+		return err
+	}
+	// 非 OFD 输入（如 PDF）先导入再导出，统一走 converter.Convert。
+	if from != "ofd" {
+		return convertImported(opts, from, format)
 	}
 	if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
@@ -482,10 +485,83 @@ func minInt(left, right int) int {
 }
 
 func formatFromExtension(output string) string {
+	if strings.EqualFold(filepath.Ext(output), ".ofd") {
+		return "ofd"
+	}
 	if f, ok := converter.FormatByExtension(filepath.Ext(output)); ok {
 		return cliFormatName(f.Name)
 	}
 	return "pdf"
+}
+
+// resolveInputFormat 解析输入格式：优先 --from，其次按输入文件扩展名匹配
+// 已注册的导入器；都没有时按 OFD 处理。
+func resolveInputFormat(opts *options) string {
+	if from := strings.ToLower(strings.TrimSpace(opts.from)); from != "" {
+		if imp, ok := converter.ImporterByName(from); ok {
+			return imp.Name()
+		}
+		return from
+	}
+	if imp, ok := converter.ImporterByExtension(filepath.Ext(opts.input)); ok {
+		return imp.Name()
+	}
+	return "ofd"
+}
+
+// resolveOutputFormat 解析输出格式：优先 --format，其次按输出扩展名推断。
+func resolveOutputFormat(opts *options) (string, error) {
+	format := strings.ToLower(strings.TrimSpace(opts.format))
+	switch format {
+	case "":
+		if strings.EqualFold(filepath.Ext(opts.output), ".zip") {
+			return "", errors.New("输出为 .zip 时需要通过 -format 指定图片格式")
+		}
+		return formatFromExtension(opts.output), nil
+	case "jpeg":
+		return "jpg", nil
+	case "markdown":
+		return "md", nil
+	}
+	return format, nil
+}
+
+// convertImported 处理非 OFD 输入：通过 converter.Convert 导入并按需导出。
+func convertImported(opts *options, from, to string) error {
+	if _, ok := converter.ImporterByName(from); !ok {
+		return fmt.Errorf("%w: 不支持的输入格式: %s", ErrInvalidFormat, from)
+	}
+	if to == "" {
+		return fmt.Errorf("%w: 未指定输出格式", ErrInvalidFormat)
+	}
+	if to != "ofd" {
+		if isImageFormat(to) {
+			return fmt.Errorf("%w: 暂不支持从 %s 直接输出图像，请先转换为 OFD", ErrInvalidFormat, from)
+		}
+		if _, ok := converter.FormatByName(registryFormatName(to)); !ok {
+			return fmt.Errorf("%w: %s", ErrInvalidFormat, to)
+		}
+	}
+	if err := validateOutputPath(opts, to); err != nil {
+		return err
+	}
+	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
+	if opts.output != "" && opts.output != "-" {
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, to)}
+		output = fileOutput
+	}
+	var option []converter.Option
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	err := converter.Convert(from, to, opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func validateOutputPath(opts *options, format string) error {

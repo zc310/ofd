@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式，也支持将 PDF、Markdown 转换为 OFD。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -26,26 +26,43 @@ ofd-converter --help
 
 ## 选项
 
-| 选项             | 说明                                                                                |
-|------------------|-------------------------------------------------------------------------------------|
-| `-o`, `-output`  | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                |
-| `-input-dir`     | 批量转换的输入目录；需要同时指定 `-output-dir`                                      |
-| `-output-dir`    | 批量转换的输出目录；保留输入目录的相对路径结构                                      |
-| `-format`        | 输出格式: `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `svg`, `eps`, `tex` |
-| `-html-format`   | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                    |
-| `-dpi`           | 输出分辨率 (1-1200)，默认 150                                                       |
-| `-page`          | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                                    |
-| `-bg`            | 背景颜色: `transparent`, `white`, `black`，默认 `white`                             |
-| `-dir`           | 不压缩，将多页图片直接保存到输出目录下的多个文件                                    |
-| `-workers`       | 批量转换并发数，默认 `4`                                                            |
-| `-recursive`     | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                |
-| `-overwrite`     | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败        |
-| `-skip-existing` | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用              |
+| 选项             | 说明                                                                                       |
+|------------------|--------------------------------------------------------------------------------------------|
+| `-o`, `-output`  | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                       |
+| `-input-dir`     | 批量转换的输入目录；需要同时指定 `-output-dir`                                             |
+| `-output-dir`    | 批量转换的输出目录；保留输入目录的相对路径结构                                             |
+| `-format`        | 输出格式: `ofd`, `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `svg`, `eps`, `tex` |
+| `-from`          | 输入格式（可选）: `pdf`, `md`；缺省按输入文件扩展名推断，未匹配到导入器时按 OFD 处理       |
+| `-html-format`   | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                           |
+| `-dpi`           | 输出分辨率 (1-1200)，默认 150                                                              |
+| `-page`          | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面                                           |
+| `-bg`            | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                    |
+| `-dir`           | 不压缩，将多页图片直接保存到输出目录下的多个文件                                           |
+| `-workers`       | 批量转换并发数，默认 `4`                                                                   |
+| `-recursive`     | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                       |
+| `-overwrite`     | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败               |
+| `-skip-existing` | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                     |
 
-输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
+输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
 
 ## 示例
+
+### PDF 转 OFD
+
+```bash
+ofd-converter input.pdf output.ofd
+ofd-converter -from pdf -format ofd input.pdf output.ofd
+```
+
+### Markdown 转 OFD
+
+Markdown 输入会被重新排版为 A4 固定版式，支持标题、段落、列表、引用、代码块、GFM 表格和本地图片；代码块使用系统等宽字体（优先 Noto Sans Mono CJK SC / DejaVu Sans Mono 等）。出于安全和确定性考虑，**不会抓取远程图片**（`http`/`https` 地址会被跳过并记录警告）。相对图片路径以 Markdown 文件所在目录为基准。
+
+```bash
+ofd-converter input.md output.ofd
+ofd-converter -from md -format ofd input.md output.ofd
+```
 
 ### OFD 转 PDF
 

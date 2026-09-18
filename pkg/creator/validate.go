@@ -1767,7 +1767,7 @@ func imageFormat(value Image) string {
 }
 
 func number(value float64) string {
-	return strconv.FormatFloat(value, 'g', -1, 64)
+	return string(appendFloat(nil, value))
 }
 
 func boxString(x, y, width, height float64) string {
