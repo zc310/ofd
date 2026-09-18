@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/tdewolff/canvas"
 )
@@ -106,5 +107,88 @@ func Page(page int) Option {
 func PDFParallel(enabled bool) Option {
 	return func(c *Converter) {
 		c.pdfParallel = enabled
+	}
+}
+
+// WithSoffice 设置 LibreOffice 可执行文件路径，供 Office 文档导入使用；
+// 为空时按 OFD_SOFFICE、PATH 和常见安装路径自动查找。
+func WithSoffice(path string) Option {
+	return func(c *Converter) {
+		c.sofficePath = strings.TrimSpace(path)
+	}
+}
+
+// WithOfficeTimeout 设置 Office 文档转换超时时间；0 表示使用默认值。
+func WithOfficeTimeout(timeout time.Duration) Option {
+	return func(c *Converter) {
+		c.officeTimeout = timeout
+	}
+}
+
+// WithPaperSize 按名称设置输出纸张尺寸，支持 A4、A3、A5、Letter、Legal、B5、16开。
+func WithPaperSize(name string) Option {
+	return func(c *Converter) {
+		paper, err := PaperByName(name)
+		if err != nil {
+			return
+		}
+		c.paper.Width = paper.Width
+		c.paper.Height = paper.Height
+	}
+}
+
+// WithPaperDimensions 以毫米设置自定义纸张尺寸。
+func WithPaperDimensions(width, height float64) Option {
+	return func(c *Converter) {
+		if width > 0 && height > 0 {
+			c.paper.Width = width
+			c.paper.Height = height
+		}
+	}
+}
+
+// WithLandscape 设置横向打印。
+func WithLandscape(landscape bool) Option {
+	return func(c *Converter) {
+		c.paper.Landscape = landscape
+	}
+}
+
+// WithPrintBackground 设置是否打印背景颜色和图片（默认开启）。
+func WithPrintBackground(enabled bool) Option {
+	return func(c *Converter) {
+		c.printBackground = enabled
+	}
+}
+
+// WithAllowRemoteResources 设置是否允许加载外部资源（默认禁止，仅允许本地与
+// data: 资源）。仅在 HTML/MHTML 转 PDF 时生效。
+func WithAllowRemoteResources(enabled bool) Option {
+	return func(c *Converter) {
+		c.allowRemote = enabled
+	}
+}
+
+// WithChrome 设置 Chrome/Chromium 可执行文件路径，供 HTML/MHTML 导入使用；
+// 为空时按 OFD_CHROME、PATH 和常见安装路径自动查找。
+func WithChrome(path string) Option {
+	return func(c *Converter) {
+		c.chromePath = strings.TrimSpace(path)
+	}
+}
+
+// WithChromeNoSandbox 设置是否禁用 Chrome 沙箱。容器或 root 环境下可能需要，
+// 但会降低安全性，默认关闭。
+func WithChromeNoSandbox(enabled bool) Option {
+	return func(c *Converter) {
+		c.noSandbox = enabled
+	}
+}
+
+// WithTempDir 设置外部工具（LibreOffice/Chrome）转换使用的临时文件根目录；
+// 为空表示使用系统临时目录。目录不存在时会按需创建子目录。
+func WithTempDir(dir string) Option {
+	return func(c *Converter) {
+		c.tempDir = strings.TrimSpace(dir)
 	}
 }

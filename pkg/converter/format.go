@@ -62,6 +62,8 @@ var (
 
 	importerList   = map[string]Importer{} // name → Importer
 	importerExtMap = map[string]Importer{} // ".pdf" → Importer
+
+	transformerList = map[string]Transformer{} // "from>to" → Transformer
 )
 
 // formatAliases 把常见的简写映射到注册名，方便 CLI 等调用方按扩展名或别名分发。
@@ -116,6 +118,44 @@ func RegisterImporter(imp Importer) {
 	for _, ext := range imp.Extensions() {
 		importerExtMap[normalizeExtension(ext)] = imp
 	}
+}
+
+// Transformer 是某类输入到某个输出格式的直接转换器，用于避免"先导入 OFD
+// 再导出"的中间损失（例如 docx→pdf 直接由 LibreOffice 完成）。各格式包在
+// init() 中调用 RegisterTransformer 注册。
+type Transformer interface {
+	// From 返回支持的输入格式名，如 "docx"、"doc"。
+	From() []string
+	// To 返回输出格式名，如 "pdf"。
+	To() string
+	// Transform 把 input 直接转换为 output。
+	Transform(input any, output io.Writer, conv *Converter) error
+}
+
+// RegisterTransformer 注册一个直接转换器。通常在 init() 中调用。
+func RegisterTransformer(transformer Transformer) {
+	to := normalizeFormatName(transformer.To())
+	if to == "" {
+		return
+	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	for _, from := range transformer.From() {
+		key := normalizeFormatName(from)
+		if key == "" {
+			continue
+		}
+		transformerList[key+">"+to] = transformer
+	}
+}
+
+// TransformerFor 查找 from→to 的直接转换器。
+func TransformerFor(from, to string) (Transformer, bool) {
+	key := normalizeFormatName(from) + ">" + normalizeFormatName(to)
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	transformer, ok := transformerList[key]
+	return transformer, ok
 }
 
 // ImporterByName 按输入格式名（含别名或扩展名）查找导入器。
@@ -176,18 +216,12 @@ func Convert(from, to string, input any, output io.Writer, opts ...Option) error
 	switch {
 	case from == "ofd" && to == "ofd":
 		return errors.New("输入和输出不能都是 OFD")
-	case to == "ofd":
-		imp, ok := ImporterByName(from)
-		if !ok {
-			return fmt.Errorf("不支持从 %s 转换为 OFD", from)
+	case from != "ofd" && to != "ofd":
+		// 优先使用直接转换器（如 docx→pdf 交给 LibreOffice），避免经过 OFD
+		// 中间格式造成的二次版式损失。
+		if transformer, ok := TransformerFor(from, to); ok {
+			return transformer.Transform(input, output, conv)
 		}
-		if output == nil {
-			return errors.New("未设置 OFD 输出参数")
-		}
-		return imp.Import(input, output, conv)
-	case from == "ofd":
-		return encodeWithConverterFormat(to, input, output, conv)
-	default:
 		imp, ok := ImporterByName(from)
 		if !ok {
 			return fmt.Errorf("不支持导入格式: %s", from)
@@ -197,6 +231,17 @@ func Convert(from, to string, input any, output io.Writer, opts ...Option) error
 			return err
 		}
 		return encodeWithConverterFormat(to, intermediate.Bytes(), output, conv)
+	case to == "ofd":
+		imp, ok := ImporterByName(from)
+		if !ok {
+			return fmt.Errorf("不支持从 %s 转换为 OFD", from)
+		}
+		if output == nil {
+			return errors.New("未设置 OFD 输出参数")
+		}
+		return imp.Import(input, output, conv)
+	default:
+		return encodeWithConverterFormat(to, input, output, conv)
 	}
 }
 
