@@ -224,6 +224,23 @@ class BlobURLCache {
     this.values.clear();
     this.bytes = 0;
   }
+
+  clearIndex(kind, index) {
+    const keysToDelete = [];
+    for (const [key] of this.values.entries()) {
+      const parts = key.split(':');
+      if (parts.length >= 3 && parts[1] === kind && parts[2] === String(index)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      const entry = this.values.get(key);
+      if (!entry) continue;
+      this.bytes -= entry.size;
+      URL.revokeObjectURL(entry.url);
+      this.values.delete(key);
+    }
+  }
 }
 
 const status = document.querySelector('#status');
@@ -307,10 +324,16 @@ const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
 const engine = new OFDWorkerClient();
-const pageCache = new BlobURLCache(256 << 20, url =>
+const pageCache = new BlobURLCache(128 << 20, url =>
   Array.from(document.querySelectorAll('.page-image')).some(image => !image.hidden && image.src === url));
-const thumbnailCache = new BlobURLCache(64 << 20, url =>
+const thumbnailCache = new BlobURLCache(32 << 20, url =>
   Array.from(document.querySelectorAll('.thumbnail img')).some(image => !image.hidden && image.src === url));
+// 打开文档时限制 WASM 侧解析器保留的页面缓存，避免滚动浏览大文档时
+// 已解析页面持续驻留。pageCacheBytes 为 0 时由 WASM 使用默认值。
+const openDocumentOptions = {
+  pageCacheCapacity: 6,
+  pageCacheBytes: 64 << 20,
+};
 const fallbackFontURLs = [
   {
     family: 'Smiley Sans',
@@ -337,7 +360,15 @@ const thumbnailBatchQueue = new Map();
 let thumbnailBatchTimer;
 const textRequests = new Map();
 const textCache = new Map();
+const textCacheMaxEntries = 64;
 let pageInfos = [];
+
+function trimTextCache() {
+  while (textCache.size > textCacheMaxEntries) {
+    const oldestKey = textCache.keys().next().value;
+    textCache.delete(oldestKey);
+  }
+}
 let pageCards = [];
 let thumbnailButtons = [];
 let current = 0;
@@ -757,6 +788,14 @@ function unmountPageSpread(position) {
       const card = pageCards[index];
       cancelPageRequest(index, card);
       cancelTextRequest(index, card);
+      textCache.delete(index);
+      renderedPages.delete(index);
+      failedPages.delete(index);
+      if (card) pageCardRequests.delete(card);
+      const pageInfoKey = `${documentGeneration}:${index}`;
+      if (pageInfoRequests.has(pageInfoKey)) pageInfoRequests.delete(pageInfoKey);
+      pageCache.clearIndex('page', index);
+      thumbnailCache.clearIndex('thumbnail', index);
       if (card) resizeObserver?.unobserve(card);
       delete pageCards[index];
     }
@@ -1047,6 +1086,10 @@ async function reportMemory(trigger = '手动') {
   const summary = {
     '页面缓存': formatFileSize(pageCache.bytes),
     '缩略图缓存': formatFileSize(thumbnailCache.bytes),
+    '文字缓存条目': textCache.size,
+    '页面请求': pageRequests.size,
+    '页面卡片请求': pageCardRequests.size,
+    '页面信息请求': pageInfoRequests.size,
     '最近文件(驻留内存)': '按需加载',
     '回退字体(JS侧)': formatFileSize(fontBytes),
     '挂载页数(解码位图)': mountedPages,
@@ -1059,6 +1102,8 @@ async function reportMemory(trigger = '手动') {
       heapSys: formatFileSize(wasm.heapSys),
       heapInuse: formatFileSize(wasm.heapInuse),
       heapAlloc: formatFileSize(wasm.heapAlloc),
+      heapReleased: formatFileSize(wasm.heapReleased),
+      heapObjects: wasm.heapObjects,
       累计分配: formatFileSize(wasm.totalAlloc),
       GC次数: wasm.numGC,
     });
@@ -1434,7 +1479,7 @@ function loadFallbackFont(source) {
     return { ...source, data };
   })();
   fallbackFontLoads.set(key, load);
-  load.catch(() => fallbackFontLoads.delete(key));
+  load.then(() => fallbackFontLoads.delete(key)).catch(() => fallbackFontLoads.delete(key));
   return load;
 }
 
@@ -1734,6 +1779,49 @@ function matchingSearchResults(pageIndex, runIndex) {
     .sort((left, right) => left.start - right.start);
 }
 
+// textLayerSegments 把同一行、同字体、相邻的文本片段合并成一个片段。
+// OFD 常把每个字形输出为独立的 TextObject；若逐字形创建绝对定位的 span，
+// 单页就可能产生数千个节点，浏览器布局/绘制的文字结构内存会急剧膨胀。
+function textLayerSegments(runs) {
+  const segments = [];
+  for (const run of runs) {
+    if (!run.text) continue;
+    const angle = run.glyphs?.[0]?.angle ?? run.charDirection ?? 0;
+    const previous = segments[segments.length - 1];
+    const tolerance = previous
+      ? Math.max(1, Math.min(run.height || 1, previous.height || 1) * 0.5)
+      : 0;
+    const mergeable = angle === 0 && previous && previous.angle === 0 &&
+      previous.fontFamily === (run.fontFamily || '') &&
+      previous.weight === run.weight &&
+      previous.bold === run.bold &&
+      previous.italic === run.italic &&
+      previous.size === run.size &&
+      Math.abs(run.y - previous.y) <= tolerance &&
+      run.x <= previous.x + previous.width + Math.max(run.height || 1, 1) * 2;
+    if (mergeable) {
+      previous.text += run.text;
+      previous.width = Math.max(previous.width, run.x + run.width - previous.x);
+      previous.height = Math.max(previous.height, run.height);
+      continue;
+    }
+    segments.push({
+      x: run.x,
+      y: run.y,
+      width: run.width,
+      height: run.height,
+      text: run.text,
+      fontFamily: run.fontFamily || '',
+      weight: run.weight,
+      bold: run.bold,
+      italic: run.italic,
+      size: run.size,
+      angle,
+    });
+  }
+  return segments;
+}
+
 function buildTextLayer(index) {
   const card = pageCards[index];
   const runs = textCache.get(index);
@@ -1743,24 +1831,33 @@ function buildTextLayer(index) {
   const layer = card.querySelector('.text-layer') || document.createElement('div');
   layer.className = 'text-layer';
   layer.replaceChildren();
-  runs.forEach((run, runIndex) => {
+  if (!layer.parentElement) card.append(layer);
+  if (!textLayerVisible) return;
+
+  for (const segment of textLayerSegments(runs)) {
     const element = document.createElement('span');
     element.className = 'text-run';
-    element.style.left = `${run.x / info.width * 100}%`;
+    element.style.left = `${segment.x / info.width * 100}%`;
     // TextRun 坐标已经是以页面左上角为原点的覆盖层坐标。
     // 渲染器只在画布内部翻转 Y 轴，因此这里不能再次翻转文字层。
-    element.style.top = `${run.y / info.height * 100}%`;
-    element.style.width = `${Math.max(run.width / info.width * 100, 0.1)}%`;
-    element.style.height = `${Math.max(run.height / info.height * 100, 0.1)}%`;
-    element.style.fontSize = `${Math.max(run.size * card.clientWidth / info.width, 1)}px`;
-    if (run.fontFamily) element.style.fontFamily = `'${run.fontFamily}', sans-serif`;
-    element.style.fontWeight = run.weight > 0 ? String(run.weight) : (run.bold ? '700' : '400');
-    element.style.fontStyle = run.italic ? 'italic' : 'normal';
-    const runAngle = run.glyphs?.[0]?.angle ?? run.charDirection ?? 0;
-    element.style.transformOrigin = 'top left';
-    element.style.transform = `rotate(${runAngle}deg)`;
-    element.textContent = run.text;
+    element.style.top = `${segment.y / info.height * 100}%`;
+    element.style.width = `${Math.max(segment.width / info.width * 100, 0.1)}%`;
+    element.style.height = `${Math.max(segment.height / info.height * 100, 0.1)}%`;
+    element.style.fontSize = `${Math.max(segment.size * card.clientWidth / info.width, 1)}px`;
+    if (segment.fontFamily) element.style.fontFamily = `'${segment.fontFamily}', sans-serif`;
+    element.style.fontWeight = segment.weight > 0 ? String(segment.weight) : (segment.bold ? '700' : '400');
+    element.style.fontStyle = segment.italic ? 'italic' : 'normal';
+    // 只有旋转文本才需要 transform；水平文本省略可避免为每个片段创建
+    // 额外的变换/合成上下文。
+    if (segment.angle) {
+      element.style.transformOrigin = 'top left';
+      element.style.transform = `rotate(${segment.angle}deg)`;
+    }
+    element.textContent = segment.text;
     layer.append(element);
+  }
+  // 搜索高亮仍按原始 run 的矩形单独渲染，保持命中位置精确。
+  runs.forEach((run, runIndex) => {
     for (const match of matchingSearchResults(index, runIndex)) {
       for (const rect of match.rects || []) {
         const highlight = document.createElement('span');
@@ -1779,7 +1876,6 @@ function buildTextLayer(index) {
       }
     }
   });
-  if (!layer.parentElement) card.append(layer);
 }
 
 function pageImageIsReady(image) {
@@ -1818,6 +1914,7 @@ function loadText(index, pinned = false) {
     .then(runs => {
       if (generation !== documentGeneration) return;
       textCache.set(index, runs);
+      trimTextCache();
       if (pageCards[index]) buildTextLayer(index);
     })
     .catch(error => {
@@ -2283,7 +2380,7 @@ async function openSelectedFile(selected) {
       throw new Error(`默认中文字体不可用：${error.message}`);
     }
     if (generation !== documentGeneration) return;
-    openRequest = engine.open(data);
+    openRequest = engine.open(data, openDocumentOptions);
     const result = await openRequest;
     if (generation !== documentGeneration) return;
     await injectFonts(result.fonts, generation);
@@ -2342,6 +2439,7 @@ function cancelOpening() {
   cancelRequests(textRequests);
   searchRequest?.cancel();
   searchRequest = undefined;
+  clearInjectedFonts();
   // open 已经进入 Worker 时，取消只会取消前端 Promise；显式 close
   // 确保 WASM 侧不会留下被取消打开的 Reader。
   void engine.close().catch(error => console.warn('[OFD] 取消打开时释放 Reader 失败', error));
@@ -2929,15 +3027,13 @@ async function collectDocumentText(generation) {
   for (let index = 0; index < pageInfos.length; index += 1) {
     throwIfDocumentActionCancelled(generation);
     setStatus(`正在读取第 ${index + 1} / ${pageInfos.length} 页文字...`);
-    await loadText(index, true);
+    try { await loadText(index, true); } catch (_) {}
     throwIfDocumentActionCancelled(generation);
-    if (!textCache.has(index)) {
-      failed += 1;
-      continue;
-    }
+    if (!textCache.has(index)) { failed += 1; continue; }
     const text = pageText(index);
     if (text) parts.push(text);
   }
+  for (const [, request] of textRequests.entries()) request.textPinned = false;
   return { text: parts.join('\n\n'), failed };
 }
 
@@ -3185,6 +3281,13 @@ function setClarityPriority(enabled) {
 function setTextLayerVisible(visible) {
   textLayerVisible = visible;
   document.body.classList.toggle('hide-text-layer', !visible);
+  if (visible) {
+    pageCards.forEach((card, index) => {
+      if (card && textCache.has(index)) buildTextLayer(index);
+    });
+  } else {
+    pageCards.forEach(card => card?.querySelector('.text-layer')?.replaceChildren());
+  }
 }
 
 function setDarkReadingVisible(visible) {

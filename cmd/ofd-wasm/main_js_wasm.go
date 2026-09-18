@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,7 +114,25 @@ func openOptions(args []js.Value) (webreader.OpenOptions, error) {
 	if args[0].Type() != js.TypeObject {
 		return webreader.OpenOptions{}, errors.New("ofd.open 配置必须是对象")
 	}
-	return webreader.OpenOptions{}, nil
+	value := args[0]
+	options := webreader.OpenOptions{}
+	if capacity := value.Get("pageCacheCapacity"); !capacity.IsUndefined() && !capacity.IsNull() {
+		if capacity.Type() != js.TypeNumber || capacity.IsNaN() || math.IsInf(capacity.Float(), 0) ||
+			capacity.Float() != math.Trunc(capacity.Float()) ||
+			capacity.Float() < 0 || capacity.Float() > 1<<20 {
+			return webreader.OpenOptions{}, errors.New("pageCacheCapacity 必须是 0 到 1048576 之间的整数")
+		}
+		options.PageCacheCapacity = capacity.Int()
+	}
+	if bytes := value.Get("pageCacheBytes"); !bytes.IsUndefined() && !bytes.IsNull() {
+		if bytes.Type() != js.TypeNumber || bytes.IsNaN() || math.IsInf(bytes.Float(), 0) ||
+			bytes.Float() != math.Trunc(bytes.Float()) ||
+			bytes.Float() < 0 || bytes.Float() > 1<<40 {
+			return webreader.OpenOptions{}, errors.New("pageCacheBytes 必须是 0 到 1099511627776 之间的整数")
+		}
+		options.PageCacheBytes = int64(bytes.Float())
+	}
+	return options, nil
 }
 
 func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
@@ -216,9 +235,8 @@ func (a *wasmApp) closeCurrentReader() error {
 	}
 	err := reader.Close()
 	reader = nil
-	// WASM 线性内存通常不会归还给浏览器，但强制 GC 可以释放已关闭
-	// Reader 的 Go 对象，避免后续打开文档时继续按峰值增长。
 	runtime.GC()
+	debug.FreeOSMemory()
 	return err
 }
 
@@ -227,13 +245,15 @@ func (a *wasmApp) memStats(_ js.Value, _ []js.Value) any {
 	var stats runtime.MemStats
 	runtime.ReadMemStats(&stats)
 	return objectValue(map[string]any{
-		"heapAlloc":  stats.HeapAlloc,
-		"heapInuse":  stats.HeapInuse,
-		"heapSys":    stats.HeapSys,
-		"stackSys":   stats.StackSys,
-		"totalAlloc": stats.TotalAlloc,
-		"sys":        stats.Sys,
-		"numGC":      stats.NumGC,
+		"heapAlloc":    stats.HeapAlloc,
+		"heapInuse":    stats.HeapInuse,
+		"heapSys":      stats.HeapSys,
+		"heapReleased": stats.HeapReleased,
+		"heapObjects":  stats.HeapObjects,
+		"stackSys":     stats.StackSys,
+		"totalAlloc":   stats.TotalAlloc,
+		"sys":          stats.Sys,
+		"numGC":        stats.NumGC,
 	})
 }
 
