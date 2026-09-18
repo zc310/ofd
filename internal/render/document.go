@@ -93,7 +93,9 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 
 const (
 	imageCacheCapacity = 128
+	imageCacheBytes    = 64 << 20
 	svgCacheCapacity   = 64
+	svgCacheBytes      = 16 << 20
 	defaultRenderDPI   = 96
 )
 
@@ -112,8 +114,8 @@ func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi canvas
 		dpi:         dpi,
 		fonts:       NewFonts(doc),
 		Document:    doc,
-		images:      utils.NewLRU[string, image.Image](imageCacheCapacity, nil),
-		svgCanvases: utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil),
+		images:      utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
+		svgCanvases: utils.NewWeightedLRU[string, *canvas.Canvas](svgCacheCapacity, svgCacheBytes, nil),
 		imageLocks:  make(map[string]*imageKeyLock),
 	}
 }

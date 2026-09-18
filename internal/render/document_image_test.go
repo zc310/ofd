@@ -677,3 +677,52 @@ func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
 		}
 	}
 }
+
+func TestImageCacheWeightCountsLazyImageBytesAndPixels(t *testing.T) {
+	var encoded bytes.Buffer
+	source := image.NewRGBA(image.Rect(0, 0, 40, 30))
+	for y := 0; y < 30; y++ {
+		for x := 0; x < 40; x++ {
+			source.SetRGBA(x, y, color.RGBA{R: uint8(x * 6), G: uint8(y * 8), B: uint8((x + y) * 3), A: 255})
+		}
+	}
+	if err := jpeg.Encode(&encoded, source, nil); err != nil {
+		t.Fatal(err)
+	}
+	lazy, err := cimage.NewJPEGImage(bytes.NewReader(encoded.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	weight := imageCacheWeight(lazy)
+	// 懒加载图片在缓存中同时保留压缩字节和按需解码后的像素，
+	// 权重必须大于压缩字节数，否则大图文档的驻留内存无法被限制。
+	if weight <= int64(len(lazy.Bytes)) {
+		t.Fatalf("imageCacheWeight = %d, 期望大于压缩字节 %d", weight, len(lazy.Bytes))
+	}
+}
+
+func TestImageCacheEvictsByByteWeight(t *testing.T) {
+	const maxWeight = int64(1 << 20)
+	doc := &Document{images: utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, maxWeight, nil)}
+	for index := 0; index < 4; index++ {
+		// 每张 512x512 RGBA 约 1MiB，超过缓存上限后必须按字节淘汰。
+		img := image.NewRGBA(image.Rect(0, 0, 512, 512))
+		doc.images.AddWeighted(fmt.Sprintf("img-%d", index), img, imageCacheWeight(img))
+	}
+	if weight := doc.images.Weight(); weight > maxWeight {
+		t.Fatalf("图片缓存权重 = %d, 期望 <= %d", weight, maxWeight)
+	}
+	if length := doc.images.Len(); length > 1 {
+		t.Fatalf("图片缓存条目 = %d, 期望 <= 1", length)
+	}
+}
+
+func TestSVGCanvasWeightUsesSourceBytes(t *testing.T) {
+	if got := svgCanvasWeight(nil); got != 1 {
+		t.Fatalf("svgCanvasWeight(nil) = %d, 期望 1", got)
+	}
+	data := []byte("<svg/>")
+	if got := svgCanvasWeight(data); got != int64(len(data)) {
+		t.Fatalf("svgCanvasWeight = %d, 期望 %d", got, len(data))
+	}
+}
