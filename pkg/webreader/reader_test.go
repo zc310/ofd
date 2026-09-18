@@ -687,20 +687,56 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 	if _, err := reader.Search("你"); err != nil {
 		t.Fatal(err)
 	}
-	if !reader.searchSet[0] || len(reader.search[0].runs) == 0 {
-		t.Fatalf("search index was not populated: %+v", reader.search)
+	indexed, ok := reader.search.Get(0)
+	if !ok || len(indexed.runs) == 0 {
+		t.Fatalf("search index was not populated: %+v", indexed)
 	}
-	if len(reader.search[0].byRune['你']) == 0 {
-		t.Fatalf("rune index was not populated: %+v", reader.search[0].byRune)
+	if len(indexed.byRune['你']) == 0 {
+		t.Fatalf("rune index was not populated: %+v", indexed.byRune)
 	}
-	indexed := reader.search[0].runs[0]
-	if len(indexed) == 0 {
+	firstRun := indexed.runs[0]
+	if len(firstRun) == 0 {
 		t.Fatal("first indexed run is empty")
 	}
 	if _, err := reader.Search("好"); err != nil {
 		t.Fatal(err)
 	}
-	if &reader.search[0].runs[0][0] != &indexed[0] {
+	reused, ok := reader.search.Get(0)
+	if !ok || len(reused.runs) == 0 || len(reused.runs[0]) == 0 {
+		t.Fatal("search index was not reused")
+	}
+	if &reused.runs[0][0] != &firstRun[0] {
 		t.Fatal("search index was rebuilt instead of reused")
+	}
+}
+
+func TestTextAndSearchCachesStayBounded(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "1000-pages.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pageCount := reader.PageCount()
+	if pageCount <= textCacheCapacity {
+		t.Fatalf("测试文档页数 %d 未超过缓存上限 %d", pageCount, textCacheCapacity)
+	}
+	for index := 0; index < pageCount; index++ {
+		if _, err := reader.Text(index); err != nil {
+			t.Fatalf("读取第 %d 页文字失败: %v", index, err)
+		}
+	}
+	if length := reader.text.Len(); length > textCacheCapacity {
+		t.Fatalf("文字缓存条目 = %d, 期望 <= %d", length, textCacheCapacity)
+	}
+	if _, err := reader.Search("the"); err != nil {
+		t.Fatal(err)
+	}
+	if length := reader.search.Len(); length > searchCacheCapacity {
+		t.Fatalf("搜索缓存条目 = %d, 期望 <= %d", length, searchCacheCapacity)
 	}
 }
