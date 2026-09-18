@@ -1,0 +1,349 @@
+# Third Party Licenses
+# This file lists the licenses of third-party dependencies used in this project.
+# Generated from go.mod dependencies.
+
+## Direct Dependencies
+
+### github.com/BurntSushi/toml v1.6.0
+License: MIT
+Source: https://github.com/BurntSushi/toml
+
+### github.com/beevik/etree v1.8.0
+License: MIT
+Source: https://github.com/beevik/etree
+
+### github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
+License: MIT
+Source: https://github.com/dkrisman/gobig2
+
+### github.com/emmansun/gmsm v0.44.1
+License: Apache-2.0
+Source: https://github.com/emmansun/gmsm
+
+### github.com/h2non/filetype v1.1.3
+License: MIT
+Source: https://github.com/h2non/filetype
+
+### github.com/knroy/go-xml v1.3.1
+License: MIT
+Source: https://github.com/knroy/go-xml
+
+### github.com/nao1215/imaging v1.0.10
+License: MIT
+Source: https://github.com/nao1215/imaging
+
+### github.com/ncruces/zenity v0.10.15
+License: MIT
+Source: https://github.com/ncruces/zenity
+
+### github.com/pdfcpu/pdfcpu v0.15.0
+License: Apache-2.0
+Source: https://github.com/pdfcpu/pdfcpu
+
+### github.com/rymdport/portal v0.4.2
+License: MIT
+Source: https://github.com/rymdport/portal
+
+### github.com/spf13/cobra v1.10.2
+License: Apache-2.0
+Source: https://github.com/spf13/cobra
+
+### github.com/stretchr/testify v1.12.1
+License: MIT
+Source: https://github.com/stretchr/testify
+
+### github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
+License: MIT
+Source: https://github.com/tdewolff/canvas
+
+### github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
+License: MIT
+Source: https://github.com/tdewolff/font
+
+### github.com/tdewolff/minify/v2 v2.24.17
+License: MIT
+Source: https://github.com/tdewolff/minify
+
+### github.com/tdewolff/test v1.0.12
+License: MIT
+Source: https://github.com/tdewolff/test
+
+### github.com/xuri/excelize/v2 v2.11.0
+License: BSD-3-Clause
+Source: https://github.com/xuri/excelize
+
+### github.com/zc310/fontfix v0.0.1
+License: MIT
+Source: https://github.com/zc310/fontfix
+
+### go.yaml.in/yaml/v3 v3.0.5
+License: Apache-2.0
+Source: https://github.com/go-yaml/yaml
+
+### golang.org/x/image v0.46.0
+License: BSD-3-Clause
+Source: https://github.com/golang/image
+
+## Notable Indirect Dependencies
+
+### codeberg.org/go-latex/latex v0.3.0
+License: MIT
+Source: https://codeberg.org/go-latex/latex
+
+### codeberg.org/go-pdf/fpdf v0.12.0
+License: MIT
+Source: https://codeberg.org/go-pdf/fpdf
+
+### fyne.io/fyne/v2 v2.8.1
+License: BSD-3-Clause
+Source: https://github.com/fyne-io/fyne
+
+### fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
+License: MIT
+Source: https://github.com/fyne-io/systray
+
+### github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298
+License: MIT
+Source: https://github.com/BurntSushi/freetype-go
+
+### github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966
+License: MIT
+Source: https://github.com/BurntSushi/graphics-go
+
+### github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
+License: MIT
+Source: https://github.com/BurntSushi/xgb
+
+### github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046
+License: MIT
+Source: https://github.com/BurntSushi/xgbutil
+
+### github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
+License: MIT
+Source: https://github.com/ByteArena/poly2tri-go
+
+### github.com/FyshOS/fancyfs v0.0.1
+License: MIT
+Source: https://github.com/FyshOS/fancyfs
+
+### github.com/Kagami/go-avif v0.1.0
+License: MIT
+Source: https://github.com/Kagami/go-avif
+
+### github.com/akavel/rsrc v0.10.2
+License: BSD-3-Clause
+Source: https://github.com/akavel/rsrc
+
+### github.com/andybalholm/brotli v1.2.4
+License: MIT
+Source: https://github.com/andybalholm/brotli
+
+### github.com/anthonynsimon/bild v0.17.1
+License: MIT
+Source: https://github.com/anthonynsimon/bild
+
+### github.com/benoitkugler/textlayout v0.3.2
+License: BSD-3-Clause
+Source: https://github.com/benoitkugler/textlayout
+
+### github.com/benoitkugler/textprocessing v0.0.6
+License: BSD-3-Clause
+Source: https://github.com/benoitkugler/textprocessing
+
+### github.com/clipperhouse/uax29/v2 v2.7.0
+License: MIT
+Source: https://github.com/clipperhouse/uax29
+
+### github.com/dchest/jsmin v1.0.0
+License: MIT
+Source: https://github.com/dchest/jsmin
+
+### github.com/fsnotify/fsnotify v1.10.1
+License: BSD-3-Clause
+Source: https://github.com/fsnotify/fsnotify
+
+### github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
+License: MIT
+Source: https://github.com/fyne-io/gl-js
+
+### github.com/fyne-io/glfw-js v0.4.0
+License: MIT
+Source: https://github.com/fyne-io/glfw-js
+
+### github.com/fyne-io/image v0.1.1
+License: BSD-3-Clause
+Source: https://github.com/fyne-io/image
+
+### github.com/fyne-io/oksvg v0.2.0
+License: BSD-3-Clause
+Source: https://github.com/fyne-io/oksvg
+
+### github.com/go-fonts/latin-modern v0.3.3
+License: GPL-2.0-with-font-exception
+Source: https://github.com/go-fonts/latin-modern
+
+### github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276
+License: BSD-3-Clause
+Source: https://github.com/go-gl/gl
+
+### github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2
+License: BSD-3-Clause
+Source: https://github.com/go-gl/glfw
+
+### github.com/go-text/render v0.2.1
+License: BSD-3-Clause
+Source: https://github.com/go-text/render
+
+### github.com/go-text/typesetting v0.3.5
+License: BSD-3-Clause
+Source: https://github.com/go-text/typesetting
+
+### github.com/godbus/dbus/v5 v5.2.2
+License: BSD-3-Clause
+Source: https://github.com/godbus/dbus
+
+### github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+License: BSD-3-Clause
+Source: https://github.com/golang/freetype
+
+### github.com/hack-pad/go-indexeddb v0.3.2
+License: MIT
+Source: https://github.com/hack-pad/go-indexeddb
+
+### github.com/hack-pad/safejs v0.1.1
+License: MIT
+Source: https://github.com/hack-pad/safejs
+
+### github.com/hhrutter/tiff v1.0.6
+License: BSD-3-Clause
+Source: https://github.com/hhrutter/tiff
+
+### github.com/inconshreveable/mousetrap v1.1.0
+License: BSD-3-Clause
+Source: https://github.com/inconshreveable/mousetrap
+
+### github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
+License: MIT
+Source: https://github.com/jeandeaual/go-locale
+
+### github.com/josephspurrier/goversioninfo v1.7.0
+License: BSD-3-Clause
+Source: https://github.com/josephspurrier/goversioninfo
+
+### github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25
+License: MIT
+Source: https://github.com/jsummers/gobmp
+
+### github.com/kolesa-team/go-webp v1.0.5
+License: MIT
+Source: https://github.com/kolesa-team/go-webp
+
+### github.com/mattn/go-runewidth v0.0.30
+License: MIT
+Source: https://github.com/mattn/go-runewidth
+
+### github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+License: MIT
+Source: https://github.com/nfnt/resize
+
+### github.com/nicksnyder/go-i18n/v2 v2.6.1
+License: MIT
+Source: https://github.com/nicksnyder/go-i18n
+
+### github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7
+License: MIT
+Source: https://github.com/randall77/makefat
+
+### github.com/richardlehane/mscfb v1.0.7
+License: BSD-3-Clause
+Source: https://github.com/richardlehane/mscfb
+
+### github.com/richardlehane/msoleps v1.0.6
+License: BSD-3-Clause
+Source: https://github.com/richardlehane/msoleps
+
+### github.com/spf13/pflag v1.0.10
+License: BSD-3-Clause
+Source: https://github.com/spf13/pflag
+
+### github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
+License: MIT
+Source: https://github.com/srwiley/oksvg
+
+### github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+License: MIT
+Source: https://github.com/srwiley/rasterx
+
+### github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
+License: MIT
+Source: https://github.com/srwiley/scanx
+
+### github.com/tdewolff/parse/v2 v2.8.16
+License: MIT
+Source: https://github.com/tdewolff/parse
+
+### github.com/tiendc/go-deepcopy v1.7.2
+License: MIT
+Source: https://github.com/tiendc/go-deepcopy
+
+### github.com/wcharczuk/go-chart/v2 v2.1.2
+License: MIT
+Source: https://github.com/wcharczuk/go-chart
+
+### github.com/xuri/efp v0.0.1
+License: BSD-3-Clause
+Source: https://github.com/xuri/efp
+
+### github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9
+License: BSD-3-Clause
+Source: https://github.com/xuri/nfp
+
+### github.com/yuin/goldmark v1.8.6
+License: MIT
+Source: https://github.com/yuin/goldmark
+
+### golang.org/x/crypto v0.57.0
+License: BSD-3-Clause
+Source: https://github.com/golang/crypto
+
+### golang.org/x/net v0.59.0
+License: BSD-3-Clause
+Source: https://github.com/golang/net
+
+### golang.org/x/sync v0.23.0
+License: BSD-3-Clause
+Source: https://github.com/golang/sync
+
+### golang.org/x/sys v0.48.0
+License: BSD-3-Clause
+Source: https://github.com/golang/sys
+
+### golang.org/x/text v0.42.0
+License: BSD-3-Clause
+Source: https://github.com/golang/text
+
+### gonum.org/v1/plot v0.17.0
+License: MIT
+Source: https://github.com/gonum/plot
+
+### modernc.org/knuth v0.6.0
+License: BSD-3-Clause
+Source: https://github.com/modernc.org/knuth
+
+### modernc.org/token v1.1.0
+License: BSD-3-Clause
+Source: https://github.com/modernc.org/token
+
+### star-tex.org/x/tex v0.7.1
+License: MIT
+Source: https://star-tex.org/x/tex
+
+## License Summary
+
+The project uses the following license types:
+- MIT: ~65 packages
+- BSD-3-Clause: ~30 packages
+- Apache-2.0: 4 packages
+- GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)
+
+All dependencies are compatible with the project's license.
