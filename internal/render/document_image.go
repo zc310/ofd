@@ -146,8 +146,56 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 	if err != nil {
 		return nil, err
 	}
-	p.svgCanvases.Add(key, svg)
+	p.svgCanvases.AddWeighted(key, svg, svgCanvasWeight(data))
 	return svg, nil
+}
+
+// svgCanvasWeight 估算解析后 SVG 画布的内存占用。画布内部结构无法直接度量，
+// 使用源 SVG 字节数作为与复杂度相关的代理值，保证至少为 1。
+func svgCanvasWeight(data []byte) int64 {
+	if len(data) <= 0 {
+		return 1
+	}
+	return int64(len(data))
+}
+
+// imageCacheWeight 估算图片在缓存中的字节占用。懒加载图片同时保留压缩字节和
+// 按需解码后的像素，因此两者一并计入；其他图片按解码后的像素估算。
+func imageCacheWeight(img image.Image) int64 {
+	if img == nil {
+		return 1
+	}
+	if lazy, ok := img.(*cimage.Image); ok {
+		weight := int64(len(lazy.Bytes))
+		if lazy.Mask != nil {
+			weight += int64(len(lazy.Mask.Bytes))
+		}
+		if lazy.Width > 0 && lazy.Height > 0 {
+			weight += int64(lazy.Width) * int64(lazy.Height) * imageBytesPerPixel(lazy.Config.ColorModel)
+		}
+		if weight > 0 {
+			return weight
+		}
+	}
+	bounds := img.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		return 1
+	}
+	return int64(bounds.Dx()) * int64(bounds.Dy()) * imageBytesPerPixel(img.ColorModel())
+}
+
+// imageBytesPerPixel 估算每种颜色模型的每像素字节数，用于图片缓存权重。
+func imageBytesPerPixel(model color.Model) int64 {
+	switch model {
+	case color.GrayModel, color.AlphaModel:
+		return 1
+	case color.Gray16Model, color.Alpha16Model, color.YCbCrModel:
+		return 2
+	case color.RGBA64Model, color.NRGBA64Model:
+		return 8
+	default:
+		return 4
+	}
 }
 
 func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
@@ -169,7 +217,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 			return nil, err
 		}
 		img := rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace)
-		p.images.Add(key, img)
+		p.images.AddWeighted(key, img, imageCacheWeight(img))
 		return img, nil
 	}
 	data, err := p.Document.FileCache.Read(key)
@@ -180,7 +228,7 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 	if err != nil {
 		return nil, err
 	}
-	p.images.Add(key, img)
+	p.images.AddWeighted(key, img, imageCacheWeight(img))
 	return img, nil
 }
 
