@@ -34,8 +34,12 @@ const (
 	maxInputBytes     = 256 << 20
 	maxRenderPixels   = 50_000_000
 	maxFontBytes      = 32 << 20
-	maxRenderPages    = 64
+	maxRenderPages    = 99999
 	maxRenderDocs     = 4
+	// textCacheCapacity 和 searchCacheCapacity 限制按页缓存的文字与搜索索引，
+	// 避免浏览/搜索大文档时把所有页面的布局快照都留在内存中。
+	textCacheCapacity   = 64
+	searchCacheCapacity = 64
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -169,10 +173,8 @@ type Reader struct {
 	renderDocs       *utils.LRU[renderDocumentKey, *render.Document]
 	fallbackFamily   string
 	fallbackFamilies []string
-	text             [][]TextRun
-	textSet          []bool
-	search           []searchPage
-	searchSet        []bool
+	text             *utils.LRU[int, []TextRun]
+	search           *utils.LRU[int, searchPage]
 	options          RenderOptions
 }
 
@@ -231,10 +233,8 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 		_ = ofd.Close()
 		return nil, errors.New("OFD 文档没有页面")
 	}
-	r.text = make([][]TextRun, len(r.pages))
-	r.textSet = make([]bool, len(r.pages))
-	r.search = make([]searchPage, len(r.pages))
-	r.searchSet = make([]bool, len(r.pages))
+	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
+	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
 	return r, nil
 }
 
@@ -285,10 +285,8 @@ func (r *Reader) UseFallbackFont(family string) error {
 	r.renderDocsMu.Lock()
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
-	r.text = make([][]TextRun, len(r.pages))
-	r.textSet = make([]bool, len(r.pages))
-	r.search = make([]searchPage, len(r.pages))
-	r.searchSet = make([]bool, len(r.pages))
+	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
+	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
 	return nil
 }
 
@@ -831,9 +829,7 @@ func (r *Reader) Close() error {
 	r.closed = true
 	r.pages = nil
 	r.text = nil
-	r.textSet = nil
 	r.search = nil
-	r.searchSet = nil
 	r.fallbackFamily = ""
 	r.fallbackFamilies = nil
 	r.renderDocsMu.Lock()
@@ -885,11 +881,12 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 // textAt 在持有 Reader 锁时缓存不可变的文档布局。
 // 向外部返回结果的调用方必须先复制结果。
 func (r *Reader) textAt(index int) []TextRun {
-	if !r.textSet[index] {
-		r.text[index] = textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily)
-		r.textSet[index] = true
+	if runs, ok := r.text.Get(index); ok {
+		return runs
 	}
-	return r.text[index]
+	runs := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily)
+	r.text.Add(index, runs)
+	return runs
 }
 
 func textFontFamily(document *render.Document, scope int, id uint64, fallback string) string {
@@ -905,26 +902,26 @@ func textFontFamily(document *render.Document, scope int, id uint64, fallback st
 }
 
 func (r *Reader) searchAt(index int, runs []TextRun) searchPage {
-	if !r.searchSet[index] {
-		indexed := searchPage{
-			runs:   make([][]rune, len(runs)),
-			byRune: make(map[rune][]int),
-		}
-		for runIndex, run := range runs {
-			indexed.runs[runIndex] = []rune(strings.ToLower(run.Text))
-			seen := make(map[rune]struct{})
-			for _, value := range indexed.runs[runIndex] {
-				if _, ok := seen[value]; ok {
-					continue
-				}
-				seen[value] = struct{}{}
-				indexed.byRune[value] = append(indexed.byRune[value], runIndex)
-			}
-		}
-		r.search[index] = indexed
-		r.searchSet[index] = true
+	if indexed, ok := r.search.Get(index); ok {
+		return indexed
 	}
-	return r.search[index]
+	indexed := searchPage{
+		runs:   make([][]rune, len(runs)),
+		byRune: make(map[rune][]int),
+	}
+	for runIndex, run := range runs {
+		indexed.runs[runIndex] = []rune(strings.ToLower(run.Text))
+		seen := make(map[rune]struct{})
+		for _, value := range indexed.runs[runIndex] {
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			indexed.byRune[value] = append(indexed.byRune[value], runIndex)
+		}
+	}
+	r.search.Add(index, indexed)
+	return indexed
 }
 
 func cloneTextRuns(source []TextRun) []TextRun {
