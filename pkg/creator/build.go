@@ -471,8 +471,10 @@ func versionXML(resource versionResource) ([]byte, error) {
 }
 
 func prepare(document Document, options CreateOptions) (*buildState, error) {
-	if err := subsetEmbeddedFonts(&document); err != nil {
-		return nil, err
+	if !options.PreserveEmbeddedFonts {
+		if err := subsetEmbeddedFonts(&document); err != nil {
+			return nil, err
+		}
 	}
 	if strings.TrimSpace(document.ID) == "" {
 		return nil, errors.New("文档 ID 不能为空")

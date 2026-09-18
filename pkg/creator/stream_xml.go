@@ -59,7 +59,7 @@ func (w *streamXMLWriter) AttrFloat(name string, value float64) {
 		return
 	}
 	w.startAttr(name)
-	w.buf = strconv.AppendFloat(w.buf, value, 'g', -1, 64)
+	w.buf = appendFloat(w.buf, value)
 	w.buf = append(w.buf, '"')
 }
 
@@ -112,8 +112,31 @@ func (w *streamXMLWriter) startAttr(name string) {
 	w.buf = append(w.buf, '=', '"')
 }
 
+// numberPrecision 是 OFD XML 中浮点数保留的小数位数。0.0001mm（0.1µm）远低于
+// 任何渲染分辨率，同时避免浮点噪声导致的超长输出（如 96.34784444444446）。
+const numberPrecision = 4
+
+// appendFloat 以固定小数位输出浮点数，去掉末尾多余的 0 和小数点，且不使用
+// 科学计数法（部分阅读器无法解析）。极小值四舍五入为 0，避免 "-0"。
 func appendFloat(dst []byte, value float64) []byte {
-	return strconv.AppendFloat(dst, value, 'g', -1, 64)
+	if !finite(value) {
+		value = 0
+	}
+	start := len(dst)
+	dst = strconv.AppendFloat(dst, value, 'f', numberPrecision, 64)
+	end := len(dst)
+	for end > start+1 && dst[end-1] == '0' {
+		end--
+	}
+	if end > start+1 && dst[end-1] == '.' {
+		end--
+	}
+	dst = dst[:end]
+	if end == start+2 && dst[start] == '-' && dst[start+1] == '0' {
+		dst[start] = '0'
+		dst = dst[:start+1]
+	}
+	return dst
 }
 
 func (w *streamXMLWriter) Text(value string) {
