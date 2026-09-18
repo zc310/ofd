@@ -344,6 +344,9 @@ func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, obje
 		return
 	}
 	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
+		if !renderableTextValue(code.Value) {
+			return
+		}
 		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
@@ -351,12 +354,35 @@ func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, obje
 	posX, posY := code.X, code.Y
 	for i, glyph := range glyphs {
 		if i > 0 {
-			deltaX, deltaY := textAdvance(textGlyphWidth(face, glyphs[i-1]), object, code, i-1)
+			// 有显式 DeltaX/DeltaY 时不需要按字体字宽步进，
+			// 避免为每个字形额外做一次文字整形。
+			glyphWidth := 0.0
+			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+				glyphWidth = textGlyphWidth(face, glyphs[i-1])
+			}
+			deltaX, deltaY := textAdvance(glyphWidth, object, code, i-1)
 			posX += deltaX
 			posY += deltaY
 		}
+		// 控制字符没有可见字形，绘制时会被字体替换成 .notdef 方块；
+		// 这里跳过绘制但仍按前面的增量推进，保持后续字形位置不变。
+		if !renderableTextValue(glyph.value) {
+			continue
+		}
 		p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
 	}
+}
+
+// renderableTextValue 判断文字是否包含可见字符。C0/C1 控制字符、DEL 和
+// U+FFFD 替换符没有可见字形，交给字体绘制会显示成 .notdef 方块。
+func renderableTextValue(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\uFFFD' {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
@@ -500,9 +526,12 @@ func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, o
 // directTextPath 处理 cmap 可通过 GlyphIndex 使用、但无法被文字整形器使用的
 // 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能。
 func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
-	path, _ := face.ToPath(value)
-	if path != nil && !path.Empty() {
-		return nil
+	var path *canvas.Path
+	if !containsPrivateGlyphRune(value) {
+		path, _ := face.ToPath(value)
+		if path != nil && !path.Empty() {
+			return nil
+		}
 	}
 	if face.Font == nil || face.Font.SFNT == nil {
 		return nil
@@ -523,6 +552,15 @@ func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 		return nil
 	}
 	return path
+}
+
+func containsPrivateGlyphRune(value string) bool {
+	for _, r := range value {
+		if r >= 0xF0000 && r <= 0xFFFFD {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
