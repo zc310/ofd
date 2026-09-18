@@ -22,6 +22,8 @@ type Converter struct {
 	pdfParallel       bool
 	imageWriter       func(page int, img image.Image) error
 	fileWriter        func(page int) (io.WriteCloser, error)
+	docTitle          string // 文档标题，由 HTML 等编码器使用
+	renderer          canvas.Writer
 }
 
 // Option 配置选项类型

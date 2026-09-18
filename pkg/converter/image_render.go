@@ -26,17 +26,8 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 			}
 		}()
 
-		var renderer canvas.Writer
-		switch c.format {
-		case "jpeg":
-			renderer = renderers.JPEG(c.dpi)
-		case "svg":
-			renderer = renderers.SVG()
-		case "eps":
-			renderer = renderers.EPS()
-		case "tex":
-			renderer = renderers.TeX()
-		default:
+		renderer := c.renderer
+		if renderer == nil {
 			renderer = renderers.PNG(c.dpi)
 		}
 

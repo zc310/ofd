@@ -4,9 +4,17 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"strings"
 
 	"github.com/tdewolff/canvas"
 )
+
+// WithFormat 按注册的格式名（或别名）设置输出格式。
+func WithFormat(format string) Option {
+	return func(c *Converter) {
+		c.format = strings.ToLower(strings.TrimSpace(format))
+	}
+}
 
 // Thumbnail 设置缩略图大小
 func Thumbnail(s int) Option {
@@ -37,25 +45,13 @@ func DPI(dpi float64) Option {
 }
 
 // PNG 设置为PNG格式
-func PNG() Option {
-	return func(c *Converter) {
-		c.format = "png"
-	}
-}
+func PNG() Option { return WithFormat("png") }
 
 // JPG 设置为JPEG格式
-func JPG() Option {
-	return func(c *Converter) {
-		c.format = "jpeg"
-	}
-}
+func JPG() Option { return WithFormat("jpeg") }
 
 // SVG 设置为 SVG 格式
-func SVG() Option {
-	return func(c *Converter) {
-		c.format = "svg"
-	}
-}
+func SVG() Option { return WithFormat("svg") }
 
 // HTMLPNG 设置 HTML 页面使用内嵌 PNG 图片。
 func HTMLPNG() Option {
@@ -79,18 +75,10 @@ func HTMLSVG() Option {
 }
 
 // EPS 设置为 Encapsulated PostScript 格式
-func EPS() Option {
-	return func(c *Converter) {
-		c.format = "eps"
-	}
-}
+func EPS() Option { return WithFormat("eps") }
 
 // TeX 设置为 TeX/PGF 格式
-func TeX() Option {
-	return func(c *Converter) {
-		c.format = "tex"
-	}
-}
+func TeX() Option { return WithFormat("tex") }
 
 // BgColor 设置背景颜色
 func BgColor(bg color.Color) Option {

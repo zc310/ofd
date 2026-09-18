@@ -12,7 +12,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -22,46 +21,41 @@ import (
 	"github.com/zc310/ofd/internal/render"
 )
 
-// HTML 将 OFD 文档转换为单个 HTML 文件。
+func init() { Register(&htmlEncoder{}) }
+
+type htmlEncoder struct{}
+
+func (e *htmlEncoder) Name() string         { return "html" }
+func (e *htmlEncoder) Kind() Kind           { return KindDocument }
+func (e *htmlEncoder) Extensions() []string { return []string{".html", ".htm"} }
+func (e *htmlEncoder) MIME() string         { return "text/html" }
+func (e *htmlEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	return encodeOFD(input, output, conv, e.htmlFromDocuments)
+}
+
+func (e *htmlEncoder) htmlFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
+	title := "OFD 文档"
+	if conv.docTitle != "" {
+		title = conv.docTitle
+	}
+	return htmlDocuments(documents, title, output, conv)
+}
+
+// HTML 将 input 中的 OFD 文档转换为单个 HTML 文件。
 // 默认每页使用内嵌 PNG 图片，也可以通过 HTMLJPG 或 HTMLSVG 选择 JPG 或 SVG。
 func HTML(input any, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置 HTML 输出参数")
-	}
-	conv := newConverter(opts...)
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
-		PageCacheCapacity: conv.pageCacheCapacity,
-		PageCacheBytes:    conv.pageCacheBytes,
-	})
-	if err != nil {
-		return fmt.Errorf("解析OFD失败: %w", err)
-	}
-	defer func() {
-		if closeErr := ofd.Close(); closeErr != nil {
-			slog.Error("关闭OFD文档失败", "error", closeErr)
-		}
-	}()
-	if len(ofd.Documents) == 0 {
-		return errors.New("没有文档")
-	}
-
-	documents := make([]*render.Document, 0, len(ofd.Documents))
-	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocumentWithDPI(conv.bgColor, document, conv.dpi))
-	}
-	return htmlDocuments(documents, htmlDocumentTitle(ofd), output, opts...)
+	return Encode("html", input, output, opts...)
 }
 
 // HTMLDocuments 将多个已解析的 OFD 文档体按全局页码写入单个 HTML 文件。
 func HTMLDocuments(documents []*render.Document, output io.Writer, opts ...Option) error {
-	return htmlDocuments(documents, "OFD 文档", output, opts...)
+	return EncodeDocuments("html", documents, output, opts...)
 }
 
-func htmlDocuments(documents []*render.Document, title string, output io.Writer, opts ...Option) error {
+func htmlDocuments(documents []*render.Document, title string, output io.Writer, conv *Converter) error {
 	if output == nil {
 		return errors.New("未设置 HTML 输出参数")
 	}
-	conv := newConverter(opts...)
 	pages := collectDocumentPages(documents)
 	if len(pages) == 0 {
 		return errors.New("文档没有页面")

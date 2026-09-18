@@ -189,9 +189,7 @@ func runSingle(opts *options) error {
 	case "markdown":
 		format = "md"
 	}
-	switch format {
-	case "pdf", "txt", "md", "html", "png", "jpg", "svg", "eps", "tex":
-	default:
+	if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
 	}
 	if opts.dpi < 1 || opts.dpi > 1200 {
@@ -246,9 +244,7 @@ func runBatch(opts *options) error {
 		return errors.New("批量转换必须通过 --format 指定输出格式")
 	}
 	format := normalizeFormat(opts.format)
-	switch format {
-	case "pdf", "txt", "md", "html", "png", "jpg", "svg", "eps", "tex":
-	default:
+	if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
 		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
 	}
 	if format == "html" {
@@ -436,11 +432,34 @@ func normalizeFormat(format string) string {
 }
 
 func isImageFormat(format string) bool {
-	switch format {
-	case "png", "jpg", "svg", "eps", "tex":
-		return true
+	return converter.IsImageFormat(registryFormatName(format))
+}
+
+// registryFormatName 把 CLI 的格式名转换为注册表名称。
+func registryFormatName(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "txt":
+		return "text"
+	case "md":
+		return "markdown"
+	case "jpg":
+		return "jpeg"
 	default:
-		return false
+		return strings.ToLower(strings.TrimSpace(format))
+	}
+}
+
+// cliFormatName 把注册表名称转换为 CLI 的格式名。
+func cliFormatName(name string) string {
+	switch name {
+	case "text":
+		return "txt"
+	case "markdown":
+		return "md"
+	case "jpeg":
+		return "jpg"
+	default:
+		return name
 	}
 }
 
@@ -463,28 +482,10 @@ func minInt(left, right int) int {
 }
 
 func formatFromExtension(output string) string {
-	switch strings.ToLower(filepath.Ext(output)) {
-	case ".pdf":
-		return "pdf"
-	case ".txt":
-		return "txt"
-	case ".md", ".markdown":
-		return "md"
-	case ".png":
-		return "png"
-	case ".jpg", ".jpeg":
-		return "jpg"
-	case ".svg":
-		return "svg"
-	case ".html", ".htm":
-		return "html"
-	case ".eps":
-		return "eps"
-	case ".tex":
-		return "tex"
-	default:
-		return "pdf"
+	if f, ok := converter.FormatByExtension(filepath.Ext(output)); ok {
+		return cliFormatName(f.Name)
 	}
+	return "pdf"
 }
 
 func validateOutputPath(opts *options, format string) error {
@@ -526,7 +527,7 @@ func convertToHTML(opts *options) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	err := converter.HTML(opts.input, output, option...)
+	err := converter.Encode("html", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -557,11 +558,7 @@ func convertToText(opts *options, format string) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	convert := converter.Text
-	if format == "md" {
-		convert = converter.Markdown
-	}
-	err := convert(opts.input, output, option...)
+	err := converter.Encode(registryFormatName(format), opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -581,7 +578,7 @@ func convertToPDF(opts *options, _ string) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	err := converter.PDF(opts.input, output, option...)
+	err := converter.Encode("pdf", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -678,20 +675,7 @@ func convertToDirectory(opts *options, format string, option []converter.Option)
 }
 
 func imageFormatOption(format string) converter.Option {
-	switch format {
-	case "png":
-		return converter.PNG()
-	case "jpg":
-		return converter.JPG()
-	case "svg":
-		return converter.SVG()
-	case "eps":
-		return converter.EPS()
-	case "tex":
-		return converter.TeX()
-	default:
-		return converter.PNG()
-	}
+	return converter.WithFormat(registryFormatName(format))
 }
 
 func parseBgColor(s string) color.Color {
