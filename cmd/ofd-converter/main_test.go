@@ -343,3 +343,33 @@ func TestRunInvalidPageDoesNotCreateOutput(t *testing.T) {
 		t.Fatalf("invalid-page output stat error = %v, want os.ErrNotExist", err)
 	}
 }
+
+func TestRegistryFormatNameRoundTripsCLINames(t *testing.T) {
+	for cliName, registryName := range map[string]string{
+		"txt": "text",
+		"md":  "markdown",
+		"jpg": "jpeg",
+		"pdf": "pdf",
+		"png": "png",
+	} {
+		if got := registryFormatName(cliName); got != registryName {
+			t.Fatalf("registryFormatName(%q) = %q, want %q", cliName, got, registryName)
+		}
+		if got := cliFormatName(registryName); got != cliName {
+			t.Fatalf("cliFormatName(%q) = %q, want %q", registryName, got, cliName)
+		}
+	}
+}
+
+func TestIsImageFormatUsesRegistryKind(t *testing.T) {
+	for _, format := range []string{"png", "jpg", "svg", "eps", "tex"} {
+		if !isImageFormat(format) {
+			t.Errorf("isImageFormat(%q) = false, want true", format)
+		}
+	}
+	for _, format := range []string{"pdf", "txt", "md", "html"} {
+		if isImageFormat(format) {
+			t.Errorf("isImageFormat(%q) = true, want false", format)
+		}
+	}
+}

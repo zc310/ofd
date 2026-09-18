@@ -3,56 +3,52 @@ package converter
 import (
 	"errors"
 	"fmt"
-	"image/color"
 	"io"
-	"log/slog"
 	"runtime"
 	"sync"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/pdf"
-	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 )
 
+func init() { Register(&pdfEncoder{}) }
+
+type pdfEncoder struct{}
+
+func (e *pdfEncoder) Name() string         { return "pdf" }
+func (e *pdfEncoder) Kind() Kind           { return KindDocument }
+func (e *pdfEncoder) Extensions() []string { return []string{".pdf"} }
+func (e *pdfEncoder) MIME() string         { return "application/pdf" }
+func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	return encodeOFD(input, output, conv, e.encodeDocuments)
+}
+
+func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
+	if output == nil {
+		return errors.New("未设置 PDF 输出参数")
+	}
+	return pdfDocumentsWithConverter(documents, output, conv)
+}
+
 const maxPDFRenderWorkers = 4
 
+// PDF 解析 input 中的 OFD 文档并按全局页码写入一个 PDF。
 func PDF(input any, output io.Writer, opts ...Option) error {
-	conv := newConverter(opts...)
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
-		PageCacheCapacity: conv.pageCacheCapacity,
-		PageCacheBytes:    conv.pageCacheBytes,
-	})
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err = ofd.Close(); err != nil {
-			slog.Error(err.Error())
-		}
-	}()
-	if len(ofd.Documents) == 0 {
-		return errors.New("没有文档")
-	}
-
-	documents := make([]*render.Document, 0, len(ofd.Documents))
-	for _, document := range ofd.Documents {
-		documents = append(documents, render.NewDocumentWithDPI(color.Transparent, document, conv.dpi))
-	}
-	return PDFDocuments(documents, output, opts...)
+	return Encode("pdf", input, output, opts...)
 }
 
 // PDFDocuments 将多个已解析的 OFD 文档体按全局页码写入同一个 PDF。
 func PDFDocuments(documents []*render.Document, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置 PDF 输出参数")
-	}
-	conv := newConverter(opts...)
+	return EncodeDocuments("pdf", documents, output, opts...)
+}
+
+func pdfDocumentsWithConverter(documents []*render.Document, output io.Writer, conv *Converter) error {
 	if !conv.pdfParallel {
 		return pdfDocumentsSerial(documents, output, conv)
 	}
 	workers := min(runtime.GOMAXPROCS(0), maxPDFRenderWorkers)
-	return pdfDocumentsWithWorkers(documents, output, workers, opts...)
+	return pdfDocumentsWithWorkersConv(documents, output, workers, conv)
 }
 
 func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -85,11 +81,10 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	return pdfDoc.Close()
 }
 
-func pdfDocumentsWithWorkers(documents []*render.Document, output io.Writer, workers int, opts ...Option) error {
+func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer, workers int, conv *Converter) error {
 	if output == nil {
 		return errors.New("未设置 PDF 输出参数")
 	}
-	conv := newConverter(opts...)
 	totalPages := countDocumentPages(documents)
 	if totalPages == 0 {
 		return errors.New("文档没有页面")
@@ -173,4 +168,9 @@ func pdfDocumentsWithWorkers(documents []*render.Document, output io.Writer, wor
 		return errors.New("PDF 文档创建失败")
 	}
 	return pdfDoc.Close()
+}
+
+// pdfDocumentsWithWorkers 是测试用的向后兼容包装。
+func pdfDocumentsWithWorkers(documents []*render.Document, output io.Writer, workers int) error {
+	return pdfDocumentsWithWorkersConv(documents, output, workers, newConverter())
 }

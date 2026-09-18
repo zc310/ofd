@@ -8,29 +8,57 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render"
 )
+
+func init() {
+	Register(&textEncoder{})
+	Register(&markdownEncoder{})
+}
+
+type textEncoder struct{}
+
+func (e *textEncoder) Name() string         { return "text" }
+func (e *textEncoder) Kind() Kind           { return KindDocument }
+func (e *textEncoder) Extensions() []string { return []string{".txt"} }
+func (e *textEncoder) MIME() string         { return "text/plain" }
+func (e *textEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	return encodeOFD(input, output, conv, e.textFromDocuments)
+}
+
+func (e *textEncoder) textFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
+	return textDocuments(renderDocsToParserDocs(documents), output, conv)
+}
+
+type markdownEncoder struct{}
+
+func (e *markdownEncoder) Name() string         { return "markdown" }
+func (e *markdownEncoder) Kind() Kind           { return KindDocument }
+func (e *markdownEncoder) Extensions() []string { return []string{".md", ".markdown"} }
+func (e *markdownEncoder) MIME() string         { return "text/markdown" }
+func (e *markdownEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	return encodeOFD(input, output, conv, e.markdownFromDocuments)
+}
+
+func (e *markdownEncoder) markdownFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
+	return markdownDocuments(renderDocsToParserDocs(documents), output, conv)
+}
+
+// renderDocsToParserDocs 从 render.Document 中提取 parser.Document。
+func renderDocsToParserDocs(documents []*render.Document) []*parser.Document {
+	docs := make([]*parser.Document, len(documents))
+	for i, d := range documents {
+		docs[i] = d.Document
+	}
+	return docs
+}
 
 const maxTextCompositeDepth = 32
 
-// Text 提取 OFD 文档中的文字并写入 output。
+// Text 提取 input 中 OFD 文档的文字并写入 output。
 // 不会保留字体、颜色和布局信息；不同文字对象按行输出，不同页面使用分页符分隔。
 func Text(input any, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置文本输出参数")
-	}
-	conv := newConverter(opts...)
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
-		PageCacheCapacity: conv.pageCacheCapacity,
-		PageCacheBytes:    conv.pageCacheBytes,
-	})
-	if err != nil {
-		return fmt.Errorf("解析OFD失败: %w", err)
-	}
-	defer ofd.Close()
-	if len(ofd.Documents) == 0 {
-		return errors.New("没有文档")
-	}
-	return TextDocuments(ofd.Documents, output, opts...)
+	return Encode("text", input, output, opts...)
 }
 
 // TextDocument 提取已解析 OFD 文档中的文字并写入 output。
@@ -43,7 +71,14 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
-	pages, err := collectPageTexts(documents, newConverter(opts...).page)
+	return textDocuments(documents, output, newConverter(opts...))
+}
+
+func textDocuments(documents []*parser.Document, output io.Writer, conv *Converter) error {
+	if output == nil {
+		return errors.New("未设置文本输出参数")
+	}
+	pages, err := collectPageTexts(documents, conv.page)
 	if err != nil {
 		return err
 	}
@@ -55,25 +90,10 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 	return err
 }
 
-// Markdown 提取 OFD 文档中的文字并写入 Markdown 文档。
+// Markdown 提取 input 中 OFD 文档的文字并写入 Markdown 文档。
 // 每个页面输出为二级标题；文字对象按行输出，并转义 Markdown 特殊字符。
 func Markdown(input any, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置Markdown输出参数")
-	}
-	conv := newConverter(opts...)
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
-		PageCacheCapacity: conv.pageCacheCapacity,
-		PageCacheBytes:    conv.pageCacheBytes,
-	})
-	if err != nil {
-		return fmt.Errorf("解析OFD失败: %w", err)
-	}
-	defer ofd.Close()
-	if len(ofd.Documents) == 0 {
-		return errors.New("没有文档")
-	}
-	return MarkdownDocuments(ofd.Documents, output, opts...)
+	return Encode("markdown", input, output, opts...)
 }
 
 // MarkdownDocument 提取已解析 OFD 文档中的文字并写入 Markdown 文档。
@@ -86,7 +106,13 @@ func MarkdownDocuments(documents []*parser.Document, output io.Writer, opts ...O
 	if output == nil {
 		return errors.New("未设置Markdown输出参数")
 	}
-	conv := newConverter(opts...)
+	return markdownDocuments(documents, output, newConverter(opts...))
+}
+
+func markdownDocuments(documents []*parser.Document, output io.Writer, conv *Converter) error {
+	if output == nil {
+		return errors.New("未设置Markdown输出参数")
+	}
 	pages, err := collectPageTexts(documents, conv.page)
 	if err != nil {
 		return err
