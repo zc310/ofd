@@ -300,3 +300,24 @@ func TestTextCodeGlyphsClampsExcessiveCodeCount(t *testing.T) {
 		t.Fatalf("glyphs = %+v, want one mapped glyph", glyphs)
 	}
 }
+
+func TestRenderableTextValueSkipsControlCharacters(t *testing.T) {
+	cases := []struct {
+		value string
+		want  bool
+	}{
+		{"A", true},
+		{"ą", true},
+		{"\u009b", false},
+		{"\u0000", false},
+		{"\u007f", false},
+		{"\uFFFD", false},
+		{"", false},
+		{"a\u009b", true},
+	}
+	for _, tc := range cases {
+		if got := renderableTextValue(tc.value); got != tc.want {
+			t.Fatalf("renderableTextValue(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}
