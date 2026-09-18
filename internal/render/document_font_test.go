@@ -12,6 +12,31 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 )
 
+func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
+	tests := []struct {
+		family string
+		name   string
+		group  string
+	}{
+		{family: "宋体", name: "F0", group: "simsun"},
+		{family: "方正小标宋_GBK", name: "F1", group: "simsun"},
+		{family: "仿宋_GB2312", name: "F2", group: "simfang"},
+		{family: "方正仿宋_GBK", name: "F3", group: "simfang"},
+		{family: "楷体", name: "F4", group: "simkai"},
+		{family: "方正楷体_GBK", name: "F5", group: "simkai"},
+		{family: "黑体", name: "F6", group: "simhei"},
+		{family: "微软雅黑", name: "F7", group: "yahei"},
+		{family: "", name: "F8", group: ""},
+		{family: "ZGCCnm-1", name: "TT-0", group: ""},
+	}
+	for _, tt := range tests {
+		got := cjkFontGroup(&models.Font{FamilyName: tt.family, FontName: tt.name})
+		if got != tt.group {
+			t.Errorf("cjkFontGroup(%q/%q) = %q, want %q", tt.family, tt.name, got, tt.group)
+		}
+	}
+}
+
 // useFallback 注册全局回退字体并将其应用到指定字体上下文。
 func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style canvas.FontStyle) {
 	t.Helper()
@@ -327,5 +352,43 @@ func TestFallbackFontKeepsRegularAndBoldFaces(t *testing.T) {
 	boldFace := fonts.fallbacks["fallback"].Face(12, canvas.Black, canvas.FontBold)
 	if regularFace == nil || boldFace == nil || regularFace.Font == boldFace.Font {
 		t.Fatal("regular and bold fallback faces were not kept separately")
+	}
+}
+
+func TestIsFixedWidthNameRecognizesMonospaceFamilies(t *testing.T) {
+	for _, name := range []string{"monospace", "DejaVu Sans Mono", "Consolas", "Menlo", "Courier New", "Noto Sans Mono CJK SC"} {
+		if !isFixedWidthName(name) {
+			t.Fatalf("应识别为等宽字体: %s", name)
+		}
+	}
+	for _, name := range []string{"", "FangSong", "SimSun", "Arial"} {
+		if isFixedWidthName(name) {
+			t.Fatalf("不应识别为等宽字体: %s", name)
+		}
+	}
+}
+
+func TestIsFixedWidthFontUsesFlagAndFamily(t *testing.T) {
+	if !isFixedWidthFont(&models.Font{FixedWidth: true}) {
+		t.Fatalf("FixedWidth 标志应生效")
+	}
+	if !isFixedWidthFont(&models.Font{FamilyName: "monospace"}) {
+		t.Fatalf("族名 monospace 应生效")
+	}
+	if isFixedWidthFont(&models.Font{FamilyName: "SimSun"}) {
+		t.Fatalf("普通族名不应识别为等宽字体")
+	}
+}
+
+func TestIsGenericFontFamily(t *testing.T) {
+	for _, name := range []string{"monospace", "sans-serif", "serif", "fixed"} {
+		if !isGenericFontFamily(name) {
+			t.Fatalf("应为通用族名: %s", name)
+		}
+	}
+	for _, name := range []string{"Menlo", "Consolas", "DejaVu Sans Mono"} {
+		if isGenericFontFamily(name) {
+			t.Fatalf("不应为通用族名: %s", name)
+		}
 	}
 }
