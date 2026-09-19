@@ -24,7 +24,7 @@ require (
 	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/fontfix v0.0.1
+	github.com/zc310/fontfix v0.0.2
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
 	golang.org/x/text v0.42.0
