@@ -18,8 +18,8 @@ type styledRune struct {
 
 // segments 按 Unicode UAX #14 断行规则把行内内容切成不可断开的段。
 // 每个返回的段内部不允许换行，段与段之间可以换行；空段表示强制换行。
-// hardBold 用于标题等需要强制加粗的场景。
-func (e *engine) segments(inlines []Inline, sizePT float64, hardBold bool) [][]atom {
+// base 提供整段统一的字族与样式基线，行内 Inline 可在其上追加 Bold/Italic。
+func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]atom {
 	size := ptToMM(sizePT)
 	var runes []rune
 	var styles []styledRune
@@ -27,8 +27,16 @@ func (e *engine) segments(inlines []Inline, sizePT float64, hardBold bool) [][]a
 		if inline.Text == "" {
 			continue
 		}
-		bold := inline.Bold || hardBold
-		style := styledRune{key: metricKey{bold: bold, italic: inline.Italic, mono: inline.Code}, size: size, color: colorText}
+		style := styledRune{
+			key: metricKey{
+				bold:   inline.Bold || base.bold,
+				italic: base.italic,
+				mono:   inline.Code || base.mono,
+				fam:    base.fam,
+			},
+			size:  size,
+			color: colorText,
+		}
 		switch {
 		case inline.Code:
 			style.color = colorCode

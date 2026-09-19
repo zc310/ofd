@@ -1,44 +1,55 @@
-# 示例文档
+---
+letterhead:
+  org: "××省档案局文件"
+  doc_no: "×档发〔2026〕18号"
+  signatory: "李四"
+  serial_no: "000018"
+  security: "内部"
+  urgency: "特急"
+footer:
+  page_number: true
+sign:
+  org: "××省档案局"
+  date: "2026年9月19日"
+colophon:
+  cc: "省委办公厅，省政府办公厅，省委组织部。"
+  issued_by: "××省档案局办公室"
+  issued_date: "2026年9月19日"
+---
 
-这是一个 **Markdown** 转 OFD 的示例。
+# ××省档案局关于加强档案安全工作的通知
+
+各市、县档案局，省直各单位档案部门：
+
+为深入贯彻落实有关档案安全工作要求，进一步加强全省档案安全管理，现就有关事项通知如下。
+
+## 一、提高思想认识
+
+档案安全是档案工作的底线，各级档案部门要增强安全意识，健全安全责任体系，确保档案实体和信息绝对安全。
+
+## 二、落实工作责任
+
+各级各部门要明确档案安全主体责任，落实专人管理，加强安全隐患排查，及时发现并消除风险。
+
+## 三、加强督导检查
+
+全省各级档案行政管理部门要加强对本地区档案安全工作的督促检查，对检查发现的突出问题要督促限期整改。
+
+## 四、严格执纪问责
+
+对因责任落实不到位造成档案安全事故的，要依法依规追究有关单位和人员责任。
+
+请各地各单位结合实际，认真抓好贯彻落实，并将有关情况及时报告省档案局。
+
+
+---
 
 - 列表项一
+    - 列表项二
 - 列表项二
 
 > 引用文本
 
 | 名称 | 数量 |
-| --- | ---: |
-| 苹果 | 3 |
-
-
-```go
-package main
-
-import (
-	"log"
-
-	"github.com/zc310/ofd/pkg/creator"
-)
-
-func main() {
-	err := creator.CreateFile(creator.Document{
-		ID:    "example-document",
-		Title: "创建示例",
-		Pages: []creator.Page{{Items: []creator.Item{
-			creator.Text{
-				X:      20,
-				Y:      30,
-				Width:  100,
-				Height: 10,
-				Size:   4.233,
-				Font:   "SimSun",
-				Value:  "你好，OFD",
-			},
-		}}}},
-	}, "output.ofd")
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-```
+|------|-----:|
+| 苹果 |    3 |

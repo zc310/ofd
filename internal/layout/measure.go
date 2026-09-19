@@ -14,11 +14,28 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+// famEnum 标识公文版式引用的字族类别，用于把 OFD 字体资源指向标准字体族。
+type famEnum uint8
+
+const (
+	// famBody 是正文仿宋，对应 Options.BodyFamily。
+	famBody famEnum = iota
+	// famHei 是黑体，对应 Options.HeiFamily（结构层次序号、密级、紧急程度）。
+	famHei
+	// famKai 是楷体，对应 Options.KaiFamily（二级序号、签发人姓名）。
+	famKai
+	// famTitle 是小标宋，对应 Options.TitleFamily（文件标题、发文机关标志）。
+	famTitle
+	// famSong 是宋体，对应 Options.SongFamily（页码等）。
+	famSong
+)
+
 // metricKey 唯一标识用于度量的一段字符样式。
 type metricKey struct {
 	bold   bool
 	italic bool
 	mono   bool
+	fam    famEnum
 }
 
 var (
@@ -41,25 +58,29 @@ func initMetrics() {
 		{bold: false, italic: true, mono: true}:   gomono.TTF,
 		{bold: true, italic: true, mono: true}:    gomono.TTF,
 	}
-	metricFonts = make(map[metricKey]*sfnt.Font, len(sources))
-	metricAsc = make(map[metricKey]float64, len(sources))
-	metricDesc = make(map[metricKey]float64, len(sources))
+	metricFonts = make(map[metricKey]*sfnt.Font, len(sources)*5)
+	metricAsc = make(map[metricKey]float64, len(sources)*5)
+	metricDesc = make(map[metricKey]float64, len(sources)*5)
 	const refPPEM = 1000 * 64
-	for key, data := range sources {
-		face, err := sfnt.Parse(data)
-		if err != nil {
-			continue
+	for fam := famBody; fam <= famSong; fam++ {
+		for key, data := range sources {
+			base := key
+			base.fam = fam
+			face, err := sfnt.Parse(data)
+			if err != nil {
+				continue
+			}
+			metricFonts[base] = face
+			var buf sfnt.Buffer
+			metrics, err := face.Metrics(&buf, refPPEM, font.HintingNone)
+			if err != nil {
+				metricAsc[base] = 0.8
+				metricDesc[base] = 0.2
+				continue
+			}
+			metricAsc[base] = float64(metrics.Ascent) / 64 / 1000
+			metricDesc[base] = float64(metrics.Descent) / 64 / 1000
 		}
-		metricFonts[key] = face
-		var buf sfnt.Buffer
-		metrics, err := face.Metrics(&buf, refPPEM, font.HintingNone)
-		if err != nil {
-			metricAsc[key] = 0.8
-			metricDesc[key] = 0.2
-			continue
-		}
-		metricAsc[key] = float64(metrics.Ascent) / 64 / 1000
-		metricDesc[key] = float64(metrics.Descent) / 64 / 1000
 	}
 }
 

@@ -24,6 +24,8 @@ var (
 	colorRule     = &creator.Color{R: 0xd0, G: 0xd7, B: 0xde}
 	colorBorder   = &creator.Color{R: 0xc4, G: 0xcb, B: 0xd1}
 	colorHeaderBG = &creator.Color{R: 0xef, G: 0xf2, B: 0xf5}
+	// colorRed 是公文版头的机关标志和分隔线颜色。
+	colorRed = &creator.Color{R: 0xcc, G: 0x00, B: 0x00}
 )
 
 // atom 是断行的最小单位：一个单词、一段空白或一个全角字符。
@@ -52,6 +54,12 @@ type engine struct {
 
 	fontNames map[metricKey]string
 	fonts     []creator.Font
+	footer    *Footer
+
+	// official 表示按 GB/T 9704-2012 公文版式编排（设置了 Letterhead 时启用）。
+	official bool
+	// officialBodyStarted 记录公文正文是否已开始，用于识别主送机关行。
+	officialBodyStarted bool
 }
 
 // Build 把流式文档排版为 OFD 文档。返回的文档可继续补充元数据后写入。
@@ -74,10 +82,19 @@ func Build(doc *Document, opts Options) (*creator.Document, error) {
 	if opts.MonoFamily == "" {
 		opts.MonoFamily = "monospace"
 	}
-	e := &engine{opts: opts, pageIndex: -1, fontNames: make(map[metricKey]string)}
+	e := &engine{opts: opts, pageIndex: -1, fontNames: make(map[metricKey]string), footer: doc.Footer, official: doc.Letterhead != nil}
 	e.computeArea()
+	if doc.Letterhead != nil && (doc.Letterhead.Org != "" || doc.Letterhead.DocNo != "") {
+		e.emitLetterhead(doc.Letterhead)
+	}
 	for i := range doc.Blocks {
 		e.emitBlock(&doc.Blocks[i])
+	}
+	if doc.Sign != nil && (doc.Sign.Org != "" || doc.Sign.Date != "") {
+		e.emitSignature(doc.Sign)
+	}
+	if doc.Colophon != nil && (doc.Colophon.Cc != "" || doc.Colophon.IssuedBy != "" || doc.Colophon.IssuedDate != "") {
+		e.emitColophon(doc.Colophon)
 	}
 	if e.pageIndex < 0 {
 		e.newPage()
@@ -108,6 +125,43 @@ func (e *engine) newPage() {
 	})
 	e.pageIndex = len(e.pages) - 1
 	e.y = e.contentTop
+	if e.footer != nil && e.footer.PageNumber {
+		e.emitPageNumber()
+	}
+}
+
+// emitPageNumber 在版心下边缘之下渲染 "— 页数 —" 页码。
+// 奇数页居右空一字、偶数页居左空一字，对应 GB/T 9704-2012 的页码位置。
+func (e *engine) emitPageNumber() {
+	size := ptToMM(e.footer.Size)
+	if e.footer.Size <= 0 {
+		size = ptToMM(14)
+	}
+	key := metricKey{fam: famSong}
+	label := fmt.Sprintf("— %d —", e.pageIndex+1)
+	width := measureWidth(label, size, key)
+	x := e.contentLeft + size
+	if e.pageIndex%2 == 0 {
+		// 0 基偶数为奇数页，页码居右空一字。
+		x = e.contentRight - size - width
+	}
+	baseline := e.contentBottom - 4
+	if e.official {
+		// GB/T 9704-2012 7.5：一字线上距版心下边缘 7mm。
+		baseline = e.contentBottom - 7 - ascent(size, key)
+	}
+	fill := true
+	e.add(creator.Text{
+		X:         x,
+		Y:         e.opts.PageHeight - baseline - size,
+		Width:     width,
+		Height:    size,
+		Value:     label,
+		Font:      e.fontName(key),
+		Size:      size,
+		Fill:      &fill,
+		FillColor: colorText,
+	})
 }
 
 func (e *engine) ensurePage() {
@@ -156,8 +210,17 @@ func (e *engine) fontName(key metricKey) string {
 		return name
 	}
 	family := e.opts.BodyFamily
-	if key.mono {
+	switch {
+	case key.mono:
 		family = e.opts.MonoFamily
+	case key.fam == famHei && e.opts.HeiFamily != "":
+		family = e.opts.HeiFamily
+	case key.fam == famKai && e.opts.KaiFamily != "":
+		family = e.opts.KaiFamily
+	case key.fam == famTitle && e.opts.TitleFamily != "":
+		family = e.opts.TitleFamily
+	case key.fam == famSong && e.opts.SongFamily != "":
+		family = e.opts.SongFamily
 	}
 	name := fmt.Sprintf("MD-%d", len(e.fonts))
 	e.fonts = append(e.fonts, creator.Font{
@@ -170,6 +233,211 @@ func (e *engine) fontName(key metricKey) string {
 	})
 	e.fontNames[key] = name
 	return name
+}
+
+// emitLetterhead 在首页版心顶部渲染红色版头，各要素位置对应 GB/T 9704-2012：
+//   - 份号、密级与紧急程度顶格版心左上角分行排列；
+//   - 发文机关标志居中，上边缘距版心上边缘 35mm；
+//   - 发文字号在机关标志下空二行，上行文与签发人同一行，签发人居右空一字；
+//   - 红色分隔线与版心等宽，印在发文字号之下 4mm。
+func (e *engine) emitLetterhead(lh *Letterhead) {
+	orgSize := ptToMM(lh.OrgSize)
+	if lh.OrgSize <= 0 {
+		orgSize = ptToMM(56)
+	}
+	docNoSize := ptToMM(lh.DocNoSize)
+	if lh.DocNoSize <= 0 {
+		docNoSize = ptToMM(16)
+	}
+	issueSize := docNoSize
+
+	e.ensurePage()
+	top := e.y
+	// 行距取自版心正文（GB/T："空二行"按版心行距计）。
+	lineSpace := ptToMM(e.opts.BodySize) * e.opts.LineHeight
+
+	// 涉密类标记：顶格版心左上角，份号、密级和保密期限、紧急程度自上而下分行；
+	// 份号用三号数字（仿宋），密级和紧急程度用三号黑体。
+	orgKey := metricKey{fam: famTitle}
+	docNoKey := metricKey{}
+	markHeiKey := metricKey{fam: famHei}
+	var markBottom float64
+	hasMarks := false
+	row := 0.0
+	for index, label := range []string{lh.SerialNo, lh.Security, lh.Urgency} {
+		if label == "" {
+			continue
+		}
+		key := docNoKey
+		if index > 0 {
+			key = markHeiKey
+		}
+		baseline := top - row*lineSpace - ascent(issueSize, key)
+		width := measureWidth(label, issueSize, key)
+		e.addText(label, e.contentLeft, baseline, atom{key: key, size: issueSize, color: colorText, width: width})
+		markBottom = baseline - descent(issueSize, key)
+		row++
+		hasMarks = true
+	}
+
+	// 发文机关标志：居中，上边缘距版心上边缘 35mm；涉密标记较高时下移保持 4mm 间距。
+	orgTop := top - 35
+	if hasMarks && markBottom < orgTop-4 {
+		orgTop = markBottom - 4
+	}
+	var orgBottom float64
+	if lh.Org != "" {
+		width := measureWidth(lh.Org, orgSize, orgKey)
+		x := e.contentLeft + (e.contentWidth-width)/2
+		baseline := orgTop - ascent(orgSize, orgKey)
+		e.addText(lh.Org, x, baseline, atom{key: orgKey, size: orgSize, color: colorRed, width: width})
+		orgBottom = baseline - descent(orgSize, orgKey)
+	} else {
+		orgBottom = top
+	}
+
+	// 发文字号：机关标志下空二行；上行文居左空一字、签发人居右空一字（同一行）。
+	docBottom := orgBottom
+	if lh.DocNo != "" || lh.Signatory != "" {
+		docTop := orgBottom - 2*lineSpace
+		baseline := docTop - ascent(docNoSize, docNoKey)
+		docNoWidth := 0.0
+		if lh.DocNo != "" {
+			docNoWidth = measureWidth(lh.DocNo, docNoSize, docNoKey)
+		}
+		// "签发人："用仿宋、"姓名"用三号楷体，整段右空一字。
+		signPrefix := "签发人："
+		signNameKey := metricKey{fam: famKai}
+		signPrefixWidth := measureWidth(signPrefix, docNoSize, docNoKey)
+		signNameWidth := 0.0
+		if lh.Signatory != "" {
+			signNameWidth = measureWidth(lh.Signatory, docNoSize, signNameKey)
+		}
+		totalWidth := signPrefixWidth + signNameWidth
+		if totalWidth > 0 {
+			e.addText(lh.DocNo, e.contentLeft+docNoSize, baseline, atom{key: docNoKey, size: docNoSize, color: colorText, width: docNoWidth})
+			signX := e.contentRight - docNoSize - totalWidth
+			e.addText(signPrefix, signX, baseline, atom{key: docNoKey, size: docNoSize, color: colorText, width: signPrefixWidth})
+			if lh.Signatory != "" {
+				e.addText(lh.Signatory, signX+signPrefixWidth, baseline, atom{key: signNameKey, size: docNoSize, color: colorText, width: signNameWidth})
+			}
+		} else if lh.DocNo != "" {
+			x := e.contentLeft + (e.contentWidth-docNoWidth)/2
+			e.addText(lh.DocNo, x, baseline, atom{key: docNoKey, size: docNoSize, color: colorText, width: docNoWidth})
+		}
+		docBottom = baseline - descent(docNoSize, docNoKey)
+	}
+
+	// 红色分隔线：发文字号之下 4mm，与版心等宽。
+	e.fillRect(e.contentLeft, docBottom-4-0.5, e.contentWidth, 0.5, colorRed)
+	e.y = docBottom - 4 - 1
+}
+
+// emitColophon 在正文流末尾渲染公文版记：抄送行与印发机关/日期行，行间用线分隔。
+// emitColophon 在末页版心最下方编排版记（GB/T 9704-2012 7.4）：
+// 首条、末条分隔线用粗线（0.35mm）、中间分隔线用细线（0.25mm），
+// 线与版心等宽；抄送左空一字，印发机关左空一字、印发日期右空一字。
+// 末条分隔线下边缘压准版心下边缘，文字行带与分隔线之间各留空（约 0.2 字）。
+func (e *engine) emitColophon(c *Colophon) {
+	sizeMM := ptToMM(14)
+	if c.Size > 0 {
+		sizeMM = ptToMM(c.Size)
+	}
+	key := metricKey{}
+	const (
+		lineBoldW = 0.35
+		lineThinW = 0.25
+	)
+	hasCc := strings.TrimSpace(c.Cc) != ""
+	band := sizeMM * 1.4 // 文字行带（文字上下各留 0.2 字）
+	rows := 1
+	if hasCc {
+		rows++
+	}
+	colH := lineBoldW + band*float64(rows) + lineThinW + lineBoldW
+	if !hasCc {
+		colH -= lineThinW
+	}
+	e.ensureHeight(colH + 1)
+	if e.y-colH >= e.contentBottom {
+		// 版记锚定在版心最下方，与正文之间留白。
+		e.y = e.contentBottom + colH
+	}
+	top := e.y
+
+	// 首条分隔线（粗线）。
+	cur := top
+	e.fillRect(e.contentLeft, cur-lineBoldW, e.contentWidth, lineBoldW, colorBorder)
+	cur -= lineBoldW
+
+	writeRow := func(text string, x, width float64) {
+		// 文字框顶距分隔线底约 0.2 字，基线在框底。
+		baseline := cur - sizeMM*0.2 - sizeMM
+		e.addText(text, x, baseline, atom{key: key, size: sizeMM, color: colorText, width: width})
+		cur -= band
+	}
+	thinLine := func() {
+		e.fillRect(e.contentLeft, cur-lineThinW, e.contentWidth, lineThinW, colorBorder)
+		cur -= lineThinW
+	}
+
+	if hasCc {
+		text := "抄送：" + strings.TrimSpace(c.Cc)
+		writeRow(text, e.contentLeft+sizeMM, measureWidth(text, sizeMM, key))
+		// 中间分隔线（细线）。
+		thinLine()
+	}
+	var issuedWidth float64
+	if strings.TrimSpace(c.IssuedBy) != "" {
+		issuedWidth += measureWidth(c.IssuedBy, sizeMM, key)
+	}
+	if strings.TrimSpace(c.IssuedDate) != "" {
+		label := strings.TrimSpace(c.IssuedDate) + "印发"
+		width := measureWidth(label, sizeMM, key)
+		writeRow(label, e.contentRight-sizeMM-width, width)
+		cur += band // 印发日期居右，机关同名在同一行，行带只计一次
+	}
+	if strings.TrimSpace(c.IssuedBy) != "" {
+		writeRow(c.IssuedBy, e.contentLeft+sizeMM, issuedWidth)
+	}
+
+	// 末条分隔线（粗线），下边缘压准版心下边缘。
+	e.fillRect(e.contentLeft, cur-lineBoldW, e.contentWidth, lineBoldW, colorBorder)
+	cur -= lineBoldW
+	e.y = cur
+}
+
+// emitSignature 渲染不加盖印章公文的落款（GB/T 9704-2012 7.3.5.2）：
+// 发文机关署名在正文下空一行、右空二字编排；成文日期在署名下一行，
+// 首字比署名首字右移二字（署名较长时日期右空二字、署名相应右移）。
+func (e *engine) emitSignature(s *Signature) {
+	size := ptToMM(s.Size)
+	if s.Size <= 0 {
+		size = ptToMM(16)
+	}
+	key := metricKey{}
+	orgWidth := measureWidth(s.Org, size, key)
+	dateWidth := measureWidth(s.Date, size, key)
+	lineH := size * e.opts.LineHeight
+	e.ensureHeight(lineH*2 + size)
+
+	e.y -= lineH // 正文下空一行
+
+	var orgLeft, dateLeft float64
+	if dateWidth > orgWidth {
+		dateLeft = e.contentRight - 2*size - dateWidth
+		orgLeft = dateLeft - 2*size
+	} else {
+		orgLeft = e.contentRight - 2*size - orgWidth
+		dateLeft = orgLeft + 2*size
+	}
+	if s.Org != "" {
+		e.addText(s.Org, orgLeft, e.y-ascent(size, key), atom{key: key, size: size, color: colorText, width: orgWidth})
+	}
+	e.y -= lineH
+	if s.Date != "" {
+		e.addText(s.Date, dateLeft, e.y-ascent(size, key), atom{key: key, size: size, color: colorText, width: dateWidth})
+	}
 }
 
 func (e *engine) emitBlock(b *Block) {
@@ -194,6 +462,10 @@ func (e *engine) emitBlock(b *Block) {
 }
 
 func (e *engine) emitParagraph(inlines []Inline, indent int) {
+	if e.official && indent == 0 {
+		e.emitOfficialParagraph(inlines)
+		return
+	}
 	step := float64(indent) * e.indentStep()
 	left := e.contentLeft + step
 	width := e.contentWidth - step
@@ -201,14 +473,57 @@ func (e *engine) emitParagraph(inlines []Inline, indent int) {
 		width = e.contentWidth
 		left = e.contentLeft
 	}
-	lines := e.wrapSegments(e.segments(inlines, e.opts.BodySize, false), width)
+	lines := e.wrapSegments(e.segments(inlines, e.opts.BodySize, metricKey{}), width)
 	for _, line := range lines {
 		e.writeLine(line, left)
 	}
 	e.space(e.blockGap())
 }
 
+// emitOfficialParagraph 按公文正文编排：每个自然段首行左空二字、回行顶格。
+// 标题后的第一个段落若以冒号结尾，视为主送机关行顶格编排（GB/T 9704 7.3.2/7.3.3）。
+func (e *engine) emitOfficialParagraph(inlines []Inline) {
+	segments := e.segments(inlines, e.opts.BodySize, metricKey{})
+	if len(segments) == 0 {
+		return
+	}
+	if !e.officialBodyStarted {
+		e.officialBodyStarted = true
+		text := ""
+		for _, inline := range inlines {
+			text += inline.Text
+		}
+		text = strings.TrimSpace(text)
+		if !strings.HasSuffix(text, "：") && !strings.HasSuffix(text, ":") {
+			indentFirstLine(segments, 2)
+		}
+	} else {
+		indentFirstLine(segments, 2)
+	}
+	lines := e.wrapSegments(segments, e.contentWidth)
+	for _, line := range lines {
+		e.writeLine(line, e.contentLeft)
+	}
+}
+
+// indentFirstLine 给段落首行前置两组全角空白，使首行左空两字、回行顶格。
+func indentFirstLine(segments [][]atom, chars int) {
+	if len(segments) == 0 || len(segments[0]) == 0 {
+		return
+	}
+	first := segments[0][0]
+	pad := make([]atom, 0, chars)
+	for index := 0; index < chars; index++ {
+		pad = append(pad, atom{text: "　", key: first.key, size: first.size, color: colorText, width: first.size, space: true})
+	}
+	segments[0] = append(pad, segments[0]...)
+}
+
 func (e *engine) emitHeading(b *Block) {
+	if e.official {
+		e.emitOfficialHeading(b)
+		return
+	}
 	level := b.Level
 	if level < 1 {
 		level = 1
@@ -218,11 +533,55 @@ func (e *engine) emitHeading(b *Block) {
 	}
 	size := e.opts.BodySize * headingScale[level-1]
 	e.space(ptToMM(e.opts.BodySize) * (e.opts.BlockSpacing + 0.4))
-	lines := e.wrapSegments(e.segments(b.Inlines, size, true), e.contentWidth)
+	lines := e.wrapSegments(e.segments(b.Inlines, size, metricKey{bold: true}), e.contentWidth)
 	for _, line := range lines {
 		e.writeLine(line, e.contentLeft)
 	}
 	e.space(e.blockGap())
+}
+
+// emitOfficialHeading 按公文标题与结构层次序数编排（GB/T 9704 7.3.1/7.3.3）：
+// 一级为文件标题，二号小标宋居中排布，红色分隔线下空二行；
+// 二至四级为结构层次序数行，用三号字，第一层黑体、第二层楷体、其余仿宋。
+func (e *engine) emitOfficialHeading(b *Block) {
+	level := b.Level
+	if level < 1 {
+		level = 1
+	}
+	if level > 6 {
+		level = 6
+	}
+	lineSpace := ptToMM(e.opts.BodySize) * e.opts.LineHeight
+	if level == 1 {
+		segments := e.segments(b.Inlines, 22, metricKey{fam: famTitle})
+		if len(segments) == 0 {
+			return
+		}
+		e.y -= 2 * lineSpace // 红色分隔线下空二行
+		lines := e.wrapSegments(segments, e.contentWidth)
+		for _, line := range lines {
+			width := e.lineWidth(line)
+			e.writeLine(line, e.contentLeft+(e.contentWidth-width)/2)
+		}
+		e.y -= lineSpace // 标题下空一行
+		return
+	}
+	fam := famBody
+	switch level {
+	case 2: // 第一层："一、"
+		fam = famHei
+	case 3: // 第二层："（一）"
+		fam = famKai
+	}
+	segments := e.segments(b.Inlines, e.opts.BodySize, metricKey{fam: fam})
+	if len(segments) == 0 {
+		return
+	}
+	indentFirstLine(segments, 2)
+	lines := e.wrapSegments(segments, e.contentWidth)
+	for _, line := range lines {
+		e.writeLine(line, e.contentLeft)
+	}
 }
 
 func (e *engine) emitListItem(b *Block) {
@@ -257,7 +616,7 @@ func (e *engine) emitCode(b *Block) {
 }
 
 func (e *engine) emitQuote(b *Block) {
-	segments := e.segments(b.Inlines, e.opts.BodySize, false)
+	segments := e.segments(b.Inlines, e.opts.BodySize, metricKey{})
 	for i := range segments {
 		for j := range segments[i] {
 			segments[i][j].color = colorQuote
@@ -368,7 +727,7 @@ func (e *engine) drawTableRow(cells []Cell, widths []float64, padding, sizeMM fl
 		if index < len(cells) {
 			cell = cells[index]
 		}
-		lines := e.wrapSegments(e.segments(cell, e.opts.BodySize, header), math.Max(widths[index]-padding*2, sizeMM))
+		lines := e.wrapSegments(e.segments(cell, e.opts.BodySize, metricKey{bold: header}), math.Max(widths[index]-padding*2, sizeMM))
 		wrapped[index] = lines
 		if len(lines) > maxLines {
 			maxLines = len(lines)

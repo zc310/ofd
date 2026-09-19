@@ -45,7 +45,12 @@ func (m *markdownImporter) Import(input any, output io.Writer, _ *converter.Conv
 	if document.Title == "" {
 		document.Title = strings.TrimSuffix(name, filepath.Ext(name))
 	}
-	ofd, err := layout.Build(document, layout.DefaultOptions())
+	options := layout.DefaultOptions()
+	if document.Letterhead != nil {
+		// 公文版头存在时采用 GB/T 9704-2012 版式（天头 37mm、三号正文、每面 22 行）。
+		options = layout.GBTOptions()
+	}
+	ofd, err := layout.Build(document, options)
 	if err != nil {
 		return err
 	}
