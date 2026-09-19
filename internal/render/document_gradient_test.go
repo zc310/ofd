@@ -247,6 +247,40 @@ func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 	}
 }
 
+func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
+	alpha := uint8(51)
+	gradientColor := func() *models.CTColor {
+		return &models.CTColor{AxialShd: &models.CTAxialShd{
+			StartPoint: models.StPos{X: 0, Y: 0},
+			EndPoint:   models.StPos{X: 10, Y: 0},
+			Segment: []models.Segment{
+				{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			},
+		}}
+	}
+	object := &models.PathObject{CtPath: models.CtPath{
+		CTGraphicUnit: models.CTGraphicUnit{Alpha: &alpha},
+		Fill:          true,
+		FillColor:     gradientColor(),
+		StrokeColor:   gradientColor(),
+	}}
+	ctx := canvas.NewContext(canvas.New(20, 20))
+	var document Document
+
+	fillGradient, strokeGradient := document.updatePathGradients(ctx, object, nil, 20)
+
+	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 204 {
+		t.Fatalf("ctx fill gradient alpha = %d, want 204", got.A)
+	}
+	if got := fillGradient.At(0, 20); got.A != 255 {
+		t.Fatalf("returned fill gradient alpha = %d, want unscaled 255", got.A)
+	}
+	if got := strokeGradient.At(0, 20); got.A != 255 {
+		t.Fatalf("returned stroke gradient alpha = %d, want unscaled 255", got.A)
+	}
+}
+
 func TestGraphicOpacityUsesTransparencySemantics(t *testing.T) {
 	if got := graphicOpacity(nil); got != 255 {
 		t.Fatalf("nil transparency = %d, want 255", got)
