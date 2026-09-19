@@ -238,7 +238,14 @@ func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page, content *mod
 // drawPageBackground 绘制页面背景。
 func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
 	ctx.SetFillColor(p.background)
-	ctx.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
+	// 页面尺寸换算成栅格像素通常不是整数，栅格画布会向上取整。只填充页面
+	// 大小会让最后一行/列只被部分覆盖，留下半透明边缘；在深色阅读背景上
+	// 会显示为黑线。向四周多填充一个设备像素，超出画布的部分会被裁掉。
+	padding := 0.0
+	if p.dpi.DPMM() > 0 {
+		padding = 1.0 / p.dpi.DPMM()
+	}
+	ctx.DrawPath(-padding, -padding, canvas.Rectangle(box.Width+2*padding, box.Height+2*padding))
 }
 
 func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
