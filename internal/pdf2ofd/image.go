@@ -2,6 +2,7 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -297,15 +298,15 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 	if err != nil {
 		return nil, "", err
 	}
-	if bpc != 8 && !indexed {
-		return nil, "", errors.New("仅支持 8 位 PNG 图像")
-	}
 	if indexed {
 		return encodePDFIndexedImage(stream.Content, width, height, bpc, components, palette)
 	}
-	raw := stream.Content
-	if len(raw) != width*height*components {
-		return nil, "", errors.New("PNG 图像数据长度无效")
+	if bpc == maxPDFImageBitsPerComponent {
+		return encodePDFImage16(ctx, stream, width, height, components)
+	}
+	raw, err := decodePDFImageSamples(ctx, stream, width, height, components, bpc)
+	if err != nil {
+		return nil, "", err
 	}
 	if components == 4 {
 		// 非 DCT 编码的 DeviceCMYK 样本已是油墨值（0 表示无油墨），无需反相。
@@ -334,6 +335,193 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
+}
+
+// maxPDFImageBitsPerComponent 是 PDF 图像支持的每分量最大位数。
+const maxPDFImageBitsPerComponent = 16
+
+// decodePDFImageSamples 把 PDF 图像样本解码为每分量 8 位的交织缓冲区。
+// 支持 BitsPerComponent 1/2/4/8/16，并按 /Decode 数组（默认 [0 1]）映射取值。
+func decodePDFImageSamples(ctx *model.Context, stream *types.StreamDict, width, height, components, bpc int) ([]byte, error) {
+	if bpc < 1 || bpc > maxPDFImageBitsPerComponent {
+		return nil, fmt.Errorf("不支持的图像位深 %d", bpc)
+	}
+	if components < 1 || components > 4 {
+		return nil, errors.New("图像颜色分量数量无效")
+	}
+	rowBytes := (width*components*bpc + 7) / 8
+	data := stream.Content
+	if width <= 0 || height <= 0 || rowBytes <= 0 || len(data) < rowBytes*height {
+		return nil, errors.New("PNG 图像数据长度无效")
+	}
+	decode := pdfImageDecode(ctx, stream, components)
+	maxValue := float64(uint32(1)<<uint(bpc) - 1)
+	samples := make([]byte, width*height*components)
+	for y := 0; y < height; y++ {
+		row := data[y*rowBytes : (y+1)*rowBytes]
+		for x := 0; x < width; x++ {
+			for c := 0; c < components; c++ {
+				normalized := float64(readPDFImageSample(row, x*components+c, bpc)) / maxValue
+				low, high := decode[c*2], decode[c*2+1]
+				samples[(y*width+x)*components+c] = floatToByte(low + normalized*(high-low))
+			}
+		}
+	}
+	return samples, nil
+}
+
+// readPDFImageSample 从一行解包后的图像数据中读取第 index 个样本（高位在前）。
+func readPDFImageSample(row []byte, index, bpc int) uint32 {
+	switch bpc {
+	case 16:
+		offset := index * 2
+		return uint32(row[offset])<<8 | uint32(row[offset+1])
+	case 8:
+		return uint32(row[index])
+	default:
+		value := uint32(0)
+		position := index * bpc
+		remaining := bpc
+		for remaining > 0 {
+			byteIndex := position / 8
+			bitInByte := position % 8
+			take := 8 - bitInByte
+			if take > remaining {
+				take = remaining
+			}
+			shift := uint(8 - bitInByte - take)
+			mask := byte(1<<uint(take) - 1)
+			value = value<<uint(take) | uint32((row[byteIndex]>>shift)&mask)
+			position += take
+			remaining -= take
+		}
+		return value
+	}
+}
+
+// pdfImageDecode 读取 /Decode 数组；缺省为每个分量 [0 1]。
+func pdfImageDecode(ctx *model.Context, stream *types.StreamDict, components int) []float64 {
+	values := make([]float64, components*2)
+	for i := 0; i < components; i++ {
+		values[i*2+1] = 1
+	}
+	object, found := stream.Find("Decode")
+	if !found {
+		return values
+	}
+	resolved, err := dereferencePDFObject(ctx, object)
+	if err != nil {
+		return values
+	}
+	array, ok := resolved.(types.Array)
+	if !ok || len(array) < components*2 {
+		return values
+	}
+	for i := 0; i < components*2; i++ {
+		if value, ok := numberValue(array[i]); ok {
+			values[i] = value
+		}
+	}
+	return values
+}
+
+func floatToByte(value float64) byte {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 255
+	}
+	return byte(value*255 + 0.5)
+}
+
+// encodePDFImage16 把 16 位样本直接编码为 16 位 PNG，保留位深。
+// DeviceCMYK 没有 16 位 PNG 通道，转换为 16 位 RGB。
+func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, height, components int) ([]byte, string, error) {
+	if components < 1 || components > 4 {
+		return nil, "", errors.New("图像颜色分量数量无效")
+	}
+	samples, err := decodePDFImageSamples16(ctx, stream, width, height, components)
+	if err != nil {
+		return nil, "", err
+	}
+	put := func(pixel []byte, value uint16) { binary.BigEndian.PutUint16(pixel, value) }
+	var img image.Image
+	switch components {
+	case 1:
+		gray := image.NewGray16(image.Rect(0, 0, width, height))
+		for index, sample := range samples {
+			put(gray.Pix[index*2:index*2+2], sample)
+		}
+		img = gray
+	case 4:
+		rgba := image.NewRGBA64(image.Rect(0, 0, width, height))
+		for index := 0; index < width*height; index++ {
+			r, g, b := cmykToRGB16(samples[index*4], samples[index*4+1], samples[index*4+2], samples[index*4+3])
+			base := index * 8
+			put(rgba.Pix[base:base+2], r)
+			put(rgba.Pix[base+2:base+4], g)
+			put(rgba.Pix[base+4:base+6], b)
+			put(rgba.Pix[base+6:base+8], 0xffff)
+		}
+		img = rgba
+	default:
+		rgba := image.NewRGBA64(image.Rect(0, 0, width, height))
+		for index := 0; index < width*height; index++ {
+			base := index * 8
+			put(rgba.Pix[base:base+2], samples[index*3])
+			put(rgba.Pix[base+2:base+4], samples[index*3+1])
+			put(rgba.Pix[base+4:base+6], samples[index*3+2])
+			put(rgba.Pix[base+6:base+8], 0xffff)
+		}
+		img = rgba
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
+	}
+	return encoded.Bytes(), "PNG", nil
+}
+
+func decodePDFImageSamples16(ctx *model.Context, stream *types.StreamDict, width, height, components int) ([]uint16, error) {
+	rowBytes := width * components * 2
+	data := stream.Content
+	if width <= 0 || height <= 0 || rowBytes <= 0 || len(data) < rowBytes*height {
+		return nil, errors.New("PNG 图像数据长度无效")
+	}
+	decode := pdfImageDecode(ctx, stream, components)
+	samples := make([]uint16, width*height*components)
+	for y := 0; y < height; y++ {
+		row := data[y*rowBytes : (y+1)*rowBytes]
+		for x := 0; x < width; x++ {
+			for c := 0; c < components; c++ {
+				offset := (x*components + c) * 2
+				sample := uint16(row[offset])<<8 | uint16(row[offset+1])
+				normalized := float64(sample) / 65535
+				low, high := decode[c*2], decode[c*2+1]
+				samples[(y*width+x)*components+c] = floatToUint16(low + normalized*(high-low))
+			}
+		}
+	}
+	return samples, nil
+}
+
+func floatToUint16(value float64) uint16 {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 0xffff
+	}
+	return uint16(value*65535 + 0.5)
+}
+
+func cmykToRGB16(c, m, y, k uint16) (uint16, uint16, uint16) {
+	black := uint32(0xffff - k)
+	r := uint16(uint32(0xffff-c) * black / 0xffff)
+	g := uint16(uint32(0xffff-m) * black / 0xffff)
+	b := uint16(uint32(0xffff-y) * black / 0xffff)
+	return r, g, b
 }
 
 func pdfImageColorSpace(ctx *model.Context, stream *types.StreamDict) (components int, indexed bool, palette []byte, err error) {
