@@ -1,11 +1,12 @@
 package creator
 
 import (
-	"archive/zip"
 	"bytes"
 	"io"
 	"runtime"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 )
 
 type testPageProvider struct {

@@ -13,6 +13,7 @@ require (
 	github.com/emmansun/gmsm v0.44.1
 	github.com/go-text/typesetting v0.3.5
 	github.com/h2non/filetype v1.1.3
+	github.com/klauspost/compress v1.20.0
 	github.com/knroy/go-xml v1.3.1
 	github.com/nao1215/imaging v1.0.10
 	github.com/ncruces/zenity v0.10.15

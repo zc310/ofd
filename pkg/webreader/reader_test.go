@@ -1,7 +1,6 @@
 package webreader
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"image"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/tdewolff/canvas"
 )

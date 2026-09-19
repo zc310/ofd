@@ -2,7 +2,6 @@
 package creator
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/klauspost/compress/zip"
 )
 
 const (

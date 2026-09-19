@@ -1,7 +1,6 @@
 package validator
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/hex"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 
 	fontpkg "github.com/tdewolff/font"
 	"github.com/xuri/excelize/v2"

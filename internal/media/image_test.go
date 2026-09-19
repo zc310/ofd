@@ -1,7 +1,6 @@
 package media
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"image"
@@ -10,6 +9,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/internal/core"
 )
