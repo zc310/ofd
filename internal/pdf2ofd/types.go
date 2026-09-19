@@ -47,10 +47,13 @@ type pdfPathCommand struct {
 }
 
 type pdfGraphicsState struct {
-	ctm, textMatrix, lineMatrix      [6]float64
-	fontName                         string
-	fontSize                         float64
-	fill, stroke                     pdfColor
+	ctm, textMatrix, lineMatrix [6]float64
+	fontName                    string
+	fontSize                    float64
+	fill, stroke                pdfColor
+	// fillSpace、strokeSpace 是当前非描边/描边颜色空间，用于正确解释
+	// sc/scn 与 SC/SCN 的分量（例如 Separation 的 tint 值）。
+	fillSpace, strokeSpace           *pdfColorSpace
 	lineWidth                        float64
 	renderMode                       int
 	charSpacing, wordSpacing, hScale float64
