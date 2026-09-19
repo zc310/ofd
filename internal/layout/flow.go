@@ -51,6 +51,7 @@ type engine struct {
 	contentLeft   float64
 	contentRight  float64
 	contentWidth  float64
+	contentHeight float64
 
 	fontNames map[metricKey]string
 	fonts     []creator.Font
@@ -60,6 +61,9 @@ type engine struct {
 	official bool
 	// officialBodyStarted 记录公文正文是否已开始，用于识别主送机关行。
 	officialBodyStarted bool
+	// afterLandscape 表示刚结束一个横排表格区块；其后的纵向排版内容
+	// 应在横排页之后另起一页，避免纵向文字落在横排页上与表格重叠。
+	afterLandscape bool
 }
 
 // Build 把流式文档排版为 OFD 文档。返回的文档可继续补充元数据后写入。
@@ -115,6 +119,7 @@ func (e *engine) computeArea() {
 	e.contentLeft = o.MarginLeft
 	e.contentRight = o.PageWidth - o.MarginRight
 	e.contentWidth = e.contentRight - e.contentLeft
+	e.contentHeight = e.contentTop - e.contentBottom
 }
 
 func (e *engine) newPage() {
@@ -168,6 +173,16 @@ func (e *engine) ensurePage() {
 	if e.pageIndex < 0 {
 		e.newPage()
 	}
+}
+
+// breakAfterLandscape 在横排表格结束、后续内容开始排版时新起一个纵向页面，
+// 保证随后的纵向文字不会落到横排页上与表格重叠。
+func (e *engine) breakAfterLandscape() {
+	if !e.afterLandscape {
+		return
+	}
+	e.afterLandscape = false
+	e.newPage()
 }
 
 func (e *engine) cur() *creator.Page { return &e.pages[e.pageIndex] }
@@ -339,6 +354,7 @@ func (e *engine) emitLetterhead(lh *Letterhead) {
 // 线与版心等宽；抄送左空一字，印发机关左空一字、印发日期右空一字。
 // 末条分隔线下边缘压准版心下边缘，文字行带与分隔线之间各留空（约 0.2 字）。
 func (e *engine) emitColophon(c *Colophon) {
+	e.breakAfterLandscape()
 	sizeMM := ptToMM(14)
 	if c.Size > 0 {
 		sizeMM = ptToMM(c.Size)
@@ -411,6 +427,7 @@ func (e *engine) emitColophon(c *Colophon) {
 // 发文机关署名在正文下空一行、右空二字编排；成文日期在署名下一行，
 // 首字比署名首字右移二字（署名较长时日期右空二字、署名相应右移）。
 func (e *engine) emitSignature(s *Signature) {
+	e.breakAfterLandscape()
 	size := ptToMM(s.Size)
 	if s.Size <= 0 {
 		size = ptToMM(16)
@@ -441,6 +458,7 @@ func (e *engine) emitSignature(s *Signature) {
 }
 
 func (e *engine) emitBlock(b *Block) {
+	e.breakAfterLandscape()
 	switch b.Kind {
 	case KindHeading:
 		e.emitHeading(b)
@@ -700,22 +718,159 @@ func (e *engine) emitTable(b *Block) {
 	for _, width := range widths {
 		total += width
 	}
-	if total > e.contentWidth {
-		scale := e.contentWidth / total
-		for index := range widths {
-			widths[index] *= scale
-		}
-	} else {
-		extra := (e.contentWidth - total) / float64(cols)
-		for index := range widths {
-			widths[index] += extra
-		}
+	if table.Landscape || total > e.contentWidth {
+		e.emitTableLandscape(table, widths, sizeMM, padding)
+		return
+	}
+	extra := (e.contentWidth - total) / float64(cols)
+	for index := range widths {
+		widths[index] += extra
 	}
 	e.drawTableRow(table.Header, widths, padding, sizeMM, true, table.Align)
 	for _, row := range table.Rows {
 		e.drawTableRow(row, widths, padding, sizeMM, false, table.Align)
 	}
 	e.space(e.blockGap())
+}
+
+// emitTableLandscape 按 GB/T 9704-2012 第 8 条横排表格编排：把列方向旋转到
+// 页面纵向（占版心高），行方向横跨版心宽，表头（首行）始终位于页面左侧——
+// 奇数页对应订口一边、偶数页对应切口一边；页码与公文其他页码保持一致。
+func (e *engine) emitTableLandscape(table *Table, widths []float64, sizeMM, padding float64) {
+	cols := len(widths)
+	lineHeight := sizeMM * e.opts.LineHeight
+	rowHeights := make([]float64, 0, len(table.Rows)+1)
+	rowHeights = append(rowHeights, e.tableRowHeight(table.Header, widths, padding, sizeMM, lineHeight))
+	for _, row := range table.Rows {
+		rowHeights = append(rowHeights, e.tableRowHeight(row, widths, padding, sizeMM, lineHeight))
+	}
+	totalW := 0.0
+	for _, width := range widths {
+		totalW += width
+	}
+	totalH := 0.0
+	for _, height := range rowHeights {
+		totalH += height
+	}
+	if totalW <= 0 || totalH <= 0 {
+		return
+	}
+	// 整体等比缩放，使列方向不超出版心高、行方向不超出版心宽；能放下则不缩放。
+	scale := math.Min(1, math.Min(e.contentHeight/totalW, e.contentWidth/totalH))
+	scaledW := make([]float64, cols)
+	for index := range widths {
+		scaledW[index] = widths[index] * scale
+	}
+	scaledH := make([]float64, len(rowHeights))
+	for index := range rowHeights {
+		scaledH[index] = rowHeights[index] * scale
+	}
+	usedW := totalW * scale
+	e.ensureHeight(usedW + ptToMM(e.opts.BodySize))
+	// 表头（首行）居页面左侧、第 0 列在下方，列自下而上排布，读者顺时针转页阅读。
+	x0 := e.contentLeft
+	bottom := e.opts.PageHeight - e.y + usedW
+	rowTop := 0.0
+	e.drawTableRowLandscape(table.Header, scaledW, rowTop, scaledH[0], usedW, scale, padding, true, table.Align, x0, bottom)
+	rowTop += scaledH[0]
+	for index, row := range table.Rows {
+		e.drawTableRowLandscape(row, scaledW, rowTop, scaledH[index+1], usedW, scale, padding, false, table.Align, x0, bottom)
+		rowTop += scaledH[index+1]
+	}
+	e.y -= usedW
+	e.space(e.blockGap())
+	e.afterLandscape = true
+}
+
+// tableRowHeight 计算一行文字换行后占用的行高。
+func (e *engine) tableRowHeight(cells []Cell, widths []float64, padding, sizeMM, lineHeight float64) float64 {
+	maxLines := 1
+	for index := 0; index < len(widths); index++ {
+		var cell Cell
+		if index < len(cells) {
+			cell = cells[index]
+		}
+		lines := e.wrapSegments(e.segments(cell, e.opts.BodySize, metricKey{}), math.Max(widths[index]-padding*2, sizeMM))
+		if len(lines) > maxLines {
+			maxLines = len(lines)
+		}
+	}
+	return float64(maxLines) * lineHeight
+}
+
+// drawTableRowLandscape 在横排坐标中绘制一行。列方向对应页面自下而上、行方向
+// 对应页面从左向右，表头行位于页面左侧；字符直接落到最终页面位置，并以
+// CharDirection=90 使字形在读者顺时针转页后保持正立。传入的宽度均已按整表
+// 等比缩放（scale 是缩放系数），字符自身尺寸同样按 scale 缩放。
+func (e *engine) drawTableRowLandscape(cells []Cell, widths []float64, rowTop, rowHeight, usedW, scale, padding float64, header bool, aligns []Align, x0, bottom float64) {
+	cols := len(widths)
+	// 换行按未缩放的自然列宽计算，分隔线/行高随后等比缩放。
+	naturalW := make([]float64, cols)
+	for index := range widths {
+		naturalW[index] = widths[index] / scale
+	}
+	wrapped := make([][][]atom, cols)
+	for index := 0; index < cols; index++ {
+		var cell Cell
+		if index < len(cells) {
+			cell = cells[index]
+		}
+		wrapped[index] = e.wrapSegments(e.segments(cell, e.opts.BodySize, metricKey{bold: header}), math.Max(naturalW[index]-2*padding, ptToMM(e.opts.BodySize)))
+	}
+	if header {
+		e.fillRectPage(x0, bottom-usedW, rowHeight, usedW, colorHeaderBG)
+	}
+	lineHeight := ptToMM(e.opts.BodySize) * e.opts.LineHeight * scale
+	colX := 0.0
+	for index := 0; index < cols; index++ {
+		align := AlignLeft
+		if index < len(aligns) {
+			align = aligns[index]
+		}
+		cursor := rowTop
+		for _, line := range wrapped[index] {
+			lineWidth := e.lineWidth(line) * scale
+			startX := colX + padding*scale
+			switch align {
+			case AlignCenter:
+				startX = colX + (widths[index]-lineWidth)/2
+			case AlignRight:
+				startX = colX + widths[index] - padding*scale - lineWidth
+			}
+			posX := startX
+			for _, item := range line {
+				if strings.TrimSpace(item.text) != "" {
+					sizeS := item.size * scale
+					ascentS := ascent(item.size, item.key) * scale
+					fill := true
+					e.add(creator.Text{
+						X:             x0 + cursor + padding*scale + ascentS,
+						Y:             bottom - posX - sizeS,
+						Width:         item.width * scale,
+						Height:        sizeS,
+						Value:         item.text,
+						Font:          e.fontName(item.key),
+						Size:          sizeS,
+						Fill:          &fill,
+						FillColor:     item.color,
+						CharDirection: 270,
+					})
+				}
+				posX += item.width * scale
+			}
+			cursor += lineHeight
+		}
+		colX += widths[index]
+	}
+	// 行底分隔线铺满列向范围；列分隔线沿本行条带延伸。
+	e.fillRectPage(x0+rowTop+rowHeight-0.2*scale, bottom-usedW, 0.2*scale, usedW, colorBorder)
+	verticalX := 0.0
+	for index := 0; index <= cols; index++ {
+		e.fillRectPage(x0+rowTop, bottom-verticalX, rowHeight, 0.2*scale, colorBorder)
+		if index < cols {
+			verticalX += widths[index]
+		}
+	}
 }
 
 func (e *engine) drawTableRow(cells []Cell, widths []float64, padding, sizeMM float64, header bool, aligns []Align) {
@@ -902,6 +1057,27 @@ func (e *engine) fillRect(x, y, width, height float64, color *creator.Color) {
 	e.add(creator.Path{
 		X:         x,
 		Y:         e.opts.PageHeight - (y + height),
+		Width:     width,
+		Height:    height,
+		Data:      rectPath(width, height),
+		Fill:      true,
+		Stroke:    stroke,
+		StrokeSet: &stroke,
+		LineWidth: 0,
+		FillColor: color,
+	})
+}
+
+// fillRectPage 以页面坐标（距页顶距离）直接绘制填充矩形，用于横排表格中
+// 已经过坐标换算的条带、分隔线等。
+func (e *engine) fillRectPage(x, y, width, height float64, color *creator.Color) {
+	if width <= 0 || height <= 0 {
+		return
+	}
+	stroke := false
+	e.add(creator.Path{
+		X:         x,
+		Y:         y,
 		Width:     width,
 		Height:    height,
 		Data:      rectPath(width, height),

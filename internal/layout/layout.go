@@ -58,6 +58,8 @@ type Table struct {
 	Header []Cell
 	Rows   [][]Cell
 	Align  []Align
+	// Landscape 强制横排表格；为空时按列宽是否超出版心自动判定。
+	Landscape bool
 }
 
 // Image 是块级图片。

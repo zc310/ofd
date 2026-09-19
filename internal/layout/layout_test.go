@@ -822,3 +822,147 @@ func TestBuildColophonOnLastPage(t *testing.T) {
 		t.Fatalf("印发日期应位于印发机关右侧: %0.4f <= %.4f", issuedDate.X, issuedBy.X)
 	}
 }
+
+func TestBuildWideTableRotatesLandscape(t *testing.T) {
+	options := DefaultOptions()
+	rows := 6
+	header := make([]Cell, 0, rows)
+	body := make([]Cell, 0, rows)
+	for index := 0; index < rows; index++ {
+		header = append(header, Cell{{Text: "一二三四五六七八九"}})
+		body = append(body, Cell{{Text: "甲乙丙丁戊己庚辛"}})
+	}
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:  KindTable,
+		Table: &Table{Header: header, Rows: [][]Cell{body}},
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	contentLeft := options.MarginLeft
+	var headerText, bodyText *creator.Text
+	rotated := 0
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			text, ok := item.(creator.Text)
+			if !ok {
+				continue
+			}
+			if text.CharDirection != 0 {
+				rotated++
+			}
+			switch {
+			case text.Value == "一":
+				headerText = &text
+			case text.Value == "甲":
+				bodyText = &text
+			}
+		}
+	}
+	if rotated == 0 {
+		t.Fatalf("宽表格应横排旋转，未发现带方向角度的文字")
+	}
+	if headerText == nil || headerText.CharDirection != 270 {
+		t.Fatalf("表头应横向旋转: header=%v", headerText)
+	}
+	if bodyText == nil || bodyText.CharDirection != 270 {
+		t.Fatalf("数据行应横向旋转: body=%v", bodyText)
+	}
+	// 表头（首行）应落在页面左侧，数据行在其右侧；坐标已是直接换算的页面坐标。
+	headerPageX := headerText.X + headerText.Height
+	bodyPageX := bodyText.X + bodyText.Height
+	if headerPageX < contentLeft-10 || headerPageX > contentLeft+12 {
+		t.Fatalf("表头应在版心左侧: pageX=%.4f contentLeft=%.4f", headerPageX, contentLeft)
+	}
+	if bodyPageX <= headerPageX+1 {
+		t.Fatalf("数据行应位于表头右侧: header=%.4f body=%.4f", headerPageX, bodyPageX)
+	}
+	if bodyPageX > options.PageHeight {
+		t.Fatalf("数据行超出页面高度: %.4f", bodyPageX)
+	}
+}
+
+func TestBuildNarrowTableStaysPortrait(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindTable,
+		Table: &Table{
+			Header: []Cell{{{Text: "名称"}}, {{Text: "数量"}}},
+			Rows:   [][]Cell{{{{Text: "苹果"}}, {{Text: "3"}}}},
+		},
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			switch value := item.(type) {
+			case creator.Text:
+				if value.CharDirection != 0 {
+					t.Fatalf("窄表格不应旋转: %q", value.Value)
+				}
+			case creator.Path:
+				if value.CTM != nil {
+					t.Fatalf("窄表格的路径不应旋转")
+				}
+			}
+		}
+	}
+}
+
+func TestBuildLandscapeForcedByFlag(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindTable,
+		Table: &Table{
+			Header:    []Cell{{{Text: "名称"}}, {{Text: "数量"}}},
+			Rows:      [][]Cell{{{{Text: "苹果"}}, {{Text: "3"}}}},
+			Landscape: true,
+		},
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	rotated := false
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			if text, ok := item.(creator.Text); ok && text.Value == "名" && text.CharDirection == 270 {
+				rotated = true
+			}
+		}
+	}
+	if !rotated {
+		t.Fatalf("显式 Landscape 的窄表格也应旋转")
+	}
+}
+
+func TestBuildLandscapeTableKeepsPageNumber(t *testing.T) {
+	document, err := Build(&Document{
+		Footer:     &Footer{PageNumber: true},
+		Letterhead: &Letterhead{Org: "××省档案局文件", DocNo: "×档发〔2026〕1号"},
+		Blocks: []Block{
+			{Kind: KindTable,
+				Table: &Table{
+					Header:    []Cell{{{Text: "名称"}}, {{Text: "数量"}}},
+					Rows:      [][]Cell{{{{Text: "苹果"}}, {{Text: "3"}}}},
+					Landscape: true,
+				}},
+			{Kind: KindParagraph, Inlines: []Inline{{Text: "正文。"}}},
+		},
+	}, GBTOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	foundNumber := false
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			if text, ok := item.(creator.Text); ok && strings.HasPrefix(text.Value, "— ") && strings.HasSuffix(text.Value, " —") {
+				if text.CTM != nil {
+					t.Fatalf("页码不应旋转: %q", text.Value)
+				}
+				foundNumber = true
+			}
+		}
+	}
+	if !foundNumber {
+		t.Fatalf("横排表格页面仍应按公文惯例渲染页码")
+	}
+}
