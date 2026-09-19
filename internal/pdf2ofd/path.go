@@ -61,9 +61,15 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 	if len(p.path) == 0 {
 		return
 	}
+	commands := p.path
+	if fill {
+		// PDF 填充会隐式闭合所有子路径；OFD 阅读器只填充显式闭合的路径。
+		// 不闭合时，用 m/l.../f* 绘制的细长矩形不会渲染出来。
+		commands = closeSubpathsForFill(commands)
+	}
 	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
 	var data strings.Builder
-	for _, command := range p.path {
+	for _, command := range commands {
 		if command.op == "Z" {
 			continue
 		}
@@ -77,7 +83,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		p.path = nil
 		return
 	}
-	for _, command := range p.path {
+	for _, command := range commands {
 		if command.op == "Z" {
 			data.WriteString(" C")
 			continue
@@ -110,6 +116,32 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 	}
 	p.page.Items = append(p.page.Items, path)
 	p.path = nil
+}
+
+// closeSubpathsForFill 在每个未显式闭合的子路径末尾补一个 Z，实现 PDF 填充
+// 隐式闭合子路径的语义。
+func closeSubpathsForFill(commands []pdfPathCommand) []pdfPathCommand {
+	result := make([]pdfPathCommand, 0, len(commands)+2)
+	pending := false
+	for _, command := range commands {
+		switch command.op {
+		case "M":
+			if pending {
+				result = append(result, pdfPathCommand{op: "Z"})
+			}
+			pending = true
+		case "Z":
+			pending = false
+		default:
+			// 绘制命令只在子路径有实际轮廓时才需要闭合。
+			pending = pending || len(command.values) > 0
+		}
+		result = append(result, command)
+	}
+	if pending {
+		result = append(result, pdfPathCommand{op: "Z"})
+	}
+	return result
 }
 
 // buildClips 把当前图形状态中的裁剪区转换为 OFD Clips。

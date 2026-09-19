@@ -431,6 +431,34 @@ func TestPDFInterpreterHandlesSCNColorComponents(t *testing.T) {
 	}
 }
 
+// TestConvertClosesImplicitFillSubpaths 验证填充路径会补齐闭合命令。PDF 填充
+// 隐式闭合子路径，而 OFD 阅读器只填充显式闭合的路径；不补 C 时，用
+// m/l…/f* 绘制的细长矩形（如 sample2.pdf 第 8 页的条形图）不会渲染。
+func TestConvertClosesImplicitFillSubpaths(t *testing.T) {
+	pdf := testutil.MinimalPDF([]byte("0.5 0.5 0.5 rg 10 10 m 100 10 l 100 20 l 10 20 l f*"), 144, 288)
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	paths := page.Content().Layer[0].PathObject
+	if len(paths) != 1 {
+		t.Fatalf("path objects = %d, want 1", len(paths))
+	}
+	commands := paths[0].AbbreviatedData
+	if len(commands) == 0 || commands[len(commands)-1].Type != models.Close {
+		t.Fatalf("last path command = %+v, want Close", commands)
+	}
+}
+
 func TestConvertExplicitlyDisablesStrokeForFillOnlyPaths(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("0 0 1 rg 10 20 30 40 re f"), 144, 288)
 	var output bytes.Buffer
