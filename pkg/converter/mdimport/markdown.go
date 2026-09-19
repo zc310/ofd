@@ -10,6 +10,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/zc310/ofd/internal/layout"
 )
@@ -20,16 +21,119 @@ type mdParser struct {
 	baseDir string
 }
 
-func parseMarkdown(source []byte, baseDir string) (*layout.Document, error) {
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
-	root := md.Parser().Parse(text.NewReader(source))
-	if root == nil {
-		return &layout.Document{}, nil
+// frontMatterLetterhead 是 front matter 中 letterhead 的字段定义。
+type frontMatterLetterhead struct {
+	Org       string  `yaml:"org"`
+	DocNo     string  `yaml:"doc_no"`
+	Signatory string  `yaml:"signatory"`
+	SerialNo  string  `yaml:"serial_no"`
+	Security  string  `yaml:"security"`
+	Urgency   string  `yaml:"urgency"`
+	Height    float64 `yaml:"height"`
+	OrgSize   float64 `yaml:"org_size"`
+	DocNoSize float64 `yaml:"doc_no_size"`
+}
+
+// frontMatterFooter 是 front matter 中 footer 的字段定义。
+type frontMatterFooter struct {
+	PageNumber bool    `yaml:"page_number"`
+	Size       float64 `yaml:"size"`
+}
+
+// frontMatterColophon 是 front matter 中 colophon 的字段定义。
+type frontMatterColophon struct {
+	Cc         string  `yaml:"cc"`
+	IssuedBy   string  `yaml:"issued_by"`
+	IssuedDate string  `yaml:"issued_date"`
+	Size       float64 `yaml:"size"`
+}
+
+// frontMatterSign 是 front matter 中 sign（落款）的字段定义。
+type frontMatterSign struct {
+	Org  string  `yaml:"org"`
+	Date string  `yaml:"date"`
+	Size float64 `yaml:"size"`
+}
+
+type frontMatter struct {
+	Letterhead *frontMatterLetterhead `yaml:"letterhead"`
+	Sign       *frontMatterSign       `yaml:"sign"`
+	Footer     *frontMatterFooter     `yaml:"footer"`
+	Colophon   *frontMatterColophon   `yaml:"colophon"`
+}
+
+// splitFrontMatter 提取文档开头的 ---...--- YAML 头；没有可用的 letterhead、
+// sign、footer 或 colophon 时返回原始内容，避免破坏以 --- 开头的普通 Markdown。
+func splitFrontMatter(source []byte) ([]byte, *layout.Letterhead, *layout.Signature, *layout.Footer, *layout.Colophon) {
+	lines := strings.Split(string(source), "\n")
+	if len(lines) < 3 || strings.TrimSuffix(lines[0], "\r") != "---" {
+		return source, nil, nil, nil, nil
 	}
-	parser := &mdParser{source: source, baseDir: baseDir}
+	end := -1
+	for index := 1; index < len(lines); index++ {
+		if strings.TrimSuffix(lines[index], "\r") == "---" {
+			end = index
+			break
+		}
+	}
+	if end <= 1 {
+		return source, nil, nil, nil, nil
+	}
+	var front frontMatter
+	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:end], "\n")), &front); err != nil {
+		return source, nil, nil, nil, nil
+	}
+	body := []byte(strings.Join(lines[end+1:], "\n"))
+	if front.Letterhead == nil && front.Sign == nil && front.Footer == nil && front.Colophon == nil {
+		return source, nil, nil, nil, nil
+	}
+	var heading *layout.Letterhead
+	if front.Letterhead != nil {
+		h := front.Letterhead
+		heading = &layout.Letterhead{
+			Org:       h.Org,
+			DocNo:     h.DocNo,
+			Signatory: h.Signatory,
+			SerialNo:  h.SerialNo,
+			Security:  h.Security,
+			Urgency:   h.Urgency,
+			Height:    h.Height,
+			OrgSize:   h.OrgSize,
+			DocNoSize: h.DocNoSize,
+		}
+	}
+	var sign *layout.Signature
+	if front.Sign != nil {
+		s := front.Sign
+		sign = &layout.Signature{Org: s.Org, Date: s.Date, Size: s.Size}
+	}
+	var footer *layout.Footer
+	if front.Footer != nil {
+		footer = &layout.Footer{PageNumber: front.Footer.PageNumber, Size: front.Footer.Size}
+	}
+	var colophon *layout.Colophon
+	if front.Colophon != nil {
+		c := front.Colophon
+		colophon = &layout.Colophon{Cc: c.Cc, IssuedBy: c.IssuedBy, IssuedDate: c.IssuedDate, Size: c.Size}
+	}
+	return body, heading, sign, footer, colophon
+}
+
+func parseMarkdown(source []byte, baseDir string) (*layout.Document, error) {
+	body, letterhead, sign, footer, colophon := splitFrontMatter(source)
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
+	root := md.Parser().Parse(text.NewReader(body))
+	if root == nil {
+		return &layout.Document{Letterhead: letterhead, Sign: sign, Footer: footer, Colophon: colophon}, nil
+	}
+	parser := &mdParser{source: body, baseDir: baseDir}
 	return &layout.Document{
-		Title:  parser.documentTitle(root),
-		Blocks: parser.blocks(root, 0),
+		Title:      parser.documentTitle(root),
+		Letterhead: letterhead,
+		Sign:       sign,
+		Footer:     footer,
+		Colophon:   colophon,
+		Blocks:     parser.blocks(root, 0),
 	}, nil
 }
 

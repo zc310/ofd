@@ -1,11 +1,13 @@
 package mdimport_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +100,48 @@ func TestConvertMarkdownFromReader(t *testing.T) {
 		t.Fatalf("转换失败: %v", err)
 	}
 	assertValidOFD(t, output.Bytes())
+}
+
+func TestConvertMarkdownLetterheadFrontMatter(t *testing.T) {
+	source := "---\nletterhead:\n  org: \"××省档案局文件\"\n  doc_no: \"×档发〔2026〕1号\"\n  signatory: \"张三\"\n  serial_no: \"000018\"\n  security: \"内部\"\n  urgency: \"特急\"\nfooter:\n  page_number: true\nsign:\n  org: \"××省档案局\"\n  date: \"2026年9月19日\"\ncolophon:\n  cc: \"省委办公厅，省政府办公厅。\"\n  issued_by: \"××省档案局办公室\"\n  issued_date: \"2026年9月19日\"\n---\n\n# 公文标题\n\n正文内容。\n"
+	var output bytes.Buffer
+	if err := converter.Convert("md", "ofd", []byte(source), &output); err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+	assertValidOFD(t, output.Bytes())
+	headFromOFD(t, output.Bytes(), "省档案局文件")
+	headFromOFD(t, output.Bytes(), "张三")
+	headFromOFD(t, output.Bytes(), "抄送")
+	headFromOFD(t, output.Bytes(), "印发")
+	// 落款署名与成文日期渲染在版记之前。
+	headFromOFD(t, output.Bytes(), "2026年9月19日印发")
+}
+
+func headFromOFD(t *testing.T, data []byte, want string) {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("打开 OFD 失败: %v", err)
+	}
+	for _, file := range reader.File {
+		if !strings.HasSuffix(file.Name, "Content.xml") {
+			continue
+		}
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatalf("读取页面内容失败: %v", err)
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("读取页面内容失败: %v", err)
+		}
+		if !bytes.Contains(content, []byte(want)) {
+			t.Fatalf("页面内容未包含 %q", want)
+		}
+		return
+	}
+	t.Fatalf("未找到页面内容 XML")
 }
 
 func assertValidOFD(t *testing.T, data []byte) {
