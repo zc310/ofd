@@ -51,12 +51,8 @@ func detectFontFormat(data []byte, hint string) string {
 	}
 }
 
-func optionalFill(value string) *bool {
-	if value == "" {
-		return nil
-	}
-	result := strings.EqualFold(value, "true")
-	return &result
+func optionalFill(value models.OptionalBool) *bool {
+	return value.Bool()
 }
 
 func textValue(codes []models.TextCode) string {
