@@ -1008,3 +1008,30 @@ func readOFDXML(t *testing.T, data []byte) []byte {
 	t.Fatal("OFD 包缺少 OFD.xml")
 	return nil
 }
+
+// TestPDFFontStyleFlags 验证依据 PDF 字体名推断的粗体/斜体/衬线/等宽标志。
+// 非嵌入字体没有字形数据，这些标志用于让阅读器回退到风格一致的系统字体。
+func TestPDFFontStyleFlags(t *testing.T) {
+	cases := []struct {
+		name                            string
+		bold, italic, serif, fixedWidth bool
+	}{
+		{"NimbusRomNo9L-Regu", false, false, true, false},
+		{"NimbusRomNo9L-Medi", true, false, true, false},
+		{"NimbusRomNo9L-ReguItal", false, true, true, false},
+		{"NimbusRomNo9L-MediItal", true, true, true, false},
+		{"NimbusRomNo9L-Regu-Slant_167", false, true, true, false},
+		{"CMSY8", false, false, true, false},
+		{"CMMI9", false, false, true, false},
+		{"CMTT9", false, false, false, true},
+		{"Courier-Bold", true, false, false, true},
+		{"Helvetica", false, false, false, false},
+	}
+	for _, test := range cases {
+		bold, italic, serif, fixedWidth := pdfFontStyleFlags(test.name)
+		if bold != test.bold || italic != test.italic || serif != test.serif || fixedWidth != test.fixedWidth {
+			t.Fatalf("%s = bold:%v italic:%v serif:%v fixed:%v, want bold:%v italic:%v serif:%v fixed:%v",
+				test.name, bold, italic, serif, fixedWidth, test.bold, test.italic, test.serif, test.fixedWidth)
+		}
+	}
+}

@@ -402,6 +402,27 @@ func pdfStandardGlyphName(value rune) string {
 	return ""
 }
 
+// pdfFontStyleFlags 依据 PDF 字体族/PostScript 名推断 OFD 逻辑字体的粗体、
+// 斜体、衬线与等宽标志。非嵌入字体没有可用的字形数据，这些标志用于让阅读器
+// 回退到风格一致的系统字体（如 NimbusRomNo9L-Medi 是粗体衬线）。
+func pdfFontStyleFlags(name string) (bold, italic, serif, fixedWidth bool) {
+	lower := strings.ToLower(name)
+	bold = strings.Contains(lower, "bold") || strings.Contains(lower, "medi") ||
+		strings.Contains(lower, "semi") || strings.Contains(lower, "demi") ||
+		strings.Contains(lower, "black") || strings.Contains(lower, "heavy")
+	italic = strings.Contains(lower, "italic") || strings.Contains(lower, "ital") ||
+		strings.Contains(lower, "oblique") || strings.Contains(lower, "slant")
+	fixedWidth = strings.Contains(lower, "nimbusmon") || strings.Contains(lower, "mono") ||
+		strings.Contains(lower, "courier") || strings.Contains(lower, "typewriter") ||
+		strings.Contains(lower, "cmtt")
+	serif = !fixedWidth && (strings.Contains(lower, "nimbusrom") || strings.Contains(lower, "roman") ||
+		strings.Contains(lower, "serif") || strings.Contains(lower, "times") ||
+		strings.Contains(lower, "cmr") || strings.Contains(lower, "cmsy") ||
+		strings.Contains(lower, "cmmi") || strings.Contains(lower, "bookman") ||
+		strings.Contains(lower, "schoolbook") || strings.Contains(lower, "georgia"))
+	return bold, italic, serif, fixedWidth
+}
+
 func embeddedFontGlyphCount(data []byte) uint32 {
 	if len(data) < 12 {
 		return 0
