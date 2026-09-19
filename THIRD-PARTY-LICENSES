@@ -4,6 +4,10 @@
 
 ## Direct Dependencies
 
+### fyne.io/fyne/v2 v2.8.1
+License: BSD-3-Clause
+Source: https://github.com/fyne-io/fyne
+
 ### github.com/BurntSushi/toml v1.6.0
 License: MIT
 Source: https://github.com/BurntSushi/toml
@@ -12,6 +16,18 @@ Source: https://github.com/BurntSushi/toml
 License: MIT
 Source: https://github.com/beevik/etree
 
+### github.com/benoitkugler/textlayout v0.3.2
+License: BSD-3-Clause
+Source: https://github.com/benoitkugler/textlayout
+
+### github.com/chromedp/cdproto v0.0.0-20260912003405-686a5c723acc
+License: MIT
+Source: https://github.com/chromedp/cdproto
+
+### github.com/chromedp/chromedp v0.16.0
+License: MIT
+Source: https://github.com/chromedp/chromedp
+
 ### github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 License: MIT
 Source: https://github.com/dkrisman/gobig2
@@ -19,6 +35,10 @@ Source: https://github.com/dkrisman/gobig2
 ### github.com/emmansun/gmsm v0.44.1
 License: Apache-2.0
 Source: https://github.com/emmansun/gmsm
+
+### github.com/go-text/typesetting v0.3.5
+License: BSD-3-Clause
+Source: https://github.com/go-text/typesetting
 
 ### github.com/h2non/filetype v1.1.3
 License: MIT
@@ -64,16 +84,16 @@ Source: https://github.com/tdewolff/font
 License: MIT
 Source: https://github.com/tdewolff/minify
 
-### github.com/tdewolff/test v1.0.12
-License: MIT
-Source: https://github.com/tdewolff/test
-
 ### github.com/xuri/excelize/v2 v2.11.0
 License: BSD-3-Clause
 Source: https://github.com/xuri/excelize
 
-### github.com/zc310/fontfix v0.0.1
+### github.com/yuin/goldmark v1.8.6
 License: MIT
+Source: https://github.com/yuin/goldmark
+
+### github.com/zc310/fontfix v0.0.2
+License: Apache-2.0
 Source: https://github.com/zc310/fontfix
 
 ### go.yaml.in/yaml/v3 v3.0.5
@@ -84,6 +104,10 @@ Source: https://github.com/go-yaml/yaml
 License: BSD-3-Clause
 Source: https://github.com/golang/image
 
+### golang.org/x/text v0.42.0
+License: BSD-3-Clause
+Source: https://github.com/golang/text
+
 ## Notable Indirect Dependencies
 
 ### codeberg.org/go-latex/latex v0.3.0
@@ -93,10 +117,6 @@ Source: https://codeberg.org/go-latex/latex
 ### codeberg.org/go-pdf/fpdf v0.12.0
 License: MIT
 Source: https://codeberg.org/go-pdf/fpdf
-
-### fyne.io/fyne/v2 v2.8.1
-License: BSD-3-Clause
-Source: https://github.com/fyne-io/fyne
 
 ### fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
 License: MIT
@@ -142,13 +162,13 @@ Source: https://github.com/andybalholm/brotli
 License: MIT
 Source: https://github.com/anthonynsimon/bild
 
-### github.com/benoitkugler/textlayout v0.3.2
-License: BSD-3-Clause
-Source: https://github.com/benoitkugler/textlayout
-
 ### github.com/benoitkugler/textprocessing v0.0.6
 License: BSD-3-Clause
 Source: https://github.com/benoitkugler/textprocessing
+
+### github.com/chromedp/sysutil v1.1.0
+License: MIT
+Source: https://github.com/chromedp/sysutil
 
 ### github.com/clipperhouse/uax29/v2 v2.7.0
 License: MIT
@@ -190,13 +210,25 @@ Source: https://github.com/go-gl/gl
 License: BSD-3-Clause
 Source: https://github.com/go-gl/glfw
 
+### github.com/gobwas/httphead v0.1.0
+License: MIT
+Source: https://github.com/gobwas/httphead
+
+### github.com/gobwas/pool v0.2.1
+License: MIT
+Source: https://github.com/gobwas/pool
+
+### github.com/gobwas/ws v1.4.0
+License: MIT
+Source: https://github.com/gobwas/ws
+
+### github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
+License: BSD-3-Clause
+Source: https://github.com/go-json-experiment/json
+
 ### github.com/go-text/render v0.2.1
 License: BSD-3-Clause
 Source: https://github.com/go-text/render
-
-### github.com/go-text/typesetting v0.3.5
-License: BSD-3-Clause
-Source: https://github.com/go-text/typesetting
 
 ### github.com/godbus/dbus/v5 v5.2.2
 License: BSD-3-Clause
@@ -298,10 +330,6 @@ Source: https://github.com/xuri/efp
 License: BSD-3-Clause
 Source: https://github.com/xuri/nfp
 
-### github.com/yuin/goldmark v1.8.6
-License: MIT
-Source: https://github.com/yuin/goldmark
-
 ### golang.org/x/crypto v0.57.0
 License: BSD-3-Clause
 Source: https://github.com/golang/crypto
@@ -317,10 +345,6 @@ Source: https://github.com/golang/sync
 ### golang.org/x/sys v0.48.0
 License: BSD-3-Clause
 Source: https://github.com/golang/sys
-
-### golang.org/x/text v0.42.0
-License: BSD-3-Clause
-Source: https://github.com/golang/text
 
 ### gonum.org/v1/plot v0.17.0
 License: MIT
@@ -341,9 +365,9 @@ Source: https://star-tex.org/x/tex
 ## License Summary
 
 The project uses the following license types:
-- MIT: ~65 packages
-- BSD-3-Clause: ~30 packages
-- Apache-2.0: 4 packages
+- MIT: ~70 packages
+- BSD-3-Clause: ~31 packages
+- Apache-2.0: 5 packages
 - GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)
 
 All dependencies are compatible with the project's license.

@@ -94,7 +94,8 @@ ofd.renderPages([0, 1, 2], { dpi: 36, background: '#00000000' })
 
 手机端工具栏按功能分行显示：打开文件和最近文件一行，页面导航和缩放控制各占一行，搜索和显示设置一行。单行内容过长时可以横向滚动，不会挤压页面或撑破屏幕。完整的 WASM API、Worker 协议、字体加载和缓存说明见 [`cmd/ofd-wasm/README.md`](cmd/ofd-wasm/README.md)。
 
-## 命令行程序打包
+<details>
+<summary>命令行程序打包</summary>
 
 根目录 `Makefile` 可以将命令行程序分别编译并打包为独立 ZIP 文件。Linux 下默认 `make` 会同时构建 Linux amd64/ARM64、macOS ARM64/x86_64、Windows x86_64/ARM64 和 Android APK ZIP；在其他系统上执行默认 `make` 时，会构建该系统支持的程序。`ofd-thumbnailer` 仅编译 Linux 版本：
 
@@ -181,6 +182,8 @@ CC=x86_64-w64-mingw32-gcc GOOS=windows CGO_ENABLED=1 GOARCH=amd64 make package
 
 Fyne 查看器需要目标平台的图形开发库。Windows 版查看器使用 `-H=windowsgui` 编译，不显示命令行窗口。
 
+</details>
+
 ## Flatpak
 
 仓库根目录包含 `io.github.zc310.ofd.json` 及其桌面集成文件，可用于构建 OFD Viewer 的 Flatpak 包。构建依赖已通过 `go.mod.json` 和 `modules.txt` 固定，避免 Flatpak 构建阶段联网下载 Go 模块。
@@ -206,7 +209,8 @@ go get github.com/zc310/ofd@latest
 
 该命令用于将本项目作为 Go 库引入，不会安装桌面阅读器或命令行程序。桌面版和命令行程序请参考上面的构建说明及后续的打包章节。
 
-### 创建 OFD
+<details>
+<summary>创建 OFD</summary>
 
 创建器使用 `github.com/beevik/etree` 生成 XML，并使用标准库 ZIP 写入 OFD 包；现有解析器仍使用原有 XML 模型。支持元数据、多页、文字、路径、图片和嵌入字体：
 
@@ -1007,7 +1011,10 @@ func (p reportPages) PageAt(index int) (creator.Page, error) {
 
 `PageAt` 会在 ID 预留、校验和写出阶段被多次调用，实现必须能重复返回同一页。可设置 `Source` 的资源包括字体、图片、多媒体、附件、封面、公共/页面资源文件、扩展数据文件和印章文件；同名 `Source` 优先于 `Data`。对应地，`pkg/creator` 提供了 `CreateWithPages`、`CreateWithPagesOptions`、`CreateFileWithPages` 和 `MarshalWithPages`，命令行工具使用 `ofd-creator --stream`。
 
-### OFD 文件校验
+</details>
+
+<details>
+<summary>OFD 文件校验</summary>
 
 `ofd-validator` 是面向 OFD 文件包的完整性和规范性校验工具，用于检查容器安全、XML 结构、Schema
 规范、文件引用、对象 ID 和签名摘要，帮助快速定位 OFD 文件中的结构问题和兼容性问题。
@@ -1046,7 +1053,10 @@ go run ./cmd/ofd-validator --format xlsx -o report.xlsx test/testdata/helloworld
 的英文枚举和 `*_zh` 中文字段。退出码 `0` 表示没有错误，`1` 表示存在校验错误（使用
 `--fail-on-warning` 时警告也会导致退出码 1），`2` 表示工具配置或输入错误。
 
-### OFD 文件分析
+</details>
+
+<details>
+<summary>OFD 文件分析</summary>
 
 `ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于快速了解文档组成、资源使用情况和对象引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。
 
@@ -1101,7 +1111,10 @@ go run ./cmd/ofd-analyzer --signature-crls revoked.crl --signature-revocation-is
 
 资源引用使用 `doc[n]/kind:id` 形式表示文档体作用域，可以区分不同文档体中重复使用的 ID。完整的命令选项、报告字段和退出码说明见 [`cmd/ofd-analyzer/README.md`](cmd/ofd-analyzer/README.md)。
 
-### OFD 档案预检和归档准备
+</details>
+
+<details>
+<summary>OFD 档案预检和归档准备</summary>
 
 `ofd-archive` 在现有校验器和分析器之上提供面向档案处理的预检、技术清单、归档准备目录和固定性验证。它会原样保留输入 OFD，记录档案著录元数据、分析报告、附件副本和 SHA-256 清单，不会自动修改签名文档或删除动作、媒体、注释和附件：
 
@@ -1139,6 +1152,8 @@ go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf --o
 # 跳过已有输出，不计为失败
 go run ./cmd/ofd-converter --input-dir ./ofd --output-dir ./pdf --format pdf --skip-existing
 ```
+
+</details>
 
 ### OFD 转 PDF
 
@@ -1263,23 +1278,18 @@ err = converter.HTML("input.ofd", &svgHTML,
 )
 ```
 
-
-
-## 注意事项
-
-- 背景颜色默认为白色，可根据需要调整
-- 支持效果见 `input.ofd` 转换结果
-- 项目尚未完整实现 GB/T 33190-2016 的全部标准能力，具体范围见 [`docs/OFD-SUPPORT.md`](docs/OFD-SUPPORT.md)
-
-
 ## 特别感谢
 
-本项目的开发离不开以下开源项目的启发和帮助：
+本项目的开发离不开以下项目的启发和帮助，参考其架构、设计或行为实现，未复制其代码：
 
 - [国家标准化管理委员会发布的 GB/T 33190-2016 标准](http://std.samr.gov.cn/)
-- https://github.com/GreenYun/OFD-Schema
-- https://github.com/itlabers/ofd-go-reference
-- https://github.com/itlabers/ofd-go
-- https://github.com/xiaoqidun/ofdgo
+- [GreenYun/OFD-Schema](https://github.com/GreenYun/OFD-Schema)，校验器内嵌的 OFD XSD 模式来源
+- [itlabers/ofd-go-reference](https://github.com/itlabers/ofd-go-reference)
+- [itlabers/ofd-go](https://github.com/itlabers/ofd-go)
+- [xiaoqidun/ofdgo](https://github.com/xiaoqidun/ofdgo)
 
-感谢所有为开源社区做出贡献的开发者！
+项目依赖的第三方库许可清单见 [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)。
+
+## 许可证
+
+本项目基于 Apache License 2.0 发布，声明见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
