@@ -97,7 +97,7 @@ func documentXML(state *buildState) ([]byte, error) {
 		}
 		element.CreateAttr("BaseLoc", templatePath(templateIndex)[len(docDir)+1:])
 	}
-	for pageIndex := range state.document.Pages {
+	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
 		page := pages.CreateElement("Page")
 		page.CreateAttr("ID", strconv.FormatUint(state.pageIDs[pageIndex], 10))
 		page.CreateAttr("BaseLoc", pagePath(pageIndex)[len(docDir)+1:])
@@ -141,10 +141,6 @@ func documentXML(state *buildState) ([]byte, error) {
 		root.CreateElement("Extensions").SetText("Extensions/Extensions.xml")
 	}
 	return documentBytes(doc)
-}
-
-func pageXML(state *buildState, pageIndex int) ([]byte, error) {
-	return streamPageXML(state, pageIndex), nil
 }
 
 func templateXML(state *buildState, templateIndex int) ([]byte, error) {

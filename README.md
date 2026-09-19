@@ -966,6 +966,47 @@ document := creator.Document{
 }
 ```
 
+#### 流式创建超大 OFD
+
+默认情况下资源会整体读入内存，整个 OFD 也会先在内存中生成后写出。创建包含大资源或极多页面的文档时，可以使用惰性数据来源和 `PageProvider`：大资源通过 `...Source` 从磁盘按需读取，页面由 `PageProvider` 按索引提供，写出时逐页构建、写完即释放。
+
+```go
+document := creator.Document{
+	ID:       "big-report",
+	PageSize: creator.A4,
+	Fonts: []creator.Font{{
+		Name:   "SourceHanSans",
+		Format: "otf",
+		Source: creator.FileDataSource("/path/to/SourceHanSans.otf"),
+	}},
+}
+options := creator.CreateOptions{
+	Compression:           creator.CompressionAuto,
+	PreserveEmbeddedFonts: true, // 流式页面无法回写子集化字形，需保留完整字体
+}
+if err := creator.CreateFileWithPages(document, reportPages{total: 1_000_000}, "report.ofd", options); err != nil {
+	log.Fatal(err)
+}
+```
+
+`CreateFileWithPages` 的 `document` 只承载元数据与资源，`Pages` 必须为空；页面由 `PageProvider` 提供：
+
+```go
+type reportPages struct{ total int }
+
+func (p reportPages) PageCount() int { return p.total }
+
+func (p reportPages) PageAt(index int) (creator.Page, error) {
+	return creator.Page{Items: []creator.Item{
+		creator.Text{X: 20, Y: 20, Width: 170, Height: 12,
+			Value: fmt.Sprintf("第 %d / %d 页", index+1, p.total),
+			Font:  "SourceHanSans", Size: 12},
+	}}, nil
+}
+```
+
+`PageAt` 会在 ID 预留、校验和写出阶段被多次调用，实现必须能重复返回同一页。可设置 `Source` 的资源包括字体、图片、多媒体、附件、封面、公共/页面资源文件、扩展数据文件和印章文件；同名 `Source` 优先于 `Data`。对应地，`pkg/creator` 提供了 `CreateWithPages`、`CreateWithPagesOptions`、`CreateFileWithPages` 和 `MarshalWithPages`，命令行工具使用 `ofd-creator --stream`。
+
 ### OFD 文件校验
 
 `ofd-validator` 是面向 OFD 文件包的完整性和规范性校验工具，用于检查容器安全、XML 结构、Schema

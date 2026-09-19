@@ -181,12 +181,16 @@ func validateTemplate(value TemplatePage) error {
 	return nil
 }
 
-func validateTemplateReferences(pages []Page, templates []TemplatePage, templateIDs []uint64) error {
+func validateTemplateReferences(pages PageProvider, templates []TemplatePage, templateIDs []uint64) error {
 	known := make(map[uint64]bool, len(templateIDs))
 	for _, id := range templateIDs {
 		known[id] = true
 	}
-	for pageIndex, page := range pages {
+	for pageIndex := 0; pageIndex < pages.PageCount(); pageIndex++ {
+		page, err := pages.PageAt(pageIndex)
+		if err != nil {
+			return err
+		}
 		for refIndex, ref := range page.Templates {
 			if ref.ZOrder != "" && ref.ZOrder != "Background" && ref.ZOrder != "Foreground" {
 				return fmt.Errorf("页面 %d 模板引用 %d 的叠放顺序无效: %q", pageIndex+1, refIndex+1, ref.ZOrder)
@@ -612,7 +616,7 @@ func validateImage(value Image) error {
 	if err := validateBox(value.X, value.Y, value.Width, value.Height); err != nil {
 		return err
 	}
-	if len(value.Data) == 0 {
+	if !hasResource(value.Data, value.Source) {
 		return errors.New("图片数据不能为空")
 	}
 	if imageFormat(value) == "" {
@@ -639,7 +643,7 @@ func validatePageImage(value PageImage) error {
 	if value.ID == 0 {
 		return errors.New("页面图片 ID 不能为空")
 	}
-	if len(value.Data) == 0 {
+	if !hasResource(value.Data, value.Source) {
 		return errors.New("页面图片数据不能为空")
 	}
 	if pageImageFormat(value) == "" {
@@ -652,20 +656,7 @@ func validatePageImage(value PageImage) error {
 }
 
 func pageImageFormat(value PageImage) string {
-	format := strings.ToUpper(strings.TrimSpace(value.Format))
-	switch format {
-	case "JPG":
-		return "JPEG"
-	case "JPEG", "PNG", "BMP", "TIFF", "GIF", "WEBP":
-		return format
-	}
-	if len(value.Data) >= 8 && bytes.Equal(value.Data[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
-		return "PNG"
-	}
-	if len(value.Data) >= 3 && bytes.Equal(value.Data[:3], []byte{0xff, 0xd8, 0xff}) {
-		return "JPEG"
-	}
-	return ""
+	return imageFormatFromPrefix(value.Format, value.Data, value.Source)
 }
 
 func validateMedia(value Media) error {
@@ -675,7 +666,7 @@ func validateMedia(value Media) error {
 	if value.Type != "Image" && value.Type != "Audio" && value.Type != "Video" {
 		return fmt.Errorf("多媒体类型必须是 Image、Audio 或 Video: %q", value.Type)
 	}
-	if len(value.Data) == 0 {
+	if !hasResource(value.Data, value.Source) {
 		return errors.New("多媒体数据不能为空")
 	}
 	if err := validateLeafFileName(value.Name); err != nil {
@@ -697,7 +688,7 @@ func validateAttachment(value Attachment) error {
 	if strings.TrimSpace(value.Name) == "" {
 		return errors.New("附件名称不能为空")
 	}
-	if len(value.Data) == 0 {
+	if !hasResource(value.Data, value.Source) {
 		return errors.New("附件数据不能为空")
 	}
 	if err := validateXMLDateTime(value.CreationDate, "附件 CreationDate"); err != nil {
@@ -744,13 +735,13 @@ func validateExtension(value Extension) error {
 	if err := validateXMLDateTime(value.Date, "扩展 Date"); err != nil {
 		return err
 	}
-	if value.Data == "" && len(value.DataXML) == 0 && len(value.DataFile) == 0 {
+	if value.Data == "" && len(value.DataXML) == 0 && !hasResource(value.DataFile, value.DataFileSource) {
 		return errors.New("扩展必须包含 Data 或 ExtendData")
 	}
-	if value.Data != "" && (len(value.DataXML) > 0 || len(value.DataFile) > 0) {
+	if value.Data != "" && (len(value.DataXML) > 0 || hasResource(value.DataFile, value.DataFileSource)) {
 		return errors.New("扩展不能同时设置 Data 和 ExtendData")
 	}
-	if len(value.DataXML) > 0 && len(value.DataFile) > 0 {
+	if len(value.DataXML) > 0 && hasResource(value.DataFile, value.DataFileSource) {
 		return errors.New("扩展不能同时设置 DataXML 和 ExtendData")
 	}
 	if value.Data != "" && strings.TrimSpace(value.DataName) != "" {
@@ -826,13 +817,13 @@ func validateSignature(value Signature, pageCount int) error {
 		}
 		seenStampIDs[stamp.ID] = true
 	}
-	if value.Type == "Sign" && len(value.SignedValue) == 0 {
+	if value.Type == "Sign" && !hasResource(value.SignedValue, value.SignedValueSource) {
 		return errors.New("Sign 签名必须设置 SignedValue")
 	}
-	if value.Type == "Seal" && len(value.SealFile) == 0 && len(value.SignedValue) == 0 {
+	if value.Type == "Seal" && !hasResource(value.SealFile, value.SealSource) && !hasResource(value.SignedValue, value.SignedValueSource) {
 		return errors.New("Seal 签名必须设置 SealFile 或 SignedValue")
 	}
-	if len(value.SealFile) > 0 && len(value.SignedValue) > 0 {
+	if hasResource(value.SealFile, value.SealSource) && hasResource(value.SignedValue, value.SignedValueSource) {
 		return errors.New("签名不能同时设置 SealFile 和 SignedValue")
 	}
 	if err := validateLeafFileName(value.SealName); err != nil {
@@ -1224,7 +1215,7 @@ func validateDocumentColors(document Document, state *buildState) error {
 				return nil
 			}
 			checkingPatterns[value.Pattern] = true
-			if err := state.preparePattern(value.Pattern, len(document.Pages), "颜色图案"); err != nil {
+			if err := state.preparePattern(value.Pattern, state.pageCount, "颜色图案"); err != nil {
 				delete(checkingPatterns, value.Pattern)
 				return err
 			}
@@ -1287,7 +1278,25 @@ func validateDocumentColors(document Document, state *buildState) error {
 			return fmt.Errorf("绘制参数颜色无效: %w", err)
 		}
 	}
-	for _, page := range append(append([]Page{}, document.Pages...), templatePages(document.Templates)...) {
+	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
+		page, err := state.pages.PageAt(pageIndex)
+		if err != nil {
+			return err
+		}
+		for _, layer := range page.Layers {
+			for _, item := range layer.Items {
+				if err := validateItemColors(item, check); err != nil {
+					return err
+				}
+			}
+		}
+		for _, item := range page.Items {
+			if err := validateItemColors(item, check); err != nil {
+				return err
+			}
+		}
+	}
+	for _, page := range templatePages(document.Templates) {
 		for _, layer := range page.Layers {
 			for _, item := range layer.Items {
 				if err := validateItemColors(item, check); err != nil {
@@ -1699,7 +1708,7 @@ func validateFont(value Font) error {
 	if value.Charset != "" && !validFontCharset(value.Charset) {
 		return fmt.Errorf("字符集无效: %q", value.Charset)
 	}
-	if len(value.Data) > 0 && !validFontFormat(fontFormat(value)) {
+	if hasResource(value.Data, value.Source) && !validFontFormat(fontFormat(value)) {
 		return errors.New("无法识别字体格式，请设置 Format")
 	}
 	return nil
@@ -1727,8 +1736,14 @@ func fontFormat(value Font) string {
 	if format != "" {
 		return strings.TrimPrefix(format, ".")
 	}
-	if len(value.Data) >= 4 {
-		switch string(value.Data[:4]) {
+	prefix := value.Data
+	if value.Source != nil {
+		if read, err := prefixDataSource(value.Source, 4); err == nil {
+			prefix = read
+		}
+	}
+	if len(prefix) >= 4 {
+		switch string(prefix[:4]) {
 		case "\x00\x01\x00\x00", "true":
 			return "ttf"
 		case "OTTO":
@@ -1750,17 +1765,29 @@ func validFontFormat(value string) bool {
 }
 
 func imageFormat(value Image) string {
-	format := strings.ToUpper(strings.TrimSpace(value.Format))
+	return imageFormatFromPrefix(value.Format, value.Data, value.Source)
+}
+
+// imageFormatFromPrefix 依据显式 Format 或数据前缀识别图片格式。
+// 资源来自 Source 时只读取开头若干字节，不整体加载。
+func imageFormatFromPrefix(format string, data []byte, source DataSource) string {
+	prefix := data
+	if source != nil {
+		if read, err := prefixDataSource(source, 8); err == nil {
+			prefix = read
+		}
+	}
+	format = strings.ToUpper(strings.TrimSpace(format))
 	switch format {
 	case "JPG":
 		return "JPEG"
 	case "JPEG", "PNG", "BMP", "TIFF", "GIF", "WEBP":
 		return format
 	}
-	if len(value.Data) >= 8 && bytes.Equal(value.Data[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
+	if len(prefix) >= 8 && bytes.Equal(prefix[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
 		return "PNG"
 	}
-	if len(value.Data) >= 3 && bytes.Equal(value.Data[:3], []byte{0xff, 0xd8, 0xff}) {
+	if len(prefix) >= 3 && bytes.Equal(prefix[:3], []byte{0xff, 0xd8, 0xff}) {
 		return "JPEG"
 	}
 	return ""

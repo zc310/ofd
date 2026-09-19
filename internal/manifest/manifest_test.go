@@ -99,6 +99,72 @@ func TestLoadJSONAndBuildAssets(t *testing.T) {
 	}
 }
 
+func TestBuildWithStreamAssetsUsesLazySources(t *testing.T) {
+	directory := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("image.bin", "image")
+	write("cover.bin", "cover")
+	write("attachment.bin", "attachment")
+	write("shared.xml", "shared")
+	write("shared.bin", "shared-file")
+	write("font.ttf", "font")
+	write("ext.bin", "extension-file")
+	write("seal.bin", "seal-file")
+	input := filepath.Join(directory, "document.json")
+	manifestJSON := `{"version":1,"document":{"id":"stream-test","cover":"cover.bin","attachments":[{"id":"att-1","name":"附件","file":"attachment.bin"}],"extensions":[{"app_name":"app","ref_id":1,"data_file":"ext.bin"}],"signatures":[{"id":"sig1","provider_name":"p","date":"2026-01-01","seal_file":"seal.bin","references":[{"file_ref":"../Document.xml"}]}]},"resources":{"public":[{"name":"Assets/SharedRes.xml","file":"shared.xml","files":[{"path":"data.bin","file":"shared.bin"}]}],"fonts":[{"name":"TestFont","format":"ttf","file":"font.ttf"}],"images":[{"id":10,"file":"image.bin"}]},"pages":[{"resources":[{"images":[{"id":20,"file":"image.bin"}]}],"items":[{"type":"image","resource_id":10}]}]}`
+	if err := os.WriteFile(input, []byte(manifestJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	value, baseDir, err := Load(input, "auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buffered, err := value.Build(baseDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(buffered.CoverData) == 0 || buffered.Media[0].Source != nil {
+		t.Fatalf("默认构建应读取资源字节且不使用惰性来源")
+	}
+	if buffered.Fonts[0].Source != nil || buffered.PublicRes[0].Files[0].Source != nil || buffered.Extensions[0].DataFileSource != nil || buffered.Signatures[0].SealSource != nil {
+		t.Fatalf("默认构建不应使用惰性来源")
+	}
+
+	streamed, err := value.BuildWithOptions(baseDir, "", BuildOptions{StreamAssets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if streamed.CoverSource == nil {
+		t.Fatalf("--stream 下封面应使用惰性来源")
+	}
+	if streamed.Media[0].Source == nil || len(streamed.Media[0].Data) != 0 {
+		t.Fatalf("--stream 下多媒体资源应使用惰性来源")
+	}
+	if streamed.Attachments[0].Source == nil {
+		t.Fatalf("--stream 下附件应使用惰性来源")
+	}
+	if streamed.Pages[0].Resources[0].Images[0].Source == nil {
+		t.Fatalf("--stream 下页面图片应使用惰性来源")
+	}
+	if streamed.Fonts[0].Source == nil {
+		t.Fatalf("--stream 下字体应使用惰性来源")
+	}
+	if streamed.PublicRes[0].Files[0].Source == nil {
+		t.Fatalf("--stream 下公共资源文件应使用惰性来源")
+	}
+	if streamed.Extensions[0].DataFileSource == nil {
+		t.Fatalf("--stream 下扩展数据文件应使用惰性来源")
+	}
+	if streamed.Signatures[0].SealSource == nil {
+		t.Fatalf("--stream 下签名印章文件应使用惰性来源")
+	}
+}
+
 func TestLoadTOMLAndBuild(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "document.toml")

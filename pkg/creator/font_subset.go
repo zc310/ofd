@@ -16,7 +16,7 @@ func subsetEmbeddedFonts(document *Document) error {
 	cloneDocumentFontSubsetInputs(document)
 	used := make(map[string]*fontUsage, len(document.Fonts))
 	for _, resource := range document.Fonts {
-		if len(resource.Data) > 0 {
+		if hasResource(resource.Data, resource.Source) {
 			used[strings.TrimSpace(resource.Name)] = &fontUsage{}
 		}
 	}
@@ -46,6 +46,14 @@ func subsetEmbeddedFonts(document *Document) error {
 		usage := used[strings.TrimSpace(resource.Name)]
 		if usage == nil || (len(usage.glyphs) == 0 && len(usage.runes) == 0) {
 			continue
+		}
+		if resource.Source != nil && len(resource.Data) == 0 {
+			data, err := readDataSource(resource.Source)
+			if err != nil {
+				return fmt.Errorf("字体资源 %q 读取失败: %w", resource.Name, err)
+			}
+			resource.Data = data
+			resource.Source = nil
 		}
 		if err := subsetFont(resource, usage); err != nil {
 			return fmt.Errorf("字体资源 %q 子集化失败: %w", resource.Name, err)

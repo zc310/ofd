@@ -57,6 +57,8 @@ type Document struct {
 	Cover string
 	// CoverData 是封面图像的二进制数据。
 	CoverData []byte
+	// CoverSource 是封面图像的惰性数据来源，优先于 CoverData。
+	CoverSource DataSource
 	// CoverName 是封面图像写入包时使用的文件名。
 	CoverName string
 	// Keywords 是文档关键字列表。
@@ -135,6 +137,8 @@ type Attachment struct {
 	Usage string
 	// Data 是附件的二进制数据。
 	Data []byte
+	// Source 是附件的惰性数据来源，优先于 Data。
+	Source DataSource
 	// FileName 是附件在 OFD 包内使用的文件名。
 	FileName string
 }
@@ -179,6 +183,8 @@ type PublicResourceFile struct {
 	Path string
 	// Data 是文件的二进制数据。
 	Data []byte
+	// Source 是文件的惰性数据来源，优先于 Data。
+	Source DataSource
 }
 
 // Extension 描述文档扩展及其属性、内联数据或外部数据文件。
@@ -202,6 +208,8 @@ type Extension struct {
 	DataXML []byte
 	// DataFile 是扩展外部数据文件的二进制内容。
 	DataFile []byte
+	// DataFileSource 是扩展外部数据文件的惰性数据来源，优先于 DataFile。
+	DataFileSource DataSource
 	// DataName 是外部数据文件在包内的文件名。
 	DataName string
 }
@@ -240,10 +248,14 @@ type Signature struct {
 	StampAnnots []SignatureStamp
 	// SealFile 是印章文件的二进制数据。
 	SealFile []byte
+	// SealSource 是印章文件的惰性数据来源，优先于 SealFile。
+	SealSource DataSource
 	// SealName 是印章文件在包内的文件名。
 	SealName string
 	// SignedValue 是签名值文件的二进制数据。
 	SignedValue []byte
+	// SignedValueSource 是签名值文件的惰性数据来源，优先于 SignedValue。
+	SignedValueSource DataSource
 	// SignedValueName 是签名值文件在包内的文件名。
 	SignedValueName string
 }
@@ -344,6 +356,9 @@ type Font struct {
 	Format string
 	// Data 是嵌入字体的二进制数据。
 	Data []byte
+	// Source 是嵌入字体的惰性数据来源，优先于 Data。
+	// 默认的子集化需要完整字体字节，会在子集化时逐字体读取并物化来源。
+	Source DataSource
 }
 
 // Page 按绘制顺序保存页面对象。
@@ -382,6 +397,8 @@ type PageResourceFile struct {
 	Path string
 	// Data 是文件的二进制数据。
 	Data []byte
+	// Source 是文件的惰性数据来源，优先于 Data。
+	Source DataSource
 }
 
 // PageImage 描述页面资源中的图片。ID 在文档内必须唯一。
@@ -392,6 +409,8 @@ type PageImage struct {
 	Format string
 	// Data 是图片的二进制数据。
 	Data []byte
+	// Source 是图片的惰性数据来源，优先于 Data。
+	Source DataSource
 	// Name 是图片在包内的文件名。
 	Name string
 }
@@ -696,6 +715,8 @@ type Image struct {
 	Height float64
 	// Data 是图片的二进制数据。
 	Data []byte
+	// Source 是图片的惰性数据来源，优先于 Data。
+	Source DataSource
 	// ResourceID 是引用的图片资源 ID。
 	ResourceID uint64
 	// Substitution 是替代图片资源 ID。
@@ -1076,6 +1097,8 @@ type Media struct {
 	Format string
 	// Data 是媒体的二进制数据。
 	Data []byte
+	// Source 是媒体的惰性数据来源，优先于 Data。
+	Source DataSource
 	// Name 是媒体文件在包内的文件名。
 	Name string
 }

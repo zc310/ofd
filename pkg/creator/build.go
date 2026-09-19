@@ -18,70 +18,91 @@ import (
 )
 
 func build(document Document) (*packageState, error) {
-	return buildWithOptions(document, CreateOptions{})
-}
-
-func buildWithOptions(document Document, options CreateOptions) (*packageState, error) {
-	state, err := prepare(document, options)
+	state, err := prepare(document, slicePages{pages: document.Pages}, CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer state.clearPatternCaches()
 
+	result := &packageState{}
+	if err := generatePackage(state, newCollectSink(result)); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// generatePackage 按固定顺序把 OFD 包条目写入 sink。顺序必须保持稳定，
+// 既保证确定性输出，也保证签名引用目标先于签名文件写出。
+func generatePackage(state *buildState, sink entrySink) error {
 	root, err := rootXML(state)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	documentXMLData, err := documentXML(state)
-	if err != nil {
-		return nil, err
+	if err := sink.write("OFD.xml", root); err != nil {
+		return err
 	}
-	entries := []zipEntry{
-		{name: "OFD.xml", data: root},
-		{name: docDir + "/Document.xml", data: documentXMLData},
-	}
-	if len(state.coverData) > 0 {
-		entries = append(entries, zipEntry{name: docDir + "/Cover/" + state.coverName, data: state.coverData})
+	if len(state.coverData) > 0 || state.coverSource != nil {
+		if err := writeResource(sink, docDir+"/Cover/"+state.coverName, state.coverData, state.coverSource); err != nil {
+			return err
+		}
 	}
 	for _, resource := range state.publicResources {
-		entries = append(entries, zipEntry{name: docDir + "/" + resource.name, data: resource.data})
+		if err := sink.write(docDir+"/"+resource.name, resource.data); err != nil {
+			return err
+		}
 		base := path.Dir(resource.name)
 		for _, file := range resource.files {
-			entries = append(entries, zipEntry{name: path.Join(docDir, base, file.path), data: file.data})
+			if err := writeResource(sink, path.Join(docDir, base, file.path), file.data, file.source); err != nil {
+				return err
+			}
 		}
 	}
 	if len(state.attachments) > 0 {
 		attachmentsData, attachmentsErr := attachmentsXML(state)
 		if attachmentsErr != nil {
-			return nil, attachmentsErr
+			return attachmentsErr
 		}
-		entries = append(entries, zipEntry{name: docDir + "/Attachments/Attachments.xml", data: attachmentsData})
+		if err := sink.write(docDir+"/Attachments/Attachments.xml", attachmentsData); err != nil {
+			return err
+		}
 		for _, attachment := range state.attachments {
-			entries = append(entries, zipEntry{name: attachmentPath(attachment.name), data: attachment.value.Data})
+			if err := writeResource(sink, attachmentPath(attachment.name), attachment.value.Data, attachment.value.Source); err != nil {
+				return err
+			}
 		}
 	}
 	if len(state.customTags) > 0 {
 		customTagsData, customTagsErr := customTagsXML(state)
 		if customTagsErr != nil {
-			return nil, customTagsErr
+			return customTagsErr
 		}
-		entries = append(entries, zipEntry{name: docDir + "/CustomTags/CustomTags.xml", data: customTagsData})
+		if err := sink.write(docDir+"/CustomTags/CustomTags.xml", customTagsData); err != nil {
+			return err
+		}
 		for _, tag := range state.customTags {
-			entries = append(entries, zipEntry{name: customTagDataPath(tag.dataName), data: tag.value.Data})
+			if err := sink.write(customTagDataPath(tag.dataName), tag.value.Data); err != nil {
+				return err
+			}
 			if len(tag.value.Schema) > 0 {
-				entries = append(entries, zipEntry{name: customTagSchemaPath(tag.schemaName), data: tag.value.Schema})
+				if err := sink.write(customTagSchemaPath(tag.schemaName), tag.value.Schema); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	if len(state.extensions) > 0 {
 		extensionsData, extensionsErr := extensionsXML(state)
 		if extensionsErr != nil {
-			return nil, extensionsErr
+			return extensionsErr
 		}
-		entries = append(entries, zipEntry{name: docDir + "/Extensions/Extensions.xml", data: extensionsData})
+		if err := sink.write(docDir+"/Extensions/Extensions.xml", extensionsData); err != nil {
+			return err
+		}
 		for _, extension := range state.extensions {
-			if len(extension.value.DataFile) > 0 {
-				entries = append(entries, zipEntry{name: extensionDataPath(extension.dataName), data: extension.value.DataFile})
+			if hasResource(extension.value.DataFile, extension.value.DataFileSource) {
+				if err := writeResource(sink, extensionDataPath(extension.dataName), extension.value.DataFile, extension.value.DataFileSource); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -89,78 +110,96 @@ func buildWithOptions(document Document, options CreateOptions) (*packageState, 
 		for _, version := range state.versions {
 			versionData, versionErr := versionXML(version)
 			if versionErr != nil {
-				return nil, versionErr
+				return versionErr
 			}
-			entries = append(entries, zipEntry{name: versionPath(version.baseName), data: versionData})
+			if err := sink.write(versionPath(version.baseName), versionData); err != nil {
+				return err
+			}
 			if len(version.value.DocRoot) > 0 {
-				entries = append(entries, zipEntry{name: versionRootPath(version.rootName), data: version.value.DocRoot})
+				if err := sink.write(versionRootPath(version.rootName), version.value.DocRoot); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	for pageIndex := range state.document.Pages {
-		pageData, pageErr := pageXML(state, pageIndex)
+	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
+		page, pageErr := state.pages.PageAt(pageIndex)
 		if pageErr != nil {
-			return nil, pageErr
+			return pageErr
 		}
-		entries = append(entries, zipEntry{
-			name: pagePath(pageIndex),
-			data: pageData,
-		})
-		for resourceIndex, resource := range state.pageResources[pageIndex] {
+		layers, resources, buildErr := state.buildPage(page, pageIndex)
+		if buildErr != nil {
+			return buildErr
+		}
+		pageData := streamPageXML(state, page, resources, layers)
+		if err := sink.write(pagePath(pageIndex), pageData); err != nil {
+			return err
+		}
+		for resourceIndex, resource := range resources {
 			resourceData, resourceErr := pageResourceXML(resource)
 			if resourceErr != nil {
-				return nil, resourceErr
+				return resourceErr
 			}
-			entries = append(entries, zipEntry{name: pageResourcePath(pageIndex, resourceIndex), data: resourceData})
+			if err := sink.write(pageResourcePath(pageIndex, resourceIndex), resourceData); err != nil {
+				return err
+			}
 			for _, file := range resource.files {
-				entries = append(entries, zipEntry{name: path.Join(docDir, "Pages", fmt.Sprintf("Page_%d", pageIndex), file.path), data: file.data})
+				entryName := path.Join(docDir, "Pages", fmt.Sprintf("Page_%d", pageIndex), file.path)
+				if err := writeResource(sink, entryName, file.data, file.source); err != nil {
+					return err
+				}
 			}
 			for _, image := range resource.images {
-				entries = append(entries, zipEntry{name: pageResourceImagePath(pageIndex, image.id, image.name), data: image.data})
+				if err := writeResource(sink, pageResourceImagePath(pageIndex, image.id, image.name), image.data, image.source); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	for templateIndex := range state.document.Templates {
 		templateData, templateErr := templateXML(state, templateIndex)
 		if templateErr != nil {
-			return nil, templateErr
+			return templateErr
 		}
-		entries = append(entries, zipEntry{name: templatePath(templateIndex), data: templateData})
+		if err := sink.write(templatePath(templateIndex), templateData); err != nil {
+			return err
+		}
 	}
 	if len(state.annotationPages) > 0 {
 		annotationsData, annotationsErr := annotationsXML(state)
 		if annotationsErr != nil {
-			return nil, annotationsErr
+			return annotationsErr
 		}
-		entries = append(entries, zipEntry{name: docDir + "/Annotations.xml", data: annotationsData})
+		if err := sink.write(docDir+"/Annotations.xml", annotationsData); err != nil {
+			return err
+		}
 		for _, annotationPage := range state.annotationPages {
 			pageData, pageErr := pageAnnotationsXML(state, annotationPage)
 			if pageErr != nil {
-				return nil, pageErr
+				return pageErr
 			}
-			entries = append(entries, zipEntry{name: annotationPath(annotationPage.pageID), data: pageData})
+			if err := sink.write(annotationPath(annotationPage.pageID), pageData); err != nil {
+				return err
+			}
 		}
 	}
 	if len(state.drawParams) > 0 || len(state.fonts) > 0 || len(state.images) > 0 || len(state.media) > 0 || len(state.composites) > 0 || len(state.document.ColorSpaces) > 0 {
 		resourceData, resourceErr := resourceXML(state)
 		if resourceErr != nil {
-			return nil, resourceErr
+			return resourceErr
 		}
-		entries = append(entries, zipEntry{
-			name: docDir + "/DocumentRes.xml",
-			data: resourceData,
-		})
+		if err := sink.write(docDir+"/DocumentRes.xml", resourceData); err != nil {
+			return err
+		}
 		for _, image := range state.images {
-			entries = append(entries, zipEntry{
-				name: resDir + "/Images/" + image.name,
-				data: image.data,
-			})
+			if err := writeResource(sink, resDir+"/Images/"+image.name, image.data, image.source); err != nil {
+				return err
+			}
 		}
 		for _, media := range state.media {
-			entries = append(entries, zipEntry{
-				name: resDir + "/Media/" + media.name,
-				data: media.data,
-			})
+			if err := writeResource(sink, resDir+"/Media/"+media.name, media.data, media.source); err != nil {
+				return err
+			}
 		}
 		profileIDs := make([]uint64, 0, len(state.colorProfiles))
 		for id := range state.colorProfiles {
@@ -174,88 +213,86 @@ func buildWithOptions(document Document, options CreateOptions) (*packageState, 
 				continue
 			}
 			profileNames[profile.name] = true
-			entries = append(entries, zipEntry{name: resDir + "/" + profile.name, data: profile.data})
+			if err := sink.write(resDir+"/"+profile.name, profile.data); err != nil {
+				return err
+			}
 		}
 		for _, font := range state.fonts {
-			if len(font.data) == 0 {
+			if !hasResource(font.data, font.source) {
 				continue
 			}
-			entries = append(entries, zipEntry{
-				name: resDir + "/Fonts/" + font.fileName,
-				data: font.data,
-			})
+			if err := writeResource(sink, resDir+"/Fonts/"+font.fileName, font.data, font.source); err != nil {
+				return err
+			}
 		}
 	}
+	if err := state.finishGeneration(); err != nil {
+		return err
+	}
+	documentXMLData, documentXMLErr := documentXML(state)
+	if documentXMLErr != nil {
+		return documentXMLErr
+	}
+	if err := sink.write(docDir+"/Document.xml", documentXMLData); err != nil {
+		return err
+	}
 	if len(state.signatures) > 0 {
-		if err := populateSignatureDigests(state, entries); err != nil {
-			return nil, err
+		if err := populateSignatureDigests(state, sink); err != nil {
+			return err
 		}
 		signaturesData, signaturesErr := signaturesXML(state)
 		if signaturesErr != nil {
-			return nil, signaturesErr
+			return signaturesErr
 		}
-		entries = append(entries, zipEntry{name: docDir + "/Signatures.xml", data: signaturesData})
+		if err := sink.write(docDir+"/Signatures.xml", signaturesData); err != nil {
+			return err
+		}
 		for _, signature := range state.signatures {
 			signatureData, signatureErr := signatureXML(signature, state.pageIDs)
 			if signatureErr != nil {
-				return nil, signatureErr
+				return signatureErr
 			}
-			entries = append(entries, zipEntry{name: signaturePath(signature.baseName), data: signatureData})
-			if len(signature.value.SealFile) > 0 {
-				entries = append(entries, zipEntry{name: signatureDataPath(signature.sealName), data: signature.value.SealFile})
+			if err := sink.write(signaturePath(signature.baseName), signatureData); err != nil {
+				return err
 			}
-			if len(signature.value.SignedValue) > 0 {
-				entries = append(entries, zipEntry{name: signatureDataPath(signature.valueName), data: signature.value.SignedValue})
+			if hasResource(signature.value.SealFile, signature.value.SealSource) {
+				if err := writeResource(sink, signatureDataPath(signature.sealName), signature.value.SealFile, signature.value.SealSource); err != nil {
+					return err
+				}
+			}
+			if hasResource(signature.value.SignedValue, signature.value.SignedValueSource) {
+				if err := writeResource(sink, signatureDataPath(signature.valueName), signature.value.SignedValue, signature.value.SignedValueSource); err != nil {
+					return err
+				}
 			}
 		}
-	}
-	seenEntryNames := make(map[string]bool, len(entries))
-	for _, entry := range entries {
-		if entry.name == "" {
-			return nil, errors.New("OFD 包条目路径不能为空")
-		}
-		if strings.HasPrefix(entry.name, "/") || strings.ContainsAny(entry.name, "\\\x00") {
-			return nil, fmt.Errorf("OFD 包条目路径无效: %s", entry.name)
-		}
-		cleanName := path.Clean(entry.name)
-		if cleanName != entry.name || cleanName == "." || strings.HasPrefix(cleanName, "../") || cleanName == ".." {
-			return nil, fmt.Errorf("OFD 包条目路径无效: %s", entry.name)
-		}
-		if seenEntryNames[entry.name] {
-			return nil, fmt.Errorf("OFD 包条目路径重复: %s", entry.name)
-		}
-		seenEntryNames[entry.name] = true
 	}
 	for _, signature := range state.signatures {
 		for index, reference := range signature.value.References {
 			target := path.Clean(path.Join(docDir+"/Signatures", reference.FileRef))
-			if !seenEntryNames[target] {
-				return nil, fmt.Errorf("签名 %q 的引用 %d 目标文件不存在: %s", signature.value.ID, index+1, reference.FileRef)
+			if !sink.has(target) {
+				return fmt.Errorf("签名 %q 的引用 %d 目标文件不存在: %s", signature.value.ID, index+1, reference.FileRef)
 			}
 		}
 	}
 	for _, version := range state.versions {
 		for index, file := range version.value.Files {
 			target := path.Clean(path.Join(docDir, file.Path))
-			if !seenEntryNames[target] {
-				return nil, fmt.Errorf("文档版本 %q 的文件 %d 目标不存在: %s", version.value.ID, index+1, file.Path)
+			if !sink.has(target) {
+				return fmt.Errorf("文档版本 %q 的文件 %d 目标不存在: %s", version.value.ID, index+1, file.Path)
 			}
 		}
 	}
-	return &packageState{entries: entries}, nil
+	return nil
 }
 
-func populateSignatureDigests(state *buildState, entries []zipEntry) error {
-	entryData := make(map[string][]byte, len(entries))
-	for _, entry := range entries {
-		entryData[entry.name] = entry.data
-	}
+func populateSignatureDigests(state *buildState, sink entrySink) error {
 	for signatureIndex := range state.signatures {
 		signature := &state.signatures[signatureIndex]
 		for referenceIndex := range signature.value.References {
 			reference := &signature.value.References[referenceIndex]
 			target := path.Clean(path.Join(docDir+"/Signatures", reference.FileRef))
-			data, ok := entryData[target]
+			data, ok := sink.lookup(target)
 			if !ok {
 				return fmt.Errorf("签名 %q 的引用 %d 无法自动计算摘要，目标文件不存在或属于签名文件: %s", signature.value.ID, referenceIndex+1, reference.FileRef)
 			}
@@ -292,7 +329,7 @@ func attachmentsXML(state *buildState) ([]byte, error) {
 		if !attachment.value.ModDate.IsZero() {
 			element.CreateAttr("ModDate", attachment.value.ModDate.Format(time.RFC3339))
 		}
-		element.CreateAttr("Size", number(float64(len(attachment.value.Data))))
+		element.CreateAttr("Size", number(float64(resourceSize(attachment.value.Data, attachment.value.Source))))
 		if attachment.value.Visible != nil {
 			element.CreateAttr("Visible", strconv.FormatBool(*attachment.value.Visible))
 		}
@@ -470,7 +507,11 @@ func versionXML(resource versionResource) ([]byte, error) {
 	return documentBytes(doc)
 }
 
-func prepare(document Document, options CreateOptions) (*buildState, error) {
+func prepare(document Document, pages PageProvider, options CreateOptions) (*buildState, error) {
+	if pages == nil {
+		pages = slicePages{pages: document.Pages}
+	}
+	pageCount := pages.PageCount()
 	if !options.PreserveEmbeddedFonts {
 		if err := subsetEmbeddedFonts(&document); err != nil {
 			return nil, err
@@ -485,7 +526,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 	if err := validateXMLDate(document.ModDate, "文档 ModDate"); err != nil {
 		return nil, err
 	}
-	if len(document.Pages) == 0 {
+	if pageCount == 0 {
 		return nil, errors.New("文档至少需要一个页面")
 	}
 	pageSize := document.PageSize
@@ -509,6 +550,8 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 
 	state := &buildState{
 		document:               document,
+		pages:                  pages,
+		pageCount:              pageCount,
 		completeTextCodeDeltas: options.CompleteTextCodeDeltas,
 		pageSize:               pageSize,
 		drawParamIDs:           make(map[string]uint64),
@@ -529,7 +572,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 		reservedIDs:            make(map[uint64]string),
 		rawDrawRelations:       make(map[uint64]uint64),
 	}
-	if err := state.reserveExplicitIDs(document); err != nil {
+	if err := state.reserveExplicitIDs(document, pages); err != nil {
 		return nil, err
 	}
 	prepareSucceeded := false
@@ -538,7 +581,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 			state.clearPatternCaches()
 		}
 	}()
-	if err := state.collectPageImageIDs(document.Pages); err != nil {
+	if err := state.collectPageImageIDs(pages); err != nil {
 		return nil, err
 	}
 	profileNames := make(map[string][]byte)
@@ -557,7 +600,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 	if err := state.prepareExtensions(document.Extensions); err != nil {
 		return nil, err
 	}
-	if err := state.prepareSignatures(document.Signatures, len(document.Pages)); err != nil {
+	if err := state.prepareSignatures(document.Signatures, pageCount); err != nil {
 		return nil, err
 	}
 	if err := state.prepareVersions(document.Versions); err != nil {
@@ -575,7 +618,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 		if strings.TrimSpace(bookmark.Goto.Bookmark) != "" {
 			return nil, fmt.Errorf("文档书签 %q 的目标必须是页面 Dest，不能使用 Bookmark", name)
 		}
-		if err := validateGoto(&bookmark.Goto, len(document.Pages), fmt.Sprintf("文档书签 %d", index+1)); err != nil {
+		if err := validateGoto(&bookmark.Goto, pageCount, fmt.Sprintf("文档书签 %d", index+1)); err != nil {
 			return nil, err
 		}
 	}
@@ -604,21 +647,24 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 			state.nextID = media.ID + 1
 		}
 		format := mediaFormat(media)
-		digest := sha256.Sum256(media.Data)
+		digest, digestErr := resourceDigest(media.Data, media.Source)
+		if digestErr != nil {
+			return nil, fmt.Errorf("多媒体资源 %d 摘要计算失败: %w", index+1, digestErr)
+		}
 		name := strings.TrimSpace(media.Name)
 		if name == "" {
-			name = hex.EncodeToString(digest[:]) + "." + format
+			name = digest + "." + format
 		}
 		if seenMediaNames[name] {
 			return nil, fmt.Errorf("多媒体文件名重复: %s", name)
 		}
 		seenMediaNames[name] = true
-		state.media = append(state.media, mediaResource{id: media.ID, name: name, type_: media.Type, format: format, data: append([]byte(nil), media.Data...)})
+		state.media = append(state.media, mediaResource{id: media.ID, name: name, type_: media.Type, format: format, data: media.Data, source: media.Source})
 	}
-	if err := validateActions(document.Actions, len(document.Pages), state.mediaIDs, state.mediaTypes, state.attachmentIDs, state.bookmarkNames); err != nil {
+	if err := validateActions(document.Actions, pageCount, state.mediaIDs, state.mediaTypes, state.attachmentIDs, state.bookmarkNames); err != nil {
 		return nil, fmt.Errorf("文档动作无效: %w", err)
 	}
-	if err := validateOutlines(document.Outlines, len(document.Pages), state.mediaIDs, state.mediaTypes, state.attachmentIDs, state.bookmarkNames); err != nil {
+	if err := validateOutlines(document.Outlines, pageCount, state.mediaIDs, state.mediaTypes, state.attachmentIDs, state.bookmarkNames); err != nil {
 		return nil, fmt.Errorf("文档大纲无效: %w", err)
 	}
 	if err := validatePermissions(document.Permissions); err != nil {
@@ -627,9 +673,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 	if err := validatePreferences(document.Preferences); err != nil {
 		return nil, fmt.Errorf("文档视图首选项无效: %w", err)
 	}
-	state.pageIDs = make([]uint64, len(document.Pages))
-	state.layers = make([][]builtLayer, len(document.Pages))
-	state.pageResources = make([][]pageResource, len(document.Pages))
+	state.pageIDs = make([]uint64, pageCount)
 	state.templateIDs = make([]uint64, len(document.Templates))
 	state.templateLayers = make([][]builtLayer, len(document.Templates))
 	for paramIndex, param := range document.DrawParams {
@@ -653,7 +697,9 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 		if _, exists := state.fontIDs[name]; exists {
 			return nil, fmt.Errorf("字体资源 %q 重复", name)
 		}
-		state.addFont(font)
+		if _, err := state.addFont(font); err != nil {
+			return nil, fmt.Errorf("字体资源 %d: %w", fontIndex+1, err)
+		}
 	}
 	for index, space := range document.ColorSpaces {
 		if err := validateColorSpace(space); err != nil {
@@ -692,9 +738,9 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 				return nil, fmt.Errorf("颜色空间 Profile 文件名对应的数据不一致: %s", profileName)
 			}
 			if _, exists := profileNames[profileName]; !exists {
-				profileNames[profileName] = append([]byte(nil), space.ProfileData...)
+				profileNames[profileName] = space.ProfileData
 			}
-			state.colorProfiles[space.ID] = colorProfileResource{name: profileName, data: append([]byte(nil), space.ProfileData...)}
+			state.colorProfiles[space.ID] = colorProfileResource{name: profileName, data: space.ProfileData}
 			s := space
 			s.Profile = profileName
 			state.document.ColorSpaces[index] = s
@@ -703,7 +749,11 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 			state.nextID = space.ID + 1
 		}
 	}
-	for pageIndex, page := range document.Pages {
+	for pageIndex := 0; pageIndex < pageCount; pageIndex++ {
+		page, pageErr := pages.PageAt(pageIndex)
+		if pageErr != nil {
+			return nil, pageErr
+		}
 		for resourceIndex, resource := range page.Resources {
 			if len(resource.Data) == 0 {
 				continue
@@ -762,35 +812,20 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 			state.nextID = template.ID + 1
 		}
 		usedTemplateIDs[state.templateIDs[templateIndex]] = true
-		if err := state.prepareLayers(template.Items, template.Layers, &state.templateLayers[templateIndex], len(document.Pages), fmt.Sprintf("模板页 %d", templateIndex+1)); err != nil {
+		if err := state.prepareLayers(template.Items, template.Layers, &state.templateLayers[templateIndex], pageCount, fmt.Sprintf("模板页 %d", templateIndex+1)); err != nil {
 			return nil, err
 		}
 	}
-	if err := validateTemplateReferences(document.Pages, document.Templates, state.templateIDs); err != nil {
+	if err := validateTemplateReferences(pages, document.Templates, state.templateIDs); err != nil {
 		return nil, err
 	}
-	for pageIndex, page := range document.Pages {
-		if err := validatePage(page); err != nil {
-			return nil, fmt.Errorf("页面 %d 无效: %w", pageIndex+1, err)
-		}
+	// 页面正文在写出阶段按页构建和释放，这里只预分配页面 ID，供跨页引用使用。
+	for pageIndex := 0; pageIndex < pageCount; pageIndex++ {
 		state.pageIDs[pageIndex] = state.allocate()
-		if err := state.preparePageResources(pageIndex, page.Resources); err != nil {
-			return nil, err
-		}
-		if err := validateActions(page.Actions, len(document.Pages), state.mediaIDs, state.mediaTypes, state.attachmentIDs, state.bookmarkNames); err != nil {
-			return nil, fmt.Errorf("页面 %d 的动作无效: %w", pageIndex+1, err)
-		}
-		pageLayers := page.Layers
-		if len(pageLayers) == 0 {
-			pageLayers = []Layer{{Type: page.LayerType, Items: page.Items}}
-		}
-		if err := state.prepareLayers(nil, pageLayers, &state.layers[pageIndex], len(document.Pages), fmt.Sprintf("页面 %d", pageIndex+1)); err != nil {
-			return nil, err
-		}
 	}
 	seenAnnotationPages := make(map[int]bool, len(document.Annotations))
 	for annotationIndex, annotationPage := range document.Annotations {
-		if err := validateAnnotationPage(annotationPage, len(document.Pages)); err != nil {
+		if err := validateAnnotationPage(annotationPage, pageCount); err != nil {
 			return nil, fmt.Errorf("注解页面 %d 无效: %w", annotationIndex+1, err)
 		}
 		if seenAnnotationPages[annotationPage.Page] {
@@ -803,7 +838,7 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 				annotation.LastModDate = defaultAnnotationDate(document)
 			}
 			var layers []builtLayer
-			if err := state.prepareLayers(annotation.Items, nil, &layers, len(document.Pages), fmt.Sprintf("注解页面 %d 的注解 %d", annotationIndex+1, itemIndex+1)); err != nil {
+			if err := state.prepareLayers(annotation.Items, nil, &layers, pageCount, fmt.Sprintf("注解页面 %d 的注解 %d", annotationIndex+1, itemIndex+1)); err != nil {
 				return nil, err
 			}
 			var items []builtItem
@@ -814,25 +849,54 @@ func prepare(document Document, options CreateOptions) (*buildState, error) {
 		}
 		state.annotationPages = append(state.annotationPages, resource)
 	}
-	for _, pattern := range state.patterns {
-		if pattern.Thumbnail != 0 && !state.pageImageIDs[pattern.Thumbnail] && !state.pendingPageImageIDs[pattern.Thumbnail] && !state.documentImageID(pattern.Thumbnail) && state.mediaTypes[pattern.Thumbnail] != "Image" {
-			return nil, fmt.Errorf("图案缩略图引用了不存在的图片资源 ID %d", pattern.Thumbnail)
-		}
-	}
-	if len(state.pendingPageImageIDs) > 0 {
-		return nil, errors.New("页面图片资源未完成准备")
-	}
-	for index, extension := range state.extensions {
-		if !state.usedIDs[extension.value.RefID] {
-			return nil, fmt.Errorf("扩展 %d RefID 引用了不存在的对象 ID %d", index+1, extension.value.RefID)
-		}
-	}
-	if state.allocationError || state.nextID == 0 || state.nextID > maxOFDID+1 {
-		return nil, errors.New("资源 ID 分配溢出")
-	}
-	state.maxID = state.nextID - 1
 	prepareSucceeded = true
 	return state, nil
+}
+
+// buildPage 按需构建单页的图层与页面资源，并注册其引用的字体、图片和绘制参数。
+// 返回的结果会在写出后立即释放，使页数远大于内存时仍可创建。
+func (s *buildState) buildPage(page Page, pageIndex int) ([]builtLayer, []pageResource, error) {
+	if err := validatePage(page); err != nil {
+		return nil, nil, fmt.Errorf("页面 %d 无效: %w", pageIndex+1, err)
+	}
+	resources, err := s.preparePageResources(pageIndex, page.Resources)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateActions(page.Actions, s.pageCount, s.mediaIDs, s.mediaTypes, s.attachmentIDs, s.bookmarkNames); err != nil {
+		return nil, nil, fmt.Errorf("页面 %d 的动作无效: %w", pageIndex+1, err)
+	}
+	pageLayers := page.Layers
+	if len(pageLayers) == 0 {
+		pageLayers = []Layer{{Type: page.LayerType, Items: page.Items}}
+	}
+	var layers []builtLayer
+	if err := s.prepareLayers(nil, pageLayers, &layers, s.pageCount, fmt.Sprintf("页面 %d", pageIndex+1)); err != nil {
+		return nil, nil, err
+	}
+	return layers, resources, nil
+}
+
+// finishGeneration 在页面写出后执行依赖全局分配结果的校验，并确定文档最大 ID。
+func (s *buildState) finishGeneration() error {
+	for _, pattern := range s.patterns {
+		if pattern.Thumbnail != 0 && !s.pageImageIDs[pattern.Thumbnail] && !s.pendingPageImageIDs[pattern.Thumbnail] && !s.documentImageID(pattern.Thumbnail) && s.mediaTypes[pattern.Thumbnail] != "Image" {
+			return fmt.Errorf("图案缩略图引用了不存在的图片资源 ID %d", pattern.Thumbnail)
+		}
+	}
+	if len(s.pendingPageImageIDs) > 0 {
+		return errors.New("页面图片资源未完成准备")
+	}
+	for index, extension := range s.extensions {
+		if !s.usedIDs[extension.value.RefID] {
+			return fmt.Errorf("扩展 %d RefID 引用了不存在的对象 ID %d", index+1, extension.value.RefID)
+		}
+	}
+	if s.allocationError || s.nextID == 0 || s.nextID > maxOFDID+1 {
+		return errors.New("资源 ID 分配溢出")
+	}
+	s.maxID = s.nextID - 1
+	return nil
 }
 
 func (s *buildState) clearPatternCaches() {
@@ -860,7 +924,7 @@ func (s *buildState) allocate() uint64 {
 	return id
 }
 
-func (s *buildState) reserveExplicitIDs(document Document) error {
+func (s *buildState) reserveExplicitIDs(document Document, pages PageProvider) error {
 	reserve := func(id uint64, kind string) error {
 		if id == 0 || id > maxOFDID || id == ^uint64(0) {
 			return nil
@@ -891,7 +955,11 @@ func (s *buildState) reserveExplicitIDs(document Document) error {
 			return err
 		}
 	}
-	for _, page := range document.Pages {
+	for pageIndex := 0; pageIndex < pages.PageCount(); pageIndex++ {
+		page, err := pages.PageAt(pageIndex)
+		if err != nil {
+			return err
+		}
 		for _, resource := range page.Resources {
 			for _, image := range resource.Images {
 				if err := reserve(image.ID, "page-image"); err != nil {
@@ -953,8 +1021,11 @@ func (s *buildState) prepareAttachments(values []Attachment) error {
 		s.attachmentIDs[value.ID] = true
 		name := strings.TrimSpace(value.FileName)
 		if name == "" {
-			digest := sha256.Sum256(value.Data)
-			name = hex.EncodeToString(digest[:])
+			digest, digestErr := resourceDigest(value.Data, value.Source)
+			if digestErr != nil {
+				return fmt.Errorf("附件 %d 摘要计算失败: %w", index+1, digestErr)
+			}
+			name = digest
 			if value.Format != "" {
 				name += "." + attachmentFormat(value.Format)
 			}
@@ -986,26 +1057,30 @@ func (s *buildState) prepareMetadata() error {
 		}
 		seenCustomData[customData.Name] = true
 	}
-	if strings.TrimSpace(value.Cover) == "" && len(value.CoverData) == 0 {
+	if strings.TrimSpace(value.Cover) == "" && !hasResource(value.CoverData, value.CoverSource) {
 		return nil
 	}
-	if len(value.CoverData) == 0 {
-		return errors.New("Cover 必须同时提供 CoverData")
+	if !hasResource(value.CoverData, value.CoverSource) {
+		return errors.New("Cover 必须同时提供 CoverData 或 CoverSource")
 	}
 	name := strings.TrimSpace(value.CoverName)
 	if name == "" {
-		digest := sha256.Sum256(value.CoverData)
-		format := imageFormat(Image{Data: value.CoverData})
+		digest, digestErr := resourceDigest(value.CoverData, value.CoverSource)
+		if digestErr != nil {
+			return fmt.Errorf("封面摘要计算失败: %w", digestErr)
+		}
+		format := imageFormat(Image{Data: value.CoverData, Source: value.CoverSource})
 		if format == "" {
 			format = "bin"
 		}
-		name = hex.EncodeToString(digest[:]) + "." + strings.ToLower(format)
+		name = digest + "." + strings.ToLower(format)
 	}
 	if err := validateLeafFileName(name); err != nil {
 		return fmt.Errorf("Cover 文件名无效: %w", err)
 	}
 	s.coverName = name
-	s.coverData = append([]byte(nil), value.CoverData...)
+	s.coverData = value.CoverData
+	s.coverSource = value.CoverSource
 	s.document.Cover = docDir + "/Cover/" + name
 	return nil
 }
@@ -1049,7 +1124,7 @@ func (s *buildState) preparePublicResources(values []PublicResource) error {
 			return fmt.Errorf("公共资源 %s 根元素必须是 OFD 命名空间中的 Res", name)
 		}
 		seen[name] = true
-		s.publicResources = append(s.publicResources, publicResource{name: name, data: append([]byte(nil), value.Data...), files: files})
+		s.publicResources = append(s.publicResources, publicResource{name: name, data: value.Data, files: files})
 	}
 	return nil
 }
@@ -1062,14 +1137,14 @@ func preparePublicResourceFiles(values []PublicResourceFile, resourceName string
 		if err != nil {
 			return nil, fmt.Errorf("公共资源 %s 的文件 %d 路径无效", resourceName, index+1)
 		}
-		if len(value.Data) == 0 {
+		if !hasResource(value.Data, value.Source) {
 			return nil, fmt.Errorf("公共资源 %s 的文件 %d 数据不能为空", resourceName, index+1)
 		}
 		if seen[name] {
 			return nil, fmt.Errorf("公共资源 %s 的文件路径重复: %s", resourceName, name)
 		}
 		seen[name] = true
-		files = append(files, publicResourceFile{path: name, data: append([]byte(nil), value.Data...)})
+		files = append(files, publicResourceFile{path: name, data: value.Data, source: value.Source})
 	}
 	return files, nil
 }
@@ -1153,9 +1228,12 @@ func (s *buildState) prepareExtensions(values []Extension) error {
 			return fmt.Errorf("扩展 %d RefID 超出 OFD 范围: %d", index+1, value.RefID)
 		}
 		name := strings.TrimSpace(value.DataName)
-		if len(value.DataFile) > 0 && name == "" {
-			digest := sha256.Sum256(value.DataFile)
-			name = hex.EncodeToString(digest[:]) + ".bin"
+		if hasResource(value.DataFile, value.DataFileSource) && name == "" {
+			digest, digestErr := resourceDigest(value.DataFile, value.DataFileSource)
+			if digestErr != nil {
+				return fmt.Errorf("扩展 %d 数据文件摘要计算失败: %w", index+1, digestErr)
+			}
+			name = digest + ".bin"
 		}
 		if name != "" {
 			if seenDataNames[name] {
@@ -1192,13 +1270,13 @@ func (s *buildState) prepareSignatures(values []Signature, pageCount int) error 
 			valueName = value.ID + ".bin"
 		}
 		sealName := strings.TrimSpace(value.SealName)
-		if len(value.SealFile) > 0 && sealName == "" {
+		if hasResource(value.SealFile, value.SealSource) && sealName == "" {
 			sealName = value.ID + ".seal"
 		}
 		dataName := ""
-		if len(value.SignedValue) > 0 {
+		if hasResource(value.SignedValue, value.SignedValueSource) {
 			dataName = valueName
-		} else if len(value.SealFile) > 0 {
+		} else if hasResource(value.SealFile, value.SealSource) {
 			dataName = sealName
 		}
 		if dataName != "" {
@@ -1254,62 +1332,63 @@ func (s *buildState) prepareVersions(values []DocumentVersion) error {
 	return nil
 }
 
-func (s *buildState) preparePageResources(pageIndex int, resources []PageResource) error {
+func (s *buildState) preparePageResources(pageIndex int, resources []PageResource) ([]pageResource, error) {
+	result := make([]pageResource, 0, len(resources))
 	for resourceIndex, resource := range resources {
 		if len(resource.Data) > 0 && len(resource.Images) > 0 {
-			return fmt.Errorf("页面 %d 资源文件 %d 不能同时设置 Data 和 Images", pageIndex+1, resourceIndex+1)
+			return nil, fmt.Errorf("页面 %d 资源文件 %d 不能同时设置 Data 和 Images", pageIndex+1, resourceIndex+1)
 		}
 		if len(resource.Data) > 0 {
 			if err := validateOFDSchema(resource.Data, "Res"); err != nil {
-				return fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
 			}
 			doc := etree.NewDocument()
 			if err := doc.ReadFromBytes(resource.Data); err != nil {
-				return fmt.Errorf("页面 %d 资源文件 %d XML 无效: %w", pageIndex+1, resourceIndex+1, err)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d XML 无效: %w", pageIndex+1, resourceIndex+1, err)
 			}
 			root := doc.Root()
 			if root == nil || root.Tag != "Res" || root.NamespaceURI() != ofNamespace {
-				return fmt.Errorf("页面 %d 资源文件 %d 根元素必须是 OFD 命名空间中的 Res", pageIndex+1, resourceIndex+1)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 根元素必须是 OFD 命名空间中的 Res", pageIndex+1, resourceIndex+1)
 			}
 			files, err := preparePageResourceFiles(resource.Files, pageIndex, resourceIndex)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			resourceName := fmt.Sprintf("Pages/Page_%d/PageRes_%d_%d.xml", pageIndex, pageIndex, resourceIndex)
 			if err := validateResExternalFiles(resource.Data, resourceName, pageResourceFilePaths(files)); err != nil {
-				return fmt.Errorf("页面 %d 资源文件 %d 的外部文件引用无效: %w", pageIndex+1, resourceIndex+1, err)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 的外部文件引用无效: %w", pageIndex+1, resourceIndex+1, err)
 			}
-			s.pageResources[pageIndex] = append(s.pageResources[pageIndex], pageResource{
+			result = append(result, pageResource{
 				name:  fmt.Sprintf("PageRes_%d_%d.xml", pageIndex, resourceIndex),
-				data:  append([]byte(nil), resource.Data...),
+				data:  resource.Data,
 				files: files,
 			})
 			continue
 		}
 		if len(resource.Images) == 0 {
-			return fmt.Errorf("页面 %d 资源文件 %d 不能为空", pageIndex+1, resourceIndex+1)
+			return nil, fmt.Errorf("页面 %d 资源文件 %d 不能为空", pageIndex+1, resourceIndex+1)
 		}
 		built := pageResource{name: fmt.Sprintf("PageRes_%d_%d.xml", pageIndex, resourceIndex)}
 		seen := make(map[uint64]bool)
 		seenNames := make(map[string]bool, len(resource.Images))
 		for imageIndex, image := range resource.Images {
 			if err := validatePageImage(image); err != nil {
-				return fmt.Errorf("页面 %d 资源文件 %d 图片 %d 无效: %w", pageIndex+1, resourceIndex+1, imageIndex+1, err)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 图片 %d 无效: %w", pageIndex+1, resourceIndex+1, imageIndex+1, err)
 			}
 			if seen[image.ID] || s.pageImageIDs[image.ID] {
-				return fmt.Errorf("页面资源图片 ID 重复: %d", image.ID)
+				return nil, fmt.Errorf("页面资源图片 ID 重复: %d", image.ID)
 			}
 			if s.pendingPageImageIDs[image.ID] {
 				delete(s.pendingPageImageIDs, image.ID)
 			}
 			if image.ID == ^uint64(0) {
-				return fmt.Errorf("页面资源图片 ID 超出可分配范围: %d", image.ID)
+				return nil, fmt.Errorf("页面资源图片 ID 超出可分配范围: %d", image.ID)
 			}
 			if image.ID > maxOFDID {
-				return fmt.Errorf("页面资源图片 ID 超出 OFD 范围: %d", image.ID)
+				return nil, fmt.Errorf("页面资源图片 ID 超出 OFD 范围: %d", image.ID)
 			}
 			if s.reservedIDs[image.ID] != "page-image" || s.usedIDs[image.ID] {
-				return fmt.Errorf("页面资源图片 ID %d 与已有资源 ID 冲突", image.ID)
+				return nil, fmt.Errorf("页面资源图片 ID %d 与已有资源 ID 冲突", image.ID)
 			}
 			delete(s.reservedIDs, image.ID)
 			seen[image.ID] = true
@@ -1319,24 +1398,31 @@ func (s *buildState) preparePageResources(pageIndex int, resources []PageResourc
 				s.nextID = image.ID + 1
 			}
 			format := pageImageFormat(image)
-			digest := sha256.Sum256(image.Data)
+			digest, digestErr := resourceDigest(image.Data, image.Source)
+			if digestErr != nil {
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 图片 %d 摘要计算失败: %w", pageIndex+1, resourceIndex+1, imageIndex+1, digestErr)
+			}
 			name := strings.TrimSpace(image.Name)
 			if name == "" {
-				name = hex.EncodeToString(digest[:]) + "." + format
+				name = digest + "." + format
 			}
 			if seenNames[name] {
-				return fmt.Errorf("页面 %d 资源文件 %d 图片文件名重复: %s", pageIndex+1, resourceIndex+1, name)
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 图片文件名重复: %s", pageIndex+1, resourceIndex+1, name)
 			}
 			seenNames[name] = true
-			built.images = append(built.images, pageImageResource{id: image.ID, name: name, format: format, data: append([]byte(nil), image.Data...)})
+			built.images = append(built.images, pageImageResource{id: image.ID, name: name, format: format, data: image.Data, source: image.Source})
 		}
-		s.pageResources[pageIndex] = append(s.pageResources[pageIndex], built)
+		result = append(result, built)
 	}
-	return nil
+	return result, nil
 }
 
-func (s *buildState) collectPageImageIDs(pages []Page) error {
-	for pageIndex, page := range pages {
+func (s *buildState) collectPageImageIDs(pages PageProvider) error {
+	for pageIndex := 0; pageIndex < pages.PageCount(); pageIndex++ {
+		page, err := pages.PageAt(pageIndex)
+		if err != nil {
+			return err
+		}
 		for resourceIndex, resource := range page.Resources {
 			for imageIndex, image := range resource.Images {
 				if image.ID == 0 || image.ID > maxOFDID || image.ID == ^uint64(0) {
@@ -1657,14 +1743,14 @@ func preparePageResourceFiles(values []PageResourceFile, pageIndex, resourceInde
 		if err != nil {
 			return nil, fmt.Errorf("页面 %d 资源文件 %d 的文件 %d 路径无效", pageIndex+1, resourceIndex+1, index+1)
 		}
-		if len(value.Data) == 0 {
+		if !hasResource(value.Data, value.Source) {
 			return nil, fmt.Errorf("页面 %d 资源文件 %d 的文件 %d 数据不能为空", pageIndex+1, resourceIndex+1, index+1)
 		}
 		if seen[name] {
 			return nil, fmt.Errorf("页面 %d 资源文件 %d 的文件路径重复: %s", pageIndex+1, resourceIndex+1, name)
 		}
 		seen[name] = true
-		files = append(files, pageResourceFile{path: name, data: append([]byte(nil), value.Data...)})
+		files = append(files, pageResourceFile{path: name, data: value.Data, source: value.Source})
 	}
 	return files, nil
 }
@@ -1712,7 +1798,11 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				if font == "" {
 					font = "SimSun"
 				}
-				built.font = s.fontID(font)
+				fontID, fontErr := s.fontID(font)
+				if fontErr != nil {
+					return fmt.Errorf("%s 图层 %d 的文字对象 %d: %w", context, layerIndex+1, itemIndex+1, fontErr)
+				}
+				built.font = fontID
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Path:
 				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
@@ -1767,7 +1857,11 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				if value.ResourceID != 0 {
 					built.image = value.ResourceID
 				} else {
-					built.image = s.imageID(value)
+					imageID, imageErr := s.imageID(value)
+					if imageErr != nil {
+						return fmt.Errorf("%s 图层 %d 的图片对象 %d: %w", context, layerIndex+1, itemIndex+1, imageErr)
+					}
+					built.image = imageID
 				}
 				built.drawParam, err = s.drawParamID(value.DrawParam)
 			case Composite:
@@ -1883,7 +1977,7 @@ func (s *buildState) prepareComposites() error {
 			}
 		}
 		resource := compositeResource{id: composite.ID, width: composite.Width, height: composite.Height, thumbnail: composite.Thumbnail, substitution: composite.Substitution}
-		if err := s.prepareLayers(composite.Items, nil, &resource.layers, len(s.document.Pages), fmt.Sprintf("复合图元资源 %d", index+1)); err != nil {
+		if err := s.prepareLayers(composite.Items, nil, &resource.layers, s.pageCount, fmt.Sprintf("复合图元资源 %d", index+1)); err != nil {
 			return err
 		}
 		s.composites = append(s.composites, resource)
@@ -1943,7 +2037,9 @@ func (s *buildState) prepareClips(clips *Clips) error {
 				if font == "" {
 					font = "SimSun"
 				}
-				s.fontID(font)
+				if _, err := s.fontID(font); err != nil {
+					return fmt.Errorf("第 %d 个 Clip 的第 %d 个 Area: %w", clipIndex+1, areaIndex+1, err)
+				}
 			}
 		}
 	}
@@ -1983,17 +2079,17 @@ func (s *buildState) resolveDrawParamRelations() error {
 	return nil
 }
 
-func (s *buildState) fontID(name string) uint64 {
+func (s *buildState) fontID(name string) (uint64, error) {
 	if id, ok := s.fontIDs[name]; ok {
-		return id
+		return id, nil
 	}
 	return s.addFont(Font{Name: name, Charset: "unicode"})
 }
 
-func (s *buildState) addFont(font Font) uint64 {
+func (s *buildState) addFont(font Font) (uint64, error) {
 	name := strings.TrimSpace(font.Name)
 	if id, ok := s.fontIDs[name]; ok {
-		return id
+		return id, nil
 	}
 	id := s.allocate()
 	resource := fontResource{
@@ -2005,34 +2101,41 @@ func (s *buildState) addFont(font Font) uint64 {
 		bold:       font.Bold,
 		serif:      font.Serif,
 		fixedWidth: font.FixedWidth,
-		data:       append([]byte(nil), font.Data...),
+		data:       font.Data,
+		source:     font.Source,
 	}
-	if len(resource.data) > 0 {
-		digest := sha256.Sum256(resource.data)
-		resource.fileName = "font-" + hex.EncodeToString(digest[:]) + "." + strings.ToLower(fontFormat(font))
+	if hasResource(font.Data, font.Source) {
+		digest, err := resourceDigest(font.Data, font.Source)
+		if err != nil {
+			return 0, fmt.Errorf("字体资源 %q 摘要计算失败: %w", name, err)
+		}
+		resource.fileName = "font-" + digest + "." + strings.ToLower(fontFormat(font))
 	}
 	s.fontIDs[name] = id
 	s.fonts = append(s.fonts, resource)
-	return id
+	return id, nil
 }
 
-func (s *buildState) imageID(image Image) uint64 {
-	digest := sha256.Sum256(image.Data)
-	key := hex.EncodeToString(digest[:])
+func (s *buildState) imageID(image Image) (uint64, error) {
+	key, err := resourceDigest(image.Data, image.Source)
+	if err != nil {
+		return 0, fmt.Errorf("图片资源摘要计算失败: %w", err)
+	}
+	format := imageFormat(image)
 	for _, resource := range s.images {
-		if resource.name == key+"."+imageFormat(image) {
-			return resource.id
+		if resource.name == key+"."+format {
+			return resource.id, nil
 		}
 	}
 	id := s.allocate()
-	format := imageFormat(image)
 	s.images = append(s.images, imageResource{
 		id:     id,
 		name:   key + "." + format,
-		data:   append([]byte(nil), image.Data...),
+		data:   image.Data,
+		source: image.Source,
 		format: format,
 	})
-	return id
+	return id, nil
 }
 
 func (s *buildState) documentImageID(id uint64) bool {

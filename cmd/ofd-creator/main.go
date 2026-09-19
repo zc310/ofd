@@ -37,8 +37,11 @@ type options struct {
 	check                  bool
 	deterministic          bool
 	completeTextCodeDeltas bool
+	stream                 bool
 	help                   bool
 }
+
+var errOFDInvalid = errors.New("OFD 校验失败")
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -68,13 +71,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
 	}
-	document, err := m.Build(baseDir, opts.assetRoot)
+	document, err := m.BuildWithOptions(baseDir, opts.assetRoot, manifest.BuildOptions{StreamAssets: opts.stream})
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
 	}
 	compression := creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression)))
-	data, err := creator.MarshalWithOptions(document, creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas})
+	createOptions := creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas}
+	if opts.stream && !opts.check && opts.output != "-" {
+		if err := writeOutputStream(opts, document, createOptions, stderr); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
+			if errors.Is(err, errOFDInvalid) {
+				return exitValidate
+			}
+			return exitOutput
+		}
+		return exitOK
+	}
+	data, err := creator.MarshalWithOptions(document, createOptions)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitBuild
@@ -99,6 +113,50 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOutput
 	}
 	return exitOK
+}
+
+// writeOutputStream 以流式方式生成 OFD 并原子写入目标文件，避免把整个
+// 文件包驻留内存。启用 --validate 时在临时文件上执行严格校验。
+func writeOutputStream(opts *options, document creator.Document, createOptions creator.CreateOptions, stderr io.Writer) error {
+	dir := filepath.Dir(opts.output)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("创建输出目录失败: %w", err)
+	}
+	temporary, err := os.CreateTemp(dir, ".ofd-creator-*")
+	if err != nil {
+		return fmt.Errorf("创建临时输出文件失败: %w", err)
+	}
+	temporaryName := temporary.Name()
+	defer func() {
+		_ = os.Remove(temporaryName)
+	}()
+	if err := creator.CreateWithOptions(document, temporary, createOptions); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("关闭临时输出文件失败: %w", err)
+	}
+	if opts.validate {
+		instance, validatorErr := validator.New()
+		if validatorErr != nil {
+			return validatorErr
+		}
+		file, openErr := os.Open(temporaryName)
+		if openErr != nil {
+			return fmt.Errorf("读取临时 OFD 失败: %w", openErr)
+		}
+		report := instance.ValidateReader(context.Background(), file, "generated.ofd")
+		_ = file.Close()
+		if report.HasErrors() {
+			_ = validator.RenderText(stderr, report)
+			return errOFDInvalid
+		}
+	}
+	if err := os.Rename(temporaryName, opts.output); err != nil {
+		return fmt.Errorf("替换输出文件失败: %w", err)
+	}
+	return nil
 }
 
 func runExport(args []string, stdout, stderr io.Writer) int {
@@ -429,6 +487,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.check, "check", false, "只解析并校验 manifest，不写出 OFD")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.completeTextCodeDeltas, "complete-text-code-deltas", false, "自动补全多字符 TextCode 的 DeltaX 和 DeltaY")
+	flags.BoolVar(&opts.stream, "stream", false, "以流式方式读取资源和写出 OFD，避免大资源整体驻留内存")
 	if err := root.Execute(); err != nil {
 		return nil, err
 	}

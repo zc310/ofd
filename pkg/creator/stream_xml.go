@@ -253,11 +253,10 @@ func (w *streamXMLWriter) appendAttrText(value string) {
 	}
 }
 
-func streamPageXML(state *buildState, pageIndex int) []byte {
+func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer) []byte {
 	w := newStreamXMLWriter()
 	w.Start("Page")
 	w.Attr("xmlns", ofNamespace)
-	page := state.document.Pages[pageIndex]
 	for _, template := range page.Templates {
 		w.Start("Template")
 		w.AttrUint("TemplateID", template.ID)
@@ -266,7 +265,7 @@ func streamPageXML(state *buildState, pageIndex int) []byte {
 		}
 		w.End()
 	}
-	for _, resource := range state.pageResources[pageIndex] {
+	for _, resource := range pageResources {
 		streamElementText(w, "PageRes", resource.name)
 	}
 	if page.Area != nil {
@@ -275,7 +274,7 @@ func streamPageXML(state *buildState, pageIndex int) []byte {
 		w.End()
 	}
 	w.Start("Content")
-	streamBuiltLayers(w, state.layers[pageIndex], state)
+	streamBuiltLayers(w, layers, state)
 	w.End()
 	if len(page.Actions) > 0 {
 		streamActions(w, page.Actions, state.pageIDs)
