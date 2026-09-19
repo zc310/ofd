@@ -187,7 +187,7 @@ func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
 }
 
 func simpleCompositePath(object models.PathObject) bool {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || object.Clips != nil || !object.Fill || object.Stroke != "false" {
+	if !object.VisibleValue() || !object.CTM.IsFinite() || object.Clips != nil || !object.Fill || object.Stroke.Value(true) {
 		return false
 	}
 	if object.FillColor == nil || object.FillColor.Value == nil {

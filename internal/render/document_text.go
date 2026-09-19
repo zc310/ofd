@@ -2,7 +2,6 @@ package render
 
 import (
 	"image"
-	"strings"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
@@ -231,7 +230,7 @@ func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *CT
 
 // textFillDisabled 判断文字对象是否明确禁止填充。
 func textFillDisabled(object models.TextObject) bool {
-	return strings.EqualFold(strings.TrimSpace(object.Fill), "false")
+	return !object.Fill.Value(true)
 }
 
 // textHScale 返回文字水平方向缩放比例，缺省值为 1。

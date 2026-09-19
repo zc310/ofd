@@ -87,8 +87,11 @@ func TestTextHScaleDefaultsToOne(t *testing.T) {
 }
 
 func TestTextFillDisabled(t *testing.T) {
-	if !textFillDisabled(models.TextObject{CtText: models.CtText{Fill: "false"}}) {
+	if !textFillDisabled(models.TextObject{CtText: models.CtText{Fill: models.NewOptionalBool(false)}}) {
 		t.Fatal("expected Fill=false to disable text fill")
+	}
+	if textFillDisabled(models.TextObject{CtText: models.CtText{Fill: models.NewOptionalBool(true)}}) {
+		t.Fatal("expected Fill=true to keep text fill enabled")
 	}
 	if textFillDisabled(models.TextObject{}) {
 		t.Fatal("expected missing Fill to keep text fill enabled")
@@ -112,7 +115,7 @@ func TestOutlineTextWithStrokeOnly(t *testing.T) {
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{Width: 50, Height: 20}},
 		Font:          1,
 		Size:          8,
-		Fill:          "false",
+		Fill:          models.NewOptionalBool(false),
 		Stroke:        true,
 		StrokeColor:   &models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}},
 		TextCode:      []models.TextCode{{Value: "O", X: 1, Y: 10}},
