@@ -1,13 +1,14 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/xuri/excelize/v2"
 )

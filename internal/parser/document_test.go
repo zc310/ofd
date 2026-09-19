@@ -1,12 +1,13 @@
 package parser
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/xml"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"

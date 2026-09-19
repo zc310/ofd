@@ -1,7 +1,6 @@
 package pdf2ofd
 
 import (
-	"archive/zip"
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"

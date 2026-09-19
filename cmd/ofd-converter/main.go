@@ -2,7 +2,6 @@
 package main
 
 import (
-	"archive/zip"
 	"errors"
 	"fmt"
 	"image/color"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/converter"

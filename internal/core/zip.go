@@ -2,7 +2,6 @@
 package core
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/xml"
 	"errors"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 )
 
 var (
@@ -85,7 +86,7 @@ func OpenFile(filename string) (*Package, error) {
 	if reader == nil {
 		return nil, errors.New("打开 ZIP 包失败: ZIP reader 为空")
 	}
-	// archive/zip 在路径不安全时仍会返回可用 reader；路径策略由上层校验器处理。
+	// github.com/klauspost/compress/zip 在路径不安全时仍会返回可用 reader；路径策略由上层校验器处理。
 	return newPackage(&reader.Reader, reader), nil
 }
 

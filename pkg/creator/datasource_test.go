@@ -1,7 +1,6 @@
 package creator
 
 import (
-	"archive/zip"
 	"bytes"
 	"io"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 )
 
 type memorySource struct {

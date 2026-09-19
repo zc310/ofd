@@ -1,12 +1,13 @@
 package core
 
 import (
-	"archive/zip"
 	"bytes"
 	"errors"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 )
 
 func TestPackageReadsContentAndXML(t *testing.T) {

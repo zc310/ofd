@@ -1,7 +1,6 @@
 package creator
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"

@@ -1,7 +1,6 @@
 package mdimport_test
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"image"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/mdimport"

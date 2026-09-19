@@ -4,9 +4,9 @@
 package main
 
 import (
-	"archive/zip"
 	"errors"
 	"fmt"
+	"github.com/klauspost/compress/zip"
 	"image/color"
 	"math"
 	"runtime"

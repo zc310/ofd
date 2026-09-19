@@ -1,13 +1,14 @@
 package creator
 
 import (
-	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 )
 
 // entrySink 接收生成阶段产出的 OFD 包条目。实现可以是内存收集（构建/基准）

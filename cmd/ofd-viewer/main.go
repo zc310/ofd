@@ -2,7 +2,6 @@
 package main
 
 import (
-	"archive/zip"
 	"fmt"
 	"image"
 	"image/color"
@@ -18,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/klauspost/compress/zip"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"

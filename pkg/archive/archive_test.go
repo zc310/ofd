@@ -1,13 +1,14 @@
 package archive
 
 import (
-	"archive/zip"
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/pkg/analyzer"
 	"github.com/zc310/ofd/pkg/validator"

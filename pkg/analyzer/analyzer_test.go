@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/xuri/excelize/v2"
 )
