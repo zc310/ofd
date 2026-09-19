@@ -27,7 +27,12 @@ type wasmApp struct {
 	streams       map[uint64]*jsChunkWriter
 }
 
-const wasmMaxRenderPages = 64
+const (
+	// wasmMaxRenderPages 限制 renderPages 批量位图渲染的页数，避免主线程同时持有过多图像。
+	wasmMaxRenderPages = 64
+	// wasmMaxStreamPages 仅用于防止异常调用分配过大的索引数组；流式导出本身不限页数。
+	wasmMaxStreamPages = 1 << 16
+)
 
 func main() {
 	console := js.Global().Get("console")
@@ -379,7 +384,7 @@ func (a *wasmApp) renderPages(_ js.Value, args []js.Value) any {
 	if len(args) < 1 || len(args) > 2 {
 		return errorValue(errors.New("ofd.renderPages 需要页面索引数组和可选配置"))
 	}
-	indices, err := jsIndices(args[0])
+	indices, err := jsIndices(args[0], wasmMaxRenderPages)
 	if err != nil {
 		return errorValue(err)
 	}
@@ -408,7 +413,7 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 	if len(args) < 1 || len(args) > 4 {
 		return errorValue(errors.New("ofd.renderStream 需要页面索引数组、可选配置和输出回调"))
 	}
-	indices, err := jsIndices(args[0])
+	indices, err := jsIndices(args[0], wasmMaxStreamPages)
 	if err != nil {
 		return errorValue(err)
 	}
@@ -792,13 +797,13 @@ func jsIndex(value js.Value) (int, error) {
 	return value.Int(), nil
 }
 
-func jsIndices(value js.Value) ([]int, error) {
+func jsIndices(value js.Value, limit int) ([]int, error) {
 	if value.Type() != js.TypeObject || value.Get("length").Type() != js.TypeNumber {
 		return nil, errors.New("页面索引必须是数组")
 	}
 	length := value.Get("length").Int()
-	if length < 0 || length > wasmMaxRenderPages {
-		return nil, fmt.Errorf("批量渲染页面数量超过限制 %d", wasmMaxRenderPages)
+	if length < 0 || length > limit {
+		return nil, fmt.Errorf("批量渲染页面数量超过限制 %d", limit)
 	}
 	indices := make([]int, length)
 	for index := range indices {

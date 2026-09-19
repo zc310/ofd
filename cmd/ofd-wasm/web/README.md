@@ -163,6 +163,7 @@ ofd.close()
 - PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`。
 - `renderPages` 按传入索引顺序返回数组，最多处理 64 页。
 - `renderStream` 单页 PNG/JPG 时直接返回 `Uint8Array`，不需要回调；多页 PNG/JPG 在 WASM 内生成 ZIP 并通过回调返回分块，PDF 始终通过回调返回分块。
+- `renderStream` 使用流式输出，不限制页数；生成过程按块回调，WASM 不会同时保留所有页面图像或完整 PDF。
 - `dpi` 对 PNG 和 JPG 有效；JPG 不支持透明度，透明区域使用白色。
 - SVG 主要保留页面中的矢量内容，但复杂渐变、裁剪或其他不适合直接序列化的效果仍可能包含栅格图像。
 - `renderStream` 使用 `format: 'pdf'` 时通过回调按顺序返回 PDF 分块，使用页面物理尺寸并保留可复制的文字对象。

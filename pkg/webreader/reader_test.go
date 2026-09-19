@@ -450,6 +450,27 @@ func TestRenderPDFToPreservesSelectableText(t *testing.T) {
 	}
 }
 
+func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	indices := make([]int, 65)
+	var output bytes.Buffer
+	if err := reader.RenderPDFTo(&output, indices, RenderOptions{DPI: 12, Background: color.White}); err != nil {
+		t.Fatalf("streamed PDF rejected oversized page batch: %v", err)
+	}
+	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(output.Bytes()), []byte("%%EOF")) {
+		t.Fatal("streamed PDF is invalid")
+	}
+}
+
 func TestRenderPageValidation(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
 	if err != nil {
