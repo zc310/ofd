@@ -575,7 +575,8 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 		documentName = name + "-" + hex.EncodeToString(digest[:])[:12]
 		break
 	}
-	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: strings.Contains(strings.ToLower(family), "bold"), Italic: strings.Contains(strings.ToLower(family), "italic")}
+	bold, italic, serif, fixedWidth := pdfFontStyleFlags(family)
+	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: bold, Italic: italic, Serif: serif, FixedWidth: fixedWidth}
 	p.document.Fonts = append(p.document.Fonts, current)
 	for _, value := range p.document.Fonts[:len(p.document.Fonts)-1] {
 		if current.Format == value.Format && len(current.Data) > 0 && bytes.Equal(current.Data, value.Data) {
