@@ -3,7 +3,28 @@ package creator
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
+
+// xmlReplacementChar 用于替换 XML 1.0 不允许的字符（如 PDF 文本里的控制符）。
+// 直接写入会让生成的 OFD 无法解析（PCDATA invalid Char value）。
+var xmlReplacementChar = []byte("\uFFFD")
+
+// isXMLChar 判断 rune 是否允许出现在 XML 1.0 文档中。
+func isXMLChar(r rune) bool {
+	switch {
+	case r == 0x09 || r == 0x0A || r == 0x0D:
+		return true
+	case r >= 0x20 && r <= 0xD7FF:
+		return true
+	case r >= 0xE000 && r <= 0xFFFD:
+		return true
+	case r >= 0x10000 && r <= 0x10FFFF:
+		return true
+	default:
+		return false
+	}
+}
 
 // streamXMLWriter 是页面高频生成路径使用的轻量 XML 写入器。
 // 它只支持 creator 所需的操作，不在内存中保留 XML 树。
@@ -175,51 +196,61 @@ func (w *streamXMLWriter) closeStart() {
 }
 
 func (w *streamXMLWriter) appendText(value string) {
-	start := 0
-	for index := 0; index < len(value); index++ {
-		var replacement string
-		switch value[index] {
-		case '&':
-			replacement = "&amp;"
-		case '<':
-			replacement = "&lt;"
-		case '>':
-			replacement = "&gt;"
-		default:
+	for index := 0; index < len(value); {
+		r, size := utf8.DecodeRuneInString(value[index:])
+		if r == utf8.RuneError && size == 1 {
+			w.buf = append(w.buf, xmlReplacementChar...)
+			index++
 			continue
 		}
-		w.buf = append(w.buf, value[start:index]...)
-		w.buf = append(w.buf, replacement...)
-		start = index + 1
+		switch r {
+		case '&':
+			w.buf = append(w.buf, "&amp;"...)
+		case '<':
+			w.buf = append(w.buf, "&lt;"...)
+		case '>':
+			w.buf = append(w.buf, "&gt;"...)
+		default:
+			if isXMLChar(r) {
+				w.buf = append(w.buf, value[index:index+size]...)
+			} else {
+				w.buf = append(w.buf, xmlReplacementChar...)
+			}
+		}
+		index += size
 	}
-	w.buf = append(w.buf, value[start:]...)
 }
 
 func (w *streamXMLWriter) appendAttrText(value string) {
-	start := 0
-	for index := 0; index < len(value); index++ {
-		var replacement string
-		switch value[index] {
-		case '&':
-			replacement = "&amp;"
-		case '<':
-			replacement = "&lt;"
-		case '"':
-			replacement = "&quot;"
-		case '\t':
-			replacement = "&#x9;"
-		case '\n':
-			replacement = "&#xA;"
-		case '\r':
-			replacement = "&#xD;"
-		default:
+	for index := 0; index < len(value); {
+		r, size := utf8.DecodeRuneInString(value[index:])
+		if r == utf8.RuneError && size == 1 {
+			w.buf = append(w.buf, xmlReplacementChar...)
+			index++
 			continue
 		}
-		w.buf = append(w.buf, value[start:index]...)
-		w.buf = append(w.buf, replacement...)
-		start = index + 1
+		switch r {
+		case '&':
+			w.buf = append(w.buf, "&amp;"...)
+		case '<':
+			w.buf = append(w.buf, "&lt;"...)
+		case '"':
+			w.buf = append(w.buf, "&quot;"...)
+		case '\t':
+			w.buf = append(w.buf, "&#x9;"...)
+		case '\n':
+			w.buf = append(w.buf, "&#xA;"...)
+		case '\r':
+			w.buf = append(w.buf, "&#xD;"...)
+		default:
+			if isXMLChar(r) {
+				w.buf = append(w.buf, value[index:index+size]...)
+			} else {
+				w.buf = append(w.buf, xmlReplacementChar...)
+			}
+		}
+		index += size
 	}
-	w.buf = append(w.buf, value[start:]...)
 }
 
 func streamPageXML(state *buildState, pageIndex int) []byte {
