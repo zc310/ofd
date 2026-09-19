@@ -29,19 +29,20 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 
 ## 内容流操作符
 
-| 操作符                                                   | 当前状态 | 说明                                                                                       |
-|----------------------------------------------------------|----------|--------------------------------------------------------------------------------------------|
-| `q` / `Q`（图形状态栈）                                  | 已支持   |                                                                                            |
-| `cm`                                                     | 已支持   | 右乘当前 CTM；对嵌套 Form XObject 的平移缩放做过专项修正。                                 |
-| `w`（线宽）                                              | 部分支持 | 线宽按 CTM 缩放；`d`/`j`/`J`/`M`/`i` 线型与端点样式未实现，保持 OFD 默认。                 |
-| `rg/RG/g/G/k/K`                                          | 已支持   | DeviceRGB / DeviceGray / DeviceCMYK 转换为 RGB。                                           |
-| `cs/CS` + `sc/scn/SC/SCN`                                | 部分支持 | 支持颜色空间名称与分量数自适应的纯色；Pattern、Shading 输出被忽略。                        |
-| `W` / `W*`（裁剪）                                       | 已支持   | 暂存到下一次路径绘制（`n/S/f/B...`）时生效；`q/Q` 恢复状态不会泄漏裁剪。                   |
-| `m/l/c/v/y/h/re`                                         | 已支持   | `re` 拆为四段并闭合；贝塞尔曲线按三次曲线输出。                                            |
-| `S/s/f/F/f\*/B/B\*/b/b\*/n`                              | 已支持   | 支持描边、填充、描边加填充；填充规则 NonZero / Even-Odd。                                  |
-| `Do`（XObject）                                          | 部分支持 | 支持 Image 与 Form（含 `Matrix`、Form 自带 `Resources`、嵌套最多 16 层）；其余子类型忽略。 |
-| 内联图像 `BI/ID/EI`                                      | 部分支持 | 缩写键展开；未给出 `ColorSpace` 时按规范默认 DeviceGray。                                  |
-| `sh`（Shading）、Pattern 绘制、透明组、`gs`（ExtGState） | 暂不支持 | 相关对象被忽略，透明度与混合模式不保留。                                                   |
+| 操作符                                  | 当前状态 | 说明                                                                                                                                        |
+|-----------------------------------------|----------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `q` / `Q`（图形状态栈）                 | 已支持   |                                                                                                                                             |
+| `cm`                                    | 已支持   | 右乘当前 CTM；对嵌套 Form XObject 的平移缩放做过专项修正。                                                                                  |
+| `w`（线宽）                             | 部分支持 | 线宽按 CTM 缩放；`d`/`j`/`J`/`M`/`i` 线型与端点样式未实现，保持 OFD 默认。                                                                  |
+| `rg/RG/g/G/k/K`                         | 已支持   | DeviceRGB / DeviceGray / DeviceCMYK 转换为 RGB。                                                                                            |
+| `cs/CS` + `sc/scn/SC/SCN`               | 部分支持 | 按当前颜色空间解释分量：DeviceGray/RGB/CMYK、`ICCBased`、`Indexed`、`Separation`、`DeviceN`（tint 变换求值）；Pattern、Shading 输出被忽略。 |
+| `W` / `W*`（裁剪）                      | 已支持   | 暂存到下一次路径绘制（`n/S/f/B...`）时生效；`q/Q` 恢复状态不会泄漏裁剪。                                                                    |
+| `m/l/c/v/y/h/re`                        | 已支持   | `re` 拆为四段并闭合；贝塞尔曲线按三次曲线输出。                                                                                             |
+| `S/s/f/F/f\*/B/B\*/b/b\*/n`             | 已支持   | 支持描边、填充、描边加填充；填充规则 NonZero / Even-Odd。                                                                                   |
+| `Do`（XObject）                         | 部分支持 | 支持 Image 与 Form（含 `Matrix`、Form 自带 `Resources`、嵌套最多 16 层）；其余子类型忽略。                                                  |
+| 内联图像 `BI/ID/EI`                     | 部分支持 | 缩写键展开；未给出 `ColorSpace` 时按规范默认 DeviceGray。                                                                                   |
+| `sh`（Shading）                         | 部分支持 | ShadingType 2/3 输出为 OFD `AxialShd`/`RadialShd`，函数按 32 段采样；Type 1/4/5/6/7 忽略。                                                  |
+| Pattern 绘制、透明组、`gs`（ExtGState） | 暂不支持 | 相关对象被忽略，透明度与混合模式不保留。                                                                                                    |
 
 ## 文本
 
@@ -56,28 +57,29 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 
 ### 文字编码与字宽
 
-| 标准范围                                          | 当前状态 | 说明                                                                                                        |
-|---------------------------------------------------|----------|-------------------------------------------------------------------------------------------------------------|
-| `ToUnicode` CMap（`bfchar`/`bfrange`）            | 已支持   | 支持条目计数前缀、数组目标与增量 range。                                                                    |
-| 简单字体 `/Encoding`（`/Differences` + 基础编码） | 已支持   | 字形名经 Unicode 映射还原；基础编码覆盖 WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。 |
-| 预定义 CJK CMap                                   | 部分支持 | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。              |
-| `Widths` + `FirstChar`、CID `/W`、`DW`            | 已支持   | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）。                                      |
-| 内嵌字体（TrueType/CFF 包装）                     | 部分支持 | 保留嵌入数据（`PreserveEmbeddedFonts`）；字形映射走 `CIDToGIDMap` 或字体 cmap，`CGTransform` 输出实际字形。 |
-| 不连续 CID / 子集字体                             | 已支持   | 经 fontfix 私有区映射（F0000+CID）判定字形存在，避免误丢整段文字。                                          |
-| 字体族名（含 `#XX` 十六进制转义）                 | 已支持   | 按原始字节再解释为 UTF-8，非法转义时原样保留。                                                              |
-| 未嵌入字体                                        | 部分支持 | 输出为 OFD 逻辑字体，由阅读器按族名回退本机字体。                                                           |
+| 标准范围                                          | 当前状态 | 说明                                                                                                                                                                                  |
+|---------------------------------------------------|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ToUnicode` CMap（`bfchar`/`bfrange`）            | 已支持   | 支持条目计数前缀、数组目标与增量 range。                                                                                                                                              |
+| 简单字体 `/Encoding`（`/Differences` + 基础编码） | 已支持   | 字形名经 Unicode 映射还原；基础编码覆盖 WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。                                                                           |
+| 预定义 CJK CMap                                   | 部分支持 | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。                                                                                        |
+| `Widths` + `FirstChar`、CID `/W`、`DW`            | 已支持   | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）。                                                                                                                |
+| 内嵌字体（TrueType/CFF 包装）                     | 部分支持 | 保留嵌入数据（`PreserveEmbeddedFonts`）；字形映射走 `CIDToGIDMap` 或字体 cmap，`CGTransform` 输出实际字形。CFF 包装后按 `FontMatrix` 修正 `head.unitsPerEm`，避免 1/2048 字体被放大。 |
+| 不连续 CID / 子集字体                             | 已支持   | 经 fontfix 私有区映射（F0000+CID）判定字形存在，避免误丢整段文字。                                                                                                                    |
+| 字体族名（含 `#XX` 十六进制转义）                 | 已支持   | 按原始字节再解释为 UTF-8，非法转义时原样保留。                                                                                                                                        |
+| 未嵌入字体                                        | 部分支持 | 输出为 OFD 逻辑字体，由阅读器按族名回退本机字体。                                                                                                                                     |
 
 ## 图像
 
-| 标准范围                                     | 当前状态 | 说明                                                                                                |
-|----------------------------------------------|----------|-----------------------------------------------------------------------------------------------------|
-| `DCTDecode`（JPEG）                          | 部分支持 | JPEG 数据直接嵌入 OFD；DeviceCMYK JPEG（含 Adobe APP14 反相约定）转为 RGB PNG。                     |
-| `FlateDecode` 解码后的栅格数据               | 部分支持 | 8 位 DeviceGray/DeviceRGB、DeviceCMYK（油墨值）与 Indexed 调色板图像重编码为 PNG。                  |
-| `ImageMask`（1 位蒙版）                      | 部分支持 | 0 采样按当前填充色着色；仅支持 1 位蒙版。                                                           |
-| `Decode` 数组（反相）                        | 已支持   |                                                                                                     |
-| 颜色空间                                     | 部分支持 | DeviceGray/CalGray、DeviceRGB/CalRGB、DeviceCMYK、`Indexed`（基础空间受限）、`ICCBased`（按 `N`）。 |
-| `JPXDecode`、`CCITTFaxDecode`、`JBIG2Decode` | 暂不支持 | 该图像转换失败（不影响其他内容）。                                                                  |
-| SMask（软蒙版）、 transparency               | 暂不支持 | 忽略。                                                                                              |
+| 标准范围                                     | 当前状态 | 说明                                                                                                                                                           |
+|----------------------------------------------|----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `DCTDecode`（JPEG）                          | 部分支持 | JPEG 数据直接嵌入 OFD；DeviceCMYK JPEG（含 Adobe APP14 反相约定）转为 RGB PNG。                                                                                |
+| `FlateDecode` 解码后的栅格数据               | 部分支持 | 8 位 DeviceGray/DeviceRGB、DeviceCMYK（油墨值）与 Indexed 调色板图像重编码为 PNG。                                                                             |
+| `ImageMask`（1 位蒙版）                      | 部分支持 | 0 采样按当前填充色着色；仅支持 1 位蒙版。                                                                                                                      |
+| `Decode` 数组（反相）                        | 已支持   |                                                                                                                                                                |
+| 颜色空间                                     | 部分支持 | DeviceGray/CalGray、DeviceRGB/CalRGB、DeviceCMYK、`Indexed`、`ICCBased`（按 `N`）、`Separation`/`DeviceN`（tint 变换，Type 0/2/3 函数）；`Lab` 按 3 分量近似。 |
+| tint 变换函数                                | 部分支持 | Type 0 采样（8/16/1/2/4/12 位，多线性插值）、Type 2 指数插值、Type 3 拼接；Type 4 PostScript 计算函数未实现。                                                  |
+| `JPXDecode`、`CCITTFaxDecode`、`JBIG2Decode` | 暂不支持 | 该图像转换失败（不影响其他内容）。                                                                                                                             |
+| SMask（软蒙版）、 transparency               | 暂不支持 | 忽略。                                                                                                                                                         |
 
 ## 包结构与容错
 
