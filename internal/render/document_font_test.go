@@ -392,3 +392,46 @@ func TestIsGenericFontFamily(t *testing.T) {
 		}
 	}
 }
+
+// TestSystemFontCandidatesMapsPostScriptNames 验证 PDF 的 PostScript 子集名
+// 会映射到可匹配的系统族名与通用族，避免非嵌入字体回退成风格不符的默认字体。
+func TestSystemFontCandidatesMapsPostScriptNames(t *testing.T) {
+	cases := []struct {
+		font     models.Font
+		contains []string
+	}{
+		{models.Font{FamilyName: "NimbusRomNo9L-Medi", Bold: true}, []string{"Nimbus Roman", "serif"}},
+		{models.Font{FamilyName: "NimbusRomNo9L-ReguItal", Italic: true}, []string{"Nimbus Roman", "serif"}},
+		{models.Font{FamilyName: "NimbusSanNo9L-Regu"}, []string{"Nimbus Sans", "sans-serif"}},
+		{models.Font{FamilyName: "NimbusMonNo9L-Regu"}, []string{"Nimbus Mono PS", "monospace"}},
+		{models.Font{FamilyName: "CMTT9", FixedWidth: true}, []string{"monospace"}},
+		{models.Font{FamilyName: "CMSY8", Serif: true}, []string{"serif"}},
+		{models.Font{FamilyName: "Helvetica-Bold", Bold: true}, []string{"sans-serif"}},
+	}
+	for _, test := range cases {
+		names := systemFontCandidates(&test.font)
+		for _, want := range test.contains {
+			found := false
+			for _, name := range names {
+				if name == want {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("systemFontCandidates(%q) = %v, 缺少 %q", test.font.FamilyName, names, want)
+			}
+		}
+	}
+}
+
+// TestSystemFontCandidatesSkipsGenericForCJK 验证 CJK 逻辑字体不会被套用
+// 拉丁通用族，避免中文字体回退成西文字体。
+func TestSystemFontCandidatesSkipsGenericForCJK(t *testing.T) {
+	names := systemFontCandidates(&models.Font{FamilyName: "方正小标宋_GBK"})
+	for _, name := range names {
+		if name == "serif" || name == "sans-serif" || name == "monospace" {
+			t.Fatalf("CJK 字体不应加入通用族候选: %v", names)
+		}
+	}
+}

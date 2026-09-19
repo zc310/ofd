@@ -372,8 +372,12 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if defaultReady {
 			return defaultFamily, "", nil
 		}
-	} else if family, ok := loadCachedSystemFont(fontName, fontStyle); ok {
-		return family, "", nil
+	} else {
+		for _, candidate := range systemFontCandidates(ft) {
+			if family, ok := loadCachedSystemFont(candidate, fontStyle); ok {
+				return family, "", nil
+			}
+		}
 	}
 	if family, ok := loadFixedWidthFont(ft, fontStyle); ok {
 		return family, "", nil
@@ -401,6 +405,90 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		return defaultFamily, "", nil
 	}
 	return nil, "", fmt.Errorf("字体 %d 无法加载", id)
+}
+
+// systemFontCandidates 返回用于匹配系统字体的候选族名。OFD 逻辑字体的
+// FamilyName 通常是 PDF 的 PostScript 名（如 NimbusRomNo9L-Regu），不能直接
+// 作为系统族名使用；这里给出常见 PostScript 名的别名和 serif/sans-serif/
+// monospace 通用族，便于回退到同类的系统字体，避免衬线/无衬线风格错乱。
+func systemFontCandidates(ft *models.Font) []string {
+	names := make([]string, 0, 5)
+	seen := make(map[string]bool, 5)
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	add(ft.FamilyName)
+	add(postscriptFamilyAlias(ft.FamilyName))
+	add(postscriptFamilyAlias(ft.FontName))
+	if cjkFontGroup(ft) == "" {
+		switch classifyFontClass(ft) {
+		case "serif":
+			add("serif")
+		case "sans-serif":
+			add("sans-serif")
+		case "monospace":
+			add("monospace")
+		}
+	}
+	return names
+}
+
+// postscriptFamilyAlias 把常见 PostScript 子集字体名映射到 fontconfig 家族名。
+// 例如 NimbusRomNo9L-* 对应系统上的 Nimbus Roman。
+func postscriptFamilyAlias(name string) string {
+	if name == "" {
+		return ""
+	}
+	if index := strings.IndexByte(name, '+'); index >= 0 {
+		name = name[index+1:]
+	}
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(lower, "nimbusromno9l"), strings.HasPrefix(lower, "nimbusromanno9l"):
+		return "Nimbus Roman"
+	case strings.HasPrefix(lower, "nimbusrom"):
+		return "Nimbus Roman"
+	case strings.HasPrefix(lower, "nimbussan"):
+		return "Nimbus Sans"
+	case strings.HasPrefix(lower, "nimbusmon"):
+		return "Nimbus Mono PS"
+	default:
+		return ""
+	}
+}
+
+// classifyFontClass 依据 OFD 的 Serif/FixedWidth 标志与族名推断通用字体类别。
+func classifyFontClass(ft *models.Font) string {
+	if ft.FixedWidth {
+		return "monospace"
+	}
+	if ft.Serif {
+		return "serif"
+	}
+	lower := strings.ToLower(ft.FamilyName + " " + ft.FontName)
+	switch {
+	case strings.Contains(lower, "nimbusmon"), strings.Contains(lower, "mono"),
+		strings.Contains(lower, "courier"), strings.Contains(lower, "typewriter"),
+		strings.Contains(lower, "cmtt"):
+		return "monospace"
+	case strings.Contains(lower, "nimbussan"), strings.Contains(lower, "sans"),
+		strings.Contains(lower, "helvetica"), strings.Contains(lower, "arial"),
+		strings.Contains(lower, "gothic"):
+		return "sans-serif"
+	case strings.Contains(lower, "nimbusrom"), strings.Contains(lower, "roman"),
+		strings.Contains(lower, "serif"), strings.Contains(lower, "times"),
+		strings.Contains(lower, "cmr"), strings.Contains(lower, "cmsy"),
+		strings.Contains(lower, "cmmi"), strings.Contains(lower, "bookman"),
+		strings.Contains(lower, "schoolbook"), strings.Contains(lower, "georgia"):
+		return "serif"
+	default:
+		return ""
+	}
 }
 
 func defaultFallbackFont() (*canvas.FontFamily, bool) {
