@@ -1035,3 +1035,135 @@ func TestPDFFontStyleFlags(t *testing.T) {
 		}
 	}
 }
+
+// TestPDFImageDataSupportsOtherBitDepths 验证非 8 位图像（1/2/4/16 位）会按
+// /Decode（默认 [0 1]）展开为每分量 8 位，而不再直接报错。
+func TestPDFImageDataSupportsOtherBitDepths(t *testing.T) {
+	gray := func(bpc int) types.Dict {
+		return types.Dict{
+			"Width":            types.Integer(2),
+			"Height":           types.Integer(1),
+			"BitsPerComponent": types.Integer(bpc),
+			"ColorSpace":       types.Name("DeviceGray"),
+		}
+	}
+	cases := []struct {
+		name    string
+		dict    types.Dict
+		content []byte
+		want    [][3]uint8
+	}{
+		{
+			name:    "1 位灰度",
+			dict:    gray(1),
+			content: []byte{0x80},
+			want:    [][3]uint8{{255, 255, 255}, {0, 0, 0}},
+		},
+		{
+			name:    "2 位灰度",
+			dict:    gray(2),
+			content: []byte{0b10110000},
+			want:    [][3]uint8{{170, 170, 170}, {255, 255, 255}},
+		},
+		{
+			name:    "4 位灰度",
+			dict:    gray(4),
+			content: []byte{0x0F},
+			want:    [][3]uint8{{0, 0, 0}, {255, 255, 255}},
+		},
+		{
+			name: "16 位灰度",
+			dict: types.Dict{
+				"Width": types.Integer(1), "Height": types.Integer(1),
+				"BitsPerComponent": types.Integer(16), "ColorSpace": types.Name("DeviceGray"),
+			},
+			content: []byte{0x80, 0x00},
+			want:    [][3]uint8{{128, 128, 128}},
+		},
+		{
+			name: "4 位 RGB",
+			dict: types.Dict{
+				"Width": types.Integer(1), "Height": types.Integer(1),
+				"BitsPerComponent": types.Integer(4), "ColorSpace": types.Name("DeviceRGB"),
+			},
+			content: []byte{0xF0, 0x80},
+			want:    [][3]uint8{{255, 0, 136}},
+		},
+		{
+			name: "1 位灰度 Decode 反相",
+			dict: types.Dict{
+				"Width": types.Integer(2), "Height": types.Integer(1),
+				"BitsPerComponent": types.Integer(1), "ColorSpace": types.Name("DeviceGray"),
+				"Decode": types.Array{types.Integer(1), types.Integer(0)},
+			},
+			content: []byte{0x80},
+			want:    [][3]uint8{{0, 0, 0}, {255, 255, 255}},
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			stream := &types.StreamDict{Dict: test.dict, Content: test.content}
+			data, format, err := pdfImageData(nil, stream, pdfColor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if format != "PNG" {
+				t.Fatalf("format = %q, want PNG", format)
+			}
+			decoded, err := png.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for index, want := range test.want {
+				r, g, b, _ := decoded.At(index, 0).RGBA()
+				if r>>8 != uint32(want[0]) || g>>8 != uint32(want[1]) || b>>8 != uint32(want[2]) {
+					t.Fatalf("pixel %d = (%d,%d,%d), want (%d,%d,%d)", index, r>>8, g>>8, b>>8, want[0], want[1], want[2])
+				}
+			}
+		})
+	}
+}
+
+// TestPDFImageDataPreserves16BitPNG 验证 16 位图像输出 16 位 PNG，而不是降采样。
+func TestPDFImageDataPreserves16BitPNG(t *testing.T) {
+	gray := &types.StreamDict{
+		Dict: types.Dict{
+			"Width": types.Integer(1), "Height": types.Integer(1),
+			"BitsPerComponent": types.Integer(16), "ColorSpace": types.Name("DeviceGray"),
+		},
+		Content: []byte{0x80, 0x00},
+	}
+	data, _, err := pdfImageData(nil, gray, pdfColor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decoded.(*image.Gray16); !ok {
+		t.Fatalf("16 位灰度应解码为 *image.Gray16，实际 %T", decoded)
+	}
+
+	rgb := &types.StreamDict{
+		Dict: types.Dict{
+			"Width": types.Integer(1), "Height": types.Integer(1),
+			"BitsPerComponent": types.Integer(16), "ColorSpace": types.Name("DeviceRGB"),
+		},
+		Content: []byte{0xFF, 0xFF, 0x00, 0x00, 0x80, 0x00},
+	}
+	data, _, err = pdfImageData(nil, rgb, pdfColor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err = png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decoded.(*image.RGBA64); !ok {
+		t.Fatalf("16 位 RGB 应解码为 *image.RGBA64，实际 %T", decoded)
+	}
+	if r, g, b, _ := decoded.At(0, 0).RGBA(); r != 0xffff || g != 0 || b != 0x8000 {
+		t.Fatalf("16 位 RGB 像素 = (%d,%d,%d)", r, g, b)
+	}
+}
