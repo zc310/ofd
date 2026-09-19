@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const (
@@ -48,8 +47,29 @@ func Create(document Document, w io.Writer) error {
 
 // CreateWithOptions 按指定选项将完整的 OFD ZIP 文件包写入 w。
 func CreateWithOptions(document Document, w io.Writer, options CreateOptions) error {
+	return createWithPages(document, slicePages{pages: document.Pages}, w, options)
+}
+
+// CreateWithPages 使用 PageProvider 按需提供的页面创建 OFD，用于页数或页模型
+// 超过内存的场景。meta 提供文档元数据与资源，meta.Pages 必须为空。
+//
+// 因为字体子集化需要改写页内字形编号，流式页面必须设置
+// CreateOptions.PreserveEmbeddedFonts 为 true，或预先自行完成字体子集化。
+func CreateWithPages(meta Document, pages PageProvider, w io.Writer) error {
+	return CreateWithPagesOptions(meta, pages, w, CreateOptions{Compression: CompressionAuto})
+}
+
+// CreateWithPagesOptions 按指定选项使用 PageProvider 创建 OFD。
+func CreateWithPagesOptions(meta Document, pages PageProvider, w io.Writer, options CreateOptions) error {
+	return createWithPages(meta, pages, w, options)
+}
+
+func createWithPages(document Document, pages PageProvider, w io.Writer, options CreateOptions) error {
 	if w == nil {
 		return errors.New("OFD 输出写入器为空")
+	}
+	if pages == nil {
+		return errors.New("OFD 页面提供者为空")
 	}
 	if options.Compression == "" {
 		options.Compression = CompressionAuto
@@ -57,34 +77,51 @@ func CreateWithOptions(document Document, w io.Writer, options CreateOptions) er
 	if options.Compression != CompressionAuto && options.Compression != CompressionDeflate && options.Compression != CompressionStore {
 		return fmt.Errorf("不支持的 ZIP 压缩策略: %q", options.Compression)
 	}
-	state, err := buildWithOptions(document, options)
+	if _, ok := pages.(slicePages); !ok && !options.PreserveEmbeddedFonts && hasEmbeddedFonts(document) {
+		return errors.New("流式页面创建需要设置 CreateOptions.PreserveEmbeddedFonts，或预先完成字体子集化")
+	}
+	state, err := prepare(document, pages, options)
 	if err != nil {
 		return err
 	}
+	defer state.clearPatternCaches()
 
 	archive := zip.NewWriter(w)
-	for _, entry := range state.entries {
-		header := &zip.FileHeader{
-			Name:   entry.name,
-			Method: zipEntryMethod(entry.name, options.Compression),
-		}
-		if options.Deterministic {
-			header.Modified = time.Unix(0, 0).UTC()
-		}
-		file, createErr := archive.CreateHeader(header)
-		if createErr != nil {
-			_ = archive.Close()
-			return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", entry.name, createErr)
-		}
-		if _, writeErr := file.Write(entry.data); writeErr != nil {
-			_ = archive.Close()
-			return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", entry.name, writeErr)
-		}
+	sink := newZipSink(archive, options, signatureReferenceTargets(state))
+	if err := generatePackage(state, sink); err != nil {
+		_ = archive.Close()
+		return err
 	}
 	if err := archive.Close(); err != nil {
 		return fmt.Errorf("关闭 OFD ZIP 包失败: %w", err)
 	}
 	return nil
+}
+
+// CreateFileWithPages 使用 PageProvider 在 filename 指定的位置创建 OFD 文件包。
+func CreateFileWithPages(meta Document, pages PageProvider, filename string, options CreateOptions) (err error) {
+	if strings.TrimSpace(filename) == "" {
+		return errors.New("OFD 输出文件名为空")
+	}
+	file, err := os.Create(filepath.Clean(filename))
+	if err != nil {
+		return fmt.Errorf("创建 OFD 文件失败: %w", err)
+	}
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("关闭 OFD 文件失败: %w", closeErr)
+		}
+	}()
+	return CreateWithPagesOptions(meta, pages, file, options)
+}
+
+// MarshalWithPages 按指定选项返回使用 PageProvider 创建的完整 OFD 字节数据。
+func MarshalWithPages(meta Document, pages PageProvider, options CreateOptions) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := CreateWithPagesOptions(meta, pages, &buffer, options); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 func zipEntryMethod(name string, mode CompressionMode) uint16 {

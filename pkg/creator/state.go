@@ -11,19 +11,19 @@ type zipEntry struct {
 
 type buildState struct {
 	document               Document
+	pages                  PageProvider
+	pageCount              int
 	completeTextCodeDeltas bool
 	pageSize               PageSize
 	pageIDs                []uint64
 	templateIDs            []uint64
 	templateLayers         [][]builtLayer
-	layers                 [][]builtLayer
 	drawParams             []drawParamResource
 	drawParamIDs           map[string]uint64
 	drawParamIndexes       map[string]int
 	fonts                  []fontResource
 	fontIDs                map[string]uint64
 	images                 []imageResource
-	pageResources          [][]pageResource
 	pageImageIDs           map[uint64]bool
 	pendingPageImageIDs    map[uint64]bool
 	media                  []mediaResource
@@ -41,6 +41,7 @@ type buildState struct {
 	versions               []versionResource
 	coverName              string
 	coverData              []byte
+	coverSource            DataSource
 	colorProfiles          map[uint64]colorProfileResource
 	colorSpaces            map[uint64]colorSpaceInfo
 	publicResources        []publicResource
@@ -98,12 +99,14 @@ type fontResource struct {
 	fixedWidth bool
 	fileName   string
 	data       []byte
+	source     DataSource
 }
 
 type imageResource struct {
 	id     uint64
 	name   string
 	data   []byte
+	source DataSource
 	format string
 }
 
@@ -115,8 +118,9 @@ type pageResource struct {
 }
 
 type pageResourceFile struct {
-	path string
-	data []byte
+	path   string
+	data   []byte
+	source DataSource
 }
 
 type pageImageResource struct {
@@ -124,6 +128,7 @@ type pageImageResource struct {
 	name   string
 	format string
 	data   []byte
+	source DataSource
 }
 
 type mediaResource struct {
@@ -132,6 +137,7 @@ type mediaResource struct {
 	type_  string
 	format string
 	data   []byte
+	source DataSource
 }
 
 type compositeResource struct {
@@ -195,8 +201,9 @@ type publicResource struct {
 }
 
 type publicResourceFile struct {
-	path string
-	data []byte
+	path   string
+	data   []byte
+	source DataSource
 }
 
 type rawResourceReference struct {

@@ -1215,7 +1215,18 @@ func Load(path, format string) (Manifest, string, error) {
 }
 
 // Build 将 manifest 转换为 creator 文档模型，并加载资源文件。
+// BuildOptions 控制 manifest 到 creator 文档的转换行为。
+type BuildOptions struct {
+	// StreamAssets 对通过 file 引用的封面、图片、多媒体、附件和页面图片使用
+	// 惰性数据来源，避免创建超大 OFD 时把资源整体读入内存。
+	StreamAssets bool
+}
+
 func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
+	return m.BuildWithOptions(baseDir, assetRoot, BuildOptions{})
+}
+
+func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptions) (creator.Document, error) {
 	if m.Version != 1 {
 		return creator.Document{}, fmt.Errorf("不支持的 manifest 版本: %d", m.Version)
 	}
@@ -1227,6 +1238,9 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	root, err := filepath.Abs(assetRoot)
 	if err != nil {
 		return creator.Document{}, fmt.Errorf("资源根目录无效: %w", err)
+	}
+	loadResource := func(file, encoded string) ([]byte, creator.DataSource, error) {
+		return loadOptionalResource(root, file, encoded, options.StreamAssets)
 	}
 	document := creator.Document{
 		ID: m.Document.ID, Title: m.Document.Title, Author: m.Document.Author,
@@ -1247,7 +1261,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.public[%d].file: %w", index, err)
 		}
-		files, err := buildResourceFiles(root, resource.Files)
+		files, err := buildResourceFiles(root, resource.Files, options.StreamAssets)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.public[%d].files: %w", index, err)
 		}
@@ -1265,11 +1279,11 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		document.CustomTags = append(document.CustomTags, creator.CustomTag{NameSpace: tag.NameSpace, Schema: schema, SchemaName: tag.SchemaName, Data: data, DataName: tag.DataName})
 	}
 	if m.Document.Cover != "" || m.Document.CoverBase64 != "" {
-		data, err := loadData(root, m.Document.Cover, m.Document.CoverBase64)
+		data, source, err := loadResource(m.Document.Cover, m.Document.CoverBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("document.cover: %w", err)
 		}
-		document.CoverData, document.CoverName = data, m.Document.CoverName
+		document.CoverData, document.CoverSource, document.CoverName = data, source, m.Document.CoverName
 	}
 	if m.Document.CreationDate != "" {
 		date, err := parseDate(m.Document.CreationDate)
@@ -1300,7 +1314,7 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	}
 	document.Outlines = outlines
 	for index, signature := range m.Document.Signatures {
-		value, err := buildSignature(root, signature)
+		value, err := buildSignature(root, signature, options.StreamAssets)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("document.signatures[%d]: %w", index, err)
 		}
@@ -1317,11 +1331,11 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		document.Bookmarks = append(document.Bookmarks, creator.Bookmark{Name: bookmark.Name, Goto: buildGoto(bookmark.Goto)})
 	}
 	for index, attachment := range m.Document.Attachments {
-		data, err := loadData(root, attachment.File, attachment.DataBase64)
+		data, source, err := loadResource(attachment.File, attachment.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("document.attachments[%d].file: %w", index, err)
 		}
-		value := creator.Attachment{ID: attachment.ID, Name: attachment.Name, Format: attachment.Format, Usage: attachment.Usage, FileName: attachment.FileName, Visible: attachment.Visible, Data: data}
+		value := creator.Attachment{ID: attachment.ID, Name: attachment.Name, Format: attachment.Format, Usage: attachment.Usage, FileName: attachment.FileName, Visible: attachment.Visible, Data: data, Source: source}
 		if attachment.CreationDate != "" {
 			value.CreationDate, err = parseDate(attachment.CreationDate)
 			if err != nil {
@@ -1348,11 +1362,11 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 			value.Properties = append(value.Properties, creator.ExtensionProperty{Name: property.Name, Type: property.Type, Value: property.Value})
 		}
 		if extension.DataFile != "" || extension.DataFileBase64 != "" {
-			data, err := loadData(root, extension.DataFile, extension.DataFileBase64)
+			data, source, err := loadOptionalResource(root, extension.DataFile, extension.DataFileBase64, options.StreamAssets)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("document.extensions[%d].data_file: %w", index, err)
 			}
-			value.DataFile = data
+			value.DataFile, value.DataFileSource = data, source
 		}
 		document.Extensions = append(document.Extensions, value)
 	}
@@ -1385,28 +1399,28 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 		}
 	}
 	for index, font := range m.Resources.Fonts {
-		data, err := loadData(root, font.File, font.DataBase64)
+		data, source, err := loadResource(font.File, font.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.fonts[%d].file: %w", index, err)
 		}
-		document.Fonts = append(document.Fonts, creator.Font{Name: font.Name, FamilyName: font.FamilyName, Charset: font.Charset, Format: font.Format, Italic: font.Italic, Bold: font.Bold, Serif: font.Serif, FixedWidth: font.FixedWidth, Data: data})
+		document.Fonts = append(document.Fonts, creator.Font{Name: font.Name, FamilyName: font.FamilyName, Charset: font.Charset, Format: font.Format, Italic: font.Italic, Bold: font.Bold, Serif: font.Serif, FixedWidth: font.FixedWidth, Data: data, Source: source})
 	}
 	for index, image := range m.Resources.Images {
-		data, err := loadData(root, image.File, image.DataBase64)
+		data, source, err := loadResource(image.File, image.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.images[%d]: %w", index, err)
 		}
 		if image.ID == 0 {
 			return creator.Document{}, fmt.Errorf("resources.images[%d].id: ID 不能为空", index)
 		}
-		document.Media = append(document.Media, creator.Media{ID: image.ID, Type: "Image", Format: image.Format, Name: image.Name, Data: data})
+		document.Media = append(document.Media, creator.Media{ID: image.ID, Type: "Image", Format: image.Format, Name: image.Name, Data: data, Source: source})
 	}
 	for index, media := range m.Resources.Media {
-		data, err := loadData(root, media.File, media.DataBase64)
+		data, source, err := loadResource(media.File, media.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.media[%d].file: %w", index, err)
 		}
-		document.Media = append(document.Media, creator.Media{ID: media.ID, Type: media.Type, Format: media.Format, Name: media.Name, Data: data})
+		document.Media = append(document.Media, creator.Media{ID: media.ID, Type: media.Type, Format: media.Format, Name: media.Name, Data: data, Source: source})
 	}
 	for index, space := range m.Resources.ColorSpaces {
 		value := creator.ColorSpace{ID: space.ID, Type: space.Type, BitsPerComponent: space.BitsPerComponent, Palette: space.Palette}
@@ -1478,17 +1492,17 @@ func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d].file: %w", index, resourceIndex, err)
 			}
-			files, err := buildPageResourceFiles(root, resource.Files)
+			files, err := buildPageResourceFiles(root, resource.Files, options.StreamAssets)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d].files: %w", index, resourceIndex, err)
 			}
 			convertedResource := creator.PageResource{Data: data, Files: files}
 			for imageIndex, image := range resource.Images {
-				imageData, err := loadData(root, image.File, image.DataBase64)
+				imageData, imageSource, err := loadResource(image.File, image.DataBase64)
 				if err != nil {
 					return creator.Document{}, fmt.Errorf("pages[%d].resources[%d].images[%d]: %w", index, resourceIndex, imageIndex, err)
 				}
-				convertedResource.Images = append(convertedResource.Images, creator.PageImage{ID: image.ID, Format: image.Format, Name: image.Name, Data: imageData})
+				convertedResource.Images = append(convertedResource.Images, creator.PageImage{ID: image.ID, Format: image.Format, Name: image.Name, Data: imageData, Source: imageSource})
 			}
 			converted.Resources = append(converted.Resources, convertedResource)
 		}
@@ -1776,28 +1790,45 @@ func validateLeafName(value string) error {
 	return nil
 }
 
-func buildResourceFiles(root string, values []ResourceFile) ([]creator.PublicResourceFile, error) {
+func buildResourceFiles(root string, values []ResourceFile, stream bool) ([]creator.PublicResourceFile, error) {
 	result := make([]creator.PublicResourceFile, 0, len(values))
 	for index, value := range values {
-		data, err := loadData(root, value.File, value.DataBase64)
+		data, source, err := loadOptionalResource(root, value.File, value.DataBase64, stream)
 		if err != nil {
 			return nil, fmt.Errorf("[%d]: %w", index, err)
 		}
-		result = append(result, creator.PublicResourceFile{Path: value.Path, Data: data})
+		result = append(result, creator.PublicResourceFile{Path: value.Path, Data: data, Source: source})
 	}
 	return result, nil
 }
 
-func buildPageResourceFiles(root string, values []ResourceFile) ([]creator.PageResourceFile, error) {
+func buildPageResourceFiles(root string, values []ResourceFile, stream bool) ([]creator.PageResourceFile, error) {
 	result := make([]creator.PageResourceFile, 0, len(values))
 	for index, value := range values {
-		data, err := loadData(root, value.File, value.DataBase64)
+		data, source, err := loadOptionalResource(root, value.File, value.DataBase64, stream)
 		if err != nil {
 			return nil, fmt.Errorf("[%d]: %w", index, err)
 		}
-		result = append(result, creator.PageResourceFile{Path: value.Path, Data: data})
+		result = append(result, creator.PageResourceFile{Path: value.Path, Data: data, Source: source})
 	}
 	return result, nil
+}
+
+// loadOptionalResource 读取可选资源。stream 为真且通过 file 引用时返回惰性来源。
+func loadOptionalResource(root, file, encoded string, stream bool) ([]byte, creator.DataSource, error) {
+	if file != "" && encoded != "" {
+		return nil, nil, errors.New("file 不能与 data_base64 同时设置")
+	}
+	if file == "" {
+		data, err := decodeOptionalBytes(encoded)
+		return data, nil, err
+	}
+	if stream {
+		source, err := loadSource(root, file)
+		return nil, source, err
+	}
+	data, err := readAsset(root, file)
+	return data, nil, err
 }
 
 func buildPermissions(value *Permissions) (*creator.Permissions, error) {
@@ -1998,7 +2029,7 @@ func buildOutlines(values []Outline) ([]creator.Outline, error) {
 	return result, nil
 }
 
-func buildSignature(root string, value Signature) (creator.Signature, error) {
+func buildSignature(root string, value Signature, stream bool) (creator.Signature, error) {
 	result := creator.Signature{ID: value.ID, Type: value.Type, ProviderName: value.ProviderName, ProviderVersion: value.ProviderVersion, Company: value.Company, Method: value.Method, CheckMethod: value.CheckMethod, SealName: value.SealName, SignedValueName: value.SignedValueName}
 	var err error
 	if value.Date != "" {
@@ -2008,7 +2039,7 @@ func buildSignature(root string, value Signature) (creator.Signature, error) {
 		}
 	}
 	if value.SealFile != "" || value.SealFileBase64 != "" {
-		result.SealFile, err = loadData(root, value.SealFile, value.SealFileBase64)
+		result.SealFile, result.SealSource, err = loadOptionalResource(root, value.SealFile, value.SealFileBase64, stream)
 		if err != nil {
 			return creator.Signature{}, fmt.Errorf("seal_file: %w", err)
 		}
@@ -2070,23 +2101,44 @@ func (value Annotation) build() (creator.Annotation, error) {
 }
 
 func readAsset(root, name string) ([]byte, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, errors.New("资源文件路径不能为空")
-	}
-	if filepath.IsAbs(name) || strings.ContainsAny(name, "\\\x00") {
-		return nil, errors.New("资源文件路径必须是资源根目录下的相对路径")
-	}
-	path, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(name)))
+	path, err := resolveAssetPath(root, name)
 	if err != nil {
-		return nil, fmt.Errorf("资源路径无效: %w", err)
-	}
-	relative, err := filepath.Rel(root, path)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return nil, errors.New("资源路径不能离开资源根目录")
+		return nil, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取 %q 失败: %w", name, err)
 	}
 	return data, nil
+}
+
+// loadSource 校验资源路径后返回惰性文件来源，不读取文件内容。
+// 仍会检查文件存在，使创建失败尽早暴露。
+func loadSource(root, name string) (creator.DataSource, error) {
+	path, err := resolveAssetPath(root, name)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("读取 %q 失败: %w", name, err)
+	}
+	return creator.FileDataSource(path), nil
+}
+
+func resolveAssetPath(root, name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", errors.New("资源文件路径不能为空")
+	}
+	if filepath.IsAbs(name) || strings.ContainsAny(name, "\\\x00") {
+		return "", errors.New("资源文件路径必须是资源根目录下的相对路径")
+	}
+	path, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(name)))
+	if err != nil {
+		return "", fmt.Errorf("资源路径无效: %w", err)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", errors.New("资源路径不能离开资源根目录")
+	}
+	return path, nil
 }
