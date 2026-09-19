@@ -327,36 +327,45 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		p.state.lineWidth = floatArg(0)
 	case "rg":
 		if len(args) >= 3 {
+			p.state.fillSpace = deviceRGBSpace
 			p.state.fill = rgbColor(floatArg(0), floatArg(1), floatArg(2))
 		}
 	case "RG":
 		if len(args) >= 3 {
+			p.state.strokeSpace = deviceRGBSpace
 			p.state.stroke = rgbColor(floatArg(0), floatArg(1), floatArg(2))
 		}
 	case "g":
 		if len(args) >= 1 {
+			p.state.fillSpace = deviceGraySpace
 			p.state.fill = rgbColor(floatArg(0), floatArg(0), floatArg(0))
 		}
 	case "G":
 		if len(args) >= 1 {
+			p.state.strokeSpace = deviceGraySpace
 			p.state.stroke = rgbColor(floatArg(0), floatArg(0), floatArg(0))
 		}
 	case "k":
 		if len(args) >= 4 {
+			p.state.fillSpace = deviceCMYKSpace
 			p.state.fill = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3))
 		}
 	case "K":
 		if len(args) >= 4 {
+			p.state.strokeSpace = deviceCMYKSpace
 			p.state.stroke = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3))
 		}
-	case "cs", "CS":
+	case "cs":
 		// 选择颜色空间本身不改变当前颜色，实际颜色由随后的 scn/SCN 提供。
+		p.state.fillSpace = p.resolveColorSpace(resources, anyName(args[0]))
+	case "CS":
+		p.state.strokeSpace = p.resolveColorSpace(resources, anyName(args[0]))
 	case "sc", "scn":
-		if value, ok := pdfColorFromComponents(args); ok {
+		if value, ok := p.colorFromOperands(p.state.fillSpace, args); ok {
 			p.state.fill = value
 		}
 	case "SC", "SCN":
-		if value, ok := pdfColorFromComponents(args); ok {
+		if value, ok := p.colorFromOperands(p.state.strokeSpace, args); ok {
 			p.state.stroke = value
 		}
 	case "BT":
@@ -497,6 +506,11 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		p.commitPendingClip()
 		if len(args) > 0 {
 			return p.xobject(anyName(args[0]), resources, depth)
+		}
+	case "sh":
+		// sh 用着色填充当前裁剪区，不改变路径与裁剪状态。
+		if len(args) > 0 {
+			p.paintShading(anyName(args[0]), resources)
 		}
 	}
 	return nil
