@@ -34,7 +34,7 @@ const (
 	maxInputBytes     = 256 << 20
 	maxRenderPixels   = 50_000_000
 	maxFontBytes      = 32 << 20
-	maxRenderPages    = 99999
+	maxRenderPages    = 64
 	maxRenderDocs     = 4
 	// textCacheCapacity 和 searchCacheCapacity 限制按页缓存的文字与搜索索引，
 	// 避免浏览/搜索大文档时把所有页面的布局快照都留在内存中。
@@ -593,6 +593,7 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 }
 
 // RenderPDF 将多个页面按传入顺序写入一个保留文字和矢量内容的 PDF 文档。
+// 该接口会把完整 PDF 保存在内存中，需要导出大量页面时应使用 RenderPDFTo。
 func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []byte, err error) {
 	var output bytes.Buffer
 	err = r.RenderPDFTo(&output, indices, options)
@@ -603,7 +604,7 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 }
 
 // RenderPDFTo 将多个页面按传入顺序写入 output，保留文字和矢量内容。
-// output 会在 PDF 生成过程中接收数据，适合流式保存大 PDF。
+// output 会在 PDF 生成过程中接收数据，适合流式保存大 PDF，因此不限制页数。
 func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOptions) (err error) {
 	if r == nil {
 		return errors.New("文档引擎为空")
@@ -613,9 +614,6 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 	}
 	if len(indices) == 0 {
 		return errors.New("PDF 页面列表为空")
-	}
-	if len(indices) > maxRenderPages {
-		return fmt.Errorf("PDF 页面数量超过限制 %d", maxRenderPages)
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
