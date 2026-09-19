@@ -1168,7 +1168,7 @@ func TestCreateTextWritesStyleAttributes(t *testing.T) {
 	}
 	defer ofd.Close()
 	text := ofd.Documents[0].Pages[0].Content().Layer[0].TextObject[0]
-	if text.HScale != 0.8 || text.ReadDirection != 1 || text.CharDirection != 2 || text.Weight != 700 || !text.Italic || !text.Stroke || text.Fill != "false" {
+	if text.HScale != 0.8 || text.ReadDirection != 1 || text.CharDirection != 2 || text.Weight != 700 || !text.Italic || !text.Stroke || text.Fill.Value(true) {
 		t.Fatalf("文字样式未正确生成: %+v", text)
 	}
 	checkGeneratedPackage(t, data)
@@ -2174,7 +2174,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	path := layer.PathObject[0]
-	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke != "false" || !path.Fill || path.Rule != "Even-Odd" {
+	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke.Value(true) || !path.Fill || path.Rule != "Even-Odd" {
 		t.Fatalf("路径属性未正确生成: %+v", path)
 	}
 	if path.LineWidth != 0.5 || path.Cap != "Round" || path.Join != "Bevel" || path.MiterLimit != 2 || path.DashOffset != 1 || path.Alpha == nil || *path.Alpha != alpha {

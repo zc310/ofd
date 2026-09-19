@@ -130,7 +130,7 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 	if object.StrokeColor != nil {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
-	if object.Stroke != "false" {
+	if object.Stroke.Value(true) {
 		effective.LineWidth = normalizedLineWidth(effective.LineWidth)
 		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit)
 		ctx.SetStrokeWidth(effective.LineWidth)

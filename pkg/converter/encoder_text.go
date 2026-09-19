@@ -299,5 +299,5 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, lines *[]str
 }
 
 func textFillDisabled(object models.TextObject) bool {
-	return strings.EqualFold(strings.TrimSpace(object.Fill), "false")
+	return !object.Fill.Value(true)
 }

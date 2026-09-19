@@ -479,8 +479,8 @@ func TestConvertExplicitlyDisablesStrokeForFillOnlyPaths(t *testing.T) {
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
-	if paths[0].Stroke != "false" {
-		t.Fatalf("fill-only path Stroke = %q, want \"false\"", paths[0].Stroke)
+	if !paths[0].Stroke.IsSet() || paths[0].Stroke.Value(true) {
+		t.Fatalf("fill-only path Stroke = %v, want explicit false", paths[0].Stroke.Value(true))
 	}
 }
 

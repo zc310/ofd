@@ -217,8 +217,8 @@ func (e *documentExporter) convertItem(item models.PageItem) (manifest.Item, err
 			return manifest.Item{}, err
 		}
 		result.Data = pathValue.AbbreviatedData.String()
-		result.Stroke = pathValue.Stroke != "false"
-		if pathValue.Stroke != "" {
+		result.Stroke = pathValue.Stroke.Value(true)
+		if pathValue.Stroke.IsSet() {
 			value := result.Stroke
 			result.StrokeSet = &value
 		}
@@ -317,9 +317,9 @@ func (e *documentExporter) convertClips(clips *models.Clips) ([]manifest.Clip, e
 				if ctPath.DashPattern != nil {
 					dashPattern = append([]float64(nil), *ctPath.DashPattern...)
 				}
-				stroke := ctPath.Stroke != "false"
+				stroke := ctPath.Stroke.Value(true)
 				var strokeSet *bool
-				if ctPath.Stroke != "" {
+				if ctPath.Stroke.IsSet() {
 					strokeSet = &stroke
 				}
 				value.Path = &manifest.ClipPath{

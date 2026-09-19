@@ -378,7 +378,7 @@ type CtText struct {
 	// Stroke 是否描边，默认值为 false；当文字对象被裁剪区引用时此属性被忽略。
 	Stroke bool `xml:"Stroke,attr,omitempty"`
 	// Fill 是否填充，默认值为 true；当文字对象被裁剪区引用时此属性被忽略。
-	Fill string `xml:"Fill,attr,omitempty"`
+	Fill OptionalBool `xml:"Fill,attr,omitempty"`
 	// HScale 字形在水平方向的缩放比，取值为 [0, 1.0]，默认值为 1.0。
 	// 例如，HScale 为 0.5 时表示实际显示的字宽为原来字宽的一半。
 	HScale float64 `xml:"HScale,attr,omitempty"`
@@ -467,7 +467,7 @@ type CtPath struct {
 	// AbbreviatedData 路径的 SVG 简写数据。
 	AbbreviatedData SVGPath `xml:"AbbreviatedData"`
 	// Stroke 是否描边，默认值为 true。
-	Stroke string `xml:"Stroke,attr,omitempty"`
+	Stroke OptionalBool `xml:"Stroke,attr,omitempty"`
 	// Fill 是否填充路径。
 	Fill bool `xml:"Fill,attr,omitempty"`
 	// Rule 填充规则，可为 NonZero 或 Even-Odd。
