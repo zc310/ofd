@@ -247,14 +247,22 @@
         @supports (height: 100dvh) {
           #sidebar { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
         }
-       #sidebar-tabs { display: flex; flex: 0 0 auto; gap: 4px; }
+       #sidebar-tabs { display: flex; flex: 0 0 auto; gap: 4px; padding: 0 10px; }
        #sidebar-tabs button { flex: 1 1 0; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 13px; cursor: pointer; }
        #sidebar-tabs button:hover { background: #ffffff80; }
        #sidebar-tabs button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
        body.dark-reading #sidebar-tabs button { color: #aeb9ca; }
        body.dark-reading #sidebar-tabs button.active { border-color: #536074; background: #303947; color: #e6ebf2; }
        #thumbnails { flex: 1 1 auto; min-height: 0; overflow: auto; padding-left: 8px; scrollbar-width: none; }
-       #outline, #bookmarks { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 4px 10px 4px; scrollbar-width: thin; }
+       .sidebar-filter { flex: 0 0 auto; box-sizing: border-box; width: auto; margin: 0 10px; min-height: 30px; padding: 4px 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; color: #172033; font: inherit; }
+       .sidebar-filter[hidden] { display: none; }
+       body.dark-reading .sidebar-filter { border-color: #536074; background: #303947; color: #e6ebf2; }
+       .sidebar-resizer { position: absolute; top: 0; right: -9px; width: 12px; height: 100%; cursor: col-resize; touch-action: none; }
+       .sidebar-resizer::after { position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: transparent; content: ""; }
+       .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .sidebar-resizer.dragging::after { background: #80b4e5; }
+       .outline-page { flex: 0 0 auto; margin-left: 2px; padding: 0 5px; border-radius: 4px; background: #0000000f; color: #7b8798; font-size: 11px; line-height: 1.8; font-variant-numeric: tabular-nums; }
+       body.dark-reading .outline-page { background: #ffffff14; color: #9aa7b8; }
+       #outline, #bookmarks { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 6px 10px 12px; scrollbar-width: thin; }
        .outline-list { list-style: none; margin: 0; padding: 0; }
        .outline-row { display: flex; align-items: center; gap: 2px; }
        .outline-toggle, .outline-toggle-placeholder { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7b8798; cursor: pointer; }
@@ -358,6 +366,7 @@
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
       #sidebar { position: static; max-height: none; }
+      .sidebar-resizer { display: none; }
       #sidebar-tabs { margin: 0 0 2px; }
       #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #outline, #bookmarks { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
@@ -597,9 +606,11 @@
         <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
         <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks" hidden>书签</button>
       </div>
+      <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
       <aside id="thumbnails" role="tabpanel" aria-label="页面缩略图"></aside>
       <aside id="outline" role="tabpanel" aria-label="文档大纲" hidden></aside>
       <aside id="bookmarks" role="tabpanel" aria-label="文档书签" hidden></aside>
+      <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" tabindex="0"></div>
     </div>
     <main id="pages" tabindex="-1">
       <div id="empty">

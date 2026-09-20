@@ -338,6 +338,8 @@ const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
 const sidebarElement = document.querySelector('#sidebar');
 const sidebarTabsElement = document.querySelector('#sidebar-tabs');
+const sidebarFilter = document.querySelector('#sidebar-filter');
+const sidebarResizer = document.querySelector('#sidebar-resizer');
 const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
 const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
 const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
@@ -443,6 +445,18 @@ let activeSidebarTab = (() => {
 })();
 let outlineNodes = [];
 let bookmarkNodes = [];
+let sidebarFilterValue = '';
+const sidebarWidthStorageKey = 'ofd-sidebar-width';
+let sidebarWidth = (() => {
+  try {
+    const stored = localStorage.getItem(sidebarWidthStorageKey);
+    if (stored == null) return 190;
+    const value = Number(stored);
+    return Number.isFinite(value) ? Math.max(140, Math.min(520, value)) : 190;
+  } catch (_) {
+    return 190;
+  }
+})();
 let renderFormat = (() => {
   try {
     const value = localStorage.getItem(renderFormatStorageKey);
@@ -2638,6 +2652,7 @@ async function openSelectedFile(selected) {
   thumbnailAnchor = 0;
   thumbnailVirtualTranslate = 0;
   thumbnailsElement.style.paddingBottom = '';
+  resetSidebarFilter();
   outlineNodes = [];
   bookmarkNodes = [];
   renderOutline();
@@ -2708,6 +2723,7 @@ async function openSelectedFile(selected) {
     thumbnailVirtualWindow = undefined;
     thumbnailAnchor = 0;
     thumbnailVirtualTranslate = 0;
+    resetSidebarFilter();
     outlineNodes = [];
     bookmarkNodes = [];
     renderOutline();
@@ -2765,6 +2781,7 @@ function cancelOpening() {
   thumbnailVirtualWindow = undefined;
   thumbnailAnchor = 0;
   thumbnailVirtualTranslate = 0;
+  resetSidebarFilter();
   outlineNodes = [];
   bookmarkNodes = [];
   renderOutline();
@@ -3589,6 +3606,7 @@ function applySidebarPanels() {
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
   if (sidebarTabBookmarks) sidebarTabBookmarks.hidden = !bookmarkNodes.length;
+  if (sidebarFilter) sidebarFilter.hidden = !(active('outline') || active('bookmarks'));
   const tabs = [
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
@@ -3615,8 +3633,41 @@ function setSidebarTab(tab) {
     updateThumbnailMetrics();
     scheduleVirtualUpdate();
   } else {
+    if (tab === 'outline') renderOutline();
+    else renderBookmarks();
     updateOutlineActive();
   }
+}
+
+function applySidebarWidth() {
+  if (!readerElement) return;
+  readerElement.style.setProperty('--thumbnail-column', `${sidebarWidth}px`);
+}
+
+function setSidebarWidth(value) {
+  const max = Math.max(180, Math.min(520, window.innerWidth - 320));
+  sidebarWidth = Math.max(140, Math.min(max, Math.round(value)));
+  applySidebarWidth();
+}
+
+function persistSidebarWidth() {
+  try {
+    localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidth));
+  } catch (_) {}
+}
+
+function finishSidebarResize() {
+  persistSidebarWidth();
+  updateThumbnailMetrics();
+  updatePageVirtualMetrics();
+  if (zoomMode === 'fit') fitWidthZoom();
+  else if (zoomMode === 'page') fitPageZoom();
+  scheduleVirtualUpdate();
+}
+
+function resetSidebarFilter() {
+  sidebarFilterValue = '';
+  if (sidebarFilter) sidebarFilter.value = '';
 }
 
 function setThumbnailsVisible(visible) {
@@ -3749,17 +3800,48 @@ function attachOutlineKeyboard(panel) {
   });
 }
 
+function outlineEmptyMessage(text) {
+  const empty = document.createElement('p');
+  empty.className = 'outline-empty';
+  empty.textContent = text;
+  return empty;
+}
+
+function appendOutlinePageTag(row, page) {
+  if (!Number.isInteger(page) || page < 0) return;
+  const tag = document.createElement('span');
+  tag.className = 'outline-page';
+  tag.textContent = String(page + 1);
+  row.append(tag);
+}
+
+// filterOutlineTree 过滤大纲树：命中节点保留整棵子树，否则保留含命中后代的节点。
+function filterOutlineTree(nodes, needle) {
+  const result = [];
+  for (const node of nodes) {
+    const children = filterOutlineTree(node.children || [], needle);
+    if (String(node.title || '').toLowerCase().includes(needle)) {
+      result.push(node);
+    } else if (children.length) {
+      result.push({ ...node, children });
+    }
+  }
+  return result;
+}
+
 function renderOutline() {
   if (!outlineElement) return;
   outlineElement.replaceChildren();
   if (!outlineNodes.length) {
-    const empty = document.createElement('p');
-    empty.className = 'outline-empty';
-    empty.textContent = '此文档没有大纲';
-    outlineElement.append(empty);
+    outlineElement.append(outlineEmptyMessage('此文档没有大纲'));
     return;
   }
-  outlineElement.append(buildOutlineList(outlineNodes, 0));
+  const nodes = sidebarFilterValue ? filterOutlineTree(outlineNodes, sidebarFilterValue) : outlineNodes;
+  if (!nodes.length) {
+    outlineElement.append(outlineEmptyMessage('无匹配结果'));
+    return;
+  }
+  outlineElement.append(buildOutlineList(nodes, 0, Boolean(sidebarFilterValue)));
   attachOutlineKeyboard(outlineElement);
   updateOutlineActive();
 }
@@ -3768,9 +3850,16 @@ function renderBookmarks() {
   if (!bookmarksElement) return;
   bookmarksElement.replaceChildren();
   if (!bookmarkNodes.length) return;
+  const bookmarks = sidebarFilterValue
+    ? bookmarkNodes.filter(bookmark => String(bookmark.name || '').toLowerCase().includes(sidebarFilterValue))
+    : bookmarkNodes;
+  if (!bookmarks.length) {
+    bookmarksElement.append(outlineEmptyMessage('无匹配结果'));
+    return;
+  }
   const list = document.createElement('ul');
   list.className = 'outline-list';
-  bookmarkNodes.forEach(bookmark => {
+  bookmarks.forEach(bookmark => {
     const item = document.createElement('li');
     item.className = 'outline-item';
     const row = document.createElement('div');
@@ -3790,6 +3879,7 @@ function renderBookmarks() {
       label.disabled = true;
     }
     row.append(label);
+    appendOutlinePageTag(row, bookmark.page);
     item.append(row);
     list.append(item);
   });
@@ -3798,7 +3888,7 @@ function renderBookmarks() {
   updateOutlineActive();
 }
 
-function buildOutlineList(nodes, depth) {
+function buildOutlineList(nodes, depth, forceExpand = false) {
   const list = document.createElement('ul');
   list.className = 'outline-list';
   nodes.forEach(node => {
@@ -3818,8 +3908,8 @@ function buildOutlineList(nodes, depth) {
       icon.setAttribute('aria-hidden', 'true');
       icon.textContent = 'expand_more';
       toggle.append(icon);
-      const children = buildOutlineList(node.children, depth + 1);
-      if (node.expanded === false) {
+      const children = buildOutlineList(node.children, depth + 1, forceExpand);
+      if (!forceExpand && node.expanded === false) {
         children.hidden = true;
         toggle.classList.add('collapsed');
       }
@@ -3851,6 +3941,7 @@ function buildOutlineList(nodes, depth) {
       label.disabled = true;
     }
     row.append(label);
+    appendOutlinePageTag(row, node.page);
     list.append(item);
   });
   return list;
@@ -4213,6 +4304,46 @@ sidebarTabsElement?.addEventListener('keydown', event => {
   next[0].focus();
   setSidebarTab(next[1]);
 });
+if (sidebarFilter) {
+  sidebarFilter.addEventListener('input', () => {
+    sidebarFilterValue = sidebarFilter.value.trim().toLowerCase();
+    if (activeSidebarTab === 'outline') renderOutline();
+    else if (activeSidebarTab === 'bookmarks') renderBookmarks();
+  });
+}
+if (sidebarResizer) {
+  let sidebarDrag = null;
+  sidebarResizer.addEventListener('pointerdown', event => {
+    if (window.matchMedia('(max-width: 620px)').matches) return;
+    sidebarDrag = { startX: event.clientX, startWidth: sidebarWidth };
+    sidebarResizer.classList.add('dragging');
+    try { sidebarResizer.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+  });
+  sidebarResizer.addEventListener('pointermove', event => {
+    if (!sidebarDrag) return;
+    setSidebarWidth(sidebarDrag.startWidth + (event.clientX - sidebarDrag.startX));
+  });
+  const stopSidebarDrag = event => {
+    if (!sidebarDrag) return;
+    sidebarDrag = null;
+    sidebarResizer.classList.remove('dragging');
+    try { sidebarResizer.releasePointerCapture(event.pointerId); } catch (_) {}
+    finishSidebarResize();
+  };
+  sidebarResizer.addEventListener('pointerup', stopSidebarDrag);
+  sidebarResizer.addEventListener('pointercancel', stopSidebarDrag);
+  sidebarResizer.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'ArrowLeft') setSidebarWidth(sidebarWidth - 16);
+    else if (event.key === 'ArrowRight') setSidebarWidth(sidebarWidth + 16);
+    else if (event.key === 'Home') setSidebarWidth(140);
+    else setSidebarWidth(window.innerWidth);
+    finishSidebarResize();
+  });
+  applySidebarWidth();
+}
 applySidebarPanels();
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
 showPagePill.addEventListener('change', () => setPagePillVisible(showPagePill.checked));
