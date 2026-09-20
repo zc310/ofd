@@ -465,7 +465,20 @@ let recentFiles = [];
 let currentDocumentKey = '';
 let pageSpreads = [];
 let pageVirtualTrack;
+let pageVirtualWindow;
+let pageAnchor = 0;
+let pageVirtualTranslate = 0;
+let pageVirtualTranslateFrame;
+let pageTrackContentHeight = 0;
+let pageTrackScrollHeight = 0;
+let pageTrackScale = 1;
+let pageTrackMaxHeight = 0;
 let thumbnailVirtualTrack;
+let thumbnailVirtualWindow;
+let thumbnailAnchor = 0;
+let thumbnailVirtualTranslate = 0;
+let thumbnailTrackScrollHeight = 0;
+let thumbnailTrackScale = 1;
 let thumbnailSlots = [];
 let thumbnailSlotByPage = [];
 let pageLoadToken = 0;
@@ -599,24 +612,148 @@ function pageSpreadOffset(position) {
   return pageSpreads[position]?.offset || 0;
 }
 
+// 浏览器对单个元素和文档的布局高度存在上限（Chromium 约 2^25 px，
+// Firefox/Safari 也有各自的限制）。数百万页的大文档使轨道高度远超该上限时，
+// 浏览器会截断可滚动高度，右键滚动条无法到达文档末尾。
+// 这里用二分法探测当前浏览器实际允许的最大布局高度，一次探测即可缓存复用。
+function detectMaxLayoutHeight() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;';
+  probe.style.height = '1px';
+  document.body.append(probe);
+  let low = 1;
+  let high = 512 * 1024 * 1024;
+  let result = 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    probe.style.height = `${mid}px`;
+    void probe.offsetHeight;
+    if (probe.getBoundingClientRect().height >= mid) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  probe.remove();
+  return result;
+}
+
+// 轨道高度上限的保守值。除了要低于浏览器元素布局坐标上限，还必须明显低于
+// Firefox 对超长文档 position: sticky 的处理能力：文档接近其布局上限
+// （约 1.8e7 px）时，sticky 的左侧缩略图面板会被错误定位、随文档滚出视口，
+// 表现为整个缩略图区域空白。实测压缩到 6e6 以内 sticky 正常。
+const trackSafeMaxHeight = 6_000_000;
+
+function pageTrackMaxLayoutHeight() {
+  // header、移动端展开的工具栏、页面内边距等也占用文档滚动高度，
+  // 预留空间避免整个文档高度略微超出限制而被截断。
+  if (pageTrackMaxHeight <= 0) {
+    const detected = detectMaxLayoutHeight() - Math.round(headerHeight()) - 128;
+    pageTrackMaxHeight = Math.min(Math.max(detected, 1_000_000), trackSafeMaxHeight);
+  }
+  return pageTrackMaxHeight;
+}
+
+// 轨道高度超过浏览器限制时，把轨道压缩到允许的高度。页面内容本身仍按
+// 原始尺寸和间距排版，通过 pageVirtualWindow 整体平移来对齐当前视口。
+//
+// 页面绝对定位的 top 和窗口的 translate 都受浏览器布局坐标限制（约 2^25
+// px），因此不能直接使用等于内容坐标的 top 或一次性的巨大平移。这里维护一个
+// 锚点 pageAnchor：页面按「内容偏移 - pageAnchor」定位（范围小、不受限制），
+// 窗口平移量 = scrollTop - 内容偏移 + pageAnchor，随滚动逐帧更新。当锚点与
+// 当前内容偏移差得足够远时重新锚定，保证两个数值始终落在浏览器允许范围内。
+// 任意锚点下页面最终位置都是 scrollTop - 内容偏移 + 内容偏移量，与锚点无关，
+// 因此重新锚定时视觉上不会跳变。scale 为 1 时未压缩，所有换算保持原样。
+//
+// 漂移上限必须明显小于浏览器布局坐标上限：页面的 top = 内容偏移 - 锚点，
+// 漂移越接近上限，越可能被浏览器截断（Firefox 实测上限约 8.9e6 px），从而
+// 出现错位甚至整片空白。这里取「探测上限的一半」与原 8M 中的较小值。
+function pageAnchorResetDrift() {
+  return Math.min(8 * 1024 * 1024, Math.floor(pageTrackMaxLayoutHeight() / 2));
+}
+
+function pageTrackScrollFromContent(contentPx) {
+  return pageTrackScale > 1 ? contentPx / pageTrackScale : contentPx;
+}
+
+function pageTrackContentFromScroll(scrollPx) {
+  return pageTrackScale > 1 ? scrollPx * pageTrackScale : scrollPx;
+}
+
+// 轨道内的滚动位置。文档顶部（滚动到最上时）轨道上沿可能在视口之下，
+// 此时相对位置为负，但滚动条无法再往上，直接按 0 处理，避免把页面
+// 整体往下偏移（轨道顶部出现多余空白）并防止滑动换算出现负数。
+function pageTrackScrollY() {
+  if (!pageVirtualTrack) return 0;
+  const viewportTop = pageVirtualTrack.getBoundingClientRect().top;
+  return Math.max(0, -viewportTop);
+}
+
+function updatePageVirtualTranslate() {
+  if (!pageVirtualWindow || !pageVirtualTrack) return;
+  const scrollTop = pageTrackScrollY();
+  const content = pageTrackContentFromScroll(scrollTop);
+  if (Math.abs(content - pageAnchor) > pageAnchorResetDrift()) {
+    pageAnchor = content;
+    pageSpreads.forEach(spread => {
+      if (spread.element) spread.element.style.top = `${spread.offset - pageAnchor}px`;
+    });
+  }
+  const translate = scrollTop - content + pageAnchor;
+  if (translate === pageVirtualTranslate) return;
+  pageVirtualTranslate = translate;
+  pageVirtualWindow.style.transform = `translate3d(0, ${translate}px, 0)`;
+}
+
+function schedulePageVirtualTranslate() {
+  if (pageVirtualTranslateFrame) return;
+  pageVirtualTranslateFrame = requestAnimationFrame(() => {
+    pageVirtualTranslateFrame = undefined;
+    updatePageVirtualTranslate();
+  });
+}
+
 function updatePageVirtualMetrics() {
   if (!pageVirtualTrack) return;
-  let offset = 0;
+  const maxHeight = pageTrackMaxLayoutHeight();
   const gap = 18 * zoom;
+  let contentOffset = 0;
   pageSpreads.forEach((spread, position) => {
     const dimensions = spreadDimensions(position);
-    spread.offset = offset;
+    spread.offset = contentOffset;
     spread.height = dimensions.height * zoom;
     spread.width = dimensions.width * zoom;
     if (spread.element) {
-      spread.element.style.top = `${offset}px`;
+      spread.element.style.top = `${contentOffset - pageAnchor}px`;
       spread.element.style.width = `${spread.width}px`;
       spread.element.style.minHeight = `${spread.height}px`;
       spread.element.style.gap = `${gap}px`;
     }
-    offset += spread.height + gap;
+    contentOffset += spread.height + gap;
   });
-  pageVirtualTrack.style.height = `${Math.max(0, offset - gap)}px`;
+  pageTrackContentHeight = Math.max(0, contentOffset - gap);
+  /* 内容超过浏览器布局高度上限时压缩轨道。压缩后滚到最底部时，视口底部必须
+     正好对准内容末尾，否则最后一页会整页落在可达范围之外：滚动条到不了末页，
+     点末尾缩略图跳进去也看不到最后一页。补偿 #pages 底部内边距 P 可满足要求：
+       scale = (contentHeight - viewport) / (maxHeight - viewport)
+       scrollHeight = contentHeight / scale
+       P = maxHeight - scrollHeight
+     这样「轨道 + P」恰好占满允许的最大布局高度，既不会再次触发浏览器截断，
+     滚到最底部时视口底部也正好对准内容末尾，与未压缩时到达文末的表现一致。 */
+  const viewportHeight = window.innerHeight;
+  if (pageTrackContentHeight > maxHeight && viewportHeight < maxHeight) {
+    pageTrackScale = (pageTrackContentHeight - viewportHeight) / (maxHeight - viewportHeight);
+    pageTrackScrollHeight = pageTrackContentHeight / pageTrackScale;
+    pagesElement.style.paddingBottom = `${Math.max(0, maxHeight - pageTrackScrollHeight)}px`;
+  } else {
+    pageTrackScrollHeight = Math.min(pageTrackContentHeight, maxHeight);
+    pageTrackScale = pageTrackContentHeight > 0 ? pageTrackContentHeight / pageTrackScrollHeight : 1;
+    pagesElement.style.paddingBottom = '';
+  }
+  pageVirtualTrack.style.height = `${pageTrackScrollHeight}px`;
+  pageVirtualTranslate = 0;
+  updatePageVirtualTranslate();
 }
 
 function pageSpreadPositionForPage(index) {
@@ -626,6 +763,42 @@ function pageSpreadPositionForPage(index) {
 function thumbnailSlotsForLayout() {
   if (!pageLayoutIsDouble()) return pageInfos.map((_, index) => index);
   return pageSpreads.flatMap(spread => spread.pages);
+}
+
+// 缩略图轨道与页面轨道共用同一套「超长内容压缩 + 锚点平移」策略。元素高度和
+// 布局坐标都受浏览器上限约束（实测 Firefox 约 9e6 px，Chromium 约 3.4e7 px），
+// 十万级页面的缩略图轨道会超过上限而被截断，Firefox 下滚到底部时缩略图区域会变空。
+// 这里压缩轨道高度并补偿底部内边距，使滚动到底时对准内容末尾；未超限时保持原样。
+function thumbnailScrollFromContent(contentPx) {
+  return thumbnailTrackScale > 1 ? contentPx / thumbnailTrackScale : contentPx;
+}
+
+function thumbnailContentFromScroll(scrollPx) {
+  return thumbnailTrackScale > 1 ? scrollPx * thumbnailTrackScale : scrollPx;
+}
+
+// 缩略图轨道相对滚动容器（#thumbnails）已滚过的距离。
+function thumbnailTrackScrollY() {
+  if (!thumbnailVirtualTrack) return 0;
+  const viewportTop = thumbnailVirtualTrack.getBoundingClientRect().top -
+    thumbnailsElement.getBoundingClientRect().top;
+  return Math.max(0, -viewportTop);
+}
+
+function updateThumbnailVirtualTranslate() {
+  if (!thumbnailVirtualWindow || !thumbnailVirtualTrack) return;
+  const scrollTop = thumbnailTrackScrollY();
+  const content = thumbnailContentFromScroll(scrollTop);
+  if (Math.abs(content - thumbnailAnchor) > pageAnchorResetDrift()) {
+    thumbnailAnchor = content;
+    thumbnailButtons.forEach((button, index) => {
+      if (button) resizeThumbnail(index, button);
+    });
+  }
+  const translate = scrollTop - content + thumbnailAnchor;
+  if (translate === thumbnailVirtualTranslate) return;
+  thumbnailVirtualTranslate = translate;
+  thumbnailVirtualWindow.style.transform = `translate3d(0, ${translate}px, 0)`;
 }
 
 function updateThumbnailMetrics() {
@@ -652,10 +825,25 @@ function updateThumbnailMetrics() {
   });
   const maxHeight = Math.max(...rowHeights, 0);
   thumbnailMetrics = { mobile, columns, gap, itemWidth, rowHeights, rowOffsets, maxHeight };
+  const contentHeight = mobile ? maxHeight : Math.max(0, offset - gap);
+  const cap = pageTrackMaxLayoutHeight();
+  const viewport = mobile ? thumbnailsElement.clientWidth : thumbnailsElement.clientHeight;
+  if (!mobile && contentHeight > cap && viewport < cap) {
+    // 与页面轨道相同的闭式解：scale 与底部内边距之和恰好占满允许高度。
+    thumbnailTrackScale = (contentHeight - viewport) / (cap - viewport);
+    thumbnailTrackScrollHeight = contentHeight / thumbnailTrackScale;
+    thumbnailsElement.style.paddingBottom = `${Math.max(0, cap - thumbnailTrackScrollHeight)}px`;
+  } else {
+    thumbnailTrackScale = 1;
+    thumbnailTrackScrollHeight = Math.min(contentHeight, cap);
+    thumbnailsElement.style.paddingBottom = '';
+  }
   thumbnailVirtualTrack.style.width = mobile ? `${thumbnailSlots.length * itemWidth + Math.max(0, thumbnailSlots.length - 1) * gap}px` : '100%';
-  thumbnailVirtualTrack.style.height = mobile
-    ? `${maxHeight}px`
-    : `${Math.max(0, offset - gap)}px`;
+  thumbnailVirtualTrack.style.height = `${mobile ? maxHeight : thumbnailTrackScrollHeight}px`;
+  thumbnailVirtualTranslate = 0;
+  // 尺寸/缩放变化会重算行偏移，必须按新的映射重新挂载可见行，否则已挂载的
+  // 缩略图仍停留在旧坐标，可能出现空白。
+  updateThumbnailVirtualWindow();
 }
 
 function thumbnailHeight(index, width) {
@@ -706,7 +894,7 @@ function scheduleVirtualUpdate() {
 
 function mountPageSpread(position) {
   const spread = pageSpreads[position];
-  if (!spread || spread.element || !pageVirtualTrack) return;
+  if (!spread || spread.element || !pageVirtualWindow) return;
   // 打开新文档或打开失败时，延迟的虚拟列表回调可能暂时看到旧 spread。
   // 不要用新文档的 pageInfos 去挂载旧页面索引。
   if (spread.pages.some(index => index >= 0 && !pageInfos[index])) return;
@@ -714,7 +902,7 @@ function mountPageSpread(position) {
   element.className = 'page-spread';
   element.dataset.position = position;
   spread.element = element;
-  pageVirtualTrack.append(element);
+  pageVirtualWindow.append(element);
   spread.pages.forEach(index => {
     if (index < 0) {
       const placeholder = document.createElement('div');
@@ -806,7 +994,7 @@ function unmountPageSpread(position) {
 
 function applyPageWidthToSpread(spread) {
   if (!spread?.element) return;
-  spread.element.style.top = `${spread.offset}px`;
+  spread.element.style.top = `${spread.offset - pageAnchor}px`;
   spread.element.style.width = `${spread.width}px`;
   spread.element.style.minHeight = `${spread.height}px`;
   spread.element.style.gap = `${18 * zoom}px`;
@@ -838,10 +1026,11 @@ function applyPageWidthToSpread(spread) {
 function updatePageVirtualWindow(updateCurrent = true) {
   if (!pageVirtualTrack || !pageSpreads.length) return;
   if (!pageInfos.length || pageSpreads.some(spread => spread.pages.some(index => index >= 0 && !pageInfos[index]))) return;
-  const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+  updatePageVirtualTranslate();
   const buffer = Math.max(window.innerHeight, 800);
-  const viewTop = window.scrollY - trackTop - buffer;
-  const viewBottom = window.scrollY - trackTop + window.innerHeight + buffer;
+  const scrollTop = pageTrackScrollY();
+  const viewTop = pageTrackContentFromScroll(scrollTop - buffer);
+  const viewBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight + buffer);
   pageSpreads.forEach((spread, position) => {
     const visible = spread.offset + spread.height >= viewTop && spread.offset <= viewBottom;
     if (visible) {
@@ -862,10 +1051,12 @@ function updatePageVirtualWindow(updateCurrent = true) {
     else unmountPageSpread(position);
   });
   if (!updateCurrent) return;
+  const viewportTop = pageTrackContentFromScroll(scrollTop);
+  const viewportBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight);
   const visible = pageSpreads
     .map((spread, position) => ({ spread, position }))
-    .filter(({ spread }) => spread.element && spread.offset + spread.height >= window.scrollY - trackTop && spread.offset <= window.scrollY - trackTop + window.innerHeight)
-    .sort((left, right) => Math.abs(left.spread.offset - (window.scrollY - trackTop)) - Math.abs(right.spread.offset - (window.scrollY - trackTop)));
+    .filter(({ spread }) => spread.element && spread.offset + spread.height >= viewportTop && spread.offset <= viewportBottom)
+    .sort((left, right) => Math.abs(left.spread.offset - viewportTop) - Math.abs(right.spread.offset - viewportTop));
   const index = firstPageInSpread(visible[0]?.position ?? currentSpreadPosition());
   if (index >= 0 && index !== current) {
     setCurrent(index, false);
@@ -900,7 +1091,7 @@ function createThumbnail(index) {
   label.textContent = index + 1;
   thumbnail.append(label);
   thumbnailButtons[index] = thumbnail;
-  thumbnailVirtualTrack.append(thumbnail);
+  thumbnailVirtualWindow.append(thumbnail);
   resizeThumbnail(index, thumbnail);
   thumbnail.classList.toggle('active', index === current);
   if (index === current) thumbnail.setAttribute('aria-current', 'page');
@@ -925,15 +1116,27 @@ function resizeThumbnail(index, thumbnail) {
     const column = slot % columns;
     const row = Math.floor(slot / columns);
     thumbnail.style.left = `${column * (width + gap)}px`;
-    thumbnail.style.top = `${rowOffsets[row] || 0}px`;
+    thumbnail.style.top = `${(rowOffsets[row] || 0) - thumbnailAnchor}px`;
     thumbnail.style.width = `${width}px`;
     thumbnail.style.height = `${height}px`;
     thumbnail.style.minHeight = '0';
   }
 }
 
+function thumbnailRowAtOrAfter(offsets, value) {
+  let low = 0;
+  let high = offsets.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (offsets[mid] < value) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
 function updateThumbnailVirtualWindow(targetSlot = -1) {
   if (!thumbnailVirtualTrack || !thumbnailSlots.length || thumbnailsElement.hidden) return;
+  updateThumbnailVirtualTranslate();
   const { mobile, columns, itemWidth, gap, rowHeights, rowOffsets } = thumbnailMetrics;
   const buffer = mobile ? thumbnailsElement.clientWidth * 2 : thumbnailsElement.clientHeight * 2;
   const cell = itemWidth + (mobile ? gap : 0);
@@ -943,12 +1146,13 @@ function updateThumbnailVirtualWindow(targetSlot = -1) {
     start = Math.max(0, Math.floor((thumbnailsElement.scrollLeft - buffer) / cell));
     end = Math.min(thumbnailSlots.length, Math.ceil((thumbnailsElement.scrollLeft + thumbnailsElement.clientWidth + buffer) / cell));
   } else {
-    const top = thumbnailsElement.scrollTop - buffer;
-    const bottom = thumbnailsElement.scrollTop + thumbnailsElement.clientHeight + buffer;
-    let startRow = 0;
-    while (startRow < rowHeights.length && rowOffsets[startRow] + rowHeights[startRow] < top) startRow += 1;
-    let endRow = startRow;
-    while (endRow < rowHeights.length && rowOffsets[endRow] < bottom) endRow += 1;
+    const scrollTop = thumbnailTrackScrollY();
+    const top = thumbnailContentFromScroll(scrollTop) - buffer;
+    const bottom = thumbnailContentFromScroll(scrollTop + thumbnailsElement.clientHeight) + buffer;
+    // rowOffsets 单调递增，二分定位可见行，避免十万级页面时线性扫描造成的卡顿。
+    let startRow = thumbnailRowAtOrAfter(rowOffsets, top);
+    if (startRow > 0 && rowOffsets[startRow - 1] + rowHeights[startRow - 1] >= top) startRow -= 1;
+    const endRow = thumbnailRowAtOrAfter(rowOffsets, bottom);
     start = startRow * columns;
     end = Math.min(thumbnailSlots.length, endRow * columns);
   }
@@ -1554,16 +1758,41 @@ function updateSearchStatus(message) {
 }
 
 function keepThumbnailVisible(button) {
-  const start = thumbnailMetrics.mobile ? button.offsetLeft : button.offsetTop;
-  const size = thumbnailMetrics.mobile ? button.offsetWidth : button.offsetHeight;
-  const visibleStart = thumbnailMetrics.mobile ? thumbnailsElement.scrollLeft : thumbnailsElement.scrollTop;
-  const visibleSize = thumbnailMetrics.mobile ? thumbnailsElement.clientWidth : thumbnailsElement.clientHeight;
-  const offset = start < visibleStart ? start : start + size > visibleStart + visibleSize
-    ? start + size - visibleSize
-    : -1;
-  if (offset < 0) return;
-  if (thumbnailMetrics.mobile) thumbnailsElement.scrollLeft = offset;
-  else thumbnailsElement.scrollTop = offset;
+  if (!button) return;
+  if (thumbnailMetrics.mobile) {
+    const start = button.offsetLeft;
+    const size = button.offsetWidth;
+    const visibleStart = thumbnailsElement.scrollLeft;
+    const visibleSize = thumbnailsElement.clientWidth;
+    const offset = start < visibleStart ? start : start + size > visibleStart + visibleSize
+      ? start + size - visibleSize
+      : -1;
+    if (offset >= 0) {
+      thumbnailsElement.scrollLeft = offset;
+      updateThumbnailVirtualWindow();
+    }
+    return;
+  }
+  // 不能用 offsetTop：压缩轨道里远距离目标的 top 会被浏览器布局上限（Firefox
+  // 约 9e6 px）截断，导致跟随滚动到错误位置甚至空白。这里直接由行元数据取内容坐标。
+  const { columns, rowOffsets, rowHeights } = thumbnailMetrics;
+  const index = Number(button.dataset.index);
+  const slot = thumbnailSlotForPage(index);
+  const row = slot >= 0 ? Math.floor(slot / columns) : -1;
+  const contentStart = row >= 0 ? (rowOffsets[row] || 0) : button.offsetTop + thumbnailAnchor;
+  const size = row >= 0 ? (rowHeights[row] || button.offsetHeight) : button.offsetHeight;
+  const contentVisibleStart = thumbnailContentFromScroll(thumbnailTrackScrollY());
+  const visibleSize = thumbnailsElement.clientHeight;
+  const target = contentStart < contentVisibleStart
+    ? contentStart
+    : contentStart + size > contentVisibleStart + visibleSize
+      ? contentStart + size - visibleSize
+      : -1;
+  if (target < 0) return;
+  thumbnailsElement.scrollTop = thumbnailScrollFromContent(target);
+  // 滚动后同步刷新虚拟窗口：重新锚定并挂载目标附近的行。只依赖异步 scroll/rAF
+  // 时，远距离跳转可能迟迟不刷新，表现为缩略图区域空白。
+  updateThumbnailVirtualWindow();
 }
 
 function setCurrent(index, syncThumbnail = true) {
@@ -1574,17 +1803,16 @@ function setCurrent(index, syncThumbnail = true) {
   // 图片可能已经从缓存显示，但此前的文字请求可能在虚拟页面卸载时被取消。
   // 当前页切换时主动补发一次，避免正文层因请求竞态缺失。
   if (changed && pageCards[index]) void loadText(index);
-  if (changed && syncThumbnail) updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
+  if (changed && syncThumbnail) {
+    updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
+    keepThumbnailVisible(thumbnailButtons[index]);
+  }
   thumbnailButtons.forEach((button, buttonIndex) => {
     if (!button) return;
     const active = buttonIndex === current;
     button.classList.toggle('active', active);
-    if (active) {
-      button.setAttribute('aria-current', 'page');
-      if (changed && syncThumbnail) keepThumbnailVisible(button);
-    } else {
-      button.removeAttribute('aria-current');
-    }
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
   });
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
@@ -1596,7 +1824,8 @@ function goTo(index) {
   mountPageSpread(position);
   setCurrent(index);
   const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({ top: trackTop + pageSpreadOffset(position), behavior: 'smooth' });
+  window.scrollTo({ top: trackTop + pageTrackScrollFromContent(pageSpreadOffset(position)), behavior: 'smooth' });
+  schedulePageVirtualTranslate();
 }
 
 function navigatePage(delta) {
@@ -2244,9 +2473,15 @@ function buildPages() {
   pageVirtualTrack = document.createElement('div');
   pageVirtualTrack.className = 'page-virtual-track';
   pagesElement.append(pageVirtualTrack);
+  pageVirtualWindow = document.createElement('div');
+  pageVirtualWindow.className = 'page-virtual-window';
+  pageVirtualTrack.append(pageVirtualWindow);
   thumbnailVirtualTrack = document.createElement('div');
   thumbnailVirtualTrack.className = 'thumbnail-virtual-track';
   thumbnailsElement.append(thumbnailVirtualTrack);
+  thumbnailVirtualWindow = document.createElement('div');
+  thumbnailVirtualWindow.className = 'thumbnail-virtual-window';
+  thumbnailVirtualTrack.append(thumbnailVirtualWindow);
   thumbnailSlots = thumbnailSlotsForLayout();
   thumbnailSlotByPage = [];
   thumbnailSlots.forEach((index, slot) => {
@@ -2289,7 +2524,8 @@ function buildPages() {
     }
     if (current > 0) {
       const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
-      window.scrollTo({ top: Math.max(0, trackTop + pageSpreadOffset(pageSpreadPositionForPage(current)) - headerHeight()), behavior: 'auto' });
+      window.scrollTo({ top: Math.max(0, trackTop + pageTrackScrollFromContent(pageSpreadOffset(pageSpreadPositionForPage(current))) - headerHeight()), behavior: 'auto' });
+      schedulePageVirtualTranslate();
     }
   }
 }
@@ -2352,7 +2588,15 @@ async function openSelectedFile(selected) {
   thumbnailButtons = [];
   pageSpreads = [];
   pageVirtualTrack = undefined;
+  pageVirtualWindow = undefined;
+  pageAnchor = 0;
+  pageVirtualTranslate = 0;
+  pageVirtualTranslateFrame = undefined;
   thumbnailVirtualTrack = undefined;
+  thumbnailVirtualWindow = undefined;
+  thumbnailAnchor = 0;
+  thumbnailVirtualTranslate = 0;
+  thumbnailsElement.style.paddingBottom = '';
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -2408,11 +2652,20 @@ async function openSelectedFile(selected) {
     pageInfos = [];
     pageSpreads = [];
     pageVirtualTrack = undefined;
+    pageVirtualWindow = undefined;
+    pageAnchor = 0;
+    pageVirtualTranslate = 0;
+    pageVirtualTranslateFrame = undefined;
     thumbnailVirtualTrack = undefined;
+    thumbnailVirtualWindow = undefined;
+    thumbnailAnchor = 0;
+    thumbnailVirtualTranslate = 0;
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
     empty.hidden = false;
+    pagesElement.style.paddingBottom = '';
+    thumbnailsElement.style.paddingBottom = '';
     resetRenderProgress();
     currentDocumentKey = '';
     current = 0;
@@ -2452,7 +2705,14 @@ function cancelOpening() {
   pageCards = [];
   thumbnailButtons = [];
   pageVirtualTrack = undefined;
+  pageVirtualWindow = undefined;
+  pageAnchor = 0;
+  pageVirtualTranslate = 0;
+  pageVirtualTranslateFrame = undefined;
   thumbnailVirtualTrack = undefined;
+  thumbnailVirtualWindow = undefined;
+  thumbnailAnchor = 0;
+  thumbnailVirtualTranslate = 0;
   thumbnailSlots = [];
   thumbnailSlotByPage = [];
   currentDocumentKey = '';
@@ -2460,6 +2720,8 @@ function cancelOpening() {
   searchGeneration++;
   pagesElement.replaceChildren(empty);
   empty.hidden = false;
+  pagesElement.style.paddingBottom = '';
+  thumbnailsElement.style.paddingBottom = '';
   resetRenderProgress();
   updateNavigation();
   documentName.textContent = '未打开文档';
@@ -3453,6 +3715,7 @@ renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormat
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });
+window.addEventListener('scroll', schedulePageVirtualTranslate, { passive: true });
 thumbnailsElement.addEventListener('scroll', scheduleThumbnailVirtualUpdate, { passive: true });
 window.addEventListener('resize', () => {
   updateThumbnailMetrics();
