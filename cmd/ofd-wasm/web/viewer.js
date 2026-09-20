@@ -276,8 +276,10 @@ const empty = document.querySelector('#empty');
 const dropHint = document.querySelector('#drop-hint');
 const pageNumber = document.querySelector('#page-number');
 const pageCount = document.querySelector('#page-count');
-const previous = document.querySelector('#previous');
-const next = document.querySelector('#next');
+const previous = document.querySelector('#pill-previous');
+const next = document.querySelector('#pill-next');
+const documentMenuToggle = document.querySelector('#document-menu-toggle');
+const documentMenu = document.querySelector('#document-menu');
 const printPage = document.querySelector('#print-page');
 const exportDocument = document.querySelector('#export-document');
 const exportDialog = document.querySelector('#export-dialog');
@@ -300,8 +302,8 @@ const copyPageText = document.querySelector('#copy-page-text');
 const copyAllTextButton = document.querySelector('#copy-all-text');
 const zoomOut = document.querySelector('#zoom-out');
 const zoomIn = document.querySelector('#zoom-in');
-const zoomFit = document.querySelector('#zoom-fit');
-const zoomFitPage = document.querySelector('#zoom-fit-page');
+const zoomMenuToggle = document.querySelector('#zoom-menu-toggle');
+const zoomMenu = document.querySelector('#zoom-menu');
 const rotatePageButton = document.querySelector('#rotate-page');
 const readingMode = document.querySelector('#reading-mode');
 const zoomLabel = document.querySelector('#zoom-label');
@@ -317,6 +319,9 @@ const viewToggle = document.querySelector('#view-toggle');
 const viewPanel = document.querySelector('#view-panel');
 const showThumbnails = document.querySelector('#show-thumbnails');
 const showTextLayer = document.querySelector('#show-text-layer');
+const showPagePill = document.querySelector('#show-page-pill');
+const pagePill = document.querySelector('#page-pill');
+const pillHide = document.querySelector('#pill-hide');
 const darkReading = document.querySelector('#dark-reading');
 const clarityPrioritySelect = document.querySelector('#clarity-priority');
 const renderFormatSelect = document.querySelector('#render-format');
@@ -454,6 +459,14 @@ let clarityPriority = (() => {
   }
 })();
 let textLayerVisible = true;
+const pagePillStorageKey = 'ofd-show-page-pill';
+let pagePillVisible = (() => {
+  try {
+    return localStorage.getItem(pagePillStorageKey) !== 'false';
+  } catch (_) {
+    return true;
+  }
+})();
 let darkReadingVisible = false;
 const documentBackgroundModeStorageKey = 'ofd-document-background-mode';
 const documentBackgroundColorStorageKey = 'ofd-document-background-color';
@@ -1742,8 +1755,8 @@ function updateNavigation() {
   searchNext.disabled = searchResults.length === 0;
   zoomOut.disabled = pageInfos.length === 0;
   zoomIn.disabled = pageInfos.length === 0;
-  zoomFit.disabled = pageInfos.length === 0;
-  zoomFitPage.disabled = pageInfos.length === 0;
+  zoomMenuToggle.disabled = pageInfos.length === 0;
+  documentMenuToggle.disabled = pageInfos.length === 0;
   rotatePageButton.disabled = pageInfos.length === 0;
   readingMode.disabled = pageInfos.length === 0;
   viewToggle.disabled = pageInfos.length === 0;
@@ -1752,6 +1765,7 @@ function updateNavigation() {
   renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
   clarityPrioritySelect.disabled = documentActionBusy || pageInfos.length === 0 || !imageRenderFormat();
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+  pagePill.hidden = !pagePillVisible || pageInfos.length === 0;
 }
 
 function setDocumentActionBusy(busy) {
@@ -2919,13 +2933,29 @@ function updateDocumentInfo() {
     if (info.creator) rows.push(['创建软件', info.creator]);
     if (info.version) rows.push(['OFD 版本', info.version]);
     rows.push(['页数', String(pageInfos.length)]);
-    if (rows.length === 0) {
-      infoBody.innerHTML = '<p class="info-empty">无文档信息</p>';
-      return;
-    }
-    infoBody.innerHTML = rows.map(([label, value]) =>
+    const fonts = Array.isArray(info.fonts) ? info.fonts : [];
+    let html = rows.map(([label, value]) =>
       `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(value)}</span></div>`
     ).join('');
+    html += '<div class="info-section-title">字体</div>';
+    if (!fonts.length) {
+      html += '<p class="info-empty">文档未声明字体</p>';
+    } else {
+      html += fonts.map(font => {
+        const badges = [font.embedded ? '嵌入' : '逻辑'];
+        if (font.bold) badges.push('粗体');
+        if (font.italic) badges.push('斜体');
+        if (font.serif) badges.push('衬线');
+        if (font.fixed_width) badges.push('等宽');
+        if (font.format) badges.push(String(font.format).toUpperCase());
+        const name = font.name || font.family || `字体 ${font.id}`;
+        const family = font.family && font.family !== font.name
+          ? `<span class="font-family">${escapeHTML(font.family)}</span>` : '';
+        return `<div class="font-item"><span class="font-name">${escapeHTML(name)}</span>${family}` +
+          `<span class="font-badges">${badges.map(badge => `<span class="font-badge">${escapeHTML(badge)}</span>`).join('')}</span></div>`;
+      }).join('');
+    }
+    infoBody.innerHTML = html;
   }).catch(() => {
     if (generation !== documentGeneration) return;
     infoBody.innerHTML = '<p class="info-empty">获取信息失败</p>';
@@ -3474,6 +3504,8 @@ function setSearchPanelOpen(open) {
   if (open) {
     setRecentPanelOpen(false);
     setViewPanelOpen(false);
+    setZoomMenuOpen(false);
+    setDocumentMenuOpen(false);
     searchInput.focus();
   }
 }
@@ -3497,6 +3529,32 @@ function setViewPanelOpen(open) {
   if (open) {
     setRecentPanelOpen(false);
     setSearchPanelOpen(false);
+    setZoomMenuOpen(false);
+    setDocumentMenuOpen(false);
+  }
+}
+
+function setZoomMenuOpen(open) {
+  if (!zoomMenu || !zoomMenuToggle) return;
+  zoomMenu.hidden = !open;
+  zoomMenuToggle.setAttribute('aria-expanded', String(open));
+  if (open) {
+    setRecentPanelOpen(false);
+    setSearchPanelOpen(false);
+    setViewPanelOpen(false);
+    setDocumentMenuOpen(false);
+  }
+}
+
+function setDocumentMenuOpen(open) {
+  if (!documentMenu || !documentMenuToggle) return;
+  documentMenu.hidden = !open;
+  documentMenuToggle.setAttribute('aria-expanded', String(open));
+  if (open) {
+    setRecentPanelOpen(false);
+    setSearchPanelOpen(false);
+    setViewPanelOpen(false);
+    setZoomMenuOpen(false);
   }
 }
 
@@ -3956,6 +4014,15 @@ function setClarityPriority(enabled) {
   scheduleVirtualUpdate();
 }
 
+function setPagePillVisible(visible) {
+  pagePillVisible = visible;
+  showPagePill.checked = visible;
+  try {
+    localStorage.setItem(pagePillStorageKey, String(visible));
+  } catch (_) {}
+  updateNavigation();
+}
+
 function setTextLayerVisible(visible) {
   textLayerVisible = visible;
   document.body.classList.toggle('hide-text-layer', !visible);
@@ -4061,6 +4128,8 @@ pagesElement.addEventListener('drop', event => {
 previous.addEventListener('click', () => navigatePage(-1));
 next.addEventListener('click', () => navigatePage(1));
 cancelAction.addEventListener('click', cancelDocumentAction);
+documentMenuToggle.addEventListener('click', () => setDocumentMenuOpen(documentMenu.hidden));
+documentMenu.addEventListener('click', event => { if (event.target.closest('button')) setDocumentMenuOpen(false); });
 printPage.addEventListener('click', openPrintDialog);
 exportDocument.addEventListener('click', openExportDialog);
 printForm.addEventListener('change', updatePrintRangeControl);
@@ -4110,8 +4179,15 @@ searchPrevious.addEventListener('click', () => moveSearchResult(-1));
 searchNext.addEventListener('click', () => moveSearchResult(1));
 zoomOut.addEventListener('click', () => setZoom(zoom - 0.25));
 zoomIn.addEventListener('click', () => setZoom(zoom + 0.25));
-zoomFit.addEventListener('click', fitWidthZoom);
-zoomFitPage.addEventListener('click', fitPageZoom);
+zoomMenuToggle.addEventListener('click', () => setZoomMenuOpen(zoomMenu.hidden));
+zoomMenu.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.dataset.zoom) setZoom(Number(button.dataset.zoom), 'manual');
+  else if (button.dataset.zoomFit === 'width') fitWidthZoom();
+  else if (button.dataset.zoomFit === 'page') fitPageZoom();
+  setZoomMenuOpen(false);
+});
 rotatePageButton.addEventListener('click', rotatePage);
 readingMode.addEventListener('click', () => setReadingMode(!document.body.classList.contains('reading-mode')));
 viewToggle.addEventListener('click', () => setViewPanelOpen(viewPanel.hidden));
@@ -4139,6 +4215,9 @@ sidebarTabsElement?.addEventListener('keydown', event => {
 });
 applySidebarPanels();
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
+showPagePill.addEventListener('change', () => setPagePillVisible(showPagePill.checked));
+pillHide.addEventListener('click', () => setPagePillVisible(false));
+showPagePill.checked = pagePillVisible;
 darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.checked));
 documentBackground.addEventListener('change', () => setDocumentBackground(documentBackground.value));
 documentBackgroundColorPicker.addEventListener('input', () => {
@@ -4217,6 +4296,8 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     if (!searchPanel.hidden) setSearchPanelOpen(false);
     else if (!viewPanel.hidden) setViewPanelOpen(false);
+    else if (zoomMenu && !zoomMenu.hidden) setZoomMenuOpen(false);
+    else if (documentMenu && !documentMenu.hidden) setDocumentMenuOpen(false);
     else if (document.body.classList.contains('reading-mode')) setReadingMode(false);
     return;
   }
@@ -4255,6 +4336,8 @@ document.addEventListener('click', event => {
   if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
   if (!searchPanel.hidden && !event.target.closest('.search-group')) setSearchPanelOpen(false);
+  if (zoomMenu && !zoomMenu.hidden && !event.target.closest('.zoom-group')) setZoomMenuOpen(false);
+  if (documentMenu && !documentMenu.hidden && !event.target.closest('.page-group')) setDocumentMenuOpen(false);
   if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
 });
 document.addEventListener('copy', () => {
@@ -4282,7 +4365,11 @@ engine.ready.then(() => {
 function setRecentPanelOpen(open) {
   recentPanel.hidden = !open;
   recentToggle.setAttribute('aria-expanded', String(open));
-  if (open) void refreshRecentFiles();
+  if (open) {
+    setZoomMenuOpen(false);
+    setDocumentMenuOpen(false);
+    void refreshRecentFiles();
+  }
 }
 
 void refreshRecentFiles();

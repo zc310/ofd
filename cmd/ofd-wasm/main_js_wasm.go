@@ -273,6 +273,10 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
+	fonts, err := reader.FontList()
+	if err != nil {
+		return errorValue(err)
+	}
 	return objectValue(map[string]any{
 		"docID":        info.DocID,
 		"title":        info.Title,
@@ -283,6 +287,7 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 		"modDate":      info.ModDate,
 		"creator":      info.Creator,
 		"version":      info.Version,
+		"fonts":        fontListValue(fonts),
 	})
 }
 
@@ -989,6 +994,24 @@ func fontsValue(fonts []webreader.FontResource) js.Value {
 		result.SetIndex(index, objectValue(map[string]any{
 			"id": font.ID, "family": font.Family, "name": font.Name,
 			"bold": font.Bold, "italic": font.Italic, "format": font.Format, "data": data,
+		}))
+	}
+	return result
+}
+
+func fontListValue(fonts []webreader.FontInfo) js.Value {
+	result := js.Global().Get("Array").New(len(fonts))
+	for index, font := range fonts {
+		result.SetIndex(index, objectValue(map[string]any{
+			"id":          font.ID,
+			"name":        font.Name,
+			"family":      font.Family,
+			"bold":        font.Bold,
+			"italic":      font.Italic,
+			"serif":       font.Serif,
+			"fixed_width": font.FixedWidth,
+			"format":      font.Format,
+			"embedded":    font.Embedded,
 		}))
 	}
 	return result

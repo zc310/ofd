@@ -32,6 +32,10 @@
 - 可选“清晰度优先”：未选中时正文始终按 72 DPI 渲染，缩放使用 CSS 放大；选中后按缩放比例重新渲染以提高图像清晰度。
 - 页面渲染格式可选 PNG 位图、JPG 图片或 SVG 矢量，默认使用 PNG；JPG 不支持透明度，透明区域使用白色。
 - 设置文档背景色，支持白色、透明、自定义颜色以及暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝和晴空浅灰主题。
+- 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应页面）。
+- 底部页码胶囊包含上一页、页码输入/总页数、下一页，可直接输入页码跳转；可在“显示设置”中隐藏，或点击胶囊上的关闭按钮隐藏。
+- 打印、导出、复制当前页文字、复制全文收在工具栏最右侧的“文档操作”菜单（`more_vert` 图标）中；移动端该按钮固定在最右侧一行。
+- 文档信息面板列出文档声明的字体（名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式）。
 - 选择单页、双页或“双页，奇数页在左”布局。
 - 显示设置和布局设置会保存在浏览器本地。
 
@@ -128,6 +132,7 @@ WASM 启动后会注册 `window.ofd`：
 ```javascript
 ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false) // WASM 生命周期内注册一次
 ofd.open(new Uint8Array(await file.arrayBuffer()))
+ofd.info() // 元数据 + fonts 字体清单（不含嵌入数据）
 ofd.pageCount()
 ofd.pages()
 ofd.pageInfo(0)
@@ -162,6 +167,7 @@ ofd.close()
 - `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
 - 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
 - `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
+- `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据。
 - `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
