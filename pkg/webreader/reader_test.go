@@ -903,3 +903,212 @@ func TestFontListIncludesDeclaredFonts(t *testing.T) {
 		t.Fatal("没有识别到嵌入字体")
 	}
 }
+
+func TestFontUsageReportsPagesUsingFont(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计字体使用页失败: %v", err)
+	}
+	if usage.Scanned == 0 {
+		t.Fatal("未扫描任何页面")
+	}
+	found := false
+	for _, page := range usage.Pages {
+		if page == 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("使用页 %v 未包含第 0 页", usage.Pages)
+	}
+
+	missing, err := reader.FontUsage(FontRef{Scope: 0, ID: ^uint64(0)}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计未使用字体失败: %v", err)
+	}
+	if len(missing.Pages) != 0 {
+		t.Fatalf("未使用字体的页面列表应为空: %v", missing.Pages)
+	}
+
+	otherScope, err := reader.FontUsage(FontRef{Scope: text[0].Scope + 1, ID: text[0].Font}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计不同作用域字体失败: %v", err)
+	}
+	if len(otherScope.Pages) != 0 {
+		t.Fatalf("不同作用域的字体不应有使用页: %v", otherScope.Pages)
+	}
+}
+
+func TestFontUsageIsScopedPerDocument(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.FontList()
+	if err != nil {
+		t.Fatalf("读取字体列表失败: %v", err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("字体列表为空")
+	}
+	scopes := make(map[int]bool)
+	for _, font := range fonts {
+		scopes[font.Scope] = true
+	}
+
+	checked := 0
+	for _, font := range fonts {
+		usage, err := reader.FontUsage(FontRef{Scope: font.Scope, ID: font.ID}, FontUsageOptions{})
+		if err != nil {
+			t.Fatalf("统计字体 %+v 失败: %v", font, err)
+		}
+		for _, page := range usage.Pages {
+			if page < 0 || page >= len(reader.pages) {
+				t.Fatalf("字体 %+v 的页面越界: %d", font, page)
+			}
+			if reader.pages[page].fontScope != font.Scope {
+				t.Fatalf("字体 %+v 的使用页 %d 属于作用域 %d", font, page, reader.pages[page].fontScope)
+			}
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("未校验任何字体")
+	}
+
+	if len(scopes) > 1 {
+		report, err := reader.FontUsageAll(FontUsageOptions{})
+		if err != nil {
+			t.Fatalf("批量统计字体失败: %v", err)
+		}
+		for _, summary := range report.Fonts {
+			for _, page := range summary.Pages {
+				if page < 0 || page >= len(reader.pages) {
+					t.Fatalf("批量统计页面越界: %d", page)
+				}
+				if reader.pages[page].fontScope != summary.Scope {
+					t.Fatalf("批量统计字体 %+v 的使用页 %d 属于作用域 %d", summary, page, reader.pages[page].fontScope)
+				}
+			}
+		}
+	}
+}
+
+func TestFontUsageAllAggregatesFonts(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	report, err := reader.FontUsageAll(FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("批量统计字体使用页失败: %v", err)
+	}
+	if report.Scanned == 0 {
+		t.Fatal("未扫描任何页面")
+	}
+	if len(report.Fonts) == 0 {
+		t.Fatal("未统计到任何字体")
+	}
+	for index := 1; index < len(report.Fonts); index++ {
+		if report.Fonts[index-1].ID >= report.Fonts[index].ID {
+			t.Fatalf("字体未按 ID 升序排列: %+v", report.Fonts)
+		}
+	}
+	found := false
+	for _, summary := range report.Fonts {
+		if summary.Scope != text[0].Scope || summary.ID != text[0].Font {
+			continue
+		}
+		for _, page := range summary.Pages {
+			if page == 0 {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("字体 %d 的使用页未包含第 0 页: %+v", text[0].Font, report.Fonts)
+	}
+}
+
+func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "1000-pages.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{MaxScan: 3})
+	if err != nil {
+		t.Fatalf("按选项统计字体失败: %v", err)
+	}
+	if usage.Scanned != 3 {
+		t.Fatalf("扫描页数 = %d, 期望 3", usage.Scanned)
+	}
+	if !usage.Truncated {
+		t.Fatal("期望扫描上限被标记为截断")
+	}
+
+	report, err := reader.FontUsageAll(FontUsageOptions{MaxScan: 50, MaxPages: 2})
+	if err != nil {
+		t.Fatalf("按选项批量统计字体失败: %v", err)
+	}
+	if report.Scanned != 50 {
+		t.Fatalf("批量扫描页数 = %d, 期望 50", report.Scanned)
+	}
+	for _, summary := range report.Fonts {
+		if len(summary.Pages) > 2 {
+			t.Fatalf("字体 %d 返回 %d 页, 期望不超过 2", summary.ID, len(summary.Pages))
+		}
+	}
+	if !report.Truncated {
+		t.Fatal("批量统计期望被标记为截断")
+	}
+}

@@ -90,6 +90,10 @@ async function execute(message) {
       return unwrap(self.ofd.outline());
     case 'preferences':
       return unwrap(self.ofd.preferences());
+    case 'fontUsage':
+      return unwrap(self.ofd.fontUsage(message.scope, message.fontID, message.maxScan, message.maxPages));
+    case 'fontUsageAll':
+      return unwrap(self.ofd.fontUsageAll(message.maxScan, message.maxPages));
     case 'pageInfo':
       return unwrap(self.ofd.pageInfo(message.index));
     case 'renderPage': {
