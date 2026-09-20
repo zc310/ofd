@@ -313,6 +313,7 @@ func TestParseArgsSupportsExternalToolOptions(t *testing.T) {
 		"-chrome-no-sandbox",
 		"-allow-remote",
 		"-no-print-background",
+		"-md-tables",
 		"-external-workers", "3",
 		"input.html", "output.pdf",
 	})
@@ -324,6 +325,9 @@ func TestParseArgsSupportsExternalToolOptions(t *testing.T) {
 	}
 	if opts.paper != "A3" || !opts.landscape || !opts.chromeNoSandbox || !opts.allowRemote || !opts.noPrintBackground {
 		t.Fatalf("外部工具选项解析不正确: %+v", opts)
+	}
+	if !opts.markdownTables {
+		t.Fatalf("markdownTables = false, want true")
 	}
 	if opts.externalWorkers != 3 {
 		t.Fatalf("externalWorkers = %d, want 3", opts.externalWorkers)

@@ -192,3 +192,12 @@ func WithTempDir(dir string) Option {
 		c.tempDir = strings.TrimSpace(dir)
 	}
 }
+
+// WithMarkdownTables 设置 OFD 转 Markdown 时是否识别并输出表格，默认关闭。
+// 表格识别基于文字位置（X 对齐与空白间隔），对无边框表格有效，但双栏正文、
+// 公式排版等也可能被误判，因此默认关闭，按需开启。
+func WithMarkdownTables(enabled bool) Option {
+	return func(c *Converter) {
+		c.markdownTables = enabled
+	}
+}

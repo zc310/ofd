@@ -24,6 +24,7 @@ type Converter struct {
 	imageWriter       func(page int, img image.Image) error
 	fileWriter        func(page int) (io.WriteCloser, error)
 	docTitle          string // 文档标题，由 HTML 等编码器使用
+	markdownTables    bool   // Markdown 输出是否识别表格
 	renderer          canvas.Writer
 	sofficePath       string
 	officeTimeout     time.Duration
@@ -133,4 +134,12 @@ func (c *Converter) TempDir() string {
 		return ""
 	}
 	return c.tempDir
+}
+
+// MarkdownTables 返回 OFD 转 Markdown 时是否识别并输出表格，默认关闭。
+func (c *Converter) MarkdownTables() bool {
+	if c == nil {
+		return false
+	}
+	return c.markdownTables
 }

@@ -162,7 +162,8 @@ func stripSVGXMLDeclaration(data []byte) []byte {
 	return data
 }
 
-func htmlDocumentTitle(ofd *parser.OFD) string {
+// documentTitle 返回 OFD 第一个文档体的非空 DocInfo.Title；没有标题时返回默认标题。
+func documentTitle(ofd *parser.OFD) string {
 	if ofd != nil {
 		for _, body := range ofd.DocBodies {
 			if body.DocInfo.Title != nil {

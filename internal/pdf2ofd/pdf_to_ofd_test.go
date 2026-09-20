@@ -592,6 +592,38 @@ func TestParsePDFToUnicodeHandlesEntryCountPrefix(t *testing.T) {
 	}
 }
 
+func TestParsePDFToUnicodeHandlesAdjacentHexTokens(t *testing.T) {
+	// 部分 CID 子集字体（如 FZXBSK--GBK1-0）的 ToUnicode CMap 中相邻
+	// 十六进制串之间没有空白，例如 <0336><0336><4e0a>。按 strings.Fields
+	// 切分会把整条条目当成一个字段而全部丢弃，导致中文退化成 U+FFFD。
+	data := []byte("/CIDInit /ProcSet findresource begin\n" +
+		"1 begincodespacerange\n<0336><4da5>\nendcodespacerange\n" +
+		"2 beginbfrange\n<0336><0336><4e0a>\n<03ba><03bc><4e8e>\nendbfrange\n" +
+		"endcmap\n")
+	result := parsePDFToUnicode(data)
+	if got := result[0x0336]; got != "上" {
+		t.Fatalf("0x0336 = %q, want %q", got, "上")
+	}
+	if got := result[0x03ba]; got != "于" {
+		t.Fatalf("0x03ba = %q, want %q", got, "于")
+	}
+	if got := result[0x03bb]; got != "亏" {
+		t.Fatalf("0x03bb = %q, want %q", got, "亏")
+	}
+	if got := result[0x03bc]; got != "亐" {
+		t.Fatalf("0x03bc = %q, want %q", got, "亐")
+	}
+}
+
+func TestParsePDFToUnicodeHandlesBfrangeArrayAcrossLines(t *testing.T) {
+	// bfrange 的第三项允许是跨行的 [...] 数组，逐行解析会漏掉后续目标。
+	data := []byte("1 beginbfrange\n<10><11>[\n<0041>\n<0042>\n]\nendbfrange\n")
+	result := parsePDFToUnicode(data)
+	if result[0x10] != "A" || result[0x11] != "B" {
+		t.Fatalf("bfrange array = %q,%q, want A,B", result[0x10], result[0x11])
+	}
+}
+
 func TestPDFTextGlyphTransformsKeepsMappedGlyphsWhenSomeCodesUnmapped(t *testing.T) {
 	font := pdfFontInfo{
 		data:      fakeSFNTWithGlyphCount(200),
