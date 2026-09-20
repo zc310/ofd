@@ -117,6 +117,14 @@ class OFDWorkerClient {
     return this.request('info');
   }
 
+  outline() {
+    return this.request('outline');
+  }
+
+  preferences() {
+    return this.request('preferences');
+  }
+
   memStats() {
     return this.request('memStats');
   }
@@ -323,6 +331,13 @@ const infoToggle = document.querySelector('#info-toggle');
 const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
+const sidebarElement = document.querySelector('#sidebar');
+const sidebarTabsElement = document.querySelector('#sidebar-tabs');
+const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
+const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
+const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
+const outlineElement = document.querySelector('#outline');
+const bookmarksElement = document.querySelector('#bookmarks');
 const engine = new OFDWorkerClient();
 const pageCache = new BlobURLCache(128 << 20, url =>
   Array.from(document.querySelectorAll('.page-image')).some(image => !image.hidden && image.src === url));
@@ -412,6 +427,17 @@ let thumbnailsVisible = (() => {
     return true;
   }
 })();
+const sidebarTabStorageKey = 'ofd-sidebar-tab';
+let activeSidebarTab = (() => {
+  try {
+    const value = localStorage.getItem(sidebarTabStorageKey);
+    return ['thumbnails', 'outline', 'bookmarks'].includes(value) ? value : 'thumbnails';
+  } catch (_) {
+    return 'thumbnails';
+  }
+})();
+let outlineNodes = [];
+let bookmarkNodes = [];
 let renderFormat = (() => {
   try {
     const value = localStorage.getItem(renderFormatStorageKey);
@@ -1814,6 +1840,7 @@ function setCurrent(index, syncThumbnail = true) {
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
+  if (changed) updateOutlineActive();
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
 }
@@ -2462,8 +2489,8 @@ function flushThumbnailBatch() {
 
 function buildPages() {
   updateThumbnailLayout();
-  thumbnailsElement.hidden = !thumbnailsVisible;
   readerElement.classList.toggle('hide-thumbnails', !thumbnailsVisible);
+  applySidebarPanels();
   resizeObserver?.disconnect();
   pagesElement.replaceChildren();
   thumbnailsElement.replaceChildren();
@@ -2597,6 +2624,10 @@ async function openSelectedFile(selected) {
   thumbnailAnchor = 0;
   thumbnailVirtualTranslate = 0;
   thumbnailsElement.style.paddingBottom = '';
+  outlineNodes = [];
+  bookmarkNodes = [];
+  renderOutline();
+  renderBookmarks();
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -2641,10 +2672,13 @@ async function openSelectedFile(selected) {
     });
     currentDocumentKey = documentKey(selected);
     current = restoreReadingPosition(selected, pageInfos.length);
+    await applyDocumentPreferences();
+    if (generation !== documentGeneration) return;
     restorePageRotation();
     buildPages();
     setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
+    void loadOutline();
     void saveRecentFile(selected);
     void reportMemory('打开文档');
   } catch (error) {
@@ -2660,6 +2694,10 @@ async function openSelectedFile(selected) {
     thumbnailVirtualWindow = undefined;
     thumbnailAnchor = 0;
     thumbnailVirtualTranslate = 0;
+    outlineNodes = [];
+    bookmarkNodes = [];
+    renderOutline();
+    renderBookmarks();
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
@@ -2713,6 +2751,10 @@ function cancelOpening() {
   thumbnailVirtualWindow = undefined;
   thumbnailAnchor = 0;
   thumbnailVirtualTranslate = 0;
+  outlineNodes = [];
+  bookmarkNodes = [];
+  renderOutline();
+  renderBookmarks();
   thumbnailSlots = [];
   thumbnailSlotByPage = [];
   currentDocumentKey = '';
@@ -3476,10 +3518,53 @@ function setMobileToolbarExpanded(expanded) {
   }
 }
 
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks'];
+
+// applySidebarPanels 根据侧栏可见性和当前页签，决定缩略图/大纲/书签面板的显隐。
+function applySidebarPanels() {
+  if (!sidebarElement) return;
+  if (!sidebarTabs.includes(activeSidebarTab)) activeSidebarTab = 'thumbnails';
+  if (activeSidebarTab === 'bookmarks' && !bookmarkNodes.length) activeSidebarTab = 'thumbnails';
+  sidebarElement.hidden = !thumbnailsVisible;
+  const active = tab => thumbnailsVisible && activeSidebarTab === tab;
+  thumbnailsElement.hidden = !active('thumbnails');
+  if (outlineElement) outlineElement.hidden = !active('outline');
+  if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
+  if (sidebarTabBookmarks) sidebarTabBookmarks.hidden = !bookmarkNodes.length;
+  const tabs = [
+    [sidebarTabThumbnails, 'thumbnails'],
+    [sidebarTabOutline, 'outline'],
+    [sidebarTabBookmarks, 'bookmarks'],
+  ];
+  tabs.forEach(([button, tab]) => {
+    button?.classList.toggle('active', activeSidebarTab === tab);
+    button?.setAttribute('aria-selected', String(activeSidebarTab === tab));
+  });
+}
+
+function setSidebarTab(tab) {
+  if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
+  if (tab === 'bookmarks' && !bookmarkNodes.length) tab = 'thumbnails';
+  const changed = activeSidebarTab !== tab;
+  activeSidebarTab = tab;
+  if (changed) {
+    try {
+      localStorage.setItem(sidebarTabStorageKey, tab);
+    } catch (_) {}
+  }
+  applySidebarPanels();
+  if (tab === 'thumbnails') {
+    updateThumbnailMetrics();
+    scheduleVirtualUpdate();
+  } else {
+    updateOutlineActive();
+  }
+}
+
 function setThumbnailsVisible(visible) {
   thumbnailsVisible = visible;
   showThumbnails.checked = visible;
-  thumbnailsElement.hidden = !visible;
+  applySidebarPanels();
   readerElement.classList.toggle('hide-thumbnails', !visible);
   document.body.classList.toggle('hide-thumbnails', !visible);
   try {
@@ -3491,6 +3576,337 @@ function setThumbnailsVisible(visible) {
   requestAnimationFrame(() => {
     if (zoomMode === 'fit') fitWidthZoom();
     else if (zoomMode === 'page') fitPageZoom();
+  });
+}
+
+function hasSavedPreference(key) {
+  try {
+    return localStorage.getItem(key) != null;
+  } catch (_) {
+    return false;
+  }
+}
+
+// 文档声明的页面布局到阅读器布局的近似映射；未识别时返回空串。
+function mapDocumentPageLayout(value) {
+  switch (String(value)) {
+    case 'OnePage':
+    case 'OneColumn':
+      return 'single';
+    case 'TwoPageL':
+    case 'TwoColumnL':
+      return 'double-odd-left';
+    case 'TwoPageR':
+    case 'TwoColumnR':
+      return 'double';
+    default:
+      return '';
+  }
+}
+
+// 文档声明的缩放模式映射；FitHeight/FitRect 暂用“适应页面”近似。
+function mapDocumentZoomMode(value) {
+  switch (String(value)) {
+    case 'FitWidth':
+      return 'fit';
+    case 'FitHeight':
+    case 'FitRect':
+      return 'page';
+    default:
+      return '';
+  }
+}
+
+function normalizeDocumentZoom(value) {
+  let zoomValue = Number(value);
+  if (!Number.isFinite(zoomValue) || zoomValue <= 0) return 0;
+  if (zoomValue > 5) zoomValue /= 100;
+  return Math.max(0.5, Math.min(3, zoomValue));
+}
+
+// applyDocumentPreferences 在用户没有显式保存偏好时，应用文档声明的布局与初始缩放。
+async function applyDocumentPreferences() {
+  let preferences = null;
+  try {
+    preferences = await engine.preferences();
+  } catch (_) {
+    return;
+  }
+  if (!preferences) return;
+  if (!hasSavedPreference(pageLayoutStorageKey)) {
+    const layout = mapDocumentPageLayout(preferences.page_layout);
+    if (layout) {
+      pageLayout = layout;
+      pageLayoutSelect.value = layout;
+    }
+  }
+  if (!hasSavedPreference(zoomModeStorageKey)) {
+    const zoomValue = normalizeDocumentZoom(preferences.zoom);
+    if (zoomValue) {
+      zoom = zoomValue;
+      zoomMode = 'manual';
+    } else {
+      const mode = mapDocumentZoomMode(preferences.zoom_mode);
+      if (mode) zoomMode = mode;
+    }
+  }
+}
+
+async function loadOutline() {
+  const generation = documentGeneration;
+  let tree = null;
+  try {
+    tree = await engine.outline();
+  } catch (_) {
+    tree = null;
+  }
+  if (generation !== documentGeneration) return;
+  outlineNodes = Array.isArray(tree?.nodes) ? tree.nodes : [];
+  bookmarkNodes = Array.isArray(tree?.bookmarks) ? tree.bookmarks : [];
+  renderOutline();
+  renderBookmarks();
+  // 文档声明的显示模式优先决定默认页签。
+  const mode = String(tree?.page_mode || '');
+  if (mode === 'UseOutlines' && outlineNodes.length) setSidebarTab('outline');
+  else if (mode === 'UseBookmarks' && bookmarkNodes.length) setSidebarTab('bookmarks');
+}
+
+// attachOutlineKeyboard 让大纲/书签面板支持方向键、Home/End 在条目间移动焦点。
+function attachOutlineKeyboard(panel) {
+  if (!panel || panel.dataset.keyboardBound) return;
+  panel.dataset.keyboardBound = '1';
+  panel.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = [...panel.querySelectorAll('.outline-label:not(:disabled), .outline-toggle')]
+      .filter(element => element.offsetParent !== null);
+    if (!items.length) return;
+    let index = items.indexOf(document.activeElement);
+    if (index < 0) index = 0;
+    if (event.key === 'ArrowDown') index = Math.min(items.length - 1, index + 1);
+    else if (event.key === 'ArrowUp') index = Math.max(0, index - 1);
+    else if (event.key === 'Home') index = 0;
+    else index = items.length - 1;
+    event.preventDefault();
+    items[index].focus();
+  });
+}
+
+function renderOutline() {
+  if (!outlineElement) return;
+  outlineElement.replaceChildren();
+  if (!outlineNodes.length) {
+    const empty = document.createElement('p');
+    empty.className = 'outline-empty';
+    empty.textContent = '此文档没有大纲';
+    outlineElement.append(empty);
+    return;
+  }
+  outlineElement.append(buildOutlineList(outlineNodes, 0));
+  attachOutlineKeyboard(outlineElement);
+  updateOutlineActive();
+}
+
+function renderBookmarks() {
+  if (!bookmarksElement) return;
+  bookmarksElement.replaceChildren();
+  if (!bookmarkNodes.length) return;
+  const list = document.createElement('ul');
+  list.className = 'outline-list';
+  bookmarkNodes.forEach(bookmark => {
+    const item = document.createElement('li');
+    item.className = 'outline-item';
+    const row = document.createElement('div');
+    row.className = 'outline-row';
+    const spacer = document.createElement('span');
+    spacer.className = 'outline-toggle-placeholder';
+    row.append(spacer);
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'outline-label';
+    label.textContent = bookmark.name || '未命名书签';
+    label.title = bookmark.name || '';
+    if (Number.isInteger(bookmark.page) && bookmark.page >= 0) {
+      label.dataset.page = String(bookmark.page);
+      label.addEventListener('click', () => goToDestination(bookmark.page, bookmark.dest));
+    } else {
+      label.disabled = true;
+    }
+    row.append(label);
+    item.append(row);
+    list.append(item);
+  });
+  bookmarksElement.append(list);
+  attachOutlineKeyboard(bookmarksElement);
+  updateOutlineActive();
+}
+
+function buildOutlineList(nodes, depth) {
+  const list = document.createElement('ul');
+  list.className = 'outline-list';
+  nodes.forEach(node => {
+    const item = document.createElement('li');
+    item.className = 'outline-item';
+    const row = document.createElement('div');
+    row.className = 'outline-row';
+    row.style.paddingLeft = `${depth * 14}px`;
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (hasChildren) {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'outline-toggle';
+      toggle.setAttribute('aria-label', '折叠/展开');
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-outlined';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = 'expand_more';
+      toggle.append(icon);
+      const children = buildOutlineList(node.children, depth + 1);
+      if (node.expanded === false) {
+        children.hidden = true;
+        toggle.classList.add('collapsed');
+      }
+      toggle.addEventListener('click', () => {
+        children.hidden = !children.hidden;
+        toggle.classList.toggle('collapsed', children.hidden);
+      });
+      row.append(toggle);
+      item.append(row, children);
+    } else {
+      const spacer = document.createElement('span');
+      spacer.className = 'outline-toggle-placeholder';
+      row.append(spacer);
+      item.append(row);
+    }
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'outline-label';
+    label.textContent = node.title || '未命名';
+    label.title = node.title || '';
+    if (Number.isInteger(node.page) && node.page >= 0) {
+      label.dataset.page = String(node.page);
+      label.addEventListener('click', () => goToDestination(node.page, node.dest));
+    } else if (typeof node.uri === 'string' && node.uri) {
+      label.classList.add('outline-link');
+      label.title = node.uri;
+      label.addEventListener('click', () => window.open(node.uri, '_blank', 'noopener'));
+    } else {
+      label.disabled = true;
+    }
+    row.append(label);
+    list.append(item);
+  });
+  return list;
+}
+
+// normalizeDestZoom 把 OFD 目标缩放归一化为阅读器支持的倍率。
+// 部分生产者按百分比（100=100%）书写，这里对明显大于 5 的值按百分比处理。
+function normalizeDestZoom(value) {
+  let zoomValue = Number(value);
+  if (!Number.isFinite(zoomValue) || zoomValue <= 0) return 0;
+  if (zoomValue > 5) zoomValue /= 100;
+  return Math.max(0.5, Math.min(3, zoomValue));
+}
+
+// destPagePoint 把 Dest 的 Left/Top（毫米）换算为页面显示区域内的基准像素坐标
+// （zoom=1，X 向右、Y 向下），并考虑当前页面旋转。
+function destPagePoint(info, dest) {
+  const rotation = ((pageRotation % 360) + 360) % 360;
+  const rawLeft = Number(dest.left);
+  const rawTop = Number(dest.top);
+  const x = Number.isFinite(rawLeft) ? rawLeft : 0;
+  const y = Number.isFinite(rawTop) ? rawTop : 0;
+  const base = rotation % 180 === 0 ? 820 / info.width : 820 / info.height;
+  switch (rotation) {
+    case 90:
+      return { x: (info.height - y) * base, y: x * base };
+    case 180:
+      return { x: (info.width - x) * base, y: (info.height - y) * base };
+    case 270:
+      return { x: y * base, y: (info.width - x) * base };
+    default:
+      return { x: x * base, y: y * base };
+  }
+}
+
+// fitRectZoom 计算把 Dest 的 FitR 矩形适配到可用区域所需的缩放。
+function fitRectZoom(info, dest) {
+  const rawLeft = Number(dest.left);
+  const rawTop = Number(dest.top);
+  const rawRight = Number(dest.right);
+  const rawBottom = Number(dest.bottom);
+  const rectWidth = Math.abs((Number.isFinite(rawRight) ? rawRight : info.width) - (Number.isFinite(rawLeft) ? rawLeft : 0));
+  const rectHeight = Math.abs((Number.isFinite(rawBottom) ? rawBottom : info.height) - (Number.isFinite(rawTop) ? rawTop : 0));
+  if (rectWidth <= 0 || rectHeight <= 0) return 0;
+  const base = 820 / info.width; // 毫米到基准像素在横纵方向等比
+  const rotation = ((pageRotation % 360) + 360) % 360;
+  const displayWidth = (rotation % 180 === 0 ? rectWidth : rectHeight) * base;
+  const displayHeight = (rotation % 180 === 0 ? rectHeight : rectWidth) * base;
+  const readerStyle = getComputedStyle(readerElement);
+  const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
+  const availableWidth = Math.max(1, pagesElement.clientWidth);
+  const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
+  return Math.max(0.5, Math.min(3, Math.min(availableWidth / displayWidth, availableHeight / displayHeight)));
+}
+
+// scrollToDestinationX 让目标横向位置对齐到阅读区左边缘（存在横向溢出时才生效）。
+function scrollToDestinationX(index, targetX) {
+  const card = pageCards[index];
+  if (!card) return;
+  const cardRect = card.getBoundingClientRect();
+  const pagesRect = pagesElement.getBoundingClientRect();
+  const desired = pagesElement.scrollLeft + (cardRect.left - pagesRect.left) + targetX - 8;
+  pagesElement.scrollLeft = Math.max(0, desired);
+}
+
+// goToDestination 跳转到指定页；有目标位置时按 Dest 的 Top/Left/Zoom 精确定位，
+// FitR 先按矩形适配缩放。旋转页面按显示方向换算坐标。
+function goToDestination(index, dest) {
+  if (!Number.isInteger(index) || index < 0 || index >= pageInfos.length) return;
+  const info = pageInfos[index];
+  if (!dest || !info || info.width <= 0) {
+    goTo(index);
+    return;
+  }
+  const type = String(dest.type || '').toUpperCase();
+  if (type === 'FITR') {
+    const fit = fitRectZoom(info, dest);
+    if (fit) setZoom(fit, 'manual');
+  } else {
+    const destZoom = normalizeDestZoom(dest.zoom);
+    if (destZoom) setZoom(destZoom, 'manual');
+  }
+  const position = pageSpreadPositionForPage(index);
+  mountPageSpread(position);
+  setCurrent(index);
+  const point = destPagePoint(info, dest);
+  const offset = pageSpreadOffset(position) + point.y * zoom;
+  const trackTop = pageVirtualTrack.getBoundingClientRect().top + window.scrollY;
+  window.scrollTo({ top: Math.max(0, trackTop + pageTrackScrollFromContent(offset)), behavior: 'smooth' });
+  schedulePageVirtualTranslate();
+  requestAnimationFrame(() => scrollToDestinationX(index, point.x * zoom));
+}
+
+// updateOutlineActive 高亮当前页对应的最近大纲项（页码不超过当前页的最后一项）。
+function updateOutlineActive() {
+  const panels = [outlineElement, bookmarksElement].filter(panel => panel && !panel.hidden);
+  panels.forEach(panel => {
+    const labels = panel.querySelectorAll('.outline-label[data-page]');
+    let active = null;
+    let activePage = -1;
+    labels.forEach(label => {
+      label.classList.remove('active');
+      const page = Number(label.dataset.page);
+      if (page <= current && page >= activePage) {
+        activePage = page;
+        active = label;
+      }
+    });
+    if (!active) return;
+    active.classList.add('active');
+    const box = panel.getBoundingClientRect();
+    const rect = active.getBoundingClientRect();
+    if (rect.top < box.top) panel.scrollTop -= box.top - rect.top;
+    else if (rect.bottom > box.bottom) panel.scrollTop += rect.bottom - box.bottom;
   });
 }
 
@@ -3703,6 +4119,25 @@ mobileToolbarToggle.addEventListener('click', () => {
   setMobileToolbarExpanded(!mobileToolbarToggle.matches('[aria-expanded="true"]'));
 });
 showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbnails.checked));
+sidebarTabThumbnails?.addEventListener('click', () => setSidebarTab('thumbnails'));
+sidebarTabOutline?.addEventListener('click', () => setSidebarTab('outline'));
+sidebarTabBookmarks?.addEventListener('click', () => setSidebarTab('bookmarks'));
+sidebarTabsElement?.addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const tabs = [
+    [sidebarTabThumbnails, 'thumbnails'],
+    [sidebarTabOutline, 'outline'],
+    [sidebarTabBookmarks, 'bookmarks'],
+  ].filter(([button]) => button && !button.hidden);
+  const index = tabs.findIndex(([button]) => button === document.activeElement);
+  if (index < 0) return;
+  event.preventDefault();
+  const step = event.key === 'ArrowRight' ? 1 : -1;
+  const next = tabs[(index + step + tabs.length) % tabs.length];
+  next[0].focus();
+  setSidebarTab(next[1]);
+});
+applySidebarPanels();
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
 darkReading.addEventListener('change', () => setDarkReadingVisible(darkReading.checked));
 documentBackground.addEventListener('change', () => setDocumentBackground(documentBackground.value));
