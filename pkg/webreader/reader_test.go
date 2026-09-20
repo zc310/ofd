@@ -868,3 +868,38 @@ func TestPreferencesExposeDocumentZoom(t *testing.T) {
 		t.Fatalf("Zoom = %v, 期望 %v", zoomPreferences.Zoom, zoomValue)
 	}
 }
+
+func TestFontListIncludesDeclaredFonts(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.FontList()
+	if err != nil {
+		t.Fatalf("读取字体列表失败: %v", err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("字体列表为空")
+	}
+	embedded := 0
+	for _, font := range fonts {
+		if font.Name == "" && font.Family == "" {
+			t.Fatalf("字体缺少名称: %+v", font)
+		}
+		if font.Embedded {
+			embedded++
+			if font.Format == "" {
+				t.Fatalf("嵌入字体缺少格式: %+v", font)
+			}
+		}
+	}
+	if embedded == 0 {
+		t.Fatal("没有识别到嵌入字体")
+	}
+}

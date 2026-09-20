@@ -129,6 +129,26 @@ type FontResource struct {
 	Data   []byte
 }
 
+// FontInfo 描述文档声明的一个字体，不包含嵌入字体数据。
+type FontInfo struct {
+	// ID 是字体在所属文档内的标识。
+	ID uint64
+	// Name 是 OFD 声明的字体名称（FontName）。
+	Name string
+	// Family 是字体族名称（FamilyName），可能为空。
+	Family string
+	// Bold、Italic 表示字体声明为粗体或斜体。
+	Bold   bool
+	Italic bool
+	// Serif 表示衬线字体，FixedWidth 表示等宽字体。
+	Serif      bool
+	FixedWidth bool
+	// Format 是嵌入字体文件的格式（如 ttf、otf），无嵌入时为空。
+	Format string
+	// Embedded 表示文档是否内嵌了字体文件。
+	Embedded bool
+}
+
 // FontSource 是由调用方提供给 WASM 渲染器的字体文件。
 // 浏览器无法读取本机系统字体文件，因此无内嵌字体时应传入可访问的
 // TTF/OTF Web Font 数据，例如 Google Fonts 的 Noto Sans SC。
@@ -677,6 +697,53 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 		})
 	}
 	return resources, nil
+}
+
+// FontList 返回文档声明的全部字体（含没有嵌入文件的逻辑字体），不读取字体数据。
+func (r *Reader) FontList() ([]FontInfo, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	if r.ofd == nil {
+		return nil, nil
+	}
+	fonts := make([]FontInfo, 0)
+	seen := make(map[string]struct{})
+	for documentIndex, document := range r.ofd.Documents {
+		document.ForEachFont(func(id models.StID, font *models.Font) bool {
+			if font == nil {
+				return true
+			}
+			key := fmt.Sprintf("%d:%d", documentIndex, id)
+			if _, ok := seen[key]; ok {
+				return true
+			}
+			seen[key] = struct{}{}
+			embedded := font.FontFile != ""
+			format := ""
+			if embedded {
+				format = fontFormat(font.FontFile)
+			}
+			fonts = append(fonts, FontInfo{
+				ID:         uint64(id),
+				Name:       font.FontName,
+				Family:     font.FamilyName,
+				Bold:       font.Bold,
+				Italic:     font.Italic,
+				Serif:      font.Serif,
+				FixedWidth: font.FixedWidth,
+				Format:     format,
+				Embedded:   embedded,
+			})
+			return true
+		})
+	}
+	return fonts, nil
 }
 
 // Search 在所有页面的文字对象中查找 query，匹配不区分大小写。

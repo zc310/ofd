@@ -46,6 +46,19 @@
     .toolbar-group.view-group { position: relative; }
     .view-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; min-width: 190px; gap: 8px; padding: 10px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
     .view-panel[hidden] { display: none; }
+    .toolbar-group.zoom-group { position: relative; }
+    #zoom-menu-toggle { min-width: 54px; }
+    .zoom-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; min-width: 190px; padding: 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
+    .zoom-menu[hidden] { display: none; }
+    .zoom-menu button { min-height: 30px; padding: 3px 6px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; font: inherit; cursor: pointer; }
+    .zoom-menu button:hover { background: #e8f1fb; }
+    .toolbar-group.page-group { position: relative; }
+    .document-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; min-width: 200px; gap: 4px; padding: 6px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
+    .document-menu[hidden] { display: none; }
+    .document-menu button { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; color: #172033; font: inherit; text-align: left; cursor: pointer; }
+    .document-menu button:hover:not(:disabled) { background: #e8f1fb; }
+    .document-menu button:disabled { opacity: .5; cursor: default; }
+    .document-menu .material-symbols-outlined { font-size: 18px; }
      .view-option { display: flex; min-height: 32px; align-items: center; gap: 8px; padding: 4px; font-size: 14px; }
      .view-option select { min-width: 108px; min-height: 30px; margin-left: auto; padding: 3px 6px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; font: inherit; }
      .view-option input[type="color"] { width: 42px; min-height: 30px; margin-left: auto; padding: 2px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; }
@@ -75,6 +88,16 @@
      .info-row { display: flex; gap: 8px; margin: 0 0 4px; }
      .info-label { min-width: 70px; color: #667188; }
      .info-value { color: #172033; word-break: break-all; }
+     .info-section-title { margin: 10px 0 6px; padding-top: 8px; border-top: 1px solid #00000014; color: #667188; font-weight: 600; }
+     .font-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 6px; }
+     .font-name { color: #172033; }
+     .font-family { color: #667188; font-size: 12px; }
+     .font-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+     .font-badge { padding: 0 5px; border-radius: 4px; background: #e4e9f0; color: #4b5668; font-size: 11px; line-height: 1.6; }
+     body.dark-reading .info-section-title { border-color: #ffffff1f; color: #aeb9ca; }
+     body.dark-reading .font-name { color: #e6ebf2; }
+     body.dark-reading .font-family { color: #aeb9ca; }
+     body.dark-reading .font-badge { background: #303947; color: #c6d0dd; }
      .print-dialog { width: min(420px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
      .print-dialog::backdrop { background: #17203366; }
      .print-form { display: grid; gap: 16px; padding: 20px; }
@@ -149,6 +172,16 @@
      #back-to-top { position: fixed; right: 24px; bottom: 24px; z-index: 9; display: inline-flex; min-width: 42px; min-height: 42px; align-items: center; justify-content: center; border: 1px solid #ffffff66; border-radius: 50%; background: #263552e8; color: #fff; box-shadow: 0 3px 12px #17203340; font-size: 20px; line-height: 1; }
     #back-to-top:hover { background: #34476c; }
     #back-to-top[hidden] { display: none; }
+    .page-pill { position: fixed; left: 50%; bottom: 24px; z-index: 9; display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid #ffffff2e; border-radius: 999px; background: #172033e6; color: #fff; box-shadow: 0 3px 12px #17203340; transform: translateX(-50%); }
+    .page-pill[hidden] { display: none; }
+    .page-pill button { display: inline-flex; min-width: 34px; min-height: 34px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+    .page-pill button:hover:not(:disabled) { background: #ffffff26; }
+    .page-pill button:disabled { opacity: .4; cursor: default; }
+    .page-pill-label { display: inline-flex; align-items: center; gap: 4px; padding: 0 2px; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .page-pill input#page-number { width: 50px; min-height: 30px; padding: 2px 4px; border: 1px solid #ffffff38; border-radius: 5px; background: #ffffff1a; color: #fff; text-align: center; font: inherit; }
+    .page-pill input#page-number:disabled { opacity: .5; }
+    body.dark-reading .page-pill { background: #252c38e6; }
+    body:fullscreen .page-pill { bottom: calc(18px + env(safe-area-inset-bottom)); }
     body.dark-reading #render-progress-label { color: #aeb9ca; }
     body.reading-mode header { box-shadow: none; }
     body.reading-mode .brand strong { font-size: 0; }
@@ -179,6 +212,12 @@
     body.dark-reading .thumbnail.active { border-color: #80b4e5; box-shadow: inset 0 0 0 2px #80b4e5, 0 3px 10px #00000050; }
      body.dark-reading .page-card { box-shadow: 0 4px 20px #00000060; }
     body.dark-reading .search-panel, body.dark-reading .view-panel, body.dark-reading .info-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
+    body.dark-reading .zoom-menu { border-color: #536074; background: #252c38; color: #e6ebf2; }
+    body.dark-reading .zoom-menu button { border-color: #536074; background: #303947; color: #e6ebf2; }
+    body.dark-reading .zoom-menu button:hover { background: #3a465a; }
+    body.dark-reading .document-menu { border-color: #536074; background: #252c38; color: #e6ebf2; }
+    body.dark-reading .document-menu button { color: #e6ebf2; }
+    body.dark-reading .document-menu button:hover:not(:disabled) { background: #3a465a; }
     body.dark-reading .search-panel input { border-color: #536074; background: #303947; color: #e6ebf2; }
      body.dark-reading .view-option { color: #e6ebf2; }
      body.dark-reading .view-option select, body.dark-reading .view-option input[type="color"] { border-color: #536074; background: #303947; color: #e6ebf2; }
@@ -284,7 +323,7 @@
     #drop-hint { display: none; }
     @keyframes loading-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     @media (max-width: 620px) {
-      header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
+      header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
       header > * { margin: 0; }
       .brand { grid-column: 1 / -1; min-width: 0; }
       #document-name { max-width: calc(100vw - 150px); }
@@ -297,12 +336,12 @@
        .view-group { grid-column: 4; justify-content: center; }
        .info-group { grid-column: 5; justify-content: center; }
        .mobile-toolbar-toggle { display: inline-flex; grid-column: 6; justify-content: center; }
+       .page-group { display: inline-flex; grid-column: 7; justify-content: center; overflow: visible; }
        .toolbar-group.recent-group { position: static; }
        header .recent-panel { top: calc(100% + 8px); right: 10px; left: 10px; z-index: 20; width: auto; max-height: calc(100vh - 120px); max-height: calc(100dvh - 120px); overflow-y: auto; }
-         .page-group, .zoom-group { display: none; grid-column: 1 / -1; width: 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
-         .page-group::-webkit-scrollbar, .zoom-group::-webkit-scrollbar { display: none; }
-         header.mobile-toolbar-expanded .page-group { display: flex; grid-row: 3; }
-         header.mobile-toolbar-expanded .zoom-group { display: flex; grid-row: 4; }
+         .zoom-group { display: none; grid-column: 1 / -1; width: 100%; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+         .zoom-group::-webkit-scrollbar { display: none; }
+         header.mobile-toolbar-expanded .zoom-group { display: flex; grid-row: 3; }
 
 
       .page-group > span { display: inline-flex; align-items: center; }
@@ -313,6 +352,8 @@
 
 
        .view-panel { width: min(240px, calc(100vw - 20px)); }
+       .zoom-menu { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+       .document-menu { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; min-width: 0; }
          .page-spread { left: 0; justify-content: flex-start; transform: none; }
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
@@ -330,6 +371,7 @@
       #status-message { flex: 1 1 100%; }
       #render-progress { flex: 1 1 auto; width: auto; }
       #back-to-top { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
+      .page-pill { bottom: calc(14px + env(safe-area-inset-bottom)); }
     }
      @media (max-width: 380px) {
        header { gap: 5px; }
@@ -389,6 +431,7 @@
       <div id="view-panel" class="view-panel" hidden>
            <label class="view-option"><input id="show-thumbnails" type="checkbox" checked>显示缩略图</label>
            <label class="view-option"><input id="show-text-layer" type="checkbox" checked>显示文字层</label>
+           <label class="view-option"><input id="show-page-pill" type="checkbox" checked>底部页码</label>
            <label class="view-option"><input id="dark-reading" type="checkbox">深色阅读背景</label>
            <label class="view-option"><input id="clarity-priority" type="checkbox">清晰度优先</label>
            <label class="view-option" for="render-format">页面渲染格式<select id="render-format" aria-label="页面渲染格式">
@@ -429,23 +472,32 @@
     <div class="toolbar-group mobile-toolbar-toggle">
       <button id="mobile-toolbar-toggle" type="button" title="展开工具栏" aria-label="展开工具栏" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button>
     </div>
-    <div class="toolbar-group page-group" aria-label="页面导航">
-       <button id="previous" type="button" title="上一页" aria-label="上一页" disabled><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
-      <span><input id="page-number" type="number" min="1" value="1" size="3" disabled> / <span id="page-count">0</span></span>
-       <button id="next" type="button" title="下一页" aria-label="下一页" disabled><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
-       <button id="print-page" type="button" title="打印" aria-label="打印" disabled><span class="material-symbols-outlined" aria-hidden="true">print</span></button>
-       <button id="export-document" type="button" title="导出" aria-label="导出" disabled><span class="material-symbols-outlined" aria-hidden="true">download</span></button>
-       <button id="copy-page-text" type="button" title="复制当前页文字" aria-label="复制当前页文字" disabled><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
-       <button id="copy-all-text" type="button" title="复制全文" aria-label="复制全文" disabled><span class="material-symbols-outlined" aria-hidden="true">text_snippet</span></button>
-    </div>
     <div class="toolbar-group zoom-group" aria-label="缩放">
        <button id="zoom-out" type="button" title="缩小" aria-label="缩小" disabled><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
-      <span id="zoom-label">100%</span>
+       <button id="zoom-menu-toggle" type="button" title="缩放" aria-label="缩放" aria-haspopup="true" aria-expanded="false" disabled><span id="zoom-label">100%</span></button>
        <button id="zoom-in" type="button" title="放大" aria-label="放大" disabled><span class="material-symbols-outlined" aria-hidden="true">add</span></button>
-       <button id="zoom-fit" type="button" title="适应宽度" aria-label="适应宽度" disabled><span class="material-symbols-outlined" aria-hidden="true">width</span></button>
-       <button id="zoom-fit-page" type="button" title="适应页面" aria-label="适应页面" disabled><span class="material-symbols-outlined" aria-hidden="true">fit_screen</span></button>
        <button id="rotate-page" type="button" title="旋转 0°" aria-label="旋转 0°" disabled><span class="material-symbols-outlined" aria-hidden="true">rotate_right</span></button>
        <button id="reading-mode" type="button" title="阅读模式" aria-label="阅读模式" disabled aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">fullscreen</span></button>
+      <div id="zoom-menu" class="zoom-menu" hidden>
+        <button type="button" data-zoom="0.5">50%</button>
+        <button type="button" data-zoom="0.75">75%</button>
+        <button type="button" data-zoom="1">100%</button>
+        <button type="button" data-zoom="1.25">125%</button>
+        <button type="button" data-zoom="1.5">150%</button>
+        <button type="button" data-zoom="2">200%</button>
+        <button type="button" data-zoom="3">300%</button>
+        <button type="button" data-zoom-fit="width">适应宽度</button>
+        <button type="button" data-zoom-fit="page">适应页面</button>
+      </div>
+    </div>
+    <div class="toolbar-group page-group" aria-label="文档操作">
+       <button id="document-menu-toggle" type="button" title="文档操作" aria-label="文档操作" aria-haspopup="true" aria-expanded="false" disabled><span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>
+      <div id="document-menu" class="document-menu" hidden>
+         <button id="print-page" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">print</span>打印</button>
+         <button id="export-document" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">download</span>导出</button>
+         <button id="copy-page-text" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">content_copy</span>复制当前页文字</button>
+         <button id="copy-all-text" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">text_snippet</span>复制全文</button>
+      </div>
     </div>
   </header>
   <div id="status">
@@ -556,6 +608,12 @@
         <span id="drop-hint">松开鼠标即可打开</span>
       </div>
     </main>
+  </div>
+  <div id="page-pill" class="page-pill" role="group" aria-label="页码导航" hidden>
+     <button id="pill-previous" type="button" aria-label="上一页" title="上一页"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+    <span class="page-pill-label"><input id="page-number" type="number" min="1" value="1" size="3" aria-label="页码" disabled> / <span id="page-count">0</span></span>
+     <button id="pill-next" type="button" aria-label="下一页" title="下一页"><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+     <button id="pill-hide" type="button" aria-label="隐藏底部页码" title="隐藏"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
   </div>
    <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
   <script src="viewer.js"></script>
