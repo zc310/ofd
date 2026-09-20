@@ -25,7 +25,7 @@ require (
 	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/fontfix v0.0.2
+	github.com/zc310/fontfix v0.0.3-0.20260920024109-9aec3589ce48
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
 	golang.org/x/text v0.42.0
@@ -97,3 +97,5 @@ require (
 	modernc.org/token v1.1.0 // indirect
 	star-tex.org/x/tex v0.7.1 // indirect
 )
+
+replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260920023840-01f034c32b9b
