@@ -17,13 +17,11 @@ import (
 
 	"github.com/nao1215/imaging"
 	"github.com/zc310/ofd/internal/media"
-	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
 const (
 	timeoutDuration = 60 * time.Second
-	defaultSize     = 128
 	dpi             = 72
 )
 
@@ -35,7 +33,7 @@ var (
 
 func main() {
 	if err := runWithTimeout(); err != nil {
-		slog.Error("Error:", "err", err)
+		slog.Error("failed to generate thumbnail", "error", err)
 		os.Exit(1)
 	}
 }
@@ -80,8 +78,11 @@ func realMain() error {
 
 func parseSize(sizeStr string) (int, error) {
 	size, err := strconv.Atoi(sizeStr)
-	if err != nil || size <= 0 {
-		return defaultSize, err
+	if err != nil {
+		return 0, err
+	}
+	if size <= 0 {
+		return 0, errors.New("size must be a positive integer")
 	}
 	return size, nil
 }
@@ -112,18 +113,11 @@ func resizeImage(img image.Image, size int) image.Image {
 }
 
 func generateOFDThumbnail(input, output string, size int) error {
-	ofd, err := parser.NewOFD(input)
-	if err != nil {
-		return err
-	}
-	defer ofd.Close()
-
 	return converter.Image(input,
 		converter.Thumbnail(size),
 		converter.ImageWriter(func(page int, img image.Image) error {
 			return imaging.Save(img, output)
 		}),
 		converter.Page(1),
-		converter.PNG(),
 		converter.DPI(dpi))
 }
