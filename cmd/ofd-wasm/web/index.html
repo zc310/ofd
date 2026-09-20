@@ -153,12 +153,12 @@
     body.reading-mode header { box-shadow: none; }
     body.reading-mode .brand strong { font-size: 0; }
     body.reading-mode .brand strong::after { font-size: 16px; content: "OFD"; }
-     body.reading-mode #thumbnails { display: none; }
-      body.reading-mode .reader { grid-template-columns: minmax(0, 1fr); max-width: 100%; background: #e0e4e9; }
-     body.reading-mode .reader > #pages,
-     body.hide-thumbnails .reader > #pages { grid-column: 1; }
-     body.hide-thumbnails #thumbnails,
-     #thumbnails[hidden] { display: none !important; }
+      body.reading-mode #sidebar { display: none; }
+       body.reading-mode .reader { grid-template-columns: minmax(0, 1fr); max-width: 100%; background: #e0e4e9; }
+      body.reading-mode .reader > #pages,
+      body.hide-thumbnails .reader > #pages { grid-column: 1; }
+      body.hide-thumbnails #sidebar,
+      #sidebar[hidden] { display: none !important; }
       body.hide-thumbnails .reader { grid-template-columns: minmax(0, 1fr); max-width: 100%; background: #e0e4e9; }
      @media (min-width: 621px) {
        body.hide-thumbnails .reader { padding-left: 16px; }
@@ -201,13 +201,38 @@
 
       .reader { --thumbnail-column: 190px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
       .reader.hide-thumbnails { grid-template-columns: minmax(0, 1fr); }
-      .reader > #thumbnails { grid-column: 1; }
-      .reader > #pages { grid-column: 2; }
-      .reader.hide-thumbnails > #pages { grid-column: 1; }
-      #thumbnails { position: sticky; top: calc(var(--header-height, 0px) + 16px); display: block; width: 100%; min-width: 0; max-height: calc(100vh - var(--header-height, 0px) - 32px); padding-left: 8px; overflow: auto; scrollbar-width: none; }
-       @supports (height: 100dvh) {
-         #thumbnails { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
-       }
+       .reader > #sidebar { grid-column: 1; }
+       .reader > #pages { grid-column: 2; }
+       .reader.hide-thumbnails > #pages { grid-column: 1; }
+       #sidebar { position: sticky; top: calc(var(--header-height, 0px) + 16px); display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; max-height: calc(100vh - var(--header-height, 0px) - 32px); }
+        @supports (height: 100dvh) {
+          #sidebar { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
+        }
+       #sidebar-tabs { display: flex; flex: 0 0 auto; gap: 4px; }
+       #sidebar-tabs button { flex: 1 1 0; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 13px; cursor: pointer; }
+       #sidebar-tabs button:hover { background: #ffffff80; }
+       #sidebar-tabs button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
+       body.dark-reading #sidebar-tabs button { color: #aeb9ca; }
+       body.dark-reading #sidebar-tabs button.active { border-color: #536074; background: #303947; color: #e6ebf2; }
+       #thumbnails { flex: 1 1 auto; min-height: 0; overflow: auto; padding-left: 8px; scrollbar-width: none; }
+       #outline, #bookmarks { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 4px 10px 4px; scrollbar-width: thin; }
+       .outline-list { list-style: none; margin: 0; padding: 0; }
+       .outline-row { display: flex; align-items: center; gap: 2px; }
+       .outline-toggle, .outline-toggle-placeholder { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7b8798; cursor: pointer; }
+       .outline-toggle:hover { background: #ffffff80; }
+       .outline-toggle .material-symbols-outlined { font-size: 18px; transition: transform .15s; }
+       .outline-toggle.collapsed .material-symbols-outlined { transform: rotate(-90deg); }
+       .outline-label { flex: 1 1 auto; min-width: 0; padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: #26313f; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+       .outline-label:hover { background: #ffffffb0; }
+       .outline-label.active { background: #dbe8f6; color: #10508f; font-weight: 600; }
+       .outline-label:disabled { color: #8a94a3; cursor: default; }
+       .outline-label.outline-link::after { content: "↗"; margin-left: 4px; font-size: 11px; color: #7b8798; }
+       .outline-empty { margin: 12px 8px; color: #7b8798; font-size: 13px; }
+       body.dark-reading .outline-label { color: #d7dee8; }
+       body.dark-reading .outline-label:hover { background: #ffffff1a; }
+       body.dark-reading .outline-label.active { background: #2b4a6b; color: #cfe3f7; }
+       body.dark-reading .outline-toggle { color: #9aa7b8; }
+       body.dark-reading .outline-empty { color: #8b97a8; }
        #thumbnails::-webkit-scrollbar { display: none; }
 
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -291,7 +316,10 @@
          .page-spread { left: 0; justify-content: flex-start; transform: none; }
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
+      #sidebar { position: static; max-height: none; }
+      #sidebar-tabs { margin: 0 0 2px; }
       #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
+       #outline, #bookmarks { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
@@ -511,7 +539,16 @@
     </div>
   </dialog>
   <div class="reader">
-    <aside id="thumbnails" aria-label="页面缩略图"></aside>
+    <div id="sidebar">
+      <div id="sidebar-tabs" role="tablist" aria-label="导航视图">
+        <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="active">缩略图</button>
+        <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
+        <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks" hidden>书签</button>
+      </div>
+      <aside id="thumbnails" role="tabpanel" aria-label="页面缩略图"></aside>
+      <aside id="outline" role="tabpanel" aria-label="文档大纲" hidden></aside>
+      <aside id="bookmarks" role="tabpanel" aria-label="文档书签" hidden></aside>
+    </div>
     <main id="pages" tabindex="-1">
       <div id="empty">
         <strong>打开 OFD 文档</strong>

@@ -15,6 +15,15 @@
 - TXT 导出为一个文本文档。
 - 导出逐页执行并显示进度，可在当前页面完成后取消。
 
+### 导航
+
+- 左侧栏可在“缩略图”“大纲”“书签”之间切换，大纲以可折叠树展示，点击条目跳转到对应页面。
+- 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
+- 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
+- 没有大纲的文档显示占位提示，无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
+- 大纲项按文档声明的 `Expanded` 决定默认展开状态；大纲/书签面板支持方向键与 Home/End 移动焦点，页签支持左右方向键切换。
+- 用户尚未保存布局/缩放偏好时，采用文档声明的 `PageLayout`（OneColumn/TwoPageL/TwoPageR 等近似映射为单页/双页）和 `ZoomMode`/自定义 `Zoom`；`FitHeight`/`FitRect` 近似为“适应页面”。用户保存过的偏好优先。
+
 ### 显示设置
 
 - 显示或隐藏缩略图。
@@ -122,6 +131,8 @@ ofd.open(new Uint8Array(await file.arrayBuffer()))
 ofd.pageCount()
 ofd.pages()
 ofd.pageInfo(0)
+ofd.outline()
+ofd.preferences()
 ofd.text(0)
 ofd.search('关键词')
 ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
@@ -148,6 +159,9 @@ ofd.close()
 - 页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`；仍无效时回退为 A4。
 - 多个文档体分别使用各自的页面尺寸。
 - 页面实际展示或调用 `ofd.pageInfo(index)` 时，才按需读取指定页面的完整内容。
+- `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
+- 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
+- `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
 - `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
@@ -183,6 +197,8 @@ close
 cancel     target: request id
 addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boolean
 pageInfo   index: number
+outline
+preferences
 renderPage index: number, options: object
 renderPages indices: number[], options: object
 renderStream indices: number[], options: object[, callback: function]

@@ -15,6 +15,7 @@ import (
 	"github.com/klauspost/compress/zip"
 
 	"github.com/tdewolff/canvas"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 func TestOpenAndRenderPage(t *testing.T) {
@@ -760,5 +761,110 @@ func TestTextAndSearchCachesStayBounded(t *testing.T) {
 	}
 	if length := reader.search.Len(); length > searchCacheCapacity {
 		t.Fatalf("搜索缓存条目 = %d, 期望 <= %d", length, searchCacheCapacity)
+	}
+}
+
+func TestOutlineResolvesPageAndBookmark(t *testing.T) {
+	top := 20.0
+	zoom := 1.5
+	document := creator.Document{
+		ID:          "outline-test",
+		Title:       "大纲测试",
+		PageSize:    creator.A4,
+		Pages:       []creator.Page{{}, {}},
+		Preferences: &creator.ViewPreferences{PageMode: creator.PageModeUseOutlines},
+		Bookmarks:   []creator.Bookmark{{Name: "第三章", Goto: creator.GotoAction{Page: 1}}},
+		Outlines: []creator.Outline{
+			{
+				Title:   "第一章",
+				Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 0}}},
+				Children: []creator.Outline{
+					{Title: "1.1 节", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 1, Type: "XYZ", Top: &top, Zoom: &zoom}}}},
+				},
+			},
+			{Title: "书签跳转", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Bookmark: "第三章"}}}},
+			{Title: "外部链接", Actions: []creator.Action{{Event: creator.ActionEventClick, URI: &creator.URIAction{URI: "https://example.com"}}}},
+		},
+	}
+	var buffer bytes.Buffer
+	if err := creator.Create(document, &buffer); err != nil {
+		t.Fatalf("创建测试 OFD 失败: %v", err)
+	}
+	reader, err := Open(buffer.Bytes())
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	tree, err := reader.Outline()
+	if err != nil {
+		t.Fatalf("读取大纲失败: %v", err)
+	}
+	if tree.PageMode != string(creator.PageModeUseOutlines) {
+		t.Fatalf("PageMode = %q, 期望 UseOutlines", tree.PageMode)
+	}
+	if len(tree.Nodes) != 3 {
+		t.Fatalf("顶层大纲项 = %d, 期望 3", len(tree.Nodes))
+	}
+	if tree.Nodes[0].Title != "第一章" || tree.Nodes[0].Page != 0 {
+		t.Fatalf("节点 0 = %+v", tree.Nodes[0])
+	}
+	child := tree.Nodes[0].Children
+	if len(child) != 1 || child[0].Page != 1 {
+		t.Fatalf("节点 0 子项 = %+v", child)
+	}
+	if child[0].Dest == nil || child[0].Dest.Top == nil || *child[0].Dest.Top != top || child[0].Dest.Zoom == nil || *child[0].Dest.Zoom != zoom {
+		t.Fatalf("子项目标位置/缩放未解析: %+v", child[0].Dest)
+	}
+	if tree.Nodes[1].Page != 1 || tree.Nodes[1].Dest == nil {
+		t.Fatalf("书签跳转节点 = %+v", tree.Nodes[1])
+	}
+	if tree.Nodes[2].URI != "https://example.com" || tree.Nodes[2].Page != -1 {
+		t.Fatalf("链接节点 = %+v", tree.Nodes[2])
+	}
+	if len(tree.Bookmarks) != 1 || tree.Bookmarks[0].Name != "第三章" || tree.Bookmarks[0].Page != 1 {
+		t.Fatalf("书签列表 = %+v", tree.Bookmarks)
+	}
+}
+
+func TestPreferencesExposeDocumentZoom(t *testing.T) {
+	openWithPreferences := func(t *testing.T, preferences *creator.ViewPreferences) *Reader {
+		t.Helper()
+		document := creator.Document{
+			ID:          "preferences-test",
+			Title:       "偏好测试",
+			PageSize:    creator.A4,
+			Pages:       []creator.Page{{}},
+			Preferences: preferences,
+		}
+		var buffer bytes.Buffer
+		if err := creator.Create(document, &buffer); err != nil {
+			t.Fatalf("创建测试 OFD 失败: %v", err)
+		}
+		reader, err := Open(buffer.Bytes())
+		if err != nil {
+			t.Fatalf("打开测试 OFD 失败: %v", err)
+		}
+		t.Cleanup(func() { _ = reader.Close() })
+		return reader
+	}
+
+	modeReader := openWithPreferences(t, &creator.ViewPreferences{ZoomMode: creator.ZoomModeFitWidth})
+	modePreferences, err := modeReader.Preferences()
+	if err != nil {
+		t.Fatalf("读取显示偏好失败: %v", err)
+	}
+	if modePreferences.ZoomMode != creator.ZoomModeFitWidth {
+		t.Fatalf("ZoomMode = %q, 期望 %q", modePreferences.ZoomMode, creator.ZoomModeFitWidth)
+	}
+
+	zoomValue := 1.75
+	zoomReader := openWithPreferences(t, &creator.ViewPreferences{Zoom: &zoomValue})
+	zoomPreferences, err := zoomReader.Preferences()
+	if err != nil {
+		t.Fatalf("读取显示偏好失败: %v", err)
+	}
+	if zoomPreferences.Zoom == nil || *zoomPreferences.Zoom != zoomValue {
+		t.Fatalf("Zoom = %v, 期望 %v", zoomPreferences.Zoom, zoomValue)
 	}
 }

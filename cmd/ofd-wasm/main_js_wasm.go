@@ -47,6 +47,8 @@ func main() {
 	api.Set("addFallbackFont", js.FuncOf(app.addFallbackFont))
 	api.Set("close", js.FuncOf(app.close))
 	api.Set("info", js.FuncOf(app.info))
+	api.Set("outline", js.FuncOf(app.outline))
+	api.Set("preferences", js.FuncOf(app.preferences))
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
@@ -281,6 +283,38 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 		"modDate":      info.ModDate,
 		"creator":      info.Creator,
 		"version":      info.Version,
+	})
+}
+
+func (a *wasmApp) outline(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	tree, err := reader.Outline()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{
+		"page_mode": tree.PageMode,
+		"nodes":     outlineNodesValue(tree.Nodes),
+		"bookmarks": bookmarksValue(tree.Bookmarks),
+	})
+}
+
+func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	preferences, err := reader.Preferences()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{
+		"page_layout": preferences.PageLayout,
+		"zoom_mode":   preferences.ZoomMode,
+		"zoom":        optionalFloatValue(preferences.Zoom),
 	})
 }
 
@@ -830,6 +864,61 @@ func pageValue(page webreader.PageInfo) js.Value {
 		"width":  page.Width,
 		"height": page.Height,
 	})
+}
+
+func outlineNodesValue(nodes []webreader.OutlineNode) js.Value {
+	result := js.Global().Get("Array").New(len(nodes))
+	for index, node := range nodes {
+		result.SetIndex(index, objectValue(map[string]any{
+			"title":    node.Title,
+			"page":     node.Page,
+			"uri":      node.URI,
+			"dest":     outlineDestValue(node.Dest),
+			"expanded": optionalBoolValue(node.Expanded),
+			"children": outlineNodesValue(node.Children),
+		}))
+	}
+	return result
+}
+
+func outlineDestValue(dest *webreader.OutlineDest) any {
+	if dest == nil {
+		return nil
+	}
+	return objectValue(map[string]any{
+		"type":   dest.Type,
+		"left":   optionalFloatValue(dest.Left),
+		"top":    optionalFloatValue(dest.Top),
+		"right":  optionalFloatValue(dest.Right),
+		"bottom": optionalFloatValue(dest.Bottom),
+		"zoom":   optionalFloatValue(dest.Zoom),
+	})
+}
+
+func optionalFloatValue(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func optionalBoolValue(value *bool) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func bookmarksValue(bookmarks []webreader.Bookmark) js.Value {
+	result := js.Global().Get("Array").New(len(bookmarks))
+	for index, bookmark := range bookmarks {
+		result.SetIndex(index, objectValue(map[string]any{
+			"name": bookmark.Name,
+			"page": bookmark.Page,
+			"dest": outlineDestValue(bookmark.Dest),
+		}))
+	}
+	return result
 }
 
 func textRunsValue(runs []webreader.TextRun) js.Value {

@@ -86,6 +86,10 @@ async function execute(message) {
       return unwrap(self.ofd.memStats());
     case 'info':
       return unwrap(self.ofd.info());
+    case 'outline':
+      return unwrap(self.ofd.outline());
+    case 'preferences':
+      return unwrap(self.ofd.preferences());
     case 'pageInfo':
       return unwrap(self.ofd.pageInfo(message.index));
     case 'renderPage': {
