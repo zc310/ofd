@@ -170,6 +170,10 @@
      #startup-progress { width: min(360px, calc(100vw - 48px)); height: 10px; accent-color: #2476bd; }
      #startup-progress-label { color: #667188; font-size: 13px; font-variant-numeric: tabular-nums; }
      #back-to-top { position: fixed; right: 24px; bottom: 24px; z-index: 9; display: inline-flex; min-width: 42px; min-height: 42px; align-items: center; justify-content: center; border: 1px solid #ffffff66; border-radius: 50%; background: #263552e8; color: #fff; box-shadow: 0 3px 12px #17203340; font-size: 20px; line-height: 1; }
+     #sidebar-toggle { position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 8; display: none; min-height: 38px; padding: 6px 13px; border: 1px solid #ffffff66; border-radius: 19px; background: #263552e8; color: #fff; box-shadow: 0 3px 12px #17203340; font-size: 13px; cursor: pointer; }
+     #sidebar-toggle[aria-pressed="true"] { background: #3b82c4e8; }
+     .sidebar-backdrop { position: fixed; inset: 0; z-index: 10; display: none; background: #1720332e; }
+     .sidebar-handle { display: none; }
     #back-to-top:hover { background: #34476c; }
     #back-to-top[hidden] { display: none; }
     .page-pill { position: fixed; left: 50%; bottom: 24px; z-index: 9; display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid #ffffff2e; border-radius: 999px; background: #172033e6; color: #fff; box-shadow: 0 3px 12px #17203340; transform: translateX(-50%); }
@@ -481,12 +485,16 @@
          .page-spread { left: 0; justify-content: flex-start; transform: none; }
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
-       #sidebar { position: static; max-height: none; }
+       #sidebar { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 11; max-height: 62vh; margin: 0; padding: 4px 10px calc(10px + env(safe-area-inset-bottom)); border-radius: 14px 14px 0 0; background: #fff; box-shadow: 0 -6px 24px #17203340; overflow: visible; }
+       #sidebar-more-menu { top: auto; bottom: calc(100% + 6px); box-shadow: 0 -5px 18px #17203340; }
+       body.dark-reading #sidebar { background: #252c38; }
        .sidebar-resizer { display: none; }
        .thumbnail-toolbar { display: none; }
-       #sidebar-tabs { margin: 0 0 2px; }
+       .sidebar-handle { display: block; flex: 0 0 auto; width: 44px; height: 4px; margin: 2px auto 6px; border-radius: 2px; background: #b7c0cd; cursor: pointer; }
+       #sidebar-tabs { margin: 0; padding: 0; }
        #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
-        #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
+       #thumbnails[hidden] { display: none; }
+        #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
@@ -498,6 +506,11 @@
       #render-progress { flex: 1 1 auto; width: auto; }
       #back-to-top { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
       .page-pill { bottom: calc(14px + env(safe-area-inset-bottom)); }
+      #sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
+      body.sidebar-sheet #sidebar-toggle { display: none; }
+      body.sidebar-sheet .sidebar-backdrop { display: block; }
+      #sidebar-tabs > button { min-height: 40px; }
+      #outline .outline-label, #bookmarks .outline-label { padding-top: 9px; padding-bottom: 9px; }
     }
      @media (max-width: 380px) {
        header { gap: 5px; }
@@ -718,6 +731,7 @@
   </dialog>
   <div class="reader">
     <div id="sidebar">
+      <div id="sidebar-handle" class="sidebar-handle" role="button" tabindex="0" aria-label="收起侧栏"></div>
       <div id="sidebar-tabs" role="tablist" aria-label="导航视图">
         <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="active">缩略图</button>
         <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
@@ -768,6 +782,8 @@
      <button id="pill-hide" type="button" aria-label="隐藏底部页码" title="隐藏"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
   </div>
    <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+  <button id="sidebar-toggle" type="button" aria-pressed="true" aria-label="侧栏" title="侧栏">侧栏</button>
   <script src="viewer.js"></script>
 </body>
 </html>
