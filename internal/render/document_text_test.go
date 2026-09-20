@@ -293,7 +293,7 @@ func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
 
 func TestTextCodeGlyphsClampsExcessiveCodeCount(t *testing.T) {
 	runes := []rune("ab")
-	glyphs := textCodeGlyphs(runes, []models.CTCGTransform{{
+	glyphs := textCodeGlyphs(nil, runes, []models.CTCGTransform{{
 		CodePosition: 0,
 		CodeCount:    int(^uint(0) >> 1),
 		Glyphs:       []int{65},

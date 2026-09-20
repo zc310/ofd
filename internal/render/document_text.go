@@ -338,7 +338,7 @@ type textGlyph struct {
 
 func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
 	runes := []rune(code.Value)
-	glyphs := textCodeGlyphs(runes, object.CGTransform, codePosition)
+	glyphs := textCodeGlyphs(face, runes, object.CGTransform, codePosition)
 	if len(glyphs) == 0 {
 		return
 	}
@@ -384,7 +384,7 @@ func renderableTextValue(value string) bool {
 	return false
 }
 
-func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
+func textCodeGlyphs(face *canvas.FontFace, runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
 	if len(transforms) == 0 {
 		glyphs := make([]textGlyph, len(runes))
 		for i, r := range runes {
@@ -410,6 +410,13 @@ func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePositio
 		}
 		for _, id := range ids {
 			if id >= 0 && id <= 0xffff {
+				// 单码位对单字形且字体能按原 Unicode 成形时，优先使用原文本，
+				// 让 PDF 等输出保留可复制、可搜索的文字；否则退回字形私有区。
+				if len(ids) == 1 && transform.CodeCount == 1 && i < len(runes) &&
+					renderableTextValue(string(runes[i])) && fontCanRenderRune(face, runes[i]) {
+					glyphs = append(glyphs, textGlyph{value: string(runes[i])})
+					continue
+				}
 				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
 			}
 		}
@@ -426,6 +433,34 @@ func textCodeGlyphs(runes []rune, transforms []models.CTCGTransform, codePositio
 	return glyphs
 }
 
+// fontCanRenderRune 判断字体是否存在该 Unicode 码位的字形。缺少 Unicode cmap
+// 的子集字体在注入文档映射前会返回 false，此时调用方回退到字形私有区绘制。
+func fontCanRenderRune(face *canvas.FontFace, r rune) bool {
+	if face == nil || face.Font == nil {
+		return false
+	}
+	return face.Font.GlyphIndex(r) != 0
+}
+
+// fontCanRenderText 判断字体能否按给定文本成形：文本必须不含私有区字形引用，
+// 且每个可见字符都有对应字形。只有这样才能安全地用正常文字接口绘制。
+func fontCanRenderText(face *canvas.FontFace, value string) bool {
+	if containsPrivateGlyphRune(value) {
+		return false
+	}
+	rendered := false
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\uFFFD' {
+			continue
+		}
+		if !fontCanRenderRune(face, r) {
+			return false
+		}
+		rendered = true
+	}
+	return rendered
+}
+
 func textGlyphWidth(face *canvas.FontFace, glyph textGlyph) float64 {
 	return face.TextWidth(glyph.value)
 }
@@ -437,10 +472,10 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		return
 	}
 	// 某些嵌入式 CFF 字体经过 OFD 子集修复后不能安全地交给 PDF
-	// 子集器，因此保留路径回退；外部回退字体通常是完整字体，应保留
-	// 原生文字对象以支持复制和搜索。
+	// 子集器，因此对无法按调用文本成形的文字保留路径回退；已经注入文档
+	// Unicode 映射、字体可以成形的文字走正常文字接口，以保留复制和搜索能力。
 	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
-	if isEmbeddedFont && face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF {
+	if isEmbeddedFont && face.Font != nil && face.Font.SFNT != nil && face.Font.SFNT.IsCFF && !fontCanRenderText(face, value) {
 		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}

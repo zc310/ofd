@@ -56,6 +56,7 @@ type Fonts struct {
 	fallbacks      map[string]*canvas.FontFamily
 	fallbackFaces  []fallbackFace
 	fallbackByFont map[models.StRefID]string
+	glyphMappings  map[models.StRefID]map[rune]uint16
 	mu             sync.Mutex
 	loadLocksMu    sync.Mutex
 	loadLocks      map[models.StRefID]*sync.Mutex
@@ -114,9 +115,51 @@ func NewFonts(doc *parser.Document) *Fonts {
 		Fonts:          make(map[models.StRefID]*canvas.FontFamily),
 		fallbacks:      make(map[string]*canvas.FontFamily),
 		fallbackByFont: make(map[models.StRefID]string),
+		glyphMappings:  make(map[models.StRefID]map[rune]uint16),
 		loadLocks:      make(map[models.StRefID]*sync.Mutex),
 		renderLocks:    make(map[*canvas.FontFamily]*sync.Mutex),
 	}
+}
+
+// RegisterGlyphs 登记某个字体的 Unicode→字形映射。新增或变更映射时会作废该
+// 字体已加载的族，使后续 LoadFont 用完整映射重建，保证渲染使用原始文本。
+func (p *Fonts) RegisterGlyphs(id models.StRefID, pairs map[rune]uint16) {
+	if p == nil || len(pairs) == 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	mapping := p.glyphMappings[id]
+	if mapping == nil {
+		mapping = make(map[rune]uint16, len(pairs))
+		p.glyphMappings[id] = mapping
+	}
+	changed := false
+	for r, glyph := range pairs {
+		if current, ok := mapping[r]; !ok || current != glyph {
+			mapping[r] = glyph
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	delete(p.Fonts, id)
+	delete(p.fallbackByFont, id)
+	p.generation++
+}
+
+// glyphMappingList 返回某个字体已登记的映射，调用方需持有 p.mu。
+func (p *Fonts) glyphMappingList(id models.StRefID) []fontfix.GlyphMapping {
+	mapping := p.glyphMappings[id]
+	if len(mapping) == 0 {
+		return nil
+	}
+	list := make([]fontfix.GlyphMapping, 0, len(mapping))
+	for r, glyph := range mapping {
+		list = append(list, fontfix.GlyphMapping{Rune: r, Glyph: glyph})
+	}
+	return list
 }
 
 func (p *Fonts) loadLock(id models.StRefID) *sync.Mutex {
@@ -325,7 +368,10 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	if ft.FontFile != "" {
 		family := canvas.NewFontFamily(fontName)
 		if data, err := p.FileCache.Read(string(ft.FontFile)); err == nil {
-			if err := loadEmbeddedFont(family, data, fontStyle); err == nil {
+			p.mu.Lock()
+			mappings := p.glyphMappingList(id)
+			p.mu.Unlock()
+			if err := loadEmbeddedFont(family, data, fontStyle, mappings); err == nil {
 				return family, "", nil
 			}
 		}
@@ -880,7 +926,17 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 
 // loadEmbeddedFont 优先使用 fontfix 修复后的内嵌字体，修复失败时再尝试
 // 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
-func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
+// mappings 为文档提供的 Unicode→字形映射，用于让缺少 Unicode cmap 的子集字体
+// 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
+func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle, mappings []fontfix.GlyphMapping) error {
+	if len(mappings) > 0 {
+		if fixed, err := fontfix.RepairWithGlyphs(data, mappings); err == nil {
+			slog.Debug("load embedded font with glyph mappings", "family", family.Name(), "style", style, "mappings", len(mappings))
+			if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {
+				return nil
+			}
+		}
+	}
 	if fixed, err := fontfix.Repair(data); err == nil {
 		slog.Debug("load repaired embedded font", "family", family.Name(), "style", style, "bytes", len(fixed))
 		if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {

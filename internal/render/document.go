@@ -267,6 +267,9 @@ func (p *Document) pageContent(ctx *canvas.Context, page *parser.Page, seal bool
 	if content == nil {
 		return
 	}
+	// 登记本页（含模板与注释）的 Unicode→字形映射，使缺少 Unicode cmap 的
+	// 内嵌子集字体也能按原始文本渲染，保留 PDF 文字可复制性。
+	p.fonts.registerPageGlyphs(p.Document, page, content)
 	pb := content.Area.PhysicalBox
 	for _, template := range content.Template {
 		p.template(ctx, template, pb, budget)
