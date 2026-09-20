@@ -388,6 +388,9 @@ const sidebarElement = document.querySelector('#sidebar');
 const sidebarTabsElement = document.querySelector('#sidebar-tabs');
 const sidebarFilter = document.querySelector('#sidebar-filter');
 const sidebarResizer = document.querySelector('#sidebar-resizer');
+const sidebarHandle = document.querySelector('#sidebar-handle');
+const sidebarBackdrop = document.querySelector('#sidebar-backdrop');
+const sidebarToggle = document.querySelector('#sidebar-toggle');
 const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
 const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
 const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
@@ -500,6 +503,23 @@ let thumbnailsVisible = (() => {
     return true;
   }
 })();
+const mobileSidebarStorageKey = 'ofd-mobile-sidebar';
+let mobileSidebarOpen = (() => {
+  try {
+    return localStorage.getItem(mobileSidebarStorageKey) === 'true';
+  } catch (_) {
+    return false;
+  }
+})();
+
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 620px)').matches;
+}
+
+// sidebarShown 返回当前平台下侧栏/底部抽屉是否可见。
+function sidebarShown() {
+  return isMobileViewport() ? mobileSidebarOpen : thumbnailsVisible;
+}
 const sidebarTabStorageKey = 'ofd-sidebar-tab';
 let activeSidebarTab = (() => {
   try {
@@ -2606,7 +2626,7 @@ function flushThumbnailBatch() {
 
 function buildPages() {
   updateThumbnailLayout();
-  readerElement.classList.toggle('hide-thumbnails', !thumbnailsVisible);
+  readerElement.classList.toggle('hide-thumbnails', !sidebarShown());
   applySidebarPanels();
   resizeObserver?.disconnect();
   pagesElement.replaceChildren();
@@ -3780,8 +3800,9 @@ const sidebarMoreLabels = { fonts: '字体', attachments: '附件', media: '资�
 function applySidebarPanels() {
   if (!sidebarElement) return;
   if (!sidebarTabs.includes(activeSidebarTab)) activeSidebarTab = 'thumbnails';
-  sidebarElement.hidden = !thumbnailsVisible;
-  const active = tab => thumbnailsVisible && activeSidebarTab === tab;
+  const visible = sidebarShown();
+  sidebarElement.hidden = !visible;
+  const active = tab => visible && activeSidebarTab === tab;
   thumbnailsElement.hidden = !active('thumbnails');
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
@@ -3824,8 +3845,20 @@ function applySidebarPanels() {
   sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
   sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
   sidebarMoreSignatures?.classList.toggle('active', activeSidebarTab === 'signatures');
-  if (sidebarMoreMenu && thumbnailsVisible === false) setSidebarMoreOpen(false);
+  if (sidebarMoreMenu && !visible) setSidebarMoreOpen(false);
   if (thumbnailSizeSlider) thumbnailSizeSlider.value = String(thumbnailSizePercent);
+  const sheet = isMobileViewport() && mobileSidebarOpen;
+  document.body.classList.toggle('sidebar-sheet', sheet);
+  if (sidebarBackdrop) sidebarBackdrop.hidden = !sheet;
+  updateSidebarToggle();
+}
+
+function updateSidebarToggle() {
+  if (!sidebarToggle) return;
+  const shown = sidebarShown();
+  sidebarToggle.setAttribute('aria-pressed', String(shown));
+  sidebarToggle.textContent = shown ? '收起侧栏' : '侧栏';
+  sidebarToggle.title = shown ? '隐藏侧栏' : '显示侧栏';
 }
 
 function setSidebarMoreOpen(open) {
@@ -3875,13 +3908,19 @@ function setSidebarTab(tab) {
 }
 
 function toggleSidebar() {
-  setThumbnailsVisible(!thumbnailsVisible);
+  setThumbnailsVisible(!sidebarShown());
+}
+
+// collapseSidebarAfterJump 在手机端点击条目跳转后收起底部抽屉，露出页面。
+function collapseSidebarAfterJump() {
+  if (!isMobileViewport() || !mobileSidebarOpen) return;
+  setThumbnailsVisible(false);
 }
 
 // cycleSidebarPanel 在侧栏面板之间循环切换（含“更多”里的字体/附件/资源/注解/签名）。
 function cycleSidebarPanel(step) {
   if (!sidebarTabs.length) return;
-  if (!thumbnailsVisible) setThumbnailsVisible(true);
+  if (!sidebarShown()) setThumbnailsVisible(true);
   const index = sidebarTabs.indexOf(activeSidebarTab);
   const next = sidebarTabs[(index + step + sidebarTabs.length) % sidebarTabs.length];
   setSidebarTab(next);
@@ -3933,14 +3972,21 @@ function resetSidebarFilter() {
 }
 
 function setThumbnailsVisible(visible) {
-  thumbnailsVisible = visible;
+  if (isMobileViewport()) {
+    mobileSidebarOpen = visible;
+    try {
+      localStorage.setItem(mobileSidebarStorageKey, String(visible));
+    } catch (_) {}
+  } else {
+    thumbnailsVisible = visible;
+    try {
+      localStorage.setItem(thumbnailsStorageKey, String(visible));
+    } catch (_) {}
+  }
   showThumbnails.checked = visible;
   applySidebarPanels();
   readerElement.classList.toggle('hide-thumbnails', !visible);
   document.body.classList.toggle('hide-thumbnails', !visible);
-  try {
-    localStorage.setItem(thumbnailsStorageKey, String(visible));
-  } catch (_) {}
   if (!visible) setViewPanelOpen(false);
   updateThumbnailMetrics();
   scheduleVirtualUpdate();
@@ -4194,7 +4240,7 @@ function renderBookmarks() {
     label.title = bookmark.name || '';
     if (Number.isInteger(bookmark.page) && bookmark.page >= 0) {
       label.dataset.page = String(bookmark.page);
-      label.addEventListener('click', () => goToDestination(bookmark.page, bookmark.dest));
+      label.addEventListener('click', () => { goToDestination(bookmark.page, bookmark.dest); collapseSidebarAfterJump(); });
     } else {
       label.disabled = true;
     }
@@ -4789,7 +4835,7 @@ function buildAnnotationItem(info) {
   item.className = 'annotation-item';
   const hasPage = Number.isInteger(info?.page) && info.page >= 0;
   if (hasPage) {
-    item.addEventListener('click', () => goToAnnotation(info));
+    item.addEventListener('click', () => { goToAnnotation(info); collapseSidebarAfterJump(); });
     item.title = `跳转到第 ${info.page + 1} 页`;
   } else {
     item.disabled = true;
@@ -4884,7 +4930,7 @@ function buildSignatureStamp(info, stamp, stampIndex) {
   button.className = 'signature-stamp';
   const hasPage = Number.isInteger(stamp?.page) && stamp.page >= 0;
   if (hasPage) {
-    button.addEventListener('click', () => goToAnnotation({ page: stamp.page, boundary: stamp.boundary }));
+    button.addEventListener('click', () => { goToAnnotation({ page: stamp.page, boundary: stamp.boundary }); collapseSidebarAfterJump(); });
     button.title = `跳转到第 ${stamp.page + 1} 页`;
   } else {
     button.disabled = true;
@@ -5191,7 +5237,7 @@ function buildOutlineList(nodes, depth, forceExpand = false, pathPrefix = '') {
     label.title = node.title || '';
     if (Number.isInteger(node.page) && node.page >= 0) {
       label.dataset.page = String(node.page);
-      label.addEventListener('click', () => goToDestination(node.page, node.dest));
+      label.addEventListener('click', () => { goToDestination(node.page, node.dest); collapseSidebarAfterJump(); });
     } else if (typeof node.uri === 'string' && node.uri) {
       label.classList.add('outline-link');
       label.title = node.uri;
@@ -5422,10 +5468,10 @@ function setDocumentBackground(mode, color = documentBackgroundCustomColor) {
 }
 
 try {
-  showThumbnails.checked = thumbnailsVisible;
-  setThumbnailsVisible(thumbnailsVisible);
+  showThumbnails.checked = sidebarShown();
+  setThumbnailsVisible(sidebarShown());
 } catch (_) {
-  document.body.classList.toggle('hide-thumbnails', !thumbnailsVisible);
+  document.body.classList.toggle('hide-thumbnails', !sidebarShown());
 }
 try {
   setRenderFormat(renderFormat);
@@ -5554,6 +5600,14 @@ sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachmen
 sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
 sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
 sidebarMoreSignatures?.addEventListener('click', () => setSidebarTab('signatures'));
+sidebarToggle?.addEventListener('click', () => setThumbnailsVisible(!sidebarShown()));
+sidebarBackdrop?.addEventListener('click', () => setThumbnailsVisible(false));
+sidebarHandle?.addEventListener('click', () => setThumbnailsVisible(false));
+sidebarHandle?.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  setThumbnailsVisible(false);
+});
 if (thumbnailSizeSlider) {
   thumbnailSizeSlider.addEventListener('input', () => setThumbnailSize(Number(thumbnailSizeSlider.value)));
   thumbnailSizeSlider.addEventListener('change', persistThumbnailSize);
@@ -5653,6 +5707,7 @@ window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualTranslate, { passive: true });
 thumbnailsElement.addEventListener('scroll', scheduleThumbnailVirtualUpdate, { passive: true });
 window.addEventListener('resize', () => {
+  applySidebarPanels();
   updateThumbnailMetrics();
   updatePageVirtualMetrics();
   if (zoomMode === 'fit') fitWidthZoom();
