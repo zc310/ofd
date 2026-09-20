@@ -90,6 +90,7 @@ func convertToPDF(input any, conv *converter.Converter) ([]byte, error) {
 	if conv != nil {
 		paper := conv.Paper()
 		options.Chrome = conv.ChromePath()
+		options.Timeout = conv.OfficeTimeout()
 		// 传入未交换的纸张尺寸，由 Chrome 依据 Landscape 决定方向。
 		options.Width = paper.Width
 		options.Height = paper.Height

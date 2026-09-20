@@ -311,68 +311,150 @@ func fallbackPDFCode(value byte) string {
 
 func parsePDFToUnicode(data []byte) map[uint16]string {
 	result := map[uint16]string{}
+	tokens := tokenizePDFCMap(string(data))
 	mode := ""
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+	for index := 0; index < len(tokens); index++ {
+		token := tokens[index]
+		switch token {
+		case "beginbfchar":
+			mode = "char"
 			continue
-		}
-		// CMap 规范允许 beginbfchar/beginbfrange 前带条目数量，例如
-		// "136 beginbfchar"；此时操作符不是第一个字段，需要按最后一个字段识别。
-		keyword := fields[0]
-		if len(fields) > 1 {
-			keyword = fields[len(fields)-1]
-		}
-		switch keyword {
-		case "beginbfchar", "beginbfrange":
-			mode = keyword
+		case "beginbfrange":
+			mode = "range"
 			continue
 		case "endbfchar", "endbfrange":
 			mode = ""
 			continue
 		}
-		if mode == "" || len(fields) < 2 || !strings.HasPrefix(fields[0], "<") {
+		if mode == "" || !strings.HasPrefix(token, "<") {
 			continue
 		}
-		source, ok := pdfHexUint(fields[0])
+		source, ok := pdfHexUint(token)
 		if !ok {
 			continue
 		}
-		if mode == "beginbfchar" {
-			if target, ok := pdfHexString(fields[1]); ok {
+		switch mode {
+		case "char":
+			if index+1 >= len(tokens) {
+				continue
+			}
+			if target, ok := pdfHexString(tokens[index+1]); ok {
 				result[source] = target
 			}
-			continue
-		}
-		if len(fields) < 3 {
-			continue
-		}
-		end, endOK := pdfHexUint(fields[1])
-		if !endOK || end < source {
-			continue
-		}
-		if fields[2] == "[" {
-			for code, index := source, 3; code <= end && index < len(fields); code, index = code+1, index+1 {
-				target := fields[index]
-				if target == "]" {
-					break
-				}
-				if value, ok := pdfHexString(target); ok {
-					result[code] = value
-				}
+			index++
+		case "range":
+			if index+2 >= len(tokens) {
+				continue
 			}
-			continue
-		}
-		start, ok := pdfHexString(fields[2])
-		if !ok {
-			continue
-		}
-		for code := source; code <= end; code++ {
-			result[code] = start
-			start = incrementPDFUnicode(start)
+			end, endOK := pdfHexUint(tokens[index+1])
+			if !endOK || end < source {
+				continue
+			}
+			// bfrange 的第三项为 "<start>"（连续递增）或 "[...]"（逐个列出）。
+			if tokens[index+2] == "[" {
+				cursor := index + 3
+				for code := source; code <= end && cursor < len(tokens); code, cursor = code+1, cursor+1 {
+					if tokens[cursor] == "]" {
+						cursor++
+						break
+					}
+					if value, ok := pdfHexString(tokens[cursor]); ok {
+						result[code] = value
+					}
+				}
+				index = cursor - 1
+				continue
+			}
+			start, ok := pdfHexString(tokens[index+2])
+			if !ok {
+				continue
+			}
+			for code := source; code <= end; code++ {
+				result[code] = start
+				start = incrementPDFUnicode(start)
+			}
+			index += 2
 		}
 	}
 	return result
+}
+
+// tokenizePDFCMap 把 ToUnicode CMap 文本切分为 token。CMap 允许相邻的
+// "<...>" 之间没有空白（例如 <0336><0336><4e0a>），因此不能直接用
+// strings.Fields，需要按分隔符切分并把十六进制串整体保留。
+func tokenizePDFCMap(data string) []string {
+	tokens := make([]string, 0, 256)
+	for index := 0; index < len(data); {
+		current := data[index]
+		switch {
+		case current == '%':
+			// 注释到行尾。
+			for index < len(data) && data[index] != '\n' {
+				index++
+			}
+		case current == '(':
+			// 跳过字面字符串（如 /Registry (Adobe)）。
+			depth := 1
+			index++
+			for index < len(data) && depth > 0 {
+				switch data[index] {
+				case '\\':
+					index++
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+				index++
+			}
+		case current == '<':
+			if index+1 < len(data) && data[index+1] == '<' {
+				index += 2
+				continue
+			}
+			end := strings.IndexByte(data[index:], '>')
+			if end < 0 {
+				return tokens
+			}
+			tokens = append(tokens, data[index:index+end+1])
+			index += end + 1
+		case current == '>' || current == ')' || current == '{' || current == '}':
+			index++
+		case current == '[' || current == ']':
+			tokens = append(tokens, string(current))
+			index++
+		case isPDFCMapSpace(current):
+			index++
+		default:
+			end := index
+			for end < len(data) && !isPDFCMapDelimiter(data[end]) {
+				end++
+			}
+			if end == index {
+				index++
+				continue
+			}
+			tokens = append(tokens, data[index:end])
+			index = end
+		}
+	}
+	return tokens
+}
+
+func isPDFCMapSpace(value byte) bool {
+	switch value {
+	case ' ', '\t', '\r', '\n', '\f', 0:
+		return true
+	}
+	return false
+}
+
+func isPDFCMapDelimiter(value byte) bool {
+	switch value {
+	case '<', '>', '[', ']', '(', ')', '{', '}', '%':
+		return true
+	}
+	return isPDFCMapSpace(value)
 }
 
 func pdfHexUint(value string) (uint16, bool) {

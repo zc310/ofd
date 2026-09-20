@@ -80,8 +80,8 @@ func TestHTMLDocumentsSupportsSinglePage(t *testing.T) {
 func TestHTMLDocumentTitleUsesOFDMetadata(t *testing.T) {
 	title := `报告 <2026>`
 	ofd := &parser.OFD{OFD: models.OFD{DocBodies: []models.DocBody{{DocInfo: models.DocInfo{Title: &title}}}}}
-	if got := htmlDocumentTitle(ofd); got != title {
-		t.Fatalf("htmlDocumentTitle() = %q, want %q", got, title)
+	if got := documentTitle(ofd); got != title {
+		t.Fatalf("documentTitle() = %q, want %q", got, title)
 	}
 	if got := htmlHeader(title); !strings.Contains(got, "<title>报告 &lt;2026&gt;</title>") {
 		t.Fatalf("HTML title was not escaped: %s", got)
@@ -91,7 +91,7 @@ func TestHTMLDocumentTitleUsesOFDMetadata(t *testing.T) {
 func TestHTMLDocumentTitleFallsBackWhenMetadataIsEmpty(t *testing.T) {
 	empty := "  "
 	ofd := &parser.OFD{OFD: models.OFD{DocBodies: []models.DocBody{{DocInfo: models.DocInfo{Title: &empty}}}}}
-	if got := htmlDocumentTitle(ofd); got != "OFD 文档" {
-		t.Fatalf("htmlDocumentTitle() = %q, want default title", got)
+	if got := documentTitle(ofd); got != "OFD 文档" {
+		t.Fatalf("documentTitle() = %q, want default title", got)
 	}
 }

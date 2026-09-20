@@ -333,7 +333,7 @@ func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*rend
 		return err
 	}
 	if ofd != nil {
-		conv.docTitle = htmlDocumentTitle(ofd)
+		conv.docTitle = documentTitle(ofd)
 	}
 	return encode(documents, output, conv)
 }

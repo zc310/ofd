@@ -2,13 +2,14 @@ package converter
 
 import (
 	"errors"
-	"fmt"
 	"io"
+	"math"
+	"sort"
 	"strings"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/textdoc"
 )
 
 func init() {
@@ -27,33 +28,24 @@ func (e *textEncoder) Encode(input any, output io.Writer, conv *Converter) error
 }
 
 func (e *textEncoder) textFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
-	return textDocuments(renderDocsToParserDocs(documents), output, conv)
-}
-
-type markdownEncoder struct{}
-
-func (e *markdownEncoder) Name() string         { return "markdown" }
-func (e *markdownEncoder) Kind() Kind           { return KindDocument }
-func (e *markdownEncoder) Extensions() []string { return []string{".md", ".markdown"} }
-func (e *markdownEncoder) MIME() string         { return "text/markdown" }
-func (e *markdownEncoder) Encode(input any, output io.Writer, conv *Converter) error {
-	return encodeOFD(input, output, conv, e.markdownFromDocuments)
-}
-
-func (e *markdownEncoder) markdownFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
-	return markdownDocuments(renderDocsToParserDocs(documents), output, conv)
-}
-
-// renderDocsToParserDocs 从 render.Document 中提取 parser.Document。
-func renderDocsToParserDocs(documents []*render.Document) []*parser.Document {
-	docs := make([]*parser.Document, len(documents))
-	for i, d := range documents {
-		docs[i] = d.Document
+	pages, err := extractPageTexts(documents, conv.page)
+	if err != nil {
+		return err
 	}
-	return docs
+	return textDocuments(pages, output)
 }
 
-const maxTextCompositeDepth = 32
+func textDocuments(pages []string, output io.Writer) error {
+	if output == nil {
+		return errors.New("未设置文本输出参数")
+	}
+	text := strings.Join(pages, "\n\n")
+	if text != "" {
+		text += "\n"
+	}
+	_, err := io.WriteString(output, text)
+	return err
+}
 
 // Text 提取 input 中 OFD 文档的文字并写入 output。
 // 不会保留字体、颜色和布局信息；不同文字对象按行输出，不同页面使用分页符分隔。
@@ -71,233 +63,134 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
-	return textDocuments(documents, output, newConverter(opts...))
+	docs := make([]*render.Document, len(documents))
+	for i, d := range documents {
+		docs[i] = &render.Document{Document: d}
+	}
+	return textFromRenderDocuments(docs, output, newConverter(opts...))
 }
 
-func textDocuments(documents []*parser.Document, output io.Writer, conv *Converter) error {
-	if output == nil {
-		return errors.New("未设置文本输出参数")
-	}
-	pages, err := collectPageTexts(documents, conv.page)
+func textFromRenderDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
+	pages, err := extractPageTexts(documents, conv.page)
 	if err != nil {
 		return err
 	}
-	text := strings.Join(pages, "\n\f\n")
-	if text != "" {
-		text += "\n"
-	}
-	_, err = io.WriteString(output, text)
-	return err
+	return textDocuments(pages, output)
 }
 
-// Markdown 提取 input 中 OFD 文档的文字并写入 Markdown 文档。
-// 每个页面输出为二级标题；文字对象按行输出，并转义 Markdown 特殊字符。
-func Markdown(input any, output io.Writer, opts ...Option) error {
-	return Encode("markdown", input, output, opts...)
-}
-
-// MarkdownDocument 提取已解析 OFD 文档中的文字并写入 Markdown 文档。
-func MarkdownDocument(doc *parser.Document, output io.Writer, opts ...Option) error {
-	return MarkdownDocuments([]*parser.Document{doc}, output, opts...)
-}
-
-// MarkdownDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 Markdown 文档。
-func MarkdownDocuments(documents []*parser.Document, output io.Writer, opts ...Option) error {
-	if output == nil {
-		return errors.New("未设置Markdown输出参数")
-	}
-	return markdownDocuments(documents, output, newConverter(opts...))
-}
-
-func markdownDocuments(documents []*parser.Document, output io.Writer, conv *Converter) error {
-	if output == nil {
-		return errors.New("未设置Markdown输出参数")
-	}
-	pages, err := collectPageTexts(documents, conv.page)
-	if err != nil {
-		return err
-	}
-
-	var markdown strings.Builder
-	markdown.WriteString("# OFD 文档\n")
-	for index, page := range pages {
-		pageNumber := index + 1
-		if conv.page > 0 {
-			pageNumber = conv.page
-		}
-		fmt.Fprintf(&markdown, "\n## 第 %d 页\n\n", pageNumber)
-		if page == "" {
-			continue
-		}
-		for line := range strings.SplitSeq(page, "\n") {
-			markdown.WriteString(escapeMarkdownLine(line))
-			markdown.WriteByte('\n')
-		}
-	}
-	_, err = io.WriteString(output, markdown.String())
-	return err
-}
-
-func collectPageTexts(documents []*parser.Document, page int) ([]string, error) {
-	pageCount := 0
-	for _, doc := range documents {
-		if doc != nil {
-			for _, page := range doc.Pages {
-				if page != nil {
-					pageCount++
-				}
-			}
-		}
-	}
-	if pageCount == 0 {
-		return nil, errors.New("文档没有页面")
-	}
-	pageStart, pageEnd, err := pageRange(pageCount, page)
+// extractPageTexts 提取每个页面的纯文本表示。
+func extractPageTexts(documents []*render.Document, page int) ([]string, error) {
+	pages, err := collectTextPages(documents, page)
 	if err != nil {
 		return nil, err
 	}
+	textPages := make([]string, len(pages))
+	for i, p := range pages {
+		textPages[i] = strings.Join(arrangeTextLayout(p.Entries, p.Width), "\n")
+	}
+	return textPages, nil
+}
 
-	pages := make([]string, 0, pageEnd-pageStart)
-	globalPage := 0
-	for _, doc := range documents {
-		if doc == nil {
+// collectTextPages 按全局页码校验并提取页面。
+func collectTextPages(documents []*render.Document, page int) ([]textdoc.Page, error) {
+	docs := parserDocuments(documents)
+	total := textdoc.Count(docs)
+	if total == 0 {
+		return nil, errors.New("文档没有页面")
+	}
+	start, end, err := pageRange(total, page)
+	if err != nil {
+		return nil, err
+	}
+	return textdoc.Collect(docs, start, end), nil
+}
+
+// parserDocuments 从 render.Document 中提取底层 parser.Document。
+func parserDocuments(documents []*render.Document) []*parser.Document {
+	docs := make([]*parser.Document, len(documents))
+	for i, d := range documents {
+		if d != nil {
+			docs[i] = d.Document
+		}
+	}
+	return docs
+}
+
+const textLayoutColumns = 80
+
+// arrangeTextLayout 将文字对象按 y 聚成行、行内按 x 排列，并用前导和间隔空格
+// 近似还原列位置。纯文本只有行列两个维度，因此只能做到近似对齐。
+func arrangeTextLayout(entries []textdoc.Entry, pageWidth float64) []string {
+	valid := make([]textdoc.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Text == "" || !textdoc.Finite(entry.X) || !textdoc.Finite(entry.Y) {
 			continue
 		}
-		for _, page := range doc.Pages {
-			if page == nil {
-				continue
-			}
-			if globalPage >= pageStart && globalPage < pageEnd {
-				pages = append(pages, extractPageText(doc, page))
-			}
-			globalPage++
-			if globalPage >= pageEnd {
+		valid = append(valid, entry)
+	}
+	if len(valid) == 0 {
+		return nil
+	}
+	sort.SliceStable(valid, func(i, j int) bool {
+		if valid[i].Y != valid[j].Y {
+			return valid[i].Y < valid[j].Y
+		}
+		return valid[i].X < valid[j].X
+	})
+
+	unit := pageWidth / textLayoutColumns
+	if !textdoc.Finite(unit) || unit <= 0 {
+		unit = 1
+	}
+	minX := valid[0].X
+	for _, entry := range valid[1:] {
+		if entry.X < minX {
+			minX = entry.X
+		}
+	}
+
+	lines := make([]string, 0, len(valid))
+	for start := 0; start < len(valid); {
+		rowY := valid[start].Y
+		rowSize := valid[start].Size
+		end := start + 1
+		for end < len(valid) {
+			if valid[end].Y-rowY > textdoc.RowTolerance(rowSize, valid[end].Size, unit) {
 				break
 			}
+			if valid[end].Size > rowSize {
+				rowSize = valid[end].Size
+			}
+			end++
 		}
-		if globalPage >= pageEnd {
-			break
-		}
+		row := valid[start:end]
+		sort.SliceStable(row, func(i, j int) bool { return row[i].X < row[j].X })
+		lines = append(lines, layoutTextRow(row, minX, unit))
+		start = end
 	}
-	return pages, nil
+	return lines
 }
 
-func escapeMarkdownLine(line string) string {
-	line = strings.NewReplacer(
-		`\`, `\\`,
-		"`", "\\`",
-		"*", "\\*",
-		"_", "\\_",
-		"[", "\\[",
-		"]", "\\]",
-		"<", "\\<",
-		">", "\\>",
-		"|", "\\|",
-		"~", "\\~",
-	).Replace(line)
-	if len(line) > 0 {
-		switch line[0] {
-		case '#', '-', '+', '=', '>':
-			line = "\\" + line
-		}
-	}
-	if index := strings.Index(line, ". "); index > 0 && allDigits(line[:index]) {
-		line = line[:index] + `\.` + line[index+1:]
-	}
-	return line
-}
+func layoutTextRow(row []textdoc.Entry, minX, unit float64) string {
+	var builder strings.Builder
+	width := 0
 
-func allDigits(value string) bool {
-	if value == "" {
-		return false
-	}
-	for index := 0; index < len(value); index++ {
-		if value[index] < '0' || value[index] > '9' {
-			return false
+	for index, entry := range row {
+		column := int(math.Round((entry.X - minX) / unit))
+		if column < 0 {
+			column = 0
 		}
-	}
-	return true
-}
-
-func extractPageText(doc *parser.Document, page *parser.Page) string {
-	if page == nil {
-		return ""
-	}
-	lease, err := page.AcquireLease()
-	if err != nil {
-		return ""
-	}
-	defer lease.Release()
-	lines := make([]string, 0)
-	content := lease.Content()
-	if content == nil {
-		return ""
-	}
-	for _, template := range content.Template {
-		if content := doc.GetTemplate(models.StID(template.TemplateID)); content != nil {
-			appendPageContentText(doc, content.Content, &lines, 0)
+		switch {
+		case index == 0:
+			builder.WriteString(strings.Repeat(" ", column))
+		case column > width:
+			builder.WriteString(strings.Repeat(" ", column-width))
+		default:
+			builder.WriteByte(' ')
+			column = width + 1
 		}
+		builder.WriteString(entry.Text)
+		width = column + textdoc.DisplayWidth(entry.Text)
 	}
-	appendPageContentText(doc, content.Content, &lines, 0)
-	if annot := doc.GetAnnotation(page.ID); annot != nil {
-		for _, item := range annot.Annots {
-			if item == nil || !item.Visible.Value(true) || item.Appearance == nil {
-				continue
-			}
-			appendTextItems(doc, item.Appearance.Items, &lines, 0)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func appendPageContentText(doc *parser.Document, content *models.Content, lines *[]string, depth int) {
-	if content == nil {
-		return
-	}
-	// 与渲染顺序保持一致：背景层先于其他图层处理。
-	for _, layer := range content.Layer {
-		if layer != nil && layer.Type == "Background" {
-			appendTextItems(doc, layer.Items, lines, depth)
-		}
-	}
-	for _, layer := range content.Layer {
-		if layer != nil && layer.Type != "Background" {
-			appendTextItems(doc, layer.Items, lines, depth)
-		}
-	}
-}
-
-func appendTextItems(doc *parser.Document, items []models.PageItem, lines *[]string, depth int) {
-	if depth > maxTextCompositeDepth {
-		return
-	}
-	for _, item := range items {
-		switch item.Kind {
-		case models.PageItemText:
-			if !item.Text.VisibleValue() || textFillDisabled(item.Text) {
-				continue
-			}
-			var text strings.Builder
-			for _, code := range item.Text.TextCode {
-				text.WriteString(code.Value)
-			}
-			if text.Len() > 0 {
-				*lines = append(*lines, text.String())
-			}
-		case models.PageItemBlock:
-			appendTextItems(doc, item.Block.Items, lines, depth)
-		case models.PageItemComposite:
-			if !item.Composite.VisibleValue() {
-				continue
-			}
-			unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID))
-			if unit != nil {
-				appendTextItems(doc, unit.Content.Items, lines, depth+1)
-			}
-		}
-	}
-}
-
-func textFillDisabled(object models.TextObject) bool {
-	return !object.Fill.Value(true)
+	return builder.String()
 }

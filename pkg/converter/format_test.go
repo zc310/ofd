@@ -114,7 +114,7 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 	if err := Encode("md", formatFixture, &combined, Page(1)); err != nil {
 		t.Fatalf("Encode(md) 失败: %v", err)
 	}
-	if !bytes.HasPrefix(combined.Bytes(), []byte("# OFD 文档")) {
+	if !bytes.HasPrefix(combined.Bytes(), []byte("# Hello World")) {
 		t.Fatalf("Encode(md) 输出 = %q", combined.String())
 	}
 }

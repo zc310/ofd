@@ -35,7 +35,8 @@ func ExamplePDF() {
 func ExampleMarkdown() {
 	var output bytes.Buffer
 	err := converter.Markdown("../../test/testdata/helloworld.ofd", &output, converter.Page(1))
-	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("## 第 1 页")))
+	// 标题使用 OFD 文档的 DocInfo.Title，没有标题时回退为 “OFD 文档”。
+	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("# Hello World")))
 	// Output: true
 }
 

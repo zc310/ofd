@@ -63,6 +63,7 @@ type options struct {
 	landscape         bool
 	noPrintBackground bool
 	allowRemote       bool
+	markdownTables    bool
 	recursive         bool
 	overwrite         bool
 	skipExisting      bool
@@ -155,10 +156,11 @@ func parseArgs(args []string) (*options, error) {
 	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML 文档转换超时秒数；0 表示默认 120 秒")
 	flags.StringVar(&opts.chrome, "chrome", "", "Chrome/Chromium 可执行文件路径；缺省按 OFD_CHROME、PATH 和常见安装路径查找")
 	flags.StringVar(&opts.tempDir, "temp-dir", "", "外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录")
-	flags.StringVar(&opts.paper, "paper", "", "纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4")
-	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印")
+	flags.StringVar(&opts.paper, "paper", "", "打印纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4（仅 HTML/MHTML 生效）")
+	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印，交换纸张宽高（仅 HTML/MHTML 生效）")
 	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
 	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
+	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
 	flags.BoolVar(&opts.chromeNoSandbox, "chrome-no-sandbox", false, "禁用 Chrome 沙箱（容器或 root 环境可能需要）")
 	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
 	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
@@ -179,7 +181,7 @@ func normalizeConverterArgs(args []string) []string {
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
 		"external-workers": true, "soffice": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
-		"allow-remote": true, "chrome-no-sandbox": true,
+		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
 	result := make([]string, len(args))
@@ -631,6 +633,7 @@ func convertImported(opts *options, from, to string) error {
 		option = append(option, converter.Page(opts.page))
 	}
 	option = append(option, officeOptions(opts)...)
+	option = append(option, markdownTablesOption(opts, to)...)
 	err := converter.Convert(from, to, opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
@@ -638,6 +641,18 @@ func convertImported(opts *options, from, to string) error {
 		}
 	}
 	return err
+}
+
+// markdownTablesOption 在输出 Markdown 且启用 -md-tables 时返回表格识别选项。
+func markdownTablesOption(opts *options, format string) []converter.Option {
+	if !opts.markdownTables {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "md", "markdown":
+		return []converter.Option{converter.WithMarkdownTables(true)}
+	}
+	return nil
 }
 
 // officeOptions 生成外部工具（LibreOffice/Chrome）与纸张相关选项；未设置时
@@ -744,6 +759,7 @@ func convertToText(opts *options, format string) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
+	option = append(option, markdownTablesOption(opts, registryFormatName(format))...)
 	err := converter.Encode(registryFormatName(format), opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
