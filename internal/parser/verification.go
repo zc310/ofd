@@ -75,7 +75,7 @@ type SignatureComponentResult struct {
 	Error string
 }
 
-// CertificateInfo 是签名证书的可报告信息，不包含完整证书二进制。
+// CertificateInfo 是签名证书的可报告信息，并保留原始 DER 以便导出。
 type CertificateInfo struct {
 	SerialNumber string
 	Subject      pkix.Name
@@ -83,6 +83,8 @@ type CertificateInfo struct {
 	NotBefore    time.Time
 	NotAfter     time.Time
 	PublicKey    string
+	// RawDER 是证书的 DER 编码内容。
+	RawDER []byte
 }
 
 // CertificateTrustOptions 配置可选的证书链校验。
@@ -420,5 +422,6 @@ func certificateInfo(certificate *gmx509.Certificate) *CertificateInfo {
 		NotBefore:    certificate.NotBefore,
 		NotAfter:     certificate.NotAfter,
 		PublicKey:    publicKey,
+		RawDER:       append([]byte(nil), certificate.Raw...),
 	}
 }

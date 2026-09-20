@@ -110,6 +110,25 @@ async function execute(message) {
     }
     case 'annotations':
       return unwrap(self.ofd.annotations());
+    case 'signatures':
+      return unwrap(self.ofd.signatures());
+    case 'signatureCertificate': {
+      const result = unwrap(self.ofd.signatureCertificate(message.scope, message.signatureID, message.slot));
+      const data = new Uint8Array(result);
+      return data.slice().buffer;
+    }
+    case 'signatureValue': {
+      const result = unwrap(self.ofd.signatureValue(message.scope, message.signatureID));
+      const data = new Uint8Array(result);
+      return data.slice().buffer;
+    }
+    case 'stats':
+      return unwrap(self.ofd.stats());
+    case 'signatureSeal': {
+      const result = unwrap(self.ofd.signatureSeal(message.scope, message.signatureID, message.stampIndex));
+      const data = new Uint8Array(result);
+      return data.slice().buffer;
+    }
     case 'pageInfo':
       return unwrap(self.ofd.pageInfo(message.index));
     case 'renderPage': {

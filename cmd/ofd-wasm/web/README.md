@@ -17,11 +17,13 @@
 
 ### 导航
 
-- 左侧栏页签为“缩略图”“大纲”“书签”，以及“更多”菜单下的“字体”“附件”“资源”“注解”；大纲以可折叠树展示，点击条目跳转到对应页面。
+- 左侧栏页签为“缩略图”“大纲”“书签”，以及“更多”菜单下的“字体”“附件”“资源”“注解”“签名”；大纲以可折叠树展示，点击条目跳转到对应页面。
 - 字体页签列出文档声明的字体清单，可按标题输入框过滤字体名/字体族，点击字体项的“定位使用页”可查找并跳转到使用该字体的页面（统计按文档规模限制扫描页数，截断时提示“仅覆盖前 N 页”）。
 - 附件页签列出文档附件（名称、格式/大小、`Usage` 与隐藏/缺失徽标），可按名称过滤；可见附件提供“下载”，图片/PDF/文本/音视频等可预览类型额外提供“预览”（新标签页打开），缺失文件禁用操作。
 - 资源页签以缩略图网格列出文档内多媒体资源（图片/音频/视频），图片进入可视区域时懒加载缩略图并显示格式、尺寸与大小，点击在新标签页预览；音视频显示类型图标。
+- 各内容面板（大纲/书签/字体/附件/资源/注解/签名）的滚动位置按文档保存在浏览器本地，重新切换页签或再次打开文档时会恢复到上次位置。
 - 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
+- 签名页签列出文档签名（提供者/公司、算法、签名时间、摘要一致/验签通过/可信徽标），并显示每个签章所在页码与印章缩略图，点击跳转到签章位置；点击“签名范围”可展开签名覆盖的文件引用与逐项摘要校验（数据摘要一致/不一致），点击“证书详情”可展开印章/外层证书的主体、签发者、序列号、有效期、公钥、算法与签名/证书/证书链/吊销校验状态，并可导出证书（DER/PEM）；签名项提供“导出签名值”（SignedValue.dat）。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
 - 没有大纲或书签的文档在对应页签显示占位提示（页签始终可用，不会自动跳回缩略图），无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
@@ -37,6 +39,7 @@
 - `+` / `=`：放大；`-`：缩小；`0`：恢复 100%。
 - `f`：适应宽度；`Shift+F`：适应页面。
 - `Ctrl/Cmd+F`：打开搜索；`Ctrl/Cmd+Shift+C`：复制当前页文字。
+- `Ctrl/Cmd+B`：显示/隐藏侧栏；`[` / `]`：切换上一个/下一个侧栏面板（缩略图/大纲/书签/字体/附件/资源/注解/签名）。
 - 在输入框内输入或存在 `Ctrl/Cmd` 等修饰键时不会触发上述翻页/缩放快捷键。
 
 ### 显示设置
@@ -50,7 +53,7 @@
 - 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应页面）。
 - 底部页码胶囊包含上一页、页码输入/总页数、下一页，可直接输入页码跳转；可在“显示设置”中隐藏，或点击胶囊上的关闭按钮隐藏。
 - 打印、导出、复制当前页文字、复制全文收在工具栏最右侧的“文档操作”菜单（`more_vert` 图标）中；移动端该按钮固定在最右侧一行。
-- 文档信息面板列出文档声明的字体（名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式）。
+- 文档信息面板列出文档声明的字体（名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式），并汇总资源统计（字体/附件/多媒体/注解页/签名数量）。
 - 选择单页、双页或“双页，奇数页在左”布局。
 - 显示设置和布局设置会保存在浏览器本地。
 
@@ -212,6 +215,8 @@ ofd.close()
 - `ofd.attachmentData(scope, id, maxBytes)` 读取附件二进制内容（返回可转移的 `ArrayBuffer`）；`maxBytes` 省略时默认 32 MiB，硬上限 128 MiB，超过上限返回错误。
 - `ofd.media()` 返回多媒体资源清单：`{ scope, id, name, type, format, size, exists }`；`type` 通常为 `Image`/`Audio`/`Video`，`name` 是资源文件名。`ofd.mediaData(scope, id, maxBytes)` 读取资源二进制内容，大小限制同附件。
 - `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。
+- `ofd.signatures()` 返回签名清单：`{ scope, id, provider, company, version, method, date, has_digest, digest_valid, digest_method, has_verification, verified, trusted, trust_checked, verification_error, has_data_hash, data_hash_match, references, stamps, certificates }`，其中 `references` 为 `{ file_ref, exists, match, error }`，`stamps` 为 `{ page, id, has_seal, seal_type, boundary }`，`certificates` 为 `{ slot, subject, issuer, common_name, organization, organizational_unit, country, locality, province, serial_number, not_before, not_after, public_key, algorithm, signature_format, signature_valid, certificate_valid, trust_checked, trusted, trust_error, revocation_checked, revocation_status, revocation_error, error }`。`ofd.signatureSeal(scope, id, stampIndex)` 返回签章印章文件内容（可转移 `ArrayBuffer`）。`ofd.signatureCertificate(scope, id, slot)` 按层级（`seal`/`outer`）返回证书 DER；`ofd.signatureValue(scope, id)` 返回签名值（SignedValue.dat）内容。
+- `ofd.stats()` 返回资源数量汇总：`{ fonts, attachments, media, annotation_pages, signatures }`，只读取声明，不加载资源内容。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 
 ## Worker 协议
