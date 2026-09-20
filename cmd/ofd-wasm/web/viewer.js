@@ -133,6 +133,26 @@ class OFDWorkerClient {
     return this.request('fontUsageAll', { maxScan: options.maxScan, maxPages: options.maxPages });
   }
 
+  attachments() {
+    return this.request('attachments');
+  }
+
+  attachmentData(scope, attachmentID, maxBytes) {
+    return this.request('attachmentData', { scope, attachmentID, maxBytes });
+  }
+
+  media() {
+    return this.request('media');
+  }
+
+  mediaData(scope, mediaID, maxBytes) {
+    return this.request('mediaData', { scope, mediaID, maxBytes });
+  }
+
+  annotations() {
+    return this.request('annotations');
+  }
+
   memStats() {
     return this.request('memStats');
   }
@@ -351,7 +371,16 @@ const sidebarResizer = document.querySelector('#sidebar-resizer');
 const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
 const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
 const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
-const sidebarTabFonts = document.querySelector('#sidebar-tab-fonts');
+const sidebarTabMore = document.querySelector('#sidebar-tab-more');
+const sidebarTabMoreLabel = document.querySelector('#sidebar-tab-more-label');
+const sidebarMoreMenu = document.querySelector('#sidebar-more-menu');
+const sidebarMoreFonts = document.querySelector('#sidebar-more-fonts');
+const sidebarMoreAttachments = document.querySelector('#sidebar-more-attachments');
+const sidebarMoreMedia = document.querySelector('#sidebar-more-media');
+const sidebarMoreAnnotations = document.querySelector('#sidebar-more-annotations');
+const attachmentsElement = document.querySelector('#attachments');
+const mediaElement = document.querySelector('#media');
+const annotationsElement = document.querySelector('#annotations');
 const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
 const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
 const outlineElement = document.querySelector('#outline');
@@ -481,6 +510,8 @@ let documentInfoGeneration = -1;
 let documentFontUsage = null;
 let documentFontUsageGeneration = -1;
 let documentFontUsageMeta = { scanned: 0, truncated: false };
+let mediaObserver = null;
+let mediaObjectURLs = [];
 const sidebarWidthStorageKey = 'ofd-sidebar-width';
 let sidebarWidth = (() => {
   try {
@@ -2696,6 +2727,10 @@ async function openSelectedFile(selected) {
   documentFontUsageMeta = { scanned: 0, truncated: false };
   outlineExpandState = {};
   if (activeSidebarTab === 'fonts') fontsElement?.replaceChildren();
+  if (activeSidebarTab === 'attachments') attachmentsElement?.replaceChildren();
+  revokeMediaURLs();
+  if (activeSidebarTab === 'media') mediaElement?.replaceChildren();
+  if (activeSidebarTab === 'annotations') annotationsElement?.replaceChildren();
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -2745,6 +2780,9 @@ async function openSelectedFile(selected) {
     restorePageRotation();
     buildPages();
     if (activeSidebarTab === 'fonts') renderFonts();
+    if (activeSidebarTab === 'attachments') renderAttachments();
+    if (activeSidebarTab === 'media') renderMedia();
+    if (activeSidebarTab === 'annotations') renderAnnotations();
     setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
     void loadOutline();
@@ -2775,6 +2813,9 @@ async function openSelectedFile(selected) {
     documentFontUsageMeta = { scanned: 0, truncated: false };
     outlineExpandState = {};
     if (activeSidebarTab === 'fonts') renderFonts();
+    if (activeSidebarTab === 'attachments') renderAttachments();
+    if (activeSidebarTab === 'media') renderMedia();
+    if (activeSidebarTab === 'annotations') renderAnnotations();
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
@@ -2840,6 +2881,9 @@ function cancelOpening() {
   documentFontUsageMeta = { scanned: 0, truncated: false };
   outlineExpandState = {};
   if (activeSidebarTab === 'fonts') renderFonts();
+  if (activeSidebarTab === 'attachments') renderAttachments();
+  if (activeSidebarTab === 'media') renderMedia();
+  if (activeSidebarTab === 'annotations') renderAnnotations();
   thumbnailSlots = [];
   thumbnailSlotByPage = [];
   currentDocumentKey = '';
@@ -3647,9 +3691,11 @@ function setMobileToolbarExpanded(expanded) {
   }
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts'];
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'attachments', 'media', 'annotations'];
+const sidebarMoreTabs = ['fonts', 'attachments', 'media', 'annotations'];
+const sidebarMoreLabels = { fonts: '字体', attachments: '附件', media: '资源', annotations: '注解' };
 
-// applySidebarPanels 根据侧栏可见性和当前页签，决定缩略图/大纲/书签/字体面板的显隐。
+// applySidebarPanels 根据侧栏可见性和当前面板，决定缩略图/大纲/书签/字体/附件面板的显隐。
 function applySidebarPanels() {
   if (!sidebarElement) return;
   if (!sidebarTabs.includes(activeSidebarTab)) activeSidebarTab = 'thumbnails';
@@ -3659,36 +3705,68 @@ function applySidebarPanels() {
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
   if (fontsElement) fontsElement.hidden = !active('fonts');
+  if (attachmentsElement) attachmentsElement.hidden = !active('attachments');
+  if (mediaElement) mediaElement.hidden = !active('media');
+  if (annotationsElement) annotationsElement.hidden = !active('annotations');
   if (thumbnailToolbar) thumbnailToolbar.hidden = !active('thumbnails');
   if (outlineToolbar) outlineToolbar.hidden = !active('outline');
   if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
   if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
   if (sidebarFilter) {
-    sidebarFilter.hidden = !(active('outline') || active('bookmarks') || active('fonts'));
-    sidebarFilter.placeholder = activeSidebarTab === 'fonts' ? '过滤字体' : '过滤标题';
+    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('attachments') || active('media') || active('annotations');
+    sidebarFilter.hidden = !filterable;
+    if (active('fonts')) sidebarFilter.placeholder = '过滤字体';
+    else if (active('attachments')) sidebarFilter.placeholder = '过滤附件';
+    else if (active('media')) sidebarFilter.placeholder = '过滤资源';
+    else if (active('annotations')) sidebarFilter.placeholder = '过滤注解';
+    else sidebarFilter.placeholder = '过滤标题';
   }
   const tabs = [
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
-    [sidebarTabFonts, 'fonts'],
   ];
   tabs.forEach(([button, tab]) => {
     button?.classList.toggle('active', activeSidebarTab === tab);
     button?.setAttribute('aria-selected', String(activeSidebarTab === tab));
   });
+  const moreActive = sidebarMoreTabs.includes(activeSidebarTab);
+  sidebarTabMore?.classList.toggle('active', moreActive);
+  sidebarTabMore?.setAttribute('aria-selected', String(moreActive));
+  if (sidebarTabMoreLabel) {
+    sidebarTabMoreLabel.textContent = moreActive ? (sidebarMoreLabels[activeSidebarTab] || '更多') : '更多';
+  }
+  sidebarMoreFonts?.classList.toggle('active', activeSidebarTab === 'fonts');
+  sidebarMoreAttachments?.classList.toggle('active', activeSidebarTab === 'attachments');
+  sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
+  sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
+  if (sidebarMoreMenu && thumbnailsVisible === false) setSidebarMoreOpen(false);
   if (thumbnailSizeSlider) thumbnailSizeSlider.value = String(thumbnailSizePercent);
+}
+
+function setSidebarMoreOpen(open) {
+  if (!sidebarMoreMenu) return;
+  sidebarMoreMenu.hidden = !open;
+  sidebarTabMore?.setAttribute('aria-expanded', String(open));
+  if (open) {
+    setViewPanelOpen(false);
+    setSearchPanelOpen(false);
+    setZoomMenuOpen(false);
+    setDocumentMenuOpen(false);
+  }
 }
 
 function setSidebarTab(tab) {
   if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
   const changed = activeSidebarTab !== tab;
+  if (activeSidebarTab === 'media' && tab !== 'media') revokeMediaURLs();
   activeSidebarTab = tab;
   if (changed) {
     try {
       localStorage.setItem(sidebarTabStorageKey, tab);
     } catch (_) {}
   }
+  if (sidebarMoreTabs.includes(tab)) setSidebarMoreOpen(false);
   applySidebarPanels();
   if (tab === 'thumbnails') {
     updateThumbnailMetrics();
@@ -3699,6 +3777,12 @@ function setSidebarTab(tab) {
   } else if (tab === 'bookmarks') {
     renderBookmarks();
     updateOutlineActive();
+  } else if (tab === 'attachments') {
+    renderAttachments();
+  } else if (tab === 'media') {
+    renderMedia();
+  } else if (tab === 'annotations') {
+    renderAnnotations();
   } else {
     renderFonts();
   }
@@ -4243,6 +4327,424 @@ function renderFonts() {
   });
 }
 
+function attachmentBadge(text, extraClass) {
+  const badge = document.createElement('span');
+  badge.className = 'attachment-badge' + (extraClass ? ` ${extraClass}` : '');
+  badge.textContent = text;
+  return badge;
+}
+
+function formatAttachmentBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// attachmentPreviewMime 返回可在新标签预览的 MIME，不支持预览时返回空串。
+function attachmentPreviewMime(item) {
+  const format = String(item?.format || '').toLowerCase();
+  const name = String(item?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : format;
+  const known = {
+    pdf: 'application/pdf',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    svg: 'image/svg+xml',
+    txt: 'text/plain',
+    xml: 'application/xml',
+    json: 'application/json',
+    csv: 'text/csv',
+    md: 'text/markdown',
+    html: 'text/html',
+    htm: 'text/html',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+  };
+  return known[ext] || known[format] || '';
+}
+
+function safeResourceName(item, fallback) {
+  const raw = String(item?.name || item?.id || fallback);
+  const cleaned = raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+/, '').trim();
+  return cleaned || `${fallback}-${item?.id ?? ''}`;
+}
+
+async function fetchAttachmentData(item) {
+  const maxBytes = 0;
+  return engine.attachmentData(Number(item?.scope) || 0, String(item?.id ?? ''), maxBytes);
+}
+
+async function runAttachmentAction(button, action) {
+  const generation = documentGeneration;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = '读取中…';
+  try {
+    await action();
+  } catch (error) {
+    if (generation === documentGeneration) setStatus(`附件操作失败：${error.message}`);
+  } finally {
+    if (generation === documentGeneration && button.isConnected) {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
+}
+
+async function downloadAttachment(item) {
+  const data = await fetchAttachmentData(item);
+  const mime = attachmentPreviewMime(item) || 'application/octet-stream';
+  downloadBytes(data, safeResourceName(item, 'attachment'), mime);
+}
+
+async function previewAttachment(item) {
+  const mime = attachmentPreviewMime(item);
+  const data = await fetchAttachmentData(item);
+  const url = URL.createObjectURL(new Blob([data], { type: mime || 'application/octet-stream' }));
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function buildAttachmentItem(item) {
+  const row = document.createElement('div');
+  row.className = 'attachment-item';
+  const info = document.createElement('div');
+  info.className = 'attachment-info';
+  const name = document.createElement('span');
+  name.className = 'attachment-name';
+  name.textContent = item?.name || item?.id || '未命名附件';
+  name.title = name.textContent;
+  const meta = document.createElement('span');
+  meta.className = 'attachment-meta';
+  const parts = [];
+  if (item?.format) parts.push(String(item.format).toUpperCase());
+  const size = formatAttachmentBytes(Number(item?.actual_size) || (item?.has_size ? Number(item?.size) : 0));
+  if (size) parts.push(size);
+  meta.textContent = parts.join(' · ');
+  info.append(name, meta);
+
+  const badges = document.createElement('span');
+  badges.className = 'attachment-badges';
+  if (!item?.visible) badges.append(attachmentBadge('隐藏', 'attachment-warn'));
+  if (item?.usage && item.usage !== 'none') badges.append(attachmentBadge(String(item.usage)));
+  if (!item?.exists) badges.append(attachmentBadge('文件缺失', 'attachment-warn'));
+
+  const actions = document.createElement('span');
+  actions.className = 'attachment-actions';
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'attachment-action';
+  download.textContent = '下载';
+  const preview = document.createElement('button');
+  preview.type = 'button';
+  preview.className = 'attachment-action';
+  preview.textContent = '预览';
+  if (!item?.exists) {
+    download.disabled = true;
+    preview.disabled = true;
+  } else {
+    download.addEventListener('click', () => runAttachmentAction(download, () => downloadAttachment(item)));
+    if (attachmentPreviewMime(item)) {
+      preview.addEventListener('click', () => runAttachmentAction(preview, () => previewAttachment(item)));
+    } else {
+      preview.hidden = true;
+    }
+  }
+  actions.append(download);
+  if (!preview.hidden) actions.append(preview);
+
+  row.append(info, badges, actions);
+  return row;
+}
+
+function renderAttachments() {
+  if (!attachmentsElement) return;
+  const generation = documentGeneration;
+  attachmentsElement.replaceChildren();
+  if (!pageInfos.length) {
+    attachmentsElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  attachmentsElement.append(outlineEmptyMessage('正在读取附件...'));
+  engine.attachments().then(list => {
+    if (generation !== documentGeneration) return;
+    const attachments = Array.isArray(list) ? list : [];
+    attachmentsElement.replaceChildren();
+    if (!attachments.length) {
+      attachmentsElement.append(outlineEmptyMessage('此文档没有附件'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? attachments.filter(item => `${item.name || ''} ${item.format || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : attachments;
+    if (!filtered.length) {
+      attachmentsElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    filtered.forEach(item => attachmentsElement.append(buildAttachmentItem(item)));
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    attachmentsElement.replaceChildren(outlineEmptyMessage('获取附件失败'));
+  });
+}
+
+function revokeMediaURLs() {
+  mediaObserver?.disconnect();
+  mediaObserver = null;
+  mediaObjectURLs.forEach(url => URL.revokeObjectURL(url));
+  mediaObjectURLs = [];
+}
+
+// mediaMime 根据资源名后缀或声明格式推断 MIME。
+function mediaMime(item) {
+  const name = String(item?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : String(item?.format || '').toLowerCase();
+  const known = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    bmp: 'image/bmp',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+  };
+  return known[ext] || '';
+}
+
+function mediaKind(item) {
+  const type = String(item?.type || '').toLowerCase();
+  if (type === 'audio') return 'audio';
+  if (type === 'video') return 'video';
+  return 'image';
+}
+
+function mediaTypeLabel(item) {
+  const kind = mediaKind(item);
+  return kind === 'audio' ? '音频' : kind === 'video' ? '视频' : '图片';
+}
+
+function mediaIcon(kind) {
+  return kind === 'audio' ? 'music_note' : kind === 'video' ? 'movie' : 'image';
+}
+
+async function fetchMediaData(item) {
+  return engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0);
+}
+
+async function previewMedia(item) {
+  const data = await fetchMediaData(item);
+  const mime = mediaMime(item) || 'application/octet-stream';
+  const url = URL.createObjectURL(new Blob([data], { type: mime }));
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function downloadMedia(item) {
+  const data = await fetchMediaData(item);
+  downloadBytes(data, safeResourceName(item, 'resource'), mediaMime(item) || 'application/octet-stream');
+}
+
+function buildMediaItem(item) {
+  const kind = mediaKind(item);
+  const element = document.createElement('button');
+  element.type = 'button';
+  element.className = 'media-item loading';
+  element.item = item;
+  element.title = item?.name || `资源 ${item?.id}`;
+  element.addEventListener('click', () => {
+    void previewMedia(item).catch(error => setStatus(`资源打开失败：${error.message}`));
+  });
+  const thumb = document.createElement('span');
+  thumb.className = 'media-thumb';
+  const icon = document.createElement('span');
+  icon.className = 'material-symbols-outlined';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = mediaIcon(kind);
+  thumb.append(icon);
+  const meta = document.createElement('span');
+  meta.className = 'media-meta';
+  const size = formatAttachmentBytes(Number(item?.size) || 0);
+  meta.textContent = [mediaTypeLabel(item), size].filter(Boolean).join(' · ');
+  element.append(thumb, meta);
+  return element;
+}
+
+async function loadMediaThumb(element) {
+  const item = element.item;
+  if (!item || element.dataset.loaded) return;
+  element.dataset.loaded = '1';
+  try {
+    const data = await fetchMediaData(item);
+    const mime = mediaMime(item) || 'application/octet-stream';
+    const url = URL.createObjectURL(new Blob([data], { type: mime }));
+    mediaObjectURLs.push(url);
+    const thumb = element.querySelector('.media-thumb');
+    const icon = thumb?.querySelector('.material-symbols-outlined');
+    const img = document.createElement('img');
+    img.alt = item.name || '';
+    img.src = url;
+    img.addEventListener('load', () => {
+      if (icon) icon.hidden = true;
+      const meta = element.querySelector('.media-meta');
+      if (!meta || !img.naturalWidth) return;
+      const size = formatAttachmentBytes(Number(item.size) || 0);
+      meta.textContent = [mediaTypeLabel(item), `${img.naturalWidth}×${img.naturalHeight}`, size].filter(Boolean).join(' · ');
+    });
+    img.addEventListener('error', () => img.remove());
+    thumb?.append(img);
+  } catch (_) {
+    // 缩略图加载失败时保留类型图标。
+  } finally {
+    element.classList.remove('loading');
+  }
+}
+
+function renderMedia() {
+  if (!mediaElement) return;
+  const generation = documentGeneration;
+  revokeMediaURLs();
+  mediaElement.replaceChildren();
+  if (!pageInfos.length) {
+    mediaElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  mediaElement.append(outlineEmptyMessage('正在读取资源...'));
+  engine.media().then(list => {
+    if (generation !== documentGeneration) return;
+    const resources = Array.isArray(list) ? list : [];
+    mediaElement.replaceChildren();
+    if (!resources.length) {
+      mediaElement.append(outlineEmptyMessage('此文档没有多媒体资源'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? resources.filter(item => `${item.name || ''} ${item.format || ''} ${item.type || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : resources;
+    if (!filtered.length) {
+      mediaElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'media-grid';
+    filtered.forEach(item => grid.append(buildMediaItem(item)));
+    mediaElement.append(grid);
+    const thumbs = [...grid.querySelectorAll('.media-item')].filter(element => mediaKind(element.item) === 'image');
+    grid.querySelectorAll('.media-item').forEach(element => {
+      if (mediaKind(element.item) !== 'image') element.classList.remove('loading');
+    });
+    if (thumbs.length && typeof IntersectionObserver === 'function') {
+      mediaObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          mediaObserver?.unobserve(entry.target);
+          void loadMediaThumb(entry.target);
+        });
+      }, { root: mediaElement, rootMargin: '200px' });
+      thumbs.forEach(element => mediaObserver.observe(element));
+    } else {
+      thumbs.forEach(element => { void loadMediaThumb(element); });
+    }
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    mediaElement.replaceChildren(outlineEmptyMessage('获取资源失败'));
+  });
+}
+
+function goToAnnotation(info) {
+  const boundary = info?.boundary;
+  if (boundary && Number.isFinite(boundary.x) && Number.isFinite(boundary.y)) {
+    goToDestination(info.page, { type: 'XYZ', left: boundary.x, top: boundary.y, right: null, bottom: null, zoom: null });
+    return;
+  }
+  goTo(info.page);
+}
+
+function buildAnnotationItem(info) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'annotation-item';
+  const hasPage = Number.isInteger(info?.page) && info.page >= 0;
+  if (hasPage) {
+    item.addEventListener('click', () => goToAnnotation(info));
+    item.title = `跳转到第 ${info.page + 1} 页`;
+  } else {
+    item.disabled = true;
+  }
+  const page = document.createElement('span');
+  page.className = 'outline-page';
+  page.textContent = hasPage ? String(info.page + 1) : '—';
+  const type = document.createElement('span');
+  type.className = 'annotation-type';
+  type.textContent = [info?.type, info?.subtype].filter(Boolean).join(' / ') || '注解';
+  item.append(page, type);
+  const metaText = [info?.creator, info?.last_mod_date].filter(Boolean).join(' · ');
+  if (metaText) {
+    const meta = document.createElement('span');
+    meta.className = 'annotation-meta';
+    meta.textContent = metaText;
+    item.append(meta);
+  }
+  if (info?.remark) {
+    const remark = document.createElement('span');
+    remark.className = 'annotation-remark';
+    remark.textContent = info.remark;
+    item.append(remark);
+  }
+  if (info?.visible === false) item.append(attachmentBadge('隐藏', 'attachment-warn'));
+  return item;
+}
+
+function renderAnnotations() {
+  if (!annotationsElement) return;
+  const generation = documentGeneration;
+  annotationsElement.replaceChildren();
+  if (!pageInfos.length) {
+    annotationsElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  annotationsElement.append(outlineEmptyMessage('正在读取注解...'));
+  engine.annotations().then(list => {
+    if (generation !== documentGeneration) return;
+    const annotations = Array.isArray(list) ? list : [];
+    annotationsElement.replaceChildren();
+    if (!annotations.length) {
+      annotationsElement.append(outlineEmptyMessage('此文档没有注解'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? annotations.filter(item => `${item.type || ''} ${item.subtype || ''} ${item.creator || ''} ${item.remark || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : annotations;
+    if (!filtered.length) {
+      annotationsElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    filtered.forEach(item => annotationsElement.append(buildAnnotationItem(item)));
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    annotationsElement.replaceChildren(outlineEmptyMessage('获取注解失败'));
+  });
+}
+
 function buildOutlineList(nodes, depth, forceExpand = false, pathPrefix = '') {
   const list = document.createElement('ul');
   list.className = 'outline-list';
@@ -4649,7 +5151,11 @@ showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbna
 sidebarTabThumbnails?.addEventListener('click', () => setSidebarTab('thumbnails'));
 sidebarTabOutline?.addEventListener('click', () => setSidebarTab('outline'));
 sidebarTabBookmarks?.addEventListener('click', () => setSidebarTab('bookmarks'));
-sidebarTabFonts?.addEventListener('click', () => setSidebarTab('fonts'));
+sidebarTabMore?.addEventListener('click', () => setSidebarMoreOpen(sidebarMoreMenu?.hidden));
+sidebarMoreFonts?.addEventListener('click', () => setSidebarTab('fonts'));
+sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachments'));
+sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
+sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
 if (thumbnailSizeSlider) {
   thumbnailSizeSlider.addEventListener('input', () => setThumbnailSize(Number(thumbnailSizeSlider.value)));
   thumbnailSizeSlider.addEventListener('change', persistThumbnailSize);
@@ -4662,7 +5168,7 @@ sidebarTabsElement?.addEventListener('keydown', event => {
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
-    [sidebarTabFonts, 'fonts'],
+    [sidebarTabMore, ''],
   ].filter(([button]) => button && !button.hidden);
   const index = tabs.findIndex(([button]) => button === document.activeElement);
   if (index < 0) return;
@@ -4670,7 +5176,7 @@ sidebarTabsElement?.addEventListener('keydown', event => {
   const step = event.key === 'ArrowRight' ? 1 : -1;
   const next = tabs[(index + step + tabs.length) % tabs.length];
   next[0].focus();
-  setSidebarTab(next[1]);
+  if (next[1]) setSidebarTab(next[1]);
 });
 if (sidebarFilter) {
   sidebarFilter.addEventListener('input', () => {
@@ -4678,6 +5184,9 @@ if (sidebarFilter) {
     if (activeSidebarTab === 'outline') renderOutline();
     else if (activeSidebarTab === 'bookmarks') renderBookmarks();
     else if (activeSidebarTab === 'fonts') renderFonts();
+    else if (activeSidebarTab === 'attachments') renderAttachments();
+    else if (activeSidebarTab === 'media') renderMedia();
+    else if (activeSidebarTab === 'annotations') renderAnnotations();
   });
 }
 if (sidebarResizer) {
@@ -4798,6 +5307,7 @@ window.addEventListener('keydown', event => {
     else if (!viewPanel.hidden) setViewPanelOpen(false);
     else if (zoomMenu && !zoomMenu.hidden) setZoomMenuOpen(false);
     else if (documentMenu && !documentMenu.hidden) setDocumentMenuOpen(false);
+    else if (sidebarMoreMenu && !sidebarMoreMenu.hidden) setSidebarMoreOpen(false);
     else if (document.body.classList.contains('reading-mode')) setReadingMode(false);
     return;
   }
@@ -4851,6 +5361,7 @@ document.addEventListener('click', event => {
   if (zoomMenu && !zoomMenu.hidden && !event.target.closest('.zoom-group')) setZoomMenuOpen(false);
   if (documentMenu && !documentMenu.hidden && !event.target.closest('.page-group')) setDocumentMenuOpen(false);
   if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
+  if (sidebarMoreMenu && !sidebarMoreMenu.hidden && !event.target.closest('#sidebar-tabs') && !event.target.closest('#sidebar-more-menu')) setSidebarMoreOpen(false);
 });
 document.addEventListener('copy', () => {
   const selection = window.getSelection();
