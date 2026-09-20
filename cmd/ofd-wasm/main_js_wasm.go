@@ -51,6 +51,11 @@ func main() {
 	api.Set("preferences", js.FuncOf(app.preferences))
 	api.Set("fontUsage", js.FuncOf(app.fontUsage))
 	api.Set("fontUsageAll", js.FuncOf(app.fontUsageAll))
+	api.Set("attachments", js.FuncOf(app.attachments))
+	api.Set("attachmentData", js.FuncOf(app.attachmentData))
+	api.Set("media", js.FuncOf(app.media))
+	api.Set("mediaData", js.FuncOf(app.mediaData))
+	api.Set("annotations", js.FuncOf(app.annotations))
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
@@ -367,6 +372,136 @@ func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
 		"scanned":   report.Scanned,
 		"truncated": report.Truncated,
 	})
+}
+
+func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	infos, err := reader.Attachments()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(infos))
+	for index, info := range infos {
+		result.SetIndex(index, objectValue(map[string]any{
+			"scope":       info.Scope,
+			"id":          info.ID,
+			"name":        info.Name,
+			"format":      info.Format,
+			"size":        info.Size,
+			"has_size":    info.HasSize,
+			"actual_size": info.ActualSize,
+			"usage":       info.Usage,
+			"visible":     info.Visible,
+			"exists":      info.Exists,
+		}))
+	}
+	return result
+}
+
+func (a *wasmApp) attachmentData(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString {
+		return errorValue(errors.New("ofd.attachmentData 需要作用域和附件 ID 参数"))
+	}
+	maxBytes := int64(0)
+	if len(args) > 2 && args[2].Type() == js.TypeNumber {
+		maxBytes = int64(args[2].Float())
+	}
+	data, err := reader.AttachmentData(int(args[0].Float()), args[1].String(), maxBytes)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
+	return result
+}
+
+func (a *wasmApp) media(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	infos, err := reader.Media()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(infos))
+	for index, info := range infos {
+		result.SetIndex(index, objectValue(map[string]any{
+			"scope":  info.Scope,
+			"id":     info.ID,
+			"name":   info.Name,
+			"type":   info.Type,
+			"format": info.Format,
+			"size":   info.Size,
+			"exists": info.Exists,
+		}))
+	}
+	return result
+}
+
+func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeNumber {
+		return errorValue(errors.New("ofd.mediaData 需要作用域和资源 ID 两个数字参数"))
+	}
+	maxBytes := int64(0)
+	if len(args) > 2 && args[2].Type() == js.TypeNumber {
+		maxBytes = int64(args[2].Float())
+	}
+	data, err := reader.MediaData(int(args[0].Float()), uint64(args[1].Float()), maxBytes)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
+	return result
+}
+
+func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	infos, err := reader.Annotations()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(infos))
+	for index, info := range infos {
+		value := map[string]any{
+			"scope":         info.Scope,
+			"page":          info.Page,
+			"id":            info.ID,
+			"type":          info.Type,
+			"subtype":       info.Subtype,
+			"creator":       info.Creator,
+			"last_mod_date": info.LastModDate,
+			"visible":       info.Visible,
+			"remark":        info.Remark,
+		}
+		if info.Boundary != nil {
+			value["boundary"] = objectValue(map[string]any{
+				"x":      info.Boundary.X,
+				"y":      info.Boundary.Y,
+				"width":  info.Boundary.Width,
+				"height": info.Boundary.Height,
+			})
+		} else {
+			value["boundary"] = nil
+		}
+		result.SetIndex(index, objectValue(value))
+	}
+	return result
 }
 
 func (a *wasmApp) pageCount(_ js.Value, _ []js.Value) any {

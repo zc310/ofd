@@ -1112,3 +1112,178 @@ func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
 		t.Fatal("批量统计期望被标记为截断")
 	}
 }
+
+func TestAttachmentsExposeMetadataAndData(t *testing.T) {
+	cases := []struct {
+		file string
+		name string
+	}{
+		{"multi_demo.ofd", "original_invoice.xml"},
+		{"999.ofd", "original_invoice"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			infos, err := reader.Attachments()
+			if err != nil {
+				t.Fatalf("读取附件清单失败: %v", err)
+			}
+			if len(infos) == 0 {
+				t.Fatal("附件清单为空")
+			}
+			var found *AttachmentInfo
+			for index := range infos {
+				if infos[index].Name == tc.name {
+					found = &infos[index]
+					break
+				}
+			}
+			if found == nil {
+				t.Fatalf("未找到附件 %q: %+v", tc.name, infos)
+			}
+			if !found.Exists {
+				t.Fatalf("附件 %q 不存在: %+v", tc.name, found)
+			}
+			if found.ActualSize == 0 {
+				t.Fatalf("附件 %q 实际大小为 0", tc.name)
+			}
+			if found.Visible {
+				t.Fatalf("附件 %q 期望 Visible=false", tc.name)
+			}
+			if found.Format != "xml" {
+				t.Fatalf("附件 %q 格式 = %q, 期望 xml", tc.name, found.Format)
+			}
+			if !found.HasSize {
+				t.Fatalf("附件 %q 期望有声明大小", tc.name)
+			}
+
+			content, err := reader.AttachmentData(found.Scope, found.ID, 0)
+			if err != nil {
+				t.Fatalf("读取附件内容失败: %v", err)
+			}
+			if int64(len(content)) != found.ActualSize {
+				t.Fatalf("附件内容长度 = %d, 期望 %d", len(content), found.ActualSize)
+			}
+			if _, err := reader.AttachmentData(found.Scope, found.ID, 1); err == nil {
+				t.Fatal("超过读取上限时应返回错误")
+			}
+		})
+	}
+}
+
+func TestAttachmentDataRejectsUnknown(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.AttachmentData(0, "no-such-id", 0); err == nil {
+		t.Fatal("不存在的附件应返回错误")
+	}
+	if _, err := reader.AttachmentData(99, "8", 0); err == nil {
+		t.Fatal("越界作用域应返回错误")
+	}
+}
+
+func TestMediaExposeMetadataAndData(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "magazine.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Media()
+	if err != nil {
+		t.Fatalf("读取多媒体资源失败: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("多媒体资源为空")
+	}
+	images := 0
+	for _, info := range infos {
+		if info.Type == "Image" {
+			images++
+		}
+		if !info.Exists {
+			t.Fatalf("多媒体资源不存在: %+v", info)
+		}
+		if info.Size <= 0 {
+			t.Fatalf("多媒体资源大小为 0: %+v", info)
+		}
+	}
+	if images == 0 {
+		t.Fatal("未识别到图片资源")
+	}
+
+	found := infos[0]
+	content, err := reader.MediaData(found.Scope, found.ID, 0)
+	if err != nil {
+		t.Fatalf("读取多媒体内容失败: %v", err)
+	}
+	if int64(len(content)) != found.Size {
+		t.Fatalf("多媒体内容长度 = %d, 期望 %d", len(content), found.Size)
+	}
+	if _, err := reader.MediaData(found.Scope, found.ID, 1); err == nil {
+		t.Fatal("超过读取上限时应返回错误")
+	}
+	if _, err := reader.MediaData(0, 1<<40, 0); err == nil {
+		t.Fatal("不存在的多媒体资源应返回错误")
+	}
+}
+
+func TestAnnotationsExposeMetadata(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Annotations()
+	if err != nil {
+		t.Fatalf("读取注解失败: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("注解列表为空")
+	}
+	var stamp *AnnotationInfo
+	for index := range infos {
+		if infos[index].Type == "Stamp" {
+			stamp = &infos[index]
+			break
+		}
+	}
+	if stamp == nil {
+		t.Fatalf("未找到图章注解: %+v", infos)
+	}
+	if stamp.Page < 0 {
+		t.Fatalf("注解页码无效: %+v", stamp)
+	}
+	if stamp.Boundary == nil {
+		t.Fatalf("图章注解缺少边界: %+v", stamp)
+	}
+	if !stamp.Visible {
+		t.Fatalf("未声明 Visible 时应默认为可见: %+v", stamp)
+	}
+}

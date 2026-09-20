@@ -17,7 +17,11 @@
 
 ### 导航
 
-- 左侧栏可在“缩略图”“大纲”“书签”“字体”之间切换，大纲以可折叠树展示，点击条目跳转到对应页面；字体页签列出文档声明的字体清单，可按标题输入框过滤字体名/字体族，点击字体项的“定位使用页”可查找并跳转到使用该字体的页面（统计按文档规模限制扫描页数，截断时提示“仅覆盖前 N 页”）。
+- 左侧栏页签为“缩略图”“大纲”“书签”，以及“更多”菜单下的“字体”“附件”“资源”“注解”；大纲以可折叠树展示，点击条目跳转到对应页面。
+- 字体页签列出文档声明的字体清单，可按标题输入框过滤字体名/字体族，点击字体项的“定位使用页”可查找并跳转到使用该字体的页面（统计按文档规模限制扫描页数，截断时提示“仅覆盖前 N 页”）。
+- 附件页签列出文档附件（名称、格式/大小、`Usage` 与隐藏/缺失徽标），可按名称过滤；可见附件提供“下载”，图片/PDF/文本/音视频等可预览类型额外提供“预览”（新标签页打开），缺失文件禁用操作。
+- 资源页签以缩略图网格列出文档内多媒体资源（图片/音频/视频），图片进入可视区域时懒加载缩略图并显示格式、尺寸与大小，点击在新标签页预览；音视频显示类型图标。
+- 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
 - 没有大纲或书签的文档在对应页签显示占位提示（页签始终可用，不会自动跳回缩略图），无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
@@ -204,6 +208,10 @@ ofd.close()
 ### 文字与错误
 
 - `ofd.text()` 返回的文字对象包含对应的 `scope`、`fontFamily`、`weight`、`bold` 和 `italic`。
+- `ofd.attachments()` 返回附件清单：`{ scope, id, name, format, size, has_size, actual_size, usage, visible, exists }`；`size` 是声明的字节数（`has_size=false` 时无效），`actual_size` 是包内实际字节数（文件缺失或未知时为 0），`visible` 未声明时为 true。
+- `ofd.attachmentData(scope, id, maxBytes)` 读取附件二进制内容（返回可转移的 `ArrayBuffer`）；`maxBytes` 省略时默认 32 MiB，硬上限 128 MiB，超过上限返回错误。
+- `ofd.media()` 返回多媒体资源清单：`{ scope, id, name, type, format, size, exists }`；`type` 通常为 `Image`/`Audio`/`Video`，`name` 是资源文件名。`ofd.mediaData(scope, id, maxBytes)` 读取资源二进制内容，大小限制同附件。
+- `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 
 ## Worker 协议
