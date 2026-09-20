@@ -875,6 +875,30 @@ func (p *Document) ForEachSignedValue(fn func(id string, value *SignedValue) boo
 	}
 }
 
+// ForEachSignature 遍历当前文档的签名。回调返回 false 时停止遍历。
+func (p *Document) ForEachSignature(fn func(id string, signature *models.Signature) bool) {
+	if p == nil || fn == nil {
+		return
+	}
+	p.signatureMu.RLock()
+	signatures := make([]struct {
+		id        string
+		signature *models.Signature
+	}, 0, len(p.signs))
+	for id, signature := range p.signs {
+		signatures = append(signatures, struct {
+			id        string
+			signature *models.Signature
+		}{id: id, signature: signature})
+	}
+	p.signatureMu.RUnlock()
+	for _, item := range signatures {
+		if !fn(item.id, item.signature) {
+			return
+		}
+	}
+}
+
 // SignedValuesSnapshot 返回签名值的快照。
 func (p *Document) SignedValuesSnapshot() map[string]*SignedValue {
 	result := make(map[string]*SignedValue)
@@ -1235,6 +1259,16 @@ func (p *Document) LoadAnnotation(pageID models.StID) (*models.PageAnnot, error)
 	}
 	p.annotations[pageID] = &annot
 	return &annot, nil
+}
+
+// AnnotationPageCount 返回声明了注解的页面数量（不读取注解内容）。
+func (p *Document) AnnotationPageCount() int {
+	if p == nil {
+		return 0
+	}
+	p.annotationMu.Lock()
+	defer p.annotationMu.Unlock()
+	return len(p.annotationLocations)
 }
 
 // GetAnnotation 按需读取指定页面的注解，读取失败时返回 nil。

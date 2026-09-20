@@ -1287,3 +1287,179 @@ func TestAnnotationsExposeMetadata(t *testing.T) {
 		t.Fatalf("未声明 Visible 时应默认为可见: %+v", stamp)
 	}
 }
+
+func TestSignaturesExposeMetadataAndSeals(t *testing.T) {
+	cases := []struct {
+		file    string
+		wantMin int
+		seals   bool
+		certs   bool
+	}{
+		{"zsbk.ofd", 1, true, true},
+		{"999.ofd", 1, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			infos, err := reader.Signatures()
+			if err != nil {
+				t.Fatalf("读取签名失败: %v", err)
+			}
+			if len(infos) < tc.wantMin {
+				t.Fatalf("签名数量 = %d, 期望至少 %d: %+v", len(infos), tc.wantMin, infos)
+			}
+			foundSeal := false
+			foundCert := false
+			foundRef := false
+			for _, info := range infos {
+				if info.Provider == "" {
+					t.Fatalf("签名缺少提供者: %+v", info)
+				}
+				if !info.HasDigest {
+					t.Fatalf("签名缺少摘要结果: %+v", info)
+				}
+				for _, reference := range info.References {
+					if reference.FileRef == "" {
+						t.Fatalf("签名引用缺少路径: %+v", reference)
+					}
+					foundRef = true
+				}
+				for _, cert := range info.Certificates {
+					if cert.Subject == "" {
+						if cert.Error == "" && cert.TrustError == "" && cert.RevocationError == "" {
+							t.Fatalf("证书缺少主体且无错误信息: %+v", cert)
+						}
+						continue
+					}
+					if cert.SerialNumber == "" {
+						t.Fatalf("证书缺少序列号: %+v", cert)
+					}
+					foundCert = true
+				}
+				for stampIndex, stamp := range info.Stamps {
+					if stamp.Page < 0 {
+						t.Fatalf("签章页码无效: %+v", stamp)
+					}
+					if !stamp.HasSeal {
+						continue
+					}
+					foundSeal = true
+					seal, sealType, err := reader.SignatureSeal(info.Scope, info.ID, stampIndex)
+					if err != nil {
+						t.Fatalf("读取印章失败: %v", err)
+					}
+					if len(seal) == 0 || sealType == "" {
+						t.Fatalf("印章数据为空: type=%q len=%d", sealType, len(seal))
+					}
+				}
+			}
+			if tc.seals && !foundSeal {
+				t.Fatalf("未找到印章数据: %+v", infos)
+			}
+			if tc.certs && !foundCert {
+				t.Fatalf("未找到证书详情: %+v", infos)
+			}
+			if !foundRef {
+				t.Fatalf("未找到签名引用: %+v", infos)
+			}
+		})
+	}
+}
+
+func TestStatsSummarizeResources(t *testing.T) {
+	cases := []struct {
+		file        string
+		attachments bool
+		media       bool
+		signatures  bool
+	}{
+		{"999.ofd", true, true, true},
+		{"zsbk.ofd", false, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			stats, err := reader.Stats()
+			if err != nil {
+				t.Fatalf("读取资源统计失败: %v", err)
+			}
+			if stats.Fonts == 0 {
+				t.Fatalf("字体数为 0: %+v", stats)
+			}
+			if tc.attachments && stats.Attachments == 0 {
+				t.Fatalf("附件数为 0: %+v", stats)
+			}
+			if tc.media && stats.Media == 0 {
+				t.Fatalf("多媒体数为 0: %+v", stats)
+			}
+			if tc.signatures && stats.Signatures == 0 {
+				t.Fatalf("签名数为 0: %+v", stats)
+			}
+		})
+	}
+}
+
+func TestSignatureCertificateAndValueExport(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Signatures()
+	if err != nil || len(infos) == 0 {
+		t.Fatalf("签名列表为空: %v", err)
+	}
+	info := infos[0]
+	var slot string
+	for _, cert := range info.Certificates {
+		if cert.Subject != "" {
+			slot = cert.SlotKey
+			break
+		}
+	}
+	if slot == "" {
+		t.Fatalf("未找到有效证书: %+v", info.Certificates)
+	}
+	der, err := reader.SignatureCertificate(info.Scope, info.ID, slot)
+	if err != nil {
+		t.Fatalf("导出证书失败: %v", err)
+	}
+	if len(der) < 2 || der[0] != 0x30 {
+		t.Fatalf("证书 DER 无效: %x", der)
+	}
+
+	value, err := reader.SignatureValue(info.Scope, info.ID)
+	if err != nil {
+		t.Fatalf("导出签名值失败: %v", err)
+	}
+	if len(value) == 0 {
+		t.Fatal("签名值为空")
+	}
+
+	if _, err := reader.SignatureCertificate(info.Scope, info.ID, "unknown"); err == nil {
+		t.Fatal("未知证书层级应返回错误")
+	}
+}

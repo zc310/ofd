@@ -302,7 +302,7 @@
        .thumbnail-toolbar[hidden] { display: none; }
        .thumbnail-toolbar .thumbnail-size-label { flex: 0 0 auto; color: #7b8798; font-size: 12px; }
        .thumbnail-toolbar .thumbnail-size-slider { flex: 1 1 auto; min-width: 0; accent-color: #2476bd; }
-       #fonts, #attachments, #media, #annotations { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 10px 12px; scrollbar-width: thin; }
+       #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 10px 12px; scrollbar-width: thin; }
        .fonts-summary { margin: 2px 0 10px; color: #667188; font-size: 12px; }
        .fonts-list { display: flex; flex-direction: column; }
        .font-item-wrap { display: flex; flex-direction: column; }
@@ -324,6 +324,7 @@
        .attachment-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; }
        .attachment-badge { padding: 0 5px; border-radius: 4px; background: #e4e9f0; color: #4b5668; font-size: 11px; line-height: 1.6; }
        .attachment-badge.attachment-warn { background: #f3e2e2; color: #9b3e3e; }
+       .attachment-badge.attachment-ok { background: #dcefdc; color: #2f6b2f; }
        .attachment-actions { display: inline-flex; flex: 0 0 auto; gap: 4px; margin-left: auto; }
        .attachment-action { padding: 1px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #4b5668; font-size: 11px; line-height: 1.7; cursor: pointer; }
        .attachment-action:hover { background: #f1f5f9; }
@@ -355,6 +356,46 @@
        body.dark-reading .annotation-item:hover { background: #ffffff1a; }
        body.dark-reading .annotation-type, body.dark-reading .annotation-remark { color: #c6d0dd; }
        body.dark-reading .annotation-meta { color: #9aa7b8; }
+       body.dark-reading .attachment-badge.attachment-ok { background: #24402a; color: #a6d6a6; }
+       .signature-item { display: flex; flex-direction: column; gap: 5px; margin: 0 0 10px; padding: 7px; border: 1px solid #d7dce5; border-radius: 6px; background: var(--document-background, #fff); }
+       .signature-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+       .signature-title { color: #172033; font-size: 13px; font-weight: 600; }
+       .signature-meta { color: #7b8798; font-size: 11px; }
+       .signature-stamps { display: flex; flex-wrap: wrap; gap: 6px; }
+       .signature-stamp { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #26313f; font-size: 11px; cursor: pointer; }
+       .signature-stamp:hover { border-color: #80b4e5; }
+       .signature-stamp:disabled { cursor: default; opacity: .7; }
+       .signature-seal { width: 26px; height: 26px; object-fit: contain; }
+       .signature-seal-icon { color: #7b8798; font-size: 18px; }
+       body.dark-reading .signature-item { border-color: #536074; background: #252c38; }
+       body.dark-reading .signature-title { color: #e6ebf2; }
+       body.dark-reading .signature-meta { color: #9aa7b8; }
+       body.dark-reading .signature-stamp { border-color: #536074; background: #303947; color: #c6d0dd; }
+       .signature-detail-toggle { align-self: flex-start; padding: 1px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #4b5668; font-size: 11px; line-height: 1.7; cursor: pointer; }
+       .signature-detail-toggle:hover { background: #f1f5f9; }
+       .signature-detail-toggle.active { border-color: #80b4e5; background: #dbe8f6; color: #10508f; }
+       .signature-certs { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+       .certificate { padding: 6px; border: 1px solid #e0e4e9; border-radius: 5px; background: #f7f9fb; }
+       .certificate-title { margin-bottom: 4px; color: #4b5668; font-size: 12px; font-weight: 600; }
+       .certificate-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+       .certificate-row { display: flex; gap: 6px; font-size: 11px; line-height: 1.7; }
+       .certificate-label { flex: 0 0 58px; color: #7b8798; }
+       .certificate-value { flex: 1 1 auto; min-width: 0; color: #26313f; word-break: break-all; }
+       body.dark-reading .signature-detail-toggle { border-color: #536074; background: #303947; color: #c6d0dd; }
+       body.dark-reading .certificate { border-color: #3a4350; background: #2b313b; }
+       body.dark-reading .certificate-title { color: #c6d0dd; }
+       body.dark-reading .certificate-value { color: #d7dee8; }
+       .certificate-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+       .certificate-action { padding: 1px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #4b5668; font-size: 11px; line-height: 1.7; cursor: pointer; }
+       .certificate-action:hover { background: #f1f5f9; }
+       .certificate-action:disabled { opacity: .5; cursor: default; }
+       body.dark-reading .certificate-action { border-color: #536074; background: #303947; color: #c6d0dd; }
+       .signature-refs { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; max-height: 260px; overflow: auto; }
+       .signature-ref { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; font-size: 11px; }
+       .signature-ref-path { flex: 1 1 140px; min-width: 0; overflow: hidden; color: #4b5668; text-overflow: ellipsis; white-space: nowrap; }
+       .signature-ref-error { flex: 1 1 100%; color: #9b3e3e; }
+       body.dark-reading .signature-ref-path { color: #c6d0dd; }
+       body.dark-reading .signature-ref-error { color: #e6a8a8; }
        #thumbnails::-webkit-scrollbar { display: none; }
 
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -445,7 +486,7 @@
        .thumbnail-toolbar { display: none; }
        #sidebar-tabs { margin: 0 0 2px; }
        #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
-        #outline, #bookmarks, #fonts, #attachments, #media, #annotations { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
+        #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
@@ -690,6 +731,7 @@
           <button id="sidebar-more-attachments" type="button" role="menuitem" aria-controls="attachments">附件</button>
           <button id="sidebar-more-media" type="button" role="menuitem" aria-controls="media">资源</button>
           <button id="sidebar-more-annotations" type="button" role="menuitem" aria-controls="annotations">注解</button>
+          <button id="sidebar-more-signatures" type="button" role="menuitem" aria-controls="signatures">签名</button>
         </div>
       </div>
       <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
@@ -708,6 +750,7 @@
       <aside id="attachments" role="tabpanel" aria-label="文档附件" hidden></aside>
       <aside id="media" role="tabpanel" aria-label="文档资源" hidden></aside>
       <aside id="annotations" role="tabpanel" aria-label="文档注解" hidden></aside>
+      <aside id="signatures" role="tabpanel" aria-label="文档签名" hidden></aside>
       <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" tabindex="0"></div>
     </div>
     <main id="pages" tabindex="-1">

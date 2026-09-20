@@ -56,6 +56,11 @@ func main() {
 	api.Set("media", js.FuncOf(app.media))
 	api.Set("mediaData", js.FuncOf(app.mediaData))
 	api.Set("annotations", js.FuncOf(app.annotations))
+	api.Set("signatures", js.FuncOf(app.signatures))
+	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
+	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
+	api.Set("signatureValue", js.FuncOf(app.signatureValue))
+	api.Set("stats", js.FuncOf(app.stats))
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
@@ -502,6 +507,172 @@ func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
 		result.SetIndex(index, objectValue(value))
 	}
 	return result
+}
+
+func (a *wasmApp) signatures(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	infos, err := reader.Signatures()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(infos))
+	for index, info := range infos {
+		value := map[string]any{
+			"scope":              info.Scope,
+			"id":                 info.ID,
+			"provider":           info.Provider,
+			"company":            info.Company,
+			"version":            info.Version,
+			"method":             info.Method,
+			"date":               info.Date,
+			"has_digest":         info.HasDigest,
+			"digest_valid":       info.DigestValid,
+			"digest_method":      info.DigestMethod,
+			"has_verification":   info.HasVerification,
+			"verified":           info.Verified,
+			"trusted":            info.Trusted,
+			"trust_checked":      info.TrustChecked,
+			"verification_error": info.VerificationError,
+			"has_data_hash":      info.HasDataHash,
+			"data_hash_match":    info.DataHashMatch,
+		}
+		references := js.Global().Get("Array").New(len(info.References))
+		for refIndex, reference := range info.References {
+			references.SetIndex(refIndex, objectValue(map[string]any{
+				"file_ref": reference.FileRef,
+				"exists":   reference.Exists,
+				"match":    reference.Match,
+				"error":    reference.Error,
+			}))
+		}
+		value["references"] = references
+		stamps := js.Global().Get("Array").New(len(info.Stamps))
+		for stampIndex, stamp := range info.Stamps {
+			stampValue := map[string]any{
+				"page":      stamp.Page,
+				"id":        stamp.ID,
+				"has_seal":  stamp.HasSeal,
+				"seal_type": stamp.SealType,
+			}
+			if stamp.Boundary != nil {
+				stampValue["boundary"] = objectValue(map[string]any{
+					"x":      stamp.Boundary.X,
+					"y":      stamp.Boundary.Y,
+					"width":  stamp.Boundary.Width,
+					"height": stamp.Boundary.Height,
+				})
+			} else {
+				stampValue["boundary"] = nil
+			}
+			stamps.SetIndex(stampIndex, objectValue(stampValue))
+		}
+		value["stamps"] = stamps
+		certificates := js.Global().Get("Array").New(len(info.Certificates))
+		for certIndex, cert := range info.Certificates {
+			certificates.SetIndex(certIndex, objectValue(map[string]any{
+				"slot":                cert.Slot,
+				"slot_key":            cert.SlotKey,
+				"subject":             cert.Subject,
+				"issuer":              cert.Issuer,
+				"common_name":         cert.CommonName,
+				"organization":        cert.Organization,
+				"organizational_unit": cert.OrganizationalUnit,
+				"country":             cert.Country,
+				"locality":            cert.Locality,
+				"province":            cert.Province,
+				"serial_number":       cert.SerialNumber,
+				"not_before":          cert.NotBefore,
+				"not_after":           cert.NotAfter,
+				"public_key":          cert.PublicKey,
+				"algorithm":           cert.Algorithm,
+				"signature_format":    cert.SignatureFormat,
+				"signature_valid":     cert.SignatureValid,
+				"certificate_valid":   cert.CertificateValid,
+				"trust_checked":       cert.TrustChecked,
+				"trusted":             cert.Trusted,
+				"trust_error":         cert.TrustError,
+				"revocation_checked":  cert.RevocationChecked,
+				"revocation_status":   cert.RevocationStatus,
+				"revocation_error":    cert.RevocationError,
+				"error":               cert.Error,
+			}))
+		}
+		value["certificates"] = certificates
+		result.SetIndex(index, objectValue(value))
+	}
+	return result
+}
+
+func (a *wasmApp) signatureSeal(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 3 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString || args[2].Type() != js.TypeNumber {
+		return errorValue(errors.New("ofd.signatureSeal 需要作用域、签名 ID 和签章索引参数"))
+	}
+	data, _, err := reader.SignatureSeal(int(args[0].Float()), args[1].String(), int(args[2].Float()))
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
+	return result
+}
+
+func (a *wasmApp) signatureCertificate(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 3 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString || args[2].Type() != js.TypeString {
+		return errorValue(errors.New("ofd.signatureCertificate 需要作用域、签名 ID 和证书层级参数"))
+	}
+	data, err := reader.SignatureCertificate(int(args[0].Float()), args[1].String(), args[2].String())
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
+	return result
+}
+
+func (a *wasmApp) signatureValue(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString {
+		return errorValue(errors.New("ofd.signatureValue 需要作用域和签名 ID 参数"))
+	}
+	data, err := reader.SignatureValue(int(args[0].Float()), args[1].String())
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(result, data)
+	return result
+}
+
+func (a *wasmApp) stats(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	stats, err := reader.Stats()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{
+		"fonts":            stats.Fonts,
+		"attachments":      stats.Attachments,
+		"media":            stats.Media,
+		"annotation_pages": stats.AnnotationPages,
+		"signatures":       stats.Signatures,
+	})
 }
 
 func (a *wasmApp) pageCount(_ js.Value, _ []js.Value) any {

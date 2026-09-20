@@ -153,6 +153,26 @@ class OFDWorkerClient {
     return this.request('annotations');
   }
 
+  signatures() {
+    return this.request('signatures');
+  }
+
+  signatureSeal(scope, signatureID, stampIndex) {
+    return this.request('signatureSeal', { scope, signatureID, stampIndex });
+  }
+
+  signatureCertificate(scope, signatureID, slot) {
+    return this.request('signatureCertificate', { scope, signatureID, slot });
+  }
+
+  signatureValue(scope, signatureID) {
+    return this.request('signatureValue', { scope, signatureID });
+  }
+
+  stats() {
+    return this.request('stats');
+  }
+
   memStats() {
     return this.request('memStats');
   }
@@ -378,9 +398,11 @@ const sidebarMoreFonts = document.querySelector('#sidebar-more-fonts');
 const sidebarMoreAttachments = document.querySelector('#sidebar-more-attachments');
 const sidebarMoreMedia = document.querySelector('#sidebar-more-media');
 const sidebarMoreAnnotations = document.querySelector('#sidebar-more-annotations');
+const sidebarMoreSignatures = document.querySelector('#sidebar-more-signatures');
 const attachmentsElement = document.querySelector('#attachments');
 const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
+const signaturesElement = document.querySelector('#signatures');
 const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
 const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
 const outlineElement = document.querySelector('#outline');
@@ -512,6 +534,10 @@ let documentFontUsageGeneration = -1;
 let documentFontUsageMeta = { scanned: 0, truncated: false };
 let mediaObserver = null;
 let mediaObjectURLs = [];
+const sidebarScrollStorageKey = 'ofd-sidebar-scroll';
+let sidebarScroll = {};
+let sidebarScrollPersistTimer;
+const sidebarScrollPanels = {};
 const sidebarWidthStorageKey = 'ofd-sidebar-width';
 let sidebarWidth = (() => {
   try {
@@ -2726,11 +2752,13 @@ async function openSelectedFile(selected) {
   documentFontUsageGeneration = -1;
   documentFontUsageMeta = { scanned: 0, truncated: false };
   outlineExpandState = {};
+  sidebarScroll = {};
   if (activeSidebarTab === 'fonts') fontsElement?.replaceChildren();
   if (activeSidebarTab === 'attachments') attachmentsElement?.replaceChildren();
   revokeMediaURLs();
   if (activeSidebarTab === 'media') mediaElement?.replaceChildren();
   if (activeSidebarTab === 'annotations') annotationsElement?.replaceChildren();
+  if (activeSidebarTab === 'signatures') signaturesElement?.replaceChildren();
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -2774,6 +2802,7 @@ async function openSelectedFile(selected) {
         : { index, width: 210, height: 297 };
     });
     currentDocumentKey = documentKey(selected);
+    sidebarScroll = readSidebarScroll();
     current = restoreReadingPosition(selected, pageInfos.length);
     await applyDocumentPreferences();
     if (generation !== documentGeneration) return;
@@ -2783,6 +2812,7 @@ async function openSelectedFile(selected) {
     if (activeSidebarTab === 'attachments') renderAttachments();
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
+    if (activeSidebarTab === 'signatures') renderSignatures();
     setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
     void loadOutline();
@@ -2816,6 +2846,7 @@ async function openSelectedFile(selected) {
     if (activeSidebarTab === 'attachments') renderAttachments();
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
+    if (activeSidebarTab === 'signatures') renderSignatures();
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
@@ -2884,6 +2915,7 @@ function cancelOpening() {
   if (activeSidebarTab === 'attachments') renderAttachments();
   if (activeSidebarTab === 'media') renderMedia();
   if (activeSidebarTab === 'annotations') renderAnnotations();
+  if (activeSidebarTab === 'signatures') renderSignatures();
   thumbnailSlots = [];
   thumbnailSlotByPage = [];
   currentDocumentKey = '';
@@ -3071,6 +3103,27 @@ function updateDocumentInfo() {
       }).join('');
     }
     infoBody.innerHTML = html;
+    engine.stats().then(stats => {
+      if (generation !== documentGeneration || !stats) return;
+      const title = document.createElement('div');
+      title.className = 'info-section-title';
+      title.textContent = '资源统计';
+      const box = document.createElement('div');
+      [['字体', stats.fonts], ['附件', stats.attachments], ['多媒体', stats.media], ['注解页', stats.annotation_pages], ['签名', stats.signatures]]
+        .forEach(([label, value]) => {
+          const row = document.createElement('div');
+          row.className = 'info-row';
+          const name = document.createElement('span');
+          name.className = 'info-label';
+          name.textContent = label;
+          const count = document.createElement('span');
+          count.className = 'info-value';
+          count.textContent = String(value ?? 0);
+          row.append(name, count);
+          box.append(row);
+        });
+      infoBody.append(title, box);
+    }).catch(() => {});
   }).catch(() => {
     if (generation !== documentGeneration) return;
     infoBody.innerHTML = '<p class="info-empty">获取信息失败</p>';
@@ -3691,9 +3744,37 @@ function setMobileToolbarExpanded(expanded) {
   }
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'attachments', 'media', 'annotations'];
-const sidebarMoreTabs = ['fonts', 'attachments', 'media', 'annotations'];
-const sidebarMoreLabels = { fonts: '字体', attachments: '附件', media: '资源', annotations: '注解' };
+function readSidebarScroll() {
+  try {
+    const all = JSON.parse(localStorage.getItem(sidebarScrollStorageKey) || '{}');
+    const state = currentDocumentKey ? all[currentDocumentKey] : null;
+    return state && typeof state === 'object' ? state : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function persistSidebarScroll() {
+  clearTimeout(sidebarScrollPersistTimer);
+  sidebarScrollPersistTimer = setTimeout(() => {
+    if (!currentDocumentKey) return;
+    try {
+      const all = JSON.parse(localStorage.getItem(sidebarScrollStorageKey) || '{}');
+      all[currentDocumentKey] = sidebarScroll;
+      const entries = Object.entries(all).slice(-20);
+      localStorage.setItem(sidebarScrollStorageKey, JSON.stringify(Object.fromEntries(entries)));
+    } catch (_) {}
+  }, 300);
+}
+
+function restorePanelScroll(panel) {
+  const element = sidebarScrollPanels[panel];
+  if (element) element.scrollTop = sidebarScroll[panel] || 0;
+}
+
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'attachments', 'media', 'annotations', 'signatures'];
+const sidebarMoreTabs = ['fonts', 'attachments', 'media', 'annotations', 'signatures'];
+const sidebarMoreLabels = { fonts: '字体', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名' };
 
 // applySidebarPanels 根据侧栏可见性和当前面板，决定缩略图/大纲/书签/字体/附件面板的显隐。
 function applySidebarPanels() {
@@ -3708,17 +3789,19 @@ function applySidebarPanels() {
   if (attachmentsElement) attachmentsElement.hidden = !active('attachments');
   if (mediaElement) mediaElement.hidden = !active('media');
   if (annotationsElement) annotationsElement.hidden = !active('annotations');
+  if (signaturesElement) signaturesElement.hidden = !active('signatures');
   if (thumbnailToolbar) thumbnailToolbar.hidden = !active('thumbnails');
   if (outlineToolbar) outlineToolbar.hidden = !active('outline');
   if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
   if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
   if (sidebarFilter) {
-    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('attachments') || active('media') || active('annotations');
+    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('attachments') || active('media') || active('annotations') || active('signatures');
     sidebarFilter.hidden = !filterable;
     if (active('fonts')) sidebarFilter.placeholder = '过滤字体';
     else if (active('attachments')) sidebarFilter.placeholder = '过滤附件';
     else if (active('media')) sidebarFilter.placeholder = '过滤资源';
     else if (active('annotations')) sidebarFilter.placeholder = '过滤注解';
+    else if (active('signatures')) sidebarFilter.placeholder = '过滤签名';
     else sidebarFilter.placeholder = '过滤标题';
   }
   const tabs = [
@@ -3740,6 +3823,7 @@ function applySidebarPanels() {
   sidebarMoreAttachments?.classList.toggle('active', activeSidebarTab === 'attachments');
   sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
   sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
+  sidebarMoreSignatures?.classList.toggle('active', activeSidebarTab === 'signatures');
   if (sidebarMoreMenu && thumbnailsVisible === false) setSidebarMoreOpen(false);
   if (thumbnailSizeSlider) thumbnailSizeSlider.value = String(thumbnailSizePercent);
 }
@@ -3759,7 +3843,7 @@ function setSidebarMoreOpen(open) {
 function setSidebarTab(tab) {
   if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
   const changed = activeSidebarTab !== tab;
-  if (activeSidebarTab === 'media' && tab !== 'media') revokeMediaURLs();
+  if ((activeSidebarTab === 'media' || activeSidebarTab === 'signatures') && tab !== activeSidebarTab) revokeMediaURLs();
   activeSidebarTab = tab;
   if (changed) {
     try {
@@ -3783,9 +3867,24 @@ function setSidebarTab(tab) {
     renderMedia();
   } else if (tab === 'annotations') {
     renderAnnotations();
+  } else if (tab === 'signatures') {
+    renderSignatures();
   } else {
     renderFonts();
   }
+}
+
+function toggleSidebar() {
+  setThumbnailsVisible(!thumbnailsVisible);
+}
+
+// cycleSidebarPanel 在侧栏面板之间循环切换（含“更多”里的字体/附件/资源/注解/签名）。
+function cycleSidebarPanel(step) {
+  if (!sidebarTabs.length) return;
+  if (!thumbnailsVisible) setThumbnailsVisible(true);
+  const index = sidebarTabs.indexOf(activeSidebarTab);
+  const next = sidebarTabs[(index + step + sidebarTabs.length) % sidebarTabs.length];
+  setSidebarTab(next);
 }
 
 function setThumbnailSize(percent) {
@@ -4061,6 +4160,7 @@ function renderOutline() {
   outlineElement.append(buildOutlineList(nodes, 0, Boolean(sidebarFilterValue)));
   attachOutlineKeyboard(outlineElement);
   updateOutlineActive();
+  restorePanelScroll('outline');
 }
 
 function renderBookmarks() {
@@ -4106,6 +4206,7 @@ function renderBookmarks() {
   bookmarksElement.append(list);
   attachOutlineKeyboard(bookmarksElement);
   updateOutlineActive();
+  restorePanelScroll('bookmarks');
 }
 
 // loadDocumentInfo 在每个文档生命周期内缓存一次 engine.info()，供信息面板和字体页签共用。
@@ -4321,6 +4422,7 @@ function renderFonts() {
     filtered.forEach(font => list.append(buildFontItem(font)));
     fontsElement.append(list);
     applyFontUsageLabels();
+    restorePanelScroll('fonts');
   }).catch(() => {
     if (generation !== documentGeneration) return;
     fontsElement.replaceChildren(outlineEmptyMessage('获取字体失败'));
@@ -4490,6 +4592,7 @@ function renderAttachments() {
       return;
     }
     filtered.forEach(item => attachmentsElement.append(buildAttachmentItem(item)));
+    restorePanelScroll('attachments');
   }).catch(() => {
     if (generation !== documentGeneration) return;
     attachmentsElement.replaceChildren(outlineEmptyMessage('获取附件失败'));
@@ -4664,6 +4767,7 @@ function renderMedia() {
     } else {
       thumbs.forEach(element => { void loadMediaThumb(element); });
     }
+    restorePanelScroll('media');
   }).catch(() => {
     if (generation !== documentGeneration) return;
     mediaElement.replaceChildren(outlineEmptyMessage('获取资源失败'));
@@ -4739,9 +4843,302 @@ function renderAnnotations() {
       return;
     }
     filtered.forEach(item => annotationsElement.append(buildAnnotationItem(item)));
+    restorePanelScroll('annotations');
   }).catch(() => {
     if (generation !== documentGeneration) return;
     annotationsElement.replaceChildren(outlineEmptyMessage('获取注解失败'));
+  });
+}
+
+// signatureMethodLabel 把常见签名/摘要算法 OID 显示为易读名称。
+function signatureMethodLabel(method) {
+  const value = String(method || '');
+  const known = {
+    '1.2.156.10197.1.501': 'SM2',
+    '1.2.156.10197.1.401': 'SM3',
+    '1.3.14.3.2.26': 'SHA1',
+    '1.2.840.113549.2.5': 'MD5',
+    '2.16.840.1.101.3.4.2.1': 'SHA256',
+  };
+  return known[value] || value;
+}
+
+function sealMime(type) {
+  const value = String(type || '').toLowerCase();
+  if (value === 'png') return 'image/png';
+  if (value === 'jpg' || value === 'jpeg') return 'image/jpeg';
+  return '';
+}
+
+function signatureSealIcon() {
+  const icon = document.createElement('span');
+  icon.className = 'material-symbols-outlined signature-seal-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = 'verified_user';
+  return icon;
+}
+
+function buildSignatureStamp(info, stamp, stampIndex) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'signature-stamp';
+  const hasPage = Number.isInteger(stamp?.page) && stamp.page >= 0;
+  if (hasPage) {
+    button.addEventListener('click', () => goToAnnotation({ page: stamp.page, boundary: stamp.boundary }));
+    button.title = `跳转到第 ${stamp.page + 1} 页`;
+  } else {
+    button.disabled = true;
+  }
+  const mime = sealMime(stamp?.seal_type);
+  if (stamp?.has_seal && mime) {
+    const img = document.createElement('img');
+    img.className = 'signature-seal';
+    img.alt = '印章';
+    engine.signatureSeal(Number(info.scope) || 0, String(info.id), stampIndex).then(data => {
+      const url = URL.createObjectURL(new Blob([data], { type: mime }));
+      mediaObjectURLs.push(url);
+      img.src = url;
+    }).catch(() => img.replaceWith(signatureSealIcon()));
+    button.append(img);
+  } else {
+    button.append(signatureSealIcon());
+  }
+  const label = document.createElement('span');
+  label.textContent = hasPage ? `第 ${stamp.page + 1} 页` : '签章';
+  button.append(label);
+  return button;
+}
+
+function buildSignatureItem(info) {
+  const item = document.createElement('div');
+  item.className = 'signature-item';
+  const head = document.createElement('div');
+  head.className = 'signature-head';
+  const title = document.createElement('span');
+  title.className = 'signature-title';
+  title.textContent = info.provider || info.company || `签名 ${info.id}`;
+  head.append(title);
+  const metaParts = [];
+  if (info.company && info.company !== info.provider) metaParts.push(info.company);
+  const method = signatureMethodLabel(info.method);
+  if (method) metaParts.push(method);
+  if (info.date) metaParts.push(info.date);
+  if (metaParts.length) {
+    const meta = document.createElement('span');
+    meta.className = 'signature-meta';
+    meta.textContent = metaParts.join(' · ');
+    head.append(meta);
+  }
+  if (info.has_digest) head.append(attachmentBadge(info.digest_valid ? '摘要一致' : '摘要不一致', info.digest_valid ? 'attachment-ok' : 'attachment-warn'));
+  if (info.has_verification) {
+    head.append(attachmentBadge(info.verified ? '验签通过' : '验签失败', info.verified ? 'attachment-ok' : 'attachment-warn'));
+    if (info.trust_checked) head.append(attachmentBadge(info.trusted ? '可信' : '未授信', info.trusted ? 'attachment-ok' : 'attachment-warn'));
+    else head.append(attachmentBadge('未校验证书链', ''));
+  }
+  item.append(head);
+  if (info.verification_error) {
+    const error = document.createElement('p');
+    error.className = 'outline-empty';
+    error.textContent = `验签错误：${info.verification_error}`;
+    item.append(error);
+  }
+  if (Array.isArray(info.references) && info.references.length) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'signature-detail-toggle';
+    toggle.textContent = `签名范围（${info.references.length}）`;
+    const box = document.createElement('div');
+    box.className = 'signature-refs';
+    box.hidden = true;
+    if (info.has_data_hash) {
+      const row = document.createElement('div');
+      row.className = 'signature-ref';
+      row.append(attachmentBadge(info.data_hash_match ? '数据摘要一致' : '数据摘要不一致', info.data_hash_match ? 'attachment-ok' : 'attachment-warn'));
+      box.append(row);
+    }
+    const shown = info.references.slice(0, 50);
+    shown.forEach(reference => {
+      const row = document.createElement('div');
+      row.className = 'signature-ref';
+      const path = document.createElement('span');
+      path.className = 'signature-ref-path';
+      path.textContent = reference.file_ref;
+      path.title = reference.file_ref;
+      row.append(path);
+      if (!reference.exists) row.append(attachmentBadge('文件缺失', 'attachment-warn'));
+      else row.append(attachmentBadge(reference.match ? '摘要一致' : '摘要不一致', reference.match ? 'attachment-ok' : 'attachment-warn'));
+      if (reference.error) {
+        const error = document.createElement('span');
+        error.className = 'signature-ref-error';
+        error.textContent = reference.error;
+        row.append(error);
+      }
+      box.append(row);
+    });
+    if (info.references.length > shown.length) {
+      const more = document.createElement('div');
+      more.className = 'signature-ref';
+      more.textContent = `…其余 ${info.references.length - shown.length} 项`;
+      box.append(more);
+    }
+    toggle.addEventListener('click', () => {
+      box.hidden = !box.hidden;
+      toggle.classList.toggle('active', !box.hidden);
+    });
+    item.append(toggle, box);
+  }
+  if (Array.isArray(info.stamps) && info.stamps.length) {
+    const stamps = document.createElement('div');
+    stamps.className = 'signature-stamps';
+    info.stamps.forEach((stamp, stampIndex) => stamps.append(buildSignatureStamp(info, stamp, stampIndex)));
+    item.append(stamps);
+  }
+  if (Array.isArray(info.certificates) && info.certificates.length) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'signature-detail-toggle';
+    toggle.textContent = '证书详情';
+    const box = document.createElement('div');
+    box.className = 'signature-certs';
+    box.hidden = true;
+    info.certificates.forEach(cert => box.append(buildCertificateDetail(info, cert)));
+    toggle.addEventListener('click', () => {
+      box.hidden = !box.hidden;
+      toggle.classList.toggle('active', !box.hidden);
+    });
+    item.append(toggle, box);
+  }
+  const valueButton = document.createElement('button');
+  valueButton.type = 'button';
+  valueButton.className = 'signature-detail-toggle';
+  valueButton.textContent = '导出签名值';
+  valueButton.addEventListener('click', () => runAttachmentAction(valueButton, () => downloadSignatureValue(info)));
+  item.append(valueButton);
+  return item;
+}
+
+function derToPEM(der) {
+  const bytes = new Uint8Array(der);
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+  const lines = (btoa(binary).match(/.{1,64}/g) || []).join('\n');
+  return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----\n`;
+}
+
+function certificateFileBase(info, cert) {
+  const name = `${info?.provider || info?.company || info?.id || 'certificate'}-${cert?.slot_key || 'cert'}`;
+  return safeResourceName({ name }, 'certificate');
+}
+
+async function downloadCertificate(info, cert, format) {
+  const der = await engine.signatureCertificate(Number(info?.scope) || 0, String(info?.id), String(cert?.slot_key));
+  const base = certificateFileBase(info, cert);
+  if (format === 'pem') {
+    downloadBytes(new TextEncoder().encode(derToPEM(der)), `${base}.pem`, 'application/x-pem-file');
+  } else {
+    downloadBytes(der, `${base}.der`, 'application/pkix-cert');
+  }
+}
+
+async function downloadSignatureValue(info) {
+  const data = await engine.signatureValue(Number(info?.scope) || 0, String(info?.id));
+  const base = safeResourceName({ name: info?.provider || info?.company || info?.id || 'signature' }, 'signature');
+  downloadBytes(data, `${base}.dat`, 'application/octet-stream');
+}
+
+function buildCertificateDetail(info, cert) {
+  const box = document.createElement('div');
+  box.className = 'certificate';
+  const title = document.createElement('div');
+  title.className = 'certificate-title';
+  title.textContent = `${cert?.slot || '证书'}证书`;
+  box.append(title);
+  const badges = document.createElement('div');
+  badges.className = 'certificate-badges';
+  badges.append(attachmentBadge(cert?.signature_valid ? '签名有效' : '签名无效', cert?.signature_valid ? 'attachment-ok' : 'attachment-warn'));
+  badges.append(attachmentBadge(cert?.certificate_valid ? '证书在有效期内' : '证书有效期未通过', cert?.certificate_valid ? 'attachment-ok' : 'attachment-warn'));
+  if (cert?.trust_checked) badges.append(attachmentBadge(cert.trusted ? '证书链可信' : '证书链不可信', cert.trusted ? 'attachment-ok' : 'attachment-warn'));
+  else badges.append(attachmentBadge('未校验证书链', ''));
+  if (cert?.revocation_checked) badges.append(attachmentBadge(`吊销：${cert.revocation_status || 'unknown'}`, cert.revocation_status === 'good' ? 'attachment-ok' : 'attachment-warn'));
+  box.append(badges);
+  const rows = [
+    ['主体', cert?.subject],
+    ['签发者', cert?.issuer],
+    ['序列号', cert?.serial_number],
+    ['有效期', cert?.not_before && cert?.not_after ? `${cert.not_before} ~ ${cert.not_after}` : ''],
+    ['公钥', cert?.public_key],
+    ['签名算法', signatureMethodLabel(cert?.algorithm)],
+    ['签名格式', cert?.signature_format],
+  ];
+  rows.forEach(([label, value]) => {
+    if (!value) return;
+    const row = document.createElement('div');
+    row.className = 'certificate-row';
+    const name = document.createElement('span');
+    name.className = 'certificate-label';
+    name.textContent = label;
+    const text = document.createElement('span');
+    text.className = 'certificate-value';
+    text.textContent = value;
+    row.append(name, text);
+    box.append(row);
+  });
+  const errors = [cert?.trust_error, cert?.revocation_error, cert?.error].filter(Boolean);
+  if (errors.length) {
+    const error = document.createElement('p');
+    error.className = 'outline-empty';
+    error.textContent = errors.join('；');
+    box.append(error);
+  }
+  if (cert?.slot_key) {
+    const actions = document.createElement('div');
+    actions.className = 'certificate-actions';
+    const derButton = document.createElement('button');
+    derButton.type = 'button';
+    derButton.className = 'certificate-action';
+    derButton.textContent = '导出 DER';
+    derButton.addEventListener('click', () => runAttachmentAction(derButton, () => downloadCertificate(info, cert, 'der')));
+    const pemButton = document.createElement('button');
+    pemButton.type = 'button';
+    pemButton.className = 'certificate-action';
+    pemButton.textContent = '导出 PEM';
+    pemButton.addEventListener('click', () => runAttachmentAction(pemButton, () => downloadCertificate(info, cert, 'pem')));
+    actions.append(derButton, pemButton);
+    box.append(actions);
+  }
+  return box;
+}
+
+function renderSignatures() {
+  if (!signaturesElement) return;
+  const generation = documentGeneration;
+  revokeMediaURLs();
+  signaturesElement.replaceChildren();
+  if (!pageInfos.length) {
+    signaturesElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  signaturesElement.append(outlineEmptyMessage('正在读取签名...'));
+  engine.signatures().then(list => {
+    if (generation !== documentGeneration) return;
+    const signatures = Array.isArray(list) ? list : [];
+    signaturesElement.replaceChildren();
+    if (!signatures.length) {
+      signaturesElement.append(outlineEmptyMessage('此文档没有签名'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? signatures.filter(item => `${item.provider || ''} ${item.company || ''} ${item.method || ''} ${item.date || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : signatures;
+    if (!filtered.length) {
+      signaturesElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    filtered.forEach(item => signaturesElement.append(buildSignatureItem(item)));
+    restorePanelScroll('signatures');
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    signaturesElement.replaceChildren(outlineEmptyMessage('获取签名失败'));
   });
 }
 
@@ -5156,6 +5553,7 @@ sidebarMoreFonts?.addEventListener('click', () => setSidebarTab('fonts'));
 sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachments'));
 sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
 sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
+sidebarMoreSignatures?.addEventListener('click', () => setSidebarTab('signatures'));
 if (thumbnailSizeSlider) {
   thumbnailSizeSlider.addEventListener('input', () => setThumbnailSize(Number(thumbnailSizeSlider.value)));
   thumbnailSizeSlider.addEventListener('change', persistThumbnailSize);
@@ -5187,6 +5585,7 @@ if (sidebarFilter) {
     else if (activeSidebarTab === 'attachments') renderAttachments();
     else if (activeSidebarTab === 'media') renderMedia();
     else if (activeSidebarTab === 'annotations') renderAnnotations();
+    else if (activeSidebarTab === 'signatures') renderSignatures();
   });
 }
 if (sidebarResizer) {
@@ -5222,6 +5621,19 @@ if (sidebarResizer) {
   });
   applySidebarWidth();
 }
+sidebarScrollPanels.outline = outlineElement;
+sidebarScrollPanels.bookmarks = bookmarksElement;
+sidebarScrollPanels.fonts = fontsElement;
+sidebarScrollPanels.attachments = attachmentsElement;
+sidebarScrollPanels.media = mediaElement;
+sidebarScrollPanels.annotations = annotationsElement;
+sidebarScrollPanels.signatures = signaturesElement;
+Object.entries(sidebarScrollPanels).forEach(([panel, element]) => {
+  element?.addEventListener('scroll', () => {
+    sidebarScroll[panel] = element.scrollTop;
+    persistSidebarScroll();
+  }, { passive: true });
+});
 applySidebarPanels();
 showTextLayer.addEventListener('change', () => setTextLayerVisible(showTextLayer.checked));
 showPagePill.addEventListener('change', () => setPagePillVisible(showPagePill.checked));
@@ -5298,6 +5710,13 @@ window.addEventListener('keydown', event => {
     setSearchPanelOpen(true);
     return;
   }
+  if (modifier && key === 'b') {
+    if (!editing) {
+      event.preventDefault();
+      toggleSidebar();
+    }
+    return;
+  }
   if (editing) {
     if (event.key === 'Escape' && target === searchInput) setSearchPanelOpen(false);
     return;
@@ -5309,6 +5728,16 @@ window.addEventListener('keydown', event => {
     else if (documentMenu && !documentMenu.hidden) setDocumentMenuOpen(false);
     else if (sidebarMoreMenu && !sidebarMoreMenu.hidden) setSidebarMoreOpen(false);
     else if (document.body.classList.contains('reading-mode')) setReadingMode(false);
+    return;
+  }
+  if (event.key === '[') {
+    event.preventDefault();
+    cycleSidebarPanel(-1);
+    return;
+  }
+  if (event.key === ']') {
+    event.preventDefault();
+    cycleSidebarPanel(1);
     return;
   }
   if (!pageInfos.length) return;
