@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -36,6 +37,14 @@ const (
 	maxFontBytes      = 32 << 20
 	maxRenderPages    = 64
 	maxRenderDocs     = 4
+	// maxFontUsageScan 和 maxFontUsagePages 是按字体统计使用页面时的默认上限，
+	// 避免十万级页面文档在一次统计请求中解析全部页面布局。
+	maxFontUsageScan  = 10_000
+	maxFontUsagePages = 500
+	// maxFontUsageScanHard 和 maxFontUsagePagesHard 是调用方可以请求的绝对上限，
+	// 防止传入过大的参数导致一次统计请求解析全部页面。
+	maxFontUsageScanHard  = 100_000
+	maxFontUsagePagesHard = 5_000
 	// textCacheCapacity 和 searchCacheCapacity 限制按页缓存的文字与搜索索引，
 	// 避免浏览/搜索大文档时把所有页面的布局快照都留在内存中。
 	textCacheCapacity   = 64
@@ -52,11 +61,13 @@ type PageInfo struct {
 // TextRun 描述页面中的一个文字对象。坐标和尺寸单位为毫米。
 // X/Y 是网页覆盖层使用的左上角坐标，不是 TextCode 的基线坐标。
 type TextRun struct {
-	Text          string
-	X             float64
-	Y             float64
-	Width         float64
-	Height        float64
+	Text   string
+	X      float64
+	Y      float64
+	Width  float64
+	Height float64
+	// Scope 是文字所属文档体的索引，与 Font 一起唯一标识使用的字体。
+	Scope         int
 	Font          uint64
 	Size          float64
 	Weight        int
@@ -133,6 +144,8 @@ type FontResource struct {
 type FontInfo struct {
 	// ID 是字体在所属文档内的标识。
 	ID uint64
+	// Scope 是字体所属文档体的索引，与 ID 一起唯一标识一个字体。
+	Scope int
 	// Name 是 OFD 声明的字体名称（FontName）。
 	Name string
 	// Family 是字体族名称（FamilyName），可能为空。
@@ -147,6 +160,67 @@ type FontInfo struct {
 	Format string
 	// Embedded 表示文档是否内嵌了字体文件。
 	Embedded bool
+}
+
+// FontRef 唯一标识一个文档作用域内的字体。
+type FontRef struct {
+	// Scope 是字体所属文档体的索引。
+	Scope int
+	// ID 是字体在所属文档内的标识。
+	ID uint64
+}
+
+// FontUsageOptions 控制按字体统计使用页面时的扫描上限，零值使用默认值。
+type FontUsageOptions struct {
+	// MaxScan 是最多扫描的页数，0 使用默认值 maxFontUsageScan，上限为 maxFontUsageScanHard。
+	MaxScan int
+	// MaxPages 是每个字体最多返回的页面数，0 使用默认值 maxFontUsagePages，上限为 maxFontUsagePagesHard。
+	MaxPages int
+}
+
+func (options FontUsageOptions) normalized() FontUsageOptions {
+	if options.MaxScan <= 0 {
+		options.MaxScan = maxFontUsageScan
+	} else if options.MaxScan > maxFontUsageScanHard {
+		options.MaxScan = maxFontUsageScanHard
+	}
+	if options.MaxPages <= 0 {
+		options.MaxPages = maxFontUsagePages
+	} else if options.MaxPages > maxFontUsagePagesHard {
+		options.MaxPages = maxFontUsagePagesHard
+	}
+	return options
+}
+
+// FontUsage 描述某个字体在文档文字中的使用情况。
+// 为避免超大文档长时间扫描，统计页数和结果数量由 FontUsageOptions 限制。
+type FontUsage struct {
+	// Pages 是使用该字体的页面索引，升序排列。
+	Pages []int
+	// Scanned 是实际扫描的页数。
+	Scanned int
+	// Truncated 表示因达到扫描页数或结果数量上限而提前结束，结果可能不完整。
+	Truncated bool
+}
+
+// FontUsageSummary 描述一个字体在文档中的使用页面。
+type FontUsageSummary struct {
+	// Scope 是字体所属文档体的索引。
+	Scope int
+	// ID 是字体在所属文档内的标识。
+	ID uint64
+	// Pages 是使用该字体的页面索引，升序排列，最多 maxFontUsagePages 个。
+	Pages []int
+}
+
+// FontUsageReport 是一次批量字体使用统计的结果。
+type FontUsageReport struct {
+	// Fonts 按字体 ID 升序排列。
+	Fonts []FontUsageSummary
+	// Scanned 是实际扫描的页数。
+	Scanned int
+	// Truncated 表示因扫描页数或单个字体结果数量上限而可能不完整。
+	Truncated bool
 }
 
 // FontSource 是由调用方提供给 WASM 渲染器的字体文件。
@@ -731,6 +805,7 @@ func (r *Reader) FontList() ([]FontInfo, error) {
 			}
 			fonts = append(fonts, FontInfo{
 				ID:         uint64(id),
+				Scope:      documentIndex,
 				Name:       font.FontName,
 				Family:     font.FamilyName,
 				Bold:       font.Bold,
@@ -744,6 +819,102 @@ func (r *Reader) FontList() ([]FontInfo, error) {
 		})
 	}
 	return fonts, nil
+}
+
+// FontUsage 返回使用指定字体的页面。为避免超大文档长时间扫描，扫描页数和
+// 结果数量由 options 限制；Truncated 表示结果可能不完整。
+func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, error) {
+	if r == nil {
+		return FontUsage{}, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+	if r.closed {
+		return FontUsage{}, errors.New("文档引擎已经关闭")
+	}
+	options = options.normalized()
+	usage := FontUsage{}
+	limit := len(r.pages)
+	if limit > options.MaxScan {
+		limit = options.MaxScan
+	}
+	for index := 0; index < limit; index++ {
+		usage.Scanned = index + 1
+		for _, run := range r.textAt(index) {
+			if run.Scope != ref.Scope || run.Font != ref.ID {
+				continue
+			}
+			usage.Pages = append(usage.Pages, index)
+			break
+		}
+		if len(usage.Pages) >= options.MaxPages {
+			usage.Truncated = true
+			break
+		}
+	}
+	if !usage.Truncated && limit < len(r.pages) {
+		usage.Truncated = true
+	}
+	return usage, nil
+}
+
+// FontUsageAll 一次扫描统计所有字体的使用页面，供字体列表批量展示。
+// 扫描页数和单个字体的结果数量由 options 限制。
+func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error) {
+	if r == nil {
+		return FontUsageReport{}, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+	if r.closed {
+		return FontUsageReport{}, errors.New("文档引擎已经关闭")
+	}
+	options = options.normalized()
+	report := FontUsageReport{}
+	byFont := make(map[FontRef][]int)
+	limit := len(r.pages)
+	if limit > options.MaxScan {
+		limit = options.MaxScan
+	}
+	for index := 0; index < limit; index++ {
+		report.Scanned = index + 1
+		for _, run := range r.textAt(index) {
+			ref := FontRef{Scope: run.Scope, ID: run.Font}
+			pages := byFont[ref]
+			if len(pages) >= options.MaxPages {
+				continue
+			}
+			if len(pages) > 0 && pages[len(pages)-1] == index {
+				continue
+			}
+			byFont[ref] = append(pages, index)
+		}
+	}
+	if limit < len(r.pages) {
+		report.Truncated = true
+	}
+	refs := make([]FontRef, 0, len(byFont))
+	for ref := range byFont {
+		refs = append(refs, ref)
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Scope != refs[j].Scope {
+			return refs[i].Scope < refs[j].Scope
+		}
+		return refs[i].ID < refs[j].ID
+	})
+	for _, ref := range refs {
+		pages := byFont[ref]
+		if len(pages) >= options.MaxPages {
+			report.Truncated = true
+		}
+		report.Fonts = append(report.Fonts, FontUsageSummary{Scope: ref.Scope, ID: ref.ID, Pages: pages})
+	}
+	return report, nil
 }
 
 // Search 在所有页面的文字对象中查找 query，匹配不区分大小写。
@@ -1131,7 +1302,7 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 	for _, layout := range layouts {
 		run := TextRun{
 			Text: layout.Text, X: layout.X, Y: layout.Y, Width: layout.Width, Height: layout.Height,
-			Font: layout.Font, Size: layout.Size, ReadDirection: layout.ReadDirection,
+			Scope: fontScope, Font: layout.Font, Size: layout.Size, ReadDirection: layout.ReadDirection,
 			Weight:        layout.Weight,
 			CharDirection: layout.CharDirection, FontFamily: textFontFamily(document, fontScope, layout.Font, fallbackFamily),
 			Bold: layout.Bold, Italic: layout.Italic,

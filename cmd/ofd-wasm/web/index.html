@@ -238,7 +238,7 @@
      body.dark-reading:fullscreen { background: #1b2029; }
      body.dark-reading:fullscreen .reader { background: #1f252f; }
 
-      .reader { --thumbnail-column: 190px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
+      .reader { --thumbnail-column: 210px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
       .reader.hide-thumbnails { grid-template-columns: minmax(0, 1fr); }
        .reader > #sidebar { grid-column: 1; }
        .reader > #pages { grid-column: 2; }
@@ -247,8 +247,8 @@
         @supports (height: 100dvh) {
           #sidebar { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
         }
-       #sidebar-tabs { display: flex; flex: 0 0 auto; gap: 4px; padding: 0 10px; }
-       #sidebar-tabs button { flex: 1 1 0; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 13px; cursor: pointer; }
+       #sidebar-tabs { display: flex; flex: 0 0 auto; gap: 3px; padding: 0 10px; }
+       #sidebar-tabs button { flex: 1 1 0; min-width: 0; padding: 5px 4px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
        #sidebar-tabs button:hover { background: #ffffff80; }
        #sidebar-tabs button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
        body.dark-reading #sidebar-tabs button { color: #aeb9ca; }
@@ -269,7 +269,7 @@
        .outline-toggle:hover { background: #ffffff80; }
        .outline-toggle .material-symbols-outlined { font-size: 18px; transition: transform .15s; }
        .outline-toggle.collapsed .material-symbols-outlined { transform: rotate(-90deg); }
-       .outline-label { flex: 1 1 auto; min-width: 0; padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: #26313f; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+       .outline-label { flex: 1 1 auto; display: block; min-width: 0; padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: #26313f; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
        .outline-label:hover { background: #ffffffb0; }
        .outline-label.active { background: #dbe8f6; color: #10508f; font-weight: 600; }
        .outline-label:disabled { color: #8a94a3; cursor: default; }
@@ -280,6 +280,31 @@
        body.dark-reading .outline-label.active { background: #2b4a6b; color: #cfe3f7; }
        body.dark-reading .outline-toggle { color: #9aa7b8; }
        body.dark-reading .outline-empty { color: #8b97a8; }
+       .outline-toolbar { display: flex; flex: 0 0 auto; gap: 4px; padding: 0 10px; }
+       .outline-toolbar[hidden] { display: none; }
+       .outline-toolbar button { flex: 1 1 0; min-width: 0; padding: 3px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #5b6675; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+       .outline-toolbar button:hover { background: #f1f5f9; }
+       .outline-toolbar button:disabled { opacity: .5; cursor: default; }
+       body.dark-reading .outline-toolbar button { border-color: #536074; background: #303947; color: #c6d0dd; }
+       .thumbnail-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 0 10px; }
+       .thumbnail-toolbar[hidden] { display: none; }
+       .thumbnail-toolbar .thumbnail-size-label { flex: 0 0 auto; color: #7b8798; font-size: 12px; }
+       .thumbnail-toolbar .thumbnail-size-slider { flex: 1 1 auto; min-width: 0; accent-color: #2476bd; }
+       #fonts { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 10px 12px; scrollbar-width: thin; }
+       .fonts-summary { margin: 2px 0 10px; color: #667188; font-size: 12px; }
+       .fonts-list { display: flex; flex-direction: column; }
+       .font-item-wrap { display: flex; flex-direction: column; }
+       .font-item-wrap .font-item { margin: 0 0 6px; }
+       .font-usage { flex: 0 0 auto; margin-left: auto; padding: 1px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #4b5668; font-size: 11px; line-height: 1.7; cursor: pointer; }
+       .font-usage:hover { background: #f1f5f9; }
+       .font-usage.active { border-color: #80b4e5; background: #dbe8f6; color: #10508f; }
+       .font-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 8px; }
+       .font-page { min-width: 30px; padding: 1px 6px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #26313f; font-size: 11px; cursor: pointer; }
+       .font-page:hover { border-color: #80b4e5; background: #dbe8f6; }
+       .font-page-more { color: #7b8798; font-size: 11px; }
+       body.dark-reading .fonts-summary { color: #aeb9ca; }
+       body.dark-reading .font-usage, body.dark-reading .font-page { border-color: #536074; background: #303947; color: #c6d0dd; }
+       body.dark-reading .font-usage.active { border-color: #80b4e5; background: #2b4a6b; color: #cfe3f7; }
        #thumbnails::-webkit-scrollbar { display: none; }
 
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -365,11 +390,12 @@
          .page-spread { left: 0; justify-content: flex-start; transform: none; }
          .reader { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 4px 10px 10px; background: #e0e4e9; }
 
-      #sidebar { position: static; max-height: none; }
-      .sidebar-resizer { display: none; }
-      #sidebar-tabs { margin: 0 0 2px; }
-      #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
-       #outline, #bookmarks { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
+       #sidebar { position: static; max-height: none; }
+       .sidebar-resizer { display: none; }
+       .thumbnail-toolbar { display: none; }
+       #sidebar-tabs { margin: 0 0 2px; }
+       #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
+        #outline, #bookmarks, #fonts { flex: 1 1 auto; max-height: 45vh; overflow-y: auto; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
@@ -604,12 +630,22 @@
       <div id="sidebar-tabs" role="tablist" aria-label="导航视图">
         <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="active">缩略图</button>
         <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
-        <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks" hidden>书签</button>
+        <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks">书签</button>
+        <button id="sidebar-tab-fonts" type="button" role="tab" aria-selected="false" aria-controls="fonts">字体</button>
       </div>
       <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
+      <div id="outline-toolbar" class="outline-toolbar" role="group" aria-label="大纲操作" hidden>
+        <button id="outline-expand-all" type="button">展开全部</button>
+        <button id="outline-collapse-all" type="button">折叠全部</button>
+      </div>
+      <div id="thumbnail-toolbar" class="thumbnail-toolbar" role="group" aria-label="缩略图尺寸">
+        <span class="thumbnail-size-label">尺寸</span>
+        <input id="thumbnail-size-slider" class="thumbnail-size-slider" type="range" min="40" max="100" step="5" value="100" aria-label="缩略图尺寸">
+      </div>
       <aside id="thumbnails" role="tabpanel" aria-label="页面缩略图"></aside>
       <aside id="outline" role="tabpanel" aria-label="文档大纲" hidden></aside>
       <aside id="bookmarks" role="tabpanel" aria-label="文档书签" hidden></aside>
+      <aside id="fonts" role="tabpanel" aria-label="文档字体" hidden></aside>
       <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" tabindex="0"></div>
     </div>
     <main id="pages" tabindex="-1">

@@ -17,13 +17,23 @@
 
 ### 导航
 
-- 左侧栏可在“缩略图”“大纲”“书签”之间切换，大纲以可折叠树展示，点击条目跳转到对应页面。
+- 左侧栏可在“缩略图”“大纲”“书签”“字体”之间切换，大纲以可折叠树展示，点击条目跳转到对应页面；字体页签列出文档声明的字体清单，可按标题输入框过滤字体名/字体族，点击字体项的“定位使用页”可查找并跳转到使用该字体的页面（统计按文档规模限制扫描页数，截断时提示“仅覆盖前 N 页”）。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
-- 没有大纲的文档显示占位提示，无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
+- 没有大纲或书签的文档在对应页签显示占位提示（页签始终可用，不会自动跳回缩略图），无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
 - 侧栏宽度可用分隔条拖拽调整并保存在本地；大纲/书签条目右侧显示目标页码，并支持按标题过滤（保留命中项及其祖先）。
-- 大纲项按文档声明的 `Expanded` 决定默认展开状态；大纲/书签面板支持方向键与 Home/End 移动焦点，页签支持左右方向键切换。
+- 大纲项按文档声明的 `Expanded` 决定默认展开状态，用户手动折叠/展开会按文档保存在本地并覆盖声明值；大纲页签提供“展开全部/折叠全部”（过滤时禁用），大纲/书签面板支持方向键与 Home/End 移动焦点，页签支持左右方向键切换。
+- 打开字体页签时会批量统计所有字体的使用页数并显示在“定位使用页”按钮上，无需逐个点击；统计结果按文档缓存。
 - 用户尚未保存布局/缩放偏好时，采用文档声明的 `PageLayout`（OneColumn/TwoPageL/TwoPageR 等近似映射为单页/双页）和 `ZoomMode`/自定义 `Zoom`；`FitHeight`/`FitRect` 近似为“适应页面”。用户保存过的偏好优先。
+
+### 键盘快捷键
+
+- `ArrowLeft` / `PageUp`：上一页；`ArrowRight` / `PageDown`：下一页。
+- `Home` / `End`：第一页 / 最后一页。
+- `+` / `=`：放大；`-`：缩小；`0`：恢复 100%。
+- `f`：适应宽度；`Shift+F`：适应页面。
+- `Ctrl/Cmd+F`：打开搜索；`Ctrl/Cmd+Shift+C`：复制当前页文字。
+- 在输入框内输入或存在 `Ctrl/Cmd` 等修饰键时不会触发上述翻页/缩放快捷键。
 
 ### 显示设置
 
@@ -46,6 +56,7 @@
 - “双页，奇数页在左”模式的页面排列为“1+2、3+4”。
 - 双页布局下，桌面端左侧缩略图也按两列显示，并与页面 spread 对齐。
 - 单页布局保持一列，手机端继续使用顶部横向缩略图栏。
+- 缩略图页签顶部提供尺寸滑块（桌面端，可用宽度的 40%–100%），拖动即时调整并保存在本地；手机端使用固定尺寸。
 
 ### 响应式阅读
 
@@ -168,7 +179,8 @@ ofd.close()
 - `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
 - 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
 - `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
-- `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据。
+- `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, scope, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据；`scope` 是字体所属文档体索引，与 `id` 一起唯一标识一个字体。
+- `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
 - `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
@@ -191,7 +203,7 @@ ofd.close()
 
 ### 文字与错误
 
-- `ofd.text()` 返回的文字对象包含对应的 `fontFamily`、`weight`、`bold` 和 `italic`。
+- `ofd.text()` 返回的文字对象包含对应的 `scope`、`fontFamily`、`weight`、`bold` 和 `italic`。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 
 ## Worker 协议

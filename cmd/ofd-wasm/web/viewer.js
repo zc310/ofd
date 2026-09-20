@@ -125,6 +125,14 @@ class OFDWorkerClient {
     return this.request('preferences');
   }
 
+  fontUsage(scope, fontID, options = {}) {
+    return this.request('fontUsage', { scope, fontID, maxScan: options.maxScan, maxPages: options.maxPages });
+  }
+
+  fontUsageAll(options = {}) {
+    return this.request('fontUsageAll', { maxScan: options.maxScan, maxPages: options.maxPages });
+  }
+
   memStats() {
     return this.request('memStats');
   }
@@ -343,8 +351,15 @@ const sidebarResizer = document.querySelector('#sidebar-resizer');
 const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
 const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
 const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
+const sidebarTabFonts = document.querySelector('#sidebar-tab-fonts');
+const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
+const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
 const outlineElement = document.querySelector('#outline');
 const bookmarksElement = document.querySelector('#bookmarks');
+const fontsElement = document.querySelector('#fonts');
+const outlineToolbar = document.querySelector('#outline-toolbar');
+const outlineExpandAll = document.querySelector('#outline-expand-all');
+const outlineCollapseAll = document.querySelector('#outline-collapse-all');
 const engine = new OFDWorkerClient();
 const pageCache = new BlobURLCache(128 << 20, url =>
   Array.from(document.querySelectorAll('.page-image')).some(image => !image.hidden && image.src === url));
@@ -438,7 +453,7 @@ const sidebarTabStorageKey = 'ofd-sidebar-tab';
 let activeSidebarTab = (() => {
   try {
     const value = localStorage.getItem(sidebarTabStorageKey);
-    return ['thumbnails', 'outline', 'bookmarks'].includes(value) ? value : 'thumbnails';
+    return ['thumbnails', 'outline', 'bookmarks', 'fonts'].includes(value) ? value : 'thumbnails';
   } catch (_) {
     return 'thumbnails';
   }
@@ -446,15 +461,35 @@ let activeSidebarTab = (() => {
 let outlineNodes = [];
 let bookmarkNodes = [];
 let sidebarFilterValue = '';
+const thumbnailSizeStorageKey = 'ofd-thumbnail-size';
+// 缩略图尺寸以可用宽度的百分比表示，允许 40%–100%。兼容旧版 small/medium/large 档位。
+const thumbnailSizeLegacy = { small: 55, medium: 75, large: 100 };
+let thumbnailSizePercent = (() => {
+  try {
+    const raw = localStorage.getItem(thumbnailSizeStorageKey);
+    if (raw == null) return 100;
+    const value = Object.prototype.hasOwnProperty.call(thumbnailSizeLegacy, raw) ? thumbnailSizeLegacy[raw] : Number(raw);
+    return Number.isFinite(value) ? Math.max(40, Math.min(100, Math.round(value))) : 100;
+  } catch (_) {
+    return 100;
+  }
+})();
+const outlineExpandStorageKey = 'ofd-outline-expanded';
+let outlineExpandState = {};
+let documentInfo = null;
+let documentInfoGeneration = -1;
+let documentFontUsage = null;
+let documentFontUsageGeneration = -1;
+let documentFontUsageMeta = { scanned: 0, truncated: false };
 const sidebarWidthStorageKey = 'ofd-sidebar-width';
 let sidebarWidth = (() => {
   try {
     const stored = localStorage.getItem(sidebarWidthStorageKey);
-    if (stored == null) return 190;
+    if (stored == null) return 210;
     const value = Number(stored);
-    return Number.isFinite(value) ? Math.max(140, Math.min(520, value)) : 190;
+    return Number.isFinite(value) ? Math.max(140, Math.min(520, value)) : 210;
   } catch (_) {
-    return 190;
+    return 210;
   }
 })();
 let renderFormat = (() => {
@@ -860,9 +895,8 @@ function updateThumbnailMetrics() {
   const double = pageLayoutIsDouble();
   const columns = mobile ? 1 : double ? 2 : 1;
   const gap = mobile ? 8 : double ? 8 : 10;
-  const itemWidth = mobile
-    ? 72
-    : Math.max(1, (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns);
+  const available = Math.max(1, (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns);
+  const itemWidth = mobile ? 72 : Math.max(1, available * (thumbnailSizePercent / 100));
   const rows = Math.ceil(thumbnailSlots.length / columns);
   const rowHeights = Array.from({ length: rows }, (_, row) => {
     const start = row * columns;
@@ -1155,9 +1189,7 @@ function resizeThumbnail(index, thumbnail) {
   const slot = thumbnailSlotForPage(index);
   if (slot < 0) return;
   const { mobile, columns, gap, itemWidth, rowOffsets, maxHeight } = thumbnailMetrics;
-  const width = mobile
-    ? itemWidth
-    : (thumbnailVirtualTrack.clientWidth - gap * (columns - 1)) / columns;
+  const width = itemWidth;
   const height = thumbnailHeight(index, width);
   if (mobile) {
     thumbnail.style.left = `${slot * (itemWidth + gap)}px`;
@@ -2657,6 +2689,13 @@ async function openSelectedFile(selected) {
   bookmarkNodes = [];
   renderOutline();
   renderBookmarks();
+  documentInfo = null;
+  documentInfoGeneration = -1;
+  documentFontUsage = null;
+  documentFontUsageGeneration = -1;
+  documentFontUsageMeta = { scanned: 0, truncated: false };
+  outlineExpandState = {};
+  if (activeSidebarTab === 'fonts') fontsElement?.replaceChildren();
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -2705,6 +2744,7 @@ async function openSelectedFile(selected) {
     if (generation !== documentGeneration) return;
     restorePageRotation();
     buildPages();
+    if (activeSidebarTab === 'fonts') renderFonts();
     setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
     void loadOutline();
@@ -2728,6 +2768,13 @@ async function openSelectedFile(selected) {
     bookmarkNodes = [];
     renderOutline();
     renderBookmarks();
+    documentInfo = null;
+    documentInfoGeneration = -1;
+    documentFontUsage = null;
+    documentFontUsageGeneration = -1;
+    documentFontUsageMeta = { scanned: 0, truncated: false };
+    outlineExpandState = {};
+    if (activeSidebarTab === 'fonts') renderFonts();
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
@@ -2786,6 +2833,13 @@ function cancelOpening() {
   bookmarkNodes = [];
   renderOutline();
   renderBookmarks();
+  documentInfo = null;
+  documentInfoGeneration = -1;
+  documentFontUsage = null;
+  documentFontUsageGeneration = -1;
+  documentFontUsageMeta = { scanned: 0, truncated: false };
+  outlineExpandState = {};
+  if (activeSidebarTab === 'fonts') renderFonts();
   thumbnailSlots = [];
   thumbnailSlotByPage = [];
   currentDocumentKey = '';
@@ -2937,8 +2991,8 @@ function updateDocumentInfo() {
     return;
   }
   const generation = documentGeneration;
-  engine.info().then(info => {
-    if (generation !== documentGeneration) return;
+  loadDocumentInfo().then(info => {
+    if (generation !== documentGeneration || !info) return;
     const rows = [];
     if (info.docID) rows.push(['文档标识', info.docID]);
     if (info.title) rows.push(['标题', info.title]);
@@ -3593,34 +3647,41 @@ function setMobileToolbarExpanded(expanded) {
   }
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks'];
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts'];
 
-// applySidebarPanels 根据侧栏可见性和当前页签，决定缩略图/大纲/书签面板的显隐。
+// applySidebarPanels 根据侧栏可见性和当前页签，决定缩略图/大纲/书签/字体面板的显隐。
 function applySidebarPanels() {
   if (!sidebarElement) return;
   if (!sidebarTabs.includes(activeSidebarTab)) activeSidebarTab = 'thumbnails';
-  if (activeSidebarTab === 'bookmarks' && !bookmarkNodes.length) activeSidebarTab = 'thumbnails';
   sidebarElement.hidden = !thumbnailsVisible;
   const active = tab => thumbnailsVisible && activeSidebarTab === tab;
   thumbnailsElement.hidden = !active('thumbnails');
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
-  if (sidebarTabBookmarks) sidebarTabBookmarks.hidden = !bookmarkNodes.length;
-  if (sidebarFilter) sidebarFilter.hidden = !(active('outline') || active('bookmarks'));
+  if (fontsElement) fontsElement.hidden = !active('fonts');
+  if (thumbnailToolbar) thumbnailToolbar.hidden = !active('thumbnails');
+  if (outlineToolbar) outlineToolbar.hidden = !active('outline');
+  if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
+  if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
+  if (sidebarFilter) {
+    sidebarFilter.hidden = !(active('outline') || active('bookmarks') || active('fonts'));
+    sidebarFilter.placeholder = activeSidebarTab === 'fonts' ? '过滤字体' : '过滤标题';
+  }
   const tabs = [
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
+    [sidebarTabFonts, 'fonts'],
   ];
   tabs.forEach(([button, tab]) => {
     button?.classList.toggle('active', activeSidebarTab === tab);
     button?.setAttribute('aria-selected', String(activeSidebarTab === tab));
   });
+  if (thumbnailSizeSlider) thumbnailSizeSlider.value = String(thumbnailSizePercent);
 }
 
 function setSidebarTab(tab) {
   if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
-  if (tab === 'bookmarks' && !bookmarkNodes.length) tab = 'thumbnails';
   const changed = activeSidebarTab !== tab;
   activeSidebarTab = tab;
   if (changed) {
@@ -3632,11 +3693,29 @@ function setSidebarTab(tab) {
   if (tab === 'thumbnails') {
     updateThumbnailMetrics();
     scheduleVirtualUpdate();
-  } else {
-    if (tab === 'outline') renderOutline();
-    else renderBookmarks();
+  } else if (tab === 'outline') {
+    renderOutline();
     updateOutlineActive();
+  } else if (tab === 'bookmarks') {
+    renderBookmarks();
+    updateOutlineActive();
+  } else {
+    renderFonts();
   }
+}
+
+function setThumbnailSize(percent) {
+  const value = Math.max(40, Math.min(100, Math.round(Number(percent) || 100)));
+  if (value === thumbnailSizePercent) return;
+  thumbnailSizePercent = value;
+  updateThumbnailMetrics();
+  scheduleVirtualUpdate();
+}
+
+function persistThumbnailSize() {
+  try {
+    localStorage.setItem(thumbnailSizeStorageKey, String(thumbnailSizePercent));
+  } catch (_) {}
 }
 
 function applySidebarWidth() {
@@ -3772,6 +3851,8 @@ async function loadOutline() {
   if (generation !== documentGeneration) return;
   outlineNodes = Array.isArray(tree?.nodes) ? tree.nodes : [];
   bookmarkNodes = Array.isArray(tree?.bookmarks) ? tree.bookmarks : [];
+  outlineExpandState = readOutlineExpandState();
+  applyOutlineExpandState(outlineNodes);
   renderOutline();
   renderBookmarks();
   // 文档声明的显示模式优先决定默认页签。
@@ -3829,8 +3910,60 @@ function filterOutlineTree(nodes, needle) {
   return result;
 }
 
+// 大纲展开状态按文档（文件标识）持久化，键为节点在树中的索引路径，如 "0.1"。
+function readOutlineExpandState() {
+  try {
+    const all = JSON.parse(localStorage.getItem(outlineExpandStorageKey) || '{}');
+    const state = currentDocumentKey ? all[currentDocumentKey] : null;
+    return state && typeof state === 'object' ? state : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function persistOutlineExpandState() {
+  if (!currentDocumentKey) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(outlineExpandStorageKey) || '{}');
+    all[currentDocumentKey] = outlineExpandState;
+    const entries = Object.entries(all).slice(-30);
+    localStorage.setItem(outlineExpandStorageKey, JSON.stringify(Object.fromEntries(entries)));
+  } catch (_) {}
+}
+
+function applyOutlineExpandState(nodes, pathPrefix = '') {
+  nodes.forEach((node, index) => {
+    const path = pathPrefix ? `${pathPrefix}.${index}` : String(index);
+    if (Object.prototype.hasOwnProperty.call(outlineExpandState, path)) {
+      node.expanded = outlineExpandState[path];
+    }
+    if (Array.isArray(node.children) && node.children.length) {
+      applyOutlineExpandState(node.children, path);
+    }
+  });
+}
+
+function setAllOutlineExpanded(expanded) {
+  setAllOutlineExpandedIn(outlineNodes, expanded);
+  persistOutlineExpandState();
+  renderOutline();
+}
+
+function setAllOutlineExpandedIn(nodes, expanded, pathPrefix = '') {
+  nodes.forEach((node, index) => {
+    const path = pathPrefix ? `${pathPrefix}.${index}` : String(index);
+    if (Array.isArray(node.children) && node.children.length) {
+      outlineExpandState[path] = expanded;
+      node.expanded = expanded;
+      setAllOutlineExpandedIn(node.children, expanded, path);
+    }
+  });
+}
+
 function renderOutline() {
   if (!outlineElement) return;
+  if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
+  if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
   outlineElement.replaceChildren();
   if (!outlineNodes.length) {
     outlineElement.append(outlineEmptyMessage('此文档没有大纲'));
@@ -3849,7 +3982,10 @@ function renderOutline() {
 function renderBookmarks() {
   if (!bookmarksElement) return;
   bookmarksElement.replaceChildren();
-  if (!bookmarkNodes.length) return;
+  if (!bookmarkNodes.length) {
+    bookmarksElement.append(outlineEmptyMessage('此文档没有书签'));
+    return;
+  }
   const bookmarks = sidebarFilterValue
     ? bookmarkNodes.filter(bookmark => String(bookmark.name || '').toLowerCase().includes(sidebarFilterValue))
     : bookmarkNodes;
@@ -3888,10 +4024,230 @@ function renderBookmarks() {
   updateOutlineActive();
 }
 
-function buildOutlineList(nodes, depth, forceExpand = false) {
+// loadDocumentInfo 在每个文档生命周期内缓存一次 engine.info()，供信息面板和字体页签共用。
+async function loadDocumentInfo() {
+  if (documentInfoGeneration === documentGeneration && documentInfo) return documentInfo;
+  const generation = documentGeneration;
+  const info = await engine.info();
+  if (generation !== documentGeneration) return null;
+  documentInfo = info;
+  documentInfoGeneration = generation;
+  return info;
+}
+
+function buildFontItem(font) {
+  const badges = [font.embedded ? '嵌入' : '逻辑'];
+  if (font.bold) badges.push('粗体');
+  if (font.italic) badges.push('斜体');
+  if (font.serif) badges.push('衬线');
+  if (font.fixed_width) badges.push('等宽');
+  if (font.format) badges.push(String(font.format).toUpperCase());
+  const wrap = document.createElement('div');
+  wrap.className = 'font-item-wrap';
+  const item = document.createElement('div');
+  item.className = 'font-item';
+  const name = document.createElement('span');
+  name.className = 'font-name';
+  name.textContent = font.name || font.family || `字体 ${font.id}`;
+  item.append(name);
+  if (font.family && font.family !== font.name) {
+    const family = document.createElement('span');
+    family.className = 'font-family';
+    family.textContent = font.family;
+    item.append(family);
+  }
+  const badgeBox = document.createElement('span');
+  badgeBox.className = 'font-badges';
+  badges.forEach(text => {
+    const badge = document.createElement('span');
+    badge.className = 'font-badge';
+    badge.textContent = text;
+    badgeBox.append(badge);
+  });
+  item.append(badgeBox);
+  const usage = document.createElement('button');
+  usage.type = 'button';
+  usage.className = 'font-usage';
+  usage.dataset.fontKey = fontUsageKey(font);
+  usage.textContent = '定位使用页';
+  usage.addEventListener('click', () => toggleFontUsage(font, wrap, usage));
+  item.append(usage);
+  wrap.append(item);
+  return wrap;
+}
+
+function fontUsageLabel(usage) {
+  const count = Array.isArray(usage?.pages) ? usage.pages.length : 0;
+  return count ? `${count} 页` : '未使用';
+}
+
+// 字体作用域 + ID 唯一标识一个字体，避免多文档体之间字体 ID 冲突。
+function fontUsageKey(font) {
+  return `${Number(font?.scope) || 0}:${Number(font?.id)}`;
+}
+
+// fontUsageLimits 按文档规模选择统计扫描上限：小文档全量，大文档限制自动统计的扫描成本。
+function fontUsageLimits(batch) {
+  const pages = pageInfos.length || 0;
+  if (!batch) {
+    return { maxScan: Math.max(1, Math.min(pages || 1, 10000)), maxPages: 500 };
+  }
+  const maxScan = pages <= 2000 ? pages : pages <= 20000 ? 4000 : 2000;
+  return { maxScan: Math.max(1, maxScan), maxPages: 500 };
+}
+
+// loadFontUsageAll 在每个文档生命周期内缓存一次批量字体使用统计。
+async function loadFontUsageAll() {
+  if (documentFontUsageGeneration === documentGeneration && documentFontUsage) return documentFontUsage;
+  const generation = documentGeneration;
+  const report = await engine.fontUsageAll(fontUsageLimits(true));
+  if (generation !== documentGeneration) return null;
+  const map = new Map();
+  for (const entry of report?.fonts || []) {
+    map.set(fontUsageKey(entry), {
+      pages: Array.isArray(entry.pages) ? entry.pages : [],
+      scanned: report.scanned || 0,
+      truncated: !!report.truncated,
+    });
+  }
+  documentFontUsage = map;
+  documentFontUsageMeta = { scanned: report?.scanned || 0, truncated: !!report?.truncated };
+  documentFontUsageGeneration = generation;
+  return map;
+}
+
+function applyFontUsageLabels() {
+  if (!fontsElement) return;
+  const generation = documentGeneration;
+  loadFontUsageAll().then(map => {
+    if (generation !== documentGeneration || !map) return;
+    fontsElement.querySelectorAll('.font-usage').forEach(button => {
+      const usage = map.get(button.dataset.fontKey);
+      if (usage && !button.classList.contains('active')) button.textContent = fontUsageLabel(usage);
+    });
+    if (documentFontUsageMeta.truncated && !fontsElement.querySelector('.fonts-usage-note')) {
+      const note = document.createElement('p');
+      note.className = 'outline-empty fonts-usage-note';
+      note.textContent = `使用页统计仅覆盖前 ${documentFontUsageMeta.scanned} 页`;
+      fontsElement.append(note);
+    }
+  }).catch(() => {});
+}
+
+// toggleFontUsage 查找使用指定字体的页面并展开页码列表；再次点击收起。
+async function toggleFontUsage(font, wrap, button) {
+  const generation = documentGeneration;
+  const key = fontUsageKey(font);
+  const existing = wrap.querySelector('.font-pages');
+  if (existing) {
+    existing.remove();
+    button.classList.remove('active');
+    const cached = documentFontUsageGeneration === generation ? documentFontUsage?.get(key) : null;
+    button.textContent = cached ? fontUsageLabel(cached) : '定位使用页';
+    return;
+  }
+  let usage = documentFontUsageGeneration === generation ? documentFontUsage?.get(key) : null;
+  if (!usage) {
+    button.disabled = true;
+    button.textContent = '查找中…';
+    try {
+      usage = await engine.fontUsage(Number(font.scope) || 0, Number(font.id), fontUsageLimits(false));
+    } catch (_) {
+      usage = null;
+    }
+    if (generation !== documentGeneration) return;
+    button.disabled = false;
+    if (!usage) {
+      button.textContent = '查找失败';
+      return;
+    }
+    if (documentFontUsageGeneration !== generation || !documentFontUsage) {
+      documentFontUsage = new Map();
+      documentFontUsageGeneration = generation;
+    }
+    documentFontUsage.set(key, usage);
+  }
+  const pages = Array.isArray(usage.pages) ? usage.pages : [];
+  button.classList.add('active');
+  button.textContent = fontUsageLabel(usage);
+  const box = document.createElement('div');
+  box.className = 'font-pages';
+  if (!pages.length) {
+    box.append(outlineEmptyMessage(`前 ${usage.scanned || 0} 页未使用`));
+    wrap.append(box);
+    return;
+  }
+  const shown = pages.slice(0, 60);
+  shown.forEach(page => {
+    const pageButton = document.createElement('button');
+    pageButton.type = 'button';
+    pageButton.className = 'font-page';
+    pageButton.textContent = String(page + 1);
+    pageButton.title = `跳转到第 ${page + 1} 页`;
+    pageButton.addEventListener('click', () => goTo(page));
+    box.append(pageButton);
+  });
+  if (pages.length > shown.length) {
+    const more = document.createElement('span');
+    more.className = 'font-page-more';
+    more.textContent = `+${pages.length - shown.length}`;
+    box.append(more);
+  }
+  if (usage.truncated) {
+    box.append(outlineEmptyMessage(`仅扫描前 ${usage.scanned} 页，可能还有更多`));
+  }
+  wrap.append(box);
+}
+
+function renderFonts() {
+  if (!fontsElement) return;
+  const generation = documentGeneration;
+  fontsElement.replaceChildren();
+  if (!pageInfos.length) {
+    fontsElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  fontsElement.append(outlineEmptyMessage('正在读取字体...'));
+  loadDocumentInfo().then(info => {
+    if (generation !== documentGeneration) return;
+    fontsElement.replaceChildren();
+    if (!info) {
+      fontsElement.append(outlineEmptyMessage('获取字体失败'));
+      return;
+    }
+    const fonts = Array.isArray(info.fonts) ? info.fonts : [];
+    if (!fonts.length) {
+      fontsElement.append(outlineEmptyMessage('文档未声明字体'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? fonts.filter(font => `${font.name || ''} ${font.family || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : fonts;
+    if (!filtered.length) {
+      fontsElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    const embedded = fonts.filter(font => font.embedded).length;
+    const summary = document.createElement('p');
+    summary.className = 'fonts-summary';
+    summary.textContent = `共 ${fonts.length} 个字体（嵌入 ${embedded} · 逻辑 ${fonts.length - embedded}）`;
+    fontsElement.append(summary);
+    const list = document.createElement('div');
+    list.className = 'fonts-list';
+    filtered.forEach(font => list.append(buildFontItem(font)));
+    fontsElement.append(list);
+    applyFontUsageLabels();
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    fontsElement.replaceChildren(outlineEmptyMessage('获取字体失败'));
+  });
+}
+
+function buildOutlineList(nodes, depth, forceExpand = false, pathPrefix = '') {
   const list = document.createElement('ul');
   list.className = 'outline-list';
-  nodes.forEach(node => {
+  nodes.forEach((node, index) => {
+    const path = pathPrefix ? `${pathPrefix}.${index}` : String(index);
     const item = document.createElement('li');
     item.className = 'outline-item';
     const row = document.createElement('div');
@@ -3908,7 +4264,7 @@ function buildOutlineList(nodes, depth, forceExpand = false) {
       icon.setAttribute('aria-hidden', 'true');
       icon.textContent = 'expand_more';
       toggle.append(icon);
-      const children = buildOutlineList(node.children, depth + 1, forceExpand);
+      const children = buildOutlineList(node.children, depth + 1, forceExpand, path);
       if (!forceExpand && node.expanded === false) {
         children.hidden = true;
         toggle.classList.add('collapsed');
@@ -3916,6 +4272,10 @@ function buildOutlineList(nodes, depth, forceExpand = false) {
       toggle.addEventListener('click', () => {
         children.hidden = !children.hidden;
         toggle.classList.toggle('collapsed', children.hidden);
+        if (!sidebarFilterValue) {
+          outlineExpandState[path] = !children.hidden;
+          persistOutlineExpandState();
+        }
       });
       row.append(toggle);
       item.append(row, children);
@@ -4289,12 +4649,20 @@ showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbna
 sidebarTabThumbnails?.addEventListener('click', () => setSidebarTab('thumbnails'));
 sidebarTabOutline?.addEventListener('click', () => setSidebarTab('outline'));
 sidebarTabBookmarks?.addEventListener('click', () => setSidebarTab('bookmarks'));
+sidebarTabFonts?.addEventListener('click', () => setSidebarTab('fonts'));
+if (thumbnailSizeSlider) {
+  thumbnailSizeSlider.addEventListener('input', () => setThumbnailSize(Number(thumbnailSizeSlider.value)));
+  thumbnailSizeSlider.addEventListener('change', persistThumbnailSize);
+}
+outlineExpandAll?.addEventListener('click', () => setAllOutlineExpanded(true));
+outlineCollapseAll?.addEventListener('click', () => setAllOutlineExpanded(false));
 sidebarTabsElement?.addEventListener('keydown', event => {
   if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   const tabs = [
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
+    [sidebarTabFonts, 'fonts'],
   ].filter(([button]) => button && !button.hidden);
   const index = tabs.findIndex(([button]) => button === document.activeElement);
   if (index < 0) return;
@@ -4309,6 +4677,7 @@ if (sidebarFilter) {
     sidebarFilterValue = sidebarFilter.value.trim().toLowerCase();
     if (activeSidebarTab === 'outline') renderOutline();
     else if (activeSidebarTab === 'bookmarks') renderBookmarks();
+    else if (activeSidebarTab === 'fonts') renderFonts();
   });
 }
 if (sidebarResizer) {
@@ -4460,6 +4829,18 @@ window.addEventListener('keydown', event => {
     case '-':
       event.preventDefault();
       setZoom(zoom - 0.25);
+      break;
+    case '0':
+      event.preventDefault();
+      setZoom(1);
+      break;
+    case 'f':
+      event.preventDefault();
+      fitWidthZoom();
+      break;
+    case 'F':
+      event.preventDefault();
+      fitPageZoom();
       break;
   }
 });

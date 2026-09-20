@@ -49,6 +49,8 @@ func main() {
 	api.Set("info", js.FuncOf(app.info))
 	api.Set("outline", js.FuncOf(app.outline))
 	api.Set("preferences", js.FuncOf(app.preferences))
+	api.Set("fontUsage", js.FuncOf(app.fontUsage))
+	api.Set("fontUsageAll", js.FuncOf(app.fontUsageAll))
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
@@ -320,6 +322,50 @@ func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
 		"page_layout": preferences.PageLayout,
 		"zoom_mode":   preferences.ZoomMode,
 		"zoom":        optionalFloatValue(preferences.Zoom),
+	})
+}
+
+func (a *wasmApp) fontUsage(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeNumber {
+		return errorValue(errors.New("ofd.fontUsage 需要字体作用域和标识两个数字参数"))
+	}
+	ref := webreader.FontRef{Scope: int(args[0].Float()), ID: uint64(args[1].Float())}
+	usage, err := reader.FontUsage(ref, fontUsageOptions(args[2:]))
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{
+		"pages":     intSliceValue(usage.Pages),
+		"scanned":   usage.Scanned,
+		"truncated": usage.Truncated,
+	})
+}
+
+func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	report, err := reader.FontUsageAll(fontUsageOptions(args))
+	if err != nil {
+		return errorValue(err)
+	}
+	fonts := js.Global().Get("Array").New(len(report.Fonts))
+	for index, summary := range report.Fonts {
+		fonts.SetIndex(index, objectValue(map[string]any{
+			"scope": summary.Scope,
+			"id":    summary.ID,
+			"pages": intSliceValue(summary.Pages),
+		}))
+	}
+	return objectValue(map[string]any{
+		"fonts":     fonts,
+		"scanned":   report.Scanned,
+		"truncated": report.Truncated,
 	})
 }
 
@@ -935,6 +981,7 @@ func textRunsValue(runs []webreader.TextRun) js.Value {
 			"y":             run.Y,
 			"width":         run.Width,
 			"height":        run.Height,
+			"scope":         run.Scope,
 			"font":          run.Font,
 			"size":          run.Size,
 			"weight":        run.Weight,
@@ -1004,6 +1051,7 @@ func fontListValue(fonts []webreader.FontInfo) js.Value {
 	for index, font := range fonts {
 		result.SetIndex(index, objectValue(map[string]any{
 			"id":          font.ID,
+			"scope":       font.Scope,
 			"name":        font.Name,
 			"family":      font.Family,
 			"bold":        font.Bold,
@@ -1013,6 +1061,26 @@ func fontListValue(fonts []webreader.FontInfo) js.Value {
 			"format":      font.Format,
 			"embedded":    font.Embedded,
 		}))
+	}
+	return result
+}
+
+// fontUsageOptions 从 JS 参数读取字体统计上限；缺省或非数字时使用 Reader 默认值。
+func fontUsageOptions(args []js.Value) webreader.FontUsageOptions {
+	options := webreader.FontUsageOptions{}
+	if len(args) > 0 && args[0].Type() == js.TypeNumber {
+		options.MaxScan = int(args[0].Float())
+	}
+	if len(args) > 1 && args[1].Type() == js.TypeNumber {
+		options.MaxPages = int(args[1].Float())
+	}
+	return options
+}
+
+func intSliceValue(values []int) js.Value {
+	result := js.Global().Get("Array").New(len(values))
+	for index, value := range values {
+		result.SetIndex(index, value)
 	}
 	return result
 }
