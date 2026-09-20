@@ -223,10 +223,12 @@
     .thumbnail.loading img { opacity: .35; }
     .thumbnail.loading span { background: #7b8798cc; }
     .thumbnail span { position: absolute; right: 5px; bottom: 4px; padding: 1px 4px; border-radius: 3px; background: #172033cc; color: #fff; font-size: 12px; }
-      #pages { display: block; position: relative; width: 100%; min-width: 0; overflow-x: auto; touch-action: pan-x pan-y; }
+      #pages { display: block; position: relative; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x pan-y; }
 
      #pages { padding: 4px 0 24px; }
       .page-virtual-track, .thumbnail-virtual-track { position: relative; width: 100%; }
+      .page-virtual-window { position: absolute; left: 0; right: 0; top: 0; }
+      .thumbnail-virtual-window { position: absolute; left: 0; top: 0; width: 100%; }
       .page-spread { position: absolute; left: 50%; display: flex; align-items: flex-start; justify-content: center; gap: 18px; transform: translateX(-50%); }
       .thumbnail-virtual-track .thumbnail { position: absolute; }
      .page-spread > .page-card, .page-spread .page-placeholder { flex: 0 0 auto; }
