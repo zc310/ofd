@@ -200,6 +200,8 @@ func convertPDFPage(ctx *model.Context, pageNumber int, document *creator.Docume
 	if err := interpreter.parse(content, resources, nil, 0); err != nil {
 		return creator.Page{}, err
 	}
+	// 注解（外观流）绘制在页面内容之上。
+	interpreter.renderAnnotations(pageDict)
 	// 合并相邻单字文字对象，减少 OFD 文字对象数量，逐字定位保持不变。
 	page.Items = mergeAdjacentTextItems(page.Items)
 	return page, nil
@@ -259,7 +261,70 @@ func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator
 	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
 		ctm: identityPDFMatrix(), textMatrix: identityPDFMatrix(), lineMatrix: identityPDFMatrix(), fontSize: 12,
 		fill: pdfColor{r: 0, g: 0, b: 0}, stroke: pdfColor{r: 0, g: 0, b: 0}, lineWidth: 1, hScale: 100,
+		fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,
 	}}
+}
+
+// applyExtGState 读取 ExtGState 的不透明度 ca/CA。混合模式与软掩码暂不处理，
+// 缺失的键保留当前取值。
+func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
+	if resources == nil || name == "" {
+		return
+	}
+	states, ok := dereferencedSubDict(p.ctx, resources, "ExtGState")
+	if !ok {
+		return
+	}
+	raw, found := states.Find(name)
+	if !found {
+		return
+	}
+	dict, err := p.ctx.XRefTable.DereferenceDict(raw)
+	if err != nil || dict == nil {
+		return
+	}
+	if value, found := dict.Find("ca"); found {
+		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
+			if opacity, ok := numberValue(number); ok {
+				p.state.fillAlpha = clampOpacity(opacity)
+			}
+		}
+	}
+	if value, found := dict.Find("CA"); found {
+		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
+			if opacity, ok := numberValue(number); ok {
+				p.state.strokeAlpha = clampOpacity(opacity)
+			}
+		}
+	}
+	if value, found := dict.Find("BM"); found {
+		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
+			if name, ok := number.(types.Name); ok {
+				p.state.blendMode = name.Value()
+			}
+		}
+	}
+}
+
+// isNormalBlendMode 判断 BM 是否等价于不混合。OFD 没有混合模式，只有 Normal
+// 才可以用 ca/CA 的纯透明度近似。
+func isNormalBlendMode(mode string) bool {
+	switch mode {
+	case "", "Normal", "Compatible":
+		return true
+	default:
+		return false
+	}
+}
+
+func clampOpacity(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
 }
 
 func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *pdfGraphicsState, depth int) error {
@@ -323,37 +388,65 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 			matrix := [6]float64{floatArg(0), floatArg(1), floatArg(2), floatArg(3), floatArg(4), floatArg(5)}
 			p.state.ctm = multiplyPDFMatrix(p.state.ctm, matrix)
 		}
+	case "gs":
+		if len(args) > 0 {
+			p.applyExtGState(resources, anyName(args[0]))
+		}
 	case "w":
 		p.state.lineWidth = floatArg(0)
+	case "d":
+		// [array] phase d：设置虚线数组与起始偏移；空数组恢复实线。
+		p.state.dashPattern = nil
+		p.state.dashOffset = 0
+		if len(args) > 0 {
+			if values, ok := args[0].([]any); ok {
+				pattern := make([]float64, 0, len(values))
+				for _, value := range values {
+					pattern = append(pattern, anyFloat(value))
+				}
+				// PDF 规定元素个数为奇数时重复一次补成偶数。
+				if len(pattern)%2 == 1 {
+					pattern = append(pattern, pattern...)
+				}
+				if len(pattern) > 0 {
+					p.state.dashPattern = pattern
+				}
+			}
+		}
+		if len(args) > 1 {
+			p.state.dashOffset = anyFloat(args[1])
+		}
 	case "rg":
 		if len(args) >= 3 {
 			p.state.fillSpace = deviceRGBSpace
-			p.state.fill = rgbColor(floatArg(0), floatArg(1), floatArg(2))
+			p.state.fill, p.state.fillPaint = rgbColor(floatArg(0), floatArg(1), floatArg(2)), nil
 		}
 	case "RG":
+
 		if len(args) >= 3 {
 			p.state.strokeSpace = deviceRGBSpace
-			p.state.stroke = rgbColor(floatArg(0), floatArg(1), floatArg(2))
+			p.state.stroke, p.state.strokePaint = rgbColor(floatArg(0), floatArg(1), floatArg(2)), nil
 		}
 	case "g":
 		if len(args) >= 1 {
 			p.state.fillSpace = deviceGraySpace
-			p.state.fill = rgbColor(floatArg(0), floatArg(0), floatArg(0))
+			p.state.fill, p.state.fillPaint = rgbColor(floatArg(0), floatArg(0), floatArg(0)), nil
 		}
 	case "G":
 		if len(args) >= 1 {
 			p.state.strokeSpace = deviceGraySpace
-			p.state.stroke = rgbColor(floatArg(0), floatArg(0), floatArg(0))
+			p.state.stroke, p.state.strokePaint = rgbColor(floatArg(0), floatArg(0), floatArg(0)), nil
 		}
 	case "k":
 		if len(args) >= 4 {
 			p.state.fillSpace = deviceCMYKSpace
-			p.state.fill = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3))
+			p.state.fill, p.state.fillPaint = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3)), nil
 		}
 	case "K":
+
 		if len(args) >= 4 {
 			p.state.strokeSpace = deviceCMYKSpace
-			p.state.stroke = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3))
+			p.state.stroke, p.state.strokePaint = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3)), nil
 		}
 	case "cs":
 		// 选择颜色空间本身不改变当前颜色，实际颜色由随后的 scn/SCN 提供。
@@ -361,12 +454,21 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 	case "CS":
 		p.state.strokeSpace = p.resolveColorSpace(resources, anyName(args[0]))
 	case "sc", "scn":
+		if p.state.fillSpace == patternSpace {
+			p.state.fillPaint = p.resolvePattern(resources, anyName(args[0]))
+			break
+		}
 		if value, ok := p.colorFromOperands(p.state.fillSpace, args); ok {
-			p.state.fill = value
+			p.state.fill, p.state.fillPaint = value, nil
 		}
 	case "SC", "SCN":
+
+		if p.state.strokeSpace == patternSpace {
+			p.state.strokePaint = p.resolvePattern(resources, anyName(args[0]))
+			break
+		}
 		if value, ok := p.colorFromOperands(p.state.strokeSpace, args); ok {
-			p.state.stroke = value
+			p.state.stroke, p.state.strokePaint = value, nil
 		}
 	case "BT":
 		p.state.textMatrix, p.state.lineMatrix = identityPDFMatrix(), identityPDFMatrix()
@@ -549,8 +651,6 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 			}
 		}
 	}
-	// PDF 未嵌入字体时保持逻辑字体，由阅读器按字体族名回退到本机字体。
-	p.fonts[name] = font
 	family := strings.TrimPrefix(name, "/")
 	if font.familyName != "" {
 		family = font.familyName
@@ -561,6 +661,9 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 	if family == "" {
 		family = "Helvetica"
 	}
+	font.bold, font.italic, _, _ = pdfFontStyleFlags(family)
+	// PDF 未嵌入字体时保持逻辑字体，由阅读器按字体族名回退到本机字体。
+	p.fonts[name] = font
 	documentName := name
 	for _, value := range p.document.Fonts {
 		if value.Name != name {
@@ -575,8 +678,8 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 		documentName = name + "-" + hex.EncodeToString(digest[:])[:12]
 		break
 	}
-	bold, italic, serif, fixedWidth := pdfFontStyleFlags(family)
-	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: bold, Italic: italic, Serif: serif, FixedWidth: fixedWidth}
+	_, _, serif, fixedWidth := pdfFontStyleFlags(family)
+	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: font.bold, Italic: font.italic, Serif: serif, FixedWidth: fixedWidth}
 	p.document.Fonts = append(p.document.Fonts, current)
 	for _, value := range p.document.Fonts[:len(p.document.Fonts)-1] {
 		if current.Format == value.Format && len(current.Data) > 0 && bytes.Equal(current.Data, value.Data) {
