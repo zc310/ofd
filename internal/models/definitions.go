@@ -481,11 +481,11 @@ func (c *Color) parse(s string) error {
 	}
 
 	parts := strings.Fields(s)
-	if len(parts) != 3 && len(parts) != 4 {
-		return fmt.Errorf("invalid color format: %s, expected 'R G B' or 'R G B A'", s)
+	// 颜色分量数量由颜色空间决定：GRAY 1 个、RGB 3 个、CMYK 4 个。
+	if len(parts) != 1 && len(parts) != 3 && len(parts) != 4 {
+		return fmt.Errorf("invalid color format: %s, expected 1, 3 or 4 components", s)
 	}
 
-	// 解析 RGB
 	values := [4]uint8{0, 0, 0, 255}
 	for i := 0; i < len(parts); i++ {
 		val, err := c.parseInt(parts[i])
@@ -498,7 +498,11 @@ func (c *Color) parse(s string) error {
 		values[i] = uint8(val)
 	}
 
-	// 如果没有 Alpha，使用 255
+	// 单分量（GRAY）与三分量（RGB）默认完全不透明；四分量按颜色空间解释，
+	// 存储在第 4 个分量中。
+	if len(parts) == 1 {
+		values[3] = 255
+	}
 	if len(parts) == 3 {
 		values[3] = 255
 	}

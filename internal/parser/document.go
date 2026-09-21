@@ -36,6 +36,7 @@ type Document struct {
 	drawParams          map[models.StID]*models.DrawParam
 	res                 map[models.StID]*models.MultiMedia
 	fontRes             map[models.StID]*models.Font
+	colorSpaces         map[models.StID]*models.ColorSpace
 	compositeUnits      map[models.StID]*models.CompositeGraphicUnit
 	publicRes           []*models.Res
 	documentRes         []*models.Res
@@ -124,6 +125,7 @@ func (p *Document) clearCaches() {
 	p.drawParams = nil
 	p.res = nil
 	p.fontRes = nil
+	p.colorSpaces = nil
 	p.compositeUnits = nil
 	p.publicRes = nil
 	p.documentRes = nil
@@ -340,6 +342,16 @@ func (p *Document) registerPageResource(resource *models.Res, filePath models.St
 			resources.fonts[font.ID] = &font
 		}
 	}
+	if resource.ColorSpaces != nil {
+		for _, space := range resource.ColorSpaces.ColorSpace {
+			s := space
+			if s.Profile != "" {
+				s.Profile = s.Profile.Resolve(filePath.Dir().Join(string(resource.BaseLoc)))
+			}
+			p.colorSpaces[s.ID] = &s
+			resources.colorSpaces[s.ID] = &s
+		}
+	}
 }
 
 func resourceSize(resource *models.Res) int64 {
@@ -352,6 +364,9 @@ func resourceSize(resource *models.Res) int64 {
 	}
 	if resource.Fonts != nil {
 		size += int64(len(resource.Fonts.Font))
+	}
+	if resource.ColorSpaces != nil {
+		size += int64(len(resource.ColorSpaces.ColorSpace))
 	}
 	if resource.DrawParams != nil {
 		size += int64(len(resource.DrawParams.DrawParam))
@@ -420,6 +435,15 @@ func (p *Document) parseResourceFilePath(path models.StLoc, resolveMedia bool) (
 			p.fontRes[font.ID] = &font
 		}
 	}
+	if pr.ColorSpaces != nil {
+		for _, space := range pr.ColorSpaces.ColorSpace {
+			s := space
+			if s.Profile != "" {
+				s.Profile = s.Profile.Resolve(path.Dir().Join(string(pr.BaseLoc)))
+			}
+			p.colorSpaces[s.ID] = &s
+		}
+	}
 	return &pr, nil
 }
 
@@ -473,6 +497,15 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 			}
 		}
 	}
+	for id, value := range resources.colorSpaces {
+		if p.colorSpaces[id] == value {
+			if replacement, ok := pageResourceReplacement(used, "colorSpaces", id); ok {
+				p.colorSpaces[id] = replacement.(*models.ColorSpace)
+			} else {
+				delete(p.colorSpaces, id)
+			}
+		}
+	}
 	for id, value := range resources.composites {
 		if p.compositeUnits[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "composites", id); ok {
@@ -494,6 +527,8 @@ func pageResourceReplacement(resources []pageResources, kind string, id models.S
 			candidate = resource.drawParams[id]
 		case "fonts":
 			candidate = resource.fonts[id]
+		case "colorSpaces":
+			candidate = resource.colorSpaces[id]
 		case "composites":
 			candidate = resource.composites[id]
 		}
@@ -618,10 +653,11 @@ func (p *Document) parse(body models.DocBody) error {
 				}
 				target.pageContent = content
 				target.resources = pageResources{
-					media:      make(map[models.StID]*models.MultiMedia),
-					drawParams: make(map[models.StID]*models.DrawParam),
-					fonts:      make(map[models.StID]*models.Font),
-					composites: make(map[models.StID]*models.CompositeGraphicUnit),
+					media:       make(map[models.StID]*models.MultiMedia),
+					drawParams:  make(map[models.StID]*models.DrawParam),
+					fonts:       make(map[models.StID]*models.Font),
+					colorSpaces: make(map[models.StID]*models.ColorSpace),
+					composites:  make(map[models.StID]*models.CompositeGraphicUnit),
 				}
 				for _, resource := range content.PageRes {
 					resourcePath := pagePath.Dir().Join(resource.String())
@@ -643,6 +679,7 @@ func (p *Document) parse(body models.DocBody) error {
 	p.drawParams = make(map[models.StID]*models.DrawParam)
 	p.res = make(map[models.StID]*models.MultiMedia)
 	p.fontRes = make(map[models.StID]*models.Font)
+	p.colorSpaces = make(map[models.StID]*models.ColorSpace)
 	p.compositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
 	if err = p.parsePublicRes(); err != nil {
 		slog.Error(err.Error())
@@ -1030,6 +1067,13 @@ func (p *Document) GetFont(id models.StID) *models.Font {
 	p.resourcesMu.RLock()
 	defer p.resourcesMu.RUnlock()
 	return p.fontRes[id]
+}
+
+// GetColorSpace 返回指定 ID 的颜色空间资源。
+func (p *Document) GetColorSpace(id models.StID) *models.ColorSpace {
+	p.resourcesMu.RLock()
+	defer p.resourcesMu.RUnlock()
+	return p.colorSpaces[id]
 }
 
 // GetCompositeUnit 返回指定 ID 的复合图元资源。

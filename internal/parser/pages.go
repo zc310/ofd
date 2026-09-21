@@ -18,10 +18,11 @@ const (
 )
 
 type pageResources struct {
-	media      map[models.StID]*models.MultiMedia
-	drawParams map[models.StID]*models.DrawParam
-	fonts      map[models.StID]*models.Font
-	composites map[models.StID]*models.CompositeGraphicUnit
+	media       map[models.StID]*models.MultiMedia
+	drawParams  map[models.StID]*models.DrawParam
+	fonts       map[models.StID]*models.Font
+	colorSpaces map[models.StID]*models.ColorSpace
+	composites  map[models.StID]*models.CompositeGraphicUnit
 }
 
 type Page struct {
