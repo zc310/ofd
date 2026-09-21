@@ -5,6 +5,9 @@ import (
 	"math"
 	"strings"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+
+	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -67,6 +70,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		// 不闭合时，用 m/l.../f* 绘制的细长矩形不会渲染出来。
 		commands = closeSubpathsForFill(commands)
 	}
+	commands = p.clampExtremePath(commands)
 	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
 	var data strings.Builder
 	for _, command := range commands {
@@ -110,11 +114,60 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		height = 0.001
 	}
 	lineWidth := p.state.lineWidth * p.info.userUnit * pdfPointToMillimeter * pdfMatrixScale(p.state.ctm)
+	// PDF 的 0 线宽表示设备能画出的最细线（1 像素）。OFD 线宽是毫米且与分辨率
+	// 无关，无法表达“1 像素”，用一个细线宽近似，避免渲染成默认的 1pt 粗线。
+	if p.state.lineWidth <= 0 {
+		lineWidth = hairlineLineWidthMM
+	}
 	path := creator.Path{X: minX, Y: minY, Width: width, Height: height, Data: strings.TrimSpace(data.String()), Stroke: stroke, StrokeSet: &stroke, Fill: fill, Rule: rule, LineWidth: lineWidth, StrokeColor: colorToCreator(p.state.stroke), FillColor: colorToCreator(p.state.fill)}
+	// OFD 的 DashPattern 以线宽为单位（渲染端按线宽缩放），而 PDF 的 d 是绝对
+	// 长度，因此这里除以生效线宽换算成倍数。线宽为 0 时渲染端用默认线宽。
+	if len(p.state.dashPattern) > 0 {
+		scale := p.info.userUnit * pdfPointToMillimeter * pdfMatrixScale(p.state.ctm)
+		strokeWidth := lineWidth
+		if strokeWidth <= 0 {
+			strokeWidth = defaultPathLineWidthMM
+		}
+		dashes := make([]float64, len(p.state.dashPattern))
+		for index, value := range p.state.dashPattern {
+			dashes[index] = value * scale / strokeWidth
+		}
+		path.DashPattern = dashes
+		path.DashOffset = p.state.dashOffset * scale / strokeWidth
+	}
+	// Pattern 颜色空间下 scn/SCN 选中的图案以路径边界为局部原点，需在路径
+	// 坐标确定后再转换，否则渐变会整体偏移。
+	if fill && p.state.fillPaint != nil {
+		if shading := p.state.fillPaint.shading; shading != nil {
+			if color := p.shadingColor(shading, &path); color != nil {
+				path.FillColor = color
+			}
+		} else if tiling := p.state.fillPaint.tiling; tiling != nil {
+			// 平铺图案以图片对象形式展开，不再用纯色填充路径。
+			if p.emitTilingFill(tiling, p.path, [4]float64{minX, minY, maxX, maxY}) {
+				fill = false
+				path.Fill = false
+			}
+		}
+	}
+	if stroke && p.state.strokePaint != nil {
+		if shading := p.state.strokePaint.shading; shading != nil {
+			if color := p.shadingColor(shading, &path); color != nil {
+				path.StrokeColor = color
+			}
+		}
+	}
 	if clips := p.buildClips(minX, minY, false, 0, 0); clips != nil {
 		path.Clips = clips
 	}
-	p.page.Items = append(p.page.Items, path)
+	path.Alpha = ofdTransparency(p.pathOpacity(fill, stroke))
+	// OFD 无混合模式：把 Multiply 纯色填充近似成半透明，使文字等高对比内容透出。
+	if fill && !stroke {
+		p.approximateMultiplyFill(&path)
+	}
+	if fill || stroke {
+		p.page.Items = append(p.page.Items, path)
+	}
 	p.path = nil
 }
 
@@ -258,12 +311,174 @@ func pdfMatrixScale(matrix [6]float64) float64 {
 	return math.Sqrt(math.Abs(determinant))
 }
 
-func anyFloat(value any) float64 {
-	if number, ok := value.(float64); ok {
-		return number
+// maxReasonableCoordinate 是路径坐标的合理上限（PDF 点）。超过该值的坐标通常
+// 是"覆盖整个平面"的技巧（如把矩形画到 ±1 亿），只用于构造补集填充。
+const maxReasonableCoordinate = 1e6
+
+// defaultPathLineWidthMM 是 OFD 未指定 LineWidth 时渲染端采用的线宽（1pt）。
+// OFD 的 DashPattern 以线宽为单位，换算虚线倍数时需要它。
+const defaultPathLineWidthMM = 0.353
+
+// hairlineLineWidthMM 是 PDF 0 线宽的近似值。约 1/4pt，在 150dpi 下约 1 像素，
+// 与大多数阅读器绘制 0 线宽的观感接近。
+const hairlineLineWidthMM = 0.1
+
+// clampExtremePath 把含极端坐标的路径收缩到页面附近。部分 PDF（例如注解外观流
+// 中"先画巨型矩形再挖洞"的补集填充）使用远超页面范围的坐标，直接输出会让
+// OFD 阅读器生成跨越数百万毫米的路径并可能导致填充丢失。只在坐标明显异常时
+// 收缩，正常路径保持不变。
+func (p *pdfInterpreter) clampExtremePath(commands []pdfPathCommand) []pdfPathCommand {
+	extreme := false
+	for _, command := range commands {
+		for _, value := range command.values {
+			if value > maxReasonableCoordinate || value < -maxReasonableCoordinate {
+				extreme = true
+				break
+			}
+		}
+		if extreme {
+			break
+		}
 	}
-	if number, ok := value.(int); ok {
+	if !extreme {
+		return commands
+	}
+	padX := (p.info.maxX - p.info.minX) * 2
+	padY := (p.info.maxY - p.info.minY) * 2
+	minX, maxX := p.info.minX-padX, p.info.maxX+padX
+	minY, maxY := p.info.minY-padY, p.info.maxY+padY
+	clamped := make([]pdfPathCommand, len(commands))
+	for i, command := range commands {
+		values := make([]float64, len(command.values))
+		for j := 0; j+1 < len(command.values); j += 2 {
+			values[j] = math.Max(minX, math.Min(maxX, command.values[j]))
+			values[j+1] = math.Max(minY, math.Min(maxY, command.values[j+1]))
+		}
+		clamped[i] = pdfPathCommand{op: command.op, values: values}
+	}
+	return clamped
+}
+
+// fillOpacity 返回填充的生效不透明度：局部 ca 乘以外层 Form 的组透明度。
+func (p *pdfInterpreter) fillOpacity() float64 {
+	return p.state.fillAlpha * p.groupOpacity()
+}
+
+// strokeOpacity 返回描边的生效不透明度：局部 CA 乘以外层 Form 的组透明度。
+func (p *pdfInterpreter) strokeOpacity() float64 {
+	return p.state.strokeAlpha * p.groupOpacity()
+}
+
+// groupOpacity 返回外层 Form XObject 累积的组透明度，未进入 Form 时为 1。
+func (p *pdfInterpreter) groupOpacity() float64 {
+	if p.state.groupAlpha <= 0 {
+		return 1
+	}
+	return p.state.groupAlpha
+}
+
+// pathOpacity 返回当前路径生效的 PDF 不透明度：填充用 ca，描边用 CA，
+// 同时填充与描边时取较小值。
+func (p *pdfInterpreter) pathOpacity(fill, stroke bool) float64 {
+	switch {
+	case fill && stroke:
+		return math.Min(p.fillOpacity(), p.strokeOpacity())
+	case stroke:
+		return p.strokeOpacity()
+	default:
+		return p.fillOpacity()
+	}
+}
+
+// approximateMultiplyFill 把 Multiply 混合的纯色填充近似为半透明叠加。选择
+// 不透明度 a = op·(255−minC)/255，并反推修正色 C′，使白色背景上仍渲染出原始
+// 高亮色：Normal 结果 (1−a)·255 + a·C′ = (1−op)·255 + op·C。这样深色内容以
+// a·C′ 透出（黑字可见），背景仍接近原色。OFD 没有混合模式，这是标准兼容近似。
+func (p *pdfInterpreter) approximateMultiplyFill(path *creator.Path) {
+	if !strings.EqualFold(p.state.blendMode, "Multiply") {
+		return
+	}
+	color := path.FillColor
+	if color == nil || color.Axial != nil || color.Radial != nil || color.Gouraud != nil || color.LaGouraud != nil || color.Pattern != nil {
+		return
+	}
+	opacity := p.fillOpacity()
+	if opacity <= 0 {
+		return
+	}
+	minimum := int(color.R)
+	if int(color.G) < minimum {
+		minimum = int(color.G)
+	}
+	if int(color.B) < minimum {
+		minimum = int(color.B)
+	}
+	if minimum >= 255 {
+		return
+	}
+	a := opacity * float64(255-minimum) / 255
+	if a < 0.05 {
+		a = 0.05
+	}
+	scale := opacity / a
+	channel := func(value uint8) uint8 {
+		result := 255 - scale*float64(255-int(value))
+		if result < 0 {
+			return 0
+		}
+		if result > 255 {
+			return 255
+		}
+		return uint8(math.Round(result))
+	}
+	path.FillColor = &creator.Color{
+		R: channel(color.R), G: channel(color.G), B: channel(color.B),
+		Components: color.Components, ColorSpace: color.ColorSpace, Index: color.Index, Alpha: color.Alpha,
+	}
+	path.Alpha = ofdTransparency(a)
+}
+
+// ofdTransparency 把 PDF 不透明度（0-1）转换为 OFD 图元透明度（0-255，
+// 255 表示完全透明）。完全不透明时返回 nil 以省略该属性。
+func ofdTransparency(opacity float64) *uint8 {
+	if opacity >= 1 {
+		return nil
+	}
+	if opacity < 0 {
+		opacity = 0
+	}
+	value := uint8(math.Round((1 - opacity) * 255))
+	return &value
+}
+
+// ofdColorOpacity 把 PDF 不透明度应用到 OFD 颜色（Alpha 为不透明度）。
+func ofdColorOpacity(source *creator.Color, opacity float64) *creator.Color {
+	if source == nil || opacity >= 1 {
+		return source
+	}
+	if opacity < 0 {
+		opacity = 0
+	}
+	value := uint8(math.Round(opacity * 255))
+	source.Alpha = &value
+	return source
+}
+
+func anyFloat(value any) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case int:
 		return float64(number)
+	case types.Integer:
+		return float64(number)
+	case types.Float:
+		return float64(number)
+	case types.Array:
+		// 兼容少数把数值包成单元素数组的写法。
+		if len(number) == 1 {
+			return anyFloat(number[0])
+		}
 	}
 	return 0
 }
@@ -287,7 +502,19 @@ func rgbColor(r, g, b float64) pdfColor {
 }
 
 func cmykColor(c, m, y, k float64) pdfColor {
-	return pdfColor{uint8((1 - clamp01(c)) * (1 - clamp01(k)) * 255), uint8((1 - clamp01(m)) * (1 - clamp01(k)) * 255), uint8((1 - clamp01(y)) * (1 - clamp01(k)) * 255)}
+	// 首选 ICC 转换（可通过 OFD_CMYK_ICC 或系统 CMYK 配置文件提供），
+	// 不可用时回退到近似油墨模型。
+	if transformer, _ := coloricc.DefaultCMYK(); transformer != nil {
+		r, g, b := transformer.ToRGB([]uint8{
+			byte(clamp01(c)*255 + 0.5),
+			byte(clamp01(m)*255 + 0.5),
+			byte(clamp01(y)*255 + 0.5),
+			byte(clamp01(k)*255 + 0.5),
+		})
+		return pdfColor{r: r, g: g, b: b}
+	}
+	r, g, b := cmykInkToRGB(byte(clamp01(c)*255+0.5), byte(clamp01(m)*255+0.5), byte(clamp01(y)*255+0.5), byte(clamp01(k)*255+0.5))
+	return pdfColor{r: r, g: g, b: b}
 }
 
 func clamp01(value float64) float64 { return math.Max(0, math.Min(1, value)) }
