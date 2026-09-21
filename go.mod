@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/BurntSushi/toml v1.6.0
+	github.com/FloatTech/gg v1.1.3
 	github.com/beevik/etree v1.8.0
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/chromedp/cdproto v0.0.0-20260912003405-686a5c723acc
@@ -12,10 +13,14 @@ require (
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.44.1
 	github.com/go-text/typesetting v0.3.5
+	github.com/gogpu/gg v0.52.5
 	github.com/h2non/filetype v1.1.3
 	github.com/klauspost/compress v1.20.0
 	github.com/knroy/go-xml v1.3.1
-	github.com/nao1215/imaging v1.0.10
+	github.com/kovidgoyal/imaging v1.8.23
+	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
+	github.com/mrjoshuak/go-jpeg2000 v1.5.12
+	github.com/nao1215/imaging v1.0.11
 	github.com/ncruces/zenity v0.10.15
 	github.com/pdfcpu/pdfcpu v0.15.0
 	github.com/rymdport/portal v0.4.2
@@ -23,6 +28,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
 	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
+	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.6
 	github.com/zc310/fontfix v0.0.3-0.20260920024109-9aec3589ce48
@@ -46,10 +52,12 @@ require (
 	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
+	github.com/chewxy/math32 v1.11.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
+	github.com/fumiama/imgsz v0.0.2 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
@@ -63,6 +71,8 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/gogpu/gpucontext v0.28.0 // indirect
+	github.com/gogpu/gputypes v0.5.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect
@@ -72,6 +82,7 @@ require (
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
+	github.com/kovidgoyal/go-parallel v1.1.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
@@ -98,4 +109,6 @@ require (
 	star-tex.org/x/tex v0.7.1 // indirect
 )
 
-replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260920023840-01f034c32b9b
+replace github.com/tdewolff/font => ../font
+
+replace github.com/tdewolff/canvas => ../canvas
