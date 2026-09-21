@@ -15,7 +15,7 @@ const (
 	maxDashElements   = 1024
 )
 
-func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (*CTColor, *CTColor) {
+func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTColor, *CTColor) {
 	if dp == nil {
 		return nil, nil
 	}
@@ -38,8 +38,11 @@ func (p *Document) updateDrawParams(ctx *canvas.Context, dp *models.DrawParam) (
 	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
 }
 
+// CTColor 是解析后的绘制颜色：固定值颜色（HasValue）或渐变。Value 用值类型
+// 内联，避免每次 updateCtColor 都堆分配 *color.RGBA 与 *CTColor。
 type CTColor struct {
-	Value    *color.RGBA
+	Value    color.RGBA
+	HasValue bool
 	Gradient canvas.Gradient
 }
 
@@ -48,9 +51,9 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 		return nil
 	}
 	cc := &CTColor{}
-	if source.Value != nil {
-		value := ofdColorRGBA(*source)
-		cc.Value = &value
+	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
+		cc.Value = p.colorRGBA(*source)
+		cc.HasValue = true
 	}
 
 	cc.Gradient = p.pathGradient(source, identityGradientTransform)
@@ -63,8 +66,8 @@ func identityGradientTransform(point models.StPos) canvas.Point {
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
 func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
-	if source != nil && source.Value != nil {
-		set(ofdColorRGBA(*source))
+	if source != nil && (source.Value != nil || source.ColorSpace != 0 || source.Index != 0) {
+		set(p.colorRGBA(*source))
 	}
 }
 
@@ -88,7 +91,7 @@ func getLineJoin(joinStr string) canvas.Joiner {
 		return canvas.MiterJoin
 	}
 }
-func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath, dp *models.DrawParam) {
+func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam) {
 	if object == nil {
 		return
 	}
@@ -121,10 +124,10 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 	if object.Fill {
 		p.applyFill(ctx, fill, object.Alpha)
 		if object.Rule == "Even-Odd" {
-			ctx.FillRule = canvas.EvenOdd
+			ctx.SetFillRule(canvas.EvenOdd)
 		}
 	} else {
-		ctx.SetFill(nil)
+		ctx.ClearFill()
 	}
 
 	if object.StrokeColor != nil {
@@ -148,13 +151,13 @@ func (p *Document) updateCtPathStyle(ctx *canvas.Context, object *models.CtPath,
 	}
 }
 
-func (p *Document) applyFill(ctx *canvas.Context, fill *CTColor, alpha *uint8) {
+func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 	if fill == nil {
 		ctx.SetFillColor(canvas.Transparent)
 		return
 	}
-	if fill.Value != nil {
-		value := *fill.Value
+	if fill.HasValue {
+		value := fill.Value
 		if alpha != nil {
 			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(alpha)) / 255)
 		}
@@ -176,13 +179,13 @@ func graphicOpacity(transparency *uint8) uint8 {
 	return 255 - *transparency
 }
 
-func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *models.CtPath) {
-	if stroke == nil || (stroke.Value == nil && stroke.Gradient == nil) {
+func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {
+	if stroke == nil || (!stroke.HasValue && stroke.Gradient == nil) {
 		ctx.SetStrokeColor(canvas.Black)
 	} else if stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else {
-		ctx.SetStrokeColor(*stroke.Value)
+		ctx.SetStrokeColor(stroke.Value)
 	}
 	ctx.SetStrokeCapper(getLineCap(object.Cap))
 	joiner := getLineJoin(object.Join)
@@ -192,7 +195,7 @@ func (p *Document) applyStroke(ctx *canvas.Context, stroke *CTColor, object *mod
 		// OFD 将 MiterLimit 定义为以毫米为单位的绝对长度。
 		// Canvas 使用相对于中心线测量的斜接长度进行比较，
 		// 因此这里需要换算为相对于半线宽的倍率。
-		lineWidth := ctx.Style.StrokeWidth
+		lineWidth := ctx.StrokeWidth()
 		if lineWidth > 0 {
 			miterLimit /= lineWidth / 2
 		}
