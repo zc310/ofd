@@ -11,8 +11,11 @@ import (
 	"image/png"
 	"math"
 
+	gobig2 "github.com/dkrisman/gobig2"
+	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -34,13 +37,25 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 		return nil
 	}
 	if *subtype == "Image" {
-		return p.appendImage(stream)
+		// 单个图像解码失败（例如 JPXDecode 等不支持的过滤器）不应中断整页
+		// 转换，跳过该图像继续处理其余内容。
+		_ = p.appendImage(stream)
+		return nil
 	}
 	if *subtype == "Form" {
 		if stream.Decode() != nil {
 			return nil
 		}
 		formState := p.state
+		// Form 作为透明度组绘制。OFD 没有混合模式：仅在 BM 为 Normal 时把外层
+		// gs 的 ca/CA 累积为组透明度，并重置局部 ca/CA，避免 Form 内的 gs
+		// （常见 ca=1）覆盖外层的不透明度。BM 为 Multiply/HardLight 等时，单独
+		// 套用 ca/CA 会与混合效果叠加出更大偏差，因此保持原有叠加方式。
+		if isNormalBlendMode(p.state.blendMode) {
+			formState.groupAlpha = p.groupOpacity() * math.Min(p.state.fillAlpha, p.state.strokeAlpha)
+			formState.fillAlpha = 1
+			formState.strokeAlpha = 1
+		}
 		matrix := identityPDFMatrix()
 		if array := stream.ArrayEntry("Matrix"); len(array) == 6 {
 			for i := range matrix {
@@ -66,6 +81,31 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 	return nil
 }
 
+// imageFlipCTM 判断图像是否需要镜像，并返回 OFD 图片对象的 CTM。仅处理轴对齐
+// （无旋转/斜切）的 CTM：X 缩放为负表示水平镜像，Y 缩放为负表示垂直镜像。
+// OFD 图片缺省 CTM 为 {Width,0,0,Height,0,0}，镜像时对相应轴取负并平移一个
+// 边界长度，使图像仍落在原边界内。
+func imageFlipCTM(ctm [6]float64, width, height float64) *creator.CTM {
+	if ctm[1] != 0 || ctm[2] != 0 {
+		return nil
+	}
+	vertical := ctm[3] < 0
+	horizontal := ctm[0] < 0
+	if !vertical && !horizontal {
+		return nil
+	}
+	matrix := creator.CTM{width, 0, 0, height, 0, 0}
+	if horizontal {
+		matrix[0] = -width
+		matrix[4] = width
+	}
+	if vertical {
+		matrix[3] = -height
+		matrix[5] = height
+	}
+	return &matrix
+}
+
 // appendImage 把解码后的图像按当前 CTM 的包围盒放入页面。内联图像与图像
 // XObject 共用该逻辑。
 func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
@@ -84,7 +124,10 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 		minX, minY, maxX, maxY = math.Min(minX, x), math.Min(minY, y), math.Max(maxX, x), math.Max(maxY, y)
 	}
 	width, height := math.Max(maxX-minX, 0.001), math.Max(maxY-minY, 0.001)
-	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format}
+	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format, Alpha: ofdTransparency(p.fillOpacity())}
+	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm）。OFD
+	// 图片缺省按边界正放，这里输出负缩放 CTM 让阅读器镜像。
+	image.CTM = imageFlipCTM(p.state.ctm, width, height)
 	// 图片对象在阅读器侧默认使用 {Width,0,0,Height,0,0} 的 CTM，
 	// 裁剪区坐标需要抵消该缩放后才能使用毫米坐标。
 	if clips := p.buildClips(minX, minY, true, width, height); clips != nil {
@@ -143,7 +186,9 @@ func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer) error {
 	if pipeline := inlineImageFilterPipeline(stream); len(pipeline) > 0 {
 		stream.FilterPipeline = pipeline
 	}
-	return p.appendImage(stream)
+	// 与图像 XObject 一致：解码失败只跳过该图像。
+	_ = p.appendImage(stream)
+	return nil
 }
 
 func inlineImageColorSpace(value any) any {
@@ -246,7 +291,404 @@ func isJPEGData(data []byte) bool {
 	return len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
 }
 
+// pdfImageData 编码图像为 PNG/JPEG；若图像带有 SMask（软掩码），则把掩码
+// 作为 alpha 通道应用到图像上，避免透明区域被绘制成不透明色块。
 func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
+	data, format, err := pdfImageDataRaw(ctx, stream, maskColor)
+	if err != nil {
+		return nil, "", err
+	}
+	maskStream := pdfImageSoftMask(ctx, stream)
+	if maskStream == nil {
+		return data, format, nil
+	}
+	masked, ok := applyPDFImageSoftMask(ctx, data, maskStream)
+	if !ok {
+		return data, format, nil
+	}
+	return masked, "PNG", nil
+}
+
+// pdfImageSoftMask 解析图像 /SMask 引用的软掩码流；不存在时返回 nil。
+func pdfImageSoftMask(ctx *model.Context, stream *types.StreamDict) *types.StreamDict {
+	object, found := stream.Find("SMask")
+	if !found {
+		return nil
+	}
+	mask, _, err := ctx.XRefTable.DereferenceStreamDict(object)
+	if err != nil || mask == nil {
+		return nil
+	}
+	return mask
+}
+
+// applyPDFImageSoftMask 把灰度软掩码作为 alpha 通道应用到已编码的图像上，
+// 返回带透明度的 PNG。base 必须是可解码的 PNG/JPEG。
+func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.StreamDict) ([]byte, bool) {
+	baseImage, _, err := image.Decode(bytes.NewReader(base))
+	if err != nil {
+		return nil, false
+	}
+	maskWidth, okW := integerValue(maskStream.Dict["Width"])
+	maskHeight, okH := integerValue(maskStream.Dict["Height"])
+	if !okW || !okH || maskWidth <= 0 || maskHeight <= 0 {
+		return nil, false
+	}
+	maskBPC, _ := integerValue(maskStream.Dict["BitsPerComponent"])
+	if maskBPC == 0 {
+		maskBPC = 1
+	}
+	if !hasJBIG2Filter(maskStream) && !hasJPXFilter(maskStream) {
+		if maskBPC > 8 {
+			// 高位深软掩码缺少通用样本解码路径，保持原图。
+			return nil, false
+		}
+		if len(maskStream.Content) == 0 && maskStream.Decode() != nil {
+			return nil, false
+		}
+	}
+	samples, err := pdfImageMaskSamples(ctx, maskStream, maskWidth, maskHeight, maskBPC)
+	if err != nil {
+		return nil, false
+	}
+	bounds := baseImage.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	// 基础图像本身不透明，这里写入的是非预乘 RGB。必须使用 NRGBA：若写入
+	// RGBA（预乘），PNG 编码会对低 alpha 像素做反预乘，把接近透明的颜色放大成
+	// 红/品红色边缘。
+	rgba := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		maskY := y * maskHeight / height
+		if maskY >= maskHeight {
+			maskY = maskHeight - 1
+		}
+		for x := 0; x < width; x++ {
+			maskX := x * maskWidth / width
+			if maskX >= maskWidth {
+				maskX = maskWidth - 1
+			}
+			base := color.NRGBAModel.Convert(baseImage.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.NRGBA)
+			alpha := samples[maskY*maskWidth+maskX]
+			target := rgba.PixOffset(x, y)
+			rgba.Pix[target], rgba.Pix[target+1], rgba.Pix[target+2], rgba.Pix[target+3] = base.R, base.G, base.B, alpha
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, rgba); err != nil {
+		return nil, false
+	}
+	return encoded.Bytes(), true
+}
+
+// hasJBIG2Filter 判断图像流是否使用 JBIG2Decode 过滤器。
+func hasJBIG2Filter(stream *types.StreamDict) bool {
+	if stream == nil {
+		return false
+	}
+	for _, filter := range stream.FilterPipeline {
+		if filter.Name == "JBIG2Decode" {
+			return true
+		}
+	}
+	return false
+}
+
+// jbig2StreamBytes 返回 JBIG2Decode 的段流字节。JBIG2Decode 是图像管线的最后
+// 一层，pdfcpu 不解析它，因此其前面的过滤层（若有）需先解码。
+func jbig2StreamBytes(stream *types.StreamDict) []byte {
+	for index, filter := range stream.FilterPipeline {
+		if filter.Name != "JBIG2Decode" {
+			continue
+		}
+		if index == 0 {
+			return stream.Raw
+		}
+		// 前置过滤层：解码后 Content 即为 JBIG2 段流。pdfcpu 遇到 JBIG2Decode
+		// 会报错，因此这里只支持 JBIG2Decode 作为唯一过滤器。
+		return nil
+	}
+	return nil
+}
+
+// pdfJBIG2Globals 读取 DecodeParms 的 /JBIG2Globals 段流（跨图像共享的符号字典）。
+func pdfJBIG2Globals(ctx *model.Context, stream *types.StreamDict) []byte {
+	for _, filter := range stream.FilterPipeline {
+		if filter.Name != "JBIG2Decode" || filter.DecodeParms == nil {
+			continue
+		}
+		object, found := filter.DecodeParms.Find("JBIG2Globals")
+		if !found {
+			continue
+		}
+		globals, _, err := ctx.XRefTable.DereferenceStreamDict(object)
+		if err != nil || globals == nil {
+			continue
+		}
+		if data := pdfStreamContent(globals); len(data) > 0 {
+			return data
+		}
+	}
+	return nil
+}
+
+// pdfJBIG2Image 用 gobig2 把 JBIG2Decode 段流解码为灰度位图（0 为墨、255 为纸）。
+func pdfJBIG2Image(ctx *model.Context, stream *types.StreamDict) (*image.Gray, error) {
+	data := jbig2StreamBytes(stream)
+	if len(data) == 0 {
+		return nil, errors.New("JBIG2 图像数据为空")
+	}
+	decoder, err := gobig2.NewDecoderEmbedded(bytes.NewReader(data), pdfJBIG2Globals(ctx, stream))
+	if err != nil {
+		return nil, fmt.Errorf("JBIG2 解码失败: %w", err)
+	}
+	decoded, err := decoder.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("JBIG2 解码失败: %w", err)
+	}
+	gray, ok := decoded.(*image.Gray)
+	if !ok || gray == nil || gray.Bounds().Empty() {
+		return nil, errors.New("JBIG2 解码结果无效")
+	}
+	return gray, nil
+}
+
+// encodePDFJBIG2Image 把 JBIG2 灰度位图输出为 OFD 图像：ImageMask 按填充色着色，
+// 普通图像按 /Decode 反相后输出灰度 PNG。
+func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *image.Gray, maskColor pdfColor) ([]byte, string, error) {
+	decodeMin, decodeMax := 0.0, 1.0
+	if decode, found := stream.Find("Decode"); found {
+		if array, ok := decode.(types.Array); ok && len(array) >= 2 {
+			if value, ok := dereferencedPDFNumber(ctx, array[0]); ok {
+				decodeMin = value
+			}
+			if value, ok := dereferencedPDFNumber(ctx, array[1]); ok {
+				decodeMax = value
+			}
+		}
+	}
+	invert := decodeMax < decodeMin
+	bounds := gray.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	imageMask := false
+	if value, found := stream.Find("ImageMask"); found {
+		if boolean, ok := value.(types.Boolean); ok {
+			imageMask = boolean.Value()
+		}
+	}
+	if imageMask {
+		rgba := image.NewRGBA(image.Rect(0, 0, width, height))
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				ink := gray.GrayAt(bounds.Min.X+x, bounds.Min.Y+y).Y < 128
+				if invert {
+					ink = !ink
+				}
+				if ink {
+					rgba.SetRGBA(x, y, color.RGBA{R: maskColor.r, G: maskColor.g, B: maskColor.b, A: 255})
+				}
+			}
+		}
+		var encoded bytes.Buffer
+		if err := png.Encode(&encoded, rgba); err != nil {
+			return nil, "", fmt.Errorf("编码 JBIG2 蒙版失败: %w", err)
+		}
+		return encoded.Bytes(), "PNG", nil
+	}
+	out := gray
+	if invert {
+		out = image.NewGray(bounds)
+		for index, value := range gray.Pix {
+			out.Pix[index] = 255 - value
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, out); err != nil {
+		return nil, "", fmt.Errorf("编码 JBIG2 图像失败: %w", err)
+	}
+	return encoded.Bytes(), "PNG", nil
+}
+
+// hasJPXFilter 判断图像流是否使用 JPXDecode 过滤器。
+func hasJPXFilter(stream *types.StreamDict) bool {
+	if stream == nil {
+		return false
+	}
+	for _, filter := range stream.FilterPipeline {
+		if filter.Name == "JPXDecode" {
+			return true
+		}
+	}
+	return false
+}
+
+// jpxStreamBytes 返回 JPXDecode 的 JPEG 2000 码流。JPXDecode 是图像管线的最后
+// 一层；pdfcpu 不解析它，只支持它作为唯一过滤器。
+func jpxStreamBytes(stream *types.StreamDict) []byte {
+	for index, filter := range stream.FilterPipeline {
+		if filter.Name != "JPXDecode" {
+			continue
+		}
+		if index == 0 {
+			return stream.Raw
+		}
+		return nil
+	}
+	return nil
+}
+
+// encodePDFJPXImage 用纯 Go JPEG 2000 解码库把 JPXDecode 图像转为 PNG。库会按
+// JP2 的 colr 信息做颜色转换，输出灰度或 RGBA；`/Decode [1 0]` 视为反相。
+func encodePDFJPXImage(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
+	data := jpxStreamBytes(stream)
+	if len(data) == 0 {
+		return nil, "", errors.New("JPX 图像数据为空")
+	}
+	decoded, err := jpeg2000.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", fmt.Errorf("JPX 解码失败: %w", err)
+	}
+	if decoded == nil || decoded.Bounds().Empty() {
+		return nil, "", errors.New("JPX 解码结果无效")
+	}
+	decodeMin, decodeMax := 0.0, 1.0
+	if decode, found := stream.Find("Decode"); found {
+		if array, ok := decode.(types.Array); ok && len(array) >= 2 {
+			if value, ok := dereferencedPDFNumber(ctx, array[0]); ok {
+				decodeMin = value
+			}
+			if value, ok := dereferencedPDFNumber(ctx, array[1]); ok {
+				decodeMax = value
+			}
+		}
+	}
+	invert := decodeMax < decodeMin
+	imageMask := false
+	if value, found := stream.Find("ImageMask"); found {
+		if boolean, ok := value.(types.Boolean); ok {
+			imageMask = boolean.Value()
+		}
+	}
+	bounds := decoded.Bounds()
+	if imageMask {
+		rgba := image.NewRGBA(bounds)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				ink := color.GrayModel.Convert(decoded.At(x, y)).(color.Gray).Y < 128
+				if invert {
+					ink = !ink
+				}
+				if ink {
+					rgba.SetRGBA(x, y, color.RGBA{R: maskColor.r, G: maskColor.g, B: maskColor.b, A: 255})
+				}
+			}
+		}
+		return encodePNGImage(rgba)
+	}
+	if !invert {
+		return encodePNGImage(decoded)
+	}
+	out := image.NewNRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			value := color.NRGBAModel.Convert(decoded.At(x, y)).(color.NRGBA)
+			value.R, value.G, value.B = 255-value.R, 255-value.G, 255-value.B
+			out.SetNRGBA(x, y, value)
+		}
+	}
+	return encodePNGImage(out)
+}
+
+// encodePNGImage 把图像编码为 PNG。
+func encodePNGImage(img image.Image) ([]byte, string, error) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
+	}
+	return encoded.Bytes(), "PNG", nil
+}
+
+// pdfImageMaskSamples 解码软掩码样本：JBIG2 掩码用 gobig2，其余走通用样本解码。
+func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, height, bpc int) ([]byte, error) {
+	if hasJBIG2Filter(stream) {
+		gray, err := pdfJBIG2Image(ctx, stream)
+		if err != nil {
+			return nil, err
+		}
+		return resampleGrayMask(gray, width, height), nil
+	}
+	if hasJPXFilter(stream) {
+		data := jpxStreamBytes(stream)
+		if len(data) == 0 {
+			return nil, errors.New("JPX 掩码数据为空")
+		}
+		decoded, err := jpeg2000.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("JPX 掩码解码失败: %w", err)
+		}
+		return resampleImageGray(decoded, width, height), nil
+	}
+	return decodePDFImageSamples(ctx, stream, width, height, 1, bpc)
+}
+
+// resampleImageGray 把任意图像按最近邻缩放为 width×height 的灰度样本，用于软掩码。
+func resampleImageGray(img image.Image, width, height int) []byte {
+	bounds := img.Bounds()
+	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
+	samples := make([]byte, width*height)
+	for y := 0; y < height; y++ {
+		sourceY := bounds.Min.Y
+		if sourceHeight > 0 {
+			sourceY += y * sourceHeight / height
+		}
+		for x := 0; x < width; x++ {
+			sourceX := bounds.Min.X
+			if sourceWidth > 0 {
+				sourceX += x * sourceWidth / width
+			}
+			samples[y*width+x] = color.GrayModel.Convert(img.At(sourceX, sourceY)).(color.Gray).Y
+		}
+	}
+	return samples
+}
+
+// resampleGrayMask 把灰度位图按最近邻缩放到 width×height，作为软掩码的 alpha。
+func resampleGrayMask(gray *image.Gray, width, height int) []byte {
+	bounds := gray.Bounds()
+	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
+	samples := make([]byte, width*height)
+	for y := 0; y < height; y++ {
+		sourceY := 0
+		if sourceHeight > 0 {
+			sourceY = y * sourceHeight / height
+		}
+		sourceY += bounds.Min.Y
+		for x := 0; x < width; x++ {
+			sourceX := 0
+			if sourceWidth > 0 {
+				sourceX = x * sourceWidth / width
+			}
+			samples[y*width+x] = gray.GrayAt(bounds.Min.X+sourceX, sourceY).Y
+		}
+	}
+	return samples
+}
+
+func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
+	// JBIG2Decode（T.88）由 gobig2 解码为灰度位图，再按 ImageMask 或 1 位图像
+	// 输出。pdfcpu 不处理该过滤器，必须在此之前拦截。
+	if hasJBIG2Filter(stream) {
+		gray, err := pdfJBIG2Image(ctx, stream)
+		if err != nil {
+			return nil, "", err
+		}
+		return encodePDFJBIG2Image(ctx, stream, gray, maskColor)
+	}
+	// JPXDecode（JPEG 2000）由纯 Go 解码库处理。
+	if hasJPXFilter(stream) {
+		return encodePDFJPXImage(ctx, stream, maskColor)
+	}
+	// 图像颜色空间可能内嵌 ICC 配置文件；CMYK 图像优先用它转换到 RGB。
+	cmyk := pdfImageCMYKConverter(ctx, stream)
 	for index, filter := range stream.FilterPipeline {
 		if filter.Name != "DCTDecode" {
 			continue
@@ -264,7 +706,7 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 		}
 		// DeviceCMYK JPEG 直接嵌入 OFD 时，多数渲染器会按 Adobe 约定解码成
 		// 反相颜色（整幅变黑）。这里转换为 RGB PNG，保证红章等彩色图像正确。
-		if encoded, format, ok, err := encodePDFCMYKJPEG(jpegData); err != nil {
+		if encoded, format, ok, err := encodePDFCMYKJPEG(jpegData, cmyk); err != nil {
 			return nil, "", err
 		} else if ok {
 			return encoded, format, nil
@@ -299,10 +741,10 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 		return nil, "", err
 	}
 	if indexed {
-		return encodePDFIndexedImage(stream.Content, width, height, bpc, components, palette)
+		return encodePDFIndexedImage(stream.Content, width, height, bpc, components, palette, cmyk)
 	}
 	if bpc == maxPDFImageBitsPerComponent {
-		return encodePDFImage16(ctx, stream, width, height, components)
+		return encodePDFImage16(ctx, stream, width, height, components, cmyk)
 	}
 	raw, err := decodePDFImageSamples(ctx, stream, width, height, components, bpc)
 	if err != nil {
@@ -310,7 +752,7 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 	}
 	if components == 4 {
 		// 非 DCT 编码的 DeviceCMYK 样本已是油墨值（0 表示无油墨），无需反相。
-		return encodePDFCMYKImage(&image.CMYK{Pix: raw, Stride: width * 4, Rect: image.Rect(0, 0, width, height)}, false)
+		return encodePDFCMYKImage(&image.CMYK{Pix: raw, Stride: width * 4, Rect: image.Rect(0, 0, width, height)}, false, cmyk)
 	}
 	if components == 1 {
 		gray := image.NewGray(image.Rect(0, 0, width, height))
@@ -437,7 +879,7 @@ func floatToByte(value float64) byte {
 
 // encodePDFImage16 把 16 位样本直接编码为 16 位 PNG，保留位深。
 // DeviceCMYK 没有 16 位 PNG 通道，转换为 16 位 RGB。
-func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, height, components int) ([]byte, string, error) {
+func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, height, components int, converter cmykConverter) ([]byte, string, error) {
 	if components < 1 || components > 4 {
 		return nil, "", errors.New("图像颜色分量数量无效")
 	}
@@ -457,7 +899,7 @@ func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, heigh
 	case 4:
 		rgba := image.NewRGBA64(image.Rect(0, 0, width, height))
 		for index := 0; index < width*height; index++ {
-			r, g, b := cmykToRGB16(samples[index*4], samples[index*4+1], samples[index*4+2], samples[index*4+3])
+			r, g, b := converter.toRGB16(samples[index*4], samples[index*4+1], samples[index*4+2], samples[index*4+3])
 			base := index * 8
 			put(rgba.Pix[base:base+2], r)
 			put(rgba.Pix[base+2:base+4], g)
@@ -517,11 +959,9 @@ func floatToUint16(value float64) uint16 {
 }
 
 func cmykToRGB16(c, m, y, k uint16) (uint16, uint16, uint16) {
-	black := uint32(0xffff - k)
-	r := uint16(uint32(0xffff-c) * black / 0xffff)
-	g := uint16(uint32(0xffff-m) * black / 0xffff)
-	b := uint16(uint32(0xffff-y) * black / 0xffff)
-	return r, g, b
+	// 与 8 位 CMYK 使用同一套 Adobe/poppler 矩阵模型，只是分量精度为 16 位。
+	r, g, b := coloricc.DeviceCMYKToRGB(float64(c)/65535, float64(m)/65535, float64(y)/65535, float64(k)/65535)
+	return uint16(math.Round(65535 * r)), uint16(math.Round(65535 * g)), uint16(math.Round(65535 * b))
 }
 
 func pdfImageColorSpace(ctx *model.Context, stream *types.StreamDict) (components int, indexed bool, palette []byte, err error) {
@@ -678,11 +1118,12 @@ func pdfBytesObject(object types.Object) ([]byte, bool) {
 	}
 }
 
-func encodePDFIndexedImage(data []byte, width, height, bpc, components int, palette []byte) ([]byte, string, error) {
+func encodePDFIndexedImage(data []byte, width, height, bpc, components int, palette []byte, converter cmykConverter) ([]byte, string, error) {
 	if bpc <= 0 || bpc > 8 {
 		return nil, "", errors.New("Indexed 图像位深无效")
 	}
-	if components != 1 && components != 3 {
+	// 基础颜色空间允许灰度、RGB 与 CMYK；CMYK 调色板按油墨值转为 RGB。
+	if components != 1 && components != 3 && components != 4 {
 		return nil, "", errors.New("Indexed 基础颜色空间不支持")
 	}
 	rowBytes := (width*bpc + 7) / 8
@@ -699,9 +1140,13 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 			if paletteIndex+components-1 >= len(palette) {
 				return nil, "", errors.New("Indexed 图像索引超出调色板")
 			}
-			if components == 1 {
+			switch components {
+			case 1:
 				rgba.SetRGBA(x, y, color.RGBA{R: palette[paletteIndex], G: palette[paletteIndex], B: palette[paletteIndex], A: 255})
-			} else {
+			case 4:
+				r, g, b := converter.toRGB(palette[paletteIndex], palette[paletteIndex+1], palette[paletteIndex+2], palette[paletteIndex+3])
+				rgba.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: 255})
+			default:
 				rgba.SetRGBA(x, y, color.RGBA{R: palette[paletteIndex], G: palette[paletteIndex+1], B: palette[paletteIndex+2], A: 255})
 			}
 		}
@@ -714,12 +1159,13 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 }
 
 // encodePDFCMYKJPEG 把 DeviceCMYK 的 JPEG 转换为 RGB PNG。Go 的 jpeg 解码器
-// 对 Adobe APP14 transform=0 的 CMYK JPEG 会做一次反相，而 PDF 中 DeviceCMYK
-// 样本本身就是油墨值，因此需要再反相还原。返回 ok=false 表示该 JPEG 不是
-// CMYK 图像，调用方应按原始字节处理。
-func encodePDFCMYKJPEG(data []byte) ([]byte, string, bool, error) {
+// 对 Adobe CMYK JPEG（transform=0 的 CMYK 与 transform=2 的 YCbCrK/YCCK）会
+// 做一次反相，而 PDF 中 DeviceCMYK 样本本身就是油墨值，因此需要再反相还原。
+// 返回 ok=false 表示该 JPEG 不是 CMYK 图像，调用方应按原始字节处理。
+func encodePDFCMYKJPEG(data []byte, converter cmykConverter) ([]byte, string, bool, error) {
 	transform, adobe := jpegAdobeTransform(data)
-	if !adobe || transform != 0 {
+	// transform 0 = CMYK，2 = YCbCrK（YCCK），两者都是 4 分量 CMYK JPEG。
+	if !adobe || (transform != 0 && transform != 2) {
 		return nil, "", false, nil
 	}
 	img, err := jpeg.Decode(bytes.NewReader(data))
@@ -730,7 +1176,7 @@ func encodePDFCMYKJPEG(data []byte) ([]byte, string, bool, error) {
 	if !ok {
 		return nil, "", false, nil
 	}
-	encoded, format, err := encodePDFCMYKImage(cmyk, true)
+	encoded, format, err := encodePDFCMYKImage(cmyk, true, converter)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -770,33 +1216,117 @@ func jpegAdobeTransform(data []byte) (byte, bool) {
 	return 0, false
 }
 
-// 标准四色印刷油墨在白纸上的近似 sRGB 表现。直接用 color.CMYKToRGB 会把
-// 纯品红画成 (255,0,255)，比实际印刷色偏亮偏紫，因此按油墨减色模型合成。
-var (
-	processInkCyan    = [3]float64{0, 174, 239}
-	processInkMagenta = [3]float64{236, 0, 139}
-	processInkYellow  = [3]float64{255, 242, 0}
-)
+// cmykConverter 负责把 CMYK 图像样本转换为 RGB。优先使用 ICC 配置文件
+// （图像内嵌的 ICCBased 配置文件，或环境变量 OFD_CMYK_ICC 指定的默认配置），
+// 不可用时回退到近似油墨模型。渲染端 internal/render 采用同样的优先级。
+type cmykConverter struct {
+	icc *coloricc.Transformer
+}
 
-// cmykInkToRGB 用减色模型把 CMYK 油墨量合成为 RGB：每种油墨按其在某个通道
-// 上对白光的吸收量线性叠加，最后用黑色油墨吸收全部通道。
-func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
-	cyan, magenta, yellow, black := float64(c)/255, float64(m)/255, float64(y)/255, float64(k)/255
-	absorb := func(cyanSolid, magentaSolid, yellowSolid float64) uint8 {
-		value := cyan*(255-cyanSolid) + magenta*(255-magentaSolid) + yellow*(255-yellowSolid) + black*255
-		if value > 255 {
-			value = 255
-		}
-		return uint8(math.Round(255 - value))
+func (c cmykConverter) toRGB(cyan, magenta, yellow, black uint8) (uint8, uint8, uint8) {
+	if c.icc != nil {
+		return c.icc.ToRGB([]uint8{cyan, magenta, yellow, black})
 	}
-	return absorb(processInkCyan[0], processInkMagenta[0], processInkYellow[0]),
-		absorb(processInkCyan[1], processInkMagenta[1], processInkYellow[1]),
-		absorb(processInkCyan[2], processInkMagenta[2], processInkYellow[2])
+	return cmykInkToRGB(cyan, magenta, yellow, black)
+}
+
+func (c cmykConverter) toRGB16(cyan, magenta, yellow, black uint16) (uint16, uint16, uint16) {
+	if c.icc != nil {
+		to8 := func(value uint16) uint8 { return uint8(value >> 8) }
+		r, g, b := c.icc.ToRGB([]uint8{to8(cyan), to8(magenta), to8(yellow), to8(black)})
+		to16 := func(value uint8) uint16 { return uint16(value)<<8 | uint16(value) }
+		return to16(r), to16(g), to16(b)
+	}
+	return cmykToRGB16(cyan, magenta, yellow, black)
+}
+
+// pdfImageCMYKConverter 根据图像的颜色空间选择 CMYK 转换器：ICCBased 图像使用
+// 内嵌配置文件，其余 CMYK 图像使用 OFD_CMYK_ICC 默认配置（未设置则为近似模型）。
+func pdfImageCMYKConverter(ctx *model.Context, stream *types.StreamDict) cmykConverter {
+	if transformer := pdfImageICCProfile(ctx, stream); transformer != nil {
+		return cmykConverter{icc: transformer}
+	}
+	transformer, _ := coloricc.DefaultCMYK()
+	return cmykConverter{icc: transformer}
+}
+
+// pdfImageICCProfile 读取 ICCBased 图像颜色空间内嵌的 4 分量 ICC 配置文件。
+// 返回 nil 表示该图像没有可用的内嵌 CMYK 配置文件。
+func pdfImageICCProfile(ctx *model.Context, stream *types.StreamDict) *coloricc.Transformer {
+	object, found := stream.Find("ColorSpace")
+	if !found {
+		return nil
+	}
+	resolved, err := dereferencePDFObject(ctx, object)
+	if err != nil {
+		return nil
+	}
+	array, ok := resolved.(types.Array)
+	if !ok || len(array) < 2 {
+		return nil
+	}
+	name, ok := array[0].(types.Name)
+	if !ok || name.Value() != "ICCBased" {
+		return nil
+	}
+	profileObject, err := dereferencePDFObject(ctx, array[1])
+	if err != nil {
+		return nil
+	}
+	var profile *types.StreamDict
+	switch value := profileObject.(type) {
+	case types.StreamDict:
+		profile = &value
+	case *types.StreamDict:
+		profile = value
+	default:
+		return nil
+	}
+	if profile == nil {
+		return nil
+	}
+	if n, ok := dereferencedPDFNumber(ctx, profile.Dict["N"]); !ok || int(n) != 4 {
+		return nil
+	}
+	transformer, err := coloricc.New(pdfStreamContent(profile), 4)
+	if err != nil {
+		return nil
+	}
+	return transformer
+}
+
+// pdfStreamContent 返回流解码后的字节：优先已解码的 Content，其次按过滤器
+// 解码 Raw，最后在没有过滤器时直接使用 Raw。
+func pdfStreamContent(stream *types.StreamDict) []byte {
+	if stream == nil {
+		return nil
+	}
+	if len(stream.Content) > 0 {
+		return stream.Content
+	}
+	if len(stream.FilterPipeline) == 0 {
+		return stream.Raw
+	}
+	if stream.Decode() == nil {
+		return stream.Content
+	}
+	return nil
+}
+
+// cmykInkToRGB 在没有可用 ICC 配置文件时，用 Adobe/poppler 的 4 色印刷矩阵模型
+// 把 CMYK 油墨量合成为 RGB。纯色结果与印刷色一致：纯青 (0,173,239)、
+// 纯品红 (236,0,140)、纯黄 (255,242,0)、纯黑 (35,31,32)。
+//
+// 这里不加载 ICC profile，属于近似转换；渲染端 internal/render 使用同一套模型，
+// 保证同一 CMYK 颜色在转换与渲染两条路径上一致。
+func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
+	r, g, b := coloricc.DeviceCMYKToRGB(float64(c)/255, float64(m)/255, float64(y)/255, float64(k)/255)
+	return uint8(math.Round(255 * r)), uint8(math.Round(255 * g)), uint8(math.Round(255 * b))
 }
 
 // encodePDFCMYKImage 将 CMYK 图像转换为 RGB PNG；invert 为 true 时先对四个
 // 分量取反，用于还原 Go 解码 Adobe CMYK JPEG 时引入的反相。
-func encodePDFCMYKImage(img *image.CMYK, invert bool) ([]byte, string, error) {
+func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) ([]byte, string, error) {
 	bounds := img.Bounds()
 	rgba := image.NewRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -806,7 +1336,7 @@ func encodePDFCMYKImage(img *image.CMYK, invert bool) ([]byte, string, error) {
 			if invert {
 				c, m, yellow, k = 255-c, 255-m, 255-yellow, 255-k
 			}
-			r, g, b := cmykInkToRGB(c, m, yellow, k)
+			r, g, b := converter.toRGB(c, m, yellow, k)
 			target := rgba.PixOffset(x, y)
 			rgba.Pix[target], rgba.Pix[target+1], rgba.Pix[target+2], rgba.Pix[target+3] = r, g, b, 255
 		}

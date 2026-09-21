@@ -598,6 +598,52 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 	}
 }
 
+func TestImageNegativeYCTMRendersFlipped(t *testing.T) {
+	// 图片对象带负 Y 缩放 CTM 时必须垂直镜像，用于还原 PDF 扫描件的朝向。
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	img.Set(1, 0, color.RGBA{R: 255, A: 255})
+	img.Set(0, 1, color.RGBA{B: 255, A: 255})
+	img.Set(1, 1, color.RGBA{B: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+
+	ctm := creator.CTM{20, 0, 0, -20, 0, 20}
+	document := creator.Document{
+		ID:       "flip",
+		PageSize: creator.PageSize{Width: 20, Height: 20},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Image{X: 0, Y: 0, Width: 20, Height: 20, Data: encoded.Bytes(), Format: "PNG", CTM: &ctm},
+		}}},
+	}
+	var ofdBytes bytes.Buffer
+	if err := creator.Create(document, &ofdBytes); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(ofdBytes.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], canvas.DPI(96))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, canvas.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := raster.Bounds()
+	topR, _, topB, _ := raster.At(bounds.Dx()/2, 1).RGBA()
+	bottomR, _, bottomB, _ := raster.At(bounds.Dx()/2, bounds.Dy()-2).RGBA()
+	if topB <= topR {
+		t.Fatalf("top pixel r=%d b=%d, want blue (flipped)", topR>>8, topB>>8)
+	}
+	if bottomR <= bottomB {
+		t.Fatalf("bottom pixel r=%d b=%d, want red", bottomR>>8, bottomB>>8)
+	}
+}
+
 func TestSVGImageRendersAsVector(t *testing.T) {
 	svgData := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>`)
 	data, err := creator.Marshal(creator.Document{
