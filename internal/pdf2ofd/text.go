@@ -50,7 +50,14 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	}
 	fill := p.state.renderMode == 0 || p.state.renderMode == 2 || p.state.renderMode == 4 || p.state.renderMode == 6
 	stroke := p.state.renderMode == 1 || p.state.renderMode == 2 || p.state.renderMode == 5 || p.state.renderMode == 6
-	item := creator.Text{X: x, Y: y - size, Width: math.Max(width, 0.001), Height: math.Max(size, 0.001), Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke, FillColor: colorToCreator(p.state.fill), StrokeColor: colorToCreator(p.state.stroke)}
+	weight := 0
+	if font.bold {
+		weight = 700
+	}
+	item := creator.Text{X: x, Y: y - size, Width: math.Max(width, 0.001), Height: math.Max(size, 0.001), Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke,
+		Weight: weight, Italic: font.italic,
+		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
+		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
 	if transforms := pdfTextGlyphTransforms(codes, text, font); len(transforms) > 0 {
 		item.CGTransforms = transforms
 	}
