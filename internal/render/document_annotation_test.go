@@ -73,12 +73,12 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 	withoutContext.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
 	withContext.SetFillColor(canvas.White)
 	withContext.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
-	renderDoc.drawPageBackground(withoutContext, box)
+	renderDoc.drawPageBackground(NewCanvasBackend(withoutContext), box)
 	for _, template := range templates {
 		renderDoc.Template(withoutContext, template, box)
 	}
 	if pageContent != nil {
-		renderDoc.drawLayers(withoutContext, pageContent.Layer, box)
+		renderDoc.drawLayers(NewCanvasBackend(withoutContext), pageContent.Layer, box)
 	}
 	renderDoc.PageContent(withContext, page, true)
 

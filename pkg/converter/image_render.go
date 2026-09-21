@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"io"
 	"log/slog"
 
 	"github.com/nao1215/imaging"
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers"
+	wpng "github.com/woozymasta/png"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -31,7 +33,14 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 			renderer = renderers.PNG(c.dpi)
 		}
 
-		if err := page.Write(w, renderer); err != nil {
+		// PNG 走本地快速光栅化路径 + woozymasta/png 编码器（klauspost zlib）：
+		// 光栅化与 RasterizePage / ImageWriter 共用同一 fast 路径，像素一致；
+		// level 7 压缩下输出体积与标准库默认压缩相当，编码更快。
+		if c.format == "png" {
+			if err := c.writePNG(w, page); err != nil {
+				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+			}
+		} else if err := page.Write(w, renderer); err != nil {
 			return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 		}
 	}
@@ -52,6 +61,16 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 	}
 
 	return nil
+}
+
+// writePNG 光栅化页面并写出 PNG。光栅化复用 render.Rasterize（与
+// RasterizePage / ImageWriter 同一路径，输出像素一致）；编码使用
+// woozymasta/png（klauspost zlib 实现），level 7 下输出体积与标准库
+// 默认压缩相当但速度更快。
+func (c *Converter) writePNG(w io.Writer, cPage *canvas.Canvas) error {
+	img := render.Rasterize(cPage, c.dpi, canvas.DefaultColorSpace)
+	encoder := &wpng.Encoder{CompressionLevel: wpng.CompressionLevel(7)}
+	return encoder.Encode(w, img)
 }
 
 // resizeThumbnail 生成缩略图

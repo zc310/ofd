@@ -3,6 +3,7 @@ package render
 import (
 	"crypto/sha256"
 	"fmt"
+	"image/color"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -63,6 +64,34 @@ type Fonts struct {
 	generation     uint64
 	renderLocksMu  sync.Mutex
 	renderLocks    map[*canvas.FontFamily]*sync.Mutex
+	pathCacheMu    sync.Mutex
+	pathCache      map[fontPathKey]*canvas.Path
+	textLineMu     sync.Mutex
+	textLineCache  map[textLineKey]*canvas.Text
+}
+
+// fontPathKey 标识一次确定的字形轮廓计算结果：轮廓几何只由字体数据、
+// 字号、样式与文本决定（ToPath 不受画笔颜色与绘制矩阵影响），因此跨
+// TextObject、跨页面复用同一轮廓是安全的。字形轮廓拆解（必要时含
+// harfbuzz 整形）是渲染热点，缓存后相同字符串只计算一次。
+type fontPathKey struct {
+	font    *canvas.Font
+	size    float64
+	style   canvas.FontStyle
+	variant canvas.FontVariant
+	value   string
+}
+
+// textLineKey 标识一次 canvas 原生文字整形结果（NewTextLine）。native 文字
+// 绘制是 canvas 后端的渲染热点，相同字体/字号/样式/纯色画笔/文本整形成果
+// 可复用；带渐变/图案画笔的文字不缓存（画笔会随文本对象变化）。
+type textLineKey struct {
+	font    *canvas.Font
+	size    float64
+	style   canvas.FontStyle
+	variant canvas.FontVariant
+	fill    color.RGBA
+	value   string
 }
 
 type fallbackFace struct {
@@ -118,6 +147,7 @@ func NewFonts(doc *parser.Document) *Fonts {
 		glyphMappings:  make(map[models.StRefID]map[rune]uint16),
 		loadLocks:      make(map[models.StRefID]*sync.Mutex),
 		renderLocks:    make(map[*canvas.FontFamily]*sync.Mutex),
+		pathCache:      make(map[fontPathKey]*canvas.Path),
 	}
 }
 
@@ -201,6 +231,75 @@ func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
 	lock := &sync.Mutex{}
 	p.renderLocks[family] = lock
 	return lock
+}
+
+// shapedTextPath 返回 (face, value) 拍平后的字形轮廓路径，带正文级缓存。
+// 相同字体数据 + 字号 + 样式 + 文本的轮廓对完全相同，直接复用可避免对
+// 重复字符串反复整形与解析字形轮廓。返回的 canvas.Path 不可变，跨对象
+// 复用安全；缓存有界，超出后整体清空。
+func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path {
+	if face == nil || face.Font == nil || value == "" {
+		return nil
+	}
+	key := fontPathKey{font: face.Font, size: face.Size, style: face.Style, variant: face.Variant, value: value}
+	p.pathCacheMu.Lock()
+	if p.pathCache != nil {
+		if path := p.pathCache[key]; path != nil {
+			p.pathCacheMu.Unlock()
+			return path
+		}
+	}
+	path, _ := face.ToPath(value)
+	if path == nil || path.Empty() {
+		p.pathCacheMu.Unlock()
+		return nil
+	}
+	if len(p.pathCache) >= 2048 {
+		p.pathCache = make(map[fontPathKey]*canvas.Path)
+	} else if p.pathCache == nil {
+		p.pathCache = make(map[fontPathKey]*canvas.Path)
+	}
+	p.pathCache[key] = path
+	p.pathCacheMu.Unlock()
+	return path
+}
+
+// shapedTextLine 返回 (face, value) 经 canvas 原生整形的文字行，带缓存。
+// canvas 后端的 DrawText 每次 NewTextLine 都会重新整形/分项，是明显热点；
+// 相同字体数据 + 字号 + 样式 + 纯色画笔 + 文本的整形成果完全一致，直接复用。
+// 渐变/图案画笔的文字不缓存，避免不同文本对象互相污染。返回的 canvas.Text
+// 只被读取渲染，跨对象复用安全；缓存有界，超出后整体清空。
+func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text {
+	if face == nil || face.Font == nil || value == "" {
+		return nil
+	}
+	if !face.Fill.IsColor() {
+		return canvas.NewTextLine(face, value, canvas.Left)
+	}
+	key := textLineKey{
+		font:    face.Font,
+		size:    face.Size,
+		style:   face.Style,
+		variant: face.Variant,
+		fill:    face.Fill.Color,
+		value:   value,
+	}
+	p.textLineMu.Lock()
+	if p.textLineCache != nil {
+		if line := p.textLineCache[key]; line != nil {
+			p.textLineMu.Unlock()
+			return line
+		}
+	}
+	line := canvas.NewTextLine(face, value, canvas.Left)
+	if len(p.textLineCache) >= 2048 {
+		p.textLineCache = make(map[textLineKey]*canvas.Text)
+	} else if p.textLineCache == nil {
+		p.textLineCache = make(map[textLineKey]*canvas.Text)
+	}
+	p.textLineCache[key] = line
+	p.textLineMu.Unlock()
+	return line
 }
 
 func loadCachedSystemFont(name string, style canvas.FontStyle) (*canvas.FontFamily, bool) {

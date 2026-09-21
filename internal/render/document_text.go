@@ -14,10 +14,10 @@ import (
 func (p *Document) Text(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.textWithBudget(ctx, object, dp, pb, nil, nil, &budget)
+	p.textWithBudget(NewCanvasBackend(ctx), object, dp, pb, nil, nil, &budget)
 }
 
-func (p *Document) textWithBudget(ctx *canvas.Context, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, budget *renderBudget) {
+func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) || !finiteFloat(object.Size) {
 		return
@@ -64,15 +64,15 @@ func (p *Document) textWithBudget(ctx *canvas.Context, object models.TextObject,
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Alpha != nil {
-		if fill != nil && fill.Value != nil {
-			value := *fill.Value
+		if fill != nil && fill.HasValue {
+			value := fill.Value
 			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
-			fill = &CTColor{Value: &value, Gradient: fill.Gradient}
+			fill = &CTColor{Value: value, HasValue: true, Gradient: fill.Gradient}
 		}
-		if stroke != nil && stroke.Value != nil {
-			value := *stroke.Value
+		if stroke != nil && stroke.HasValue {
+			value := stroke.Value
 			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
-			stroke = &CTColor{Value: &value, Gradient: stroke.Gradient}
+			stroke = &CTColor{Value: value, HasValue: true, Gradient: stroke.Gradient}
 		}
 	}
 	face := buildTextFace(fontFamily, object, fill)
@@ -88,8 +88,8 @@ func (p *Document) textWithBudget(ctx *canvas.Context, object models.TextObject,
 	}
 	if stroke != nil && stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
-	} else if stroke != nil && stroke.Value != nil {
-		ctx.SetStrokeColor(*stroke.Value)
+	} else if stroke != nil && stroke.HasValue {
+		ctx.SetStrokeColor(stroke.Value)
 	} else {
 		ctx.SetStrokeColor(canvas.Black)
 	}
@@ -114,19 +114,14 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 }
 
 // drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
-func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, budget *renderBudget) bool {
+func (p *Document) drawMeshText(ctx DrawContext, face *canvas.FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, budget *renderBudget) bool {
 	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
 		return false
 	}
 	if !budget.allowOffscreenPixels(pb.Width, pb.Height, meshGradientDPI) {
 		return false
 	}
-	transform := func(point models.StPos) canvas.Point {
-		if object.CTM != nil {
-			point.X, point.Y = object.CTM.TransformPoint(point)
-		}
-		return canvas.Point{X: point.X + object.Boundary.X, Y: pb.Height - (point.Y + object.Boundary.Y)}
-	}
+	transform := gradientBoundaryTransform(object.Boundary, pb.Height)
 	gradient := p.pathGradient(source, transform)
 	if gradient == nil {
 		return false
@@ -138,7 +133,7 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue
 		}
-		p.drawMeshTextCode(pageCtx, face, object, code, pb.Height)
+		p.drawMeshTextCode(NewCanvasBackend(pageCtx), face, object, code, pb.Height)
 	}
 	if !finiteFloat(pb.Width) || !finiteFloat(pb.Height) {
 		return false
@@ -152,7 +147,7 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 	}
 	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, textImage,
 		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
-	matrix = ctx.CoordSystemView().Mul(ctx.View()).Mul(matrix)
+	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false
 	}
@@ -160,7 +155,7 @@ func (p *Document) drawMeshText(ctx *canvas.Context, face *canvas.FontFace, sour
 	return true
 }
 
-func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
+func (p *Document) drawMeshTextCode(ctx DrawContext, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
 	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
 		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
 		return
@@ -178,14 +173,14 @@ func (p *Document) drawMeshTextCode(ctx *canvas.Context, face *canvas.FontFace, 
 	}
 }
 
-func (p *Document) drawMeshTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
+func (p *Document) drawMeshTextGlyph(ctx DrawContext, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() {
 		return
 	}
-	path := directTextPath(face, value)
+	path := p.fonts.directTextPath(face, value)
 	if path == nil {
-		path, _ = face.ToPath(value)
+		path = p.fonts.shapedTextPath(face, value)
 	}
 	if path == nil || path.Empty() {
 		return
@@ -216,8 +211,8 @@ func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *CT
 	switch {
 	case fill != nil && fill.Gradient != nil:
 		args = append(args, fill.Gradient)
-	case fill != nil && fill.Value != nil:
-		args = append(args, *fill.Value)
+	case fill != nil && fill.HasValue:
+		args = append(args, fill.Value)
 	default:
 		// OFD 未指定 FillColor 时，文字填充默认为黑色。
 		// 不能使用透明色，否则 PDF 渲染器会输出非法的 NaN 颜色值破坏内容流。
@@ -336,7 +331,7 @@ type textGlyph struct {
 	value string
 }
 
-func (p *Document) drawTextCode(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+func (p *Document) drawTextCode(ctx DrawContext, face *canvas.FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
 	runes := []rune(code.Value)
 	glyphs := textCodeGlyphs(face, runes, object.CGTransform, codePosition)
 	if len(glyphs) == 0 {
@@ -465,7 +460,7 @@ func textGlyphWidth(face *canvas.FontFace, glyph textGlyph) float64 {
 	return face.TextWidth(glyph.value)
 }
 
-func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+func (p *Document) drawTextGlyph(ctx DrawContext, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
 	hScale := textHScale(object)
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
@@ -479,7 +474,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
-	if path := directTextPath(face, value); path != nil {
+	if path := p.fonts.directTextPath(face, value); path != nil {
 		p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
@@ -512,7 +507,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
-		ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
+		p.drawTextInline(ctx, face, value)
 		ctx.Pop()
 		return
 	}
@@ -526,7 +521,7 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 		ctx.Rotate(-object.CTM.RotationAngleDegrees())
 		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
-		ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
+		p.drawTextInline(ctx, face, value)
 		ctx.Pop()
 		return
 	}
@@ -540,16 +535,36 @@ func (p *Document) drawTextGlyph(ctx *canvas.Context, face *canvas.FontFace, obj
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	ctx.Rotate(-textCharDirectionDegrees(object))
 	ctx.Scale(hScale, 1)
-	ctx.DrawText(0, 0, canvas.NewTextLine(face, value, canvas.Left))
+	p.drawTextInline(ctx, face, value)
 	ctx.Pop()
+}
+
+// drawTextInline 优先使用后端原生文字绘制（与 canvas DrawText 语义一致，
+// 保留文字整形和 PDF 文字可复制性）。后端不支持时回退到字形轮廓路径。
+func (p *Document) drawTextInline(ctx DrawContext, face *canvas.FontFace, value string) {
+	if td, ok := ctx.(textDrawer); ok {
+		if line := p.fonts.shapedTextLine(face, value); line != nil {
+			td.DrawTextLine(line)
+		}
+		return
+	}
+	if path := p.fonts.shapedTextPath(face, value); path != nil && !path.Empty() {
+		// 路径绘制使用当前填充样式：原生 DrawText 使用 FontFace 内嵌的
+		// 画笔且只填充、绝不描边（空心字由 drawTextPath 单独处理），
+		// 这里同样显式套用画笔并清除残存的描边状态（例如上一条路径
+		// 图元留下的描边），否则字形会被描边成更粗更黑的笔画。
+		ctx.ClearStroke()
+		ctx.SetFillPaint(face.Fill)
+		ctx.DrawPath(0, 0, path)
+	}
 }
 
 // drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
 // 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
-func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
-	path := directTextPath(face, value)
+func (p *Document) drawCFFTextPath(ctx DrawContext, face *canvas.FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	path := p.fonts.directTextPath(face, value)
 	if path == nil {
-		path, _ = face.ToPath(value)
+		path = p.fonts.shapedTextPath(face, value)
 	}
 	if path == nil || path.Empty() {
 		return
@@ -558,12 +573,14 @@ func (p *Document) drawCFFTextPath(ctx *canvas.Context, face *canvas.FontFace, o
 }
 
 // directTextPath 处理 cmap 可通过 GlyphIndex 使用、但无法被文字整形器使用的
-// 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能。
-func directTextPath(face *canvas.FontFace, value string) *canvas.Path {
+// 子集字体。普通文字仍会在后续使用 Canvas 的文字整形功能；这里对整形成功的
+// 情形返回 nil（示意“无需按字形映射构建”），并利用缓存后的轮廓判断，避免
+// 与后续 drawTextInline 重复计算同一字形轮廓。
+func (p *Fonts) directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 	var path *canvas.Path
 	if !containsPrivateGlyphRune(value) {
-		path, _ := face.ToPath(value)
-		if path != nil && !path.Empty() {
+		path := p.shapedTextPath(face, value)
+		if path != nil {
 			return nil
 		}
 	}
@@ -597,7 +614,7 @@ func containsPrivateGlyphRune(value string) bool {
 	return false
 }
 
-func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawTextPath(ctx DrawContext, face *canvas.FontFace, path *canvas.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
 	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
@@ -606,10 +623,10 @@ func (p *Document) drawTextPath(ctx *canvas.Context, face *canvas.FontFace, path
 	// 因此需要将文字填充样式复制到路径绘制状态。
 	if textFillDisabled(object) && object.Stroke {
 		// 空心字：仅描边，不填充。
-		ctx.SetFill(nil)
+		ctx.ClearFill()
 	} else {
-		ctx.SetFill(face.Fill)
-		ctx.SetStroke(nil)
+		ctx.SetFillPaint(face.Fill)
+		ctx.ClearStroke()
 	}
 	if parentCTM != nil {
 		if object.CTM != nil {

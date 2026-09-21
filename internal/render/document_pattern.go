@@ -14,7 +14,7 @@ const maxPatternTiles = 100000
 // drawPatternPath 将 CellContent 直接作为矢量对象绘制。图案单元使用自身的
 // 左上角坐标系，而目标画布使用左下角坐标系；应用图块 CTM 后，页面高度转换
 // 由对象绘制函数完成。
-func (p *Document) drawPatternPath(ctx *canvas.Context, path *canvas.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM, budget *renderBudget) bool {
+func (p *Document) drawPatternPath(ctx DrawContext, path *canvas.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM, budget *renderBudget) bool {
 	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
 		!pb.IsFinite() || path == nil || len(pattern.CellContent.Items) == 0 {
 		return false

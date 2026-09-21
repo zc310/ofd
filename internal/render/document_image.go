@@ -18,10 +18,10 @@ import (
 )
 
 func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
-	p.image(ctx, object, dp, pb, nil, nil)
+	p.image(NewCanvasBackend(ctx), object, dp, pb, nil, nil)
 }
 
-func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -49,12 +49,21 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *mode
 			flip := canvas.Matrix{{1, 0, 0}, {0, -1, svg.H}}
 			m := imageMatrixWH(object.Boundary, svg.W, svg.H, ctm, pb.Height).Mul(flip)
 			if finiteMatrix(m) {
-				m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
+				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
-					p.svgMu.Lock()
-					svg.RenderViewTo(ctx.Renderer, m)
-					p.svgMu.Unlock()
-					return
+					if sr, ok := ctx.(svgSceneRenderer); ok {
+						p.svgMu.Lock()
+						sr.RenderScene(svg, m)
+						p.svgMu.Unlock()
+						return
+					}
+					// 非矢量后端：栅格化 SVG 后再经 RenderImage 贴回，
+					// 保持图形内容可见（失矢量清晰度）。
+					var svgImage image.Image = rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace)
+					if svgImage != nil && !svgImage.Bounds().Empty() {
+						ctx.RenderImage(svgImage, m)
+						return
+					}
 				}
 			}
 		}
@@ -81,7 +90,7 @@ func (p *Document) image(ctx *canvas.Context, object models.ImageObject, _ *mode
 	if parentClip != nil {
 		img = imageWithClip(img, parentClip, m)
 	}
-	m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
+	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return
 	}

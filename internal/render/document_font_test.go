@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/fontfix"
@@ -433,5 +434,49 @@ func TestSystemFontCandidatesSkipsGenericForCJK(t *testing.T) {
 		if name == "serif" || name == "sans-serif" || name == "monospace" {
 			t.Fatalf("CJK 字体不应加入通用族候选: %v", names)
 		}
+	}
+}
+
+// TestShapedTextLineCacheReusesShaping 回归 canvas 原生文字整形的缓存：
+// 相同字体/字号/样式/纯色画笔/文本必须复用同一个 *canvas.Text，避免重复
+// 整形；渐变画笔不进入缓存（每次返回新对象）。
+func TestShapedTextLineCacheReusesShaping(t *testing.T) {
+	fontPath := filepath.Join("..", "..", "test", "testdata", "DejaVuSans.ttf")
+	if _, err := os.Stat(fontPath); err != nil {
+		if _, err := os.Stat("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"); err == nil {
+			fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+		} else {
+			t.Skip("缺少 DejaVuSans 测试字体")
+		}
+	}
+	family := canvas.NewFontFamily("shaped-text-line-test")
+	if err := family.LoadFontFile(fontPath, canvas.FontRegular); err != nil {
+		t.Skipf("字体加载失败: %v", err)
+	}
+
+	fonts := &Fonts{Fonts: map[models.StRefID]*canvas.FontFamily{}}
+	face := family.Face(12, canvas.Black)
+
+	first := fonts.shapedTextLine(face, "OFD 渲染缓存")
+	if first == nil {
+		t.Fatal("shapedTextLine 返回 nil")
+	}
+	second := fonts.shapedTextLine(face, "OFD 渲染缓存")
+	if first != second {
+		t.Fatal("相同文本未命中整形缓存")
+	}
+	if *(*uintptr)(unsafe.Pointer(&first)) != *(*uintptr)(unsafe.Pointer(&second)) {
+		t.Fatal("缓存返回的不是同一对象")
+	}
+
+	// 渐变画笔不缓存，避免不同文本对象互相污染。
+	grad := canvas.Grad{}
+	grad.Add(0, canvas.Black)
+	grad.Add(1, canvas.White)
+	faceGrad := family.Face(12, grad.ToLinear(canvas.Point{}, canvas.Point{X: 10, Y: 10}))
+	a := fonts.shapedTextLine(faceGrad, "OFD 渲染缓存")
+	b := fonts.shapedTextLine(faceGrad, "OFD 渲染缓存")
+	if a == b {
+		t.Fatal("渐变画笔文字不应进入缓存")
 	}
 }

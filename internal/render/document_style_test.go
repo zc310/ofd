@@ -12,7 +12,7 @@ func TestApplyFillDefaultsToTransparent(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	ctx.SetFillColor(color.RGBA{R: 255, A: 255})
 	var document Document
-	document.applyFill(ctx, nil, nil)
+	document.applyFill(NewCanvasBackend(ctx), nil, nil)
 	if ctx.Style.Fill.Color != canvas.Transparent {
 		t.Fatalf("expected transparent default fill, got %v", ctx.Style.Fill.Color)
 	}
@@ -21,7 +21,7 @@ func TestApplyFillDefaultsToTransparent(t *testing.T) {
 func TestApplyFillKeepsExplicitColor(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.applyFill(ctx, &CTColor{Value: &color.RGBA{R: 10, G: 20, B: 30, A: 255}}, nil)
+	document.applyFill(NewCanvasBackend(ctx), &CTColor{Value: color.RGBA{R: 10, G: 20, B: 30, A: 255}, HasValue: true}, nil)
 	if ctx.Style.Fill.Color != (color.RGBA{R: 10, G: 20, B: 30, A: 255}) {
 		t.Fatalf("expected explicit fill color, got %v", ctx.Style.Fill.Color)
 	}
@@ -30,7 +30,7 @@ func TestApplyFillKeepsExplicitColor(t *testing.T) {
 func TestApplyStrokeDefaultsToBlack(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.applyStroke(ctx, nil, &models.CtPath{})
+	document.applyStroke(NewCanvasBackend(ctx), nil, &models.CtPath{})
 	if ctx.Style.Stroke.Color != canvas.Black {
 		t.Fatalf("expected black default stroke, got %v", ctx.Style.Stroke.Color)
 	}
@@ -52,7 +52,7 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 		Join:      "Round",
 	}
 
-	document.updateCtPathStyle(ctx, object, dp)
+	document.updateCtPathStyle(NewCanvasBackend(ctx), object, dp)
 
 	if ctx.Style.StrokeWidth != 2 {
 		t.Fatalf("stroke width = %g, want 2", ctx.Style.StrokeWidth)
@@ -68,7 +68,7 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(ctx, &models.CtPath{
+	document.updateCtPathStyle(NewCanvasBackend(ctx), &models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{
 			LineWidth:  3,
 			Join:       "Miter",
@@ -95,7 +95,7 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(ctx, &models.CtPath{
+	document.updateCtPathStyle(NewCanvasBackend(ctx), &models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{
 			LineWidth:   -1,
 			MiterLimit:  -1,

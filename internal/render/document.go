@@ -29,6 +29,8 @@ type Document struct {
 	svgMu        sync.Mutex
 	images       *utils.LRU[string, image.Image]
 	svgCanvases  *utils.LRU[string, *canvas.Canvas]
+	sealMu       sync.Mutex
+	sealDocs     map[[32]byte]*sealDocEntry
 }
 
 type imageKeyLock struct {
@@ -207,7 +209,7 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 	if content == nil {
 		return errors.New("页面内容为空")
 	}
-	p.drawPage(ctx, page, content, &budget)
+	p.drawPage(NewCanvasBackend(ctx), page, content, &budget)
 	return nil
 }
 
@@ -225,18 +227,18 @@ func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
 	}
 	box := content.Area.PhysicalBox
 	c := canvas.New(box.Width, box.Height)
-	p.drawPage(canvas.NewContext(c), page, content, &budget)
+	p.drawPage(NewCanvasBackend(canvas.NewContext(c)), page, content, &budget)
 	return c, nil
 }
 
 // drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
-func (p *Document) drawPage(ctx *canvas.Context, page *parser.Page, content *models.PageContent, budget *renderBudget) {
+func (p *Document) drawPage(ctx DrawContext, page *parser.Page, content *models.PageContent, budget *renderBudget) {
 	p.drawPageBackground(ctx, content.Area.PhysicalBox)
 	p.pageContent(ctx, page, true, budget)
 }
 
 // drawPageBackground 绘制页面背景。
-func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
+func (p *Document) drawPageBackground(ctx DrawContext, box models.StBox) {
 	ctx.SetFillColor(p.background)
 	// 页面尺寸换算成栅格像素通常不是整数，栅格画布会向上取整。只填充页面
 	// 大小会让最后一行/列只被部分覆盖，留下半透明边缘；在深色阅读背景上
@@ -251,10 +253,10 @@ func (p *Document) drawPageBackground(ctx *canvas.Context, box models.StBox) {
 func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
 	var budget renderBudget
 	budget.reset()
-	p.pageContent(ctx, page, seal, &budget)
+	p.pageContent(NewCanvasBackend(ctx), page, seal, &budget)
 }
 
-func (p *Document) pageContent(ctx *canvas.Context, page *parser.Page, seal bool, budget *renderBudget) {
+func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, budget *renderBudget) {
 	if page == nil {
 		return
 	}
@@ -284,7 +286,7 @@ func (p *Document) pageContent(ctx *canvas.Context, page *parser.Page, seal bool
 
 	if annot := p.Document.GetAnnotation(page.ID); annot != nil {
 		for _, item := range annot.Annots {
-			p.Annot(ctx, item, pb)
+			p.annot(ctx, item, pb)
 		}
 	}
 }
@@ -292,10 +294,10 @@ func (p *Document) pageContent(ctx *canvas.Context, page *parser.Page, seal bool
 func (p *Document) Template(ctx *canvas.Context, template models.Template, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.template(ctx, template, pb, &budget)
+	p.template(NewCanvasBackend(ctx), template, pb, &budget)
 }
 
-func (p *Document) template(ctx *canvas.Context, template models.Template, pb models.StBox, budget *renderBudget) {
+func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
 	content, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
 	if err != nil {
 		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
@@ -307,13 +309,13 @@ func (p *Document) template(ctx *canvas.Context, template models.Template, pb mo
 }
 
 // drawLayers 先绘制背景层，再绘制其他图层。
-func (p *Document) drawLayers(ctx *canvas.Context, layers []*models.Layer, pb models.StBox) {
+func (p *Document) drawLayers(ctx DrawContext, layers []*models.Layer, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
 	p.drawLayersWithBudget(ctx, layers, pb, &budget)
 }
 
-func (p *Document) drawLayersWithBudget(ctx *canvas.Context, layers []*models.Layer, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer, pb models.StBox, budget *renderBudget) {
 	if len(layers) == 0 {
 		return
 	}
@@ -330,9 +332,9 @@ func (p *Document) drawLayersWithBudget(ctx *canvas.Context, layers []*models.La
 }
 
 // drawSeals 绘制当前页面上的电子印章。
-func (p *Document) drawSeals(ctx *canvas.Context, pageID models.StID, pb models.StBox) {
+func (p *Document) drawSeals(ctx DrawContext, pageID models.StID, pb models.StBox) {
 	for _, info := range p.Document.GetSeals(pageID) {
-		if err := p.Seal(ctx, info, pb); err != nil {
+		if err := p.seal(ctx, info, pb); err != nil {
 			slog.Error(err.Error())
 		}
 	}
@@ -341,10 +343,10 @@ func (p *Document) drawSeals(ctx *canvas.Context, pageID models.StID, pb models.
 func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.layer(ctx, layer, pb, &budget)
+	p.layer(NewCanvasBackend(ctx), layer, pb, &budget)
 }
 
-func (p *Document) layer(ctx *canvas.Context, layer *models.Layer, pb models.StBox, budget *renderBudget) {
+func (p *Document) layer(ctx DrawContext, layer *models.Layer, pb models.StBox, budget *renderBudget) {
 	if layer == nil {
 		return
 	}
@@ -356,11 +358,11 @@ func (p *Document) layer(ctx *canvas.Context, layer *models.Layer, pb models.StB
 }
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
-func (p *Document) drawItems(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, budget *renderBudget) {
+func (p *Document) drawItems(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, budget *renderBudget) {
 	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0, budget)
 }
 
-func (p *Document) drawItemsWithTransform(ctx *canvas.Context, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
+func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
 	if parentCTM != nil && !parentCTM.IsFinite() {
 		return
 	}
@@ -390,13 +392,17 @@ func (p *Document) objectDrawParam(id models.StRefID, inherited *models.DrawPara
 }
 
 // drawPageBlock 递归绘制 PageBlock，保持子块先于当前块的顺序。
-func (p *Document) drawPageBlock(ctx *canvas.Context, block models.PageBlock, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) drawPageBlock(ctx DrawContext, block models.PageBlock, dp *models.DrawParam, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
 	p.drawItems(ctx, block.Items, dp, pb, &budget)
 }
 
 func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StBox) {
+	p.annot(NewCanvasBackend(ctx), annot, pb)
+}
+
+func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
 	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
@@ -406,15 +412,19 @@ func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StB
 		case models.PageItemImage:
 			object := item.Image
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
+			p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
 		case models.PageItemPath:
 			object := item.Path
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Path(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
+			var budget renderBudget
+			budget.reset()
+			p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
 		case models.PageItemText:
 			object := item.Text
 			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.Text(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb)
+			var budget renderBudget
+			budget.reset()
+			p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
 		case models.PageItemComposite, models.PageItemBlock:
 		}
 	}

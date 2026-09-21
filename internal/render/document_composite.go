@@ -19,10 +19,10 @@ const maxCompositeDepth = 32
 func (p *Document) Composite(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.compositeWithBudget(ctx, object, dp, pb, nil, nil, 0, &budget)
+	p.compositeWithBudget(NewCanvasBackend(ctx), object, dp, pb, nil, nil, 0, &budget)
 }
 
-func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
+func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -72,7 +72,7 @@ func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.Compos
 	// 在单元自身的坐标系中绘制全部内容。
 	cc := canvas.New(w, h)
 	cctx := canvas.NewContext(cc)
-	p.drawItemsWithTransform(cctx, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
+	p.drawItemsWithTransform(NewCanvasBackend(cctx), unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
 
 	// 这里使用调用方传入的输出分辨率，根据复合单元在页面上的放置宽度
 	// 推算离屏栅格分辨率；实际值还会受到上下限和离屏像素预算限制。
@@ -127,7 +127,7 @@ func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.Compos
 	if object.Alpha != nil {
 		img = applyImageAlpha(img, graphicOpacity(object.Alpha))
 	}
-	m = ctx.CoordSystemView().Mul(ctx.View()).Mul(m)
+	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return
 	}
@@ -137,7 +137,7 @@ func (p *Document) compositeWithBudget(ctx *canvas.Context, object models.Compos
 // renderSimpleCompositeVector 将常见的单路径复合图元保持为矢量绘制。
 // 裁剪、图像、渐变、嵌套复合图元以及其他需要独立绘制表面的情况，
 // 仍然交由下面的栅格化回退逻辑处理。
-func (p *Document) renderSimpleCompositeVector(ctx *canvas.Context, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) bool {
+func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) bool {
 	if len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath {
 		return false
 	}
