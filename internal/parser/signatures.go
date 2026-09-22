@@ -15,6 +15,7 @@ var supportedTypes = map[string]bool{
 	"jpg":  true,
 	"jpeg": true,
 	"bmp":  true,
+	"svg":  true,
 }
 
 // SealData 存储提取的签章数据。
