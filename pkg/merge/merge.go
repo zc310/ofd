@@ -50,6 +50,23 @@ const (
 	OrphanPreserve OrphanMode = "preserve"
 )
 
+// Limits 限制合并输入的规模，避免恶意或异常文档造成的解压放大。
+type Limits struct {
+	// MaxEntries 是允许搬运的最大条目数（含签名等所有非目录条目），
+	// 0 表示默认 10000。
+	MaxEntries int
+	// MaxEntryBytes 是单个条目解压后的最大字节数，0 表示默认 64MB。
+	MaxEntryBytes int64
+	// MaxTotalBytes 是所有条目解压后的总字节上限，0 表示默认 512MB。
+	MaxTotalBytes int64
+}
+
+const (
+	defaultMaxEntries    = 10000
+	defaultMaxEntryBytes = int64(64 << 20)
+	defaultMaxTotalBytes = int64(512 << 20)
+)
+
 // Options 控制 ZIP 级合并的输出方式。
 type Options struct {
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
@@ -60,6 +77,8 @@ type Options struct {
 	Signatures SignatureMode
 	// Orphans 是文档目录之外条目的处理方式，空值时使用 OrphanError。
 	Orphans OrphanMode
+	// Limits 限制合并输入的规模，零值使用默认限制。
+	Limits Limits
 	// OnWarning 可选，接收合并过程中的非致命提示，例如签名被重写后签名值失效。
 	OnWarning func(string)
 }
@@ -243,6 +262,9 @@ type mergeState struct {
 }
 
 func normalizeOptions(options Options) (Options, error) {
+	if options.Limits.MaxEntries < 0 || options.Limits.MaxEntryBytes < 0 || options.Limits.MaxTotalBytes < 0 {
+		return Options{}, errors.New("合并规模限制不能为负数")
+	}
 	if options.Compression == "" {
 		options.Compression = creator.CompressionAuto
 	}
@@ -284,7 +306,7 @@ func mergeSource(state *mergeState, src source) error {
 	}
 	defer func() { _ = pkg.Close() }()
 
-	rootData, err := pkg.Read(spec.RootDocument)
+	rootData, err := pkg.ReadLimit(spec.RootDocument, state.writer.maxEntryBytes)
 	if err != nil {
 		return fmt.Errorf("读取 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
@@ -389,7 +411,10 @@ func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, pl
 		newName := plan.newDir + strings.TrimPrefix(name, plan.oldDir)
 
 		if isSignatureXML(name) {
-			data, err := pkg.Read(name)
+			if entry.UncompressedSize > uint64(writer.maxEntryBytes) {
+				return fmt.Errorf("签名文件 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, writer.maxEntryBytes)
+			}
+			data, err := pkg.ReadLimit(name, writer.maxEntryBytes)
 			if err != nil {
 				return fmt.Errorf("读取 %s 的 %s 失败: %w", input, name, err)
 			}
@@ -628,10 +653,58 @@ type entryWriter struct {
 	archive *zip.Writer
 	options Options
 	seen    map[string]bool
+
+	entryCount    int
+	remaining     int64
+	maxEntries    int
+	maxEntryBytes int64
+	maxTotalBytes int64
 }
 
 func newEntryWriter(archive *zip.Writer, options Options) *entryWriter {
-	return &entryWriter{archive: archive, options: options, seen: make(map[string]bool)}
+	limits := options.Limits
+	if limits.MaxEntries == 0 {
+		limits.MaxEntries = defaultMaxEntries
+	}
+	if limits.MaxEntryBytes == 0 {
+		limits.MaxEntryBytes = defaultMaxEntryBytes
+	}
+	if limits.MaxTotalBytes == 0 {
+		limits.MaxTotalBytes = defaultMaxTotalBytes
+	}
+	return &entryWriter{
+		archive:       archive,
+		options:       options,
+		seen:          make(map[string]bool),
+		remaining:     limits.MaxTotalBytes,
+		maxEntries:    limits.MaxEntries,
+		maxEntryBytes: limits.MaxEntryBytes,
+		maxTotalBytes: limits.MaxTotalBytes,
+	}
+}
+
+// reserve 校验条目标路径并预留条目配额。
+func (w *entryWriter) reserve(name string) error {
+	if err := validateEntryName(name, w.seen); err != nil {
+		return err
+	}
+	if w.entryCount >= w.maxEntries {
+		return fmt.Errorf("合并条目数超过上限 %d", w.maxEntries)
+	}
+	w.entryCount++
+	return nil
+}
+
+// checkSize 校验单个条目解压后的字节数是否在单条与总预算内，并扣减总预算。
+func (w *entryWriter) checkSize(name string, size int64) error {
+	if size > w.maxEntryBytes {
+		return fmt.Errorf("条目 %s 解压后 %d 字节，超过单条上限 %d 字节", name, size, w.maxEntryBytes)
+	}
+	if size > w.remaining {
+		return fmt.Errorf("解压总大小超过上限 %d 字节", w.maxTotalBytes)
+	}
+	w.remaining -= size
+	return nil
 }
 
 // warn 通过 Options.OnWarning 上报非致命提示。
@@ -655,7 +728,10 @@ func validateEntryName(name string, seen map[string]bool) error {
 
 // write 按压缩策略与确定性选项写入一个内存条目。
 func (w *entryWriter) write(name string, data []byte) error {
-	if err := validateEntryName(name, w.seen); err != nil {
+	if err := w.reserve(name); err != nil {
+		return err
+	}
+	if err := w.checkSize(name, int64(len(data))); err != nil {
 		return err
 	}
 	header := &zip.FileHeader{Name: name, Method: zipEntryMethod(name, w.options.Compression)}
@@ -674,8 +750,14 @@ func (w *entryWriter) write(name string, data []byte) error {
 
 // writeSource 流式写入输入包中的条目，避免资源整体驻留内存。
 func (w *entryWriter) writeSource(pkg *core.Package, entry core.Entry, name string) error {
-	if err := validateEntryName(name, w.seen); err != nil {
+	if err := w.reserve(name); err != nil {
 		return err
+	}
+	if entry.UncompressedSize > uint64(w.maxEntryBytes) {
+		return fmt.Errorf("条目 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, w.maxEntryBytes)
+	}
+	if int64(entry.UncompressedSize) > w.remaining {
+		return fmt.Errorf("解压总大小超过上限 %d 字节", w.maxTotalBytes)
 	}
 	reader, err := pkg.OpenEntry(entry)
 	if err != nil {
@@ -691,10 +773,33 @@ func (w *entryWriter) writeSource(pkg *core.Package, entry core.Entry, name stri
 	if err != nil {
 		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
 	}
-	if _, err := io.Copy(file, reader); err != nil {
-		return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
+	counter := &limitWriter{writer: file, entryRemaining: w.maxEntryBytes, totalRemaining: &w.remaining, name: name, maxTotal: w.maxTotalBytes}
+	if _, err := io.Copy(counter, reader); err != nil {
+		return err
 	}
 	return nil
+}
+
+// limitWriter 在解压复制过程中同时限制单条和总字节数，防止声明大小与实际不符。
+type limitWriter struct {
+	writer         io.Writer
+	entryRemaining int64
+	totalRemaining *int64
+	name           string
+	maxTotal       int64
+}
+
+func (l *limitWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > l.entryRemaining {
+		return 0, fmt.Errorf("条目 %s 解压后超过单条大小上限", l.name)
+	}
+	if int64(len(p)) > *l.totalRemaining {
+		return 0, fmt.Errorf("解压总大小超过上限 %d 字节", l.maxTotal)
+	}
+	n, err := l.writer.Write(p)
+	l.entryRemaining -= int64(n)
+	*l.totalRemaining -= int64(n)
+	return n, err
 }
 
 // zipEntryMethod 与 creator 的压缩策略保持一致：已压缩格式使用 Store。

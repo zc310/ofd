@@ -151,6 +151,8 @@ ofd-creator merge -o merged.ofd --compression auto --deterministic --validate in
 
 `--orphans` 控制文档目录之外的条目的处理方式：`error`（默认，直接失败）、`ignore`（跳过）或 `preserve`（按原路径保留到包根）。`--signatures rewrite` 重写签名路径时会向标准错误输出警告，说明哪些签名值已失效。
 
+为防止恶意或异常文档造成解压放大，合并默认限制条目数 10000、单条解压 64MB、解压总计 512MB，可分别用 `--max-entries`、`--max-entry-mb`、`--max-total-mb` 调整。
+
 合并逻辑同时以库的形式公开在 `pkg/merge`：`Files`（文件路径、输入按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回完整字节）。
 
 ## 压缩策略
