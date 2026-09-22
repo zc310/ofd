@@ -280,9 +280,15 @@ func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (
 }
 
 func (p *pdfInterpreter) pagePoint(x, y float64) (float64, float64) {
-	x, y = x*p.info.userUnit, y*p.info.userUnit
-	minX, minY, maxX, maxY := p.info.minX*p.info.userUnit, p.info.minY*p.info.userUnit, p.info.maxX*p.info.userUnit, p.info.maxY*p.info.userUnit
-	switch p.info.rotate {
+	return pdfPagePoint(p.info, x, y)
+}
+
+// pdfPagePoint 把 PDF 用户空间坐标转换为 OFD 页面坐标（毫米，原点在页面左上角），
+// 并处理页面旋转。转换页面内容、目标位置和裁剪区时共用该映射。
+func pdfPagePoint(info pdfPageInfo, x, y float64) (float64, float64) {
+	x, y = x*info.userUnit, y*info.userUnit
+	minX, minY, maxX, maxY := info.minX*info.userUnit, info.minY*info.userUnit, info.maxX*info.userUnit, info.maxY*info.userUnit
+	switch info.rotate {
 	case 90:
 		return (y - minY) * pdfPointToMillimeter, (x - minX) * pdfPointToMillimeter
 	case 180:

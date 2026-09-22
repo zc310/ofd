@@ -90,6 +90,11 @@ func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
 	if len(document.Pages) > 0 {
 		document.PageSize = creator.PageSize{Width: document.Pages[0].Area.PhysicalBox.Width, Height: document.Pages[0].Area.PhysicalBox.Height}
 	}
+	// PDF 目录大纲转换为 OFD 大纲；原文档要求显示大纲面板时同步设置显示偏好。
+	document.Outlines = convertOutlines(ctx)
+	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(ctx) {
+		document.Preferences = &creator.ViewPreferences{PageMode: creator.PageModeUseOutlines}
+	}
 	return creator.CreateWithOptions(document, output, creator.CreateOptions{PreserveEmbeddedFonts: true})
 }
 
