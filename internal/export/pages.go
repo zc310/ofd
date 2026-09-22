@@ -47,8 +47,7 @@ func (e *documentExporter) exportTemplates(result *manifest.Manifest) error {
 			return fmt.Errorf("转换模板页 %d 失败: %w", definition.ID, err)
 		}
 		name := valueOrEmpty(definition.Name)
-		zOrder := valueOrEmpty(definition.ZOrder)
-		result.Templates = append(result.Templates, manifest.Template{ID: uint64(definition.ID), Name: name, ZOrder: zOrder, Area: page.Area, Layers: page.Layers, Items: page.Items})
+		result.Templates = append(result.Templates, manifest.Template{ID: uint64(definition.ID), Name: name, ZOrder: definition.ZOrder.String(), Area: page.Area, Layers: page.Layers, Items: page.Items})
 	}
 	return nil
 }
@@ -60,7 +59,7 @@ func (e *documentExporter) convertPageContent(content *models.PageContent) (mani
 	}
 	page.Area = exportPageArea(content.Area)
 	for _, template := range content.Template {
-		page.Templates = append(page.Templates, manifest.TemplateRef{ID: uint64(template.TemplateID), ZOrder: template.ZOrder})
+		page.Templates = append(page.Templates, manifest.TemplateRef{ID: uint64(template.TemplateID), ZOrder: template.ZOrder.String()})
 	}
 	if content.Actions != nil {
 		actions, err := e.exportActionList(content.Actions.Action)
