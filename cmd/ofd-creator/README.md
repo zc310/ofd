@@ -163,9 +163,22 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 - 命令向**标准输出**写 `SignedValue.dat` 字节（SES 结构，`DataHash` 是对输入 `Signature.xml` 字节的摘要），错误写标准错误；
 - 命令按空白拆分参数，不支持引号或 shell 语法；
 - 元数据通过环境变量传入：`OFD_SIGN_DOCUMENT`、`OFD_SIGN_ID`、`OFD_SIGN_PROVIDER`、`OFD_SIGN_PROVIDER_VERSION`、`OFD_SIGN_COMPANY`、`OFD_SIGN_SIGNATURE_METHOD`、`OFD_SIGN_CHECK_METHOD`、`OFD_SIGN_TIME`；
-- 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）。
+- 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）；
+- `--sign-provider`、`--sign-provider-version`、`--sign-company`、`--sign-method`、`--sign-check-method` 分别设置 `SignedInfo` 的 `Provider` 名称/版本/公司、`SignatureMethod`（默认 `1.2.156.10197.1.501`）和 `References@CheckMethod`（默认 `SM3`）；这些值同时通过上面的环境变量传给命令。
+- 重签会删除文档体已有的签名文件，包括当前布局的 `Signatures/` 和历史生产者使用的 `Signs/`（`Signatures.xml`/`Signs.xml` 及其目录），避免旧签名残留。
+- `--sign-stamp` 会在 `Signature.xml` 写入 `StampAnnot`，让阅读器把 `SignedValue.dat` 里的印章图片绘制到页面上；默认放在文档体首页右下角（40mm），可用 `--sign-stamp-page` 指定页面 ID、`--sign-stamp-boundary "x y width height"`（毫米）指定位置。真实印章图片来自签名值（外部命令输出的 `SES_ESPictrueInfo`），演示签名器 `ofd-signer-demo` 会生成一张 SVG（红圈“中”字）占位图。
+
+仓库提供最小示例签名器 `cmd/ofd-signer-demo`，可用来验证整条链路（它现场生成 SM2 自签名证书，签署 SES 印章与 `TBS_Sign`）：
+
+```bash
+go build -o /tmp/ofd-signer-demo ./cmd/ofd-signer-demo
+go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
+  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures test/testdata/hello.ofd
+```
 
 重签名通常配合 `--signatures drop`（先清掉旧签名）或有 `--pages` 的模型级合并使用。
+
+`--deterministic` 同样作用于签名后的重新打包（固定 ZIP 条目时间）；但签名时间默认取当前时间，写入 `Signature.xml` 的 `SignatureDateTime` 会变化，若要完全可复现需要使用固定时间的签名命令，或直接用 `pkg/sign` 的 `Options.Date`。
 
 `merge` 支持与创建命令相同的压缩策略和确定性选项，并可使用 `--validate` 在写出前执行严格校验：
 

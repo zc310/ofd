@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -442,5 +443,45 @@ func TestRunMergeSignCmd(t *testing.T) {
 	}
 	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
 		t.Fatalf("验签应报告摘要有效, stderr = %s", stderr.String())
+	}
+}
+
+func TestRunMergeSignMetadataFlags(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("使用 cat 作为外部签名命令")
+	}
+	directory := t.TempDir()
+	output := filepath.Join(directory, "signed.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	var stdout, stderr bytes.Buffer
+	args := []string{
+		"merge", "-i", hello, "-o", output, "--pages", "1", "--sign-cmd", "cat",
+		"--sign-id", "sign-9",
+		"--sign-provider", "Acme Signer",
+		"--sign-provider-version", "2.1",
+		"--sign-company", "Acme Inc",
+		"--sign-method", "1.2.156.10197.1.501",
+		"--sign-check-method", "SM3",
+	}
+	if code := run(args, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge exit code = %d, stderr = %s", code, stderr.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := core.OpenBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	signature, err := pkg.Read("Doc_0/Signatures/Signature_sign-9.xml")
+	if err != nil {
+		t.Fatalf("读取签名 XML 失败: %v", err)
+	}
+	for _, want := range []string{`ProviderName="Acme Signer"`, `Version="2.1"`, `Company="Acme Inc"`, "1.2.156.10197.1.501", "SM3"} {
+		if !bytes.Contains(signature, []byte(want)) {
+			t.Fatalf("Signature.xml 缺少 %q:\n%s", want, signature)
+		}
 	}
 }
