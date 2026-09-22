@@ -1,6 +1,33 @@
 {
   "version":1,
-  "document":{"id":"path-fill-rules","title":"OFD Path 填充规则示例","author":"ofd-creator","creator":"ofd-creator","creator_version":"1","page_size":{"name":"A4"}},
+  "document":{"id":"path-fill-rules","title":"OFD Path 填充规则示例","author":"ofd-creator","creator":"ofd-creator","creator_version":"1","outlines":[
+    {"title":"第一页：基础路径与嵌套轮廓","count":6,"expanded":true,"actions":[{"goto":{"page":0}}],"children":[
+      {"title":"默认规则","actions":[{"goto":{"page":0,"type":"XYZ","left":15,"top":38,"zoom":1}}]},
+      {"title":"NonZero 同向嵌套","actions":[{"goto":{"page":0,"type":"XYZ","left":78,"top":38,"zoom":1}}]},
+      {"title":"Even-Odd 挖空","actions":[{"goto":{"page":0,"type":"XYZ","left":141,"top":38,"zoom":1}}]},
+      {"title":"NonZero 星形","actions":[{"goto":{"page":0,"type":"XYZ","left":15,"top":143,"zoom":1}}]},
+      {"title":"Even-Odd 星形","actions":[{"goto":{"page":0,"type":"XYZ","left":78,"top":143,"zoom":1}}]},
+      {"title":"NonZero 复合轮廓","actions":[{"goto":{"page":0,"type":"XYZ","left":141,"top":143,"zoom":1}}]}
+    ]},
+    {"title":"第二页：多轮廓、孔洞和组合路径","count":3,"expanded":true,"actions":[{"goto":{"page":1}}],"children":[
+      {"title":"Even-Odd 多孔图形","actions":[{"goto":{"page":1,"type":"XYZ","left":15,"top":42,"zoom":1}}]},
+      {"title":"NonZero 同向重叠矩形","actions":[{"goto":{"page":1,"type":"XYZ","left":15,"top":136,"zoom":1}}]},
+      {"title":"Even-Odd 重叠矩形","actions":[{"goto":{"page":1,"type":"XYZ","left":15,"top":222,"zoom":1}}]}
+    ]},
+    {"title":"第三页：渐变 Path 的对象级 Alpha","count":4,"expanded":true,"actions":[{"goto":{"page":2}}],"children":[
+      {"title":"Alpha 未设置","actions":[{"goto":{"page":2,"type":"XYZ","left":15,"top":50,"zoom":1}}]},
+      {"title":"Alpha = 128","actions":[{"goto":{"page":2,"type":"XYZ","left":115,"top":50,"zoom":1}}]},
+      {"title":"Alpha = 64","actions":[{"goto":{"page":2,"type":"XYZ","left":15,"top":145,"zoom":1}}]},
+      {"title":"渐变描边 Alpha = 128","actions":[{"goto":{"page":2,"type":"XYZ","left":115,"top":145,"zoom":1}}]}
+    ]}
+  ],
+  "bookmarks":[
+    {"name":"第一页 默认规则","goto":{"page":0,"type":"XYZ","left":15,"top":38,"zoom":1}},
+    {"name":"第一页 Even-Odd 挖空","goto":{"page":0,"type":"XYZ","left":141,"top":38,"zoom":1}},
+    {"name":"第二页 NonZero 同向重叠","goto":{"page":1,"type":"XYZ","left":15,"top":136,"zoom":1}},
+    {"name":"第三页 渐变描边","goto":{"page":2,"type":"XYZ","left":115,"top":145,"zoom":1}}
+  ],
+  "page_size":{"name":"A4"}},
   "pages":[
     {
       "items":[
