@@ -409,6 +409,100 @@ func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
 	}
 }
 
+func TestConvertYCCKJPEGToRGB(t *testing.T) {
+	// RA_CI.pdf 第 4 页的 GitHub 图标是 Adobe YCCK（APP14 transform=2）CMYK
+	// JPEG。只处理 transform=0 时会把 CMYK JPEG 原样嵌入 OFD，阅读器按 RGB
+	// 解码后整幅反相（白底变黑底）。转换后应为白底 PNG。
+	pdf, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "pdf", "RA_CI.pdf"))
+	if err != nil {
+		t.Skipf("测试文件不存在，跳过: %v", err)
+	}
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	page := ofd.Documents[0].Pages[3]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, image := range page.Content().Layer[0].ImageObject {
+		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
+		if media == nil || !strings.EqualFold(media.Format, "PNG") {
+			continue
+		}
+		data, err := ofd.Documents[0].FileCache.Read(media.MediaFile.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if img.Bounds().Dx() != 232 || img.Bounds().Dy() != 232 {
+			continue
+		}
+		if r, g, b, _ := img.At(0, 0).RGBA(); r>>8 < 200 || g>>8 < 200 || b>>8 < 200 {
+			t.Fatalf("YCCK image background = (%d,%d,%d), want white", r>>8, g>>8, b>>8)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("YCCK CMYK JPEG was not converted to a white-background PNG")
+	}
+}
+
+func TestPDFImageCMYKConverterUsesEmbeddedICCProfile(t *testing.T) {
+	profilePath := os.Getenv("OFD_CMYK_ICC")
+	if profilePath == "" {
+		t.Skip("OFD_CMYK_ICC 未设置，跳过内嵌 ICC 图像转换测试")
+	}
+	profileData, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Skipf("无法读取 %s: %v", profilePath, err)
+	}
+	profileStream := types.StreamDict{Dict: types.Dict{"N": types.Integer(4)}, Content: profileData}
+	stream := &types.StreamDict{Dict: types.Dict{
+		"ColorSpace": types.Array{types.Name("ICCBased"), profileStream},
+	}}
+	converter := pdfImageCMYKConverter(nil, stream)
+	if converter.icc == nil {
+		t.Fatal("ICCBased CMYK image did not use its embedded profile")
+	}
+	// Perceptual 渲染意图会压缩黑场，纯黑只要求偏暗。
+	if r, g, b := converter.toRGB(0, 0, 0, 255); r > 90 || g > 90 || b > 90 {
+		t.Fatalf("black = (%d,%d,%d), want dark", r, g, b)
+	}
+	if r, g, b := converter.toRGB(0, 0, 0, 0); r < 240 || g < 240 || b < 240 {
+		t.Fatalf("white = (%d,%d,%d), want near white", r, g, b)
+	}
+}
+
+func TestPDFImageCMYKConverterFallsBackWithoutProfile(t *testing.T) {
+	t.Setenv("OFD_CMYK_ICC", "")
+	stream := &types.StreamDict{Dict: types.Dict{"ColorSpace": types.Name("DeviceCMYK")}}
+	converter := pdfImageCMYKConverter(nil, stream)
+	if converter.icc != nil {
+		t.Fatal("DeviceCMYK image without a profile should use the approximate model")
+	}
+	// 回退路径必须与近似油墨模型完全一致。
+	r, g, b := converter.toRGB(255, 0, 0, 0)
+	wantR, wantG, wantB := cmykInkToRGB(255, 0, 0, 0)
+	if r != wantR || g != wantG || b != wantB {
+		t.Fatalf("fallback = (%d,%d,%d), want ink model (%d,%d,%d)", r, g, b, wantR, wantG, wantB)
+	}
+	// 青 + 黄的高覆盖率混合色应接近 poppler 的偏橄榄绿，而不是旧的青柠色。
+	if r, g, b := cmykInkToRGB(113, 21, 243, 33); r != 127 || g != 172 || b != 40 {
+		t.Fatalf("mixed ink = (%d,%d,%d), want (127,172,40)", r, g, b)
+	}
+}
+
 func TestPDFInterpreterHandlesSCNColorComponents(t *testing.T) {
 	interpreter := &pdfInterpreter{}
 	resources := types.Dict{}
@@ -1158,6 +1252,30 @@ func TestPDFImageDataSupportsOtherBitDepths(t *testing.T) {
 }
 
 // TestPDFImageDataPreserves16BitPNG 验证 16 位图像输出 16 位 PNG，而不是降采样。
+func TestEncodePDFIndexedImageSupportsCMYKPalette(t *testing.T) {
+	// Indexed 的基础颜色空间可以是 DeviceCMYK（4 分量）。调色板索引 0 为白
+	// （油墨 0,0,0,0），索引 1 为黑（0,0,0,255）；1bpp 两像素数据 0b01。
+	palette := []byte{0, 0, 0, 0, 0, 0, 0, 255}
+	encoded, format, err := encodePDFIndexedImage([]byte{0x40}, 2, 1, 1, 4, palette, cmykConverter{})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if format != "PNG" {
+		t.Fatalf("format = %s, want PNG", format)
+	}
+	img, err := png.Decode(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, g, b, a := img.At(0, 0).RGBA(); r < 0xf000 || g < 0xf000 || b < 0xf000 || a != 0xffff {
+		t.Fatalf("index 0 = %d,%d,%d,%d, want white", r, g, b, a)
+	}
+	// Adobe/poppler 矩阵模型下纯黑油墨为接近黑的 (35,31,32)，而不是纯黑。
+	if r, g, b, a := img.At(1, 0).RGBA(); r>>8 != 35 || g>>8 != 31 || b>>8 != 32 || a != 0xffff {
+		t.Fatalf("index 1 = %d,%d,%d,%d, want (35,31,32)", r>>8, g>>8, b>>8, a)
+	}
+}
+
 func TestPDFImageDataPreserves16BitPNG(t *testing.T) {
 	gray := &types.StreamDict{
 		Dict: types.Dict{

@@ -15,6 +15,18 @@ type pdfShading struct {
 	coords      []float64
 	functions   []*pdfFunction
 	extend      [2]bool
+	// matrix 是 PatternType 2 图案的 Matrix，把图案空间映射到页面默认坐标
+	// 空间。sh 操作符直接使用着色时保持单位矩阵。
+	matrix [6]float64
+	// pattern 表示该着色来自 PatternType 2 图案。图案坐标位于页面默认坐标
+	// 空间，绘制时不再叠加当前 CTM；sh 操作符的着色位于当前用户空间，需要叠加。
+	pattern bool
+	// mesh 是 ShadingType 4/5/6/7 网格着色的原始数据。
+	mesh *pdfMeshData
+	// meshBackground 是网格着色的 Background 颜色；存在时作为 OFD 的
+	// BackColor 并在网格外延展。
+	meshBackground    pdfColor
+	hasMeshBackground bool
 }
 
 // shadingSampleCount 是渐变转换为 OFD Segment 时的采样数。OFD 只支持分段
@@ -36,6 +48,32 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	}
 	shading := p.parseShading(object, 0)
 	if shading == nil {
+		return
+	}
+	// 网格着色（Type 4/5/6/7）优先输出为矢量网格，超出上限或裁剪区无法还原
+	// 为路径时再回退为位图。
+	if shading.mesh != nil {
+		matrix := multiplyPDFMatrix(p.state.ctm, shading.matrix)
+		if path, ok := p.shadingFillPath(); ok {
+			if color, ok := p.meshVectorColor(shading, matrix, path); ok {
+				path.Fill = true
+				path.Rule = "NonZero"
+				path.FillColor = color
+				// 与普通着色一样必须显式关闭描边，避免沿路径边界描黑边。
+				stroke := false
+				path.Stroke = false
+				path.StrokeSet = &stroke
+				if clips := p.buildClips(path.X, path.Y, false, 0, 0); clips != nil {
+					path.Clips = clips
+				}
+				path.Alpha = ofdTransparency(p.fillOpacity())
+				p.page.Items = append(p.page.Items, *path)
+				return
+			}
+		}
+		if image := p.meshImage(shading, matrix); image != nil {
+			p.page.Items = append(p.page.Items, *image)
+		}
 		return
 	}
 	path, ok := p.shadingFillPath()
@@ -65,28 +103,67 @@ func (p *pdfInterpreter) parseShading(object types.Object, depth int) *pdfShadin
 	if depth > 8 {
 		return nil
 	}
-	dict, err := dereferenceDict(p.ctx, object, true)
-	if err != nil || dict == nil {
+	resolved, err := dereferencePDFObject(p.ctx, object)
+	if err != nil || resolved == nil {
+		return nil
+	}
+	// 着色对象通常是字典；网格着色（Type 4/5/6/7）是流对象。
+	var dict types.Dict
+	switch value := resolved.(type) {
+	case types.Dict:
+		dict = value
+	case types.StreamDict:
+		dict = value.Dict
+	case *types.StreamDict:
+		dict = value.Dict
+	default:
+		return nil
+	}
+	if dict == nil {
 		return nil
 	}
 	shadingType, _ := dereferencedPDFNumber(p.ctx, dict["ShadingType"])
-	if shadingType != 2 && shadingType != 3 {
+	if shadingType < 2 || shadingType > 7 {
 		return nil
 	}
 	spaces := p.parseColorSpaceObject(dict, "ColorSpace", depth)
 	if spaces == nil {
 		return nil
 	}
+	shading := &pdfShading{
+		shadingType: int(shadingType),
+		colorSpace:  spaces,
+		coords:      pdfNumberArray(p.ctx, dict["Coords"]),
+		matrix:      identityPDFMatrix(),
+	}
+	// 网格着色（Type 4/5/6/7）保存原始数据，绘制时再展开为 OFD 三角网格。
+	if shadingType >= 4 {
+		shading.mesh = p.parseMeshData(object, dict)
+		if shading.mesh == nil {
+			return nil
+		}
+		// 可选的 Background 颜色在绘制网格前铺满裁剪区，对应 OFD 的
+		// BackColor；存在时网格外区域延展为该背景色。
+		if values := pdfNumberArray(p.ctx, dict["Background"]); len(values) >= spaces.components {
+			components := make([]float64, spaces.components)
+			copy(components, values)
+			if color, ok := spaces.colorFromComponents(components); ok {
+				shading.meshBackground = color
+				shading.hasMeshBackground = true
+			}
+		}
+		return shading
+	}
 	functionObject, found := dict.Find("Function")
 	if !found {
 		return nil
 	}
 	var functions []*pdfFunction
-	resolved, err := dereferencePDFObject(p.ctx, functionObject)
+	functionResolved, err := dereferencePDFObject(p.ctx, functionObject)
 	if err != nil {
 		return nil
 	}
-	if array, ok := resolved.(types.Array); ok {
+	if array, ok := functionResolved.(types.Array); ok {
 		for _, item := range array {
 			function := p.parseFunction(item, depth+1)
 			if function == nil {
@@ -101,23 +178,56 @@ func (p *pdfInterpreter) parseShading(object types.Object, depth int) *pdfShadin
 		}
 		functions = append(functions, function)
 	}
-	extend := [2]bool{}
+	shading.functions = functions
 	if value, err := dereferencePDFObject(p.ctx, dict["Extend"]); err == nil {
 		if array, ok := value.(types.Array); ok {
 			for index := 0; index < 2 && index < len(array); index++ {
 				if flag, ok := array[index].(types.Boolean); ok {
-					extend[index] = bool(flag)
+					shading.extend[index] = bool(flag)
 				}
 			}
 		}
 	}
-	return &pdfShading{
-		shadingType: int(shadingType),
-		colorSpace:  spaces,
-		coords:      pdfNumberArray(p.ctx, dict["Coords"]),
-		functions:   functions,
-		extend:      extend,
+	return shading
+}
+
+// parseMeshData 读取网格着色的位图数据与解码参数。
+func (p *pdfInterpreter) parseMeshData(object types.Object, dict types.Dict) *pdfMeshData {
+	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
+	if err != nil || stream == nil {
+		return nil
 	}
+	data := pdfStreamContent(stream)
+	if len(data) == 0 {
+		return nil
+	}
+	mesh := &pdfMeshData{
+		data:              append([]byte(nil), data...),
+		bitsPerCoordinate: 8,
+		bitsPerComponent:  8,
+	}
+	var shadingType float64
+	shadingType, _ = dereferencedPDFNumber(p.ctx, dict["ShadingType"])
+	mesh.kind = int(shadingType)
+	if value, ok := integerValue(dict["BitsPerCoordinate"]); ok && value > 0 {
+		mesh.bitsPerCoordinate = value
+	}
+	if value, ok := integerValue(dict["BitsPerComponent"]); ok && value > 0 {
+		mesh.bitsPerComponent = value
+	}
+	if value, ok := integerValue(dict["BitsPerFlag"]); ok && value >= 0 {
+		mesh.bitsPerFlag = value
+	}
+	if mesh.kind == 5 {
+		if value, ok := integerValue(dict["VerticesPerRow"]); ok {
+			mesh.verticesPerRow = value
+		}
+	}
+	mesh.decode = pdfNumberArray(p.ctx, dict["Decode"])
+	if mesh.bitsPerCoordinate > 32 || mesh.bitsPerComponent > 16 || mesh.bitsPerFlag > 8 {
+		return nil
+	}
+	return mesh
 }
 
 func (p *pdfInterpreter) parseColorSpaceObject(dict types.Dict, key string, depth int) *pdfColorSpace {
@@ -131,6 +241,16 @@ func (p *pdfInterpreter) parseColorSpaceObject(dict types.Dict, key string, dept
 // shadingColor 把着色转换为 OFD 渐变填充；不支持的类型返回 nil。OFD 渐变
 // 坐标是相对路径边界左上角的局部坐标，因此需要减去 path 的 X/Y。
 func (p *pdfInterpreter) shadingColor(shading *pdfShading, path *creator.Path) *creator.Color {
+	// PatternType 2 图案空间先经图案 Matrix 映射到页面默认坐标空间（不叠加
+	// 当前 CTM）；sh 操作符的着色位于当前用户空间，需要叠加 CTM。
+	matrix := shading.matrix
+	if !shading.pattern {
+		matrix = multiplyPDFMatrix(p.state.ctm, matrix)
+	}
+	if shading.mesh != nil {
+		// 网格图案填充暂不支持。
+		return nil
+	}
 	stops := make([]creator.ColorStop, 0, shadingSampleCount+1)
 	for index := 0; index <= shadingSampleCount; index++ {
 		position := float64(index) / shadingSampleCount
@@ -148,11 +268,11 @@ func (p *pdfInterpreter) shadingColor(shading *pdfShading, path *creator.Path) *
 		extend |= 2
 	}
 	toLocal := func(x, y float64) (float64, float64) {
-		deviceX, deviceY := transformPDFPoint(x, y, p.state.ctm)
+		deviceX, deviceY := transformPDFPoint(x, y, matrix)
 		pageX, pageY := p.pagePoint(deviceX, deviceY)
 		return pageX - path.X, pageY - path.Y
 	}
-	scale := pdfMatrixScale(p.state.ctm) * p.info.userUnit * pdfPointToMillimeter
+	scale := pdfMatrixScale(matrix) * p.info.userUnit * pdfPointToMillimeter
 	point := func(x, y float64) string {
 		lx, ly := toLocal(x, y)
 		return fmt.Sprintf("%.4f %.4f", lx, ly)
