@@ -273,6 +273,15 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	// 内嵌子集字体也能按原始文本渲染，保留 PDF 文字可复制性。
 	p.fonts.registerPageGlyphs(p.Document, page, content)
 	pb := content.Area.PhysicalBox
+	annots := p.Document.GetAnnotation(page.ID)
+	// Watermark 水印注解按背景层绘制，位于模板之后、页面内容之前。
+	if annots != nil {
+		for _, item := range annots.Annots {
+			if item != nil && item.Type == models.AnnotTypeWatermark {
+				p.annot(ctx, item, pb)
+			}
+		}
+	}
 	for _, template := range content.Template {
 		p.template(ctx, template, pb, budget)
 	}
@@ -284,9 +293,12 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		p.drawSeals(ctx, page.ID, pb)
 	}
 
-	if annot := p.Document.GetAnnotation(page.ID); annot != nil {
-		for _, item := range annot.Annots {
-			p.annot(ctx, item, pb)
+	// 其余类型注解（印章、链接、路径、高亮等）绘制在最上层。
+	if annots != nil {
+		for _, item := range annots.Annots {
+			if item != nil && item.Type != models.AnnotTypeWatermark {
+				p.annot(ctx, item, pb)
+			}
 		}
 	}
 }
