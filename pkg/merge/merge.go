@@ -1,10 +1,14 @@
-// Package merge 提供 OFD 文档的 ZIP 级合并能力。
+// Package merge 提供 OFD 文档的合并能力。
 //
 // ZIP 级合并只重写 OFD.xml 与签名文件中的包内路径，把每个输入文档体
 // （DocBody）的目录树原样搬运到新的 Doc_N 目录，不解析或重写页面、资源
 // 等内部 XML，因此改动最小、资源 ID 不需要重映射。被引用文件的字节保持
 // 不变，签名摘要仍然有效；但签名值（SignedValue）本身覆盖了签名清单，重写
 // 路径后需要重新签名。签名处理方式由 Options.Signatures 控制。
+//
+// 模型级合并（Pages）把多个文档体的页面解析为 creator 模型后重新生成一个
+// 单文档 OFD，支持跨文档拼页，但需要重新编号文档级资源；页面级资源冲突会由
+// 创建器报错。
 package merge
 
 import (

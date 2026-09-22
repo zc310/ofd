@@ -32,6 +32,9 @@ type Options struct {
 	Format string
 	// JSONIndent 控制 JSON 输出是否使用 2 空格缩进。
 	JSONIndent bool
+	// AssetSink 可选，接收导出过程中产生的二进制资源（name 为资源相对路径）。
+	// 设置后不再写入 AssetRoot，AssetRoot 可以为空。
+	AssetSink func(name string, data []byte) error
 }
 
 // BundleIndex 描述 WriteBundle 生成的 manifest 集合。
@@ -182,14 +185,54 @@ func export(input any, output io.Writer, options Options, documentIndex *int) er
 	return nil
 }
 
+// BuildManifest 将指定文档体导出为 manifest 结构，并把二进制资源交给
+// Options.AssetSink（或写入 AssetRoot）。用于在内存中继续合并或转换。
+func BuildManifest(input any, index int, options Options) (manifest.Manifest, error) {
+	ofd, err := parser.NewOFD(input)
+	if err != nil {
+		return manifest.Manifest{}, fmt.Errorf("解析 OFD 失败: %w", err)
+	}
+	defer func() { _ = ofd.Close() }()
+	return BuildManifestFromOFD(ofd, index, options)
+}
+
+// BuildManifestFromOFD 与 BuildManifest 相同，但复用已打开的解析器。
+func BuildManifestFromOFD(ofd *parser.OFD, index int, options Options) (manifest.Manifest, error) {
+	if ofd == nil {
+		return manifest.Manifest{}, errors.New("解析器为空")
+	}
+	if len(ofd.Documents) == 0 {
+		return manifest.Manifest{}, errors.New("没有文档体")
+	}
+	if index < 0 || index >= len(ofd.Documents) {
+		return manifest.Manifest{}, fmt.Errorf("文档体索引超出范围: %d，共有 %d 个文档体", index, len(ofd.Documents))
+	}
+	if ofd.Documents[index] == nil {
+		return manifest.Manifest{}, errors.New("文档体为空")
+	}
+	return buildManifest(ofd, index, options)
+}
+
 func exportDocument(ofd *parser.OFD, index int, options Options) ([]byte, manifest.Document, error) {
+	result, err := buildManifest(ofd, index, options)
+	if err != nil {
+		return nil, manifest.Document{}, err
+	}
+	output, err := marshalManifest(result, options.Format, options.JSONIndent)
+	if err != nil {
+		return nil, manifest.Document{}, err
+	}
+	return output, result.Document, nil
+}
+
+func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manifest, error) {
 	document := ofd.Documents[index]
 	for _, page := range document.Pages {
 		if page == nil {
 			continue
 		}
 		if err := page.EnsureLoaded(); err != nil {
-			return nil, manifest.Document{}, fmt.Errorf("加载页面资源失败: %w", err)
+			return manifest.Manifest{}, fmt.Errorf("加载页面资源失败: %w", err)
 		}
 	}
 	pageIndexes := make(map[models.StID]int, len(document.Pages))
@@ -204,6 +247,7 @@ func exportDocument(ofd *parser.OFD, index int, options Options) ([]byte, manife
 		documentIndex:     index,
 		assetRoot:         options.AssetRoot,
 		assetPrefix:       filepath.ToSlash(options.AssetPrefix),
+		assetSink:         options.AssetSink,
 		fonts:             make(map[models.StID]string),
 		fontNames:         make(map[string]bool),
 		media:             make(map[models.StID]string),
@@ -226,13 +270,9 @@ func exportDocument(ofd *parser.OFD, index int, options Options) ([]byte, manife
 	}
 	result, err := exporter.build()
 	if err != nil {
-		return nil, manifest.Document{}, err
+		return manifest.Manifest{}, err
 	}
-	output, err := marshalManifest(result, options.Format, options.JSONIndent)
-	if err != nil {
-		return nil, manifest.Document{}, err
-	}
-	return output, result.Document, nil
+	return result, nil
 }
 
 func normalizeFormat(format string) (string, error) {
@@ -322,6 +362,7 @@ type documentExporter struct {
 	documentIndex           int
 	assetRoot               string
 	assetPrefix             string
+	assetSink               func(name string, data []byte) error
 	fonts                   map[models.StID]string
 	fontNames               map[string]bool
 	media                   map[models.StID]string
@@ -457,8 +498,10 @@ func (e *documentExporter) markPublicResource(resource *models.Res) {
 
 func (e *documentExporter) build() (manifest.Manifest, error) {
 	var err error
-	if err = os.MkdirAll(e.assetRoot, 0755); err != nil {
-		return manifest.Manifest{}, fmt.Errorf("创建资源目录失败: %w", err)
+	if e.assetSink == nil {
+		if err = os.MkdirAll(e.assetRoot, 0755); err != nil {
+			return manifest.Manifest{}, fmt.Errorf("创建资源目录失败: %w", err)
+		}
 	}
 	result := manifest.Manifest{Version: 1}
 	if err = e.preparePageResourceMetadata(); err != nil {
@@ -520,6 +563,9 @@ func (e *documentExporter) assetPath(file string) string {
 }
 
 func (e *documentExporter) writeAsset(file string, data []byte) error {
+	if e.assetSink != nil {
+		return e.assetSink(file, data)
+	}
 	name := filepath.Join(e.assetRoot, filepath.FromSlash(file))
 	if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {
 		return err

@@ -26,6 +26,8 @@ const (
 	exitResource = 4
 	exitOutput   = 5
 	exitValidate = 6
+
+	defaultMergeWorkers = 4
 )
 
 type options struct {
@@ -264,9 +266,31 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge: 警告:", message)
 		},
 	}
+	run := func(w io.Writer) error {
+		if strings.TrimSpace(opts.pages) == "" {
+			return merge.Files(opts.inputs, w, mergeOptions)
+		}
+		pages, err := merge.ParsePageSelection(opts.pages)
+		if err != nil {
+			return err
+		}
+		sources := make([]merge.Source, 0, len(opts.inputs))
+		for _, input := range opts.inputs {
+			sources = append(sources, merge.Source{Path: input})
+		}
+		return merge.Pages(sources, w, merge.PageOptions{
+			Compression:   mergeOptions.Compression,
+			Deterministic: mergeOptions.Deterministic,
+			Selectors:     pages,
+			ID:            opts.documentID,
+			Title:         opts.title,
+			Author:        opts.author,
+			Concurrency:   opts.workers,
+		})
+	}
 	if opts.output == "-" {
 		var buffer bytes.Buffer
-		if err := merge.Files(opts.inputs, &buffer, mergeOptions); err != nil {
+		if err := run(&buffer); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 			return exitResource
 		}
@@ -294,7 +318,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 	}
 	temporaryName := temporary.Name()
 	defer func() { _ = os.Remove(temporaryName) }()
-	if err := merge.Files(opts.inputs, temporary, mergeOptions); err != nil {
+	if err := run(temporary); err != nil {
 		_ = temporary.Close()
 		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 		return exitResource
@@ -342,6 +366,11 @@ type mergeOptions struct {
 	compression   string
 	signatures    string
 	orphans       string
+	pages         string
+	documentID    string
+	title         string
+	author        string
+	workers       int
 	maxEntries    int
 	maxEntryMB    int
 	maxTotalMB    int
@@ -384,6 +413,11 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
 	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：preserve、rewrite 或 drop")
 	flags.StringVar(&opts.orphans, "orphans", opts.orphans, "文档目录外条目处理方式：error、ignore 或 preserve")
+	flags.StringVar(&opts.pages, "pages", "", "选页并重排：全局 1,3-5 或按源 s1:1,3-5;s2:2；设置后使用模型级合并")
+	flags.StringVar(&opts.documentID, "document-id", "", "模型级合并输出文档 ID，默认沿用首源")
+	flags.StringVar(&opts.title, "title", "", "模型级合并输出文档标题，默认沿用首源")
+	flags.StringVar(&opts.author, "author", "", "模型级合并输出文档作者，默认沿用首源")
+	flags.IntVar(&opts.workers, "workers", defaultMergeWorkers, "模型级合并并行解析输入的并发数，默认 4")
 	flags.IntVar(&opts.maxEntries, "max-entries", 0, "最多搬运的条目数，0 表示使用默认值 10000")
 	flags.IntVar(&opts.maxEntryMB, "max-entry-mb", 0, "单个条目解压后的最大 MB，0 表示使用默认值 64")
 	flags.IntVar(&opts.maxTotalMB, "max-total-mb", 0, "所有条目解压后的总 MB 上限，0 表示使用默认值 512")
@@ -434,6 +468,27 @@ func validateMergeOptions(opts *mergeOptions) error {
 	}
 	if opts.maxEntries < 0 || opts.maxEntryMB < 0 || opts.maxTotalMB < 0 {
 		return errors.New("合并规模限制不能为负数")
+	}
+	if strings.TrimSpace(opts.pages) != "" {
+		if _, err := merge.ParsePageSelection(opts.pages); err != nil {
+			return err
+		}
+		signatures := merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures)))
+		if signatures != "" && signatures != merge.SignaturePreserve {
+			return errors.New("--pages 使用模型级合并，不支持 --signatures")
+		}
+		orphans := merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans)))
+		if orphans != "" && orphans != merge.OrphanError {
+			return errors.New("--pages 使用模型级合并，不支持 --orphans")
+		}
+		if opts.maxEntries != 0 || opts.maxEntryMB != 0 || opts.maxTotalMB != 0 {
+			return errors.New("--pages 使用模型级合并，不支持 --max-entries/--max-entry-mb/--max-total-mb")
+		}
+		if opts.workers < 1 {
+			return errors.New("--workers 必须大于 0")
+		}
+	} else if opts.documentID != "" || opts.title != "" || opts.author != "" || opts.workers != defaultMergeWorkers {
+		return errors.New("--document-id/--title/--author/--workers 仅在设置 --pages 时可用")
 	}
 	return nil
 }

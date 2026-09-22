@@ -1,6 +1,7 @@
 package creator
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,6 +24,21 @@ type DataSource interface {
 // FileDataSource 返回从磁盘文件按需读取的 DataSource。
 func FileDataSource(path string) DataSource {
 	return fileDataSource{path: path}
+}
+
+// BytesDataSource 返回从内存字节读取的 DataSource。
+func BytesDataSource(data []byte) DataSource {
+	return bytesDataSource{data: data}
+}
+
+type bytesDataSource struct{ data []byte }
+
+func (s bytesDataSource) Open() (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(s.data)), nil
+}
+
+func (s bytesDataSource) Size() int64 {
+	return int64(len(s.data))
 }
 
 type fileDataSource struct{ path string }
