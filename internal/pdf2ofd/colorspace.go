@@ -6,6 +6,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/coloricc"
 )
 
 // pdfColorSpace 表示一个已解析的 PDF 颜色空间。颜色空间只描述分量语义，
@@ -19,12 +20,16 @@ type pdfColorSpace struct {
 	high   int
 	// Separation / DeviceN：tint 变换函数，把分量映射到 base 的分量。
 	tint *pdfFunction
+	// ICCBased：内嵌的 ICC 配置文件转换器。
+	icc *coloricc.Transformer
 }
 
 var (
 	deviceGraySpace = &pdfColorSpace{family: "DeviceGray", components: 1}
 	deviceRGBSpace  = &pdfColorSpace{family: "DeviceRGB", components: 3}
 	deviceCMYKSpace = &pdfColorSpace{family: "DeviceCMYK", components: 4}
+	// patternSpace 是 Pattern 颜色空间；实际颜色由 scn/SCN 的图案名决定。
+	patternSpace = &pdfColorSpace{family: "Pattern", components: 1}
 )
 
 func namedColorSpace(name string) *pdfColorSpace {
@@ -41,6 +46,8 @@ func namedColorSpace(name string) *pdfColorSpace {
 		return &pdfColorSpace{family: "CalRGB", components: 3}
 	case "Lab":
 		return &pdfColorSpace{family: "Lab", components: 3}
+	case "Pattern":
+		return patternSpace
 	default:
 		return nil
 	}
@@ -50,6 +57,10 @@ func namedColorSpace(name string) *pdfColorSpace {
 func (p *pdfInterpreter) resolveColorSpace(resources types.Dict, name string) *pdfColorSpace {
 	if name == "" {
 		return nil
+	}
+	// Pattern 是设备相关的颜色空间名称，不要求出现在 ColorSpace 资源中。
+	if name == "Pattern" {
+		return patternSpace
 	}
 	if resources != nil {
 		if spaces, ok := dereferencedSubDict(p.ctx, resources, "ColorSpace"); ok {
@@ -111,24 +122,34 @@ func (p *pdfInterpreter) parseICCBasedSpace(array types.Array) *pdfColorSpace {
 		return nil
 	}
 	components := 3
+	var profileData []byte
 	switch value := profile.(type) {
 	case types.StreamDict:
 		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
 			components = int(n)
 		}
+		profileData = pdfStreamContent(&value)
 	case *types.StreamDict:
 		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
 			components = int(n)
 		}
+		profileData = pdfStreamContent(value)
 	}
+	space := &pdfColorSpace{family: "ICCBased", components: components}
 	switch components {
 	case 1:
-		return &pdfColorSpace{family: "ICCBased", components: 1, base: deviceGraySpace}
+		space.base = deviceGraySpace
 	case 4:
-		return &pdfColorSpace{family: "ICCBased", components: 4, base: deviceCMYKSpace}
+		space.base = deviceCMYKSpace
 	default:
-		return &pdfColorSpace{family: "ICCBased", components: 3, base: deviceRGBSpace}
+		space.base = deviceRGBSpace
 	}
+	if len(profileData) > 0 {
+		if transformer, err := coloricc.New(profileData, components); err == nil {
+			space.icc = transformer
+		}
+	}
+	return space
 }
 
 func (p *pdfInterpreter) parseIndexedSpace(array types.Array, depth int) *pdfColorSpace {
@@ -242,6 +263,15 @@ func (cs *pdfColorSpace) colorFromComponents(values []float64) (pdfColor, bool) 
 
 	if len(values) < cs.components {
 		return pdfColor{}, false
+	}
+	// ICCBased 颜色空间使用内嵌配置文件转换到 sRGB。
+	if cs.icc != nil {
+		components := make([]uint8, cs.components)
+		for i := 0; i < cs.components; i++ {
+			components[i] = floatToByte(clamp01(values[i]))
+		}
+		r, g, b := cs.icc.ToRGB(components)
+		return pdfColor{r: r, g: g, b: b}, true
 	}
 	switch cs.components {
 	case 1:

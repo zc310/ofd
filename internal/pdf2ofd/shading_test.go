@@ -122,6 +122,80 @@ func TestConvertShadingCoordinatesAreRelativeToPathBoundary(t *testing.T) {
 	}
 }
 
+func TestConvertEmitsShadingForPatternFill(t *testing.T) {
+	// canvas 生成的 PDF 用 Pattern 颜色空间 + scn 填充渐变（不是 sh 操作符），
+	// 转换后必须保留 AxialShd，否则渐变会退化成纯色。
+	content := []byte("/Pattern cs /P1 scn 0 0 100 100 re f")
+	pdf := patternShadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	paths := page.Content().Layer[0].PathObject
+	if len(paths) != 1 {
+		t.Fatalf("path objects = %d, want 1", len(paths))
+	}
+	color := paths[0].FillColor
+	if color == nil || color.AxialShd == nil {
+		t.Fatalf("fill color = %+v, want axial shading", color)
+	}
+	first := color.AxialShd.Segment[0].Color.Value
+	if first == nil || first.R != 255 || first.G != 0 || first.B != 0 {
+		t.Fatalf("first stop = %+v, want red", first)
+	}
+}
+
+func TestConvertPatternShadingIgnoresContentCTM(t *testing.T) {
+	// PatternType 2 图案坐标位于页面默认坐标空间，绘制时不再叠加当前 CTM。
+	// 内容以 2 倍缩放绘制 100x100 矩形时，渐变终点仍应落在页面坐标 100（约
+	// 35.28mm），而不是被放大到 200。
+	content := []byte("q 2 0 0 2 0 0 cm /Pattern cs /P1 scn 0 0 100 100 re f Q")
+	pdf := patternShadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	color := page.Content().Layer[0].PathObject[0].FillColor
+	if color == nil || color.AxialShd == nil {
+		t.Fatalf("fill color = %+v, want axial shading", color)
+	}
+	// 100pt * 25.4/72 = 35.28mm；若被 CTM 放大则约为 70.56。
+	if endX := color.AxialShd.EndPoint.X; endX < 34 || endX > 36.5 {
+		t.Fatalf("EndPoint.X = %g, want ~35.28 (unscaled by CTM)", endX)
+	}
+}
+
+// patternShadingPDF 构造单页 PDF，资源中带 PatternType 2 图案 /P1。
+func patternShadingPDF(content []byte, shading string) []byte {
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Pattern << /P1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		shading,
+		"<< /Type /Pattern /PatternType 2 /Matrix [1 0 0 1 0 0] /Shading 5 0 R >>",
+	}
+	return assemblePDF(objects)
+}
+
 // shadingPDF 构造单页 PDF，资源中带 /Sh1 着色定义。
 func shadingPDF(content []byte, shading string) []byte {
 	objects := []string{
