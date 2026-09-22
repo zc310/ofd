@@ -1,0 +1,625 @@
+# 注解示例：背景水印与前景签章
+# 展示 OFD 注解按类型分层绘制：
+#   - Watermark 水印注解绘制在页面内容之下（背景层）
+#   - Stamp 签章注解绘制在页面内容之上（最上层）
+#   - 正文文字与水印文字重叠，用于直观对比叠放顺序
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/annotations.yaml -o test/testdata/annotations.ofd --validate --deterministic
+
+version: 1
+
+document:
+  id: annotations
+  title: 注解示例
+  author: ofd-creator
+  creator: ofd-creator
+  creator_version: "1"
+  page_size:
+    name: A4
+  creation_date: "2026-09-22T00:00:00Z"
+  annotations:
+    - page: 0
+      items:
+        # Watermark 水印：以页面中心为基准的斜排半透明文本，位于内容之下。
+        - id: 101
+          type: Watermark
+          creator: ofd-creator
+          last_mod_date: "2026-09-22"
+          boundary:
+            x: 0
+            "y": 0
+            width: 210
+            height: 297
+          items:
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 90.6, 7.4]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 168.4, 85.1]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 246.1, 162.9]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 74.7, 23.2]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 152.5, 101.0]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 230.3, 178.8]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 58.9, 39.0]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 136.7, 116.8]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 214.5, 194.6]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 43.1, 54.9]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 120.8, 132.7]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 198.6, 210.4]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 27.2, 70.7]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 105.0, 148.5]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 182.8, 226.3]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 11.4, 86.6]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 89.2, 164.3]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 166.9, 242.1]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, -4.5, 102.4]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 73.3, 180.2]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 151.1, 258.0]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, -20.3, 118.2]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 57.5, 196.0]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 135.3, 273.8]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, -36.1, 134.1]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 41.6, 211.9]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+            - type: text
+              x: 0
+              y: 0
+              width: 210
+              height: 297
+              value: 保密资料
+              font: 楷体
+              size: 9
+              fill: True
+              alpha: 51
+              fill_color:
+                r: 170
+                g: 160
+                b: 165
+              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 119.4, 289.6]
+              text_codes:
+                - value: 保密资料
+                  x: 8
+                  "y": 10
+        # Stamp 签章：右下角红色圆章，位于内容之上。
+        - id: 102
+          type: Stamp
+          creator: ofd-creator
+          last_mod_date: "2026-09-22"
+          boundary:
+            x: 0
+            "y": 0
+            width: 210
+            height: 297
+          items:
+            - type: path
+              x: 130
+              "y": 220
+              width: 60
+              height: 60
+              data: M 30 2 A 28 28 0 1 1 29.99 2 C
+              fill: true
+              fill_color:
+                r: 230
+                g: 40
+                b: 40
+              alpha: 170
+            - type: text
+              x: 135
+              "y": 220
+              width: 60
+              height: 60
+              value: 已阅
+              font: 楷体
+              size: 18
+              fill: true
+              fill_color:
+                r: 230
+                g: 40
+                b: 40
+              alpha: 170
+
+pages:
+  - items:
+      - type: text
+        x: 35
+        "y": 130
+        width: 140
+        height: 12
+        value: 正文在内容层，绘制于水印之上
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 35
+        "y": 150
+        width: 140
+        height: 12
+        value: 底部斜排文字为 Watermark 水印注解
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 35
+        "y": 170
+        width: 140
+        height: 12
+        value: 右下角红色圆章为 Stamp 签章注解
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
