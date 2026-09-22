@@ -141,6 +141,32 @@ ofd-creator merge --signatures rewrite -o merged.ofd input1.ofd input2.ofd
 ofd-creator merge --signatures drop -o merged.ofd input1.ofd input2.ofd
 ```
 
+合并过程会把每个输入签名的处理结果（保留/重写/丢弃）汇总到标准错误。加 `--verify-signatures` 会在写出前解析输出文档，逐签名报告摘要与 SM2/SES 密码学验证状态：
+
+```bash
+ofd-creator merge -o merged.ofd --signatures rewrite --verify-signatures input1.ofd input2.ofd
+```
+
+注意 `rewrite` 会改写签名文件本身，可能使 SES 的数据摘要（对签名 XML 计算）失效，即使被引用文件摘要仍然匹配；这类签名需要重新签名。
+
+### 外部命令重签名
+
+合并会重写资源名和路径，旧签名无法沿用。`--sign-cmd` 在合并完成后调用外部命令，为每个文档体追加一个新签名：
+
+```bash
+ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign-1 --verify-signatures input.ofd
+```
+
+约定：
+
+- `ofd-creator` 已为每个文档体计算被引用文件的摘要，生成最终的 `Signature.xml`（`SignedInfo`，含各 `Reference@FileRef` 与 `CheckValue`，以及 `SignedValue` 路径），通过**标准输入**传给命令；
+- 命令向**标准输出**写 `SignedValue.dat` 字节（SES 结构，`DataHash` 是对输入 `Signature.xml` 字节的摘要），错误写标准错误；
+- 命令按空白拆分参数，不支持引号或 shell 语法；
+- 元数据通过环境变量传入：`OFD_SIGN_DOCUMENT`、`OFD_SIGN_ID`、`OFD_SIGN_PROVIDER`、`OFD_SIGN_PROVIDER_VERSION`、`OFD_SIGN_COMPANY`、`OFD_SIGN_SIGNATURE_METHOD`、`OFD_SIGN_CHECK_METHOD`、`OFD_SIGN_TIME`；
+- 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）。
+
+重签名通常配合 `--signatures drop`（先清掉旧签名）或有 `--pages` 的模型级合并使用。
+
 `merge` 支持与创建命令相同的压缩策略和确定性选项，并可使用 `--validate` 在写出前执行严格校验：
 
 ```bash
