@@ -57,6 +57,7 @@ VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 ARCHIVE := $(BIN_DIR)/ofd-archive$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
+SIGNER_DEMO := $(BIN_DIR)/ofd-signer-demo$(BIN_SUFFIX)
 WASM := cmd/ofd-wasm/web/ofd.wasm
 WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
 WASM_VIEWER := cmd/ofd-wasm/web/viewer.js
@@ -74,6 +75,7 @@ VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
 ANALYZER_PACKAGE := $(DIST_DIR)/ofd-analyzer-$(PLATFORM).zip
 ARCHIVE_PACKAGE := $(DIST_DIR)/ofd-archive-$(PLATFORM).zip
 CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
+SIGNER_DEMO_PACKAGE := $(DIST_DIR)/ofd-signer-demo-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
@@ -82,8 +84,8 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= 0.0.5
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -100,7 +102,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-archive package-creator clean help FORCE
+.PHONY: all build build-tools build-wasm build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-archive package-creator package-signer-demo clean help FORCE
 
 all: package
 
@@ -118,6 +120,7 @@ help:
 		'make package-analyzer        Build the OFD analyzer' \
 		'make package-archive         Build the OFD archive tool' \
 		'make package-creator         Build the OFD creator' \
+		'make package-signer-demo     Build the OFD demo signer' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
 		'make build-arm64             Build Linux ARM64 command programs' \
 		'make package-arm64           Build Linux ARM64 packages' \
@@ -216,6 +219,10 @@ $(CREATOR): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-creator
 
+$(SIGNER_DEMO): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-signer-demo
+
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -291,6 +298,8 @@ package-archive: $(ARCHIVE_PACKAGE)
 
 package-creator: $(CREATOR_PACKAGE)
 
+package-signer-demo: $(SIGNER_DEMO_PACKAGE)
+
 $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
 	@mkdir -p "$(DIST_DIR)"
 	@rm -rf "$(PACKAGE_DIR)/ofd-validator"
@@ -326,6 +335,15 @@ $(CREATOR_PACKAGE): $(CREATOR) cmd/ofd-creator/README.md
 	@cp "$(CREATOR)" "$(PACKAGE_DIR)/ofd-creator/ofd-creator$(BIN_SUFFIX)"
 	@cp "cmd/ofd-creator/README.md" "$(PACKAGE_DIR)/ofd-creator/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-creator"
+
+$(SIGNER_DEMO_PACKAGE): $(SIGNER_DEMO) cmd/ofd-signer-demo/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-signer-demo"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-signer-demo"
+	@rm -f "$@"
+	@cp "$(SIGNER_DEMO)" "$(PACKAGE_DIR)/ofd-signer-demo/ofd-signer-demo$(BIN_SUFFIX)"
+	@cp "cmd/ofd-signer-demo/README.md" "$(PACKAGE_DIR)/ofd-signer-demo/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-signer-demo"
 
 $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@mkdir -p "$(DIST_DIR)"

@@ -1046,7 +1046,7 @@ func main() {
 
 需要跨文档拼页时使用模型级合并 `Pages`：它把每个输入文档体的页面解析为 creator 模型后重新生成一个单文档 OFD，自动重命名/重编号文档级资源并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。`PageOptions.Pages` 可按拼接页序选页/重排，`PageOptions.Selectors` 可按来源选页（来源从 1 开始），`PageOptions.Limits` 限制单输入字节数、输入总字节数与输出页数，`PageOptions.Concurrency` 控制并行解析输入的并发数（默认 4），`PageOptions.ID/Title/Author/Subject` 可覆盖输出元数据。
 
-需要重新签名时，`pkg/sign` 提供 `Sign`：为每个文档体计算引用摘要、生成 `Signature.xml`，把该文件交给外部命令并写回其输出的 `SignedValue.dat`；命令行对应 `ofd-creator merge --sign-cmd`，私钥与算法由外部命令负责。
+需要重新签名时，`pkg/sign` 提供 `Sign`：为每个文档体计算引用摘要、生成 `Signature.xml`，把该文件交给外部命令并写回其输出的 `SignedValue.dat`；`Options.Deterministic` 固定重新打包的 ZIP 时间（配合固定的 `Options.Date` 可得到字节可复现的结果），命令行对应 `ofd-creator merge --sign-cmd --deterministic`，私钥与算法由外部命令负责。仓库包含最小示例签名器 [`cmd/ofd-signer-demo`](cmd/ofd-signer-demo)，用于演示 `--sign-cmd` 协议和 SES 结构（仅演示/测试，不可用于生产）。
 
 ```go
 if err := merge.Pages([]merge.Source{{Path: "a.ofd"}, {Path: "b.ofd"}}, output, merge.PageOptions{}); err != nil {
