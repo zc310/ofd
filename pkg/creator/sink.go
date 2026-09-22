@@ -1,14 +1,13 @@
 package creator
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/core"
 )
 
 // entrySink 接收生成阶段产出的 OFD 包条目。实现可以是内存收集（构建/基准）
@@ -180,15 +179,8 @@ func signatureReferenceTargets(state *buildState) map[string]bool {
 
 // validateEntryName 校验包内条目路径安全且不重复。
 func validateEntryName(name string, seen map[string]bool) error {
-	if name == "" {
-		return errors.New("OFD 包条目路径不能为空")
-	}
-	if strings.HasPrefix(name, "/") || strings.ContainsAny(name, "\\\x00") {
-		return fmt.Errorf("OFD 包条目路径无效: %s", name)
-	}
-	cleanName := path.Clean(name)
-	if cleanName != name || cleanName == "." || strings.HasPrefix(cleanName, "../") || cleanName == ".." {
-		return fmt.Errorf("OFD 包条目路径无效: %s", name)
+	if err := core.ValidateEntryName(name); err != nil {
+		return err
 	}
 	if seen[name] {
 		return fmt.Errorf("OFD 包条目路径重复: %s", name)

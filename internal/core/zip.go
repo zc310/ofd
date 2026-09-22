@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -100,6 +101,26 @@ func OpenBytes(data []byte) (*Package, error) {
 		return nil, errors.New("从字节数据创建 ZIP 包失败: ZIP reader 为空")
 	}
 	return newPackage(reader, nil), nil
+}
+
+// OpenReaderAt 从随机访问读取器打开 OFD ZIP 包，无需把数据整体复制到内存。
+// size 必须是数据的完整字节长度。调用方仍负责关闭底层 reader。
+func OpenReaderAt(reader io.ReaderAt, size int64) (*Package, error) {
+	if reader == nil {
+		return nil, errors.New("输入随机访问读取器为空")
+	}
+	if size <= 0 {
+		return nil, fmt.Errorf("输入大小必须为正数: %d", size)
+	}
+	zipReader, err := zip.NewReader(reader, size)
+	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
+		return nil, fmt.Errorf("从随机访问读取器创建 ZIP 包失败: %w", err)
+	}
+	if zipReader == nil {
+		return nil, errors.New("从随机访问读取器创建 ZIP 包失败: ZIP reader 为空")
+	}
+	// github.com/klauspost/compress/zip 在路径不安全时仍会返回可用 reader；路径策略由上层校验器处理。
+	return newPackage(zipReader, nil), nil
 }
 
 // OpenReader 从读取器中读取全部数据并打开 OFD ZIP 包。
@@ -370,6 +391,22 @@ func (p *Package) lookupIndex(fileName string) (int, bool) {
 
 func lookupName(fileName string) string {
 	return strings.TrimLeft(fileName, "/")
+}
+
+// ValidateEntryName 校验 OFD 包条目的相对路径是否安全：非空、不以斜杠开头、
+// 不含反斜杠或 NUL，且清理后保持原样（不含 . 或 .. 片段）。该函数不检查同名重复。
+func ValidateEntryName(name string) error {
+	if name == "" {
+		return errors.New("OFD 包条目路径不能为空")
+	}
+	if strings.HasPrefix(name, "/") || strings.ContainsAny(name, "\\\x00") {
+		return fmt.Errorf("OFD 包条目路径无效: %s", name)
+	}
+	cleanName := path.Clean(name)
+	if cleanName != name || cleanName == "." || cleanName == ".." || strings.HasPrefix(cleanName, "../") {
+		return fmt.Errorf("OFD 包条目路径无效: %s", name)
+	}
+	return nil
 }
 
 func entryFromZipFile(token *packageToken, index int, file *zip.File) Entry {

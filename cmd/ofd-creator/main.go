@@ -15,6 +15,7 @@ import (
 	ofdexport "github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -53,6 +54,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && strings.EqualFold(args[0], "export") {
 		return runExport(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && strings.EqualFold(args[0], "merge") {
+		return runMerge(args[1:], stdout, stderr)
 	}
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
@@ -231,6 +235,193 @@ func runExportAll(args []string, _, stderr io.Writer) int {
 		return exitResource
 	}
 	return exitOK
+}
+
+func runMerge(args []string, stdout, stderr io.Writer) int {
+	opts, err := parseMergeArgs(args, stderr)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitUsage
+	}
+	if opts.help {
+		return exitOK
+	}
+	if err := validateMergeOptions(opts); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitUsage
+	}
+	mergeOptions := merge.Options{
+		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
+		Deterministic: opts.deterministic,
+		Signatures:    merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
+		Orphans:       merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))),
+		OnWarning: func(message string) {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge: 警告:", message)
+		},
+	}
+	if opts.output == "-" {
+		var buffer bytes.Buffer
+		if err := merge.Files(opts.inputs, &buffer, mergeOptions); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+			return exitResource
+		}
+		if opts.validate {
+			if err := validateMerged(bytes.NewReader(buffer.Bytes()), "merged.ofd", stderr); err != nil {
+				return exitValidate
+			}
+		}
+		if _, err := stdout.Write(buffer.Bytes()); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+			return exitOutput
+		}
+		return exitOK
+	}
+
+	dir := filepath.Dir(opts.output)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitOutput
+	}
+	temporary, err := os.CreateTemp(dir, ".ofd-creator-merge-*")
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitOutput
+	}
+	temporaryName := temporary.Name()
+	defer func() { _ = os.Remove(temporaryName) }()
+	if err := merge.Files(opts.inputs, temporary, mergeOptions); err != nil {
+		_ = temporary.Close()
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitResource
+	}
+	if err := temporary.Close(); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitOutput
+	}
+	if opts.validate {
+		file, openErr := os.Open(temporaryName)
+		if openErr != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", openErr)
+			return exitOutput
+		}
+		validateErr := validateMerged(file, "merged.ofd", stderr)
+		_ = file.Close()
+		if validateErr != nil {
+			return exitValidate
+		}
+	}
+	if err := os.Rename(temporaryName, opts.output); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return exitOutput
+	}
+	return exitOK
+}
+
+func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
+	instance, err := validator.New()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+		return err
+	}
+	report := instance.ValidateReader(context.Background(), reader, name)
+	if report.HasErrors() {
+		_ = validator.RenderText(stderr, report)
+		return errOFDInvalid
+	}
+	return nil
+}
+
+type mergeOptions struct {
+	inputs        []string
+	output        string
+	compression   string
+	signatures    string
+	orphans       string
+	deterministic bool
+	validate      bool
+	help          bool
+}
+
+func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
+	opts := &mergeOptions{compression: string(creator.CompressionAuto), signatures: string(merge.SignaturePreserve), orphans: string(merge.OrphanError)}
+	root := &cobra.Command{
+		Use:           "ofd-creator merge",
+		Short:         "合并多个 OFD 为多文档 OFD",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.help {
+				return nil
+			}
+			opts.inputs = append(opts.inputs, positional...)
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator merge - 合并多个 OFD 为多文档 OFD")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator merge -o merged.ofd input1.ofd input2.ofd")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringArrayVarP(&opts.inputs, "input", "i", nil, "OFD 输入文件，可重复指定；也可作为位置参数")
+	flags.StringVarP(&opts.output, "output", "o", "", "合并后的 OFD 输出路径；使用 - 写入标准输出")
+	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
+	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：preserve、rewrite 或 drop")
+	flags.StringVar(&opts.orphans, "orphans", opts.orphans, "文档目录外条目处理方式：error、ignore 或 preserve")
+	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
+	flags.BoolVar(&opts.validate, "validate", false, "合并后执行严格 OFD 校验")
+	if err := root.Execute(); err != nil {
+		return nil, err
+	}
+	if opts.help {
+		return opts, nil
+	}
+	return opts, nil
+}
+
+func validateMergeOptions(opts *mergeOptions) error {
+	if len(opts.inputs) == 0 {
+		return errors.New("至少需要一个 OFD 输入文件")
+	}
+	if strings.TrimSpace(opts.output) == "" {
+		return errors.New("缺少合并后的 OFD 输出文件")
+	}
+	for _, input := range opts.inputs {
+		if input == "-" {
+			return errors.New("merge 不支持从标准输入读取")
+		}
+	}
+	if opts.output != "-" {
+		for _, input := range opts.inputs {
+			if samePath(input, opts.output) {
+				return errors.New("输出文件不能覆盖输入 OFD 文件")
+			}
+		}
+	}
+	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {
+	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
+	default:
+		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
+	}
+	switch merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
+	case "", merge.SignaturePreserve, merge.SignatureRewrite, merge.SignatureDrop:
+	default:
+		return fmt.Errorf("不支持的签名处理方式 %q", opts.signatures)
+	}
+	switch merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))) {
+	case "", merge.OrphanError, merge.OrphanIgnore, merge.OrphanPreserve:
+	default:
+		return fmt.Errorf("不支持的目录外条目处理方式 %q", opts.orphans)
+	}
+	return nil
 }
 
 type exportAllOptions struct {

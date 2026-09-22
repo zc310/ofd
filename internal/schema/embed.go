@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/knroy/go-xml/xsd"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 // Files 保存校验器使用的 OFD XSD 集合。文件名和相对路径保持不变，
@@ -17,7 +18,7 @@ import (
 //go:embed xsd/*.xsd
 var Files embed.FS
 
-const namespace = "http://www.ofdspec.org/2016"
+const namespace = spec.Namespace
 
 var roots = map[string]string{
 	"OFD":         "OFD.xsd",

@@ -38,7 +38,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 	if err != nil {
 		return err
 	}
-	if err := sink.write("OFD.xml", root); err != nil {
+	if err := sink.write(rootDocumentName, root); err != nil {
 		return err
 	}
 	if len(state.coverData) > 0 || state.coverSource != nil {

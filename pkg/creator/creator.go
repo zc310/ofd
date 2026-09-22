@@ -11,13 +11,15 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 const (
-	ofNamespace = "http://www.ofdspec.org/2016"
-	docDir      = "Doc_0"
-	resDir      = docDir + "/Res"
-	maxOFDID    = uint64(^uint32(0))
+	ofNamespace      = spec.Namespace
+	rootDocumentName = spec.RootDocument
+	docDir           = "Doc_0"
+	resDir           = docDir + "/Res"
+	maxOFDID         = uint64(^uint32(0))
 )
 
 // CompressionMode 表示 OFD ZIP 条目的压缩策略。

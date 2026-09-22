@@ -25,9 +25,13 @@ import (
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"
+	"github.com/zc310/ofd/internal/spec"
 )
 
-const ofdNamespace = "http://www.ofdspec.org/2016"
+const (
+	ofdNamespace = spec.Namespace
+	rootDocument = spec.RootDocument
+)
 
 // Mode 表示校验严格程度。
 type Mode string
@@ -277,16 +281,16 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	report.Summary.Files = len(archive.files)
 	report.setCheck("zip", "passed")
 
-	_, ok := archive.get("OFD.xml")
+	_, ok := archive.get(rootDocument)
 	if !ok {
-		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.missing_ofd_xml", File: "OFD.xml", Message: "缺少必需的 OFD.xml 文件"}, v.opts.MaxErrors)
+		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.missing_ofd_xml", File: rootDocument, Message: "缺少必需的 " + rootDocument + " 文件"}, v.opts.MaxErrors)
 		report.setCheck("zip", "failed")
 		return
 	}
 
 	documents := make(map[string]*xmlDocument)
-	queue := []queuedXML{{path: "OFD.xml", expected: "OFD"}}
-	queued := map[string]string{"OFD.xml": "OFD"}
+	queue := []queuedXML{{path: rootDocument, expected: "OFD"}}
+	queued := map[string]string{rootDocument: "OFD"}
 	// 先校验文件引用，再将 XML 引用加入队列，确保扫描到的 XML 也会继续闭包解析。
 	processReferences := func(candidates []fileReference) {
 		for _, ref := range candidates {
@@ -366,7 +370,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	if v.opts.ScanXML {
 		for _, name := range sortedPackageNames(archive.files) {
 			file := archive.files[name]
-			if file.isDir || path.Ext(name) != ".xml" || name == "OFD.xml" {
+			if file.isDir || path.Ext(name) != ".xml" || name == rootDocument {
 				continue
 			}
 			if _, exists := documents[name]; exists {
