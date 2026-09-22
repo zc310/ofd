@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"image"
 	"image/color"
+	"math"
 	"sync"
 
 	"github.com/h2non/filetype"
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -20,6 +22,9 @@ func (p *Document) Seal(ctx *canvas.Context, info *parser.SealInfo, pb models.St
 func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
 		return nil
+	}
+	if isSVGFormat(info.SealData.FileType, "") {
+		return p.drawSVGSeal(ctx, info, pb)
 	}
 	if filetype.IsImage(info.SealData.Data) {
 		return p.drawImageSeal(ctx, info, pb)
@@ -36,6 +41,11 @@ func (p *Document) drawImageSeal(ctx DrawContext, info *parser.SealInfo, pb mode
 	if err != nil {
 		return err
 	}
+	return p.drawRasterSeal(ctx, info, pb, img)
+}
+
+// drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上。
+func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
 	imgBounds := img.Bounds()
 	if imgBounds.Empty() {
 		return nil
@@ -152,4 +162,36 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	budget.reset()
 	entry.doc.pageContent(ctx, page, false, &budget)
 	return nil
+}
+
+// drawSVGSeal 解析并绘制 SVG 格式的印章。
+// 先栅格化为位图再复用位图印章的坐标映射，保证矢量方向与 PNG/JPG 印章一致；
+// 栅格化分辨率按印章盒尺寸取 96dpi 以上，保持边缘清晰。
+func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+	svg, err := canvas.ParseSVG(bytes.NewReader(info.SealData.Data))
+	if err != nil {
+		return err
+	}
+	if svg == nil || svg.W <= 0 || svg.H <= 0 {
+		return nil
+	}
+	img := rasterizer.Draw(svg, sealRasterResolution(info.StampAnnot.Boundary, svg.W, svg.H), canvas.DefaultColorSpace)
+	if img == nil || img.Bounds().Empty() {
+		return nil
+	}
+	return p.drawRasterSeal(ctx, info, pb, img)
+}
+
+// sealRasterResolution 选择栅格化分辨率：按印章盒的毫米尺寸换算为像素，
+// 使 SVG 的短边至少达到 canvasDPI 像素，避免放大后模糊。
+func sealRasterResolution(box models.StBox, svgW, svgH float64) canvas.Resolution {
+	const canvasDPI = 192.0
+	shortSide := math.Min(box.Width, box.Height)
+	reference := math.Min(svgW, svgH)
+	if shortSide <= 0 || reference <= 0 {
+		return canvas.DPI(canvasDPI)
+	}
+	// 1 画布单位对应 shortSide/reference 毫米，使短边渲染出 canvasDPI 像素。
+	perMM := canvasDPI / shortSide
+	return canvas.Resolution(perMM)
 }
