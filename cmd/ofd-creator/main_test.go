@@ -222,3 +222,99 @@ func TestRunExportAllRejectsStandardOutput(t *testing.T) {
 		t.Fatalf("run export-all stdout exit code = %d, stderr = %s", code, stderr.String())
 	}
 }
+
+func TestParseMergeArgs(t *testing.T) {
+	opts, err := parseMergeArgs([]string{"-i", "a.ofd", "-i", "b.ofd", "-o", "merged.ofd", "--deterministic"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.inputs) != 2 || opts.inputs[0] != "a.ofd" || opts.inputs[1] != "b.ofd" || opts.output != "merged.ofd" || !opts.deterministic {
+		t.Fatalf("merge options = %+v", opts)
+	}
+
+	opts, err = parseMergeArgs([]string{"-o", "merged.ofd", "a.ofd", "b.ofd"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.inputs) != 2 || opts.inputs[0] != "a.ofd" || opts.inputs[1] != "b.ofd" {
+		t.Fatalf("positional merge options = %+v", opts)
+	}
+}
+
+func TestRunMergeWritesValidatedDocument(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	var stdout, stderr bytes.Buffer
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge exit code = %d, stderr = %s", code, stderr.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := validator.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := instance.ValidateReader(t.Context(), bytes.NewReader(data), output); report.HasErrors() {
+		t.Fatalf("merged OFD failed validation: %+v", report.Issues)
+	}
+}
+
+func TestRunMergeRejectsUsageErrors(t *testing.T) {
+	directory := t.TempDir()
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	output := filepath.Join(directory, "merged.ofd")
+	cases := [][]string{
+		{"merge", "-o", output},
+		{"merge", "-i", hello},
+		{"merge", "-i", "-", "-o", output},
+		{"merge", "-i", hello, "-o", hello},
+		{"merge", "-i", hello, "-o", output, "--compression", "bogus"},
+		{"merge", "-i", hello, "-o", output, "--orphans", "bogus"},
+	}
+	for _, args := range cases {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != exitUsage {
+			t.Fatalf("run %v exit code = %d, want %d, stderr = %s", args, code, exitUsage, stderr.String())
+		}
+	}
+}
+
+func TestRunMergeSignatureModes(t *testing.T) {
+	directory := t.TempDir()
+	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	output := filepath.Join(directory, "merged.ofd")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", signed, "-i", signed, "-o", output}, &stdout, &stderr); code != exitResource {
+		t.Fatalf("preserve 模式下签名无法保留时 exit code = %d, want %d, stderr = %s", code, exitResource, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"merge", "-i", signed, "-i", signed, "-o", output, "--signatures", "drop"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("drop 模式 exit code = %d, stderr = %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"merge", "-i", signed, "-o", output, "--signatures", "bogus"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("非法签名模式 exit code = %d, want %d", code, exitUsage)
+	}
+}
+
+func TestRunMergeReportsSignatureRewriteWarning(t *testing.T) {
+	directory := t.TempDir()
+	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	output := filepath.Join(directory, "merged.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", signed, "-i", signed, "-o", output, "--signatures", "rewrite"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("rewrite 模式 exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("警告")) {
+		t.Fatalf("应输出签名重写警告, stderr = %s", stderr.String())
+	}
+}

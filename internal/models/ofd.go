@@ -87,8 +87,6 @@ type Keywords struct {
 
 // String 返回 OFD 文档的 XML 字符串表示。
 func (p *OFD) String() string {
-	//p.XMLNS = "http://www.ofdspec.org/2016"
-
 	buf, err := xml.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return ""

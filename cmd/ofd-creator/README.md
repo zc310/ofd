@@ -99,6 +99,60 @@ exported/
 
 `index.yaml`（或指定格式的 `index.json`、`index.toml`）列出每个文档体的索引、ID、标题、manifest 路径、资源目录和页数。每个子 manifest 都可以独立执行普通创建命令；批量导出要求目标目录不存在，以避免覆盖已有文件。
 
+## 合并多个 OFD
+
+`merge` 子命令把多个 OFD 的文档体（DocBody）打包成一个多文档 OFD：
+
+```bash
+ofd-creator merge \
+  --output merged.ofd \
+  input1.ofd \
+  input2.ofd
+```
+
+也可以用 `--input`/`-i` 重复指定输入文件：
+
+```bash
+ofd-creator merge -i input1.ofd -i input2.ofd -o merged.ofd
+```
+
+合并采用 ZIP 级方式：每个输入文档体的目录树原样复制到新的 `Doc_0`、`Doc_1` … 目录，只重写 `OFD.xml` 中的 `DocRoot`、`Signatures`、版本 `BaseLoc`；页面、资源等内部 XML 不被解析或重写。因此：
+
+- 各文档体的字体、图片等资源 ID 保持独立作用域，不需要重映射。
+- 若合并后出现重复的 `DocID`，会为重复项自动生成新的 ID。
+
+输入文件的文档目录必须在包内，且除 `OFD.xml` 外不能存在文档目录之外的条目，否则合并会失败。
+
+### 签名处理
+
+`--signatures` 控制签名文件的处理方式：
+
+```text
+preserve   默认。签名文件字节保持不变。签名使用相对路径且文档目录名未变时签名完全有效；
+           若签名使用包内绝对路径（如 /Doc_0/Pages/...）且文档被改名，无法同时保持引用有效
+           和签名不变，此时直接报错，避免产出签名已失效的结果。
+rewrite    重写签名文件中的包内绝对路径，使引用指向新目录。引用与摘要仍有效，但签名值
+           （SignedValue）覆盖签名清单，重写后原签名值失效，需要重新签名。
+drop       删除签名目录以及 OFD.xml 中的签名引用，产出无签名文档。
+```
+
+```bash
+ofd-creator merge --signatures rewrite -o merged.ofd input1.ofd input2.ofd
+ofd-creator merge --signatures drop -o merged.ofd input1.ofd input2.ofd
+```
+
+`merge` 支持与创建命令相同的压缩策略和确定性选项，并可使用 `--validate` 在写出前执行严格校验：
+
+```bash
+ofd-creator merge -o merged.ofd --compression auto --deterministic --validate input1.ofd input2.ofd
+```
+
+`--output -` 可以把合并结果写入标准输出；`merge` 不支持从标准输入读取。
+
+`--orphans` 控制文档目录之外的条目的处理方式：`error`（默认，直接失败）、`ignore`（跳过）或 `preserve`（按原路径保留到包根）。`--signatures rewrite` 重写签名路径时会向标准错误输出警告，说明哪些签名值已失效。
+
+合并逻辑同时以库的形式公开在 `pkg/merge`：`Files`（文件路径、输入按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回完整字节）。
+
 ## 压缩策略
 
 ```text

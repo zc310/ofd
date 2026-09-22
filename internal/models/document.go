@@ -1,6 +1,10 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+
+	"github.com/zc310/ofd/internal/spec"
+)
 
 // Document OFD 文档主体定义。
 type Document struct {
@@ -254,7 +258,7 @@ type CustomTag struct {
 
 // String 返回 Document 的 XML 字符串表示，并设置 OFD 命名空间。
 func (p *Document) String() string {
-	p.XMLNS = "http://www.ofdspec.org/2016"
+	p.XMLNS = spec.Namespace
 	buf, err := xml.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return ""

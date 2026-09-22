@@ -9,6 +9,7 @@ import (
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 // OFD 表示一个OFD文档解析器
@@ -21,7 +22,7 @@ type OFD struct {
 }
 
 const (
-	rootDocument = "OFD.xml"
+	rootDocument = spec.RootDocument
 )
 
 const defaultMaxInputBytes = 512 << 20

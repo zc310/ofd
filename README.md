@@ -17,6 +17,7 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 | **文档转换**   | OFD 转 PDF、单文件 HTML、纯文本、Markdown 和 PNG/JPG 等图像格式；PDF/Markdown/Office/HTML 文档转 OFD |
 | **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                                             |
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                                                   |
+| **文档合并**   | ZIP 级合并多个 OFD 为多文档包，支持签名处理和目录外条目策略                                           |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                                              |
 | **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告                         |
 | **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证                                       |
@@ -1010,6 +1011,38 @@ func (p reportPages) PageAt(index int) (creator.Page, error) {
 ```
 
 `PageAt` 会在 ID 预留、校验和写出阶段被多次调用，实现必须能重复返回同一页。可设置 `Source` 的资源包括字体、图片、多媒体、附件、封面、公共/页面资源文件、扩展数据文件和印章文件；同名 `Source` 优先于 `Data`。对应地，`pkg/creator` 提供了 `CreateWithPages`、`CreateWithPagesOptions`、`CreateFileWithPages` 和 `MarshalWithPages`，命令行工具使用 `ofd-creator --stream`。
+
+</details>
+
+<details>
+<summary>合并 OFD</summary>
+
+`pkg/merge` 提供 ZIP 级合并：把多个 OFD 的文档体（DocBody）打包成一个多文档 OFD，目录树原样搬运到新的 `Doc_0`、`Doc_1` … 目录，只重写 `OFD.xml` 与签名文件中的包内路径，不解析页面和资源。
+
+```go
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/zc310/ofd/pkg/merge"
+)
+
+func main() {
+	output, err := os.Create("merged.ofd")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer output.Close()
+
+	if err := merge.Files([]string{"a.ofd", "b.ofd"}, output, merge.Options{}); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+入口包括 `Files`（文件路径，按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回字节）。`Options.Signatures` 控制签名处理（`preserve`/`rewrite`/`drop`），`Options.Orphans` 控制文档目录之外条目的处理（`error`/`ignore`/`preserve`），`Options.OnWarning` 可选接收非致命提示。命令行对应 `ofd-creator merge`。
 
 </details>
 

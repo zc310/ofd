@@ -18,6 +18,7 @@ import (
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 type analyzer struct {
@@ -1249,7 +1250,7 @@ func signatureSealInfo(value parser.SESealInfo) *SignatureSealInfo {
 
 func (a *analyzer) addDocumentReferences(body models.DocBody, doc *parser.Document) {
 	documentPath := resolveFrom(models.StLoc("/"), body.DocRoot)
-	a.addFileReference("OFD.xml", "document", documentPath, a.fileExists(documentPath))
+	a.addFileReference(spec.RootDocument, "document", documentPath, a.fileExists(documentPath))
 	for _, page := range doc.Document.Pages.Pages {
 		pagePath := resolveFrom(doc.BaseLoc, page.BaseLoc)
 		a.addFileReference(documentPath, "page", pagePath, a.fileExists(pagePath))
@@ -1279,7 +1280,7 @@ func (a *analyzer) addDocumentReferences(body models.DocBody, doc *parser.Docume
 	}
 	if a.options.IncludeSignatures && body.Signatures != nil {
 		signaturePath := resolveFrom(models.StLoc("/"), *body.Signatures)
-		a.addFileReference("OFD.xml", "signatures", signaturePath, a.fileExists(signaturePath))
+		a.addFileReference(spec.RootDocument, "signatures", signaturePath, a.fileExists(signaturePath))
 	}
 }
 

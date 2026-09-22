@@ -13,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 // Kind 表示输出格式的类别，用于调用方按类别分发转换行为。
@@ -283,7 +284,7 @@ func sniffInputFormat(data []byte) (string, error) {
 	if len(data) >= 5 && string(data[:5]) == "%PDF-" {
 		return "pdf", nil
 	}
-	if len(data) >= 4 && bytes.Equal(data[:4], []byte("PK\x03\x04")) && bytes.Contains(data, []byte("OFD.xml")) {
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte("PK\x03\x04")) && bytes.Contains(data, []byte(spec.RootDocument)) {
 		return "ofd", nil
 	}
 	return "", errors.New("无法识别输入格式，请显式指定 from")

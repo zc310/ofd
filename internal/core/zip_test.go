@@ -413,3 +413,51 @@ func (c *errorCloser) Close() error {
 }
 
 var _ io.Closer = (*errorCloser)(nil)
+
+func TestOpenReaderAtReadsWithoutBuffering(t *testing.T) {
+	archiveData := newTestZip(t, map[string][]byte{
+		"OFD.xml": []byte(`<OFD><DocBody/></OFD>`),
+		"data":    []byte("content"),
+	})
+	archive, err := OpenReaderAt(bytes.NewReader(archiveData), int64(len(archiveData)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	data, err := archive.Read("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("Read = %q", data)
+	}
+}
+
+func TestOpenReaderAtValidatesInput(t *testing.T) {
+	if _, err := OpenReaderAt(nil, 10); err == nil {
+		t.Fatal("nil reader should fail")
+	}
+	if _, err := OpenReaderAt(bytes.NewReader(nil), 0); err == nil {
+		t.Fatal("zero size should fail")
+	}
+	if _, err := OpenReaderAt(bytes.NewReader(nil), -1); err == nil {
+		t.Fatal("negative size should fail")
+	}
+}
+
+func TestValidateEntryName(t *testing.T) {
+	valid := []string{"OFD.xml", "Doc_0/Document.xml", "Doc_0/Res/image_1.png", "a-b_c.txt"}
+	for _, name := range valid {
+		if err := ValidateEntryName(name); err != nil {
+			t.Fatalf("ValidateEntryName(%q) = %v, want nil", name, err)
+		}
+	}
+
+	invalid := []string{"", "/absolute.xml", "a\\b", "a\x00b", ".", "..", "../escape", "Doc_0/../escape", "Doc_0/./x", "Doc_0//x"}
+	for _, name := range invalid {
+		if err := ValidateEntryName(name); err == nil {
+			t.Fatalf("ValidateEntryName(%q) = nil, want error", name)
+		}
+	}
+}
