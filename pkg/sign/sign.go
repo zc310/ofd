@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ type Options struct {
 	// Command 是外部签名命令，按空白拆分参数，不支持引号或 shell 语法。
 	// 命令从标准输入读取 Signature.xml 字节，向标准输出写 SignedValue.dat 字节。
 	Command string
-	// ID 是签名标识，空值时使用 "1"。
+	// ID 是签名标识，空值时使用 "sign-1"。
 	ID string
 	// ProviderName、ProviderVersion、Company 写入 SignedInfo 的 Provider。
 	ProviderName    string
@@ -50,9 +49,37 @@ type Options struct {
 	CheckMethod string
 	// Date 是签名时间，零值时使用当前时间。
 	Date time.Time
+	// Deterministic 使用固定 ZIP 时间，生成可复现的签名结果。
+	// 需要 Date 固定时配合设置，否则 Signature.xml 中的签名时间仍会变化。
+	Deterministic bool
+	// Stamp 控制是否在 Signature.xml 写入 StampAnnot，让阅读器把印章图片绘制到页面上。
+	// 为 nil 时不写入 StampAnnot（只验签，不显示印章）。
+	Stamp *StampOptions
+	// References 控制 SignedInfo/References 覆盖的文件集合；为 nil 时签名文档体目录下的全部文件（不含 OFD.xml）。
+	References *ReferenceOptions
 	// Environment 是传递给外部命令的额外环境变量，格式为 KEY=VALUE。
 	Environment []string
 }
+
+// ReferenceOptions 选择 SignedInfo/References 覆盖的文件。
+// Include/Exclude 是不区分大小写的 glob（相对文档体目录，如 "Pages/**"、"*.xml"），
+// 为空表示包含全部文件。RootDocument 为真时把 OFD.xml 纳入引用。
+type ReferenceOptions struct {
+	Include      []string
+	Exclude      []string
+	RootDocument bool
+}
+
+// StampOptions 描述签章在页面上的位置。
+type StampOptions struct {
+	// PageRef 是 StampAnnot@PageRef 引用的页面 ID；为空时使用首个文档体的首页。
+	PageRef string
+	// Boundary 是 StampAnnot@Boundary，格式为 "x y width height"；为空时在首页右下角放置默认大小印章。
+	Boundary string
+}
+
+// defaultStampSize 是默认印章边长（毫米）。
+const defaultStampSize = 40.0
 
 type entry struct {
 	name   string
@@ -103,6 +130,7 @@ func Sign(input any, w io.Writer, options Options) error {
 	if id == "" {
 		id = "sign-1"
 	}
+	stampID := normalizeStampID(id)
 	signatureMethod := strings.TrimSpace(options.SignatureMethod)
 	if signatureMethod == "" {
 		signatureMethod = DefaultSignatureMethod
@@ -123,25 +151,19 @@ func Sign(input any, w io.Writer, options Options) error {
 			return err
 		}
 		signatureDir := path.Join(docDir, "Signatures")
-		references := make([]string, 0)
-		for _, item := range entries {
-			if item.name == path.Join(docDir, "Signatures.xml") {
-				continue
-			}
-			if item.name == signatureDir || strings.HasPrefix(item.name, signatureDir+"/") {
-				continue
-			}
-			if !strings.HasPrefix(item.name, docDir+"/") {
-				continue
-			}
-			references = append(references, path.Join("..", strings.TrimPrefix(item.name, docDir+"/")))
-		}
-		sort.Strings(references)
+		references := collectReferences(docDir, entries, options.References)
 		if len(references) == 0 {
 			return fmt.Errorf("%s 没有可签名的文件", docDir)
 		}
 
 		baseName := "Signature_" + id + ".xml"
+		var stamp *stampAnnot
+		if options.Stamp != nil {
+			stamp, err = resolveStamp(*options.Stamp, docDir, entries)
+			if err != nil {
+				return err
+			}
+		}
 		signatureXML, err := buildSignatureXML(signatureXMLInput{
 			id:              id,
 			providerName:    options.ProviderName,
@@ -154,6 +176,8 @@ func Sign(input any, w io.Writer, options Options) error {
 			references:      references,
 			files:           index,
 			signatureBase:   signatureDir,
+			stamp:           stamp,
+			stampID:         stampID,
 		})
 		if err != nil {
 			return err
@@ -184,7 +208,7 @@ func Sign(input any, w io.Writer, options Options) error {
 	if err != nil {
 		return fmt.Errorf("生成 %s 失败: %w", spec.RootDocument, err)
 	}
-	return writePackage(w, entries, added, updatedRoot)
+	return writePackage(w, entries, added, updatedRoot, options.Deterministic)
 }
 
 type signatureXMLInput struct {
@@ -199,6 +223,14 @@ type signatureXMLInput struct {
 	references      []string
 	files           map[string][]byte
 	signatureBase   string
+	stamp           *stampAnnot
+	stampID         string
+}
+
+// stampAnnot 是写入 Signature.xml 的 StampAnnot 属性值。
+type stampAnnot struct {
+	pageRef  string
+	boundary string
 }
 
 func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
@@ -229,6 +261,12 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 		element := references.CreateElement("Reference")
 		element.CreateAttr("FileRef", reference)
 		element.CreateElement("CheckValue").SetText(base64.StdEncoding.EncodeToString(digest[:]))
+	}
+	if input.stamp != nil {
+		stamp := info.CreateElement("StampAnnot")
+		stamp.CreateAttr("ID", input.stampID)
+		stamp.CreateAttr("PageRef", input.stamp.pageRef)
+		stamp.CreateAttr("Boundary", input.stamp.boundary)
 	}
 	root.CreateElement("SignedValue").SetText(input.signedValue)
 	out, err := doc.WriteToBytes()
@@ -280,7 +318,19 @@ func runCommand(command string, stdin []byte, environment map[string]string, ext
 	return stdout.Bytes(), nil
 }
 
-func writePackage(w io.Writer, entries, added []entry, rootData []byte) error {
+// isSignatureEntry 判断条目是否属于文档体的签名文件。
+// 除当前 layout 的 Signatures 目录外，同时识别历史生产者使用的 Signs 目录，
+// 避免重签后旧签名残留。
+func isSignatureEntry(name string) bool {
+	for _, dir := range []string{"Signatures", "Signs"} {
+		if strings.HasSuffix(name, "/"+dir+".xml") || strings.Contains(name, "/"+dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func writePackage(w io.Writer, entries, added []entry, rootData []byte, deterministic bool) error {
 	archive := zip.NewWriter(w)
 	seen := make(map[string]bool)
 	write := func(name string, data []byte, method uint16) error {
@@ -292,6 +342,9 @@ func writePackage(w io.Writer, entries, added []entry, rootData []byte) error {
 		}
 		seen[name] = true
 		header := &zip.FileHeader{Name: name, Method: method}
+		if deterministic {
+			header.Modified = time.Unix(0, 0).UTC()
+		}
 		file, err := archive.CreateHeader(header)
 		if err != nil {
 			return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
@@ -305,7 +358,7 @@ func writePackage(w io.Writer, entries, added []entry, rootData []byte) error {
 		if item.name == spec.RootDocument {
 			continue
 		}
-		if strings.HasSuffix(item.name, "/Signatures.xml") || strings.Contains(item.name, "/Signatures/") {
+		if isSignatureEntry(item.name) {
 			continue
 		}
 		if err := write(item.name, item.data, item.method); err != nil {
