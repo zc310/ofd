@@ -983,3 +983,86 @@ func TestPagesRejectsNegativeConcurrency(t *testing.T) {
 		t.Fatalf("负数并发数应返回错误")
 	}
 }
+
+func collectSignatureEvents(t *testing.T, run func(onSignature func(SignatureEvent)) error) []SignatureEvent {
+	t.Helper()
+	var events []SignatureEvent
+	if err := run(func(event SignatureEvent) { events = append(events, event) }); err != nil {
+		t.Fatalf("合并失败: %v", err)
+	}
+	return events
+}
+
+func signatureActions(events []SignatureEvent) map[SignatureAction]int {
+	counts := make(map[SignatureAction]int)
+	for _, event := range events {
+		counts[event.Action]++
+	}
+	return counts
+}
+
+func TestMergeSignatureEvents(t *testing.T) {
+	preserved := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
+		var buffer bytes.Buffer
+		return Files([]string{testdataPath("999.ofd")}, &buffer, Options{Signatures: SignaturePreserve, OnSignature: on})
+	})
+	if signatureActions(preserved)[SignaturePreserved] != 1 {
+		t.Fatalf("preserve 事件 = %+v", preserved)
+	}
+
+	rewritten := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
+		var buffer bytes.Buffer
+		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureRewrite, OnSignature: on})
+	})
+	if signatureActions(rewritten)[SignatureRewritten] != 1 {
+		t.Fatalf("rewrite 事件 = %+v", rewritten)
+	}
+
+	dropped := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
+		var buffer bytes.Buffer
+		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureDrop, OnSignature: on})
+	})
+	if signatureActions(dropped)[SignatureDropped] != 2 {
+		t.Fatalf("drop 事件 = %+v", dropped)
+	}
+}
+
+func TestVerifySignatures(t *testing.T) {
+	statuses, err := VerifySignatures(testdataPath("999.ofd"))
+	if err != nil {
+		t.Fatalf("VerifySignatures 失败: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("期望 1 个签名，实际 %d", len(statuses))
+	}
+	if !statuses[0].DigestValid {
+		t.Fatalf("原始文件摘要应有效: %+v", statuses[0])
+	}
+
+	var buffer bytes.Buffer
+	if err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureRewrite}); err != nil {
+		t.Fatalf("合并失败: %v", err)
+	}
+	merged, err := VerifySignatures(buffer.Bytes())
+	if err != nil {
+		t.Fatalf("VerifySignatures 失败: %v", err)
+	}
+	if len(merged) != 2 {
+		t.Fatalf("期望 2 个签名，实际 %d", len(merged))
+	}
+}
+
+func TestPagesSignatureEvents(t *testing.T) {
+	var events []SignatureEvent
+	var buffer bytes.Buffer
+	err := Pages([]Source{{Path: testdataPath("999.ofd")}}, &buffer, PageOptions{
+		Pages:       []int{1},
+		OnSignature: func(event SignatureEvent) { events = append(events, event) },
+	})
+	if err != nil {
+		t.Fatalf("Pages 失败: %v", err)
+	}
+	if signatureActions(events)[SignatureDropped] != 1 {
+		t.Fatalf("模型级合并应丢弃并汇总签名，实际 %+v", events)
+	}
+}

@@ -71,6 +71,30 @@ const (
 	defaultMaxTotalBytes = int64(512 << 20)
 )
 
+// SignatureAction 描述合并过程对某个签名采取的动作。
+type SignatureAction string
+
+const (
+	// SignaturePreserved 表示签名文件字节原样保留。
+	SignaturePreserved SignatureAction = "preserved"
+	// SignatureRewritten 表示签名文件中的包内路径被重写，签名值会失效。
+	SignatureRewritten SignatureAction = "rewritten"
+	// SignatureDropped 表示签名被丢弃。
+	SignatureDropped SignatureAction = "dropped"
+)
+
+// SignatureEvent 描述某个输入签名的处理结果。
+type SignatureEvent struct {
+	// Input 是来源名称，文件输入时为路径。
+	Input string
+	// DocumentIndex 是文档体索引，从 0 开始。
+	DocumentIndex int
+	// ID 是签名标识或签名文件路径。
+	ID string
+	// Action 是对该签名的处理动作。
+	Action SignatureAction
+}
+
 // Options 控制 ZIP 级合并的输出方式。
 type Options struct {
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
@@ -85,6 +109,8 @@ type Options struct {
 	Limits Limits
 	// OnWarning 可选，接收合并过程中的非致命提示，例如签名被重写后签名值失效。
 	OnWarning func(string)
+	// OnSignature 可选，接收每个输入签名的处理结果。
+	OnSignature func(SignatureEvent)
 }
 
 // bodyPlan 描述一个输入文档体从旧目录到新目录的搬运计划。
@@ -93,6 +119,8 @@ type bodyPlan struct {
 	newDir string
 	// signatureDir 是旧的签名目录（包内相对路径），SignatureDrop 时整目录跳过。
 	signatureDir string
+	// documentIndex 是文档体索引，用于签名事件。
+	documentIndex int
 }
 
 // Source 描述一个可整体读取的 OFD 输入。Path、Data、Reader 必须且只能设置一个：
@@ -333,7 +361,7 @@ func mergeSource(state *mergeState, src source) error {
 
 	plans := make([]bodyPlan, 0, len(docBodies))
 	oldDirs := make(map[string]bool, len(docBodies))
-	for _, body := range docBodies {
+	for documentIndex, body := range docBodies {
 		docRoot := directChildText(body, "DocRoot")
 		oldDir, err := normalizeDir(docRoot)
 		if err != nil {
@@ -346,7 +374,7 @@ func mergeSource(state *mergeState, src source) error {
 
 		newDir := fmt.Sprintf("Doc_%d", state.nextDir)
 		state.nextDir++
-		plan := bodyPlan{oldDir: oldDir, newDir: newDir}
+		plan := bodyPlan{oldDir: oldDir, newDir: newDir, documentIndex: documentIndex}
 		if state.writer.options.Signatures == SignatureDrop {
 			plan.signatureDir = signatureDirOf(body)
 		}
@@ -410,6 +438,9 @@ func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, pl
 			}
 		}
 		if signatures == SignatureDrop && inSignatureDir(name, plan.signatureDir) {
+			if isSignatureDocument(name) {
+				writer.signature(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: SignatureDropped})
+			}
 			continue
 		}
 		newName := plan.newDir + strings.TrimPrefix(name, plan.oldDir)
@@ -423,12 +454,17 @@ func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, pl
 				return fmt.Errorf("读取 %s 的 %s 失败: %w", input, name, err)
 			}
 			rewritten, changed := rewriteSignatureXML(data, plan.oldDir, plan.newDir)
+			action := SignaturePreserved
 			if changed {
 				if signatures == SignaturePreserve {
 					return fmt.Errorf("%s 的 %s 使用包内绝对路径，文档改名后必须重写路径才能保持引用有效；preserve 模式无法保留原始签名，请改用 rewrite 或 drop", input, name)
 				}
 				writer.warn(fmt.Sprintf("签名文件 %s 的包内绝对路径已重写为 %s，原签名值失效", name, newName))
 				data = rewritten
+				action = SignatureRewritten
+			}
+			if isSignatureDocument(name) {
+				writer.signature(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: action})
 			}
 			if err := writer.write(newName, data); err != nil {
 				return err
@@ -718,6 +754,13 @@ func (w *entryWriter) warn(message string) {
 	}
 }
 
+// signature 通过 Options.OnSignature 上报签名处理结果。
+func (w *entryWriter) signature(event SignatureEvent) {
+	if w.options.OnSignature != nil {
+		w.options.OnSignature(event)
+	}
+}
+
 // validateEntryName 校验包内条目路径安全且未重复出现。
 func validateEntryName(name string, seen map[string]bool) error {
 	if err := core.ValidateEntryName(name); err != nil {
@@ -832,6 +875,11 @@ func isSignatureXML(name string) bool {
 	default:
 		return false
 	}
+}
+
+// isSignatureDocument 判断条目是否为单个签名描述文件（Signatures.xml 是清单）。
+func isSignatureDocument(name string) bool {
+	return path.Base(name) == "Signature.xml"
 }
 
 // inSignatureDir 判断条目是否位于指定的签名目录内。
