@@ -1042,9 +1042,11 @@ func main() {
 }
 ```
 
-入口包括 `Files`（文件路径，按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回字节）。`Options.Signatures` 控制签名处理（`preserve`/`rewrite`/`drop`），`Options.Orphans` 控制文档目录之外条目的处理（`error`/`ignore`/`preserve`），`Options.Limits` 限制条目数和解压大小，`Options.OnWarning` 可选接收非致命提示。命令行对应 `ofd-creator merge`。
+入口包括 `Files`（文件路径，按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回字节）。`Options.Signatures` 控制签名处理（`preserve`/`rewrite`/`drop`），`Options.Orphans` 控制文档目录之外条目的处理（`error`/`ignore`/`preserve`），`Options.Limits` 限制条目数和解压大小，`Options.OnWarning`/`Options.OnSignature` 分别接收非致命提示与签名处理结果；`VerifySignatures` 可校验输出文档每个签名的摘要与密码学签名。命令行对应 `ofd-creator merge`。
 
 需要跨文档拼页时使用模型级合并 `Pages`：它把每个输入文档体的页面解析为 creator 模型后重新生成一个单文档 OFD，自动重命名/重编号文档级资源并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。`PageOptions.Pages` 可按拼接页序选页/重排，`PageOptions.Selectors` 可按来源选页（来源从 1 开始），`PageOptions.Limits` 限制单输入字节数、输入总字节数与输出页数，`PageOptions.Concurrency` 控制并行解析输入的并发数（默认 4），`PageOptions.ID/Title/Author/Subject` 可覆盖输出元数据。
+
+需要重新签名时，`pkg/sign` 提供 `Sign`：为每个文档体计算引用摘要、生成 `Signature.xml`，把该文件交给外部命令并写回其输出的 `SignedValue.dat`；命令行对应 `ofd-creator merge --sign-cmd`，私钥与算法由外部命令负责。
 
 ```go
 if err := merge.Pages([]merge.Source{{Path: "a.ofd"}, {Path: "b.ofd"}}, output, merge.PageOptions{}); err != nil {
