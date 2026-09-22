@@ -17,10 +17,11 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 | **文档转换**   | OFD 转 PDF、单文件 HTML、纯文本、Markdown 和 PNG/JPG 等图像格式；PDF/Markdown/Office/HTML 文档转 OFD |
 | **页面处理**   | 支持多文档体、多页面转换，按文档体顺序合并并使用全局页码                                             |
 | **灵活配置**   | 支持自定义 DPI、背景颜色和页面选择                                                                   |
-| **文档合并**   | ZIP 级合并多个 OFD 为多文档包，支持签名处理和目录外条目策略                                           |
+| **文档合并**   | ZIP 级合并多个 OFD 为多文档包，支持签名处理和目录外条目策略                                          |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                                              |
 | **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告                         |
 | **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证                                       |
+| **发票抽取**   | 从增值税电子发票 OFD 中读取结构化发票附件并输出 JSON，页面文字层补齐票面标题与大写金额               |
 | **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                                                       |
 | **安卓阅读**   | 支持 Android 文件选择、文档阅读和 APK 打包                                                           |
 | **浏览器阅读** | 提供基于 Web Worker 和 WASM 的 OFD 阅读器                                                            |
@@ -148,10 +149,16 @@ Linux amd64 默认构建包含 `ofd-viewer`；Linux ARM64 和 Linux 主机交叉
 make package-validator
 ```
 
+单独构建 OFD 电子发票信息抽取工具：
+
+```bash
+make package-invoice
+```
+
 Linux amd64 默认会生成 Linux amd64/ARM64、macOS、Windows x86_64/ARM64 程序包以及 Android APK 和 APK ZIP；
-Linux ARM64 会生成五个 Linux 程序包；Windows 和 macOS 下的默认构建会生成
-`ofd-viewer`、`ofd-converter`、`ofd-validator`、`ofd-analyzer` 和 `ofd-archive` 五个 ZIP，不会编译
-`ofd-thumbnailer`。
+Linux ARM64 会生成五个 Linux 程序包（不含 `ofd-viewer`）；Windows 和 macOS 下的默认构建会生成
+`ofd-viewer`、`ofd-converter`、`ofd-validator`、`ofd-analyzer`、`ofd-archive`、`ofd-creator`、
+`ofd-signer-demo` 和 `ofd-invoice` 各个 ZIP，不会编译 `ofd-thumbnailer`。
 
 每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
 
@@ -1153,6 +1160,20 @@ go run ./cmd/ofd-analyzer --signature-crls revoked.crl --signature-revocation-is
 - 使用 `--fail-on-warning` 可在发现分析警告时返回退出码 `1`
 
 资源引用使用 `doc[n]/kind:id` 形式表示文档体作用域，可以区分不同文档体中重复使用的 ID。完整的命令选项、报告字段和退出码说明见 [`cmd/ofd-analyzer/README.md`](cmd/ofd-analyzer/README.md)。
+
+</details>
+
+<details>
+<summary>电子发票信息抽取</summary>
+
+`ofd-invoice` 从增值税电子发票 OFD 文件中抽取结构化发票信息并输出 JSON，适合财务入账、对账和自动化处理。抽取以 OFD 包内嵌的发票结构化附件为主（税控开具的电子普票/专票通常自带 `Doc_0/Attachs/original_invoice.xml`），页面文字层只用于补齐票面标题和价税合计大写金额，并按标题推断发票类型（标题取含「发票/通行费」字样、字号最大的票面文字）。
+
+```bash
+go run ./cmd/ofd-invoice invoice.ofd
+go run ./cmd/ofd-invoice --pretty -o invoice.json invoice.ofd
+```
+
+字段包括发票代码/号码、开票日期、校验码、机器编号、不含税金额、税额、价税合计（小写与大写）、税控码、收款人/复核人/开票人、购销方资料以及逐行价税明细；金额、数量、税率使用精确十进制表示。附件缺失或不可用时返回错误，不处理 PDF 等非 OFD 输入。库 API（`github.com/zc310/ofd/pkg/invoice` 的 `Extract`）可直接在外部代码中复用。完整用法见 [`cmd/ofd-invoice/README.md`](cmd/ofd-invoice/README.md)。
 
 </details>
 
