@@ -1678,7 +1678,7 @@ func TestCreateTemplatePages(t *testing.T) {
 	if document.GetTemplate(10) == nil {
 		t.Fatal("模板页内容加载失败")
 	}
-	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder == nil || *document.CommonData.TemplatePages[0].ZOrder != "Background" {
+	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder != "Background" {
 		t.Fatalf("模板页定义未正确生成: %+v", document.CommonData.TemplatePages)
 	}
 	if document.GetTemplate(10) == nil || document.GetTemplate(10).Content == nil || len(document.GetTemplate(10).Content.Layer) != 1 || len(document.GetTemplate(10).Content.Layer[0].PathObject) != 1 {

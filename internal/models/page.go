@@ -40,7 +40,7 @@ type Template struct {
 	// TemplateID 被引用模板页的标识。
 	TemplateID StRefID `xml:"TemplateID,attr"`
 	// ZOrder 模板页的叠放顺序，可为 Background 或 Foreground。
-	ZOrder string `xml:"ZOrder,attr,omitempty"`
+	ZOrder ZOrder `xml:"ZOrder,attr,omitempty"`
 }
 
 // Content 页面内容容器。

@@ -59,7 +59,7 @@ type TemplatePage struct {
 	// Name 模板页名称。
 	Name *string `xml:"Name,attr,omitempty"`
 	// ZOrder 模板页的叠放顺序。
-	ZOrder *string `xml:"ZOrder,attr,omitempty"`
+	ZOrder ZOrder `xml:"ZOrder,attr,omitempty"`
 	// BaseLoc 模板页内容文件的位置。
 	BaseLoc StLoc `xml:"BaseLoc,attr"`
 }
