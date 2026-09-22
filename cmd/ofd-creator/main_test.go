@@ -274,6 +274,7 @@ func TestRunMergeRejectsUsageErrors(t *testing.T) {
 		{"merge", "-i", hello, "-o", hello},
 		{"merge", "-i", hello, "-o", output, "--compression", "bogus"},
 		{"merge", "-i", hello, "-o", output, "--orphans", "bogus"},
+		{"merge", "-i", hello, "-o", output, "--max-entry-mb", "-1"},
 	}
 	for _, args := range cases {
 		var stdout, stderr bytes.Buffer

@@ -255,6 +255,11 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		Deterministic: opts.deterministic,
 		Signatures:    merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
 		Orphans:       merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))),
+		Limits: merge.Limits{
+			MaxEntries:    opts.maxEntries,
+			MaxEntryBytes: int64(opts.maxEntryMB) << 20,
+			MaxTotalBytes: int64(opts.maxTotalMB) << 20,
+		},
 		OnWarning: func(message string) {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge: 警告:", message)
 		},
@@ -337,6 +342,9 @@ type mergeOptions struct {
 	compression   string
 	signatures    string
 	orphans       string
+	maxEntries    int
+	maxEntryMB    int
+	maxTotalMB    int
 	deterministic bool
 	validate      bool
 	help          bool
@@ -376,6 +384,9 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
 	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：preserve、rewrite 或 drop")
 	flags.StringVar(&opts.orphans, "orphans", opts.orphans, "文档目录外条目处理方式：error、ignore 或 preserve")
+	flags.IntVar(&opts.maxEntries, "max-entries", 0, "最多搬运的条目数，0 表示使用默认值 10000")
+	flags.IntVar(&opts.maxEntryMB, "max-entry-mb", 0, "单个条目解压后的最大 MB，0 表示使用默认值 64")
+	flags.IntVar(&opts.maxTotalMB, "max-total-mb", 0, "所有条目解压后的总 MB 上限，0 表示使用默认值 512")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.validate, "validate", false, "合并后执行严格 OFD 校验")
 	if err := root.Execute(); err != nil {
@@ -420,6 +431,9 @@ func validateMergeOptions(opts *mergeOptions) error {
 	case "", merge.OrphanError, merge.OrphanIgnore, merge.OrphanPreserve:
 	default:
 		return fmt.Errorf("不支持的目录外条目处理方式 %q", opts.orphans)
+	}
+	if opts.maxEntries < 0 || opts.maxEntryMB < 0 || opts.maxTotalMB < 0 {
+		return errors.New("合并规模限制不能为负数")
 	}
 	return nil
 }

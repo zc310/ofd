@@ -464,3 +464,30 @@ func TestMergeSmokeOverTestdata(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeEnforcesLimits(t *testing.T) {
+	input := []string{testdataPath("hello.ofd")}
+	cases := []struct {
+		name   string
+		limits Limits
+	}{
+		{"max entries", Limits{MaxEntries: 1}},
+		{"max entry bytes", Limits{MaxEntryBytes: 8}},
+		{"max total bytes", Limits{MaxTotalBytes: 16}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buffer bytes.Buffer
+			if err := Files(input, &buffer, Options{Limits: tc.limits}); err == nil {
+				t.Fatalf("超过限制时应返回错误")
+			}
+		})
+	}
+}
+
+func TestMergeRejectsNegativeLimits(t *testing.T) {
+	var buffer bytes.Buffer
+	if err := Files([]string{testdataPath("hello.ofd")}, &buffer, Options{Limits: Limits{MaxEntryBytes: -1}}); err == nil {
+		t.Fatalf("负数限制应返回错误")
+	}
+}
