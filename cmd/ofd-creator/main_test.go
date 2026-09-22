@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/zc310/ofd/pkg/validator"
@@ -401,5 +402,45 @@ func TestRunMergePagesConcurrency(t *testing.T) {
 	stderr.Reset()
 	if code := run([]string{"merge", "-i", hello, "-o", output, "--workers", "2"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("无 --pages 时 --workers exit code = %d, want %d", code, exitUsage)
+	}
+}
+
+func TestRunMergeVerifySignatures(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", signed, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("verify signatures exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("签名汇总")) || !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
+		t.Fatalf("应输出签名汇总与验证结果, stderr = %s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	if code := run([]string{"merge", "-i", hello, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("no signature exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("没有签名")) {
+		t.Fatalf("无签名文档应提示没有签名, stderr = %s", stderr.String())
+	}
+}
+
+func TestRunMergeSignCmd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("使用 cat 作为外部签名命令")
+	}
+	directory := t.TempDir()
+	output := filepath.Join(directory, "signed.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-o", output, "--pages", "1", "--sign-cmd", "cat", "--verify-signatures"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge --sign-cmd exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
+		t.Fatalf("验签应报告摘要有效, stderr = %s", stderr.String())
 	}
 }

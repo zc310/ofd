@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	ofdexport "github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -252,6 +254,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 		return exitUsage
 	}
+	collector := &signatureCollector{}
 	mergeOptions := merge.Options{
 		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
 		Deterministic: opts.deterministic,
@@ -265,6 +268,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		OnWarning: func(message string) {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge: 警告:", message)
 		},
+		OnSignature: collector.add,
 	}
 	run := func(w io.Writer) error {
 		if strings.TrimSpace(opts.pages) == "" {
@@ -286,13 +290,55 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 			Title:         opts.title,
 			Author:        opts.author,
 			Concurrency:   opts.workers,
+			OnSignature:   collector.add,
 		})
+	}
+	if strings.TrimSpace(opts.signCmd) != "" {
+		var raw bytes.Buffer
+		if err := run(&raw); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+			return exitResource
+		}
+		reportSignatureEvents(stderr, collector.snapshot())
+		var signed bytes.Buffer
+		if err := sign.Sign(raw.Bytes(), &signed, sign.Options{Command: opts.signCmd, ID: opts.signID}); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+			return exitResource
+		}
+		data := signed.Bytes()
+		if opts.verifySignatures {
+			statuses, verifyErr := merge.VerifySignatures(data)
+			if verifyErr != nil {
+				_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
+				return exitResource
+			}
+			reportSignatureVerification(stderr, statuses)
+		}
+		if opts.validate {
+			if err := validateMerged(bytes.NewReader(data), "merged.ofd", stderr); err != nil {
+				return exitValidate
+			}
+		}
+		if err := writeOutput(opts.output, data, stdout); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
+			return exitOutput
+		}
+		return exitOK
 	}
 	if opts.output == "-" {
 		var buffer bytes.Buffer
 		if err := run(&buffer); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 			return exitResource
+		}
+		reportSignatureEvents(stderr, collector.snapshot())
+		if opts.verifySignatures {
+			statuses, verifyErr := merge.VerifySignatures(buffer.Bytes())
+			if verifyErr != nil {
+				_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
+				return exitResource
+			}
+			reportSignatureVerification(stderr, statuses)
 		}
 		if opts.validate {
 			if err := validateMerged(bytes.NewReader(buffer.Bytes()), "merged.ofd", stderr); err != nil {
@@ -305,7 +351,6 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		}
 		return exitOK
 	}
-
 	dir := filepath.Dir(opts.output)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
@@ -327,6 +372,15 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 		return exitOutput
 	}
+	reportSignatureEvents(stderr, collector.snapshot())
+	if opts.verifySignatures {
+		statuses, verifyErr := merge.VerifySignatures(temporaryName)
+		if verifyErr != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
+			return exitResource
+		}
+		reportSignatureVerification(stderr, statuses)
+	}
 	if opts.validate {
 		file, openErr := os.Open(temporaryName)
 		if openErr != nil {
@@ -346,6 +400,63 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
+type signatureCollector struct {
+	mu     sync.Mutex
+	events []merge.SignatureEvent
+}
+
+func (c *signatureCollector) add(event merge.SignatureEvent) {
+	c.mu.Lock()
+	c.events = append(c.events, event)
+	c.mu.Unlock()
+}
+
+func (c *signatureCollector) snapshot() []merge.SignatureEvent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]merge.SignatureEvent(nil), c.events...)
+}
+
+func reportSignatureEvents(w io.Writer, events []merge.SignatureEvent) {
+	if len(events) == 0 {
+		return
+	}
+	var preserved, rewritten, dropped int
+	for _, event := range events {
+		switch event.Action {
+		case merge.SignaturePreserved:
+			preserved++
+		case merge.SignatureRewritten:
+			rewritten++
+		case merge.SignatureDropped:
+			dropped++
+		}
+		_, _ = fmt.Fprintf(w, "ofd-creator merge: 签名 %s#%d %s -> %s\n", event.Input, event.DocumentIndex, event.ID, event.Action)
+	}
+	_, _ = fmt.Fprintf(w, "ofd-creator merge: 签名汇总：保留 %d，重写 %d，丢弃 %d\n", preserved, rewritten, dropped)
+}
+
+func reportSignatureVerification(w io.Writer, statuses []merge.SignatureStatus) {
+	if len(statuses) == 0 {
+		_, _ = fmt.Fprintln(w, "ofd-creator merge: 输出文档没有签名")
+		return
+	}
+	for _, status := range statuses {
+		digest := "摘要有效"
+		if !status.DigestValid {
+			digest = "摘要无效"
+		}
+		signature := "密码学签名未验证"
+		switch {
+		case status.Verified:
+			signature = "密码学签名有效"
+		case status.VerificationError != "":
+			signature = "密码学签名校验失败"
+		}
+		_, _ = fmt.Fprintf(w, "ofd-creator merge: 签名 %s：%s，%s\n", status.ID, digest, signature)
+	}
+}
+
 func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
 	instance, err := validator.New()
 	if err != nil {
@@ -361,22 +472,25 @@ func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
 }
 
 type mergeOptions struct {
-	inputs        []string
-	output        string
-	compression   string
-	signatures    string
-	orphans       string
-	pages         string
-	documentID    string
-	title         string
-	author        string
-	workers       int
-	maxEntries    int
-	maxEntryMB    int
-	maxTotalMB    int
-	deterministic bool
-	validate      bool
-	help          bool
+	inputs           []string
+	output           string
+	compression      string
+	signatures       string
+	orphans          string
+	pages            string
+	documentID       string
+	title            string
+	author           string
+	signCmd          string
+	signID           string
+	workers          int
+	maxEntries       int
+	maxEntryMB       int
+	maxTotalMB       int
+	deterministic    bool
+	verifySignatures bool
+	validate         bool
+	help             bool
 }
 
 func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
@@ -423,6 +537,9 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.IntVar(&opts.maxTotalMB, "max-total-mb", 0, "所有条目解压后的总 MB 上限，0 表示使用默认值 512")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.validate, "validate", false, "合并后执行严格 OFD 校验")
+	flags.BoolVar(&opts.verifySignatures, "verify-signatures", false, "合并后校验输出文档的签名摘要与密码学签名")
+	flags.StringVar(&opts.signCmd, "sign-cmd", "", "合并后调用外部命令为输出追加签名；命令从 stdin 读 Signature.xml，向 stdout 写 SignedValue.dat")
+	flags.StringVar(&opts.signID, "sign-id", "sign-1", "外部签名的签名标识，需为合法 xs:ID")
 	if err := root.Execute(); err != nil {
 		return nil, err
 	}
