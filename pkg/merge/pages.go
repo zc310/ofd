@@ -13,6 +13,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -50,6 +51,8 @@ type PageOptions struct {
 	Limits PageLimits
 	// Concurrency 是并行解析/转换输入的并发数，0 表示默认 4，1 表示串行。
 	Concurrency int
+	// OnSignature 可选，接收每个输入签名在模型级合并中被丢弃的结果。
+	OnSignature func(SignatureEvent)
 	// ID、Title、Author、Subject 可选覆盖输出文档元数据；为空时沿用首个来源。
 	ID      string
 	Title   string
@@ -195,6 +198,11 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 			return fmt.Errorf("处理输入 %s 失败: %w", prepared[index].name, result.err)
 		}
 		for _, built := range result.documents {
+			for _, id := range built.signatures {
+				if options.OnSignature != nil {
+					options.OnSignature(SignatureEvent{Input: prepared[index].name, DocumentIndex: built.documentIndex, ID: id, Action: SignatureDropped})
+				}
+			}
 			document := built.document
 			remapDocument(&document, built.prefix, ids)
 			mergePageDocument(&merged, document, first)
@@ -312,8 +320,10 @@ type pageInput struct {
 }
 
 type builtDocument struct {
-	document creator.Document
-	prefix   string
+	document      creator.Document
+	prefix        string
+	documentIndex int
+	signatures    []string
 }
 
 type builtSource struct {
@@ -394,7 +404,12 @@ func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource
 			return builtSource{err: fmt.Errorf("转换 %s 的文档体 %d 失败: %w", input.name, documentIndex, err)}
 		}
 		result.pages += len(document.Pages)
-		result.documents = append(result.documents, builtDocument{document: document, prefix: prefix})
+		var signatureIDs []string
+		ofd.Documents[documentIndex].ForEachSignature(func(id string, _ *models.Signature) bool {
+			signatureIDs = append(signatureIDs, id)
+			return true
+		})
+		result.documents = append(result.documents, builtDocument{document: document, prefix: prefix, documentIndex: documentIndex, signatures: signatureIDs})
 	}
 	return result
 }
