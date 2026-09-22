@@ -319,3 +319,87 @@ func TestRunMergeReportsSignatureRewriteWarning(t *testing.T) {
 		t.Fatalf("应输出签名重写警告, stderr = %s", stderr.String())
 	}
 }
+
+func TestRunMergePages(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "2,1", "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge --pages exit code = %d, stderr = %s", code, stderr.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := validator.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := instance.ValidateReader(t.Context(), bytes.NewReader(data), output); report.HasErrors() {
+		t.Fatalf("选页合并结果未通过校验: %+v", report.Issues)
+	}
+}
+
+func TestRunMergePagesRejectsIncompatibleFlags(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	cases := [][]string{
+		{"merge", "-i", hello, "-o", output, "--pages", "0"},
+		{"merge", "-i", hello, "-o", output, "--pages", "1", "--signatures", "rewrite"},
+		{"merge", "-i", hello, "-o", output, "--pages", "1", "--orphans", "ignore"},
+		{"merge", "-i", hello, "-o", output, "--pages", "1", "--max-entries", "5"},
+	}
+	for _, args := range cases {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != exitUsage {
+			t.Fatalf("run %v exit code = %d, want %d, stderr = %s", args, code, exitUsage, stderr.String())
+		}
+	}
+}
+
+func TestRunMergePagesBySource(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "s2:1;s1", "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge --pages s2:1;s1 exit code = %d, stderr = %s", code, stderr.String())
+	}
+}
+
+func TestRunMergePagesOverridesMetadata(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-o", output, "--pages", "1", "--document-id", "cli-id", "--title", "CLI 标题", "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge metadata exit code = %d, stderr = %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"merge", "-i", hello, "-o", output, "--title", "无 pages"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("无 --pages 时元数据选项 exit code = %d, want %d", code, exitUsage)
+	}
+}
+
+func TestRunMergePagesConcurrency(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "merged.ofd")
+	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "1", "--workers", "2", "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge --workers exit code = %d, stderr = %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"merge", "-i", hello, "-o", output, "--workers", "2"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("无 --pages 时 --workers exit code = %d, want %d", code, exitUsage)
+	}
+}

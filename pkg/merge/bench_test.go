@@ -69,3 +69,43 @@ func BenchmarkSourcesReaderAt(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkPages(b *testing.B) {
+	paths := []string{testdataPath("project-showcase.ofd"), testdataPath("pattern-fill.ofd")}
+	sources := make([]Source, 0, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			b.Fatal(err)
+		}
+		sources = append(sources, Source{Name: path, Data: data})
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buffer bytes.Buffer
+		if err := Pages(sources, &buffer, PageOptions{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPagesConcurrent(b *testing.B) {
+	paths := []string{testdataPath("project-showcase.ofd"), testdataPath("pattern-fill.ofd")}
+	sources := make([]Source, 0, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			b.Fatal(err)
+		}
+		sources = append(sources, Source{Name: path, Data: data})
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buffer bytes.Buffer
+		if err := Pages(sources, &buffer, PageOptions{Concurrency: 4}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

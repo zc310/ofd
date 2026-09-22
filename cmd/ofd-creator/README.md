@@ -155,6 +155,23 @@ ofd-creator merge -o merged.ofd --compression auto --deterministic --validate in
 
 合并逻辑同时以库的形式公开在 `pkg/merge`：`Files`（文件路径、输入按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回完整字节）。
 
+### 选页与重排
+
+`--pages` 使用模型级合并，把各输入的页面解析后重新生成一个单文档 OFD，并按给出的页序输出。支持全局页序和按来源两种写法，来源序号从 `1` 开始、按 `-i`/位置参数顺序编号：
+
+```bash
+# 全局页序：按输入顺序拼接后的第 1、3-5 页
+ofd-creator merge -o selected.ofd --pages 1,3-5 input1.ofd input2.ofd
+
+# 按来源：第 1 个输入的第 2 页，再第 2 个输入的全部页面
+ofd-creator merge -o selected.ofd --pages "s1:2;s2" input1.ofd input2.ofd
+
+# 重排
+ofd-creator merge -o reversed.ofd --pages 2,1 input1.ofd input2.ofd
+```
+
+模型级合并会自动重命名/重编号文档级资源（字体名、绘制参数名、图片/颜色空间/复合图元/模板 ID）并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。因此不能与 `--signatures`、`--orphans`、`--max-*` 同时使用。输出文档元数据默认沿用首个来源，可用 `--document-id`、`--title`、`--author` 覆盖；`--workers` 控制并行解析输入的并发数（默认 4），与 `ofd-converter --workers` 命名一致。
+
 ## 压缩策略
 
 ```text

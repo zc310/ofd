@@ -1220,6 +1220,9 @@ type BuildOptions struct {
 	// StreamAssets 对通过 file 引用的封面、图片、多媒体、附件和页面图片使用
 	// 惰性数据来源，避免创建超大 OFD 时把资源整体读入内存。
 	StreamAssets bool
+	// LoadAsset 可选，从内存读取通过 file 引用的资源；为空时从磁盘资源根目录读取。
+	// 设置后 StreamAssets 的惰性来源会退化为内存字节来源。
+	LoadAsset func(name string) ([]byte, error)
 }
 
 func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
@@ -1239,8 +1242,9 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 	if err != nil {
 		return creator.Document{}, fmt.Errorf("资源根目录无效: %w", err)
 	}
+	store := assetStore{root: root, loader: options.LoadAsset}
 	loadResource := func(file, encoded string) ([]byte, creator.DataSource, error) {
-		return loadOptionalResource(root, file, encoded, options.StreamAssets)
+		return store.loadOptional(file, encoded, options.StreamAssets)
 	}
 	document := creator.Document{
 		ID: m.Document.ID, Title: m.Document.Title, Author: m.Document.Author,
@@ -1257,22 +1261,22 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 		document.Permissions = permissions
 	}
 	for index, resource := range m.Resources.Public {
-		data, err := loadData(root, resource.File, resource.DataBase64)
+		data, err := store.loadData(resource.File, resource.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.public[%d].file: %w", index, err)
 		}
-		files, err := buildResourceFiles(root, resource.Files, options.StreamAssets)
+		files, err := store.buildResourceFiles(resource.Files, options.StreamAssets)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.public[%d].files: %w", index, err)
 		}
 		document.PublicRes = append(document.PublicRes, creator.PublicResource{Name: resource.Name, Data: data, Files: files})
 	}
 	for index, tag := range m.Resources.CustomTags {
-		schema, err := loadData(root, tag.Schema, tag.SchemaBase64)
+		schema, err := store.loadData(tag.Schema, tag.SchemaBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.custom_tags[%d].schema: %w", index, err)
 		}
-		data, err := loadData(root, tag.Data, tag.DataBase64)
+		data, err := store.loadData(tag.Data, tag.DataBase64)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.custom_tags[%d].data: %w", index, err)
 		}
@@ -1314,7 +1318,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 	}
 	document.Outlines = outlines
 	for index, signature := range m.Document.Signatures {
-		value, err := buildSignature(root, signature, options.StreamAssets)
+		value, err := store.buildSignature(signature, options.StreamAssets)
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("document.signatures[%d]: %w", index, err)
 		}
@@ -1362,7 +1366,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 			value.Properties = append(value.Properties, creator.ExtensionProperty{Name: property.Name, Type: property.Type, Value: property.Value})
 		}
 		if extension.DataFile != "" || extension.DataFileBase64 != "" {
-			data, source, err := loadOptionalResource(root, extension.DataFile, extension.DataFileBase64, options.StreamAssets)
+			data, source, err := store.loadOptional(extension.DataFile, extension.DataFileBase64, options.StreamAssets)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("document.extensions[%d].data_file: %w", index, err)
 			}
@@ -1380,7 +1384,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 			value.CreationDate = parsed
 		}
 		if version.DocRoot != "" || version.DocRootBase64 != "" {
-			data, err := loadData(root, version.DocRoot, version.DocRootBase64)
+			data, err := store.loadData(version.DocRoot, version.DocRootBase64)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("document.versions[%d].doc_root: %w", index, err)
 			}
@@ -1425,7 +1429,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 	for index, space := range m.Resources.ColorSpaces {
 		value := creator.ColorSpace{ID: space.ID, Type: space.Type, BitsPerComponent: space.BitsPerComponent, Palette: space.Palette}
 		if space.ProfileFile != "" || space.ProfileBase64 != "" {
-			data, err := loadData(root, space.ProfileFile, space.ProfileBase64)
+			data, err := store.loadData(space.ProfileFile, space.ProfileBase64)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("resources.color_spaces[%d].profile_file: %w", index, err)
 			}
@@ -1488,11 +1492,11 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 			if len(resource.Images) > 0 && (resource.File != "" || resource.DataBase64 != "" || len(resource.Files) > 0) {
 				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d]: images 不能与 file、data_base64 或 files 同时设置", index, resourceIndex)
 			}
-			data, err := loadData(root, resource.File, resource.DataBase64)
+			data, err := store.loadData(resource.File, resource.DataBase64)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d].file: %w", index, resourceIndex, err)
 			}
-			files, err := buildPageResourceFiles(root, resource.Files, options.StreamAssets)
+			files, err := store.buildPageResourceFiles(resource.Files, options.StreamAssets)
 			if err != nil {
 				return creator.Document{}, fmt.Errorf("pages[%d].resources[%d].files: %w", index, resourceIndex, err)
 			}
@@ -1754,19 +1758,32 @@ func parseDate(value string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("日期格式无效: %q", value)
 }
 
-func readOptionalAsset(root, name string) ([]byte, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, nil
-	}
-	return readAsset(root, name)
+// assetStore 解析 manifest 引用的资源，可来自磁盘目录或内存加载器。
+type assetStore struct {
+	root   string
+	loader func(name string) ([]byte, error)
 }
 
-func loadData(root, file, encoded string) ([]byte, error) {
+// read 读取资源字节。使用内存加载器时仍校验路径必须是相对、安全的。
+func (s assetStore) read(name string) ([]byte, error) {
+	if s.loader == nil {
+		return readAsset(s.root, name)
+	}
+	if strings.TrimSpace(name) == "" {
+		return nil, errors.New("资源文件路径不能为空")
+	}
+	if filepath.IsAbs(name) || strings.ContainsAny(name, "\\\x00") {
+		return nil, errors.New("资源文件路径必须是资源根目录下的相对路径")
+	}
+	return s.loader(name)
+}
+
+func (s assetStore) loadData(file, encoded string) ([]byte, error) {
 	if file != "" && encoded != "" {
 		return nil, errors.New("file 不能与 data_base64 同时设置")
 	}
 	if file != "" {
-		return readAsset(root, file)
+		return s.read(file)
 	}
 	return decodeOptionalBytes(encoded)
 }
@@ -1790,10 +1807,10 @@ func validateLeafName(value string) error {
 	return nil
 }
 
-func buildResourceFiles(root string, values []ResourceFile, stream bool) ([]creator.PublicResourceFile, error) {
+func (s assetStore) buildResourceFiles(values []ResourceFile, stream bool) ([]creator.PublicResourceFile, error) {
 	result := make([]creator.PublicResourceFile, 0, len(values))
 	for index, value := range values {
-		data, source, err := loadOptionalResource(root, value.File, value.DataBase64, stream)
+		data, source, err := s.loadOptional(value.File, value.DataBase64, stream)
 		if err != nil {
 			return nil, fmt.Errorf("[%d]: %w", index, err)
 		}
@@ -1802,10 +1819,10 @@ func buildResourceFiles(root string, values []ResourceFile, stream bool) ([]crea
 	return result, nil
 }
 
-func buildPageResourceFiles(root string, values []ResourceFile, stream bool) ([]creator.PageResourceFile, error) {
+func (s assetStore) buildPageResourceFiles(values []ResourceFile, stream bool) ([]creator.PageResourceFile, error) {
 	result := make([]creator.PageResourceFile, 0, len(values))
 	for index, value := range values {
-		data, source, err := loadOptionalResource(root, value.File, value.DataBase64, stream)
+		data, source, err := s.loadOptional(value.File, value.DataBase64, stream)
 		if err != nil {
 			return nil, fmt.Errorf("[%d]: %w", index, err)
 		}
@@ -1814,8 +1831,9 @@ func buildPageResourceFiles(root string, values []ResourceFile, stream bool) ([]
 	return result, nil
 }
 
-// loadOptionalResource 读取可选资源。stream 为真且通过 file 引用时返回惰性来源。
-func loadOptionalResource(root, file, encoded string, stream bool) ([]byte, creator.DataSource, error) {
+// loadOptional 读取可选资源。stream 为真且来自磁盘时返回惰性文件来源；
+// 使用内存加载器时退化为内存字节来源。
+func (s assetStore) loadOptional(file, encoded string, stream bool) ([]byte, creator.DataSource, error) {
 	if file != "" && encoded != "" {
 		return nil, nil, errors.New("file 不能与 data_base64 同时设置")
 	}
@@ -1823,12 +1841,18 @@ func loadOptionalResource(root, file, encoded string, stream bool) ([]byte, crea
 		data, err := decodeOptionalBytes(encoded)
 		return data, nil, err
 	}
-	if stream {
-		source, err := loadSource(root, file)
+	if stream && s.loader == nil {
+		source, err := loadSource(s.root, file)
 		return nil, source, err
 	}
-	data, err := readAsset(root, file)
-	return data, nil, err
+	data, err := s.read(file)
+	if err != nil {
+		return nil, nil, err
+	}
+	if stream {
+		return nil, creator.BytesDataSource(data), nil
+	}
+	return data, nil, nil
 }
 
 func buildPermissions(value *Permissions) (*creator.Permissions, error) {
@@ -2029,7 +2053,7 @@ func buildOutlines(values []Outline) ([]creator.Outline, error) {
 	return result, nil
 }
 
-func buildSignature(root string, value Signature, stream bool) (creator.Signature, error) {
+func (s assetStore) buildSignature(value Signature, stream bool) (creator.Signature, error) {
 	result := creator.Signature{ID: value.ID, Type: value.Type, ProviderName: value.ProviderName, ProviderVersion: value.ProviderVersion, Company: value.Company, Method: value.Method, CheckMethod: value.CheckMethod, SealName: value.SealName, SignedValueName: value.SignedValueName}
 	var err error
 	if value.Date != "" {
@@ -2039,7 +2063,7 @@ func buildSignature(root string, value Signature, stream bool) (creator.Signatur
 		}
 	}
 	if value.SealFile != "" || value.SealFileBase64 != "" {
-		result.SealFile, result.SealSource, err = loadOptionalResource(root, value.SealFile, value.SealFileBase64, stream)
+		result.SealFile, result.SealSource, err = s.loadOptional(value.SealFile, value.SealFileBase64, stream)
 		if err != nil {
 			return creator.Signature{}, fmt.Errorf("seal_file: %w", err)
 		}
