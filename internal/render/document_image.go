@@ -10,18 +10,16 @@ import (
 	"strings"
 
 	_ "github.com/dkrisman/gobig2"
-	"github.com/tdewolff/canvas"
-	cimage "github.com/tdewolff/canvas/image"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
-func (p *Document) Image(ctx *canvas.Context, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
-	p.image(NewCanvasBackend(ctx), object, dp, pb, nil, nil)
+func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
+	p.image(ctx, object, dp, pb, nil, nil)
 }
 
-func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path) {
+func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -43,23 +41,23 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	// 使 PDF 输出保持矢量（边框、文字等清晰），而非 96dpi 位图。
 	if isSVGFormat(resMedia.Format, resMedia.MediaFile) &&
 		(object.Clips == nil || len(object.Clips.Clip) == 0) && parentClip == nil {
-		if svg, err := p.decodeSVGCanvas(resMedia.MediaFile, resMedia.Format); err == nil && svg.W > 0 && svg.H > 0 {
+		if svg, err := p.decodeSVGScene(resMedia.MediaFile, resMedia.Format); err == nil && svg.Width() > 0 && svg.Height() > 0 {
 			// svg 画布为 y 向上、左下角原点坐标系，而 imageMatrixWH 面向
 			// y 向下（图像像素）坐标系，需先翻转 y 轴再应用放置矩阵。
-			flip := canvas.Matrix{{1, 0, 0}, {0, -1, svg.H}}
-			m := imageMatrixWH(object.Boundary, svg.W, svg.H, ctm, pb.Height).Mul(flip)
+			flip := geom.Matrix{{1, 0, 0}, {0, -1, svg.Height()}}
+			m := imageMatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm, pb.Height).Mul(flip)
 			if finiteMatrix(m) {
 				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
-					if sr, ok := ctx.(svgSceneRenderer); ok {
-						p.svgMu.Lock()
-						sr.RenderScene(svg, m)
-						p.svgMu.Unlock()
+					p.svgMu.Lock()
+					rendered := svg.RenderVector(ctx, m)
+					p.svgMu.Unlock()
+					if rendered {
 						return
 					}
 					// 非矢量后端：栅格化 SVG 后再经 RenderImage 贴回，
 					// 保持图形内容可见（失矢量清晰度）。
-					var svgImage image.Image = rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace)
+					svgImage := svg.Rasterize(geom.DPI(96))
 					if svgImage != nil && !svgImage.Bounds().Empty() {
 						ctx.RenderImage(svgImage, m)
 						return
@@ -106,21 +104,21 @@ func imageCTM(object models.ImageObject) models.CTM {
 }
 
 // imageMatrix 将图片像素坐标映射到 OFD 页面坐标。
-func imageMatrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight float64) canvas.Matrix {
+func imageMatrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight float64) geom.Matrix {
 	imgW := float64(img.Bounds().Dx())
 	imgH := float64(img.Bounds().Dy())
 	return imageMatrixWH(box, imgW, imgH, ctm, pageHeight)
 }
 
 // imageMatrixWH 将宽高为 (w, h) 的坐标空间映射到 OFD 页面坐标。
-func imageMatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64) canvas.Matrix {
-	return canvas.Matrix{
+func imageMatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64) geom.Matrix {
+	return geom.Matrix{
 		{ctm[0] / w, -ctm[2] / h, box.X + ctm[2] + ctm[4]},
 		{-ctm[1] / w, ctm[3] / h, pageHeight - box.Y - ctm[3] - ctm[5]},
 	}
 }
 
-func finiteMatrix(matrix canvas.Matrix) bool {
+func finiteMatrix(matrix geom.Matrix) bool {
 	for _, row := range matrix {
 		for _, value := range row {
 			if !finiteFloat(value) {
@@ -135,7 +133,7 @@ func isSVGFormat(format string, file models.StLoc) bool {
 	return strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg")
 }
 
-func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Canvas, error) {
+func (p *Document) decodeSVGScene(file models.StLoc, format string) (SVGScene, error) {
 	key := file.Clean().String()
 	imageLock := p.imageLock(key)
 	defer p.releaseImageLock(key, imageLock)
@@ -151,12 +149,12 @@ func (p *Document) decodeSVGCanvas(file models.StLoc, format string) (*canvas.Ca
 	if err != nil {
 		return nil, err
 	}
-	svg, err := canvas.ParseSVG(bytes.NewReader(data))
+	scene, err := parseSVGScene(data)
 	if err != nil {
 		return nil, err
 	}
-	p.svgCanvases.AddWeighted(key, svg, svgCanvasWeight(data))
-	return svg, nil
+	p.svgCanvases.AddWeighted(key, scene, svgCanvasWeight(data))
+	return scene, nil
 }
 
 // svgCanvasWeight 估算解析后 SVG 画布的内存占用。画布内部结构无法直接度量，
@@ -174,17 +172,8 @@ func imageCacheWeight(img image.Image) int64 {
 	if img == nil {
 		return 1
 	}
-	if lazy, ok := img.(*cimage.Image); ok {
-		weight := int64(len(lazy.Bytes))
-		if lazy.Mask != nil {
-			weight += int64(len(lazy.Mask.Bytes))
-		}
-		if lazy.Width > 0 && lazy.Height > 0 {
-			weight += int64(lazy.Width) * int64(lazy.Height) * imageBytesPerPixel(lazy.Config.ColorModel)
-		}
-		if weight > 0 {
-			return weight
-		}
+	if lazy, ok := img.(*EncodedImage); ok {
+		return lazy.Weight()
 	}
 	bounds := img.Bounds()
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
@@ -221,11 +210,11 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 		if err != nil {
 			return nil, err
 		}
-		svg, err := canvas.ParseSVG(bytes.NewReader(data))
+		scene, err := parseSVGScene(data)
 		if err != nil {
 			return nil, err
 		}
-		img := rasterizer.Draw(svg, canvas.DPI(96), canvas.DefaultColorSpace)
+		img := scene.Rasterize(geom.DPI(96))
 		p.images.AddWeighted(key, img, imageCacheWeight(img))
 		return img, nil
 	}
@@ -243,23 +232,24 @@ func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, e
 
 var pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 
-// decodeRasterImage 对 JPEG/PNG 使用懒加载的 cimage.Image，保留原始编码字节。
+// decodeRasterImage 对 JPEG/PNG 使用懒解码并保留原始编码字节的
+// EncodedImage，供 canvas PDF 写入器等按原字节内嵌。
 // PDF 渲染器可以按原字节嵌入（DCT 等过滤），避免解码后重新转成 RGB 再 flate 压缩。
 func decodeRasterImage(data []byte) (image.Image, error) {
 	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
-		return cimage.NewJPEGImage(bytes.NewReader(data))
+		return newEncodedImage("jpeg", data), nil
 	}
 	if len(data) >= len(pngSignature) && bytes.Equal(data[:len(pngSignature)], pngSignature) {
-		return cimage.NewPNGImage(bytes.NewReader(data))
+		return newEncodedImage("png", data), nil
 	}
 	return media.DecodeBytes(data)
 }
 
-func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *canvas.Path {
+func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil
 	}
-	var result *canvas.Path
+	var result *geom.Path
 	for _, clip := range clips.Clip {
 		current := p.buildImageClipRegion(clip, clips.TransFlag, pageH, bx, by, objectCTM)
 		if current != nil {
@@ -274,8 +264,8 @@ func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, ob
 }
 
 // buildImageClipRegion 合并同一个 Clip 中的所有 Area。
-func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pageH, bx, by float64, objectCTM models.CTM) *canvas.Path {
-	var result *canvas.Path
+func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
+	var result *geom.Path
 	for _, area := range clip.Area {
 		if area.Path == nil {
 			continue
@@ -321,8 +311,8 @@ func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pag
 	return result
 }
 
-func imageWithClip(img image.Image, clip *canvas.Path, m canvas.Matrix) image.Image {
-	if img == nil || clip == nil || !finiteMatrix(m) || canvas.Equal(m.Det(), 0) {
+func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image {
+	if img == nil || clip == nil || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
 		return img
 	}
 	bounds := img.Bounds()
@@ -342,8 +332,8 @@ func imageWithClip(img image.Image, clip *canvas.Path, m canvas.Matrix) image.Im
 // 此时掩码不会改变任何像素，跳过昂贵的全分辨率掩码合成。
 // 对于大图片，允许少量像素的内缩容差，避免因生产者生成的微小边框
 // 导致所有图片都被迫走全分辨率掩码合成的慢路径。
-func clipCoversImage(clip *canvas.Path, m canvas.Matrix, width, height int) bool {
-	if clip == nil || width <= 0 || height <= 0 || !finiteMatrix(m) || canvas.Equal(m.Det(), 0) {
+func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
+	if clip == nil || width <= 0 || height <= 0 || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
 		return false
 	}
 	inverse := m.Inv()
@@ -364,7 +354,7 @@ func clipCoversImage(clip *canvas.Path, m canvas.Matrix, width, height int) bool
 	return area >= 0.99*boxArea
 }
 
-func polygonArea(points []canvas.Point) float64 {
+func polygonArea(points []geom.Point) float64 {
 	if len(points) < 3 {
 		return 0
 	}
@@ -378,18 +368,16 @@ func polygonArea(points []canvas.Point) float64 {
 }
 
 // imageClipMask 将页面裁剪路径转换为图片像素掩码。
-func imageClipMask(clip *canvas.Path, m canvas.Matrix, width, height int) *image.RGBA {
+func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.RGBA {
 	inverse := m.Inv()
 	if !finiteMatrix(inverse) {
 		return image.NewRGBA(image.Rect(0, 0, width, height))
 	}
 	maskPath := clip.Copy().Transform(inverse)
-	maskCanvas := canvas.New(float64(width), float64(height))
-	maskCtx := canvas.NewContext(maskCanvas)
-	maskCtx.SetFillColor(color.White)
-	maskCtx.SetStrokeColor(canvas.Transparent)
-	maskCtx.DrawPath(0, 0, maskPath)
-	return rasterizer.Draw(maskCanvas, canvas.DPMM(1), canvas.DefaultColorSpace)
+	surface := newOffscreenSurface(float64(width), float64(height), geom.DPMM(1))
+	surface.SetFillColor(color.White)
+	surface.DrawPath(0, 0, maskPath)
+	return surface.Raster()
 }
 
 // applyImageMask 将掩码透明度合成到原图片。
@@ -398,7 +386,7 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	src := img
-	if lazy, ok := img.(*cimage.Image); ok {
+	if lazy, ok := img.(*EncodedImage); ok {
 		if decoded, err := lazy.Image(); err == nil {
 			src = decoded
 		}

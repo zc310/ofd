@@ -3,8 +3,8 @@ package render
 import (
 	"testing"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 func TestPatternMatrix(t *testing.T) {
@@ -13,7 +13,7 @@ func TestPatternMatrix(t *testing.T) {
 	if !ok {
 		t.Fatal("expected valid pattern CTM")
 	}
-	got := matrix.Dot(canvas.Point{X: 1, Y: 2})
+	got := matrix.Dot(geom.Point{X: 1, Y: 2})
 	if got.X != 16 || got.Y != 20 {
 		t.Fatalf("unexpected transformed point: %+v", got)
 	}
@@ -46,13 +46,13 @@ func TestPatternReflection(t *testing.T) {
 		name   string
 		method string
 		ix, iy int
-		point  canvas.Point
-		want   canvas.Point
+		point  geom.Point
+		want   geom.Point
 	}{
-		{"normal", "Normal", 0, 0, canvas.Point{X: 3, Y: 4}, canvas.Point{X: 3, Y: 4}},
-		{"row", "Row", 0, 1, canvas.Point{X: 3, Y: 4}, canvas.Point{X: 17, Y: 4}},
-		{"column", "Column", 1, 0, canvas.Point{X: 3, Y: 4}, canvas.Point{X: 17, Y: 4}},
-		{"row and column", "RowAndColumn", 1, 1, canvas.Point{X: 3, Y: 4}, canvas.Point{X: 17, Y: 16}},
+		{"normal", "Normal", 0, 0, geom.Point{X: 3, Y: 4}, geom.Point{X: 3, Y: 4}},
+		{"row", "Row", 0, 1, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 4}},
+		{"column", "Column", 1, 0, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 4}},
+		{"row and column", "RowAndColumn", 1, 1, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 16}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

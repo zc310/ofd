@@ -1,12 +1,12 @@
 package render
 
 import (
+	"github.com/zc310/ofd/internal/render/geom"
 	"image/color"
 	"path/filepath"
 	"sync"
 	"testing"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -19,13 +19,13 @@ func TestPageBackgroundCoversFractionalPixelEdges(t *testing.T) {
 		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 230.0111, Height: 305.1528}},
 	})
 	// 50 DPI 下 230.0111mm ≈ 452.78px、305.1528mm ≈ 600.7px，均非整数。
-	dpi := canvas.DPI(50)
+	dpi := geom.DPI(50)
 	doc := NewDocumentWithDPI(color.White, &parser.Document{}, dpi)
 	canvasPage, err := doc.Page(page)
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := Rasterize(canvasPage, dpi, canvas.DefaultColorSpace)
+	img := canvasPage.Rasterize(geom.Resolution(dpi))
 	bounds := img.Bounds()
 	check := func(x, y int) {
 		t.Helper()
@@ -60,8 +60,8 @@ func TestPageUsesA4ForInvalidPhysicalBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if canvasPage.W != 210 || canvasPage.H != 297 {
-		t.Fatalf("canvas size = %gx%g, want 210x297", canvasPage.W, canvasPage.H)
+	if canvasPage.Width() != 210 || canvasPage.Height() != 297 {
+		t.Fatalf("canvas size = %gx%g, want 210x297", canvasPage.Width(), canvasPage.Height())
 	}
 	box, err := page.PhysicalBox()
 	if err != nil {
@@ -93,7 +93,7 @@ func TestDocumentPageIsSafeForConcurrentCalls(t *testing.T) {
 					t.Errorf("render page: %v", err)
 					return
 				}
-				if canvasPage == nil || canvasPage.W <= 0 || canvasPage.H <= 0 {
+				if canvasPage == nil || canvasPage.Width() <= 0 || canvasPage.Height() <= 0 {
 					t.Errorf("invalid canvas size: %#v", canvasPage)
 					return
 				}

@@ -1,4 +1,4 @@
-package render
+package canvas
 
 import (
 	"os"
@@ -39,9 +39,9 @@ func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
 }
 
 // useFallback 注册全局回退字体并将其应用到指定字体上下文。
-func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style canvas.FontStyle) {
+func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style FontStyle) {
 	t.Helper()
-	if err := RegisterFallbackFont(data, family, style); err != nil {
+	if err := registerFallbackFont(data, family, style); err != nil {
 		t.Fatal(err)
 	}
 	if err := fonts.UseFallbackFont(family); err != nil {
@@ -50,7 +50,7 @@ func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style c
 }
 
 func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
 
 	fonts := NewFonts(ofd.Documents[0])
 	const workers = 16
-	families := make(chan *canvas.FontFamily, workers)
+	families := make(chan FontFamily, workers)
 	errs := make(chan error, workers)
 	var wg sync.WaitGroup
 	for index := 0; index < workers; index++ {
@@ -81,22 +81,23 @@ func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
 	}
 	var first *canvas.FontFamily
 	for family := range families {
+		current := family.(*canvas.FontFamily)
 		if first == nil {
-			first = family
+			first = current
 			continue
 		}
-		if family != first {
+		if current != first {
 			t.Fatal("同一字体的并发加载创建了多个字体族")
 		}
 	}
 }
 
 func TestSystemFontCacheReusesFamilyAndRenderLock(t *testing.T) {
-	first, ok := loadCachedSystemFont("DejaVu Sans", canvas.FontRegular)
+	first, ok := loadCachedSystemFont("DejaVu Sans", FontRegular)
 	if !ok {
 		t.Skip("DejaVu Sans is unavailable")
 	}
-	second, ok := loadCachedSystemFont("DejaVu Sans", canvas.FontRegular)
+	second, ok := loadCachedSystemFont("DejaVu Sans", FontRegular)
 	if !ok {
 		t.Fatal("cached DejaVu Sans could not be loaded")
 	}
@@ -106,7 +107,7 @@ func TestSystemFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 
 	firstFonts := NewFonts(nil)
 	secondFonts := NewFonts(nil)
-	if firstFonts.renderLock(first) != secondFonts.renderLock(second) {
+	if firstFonts.RenderLock(first) != secondFonts.RenderLock(second) {
 		t.Fatal("system font cache did not share the render lock")
 	}
 }
@@ -118,14 +119,14 @@ func TestFallbackFontRegistryReusesFamilyAndRenderLock(t *testing.T) {
 	}
 	firstFonts := NewFonts(nil)
 	secondFonts := NewFonts(nil)
-	useFallback(t, firstFonts, data, "ProcessFallback", canvas.FontRegular)
-	useFallback(t, secondFonts, data, "ProcessFallback", canvas.FontRegular)
+	useFallback(t, firstFonts, data, "ProcessFallback", FontRegular)
+	useFallback(t, secondFonts, data, "ProcessFallback", FontRegular)
 	first := firstFonts.fallbacks["ProcessFallback"]
 	second := secondFonts.fallbacks["ProcessFallback"]
 	if firstFonts.fallbacks["ProcessFallback"] != secondFonts.fallbacks["ProcessFallback"] {
 		t.Fatal("fallback font registry created multiple font families")
 	}
-	if firstFonts.renderLock(first) != secondFonts.renderLock(second) {
+	if firstFonts.RenderLock(first) != secondFonts.RenderLock(second) {
 		t.Fatal("fallback font registry did not share the render lock")
 	}
 }
@@ -137,8 +138,8 @@ func TestFallbackFontRegisteredOnceGlobally(t *testing.T) {
 	}
 	firstFonts := NewFonts(nil)
 	secondFonts := NewFonts(nil)
-	useFallback(t, firstFonts, font, "LockedFamily", canvas.FontRegular)
-	useFallback(t, secondFonts, font, "LockedFamily", canvas.FontRegular)
+	useFallback(t, firstFonts, font, "LockedFamily", FontRegular)
+	useFallback(t, secondFonts, font, "LockedFamily", FontRegular)
 	reg := fallbackRegistry["LockedFamily"]
 	if reg == nil {
 		t.Fatal("fallback family was not registered globally")
@@ -163,13 +164,13 @@ func TestFallbackFontIsDefaultWhenNoOtherFonts(t *testing.T) {
 		t.Skipf("DejaVu Sans is unavailable: %v", err)
 	}
 	fonts := NewFonts(nil)
-	useFallback(t, fonts, font, "DefaultFallback", canvas.FontRegular)
+	useFallback(t, fonts, font, "DefaultFallback", FontRegular)
 	// 缺字体的样式也必须匹配到同一个全局家族（Bold 落回 Regular face）。
-	regular, ok := selectFallback(fonts.fallbackFaces, canvas.FontRegular)
+	regular, ok := selectFallback(fonts.fallbackFaces, FontRegular)
 	if !ok {
 		t.Fatal("no fallback face available for Regular")
 	}
-	bold, ok := selectFallback(fonts.fallbackFaces, canvas.FontBold)
+	bold, ok := selectFallback(fonts.fallbackFaces, FontBold)
 	if !ok {
 		t.Fatal("no fallback face available for Bold")
 	}
@@ -188,8 +189,8 @@ func TestFallbackFontRegistryKeepsDifferentStylesInOneFamily(t *testing.T) {
 		t.Skipf("DejaVu Sans Bold is unavailable: %v", err)
 	}
 	fonts := NewFonts(nil)
-	useFallback(t, fonts, regular, "ProcessStyleFallback", canvas.FontRegular)
-	useFallback(t, fonts, bold, "ProcessStyleFallback", canvas.FontBold)
+	useFallback(t, fonts, regular, "ProcessStyleFallback", FontRegular)
+	useFallback(t, fonts, bold, "ProcessStyleFallback", FontBold)
 	family := fonts.fallbacks["ProcessStyleFallback"]
 	if family.Face(12, canvas.Black, canvas.FontRegular).Font == family.Face(12, canvas.Black, canvas.FontBold).Font {
 		t.Fatal("different fallback styles did not keep separate font faces")
@@ -200,9 +201,9 @@ func TestSelectFallbackPrefersMatchingFontFamily(t *testing.T) {
 	generic := canvas.NewFontFamily("OFD-NotoSansSC")
 	kaiti := canvas.NewFontFamily("楷体")
 	fallback, ok := selectFallback([]fallbackFace{
-		{family: generic, style: canvas.FontRegular, name: "OFD-NotoSansSC"},
-		{family: kaiti, style: canvas.FontRegular, name: "楷体"},
-	}, canvas.FontRegular, "KaiTi")
+		{family: generic, style: FontRegular, name: "OFD-NotoSansSC"},
+		{family: kaiti, style: FontRegular, name: "楷体"},
+	}, FontRegular, "KaiTi")
 	if !ok {
 		t.Fatal("no fallback font was selected")
 	}
@@ -225,7 +226,7 @@ func TestSelectFallbackPrefersMatchingFontFamily(t *testing.T) {
 }
 
 func TestIntroEmbeddedFontsLoad(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +239,7 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 			t.Fatalf("font %d: %v", id, err)
 		}
 		defaultFamily, _ := defaultFallbackFont()
-		if family == defaultFamily || !fontFamilyUsable(family) {
+		if family == defaultFamily || !fontFamilyUsable(family.(*canvas.FontFamily)) {
 			t.Fatalf("font %d was not loaded as an embedded usable font", id)
 		}
 	}
@@ -246,7 +247,8 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	face := family.Face(1, canvas.Black)
+	cf := family.(*canvas.FontFamily)
+	face := cf.Face(1, canvas.Black)
 	for _, glyphID := range []uint16{4947, 3773, 6809} {
 		if got := face.Font.GlyphIndex(fontfix.GlyphRune(glyphID)); got == 0 {
 			t.Fatalf("CFF CID %d has no glyph mapping", glyphID)
@@ -259,7 +261,7 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 }
 
 func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +275,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !fontFamilyUsable(family) {
+	if !fontFamilyUsable(family.(*canvas.FontFamily)) {
 		t.Fatal("font 115 is not usable")
 	}
 	defaultFamily, _ := defaultFallbackFont()
@@ -283,7 +285,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 }
 
 func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +310,7 @@ func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
 }
 
 func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,8 +348,8 @@ func TestFallbackFontKeepsRegularAndBoldFaces(t *testing.T) {
 	}
 
 	fonts := NewFonts(nil)
-	useFallback(t, fonts, regular, "fallback", canvas.FontRegular)
-	useFallback(t, fonts, bold, "fallback", canvas.FontBold)
+	useFallback(t, fonts, regular, "fallback", FontRegular)
+	useFallback(t, fonts, bold, "fallback", FontBold)
 
 	regularFace := fonts.fallbacks["fallback"].Face(12, canvas.Black, canvas.FontRegular)
 	boldFace := fonts.fallbacks["fallback"].Face(12, canvas.Black, canvas.FontBold)
@@ -441,7 +443,7 @@ func TestSystemFontCandidatesSkipsGenericForCJK(t *testing.T) {
 // 相同字体/字号/样式/纯色画笔/文本必须复用同一个 *canvas.Text，避免重复
 // 整形；渐变画笔不进入缓存（每次返回新对象）。
 func TestShapedTextLineCacheReusesShaping(t *testing.T) {
-	fontPath := filepath.Join("..", "..", "test", "testdata", "DejaVuSans.ttf")
+	fontPath := filepath.Join("..", "..", "..", "..", "test", "testdata", "DejaVuSans.ttf")
 	if _, err := os.Stat(fontPath); err != nil {
 		if _, err := os.Stat("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"); err == nil {
 			fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"

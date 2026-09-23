@@ -9,14 +9,13 @@ import (
 	"sync"
 
 	"github.com/h2non/filetype"
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
-func (p *Document) Seal(ctx *canvas.Context, info *parser.SealInfo, pb models.StBox) error {
-	return p.seal(NewCanvasBackend(ctx), info, pb)
+func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+	return p.seal(ctx, info, pb)
 }
 
 func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
@@ -168,14 +167,14 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 // 先栅格化为位图再复用位图印章的坐标映射，保证矢量方向与 PNG/JPG 印章一致；
 // 栅格化分辨率按印章盒尺寸取 96dpi 以上，保持边缘清晰。
 func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
-	svg, err := canvas.ParseSVG(bytes.NewReader(info.SealData.Data))
+	scene, err := parseSVGScene(info.SealData.Data)
 	if err != nil {
 		return err
 	}
-	if svg == nil || svg.W <= 0 || svg.H <= 0 {
+	if scene == nil || scene.Width() <= 0 || scene.Height() <= 0 {
 		return nil
 	}
-	img := rasterizer.Draw(svg, sealRasterResolution(info.StampAnnot.Boundary, svg.W, svg.H), canvas.DefaultColorSpace)
+	img := scene.Rasterize(sealRasterResolution(info.StampAnnot.Boundary, scene.Width(), scene.Height()))
 	if img == nil || img.Bounds().Empty() {
 		return nil
 	}
@@ -184,14 +183,14 @@ func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models
 
 // sealRasterResolution 选择栅格化分辨率：按印章盒的毫米尺寸换算为像素，
 // 使 SVG 的短边至少达到 canvasDPI 像素，避免放大后模糊。
-func sealRasterResolution(box models.StBox, svgW, svgH float64) canvas.Resolution {
+func sealRasterResolution(box models.StBox, svgW, svgH float64) geom.Resolution {
 	const canvasDPI = 192.0
 	shortSide := math.Min(box.Width, box.Height)
 	reference := math.Min(svgW, svgH)
 	if shortSide <= 0 || reference <= 0 {
-		return canvas.DPI(canvasDPI)
+		return geom.DPI(canvasDPI)
 	}
 	// 1 画布单位对应 shortSide/reference 毫米，使短边渲染出 canvasDPI 像素。
 	perMM := canvasDPI / shortSide
-	return canvas.Resolution(perMM)
+	return geom.Resolution(perMM)
 }

@@ -6,14 +6,15 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 func TestApplyFillDefaultsToTransparent(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	ctx.SetFillColor(color.RGBA{R: 255, A: 255})
 	var document Document
-	document.applyFill(NewCanvasBackend(ctx), nil, nil)
-	if ctx.Style.Fill.Color != canvas.Transparent {
+	document.applyFill(newCanvasBackend(ctx), nil, nil)
+	if ctx.Style.Fill.Color != geom.Transparent {
 		t.Fatalf("expected transparent default fill, got %v", ctx.Style.Fill.Color)
 	}
 }
@@ -21,7 +22,7 @@ func TestApplyFillDefaultsToTransparent(t *testing.T) {
 func TestApplyFillKeepsExplicitColor(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.applyFill(NewCanvasBackend(ctx), &CTColor{Value: color.RGBA{R: 10, G: 20, B: 30, A: 255}, HasValue: true}, nil)
+	document.applyFill(newCanvasBackend(ctx), &CTColor{Value: color.RGBA{R: 10, G: 20, B: 30, A: 255}, HasValue: true}, nil)
 	if ctx.Style.Fill.Color != (color.RGBA{R: 10, G: 20, B: 30, A: 255}) {
 		t.Fatalf("expected explicit fill color, got %v", ctx.Style.Fill.Color)
 	}
@@ -30,8 +31,8 @@ func TestApplyFillKeepsExplicitColor(t *testing.T) {
 func TestApplyStrokeDefaultsToBlack(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.applyStroke(NewCanvasBackend(ctx), nil, &models.CtPath{})
-	if ctx.Style.Stroke.Color != canvas.Black {
+	document.applyStroke(newCanvasBackend(ctx), nil, &models.CtPath{})
+	if ctx.Style.Stroke.Color != geom.Black {
 		t.Fatalf("expected black default stroke, got %v", ctx.Style.Stroke.Color)
 	}
 }
@@ -52,7 +53,7 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 		Join:      "Round",
 	}
 
-	document.updateCtPathStyle(NewCanvasBackend(ctx), object, dp)
+	document.updateCtPathStyle(newCanvasBackend(ctx), object, dp)
 
 	if ctx.Style.StrokeWidth != 2 {
 		t.Fatalf("stroke width = %g, want 2", ctx.Style.StrokeWidth)
@@ -68,7 +69,7 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(NewCanvasBackend(ctx), &models.CtPath{
+	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{
 			LineWidth:  3,
 			Join:       "Miter",
@@ -83,10 +84,11 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 	if joiner.Limit != 2.0/1.5 {
 		t.Fatalf("miter limit ratio = %g, want %g", joiner.Limit, 2.0/1.5)
 	}
-	path := canvas.MustParseSVGPath("M20 35L40 5L60 35")
-	clipped := path.Stroke(3, canvas.ButtCap, joiner, canvas.Tolerance).ToSVG()
-	unclipped := path.Stroke(3, canvas.ButtCap,
-		canvas.MiterJoiner{GapJoiner: canvas.BevelJoin, Limit: 10.0 / 1.5}, canvas.Tolerance).ToSVG()
+	geomJoiner := geom.MiterJoiner{GapJoiner: geom.BevelJoin, Limit: joiner.Limit}
+	path := geom.MustParseSVGPath("M20 35L40 5L60 35")
+	clipped := path.Stroke(3, geom.ButtCap, geomJoiner, geom.Tolerance).ToSVG()
+	unclipped := path.Stroke(3, geom.ButtCap,
+		geom.MiterJoiner{GapJoiner: geom.BevelJoin, Limit: 10.0 / 1.5}, geom.Tolerance).ToSVG()
 	if clipped == unclipped {
 		t.Fatal("different MiterLimit values produced identical stroked paths")
 	}
@@ -95,7 +97,7 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document
-	document.updateCtPathStyle(NewCanvasBackend(ctx), &models.CtPath{
+	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{
 			LineWidth:   -1,
 			MiterLimit:  -1,

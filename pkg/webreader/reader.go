@@ -18,13 +18,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers"
-	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
 )
 
@@ -639,13 +638,13 @@ func (r *Reader) UseFallbackFont(family string) error {
 	return nil
 }
 
-func fallbackFontStyle(source FontSource) canvas.FontStyle {
-	style := canvas.FontRegular
+func fallbackFontStyle(source FontSource) render.FontStyle {
+	style := render.FontRegular
 	if source.Weight >= 650 {
-		style = canvas.FontBold
+		style = render.FontBold
 	}
 	if source.Italic {
-		style |= canvas.FontItalic
+		style |= render.FontItalic
 	}
 	return style
 }
@@ -1861,38 +1860,29 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 	// TrueType 字体应进行子集化，避免将完整中文字体写入每个 PDF。
 	// CFF/TTC 回退字体暂时不能交给 canvas 的 CFF 子集器；对这类字体
 	// 关闭子集化仍会保留 ToUnicode 和原生文字对象，避免 Close 时 panic。
-	pdfOptions := &pdf.Options{Compress: true, SubsetFonts: !r.hasUnsafeFallbackFontSubset()}
-	var document *pdf.PDF
+	pdfDoc, err := render.NewPDFDocument(output, render.PDFOptions{Compress: true, SubsetFonts: !r.hasUnsafeFallbackFontSubset()})
+	if err != nil {
+		return err
+	}
 	defer func() {
-		if document == nil {
-			return
-		}
-		if closeErr := document.Close(); closeErr != nil {
-			if err == nil {
-				err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
-			}
+		if closeErr := pdfDoc.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
 		}
 	}()
 	for position, index := range indices {
-		page, pageErr := r.pdfPage(index, background, canvas.DPI(dpi))
+		page, pageErr := r.pdfPage(index, background, geom.DPI(dpi))
 		if pageErr != nil {
 			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, pageErr)
 		}
-		if document == nil {
-			document = pdf.New(output, page.W, page.H, pdfOptions)
-		} else {
-			document.NewPage(page.W, page.H)
-		}
-		resolution := canvas.DPI(dpi)
-		width := page.W * resolution.DPMM()
-		height := page.H * resolution.DPMM()
+		resolution := geom.DPI(dpi)
+		width := page.Width() * resolution.DPMM()
+		height := page.Height() * resolution.DPMM()
 		if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(height) || math.IsInf(height, 0) || width*height > maxRenderPixels {
 			return fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
 		}
-		page.RenderTo(document)
-	}
-	if document == nil {
-		return errors.New("PDF 文档创建失败")
+		if addErr := pdfDoc.AddPage(page); addErr != nil {
+			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, addErr)
+		}
 	}
 	return nil
 }
@@ -1912,7 +1902,7 @@ func (r *Reader) hasUnsafeFallbackFontSubset() bool {
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。
-func (r *Reader) pdfPage(index int, background color.Color, dpi canvas.Resolution) (*canvas.Canvas, error) {
+func (r *Reader) pdfPage(index int, background color.Color, dpi geom.Resolution) (render.VectorSurface, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
@@ -1976,7 +1966,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		background = color.Transparent
 	}
 	// NewDocument 保证页面背景和渲染内容使用同一个文档级渲染上下文。
-	document, err := r.pageDocument(ref, background, canvas.DPI(options.DPI))
+	document, err := r.pageDocument(ref, background, geom.DPI(options.DPI))
 	if err != nil {
 		return nil, err
 	}
@@ -1987,12 +1977,12 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 
 	var output bytes.Buffer
 	if format == RenderSVG {
-		if err := page.Write(&output, renderers.SVG()); err != nil {
+		if err := page.Write(&output, "svg"); err != nil {
 			return nil, fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
 		}
 		return output.Bytes(), nil
 	}
-	var rendered image.Image = render.Rasterize(page, canvas.DPI(options.DPI), canvas.DefaultColorSpace)
+	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI))
 	if format == RenderJPG {
 		rendered = opaqueImage(rendered, color.White)
 		if err := jpeg.Encode(&output, rendered, &jpeg.Options{Quality: 90}); err != nil {
@@ -2015,7 +2005,7 @@ func opaqueImage(source image.Image, background color.Color) image.Image {
 }
 
 // pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。
-func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi canvas.Resolution) (*render.Document, error) {
+func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Resolution) (*render.Document, error) {
 	document := ref.document
 	if document == nil || document.Document == nil {
 		return nil, errors.New("页面渲染上下文为空")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/spec"
 )
 

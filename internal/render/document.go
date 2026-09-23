@@ -11,24 +11,24 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
 )
 
 type Document struct {
 	*parser.Document
 	background   color.Color
-	dpi          canvas.Resolution
-	fonts        *Fonts
+	dpi          geom.Resolution
+	fonts        FontEngine
 	fallbacks    []string
 	fallbackMu   sync.RWMutex
 	imageLocksMu sync.Mutex
 	imageLocks   map[string]*imageKeyLock
 	svgMu        sync.Mutex
 	images       *utils.LRU[string, image.Image]
-	svgCanvases  *utils.LRU[string, *canvas.Canvas]
+	svgCanvases  *utils.LRU[string, SVGScene]
 	sealMu       sync.Mutex
 	sealDocs     map[[32]byte]*sealDocEntry
 }
@@ -85,7 +85,7 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 		math.IsNaN(height) || math.IsInf(height, 0) || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
 		return false
 	}
-	pixels := width * height * canvas.DPI(dpi).DPMM() * canvas.DPI(dpi).DPMM()
+	pixels := width * height * geom.DPI(dpi).DPMM() * geom.DPI(dpi).DPMM()
 	if math.IsNaN(pixels) || math.IsInf(pixels, 0) || b.offscreenPixels > maxOffscreenPixels-pixels {
 		return false
 	}
@@ -102,22 +102,22 @@ const (
 )
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
-	return NewDocumentWithDPI(background, doc, canvas.DPI(defaultRenderDPI))
+	return NewDocumentWithDPI(background, doc, geom.DPI(defaultRenderDPI))
 }
 
 // NewDocumentWithDPI 创建带有输出分辨率的渲染文档。
 // dpi 用于复合图元等内部离屏栅格化，不改变页面的物理尺寸。
-func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi canvas.Resolution) *Document {
+func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi geom.Resolution) *Document {
 	if dpi <= 0 {
-		dpi = canvas.DPI(defaultRenderDPI)
+		dpi = geom.DPI(defaultRenderDPI)
 	}
 	return &Document{
 		background:  background,
 		dpi:         dpi,
-		fonts:       NewFonts(doc),
+		fonts:       NewFontEngine(doc),
 		Document:    doc,
 		images:      utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
-		svgCanvases: utils.NewWeightedLRU[string, *canvas.Canvas](svgCacheCapacity, svgCacheBytes, nil),
+		svgCanvases: utils.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil),
 		imageLocks:  make(map[string]*imageKeyLock),
 	}
 }
@@ -197,7 +197,7 @@ func annotationVisible(annot *models.Annot) bool {
 	return annot != nil && annot.Visible.Value(true)
 }
 
-func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
+func (p *Document) Draw(ctx DrawContext, page *parser.Page) error {
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return err
@@ -209,11 +209,11 @@ func (p *Document) Draw(ctx *canvas.Context, page *parser.Page) error {
 	if content == nil {
 		return errors.New("页面内容为空")
 	}
-	p.drawPage(NewCanvasBackend(ctx), page, content, &budget)
+	p.drawPage(ctx, page, content, &budget)
 	return nil
 }
 
-func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
+func (p *Document) Page(page *parser.Page) (VectorSurface, error) {
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return nil, err
@@ -225,10 +225,13 @@ func (p *Document) Page(page *parser.Page) (*canvas.Canvas, error) {
 	if content == nil {
 		return nil, errors.New("页面内容为空")
 	}
+	if newVectorSurface == nil {
+		return nil, errors.New("未注册矢量表面工厂（请空白导入 internal/render/backends/canvas 或注册自定义工厂）")
+	}
 	box := content.Area.PhysicalBox
-	c := canvas.New(box.Width, box.Height)
-	p.drawPage(NewCanvasBackend(canvas.NewContext(c)), page, content, &budget)
-	return c, nil
+	return newVectorSurface(box.Width, box.Height, func(ctx DrawContext) {
+		p.drawPage(ctx, page, content, &budget)
+	}), nil
 }
 
 // drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
@@ -247,13 +250,13 @@ func (p *Document) drawPageBackground(ctx DrawContext, box models.StBox) {
 	if p.dpi.DPMM() > 0 {
 		padding = 1.0 / p.dpi.DPMM()
 	}
-	ctx.DrawPath(-padding, -padding, canvas.Rectangle(box.Width+2*padding, box.Height+2*padding))
+	ctx.DrawPath(-padding, -padding, geom.Rectangle(box.Width+2*padding, box.Height+2*padding))
 }
 
-func (p *Document) PageContent(ctx *canvas.Context, page *parser.Page, seal bool) {
+func (p *Document) PageContent(ctx DrawContext, page *parser.Page, seal bool) {
 	var budget renderBudget
 	budget.reset()
-	p.pageContent(NewCanvasBackend(ctx), page, seal, &budget)
+	p.pageContent(ctx, page, seal, &budget)
 }
 
 func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, budget *renderBudget) {
@@ -271,7 +274,9 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	}
 	// 登记本页（含模板与注释）的 Unicode→字形映射，使缺少 Unicode cmap 的
 	// 内嵌子集字体也能按原始文本渲染，保留 PDF 文字可复制性。
-	p.fonts.registerPageGlyphs(p.Document, page, content)
+	if p.fonts != nil {
+		p.fonts.RegisterPageGlyphs(p.Document, page, content)
+	}
 	pb := content.Area.PhysicalBox
 	annots := p.Document.GetAnnotation(page.ID)
 	// Watermark 水印注解按背景层绘制，位于模板之后、页面内容之前。
@@ -303,10 +308,10 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	}
 }
 
-func (p *Document) Template(ctx *canvas.Context, template models.Template, pb models.StBox) {
+func (p *Document) Template(ctx DrawContext, template models.Template, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.template(NewCanvasBackend(ctx), template, pb, &budget)
+	p.template(ctx, template, pb, &budget)
 }
 
 func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
@@ -352,10 +357,10 @@ func (p *Document) drawSeals(ctx DrawContext, pageID models.StID, pb models.StBo
 	}
 }
 
-func (p *Document) Layer(ctx *canvas.Context, layer *models.Layer, pb models.StBox) {
+func (p *Document) Layer(ctx DrawContext, layer *models.Layer, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.layer(NewCanvasBackend(ctx), layer, pb, &budget)
+	p.layer(ctx, layer, pb, &budget)
 }
 
 func (p *Document) layer(ctx DrawContext, layer *models.Layer, pb models.StBox, budget *renderBudget) {
@@ -374,7 +379,7 @@ func (p *Document) drawItems(ctx DrawContext, items []models.PageItem, dp *model
 	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0, budget)
 }
 
-func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, compositeDepth int, budget *renderBudget) {
+func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
 	if parentCTM != nil && !parentCTM.IsFinite() {
 		return
 	}
@@ -410,8 +415,8 @@ func (p *Document) drawPageBlock(ctx DrawContext, block models.PageBlock, dp *mo
 	p.drawItems(ctx, block.Items, dp, pb, &budget)
 }
 
-func (p *Document) Annot(ctx *canvas.Context, annot *models.Annot, pb models.StBox) {
-	p.annot(NewCanvasBackend(ctx), annot, pb)
+func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
+	p.annot(ctx, annot, pb)
 }
 
 func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {

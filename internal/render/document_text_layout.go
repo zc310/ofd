@@ -131,15 +131,16 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 	widthOf := func(string) float64 { return 0 }
 	if document != nil && document.fonts != nil {
 		if family, err := document.fonts.LoadFont(object.Font); err == nil && family != nil {
-			fontLock := document.fonts.renderLock(family)
+			fontLock := document.fonts.RenderLock(family)
 			fontLock.Lock()
 			defer fontLock.Unlock()
 			fontObject := object
 			if ctmYScale > 0 {
 				fontObject.Size *= ctmYScale
 			}
-			face := buildTextFace(family, fontObject, nil)
-			widthOf = face.TextWidth
+			if face := document.fonts.FaceObject(family, fontObject, nil); face != nil {
+				widthOf = face.TextWidth
+			}
 		}
 	}
 	runes := []rune(code.Value)

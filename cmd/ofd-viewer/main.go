@@ -28,10 +28,10 @@ import (
 	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	ofdcanvas "github.com/tdewolff/canvas"
-	canvasFyne "github.com/tdewolff/canvas/renderers/fyne"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
 )
 
@@ -1055,7 +1055,7 @@ func (v *viewer) requestPageRender(operation uint64, pageIndex int) {
 
 func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex int, page *parser.Page, slot *pageSlot) {
 
-	img, err := v.renderPageImage(doc, page, ofdcanvas.DPI(viewerDPI), func() bool {
+	img, err := v.renderPageImage(doc, page, geom.DPI(viewerDPI), func() bool {
 		return operation == v.operation.Load()
 	})
 	if err != nil || img == nil {
@@ -1095,7 +1095,7 @@ func (v *viewer) requestThumbnailRender(pageIndex int) {
 		return
 	}
 	go func() {
-		img, err := v.renderPageImage(pageRef.document, pageRef.page, ofdcanvas.DPI(thumbnailDPI), func() bool {
+		img, err := v.renderPageImage(pageRef.document, pageRef.page, geom.DPI(thumbnailDPI), func() bool {
 			return generation == v.thumbnailGeneration.Load()
 		})
 		rendering.Store(false)
@@ -1139,7 +1139,7 @@ func closeInput(input any) (err error) {
 	return closer.Close()
 }
 
-func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolution ofdcanvas.Resolution, valid func() bool) (img image.Image, err error) {
+func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolution geom.Resolution, valid func() bool) (img image.Image, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			img = nil
@@ -1155,29 +1155,17 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 	if !valid() {
 		return nil, nil
 	}
-	lease, err := page.AcquireLease()
+	// 直接按指定分辨率使用内置 canvas 后端栅格化页面。此前通过 Fyne 画布
+	// 渲染再取图，最终同样走 canvas 光栅器，因此输出一致；改为 RasterizePage
+	// 后核心渲染不再需要 *canvas.Context 适配。
+	raster, err := doc.RasterizePage(page, render.BackendCanvas, resolution)
 	if err != nil {
 		return nil, err
 	}
-	defer lease.Release()
-	content := lease.Content()
-	if content == nil {
-		return nil, fmt.Errorf("页面内容为空")
-	}
-	if content.Area == nil {
-		return nil, fmt.Errorf("页面区域为空")
-	}
-	box := content.Area.PhysicalBox
-	pageCanvas := canvasFyne.New(box.Width, box.Height, resolution)
-	ctx := ofdcanvas.NewContext(pageCanvas.Canvas)
-	if err := doc.Draw(ctx, page); err != nil {
-		return nil, err
-	}
-	pageObject, ok := pageCanvas.Content().(*fyneCanvas.Image)
-	if !ok || pageObject.Image == nil {
+	if raster == nil {
 		return nil, nil
 	}
-	return pageObject.Image, nil
+	return raster, nil
 }
 
 func (v *viewer) changePage(delta int) {

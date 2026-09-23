@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tdewolff/canvas"
-
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/testscene"
 )
 
@@ -29,13 +30,13 @@ func TestGGCanvasParity(t *testing.T) {
 	}
 
 	ww, hh := 200.0, 140.0
-	res := canvas.DPI(96)
+	res := geom.DPI(96)
 
 	canvasBackend, err := render.NewBackend(render.BackendCanvas, ww, hh, res)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ggBackend, err := render.NewBackend(render.BackendGG, ww, hh, res)
+	ggBackend, err := render.NewBackend(drawing.BackendGG, ww, hh, res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,15 +112,15 @@ func TestGGBackendMatchesCanvasOnRealOFD(t *testing.T) {
 			if len(ofd.Documents) == 0 || len(ofd.Documents[0].Pages) == 0 {
 				t.Skip("文档无页面")
 			}
-			doc := render.NewDocumentWithDPI(color.White, ofd.Documents[0], canvas.DPI(96))
+			doc := render.NewDocumentWithDPI(color.White, ofd.Documents[0], geom.DPI(96))
 			page := doc.Pages[0]
 
-			res := canvas.DPI(96)
+			res := geom.DPI(96)
 			canvasImg, err := doc.RasterizePage(page, render.BackendCanvas, res)
 			if err != nil {
 				t.Skipf("canvas 后端渲染失败（环境相关）: %v", err)
 			}
-			ggImg, err := doc.RasterizePage(page, render.BackendGG, res)
+			ggImg, err := doc.RasterizePage(page, drawing.BackendGG, res)
 			if err != nil {
 				t.Fatalf("gg 后端渲染失败: %v", err)
 			}

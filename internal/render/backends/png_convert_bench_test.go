@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/tdewolff/canvas"
-
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
@@ -28,8 +28,8 @@ func (discardWriterCloser) Close() error                { return nil }
 // 全部限制在第 1 页，便于与 RasterizePage 直接对齐。
 func BenchmarkConvertPngPage1(b *testing.B) {
 	for _, dpiVal := range []float64{150, 300} {
-		dpi := canvas.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, render.BackendGG, render.BackendFTGG, render.BackendTinySkia} {
+		dpi := geom.DPI(dpiVal)
+		for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 			b.Run(fmt.Sprintf("RasterizePage/%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()

@@ -36,7 +36,7 @@ func TestAnoStampAnnotationRendersText(t *testing.T) {
 	ctx := canvas.NewContext(c)
 	ctx.SetFillColor(canvas.White)
 	ctx.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
-	renderDoc.Annot(ctx, annot, box)
+	renderDoc.Annot(newCanvasBackend(ctx), annot, box)
 
 	if pixels := countNonWhite(rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)); pixels < 100 {
 		t.Fatalf("stamp annotation rendered only %d non-white pixels", pixels)
@@ -73,14 +73,14 @@ func TestAnoPageIncludesStampAnnotation(t *testing.T) {
 	withoutContext.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
 	withContext.SetFillColor(canvas.White)
 	withContext.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
-	renderDoc.drawPageBackground(NewCanvasBackend(withoutContext), box)
+	renderDoc.drawPageBackground(newCanvasBackend(withoutContext), box)
 	for _, template := range templates {
-		renderDoc.Template(withoutContext, template, box)
+		renderDoc.Template(newCanvasBackend(withoutContext), template, box)
 	}
 	if pageContent != nil {
-		renderDoc.drawLayers(NewCanvasBackend(withoutContext), pageContent.Layer, box)
+		renderDoc.drawLayers(newCanvasBackend(withoutContext), pageContent.Layer, box)
 	}
-	renderDoc.PageContent(withContext, page, true)
+	renderDoc.PageContent(newCanvasBackend(withContext), page, true)
 
 	withImage := rasterizer.Draw(withAnnotation, canvas.DPI(72), canvas.DefaultColorSpace)
 	withoutImage := rasterizer.Draw(withoutAnnotation, canvas.DPI(72), canvas.DefaultColorSpace)

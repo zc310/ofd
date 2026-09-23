@@ -2,11 +2,11 @@
 //
 // gg、ftgg、tinyskia 三个后端只有「画笔/路径提交/图像合成」随光栅库不同，
 // 其余语义完全一致：Push/Pop 样式镜像、逻辑矩阵累计、毫米→设备像素换算、
-// 描边造型缩放、canvas.Path 扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等。
+// 描边造型缩放、路径扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等。
 // 这些共享逻辑集中在本包，各后端只需实现 Hooks。
 //
-// Core 直接满足 render.DrawContext（并带 Raster），因此各后端 New 只需
-// 用一个工厂函数构造 Hooks 即可返回 render.Backend。
+// Core 直接满足 render.DrawContext（并带 Raster），且全部使用与绘制库无关
+// 的 geom 类型，因此本包与各后端都不依赖 tdewolff/canvas。
 package rastercore
 
 import (
@@ -15,7 +15,7 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 
 	"github.com/zc310/ofd/internal/render/backends/rasterstate"
 )
@@ -23,8 +23,8 @@ import (
 // StrokeStyle 是换算到设备像素后的描边造型，交给 Hooks 写入光栅库。
 type StrokeStyle struct {
 	Width      float64 // 设备像素线宽
-	Cap        canvas.Capper
-	Join       canvas.Joiner
+	Cap        geom.Capper
+	Join       geom.Joiner
 	MiterLimit float64
 	Dashes     []float64 // 原始（逻辑毫米）虚线数组，由 Hooks 按线宽缩放
 	DashOffset float64   // 原始（逻辑毫米）相位
@@ -45,7 +45,7 @@ const (
 // DeviceSeg 是一段设备像素坐标的路径。P 按段类型使用前 1~3 个点。
 type DeviceSeg struct {
 	Op DeviceOp
-	P  [3]canvas.Point
+	P  [3]geom.Point
 }
 
 // DevicePath 是复用缓冲的设备路径，避免每次绘制都分配新切片。
@@ -58,24 +58,24 @@ func (p *DevicePath) Reset() { p.Segs = p.Segs[:0] }
 
 // MoveTo 追加一个移动到点。
 func (p *DevicePath) MoveTo(x, y float64) {
-	p.Segs = append(p.Segs, DeviceSeg{Op: MoveOp, P: [3]canvas.Point{{X: x, Y: y}}})
+	p.Segs = append(p.Segs, DeviceSeg{Op: MoveOp, P: [3]geom.Point{{X: x, Y: y}}})
 }
 
 // LineTo 追加一个直线段。
 func (p *DevicePath) LineTo(x, y float64) {
-	p.Segs = append(p.Segs, DeviceSeg{Op: LineOp, P: [3]canvas.Point{{X: x, Y: y}}})
+	p.Segs = append(p.Segs, DeviceSeg{Op: LineOp, P: [3]geom.Point{{X: x, Y: y}}})
 }
 
 // QuadTo 追加一个二次贝塞尔段。
 func (p *DevicePath) QuadTo(cx, cy, x, y float64) {
-	p.Segs = append(p.Segs, DeviceSeg{Op: QuadOp, P: [3]canvas.Point{{X: cx, Y: cy}, {X: x, Y: y}}})
+	p.Segs = append(p.Segs, DeviceSeg{Op: QuadOp, P: [3]geom.Point{{X: cx, Y: cy}, {X: x, Y: y}}})
 }
 
 // CubeTo 追加一个三次贝塞尔段。
 func (p *DevicePath) CubeTo(c1x, c1y, c2x, c2y, x, y float64) {
 	p.Segs = append(p.Segs, DeviceSeg{
 		Op: CubeOp,
-		P:  [3]canvas.Point{{X: c1x, Y: c1y}, {X: c2x, Y: c2y}, {X: x, Y: y}},
+		P:  [3]geom.Point{{X: c1x, Y: c1y}, {X: c2x, Y: c2y}, {X: x, Y: y}},
 	})
 }
 
@@ -84,30 +84,36 @@ func (p *DevicePath) Close() {
 	p.Segs = append(p.Segs, DeviceSeg{Op: CloseOp})
 }
 
-// Hooks 是共享状态机与具体光栅库之间的桥。Core 负责渲染上下文语义，Hooks
-// 只做与库相关的画笔设置、路径提交与图像合成。
+// Hooks 是共享状态机与具体光栅库之间的桥。
+//
+// Core 负责渲染上下文语义，Hooks 只做与库相关的画笔设置、路径提交与图像
+// 合成，全部使用 geom 类型。
 type Hooks interface {
-	// Push/Pop 保存并恢复光栅库自身的画笔与变换。
+	// Push 保存光栅库自身的画笔与变换。
 	Push()
+	// Pop 恢复最近一次 Push 保存的光栅库画笔与变换。
 	Pop()
 
-	// SetFillSolid/SetStrokeSolid 设置纯色画笔；ClearFill/ClearStroke 清除。
+	// SetFillSolid 设置纯色填充画笔。
 	SetFillSolid(c color.Color)
+	// SetStrokeSolid 设置纯色描边画笔。
 	SetStrokeSolid(c color.Color)
+	// ClearFill 清除填充画笔。
 	ClearFill()
+	// ClearStroke 清除描边画笔。
 	ClearStroke()
 
 	// SetFillRule 设置光栅库的填充规则。
-	SetFillRule(rule canvas.FillRule)
+	SetFillRule(rule geom.FillRule)
 
 	// DrawDevicePath 提交已换算到设备像素坐标的路径，并按需填充/描边。
 	// m 是当次绘制的完整逻辑矩阵（渐变采样/几何换算用）；fillGrad 与
 	// strokeGrad 为 nil 表示使用当前已设置的纯色画笔。Core 已保证 fill 与
 	// stroke 至少一个为真，且 stroke 为真时 style.Width>0。
-	DrawDevicePath(path *DevicePath, m canvas.Matrix, fill, stroke bool, fillGrad, strokeGrad canvas.Gradient, style StrokeStyle)
+	DrawDevicePath(path *DevicePath, m geom.Matrix, fill, stroke bool, fillGrad, strokeGrad geom.Gradient, style StrokeStyle)
 
 	// RenderImage 按绝对设备矩阵合成预渲染图像（离屏合成/mesh/文字图层）。
-	RenderImage(img image.Image, m canvas.Matrix)
+	RenderImage(img image.Image, m geom.Matrix)
 
 	// Raster 返回当前绘制的全部内容对应的 RGBA 图像。
 	Raster() *image.RGBA
@@ -121,29 +127,29 @@ type Core struct {
 	hpix float64 // 像素缓冲高（float 形式）
 
 	hooks Hooks
-	mx    canvas.Matrix
+	mx    geom.Matrix
 
 	device DevicePath
 
 	fillActive   bool
 	strokeActive bool
 	strokeWidth  float64
-	strokeCap    canvas.Capper
-	strokeJoin   canvas.Joiner
+	strokeCap    geom.Capper
+	strokeJoin   geom.Joiner
 	miterLimit   float64
 	dashOffset   float64
 	dashes       []float64
-	fillGradient canvas.Gradient
-	strokeGrad   canvas.Gradient
-	strokePaint  canvas.Paint
-	fillRule     canvas.FillRule
+	fillGradient geom.Gradient
+	strokeGrad   geom.Gradient
+	strokePaint  geom.Paint
+	fillRule     geom.FillRule
 
 	stack []rasterstate.State
 }
 
 // New 计算像素尺寸并调用 factory 构造光栅库的 Hooks。factory 收到已经过
 // 取整校验的 wpx/hpx（像素）与 dpmm/hpix，返回库相关的 Hooks 实现。
-func New(width, height float64, resolution canvas.Resolution, factory func(wpx, hpx int, dpmm, hpix float64) Hooks) (*Core, error) {
+func New(width, height float64, resolution geom.Resolution, factory func(wpx, hpx int, dpmm, hpix float64) Hooks) (*Core, error) {
 	dpmm := resolution.DPMM()
 	wpx := int(width*dpmm + 0.5)
 	hpx := int(height*dpmm + 0.5)
@@ -156,18 +162,18 @@ func New(width, height float64, resolution canvas.Resolution, factory func(wpx, 
 		dpmm:  dpmm,
 		hpix:  float64(hpx),
 		hooks: factory(wpx, hpx, dpmm, float64(hpx)),
-		mx:    canvas.Identity,
+		mx:    geom.Identity,
 		// canvas 默认样式：填充黑色、描边空、线宽 1；MiterJoin 即
 		// MiterJoiner{GapJoiner: BevelJoin, Limit: 4.0}。
 		fillActive: true,
-		strokeCap:  canvas.ButtCap,
-		strokeJoin: canvas.MiterJoin,
+		strokeCap:  geom.ButtCap,
+		strokeJoin: geom.MiterJoin,
 		miterLimit: 4.0,
 	}, nil
 }
 
 // MatrixScale 返回矩阵的不变缩放因子（行列式开方），用于线宽/虚线换算。
-func MatrixScale(m canvas.Matrix) float64 {
+func MatrixScale(m geom.Matrix) float64 {
 	det := m[0][0]*m[1][1] - m[0][1]*m[1][0]
 	sf := math.Sqrt(math.Abs(det))
 	if !(sf > 0) || math.IsNaN(sf) {
@@ -208,13 +214,17 @@ func (c *Core) Pop() {
 	c.hooks.Pop()
 }
 
-// Translate/Scale/Rotate 累积逻辑矩阵（设备换算在 DrawPath 执行）。
+// Translate 追加平移变换（设备换算在 DrawPath 执行）。
 func (c *Core) Translate(x, y float64) { c.mx = c.mx.Translate(x, y) }
-func (c *Core) Scale(sx, sy float64)   { c.mx = c.mx.Scale(sx, sy) }
-func (c *Core) Rotate(deg float64)     { c.mx = c.mx.Rotate(deg) }
 
-// CurrentMatrix 返回 canvas 表示（CoordSystem·View）的当前逻辑矩阵。
-func (c *Core) CurrentMatrix() canvas.Matrix { return c.mx }
+// Scale 追加缩放变换（设备换算在 DrawPath 执行）。
+func (c *Core) Scale(sx, sy float64) { c.mx = c.mx.Scale(sx, sy) }
+
+// Rotate 追加旋转变换（设备换算在 DrawPath 执行）。
+func (c *Core) Rotate(deg float64) { c.mx = c.mx.Rotate(deg) }
+
+// CurrentMatrix 返回当前逻辑矩阵（CoordSystem·View）。
+func (c *Core) CurrentMatrix() geom.Matrix { return c.mx }
 
 // SetFillColor 设置纯色填充。
 func (c *Core) SetFillColor(col color.Color) {
@@ -224,13 +234,13 @@ func (c *Core) SetFillColor(col color.Color) {
 }
 
 // SetFillGradient 设置渐变填充（延迟到 DrawPath 时按矩阵采样）。
-func (c *Core) SetFillGradient(g canvas.Gradient) {
+func (c *Core) SetFillGradient(g geom.Gradient) {
 	c.fillActive = true
 	c.fillGradient = g
 }
 
 // SetFillPaint 设置填充画笔（颜色、渐变或清除）。
-func (c *Core) SetFillPaint(paint canvas.Paint) {
+func (c *Core) SetFillPaint(paint geom.Paint) {
 	if paint.IsColor() {
 		c.SetFillColor(paint.Color)
 	} else if paint.IsGradient() {
@@ -256,14 +266,14 @@ func (c *Core) SetStrokeColor(col color.Color) {
 }
 
 // SetStrokeGradient 设置描边渐变（延迟到 DrawPath 时按矩阵采样）。
-func (c *Core) SetStrokeGradient(g canvas.Gradient) {
+func (c *Core) SetStrokeGradient(g geom.Gradient) {
 	c.strokeActive = true
 	c.strokeGrad = g
-	c.strokePaint = canvas.Paint{Gradient: g}
+	c.strokePaint = geom.GradientPaint(g)
 }
 
 // SetStrokePaint 设置描边画笔（颜色、渐变或清除）。
-func (c *Core) SetStrokePaint(paint canvas.Paint) {
+func (c *Core) SetStrokePaint(paint geom.Paint) {
 	if paint.IsColor() {
 		c.SetStrokeColor(paint.Color)
 	} else if paint.IsGradient() {
@@ -277,7 +287,7 @@ func (c *Core) SetStrokePaint(paint canvas.Paint) {
 func (c *Core) ClearStroke() {
 	c.strokeActive = false
 	c.strokeGrad = nil
-	c.strokePaint = canvas.Paint{}
+	c.strokePaint = geom.Paint{}
 	c.hooks.ClearStroke()
 }
 
@@ -296,12 +306,12 @@ func (c *Core) SetDashes(offset float64, dashes ...float64) {
 }
 
 // SetStrokeCapper 设置线帽。
-func (c *Core) SetStrokeCapper(cap canvas.Capper) { c.strokeCap = cap }
+func (c *Core) SetStrokeCapper(cap geom.Capper) { c.strokeCap = cap }
 
 // SetStrokeJoiner 设置连接器，并记录斜接限制。
-func (c *Core) SetStrokeJoiner(join canvas.Joiner) {
+func (c *Core) SetStrokeJoiner(join geom.Joiner) {
 	c.strokeJoin = join
-	if j, ok := join.(canvas.MiterJoiner); ok {
+	if j, ok := join.(geom.MiterJoiner); ok {
 		c.miterLimit = j.Limit
 	}
 }
@@ -310,19 +320,19 @@ func (c *Core) SetStrokeJoiner(join canvas.Joiner) {
 func (c *Core) StrokeWidth() float64 { return c.strokeWidth }
 
 // StrokeCapper 返回当前线帽。
-func (c *Core) StrokeCapper() canvas.Capper { return c.strokeCap }
+func (c *Core) StrokeCapper() geom.Capper { return c.strokeCap }
 
 // StrokeJoiner 返回当前连接器。
-func (c *Core) StrokeJoiner() canvas.Joiner { return c.strokeJoin }
+func (c *Core) StrokeJoiner() geom.Joiner { return c.strokeJoin }
 
 // SetFillRule 设置填充规则。
-func (c *Core) SetFillRule(rule canvas.FillRule) {
+func (c *Core) SetFillRule(rule geom.FillRule) {
 	c.fillRule = rule
 	c.hooks.SetFillRule(rule)
 }
 
 // DrawPath 按当前样式绘制路径（x,y 为路径平移到画布的偏移）。
-func (c *Core) DrawPath(x, y float64, p *canvas.Path) {
+func (c *Core) DrawPath(x, y float64, p *geom.Path) {
 	stroke := c.strokeActive && c.strokeWidth > 0
 	if p == nil || p.Empty() || math.IsNaN(x) || math.IsNaN(y) || !c.fillActive && !stroke {
 		return
@@ -341,7 +351,7 @@ func (c *Core) DrawPath(x, y float64, p *canvas.Path) {
 }
 
 // TextPath 绘制字形轮廓路径（同 DrawPath）。
-func (c *Core) TextPath(p *canvas.Path, x, y float64) { c.DrawPath(x, y, p) }
+func (c *Core) TextPath(p *geom.Path, x, y float64) { c.DrawPath(x, y, p) }
 
 // DrawImage 绘制图片：dpmm 是源图像素到画布单位（mm）的换算。
 func (c *Core) DrawImage(img image.Image, x, y float64, dpmm float64) {
@@ -353,7 +363,7 @@ func (c *Core) DrawImage(img image.Image, x, y float64, dpmm float64) {
 }
 
 // RenderImage 按绝对设备矩阵绘制预渲染图片。
-func (c *Core) RenderImage(img image.Image, m canvas.Matrix) {
+func (c *Core) RenderImage(img image.Image, m geom.Matrix) {
 	if img == nil || img.Bounds().Dx() == 0 || img.Bounds().Dy() == 0 {
 		return
 	}
@@ -382,12 +392,12 @@ func unwrapImage(img image.Image) image.Image {
 // Raster 返回当前光栅库绘制的 RGBA 图像。
 func (c *Core) Raster() *image.RGBA { return c.hooks.Raster() }
 
-// buildDevice 把 canvas 路径（D 空间）按完整逻辑矩阵 m 换算为设备像素坐标
+// buildDevice 把 geom 路径按完整逻辑矩阵 m 换算为设备像素坐标
 // device = {dpmm·X, Hpix − dpmm·Y}；椭圆弧先用 ReplaceArcs 展开为三次贝塞尔。
-func (c *Core) buildDevice(p *canvas.Path, m canvas.Matrix) {
+func (c *Core) buildDevice(p *geom.Path, m geom.Matrix) {
 	c.device.Reset()
 	dpmm, hpix := c.dpmm, c.hpix
-	toDev := func(pt canvas.Point) (float64, float64) {
+	toDev := func(pt geom.Point) (float64, float64) {
 		lx := m[0][0]*pt.X + m[0][1]*pt.Y + m[0][2]
 		ly := m[1][0]*pt.X + m[1][1]*pt.Y + m[1][2]
 		return dpmm * lx, hpix - dpmm*ly
@@ -395,22 +405,22 @@ func (c *Core) buildDevice(p *canvas.Path, m canvas.Matrix) {
 	sc := p.ReplaceArcs().Scanner()
 	for sc.Scan() {
 		switch sc.Cmd() {
-		case canvas.MoveToCmd:
+		case geom.MoveToCmd:
 			x, y := toDev(sc.End())
 			c.device.MoveTo(x, y)
-		case canvas.LineToCmd:
+		case geom.LineToCmd:
 			x, y := toDev(sc.End())
 			c.device.LineTo(x, y)
-		case canvas.QuadToCmd:
+		case geom.QuadToCmd:
 			cx, cy := toDev(sc.CP1())
 			x, y := toDev(sc.End())
 			c.device.QuadTo(cx, cy, x, y)
-		case canvas.CubeToCmd:
+		case geom.CubeToCmd:
 			c1x, c1y := toDev(sc.CP1())
 			c2x, c2y := toDev(sc.CP2())
 			x, y := toDev(sc.End())
 			c.device.CubeTo(c1x, c1y, c2x, c2y, x, y)
-		case canvas.CloseCmd:
+		case geom.CloseCmd:
 			c.device.Close()
 		}
 	}

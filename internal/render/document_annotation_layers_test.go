@@ -45,7 +45,7 @@ func TestAnnotWatermarkRendersBelowPageContent(t *testing.T) {
 	}
 	c := canvas.New(box.Width, box.Height)
 	ctx := canvas.NewContext(c)
-	renderDoc.PageContent(ctx, page, false)
+	renderDoc.PageContent(newCanvasBackend(ctx), page, false)
 
 	img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
 	// 中心像素被黑色页面内容覆盖（Watermark 绘制在内容之下），而不是红色。
@@ -88,7 +88,7 @@ func TestAnnotStampRendersAbovePageContent(t *testing.T) {
 	}
 	c := canvas.New(box.Width, box.Height)
 	ctx := canvas.NewContext(c)
-	renderDoc.PageContent(ctx, page, false)
+	renderDoc.PageContent(newCanvasBackend(ctx), page, false)
 
 	img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
 	// 中心像素被红色 Stamp 注解覆盖（非 Watermark 仍绘制在最上层）。
@@ -122,7 +122,7 @@ func TestAnnoStampAnnotationRemainsVisible(t *testing.T) {
 	ctx := canvas.NewContext(c)
 	ctx.SetFillColor(canvas.White)
 	ctx.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
-	renderDoc.PageContent(ctx, page, true)
+	renderDoc.PageContent(newCanvasBackend(ctx), page, true)
 
 	pixels := countNonWhite(rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace))
 	if pixels < 100 {

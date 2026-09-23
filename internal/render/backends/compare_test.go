@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tdewolff/canvas"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -16,7 +15,10 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 
+	_ "github.com/zc310/ofd/internal/render/backends/draw2d"
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	_ "github.com/zc310/ofd/internal/render/backends/gg"
 	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
@@ -25,7 +27,7 @@ import (
 const stress999Path = "../../../test/testdata/999.ofd"
 
 // stress999Document 打开 999.ofd 并返回可复用的渲染文档（页面/字体一次到位）。
-func stress999Document(t testing.TB, dpi canvas.Resolution) (*render.Document, *parser.OFD) {
+func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *parser.OFD) {
 	t.Helper()
 	ofd, err := parser.NewOFD(stress999Path)
 	if err != nil {
@@ -50,16 +52,16 @@ func stress999Document(t testing.TB, dpi canvas.Resolution) (*render.Document, *
 // 差异图为白底红点（逐像素不一致处涂红）。结果写入 STRESS_PNG_DIR（默认
 // /tmp/ofd_test/compare.png）。
 func TestCompareBackends999Page1(t *testing.T) {
-	doc, ofd := stress999Document(t, canvas.DPI(150))
+	doc, ofd := stress999Document(t, geom.DPI(150))
 	defer ofd.Close()
 	page := doc.Pages[0]
 
 	base := render.BackendCanvas
-	others := []string{render.BackendGG, render.BackendFTGG, render.BackendTinySkia}
+	others := []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D}
 	rendered := make(map[string]*image.RGBA)
 	names := append([]string{base}, others...)
 	for _, name := range names {
-		img, err := doc.RasterizePage(page, name, canvas.DPI(150))
+		img, err := doc.RasterizePage(page, name, geom.DPI(150))
 		if err != nil {
 			t.Fatalf("%s 渲染失败: %v", name, err)
 		}
@@ -101,12 +103,14 @@ func backendTag(name string) string {
 	switch name {
 	case render.BackendCanvas:
 		return "A(canvas)"
-	case render.BackendGG:
+	case drawing.BackendGG:
 		return "B(gg)"
-	case render.BackendFTGG:
+	case drawing.BackendFTGG:
 		return "C(ftgg)"
-	case render.BackendTinySkia:
+	case drawing.BackendTinySkia:
 		return "D(tinyskia)"
+	case drawing.BackendDraw2D:
+		return "E(draw2d)"
 	default:
 		return name
 	}
@@ -193,7 +197,7 @@ func drawLabel(img *image.RGBA, x int, text string) {
 // 要求红色覆盖像素数与 canvas 基准接近。
 func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	ww, hh := 40.0, 40.0
-	res := canvas.DPI(96)
+	res := geom.DPI(96)
 
 	redFillPixels := func(name string) int {
 		b, err := render.NewBackend(name, ww, hh, res)
@@ -201,16 +205,16 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		b.SetFillColor(color.White)
-		b.DrawPath(0, 0, canvas.Rectangle(ww, hh))
+		b.DrawPath(0, 0, geom.Rectangle(ww, hh))
 		b.ClearFill()
 		b.SetStrokeColor(color.RGBA{R: 0xd3, G: 0x2f, B: 0x2f, A: 0xff})
 		b.SetStrokeWidth(6)
 		b.CopyStrokeToFill()
 		b.SetStrokeColor(color.Transparent)
-		p := &canvas.Path{}
+		p := &geom.Path{}
 		p.MoveTo(5, 5)
 		p.LineTo(35, 35)
-		b.DrawPath(0, 0, p.Stroke(6, canvas.ButtCap, canvas.MiterJoin, canvas.Tolerance))
+		b.DrawPath(0, 0, p.Stroke(6, geom.ButtCap, geom.MiterJoin, geom.Tolerance))
 
 		img := b.Raster()
 		n := 0
@@ -226,7 +230,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	if base == 0 {
 		t.Fatal("canvas 基准没有填充像素，测试无意义")
 	}
-	for _, name := range []string{render.BackendGG, render.BackendFTGG, render.BackendTinySkia} {
+	for _, name := range []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 		got := redFillPixels(name)
 		t.Logf("%s 填充像素 %d（canvas 基准 %d）", name, got, base)
 		if got == 0 {
@@ -246,8 +250,8 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 // TestNewBackendRejectsZeroPixelSize 回归：页面在给定分辨率下取整为 0 像素时
 // 各后端必须返回错误，而不是 panic 或产出空图。
 func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, render.BackendGG, render.BackendFTGG, render.BackendTinySkia} {
-		if _, err := render.NewBackend(name, 0.001, 0.001, canvas.DPI(1)); err == nil {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+		if _, err := render.NewBackend(name, 0.001, 0.001, geom.DPI(1)); err == nil {
 			t.Errorf("%s: 0 像素页面未返回错误", name)
 		}
 	}

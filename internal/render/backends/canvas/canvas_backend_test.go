@@ -1,4 +1,4 @@
-package render
+package canvas
 
 import (
 	"image"
@@ -49,13 +49,13 @@ func drawPageDirect(t *testing.T, fontPath string) *image.RGBA {
 	ctx := canvas.NewContext(c)
 	ctx.SetCoordSystem(canvas.CartesianIV)
 	testscene.SceneDirect(t, ctx, fontPath)
-	return Rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
+	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
 }
 
 func drawPageBackend(t *testing.T, fontPath string) *image.RGBA {
 	c := canvas.New(200, 140)
 	ctx := canvas.NewContext(c)
 	ctx.SetCoordSystem(canvas.CartesianIV)
-	testscene.SceneBackend(t, NewCanvasBackend(ctx), fontPath)
-	return Rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
+	testscene.SceneBackend(t, newCanvasBackend(ctx), fontPath)
+	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
 }

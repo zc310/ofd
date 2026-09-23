@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 func TestResolveColorSpaceColor(t *testing.T) {
@@ -80,7 +80,7 @@ func TestGradientStopsUseColorSpaceColors(t *testing.T) {
 	resolve := func(source models.CTColor) color.RGBA {
 		return resolveColorSpaceColor(space, source)
 	}
-	var gradient canvas.Grad
+	var gradient geom.Grad
 	addOFDGradientStops(&gradient, shd.Segment, resolve)
 	if len(gradient) != 2 {
 		t.Fatalf("stops = %d, want 2", len(gradient))

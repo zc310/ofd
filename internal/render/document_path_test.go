@@ -8,6 +8,7 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 func TestDrawClippedPathKeepsEvenOddHole(t *testing.T) {
@@ -15,10 +16,10 @@ func TestDrawClippedPathKeepsEvenOddHole(t *testing.T) {
 	// 带裁剪的 Even-Odd 路径（例如注解外观流中"整页减洞"的背景）必须保留洞。
 	doc := &Document{}
 	c := canvas.New(100, 100)
-	backend := NewCanvasBackend(canvas.NewContext(c))
+	backend := newCanvasBackend(canvas.NewContext(c))
 	backend.SetFillColor(color.RGBA{A: 255})
 
-	path := &canvas.Path{}
+	path := &geom.Path{}
 	path.MoveTo(0, 0)
 	path.LineTo(100, 0)
 	path.LineTo(100, 100)
@@ -29,11 +30,11 @@ func TestDrawClippedPathKeepsEvenOddHole(t *testing.T) {
 	path.LineTo(60, 60)
 	path.LineTo(40, 60)
 	path.Close()
-	clip := canvas.Rectangle(100, 100)
+	clip := geom.Rectangle(100, 100)
 	object := models.PathObject{CtPath: models.CtPath{Fill: true, Rule: "Even-Odd"}}
 	doc.drawClippedPath(backend, path, clip, object)
 
-	out := Rasterize(c, canvas.DPI(72), canvas.DefaultColorSpace)
+	out := rasterize(c, canvas.DPI(72), canvas.DefaultColorSpace)
 	dpmm := canvas.DPI(72).DPMM()
 	if _, _, _, a := out.RGBAAt(int(50*dpmm), out.Bounds().Dy()-int(50*dpmm)).RGBA(); a>>8 != 0 {
 		t.Fatalf("hole alpha = %d, want 0", a>>8)
@@ -83,16 +84,16 @@ func TestGraphicRenderingSkipsNonFiniteCTM(t *testing.T) {
 	document := &Document{}
 	ctx := canvas.NewContext(canvas.New(100, 100))
 
-	document.Path(ctx, models.PathObject{CtPath: models.CtPath{
+	document.Path(newCanvasBackend(ctx), models.PathObject{CtPath: models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{CTM: &bad},
 	}}, nil, models.StBox{Width: 100, Height: 100})
-	document.Image(ctx, models.ImageObject{CtImage: models.CtImage{
+	document.Image(newCanvasBackend(ctx), models.ImageObject{CtImage: models.CtImage{
 		CTGraphicUnit: models.CTGraphicUnit{CTM: &bad},
 	}}, nil, models.StBox{Width: 100, Height: 100})
-	document.Text(ctx, models.TextObject{CtText: models.CtText{
+	document.Text(newCanvasBackend(ctx), models.TextObject{CtText: models.CtText{
 		CTGraphicUnit: models.CTGraphicUnit{CTM: &bad},
 	}}, nil, models.StBox{Width: 100, Height: 100})
-	document.Composite(ctx, models.CompositeObject{CtComposite: models.CtComposite{
+	document.Composite(newCanvasBackend(ctx), models.CompositeObject{CtComposite: models.CtComposite{
 		CTGraphicUnit: models.CTGraphicUnit{CTM: &bad},
 	}}, nil, models.StBox{Width: 100, Height: 100})
 }

@@ -3,10 +3,12 @@
 //
 //	import _ "github.com/zc310/ofd/internal/render/backends/gg"
 //
-// 之后即可用 render.BackendGG="gg" 作为 Document.RasterizePage 的后端名。
+// 之后即可用 drawing.BackendGG="gg" 作为栅格后端名，或经
+// converter.RasterBackend("gg") 使用。
 // 渲染上下文状态机（Push/Pop、坐标换算、路径扫描、描边缩放）由
 // internal/render/backends/rastercore 共享，本包只实现 gogpu/gg 的画笔、
-// 路径提交与图像合成。
+// 路径提交与图像合成；状态机与 Hooks 之间使用与绘制库无关的 geom 类型，
+// 本包不依赖 tdewolff/canvas。
 package gg
 
 import (
@@ -14,18 +16,18 @@ import (
 	"image/color"
 
 	"github.com/gogpu/gg"
-	"github.com/tdewolff/canvas"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 
-	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/backends/rastercore"
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
-var _ render.Backend = (*rastercore.Core)(nil)
+var _ drawing.Backend = (*rastercore.Core)(nil)
 
 func init() {
-	_ = render.RegisterBackend(render.BackendGG, func(width, height float64, resolution canvas.Resolution) (render.Backend, error) {
+	_ = drawing.RegisterBackend(drawing.BackendGG, func(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 		return New(width, height, resolution)
 	})
 }
@@ -33,7 +35,7 @@ func init() {
 // New 创建 gogpu/gg 光栅后端。输出分辨率由 resolution 决定，页面物理尺寸
 // 为 width×height(mm)；Raster 的图片尺寸与 canvas 的 Rasterize 取整规则
 // 逐像素一致（int(w*dpmm+0.5)）。
-func New(width, height float64, resolution canvas.Resolution) (render.Backend, error) {
+func New(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 	core, err := rastercore.New(width, height, resolution, func(wpx, hpx int, dpmm, hpix float64) rastercore.Hooks {
 		pm := gg.NewPixmap(wpx, hpx)
 		return &ggHooks{dc: gg.NewContextForPixmap(pm), pm: pm, dpmm: dpmm, hpix: hpix, path: gg.NewPath()}
@@ -48,7 +50,7 @@ func New(width, height float64, resolution canvas.Resolution) (render.Backend, e
 //
 // 坐标模型：rastercore 已把路径换算到设备像素（y 向下），gogpu/gg 的软件
 // 栅格器只接受设备坐标，因此这里直接把设备路径交给 gg，不做额外变换。
-// 渐变按设备像素中心经完整矩阵逆映射回逻辑毫米后采样 canvas.Gradient，
+// 渐变按设备像素中心经完整矩阵逆映射回逻辑毫米后采样 geom.Gradient，
 // 与 canvas 默认的 LinearColorSpace（不做 gamma 往返）一致。图片按 canvas
 // rasterizer.RenderImage 的边距与仿射换算，用 x/image 的 Catmull-Rom 直接
 // 合成到 gg 像素缓冲。
@@ -68,16 +70,16 @@ func (h *ggHooks) SetStrokeSolid(c color.Color) { h.dc.SetStrokeBrush(gg.Solid(g
 func (h *ggHooks) ClearFill()                   { h.dc.SetFillBrush(gg.Solid(gg.Transparent)) }
 func (h *ggHooks) ClearStroke()                 { h.dc.SetStrokeBrush(gg.Solid(gg.Transparent)) }
 
-func (h *ggHooks) SetFillRule(rule canvas.FillRule) {
+func (h *ggHooks) SetFillRule(rule geom.FillRule) {
 	switch rule {
-	case canvas.NonZero:
+	case geom.NonZero:
 		h.dc.SetFillRule(gg.FillRuleNonZero)
 	default:
 		h.dc.SetFillRule(gg.FillRuleEvenOdd)
 	}
 }
 
-func (h *ggHooks) DrawDevicePath(dp *rastercore.DevicePath, m canvas.Matrix, fill, stroke bool, fillGrad, strokeGrad canvas.Gradient, style rastercore.StrokeStyle) {
+func (h *ggHooks) DrawDevicePath(dp *rastercore.DevicePath, m geom.Matrix, fill, stroke bool, fillGrad, strokeGrad geom.Gradient, style rastercore.StrokeStyle) {
 	fillGGPath(h.path, dp)
 	h.dc.SetPath(h.path)
 	if fill {
@@ -101,7 +103,7 @@ func (h *ggHooks) DrawDevicePath(dp *rastercore.DevicePath, m canvas.Matrix, fil
 	}
 }
 
-func (h *ggHooks) RenderImage(img image.Image, m canvas.Matrix) {
+func (h *ggHooks) RenderImage(img image.Image, m geom.Matrix) {
 	// 复刻 canvas rasterizer.RenderImage 的边距与仿射换算，直接合成到 gg
 	// 像素缓冲：非轴对齐变换时四周加 4px 透明边，避免旋转/斜切采样到缓冲
 	// 外像素。LinearColorSpace 下 canvas 不做 gamma 往返，这里同样直接以
@@ -117,7 +119,7 @@ func (h *ggHooks) RenderImage(img image.Image, m canvas.Matrix) {
 	}
 	hh := float64(h.pm.Height())
 	srcH := float64(src.Bounds().Size().Y)
-	origin := m.Dot(canvas.Point{X: -float64(margin), Y: srcH - float64(margin)}).Mul(h.dpmm)
+	origin := m.Dot(geom.Point{X: -float64(margin), Y: srcH - float64(margin)}).Mul(h.dpmm)
 	m = m.Scale(h.dpmm, h.dpmm)
 	aff3 := f64.Aff3{m[0][0], -m[0][1], origin.X, -m[1][0], m[1][1], hh - origin.Y}
 	// 直接把 Pixmap 的预乘 RGBA 缓冲别名为 *image.RGBA 作为目标：x/image/draw
@@ -136,10 +138,10 @@ func (h *ggHooks) Raster() *image.RGBA { return h.pm.ToImage() }
 
 // gradBrush 返回按绘制完整矩阵逆采样渐变的画笔，复刻 canvas rasterizer
 // 的 mInv.Dot(point) 语义；纯色填充的画笔已在 SetFillSolid 设置。
-func (h *ggHooks) gradBrush(g canvas.Gradient, invFull canvas.Matrix) gg.Brush {
+func (h *ggHooks) gradBrush(g geom.Gradient, invFull geom.Matrix) gg.Brush {
 	dpmm, hpix := h.dpmm, h.hpix
 	return gg.NewCustomBrush(func(x, y float64) gg.RGBA {
-		p := invFull.Dot(canvas.Point{X: x / dpmm, Y: (hpix - y) / dpmm})
+		p := invFull.Dot(geom.Point{X: x / dpmm, Y: (hpix - y) / dpmm})
 		return ggRGBA(g.At(p.X, p.Y))
 	})
 }
@@ -148,17 +150,17 @@ func (h *ggHooks) gradBrush(g canvas.Gradient, invFull canvas.Matrix) gg.Brush {
 func (h *ggHooks) strokeStyle(style rastercore.StrokeStyle) {
 	h.dc.SetLineWidth(style.Width)
 	switch style.Cap.(type) {
-	case canvas.RoundCapper:
+	case geom.RoundCapper:
 		h.dc.SetLineCap(gg.LineCapRound)
-	case canvas.SquareCapper:
+	case geom.SquareCapper:
 		h.dc.SetLineCap(gg.LineCapSquare)
 	default:
 		h.dc.SetLineCap(gg.LineCapButt)
 	}
 	switch style.Join.(type) {
-	case canvas.RoundJoiner:
+	case geom.RoundJoiner:
 		h.dc.SetLineJoin(gg.LineJoinRound)
-	case canvas.BevelJoiner:
+	case geom.BevelJoiner:
 		h.dc.SetLineJoin(gg.LineJoinBevel)
 	default:
 		h.dc.SetLineJoin(gg.LineJoinMiter)

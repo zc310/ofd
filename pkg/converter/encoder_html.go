@@ -15,10 +15,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 func init() { Register(&htmlEncoder{}) }
@@ -77,7 +76,7 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 		}
 		var data bytes.Buffer
 		if conv.htmlImageFormat == "svg" {
-			if err := page.Write(&data, renderers.SVG()); err != nil {
+			if err := page.Write(&data, "svg"); err != nil {
 				return fmt.Errorf("编码第%d页 SVG 失败: %w", pageInfo.pageNumber, err)
 			}
 			dataBytes := stripSVGXMLDeclaration(data.Bytes())
@@ -86,15 +85,15 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 				return fmt.Errorf("准备第%d页 SVG 失败: %w", pageInfo.pageNumber, err)
 			}
 		} else if conv.htmlImageFormat == "jpg" {
-			if err := encodeHTMLJPG(&data, page, conv.dpi); err != nil {
+			if err := encodeHTMLJPG(&data, page, geom.Resolution(conv.dpi)); err != nil {
 				return fmt.Errorf("编码第%d页 JPG 失败: %w", pageInfo.pageNumber, err)
 			}
 		} else {
-			if err := encodeHTMLPNG(&data, page, conv.dpi); err != nil {
+			if err := encodeHTMLPNG(&data, page, geom.Resolution(conv.dpi)); err != nil {
 				return fmt.Errorf("编码第%d页 PNG 失败: %w", pageInfo.pageNumber, err)
 			}
 		}
-		return writeHTMLPage(output, pageInfo.pageNumber, page.W, page.H, data.Bytes(), conv.htmlImageFormat)
+		return writeHTMLPage(output, pageInfo.pageNumber, page.Width(), page.Height(), data.Bytes(), conv.htmlImageFormat)
 	})
 	if err != nil {
 		return err
@@ -105,12 +104,12 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 	return nil
 }
 
-func encodeHTMLPNG(output io.Writer, page *canvas.Canvas, dpi canvas.Resolution) error {
-	return png.Encode(output, render.Rasterize(page, dpi, canvas.DefaultColorSpace))
+func encodeHTMLPNG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {
+	return png.Encode(output, page.Rasterize(dpi))
 }
 
-func encodeHTMLJPG(output io.Writer, page *canvas.Canvas, dpi canvas.Resolution) error {
-	return jpeg.Encode(output, opaqueImage(render.Rasterize(page, dpi, canvas.DefaultColorSpace), color.White), &jpeg.Options{Quality: 90})
+func encodeHTMLJPG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {
+	return jpeg.Encode(output, opaqueImage(page.Rasterize(dpi), color.White), &jpeg.Options{Quality: 90})
 }
 
 func opaqueImage(source image.Image, background color.Color) image.Image {
