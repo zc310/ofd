@@ -18,28 +18,13 @@ import (
 	"io"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/entrywriter"
 	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
-)
-
-// SignatureMode 控制合并时如何处理签名文件。
-type SignatureMode string
-
-const (
-	// SignaturePreserve 保持签名文件字节不变，仅重写 OFD.xml 中指向签名的路径。
-	// 当文档被改名且签名使用包内绝对路径、必须重写签名文件才能保持引用有效时，
-	// 返回错误，避免产出签名已失效的结果。空值等同于此模式。
-	SignaturePreserve SignatureMode = "preserve"
-	// SignatureRewrite 重写签名文件中的包内绝对路径，使其指向新目录。引用可解析、
-	// 摘要仍有效，但签名值（SignedValue）覆盖签名清单，重写后原签名值失效。
-	SignatureRewrite SignatureMode = "rewrite"
-	// SignatureDrop 删除签名目录以及 OFD.xml 中的签名引用，产出无签名文档。
-	SignatureDrop SignatureMode = "drop"
 )
 
 // OrphanMode 控制文档目录之外的条目如何处理。
@@ -55,21 +40,7 @@ const (
 )
 
 // Limits 限制合并输入的规模，避免恶意或异常文档造成的解压放大。
-type Limits struct {
-	// MaxEntries 是允许搬运的最大条目数（含签名等所有非目录条目），
-	// 0 表示默认 10000。
-	MaxEntries int
-	// MaxEntryBytes 是单个条目解压后的最大字节数，0 表示默认 64MB。
-	MaxEntryBytes int64
-	// MaxTotalBytes 是所有条目解压后的总字节上限，0 表示默认 512MB。
-	MaxTotalBytes int64
-}
-
-const (
-	defaultMaxEntries    = 10000
-	defaultMaxEntryBytes = int64(64 << 20)
-	defaultMaxTotalBytes = int64(512 << 20)
-)
+type Limits = creator.Limits
 
 // SignatureAction 描述合并过程对某个签名采取的动作。
 type SignatureAction string
@@ -101,8 +72,8 @@ type Options struct {
 	Compression creator.CompressionMode
 	// Deterministic 使用固定 ZIP 时间，生成可复现的合并结果。
 	Deterministic bool
-	// Signatures 是签名处理方式，空值时使用 SignaturePreserve。
-	Signatures SignatureMode
+	// Signatures 是签名处理方式，空值时使用 archive.SignaturePreserve。
+	Signatures creator.SignatureMode
 	// Orphans 是文档目录之外条目的处理方式，空值时使用 OrphanError。
 	Orphans OrphanMode
 	// Limits 限制合并输入的规模，零值使用默认限制。
@@ -117,7 +88,7 @@ type Options struct {
 type bodyPlan struct {
 	oldDir string
 	newDir string
-	// signatureDir 是旧的签名目录（包内相对路径），SignatureDrop 时整目录跳过。
+	// signatureDir 是旧的签名目录（包内相对路径），archive.SignatureDrop 时整目录跳过。
 	signatureDir string
 	// documentIndex 是文档体索引，用于签名事件。
 	documentIndex int
@@ -254,7 +225,8 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 	}
 	archive := zip.NewWriter(w)
 	state := &mergeState{
-		writer:     newEntryWriter(archive, options),
+		writer:     entrywriter.New(archive, entrywriter.Config{Compression: options.Compression, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning}),
+		options:    options,
 		seenDocIDs: make(map[string]bool),
 	}
 
@@ -274,7 +246,7 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 		_ = archive.Close()
 		return err
 	}
-	if err := state.writer.write(spec.RootDocument, rootData); err != nil {
+	if err := state.writer.Write(spec.RootDocument, rootData); err != nil {
 		_ = archive.Close()
 		return err
 	}
@@ -286,29 +258,34 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 
 // mergeState 汇总一次合并过程中的输出写入器与累计状态。
 type mergeState struct {
-	writer     *entryWriter
+	writer     *entrywriter.Writer
+	options    Options
 	bodies     []*etree.Element
 	attrs      rootAttrs
 	nextDir    int
 	seenDocIDs map[string]bool
 }
 
+// emit 通过 Options.OnSignature 上报签名处理结果。
+func (state *mergeState) emit(event SignatureEvent) {
+	if state.options.OnSignature != nil {
+		state.options.OnSignature(event)
+	}
+}
+
 func normalizeOptions(options Options) (Options, error) {
-	if options.Limits.MaxEntries < 0 || options.Limits.MaxEntryBytes < 0 || options.Limits.MaxTotalBytes < 0 {
-		return Options{}, errors.New("合并规模限制不能为负数")
+	if err := creator.ValidateLimits(options.Limits); err != nil {
+		return Options{}, err
 	}
-	if options.Compression == "" {
-		options.Compression = creator.CompressionAuto
+	mode, err := creator.NormalizeCompression(options.Compression)
+	if err != nil {
+		return Options{}, err
 	}
-	switch options.Compression {
-	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
-	default:
-		return Options{}, fmt.Errorf("不支持的 ZIP 压缩策略: %q", options.Compression)
-	}
+	options.Compression = mode
 	switch options.Signatures {
 	case "":
-		options.Signatures = SignaturePreserve
-	case SignaturePreserve, SignatureRewrite, SignatureDrop:
+		options.Signatures = creator.SignaturePreserve
+	case creator.SignaturePreserve, creator.SignatureRewrite, creator.SignatureDrop:
 	default:
 		return Options{}, fmt.Errorf("不支持的签名处理方式: %q", options.Signatures)
 	}
@@ -338,7 +315,7 @@ func mergeSource(state *mergeState, src source) error {
 	}
 	defer func() { _ = pkg.Close() }()
 
-	rootData, err := pkg.ReadLimit(spec.RootDocument, state.writer.maxEntryBytes)
+	rootData, err := pkg.ReadLimit(spec.RootDocument, state.writer.MaxEntryBytes())
 	if err != nil {
 		return fmt.Errorf("读取 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
@@ -375,13 +352,13 @@ func mergeSource(state *mergeState, src source) error {
 		newDir := fmt.Sprintf("Doc_%d", state.nextDir)
 		state.nextDir++
 		plan := bodyPlan{oldDir: oldDir, newDir: newDir, documentIndex: documentIndex}
-		if state.writer.options.Signatures == SignatureDrop {
+		if state.options.Signatures == creator.SignatureDrop {
 			plan.signatureDir = signatureDirOf(body)
 		}
 		plans = append(plans, plan)
 
 		cloned := cloneElement(body)
-		if state.writer.options.Signatures == SignatureDrop {
+		if state.options.Signatures == creator.SignatureDrop {
 			removeBodySignatures(cloned)
 		}
 		rewriteBodyPaths(cloned, oldDir, newDir)
@@ -389,7 +366,7 @@ func mergeSource(state *mergeState, src source) error {
 		state.bodies = append(state.bodies, cloned)
 	}
 
-	if err := copyPackageEntries(state.writer, pkg, src.name, plans); err != nil {
+	if err := copyPackageEntries(state, pkg, src.name, plans); err != nil {
 		return err
 	}
 	return nil
@@ -412,8 +389,9 @@ func removeBodySignatures(body *etree.Element) {
 }
 
 // copyPackageEntries 把输入包中除 OFD.xml 外的条目按目录计划搬运到输出包。
-func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, plans []bodyPlan) error {
-	signatures := writer.options.Signatures
+func copyPackageEntries(state *mergeState, pkg *core.Package, input string, plans []bodyPlan) error {
+	writer := state.writer
+	signatures := state.options.Signatures
 	for _, entry := range pkg.Entries() {
 		if entry.IsDir {
 			continue
@@ -425,11 +403,11 @@ func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, pl
 
 		plan, ok := matchPlan(name, plans)
 		if !ok {
-			switch writer.options.Orphans {
+			switch state.options.Orphans {
 			case OrphanIgnore:
 				continue
 			case OrphanPreserve:
-				if err := writer.writeSource(pkg, entry, name); err != nil {
+				if err := writer.WriteSource(pkg, entry, name); err != nil {
 					return fmt.Errorf("写入 %s 的 %s 失败: %w", input, name, err)
 				}
 				continue
@@ -437,42 +415,42 @@ func copyPackageEntries(writer *entryWriter, pkg *core.Package, input string, pl
 				return fmt.Errorf("%s 的条目 %s 不在任何文档目录内；可用 OrphanIgnore 跳过或 OrphanPreserve 保留", input, name)
 			}
 		}
-		if signatures == SignatureDrop && inSignatureDir(name, plan.signatureDir) {
+		if signatures == creator.SignatureDrop && creator.InSignatureDir(name, plan.signatureDir) {
 			if isSignatureDocument(name) {
-				writer.signature(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: SignatureDropped})
+				state.emit(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: SignatureDropped})
 			}
 			continue
 		}
 		newName := plan.newDir + strings.TrimPrefix(name, plan.oldDir)
 
 		if isSignatureXML(name) {
-			if entry.UncompressedSize > uint64(writer.maxEntryBytes) {
-				return fmt.Errorf("签名文件 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, writer.maxEntryBytes)
+			if entry.UncompressedSize > uint64(writer.MaxEntryBytes()) {
+				return fmt.Errorf("签名文件 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, writer.MaxEntryBytes())
 			}
-			data, err := pkg.ReadLimit(name, writer.maxEntryBytes)
+			data, err := pkg.ReadLimit(name, writer.MaxEntryBytes())
 			if err != nil {
 				return fmt.Errorf("读取 %s 的 %s 失败: %w", input, name, err)
 			}
 			rewritten, changed := rewriteSignatureXML(data, plan.oldDir, plan.newDir)
 			action := SignaturePreserved
 			if changed {
-				if signatures == SignaturePreserve {
+				if signatures == creator.SignaturePreserve {
 					return fmt.Errorf("%s 的 %s 使用包内绝对路径，文档改名后必须重写路径才能保持引用有效；preserve 模式无法保留原始签名，请改用 rewrite 或 drop", input, name)
 				}
-				writer.warn(fmt.Sprintf("签名文件 %s 的包内绝对路径已重写为 %s，原签名值失效", name, newName))
+				writer.Warn(fmt.Sprintf("签名文件 %s 的包内绝对路径已重写为 %s，原签名值失效", name, newName))
 				data = rewritten
 				action = SignatureRewritten
 			}
 			if isSignatureDocument(name) {
-				writer.signature(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: action})
+				state.emit(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: action})
 			}
-			if err := writer.write(newName, data); err != nil {
+			if err := writer.Write(newName, data); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if err := writer.writeSource(pkg, entry, newName); err != nil {
+		if err := writer.WriteSource(pkg, entry, newName); err != nil {
 			return fmt.Errorf("写入 %s 的 %s 失败: %w", input, name, err)
 		}
 	}
@@ -688,186 +666,6 @@ func readRootAttrs(root *etree.Element) rootAttrs {
 	}
 }
 
-// entryWriter 校验并写入输出 ZIP 条目，同时拒绝重复路径。
-type entryWriter struct {
-	archive *zip.Writer
-	options Options
-	seen    map[string]bool
-
-	entryCount    int
-	remaining     int64
-	maxEntries    int
-	maxEntryBytes int64
-	maxTotalBytes int64
-}
-
-func newEntryWriter(archive *zip.Writer, options Options) *entryWriter {
-	limits := options.Limits
-	if limits.MaxEntries == 0 {
-		limits.MaxEntries = defaultMaxEntries
-	}
-	if limits.MaxEntryBytes == 0 {
-		limits.MaxEntryBytes = defaultMaxEntryBytes
-	}
-	if limits.MaxTotalBytes == 0 {
-		limits.MaxTotalBytes = defaultMaxTotalBytes
-	}
-	return &entryWriter{
-		archive:       archive,
-		options:       options,
-		seen:          make(map[string]bool),
-		remaining:     limits.MaxTotalBytes,
-		maxEntries:    limits.MaxEntries,
-		maxEntryBytes: limits.MaxEntryBytes,
-		maxTotalBytes: limits.MaxTotalBytes,
-	}
-}
-
-// reserve 校验条目标路径并预留条目配额。
-func (w *entryWriter) reserve(name string) error {
-	if err := validateEntryName(name, w.seen); err != nil {
-		return err
-	}
-	if w.entryCount >= w.maxEntries {
-		return fmt.Errorf("合并条目数超过上限 %d", w.maxEntries)
-	}
-	w.entryCount++
-	return nil
-}
-
-// checkSize 校验单个条目解压后的字节数是否在单条与总预算内，并扣减总预算。
-func (w *entryWriter) checkSize(name string, size int64) error {
-	if size > w.maxEntryBytes {
-		return fmt.Errorf("条目 %s 解压后 %d 字节，超过单条上限 %d 字节", name, size, w.maxEntryBytes)
-	}
-	if size > w.remaining {
-		return fmt.Errorf("解压总大小超过上限 %d 字节", w.maxTotalBytes)
-	}
-	w.remaining -= size
-	return nil
-}
-
-// warn 通过 Options.OnWarning 上报非致命提示。
-func (w *entryWriter) warn(message string) {
-	if w.options.OnWarning != nil {
-		w.options.OnWarning(message)
-	}
-}
-
-// signature 通过 Options.OnSignature 上报签名处理结果。
-func (w *entryWriter) signature(event SignatureEvent) {
-	if w.options.OnSignature != nil {
-		w.options.OnSignature(event)
-	}
-}
-
-// validateEntryName 校验包内条目路径安全且未重复出现。
-func validateEntryName(name string, seen map[string]bool) error {
-	if err := core.ValidateEntryName(name); err != nil {
-		return err
-	}
-	if seen[name] {
-		return fmt.Errorf("OFD 包条目路径重复: %s", name)
-	}
-	seen[name] = true
-	return nil
-}
-
-// write 按压缩策略与确定性选项写入一个内存条目。
-func (w *entryWriter) write(name string, data []byte) error {
-	if err := w.reserve(name); err != nil {
-		return err
-	}
-	if err := w.checkSize(name, int64(len(data))); err != nil {
-		return err
-	}
-	header := &zip.FileHeader{Name: name, Method: zipEntryMethod(name, w.options.Compression)}
-	if w.options.Deterministic {
-		header.Modified = time.Unix(0, 0).UTC()
-	}
-	file, err := w.archive.CreateHeader(header)
-	if err != nil {
-		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
-	}
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
-	}
-	return nil
-}
-
-// writeSource 流式写入输入包中的条目，避免资源整体驻留内存。
-func (w *entryWriter) writeSource(pkg *core.Package, entry core.Entry, name string) error {
-	if err := w.reserve(name); err != nil {
-		return err
-	}
-	if entry.UncompressedSize > uint64(w.maxEntryBytes) {
-		return fmt.Errorf("条目 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, w.maxEntryBytes)
-	}
-	if int64(entry.UncompressedSize) > w.remaining {
-		return fmt.Errorf("解压总大小超过上限 %d 字节", w.maxTotalBytes)
-	}
-	reader, err := pkg.OpenEntry(entry)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = reader.Close() }()
-
-	header := &zip.FileHeader{Name: name, Method: zipEntryMethod(name, w.options.Compression)}
-	if w.options.Deterministic {
-		header.Modified = time.Unix(0, 0).UTC()
-	}
-	file, err := w.archive.CreateHeader(header)
-	if err != nil {
-		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
-	}
-	counter := &limitWriter{writer: file, entryRemaining: w.maxEntryBytes, totalRemaining: &w.remaining, name: name, maxTotal: w.maxTotalBytes}
-	if _, err := io.Copy(counter, reader); err != nil {
-		return err
-	}
-	return nil
-}
-
-// limitWriter 在解压复制过程中同时限制单条和总字节数，防止声明大小与实际不符。
-type limitWriter struct {
-	writer         io.Writer
-	entryRemaining int64
-	totalRemaining *int64
-	name           string
-	maxTotal       int64
-}
-
-func (l *limitWriter) Write(p []byte) (int, error) {
-	if int64(len(p)) > l.entryRemaining {
-		return 0, fmt.Errorf("条目 %s 解压后超过单条大小上限", l.name)
-	}
-	if int64(len(p)) > *l.totalRemaining {
-		return 0, fmt.Errorf("解压总大小超过上限 %d 字节", l.maxTotal)
-	}
-	n, err := l.writer.Write(p)
-	l.entryRemaining -= int64(n)
-	*l.totalRemaining -= int64(n)
-	return n, err
-}
-
-// zipEntryMethod 与 creator 的压缩策略保持一致：已压缩格式使用 Store。
-func zipEntryMethod(name string, mode creator.CompressionMode) uint16 {
-	if mode == creator.CompressionStore {
-		return zip.Store
-	}
-	if mode == creator.CompressionDeflate {
-		return zip.Deflate
-	}
-	switch strings.ToLower(path.Ext(name)) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".jxl",
-		".mp3", ".mp4", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav",
-		".flac", ".mpg", ".mpeg", ".avi", ".mkv", ".mov", ".webm",
-		".m4v", ".wma", ".pdf", ".zip", ".gz", ".bz2", ".xz", ".7z", ".rar":
-		return zip.Store
-	default:
-		return zip.Deflate
-	}
-}
-
 func isSignatureXML(name string) bool {
 	switch path.Base(name) {
 	case "Signatures.xml", "Signature.xml":
@@ -880,14 +678,6 @@ func isSignatureXML(name string) bool {
 // isSignatureDocument 判断条目是否为单个签名描述文件（Signatures.xml 是清单）。
 func isSignatureDocument(name string) bool {
 	return path.Base(name) == "Signature.xml"
-}
-
-// inSignatureDir 判断条目是否位于指定的签名目录内。
-func inSignatureDir(name, dir string) bool {
-	if dir == "" {
-		return false
-	}
-	return name == dir || strings.HasPrefix(name, dir+"/")
 }
 
 func localName(element *etree.Element) string {

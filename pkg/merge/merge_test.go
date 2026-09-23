@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zip"
 	"image"
 	"image/png"
+
+	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/parser"
@@ -96,7 +97,7 @@ func TestMergeRewritesAbsoluteSignaturePaths(t *testing.T) {
 	data := mergeToBytes(t, []string{
 		testdataPath("999.ofd"),
 		testdataPath("999.ofd"),
-	}, Options{Signatures: SignatureRewrite})
+	}, Options{Signatures: creator.SignatureRewrite})
 
 	pkg := openMerged(t, data)
 	first := readEntry(t, pkg, "Doc_0/Signs/Sign_0/Signature.xml")
@@ -114,7 +115,7 @@ func TestMergeRewritesAbsoluteSignaturePaths(t *testing.T) {
 }
 
 func TestSignaturePreserveRejectsRenamedAbsolutePaths(t *testing.T) {
-	err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &bytes.Buffer{}, Options{Signatures: SignaturePreserve})
+	err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &bytes.Buffer{}, Options{Signatures: creator.SignaturePreserve})
 	if err == nil {
 		t.Fatalf("preserve 模式下签名绝对路径无法保留时应返回错误")
 	}
@@ -124,7 +125,7 @@ func TestSignatureDropRemovesSignatureFiles(t *testing.T) {
 	data := mergeToBytes(t, []string{
 		testdataPath("999.ofd"),
 		testdataPath("999.ofd"),
-	}, Options{Signatures: SignatureDrop})
+	}, Options{Signatures: creator.SignatureDrop})
 
 	pkg := openMerged(t, data)
 	for _, entry := range pkg.Entries() {
@@ -394,7 +395,7 @@ func TestMergeRejectsUnsafeDocRoot(t *testing.T) {
 func TestSignatureRewriteEmitsWarning(t *testing.T) {
 	var warnings []string
 	data := mergeToBytes(t, []string{testdataPath("999.ofd"), testdataPath("999.ofd")}, Options{
-		Signatures: SignatureRewrite,
+		Signatures: creator.SignatureRewrite,
 		OnWarning:  func(message string) { warnings = append(warnings, message) },
 	})
 	if len(warnings) == 0 {
@@ -458,7 +459,7 @@ func TestMergeSmokeOverTestdata(t *testing.T) {
 		path := path
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			var buffer bytes.Buffer
-			options := Options{Signatures: SignatureDrop, Orphans: OrphanIgnore}
+			options := Options{Signatures: creator.SignatureDrop, Orphans: OrphanIgnore}
 			if err := Files([]string{path, hello}, &buffer, options); err != nil {
 				t.Skipf("跳过无法合并的样例: %v", err)
 			}
@@ -1004,7 +1005,7 @@ func signatureActions(events []SignatureEvent) map[SignatureAction]int {
 func TestMergeSignatureEvents(t *testing.T) {
 	preserved := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd")}, &buffer, Options{Signatures: SignaturePreserve, OnSignature: on})
+		return Files([]string{testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignaturePreserve, OnSignature: on})
 	})
 	if signatureActions(preserved)[SignaturePreserved] != 1 {
 		t.Fatalf("preserve 事件 = %+v", preserved)
@@ -1012,7 +1013,7 @@ func TestMergeSignatureEvents(t *testing.T) {
 
 	rewritten := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureRewrite, OnSignature: on})
+		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite, OnSignature: on})
 	})
 	if signatureActions(rewritten)[SignatureRewritten] != 1 {
 		t.Fatalf("rewrite 事件 = %+v", rewritten)
@@ -1020,7 +1021,7 @@ func TestMergeSignatureEvents(t *testing.T) {
 
 	dropped := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureDrop, OnSignature: on})
+		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureDrop, OnSignature: on})
 	})
 	if signatureActions(dropped)[SignatureDropped] != 2 {
 		t.Fatalf("drop 事件 = %+v", dropped)
@@ -1040,7 +1041,7 @@ func TestVerifySignatures(t *testing.T) {
 	}
 
 	var buffer bytes.Buffer
-	if err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: SignatureRewrite}); err != nil {
+	if err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite}); err != nil {
 		t.Fatalf("合并失败: %v", err)
 	}
 	merged, err := VerifySignatures(buffer.Bytes())

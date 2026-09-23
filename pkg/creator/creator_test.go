@@ -135,14 +135,14 @@ func TestCreateUsesStoreForAlreadyCompressedEntries(t *testing.T) {
 }
 
 func TestZipEntryMethodClassifiesCompressedExtensions(t *testing.T) {
-	for _, name := range []string{"image.PNG", "photo.jpeg", "sound.wav", "movie.mp4", "document.pdf", "archive.zip"} {
-		if method := zipEntryMethod(name, CompressionAuto); method != zip.Store {
-			t.Errorf("zipEntryMethod(%q) = %d, want Store", name, method)
+	for _, name := range []string{"image.PNG", "photo.jpeg", "sound.m4v", "movie.mp4", "document.pdf", "archive.zip", "sheet.xlsx"} {
+		if method := EntryMethod(name, CompressionAuto); method != zip.Store {
+			t.Errorf("EntryMethod(%q) = %d, want Store", name, method)
 		}
 	}
 	for _, name := range []string{"OFD.xml", "Document.xml", "data.json", "font.ttf", "file.bin"} {
-		if method := zipEntryMethod(name, CompressionAuto); method != zip.Deflate {
-			t.Errorf("zipEntryMethod(%q) = %d, want Deflate", name, method)
+		if method := EntryMethod(name, CompressionAuto); method != zip.Deflate {
+			t.Errorf("EntryMethod(%q) = %d, want Deflate", name, method)
 		}
 	}
 }
