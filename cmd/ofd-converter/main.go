@@ -24,6 +24,7 @@ import (
 	// 注册 Office（doc/docx/odt/rtf/wps/pptx/xlsx 等）导入器与→PDF 转换器。
 	_ "github.com/zc310/ofd/pkg/converter/officeimport"
 	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
+	"github.com/zc310/ofd/internal/utils"
 	_ "github.com/zc310/ofd/pkg/converter/htmlimport"
 )
 
@@ -314,7 +315,7 @@ func runBatch(opts *options) error {
 	} else if statErr != nil && !os.IsNotExist(statErr) {
 		return fmt.Errorf("输出目录: %w", statErr)
 	}
-	if samePath(inputRoot, outputRoot) {
+	if utils.SamePath(inputRoot, outputRoot) {
 		return errors.New("批量输入目录和输出目录不能相同")
 	}
 
@@ -546,12 +547,6 @@ func cliFormatName(name string) string {
 func isPathWithin(parent, path string) bool {
 	relative, err := filepath.Rel(parent, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
-}
-
-func samePath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
 func minInt(left, right int) int {

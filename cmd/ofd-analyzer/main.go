@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -227,7 +226,7 @@ func validateOptions(opts *options) error {
 	if err := analyzer.ValidateInputPath(opts.input); err != nil {
 		return fmt.Errorf("输入文件：%w", err)
 	}
-	if opts.output != "" && opts.output != "-" && samePath(opts.input, opts.output) {
+	if opts.output != "" && opts.output != "-" && utils.SamePath(opts.input, opts.output) {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
 	}
 	return nil
@@ -269,18 +268,4 @@ func writeReport(opts *options, report analyzer.Report, stdout io.Writer) error 
 		return fmt.Errorf("关闭报告输出文件失败：%w", err)
 	}
 	return nil
-}
-
-func samePath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	if filepath.Clean(leftAbs) == filepath.Clean(rightAbs) {
-		return true
-	}
-	leftReal, leftErr := filepath.EvalSymlinks(leftAbs)
-	rightReal, rightErr := filepath.EvalSymlinks(rightAbs)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftReal) == filepath.Clean(rightReal)
 }

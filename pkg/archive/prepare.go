@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/analyzer"
 )
 
@@ -20,7 +21,7 @@ func Prepare(ctx context.Context, input, output string, metadata Metadata, profi
 	if err != nil {
 		return report, err
 	}
-	if samePath(input, output) {
+	if utils.SamePath(input, output) {
 		return report, fmt.Errorf("归档输出目录不能是输入文件")
 	}
 	if info, statErr := os.Stat(output); statErr == nil && !info.IsDir() {
@@ -453,10 +454,4 @@ func copyFile(source, destination string) error {
 		return err
 	}
 	return out.Close()
-}
-
-func samePath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
