@@ -90,3 +90,19 @@ func FindFirstFileInDirs(dirs []string, targetFiles ...string) (string, error) {
 		return "", fmt.Errorf("搜索超时")
 	}
 }
+
+// SamePath 判断两个文件路径是否指向同一文件。先按绝对路径与路径清理结果比较，
+// 不相等时再尝试解析符号链接；任一环节出错返回 false。
+func SamePath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	if filepath.Clean(leftAbs) == filepath.Clean(rightAbs) {
+		return true
+	}
+	leftReal, leftErr := filepath.EvalSymlinks(leftAbs)
+	rightReal, rightErr := filepath.EvalSymlinks(rightAbs)
+	return leftErr == nil && rightErr == nil && filepath.Clean(leftReal) == filepath.Clean(rightReal)
+}

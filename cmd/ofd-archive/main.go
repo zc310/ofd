@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/archive"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -276,7 +277,7 @@ func validateOptions(opts *options) error {
 			return fmt.Errorf("profile 文件：%w", err)
 		}
 	}
-	if opts.command != "prepare" && opts.output != "" && opts.output != "-" && samePath(opts.input, opts.output) {
+	if opts.command != "prepare" && opts.output != "" && opts.output != "-" && utils.SamePath(opts.input, opts.output) {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
 	}
 	if opts.maxErrors < 0 || opts.maxInputSize < 0 || opts.maxFileSize < 0 || opts.maxTotalSize < 0 || opts.maxEntries < 0 || opts.maxXMLBytes < 0 || opts.maxXMLNodes < 0 || opts.maxXMLDepth < 0 || opts.maxAttachmentSize < 0 {
@@ -367,20 +368,6 @@ func writeReportValue(opts *options, value any, stdout io.Writer) error {
 		return err
 	}
 	return render(opts, stdout, value)
-}
-
-func samePath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	if filepath.Clean(leftAbs) == filepath.Clean(rightAbs) {
-		return true
-	}
-	leftReal, leftErr := filepath.EvalSymlinks(leftAbs)
-	rightReal, rightErr := filepath.EvalSymlinks(rightAbs)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftReal) == filepath.Clean(rightReal)
 }
 
 func render(opts *options, writer io.Writer, value any) error {
