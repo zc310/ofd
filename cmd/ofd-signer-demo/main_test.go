@@ -2,7 +2,8 @@ package main
 
 import (
 	"bytes"
-	"github.com/tdewolff/canvas"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 	"time"
@@ -98,19 +99,59 @@ func TestSignHonoursSignedXMLDataHash(t *testing.T) {
 	}
 }
 
-func TestPlaceholderSealIsRedRingSVG(t *testing.T) {
+func TestPlaceholderSealIsRedRingPNG(t *testing.T) {
 	seal := placeholderSeal()
-	if !bytes.HasPrefix(bytes.TrimSpace(seal), []byte("<svg")) {
-		t.Fatalf("印章应为 SVG:\n%s", seal)
+	if pictureType != "png" {
+		t.Fatalf("SES_ESPictrueInfo.Type 应为 png，实际 %q", pictureType)
 	}
-	if !bytes.Contains(seal, []byte(`stroke="#E60012"`)) {
-		t.Fatal("印章颜色应为 #E60012")
+	img, err := png.Decode(bytes.NewReader(seal))
+	if err != nil {
+		t.Fatalf("印章应为可解码的 PNG: %v", err)
 	}
-	if !bytes.Contains(seal, []byte("<circle")) {
-		t.Fatal("印章应包含圆环")
+	if _, _, err := pictureSize(); err != nil {
+		t.Fatalf("pictureSize 失败: %v", err)
 	}
-	if _, err := canvas.ParseSVG(bytes.NewReader(seal)); err != nil {
-		t.Fatalf("印章 SVG 应可解析: %v", err)
+	if !containsRedRingPixel(img) {
+		t.Fatal("印章应包含红色圆环颜色")
+	}
+}
+
+// containsRedRingPixel 判断图片中是否存在印章的红色像素（#E60012 系）。
+func containsRedRingPixel(img image.Image) bool {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if int(a>>8) == 0 {
+				continue
+			}
+			if int(r>>8) > 150 && int(g>>8) < 80 && int(b>>8) < 100 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestSignedValuePictureDimensionsMatchPNG(t *testing.T) {
+	signedValue, err := sign([]byte("<Signature>picture</Signature>"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parser.ParseSignedValue(signedValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	width, height, err := pictureSize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	picture := parsed.SES.TBS.Seal.SealInfo.Picture
+	if picture.Width != int64(width) || picture.Height != int64(height) {
+		t.Fatalf("SES_ESPictrueInfo 尺寸应为 %dx%d，实际 %dx%d", width, height, picture.Width, picture.Height)
+	}
+	if picture.Type != pictureType {
+		t.Fatalf("SES_ESPictrueInfo.Type 应为 %q，实际 %q", pictureType, picture.Type)
 	}
 }
 
