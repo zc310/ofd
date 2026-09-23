@@ -32,7 +32,7 @@ func TestConvertStrokeDashPattern(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -74,7 +74,7 @@ func TestConvertEmptyDashPatternClearsDashes(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 2 {
 		t.Fatalf("path objects = %d, want 2", len(paths))
 	}

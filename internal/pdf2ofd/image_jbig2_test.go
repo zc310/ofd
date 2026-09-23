@@ -44,7 +44,7 @@ func TestConvertJBIG2ImageMask(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
@@ -101,10 +101,10 @@ func TestConvertSkipsUnsupportedImageFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	block := page.Content().Layer[0]
-	if len(block.ImageObject) != 0 {
-		t.Fatalf("image objects = %d, want 0", len(block.ImageObject))
+	if len(layerImages(block)) != 0 {
+		t.Fatalf("image objects = %d, want 0", len(layerImages(block)))
 	}
-	if len(block.PathObject) == 0 {
+	if len(layerPaths(block)) == 0 {
 		t.Fatal("page content after unsupported image was dropped")
 	}
 }
@@ -137,7 +137,7 @@ func TestConvertJBIG2GrayscaleImage(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}

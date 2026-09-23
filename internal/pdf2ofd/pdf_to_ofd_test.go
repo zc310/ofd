@@ -51,13 +51,13 @@ func TestConvertBasicPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := page.Content().Layer[0]
-	if len(content.TextObject) != 1 || content.TextObject[0].TextCode[0].Value != "Hello" {
-		t.Fatalf("text objects = %+v", content.TextObject)
+	if len(layerTexts(content)) != 1 || layerTexts(content)[0].TextCode[0].Value != "Hello" {
+		t.Fatalf("text objects = %+v", layerTexts(content))
 	}
-	if len(content.PathObject) != 1 {
-		t.Fatalf("path objects = %d, want 1", len(content.PathObject))
+	if len(layerPaths(content)) != 1 {
+		t.Fatalf("path objects = %d, want 1", len(layerPaths(content)))
 	}
-	if got := content.PathObject[0].Boundary.Width; got < 24.9 || got > 25.5 {
+	if got := layerPaths(content)[0].Boundary.Width; got < 24.9 || got > 25.5 {
 		t.Fatalf("path width = %gmm, want about 25.4mm", got)
 	}
 }
@@ -101,7 +101,7 @@ func TestConvertUsesTextMatrixScale(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	text := page.Content().Layer[0].TextObject[0]
+	text := layerTexts(page.Content().Layer[0])[0]
 	if text.Boundary.Height < 6.5 || text.Boundary.Height > 7.2 {
 		t.Fatalf("text height = %gmm, want about 7.06mm", text.Boundary.Height)
 	}
@@ -123,7 +123,7 @@ func TestConvertTextLeadingAdvancesText(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	texts := page.Content().Layer[0].TextObject
+	texts := layerTexts(page.Content().Layer[0])
 	if len(texts) != 2 {
 		t.Fatalf("text objects = %d, want 2", len(texts))
 	}
@@ -151,7 +151,7 @@ func TestConvertWhitespaceOnlyShowAdvancesText(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	texts := page.Content().Layer[0].TextObject
+	texts := layerTexts(page.Content().Layer[0])
 	if len(texts) != 2 {
 		t.Fatalf("text objects = %d, want 2", len(texts))
 	}
@@ -271,7 +271,7 @@ func TestConvertInlineImageMaskEmitsImage(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
@@ -297,7 +297,7 @@ func TestConvertInlineColorImageEmitsImage(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	if images := page.Content().Layer[0].ImageObject; len(images) != 1 {
+	if images := layerImages(page.Content().Layer[0]); len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
 }
@@ -355,7 +355,7 @@ func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) == 0 {
 		t.Fatal("page 2 has no image objects")
 	}
@@ -432,7 +432,7 @@ func TestConvertYCCKJPEGToRGB(t *testing.T) {
 		t.Fatal(err)
 	}
 	found := false
-	for _, image := range page.Content().Layer[0].ImageObject {
+	for _, image := range layerImages(page.Content().Layer[0]) {
 		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
 		if media == nil || !strings.EqualFold(media.Format, "PNG") {
 			continue
@@ -544,7 +544,7 @@ func TestConvertClosesImplicitFillSubpaths(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -569,7 +569,7 @@ func TestConvertExplicitlyDisablesStrokeForFillOnlyPaths(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -593,7 +593,7 @@ func TestConvertScalesLineWidthByCTM(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -811,7 +811,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 							t.Fatal(err)
 						}
 						for _, layer := range page.Content().Layer {
-							for _, text := range layer.TextObject {
+							for _, text := range layerTexts(layer) {
 								transformCount += len(text.CGTransform)
 								for _, code := range text.TextCode {
 									if strings.Contains(code.Value, "Pythona)") {
@@ -844,7 +844,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 							t.Fatal(err)
 						}
 						for _, layer := range page.Content().Layer {
-							for _, text := range layer.TextObject {
+							for _, text := range layerTexts(layer) {
 								for _, code := range text.TextCode {
 									if len(code.DeltaX) > 0 {
 										deltaCount++
@@ -875,7 +875,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 							t.Fatal(err)
 						}
 						for _, layer := range page.Content().Layer {
-							for _, text := range layer.TextObject {
+							for _, text := range layerTexts(layer) {
 								for _, code := range text.TextCode {
 									replacement += strings.Count(code.Value, "\uFFFD")
 									if len(code.DeltaX) > 1 {
@@ -956,7 +956,7 @@ func TestConvertAppliesPathClip(t *testing.T) {
 	}
 	clipped := 0
 	for _, layer := range page.Content().Layer {
-		for _, path := range layer.PathObject {
+		for _, path := range layerPaths(layer) {
 			if path.Clips != nil && len(path.Clips.Clip) > 0 {
 				clipped++
 				if len(path.Clips.Clip[0].Area) == 0 || path.Clips.Clip[0].Area[0].Path == nil {
@@ -988,7 +988,7 @@ func TestCommitPendingClipOnlyAffectsCurrentScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, layer := range page.Content().Layer {
-		for _, path := range layer.PathObject {
+		for _, path := range layerPaths(layer) {
 			if path.Clips != nil && len(path.Clips.Clip) > 0 {
 				t.Fatal("Q 之后的路径不应继承已恢复的裁剪区")
 			}

@@ -29,7 +29,7 @@ func TestConvertSetsTextStyleFlagsFromFont(t *testing.T) {
 				"<< /Type /Font /Subtype /Type1 /BaseFont /" + tc.baseFont + " >>",
 			}
 			page := parseConvertedPage(t, objects)
-			texts := page.Content().Layer[0].TextObject
+			texts := layerTexts(page.Content().Layer[0])
 			if len(texts) != 1 {
 				t.Fatalf("expected 1 text object, got %d", len(texts))
 			}

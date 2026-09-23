@@ -54,41 +54,54 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	path := doc.Pages[0].Content().Layer[0].PathObject[1]
+	path := findPathAt(doc.Pages[0].Content().Layer[0].Items, 1)
 	if path.LineWidth != 1 {
 		t.Fatalf("PathObject LineWidth = %g, want 1", path.LineWidth)
 	}
 	if path.StrokeColor == nil || path.StrokeColor.Value == nil {
 		t.Fatal("PathObject StrokeColor was not parsed")
 	}
-	var miterPath *models.PathObject
-	for i := range doc.Pages[1].Content().Layer[0].PathObject {
-		path := &doc.Pages[1].Content().Layer[0].PathObject[i]
-		if path.ID == 51 {
-			miterPath = path
-			break
-		}
-	}
+	miterPath := findPathByID(doc.Pages[1].Content().Layer[0].Items, 51)
 	if miterPath == nil || miterPath.LineWidth != 3 {
 		if miterPath == nil {
 			t.Fatal("page 2 PathObject ID=51 was not parsed")
 		}
 		t.Fatalf("page 2 PathObject ID=51 LineWidth = %g, want 3", miterPath.LineWidth)
 	}
-	var drawParamPath *models.PathObject
-	for i := range doc.Pages[3].Content().Layer[0].PathObject {
-		path := &doc.Pages[3].Content().Layer[0].PathObject[i]
-		if path.ID == 31 {
-			drawParamPath = path
-			break
-		}
-	}
+	drawParamPath := findPathByID(doc.Pages[3].Content().Layer[0].Items, 31)
 	if drawParamPath == nil || drawParamPath.DrawParam != 18 {
 		if drawParamPath == nil {
 			t.Fatal("page 4 PathObject ID=31 was not parsed")
 		}
 		t.Fatalf("PathObject ID=31 DrawParam = %d, want 18", drawParamPath.DrawParam)
 	}
+}
+
+// findPathByID 从页面块文档序列表中查找指定 ID 的路径对象。
+func findPathByID(items []models.PageItem, id models.StID) *models.PathObject {
+	for i := range items {
+		if items[i].Kind != models.PageItemPath {
+			continue
+		}
+		if items[i].Path.ID == id {
+			return &items[i].Path
+		}
+	}
+	return nil
+}
+
+// findPathAt 返回页面块文档序列表中第 n 个路径对象。
+func findPathAt(items []models.PageItem, n int) *models.PathObject {
+	for i := range items {
+		if items[i].Kind != models.PageItemPath {
+			continue
+		}
+		if n == 0 {
+			return &items[i].Path
+		}
+		n--
+	}
+	return nil
 }
 
 func TestNewOFDWithOptionsRejectsNegativeLimits(t *testing.T) {

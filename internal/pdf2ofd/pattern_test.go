@@ -39,7 +39,7 @@ func TestConvertEmitsImageForTilingPatternFill(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) == 0 {
 		t.Fatal("tiling pattern fill produced no image object")
 	}
@@ -78,7 +78,7 @@ func TestConvertComposesDenseTilingPatternIntoImage(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("dense tiling pattern produced %d images, want 1 composed image", len(images))
 	}
@@ -132,7 +132,7 @@ func TestConvertAppliesImageSoftMask(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) == 0 {
 		t.Fatal("soft-masked image produced no image object")
 	}
@@ -183,7 +183,7 @@ func TestConvertImageNegativeYMatrixEmitsFlipCTM(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
@@ -233,7 +233,7 @@ func TestConvertSoftMaskKeepsBaseColorAtLowAlpha(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) == 0 {
 		t.Fatal("soft-masked image produced no image object")
 	}

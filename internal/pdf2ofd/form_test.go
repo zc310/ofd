@@ -37,7 +37,7 @@ func TestConvertFormXObjectAppliesMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 	positions := map[string][2]float64{}
-	for _, item := range page.Content().Layer[0].TextObject {
+	for _, item := range layerTexts(page.Content().Layer[0]) {
 		value := ""
 		for _, code := range item.TextCode {
 			value += code.Value
@@ -92,7 +92,7 @@ func TestConvertFormGroupAlphaKeepsOuterOpacity(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
@@ -134,7 +134,7 @@ func TestConvertBlendModeFormDoesNotApplyGroupAlpha(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
