@@ -160,7 +160,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 	if clips := p.buildClips(minX, minY, false, 0, 0); clips != nil {
 		path.Clips = clips
 	}
-	path.Alpha = ofdTransparency(p.pathOpacity(fill, stroke))
+	path.Alpha = ofdAlpha(p.pathOpacity(fill, stroke))
 	// OFD 无混合模式：把 Multiply 纯色填充近似成半透明，使文字等高对比内容透出。
 	if fill && !stroke {
 		p.approximateMultiplyFill(&path)
@@ -441,19 +441,19 @@ func (p *pdfInterpreter) approximateMultiplyFill(path *creator.Path) {
 		R: channel(color.R), G: channel(color.G), B: channel(color.B),
 		Components: color.Components, ColorSpace: color.ColorSpace, Index: color.Index, Alpha: color.Alpha,
 	}
-	path.Alpha = ofdTransparency(a)
+	path.Alpha = ofdAlpha(a)
 }
 
-// ofdTransparency 把 PDF 不透明度（0-1）转换为 OFD 图元透明度（0-255，
-// 255 表示完全透明）。完全不透明时返回 nil 以省略该属性。
-func ofdTransparency(opacity float64) *uint8 {
+// ofdAlpha 把 PDF 不透明度（0-1）转换为 OFD 图元 Alpha（0-255，
+// 255 表示完全不透明）。完全不透明时返回 nil 以省略该属性。
+func ofdAlpha(opacity float64) *uint8 {
 	if opacity >= 1 {
 		return nil
 	}
 	if opacity < 0 {
 		opacity = 0
 	}
-	value := uint8(math.Round((1 - opacity) * 255))
+	value := uint8(math.Round(opacity * 255))
 	return &value
 }
 

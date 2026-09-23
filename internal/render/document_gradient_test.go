@@ -307,11 +307,11 @@ func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 
 	document.updatePathGradients(newCanvasBackend(ctx), object, nil, 20)
 
-	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 204 {
-		t.Fatalf("fill gradient alpha = %d, want 204", got.A)
+	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 51 {
+		t.Fatalf("fill gradient alpha = %d, want 51", got.A)
 	}
-	if got := ctx.Style.Stroke.Gradient.At(0, 20); got.A != 204 {
-		t.Fatalf("stroke gradient alpha = %d, want 204", got.A)
+	if got := ctx.Style.Stroke.Gradient.At(0, 20); got.A != 51 {
+		t.Fatalf("stroke gradient alpha = %d, want 51", got.A)
 	}
 }
 
@@ -338,8 +338,8 @@ func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
 
 	fillGradient, strokeGradient := document.updatePathGradients(newCanvasBackend(ctx), object, nil, 20)
 
-	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 204 {
-		t.Fatalf("ctx fill gradient alpha = %d, want 204", got.A)
+	if got := ctx.Style.Fill.Gradient.At(0, 20); got.A != 51 {
+		t.Fatalf("ctx fill gradient alpha = %d, want 51", got.A)
 	}
 	if got := fillGradient.At(0, 20); got.A != 255 {
 		t.Fatalf("returned fill gradient alpha = %d, want unscaled 255", got.A)
@@ -384,18 +384,18 @@ func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 	}
 }
 
-func TestGraphicOpacityUsesTransparencySemantics(t *testing.T) {
+func TestGraphicOpacityUsesOpacitySemantics(t *testing.T) {
 	if got := graphicOpacity(nil); got != 255 {
-		t.Fatalf("nil transparency = %d, want 255", got)
+		t.Fatalf("nil alpha = %d, want 255", got)
 	}
-	if got := graphicOpacity(uint8ptr(0)); got != 255 {
-		t.Fatalf("zero transparency = %d, want 255", got)
+	if got := graphicOpacity(uint8ptr(0)); got != 0 {
+		t.Fatalf("zero alpha = %d, want 0", got)
 	}
-	if got := graphicOpacity(uint8ptr(51)); got != 204 {
-		t.Fatalf("51 transparency = %d, want 204", got)
+	if got := graphicOpacity(uint8ptr(51)); got != 51 {
+		t.Fatalf("alpha 51 = %d, want 51", got)
 	}
-	if got := graphicOpacity(uint8ptr(255)); got != 0 {
-		t.Fatalf("full transparency = %d, want 0", got)
+	if got := graphicOpacity(uint8ptr(255)); got != 255 {
+		t.Fatalf("full alpha = %d, want 255", got)
 	}
 }
 

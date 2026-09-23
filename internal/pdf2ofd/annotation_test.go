@@ -75,9 +75,9 @@ func TestConvertAppliesExtGStateOpacity(t *testing.T) {
 	}
 	alpha := paths[0].Alpha
 	if alpha == nil {
-		t.Fatal("path Alpha is nil, want OFD transparency for ca=0.5")
+		t.Fatal("path Alpha is nil, want OFD alpha for ca=0.5")
 	}
-	// OFD 图元 Alpha 是透明度：ca=0.5 → 不透明度 0.5 → 透明度 128。
+	// OFD 图元 Alpha 是不透明度：ca=0.5 → 不透明度 0.5 → Alpha 128。
 	if *alpha < 126 || *alpha > 130 {
 		t.Fatalf("path Alpha = %d, want ~128", *alpha)
 	}
