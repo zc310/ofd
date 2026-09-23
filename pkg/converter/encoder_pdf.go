@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/tdewolff/canvas"
+	cimage "github.com/tdewolff/canvas/image"
 	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/render"
 )
@@ -22,6 +23,12 @@ func (e *pdfEncoder) Extensions() []string { return []string{".pdf"} }
 func (e *pdfEncoder) MIME() string         { return "application/pdf" }
 func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	return encodeOFD(input, output, conv, e.encodeDocuments)
+}
+
+func pdfOptions() *pdf.Options {
+	opts := pdf.DefaultOptions
+	opts.ImageEncoding = cimage.Lossy
+	return &opts
 }
 
 func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -69,7 +76,7 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 		if pdfDoc == nil {
-			pdfDoc = pdf.New(output, c.W, c.H, nil)
+			pdfDoc = pdf.New(output, c.W, c.H, pdfOptions())
 		} else {
 			pdfDoc.NewPage(c.W, c.H)
 		}
@@ -141,7 +148,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 				return fmt.Errorf("处理第%d页失败: 页面画布为空", page.pageNumber)
 			}
 			if pdfDoc == nil {
-				pdfDoc = pdf.New(output, job.canvas.W, job.canvas.H, nil)
+				pdfDoc = pdf.New(output, job.canvas.W, job.canvas.H, pdfOptions())
 			} else {
 				pdfDoc.NewPage(job.canvas.W, job.canvas.H)
 			}
