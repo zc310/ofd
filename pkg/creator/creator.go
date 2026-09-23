@@ -24,7 +24,11 @@ const (
 
 // CreateOptions 控制 OFD ZIP 包的生成方式。
 type CreateOptions struct {
-	Compression           CompressionMode
+	Compression CompressionMode
+	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
+	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效，
+	// CompressionStore 或自动选择 Store 的条目不受影响。
+	CompressionLevel      int
 	Deterministic         bool
 	PreserveEmbeddedFonts bool
 	// CompleteTextCodeDeltas 按字体度量自动补全缺失的 DeltaX 和 DeltaY。
@@ -68,6 +72,11 @@ func createWithPages(document Document, pages PageProvider, w io.Writer, options
 	if options.Compression != CompressionAuto && options.Compression != CompressionDeflate && options.Compression != CompressionStore {
 		return fmt.Errorf("不支持的 ZIP 压缩策略: %q", options.Compression)
 	}
+	level, err := NormalizeCompressionLevel(options.CompressionLevel)
+	if err != nil {
+		return err
+	}
+	options.CompressionLevel = level
 	if _, ok := pages.(slicePages); !ok && !options.PreserveEmbeddedFonts && hasEmbeddedFonts(document) {
 		return errors.New("流式页面创建需要设置 CreateOptions.PreserveEmbeddedFonts，或预先完成字体子集化")
 	}

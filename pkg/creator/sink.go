@@ -34,17 +34,19 @@ func writeResource(sink entrySink, name string, data []byte, source DataSource) 
 type collectSink struct {
 	state *packageState
 	seen  map[string]bool
+	index map[string]int
 }
 
 func newCollectSink(state *packageState) *collectSink {
-	return &collectSink{state: state, seen: make(map[string]bool)}
+	return &collectSink{state: state, seen: make(map[string]bool), index: make(map[string]int)}
 }
 
 func (s *collectSink) write(name string, data []byte) error {
 	if err := validateEntryName(name, s.seen); err != nil {
 		return err
 	}
-	s.state.entries = append(s.state.entries, zipEntry{name: name, data: data})
+	s.index[name] = len(s.state.entries)
+	s.state.entries = append(s.state.entries, zipEntry{name: name, data: append([]byte(nil), data...)})
 	return nil
 }
 
@@ -57,12 +59,11 @@ func (s *collectSink) writeSource(name string, source DataSource) error {
 }
 
 func (s *collectSink) lookup(name string) ([]byte, bool) {
-	for index := range s.state.entries {
-		if s.state.entries[index].name == name {
-			return s.state.entries[index].data, true
-		}
+	index, ok := s.index[name]
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return s.state.entries[index].data, true
 }
 
 func (s *collectSink) has(name string) bool {
@@ -83,6 +84,7 @@ func newZipSink(archive *zip.Writer, options CreateOptions, targets map[string]b
 	if targets == nil {
 		targets = map[string]bool{}
 	}
+	ApplyCompressionLevel(archive, options.CompressionLevel)
 	return &zipSink{
 		archive:  archive,
 		options:  options,
@@ -111,7 +113,7 @@ func (s *zipSink) write(name string, data []byte) error {
 		return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
 	}
 	if s.targets[name] {
-		s.retained[name] = data
+		s.retained[name] = append([]byte(nil), data...)
 	}
 	return nil
 }

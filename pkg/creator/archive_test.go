@@ -43,6 +43,36 @@ func TestEntryMethodForced(t *testing.T) {
 	}
 }
 
+func TestNormalizeCompressionLevel(t *testing.T) {
+	tests := []struct {
+		level   int
+		want    int
+		wantErr bool
+	}{
+		{0, DefaultCompressionLevel, false},
+		{1, 1, false},
+		{5, 5, false},
+		{9, 9, false},
+		{-1, 0, true},
+		{10, 0, true},
+	}
+	for _, test := range tests {
+		got, err := NormalizeCompressionLevel(test.level)
+		if test.wantErr {
+			if err == nil {
+				t.Errorf("NormalizeCompressionLevel(%d) 应报错", test.level)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("NormalizeCompressionLevel(%d) 不应报错: %v", test.level, err)
+		}
+		if got != test.want {
+			t.Errorf("NormalizeCompressionLevel(%d) = %d, want %d", test.level, got, test.want)
+		}
+	}
+}
+
 func TestLimitWriterRejectsOverflow(t *testing.T) {
 	var buffer bytes.Buffer
 	remaining := int64(100)

@@ -70,6 +70,9 @@ type SignatureEvent struct {
 type Options struct {
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
 	Compression creator.CompressionMode
+	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
+	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效。
+	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的合并结果。
 	Deterministic bool
 	// Signatures 是签名处理方式，空值时使用 archive.SignaturePreserve。
@@ -225,7 +228,7 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 	}
 	archive := zip.NewWriter(w)
 	state := &mergeState{
-		writer:     entrywriter.New(archive, entrywriter.Config{Compression: options.Compression, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning}),
+		writer:     entrywriter.New(archive, entrywriter.Config{Compression: options.Compression, CompressionLevel: options.CompressionLevel, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning}),
 		options:    options,
 		seenDocIDs: make(map[string]bool),
 	}
@@ -282,6 +285,11 @@ func normalizeOptions(options Options) (Options, error) {
 		return Options{}, err
 	}
 	options.Compression = mode
+	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
+	if err != nil {
+		return Options{}, err
+	}
+	options.CompressionLevel = level
 	switch options.Signatures {
 	case "":
 		options.Signatures = creator.SignaturePreserve

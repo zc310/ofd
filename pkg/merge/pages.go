@@ -39,6 +39,9 @@ const (
 type PageOptions struct {
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
 	Compression creator.CompressionMode
+	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
+	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效。
+	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的合并结果。
 	Deterministic bool
 	// Pages 指定输出页序，元素为按输入顺序拼接后的 1 起始全局页码；为空时输出
@@ -453,7 +456,11 @@ func pageCreateOptions(options PageOptions) (creator.CreateOptions, error) {
 	default:
 		return creator.CreateOptions{}, fmt.Errorf("不支持的 ZIP 压缩策略: %q", compression)
 	}
-	return creator.CreateOptions{Compression: compression, Deterministic: options.Deterministic}, nil
+	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
+	if err != nil {
+		return creator.CreateOptions{}, err
+	}
+	return creator.CreateOptions{Compression: compression, CompressionLevel: level, Deterministic: options.Deterministic}, nil
 }
 
 // buildPageDocument 把单个文档体导出为 creator 文档，资源收集到 assets。

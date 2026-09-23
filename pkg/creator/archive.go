@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/zip"
 )
 
@@ -87,6 +88,35 @@ func NormalizeCompression(mode CompressionMode) (CompressionMode, error) {
 	default:
 		return "", fmt.Errorf("不支持的 ZIP 压缩策略: %q", mode)
 	}
+}
+
+// DefaultCompressionLevel 是 DEFLATE 的默认压缩级别，与 klauspost zip 的
+// 默认一致。级别越高压缩率越高、写入越慢。
+const DefaultCompressionLevel = 5
+
+// NormalizeCompressionLevel 校验 DEFLATE 压缩级别：0 表示使用默认级别
+// DefaultCompressionLevel，显式范围 1（最快）到 9（最紧凑）。返回实际
+// 应使用的压缩级别。
+func NormalizeCompressionLevel(level int) (int, error) {
+	if level < 0 || level > 9 {
+		return 0, fmt.Errorf("不支持的 DEFLATE 压缩级别 %d（允许 0-9）", level)
+	}
+	if level == 0 {
+		return DefaultCompressionLevel, nil
+	}
+	return level, nil
+}
+
+// ApplyCompressionLevel 在 zip.Writer 上按级别注册 DEFLATE 压缩器，必须
+// 在第一次创建 Deflate 条目之前调用。level 为 0 或默认级别时保持 klauspost
+// 的默认实现，不注册。调用方应先通过 NormalizeCompressionLevel 校验级别。
+func ApplyCompressionLevel(w *zip.Writer, level int) {
+	if level == 0 || level == DefaultCompressionLevel {
+		return
+	}
+	w.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(out, level)
+	})
 }
 
 // ValidateLimits 校验解压规模限制不能为负数。
