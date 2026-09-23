@@ -6,8 +6,97 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
+
+// referenceAppendEscaped 是 appendEscaped 的参考实现：逐 rune 解码并按
+// XML 1.0 字符表转义/替换，作为差分测试基准。
+func referenceAppendEscaped(dst []byte, value string, textMode bool) []byte {
+	for index := 0; index < len(value); {
+		r, size := utf8.DecodeRuneInString(value[index:])
+		if r == utf8.RuneError && size == 1 {
+			dst = append(dst, xmlReplacementChar...)
+			index++
+			continue
+		}
+		switch r {
+		case '&':
+			dst = append(dst, "&amp;"...)
+		case '<':
+			dst = append(dst, "&lt;"...)
+		case '>':
+			if textMode {
+				dst = append(dst, "&gt;"...)
+			} else {
+				dst = append(dst, '>')
+			}
+		case '"':
+			if textMode {
+				dst = append(dst, '"')
+			} else {
+				dst = append(dst, "&quot;"...)
+			}
+		case '\t':
+			if textMode {
+				dst = append(dst, '\t')
+			} else {
+				dst = append(dst, "&#x9;"...)
+			}
+		case '\n':
+			if textMode {
+				dst = append(dst, '\n')
+			} else {
+				dst = append(dst, "&#xA;"...)
+			}
+		case '\r':
+			if textMode {
+				dst = append(dst, '\r')
+			} else {
+				dst = append(dst, "&#xD;"...)
+			}
+		default:
+			if isXMLChar(r) {
+				dst = append(dst, value[index:index+size]...)
+			} else {
+				dst = append(dst, xmlReplacementChar...)
+			}
+		}
+		index += size
+	}
+	return dst
+}
+
+// TestAppendEscapedMatchesReference 差分验证文本与属性转义快路径逐字节
+// 等价于参考实现，覆盖特殊字节、控制符、DEL 与多字节 UTF-8。
+func TestAppendEscapedMatchesReference(t *testing.T) {
+	inputs := []string{
+		"", "plain ascii", `A&B<C>"D'`,
+		"line\nbreak\ttab\rreturn",
+		"闭合 C 与坐标 0 0 210 297", "中文文本：甲&乙<丙>丁",
+		"\x00\x01\x1f\x0b\x0c\x1d 控制符",
+		"DEL:\x7f 合法?",
+		"混合<b>标签</b>与&amp;实体",
+		"多字节：\u65e5\u672c\u8a9e\x1e尾",
+		"\xf0\x9f\x98\x80 emoji 结尾", // 4 字节 rune
+		"invalid utf8: \xe4\xb8\xad\xff\xfe 中文",
+		"开头特殊&，中间<，结尾>",
+		strings.Repeat("平铺的文本", 20),
+	}
+	for _, value := range inputs {
+		for _, textMode := range []bool{true, false} {
+			want := referenceAppendEscaped(nil, value, textMode)
+			w := newStreamXMLWriter()
+			w.Reset()
+			w.appendEscaped(value, textMode)
+			got := w.Bytes()
+			if !bytes.Equal(got, want) {
+				t.Fatalf("textMode=%v value=%q: got %q, want %q", textMode, value, got, want)
+			}
+		}
+	}
+}
 
 // TestStreamXMLWriterReplacesInvalidXMLChars 验证文本和属性中的 XML 非法字符
 // （如 PDF 文本里的控制符）会被替换为 U+FFFD，否则生成的 OFD 无法解析
