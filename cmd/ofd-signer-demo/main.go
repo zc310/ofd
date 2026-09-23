@@ -33,20 +33,14 @@ const (
 )
 
 const (
-	sm2WithSM3OID = "1.2.156.10197.1.501"
-
-	// pictureType 是 SES_ESPictrueInfo.Type，演示印章使用 SVG。
-	pictureType   = "svg"
-	pictureWidth  = 40
-	pictureHeight = 40
+	// pictureType 是 SES_ESPictrueInfo.Type，演示印章使用 PNG。
+	pictureType = "png"
 
 	// headerID 是 SES_Header.ID 的固定值，GM/T 0031 规定为 "ES"。
 	headerID = "ES"
 	// sealVersion 是 SES 结构版本号；演示器使用与 OFD 规范配套的 V4。
 	sealVersion = 4
 )
-
-var sealPropertyType = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 1024}
 
 type sesSignature struct {
 	TBS                tbsSign
@@ -172,6 +166,10 @@ func sign(signatureXML []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	sealWidth, sealHeight, err := pictureSize()
+	if err != nil {
+		return nil, err
+	}
 	sealInfo := sesSealInfo{
 		Header: sesHeader{ID: headerID, Version: sealVersion, VID: demoProvider + "/" + demoVersion},
 		ESID:   demoProvider + "-" + id + "@" + producer,
@@ -184,7 +182,7 @@ func sign(signatureXML []byte) ([]byte, error) {
 			ValidFrom:       now,
 			ValidTo:         now.AddDate(10, 0, 0),
 		},
-		Picture: sesPicture{Type: pictureType, Data: placeholderSeal(), Width: pictureWidth, Height: pictureHeight},
+		Picture: sesPicture{Type: pictureType, Data: placeholderSeal(), Width: sealWidth, Height: sealHeight},
 	}
 	sealInfoDER, err := asn1.Marshal(sealInfo)
 	if err != nil {

@@ -69,13 +69,8 @@ SES_Header ::= SEQUENCE {
 - 用自签名证书封装公钥（`SM2WithSM3`）；
 - 计算 `Signature.xml` 的 SM3 摘要作为 `TBS_Sign.DataHash`；
 - 用 SM2 分别签署 `SES_Seal_Info`（印章内部签名）和 `TBS_Sign`（外层签名）；
-- 生成一张 SVG 印章占位图（`SES_ESPictrueInfo.Type = "svg"`）：红色圆环。圆环用 `<circle>`：
-
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <circle cx="100" cy="100" r="88" fill="none" stroke="#E60012" stroke-width="8"/>  
-</svg>
-```
+- 生成一张 PNG 印章占位图（`SES_ESPictrueInfo.Type = "png"`）：红色圆环加「中」字，
+  空白区域透明，尺寸 938×938（`SES_ESPictrueInfo.Width/Height` 与图元尺寸一致）。
 
 与真实印章样例的差异：真实印章的 `esID`、`SES_Header.VID`、`Property.Name`
 和证书来自厂商/CA，`SES_ESPictrueInfo.Data` 是真实印章图片；本演示器用固定的
@@ -116,7 +111,7 @@ ofd-creator merge: 签名 sign-1：摘要有效，密码学签名有效
 这是演示程序，**不能用于生产**：
 
 - 证书是每次运行随机生成的自签名证书，没有信任链，重新运行会得到不同的证书和签名；
-- 印章图片只是内嵌的灰度 BMP 占位图，不是有效签章；
+- 印章图片只是内嵌的 PNG 占位图（红色圆环加「中」字），不是有效签章；
 - 私钥不落盘、不持久化，验证方无法确认印章归属；
 - `--signatures drop` 后重签的文档只用于演示 `pkg/merge` 与 `pkg/sign` 的链路。
 
