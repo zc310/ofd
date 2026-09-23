@@ -88,18 +88,27 @@ func collectObjectGlyphs(object models.TextObject, out map[models.StRefID]map[ru
 			if transform.GlyphCount > 0 && transform.GlyphCount < len(ids) {
 				ids = ids[:transform.GlyphCount]
 			}
-			if transform.CodeCount == 1 && len(ids) == 1 && ids[0] >= 0 && ids[0] <= 0xffff {
-				if r := runes[i]; renderableRune(r) {
-					if pairs == nil {
-						pairs = make(map[rune]uint16)
-						out[object.Font] = pairs
-					}
-					pairs[r] = uint16(ids[0])
-				}
-			}
 			codeCount := transform.CodeCount
 			if codeCount <= 0 {
 				codeCount = 1
+			}
+			// 一对一变换（码位数与字形数相等，绝大多数 OFD 子集字体如此）：
+			// 逐码位与字形按序配对登记。缺少 Unicode cmap 的子集字体借此获得
+			// 原始文本到字形的映射，渲染即可走正常文字接口而非轮廓路径。
+			if codeCount == len(ids) && i+codeCount <= len(runes) {
+				for k := 0; k < codeCount; k++ {
+					glyph := ids[k]
+					if glyph < 0 || glyph > 0xffff {
+						continue
+					}
+					if r := runes[i+k]; renderableRune(r) {
+						if pairs == nil {
+							pairs = make(map[rune]uint16)
+							out[object.Font] = pairs
+						}
+						pairs[r] = uint16(glyph)
+					}
+				}
 			}
 			remaining := len(runes) - i
 			if codeCount >= remaining {

@@ -29,6 +29,29 @@ func TestCollectObjectGlyphsPairsUnicodeWithGlyph(t *testing.T) {
 	}
 }
 
+func TestCollectObjectGlyphsPairsMultiCodeOneToOne(t *testing.T) {
+	// 码位数与字形数相等的多码位一对一变换（OFD 子集字体最常见形态），应逐
+	// 码位按序登记 Unicode→字形映射，使缺少 Unicode cmap 的子集字体也能按
+	// 原始文本渲染，PDF 等输出保留可复制、可搜索的文字。
+	object := models.TextObject{CtText: models.CtText{
+		Font:     models.StRefID(10),
+		TextCode: []models.TextCode{{Value: "自动识别"}},
+		CGTransform: []models.CTCGTransform{
+			{CodePosition: 0, CodeCount: 4, GlyphCount: 4, Glyphs: models.StArrayI{100, 200, 300, 400}},
+		},
+	}}
+	object.Visible.Set(true)
+
+	out := make(map[models.StRefID]map[rune]uint16)
+	collectObjectGlyphs(object, out)
+	want := map[rune]uint16{'自': 100, '动': 200, '识': 300, '别': 400}
+	for r, glyph := range want {
+		if got := out[10][r]; got != glyph {
+			t.Fatalf("%c -> %d, want %d (out=%v)", r, got, glyph, out[10])
+		}
+	}
+}
+
 func TestCollectObjectGlyphsSkipsMultiGlyphAndInvisible(t *testing.T) {
 	// 多字形（连字）无法可靠对应单个 Unicode，不应登记；不可见对象也不登记。
 	multi := models.TextObject{CtText: models.CtText{

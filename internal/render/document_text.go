@@ -351,21 +351,31 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 		if transform.GlyphCount > 0 && transform.GlyphCount < len(ids) {
 			ids = ids[:transform.GlyphCount]
 		}
-		for _, id := range ids {
-			if id >= 0 && id <= 0xffff {
-				// 单码位对单字形且字体能按原 Unicode 成形时，优先使用原文本，
-				// 让 PDF 等输出保留可复制、可搜索的文字；否则退回字形私有区。
-				if len(ids) == 1 && transform.CodeCount == 1 && i < len(runes) &&
-					renderableTextValue(string(runes[i])) && fontCanRenderRune(face, runes[i]) {
-					glyphs = append(glyphs, textGlyph{value: string(runes[i])})
+		codeCount := transform.CodeCount
+		if codeCount <= 0 {
+			codeCount = 1
+		}
+		// 一对一变换（码位数与字形数相等）：逐码位与字形按序配对。字体能按
+		// 原始 Unicode 成形时优先使用原文本，让 PDF 等输出保留可复制、可搜索
+		// 的文字；否则退回字形私有区引用（仅能按轮廓绘制）。
+		if codeCount == len(ids) && i+codeCount <= len(runes) {
+			for k := 0; k < codeCount; k++ {
+				id := ids[k]
+				if id < 0 || id > 0xffff {
+					continue
+				}
+				if r := runes[i+k]; renderableTextValue(string(r)) && fontCanRenderRune(face, r) {
+					glyphs = append(glyphs, textGlyph{value: string(r)})
 					continue
 				}
 				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
 			}
-		}
-		codeCount := transform.CodeCount
-		if codeCount <= 0 {
-			codeCount = 1
+		} else {
+			for _, id := range ids {
+				if id >= 0 && id <= 0xffff {
+					glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
+				}
+			}
 		}
 		remaining := len(runes) - i
 		if codeCount >= remaining {
@@ -375,10 +385,6 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 	}
 	return glyphs
 }
-
-// fontCanRenderRune 判断字体是否存在该 Unicode 码位的字形。缺少 Unicode cmap
-
-// fontCanRenderText 判断字体能否按给定文本成形：文本必须不含私有区字形引用，
 
 func textGlyphWidth(face FontFace, glyph textGlyph) float64 {
 	return face.TextWidth(glyph.value)
