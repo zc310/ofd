@@ -68,6 +68,25 @@ func TestTextReadAdvance(t *testing.T) {
 	}
 }
 
+func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
+	// 正常水平步进不触发断串（否则中文会被逐字拆开、提取时插入空格）。
+	if textAdvanceDiffers(3.175, 0, 3.175) {
+		t.Fatal("horizontal advance should not break the run")
+	}
+	// 小负值字距不应断串。
+	if textAdvanceDiffers(-0.1, 0, 3.175) {
+		t.Fatal("small negative kerning should not break the run")
+	}
+	// 纵向位移（换行/基线调整）必须断串，否则多行文字会被合并成一行。
+	if !textAdvanceDiffers(0, 4.5, 3.175) {
+		t.Fatal("vertical advance should break the run")
+	}
+	// 横向明显回退（换行回到行首）也必须断串。
+	if !textAdvanceDiffers(-67.5, 0, 2.5) {
+		t.Fatal("backward advance should break the run")
+	}
+}
+
 func TestTextCharDirectionDegrees(t *testing.T) {
 	for _, test := range []struct {
 		direction int
