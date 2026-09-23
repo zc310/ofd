@@ -146,6 +146,49 @@ func TestWarningCallback(t *testing.T) {
 	}
 }
 
+func TestInvalidCompressionLevelFallsBackWithWarning(t *testing.T) {
+	var buffer bytes.Buffer
+	archive := zip.NewWriter(&buffer)
+	var warned []string
+	writer := New(archive, Config{CompressionLevel: 12, OnWarning: func(message string) { warned = append(warned, message) }})
+	if err := writer.Write("a.xml", []byte("<A/>")); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "无效的 DEFLATE 压缩级别") {
+		t.Fatalf("无效级别应回退默认并警告: %v", warned)
+	}
+	entries := readPackage(t, buffer.Bytes())
+	if entries["a.xml"] != "<A/>" {
+		t.Fatalf("无效级别回退后仍应正常写入: %q", entries["a.xml"])
+	}
+}
+
+func TestDeflateCompressionLevelWrites(t *testing.T) {
+	var buffer bytes.Buffer
+	archive := zip.NewWriter(&buffer)
+	writer := New(archive, Config{Compression: creator.CompressionDeflate, CompressionLevel: 1})
+	if err := writer.Write("Doc_0/Document.xml", []byte(`<Document/>`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reader.File) != 1 || reader.File[0].Method != zip.Deflate {
+		t.Fatalf("deflate 级别条目方法不符: %+v", reader.File)
+	}
+	entries := readPackage(t, buffer.Bytes())
+	if entries["Doc_0/Document.xml"] != `<Document/>` {
+		t.Fatalf("deflate 级别条目内容不符: %q", entries["Doc_0/Document.xml"])
+	}
+}
+
 func buildSourceZip(t *testing.T, files map[string][]byte) []byte {
 	t.Helper()
 	var buffer bytes.Buffer

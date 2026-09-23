@@ -55,6 +55,9 @@ type Operation struct {
 type Options struct {
 	// Compression 是输出 ZIP 的压缩策略，空值时按条目类型自动选择。
 	Compression creator.CompressionMode
+	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
+	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效。
+	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的结果。
 	Deterministic bool
 	// Signatures 是签名处理方式，空值跳过签名处理。
@@ -243,6 +246,11 @@ func normalizeOptions(options Options) (Options, error) {
 		return Options{}, err
 	}
 	options.Compression = mode
+	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
+	if err != nil {
+		return Options{}, err
+	}
+	options.CompressionLevel = level
 	switch options.Signatures {
 	case "":
 		options.Signatures = creator.SignatureDrop
@@ -298,7 +306,7 @@ func signatureDirs(pkg *core.Package) ([]string, error) {
 // 按签名模式处理签名目录），再追加 add 条目与 OFD.xml。
 func rebuild(pkg *core.Package, plan *plan, options Options, w io.Writer) error {
 	writer := zip.NewWriter(w)
-	state := entrywriter.New(writer, entrywriter.Config{Compression: options.Compression, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning})
+	state := entrywriter.New(writer, entrywriter.Config{Compression: options.Compression, CompressionLevel: options.CompressionLevel, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning})
 	rootData, err := pkg.Read(spec.RootDocument)
 	if err != nil {
 		_ = writer.Close()

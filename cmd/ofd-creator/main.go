@@ -41,6 +41,7 @@ type options struct {
 	assetRoot              string
 	format                 string
 	compression            string
+	compressionLevel       int
 	validate               bool
 	check                  bool
 	deterministic          bool
@@ -91,7 +92,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitResource
 	}
 	compression := creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression)))
-	createOptions := creator.CreateOptions{Compression: compression, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas}
+	createOptions := creator.CreateOptions{Compression: compression, CompressionLevel: opts.compressionLevel, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas}
 	if opts.stream && !opts.check && opts.output != "-" {
 		if err := writeOutputStream(opts, document, createOptions, stderr); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
@@ -262,10 +263,11 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 	}
 	collector := &signatureCollector{}
 	mergeOptions := merge.Options{
-		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
-		Deterministic: opts.deterministic,
-		Signatures:    creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
-		Orphans:       merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))),
+		Compression:      creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
+		CompressionLevel: opts.compressionLevel,
+		Deterministic:    opts.deterministic,
+		Signatures:       creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
+		Orphans:          merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))),
 		Limits: merge.Limits{
 			MaxEntries:    opts.maxEntries,
 			MaxEntryBytes: int64(opts.maxEntryMB) << 20,
@@ -289,14 +291,15 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 			sources = append(sources, merge.Source{Path: input})
 		}
 		return merge.Pages(sources, w, merge.PageOptions{
-			Compression:   mergeOptions.Compression,
-			Deterministic: mergeOptions.Deterministic,
-			Selectors:     pages,
-			ID:            opts.documentID,
-			Title:         opts.title,
-			Author:        opts.author,
-			Concurrency:   opts.workers,
-			OnSignature:   collector.add,
+			Compression:      mergeOptions.Compression,
+			CompressionLevel: mergeOptions.CompressionLevel,
+			Deterministic:    mergeOptions.Deterministic,
+			Selectors:        pages,
+			ID:               opts.documentID,
+			Title:            opts.title,
+			Author:           opts.author,
+			Concurrency:      opts.workers,
+			OnSignature:      collector.add,
 		})
 	}
 	if strings.TrimSpace(opts.signCmd) != "" {
@@ -543,6 +546,7 @@ type mergeOptions struct {
 	inputs           []string
 	output           string
 	compression      string
+	compressionLevel int
 	signatures       string
 	orphans          string
 	pages            string
@@ -592,6 +596,7 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.StringArrayVarP(&opts.inputs, "input", "i", nil, "OFD 输入文件，可重复指定；也可作为位置参数")
 	flags.StringVarP(&opts.output, "output", "o", "", "合并后的 OFD 输出路径；使用 - 写入标准输出")
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
+	flags.IntVar(&opts.compressionLevel, "compression-level", 0, "DEFLATE 压缩级别：0 使用默认级别 5，1（最快）到 9（最紧凑）")
 	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：preserve、rewrite 或 drop")
 	flags.StringVar(&opts.orphans, "orphans", opts.orphans, "文档目录外条目处理方式：error、ignore 或 preserve")
 	flags.StringVar(&opts.pages, "pages", "", "选页并重排：全局 1,3-5 或按源 s1:1,3-5;s2:2；设置后使用模型级合并")
@@ -639,6 +644,9 @@ func validateMergeOptions(opts *mergeOptions) error {
 	default:
 		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
 	}
+	if _, err := creator.NormalizeCompressionLevel(opts.compressionLevel); err != nil {
+		return err
+	}
 	switch creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
 	case "", creator.SignaturePreserve, creator.SignatureRewrite, creator.SignatureDrop:
 	default:
@@ -680,6 +688,7 @@ type replaceOptions struct {
 	input            string
 	output           string
 	compression      string
+	compressionLevel int
 	signatures       string
 	sets             []string
 	adds             []string
@@ -729,6 +738,7 @@ func parseReplaceArgs(args []string, output io.Writer) (*replaceOptions, error) 
 	flags.StringVarP(&opts.input, "input", "i", "", "输入的 OFD 文件；也可作为位置参数")
 	flags.StringVarP(&opts.output, "output", "o", "", "输出 OFD 路径；使用 - 写入标准输出")
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
+	flags.IntVar(&opts.compressionLevel, "compression-level", 0, "DEFLATE 压缩级别：0 使用默认级别 5，1（最快）到 9（最紧凑）")
 	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：drop、preserve 或 rewrite")
 	flags.StringArrayVar(&opts.sets, "set", nil, "替换已有条目，格式 NAME=FILE（FILE 为 - 时读标准输入），可重复")
 	flags.StringArrayVar(&opts.adds, "add", nil, "新增条目，格式 NAME=FILE（FILE 为 - 时读标准输入），可重复")
@@ -764,6 +774,9 @@ func validateReplaceOptions(opts *replaceOptions) error {
 	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
 	default:
 		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
+	}
+	if _, err := creator.NormalizeCompressionLevel(opts.compressionLevel); err != nil {
+		return err
 	}
 	switch creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
 	case "", creator.SignatureDrop, creator.SignaturePreserve, creator.SignatureRewrite:
@@ -863,9 +876,10 @@ func runReplace(args []string, stdout, stderr io.Writer) int {
 	}
 	var buffer bytes.Buffer
 	if err := replace.Files(opts.input, operations, &buffer, replace.Options{
-		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
-		Deterministic: opts.deterministic,
-		Signatures:    creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
+		Compression:      creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
+		CompressionLevel: opts.compressionLevel,
+		Deterministic:    opts.deterministic,
+		Signatures:       creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
 		Limits: replace.Limits{
 			MaxEntries:    opts.maxEntries,
 			MaxEntryBytes: int64(opts.maxEntryMB) << 20,
@@ -1154,6 +1168,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.assetRoot, "asset-root", "", "资源根目录，默认使用 manifest 所在目录")
 	flags.StringVar(&opts.format, "format", "auto", "manifest 格式：auto、json、yaml 或 toml")
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
+	flags.IntVar(&opts.compressionLevel, "compression-level", 0, "DEFLATE 压缩级别：0 使用默认级别 5，1（最快）到 9（最紧凑）")
 	flags.BoolVar(&opts.validate, "validate", false, "生成后执行严格 OFD 校验")
 	flags.BoolVar(&opts.check, "check", false, "只解析并校验 manifest，不写出 OFD")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
@@ -1182,6 +1197,9 @@ func validateOptions(opts *options) error {
 	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
 	default:
 		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
+	}
+	if _, err := creator.NormalizeCompressionLevel(opts.compressionLevel); err != nil {
+		return err
 	}
 	if opts.format != "auto" {
 		format := strings.ToLower(strings.TrimSpace(opts.format))

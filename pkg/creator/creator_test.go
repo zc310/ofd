@@ -3308,3 +3308,56 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 		t.Fatal("Marshal accepted duplicate annotation pages")
 	}
 }
+
+func TestCreateCompressionLevelRoundTrip(t *testing.T) {
+	document := Document{
+		ID:       "compression-level",
+		Title:    "压缩级别测试",
+		PageSize: A4,
+		Pages: []Page{{Items: []Item{
+			Text{X: 20, Y: 30, Width: 100, Height: 10, Value: "压缩级别测试文字", Font: "SimSun"},
+		}}},
+	}
+	for _, level := range []int{1, 5, 9} {
+		data, err := MarshalWithOptions(document, CreateOptions{Compression: CompressionDeflate, CompressionLevel: level})
+		if err != nil {
+			t.Fatalf("level %d: %v", level, err)
+		}
+		newTestOFD(t, data)
+	}
+}
+
+func TestCreateCompressionLevelDefaultInvariant(t *testing.T) {
+	document := Document{
+		ID:       "compression-level-default",
+		Title:    "默认级别不变",
+		PageSize: A4,
+		Pages: []Page{{Items: []Item{
+			Text{X: 20, Y: 30, Width: 100, Height: 10, Value: "默认压缩级别输出不变", Font: "SimSun"},
+		}}},
+	}
+	zero, err := Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	five, err := MarshalWithOptions(document, CreateOptions{CompressionLevel: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(zero, five) {
+		t.Fatal("显式默认级别 5 应保持与不设置级别时的逐字节输出一致")
+	}
+	stored, err := MarshalWithOptions(document, CreateOptions{Compression: CompressionStore, CompressionLevel: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(stored), int64(len(stored)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range archive.File {
+		if file.Method != zip.Store {
+			t.Fatalf("store 模式应忽略压缩级别，条目 %s 使用 %d", file.Name, file.Method)
+		}
+	}
+}

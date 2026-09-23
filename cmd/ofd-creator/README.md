@@ -245,10 +245,12 @@ deflate    所有文件使用 Deflate
 store      所有文件使用 Store
 ```
 
+`--compression-level` 控制 Deflate 的压缩级别：`0`（默认）使用默认级别 `5`，显式范围 `1`（最快、压缩率最低）到 `9`（最慢、压缩率最高）。级别只影响实际使用 Deflate 的条目；`--compression store` 或 `auto` 选择 Store 的条目（图片、PDF 等）不受影响。
+
 例如：
 
 ```bash
-ofd-creator -i document.yaml -o result.ofd --compression auto
+ofd-creator -i document.yaml -o result.ofd --compression deflate --compression-level 1
 ```
 
 ## 流式创建超大 OFD

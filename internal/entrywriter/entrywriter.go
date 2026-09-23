@@ -16,6 +16,9 @@ import (
 type Config struct {
 	// Compression 是输出 ZIP 的压缩策略，空值使用 creator.CompressionAuto。
 	Compression creator.CompressionMode
+	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
+	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效。
+	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的结果。
 	Deterministic bool
 	// Limits 限制输出规模，零值使用 creator 的默认限制。
@@ -35,6 +38,7 @@ type Writer struct {
 }
 
 // New 创建写入器并套用默认规模限制。调用方负责在写完后关闭 archive。
+// 若 CompressionLevel 无效，回退默认级别并通过 OnWarning 上报。
 func New(archive *zip.Writer, config Config) *Writer {
 	if config.Compression == "" {
 		config.Compression = creator.CompressionAuto
@@ -48,12 +52,22 @@ func New(archive *zip.Writer, config Config) *Writer {
 	if config.Limits.MaxTotalBytes == 0 {
 		config.Limits.MaxTotalBytes = creator.DefaultMaxTotalBytes
 	}
-	return &Writer{
+	var levelErr error
+	config.CompressionLevel, levelErr = creator.NormalizeCompressionLevel(config.CompressionLevel)
+	if levelErr != nil {
+		config.CompressionLevel = 0
+	}
+	creator.ApplyCompressionLevel(archive, config.CompressionLevel)
+	w := &Writer{
 		archive:   archive,
 		config:    config,
 		seen:      make(map[string]bool),
 		remaining: config.Limits.MaxTotalBytes,
 	}
+	if levelErr != nil {
+		w.Warn(fmt.Sprintf("无效的 DEFLATE 压缩级别，使用默认: %v", levelErr))
+	}
+	return w
 }
 
 // MaxEntryBytes 返回当前单条解压字节上限。
