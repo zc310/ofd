@@ -293,7 +293,20 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 		return
 	}
 
+	// 将可正常整形的连续字形合并为一个文本串一次性绘制。逐字调用 DrawText 会让
+	// PDF 中每个字成为独立定位的文本块，提取器会把这些文本块之间的间隙当成空格，
+	// 导致中文提取结果每个字之间插入空格。私有区字形无法参与正常整形，单独绘制并
+	// 断开当前文本串。
 	posX, posY := code.X, code.Y
+	var run []rune
+	runX, runY := posX, posY
+	flushRun := func() {
+		if len(run) == 0 {
+			return
+		}
+		p.drawTextGlyph(ctx, face, object, string(run), runX, runY, pageHeight, parentCTM)
+		run = run[:0]
+	}
 	for i, glyph := range glyphs {
 		if i > 0 {
 			// 有显式 DeltaX/DeltaY 时不需要按字体字宽步进，
@@ -311,8 +324,17 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 		if !renderableTextValue(glyph.value) {
 			continue
 		}
-		p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
+		if containsPrivateGlyphRune(glyph.value) {
+			flushRun()
+			p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
+			continue
+		}
+		if len(run) == 0 {
+			runX, runY = posX, posY
+		}
+		run = append(run, []rune(glyph.value)...)
 	}
+	flushRun()
 }
 
 // renderableTextValue 判断文字是否包含可见字符。C0/C1 控制字符、DEL 和

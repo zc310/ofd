@@ -110,8 +110,10 @@ require (
 	star-tex.org/x/tex v0.7.1 // indirect
 )
 
-replace github.com/tdewolff/font => ../font
+replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260923164158-fa4355038d52
 
-replace github.com/tdewolff/canvas => ../canvas
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20260923231615-ffe1cbf5406e
 
-replace github.com/lumifloat/tinyskia => ../tinyskia
+replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
+
+replace github.com/zc310/fontfix => github.com/zc310/fontfix v0.0.3-0.20260923225458-d7ea9933aad4
