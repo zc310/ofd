@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 
-	"github.com/tdewolff/canvas/renderers"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -24,7 +23,6 @@ func (e *pngEncoder) Extensions() []string { return []string{".png"} }
 func (e *pngEncoder) MIME() string         { return "image/png" }
 func (e *pngEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	conv.format = "png"
-	conv.renderer = renderers.PNG(conv.dpi)
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 
@@ -36,7 +34,6 @@ func (e *jpegEncoder) Extensions() []string { return []string{".jpg", ".jpeg"} }
 func (e *jpegEncoder) MIME() string         { return "image/jpeg" }
 func (e *jpegEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	conv.format = "jpeg"
-	conv.renderer = renderers.JPEG(conv.dpi)
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 
@@ -48,7 +45,6 @@ func (e *svgEncoder) Extensions() []string { return []string{".svg"} }
 func (e *svgEncoder) MIME() string         { return "image/svg+xml" }
 func (e *svgEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	conv.format = "svg"
-	conv.renderer = renderers.SVG()
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 
@@ -60,7 +56,6 @@ func (e *epsEncoder) Extensions() []string { return []string{".eps"} }
 func (e *epsEncoder) MIME() string         { return "application/postscript" }
 func (e *epsEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	conv.format = "eps"
-	conv.renderer = renderers.EPS()
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 
@@ -72,7 +67,6 @@ func (e *texEncoder) Extensions() []string { return []string{".tex"} }
 func (e *texEncoder) MIME() string         { return "application/x-tex" }
 func (e *texEncoder) Encode(input any, output io.Writer, conv *Converter) error {
 	conv.format = "tex"
-	conv.renderer = renderers.TeX()
 	return encodeOFD(input, output, conv, encodeDocuments)
 }
 

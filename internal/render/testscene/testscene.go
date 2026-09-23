@@ -1,6 +1,6 @@
 // Package testscene 提供后端一致性测试共用的“页面场景”与配套图元/度量：
 // 同一段 DrawContext 绘制命令可依次作用到不同光栅后端，用于逐像素对照
-// 与速度测试。它只依赖 canvas 数学结构与一个与 render.DrawContext 结构
+// 与速度测试。它只依赖 geom 数学结构与一个与 render.DrawContext 结构
 // 等价的本地接口（Renderer），因此不引入 render 包，避免内部测试包与插件
 // 包之间的 import cycle。
 package testscene
@@ -14,6 +14,9 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
+
+	"github.com/zc310/ofd/internal/render/canvasconv"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // Renderer 是本包场景所需的绘制操作面，方法签名与 render.DrawContext 中
@@ -21,21 +24,21 @@ import (
 // tinyskia）都满足该接口。
 type Renderer interface {
 	SetFillColor(c color.Color)
-	SetFillGradient(g canvas.Gradient)
-	SetFillRule(rule canvas.FillRule)
+	SetFillGradient(g geom.Gradient)
+	SetFillRule(rule geom.FillRule)
 	ClearFill()
 	SetStrokeColor(c color.Color)
 	SetStrokeWidth(w float64)
-	SetStrokeCapper(cap canvas.Capper)
-	SetStrokeJoiner(join canvas.Joiner)
+	SetStrokeCapper(cap geom.Capper)
+	SetStrokeJoiner(join geom.Joiner)
 	ClearStroke()
 	SetDashes(offset float64, dashes ...float64)
-	DrawPath(x, y float64, p *canvas.Path)
+	DrawPath(x, y float64, p *geom.Path)
 	DrawImage(img image.Image, x, y float64, dpmm float64)
-	TextPath(p *canvas.Path, x, y float64)
-	RenderImage(img image.Image, m canvas.Matrix)
+	TextPath(p *geom.Path, x, y float64)
+	RenderImage(img image.Image, m geom.Matrix)
 	CopyStrokeToFill()
-	CurrentMatrix() canvas.Matrix
+	CurrentMatrix() geom.Matrix
 }
 
 // PickTestFont 依次尝试已知可用的本地字体路径，找不到时返回空串。
@@ -78,14 +81,14 @@ func SceneDirect(t testing.TB, ctx *canvas.Context, fontPath string) {
 	ctx.SetStrokeWidth(1.4)
 	ctx.SetStrokeJoiner(canvas.MiterJoin)
 	ctx.SetStrokeCapper(canvas.ButtCap)
-	ctx.DrawPath(0, 0, WavePath())
+	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(WavePath()))
 
 	ctx.SetStroke(nil)
 	ctx.SetFillRule(canvas.EvenOdd)
 	ctx.SetFillColor(cRed)
-	p := CirclePath(50, 105, 16)
-	p = AppendCircle(p, 68, 105, 16)
-	ctx.DrawPath(0, 0, p)
+	p := CirclePathGeom(50, 105, 16)
+	p = AppendCircleGeom(p, 68, 105, 16)
+	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(p))
 	ctx.SetFillRule(canvas.NonZero)
 
 	g := canvas.Grad{}
@@ -112,12 +115,12 @@ func SceneDirect(t testing.TB, ctx *canvas.Context, fontPath string) {
 	ctx.SetDashes(0, 3, 1.2)
 	ctx.SetStrokeCapper(canvas.RoundCap)
 	ctx.SetStrokeJoiner(canvas.RoundJoin)
-	ctx.DrawPath(0, 0, RoundedRectPath(8, 8, 192, 132, 12))
+	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(RoundedRectPath(8, 8, 192, 132, 12)))
 
 	m := ctx.CoordSystemView().Mul(ctx.View()).Mul(canvas.Identity.Translate(120, 55))
 	ctx.RenderImage(OffscreenGradient(), m)
 
-	ctx.SetStroke(canvas.Navy)
+	ctx.SetStroke(cNavy)
 	ctx.SetStrokeWidth(0.8)
 	ctx.SetFill(ctx.Style.Stroke)
 	p2 := &canvas.Path{}
@@ -133,34 +136,34 @@ func SceneBackend(t testing.TB, b Renderer, fontPath string) {
 	face := LoadTestFace(t, fontPath)
 
 	b.SetFillColor(color.White)
-	b.DrawPath(0, 0, canvas.Rectangle(200, 140))
+	b.DrawPath(0, 0, geom.Rectangle(200, 140))
 
 	b.DrawImage(MaskedChecker(), 14, 14, 25.4/25.4)
 
 	b.ClearFill()
 	b.SetStrokeColor(cGreen)
 	b.SetStrokeWidth(1.4)
-	b.SetStrokeJoiner(canvas.MiterJoin)
-	b.SetStrokeCapper(canvas.ButtCap)
+	b.SetStrokeJoiner(geom.MiterJoin)
+	b.SetStrokeCapper(geom.ButtCap)
 	b.DrawPath(0, 0, WavePath())
 
 	b.ClearStroke()
-	b.SetFillRule(canvas.EvenOdd)
+	b.SetFillRule(geom.EvenOdd)
 	b.SetFillColor(cRed)
-	p := CirclePath(50, 105, 16)
-	p = AppendCircle(p, 68, 105, 16)
+	p := CirclePathGeom(50, 105, 16)
+	p = AppendCircleGeom(p, 68, 105, 16)
 	b.DrawPath(0, 0, p)
-	b.SetFillRule(canvas.NonZero)
+	b.SetFillRule(geom.NonZero)
 
-	g := canvas.Grad{}
+	g := geom.Grad{}
 	g.Add(0, cGradA)
 	g.Add(1, cGradB)
-	b.SetFillGradient(g.ToLinear(canvas.Point{X: 110, Y: 105}, canvas.Point{X: 188, Y: 128}))
+	b.SetFillGradient(g.ToLinear(geom.Point{X: 110, Y: 105}, geom.Point{X: 188, Y: 128}))
 	b.SetStrokeColor(color.Transparent)
-	b.DrawPath(0, 0, canvas.Rectangle(78, 23).Translate(110, 105))
+	b.DrawPath(0, 0, geom.Rectangle(78, 23).Translate(110, 105))
 
-	clip := canvas.Circle(20).Translate(148, 37).And(canvas.Rectangle(24, 24).Translate(136, 25))
-	fill := canvas.Circle(34).Translate(148, 37).And(clip)
+	clip := geom.Circle(20).Translate(148, 37).And(geom.Rectangle(24, 24).Translate(136, 25))
+	fill := geom.Circle(34).Translate(148, 37).And(clip)
 	b.SetFillColor(cOrange)
 	b.DrawPath(0, 0, fill)
 
@@ -168,23 +171,23 @@ func SceneBackend(t testing.TB, b Renderer, fontPath string) {
 	tp = tp.Transform(canvas.Identity.ReflectY()).Translate(42, 20)
 	b.SetFillColor(cDark)
 	b.SetStrokeColor(color.Transparent)
-	b.TextPath(tp, 0, 0)
+	b.TextPath(canvasconv.FromCanvasPath(tp), 0, 0)
 
 	b.ClearFill()
 	b.SetStrokeColor(cNavy)
 	b.SetStrokeWidth(1.2)
 	b.SetDashes(0, 3, 1.2)
-	b.SetStrokeCapper(canvas.RoundCap)
-	b.SetStrokeJoiner(canvas.RoundJoin)
+	b.SetStrokeCapper(geom.RoundCap)
+	b.SetStrokeJoiner(geom.RoundJoin)
 	b.DrawPath(0, 0, RoundedRectPath(8, 8, 192, 132, 12))
 
-	m := b.CurrentMatrix().Mul(canvas.Identity.Translate(120, 55))
+	m := b.CurrentMatrix().Mul(geom.Identity.Translate(120, 55))
 	b.RenderImage(OffscreenGradient(), m)
 
-	b.SetStrokeColor(canvas.Navy)
+	b.SetStrokeColor(cNavy)
 	b.SetStrokeWidth(0.8)
 	b.CopyStrokeToFill()
-	p2 := &canvas.Path{}
+	p2 := &geom.Path{}
 	p2.MoveTo(150, 115)
 	p2.LineTo(185, 88)
 	b.DrawPath(0, 0, p2)
@@ -223,8 +226,8 @@ func MaskedChecker() image.Image {
 }
 
 // WavePath 返回开放波浪样条路径。
-func WavePath() *canvas.Path {
-	p := &canvas.Path{}
+func WavePath() *geom.Path {
+	p := &geom.Path{}
 	p.MoveTo(20, 78)
 	p.CubeTo(30, 72, 40, 88, 50, 78)
 	p.CubeTo(57, 70, 64, 86, 71, 78)
@@ -232,9 +235,9 @@ func WavePath() *canvas.Path {
 	return p
 }
 
-// CirclePath 返回近似圆的多边形路径。
-func CirclePath(cx, cy, r float64) *canvas.Path {
-	p := &canvas.Path{}
+// CirclePathGeom 返回近似圆的多边形路径。
+func CirclePathGeom(cx, cy, r float64) *geom.Path {
+	p := &geom.Path{}
 	p.MoveTo(cx+r, cy)
 	seg := int(r * 12)
 	for i := 1; i <= seg; i++ {
@@ -245,14 +248,14 @@ func CirclePath(cx, cy, r float64) *canvas.Path {
 	return p
 }
 
-// AppendCircle 在路径后追加一个圆。
-func AppendCircle(p *canvas.Path, cx, cy, r float64) *canvas.Path {
-	return p.Append(CirclePath(cx, cy, r))
+// AppendCircleGeom 在路径后追加一个圆。
+func AppendCircleGeom(p *geom.Path, cx, cy, r float64) *geom.Path {
+	return p.Append(CirclePathGeom(cx, cy, r))
 }
 
 // RoundedRectPath 返回圆角矩形路径。
-func RoundedRectPath(x0, y0, x1, y1, r float64) *canvas.Path {
-	p := &canvas.Path{}
+func RoundedRectPath(x0, y0, x1, y1, r float64) *geom.Path {
+	p := &geom.Path{}
 	p.MoveTo(x0+r, y0)
 	p.LineTo(x1-r, y0)
 	p.ArcTo(r, r, 0, false, true, x1, y0+r)

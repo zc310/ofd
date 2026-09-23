@@ -4,9 +4,11 @@
 //
 //	import _ "github.com/zc310/ofd/internal/render/backends/ftgg"
 //
-// 之后即可用 render.BackendFTGG="ftgg" 作为 Document.RasterizePage 的后端名。
+// 之后即可用 drawing.BackendFTGG="ftgg" 作为栅格后端名，或经
+// converter.RasterBackend("ftgg") 使用。
 // 只用于渲染速度对照实验，不承诺与 canvas/gogpu 的逐像素输出一致。
-// 渲染上下文状态机由 internal/render/backends/rastercore 共享。
+// 渲染上下文状态机由 internal/render/backends/rastercore 共享，本包只依赖
+// geom 类型，不依赖 tdewolff/canvas。
 package ftgg
 
 import (
@@ -14,25 +16,25 @@ import (
 	"image/color"
 
 	ftgg "github.com/FloatTech/gg"
-	"github.com/tdewolff/canvas"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 
-	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/backends/rastercore"
+	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
-var _ render.Backend = (*rastercore.Core)(nil)
+var _ drawing.Backend = (*rastercore.Core)(nil)
 
 func init() {
-	_ = render.RegisterBackend(render.BackendFTGG, func(width, height float64, resolution canvas.Resolution) (render.Backend, error) {
+	_ = drawing.RegisterBackend(drawing.BackendFTGG, func(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 		return New(width, height, resolution)
 	})
 }
 
 // New 创建 FloatTech/gg 光栅后端。输出分辨率和像素尺寸规则与 gogpu/gg
 // 后端一致。
-func New(width, height float64, resolution canvas.Resolution) (render.Backend, error) {
+func New(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 	core, err := rastercore.New(width, height, resolution, func(wpx, hpx int, dpmm, hpix float64) rastercore.Hooks {
 		im := image.NewRGBA(image.Rect(0, 0, wpx, hpx))
 		return &ftggHooks{dc: ftgg.NewContextForRGBA(im), im: im, dpmm: dpmm, hpix: hpix}
@@ -48,7 +50,7 @@ func New(width, height float64, resolution canvas.Resolution) (render.Backend, e
 // 已知差异（速度对照可接受）：
 //   - freetype/raster 的 Stroke 对 nil joiner 回退为 RoundJoiner，因此 canvas
 //     的 MiterJoin 在此降级为圆角连接（FloatTech 无 Miter 连接器可用）。
-//   - 渐变通过自定义 Pattern 逐像素采样 canvas.Gradient，与 gogpu 的
+//   - 渐变通过自定义 Pattern 逐像素采样 geom.Gradient，与 gogpu 的
 //     CustomBrush 语义一致。
 type ftggHooks struct {
 	dc   *ftgg.Context
@@ -69,16 +71,16 @@ func (h *ftggHooks) SetStrokeSolid(c color.Color) {
 func (h *ftggHooks) ClearFill()   { h.dc.SetFillStyle(ftgg.NewSolidPattern(color.Transparent)) }
 func (h *ftggHooks) ClearStroke() { h.dc.SetStrokeStyle(ftgg.NewSolidPattern(color.Transparent)) }
 
-func (h *ftggHooks) SetFillRule(rule canvas.FillRule) {
+func (h *ftggHooks) SetFillRule(rule geom.FillRule) {
 	switch rule {
-	case canvas.NonZero:
+	case geom.NonZero:
 		h.dc.SetFillRule(ftgg.FillRuleWinding)
 	default:
 		h.dc.SetFillRule(ftgg.FillRuleEvenOdd)
 	}
 }
 
-func (h *ftggHooks) DrawDevicePath(dp *rastercore.DevicePath, m canvas.Matrix, fill, stroke bool, fillGrad, strokeGrad canvas.Gradient, style rastercore.StrokeStyle) {
+func (h *ftggHooks) DrawDevicePath(dp *rastercore.DevicePath, m geom.Matrix, fill, stroke bool, fillGrad, strokeGrad geom.Gradient, style rastercore.StrokeStyle) {
 	replayPath(h.dc, dp)
 	if fill {
 		if fillGrad != nil {
@@ -101,7 +103,7 @@ func (h *ftggHooks) DrawDevicePath(dp *rastercore.DevicePath, m canvas.Matrix, f
 	}
 }
 
-func (h *ftggHooks) RenderImage(img image.Image, m canvas.Matrix) {
+func (h *ftggHooks) RenderImage(img image.Image, m geom.Matrix) {
 	src := img
 	margin := 0
 	if (m[0][1] != 0.0 || m[1][0] != 0.0) && (m[0][0] != 0.0 || m[1][1] == 0.0) {
@@ -113,7 +115,7 @@ func (h *ftggHooks) RenderImage(img image.Image, m canvas.Matrix) {
 	}
 	hh := h.hpix
 	srcH := float64(src.Bounds().Size().Y)
-	origin := m.Dot(canvas.Point{X: -float64(margin), Y: srcH - float64(margin)}).Mul(h.dpmm)
+	origin := m.Dot(geom.Point{X: -float64(margin), Y: srcH - float64(margin)}).Mul(h.dpmm)
 	m = m.Scale(h.dpmm, h.dpmm)
 	aff3 := f64.Aff3{m[0][0], -m[0][1], origin.X, -m[1][0], m[1][1], hh - origin.Y}
 	draw.CatmullRom.Transform(h.im, aff3, src, src.Bounds(), draw.Over, nil)
@@ -149,17 +151,17 @@ func replayPath(dc *ftgg.Context, dp *rastercore.DevicePath) {
 func (h *ftggHooks) strokeStyle(style rastercore.StrokeStyle) {
 	h.dc.SetLineWidth(style.Width)
 	switch style.Cap.(type) {
-	case canvas.RoundCapper:
+	case geom.RoundCapper:
 		h.dc.SetLineCap(ftgg.LineCapRound)
-	case canvas.SquareCapper:
+	case geom.SquareCapper:
 		h.dc.SetLineCap(ftgg.LineCapSquare)
 	default:
 		h.dc.SetLineCap(ftgg.LineCapButt)
 	}
 	switch style.Join.(type) {
-	case canvas.RoundJoiner:
+	case geom.RoundJoiner:
 		h.dc.SetLineJoin(ftgg.LineJoinRound)
-	case canvas.BevelJoiner:
+	case geom.BevelJoiner:
 		h.dc.SetLineJoin(ftgg.LineJoinBevel)
 	default:
 		h.dc.SetLineJoin(ftgg.LineJoinRound)
@@ -178,18 +180,18 @@ func (h *ftggHooks) strokeStyle(style rastercore.StrokeStyle) {
 }
 
 // ftggPattern 是 FloatTech 的逐像素 Pattern，复刻 gogpu gradBrush 的采样
-// 语义：设备像素中心先经完整矩阵逆映射回逻辑毫米，再用 canvas.Gradient.At
+// 语义：设备像素中心先经完整矩阵逆映射回逻辑毫米，再用 geom.Gradient.At
 // 求色。
 type ftggPattern struct {
-	inv  canvas.Matrix
+	inv  geom.Matrix
 	dpmm float64
 	hpix float64
-	g    canvas.Gradient
+	g    geom.Gradient
 }
 
 // ColorAt 返回像素 (x,y) 处采样到的颜色。
 func (p *ftggPattern) ColorAt(x, y int) color.Color {
-	pt := p.inv.Dot(canvas.Point{X: float64(x) / p.dpmm, Y: (p.hpix - float64(y)) / p.dpmm})
+	pt := p.inv.Dot(geom.Point{X: float64(x) / p.dpmm, Y: (p.hpix - float64(y)) / p.dpmm})
 	return p.g.At(pt.X, pt.Y)
 }
 

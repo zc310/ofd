@@ -14,7 +14,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -287,11 +287,11 @@ func TestPageDocumentReusesBackgroundCache(t *testing.T) {
 	}
 	defer reader.Close()
 
-	first, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
+	first, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
+	second, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
 		color.RGBA{R: 128, A: 255},
 	}
 	for _, background := range backgrounds {
-		if _, err := reader.pageDocument(reader.pages[0], background, canvas.DPI(96)); err != nil {
+		if _, err := reader.pageDocument(reader.pages[0], background, geom.DPI(96)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -342,14 +342,14 @@ func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	}
 	defer reader.Close()
 
-	first, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
+	first, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reader.UseFallbackFont("CacheInvalidationFallback"); err == nil {
 		t.Fatal("未注册回退字体应返回错误")
 	}
-	second, err := reader.pageDocument(reader.pages[0], color.White, canvas.DPI(96))
+	second, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,13 +7,14 @@ import (
 	"io"
 	"time"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // Converter 配置转换器
 type Converter struct {
-	dpi               canvas.Resolution
+	dpi               geom.Resolution
 	format            string // png, jpeg, svg, eps, tex
+	rasterBackend     string // 非空时 PNG/JPG 走该栅格后端（BackendGG 等）
 	htmlImageFormat   string // png, svg
 	bgColor           color.Color
 	page              int
@@ -25,7 +26,6 @@ type Converter struct {
 	fileWriter        func(page int) (io.WriteCloser, error)
 	docTitle          string // 文档标题，由 HTML 等编码器使用
 	markdownTables    bool   // Markdown 输出是否识别表格
-	renderer          canvas.Writer
 	sofficePath       string
 	officeTimeout     time.Duration
 	chromePath        string
@@ -41,7 +41,7 @@ type Option func(*Converter)
 
 // 默认配置
 var defaultConverter = &Converter{
-	dpi:             canvas.DPI(300),
+	dpi:             geom.DPI(300),
 	format:          "png",
 	htmlImageFormat: "png",
 	bgColor:         color.Transparent,

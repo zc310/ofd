@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 const maxPatternTiles = 100000
@@ -14,7 +14,7 @@ const maxPatternTiles = 100000
 // drawPatternPath 将 CellContent 直接作为矢量对象绘制。图案单元使用自身的
 // 左上角坐标系，而目标画布使用左下角坐标系；应用图块 CTM 后，页面高度转换
 // 由对象绘制函数完成。
-func (p *Document) drawPatternPath(ctx DrawContext, path *canvas.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM, budget *renderBudget) bool {
+func (p *Document) drawPatternPath(ctx DrawContext, path *geom.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM, budget *renderBudget) bool {
 	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
 		!pb.IsFinite() || path == nil || len(pattern.CellContent.Items) == 0 {
 		return false
@@ -198,11 +198,11 @@ func invertCTM(matrix models.CTM) (models.CTM, bool) {
 	return inverse, true
 }
 
-// 保留 patternMatrix，供测试以及需要将 OFD CTM 表示为 canvas 矩阵的调用方使用。
-func patternMatrix(pattern *models.CtPattern) (canvas.Matrix, bool) {
+// 保留 patternMatrix，供测试以及需要将 OFD CTM 表示为 geom.Matrix 的调用方使用。
+func patternMatrix(pattern *models.CtPattern) (geom.Matrix, bool) {
 	ctm, ok := patternCTM(pattern)
 	if !ok {
-		return canvas.Identity, false
+		return geom.Identity, false
 	}
-	return canvas.Matrix{{ctm[0], ctm[2], ctm[4]}, {ctm[1], ctm[3], ctm[5]}}, true
+	return geom.Matrix{{ctm[0], ctm[2], ctm[4]}, {ctm[1], ctm[3], ctm[5]}}, true
 }

@@ -4,22 +4,21 @@ import (
 	"image"
 	"math"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 const meshGradientDPI = 300.0
 
-func (p *Document) Path(ctx *canvas.Context, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
+func (p *Document) Path(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
-	p.pathWithBudget(NewCanvasBackend(ctx), object, dp, pb, nil, nil, &budget)
+	p.pathWithBudget(ctx, object, dp, pb, nil, nil, &budget)
 }
 
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
-func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *canvas.Path, budget *renderBudget) {
+func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
 		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
 		return
@@ -67,7 +66,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	}
 	if object.Stroke.Value(true) {
 		if isMeshColor(strokeSource) {
-			strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), canvas.Tolerance)
+			strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
 			if clipPath != nil {
 				strokePath = strokePath.And(clipPath)
 			}
@@ -108,17 +107,17 @@ func isMeshColor(color *models.CTColor) bool {
 }
 
 // drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。
-// canvas 的 PDF 和 SVG 渲染器不支持自定义渐变，使用图像回退可以保证
+// PDF/SVG 等矢量输出不支持自定义渐变，使用图像回退可以保证
 // Gouraud/LaGourand 在不同输出格式下都能保留视觉效果。
 // gradient 由调用方预先构造（不含对象 Alpha，对象 Alpha 在栅格图上应用）。
-func (p *Document) drawMeshPaint(ctx DrawContext, paintPath *canvas.Path, gradient canvas.Gradient, object models.PathObject, pb models.StBox, budget *renderBudget) bool {
+func (p *Document) drawMeshPaint(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, object models.PathObject, pb models.StBox, budget *renderBudget) bool {
 	if paintPath == nil || gradient == nil {
 		return false
 	}
 	return p.drawMeshPaintGradient(ctx, paintPath, gradient, pb, object.Alpha, budget)
 }
 
-func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *canvas.Path, gradient canvas.Gradient, pb models.StBox, alpha *uint8, budget *renderBudget) bool {
+func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, gradient geom.Gradient, pb models.StBox, alpha *uint8, budget *renderBudget) bool {
 	if paintPath == nil || gradient == nil || !pb.IsFinite() || pb.Width <= 0 || pb.Height <= 0 {
 		return false
 	}
@@ -129,7 +128,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *canvas.Path
 	if bounds.Empty() || bounds.W() <= 0 || bounds.H() <= 0 {
 		return false
 	}
-	resolution := canvas.DPI(meshGradientDPI)
+	resolution := geom.DPI(meshGradientDPI)
 	padding := 1.0 / resolution.DPMM()
 	bounds.X0 -= padding
 	bounds.Y0 -= padding
@@ -143,11 +142,10 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *canvas.Path
 	if !budget.allowOffscreenPixels(width, height, meshGradientDPI) {
 		return false
 	}
-	page := canvas.New(width, height)
-	pageCtx := canvas.NewContext(page)
-	pageCtx.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
-	pageCtx.DrawPath(0, 0, paintPath.Copy().Translate(-bounds.X0, -bounds.Y0))
-	var meshImage image.Image = rasterizer.Draw(page, resolution, canvas.DefaultColorSpace)
+	surface := newOffscreenSurface(width, height, resolution)
+	surface.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
+	surface.DrawPath(0, 0, paintPath.Copy().Translate(-bounds.X0, -bounds.Y0))
+	var meshImage image.Image = surface.Raster()
 	if meshImage == nil || meshImage.Bounds().Empty() {
 		return false
 	}
@@ -175,12 +173,12 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *canvas.Path
 
 // objectPointTransform 返回把对象局部坐标映射到画布坐标的变换：
 // 先应用对象 CTM，再叠加对象 Boundary 偏移并翻转 Y 轴。
-func objectPointTransform(object models.PathObject, pageHeight float64) func(models.StPos) canvas.Point {
-	return func(point models.StPos) canvas.Point {
+func objectPointTransform(object models.PathObject, pageHeight float64) func(models.StPos) geom.Point {
+	return func(point models.StPos) geom.Point {
 		if object.CTM != nil {
 			point.X, point.Y = object.CTM.TransformPoint(point)
 		}
-		return canvas.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
+		return geom.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
 	}
 }
 
@@ -188,19 +186,19 @@ func objectPointTransform(object models.PathObject, pageHeight float64) func(mod
 // OFD 的渐变坐标位于对象 CTM 已经生效的坐标系中（与路径数据的局部坐标系不同），
 // 因此这里不再应用对象 CTM，只叠加 Boundary 偏移并翻转 Y 轴；否则带平移或缩放的
 // CTM 会被重复应用，导致渐变整体偏离图形，只能看到端点颜色。
-func gradientBoundaryTransform(boundary models.StBox, pageHeight float64) func(models.StPos) canvas.Point {
-	return func(point models.StPos) canvas.Point {
-		return canvas.Point{X: point.X + boundary.X, Y: pageHeight - (point.Y + boundary.Y)}
+func gradientBoundaryTransform(boundary models.StBox, pageHeight float64) func(models.StPos) geom.Point {
+	return func(point models.StPos) geom.Point {
+		return geom.Point{X: point.X + boundary.X, Y: pageHeight - (point.Y + boundary.Y)}
 	}
 }
 
-func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *canvas.Path {
+func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *geom.Path {
 	return p.buildObjectPathWithTransform(object, pageHeight, nil)
 }
 
-func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *canvas.Path {
+func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *geom.Path {
 	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
-		return &canvas.Path{}
+		return &geom.Path{}
 	}
 	// Pattern 的 CellContent 边界属于父级图块的坐标系。
 	// 父级与对象矩阵只组合一次，避免每个点重复执行矩阵乘法与分配。
@@ -210,7 +208,7 @@ func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHe
 		if object.CTM != nil {
 			ctm = parentCTM.Multiply(object.CTM)
 			if !ctm.IsFinite() {
-				return &canvas.Path{}
+				return &geom.Path{}
 			}
 		}
 	}
@@ -231,7 +229,7 @@ func finiteFloat(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
-func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *canvas.Path {
+func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *geom.Path {
 	if clips == nil || len(clips.Clip) == 0 {
 		return nil
 	}
@@ -253,7 +251,7 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 		}
 	}
 
-	var result *canvas.Path
+	var result *geom.Path
 	for _, clip := range clips.Clip {
 		region := p.buildClipRegion(clip, clips.TransFlag, objectMatrix, box, pageHeight)
 		if region == nil {
@@ -268,8 +266,8 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 	return result
 }
 
-func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCTM models.CTM, box models.StBox, pageHeight float64) *canvas.Path {
-	var result *canvas.Path
+func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
+	var result *geom.Path
 	for _, area := range clip.Area {
 		if area.Path == nil {
 			continue
@@ -313,7 +311,7 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 	return result
 }
 
-func (p *Document) drawClippedPath(ctx DrawContext, path, clip *canvas.Path, object models.PathObject) {
+func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, object models.PathObject) {
 	if object.Fill {
 		// OFD 允许填充路径省略末尾闭合命令，布尔运算前需要补齐。
 		fillPath := path.Copy()
@@ -322,19 +320,19 @@ func (p *Document) drawClippedPath(ctx DrawContext, path, clip *canvas.Path, obj
 		// 先用 Even-Odd 规则整理轮廓方向（外圈 CCW、洞 CW），求交后再按
 		// NonZero 填充即可保留洞。
 		if object.Rule == "Even-Odd" {
-			fillPath = fillPath.Settle(canvas.EvenOdd)
+			fillPath = fillPath.Settle(geom.EvenOdd)
 		}
 		ctx.Push()
-		ctx.SetStrokeColor(canvas.Transparent)
+		ctx.SetStrokeColor(geom.Transparent)
 		ctx.DrawPath(0, 0, fillPath.And(clip))
 		ctx.Pop()
 	}
 	if object.Stroke.Value(true) {
 		// 描边路径可能是开放路径，先转换为描边区域再执行裁剪。
-		strokePath := path.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), canvas.Tolerance)
+		strokePath := path.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
 		ctx.Push()
 		ctx.CopyStrokeToFill()
-		ctx.SetStrokeColor(canvas.Transparent)
+		ctx.SetStrokeColor(geom.Transparent)
 		ctx.DrawPath(0, 0, strokePath.And(clip))
 		ctx.Pop()
 	}
@@ -342,7 +340,7 @@ func (p *Document) drawClippedPath(ctx DrawContext, path, clip *canvas.Path, obj
 
 // updatePathGradients 设置绘制的填充/描边渐变，并返回未经对象 Alpha 缩放的
 // 原生渐变；网格渐变回退绘制时复用该渐变，只在栅格图像上应用对象 Alpha。
-func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObject, dp *models.DrawParam, pageHeight float64) (fillGradient, strokeGradient canvas.Gradient) {
+func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObject, dp *models.DrawParam, pageHeight float64) (fillGradient, strokeGradient geom.Gradient) {
 	fillColor := object.FillColor
 	strokeColor := object.StrokeColor
 	if dp != nil {
@@ -366,11 +364,11 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObjec
 	return fillGradient, strokeGradient
 }
 
-func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) canvas.Point) canvas.Gradient {
+func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) geom.Point) geom.Gradient {
 	if ctColor == nil {
 		return nil
 	}
-	var gradient canvas.Gradient
+	var gradient geom.Gradient
 	if shd := ctColor.AxialShd; shd != nil {
 		gradient = newOFDLinearGradient(shd, transform, p.colorRGBA)
 	}
@@ -395,8 +393,8 @@ func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.S
 	return gradient
 }
 
-func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *canvas.Path {
-	pa := &canvas.Path{}
+func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *geom.Path {
+	pa := &geom.Path{}
 	if cp == nil || transform == nil {
 		return pa
 	}

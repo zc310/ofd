@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // WithFormat 按注册的格式名（或别名）设置输出格式。
@@ -41,7 +41,7 @@ func ImageWriter(f func(page int, img image.Image) error) Option {
 // DPI 设置DPI
 func DPI(dpi float64) Option {
 	return func(c *Converter) {
-		c.dpi = canvas.DPI(dpi)
+		c.dpi = geom.DPI(dpi)
 	}
 }
 
@@ -200,4 +200,12 @@ func WithMarkdownTables(enabled bool) Option {
 	return func(c *Converter) {
 		c.markdownTables = enabled
 	}
+}
+
+// RasterBackend 指定 PNG/JPG 输出使用的栅格后端名（如 "canvas"、"gg"、
+// "ftgg"、"tinyskia"）。仅对 PNG/JPEG 生效；空字符串表示使用 canvas 矢量
+// 表面光栅化（默认）。使用 canvas 之外的后端需在程序中空白导入对应插件包，
+// 例如 import _ "github.com/zc310/ofd/internal/render/backends/gg"。
+func RasterBackend(name string) Option {
+	return func(c *Converter) { c.rasterBackend = name }
 }

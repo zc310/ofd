@@ -1,4 +1,4 @@
-package render
+package canvas
 
 import (
 	"github.com/zc310/ofd/internal/models"
@@ -11,7 +11,7 @@ import (
 // 在 PDF 等输出中保留可复制、可搜索的文字。
 
 // registerPageGlyphs 扫描页面（含模板与注释）的文字对象并登记字形映射。
-func (p *Fonts) registerPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent) {
+func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent) {
 	if p == nil || doc == nil || content == nil {
 		return
 	}

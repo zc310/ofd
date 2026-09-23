@@ -1,4 +1,4 @@
-package render
+package canvas
 
 import (
 	"image"
@@ -6,15 +6,16 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/render/geom"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 )
 
 const fastImageDownscaleThreshold = 1.25
 
-// Rasterize 将画布栅格化为 RGBA 图片。图片明显缩小时使用较快的双线性
+// rasterize 将画布栅格化为 RGBA 图片。图片明显缩小时使用较快的双线性
 // 插值；其他图像仍使用 canvas 默认的 Catmull-Rom 插值。
-func Rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas.ColorSpace) *image.RGBA {
+func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas.ColorSpace) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, int(c.W*resolution.DPMM()+0.5), int(c.H*resolution.DPMM()+0.5)))
 	base := rasterizer.FromImage(img, resolution, colorSpace)
 	renderer := &adaptiveRasterizer{
@@ -116,7 +117,7 @@ func isLinearColorSpace(colorSpace canvas.ColorSpace) bool {
 }
 
 func shouldUseFastImageTransform(img image.Image, m canvas.Matrix, resolution canvas.Resolution) bool {
-	if img == nil || !finiteMatrix(m) || resolution <= 0 {
+	if img == nil || !finiteMatrix(geom.Matrix(m)) || resolution <= 0 {
 		return false
 	}
 	bounds := img.Bounds()

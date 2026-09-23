@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall/js"
 
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/pkg/webreader"
 )
 

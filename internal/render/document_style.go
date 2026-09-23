@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 const (
@@ -38,14 +38,6 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
 }
 
-// CTColor 是解析后的绘制颜色：固定值颜色（HasValue）或渐变。Value 用值类型
-// 内联，避免每次 updateCtColor 都堆分配 *color.RGBA 与 *CTColor。
-type CTColor struct {
-	Value    color.RGBA
-	HasValue bool
-	Gradient canvas.Gradient
-}
-
 func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	if source == nil {
 		return nil
@@ -60,8 +52,8 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	return cc
 }
 
-func identityGradientTransform(point models.StPos) canvas.Point {
-	return canvas.Point{X: point.X, Y: point.Y}
+func identityGradientTransform(point models.StPos) geom.Point {
+	return geom.Point{X: point.X, Y: point.Y}
 }
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
@@ -71,24 +63,24 @@ func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
 	}
 }
 
-func getLineCap(capStr string) canvas.Capper {
+func getLineCap(capStr string) geom.Capper {
 	switch capStr {
 	case "Round":
-		return canvas.RoundCap
+		return geom.RoundCap
 	case "Square":
-		return canvas.SquareCap
+		return geom.SquareCap
 	default:
-		return canvas.ButtCap
+		return geom.ButtCap
 	}
 }
-func getLineJoin(joinStr string) canvas.Joiner {
+func getLineJoin(joinStr string) geom.Joiner {
 	switch joinStr {
 	case "Round":
-		return canvas.RoundJoin
+		return geom.RoundJoin
 	case "Bevel":
-		return canvas.BevelJoin
+		return geom.BevelJoin
 	default:
-		return canvas.MiterJoin
+		return geom.MiterJoin
 	}
 }
 func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam) {
@@ -124,7 +116,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 	if object.Fill {
 		p.applyFill(ctx, fill, object.Alpha)
 		if object.Rule == "Even-Odd" {
-			ctx.SetFillRule(canvas.EvenOdd)
+			ctx.SetFillRule(geom.EvenOdd)
 		}
 	} else {
 		ctx.ClearFill()
@@ -153,7 +145,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 
 func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 	if fill == nil {
-		ctx.SetFillColor(canvas.Transparent)
+		ctx.SetFillColor(geom.Transparent)
 		return
 	}
 	if fill.HasValue {
@@ -168,7 +160,7 @@ func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 		ctx.SetFillGradient(fill.Gradient)
 		return
 	}
-	ctx.SetFillColor(canvas.Transparent)
+	ctx.SetFillColor(geom.Transparent)
 }
 
 // graphicOpacity 将 OFD 图形透明度转换为图像不透明度。
@@ -181,7 +173,7 @@ func graphicOpacity(transparency *uint8) uint8 {
 
 func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {
 	if stroke == nil || (!stroke.HasValue && stroke.Gradient == nil) {
-		ctx.SetStrokeColor(canvas.Black)
+		ctx.SetStrokeColor(geom.Black)
 	} else if stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else {
@@ -189,7 +181,7 @@ func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.
 	}
 	ctx.SetStrokeCapper(getLineCap(object.Cap))
 	joiner := getLineJoin(object.Join)
-	if joiner == canvas.MiterJoin {
+	if _, isMiter := joiner.(geom.MiterJoiner); isMiter {
 		miterLimit := object.MiterLimit
 		miterLimit = normalizedMiterLimit(miterLimit)
 		// OFD 将 MiterLimit 定义为以毫米为单位的绝对长度。
@@ -199,7 +191,7 @@ func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.
 		if lineWidth > 0 {
 			miterLimit /= lineWidth / 2
 		}
-		joiner = canvas.MiterJoiner{GapJoiner: canvas.BevelJoin, Limit: miterLimit}
+		joiner = geom.MiterJoiner{GapJoiner: geom.BevelJoin, Limit: miterLimit}
 	}
 	ctx.SetStrokeJoiner(joiner)
 }

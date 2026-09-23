@@ -4,19 +4,33 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
+	"image/jpeg"
 	"io"
 	"log/slog"
 
 	"github.com/nao1215/imaging"
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers"
 	wpng "github.com/woozymasta/png"
 	"github.com/zc310/ofd/internal/render"
 )
 
-// renderPage 渲染单个页面
-func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
-	// 文件写入器处理
+// useRasterBackend 判断当前配置是否应把位图输出交给可替换的栅格后端：
+// 仅当显式设置了 RasterBackend 且输出为 PNG/JPEG 时启用；矢量格式
+// （SVG/EPS/TeX）仍走 VectorSurface。
+func (c *Converter) useRasterBackend() bool {
+	if c.rasterBackend == "" {
+		return false
+	}
+	switch c.format {
+	case "png", "jpeg", "jpg":
+		return true
+	default:
+		return false
+	}
+}
+
+// renderPage 渲染单个页面（默认路径：canvas 矢量表面光栅化）。
+func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) error {
 	if c.fileWriter != nil {
 		w, err := c.fileWriter(pageNumber)
 		if err != nil {
@@ -28,33 +42,28 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 			}
 		}()
 
-		renderer := c.renderer
-		if renderer == nil {
-			renderer = renderers.PNG(c.dpi)
-		}
-
-		// PNG 走本地快速光栅化路径 + woozymasta/png 编码器（klauspost zlib）：
-		// 光栅化与 RasterizePage / ImageWriter 共用同一 fast 路径，像素一致；
-		// level 7 压缩下输出体积与标准库默认压缩相当，编码更快。
-		if c.format == "png" {
-			if err := c.writePNG(w, page); err != nil {
+		switch c.format {
+		case "png":
+			if err := encodePNG(w, page.Rasterize(c.dpi)); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
-		} else if err := page.Write(w, renderer); err != nil {
-			return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+		case "jpeg", "jpg":
+			img := opaqueImage(page.Rasterize(c.dpi), color.White)
+			if err := jpeg.Encode(w, img, &jpeg.Options{Quality: 90}); err != nil {
+				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+			}
+		default:
+			if err := page.Write(w, c.format); err != nil {
+				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+			}
 		}
 	}
 
-	// 图像写入器处理
 	if c.imageWriter != nil {
-		var img image.Image
-		img = render.Rasterize(page, c.dpi, canvas.DefaultColorSpace)
-
-		// 缩略图处理
+		var img image.Image = page.Rasterize(c.dpi)
 		if c.thumbnail > 0 {
 			img = c.resizeThumbnail(img)
 		}
-
 		if err := c.imageWriter(pageNumber, img); err != nil {
 			return fmt.Errorf("写入第%d页图像失败: %w", pageNumber, err)
 		}
@@ -63,12 +72,48 @@ func (c *Converter) renderPage(pageNumber int, page *canvas.Canvas) error {
 	return nil
 }
 
-// writePNG 光栅化页面并写出 PNG。光栅化复用 render.Rasterize（与
-// RasterizePage / ImageWriter 同一路径，输出像素一致）；编码使用
-// woozymasta/png（klauspost zlib 实现），level 7 下输出体积与标准库
-// 默认压缩相当但速度更快。
-func (c *Converter) writePNG(w io.Writer, cPage *canvas.Canvas) error {
-	img := render.Rasterize(cPage, c.dpi, canvas.DefaultColorSpace)
+// renderRasterPage 用已由栅格后端光栅化的页面图像完成写出。
+func (c *Converter) renderRasterPage(pageNumber int, img image.Image) error {
+	if c.fileWriter != nil {
+		w, err := c.fileWriter(pageNumber)
+		if err != nil {
+			return fmt.Errorf("创建文件写入器失败: %w", err)
+		}
+		defer func() {
+			if err := w.Close(); err != nil {
+				slog.Error("关闭文件写入器失败", "error", err)
+			}
+		}()
+
+		switch c.format {
+		case "png":
+			if err := encodePNG(w, img); err != nil {
+				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+			}
+		default: // jpeg / jpg
+			opaque := opaqueImage(img, color.White)
+			if err := jpeg.Encode(w, opaque, &jpeg.Options{Quality: 90}); err != nil {
+				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
+			}
+		}
+	}
+
+	if c.imageWriter != nil {
+		out := img
+		if c.thumbnail > 0 {
+			out = c.resizeThumbnail(out)
+		}
+		if err := c.imageWriter(pageNumber, out); err != nil {
+			return fmt.Errorf("写入第%d页图像失败: %w", pageNumber, err)
+		}
+	}
+
+	return nil
+}
+
+// encodePNG 使用 woozymasta/png（klauspost zlib 实现）写出 PNG；level 7
+// 压缩下输出体积与标准库默认压缩相当但速度更快。
+func encodePNG(w io.Writer, img image.Image) error {
 	encoder := &wpng.Encoder{CompressionLevel: wpng.CompressionLevel(7)}
 	return encoder.Encode(w, img)
 }
@@ -108,12 +153,24 @@ func (c *Converter) renderDocuments(documents []*render.Document) error {
 	pages = pages[pageStart:pageEnd]
 
 	for _, page := range pages {
-		canvasPage, err := page.document.Page(page.document.Pages[page.pageIndex])
+		// PNG/JPEG 指定了栅格后端时直接经 RasterizePage 取图，跳过 canvas
+		// 矢量表面的创建与光栅化。
+		if c.useRasterBackend() {
+			img, err := page.document.RasterizePage(page.document.Pages[page.pageIndex], c.rasterBackend, c.dpi)
+			if err != nil {
+				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
+			}
+			if err := c.renderRasterPage(page.pageNumber, img); err != nil {
+				return err
+			}
+			continue
+		}
+
+		surface, err := page.document.Page(page.document.Pages[page.pageIndex])
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-
-		if err := c.renderPage(page.pageNumber, canvasPage); err != nil {
+		if err := c.renderPage(page.pageNumber, surface); err != nil {
 			return err
 		}
 	}

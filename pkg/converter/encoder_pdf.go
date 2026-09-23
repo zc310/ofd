@@ -7,9 +7,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/tdewolff/canvas"
-	cimage "github.com/tdewolff/canvas/image"
-	"github.com/tdewolff/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -25,10 +22,10 @@ func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error 
 	return encodeOFD(input, output, conv, e.encodeDocuments)
 }
 
-func pdfOptions() *pdf.Options {
-	opts := pdf.DefaultOptions
-	opts.ImageEncoding = cimage.Lossy
-	return &opts
+// pdfRenderOptions 是 PDF 输出选项：压缩内容流、子集化 TrueType 字体、
+// 图片使用有损编码以对齐官方体积。
+func pdfRenderOptions() render.PDFOptions {
+	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: true}
 }
 
 func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -69,21 +66,18 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	}
 	pages = pages[pageStart:pageEnd]
 
-	var pdfDoc *pdf.PDF
+	pdfDoc, err := render.NewPDFDocument(output, pdfRenderOptions())
+	if err != nil {
+		return err
+	}
 	for _, page := range pages {
-		c, err := page.document.Page(page.document.Pages[page.pageIndex])
+		surface, err := page.document.Page(page.document.Pages[page.pageIndex])
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-		if pdfDoc == nil {
-			pdfDoc = pdf.New(output, c.W, c.H, pdfOptions())
-		} else {
-			pdfDoc.NewPage(c.W, c.H)
+		if err := pdfDoc.AddPage(surface); err != nil {
+			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-		c.RenderTo(pdfDoc)
-	}
-	if pdfDoc == nil {
-		return errors.New("PDF 文档创建失败")
 	}
 	return pdfDoc.Close()
 }
@@ -101,11 +95,14 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		return err
 	}
 
-	var pdfDoc *pdf.PDF
+	pdfDoc, err := render.NewPDFDocument(output, pdfRenderOptions())
+	if err != nil {
+		return err
+	}
 	workers = max(1, min(workers, pageEnd-pageStart))
 	type pageJob struct {
 		page     documentPage
-		canvas   *canvas.Canvas
+		surface  render.VectorSurface
 		err      error
 		finished *sync.WaitGroup
 	}
@@ -116,7 +113,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		go func() {
 			defer pool.Done()
 			for job := range jobs {
-				job.canvas, job.err = job.page.document.Page(job.page.document.Pages[job.page.pageIndex])
+				job.surface, job.err = job.page.document.Page(job.page.document.Pages[job.page.pageIndex])
 				job.finished.Done()
 			}
 		}()
@@ -127,7 +124,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 	}()
 
 	// 每批先并行生成全部页面画布，再按页序串行写入 PDF。这样下一批
-	// 不会在上一批 RenderTo 期间访问共享的字体状态。
+	// 不会在上一批写入期间访问共享的字体状态。
 	batch := make([]documentPage, 0, workers)
 	flush := func() error {
 		jobsInBatch := make([]*pageJob, len(batch))
@@ -144,15 +141,12 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			if job.err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, job.err)
 			}
-			if job.canvas == nil {
+			if job.surface == nil {
 				return fmt.Errorf("处理第%d页失败: 页面画布为空", page.pageNumber)
 			}
-			if pdfDoc == nil {
-				pdfDoc = pdf.New(output, job.canvas.W, job.canvas.H, pdfOptions())
-			} else {
-				pdfDoc.NewPage(job.canvas.W, job.canvas.H)
+			if err := pdfDoc.AddPage(job.surface); err != nil {
+				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 			}
-			job.canvas.RenderTo(pdfDoc)
 		}
 		batch = batch[:0]
 		return nil
@@ -170,9 +164,6 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		if err := flush(); err != nil {
 			return err
 		}
-	}
-	if pdfDoc == nil {
-		return errors.New("PDF 文档创建失败")
 	}
 	return pdfDoc.Close()
 }

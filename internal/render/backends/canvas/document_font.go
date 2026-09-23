@@ -1,4 +1,4 @@
-package render
+package canvas
 
 import (
 	"crypto/sha256"
@@ -17,8 +17,13 @@ import (
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/utils"
 )
+
+// 本文件实现 canvas 字体引擎 Fonts：字体资源解析、内嵌字体加载、字形映射
+// 登记、回退字体全局注册表与串行化锁；系统字体候选匹配见 font_candidates.go，
+// 字体面与文字样式适配见 font_face.go。
 
 var (
 	onceFonts       sync.Once
@@ -43,7 +48,7 @@ const defaultFallbackKey = ""
 
 type systemFontKey struct {
 	name  string
-	style canvas.FontStyle
+	style drawing.FontStyle
 }
 
 type systemFontCacheEntry struct {
@@ -77,7 +82,7 @@ type Fonts struct {
 type fontPathKey struct {
 	font    *canvas.Font
 	size    float64
-	style   canvas.FontStyle
+	style   drawing.FontStyle
 	variant canvas.FontVariant
 	value   string
 }
@@ -88,7 +93,7 @@ type fontPathKey struct {
 type textLineKey struct {
 	font    *canvas.Font
 	size    float64
-	style   canvas.FontStyle
+	style   drawing.FontStyle
 	variant canvas.FontVariant
 	fill    color.RGBA
 	value   string
@@ -96,13 +101,13 @@ type textLineKey struct {
 
 type fallbackFace struct {
 	family *canvas.FontFamily
-	style  canvas.FontStyle
+	style  drawing.FontStyle
 	name   string
 }
 
 type fallbackFontSource struct {
 	data   []byte
-	style  canvas.FontStyle
+	style  drawing.FontStyle
 	digest [sha256.Size]byte
 }
 
@@ -126,14 +131,14 @@ func NewFonts(doc *parser.Document) *Fonts {
 		var err error
 		if fontPath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
 			slog.Debug("load default font file", "path", fontPath)
-			if err = defaultRegistration.family.LoadFontFile(fontPath, canvas.FontRegular); err == nil {
+			if err = defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
 				defaultRegistration.ready = true
 				return
 			}
 		}
 		for _, name := range []string{"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times"} {
-			slog.Debug("load default system font", "family", name, "style", canvas.FontRegular)
-			if err := defaultRegistration.family.LoadSystemFont(name, canvas.FontRegular); err == nil {
+			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
+			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
 				defaultRegistration.ready = true
 				break
 			}
@@ -206,7 +211,11 @@ func (p *Fonts) loadLock(id models.StRefID) *sync.Mutex {
 	return lock
 }
 
-func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
+func (p *Fonts) RenderLock(handle drawing.FontFamily) *sync.Mutex {
+	family, ok := handle.(*canvas.FontFamily)
+	if !ok || family == nil {
+		return &sync.Mutex{}
+	}
 	fontCacheMu.Lock()
 	for _, registration := range fallbackRegistry {
 		if registration.family == family && registration.renderMu != nil {
@@ -237,72 +246,8 @@ func (p *Fonts) renderLock(family *canvas.FontFamily) *sync.Mutex {
 // 相同字体数据 + 字号 + 样式 + 文本的轮廓对完全相同，直接复用可避免对
 // 重复字符串反复整形与解析字形轮廓。返回的 canvas.Path 不可变，跨对象
 // 复用安全；缓存有界，超出后整体清空。
-func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path {
-	if face == nil || face.Font == nil || value == "" {
-		return nil
-	}
-	key := fontPathKey{font: face.Font, size: face.Size, style: face.Style, variant: face.Variant, value: value}
-	p.pathCacheMu.Lock()
-	if p.pathCache != nil {
-		if path := p.pathCache[key]; path != nil {
-			p.pathCacheMu.Unlock()
-			return path
-		}
-	}
-	path, _ := face.ToPath(value)
-	if path == nil || path.Empty() {
-		p.pathCacheMu.Unlock()
-		return nil
-	}
-	if len(p.pathCache) >= 2048 {
-		p.pathCache = make(map[fontPathKey]*canvas.Path)
-	} else if p.pathCache == nil {
-		p.pathCache = make(map[fontPathKey]*canvas.Path)
-	}
-	p.pathCache[key] = path
-	p.pathCacheMu.Unlock()
-	return path
-}
 
-// shapedTextLine 返回 (face, value) 经 canvas 原生整形的文字行，带缓存。
-// canvas 后端的 DrawText 每次 NewTextLine 都会重新整形/分项，是明显热点；
-// 相同字体数据 + 字号 + 样式 + 纯色画笔 + 文本的整形成果完全一致，直接复用。
-// 渐变/图案画笔的文字不缓存，避免不同文本对象互相污染。返回的 canvas.Text
-// 只被读取渲染，跨对象复用安全；缓存有界，超出后整体清空。
-func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text {
-	if face == nil || face.Font == nil || value == "" {
-		return nil
-	}
-	if !face.Fill.IsColor() {
-		return canvas.NewTextLine(face, value, canvas.Left)
-	}
-	key := textLineKey{
-		font:    face.Font,
-		size:    face.Size,
-		style:   face.Style,
-		variant: face.Variant,
-		fill:    face.Fill.Color,
-		value:   value,
-	}
-	p.textLineMu.Lock()
-	if p.textLineCache != nil {
-		if line := p.textLineCache[key]; line != nil {
-			p.textLineMu.Unlock()
-			return line
-		}
-	}
-	line := canvas.NewTextLine(face, value, canvas.Left)
-	if len(p.textLineCache) >= 2048 {
-		p.textLineCache = make(map[textLineKey]*canvas.Text)
-	} else if p.textLineCache == nil {
-		p.textLineCache = make(map[textLineKey]*canvas.Text)
-	}
-	p.textLineCache[key] = line
-	p.textLineMu.Unlock()
-	return line
-}
-
-func loadCachedSystemFont(name string, style canvas.FontStyle) (*canvas.FontFamily, bool) {
+func loadCachedSystemFont(name string, style drawing.FontStyle) (*canvas.FontFamily, bool) {
 	key := systemFontKey{name: name, style: style}
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
@@ -312,7 +257,7 @@ func loadCachedSystemFont(name string, style canvas.FontStyle) (*canvas.FontFami
 
 	family := canvas.NewFontFamily(name)
 	slog.Debug("load system font", "family", name, "style", style)
-	if err := family.LoadSystemFont(name, style); err != nil {
+	if err := family.LoadSystemFont(name, canvasStyle(style)); err != nil {
 		return nil, false
 	}
 	entry := &systemFontCacheEntry{family: family, renderMu: &sync.Mutex{}}
@@ -380,7 +325,7 @@ func loadFontFileSafely(family *canvas.FontFamily, path string) (loaded bool) {
 			loaded = false
 		}
 	}()
-	return family.LoadFontFile(path, canvas.FontRegular) == nil && fontFamilySupportsCJK(family)
+	return family.LoadFontFile(path, canvasStyle(drawing.FontRegular)) == nil && fontFamilySupportsCJK(family)
 }
 
 func isAndroidFontFile(name string) bool {
@@ -396,7 +341,7 @@ func fontFamilySupportsCJK(family *canvas.FontFamily) bool {
 	return face != nil && face.Font != nil && face.Font.GlyphIndex('中') != 0
 }
 
-func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
+func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 	if p == nil {
 		return nil, fmt.Errorf("字体上下文为空")
 	}
@@ -447,7 +392,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (*canvas.FontFamily, error) {
 func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks []fallbackFace) (*canvas.FontFamily, string, error) {
 	defaultFamily, defaultReady := defaultFallbackFont()
 	if ft == nil {
-		if fallback, ok := selectFallback(fallbacks, canvas.FontRegular); ok {
+		if fallback, ok := selectFallback(fallbacks, drawing.FontRegular); ok {
 			return fallback.family, fallback.family.Name(), nil
 		}
 		if !defaultReady {
@@ -457,12 +402,12 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	}
 
 	fontName := ft.FontName
-	fontStyle := canvas.FontRegular
+	fontStyle := drawing.FontRegular
 	if ft.Italic {
-		fontStyle |= canvas.FontItalic
+		fontStyle |= drawing.FontItalic
 	}
 	if ft.Bold {
-		fontStyle |= canvas.FontBold
+		fontStyle |= drawing.FontBold
 	}
 	if ft.FontFile != "" {
 		family := canvas.NewFontFamily(fontName)
@@ -491,7 +436,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		}
 		candidateFamily := canvas.NewFontFamily(fontName)
 		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(data))
-		if err := candidateFamily.LoadFont(data, 0, fontStyle); err == nil && fontFamilyUsable(candidateFamily) {
+		if err := candidateFamily.LoadFont(data, 0, canvasStyle(fontStyle)); err == nil && fontFamilyUsable(candidateFamily) {
 			matched = candidateFamily
 			return false
 		}
@@ -536,7 +481,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if files, ok := cjkFontFiles[group]; ok && len(files) > 0 {
 			if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
 				slog.Debug("load fallback system font file", "family", group, "path", fontPath, "style", fontStyle)
-				if err := family.LoadFontFile(fontPath, fontStyle); err == nil {
+				if err := family.LoadFontFile(fontPath, canvasStyle(fontStyle)); err == nil {
 					return family, "", nil
 				}
 			}
@@ -556,85 +501,6 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 // FamilyName 通常是 PDF 的 PostScript 名（如 NimbusRomNo9L-Regu），不能直接
 // 作为系统族名使用；这里给出常见 PostScript 名的别名和 serif/sans-serif/
 // monospace 通用族，便于回退到同类的系统字体，避免衬线/无衬线风格错乱。
-func systemFontCandidates(ft *models.Font) []string {
-	names := make([]string, 0, 5)
-	seen := make(map[string]bool, 5)
-	add := func(name string) {
-		name = strings.TrimSpace(name)
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		names = append(names, name)
-	}
-	add(ft.FamilyName)
-	add(postscriptFamilyAlias(ft.FamilyName))
-	add(postscriptFamilyAlias(ft.FontName))
-	if cjkFontGroup(ft) == "" {
-		switch classifyFontClass(ft) {
-		case "serif":
-			add("serif")
-		case "sans-serif":
-			add("sans-serif")
-		case "monospace":
-			add("monospace")
-		}
-	}
-	return names
-}
-
-// postscriptFamilyAlias 把常见 PostScript 子集字体名映射到 fontconfig 家族名。
-// 例如 NimbusRomNo9L-* 对应系统上的 Nimbus Roman。
-func postscriptFamilyAlias(name string) string {
-	if name == "" {
-		return ""
-	}
-	if index := strings.IndexByte(name, '+'); index >= 0 {
-		name = name[index+1:]
-	}
-	lower := strings.ToLower(name)
-	switch {
-	case strings.HasPrefix(lower, "nimbusromno9l"), strings.HasPrefix(lower, "nimbusromanno9l"):
-		return "Nimbus Roman"
-	case strings.HasPrefix(lower, "nimbusrom"):
-		return "Nimbus Roman"
-	case strings.HasPrefix(lower, "nimbussan"):
-		return "Nimbus Sans"
-	case strings.HasPrefix(lower, "nimbusmon"):
-		return "Nimbus Mono PS"
-	default:
-		return ""
-	}
-}
-
-// classifyFontClass 依据 OFD 的 Serif/FixedWidth 标志与族名推断通用字体类别。
-func classifyFontClass(ft *models.Font) string {
-	if ft.FixedWidth {
-		return "monospace"
-	}
-	if ft.Serif {
-		return "serif"
-	}
-	lower := strings.ToLower(ft.FamilyName + " " + ft.FontName)
-	switch {
-	case strings.Contains(lower, "nimbusmon"), strings.Contains(lower, "mono"),
-		strings.Contains(lower, "courier"), strings.Contains(lower, "typewriter"),
-		strings.Contains(lower, "cmtt"):
-		return "monospace"
-	case strings.Contains(lower, "nimbussan"), strings.Contains(lower, "sans"),
-		strings.Contains(lower, "helvetica"), strings.Contains(lower, "arial"),
-		strings.Contains(lower, "gothic"):
-		return "sans-serif"
-	case strings.Contains(lower, "nimbusrom"), strings.Contains(lower, "roman"),
-		strings.Contains(lower, "serif"), strings.Contains(lower, "times"),
-		strings.Contains(lower, "cmr"), strings.Contains(lower, "cmsy"),
-		strings.Contains(lower, "cmmi"), strings.Contains(lower, "bookman"),
-		strings.Contains(lower, "schoolbook"), strings.Contains(lower, "georgia"):
-		return "serif"
-	default:
-		return ""
-	}
-}
 
 func defaultFallbackFont() (*canvas.FontFamily, bool) {
 	fontCacheMu.Lock()
@@ -646,7 +512,7 @@ func defaultFallbackFont() (*canvas.FontFamily, bool) {
 	return registration.family, registration.ready
 }
 
-func selectFallback(fallbacks []fallbackFace, style canvas.FontStyle, fontNames ...string) (fallbackFace, bool) {
+func selectFallback(fallbacks []fallbackFace, style drawing.FontStyle, fontNames ...string) (fallbackFace, bool) {
 	bestScore := int(^uint(0) >> 1)
 	var best fallbackFace
 	found := false
@@ -670,178 +536,7 @@ func selectFallback(fallbacks []fallbackFace, style canvas.FontStyle, fontNames 
 	return best, found
 }
 
-func sameFallbackName(left, right string) bool {
-	left = normalizeFallbackName(left)
-	right = normalizeFallbackName(right)
-	if left == "" || right == "" {
-		return false
-	}
-	if left == right {
-		return true
-	}
-	return fallbackNameGroup(left) != "" && fallbackNameGroup(left) == fallbackNameGroup(right)
-}
-
-func normalizeFallbackName(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	name = strings.NewReplacer(" ", "", "_", "", "-", "").Replace(name)
-	return name
-}
-
-func fallbackNameGroup(name string) string {
-	switch name {
-	case "宋体", "宋体gb2312", "simsun", "nsimsun", "songti", "simsungb2312", "songtigb2312",
-		"方正小标宋", "方正小标宋gbk", "方正书宋", "fzxbs":
-		return "simsun"
-	case "华文宋体", "stsong":
-		return "stsong"
-	case "黑体", "黑体gb2312", "simhei", "heiti", "hei", "microsoftheiti", "heitisc", "方正黑体", "方正黑体gbk":
-		return "simhei"
-	case "华文黑体", "stheiti":
-		return "stheiti"
-	case "楷体", "楷体gb2312", "simkai", "kaiti", "kaishu", "kaitigb2312", "方正楷体", "方正楷体gbk":
-		return "simkai"
-	case "华文楷体", "stkaiti":
-		return "stkaiti"
-	case "仿宋", "仿宋gb2312", "simfang", "fangsong", "fangsonggb2312", "方正仿宋", "方正仿宋gbk":
-		return "simfang"
-	case "华文仿宋", "stfangsong":
-		return "stfangsong"
-	case "微软雅黑", "microsoftyahei", "microsoftyaheiui", "msyh", "yahei":
-		return "yahei"
-	case "微软正黑", "microsoftjhenghei", "microsoftjhengheiui", "msjh":
-		return "jhenghei"
-	case "等线", "dengxian":
-		return "dengxian"
-	case "思源黑体", "sourcehansanssc", "sourcehansanscn", "notosanssc", "notosanscjksc", "ofdnotosanssc":
-		return "sanssc"
-	case "思源宋体", "sourcehanserifsc", "sourcehanserifcn", "notoserifsc", "notoserifcjksc":
-		return "serifsc"
-	default:
-		return ""
-	}
-}
-
-// cjkFontFiles 把中文字体组映射到系统字体目录中可能存在的字体文件名。
-// 只收录常见宋体/黑体/楷体/仿宋/雅黑；其他字体组没有通用文件名时不映射。
-var cjkFontFiles = map[string][]string{
-	"simsun":  {"simsun.ttc", "simsun.ttf", "simsunb.ttf", "Songti.ttc"},
-	"simhei":  {"simhei.ttf", "simhei.ttc"},
-	"simkai":  {"simkai.ttf"},
-	"simfang": {"simfang.ttf"},
-	"yahei":   {"msyh.ttc", "msyh.ttf", "msyhbd.ttc", "msyhl.ttc"},
-}
-
-// cjkFontGroup 从字体族名和字体名中识别中文字体组；只有该组在
-// cjkFontFiles 中有候选字体文件时才返回组名。
-func cjkFontGroup(ft *models.Font) string {
-	for _, name := range []string{ft.FamilyName, ft.FontName} {
-		group := fallbackNameGroup(normalizeFallbackName(name))
-		if group == "" {
-			continue
-		}
-		if _, ok := cjkFontFiles[group]; ok {
-			return group
-		}
-	}
-	return ""
-}
-
-// fixedWidthFontFamilies 是常见等宽字体的系统族名，按优先级排列。
-var fixedWidthFontFamilies = []string{
-	"Noto Sans Mono CJK SC",
-	"Noto Sans Mono",
-	"DejaVu Sans Mono",
-	"Liberation Mono",
-	"Noto Mono",
-	"Ubuntu Mono",
-	"Menlo",
-	"Monaco",
-	"Consolas",
-	"Courier New",
-	"Source Code Pro",
-	"Fira Code",
-	"JetBrains Mono",
-	"Cascadia Mono",
-	"Roboto Mono",
-	"FreeMono",
-}
-
-// fixedWidthFontFiles 是系统字体目录中常见的等宽字体文件名。
-var fixedWidthFontFiles = []string{
-	"DejaVuSansMono.ttf",
-	"DejaVuSansMono-Bold.ttf",
-	"LiberationMono-Regular.ttf",
-	"LiberationMono-Bold.ttf",
-	"NotoSansMonoCJKsc-Regular.otf",
-	"NotoSansMono-Regular.ttf",
-	"UbuntuMono-R.ttf",
-	"FreeMono.ttf",
-	"SourceCodePro-Regular.ttf",
-}
-
-// loadFixedWidthFont 为逻辑等宽字体选择系统等宽字体。OFD 的 FontName 通常是
-// 资源名，无法直接匹配系统字体，因此这里依据 FixedWidth 标志和族名中的
-// monospace 线索，按族名或常见字体文件加载等宽字体。
-func loadFixedWidthFont(ft *models.Font, style canvas.FontStyle) (*canvas.FontFamily, bool) {
-	if ft == nil || !isFixedWidthFont(ft) {
-		return nil, false
-	}
-	family := canvas.NewFontFamily("fixed-width")
-	if name := strings.TrimSpace(ft.FamilyName); !isGenericFontFamily(name) {
-		if err := family.LoadSystemFont(name, style); err == nil {
-			return family, true
-		}
-	}
-	for _, name := range fixedWidthFontFamilies {
-		if err := family.LoadSystemFont(name, style); err == nil {
-			return family, true
-		}
-	}
-	if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), fixedWidthFontFiles...); err == nil {
-		slog.Debug("load fallback fixed-width font file", "path", path, "style", style)
-		if loadFontFileSafely(family, path) {
-			return family, true
-		}
-	}
-	return nil, false
-}
-
-// isFixedWidthFont 判断逻辑字体是否应按等宽字体处理。
-func isFixedWidthFont(ft *models.Font) bool {
-	if ft.FixedWidth {
-		return true
-	}
-	return isFixedWidthName(ft.FamilyName) || isFixedWidthName(ft.FontName)
-}
-
-func isFixedWidthName(name string) bool {
-	normalized := normalizeFallbackName(name)
-	if normalized == "" {
-		return false
-	}
-	switch normalized {
-	case "monospace", "mono", "fixed", "fixedwidth", "courier", "couriernew", "consolas", "menlo", "monaco":
-		return true
-	}
-	return strings.Contains(normalized, "mono")
-}
-
-func isGenericFontFamily(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "", "monospace", "mono", "fixed", "fixedwidth", "sans-serif", "sansserif", "serif", "cursive", "fantasy":
-		return true
-	default:
-		return false
-	}
-}
-
-// RegisterFallbackFont 把回退字体注册到进程级全局注册表。
-// 同一字体族全局只保存一份解析结果和一份字体数据引用，重复注册幂等
-// （首个 RenderDocument/Fonts 完成解析后即锁定）。注册后通过
-// Fonts.UseFallbackFont 或 Document.UseFallbackFont 应用到具体文档；
-// 没有其他回退字体时，缺失字体默认使用该全局字体族。
-func RegisterFallbackFont(data []byte, family string, style canvas.FontStyle) error {
+func registerFallbackFont(data []byte, family string, style drawing.FontStyle) error {
 	if len(data) == 0 {
 		return fmt.Errorf("回退字体数据为空")
 	}
@@ -854,7 +549,7 @@ func RegisterFallbackFont(data []byte, family string, style canvas.FontStyle) er
 
 // FallbackFontData 返回已全局注册回退字体族的首个来源数据（用于字体签名等
 // 只读检查）；未注册时 ok 为 false。
-func FallbackFontData(family string) ([]byte, bool) {
+func fallbackFontData(family string) ([]byte, bool) {
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
 	reg := fallbackRegistry[family]
@@ -898,7 +593,7 @@ func (p *Fonts) UseFallbackFont(family string) error {
 	return nil
 }
 
-func (p *Fonts) hasFallbackFace(family string, style canvas.FontStyle) bool {
+func (p *Fonts) hasFallbackFace(family string, style drawing.FontStyle) bool {
 	for _, face := range p.fallbackFaces {
 		if face.name == family && face.style == style {
 			return true
@@ -916,7 +611,7 @@ func (p *Fonts) hasAllFallbackFaces(family string, sources []fallbackFontSource)
 	return true
 }
 
-func (p *Fonts) applyFallbackFace(family string, style canvas.FontStyle, globalFamily *canvas.FontFamily) {
+func (p *Fonts) applyFallbackFace(family string, style drawing.FontStyle, globalFamily *canvas.FontFamily) {
 	for index, face := range p.fallbackFaces {
 		if face.name == family && face.style == style {
 			p.fallbackFaces[index] = fallbackFace{family: globalFamily, style: style, name: family}
@@ -929,7 +624,7 @@ func (p *Fonts) applyFallbackFace(family string, style canvas.FontStyle, globalF
 // registerFallbackFamily 把 字体族+样式+数据 注册到全局注册表。
 // 同一 字体族+样式+数据 只处理一次（锁定）；相同字体族引入不同样式/字体时
 // 构建包含全部来源的全局多样式家族，同样只构建一次。
-func registerFallbackFamily(family string, style canvas.FontStyle, data []byte) (*canvas.FontFamily, error) {
+func registerFallbackFamily(family string, style drawing.FontStyle, data []byte) (*canvas.FontFamily, error) {
 	digest := sha256.Sum256(data)
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
@@ -972,9 +667,9 @@ func registerFallbackFamily(family string, style canvas.FontStyle, data []byte) 
 	return reg.family, nil
 }
 
-func loadFallbackFace(family *canvas.FontFamily, data []byte, style canvas.FontStyle) error {
+func loadFallbackFace(family *canvas.FontFamily, data []byte, style drawing.FontStyle) error {
 	slog.Debug("load fallback font", "family", family.Name(), "style", style, "bytes", len(data))
-	if err := family.LoadFont(data, 0, style); err != nil {
+	if err := family.LoadFont(data, 0, canvasStyle(style)); err != nil {
 		return err
 	}
 	if !fontFamilyUsable(family) {
@@ -1027,23 +722,23 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
 // mappings 为文档提供的 Unicode→字形映射，用于让缺少 Unicode cmap 的子集字体
 // 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
-func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style canvas.FontStyle, mappings []fontfix.GlyphMapping) error {
+func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) error {
 	if len(mappings) > 0 {
 		if fixed, err := fontfix.RepairWithGlyphs(data, mappings); err == nil {
 			slog.Debug("load embedded font with glyph mappings", "family", family.Name(), "style", style, "mappings", len(mappings))
-			if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {
+			if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
 				return nil
 			}
 		}
 	}
 	if fixed, err := fontfix.Repair(data); err == nil {
 		slog.Debug("load repaired embedded font", "family", family.Name(), "style", style, "bytes", len(fixed))
-		if err = family.LoadFont(fixed, 0, style); err == nil && fontFamilyUsable(family) {
+		if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
 			return nil
 		}
 	}
 	slog.Debug("load original embedded font", "family", family.Name(), "style", style, "bytes", len(data))
-	if err := family.LoadFont(data, 0, style); err == nil && fontFamilyUsable(family) {
+	if err := family.LoadFont(data, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
 		return nil
 	}
 	return fmt.Errorf("嵌入字体结构不可用")
@@ -1076,3 +771,6 @@ func fontFamilyUsableSafe(family *canvas.FontFamily) (usable bool) {
 		face.Font.SFNT.OS2 != nil && face.Font.SFNT.Cmap != nil &&
 		face.Font.SFNT.Maxp != nil
 }
+
+// canvasFontFace 是 FontFace 的 canvas 实现：把 canvas.FontFace 的字形轮廓
+// 与度量转换为与绘制库无关的 geom 类型，是核心包内字体能力的适配层。

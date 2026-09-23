@@ -26,6 +26,13 @@ import (
 	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
 	"github.com/zc310/ofd/internal/utils"
 	_ "github.com/zc310/ofd/pkg/converter/htmlimport"
+
+	// 注册可选栅格后端，供 --raster-backend 选择（PNG/JPG）。
+	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	_ "github.com/zc310/ofd/internal/render/backends/draw2d"
+	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
+	_ "github.com/zc310/ofd/internal/render/backends/gg"
+	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 )
 
 const (
@@ -50,6 +57,7 @@ type options struct {
 	from              string
 	htmlFormat        string
 	dpi               int
+	rasterBackend     string
 	page              int
 	bg                string
 	dir               bool
@@ -148,6 +156,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
+	flags.StringVar(&opts.rasterBackend, "raster-backend", "", "PNG/JPG 栅格后端: canvas, gg, ftgg, tinyskia, draw2d；缺省 canvas(矢量表面光栅化)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
 	flags.BoolVar(&opts.dir, "dir", opts.dir, "不压缩，将多页图片直接保存到输出目录下的多个文件")
@@ -180,6 +189,7 @@ func normalizeConverterArgs(args []string) []string {
 		"format": true, "from": true, "html-format": true, "input-dir": true, "output-dir": true,
 		"output": true,
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
+		"raster-backend":   true,
 		"external-workers": true, "soffice": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
@@ -789,6 +799,9 @@ func convertToImage(opts *options, format string) error {
 		converter.DPI(float64(opts.dpi)),
 		converter.BgColor(parseBgColor(opts.bg)),
 		imageFormatOption(format),
+	}
+	if opts.rasterBackend != "" {
+		option = append(option, converter.RasterBackend(opts.rasterBackend))
 	}
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))

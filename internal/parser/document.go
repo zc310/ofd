@@ -644,14 +644,14 @@ func (p *Document) parse(body models.DocBody) error {
 			document: p,
 			load: func(target *Page) error {
 				target.cacheSize.Store(0)
-				var content models.PageContent
-				if err := p.FileCache.ReadXMLLimit(pagePath.String(), &content, maxPageXMLBytes); err != nil {
+				content, err := readPageContentXML(p.FileCache, pagePath.String(), maxPageXMLBytes)
+				if err != nil {
 					return err
 				}
 				if content.Area == nil {
 					content.Area = &p.CommonData.PageArea
 				}
-				target.pageContent = content
+				target.pageContent = *content
 				target.resources = pageResources{
 					media:       make(map[models.StID]*models.MultiMedia),
 					drawParams:  make(map[models.StID]*models.DrawParam),
@@ -865,8 +865,12 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 	if !ok {
 		return nil, nil
 	}
-	var content models.PageContent
-	if err := p.FileCache.ReadXML(location.String(), &content); err != nil {
+	var entrySize uint64
+	if entry, ok := p.FileCache.Lookup(location.String()); ok {
+		entrySize = entry.UncompressedSize
+	}
+	content, err := readPageContentXML(p.FileCache, location.String(), xmlReadLimit(entrySize))
+	if err != nil {
 		p.templateErrors[id] = err
 		slog.Warn("读取模板页失败", "template_id", id, "file", location.String(), "error", err)
 		return nil, err
@@ -876,9 +880,9 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 			delete(p.templates, id)
 		})
 	}
-	p.templates[id] = &content
-	p.templateCache.AddWeighted(id, &content, pageContentSize(&content))
-	return &content, nil
+	p.templates[id] = content
+	p.templateCache.AddWeighted(id, content, pageContentSize(content))
+	return content, nil
 }
 
 // GetTemplate 返回指定模板页，读取失败时返回 nil。

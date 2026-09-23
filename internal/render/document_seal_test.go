@@ -7,6 +7,7 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // TestOFDSealDocumentCached 回归：OFD 印章文档在多次渲染同一页面时必须只
@@ -20,10 +21,10 @@ func TestOFDSealDocumentCached(t *testing.T) {
 	if len(ofd.Documents) == 0 || len(ofd.Documents[0].Pages) == 0 {
 		t.Skip("文档无页面")
 	}
-	doc := NewDocumentWithDPI(canvas.White, ofd.Documents[0], canvas.DPI(96))
+	doc := NewDocumentWithDPI(canvas.White, ofd.Documents[0], geom.DPI(96))
 	page := doc.Pages[0]
 	for i := 0; i < 2; i++ {
-		if _, err := doc.RasterizePage(page, BackendCanvas, canvas.DPI(96)); err != nil {
+		if _, err := doc.RasterizePage(page, BackendCanvas, geom.DPI(96)); err != nil {
 			t.Fatalf("第 %d 次渲染失败: %v", i+1, err)
 		}
 	}
@@ -55,7 +56,7 @@ func Test999StampSealInheritsFallbackFont(t *testing.T) {
 		t.Fatal(err)
 	}
 	withFallback := NewDocument(canvas.White, sealDocument.Documents[0])
-	if err := RegisterFallbackFont(fontData, "Noto-Regular-Test", canvas.FontRegular); err != nil {
+	if err := RegisterFallbackFont(fontData, "Noto-Regular-Test", FontRegular); err != nil {
 		t.Fatal(err)
 	}
 	if err := withFallback.UseFallbackFont("Noto-Regular-Test"); err != nil {

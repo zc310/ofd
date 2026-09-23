@@ -14,9 +14,9 @@ import (
 	"testing"
 
 	"github.com/tdewolff/canvas"
-	cimage "github.com/tdewolff/canvas/image"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -32,9 +32,15 @@ func (r *recordingRenderer) Size() (float64, float64) {
 	return r.width, r.height
 }
 
-func (r *recordingRenderer) RenderPath(_ *canvas.Path, _ canvas.Style, _ canvas.Matrix) { r.paths++ }
-func (r *recordingRenderer) RenderText(_ *canvas.Text, _ canvas.Matrix)                 { r.texts++ }
-func (r *recordingRenderer) RenderImage(_ image.Image, _ canvas.Matrix)                 { r.images++ }
+func (r *recordingRenderer) RenderPath(_ *canvas.Path, _ canvas.Style, _ canvas.Matrix) {
+	r.paths++
+}
+func (r *recordingRenderer) RenderText(_ *canvas.Text, _ canvas.Matrix) {
+	r.texts++
+}
+func (r *recordingRenderer) RenderImage(_ image.Image, _ canvas.Matrix) {
+	r.images++
+}
 
 func TestApplyImageMaskFastPathsMatchReference(t *testing.T) {
 	mask := image.NewRGBA(image.Rect(0, 0, 8, 6))
@@ -110,8 +116,8 @@ func applyImageMaskReference(img image.Image, mask *image.RGBA) image.Image {
 
 func TestClipCoversImageSkipsFullRectangleClip(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 100, 50))
-	clip := canvas.Rectangle(100, 50)
-	out := imageWithClip(img, clip, canvas.Identity)
+	clip := geom.Rectangle(100, 50)
+	out := imageWithClip(img, clip, geom.Identity)
 	if out != image.Image(img) {
 		t.Fatal("expected a clip covering the full image to be skipped")
 	}
@@ -119,8 +125,8 @@ func TestClipCoversImageSkipsFullRectangleClip(t *testing.T) {
 
 func TestClipCoversImageSkipsScaledFullRectangleClip(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 200, 100))
-	clip := canvas.Rectangle(100, 50)
-	out := imageWithClip(img, clip, canvas.Matrix{{0.5, 0, 0}, {0, 0.5, 0}})
+	clip := geom.Rectangle(100, 50)
+	out := imageWithClip(img, clip, geom.Matrix{{0.5, 0, 0}, {0, 0.5, 0}})
 	if out != image.Image(img) {
 		t.Fatal("expected a scaled clip covering the full image to be skipped")
 	}
@@ -133,8 +139,8 @@ func TestClipCoversImageAppliesPartialRectangleClip(t *testing.T) {
 			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 		}
 	}
-	clip := canvas.Rectangle(50, 50)
-	out := imageWithClip(img, clip, canvas.Identity)
+	clip := geom.Rectangle(50, 50)
+	out := imageWithClip(img, clip, geom.Identity)
 	if out == image.Image(img) {
 		t.Fatal("expected a partial clip to produce a masked image")
 	}
@@ -160,12 +166,12 @@ func TestDecodeRasterImageKeepsRawJPEGBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, ok := decoded.(*cimage.Image)
+	img, ok := decoded.(*EncodedImage)
 	if !ok {
-		t.Fatalf("expected lazy cimage.Image for JPEG, got %T", decoded)
+		t.Fatalf("expected lazy EncodedImage for JPEG, got %T", decoded)
 	}
-	if img.Mimetype != "image/jpeg" {
-		t.Fatalf("unexpected mimetype %q", img.Mimetype)
+	if img.Format != "jpeg" || !bytes.Equal(img.Data, buf.Bytes()) {
+		t.Fatalf("expected raw JPEG bytes preserved, format=%q", img.Format)
 	}
 }
 
@@ -178,12 +184,12 @@ func TestDecodeRasterImageKeepsRawPNGBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, ok := decoded.(*cimage.Image)
+	img, ok := decoded.(*EncodedImage)
 	if !ok {
-		t.Fatalf("expected lazy cimage.Image for PNG, got %T", decoded)
+		t.Fatalf("expected lazy EncodedImage for PNG, got %T", decoded)
 	}
-	if img.Mimetype != "image/png" {
-		t.Fatalf("unexpected mimetype %q", img.Mimetype)
+	if img.Format != "png" || !bytes.Equal(img.Data, buf.Bytes()) {
+		t.Fatalf("expected raw PNG bytes preserved, format=%q", img.Format)
 	}
 }
 
@@ -489,9 +495,9 @@ func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		b.StopTimer()
-		doc.svgCanvases = utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil)
+		doc.svgCanvases = utils.NewLRU[string, SVGScene](svgCacheCapacity, nil)
 		b.StartTimer()
-		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+		if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -500,13 +506,13 @@ func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
 func BenchmarkDocumentDecodeSVGCanvasCached(b *testing.B) {
 	doc, medias := benchmarkSVGDocument(b)
 	media := medias[0]
-	if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+	if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
-		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+		if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -515,14 +521,14 @@ func BenchmarkDocumentDecodeSVGCanvasCached(b *testing.B) {
 func BenchmarkDocumentDecodeSVGCanvasSameKeyParallel(b *testing.B) {
 	doc, medias := benchmarkSVGDocument(b)
 	media := medias[0]
-	if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+	if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+			if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 				b.Errorf("SVG 解码失败: %v", err)
 			}
 		}
@@ -532,7 +538,7 @@ func BenchmarkDocumentDecodeSVGCanvasSameKeyParallel(b *testing.B) {
 func BenchmarkDocumentDecodeSVGCanvasDifferentKeysParallel(b *testing.B) {
 	doc, medias := benchmarkSVGDocument(b)
 	for _, media := range medias {
-		if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+		if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -542,7 +548,7 @@ func BenchmarkDocumentDecodeSVGCanvasDifferentKeysParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			media := medias[(next.Add(1)-1)%uint64(len(medias))]
-			if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+			if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 				b.Errorf("SVG 解码失败: %v", err)
 			}
 		}
@@ -569,7 +575,7 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 	b.ResetTimer()
 	for round := 0; round < b.N; round++ {
 		b.StopTimer()
-		doc.svgCanvases = utils.NewLRU[string, *canvas.Canvas](svgCacheCapacity, nil)
+		doc.svgCanvases = utils.NewLRU[string, SVGScene](svgCacheCapacity, nil)
 		start := make(chan struct{})
 		errs := make(chan error, workers)
 		var wg sync.WaitGroup
@@ -582,7 +588,7 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 				if sameKey {
 					media = medias[0]
 				}
-				if _, err := doc.decodeSVGCanvas(media.file, media.format); err != nil {
+				if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 					errs <- err
 				}
 			}(index)
@@ -628,8 +634,8 @@ func TestImageNegativeYCTMRendersFlipped(t *testing.T) {
 	}
 	defer ofd.Close()
 
-	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], canvas.DPI(96))
-	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, canvas.DPI(96))
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -675,7 +681,7 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 	}
 	rec := &recordingRenderer{width: pb.Width, height: pb.Height}
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	if err := doc.Draw(canvas.NewContext(rec), page); err != nil {
+	if err := doc.Draw(newCanvasBackend(canvas.NewContext(rec)), page); err != nil {
 		t.Fatal(err)
 	}
 	if rec.images != 0 {
@@ -692,10 +698,10 @@ func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
 	pageHeight := 297.0
 	svgW := 100.0
 	svgH := 75.0
-	dpmm := canvas.DPI(96).DPMM()
+	dpmm := geom.DPI(96).DPMM()
 	imgW := svgW * dpmm
 	imgH := svgH * dpmm
-	flip := canvas.Matrix{{1, 0, 0}, {0, -1, svgH}}
+	flip := geom.Matrix{{1, 0, 0}, {0, -1, svgH}}
 
 	mRaster := imageMatrixWH(box, imgW, imgH, ctm, pageHeight)
 	mVector := imageMatrixWH(box, svgW, svgH, ctm, pageHeight).Mul(flip)
@@ -735,15 +741,12 @@ func TestImageCacheWeightCountsLazyImageBytesAndPixels(t *testing.T) {
 	if err := jpeg.Encode(&encoded, source, nil); err != nil {
 		t.Fatal(err)
 	}
-	lazy, err := cimage.NewJPEGImage(bytes.NewReader(encoded.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lazy := newEncodedImage("jpeg", encoded.Bytes())
 	weight := imageCacheWeight(lazy)
 	// 懒加载图片在缓存中同时保留压缩字节和按需解码后的像素，
 	// 权重必须大于压缩字节数，否则大图文档的驻留内存无法被限制。
-	if weight <= int64(len(lazy.Bytes)) {
-		t.Fatalf("imageCacheWeight = %d, 期望大于压缩字节 %d", weight, len(lazy.Bytes))
+	if weight <= int64(len(encoded.Bytes())) {
+		t.Fatalf("imageCacheWeight = %d, 期望大于压缩字节 %d", weight, len(encoded.Bytes()))
 	}
 }
 

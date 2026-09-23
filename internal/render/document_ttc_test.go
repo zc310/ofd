@@ -2,11 +2,11 @@ package render
 
 import (
 	"bytes"
+	"github.com/zc310/ofd/internal/render/geom"
 	"os"
 	"testing"
 
 	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -40,7 +40,7 @@ func TestCreatedTTCFontRendersEmbeddedCJKText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered := rasterizer.Draw(page, canvas.DPI(36), canvas.DefaultColorSpace)
+	rendered := page.Rasterize(geom.Resolution(canvas.DPI(36)))
 	if rendered == nil || rendered.Bounds().Empty() {
 		t.Fatal("rendered page is empty")
 	}
