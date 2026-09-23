@@ -446,6 +446,149 @@ func TestRunMergeSignCmd(t *testing.T) {
 	}
 }
 
+func TestRunReplaceSetAddDelete(t *testing.T) {
+	directory := t.TempDir()
+	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	setFile := filepath.Join(directory, "doc.xml")
+	if err := os.WriteFile(setFile, []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(directory, "replaced.ofd")
+	var stdout, stderr bytes.Buffer
+	args := []string{
+		"replace", "-i", input, "-o", output,
+		"--set", "Doc_0/Document.xml=" + setFile,
+		"--add", "Doc_0/Res/note.txt=" + setFile,
+		"--delete", "Doc_0/DocumentRes.xml",
+	}
+	if code := run(args, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run replace exit code = %d, stderr = %s", code, stderr.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := core.OpenBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	if !pkg.Has("Doc_0/Res/note.txt") {
+		t.Fatal("新增条目缺失")
+	}
+	if pkg.Has("Doc_0/DocumentRes.xml") {
+		t.Fatal("删除条目仍存在")
+	}
+	content, err := pkg.Read("Doc_0/Document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(content, []byte("<Document/>")) {
+		t.Fatalf("替换内容不符: %s", content)
+	}
+}
+
+func TestRunReplaceUsageErrors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"replace", "-i", "in.ofd"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("缺输出应返回 usage, got %d", code)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"replace", "-i", "in.ofd", "-o", "out.ofd"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("无操作应返回 usage, got %d", code)
+	}
+}
+
+func TestRunReplaceXMLCheckDefault(t *testing.T) {
+	directory := t.TempDir()
+	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	badFile := filepath.Join(directory, "bad.xml")
+	if err := os.WriteFile(badFile, []byte("<Document><unclosed>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(directory, "out.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{
+		"replace", "-i", input, "-o", output,
+		"--set", "Doc_0/Document.xml=" + badFile,
+	}, &stdout, &stderr); code != exitResource {
+		t.Fatalf("默认应拒绝坏 XML，exit=%d, stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{
+		"replace", "-i", input, "-o", output,
+		"--set", "Doc_0/Document.xml=" + badFile, "--no-validate",
+	}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("--no-validate 应跳过 XML 检查，exit=%d, stderr=%s", code, stderr.String())
+	}
+}
+
+func TestRunReplaceVerifySignatures(t *testing.T) {
+	directory := t.TempDir()
+	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	setFile := filepath.Join(directory, "doc.xml")
+	if err := os.WriteFile(setFile, []byte("<Document/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(directory, "out.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{
+		"replace", "-i", input, "-o", output,
+		"--set", "Doc_0/Document.xml=" + setFile,
+		"--verify-signatures",
+	}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("--verify-signatures exit=%d, stderr=%s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("没有签名")) {
+		t.Fatalf("应报告输出没有签名, stderr=%s", stderr.String())
+	}
+}
+
+func TestRunReplaceSignCmd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("使用 cat 作为外部签名命令")
+	}
+	directory := t.TempDir()
+	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	setFile := filepath.Join(directory, "doc.xml")
+	if err := os.WriteFile(setFile, []byte("<Document/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(directory, "signed.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{
+		"replace", "-i", input, "-o", output,
+		"--set", "Doc_0/Document.xml=" + setFile,
+		"--sign-cmd", "cat", "--verify-signatures",
+	}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run replace --sign-cmd exit=%d, stderr=%s", code, stderr.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
+		t.Fatalf("验签应报告摘要有效, stderr=%s", stderr.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := core.OpenBytes(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	if !pkg.Has("Doc_0/Signatures/Signature_sign-1.xml") {
+		t.Fatal("替换后输出缺少追加的签名文件")
+	}
+	content, err := pkg.Read("Doc_0/Document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "<Document/>" {
+		t.Fatalf("替换后的条目内容不符: %s", content)
+	}
+}
+
 func TestRunMergeSignMetadataFlags(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("使用 cat 作为外部签名命令")

@@ -23,6 +23,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 const (
@@ -322,12 +323,7 @@ func runCommand(command string, stdin []byte, environment map[string]string, ext
 // 除当前 layout 的 Signatures 目录外，同时识别历史生产者使用的 Signs 目录，
 // 避免重签后旧签名残留。
 func isSignatureEntry(name string) bool {
-	for _, dir := range []string{"Signatures", "Signs"} {
-		if strings.HasSuffix(name, "/"+dir+".xml") || strings.Contains(name, "/"+dir+"/") {
-			return true
-		}
-	}
-	return false
+	return creator.IsSignatureEntry(name)
 }
 
 func writePackage(w io.Writer, entries, added []entry, rootData []byte, deterministic bool) error {
