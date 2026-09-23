@@ -46,7 +46,7 @@ func TestConvertEmitsAxialShadingForScrollOperator(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -80,7 +80,7 @@ func TestConvertEmitsRadialShadingForScrollOperator(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -112,7 +112,7 @@ func TestConvertShadingCoordinatesAreRelativeToPathBoundary(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	color := page.Content().Layer[0].PathObject[0].FillColor
+	color := layerPaths(page.Content().Layer[0])[0].FillColor
 	if color == nil || color.AxialShd == nil {
 		t.Fatalf("fill color = %+v, want axial shading", color)
 	}
@@ -140,7 +140,7 @@ func TestConvertEmitsShadingForPatternFill(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) != 1 {
 		t.Fatalf("path objects = %d, want 1", len(paths))
 	}
@@ -173,7 +173,7 @@ func TestConvertPatternShadingIgnoresContentCTM(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	color := page.Content().Layer[0].PathObject[0].FillColor
+	color := layerPaths(page.Content().Layer[0])[0].FillColor
 	if color == nil || color.AxialShd == nil {
 		t.Fatalf("fill color = %+v, want axial shading", color)
 	}

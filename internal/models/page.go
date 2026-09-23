@@ -137,17 +137,8 @@ type PageItem struct {
 
 // CTPageBlock 页面内容块，除了按类型分组保存外，还按文档顺序记录到 Items 中。
 type CTPageBlock struct {
-	// TextObject 页面块中的文字对象，按类型分组保存。
-	TextObject []TextObject `xml:"TextObject"`
-	// PathObject 页面块中的路径对象，按类型分组保存。
-	PathObject []PathObject `xml:"PathObject"`
-	// ImageObject 页面块中的图像对象，按类型分组保存。
-	ImageObject []ImageObject `xml:"ImageObject"`
-	// CompositeObject 页面块中的复合对象，按类型分组保存。
-	CompositeObject []CompositeObject `xml:"CompositeObject"`
-	// PageBlock 页面块中的嵌套页面对象块，按类型分组保存。
-	PageBlock []PageBlock `xml:"PageBlock"`
-	// Items 页面对象的文档顺序列表，用于保持原始绘制顺序。
+	// Items 页面对象的文档顺序列表，用于保持原始绘制顺序，是所有消费方
+	// 唯一使用的字段，避免为每个对象同时维护类型分组与文档顺序两份存储。
 	Items []PageItem
 }
 
@@ -168,7 +159,6 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 					return err
 				}
 				o.CtText.CTGraphicUnit.normalizeDrawParams()
-				p.TextObject = append(p.TextObject, o)
 				item.Kind = PageItemText
 				item.Text = o
 			case "PathObject":
@@ -177,7 +167,6 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 					return err
 				}
 				o.CtPath.CTGraphicUnit.normalizeDrawParams()
-				p.PathObject = append(p.PathObject, o)
 				item.Kind = PageItemPath
 				item.Path = o
 			case "ImageObject":
@@ -186,7 +175,6 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 					return err
 				}
 				o.CtImage.CTGraphicUnit.normalizeDrawParams()
-				p.ImageObject = append(p.ImageObject, o)
 				item.Kind = PageItemImage
 				item.Image = o
 			case "CompositeObject":
@@ -195,7 +183,6 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 					return err
 				}
 				o.CtComposite.CTGraphicUnit.normalizeDrawParams()
-				p.CompositeObject = append(p.CompositeObject, o)
 				item.Kind = PageItemComposite
 				item.Composite = o
 			case "PageBlock":
@@ -203,7 +190,6 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
-				p.PageBlock = append(p.PageBlock, o)
 				item.Kind = PageItemBlock
 				item.Block = o
 			default:

@@ -39,7 +39,7 @@ func TestConvertRendersAnnotationAppearance(t *testing.T) {
 	}
 	page := parseConvertedPage(t, objects)
 	found := false
-	for _, item := range page.Content().Layer[0].PathObject {
+	for _, item := range layerPaths(page.Content().Layer[0]) {
 		if item.FillColor == nil || item.FillColor.Value == nil {
 			continue
 		}
@@ -69,7 +69,7 @@ func TestConvertAppliesExtGStateOpacity(t *testing.T) {
 		"<< /Type /ExtGState /ca 0.5 >>",
 	}
 	page := parseConvertedPage(t, objects)
-	paths := page.Content().Layer[0].PathObject
+	paths := layerPaths(page.Content().Layer[0])
 	if len(paths) == 0 {
 		t.Fatal("extgstate path not emitted")
 	}

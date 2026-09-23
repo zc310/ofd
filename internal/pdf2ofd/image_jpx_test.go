@@ -68,7 +68,7 @@ func convertJPXImage(t *testing.T, jp2 []byte) image.Image {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	images := page.Content().Layer[0].ImageObject
+	images := layerImages(page.Content().Layer[0])
 	if len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
 	}
