@@ -23,12 +23,26 @@ func TestEncodedImageWeightUsesHeaderOnly(t *testing.T) {
 		t.Fatal("weight() 不应触发完整解码")
 	}
 
-	// 真正需要像素时才解码，并缓存结果。
+	// Bounds/ColorModel 只读图片头，不应触发完整解码。
 	if lazy.Bounds().Empty() {
-		t.Fatal("Bounds() 解码失败")
+		t.Fatal("Bounds() 返回空矩形")
+	}
+	if lazy.img != nil {
+		t.Fatal("Bounds() 不应触发完整解码")
+	}
+	if lazy.ColorModel() == nil {
+		t.Fatal("ColorModel() 为空")
+	}
+	if lazy.img != nil {
+		t.Fatal("ColorModel() 不应触发完整解码")
+	}
+
+	// 真正需要像素时才解码，并缓存结果。
+	if lazy.At(0, 0) == nil {
+		t.Fatal("At() 失败")
 	}
 	if lazy.img == nil {
-		t.Fatal("Bounds() 应触发解码并缓存")
+		t.Fatal("At() 应触发解码并缓存")
 	}
 }
 
