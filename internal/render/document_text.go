@@ -2,6 +2,7 @@ package render
 
 import (
 	"image"
+	"math"
 
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -217,6 +218,16 @@ func textHScale(object models.TextObject) float64 {
 	return 1
 }
 
+// textAdvanceDiffers 判断显式步进是否包含换行/基线调整：纵向位移非零，或横向
+// 回退幅度超过字体自然步进（换行回到行首）。此类位移无法用同一文本串的字体
+// 自然步进表达，必须断开文本串。
+func textAdvanceDiffers(deltaX, deltaY, naturalX float64) bool {
+	if math.Abs(deltaY) > 0.01 {
+		return true
+	}
+	return deltaX < -math.Max(math.Abs(naturalX), 0.01)
+}
+
 // normalizeTextDirection 将 OFD 方向归一化为最接近的标准象限方向。
 // OFD 标准使用 0、90、180、270 度；对非标准输入采用邻近象限，避免
 // 产生未定义的斜向排版结果。
@@ -318,6 +329,15 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 			deltaX, deltaY := textAdvance(glyphWidth, object, code, i-1)
 			posX += deltaX
 			posY += deltaY
+			// 显式步进出现纵向位移或明显回退时（换行、基线调整），断开当前文本串：
+			// 合并绘制只按字体自然步进水平排布，忽略这些位移会把多行文字压成一行，
+			// 后续行跑到页外而不可见。
+			if len(run) > 0 {
+				naturalX := textGlyphWidth(face, glyphs[i-1]) * textHScale(object)
+				if textAdvanceDiffers(deltaX, deltaY, naturalX) {
+					flushRun()
+				}
+			}
 		}
 		// 控制字符没有可见字形，绘制时会被字体替换成 .notdef 方块；
 		// 这里跳过绘制但仍按前面的增量推进，保持后续字形位置不变。
