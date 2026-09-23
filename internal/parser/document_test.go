@@ -84,7 +84,7 @@ func findPathByID(items []models.PageItem, id models.StID) *models.PathObject {
 			continue
 		}
 		if items[i].Path.ID == id {
-			return &items[i].Path
+			return items[i].Path
 		}
 	}
 	return nil
@@ -97,7 +97,7 @@ func findPathAt(items []models.PageItem, n int) *models.PathObject {
 			continue
 		}
 		if n == 0 {
-			return &items[i].Path
+			return items[i].Path
 		}
 		n--
 	}

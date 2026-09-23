@@ -147,7 +147,7 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemText:
-			if !item.Text.VisibleValue() || textFillDisabled(item.Text) {
+			if !item.Text.VisibleValue() || textFillDisabled(*item.Text) {
 				continue
 			}
 			var text strings.Builder
@@ -157,9 +157,9 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 			if text.Len() == 0 {
 				continue
 			}
-			x, y := textEntryPosition(item.Text)
+			x, y := textEntryPosition(*item.Text)
 			value := EnsureUTF8(text.String())
-			*entries = append(*entries, Entry{Text: value, X: x, Y: y, Size: item.Text.Size, Width: textEntryWidth(item.Text, value)})
+			*entries = append(*entries, Entry{Text: value, X: x, Y: y, Size: item.Text.Size, Width: textEntryWidth(*item.Text, value)})
 		case models.PageItemBlock:
 			appendTextItems(doc, item.Block.Items, entries, depth)
 		case models.PageItemComposite:

@@ -89,7 +89,7 @@ func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, do
 			codePosition := 0
 			for _, code := range item.Text.TextCode {
 				if code.Value != "" {
-					*layouts = append(*layouts, buildTextLayout(document, item.Text, code, codePosition))
+					*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
 				}
 				codePosition += len([]rune(code.Value))
 			}

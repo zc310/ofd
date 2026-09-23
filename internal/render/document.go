@@ -381,15 +381,15 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemPath:
-			p.pathWithBudget(ctx, item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip, budget)
+			p.pathWithBudget(ctx, *item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemImage:
-			p.image(ctx, item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip)
+			p.image(ctx, *item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip)
 		case models.PageItemText:
-			p.textWithBudget(ctx, item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip, budget)
+			p.textWithBudget(ctx, *item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemBlock:
 			p.drawItemsWithTransform(ctx, item.Block.Items, dp, pb, parentCTM, parentClip, compositeDepth, budget)
 		case models.PageItemComposite:
-			p.compositeWithBudget(ctx, item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
+			p.compositeWithBudget(ctx, *item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
 		}
 	}
 }
@@ -422,17 +422,17 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	for _, item := range annot.Appearance.Items {
 		switch item.Kind {
 		case models.PageItemImage:
-			object := item.Image
+			object := *item.Image
 			object.Boundary = object.Boundary.CopyAndShift(&box)
 			p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
 		case models.PageItemPath:
-			object := item.Path
+			object := *item.Path
 			object.Boundary = object.Boundary.CopyAndShift(&box)
 			var budget renderBudget
 			budget.reset()
 			p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
 		case models.PageItemText:
-			object := item.Text
+			object := *item.Text
 			object.Boundary = object.Boundary.CopyAndShift(&box)
 			var budget renderBudget
 			budget.reset()

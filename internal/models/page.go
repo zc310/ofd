@@ -120,19 +120,21 @@ const (
 )
 
 // PageItem 按文档顺序保存页面块中的一个图形对象。
+// 负载字段保存指针而非按值内嵌，使切片增长时只拷贝指针而不是整个联合结构体。
+// 只有一个 Kind 对应的字段非空。
 type PageItem struct {
 	// Kind 页面对象的类型。
 	Kind PageItemKind
 	// Text 当 Kind 为 PageItemText 时保存的文字对象。
-	Text TextObject
+	Text *TextObject
 	// Path 当 Kind 为 PageItemPath 时保存的路径对象。
-	Path PathObject
+	Path *PathObject
 	// Image 当 Kind 为 PageItemImage 时保存的图像对象。
-	Image ImageObject
+	Image *ImageObject
 	// Composite 当 Kind 为 PageItemComposite 时保存的复合对象。
-	Composite CompositeObject
+	Composite *CompositeObject
 	// Block 当 Kind 为 PageItemBlock 时保存的嵌套页面对象块。
-	Block PageBlock
+	Block *PageBlock
 }
 
 // CTPageBlock 页面内容块，除了按类型分组保存外，还按文档顺序记录到 Items 中。
@@ -160,7 +162,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				}
 				o.CtText.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemText
-				item.Text = o
+				item.Text = &o
 			case "PathObject":
 				var o PathObject
 				if err := d.DecodeElement(&o, &elem); err != nil {
@@ -168,7 +170,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				}
 				o.CtPath.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemPath
-				item.Path = o
+				item.Path = &o
 			case "ImageObject":
 				var o ImageObject
 				if err := d.DecodeElement(&o, &elem); err != nil {
@@ -176,7 +178,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				}
 				o.CtImage.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemImage
-				item.Image = o
+				item.Image = &o
 			case "CompositeObject":
 				var o CompositeObject
 				if err := d.DecodeElement(&o, &elem); err != nil {
@@ -184,14 +186,14 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 				}
 				o.CtComposite.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemComposite
-				item.Composite = o
+				item.Composite = &o
 			case "PageBlock":
 				var o PageBlock
 				if err := d.DecodeElement(&o, &elem); err != nil {
 					return err
 				}
 				item.Kind = PageItemBlock
-				item.Block = o
+				item.Block = &o
 			default:
 				if err := d.Skip(); err != nil {
 					return err

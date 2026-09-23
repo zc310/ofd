@@ -141,7 +141,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	if len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath {
 		return false
 	}
-	pathObject := unit.Content.Items[0].Path
+	pathObject := *unit.Content.Items[0].Path
 	if parentCTM != nil || parentClip != nil || !simpleCompositePath(pathObject) {
 		return false
 	}

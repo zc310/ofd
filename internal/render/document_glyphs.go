@@ -55,7 +55,7 @@ func collectItemGlyphs(items []models.PageItem, out map[models.StRefID]map[rune]
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemText:
-			collectObjectGlyphs(item.Text, out)
+			collectObjectGlyphs(*item.Text, out)
 		case models.PageItemBlock:
 			collectItemGlyphs(item.Block.Items, out)
 		case models.PageItemComposite:

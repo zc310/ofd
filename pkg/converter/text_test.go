@@ -17,7 +17,7 @@ func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
 			Items: []models.PageItem{
 				textItem("1", true),
 				textItem("2", true),
-				{Kind: models.PageItemBlock, Block: models.PageBlock{CTPageBlock: models.CTPageBlock{
+				{Kind: models.PageItemBlock, Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{
 					Items: []models.PageItem{textItem("3", true)},
 				}}},
 			},
@@ -147,7 +147,7 @@ func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
 func textItem(value string, visible bool) models.PageItem {
 	object := models.TextObject{CtText: models.CtText{TextCode: []models.TextCode{{Value: value}}}}
 	object.Visible.Set(visible)
-	return models.PageItem{Kind: models.PageItemText, Text: object}
+	return models.PageItem{Kind: models.PageItemText, Text: &object}
 }
 
 func textItemAt(value string, visible bool, x, y, size float64) models.PageItem {
@@ -158,7 +158,7 @@ func textItemAt(value string, visible bool, x, y, size float64) models.PageItem 
 		},
 	}
 	object.Visible.Set(visible)
-	return models.PageItem{Kind: models.PageItemText, Text: object}
+	return models.PageItem{Kind: models.PageItemText, Text: &object}
 }
 
 func textContent(value string) *models.Content {

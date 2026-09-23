@@ -597,7 +597,7 @@ func (a *analyzer) analyzeItems(items []models.PageItem, counts *ObjectCounts, t
 		switch item.Kind {
 		case models.PageItemText:
 			counts.Text++
-			addTextObject(text, item.Text)
+			addTextObject(text, *item.Text)
 			if item.Text.Font > 0 {
 				resources.Fonts = appendUnique(resources.Fonts, uint64(item.Text.Font))
 				a.useFont(documentIndex, uint64(item.Text.Font), source)
