@@ -33,6 +33,8 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge` 和 `replace` 子命令，分别用于导出 manifest、批量导出、合并 OFD 以及替换/新增/删除包内条目。详见下文各节。
+
 ## 导出 OFD 配置
 
 支持将单文档体 OFD 导出为可再次用于 `ofd-creator` 的 YAML、JSON 或 TOML manifest，并将字体、图片和其他多媒体资源复制到资源目录。默认格式为 YAML：
@@ -210,6 +212,30 @@ ofd-creator merge -o reversed.ofd --pages 2,1 input1.ofd input2.ofd
 ```
 
 模型级合并会自动重命名/重编号文档级资源（字体名、绘制参数名、图片/颜色空间/复合图元/模板 ID）并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。因此不能与 `--signatures`、`--orphans`、`--max-*` 同时使用。输出文档元数据默认沿用首个来源，可用 `--document-id`、`--title`、`--author` 覆盖；`--workers` 控制并行解析输入的并发数（默认 4），与 `ofd-converter --workers` 命名一致。
+
+## 替换、新增与删除包内条目
+
+`replace` 子命令按包内路径替换、新增或删除条目，不解析页面或资源模型，其余条目原样搬运：
+
+```bash
+ofd-creator replace -i in.ofd -o out.ofd \
+  --set 'Doc_0/Pages/Page_0/Content.xml=./content.xml' \
+  --set 'Doc_0/Res/Image_3.png=./logo.png' \
+  --add 'Doc_0/Res/extra.txt=./extra.txt' \
+  --delete 'Doc_0/Thumbnail.xml'
+```
+
+- 条目路径为包内路径，不带前导斜杠，例如 `Doc_0/Pages/Page_0/Content.xml`。
+- `--set` 要求目标已存在（不存在报错），`--add` 要求目标不存在（已存在报错），`--delete` 只给路径。三者均可重复；同一路径出现在多个操作中会报错。执行顺序为 `delete` → `set` → `add`。
+- `NAME=FILE` 以第一个 `=` 切分，`FILE` 可以含 `=`；`FILE` 为 `-` 时从标准输入读取内容。
+- 任何字节改动都会使已有签名摘要失效，因此 `--signatures` 默认 `drop`（丢弃签名目录），也可显式选择 `preserve` 或 `rewrite`；`rewrite` 与 `preserve` 等价，因为路径不会改变。
+- 新内容若命中 `.xml` 条目（`--set`/`--add`），默认会先解析校验良构性（含根元素）；可用 `--no-validate` 关闭。`--validate` 则是在替换后对整体输出执行严格 OFD 校验，两者作用不同。
+- `--verify-signatures` 在替换后校验输出文档的签名摘要与密码学签名：只报告结果不因摘要失效而失败，签名结构损坏等输出级错误返回资源错误退出码（与 `merge --verify-signatures` 一致）。
+- 也可以像 `merge` 一样在替换后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge` 的 `--sign-*` 一致。`--signatures` 默认 `drop` 会先丢弃旧签名，再按替换后的内容签署新签名。
+- 支持 `--compression`、`--deterministic`、`--validate`，以及 `--max-entries`/`--max-entry-mb`/`--max-total-mb` 解压规模限制。
+- `--output -` 可以把结果写入标准输出；`replace` 不支持从标准输入读取 OFD。
+
+替换逻辑同时以库的形式公开在 `pkg/replace`：`Files`（任意输入 + `[]Operation`）和 `Paths`（`name -> 本地文件` 映射，等价于一组 `set`）。
 
 ## 压缩策略
 

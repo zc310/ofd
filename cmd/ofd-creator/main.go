@@ -13,10 +13,13 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	ofdexport "github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -61,6 +64,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && strings.EqualFold(args[0], "merge") {
 		return runMerge(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && strings.EqualFold(args[0], "replace") {
+		return runReplace(args[1:], stdout, stderr)
 	}
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
@@ -225,7 +231,7 @@ func runExportAll(args []string, _, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all: 批量导出必须写入目录，不能使用标准输出")
 		return exitUsage
 	}
-	if opts.output != "-" && opts.input != "-" && samePath(opts.input, opts.output) {
+	if opts.output != "-" && opts.input != "-" && utils.SamePath(opts.input, opts.output) {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all: 输出目录不能覆盖 OFD 输入文件")
 		return exitUsage
 	}
@@ -258,7 +264,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 	mergeOptions := merge.Options{
 		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
 		Deterministic: opts.deterministic,
-		Signatures:    merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
+		Signatures:    creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
 		Orphans:       merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans))),
 		Limits: merge.Limits{
 			MaxEntries:    opts.maxEntries,
@@ -301,18 +307,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		}
 		reportSignatureEvents(stderr, collector.snapshot())
 		var signed bytes.Buffer
-		if err := sign.Sign(raw.Bytes(), &signed, sign.Options{
-			Command:         opts.signCmd,
-			ID:              opts.signID,
-			ProviderName:    opts.signProvider,
-			ProviderVersion: opts.signProviderVersion,
-			Company:         opts.signCompany,
-			SignatureMethod: opts.signMethod,
-			CheckMethod:     opts.signCheckMethod,
-			Deterministic:   opts.deterministic,
-			Stamp:           signStamp(opts),
-			References:      signReferences(opts),
-		}); err != nil {
+		if err := sign.Sign(raw.Bytes(), &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 			return exitResource
 		}
@@ -323,7 +318,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
 				return exitResource
 			}
-			reportSignatureVerification(stderr, statuses)
+			reportSignatureVerification(stderr, "ofd-creator merge", statuses)
 		}
 		if opts.validate {
 			if err := validateMerged(bytes.NewReader(data), "merged.ofd", stderr); err != nil {
@@ -349,7 +344,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
 				return exitResource
 			}
-			reportSignatureVerification(stderr, statuses)
+			reportSignatureVerification(stderr, "ofd-creator merge", statuses)
 		}
 		if opts.validate {
 			if err := validateMerged(bytes.NewReader(buffer.Bytes()), "merged.ofd", stderr); err != nil {
@@ -390,7 +385,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", verifyErr)
 			return exitResource
 		}
-		reportSignatureVerification(stderr, statuses)
+		reportSignatureVerification(stderr, "ofd-creator merge", statuses)
 	}
 	if opts.validate {
 		file, openErr := os.Open(temporaryName)
@@ -447,9 +442,9 @@ func reportSignatureEvents(w io.Writer, events []merge.SignatureEvent) {
 	_, _ = fmt.Fprintf(w, "ofd-creator merge: 签名汇总：保留 %d，重写 %d，丢弃 %d\n", preserved, rewritten, dropped)
 }
 
-func reportSignatureVerification(w io.Writer, statuses []merge.SignatureStatus) {
+func reportSignatureVerification(w io.Writer, prefix string, statuses []merge.SignatureStatus) {
 	if len(statuses) == 0 {
-		_, _ = fmt.Fprintln(w, "ofd-creator merge: 输出文档没有签名")
+		_, _ = fmt.Fprintln(w, prefix+": 输出文档没有签名")
 		return
 	}
 	for _, status := range statuses {
@@ -464,22 +459,70 @@ func reportSignatureVerification(w io.Writer, statuses []merge.SignatureStatus) 
 		case status.VerificationError != "":
 			signature = "密码学签名校验失败"
 		}
-		_, _ = fmt.Fprintf(w, "ofd-creator merge: 签名 %s：%s，%s\n", status.ID, digest, signature)
+		_, _ = fmt.Fprintf(w, "%s: 签名 %s：%s，%s\n", prefix, status.ID, digest, signature)
 	}
 }
 
-func signStamp(opts *mergeOptions) *sign.StampOptions {
+func signStamp(opts *signFlags) *sign.StampOptions {
 	if !opts.signStamp {
 		return nil
 	}
 	return &sign.StampOptions{PageRef: opts.signStampPage, Boundary: opts.signStampBoundary}
 }
 
-func signReferences(opts *mergeOptions) *sign.ReferenceOptions {
+func signReferences(opts *signFlags) *sign.ReferenceOptions {
 	if len(opts.signInclude) == 0 && len(opts.signExclude) == 0 && !opts.signRoot {
 		return nil
 	}
 	return &sign.ReferenceOptions{Include: opts.signInclude, Exclude: opts.signExclude, RootDocument: opts.signRoot}
+}
+
+func buildSignOptions(opts *signFlags, deterministic bool) sign.Options {
+	return sign.Options{
+		Command:         opts.signCmd,
+		ID:              opts.signID,
+		ProviderName:    opts.signProvider,
+		ProviderVersion: opts.signProviderVersion,
+		Company:         opts.signCompany,
+		SignatureMethod: opts.signMethod,
+		CheckMethod:     opts.signCheckMethod,
+		Deterministic:   deterministic,
+		Stamp:           signStamp(opts),
+		References:      signReferences(opts),
+	}
+}
+
+func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
+	flags.StringVar(&opts.signCmd, "sign-cmd", "", "调用外部命令为输出追加签名；命令从 stdin 读 Signature.xml，向 stdout 写 SignedValue.dat")
+	flags.StringVar(&opts.signID, "sign-id", "sign-1", "外部签名的签名标识，需为合法 xs:ID")
+	flags.StringVar(&opts.signProvider, "sign-provider", "", "外部签名写入 SignedInfo 的提供者名称")
+	flags.StringVar(&opts.signProviderVersion, "sign-provider-version", "", "外部签名写入 SignedInfo 的提供者版本")
+	flags.StringVar(&opts.signCompany, "sign-company", "", "外部签名写入 SignedInfo 的提供者公司")
+	flags.StringVar(&opts.signMethod, "sign-method", "", "外部签名算法 OID，默认 "+sign.DefaultSignatureMethod)
+	flags.StringVar(&opts.signCheckMethod, "sign-check-method", "", "外部签名摘要算法，默认 "+sign.DefaultCheckMethod)
+	flags.BoolVar(&opts.signStamp, "sign-stamp", false, "在 Signature.xml 写入 StampAnnot，让阅读器绘制印章图片")
+	flags.StringVar(&opts.signStampPage, "sign-stamp-page", "", "签章页面 ID，默认文档体首页")
+	flags.StringVar(&opts.signStampBoundary, "sign-stamp-boundary", "", "签章位置 \"x y width height\"（毫米），默认首页右下角")
+	flags.StringArrayVar(&opts.signInclude, "sign-include", nil, "签名引用白名单 glob（相对文档体目录，可重复）")
+	flags.StringArrayVar(&opts.signExclude, "sign-exclude", nil, "签名引用排除 glob（相对文档体目录，可重复）")
+	flags.BoolVar(&opts.signRoot, "sign-root", false, "把 OFD.xml 纳入签名引用")
+}
+
+// signFlags 是一组外部签名选项，merge 与 replace 共用。
+type signFlags struct {
+	signCmd             string
+	signID              string
+	signProvider        string
+	signProviderVersion string
+	signCompany         string
+	signMethod          string
+	signCheckMethod     string
+	signStamp           bool
+	signStampPage       string
+	signStampBoundary   string
+	signInclude         []string
+	signExclude         []string
+	signRoot            bool
 }
 
 func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
@@ -497,40 +540,28 @@ func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
 }
 
 type mergeOptions struct {
-	inputs              []string
-	output              string
-	compression         string
-	signatures          string
-	orphans             string
-	pages               string
-	documentID          string
-	title               string
-	author              string
-	signCmd             string
-	signID              string
-	signProvider        string
-	signProviderVersion string
-	signCompany         string
-	signMethod          string
-	signCheckMethod     string
-	signStamp           bool
-	signStampPage       string
-	signStampBoundary   string
-	signInclude         []string
-	signExclude         []string
-	signRoot            bool
-	workers             int
-	maxEntries          int
-	maxEntryMB          int
-	maxTotalMB          int
-	deterministic       bool
-	verifySignatures    bool
-	validate            bool
-	help                bool
+	inputs           []string
+	output           string
+	compression      string
+	signatures       string
+	orphans          string
+	pages            string
+	documentID       string
+	title            string
+	author           string
+	workers          int
+	maxEntries       int
+	maxEntryMB       int
+	maxTotalMB       int
+	deterministic    bool
+	verifySignatures bool
+	validate         bool
+	help             bool
+	signFlags
 }
 
 func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
-	opts := &mergeOptions{compression: string(creator.CompressionAuto), signatures: string(merge.SignaturePreserve), orphans: string(merge.OrphanError)}
+	opts := &mergeOptions{compression: string(creator.CompressionAuto), signatures: string(creator.SignaturePreserve), orphans: string(merge.OrphanError)}
 	root := &cobra.Command{
 		Use:           "ofd-creator merge",
 		Short:         "合并多个 OFD 为多文档 OFD",
@@ -574,19 +605,7 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.validate, "validate", false, "合并后执行严格 OFD 校验")
 	flags.BoolVar(&opts.verifySignatures, "verify-signatures", false, "合并后校验输出文档的签名摘要与密码学签名")
-	flags.StringVar(&opts.signCmd, "sign-cmd", "", "合并后调用外部命令为输出追加签名；命令从 stdin 读 Signature.xml，向 stdout 写 SignedValue.dat")
-	flags.StringVar(&opts.signID, "sign-id", "sign-1", "外部签名的签名标识，需为合法 xs:ID")
-	flags.StringVar(&opts.signProvider, "sign-provider", "", "外部签名写入 SignedInfo 的提供者名称")
-	flags.StringVar(&opts.signProviderVersion, "sign-provider-version", "", "外部签名写入 SignedInfo 的提供者版本")
-	flags.StringVar(&opts.signCompany, "sign-company", "", "外部签名写入 SignedInfo 的提供者公司")
-	flags.StringVar(&opts.signMethod, "sign-method", "", "外部签名算法 OID，默认 "+sign.DefaultSignatureMethod)
-	flags.StringVar(&opts.signCheckMethod, "sign-check-method", "", "外部签名摘要算法，默认 "+sign.DefaultCheckMethod)
-	flags.BoolVar(&opts.signStamp, "sign-stamp", false, "在 Signature.xml 写入 StampAnnot，让阅读器绘制印章图片")
-	flags.StringVar(&opts.signStampPage, "sign-stamp-page", "", "签章页面 ID，默认文档体首页")
-	flags.StringVar(&opts.signStampBoundary, "sign-stamp-boundary", "", "签章位置 \"x y width height\"（毫米），默认首页右下角")
-	flags.StringArrayVar(&opts.signInclude, "sign-include", nil, "签名引用白名单 glob（相对文档体目录，可重复）")
-	flags.StringArrayVar(&opts.signExclude, "sign-exclude", nil, "签名引用排除 glob（相对文档体目录，可重复）")
-	flags.BoolVar(&opts.signRoot, "sign-root", false, "把 OFD.xml 纳入签名引用")
+	registerSignFlags(flags, &opts.signFlags)
 	if err := root.Execute(); err != nil {
 		return nil, err
 	}
@@ -610,7 +629,7 @@ func validateMergeOptions(opts *mergeOptions) error {
 	}
 	if opts.output != "-" {
 		for _, input := range opts.inputs {
-			if samePath(input, opts.output) {
+			if utils.SamePath(input, opts.output) {
 				return errors.New("输出文件不能覆盖输入 OFD 文件")
 			}
 		}
@@ -620,8 +639,8 @@ func validateMergeOptions(opts *mergeOptions) error {
 	default:
 		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
 	}
-	switch merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
-	case "", merge.SignaturePreserve, merge.SignatureRewrite, merge.SignatureDrop:
+	switch creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
+	case "", creator.SignaturePreserve, creator.SignatureRewrite, creator.SignatureDrop:
 	default:
 		return fmt.Errorf("不支持的签名处理方式 %q", opts.signatures)
 	}
@@ -637,8 +656,8 @@ func validateMergeOptions(opts *mergeOptions) error {
 		if _, err := merge.ParsePageSelection(opts.pages); err != nil {
 			return err
 		}
-		signatures := merge.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures)))
-		if signatures != "" && signatures != merge.SignaturePreserve {
+		signatures := creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures)))
+		if signatures != "" && signatures != creator.SignaturePreserve {
 			return errors.New("--pages 使用模型级合并，不支持 --signatures")
 		}
 		orphans := merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans)))
@@ -655,6 +674,234 @@ func validateMergeOptions(opts *mergeOptions) error {
 		return errors.New("--document-id/--title/--author/--workers 仅在设置 --pages 时可用")
 	}
 	return nil
+}
+
+type replaceOptions struct {
+	input            string
+	output           string
+	compression      string
+	signatures       string
+	sets             []string
+	adds             []string
+	deletes          []string
+	maxEntries       int
+	maxEntryMB       int
+	maxTotalMB       int
+	deterministic    bool
+	validate         bool
+	noValidate       bool
+	verifySignatures bool
+	help             bool
+	signFlags
+}
+
+func parseReplaceArgs(args []string, output io.Writer) (*replaceOptions, error) {
+	opts := &replaceOptions{compression: string(creator.CompressionAuto), signatures: string(creator.SignatureDrop)}
+	root := &cobra.Command{
+		Use:           "ofd-creator replace",
+		Short:         "替换、新增或删除 OFD 包内条目",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.help {
+				return nil
+			}
+			if len(positional) > 0 && strings.TrimSpace(opts.input) == "" {
+				opts.input = positional[0]
+			}
+			return nil
+		},
+	}
+	root.SetArgs(args)
+	root.SetOut(output)
+	root.SetErr(output)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		opts.help = true
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator replace - 替换、新增或删除 OFD 包内条目")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator replace -i in.ofd -o out.ofd --set NAME=FILE --add NAME=FILE --delete NAME")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		flags := cmd.Flags()
+		flags.SetOutput(cmd.OutOrStdout())
+		flags.PrintDefaults()
+	})
+	flags := root.Flags()
+	flags.StringVarP(&opts.input, "input", "i", "", "输入的 OFD 文件；也可作为位置参数")
+	flags.StringVarP(&opts.output, "output", "o", "", "输出 OFD 路径；使用 - 写入标准输出")
+	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
+	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：drop、preserve 或 rewrite")
+	flags.StringArrayVar(&opts.sets, "set", nil, "替换已有条目，格式 NAME=FILE（FILE 为 - 时读标准输入），可重复")
+	flags.StringArrayVar(&opts.adds, "add", nil, "新增条目，格式 NAME=FILE（FILE 为 - 时读标准输入），可重复")
+	flags.StringArrayVar(&opts.deletes, "delete", nil, "删除已有条目，格式 NAME，可重复")
+	flags.IntVar(&opts.maxEntries, "max-entries", 0, "最多搬运的条目数，0 表示使用默认值 10000")
+	flags.IntVar(&opts.maxEntryMB, "max-entry-mb", 0, "单个条目解压后的最大 MB，0 表示使用默认值 64")
+	flags.IntVar(&opts.maxTotalMB, "max-total-mb", 0, "所有条目解压后的总 MB 上限，0 表示使用默认值 512")
+	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
+	flags.BoolVar(&opts.validate, "validate", false, "替换后对整体输出执行严格 OFD 校验")
+	flags.BoolVar(&opts.noValidate, "no-validate", false, "关闭默认的 XML 良构检查（新内容为 .xml 条目时默认解析校验）")
+	flags.BoolVar(&opts.verifySignatures, "verify-signatures", false, "替换后校验输出文档的签名摘要与密码学签名")
+	registerSignFlags(flags, &opts.signFlags)
+	if err := root.Execute(); err != nil {
+		return nil, err
+	}
+	return opts, nil
+}
+
+func validateReplaceOptions(opts *replaceOptions) error {
+	if strings.TrimSpace(opts.input) == "" {
+		return errors.New("缺少输入的 OFD 文件")
+	}
+	if strings.TrimSpace(opts.output) == "" {
+		return errors.New("缺少输出 OFD 文件")
+	}
+	if opts.input == "-" {
+		return errors.New("replace 不支持从标准输入读取 OFD")
+	}
+	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+		return errors.New("输出文件不能覆盖输入 OFD 文件")
+	}
+	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {
+	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
+	default:
+		return fmt.Errorf("不支持的 ZIP 压缩策略 %q", opts.compression)
+	}
+	switch creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))) {
+	case "", creator.SignatureDrop, creator.SignaturePreserve, creator.SignatureRewrite:
+	default:
+		return fmt.Errorf("不支持的签名处理方式 %q", opts.signatures)
+	}
+	if opts.maxEntries < 0 || opts.maxEntryMB < 0 || opts.maxTotalMB < 0 {
+		return errors.New("替换规模限制不能为负数")
+	}
+	if len(opts.sets)+len(opts.adds)+len(opts.deletes) == 0 {
+		return errors.New("至少需要一个 --set、--add 或 --delete")
+	}
+	return nil
+}
+
+func parseReplaceOperation(kind replace.OperationKind, spec string) (replace.Operation, error) {
+	switch kind {
+	case replace.OpDelete:
+		name := strings.TrimSpace(spec)
+		if name == "" {
+			return replace.Operation{}, errors.New("--delete 缺少条目路径")
+		}
+		return replace.Operation{Kind: kind, Name: name}, nil
+	default:
+		index := strings.Index(spec, "=")
+		if index < 0 {
+			return replace.Operation{}, fmt.Errorf("%s 参数需为 NAME=FILE 格式: %q", kind, spec)
+		}
+		name := strings.TrimSpace(spec[:index])
+		file := spec[index+1:]
+		if name == "" {
+			return replace.Operation{}, fmt.Errorf("%s 缺少条目路径: %q", kind, spec)
+		}
+		if file == "" {
+			return replace.Operation{}, fmt.Errorf("%s 缺少来源文件: %q", kind, spec)
+		}
+		data, err := readReplaceSource(file)
+		if err != nil {
+			return replace.Operation{}, err
+		}
+		return replace.Operation{Kind: kind, Name: name, Data: data}, nil
+	}
+}
+
+func readReplaceSource(file string) ([]byte, error) {
+	if file == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("读取标准输入失败: %w", err)
+		}
+		return data, nil
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("读取 %s 失败: %w", file, err)
+	}
+	return data, nil
+}
+
+func runReplace(args []string, stdout, stderr io.Writer) int {
+	opts, err := parseReplaceArgs(args, stderr)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+		return exitUsage
+	}
+	if opts.help {
+		return exitOK
+	}
+	if err := validateReplaceOptions(opts); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+		return exitUsage
+	}
+	operations := make([]replace.Operation, 0, len(opts.sets)+len(opts.adds)+len(opts.deletes))
+	for _, item := range opts.sets {
+		operation, err := parseReplaceOperation(replace.OpSet, item)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+			return exitUsage
+		}
+		operations = append(operations, operation)
+	}
+	for _, item := range opts.adds {
+		operation, err := parseReplaceOperation(replace.OpAdd, item)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+			return exitUsage
+		}
+		operations = append(operations, operation)
+	}
+	for _, item := range opts.deletes {
+		operation, err := parseReplaceOperation(replace.OpDelete, item)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+			return exitUsage
+		}
+		operations = append(operations, operation)
+	}
+	var buffer bytes.Buffer
+	if err := replace.Files(opts.input, operations, &buffer, replace.Options{
+		Compression:   creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))),
+		Deterministic: opts.deterministic,
+		Signatures:    creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures))),
+		Limits: replace.Limits{
+			MaxEntries:    opts.maxEntries,
+			MaxEntryBytes: int64(opts.maxEntryMB) << 20,
+			MaxTotalBytes: int64(opts.maxTotalMB) << 20,
+		},
+		Validate:     opts.validate,
+		SkipXMLCheck: opts.noValidate,
+		OnWarning: func(message string) {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace: 警告:", message)
+		},
+	}); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+		return exitResource
+	}
+	data := buffer.Bytes()
+	if strings.TrimSpace(opts.signCmd) != "" {
+		var signed bytes.Buffer
+		if err := sign.Sign(data, &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+			return exitResource
+		}
+		data = signed.Bytes()
+	}
+	if opts.verifySignatures {
+		statuses, verifyErr := merge.VerifySignatures(data)
+		if verifyErr != nil {
+			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", verifyErr)
+			return exitResource
+		}
+		reportSignatureVerification(stderr, "ofd-creator replace", statuses)
+	}
+	if err := writeOutput(opts.output, data, stdout); err != nil {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
+		return exitOutput
+	}
+	return exitOK
 }
 
 type exportAllOptions struct {
@@ -800,7 +1047,7 @@ func validateExportOptions(opts *exportOptions) error {
 		return fmt.Errorf("不支持的导出格式 %q", opts.format)
 	}
 	opts.format = format
-	if opts.output != "-" && opts.input != "-" && samePath(opts.input, opts.output) {
+	if opts.output != "-" && opts.input != "-" && utils.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖 OFD 输入文件")
 	}
 	if opts.document < -1 {
@@ -928,7 +1175,7 @@ func validateOptions(opts *options) error {
 	if strings.TrimSpace(opts.output) == "" && !opts.check {
 		return errors.New("缺少 OFD 输出文件")
 	}
-	if opts.output != "-" && samePath(opts.input, opts.output) {
+	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖 manifest 输入文件")
 	}
 	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {
@@ -973,13 +1220,4 @@ func writeOutput(name string, data []byte, stdout io.Writer) error {
 		return fmt.Errorf("替换输出文件失败: %w", err)
 	}
 	return nil
-}
-
-func samePath(left, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	return filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
