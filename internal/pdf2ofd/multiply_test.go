@@ -41,9 +41,9 @@ func TestConvertMultiplyFillBecomesTranslucent(t *testing.T) {
 	if path.Alpha == nil {
 		t.Fatal("multiply fill should be translucent; Alpha is nil")
 	}
-	// minC = 92 → a = 163/255 ≈ 0.639 → 透明度 (1-a)*255 ≈ 92。
-	if got := *path.Alpha; got < 88 || got > 96 {
-		t.Fatalf("Alpha = %d, want ~92", got)
+	// minC = 92 → a = 163/255 ≈ 0.639 → 不透明度 a*255 ≈ 163。
+	if got := *path.Alpha; got < 160 || got > 166 {
+		t.Fatalf("Alpha = %d, want ~163", got)
 	}
 	color := path.FillColor
 	if color == nil || color.Value == nil {

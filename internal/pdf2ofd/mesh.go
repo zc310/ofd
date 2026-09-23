@@ -310,7 +310,7 @@ func (p *pdfInterpreter) meshImage(shading *pdfShading, matrix [6]float64) *crea
 		return nil
 	}
 	img := &creator.Image{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY, Data: imageData, Format: "PNG"}
-	img.Alpha = ofdTransparency(p.fillOpacity())
+	img.Alpha = ofdAlpha(p.fillOpacity())
 	if clips := p.buildClips(minX, minY, true, maxX-minX, maxY-minY); clips != nil {
 		img.Clips = clips
 	}

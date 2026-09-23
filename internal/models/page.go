@@ -287,7 +287,7 @@ type CTGraphicUnit struct {
 	DashOffset float64 `xml:"DashOffset,attr,omitempty"`
 	// DashPattern 虚线模式中实线段和空白段的长度数组。
 	DashPattern *StArrayF `xml:"DashPattern,attr,omitempty"`
-	// Alpha 图元整体透明度，取值范围为 0 到 255。
+	// Alpha 图元整体不透明度，取值范围为 0 到 255，255 表示完全不透明（缺省 255）。
 	Alpha *uint8 `xml:"Alpha,attr,omitempty"`
 
 	// 兼容将这些属性编码为子元素的文档。
@@ -590,7 +590,7 @@ type CTColor struct {
 	Index int `xml:"Index,attr,omitempty"`
 	// ColorSpace 颜色空间资源引用。
 	ColorSpace StRefID `xml:"ColorSpace,attr,omitempty"`
-	// Alpha 颜色透明度，在 0~255 之间取值。默认为 255，表示完全不透明
+	// Alpha 颜色不透明度，在 0~255 之间取值。默认为 255，表示完全不透明
 	//
 	//可选
 	Alpha *uint8 `xml:"Alpha,attr,omitempty"`

@@ -163,12 +163,13 @@ func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 	ctx.SetFillColor(geom.Transparent)
 }
 
-// graphicOpacity 将 OFD 图形透明度转换为图像不透明度。
-func graphicOpacity(transparency *uint8) uint8 {
-	if transparency == nil {
+// graphicOpacity 返回 OFD 图元/颜色 Alpha 对应的不透明度。
+// OFD 的 Alpha 是不透明度：0 表示全透明，255 表示完全不透明，缺省 255。
+func graphicOpacity(alpha *uint8) uint8 {
+	if alpha == nil {
 		return 255
 	}
-	return 255 - *transparency
+	return *alpha
 }
 
 func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {

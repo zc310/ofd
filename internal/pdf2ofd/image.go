@@ -124,7 +124,7 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 		minX, minY, maxX, maxY = math.Min(minX, x), math.Min(minY, y), math.Max(maxX, x), math.Max(maxY, y)
 	}
 	width, height := math.Max(maxX-minX, 0.001), math.Max(maxY-minY, 0.001)
-	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format, Alpha: ofdTransparency(p.fillOpacity())}
+	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format, Alpha: ofdAlpha(p.fillOpacity())}
 	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm）。OFD
 	// 图片缺省按边界正放，这里输出负缩放 CTM 让阅读器镜像。
 	image.CTM = imageFlipCTM(p.state.ctm, width, height)
