@@ -211,61 +211,105 @@ func (w *streamXMLWriter) closeStart() {
 	}
 }
 
-func (w *streamXMLWriter) appendText(value string) {
-	for index := 0; index < len(value); {
-		r, size := utf8.DecodeRuneInString(value[index:])
-		if r == utf8.RuneError && size == 1 {
-			w.buf = append(w.buf, xmlReplacementChar...)
-			index++
-			continue
-		}
-		switch r {
-		case '&':
-			w.buf = append(w.buf, "&amp;"...)
-		case '<':
-			w.buf = append(w.buf, "&lt;"...)
-		case '>':
-			w.buf = append(w.buf, "&gt;"...)
-		default:
-			if isXMLChar(r) {
-				w.buf = append(w.buf, value[index:index+size]...)
-			} else {
-				w.buf = append(w.buf, xmlReplacementChar...)
-			}
-		}
-		index += size
+// escapeSeek 标记 ASCII 特殊字节：置位表示该字节需要逐字处理（XML 非法
+// 控制符或 & < > " \t \n \r），不能原样批量追加。字节 >= 0x80 一律走
+// rune 校验路径（含无效 UTF-8 序列替换）。
+var escapeSeek = func() (table [256]bool) {
+	for _, b := range []byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\t\n\r&<>\"") {
+		table[b] = true
 	}
+	return table
+}()
+
+func (w *streamXMLWriter) appendText(value string) {
+	w.appendEscaped(value, true)
 }
 
 func (w *streamXMLWriter) appendAttrText(value string) {
-	for index := 0; index < len(value); {
+	w.appendEscaped(value, false)
+}
+
+// appendEscaped 批量追加字符串内容：常见文本几乎不含特殊字节，扫描阶段
+// 只做字节查表，纯 ASCII 段一次整段追加，避免逐 rune 解码。
+func (w *streamXMLWriter) appendEscaped(value string, textMode bool) {
+	for plain := 0; plain < len(value); {
+		index := plain
+		for index < len(value) {
+			b := value[index]
+			if b >= utf8.RuneSelf || escapeSeek[b] {
+				break
+			}
+			index++
+		}
+		if index == len(value) {
+			w.buf = append(w.buf, value[plain:]...)
+			return
+		}
+		if index > plain {
+			w.buf = append(w.buf, value[plain:index]...)
+		}
+		b := value[index]
+		if b < utf8.RuneSelf {
+			w.appendSpecial(b, textMode)
+			plain = index + 1
+			continue
+		}
 		r, size := utf8.DecodeRuneInString(value[index:])
 		if r == utf8.RuneError && size == 1 {
 			w.buf = append(w.buf, xmlReplacementChar...)
-			index++
+			plain = index + 1
 			continue
 		}
-		switch r {
-		case '&':
-			w.buf = append(w.buf, "&amp;"...)
-		case '<':
-			w.buf = append(w.buf, "&lt;"...)
-		case '"':
-			w.buf = append(w.buf, "&quot;"...)
-		case '\t':
-			w.buf = append(w.buf, "&#x9;"...)
-		case '\n':
-			w.buf = append(w.buf, "&#xA;"...)
-		case '\r':
-			w.buf = append(w.buf, "&#xD;"...)
-		default:
-			if isXMLChar(r) {
-				w.buf = append(w.buf, value[index:index+size]...)
-			} else {
-				w.buf = append(w.buf, xmlReplacementChar...)
-			}
+		if isXMLChar(r) {
+			w.buf = append(w.buf, value[index:index+size]...)
+		} else {
+			w.buf = append(w.buf, xmlReplacementChar...)
 		}
-		index += size
+		plain = index + size
+	}
+}
+
+// appendSpecial 处理单个 ASCII 特殊字节。textMode 下 > 转义为 &gt;、" \t
+// \n \r 原样输出；属性上下文要么转义要么原样透传合法字符；其余命中字节
+// 均为 XML 非法控制符，替换为 U+FFFD。
+func (w *streamXMLWriter) appendSpecial(b byte, textMode bool) {
+	switch b {
+	case '&':
+		w.buf = append(w.buf, "&amp;"...)
+	case '<':
+		w.buf = append(w.buf, "&lt;"...)
+	case '"':
+		if textMode {
+			w.buf = append(w.buf, '"')
+		} else {
+			w.buf = append(w.buf, "&quot;"...)
+		}
+	case '\t':
+		if textMode {
+			w.buf = append(w.buf, '\t')
+		} else {
+			w.buf = append(w.buf, "&#x9;"...)
+		}
+	case '\n':
+		if textMode {
+			w.buf = append(w.buf, '\n')
+		} else {
+			w.buf = append(w.buf, "&#xA;"...)
+		}
+	case '\r':
+		if textMode {
+			w.buf = append(w.buf, '\r')
+		} else {
+			w.buf = append(w.buf, "&#xD;"...)
+		}
+	case '>':
+		if textMode {
+			w.buf = append(w.buf, "&gt;"...)
+		} else {
+			w.buf = append(w.buf, '>')
+		}
+	default:
+		w.buf = append(w.buf, xmlReplacementChar...)
 	}
 }
 
