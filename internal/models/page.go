@@ -156,44 +156,35 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 			var item PageItem
 			switch elem.Name.Local {
 			case "TextObject":
-				var o TextObject
-				if err := d.DecodeElement(&o, &elem); err != nil {
-					return err
-				}
-				o.CtText.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemText
-				item.Text = &o
+				item.Text = &TextObject{}
+				if err := item.Text.UnmarshalXML(d, elem); err != nil {
+					return err
+				}
 			case "PathObject":
-				var o PathObject
-				if err := d.DecodeElement(&o, &elem); err != nil {
-					return err
-				}
-				o.CtPath.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemPath
-				item.Path = &o
+				item.Path = &PathObject{}
+				if err := item.Path.UnmarshalXML(d, elem); err != nil {
+					return err
+				}
 			case "ImageObject":
-				var o ImageObject
-				if err := d.DecodeElement(&o, &elem); err != nil {
-					return err
-				}
-				o.CtImage.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemImage
-				item.Image = &o
+				item.Image = &ImageObject{}
+				if err := item.Image.UnmarshalXML(d, elem); err != nil {
+					return err
+				}
 			case "CompositeObject":
-				var o CompositeObject
-				if err := d.DecodeElement(&o, &elem); err != nil {
-					return err
-				}
-				o.CtComposite.CTGraphicUnit.normalizeDrawParams()
 				item.Kind = PageItemComposite
-				item.Composite = &o
-			case "PageBlock":
-				var o PageBlock
-				if err := d.DecodeElement(&o, &elem); err != nil {
+				item.Composite = &CompositeObject{}
+				if err := item.Composite.UnmarshalXML(d, elem); err != nil {
 					return err
 				}
+			case "PageBlock":
 				item.Kind = PageItemBlock
-				item.Block = &o
+				item.Block = &PageBlock{}
+				if err := item.Block.UnmarshalXML(d, elem); err != nil {
+					return err
+				}
 			default:
 				if err := d.Skip(); err != nil {
 					return err
