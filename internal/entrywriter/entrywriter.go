@@ -35,6 +35,7 @@ type Writer struct {
 	seen       map[string]bool
 	entryCount int
 	remaining  int64
+	copyBuf    []byte
 }
 
 // New 创建写入器并套用默认规模限制。调用方负责在写完后关闭 archive。
@@ -122,10 +123,19 @@ func (w *Writer) WriteSource(pkg *core.Package, entry core.Entry, name string) e
 		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
 	}
 	counter := creator.NewLimitWriter(file, name, w.config.Limits.MaxEntryBytes, w.config.Limits.MaxTotalBytes, &w.remaining)
-	if _, err := io.Copy(counter, reader); err != nil {
+	if _, err := io.CopyBuffer(counter, reader, w.copyBuffer()); err != nil {
 		return err
 	}
 	return nil
+}
+
+// copyBuffer 返回供 io.CopyBuffer 复用的拷贝缓冲，避免每条目临时分配 32KB。
+// Writer 不保证并发使用（archive、remaining 等状态同样无并发保护）。
+func (w *Writer) copyBuffer() []byte {
+	if w.copyBuf == nil {
+		w.copyBuf = make([]byte, 32*1024)
+	}
+	return w.copyBuf
 }
 
 func (w *Writer) header(name string) *zip.FileHeader {
