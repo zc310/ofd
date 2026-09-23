@@ -4,6 +4,7 @@ import (
 	"math"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
@@ -14,18 +15,6 @@ const defaultTextSize = 4.2333333333
 
 // completeTextCodes 补充 TextCode 的默认起点，并按选项补充字符位置增量。
 func completeTextCodes(codes []TextCode, value string, width, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) []TextCode {
-	if len(codes) == 0 {
-		if len([]rune(value)) == 0 {
-			return codes
-		}
-		codes = []TextCode{{Value: value}}
-	}
-	total := 0
-	for _, code := range codes {
-		total += len([]rune(code.Value))
-	}
-	result := append([]TextCode(nil), codes...)
-	changed := false
 	baseline := height
 	if baseline <= 0 {
 		baseline = size
@@ -33,30 +22,68 @@ func completeTextCodes(codes []TextCode, value string, width, height, size, hSca
 			baseline = defaultTextSize
 		}
 	}
-	for index, code := range result {
-		runes := []rune(code.Value)
-		if code.X == nil {
-			x := 0.0
-			result[index].X = &x
-			changed = true
+	if len(codes) == 0 {
+		if runeCountOf(value) == 0 {
+			return codes
 		}
-		if code.Y == nil {
-			y := baseline
-			result[index].Y = &y
+		// 单段整体文本：X/Y 必为默认值，直接构造，零多余拷贝。
+		x := 0.0
+		y := baseline
+		return []TextCode{{Value: value, X: &x, Y: &y}}
+	}
+	// 已提供 codes：先扫描是否真的需要改写，不需要则原样返回（零分配）。
+	changed := false
+	for _, code := range codes {
+		if code.X == nil || code.Y == nil {
 			changed = true
+			break
 		}
-		if completeDeltas && total > 1 && len(runes) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-			face := findTextFace(fontName, fonts, size, weight, italic)
-			deltaX, deltaY := makeTextCodeDeltas(runes, width, size, hScale, direction, total, face)
-			result[index].DeltaX = deltaX
-			result[index].DeltaY = deltaY
-			changed = true
+	}
+	if !changed && completeDeltas {
+		for _, code := range codes {
+			if runeCountOf(code.Value) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+				changed = true
+				break
+			}
 		}
 	}
 	if !changed {
 		return codes
 	}
+	result := append([]TextCode(nil), codes...)
+	total := 0
+	for _, code := range result {
+		total += runeCountOf(code.Value)
+	}
+	for index := range result {
+		code := &result[index]
+		if code.X == nil {
+			x := 0.0
+			code.X = &x
+		}
+		if code.Y == nil {
+			y := baseline
+			code.Y = &y
+		}
+		if completeDeltas && total > 1 && runeCountOf(code.Value) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+			face := findTextFace(fontName, fonts, size, weight, italic)
+			deltaX, deltaY := makeTextCodeDeltas([]rune(code.Value), width, size, hScale, direction, total, face)
+			code.DeltaX = deltaX
+			code.DeltaY = deltaY
+		}
+	}
 	return result
+}
+
+// runeCountOf 统计字符串的字符数；对 ASCII 快路径直接取 len，否则交给
+// utf8.RuneCountInString，全程不分配。
+func runeCountOf(value string) int {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= utf8.RuneSelf {
+			return utf8.RuneCountInString(value[i:])
+		}
+	}
+	return len(value)
 }
 
 func makeTextCodeDeltas(runes []rune, width, size, hScale float64, direction, total int, face *canvas.FontFace) ([]float64, []float64) {
