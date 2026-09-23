@@ -143,8 +143,8 @@ func documentXML(state *buildState) ([]byte, error) {
 	return documentBytes(doc)
 }
 
-func templateXML(state *buildState, templateIndex int) ([]byte, error) {
-	return streamTemplateXML(state, templateIndex), nil
+func templateXML(state *buildState, templateIndex int, w *streamXMLWriter) ([]byte, error) {
+	return streamTemplateXML(state, templateIndex, w), nil
 }
 
 func appendBuiltLayers(parent *etree.Element, layers []builtLayer, state *buildState) {
