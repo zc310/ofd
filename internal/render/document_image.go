@@ -328,10 +328,11 @@ func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image 
 }
 
 // clipCoversImage 判断裁剪路径在图像像素坐标下是否完全覆盖图像范围。
-// 常见的由生产者生成的 OFD 会为图片附上与原图等大的矩形裁切，
-// 此时掩码不会改变任何像素，跳过昂贵的全分辨率掩码合成。
-// 对于大图片，允许少量像素的内缩容差，避免因生产者生成的微小边框
-// 导致所有图片都被迫走全分辨率掩码合成的慢路径。
+// 常见的由生产者生成的 OFD 会为图片附上与原图等大的矩形裁切（多为版面出血
+// 裁切：贴边图四周留 1-3px 的出血边），此时掩码不会改变任何有效像素，跳过
+// 昂贵的全分辨率掩码合成，让 JPEG/PNG 源图可以按原字节直传 PDF。
+// 容差按图像短边的 1.5% 计（下限 2px）：允许一个极细的出血边框，小图
+// （短边 <~130px）仍走掩码路径，避免把真实内容裁切误判为可跳过。
 func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
 	if clip == nil || width <= 0 || height <= 0 || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
 		return false
@@ -342,7 +343,7 @@ func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
 	}
 	maskPath := clip.Copy().Transform(inverse)
 	b := maskPath.Bounds()
-	eps := math.Max(2.0, 0.005*float64(min(width, height)))
+	eps := math.Max(2.0, 0.015*float64(min(width, height)))
 	if b.X0 > eps || b.Y0 > eps || b.X1 < float64(width)-eps || b.Y1 < float64(height)-eps {
 		return false
 	}
