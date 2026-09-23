@@ -122,6 +122,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 			}
 		}
 	}
+	pageWriter := newStreamXMLWriter()
 	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
 		page, pageErr := state.pages.PageAt(pageIndex)
 		if pageErr != nil {
@@ -131,7 +132,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		if buildErr != nil {
 			return buildErr
 		}
-		pageData := streamPageXML(state, page, resources, layers)
+		pageData := streamPageXML(state, page, resources, layers, pageWriter)
 		if err := sink.write(pagePath(pageIndex), pageData); err != nil {
 			return err
 		}
@@ -157,7 +158,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	for templateIndex := range state.document.Templates {
-		templateData, templateErr := templateXML(state, templateIndex)
+		templateData, templateErr := templateXML(state, templateIndex, pageWriter)
 		if templateErr != nil {
 			return templateErr
 		}
@@ -1772,6 +1773,9 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 			return fmt.Errorf("%s 图层 %d 无效: %w", context, layerIndex+1, err)
 		}
 		layerResult := builtLayer{id: s.allocate(), layerType: layerType, drawParam: layerDrawParam}
+		if len(layer.Items) > 0 {
+			layerResult.items = make([]builtItem, 0, len(layer.Items))
+		}
 		for itemIndex, item := range layer.Items {
 			if item == nil {
 				return fmt.Errorf("%s 图层 %d 的对象 %d 为空", context, layerIndex+1, itemIndex+1)
@@ -1833,17 +1837,11 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				} else if err := validateImage(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的图片对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}
-				for _, reference := range []struct {
-					name string
-					id   uint64
-				}{
-					{name: "Substitution", id: value.Substitution},
-					{name: "ImageMask", id: value.ImageMask},
-				} {
-					referenceName, referenceID := reference.name, reference.id
-					if referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != "Image" {
-						return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的 %s 资源 ID %d", context, layerIndex+1, itemIndex+1, referenceName, referenceID)
-					}
+				if referenceID := value.Substitution; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != "Image" {
+					return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的 Substitution 资源 ID %d", context, layerIndex+1, itemIndex+1, referenceID)
+				}
+				if referenceID := value.ImageMask; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != "Image" {
+					return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的 ImageMask 资源 ID %d", context, layerIndex+1, itemIndex+1, referenceID)
 				}
 				if err := validateClips(value.Clips); err != nil {
 					return fmt.Errorf("%s 图层 %d 的图片对象 %d 裁剪无效: %w", context, layerIndex+1, itemIndex+1, err)

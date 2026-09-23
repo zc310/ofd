@@ -1,6 +1,7 @@
 package creator
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -38,6 +39,13 @@ func newStreamXMLWriter() *streamXMLWriter {
 	w := &streamXMLWriter{buf: make([]byte, 0, 4096), stack: make([]string, 0, 8)}
 	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 	return w
+}
+
+// Reset 清空缓冲区与元素栈。调用方需重新写入 XML 声明。
+func (w *streamXMLWriter) Reset() {
+	w.buf = w.buf[:0]
+	w.stack = w.stack[:0]
+	w.open = false
 }
 
 func (w *streamXMLWriter) Start(name string) {
@@ -137,11 +145,19 @@ func (w *streamXMLWriter) startAttr(name string) {
 // 任何渲染分辨率，同时避免浮点噪声导致的超长输出（如 96.34784444444446）。
 const numberPrecision = 4
 
+// maxInt64Float 是可安全转换到 int64 的最大 float64（math.MaxInt64 的浮点值）。
+const maxInt64Float = float64(math.MaxInt64)
+
 // appendFloat 以固定小数位输出浮点数，去掉末尾多余的 0 和小数点，且不使用
 // 科学计数法（部分阅读器无法解析）。极小值四舍五入为 0，避免 "-0"。
 func appendFloat(dst []byte, value float64) []byte {
 	if !finite(value) {
 		value = 0
+	}
+	// 整数快路径：strconv 'f'4 对精确整数输出 "N.0000"，裁剪后与
+	// AppendInt 逐字节一致，可完全跳过浮点格式化。
+	if value == math.Trunc(value) && value >= -maxInt64Float && value <= maxInt64Float {
+		return strconv.AppendInt(dst, int64(value), 10)
 	}
 	start := len(dst)
 	dst = strconv.AppendFloat(dst, value, 'f', numberPrecision, 64)
@@ -253,8 +269,9 @@ func (w *streamXMLWriter) appendAttrText(value string) {
 	}
 }
 
-func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer) []byte {
-	w := newStreamXMLWriter()
+func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer, w *streamXMLWriter) []byte {
+	w.Reset()
+	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 	w.Start("Page")
 	w.Attr("xmlns", ofNamespace)
 	for _, template := range page.Templates {
@@ -283,8 +300,9 @@ func streamPageXML(state *buildState, page Page, pageResources []pageResource, l
 	return w.Bytes()
 }
 
-func streamTemplateXML(state *buildState, templateIndex int) []byte {
-	w := newStreamXMLWriter()
+func streamTemplateXML(state *buildState, templateIndex int, w *streamXMLWriter) []byte {
+	w.Reset()
+	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 	w.Start("Page")
 	w.Attr("xmlns", ofNamespace)
 	template := state.document.Templates[templateIndex]
