@@ -43,16 +43,22 @@ func (e *EncodedImage) Image() (image.Image, error) {
 	return e.img, e.err
 }
 
-// Bounds 返回图片边界，解码失败时返回空矩形。
+// Bounds 返回图片边界。只读取图片头（DecodeConfig）获取尺寸，不触发完整解码。
 func (e *EncodedImage) Bounds() image.Rectangle {
-	img, err := e.Image()
-	if err != nil || img == nil {
+	if e == nil {
 		return image.Rectangle{}
 	}
-	return img.Bounds()
+	e.configOnce.Do(func() {
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(e.Data))
+		e.config, e.configErr = cfg, err
+	})
+	if e.configErr != nil || e.config.Width <= 0 || e.config.Height <= 0 {
+		return image.Rectangle{}
+	}
+	return image.Rect(0, 0, e.config.Width, e.config.Height)
 }
 
-// At 返回像素颜色，解码失败时返回透明色。
+// At 返回像素颜色（会触发解码）。
 func (e *EncodedImage) At(x, y int) color.Color {
 	img, err := e.Image()
 	if err != nil || img == nil {
@@ -61,13 +67,19 @@ func (e *EncodedImage) At(x, y int) color.Color {
 	return img.At(x, y)
 }
 
-// ColorModel 返回颜色模型，解码失败时回退 RGBAModel。
+// ColorModel 返回颜色模型。只读取图片头，不触发完整解码。
 func (e *EncodedImage) ColorModel() color.Model {
-	img, err := e.Image()
-	if err != nil || img == nil {
+	if e == nil {
 		return color.RGBAModel
 	}
-	return img.ColorModel()
+	e.configOnce.Do(func() {
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(e.Data))
+		e.config, e.configErr = cfg, err
+	})
+	if e.configErr != nil || e.config.ColorModel == nil {
+		return color.RGBAModel
+	}
+	return e.config.ColorModel
 }
 
 // weight 估算该图片在缓存中的内存占用：编码字节 + 解码后的像素。只读取
