@@ -98,11 +98,58 @@ func (p SVGPath) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	return e.EncodeElement(pathStr, start)
 }
 
+// pathTokens 路径数据的令牌视图。对纯 ASCII 数据使用偏移表按需切片，
+// 避免 strings.Fields 为每个坐标分配字符串头；含非 ASCII 字节时回退到
+// strings.Fields 以保持与拆分语义一致。
+type pathTokens struct {
+	data   string
+	idx    []int32
+	fields []string
+}
+
+func (t pathTokens) len() int {
+	if t.fields != nil {
+		return len(t.fields)
+	}
+	return len(t.idx) / 2
+}
+
+func (t pathTokens) get(i int) string {
+	if t.fields != nil {
+		return t.fields[i]
+	}
+	return t.data[t.idx[2*i]:t.idx[2*i+1]]
+}
+
+func splitPathTokens(data string) pathTokens {
+	for i := 0; i < len(data); i++ {
+		if data[i] >= 0x80 {
+			return pathTokens{data: data, fields: strings.Fields(data)}
+		}
+	}
+	idx := make([]int32, 0, 16)
+	i := 0
+	for i < len(data) {
+		for i < len(data) && (data[i] == ' ' || data[i] == '\t' || data[i] == '\v' || data[i] == '\f' || data[i] == '\r' || data[i] == '\n') {
+			i++
+		}
+		if i >= len(data) {
+			break
+		}
+		start := i
+		for i < len(data) && !(data[i] == ' ' || data[i] == '\t' || data[i] == '\v' || data[i] == '\f' || data[i] == '\r' || data[i] == '\n') {
+			i++
+		}
+		idx = append(idx, int32(start), int32(i))
+	}
+	return pathTokens{data: data, idx: idx}
+}
+
 // parsePathData 将路径字符串解析为 SVGPath。
 // 除显式命令外，M 和 L 命令支持连续坐标对的隐式形式。
 func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
-	tokens := strings.Fields(data)
-	if len(tokens) == 0 {
+	tokens := splitPathTokens(data)
+	if tokens.len() == 0 {
 		return SVGPath{}, nil
 	}
 
@@ -110,8 +157,8 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 	var currentCmd *PathCommand
 	index := 0
 
-	for index < len(tokens) {
-		token := tokens[index]
+	for index < tokens.len() {
+		token := tokens.get(index)
 
 		switch token {
 		case "M", "S":
@@ -195,7 +242,7 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 }
 
 // parseMoveCommand 解析 M 或 S 命令及其坐标参数。
-func (p *SVGPath) parseMoveCommand(tokens []string, startIdx int) (PathCommand, int, error) {
+func (p *SVGPath) parseMoveCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
 	if err != nil {
 		return PathCommand{}, startIdx, fmt.Errorf("M命令解析失败: %w", err)
@@ -204,7 +251,7 @@ func (p *SVGPath) parseMoveCommand(tokens []string, startIdx int) (PathCommand, 
 }
 
 // parseLineCommand 解析 L 命令及其坐标参数。
-func (p *SVGPath) parseLineCommand(tokens []string, startIdx int) (PathCommand, int, error) {
+func (p *SVGPath) parseLineCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
 	if err != nil {
 		return PathCommand{}, startIdx, fmt.Errorf("L命令解析失败: %w", err)
@@ -213,7 +260,7 @@ func (p *SVGPath) parseLineCommand(tokens []string, startIdx int) (PathCommand, 
 }
 
 // parseBezierCommand 解析 B 命令及其三个坐标点参数。
-func (p *SVGPath) parseBezierCommand(tokens []string, startIdx int) (PathCommand, int, error) {
+func (p *SVGPath) parseBezierCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 3)
 	if err != nil {
 		return PathCommand{}, startIdx, fmt.Errorf("B命令解析失败: %w", err)
@@ -222,7 +269,7 @@ func (p *SVGPath) parseBezierCommand(tokens []string, startIdx int) (PathCommand
 }
 
 // parseQuadToCommand 解析 Q 命令及其两个坐标点参数。
-func (p *SVGPath) parseQuadToCommand(tokens []string, startIdx int) (PathCommand, int, error) {
+func (p *SVGPath) parseQuadToCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
 	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 2)
 	if err != nil {
 		return PathCommand{}, startIdx, fmt.Errorf("Q命令解析失败: %w", err)
@@ -232,47 +279,47 @@ func (p *SVGPath) parseQuadToCommand(tokens []string, startIdx int) (PathCommand
 
 // parseArcCommand 解析 A 命令及其椭圆弧参数。
 // A 命令参数依次为 RX、RY、旋转角度、大弧标志、扫过标志和终点坐标。
-func (p *SVGPath) parseArcCommand(tokens []string, startIdx int) (PathCommand, int, error) {
-	if startIdx+7 >= len(tokens) {
+func (p *SVGPath) parseArcCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
+	if startIdx+7 >= tokens.len() {
 		return PathCommand{}, startIdx, fmt.Errorf("A命令需要7个参数")
 	}
 
 	// 解析椭圆半径
-	rx, err := parseFiniteFloat(tokens[startIdx+1], "A命令rx")
+	rx, err := parseFiniteFloat(tokens.get(startIdx+1), "A命令rx")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
-	ry, err := parseFiniteFloat(tokens[startIdx+2], "A命令ry")
+	ry, err := parseFiniteFloat(tokens.get(startIdx+2), "A命令ry")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
 	// 解析x轴旋转角度
-	xAxisRotation, err := parseFiniteFloat(tokens[startIdx+3], "A命令x轴旋转角度")
+	xAxisRotation, err := parseFiniteFloat(tokens.get(startIdx+3), "A命令x轴旋转角度")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
 	// 解析大弧标志
-	largeArcFlag, err := parseFiniteFloat(tokens[startIdx+4], "A命令大弧标志")
+	largeArcFlag, err := parseFiniteFloat(tokens.get(startIdx+4), "A命令大弧标志")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
 	// 解析扫过标志
-	sweepFlag, err := parseFiniteFloat(tokens[startIdx+5], "A命令扫过标志")
+	sweepFlag, err := parseFiniteFloat(tokens.get(startIdx+5), "A命令扫过标志")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
 	// 解析终点坐标
-	endX, err := parseFiniteFloat(tokens[startIdx+6], "A命令终点x坐标")
+	endX, err := parseFiniteFloat(tokens.get(startIdx+6), "A命令终点x坐标")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
 
-	endY, err := parseFiniteFloat(tokens[startIdx+7], "A命令终点y坐标")
+	endY, err := parseFiniteFloat(tokens.get(startIdx+7), "A命令终点y坐标")
 	if err != nil {
 		return PathCommand{}, startIdx, err
 	}
@@ -293,7 +340,7 @@ func (p *SVGPath) parseArcCommand(tokens []string, startIdx int) (PathCommand, i
 }
 
 // parseImplicitCommand 根据上一条命令解析省略命令字母的坐标参数。
-func (p *SVGPath) parseImplicitCommand(tokens []string, startIdx int, lastCmd PathCommand) (PathCommand, int, error) {
+func (p *SVGPath) parseImplicitCommand(tokens pathTokens, startIdx int, lastCmd PathCommand) (PathCommand, int, error) {
 	switch lastCmd.Type {
 	case MoveTo, LineTo:
 		points, nextIdx, err := p.parsePoints(tokens, startIdx, 1)
@@ -307,21 +354,21 @@ func (p *SVGPath) parseImplicitCommand(tokens []string, startIdx int, lastCmd Pa
 }
 
 // parsePoints 从令牌列表中解析指定数量的坐标点。
-func (p *SVGPath) parsePoints(tokens []string, startIdx, numPoints int) ([]StPos, int, error) {
+func (p *SVGPath) parsePoints(tokens pathTokens, startIdx, numPoints int) ([]StPos, int, error) {
 	var points []StPos
 	idx := startIdx
 
 	for len(points) < numPoints {
-		if idx+1 >= len(tokens) {
+		if idx+1 >= tokens.len() {
 			return nil, idx, fmt.Errorf("需要%d个点，但只找到%d个坐标", numPoints, len(points)*2)
 		}
 
-		x, err := parseFiniteFloat(tokens[idx], "x坐标")
+		x, err := parseFiniteFloat(tokens.get(idx), "x坐标")
 		if err != nil {
 			return nil, idx, err
 		}
 
-		y, err := parseFiniteFloat(tokens[idx+1], "y坐标")
+		y, err := parseFiniteFloat(tokens.get(idx+1), "y坐标")
 		if err != nil {
 			return nil, idx, err
 		}
