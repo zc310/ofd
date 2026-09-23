@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 func benchmarkInputs(b *testing.B) []string {
@@ -12,7 +14,7 @@ func benchmarkInputs(b *testing.B) []string {
 }
 
 func benchmarkOptions() Options {
-	return Options{Signatures: SignatureDrop, Orphans: OrphanIgnore}
+	return Options{Signatures: creator.SignatureDrop, Orphans: OrphanIgnore}
 }
 
 func BenchmarkFiles(b *testing.B) {

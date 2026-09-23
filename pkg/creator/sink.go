@@ -98,7 +98,7 @@ func (s *zipSink) write(name string, data []byte) error {
 	}
 	header := &zip.FileHeader{
 		Name:   name,
-		Method: zipEntryMethod(name, s.options.Compression),
+		Method: EntryMethod(name, s.options.Compression),
 	}
 	if s.options.Deterministic {
 		header.Modified = time.Unix(0, 0).UTC()
@@ -122,7 +122,7 @@ func (s *zipSink) writeSource(name string, source DataSource) error {
 	}
 	header := &zip.FileHeader{
 		Name:   name,
-		Method: zipEntryMethod(name, s.options.Compression),
+		Method: EntryMethod(name, s.options.Compression),
 	}
 	if s.options.Deterministic {
 		header.Modified = time.Unix(0, 0).UTC()

@@ -22,18 +22,6 @@ const (
 	maxOFDID         = uint64(^uint32(0))
 )
 
-// CompressionMode 表示 OFD ZIP 条目的压缩策略。
-type CompressionMode string
-
-const (
-	// CompressionAuto 对已压缩格式使用 Store，其他文件使用 Deflate。
-	CompressionAuto CompressionMode = "auto"
-	// CompressionDeflate 对所有条目使用 Deflate。
-	CompressionDeflate CompressionMode = "deflate"
-	// CompressionStore 对所有条目使用 Store。
-	CompressionStore CompressionMode = "store"
-)
-
 // CreateOptions 控制 OFD ZIP 包的生成方式。
 type CreateOptions struct {
 	Compression           CompressionMode
@@ -125,25 +113,6 @@ func MarshalWithPages(meta Document, pages PageProvider, options CreateOptions) 
 		return nil, err
 	}
 	return buffer.Bytes(), nil
-}
-
-func zipEntryMethod(name string, mode CompressionMode) uint16 {
-	if mode == CompressionStore {
-		return zip.Store
-	}
-	if mode == CompressionDeflate {
-		return zip.Deflate
-	}
-	extension := strings.ToLower(filepath.Ext(name))
-	switch extension {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".jxl",
-		".mp3", ".mp4", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav",
-		".flac", ".mpg", ".mpeg", ".avi", ".mkv", ".mov", ".webm",
-		".m4v", ".wma", ".pdf", ".zip", ".gz", ".bz2", ".xz", ".7z", ".rar":
-		return zip.Store
-	default:
-		return zip.Deflate
-	}
 }
 
 // CreateFile 在 filename 指定的位置创建 OFD 文件包。
