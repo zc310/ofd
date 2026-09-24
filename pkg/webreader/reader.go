@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -275,9 +276,27 @@ type AnnotationBoundary struct {
 	Height float64
 }
 
+// PageLink 描述页面正文图元上的可点击链接。与 AnnotationInfo 中的 Link 注解
+// 不同，这类链接直接挂在页面内容（图层）的文字、路径、图像或复合图元上。
+type PageLink struct {
+	// Scope 是链接所属文档体的索引。
+	Scope int
+	// Page 是链接所在页面的全局索引。
+	Page int
+	// ID 是承载链接的图元标识，未声明时为空。
+	ID string
+	// Boundary 是图元边界（毫米）。
+	Boundary AnnotationBoundary
+	// URI 是外部链接目标，非空时点击打开链接。
+	URI string
+	// TargetPage 是跳转目标页全局索引，-1 表示没有页面目标。
+	TargetPage int
+	// Dest 是跳转目标的位置与缩放，nil 表示没有位置信息。
+	Dest *OutlineDest
+}
+
 // AnnotationInfo 描述文档中的一个注解。
 type AnnotationInfo struct {
-	// Scope 是注解所属文档体的索引。
 	Scope int
 	// Page 是注解所在页面的全局索引。
 	Page int
@@ -297,6 +316,12 @@ type AnnotationInfo struct {
 	Remark string
 	// Boundary 是注解外观边界，未声明时为 nil。
 	Boundary *AnnotationBoundary
+	// URI 是链接注解的外部链接目标，非空时点击打开链接。
+	URI string
+	// TargetPage 是链接注解的跳转目标页全局索引，-1 表示没有页面目标。
+	TargetPage int
+	// Dest 是链接注解跳转目标的位置与缩放，nil 表示没有位置信息。
+	Dest *OutlineDest
 }
 
 // SignatureStamp 描述签名关联的一个签章位置。
@@ -1352,6 +1377,12 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 		return nil, errors.New("文档引擎已经关闭")
 	}
 	infos := make([]AnnotationInfo, 0)
+	pageIndex := make(map[models.StID]int, len(r.pages))
+	for index, ref := range r.pages {
+		if ref.page != nil {
+			pageIndex[ref.page.ID] = index
+		}
+	}
 	for index, ref := range r.pages {
 		if ref.page == nil || ref.document == nil {
 			continue
@@ -1365,13 +1396,14 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 				continue
 			}
 			info := AnnotationInfo{
-				Scope:   ref.fontScope,
-				Page:    index,
-				ID:      item.ID,
-				Type:    string(item.Type),
-				Subtype: item.Subtype,
-				Creator: item.Creator,
-				Visible: item.Visible.Value(true),
+				Scope:      ref.fontScope,
+				Page:       index,
+				ID:         item.ID,
+				Type:       string(item.Type),
+				Subtype:    item.Subtype,
+				Creator:    item.Creator,
+				Visible:    item.Visible.Value(true),
+				TargetPage: -1,
 			}
 			if !item.LastModDate.IsZero() {
 				info.LastModDate = item.LastModDate.Time.Format("2006-01-02")
@@ -1388,10 +1420,210 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 					Height: boundary.Height,
 				}
 			}
+			info.URI, info.TargetPage, info.Dest = annotLinkAction(item, pageIndex)
 			infos = append(infos, info)
 		}
 	}
 	return infos, nil
+}
+
+// annotLinkAction 在注解外观的页面对象中查找 CLICK 动作。链接目标既可能在注解
+// 外观的图形对象上（Link 注解的常见形态），也可能通过嵌套 PageBlock 组织，因此
+// 这里递归遍历；命中外部链接或页面跳转后立即停止。
+func annotLinkAction(annot *models.Annot, pageIndex map[models.StID]int) (string, int, *OutlineDest) {
+	if annot == nil || annot.Appearance == nil {
+		return "", -1, nil
+	}
+	uri, page, dest, found := pageBlockLinkAction(annot.Appearance.Items, pageIndex)
+	if !found {
+		return "", -1, nil
+	}
+	return uri, page, dest
+}
+
+// pageBlockLinkAction 递归遍历页面对象，返回首个 CLICK 动作的外部链接或页面跳转。
+func pageBlockLinkAction(items []models.PageItem, pageIndex map[models.StID]int) (string, int, *OutlineDest, bool) {
+	for _, item := range items {
+		if item.Kind == models.PageItemBlock {
+			if item.Block != nil {
+				if uri, page, dest, found := pageBlockLinkAction(item.Block.Items, pageIndex); found {
+					return uri, page, dest, true
+				}
+			}
+			continue
+		}
+		unit := pageItemGraphicUnit(item)
+		if unit == nil || unit.Actions == nil {
+			continue
+		}
+		uri, page, dest, found := actionLink(*unit.Actions, pageIndex)
+		if found {
+			return uri, page, dest, true
+		}
+	}
+	return "", -1, nil, false
+}
+
+// actionLink 返回动作集合中首个 CLICK 链接动作；found 为 false 表示没有链接动作。
+func actionLink(actions models.Actions, pageIndex map[models.StID]int) (string, int, *OutlineDest, bool) {
+	for _, action := range actions.Action {
+		if action.Event != models.ActionEventClick {
+			continue
+		}
+		if action.URI != nil && action.URI.URI != "" {
+			return action.URI.URI, -1, nil, true
+		}
+		if action.Goto != nil && action.Goto.Dest != nil {
+			dest := convertOutlineDest(*action.Goto.Dest)
+			page := -1
+			if resolved, ok := pageIndex[models.StID(action.Goto.Dest.PageID)]; ok {
+				page = resolved
+			}
+			return "", page, dest, true
+		}
+	}
+	return "", -1, nil, false
+}
+
+// PageLinks 返回页面正文图元（图层）上的可点击链接，按页面顺序排列。
+func (r *Reader) PageLinks() ([]PageLink, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	pageIndex := make(map[models.StID]int, len(r.pages))
+	for index, ref := range r.pages {
+		if ref.page != nil {
+			pageIndex[ref.page.ID] = index
+		}
+	}
+	links := make([]PageLink, 0)
+	for index, ref := range r.pages {
+		if ref.page == nil || ref.document == nil || ref.document.Document == nil {
+			continue
+		}
+		appendLayerLinks(contentLayers(ref.page), ref.fontScope, index, pageIndex, &links)
+		// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
+		for _, tpl := range ref.page.Template() {
+			template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
+			if template == nil || template.Content == nil {
+				continue
+			}
+			appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, &links)
+		}
+	}
+	return links, nil
+}
+
+// contentLayers 返回页面正文的图层列表；读取失败时返回 nil。
+func contentLayers(page *parser.Page) []*models.Layer {
+	var layers []*models.Layer
+	_ = page.WithPageContent(func(content *models.PageContent) error {
+		if content != nil && content.Content != nil {
+			layers = content.Content.Layer
+		}
+		return nil
+	})
+	return layers
+}
+
+// appendLayerLinks 把一组图层中的链接图元回调到 links，并补齐作用域与页码。
+func appendLayerLinks(layers []*models.Layer, scope, page int, pageIndex map[models.StID]int, links *[]PageLink) {
+	for _, layer := range layers {
+		if layer == nil {
+			continue
+		}
+		collectPageBlockLinks(layer.Items, pageIndex, func(link PageLink) {
+			link.Scope = scope
+			link.Page = page
+			*links = append(*links, link)
+		})
+	}
+}
+
+// collectPageBlockLinks 遍历页面对象，把带边界的链接动作回调给 emit。
+func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]int, emit func(PageLink)) {
+	for _, item := range items {
+		if item.Kind == models.PageItemBlock {
+			if item.Block != nil {
+				collectPageBlockLinks(item.Block.Items, pageIndex, emit)
+			}
+			continue
+		}
+		unit := pageItemGraphicUnit(item)
+		if unit == nil || unit.Actions == nil || !unit.Boundary.IsFinite() {
+			continue
+		}
+		if unit.Boundary.Width <= 0 || unit.Boundary.Height <= 0 {
+			continue
+		}
+		uri, target, dest, found := actionLink(*unit.Actions, pageIndex)
+		if !found {
+			continue
+		}
+		id := itemID(item)
+		emit(PageLink{
+			ID:         id,
+			Boundary:   AnnotationBoundary{X: unit.Boundary.X, Y: unit.Boundary.Y, Width: unit.Boundary.Width, Height: unit.Boundary.Height},
+			URI:        uri,
+			TargetPage: target,
+			Dest:       dest,
+		})
+	}
+}
+
+func itemID(item models.PageItem) string {
+	switch item.Kind {
+	case models.PageItemText:
+		if item.Text != nil {
+			return formatStID(item.Text.ID)
+		}
+	case models.PageItemPath:
+		if item.Path != nil {
+			return formatStID(item.Path.ID)
+		}
+	case models.PageItemImage:
+		if item.Image != nil {
+			return formatStID(item.Image.ID)
+		}
+	case models.PageItemComposite:
+		if item.Composite != nil {
+			return formatStID(item.Composite.ID)
+		}
+	}
+	return ""
+}
+
+func formatStID(id models.StID) string {
+	return strconv.FormatUint(uint64(id), 10)
+}
+
+// pageItemGraphicUnit 返回页面对象携带的通用图形属性；嵌套 PageBlock 返回 nil，
+// 由调用方递归处理其子项。
+func pageItemGraphicUnit(item models.PageItem) *models.CTGraphicUnit {
+	switch item.Kind {
+	case models.PageItemText:
+		if item.Text != nil {
+			return &item.Text.CTGraphicUnit
+		}
+	case models.PageItemPath:
+		if item.Path != nil {
+			return &item.Path.CTGraphicUnit
+		}
+	case models.PageItemImage:
+		if item.Image != nil {
+			return &item.Image.CTGraphicUnit
+		}
+	case models.PageItemComposite:
+		if item.Composite != nil {
+			return &item.Composite.CTGraphicUnit
+		}
+	}
+	return nil
 }
 
 // Signatures 返回所有文档体的签名及其摘要/验签结果。
