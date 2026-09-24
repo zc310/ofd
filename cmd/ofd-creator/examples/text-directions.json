@@ -634,17 +634,17 @@
           "y":230,
           "width":180,
           "height":8,
-          "text_codes":[{"value":"HScale 0-1 控制水平缩放比例"}],
+          "text_codes":[{"value":"HScale 控制水平缩放比例（可 >1 横向拉伸）"}],
           "font":"楷体",
           "size":4.5,
           "fill":true,
           "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":242,"width":180,"height":45,"data":"M 0 0 L 180 0 L 180 45 L 0 45 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
+        {"type":"path","x":15,"y":242,"width":180,"height":52,"data":"M 0 0 L 180 0 L 180 45 L 0 45 C","fill":true,"fill_color":{"r":255,"g":255,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":200,"g":200,"b":200}},
         {
           "type":"text",
           "x":20,
-          "y":248,
+          "y":244,
           "width":170,
           "height":12,
           "text_codes":[{"value":"HScale=1.0 正常"}],
@@ -657,7 +657,7 @@
         {
           "type":"text",
           "x":20,
-          "y":262,
+          "y":256,
           "width":170,
           "height":12,
           "text_codes":[{"value":"HScale=0.5 压缩"}],
@@ -670,13 +670,26 @@
         {
           "type":"text",
           "x":20,
-          "y":276,
+          "y":268,
           "width":170,
           "height":12,
           "text_codes":[{"value":"HScale=0.8 稍扁"}],
           "font":"楷体",
           "size":9,
           "h_scale":0.8,
+          "fill":true,
+          "fill_color":{"r":60,"g":60,"b":60}
+        },
+        {
+          "type":"text",
+          "x":20,
+          "y":280,
+          "width":170,
+          "height":12,
+          "text_codes":[{"value":"HScale=1.5 拉伸"}],
+          "font":"楷体",
+          "size":9,
+          "h_scale":1.5,
           "fill":true,
           "fill_color":{"r":60,"g":60,"b":60}
         }

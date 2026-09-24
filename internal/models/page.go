@@ -358,8 +358,9 @@ type CtText struct {
 	Stroke bool `xml:"Stroke,attr,omitempty"`
 	// Fill 是否填充，默认值为 true；当文字对象被裁剪区引用时此属性被忽略。
 	Fill OptionalBool `xml:"Fill,attr,omitempty"`
-	// HScale 字形在水平方向的缩放比，取值为 [0, 1.0]，默认值为 1.0。
-	// 例如，HScale 为 0.5 时表示实际显示的字宽为原来字宽的一半。
+	// HScale 字形在水平方向的缩放比，默认值为 1.0。
+	// 取值可小于 1（压缩）也可大于 1（拉伸）；例如 HScale 为 0.5 时字宽减半，
+	// 为 1.5 时字宽变为原来的 1.5 倍（对应 PDF 的 Tz>100%）。
 	HScale float64 `xml:"HScale,attr,omitempty"`
 	// ReadDirection 阅读方向，指定文字排列的方向，默认值为 0。
 	ReadDirection int `xml:"ReadDirection,attr,omitempty"`

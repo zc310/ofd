@@ -2610,10 +2610,18 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	if _, err := Marshal(Document{
 		ID: "invalid-text-scale",
 		Pages: []Page{{Items: []Item{
-			Text{X: 0, Y: 0, Width: 1, Height: 1, Value: "文字", HScale: 1.1},
+			Text{X: 0, Y: 0, Width: 1, Height: 1, Value: "文字", HScale: -0.5},
 		}}},
 	}); err == nil {
-		t.Fatal("Marshal accepted an invalid text scale")
+		t.Fatal("Marshal accepted an invalid negative text scale")
+	}
+	if _, err := Marshal(Document{
+		ID: "valid-text-scale-above-one",
+		Pages: []Page{{Items: []Item{
+			Text{X: 0, Y: 0, Width: 1, Height: 1, Value: "文字", HScale: 1.1},
+		}}},
+	}); err != nil {
+		t.Fatalf("Marshal rejected HScale above 1: %v", err)
 	}
 	if _, err := Marshal(Document{
 		ID:    "invalid-layer",

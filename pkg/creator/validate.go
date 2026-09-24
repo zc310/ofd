@@ -504,7 +504,7 @@ func validateText(value Text) error {
 	if value.Size < 0 || !finite(value.Size) {
 		return fmt.Errorf("字号无效: %.6g", value.Size)
 	}
-	if value.HScale < 0 || value.HScale > 1 || !finite(value.HScale) {
+	if value.HScale < 0 || !finite(value.HScale) {
 		return fmt.Errorf("水平缩放无效: %.6g", value.HScale)
 	}
 	if value.Weight != 0 && (value.Weight < 100 || value.Weight > 1000 || value.Weight%100 != 0) {
@@ -1633,7 +1633,7 @@ func validateClipText(value ClipText) error {
 	if value.Size < 0 || !finite(value.Size) {
 		return fmt.Errorf("字号无效: %.6g", value.Size)
 	}
-	if value.HScale < 0 || value.HScale > 1 || !finite(value.HScale) {
+	if value.HScale < 0 || !finite(value.HScale) {
 		return fmt.Errorf("水平缩放无效: %.6g", value.HScale)
 	}
 	if value.Weight != 0 && (value.Weight < 100 || value.Weight > 1000 || value.Weight%100 != 0) {
