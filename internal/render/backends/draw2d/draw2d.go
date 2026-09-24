@@ -13,6 +13,7 @@ import (
 	"image"
 	"image/color"
 
+	"github.com/golang/freetype/raster"
 	d2d "github.com/llgcode/draw2d"
 	d2dimg "github.com/llgcode/draw2d/draw2dimg"
 	"golang.org/x/image/draw"
@@ -34,7 +35,7 @@ func init() {
 func New(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 	core, err := rastercore.New(width, height, resolution, func(wpx, hpx int, dpmm, hpix float64) rastercore.Hooks {
 		im := image.NewRGBA(image.Rect(0, 0, wpx, hpx))
-		gc := d2dimg.NewGraphicContext(im)
+		gc := d2dimg.NewGraphicContextWithPainter(im, newGradientPainter(im, dpmm, hpix))
 		return &draw2dHooks{gc: gc, im: im, dpmm: dpmm, hpix: hpix}
 	})
 	if err != nil {
@@ -144,9 +145,9 @@ func (h *draw2dHooks) Raster() *image.RGBA {
 	return dst
 }
 
-// gradientColor 实现 color.Color 但实际用于承载渐变采样信息：draw2d 的
-// RGBAPainter.SetColor 会调用 RGBA()，无法按像素采样，因此这里不作为真正的
-// Painter 使用，仅作占位——详见 SetFillColor 的说明。
+// gradientColor 承载一次渐变填充/描边的采样信息：它实现 color.Color 以通过
+// SetFillColor/SetStrokeColor 的接口，gradientPainter 在 SetColor 时识别该类型
+// 并切换到逐像素采样；RGBA 仅用于退化兜底。
 type gradientColor struct {
 	g    geom.Gradient
 	inv  geom.Matrix
@@ -154,9 +155,87 @@ type gradientColor struct {
 	hpix float64
 }
 
-// RGBA 返回渐变中点的近似色，仅用于退化场景（无法逐像素采样时）。
+// RGBA 返回透明色。正常绘制由 gradientPainter 捕获 *gradientColor 逐像素
+// 采样，不应走到这里；若被当作普通颜色使用则保持透明而不污染黑色。
 func (c *gradientColor) RGBA() (uint32, uint32, uint32, uint32) {
-	return color.RGBA{A: 0xff}.RGBA()
+	return color.RGBA{}.RGBA()
+}
+
+// gradientPainter 是 draw2dimg 的光栅 painter：纯色与 draw2d 默认的 freetype
+// RGBAPainter 完全一致；遇到 *gradientColor 时对 span 逐像素经逆矩阵回映射到
+// 逻辑毫米坐标采样 geom.Gradient，复刻 gg/canvas 的渐变语义。fill 与 stroke
+// 共用同一个 painter，SetColor 在每次 Fill/Stroke 前调用以切换模式。
+type gradientPainter struct {
+	*raster.RGBAPainter
+	im   *image.RGBA
+	dpmm float64
+	hpix float64
+
+	g   geom.Gradient
+	inv geom.Matrix
+}
+
+// newGradientPainter 创建以 im 为目标的渐变 painter。纯色模式委托给内嵌的
+// RGBAPainter，保证与 draw2d 默认行为一致。
+func newGradientPainter(im *image.RGBA, dpmm, hpix float64) *gradientPainter {
+	return &gradientPainter{RGBAPainter: raster.NewRGBAPainter(im), im: im, dpmm: dpmm, hpix: hpix}
+}
+
+// SetColor 切换 painter 模式：*gradientColor 表示渐变逐像素采样，其它颜色
+// 走内嵌 RGBAPainter 的纯色路径。
+func (p *gradientPainter) SetColor(c color.Color) {
+	if gc, ok := c.(*gradientColor); ok {
+		p.g = gc.g
+		p.inv = gc.inv
+		return
+	}
+	p.g = nil
+	p.RGBAPainter.SetColor(c)
+}
+
+// Paint 实现 raster.Painter。渐变模式下对 span 内每个像素计算渐变颜色并按
+// freetype RGBAPainter 的 Over 合成公式写入目标缓冲（与纯色一致）。
+func (p *gradientPainter) Paint(ss []raster.Span, done bool) {
+	if p.g == nil {
+		p.RGBAPainter.Paint(ss, done)
+		return
+	}
+	b := p.im.Bounds()
+	dpmm, hpix := p.dpmm, p.hpix
+	for _, s := range ss {
+		if s.Y < b.Min.Y {
+			continue
+		}
+		if s.Y >= b.Max.Y {
+			return
+		}
+		if s.X0 < b.Min.X {
+			s.X0 = b.Min.X
+		}
+		if s.X1 > b.Max.X {
+			s.X1 = b.Max.X
+		}
+		if s.X0 >= s.X1 {
+			continue
+		}
+		ma := s.Alpha
+		const m = 1<<16 - 1
+		i := (s.Y-b.Min.Y)*p.im.Stride + (s.X0-b.Min.X)*4
+		for x := s.X0; x < s.X1; x++ {
+			pt := p.inv.Dot(geom.Point{X: float64(x) / dpmm, Y: (hpix - float64(s.Y)) / dpmm})
+			cr, cg, cb, ca := p.g.At(pt.X, pt.Y).RGBA()
+			dr := uint32(p.im.Pix[i+0])
+			dg := uint32(p.im.Pix[i+1])
+			db := uint32(p.im.Pix[i+2])
+			da := uint32(p.im.Pix[i+3])
+			a := (m - (ca*ma)/m) * 0x101
+			p.im.Pix[i+0] = uint8((dr*a + cr*ma) / m >> 8)
+			p.im.Pix[i+1] = uint8((dg*a + cg*ma) / m >> 8)
+			p.im.Pix[i+2] = uint8((db*a + cb*ma) / m >> 8)
+			p.im.Pix[i+3] = uint8((da*a + ca*ma) / m >> 8)
+			i += 4
+		}
+	}
 }
 
 // replayPath 把设备像素路径逐段追加到 draw2d 的当前路径。
