@@ -136,11 +136,33 @@ func NewFonts(doc *parser.Document) *Fonts {
 				return
 			}
 		}
-		for _, name := range []string{"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times"} {
+		// 缺失字体的兜底：优先中文字体（OFD 多为中文），再补跨平台普遍存在的
+		// 西文无衬线字体与通用族，尽量保证任何系统都能找到一个可渲染的字体。
+		for _, name := range []string{
+			"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei",
+			"Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+			"Microsoft YaHei", "微软雅黑", "PingFang SC", "Hiragino Sans GB", "STHeiti",
+			"Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "Tahoma", "Verdana",
+			"Liberation Sans", "DejaVu Sans", "Noto Sans", "Cantarell",
+			"sans-serif", "Noto Serif", "DejaVu Serif", "Times",
+		} {
 			slog.Debug("load default system font", "family", name, "style", drawing.FontRegular)
 			if err := defaultRegistration.family.LoadSystemFont(name, canvasStyle(drawing.FontRegular)); err == nil {
 				defaultRegistration.ready = true
 				break
+			}
+		}
+		if !defaultRegistration.ready {
+			// 族名都匹配不到时按常见字体文件名兜底：部分精简系统没有可用的
+			// fontconfig 别名，但字体文件仍在标准目录中。
+			for _, file := range []string{"DejaVuSans.ttf", "LiberationSans-Regular.ttf", "NotoSans-Regular.ttf", "Arial.ttf", "arial.ttf"} {
+				if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), file); err == nil {
+					slog.Debug("load default font file", "path", fontPath)
+					if err := defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
+						defaultRegistration.ready = true
+						break
+					}
+				}
 			}
 		}
 	})
