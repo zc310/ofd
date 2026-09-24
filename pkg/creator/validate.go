@@ -856,7 +856,8 @@ func validateDocumentVersion(value DocumentVersion) error {
 		if err := doc.ReadFromBytes(value.DocRoot); err != nil {
 			return fmt.Errorf("文档版本根文件 XML 无效: %w", err)
 		}
-		if doc.Root() == nil || doc.Root().Tag != "Document" || doc.Root().NamespaceURI() != ofNamespace {
+		root := doc.Root()
+		if root == nil || root.Tag != "Document" || root.NamespaceURI() != ofNamespace {
 			return errors.New("文档版本根文件必须是 OFD 命名空间中的 Document")
 		}
 	}
@@ -1592,20 +1593,20 @@ func validateCTMAndClips(ctm *CTM, clips *Clips) error {
 				}
 			}
 			if area.Path != nil {
-				path := area.Path
-				if err := validateCTM(path.CTM); err != nil {
+				areaPath := area.Path
+				if err := validateCTM(areaPath.CTM); err != nil {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 路径 CTM 无效: %w", clipIndex+1, areaIndex+1, err)
 				}
-				if err := validateBox(path.Boundary.X, path.Boundary.Y, path.Boundary.Width, path.Boundary.Height); err != nil {
+				if err := validateBox(areaPath.Boundary.X, areaPath.Boundary.Y, areaPath.Boundary.Width, areaPath.Boundary.Height); err != nil {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 边界无效: %w", clipIndex+1, areaIndex+1, err)
 				}
-				if strings.TrimSpace(path.Data) == "" {
+				if strings.TrimSpace(areaPath.Data) == "" {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 路径数据不能为空", clipIndex+1, areaIndex+1)
 				}
-				if path.Rule != "" && path.Rule != "NonZero" && path.Rule != "Even-Odd" {
+				if areaPath.Rule != "" && areaPath.Rule != "NonZero" && areaPath.Rule != "Even-Odd" {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 填充规则无效", clipIndex+1, areaIndex+1)
 				}
-				if err := validateGraphicStyle(path.LineWidth, path.Cap, path.Join, path.MiterLimit, path.DashOffset, path.DashPattern, path.Alpha); err != nil {
+				if err := validateGraphicStyle(areaPath.LineWidth, areaPath.Cap, areaPath.Join, areaPath.MiterLimit, areaPath.DashOffset, areaPath.DashPattern, areaPath.Alpha); err != nil {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 线条参数无效: %w", clipIndex+1, areaIndex+1, err)
 				}
 			} else if err := validateClipText(*area.Text); err != nil {
