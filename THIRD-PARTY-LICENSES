@@ -48,9 +48,9 @@ Source: https://github.com/h2non/filetype
 License: MIT
 Source: https://github.com/knroy/go-xml
 
-### github.com/nao1215/imaging v1.0.10
+### github.com/kovidgoyal/imaging v1.8.23
 License: MIT
-Source: https://github.com/nao1215/imaging
+Source: https://github.com/kovidgoyal/imaging
 
 ### github.com/ncruces/zenity v0.10.15
 License: MIT
