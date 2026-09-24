@@ -240,14 +240,19 @@ func newOFDGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos
 			continue
 		}
 
-		if point.EdgeFlag != 1 && point.EdgeFlag != 2 {
+		if point.EdgeFlag != 1 && point.EdgeFlag != 2 && point.EdgeFlag != 3 {
 			index++
 			continue
 		}
 		vertex := newGouraudVertex(point, transform, resolve)
-		if point.EdgeFlag == 1 {
+		switch point.EdgeFlag {
+		case 1:
 			previous = [3]ofdMeshVertex{previous[1], previous[2], vertex}
-		} else {
+		case 3:
+			// 规范只定义 0/1/2，但个别文件沿用 PDF 语义写出 EdgeFlag=3
+			// （复用上一个三角形的 v0-v1 边），这里宽容处理避免丢三角形。
+			previous = [3]ofdMeshVertex{previous[0], previous[1], vertex}
+		default:
 			previous = [3]ofdMeshVertex{previous[0], previous[2], vertex}
 		}
 		triangles = append(triangles, makeMeshTriangle(previous[0], previous[1], previous[2]))
@@ -260,6 +265,11 @@ func newOFDGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos
 // 每个相邻的四个顶点沿对角线拆分为两个三角形。
 func newOFDLaGouraudGradient(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
 	if shd == nil || shd.VerticesPerRow < 2 || len(shd.Point) < shd.VerticesPerRow*2 {
+		return nil
+	}
+	// 规则网格要求 Point 数量是 VerticesPerRow 的整数倍（逐行完整）。末尾
+	// 出现半行说明数据损坏或装配错误，整体拒绝而不是静默丢弃不完整的尾行。
+	if len(shd.Point)%shd.VerticesPerRow != 0 {
 		return nil
 	}
 	rows := len(shd.Point) / shd.VerticesPerRow
