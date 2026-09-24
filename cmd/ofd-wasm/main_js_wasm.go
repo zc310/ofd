@@ -46,6 +46,7 @@ func main() {
 	api := js.Global().Get("Object").New()
 	api.Set("open", js.FuncOf(app.open))
 	api.Set("addFallbackFont", js.FuncOf(app.addFallbackFont))
+	api.Set("removeFallbackFont", js.FuncOf(app.removeFallbackFont))
 	api.Set("close", js.FuncOf(app.close))
 	api.Set("info", js.FuncOf(app.info))
 	api.Set("outline", js.FuncOf(app.outline))
@@ -218,6 +219,32 @@ func containsFallbackFont(fonts []webreader.FontSource, source webreader.FontSou
 		}
 	}
 	return false
+}
+
+// removeFallbackFont 移除指定字体族：从本实例的回退字体列表移除（后续打开的文档
+// 不再自动应用），并让当前 Reader 取消该回退字体，使已打开文档立即恢复内嵌/默认
+// 字体。全局字体注册表不提供撤销，但本机字体仅在当前文档生效的语义由此保证。
+func (a *wasmApp) removeFallbackFont(_ js.Value, args []js.Value) any {
+	if len(args) != 1 || args[0].Type() != js.TypeString || strings.TrimSpace(args[0].String()) == "" {
+		return errorValue(errors.New("ofd.removeFallbackFont 需要字体族名"))
+	}
+	family := args[0].String()
+	a.mu.Lock()
+	kept := a.fallbackFonts[:0]
+	for _, source := range a.fallbackFonts {
+		if source.Family != family {
+			kept = append(kept, source)
+		}
+	}
+	a.fallbackFonts = kept
+	reader := a.reader
+	a.mu.Unlock()
+	if reader != nil {
+		if err := reader.RemoveFallbackFont(family); err != nil {
+			return errorValue(err)
+		}
+	}
+	return nil
 }
 
 func cloneFontSource(source webreader.FontSource) webreader.FontSource {

@@ -80,6 +80,8 @@ async function execute(message) {
         message.weight ?? 400,
         !!message.italic,
       ));
+    case 'removeFallbackFont':
+      return unwrap(self.ofd.removeFallbackFont(message.family));
     case 'close':
       return unwrap(self.ofd.close());
     case 'memStats':

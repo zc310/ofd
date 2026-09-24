@@ -109,6 +109,10 @@ class OFDWorkerClient {
     }, [buffer]);
   }
 
+  removeFallbackFont(family) {
+    return this.request('removeFallbackFont', { family });
+  }
+
   close() {
     return this.request('close');
   }
@@ -376,6 +380,7 @@ const pagePill = document.querySelector('#page-pill');
 const pillHide = document.querySelector('#pill-hide');
 const darkReading = document.querySelector('#dark-reading');
 const clarityPrioritySelect = document.querySelector('#clarity-priority');
+const localFontsSelect = document.querySelector('#local-fonts');
 const renderFormatSelect = document.querySelector('#render-format');
 const documentBackground = document.querySelector('#document-background');
 const documentBackgroundColorPicker = document.querySelector('#document-background-color');
@@ -469,6 +474,8 @@ let thumbnailButtons = [];
 let current = 0;
 let documentGeneration = 0;
 let injectedFonts = new Map();
+let localFontsActive = false;
+const localFontFamilies = new Set();
 let resizeObserver;
 let pageLinks = new Map();
 let linkRequest;
@@ -1817,6 +1824,217 @@ async function preloadFallbackFonts() {
   return loaded;
 }
 
+// 本机字体：仅在用户显式勾选时按需读取，且只读取文档声明但未嵌入的字体族所
+// 需要的本地字体。字体数据注册到 WASM 回退表后立即重渲染；关闭或切换文档时
+// 移除注册，使本机字体仅在当前文档内有效（“临时”语义）。
+
+// localFontsSupported 判断当前浏览器是否支持本地字体访问 API。
+function localFontsSupported() {
+  return typeof window !== 'undefined' && typeof window.queryLocalFonts === 'function';
+}
+
+// missingFontFamilies 收集文档声明但未嵌入的字体族名（去重，保留原始名）。部分
+// 文档只填了 FontName 而没有 FamilyName，此时回退使用 name。
+async function missingFontFamilies() {
+  try {
+    const info = await loadDocumentInfo();
+    const families = new Map();
+    for (const font of info?.fonts || []) {
+      if (!font || font.embedded) continue;
+      const family = String(font.family || font.name || '').trim();
+      if (!family) continue;
+      families.set(normalizeFontFamily(family), family);
+    }
+    return families;
+  } catch (_) {
+    return new Map();
+  }
+}
+
+// normalizeFontFamily 归一化用于比较的字体族名：小写并去掉空白、连字符与样式后缀。
+function normalizeFontFamily(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+    .replace(/(regular|bold|italic|light|medium|semibold|black|thin)$/g, '');
+}
+
+// FONT_FAMILY_GROUPS 把常见的字体族别名映射到等价组，用于把文档声明的字体族
+// （如“仿宋_GB2312”）与本机字体（如“FangSong”“仿宋”）对应起来。与
+// internal/render/backends/canvas/font_candidates.go 的 fallbackNameGroup 保持一致。
+const FONT_FAMILY_GROUPS = {
+  simsun: ['宋体', '宋体gb2312', 'simsun', 'nsimsun', 'songti', 'simsungb2312', 'songtigb2312', '方正小标宋', '方正小标宋gbk', '方正书宋', 'fzxbs'],
+  stsong: ['华文宋体', 'stsong'],
+  simhei: ['黑体', '黑体gb2312', 'simhei', 'heiti', 'hei', 'microsoftheiti', 'heitisc', '方正黑体', '方正黑体gbk'],
+  stheiti: ['华文黑体', 'stheiti'],
+  simkai: ['楷体', '楷体gb2312', 'simkai', 'kaiti', 'kaishu', 'kaitigb2312', '方正楷体', '方正楷体gbk'],
+  stkaiti: ['华文楷体', 'stkaiti'],
+  simfang: ['仿宋', '仿宋gb2312', 'simfang', 'fangsong', 'fangsonggb2312', '方正仿宋', '方正仿宋gbk'],
+  stfangsong: ['华文仿宋', 'stfangsong'],
+  yahei: ['微软雅黑', 'microsoftyahei', 'microsoftyaheiui', 'msyh', 'yahei'],
+  jhenghei: ['微软正黑', 'microsoftjhenghei', 'microsoftjhengheiui', 'msjh'],
+  dengxian: ['等线', 'dengxian'],
+  sanssc: ['思源黑体', 'sourcehansanssc', 'sourcehansanscn', 'notosanssc', 'notosanscjksc', 'ofdnotosanssc'],
+  serifsc: ['思源宋体', 'sourcehanserifsc', 'sourcehanserifcn', 'notoserifsc', 'notoserifcjksc'],
+  smileysans: ['smileysans', 'smileysansoblique', '得意黑'],
+};
+
+// fontFamilyGroup 返回字体族所属的等价组；未收录时返回空字符串。
+function fontFamilyGroup(name) {
+  const normalized = normalizeFontFamily(name);
+  for (const [group, members] of Object.entries(FONT_FAMILY_GROUPS)) {
+    if (members.includes(normalized)) return group;
+  }
+  return '';
+}
+
+// localFontMatchesFamily 判断本机字体是否可用于补齐文档声明的某个字体族：优先精确
+// 归一化匹配，其次按等价组匹配。
+function localFontMatchesFamily(localFont, missing) {
+  const localNorm = normalizeFontFamily(localFont.family);
+  const localGroup = fontFamilyGroup(localFont.family);
+  for (const [key, original] of missing) {
+    if (key === localNorm) return original;
+    if (localGroup) {
+      const group = fontFamilyGroup(original);
+      if (group && group === localGroup) return original;
+    }
+  }
+  return '';
+}
+
+// fetchLocalFontsForDocument 在已获得本地字体列表后，匹配文档缺失字体、读取字形
+// 数据并注册为 WASM 回退字体。返回实际注册的字体数量。queryLocalFontsPromise 必须
+// 在用户手势内同步发起（见 setLocalFonts），否则浏览器会拒绝授权。
+async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
+  const wanted = await missingFontFamilies();
+  wanted.delete('');
+  if (wanted.size === 0) return 0;
+
+  const available = await queryLocalFontsPromise;
+  const selected = new Map();
+  for (const font of available || []) {
+    const family = String(font.family || '').trim();
+    if (!family) continue;
+    const wantedName = localFontMatchesFamily({ family }, wanted);
+    if (!wantedName) continue;
+    // 同一目标族只取一份；优先常规字重。
+    if (selected.has(wantedName) && font.style !== 'Regular') continue;
+    if (!selected.has(wantedName) || font.style === 'Regular') {
+      selected.set(wantedName, font);
+    }
+  }
+  if (selected.size === 0) return 0;
+
+  let registered = 0;
+  for (const [wantedName, font] of selected) {
+    if (generation !== documentGeneration) return registered;
+    let data;
+    try {
+      const blob = await font.blob();
+      data = await blob.arrayBuffer();
+    } catch (_) {
+      continue;
+    }
+    if (generation !== documentGeneration) return registered;
+    const weight = font.style === 'Bold' ? 700 : 400;
+    const italic = font.style === 'Italic' || font.style === 'Bold Italic';
+    try {
+      await engine.addFallbackFont(data, wantedName, weight, italic);
+      localFontFamilies.add(wantedName);
+      registered++;
+    } catch (_) {
+      // 无法注册的本地字体不应阻止其他字体生效。
+    }
+  }
+  return registered;
+}
+
+// removeLocalFonts 移除本窗口曾注册的本机字体，使后续打开的文档不再沿用。
+async function removeLocalFonts() {
+  const families = Array.from(localFontFamilies);
+  localFontFamilies.clear();
+  for (const family of families) {
+    try {
+      await engine.removeFallbackFont(family);
+    } catch (_) {
+      // 移除失败不影响关闭流程。
+    }
+  }
+}
+
+// setLocalFonts 切换本机字体使用；仅在勾选且文档已打开时读取，失败时回滚勾选。
+async function setLocalFonts(enabled) {
+  if (!enabled) {
+    if (!localFontsActive) return;
+    localFontsActive = false;
+    await removeLocalFonts();
+    invalidatePageFonts();
+    setStatus('已停用本机字体');
+    return;
+  }
+  if (!pageInfos.length) {
+    localFontsSelect.checked = false;
+    return;
+  }
+  if (!localFontsSupported()) {
+    localFontsSelect.checked = false;
+    setStatus('当前浏览器不支持读取本机字体');
+    return;
+  }
+  // queryLocalFonts 必须在用户手势的同步任务内发起，否则浏览器会以
+  // SecurityError 拒绝且不弹授权框；先发起再 await 其余准备工作。
+  let queryPromise;
+  try {
+    queryPromise = window.queryLocalFonts();
+  } catch (error) {
+    localFontsSelect.checked = false;
+    setStatus(`读取本机字体失败：${error.message}`);
+    return;
+  }
+  const generation = documentGeneration;
+  localFontsSelect.disabled = true;
+  let registered = 0;
+  try {
+    registered = await fetchLocalFontsForDocument(queryPromise, generation);
+  } catch (error) {
+    if (generation === documentGeneration) {
+      localFontsSelect.checked = false;
+      setStatus(`读取本机字体失败：${error.message}`);
+    }
+    return;
+  } finally {
+    if (generation === documentGeneration) localFontsSelect.disabled = false;
+  }
+  if (generation !== documentGeneration) return;
+  if (registered === 0) {
+    localFontsSelect.checked = false;
+    setStatus('本机没有可用于补齐的字体');
+    return;
+  }
+  localFontsActive = true;
+  invalidatePageFonts();
+  setStatus(`已启用本机字体（${registered} 款）`);
+}
+
+// invalidatePageFonts 丢弃页面与缩略图缓存并重渲染可见页面，使字体变更生效。
+function invalidatePageFonts() {
+  cancelRequests(pageRequests);
+  cancelRequests(thumbnailRequests);
+  pageCache.clear();
+  thumbnailCache.clear();
+  thumbnailButtons.forEach(button => {
+    const image = button?.querySelector('img');
+    if (image) {
+      image.hidden = true;
+      image.removeAttribute('src');
+      image.classList.remove('loaded');
+    }
+  });
+  reloadPageImages();
+  scheduleVirtualUpdate();
+}
+
 function loadFallbackFont(source) {
   const key = `${source.family}:${source.weight}`;
   const cached = fallbackFontData.get(key);
@@ -1897,6 +2115,9 @@ function updateNavigation() {
   pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
   renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
   clarityPrioritySelect.disabled = documentActionBusy || pageInfos.length === 0 || !imageRenderFormat();
+  if (localFontsSelect) {
+    localFontsSelect.disabled = documentActionBusy || pageInfos.length === 0 || !localFontsSupported();
+  }
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
   pagePill.hidden = !pagePillVisible || pageInfos.length === 0;
 }
@@ -2733,6 +2954,13 @@ async function openSelectedFile(selected) {
   openRequest?.cancel();
   openRequest = undefined;
   clearInjectedFonts();
+  // 本机字体仅在当前文档有效：切换文档时移除并复位开关。
+  void removeLocalFonts();
+  localFontsActive = false;
+  if (localFontsSelect) {
+    localFontsSelect.checked = false;
+    localFontsSelect.disabled = true;
+  }
   pageCache.clear();
   thumbnailCache.clear();
   cancelRequests(pageRequests);
@@ -2914,6 +3142,10 @@ function cancelOpening() {
   searchRequest?.cancel();
   searchRequest = undefined;
   clearInjectedFonts();
+  // 关闭文档时一并撤销本机字体，避免影响后续文档。
+  void removeLocalFonts();
+  localFontsActive = false;
+  if (localFontsSelect) localFontsSelect.checked = false;
   // open 已经进入 Worker 时，取消只会取消前端 Promise；显式 close
   // 确保 WASM 侧不会留下被取消打开的 Reader。
   void engine.close().catch(error => console.warn('[OFD] 取消打开时释放 Reader 失败', error));
@@ -5801,6 +6033,7 @@ documentBackgroundColorPicker.addEventListener('input', () => {
 });
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
 clarityPrioritySelect.addEventListener('change', () => setClarityPriority(clarityPrioritySelect.checked));
+localFontsSelect?.addEventListener('change', () => { void setLocalFonts(localFontsSelect.checked); });
 renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormatSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
