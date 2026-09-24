@@ -25,6 +25,7 @@
 - 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
 - 签名页签列出文档签名（提供者/公司、算法、签名时间、摘要一致/验签通过/可信徽标），并显示每个签章所在页码与印章缩略图，点击跳转到签章位置；点击“签名范围”可展开签名覆盖的文件引用与逐项摘要校验（数据摘要一致/不一致），点击“证书详情”可展开印章/外层证书的主体、签发者、序列号、有效期、公钥、算法与签名/证书/证书链/吊销校验状态，并可导出证书（DER/PEM）；签名项提供“导出签名值”（SignedValue.dat）。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
+- 页面上的可点击链接会叠加半透明热区：链接来自注解（`Type="Link"`）与页面正文/模板图元的 `CLICK` 动作；外部链接在新标签页打开，内部跳转按目标页与 `Dest` 定位，并随页面旋转/缩放重新布局。
 - 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
 - 没有大纲或书签的文档在对应页签显示占位提示（页签始终可用，不会自动跳回缩略图），无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
 - 侧栏宽度可用分隔条拖拽调整并保存在本地；大纲/书签条目右侧显示目标页码，并支持按标题过滤（保留命中项及其祖先）。
@@ -55,6 +56,7 @@
 - 打印、导出、复制当前页文字、复制全文收在工具栏最右侧的“文档操作”菜单（`more_vert` 图标）中；移动端该按钮固定在最右侧一行。
 - 文档信息面板列出文档声明的字体（名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式），并汇总资源统计（字体/附件/多媒体/注解页/签名数量）。
 - 选择单页、双页或“双页，奇数页在左”布局。
+- 可选“使用本机字体”：仅在勾选且已打开文档时，于用户手势内请求浏览器授权读取本机字体（`queryLocalFonts`），只取文档声明但未嵌入的字体族并注册为回退字体后重新渲染；取消勾选或关闭/切换文档时移除注册并恢复内嵌/默认字体，本机字体仅在当前文档内有效。不支持该 API 的浏览器会禁用此选项。
 - 显示设置和布局设置会保存在浏览器本地。
 
 ### 页面布局
@@ -152,6 +154,7 @@ WASM 启动后会注册 `window.ofd`：
 
 ```javascript
 ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false) // WASM 生命周期内注册一次
+ofd.removeFallbackFont('Noto Sans SC') // 取消该回退字体族，当前文档恢复内嵌/默认字体
 ofd.open(new Uint8Array(await file.arrayBuffer()))
 ofd.info() // 元数据 + fonts 字体清单（不含嵌入数据）
 ofd.pageCount()
@@ -161,6 +164,8 @@ ofd.outline()
 ofd.preferences()
 ofd.text(0)
 ofd.search('关键词')
+ofd.pageLinks() // 页面正文图元上的可点击链接
+ofd.annotations() // 注解清单（含 Link 注解的 uri/target_page/dest）
 ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
 ofd.renderPage(0, { format: 'jpg', dpi: 72 })
 ofd.renderPage(0, { format: 'svg' })
@@ -192,6 +197,7 @@ ofd.close()
 - `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
 - `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
+- `ofd.removeFallbackFont(family)` 取消先前注册的回退字体族：从当前 WASM 实例的回退字体列表移除（后续文档不再沿用），并让已打开文档立即恢复内嵌/默认字体。全局字体注册表不回滚。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
 - 后续文档会复用缓存，不受字符数量限制；未找到可用内嵌字体的文字会优先按 OFD 字体名选择匹配的回退字体，匹配不到时使用第一个适配样式的回退字体。
 - 自托管字体需要允许当前页面跨域访问；HTTPS 页面不能加载 HTTP 字体 URL。
@@ -216,7 +222,8 @@ ofd.close()
 - `ofd.attachments()` 返回附件清单：`{ scope, id, name, format, size, has_size, actual_size, usage, visible, exists }`；`size` 是声明的字节数（`has_size=false` 时无效），`actual_size` 是包内实际字节数（文件缺失或未知时为 0），`visible` 未声明时为 true。
 - `ofd.attachmentData(scope, id, maxBytes)` 读取附件二进制内容（返回可转移的 `ArrayBuffer`）；`maxBytes` 省略时默认 32 MiB，硬上限 128 MiB，超过上限返回错误。
 - `ofd.media()` 返回多媒体资源清单：`{ scope, id, name, type, format, size, exists }`；`type` 通常为 `Image`/`Audio`/`Video`，`name` 是资源文件名。`ofd.mediaData(scope, id, maxBytes)` 读取资源二进制内容，大小限制同附件。
-- `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。
+- `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, uri, target_page, dest, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。`Link` 注解的 `uri` 是外部链接（无则空串），`target_page` 是跳转目标页全局索引（无页面目标为 `-1`），`dest` 为 `{ type, left, top, right, bottom, zoom }`（无位置信息为 `null`）。
+- `ofd.pageLinks()` 返回页面正文图元上的可点击链接清单：`{ scope, page, id, uri, target_page, dest, boundary }`，字段含义同上。链接可能定义在页面的模板页上，会叠加到每个使用该模板的页面；承载链接的图元不可见时仍可点击。
 - `ofd.signatures()` 返回签名清单：`{ scope, id, provider, company, version, method, date, has_digest, digest_valid, digest_method, has_verification, verified, trusted, trust_checked, verification_error, has_data_hash, data_hash_match, references, stamps, certificates }`，其中 `references` 为 `{ file_ref, exists, match, error }`，`stamps` 为 `{ page, id, has_seal, seal_type, boundary }`，`certificates` 为 `{ slot, subject, issuer, common_name, organization, organizational_unit, country, locality, province, serial_number, not_before, not_after, public_key, algorithm, signature_format, signature_valid, certificate_valid, trust_checked, trusted, trust_error, revocation_checked, revocation_status, revocation_error, error }`。`ofd.signatureSeal(scope, id, stampIndex)` 返回签章印章文件内容（可转移 `ArrayBuffer`）。`ofd.signatureCertificate(scope, id, slot)` 按层级（`seal`/`outer`）返回证书 DER；`ofd.signatureValue(scope, id)` 返回签名值（SignedValue.dat）内容。
 - `ofd.stats()` 返回资源数量汇总：`{ fonts, attachments, media, annotation_pages, signatures }`，只读取声明，不加载资源内容。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
@@ -229,10 +236,26 @@ ofd.close()
 open       data: ArrayBuffer
 close
 cancel     target: request id
+memStats
+info
 addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boolean
+removeFallbackFont family: string
 pageInfo   index: number
 outline
 preferences
+fontUsage  scope: number, fontID: number[, maxScan, maxPages]
+fontUsageAll [maxScan, maxPages]
+attachments
+attachmentData scope: number, id: number[, maxBytes]
+media
+mediaData  scope: number, id: number[, maxBytes]
+pageLinks
+annotations
+signatures
+signatureSeal scope: number, id: number, stampIndex: number
+signatureCertificate scope: number, id: number, slot: string
+signatureValue scope: number, id: number
+stats
 renderPage index: number, options: object
 renderPages indices: number[], options: object
 renderStream indices: number[], options: object[, callback: function]
