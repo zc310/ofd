@@ -27,6 +27,8 @@ func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
 		{family: "方正楷体_GBK", name: "F5", group: "simkai"},
 		{family: "黑体", name: "F6", group: "simhei"},
 		{family: "微软雅黑", name: "F7", group: "yahei"},
+		{family: "Smiley Sans", name: "F9", group: "smileysans"},
+		{family: "得意黑", name: "F10", group: "smileysans"},
 		{family: "", name: "F8", group: ""},
 		{family: "ZGCCnm-1", name: "TT-0", group: ""},
 	}
