@@ -7,8 +7,9 @@
 package canvasconv
 
 import (
-	"github.com/tdewolff/canvas"
 	"image/color"
+
+	"github.com/tdewolff/canvas"
 
 	"github.com/zc310/ofd/internal/render/geom"
 )
