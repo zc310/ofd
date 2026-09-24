@@ -63,6 +63,20 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 		Weight: weight, Italic: font.italic,
 		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
 		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
+	// 合并 CTM 与文本矩阵后其 x 轴方向决定文字的排版角度。OFD 文字不带 CTM 时
+	// 只能水平排版，旋转文字（如 45° 的图章/水印）会丢失角度而变成水平。带旋转
+	// 时输出纯旋转 CTM，并把 Boundary 反推为“码位原点经 CTM 变换后落在笔位置”。
+	if rotation := -math.Atan2(
+		p.state.ctm[1]*p.state.textMatrix[0]+p.state.ctm[3]*p.state.textMatrix[1],
+		p.state.ctm[0]*p.state.textMatrix[0]+p.state.ctm[2]*p.state.textMatrix[1],
+	); math.Abs(rotation) > 1e-4 {
+		cos, sin := math.Cos(rotation), math.Sin(rotation)
+		item.CTM = &creator.CTM{cos, sin, -sin, cos, 0, 0}
+		// creator 会把文字码位的 Y 填为行高，渲染端按 CTM 变换码位原点后再叠加
+		// Boundary，因此 X/Y 需扣除该旋转偏移，保证基线起点仍落在 (x, y)。
+		item.X = x + sin*size
+		item.Y = y - cos*size
+	}
 	// PDF 的 Tz 同时缩放字形宽度和推进量。这里只把推进量计入 Width/DeltaX，
 	// 若不同时输出 OFD 的 HScale，字形本身会按原宽绘制（横向未拉伸），
 	// 导致 Tz≠100 的标题等文字偏窄、与相邻行字距失真。OFD HScale 默认 1。

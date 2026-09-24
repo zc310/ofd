@@ -57,6 +57,37 @@ func TestConvertRendersAnnotationAppearance(t *testing.T) {
 	}
 }
 
+func TestConvertAnnotationFontScopesToAppearanceResources(t *testing.T) {
+	// 注解外观有自己的资源字典，允许使用与页面同名的字体资源（如 /F1）。
+	// 若按资源名复用页面已缓存的字体，外观会误用页面字体并按错误编码解码，
+	// 使图章/水印文字（如 "保密资料"）乱码或不可见。
+	pageContent := "BT /F1 12 Tf 10 50 Td (A) Tj ET"
+	appearance := "BT /F1 8 Tf 10 10 Td (A) Tj ET"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",         // 1
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>", // 2
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [8 0 R] >>",                                              // 3
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",                                                                                                                      // 4 页面 /F1
+		"<< /Length " + itoa(len(pageContent)) + " >>\nstream\n" + pageContent + "\nendstream",                                                                                        // 5
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Type /Encoding /Differences [65 /Z] >> >>",                                                                 // 6 外观 /F1，码 65 映射为 Z
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << /Font << /F1 6 0 R >> >> /Length " + itoa(len(appearance)) + " >>\nstream\n" + appearance + "\nendstream", // 7
+		"<< /Type /Annot /Subtype /Stamp /Rect [0 0 100 100] /F 4 /AP << /N 7 0 R >> >>",                                                                                              // 8
+	}
+	page := parseConvertedPage(t, objects)
+	var got []string
+	for _, text := range layerTexts(page.Content().Layer[0]) {
+		if len(text.TextCode) > 0 {
+			got = append(got, text.TextCode[0].Value)
+		}
+	}
+	for _, value := range got {
+		if value == "Z" {
+			return
+		}
+	}
+	t.Fatalf("annotation text = %v, want Z (annotation must use its own /F1, not the page /F1)", got)
+}
+
 func TestConvertAppliesExtGStateOpacity(t *testing.T) {
 	// ExtGState 的 ca/CA 是透明度的来源之一；忽略它会让半透明注解（如整页
 	// 灰色背景）变成不透明色块。
