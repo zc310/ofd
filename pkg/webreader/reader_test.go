@@ -1291,6 +1291,96 @@ func TestAnnotationsExposeMetadata(t *testing.T) {
 	}
 }
 
+func TestAnnotationsExposeLinkTarget(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "links.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Annotations()
+	if err != nil {
+		t.Fatalf("读取注解失败: %v", err)
+	}
+	byID := make(map[string]AnnotationInfo, len(infos))
+	for _, info := range infos {
+		byID[info.ID] = info
+	}
+
+	// 内部跳转：动作挂在外观页面的图形对象上，目标页解析为全局页索引。
+	internal := byID["201"]
+	if internal.Type != "Link" {
+		t.Fatalf("注解 201 类型 = %q, 期望 Link", internal.Type)
+	}
+	if internal.Boundary == nil || internal.Boundary.X != 30 || internal.Boundary.Y != 160 {
+		t.Fatalf("链接 201 边界 = %+v", internal.Boundary)
+	}
+	if internal.TargetPage != 1 {
+		t.Fatalf("链接 201 目标页 = %d, 期望 1", internal.TargetPage)
+	}
+	if internal.Dest == nil || internal.Dest.Type != "XYZ" || internal.Dest.Left == nil || *internal.Dest.Left != 0 {
+		t.Fatalf("链接 201 跳转目标 = %+v", internal.Dest)
+	}
+	if internal.URI != "" {
+		t.Fatalf("链接 201 不应有外部 URI: %+v", internal)
+	}
+
+	// 外部链接：只有 URI，没有页面目标。
+	external := byID["202"]
+	if external.URI != "https://github.com/zc310/ofd" {
+		t.Fatalf("链接 202 URI = %q", external.URI)
+	}
+	if external.TargetPage != -1 || external.Dest != nil {
+		t.Fatalf("外部链接不应有页面目标: %+v", external)
+	}
+
+	// 第二页的返回链接目标为全局页索引 0。
+	if back := byID["203"]; back.TargetPage != 0 || back.Page != 1 {
+		t.Fatalf("链接 203 = %+v, 期望 page=1 target=0", back)
+	}
+}
+
+func TestPageLinksExposeGraphicUnitActions(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "project-showcase.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatalf("读取页面链接失败: %v", err)
+	}
+	var found *PageLink
+	for index := range links {
+		if links[index].URI == "https://github.com/zc310/ofd" {
+			found = &links[index]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("未找到正文图元上的外链: %+v", links)
+	}
+	// 该链接定义在页面模板上，模板图元会叠加到每个使用它的页面上。
+	if found.Page != 0 {
+		t.Fatalf("链接页码 = %d, 期望 0", found.Page)
+	}
+	if found.Boundary.Width <= 0 || found.Boundary.Height <= 0 {
+		t.Fatalf("链接边界无效: %+v", found.Boundary)
+	}
+	if found.TargetPage != -1 || found.Dest != nil {
+		t.Fatalf("外部链接不应有页面目标: %+v", found)
+	}
+}
+
 func TestSignaturesExposeMetadataAndSeals(t *testing.T) {
 	cases := []struct {
 		file    string
