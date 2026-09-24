@@ -279,8 +279,9 @@ func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
 	value := models.Color{RGBA: color.RGBA{R: 255, A: 255}}
 	alpha := uint8(128)
 	got := ofdColorRGBA(models.CTColor{Value: &value, Alpha: &alpha})
-	if got.R != 255 || got.A < 127 || got.A > 128 {
-		t.Fatalf("color = %v, want straight red with approximately 128 alpha", got)
+	n := color.NRGBAModel.Convert(got).(color.NRGBA)
+	if n.R != 255 || n.A < 127 || n.A > 128 {
+		t.Fatalf("color = %v, want straight red with approximately 128 alpha", n)
 	}
 }
 

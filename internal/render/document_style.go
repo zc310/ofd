@@ -151,7 +151,7 @@ func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 	if fill.HasValue {
 		value := fill.Value
 		if alpha != nil {
-			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(alpha)) / 255)
+			value = scaleAlpha(value, graphicOpacity(alpha))
 		}
 		ctx.SetFillColor(value)
 		return
