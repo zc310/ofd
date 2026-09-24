@@ -16,6 +16,7 @@ require (
 	github.com/fogleman/gg v1.3.0
 	github.com/go-text/typesetting v0.3.5
 	github.com/gogpu/gg v0.52.5
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
 	github.com/klauspost/compress v1.20.0
 	github.com/knroy/go-xml v1.3.1
@@ -23,7 +24,6 @@ require (
 	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
-	github.com/nao1215/imaging v1.0.11
 	github.com/ncruces/zenity v0.10.15
 	github.com/pdfcpu/pdfcpu v0.15.0
 	github.com/rymdport/portal v0.4.2
@@ -78,7 +78,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogpu/gpucontext v0.31.3 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.1 // indirect
 	github.com/hhrutter/tiff v1.0.6 // indirect
@@ -88,12 +87,14 @@ require (
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
 	github.com/kovidgoyal/go-parallel v1.1.1 // indirect
+	github.com/kovidgoyal/go-shm v1.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7 // indirect
 	github.com/richardlehane/mscfb v1.0.8 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
@@ -103,7 +104,6 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	gonum.org/v1/plot v0.17.0 // indirect
 	modernc.org/knuth v0.6.0 // indirect
@@ -113,6 +113,6 @@ require (
 
 replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260923164158-fa4355038d52
 
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20260923231615-ffe1cbf5406e
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20260924140911-8b7a86f23fa0
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
