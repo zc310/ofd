@@ -13,6 +13,7 @@ package tinyskia
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"github.com/lumifloat/tinyskia"
 
@@ -53,6 +54,10 @@ type tinyskiaHooks struct {
 	dpmm     float64
 	hpix     float64
 	fillRule geom.FillRule
+
+	// gradOriginX/Y 记录最近一次 gradientPattern 图案左上角所在的设备坐标，
+	// 图案填充时用平移矩阵把图案原点贴回该位置。
+	gradOriginX, gradOriginY int
 }
 
 func (h *tinyskiaHooks) Push() { h.ctx.Save() }
@@ -70,7 +75,7 @@ func (h *tinyskiaHooks) DrawDevicePath(dp *rastercore.DevicePath, m geom.Matrix,
 	replayPath(h.ctx, dp)
 	if fill {
 		if fillGrad != nil {
-			h.setGradient(fillGrad, m, true)
+			h.setGradient(fillGrad, m, true, dp, 0)
 		}
 		// tinyskia 的 Fill/Stroke 都不会自动清空路径，因此同一条路径可以
 		// 先 Fill 后 Stroke；这里显式使用填充规则版本区分 NonZero/EvenOdd。
@@ -84,7 +89,7 @@ func (h *tinyskiaHooks) DrawDevicePath(dp *rastercore.DevicePath, m geom.Matrix,
 	if stroke {
 		h.strokeStyle(style)
 		if strokeGrad != nil {
-			h.setGradient(strokeGrad, m, false)
+			h.setGradient(strokeGrad, m, false, dp, style.Width/2)
 		}
 		h.ctx.Stroke()
 	}
@@ -121,8 +126,8 @@ func (h *tinyskiaHooks) Raster() *image.RGBA {
 }
 
 // setGradient 把 geom 渐变几何换算到设备空间后重建为 tinyskia 渐变样式。
-// isFill 选择 fill/stroke 样式。
-func (h *tinyskiaHooks) setGradient(g geom.Gradient, m geom.Matrix, isFill bool) {
+// isFill 选择 fill/stroke 样式；dp 与 pad 仅在非纯渐变回退到逐像素图案时使用。
+func (h *tinyskiaHooks) setGradient(g geom.Gradient, m geom.Matrix, isFill bool, dp *rastercore.DevicePath, pad float64) {
 	set := h.ctx.SetFillStyleGradient
 	if !isFill {
 		set = h.ctx.SetStrokeStyleGradient
@@ -145,12 +150,79 @@ func (h *tinyskiaHooks) setGradient(g geom.Gradient, m geom.Matrix, isFill bool)
 			return
 		}
 	}
-	// 不支持的渐变类型：用透明底色兜底，避免沿用上一个样式。
+	// 未知渐变类型（ofdLinearGradient/ofdRadialGradient 的 Repeat/Reflect 等
+	// 特殊语义、ofdEllipticalGradient、ofdOpacityGradient）：tinyskia 无法
+	// 注入自定义采样器，改把渐变逐像素采样到 pattern 图案上，经图案填充
+	// 实现与 gg/canvas 相同的 At 语义，而不是退化为透明。
+	data := h.gradientPattern(g, m, dp, pad)
+	if data == nil {
+		h.setGradientFallback(isFill)
+		return
+	}
+	p, err := h.ctx.CreatePattern(data, tinyskia.RepeatModeNoRepeat)
+	if err != nil {
+		h.setGradientFallback(isFill)
+		return
+	}
+	_ = p.SetTransformWithMatrix(tinyskia.NewMatrixIdentity().Translate(float64(h.gradOriginX), float64(h.gradOriginY)))
+	if isFill {
+		h.ctx.SetFillStylePattern(p)
+	} else {
+		h.ctx.SetStrokeStylePattern(p)
+	}
+}
+
+// setGradientFallback 用透明底色兜底，避免沿用上一个样式。
+func (h *tinyskiaHooks) setGradientFallback(isFill bool) {
 	if isFill {
 		h.ctx.SetFillStyleSolidColor(color.RGBA{})
 	} else {
 		h.ctx.SetStrokeStyleSolidColor(color.RGBA{})
 	}
+}
+
+// gradientPattern 把 g 在设备路径覆盖区域内逐像素采样成 RGBA 图案。
+// dp 为设备像素路径，pad 为设备像素扩充余量（描边线宽的一半）。
+func (h *tinyskiaHooks) gradientPattern(g geom.Gradient, m geom.Matrix, dp *rastercore.DevicePath, pad float64) *image.RGBA {
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	for _, s := range dp.Segs {
+		for _, p := range s.P {
+			minX = math.Min(minX, p.X)
+			minY = math.Min(minY, p.Y)
+			maxX = math.Max(maxX, p.X)
+			maxY = math.Max(maxY, p.Y)
+		}
+	}
+	if minX > maxX || minY > maxY {
+		return nil
+	}
+	bx := int(math.Floor(minX - pad))
+	by := int(math.Floor(minY - pad))
+	bw := int(math.Ceil(maxX+pad)) - bx
+	bh := int(math.Ceil(maxY+pad)) - by
+	if bx < 0 {
+		bw += bx
+		bx = 0
+	}
+	if by < 0 {
+		bh += by
+		by = 0
+	}
+	if bw <= 0 || bh <= 0 {
+		return nil
+	}
+	h.gradOriginX, h.gradOriginY = bx, by
+	data := image.NewRGBA(image.Rect(0, 0, bw, bh))
+	inv := m.Inv()
+	for v := 0; v < bh; v++ {
+		devY := float64(by + v)
+		for u := 0; u < bw; u++ {
+			pt := inv.Dot(geom.Point{X: float64(bx+u) / h.dpmm, Y: (h.hpix - devY) / h.dpmm})
+			data.SetRGBA(u, v, g.At(pt.X, pt.Y))
+		}
+	}
+	return data
 }
 
 // replayPath 把设备像素路径逐段追加到 tinyskia 的当前路径。
