@@ -114,6 +114,48 @@ func TestSystemFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFontCacheReusesFamilyAndRenderLock(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	first, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, nil)
+	if err != nil {
+		t.Fatalf("加载嵌入字体失败: %v", err)
+	}
+	second, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, nil)
+	if err != nil {
+		t.Fatalf("复用嵌入字体失败: %v", err)
+	}
+	if first != second {
+		t.Fatal("嵌入字体缓存创建了多个字体族")
+	}
+	mapped, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
+	if err != nil {
+		t.Fatalf("加载带映射的嵌入字体失败: %v", err)
+	}
+	if mapped == first {
+		t.Fatal("不同字形映射不应复用同一字体族")
+	}
+	firstFonts := NewFonts(nil)
+	secondFonts := NewFonts(nil)
+	if firstFonts.RenderLock(first) != secondFonts.RenderLock(second) {
+		t.Fatal("嵌入字体缓存未共享渲染锁")
+	}
+}
+
+func TestHashGlyphMappingsIsOrderIndependent(t *testing.T) {
+	a := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}, {Rune: 'B', Glyph: 2}})
+	b := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'B', Glyph: 2}, {Rune: 'A', Glyph: 1}})
+	if a != b {
+		t.Fatal("字形映射摘要应与顺序无关")
+	}
+	c := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'A', Glyph: 2}, {Rune: 'B', Glyph: 1}})
+	if a == c {
+		t.Fatal("不同字形映射应产生不同摘要")
+	}
+}
+
 func TestFallbackFontRegistryReusesFamilyAndRenderLock(t *testing.T) {
 	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 	if err != nil {
