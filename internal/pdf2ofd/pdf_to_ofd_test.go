@@ -107,6 +107,64 @@ func TestConvertUsesTextMatrixScale(t *testing.T) {
 	}
 }
 
+// TestConvertCJKMilimeterCTMScale 验证电子发票这类以 cm 把用户单位放大为 1mm 的页面
+// 里，文字字号与推进量必须计入 CTM 平均缩放。忽略它会将 6.7028 的字号按
+// 0.35278 缩成 2.3646mm，标题文字变成不可读的小点（回归 #016）。
+func TestConvertCJKMilimeterCTMScale(t *testing.T) {
+	pdf := cjkFontPDF([]byte("2.8346 0 0 2.8346 0 0 cm BT /F1 6.7028 Tf 68.5 130 Td <91CD> Tj ET"))
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	text := layerTexts(page.Content().Layer[0])[0]
+	if got := text.Boundary.Height; got < 6.69 || got > 6.71 {
+		t.Fatalf("text size = %gmm, want about 6.7028mm", got)
+	}
+	if got := text.Boundary.Width; got < 6.69 || got > 6.71 {
+		t.Fatalf("text width = %gmm, want about 6.7028mm", got)
+	}
+	if got := text.Boundary.X; got < 68.4 || got > 68.6 {
+		t.Fatalf("text x = %gmm, want about 68.5mm", got)
+	}
+}
+
+// TestConvertCJKKerningAdvance 验证 CJK 全角字符在 /W 未覆盖其码位时按全角宽度回退，
+// TJ 的微调字距也在正确位置推进。以前按 defaultW（500 半角）回退会让相邻汉字只
+// 排开 3.35mm 且与字距叠加造成半个字宽错位。
+func TestConvertCJKKerningAdvance(t *testing.T) {
+	pdf := cjkFontPDF([]byte("2.8346 0 0 2.8346 0 0 cm BT /F1 6.7028 Tf 68.5 130 Td [<91CD> 30 <5E86>] TJ ET"))
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	texts := layerTexts(page.Content().Layer[0])
+	if len(texts) != 2 {
+		t.Fatalf("got %d text objects, want 2", len(texts))
+	}
+	first, second := texts[0], texts[1]
+	if got := second.Boundary.X - first.Boundary.X; got < 6.48 || got > 6.52 {
+		t.Fatalf("glyph advance = %gmm, want about 6.5016mm", got)
+	}
+}
+
 func TestConvertTextLeadingAdvancesText(t *testing.T) {
 	// TL 设置行距，T* 用它换行。忽略 TL 会让后续文字落在同一行造成公式错位。
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td 14 TL (abc) Tj T* (def) Tj ET"), 144, 288)
@@ -170,7 +228,7 @@ func TestPDFTextDeltasUsePDFWidthsWhenFontAdvanceMismatch(t *testing.T) {
 		widths:      map[int]float64{65: 602.0508, 66: 602.0508, 67: 602.0508},
 		glyphWidths: map[uint16]float64{65: 293.9, 66: 293.9, 67: 293.9},
 	}
-	deltas := pdfTextDeltas([]uint16{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1)
+	deltas := pdfTextDeltas([]uint16{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1, 1)
 	if len(deltas) != 2 {
 		t.Fatalf("deltas = %v, want length 2", deltas)
 	}
@@ -187,7 +245,7 @@ func TestPDFTextDeltasSkipWhenFontAdvanceMatches(t *testing.T) {
 		widths:      map[int]float64{65: 602, 66: 602},
 		glyphWidths: map[uint16]float64{65: 602, 66: 602},
 	}
-	if deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1); deltas != nil {
+	if deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1); deltas != nil {
 		t.Fatalf("deltas = %v, want nil when font advance matches /Widths", deltas)
 	}
 }

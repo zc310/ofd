@@ -38,8 +38,13 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if textScaleY == 0 {
 		textScaleY = 1
 	}
-	width := pdfTextWidth(codes, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale) * p.info.userUnit * pdfPointToMillimeter
-	size := p.state.fontSize * textScaleY * p.info.userUnit * pdfPointToMillimeter
+	// 整页坐标用 cm 放大排版（如通勤发票把用户单位定为 1mm）时，Tf/Tm 给出的
+	// “字号”仍按该坐标系计。向量与路径的线宽都已计入 CTM 平均缩放，文字的字号
+	// 和推进量省略它会把字形画得过小、占位挤在左下角。这里与路径一致使用
+	// pdfMatrixScale，旋转等保角变换不影响字号。
+	ctmScale := pdfMatrixScale(p.state.ctm)
+	width := pdfTextWidth(codes, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale) * p.info.userUnit * pdfPointToMillimeter * ctmScale
+	size := p.state.fontSize * textScaleY * p.info.userUnit * pdfPointToMillimeter * ctmScale
 	fontName := p.state.fontName
 	if alias := p.fontAliases[fontName]; alias != "" {
 		fontName = alias
@@ -58,10 +63,17 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 		Weight: weight, Italic: font.italic,
 		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
 		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
+	// Pattern 颜色空间下用渐变图案填充文字（如电子发票的彩色标题）时，必须把
+	// 着色转成文字对象边界的局部渐变；否则文字回退成纯色/黑色，渐变丢失。
+	if fill && p.state.fillPaint != nil && p.state.fillPaint.shading != nil {
+		if color := p.shadingColor(p.state.fillPaint.shading, item.X, item.Y); color != nil {
+			item.FillColor = ofdColorOpacity(color, p.fillOpacity())
+		}
+	}
 	if transforms := pdfTextGlyphTransforms(codes, text, font); len(transforms) > 0 {
 		item.CGTransforms = transforms
 	}
-	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit); len(deltas) > 0 {
+	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, ctmScale); len(deltas) > 0 {
 		item.TextCodes = []creator.TextCode{{Value: text, DeltaX: deltas}}
 	}
 	p.page.Items = append(p.page.Items, item)
@@ -142,14 +154,36 @@ func pdfCodeWidth(code uint16, font pdfFontInfo) float64 {
 				value = 500
 			}
 		}
+		// UniGB-UCS2-H 之类的全角 CMap 以 Unicode 编码作为字节码，而 /W 按
+		// CID 给出字宽，按码位直接查表基本都会落空。此时 CJK 字符按全角
+		// （1000）处理，否则套用 defaultW（常为 500 的半角）会把汉字挤压成
+		// 窄字、逐字间距只有一半。
+		if pdfCJKFullWidth(font.encoding) && code >= 0x80 && font.defaultW < 1000 {
+			value = 1000
+		}
 	}
 	return value
 }
 
+// pdfCJKFullWidth 判断 CMap 是否以 Unicode 全角字形编码（UCS-2/UTF-16 的 Uni*
+// 系列）。这类编码中非 ASCII 字符几乎都是全角 CJK 字符。
+func pdfCJKFullWidth(name string) bool {
+	switch name {
+	case "UniGB-UCS2-H", "UniGB-UCS2-V", "UniGB-UTF16-H", "UniGB-UTF16-V",
+		"UniCNS-UCS2-H", "UniCNS-UCS2-V", "UniCNS-UTF16-H", "UniCNS-UTF16-V",
+		"UniJIS-UCS2-H", "UniJIS-UCS2-V", "UniJIS-UTF16-H", "UniJIS-UTF16-V",
+		"UniKS-UCS2-H", "UniKS-UCS2-V", "UniKS-UTF16-H", "UniKS-UTF16-V":
+		return true
+	default:
+		return false
+	}
+}
+
 // pdfTextDeltas 在嵌入字体的字形宽度与 PDF /Widths 不一致时，按 /Widths 生成
 // 逐字符位置增量（毫米）。部分生产者（如 ReportLab）会写入与 unitsPerEm 不匹配
-// 的 hmtx，阅读器若直接使用字体字宽会把代码等文字挤在一起。
-func pdfTextDeltas(codes []uint16, text string, font pdfFontInfo, size, charSpacing, wordSpacing, hScale, userUnit float64) []float64 {
+// 的 hmtx，阅读器若直接使用字体字宽会把代码等文字挤在一起。ctmScale 与字号统一
+// 传递当前 CTM 的平均缩放，保证“整页按 1mm 排版”的文档里增量仍是物理毫米。
+func pdfTextDeltas(codes []uint16, text string, font pdfFontInfo, size, charSpacing, wordSpacing, hScale, userUnit, ctmScale float64) []float64 {
 	if len(codes) < 2 || len(font.glyphWidths) == 0 || len([]rune(text)) != len(codes) {
 		return nil
 	}
@@ -173,7 +207,7 @@ func pdfTextDeltas(codes []uint16, text string, font pdfFontInfo, size, charSpac
 		if code == ' ' {
 			advance += wordSpacing
 		}
-		deltas[index] = advance * scale * userUnit * pdfPointToMillimeter
+		deltas[index] = advance * scale * userUnit * pdfPointToMillimeter * ctmScale
 	}
 	return deltas
 }
