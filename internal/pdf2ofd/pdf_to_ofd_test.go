@@ -165,6 +165,30 @@ func TestConvertCJKKerningAdvance(t *testing.T) {
 	}
 }
 
+// TestConvertEmitsHScaleForHorizontalScaling 验证 PDF 的 Tz（水平缩放）保留为
+// OFD 的 HScale。只把缩放计入推进量而丢失 HScale 会让 Tz≠100 的字形不被横向
+// 拉伸（标题偏窄、字距失真）。
+func TestConvertEmitsHScaleForHorizontalScaling(t *testing.T) {
+	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 150 Tz 20 200 Td (Hi) Tj ET"), 144, 288)
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	text := layerTexts(page.Content().Layer[0])[0]
+	if text.HScale < 1.49 || text.HScale > 1.51 {
+		t.Fatalf("HScale = %g, want about 1.5 from Tz=150", text.HScale)
+	}
+}
+
 func TestConvertTextLeadingAdvancesText(t *testing.T) {
 	// TL 设置行距，T* 用它换行。忽略 TL 会让后续文字落在同一行造成公式错位。
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td 14 TL (abc) Tj T* (def) Tj ET"), 144, 288)

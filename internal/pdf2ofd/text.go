@@ -63,6 +63,12 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 		Weight: weight, Italic: font.italic,
 		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
 		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
+	// PDF 的 Tz 同时缩放字形宽度和推进量。这里只把推进量计入 Width/DeltaX，
+	// 若不同时输出 OFD 的 HScale，字形本身会按原宽绘制（横向未拉伸），
+	// 导致 Tz≠100 的标题等文字偏窄、与相邻行字距失真。OFD HScale 默认 1。
+	if h := p.state.hScale; h > 0 && h != 100 {
+		item.HScale = h / 100
+	}
 	// Pattern 颜色空间下用渐变图案填充文字（如电子发票的彩色标题）时，必须把
 	// 着色转成文字对象边界的局部渐变；否则文字回退成纯色/黑色，渐变丢失。
 	if fill && p.state.fillPaint != nil && p.state.fillPaint.shading != nil {
