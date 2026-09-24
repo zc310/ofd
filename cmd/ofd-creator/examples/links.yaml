@@ -1,0 +1,177 @@
+# 链接注解示例：页内跳转、跨页跳转与外部链接
+# 展示 Link 注解的常见形态：
+#   - Goto 动作通过边界框触发的页内/跨页跳转（XYZ 目标）
+#   - URI 动作打开外部链接
+#   - 承载动作的 PathObject 设为不可见，仅作为点击热区
+# Web 阅读器（ofd-wasm）会在页面上按注解边界叠加可点击热区。
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/links.yaml -o test/testdata/links.ofd --validate --deterministic
+
+version: 1
+
+document:
+  id: links
+  title: 链接示例
+  author: ofd-creator
+  creator: ofd-creator
+  creator_version: "1"
+  page_size:
+    name: A4
+  creation_date: "2026-09-24T00:00:00Z"
+  annotations:
+    # 第 1 页（索引 0）的链接注解。
+    - page: 0
+      items:
+        # 跳转到第 2 页（索引 1）顶部的内部链接。
+        - id: 201
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-09-24"
+          read_only: false
+          boundary:
+            x: 30
+            "y": 160
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: XYZ
+                    left: 0
+                    top: 0
+        # 打开外部链接。
+        - id: 202
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-09-24"
+          read_only: false
+          boundary:
+            x: 30
+            "y": 180
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  uri:
+                    uri: https://github.com/zc310/ofd
+                    target: _blank
+    # 第 2 页（索引 1）的链接注解，跳回第 1 页。
+    - page: 1
+      items:
+        - id: 203
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-09-24"
+          read_only: false
+          boundary:
+            x: 30
+            "y": 160
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 0
+                    type: XYZ
+                    left: 0
+                    top: 0
+
+pages:
+  - items:
+      - type: text
+        x: 30
+        "y": 120
+        width: 150
+        height: 14
+        value: 链接示例 · 第 1 页
+        font: 楷体
+        size: 12
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 155
+        width: 150
+        height: 10
+        value: → 跳转到第 2 页
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 175
+        width: 150
+        height: 10
+        value: ↗ 打开项目主页
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+  - items:
+      - type: text
+        x: 30
+        "y": 120
+        width: 150
+        height: 14
+        value: 链接示例 · 第 2 页
+        font: 楷体
+        size: 12
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 155
+        width: 150
+        height: 10
+        value: ← 返回第 1 页
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
