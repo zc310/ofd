@@ -85,6 +85,15 @@ func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
 	if !textAdvanceDiffers(-67.5, 0, 2.5) {
 		t.Fatal("backward advance should break the run")
 	}
+	// 前进步进与字体自然步进相差过大（子集字体 hmtx 占位全角）必须断串，
+	// 否则原生文本串会按字体字宽排版、忽略 DeltaX，字距错误。
+	if !textAdvanceDiffers(1.8486, 0, 3.4234) {
+		t.Fatal("explicit advance far from natural advance should break the run")
+	}
+	// 前进步进接近自然步进的微小差异（正常字距）不应断串。
+	if textAdvanceDiffers(3.175, 0, 3.2) {
+		t.Fatal("advance close to natural should not break the run")
+	}
 }
 
 func TestTextCharDirectionDegrees(t *testing.T) {

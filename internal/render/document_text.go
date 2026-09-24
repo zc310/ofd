@@ -214,14 +214,24 @@ func textHScale(object models.TextObject) float64 {
 	return 1
 }
 
-// textAdvanceDiffers 判断显式步进是否包含换行/基线调整：纵向位移非零，或横向
-// 回退幅度超过字体自然步进（换行回到行首）。此类位移无法用同一文本串的字体
-// 自然步进表达，必须断开文本串。
+// textAdvanceDiffers 判断显式步进是否无法用同一文本串的字体自然步进表达：
+// 纵向位移非零、横向明显回退（换行回到行首），或前进步进与字体自然步进相差
+// 过大。最后一种情况常见于嵌入式子集字体的 hmtx 只是占位宽度（例如全角），
+// 此时按字体字宽排版会忽略 TextCode 的 DeltaX，造成字距错误；小幅字距仍然
+// 合并，以保留整段绘制、避免文本提取时插入空格。
 func textAdvanceDiffers(deltaX, deltaY, naturalX float64) bool {
 	if math.Abs(deltaY) > 0.01 {
 		return true
 	}
-	return deltaX < -math.Max(math.Abs(naturalX), 0.01)
+	if deltaX < -math.Max(math.Abs(naturalX), 0.01) {
+		return true
+	}
+	if deltaX > 0 && math.Abs(naturalX) > 0 {
+		if tolerance := math.Max(0.2, math.Abs(naturalX)*0.05); math.Abs(deltaX-naturalX) > tolerance {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeTextDirection 将 OFD 方向归一化为最接近的标准象限方向。
