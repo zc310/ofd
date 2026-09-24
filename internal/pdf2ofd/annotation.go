@@ -75,7 +75,19 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 		fill: pdfColor{}, stroke: pdfColor{}, lineWidth: 1, hScale: 100, fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,
 	}
 	saved := p.state
-	if err := p.parse(form.Content, resources, &state, 0); err != nil {
+	// 注解外观可以有自己的资源字典，并允许使用与页面同名的字体资源（如 /F1）。
+	// 字体缓存按资源名而非资源字典索引，若不复位会把页面同名资源误用为外观
+	// 字体：例如把页面 Identity-H 的正文宋体当作外观 UniGB-UCS2-H 的浅灰水印，
+	// 使水印文本按错误编码解码、字形映射到错误字形而不可见。外观自带资源时
+	// 用独立缓存解析，解析完恢复页面缓存。
+	savedFonts, savedAliases := p.fonts, p.fontAliases
+	if resources != nil {
+		p.fonts = map[string]pdfFontInfo{}
+		p.fontAliases = map[string]string{}
+	}
+	err = p.parse(form.Content, resources, &state, 0)
+	p.fonts, p.fontAliases = savedFonts, savedAliases
+	if err != nil {
 		p.state = saved
 		return
 	}

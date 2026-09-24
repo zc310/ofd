@@ -189,6 +189,32 @@ func TestConvertEmitsHScaleForHorizontalScaling(t *testing.T) {
 	}
 }
 
+// TestConvertEmitsRotationForRotatedText 验证带旋转的文字（如图章/水印）输出
+// 旋转 CTM。OFD 文字不带 CTM 时只能水平排版，旋转角会丢失。
+func TestConvertEmitsRotationForRotatedText(t *testing.T) {
+	pdf := testutil.MinimalPDF([]byte("q 0.7071 -0.7071 0.7071 0.7071 100 100 cm BT /F1 20 Tf 0 0 Td (AB) Tj ET Q"), 200, 200)
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	text := layerTexts(page.Content().Layer[0])[0]
+	if text.CTM == nil {
+		t.Fatal("rotated text has no CTM")
+	}
+	if got := text.CTM.RotationAngleDegrees(); got < 44.9 || got > 45.1 {
+		t.Fatalf("text rotation = %g°, want about 45°", got)
+	}
+}
+
 func TestConvertTextLeadingAdvancesText(t *testing.T) {
 	// TL 设置行距，T* 用它换行。忽略 TL 会让后续文字落在同一行造成公式错位。
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td 14 TL (abc) Tj T* (def) Tj ET"), 144, 288)

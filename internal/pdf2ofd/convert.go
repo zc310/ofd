@@ -685,14 +685,21 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 	}
 	_, _, serif, fixedWidth := pdfFontStyleFlags(family)
 	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: font.bold, Italic: font.italic, Serif: serif, FixedWidth: fixedWidth}
-	p.document.Fonts = append(p.document.Fonts, current)
-	for _, value := range p.document.Fonts[:len(p.document.Fonts)-1] {
+	// 复用已有等价字体：嵌入字体按数据去重；非嵌入字体 Data 为空，摘要固定，
+	// 必须按族名与样式去重，否则跨页（或注解外观）的同族逻辑字体会重复注册
+	// 同名资源 "name-<摘要>" 而报错。
+	for _, value := range p.document.Fonts {
 		if current.Format == value.Format && len(current.Data) > 0 && bytes.Equal(current.Data, value.Data) {
-			p.document.Fonts = p.document.Fonts[:len(p.document.Fonts)-1]
+			p.fontAliases[name] = value.Name
+			return
+		}
+		if len(current.Data) == 0 && len(value.Data) == 0 && current.FamilyName == value.FamilyName &&
+			current.Bold == value.Bold && current.Italic == value.Italic {
 			p.fontAliases[name] = value.Name
 			return
 		}
 	}
+	p.document.Fonts = append(p.document.Fonts, current)
 	if documentName != name {
 		p.fontAliases[name] = documentName
 	}
