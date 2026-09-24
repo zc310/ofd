@@ -139,7 +139,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 	// 坐标确定后再转换，否则渐变会整体偏移。
 	if fill && p.state.fillPaint != nil {
 		if shading := p.state.fillPaint.shading; shading != nil {
-			if color := p.shadingColor(shading, &path); color != nil {
+			if color := p.shadingColor(shading, path.X, path.Y); color != nil {
 				path.FillColor = color
 			}
 		} else if tiling := p.state.fillPaint.tiling; tiling != nil {
@@ -152,7 +152,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 	}
 	if stroke && p.state.strokePaint != nil {
 		if shading := p.state.strokePaint.shading; shading != nil {
-			if color := p.shadingColor(shading, &path); color != nil {
+			if color := p.shadingColor(shading, path.X, path.Y); color != nil {
 				path.StrokeColor = color
 			}
 		}

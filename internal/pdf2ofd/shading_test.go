@@ -183,6 +183,58 @@ func TestConvertPatternShadingIgnoresContentCTM(t *testing.T) {
 	}
 }
 
+// gradientTextPDF 构造单页 PDF，文字使用 PatternType 2 图案 /P1 作为填充，
+// 资源同时提供 /F1 字体。
+func gradientTextPDF(content []byte, shading string) []byte {
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 7 0 R >> /Pattern << /P1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		shading,
+		"<< /Type /Pattern /PatternType 2 /Matrix [1 0 0 1 0 0] /Shading 5 0 R >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	return assemblePDF(objects)
+}
+
+func TestConvertEmitsShadingForGradientTextFill(t *testing.T) {
+	// 文字用 Pattern 颜色空间渐变填充（电子发票的彩色标题）时，必须把着色转成
+	// 文字对象边界的局部渐变；否则文字退化成纯色/黑色，字体上的渐变丢失。
+	content := []byte("/Pattern cs /P1 scn BT /F1 12 Tf 20 100 Td (Hi) Tj ET")
+	pdf := gradientTextPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
+	var output bytes.Buffer
+	if err := Convert(pdf, &output); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	texts := layerTexts(page.Content().Layer[0])
+	if len(texts) != 1 {
+		t.Fatalf("text objects = %d, want 1", len(texts))
+	}
+	color := texts[0].FillColor
+	if color == nil || color.AxialShd == nil {
+		t.Fatalf("fill color = %+v, want axial shading", color)
+	}
+	first := color.AxialShd.Segment[0].Color.Value
+	if first == nil || first.R != 255 || first.G != 0 || first.B != 0 {
+		t.Fatalf("first stop = %+v, want red", first)
+	}
+	// 渐变坐标必须相对文字边界：着色终点页面 X=100pt≈35.28mm，减去文字
+	// 边界 X=20pt≈7.06mm 后约为 28.22mm；若未减边界会得到 35.28。
+	if endX := color.AxialShd.EndPoint.X; endX < 27.9 || endX > 28.5 {
+		t.Fatalf("EndPoint.X = %g, want ~28.22 relative to text boundary", endX)
+	}
+}
+
 // patternShadingPDF 构造单页 PDF，资源中带 PatternType 2 图案 /P1。
 func patternShadingPDF(content []byte, shading string) []byte {
 	objects := []string{
