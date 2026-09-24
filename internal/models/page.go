@@ -539,8 +539,10 @@ type GouraudPoint struct {
 	X float64 `xml:"X,attr"`
 	// Y 控制点纵坐标。
 	Y float64 `xml:"Y,attr"`
-	// EdgeFlag 网格边缘标志，可为 0、1 或 2。
-	EdgeFlag int `xml:"EdgeFlag,attr"` // 0,1,2
+	// EdgeFlag 网格边缘标志：0 为三角形起始点，1/2 复用上一个三角形的
+	// v1-v2 / v0-v2 边；个别文件沿用 PDF 语义使用 3（复用 v0-v1 边），
+	// 渲染端宽容处理。
+	EdgeFlag int `xml:"EdgeFlag,attr"` // 0,1,2；3 兼容 PDF 语义
 }
 
 // CTLaGouraudShd Gouraud 网格渐变填充定义。
