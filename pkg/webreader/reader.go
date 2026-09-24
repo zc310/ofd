@@ -663,6 +663,52 @@ func (r *Reader) UseFallbackFont(family string) error {
 	return nil
 }
 
+// RemoveFallbackFont 取消当前文档先前通过 UseFallbackFont 登记的回退字体族，
+// 使缺失字体恢复为内嵌或默认字体。全局字体注册表不回滚，但本 Reader 已解析的
+// 文档与文字/搜索缓存会失效，以便下次渲染使用默认字体。
+func (r *Reader) RemoveFallbackFont(family string) error {
+	if r == nil {
+		return errors.New("文档引擎为空")
+	}
+	if family == "" {
+		return errors.New("回退字体族名为空")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return errors.New("文档引擎已经关闭")
+	}
+	seenDocuments := make(map[*render.Document]struct{})
+	for _, ref := range r.pages {
+		if _, seen := seenDocuments[ref.document]; seen {
+			continue
+		}
+		seenDocuments[ref.document] = struct{}{}
+		ref.document.RemoveFallbackFont(family)
+	}
+	if len(r.fallbackFamilies) > 0 {
+		kept := r.fallbackFamilies[:0]
+		for _, value := range r.fallbackFamilies {
+			if value != family {
+				kept = append(kept, value)
+			}
+		}
+		r.fallbackFamilies = kept
+	}
+	if r.fallbackFamily == family {
+		r.fallbackFamily = ""
+		if len(r.fallbackFamilies) > 0 {
+			r.fallbackFamily = r.fallbackFamilies[len(r.fallbackFamilies)-1]
+		}
+	}
+	r.renderDocsMu.Lock()
+	r.renderDocs = nil
+	r.renderDocsMu.Unlock()
+	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
+	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
+	return nil
+}
+
 func fallbackFontStyle(source FontSource) render.FontStyle {
 	style := render.FontRegular
 	if source.Weight >= 650 {
