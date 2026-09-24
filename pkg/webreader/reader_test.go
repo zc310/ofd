@@ -610,6 +610,20 @@ func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
 	if runs[0].FontFamily != family {
 		t.Fatalf("fallback family = %q, want %q", runs[0].FontFamily, family)
 	}
+	// 取消回退字体后，文字快照不再使用该族，恢复为默认族。
+	if err := reader.RemoveFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("document has no text runs after removing fallback")
+	}
+	if runs[0].FontFamily == family {
+		t.Fatalf("移除回退字体后仍使用 %q", family)
+	}
 }
 
 func TestTextAndSearch(t *testing.T) {
@@ -1200,7 +1214,7 @@ func TestAttachmentDataRejectsUnknown(t *testing.T) {
 }
 
 func TestMediaExposeMetadataAndData(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "magazine.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("magazine.ofd  is unavailable")
 	}
