@@ -9,7 +9,7 @@ import (
 	cimage "github.com/tdewolff/canvas/image"
 
 	"github.com/zc310/ofd/internal/render"
-	"github.com/zc310/ofd/internal/render/canvasconv"
+	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
