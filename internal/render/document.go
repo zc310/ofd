@@ -165,6 +165,24 @@ func (p *Document) UseFallbackFont(family string) error {
 	return nil
 }
 
+// RemoveFallbackFont 取消先前通过 UseFallbackFont 登记的回退字体族，使缺失字体
+// 恢复为内嵌或默认字体。
+func (p *Document) RemoveFallbackFont(family string) {
+	if p == nil || p.fonts == nil || family == "" {
+		return
+	}
+	p.fonts.RemoveFallbackFont(family)
+	p.fallbackMu.Lock()
+	defer p.fallbackMu.Unlock()
+	kept := p.fallbacks[:0]
+	for _, value := range p.fallbacks {
+		if value != family {
+			kept = append(kept, value)
+		}
+	}
+	p.fallbacks = kept
+}
+
 func (p *Document) fallbackFontFamilies() []string {
 	if p == nil {
 		return nil
