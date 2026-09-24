@@ -9,7 +9,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/nao1215/imaging"
+	"github.com/kovidgoyal/imaging"
 	wpng "github.com/woozymasta/png"
 	"github.com/zc310/ofd/internal/render"
 )

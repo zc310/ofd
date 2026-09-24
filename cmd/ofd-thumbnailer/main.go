@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nao1215/imaging"
+	"github.com/kovidgoyal/imaging"
 	"github.com/zc310/ofd/internal/media"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/pkg/converter"
