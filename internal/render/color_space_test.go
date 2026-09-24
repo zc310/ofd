@@ -54,7 +54,8 @@ func TestResolveColorSpaceColor(t *testing.T) {
 			name:  "alpha attribute",
 			space: models.ColorSpace{Type: "RGB"},
 			color: models.CTColor{ColorSpace: 1, Value: &models.Color{RGBA: color.RGBA{R: 1, G: 2, B: 3, A: 255}}, Alpha: &alpha},
-			want:  color.RGBA{R: 1, G: 2, B: 3, A: 128},
+			// color.RGBA 为预乘格式，需按 alpha 预乘 RGB。
+			want: premultiplied(1, 2, 3, 128),
 		},
 	}
 	for _, tc := range cases {

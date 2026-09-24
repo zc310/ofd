@@ -63,14 +63,10 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	if object.Alpha != nil {
 		if fill != nil && fill.HasValue {
-			value := fill.Value
-			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
-			fill = &CTColor{Value: value, HasValue: true, Gradient: fill.Gradient}
+			fill = &CTColor{Value: scaleAlpha(fill.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: fill.Gradient}
 		}
 		if stroke != nil && stroke.HasValue {
-			value := stroke.Value
-			value.A = uint8(uint16(value.A) * uint16(graphicOpacity(object.Alpha)) / 255)
-			stroke = &CTColor{Value: value, HasValue: true, Gradient: stroke.Gradient}
+			stroke = &CTColor{Value: scaleAlpha(stroke.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: stroke.Gradient}
 		}
 	}
 	face := p.fonts.FaceObject(fontFamily, object, fill)

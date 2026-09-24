@@ -181,7 +181,7 @@ func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
 	}
 	copy := *source
 	copy.Value = &models.Color{RGBA: source.Value.RGBA}
-	copy.Value.A = uint8(uint16(copy.Value.A) * uint16(alpha) / 255)
+	copy.Value.RGBA = scaleAlpha(copy.Value.RGBA, alpha)
 	return &copy
 }
 

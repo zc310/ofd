@@ -39,7 +39,7 @@ func (p *Document) colorRGBA(source models.CTColor) color.RGBA {
 			if source.Alpha != nil {
 				alpha = *source.Alpha
 			}
-			return color.RGBA{R: r, G: g, B: b, A: alpha}
+			return premultiplied(r, g, b, alpha)
 		}
 	}
 	return resolveColorSpaceColor(space, source)
@@ -132,18 +132,18 @@ func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor) col
 			return ofdColorRGBA(source)
 		}
 		value := componentByte(components[0])
-		return color.RGBA{R: value, G: value, B: value, A: alpha}
+		return premultiplied(value, value, value, alpha)
 	case "CMYK":
 		if len(components) < 4 {
 			return ofdColorRGBA(source)
 		}
 		r, g, b := cmykInkToRGB(componentByte(components[0]), componentByte(components[1]), componentByte(components[2]), componentByte(components[3]))
-		return color.RGBA{R: r, G: g, B: b, A: alpha}
+		return premultiplied(r, g, b, alpha)
 	default:
 		if len(components) < 3 {
 			return ofdColorRGBA(source)
 		}
-		return color.RGBA{R: componentByte(components[0]), G: componentByte(components[1]), B: componentByte(components[2]), A: alpha}
+		return premultiplied(componentByte(components[0]), componentByte(components[1]), componentByte(components[2]), alpha)
 	}
 }
 

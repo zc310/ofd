@@ -73,8 +73,7 @@ func ofdColorRGBA(source models.CTColor) color.RGBA {
 	if source.Alpha != nil {
 		alpha = uint8(uint16(alpha) * uint16(*source.Alpha) / 255)
 	}
-	value.A = alpha
-	return value
+	return premultiplied(value.R, value.G, value.B, alpha)
 }
 
 func addOFDGradientStops(gradient *geom.Grad, segments []models.Segment, resolve colorResolver) {
