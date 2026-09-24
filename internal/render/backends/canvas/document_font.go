@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"image/color"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -26,10 +28,11 @@ import (
 // 字体面与文字样式适配见 font_face.go。
 
 var (
-	onceFonts       sync.Once
-	fontCacheMu     sync.Mutex
-	systemFontCache = make(map[systemFontKey]*systemFontCacheEntry)
-	fontRenderLocks = make(map[*canvas.FontFamily]*sync.Mutex)
+	onceFonts         sync.Once
+	fontCacheMu       sync.Mutex
+	systemFontCache   = make(map[systemFontKey]*systemFontCacheEntry)
+	embeddedFontCache = make(map[embeddedFontKey]*embeddedFontCacheEntry)
+	fontRenderLocks   = make(map[*canvas.FontFamily]*sync.Mutex)
 	// 全局回退字体注册表：同一字体族全局只保存一份解析结果和一份字体数据引用，
 	// 首个 render.Document 注册后即锁定；后续文档缺字体时默认全部使用已锁定字体。
 	fallbackRegistry = make(map[string]*fallbackRegistration)
@@ -52,6 +55,20 @@ type systemFontKey struct {
 }
 
 type systemFontCacheEntry struct {
+	family   *canvas.FontFamily
+	renderMu *sync.Mutex
+}
+
+// embeddedFontKey 标识一次内嵌字体解析结果。相同字体数据、样式、族名和字形
+// 映射只需解析一次；字形映射来自 map，摘要按排序后的内容计算以保证顺序无关。
+type embeddedFontKey struct {
+	name           string
+	style          drawing.FontStyle
+	dataDigest     [sha256.Size]byte
+	mappingsDigest [sha256.Size]byte
+}
+
+type embeddedFontCacheEntry struct {
 	family   *canvas.FontFamily
 	renderMu *sync.Mutex
 }
@@ -288,6 +305,64 @@ func loadCachedSystemFont(name string, style drawing.FontStyle) (*canvas.FontFam
 	return family, true
 }
 
+// loadCachedEmbeddedFont 按字体数据、样式、族名与字形映射缓存内嵌字体解析结果，
+// 使同一字体在多次转换（或多文档）间只做一次 fontfix 修复与 canvas 解析。返回的
+// 字体族注册了共享渲染锁，与系统字体缓存一致地串行化同一字体的绘制。
+func loadCachedEmbeddedFont(name string, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) (*canvas.FontFamily, error) {
+	key := embeddedFontKey{
+		name:           name,
+		style:          style,
+		dataDigest:     sha256.Sum256(data),
+		mappingsDigest: hashGlyphMappings(mappings),
+	}
+	fontCacheMu.Lock()
+	if entry := embeddedFontCache[key]; entry != nil {
+		fontCacheMu.Unlock()
+		return entry.family, nil
+	}
+	fontCacheMu.Unlock()
+
+	family := canvas.NewFontFamily(name)
+	if err := loadEmbeddedFont(family, data, style, mappings); err != nil {
+		return nil, err
+	}
+	renderMu := &sync.Mutex{}
+	fontCacheMu.Lock()
+	if existing := embeddedFontCache[key]; existing != nil {
+		fontCacheMu.Unlock()
+		return existing.family, nil
+	}
+	embeddedFontCache[key] = &embeddedFontCacheEntry{family: family, renderMu: renderMu}
+	fontRenderLocks[family] = renderMu
+	fontCacheMu.Unlock()
+	return family, nil
+}
+
+// hashGlyphMappings 以与遍历顺序无关的方式对字形映射求摘要。
+func hashGlyphMappings(mappings []fontfix.GlyphMapping) [sha256.Size]byte {
+	if len(mappings) == 0 {
+		return [sha256.Size]byte{}
+	}
+	sorted := append([]fontfix.GlyphMapping(nil), mappings...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Rune != sorted[j].Rune {
+			return sorted[i].Rune < sorted[j].Rune
+		}
+		return sorted[i].Glyph < sorted[j].Glyph
+	})
+	h := sha256.New()
+	var buf [4]byte
+	for _, mapping := range sorted {
+		binary.LittleEndian.PutUint32(buf[:], uint32(mapping.Rune))
+		h.Write(buf[:])
+		binary.LittleEndian.PutUint32(buf[:], uint32(mapping.Glyph))
+		h.Write(buf[:])
+	}
+	var digest [sha256.Size]byte
+	copy(digest[:], h.Sum(nil))
+	return digest
+}
+
 func loadAndroidDefaultFont(family *canvas.FontFamily) bool {
 	preferredNames := []string{
 		"NotoSansCJK-Regular.ttc",
@@ -432,12 +507,11 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		fontStyle |= drawing.FontBold
 	}
 	if ft.FontFile != "" {
-		family := canvas.NewFontFamily(fontName)
 		if data, err := p.FileCache.Read(string(ft.FontFile)); err == nil {
 			p.mu.Lock()
 			mappings := p.glyphMappingList(id)
 			p.mu.Unlock()
-			if err := loadEmbeddedFont(family, data, fontStyle, mappings); err == nil {
+			if family, err := loadCachedEmbeddedFont(fontName, data, fontStyle, mappings); err == nil {
 				return family, "", nil
 			}
 		}
@@ -453,13 +527,9 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if err != nil {
 			return true
 		}
-		if fixed, fixErr := fontfix.Repair(data); fixErr == nil {
-			data = fixed
-		}
-		candidateFamily := canvas.NewFontFamily(fontName)
 		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(data))
-		if err := candidateFamily.LoadFont(data, 0, canvasStyle(fontStyle)); err == nil && fontFamilyUsable(candidateFamily) {
-			matched = candidateFamily
+		if family, err := loadCachedEmbeddedFont(fontName, data, fontStyle, nil); err == nil {
+			matched = family
 			return false
 		}
 		return true
