@@ -12,6 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/render/drawing"
 
 	_ "github.com/zc310/ofd/internal/render/backends/draw2d"
+	_ "github.com/zc310/ofd/internal/render/backends/fgg"
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	_ "github.com/zc310/ofd/internal/render/backends/gg"
 	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
@@ -30,7 +31,7 @@ func TestStress999Page1PNG(t *testing.T) {
 		iters := 20
 		measure := func(name string) time.Duration {
 			start := time.Now()
-			for i := 0; i < iters; i++ {
+			for range iters {
 				if _, err := doc.RasterizePage(page, name, dpi); err != nil {
 					t.Fatalf("%s 渲染失败: %v", name, err)
 				}
@@ -41,17 +42,18 @@ func TestStress999Page1PNG(t *testing.T) {
 		canvasDur := measure(render.BackendCanvas)
 		ggDur := measure(drawing.BackendGG)
 		ftggDur := measure(drawing.BackendFTGG)
+		fggDur := measure(drawing.BackendFGG)
 		tskDur := measure(drawing.BackendTinySkia)
 		d2dDur := measure(drawing.BackendDraw2D)
 		if err := ofd.Close(); err != nil {
 			t.Errorf("关闭 OFD 失败: %v", err)
 		}
-		t.Logf("dpi=%.0f  canvas %v   gg %v   ftgg %v   tinyskia %v   draw2d %v"+
-			"   加速比 gg/canvas=%.2fx ftgg/canvas=%.2fx tinyskia/canvas=%.2fx draw2d/canvas=%.2fx",
+		t.Logf("dpi=%.0f  canvas %v   gg %v   ftgg %v   fgg %v   tinyskia %v   draw2d %v"+
+			"   加速比 gg/canvas=%.2fx ftgg/canvas=%.2fx fgg/canvas=%.2fx tinyskia/canvas=%.2fx draw2d/canvas=%.2fx",
 			dpiVal, canvasDur.Round(time.Microsecond), ggDur.Round(time.Microsecond),
-			ftggDur.Round(time.Microsecond), tskDur.Round(time.Microsecond), d2dDur.Round(time.Microsecond),
+			ftggDur.Round(time.Microsecond), fggDur.Round(time.Microsecond), tskDur.Round(time.Microsecond), d2dDur.Round(time.Microsecond),
 			float64(canvasDur)/float64(ggDur), float64(canvasDur)/float64(ftggDur),
-			float64(canvasDur)/float64(tskDur), float64(canvasDur)/float64(d2dDur))
+			float64(canvasDur)/float64(fggDur), float64(canvasDur)/float64(tskDur), float64(canvasDur)/float64(d2dDur))
 	}
 
 	// 150dpi 输出四份 PNG 到临时目录供目视对比。
@@ -66,7 +68,9 @@ func TestStress999Page1PNG(t *testing.T) {
 		render.BackendCanvas:    filepath.Join(dir, "999_p1_canvas.png"),
 		drawing.BackendGG:       filepath.Join(dir, "999_p1_gg.png"),
 		drawing.BackendFTGG:     filepath.Join(dir, "999_p1_ftgg.png"),
+		drawing.BackendFGG:      filepath.Join(dir, "999_p1_fgg.png"),
 		drawing.BackendTinySkia: filepath.Join(dir, "999_p1_tinyskia.png"),
+		drawing.BackendDraw2D:   filepath.Join(dir, "999_p1_draw2d.png"),
 	} {
 		img, err := doc.RasterizePage(page, name, geom.DPI(150))
 		if err != nil {
@@ -92,7 +96,7 @@ func TestStress999Page1PNG(t *testing.T) {
 func BenchmarkRasterize999Page1(b *testing.B) {
 	for _, dpiVal := range []float64{96, 150, 300} {
 		dpi := geom.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+		for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 			b.Run(fmt.Sprintf("%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()

@@ -31,6 +31,10 @@ const (
 	BackendGG = "gg"
 	// BackendFTGG 使用 FloatTech/gg 光栅后端（测速对照）。
 	BackendFTGG = "ftgg"
+	// BackendFGG 使用 fogleman/gg 光栅后端（测速对照，FloatTech/gg 的
+	// 上游原版）。需要空白导入
+	// github.com/zc310/ofd/internal/render/backends/fgg 才能注册使用。
+	BackendFGG = "fgg"
 	// BackendTinySkia 使用 tinyskia 光栅后端（测速对照）。
 	BackendTinySkia = "tinyskia"
 	// BackendDraw2D 使用 llgcode/draw2d 光栅后端（测速对照）。需要空白导入

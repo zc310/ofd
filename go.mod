@@ -7,12 +7,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
-	github.com/beevik/etree v1.8.0
+	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/chromedp/cdproto v0.0.0-20260922220944-a19bff23514f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.44.1
+	github.com/fogleman/gg v1.3.0
 	github.com/go-text/typesetting v0.3.5
 	github.com/gogpu/gg v0.52.5
 	github.com/h2non/filetype v1.1.3
@@ -36,7 +37,7 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/fontfix v0.0.3-0.20260920024109-9aec3589ce48
+	github.com/zc310/fontfix v0.0.3-0.20260923225458-d7ea9933aad4
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
 	golang.org/x/text v0.42.0
@@ -115,5 +116,3 @@ replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260923164158-
 replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20260923231615-ffe1cbf5406e
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
-
-replace github.com/zc310/fontfix => github.com/zc310/fontfix v0.0.3-0.20260923225458-d7ea9933aad4
