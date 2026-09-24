@@ -57,6 +57,7 @@ func main() {
 	api.Set("media", js.FuncOf(app.media))
 	api.Set("mediaData", js.FuncOf(app.mediaData))
 	api.Set("annotations", js.FuncOf(app.annotations))
+	api.Set("pageLinks", js.FuncOf(app.pageLinks))
 	api.Set("signatures", js.FuncOf(app.signatures))
 	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
 	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
@@ -494,6 +495,9 @@ func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
 			"last_mod_date": info.LastModDate,
 			"visible":       info.Visible,
 			"remark":        info.Remark,
+			"uri":           info.URI,
+			"target_page":   info.TargetPage,
+			"dest":          outlineDestValue(info.Dest),
 		}
 		if info.Boundary != nil {
 			value["boundary"] = objectValue(map[string]any{
@@ -504,6 +508,36 @@ func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
 			})
 		} else {
 			value["boundary"] = nil
+		}
+		result.SetIndex(index, objectValue(value))
+	}
+	return result
+}
+
+func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	links, err := reader.PageLinks()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(links))
+	for index, link := range links {
+		value := map[string]any{
+			"scope":       link.Scope,
+			"page":        link.Page,
+			"id":          link.ID,
+			"uri":         link.URI,
+			"target_page": link.TargetPage,
+			"dest":        outlineDestValue(link.Dest),
+			"boundary": objectValue(map[string]any{
+				"x":      link.Boundary.X,
+				"y":      link.Boundary.Y,
+				"width":  link.Boundary.Width,
+				"height": link.Boundary.Height,
+			}),
 		}
 		result.SetIndex(index, objectValue(value))
 	}
