@@ -685,6 +685,31 @@ func (p *Fonts) UseFallbackFont(family string) error {
 	return nil
 }
 
+// RemoveFallbackFont 移除本字体上下文先前通过 UseFallbackFont 登记的回退字体族，
+// 使缺失字体不再回退到该族。全局注册表不回滚，但本上下文的回退集合与解析缓存会
+// 重建，后续渲染即恢复为内嵌或默认字体。
+func (p *Fonts) RemoveFallbackFont(family string) {
+	if p == nil || family == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.fallbacks[family]; !ok && !p.hasFallbackFace(family, drawing.FontRegular) {
+		return
+	}
+	delete(p.fallbacks, family)
+	kept := p.fallbackFaces[:0]
+	for _, face := range p.fallbackFaces {
+		if face.name != family {
+			kept = append(kept, face)
+		}
+	}
+	p.fallbackFaces = kept
+	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
+	p.fallbackByFont = make(map[models.StRefID]string)
+	p.generation++
+}
+
 func (p *Fonts) hasFallbackFace(family string, style drawing.FontStyle) bool {
 	for _, face := range p.fallbackFaces {
 		if face.name == family && face.style == style {

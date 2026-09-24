@@ -241,6 +241,8 @@ type FontEngine interface {
 	RegisterPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent)
 	// UseFallbackFont 使引擎在缺失字体时使用已全局注册的回退字体族。
 	UseFallbackFont(family string) error
+	// RemoveFallbackFont 取消先前登记的回退字体族，使缺失字体恢复内嵌/默认字体。
+	RemoveFallbackFont(family string)
 	// FallbackFontFamily 返回为文档字体选择的外部字体族。
 	FallbackFontFamily(id models.StRefID) string
 	// HasLoadedEmbeddedFont 判断文档字体是否解析为可用且已加载的内嵌字体。

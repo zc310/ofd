@@ -156,6 +156,30 @@ func TestHashGlyphMappingsIsOrderIndependent(t *testing.T) {
 	}
 }
 
+func TestRemoveFallbackFontRestoresContext(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	fonts := NewFonts(nil)
+	useFallback(t, fonts, data, "RemovableFallback", FontRegular)
+	if fonts.fallbacks["RemovableFallback"] == nil {
+		t.Fatal("回退字体未登记")
+	}
+	fonts.RemoveFallbackFont("RemovableFallback")
+	if fonts.fallbacks["RemovableFallback"] != nil {
+		t.Fatal("移除后仍保留回退字体族")
+	}
+	for _, face := range fonts.fallbackFaces {
+		if face.name == "RemovableFallback" {
+			t.Fatal("移除后仍保留回退字体面")
+		}
+	}
+	if fonts.FallbackFontFamily(0) == "RemovableFallback" {
+		t.Fatal("移除后仍为字体选择该回退族")
+	}
+}
+
 func TestFallbackFontRegistryReusesFamilyAndRenderLock(t *testing.T) {
 	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 	if err != nil {

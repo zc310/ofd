@@ -95,6 +95,7 @@ func (fakeFontEngine) RenderLock(FontFamily) *sync.Mutex { return &sync.Mutex{} 
 func (fakeFontEngine) RegisterPageGlyphs(*parser.Document, *parser.Page, *models.PageContent) {
 }
 func (fakeFontEngine) UseFallbackFont(string) error              { return nil }
+func (fakeFontEngine) RemoveFallbackFont(string)                 {}
 func (fakeFontEngine) FallbackFontFamily(models.StRefID) string  { return "" }
 func (fakeFontEngine) HasLoadedEmbeddedFont(models.StRefID) bool { return false }
 
