@@ -29,7 +29,7 @@ func (discardWriterCloser) Close() error                { return nil }
 func BenchmarkConvertPngPage1(b *testing.B) {
 	for _, dpiVal := range []float64{150, 300} {
 		dpi := geom.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+		for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 			b.Run(fmt.Sprintf("RasterizePage/%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()
