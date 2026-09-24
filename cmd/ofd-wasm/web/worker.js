@@ -110,6 +110,8 @@ async function execute(message) {
     }
     case 'annotations':
       return unwrap(self.ofd.annotations());
+    case 'pageLinks':
+      return unwrap(self.ofd.pageLinks());
     case 'signatures':
       return unwrap(self.ofd.signatures());
     case 'signatureCertificate': {

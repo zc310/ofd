@@ -153,6 +153,10 @@ class OFDWorkerClient {
     return this.request('annotations');
   }
 
+  pageLinks() {
+    return this.request('pageLinks');
+  }
+
   signatures() {
     return this.request('signatures');
   }
@@ -466,6 +470,8 @@ let current = 0;
 let documentGeneration = 0;
 let injectedFonts = new Map();
 let resizeObserver;
+let pageLinks = new Map();
+let linkRequest;
 let searchResults = [];
 let activeSearchResult = -1;
 let searchGeneration = 0;
@@ -1098,6 +1104,8 @@ function mountPageSpread(position) {
     surface.className = 'page-surface';
     const textLayer = document.createElement('div');
     textLayer.className = 'text-layer';
+    const linkLayer = document.createElement('div');
+    linkLayer.className = 'link-layer';
     image.addEventListener('load', () => {
       image.classList.add('loaded');
       clearPageLoading(card, image);
@@ -1109,13 +1117,14 @@ function mountPageSpread(position) {
       markPageFailed(index);
       showPageError(index, '页面图片加载失败');
     });
-    surface.append(image, textLayer);
+    surface.append(image, textLayer, linkLayer);
     card.append(surface);
     element.append(card);
     pageCards[index] = card;
     if (textCache.has(index)) buildTextLayer(index);
     resizeObserver?.observe(card);
     loadPage(index);
+    applyPageLinks(index);
   });
   applyPageWidthToSpread(spread);
   spread.pages.forEach(index => {
@@ -1184,6 +1193,7 @@ function applyPageWidthToSpread(spread) {
       surface.style.width = rotated ? `${info.width / info.height * 100}%` : '100%';
       surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
     }
+    applyPageLinks(index);
   });
 }
 
@@ -2743,6 +2753,9 @@ async function openSelectedFile(selected) {
   searchResults = [];
   activeSearchResult = -1;
   searchGeneration++;
+  linkRequest?.cancel();
+  linkRequest = undefined;
+  pageLinks = new Map();
   updateSearchStatus('');
   resetRenderProgress();
   resizeObserver?.disconnect();
@@ -2836,6 +2849,7 @@ async function openSelectedFile(selected) {
     setStatus(`已打开：${selected.name}`);
     updateRenderProgress();
     void loadOutline();
+    void fetchPageLinks(generation);
     void saveRecentFile(selected);
     void reportMemory('打开文档');
   } catch (error) {
@@ -5310,6 +5324,93 @@ function scrollToDestinationX(index, targetX) {
   const pagesRect = pagesElement.getBoundingClientRect();
   const desired = pagesElement.scrollLeft + (cardRect.left - pagesRect.left) + targetX - 8;
   pagesElement.scrollLeft = Math.max(0, desired);
+}
+
+// fetchPageLinks 读取可点击链接并按页面缓存边界与动作。链接来自两处：注解
+// （Type="Link"）与页面正文图元（含模板页）的动作，两者都归一为 {page, uri,
+// target_page, dest, boundary} 结构。
+function fetchPageLinks(generation) {
+  linkRequest?.cancel();
+  pageLinks = new Map();
+  const addLink = item => {
+    if (!item || typeof item !== 'object') return;
+    const boundary = item.boundary;
+    if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
+        !(boundary.width > 0) || !(boundary.height > 0)) return;
+    const external = typeof item.uri === 'string' && item.uri !== '';
+    const target = Number(item.target_page);
+    const internal = Number.isInteger(target) && target >= 0;
+    if (!external && !internal) return;
+    const bucket = pageLinks.get(item.page);
+    if (bucket) bucket.push(item);
+    else pageLinks.set(item.page, [item]);
+  };
+  const collect = list => {
+    if (Array.isArray(list)) list.forEach(addLink);
+  };
+  const annotationsRequest = engine.annotations();
+  const pageLinksRequest = engine.pageLinks();
+  linkRequest = {
+    cancel: () => {
+      annotationsRequest.cancel?.();
+      pageLinksRequest.cancel?.();
+    },
+  };
+  Promise.all([
+    annotationsRequest.catch(() => []),
+    pageLinksRequest.catch(() => []),
+  ]).then(([annotations, pageGraphicLinks]) => {
+    if (generation !== documentGeneration) return;
+    const annotationList = Array.isArray(annotations) ? annotations : [];
+    annotationList.forEach(item => {
+      if (item && item.type === 'Link') addLink(item);
+    });
+    collect(pageGraphicLinks);
+    applyPageLinks();
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    pageLinks = new Map();
+  });
+}
+
+// applyPageLinks 在指定页面上重建链接热区；不传页时重建所有已挂载页面。
+function applyPageLinks(index) {
+  const targets = Number.isInteger(index) ? [index] : Array.from(pageLinks.keys());
+  targets.forEach(pageIndex => {
+    const card = pageCards[pageIndex];
+    const layer = card?.querySelector('.link-layer');
+    if (!layer) return;
+    layer.replaceChildren();
+    const info = pageInfos[pageIndex];
+    const links = pageLinks.get(pageIndex);
+    if (!info || info.width <= 0 || info.height <= 0 || !links) return;
+    links.forEach(link => {
+      const boundary = link.boundary;
+      const hotspot = document.createElement('button');
+      hotspot.type = 'button';
+      hotspot.className = 'link-hotspot';
+      hotspot.style.left = `${(boundary.x / info.width) * 100}%`;
+      hotspot.style.top = `${(boundary.y / info.height) * 100}%`;
+      hotspot.style.width = `${(boundary.width / info.width) * 100}%`;
+      hotspot.style.height = `${(boundary.height / info.height) * 100}%`;
+      const external = typeof link.uri === 'string' && link.uri !== '';
+      hotspot.title = external ? link.uri : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
+      hotspot.setAttribute('aria-label', hotspot.title);
+      hotspot.addEventListener('click', () => openPageLink(link));
+      layer.append(hotspot);
+    });
+  });
+}
+
+// openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。
+function openPageLink(link) {
+  if (typeof link.uri === 'string' && link.uri !== '') {
+    window.open(link.uri, '_blank', 'noopener');
+    return;
+  }
+  const target = Number(link.target_page);
+  if (!Number.isInteger(target) || target < 0 || target >= pageInfos.length) return;
+  goToDestination(target, link.dest);
 }
 
 // goToDestination 跳转到指定页；有目标位置时按 Dest 的 Top/Left/Zoom 精确定位，
