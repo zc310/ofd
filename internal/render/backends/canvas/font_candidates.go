@@ -141,19 +141,23 @@ func fallbackNameGroup(name string) string {
 		return "sanssc"
 	case "思源宋体", "sourcehanserifsc", "sourcehanserifcn", "notoserifsc", "notoserifcjksc":
 		return "serifsc"
+	case "smileysans", "smileysansoblique", "得意黑":
+		return "smileysans"
 	default:
 		return ""
 	}
 }
 
 // cjkFontFiles 把中文字体组映射到系统字体目录中可能存在的字体文件名。
-// 只收录常见宋体/黑体/楷体/仿宋/雅黑；其他字体组没有通用文件名时不映射。
+// 收录常见宋体/黑体/楷体/仿宋/雅黑，以及「得意黑」（Smiley Sans）；其他字体组
+// 没有通用文件名时不映射。
 var cjkFontFiles = map[string][]string{
-	"simsun":  {"simsun.ttc", "simsun.ttf", "simsunb.ttf", "Songti.ttc"},
-	"simhei":  {"simhei.ttf", "simhei.ttc"},
-	"simkai":  {"simkai.ttf"},
-	"simfang": {"simfang.ttf"},
-	"yahei":   {"msyh.ttc", "msyh.ttf", "msyhbd.ttc", "msyhl.ttc"},
+	"simsun":     {"simsun.ttc", "simsun.ttf", "simsunb.ttf", "Songti.ttc"},
+	"simhei":     {"simhei.ttf", "simhei.ttc"},
+	"simkai":     {"simkai.ttf"},
+	"simfang":    {"simfang.ttf"},
+	"yahei":      {"msyh.ttc", "msyh.ttf", "msyhbd.ttc", "msyhl.ttc"},
+	"smileysans": {"SmileySans-Oblique.ttf", "SmileySans-Oblique.otf", "SmileySans.ttf", "SmileySans.otf"},
 }
 
 // cjkFontGroup 从字体族名和字体名中识别中文字体组；只有该组在
