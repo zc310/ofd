@@ -130,7 +130,11 @@ func (h *draw2dHooks) RenderImage(img image.Image, m geom.Matrix) {
 	d := sm[1][1]
 	e := origin.X
 	f := hh - origin.Y
-	tr := d2d.Matrix{a, -b, c, -d, e, f}
+	// draw2d Matrix.Transform 的 x' = tr0·x + tr2·y + tr4、y' = tr1·x + tr3·y + tr5，
+	// 与 canvas 的 aff3（dst.x = m00·sx - m01·sy + origin.X、dst.y = -m10·sx + m11·sy + f）
+	// 对应：tr = {a, -b, -c, d, f}。写反 c/d 的符号会让 y 轴整体翻转，轴对齐图片
+	// 会被上下镜像或贴出页面（如左上角二维码）。
+	tr := d2d.Matrix{a, -b, -c, d, e, f}
 	d2dimg.DrawImage(src, h.im, tr, draw.Over, d2dimg.BicubicFilter)
 }
 

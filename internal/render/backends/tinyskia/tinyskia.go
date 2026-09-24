@@ -94,11 +94,23 @@ func (h *tinyskiaHooks) RenderImage(img image.Image, m geom.Matrix) {
 	// 把图像像素→逻辑毫米的矩阵 m 换算成设备像素仿射，交给 tinyskia 的
 	// DrawImageScaled：源图像直接经该仿射变换采样覆盖矩形。canvas 的
 	// RenderImage 用 Catmull-Rom，此处是 tiny-skia 自身的 pattern 引擎。
+	//
+	// 与 gg/canvas 一致，图像像素坐标以“左上角为原点、y 向下”，而页面矩阵
+	// m 面向 y 向上的逻辑坐标：canvas 用 origin=m.Dot(0, imgH) 把源图底部中
+	// 心作为平移基准，再以 dst.y = m11·sy + (hh - origin.Y) 让源图顶行落在
+	// 设备顶部。这里等价换算到 SetTransformValues 的设备映射
+	// x' = SX·x + KX·y + TX、y' = KY·x + SY·y + TY：
+	//   SX=dpmm·m00  KX=-dpmm·m01  TX=dpmm·(m02 + m01·imgH)
+	//   KY=-dpmm·m10  SY=dpmm·m11   TY=hh - dpmm·(m12 + m11·imgH)
+	// 之前 KX/SY 的符号写反且平移未含 imgH 项，轴对齐图片被上下镜像（如
+	// 左上角二维码整体倒置）。
 	src := img.Bounds().Size()
 	cw, ch := float64(src.X), float64(src.Y)
+	imgH := ch
+	origin := m.Dot(geom.Point{X: 0, Y: imgH}).Mul(h.dpmm)
 	h.ctx.SetTransformValues(
-		h.dpmm*m[0][0], -h.dpmm*m[1][0], h.dpmm*m[0][1], -h.dpmm*m[1][1],
-		h.dpmm*m[0][2], h.hpix-h.dpmm*m[1][2],
+		h.dpmm*m[0][0], -h.dpmm*m[1][0], -h.dpmm*m[0][1], h.dpmm*m[1][1],
+		origin.X, h.hpix-origin.Y,
 	)
 	h.ctx.DrawImageScaled(img, 0, 0, cw, ch)
 	h.ctx.ResetTransform()
