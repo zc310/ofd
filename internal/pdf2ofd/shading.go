@@ -80,7 +80,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	if !ok {
 		return
 	}
-	fillColor := p.shadingColor(shading, path)
+	fillColor := p.shadingColor(shading, path.X, path.Y)
 	if fillColor == nil {
 		return
 	}
@@ -239,8 +239,9 @@ func (p *pdfInterpreter) parseColorSpaceObject(dict types.Dict, key string, dept
 }
 
 // shadingColor 把着色转换为 OFD 渐变填充；不支持的类型返回 nil。OFD 渐变
-// 坐标是相对路径边界左上角的局部坐标，因此需要减去 path 的 X/Y。
-func (p *pdfInterpreter) shadingColor(shading *pdfShading, path *creator.Path) *creator.Color {
+// 坐标是相对对象边界左上角的局部坐标，因此需要减去对象的 X/Y（路径边界或
+// 文字对象边界）。
+func (p *pdfInterpreter) shadingColor(shading *pdfShading, originX, originY float64) *creator.Color {
 	// PatternType 2 图案空间先经图案 Matrix 映射到页面默认坐标空间（不叠加
 	// 当前 CTM）；sh 操作符的着色位于当前用户空间，需要叠加 CTM。
 	matrix := shading.matrix
@@ -270,7 +271,7 @@ func (p *pdfInterpreter) shadingColor(shading *pdfShading, path *creator.Path) *
 	toLocal := func(x, y float64) (float64, float64) {
 		deviceX, deviceY := transformPDFPoint(x, y, matrix)
 		pageX, pageY := p.pagePoint(deviceX, deviceY)
-		return pageX - path.X, pageY - path.Y
+		return pageX - originX, pageY - originY
 	}
 	scale := pdfMatrixScale(matrix) * p.info.userUnit * pdfPointToMillimeter
 	point := func(x, y float64) string {
