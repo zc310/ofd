@@ -156,6 +156,3 @@ func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) 
 	}
 	return gradient
 }
-
-// newOFDGouraudGradient 创建自由三角网格。
-// EdgeFlag=0 开始新的三角形，1 和 2 按 OFD 自由网格格式复用前一个三角形的对应边。

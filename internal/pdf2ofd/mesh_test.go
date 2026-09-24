@@ -73,6 +73,120 @@ func TestConvertTensorPatchMeshEmitsGouraudPath(t *testing.T) {
 	}
 }
 
+// TestDecodeFreeFormPointsEdgeFlag3ReusesFirstEdge 回归：PDF 自由网格的
+// EdgeFlag=3（复用上一个三角形的 v0-v1 边）此前被 decodeFreeFormPoints
+// 当作普通单点丢弃/错误连线；现在应按完整 (0,1,2) 三元组输出同一个三角形，
+// 并且后续邻接链（flag 1）仍与 flag 3 输出的三角形正确衔接。
+func TestDecodeFreeFormPointsEdgeFlag3ReusesFirstEdge(t *testing.T) {
+	writer := &meshBitWriter{}
+	maxCoord := float64(math.MaxUint32)
+	writeCoords := func(x, y, r, g, b float64) {
+		writer.write(uint32(x*maxCoord), 32)
+		writer.write(uint32(y*maxCoord), 32)
+		writer.write(uint32(r), 8)
+		writer.write(uint32(g), 8)
+		writer.write(uint32(b), 8)
+	}
+	// 位流：flag0 后紧跟三个顶点（三角形起始点之后不为 v1/v2 再写 flag），
+	// 之后每个顶点 = flag(2 bits) + 坐标 + 颜色。
+	writer.write(0, 2)
+	writeCoords(0.02, 0.02, 200, 10, 10) // v0 = (2,2)
+	writeCoords(0.18, 0.02, 10, 200, 10) // v1 = (18,2)
+	writeCoords(0.10, 0.18, 10, 10, 200) // v2 = (10,18)
+	writer.write(3, 2)
+	writeCoords(0.10, 0.32, 200, 200, 10) // v3 = (10,32)，flag 3 → {v0,v1,v3}
+	writer.write(1, 2)
+	writeCoords(0.18, 0.52, 10, 10, 200) // v4 = (18,52)，flag 1 → 衔接 {v1,v3,v4}
+
+	shading := &pdfShading{
+		shadingType: 4,
+		colorSpace:  deviceRGBSpace,
+		mesh: &pdfMeshData{
+			kind:              4,
+			bitsPerCoordinate: 32,
+			bitsPerComponent:  8,
+			bitsPerFlag:       2,
+			decode:            []float64{0, 100, 0, 100, 0, 1, 0, 1, 0, 1},
+			data:              writer.bytes(),
+		},
+	}
+	points, ok := decodeFreeFormPoints(shading.mesh, &meshBitReader{data: shading.mesh.data}, shading)
+	if !ok {
+		t.Fatal("decodeFreeFormPoints failed")
+	}
+	wantXY := [][2]float64{
+		{2, 2}, {18, 2}, {10, 18}, // 三角形 1
+		{2, 2}, {18, 2}, {10, 32}, // 三角形 2（flag 3 展开）
+		{18, 52}, // flag 1 连接后续
+	}
+	wantFlag := []int{0, 1, 2, 0, 1, 2, 1}
+	wantColor := []pdfColor{
+		{200, 10, 10}, {10, 200, 10}, {10, 10, 200},
+		{200, 10, 10}, {10, 200, 10}, {200, 200, 10}, {10, 10, 200},
+	}
+	if len(points) != len(wantXY) {
+		t.Fatalf("points = %d, want %d", len(points), len(wantXY))
+	}
+	for i, point := range points {
+		if math.Abs(point.x-wantXY[i][0]) > 1e-6 || math.Abs(point.y-wantXY[i][1]) > 1e-6 {
+			t.Fatalf("point %d pos = (%g,%g), want (%g,%g)", i, point.x, point.y, wantXY[i][0], wantXY[i][1])
+		}
+		if point.flag != wantFlag[i] {
+			t.Fatalf("point %d flag = %d, want %d", i, point.flag, wantFlag[i])
+		}
+		close := func(a, b uint8) bool { d := int(a) - int(b); return d >= -2 && d <= 2 }
+		if !close(point.color.r, wantColor[i].r) || !close(point.color.g, wantColor[i].g) || !close(point.color.b, wantColor[i].b) {
+			t.Fatalf("point %d color = %+v, want %+v", i, point.color, wantColor[i])
+		}
+	}
+}
+
+// TestDecodeFreeFormMeshEdgeFlag3ReusesFirstEdge 回归：位图回退路径
+// decodeFreeFormMesh 对 EdgeFlag=3 同样应复用上一个三角形的 v0-v1 边，
+// 否则 meshImage 会丢失三角形。
+func TestDecodeFreeFormMeshEdgeFlag3ReusesFirstEdge(t *testing.T) {
+	writer := &meshBitWriter{}
+	maxCoord := float64(math.MaxUint32)
+	writeCoords := func(x, y, r, g, b float64) {
+		writer.write(uint32(x*maxCoord), 32)
+		writer.write(uint32(y*maxCoord), 32)
+		writer.write(uint32(r), 8)
+		writer.write(uint32(g), 8)
+		writer.write(uint32(b), 8)
+	}
+	writer.write(0, 2)
+	writeCoords(0.02, 0.02, 200, 10, 10)
+	writeCoords(0.18, 0.02, 10, 200, 10)
+	writeCoords(0.10, 0.18, 10, 10, 200)
+	writer.write(3, 2)
+	writeCoords(0.10, 0.32, 200, 200, 10)
+
+	shading := &pdfShading{
+		shadingType: 4,
+		colorSpace:  deviceRGBSpace,
+		mesh: &pdfMeshData{
+			kind:              4,
+			bitsPerCoordinate: 32,
+			bitsPerComponent:  8,
+			bitsPerFlag:       2,
+			decode:            []float64{0, 100, 0, 100, 0, 1, 0, 1, 0, 1},
+			data:              writer.bytes(),
+		},
+	}
+	triangles := decodeFreeFormMesh(shading.mesh, &meshBitReader{data: shading.mesh.data}, shading)
+	if len(triangles) != 2 {
+		t.Fatalf("triangles = %d, want 2", len(triangles))
+	}
+	// 三角形 2 应为 {v0, v1, v3} = {(2,2),(18,2),(10,32)}。
+	second := triangles[1]
+	want := [][2]float64{{2, 2}, {18, 2}, {10, 32}}
+	for i := 0; i < 3; i++ {
+		if math.Abs(second[i].x-want[i][0]) > 1e-6 || math.Abs(second[i].y-want[i][1]) > 1e-6 {
+			t.Fatalf("tri2 vertex %d = (%g,%g), want (%g,%g)", i, second[i].x, second[i].y, want[i][0], want[i][1])
+		}
+	}
+}
+
 func TestConvertLatticeMeshEmitsLaGouraudPath(t *testing.T) {
 	// Type 5 规则网格应输出 LaGouraudShd，保留每行顶点数。
 	mesh := buildLatticeMeshStream(2, [][3]uint8{{200, 10, 10}, {10, 200, 10}, {10, 10, 200}, {200, 200, 10}})

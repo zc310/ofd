@@ -153,10 +153,13 @@ func decodeMeshPoints(shading *pdfShading) (points []ofdMeshPoint, verticesPerRo
 }
 
 // decodeFreeFormPoints 解析自由网格（Type 4），保留 EdgeFlag 以便阅读器重建
-// 与原始网格一致的三角形邻接关系。
+// 与原始网格一致的三角形邻接关系。PDF 的 EdgeFlag=3（复用上一个三角形的
+// v0-v1 边）在 OFD 的 GouraudShd 中没有对应标志，改以完整三点输出同一三角形。
 func decodeFreeFormPoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShading) ([]ofdMeshPoint, bool) {
 	components := shading.colorSpace.components
 	var points []ofdMeshPoint
+	var previous [3]ofdMeshPoint
+	hasPrevious := false
 	for len(points) < maxVectorMeshPoints {
 		flag, ok := reader.read(maxInt(mesh.bitsPerFlag, 2))
 		if !ok {
@@ -166,7 +169,7 @@ func decodeFreeFormPoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdf
 		if !ok {
 			break
 		}
-		if flag == 0 {
+		if !hasPrevious || flag == 0 {
 			second, ok := readMeshVertex(mesh, reader, components, shading, 1)
 			if !ok {
 				break
@@ -175,13 +178,37 @@ func decodeFreeFormPoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdf
 			if !ok {
 				break
 			}
-			points = append(points,
-				ofdMeshPoint{x: vertex.x, y: vertex.y, color: vertex.color, flag: 0},
-				ofdMeshPoint{x: second.x, y: second.y, color: second.color, flag: 1},
-				ofdMeshPoint{x: third.x, y: third.y, color: third.color, flag: 2})
+			previous = [3]ofdMeshPoint{
+				{x: vertex.x, y: vertex.y, color: vertex.color, flag: 0},
+				{x: second.x, y: second.y, color: second.color, flag: 1},
+				{x: third.x, y: third.y, color: third.color, flag: 2},
+			}
+			points = append(points, previous[0], previous[1], previous[2])
+			hasPrevious = true
 			continue
 		}
-		points = append(points, ofdMeshPoint{x: vertex.x, y: vertex.y, color: vertex.color, flag: int(flag)})
+		point := ofdMeshPoint{x: vertex.x, y: vertex.y, color: vertex.color, flag: int(flag)}
+		switch flag {
+		case 1:
+			previous = [3]ofdMeshPoint{previous[1], previous[2], point}
+			points = append(points, point)
+		case 2:
+			previous = [3]ofdMeshPoint{previous[0], previous[2], point}
+			points = append(points, point)
+		case 3:
+			// PDF 允许复用上一个三角形的 v0-v1 边（EdgeFlag=3），OFD 没有该
+			// 标志；按完整 (0,1,2) 三元组重复输出同一个三角形，邻接状态与
+			// 直接连线完全一致，后续三角形不受影响。
+			triangle := [3]ofdMeshPoint{
+				{x: previous[0].x, y: previous[0].y, color: previous[0].color, flag: 0},
+				{x: previous[1].x, y: previous[1].y, color: previous[1].color, flag: 1},
+				{x: vertex.x, y: vertex.y, color: vertex.color, flag: 2},
+			}
+			points = append(points, triangle[0], triangle[1], triangle[2])
+			previous = triangle
+		default:
+			points = append(points, point)
+		}
 	}
 	if len(points) < 3 {
 		return nil, false
@@ -426,6 +453,9 @@ func decodeFreeFormMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfSh
 		}
 		if flag == 1 {
 			previous = [3]meshVertex{previous[1], previous[2], vertex}
+		} else if flag == 3 {
+			// PDF 的 EdgeFlag=3 复用上一个三角形的 v0-v1 边。
+			previous = [3]meshVertex{previous[0], previous[1], vertex}
 		} else {
 			previous = [3]meshVertex{previous[0], previous[2], vertex}
 		}
