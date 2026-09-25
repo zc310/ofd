@@ -458,10 +458,10 @@ type Color struct {
 
 // ColorStop 描述渐变中的颜色停止点。
 type ColorStop struct {
-	// Position 指定颜色在渐变中的位置。
-	Position float64 `json:"position,omitempty" yaml:"position,omitempty" toml:"position,omitempty"`
+	// Position 指定颜色在渐变中的位置。省略时不写出，由渲染按首尾补齐。
+	Position *float64 `json:"position,omitempty" yaml:"position,omitempty" toml:"position,omitempty"`
 	// Color 指定该位置的颜色。
-	Color Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
+	Color Color `json:"color" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
 // AxialShading 描述轴向渐变。
@@ -1948,7 +1948,12 @@ func buildColorStops(values []ColorStop) ([]creator.ColorStop, error) {
 		if err != nil {
 			return nil, fmt.Errorf("[%d].color: %w", index, err)
 		}
-		result = append(result, creator.ColorStop{Position: value.Position, Color: *color})
+		stop := creator.ColorStop{Color: *color}
+		if value.Position != nil {
+			stop.Position = *value.Position
+			stop.PositionSet = true
+		}
+		result = append(result, stop)
 	}
 	return result, nil
 }

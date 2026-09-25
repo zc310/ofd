@@ -143,7 +143,12 @@ func (e *documentExporter) exportColorStops(values []models.Segment) ([]manifest
 		if err != nil {
 			return nil, fmt.Errorf("[%d].color: %w", index, err)
 		}
-		result = append(result, manifest.ColorStop{Position: value.Position, Color: *color})
+		stop := manifest.ColorStop{Color: *color}
+		if value.PositionSet {
+			position := value.Position
+			stop.Position = &position
+		}
+		result = append(result, stop)
 	}
 	return result, nil
 }

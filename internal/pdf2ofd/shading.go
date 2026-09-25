@@ -259,7 +259,7 @@ func (p *pdfInterpreter) shadingColor(shading *pdfShading, originX, originY floa
 		if !ok {
 			return nil
 		}
-		stops = append(stops, creator.ColorStop{Position: position, Color: creator.Color{R: color.r, G: color.g, B: color.b}})
+		stops = append(stops, creator.ColorStop{Position: position, PositionSet: true, Color: creator.Color{R: color.r, G: color.g, B: color.b}})
 	}
 	extend := 0
 	if shading.extend[0] {

@@ -933,7 +933,9 @@ func shadingXML(parent *etree.Element, value interface{}) {
 		gradientCommonXML(element, shading.MapType, shading.MapUnit, shading.Extend, shading.StartPoint, shading.EndPoint)
 		for _, stop := range shading.Segments {
 			segment := element.CreateElement("Segment")
-			segment.CreateAttr("Position", number(stop.Position))
+			if stop.PositionSet {
+				segment.CreateAttr("Position", number(stop.Position))
+			}
 			colorXML(segment, "Color", &stop.Color)
 		}
 	case *RadialShading:
@@ -961,7 +963,9 @@ func shadingXML(parent *etree.Element, value interface{}) {
 		}
 		for _, stop := range shading.Segments {
 			segment := element.CreateElement("Segment")
-			segment.CreateAttr("Position", number(stop.Position))
+			if stop.PositionSet {
+				segment.CreateAttr("Position", number(stop.Position))
+			}
 			colorXML(segment, "Color", &stop.Color)
 		}
 	case *GouraudShading:

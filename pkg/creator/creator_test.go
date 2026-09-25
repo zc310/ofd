@@ -1750,7 +1750,7 @@ func TestCreateAdvancedColors(t *testing.T) {
 	data, err := Marshal(Document{
 		ID:          "advanced-color-test",
 		ColorSpaces: []ColorSpace{{ID: 30, Type: "RGB", BitsPerComponent: 8}},
-		DrawParams:  []DrawParam{{Name: "gradient", FillColor: &Color{ColorSpace: 30, Axial: &AxialShading{StartPoint: "0 0", EndPoint: "20 20", Segments: []ColorStop{{Position: 0, Color: Color{R: 255, G: 0, B: 0}}, {Position: 1, Color: Color{R: 0, G: 0, B: 255}}}}}}},
+		DrawParams:  []DrawParam{{Name: "gradient", FillColor: &Color{ColorSpace: 30, Axial: &AxialShading{StartPoint: "0 0", EndPoint: "20 20", Segments: []ColorStop{{Position: 0, PositionSet: true, Color: Color{R: 255, G: 0, B: 0}}, {Position: 1, PositionSet: true, Color: Color{R: 0, G: 0, B: 255}}}}}}},
 		Pages: []Page{{Items: []Item{
 			Path{X: 1, Y: 1, Width: 20, Height: 20, Data: "M 0 0 L 20 0 L 20 20 C", Fill: true, FillColor: &Color{ColorSpace: 30, Components: []int{51, 102, 153}}},
 		}}},
@@ -1962,7 +1962,7 @@ func TestCreateRadialColor(t *testing.T) {
 		Pages: []Page{{Items: []Item{
 			Path{X: 1, Y: 1, Width: 20, Height: 20, Data: "M 0 0 L 20 0 L 20 20 C", Fill: true, FillColor: &Color{Radial: &RadialShading{
 				StartPoint: "10 10", EndPoint: "10 10", EndRadius: 10,
-				Segments: []ColorStop{{Position: 0, Color: Color{R: 255, G: 255, B: 255}}, {Position: 1, Color: Color{R: 0, G: 0, B: 0}}},
+				Segments: []ColorStop{{Position: 0, PositionSet: true, Color: Color{R: 255, G: 255, B: 255}}, {Position: 1, PositionSet: true, Color: Color{R: 0, G: 0, B: 0}}},
 			}}},
 		}}},
 	})
@@ -2800,13 +2800,13 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	}
 	if _, err := Marshal(Document{
 		ID:    "invalid-gradient",
-		Pages: []Page{{Items: []Item{Path{X: 0, Y: 0, Width: 10, Height: 10, Data: "M 0 0 L 10 10 C", FillColor: &Color{Axial: &AxialShading{StartPoint: "0 0", EndPoint: "1 1", Segments: []ColorStop{{Position: 0, Color: Color{R: 0, G: 0, B: 0}}}}}}}}},
+		Pages: []Page{{Items: []Item{Path{X: 0, Y: 0, Width: 10, Height: 10, Data: "M 0 0 L 10 10 C", FillColor: &Color{Axial: &AxialShading{StartPoint: "0 0", EndPoint: "1 1", Segments: []ColorStop{{Position: 0, PositionSet: true, Color: Color{R: 0, G: 0, B: 0}}}}}}}}},
 	}); err == nil {
 		t.Fatal("Marshal accepted an incomplete gradient")
 	}
 	if _, err := Marshal(Document{
 		ID:    "invalid-gradient-position",
-		Pages: []Page{{Items: []Item{Path{X: 0, Y: 0, Width: 10, Height: 10, Data: "M 0 0 L 10 10 C", FillColor: &Color{Axial: &AxialShading{StartPoint: "0", EndPoint: "1 1", Segments: []ColorStop{{Position: 0, Color: Color{R: 0, G: 0, B: 0}}, {Position: 1.5, Color: Color{R: 255}}}}}}}}},
+		Pages: []Page{{Items: []Item{Path{X: 0, Y: 0, Width: 10, Height: 10, Data: "M 0 0 L 10 10 C", FillColor: &Color{Axial: &AxialShading{StartPoint: "0", EndPoint: "1 1", Segments: []ColorStop{{Position: 0, PositionSet: true, Color: Color{R: 0, G: 0, B: 0}}, {Position: 1.5, PositionSet: true, Color: Color{R: 255}}}}}}}}},
 	}); err == nil {
 		t.Fatal("Marshal accepted invalid gradient position data")
 	}

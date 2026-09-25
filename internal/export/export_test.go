@@ -286,11 +286,11 @@ func TestExportPreservesGradientColors(t *testing.T) {
 		Pages: []creator.Page{{Items: []creator.Item{
 			creator.Path{X: 10, Y: 60, Width: 140, Height: 40, Data: "M 0 0 L 140 0 L 140 40 L 0 40 C", Fill: true, FillColor: &creator.Color{Axial: &creator.AxialShading{
 				MapType: "Reflect", MapUnit: 25, StartPoint: "0 0", EndPoint: "25 0",
-				Segments: []creator.ColorStop{{Position: 0, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, Color: creator.Color{R: 0, G: 0, B: 255}}},
+				Segments: []creator.ColorStop{{Position: 0, PositionSet: true, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, PositionSet: true, Color: creator.Color{R: 0, G: 0, B: 255}}},
 			}}},
 			creator.Path{X: 10, Y: 90, Width: 60, Height: 45, Data: "M 0 0 L 60 0 L 60 45 L 0 45 C", Fill: true, FillColor: &creator.Color{Radial: &creator.RadialShading{
 				StartPoint: "12 21", StartRadius: 3, EndPoint: "42 21", EndRadius: 15, Extend: 2,
-				Segments: []creator.ColorStop{{Position: 0, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, Color: creator.Color{R: 0, G: 0, B: 255}}},
+				Segments: []creator.ColorStop{{Position: 0, PositionSet: true, Color: creator.Color{R: 255, G: 255, B: 0}}, {Position: 1, PositionSet: true, Color: creator.Color{R: 0, G: 0, B: 255}}},
 			}}},
 		}}},
 	})

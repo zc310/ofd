@@ -946,7 +946,9 @@ func streamShading(w *streamXMLWriter, value interface{}) {
 		streamGradientCommon(w, shading.MapType, shading.MapUnit, shading.Extend, shading.StartPoint, shading.EndPoint)
 		for _, stop := range shading.Segments {
 			w.Start("Segment")
-			w.AttrFloat("Position", stop.Position)
+			if stop.PositionSet {
+				w.AttrFloat("Position", stop.Position)
+			}
 			streamColor(w, "Color", &stop.Color)
 			w.End()
 		}
@@ -976,7 +978,9 @@ func streamShading(w *streamXMLWriter, value interface{}) {
 		}
 		for _, stop := range shading.Segments {
 			w.Start("Segment")
-			w.AttrFloat("Position", stop.Position)
+			if stop.PositionSet {
+				w.AttrFloat("Position", stop.Position)
+			}
 			streamColor(w, "Color", &stop.Color)
 			w.End()
 		}
