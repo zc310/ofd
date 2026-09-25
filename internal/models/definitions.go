@@ -470,7 +470,7 @@ func (c *Color) parseInt(s string) (int, error) {
 	return int(val), err
 }
 
-// 解析字符串 "156 82 35" 或 "156 82 35 255"
+// 解析字符串 "156 82 35"、"156 82 35 255" 或 16 位分量 "0 0 0 65535"
 func (c *Color) parse(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -483,19 +483,36 @@ func (c *Color) parse(s string) error {
 	parts := strings.Fields(s)
 	// 颜色分量数量由颜色空间决定：GRAY 1 个、RGB 3 个、CMYK 4 个。
 	if len(parts) != 1 && len(parts) != 3 && len(parts) != 4 {
-		return fmt.Errorf("invalid color format: %s, expected 1, 3 or 4 components", s)
+		return fmt.Errorf("无效的颜色格式: %s，预期 1、3 或 4 个分量", s)
+	}
+
+	parsed := [4]int{}
+	highest := 0
+	for i := range parts {
+		val, err := c.parseInt(parts[i])
+		if err != nil {
+			return fmt.Errorf("颜色中的数字 '%s' 无效: %v", parts[i], err)
+		}
+		if val < 0 || val > 65535 {
+			return fmt.Errorf("颜色值超出范围 0-65535: %d", val)
+		}
+		parsed[i] = val
+		if val > highest {
+			highest = val
+		}
 	}
 
 	values := [4]uint8{0, 0, 0, 255}
-	for i := 0; i < len(parts); i++ {
-		val, err := c.parseInt(parts[i])
-		if err != nil {
-			return fmt.Errorf("invalid number '%s' in color: %v", parts[i], err)
+	if highest > 255 {
+		// 分量使用 16 位表示（如 Value="0 0 0 65535"）：保留高位转到 8 位，
+		// 与 pdf2ofd/render 的颜色分量转换方式一致。
+		for i := range parts {
+			values[i] = uint8(uint16(parsed[i]) >> 8)
 		}
-		if val < 0 || val > 255 {
-			return fmt.Errorf("color value out of range 0-255: %d", val)
+	} else {
+		for i := range parts {
+			values[i] = uint8(parsed[i])
 		}
-		values[i] = uint8(val)
 	}
 
 	// 单分量（GRAY）与三分量（RGB）默认完全不透明；四分量按颜色空间解释，
