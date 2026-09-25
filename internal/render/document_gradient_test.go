@@ -2,9 +2,11 @@ package render
 
 import (
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -58,14 +60,30 @@ func TestOFDGradientStopsDefaultToEvenEndpoints(t *testing.T) {
 	}
 }
 
+func TestOFDGradientStopsFillOmittedEndpoints(t *testing.T) {
+	stops := []models.Segment{
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+		{Position: 0.5, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}},
+	}
+	var gradient geom.Grad
+	addOFDGradientStops(&gradient, stops, nil)
+	if len(gradient) != 3 || gradient[0].Offset != 0 || gradient[1].Offset != 0.5 || gradient[2].Offset != 1 {
+		t.Fatalf("unexpected partial stops: %+v", gradient)
+	}
+	if gradient[0].Color.R != 255 || gradient[1].Color.B != 255 || gradient[2].Color.G != 255 {
+		t.Fatalf("unexpected stop colors: %+v", gradient)
+	}
+}
+
 func TestOFDLinearGradientMapModes(t *testing.T) {
 	shd := &models.CTAxialShd{
 		StartPoint: models.StPos{X: 0, Y: 0},
 		EndPoint:   models.StPos{X: 10, Y: 0},
 		MapUnit:    10,
 		Segment: []models.Segment{
-			{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
 
@@ -92,8 +110,8 @@ func TestOFDLinearGradientUsesCanvasGradientForPDF(t *testing.T) {
 		StartPoint: models.StPos{X: 0, Y: 0},
 		EndPoint:   models.StPos{X: 10, Y: 0},
 		Segment: []models.Segment{
-			{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
 
@@ -109,8 +127,8 @@ func TestTranslatedGradientPreservesPageCoordinates(t *testing.T) {
 		StartPoint: models.StPos{X: 10, Y: 20},
 		EndPoint:   models.StPos{X: 20, Y: 20},
 		Segment: []models.Segment{
-			{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}, identityGradientTransform, nil)
 	local := translateGradient(gradient, 10, 20)
@@ -125,8 +143,8 @@ func TestOFDLinearGradientExtend(t *testing.T) {
 		EndPoint:   models.StPos{X: 10, Y: 0},
 		Extend:     3,
 		Segment: []models.Segment{
-			{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-			{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+			{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 		},
 	}
 	gradient := newOFDLinearGradient(shd, func(point models.StPos) geom.Point {
@@ -292,8 +310,8 @@ func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 			StartPoint: models.StPos{X: 0, Y: 0},
 			EndPoint:   models.StPos{X: 10, Y: 0},
 			Segment: []models.Segment{
-				{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}}
 	}
@@ -323,8 +341,8 @@ func TestUpdatePathGradientsReturnsUnscaledGradientForMeshReuse(t *testing.T) {
 			StartPoint: models.StPos{X: 0, Y: 0},
 			EndPoint:   models.StPos{X: 10, Y: 0},
 			Segment: []models.Segment{
-				{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}}
 	}
@@ -364,8 +382,8 @@ func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 			StartPoint: models.StPos{X: 0, Y: 0},
 			EndPoint:   models.StPos{X: 20, Y: 0},
 			Segment: []models.Segment{
-				{Position: 0, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
-				{Position: 1, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+				{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
 			},
 		}},
 	}}
@@ -382,6 +400,43 @@ func TestPathGradientCoordinatesIgnoreObjectCTM(t *testing.T) {
 	// 若错误地再次叠加 CTM，起点会变成 (110, 30)。
 	if gradient.Start != (canvas.Point{X: 10, Y: 80}) || gradient.End != (canvas.Point{X: 30, Y: 80}) {
 		t.Fatalf("gradient axis = %v..%v, want (10,80)..(30,80)", gradient.Start, gradient.End)
+	}
+}
+
+func TestRepeatReflectGradientRendersInPDF(t *testing.T) {
+	for _, mapType := range []string{"Repeat", "Reflect"} {
+		object := models.PathObject{CtPath: models.CtPath{
+			CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 10}},
+			Fill:          true,
+			FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
+				StartPoint: models.StPos{X: 0, Y: 0},
+				EndPoint:   models.StPos{X: 10, Y: 0},
+				MapType:    mapType,
+				MapUnit:    10,
+				Segment: []models.Segment{
+					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+					{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+				},
+			}},
+			AbbreviatedData: models.SVGPath{
+				{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
+				{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
+				{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 10}}},
+				{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 10}}},
+				{Type: models.Close},
+			},
+		}}
+		c := canvas.New(30, 20)
+		ctx := canvas.NewContext(c)
+		var document Document
+		document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+		img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
+		// 画布 Y 向上。矩形中心在 (15, 15)。
+		px := int(math.Round(15.0 / 25.4 * 72.0))
+		mid := img.RGBAAt(px, img.Bounds().Dy()-px)
+		if mid.R > 250 && mid.G > 250 && mid.B > 250 {
+			t.Fatalf("%s gradient is blank at mid pixel %v", mapType, mid)
+		}
 	}
 }
 

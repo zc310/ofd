@@ -48,7 +48,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	}
 	fillSource := resolvePathColor(object.FillColor, dpFillColor)
 	strokeSource := resolvePathColor(object.StrokeColor, dpStrokeColor)
-	fillIsMesh := isMeshColor(fillSource)
+	fillIsMesh := isMeshColor(fillSource) || needsRasterGradient(fillGradient)
 	var pattern *models.CtPattern
 	if fillSource != nil {
 		pattern = fillSource.Pattern
@@ -65,7 +65,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		}
 	}
 	if object.Stroke.Value(true) {
-		if isMeshColor(strokeSource) {
+		if isMeshColor(strokeSource) || needsRasterGradient(strokeGradient) {
 			strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
 			if clipPath != nil {
 				strokePath = strokePath.And(clipPath)
@@ -104,6 +104,17 @@ func resolvePathColor(color, fallback *models.CTColor) *models.CTColor {
 
 func isMeshColor(color *models.CTColor) bool {
 	return color != nil && (color.GouraudShd != nil || color.LaGourandShd != nil || color.LaGouraudShd != nil)
+}
+
+// needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。
+// Repeat/Reflect 只能采样，直接写入会得到没有 Coords/Function 的空着色。
+func needsRasterGradient(gradient geom.Gradient) bool {
+	switch gradient.(type) {
+	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:
+		return true
+	default:
+		return false
+	}
 }
 
 // drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。

@@ -80,22 +80,59 @@ func addOFDGradientStops(gradient *geom.Grad, segments []models.Segment, resolve
 	if len(segments) == 0 {
 		return
 	}
-	allPositionsOmitted := true
-	for _, segment := range segments {
-		if segment.Position != 0 {
-			allPositionsOmitted = false
-			break
-		}
-	}
+	positions := segmentPositions(segments)
 	for i, segment := range segments {
-		position := segment.Position
-		// OFD 允许省略位置。常见的双色标形式表示渐变的起点和终点，
-		// 而不是两个都位于 0 的色标。
-		if allPositionsOmitted && len(segments) > 1 {
-			position = float64(i) / float64(len(segments)-1)
-		}
-		gradient.Add(position, meshColor(segment.Color, resolve))
+		gradient.Add(positions[i], meshColor(segment.Color, resolve))
 	}
+}
+
+// segmentPositions 补齐省略的渐变色标位置。全部省略时均匀分布在 [0,1]；
+// 首段省略为 0、末段省略为 1，中间连续省略的色标在两侧已知位置之间均分。
+func segmentPositions(segments []models.Segment) []float64 {
+	positions := make([]float64, len(segments))
+	known := make([]bool, len(segments))
+	anySet := false
+	for i, segment := range segments {
+		if segment.PositionSet {
+			positions[i] = segment.Position
+			known[i] = true
+			anySet = true
+		}
+	}
+	if !anySet {
+		if len(segments) == 1 {
+			return positions
+		}
+		for i := range positions {
+			positions[i] = float64(i) / float64(len(segments)-1)
+		}
+		return positions
+	}
+	if !known[0] {
+		positions[0] = 0
+		known[0] = true
+	}
+	if len(segments) > 1 && !known[len(segments)-1] {
+		positions[len(segments)-1] = 1
+		known[len(segments)-1] = true
+	}
+	for i := 0; i < len(segments); {
+		if known[i] {
+			i++
+			continue
+		}
+		start := i - 1
+		end := i
+		for end < len(segments) && !known[end] {
+			end++
+		}
+		span := float64(end - start)
+		for j := start + 1; j < end; j++ {
+			positions[j] = positions[start] + (positions[end]-positions[start])*float64(j-start)/span
+		}
+		i = end
+	}
+	return positions
 }
 
 // gradientColor 在调用 geom.Grad 插值前应用 OFD 的 Extend 语义。
