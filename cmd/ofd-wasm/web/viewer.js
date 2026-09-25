@@ -161,6 +161,10 @@ class OFDWorkerClient {
     return this.request('pageLinks');
   }
 
+  pageMediaActions() {
+    return this.request('pageMediaActions');
+  }
+
   signatures() {
     return this.request('signatures');
   }
@@ -478,6 +482,9 @@ let localFontsActive = false;
 const localFontFamilies = new Set();
 let resizeObserver;
 let pageLinks = new Map();
+let pageMediaActions = [];
+let mediaCatalog = [];
+const activeMedia = new Map();
 let linkRequest;
 let searchResults = [];
 let activeSearchResult = -1;
@@ -2208,7 +2215,10 @@ function setCurrent(index, syncThumbnail = true) {
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
-  if (changed) updateOutlineActive();
+  if (changed) {
+    updateOutlineActive();
+    runPageMediaActions(index);
+  }
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
 }
@@ -2984,6 +2994,9 @@ async function openSelectedFile(selected) {
   linkRequest?.cancel();
   linkRequest = undefined;
   pageLinks = new Map();
+  pageMediaActions = [];
+  mediaCatalog = [];
+  stopActiveMedia();
   updateSearchStatus('');
   resetRenderProgress();
   resizeObserver?.disconnect();
@@ -5572,7 +5585,8 @@ function fetchPageLinks(generation) {
     const external = typeof item.uri === 'string' && item.uri !== '';
     const target = Number(item.target_page);
     const internal = Number.isInteger(target) && target >= 0;
-    if (!external && !internal) return;
+    const media = item.media_kind === 'sound' || item.media_kind === 'movie';
+    if (!external && !internal && !media) return;
     const bucket = pageLinks.get(item.page);
     if (bucket) bucket.push(item);
     else pageLinks.set(item.page, [item]);
@@ -5582,23 +5596,33 @@ function fetchPageLinks(generation) {
   };
   const annotationsRequest = engine.annotations();
   const pageLinksRequest = engine.pageLinks();
+  const mediaActionsRequest = engine.pageMediaActions();
+  const mediaRequest = engine.media();
   linkRequest = {
     cancel: () => {
       annotationsRequest.cancel?.();
       pageLinksRequest.cancel?.();
+      mediaActionsRequest.cancel?.();
+      mediaRequest.cancel?.();
     },
   };
   Promise.all([
     annotationsRequest.catch(() => []),
     pageLinksRequest.catch(() => []),
-  ]).then(([annotations, pageGraphicLinks]) => {
+    mediaActionsRequest.catch(() => []),
+    mediaRequest.catch(() => []),
+  ]).then(([annotations, pageGraphicLinks, mediaActions, media]) => {
     if (generation !== documentGeneration) return;
     const annotationList = Array.isArray(annotations) ? annotations : [];
     annotationList.forEach(item => {
       if (item && item.type === 'Link') addLink(item);
     });
     collect(pageGraphicLinks);
+    pageMediaActions = Array.isArray(mediaActions) ? mediaActions : [];
+    mediaCatalog = Array.isArray(media) ? media : [];
     applyPageLinks();
+    runDocumentMediaActions();
+    runPageMediaActions(current);
   }).catch(() => {
     if (generation !== documentGeneration) return;
     pageLinks = new Map();
@@ -5626,7 +5650,8 @@ function applyPageLinks(index) {
       hotspot.style.width = `${(boundary.width / info.width) * 100}%`;
       hotspot.style.height = `${(boundary.height / info.height) * 100}%`;
       const external = typeof link.uri === 'string' && link.uri !== '';
-      hotspot.title = external ? link.uri : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
+      const media = link.media_kind === 'sound' || link.media_kind === 'movie';
+      hotspot.title = external ? link.uri : media ? (link.media_kind === 'sound' ? '播放声音' : '播放影片') : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
       hotspot.setAttribute('aria-label', hotspot.title);
       hotspot.addEventListener('click', () => openPageLink(link));
       layer.append(hotspot);
@@ -5634,8 +5659,99 @@ function applyPageLinks(index) {
   });
 }
 
+function mediaActionKey(action) {
+  return `${action.scope}:${action.media_id}`;
+}
+
+function stopActiveMedia(key) {
+  const entries = key ? [[key, activeMedia.get(key)]] : Array.from(activeMedia.entries());
+  entries.forEach(([entryKey, entry]) => {
+    if (!entry) return;
+    entry.element.pause();
+    entry.element.remove();
+    if (entry.url) URL.revokeObjectURL(entry.url);
+    activeMedia.delete(entryKey);
+  });
+}
+
+async function ensureMediaElement(action) {
+  const key = mediaActionKey(action);
+  const existing = activeMedia.get(key);
+  if (existing) return existing;
+  const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0);
+  if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
+    throw new Error('媒体资源为空');
+  }
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const described = mediaCatalog.find(item => Number(item.scope) === (Number(action.scope) || 0) && Number(item.id) === Number(action.media_id));
+  const mime = mediaMime(described || { type: action.media_kind === 'sound' ? 'Audio' : 'Video' });
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime || (action.media_kind === 'sound' ? 'audio/mpeg' : 'video/mp4') }));
+  const element = document.createElement(action.media_kind === 'sound' ? 'audio' : 'video');
+  element.src = url;
+  element.preload = 'auto';
+  if (action.media_kind === 'movie') {
+    element.controls = true;
+    element.style.position = 'fixed';
+    element.style.left = '50%';
+    element.style.top = '50%';
+    element.style.transform = 'translate(-50%, -50%)';
+    element.style.zIndex = '40';
+    element.style.maxWidth = 'min(720px, 80vw)';
+    element.style.maxHeight = '70vh';
+    element.style.background = '#000';
+    document.body.append(element);
+  }
+  const entry = { element, url };
+  activeMedia.set(key, entry);
+  element.addEventListener('ended', () => {
+    if (!element.loop) stopActiveMedia(key);
+  });
+  return entry;
+}
+
+async function playMediaAction(action) {
+  if (!action || !(Number(action.media_id) > 0)) return;
+  const operator = String(action.operator || 'Play');
+  const key = mediaActionKey(action);
+  if (operator === 'Stop') {
+    stopActiveMedia(key);
+    return;
+  }
+  try {
+    const entry = await ensureMediaElement(action);
+    if (operator === 'Pause') {
+      entry.element.pause();
+      return;
+    }
+    if (action.media_kind === 'sound') {
+      const volume = Number(action.volume);
+      if (Number.isFinite(volume)) entry.element.volume = Math.max(0, Math.min(1, volume / 100));
+      entry.element.loop = !!action.repeat;
+    }
+    await entry.element.play();
+  } catch (error) {
+    setStatus(error?.message || '无法播放媒体');
+  }
+}
+
+function runDocumentMediaActions() {
+  pageMediaActions.filter(action => action.event === 'DO').forEach(action => {
+    playMediaAction(action);
+  });
+}
+
+function runPageMediaActions(index) {
+  pageMediaActions.filter(action => action.event === 'PO' && action.page === index).forEach(action => {
+    playMediaAction(action);
+  });
+}
+
 // openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。
 function openPageLink(link) {
+  if (link.media_kind === 'sound' || link.media_kind === 'movie') {
+    playMediaAction(link);
+    return;
+  }
   if (typeof link.uri === 'string' && link.uri !== '') {
     window.open(link.uri, '_blank', 'noopener');
     return;
