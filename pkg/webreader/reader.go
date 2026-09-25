@@ -293,6 +293,18 @@ type PageLink struct {
 	TargetPage int
 	// Dest 是跳转目标的位置与缩放，nil 表示没有位置信息。
 	Dest *OutlineDest
+	// MediaID 是声音或影片动作引用的多媒体资源 ID，0 表示没有媒体动作。
+	MediaID uint64
+	// MediaKind 是媒体类型，sound 或 movie；空表示不是媒体动作。
+	MediaKind string
+	// Operator 是影片操作：Play、Stop、Pause、Resume。声音动作为空。
+	Operator string
+	// Volume 是声音音量，0 到 100；nil 表示未声明。
+	Volume *int
+	// Repeat 表示声音是否循环。
+	Repeat bool
+	// Event 是触发事件：CLICK、PO（进入页面）、DO（文档打开）。
+	Event string
 }
 
 // AnnotationInfo 描述文档中的一个注解。
@@ -1531,6 +1543,45 @@ func actionLink(actions models.Actions, pageIndex map[models.StID]int) (string, 
 	return "", -1, nil, false
 }
 
+// mediaAction 返回动作集合中首个声音或影片动作。event 为空时接受任意事件。
+func mediaAction(actions []models.CtAction, event models.ActionEvent) (PageLink, bool) {
+	for _, action := range actions {
+		if event != "" && action.Event != event {
+			continue
+		}
+		if action.Sound != nil && action.Sound.ResourceID != 0 {
+			link := PageLink{
+				MediaID:    uint64(action.Sound.ResourceID),
+				MediaKind:  "sound",
+				Event:      string(action.Event),
+				TargetPage: -1,
+			}
+			if action.Sound.Volume != nil {
+				volume := *action.Sound.Volume
+				link.Volume = &volume
+			}
+			if action.Sound.Repeat != nil {
+				link.Repeat = *action.Sound.Repeat
+			}
+			return link, true
+		}
+		if action.Movie != nil && action.Movie.ResourceID != 0 {
+			operator := string(action.Movie.Operator)
+			if operator == "" {
+				operator = string(models.MovieOperatorPlay)
+			}
+			return PageLink{
+				MediaID:    uint64(action.Movie.ResourceID),
+				MediaKind:  "movie",
+				Operator:   operator,
+				Event:      string(action.Event),
+				TargetPage: -1,
+			}, true
+		}
+	}
+	return PageLink{}, false
+}
+
 // PageLinks 返回页面正文图元（图层）上的可点击链接，按页面顺序排列。
 func (r *Reader) PageLinks() ([]PageLink, error) {
 	if r == nil {
@@ -1607,19 +1658,65 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 		if unit.Boundary.Width <= 0 || unit.Boundary.Height <= 0 {
 			continue
 		}
+		id := itemID(item)
+		boundary := AnnotationBoundary{X: unit.Boundary.X, Y: unit.Boundary.Y, Width: unit.Boundary.Width, Height: unit.Boundary.Height}
 		uri, target, dest, found := actionLink(*unit.Actions, pageIndex)
-		if !found {
+		if found {
+			emit(PageLink{
+				ID:         id,
+				Boundary:   boundary,
+				URI:        uri,
+				TargetPage: target,
+				Dest:       dest,
+				Event:      string(models.ActionEventClick),
+			})
 			continue
 		}
-		id := itemID(item)
-		emit(PageLink{
-			ID:         id,
-			Boundary:   AnnotationBoundary{X: unit.Boundary.X, Y: unit.Boundary.Y, Width: unit.Boundary.Width, Height: unit.Boundary.Height},
-			URI:        uri,
-			TargetPage: target,
-			Dest:       dest,
-		})
+		media, ok := mediaAction(unit.Actions.Action, models.ActionEventClick)
+		if !ok {
+			continue
+		}
+		media.ID = id
+		media.Boundary = boundary
+		emit(media)
 	}
+}
+
+// PageMediaActions 返回进入页面（PO）和打开文档（DO）时要执行的声音、影片动作。
+// 页面动作挂在对应页；文档级 DO 动作挂在该文档体的第一页，Page 为 -1 表示没有页面。
+func (r *Reader) PageMediaActions() ([]PageLink, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	actions := make([]PageLink, 0)
+	seenDocument := make(map[int]bool)
+	for index, ref := range r.pages {
+		if ref.page == nil || ref.document == nil {
+			continue
+		}
+		if pageActions := ref.page.Actions(); pageActions != nil {
+			if media, ok := mediaAction(pageActions.Action, ""); ok {
+				media.Scope = ref.fontScope
+				media.Page = index
+				actions = append(actions, media)
+			}
+		}
+		if seenDocument[ref.fontScope] || ref.document.Document == nil || ref.document.Document.Actions == nil {
+			continue
+		}
+		seenDocument[ref.fontScope] = true
+		if media, ok := mediaAction(ref.document.Document.Actions.Actions, models.ActionEventDO); ok {
+			media.Scope = ref.fontScope
+			media.Page = index
+			actions = append(actions, media)
+		}
+	}
+	return actions, nil
 }
 
 func itemID(item models.PageItem) string {

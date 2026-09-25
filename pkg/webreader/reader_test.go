@@ -1358,6 +1358,78 @@ func TestAnnotationsExposeLinkTarget(t *testing.T) {
 	}
 }
 
+func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
+	volume := 80
+	repeat := true
+	data, err := creator.Marshal(creator.Document{
+		ID: "media-action-reader",
+		Media: []creator.Media{
+			{ID: 40, Type: "Audio", Format: "mp3", Data: []byte("audio")},
+			{ID: 41, Type: "Video", Format: "mp4", Data: []byte("video")},
+		},
+		Actions: []creator.Action{
+			{Event: creator.ActionEventDO, Sound: &creator.SoundAction{ResourceID: 40, Volume: &volume, Repeat: &repeat}},
+		},
+		Pages: []creator.Page{{
+			Area: &creator.PageArea{PhysicalBox: &creator.Box{Width: 210, Height: 297}},
+			Actions: []creator.Action{
+				{Event: creator.ActionEventPO, Movie: &creator.MovieAction{ResourceID: 41, Operator: "Play"}},
+			},
+			Items: []creator.Item{
+				creator.Path{
+					X: 10, Y: 20, Width: 40, Height: 30,
+					Data: "M 0 0 L 40 0 L 40 30 L 0 30 C",
+					Actions: []creator.Action{
+						{Event: creator.ActionEventClick, Sound: &creator.SoundAction{ResourceID: 40}},
+					},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	actions, err := reader.PageMediaActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("媒体动作数量 = %d, 期望 2: %+v", len(actions), actions)
+	}
+	var sound, movie *PageLink
+	for index := range actions {
+		switch actions[index].Event {
+		case "DO":
+			sound = &actions[index]
+		case "PO":
+			movie = &actions[index]
+		}
+	}
+	if sound == nil || sound.MediaKind != "sound" || sound.MediaID != 40 || sound.Volume == nil || *sound.Volume != 80 || !sound.Repeat || sound.Page != 0 {
+		t.Fatalf("文档声音动作不符: %+v", sound)
+	}
+	if movie == nil || movie.MediaKind != "movie" || movie.MediaID != 41 || movie.Operator != "Play" || movie.Page != 0 {
+		t.Fatalf("页面影片动作不符: %+v", movie)
+	}
+
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].MediaKind != "sound" || links[0].MediaID != 40 || links[0].Event != "CLICK" {
+		t.Fatalf("点击声音热区不符: %+v", links)
+	}
+	if links[0].Boundary.Width != 40 || links[0].Boundary.Height != 30 {
+		t.Fatalf("点击热区边界不符: %+v", links[0].Boundary)
+	}
+}
+
 func TestPageLinksExposeGraphicUnitActions(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "project-showcase.ofd"))
 	if err != nil {
