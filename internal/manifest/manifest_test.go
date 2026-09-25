@@ -373,8 +373,8 @@ func TestBuildGradientPatternAndAnnotation(t *testing.T) {
 					StartPoint: "0 0",
 					EndPoint:   "1 1",
 					Segments: []ColorStop{
-						{Position: 0, Color: Color{R: 0, G: 0, B: 0}},
-						{Position: 1, Color: Color{R: 255, G: 255, B: 255}},
+						{Position: float64ptr(0), Color: Color{R: 0, G: 0, B: 0}},
+						{Position: float64ptr(1), Color: Color{R: 255, G: 255, B: 255}},
 					},
 				}},
 			},
@@ -690,5 +690,9 @@ func TestBuildRejectsInvalidBase64Resource(t *testing.T) {
 }
 
 func boolPointer(value bool) *bool {
+	return &value
+}
+
+func float64ptr(value float64) *float64 {
 	return &value
 }

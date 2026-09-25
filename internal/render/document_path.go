@@ -108,10 +108,13 @@ func isMeshColor(color *models.CTColor) bool {
 
 // needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。
 // Repeat/Reflect 只能采样，直接写入会得到没有 Coords/Function 的空着色。
+// 起始半径为 0 的偏心径向渐变写成 ShadingType 3 后，焦点另一侧不会铺起点色。
 func needsRasterGradient(gradient geom.Gradient) bool {
-	switch gradient.(type) {
+	switch value := gradient.(type) {
 	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:
 		return true
+	case *geom.RadialGradient:
+		return geom.Equal(value.R0, 0) && value.C0 != value.C1
 	default:
 		return false
 	}

@@ -847,8 +847,10 @@ type ColorSpace struct {
 
 // ColorStop 描述渐变中的颜色分段。
 type ColorStop struct {
-	// Position 是渐变位置，通常取值范围为 0 到 1。
+	// Position 是渐变位置，通常取值范围为 0 到 1。PositionSet 为假时表示省略。
 	Position float64
+	// PositionSet 表示 Position 是否显式给出。省略时不写出 XML 属性。
+	PositionSet bool
 	// Color 是该位置对应的颜色。
 	Color Color
 }

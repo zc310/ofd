@@ -440,6 +440,42 @@ func TestRepeatReflectGradientRendersInPDF(t *testing.T) {
 	}
 }
 
+func TestEccentricRadialKeepsStartColorOutsideFocus(t *testing.T) {
+	object := models.PathObject{CtPath: models.CtPath{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
+		Fill:          true,
+		FillColor: &models.CTColor{RadialShd: &models.CTRadialShd{
+			StartPoint:  models.StPos{X: 16, Y: 10},
+			EndPoint:    models.StPos{X: 26, Y: 10},
+			StartRadius: 0,
+			EndRadius:   6,
+			Segment: []models.Segment{
+				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 200, A: 255}}}},
+				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+			},
+		}},
+		AbbreviatedData: models.SVGPath{
+			{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
+			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
+			{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 20}}},
+			{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 20}}},
+			{Type: models.Close},
+		},
+	}}
+	c := canvas.New(30, 20)
+	ctx := canvas.NewContext(c)
+	var document Document
+	document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+	img := rasterizer.Draw(c, canvas.DPI(72), canvas.DefaultColorSpace)
+	// 焦点在 x=16，终点圆左缘在 x=20。x=4 在圆外，应保持起点绿色。
+	x := int(math.Round(4.0 / 25.4 * 72.0))
+	y := img.Bounds().Dy() - int(math.Round(10.0/25.4*72.0))
+	got := img.RGBAAt(x, y)
+	if got.G < 150 || got.R > 40 {
+		t.Fatalf("left of focus = %v, want start green", got)
+	}
+}
+
 func TestGraphicOpacityUsesOpacitySemantics(t *testing.T) {
 	if got := graphicOpacity(nil); got != 255 {
 		t.Fatalf("nil alpha = %d, want 255", got)
