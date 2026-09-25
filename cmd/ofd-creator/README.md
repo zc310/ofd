@@ -33,7 +33,7 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge` 和 `replace` 子命令，分别用于导出 manifest、批量导出、合并 OFD 以及替换/新增/删除包内条目。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace` 和 `watermark` 子命令，分别用于导出 manifest、批量导出、合并 OFD、替换/新增/删除包内条目以及添加/替换/删除水印。详见下文各节。
 
 ## 导出 OFD 配置
 
@@ -236,6 +236,46 @@ ofd-creator replace -i in.ofd -o out.ofd \
 - `--output -` 可以把结果写入标准输出；`replace` 不支持从标准输入读取 OFD。
 
 替换逻辑同时以库的形式公开在 `pkg/replace`：`Files`（任意输入 + `[]Operation`）和 `Paths`（`name -> 本地文件` 映射，等价于一组 `set`）。
+
+## 添加、替换与删除水印
+
+`watermark` 子命令在文档级或页面级操作 `Type="Watermark"` 注解，自动维护各页注解文件、`Annotations.xml` 索引与 `Document.xml` 的 `<Annotations>` 声明，无需手工指定包内路径：
+
+```bash
+# 在全部页面上添加一条文字水印，平铺铺满整页（默认布局）
+ofd-creator watermark add -i in.ofd -o out.ofd --text "保密资料" --font-size 9
+
+# 单条文字水印居中放置并降低不透明度
+ofd-creator watermark add -i in.ofd -o out.ofd --text "定稿" --layout center --opacity 50
+
+# 文字水印整体倾斜 45 度（屏幕顺时针：左边往上、右边往下），绕文本中心旋转
+ofd-creator watermark add -i in.ofd -o out.ofd --text "保密资料" --rotate 45
+
+# 右端上抬（屏幕逆时针）用负值
+ofd-creator watermark add -i in.ofd -o out.ofd --text "保密资料" --rotate -45
+
+# 图片水印：自动嵌入图片资源并平铺，PNG 支持 --opacity 烘焙半透明
+ofd-creator watermark add -i in.ofd -o out.ofd --image logo.png --image-width 40 --opacity 60
+
+# 只修改第 1 页（下标 0）上 ID 为 5 的水印，外观使用自备 XML 片段
+ofd-creator watermark replace -i in.ofd -o out.ofd --page 0 --match-id 5 \
+  --appearance ./watermark.xml
+
+# 删除文档体 0 中 ID 为 6 的水印
+ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
+```
+
+- 操作与目标：`--document` 选择文档体（默认 `-1` 全部）；`--page` 是 0 起的页面下标，可重复，省略表示全部页面；`--match-id` 仅对 `replace`/`remove` 生效，省略表示匹配全部水印注解。加水印在目标范围内每个页面各加一条。
+- 外观三选一：`--text` 自动生成文字外观（可配 `--font`/`--font-size`/`--color "R G B"`/`--text-x`/`--text-y`/`--boundary "X Y Width Height"`/`--opacity`/`--layout`/`--rotate`），`--image` 生成图片水印（自动写入 `DocumentRes.xml` 的 `<MultiMedias>` 与图片条目），`--appearance` 直接读取外观 XML 片段文件；三者互斥。都不给时外观为空 `<Appearance/>`。`replace`/`remove` 会回收不再被任何页面引用、且由水印命名的图片条目；多页共享同一图片时仍被引用则不回收。
+- 布局与透明度：`--layout tile`（默认，按 `--boundary` 区域平铺网格）或 `center`（区域内单条居中）；`--text-x`/`--text-y` 在平铺/居中时作为整体偏移。`--opacity` 取值 0-100（`0` 表示不设置）：文字水印写成 `Alpha` 属性；PNG 图片水印烘焙进图片 alpha 通道（`--image-width` 毫米，高度按图片像素比例推算）。
+- 文字旋转：`--rotate` 以度为单位，让文字绕每个文本实例自身的中心倾斜，旋转时位置不偏移；正值屏幕顺时针（左边往上、右边往下，`\` 形），负值右端上抬（屏幕逆时针，`/` 形）。仅对 `--text` 生效。
+- 字体：文字水印的 `--font` 接受文档资源中（同一文档体的 `PublicRes` 与 `DocumentRes`）的字体 ID 或名称，命中名称时会解析为对应数值 ID 再写入外观；省略 `--font` 时自动选用文档中最小 ID 的字体。显式指定且文档中不存在时直接报错，不会写出非法的默认字体引用。
+- 注解属性：`--id`（0 自动分配，取 `MaxUnitID` 与页面内既有注解 ID 之后）、`--creator`、`--subtype`、`--visible`/`--print`/`--no-zoom`/`--no-rotate`、`--read-only`、`--remark`、`--parameter Name=Value`（可重复）。
+- 默认门控：文档 `Permissions/Watermark=false` 时拒绝任何修改（`--skip-permissions-check` 跳过）；`ReadOnly` 缺省或为 `true` 的水印拒绝 `replace`/`remove`（`--skip-readonly-check` 跳过）。本命令写出的水印显式标记 `ReadOnly=false`，可直接再删。
+- 清理：`remove` 后某页无任何注解会删除该页注解文件，索引与 `Document.xml` 的 `<Annotations>` 同步清理。
+- 复用 `replace` 框架，因此 `--compression`/`--compression-level`/`--deterministic`/`--validate`/`--max-entries`/`--max-entry-mb`/`--max-total-mb`/`--signatures` 行为一致：任何修改都会使既有签名摘要失效，`--signatures` 默认 `drop`。也可以像 `replace`/`merge` 一样在修改后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge`/`replace` 的 `--sign-*` 一致；`--verify-signatures` 在写出前校验输出文档的签名摘要与密码学签名。`--output -` 写标准输出，不支持从标准输入读取。
+- 保留原始命名空间风格：默认 `xmlns` 文档的水印使用无前缀元素，`xmlns:ofd` 文档的新增索引/页面文件以及 `--appearance` 原始外观片段均套用 `ofd` 前缀；无既有注解索引时从 `Document.xml` 根元素继承前缀。自备外观片段无法解析时直接报错，不会静默写成空 `<Appearance/>`。
+- 水印编辑逻辑以库的形式公开在 `pkg/watermark`：`Add`、`Replace`、`Remove` 三个函数接收任意输入（路径/字节/`io.Reader`/`*core.Package`）与 `Target`，外观自动分配 ID；`Watermark.Appearance` 可直接放入原始 XML 片段，或用 `watermark.TextAppearance`/`watermark.ImageAppearance` 生成平铺/居中的文字或图片外观（`TextOptions.Rotation` 指定文字旋转角度，`TextOptions.CTM` 直接透传变换矩阵、优先级更高）；`Watermark.Image` 提供图片水印的资源嵌入能力。
 
 ## 压缩策略
 

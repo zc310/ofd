@@ -69,6 +69,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && strings.EqualFold(args[0], "replace") {
 		return runReplace(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && strings.EqualFold(args[0], "watermark") {
+		return runWatermark(args[1:], stdout, stderr)
+	}
 	opts, err := parseArgs(args, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
@@ -1157,6 +1160,14 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		opts.help = true
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator - OFD 文件创建工具")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator -i document.yaml -o result.ofd [选项]")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "子命令：")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  merge                           合并多个 OFD 为多文档 OFD")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  replace                         替换、新增或删除 OFD 包内条目")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  watermark <add|replace|remove>   添加、替换或删除文档水印")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export                          从 OFD 导出 creator manifest")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export-all                      导出 OFD 的全部文档体")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "运行 ofd-creator <子命令> -h 查看对应细节。")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())
 		flags := cmd.Flags()
 		flags.SetOutput(cmd.OutOrStdout())
