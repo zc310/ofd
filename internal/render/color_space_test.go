@@ -74,8 +74,8 @@ func TestGradientStopsUseColorSpaceColors(t *testing.T) {
 		StartPoint: models.StPos{X: 0, Y: 0},
 		EndPoint:   models.StPos{X: 10, Y: 0},
 		Segment: []models.Segment{
-			{Position: 0, Color: models.CTColor{ColorSpace: 1, Value: &models.Color{RGBA: color.RGBA{0, 0, 0, 0}}}},
-			{Position: 1, Color: models.CTColor{ColorSpace: 1, Value: &models.Color{RGBA: color.RGBA{0, 0, 0, 255}}}},
+			{Position: 0, PositionSet: true, Color: models.CTColor{ColorSpace: 1, Value: &models.Color{RGBA: color.RGBA{0, 0, 0, 0}}}},
+			{Position: 1, PositionSet: true, Color: models.CTColor{ColorSpace: 1, Value: &models.Color{RGBA: color.RGBA{0, 0, 0, 255}}}},
 		},
 	}
 	resolve := func(source models.CTColor) color.RGBA {

@@ -603,6 +603,25 @@ type CTColor struct {
 type Segment struct {
 	// Color 当前分段的颜色。
 	Color CTColor `xml:"Color"`
-	// Position 当前颜色在渐变中的位置。
+	// Position 当前颜色在渐变中的位置。缺省时为零值，须结合 PositionSet 判断。
 	Position float64 `xml:"Position,attr,omitempty"`
+	// PositionSet 表示 Position 属性是否出现在 XML 中。
+	PositionSet bool `xml:"-"`
+}
+
+// UnmarshalXML 解码渐变段，并记录 Position 是否显式给出。
+func (s *Segment) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type segment Segment
+	var value segment
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+	*s = Segment(value)
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "Position" {
+			s.PositionSet = true
+			break
+		}
+	}
+	return nil
 }
