@@ -2215,10 +2215,7 @@ function setCurrent(index, syncThumbnail = true) {
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
-  if (changed) {
-    updateOutlineActive();
-    runPageMediaActions(index);
-  }
+  if (changed) updateOutlineActive();
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
 }
@@ -5621,8 +5618,6 @@ function fetchPageLinks(generation) {
     pageMediaActions = Array.isArray(mediaActions) ? mediaActions : [];
     mediaCatalog = Array.isArray(media) ? media : [];
     applyPageLinks();
-    runDocumentMediaActions();
-    runPageMediaActions(current);
   }).catch(() => {
     if (generation !== documentGeneration) return;
     pageLinks = new Map();
@@ -5728,22 +5723,11 @@ async function playMediaAction(action) {
       if (Number.isFinite(volume)) entry.element.volume = Math.max(0, Math.min(1, volume / 100));
       entry.element.loop = !!action.repeat;
     }
+    if (operator === 'Play') entry.element.currentTime = 0;
     await entry.element.play();
   } catch (error) {
     setStatus(error?.message || '无法播放媒体');
   }
-}
-
-function runDocumentMediaActions() {
-  pageMediaActions.filter(action => action.event === 'DO').forEach(action => {
-    playMediaAction(action);
-  });
-}
-
-function runPageMediaActions(index) {
-  pageMediaActions.filter(action => action.event === 'PO' && action.page === index).forEach(action => {
-    playMediaAction(action);
-  });
 }
 
 // openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。

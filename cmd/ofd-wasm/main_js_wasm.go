@@ -59,6 +59,7 @@ func main() {
 	api.Set("mediaData", js.FuncOf(app.mediaData))
 	api.Set("annotations", js.FuncOf(app.annotations))
 	api.Set("pageLinks", js.FuncOf(app.pageLinks))
+	api.Set("pageMediaActions", js.FuncOf(app.pageMediaActions))
 	api.Set("signatures", js.FuncOf(app.signatures))
 	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
 	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
@@ -552,21 +553,58 @@ func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
 	}
 	result := js.Global().Get("Array").New(len(links))
 	for index, link := range links {
-		value := map[string]any{
-			"scope":       link.Scope,
-			"page":        link.Page,
-			"id":          link.ID,
-			"uri":         link.URI,
-			"target_page": link.TargetPage,
-			"dest":        outlineDestValue(link.Dest),
-			"boundary": objectValue(map[string]any{
-				"x":      link.Boundary.X,
-				"y":      link.Boundary.Y,
-				"width":  link.Boundary.Width,
-				"height": link.Boundary.Height,
-			}),
-		}
-		result.SetIndex(index, objectValue(value))
+		result.SetIndex(index, objectValue(pageLinkValue(link)))
+	}
+	return result
+}
+
+func pageLinkValue(link webreader.PageLink) map[string]any {
+	value := map[string]any{
+		"scope":       link.Scope,
+		"page":        link.Page,
+		"id":          link.ID,
+		"uri":         link.URI,
+		"target_page": link.TargetPage,
+		"dest":        outlineDestValue(link.Dest),
+		"media_id":    link.MediaID,
+		"media_kind":  link.MediaKind,
+		"operator":    link.Operator,
+		"repeat":      link.Repeat,
+		"volume":      optionalIntValue(link.Volume),
+		"event":       link.Event,
+	}
+	if link.Boundary.Width > 0 && link.Boundary.Height > 0 {
+		value["boundary"] = objectValue(map[string]any{
+			"x":      link.Boundary.X,
+			"y":      link.Boundary.Y,
+			"width":  link.Boundary.Width,
+			"height": link.Boundary.Height,
+		})
+	} else {
+		value["boundary"] = nil
+	}
+	return value
+}
+
+func optionalIntValue(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func (a *wasmApp) pageMediaActions(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	links, err := reader.PageMediaActions()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(links))
+	for index, link := range links {
+		result.SetIndex(index, objectValue(pageLinkValue(link)))
 	}
 	return result
 }
