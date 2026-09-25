@@ -123,6 +123,13 @@ func canvasImage(img image.Image) image.Image {
 	if err != nil || ci == nil {
 		return img
 	}
+	// canvas 的 PDF 写入器固定按 DeviceRGB 声明图像，而 Go 的 JPEG 编码器只对
+	// 具体的 *image.Gray 输出单通道灰度 JPEG；canvas 快路径会把灰度 PNG 解码成
+	// *image.Gray。灰度 JPEG 按 DeviceRGB 解码会错位，表现为整幅图重复/花屏，
+	// 因此灰度图跳过原字节内嵌快路径，交回 canvas 走通用 RGB 编码。
+	if lazy.ColorModel() == color.GrayModel {
+		return img
+	}
 	lazy.SetCanvasCached(ci)
 	return ci
 }
