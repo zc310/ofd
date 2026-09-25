@@ -49,13 +49,14 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 
 | 标准范围                                     | 状态 | 说明                                                                                              |
 |----------------------------------------------|:----:|---------------------------------------------------------------------------------------------------|
-| `BT/ET`、`Tf`、`Tm`、`Td/TD/TL/T\*`          |  ✅  | `Tm` 的水平/垂直缩放参与宽度与字号计算；旋转与斜切只保留尺度，方向信息不输出。                    |
-| `Tc`（字距）、`Tw`（词距）、`Tz`（水平缩放） |  ✅  | 参与宽度计算并输出为 OFD `DeltaX`。                                                               |
+| `BT/ET`、`Tf`、`Tm`、`Td/TD/TL/T\*`          |  ✅  | `Tm` 的水平/垂直缩放参与宽度与字号计算；文本矩阵 x 轴方向决定排版角度，纯旋转（无斜切）输出为 OFD 文字对象的旋转 `CTM`，并反推 `Boundary` 使码位原点落在笔位置。 |
+| `Tc`（字距）、`Tw`（词距）、`Tz`（水平缩放） |  ✅  | `Tz` 同时输出为 OFD `HScale`（`hScale/100`）并计入推进量（`DeltaX`）；`Tc`/`Tw` 计入宽度与 `DeltaX`。 |
 | `Tj/TJ/'/"`                                  |  ✅  | `TJ` 的数值偏移折算为字间推进；纯空白输出只推进文本矩阵，避免后续文字左移。                       |
 | `Tr`（渲染模式）                             |  ⚠️  | 0/2/4/6 按填充、1/2/5/6 按描边；填充加描边同时输出颜色。                                          |
 | `Ts`（文字上浮）、Type3 `d0/d1`              |  ❌  | 忽略；Type3 字体仍可通过 `/Encoding` 还原文字。                                                   |
-| 相邻单字文字对象                             |  ✅  | 转换后合并相邻同样式单字对象（同字体/字号/基线/颜色、水平、无 CTM/Clips/Actions），逐字定位不变。 |
+| 相邻单字文字对象                             |  ✅  | 转换后合并相邻同样式单字对象（同字体/字号/基线/颜色/`HScale`、水平、无 CTM/Clips/Actions），逐字定位不变。 |
 | 字体样式（`Weight`/`Italic`）                |  ✅  | 依据字体描述符与族名判定粗体/斜体并写入文字对象，避免渲染器对内嵌字体再次做伪斜体处理。           |
+| 渐变填充的文字（`sh` 或图案着色填充）         |  ⚠️  | 文字使用渐变/图案着色填充时，按文字位置取样为 RGB 并写入 `FillColor`（保留近似纯色），不输出 OFD 渐变。 |
 
 ### 文字编码与字宽
 
@@ -63,8 +64,8 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 |---------------------------------------------------|:----:|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ToUnicode` CMap（`bfchar`/`bfrange`）            |  ✅  | 支持条目计数前缀、数组目标与增量 range。                                                                                                                                              |
 | 简单字体 `/Encoding`（`/Differences` + 基础编码） |  ✅  | 字形名经 Unicode 映射还原；基础编码覆盖 WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。                                                                           |
-| 预定义 CJK CMap                                   |  ⚠️  | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。                                                                                        |
-| `Widths` + `FirstChar`、CID `/W`、`DW`            |  ✅  | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）。                                                                                                                |
+| 预定义 CJK CMap                                   |  ⚠️  | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。全角 CMap（`Uni*` UCS2/UTF16）非 ASCII 字形回退为 1000/1000 字宽，避免缺 `DW`/`W` 时推进偏窄。 |
+| `Widths` + `FirstChar`、CID `/W`、`DW`            |  ✅  | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）；字宽、字号与 `DeltaX` 统一乘 CTM 平均缩放，保证“整页按 1mm 排版”文档的物理毫米增量。 |
 | 内嵌字体（TrueType/CFF 包装）                     |  ⚠️  | 保留嵌入数据（`PreserveEmbeddedFonts`）；字形映射走 `CIDToGIDMap` 或字体 cmap，`CGTransform` 输出实际字形。CFF 包装后按 `FontMatrix` 修正 `head.unitsPerEm`，避免 1/2048 字体被放大。 |
 | 不连续 CID / 子集字体                             |  ✅  | 经 fontfix 私有区映射（F0000+CID）判定字形存在，避免误丢整段文字。                                                                                                                    |
 | 字体族名（含 `#XX` 十六进制转义）                 |  ✅  | 按原始字节再解释为 UTF-8，非法转义时原样保留。                                                                                                                                        |
@@ -134,8 +135,11 @@ go run ./cmd/ofd-validator --format text --mode strict output.ofd
 ```
 
 `internal/pdf2ofd/pdf_to_ofd_test.go` 覆盖页面几何、矩阵级联、文本推进与
-`DeltaX`、CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并与
-元数据；`annotation_test.go`、`form_test.go`、`text_test.go`、`mesh_test.go`
-分别覆盖注释外观、Form 矩阵、字体样式标记与网格着色的矢量输出；
-`outline_test.go` 覆盖大纲层级、`Dest` 坐标换算与命名目标；
+`DeltaX`、`HScale`、文字旋转 `CTM`、CTM 缩放下的 CJK 毫米字号与推进、渐变填充文字、
+CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并与
+元数据；`shading_test.go`、`pattern_test.go`、`colorspace_test.go`、`mesh_test.go`
+覆盖着色/图案/颜色空间与网格着色；`dash_test.go`、`multiply_test.go` 覆盖线条样式与
+混合模式近似；`image_jbig2_test.go`、`image_jpx_test.go` 覆盖 JBIG2/JPEG2000 解码；
+`annotation_test.go`、`form_test.go`、`text_test.go` 分别覆盖注释外观、Form 矩阵与
+字体样式标记；`outline_test.go` 覆盖大纲层级、`Dest` 坐标换算与命名目标；
 `TestConvertTestdataPDFs` 会对 `test/testdata/pdf/` 下的固定样本做端到端转换校验。
