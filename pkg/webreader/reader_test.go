@@ -18,6 +18,74 @@ import (
 	"github.com/zc310/ofd/pkg/creator"
 )
 
+func TestVersionsListsPagesFromFileList(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "versions.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	versions, err := reader.Versions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("versions = %d, want 2", len(versions))
+	}
+	if versions[0].ID != "v1" || versions[0].Current || versions[0].Version != "1.0" || len(versions[0].Pages) != 1 || versions[0].Pages[0] != 0 {
+		t.Fatalf("v1 = %+v", versions[0])
+	}
+	if versions[1].ID != "v2" || !versions[1].Current || versions[1].Version != "1.1" || len(versions[1].Pages) != 2 || versions[1].Pages[1] != 1 {
+		t.Fatalf("v2 = %+v", versions[1])
+	}
+}
+
+func TestDocumentClickActionsMatchPageText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "actions.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uri, bookmark, movie *PageLink
+	for index := range links {
+		switch {
+		case links[index].URI != "":
+			uri = &links[index]
+		case links[index].TargetPage >= 0:
+			bookmark = &links[index]
+		case links[index].MediaKind == "movie":
+			movie = &links[index]
+		}
+	}
+	if uri == nil || uri.URI != "https://github.com/zc310/ofd" || uri.Page != 0 {
+		t.Fatalf("URI 热区不符: %+v", uri)
+	}
+	if bookmark == nil || bookmark.TargetPage != 1 || bookmark.Page != 0 {
+		t.Fatalf("书签热区不符: %+v", bookmark)
+	}
+	if movie == nil || movie.MediaID != 22 || movie.Operator != "Play" || movie.Page != 0 {
+		t.Fatalf("影片热区不符: %+v", movie)
+	}
+	actions, err := reader.PageMediaActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].MediaKind != "sound" || actions[0].MediaID != 21 || actions[0].Event != "PO" || actions[0].Page != 0 {
+		t.Fatalf("进入页面声音不符: %+v", actions)
+	}
+}
+
 func TestOpenAndRenderPage(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {

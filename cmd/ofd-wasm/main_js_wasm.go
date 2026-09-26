@@ -54,6 +54,7 @@ func main() {
 	api.Set("fontUsage", js.FuncOf(app.fontUsage))
 	api.Set("fontUsageAll", js.FuncOf(app.fontUsageAll))
 	api.Set("attachments", js.FuncOf(app.attachments))
+	api.Set("versions", js.FuncOf(app.versions))
 	api.Set("attachmentData", js.FuncOf(app.attachmentData))
 	api.Set("media", js.FuncOf(app.media))
 	api.Set("mediaData", js.FuncOf(app.mediaData))
@@ -407,6 +408,31 @@ func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
 		"scanned":   report.Scanned,
 		"truncated": report.Truncated,
 	})
+}
+
+func (a *wasmApp) versions(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	infos, err := reader.Versions()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(infos))
+	for index, info := range infos {
+		result.SetIndex(index, objectValue(map[string]any{
+			"scope":         info.Scope,
+			"id":            info.ID,
+			"index":         info.Index,
+			"current":       info.Current,
+			"version":       info.Version,
+			"name":          info.Name,
+			"creation_date": info.CreationDate,
+			"pages":         intSliceValue(info.Pages),
+		}))
+	}
+	return result
 }
 
 func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {

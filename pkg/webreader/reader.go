@@ -13,6 +13,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -225,6 +227,26 @@ type FontUsageReport struct {
 	Scanned int
 	// Truncated 表示因扫描页数或单个字体结果数量上限而可能不完整。
 	Truncated bool
+}
+
+// VersionInfo 描述文档体中的一个文档版本。
+type VersionInfo struct {
+	// Scope 是版本所属文档体的索引。
+	Scope int
+	// ID 是版本标识。
+	ID string
+	// Index 是版本序号。
+	Index int
+	// Current 表示该版本是否为当前版本。
+	Current bool
+	// Version 是版本号。
+	Version string
+	// Name 是版本名称。
+	Name string
+	// CreationDate 是版本创建日期。
+	CreationDate string
+	// Pages 是该版本文件清单里引用的全局页码，从 0 开始。
+	Pages []int
 }
 
 // AttachmentInfo 描述文档中的一个附件，只包含清单元数据。
@@ -1194,6 +1216,84 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 	return report, nil
 }
 
+// Versions 返回所有文档体的版本清单。Pages 只包含文件清单里能对应到当前文档页的页码。
+func (r *Reader) Versions() ([]VersionInfo, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	if r.ofd == nil {
+		return nil, nil
+	}
+	infos := make([]VersionInfo, 0)
+	for scope, document := range r.ofd.Documents {
+		if document == nil || scope >= len(r.ofd.DocBodies) {
+			continue
+		}
+		body := r.ofd.DocBodies[scope]
+		if body.Versions == nil {
+			continue
+		}
+		for _, version := range body.Versions.VersionList {
+			info := VersionInfo{Scope: scope, ID: version.ID, Index: version.Index, Current: version.Current}
+			if loaded := document.GetVersion(version.ID); loaded != nil {
+				if loaded.Version != nil {
+					info.Version = *loaded.Version
+				}
+				if loaded.Name != nil {
+					info.Name = *loaded.Name
+				}
+				if loaded.CreationDate != nil && !loaded.CreationDate.IsZero() {
+					info.CreationDate = loaded.CreationDate.Format("2006-01-02")
+				}
+				info.Pages = versionPages(r.pages, scope, loaded.FileList.Files)
+			}
+			infos = append(infos, info)
+		}
+	}
+	return infos, nil
+}
+
+var versionPagePattern = regexp.MustCompile(`(?i)(?:^|/)page_(\d+)(?:/|$)`)
+
+func versionPages(pages []pageRef, scope int, files []models.VersionFile) []int {
+	start := 0
+	count := 0
+	for _, ref := range pages {
+		if ref.fontScope < scope {
+			start++
+			continue
+		}
+		if ref.fontScope == scope {
+			count++
+		}
+	}
+	seen := map[int]bool{}
+	result := make([]int, 0)
+	for _, file := range files {
+		match := versionPagePattern.FindStringSubmatch(strings.ReplaceAll(file.Path.Clean().String(), "\\", "/"))
+		if match == nil {
+			base := path.Base(file.Path.Clean().String())
+			match = versionPagePattern.FindStringSubmatch(base)
+		}
+		if match == nil {
+			continue
+		}
+		local, err := strconv.Atoi(match[1])
+		if err != nil || local < 0 || local >= count || seen[local] {
+			continue
+		}
+		seen[local] = true
+		result = append(result, start+local)
+	}
+	sort.Ints(result)
+	return result
+}
+
 // Attachments 返回所有文档体的附件清单（只读元数据，不读取附件内容）。
 func (r *Reader) Attachments() ([]AttachmentInfo, error) {
 	if r == nil {
@@ -1583,6 +1683,7 @@ func mediaAction(actions []models.CtAction, event models.ActionEvent) (PageLink,
 }
 
 // PageLinks 返回页面正文图元（图层）上的可点击链接，按页面顺序排列。
+// 文档级 CLICK 没有区域时，按第一页文字内容匹配 URI 或书签名称，挂到对应文字边界。
 func (r *Reader) PageLinks() ([]PageLink, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -1604,6 +1705,9 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 			continue
 		}
 		appendLayerLinks(contentLayers(ref.page), ref.fontScope, index, pageIndex, &links)
+		if index == firstPageOfScope(r.pages, ref.fontScope) {
+			appendDocumentClickLinks(ref, index, pageIndex, &links)
+		}
 		// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
 		for _, tpl := range ref.page.Template() {
 			template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
@@ -1614,6 +1718,129 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 		}
 	}
 	return links, nil
+}
+
+func firstPageOfScope(pages []pageRef, scope int) int {
+	for index, ref := range pages {
+		if ref.fontScope == scope {
+			return index
+		}
+	}
+	return -1
+}
+
+// appendDocumentClickLinks 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
+func appendDocumentClickLinks(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink) {
+	if ref.document == nil || ref.document.Document == nil || ref.document.Document.Actions == nil || ref.page == nil {
+		return
+	}
+	texts := pageTextObjects(ref.page)
+	for _, action := range ref.document.Document.Actions.Actions {
+		if action.Event != models.ActionEventClick {
+			continue
+		}
+		var text *models.TextObject
+		link := PageLink{Scope: ref.fontScope, Page: page, Event: string(action.Event), TargetPage: -1}
+		switch {
+		case action.URI != nil && action.URI.URI != "":
+			text = textMatching(texts, action.URI.URI)
+			link.URI = action.URI.URI
+		case action.Goto != nil && action.Goto.Bookmark != nil && action.Goto.Bookmark.Name != "":
+			name := action.Goto.Bookmark.Name
+			text = textMatching(texts, name)
+			if ref.document.Document.Bookmarks != nil {
+				for _, bookmark := range ref.document.Document.Bookmarks.Bookmarks {
+					if bookmark.Name != name {
+						continue
+					}
+					dest := convertOutlineDest(bookmark.Dest)
+					link.Dest = dest
+					if resolved, ok := pageIndex[models.StID(bookmark.Dest.PageID)]; ok {
+						link.TargetPage = resolved
+					}
+					break
+				}
+			}
+		case action.Movie != nil && action.Movie.ResourceID != 0:
+			text = firstUnusedText(texts, *links, page)
+			operator := string(action.Movie.Operator)
+			if operator == "" {
+				operator = string(models.MovieOperatorPlay)
+			}
+			link.MediaID = uint64(action.Movie.ResourceID)
+			link.MediaKind = "movie"
+			link.Operator = operator
+		default:
+			continue
+		}
+		if text == nil || !text.Boundary.IsFinite() || text.Boundary.Width <= 0 || text.Boundary.Height <= 0 {
+			continue
+		}
+		link.ID = formatStID(text.ID)
+		link.Boundary = AnnotationBoundary{X: text.Boundary.X, Y: text.Boundary.Y, Width: text.Boundary.Width, Height: text.Boundary.Height}
+		*links = append(*links, link)
+	}
+}
+
+func pageTextObjects(page *parser.Page) []*models.TextObject {
+	var texts []*models.TextObject
+	var walk func([]models.PageItem)
+	walk = func(items []models.PageItem) {
+		for _, item := range items {
+			if item.Kind == models.PageItemBlock && item.Block != nil {
+				walk(item.Block.Items)
+				continue
+			}
+			if item.Kind == models.PageItemText && item.Text != nil {
+				texts = append(texts, item.Text)
+			}
+		}
+	}
+	for _, layer := range contentLayers(page) {
+		if layer != nil {
+			walk(layer.Items)
+		}
+	}
+	return texts
+}
+
+func textMatching(texts []*models.TextObject, needle string) *models.TextObject {
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return nil
+	}
+	for _, text := range texts {
+		if strings.Contains(textValue(text), needle) {
+			return text
+		}
+	}
+	return nil
+}
+
+func firstUnusedText(texts []*models.TextObject, links []PageLink, page int) *models.TextObject {
+	used := map[string]bool{}
+	for _, link := range links {
+		if link.Page == page {
+			used[link.ID] = true
+		}
+	}
+	for _, text := range texts {
+		if !used[formatStID(text.ID)] {
+			return text
+		}
+	}
+	return nil
+}
+
+func textValue(text *models.TextObject) string {
+	if text == nil {
+		return ""
+	}
+	var value strings.Builder
+	for _, code := range text.TextCode {
+		value.WriteString(code.Value)
+	}
+	return value.String()
 }
 
 // contentLayers 返回页面正文的图层列表；读取失败时返回 nil。
@@ -1683,7 +1910,7 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 }
 
 // PageMediaActions 返回进入页面（PO）和打开文档（DO）时要执行的声音、影片动作。
-// 页面动作挂在对应页；文档级 DO 动作挂在该文档体的第一页，Page 为 -1 表示没有页面。
+// 页面动作挂在对应页；文档级 DO、PO 动作挂在该文档体的第一页，Page 为 -1 表示没有页面。
 func (r *Reader) PageMediaActions() ([]PageLink, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -1710,10 +1937,12 @@ func (r *Reader) PageMediaActions() ([]PageLink, error) {
 			continue
 		}
 		seenDocument[ref.fontScope] = true
-		if media, ok := mediaAction(ref.document.Document.Actions.Actions, models.ActionEventDO); ok {
-			media.Scope = ref.fontScope
-			media.Page = index
-			actions = append(actions, media)
+		for _, event := range []models.ActionEvent{models.ActionEventDO, models.ActionEventPO} {
+			if media, ok := mediaAction(ref.document.Document.Actions.Actions, event); ok {
+				media.Scope = ref.fontScope
+				media.Page = index
+				actions = append(actions, media)
+			}
 		}
 	}
 	return actions, nil
