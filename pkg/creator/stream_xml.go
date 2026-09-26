@@ -597,9 +597,6 @@ func streamImage(w *streamXMLWriter, item builtItem, value Image, pageIDs []uint
 	streamClips(w, value.Clips, drawParamIDs, fontIDs)
 	if value.Border != nil {
 		w.Start("Border")
-		if value.Border.Color != nil {
-			streamColor(w, "BorderColor", value.Border.Color)
-		}
 		if value.Border.LineWidth != 0 {
 			w.AttrFloat("LineWidth", value.Border.LineWidth)
 		}
@@ -614,6 +611,9 @@ func streamImage(w *streamXMLWriter, item builtItem, value Image, pageIDs []uint
 		}
 		if len(value.Border.DashPattern) > 0 {
 			w.AttrFloatList("DashPattern", value.Border.DashPattern)
+		}
+		if value.Border.Color != nil {
+			streamColor(w, "BorderColor", value.Border.Color)
 		}
 		w.End()
 	}
