@@ -1,0 +1,130 @@
+version: 1
+document:
+  id: draw-params
+  title: 绘制参数示例
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+resources:
+  draw_params:
+    - name: base
+      line_width: 1.2
+      cap: Butt
+      join: Miter
+      miter_limit: 8
+      fill_color:
+        r: 220
+        g: 50
+        b: 50
+      stroke_color:
+        r: 30
+        g: 30
+        b: 30
+    - name: thick
+      relative: base
+      line_width: 4
+      cap: Round
+      join: Round
+    - name: dashed
+      relative: thick
+      dash_pattern:
+        - 6
+        - 3
+      dash_offset: 2
+      stroke_color:
+        r: 30
+        g: 90
+        b: 180
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: DrawParam 与 Relative
+        font: 宋体
+        size: 6
+        fill: true
+      - type: text
+        x: 15
+        y: 28
+        width: 170
+        height: 6
+        value: base：红填充，黑描边，线宽 1.2
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 36
+        width: 160
+        height: 28
+        data: M 4 14 L 150 14
+        stroke: true
+        fill: false
+        draw_param: base
+      - type: path
+        x: 15
+        y: 48
+        width: 40
+        height: 24
+        data: M 0 0 L 40 0 L 40 24 L 0 24 C
+        stroke: true
+        fill: true
+        draw_param: base
+      - type: text
+        x: 15
+        y: 84
+        width: 170
+        height: 6
+        value: thick 继承 base，线宽改为 4，端点 Round
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 92
+        width: 160
+        height: 28
+        data: M 4 14 L 150 14
+        stroke: true
+        fill: false
+        draw_param: thick
+      - type: path
+        x: 15
+        y: 108
+        width: 40
+        height: 24
+        data: M 0 0 L 40 0 L 40 24 L 0 24 C
+        stroke: true
+        fill: true
+        draw_param: thick
+      - type: text
+        x: 15
+        y: 144
+        width: 180
+        height: 6
+        value: dashed 继承 thick，虚线并改描边为蓝
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 152
+        width: 160
+        height: 28
+        data: M 4 14 L 150 14
+        stroke: true
+        fill: false
+        draw_param: dashed
+      - type: path
+        x: 15
+        y: 168
+        width: 40
+        height: 24
+        data: M 0 0 L 40 0 L 40 24 L 0 24 C
+        stroke: true
+        fill: true
+        draw_param: dashed

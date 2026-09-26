@@ -1,0 +1,200 @@
+version: 1
+document:
+  id: color-spaces
+  title: 颜色空间示例
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+resources:
+  color_spaces:
+    - id: 11
+      type: GRAY
+      bits_per_component: 8
+    - id: 12
+      type: CMYK
+      bits_per_component: 8
+    - id: 13
+      type: RGB
+      bits_per_component: 8
+      palette:
+        - "220 40 40"
+        - "40 90 180"
+        - "40 150 80"
+    - id: 14
+      type: RGB
+      bits_per_component: 8
+      profile_name: srgb.icc
+      profile_base64: AAACTGxjbXMEQAAAbW50clJHQiBYWVogB+oACQAZABcAIgAiYWNzcEFQUEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPbWAAEAAAAA0y1sY21zAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALZGVzYwAAAQgAAAA2Y3BydAAAAUAAAABMd3RwdAAAAYwAAAAUY2hhZAAAAaAAAAAsclhZWgAAAcwAAAAUYlhZWgAAAeAAAAAUZ1hZWgAAAfQAAAAUclRSQwAAAggAAAAgZ1RSQwAAAggAAAAgYlRSQwAAAggAAAAgY2hybQAAAigAAAAkbWx1YwAAAAAAAAABAAAADGVuVVMAAAAaAAAAHABzAFIARwBCACAAYgB1AGkAbAB0AC0AaQBuAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAADAAAAAcAE4AbwAgAGMAbwBwAHkAcgBpAGcAaAB0ACwAIAB1AHMAZQAgAGYAcgBlAGUAbAB5WFlaIAAAAAAAAPbWAAEAAAAA0y1zZjMyAAAAAAABDEIAAAXe///zJQAAB5MAAP2Q///7of///aIAAAPcAADAblhZWiAAAAAAAABvoAAAOPUAAAOQWFlaIAAAAAAAACSfAAAPhAAAtsNYWVogAAAAAAAAYpcAALeHAAAY2XBhcmEAAAAAAAMAAAACZmYAAPKnAAANWQAAE9AAAApbY2hybQAAAAAAAwAAAACj1wAAVHsAAEzNAACZmgAAJmYAAA9c
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 颜色空间
+        font: 宋体
+        size: 6
+        fill: true
+      - type: text
+        x: 15
+        y: 28
+        width: 80
+        height: 6
+        value: GRAY 64
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 36
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 11
+          components:
+            - 64
+      - type: text
+        x: 80
+        y: 28
+        width: 80
+        height: 6
+        value: GRAY 180
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 80
+        y: 36
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 11
+          components:
+            - 180
+      - type: text
+        x: 15
+        y: 76
+        width: 160
+        height: 6
+        value: CMYK 青 / 品红 / 黄
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 84
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 12
+          components:
+            - 255
+            - 0
+            - 0
+            - 0
+      - type: path
+        x: 80
+        y: 84
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 12
+          components:
+            - 0
+            - 255
+            - 0
+            - 0
+      - type: path
+        x: 145
+        y: 84
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 12
+          components:
+            - 0
+            - 0
+            - 255
+            - 0
+      - type: text
+        x: 15
+        y: 124
+        width: 160
+        height: 6
+        value: 调色板 Index 0 / 1 / 2
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 132
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 13
+          index: 0
+      - type: path
+        x: 80
+        y: 132
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 13
+          index: 1
+      - type: path
+        x: 145
+        y: 132
+        width: 50
+        height: 28
+        data: M 0 0 L 50 0 L 50 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 13
+          index: 2
+      - type: text
+        x: 15
+        y: 172
+        width: 170
+        height: 6
+        value: ICC Profile sRGB 纯红
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 180
+        width: 180
+        height: 28
+        data: M 0 0 L 180 0 L 180 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          color_space: 14
+          components:
+            - 255
+            - 0
+            - 0

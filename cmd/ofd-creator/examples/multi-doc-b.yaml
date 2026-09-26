@@ -1,0 +1,20 @@
+version: 1
+document:
+  id: multi-b
+  title: 文档体 B
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    width: 148
+    height: 210
+pages:
+  - items:
+      - type: text
+        x: 16
+        y: 24
+        width: 110
+        height: 12
+        value: 文档体 B
+        font: 宋体
+        size: 10
+        fill: true

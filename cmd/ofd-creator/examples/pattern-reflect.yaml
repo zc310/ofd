@@ -1,0 +1,211 @@
+version: 1
+document:
+  id: pattern-reflect
+  title: 底纹翻转
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 10
+        width: 180
+        height: 8
+        value: 底纹 ReflectMethod（图 28）
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 15
+        y: 24
+        width: 80
+        height: 6
+        value: Normal
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 32
+        width: 80
+        height: 50
+        data: M 0 0 L 80 0 L 80 50 L 0 50 C
+        stroke: false
+        fill: true
+        fill_color:
+          pattern:
+            width: 16
+            height: 12
+            x_step: 16
+            y_step: 12
+            reflect_method: Normal
+            relative_to: Object
+            items:
+              - type: path
+                x: 0
+                y: 0
+                width: 16
+                height: 12
+                data: M 0 0 L 16 0 L 16 12 L 0 12 C
+                fill: true
+                fill_color:
+                  r: 230
+                  g: 236
+                  b: 245
+              - type: path
+                x: 0
+                y: 0
+                width: 8
+                height: 12
+                data: M 0 12 L 8 0 L 0 0 C
+                fill: true
+                fill_color:
+                  r: 40
+                  g: 110
+                  b: 200
+      - type: text
+        x: 110
+        y: 24
+        width: 80
+        height: 6
+        value: Row
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 110
+        y: 32
+        width: 80
+        height: 50
+        data: M 0 0 L 80 0 L 80 50 L 0 50 C
+        stroke: false
+        fill: true
+        fill_color:
+          pattern:
+            width: 16
+            height: 12
+            x_step: 16
+            y_step: 12
+            reflect_method: Row
+            relative_to: Object
+            items:
+              - type: path
+                x: 0
+                y: 0
+                width: 16
+                height: 12
+                data: M 0 0 L 16 0 L 16 12 L 0 12 C
+                fill: true
+                fill_color:
+                  r: 230
+                  g: 236
+                  b: 245
+              - type: path
+                x: 0
+                y: 0
+                width: 8
+                height: 12
+                data: M 0 12 L 8 0 L 0 0 C
+                fill: true
+                fill_color:
+                  r: 40
+                  g: 110
+                  b: 200
+      - type: text
+        x: 15
+        y: 96
+        width: 80
+        height: 6
+        value: Column
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 104
+        width: 80
+        height: 50
+        data: M 0 0 L 80 0 L 80 50 L 0 50 C
+        stroke: false
+        fill: true
+        fill_color:
+          pattern:
+            width: 16
+            height: 12
+            x_step: 16
+            y_step: 12
+            reflect_method: Column
+            relative_to: Object
+            items:
+              - type: path
+                x: 0
+                y: 0
+                width: 16
+                height: 12
+                data: M 0 0 L 16 0 L 16 12 L 0 12 C
+                fill: true
+                fill_color:
+                  r: 230
+                  g: 236
+                  b: 245
+              - type: path
+                x: 0
+                y: 0
+                width: 8
+                height: 12
+                data: M 0 12 L 8 0 L 0 0 C
+                fill: true
+                fill_color:
+                  r: 40
+                  g: 110
+                  b: 200
+      - type: text
+        x: 110
+        y: 96
+        width: 80
+        height: 6
+        value: RowAndColumn
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 110
+        y: 104
+        width: 80
+        height: 50
+        data: M 0 0 L 80 0 L 80 50 L 0 50 C
+        stroke: false
+        fill: true
+        fill_color:
+          pattern:
+            width: 16
+            height: 12
+            x_step: 16
+            y_step: 12
+            reflect_method: RowAndColumn
+            relative_to: Object
+            items:
+              - type: path
+                x: 0
+                y: 0
+                width: 16
+                height: 12
+                data: M 0 0 L 16 0 L 16 12 L 0 12 C
+                fill: true
+                fill_color:
+                  r: 230
+                  g: 236
+                  b: 245
+              - type: path
+                x: 0
+                y: 0
+                width: 8
+                height: 12
+                data: M 0 12 L 8 0 L 0 0 C
+                fill: true
+                fill_color:
+                  r: 40
+                  g: 110
+                  b: 200

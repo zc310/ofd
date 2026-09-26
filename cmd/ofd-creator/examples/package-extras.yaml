@@ -1,0 +1,77 @@
+version: 1
+document:
+  id: package-extras
+  title: 附件、自定义标签和扩展数据
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  attachments:
+    - id: note
+      name: 说明.txt
+      format: txt
+      usage: source
+      file_name: note.txt
+      creation_date: "2026-01-02"
+      mod_date: "2026-01-03"
+      visible: true
+      data_base64: 6L+Z5piv5LiA5Liq5paH5pys6ZmE5Lu2Cg==
+  extensions:
+    - app_name: ofd-creator
+      company: ofd
+      app_version: "1"
+      date: "2026-01-03"
+      ref_id: 1
+      data_xml: "<Data><Item>extra</Item></Data>"
+      properties:
+        - name: department
+          type: string
+          value: archive
+  custom_data:
+    - name: catalog
+      value: demo
+resources:
+  custom_tags:
+    - name_space: urn:ofd:demo
+      schema_name: tags.xsd
+      schema_base64: PD94bWwgdmVyc2lvbj0iMS4wIj8+Cjx4czpzY2hlbWEgeG1sbnM6eHM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvWE1MU2NoZW1hIi8+
+      data_name: tags.xml
+      data_base64: PD94bWwgdmVyc2lvbj0iMS4wIj8+CjxUYWdzPjxJdGVtPueOi+WPsDwvSXRlbT48L1RhZ3M+
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 170
+        height: 10
+        value: 附件、标签和扩展
+        font: 宋体
+        size: 8
+        fill: true
+      - type: text
+        x: 20
+        y: 50
+        width: 170
+        height: 8
+        value: 附件 note.txt
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 64
+        width: 170
+        height: 8
+        value: 自定义标签 urn:ofd:demo
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 78
+        width: 170
+        height: 8
+        value: 扩展属性 department=archive
+        font: 宋体
+        size: 5
+        fill: true

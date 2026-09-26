@@ -1,0 +1,19 @@
+version: 1
+document:
+  id: multi-a
+  title: 文档体 A
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 160
+        height: 12
+        value: 文档体 A
+        font: 宋体
+        size: 10
+        fill: true

@@ -1,0 +1,82 @@
+version: 1
+document:
+  id: actions
+  title: 动作示例
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  bookmarks:
+    - name: 第二页
+      goto:
+        page: 1
+        type: XYZ
+        top: 20
+  actions:
+    - event: CLICK
+      uri:
+        uri: https://github.com/zc310/ofd
+        target: _blank
+    - event: CLICK
+      goto:
+        bookmark: 第二页
+    - event: PO
+      sound:
+        resource_id: 21
+        volume: 80
+        repeat: false
+    - event: CLICK
+      movie:
+        resource_id: 22
+        operator: Play
+resources:
+  media:
+    - id: 21
+      type: Audio
+      format: wav
+      name: tone.wav
+      data_base64: UklGRgAAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=
+    - id: 22
+      type: Video
+      format: mp4
+      name: clip.mp4
+      data_base64: AAAAGGZ0eXBtcDQyAAAA
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 170
+        height: 10
+        value: URI / 书签 / 声音 / 影片
+        font: 宋体
+        size: 6
+        fill: true
+      - type: text
+        x: 20
+        y: 50
+        width: 170
+        height: 8
+        value: 点击打开 https://github.com/zc310/ofd
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 20
+        y: 64
+        width: 170
+        height: 8
+        value: 书签跳到第二页
+        font: 宋体
+        size: 4
+        fill: true
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 170
+        height: 10
+        value: 第二页
+        font: 宋体
+        size: 8
+        fill: true

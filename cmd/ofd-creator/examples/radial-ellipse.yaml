@@ -1,0 +1,134 @@
+version: 1
+document:
+  id: radial-ellipse
+  title: 径向渐变离心率与倾斜角
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 离心率 0 圆
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 15
+        y: 24
+        width: 80
+        height: 70
+        data: M 0 0 L 80 0 L 80 70 L 0 70 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 40 35
+            start_radius: 0
+            end_point: 40 35
+            end_radius: 32
+            eccentricity: 0
+            angle: 0
+            segments:
+              - color:
+                  r: 255
+                  g: 80
+              - color:
+                  b: 180
+      - type: text
+        x: 110
+        y: 12
+        width: 80
+        height: 8
+        value: 离心率 0.75
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 110
+        y: 24
+        width: 80
+        height: 70
+        data: M 0 0 L 80 0 L 80 70 L 0 70 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 40 35
+            start_radius: 0
+            end_point: 40 35
+            end_radius: 32
+            eccentricity: 0.75
+            angle: 0
+            segments:
+              - color:
+                  r: 255
+                  g: 80
+              - color:
+                  b: 180
+      - type: text
+        x: 15
+        y: 108
+        width: 80
+        height: 8
+        value: 倾斜 45 度
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 15
+        y: 120
+        width: 80
+        height: 70
+        data: M 0 0 L 80 0 L 80 70 L 0 70 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 40 35
+            start_radius: 0
+            end_point: 40 35
+            end_radius: 32
+            eccentricity: 0.75
+            angle: 45
+            segments:
+              - color:
+                  r: 255
+                  g: 80
+              - color:
+                  b: 180
+      - type: text
+        x: 110
+        y: 108
+        width: 80
+        height: 8
+        value: 倾斜 90 度
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 110
+        y: 120
+        width: 80
+        height: 70
+        data: M 0 0 L 80 0 L 80 70 L 0 70 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 40 35
+            start_radius: 0
+            end_point: 40 35
+            end_radius: 32
+            eccentricity: 0.75
+            angle: 90
+            segments:
+              - color:
+                  r: 255
+                  g: 80
+              - color:
+                  b: 180

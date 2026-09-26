@@ -1,0 +1,133 @@
+version: 1
+document:
+  id: axial-extend
+  title: 轴向渐变 Extend
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 轴向渐变 Extend（GB/T 33190 表 29）
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 15
+        y: 28
+        width: 170
+        height: 6
+        value: Extend=0 轴线外不延伸
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 36
+        width: 170
+        height: 28
+        data: M 0 0 L 170 0 L 170 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          axial:
+            start_point: 40 14
+            end_point: 130 14
+            extend: 0
+            segments:
+              - color:
+                  r: 255
+                  g: 220
+              - color:
+                  b: 255
+      - type: text
+        x: 15
+        y: 74
+        width: 170
+        height: 6
+        value: Extend=1 向起点延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 82
+        width: 170
+        height: 28
+        data: M 0 0 L 170 0 L 170 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          axial:
+            start_point: 40 14
+            end_point: 130 14
+            extend: 1
+            segments:
+              - position: 0
+                color:
+                  r: 255
+                  g: 220
+              - position: 1
+                color:
+                  b: 255
+      - type: text
+        x: 15
+        y: 120
+        width: 170
+        height: 6
+        value: Extend=2 向终点延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 128
+        width: 170
+        height: 28
+        data: M 0 0 L 170 0 L 170 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          axial:
+            start_point: 40 14
+            end_point: 130 14
+            extend: 2
+            segments:
+              - color:
+                  r: 255
+                  g: 220
+              - color:
+                  b: 255
+      - type: text
+        x: 15
+        y: 166
+        width: 170
+        height: 6
+        value: Extend=3 两侧都延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 174
+        width: 170
+        height: 28
+        data: M 0 0 L 170 0 L 170 28 L 0 28 C
+        stroke: false
+        fill: true
+        fill_color:
+          axial:
+            start_point: 40 14
+            end_point: 130 14
+            extend: 3
+            segments:
+              - color:
+                  r: 255
+                  g: 220
+              - color:
+                  b: 255

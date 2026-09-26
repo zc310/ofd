@@ -1,0 +1,71 @@
+version: 1
+document:
+  id: versions
+  title: 文档版本示例
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  versions:
+    - id: v1
+      index: 1
+      version: "1.0"
+      name: 初始版本
+      creation_date: "2026-01-02"
+      doc_root_name: version-1.xml
+      doc_root_base64: PERvY3VtZW50IHhtbG5zPSJodHRwOi8vd3d3Lm9mZHNwZWMub3JnLzIwMTYiPjxDb21tb25EYXRhPjxNYXhVbml0SUQ+ODwvTWF4VW5pdElEPjxQYWdlQXJlYT48UGh5c2ljYWxCb3g+MCAwIDIxMCAyOTc8L1BoeXNpY2FsQm94PjwvUGFnZUFyZWE+PC9Db21tb25EYXRhPjxQYWdlcz48UGFnZSBJRD0iMSIgQmFzZUxvYz0iLi4vLi4vUGFnZXMvUGFnZV8wL0NvbnRlbnQueG1sIi8+PC9QYWdlcz48L0RvY3VtZW50Pg==
+      files:
+        - id: file-1
+          path: Pages/Page_0/Content.xml
+    - id: v2
+      index: 2
+      current: true
+      version: "1.1"
+      name: 当前版本
+      creation_date: "2026-03-15"
+      doc_root_name: version-2.xml
+      doc_root_base64: PERvY3VtZW50IHhtbG5zPSJodHRwOi8vd3d3Lm9mZHNwZWMub3JnLzIwMTYiPjxDb21tb25EYXRhPjxNYXhVbml0SUQ+ODwvTWF4VW5pdElEPjxQYWdlQXJlYT48UGh5c2ljYWxCb3g+MCAwIDIxMCAyOTc8L1BoeXNpY2FsQm94PjwvUGFnZUFyZWE+PC9Db21tb25EYXRhPjxQYWdlcz48UGFnZSBJRD0iMSIgQmFzZUxvYz0iLi4vLi4vUGFnZXMvUGFnZV8wL0NvbnRlbnQueG1sIi8+PFBhZ2UgSUQ9IjIiIEJhc2VMb2M9Ii4uLy4uL1BhZ2VzL1BhZ2VfMS9Db250ZW50LnhtbCIvPjwvUGFnZXM+PC9Eb2N1bWVudD4=
+      files:
+        - id: file-2
+          path: Pages/Page_0/Content.xml
+        - id: file-3
+          path: Pages/Page_1/Content.xml
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 160
+        height: 12
+        value: v1 初始版本
+        font: 宋体
+        size: 10
+        fill: true
+      - type: text
+        x: 20
+        y: 52
+        width: 160
+        height: 8
+        value: 只有这一页
+        font: 宋体
+        size: 5
+        fill: true
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 160
+        height: 12
+        value: v2 当前版本
+        font: 宋体
+        size: 10
+        fill: true
+      - type: text
+        x: 20
+        y: 52
+        width: 160
+        height: 8
+        value: 新增第二页
+        font: 宋体
+        size: 5
+        fill: true
