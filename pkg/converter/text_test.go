@@ -482,3 +482,29 @@ func TestTextDocumentSanitizesNonUTF8TextValue(t *testing.T) {
 		t.Fatalf("text = %q, want %q", got, want)
 	}
 }
+
+func TestTextDocumentClampsLeadingSpacesForOutOfPagePosition(t *testing.T) {
+	// 损坏文档可能写入远超页面尺寸的坐标（实测样本中 TextObject 的 Boundary
+	// 达到 1e14mm）。前导空格数量由 X 偏移换算的列号决定，不设上限时
+	// strings.Repeat 会按该列号申请内存并触发 runtime out of memory。
+	page := parser.NewPage(models.PageContent{
+		Area: &models.CtPageArea{PhysicalBox: models.StBox{Width: 210, Height: 297}},
+		Content: &models.Content{Layer: []*models.Layer{{CTPageBlock: models.CTPageBlock{
+			Items: []models.PageItem{
+				textItemAt("far", true, 837723939487902.875, 10, 4),
+				textItemAt("near", true, 10, 10, 4),
+			},
+		}}}}})
+	doc := &parser.Document{Pages: []*parser.Page{page}}
+
+	var output bytes.Buffer
+	if err := TextDocument(doc, &output); err != nil {
+		t.Fatal(err)
+	}
+	// 列单位 210/80 = 2.625。near 的 X 最小，排在行首并占 4 列；far 的偏移
+	// 远超版心，列号被截断到 80，因此从第 80 列开始。
+	want := "near" + strings.Repeat(" ", textLayoutColumns-4) + "far\n"
+	if got := output.String(); got != want {
+		t.Fatalf("out of page position = %q, want %q", got, want)
+	}
+}

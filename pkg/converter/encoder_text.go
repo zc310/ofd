@@ -176,10 +176,7 @@ func layoutTextRow(row []textdoc.Entry, minX, unit float64) string {
 	width := 0
 
 	for index, entry := range row {
-		column := int(math.Round((entry.X - minX) / unit))
-		if column < 0 {
-			column = 0
-		}
+		column := textColumn((entry.X-minX)/unit, unit)
 		switch {
 		case index == 0:
 			builder.WriteString(strings.Repeat(" ", column))
@@ -193,4 +190,20 @@ func layoutTextRow(row []textdoc.Entry, minX, unit float64) string {
 		width = column + textdoc.DisplayWidth(entry.Text)
 	}
 	return builder.String()
+}
+
+// textColumn 把行内横向偏移换算成列号，并限制在版心列数内。
+//
+// 损坏文档可能写入远超页面尺寸的坐标，例如实测样本中 TextObject 的 Boundary
+// 达到 1e14mm。若不设上限，该偏移换算出的列号会直接决定前导空格数量，
+// strings.Repeat 将申请到无法分配的内存并触发 runtime out of memory，因此
+// 必须在换算成 int 之前就截断，避免 int 转换本身溢出。
+func textColumn(offset, unit float64) int {
+	if !textdoc.Finite(offset) || !textdoc.Finite(unit) || unit <= 0 || offset <= 0 {
+		return 0
+	}
+	if offset >= float64(textLayoutColumns) {
+		return textLayoutColumns
+	}
+	return int(math.Round(offset))
 }
