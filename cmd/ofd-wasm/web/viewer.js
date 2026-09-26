@@ -137,6 +137,10 @@ class OFDWorkerClient {
     return this.request('fontUsageAll', { maxScan: options.maxScan, maxPages: options.maxPages });
   }
 
+  versions() {
+    return this.request('versions');
+  }
+
   attachments() {
     return this.request('attachments');
   }
@@ -411,10 +415,12 @@ const sidebarTabMore = document.querySelector('#sidebar-tab-more');
 const sidebarTabMoreLabel = document.querySelector('#sidebar-tab-more-label');
 const sidebarMoreMenu = document.querySelector('#sidebar-more-menu');
 const sidebarMoreFonts = document.querySelector('#sidebar-more-fonts');
+const sidebarMoreVersions = document.querySelector('#sidebar-more-versions');
 const sidebarMoreAttachments = document.querySelector('#sidebar-more-attachments');
 const sidebarMoreMedia = document.querySelector('#sidebar-more-media');
 const sidebarMoreAnnotations = document.querySelector('#sidebar-more-annotations');
 const sidebarMoreSignatures = document.querySelector('#sidebar-more-signatures');
+const versionsElement = document.querySelector('#versions');
 const attachmentsElement = document.querySelector('#attachments');
 const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
@@ -946,8 +952,11 @@ function pageSpreadPositionForPage(index) {
 }
 
 function thumbnailSlotsForLayout() {
-  if (!pageLayoutIsDouble()) return pageInfos.map((_, index) => index);
-  return pageSpreads.flatMap(spread => spread.pages);
+  const indexes = pageLayoutIsDouble()
+    ? pageSpreads.flatMap(spread => spread.pages)
+    : pageInfos.map((_, index) => index);
+  if (!versionPageFilter) return indexes;
+  return indexes.filter(index => index < 0 || versionPageFilter.has(index));
 }
 
 // 缩略图轨道与页面轨道共用同一套「超长内容压缩 + 锚点平移」策略。元素高度和
@@ -2216,8 +2225,19 @@ function setCurrent(index, syncThumbnail = true) {
     else button.removeAttribute('aria-current');
   });
   if (changed) updateOutlineActive();
+  if (changed) playPageEntryMedia(index);
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
+}
+
+function playPageEntryMedia(index) {
+  pageMediaActions.forEach(action => {
+    if (!action || action.media_kind !== 'sound') return;
+    if (action.event !== 'PO' && action.event !== 'DO') return;
+    if (action.event === 'PO' && Number(action.page) !== index) return;
+    if (action.event === 'DO' && index !== 0) return;
+    playMediaAction(action);
+  });
 }
 
 function goTo(index) {
@@ -3072,6 +3092,8 @@ async function openSelectedFile(selected) {
         ? info
         : { index, width: 210, height: 297 };
     });
+    selectedVersionID = '';
+    versionPageFilter = null;
     currentDocumentKey = documentKey(selected);
     sidebarScroll = readSidebarScroll();
     current = restoreReadingPosition(selected, pageInfos.length);
@@ -3080,6 +3102,7 @@ async function openSelectedFile(selected) {
     restorePageRotation();
     buildPages();
     if (activeSidebarTab === 'fonts') renderFonts();
+    if (activeSidebarTab === 'versions') renderVersions();
     if (activeSidebarTab === 'attachments') renderAttachments();
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
@@ -3115,6 +3138,7 @@ async function openSelectedFile(selected) {
     documentFontUsageMeta = { scanned: 0, truncated: false };
     outlineExpandState = {};
     if (activeSidebarTab === 'fonts') renderFonts();
+    if (activeSidebarTab === 'versions') renderVersions();
     if (activeSidebarTab === 'attachments') renderAttachments();
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
@@ -3188,6 +3212,7 @@ function cancelOpening() {
   documentFontUsageMeta = { scanned: 0, truncated: false };
   outlineExpandState = {};
   if (activeSidebarTab === 'fonts') renderFonts();
+  if (activeSidebarTab === 'versions') renderVersions();
   if (activeSidebarTab === 'attachments') renderAttachments();
   if (activeSidebarTab === 'media') renderMedia();
   if (activeSidebarTab === 'annotations') renderAnnotations();
@@ -4048,9 +4073,9 @@ function restorePanelScroll(panel) {
   if (element) element.scrollTop = sidebarScroll[panel] || 0;
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'attachments', 'media', 'annotations', 'signatures'];
-const sidebarMoreTabs = ['fonts', 'attachments', 'media', 'annotations', 'signatures'];
-const sidebarMoreLabels = { fonts: '字体', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名' };
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
+const sidebarMoreTabs = ['fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
+const sidebarMoreLabels = { fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名' };
 
 // applySidebarPanels 根据侧栏可见性和当前面板，决定缩略图/大纲/书签/字体/附件面板的显隐。
 function applySidebarPanels() {
@@ -4063,6 +4088,7 @@ function applySidebarPanels() {
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
   if (fontsElement) fontsElement.hidden = !active('fonts');
+  if (versionsElement) versionsElement.hidden = !active('versions');
   if (attachmentsElement) attachmentsElement.hidden = !active('attachments');
   if (mediaElement) mediaElement.hidden = !active('media');
   if (annotationsElement) annotationsElement.hidden = !active('annotations');
@@ -4072,9 +4098,10 @@ function applySidebarPanels() {
   if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
   if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
   if (sidebarFilter) {
-    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('attachments') || active('media') || active('annotations') || active('signatures');
+    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('versions') || active('attachments') || active('media') || active('annotations') || active('signatures');
     sidebarFilter.hidden = !filterable;
     if (active('fonts')) sidebarFilter.placeholder = '过滤字体';
+    else if (active('versions')) sidebarFilter.placeholder = '过滤版本';
     else if (active('attachments')) sidebarFilter.placeholder = '过滤附件';
     else if (active('media')) sidebarFilter.placeholder = '过滤资源';
     else if (active('annotations')) sidebarFilter.placeholder = '过滤注解';
@@ -4097,6 +4124,7 @@ function applySidebarPanels() {
     sidebarTabMoreLabel.textContent = moreActive ? (sidebarMoreLabels[activeSidebarTab] || '更多') : '更多';
   }
   sidebarMoreFonts?.classList.toggle('active', activeSidebarTab === 'fonts');
+  sidebarMoreVersions?.classList.toggle('active', activeSidebarTab === 'versions');
   sidebarMoreAttachments?.classList.toggle('active', activeSidebarTab === 'attachments');
   sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
   sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
@@ -4150,6 +4178,8 @@ function setSidebarTab(tab) {
   } else if (tab === 'bookmarks') {
     renderBookmarks();
     updateOutlineActive();
+  } else if (tab === 'versions') {
+    renderVersions();
   } else if (tab === 'attachments') {
     renderAttachments();
   } else if (tab === 'media') {
@@ -4867,6 +4897,77 @@ function buildAttachmentItem(item) {
 
   row.append(info, badges, actions);
   return row;
+}
+
+let selectedVersionID = '';
+let versionPageFilter = null;
+
+function renderVersions() {
+  if (!versionsElement) return;
+  const generation = documentGeneration;
+  versionsElement.replaceChildren();
+  if (!pageInfos.length) {
+    versionsElement.append(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  versionsElement.append(outlineEmptyMessage('正在读取版本...'));
+  engine.versions().then(list => {
+    if (generation !== documentGeneration) return;
+    const versions = Array.isArray(list) ? list : [];
+    versionsElement.replaceChildren();
+    if (!versions.length) {
+      versionsElement.append(outlineEmptyMessage('此文档没有版本'));
+      return;
+    }
+    const filtered = sidebarFilterValue
+      ? versions.filter(item => `${item.id || ''} ${item.name || ''} ${item.version || ''}`.toLowerCase().includes(sidebarFilterValue))
+      : versions;
+    if (!filtered.length) {
+      versionsElement.append(outlineEmptyMessage('无匹配结果'));
+      return;
+    }
+    if (!filtered.some(item => item.id === selectedVersionID)) selectedVersionID = '';
+    filtered.forEach(item => versionsElement.append(buildVersionItem(item)));
+    restorePanelScroll('versions');
+  }).catch(() => {
+    if (generation !== documentGeneration) return;
+    versionsElement.replaceChildren(outlineEmptyMessage('获取版本失败'));
+  });
+}
+
+function buildVersionItem(item) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'outline-label';
+  if (item.id === selectedVersionID) button.classList.add('active');
+  const title = [item.id, item.name, item.version].filter(Boolean).join(' ');
+  button.textContent = title || '版本';
+  if (item.current) button.textContent += ' · 当前';
+  const pages = Array.isArray(item.pages) ? item.pages.filter(page => Number.isInteger(page)) : [];
+  button.title = pages.length ? `包含第 ${pages.map(page => page + 1).join('、')} 页` : '没有可显示的页面';
+  button.addEventListener('click', () => {
+    selectedVersionID = selectedVersionID === item.id ? '' : item.id;
+    applyVersionPages(selectedVersionID ? pages : null);
+    renderVersions();
+  });
+  return button;
+}
+
+function applyVersionPages(pages) {
+  versionPageFilter = pages ? new Set(pages) : null;
+  pageCards.forEach((card, index) => { card.hidden = versionPageFilter ? !versionPageFilter.has(index) : false; });
+  thumbnailButtons.forEach(button => button?.remove());
+  thumbnailButtons = [];
+  thumbnailSlots = thumbnailSlotsForLayout();
+  thumbnailSlotByPage = [];
+  thumbnailSlots.forEach((index, slot) => {
+    if (index >= 0) thumbnailSlotByPage[index] = slot;
+  });
+  updateThumbnailMetrics();
+  updateThumbnailVirtualWindow(false);
+  if (!pages) return;
+  const first = pages.find(page => page >= 0 && page < pageInfos.length);
+  if (first !== undefined) goTo(first);
 }
 
 function renderAttachments() {
@@ -6029,6 +6130,7 @@ sidebarTabOutline?.addEventListener('click', () => setSidebarTab('outline'));
 sidebarTabBookmarks?.addEventListener('click', () => setSidebarTab('bookmarks'));
 sidebarTabMore?.addEventListener('click', () => setSidebarMoreOpen(sidebarMoreMenu?.hidden));
 sidebarMoreFonts?.addEventListener('click', () => setSidebarTab('fonts'));
+sidebarMoreVersions?.addEventListener('click', () => setSidebarTab('versions'));
 sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachments'));
 sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
 sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
@@ -6069,6 +6171,7 @@ if (sidebarFilter) {
     if (activeSidebarTab === 'outline') renderOutline();
     else if (activeSidebarTab === 'bookmarks') renderBookmarks();
     else if (activeSidebarTab === 'fonts') renderFonts();
+    else if (activeSidebarTab === 'versions') renderVersions();
     else if (activeSidebarTab === 'attachments') renderAttachments();
     else if (activeSidebarTab === 'media') renderMedia();
     else if (activeSidebarTab === 'annotations') renderAnnotations();
@@ -6111,6 +6214,7 @@ if (sidebarResizer) {
 sidebarScrollPanels.outline = outlineElement;
 sidebarScrollPanels.bookmarks = bookmarksElement;
 sidebarScrollPanels.fonts = fontsElement;
+sidebarScrollPanels.versions = versionsElement;
 sidebarScrollPanels.attachments = attachmentsElement;
 sidebarScrollPanels.media = mediaElement;
 sidebarScrollPanels.annotations = annotationsElement;
