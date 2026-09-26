@@ -1,0 +1,73 @@
+version: 1
+document:
+  id: preferences
+  title: 阅读偏好
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  preferences:
+    page_mode: UseOutlines
+    page_layout: TwoPageL
+    tab_display: DocTitle
+    hide_toolbar: false
+    hide_menubar: false
+    hide_window_ui: false
+    zoom_mode: FitWidth
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 24
+        width: 170
+        height: 10
+        value: 左页
+        font: 宋体
+        size: 8
+        fill: true
+      - type: text
+        x: 20
+        y: 42
+        width: 170
+        height: 8
+        value: PageMode=UseOutlines
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 56
+        width: 170
+        height: 8
+        value: PageLayout=TwoPageL
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 70
+        width: 170
+        height: 8
+        value: ZoomMode=FitWidth
+        font: 宋体
+        size: 5
+        fill: true
+  - items:
+      - type: text
+        x: 20
+        y: 24
+        width: 170
+        height: 10
+        value: 右页
+        font: 宋体
+        size: 8
+        fill: true
+      - type: text
+        x: 20
+        y: 42
+        width: 170
+        height: 8
+        value: 双页左侧开始
+        font: 宋体
+        size: 5
+        fill: true

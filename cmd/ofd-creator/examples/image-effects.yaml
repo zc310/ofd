@@ -1,0 +1,83 @@
+version: 1
+document:
+  id: image-effects
+  title: 图片边框、蒙版和替代图
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+resources:
+  images:
+    - id: 31
+      name: photo.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAAFAAAAA0CAYAAAAddL/hAAAAXklEQVR42u3QMQEAAAQAMHGkk1MrOng8O1ZgkdXDXUgQKFCgQAQKFCgQgQIFCkSgQIECEShQoEAEChQoEIECBQpEoECBAhEoUKBABAoUKBCBAgUKFChCoECBAhH4YQFo4Gl7GMr8QwAAAABJRU5ErkJggg==
+    - id: 34
+      name: broken.png
+      format: PNG
+      data_base64: bm90LWEtcG5n
+    - id: 32
+      name: mask.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAAFAAAAA0CAYAAAAddL/hAAAAn0lEQVR4nO3QwQ3AMAACsey/dLsBfFqRh5FuAHye+3du7vx4/KvNkVIAAQJsmyOlAAIE2DZHSgEECLBtjpQCCBBg2xwpBRAgwLY5UgogQIBtc6QUQIAA2+ZIKYAAAbbNkVIAAQJsmyOlAAIE2DZHSgEECLBtjpQCCBBg2xwpBRAgwLY5UgogQIBtc6QUQIAA2+ZIKYAAAbbNkVIAAW57AcnMqmk8L5g+AAAAAElFTkSuQmCC
+    - id: 33
+      name: fallback.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAAFAAAAA0CAYAAAAddL/hAAAAXklEQVR42u3QMREAAAQAQJmE0P8UooPF8sMX+OjK4S4kCBQoUCACBQoUiECBAgUiUKBAgQgUKFAgAgUKFIhAgQIFIlCgQIEIFChQIAIFChSIQIECBQoUIVCgQIEI/LAokiRsrCjbIwAAAABJRU5ErkJggg==
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 圆角边框
+        font: 宋体
+        size: 4
+        fill: true
+      - type: image
+        x: 15
+        y: 22
+        width: 70
+        height: 46
+        resource_id: 31
+        border:
+          line_width: 1.5
+          horizontal_radius: 12
+          vertical_radius: 12
+          color:
+            r: 30
+            g: 80
+            b: 160
+      - type: text
+        x: 110
+        y: 12
+        width: 80
+        height: 8
+        value: ImageMask
+        font: 宋体
+        size: 4
+        fill: true
+      - type: image
+        x: 110
+        y: 22
+        width: 70
+        height: 46
+        resource_id: 31
+        image_mask: 32
+      - type: text
+        x: 15
+        y: 80
+        width: 80
+        height: 8
+        value: Substitution
+        font: 宋体
+        size: 4
+        fill: true
+      - type: image
+        x: 15
+        y: 90
+        width: 70
+        height: 46
+        resource_id: 34
+        substitution: 33

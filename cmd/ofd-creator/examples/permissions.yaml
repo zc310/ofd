@@ -1,0 +1,50 @@
+version: 1
+document:
+  id: permissions
+  title: 权限声明
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  permissions:
+    edit: false
+    annot: false
+    export: true
+    signature: true
+    watermark: false
+    print_screen: false
+    print:
+      printable: true
+      copies: 2
+    valid_period:
+      start: "2026-01-01T00:00:00Z"
+      end: "2026-12-31T23:59:59Z"
+pages:
+  - items:
+      - type: text
+        x: 20
+        y: 30
+        width: 170
+        height: 10
+        value: 权限声明
+        font: 宋体
+        size: 8
+        fill: true
+      - type: text
+        x: 20
+        y: 50
+        width: 170
+        height: 8
+        value: 禁止编辑、批注、水印和截屏
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 64
+        width: 170
+        height: 8
+        value: 允许导出和签名，可打印 2 份
+        font: 宋体
+        size: 5
+        fill: true
