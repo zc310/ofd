@@ -1,3 +1,9 @@
+# 底纹翻转
+# 底纹翻转示例；同一三角单元按 Normal、Row、Column、RowAndColumn 平铺。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml -o test/testdata/pattern-reflect.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: pattern-reflect

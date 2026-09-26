@@ -1,3 +1,9 @@
+# 裁剪区
+# 裁剪区示例；矩形分别被椭圆路径和文字裁剪，并演示同一裁剪区中两个路径取并集。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml -o test/testdata/clips.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: clips

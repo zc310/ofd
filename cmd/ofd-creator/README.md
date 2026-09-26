@@ -366,6 +366,14 @@ pages:
 
 楷体文字样式实例见 `cmd/ofd-creator/examples/kaiti-styles.yaml`，包含多种字号、字重、斜体、描边和字宽设置。
 
+字体样式矩阵实例见 `cmd/ofd-creator/examples/font-styles.yaml`，覆盖 100--900 字重、斜体、HScale、填充/描边及轴向/径向渐变文字。
+
+绘制参数实例见 `cmd/ofd-creator/examples/drawparam.yaml`，覆盖线宽、Cap/Join、MiterLimit、DashPattern/DashOffset、颜色及 Relative 三级继承。
+
+着色合集实例见 `cmd/ofd-creator/examples/shading.yaml`，覆盖 Axial/Radial/Gouraud/LaGouraud/Pattern 及 Direct/Repeat/Reflect 映射。
+
+径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
+
 线条样式 JSON 实例见 `cmd/ofd-creator/examples/line-styles.json`，包含线宽、端点、连接、虚线、偏移、折线和透明度效果。
 
 两页路径填充规则实例见 `cmd/ofd-creator/examples/path-fill-rules.json`，包含默认规则、`NonZero`、`Even-Odd`、嵌套轮廓、星形、多孔图形和重叠路径。

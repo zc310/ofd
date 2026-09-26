@@ -1,0 +1,966 @@
+# 径向渐变综合示例
+# 5 页覆盖径向渐变的 Eccentricity 离心率与 Angle 倾角、轴向渐变的
+# Extend/MapType 映射，以及径向渐变的 Extend 与 MapType。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-demo.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-demo.yaml -o test/testdata/radial_demo.ofd --format auto --deterministic --validate
+
+
+version: 1
+document:
+  id: radial-ecc-angle-demo
+  title: Radial 渐变 Eccentricity/Angle 示例
+  author: github.com/zc310/ofd
+  page_size:
+    width: 210
+    height: 297
+  creation_date: "2026-09-03T00:00:00Z"
+  area:
+    physical_box:
+      width: 210
+      height: 297
+resources:
+  fonts:
+    - name: 仿宋
+      charset: unicode
+  color_spaces:
+    - id: 1
+      type: RGB
+pages:
+  - layers:
+      - items:
+          - type: text
+            x: 20
+            "y": 10
+            width: 170
+            height: 12
+            value: 'Radial Gradient: Eccentricity'
+            font: 仿宋
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Radial Gradient: Eccentricity'
+                x: 0
+                "y": 8
+            weight: 900
+          - type: path
+            x: 20
+            "y": 30
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 108
+            width: 75
+            height: 6
+            value: Eccentricity=0
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Eccentricity=0
+                x: 0
+                "y": 5
+          - type: path
+            x: 105
+            "y": 30
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.5
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 105
+            "y": 108
+            width: 75
+            height: 6
+            value: Eccentricity=0.5
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Eccentricity=0.5
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 125
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.8
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 203
+            width: 75
+            height: 6
+            value: Eccentricity=0.8
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Eccentricity=0.8
+                x: 0
+                "y": 5
+          - type: path
+            x: 105
+            "y": 125
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.95
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 105
+            "y": 203
+            width: 75
+            height: 6
+            value: Eccentricity=0.95
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Eccentricity=0.95
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 220
+            width: 170
+            height: 55
+            data: M 0.00 0.00 L 170.00 0.00 L 170.00 55.00 L 0.00 55.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.6
+                start_point: 85 27
+                end_point: 85 27
+                end_radius: 85
+                segments:
+                  - color:
+                      r: 255
+                      g: 200
+                  - position: 0.5
+                    color:
+                      r: 200
+                      b: 100
+                  - color:
+                      g: 100
+                      b: 200
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 278
+            width: 170
+            height: 6
+            value: Three-color gradient, E=0.6
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Three-color gradient, E=0.6
+                x: 0
+                "y": 5
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            x: 20
+            "y": 10
+            width: 170
+            height: 12
+            value: 'Radial Gradient: Angle'
+            font: 仿宋
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Radial Gradient: Angle'
+                x: 0
+                "y": 8
+            weight: 900
+          - type: path
+            x: 20
+            "y": 30
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.6
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 108
+            width: 75
+            height: 6
+            value: Angle=0
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Angle=0
+                x: 0
+                "y": 5
+          - type: path
+            x: 105
+            "y": 30
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.6
+                angle: 45
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 105
+            "y": 108
+            width: 75
+            height: 6
+            value: Angle=45
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Angle=45
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 125
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.6
+                angle: 90
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 203
+            width: 75
+            height: 6
+            value: Angle=90
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Angle=90
+                x: 0
+                "y": 5
+          - type: path
+            x: 105
+            "y": 125
+            width: 75
+            height: 75
+            data: M 0.00 0.00 L 75.00 0.00 L 75.00 75.00 L 0.00 75.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.6
+                angle: 135
+                start_point: 37 37
+                end_point: 37 37
+                end_radius: 37
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+            stroke_color: {}
+          - type: text
+            x: 105
+            "y": 203
+            width: 75
+            height: 6
+            value: Angle=135
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: Angle=135
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 220
+            width: 85
+            height: 55
+            data: M 0.00 0.00 L 85.00 0.00 L 85.00 55.00 L 0.00 55.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.8
+                angle: 30
+                start_point: 42 27
+                end_point: 42 27
+                end_radius: 42
+                segments:
+                  - color:
+                      g: 200
+                  - color:
+                      r: 200
+                      g: 200
+            stroke_color: {}
+          - type: text
+            x: 20
+            "y": 278
+            width: 85
+            height: 6
+            value: E=0.8 A=30
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: E=0.8 A=30
+                x: 0
+                "y": 5
+          - type: path
+            x: 110
+            "y": 220
+            width: 80
+            height: 55
+            data: M 0.00 0.00 L 80.00 0.00 L 80.00 55.00 L 0.00 55.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 0.5
+            fill_color:
+              radial:
+                eccentricity: 0.9
+                angle: 60
+                start_point: 40 27
+                end_point: 40 27
+                end_radius: 40
+                segments:
+                  - color:
+                      r: 200
+                  - position: 0.5
+                    color:
+                      g: 200
+                  - color:
+                      b: 200
+            stroke_color: {}
+          - type: text
+            x: 110
+            "y": 278
+            width: 80
+            height: 6
+            value: E=0.9 A=60 three-color
+            font: 仿宋
+            size: 4
+            fill_color: {}
+            text_codes:
+              - value: E=0.9 A=60 three-color
+                x: 0
+                "y": 5
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            x: 20
+            "y": 10
+            width: 170
+            height: 12
+            value: 'Axial Gradient: Extend / MapType'
+            font: 仿宋
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Axial Gradient: Extend / MapType'
+                x: 0
+                "y": 8
+            weight: 900
+          - type: text
+            x: 20
+            "y": 28
+            width: 140
+            height: 6
+            value: Direct (Default)
+            font: 仿宋
+            size: 4
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Direct (Default)
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 36
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                start_point: 0 0
+                end_point: 140 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 20
+            "y": 82
+            width: 140
+            height: 6
+            value: MapType="Repeat" MapUnit="25"
+            font: 仿宋
+            size: 4
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: MapType="Repeat" MapUnit="25"
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 90
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Repeat
+                map_unit: 25
+                start_point: 0 0
+                end_point: 140 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 20
+            "y": 136
+            width: 140
+            height: 6
+            value: MapType="Reflect" EndPoint="25 0"
+            font: 仿宋
+            size: 4
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: MapType="Reflect" EndPoint="25 0"
+                x: 0
+                "y": 5
+          - type: path
+            x: 20
+            "y": 144
+            width: 140
+            height: 40
+            data: M 0.00 0.00 L 140.00 0.00 L 140.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Reflect
+                map_unit: 25
+                start_point: 0 0
+                end_point: 25 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            x: 5
+            "y": 8
+            width: 200
+            height: 12
+            value: 'Radial Gradient: Extend'
+            font: 仿宋
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Radial Gradient: Extend'
+                x: 0
+                "y": 8
+            weight: 900
+          - type: text
+            x: 5
+            "y": 24
+            width: 58
+            height: 6
+            value: Extend=0 (Pad)
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Extend=0 (Pad)
+                x: 0
+                "y": 5
+          - type: path
+            x: 5
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 68
+            "y": 24
+            width: 58
+            height: 6
+            value: Extend=1 (Repeat)
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Extend=1 (Repeat)
+                x: 0
+                "y": 5
+          - type: path
+            x: 68
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                extend: 1
+                segments:
+                  - position: 0
+                    color:
+                      r: 255
+                      g: 255
+                  - position: 1
+                    color:
+                      b: 255
+          - type: text
+            x: 131
+            "y": 24
+            width: 58
+            height: 6
+            value: Extend=2 (Reflect)
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Extend=2 (Reflect)
+                x: 0
+                "y": 5
+          - type: path
+            x: 131
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                extend: 2
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 5
+            "y": 122
+            width: 58
+            height: 6
+            value: Reversed radii, Extend=0
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Reversed radii, Extend=0
+                x: 0
+                "y": 5
+          - type: path
+            x: 5
+            "y": 129
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 15
+                end_point: 41 40
+                end_radius: 3
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 68
+            "y": 122
+            width: 58
+            height: 6
+            value: Reversed radii, Extend=1
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Reversed radii, Extend=1
+                x: 0
+                "y": 5
+          - type: path
+            x: 68
+            "y": 129
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 15
+                end_point: 41 40
+                end_radius: 3
+                extend: 1
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 131
+            "y": 122
+            width: 58
+            height: 6
+            value: Reversed radii, Extend=2
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: Reversed radii, Extend=2
+                x: 0
+                "y": 5
+          - type: path
+            x: 131
+            "y": 129
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 15
+                end_point: 41 40
+                end_radius: 3
+                extend: 2
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            x: 5
+            "y": 8
+            width: 200
+            height: 12
+            value: 'Radial Gradient: MapType'
+            font: 仿宋
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Radial Gradient: MapType'
+                x: 0
+                "y": 8
+            weight: 900
+          - type: text
+            x: 5
+            "y": 24
+            width: 58
+            height: 6
+            value: MapType=Pad (Default)
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: MapType=Pad (Default)
+                x: 0
+                "y": 5
+          - type: path
+            x: 5
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 68
+            "y": 24
+            width: 58
+            height: 6
+            value: MapType="Repeat"
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: MapType="Repeat"
+                x: 0
+                "y": 5
+          - type: path
+            x: 68
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                map_type: Repeat
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+          - type: text
+            x: 131
+            "y": 24
+            width: 58
+            height: 6
+            value: MapType="Reflect"
+            font: 仿宋
+            size: 3.5
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: MapType="Reflect"
+                x: 0
+                "y": 5
+          - type: path
+            x: 131
+            "y": 31
+            width: 58
+            height: 85
+            data: M 0.00 0.00 L 58.00 0.00 L 58.00 85.00 L 0.00 85.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                map_type: Reflect
+                start_point: 12 40
+                start_radius: 3
+                end_point: 41 40
+                end_radius: 15
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                  - color:
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297

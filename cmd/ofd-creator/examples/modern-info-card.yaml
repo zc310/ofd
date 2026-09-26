@@ -1,6 +1,6 @@
 # 现代信息卡片 / 活动海报样式实例
 # 运行：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/modern-info-card.yaml -o modern-info-card.ofd --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/modern-info-card.yaml -o modern-info-card.ofd --format auto --deterministic --validate
 
 version: 1
 

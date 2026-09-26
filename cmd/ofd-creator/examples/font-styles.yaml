@@ -1,0 +1,811 @@
+# 字体样式示例
+# 覆盖字重 100-900、常规/斜体/粗斜体、HScale 水平缩放、填充/描边/填充+描边、
+# 字号、轴向与径向渐变文字、纯色与半透明文字、等宽字体。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml -o test/testdata/font-styles.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: font-demo-20260903
+  title: OFD 字体样式示例
+  author: github.com/zc310/ofd
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    width: 210
+    height: 297
+  creation_date: "2026-09-03T00:00:00Z"
+  area:
+    physical_box:
+      width: 210
+      height: 297
+resources:
+  fonts:
+    - name: Noto Sans CJK CN
+      charset: unicode
+    - name: SimSun
+      family_name: 宋体
+      charset: prc
+    - name: Noto Sans CJK SC
+      charset: unicode
+    - name: Liberation Mono
+      charset: unicode
+  color_spaces:
+    - id: 1
+      type: RGB
+pages:
+  - layers:
+      - items:
+          - type: text
+            x: 20
+            "y": 10
+            width: 170
+            height: 14
+            value: OFD 字体样式示例
+            font: SimSun
+            size: 18
+            fill_color: {}
+            text_codes:
+              - value: OFD 字体样式示例
+                x: 0
+                "y": 12
+            weight: 900
+          - type: text
+            x: 20
+            "y": 28
+            width: 170
+            height: 8
+            value: 'Font Weight 权重 (100-900):'
+            font: Noto Sans CJK CN
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'Font Weight 权重 (100-900):'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 38
+            width: 170
+            height: 8
+            value: 'Weight 100 (Thin): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 100 (Thin): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 100
+          - type: text
+            x: 20
+            "y": 48
+            width: 170
+            height: 8
+            value: 'Weight 200 (ExtraLight): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 200 (ExtraLight): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 200
+          - type: text
+            x: 20
+            "y": 58
+            width: 170
+            height: 8
+            value: 'Weight 300 (Light): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 300 (Light): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 300
+          - type: text
+            x: 20
+            "y": 68
+            width: 170
+            height: 8
+            value: 'Weight 400 (Regular): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 400 (Regular): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 400
+          - type: text
+            x: 20
+            "y": 78
+            width: 170
+            height: 8
+            value: 'Weight 500 (Medium): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 500 (Medium): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 500
+          - type: text
+            x: 20
+            "y": 88
+            width: 170
+            height: 8
+            value: 'Weight 600 (SemiBold): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 600 (SemiBold): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 600
+          - type: text
+            x: 20
+            "y": 98
+            width: 170
+            height: 8
+            value: 'Weight 700 (Bold): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 700 (Bold): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 700
+          - type: text
+            x: 20
+            "y": 108
+            width: 170
+            height: 8
+            value: 'Weight 800 (ExtraBold): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 800 (ExtraBold): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 800
+          - type: text
+            x: 20
+            "y": 118
+            width: 170
+            height: 8
+            value: 'Weight 900 (Black): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'Weight 900 (Black): The quick brown fox'
+                x: 0
+                "y": 7
+            weight: 900
+          - type: text
+            x: 20
+            "y": 132
+            width: 170
+            height: 8
+            value: 'Italic 斜体:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'Italic 斜体:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 142
+            width: 80
+            height: 8
+            value: Regular 正常
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: Regular 正常
+                x: 0
+                "y": 7
+            weight: 400
+          - type: text
+            x: 110
+            "y": 142
+            width: 80
+            height: 8
+            value: Italic 斜体
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: Italic 斜体
+                x: 0
+                "y": 7
+            weight: 400
+            italic: true
+          - type: text
+            x: 20
+            "y": 152
+            width: 80
+            height: 8
+            value: Bold 粗体
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: Bold 粗体
+                x: 0
+                "y": 7
+            weight: 700
+          - type: text
+            x: 110
+            "y": 152
+            width: 80
+            height: 8
+            value: Bold Italic 粗斜体
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: Bold Italic 粗斜体
+                x: 0
+                "y": 7
+            weight: 700
+            italic: true
+          - type: text
+            x: 20
+            "y": 166
+            width: 170
+            height: 8
+            value: 'HScale 水平缩放:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'HScale 水平缩放:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 176
+            width: 170
+            height: 8
+            value: 'HScale=0.5 (50%): The quick brown fox jumps'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'HScale=0.5 (50%): The quick brown fox jumps'
+                x: 0
+                "y": 7
+            h_scale: 0.5
+            weight: 700
+          - type: text
+            x: 20
+            "y": 186
+            width: 170
+            height: 8
+            value: 'HScale=0.75 (75%): The quick brown fox jumps'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'HScale=0.75 (75%): The quick brown fox jumps'
+                x: 0
+                "y": 7
+            h_scale: 0.75
+            weight: 700
+          - type: text
+            x: 20
+            "y": 196
+            width: 170
+            height: 8
+            value: 'HScale=1.0 (100%): The quick brown fox jumps'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'HScale=1.0 (100%): The quick brown fox jumps'
+                x: 0
+                "y": 7
+            weight: 700
+          - type: text
+            x: 20
+            "y": 206
+            width: 170
+            height: 8
+            value: 'HScale=1.25 (125%): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'HScale=1.25 (125%): The quick brown fox'
+                x: 0
+                "y": 7
+            h_scale: 1.25
+            weight: 700
+          - type: text
+            x: 20
+            "y": 216
+            width: 170
+            height: 8
+            value: 'HScale=1.5 (150%): The quick brown fox'
+            font: Noto Sans CJK CN
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: 'HScale=1.5 (150%): The quick brown fox'
+                x: 0
+                "y": 7
+            h_scale: 1.5
+            weight: 700
+          - type: text
+            x: 20
+            "y": 232
+            width: 170
+            height: 8
+            value: 'Stroke 描边文字:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'Stroke 描边文字:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 242
+            width: 80
+            height: 10
+            value: 填充文字
+            font: SimSun
+            size: 12
+            fill: true
+            fill_color:
+              b: 200
+            text_codes:
+              - value: 填充文字
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 110
+            "y": 242
+            width: 80
+            height: 10
+            value: 描边文字
+            font: SimSun
+            size: 12
+            stroke: true
+            fill: false
+            stroke_color:
+              r: 200
+            text_codes:
+              - value: 描边文字
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 256
+            width: 80
+            height: 10
+            value: 填充+描边
+            font: SimSun
+            size: 12
+            stroke: true
+            fill: true
+            fill_color:
+              b: 200
+            stroke_color:
+              r: 200
+            text_codes:
+              - value: 填充+描边
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 272
+            width: 170
+            height: 8
+            value: '字号大小:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: '字号大小:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 280
+            width: 170
+            height: 16
+            value: Size 14mm 大号文字
+            font: SimSun
+            size: 14
+            fill_color: {}
+            text_codes:
+              - value: Size 14mm 大号文字
+                x: 0
+                "y": 12
+            weight: 400
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            x: 20
+            "y": 10
+            width: 170
+            height: 14
+            value: 高级字体样式
+            font: SimSun
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: 高级字体样式
+                x: 0
+                "y": 12
+            weight: 900
+          - type: text
+            x: 20
+            "y": 28
+            width: 170
+            height: 8
+            value: '渐变色文字:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: '渐变色文字:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 38
+            width: 170
+            height: 12
+            value: 渐变彩色文字 Rainbow Text
+            font: Noto Sans CJK CN
+            size: 14
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 170 0
+                segments:
+                  - color:
+                      r: 255
+                  - position: 0.5
+                    color:
+                      g: 255
+                  - color:
+                      b: 255
+            text_codes:
+              - value: 渐变彩色文字 Rainbow Text
+                x: 0
+                "y": 10
+            weight: 700
+          - type: text
+            x: 20
+            "y": 54
+            width: 170
+            height: 12
+            value: 径向渐变文字 Radial Text
+            font: Noto Sans CJK CN
+            size: 14
+            fill_color:
+              radial:
+                start_point: 85 6
+                end_point: 85 6
+                end_radius: 85
+                segments:
+                  - color:
+                      r: 255
+                      g: 200
+                  - color:
+                      r: 200
+                      b: 100
+            text_codes:
+              - value: 径向渐变文字 Radial Text
+                x: 0
+                "y": 10
+            weight: 700
+          - type: text
+            x: 20
+            "y": 72
+            width: 170
+            height: 8
+            value: '中文字体:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: '中文字体:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 82
+            width: 170
+            height: 10
+            value: '宋体 Regular: OFD 版式文档国家标准'
+            font: SimSun
+            size: 12
+            fill_color: {}
+            text_codes:
+              - value: '宋体 Regular: OFD 版式文档国家标准'
+                x: 0
+                "y": 9
+            weight: 400
+          - type: text
+            x: 20
+            "y": 94
+            width: 170
+            height: 10
+            value: '宋体 Bold: OFD 版式文档国家标准'
+            font: SimSun
+            size: 12
+            fill_color: {}
+            text_codes:
+              - value: '宋体 Bold: OFD 版式文档国家标准'
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 106
+            width: 170
+            height: 10
+            value: '宋体 Italic: OFD 版式文档国家标准'
+            font: SimSun
+            size: 12
+            fill_color: {}
+            text_codes:
+              - value: '宋体 Italic: OFD 版式文档国家标准'
+                x: 0
+                "y": 9
+            weight: 400
+            italic: true
+          - type: text
+            x: 20
+            "y": 122
+            width: 170
+            height: 8
+            value: 'Color 颜色变化:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'Color 颜色变化:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 132
+            width: 170
+            height: 10
+            value: 红色文字 Red
+            font: SimSun
+            size: 12
+            fill_color:
+              r: 255
+            text_codes:
+              - value: 红色文字 Red
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 144
+            width: 170
+            height: 10
+            value: 绿色文字 Green
+            font: SimSun
+            size: 12
+            fill_color:
+              g: 150
+            text_codes:
+              - value: 绿色文字 Green
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 156
+            width: 170
+            height: 10
+            value: 蓝色文字 Blue
+            font: SimSun
+            size: 12
+            fill_color:
+              b: 200
+            text_codes:
+              - value: 蓝色文字 Blue
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 168
+            width: 170
+            height: 10
+            value: 紫色文字 Purple
+            font: SimSun
+            size: 12
+            fill_color:
+              r: 128
+              b: 128
+            text_codes:
+              - value: 紫色文字 Purple
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 180
+            width: 170
+            height: 10
+            value: 半透明橙色文字 (Alpha=128)
+            font: SimSun
+            size: 12
+            fill_color:
+              r: 255
+              g: 128
+              alpha: 128
+            text_codes:
+              - value: 半透明橙色文字 (Alpha=128)
+                x: 0
+                "y": 9
+            weight: 700
+          - type: text
+            x: 20
+            "y": 196
+            width: 170
+            height: 8
+            value: '组合样式:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: '组合样式:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 206
+            width: 170
+            height: 12
+            value: 宋体粗斜体渐变
+            font: SimSun
+            size: 14
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 170 0
+                segments:
+                  - color:
+                      r: 200
+                  - color:
+                      b: 200
+            text_codes:
+              - value: 宋体粗斜体渐变
+                x: 0
+                "y": 10
+            weight: 900
+            italic: true
+          - type: text
+            x: 20
+            "y": 222
+            width: 170
+            height: 12
+            value: 描边渐变效果
+            font: SimSun
+            size: 14
+            stroke: true
+            fill: false
+            stroke_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 170 0
+                segments:
+                  - color:
+                      g: 150
+                  - color:
+                      r: 150
+                      b: 150
+            text_codes:
+              - value: 描边渐变效果
+                x: 0
+                "y": 10
+            weight: 700
+          - type: text
+            x: 20
+            "y": 240
+            width: 170
+            height: 8
+            value: 'FixedWidth 等宽字体:'
+            font: SimSun
+            size: 6
+            fill_color:
+              r: 100
+              g: 100
+              b: 100
+            text_codes:
+              - value: 'FixedWidth 等宽字体:'
+                x: 0
+                "y": 6
+          - type: text
+            x: 20
+            "y": 250
+            width: 170
+            height: 10
+            value: ABCDEFabcdef0123456789 !@#$%^&*()
+            font: Liberation Mono
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: ABCDEFabcdef0123456789 !@#$%^&*()
+                x: 0
+                "y": 8
+            weight: 400
+          - type: text
+            x: 20
+            "y": 262
+            width: 170
+            height: 10
+            value: ABCDEFabcdef0123456789 !@#$%^&*()
+            font: Liberation Mono
+            size: 10
+            fill_color: {}
+            text_codes:
+              - value: ABCDEFabcdef0123456789 !@#$%^&*()
+                x: 0
+                "y": 8
+            weight: 700
+    area:
+      physical_box:
+        width: 210
+        height: 297

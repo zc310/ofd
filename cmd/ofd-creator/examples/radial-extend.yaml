@@ -1,0 +1,157 @@
+# 径向渐变 Extend 示例
+# 单页 4 个圆形路径（起止圆短于所在圆），分别展示 Extend 0、1、2、3 的延伸行为。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml -o radial-extend.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: radial-extend
+  title: 径向渐变 Extend
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 径向渐变 Extend（GB/T 33190 表 29）
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 30
+        width: 70
+        height: 6
+        value: Extend=0 不延伸
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 20
+        y: 38
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 35 35
+            start_radius: 10
+            end_point: 35 35
+            end_radius: 26
+            extend: 0
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 120
+        y: 30
+        width: 70
+        height: 6
+        value: Extend=1 向起点延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 120
+        y: 38
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 35 35
+            start_radius: 10
+            end_point: 35 35
+            end_radius: 26
+            extend: 1
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 20
+        y: 124
+        width: 70
+        height: 6
+        value: Extend=2 向终点延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 20
+        y: 132
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 35 35
+            start_radius: 10
+            end_point: 35 35
+            end_radius: 26
+            extend: 2
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 120
+        y: 124
+        width: 70
+        height: 6
+        value: Extend=3 两侧都延长
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 120
+        y: 132
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            start_point: 35 35
+            start_radius: 10
+            end_point: 35 35
+            end_radius: 26
+            extend: 3
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230

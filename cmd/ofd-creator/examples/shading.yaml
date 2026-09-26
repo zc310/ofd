@@ -1,0 +1,1209 @@
+# 着色示例合集
+# 6 页覆盖：AxialShd（Direct/Repeat/Reflect 映射）、RadialShd、GouraudShd、
+# LaGourandShd、Pattern 填充，以及第 6 页的轴向/径向渐变文字。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/shading.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/shading.yaml -o test/testdata/shading.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: shading-demo
+  title: 着色示例合集
+  author: github.com/zc310/ofd
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    width: 210
+    height: 297
+  creation_date: "2026-01-01T00:00:00Z"
+  area:
+    physical_box:
+      width: 210
+      height: 297
+pages:
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: AxialShd 线性渐变示例
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: AxialShd 线性渐变示例
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: 'Direct (红→蓝):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: 'Direct (红→蓝):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 0
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 96
+            width: 100
+            height: 6
+            value: '三色渐变 (红→蓝→绿):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '三色渐变 (红→蓝→绿):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 104
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 0
+                segments:
+                  - color:
+                      r: 255
+                  - position: 0.5
+                    color:
+                      b: 255
+                  - color:
+                      g: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 150
+            width: 100
+            height: 6
+            value: 'Repeat 模式:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: 'Repeat 模式:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 158
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Repeat
+                map_unit: 50
+                start_point: 0 0
+                end_point: 50 0
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 204
+            width: 100
+            height: 6
+            value: 'Reflect 模式:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: 'Reflect 模式:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 212
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Reflect
+                map_unit: 50
+                start_point: 0 0
+                end_point: 50 0
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 258
+            width: 100
+            height: 6
+            value: '对角线渐变:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '对角线渐变:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 266
+            width: 150
+            height: 28
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 28.00 L 0.00 28.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 28
+                segments:
+                  - color:
+                      r: 255
+                      g: 200
+                  - color:
+                      g: 100
+                      b: 200
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: RadialShd 径向渐变示例
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: RadialShd 径向渐变示例
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '基本径向 (红→蓝):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '基本径向 (红→蓝):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 75 30
+                end_point: 75 30
+                end_radius: 60
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 116
+            width: 100
+            height: 6
+            value: '偏心径向 (绿→黄):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '偏心径向 (绿→黄):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 124
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 40 30
+                end_point: 110 30
+                end_radius: 50
+                segments:
+                  - color:
+                      g: 200
+                  - color:
+                      r: 255
+                      g: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 190
+            width: 100
+            height: 6
+            value: '三色径向 (红→白→蓝):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '三色径向 (红→白→蓝):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 198
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 75 30
+                end_point: 75 30
+                end_radius: 60
+                segments:
+                  - color:
+                      r: 255
+                  - position: 0.5
+                    color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 264
+            width: 100
+            height: 6
+            value: '带透明度:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '带透明度:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 272
+            width: 150
+            height: 22
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 22.00 L 0.00 22.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              radial:
+                start_point: 75 11
+                end_point: 75 11
+                end_radius: 20
+                segments:
+                  - color:
+                      r: 255
+                      alpha: 0
+                  - color:
+                      b: 255
+                      alpha: 128
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: GouraudShd 三角网格渐变
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: GouraudShd 三角网格渐变
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '单三角形 (红绿蓝):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '单三角形 (红绿蓝):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 80
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 80.00 L 0.00 80.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              gouraud:
+                points:
+                  - x: 75
+                    color:
+                      r: 255
+                  - x: 150
+                    "y": 80
+                    edge_flag: 1
+                    color:
+                      g: 255
+                  - "y": 80
+                    edge_flag: 2
+                    color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 136
+            width: 100
+            height: 6
+            value: '双三角形拼接:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '双三角形拼接:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 144
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              gouraud:
+                points:
+                  - color:
+                      r: 255
+                  - x: 150
+                    edge_flag: 1
+                    color:
+                      g: 255
+                  - x: 75
+                    "y": 60
+                    edge_flag: 2
+                    color:
+                      r: 255
+                      g: 255
+                  - x: 150
+                    color:
+                      g: 255
+                  - x: 150
+                    "y": 60
+                    edge_flag: 1
+                    color:
+                      b: 255
+                  - x: 75
+                    "y": 60
+                    edge_flag: 2
+                    color:
+                      g: 255
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 210
+            width: 100
+            height: 6
+            value: '扇形 (白→彩虹):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '扇形 (白→彩虹):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 218
+            width: 150
+            height: 72
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 72.00 L 0.00 72.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              gouraud:
+                points:
+                  - x: 75
+                    "y": 36
+                    color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - edge_flag: 1
+                    color:
+                      r: 255
+                  - x: 150
+                    edge_flag: 2
+                    color:
+                      r: 255
+                      g: 255
+                  - x: 150
+                    edge_flag: 1
+                    color:
+                      g: 255
+                  - x: 150
+                    "y": 72
+                    edge_flag: 2
+                    color:
+                      g: 255
+                      b: 255
+                  - x: 150
+                    "y": 72
+                    edge_flag: 1
+                    color:
+                      b: 255
+                  - "y": 72
+                    edge_flag: 2
+                    color:
+                      r: 255
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: LaGouraudShd 网格渐变
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: LaGouraudShd 网格渐变
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '2x2 网格 (四角颜色):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '2x2 网格 (四角颜色):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              la_gouraud:
+                vertices_per_row: 2
+                points:
+                  - color:
+                      r: 255
+                  - x: 150
+                    color:
+                      g: 255
+                  - "y": 60
+                    color:
+                      b: 255
+                  - x: 150
+                    "y": 60
+                    color:
+                      r: 255
+                      g: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 116
+            width: 100
+            height: 6
+            value: '3x3 网格 (彩虹):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '3x3 网格 (彩虹):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 124
+            width: 150
+            height: 80
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 80.00 L 0.00 80.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              la_gouraud:
+                vertices_per_row: 3
+                points:
+                  - color:
+                      r: 255
+                  - x: 75
+                    color:
+                      r: 255
+                      g: 128
+                  - x: 150
+                    color:
+                      r: 255
+                      g: 255
+                  - "y": 40
+                    color:
+                      g: 255
+                  - x: 75
+                    "y": 40
+                    color:
+                      g: 255
+                      b: 255
+                  - x: 150
+                    "y": 40
+                    color:
+                      b: 255
+                  - "y": 80
+                    color:
+                      r: 128
+                      b: 255
+                  - x: 75
+                    "y": 80
+                    color:
+                      r: 255
+                      b: 255
+                  - x: 150
+                    "y": 80
+                    color:
+                      r: 255
+                      g: 128
+                      b: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 210
+            width: 100
+            height: 6
+            value: '4x4 网格 (暖→冷):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '4x4 网格 (暖→冷):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 218
+            width: 150
+            height: 72
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 72.00 L 0.00 72.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              la_gouraud:
+                vertices_per_row: 4
+                points:
+                  - color:
+                      r: 255
+                  - x: 50
+                    color:
+                      r: 255
+                      g: 85
+                  - x: 100
+                    color:
+                      r: 255
+                      g: 170
+                  - x: 150
+                    color:
+                      r: 255
+                      g: 255
+                  - "y": 24
+                    color:
+                      r: 200
+                      b: 80
+                  - x: 50
+                    "y": 24
+                    color:
+                      r: 200
+                      g: 100
+                      b: 80
+                  - x: 100
+                    "y": 24
+                    color:
+                      r: 200
+                      g: 180
+                      b: 80
+                  - x: 150
+                    "y": 24
+                    color:
+                      r: 200
+                      g: 200
+                      b: 80
+                  - "y": 48
+                    color:
+                      g: 100
+                      b: 200
+                  - x: 50
+                    "y": 48
+                    color:
+                      g: 150
+                      b: 200
+                  - x: 100
+                    "y": 48
+                    color:
+                      g: 200
+                      b: 200
+                  - x: 150
+                    "y": 48
+                    color:
+                      g: 255
+                      b: 200
+                  - "y": 72
+                    color:
+                      b: 255
+                  - x: 50
+                    "y": 72
+                    color:
+                      g: 85
+                      b: 255
+                  - x: 100
+                    "y": 72
+                    color:
+                      g: 170
+                      b: 255
+                  - x: 150
+                    "y": 72
+                    color:
+                      g: 255
+                      b: 255
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: Pattern 图案填充示例
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: Pattern 图案填充示例
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '条纹图案 (Normal):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '条纹图案 (Normal):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 10.00 0.00 L 10.00 20.00 L 0.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 2.00 9.00 L 9.00 9.00 L 9.00 7.00 L 13.00 10.00 L 9.00 13.00 L 9.00 11.00 L 2.00 11.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      alpha: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 96
+            width: 100
+            height: 6
+            value: '棋盘格 (Row):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '棋盘格 (Row):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 104
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: Row
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 20.00 0.00 L 20.00 20.00 L 0.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color: {}
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 10.00 0.00 L 10.00 10.00 L 0.00 10.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 10.00 L 20.00 10.00 L 20.00 20.00 L 10.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 5.00 9.00 L 13.00 9.00 L 13.00 7.50 L 16.00 10.00 L 13.00 12.50 L 13.00 11.00 L 5.00 11.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      g: 180
+                      alpha: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 150
+            width: 100
+            height: 6
+            value: '菱形 (Column):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '菱形 (Column):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 158
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: Column
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 0.00 L 20.00 10.00 L 10.00 20.00 L 0.00 10.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      g: 128
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 8.00 18.00 L 10.00 20.00 L 12.00 18.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      alpha: 128
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 18.00 8.00 L 20.00 10.00 L 18.00 12.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 191
+                      g: 191
+                      alpha: 180
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 204
+            width: 100
+            height: 6
+            value: '星形 (RowAndColumn):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '星形 (RowAndColumn):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 212
+            width: 150
+            height: 80
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 80.00 L 0.00 80.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: RowAndColumn
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 1.30 L 12.00 8.00 L 18.70 8.00 L 13.30 12.00 L 15.30 18.70 L 10.00 14.70 L 4.70 18.70 L 6.70 12.00 L 1.30 8.00 L 8.00 8.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 12.00 13.50 L 15.30 18.70 L 10.00 14.70 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 200
+    area:
+      physical_box:
+        width: 210
+        height: 297
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: 组合着色示例
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: 组合着色示例
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '渐变背景:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '渐变背景:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 60
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 60.00 L 0.00 60.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 2
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 0
+                segments:
+                  - color:
+                      r: 255
+                      g: 200
+                      b: 200
+                  - color:
+                      r: 200
+                      g: 200
+                      b: 255
+            stroke_color: {}
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 116
+            width: 100
+            height: 6
+            value: '径向渐变圆形:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '径向渐变圆形:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 60
+            "y": 124
+            width: 90
+            height: 60
+            data: M 45.00 0.00 A 45.00 30.00 0.00 1 1 44.99 0.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            fill_color:
+              radial:
+                start_point: 45 30
+                end_point: 45 30
+                end_radius: 45
+                segments:
+                  - color:
+                      r: 255
+                      g: 255
+                      b: 200
+                  - position: 0.7
+                    color:
+                      r: 255
+                      g: 150
+                  - color:
+                      r: 200
+            stroke_color:
+              r: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 190
+            width: 100
+            height: 6
+            value: '纯色+渐变描边:'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '纯色+渐变描边:'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 198
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            stroke: true
+            fill: true
+            stroke_set: true
+            line_width: 2
+            fill_color:
+              r: 200
+              g: 255
+              b: 200
+            stroke_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 0
+                segments:
+                  - color:
+                      r: 255
+                  - color:
+                      b: 255
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 244
+            width: 150
+            height: 20
+            value: 渐变彩色文字
+            size: 14
+            fill_color:
+              axial:
+                map_type: Direct
+                start_point: 0 0
+                end_point: 150 0
+                segments:
+                  - color:
+                      r: 255
+                  - position: 0.5
+                    color:
+                      g: 255
+                  - color:
+                      b: 255
+            text_codes:
+              - value: 渐变彩色文字
+                x: 0
+                "y": 16
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 268
+            width: 150
+            height: 20
+            value: 半透明蓝色文字
+            size: 14
+            fill_color:
+              b: 255
+              alpha: 128
+            text_codes:
+              - value: 半透明蓝色文字
+                x: 0
+                "y": 16
+    area:
+      physical_box:
+        width: 210
+        height: 297

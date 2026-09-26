@@ -306,7 +306,7 @@
           "fill":true,
           "fill_color":{"r":75,"g":85,"b":105}
         },
-        {"type":"path","x":15,"y":218,"width":180,"height":35,"data":"M 0 0 L 180 0 L 180 35 L 0 35 C","fill":true,"fill_color":{"r":235,"g":245,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":150,"g":190,"b":230}},
+        {"type":"path","x":15,"y":216,"width":180,"height":46,"data":"M 0 0 L 180 0 L 180 46 L 0 46 C","fill":true,"fill_color":{"r":235,"g":245,"b":255},"stroke":true,"line_width":0.5,"stroke_color":{"r":150,"g":190,"b":230}},
         {
           "type":"text",
           "x":20,
@@ -317,7 +317,7 @@
           "size":8,
           "read_direction":0,
           "char_direction":0,
-          "text_codes":[{"value":"波浪形文字效果演示"}],
+          "text_codes":[{"value":"波浪形文字效果演示","delta_x":[10,10,10,10,10,10,10,10],"delta_y":[6,-6,-6,6,6,-6,-6,0]}],
           "fill":true,
           "fill_color":{"r":30,"g":100,"b":180}
         }
@@ -365,8 +365,8 @@
           "fill":true,
           "fill_color":{
             "axial":{
-              "start_point":"0 0.5",
-              "end_point":"1 0.5",
+              "start_point":"0 9",
+              "end_point":"78 9",
               "segments":[
                 {"position":0,"color":{"r":220,"g":50,"b":50}},
                 {"position":0.5,"color":{"r":50,"g":180,"b":50}},
@@ -388,10 +388,10 @@
           "fill":true,
           "fill_color":{
             "radial":{
-              "start_point":"0.5 0.5",
+              "start_point":"57 9",
               "start_radius":0,
-              "end_point":"0.5 0.5",
-              "end_radius":0.7,
+              "end_point":"57 9",
+              "end_radius":57,
               "segments":[
                 {"position":0,"color":{"r":255,"g":200,"b":50}},
                 {"position":1,"color":{"r":200,"g":50,"b":100}}

@@ -1,3 +1,9 @@
+# 图片边框、蒙版和替代图
+# 图片效果示例；蓝色小图分别演示显式 `Clips` 圆角裁剪与圆角边框、ImageMask 半透明蒙版和损坏资源的 Substitution 替代图。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/image-effects.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/image-effects.yaml -o test/testdata/image-effects.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: image-effects
@@ -31,7 +37,7 @@ pages:
         y: 12
         width: 180
         height: 8
-        value: 圆角边框
+        value: 圆角裁剪与边框
         font: 宋体
         size: 4
         fill: true
@@ -41,6 +47,15 @@ pages:
         width: 70
         height: 46
         resource_id: 31
+        clips:
+          - areas:
+              - path:
+                  boundary:
+                    x: 0
+                    y: 0
+                    width: 70
+                    height: 46
+                  data: M 12 46 L 58 46 A 12 12 0 0 0 70 34 L 70 12 A 12 12 0 0 0 58 0 L 12 0 A 12 12 0 0 0 0 12 L 0 34 A 12 12 0 0 0 12 46 C
         border:
           line_width: 1.5
           horizontal_radius: 12
