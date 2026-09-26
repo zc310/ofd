@@ -1,0 +1,425 @@
+# 华为图标提取结果反推配置（test/testdata/huawei.ofd）
+# 单页 8 个路径 + AxialShd/RadialShd 渐变填充与 Clips 裁剪、15 处 CTM，无文字。
+# 原始样例含 9 个严格校验错误（PageArea 元素顺序、Clips 位置、DocInfo 顺序），
+# 重建产物为严格有效版本。
+# 限制：原样例 <Clips TransFlag="false"> 关闭裁剪区 CTM 与图元 CTM 相乘，而当前
+# manifest schema 尚无 trans_flag 字段，重建产物缺少该属性会被过度裁剪（与原样例
+# 约 16% 像素差异）；补写 TransFlag="false" 后可还原至 0.01% 以内。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/huawei.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/huawei.yaml -o /tmp/huawei.ofd --format auto --deterministic --validate
+# 注意：test/testdata/huawei.ofd 是外部收集样例（README 来源分类），本配置为反推复刻，
+# 输出到 /tmp，不覆盖 fixture。
+
+version: 1
+document:
+  id: 68e2a11b94cd4a8db7c9001f00000000
+  author: github.com/zc310/ofd
+  creator: huawei-icon-extract
+  page_size:
+    width: 20.951
+    height: 17.471
+  creation_date: "2026-09-01T00:00:00Z"
+  area:
+    physical_box:
+      width: 20.951
+      height: 17.471
+    application_box:
+      width: 20.951
+      height: 17.471
+resources:
+  public:
+    - name: PublicRes.xml
+      data_base64: PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPG9mZDpSZXMgeG1sbnM6b2ZkPSJodHRwOi8vd3d3Lm9mZHNwZWMub3JnLzIwMTYiIEJhc2VMb2M9Ii4iLz4K
+pages:
+  - layers:
+      - items:
+          - type: path
+            x: 5.0153
+            "y": 5.669
+            width: 4.6119
+            height: 5.745
+            data: M 0.00 0.00 L 13.07 0.00 L 13.07 16.29 L 0.00 16.29
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              axial:
+                extend: 3
+                start_point: 1.7846 -0.022
+                end_point: 5.2744 3.7998
+                segments:
+                  - position: 0
+                    color:
+                      r: 230
+                      g: 25
+                      b: 20
+                  - position: 0.9944
+                    color:
+                      r: 227
+                      g: 32
+                      b: 20
+                  - position: 1
+                    color:
+                      r: 227
+                      g: 32
+                      b: 20
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 13.073
+                        height: 16.285
+                      data: M 0.22 5.93 B 0.34 8.17 2.03 9.50 2.03 9.50 L 2.03 9.50 B 4.75 12.14 11.33 15.49 12.86 16.25 L 12.86 16.25 B 12.89 16.26 12.96 16.29 13.01 16.23 L 13.01 16.23 B 13.01 16.23 13.07 16.18 13.04 16.10 L 13.04 16.10 L 13.04 16.10 B 8.85 6.94 3.12 0.00 3.12 0.00 L 3.12 0.00 B 3.12 0.00 0.00 2.96 0.22 5.93
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 5.3279
+            "y": 12.1573
+            width: 3.9278
+            height: 1.3137
+            data: M 0.00 0.00 L 11.13 0.00 L 11.13 3.72 L 0.00 3.72
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              axial:
+                extend: 3
+                start_point: 0 -0.5201
+                end_point: 3.8971 -0.5201
+                segments:
+                  - position: 0
+                    color:
+                      r: 147
+                      g: 30
+                      b: 34
+                  - position: 0.2
+                    color:
+                      r: 146
+                      g: 29
+                      b: 34
+                  - position: 0.9944
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+                  - position: 1
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 11.134
+                        height: 3.724
+                      data: M 0.00 0.38 B 0.99 2.15 2.56 3.59 4.26 3.72 L 4.26 3.72 L 4.76 3.72 B 4.93 3.71 5.11 3.68 5.28 3.64 L 5.28 3.64 B 6.72 3.28 9.98 1.01 11.05 0.24 L 11.05 0.24 L 11.05 0.24 B 11.13 0.16 11.11 0.10 11.11 0.10 L 11.11 0.10 B 11.08 0.00 10.96 0.00 10.96 0.00 L 10.96 0.00 L 10.96 0.00 C
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 4
+            "y": 8.8828
+            width: 5.3224
+            height: 3.0014
+            data: M 0.00 0.00 L 15.09 0.00 L 15.09 8.51 L 0.00 8.51
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              axial:
+                extend: 3
+                start_point: 0.8732 -0.3891
+                end_point: 5.8447 0.8967
+                segments:
+                  - position: 0
+                    color:
+                      r: 147
+                      g: 30
+                      b: 34
+                  - position: 0.1
+                    color:
+                      r: 151
+                      g: 30
+                      b: 35
+                  - position: 0.9944
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+                  - position: 1
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 15.087
+                        height: 8.508
+                      data: M 1.15 4.75 B 2.33 7.26 4.60 8.02 4.60 8.02 L 4.60 8.02 B 5.65 8.45 6.70 8.48 6.70 8.48 L 6.70 8.48 B 6.87 8.51 13.22 8.48 14.92 8.47 L 14.92 8.47 B 14.99 8.47 15.03 8.40 15.03 8.40 L 15.03 8.40 B 15.09 8.31 14.99 8.24 14.99 8.24 L 14.99 8.24 L 14.99 8.23 B 10.18 4.98 0.85 0.00 0.85 0.00 L 0.85 0.00 B 0.00 2.63 1.15 4.75 1.15 4.75
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 7.4855
+            "y": 4
+            width: 3.2149
+            height: 7.0944
+            data: M 0.00 0.00 L 9.11 0.00 L 9.11 20.11 L 0.00 20.11
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              radial:
+                start_point: 4.4742 1.2968
+                end_point: 4.4742 1.2968
+                end_radius: 5.8634
+                extend: 3
+                segments:
+                  - position: 0
+                    color:
+                      r: 247
+                      g: 197
+                      b: 150
+                  - position: 1
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 9.113
+                        height: 20.11
+                      data: M 4.12 0.33 B 1.21 1.08 0.53 3.72 0.53 3.72 L 0.53 3.72 B 0.00 5.37 0.54 7.19 0.54 7.19 L 0.54 7.19 B 1.51 11.49 6.28 18.55 7.30 20.04 L 7.30 20.04 B 7.38 20.11 7.44 20.08 7.44 20.08 L 7.44 20.08 B 7.54 20.05 7.54 19.95 7.54 19.95 L 7.54 19.95 L 7.54 19.95 B 9.11 4.18 5.88 0.00 5.88 0.00 L 5.88 0.00 B 5.41 0.04 4.12 0.33 4.12 0.33
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 10.2537
+            "y": 4
+            width: 3.211
+            height: 7.0986
+            data: M 0.00 0.00 L 9.10 0.00 L 9.10 20.12 L 0.00 20.12
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              radial:
+                start_point: 1.7059 1.2968
+                end_point: 1.7059 1.2968
+                end_radius: 5.8634
+                extend: 3
+                segments:
+                  - position: 0
+                    color:
+                      r: 247
+                      g: 197
+                      b: 150
+                  - position: 1
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 9.102
+                        height: 20.122
+                      data: M 1.58 19.96 B 1.59 20.06 1.67 20.08 1.67 20.08 L 1.67 20.08 B 1.77 20.12 1.82 20.02 1.82 20.02 L 1.82 20.02 L 1.83 20.02 B 2.88 18.50 7.62 11.47 8.58 7.19 L 8.58 7.19 B 8.58 7.19 9.10 5.12 8.60 3.72 L 8.60 3.72 B 8.60 3.72 7.88 1.04 4.97 0.33 L 4.97 0.33 B 4.97 0.33 4.14 0.12 3.25 0.00 L 3.25 0.00 B 3.25 0.00 0.00 4.18 1.58 19.96
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 11.7043
+            "y": 12.1597
+            width: 3.9232
+            height: 1.3113
+            data: M 0.00 0.00 L 11.12 0.00 L 11.12 3.72 L 0.00 3.72
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              axial:
+                extend: 3
+                start_point: 3.2706 2.4699
+                end_point: -0.2769 0.9127
+                segments:
+                  - position: 0
+                    color:
+                      r: 147
+                      g: 30
+                      b: 34
+                  - position: 0.2
+                    color:
+                      r: 200
+                      g: 22
+                      b: 29
+                  - position: 1
+                    color:
+                      r: 231
+                      g: 31
+                      b: 24
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 11.121
+                        height: 3.717
+                      data: M 0.15 0.00 B 0.15 0.00 0.05 0.02 0.02 0.09 L 0.02 0.09 B 0.02 0.09 0.00 0.18 0.07 0.23 L 0.07 0.23 L 0.06 0.23 B 1.11 0.99 4.29 3.21 5.83 3.64 L 5.83 3.64 B 5.83 3.64 5.96 3.69 6.19 3.72 L 6.19 3.72 L 6.95 3.72 B 8.00 3.60 9.63 2.94 11.12 0.38 L 11.12 0.38 L 0.15 0.00 C
+                      stroke_set: false
+                      fill: true
+          - type: path
+            x: 11.6403
+            "y": 8.8746
+            width: 5.3107
+            height: 3.0004
+            data: M -119.89 -343.66 L -119.89 -343.66 B -119.89 -343.66 -119.98 -343.61 -119.95 -343.50 B -119.95 -343.50 -119.91 -343.42 -119.84 -343.42 B -118.11 -343.42 -111.58 -343.41 -111.42 -343.44 B -111.42 -343.44 -110.57 -343.47 -109.53 -343.87 B -109.53 -343.87 -107.21 -344.61 -106.00 -347.25 B -106.00 -347.25 -104.93 -349.40 -105.76 -351.91 B -105.76 -351.91 -115.08 -346.91 -119.89 -343.66
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 42.3265
+              - 124.1475
+            fill_color:
+              r: 213
+              g: 31
+              b: 25
+          - type: path
+            x: 11.3318
+            "y": 5.669
+            width: 4.6006
+            height: 5.745
+            data: M 0.00 0.00 L 13.04 0.00 L 13.04 16.29 L 0.00 16.29
+            fill: true
+            stroke_set: false
+            ctm:
+              - 0.3528
+              - 0
+              - 0
+              - 0.3528
+              - 0
+              - 0
+            fill_color:
+              axial:
+                extend: 3
+                start_point: 0.0121 -0.5201
+                end_point: 4.5091 -0.5201
+                segments:
+                  - position: 0
+                    color:
+                      r: 230
+                      g: 25
+                      b: 20
+                  - position: 0.9944
+                    color:
+                      r: 227
+                      g: 32
+                      b: 20
+                  - position: 1
+                    color:
+                      r: 227
+                      g: 32
+                      b: 20
+            clips:
+              - areas:
+                  - ctm:
+                      - 0.3528
+                      - 0
+                      - 0
+                      - 0.3528
+                      - 0
+                      - 0
+                    path:
+                      boundary:
+                        width: 13.041
+                        height: 16.285
+                      data: M 0.05 16.05 L 0.05 16.05 B 0.05 16.05 0.00 16.16 0.08 16.23 L 0.08 16.23 B 0.08 16.23 0.16 16.29 0.23 16.24 L 0.23 16.24 B 1.80 15.46 8.33 12.13 11.04 9.50 L 11.04 9.50 B 11.04 9.50 12.75 8.12 12.84 5.91 L 12.84 5.91 B 13.04 2.84 9.95 0.00 9.95 0.00 L 9.95 0.00 B 9.95 0.00 4.24 6.92 0.05 16.05
+                      stroke_set: false
+                      fill: true
+    area:
+      physical_box:
+        width: 20.951
+        height: 17.471

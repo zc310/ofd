@@ -1,3 +1,9 @@
+# 颜色空间示例
+# 颜色空间示例；覆盖 GRAY、CMYK、RGB 调色板和带 sRGB ICC Profile 的 RGB。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml -o test/testdata/color-spaces.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: color-spaces

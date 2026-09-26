@@ -1,3 +1,9 @@
+# 页面区域
+# 页面区域示例；同时标出物理框、应用框、内容框和出血框。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/page-area.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/page-area.yaml -o test/testdata/page-area.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: page-area

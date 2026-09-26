@@ -1,3 +1,9 @@
+# 权限声明
+# 权限示例；禁止编辑、批注、水印和截屏，允许导出、签名，打印 2 份，并带有效期。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/permissions.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/permissions.yaml -o test/testdata/permissions.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: permissions

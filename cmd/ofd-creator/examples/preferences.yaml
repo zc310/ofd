@@ -1,3 +1,9 @@
+# 阅读偏好
+# 阅读偏好示例；`PageMode=UseOutlines`、`PageLayout=TwoPageL`、`ZoomMode=FitWidth`。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/preferences.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/preferences.yaml -o test/testdata/preferences.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: preferences

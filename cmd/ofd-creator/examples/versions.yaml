@@ -1,3 +1,9 @@
+# 文档版本示例
+# 文档版本示例；v1 只包含第一页，当前版本 v2 增加第二页。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/versions.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/versions.yaml -o test/testdata/versions.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: versions

@@ -1,3 +1,9 @@
+# 动作示例
+# 动作示例；点击打开 URI、按书签跳到第二页，并引用音频和视频资源。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml -o test/testdata/actions.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: actions

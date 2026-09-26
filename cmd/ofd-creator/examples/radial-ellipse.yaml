@@ -1,3 +1,9 @@
+# 径向渐变离心率与倾斜角
+# 椭圆径向渐变示例；对比离心率 0 与 0.75，以及倾斜 0、45、90 度。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-ellipse.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-ellipse.yaml -o test/testdata/radial-ellipse.ofd --format auto --deterministic --validate
+
 version: 1
 document:
   id: radial-ellipse
