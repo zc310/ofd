@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 
 	_ "github.com/dkrisman/gobig2"
@@ -25,6 +26,9 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 		return
 	}
 	resMedia := p.Document.GetMedia(models.StID(object.ResourceID))
+	if resMedia == nil && object.Substitution != 0 {
+		resMedia = p.Document.GetMedia(models.StID(object.Substitution))
+	}
 	if resMedia == nil {
 		return
 	}
@@ -69,12 +73,27 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	}
 
 	img, err := p.decodeImage(resMedia.MediaFile.Clean(), resMedia.Format)
+	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && models.StID(object.Substitution) != models.StID(resMedia.ID) {
+		if fallback := p.Document.GetMedia(models.StID(object.Substitution)); fallback != nil {
+			if decoded, decodeErr := p.decodeImage(fallback.MediaFile.Clean(), fallback.Format); decodeErr == nil && decoded != nil && !decoded.Bounds().Empty() {
+				img = decoded
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		slog.Error("decode image failed", "file", resMedia.MediaFile, "error", err)
 		return
 	}
 	if img == nil || img.Bounds().Empty() {
 		return
+	}
+	if object.ImageMask != 0 {
+		if maskMedia := p.Document.GetMedia(models.StID(object.ImageMask)); maskMedia != nil {
+			if mask, maskErr := p.decodeImage(maskMedia.MediaFile.Clean(), maskMedia.Format); maskErr == nil && mask != nil {
+				img = applyResourceImageMask(img, mask)
+			}
+		}
 	}
 
 	m := imageMatrix(object.Boundary, img, ctm, pb.Height)
@@ -93,6 +112,152 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 		return
 	}
 	ctx.RenderImage(img, m)
+	p.drawImageBorder(ctx, object, pb.Height)
+}
+
+func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, pageHeight float64) {
+	border := object.Border
+	if border == nil || !object.Boundary.IsFinite() {
+		return
+	}
+	lineWidth := border.LineWidth
+	if lineWidth <= 0 {
+		lineWidth = defaultLineWidth
+	}
+	box := object.Boundary
+	rx := border.HorizonalCornerRadius
+	ry := border.VerticalCornerRadius
+	if rx < 0 {
+		rx = 0
+	}
+	if ry < 0 {
+		ry = 0
+	}
+	path := roundedImageBorder(box.Width, box.Height, rx, ry)
+	if path.Empty() {
+		return
+	}
+	ctx.Push()
+	defer ctx.Pop()
+	ctx.ClearFill()
+	ctx.SetStrokeWidth(lineWidth)
+	if len(border.DashPattern) > 0 {
+		dashes := make([]float64, 0, len(border.DashPattern))
+		for _, value := range border.DashPattern {
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil || parsed < 0 {
+				dashes = nil
+				break
+			}
+			dashes = append(dashes, parsed)
+		}
+		if len(dashes) > 0 {
+			ctx.SetDashes(border.DashOffset, dashes...)
+		}
+	}
+	stroke := color.RGBA{A: 255}
+	if border.BorderColor != nil {
+		stroke = p.colorRGBA(*border.BorderColor)
+	}
+	ctx.SetStrokeColor(stroke)
+	ctx.DrawPath(box.X, pageHeight-(box.Y+box.Height), path)
+}
+
+func roundedImageBorder(width, height, rx, ry float64) *geom.Path {
+	if width <= 0 || height <= 0 {
+		return &geom.Path{}
+	}
+	if rx > width/2 {
+		rx = width / 2
+	}
+	if ry > height/2 {
+		ry = height / 2
+	}
+	if rx == 0 && ry == 0 {
+		return geom.Rectangle(width, height)
+	}
+	if rx == 0 {
+		rx = ry
+	}
+	if ry == 0 {
+		ry = rx
+	}
+	// 局部坐标 Y 向上，从左上角顺时针绕行。geom 的 sweep 语义与
+	// geom.RoundedRectangle 一致：sweep=true 只在逆时针绕行时得到凸弧，
+	// 顺时针绕行必须传 sweep=false，否则圆角会反向凹进图形内部。
+	path := &geom.Path{}
+	path.MoveTo(rx, height)
+	path.LineTo(width-rx, height)
+	path.ArcTo(rx, ry, 0, false, false, width, height-ry)
+	path.LineTo(width, ry)
+	path.ArcTo(rx, ry, 0, false, false, width-rx, 0)
+	path.LineTo(rx, 0)
+	path.ArcTo(rx, ry, 0, false, false, 0, ry)
+	path.LineTo(0, height-ry)
+	path.ArcTo(rx, ry, 0, false, false, rx, height)
+	path.Close()
+	return path
+}
+
+func applyResourceImageMask(img, mask image.Image) image.Image {
+	bounds := img.Bounds()
+	if bounds.Empty() || mask == nil || mask.Bounds().Empty() {
+		return img
+	}
+	src := decodedImage(img)
+	mask = decodedImage(mask)
+	out := image.NewNRGBA(bounds)
+	maskBounds := mask.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		my := maskBounds.Min.Y + (y-bounds.Min.Y)*maskBounds.Dy()/bounds.Dy()
+		if my >= maskBounds.Max.Y {
+			my = maskBounds.Max.Y - 1
+		}
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			mx := maskBounds.Min.X + (x-bounds.Min.X)*maskBounds.Dx()/bounds.Dx()
+			if mx >= maskBounds.Max.X {
+				mx = maskBounds.Max.X - 1
+			}
+			c := nrgbaAt(src, x, y)
+			mc := nrgbaAt(mask, mx, my)
+			luma := (299*uint32(mc.R) + 587*uint32(mc.G) + 114*uint32(mc.B)) / 1000
+			if mc.A == 0 {
+				luma = 0
+			}
+			c.A = uint8(uint32(c.A) * luma / 255)
+			out.SetNRGBA(x, y, c)
+		}
+	}
+	return out
+}
+
+func nrgbaAt(img image.Image, x, y int) color.NRGBA {
+	switch source := img.(type) {
+	case *image.NRGBA:
+		return source.NRGBAAt(x, y)
+	case *image.RGBA:
+		return color.NRGBAModel.Convert(source.RGBAAt(x, y)).(color.NRGBA)
+	default:
+		return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+	}
+}
+
+func decodedImage(img image.Image) image.Image {
+	type lazyImage interface {
+		Image() (image.Image, error)
+	}
+	for range 4 {
+		lazy, ok := img.(lazyImage)
+		if !ok {
+			return img
+		}
+		decoded, err := lazy.Image()
+		if err != nil || decoded == nil || decoded == img {
+			return img
+		}
+		img = decoded
+	}
+	return img
 }
 
 // imageCTM 返回图片对象使用的变换矩阵。

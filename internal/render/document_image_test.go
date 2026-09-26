@@ -604,6 +604,89 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 	}
 }
 
+func TestImageEffectsRenderBorderMaskAndSubstitution(t *testing.T) {
+	photo := solidPNG(t, 8, 4, color.NRGBA{R: 40, G: 110, B: 200, A: 255})
+	mask := image.NewNRGBA(image.Rect(0, 0, 8, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 8; x++ {
+			alpha := uint8(255)
+			if x >= 4 {
+				alpha = 0
+			}
+			mask.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: alpha})
+		}
+	}
+	var maskPNG bytes.Buffer
+	if err := png.Encode(&maskPNG, mask); err != nil {
+		t.Fatal(err)
+	}
+	fallback := solidPNG(t, 8, 4, color.NRGBA{R: 210, G: 70, B: 50, A: 255})
+	data, err := creator.Marshal(creator.Document{
+		ID: "image-effects",
+		Media: []creator.Media{
+			{ID: 31, Type: "Image", Format: "PNG", Data: photo},
+			{ID: 32, Type: "Image", Format: "PNG", Data: maskPNG.Bytes()},
+			{ID: 33, Type: "Image", Format: "PNG", Data: fallback},
+			{ID: 34, Type: "Image", Format: "PNG", Data: []byte("not-a-png")},
+		},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Image{X: 10, Y: 10, Width: 20, Height: 10, ResourceID: 31, ImageMask: 32},
+			creator.Image{X: 40, Y: 10, Width: 20, Height: 10, ResourceID: 34, Substitution: 33},
+			creator.Image{X: 10, Y: 30, Width: 20, Height: 10, ResourceID: 31, Border: &creator.ImageBorder{LineWidth: 1, HorizontalRadius: 2, VerticalRadius: 2, Color: &creator.Color{R: 0, G: 0, B: 0}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(72))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(72))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(x, y float64) color.NRGBA {
+		px := int(x / 25.4 * 72)
+		py := int(y / 25.4 * 72)
+		r, g, b, a := raster.At(px, py).RGBA()
+		return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)}
+	}
+	left := at(14, 15)
+	right := at(26, 15)
+	if left.B < 150 || left.A < 200 {
+		t.Fatalf("masked left = %+v, want blue", left)
+	}
+	if right.A > 20 {
+		t.Fatalf("masked right = %+v, want transparent", right)
+	}
+	sub := at(50, 15)
+	if sub.R < 150 || sub.B > 80 {
+		t.Fatalf("substitution = %+v, want red fallback", sub)
+	}
+	edge := at(20, 30.2)
+	if edge.A < 200 {
+		t.Fatalf("border = %+v, want visible stroke", edge)
+	}
+}
+
+func solidPNG(t *testing.T, w, h int, c color.NRGBA) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 func TestImageNegativeYCTMRendersFlipped(t *testing.T) {
 	// 图片对象带负 Y 缩放 CTM 时必须垂直镜像，用于还原 PDF 扫描件的朝向。
 	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -773,5 +856,117 @@ func TestSVGCanvasWeightUsesSourceBytes(t *testing.T) {
 	data := []byte("<svg/>")
 	if got := svgCanvasWeight(data); got != int64(len(data)) {
 		t.Fatalf("svgCanvasWeight = %d, 期望 %d", got, len(data))
+	}
+}
+
+// 圆角图片边框的圆弧必须凸出矩形，即圆弧落在弦（矩形边与角点之间的连线）的角点一侧。
+// 凹进矩形时圆弧以角点为圆心，弧线整体落到弦的另一侧。返回弧线相对弦的最大偏移，
+// 正值表示凸出角点。
+func roundedBorderCornerBulge(t *testing.T, width, height, rx, ry float64) float64 {
+	t.Helper()
+	path := roundedImageBorder(width, height, rx, ry)
+	if path.Empty() {
+		t.Fatalf("roundedImageBorder(%v, %v, %v, %v) 为空", width, height, rx, ry)
+	}
+	// 弦的两个端点为 (0, height-ry) 与 (rx, height)，法线取指向角点 (0, height) 的一侧。
+	norm := math.Hypot(rx, ry)
+	if norm == 0 {
+		t.Fatalf("圆角半径为 0，不应生成圆弧")
+	}
+	bulge := 0.0
+	for _, p := range path.Flatten(0.01).Coords() {
+		if p.X > rx || p.Y < height-ry {
+			continue
+		}
+		dist := (-ry*p.X + rx*(p.Y-(height-ry))) / norm
+		if dist > bulge {
+			bulge = dist
+		}
+	}
+	return bulge
+}
+
+func TestRoundedImageBorderCornersBulgeOutward(t *testing.T) {
+	cases := []struct {
+		width, height, rx, ry float64
+	}{
+		{20, 10, 2, 2},
+		{70, 46, 12, 12},
+		{40, 20, 6, 3},
+		{10, 10, 5, 5},
+	}
+	for _, c := range cases {
+		bulge := roundedBorderCornerBulge(t, c.width, c.height, c.rx, c.ry)
+		r := math.Min(math.Min(c.rx, c.width/2), math.Min(c.ry, c.height/2))
+		if bulge < 0.05*r {
+			t.Fatalf("圆角(%v,%v,%v,%v) 左上角弧线凸出量 = %.4f，期望正数（弧线凹进图形内部）",
+				c.width, c.height, c.rx, c.ry, bulge)
+		}
+	}
+}
+
+func TestRoundedImageBorderNoRadiusUsesRectangle(t *testing.T) {
+	if got := len(roundedImageBorder(20, 10, 0, 0).Flatten(0.01).Coords()); got != 5 {
+		t.Fatalf("无圆角边框顶点数 = %d，期望 5", got)
+	}
+}
+
+func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
+	const (
+		imgX, imgY = 20.0, 40.0
+		imgW, imgH = 40.0, 20.0
+		radius     = 6.0
+		dpi        = 300.0
+	)
+	photo := solidPNG(t, 8, 4, color.NRGBA{R: 200, G: 220, B: 240, A: 255})
+	data, err := creator.Marshal(creator.Document{
+		ID:    "image-rounded-border",
+		Media: []creator.Media{{ID: 1, Type: "Image", Format: "PNG", Data: photo}},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Image{
+				X: imgX, Y: imgY, Width: imgW, Height: imgH, ResourceID: 1,
+				Border: &creator.ImageBorder{
+					LineWidth: 1, HorizontalRadius: radius, VerticalRadius: radius,
+					Color: &creator.Color{R: 0, G: 0, B: 0},
+				},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 沿左上角到图心的对角线取样，3x3 邻域内出现描边即认为该处有边框。
+	hasStroke := func(dist float64) bool {
+		px := int((imgX + dist/math.Sqrt2) / 25.4 * dpi)
+		py := int((imgY + dist/math.Sqrt2) / 25.4 * dpi)
+		for dy := -1; dy <= 1; dy++ {
+			for dx := -1; dx <= 1; dx++ {
+				r, g, b, a := raster.At(px+dx, py+dy).RGBA()
+				if a>>8 < 200 {
+					continue
+				}
+				if 0.299*float64(r>>8)+0.587*float64(g>>8)+0.114*float64(b>>8) < 100 {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	convex := radius * (math.Sqrt2 - 1)
+	if !hasStroke(convex) {
+		t.Fatalf("距角点 %.2fmm（凸圆角弧线位置）处没有描边，圆角可能凹进图形内部", convex)
+	}
+	if hasStroke(radius) {
+		t.Fatalf("距角点 %.2fmm（凹圆角弧线位置）处出现描边，圆角方向反了", radius)
 	}
 }
