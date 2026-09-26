@@ -22,10 +22,10 @@ func (e *pdfEncoder) Encode(input any, output io.Writer, conv *Converter) error 
 	return encodeOFD(input, output, conv, e.encodeDocuments)
 }
 
-// pdfRenderOptions 是 PDF 输出选项：压缩内容流、子集化 TrueType 字体、
-// 图片使用有损编码以对齐官方体积。
+// pdfRenderOptions 是 PDF 输出选项：压缩内容流、子集化 TrueType 字体。
+// JPEG 和不透明 PNG 按原始字节嵌入；透明图使用无损编码，避免重新压成 JPEG。
 func pdfRenderOptions() render.PDFOptions {
-	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: true}
+	return render.PDFOptions{Compress: true, SubsetFonts: true, LossyImages: false}
 }
 
 func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
