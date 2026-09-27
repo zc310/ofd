@@ -2,12 +2,41 @@ package render
 
 import (
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 )
+
+// TestPathStrokeScalesWithObjectCTM 回归：线宽、虚线、斜接限制定义在对象坐标系，
+// 必须按对象 CTM 缩放。此前带 pt→mm（0.3528）之类缩放 CTM 的描边会过粗。
+func TestPathStrokeScalesWithObjectCTM(t *testing.T) {
+	object := models.PathObject{CtPath: models.CtPath{
+		CTGraphicUnit: models.CTGraphicUnit{
+			LineWidth: 1.021,
+			CTM:       &models.CTM{0.3528, 0, 0, 0.3528, 0, 0},
+		},
+	}}
+	scale := pathStrokeScale(object, nil)
+	if math.Abs(scale-0.3528) > 1e-9 {
+		t.Fatalf("pathStrokeScale = %g, want 0.3528", scale)
+	}
+
+	ctx := canvas.NewContext(canvas.New(10, 10))
+	var document Document
+	document.updateCtPathStyle(newCanvasBackend(ctx), &object.CtPath, nil, scale)
+	want := 1.021 * 0.3528
+	if math.Abs(ctx.Style.StrokeWidth-want) > 1e-9 {
+		t.Fatalf("stroke width = %g, want %g", ctx.Style.StrokeWidth, want)
+	}
+
+	// 无 CTM 时缩放系数为 1，保持原有线宽。
+	if scale := pathStrokeScale(models.PathObject{}, nil); scale != 1 {
+		t.Fatalf("pathStrokeScale without CTM = %g, want 1", scale)
+	}
+}
 
 func TestApplyFillDefaultsToTransparent(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
@@ -53,7 +82,7 @@ func TestPathStyleObjectPropertiesOverrideDrawParam(t *testing.T) {
 		Join:      "Round",
 	}
 
-	document.updateCtPathStyle(newCanvasBackend(ctx), object, dp)
+	document.updateCtPathStyle(newCanvasBackend(ctx), object, dp, 1)
 
 	if ctx.Style.StrokeWidth != 2 {
 		t.Fatalf("stroke width = %g, want 2", ctx.Style.StrokeWidth)
@@ -75,7 +104,7 @@ func TestMiterLimitUsesAbsoluteMillimetres(t *testing.T) {
 			Join:       "Miter",
 			MiterLimit: 2,
 		},
-	}, nil)
+	}, nil, 1)
 
 	joiner, ok := ctx.Style.StrokeJoiner.(canvas.MiterJoiner)
 	if !ok {
@@ -104,7 +133,7 @@ func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 			DashOffset:  -1,
 			DashPattern: &models.StArrayF{0, 0},
 		},
-	}, nil)
+	}, nil, 1)
 
 	if ctx.Style.StrokeWidth != defaultLineWidth {
 		t.Fatalf("stroke width = %g, want default %g", ctx.Style.StrokeWidth, defaultLineWidth)
