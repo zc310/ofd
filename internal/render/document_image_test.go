@@ -970,3 +970,85 @@ func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
 		t.Fatalf("距角点 %.2fmm（凹圆角弧线位置）处出现描边，圆角方向反了", radius)
 	}
 }
+
+// 图片裁剪区域使用图元自身的毫米局部坐标，不能套用 imageCTM 按 Boundary
+// 尺寸合成的放置矩阵，否则裁剪路径被放大 Boundary 倍后整张图片消失。
+func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
+	const (
+		imgX, imgY = 15.0, 22.0
+		imgW, imgH = 70.0, 46.0
+		radius     = 12.0
+		dpi        = 300.0
+	)
+	// sweep 取 0 才是凸圆角：裁剪路径在渲染时会被翻转 y 轴，
+	// 与 roundedImageBorder 使用的几何 sweep 相反。
+	const roundedRect = "M 12 46 L 58 46 A 12 12 0 0 0 70 34 L 70 12 A 12 12 0 0 0 58 0 " +
+		"L 12 0 A 12 12 0 0 0 0 12 L 0 34 A 12 12 0 0 0 12 46 C"
+	photo := solidPNG(t, 80, 52, color.NRGBA{R: 40, G: 110, B: 200, A: 255})
+	data, err := creator.Marshal(creator.Document{
+		ID:    "image-rounded-clip",
+		Media: []creator.Media{{ID: 1, Type: "Image", Format: "PNG", Data: photo}},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Image{
+				X: imgX, Y: imgY, Width: imgW, Height: imgH, ResourceID: 1,
+				Clips: &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{{
+					Path: &creator.ClipPath{
+						Boundary: creator.Box{Width: imgW, Height: imgH},
+						Data:     roundedRect,
+					},
+				}}}}},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(dpi))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(dpi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alphaAt := func(xmm, ymm float64) uint32 {
+		px := int(xmm / 25.4 * dpi)
+		py := int(ymm / 25.4 * dpi)
+		_, _, _, a := raster.At(px, py).RGBA()
+		return a >> 8
+	}
+	if got := alphaAt(imgX+imgW/2, imgY+imgH/2); got < 250 {
+		t.Fatalf("图片中心不透明度 = %d，期望 255，裁剪区域可能整体错位", got)
+	}
+	// 四个外角应被圆角裁掉；内侧对角点仍属于图片。
+	inset := radius * 0.1
+	for _, c := range []struct {
+		name string
+		x, y float64
+	}{
+		{"左上", imgX + inset, imgY + inset},
+		{"右上", imgX + imgW - inset, imgY + inset},
+		{"左下", imgX + inset, imgY + imgH - inset},
+		{"右下", imgX + imgW - inset, imgY + imgH - inset},
+	} {
+		if got := alphaAt(c.x, c.y); got > 5 {
+			t.Fatalf("%s 外角不透明度 = %d，期望 0，圆角裁剪未生效", c.name, got)
+		}
+	}
+	diagonal := radius * math.Sqrt2
+	for _, c := range []struct {
+		name string
+		x, y float64
+	}{
+		{"左上", imgX + diagonal*0.9, imgY + diagonal*0.9},
+		{"右上", imgX + imgW - diagonal*0.9, imgY + diagonal*0.9},
+		{"左下", imgX + diagonal*0.9, imgY + imgH - diagonal*0.9},
+		{"右下", imgX + imgW - diagonal*0.9, imgY + imgH - diagonal*0.9},
+	} {
+		if got := alphaAt(c.x, c.y); got < 250 {
+			t.Fatalf("%s 圆角内侧不透明度 = %d，期望 255", c.name, got)
+		}
+	}
+}
