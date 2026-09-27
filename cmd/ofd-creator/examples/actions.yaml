@@ -1,5 +1,5 @@
 # 动作示例
-# 动作示例；点击打开 URI、按书签跳到第二页，并引用音频和视频资源。
+# 覆盖点击打开 URI、书签跳转、音频/视频播放与附件动作（GotoA 打开文档内附件）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml -o test/testdata/actions.ofd --format auto --deterministic --validate
@@ -18,6 +18,13 @@ document:
         page: 1
         type: XYZ
         top: 20
+  attachments:
+    - id: demo-note
+      name: 说明.txt
+      format: txt
+      usage: source
+      file_name: demo-note.txt
+      data_base64: 6L+Z5piv6YCa6L+HIEdvdG9BIOmZhOS7tuWKqOS9nOaJk+W8gOeahOmZhOS7tuOAggo=
   actions:
     - event: CLICK
       uri:
@@ -35,6 +42,10 @@ document:
       movie:
         resource_id: 22
         operator: Play
+    - event: CLICK
+      goto_a:
+        attach_id: demo-note
+        new_window: true
 resources:
   media:
     - id: 21
@@ -54,7 +65,7 @@ pages:
         y: 30
         width: 170
         height: 10
-        value: URI / 书签 / 声音 / 影片
+        value: URI / 书签 / 声音 / 影片 / 附件
         font: 宋体
         size: 6
         fill: true
@@ -73,6 +84,15 @@ pages:
         width: 170
         height: 8
         value: 书签跳到第二页
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 20
+        y: 78
+        width: 170
+        height: 8
+        value: 打开附件 说明.txt（GotoA）
         font: 宋体
         size: 4
         fill: true

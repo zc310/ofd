@@ -315,6 +315,10 @@ type PageLink struct {
 	TargetPage int
 	// Dest 是跳转目标的位置与缩放，nil 表示没有位置信息。
 	Dest *OutlineDest
+	// AttachmentID 是 GotoA 动作引用的附件 ID，非空时点击打开该附件。
+	AttachmentID string
+	// AttachmentName 是附件名称，用于界面展示与文字匹配，未解析时为空。
+	AttachmentName string
 	// MediaID 是声音或影片动作引用的多媒体资源 ID，0 表示没有媒体动作。
 	MediaID uint64
 	// MediaKind 是媒体类型，sound 或 movie；空表示不是媒体动作。
@@ -1761,6 +1765,17 @@ func appendDocumentClickLinks(ref pageRef, page int, pageIndex map[models.StID]i
 					break
 				}
 			}
+		case action.GotoA != nil && action.GotoA.AttachID != "":
+			link.AttachmentID = action.GotoA.AttachID
+			link.AttachmentName = attachmentName(ref.document, action.GotoA.AttachID)
+			// 附件动作优先按附件名称匹配文字（示例中文字为 “打开附件 说明.txt”），
+			// 名称缺失时退回附件 ID。
+			if link.AttachmentName != "" {
+				text = textMatching(texts, link.AttachmentName)
+			}
+			if text == nil {
+				text = textMatching(texts, action.GotoA.AttachID)
+			}
 		case action.Movie != nil && action.Movie.ResourceID != 0:
 			text = firstUnusedText(texts, *links, page)
 			operator := string(action.Movie.Operator)
@@ -1832,6 +1847,36 @@ func firstUnusedText(texts []*models.TextObject, links []PageLink, page int) *mo
 	return nil
 }
 
+// attachmentAction 返回动作集合中首个附件动作（GotoA）的附件 ID。
+func attachmentAction(actions []models.CtAction, event models.ActionEvent) (string, bool) {
+	for _, action := range actions {
+		if event != "" && action.Event != event {
+			continue
+		}
+		if action.GotoA != nil && action.GotoA.AttachID != "" {
+			return action.GotoA.AttachID, true
+		}
+	}
+	return "", false
+}
+
+// attachmentName 按附件 ID 解析附件名称；文档或缺省时返回空串。
+func attachmentName(document *render.Document, id string) string {
+	if document == nil || id == "" {
+		return ""
+	}
+	list := document.GetAttachments()
+	if list == nil {
+		return ""
+	}
+	for _, attachment := range list.Attachments {
+		if attachment.ID == id {
+			return attachment.Name
+		}
+	}
+	return ""
+}
+
 func textValue(text *models.TextObject) string {
 	if text == nil {
 		return ""
@@ -1896,6 +1941,15 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 				TargetPage: target,
 				Dest:       dest,
 				Event:      string(models.ActionEventClick),
+			})
+			continue
+		}
+		if attachID, ok := attachmentAction(unit.Actions.Action, models.ActionEventClick); ok {
+			emit(PageLink{
+				ID:           id,
+				Boundary:     boundary,
+				AttachmentID: attachID,
+				Event:        string(models.ActionEventClick),
 			})
 			continue
 		}

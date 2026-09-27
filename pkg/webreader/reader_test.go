@@ -57,7 +57,7 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var uri, bookmark, movie *PageLink
+	var uri, bookmark, movie, attachment *PageLink
 	for index := range links {
 		switch {
 		case links[index].URI != "":
@@ -66,6 +66,8 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 			bookmark = &links[index]
 		case links[index].MediaKind == "movie":
 			movie = &links[index]
+		case links[index].AttachmentID != "":
+			attachment = &links[index]
 		}
 	}
 	if uri == nil || uri.URI != "https://github.com/zc310/ofd" || uri.Page != 0 {
@@ -76,6 +78,9 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 	}
 	if movie == nil || movie.MediaID != 22 || movie.Operator != "Play" || movie.Page != 0 {
 		t.Fatalf("影片热区不符: %+v", movie)
+	}
+	if attachment == nil || attachment.AttachmentID != "demo-note" || attachment.AttachmentName != "说明.txt" || attachment.Page != 0 {
+		t.Fatalf("附件热区不符: %+v", attachment)
 	}
 	actions, err := reader.PageMediaActions()
 	if err != nil {

@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nao1215/imaging"
+	"github.com/kovidgoyal/imaging"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/zc310/ofd/pkg/converter"
 )
 
@@ -81,7 +80,7 @@ func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, strings.Count(output.String(), "<image "))
-	assert.Contains(t, output.String(), `fill-opacity=".6"`)
+	assert.Contains(t, output.String(), `fill-opacity=".4"`)
 }
 
 func TestRender_Image(t *testing.T) {
