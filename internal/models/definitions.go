@@ -379,6 +379,7 @@ func (t *DateTime) parseTime(v string) error {
 		"20060102",
 		"20060102150405",
 		"200601021504",
+		"2006-01-02-15-04-05",
 	}
 
 	for _, format := range formats {
