@@ -260,6 +260,52 @@ func TestBuildTableTextAlignedWithHeader(t *testing.T) {
 	}
 }
 
+func TestInlineCodeKeepsExtensionOnSameLine(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindParagraph,
+		Inlines: []Inline{
+			{Text: "把扩展名改成"},
+			{Text: ".zip", Code: true},
+			{Text: "，用解压工具看里面。"},
+		},
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Text.Font 是逻辑字体资源名（MD-N），等宽族名记录在字体资源的 FamilyName 上。
+	families := make(map[string]string, len(document.Fonts))
+	for _, font := range document.Fonts {
+		families[font.Name] = font.FamilyName
+	}
+	var beforeY, codeY float64
+	var foundBefore, foundCode bool
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			text, ok := item.(creator.Text)
+			if !ok {
+				continue
+			}
+			if strings.Contains(text.Value, "扩展名改成") {
+				beforeY = text.Y
+				foundBefore = true
+			}
+			if strings.Contains(text.Value, ".zip") {
+				codeY = text.Y
+				foundCode = true
+				if family := families[text.Font]; family != "Consolas" {
+					t.Fatalf("行内代码字体 = %q（资源名 %q）", family, text.Font)
+				}
+			}
+		}
+	}
+	if !foundBefore || !foundCode {
+		t.Fatalf("缺少前文或扩展名: before=%v code=%v", foundBefore, foundCode)
+	}
+	if beforeY != codeY {
+		t.Fatalf("扩展名被拆到另一行: beforeY=%v codeY=%v", beforeY, codeY)
+	}
+}
+
 func TestBuildCodeLineSpacingUsesCodeLineHeight(t *testing.T) {
 	options := DefaultOptions()
 	document, err := Build(&Document{Blocks: []Block{{
@@ -694,6 +740,47 @@ func TestBuildOfficialPageNumberBelowContent(t *testing.T) {
 	}
 }
 
+func TestQuoteSeparatedFromFollowingTable(t *testing.T) {
+	document, err := Build(&Document{
+		Blocks: []Block{
+			{Kind: KindQuote, Inlines: []Inline{{Text: "引用文本"}}},
+			{Kind: KindTable, Table: &Table{
+				Header: []Cell{{{Text: "名称"}}, {{Text: "数量"}}},
+				Rows:   [][]Cell{{{{Text: "苹果"}}, {{Text: "3"}}}},
+			}},
+		},
+	}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	quoteBottom := 0.0
+	headerTop := 0.0
+	foundQuote, foundHeader := false, false
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			switch value := item.(type) {
+			case creator.Text:
+				if value.FillColor == colorQuote {
+					quoteBottom = value.Y + value.Height
+					foundQuote = true
+				}
+			case creator.Path:
+				if value.FillColor == colorHeaderBG && (!foundHeader || value.Y < headerTop) {
+					headerTop = value.Y
+					foundHeader = true
+				}
+			}
+		}
+	}
+	if !foundQuote || !foundHeader {
+		t.Fatalf("缺少引用或表格: quote=%v header=%v", foundQuote, foundHeader)
+	}
+	gap := headerTop - quoteBottom
+	if gap < 7 {
+		t.Fatalf("引用和表格间距过小: %.2fmm", gap)
+	}
+}
+
 func TestBuildOfficialFontFamilies(t *testing.T) {
 	document, err := Build(&Document{
 		Letterhead: &Letterhead{
@@ -766,6 +853,134 @@ func TestBuildOfficialMarkFonts(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestBuildInlineItalicSetsItalicFlag(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:    KindParagraph,
+		Inlines: []Inline{{Text: "斜体abc", Italic: true}},
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	foundItalicText := false
+	for _, text := range textItems(document) {
+		if strings.Contains(text.Value, "斜体") && text.Italic {
+			foundItalicText = true
+		}
+	}
+	if !foundItalicText {
+		t.Fatalf("行内斜体未设置 Text.Italic")
+	}
+	foundItalicFont := false
+	for _, font := range document.Fonts {
+		if font.Italic {
+			foundItalicFont = true
+		}
+	}
+	if !foundItalicFont {
+		t.Fatalf("未生成 Italic 字体资源")
+	}
+}
+
+func TestBuildStrikeDrawsStrikethroughLine(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:    KindParagraph,
+		Inlines: []Inline{{Text: "删除线abc", Strike: true}},
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	var target *creator.Text
+	for _, text := range textItems(document) {
+		if strings.Contains(text.Value, "删除线") {
+			copied := text
+			target = &copied
+		}
+	}
+	if target == nil {
+		t.Fatalf("缺少删除线文字")
+	}
+	inside := false
+	for _, page := range document.Pages {
+		for _, item := range page.Items {
+			path, ok := item.(creator.Path)
+			if !ok || !colorEqual(path.FillColor, 0x1f, 0x23, 0x28) {
+				continue
+			}
+			if path.Height <= 0 || path.Height > target.Height {
+				continue
+			}
+			if path.Y >= target.Y && path.Y+path.Height <= target.Y+target.Height {
+				inside = true
+			}
+		}
+	}
+	if !inside {
+		t.Fatalf("未在删除线文字中部找到删除线矩形")
+	}
+}
+
+func TestBuildColophonDateOnlyKeepsDateInsideRules(t *testing.T) {
+	document, err := Build(&Document{
+		Colophon: &Colophon{IssuedDate: "2026年9月19日"},
+		Blocks:   []Block{{Kind: KindParagraph, Inlines: []Inline{{Text: "正文"}}}},
+	}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	last := document.Pages[len(document.Pages)-1]
+	var date *creator.Text
+	var lines []creator.Path
+	for _, item := range last.Items {
+		switch value := item.(type) {
+		case creator.Text:
+			if strings.HasSuffix(value.Value, "印发") {
+				copied := value
+				date = &copied
+			}
+		case creator.Path:
+			if colorEqual(value.FillColor, 0xc4, 0xcb, 0xd1) {
+				lines = append(lines, value)
+			}
+		}
+	}
+	if date == nil {
+		t.Fatalf("缺少印发日期")
+	}
+	if len(lines) < 2 {
+		t.Fatalf("版记分隔线不足: %d", len(lines))
+	}
+	dateBottom := date.Y + date.Height
+	below := false
+	bottom := 0.0
+	for _, line := range lines {
+		if line.Y+line.Height > bottom {
+			bottom = line.Y + line.Height
+		}
+		if line.Y >= dateBottom {
+			below = true
+		}
+	}
+	if !below {
+		t.Fatalf("末条分隔线应在印发日期下方")
+	}
+	if bottom < 276.5 || bottom > 277.01 {
+		t.Fatalf("版记下边缘未压准版心下边缘: %.4f", bottom)
+	}
+}
+
+func TestBuildPartialOptionsKeepPageSize(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:    KindParagraph,
+		Inlines: []Inline{{Text: "正文"}},
+	}}}, Options{PageWidth: 100, PageHeight: 120, MarginLeft: 5, MarginRight: 5, MarginTop: 5, MarginBottom: 5})
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	if document.PageSize.Width != 100 || document.PageSize.Height != 120 {
+		t.Fatalf("缺省字号时不应重置页面尺寸: %+v", document.PageSize)
 	}
 }
 
