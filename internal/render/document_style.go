@@ -83,9 +83,16 @@ func getLineJoin(joinStr string) geom.Joiner {
 		return geom.MiterJoin
 	}
 }
-func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam) {
+
+// updateCtPathStyle 应用路径图元的绘制样式。strokeScale 是对象 CTM 对描边
+// 属性（线宽、虚线、斜接限制）的缩放系数：这些属性定义在对象坐标系中，而
+// 路径已被展平到页面坐标，因此需要显式换算，否则带缩放 CTM 的描边会过粗/过细。
+func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam, strokeScale float64) {
 	if object == nil {
 		return
+	}
+	if !finiteFloat(strokeScale) || strokeScale <= 0 {
+		strokeScale = 1
 	}
 	fill, stroke := p.updateDrawParams(ctx, dp)
 	effective := *object
@@ -126,8 +133,12 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Stroke.Value(true) {
-		effective.LineWidth = normalizedLineWidth(effective.LineWidth)
-		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit)
+		effective.LineWidth = normalizedLineWidth(effective.LineWidth * strokeScale)
+		// MiterLimit 与 LineWidth 同属对象坐标系的绝对长度，同比缩放后
+		// applyStroke 里的斜接倍率（MiterLimit / (LineWidth/2)）保持不变。
+		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit * strokeScale)
+		effective.DashPattern = scaledDashPattern(effective.DashPattern, strokeScale)
+		effective.DashOffset *= strokeScale
 		ctx.SetStrokeWidth(effective.LineWidth)
 		p.applyStroke(ctx, stroke, &effective)
 	} else {
@@ -209,6 +220,19 @@ func normalizedMiterLimit(value float64) float64 {
 		return defaultMiterLimit
 	}
 	return value
+}
+
+// scaledDashPattern 按对象 CTM 缩放系数缩放虚线数组。虚线长度与线宽同属
+// 对象坐标系，需要一起换算到页面坐标。
+func scaledDashPattern(pattern *models.StArrayF, scale float64) *models.StArrayF {
+	if pattern == nil || scale == 1 {
+		return pattern
+	}
+	scaled := make(models.StArrayF, len(*pattern))
+	for i, value := range *pattern {
+		scaled[i] = value * scale
+	}
+	return &scaled
 }
 
 func validDashPattern(offset float64, pattern *models.StArrayF) bool {

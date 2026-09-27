@@ -3,6 +3,7 @@ package render
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -10,6 +11,43 @@ import (
 
 // maxCompositeDepth 限制复合图元的递归嵌套深度，防止循环引用导致无限递归。
 const maxCompositeDepth = 32
+
+// compositeAxisEpsilon 是判定 CTM 是否为轴向缩放的阈值。
+const compositeAxisEpsilon = 1e-9
+
+// compositeExtentTolerance 是声明尺寸与 Boundary/CTM 反推范围的相对误差上限，
+// 超过该比例即认为单元声明的 Width/Height 不可信。
+const compositeExtentTolerance = 0.1
+
+// compositeContentExtent 由 CompositeObject 的 Boundary 与 CTM 反推复合单元的
+// 内容范围，即单元坐标系里实际会被映射到 Boundary 的区域。旋转或错切下
+// Boundary 与内容范围不再一一对应，此时不做反推。
+func compositeContentExtent(object models.CompositeObject) (width, height float64, ok bool) {
+	if object.CTM == nil || !object.CTM.IsFinite() {
+		return 0, 0, false
+	}
+	ctm := *object.CTM
+	if math.Abs(ctm[1]) > compositeAxisEpsilon || math.Abs(ctm[2]) > compositeAxisEpsilon {
+		return 0, 0, false
+	}
+	if ctm[0] == 0 || ctm[3] == 0 {
+		return 0, 0, false
+	}
+	width = object.Boundary.Width / math.Abs(ctm[0])
+	height = object.Boundary.Height / math.Abs(ctm[3])
+	if !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+// compositeExtentMismatch 判断声明尺寸与反推范围是否显著不符。
+func compositeExtentMismatch(declared, extent float64) bool {
+	if declared <= 0 {
+		return false
+	}
+	return math.Abs(extent/declared-1) > compositeExtentTolerance
+}
 
 // Composite 绘制复合图元（CompositeObject）。
 //
@@ -43,6 +81,17 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	box := object.Boundary
 	if w <= 0 || h <= 0 || box.Width <= 0 || box.Height <= 0 || !finiteFloat(w) || !finiteFloat(h) {
 		return
+	}
+
+	// 复合单元声明的 Width/Height 与 Boundary/CTM 反推出的内容范围严重不符时，
+	// 声明尺寸不可信：部分生产方按对象 CTM 的倒数写出单元坐标系尺寸。此时按
+	// 反推范围作为内容画布，并且不按透明像素裁剪，否则单元里的小图元会被拉伸
+	// 铺满整个 Boundary（y.ofd 每个单元只有一个字，裁剪后整页变成黑块）。
+	cropToInk := true
+	if extentW, extentH, ok := compositeContentExtent(object); ok &&
+		(compositeExtentMismatch(w, extentW) || compositeExtentMismatch(h, extentH)) {
+		w, h = extentW, extentH
+		cropToInk = false
 	}
 	if object.DrawParam > 0 {
 		if objectDP := p.Document.GetDrawParam(models.StID(object.DrawParam)); objectDP != nil {
@@ -82,11 +131,15 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 
 	// CompositeGraphicUnit 经常使用比实际内容更大的坐标系。去掉单元四周的
 	// 透明区域后，才能把实际可见面板映射到 CompositeObject 的 Boundary。
-	cx0, cy0, cx1, cy1 := contentImageBounds(raster)
-	if cx1 <= cx0 || cy1 <= cy0 {
-		return
+	// 声明尺寸与 Boundary/CTM 不符时画布本身已是内容范围，无需再裁剪。
+	img := raster
+	if cropToInk {
+		cx0, cy0, cx1, cy1 := contentImageBounds(raster)
+		if cx1 <= cx0 || cy1 <= cy0 {
+			return
+		}
+		img = cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	}
-	img := cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
@@ -170,7 +223,8 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp)
+	// 该分支只处理纯填充路径（simpleCompositePath 要求未勾边），描边缩放不适用。
+	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp, 1)
 	ctx.DrawPath(0, 0, path)
 	return true
 }
