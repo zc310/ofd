@@ -465,6 +465,103 @@ func TestOFDColorAlphaUsesOpacitySemantics(t *testing.T) {
 	}
 }
 
+// TestOFDColorZeroAlphaKeepsRGB 保护 OFD 完全透明色（Value=红、Alpha=0）的
+// 原始 RGB：若预乘成全 0，后续渐变色标插值会丢掉红色分量；混合端必须仍全透明。
+func TestOFDColorZeroAlphaKeepsRGB(t *testing.T) {
+	alpha := uint8(0)
+	value := models.Color{RGBA: color.RGBA{R: 255, G: 0, B: 0, A: 255}}
+	got := ofdColorRGBA(models.CTColor{Value: &value, Alpha: &alpha})
+	if got != (color.RGBA{R: 255, A: 0}) {
+		t.Fatalf("ofdColorRGBA(红,Alpha=0) = %v, want {255 0 0 0}", got)
+	}
+	if n := color.NRGBAModel.Convert(got).(color.NRGBA); n != (color.NRGBA{}) {
+		t.Fatalf("NRGBA = %v, want 全透明 {0 0 0 0}", n)
+	}
+}
+
+// TestGradientStopZeroAlphaKeepsColorInInterpolation 保护渐变色标插值：
+// 透明红（Alpha=0）与不透明蓝的中点必须是半透明品红，而不是丢红只剩蓝。
+func TestGradientStopZeroAlphaKeepsColorInInterpolation(t *testing.T) {
+	alpha := uint8(0)
+	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}
+	blue := models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}
+	var stops geom.Grad
+	stops.Add(0, meshColor(red, nil))
+	stops.Add(1, meshColor(blue, nil))
+	if mid := stops.At(0.5); mid != (color.RGBA{R: 63, B: 63, A: 127}) {
+		t.Fatalf("透明红→蓝 中点 = %v, want {63 0 63 127}", mid)
+	}
+}
+
+// TestPathGradientZeroAlphaStopKeepsHueInRaster 覆盖栅格端到端：Extend=0 走
+// ofdLinearGradient（geom 直采），Extend=3 走 canvas 原生渐变，两条插值路径的
+// 中点都必须保留红色分量（品红偏色），不能整段只剩蓝色。
+func TestPathGradientZeroAlphaStopKeepsHueInRaster(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		extend int
+	}{
+		{"Extend=0 ofdLinearGradient", 0},
+		{"Extend=3 canvas原生渐变", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			alpha := uint8(0)
+			object := models.PathObject{CtPath: models.CtPath{
+				CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}},
+				Fill:          true,
+				FillColor: &models.CTColor{AxialShd: &models.CTAxialShd{
+					StartPoint: models.StPos{X: 0, Y: 10},
+					EndPoint:   models.StPos{X: 30, Y: 10},
+					Extend:     tc.extend,
+					Segment: []models.Segment{
+						{Position: 0, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
+						{Position: 1, PositionSet: true, Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+					},
+				}},
+				AbbreviatedData: models.SVGPath{
+					{Type: models.MoveTo, Points: []models.StPos{{X: 0, Y: 0}}},
+					{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 0}}},
+					{Type: models.LineTo, Points: []models.StPos{{X: 30, Y: 20}}},
+					{Type: models.LineTo, Points: []models.StPos{{X: 0, Y: 20}}},
+					{Type: models.Close},
+				},
+			}}
+			const dpi = 72.0
+			c := canvas.New(30, 20)
+			ctx := canvas.NewContext(c)
+			var document Document
+			document.Path(newCanvasBackend(ctx), object, nil, models.StBox{Width: 30, Height: 20})
+			img := rasterizer.Draw(c, canvas.DPI(dpi), canvas.DefaultColorSpace)
+			x := int(math.Round(15.0 / 25.4 * dpi))
+			y := img.Bounds().Dy() - int(math.Round(10.0/25.4*dpi))
+			mid := img.RGBAAt(x, y)
+			// 中点应偏品红（R、B 同时高于 G）；丢红时是浅蓝（R≈G）。
+			if int(mid.R)-int(mid.G) <= 40 {
+				t.Fatalf("渐变中点 = %v, 期望保留红色分量的品红色", mid)
+			}
+		})
+	}
+}
+
+// TestScaleGradientOpacityKeepsZeroAlphaStopRGB 保护对象不透明度缩放：
+// A == 0 色标的字段是 straight RGB 载体，只让 Alpha 参与缩放，不能按预乘公式
+// 把载体分量也乘小。
+func TestScaleGradientOpacityKeepsZeroAlphaStopRGB(t *testing.T) {
+	var stops geom.Grad
+	stops.Add(0, color.RGBA{R: 255, A: 0})
+	stops.Add(1, color.RGBA{B: 255, A: 255})
+	scaled, ok := scaleGradientOpacity(stops.ToLinear(geom.Point{X: 0}, geom.Point{X: 10}), 128).(*geom.LinearGradient)
+	if !ok {
+		t.Fatal("scaleGradientOpacity 应返回缩放后的线性渐变")
+	}
+	if got := scaled.Grad[0].Color; got != (color.RGBA{R: 255, A: 0}) {
+		t.Fatalf("透明红 stop = %v, want {255 0 0 0}", got)
+	}
+	if got := scaled.Grad[1].Color; got != (color.RGBA{B: 128, A: 128}) {
+		t.Fatalf("蓝 stop = %v, want {0 0 128 128}", got)
+	}
+}
+
 func TestPathGradientAppliesObjectAlphaToFillAndStroke(t *testing.T) {
 	alpha := uint8(51)
 	gradientColor := func() *models.CTColor {

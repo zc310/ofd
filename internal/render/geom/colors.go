@@ -259,16 +259,31 @@ func (g *RadialGradient) At(x, y float64) color.RGBA {
 	return g.Grad.At(0)
 }
 
+// colorLerp 在非预乘（straight）空间插值颜色与不透明度。OFD/SVG/PDF 的渐变都
+// 独立插值 RGB 与 Alpha；若直接在预乘空间插值，透明红（255,0,0,alpha=0）会被
+// 压成 (0,0,0,0)，与蓝色混合后红色分量完全消失，整段渐变只剩蓝色。
 func colorLerp(c0, c1 color.RGBA, t float64) color.RGBA {
-	r0, g0, b0, a0 := c0.RGBA()
-	r1, g1, b1, a1 := c1.RGBA()
+	n0 := straightColor(c0)
+	n1 := straightColor(c1)
 	T := uint32(t*65535.0 + 0.5)
-	return color.RGBA{
-		lerp(r0, r1, T),
-		lerp(g0, g1, T),
-		lerp(b0, b1, T),
-		lerp(a0, a1, T),
+	n := color.NRGBA{
+		R: lerp(uint32(n0.R)*0x101, uint32(n1.R)*0x101, T),
+		G: lerp(uint32(n0.G)*0x101, uint32(n1.G)*0x101, T),
+		B: lerp(uint32(n0.B)*0x101, uint32(n1.B)*0x101, T),
+		A: lerp(uint32(n0.A)*0x101, uint32(n1.A)*0x101, T),
 	}
+	return color.RGBAModel.Convert(n).(color.RGBA)
+}
+
+// straightColor 把色标转为非预乘（straight）分量。A > 0 时按预乘值还原；
+// A == 0 时 NRGBAModel 会因除零保护把 RGB 归零（RGBA{255,0,0,0} 也变成
+// {0,0,0,0}），而规范的预乘值在 A == 0 时必为全 0，非 0 字段只可能是构造方
+// （render.premultiplied）保留的 straight 载体，此处按字段直读。
+func straightColor(c color.RGBA) color.NRGBA {
+	if c.A == 0 {
+		return color.NRGBA{R: c.R, G: c.G, B: c.B}
+	}
+	return color.NRGBAModel.Convert(c).(color.NRGBA)
 }
 
 func lerp(a, b, t uint32) uint8 {

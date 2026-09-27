@@ -168,6 +168,12 @@ func scaleGradientOpacity(gradient geom.Gradient, opacity uint8) geom.Gradient {
 	scaleStops := func(stops geom.Grad) geom.Grad {
 		result := make(geom.Grad, len(stops))
 		for i, stop := range stops {
+			// A == 0 的色标以字段保存 straight RGB 载体（见 premultiplied），
+			// 不透明度只作用于 Alpha，不能按预乘公式缩放载体分量。
+			if stop.Color.A == 0 {
+				result[i] = stop
+				continue
+			}
 			stop.Color.R = uint8(uint16(stop.Color.R) * uint16(opacity) / 255)
 			stop.Color.G = uint8(uint16(stop.Color.G) * uint16(opacity) / 255)
 			stop.Color.B = uint8(uint16(stop.Color.B) * uint16(opacity) / 255)
