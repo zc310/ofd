@@ -7,8 +7,55 @@ import (
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
+
+// TestSignoutStampCompositeAnnotationRendersInk 回归：手写签名以 CompositeObject
+// 形式的 Stamp 注解出现，annot 必须绘制复合图元，而不是像以前那样整类跳过。
+func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ofdrw", "signout.ofd"))
+	if err != nil {
+		t.Skipf("样例不可用: %v", err)
+	}
+	defer ofd.Close()
+
+	doc := ofd.Documents[0]
+	pageAnnotations := doc.GetAnnotation(1)
+	if pageAnnotations == nil {
+		t.Fatal("page 1 annotations are missing")
+	}
+	var annot *models.Annot
+	for _, candidate := range pageAnnotations.Annots {
+		if candidate.Appearance == nil || candidate.Appearance.Boundary == nil {
+			continue
+		}
+		for _, item := range candidate.Appearance.Items {
+			if item.Kind == models.PageItemComposite {
+				annot = candidate
+				break
+			}
+		}
+		if annot != nil {
+			break
+		}
+	}
+	if annot == nil {
+		t.Fatal("未找到复合图元形式的印章注解")
+	}
+
+	renderDoc := NewDocument(canvas.White, doc)
+	box := *annot.Appearance.Boundary
+	c := canvas.New(box.Width, box.Height)
+	ctx := canvas.NewContext(c)
+	ctx.SetFillColor(canvas.White)
+	ctx.DrawPath(0, 0, canvas.Rectangle(box.Width, box.Height))
+	renderDoc.Annot(newCanvasBackend(ctx), annot, box)
+
+	if pixels := countNonWhite(rasterizer.Draw(c, canvas.DPI(200), canvas.DefaultColorSpace)); pixels < 100 {
+		t.Fatalf("手写签章注解只绘制了 %d 个非白像素", pixels)
+	}
+}
 
 func TestAnoStampAnnotationRendersText(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
