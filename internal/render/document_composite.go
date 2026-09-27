@@ -19,6 +19,17 @@ const compositeAxisEpsilon = 1e-9
 // 超过该比例即认为单元声明的 Width/Height 不可信。
 const compositeExtentTolerance = 0.1
 
+// 收缩离屏画布时给内容包围盒预留的边距：固定毫米数加自身尺寸的比例，
+// 用于容忍字形轮廓略微溢出 Boundary。
+const (
+	compositeInkMarginAbs   = 0.5
+	compositeInkMarginRatio = 0.02
+)
+
+// compositeInkMaxAreaRatio 是内容包围盒面积占整幅画布面积的上限。超过该比例
+// 时不收缩画布，因为此时节省的离屏像素有限，却引入了毫米取整误差。
+const compositeInkMaxAreaRatio = 0.5
+
 // compositeContentExtent 由 CompositeObject 的 Boundary 与 CTM 反推复合单元的
 // 内容范围，即单元坐标系里实际会被映射到 Boundary 的区域。旋转或错切下
 // Boundary 与内容范围不再一一对应，此时不做反推。
@@ -47,6 +58,122 @@ func compositeExtentMismatch(declared, extent float64) bool {
 		return false
 	}
 	return math.Abs(extent/declared-1) > compositeExtentTolerance
+}
+
+// compositeInkRect 估算复合单元全部内容在单元画布中的包围盒（毫米，y 向下）。
+//
+// 路径按实际轮廓取包围盒：路径数据可能远超出声明的 Boundary，只信任
+// Boundary 会把可见内容裁掉。文字按 Boundary 估算并留出边距。只有可见范围
+// 能可靠推断、且绘制位置随离屏画布原点一起平移时才返回结果；描边、旋转和
+// 嵌套内容的实际绘制都可能越出推断范围，此时返回 ok=false，由调用方沿用
+// 整幅画布。
+func (p *Document) compositeInkRect(unit *models.CompositeGraphicUnit, w, h float64) (models.StBox, bool) {
+	if unit == nil || w <= 0 || h <= 0 {
+		return models.StBox{}, false
+	}
+	axisAligned := func(ctm *models.CTM) bool {
+		if ctm == nil {
+			return true
+		}
+		return ctm.IsFinite() && math.Abs(ctm[1]) <= compositeAxisEpsilon &&
+			math.Abs(ctm[2]) <= compositeAxisEpsilon
+	}
+	var (
+		x0, y0, x1, y1 float64
+		seen           bool
+	)
+	add := func(cx0, cy0, cx1, cy1 float64) {
+		if !seen {
+			x0, y0, x1, y1 = cx0, cy0, cx1, cy1
+			seen = true
+			return
+		}
+		x0, y0 = math.Min(x0, cx0), math.Min(y0, cy0)
+		x1, y1 = math.Max(x1, cx1), math.Max(y1, cy1)
+	}
+	for _, item := range unit.Content.Items {
+		switch item.Kind {
+		case models.PageItemText:
+			if item.Text == nil || !axisAligned(item.Text.CTM) || item.Text.Stroke ||
+				!item.Text.Boundary.IsFinite() {
+				return models.StBox{}, false
+			}
+			// 单元内容的 y 轴自下而上，单元画布的 y 轴自上而下。
+			b := item.Text.Boundary
+			add(b.X, h-b.Y-b.Height, b.X+b.Width, h-b.Y)
+		case models.PageItemPath:
+			if item.Path == nil || !axisAligned(item.Path.CTM) || item.Path.Stroke.Value(true) {
+				return models.StBox{}, false
+			}
+			// buildObjectPathWithTransform 已按 h 翻转 y 轴，得到的就是画布坐标。
+			bounds := p.buildObjectPathWithTransform(*item.Path, h, nil).Bounds()
+			if bounds.Empty() {
+				return models.StBox{}, false
+			}
+			add(bounds.X0, bounds.Y0, bounds.X1, bounds.Y1)
+		default:
+			// 嵌套块、嵌套复合图元和图片都不参与收缩。
+			//
+			// 图片由 ctx.RenderImage 配合 imageMatrix 放置，该矩阵直接由
+			// pb.Height 推导并已在矩阵内部完成 y 轴翻转，不经过离屏画布的
+			// 坐标系，因此 surface.Translate 无法移动它；收缩画布会把图片
+			// 推到画布之外。缩放方向也与文字/路径相反（文字/路径按
+			// h-坐标 定位，图片按 pb.Height-坐标 定位），同一单元内无法用
+			// 一次平移同时照顾两者。
+			return models.StBox{}, false
+		}
+	}
+	if !seen {
+		return models.StBox{}, false
+	}
+	// 留出安全边距：字形轮廓可能略微溢出文字 Boundary，边距同时覆盖栅格
+	// 取整误差。包围盒裁剪到画布内。
+	x0 -= compositeInkMarginAbs + compositeInkMarginRatio*(x1-x0)
+	x1 += compositeInkMarginAbs + compositeInkMarginRatio*(x1-x0)
+	y0 -= compositeInkMarginAbs + compositeInkMarginRatio*(y1-y0)
+	y1 += compositeInkMarginAbs + compositeInkMarginRatio*(y1-y0)
+	x0, y0 = math.Max(x0, 0), math.Max(y0, 0)
+	x1, y1 = math.Min(x1, w), math.Min(y1, h)
+	iw, ih := x1-x0, y1-y0
+	if !finiteFloat(iw) || !finiteFloat(ih) || iw <= 0 || ih <= 0 {
+		return models.StBox{}, false
+	}
+	// 收益过小时不收缩：离屏画布按毫米取整，略小于原画布反而可能带来
+	// 额外的取整误差。
+	if iw*ih > compositeInkMaxAreaRatio*w*h {
+		return models.StBox{}, false
+	}
+	return models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true
+}
+
+// rasterizeCompositeUnit 在 canvasBox 指定的离屏画布上绘制复合单元内容。
+// canvasBox 可以只覆盖单元画布的一部分（tight 为 true），此时先平移坐标系，
+// 让内容按原单元坐标绘制并落到画布左上方。逻辑坐标系始终是完整的 w×h，
+// 因此无论画布是否收缩，内容的相对位置都不变。
+func (p *Document) rasterizeCompositeUnit(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
+	canvasBox models.StBox, tight bool, w, h, dpi float64,
+	compositeDepth int, budget *renderBudget) image.Image {
+	surface := newOffscreenSurface(canvasBox.Width, canvasBox.Height, geom.DPI(dpi))
+	if surface == nil {
+		return nil
+	}
+	if tight {
+		surface.Push()
+		surface.Translate(-canvasBox.X, -canvasBox.Y)
+		defer surface.Pop()
+	}
+	p.drawItemsWithTransform(surface, unit.Content.Items, dp,
+		models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
+	return surface.Raster()
+}
+
+// compositeRasterBlank 判断离屏栅格结果是否整幅透明。
+func compositeRasterBlank(raster image.Image) bool {
+	if raster == nil || raster.Bounds().Empty() {
+		return true
+	}
+	x0, y0, x1, y1 := contentImageBounds(raster)
+	return x1 <= x0 || y1 <= y0
 }
 
 // Composite 绘制复合图元（CompositeObject）。
@@ -102,6 +229,9 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if p.renderSimpleCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip) {
 		return
 	}
+	if p.renderCompositeTextVector(ctx, object, unit, dp, pb, parentCTM, parentClip, w, h) {
+		return
+	}
 
 	// 在创建离屏画布前扣除预算，避免异常尺寸先完成分配再被限制。
 	dpi := p.dpi.DPI() * box.Width / w
@@ -114,17 +244,33 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if dpi < 10 {
 		dpi = 10
 	}
-	if !budget.allowOffscreenPixels(w, h, dpi) {
+	// 按内容包围盒收缩离屏画布。声明坐标系常常远大于实际内容：y.ofd 的
+	// 每个单元只画一行字，却按整页尺寸分配位图（每单元约 7.5M 像素），
+	// 离屏像素预算每页画满约 26 个单元就耗尽，后续单元被静默丢弃，
+	// 表现为 PDF 中整段文字消失。cropToInk 分支依赖“裁掉透明边后铺满
+	// Boundary”的语义，收缩画布会改变最终映射，因此只在按内容范围
+	// 建画布时收缩。
+	canvasBox := models.StBox{Width: w, Height: h}
+	tight := false
+	if !cropToInk {
+		if rect, ok := p.compositeInkRect(unit, w, h); ok {
+			canvasBox, tight = rect, true
+		}
+	}
+	if !budget.allowOffscreenPixels(canvasBox.Width, canvasBox.Height, dpi) {
 		return
 	}
 
-	// 在单元自身的坐标系中绘制全部内容。
-	surface := newOffscreenSurface(w, h, geom.DPI(dpi))
-	p.drawItemsWithTransform(surface, unit.Content.Items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
+	raster := p.rasterizeCompositeUnit(unit, dp, canvasBox, tight, w, h, dpi, compositeDepth, budget)
+	if tight && compositeRasterBlank(raster) {
+		// 包围盒推断与实际绘制范围不符时，收缩后的画布会整幅空白。回退到
+		// 整幅画布重新栅格化，保证收缩只是优化而不会丢内容。
+		canvasBox, tight = models.StBox{Width: w, Height: h}, false
+		raster = p.rasterizeCompositeUnit(unit, dp, canvasBox, false, w, h, dpi, compositeDepth, budget)
+	}
 
 	// 这里使用调用方传入的输出分辨率，根据复合单元在页面上的放置宽度
 	// 推算离屏栅格分辨率；实际值还会受到上下限和离屏像素预算限制。
-	var raster image.Image = surface.Raster()
 	if raster == nil || raster.Bounds().Empty() {
 		return
 	}
@@ -141,6 +287,18 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		img = cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	}
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
+	// 离屏画布收缩到内容包围盒后，离屏图只代表单元画布的 canvasBox 子区域，
+	// 必须映射回该子区域对应的 Boundary 矩形，否则内容会整体偏移。
+	drawBox := box
+	if tight {
+		drawBox = models.StBox{
+			X:      box.X + box.Width*canvasBox.X/w,
+			Y:      box.Y + box.Height*(h-canvasBox.Y-canvasBox.Height)/h,
+			Width:  box.Width * canvasBox.Width / w,
+			Height: box.Height * canvasBox.Height / h,
+		}
+		ctm = models.CTM{drawBox.Width, 0, 0, drawBox.Height, 0, 0}
+	}
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
 		if !ctm.IsFinite() {
@@ -149,7 +307,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
-	m := imageMatrix(box, img, ctm, pb.Height)
+	m := imageMatrix(drawBox, img, ctm, pb.Height)
 	if !finiteMatrix(m) {
 		return
 	}
@@ -226,6 +384,59 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	// 该分支只处理纯填充路径（simpleCompositePath 要求未勾边），描边缩放不适用。
 	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp, 1)
 	ctx.DrawPath(0, 0, path)
+	return true
+}
+
+// renderCompositeTextVector 把只含文字的复合图元直接画进页面矢量表面，使
+// PDF/SVG 保留真实文字（可复制、可检索），而不是烘焙成位图。
+//
+// y.ofd 的每个复合单元只有一行文字。此前这类单元全部走栅格化回退：文字被
+// 压进位图，PDF 里没有任何文字算子，pdftotext 提取 0 字符；同时离屏画布按
+// 单元声明的整页尺寸分配，白白消耗预算并挤掉后续单元。
+//
+// 位置映射与栅格化分支保持一致：单元画布 (0,0)-(w,h) 映射到 Boundary，
+// 因此这里用同一矩阵变换页面上下文，再以完整单元坐标系绘制文字。
+func (p *Document) renderCompositeTextVector(ctx DrawContext, object models.CompositeObject,
+	unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox,
+	parentCTM *models.CTM, parentClip *geom.Path, w, h float64) bool {
+	if unit == nil || len(unit.Content.Items) == 0 {
+		return false
+	}
+	// 父级变换与父级裁剪、以及复合图元自身的裁剪，在矢量分支里需要单独还原；
+	// 这些情况交回栅格化回退。
+	if parentCTM != nil || parentClip != nil || object.Clips != nil {
+		return false
+	}
+	// 只处理纯文字单元。混有路径、图像或嵌套复合图元时单元需要独立绘制
+	// 表面（例如图案填充的单元格），保持栅格化。
+	items := make([]models.PageItem, 0, len(unit.Content.Items))
+	for _, item := range unit.Content.Items {
+		if item.Kind != models.PageItemText || item.Text == nil {
+			return false
+		}
+		text := *item.Text
+		if !text.VisibleValue() || !text.CTM.IsFinite() || !text.Boundary.IsFinite() {
+			return false
+		}
+		// Composite Alpha 表示复合图元整体透明度。矢量分支没有独立的透明度
+		// 分组，与单路径分支一致地合并到文字填充色。
+		if object.Alpha != nil {
+			text.FillColor = cloneCompositeColor(text.FillColor, graphicOpacity(object.Alpha))
+		}
+		items = append(items, models.PageItem{Kind: models.PageItemText, Text: &text})
+	}
+
+	box := object.Boundary
+	matrix := imageMatrixWH(box, w, h, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
+	if !finiteMatrix(matrix) {
+		return false
+	}
+	var budget renderBudget
+	budget.reset()
+	ctx.Push()
+	defer ctx.Pop()
+	ctx.Transform(matrix)
+	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, nil, 1, &budget)
 	return true
 }
 
