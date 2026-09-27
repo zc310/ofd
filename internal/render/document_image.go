@@ -8,8 +8,10 @@ import (
 	"image/draw"
 	"log/slog"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	_ "github.com/dkrisman/gobig2"
 	"github.com/zc310/ofd/internal/media"
@@ -612,8 +614,20 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 // 之后按行内列号递推，省掉每个像素的 PixOffset 调用。
 func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
+	if workers := maskRowWorkers(width, height); workers > 1 {
+		runMaskRows(workers, height, func(lo, hi int) {
+			maskYCbCrRows(src, mask, out, imgMin, maskMin, lo, hi)
+		})
+		return
+	}
+	maskYCbCrRows(src, mask, out, imgMin, maskMin, 0, height)
+}
+
+// maskYCbCrRows 合成 [lo,hi) 行区间的掩码 alpha。
+func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := 0; row < height; row++ {
+	for row := lo; row < hi; row++ {
 		y := src.Rect.Min.Y + row
 		yi := row * src.YStride
 		oi := out.PixOffset(src.Rect.Min.X, y)
@@ -635,15 +649,76 @@ func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin
 	}
 }
 
-// applyMaskNRGBA 用掩码 alpha 就地合成 NRGBA 图像。
+// 掩码合成的并行参数。图案单元这类大尺寸图片的掩码合成是纯 CPU 的逐像素
+// 循环，按行分块后可以线性扩展到多核。
+const (
+	// maskParallelThreshold 是并行合成的最小像素数。低于该值时 goroutine
+	// 调度与闭包开销超过收益，保持串行。
+	maskParallelThreshold = 1 << 18
+	// maskParallelWorkers 限制单次合成的并发数。页面渲染本身已按页并行，
+	// 这里取小值以免与页面级并发叠加后过度订阅 CPU。
+	maskParallelWorkers = 4
+)
+
+// maskRowWorkers 返回本次掩码合成可用的并发数，返回 1 表示串行。
+// 像素数不足阈值时 goroutine 调度与闭包开销超过收益；页面渲染本身已按页
+// 并发，因此单次合成的并发数取小值，避免叠加后过度订阅 CPU。
+func maskRowWorkers(width, height int) int {
+	workers := maskParallelWorkers
+	if v := runtime.GOMAXPROCS(0); v < workers {
+		workers = v
+	}
+	if workers <= 1 || width*height < maskParallelThreshold {
+		return 1
+	}
+	return workers
+}
+
+// runMaskRows 把 [0,height) 的行区间分块交给多个 goroutine 执行，fn 负责
+// 处理分配到的 [lo,hi) 行。各块写入互不重叠的像素区间，可以安全并发。
+func runMaskRows(workers, height int, fn func(lo, hi int)) {
+	if workers <= 1 {
+		fn(0, height)
+		return
+	}
+	rows := (height + workers - 1) / workers
+	var wg sync.WaitGroup
+	for lo := 0; lo < height; lo += rows {
+		hi := lo + rows
+		if hi > height {
+			hi = height
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			fn(lo, hi)
+		}(lo, hi)
+	}
+	wg.Wait()
+}
+
+// applyMaskNRGBA 用掩码 alpha 合成 NRGBA 图像。
 //
 // 图案单元等大尺寸图片会逐像素经过这里，是图片路径的主要开销，因此按行切片
 // 遍历：行首偏移只计算一次，之后每像素递增 4 字节，省掉每个像素三次
 // PixOffset 调用与重复的边界判断。
 func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
+	if workers := maskRowWorkers(width, height); workers > 1 {
+		runMaskRows(workers, height, func(lo, hi int) {
+			maskNGBGARows(src, mask, out, imgMin, maskMin, lo, hi)
+		})
+		return
+	}
+	maskNGBGARows(src, mask, out, imgMin, maskMin, 0, height)
+}
+
+// maskNGBGARows 合成 [lo,hi) 行区间的掩码 alpha。行首偏移只计算一次，之后
+// 每像素递增 4 字节，省掉每个像素三次 PixOffset 调用与重复的边界判断。
+func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := 0; row < height; row++ {
+	for row := lo; row < hi; row++ {
 		y := src.Rect.Min.Y + row
 		si := src.PixOffset(src.Rect.Min.X, y)
 		oi := out.PixOffset(src.Rect.Min.X, y)
@@ -664,8 +739,21 @@ func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin
 // 每像素递增 4 字节；分支不用 continue，保证下标推进不会被跳过。
 func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
+	if workers := maskRowWorkers(width, height); workers > 1 {
+		runMaskRows(workers, height, func(lo, hi int) {
+			maskRGBARows(src, mask, out, imgMin, maskMin, lo, hi)
+		})
+		return
+	}
+	maskRGBARows(src, mask, out, imgMin, maskMin, 0, height)
+}
+
+// maskRGBARows 合成 [lo,hi) 行区间的掩码 alpha。分支不用 continue，保证
+// 下标推进不会被跳过。
+func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := 0; row < height; row++ {
+	for row := lo; row < hi; row++ {
 		y := src.Rect.Min.Y + row
 		si := src.PixOffset(src.Rect.Min.X, y)
 		oi := out.PixOffset(src.Rect.Min.X, y)
