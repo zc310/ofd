@@ -115,11 +115,32 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 
 在支持 File Handling API 的 Chromium 浏览器中，将阅读器安装为 PWA 后，manifest 会将 `.ofd` 注册为可打开的文件类型。用户可以在系统文件管理器中将 `.ofd` 文件设置为使用该阅读器打开；浏览器通过 `launchQueue` 将文件交给页面。未安装为 PWA 或浏览器不支持该 API 时，仍可使用“打开文件”和拖放方式。
 
+## 用 URL 参数直接打开远程文档
+
+页面地址带上 `?file=<url>` 时，打开页面会自动下载并打开该文档，不需要再手动选择文件：
+
+```text
+http://localhost:8080/?file=docs/sample.ofd
+http://localhost:8080/?file=https%3A%2F%2Fexample.com%2Fsample.ofd&name=%E6%A0%B7%E4%BE%8B.ofd
+```
+
+- `file` 支持与页面同源的相对路径和 `http`/`https` 绝对地址；非 HTTP 协议会被拒绝。
+- `name` 可选，用于覆盖从地址推断出的文件名（例如下载地址没有 `.ofd` 后缀时）。不带 `name` 时取 URL 路径的最后一段，路径为空则用 `document.ofd`。
+- 下载不等待 WASM 初始化，与模块和字体加载并行，最长等待 `remoteFileTimeout`（120 秒），超过 `remoteFileMaxBytes`（256 MB）直接失败。
+- 打开成功后地址栏会改写为 `?file=`（`history.replaceState`），因此链接可以直接分享，刷新也会重新加载同一文档；用户在页面内使用本地文件、最近文件或拖放打开时，这两个参数会被清除。
+- 浏览器前进/后退（`popstate`）会按新地址重新加载对应的远程文档。
+- 远程文档同样进入“最近打开”，沿用 `recentFileMaxBytes`（64 MB）上限，超限的文件不写入 IndexedDB。
+- 下载请求使用 `cache: 'no-store'`，`service-worker.js` 据此让文档响应绕过 shell 缓存，因此同一地址不会读到陈旧副本。
+- 跨域地址需要目标服务器返回 `Access-Control-Allow-Origin`，否则浏览器会阻止读取；同源部署（含把 `.ofd` 放在 `web` 目录或其子目录下的静态服务）没有这个限制。
+- 下载失败只提示错误，不会锁死页面：启动页和「打开文件」、拖放入口保持可用。
+
 ## 资源缓存与更新
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。`service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
 页面入口、页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，把 `service-worker.js` 的 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
+
+`?file=` 下载的远程文档不参与这套缓存：请求带 `cache: 'no-store'`，Service Worker 直接放行，既不写入 shell 缓存也不读取缓存，因此不会占用 shell 缓存空间或命中陈旧文档。
 
 客户端已经做了两处兜底，不依赖服务器配置即可保证更新：
 
