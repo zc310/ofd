@@ -129,6 +129,66 @@ func NewRadialGradient(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 	return &RadialGradient{C0: c0, R0: r0, C1: c1, R1: r1, cd: cd, dr: dr, a: cd.Dot(cd) - dr*dr}
 }
 
+// RadialParameter 返回点 (x,y) 在两圆插值族 ((1-t)·C0+t·C1, R0+t·dr) 中的参数 t，
+// 以及该点是否存在可用的解。参数 t 是 PDF/pixman 的同一参数：圆的半径为 R0+t·dr。
+//
+// 一个点可能同时落在两个圆上，按绘制顺序取较大的 t（后绘制的圆覆盖先绘制的）。
+// 轴外的根只有在对应方向允许延伸时才参与选择：extend 第 0 位允许 t<0（起点侧），
+// 第 1 位允许 t>1（终点侧）；[0,1] 内的根始终可用。半径 R0+t·dr 为负的圆被排除。
+// 没有任何可用解时 ok 为 false，表示该点不在着色范围内（未延伸区域保持透明）。
+//
+// 不同 Extend 组合会因此得到不同结果：例如点同时落在 t=0.3 与 t=1.8 两个圆上时，
+// Extend 含终点位就取 1.8（终点色），否则取 0.3（轴内渐变），与 PDF 渲染一致。
+func (g *RadialGradient) RadialParameter(x, y float64, extend int) (float64, bool) {
+	pd := Point{x, y}.Sub(g.C0)
+	b := pd.Dot(g.cd) + g.R0*g.dr
+	c := pd.Dot(pd) - g.R0*g.R0
+	a := g.a
+	allowed := func(t float64) bool {
+		if math.IsNaN(t) || g.R0+g.dr*t < 0 {
+			return false
+		}
+		switch {
+		case t < 0:
+			return extend&1 != 0
+		case t > 1:
+			return extend&2 != 0
+		}
+		return true
+	}
+
+	best, found := 0.0, false
+	consider := func(t float64) {
+		if !allowed(t) {
+			return
+		}
+		if !found || t > best {
+			best, found = t, true
+		}
+	}
+
+	if a == 0 {
+		if b == 0 {
+			return 0, false
+		}
+		consider(c / (2.0 * b))
+		return best, found
+	}
+
+	discr := b*b - a*c
+	if discr < 0 {
+		return 0, false
+	}
+	sqrtDiscr := math.Sqrt(discr)
+	inva := 1.0 / a
+	consider((b - sqrtDiscr) * inva)
+	consider((b + sqrtDiscr) * inva)
+	if found {
+		return best, true
+	}
+	return 0, false
+}
+
 // At 返回 (x,y) 处的颜色（参考 pixman-radial-gradient 实现）。
 func (g *RadialGradient) At(x, y float64) color.RGBA {
 	if len(g.Grad) == 0 {
