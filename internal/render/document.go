@@ -450,16 +450,21 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
+	// 预算作用域为整个注解外观，与 drawPageBlock 一致：注解内的图元共享同一份
+	// 预算，逐图元新建会让图元数量多的注解成倍放大离屏与图案上限。
+	var budget renderBudget
+	budget.reset()
 	box := *annot.Appearance.Boundary
 	for _, item := range annot.Appearance.Items {
-		p.annotItem(ctx, item, box, pb)
+		p.annotItem(ctx, item, box, pb, &budget)
 	}
 }
 
 // annotItem 绘制注解外观中的一个图元。外观内各图元的 Boundary 相对
 // Appearance.Boundary 左上角，这里按 box 平移后再绘制；复合图元（如手写签名
 // 的矢量笔迹）与嵌套块同样要绘制，不能像以前那样被直接跳过。
-func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox) {
+// budget 由 annot 创建并在整个外观的图元与嵌套块之间共享。
+func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox, budget *renderBudget) {
 	switch item.Kind {
 	case models.PageItemImage:
 		object := *item.Image
@@ -468,28 +473,22 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 	case models.PageItemPath:
 		object := *item.Path
 		object.Boundary = object.Boundary.CopyAndShift(&box)
-		var budget renderBudget
-		budget.reset()
-		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
+		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
 	case models.PageItemText:
 		object := *item.Text
 		object.Boundary = object.Boundary.CopyAndShift(&box)
-		var budget renderBudget
-		budget.reset()
-		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
+		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
 	case models.PageItemComposite:
 		object := *item.Composite
 		object.Boundary = object.Boundary.CopyAndShift(&box)
-		var budget renderBudget
-		budget.reset()
-		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, 0, &budget)
+		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, 0, budget)
 	case models.PageItemBlock:
 		if item.Block == nil {
 			return
 		}
 		// 块与子图元共用父级坐标系，因此仍以同一个 box 平移。
 		for _, child := range item.Block.Items {
-			p.annotItem(ctx, child, box, pb)
+			p.annotItem(ctx, child, box, pb, budget)
 		}
 	}
 }

@@ -17,8 +17,8 @@ func (p *Document) Text(ctx DrawContext, object models.TextObject, dp *models.Dr
 }
 
 func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
-		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) || !finiteFloat(object.Size) {
+	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) ||
+		!finiteFloat(object.Size) {
 		return
 	}
 	if parentCTM != nil && object.CTM != nil && !parentCTM.Multiply(object.CTM).IsFinite() {

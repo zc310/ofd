@@ -188,8 +188,7 @@ func (p *Document) Composite(ctx DrawContext, object models.CompositeObject, dp 
 }
 
 func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
-		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
+	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
 	if compositeDepth >= maxCompositeDepth {
@@ -275,6 +274,20 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		return
 	}
 
+	p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip)
+}
+
+// placeCompositeImage 把已栅格化的复合单元内容按 CompositeObject 的 Boundary
+// 贴回页面：按需裁掉透明边、计算放置矩阵、应用裁剪区与整体透明度，最后经
+// RenderImage 绘制。放置矩阵不可用时放弃该复合图元，返回 false。
+//
+// canvasBox/tight 描述离屏画布覆盖单元画布的范围：tight 为真时画布只覆盖
+// canvasBox 子区域，离屏图必须映射回该子区域对应的 Boundary 矩形，否则内容
+// 会整体偏移。cropToInk 为真表示单元声明尺寸可信，需要裁掉四周透明区域再把
+// 可见面板铺满 Boundary。
+func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeObject, raster image.Image,
+	canvasBox models.StBox, tight bool, w, h float64, cropToInk bool,
+	pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) bool {
 	// CompositeGraphicUnit 经常使用比实际内容更大的坐标系。去掉单元四周的
 	// 透明区域后，才能把实际可见面板映射到 CompositeObject 的 Boundary。
 	// 声明尺寸与 Boundary/CTM 不符时画布本身已是内容范围，无需再裁剪。
@@ -282,10 +295,11 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if cropToInk {
 		cx0, cy0, cx1, cy1 := contentImageBounds(raster)
 		if cx1 <= cx0 || cy1 <= cy0 {
-			return
+			return false
 		}
 		img = cropImage(raster, int(cx0), int(cy0), int(cx1), int(cy1))
 	}
+	box := object.Boundary
 	ctm := models.CTM{box.Width, 0, 0, box.Height, 0, 0}
 	// 离屏画布收缩到内容包围盒后，离屏图只代表单元画布的 canvasBox 子区域，
 	// 必须映射回该子区域对应的 Boundary 矩形，否则内容会整体偏移。
@@ -302,14 +316,14 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
 		if !ctm.IsFinite() {
-			return
+			return false
 		}
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
 	m := imageMatrix(drawBox, img, ctm, pb.Height)
 	if !finiteMatrix(m) {
-		return
+		return false
 	}
 	// Clip 的 Area/Path 坐标经过自身 CTM 后位于页面坐标系。buildImageClip
 	// 会依据 TransFlag 决定是否叠加 CompositeObject 的 CTM，避免在 false
@@ -317,14 +331,14 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	clipCTM := models.IdentityMatrix
 	if object.CTM != nil {
 		if !object.CTM.IsFinite() {
-			return
+			return false
 		}
 		clipCTM = *object.CTM
 	}
 	if parentCTM != nil {
 		clipCTM = *parentCTM.Multiply(&clipCTM)
 		if !clipCTM.IsFinite() {
-			return
+			return false
 		}
 	}
 	if clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM); clip != nil {
@@ -339,9 +353,10 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	}
 	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
-		return
+		return false
 	}
 	ctx.RenderImage(img, m)
+	return true
 }
 
 // renderSimpleCompositeVector 将常见的单路径复合图元保持为矢量绘制。
