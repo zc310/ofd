@@ -48,7 +48,7 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 		cc.HasValue = true
 	}
 
-	cc.Gradient = p.pathGradient(source, identityGradientTransform)
+	cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
 	return cc
 }
 
