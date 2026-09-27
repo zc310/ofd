@@ -67,6 +67,9 @@ type textFaces struct {
 	base FontFace
 	// hScale 是文字的水平缩放比例。
 	hScale float64
+	// native 为真时直接把 base（Boundary 空间渐变）交给矢量后端，让 canvas
+	// 写出原生 Shading 并保留真实文字；仅栅格后端需要逐 run 重映射渐变。
+	native bool
 }
 
 // newTextFaces 建立按 run 提供字体面的辅助对象。fill 为 Boundary 空间的填充色。
@@ -87,6 +90,9 @@ func (t *textFaces) gradient() geom.Gradient {
 func (t *textFaces) run(runX, runY float64) FontFace {
 	if t == nil {
 		return nil
+	}
+	if t.native {
+		return t.base
 	}
 	gradient := t.gradient()
 	if gradient == nil || t.engine == nil || t.family == nil {
@@ -112,6 +118,9 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 
 // runPaint 返回该 run 在其排版空间中取样的填充画笔，用于走路径绘制的文字。
 func (t *textFaces) runPaint(runX, runY float64, base geom.Paint) geom.Paint {
+	if t == nil || t.native {
+		return base
+	}
 	gradient := t.gradient()
 	if gradient == nil || !finiteFloat(runX) || !finiteFloat(runY) || !finiteFloat(t.hScale) {
 		return base
@@ -126,6 +135,9 @@ func (t *textFaces) runPaint(runX, runY float64, base geom.Paint) geom.Paint {
 // devicePaint 返回按设备空间取样的填充画笔。matrix 是把图元 Boundary 空间
 // 映射到设备空间的排版矩阵；矩阵不可逆时退回 run 空间画笔，由调用方决定。
 func (t *textFaces) devicePaint(matrix geom.Matrix, fallback geom.Paint) (geom.Paint, bool) {
+	if t == nil || t.native {
+		return fallback, true
+	}
 	gradient := t.gradient()
 	if gradient == nil {
 		return fallback, true

@@ -89,14 +89,31 @@ func (g Grad) ToRadial(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 type LinearGradient struct {
 	Grad
 	Start, End Point
-	d          Point
-	d2         float64
+	// Extend[0] 控制起点之前是否着色、Extend[1] 控制终点之后是否着色；
+	// 为 false 时该区域不着色（透明）。
+	Extend [2]bool
+	d      Point
+	d2     float64
 }
 
-// NewLinearGradient 返回线性渐变。
+// NewLinearGradient 返回线性渐变，默认两端都延伸。
 func NewLinearGradient(start, end Point) *LinearGradient {
 	d := end.Sub(start)
-	return &LinearGradient{Start: start, End: end, d: d, d2: d.Dot(d)}
+	return &LinearGradient{Start: start, End: end, Extend: [2]bool{true, true}, d: d, d2: d.Dot(d)}
+}
+
+// at 返回渐变参数 t 处的颜色，按 Extend 决定轴外是否着色。
+func (g *LinearGradient) at(t float64) color.RGBA {
+	if math.IsNaN(t) {
+		return Transparent
+	}
+	if t < 0 && !g.Extend[0] {
+		return Transparent
+	}
+	if t > 1 && !g.Extend[1] {
+		return Transparent
+	}
+	return g.Grad.At(t)
 }
 
 // At 返回 (x,y) 处的颜色。
@@ -106,11 +123,14 @@ func (g *LinearGradient) At(x, y float64) color.RGBA {
 	}
 	p := Point{x, y}.Sub(g.Start)
 	if Equal(g.d.Y, 0.0) && !Equal(g.d.X, 0.0) {
-		return g.Grad.At(p.X / g.d.X)
+		return g.at(p.X / g.d.X)
 	} else if !Equal(g.d.Y, 0.0) && Equal(g.d.X, 0.0) {
-		return g.Grad.At(p.Y / g.d.Y)
+		return g.at(p.Y / g.d.Y)
 	}
-	return g.Grad.At(p.Dot(g.d) / g.d2)
+	if Equal(g.d2, 0.0) {
+		return g.at(0)
+	}
+	return g.at(p.Dot(g.d) / g.d2)
 }
 
 // RadialGradient 是两个圆之间的径向渐变。
@@ -118,15 +138,18 @@ type RadialGradient struct {
 	Grad
 	C0, C1 Point
 	R0, R1 float64
+	// Extend[0] 控制起始圆之前是否着色、Extend[1] 控制终止圆之后是否着色；
+	// 为 false 时该区域不着色（透明）。
+	Extend [2]bool
 	cd     Point
 	dr, a  float64
 }
 
-// NewRadialGradient 返回径向渐变。
+// NewRadialGradient 返回径向渐变，默认两端都延伸。
 func NewRadialGradient(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradient {
 	cd := c1.Sub(c0)
 	dr := r1 - r0
-	return &RadialGradient{C0: c0, R0: r0, C1: c1, R1: r1, cd: cd, dr: dr, a: cd.Dot(cd) - dr*dr}
+	return &RadialGradient{C0: c0, R0: r0, C1: c1, R1: r1, Extend: [2]bool{true, true}, cd: cd, dr: dr, a: cd.Dot(cd) - dr*dr}
 }
 
 // RadialParameter 返回点 (x,y) 在两圆插值族 ((1-t)·C0+t·C1, R0+t·dr) 中的参数 t，
@@ -193,6 +216,22 @@ func (g *RadialGradient) RadialParameter(x, y float64, extend int) (float64, boo
 func (g *RadialGradient) At(x, y float64) color.RGBA {
 	if len(g.Grad) == 0 {
 		return Transparent
+	}
+	// 部分延伸时必须按 Extend 位选择轴外的根；两端都延伸时沿用原来的钳制实现，
+	// 保持既有渲染结果不变。
+	if !g.Extend[0] || !g.Extend[1] {
+		extend := 0
+		if g.Extend[0] {
+			extend |= 1
+		}
+		if g.Extend[1] {
+			extend |= 2
+		}
+		t, ok := g.RadialParameter(x, y, extend)
+		if !ok {
+			return Transparent
+		}
+		return g.Grad.At(t)
 	}
 	// 见 https://github.com/servo/pixman/blob/master/pixman/pixman-radial-gradient.c
 	pd := Point{x, y}.Sub(g.C0)

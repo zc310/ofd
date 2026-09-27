@@ -16,3 +16,10 @@ type textDrawer interface {
 	// 正方向延伸）。canvas 后端把它断言为 canvas 文本并原生绘制。
 	DrawTextLine(run TextRun)
 }
+
+// shadingTextBackend 由能把原生 Linear/RadialGradient 序列化为文字着色图案的
+// 矢量后端实现（canvas 的 PDF/SVG 输出）。实现后，可原生表达的渐变文字保留
+// 真实文字 + 原生 Shading，而不是栅格化成图片，从而在 PDF 中仍可复制。
+type shadingTextBackend interface {
+	ShadingText() bool
+}

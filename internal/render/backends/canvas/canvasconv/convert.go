@@ -110,10 +110,12 @@ func ToCanvasGradient(g geom.Gradient) canvas.Gradient {
 	case *geom.LinearGradient:
 		cg := canvas.NewLinearGradient(canvas.Point(value.Start), canvas.Point(value.End))
 		cg.Grad = toCanvasGrad(value.Grad)
+		cg.Extend = value.Extend
 		return cg
 	case *geom.RadialGradient:
 		cg := canvas.NewRadialGradient(canvas.Point(value.C0), value.R0, canvas.Point(value.C1), value.R1)
 		cg.Grad = toCanvasGrad(value.Grad)
+		cg.Extend = value.Extend
 		return cg
 	default:
 		return geomGradientSource{g}

@@ -199,6 +199,8 @@ func TestOFDLinearGradientDirectExtendBits(t *testing.T) {
 		beforeStart, afterEnd color.RGBA
 		wantNative            bool
 	}{
+		// 路径轴向渐变仅 Extend=3 用原生 LinearGradient；其它位走 ofdLinearGradient，
+		// 由矢量后端栅格化（文字另有 textShadingGradient）。
 		{0, transparent, transparent, false},
 		{1, startColor, transparent, false},
 		{2, transparent, endColor, false},
@@ -217,8 +219,12 @@ func TestOFDLinearGradientDirectExtendBits(t *testing.T) {
 		gradient := newOFDLinearGradient(shd, func(point models.StPos) geom.Point {
 			return geom.Point{X: point.X, Y: point.Y}
 		}, nil)
-		if _, native := gradient.(*geom.LinearGradient); native != tc.wantNative {
+		linear, native := gradient.(*geom.LinearGradient)
+		if native != tc.wantNative {
 			t.Fatalf("Extend=%d 是否原生矢量渐变 = %v，期望 %v", tc.extend, native, tc.wantNative)
+		}
+		if wantBits := extendBits(tc.extend); native && linear.Extend != wantBits {
+			t.Fatalf("Extend=%d 两端延伸 = %v，期望 %v", tc.extend, linear.Extend, wantBits)
 		}
 		if got := gradient.At(-5, 0); got != tc.beforeStart {
 			t.Fatalf("Extend=%d 起点之前取色 = %v，期望 %v", tc.extend, got, tc.beforeStart)
@@ -271,6 +277,8 @@ func TestOFDRadialGradientDirectExtendBits(t *testing.T) {
 		beforeStart, afterEnd color.RGBA
 		wantNative            bool
 	}{
+		// 路径径向渐变仅 Extend=3 且非焦点时用原生 RadialGradient；其它位走
+		// ofdRadialGradient，由矢量后端栅格化（文字另有 textShadingGradient）。
 		{0, transparent, transparent, false},
 		{1, startColor, transparent, false},
 		{2, transparent, endColor, false},
@@ -291,8 +299,12 @@ func TestOFDRadialGradientDirectExtendBits(t *testing.T) {
 		gradient := newOFDRadialGradient(shd, func(point models.StPos) geom.Point {
 			return geom.Point{X: point.X, Y: point.Y}
 		}, nil)
-		if _, native := gradient.(*geom.RadialGradient); native != tc.wantNative {
+		radial, native := gradient.(*geom.RadialGradient)
+		if native != tc.wantNative {
 			t.Fatalf("Extend=%d 是否原生矢量渐变 = %v，期望 %v", tc.extend, native, tc.wantNative)
+		}
+		if wantBits := extendBits(tc.extend); native && radial.Extend != wantBits {
+			t.Fatalf("Extend=%d 两端延伸 = %v，期望 %v", tc.extend, radial.Extend, wantBits)
 		}
 		// 圆心在起点圆内（t=-0.25），半径 60 在终点圆外（t=1.25）。
 		if got := gradient.At(0, 0); got != tc.beforeStart {
