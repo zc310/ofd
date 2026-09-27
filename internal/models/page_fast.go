@@ -51,6 +51,10 @@ func (p *pageLexer) next() (tt txml.TokenType, buf []byte, start int) {
 	return tt, buf, start
 }
 
+// cdataText 返回当前 CDATA token 的内容。tdewolff 的 xml lexer 在 Next() 中
+// 返回的是含 "<![CDATA[" / "]]>" 包装的原始词素，去掉包装的正文在 Text() 里。
+func (p *pageLexer) cdataText() []byte { return p.lx.Text() }
+
 func (p *pageLexer) err() error {
 	if err := p.lx.Err(); err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("解析 XML 失败: %w", err)
@@ -591,7 +595,7 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 		case txml.TextToken:
 			sb.Write(buf)
 		case txml.CDATAToken:
-			sb.Write(buf)
+			sb.Write(p.cdataText())
 		case txml.StartTagToken:
 			if _, err := p.spanElement(start); err != nil {
 				return err
@@ -679,7 +683,7 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 		case txml.TextToken:
 			sb.WriteString(unescapeXMLText(buf))
 		case txml.CDATAToken:
-			sb.Write(buf)
+			sb.Write(p.cdataText())
 		case txml.StartTagToken:
 			if _, err := p.spanElement(start); err != nil {
 				return err
@@ -956,7 +960,7 @@ func (p *pageLexer) parseElementText() ([]byte, error) {
 		case txml.TextToken:
 			sb.Write(buf)
 		case txml.CDATAToken:
-			sb.Write(buf)
+			sb.Write(p.cdataText())
 		case txml.StartTagToken:
 			if _, err := p.spanElement(start); err != nil {
 				return nil, err
