@@ -39,6 +39,9 @@ func (b *canvasBackend) Translate(x, y float64) { b.ctx.Translate(x, y) }
 func (b *canvasBackend) Scale(sx, sy float64)   { b.ctx.Scale(sx, sy) }
 func (b *canvasBackend) Rotate(deg float64)     { b.ctx.Rotate(deg) }
 
+// Transform 右乘当前视图矩阵，与 canvas 的 ComposeView 语义一致。
+func (b *canvasBackend) Transform(m geom.Matrix) { b.ctx.ComposeView(canvasconv.ToCanvasMatrix(m)) }
+
 func (b *canvasBackend) CurrentMatrix() geom.Matrix {
 	return geom.Matrix(b.ctx.CoordSystemView().Mul(b.ctx.View()))
 }

@@ -32,6 +32,8 @@ func (b *testCanvasBackend) Translate(x, y float64) { b.ctx.Translate(x, y) }
 func (b *testCanvasBackend) Scale(sx, sy float64)   { b.ctx.Scale(sx, sy) }
 func (b *testCanvasBackend) Rotate(deg float64)     { b.ctx.Rotate(deg) }
 
+func (b *testCanvasBackend) Transform(m geom.Matrix) { b.ctx.ComposeView(canvas.Matrix(m)) }
+
 func (b *testCanvasBackend) CurrentMatrix() geom.Matrix {
 	return geom.Matrix(b.ctx.CoordSystemView().Mul(b.ctx.View()))
 }
