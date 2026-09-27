@@ -34,7 +34,11 @@ type StampAnnot struct {
 	ID       string  `xml:"ID,attr"` // xs:ID 类型
 	PageRef  StRefID `xml:"PageRef,attr"`
 	Boundary StBox   `xml:"Boundary,attr"`
-	Clip     StBox   `xml:"Clip,attr,omitempty"`
+	// Clip 是印章图上的裁剪窗口，坐标相对 Boundary 左上角、且不得超过
+	// Boundary：只显示印章落在该窗口内的部分，贴在 Boundary 左上角加上
+	// Clip 偏移处。骑缝章用它把同一枚印章按页切成若干条，每页用不同的 Clip
+	// 显示其中一片。缺省（全零）表示显示整枚印章。
+	Clip StBox `xml:"Clip,attr,omitempty"`
 }
 
 type Seal struct {

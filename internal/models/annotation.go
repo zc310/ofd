@@ -143,13 +143,9 @@ func (b *StBox) parseFromString(value string) error {
 		*fields[i] = val
 	}
 
-	// 验证数值有效性
-	if b.Width < 0 {
-		return fmt.Errorf("width不能为负数: %.2f", b.Width)
-	}
-	if b.Height < 0 {
-		return fmt.Errorf("height不能为负数: %.2f", b.Height)
-	}
+	// 宽/高允许为负：真实 OFD 常把右对齐文字的 Boundary 写成负宽度，并让
+	// TextCode 的 X 偏移到负值，此时绘制点仍以 Boundary.X 为基准。XSD 也不
+	// 限制符号，因此这里只校验有限性，不拒绝负宽高。
 
 	return nil
 }

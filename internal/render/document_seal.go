@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"sync"
 
@@ -70,21 +71,91 @@ func sealTransparentBackground(img image.Image) image.Image {
 	return dst
 }
 
-// drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上。
+// drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上；存在
+// StampAnnot.Clip 时只绘制印章落在裁剪窗口内的部分。
 func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
 	img = sealTransparentBackground(img)
+
+	box := info.StampAnnot.Boundary
+	if dst, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
+		img = cropSealImage(img, box, dst)
+		box = dst
+	}
 	imgBounds := img.Bounds()
 	if imgBounds.Empty() {
 		return nil
 	}
-
-	box := info.StampAnnot.Boundary
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
 	ctx.Scale(box.Width/float64(imgBounds.Dx()), box.Height/float64(imgBounds.Dy()))
 	ctx.DrawImage(img, 0, 0, 1)
 	return nil
+}
+
+// sealClipBox 把 StampAnnot.Clip 归一化为印章 Boundary 坐标系内的目标框。
+// Clip 是印章图上的裁剪窗口：骑缝章把同一枚印章按页切成若干条，每页用不同的
+// Clip 只显示其中一片（例如 h.ofd 的 5 页各取 8mm，统一贴在页面右缘拼回完整
+// 印章）。Clip 缺省（全零）或无效时返回 ok=false，按整枚印章绘制。
+func sealClipBox(boundary, clip models.StBox) (models.StBox, bool) {
+	if boundary.Width <= 0 || boundary.Height <= 0 {
+		return models.StBox{}, false
+	}
+	if clip.Width <= 0 || clip.Height <= 0 {
+		return models.StBox{}, false
+	}
+	// 裁剪窗口越出 Boundary 时先夹回 Boundary，避免盖住印章盒以外的页面内容。
+	x0 := math.Max(clip.X, 0)
+	y0 := math.Max(clip.Y, 0)
+	x1 := math.Min(clip.X+clip.Width, boundary.Width)
+	y1 := math.Min(clip.Y+clip.Height, boundary.Height)
+	if x1 <= x0 || y1 <= y0 {
+		return models.StBox{}, false
+	}
+	return models.StBox{
+		X:      boundary.X + x0,
+		Y:      boundary.Y + y0,
+		Width:  x1 - x0,
+		Height: y1 - y0,
+	}, true
+}
+
+// cropSealImage 按目标框在 Boundary 坐标系中的位置裁剪印章位图。dst 必须是
+// boundary 的子区域；印章位图顶部对应 Boundary 顶部，故源图按同一比例取子
+// 矩形，裁剪后保持原分辨率。
+func cropSealImage(img image.Image, boundary, dst models.StBox) image.Image {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= 0 || h <= 0 || boundary.Width <= 0 || boundary.Height <= 0 {
+		return img
+	}
+	sx := func(v float64) int { return clampInt(int(math.Round(float64(b.Min.X)+v)), b.Min.X, b.Max.X) }
+	sy := func(v float64) int { return clampInt(int(math.Round(float64(b.Min.Y)+v)), b.Min.Y, b.Max.Y) }
+	x0 := sx((dst.X - boundary.X) / boundary.Width * float64(w))
+	y0 := sy((dst.Y - boundary.Y) / boundary.Height * float64(h))
+	x1 := sx((dst.X + dst.Width - boundary.X) / boundary.Width * float64(w))
+	y1 := sy((dst.Y + dst.Height - boundary.Y) / boundary.Height * float64(h))
+	if x0 >= x1 || y0 >= y1 {
+		return img
+	}
+	if x0 == b.Min.X && y0 == b.Min.Y && x1 == b.Max.X && y1 == b.Max.Y {
+		return img // 整枚印章，无需复制
+	}
+	region := image.Rect(x0, y0, x1, y1)
+	cropped := image.NewNRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
+	draw.Draw(cropped, cropped.Bounds(), img, region.Min, draw.Src)
+	return cropped
+}
+
+// clampInt 把 v 夹到 [lo, hi]。
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // sealDocEntry 是一个已解析并加载好字体的 OFD 印章文档。印章在同一文档的
@@ -181,6 +252,15 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 		return nil
 	}
 	box := info.StampAnnot.Boundary
+	if _, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
+		// 矢量印章页没有可用的裁剪接口，带 Clip 时先把印章页栅格化再交给位图
+		// 路径，与 SVG 印章共用同一套 Clip 坐标映射。
+		img := rasterSealPage(entry.doc, page, sealBox, box)
+		if img == nil {
+			return nil
+		}
+		return p.drawRasterSeal(ctx, info, pb, img)
+	}
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Translate(box.X, pb.Height-(box.Y+box.Height))
@@ -189,6 +269,19 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	budget.reset()
 	entry.doc.pageContent(ctx, page, false, &budget)
 	return nil
+}
+
+// rasterSealPage 按印章页自身尺寸把矢量印章栅格化为透明位图，分辨率由
+// sealRasterResolution 选取。离屏表面未注册时返回 nil，调用方跳过绘制。
+func rasterSealPage(doc *Document, page *parser.Page, sealBox, box models.StBox) image.Image {
+	surface := newOffscreenSurface(sealBox.Width, sealBox.Height, sealRasterResolution(box, sealBox.Width, sealBox.Height))
+	if surface == nil {
+		return nil
+	}
+	var budget renderBudget
+	budget.reset()
+	doc.pageContent(surface, page, false, &budget)
+	return surface.Raster()
 }
 
 // drawSVGSeal 解析并绘制 SVG 格式的印章。

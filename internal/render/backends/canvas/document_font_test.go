@@ -328,6 +328,47 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	}
 }
 
+// TestImageNotFoundLeftTextFontLoads 回归：testImageNotFound.ofd 左侧正文使用的
+// 内嵌子集字体（font_6.ttf / Font69.ttf）hmtx 尾部多出字节，之前会导致整个字体
+// 加载失败并回退到系统字体、正文渲染成乱码；修复后必须按内嵌字体加载并登记好
+// 页面字形映射。
+func TestImageNotFoundLeftTextFontLoads(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ofdrw", "testImageNotFound.ofd"))
+	if err != nil {
+		t.Skipf("样例不可用: %v", err)
+	}
+	defer ofd.Close()
+
+	doc := ofd.Documents[0]
+	page, err := doc.GetPage(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := lease.Content()
+	fonts := NewFonts(doc)
+	fonts.RegisterPageGlyphs(doc, page, content)
+	lease.Release()
+
+	family, err := fonts.LoadFont(6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fonts.HasLoadedEmbeddedFont(6) {
+		t.Fatal("字体 6 应以内嵌字体加载，而不是回退到系统字体")
+	}
+	face := family.(*canvas.FontFamily).Face(1, canvas.Black)
+	if face == nil || face.Font == nil {
+		t.Fatal("字体 6 的字体面为空")
+	}
+	if got := face.Font.GlyphIndex('矿'); got == 0 {
+		t.Fatal("字体 6 在登记页面字形映射后仍缺少“矿”的字形")
+	}
+}
+
 func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
 	if err != nil {
