@@ -1,6 +1,9 @@
 package layout
 
 import (
+	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"unicode"
 
@@ -41,29 +44,38 @@ type metricKey struct {
 var (
 	metricsOnce sync.Once
 	metricFonts map[metricKey]*sfnt.Font
+	printFonts  map[famEnum]*sfnt.Font
 	metricAsc   map[metricKey]float64
 	metricDesc  map[metricKey]float64
 )
 
-// initMetrics 惰性加载内置 Go 字体，只用于排版度量。生成 OFD 时使用逻辑字体，
-// 不嵌入这些字体数据，以保证中文字符仍能回退到阅读器字体。
+// initMetrics 惰性加载度量字体。公文族优先使用系统里的仿宋、黑体、楷体、宋体，
+// 找不到时退回内置 Go 字体。生成 OFD 时仍只写逻辑字体名，不嵌入这些字体。
 func initMetrics() {
-	sources := map[metricKey][]byte{
+	monoData := monoFontData()
+	latin := map[metricKey][]byte{
 		{bold: false, italic: false, mono: false}: goregular.TTF,
 		{bold: true, italic: false, mono: false}:  gobold.TTF,
 		{bold: false, italic: true, mono: false}:  goitalic.TTF,
 		{bold: true, italic: true, mono: false}:   gobolditalic.TTF,
-		{bold: false, italic: false, mono: true}:  gomono.TTF,
-		{bold: true, italic: false, mono: true}:   gomono.TTF,
-		{bold: false, italic: true, mono: true}:   gomono.TTF,
-		{bold: true, italic: true, mono: true}:    gomono.TTF,
+		{bold: false, italic: false, mono: true}:  monoData,
+		{bold: true, italic: false, mono: true}:   monoData,
+		{bold: false, italic: true, mono: true}:   monoData,
+		{bold: true, italic: true, mono: true}:    monoData,
 	}
-	metricFonts = make(map[metricKey]*sfnt.Font, len(sources)*5)
-	metricAsc = make(map[metricKey]float64, len(sources)*5)
-	metricDesc = make(map[metricKey]float64, len(sources)*5)
+	printFonts = map[famEnum]*sfnt.Font{
+		famBody:  loadPrintFont("FangSong", "Noto Serif CJK SC"),
+		famHei:   loadPrintFont("SimHei", "Noto Sans CJK SC", "Source Han Sans SC"),
+		famKai:   loadPrintFont("KaiTi", "Noto Serif CJK SC"),
+		famTitle: loadPrintFont("Noto Serif CJK SC", "Source Han Serif SC"),
+		famSong:  loadPrintFont("SimSun", "Noto Serif CJK SC"),
+	}
+	metricFonts = make(map[metricKey]*sfnt.Font, len(latin)*5)
+	metricAsc = make(map[metricKey]float64, len(latin)*5)
+	metricDesc = make(map[metricKey]float64, len(latin)*5)
 	const refPPEM = 1000 * 64
 	for fam := famBody; fam <= famSong; fam++ {
-		for key, data := range sources {
+		for key, data := range latin {
 			base := key
 			base.fam = fam
 			face, err := sfnt.Parse(data)
@@ -84,6 +96,68 @@ func initMetrics() {
 	}
 }
 
+// monoFontData 读取 Consolas 或系统等宽字体，供行内代码和代码块度量。
+// 找不到时退回内置 Go Mono。
+func monoFontData() []byte {
+	for _, family := range []string{"Consolas", "Noto Sans Mono CJK SC", "Liberation Mono"} {
+		path := fontFile(family)
+		if path == "" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || firstFont(data) == nil {
+			continue
+		}
+		return data
+	}
+	return gomono.TTF
+}
+
+// loadPrintFont 按候选族名查找系统字体并解析第一个可用文件。
+func loadPrintFont(families ...string) *sfnt.Font {
+	for _, family := range families {
+		path := fontFile(family)
+		if path == "" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if face := firstFont(data); face != nil {
+			return face
+		}
+	}
+	return nil
+}
+
+func firstFont(data []byte) *sfnt.Font {
+	if face, err := sfnt.Parse(data); err == nil {
+		return face
+	}
+	collection, err := sfnt.ParseCollection(data)
+	if err != nil || collection.NumFonts() == 0 {
+		return nil
+	}
+	face, err := collection.Font(0)
+	if err != nil {
+		return nil
+	}
+	return face
+}
+
+func fontFile(family string) string {
+	output, err := exec.Command("fc-match", "-f", "%{file}", family).Output()
+	if err != nil {
+		return ""
+	}
+	path := strings.TrimSpace(string(output))
+	if path == "" || strings.Contains(path, "DejaVu") {
+		return ""
+	}
+	return path
+}
+
 // measureWidth 返回 text 在给定字号（毫米）下占用的宽度。
 func measureWidth(text string, sizeMM float64, key metricKey) float64 {
 	if text == "" || sizeMM <= 0 {
@@ -91,6 +165,11 @@ func measureWidth(text string, sizeMM float64, key metricKey) float64 {
 	}
 	metricsOnce.Do(initMetrics)
 	face := metricFonts[key]
+	if !key.mono {
+		if printFace := printFonts[key.fam]; printFace != nil {
+			face = printFace
+		}
+	}
 	if face == nil {
 		return heuristicWidth(text, sizeMM)
 	}

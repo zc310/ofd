@@ -216,10 +216,10 @@ func DefaultOptions() Options {
 		MonoSize:     10.5,
 		LineHeight:   1.5,
 		// 代码行距比正文更紧凑，避免代码块显得松散。
-		CodeLineHeight: 1.3,
+		CodeLineHeight: 1.1,
 		BlockSpacing:   0.6,
 		BodyFamily:     "sans-serif",
-		MonoFamily:     "monospace",
+		MonoFamily:     "Consolas",
 	}
 }
 
@@ -239,10 +239,10 @@ func GBTOptions() Options {
 		MonoSize:     10.5,
 		// 每面 22 行撑满版心高度 225mm。
 		LineHeight:     (225.0 / 22.0) / ptToMM(16),
-		CodeLineHeight: 1.3,
+		CodeLineHeight: 1.1,
 		BlockSpacing:   0,
 		BodyFamily:     "FangSong",
-		MonoFamily:     "FangSong",
+		MonoFamily:     "Consolas",
 		HeiFamily:      "SimHei",
 		KaiFamily:      "KaiTi",
 		TitleFamily:    "STZhongsong",

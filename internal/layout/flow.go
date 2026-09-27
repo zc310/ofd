@@ -36,6 +36,12 @@ type atom struct {
 	color *creator.Color
 	width float64
 	space bool
+	// glue 大于 0 时，相同值的相邻段不允许断开，用于行内代码。
+	glue int
+	// strike 为真时在该字符段中部绘制删除线。
+	strike bool
+	// strikeWidth 是删除线应覆盖的宽度（不含合并进来的尾随空白）；为 0 时用 width。
+	strikeWidth float64
 }
 
 // engine 在排版过程中维护当前页面、纵向游标和字体资源。
@@ -64,6 +70,8 @@ type engine struct {
 	// afterLandscape 表示刚结束一个横排表格区块；其后的纵向排版内容
 	// 应在横排页之后另起一页，避免纵向文字落在横排页上与表格重叠。
 	afterLandscape bool
+	// lastKind 是上一块的类型，用于在引用和表格之间补间距。
+	lastKind Kind
 }
 
 // Build 把流式文档排版为 OFD 文档。返回的文档可继续补充元数据后写入。
@@ -71,20 +79,31 @@ func Build(doc *Document, opts Options) (*creator.Document, error) {
 	if doc == nil {
 		return nil, fmt.Errorf("文档为空")
 	}
-	if opts.PageWidth <= 0 || opts.PageHeight <= 0 || opts.BodySize <= 0 {
-		opts = DefaultOptions()
+	// 只补齐未设置的字段，避免因为个别字段缺省而丢弃调用方已设置的参数。
+	defaults := DefaultOptions()
+	if opts.PageWidth <= 0 {
+		opts.PageWidth = defaults.PageWidth
+	}
+	if opts.PageHeight <= 0 {
+		opts.PageHeight = defaults.PageHeight
+	}
+	if opts.BodySize <= 0 {
+		opts.BodySize = defaults.BodySize
+	}
+	if opts.MonoSize <= 0 {
+		opts.MonoSize = defaults.MonoSize
 	}
 	if opts.LineHeight <= 0 {
-		opts.LineHeight = 1.5
+		opts.LineHeight = defaults.LineHeight
 	}
 	if opts.CodeLineHeight <= 0 {
-		opts.CodeLineHeight = 1.3
+		opts.CodeLineHeight = defaults.CodeLineHeight
 	}
 	if opts.BodyFamily == "" {
-		opts.BodyFamily = "sans-serif"
+		opts.BodyFamily = defaults.BodyFamily
 	}
 	if opts.MonoFamily == "" {
-		opts.MonoFamily = "monospace"
+		opts.MonoFamily = defaults.MonoFamily
 	}
 	e := &engine{opts: opts, pageIndex: -1, fontNames: make(map[metricKey]string), footer: doc.Footer, official: doc.Letterhead != nil}
 	e.computeArea()
@@ -349,7 +368,7 @@ func (e *engine) emitLetterhead(lh *Letterhead) {
 }
 
 // emitColophon 在正文流末尾渲染公文版记：抄送行与印发机关/日期行，行间用线分隔。
-// emitColophon 在末页版心最下方编排版记（GB/T 9704-2012 7.4）：
+// 版记排在末页版心最下方（GB/T 9704-2012 7.4）：
 // 首条、末条分隔线用粗线（0.35mm）、中间分隔线用细线（0.25mm），
 // 线与版心等宽；抄送左空一字，印发机关左空一字、印发日期右空一字。
 // 末条分隔线下边缘压准版心下边缘，文字行带与分隔线之间各留空（约 0.2 字）。
@@ -365,14 +384,25 @@ func (e *engine) emitColophon(c *Colophon) {
 		lineThinW = 0.25
 	)
 	hasCc := strings.TrimSpace(c.Cc) != ""
+	issuedBy := strings.TrimSpace(c.IssuedBy)
+	issuedDate := strings.TrimSpace(c.IssuedDate)
+	hasIssued := issuedBy != "" || issuedDate != ""
+	if !hasCc && !hasIssued {
+		return
+	}
 	band := sizeMM * 1.4 // 文字行带（文字上下各留 0.2 字）
-	rows := 1
+	rows := 0
 	if hasCc {
 		rows++
 	}
-	colH := lineBoldW + band*float64(rows) + lineThinW + lineBoldW
-	if !hasCc {
-		colH -= lineThinW
+	if hasIssued {
+		rows++
+	}
+	// 抄送行与印发机关/日期行之间才有中间细线。
+	hasThin := hasCc && hasIssued
+	colH := lineBoldW + band*float64(rows) + lineBoldW
+	if hasThin {
+		colH += lineThinW
 	}
 	e.ensureHeight(colH + 1)
 	if e.y-colH >= e.contentBottom {
@@ -400,21 +430,24 @@ func (e *engine) emitColophon(c *Colophon) {
 	if hasCc {
 		text := "抄送：" + strings.TrimSpace(c.Cc)
 		writeRow(text, e.contentLeft+sizeMM, measureWidth(text, sizeMM, key))
-		// 中间分隔线（细线）。
-		thinLine()
+		if hasThin {
+			// 中间分隔线（细线）。
+			thinLine()
+		}
 	}
-	var issuedWidth float64
-	if strings.TrimSpace(c.IssuedBy) != "" {
-		issuedWidth += measureWidth(c.IssuedBy, sizeMM, key)
-	}
-	if strings.TrimSpace(c.IssuedDate) != "" {
-		label := strings.TrimSpace(c.IssuedDate) + "印发"
-		width := measureWidth(label, sizeMM, key)
-		writeRow(label, e.contentRight-sizeMM-width, width)
-		cur += band // 印发日期居右，机关同名在同一行，行带只计一次
-	}
-	if strings.TrimSpace(c.IssuedBy) != "" {
-		writeRow(c.IssuedBy, e.contentLeft+sizeMM, issuedWidth)
+	if hasIssued {
+		// 印发机关居左、印发日期居右，共用同一行带，只消费一次行高。
+		baseline := cur - sizeMM*0.2 - sizeMM
+		if issuedBy != "" {
+			width := measureWidth(issuedBy, sizeMM, key)
+			e.addText(issuedBy, e.contentLeft+sizeMM, baseline, atom{key: key, size: sizeMM, color: colorText, width: width})
+		}
+		if issuedDate != "" {
+			label := issuedDate + "印发"
+			width := measureWidth(label, sizeMM, key)
+			e.addText(label, e.contentRight-sizeMM-width, baseline, atom{key: key, size: sizeMM, color: colorText, width: width})
+		}
+		cur -= band
 	}
 
 	// 末条分隔线（粗线），下边缘压准版心下边缘。
@@ -458,7 +491,11 @@ func (e *engine) emitSignature(s *Signature) {
 }
 
 func (e *engine) emitBlock(b *Block) {
+	defer func() { e.lastKind = b.Kind }()
 	e.breakAfterLandscape()
+	if b.Kind == KindTable && e.lastKind == KindQuote {
+		e.space(e.blockGap())
+	}
 	switch b.Kind {
 	case KindHeading:
 		e.emitHeading(b)
@@ -475,7 +512,11 @@ func (e *engine) emitBlock(b *Block) {
 	case KindImage:
 		e.emitImage(b)
 	default:
-		e.emitParagraph(b.Inlines, b.Indent)
+		if b.Marker != "" {
+			e.emitListItem(b)
+		} else {
+			e.emitParagraph(b.Inlines, b.Indent)
+		}
 	}
 }
 
@@ -705,11 +746,11 @@ func (e *engine) emitTable(b *Block) {
 	for index := 0; index < cols; index++ {
 		width := 0.0
 		if index < len(table.Header) {
-			width = math.Max(width, e.cellWidth(table.Header[index], sizeMM))
+			width = math.Max(width, e.cellWidth(table.Header[index], sizeMM, true))
 		}
 		for _, row := range table.Rows {
 			if index < len(row) {
-				width = math.Max(width, e.cellWidth(row[index], sizeMM))
+				width = math.Max(width, e.cellWidth(row[index], sizeMM, false))
 			}
 		}
 		widths[index] = width + padding*2
@@ -740,9 +781,9 @@ func (e *engine) emitTableLandscape(table *Table, widths []float64, sizeMM, padd
 	cols := len(widths)
 	lineHeight := sizeMM * e.opts.LineHeight
 	rowHeights := make([]float64, 0, len(table.Rows)+1)
-	rowHeights = append(rowHeights, e.tableRowHeight(table.Header, widths, padding, sizeMM, lineHeight))
+	rowHeights = append(rowHeights, e.tableRowHeight(table.Header, widths, padding, sizeMM, lineHeight, true))
 	for _, row := range table.Rows {
-		rowHeights = append(rowHeights, e.tableRowHeight(row, widths, padding, sizeMM, lineHeight))
+		rowHeights = append(rowHeights, e.tableRowHeight(row, widths, padding, sizeMM, lineHeight, false))
 	}
 	totalW := 0.0
 	for _, width := range widths {
@@ -782,15 +823,16 @@ func (e *engine) emitTableLandscape(table *Table, widths []float64, sizeMM, padd
 	e.afterLandscape = true
 }
 
-// tableRowHeight 计算一行文字换行后占用的行高。
-func (e *engine) tableRowHeight(cells []Cell, widths []float64, padding, sizeMM, lineHeight float64) float64 {
+// tableRowHeight 计算一行文字换行后占用的行高；header 为真时按加粗度量，
+// 与 drawTableRowLandscape 的表头绘制方式保持一致。
+func (e *engine) tableRowHeight(cells []Cell, widths []float64, padding, sizeMM, lineHeight float64, header bool) float64 {
 	maxLines := 1
 	for index := 0; index < len(widths); index++ {
 		var cell Cell
 		if index < len(cells) {
 			cell = cells[index]
 		}
-		lines := e.wrapSegments(e.segments(cell, e.opts.BodySize, metricKey{}), math.Max(widths[index]-padding*2, sizeMM))
+		lines := e.wrapSegments(e.segments(cell, e.opts.BodySize, metricKey{bold: header}), math.Max(widths[index]-padding*2, sizeMM))
 		if len(lines) > maxLines {
 			maxLines = len(lines)
 		}
@@ -800,7 +842,7 @@ func (e *engine) tableRowHeight(cells []Cell, widths []float64, padding, sizeMM,
 
 // drawTableRowLandscape 在横排坐标中绘制一行。列方向对应页面自下而上、行方向
 // 对应页面从左向右，表头行位于页面左侧；字符直接落到最终页面位置，并以
-// CharDirection=90 使字形在读者顺时针转页后保持正立。传入的宽度均已按整表
+// CharDirection=270 使字形在读者顺时针转页后保持正立。传入的宽度均已按整表
 // 等比缩放（scale 是缩放系数），字符自身尺寸同样按 scale 缩放。
 func (e *engine) drawTableRowLandscape(cells []Cell, widths []float64, rowTop, rowHeight, usedW, scale, padding float64, header bool, aligns []Align, x0, bottom float64) {
 	cols := len(widths)
@@ -937,10 +979,11 @@ func (e *engine) drawTableRow(cells []Cell, widths []float64, padding, sizeMM fl
 	e.y -= rowHeight
 }
 
-func (e *engine) cellWidth(cell Cell, sizeMM float64) float64 {
+// cellWidth 计算单元格内容宽度；header 为真时按表头加粗度量，与绘制保持一致。
+func (e *engine) cellWidth(cell Cell, sizeMM float64, header bool) float64 {
 	width := 0.0
 	for _, inline := range cell {
-		key := metricKey{bold: inline.Bold, italic: inline.Italic, mono: inline.Code}
+		key := metricKey{bold: inline.Bold || header, italic: inline.Italic, mono: inline.Code}
 		width += measureWidth(inline.Text, sizeMM, key)
 	}
 	return width
@@ -986,19 +1029,21 @@ func (e *engine) writeLine(line []atom, left float64) {
 	e.ensureHeight(height)
 	baseline := e.y - ascent(size, key)
 	for _, run := range mergeRuns(line, left) {
-		e.addText(run.text, run.x, baseline, atom{text: run.text, key: run.key, size: run.size, color: run.color, width: run.width})
+		e.addText(run.text, run.x, baseline, atom{text: run.text, key: run.key, size: run.size, color: run.color, width: run.width, strike: run.strike, strikeWidth: run.strikeWidth})
 	}
 	e.y -= height
 }
 
 // textRun 是同一行内相邻、样式一致且可合并的文本片段。
 type textRun struct {
-	text  string
-	key   metricKey
-	size  float64
-	color *creator.Color
-	x     float64
-	width float64
+	text        string
+	key         metricKey
+	size        float64
+	color       *creator.Color
+	x           float64
+	width       float64
+	strike      bool
+	strikeWidth float64
 }
 
 // mergeRuns 合并相邻的同样式文本，并把空白并入前一个片段，避免生成
@@ -1017,14 +1062,15 @@ func mergeRuns(line []atom, left float64) []textRun {
 		}
 		if len(runs) > 0 {
 			last := &runs[len(runs)-1]
-			if last.key == item.key && last.size == item.size && last.color == item.color {
+			if last.key == item.key && last.size == item.size && last.color == item.color && last.strike == item.strike {
 				last.text += item.text
 				last.width += item.width
+				last.strikeWidth += item.width
 				x += item.width
 				continue
 			}
 		}
-		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, color: item.color, x: x, width: item.width})
+		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width})
 		x += item.width
 	}
 	return runs
@@ -1034,17 +1080,28 @@ func (e *engine) addText(text string, x, baseline float64, item atom) {
 	fill := true
 	e.add(creator.Text{
 		X: x,
-		// creator 的文字 Y 是文本框顶部（从页顶量起），基线在框底，
-		// 因此需从"基线距页顶的距离"再减去字号。
+		// baseline 是基线距页底的距离；creator 的文字 Y 是文本框顶部（从页顶量起），
+		// 基线在框底，故 Y = 页高 - 基线距页底 - 字号。
 		Y:         e.opts.PageHeight - baseline - item.size,
 		Width:     item.width,
 		Height:    item.size,
 		Value:     text,
 		Font:      e.fontName(item.key),
 		Size:      item.size,
+		Italic:    item.key.italic,
 		Fill:      &fill,
 		FillColor: item.color,
 	})
+	if item.strike {
+		// 删除线只覆盖实际字符，不含合并进来的尾随空白。
+		strikeWidth := item.strikeWidth
+		if strikeWidth <= 0 {
+			strikeWidth = item.width
+		}
+		if strikeWidth > 0 {
+			e.fillRect(x, baseline+item.size*0.3, strikeWidth, item.size*0.05, item.color)
+		}
+	}
 }
 
 // fillRect 绘制填充矩形。y 是矩形在排版游标（自底向上）中的下边界，

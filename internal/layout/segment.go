@@ -11,9 +11,11 @@ import (
 
 // styledRune 记录每个字符使用的度量与颜色样式。
 type styledRune struct {
-	key   metricKey
-	size  float64
-	color *creator.Color
+	key    metricKey
+	size   float64
+	color  *creator.Color
+	glue   int
+	strike bool
 }
 
 // segments 按 Unicode UAX #14 断行规则把行内内容切成不可断开的段。
@@ -23,19 +25,27 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 	size := ptToMM(sizePT)
 	var runes []rune
 	var styles []styledRune
+	glueID := 0
 	for _, inline := range inlines {
 		if inline.Text == "" {
 			continue
 		}
+		glue := 0
+		if inline.Code {
+			glueID++
+			glue = glueID
+		}
 		style := styledRune{
 			key: metricKey{
 				bold:   inline.Bold || base.bold,
-				italic: base.italic,
+				italic: inline.Italic || base.italic,
 				mono:   inline.Code || base.mono,
 				fam:    base.fam,
 			},
-			size:  size,
-			color: colorText,
+			size:   size,
+			color:  colorText,
+			glue:   glue,
+			strike: inline.Strike,
 		}
 		switch {
 		case inline.Code:
@@ -64,7 +74,7 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			result = append(result, nil)
 		}
 	}
-	return result
+	return joinGlued(result)
 }
 
 // buildSegment 把一段文本按样式拆成可绘制的 atom，换行符不参与绘制。
@@ -82,16 +92,36 @@ func buildSegment(text []rune, offset int, styles []styledRune) []atom {
 		}
 		chunk := string(text[index:end])
 		atoms = append(atoms, atom{
-			text:  chunk,
-			key:   style.key,
-			size:  style.size,
-			color: style.color,
-			width: measureWidth(chunk, style.size, style.key),
-			space: isWhitespace(chunk),
+			text:   chunk,
+			key:    style.key,
+			size:   style.size,
+			color:  style.color,
+			width:  measureWidth(chunk, style.size, style.key),
+			space:  isWhitespace(chunk),
+			glue:   style.glue,
+			strike: style.strike,
 		})
 		index = end
 	}
 	return atoms
+}
+
+// joinGlued 把同一行内代码切出的断点粘回去，避免 ".zip" 从句点拆开。
+func joinGlued(segments [][]atom) [][]atom {
+	if len(segments) < 2 {
+		return segments
+	}
+	merged := make([][]atom, 0, len(segments))
+	merged = append(merged, segments[0])
+	for _, segment := range segments[1:] {
+		previous := merged[len(merged)-1]
+		if len(previous) > 0 && len(segment) > 0 && previous[0].glue > 0 && previous[0].glue == segment[0].glue {
+			merged[len(merged)-1] = append(previous, segment...)
+			continue
+		}
+		merged = append(merged, segment)
+	}
+	return merged
 }
 
 // wrapSegments 以段为单位贪心装箱；单个段宽于整行时允许溢出，避免死循环。
