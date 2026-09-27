@@ -33,7 +33,12 @@ var (
 	fontCacheMu       sync.Mutex
 	systemFontCache   = make(map[systemFontKey]*systemFontCacheEntry)
 	embeddedFontCache = make(map[embeddedFontKey]*embeddedFontCacheEntry)
-	fontRenderLocks   = make(map[*canvas.FontFamily]*sync.Mutex)
+	// embeddedRepairerCache 按字体字节摘要缓存 fontfix.Repairer。同一份内嵌
+	// 字体在文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；
+	// Repairer 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与
+	// 输出 cmap 表。WithGlyphs 不改写缓存状态，可安全并发调用。
+	embeddedRepairerCache = make(map[[sha256.Size]byte]*fontfix.Repairer)
+	fontRenderLocks       = make(map[*canvas.FontFamily]*sync.Mutex)
 	// 全局回退字体注册表：同一字体族全局只保存一份解析结果和一份字体数据引用，
 	// 首个 render.Document 注册后即锁定；后续文档缺字体时默认全部使用已锁定字体。
 	fallbackRegistry = make(map[string]*fallbackRegistration)
@@ -353,6 +358,27 @@ func loadCachedEmbeddedFont(name string, data []byte, style drawing.FontStyle, m
 	fontRenderLocks[family] = renderMu
 	fontCacheMu.Unlock()
 	return family, nil
+}
+
+// embeddedRepairer 返回该字体字节对应的 fontfix.Repairer，必要时创建。
+// 与 embeddedFontCache 一样按进程生命周期缓存，不做淘汰。
+func embeddedRepairer(data []byte) *fontfix.Repairer {
+	digest := sha256.Sum256(data)
+	fontCacheMu.Lock()
+	repairer := embeddedRepairerCache[digest]
+	fontCacheMu.Unlock()
+	if repairer != nil {
+		return repairer
+	}
+	repairer = fontfix.NewRepairer(data)
+	fontCacheMu.Lock()
+	if existing := embeddedRepairerCache[digest]; existing != nil {
+		fontCacheMu.Unlock()
+		return existing
+	}
+	embeddedRepairerCache[digest] = repairer
+	fontCacheMu.Unlock()
+	return repairer
 }
 
 // hashGlyphMappings 以与遍历顺序无关的方式对字形映射求摘要。
@@ -858,7 +884,7 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
 func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) error {
 	if len(mappings) > 0 {
-		if fixed, err := fontfix.RepairWithGlyphs(data, mappings); err == nil {
+		if fixed, err := embeddedRepairer(data).WithGlyphs(mappings); err == nil {
 			slog.Debug("load embedded font with glyph mappings", "family", family.Name(), "style", style, "mappings", len(mappings))
 			if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
 				return nil
