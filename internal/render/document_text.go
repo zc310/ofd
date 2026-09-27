@@ -42,11 +42,9 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if dp == nil {
 		ctx.SetStrokeWidth(defaultLineWidth)
 	}
-	if object.CTM != nil {
-		if scale := object.CTM.YScale(); scale > 0 {
-			object.Size *= scale
-		}
-	}
+	// 字号保持 OFD 的原始 Size（对象坐标毫米）；CTM 的线性部分（缩放、旋转、
+	// 倾斜）统一由 textCTMLinearMatrix 作用到字形上，不能在这里再乘一次
+	// CTM.YScale，否则缩放会被应用两次，文字明显变小。
 	if !finiteFloat(object.Size) {
 		return
 	}
@@ -90,12 +88,13 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	} else {
 		ctx.SetStrokeColor(geom.Black)
 	}
+	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textHScale(object))
 	codePosition := 0
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue
 		}
-		p.drawTextCode(ctx, face, object, code, pb.Height, parentCTM, codePosition)
+		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, codePosition)
 		codePosition += len([]rune(code.Value))
 	}
 }
@@ -119,7 +118,7 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 		return false
 	}
 	transform := gradientBoundaryTransform(object.Boundary, pb.Height)
-	gradient := p.pathGradient(source, transform)
+	gradient := p.pathGradient(source, transform, gradientShadingArea(object.Boundary))
 	if gradient == nil {
 		return false
 	}
@@ -188,8 +187,9 @@ func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object mode
 		return
 	}
 	matrix := geom.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
-		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	// 与原生文字分支一致：CTM 的线性部分整体参与变换，倾斜和缩放都不能丢。
+	if m := textCTMLinearMatrix(object.CTM); m != nil {
+		matrix = matrix.Mul(*m)
 	}
 	if direction := textCharDirectionDegrees(object); direction != 0 {
 		matrix = matrix.Rotate(-direction)
@@ -296,7 +296,9 @@ type textGlyph struct {
 	value string
 }
 
-func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+	// 字形宽度与字形映射与填充无关，统一使用共享字体面。
+	face := faces.base
 	runes := []rune(code.Value)
 	glyphs := textCodeGlyphs(face, runes, object.CGTransform, codePosition)
 	if len(glyphs) == 0 {
@@ -306,7 +308,7 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 		if !renderableTextValue(code.Value) {
 			return
 		}
-		p.drawTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
+		p.drawTextGlyph(ctx, faces, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
 
@@ -321,7 +323,7 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 		if len(run) == 0 {
 			return
 		}
-		p.drawTextGlyph(ctx, face, object, string(run), runX, runY, pageHeight, parentCTM)
+		p.drawTextGlyph(ctx, faces, object, string(run), runX, runY, pageHeight, parentCTM)
 		run = run[:0]
 	}
 	for i, glyph := range glyphs {
@@ -352,7 +354,7 @@ func (p *Document) drawTextCode(ctx DrawContext, face FontFace, object models.Te
 		}
 		if containsPrivateGlyphRune(glyph.value) {
 			flushRun()
-			p.drawTextGlyph(ctx, face, object, glyph.value, posX, posY, pageHeight, parentCTM)
+			p.drawTextGlyph(ctx, faces, object, glyph.value, posX, posY, pageHeight, parentCTM)
 			continue
 		}
 		if len(run) == 0 {
@@ -438,7 +440,8 @@ func textGlyphWidth(face FontFace, glyph textGlyph) float64 {
 	return face.TextWidth(glyph.value)
 }
 
-func (p *Document) drawTextGlyph(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+	face := faces.run(x, y)
 	hScale := textHScale(object)
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
@@ -449,25 +452,27 @@ func (p *Document) drawTextGlyph(ctx DrawContext, face FontFace, object models.T
 	// Unicode 映射、字体可以成形的文字走正常文字接口，以保留复制和搜索能力。
 	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
 	if isEmbeddedFont && face.IsCFF() && !fontCanRenderText(face, value) {
-		p.drawCFFTextPath(ctx, face, object, value, x, y, pageHeight, parentCTM, hScale)
+		p.drawCFFTextPath(ctx, faces, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
 	if path := face.DirectPath(value); path != nil {
-		p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+		p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
 	// CharDirection 需要逐字旋转，Canvas 的文字排版接口不能对单个字形
 	// 应用该变换，因此退回到路径绘制。
 	if textCharDirectionDegrees(object) != 0 {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
 		}
 	}
-	// 空心字必须走路径绘制才能描边，DrawText 无法单独描边。
-	if textFillDisabled(object) && object.Stroke {
+	// 只要需要描边就必须走路径绘制：Canvas 的原生文字接口用 DefaultStyle
+	// 只复制 Fill（canvas/text.go 的 renderLineTo），FontFace 也没有描边字段，
+	// 因此 DrawText 会静默丢弃描边。空心字与"填充+描边"文字都受此限制。
+	if object.Stroke {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
-			p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
 		}
 	}
@@ -483,20 +488,9 @@ func (p *Document) drawTextGlyph(ctx DrawContext, face FontFace, object models.T
 		// 对于 CellContent，Boundary 定义在父级坐标系中。
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-		ctx.Rotate(-textCharDirectionDegrees(object))
-		ctx.Scale(hScale, 1)
-		p.drawTextInline(ctx, face, value)
-		ctx.Pop()
-		return
-	}
-	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
-		tx, ty := object.CTM.Transform(x, y)
-		if !finiteFloat(tx) || !finiteFloat(ty) || !finiteFloat(tx+object.Boundary.X) || !finiteFloat(pageHeight-(ty+object.Boundary.Y)) {
-			return
+		if m := textCTMLinearMatrix(object.CTM); m != nil {
+			ctx.Transform(*m)
 		}
-		ctx.Push()
-		ctx.Translate(tx+object.Boundary.X, pageHeight-(ty+object.Boundary.Y))
-		ctx.Rotate(-object.CTM.RotationAngleDegrees())
 		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
 		p.drawTextInline(ctx, face, value)
@@ -509,8 +503,13 @@ func (p *Document) drawTextGlyph(ctx DrawContext, face FontFace, object models.T
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
 		return
 	}
+	// CTM 的线性部分必须整体作用到字形上：只用 Rotate 只能表达纯旋转，
+	// 水平倾斜（CTM="1 0 0.3 1 0 0"）和非等比缩放会被静默丢弃，字形仍是直立的。
 	ctx.Push()
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	if m := textCTMLinearMatrix(object.CTM); m != nil {
+		ctx.Transform(*m)
+	}
 	ctx.Rotate(-textCharDirectionDegrees(object))
 	ctx.Scale(hScale, 1)
 	p.drawTextInline(ctx, face, value)
@@ -539,7 +538,8 @@ func (p *Document) drawTextInline(ctx DrawContext, face FontFace, value string) 
 
 // drawCFFTextPath 避免将修复后的裸 CFF 字体交给 PDF 字体子集器，
 // 因为子集器无法安全地序列化某些嵌入式 CFF 程序。
-func (p *Document) drawCFFTextPath(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	face := faces.run(x, y)
 	path := face.DirectPath(value)
 	if path == nil {
 		path = face.ToPath(value)
@@ -547,7 +547,7 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, face FontFace, object models
 	if path == nil || path.Empty() {
 		return
 	}
-	p.drawTextPath(ctx, face, path, object, x, y, pageHeight, parentCTM, hScale)
+	p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 }
 
 func containsPrivateGlyphRune(value string) bool {
@@ -559,21 +559,19 @@ func containsPrivateGlyphRune(value string) bool {
 	return false
 }
 
-func (p *Document) drawTextPath(ctx DrawContext, face FontFace, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
+	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变必须以它为基准还原
+	// 取样空间；后续分支会改写 x、y，因此先单独保留。
+	runX, runY := x, y
+	face := faces.run(runX, runY)
 	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
-	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
-	// 因此需要将文字填充样式复制到路径绘制状态。
-	if textFillDisabled(object) && object.Stroke {
-		// 空心字：仅描边，不填充。
-		ctx.ClearFill()
-	} else {
-		ctx.SetFillPaint(face.Fill())
-		ctx.ClearStroke()
-	}
 	if parentCTM != nil {
+		// 该分支用上下文变换绘制路径，后端在 run 排版空间中取样渐变，
+		// 与原生文字分支一致。
+		p.applyTextPathFill(ctx, faces.runPaint(runX, runY, face.Fill()), object)
 		if object.CTM != nil {
 			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
 		} else {
@@ -584,6 +582,9 @@ func (p *Document) drawTextPath(ctx DrawContext, face FontFace, path *geom.Path,
 		}
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+		if m := textCTMLinearMatrix(object.CTM); m != nil {
+			ctx.Transform(*m)
+		}
 		ctx.Scale(hScale, 1)
 		ctx.DrawPath(0, 0, path)
 		ctx.Pop()
@@ -596,8 +597,10 @@ func (p *Document) drawTextPath(ctx DrawContext, face FontFace, path *geom.Path,
 		return
 	}
 	matrix := geom.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if object.CTM != nil && object.CTM.RotationAngle() != 0 {
-		matrix = matrix.Rotate(-object.CTM.RotationAngleDegrees())
+	// 与原生文字、网格文字分支保持一致：CTM 的线性部分整体参与变换，
+	// 只调用 Rotate 会把倾斜和非等比缩放静默丢弃。
+	if m := textCTMLinearMatrix(object.CTM); m != nil {
+		matrix = matrix.Mul(*m)
 	}
 	if direction := textCharDirectionDegrees(object); direction != 0 {
 		matrix = matrix.Rotate(-direction)
@@ -606,7 +609,32 @@ func (p *Document) drawTextPath(ctx DrawContext, face FontFace, path *geom.Path,
 	if !finiteMatrix(matrix) {
 		return
 	}
+	// 排版矩阵已烘焙进轮廓，后端按设备坐标取样渐变，因此画笔要用矩阵逆
+	// 映回 Boundary 空间；矩阵退化时退回 run 空间画笔。
+	paint, ok := faces.devicePaint(matrix, faces.runPaint(runX, runY, face.Fill()))
+	if !ok {
+		paint = faces.runPaint(runX, runY, face.Fill())
+	}
+	p.applyTextPathFill(ctx, paint, object)
 	ctx.DrawPath(0, 0, path.Transform(matrix))
+}
+
+// applyTextPathFill 设置走路径文字的填充与描边状态。
+func (p *Document) applyTextPathFill(ctx DrawContext, paint geom.Paint, object models.TextObject) {
+	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
+	// 因此需要将文字填充样式复制到路径绘制状态。
+	if textFillDisabled(object) && object.Stroke {
+		// 空心字：仅描边，不填充。
+		ctx.ClearFill()
+		return
+	}
+	ctx.SetFillPaint(paint)
+	if !object.Stroke {
+		// 只有不描边的文字才清除描边。textWithBudget 已按 StrokeColor
+		// 设置好描边画笔与线宽，若在此清除，"填充+描边" 文字的描边会被
+		// 静默丢弃（text-directions.ofd 第 3 页 ID=51 即是此情况）。
+		ctx.ClearStroke()
+	}
 }
 
 func finiteArray(values models.StArrayF) bool {
@@ -623,4 +651,30 @@ func valueAt(values models.StArrayF, index int) float64 {
 		return values[index]
 	}
 	return 0
+}
+
+// textCTMLinearMatrix 返回图元 CTM 的线性部分（不含平移），供字形变换使用。
+// CTM 只变换文字原点时，倾斜与非等比缩放不会作用到字形轮廓上；字形必须
+// 显式乘上同一个线性部分。CTM 为 nil 或退化为单位变换时返回 nil。
+//
+// OFD 的 CTM 定义在对象空间（Y 轴向下），而字形轮廓是 font 的 Y 轴向上坐标，
+// 因此要把线性部分对 Y 翻转做一次共轭（F·L·F），即取反对角项的相反数，否则
+// 倾斜和旋转方向会被上下镜像：CTM="1 0 0.3 1 0 0" 会表现为上端偏右（应为上端
+// 偏左），旋转正角也会反向。
+func textCTMLinearMatrix(ctm *models.CTM) *geom.Matrix {
+	if ctm == nil {
+		return nil
+	}
+	a, b, c, d := (*ctm)[0], (*ctm)[1], (*ctm)[2], (*ctm)[3]
+	if !finiteFloat(a) || !finiteFloat(b) || !finiteFloat(c) || !finiteFloat(d) {
+		return nil
+	}
+	if a == 1 && b == 0 && c == 0 && d == 1 {
+		return nil
+	}
+	matrix := geom.Matrix{{a, -c, 0}, {-b, d, 0}}
+	if !finiteMatrix(matrix) {
+		return nil
+	}
+	return &matrix
 }

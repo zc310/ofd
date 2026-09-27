@@ -55,6 +55,10 @@ type DrawContext interface {
 	Scale(sx, sy float64)
 	Rotate(deg float64)
 
+	// Transform 用给定矩阵右乘当前变换。Translate/Scale/Rotate 无法表达倾斜
+	// （shear）等含非等比缩放的变换，文字图元的 CTM 必须用它才能完整生效。
+	Transform(m geom.Matrix)
+
 	// CurrentMatrix 返回当前完整矩阵（用于把预渲染的离屏图按正确位置贴回）。
 	CurrentMatrix() geom.Matrix
 

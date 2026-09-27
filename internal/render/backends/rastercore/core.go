@@ -223,6 +223,9 @@ func (c *Core) Scale(sx, sy float64) { c.mx = c.mx.Scale(sx, sy) }
 // Rotate 追加旋转变换（设备换算在 DrawPath 执行）。
 func (c *Core) Rotate(deg float64) { c.mx = c.mx.Rotate(deg) }
 
+// Transform 右乘当前逻辑矩阵，与 Translate/Scale/Rotate 的追加语义一致。
+func (c *Core) Transform(m geom.Matrix) { c.mx = c.mx.Mul(m) }
+
 // CurrentMatrix 返回当前逻辑矩阵（CoordSystem·View）。
 func (c *Core) CurrentMatrix() geom.Matrix { return c.mx }
 
