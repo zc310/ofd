@@ -43,8 +43,36 @@ func (p *Document) drawImageSeal(ctx DrawContext, info *parser.SealInfo, pb mode
 	return p.drawRasterSeal(ctx, info, pb, img)
 }
 
+// sealBackgroundCutoff 是判定印章纸张背景的通道阈值：R/G/B 均不低于该值
+// 视为白色背景。
+const sealBackgroundCutoff = 250
+
+// sealTransparentBackground 把不带透明通道的印章位图中的白色背景置为透明。
+// 电子印章是“墨水印记”，部分制章工具导出的图片没有透明通道、背景被压成不
+// 透明白色，直接叠加会在页面内容上留下白块（真实印章应透出底下的内容）。
+// 带透明通道的印章（绝大多数）保持原样，避免误删印章自身的不透明白色元素。
+func sealTransparentBackground(img image.Image) image.Image {
+	opaque, ok := img.(interface{ Opaque() bool })
+	if !ok || !opaque.Opaque() {
+		return img
+	}
+	b := img.Bounds()
+	dst := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			if r>>8 >= sealBackgroundCutoff && g>>8 >= sealBackgroundCutoff && bl>>8 >= sealBackgroundCutoff {
+				continue // 透明像素为零值，无需写入
+			}
+			dst.SetNRGBA(x, y, color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(bl >> 8), A: uint8(a >> 8)})
+		}
+	}
+	return dst
+}
+
 // drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上。
 func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
+	img = sealTransparentBackground(img)
 	imgBounds := img.Bounds()
 	if imgBounds.Empty() {
 		return nil
