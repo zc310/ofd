@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/canvas/text"
 	"github.com/tdewolff/font"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -90,6 +91,8 @@ type Fonts struct {
 	pathCache      map[fontPathKey]*canvas.Path
 	textLineMu     sync.Mutex
 	textLineCache  map[textLineKey]*canvas.Text
+	textWidthMu    sync.Mutex
+	textWidthCache map[textWidthKey]float64
 }
 
 // fontPathKey 标识一次确定的字形轮廓计算结果：轮廓几何只由字体数据、
@@ -114,6 +117,20 @@ type textLineKey struct {
 	variant canvas.FontVariant
 	fill    color.RGBA
 	value   string
+}
+
+// textWidthKey 标识一次确定的文本排版宽度。宽度只由字体数据、字号、样式、
+// 书写方向与文本决定（整形成果不含画笔颜色），因此不把填充色放进 key，
+// 渐变与图案画笔的文字同样可以复用。
+type textWidthKey struct {
+	font      *canvas.Font
+	size      float64
+	style     drawing.FontStyle
+	variant   canvas.FontVariant
+	direction text.Direction
+	script    text.Script
+	language  string
+	value     string
 }
 
 type fallbackFace struct {

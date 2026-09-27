@@ -106,7 +106,54 @@ func (f canvasFontFace) DirectPath(value string) *geom.Path {
 	return canvasconv.FromCanvasPath(path)
 }
 
-func (f canvasFontFace) TextWidth(value string) float64 { return f.face.TextWidth(value) }
+// maxTextWidthCacheEntries 限制文字宽度缓存条目数，超出后整体清空。
+const maxTextWidthCacheEntries = 4096
+
+// cachedTextWidth 返回文本的排版宽度，带缓存。
+//
+// canvas 的 TextWidth 每次调用都会重新做一次 harfbuzz 整形，而 OFD 排版需要
+// 逐字测量步进宽度：y.ofd 的 588 个文字图元每次排版都要为每个字形整形一次，
+// 重复整形一度占渲染 CPU 的四分之一。相同字体数据 + 字号 + 样式 + 书写方向
+// + 文本的宽度完全一致，直接复用。缓存有界，超出后整体清空。
+func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
+	if face == nil {
+		return 0
+	}
+	if face.Font == nil || value == "" {
+		return face.TextWidth(value)
+	}
+	key := textWidthKey{
+		font:      face.Font,
+		size:      face.Size,
+		style:     drawing.FontStyle(face.Style),
+		variant:   face.Variant,
+		direction: face.Direction,
+		script:    face.Script,
+		language:  face.Language,
+		value:     value,
+	}
+	p.textWidthMu.Lock()
+	if width, ok := p.textWidthCache[key]; ok {
+		p.textWidthMu.Unlock()
+		return width
+	}
+	p.textWidthMu.Unlock()
+	width := face.TextWidth(value)
+	p.textWidthMu.Lock()
+	if p.textWidthCache == nil || len(p.textWidthCache) >= maxTextWidthCacheEntries {
+		p.textWidthCache = make(map[textWidthKey]float64)
+	}
+	p.textWidthCache[key] = width
+	p.textWidthMu.Unlock()
+	return width
+}
+
+func (f canvasFontFace) TextWidth(value string) float64 {
+	if f.fonts != nil {
+		return f.fonts.cachedTextWidth(f.face, value)
+	}
+	return f.face.TextWidth(value)
+}
 
 func (f canvasFontFace) GlyphIndex(r rune) uint16 {
 	if f.face == nil || f.face.Font == nil {
