@@ -25,12 +25,19 @@ import (
 //   - CopyStrokeToFill 复用 canvas 自身保存的描边样式。
 type canvasBackend struct {
 	ctx *canvas.Context
+	// vector 表示该后端用于矢量序列化（PDF/SVG/EPS/TeX），可以把
+	// Linear/RadialGradient 写成原生 Shading，从而保留文字可复制性。
+	vector bool
 }
 
-// newCanvasBackend 包装一个 canvas.Context 为 DrawContext。
+// newCanvasBackend 包装一个 canvas.Context 为 DrawContext（矢量输出）。
 func newCanvasBackend(ctx *canvas.Context) drawing.DrawContext {
-	return &canvasBackend{ctx: ctx}
+	return &canvasBackend{ctx: ctx, vector: true}
 }
+
+// ShadingText 实现 drawing.ShadingTextBackend：矢量后端支持把原生
+// Linear/RadialGradient 作为文字着色图案序列化。
+func (b *canvasBackend) ShadingText() bool { return b.vector }
 
 func (b *canvasBackend) Push() { b.ctx.Push() }
 func (b *canvasBackend) Pop()  { b.ctx.Pop() }

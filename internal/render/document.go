@@ -202,6 +202,15 @@ func (p *Document) FallbackFontFamily(id models.StRefID) string {
 	return p.fonts.FallbackFontFamily(id)
 }
 
+// Background 返回文档渲染时使用的背景色。调用方可以据此判断能否复用已有的
+// 渲染文档，避免为不同背景重复构建字体和图片缓存。
+func (p *Document) Background() color.Color {
+	if p == nil {
+		return nil
+	}
+	return p.background
+}
+
 // HasLoadedEmbeddedFont 判断文档字体是否可以作为内嵌字体族提供给浏览器。
 func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
 	if p == nil || p.fonts == nil {
