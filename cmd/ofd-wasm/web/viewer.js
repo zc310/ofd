@@ -462,6 +462,15 @@ const recentDatabaseName = 'ofd-reader';
 const recentStoreName = 'files';
 const recentFileLimit = 5;
 const recentFileMaxBytes = 64 << 20;
+// URL 参数：?file=<url> 让页面打开后自动加载远程 OFD，?name= 覆盖文件名。
+// 远程文档与本地文件走同一条打开路径，也会进入「最近打开」（受 recentFileMaxBytes 限制）。
+const remoteFileQueryKey = 'file';
+const remoteFileNameQueryKey = 'name';
+// remoteFileTimeout 限制下载耗时：远端无响应时不能让启动页一直停在「正在下载」。
+const remoteFileTimeout = 120_000;
+// remoteFileMaxBytes 限制远程文档大小。地址由外部提供且不受本地文件选择器约束，
+// 超过上限时直接失败，避免把超大响应整体读进内存。
+const remoteFileMaxBytes = 256 << 20;
 const readingPositionStorageKey = 'ofd-reading-positions';
 const pageRequests = new Map();
 const pageCardRequests = new Map();
@@ -648,6 +657,15 @@ let startupProgressActive = true;
 let startupWasmReady = false;
 let startupFontReady = false;
 let startupFontError;
+// pendingDownload 记录正在下载的远程文档：null 表示没有下载在进行。
+// 启动页文案、取消按钮和 popstate 去重都依赖它。
+let pendingDownload;
+// startupNotice 是 ?file= 路径自己给出的启动提示（下载中、参数非法、下载失败）。
+// 它比 WASM/字体就绪事件更具体，因此 updateStartupProgress 不会再改写文案，
+// 否则后到的就绪事件会把错误提示覆盖成「已准备就绪」。
+let startupNotice;
+// currentRemoteSource 记录当前文档对应的远程来源，用于 popstate 时避免重复加载。
+let currentRemoteSource;
 let renderedPages = new Set();
 let failedPages = new Set();
 let copyFeedbackTimer;
@@ -1616,6 +1634,14 @@ function updateStartupProgress() {
     startupProgressLabel.textContent = '[2/2] 默认中文字体加载失败';
     startupMessage.textContent = `默认中文字体加载失败：${startupFontError.message}`;
     setStatus(`默认中文字体加载失败：${startupFontError.message}`);
+    return;
+  }
+  // ?file= 路径已经给出更具体的提示（下载中、参数非法或下载失败），保持原样。
+  if (startupNotice) {
+    startupProgressLabel.textContent = startupNotice.label;
+    startupMessage.textContent = startupNotice.message;
+    setStatus(startupNotice.message);
+    startupScreen.hidden = true;
     return;
   }
   if (!startupWasmReady) {
@@ -2965,17 +2991,181 @@ function cancelRequests(requests) {
   if (requests === pageRequests) pageCardRequests.clear();
 }
 
+// remoteDocumentSource 解析 ?file=/?name= 参数。raw 保留用户书写的原始值用于
+// 写回地址栏，href 是相对当前页面解析后的绝对地址。
+// 参数非法时返回带 error 的对象，调用方负责提示而不是静默忽略。
+function remoteDocumentSource(search = window.location.search) {
+  let raw;
+  let override;
+  try {
+    const params = new URLSearchParams(search);
+    raw = (params.get(remoteFileQueryKey) || '').trim();
+    override = (params.get(remoteFileNameQueryKey) || '').trim();
+  } catch (_) {
+    return undefined;
+  }
+  if (!raw) return undefined;
+  let url;
+  try {
+    url = new URL(raw, window.location.href);
+  } catch (_) {
+    return { raw, name: '', error: '文件地址无效' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { raw, name: '', error: '文件地址必须使用 HTTP 或 HTTPS' };
+  }
+  return { raw, href: url.href, name: override || decodePathName(url.pathname) || 'document.ofd' };
+}
+
+// decodePathName 取 URL 路径的最后一段作为文件名；转义非法时退回原始片段。
+function decodePathName(pathname) {
+  const segment = pathname.split('/').filter(Boolean).pop() || '';
+  if (!segment) return '';
+  try {
+    return decodeURIComponent(segment);
+  } catch (_) {
+    return segment;
+  }
+}
+
+// sanitizeRemoteName 清掉路径分隔符和控制字符：文件名会进入标题栏、保存文件名
+// 和 IndexedDB 主键，不能带上会误导用户的路径片段。
+function sanitizeRemoteName(name) {
+  return String(name || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
+}
+
+// fetchRemoteFile 下载远程 OFD 并包装成 File，让远程文档复用本地文件的打开路径。
+// 请求使用 cache: 'no-store'，Service Worker 据此让文档响应绕过 shell 缓存，
+// 避免同一地址再次访问时命中陈旧副本。
+async function fetchRemoteFile(source) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), remoteFileTimeout);
+  let response;
+  try {
+    response = await fetch(source.href, { signal: controller.signal, cache: 'no-store' });
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('下载超时或已取消');
+    // 跨域地址缺少 CORS 头时 fetch 同样失败，提示里点明这一前提。
+    throw new Error(`无法下载 ${source.href}：${error.message}（跨域地址需要 CORS 允许）`);
+  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > remoteFileMaxBytes) {
+    throw new Error(`文件过大：${formatFileSize(declared)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
+  }
+  // Content-Length 可能缺失或不准确，读取完成后再校验一次实际大小。
+  const blob = await response.blob();
+  clearTimeout(timer);
+  if (!blob.size) throw new Error('文件内容为空');
+  if (blob.size > remoteFileMaxBytes) {
+    throw new Error(`文件过大：${formatFileSize(blob.size)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
+  }
+  const name = sanitizeRemoteName(source.name) || 'document.ofd';
+  const type = blob.type || 'application/ofd';
+  if (typeof File === 'function') return new File([blob], name, { type });
+  return Object.assign(new Blob([blob], { type }), { name });
+}
+
+// openRemoteDocument 下载并打开 ?file= 指定的文档。下载阶段复用「取消打开」按钮，
+// 因此这里必须自己维护 opening 状态：openSelectedFile 的状态从下载完成后才开始。
+async function openRemoteDocument(source, options = {}) {
+  if (opening) return false;
+  const controller = new AbortController();
+  // source 一起存下来：popstate 去重要比较正在下载的地址。
+  pendingDownload = { name: source.name, href: source.href, controller };
+  opening = true;
+  cancelOpen.hidden = false;
+  const generation = documentGeneration;
+  // 下载可能长达数十秒（回退字体还要从 CDN 拉取），不能停在启动页：启动页是
+  // 全屏浮层，会挡住「取消打开」按钮，用户既看不到进度也无法取消。
+  startupScreen.hidden = true;
+  startupNotice = {
+    label: '[2/2] 正在下载远程文件',
+    message: `正在下载 ${source.name}...`,
+  };
+  setStatus(startupNotice.message);
+  try {
+    const remote = await fetchRemoteFile(source);
+    if (generation !== documentGeneration) return false;
+    pendingDownload = undefined;
+    return await openSelectedFile(remote, { remoteSource: source, keepURL: options.keepURL });
+  } catch (error) {
+    if (generation !== documentGeneration) return false;
+    pendingDownload = undefined;
+    opening = false;
+    cancelOpen.hidden = true;
+    currentRemoteSource = undefined;
+    if (isCancelledError(error)) return false;
+    startupNotice = { label: '[2/2] 下载失败', message: `下载失败：${error.message}` };
+    setStatus(startupNotice.message);
+    // 下载失败时地址栏不应继续指向打不开的地址。keepURL 表示这条历史记录不是
+    // 本次加载创建的（前进/后退），改写它会让返回目标失去意义。
+    if (!options.keepURL) replaceDocumentURL(undefined);
+    return false;
+  }
+}
+
+// loadRemoteFromLocation 按地址栏参数加载远程文档；没有 ?file= 或参数非法时返回 false。
+// 参数非法只提示不阻塞：启动页照常走完，用户仍可手动选择文件或拖放。
+async function loadRemoteFromLocation(options = {}) {
+  const source = remoteDocumentSource();
+  if (!source) return false;
+  if (source.error) {
+    startupNotice = { label: '[1/2] 无法加载远程文件', message: `无法加载远程文件：${source.error}` };
+    setStatus(startupNotice.message);
+    if (startupProgressActive) {
+      startupProgressLabel.textContent = startupNotice.label;
+      startupMessage.textContent = startupNotice.message;
+    }
+    return false;
+  }
+  return openRemoteDocument(source, options);
+}
+
+// documentURLForSource 构造带 ?file=/?name= 的当前页地址。raw 优先保留用户书写的
+// 相对地址，绝对地址用于原始值不可用的情况。
+function documentURLForSource(source) {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set(remoteFileQueryKey, source.raw || source.href);
+  const name = sanitizeRemoteName(source.name);
+  if (name) url.searchParams.set(remoteFileNameQueryKey, name);
+  return url;
+}
+
+// replaceDocumentURL 改写地址栏：远程文档写回 ?file= 以便分享和刷新恢复，
+// 本地文档清掉这两个参数，避免刷新时又去下载上一个远程文件。
+function replaceDocumentURL(source) {
+  if (!window.history?.replaceState) return;
+  const url = source ? documentURLForSource(source) : new URL(window.location.href);
+  if (!source) {
+    url.searchParams.delete(remoteFileQueryKey);
+    url.searchParams.delete(remoteFileNameQueryKey);
+  }
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
+  window.history.replaceState(null, '', next);
+}
+
 async function loadFile() {
   const selected = file.files[0];
   return openSelectedFile(selected);
 }
 
-async function openSelectedFile(selected) {
-  if (!selected) return;
+async function openSelectedFile(selected, options = {}) {
+  if (!selected) return false;
   startupProgressActive = false;
   startupScreen.hidden = true;
+  // 文档已经在手，启动阶段的提示（包括下载失败）不再有意义。
+  startupNotice = undefined;
   saveReadingPosition();
   const generation = ++documentGeneration;
+  const remoteSource = options.remoteSource;
+  // 本地文件（含最近文件、拖放、系统文件）会清掉 ?file=，避免刷新时又去下载
+  // 上一个远程文件；options.keepURL 用于前进后退触发的重复加载。
+  currentRemoteSource = remoteSource;
+  if (!options.keepURL) replaceDocumentURL(remoteSource);
   opening = true;
   cancelOpen.hidden = false;
   openRequest?.cancel();
@@ -3056,9 +3246,9 @@ async function openSelectedFile(selected) {
   try {
     // 在读取和解析新文件前释放旧 Reader，避免切换大文档时新旧文档同时驻留。
     await engine.close();
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     const data = await selected.arrayBuffer();
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     try {
       const fallbackFonts = await preloadFallbackFonts();
       if (!fallbackFontRegistration) {
@@ -3076,12 +3266,12 @@ async function openSelectedFile(selected) {
     } catch (error) {
       throw new Error(`默认中文字体不可用：${error.message}`);
     }
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     openRequest = engine.open(data, openDocumentOptions);
     const result = await openRequest;
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     await injectFonts(result.fonts, generation);
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     const pageCount = Number.isInteger(result.pageCount) && result.pageCount >= 0
       ? result.pageCount
       : (result.pages?.length || 0);
@@ -3098,7 +3288,7 @@ async function openSelectedFile(selected) {
     sidebarScroll = readSidebarScroll();
     current = restoreReadingPosition(selected, pageInfos.length);
     await applyDocumentPreferences();
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration) return false;
     restorePageRotation();
     buildPages();
     if (activeSidebarTab === 'fonts') renderFonts();
@@ -3113,8 +3303,9 @@ async function openSelectedFile(selected) {
     void fetchPageLinks(generation);
     void saveRecentFile(selected);
     void reportMemory('打开文档');
+    return true;
   } catch (error) {
-    if (generation !== documentGeneration || isCancelledError(error)) return;
+    if (generation !== documentGeneration || isCancelledError(error)) return false;
     pageInfos = [];
     pageSpreads = [];
     pageVirtualTrack = undefined;
@@ -3154,6 +3345,10 @@ async function openSelectedFile(selected) {
     current = 0;
     updateNavigation();
     setStatus(`打开失败：${error.message}`);
+    // 打开失败时地址栏不应继续指向打不开的远程文档。
+    currentRemoteSource = undefined;
+    if (remoteSource) replaceDocumentURL(undefined);
+    return false;
   } finally {
     if (generation === documentGeneration) {
       openRequest = undefined;
@@ -3166,6 +3361,15 @@ async function openSelectedFile(selected) {
 function cancelOpening() {
   if (!opening) return;
   documentGeneration++;
+  // 远程文档可能还在下载，先中止请求：否则 openSelectedFile 尚未接管，
+  // 取消后仍会把文件读进来并打开。
+  pendingDownload?.controller.abort();
+  pendingDownload = undefined;
+  // 取消后不再让启动阶段的“正在下载”提示覆盖取消结果：启动页已经让位，
+  // 后续的 WASM/字体就绪事件不应该再改写状态栏。
+  startupNotice = undefined;
+  startupProgressActive = false;
+  currentRemoteSource = undefined;
   openRequest?.cancel();
   openRequest = undefined;
   cancelRequests(pageRequests);
@@ -6455,5 +6659,17 @@ function setRecentPanelOpen(open) {
     void refreshRecentFiles();
   }
 }
+
+// popstate 后按新地址重新加载：地址栏被改写为 ?file= 后，前进后退可以在文档
+// 之间切换。没有 ?file= 说明目标地址不带远程文档，保持当前文档不动。
+window.addEventListener('popstate', () => {
+  const source = remoteDocumentSource();
+  if (!source || source.error) return;
+  if (currentRemoteSource?.href === source.href || pendingDownload?.href === source.href) return;
+  void loadRemoteFromLocation({ keepURL: true });
+});
+
+// 启动即按 ?file= 加载：不等 WASM 初始化，下载与模块、字体加载并行。
+void loadRemoteFromLocation();
 
 void refreshRecentFiles();
