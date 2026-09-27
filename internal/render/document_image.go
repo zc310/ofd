@@ -22,8 +22,7 @@ func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.
 }
 
 func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
-		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
+	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
 	resMedia := p.Document.GetMedia(models.StID(object.ResourceID))

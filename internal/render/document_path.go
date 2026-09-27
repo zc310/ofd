@@ -19,8 +19,7 @@ func (p *Document) Path(ctx DrawContext, object models.PathObject, dp *models.Dr
 // path 使用可选的父级变换绘制路径。Pattern 的 CellContent 对象与页面对象使用
 // 相同的渲染器，并将图块变换作为父级变换传入。
 func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
-	if !object.VisibleValue() || !object.CTM.IsFinite() || !parentCTM.IsFinite() ||
-		!object.Boundary.IsFinite() || !pb.IsFinite() || !finiteFloat(pb.Height) {
+	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
 	ctx.Push()
@@ -292,6 +291,17 @@ func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHe
 
 func finiteFloat(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+// drawableGraphicUnit 校验图元绘制所需的公共入参：可见性、对象与父级 CTM、
+// Boundary 和页面区域都必须是有限数值。
+//
+// OFD 允许这些属性缺失或被写入非有限值，非法输入一律跳过绘制而不是让 NaN
+// 坐标进入变换矩阵（那会污染整个内容流）。文字、路径、图片和复合图元四条
+// 绘制入口共用该规则，单独实现容易在新增校验项时漏改某一处。
+func drawableGraphicUnit(visible bool, ctm, parentCTM *models.CTM, boundary models.StBox, pb models.StBox) bool {
+	return visible && ctm.IsFinite() && parentCTM.IsFinite() &&
+		boundary.IsFinite() && pb.IsFinite() && finiteFloat(pb.Height)
 }
 
 func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeight float64, objectCTM, parentCTM *models.CTM) *geom.Path {
