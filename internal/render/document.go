@@ -452,24 +452,44 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	}
 	box := *annot.Appearance.Boundary
 	for _, item := range annot.Appearance.Items {
-		switch item.Kind {
-		case models.PageItemImage:
-			object := *item.Image
-			object.Boundary = object.Boundary.CopyAndShift(&box)
-			p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
-		case models.PageItemPath:
-			object := *item.Path
-			object.Boundary = object.Boundary.CopyAndShift(&box)
-			var budget renderBudget
-			budget.reset()
-			p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
-		case models.PageItemText:
-			object := *item.Text
-			object.Boundary = object.Boundary.CopyAndShift(&box)
-			var budget renderBudget
-			budget.reset()
-			p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
-		case models.PageItemComposite, models.PageItemBlock:
+		p.annotItem(ctx, item, box, pb)
+	}
+}
+
+// annotItem 绘制注解外观中的一个图元。外观内各图元的 Boundary 相对
+// Appearance.Boundary 左上角，这里按 box 平移后再绘制；复合图元（如手写签名
+// 的矢量笔迹）与嵌套块同样要绘制，不能像以前那样被直接跳过。
+func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox) {
+	switch item.Kind {
+	case models.PageItemImage:
+		object := *item.Image
+		object.Boundary = object.Boundary.CopyAndShift(&box)
+		p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
+	case models.PageItemPath:
+		object := *item.Path
+		object.Boundary = object.Boundary.CopyAndShift(&box)
+		var budget renderBudget
+		budget.reset()
+		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
+	case models.PageItemText:
+		object := *item.Text
+		object.Boundary = object.Boundary.CopyAndShift(&box)
+		var budget renderBudget
+		budget.reset()
+		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, &budget)
+	case models.PageItemComposite:
+		object := *item.Composite
+		object.Boundary = object.Boundary.CopyAndShift(&box)
+		var budget renderBudget
+		budget.reset()
+		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, 0, &budget)
+	case models.PageItemBlock:
+		if item.Block == nil {
+			return
+		}
+		// 块与子图元共用父级坐标系，因此仍以同一个 box 平移。
+		for _, child := range item.Block.Items {
+			p.annotItem(ctx, child, box, pb)
 		}
 	}
 }
