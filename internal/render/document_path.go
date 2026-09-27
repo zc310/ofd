@@ -30,7 +30,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		return
 	}
 
-	p.updateCtPathStyle(ctx, &object.CtPath, dp)
+	p.updateCtPathStyle(ctx, &object.CtPath, dp, pathStrokeScale(object, parentCTM))
 	fillGradient, strokeGradient := p.updatePathGradients(ctx, &object, dp, pb.Height)
 
 	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM, parentCTM)
@@ -232,6 +232,33 @@ func gradientBoundaryTransform(boundary models.StBox, pageHeight float64) func(m
 
 func (p *Document) buildObjectPath(object models.PathObject, pageHeight float64) *geom.Path {
 	return p.buildObjectPathWithTransform(object, pageHeight, nil)
+}
+
+// pathStrokeScale 返回路径图元描边属性相对对象坐标系的缩放系数。OFD 的线宽、
+// 虚线、斜接限制都定义在对象坐标系中，会随对象 CTM 一起缩放（与文字字号一致）；
+// 路径已展平到页面坐标，因此描边宽度需显式乘以 CTM 的缩放系数。均匀缩放下取
+// sqrt(|det|)，与参考实现（对象空间描边后再变换）一致。
+func pathStrokeScale(object models.PathObject, parentCTM *models.CTM) float64 {
+	var ctm *models.CTM
+	if parentCTM != nil {
+		ctm = parentCTM
+		if object.CTM != nil {
+			ctm = parentCTM.Multiply(object.CTM)
+			if !ctm.IsFinite() {
+				return 1
+			}
+		}
+	} else if object.CTM != nil {
+		ctm = object.CTM
+	}
+	if ctm == nil || !ctm.IsFinite() {
+		return 1
+	}
+	scale := math.Sqrt(math.Abs(ctm[0]*ctm[3] - ctm[1]*ctm[2]))
+	if !finiteFloat(scale) || scale <= 0 {
+		return 1
+	}
+	return scale
 }
 
 func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *geom.Path {
