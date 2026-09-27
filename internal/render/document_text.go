@@ -3,6 +3,7 @@ package render
 import (
 	"image"
 	"math"
+	"strings"
 
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -67,6 +68,18 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			stroke = &CTColor{Value: scaleAlpha(stroke.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: stroke.Gradient}
 		}
 	}
+	source := textFillColor(object, dp)
+	// 矢量后端（PDF/SVG）能把原生 Linear/RadialGradient 序列化为文字着色图案。
+	// 对可原生表达的轴向/径向渐变（含 Extend=0/1/2），改用带两端延伸位的原生
+	// 渐变作为文字填充：文字保留真实文本 + 原生 Shading，PDF 中仍可复制。
+	// Repeat/Reflect、椭圆、焦点径向、网格等仍走栅格化。
+	if fill != nil {
+		if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && isAxialRadialShading(source) {
+			if gradient := p.textShadingGradient(source); gradient != nil {
+				fill.Gradient = gradient
+			}
+		}
+	}
 	face := p.fonts.FaceObject(fontFamily, object, fill)
 	if face == nil {
 		return
@@ -76,7 +89,11 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		// 破坏内容流，直接跳过绘制。
 		return
 	}
-	if source := textFillColor(object, dp); isMeshColor(source) {
+	nativeShadingText := false
+	if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && nativeShadingGradient(fill) {
+		nativeShadingText = !textNeedsPathDrawing(face, object)
+	}
+	if isShadingColor(source) && !nativeShadingText {
 		if p.drawMeshText(ctx, face, source, object, pb, budget) {
 			return
 		}
@@ -89,6 +106,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		ctx.SetStrokeColor(geom.Black)
 	}
 	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textHScale(object))
+	faces.native = nativeShadingText
 	codePosition := 0
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
@@ -109,12 +127,45 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 	return nil
 }
 
+// nativeShadingGradient 判断填充渐变是否是可以直接写成 PDF 原生 Shading 的
+// Linear/RadialGradient（Extend=3、非焦点径向）。自定义渐变类型返回 false。
+func nativeShadingGradient(fill *CTColor) bool {
+	if fill == nil || fill.Gradient == nil {
+		return false
+	}
+	switch fill.Gradient.(type) {
+	case *geom.LinearGradient, *geom.RadialGradient:
+		return true
+	default:
+		return false
+	}
+}
+
+// textNeedsPathDrawing 判断文字是否必须走轮廓路径绘制：描边、逐字旋转，或无法
+// 按 Unicode 整形的嵌入子集/CFF 字体。这类文字无法用原生文字 + Shading 表达。
+func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
+	if face == nil {
+		return true
+	}
+	if object.Stroke || textCharDirectionDegrees(object) != 0 {
+		return true
+	}
+	var text strings.Builder
+	for _, code := range object.TextCode {
+		if face.DirectPath(code.Value) != nil {
+			return true
+		}
+		text.WriteString(code.Value)
+	}
+	if face.IsCFF() && !fontCanRenderText(face, text.String()) {
+		return true
+	}
+	return false
+}
+
 // drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
 func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, budget *renderBudget) bool {
 	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
-		return false
-	}
-	if !budget.allowOffscreenPixels(pb.Width, pb.Height, meshGradientDPI) {
 		return false
 	}
 	transform := gradientBoundaryTransform(object.Boundary, pb.Height)
@@ -122,16 +173,37 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 	if gradient == nil {
 		return false
 	}
-	surface := newOffscreenSurface(pb.Width, pb.Height, geom.DPI(meshGradientDPI))
-	surface.SetFillGradient(gradient)
+	// 只为文字自身区域创建离屏画布：整页位图会让每个渐变文字对象都承担整页
+	// 栅格化成本。文字 Boundary 未必包含升/降部，向外留出一个字号避免裁字；
+	// 字号按 CTM 的 Y 轴缩放换算成页面毫米。
+	pad := object.Size
+	if object.CTM != nil {
+		if scale := object.CTM.YScale(); scale > 0 {
+			pad *= scale
+		}
+	}
+	if pad <= 0 || !finiteFloat(pad) {
+		pad = 1
+	}
+	x0 := object.Boundary.X - pad
+	x1 := object.Boundary.X + object.Boundary.Width + pad
+	// Boundary.Y 自页顶起算，画布坐标自底向上，先翻转再留余量。
+	y0 := pb.Height - (object.Boundary.Y + object.Boundary.Height) - pad
+	y1 := pb.Height - object.Boundary.Y + pad
+	width, height := x1-x0, y1-y0
+	if !finiteFloat(x0) || !finiteFloat(y0) || !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
+		return false
+	}
+	if !budget.allowOffscreenPixels(width, height, meshGradientDPI) {
+		return false
+	}
+	surface := newOffscreenSurface(width, height, geom.DPI(meshGradientDPI))
+	surface.SetFillGradient(translateGradient(gradient, x0, y0))
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue
 		}
-		p.drawMeshTextCode(surface, face, object, code, pb.Height)
-	}
-	if !finiteFloat(pb.Width) || !finiteFloat(pb.Height) {
-		return false
+		p.drawMeshTextCode(surface, face, object, code, pb.Height, x0, y0)
 	}
 	var textImage image.Image = surface.Raster()
 	if textImage == nil || textImage.Bounds().Empty() {
@@ -140,8 +212,8 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 	if object.Alpha != nil {
 		textImage = applyImageAlpha(textImage, graphicOpacity(object.Alpha))
 	}
-	matrix := imageMatrix(models.StBox{Width: pb.Width, Height: pb.Height}, textImage,
-		models.CTM{pb.Width, 0, 0, pb.Height, 0, 0}, pb.Height)
+	box := models.StBox{X: x0, Y: pb.Height - y1, Width: width, Height: height}
+	matrix := imageMatrix(box, textImage, models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false
@@ -150,9 +222,9 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 	return true
 }
 
-func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight float64) {
+func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight, originX, originY float64) {
 	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight)
+		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, originX, originY)
 		return
 	}
 
@@ -164,11 +236,13 @@ func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object model
 			posX += deltaX
 			posY += deltaY
 		}
-		p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight)
+		p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, originX, originY)
 	}
 }
 
-func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64) {
+// drawMeshTextGlyph 在离屏画布上绘制一个字形；originX/originY 是离屏画布原点
+// 在页面画布（自底向上）坐标中的位置，字形位置需整体减去它。
+func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight, originX, originY float64) {
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() {
 		return
@@ -186,7 +260,7 @@ func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object mode
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
 		return
 	}
-	matrix := geom.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	matrix := geom.Identity.Translate(x+object.Boundary.X-originX, pageHeight-(y+object.Boundary.Y)-originY)
 	// 与原生文字分支一致：CTM 的线性部分整体参与变换，倾斜和缩放都不能丢。
 	if m := textCTMLinearMatrix(object.CTM); m != nil {
 		matrix = matrix.Mul(*m)
