@@ -131,7 +131,7 @@ func (h *ggHooks) RenderImage(img image.Image, m geom.Matrix) {
 		Stride: h.pm.Width() * 4,
 		Rect:   image.Rect(0, 0, h.pm.Width(), h.pm.Height()),
 	}
-	draw.CatmullRom.Transform(dst, aff3, src, src.Bounds(), draw.Over, nil)
+	draw.ApproxBiLinear.Transform(dst, aff3, src, src.Bounds(), draw.Over, nil)
 }
 
 func (h *ggHooks) Raster() *image.RGBA { return h.pm.ToImage() }

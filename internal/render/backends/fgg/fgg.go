@@ -118,7 +118,7 @@ func (h *fggHooks) RenderImage(img image.Image, m geom.Matrix) {
 	origin := m.Dot(geom.Point{X: -float64(margin), Y: srcH - float64(margin)}).Mul(h.dpmm)
 	m = m.Scale(h.dpmm, h.dpmm)
 	aff3 := f64.Aff3{m[0][0], -m[0][1], origin.X, -m[1][0], m[1][1], hh - origin.Y}
-	draw.CatmullRom.Transform(h.im, aff3, src, src.Bounds(), draw.Over, nil)
+	draw.ApproxBiLinear.Transform(h.im, aff3, src, src.Bounds(), draw.Over, nil)
 }
 
 func (h *fggHooks) Raster() *image.RGBA {
