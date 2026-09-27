@@ -129,9 +129,11 @@ func patternReflection(method string, width, height float64, ix, iy int) models.
 	switch strings.ToLower(method) {
 
 	case "row":
-		flipX = iy&1 != 0 // 只在奇数行水平翻转
+		// 奇数行把单元上下镜像（y -> height-y），相邻两行内容互为上下翻转
+		flipY = iy&1 != 0
 	case "column":
-		flipX = ix&1 != 0 // 只在奇数列垂直翻转
+		// 奇数列把单元左右镜像（x -> width-x），相邻两列内容互为左右翻转
+		flipX = ix&1 != 0
 	case "rowandcolumn":
 		// 两个方向都翻转，产生四象限对称图案
 		flipX = ix&1 != 0

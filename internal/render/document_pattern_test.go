@@ -50,7 +50,7 @@ func TestPatternReflection(t *testing.T) {
 		want   geom.Point
 	}{
 		{"normal", "Normal", 0, 0, geom.Point{X: 3, Y: 4}, geom.Point{X: 3, Y: 4}},
-		{"row", "Row", 0, 1, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 4}},
+		{"row", "Row", 0, 1, geom.Point{X: 3, Y: 4}, geom.Point{X: 3, Y: 16}},
 		{"column", "Column", 1, 0, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 4}},
 		{"row and column", "RowAndColumn", 1, 1, geom.Point{X: 3, Y: 4}, geom.Point{X: 17, Y: 16}},
 	}
@@ -206,38 +206,40 @@ func TestPatternReflectionNormal(t *testing.T) {
 }
 
 func TestPatternReflectionRow(t *testing.T) {
-	width := 15.0
-	for iy := 0; iy < 6; iy++ {
-		reflection := patternReflection("Row", width, 20, 0, iy)
-		// Row 模式：iy 为奇数时沿 X 轴翻转。
+	const width, height = 15.0, 20.0
+	for iy := range 6 {
+		reflection := patternReflection("Row", width, height, 0, iy)
+		// Row 模式：iy 为奇数时把单元上下镜像。
 		if iy%2 == 0 {
 			// 偶数行：恒等变换。
 			if reflection != models.IdentityMatrix {
 				t.Fatalf("Row iy=%d: want identity, got %v", iy, reflection)
 			}
-		} else {
-			// 奇数行：围绕 width 水平翻转。
-			gotX, _ := reflection.TransformPoint(models.StPos{X: 3, Y: 7})
-			if gotX != width-3 {
-				t.Fatalf("Row iy=%d: flipX(3) = %v, want %v", iy, gotX, width-3)
-			}
+			continue
+		}
+		// 奇数行：上下镜像，X 不变、Y 取 height-y。
+		gotX, gotY := reflection.TransformPoint(models.StPos{X: 3, Y: 7})
+		if gotX != 3 || gotY != height-7 {
+			t.Fatalf("Row iy=%d: flipY(3,7) = (%v,%v), want (3,%v)", iy, gotX, gotY, height-7)
 		}
 	}
 }
 
 func TestPatternReflectionColumn(t *testing.T) {
-	height := 25.0
+	const width, height = 20.0, 25.0
 	for ix := range 6 {
-		reflection := patternReflection("Column", 20, height, ix, 0)
+		reflection := patternReflection("Column", width, height, ix, 0)
+		// Column 模式：ix 为奇数时把单元左右镜像。
 		if ix%2 == 0 {
 			if reflection != models.IdentityMatrix {
 				t.Fatalf("Column ix=%d: want identity, got %v", ix, reflection)
 			}
-		} else {
-			_, gotY := reflection.TransformPoint(models.StPos{X: 5, Y: 17})
-			if gotY != height-8 {
-				t.Fatalf("Column ix=%d: flipY(8) = %v, want %v", ix, gotY, height-8)
-			}
+			continue
+		}
+		// 奇数列：左右镜像，X 取 width-x、Y 不变。
+		gotX, gotY := reflection.TransformPoint(models.StPos{X: 5, Y: 17})
+		if gotX != width-5 || gotY != 17 {
+			t.Fatalf("Column ix=%d: flipX(5,17) = (%v,%v), want (%v,17)", ix, gotX, gotY, width-5)
 		}
 	}
 }
