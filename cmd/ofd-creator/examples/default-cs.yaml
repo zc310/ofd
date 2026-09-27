@@ -1,0 +1,95 @@
+# 文档默认颜色空间 DefaultCS 示例
+# 覆盖 CommonData 的 <DefaultCS> 元素：显式指向 id=1 的 RGB 颜色空间（规范：
+# 该元素缺省时采用 RGB 作为默认颜色空间），并声明 id=2 的 GRAY 颜色空间供
+# 颜色显式引用。页面左侧为普通 RGB 值色（走默认颜色空间），右侧为显式
+# color_space=2 的 GRAY 分量色，演示默认与显式两条颜色空间引用链。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/default-cs.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/default-cs.yaml -o test/testdata/default-cs.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: default-cs
+  title: 文档默认颜色空间示例
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  default_cs: 1
+resources:
+  color_spaces:
+    - id: 1
+      type: RGB
+      bits_per_component: 8
+    - id: 2
+      type: GRAY
+      bits_per_component: 8
+pages:
+  - items:
+      - type: text
+        x: 25
+        y: 14
+        width: 160
+        height: 8
+        value: 文档默认颜色空间 DefaultCS
+        font: 宋体
+        size: 6
+        fill: true
+      - type: text
+        x: 25
+        y: 34
+        width: 160
+        height: 6
+        value: DefaultCS=1 显式指向 RGB 颜色空间（规范：缺省该元素时默认 RGB）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 25
+        y: 46
+        width: 160
+        height: 6
+        value: 左块为普通 RGB 值色，右块显式引用 GRAY 分量色（color_space=2）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 25
+        y: 64
+        width: 60
+        height: 44
+        data: M 0 0 L 60 0 L 60 44 L 0 44 C
+        fill: true
+        fill_color:
+          r: 40
+          g: 90
+          b: 180
+      - type: path
+        x: 125
+        y: 64
+        width: 60
+        height: 44
+        data: M 0 0 L 60 0 L 60 44 L 0 44 C
+        fill: true
+        fill_color:
+          color_space: 2
+          components:
+            - 128
+      - type: text
+        x: 25
+        y: 114
+        width: 60
+        height: 6
+        value: RGB 值色（默认 CS）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 125
+        y: 114
+        width: 60
+        height: 6
+        value: GRAY 分量色 128
+        font: 宋体
+        size: 4
+        fill: true

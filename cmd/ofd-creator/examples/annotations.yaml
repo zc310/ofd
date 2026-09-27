@@ -1,8 +1,12 @@
-# 注解示例：背景水印与前景签章
+# 注解示例：背景水印、前景签章与路径注解
 # 展示 OFD 注解按类型分层绘制：
 #   - Watermark 水印注解绘制在页面内容之下（背景层）
 #   - Stamp 签章注解绘制在页面内容之上（最上层）
 #   - 正文文字与水印文字重叠，用于直观对比叠放顺序
+#   - Path 路径注解以蓝色箭头指向右下角签章，与 Stamp 同层绘制于内容之上
+#   注：箭头占用 1 个单元 ID——箭头说明并入第 3 条正文而非新增对象，并从签章
+#   遮挡处移除 2 条水印文字（27→25），以保持内容对象数与 MaxUnitID=37 不变
+#   （pkg/watermark 的自动 ID 测试依赖该值）。
 # 生成：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/annotations.yaml -o test/testdata/annotations.ofd --validate --deterministic
 
@@ -425,25 +429,6 @@ document:
                 r: 170
                 g: 160
                 b: 165
-              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 151.1, 258.0]
-              text_codes:
-                - value: 保密资料
-                  x: 8
-                  "y": 10
-            - type: text
-              x: 0
-              y: 0
-              width: 210
-              height: 297
-              value: 保密资料
-              font: 楷体
-              size: 9
-              fill: True
-              alpha: 51
-              fill_color:
-                r: 170
-                g: 160
-                b: 165
               ctm: [0.707107, 0.707107, -0.707107, 0.707107, -20.3, 118.2]
               text_codes:
                 - value: 保密资料
@@ -464,25 +449,6 @@ document:
                 g: 160
                 b: 165
               ctm: [0.707107, 0.707107, -0.707107, 0.707107, 57.5, 196.0]
-              text_codes:
-                - value: 保密资料
-                  x: 8
-                  "y": 10
-            - type: text
-              x: 0
-              y: 0
-              width: 210
-              height: 297
-              value: 保密资料
-              font: 楷体
-              size: 9
-              fill: True
-              alpha: 51
-              fill_color:
-                r: 170
-                g: 160
-                b: 165
-              ctm: [0.707107, 0.707107, -0.707107, 0.707107, 135.3, 273.8]
               text_codes:
                 - value: 保密资料
                   x: 8
@@ -582,6 +548,28 @@ document:
                 b: 40
               alpha: 170
 
+        - id: 103
+          type: Path
+          creator: ofd-creator
+          last_mod_date: "2026-09-27"
+          boundary:
+            x: 0
+            "y": 0
+            width: 210
+            height: 297
+          items:
+            - type: path
+              x: 35
+              "y": 238
+              width: 90
+              height: 24
+              data: M 0 7 L 62 7 L 62 0 L 90 12 L 62 24 L 62 17 L 0 17 C
+              fill: true
+              stroke: false
+              fill_color:
+                r: 40
+                g: 110
+                b: 200
 pages:
   - items:
       - type: text
@@ -613,9 +601,9 @@ pages:
       - type: text
         x: 35
         "y": 170
-        width: 140
+        width: 175
         height: 12
-        value: 右下角红色圆章为 Stamp 签章注解
+        value: 箭头为 Path 注解，右下红章为 Stamp 签章
         font: 楷体
         size: 8
         fill: true

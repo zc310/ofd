@@ -1,5 +1,6 @@
 # 裁剪区
-# 裁剪区示例；矩形分别被椭圆路径和文字裁剪，并演示同一裁剪区中两个路径取并集。
+# 裁剪区示例；矩形分别被椭圆路径和文字裁剪。第 1 页演示同一 Clip 内两个 Area 取并集，
+# 第 2 页演示同一图元的多个 Clip 取交集（规格：多 Clip 时最终裁剪区为所有 Clip 的交集）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml -o test/testdata/clips.ofd --format auto --deterministic --validate
@@ -117,3 +118,116 @@ pages:
                     height: 28
                   data: M 14 0 A 14 14 0 1 1 14 28 A 14 14 0 1 1 14 0 C
                   fill: true
+
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 多 Clip 求交集
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 15
+        y: 26
+        width: 180
+        height: 6
+        value: 规格：同一图元存在多个 Clip 时，最终裁剪区为所有 Clip 区域的交集
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 15
+        y: 36
+        width: 180
+        height: 6
+        value: 示例：两个圆形 Clip 相交，仅重叠的透镜区域显示填充（更多 Clip 同理逐级求交）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 15
+        y: 46
+        width: 180
+        height: 6
+        value: 对照第 1 页的并集：分离的两圆全部显示，此处只剩重叠部分
+        font: 宋体
+        size: 4
+        fill: true
+      - type: path
+        x: 42
+        y: 76
+        width: 76
+        height: 76
+        data: M 38 0 A 38 38 0 1 1 38 76 A 38 38 0 1 1 38 0 C
+        stroke: true
+        fill: false
+        stroke_color:
+          r: 180
+          g: 180
+          b: 180
+        line_width: 0.5
+      - type: path
+        x: 82
+        y: 76
+        width: 76
+        height: 76
+        data: M 38 0 A 38 38 0 1 1 38 76 A 38 38 0 1 1 38 0 C
+        stroke: true
+        fill: false
+        stroke_color:
+          r: 180
+          g: 180
+          b: 180
+        line_width: 0.5
+      - type: path
+        x: 35
+        y: 64
+        width: 140
+        height: 100
+        data: M 0 0 L 140 0 L 140 100 L 0 100 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 150
+          g: 90
+          b: 210
+        clips:
+          - areas:
+              - path:
+                  boundary:
+                    x: 7
+                    y: 12
+                    width: 76
+                    height: 76
+                  data: M 38 0 A 38 38 0 1 1 38 76 A 38 38 0 1 1 38 0 C
+                  fill: true
+          - areas:
+              - path:
+                  boundary:
+                    x: 47
+                    y: 12
+                    width: 76
+                    height: 76
+                  data: M 38 0 A 38 38 0 1 1 38 76 A 38 38 0 1 1 38 0 C
+                  fill: true
+      - type: text
+        x: 45
+        y: 110
+        width: 30
+        height: 6
+        value: Clip 1
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 125
+        y: 110
+        width: 30
+        height: 6
+        value: Clip 2
+        font: 宋体
+        size: 4
+        fill: true
