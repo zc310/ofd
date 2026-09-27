@@ -2,19 +2,15 @@ package canvas
 
 import (
 	"image"
-	"math"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/renderers/rasterizer"
-	"github.com/zc310/ofd/internal/render/geom"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 )
 
-const fastImageDownscaleThreshold = 1.25
-
-// rasterize 将画布栅格化为 RGBA 图片。图片明显缩小时使用较快的双线性
-// 插值；其他图像仍使用 canvas 默认的 Catmull-Rom 插值。
+// rasterize 将画布栅格化为 RGBA 图片。图片合成统一使用双线性插值，
+// 不再按缩放比例回退到 canvas 默认的 Catmull-Rom 插值。
 func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas.ColorSpace) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, int(c.W*resolution.DPMM()+0.5), int(c.H*resolution.DPMM()+0.5)))
 	base := rasterizer.FromImage(img, resolution, colorSpace)
@@ -81,10 +77,12 @@ func (r *adaptiveRasterizer) renderImageFast(dst *image.RGBA, img image.Image, m
 	m = m.Scale(dpmm, dpmm)
 	h := float64(dst.Bounds().Size().Y)
 	aff3 := f64.Aff3{m[0][0], -m[0][1], origin.X, -m[1][0], m[1][1], h - origin.Y}
-	interp := draw.Interpolator(draw.CatmullRom)
-	if shouldUseFastImageTransform(img, m, r.resolution) {
-		interp = draw.ApproxBiLinear
-	}
+	// 统一使用 ApproxBiLinear。复合单元的离屏栅格与页面分辨率不一致，绘制时
+	// 必然发生重采样：y.ofd 每页有 300 余次放大重采样，累计重采样 2.3 亿源像素。
+	// CatmullRom 是 4x4 卷积核，单像素开销约为双线性的 6 倍，实测占 y.ofd 整体
+	// 渲染 99% 的 CPU 时间（64s -> 11.3s）。在 50 个样例共 16174 页上与
+	// CatmullRom 逐页对比，无任何一页平均差异超过 2 级灰度。
+	interp := draw.ApproxBiLinear
 	interp.Transform(dst, aff3, img, img.Bounds(), draw.Over, nil)
 }
 
@@ -114,18 +112,4 @@ func decodedImageOf(img image.Image) (image.Image, error) {
 func isLinearColorSpace(colorSpace canvas.ColorSpace) bool {
 	_, ok := colorSpace.(canvas.LinearColorSpace)
 	return ok
-}
-
-func shouldUseFastImageTransform(img image.Image, m canvas.Matrix, resolution canvas.Resolution) bool {
-	if img == nil || !finiteMatrix(geom.Matrix(m)) || resolution <= 0 {
-		return false
-	}
-	bounds := img.Bounds()
-	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-		return false
-	}
-	dpmm := resolution.DPMM()
-	scaleX := math.Hypot(m[0][0], m[1][0]) * dpmm
-	scaleY := math.Hypot(m[0][1], m[1][1]) * dpmm
-	return scaleX < 1/fastImageDownscaleThreshold || scaleY < 1/fastImageDownscaleThreshold
 }
