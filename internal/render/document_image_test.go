@@ -100,13 +100,82 @@ func TestApplyImageMaskFastPathsMatchReference(t *testing.T) {
 	}
 }
 
+// 掩码合成的三条快路径按行推进下标，掩码下标还叠加了图像与掩码各自的原点。
+// 这里用非零原点、非对齐尺寸和不同步幅的子采样覆盖该偏移换算。
+func TestApplyImageMaskFastPathsWithOffsetOrigins(t *testing.T) {
+	const w, h = 9, 5
+	newMask := func(min image.Point) *image.RGBA {
+		m := image.NewRGBA(image.Rect(min.X, min.Y, min.X+w, min.Y+h))
+		for i := range m.Pix {
+			m.Pix[i] = uint8(i*37 + 11)
+		}
+		return m
+	}
+	newNRGBA := func(min image.Point) *image.NRGBA {
+		img := image.NewNRGBA(image.Rect(min.X, min.Y, min.X+w, min.Y+h))
+		for i := range img.Pix {
+			img.Pix[i] = uint8(i*29 + 5)
+		}
+		return img
+	}
+	newRGBA := func(min image.Point) *image.RGBA {
+		img := image.NewRGBA(image.Rect(min.X, min.Y, min.X+w, min.Y+h))
+		for i := range img.Pix {
+			img.Pix[i] = uint8(i*23 + 3)
+		}
+		return img
+	}
+	newYCbCr := func(min image.Point, ratio image.YCbCrSubsampleRatio) *image.YCbCr {
+		img := image.NewYCbCr(image.Rect(min.X, min.Y, min.X+w, min.Y+h), ratio)
+		for i := range img.Y {
+			img.Y[i] = uint8(i*17 + 7)
+		}
+		for i := range img.Cb {
+			img.Cb[i] = uint8(i*13 + 1)
+		}
+		for i := range img.Cr {
+			img.Cr[i] = uint8(i*11 + 9)
+		}
+		return img
+	}
+
+	origins := []image.Point{{X: 0, Y: 0}, {X: 3, Y: 7}, {X: 11, Y: 2}}
+	cases := map[string]func(image.Point) image.Image{
+		"nrgba":    func(min image.Point) image.Image { return newNRGBA(min) },
+		"rgba":     func(min image.Point) image.Image { return newRGBA(min) },
+		"ycbcr444": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio444) },
+		"ycbcr422": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio422) },
+		"ycbcr420": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio420) },
+		"ycbcr440": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio440) },
+		"ycbcr411": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio411) },
+		"ycbcr410": func(min image.Point) image.Image { return newYCbCr(min, image.YCbCrSubsampleRatio410) },
+	}
+	for name, build := range cases {
+		for _, imgMin := range origins {
+			for _, maskMin := range origins {
+				img := build(imgMin)
+				mask := newMask(maskMin)
+				want := applyImageMaskReference(img, mask).(*image.NRGBA)
+				got := applyImageMask(img, mask).(*image.NRGBA)
+				if !bytes.Equal(want.Pix, got.Pix) {
+					t.Fatalf("%s imgMin=%v maskMin=%v: 快路径与参考实现不一致", name, imgMin, maskMin)
+				}
+			}
+		}
+	}
+}
+
+// applyImageMaskReference 是 applyImageMask 的朴素实现，用作快路径的对照。
+// 掩码像素按各自原点换算：图像第 (x,y) 点对应掩码的
+// (x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y)。
 func applyImageMaskReference(img image.Image, mask *image.RGBA) image.Image {
 	bounds := img.Bounds()
+	maskMin := mask.Rect.Min
 	out := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			ma := mask.RGBAAt(x-bounds.Min.X, y-bounds.Min.Y).A
+			ma := mask.RGBAAt(x-bounds.Min.X+maskMin.X, y-bounds.Min.Y+maskMin.Y).A
 			c.A = uint8(int(c.A) * int(ma) / 255)
 			out.SetNRGBA(x, y, c)
 		}

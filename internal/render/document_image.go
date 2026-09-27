@@ -609,83 +609,95 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 	return out
 }
 
+// applyMaskYCbCr 用掩码 alpha 合成 YCbCr 图像。行首偏移只计算一次，
+// 之后按行内列号递推，省掉每个像素的 PixOffset 调用。
 func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
-	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
-		yi := (y - src.Rect.Min.Y) * src.YStride
-		ci := y - src.Rect.Min.Y
-		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
-			yy := src.Y[yi+x-src.Rect.Min.X]
-			cidx := cOffset(src, ci, x-src.Rect.Min.X)
-			r, g, b := color.YCbCrToRGB(yy, src.Cb[cidx], src.Cr[cidx])
-			oi := out.PixOffset(x, y)
-			mi := mask.PixOffset(x-imgMin.X+maskMin.X, y-imgMin.Y+maskMin.Y)
+	width, height := src.Rect.Dx(), src.Rect.Dy()
+	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
+	for row := 0; row < height; row++ {
+		y := src.Rect.Min.Y + row
+		yi := row * src.YStride
+		oi := out.PixOffset(src.Rect.Min.X, y)
+		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
+		for col := 0; col < width; col++ {
+			// 子采样取样下标直接用标准库的 YOffset/COffset：它们按
+			// x/2-minX/2 这样的绝对换算，自行按 (x-minX)>>1 换算会在
+			// 图像原点非零时取到错误的色度。
+			x := src.Rect.Min.X + col
+			cidx := src.COffset(x, y)
+			r, g, b := color.YCbCrToRGB(src.Y[yi+col], src.Cb[cidx], src.Cr[cidx])
 			out.Pix[oi+0] = r
 			out.Pix[oi+1] = g
 			out.Pix[oi+2] = b
 			out.Pix[oi+3] = mask.Pix[mi+3]
+			oi += 4
+			mi += 4
 		}
 	}
 }
 
-func cOffset(src *image.YCbCr, row, col int) int {
-	switch src.SubsampleRatio {
-	case image.YCbCrSubsampleRatio444:
-		return row*src.CStride + col
-	case image.YCbCrSubsampleRatio422:
-		return row*src.CStride + col>>1
-	case image.YCbCrSubsampleRatio420:
-		return row>>1*src.CStride + col>>1
-	case image.YCbCrSubsampleRatio440:
-		return row>>1*src.CStride + col
-	case image.YCbCrSubsampleRatio410:
-		return row>>2*src.CStride + col>>2
-	case image.YCbCrSubsampleRatio411:
-		return row*src.CStride + col>>2
-	default:
-		return row*src.CStride + col
-	}
-}
-
+// applyMaskNRGBA 用掩码 alpha 就地合成 NRGBA 图像。
+//
+// 图案单元等大尺寸图片会逐像素经过这里，是图片路径的主要开销，因此按行切片
+// 遍历：行首偏移只计算一次，之后每像素递增 4 字节，省掉每个像素三次
+// PixOffset 调用与重复的边界判断。
 func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
-	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
-		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
-			si := src.PixOffset(x, y)
-			oi := out.PixOffset(x, y)
-			mi := mask.PixOffset(x-imgMin.X+maskMin.X, y-imgMin.Y+maskMin.Y)
+	width, height := src.Rect.Dx(), src.Rect.Dy()
+	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
+	for row := 0; row < height; row++ {
+		y := src.Rect.Min.Y + row
+		si := src.PixOffset(src.Rect.Min.X, y)
+		oi := out.PixOffset(src.Rect.Min.X, y)
+		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
+		for col := 0; col < width; col++ {
 			out.Pix[oi+0] = src.Pix[si+0]
 			out.Pix[oi+1] = src.Pix[si+1]
 			out.Pix[oi+2] = src.Pix[si+2]
 			out.Pix[oi+3] = alphaMul(src.Pix[si+3], mask.Pix[mi+3])
+			si += 4
+			oi += 4
+			mi += 4
 		}
 	}
 }
 
+// applyMaskRGBA 用掩码 alpha 合成预乘 RGBA 图像。行首偏移只计算一次，之后
+// 每像素递增 4 字节；分支不用 continue，保证下标推进不会被跳过。
 func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
-	for y := src.Rect.Min.Y; y < src.Rect.Max.Y; y++ {
-		for x := src.Rect.Min.X; x < src.Rect.Max.X; x++ {
-			si := src.PixOffset(x, y)
-			oi := out.PixOffset(x, y)
-			mi := mask.PixOffset(x-imgMin.X+maskMin.X, y-imgMin.Y+maskMin.Y)
+	width, height := src.Rect.Dx(), src.Rect.Dy()
+	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
+	for row := 0; row < height; row++ {
+		y := src.Rect.Min.Y + row
+		si := src.PixOffset(src.Rect.Min.X, y)
+		oi := out.PixOffset(src.Rect.Min.X, y)
+		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
+		for col := 0; col < width; col++ {
+			ma := mask.Pix[mi+3]
 			r, g, b, a := src.Pix[si+0], src.Pix[si+1], src.Pix[si+2], src.Pix[si+3]
-			if a == 0xff {
+			switch {
+			case a == 0xff:
+				// 完全不透明，颜色已是直通道径，直接透传并叠加掩码 alpha。
 				out.Pix[oi+0] = r
 				out.Pix[oi+1] = g
 				out.Pix[oi+2] = b
-				out.Pix[oi+3] = mask.Pix[mi+3]
-				continue
-			}
-			// 与 color.NRGBAModel.Convert(color.RGBA) 一致：先去除预乘再叠加掩码。
-			out.Pix[oi+3] = alphaMul(a, mask.Pix[mi+3])
-			if a == 0 {
+				out.Pix[oi+3] = ma
+			case a == 0:
+				// 全透明像素没有颜色可还原。
 				out.Pix[oi+0], out.Pix[oi+1], out.Pix[oi+2] = 0, 0, 0
-				continue
+				out.Pix[oi+3] = alphaMul(a, ma)
+			default:
+				// 与 color.NRGBAModel.Convert(color.RGBA) 一致：先去除预乘再叠加掩码。
+				out.Pix[oi+3] = alphaMul(a, ma)
+				r16 := uint32(r) * 0xffff / uint32(a)
+				g16 := uint32(g) * 0xffff / uint32(a)
+				b16 := uint32(b) * 0xffff / uint32(a)
+				out.Pix[oi+0] = uint8(r16 >> 8)
+				out.Pix[oi+1] = uint8(g16 >> 8)
+				out.Pix[oi+2] = uint8(b16 >> 8)
 			}
-			r16 := uint32(r) * 0xffff / uint32(a)
-			g16 := uint32(g) * 0xffff / uint32(a)
-			b16 := uint32(b) * 0xffff / uint32(a)
-			out.Pix[oi+0] = uint8(r16 >> 8)
-			out.Pix[oi+1] = uint8(g16 >> 8)
-			out.Pix[oi+2] = uint8(b16 >> 8)
+			si += 4
+			oi += 4
+			mi += 4
 		}
 	}
 }
