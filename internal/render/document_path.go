@@ -64,18 +64,6 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 			ctx.ClearFill()
 		}
 	}
-	if object.Stroke.Value(true) {
-		if isMeshColor(strokeSource) || needsRasterGradient(strokeGradient) {
-			strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
-			if clipPath != nil {
-				strokePath = strokePath.And(clipPath)
-			}
-			if p.drawMeshPaint(ctx, strokePath, strokeGradient, object, pb, budget) {
-				object.Stroke.Set(false)
-				ctx.ClearStroke()
-			}
-		}
-	}
 	if object.Fill && pattern != nil {
 		fillPath := pa.Copy()
 		fillPath.Close()
@@ -85,6 +73,34 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM, budget) {
 			object.Fill = false
 			ctx.ClearFill()
+		}
+	}
+	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || needsRasterGradient(strokeGradient))
+	if strokeRaster && object.Fill {
+		// 描边稍后会作为栅格图片绘制，且必须盖在填充之上。这里先把剩余的
+		// 实色/矢量填充画掉；否则最后的 ctx.DrawPath 会用填充盖住描边内侧，
+		// 左右描边只剩位于渐变轴外（Extend=0 时为透明）的外半条而整条消失。
+		if clipPath == nil {
+			ctx.Push()
+			ctx.ClearStroke()
+			ctx.DrawPath(0, 0, pa)
+			ctx.Pop()
+		} else {
+			fillObject := object
+			fillObject.Stroke.Set(false)
+			p.drawClippedPath(ctx, pa, clipPath, fillObject)
+		}
+		object.Fill = false
+		ctx.ClearFill()
+	}
+	if strokeRaster {
+		strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
+		if clipPath != nil {
+			strokePath = strokePath.And(clipPath)
+		}
+		if p.drawMeshPaint(ctx, strokePath, strokeGradient, object, pb, budget) {
+			object.Stroke.Set(false)
+			ctx.ClearStroke()
 		}
 	}
 	if clipPath == nil {
@@ -364,13 +380,13 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObjec
 
 	transform := gradientBoundaryTransform(object.Boundary, pageHeight)
 	if object.Fill && fillColor != nil {
-		if gradient := p.pathGradient(fillColor, transform); gradient != nil {
+		if gradient := p.pathGradient(fillColor, transform, gradientShadingArea(object.Boundary)); gradient != nil {
 			fillGradient = gradient
 			ctx.SetFillGradient(scaleGradientOpacity(gradient, graphicOpacity(object.Alpha)))
 		}
 	}
 	if object.Stroke.Value(true) && strokeColor != nil {
-		if gradient := p.pathGradient(strokeColor, transform); gradient != nil {
+		if gradient := p.pathGradient(strokeColor, transform, gradientShadingArea(object.Boundary)); gradient != nil {
 			strokeGradient = gradient
 			ctx.SetStrokeGradient(scaleGradientOpacity(gradient, graphicOpacity(object.Alpha)))
 		}
@@ -378,7 +394,9 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObjec
 	return fillGradient, strokeGradient
 }
 
-func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) geom.Point) geom.Gradient {
+// pathGradient 构造渐变。area 是着色区域在渐变局部坐标下的范围，用于网格渐变
+// 在区域内按边缘颜色夹取；调用方不清楚局部坐标范围时传 nil。
+func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) geom.Point, area *geom.Rect) geom.Gradient {
 	if ctColor == nil {
 		return nil
 	}
@@ -390,13 +408,13 @@ func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.S
 		gradient = newOFDRadialGradient(shd, transform, p.colorRGBA)
 	}
 	if shd := ctColor.GouraudShd; shd != nil {
-		gradient = newOFDGouraudGradient(shd, transform, p.colorRGBA)
+		gradient = newOFDGouraudGradientArea(shd, transform, area, p.colorRGBA)
 	}
 	if shd := ctColor.LaGourandShd; shd != nil {
-		gradient = newOFDLaGouraudGradient(shd, transform, p.colorRGBA)
+		gradient = newOFDLaGouraudGradientArea(shd, transform, area, p.colorRGBA)
 	}
 	if shd := ctColor.LaGouraudShd; shd != nil {
-		gradient = newOFDLaGouraudGradient(shd, transform, p.colorRGBA)
+		gradient = newOFDLaGouraudGradientArea(shd, transform, area, p.colorRGBA)
 	}
 	if gradient == nil {
 		return nil
@@ -480,4 +498,15 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 		}
 	}
 	return pa
+}
+
+// gradientShadingArea 返回对象 Boundary 在渐变局部坐标下的范围。
+// gradientBoundaryTransform 把局部 (0,0)-(Width,Height) 映射到 Boundary，
+// 因此着色区域就是局部坐标下的这个矩形。尺寸非法时返回 nil。
+func gradientShadingArea(boundary models.StBox) *geom.Rect {
+	if !boundary.IsFinite() || boundary.Width <= 0 || boundary.Height <= 0 {
+		return nil
+	}
+	area := geom.RectFromSize(0, 0, boundary.Width, boundary.Height)
+	return &area
 }
