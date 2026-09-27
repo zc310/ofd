@@ -80,6 +80,27 @@ func TestGradAt(t *testing.T) {
 	}
 }
 
+// TestGradAtTransparentStopKeepsColor 保护完全透明色标在 straight 插值中的
+// 原始 RGB：色标 (255,0,0,0) 与不透明蓝混合时，中点应是半透明品红
+// {63 0 63 127}，而不是丢掉红色只剩蓝色。
+func TestGradAtTransparentStopKeepsColor(t *testing.T) {
+	g := Grad{}
+	g.Add(0, color.RGBA{R: 255, A: 0})
+	g.Add(1, color.RGBA{B: 255, A: 255})
+	mid := g.At(0.5)
+	want := color.RGBA{R: 63, B: 63, A: 127}
+	if mid != want {
+		t.Fatalf("透明红→蓝 中点 = %v, want %v", mid, want)
+	}
+	// 规范预乘全 0 的色标不受影响，仍按透明黑插值。
+	g2 := Grad{}
+	g2.Add(0, color.RGBA{})
+	g2.Add(1, color.RGBA{B: 255, A: 255})
+	if mid := g2.At(0.5); mid != (color.RGBA{B: 63, A: 127}) {
+		t.Fatalf("透明黑→蓝 中点 = %v, want {0 0 63 127}", mid)
+	}
+}
+
 // TestLinearGradientAt 验证线性渐变采样。
 func TestLinearGradientAt(t *testing.T) {
 	g := Grad{}

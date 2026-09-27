@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/draw"
 	"log/slog"
 	"math"
 	"strconv"
@@ -416,7 +417,29 @@ func decodeRasterImage(data []byte) (image.Image, error) {
 	if len(data) >= len(pngSignature) && bytes.Equal(data[:len(pngSignature)], pngSignature) {
 		return newEncodedImage("png", data), nil
 	}
-	return media.DecodeBytes(data)
+	img, err := media.DecodeBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	return palettedToRGBA(img), nil
+}
+
+// palettedToRGBA 把调色板图像（GIF 等）一次性转换为 *image.RGBA。
+// x/image/draw 的缩放对 *image.RGBA 走专用快速路径；*image.Paletted 会退到
+// 通用的 RGBA64Image 路径，每个采样点都调用 Paletted.RGBA64At，整页大图放大
+// 时开销很大。转换结果随解码缓存复用，只在首次解码时付出一次成本。
+func palettedToRGBA(img image.Image) image.Image {
+	pal, ok := img.(*image.Paletted)
+	if !ok {
+		return img
+	}
+	bounds := pal.Bounds()
+	if bounds.Empty() {
+		return img
+	}
+	out := image.NewRGBA(bounds)
+	draw.Draw(out, bounds, pal, bounds.Min, draw.Src)
+	return out
 }
 
 func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {

@@ -26,3 +26,16 @@ func TestPremultipliedRoundTrip(t *testing.T) {
 		t.Fatalf("premultiplied -> NRGBA %v, want {170 160 165 51}", n)
 	}
 }
+
+// TestPremultipliedKeepsRGBAtZeroAlpha 保护完全透明色的原始 RGB 载体：
+// a == 0 时若把分量压成全 0，渐变色标插值会丢掉整段颜色（透明红→蓝只剩蓝）；
+// 同时混合端必须仍按全透明处理，不能因载体非 0 而可见。
+func TestPremultipliedKeepsRGBAtZeroAlpha(t *testing.T) {
+	got := premultiplied(255, 0, 0, 0)
+	if got != (color.RGBA{R: 255, A: 0}) {
+		t.Fatalf("premultiplied(255,0,0,0) = %v, want {255 0 0 0}", got)
+	}
+	if n := color.NRGBAModel.Convert(got).(color.NRGBA); n != (color.NRGBA{}) {
+		t.Fatalf("NRGBA = %v, want 全透明 {0 0 0 0}", n)
+	}
+}
