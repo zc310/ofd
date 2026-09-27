@@ -1,0 +1,101 @@
+# 封面与复合图元缩略图示例
+# 覆盖文档级 Cover 封面（cover_base64 内嵌 + cover_name 指定包内文件名，写入
+# Doc_0/Cover/cover.png 并在 OFD.xml DocInfo 中输出 <Cover>）与复合图元
+# CompositeGraphicUnit 的 Thumbnail 缩略图引用（指向 resources.images 图片，
+# 输出 <Thumbnail> 子元素）。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/cover-thumbnail.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/cover-thumbnail.yaml -o test/testdata/cover-thumbnail.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: cover-thumbnail
+  title: 封面与复合图元缩略图
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+  cover_base64: iVBORw0KGgoAAAANSUhEUgAAAEAAAABgCAIAAAAip+O/AAAAnklEQVR42u3bsRFAMBQGYHG2YR9soFWYQqFkAwYykAHockfivr9M9b7LK3LvXkLdrkXOKYvMAwAAAPBtqvvReQwpV9x0mxYCAAAAAAAAAAAAAABIIcFoEQAAACAmD5O5aezfr2Nedi0EAADgNeoGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfg/wj0wLAQAAAGQd+0IAAAAAUbkAhVMOJ2L8AfkAAAAASUVORK5CYII=
+  cover_name: cover.png
+resources:
+  images:
+    - id: 601
+      name: composite-preview.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAADAAAAAcCAIAAACoDqudAAAASUlEQVR42mP8/+EOw2ACTAyDDIw6aNRBlAIWZM7CBIuBckf8ghOjUTbqoFEHjTpo1EGjDhp10KiDRh3EwMDAwDjaDRp10HBzEABuIQjPF/sYEAAAAABJRU5ErkJggg==
+  composites:
+    - id: 701
+      width: 120
+      height: 70
+      thumbnail: 601
+      items:
+        - type: path
+          x: 0
+          "y": 0
+          width: 120
+          height: 70
+          data: M 0 0 L 120 0 L 120 70 L 0 70 C
+          fill: true
+          fill_color:
+            r: 255
+            g: 240
+            b: 220
+        - type: path
+          x: 10
+          "y": 12
+          width: 100
+          height: 46
+          data: M 0 0 L 100 0 L 100 46 L 0 46 C
+          fill: true
+          fill_color:
+            r: 160
+            g: 80
+            b: 20
+        - type: text
+          x: 16
+          "y": 26
+          width: 90
+          height: 20
+          value: 复合图元 701
+          font: 宋体
+          size: 10
+          fill: true
+          fill_color:
+            r: 255
+            g: 240
+            b: 220
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 封面与复合图元缩略图
+        font: 宋体
+        size: 6
+        fill: true
+      - type: text
+        x: 15
+        y: 30
+        width: 180
+        height: 6
+        value: 文档封面 Cover：cover_base64 内嵌，包内路径 Doc_0/Cover/cover.png
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 15
+        y: 42
+        width: 180
+        height: 6
+        value: 复合图元 701 的 Thumbnail 缩略图引用图片 601，写入 CompositeGraphicUnit 的 Thumbnail 子元素
+        font: 宋体
+        size: 4
+        fill: true
+      - type: composite
+        x: 45
+        y: 62
+        width: 120
+        height: 70
+        resource_id: 701

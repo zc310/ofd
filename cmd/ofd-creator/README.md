@@ -373,6 +373,8 @@ pages:
 着色合集实例见 `cmd/ofd-creator/examples/shading.yaml`，覆盖 Axial/Radial/Gouraud/LaGouraud/Pattern 及 Direct/Repeat/Reflect 映射。
 
 径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
+封面与复合图元缩略图实例见 `cmd/ofd-creator/examples/cover-thumbnail.yaml`，包含 Cover 封面（base64 内嵌小图写入 `Doc_0/Cover/`）与复合图元 Thumbnail 缩略图引用。
+文档默认颜色空间实例见 `cmd/ofd-creator/examples/default-cs.yaml`，声明 DefaultCS 指向 RGB 颜色空间，并演示 GRAY 分量色的显式 color_space 引用。
 
 线条样式 JSON 实例见 `cmd/ofd-creator/examples/line-styles.json`，包含线宽、端点、连接、虚线、偏移、折线和透明度效果。
 
