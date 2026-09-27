@@ -1121,3 +1121,63 @@ func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
 		}
 	}
 }
+
+// 掩码合成在像素数超过阈值时按行分块并发执行，各块写入互不重叠的像素区间。
+// 这里的图像刻意大于阈值，确保走到并行分支，结果必须与串行参考实现一致。
+func TestApplyImageMaskParallelMatchesReference(t *testing.T) {
+	// 宽高相乘需超过 maskParallelThreshold。
+	width, height := 520, 510
+	if width*height <= maskParallelThreshold {
+		t.Fatalf("测试图像 %dx%d 未超过并行阈值 %d", width, height, maskParallelThreshold)
+	}
+	if workers := maskRowWorkers(width, height); workers <= 1 {
+		t.Fatalf("该尺寸应触发并行，当前 workers=%d", workers)
+	}
+	// applyImageMask 的契约是 imgMin == img.Bounds().Min：离屏掩码与图像等大，
+	// 两者原点可以不同但尺寸必须一致，否则掩码下标会越界。
+	imgMin := image.Point{X: 2, Y: 5}
+	maskMin := image.Point{X: 1, Y: 1}
+	srcRect := image.Rect(imgMin.X, imgMin.Y, imgMin.X+width, imgMin.Y+height)
+	maskRect := image.Rect(maskMin.X, maskMin.Y, maskMin.X+width, maskMin.Y+height)
+	src := image.NewNRGBA(srcRect)
+	for i := range src.Pix {
+		src.Pix[i] = uint8(i*31 + 7)
+	}
+	mask := image.NewRGBA(maskRect)
+	for i := range mask.Pix {
+		mask.Pix[i] = uint8(i*17 + 3)
+	}
+
+	want := applyImageMaskReference(src, mask).(*image.NRGBA)
+	got := image.NewNRGBA(src.Rect)
+	maskNGBGARows(src, mask, got, imgMin, maskMin, 0, src.Rect.Dy())
+	if !bytes.Equal(want.Pix, got.Pix) {
+		t.Fatal("整段并行合成结果与参考实现不一致")
+	}
+	// 分块合成（模拟 runMaskRows 的切分）也必须一致。
+	chunked := image.NewNRGBA(src.Rect)
+	rows := src.Rect.Dy() / 3
+	for lo := 0; lo < src.Rect.Dy(); lo += rows {
+		hi := lo + rows
+		if hi > src.Rect.Dy() {
+			hi = src.Rect.Dy()
+		}
+		maskNGBGARows(src, mask, chunked, imgMin, maskMin, lo, hi)
+	}
+	if !bytes.Equal(want.Pix, chunked.Pix) {
+		t.Fatal("分块合成结果与参考实现不一致")
+	}
+}
+
+// maskRowWorkers 在小图或单核环境下必须退回串行。
+func TestMaskRowWorkersFallsBackToSerial(t *testing.T) {
+	if got := maskRowWorkers(16, 16); got != 1 {
+		t.Errorf("小图应串行，得到 %d", got)
+	}
+	if got := maskRowWorkers(1024, 1024); got < 1 {
+		t.Errorf("并发数至少为 1，得到 %d", got)
+	}
+	if got := maskRowWorkers(0, 0); got != 1 {
+		t.Errorf("空图应串行，得到 %d", got)
+	}
+}
