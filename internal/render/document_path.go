@@ -122,9 +122,17 @@ func isMeshColor(color *models.CTColor) bool {
 	return color != nil && (color.GouraudShd != nil || color.LaGourandShd != nil || color.LaGouraudShd != nil)
 }
 
-// needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。
-// Repeat/Reflect 只能采样，直接写入会得到没有 Coords/Function 的空着色。
-// 起始半径为 0 的偏心径向渐变写成 ShadingType 3 后，焦点另一侧不会铺起点色。
+// isShadingColor 判断颜色是否使用着色渐变（网格、轴向或径向）。这些渐变作用在
+// 文字上时无法写成合法的 PDF 原生 Shading：文字渐变必须映射到每个 run 的排版
+// 空间，会变成自定义 Gradient，PDF 后端只能写出没有 Coords/Function 的空
+// /Shading。因此文字着色渐变统一先栅格化再以图片绘制。
+func isShadingColor(color *models.CTColor) bool {
+	return isMeshColor(color) || (color != nil && (color.AxialShd != nil || color.RadialShd != nil))
+}
+
+// needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。Repeat/Reflect、
+// 椭圆和焦点径向会栅格化；Extend=0/1/2 的轴向/径向路径渐变同样如此，因为
+// SVG 等矢量写入器无法表达单向延伸（文字另见 textShadingGradient）。
 func needsRasterGradient(gradient geom.Gradient) bool {
 	switch value := gradient.(type) {
 	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:

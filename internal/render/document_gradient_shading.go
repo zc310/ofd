@@ -99,12 +99,13 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 	if !finitePoint(start) || !finitePoint(end) || !finiteFloat(shd.MapUnit) {
 		return nil
 	}
-	// 原生 *geom.LinearGradient 在 [0,1] 之外一律夹取端点色，只等价于
-	// Extend=3。Extend=0/1/2（默认值是 0）必须走 ofdLinearGradient 按位处理，
-	// 否则 Direct 轴向渐变的轴线外区域会被静默当成向两侧延长。
+	// 原生 LinearGradient 只在 [0,1] 之外夹取端点色，等价于 Extend=3；
+	// Extend=0/1/2 的路径渐变走 ofdLinearGradient（矢量后端会栅格化，
+	// 避免 SVG 无法表达单向延伸时铺满轴外区域）。文字另见 textShadingGradient。
 	if shd.MapType != "Repeat" && shd.MapType != "Reflect" && shd.Extend == 3 {
 		gradient := geom.NewLinearGradient(start, end)
 		addOFDGradientStops(&gradient.Grad, shd.Segment, resolve)
+		gradient.Extend = extendBits(shd.Extend)
 		return gradient
 	}
 
@@ -117,6 +118,60 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 	}
 	addOFDGradientStops(&gradient.stops, shd.Segment, resolve)
 	return gradient
+}
+
+// extendBits 把 OFD 的 Extend 位（第 0 位起点侧、第 1 位终点侧）转为两端标志。
+func extendBits(extend int) [2]bool {
+	return [2]bool{extend&1 != 0, extend&2 != 0}
+}
+
+// textShadingGradient 为矢量后端的文字构造可写成 PDF 原生 Shading 的渐变：
+// Direct 轴向渐变与非焦点径向渐变转为带 Extend 位的原生 Linear/RadialGradient，
+// 从而让文字保留真实文本 + 原生 /Shading（PDF 中可复制）。Repeat/Reflect、
+// 椭圆、焦点径向等无法原生表达时返回 nil，由调用方走栅格化。
+func (p *Document) textShadingGradient(source *models.CTColor) geom.Gradient {
+	if source == nil {
+		return nil
+	}
+	if shd := source.AxialShd; shd != nil {
+		if shd.MapType == "Repeat" || shd.MapType == "Reflect" {
+			return nil
+		}
+		start := identityGradientTransform(shd.StartPoint)
+		end := identityGradientTransform(shd.EndPoint)
+		if !finitePoint(start) || !finitePoint(end) || !finiteFloat(shd.MapUnit) {
+			return nil
+		}
+		gradient := geom.NewLinearGradient(start, end)
+		addOFDGradientStops(&gradient.Grad, shd.Segment, p.colorRGBA)
+		gradient.Extend = extendBits(shd.Extend)
+		return gradient
+	}
+	if shd := source.RadialShd; shd != nil {
+		if shd.MapType == "Repeat" || shd.MapType == "Reflect" || shd.Eccentricity > 0 || shd.Angle != 0 {
+			return nil
+		}
+		c0 := identityGradientTransform(shd.StartPoint)
+		c1 := identityGradientTransform(shd.EndPoint)
+		if !finitePoint(c0) || !finitePoint(c1) || !finiteFloat(shd.StartRadius) || !finiteFloat(shd.EndRadius) {
+			return nil
+		}
+		// 焦点径向（起始圆退化为点且与终止圆不同心）需要逐点判定焦点背面，
+		// 原生渐变会错误地铺上起点色。
+		if geom.Equal(shd.StartRadius, 0) && c0 != c1 {
+			return nil
+		}
+		gradient := geom.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
+		addOFDGradientStops(&gradient.Grad, shd.Segment, p.colorRGBA)
+		gradient.Extend = extendBits(shd.Extend)
+		return gradient
+	}
+	return nil
+}
+
+// isAxialRadialShading 判断颜色是否使用轴向或径向着色渐变。
+func isAxialRadialShading(source *models.CTColor) bool {
+	return source != nil && (source.AxialShd != nil || source.RadialShd != nil)
 }
 
 // radialMapUnit 返回 Repeat/Reflect 的区间长度。MapUnit 省略时用起止半径差，
@@ -141,11 +196,10 @@ func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) 
 	hasElliptical := shd.Eccentricity > 0 || shd.Angle != 0
 	hasMapType := shd.MapType == "Repeat" || shd.MapType == "Reflect"
 
-	// 原生 *geom.RadialGradient 同样只在 [0,1] 之外夹取端点色，仅等价于
-	// Extend=3；Direct 且 Extend 为 0/1/2（默认值是 0）时必须按两圆参数 t
-	// 应用 Extend 位，否则径向渐变的轴外区域会被静默当成向两侧延长。起始圆
-	// 退化为焦点的偏心渐变也走该分支：焦点背面的根半径为负，Extend=0 时
-	// 应保持透明（原生夹取会错误地铺上起点色）。
+	// 原生 RadialGradient 只在 [0,1] 之外夹取端点色，仅等价于 Extend=3；
+	// Extend=0/1/2 的路径渐变按 t 逐点判定（矢量后端会栅格化，避免 SVG 铺满）。
+	// 起始圆退化为焦点的偏心渐变也走 ofdRadialGradient：焦点背面的根半径为负，
+	// 原生夹取会错误地铺上起点色。文字另见 textShadingGradient。
 	focal := geom.Equal(shd.StartRadius, 0) && c0 != c1
 	if !hasElliptical {
 		if !hasMapType && shd.Extend == 3 && !focal {
