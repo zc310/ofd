@@ -5684,7 +5684,8 @@ function fetchPageLinks(generation) {
     const target = Number(item.target_page);
     const internal = Number.isInteger(target) && target >= 0;
     const media = item.media_kind === 'sound' || item.media_kind === 'movie';
-    if (!external && !internal && !media) return;
+    const attachment = typeof item.attachment_id === 'string' && item.attachment_id !== '';
+    if (!external && !internal && !media && !attachment) return;
     const bucket = pageLinks.get(item.page);
     if (bucket) bucket.push(item);
     else pageLinks.set(item.page, [item]);
@@ -5747,7 +5748,10 @@ function applyPageLinks(index) {
       hotspot.style.height = `${(boundary.height / info.height) * 100}%`;
       const external = typeof link.uri === 'string' && link.uri !== '';
       const media = link.media_kind === 'sound' || link.media_kind === 'movie';
-      hotspot.title = external ? link.uri : media ? (link.media_kind === 'sound' ? '播放声音' : '播放影片') : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
+      const attachment = typeof link.attachment_id === 'string' && link.attachment_id !== '';
+      hotspot.title = attachment
+        ? `打开附件 ${link.attachment_name || link.attachment_id}`
+        : external ? link.uri : media ? (link.media_kind === 'sound' ? '播放声音' : '播放影片') : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
       hotspot.setAttribute('aria-label', hotspot.title);
       hotspot.addEventListener('click', () => openPageLink(link));
       layer.append(hotspot);
@@ -5837,6 +5841,10 @@ function openPageLink(link) {
     playMediaAction(link);
     return;
   }
+  if (typeof link.attachment_id === 'string' && link.attachment_id !== '') {
+    openAttachmentLink(link);
+    return;
+  }
   if (typeof link.uri === 'string' && link.uri !== '') {
     window.open(link.uri, '_blank', 'noopener');
     return;
@@ -5844,6 +5852,37 @@ function openPageLink(link) {
   const target = Number(link.target_page);
   if (!Number.isInteger(target) || target < 0 || target >= pageInfos.length) return;
   goToDestination(target, link.dest);
+}
+
+// openAttachmentLink 执行 GotoA 附件动作：可预览类型在新标签页打开，其它类型
+// 触发下载。缺少清单信息时退回链接携带的名称/ID。
+async function openAttachmentLink(link) {
+  const scope = Number(link.scope) || 0;
+  const id = String(link.attachment_id || '');
+  if (!id) return;
+  let item = { scope, id, name: link.attachment_name || id };
+  try {
+    const list = await engine.attachments();
+    const found = (Array.isArray(list) ? list : []).find(entry => Number(entry.scope) === scope && String(entry.id) === id);
+    if (found) item = found;
+  } catch {
+    // 清单读取失败时沿用链接携带的信息。
+  }
+  try {
+    const data = await engine.attachmentData(scope, id, 0);
+    const mime = attachmentPreviewMime(item);
+    if (mime) {
+      const url = URL.createObjectURL(new Blob([data], { type: mime }));
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setStatus(`已打开附件：${item.name || id}`);
+      return;
+    }
+    downloadBytes(data, safeResourceName(item, 'attachment'), 'application/octet-stream');
+    setStatus(`已下载附件：${item.name || id}`);
+  } catch (error) {
+    setStatus(`打开附件失败：${error?.message || error}`);
+  }
 }
 
 // goToDestination 跳转到指定页；有目标位置时按 Dest 的 Top/Left/Zoom 精确定位，

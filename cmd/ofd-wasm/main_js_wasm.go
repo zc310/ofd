@@ -586,18 +586,20 @@ func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
 
 func pageLinkValue(link webreader.PageLink) map[string]any {
 	value := map[string]any{
-		"scope":       link.Scope,
-		"page":        link.Page,
-		"id":          link.ID,
-		"uri":         link.URI,
-		"target_page": link.TargetPage,
-		"dest":        outlineDestValue(link.Dest),
-		"media_id":    link.MediaID,
-		"media_kind":  link.MediaKind,
-		"operator":    link.Operator,
-		"repeat":      link.Repeat,
-		"volume":      optionalIntValue(link.Volume),
-		"event":       link.Event,
+		"scope":           link.Scope,
+		"page":            link.Page,
+		"id":              link.ID,
+		"uri":             link.URI,
+		"target_page":     link.TargetPage,
+		"dest":            outlineDestValue(link.Dest),
+		"attachment_id":   link.AttachmentID,
+		"attachment_name": link.AttachmentName,
+		"media_id":        link.MediaID,
+		"media_kind":      link.MediaKind,
+		"operator":        link.Operator,
+		"repeat":          link.Repeat,
+		"volume":          optionalIntValue(link.Volume),
+		"event":           link.Event,
 	}
 	if link.Boundary.Width > 0 && link.Boundary.Height > 0 {
 		value["boundary"] = objectValue(map[string]any{
