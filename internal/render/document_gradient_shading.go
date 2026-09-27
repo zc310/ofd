@@ -12,12 +12,23 @@ import (
 // 及其工厂 newOFDLinearGradient/newOFDRadialGradient。
 
 func (g *ofdRadialGradient) At(x, y float64) color.RGBA {
-	if g.mapUnit <= 0 || (g.mapType != "Repeat" && g.mapType != "Reflect") {
-		return g.base.At(x, y)
+	if g.mapType == "Repeat" || g.mapType == "Reflect" {
+		if g.mapUnit <= 0 {
+			return g.base.At(x, y)
+		}
+		dx, dy := x-g.c0.X, y-g.c0.Y
+		distance := math.Sqrt(dx*dx+dy*dy) - g.r0
+		return gradientColor(g.stops, mapGradientValue(distance/g.mapUnit, g.mapType), g.extend)
 	}
-	dx, dy := x-g.c0.X, y-g.c0.Y
-	distance := math.Sqrt(dx*dx+dy*dy) - g.r0
-	return gradientColor(g.stops, mapGradientValue(distance/g.mapUnit, g.mapType), g.extend)
+	// Direct：按两圆插值族的参数 t 应用 Extend 位。一个点可能同时落在多个
+	// 圆上，由 RadialParameter 依据 Extend 允许的根取较大的 t；没有任何可用
+	// 解时颜色未定义，保持透明（与 PDF 径向着色一致，例如起始圆退化为焦点
+	// 时焦点背面的区域）。
+	t, ok := g.base.RadialParameter(x, y, g.extend)
+	if !ok {
+		return color.RGBA{}
+	}
+	return gradientColor(g.stops, t, g.extend)
 }
 
 // ofdEllipticalGradient 支持椭圆径向渐变（Eccentricity/Angle）。
@@ -88,7 +99,10 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 	if !finitePoint(start) || !finitePoint(end) || !finiteFloat(shd.MapUnit) {
 		return nil
 	}
-	if shd.MapType != "Repeat" && shd.MapType != "Reflect" {
+	// 原生 *geom.LinearGradient 在 [0,1] 之外一律夹取端点色，只等价于
+	// Extend=3。Extend=0/1/2（默认值是 0）必须走 ofdLinearGradient 按位处理，
+	// 否则 Direct 轴向渐变的轴线外区域会被静默当成向两侧延长。
+	if shd.MapType != "Repeat" && shd.MapType != "Reflect" && shd.Extend == 3 {
 		gradient := geom.NewLinearGradient(start, end)
 		addOFDGradientStops(&gradient.Grad, shd.Segment, resolve)
 		return gradient
@@ -105,6 +119,19 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 	return gradient
 }
 
+// radialMapUnit 返回 Repeat/Reflect 的区间长度。MapUnit 省略时用起止半径差，
+// 使终止圆之外继续按该区间平铺或反射，而不是退回 Direct。
+func radialMapUnit(shd *models.CTRadialShd) float64 {
+	if shd.MapUnit > 0 {
+		return shd.MapUnit
+	}
+	span := math.Abs(shd.EndRadius - shd.StartRadius)
+	if span == 0 {
+		return 0
+	}
+	return span
+}
+
 func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
 	c0 := transform(shd.StartPoint)
 	c1 := transform(shd.EndPoint)
@@ -114,20 +141,29 @@ func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) 
 	hasElliptical := shd.Eccentricity > 0 || shd.Angle != 0
 	hasMapType := shd.MapType == "Repeat" || shd.MapType == "Reflect"
 
-	if !hasElliptical && !hasMapType {
-		gradient := geom.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
-		addOFDGradientStops(&gradient.Grad, shd.Segment, resolve)
-		return gradient
-	}
-
-	if !hasElliptical && hasMapType {
+	// 原生 *geom.RadialGradient 同样只在 [0,1] 之外夹取端点色，仅等价于
+	// Extend=3；Direct 且 Extend 为 0/1/2（默认值是 0）时必须按两圆参数 t
+	// 应用 Extend 位，否则径向渐变的轴外区域会被静默当成向两侧延长。起始圆
+	// 退化为焦点的偏心渐变也走该分支：焦点背面的根半径为负，Extend=0 时
+	// 应保持透明（原生夹取会错误地铺上起点色）。
+	focal := geom.Equal(shd.StartRadius, 0) && c0 != c1
+	if !hasElliptical {
+		if !hasMapType && shd.Extend == 3 && !focal {
+			gradient := geom.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
+			addOFDGradientStops(&gradient.Grad, shd.Segment, resolve)
+			return gradient
+		}
+		mapUnit := 0.0
+		if hasMapType {
+			mapUnit = radialMapUnit(shd)
+		}
 		gradient := &ofdRadialGradient{
 			c0:      c0,
 			r0:      shd.StartRadius,
 			c1:      c1,
 			r1:      shd.EndRadius,
 			mapType: shd.MapType,
-			mapUnit: shd.MapUnit,
+			mapUnit: mapUnit,
 			extend:  shd.Extend,
 		}
 		addOFDGradientStops(&gradient.stops, shd.Segment, resolve)
@@ -147,7 +183,7 @@ func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) 
 		eccentricity: shd.Eccentricity,
 		angle:        shd.Angle * math.Pi / 180,
 		mapType:      shd.MapType,
-		mapUnit:      shd.MapUnit,
+		mapUnit:      radialMapUnit(shd),
 		extend:       shd.Extend,
 		hasMapType:   hasMapType,
 	}

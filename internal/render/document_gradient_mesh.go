@@ -22,6 +22,12 @@ type ofdMeshGradient struct {
 	triangles []ofdMeshTriangle
 	backColor color.RGBA
 	extend    bool
+	// hull 是全部控制点的包围盒。控制点只定义插值锚点，并不限制着色范围，
+	// 因此落在包围盒之外的采样点要先夹回盒内再取色。
+	hull geom.Rect
+	// area 是着色区域在渐变局部坐标下的范围（即对象 Boundary）。只有落在
+	// area 之内的点才按边缘颜色延续；区域之外由 Extend 决定是否绘制。
+	area *geom.Rect
 
 	gridOnce sync.Once
 	grid     *meshGrid
@@ -142,13 +148,37 @@ func (g *meshGrid) candidates(x, y float64) ([]int32, bool) {
 }
 
 func (g *ofdMeshGradient) At(x, y float64) color.RGBA {
-	if value, ok := g.sampleAt(geom.Point{X: x, Y: y}); ok {
+	point := geom.Point{X: x, Y: y}
+	if value, ok := g.sampleAt(point); ok {
 		return value
+	}
+	// 着色区域之内的控制点空白按边缘颜色延续，而不是留空。字形常常溢出控制点
+	// 范围（例如基线贴近 Boundary 底边、渐变点未覆盖整个 Boundary），直接返回
+	// 透明色会把字形下半截整段抹掉。区域之外仍由 Extend 决定。
+	if g.insideArea(point) {
+		if value, ok := g.sampleAt(g.clampToHull(point)); ok {
+			return value
+		}
 	}
 	if g.extend {
 		return g.backColor
 	}
 	return color.RGBA{}
+}
+
+// insideArea 判断采样点是否位于着色区域内。
+func (g *ofdMeshGradient) insideArea(point geom.Point) bool {
+	return g.area != nil &&
+		point.X >= g.area.X0 && point.X <= g.area.X1 &&
+		point.Y >= g.area.Y0 && point.Y <= g.area.Y1
+}
+
+// clampToHull 把采样点夹到控制点包围盒内。
+func (g *ofdMeshGradient) clampToHull(point geom.Point) geom.Point {
+	clamped := point
+	clamped.X = math.Min(math.Max(point.X, g.hull.X0), g.hull.X1)
+	clamped.Y = math.Min(math.Max(point.Y, g.hull.Y0), g.hull.Y1)
+	return clamped
 }
 
 // sampleAt 返回覆盖该点的三角形颜色；使用空间索引把候选三角形限制在少数几个。
@@ -217,6 +247,12 @@ func interpolateMeshColor(c0, c1, c2 color.RGBA, w0, w1, w2 float64) color.RGBA 
 }
 
 func newOFDGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
+	return newOFDGouraudGradientArea(shd, transform, nil, resolve)
+}
+
+// newOFDGouraudGradientArea 与 newOFDGouraudGradient 相同，但额外给出着色区域，
+// 使区域内未被控制点覆盖的部分按边缘颜色延续。
+func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if shd == nil {
 		return nil
 	}
@@ -258,12 +294,17 @@ func newOFDGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos
 		triangles = append(triangles, makeMeshTriangle(previous[0], previous[1], previous[2]))
 		index++
 	}
-	return newMeshGradient(triangles, shd.BackColor, shd.Extend != 0, resolve)
+	return newMeshGradient(triangles, shd.BackColor, shd.Extend != 0, area, resolve)
 }
 
 // newOFDLaGouraudGradient 创建规则网格形式的 Gouraud 渐变。
 // 每个相邻的四个顶点沿对角线拆分为两个三角形。
 func newOFDLaGouraudGradient(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
+	return newOFDLaGouraudGradientArea(shd, transform, nil, resolve)
+}
+
+// newOFDLaGouraudGradientArea 与 newOFDLaGouraudGradient 相同，但额外给出着色区域。
+func newOFDLaGouraudGradientArea(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if shd == nil || shd.VerticesPerRow < 2 || len(shd.Point) < shd.VerticesPerRow*2 {
 		return nil
 	}
@@ -286,7 +327,7 @@ func newOFDLaGouraudGradient(shd *models.CTLaGouraudShd, transform func(models.S
 			)
 		}
 	}
-	return newMeshGradient(triangles, shd.BackColor, shd.Extend != 0, resolve)
+	return newMeshGradient(triangles, shd.BackColor, shd.Extend != 0, area, resolve)
 }
 
 type ofdMeshVertex struct {
@@ -312,7 +353,9 @@ func makeMeshTriangle(p0, p1, p2 ofdMeshVertex) ofdMeshTriangle {
 	return ofdMeshTriangle{p0: p0.point, p1: p1.point, p2: p2.point, c0: p0.color, c1: p1.color, c2: p2.color}
 }
 
-func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, extend bool, resolve colorResolver) geom.Gradient {
+// newMeshGradient 组装网格渐变。area 是着色区域在渐变局部坐标下的范围，
+// 为 nil 时不做边缘夹取，区域外的空白一律按 Extend 处理。
+func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, extend bool, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if len(triangles) == 0 {
 		return nil
 	}
@@ -325,7 +368,13 @@ func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, ext
 		triangles: triangles,
 		backColor: color.RGBA{A: 255},
 		extend:    extend,
+		area:      area,
 	}
+	points := make([]geom.Point, 0, len(triangles)*3)
+	for _, triangle := range triangles {
+		points = append(points, triangle.p0, triangle.p1, triangle.p2)
+	}
+	gradient.hull = geom.RectFromPoints(points...)
 	if backColor != nil {
 		gradient.backColor = meshColor(*backColor, resolve)
 	}
