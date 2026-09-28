@@ -3,6 +3,7 @@ package layout
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-text/typesetting/segmenter"
 
@@ -23,8 +24,12 @@ type styledRune struct {
 // base 提供整段统一的字族与样式基线，行内 Inline 可在其上追加 Bold/Italic。
 func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]atom {
 	size := ptToMM(sizePT)
-	var runes []rune
-	var styles []styledRune
+	count := 0
+	for _, inline := range inlines {
+		count += utf8.RuneCountInString(inline.Text)
+	}
+	runes := make([]rune, 0, count)
+	styles := make([]styledRune, 0, count)
 	glueID := 0
 	for _, inline := range inlines {
 		if inline.Text == "" {
@@ -130,7 +135,17 @@ func (e *engine) wrapSegments(segments [][]atom, width float64) [][]atom {
 		width = e.contentWidth
 	}
 	var lines [][]atom
-	var current []atom
+	// lines 里的每一行都是 current 数组的子切片，flush 后不能复用该数组，
+	// 只能给下一行一个新的数组；这里按整段 atom 总数给一个有界容量，避免每行
+	// 都从零长度反复翻倍扩容。
+	total := 0
+	for _, segment := range segments {
+		total += len(segment)
+	}
+	if total > wrapLineAtomHint {
+		total = wrapLineAtomHint
+	}
+	current := make([]atom, 0, total)
 	currentWidth := 0.0
 	flush := func() {
 		trimmed := current
@@ -187,3 +202,7 @@ func segmentWhitespaceOnly(segment []atom) bool {
 	}
 	return true
 }
+
+// wrapLineAtomHint 是 wrapSegments 为单行预留的 atom 数量上限。行内 atom 数由
+// 版心宽度决定而与文档长度无关，取值只需覆盖常见行长即可。
+const wrapLineAtomHint = 64

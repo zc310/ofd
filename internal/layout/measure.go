@@ -174,23 +174,33 @@ func measureWidth(text string, sizeMM float64, key metricKey) float64 {
 		return heuristicWidth(text, sizeMM)
 	}
 	ppem := fixed.Int26_6(sizeMM * 64)
-	var buf sfnt.Buffer
+	buf := acquireBuffer()
 	width := 0.0
 	for _, r := range text {
-		glyph, err := face.GlyphIndex(&buf, r)
+		glyph, err := face.GlyphIndex(buf, r)
 		if err != nil || glyph == 0 {
 			width += fallbackRuneWidth(r, sizeMM)
 			continue
 		}
-		advance, err := face.GlyphAdvance(&buf, glyph, ppem, font.HintingNone)
+		advance, err := face.GlyphAdvance(buf, glyph, ppem, font.HintingNone)
 		if err != nil {
 			width += fallbackRuneWidth(r, sizeMM)
 			continue
 		}
 		width += float64(advance) / 64
 	}
+	releaseBuffer(buf)
 	return width
 }
+
+// bufferPool 复用 sfnt.Buffer。该类型内部按需分配字形数据缓冲，零值起步的
+// Buffer 每度量一次文本就要重建一遍这些缓冲，是排版阶段最大的分配来源。
+// Buffer 不能被多个 goroutine 共享，因此按 P 的用法从池中独占取用。
+var bufferPool = sync.Pool{New: func() any { return new(sfnt.Buffer) }}
+
+func acquireBuffer() *sfnt.Buffer { return bufferPool.Get().(*sfnt.Buffer) }
+
+func releaseBuffer(buf *sfnt.Buffer) { bufferPool.Put(buf) }
 
 // ascent 返回给定字号（毫米）下字体基线以上的高度。
 func ascent(sizeMM float64, key metricKey) float64 {
