@@ -1,7 +1,7 @@
 // CACHE_NAME 由 make build-wasm / make package-wasm-web 根据
 // index.html、viewer.js、worker.js、wasm_exec.js、ofd.wasm 的内容哈希生成
 // ofd-reader-shell_<hash>；资源路径保持固定，发布时重新构建即可。
-const CACHE_NAME = 'ofd-reader-shell_bf2034ceee722895';
+const CACHE_NAME = 'ofd-reader-shell_defbb1a75dc1a6b6';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -38,6 +38,11 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // 同源 .ofd 文档一律不进 shell 缓存：文档体积大且同一地址内容可能已变，命中
+  // 缓存会读到陈旧副本。判断必须放在 navigate 分支之前，否则同源 .ofd 的直接
+  // 访问会被 navigate 分支接管，并把文档内容写进 './index.html' 键，污染离线
+  // 时的应用外壳。
+  if (/\.ofd$/i.test(url.pathname)) return;
   if (request.mode === 'navigate' || url.pathname.endsWith('/index.html')) {
     event.respondWith(fetch(request, { cache: 'no-cache' }).then(response => {
       if (response.ok) {
@@ -48,10 +53,9 @@ self.addEventListener('fetch', event => {
     }).catch(() => caches.match('./index.html')));
     return;
   }
-  // viewer.js 用 ?file= 下载远程文档时带 cache: 'no-store'，这类响应不能进入
-  // shell 缓存：文档体积大且地址可能指向不同内容，命中缓存会读到陈旧副本。
-  // 同源 .ofd 路径一并放行，覆盖未走 no-store 的直接访问。
-  if (request.cache === 'no-store' || /\.ofd$/i.test(url.pathname)) return;
+  // viewer.js 用 ?file= 下载远程文档时带 cache: 'no-store'，这类响应同样不能
+  // 进 shell 缓存。
+  if (request.cache === 'no-store') return;
   event.respondWith(
     caches.match(request).then(cached => cached || fetch(request).then(response => {
       if (!response.ok) return response;

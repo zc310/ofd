@@ -3105,33 +3105,41 @@ function sanitizeRemoteName(name) {
 // fetchRemoteFile 下载远程 OFD 并包装成 File，让远程文档复用本地文件的打开路径。
 // 请求使用 cache: 'no-store'，Service Worker 据此让文档响应绕过 shell 缓存，
 // 避免同一地址再次访问时命中陈旧副本。
-async function fetchRemoteFile(source) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remoteFileTimeout);
-  let response;
+// controller 由调用方（openRemoteDocument）提供并登记进 pendingDownload，中止
+// 与超时都作用在同一个 signal 上；这里自行 new 的话外部中止不会传到 fetch。
+async function fetchRemoteFile(source, controller) {
+  const ctl = controller ?? new AbortController();
+  const timer = setTimeout(() => ctl.abort(), remoteFileTimeout);
+  // 超时计时器覆盖整个下载（含响应体读取），所有退出路径都要经 finally 清理，
+  // 否则 HTTP 状态失败、Content-Length 超限等提前抛出的分支会把定时器留在事件
+  // 循环里，fetch 挂在 signal 上的监听器也随之滞留。
   try {
-    response = await fetch(source.href, { signal: controller.signal, cache: 'no-store' });
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('下载超时或已取消');
-    // 跨域地址缺少 CORS 头时 fetch 同样失败，提示里点明这一前提。
-    throw new Error(`无法下载 ${source.href}：${error.message}（跨域地址需要 CORS 允许）`);
+    let response;
+    try {
+      response = await fetch(source.href, { signal: ctl.signal, cache: 'no-store' });
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('下载超时或已取消');
+      // 跨域地址缺少 CORS 头时 fetch 同样失败，提示里点明这一前提。
+      throw new Error(`无法下载 ${source.href}：${error.message}（跨域地址需要 CORS 允许）`);
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (declared > remoteFileMaxBytes) {
+      throw new Error(`文件过大：${formatFileSize(declared)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
+    }
+    // Content-Length 可能缺失或不准确，读取完成后再校验一次实际大小。
+    const blob = await response.blob();
+    if (!blob.size) throw new Error('文件内容为空');
+    if (blob.size > remoteFileMaxBytes) {
+      throw new Error(`文件过大：${formatFileSize(blob.size)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
+    }
+    const name = sanitizeRemoteName(source.name) || 'document.ofd';
+    const type = blob.type || 'application/ofd';
+    if (typeof File === 'function') return new File([blob], name, { type });
+    return Object.assign(new Blob([blob], { type }), { name });
+  } finally {
+    clearTimeout(timer);
   }
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const declared = Number(response.headers.get('content-length') || 0);
-  if (declared > remoteFileMaxBytes) {
-    throw new Error(`文件过大：${formatFileSize(declared)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
-  }
-  // Content-Length 可能缺失或不准确，读取完成后再校验一次实际大小。
-  const blob = await response.blob();
-  clearTimeout(timer);
-  if (!blob.size) throw new Error('文件内容为空');
-  if (blob.size > remoteFileMaxBytes) {
-    throw new Error(`文件过大：${formatFileSize(blob.size)}，上限 ${formatFileSize(remoteFileMaxBytes)}`);
-  }
-  const name = sanitizeRemoteName(source.name) || 'document.ofd';
-  const type = blob.type || 'application/ofd';
-  if (typeof File === 'function') return new File([blob], name, { type });
-  return Object.assign(new Blob([blob], { type }), { name });
 }
 
 // openRemoteDocument 下载并打开 ?file= 指定的文档。下载阶段复用「取消打开」按钮，
@@ -3153,7 +3161,7 @@ async function openRemoteDocument(source, options = {}) {
   };
   setStatus(startupNotice.message);
   try {
-    const remote = await fetchRemoteFile(source);
+    const remote = await fetchRemoteFile(source, controller);
     if (generation !== documentGeneration) return false;
     pendingDownload = undefined;
     return await openSelectedFile(remote, { remoteSource: source, keepURL: options.keepURL });
@@ -3236,6 +3244,11 @@ async function openSelectedFile(selected, options = {}) {
   if (!options.keepURL) replaceDocumentURL(remoteSource);
   opening = true;
   cancelOpen.hidden = false;
+  // 远程文档可能还在下载，这里要接管打开流程：先中止并清掉记录，否则被取代的
+  // 请求会一直下完（上限 remoteFileMaxBytes），而滞留的 pendingDownload 还会让
+  // popstate 把该地址误判为"已在加载"而跳过重新加载。
+  pendingDownload?.controller.abort();
+  pendingDownload = undefined;
   openRequest?.cancel();
   openRequest = undefined;
   clearInjectedFonts();
@@ -3413,9 +3426,10 @@ async function openSelectedFile(selected, options = {}) {
     current = 0;
     updateNavigation();
     setStatus(`打开失败：${error.message}`);
-    // 打开失败时地址栏不应继续指向打不开的远程文档。
+    // 打开失败时地址栏不应继续指向打不开的远程文档。keepURL 表示这条历史记录
+    // 不是本次加载创建的（前进/后退），改写它会让返回目标失去意义。
     currentRemoteSource = undefined;
-    if (remoteSource) replaceDocumentURL(undefined);
+    if (remoteSource && !options.keepURL) replaceDocumentURL(undefined);
     return false;
   } finally {
     if (generation === documentGeneration) {
