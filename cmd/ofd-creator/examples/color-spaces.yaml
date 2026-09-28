@@ -3,6 +3,17 @@
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml -o test/testdata/color-spaces.ofd --format auto --deterministic --validate
+#
+# 期望渲染值（PNG 与 PDF 一致，详见 test/testdata/README.md 的「颜色空间渲染基准」）：
+#   GRAY  64 -> (64,64,64)      GRAY 180 -> (180,180,180)
+#   CMYK 255 0 0 0 -> (0,173,239)    印刷青
+#   CMYK   0 255 0 0 -> (236,0,140)  印刷品红
+#   CMYK   0 0 255 0 -> (255,242,0)  印刷黄
+#   调色板 Index 0/1/2 -> (220,40,40) / (40,90,180) / (40,150,80)
+#   ICC sRGB -> (255,0,0)
+# 颜色空间 12 不带 Profile，属于 device CMYK；本项目在缺少 ICC 配置文件时使用
+# Adobe/poppler 的 4 色印刷矩阵模型，因此 CMYK 原色不是纯青/品红黄。设置
+# OFD_CMYK_ICC 环境变量可改走真实 ICC 配置文件。
 
 version: 1
 document:
