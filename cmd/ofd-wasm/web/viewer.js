@@ -645,6 +645,12 @@ let documentBackgroundCustomColor = '#ffffff';
 let pageRotation = 0;
 let touchStartX = 0;
 let touchStartY = 0;
+let mousePanPointerId = -1;
+let mousePanStartX = 0;
+let mousePanStartY = 0;
+let mousePanStartScrollX = 0;
+let mousePanStartScrollY = 0;
+let mousePanActive = false;
 let touchStartDistance = 0;
 let touchPinching = false;
 let touchZoomTarget = 0;
@@ -928,11 +934,13 @@ function updatePageVirtualMetrics() {
   const maxHeight = pageTrackMaxLayoutHeight();
   const gap = 18 * zoom;
   let contentOffset = 0;
+  let maxSpreadWidth = 0;
   pageSpreads.forEach((spread, position) => {
     const dimensions = spreadDimensions(position);
     spread.offset = contentOffset;
     spread.height = dimensions.height * zoom;
     spread.width = dimensions.width * zoom;
+    if (spread.width > maxSpreadWidth) maxSpreadWidth = spread.width;
     if (spread.element) {
       spread.element.style.top = `${contentOffset - pageAnchor}px`;
       spread.element.style.width = `${spread.width}px`;
@@ -942,6 +950,12 @@ function updatePageVirtualMetrics() {
     contentOffset += spread.height + gap;
   });
   pageTrackContentHeight = Math.max(0, contentOffset - gap);
+  /* 横向：.page-spread 用 left:50% + translateX(-50%) 相对轨道居中。放大到
+     超过阅读区宽度时，居中会把左半边推到负坐标，而滚动容器只能滚动到正方向，
+     于是页面左侧永远看不到，横向滚动条的范围也只有实际需要的一半。让轨道
+     至少和最宽的展开一样宽，居中就不会产生负坐标，溢出全部落在可滚动方向。 */
+  pageVirtualTrack.style.minWidth = maxSpreadWidth > 0 ? `${maxSpreadWidth}px` : '';
+  document.body.classList.toggle('can-pan-pages', maxSpreadWidth > pagesElement.clientWidth + 1);
   /* 内容超过浏览器布局高度上限时压缩轨道。压缩后滚到最底部时，视口底部必须
      正好对准内容末尾，否则最后一页会整页落在可达范围之外：滚动条到不了末页，
      点末尾缩略图跳进去也看不到最后一页。补偿 #pages 底部内边距 P 可满足要求：
@@ -2399,6 +2413,58 @@ function touchDistance(touches) {
   return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
 }
 
+// pageHorizontalOverflow 判断页面是否被放大到超过阅读区宽度。横向有溢出时
+// 横向拖动用于平移，而不是翻页。
+function pageHorizontalOverflow() {
+  return pagesElement.scrollWidth - pagesElement.clientWidth > 1;
+}
+
+// panPointerBlocked 判断拖动起点是否落在不该平移的区域：文字图元上要能选中
+// 文本，链接触发区要能点开，控件同理。
+function panPointerBlocked(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('.text-run, a, button, input, select, textarea, [role="button"]'));
+}
+
+function handlePanPointerDown(event) {
+  if (event.pointerType !== 'mouse' || event.button !== 0) return;
+  if (!pageInfos.length || !pageHorizontalOverflow()) return;
+  if (panPointerBlocked(event.target)) return;
+  mousePanPointerId = event.pointerId;
+  mousePanStartX = event.clientX;
+  mousePanStartY = event.clientY;
+  mousePanStartScrollX = pagesElement.scrollLeft;
+  mousePanStartScrollY = window.scrollY;
+  mousePanActive = false;
+  window.addEventListener('pointermove', handlePanPointerMove);
+  window.addEventListener('pointerup', handlePanPointerEnd);
+  window.addEventListener('pointercancel', handlePanPointerEnd);
+}
+
+function handlePanPointerMove(event) {
+  if (event.pointerId !== mousePanPointerId) return;
+  const deltaX = event.clientX - mousePanStartX;
+  const deltaY = event.clientY - mousePanStartY;
+  if (!mousePanActive) {
+    // 留出阈值，避免把普通点击误判成拖动。
+    if (Math.abs(deltaX) < 4 && Math.abs(deltaY) < 4) return;
+    mousePanActive = true;
+    document.body.classList.add('pan-dragging');
+  }
+  // 横向在 #pages 内滚动，纵向由 window 滚动（与触摸一致）。
+  pagesElement.scrollLeft = mousePanStartScrollX - deltaX;
+  window.scrollTo(0, mousePanStartScrollY - deltaY);
+}
+
+function handlePanPointerEnd(event) {
+  if (event.pointerId !== mousePanPointerId) return;
+  mousePanPointerId = -1;
+  document.body.classList.remove('pan-dragging');
+  window.removeEventListener('pointermove', handlePanPointerMove);
+  window.removeEventListener('pointerup', handlePanPointerEnd);
+  window.removeEventListener('pointercancel', handlePanPointerEnd);
+}
+
 function handleTouchStart(event) {
   if (!pageInfos.length) return;
   if (event.touches.length === 1) {
@@ -2440,6 +2506,8 @@ function handleTouchEnd(event) {
   const deltaX = touch.clientX - touchStartX;
   const deltaY = touch.clientY - touchStartY;
   touchStartDistance = 0;
+  // 横向有溢出时，横向拖动已经是平移手势，不要再当作翻页，否则平移永远推不动。
+  if (pageHorizontalOverflow()) return;
   if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
   navigatePage(deltaX < 0 ? 1 : -1);
 }
@@ -6516,6 +6584,7 @@ if ('launchQueue' in window && typeof window.launchQueue.setConsumer === 'functi
     }
   });
 }
+pagesElement.addEventListener('pointerdown', handlePanPointerDown);
 pagesElement.addEventListener('touchstart', handleTouchStart, { passive: true });
 pagesElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 pagesElement.addEventListener('touchend', handleTouchEnd, { passive: true });

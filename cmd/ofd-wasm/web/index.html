@@ -454,6 +454,12 @@
     #empty.drag-over strong { color: #2476bd; }
     #drop-hint { display: none; }
     @keyframes loading-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+    /* 页面被放大到超过阅读区宽度时，横向拖动用于平移。放在媒体查询之外，
+       两种视口宽度下行为一致。 */
+    body.can-pan-pages .page-card, body.can-pan-pages .page-placeholder { cursor: grab; }
+    body.pan-dragging .page-card, body.pan-dragging .page-placeholder { cursor: grabbing; }
+    /* 拖动过程中抑制选中，否则平移会连带把文字选出来。 */
+    body.pan-dragging #pages, body.pan-dragging .text-layer, body.pan-dragging .text-run { user-select: none; }
     @media (max-width: 620px) {
       header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
       header > * { margin: 0; }
