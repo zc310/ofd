@@ -225,7 +225,7 @@ func containsFallbackFont(fonts []webreader.FontSource, source webreader.FontSou
 
 // removeFallbackFont 移除指定字体族：从本实例的回退字体列表移除（后续打开的文档
 // 不再自动应用），并让当前 Reader 取消该回退字体，使已打开文档立即恢复内嵌/默认
-// 字体。全局字体注册表不提供撤销，但本机字体仅在当前文档生效的语义由此保证。
+// 字体。全局字体注册表不提供撤销，但系统字体仅在当前文档生效的语义由此保证。
 func (a *wasmApp) removeFallbackFont(_ js.Value, args []js.Value) any {
 	if len(args) != 1 || args[0].Type() != js.TypeString || strings.TrimSpace(args[0].String()) == "" {
 		return errorValue(errors.New("ofd.removeFallbackFont 需要字体族名"))
