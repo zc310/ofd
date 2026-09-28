@@ -387,7 +387,7 @@ func (p *pageLexer) parsePageBlock() (*PageBlock, error) {
 		return nil, err
 	}
 	if void {
-		return nil, nil
+		return o, nil
 	}
 	items, err := p.parsePageItems("PageBlock")
 	if err != nil {
