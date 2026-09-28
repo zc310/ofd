@@ -1181,3 +1181,96 @@ func TestBuildLandscapeTableKeepsPageNumber(t *testing.T) {
 		t.Fatalf("横排表格页面仍应按公文惯例渲染页码")
 	}
 }
+
+// TestBuildNoBlankPageBetweenFullHeightLandscapeTables 保护两个连续"按版心高等比
+// 缩放"的横排表格之间不产生空白页。横排表格所需的纵向空间按构造等于整个版心
+// 高，ensureHeight 又要多留一个字身的高度，因此它在一张刚由 newPage 建出的
+// 页上一开始就放不下；此时若把 newPage 自己写下的页码算作"本页已有内容"，
+// 就会多换一页并留下一张只有页码的空白页。
+func TestBuildNoBlankPageBetweenFullHeightLandscapeTables(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		opts Options
+		cols int
+		cell string
+	}{
+		{"公文版式", GBTOptions(), 22, "列A"},
+		{"默认版式", DefaultOptions(), 22, "内容内容"},
+		{"宽表多列", DefaultOptions(), 30, "内容"},
+		{"窄表长文本", DefaultOptions(), 16, "内容内容内容内容"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			wideTable := func() *Table {
+				row := make([]Cell, 0, testCase.cols)
+				for index := 0; index < testCase.cols; index++ {
+					row = append(row, Cell{{Text: testCase.cell}})
+				}
+				return &Table{Header: row, Rows: [][]Cell{row}, Landscape: true}
+			}
+			document, err := Build(&Document{
+				Footer: &Footer{PageNumber: true, Size: 14},
+				Blocks: []Block{
+					{Kind: KindParagraph, Inlines: []Inline{{Text: "中间段落"}}},
+					{Kind: KindTable, Table: wideTable()},
+					{Kind: KindTable, Table: wideTable()},
+				},
+			}, testCase.opts)
+			if err != nil {
+				t.Fatalf("Build 失败: %v", err)
+			}
+			if len(document.Pages) != 3 {
+				t.Fatalf("两张横排表格应占 3 页，实际 %d 页", len(document.Pages))
+			}
+			for index, page := range document.Pages {
+				var texts []creator.Text
+				for _, item := range page.Items {
+					if text, ok := item.(creator.Text); ok {
+						texts = append(texts, text)
+					}
+				}
+				if len(texts) == 1 && strings.HasPrefix(texts[0].Value, "— ") {
+					t.Errorf("第 %d 页只有页码，是空白页", index+1)
+				}
+			}
+		})
+	}
+}
+
+// TestMeasureWidthStableAcrossBufferReuse 保护度量缓冲的池化复用。sfnt.Buffer
+// 的内部缓冲会跨度量调用累积，缓冲被复用后同一段文本的宽度必须逐位相同，否则
+// 断行位置会随排版顺序漂移。
+func TestMeasureWidthStableAcrossBufferReuse(t *testing.T) {
+	samples := []string{
+		"这是一段中文文本，用于测量宽度稳定性。",
+		"Hello ASCII text 123",
+		"混合 mixed 文本 with 中文 and 数字 42",
+		"标点，。、；：！？（）《》",
+		"\uE000 私用区字符",
+	}
+	keys := []metricKey{
+		{fam: famBody},
+		{fam: famBody, bold: true},
+		{fam: famTitle},
+		{fam: famSong, mono: true},
+		{fam: famHei},
+	}
+	sizes := []float64{3.5, 5.6, 7.4, 10.5, 21.6}
+	first := make(map[string]float64)
+	for round := 0; round < 4; round++ {
+		for _, text := range samples {
+			for _, key := range keys {
+				for _, size := range sizes {
+					got := measureWidth(text, size, key)
+					id := fmt.Sprintf("%s|%v|%v", text, key, size)
+					if round == 0 {
+						first[id] = got
+						continue
+					}
+					if got != first[id] {
+						t.Fatalf("度量结果随缓冲复用变化 %s：第 %d 轮 %.12f != %.12f", id, round, got, first[id])
+					}
+				}
+			}
+		}
+	}
+}

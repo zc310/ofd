@@ -72,6 +72,9 @@ type engine struct {
 	afterLandscape bool
 	// lastKind 是上一块的类型，用于在引用和表格之间补间距。
 	lastKind Kind
+	// pageBase 是新页创建后已有的元素数（页码等页脚元素）。判断"本页是否已
+	// 排入正文"时要与它比较，否则 newPage 写下的页码会让空白页看起来非空。
+	pageBase int
 }
 
 // Build 把流式文档排版为 OFD 文档。返回的文档可继续补充元数据后写入。
@@ -152,6 +155,8 @@ func (e *engine) newPage() {
 	if e.footer != nil && e.footer.PageNumber {
 		e.emitPageNumber()
 	}
+	// 页脚元素先于正文落下，记录此时的元素数作为"本页尚无正文"的基线。
+	e.pageBase = len(e.cur().Items)
 }
 
 // emitPageNumber 在版心下边缘之下渲染 "— 页数 —" 页码。
@@ -211,13 +216,13 @@ func (e *engine) add(item creator.Item) {
 	e.cur().Items = append(e.cur().Items, item)
 }
 
-// ensureHeight 在剩余空间不足时换页；已写内容的页面才会触发换页，避免空页。
+// ensureHeight 在剩余空间不足时换页；已排入正文的页面才会触发换页，避免空页。
 func (e *engine) ensureHeight(height float64) {
 	if e.pageIndex < 0 {
 		e.newPage()
 		return
 	}
-	if e.y-height < e.contentBottom-0.01 && len(e.cur().Items) > 0 {
+	if e.y-height < e.contentBottom-0.01 && len(e.cur().Items) > e.pageBase {
 		e.newPage()
 	}
 }
@@ -548,11 +553,11 @@ func (e *engine) emitOfficialParagraph(inlines []Inline) {
 	}
 	if !e.officialBodyStarted {
 		e.officialBodyStarted = true
-		text := ""
+		var joined strings.Builder
 		for _, inline := range inlines {
-			text += inline.Text
+			joined.WriteString(inline.Text)
 		}
-		text = strings.TrimSpace(text)
+		text := strings.TrimSpace(joined.String())
 		if !strings.HasSuffix(text, "：") && !strings.HasSuffix(text, ":") {
 			indentFirstLine(segments, 2)
 		}
