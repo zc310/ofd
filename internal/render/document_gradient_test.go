@@ -748,7 +748,7 @@ func TestEccentricRadialFocusBacksideStaysTransparent(t *testing.T) {
 
 // 实色填充 + 需要栅格化的渐变描边：描边必须画在填充之上。此前先画描边图片、
 // 后画实色填充，填充会盖住描边内侧；再叠加 Extend=0 的轴外透明，左右描边会
-// 整条消失（shading.ofd 第 6 页“纯色+渐变描边”）。
+// 整条消失（shading.ofd 第 5 页“纯色+渐变描边”）。
 func TestSolidFillWithRasterStrokeDrawsStrokeOnTop(t *testing.T) {
 	object := models.PathObject{CtPath: models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}, LineWidth: 2},

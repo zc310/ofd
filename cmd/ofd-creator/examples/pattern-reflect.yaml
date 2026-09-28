@@ -1,5 +1,6 @@
-# 底纹翻转
-# 底纹翻转示例；同一三角单元按 Normal、Row、Column、RowAndColumn 平铺。
+# 底纹翻转与图案填充
+# 2 页覆盖：第 1 页底纹翻转（同一三角单元按 Normal、Row、Column、RowAndColumn 平铺），
+# 第 2 页 Pattern 图案填充示例（条纹/星形单元，自 examples/shading.yaml 移入）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml -o test/testdata/pattern-reflect.ofd --format auto --deterministic --validate
@@ -215,3 +216,249 @@ pages:
                   r: 40
                   g: 110
                   b: 200
+  - layers:
+      - items:
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 20
+            width: 150
+            height: 12
+            value: Pattern 图案填充示例
+            size: 16
+            fill_color: {}
+            text_codes:
+              - value: Pattern 图案填充示例
+                x: 0
+                "y": 10
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 42
+            width: 100
+            height: 6
+            value: '条纹图案 (Normal):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '条纹图案 (Normal):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 50
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 10.00 0.00 L 10.00 20.00 L 0.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 2.00 9.00 L 9.00 9.00 L 9.00 7.00 L 13.00 10.00 L 9.00 13.00 L 9.00 11.00 L 2.00 11.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      alpha: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 96
+            width: 100
+            height: 6
+            value: '棋盘格 (Row):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '棋盘格 (Row):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 104
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: Row
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 20.00 0.00 L 20.00 20.00 L 0.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color: {}
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 0.00 0.00 L 10.00 0.00 L 10.00 10.00 L 0.00 10.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 10.00 L 20.00 10.00 L 20.00 20.00 L 10.00 20.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 5.00 9.00 L 13.00 9.00 L 13.00 7.50 L 16.00 10.00 L 13.00 12.50 L 13.00 11.00 L 5.00 11.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      g: 180
+                      alpha: 128
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 150
+            width: 100
+            height: 6
+            value: '菱形 (Column):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '菱形 (Column):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 158
+            width: 150
+            height: 40
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 40.00 L 0.00 40.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: Column
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 0.00 L 20.00 10.00 L 10.00 20.00 L 0.00 10.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      g: 128
+                      b: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 8.00 18.00 L 10.00 20.00 L 12.00 18.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 255
+                      alpha: 128
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 18.00 8.00 L 20.00 10.00 L 18.00 12.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 191
+                      g: 191
+                      alpha: 180
+          - type: text
+            font: FangSong
+            x: 30
+            "y": 204
+            width: 100
+            height: 6
+            value: '星形 (RowAndColumn):'
+            size: 8
+            fill_color:
+              r: 80
+              g: 80
+              b: 80
+            text_codes:
+              - value: '星形 (RowAndColumn):'
+                x: 0
+                "y": 5
+          - type: path
+            x: 30
+            "y": 212
+            width: 150
+            height: 80
+            data: M 0.00 0.00 L 150.00 0.00 L 150.00 80.00 L 0.00 80.00 C
+            fill: true
+            stroke_set: false
+            fill_color:
+              pattern:
+                width: 20
+                height: 20
+                x_step: 20
+                y_step: 20
+                reflect_method: RowAndColumn
+                items:
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 10.00 1.30 L 12.00 8.00 L 18.70 8.00 L 13.30 12.00 L 15.30 18.70 L 10.00 14.70 L 4.70 18.70 L 6.70 12.00 L 1.30 8.00 L 8.00 8.00 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                  - type: path
+                    width: 20
+                    height: 20
+                    data: M 12.00 13.50 L 15.30 18.70 L 10.00 14.70 C
+                    fill: true
+                    stroke_set: false
+                    fill_color:
+                      r: 255
+                      g: 200
+    area:
+      physical_box:
+        width: 210
+        height: 297

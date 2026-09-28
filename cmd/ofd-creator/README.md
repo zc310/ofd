@@ -370,7 +370,9 @@ pages:
 
 绘制参数实例见 `cmd/ofd-creator/examples/drawparam.yaml`，覆盖线宽、Cap/Join、MiterLimit、DashPattern/DashOffset、颜色及 Relative 三级继承。
 
-着色合集实例见 `cmd/ofd-creator/examples/shading.yaml`，覆盖 Axial/Radial/Gouraud/LaGouraud/Pattern 及 Direct/Repeat/Reflect 映射。
+着色合集实例见 `cmd/ofd-creator/examples/shading.yaml`，覆盖 Axial/Radial/Gouraud/LaGouraud 及 Direct/Repeat/Reflect 映射。
+
+底纹翻转与图案填充实例见 `cmd/ofd-creator/examples/pattern-reflect.yaml`，第 1 页覆盖底纹 ReflectMethod 的 Normal/Row/Column/RowAndColumn 平铺，第 2 页为 Pattern 图案填充示例（自 shading.yaml 移入）。
 
 径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
 
