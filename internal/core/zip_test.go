@@ -73,6 +73,69 @@ func TestPackageExposesEntryMetadataAndLookup(t *testing.T) {
 	}
 }
 
+func TestPackageLookupFallsBackToUniqueCaseInsensitiveName(t *testing.T) {
+	archiveData := newTestZip(t, map[string][]byte{
+		"Doc_0/Tpls/Tpl_0/Content.xml": []byte("template"),
+		"Pages/Page_0/Content.xml":     []byte("page"),
+	})
+	archive, err := OpenBytes(archiveData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	content, err := archive.Read("Doc_0/TPLS/Tpl_0/Content.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "template" {
+		t.Fatalf("content = %q, want %q", content, "template")
+	}
+	if !archive.Has("doc_0/tpls/tpl_0/content.xml") {
+		t.Fatal("Has returned false for a case-insensitive unique match")
+	}
+	entry, ok := archive.Lookup("Doc_0/TPLS/Tpl_0/Content.xml")
+	if !ok {
+		t.Fatal("Lookup returned false for a case-insensitive unique match")
+	}
+	if entry.Path != "Doc_0/Tpls/Tpl_0/Content.xml" {
+		t.Fatalf("entry.Path = %q, want %q", entry.Path, "Doc_0/Tpls/Tpl_0/Content.xml")
+	}
+}
+
+func TestPackageLookupRejectsAmbiguousCaseInsensitiveName(t *testing.T) {
+	archiveData := newTestZip(t, map[string][]byte{
+		"Doc_0/Tpls/Content.xml": []byte("lower"),
+		"Doc_0/TPLS/Content.xml": []byte("upper"),
+	})
+	archive, err := OpenBytes(archiveData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	content, err := archive.Read("Doc_0/Tpls/Content.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "lower" {
+		t.Fatalf("content = %q, want %q", content, "lower")
+	}
+	content, err = archive.Read("Doc_0/TPLS/Content.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "upper" {
+		t.Fatalf("content = %q, want %q", content, "upper")
+	}
+	if archive.Has("Doc_0/tPlS/Content.xml") {
+		t.Fatal("Has returned true for an ambiguous case-insensitive name")
+	}
+	if _, err := archive.Open("Doc_0/tPlS/Content.xml"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Open error = %v, want %v", err, os.ErrNotExist)
+	}
+}
+
 func TestPackageWalkEntriesStopsEarlyWithoutBuildingIndex(t *testing.T) {
 	archive, err := OpenBytes(newTestZip(t, map[string][]byte{
 		"first":  []byte("first"),
