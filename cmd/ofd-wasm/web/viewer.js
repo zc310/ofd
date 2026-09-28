@@ -629,6 +629,10 @@ let clarityPriority = (() => {
 })();
 let textLayerVisible = true;
 const pagePillStorageKey = 'ofd-show-page-pill';
+// localFontsStorageKey 记住用户是否想用系统字体。文档就绪后据此自动读取（见
+// applyLocalFontsIntentOnOpen），因此这里保存的是"用户想要系统字体"这一事实，
+// 而不是一次性动作。
+const localFontsStorageKey = 'ofd-local-fonts';
 let pagePillVisible = (() => {
   try {
     return localStorage.getItem(pagePillStorageKey) !== 'false';
@@ -1888,9 +1892,9 @@ async function preloadFallbackFonts() {
   return loaded;
 }
 
-// 本机字体：仅在用户显式勾选时按需读取，且只读取文档声明但未嵌入的字体族所
+// 系统字体：仅在用户显式勾选时按需读取，且只读取文档声明但未嵌入的字体族所
 // 需要的本地字体。字体数据注册到 WASM 回退表后立即重渲染；关闭或切换文档时
-// 移除注册，使本机字体仅在当前文档内有效（“临时”语义）。
+// 移除注册，使系统字体仅在当前文档内有效（“临时”语义）。
 
 // localFontsSupported 判断当前浏览器是否支持本地字体访问 API。
 function localFontsSupported() {
@@ -1924,7 +1928,7 @@ function normalizeFontFamily(name) {
 }
 
 // FONT_FAMILY_GROUPS 把常见的字体族别名映射到等价组，用于把文档声明的字体族
-// （如“仿宋_GB2312”）与本机字体（如“FangSong”“仿宋”）对应起来。与
+// （如“仿宋_GB2312”）与系统字体（如“FangSong”“仿宋”）对应起来。与
 // internal/render/backends/canvas/font_candidates.go 的 fallbackNameGroup 保持一致。
 const FONT_FAMILY_GROUPS = {
   simsun: ['宋体', '宋体gb2312', 'simsun', 'nsimsun', 'songti', 'simsungb2312', 'songtigb2312', '方正小标宋', '方正小标宋gbk', '方正书宋', 'fzxbs'],
@@ -1952,7 +1956,7 @@ function fontFamilyGroup(name) {
   return '';
 }
 
-// localFontMatchesFamily 判断本机字体是否可用于补齐文档声明的某个字体族：优先精确
+// localFontMatchesFamily 判断系统字体是否可用于补齐文档声明的某个字体族：优先精确
 // 归一化匹配，其次按等价组匹配。
 function localFontMatchesFamily(localFont, missing) {
   const localNorm = normalizeFontFamily(localFont.family);
@@ -1968,12 +1972,16 @@ function localFontMatchesFamily(localFont, missing) {
 }
 
 // fetchLocalFontsForDocument 在已获得本地字体列表后，匹配文档缺失字体、读取字形
-// 数据并注册为 WASM 回退字体。返回实际注册的字体数量。queryLocalFontsPromise 必须
-// 在用户手势内同步发起（见 setLocalFonts），否则浏览器会拒绝授权。
+// 数据并注册为 WASM 回退字体。queryLocalFontsPromise 由 setLocalFonts 发起。
+// 返回 { registered, wanted, unmatched }：registered 是实际注册的字体数量，wanted
+// 是文档缺失的字体族数，unmatched 只在 registered 为 0 时给出缺失的族名。三者
+// 用来区分"没有可补齐的目标"和"有目标但本机没有匹配字体"，否则界面上只能给出
+// 一句笼统的失败提示。
 async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
   const wanted = await missingFontFamilies();
   wanted.delete('');
-  if (wanted.size === 0) return 0;
+  // 文档字体已全部内嵌时没有任何可补齐的目标，这不是失败。
+  if (wanted.size === 0) return { registered: 0, wanted: 0, unmatched: [] };
 
   const available = await queryLocalFontsPromise;
   const selected = new Map();
@@ -1988,11 +1996,13 @@ async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
       selected.set(wantedName, font);
     }
   }
-  if (selected.size === 0) return 0;
+  if (selected.size === 0) {
+    return { registered: 0, wanted: wanted.size, unmatched: [...wanted.values()] };
+  }
 
   let registered = 0;
   for (const [wantedName, font] of selected) {
-    if (generation !== documentGeneration) return registered;
+    if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [] };
     let data;
     try {
       const blob = await font.blob();
@@ -2000,7 +2010,7 @@ async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
     } catch (_) {
       continue;
     }
-    if (generation !== documentGeneration) return registered;
+    if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [] };
     const weight = font.style === 'Bold' ? 700 : 400;
     const italic = font.style === 'Italic' || font.style === 'Bold Italic';
     try {
@@ -2011,10 +2021,10 @@ async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
       // 无法注册的本地字体不应阻止其他字体生效。
     }
   }
-  return registered;
+  return { registered, wanted: wanted.size, unmatched: [] };
 }
 
-// removeLocalFonts 移除本窗口曾注册的本机字体，使后续打开的文档不再沿用。
+// removeLocalFonts 移除本窗口曾注册的系统字体，使后续打开的文档不再沿用。
 async function removeLocalFonts() {
   const families = Array.from(localFontFamilies);
   localFontFamilies.clear();
@@ -2027,58 +2037,186 @@ async function removeLocalFonts() {
   }
 }
 
-// setLocalFonts 切换本机字体使用；仅在勾选且文档已打开时读取，失败时回滚勾选。
+// applyLocalFontsIntent 把存储里记住的勾选意向套回勾选框。读取系统字体必须在
+// 用户手势内发起，页面加载和打开文档时都做不到，因此这里只恢复勾选状态，不触发
+// 读取；用户点这个勾选框才会真正读取（见 change 处理器）。
+function applyLocalFontsIntent() {
+  if (!localFontsSelect || !localFontsSupported()) return false;
+  try {
+    localFontsSelect.checked = localStorage.getItem(localFontsStorageKey) === 'true';
+  } catch (_) {
+    return false;
+  }
+  return localFontsSelect.checked;
+}
+
+// localFontsGestureFire 是"需要手势时退到首次交互"的一次性监听回调，需要稳定
+// 引用才能在触发前摘除。localFontsGesturePending 表示该退路已挂载。
+let localFontsGestureFire;
+let localFontsGesturePending = false;
+// localFontsGestureUsed 记录本次文档周期内是否已经退回过手势方案。已经在手势
+// 内调用仍失败说明不是手势问题，再挂监听只会让用户每点一次失败一次。
+let localFontsGestureUsed = false;
+// localFontsIntentApplied 记录本次文档周期内是否已按存储里的意向尝试过读取。
+// 首次渲染前会等待读取，buildPages 里的兜底调用据此跳过，避免读两次。
+let localFontsIntentApplied = false;
+// localFontsFirstRenderTimeout 是首次渲染前等待系统字体的上限。读取要枚举本机
+// 字体并传输字形数据，若用户不响应授权弹窗也不能让文档一直不出现；超时后照常
+// 渲染，字体到位后再补一次。
+const localFontsFirstRenderTimeout = 3000;
+
+// localFontsPendingHint 返回可并入状态栏的待办提示。挂载发生在 buildPages 里，
+// 而"已打开"提示紧随其后，单独 setStatus 会被覆盖，因此由调用方组合进自己的消息。
+function localFontsPendingHint() {
+  return localFontsGesturePending ? '；已记住使用系统字体，点击页面任意处或按任意键即可读取' : '';
+}
+
+// armLocalFontsOnGesture 是"需要用户手势"实现上的退路：此时 queryLocalFonts 只能
+// 在用户手势内发起，退到用户的第一次点击或按键上再试。实测的浏览器已不要求手势，
+// 文档就绪时直接调用即可，这条路径只在直接调用被判定为手势问题时才走到
+// （见 needsUserGesture 与 applyLocalFontsIntentOnOpen）。
+function armLocalFontsOnGesture() {
+  if (localFontsGestureFire || localFontsGestureUsed) return false;
+  if (!localFontsSelect?.checked || localFontsActive) return false;
+  if (!pageInfos.length || !localFontsSupported()) return false;
+  const fire = () => {
+    disarmLocalFontsOnGesture();
+    void setLocalFonts(true);
+  };
+  localFontsGestureFire = fire;
+  localFontsGesturePending = true;
+  for (const type of ['pointerdown', 'keydown']) {
+    window.addEventListener(type, fire, { capture: true, once: true });
+  }
+  return true;
+}
+
+// disarmLocalFontsOnGesture 摘除待触发的一次性监听；已触发时是空操作。
+function disarmLocalFontsOnGesture() {
+  if (!localFontsGestureFire) return;
+  for (const type of ['pointerdown', 'keydown']) {
+    window.removeEventListener(type, localFontsGestureFire, true);
+  }
+  localFontsGestureFire = undefined;
+  localFontsGesturePending = false;
+}
+
+// localFontsIntentWanted 判断当前是否应该按存储里的意向读取系统字体。
+function localFontsIntentWanted() {
+  return Boolean(localFontsSelect?.checked) && !localFontsActive
+    && !localFontsIntentApplied && pageInfos.length > 0 && localFontsSupported();
+}
+
+// applyLocalFontsBeforeRender 在首次渲染前按意向读取系统字体，最多等
+// localFontsFirstRenderTimeout。等待而不是事后补，是因为补字体要清空页面缓存
+// 并把可见页全部重新栅格化一遍：既让用户看到一次字体跳变，也多渲染一遍。等在
+// 首次渲染之前则只需渲染一次，且第一帧就是最终字体。
+async function applyLocalFontsBeforeRender() {
+  if (!localFontsIntentWanted()) return;
+  localFontsIntentApplied = true;
+  setStatus('正在读取系统字体...');
+  await Promise.race([
+    setLocalFonts(true),
+    new Promise(resolve => { setTimeout(resolve, localFontsFirstRenderTimeout); }),
+  ]);
+}
+
+// applyLocalFontsIntentOnOpen 在文档就绪后按存储里的意向自动读取系统字体。
+// queryLocalFonts 在多数实现里已不要求用户手势，因此这里直接尝试，不必等用户
+// 点击；需要手势的实现会在 setLocalFonts 里退回一次性监听。意向为关、字体已生效、
+// 无文档或浏览器不支持时都只确保监听被摘除。
+function applyLocalFontsIntentOnOpen() {
+  if (!localFontsIntentWanted()) {
+    disarmLocalFontsOnGesture();
+    return;
+  }
+  localFontsIntentApplied = true;
+  void setLocalFonts(true);
+}
+
+// needsUserGesture 判断失败是否源于"缺少瞬时用户激活"。不同浏览器在这一条上
+// 行为不同，实测过的实现已放开手势要求，但仍有实现会以 SecurityError 或
+// NotAllowedError 拒绝，因此按错误名判定并保留退路。
+function needsUserGesture(error) {
+  const name = String(error?.name || '');
+  return name === 'SecurityError' || name === 'NotAllowedError';
+}
+
+// handleLocalFontsGestureFallback 处理读取失败：只有确实是手势问题、且本轮还没
+// 退回过手势方案时，才挂一次性监听等下一次交互；否则按普通失败处理。
+function handleLocalFontsGestureFallback(error) {
+  if (needsUserGesture(error) && !localFontsGestureUsed && armLocalFontsOnGesture()) {
+    localFontsGestureUsed = true;
+    setStatus('当前浏览器要求在交互中授权，点击页面任意处即可读取系统字体');
+    return;
+  }
+  localFontsSelect.checked = false;
+  setStatus(`读取系统字体失败：${error.message}`);
+}
+
+// setLocalFonts 切换系统字体使用；仅在勾选且文档已打开时读取，失败时回滚勾选。
 async function setLocalFonts(enabled) {
+  // 已经开始动作，待触发的一次性监听就没意义了；否则手动点选项会与首次交互
+  // 触发叠加，读两次系统字体。
+  disarmLocalFontsOnGesture();
   if (!enabled) {
     if (!localFontsActive) return;
     localFontsActive = false;
     await removeLocalFonts();
     invalidatePageFonts();
-    setStatus('已停用本机字体');
+    setStatus('已停用系统字体');
     return;
   }
   if (!pageInfos.length) {
-    localFontsSelect.checked = false;
+    // 保留勾选状态：这里没有文档可补齐，不是用户的意愿变了。原先静默返回，
+    // 恢复出来的勾选被点一下看起来毫无反应。
+    setStatus('请先打开文档，再点此选项读取系统字体');
     return;
   }
   if (!localFontsSupported()) {
     localFontsSelect.checked = false;
-    setStatus('当前浏览器不支持读取本机字体');
+    setStatus('当前浏览器不支持读取系统字体');
     return;
   }
-  // queryLocalFonts 必须在用户手势的同步任务内发起，否则浏览器会以
-  // SecurityError 拒绝且不弹授权框；先发起再 await 其余准备工作。
+  // 浏览器对手势的要求并不一致：早期实现要求 queryLocalFonts 在用户手势内发起
+  // （否则以 SecurityError 拒绝且不弹授权框），后来的实现已放开。因此先直接
+  // 调用，只有确实被判定为"需要手势"时才退回一次性监听，而不是无条件要求点击。
   let queryPromise;
   try {
     queryPromise = window.queryLocalFonts();
   } catch (error) {
-    localFontsSelect.checked = false;
-    setStatus(`读取本机字体失败：${error.message}`);
+    handleLocalFontsGestureFallback(error);
     return;
   }
   const generation = documentGeneration;
   localFontsSelect.disabled = true;
-  let registered = 0;
+  let result;
   try {
-    registered = await fetchLocalFontsForDocument(queryPromise, generation);
+    result = await fetchLocalFontsForDocument(queryPromise, generation);
   } catch (error) {
-    if (generation === documentGeneration) {
-      localFontsSelect.checked = false;
-      setStatus(`读取本机字体失败：${error.message}`);
-    }
+    if (generation === documentGeneration) handleLocalFontsGestureFallback(error);
     return;
   } finally {
     if (generation === documentGeneration) localFontsSelect.disabled = false;
   }
   if (generation !== documentGeneration) return;
+  const registered = result.registered;
   if (registered === 0) {
     localFontsSelect.checked = false;
-    setStatus('本机没有可用于补齐的字体');
+    // 区分两种完全不同的原因：文档没有缺失字体（系统字体无事可做），和确实
+    // 缺字体但本机没有匹配项（字体族名对不上，可据此排查）。
+    if (result.wanted === 0) {
+      setStatus('该文档的字体已全部内嵌，无需补齐系统字体');
+    } else {
+      const names = result.unmatched.slice(0, 3).join('、');
+      const more = result.unmatched.length > 3 ? ` 等 ${result.unmatched.length} 款` : '';
+      setStatus(`文档缺少 ${names}${more}，本机没有匹配的系统字体`);
+    }
     return;
   }
   localFontsActive = true;
   invalidatePageFonts();
-  setStatus(`已启用本机字体（${registered} 款）`);
+  setStatus(`已启用系统字体（${registered} 款）`);
 }
 
 // invalidatePageFonts 丢弃页面与缩略图缓存并重渲染可见页面，使字体变更生效。
@@ -3032,6 +3170,9 @@ function buildPages() {
   empty.hidden = pageInfos.length > 0;
   setCurrent(current);
   updateNavigation();
+  // 文档就绪后按记住的意向自动应用：优先直接调用 queryLocalFonts（实测的
+  // 实现已不要求手势），确实被拒时才由 setLocalFonts 退回一次性监听。
+  applyLocalFontsIntentOnOpen();
   if (pageInfos.length) {
     ensurePageMounted(current);
     void loadText(current);
@@ -3260,12 +3401,16 @@ async function openSelectedFile(selected, options = {}) {
   openRequest?.cancel();
   openRequest = undefined;
   clearInjectedFonts();
-  // 本机字体仅在当前文档有效：切换文档时移除并复位开关。
+  // 系统字体仅在当前文档有效：切换文档时移除注册并复位开关。注册要撤销，但
+  // 勾选框要恢复成存储里的意向，否则用户上次的选择会在每次打开文档时丢失。
   void removeLocalFonts();
   localFontsActive = false;
+  localFontsGestureUsed = false;
+  localFontsIntentApplied = false;
   if (localFontsSelect) {
     localFontsSelect.checked = false;
     localFontsSelect.disabled = true;
+    applyLocalFontsIntent();
   }
   pageCache.clear();
   thumbnailCache.clear();
@@ -3378,6 +3523,9 @@ async function openSelectedFile(selected, options = {}) {
     current = restoreReadingPosition(selected, pageInfos.length);
     await applyDocumentPreferences();
     if (generation !== documentGeneration) return false;
+    // 首次渲染前按存储里的意向读取系统字体，避免渲染两遍并让第一帧就是最终字体。
+    await applyLocalFontsBeforeRender();
+    if (generation !== documentGeneration) return false;
     restorePageRotation();
     buildPages();
     if (activeSidebarTab === 'fonts') renderFonts();
@@ -3386,7 +3534,7 @@ async function openSelectedFile(selected, options = {}) {
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
     if (activeSidebarTab === 'signatures') renderSignatures();
-    setStatus(`已打开：${selected.name}`);
+    setStatus(`已打开：${selected.name}${localFontsPendingHint()}`);
     updateRenderProgress();
     void loadOutline();
     void fetchPageLinks(generation);
@@ -3470,10 +3618,16 @@ function cancelOpening() {
   searchRequest?.cancel();
   searchRequest = undefined;
   clearInjectedFonts();
-  // 关闭文档时一并撤销本机字体，避免影响后续文档。
+  // 关闭文档时一并撤销系统字体，避免影响后续文档。注册要撤销，勾选框同样
+  // 恢复成存储里的意向（无文档时该选项是禁用的，状态只作为下次的起点）。
   void removeLocalFonts();
   localFontsActive = false;
-  if (localFontsSelect) localFontsSelect.checked = false;
+  localFontsGestureUsed = false;
+  localFontsIntentApplied = false;
+  if (localFontsSelect) {
+    localFontsSelect.checked = false;
+    applyLocalFontsIntent();
+  }
   // open 已经进入 Worker 时，取消只会取消前端 Promise；显式 close
   // 确保 WASM 侧不会留下被取消打开的 Reader。
   void engine.close().catch(error => console.warn('[OFD] 取消打开时释放 Reader 失败', error));
@@ -6354,6 +6508,12 @@ try {
 try {
   setClarityPriority(clarityPriority);
 } catch (_) {}
+// 恢复系统字体的勾选意向。读取本身要用户手势，无法在加载时完成，因此这里只把
+// 勾选框恢复成用户上次的意愿，真正的读取等他点这个勾选框。不支持该 API 的
+// 浏览器不恢复，避免显示一个永远不可用的已勾选项。
+try {
+  applyLocalFontsIntent();
+} catch (_) {}
 try {
   darkReading.checked = localStorage.getItem('ofd-dark-reading') === 'true';
   setDarkReadingVisible(darkReading.checked);
@@ -6578,7 +6738,22 @@ documentBackgroundColorPicker.addEventListener('input', () => {
 });
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
 clarityPrioritySelect.addEventListener('change', () => setClarityPriority(clarityPrioritySelect.checked));
-localFontsSelect?.addEventListener('change', () => { void setLocalFonts(localFontsSelect.checked); });
+// 恢复出来的勾选只是"用户想要系统字体"的意向，字体尚未读取（queryLocalFonts
+// 必须在用户手势内发起）。若按常规语义处理，勾选框显示为已勾选时用户点一下会
+// 变成取消勾选，点一下反而把选项关掉。因此这里以是否已生效为准：已生效才响应
+// 取消，未生效则把这次点击当成读取请求。勾选意向同时写入存储，程序化复位
+// （切换/关闭文档、读取失败）不触发 change，不会覆盖它。
+localFontsSelect?.addEventListener('change', () => {
+  if (!localFontsSelect.checked && !localFontsActive) {
+    localFontsSelect.checked = true;
+    void setLocalFonts(true);
+    return;
+  }
+  try {
+    localStorage.setItem(localFontsStorageKey, String(localFontsSelect.checked));
+  } catch (_) {}
+  void setLocalFonts(localFontsSelect.checked);
+});
 renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormatSelect.value));
 backToTop.addEventListener('click', scrollToTop);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
