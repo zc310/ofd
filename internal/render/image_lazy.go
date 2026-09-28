@@ -22,7 +22,11 @@ type EncodedImage struct {
 	config     image.Config
 	configErr  error
 
-	canvas any // canvas 适配层缓存，避免中性代码依赖 canvas
+	// canvas 适配层缓存，避免中性代码依赖 canvas。与 img/config 一样由
+	// sync.Once 保护：同一份图片可能被多个页面并发访问（例如调用方按
+	// AGENTS.md 的约定并发渲染），裸字段会与读取方竞争。
+	canvasOnce sync.Once
+	canvas     any
 }
 
 // newEncodedImage 返回保留编码数据的懒解码图片。
@@ -102,19 +106,21 @@ func (e *EncodedImage) Weight() int64 {
 	return weight
 }
 
-// canvasCached 返回 canvas 适配层缓存的对象（供 canvas_backend.go 使用）。
-func (e *EncodedImage) CanvasCached() any {
+// CanvasImageOnce 返回 canvas 适配层构造的对象，首次调用时用 build 构造并缓存，
+// 之后直接返回同一对象。并发调用只会构造一次，因此可以安全地在多个页面同时
+// 渲染时使用。build 返回 nil 表示该图片不走原字节内嵌快路径（例如灰度图或
+// 编码无法识别），此时结果同样被缓存，避免每次访问都重新解码。
+func (e *EncodedImage) CanvasImageOnce(build func() image.Image) image.Image {
 	if e == nil {
 		return nil
 	}
-	return e.canvas
-}
-
-// setCanvasCached 缓存 canvas 适配层构造的对象。
-func (e *EncodedImage) SetCanvasCached(v any) {
-	if e != nil {
-		e.canvas = v
-	}
+	e.canvasOnce.Do(func() {
+		if build != nil {
+			e.canvas = build()
+		}
+	})
+	ci, _ := e.canvas.(image.Image)
+	return ci
 }
 
 // NewEncodedImage 返回保留编码数据的懒解码图片（导出供 canvas 等后端或测试使用）。

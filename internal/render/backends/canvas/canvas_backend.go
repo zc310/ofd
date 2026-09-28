@@ -110,37 +110,40 @@ func (b *canvasBackend) RenderImage(img image.Image, m geom.Matrix) {
 
 // canvasImage 把保留原始编码字节的懒解码图片转换为 canvas/image.Image，使
 // canvas PDF 写入器能按原字节内嵌（DCTDecode 等）；其它图片原样返回。
+//
+// 构造与缓存由 CanvasImageOnce 一起完成，因此并发渲染同一文档时只会构造一次，
+// 也不会出现读到写了一半的接口值。
 func canvasImage(img image.Image) image.Image {
 	lazy, ok := img.(*render.EncodedImage)
 	if !ok {
 		return img
 	}
-	if cached := lazy.CanvasCached(); cached != nil {
-		if ci, ok := cached.(image.Image); ok {
-			return ci
+	ci := lazy.CanvasImageOnce(func() image.Image {
+		var (
+			out image.Image
+			err error
+		)
+		switch lazy.Format {
+		case "jpeg":
+			out, err = cimage.NewJPEGImage(bytes.NewReader(lazy.Data))
+		case "png":
+			out, err = cimage.NewPNGImage(bytes.NewReader(lazy.Data))
 		}
-	}
-	var (
-		ci  image.Image
-		err error
-	)
-	switch lazy.Format {
-	case "jpeg":
-		ci, err = cimage.NewJPEGImage(bytes.NewReader(lazy.Data))
-	case "png":
-		ci, err = cimage.NewPNGImage(bytes.NewReader(lazy.Data))
-	}
-	if err != nil || ci == nil {
+		if err != nil || out == nil {
+			return nil
+		}
+		// canvas 的 PDF 写入器固定按 DeviceRGB 声明图像，而 Go 的 JPEG 编码器只对
+		// 具体的 *image.Gray 输出单通道灰度 JPEG；canvas 快路径会把灰度 PNG 解码成
+		// *image.Gray。灰度 JPEG 按 DeviceRGB 解码会错位，表现为整幅图重复/花屏，
+		// 因此灰度图跳过原字节内嵌快路径，交回 canvas 走通用 RGB 编码。
+		if lazy.ColorModel() == color.GrayModel {
+			return nil
+		}
+		return out
+	})
+	if ci == nil {
 		return img
 	}
-	// canvas 的 PDF 写入器固定按 DeviceRGB 声明图像，而 Go 的 JPEG 编码器只对
-	// 具体的 *image.Gray 输出单通道灰度 JPEG；canvas 快路径会把灰度 PNG 解码成
-	// *image.Gray。灰度 JPEG 按 DeviceRGB 解码会错位，表现为整幅图重复/花屏，
-	// 因此灰度图跳过原字节内嵌快路径，交回 canvas 走通用 RGB 编码。
-	if lazy.ColorModel() == color.GrayModel {
-		return img
-	}
-	lazy.SetCanvasCached(ci)
 	return ci
 }
 
