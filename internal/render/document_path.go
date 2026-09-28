@@ -341,10 +341,80 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 	return result
 }
 
+// buildTextClipPath 把文字裁剪区转成字形轮廓区域。字形轮廓以基线左端为原点、
+// y 轴向上，与 OFD 路径数据在同一坐标系，因此可以直接套用与路径分支相同的
+// 设备坐标映射：先加 TextCode 原点，再经区域 CTM，最后按 box 偏移并翻转 y。
+//
+// 字体缺失、字号非法或无法取得轮廓时返回 nil，由调用方按“该区域不可用”处理。
+func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
+	if text == nil || p.fonts == nil || !text.Boundary.IsFinite() || !finiteFloat(text.Size) || text.Size <= 0 {
+		return nil
+	}
+	family, err := p.fonts.LoadFont(text.Font)
+	if err != nil || family == nil {
+		return nil
+	}
+	// 与文字绘制一致：同一字体族的整形与取轮廓必须串行。
+	fontLock := p.fonts.RenderLock(family)
+	fontLock.Lock()
+	defer fontLock.Unlock()
+
+	object := models.TextObject{CtText: *text}
+	face := p.fonts.FaceObject(family, object, nil)
+	if face == nil {
+		return nil
+	}
+	hScale := textHScale(object)
+	if !finiteFloat(hScale) {
+		return nil
+	}
+
+	var result *geom.Path
+	for _, code := range text.TextCode {
+		if code.Value == "" {
+			continue
+		}
+		outline := face.DirectPath(code.Value)
+		if outline == nil {
+			outline = face.ToPath(code.Value)
+		}
+		if outline == nil || outline.Empty() {
+			continue
+		}
+		originX := code.X + text.Boundary.X
+		originY := code.Y + text.Boundary.Y
+		// 字形轮廓的 y 轴已经向下（见 drawTextPath：它只平移基线原点，不翻转 y），
+		// 与 OFD 路径数据 y 向上的约定相反，因此不能套用路径分支的
+		// pageHeight-(y+box.Y) 取反，否则字形会上下颠倒。合成方式与 drawTextPath
+		// 完全一致：基线原点经区域 CTM 后落到设备坐标，CTM 的线性部分作用在
+		// 字形上，最后按 hScale 压扁。
+		ox, oy := areaCTM.TransformPoint(models.StPos{X: originX, Y: originY})
+		matrix := geom.Identity.Translate(ox+box.X, pageHeight-(oy+box.Y))
+		if m := textCTMLinearMatrix(&areaCTM); m != nil {
+			matrix = matrix.Mul(*m)
+		}
+		matrix = matrix.Scale(hScale, 1)
+		if !finiteMatrix(matrix) {
+			continue
+		}
+		region := outline.Transform(matrix)
+		if region == nil || region.Empty() {
+			continue
+		}
+		if result == nil {
+			result = region
+		} else {
+			// 同一区域内多个 TextCode 是并集关系。
+			result = result.Or(region)
+		}
+	}
+	return result
+}
+
 func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
 	var result *geom.Path
 	for _, area := range clip.Area {
-		if area.Path == nil {
+		if area.Path == nil && area.Text == nil {
 			continue
 		}
 
@@ -358,23 +428,34 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 		if transFlag == nil || *transFlag {
 			areaCTM = *objectCTM.Multiply(&areaCTM)
 		}
-		pathCTM := areaCTM
-		if area.Path.CTM != nil {
-			if !area.Path.CTM.IsFinite() {
+		var areaPath *geom.Path
+		if area.Text != nil {
+			// 文字裁剪区：用字形轮廓作为区域。Clips/Clip/Area 允许 Path 与 Text
+			// 二选一，此前只处理 Path，文字区域被静默跳过；区域全部落空时
+			// buildPathClip 返回 nil，裁剪整体失效、图元被完整画出。
+			areaPath = p.buildTextClipPath(area.Text, areaCTM, box, pageHeight)
+		} else {
+			pathCTM := areaCTM
+			if area.Path.CTM != nil {
+				if !area.Path.CTM.IsFinite() {
+					continue
+				}
+				pathCTM = *areaCTM.Multiply(area.Path.CTM)
+			}
+			if !pathCTM.IsFinite() {
 				continue
 			}
-			pathCTM = *areaCTM.Multiply(area.Path.CTM)
+
+			areaPath = p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
+				pt.X += area.Path.Boundary.X
+				pt.Y += area.Path.Boundary.Y
+				x, y := pathCTM.TransformPoint(pt)
+				return x + box.X, pageHeight - (y + box.Y)
+			})
 		}
-		if !pathCTM.IsFinite() {
+		if areaPath == nil || areaPath.Empty() {
 			continue
 		}
-
-		areaPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
-			pt.X += area.Path.Boundary.X
-			pt.Y += area.Path.Boundary.Y
-			x, y := pathCTM.TransformPoint(pt)
-			return x + box.X, pageHeight - (y + box.Y)
-		})
 		// Clip 区域用于填充，参与布尔运算前必须闭合。
 		areaPath.Close()
 		if result == nil {
