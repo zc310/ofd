@@ -4,6 +4,7 @@ import (
 	"regexp"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/tdewolff/font"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -100,6 +101,11 @@ type pdfInterpreter struct {
 	pointX, pointY, startX, startY float64
 	fonts                          map[string]pdfFontInfo
 	fontAliases                    map[string]string
+	// fontCache 按 PDF 字体对象号跨页复用已解析的 pdfFontInfo。同一字体对象
+	// 在每页都要重复解压 FontFile 流、修复并解析 SFNT、展开 /W 数组并逐 CID
+	// 查 cmap，是多页 PDF 转换的主要开销。加载完成后的 pdfFontInfo 视为不可变，
+	// 可直接共享。
+	fontCache map[types.Object]pdfFontInfo
 	// pendingClip 保存 W/W* 指定的裁剪路径，待下一个路径绘制操作生效。
 	pendingClip    []pdfPathCommand
 	hasPendingClip bool

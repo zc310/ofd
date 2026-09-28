@@ -80,8 +80,9 @@ func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
 		PageSize:       creator.A4,
 		Pages:          make([]creator.Page, 0, ctx.PageCount),
 	}
+	fontCache := make(map[types.Object]pdfFontInfo, 8)
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		page, err := convertPDFPage(ctx, pageNumber, &document)
+		page, err := convertPDFPage(ctx, pageNumber, &document, fontCache)
 		if err != nil {
 			return fmt.Errorf("转换 PDF 第 %d 页失败: %w", pageNumber, err)
 		}
@@ -168,7 +169,7 @@ func readPDFInput(input any) ([]byte, error) {
 	}
 }
 
-func convertPDFPage(ctx *model.Context, pageNumber int, document *creator.Document) (creator.Page, error) {
+func convertPDFPage(ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo) (creator.Page, error) {
 	pageDict, _, inherited, err := ctx.PageDict(pageNumber, false)
 	if err != nil {
 		return creator.Page{}, err
@@ -201,7 +202,7 @@ func convertPDFPage(ctx *model.Context, pageNumber int, document *creator.Docume
 	if err != nil {
 		return creator.Page{}, fmt.Errorf("读取页面内容失败: %w", err)
 	}
-	interpreter := newPDFInterpreter(ctx, &page, document, info)
+	interpreter := newPDFInterpreter(ctx, &page, document, info, fontCache)
 	if err := interpreter.parse(content, resources, nil, 0); err != nil {
 		return creator.Page{}, err
 	}
@@ -262,8 +263,11 @@ func dereferenceDict(ctx *model.Context, object types.Object, found bool) (types
 	return ctx.XRefTable.DereferenceDict(object)
 }
 
-func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator.Document, info pdfPageInfo) *pdfInterpreter {
-	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
+func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator.Document, info pdfPageInfo, fontCache map[types.Object]pdfFontInfo) *pdfInterpreter {
+	if fontCache == nil {
+		fontCache = map[types.Object]pdfFontInfo{}
+	}
+	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fontCache: fontCache, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
 		ctm: identityPDFMatrix(), textMatrix: identityPDFMatrix(), lineMatrix: identityPDFMatrix(), fontSize: 12,
 		fill: pdfColor{r: 0, g: 0, b: 0}, stroke: pdfColor{r: 0, g: 0, b: 0}, lineWidth: 1, hScale: 100,
 		fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,
@@ -652,7 +656,12 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 	if resources != nil {
 		if fonts, ok := dereferencedSubDict(p.ctx, resources, "Font"); ok {
 			if object, found := fonts.Find(name); found {
-				p.loadFont(&font, object)
+				if cached, hit := p.fontCache[object]; hit {
+					font = cached
+				} else {
+					p.loadFont(&font, object)
+					p.fontCache[object] = font
+				}
 			}
 		}
 	}
