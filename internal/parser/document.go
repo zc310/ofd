@@ -2,8 +2,10 @@ package parser
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -1175,6 +1177,13 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 	var signatures Signatures
 	dir := file.Dir()
 	if err = p.FileCache.ReadXML(file.String(), &signatures); err != nil {
+		// Signatures 在 OFD.xsd 中是可选部件。真实 OFD 存在声明了
+		// DocBody/Signatures 却没有随包提供签名索引文件的情况，此时按未签名
+		// 处理，与 SignedValue 缺失的既有策略一致，不中止普通文档解析。
+		if errors.Is(err, os.ErrNotExist) {
+			slog.Warn("签名索引文件不存在，按未签名处理", "file", file.String())
+			return nil
+		}
 		return err
 	}
 
@@ -1265,6 +1274,13 @@ func (p *Document) parseAnnotations() error {
 	var annot models.Annotations
 	fileName := p.Document.Annotations.Resolve(p.BaseLoc)
 	if err := p.FileCache.ReadXML(fileName.String(), &annot); err != nil {
+		// Annotations 在 Document.xsd 中是可选部件，索引文件本身也允许没有 Page。
+		// 真实的 OFD 存在声明了 Annotations 却没有随包提供索引文件的情况，
+		// 此时按“无注解”处理，注解是按需加载的，不影响页面渲染。
+		if errors.Is(err, os.ErrNotExist) {
+			slog.Warn("注解索引文件不存在，按无注解处理", "file", fileName.String())
+			return nil
+		}
 		return err
 	}
 	dir := fileName.Dir()
@@ -1278,7 +1294,7 @@ func (p *Document) parseAnnotations() error {
 	return nil
 }
 
-// GetAnnotation 按需读取指定页面的注解。
+// LoadAnnotation 按需读取指定页面的注解。
 func (p *Document) LoadAnnotation(pageID models.StID) (*models.PageAnnot, error) {
 	p.annotationMu.Lock()
 	defer p.annotationMu.Unlock()
