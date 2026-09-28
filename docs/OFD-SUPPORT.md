@@ -117,7 +117,7 @@
 | 校验模式                          |  ✅  | 支持 `strict`、`compat` 和 `structural` 模式，并输出文本、Markdown、JSON 和 PDF 报告。                                                                                                             |
 | 容器、XML、引用和语义检查         |  ✅  | 支持 XML 结构、命名空间、文件引用、对象 ID、资源作用域、路径安全和多项语义检查。                                                                                                                   |
 | OFD 转 PDF、图片、文本和 Markdown |  ⚠️  | 支持常见页面内容和资源转换；特殊字体、复杂渐变、透明、裁剪、模板、印章和厂商扩展可能造成输出差异。                                                                                                 |
-| 桌面、Android 和 WASM 阅读器      |  ⚠️  | 提供 Linux、Windows、Android APK 和浏览器阅读入口；各运行环境的字体、图形库和系统能力不同。WASM 阅读器支持按需读取本机字体（`queryLocalFonts`）补齐文档缺失字体，仅在当前文档内有效。              |
+| 桌面、Android 和 WASM 阅读器      |  ⚠️  | 提供 Linux、Windows、Android APK 和浏览器阅读入口；各运行环境的字体、图形库和系统能力不同。WASM 阅读器支持按需读取系统字体（`queryLocalFonts`）补齐文档缺失字体，仅在当前文档内有效。              |
 
 ## 当前明确的边界
 
