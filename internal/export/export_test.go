@@ -330,66 +330,80 @@ func TestExportPreservesGradientColors(t *testing.T) {
 }
 
 func TestExportPreservesGouraudLaGouraudAndPatternColors(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "shading.ofd")
-	var output bytes.Buffer
-	if err := WriteManifest(input, &output, Options{AssetRoot: t.TempDir()}); err != nil {
-		t.Fatal(err)
+	// Pattern 图案填充示例已从 shading.ofd 移到 pattern-reflect.ofd 第 2 页，
+	// 两个 fixture 分别断言各自的着色数量。
+	cases := []struct {
+		file      string
+		gouraud   int
+		laGouraud int
+		pattern   int
+	}{
+		{file: "shading.ofd", gouraud: 3, laGouraud: 3},
+		{file: "pattern-reflect.ofd", pattern: 8},
 	}
-	manifestPath := filepath.Join(t.TempDir(), "document.yaml")
-	if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	gouraud, laGouraud, pattern := 0, 0, 0
-	for _, page := range loaded.Pages {
-		for _, layer := range page.Layers {
-			for _, item := range layer.Items {
-				if item.FillColor == nil {
-					continue
-				}
-				switch {
-				case item.FillColor.Gouraud != nil:
-					gouraud++
-					if len(item.FillColor.Gouraud.Points) < 3 {
-						t.Fatalf("gouraud points lost: %+v", item.FillColor.Gouraud)
+	for _, tc := range cases {
+		input := filepath.Join("..", "..", "test", "testdata", tc.file)
+		var output bytes.Buffer
+		if err := WriteManifest(input, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+			t.Fatal(err)
+		}
+		manifestPath := filepath.Join(t.TempDir(), "document.yaml")
+		if err := os.WriteFile(manifestPath, output.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, baseDir, err := manifest.Load(manifestPath, "yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gouraud, laGouraud, pattern := 0, 0, 0
+		for _, page := range loaded.Pages {
+			for _, layer := range page.Layers {
+				for _, item := range layer.Items {
+					if item.FillColor == nil {
+						continue
 					}
-					for _, point := range item.FillColor.Gouraud.Points {
-						if point.Color.R == 0 && point.Color.G == 0 && point.Color.B == 0 {
-							t.Fatalf("gouraud point color lost: %+v", point)
+					switch {
+					case item.FillColor.Gouraud != nil:
+						gouraud++
+						if len(item.FillColor.Gouraud.Points) < 3 {
+							t.Fatalf("%s gouraud points lost: %+v", tc.file, item.FillColor.Gouraud)
 						}
-					}
-				case item.FillColor.LaGouraud != nil:
-					laGouraud++
-					if item.FillColor.LaGouraud.VerticesPerRow < 2 || len(item.FillColor.LaGouraud.Points) == 0 {
-						t.Fatalf("la_gouraud grid lost: %+v", item.FillColor.LaGouraud)
-					}
-				case item.FillColor.Pattern != nil:
-					pattern++
-					value := item.FillColor.Pattern
-					if value.Width != 20 || value.Height != 20 || len(value.Items) == 0 {
-						t.Fatalf("pattern cell content lost: %+v", value)
-					}
-					if len(value.Items[0].Data) == 0 {
-						t.Fatalf("pattern item data lost: %+v", value.Items[0])
+						for _, point := range item.FillColor.Gouraud.Points {
+							if point.Color.R == 0 && point.Color.G == 0 && point.Color.B == 0 {
+								t.Fatalf("%s gouraud point color lost: %+v", tc.file, point)
+							}
+						}
+					case item.FillColor.LaGouraud != nil:
+						laGouraud++
+						if item.FillColor.LaGouraud.VerticesPerRow < 2 || len(item.FillColor.LaGouraud.Points) == 0 {
+							t.Fatalf("%s la_gouraud grid lost: %+v", tc.file, item.FillColor.LaGouraud)
+						}
+					case item.FillColor.Pattern != nil:
+						pattern++
+						value := item.FillColor.Pattern
+						// shading 移入的图案单元为 20x20，pattern-reflect 原底纹单元为 16x12。
+						if !((value.Width == 20 && value.Height == 20) || (value.Width == 16 && value.Height == 12)) || len(value.Items) == 0 {
+							t.Fatalf("%s pattern cell content lost: %+v", tc.file, value)
+						}
+						if len(value.Items[0].Data) == 0 {
+							t.Fatalf("%s pattern item data lost: %+v", tc.file, value.Items[0])
+						}
 					}
 				}
 			}
 		}
-	}
-	if gouraud != 3 {
-		t.Fatalf("gouraud fills exported = %d, want 3", gouraud)
-	}
-	if laGouraud != 3 {
-		t.Fatalf("la_gouraud fills exported = %d, want 3", laGouraud)
-	}
-	if pattern != 4 {
-		t.Fatalf("pattern fills exported = %d, want 4", pattern)
-	}
-	if _, err := loaded.Build(baseDir, ""); err != nil {
-		t.Fatalf("build exported shading manifest: %v", err)
+		if gouraud != tc.gouraud {
+			t.Fatalf("%s gouraud fills exported = %d, want %d", tc.file, gouraud, tc.gouraud)
+		}
+		if laGouraud != tc.laGouraud {
+			t.Fatalf("%s la_gouraud fills exported = %d, want %d", tc.file, laGouraud, tc.laGouraud)
+		}
+		if pattern != tc.pattern {
+			t.Fatalf("%s pattern fills exported = %d, want %d", tc.file, pattern, tc.pattern)
+		}
+		if _, err := loaded.Build(baseDir, ""); err != nil {
+			t.Fatalf("build exported %s manifest: %v", tc.file, err)
+		}
 	}
 }
 
