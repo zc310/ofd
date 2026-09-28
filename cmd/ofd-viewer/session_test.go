@@ -4,11 +4,26 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // countingCloser 记录关闭次数，用于验证会话的延迟释放。
 type countingCloser struct {
 	closes atomic.Int64
+}
+
+// waitClosed 等待底层文档被关闭。dispose 在后台执行，计数是原子的，
+// 轮询它不会与关闭协程竞争。
+func waitClosed(t *testing.T, closer *countingCloser, want int64, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if closer.closes.Load() == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("等待超时: %s（关闭次数 = %d, want %d）", what, closer.closes.Load(), want)
 }
 
 func (c *countingCloser) Close() error {
@@ -24,6 +39,8 @@ func TestDocumentSessionRetireDefersCloseWhileInUse(t *testing.T) {
 		t.Fatal("未退休的会话应当允许登记使用者")
 	}
 	session.retire()
+	// 释放是异步的，但必须等到使用者退出之后才发生。
+	time.Sleep(20 * time.Millisecond)
 	if got := closer.closes.Load(); got != 0 {
 		t.Fatalf("使用者未退出时的关闭次数 = %d, want 0", got)
 	}
@@ -32,9 +49,7 @@ func TestDocumentSessionRetireDefersCloseWhileInUse(t *testing.T) {
 	}
 
 	session.release()
-	if got := closer.closes.Load(); got != 1 {
-		t.Fatalf("最后一个使用者退出后的关闭次数 = %d, want 1", got)
-	}
+	waitClosed(t, closer, 1, "最后一个使用者退出后应关闭文档")
 }
 
 func TestDocumentSessionRetireClosesIdleDocument(t *testing.T) {
@@ -42,11 +57,10 @@ func TestDocumentSessionRetireClosesIdleDocument(t *testing.T) {
 	session := &documentSession{closer: closer}
 
 	session.retire()
-	if got := closer.closes.Load(); got != 1 {
-		t.Fatalf("空闲会话退休后的关闭次数 = %d, want 1", got)
-	}
+	waitClosed(t, closer, 1, "空闲会话退休后应关闭文档")
 
 	session.retire()
+	time.Sleep(20 * time.Millisecond)
 	if got := closer.closes.Load(); got != 1 {
 		t.Fatalf("重复退休的关闭次数 = %d, want 1", got)
 	}
@@ -73,10 +87,7 @@ func TestDocumentSessionReleaseClosesOnceAfterRetire(t *testing.T) {
 		}()
 	}
 	group.Wait()
-
-	if got := closer.closes.Load(); got != 1 {
-		t.Fatalf("并发退出后的关闭次数 = %d, want 1", got)
-	}
+	waitClosed(t, closer, 1, "并发退出后应只关闭一次")
 }
 
 func TestNewDocumentSessionRejectsNilDocument(t *testing.T) {
@@ -90,7 +101,7 @@ func TestNewDocumentSessionRejectsNilDocument(t *testing.T) {
 	}
 	session.release()
 	session.retire()
-	session.close()
+	session.dispose()
 }
 
 func TestDocumentSessionAcquireRetireRace(t *testing.T) {
@@ -107,8 +118,6 @@ func TestDocumentSessionAcquireRetireRace(t *testing.T) {
 			session.release()
 		}
 		session.retire()
-		if got := closer.closes.Load(); got != 1 {
-			t.Fatalf("登记与退休并发时的关闭次数 = %d, want 1", got)
-		}
+		waitClosed(t, closer, 1, "登记与退休并发时应只关闭一次")
 	}
 }

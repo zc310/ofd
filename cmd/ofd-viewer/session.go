@@ -49,25 +49,33 @@ func (s *documentSession) release() {
 		return
 	}
 	if s.users.Add(-1) == 0 && s.retired.Load() {
-		s.close()
+		s.dispose()
 	}
 }
 
-// retire 标记文档不再接受新的使用者，并在没有使用者时立即释放。
+// retire 标记文档不再接受新的使用者，并在没有使用者时安排释放。
+// 释放本身是异步的，见 dispose。
 func (s *documentSession) retire() {
 	if s == nil {
 		return
 	}
 	if s.retired.CompareAndSwap(false, true) && s.users.Load() == 0 {
-		s.close()
+		s.dispose()
 	}
 }
 
-func (s *documentSession) close() {
+// dispose 关闭底层文档。parser.OFD.Close 会等待在途渲染持有的页面租约
+// （Document.clearCaches 里的 cond.Wait），所以必须放到后台执行：在 Fyne
+// 事件线程上等待会把界面冻结到当前页渲染结束。
+func (s *documentSession) dispose() {
 	if s == nil || !s.closed.CompareAndSwap(false, true) {
 		return
 	}
-	if s.closer != nil {
-		_ = s.closer.Close()
+	closer := s.closer
+	if closer == nil {
+		return
 	}
+	go func() {
+		_ = closer.Close()
+	}()
 }
