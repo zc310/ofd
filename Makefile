@@ -40,9 +40,12 @@ endif
 
 PLATFORM := $(GOOS)-$(GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
+# VERSION 是唯一的版本号来源：查看器的关于对话框和 Android APK 都用它。
+VERSION ?= 0.0.5
+VERSION_LDFLAG := -X main.applicationVersion=v$(VERSION)
 GO_LDFLAGS := -s -w
 GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS)"
-VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
+VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 WASM_OPT ?= wasm-opt
 WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers
 DIST_DIR := dist
@@ -83,7 +86,7 @@ ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
 ANDROID_VIEWER_NAME := OFD Viewer
 ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
-VIEWER_VERSION ?= 0.0.5
+VIEWER_VERSION ?= $(VERSION)
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
 TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(INVOICE) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
