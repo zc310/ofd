@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -29,6 +30,7 @@ import (
 	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -36,6 +38,9 @@ import (
 	"github.com/zc310/ofd/internal/utils"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
 )
+
+// errDocumentChanged 表示导出期间文档被替换或关闭，导出没有完成。
+var errDocumentChanged = errors.New("文档已更改")
 
 const (
 	applicationID = "io.github.zc310.ofd"
@@ -840,8 +845,16 @@ func (v *viewer) showExportDialog() {
 	if v.closed.Load() || !v.hasPages() || v.loading || v.exporting {
 		return
 	}
+	// 大开本文档的页面上限可能低于默认 DPI，先把默认值夹到上限内，
+	// 否则用户不改任何设置直接确定就会看到导出失败。
+	dpiLimit := maxExportDPI(v.maxPageArea)
+	defaultDPI := exportDPI
+	if defaultDPI > dpiLimit {
+		defaultDPI = dpiLimit
+	}
 	dpiEntry := widget.NewEntry()
-	dpiEntry.SetText(strconv.Itoa(exportDPI))
+	dpiEntry.SetText(strconv.Itoa(defaultDPI))
+	dpiEntry.SetPlaceHolder(fmt.Sprintf("%d-%d（受页面尺寸限制）", exportMinDPI, dpiLimit))
 	formatSelect := widget.NewSelect([]string{
 		exportFormatPDF,
 		exportFormatTXT,
@@ -877,7 +890,7 @@ func (v *viewer) showExportDialog() {
 		if !confirmed {
 			return
 		}
-		dpi := exportDPI
+		dpi := defaultDPI
 		if formatSelect.Selected == exportFormatJPG || formatSelect.Selected == exportFormatPNG {
 			var err error
 			dpi, err = strconv.Atoi(strings.TrimSpace(dpiEntry.Text))
@@ -885,10 +898,10 @@ func (v *viewer) showExportDialog() {
 				dialog.ShowInformation("导出失败", fmt.Sprintf("DPI 必须是 %d-%d 之间的整数。", exportMinDPI, exportMaxDPI), v.window)
 				return
 			}
-			// 上限 1200 DPI 对大页面仍会产生数百 MB 的单页栅格，这里按页面
-			// 实际尺寸再收紧一次，避免导出时被系统 OOM 杀掉。
-			if limit := maxExportDPI(v.maxPageArea); dpi > limit {
-				dialog.ShowInformation("导出失败", fmt.Sprintf("当前页面尺寸下 DPI 不能超过 %d，否则单页栅格会超过 %d MB。", limit, exportPageBudget>>20), v.window)
+			// 1200 DPI 对大页面仍会产生数百 MB 的单页栅格，这里按页面实际
+			// 尺寸再收紧一次，避免导出时被系统 OOM 杀掉。
+			if dpi > dpiLimit {
+				dialog.ShowInformation("导出失败", fmt.Sprintf("当前页面尺寸下 DPI 不能超过 %d，否则单页栅格会超过 %d MB。", dpiLimit, exportPageBudget>>20), v.window)
 				return
 			}
 		}
@@ -962,14 +975,12 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 				return
 			}
 			if err != nil {
-				v.exporting = false
-				v.updateControls()
+				v.finishExport()
 				dialog.ShowInformation("导出失败", err.Error(), v.window)
 				return
 			}
 			if selection.path == "" && selection.output == nil {
-				v.exporting = false
-				v.updateControls()
+				v.finishExport()
 				return
 			}
 			if selection.output != nil {
@@ -983,6 +994,7 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 
 func (v *viewer) exportToPath(path, format string, dpi int, background color.Color) {
 	if path == "" {
+		v.finishExport()
 		return
 	}
 	v.exportToOutput(func() (io.WriteCloser, error) {
@@ -992,6 +1004,7 @@ func (v *viewer) exportToPath(path, format string, dpi int, background color.Col
 
 func (v *viewer) exportToWriter(writer io.WriteCloser, format string, dpi int, background color.Color) {
 	if writer == nil {
+		v.finishExport()
 		return
 	}
 	v.exportToOutput(func() (io.WriteCloser, error) {
@@ -999,11 +1012,19 @@ func (v *viewer) exportToWriter(writer io.WriteCloser, format string, dpi int, b
 	}, writer, format, dpi, background)
 }
 
+// finishExport 结束导出状态。v.exporting 只在 export 里置位，因此每一条离开
+// export 的路径都必须复位一次；漏掉会让界面永久保持禁用。
+func (v *viewer) finishExport() {
+	v.exporting = false
+	v.updateControls()
+}
+
 func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending io.WriteCloser, format string, dpi int, background color.Color) {
 	if v.closed.Load() || v.loading || !v.hasPages() {
 		if pending != nil {
 			_ = pending.Close()
 		}
+		v.finishExport()
 		return
 	}
 	v.showExportLoading()
@@ -1012,30 +1033,20 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 	documents := append([]*render.Document(nil), v.documents...)
 	go func() {
 		var err error
-		// 会话引用保证导出期间底层文档不会被关闭；引用失败说明文档已更换或关闭。
-		if !session.acquire() || exportOperation != v.operation.Load() {
-			err = fmt.Errorf("文档已更改")
+		if exportOperation != v.operation.Load() {
+			err = errDocumentChanged
 			if pending != nil {
 				_ = pending.Close()
 			}
 		} else {
-			defer session.release()
-			var writer io.WriteCloser
-			writer, err = create()
-			if err == nil {
-				err = exportDocumentsToWriter(documents, writer, format, dpi, background)
-				if closeErr := writer.Close(); err == nil {
-					err = closeErr
-				}
-			}
+			err = writeExport(session, documents, create, pending, format, dpi, background)
 		}
 		fyne.Do(func() {
 			if v.closed.Load() {
 				return
 			}
 			v.hideExportLoading()
-			v.exporting = false
-			v.updateControls()
+			v.finishExport()
 			if err != nil {
 				dialog.ShowInformation("导出失败", err.Error(), v.window)
 				return
@@ -1043,6 +1054,31 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 			dialog.ShowInformation("导出完成", "文件已成功导出。", v.window)
 		})
 	}()
+}
+
+// writeExport 执行一次导出，阻塞到完成。会话引用在整个导出期间保持，底层
+// 文档不会被关闭；引用失败说明文档已被替换或关闭。
+//
+// 刻意做成同步函数：导出涉及会话引用、外部写入器的所有权和多种错误收尾，
+// 独立出来才能直接验证，不必经过 exportToOutput 的后台协程。
+func writeExport(session *documentSession, documents []*render.Document, create func() (io.WriteCloser, error), pending io.WriteCloser, format string, dpi int, background color.Color) error {
+	if !session.acquire() {
+		if pending != nil {
+			_ = pending.Close()
+		}
+		return errDocumentChanged
+	}
+	defer session.release()
+	writer, err := create()
+	if err != nil {
+		return err
+	}
+	err = exportDocumentsToWriter(documents, writer, format, dpi, background)
+	// 写入器的所有权在导出期间属于这里，成功失败都要关闭。
+	if closeErr := writer.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 func (v *viewer) showExportLoading() {
@@ -1078,12 +1114,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		if doc == nil || doc.Document == nil {
 			continue
 		}
-		// 背景色一致时直接复用阅读区的渲染文档，避免为导出再复制一套字体和
-		// 图片缓存；导出对话框默认就是透明背景，命中的是常见路径。
-		exportDoc := doc
-		if !sameBackground(doc.Background(), background) {
-			exportDoc = render.NewDocument(background, doc.Document)
-		}
+		exportDoc := exportDocument(doc, background)
 		exportDocs = append(exportDocs, exportDoc)
 		for _, page := range exportDoc.Pages {
 			if page != nil {
@@ -1136,6 +1167,19 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 	return archive.Close()
 }
 
+// exportDocument 取得用于导出的渲染文档。背景色一致时直接复用阅读区的那个，
+// 避免为导出再复制一套字体和图片缓存；导出对话框默认就是透明背景，命中的
+// 是常见路径。
+func exportDocument(doc *render.Document, background color.Color) *render.Document {
+	if doc == nil || doc.Document == nil {
+		return nil
+	}
+	if sameBackground(doc.Background(), background) {
+		return doc
+	}
+	return render.NewDocument(background, doc.Document)
+}
+
 func exportImageOption(format string) canvasConverter.Option {
 	switch strings.ToLower(format) {
 	case "jpg":
@@ -1183,15 +1227,37 @@ func (v *viewer) showAppInfo() {
 
 // pageSlotStates 计算每个页面的槽位参数。页面区域无法解析时仍然返回条目，
 // 保证槽位下标与全局页码一一对应；否则布局和跳转会访问空槽位而崩溃。
+// normalizePageBox 补齐页面物理尺寸。PhysicalBoxMetadata 不加载页面内容，
+// 页面没有有效尺寸时返回零值，此时回退到文档的公共页面区域，再回退到 A4。
+//
+// 与 parser 的差异：原实现会先对页面自己的 Area 调用 EnsurePhysicalBox，
+// 因此"Area 存在但宽高非法"的页面会直接得到 A4；这里会先尝试文档公共区域。
+// 只有畸形输入才会走到这个分支，两种回退都是任意的。
+func normalizePageBox(box models.StBox, doc *render.Document) models.StBox {
+	if box.Width > 0 && box.Height > 0 {
+		return box
+	}
+	area := models.CtPageArea{}
+	if doc != nil {
+		area = doc.CommonData.PageArea
+	}
+	area.EnsurePhysicalBox()
+	return area.PhysicalBox
+}
+
 func pageSlotStates(pages []viewerPage) []pageSlotState {
 	states := make([]pageSlotState, len(pages))
 	for i, pageRef := range pages {
 		states[i] = pageSlotState{aspect: 1}
-		box, err := pageRef.page.PhysicalBox()
+		// 这里只需要宽高比和面积。用 PhysicalBox 会为每一页加载完整内容与
+		// 资源、并把页面塞进页面缓存，万页文档会在事件线程上卡住数秒。
+		// PhysicalBoxMetadata 只读页面 XML 的 Area，不占租约也不进缓存。
+		box, err := pageRef.page.PhysicalBoxMetadata()
 		if err != nil {
 			slog.Error("读取页面失败", "page", i, "error", err)
 			continue
 		}
+		box = normalizePageBox(box, pageRef.document)
 		if box.Height > 0 {
 			states[i].aspect = float32(box.Width / box.Height)
 		}
@@ -1201,8 +1267,12 @@ func pageSlotStates(pages []viewerPage) []pageSlotState {
 	return states
 }
 
-func (v *viewer) createPageSlots(pages []viewerPage) {
-	states := pageSlotStates(pages)
+// createPageSlots 按页面建立槽位。states 由 buildDocumentModel 在后台算好；
+// 长度不匹配时在此补算，供测试和未走 runLoad 的路径使用。
+func (v *viewer) createPageSlots(pages []viewerPage, states []pageSlotState) {
+	if len(states) != len(pages) {
+		states = pageSlotStates(pages)
+	}
 	metas := make([]*pageMeta, len(states))
 	maxArea := 0.0
 	for i, state := range states {
@@ -1270,99 +1340,144 @@ func (v *viewer) load(filePath, fileName string, input any) {
 	v.thumbnailGeneration.Add(1)
 	v.loading = true
 	v.updateControls()
+	go v.runLoad(operation, filePath, fileName, input)
+}
 
-	go func() {
-		slog.Debug("正在打开文件", "path", filePath)
-		ofd, err := openOFD(input)
-		if closeErr := closeInput(input); closeErr != nil {
-			if err == nil {
-				err = closeErr
-			}
-		}
-		if err == nil && ofd == nil {
-			err = fmt.Errorf("打开 OFD 失败: 解析器为空")
-		}
-		if err == nil && len(ofd.Documents) == 0 {
-			_ = ofd.Close()
-			err = fmt.Errorf("没有文档")
-		}
+// runLoad 解析输入并在 Fyne 事件线程上发布文档。解析在调用方线程完成，
+// 界面状态只在 fyne.Do 回调里改动。
+//
+// 独立于 load 是为了让这条关键路径可以被同步验证：测试可以直接调用它，
+// 不必与后台协程和测试驱动内联执行的 fyne.Do 纠缠。
+func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any) {
+	slog.Debug("正在打开文件", "path", filePath)
+	ofd, err := openOFD(input)
+	if closeErr := closeInput(input); closeErr != nil && err == nil {
+		err = closeErr
+	}
 
-		fyne.Do(func() {
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					if ofd != nil {
-						_ = ofd.Close()
-					}
-					if operation == v.operation.Load() && !v.closed.Load() {
-						v.loading = false
-						v.updateControls()
-						err := fmt.Errorf("处理 OFD 文件失败: %v", recovered)
-						slog.Error("打开 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
-						dialog.ShowInformation("打开失败", err.Error(), v.window)
-					}
-				}
-			}()
-			if operation != v.operation.Load() {
-				if ofd != nil {
+	fyne.Do(func() {
+		published := false
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				// 已经发布出去的文档归会话所有，不能在这里关闭。
+				if ofd != nil && !published {
 					_ = ofd.Close()
 				}
-				return
-			}
-			if v.closed.Load() {
-				if ofd != nil {
-					_ = ofd.Close()
+				if operation == v.operation.Load() && !v.closed.Load() {
+					v.finishLoad()
+					slog.Error("打开 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
+					dialog.ShowInformation("打开失败", fmt.Sprintf("处理 OFD 文件失败: %v", recovered), v.window)
 				}
-				return
 			}
-			if err != nil {
-				if ofd != nil {
-					_ = ofd.Close()
-				}
-				v.loading = false
-				slog.Error("打开 OFD 失败", "error", err)
-				v.updateControls()
-				dialog.ShowInformation("打开失败", err.Error(), v.window)
-				return
-			}
-
-			v.closeDocument()
-			title := documentTitle(ofd, fileName)
-			documents := make([]*render.Document, 0, len(ofd.Documents))
-			for _, document := range ofd.Documents {
-				documents = append(documents, render.NewDocument(color.Transparent, document))
-			}
-			pages := collectViewerPages(documents)
-			if len(pages) == 0 {
+		}()
+		if operation != v.operation.Load() || v.closed.Load() {
+			if ofd != nil {
 				_ = ofd.Close()
-				v.loading = false
-				slog.Error("打开 OFD 失败", slog.String("error", "文档没有页面"))
-				v.updateControls()
-				return
 			}
-			v.ofd = ofd
-			v.session = newDocumentSession(ofd)
-			v.documents = documents
-			v.pages = pages
-			v.documentTitle.SetText(title)
-			v.filePath = filePath
-			v.fileName = fileName
-			v.currentPage = 0
-			v.totalPages = len(v.pages)
-			v.pageEntry.SetText("1")
-			v.thumbnails = newThumbnailCache()
-			v.pageImages = v.newPageImageCache()
-			v.thumbnailRendering = make([]atomic.Bool, v.totalPages)
-			v.createPageSlots(v.pages)
-			v.pageScroll.ScrollToTop()
-			v.thumbnailList.Refresh()
-			v.thumbnailSelected = 0
-			v.thumbnailList.Select(0)
-			v.loading = false
-			v.updateTitle()
-			v.updateControls()
-			v.updatePageWindow(operation)
-		})
-	}()
+			return
+		}
+		// parser.NewOFD 失败时同样返回非 nil 的 OFD（只是没有资源），所以
+		// 必须先看 err：只判断 ofd != nil 会把真实原因换成“没有文档”。
+		var model *documentModel
+		if err == nil {
+			// 构造模型要按页读 XML，必须留在后台线程，不能占用事件线程。
+			model, err = buildDocumentModel(ofd, fileName, color.Transparent)
+		}
+		if err == nil {
+			err = v.publishDocument(model, filePath, fileName)
+		}
+		if err != nil {
+			if ofd != nil {
+				_ = ofd.Close()
+			}
+			v.finishLoad()
+			slog.Error("打开 OFD 失败", "error", err)
+			dialog.ShowInformation("打开失败", err.Error(), v.window)
+			return
+		}
+		published = true
+		v.finishLoad()
+	})
+}
+
+// finishLoad 结束加载状态并刷新控件。v.loading 只在 load 里置位，因此每一条
+// 离开加载流程的路径都必须复位一次；漏掉会让界面永久保持禁用。
+func (v *viewer) finishLoad() {
+	v.loading = false
+	v.updateControls()
+}
+
+// documentModel 是一次解析的完整结果：渲染文档、页面列表，以及每页的排版
+// 参数。构造它需要按页读取 XML，因此在后台线程完成；发布它只改界面状态。
+type documentModel struct {
+	ofd       *parser.OFD
+	documents []*render.Document
+	pages     []viewerPage
+	states    []pageSlotState
+	title     string
+}
+
+// buildDocumentModel 构造可发布的文档模型。读取每页的物理尺寸是按页的 XML
+// I/O：万页文档在事件线程上要 100ms 以上，必须留在后台。
+func buildDocumentModel(ofd *parser.OFD, fileName string, background color.Color) (*documentModel, error) {
+	if ofd == nil || len(ofd.Documents) == 0 {
+		return nil, fmt.Errorf("没有文档")
+	}
+	documents := make([]*render.Document, 0, len(ofd.Documents))
+	for _, document := range ofd.Documents {
+		documents = append(documents, render.NewDocument(background, document))
+	}
+	pages := collectViewerPages(documents)
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("文档没有页面")
+	}
+	states := pageSlotStates(pages)
+	if len(states) != len(pages) {
+		return nil, fmt.Errorf("文档没有页面")
+	}
+	return &documentModel{
+		ofd:       ofd,
+		documents: documents,
+		pages:     pages,
+		states:    states,
+		title:     documentTitle(ofd, fileName),
+	}, nil
+}
+
+// publishDocument 把已解析的文档发布为当前阅读对象，替换此前的文档并重建
+// 显示状态。失败时返回错误并保持原状态不变。
+//
+// 只在 Fyne 事件线程上改动界面状态，模型本身由 buildDocumentModel 在后台
+// 准备好。独立成同步函数是为了能直接验证，不必经过 load 的后台协程。
+func (v *viewer) publishDocument(model *documentModel, filePath, fileName string) error {
+	if model == nil || model.ofd == nil || len(model.pages) == 0 || len(model.states) != len(model.pages) {
+		return fmt.Errorf("没有文档")
+	}
+
+	// 校验通过后才动旧状态：发布失败时用户仍能看到原文档。
+	v.closeDocument()
+	v.ofd = model.ofd
+	v.session = newDocumentSession(model.ofd)
+	v.documents = model.documents
+	v.pages = model.pages
+	v.documentTitle.SetText(model.title)
+	v.filePath = filePath
+	v.fileName = fileName
+	v.currentPage = 0
+	v.totalPages = len(model.pages)
+	v.pageEntry.SetText("1")
+	v.thumbnails = newThumbnailCache()
+	v.pageImages = v.newPageImageCache()
+	v.thumbnailRendering = make([]atomic.Bool, v.totalPages)
+	v.createPageSlots(model.pages, model.states)
+	v.pageScroll.ScrollToTop()
+	v.thumbnailList.Refresh()
+	v.thumbnailSelected = 0
+	v.thumbnailList.Select(0)
+	v.updateTitle()
+	v.updateControls()
+	v.updatePageWindow(v.operation.Load())
+	return nil
 }
 
 // expandPageWindow 把可视区间向两侧各扩展 margin 页，并夹到 [0, totalPages)。
@@ -1515,6 +1630,12 @@ func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex in
 func (v *viewer) requestThumbnailRender(pageIndex int) {
 	generation := v.thumbnailGeneration.Load()
 	if generation == 0 || !v.hasPages() || pageIndex < 0 || pageIndex >= len(v.pages) || pageIndex >= len(v.thumbnailRendering) {
+		return
+	}
+	// 页面区域读不出来的槽位不能渲染。列表每次滚动到该行都会再请求一次，
+	// 不检查就会反复触发注定失败的渲染并刷屏错误日志。
+	slot := v.pageSlotAt(pageIndex)
+	if slot == nil || !slot.renderable {
 		return
 	}
 	if _, cached := v.thumbnails.Get(pageIndex); cached {
@@ -1826,6 +1947,9 @@ func (v *viewer) syncThumbnailSelection(page int) {
 func (v *viewer) showPageLoading(operation uint64) {
 	v.pageLoadingOp = operation
 	if v.pageLoading != nil {
+		// 弹窗已经在了，只续上兜底超时：旧定时器覆盖的是上一个请求，
+		// 让它按期触发会在新请求还在渲染时提前撤掉提示。
+		v.armPageLoadingTimeout()
 		return
 	}
 	progress := widget.NewProgressBarInfinite()
@@ -1836,11 +1960,16 @@ func (v *viewer) showPageLoading(operation uint64) {
 	v.pageLoading = widget.NewModalPopUp(content, v.window.Canvas())
 	v.pageLoading.Show()
 
+	v.armPageLoadingTimeout()
+}
+
+// armPageLoadingTimeout 重新设定加载提示的兜底超时。序号让已经排队的超时
+// 回调失效：Stop 只能拦住尚未触发的定时器。
+func (v *viewer) armPageLoadingTimeout() {
 	if v.pageLoadingStop != nil {
 		v.pageLoadingStop.Stop()
 		v.pageLoadingStop = nil
 	}
-	// 序号让已经排队的超时回调失效：Stop 只能拦住尚未触发的定时器。
 	sequence := v.pageLoadingSeq.Add(1)
 	v.pageLoadingStop = time.AfterFunc(pageLoadingTimeout, func() {
 		fyne.Do(func() {
@@ -1857,12 +1986,20 @@ func (v *viewer) showPageLoading(operation uint64) {
 }
 
 // hidePageLoading 关闭加载提示并取消兜底定时器，只能在 Fyne 事件线程调用。
+// 先判断能否关闭再停定时器：反过来的话，operation 不匹配时会解除兜底
+// 超时却不隐藏提示，弹窗就永久留在界面上了。
 func (v *viewer) hidePageLoading(operation uint64) {
+	if v.pageLoading == nil {
+		return
+	}
+	if operation != 0 && operation != v.pageLoadingOp {
+		return
+	}
 	if v.pageLoadingStop != nil {
 		v.pageLoadingStop.Stop()
 		v.pageLoadingStop = nil
 	}
-	v.dismissPageLoading(operation)
+	v.dismissPageLoading(0)
 }
 
 // dismissPageLoading 隐藏加载提示。它刻意不读写 pageLoadingStop，因此从兜底
@@ -1903,6 +2040,8 @@ func (v *viewer) setThumbnailVisible(visible bool) {
 	}
 	v.thumbnailToggle.Refresh()
 	v.documentArea.Refresh()
+	// 面板隐藏期间不会同步高亮，重新显示时要补上。
+	v.syncThumbnailSelection(v.currentPage)
 }
 
 func (v *viewer) setViewMode(selected string) {
@@ -1927,6 +2066,8 @@ func (v *viewer) setViewMode(selected string) {
 	v.thumbnailList.Refresh()
 	v.scrollToPage(v.currentPage)
 	v.updatePageWindow(v.operation.Load())
+	// 单页/双页的行号映射不同，切换后高亮必须重算，否则会停在另一页上。
+	v.syncThumbnailSelection(v.currentPage)
 }
 
 func (v *viewer) updateControls() {
@@ -2034,7 +2175,10 @@ func (v *viewer) exitApplication() {
 }
 
 func (v *viewer) closeDocument() {
-	// 只标记会话退休，导出任务会在结束时释放底层文档，避免关闭文档时阻塞。
+	// 关闭路径都会推进 operation，在途渲染的 hidePageLoading 因此不会执行。
+	// 不在这里收起提示，模态框会一直挡在界面上直到兜底超时。
+	v.hidePageLoading(0)
+	// 只标记会话退休，底层文档在后台释放，避免关闭文档时阻塞事件线程。
 	v.session.retire()
 	v.session = nil
 	v.ofd = nil

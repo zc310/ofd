@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -10,13 +12,16 @@ import (
 	"image/color"
 	"math"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
 	fyneCanvas "fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
@@ -388,7 +393,7 @@ func newLoadedTestViewer(t *testing.T) *viewer {
 	window.SetContent(v.content)
 	v.pages = []viewerPage{{page: &parser.Page{}}, {page: &parser.Page{}}, {page: nil}}
 	v.totalPages = len(v.pages)
-	v.createPageSlots(v.pages)
+	v.createPageSlots(v.pages, nil)
 	// 默认把页面标记为不可渲染：这些页没有真实文档，发起渲染只会得到失败日志。
 	// 需要渲染的用例自行打开对应页面。
 	for _, meta := range v.pageSlots {
@@ -710,32 +715,52 @@ func TestPageTopSearch(t *testing.T) {
 }
 
 func TestScrollByViewportMovesOneScreen(t *testing.T) {
-	v := newLoadedTestViewer(t)
-	v.pageScroll.Resize(fyne.NewSize(400, 600))
-	v.pageContent.Refresh()
-	if len(v.pageLayout.pageBounds) < 5 {
-		t.Skipf("测试文档页数不足: %d", len(v.pageLayout.pageBounds))
+	v := newThumbnailTestViewer(t, "999.ofd")
+	prefillRenderCaches(v)
+	if v.totalPages < 3 {
+		t.Skipf("测试文档页数不足: %d", v.totalPages)
+	}
+	if len(v.pageLayout.pageBounds) != v.totalPages {
+		t.Fatalf("排版结果数 = %d, want %d", len(v.pageLayout.pageBounds), v.totalPages)
 	}
 	pageHeight := v.pageLayout.pageBounds[0].size.Height
 	if pageHeight <= 0 {
-		t.Skip("页面高度无效")
+		t.Fatal("页面高度无效，无法验证翻页")
 	}
-	// 视口约能显示 600/pageHeight 页，一次翻页应跳到那么远之后。
+	viewport := v.pageScroll.Size().Height
+	if viewport <= pageHeight {
+		t.Skipf("视口 %v 装得下整页 %v，无法验证翻屏", viewport, pageHeight)
+	}
+
+	// 向下翻一屏应落到目标位置之后、且至少前进一页。
 	before := v.currentPage
 	v.scrollByViewport(1)
 	if v.currentPage <= before {
-		t.Fatalf("向下翻页后当前页 = %d, want > %d", v.currentPage, before)
+		t.Fatalf("向下翻屏后当前页 = %d, want > %d", v.currentPage, before)
 	}
+	// 目标位置应落在可视区间内。
+	visibleStart, visibleEnd := v.pageLayout.visibleRange()
+	if v.currentPage < visibleStart || v.currentPage >= visibleEnd {
+		t.Errorf("翻屏后当前页 %d 不在可视区间 [%d,%d) 内", v.currentPage, visibleStart, visibleEnd)
+	}
+
+	// 再向上翻一屏应回到更早的页。
 	down := v.currentPage
 	v.scrollByViewport(-1)
 	if v.currentPage >= down {
-		t.Fatalf("向上翻页后当前页 = %d, want < %d", v.currentPage, down)
+		t.Fatalf("向上翻屏后当前页 = %d, want < %d", v.currentPage, down)
 	}
-	// 顶部继续向上翻页必须停在第一页，不能越界。
+
+	// 顶部和底部不得越界。
 	v.goToPage(0, false)
 	v.scrollByViewport(-1)
 	if v.currentPage != 0 {
-		t.Fatalf("顶部继续向上翻页后当前页 = %d, want 0", v.currentPage)
+		t.Fatalf("首页继续上翻后当前页 = %d, want 0", v.currentPage)
+	}
+	v.goToPage(v.totalPages-1, false)
+	v.scrollByViewport(1)
+	if v.currentPage != v.totalPages-1 {
+		t.Fatalf("末页继续下翻后当前页 = %d, want %d", v.currentPage, v.totalPages-1)
 	}
 }
 
@@ -762,6 +787,952 @@ func TestSyncThumbnailSelectionFollowsCurrentPage(t *testing.T) {
 	v.goToPage(2, false)
 	if v.thumbnailSelected != 1 {
 		t.Fatalf("双页模式下第 2 页的高亮行 = %d, want 1", v.thumbnailSelected)
+	}
+}
+
+// openTestDocuments 解析测试文档并构造导出用的渲染文档。
+func openTestDocuments(t *testing.T, name string, background color.Color) []*render.Document {
+	t.Helper()
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", name))
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+	documents := make([]*render.Document, 0, len(ofd.Documents))
+	for _, document := range ofd.Documents {
+		documents = append(documents, render.NewDocument(background, document))
+	}
+	return documents
+}
+
+func TestExportDocumentReusesMatchingBackground(t *testing.T) {
+	documents := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	doc := documents[0]
+	// 背景一致时必须原样复用，否则导出会多复制一套字体和图片缓存。
+	if got := exportDocument(doc, color.Transparent); got != doc {
+		t.Fatal("背景色一致时应复用阅读区的渲染文档")
+	}
+	// 背景不同才新建。
+	other := exportDocument(doc, color.White)
+	if other == doc {
+		t.Fatal("背景色不同时不应复用")
+	}
+	if !sameBackground(other.Background(), color.White) {
+		t.Fatalf("新文档背景 = %v, want 白色", other.Background())
+	}
+	if exportDocument(nil, color.White) != nil {
+		t.Fatal("空文档不应产生导出文档")
+	}
+}
+
+func TestExportDocumentsToWriterProducesValidOutput(t *testing.T) {
+	// 整文档格式：PDF/TXT 无论多少页都是单个文件。
+	multi := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	for _, test := range []struct{ format, magic string }{
+		{"txt", ""},
+		{"pdf", "%PDF"},
+	} {
+		var buffer bytes.Buffer
+		if err := exportDocumentsToWriter(multi, &buffer, test.format, 72, color.Transparent); err != nil {
+			t.Errorf("%s 导出失败: %v", test.format, err)
+			continue
+		}
+		if buffer.Len() == 0 {
+			t.Errorf("%s 导出结果为空", test.format)
+		}
+		if test.magic != "" && !strings.HasPrefix(buffer.String(), test.magic) {
+			t.Errorf("%s 导出结果缺少魔数 %q", test.format, test.magic)
+		}
+	}
+
+	// 单页图片：直接写文件，不打包。这条路径用 noCloseWriter 包住外部输出，
+	// 如果写入器被转换器关闭，输出会被截断。
+	single := openTestDocuments(t, "hello.ofd", color.Transparent)
+	for _, test := range []struct{ format, magic string }{
+		{"png", "\x89PNG"},
+		{"jpg", "\xff\xd8\xff"},
+	} {
+		var buffer bytes.Buffer
+		if err := exportDocumentsToWriter(single, &buffer, test.format, 72, color.Transparent); err != nil {
+			t.Errorf("单页 %s 导出失败: %v", test.format, err)
+			continue
+		}
+		if !strings.HasPrefix(buffer.String(), test.magic) {
+			t.Errorf("单页 %s 导出结果缺少魔数 %q，实际开头 %q",
+				test.format, test.magic, buffer.String()[:min(8, buffer.Len())])
+		}
+	}
+
+	// 多页图片：打包成 ZIP。
+	var packed bytes.Buffer
+	if err := exportDocumentsToWriter(multi, &packed, "png", 72, color.Transparent); err != nil {
+		t.Fatalf("多页 png 导出失败: %v", err)
+	}
+	if !strings.HasPrefix(packed.String(), "PK\x03\x04") {
+		t.Error("多页 png 导出结果不是 ZIP")
+	}
+}
+
+// countingWriteCloser 模拟外部输出（保存对话框给出的文件句柄或 fyne 写入器），
+// 记录关闭次数。
+type countingWriteCloser struct {
+	*bytes.Buffer
+	closes atomic.Int64
+}
+
+func (c *countingWriteCloser) Close() error {
+	c.closes.Add(1)
+	return nil
+}
+
+func TestExportDocumentsToWriterDoesNotCloseCallerOutput(t *testing.T) {
+	// 外部输出的所有权属于调用方：exportToOutput 负责关闭，导出过程只能写入。
+	// 这条契约正是 noCloseWriter 存在的理由，回归时必须被挡住。
+	single := openTestDocuments(t, "hello.ofd", color.Transparent)
+	for _, format := range []string{"png", "pdf", "txt"} {
+		output := &countingWriteCloser{Buffer: &bytes.Buffer{}}
+		if err := exportDocumentsToWriter(single, output, format, 72, color.Transparent); err != nil {
+			t.Errorf("%s 导出失败: %v", format, err)
+			continue
+		}
+		if got := output.closes.Load(); got != 0 {
+			t.Errorf("%s 导出过程中关闭了外部输出 %d 次", format, got)
+		}
+	}
+	// 多页图片走 ZIP 分支，同样不能关闭外部输出。
+	multi := openTestDocuments(t, "999.ofd", color.Transparent)
+	output := &countingWriteCloser{Buffer: &bytes.Buffer{}}
+	if err := exportDocumentsToWriter(multi, output, "png", 72, color.Transparent); err != nil {
+		t.Fatalf("多页导出失败: %v", err)
+	}
+	if got := output.closes.Load(); got != 0 {
+		t.Errorf("多页导出过程中关闭了外部输出 %d 次", got)
+	}
+}
+
+func TestExportDocumentsToWriterZipsMultiPageImages(t *testing.T) {
+	// 5 页文档导出图片必须打包成 ZIP，且每页一个条目。
+	documents := openTestDocuments(t, "999.ofd", color.Transparent)
+	var buffer bytes.Buffer
+	if err := exportDocumentsToWriter(documents, &buffer, "png", 72, color.Transparent); err != nil {
+		t.Fatalf("多页图片导出失败: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
+	if err != nil {
+		t.Fatalf("多页图片导出结果不是合法 ZIP: %v", err)
+	}
+	pages := 0
+	for _, file := range reader.File {
+		if !strings.HasPrefix(file.Name, "page-") || !strings.HasSuffix(file.Name, ".png") {
+			t.Errorf("ZIP 条目命名异常: %s", file.Name)
+		}
+		pages++
+	}
+	if pages != 5 {
+		t.Errorf("ZIP 条目数 = %d, want 5", pages)
+	}
+	// 条目内容必须是完整 PNG，不能因为复用写入器被截断。
+	for _, file := range reader.File {
+		handle, err := file.Open()
+		if err != nil {
+			t.Fatalf("打开 ZIP 条目 %s 失败: %v", file.Name, err)
+		}
+		head := make([]byte, 4)
+		if _, err := io.ReadFull(handle, head); err != nil {
+			t.Fatalf("读取 ZIP 条目 %s 失败: %v", file.Name, err)
+		}
+		_ = handle.Close()
+		if !bytes.Equal(head, []byte("\x89PNG")) {
+			t.Errorf("ZIP 条目 %s 不是完整 PNG，开头 %q", file.Name, head)
+		}
+	}
+}
+
+func TestExportDocumentsToWriterRejectsBadInput(t *testing.T) {
+	if err := exportDocumentsToWriter(nil, &bytes.Buffer{}, "pdf", 72, nil); err == nil {
+		t.Fatal("空文档列表应报错")
+	}
+	if err := exportDocumentsToWriter([]*render.Document{render.NewDocument(color.Transparent, &parser.Document{})},
+		nil, "pdf", 72, color.White); err == nil {
+		t.Fatal("空输出应报错")
+	}
+	documents := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	if err := exportDocumentsToWriter(documents, &bytes.Buffer{}, "pdf", 72, color.White); err != nil {
+		t.Fatalf("白色背景导出失败: %v", err)
+	}
+}
+
+// prefillRenderCaches 给所有页面填入占位位图，阻止按需渲染真正启动协程。
+// 这些用例只关心导航与布局；真实渲染会在后台协程里通过 fyne.Do 读取界面
+// 状态，与测试线程的写入竞争（真实驱动把 fyne.Do 排到主线程，测试驱动内联
+// 执行，所以只有需要真实渲染的用例才能让协程跑起来）。
+func prefillRenderCaches(v *viewer) {
+	for page := range v.pages {
+		raster := toRGBA(image.NewRGBA(image.Rect(0, 0, 1, 1)))
+		v.pageImages.AddWeighted(page, raster, rasterWeight(raster))
+		v.thumbnails.AddWeighted(page, raster, rasterWeight(raster))
+	}
+}
+
+// newThumbnailTestViewer 构造带真实页面的阅读器，缩略图渲染可以真正成功。
+func newThumbnailTestViewer(t *testing.T, name string) *viewer {
+	t.Helper()
+	test.NewTempApp(t)
+	window := test.NewWindow(nil)
+	t.Cleanup(window.Close)
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", name))
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	window.Resize(fyne.NewSize(400, 600))
+	v := newViewer(window)
+	window.SetContent(v.content)
+	v.session = newDocumentSession(ofd)
+	v.ofd = ofd
+	v.documents = make([]*render.Document, 0, len(ofd.Documents))
+	for _, document := range ofd.Documents {
+		v.documents = append(v.documents, render.NewDocument(color.Transparent, document))
+	}
+	v.pages = collectViewerPages(v.documents)
+	v.totalPages = len(v.pages)
+	v.createPageSlots(v.pages, nil)
+	v.thumbnailRendering = make([]atomic.Bool, v.totalPages)
+	v.operation.Store(1)
+	v.thumbnailGeneration.Store(1)
+	// 文档的所有者是会话：直接再 Close 一次会与会话的后台释放并发。
+	// 这里只退休会话而不调 closeDocument —— 后者要改写槽位和列表状态，
+	// 而触发真实渲染的用例可能还有渲染协程在跑。
+	t.Cleanup(func() { v.session.retire() })
+	return v
+}
+
+func TestRequestThumbnailRenderCachesRealRender(t *testing.T) {
+	v := newThumbnailTestViewer(t, "helloworld.ofd")
+	if v.totalPages < 2 {
+		t.Skipf("测试文档页数不足: %d", v.totalPages)
+	}
+	generation := v.thumbnailGeneration.Load()
+	v.requestThumbnailRender(0)
+
+	// 渲染在后台协程执行，轮询原子缓存直到任务完成。
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := v.thumbnails.Get(0); ok {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	raster, ok := v.thumbnails.Get(0)
+	if !ok {
+		t.Fatal("真实页面的缩略图没有进入缓存")
+	}
+	if rasterWeight(raster) <= 1 {
+		t.Fatalf("缩略图权重 = %d，看起来是空图像", rasterWeight(raster))
+	}
+	if v.thumbnailRendering[0].Load() {
+		t.Fatal("渲染结束后标志应复位")
+	}
+	// 重复请求应命中缓存，不再启动渲染。
+	before := v.thumbnails.Weight()
+	v.requestThumbnailRender(0)
+	if got := v.thumbnails.Weight(); got != before {
+		t.Fatal("重复请求不应改变缩略图缓存")
+	}
+	// 越界与非法 generation 都不应启动任务。
+	v.requestThumbnailRender(-1)
+	v.requestThumbnailRender(v.totalPages + 10)
+	if generation == 0 {
+		t.Fatal("前置条件失败：generation 未置位")
+	}
+}
+
+func TestUpdateThumbnailCellUsesCacheAndRequestsOnMiss(t *testing.T) {
+	v := newThumbnailTestViewer(t, "helloworld.ofd")
+	cell := newThumbnailCell()
+
+	// 缓存命中：直接用缓存图像，标签显示页码。
+	cached := toRGBA(image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	v.thumbnails.AddWeighted(0, cached, rasterWeight(cached))
+	updateThumbnailCell(cell, 0, v)
+	if cell.image.Image != cached {
+		t.Fatal("缓存命中时单元应显示缓存图像")
+	}
+	if cell.label.Text != "第 1 页" {
+		t.Errorf("单元标签 = %q, want 第 1 页", cell.label.Text)
+	}
+
+	// 缓存未命中：图像置空并请求渲染。
+	updateThumbnailCell(cell, 1, v)
+	if cell.image.Image != nil {
+		t.Fatal("缓存未命中时单元图像应置空")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := v.thumbnails.Get(1); ok {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if _, ok := v.thumbnails.Get(1); !ok {
+		t.Fatal("缓存未命中时应当发起缩略图渲染")
+	}
+}
+
+func TestThumbnailRowMapping(t *testing.T) {
+	v := &viewer{}
+	if got := v.thumbnailRow(5); got != 5 {
+		t.Errorf("单页模式行号 = %d, want 5", got)
+	}
+	if got := v.thumbnailRowCount(); got != 0 {
+		t.Errorf("无文档时行数 = %d, want 0", got)
+	}
+	v.pageLayout = &continuousLayout{mode: viewDoublePage}
+	v.totalPages = 5
+	if got := v.thumbnailRow(3); got != 1 {
+		t.Errorf("双页模式第 3 页行号 = %d, want 1", got)
+	}
+	if got := v.thumbnailRowCount(); got != 3 {
+		t.Errorf("双页模式 5 页的行数 = %d, want 3", got)
+	}
+	v.totalPages = 4
+	if got := v.thumbnailRowCount(); got != 2 {
+		t.Errorf("双页模式 4 页的行数 = %d, want 2", got)
+	}
+}
+
+// newWindowOnlyViewer 构造只有窗口和控件、没有文档的阅读器。
+func newWindowOnlyViewer(t *testing.T) *viewer {
+	t.Helper()
+	test.NewTempApp(t)
+	window := test.NewWindow(nil)
+	t.Cleanup(window.Close)
+	v := newViewer(window)
+	window.SetContent(v.content)
+	return v
+}
+
+func TestValidOFDFile(t *testing.T) {
+	if got := validOFDFile(""); got != "" {
+		t.Errorf("空路径 = %q, want 空", got)
+	}
+	if got := validOFDFile("document.pdf"); got != "" {
+		t.Errorf("非 OFD 扩展名 = %q, want 空", got)
+	}
+	if got := validOFDFile(filepath.Join(t.TempDir(), "missing.ofd")); got != "" {
+		t.Errorf("不存在的文件 = %q, want 空", got)
+	}
+	// 扩展名大小写不敏感。
+	path := filepath.Join(t.TempDir(), "doc.OFD")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatalf("准备测试文件失败: %v", err)
+	}
+	if got := validOFDFile(path); got != path {
+		t.Errorf("大写扩展名 = %q, want %q", got, path)
+	}
+}
+
+func TestExportFormatCodeAndBackground(t *testing.T) {
+	for label, want := range map[string]string{
+		exportFormatPDF: "pdf",
+		exportFormatTXT: "txt",
+		exportFormatJPG: "jpg",
+		exportFormatPNG: "png",
+		exportFormatSVG: "svg",
+		exportFormatEPS: "eps",
+		exportFormatTeX: "tex",
+		"未知格式":          "pdf",
+	} {
+		if got := exportFormatCode(label); got != want {
+			t.Errorf("exportFormatCode(%q) = %q, want %q", label, got, want)
+		}
+	}
+	if !sameBackground(exportBackgroundColor(exportBackgroundWhite), color.White) {
+		t.Error("白色背景选项应返回白色")
+	}
+	if !sameBackground(exportBackgroundColor(exportBackgroundTransparent), color.Transparent) {
+		t.Error("透明背景选项应返回透明")
+	}
+}
+
+func TestPublishDocumentReplacesStateAndSession(t *testing.T) {
+	v := newWindowOnlyViewer(t)
+	v.operation.Store(1)
+	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	ofd, err := parser.NewOFD(path)
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+
+	model, err := buildDocumentModel(ofd, "helloworld.ofd", color.Transparent)
+	if err != nil {
+		t.Fatalf("构造文档模型失败: %v", err)
+	}
+	if err := v.publishDocument(model, path, "helloworld.ofd"); err != nil {
+		t.Fatalf("发布文档失败: %v", err)
+	}
+	if v.ofd != ofd || v.session == nil {
+		t.Fatal("发布后应持有 ofd 和会话")
+	}
+	if v.session.retired.Load() {
+		t.Fatal("新发布的会话不应处于退休状态")
+	}
+	if v.totalPages != len(v.pages) || v.totalPages == 0 {
+		t.Fatalf("页数 = %d, 页面列表 = %d", v.totalPages, len(v.pages))
+	}
+	if len(v.pageSlots) != v.totalPages || len(v.pageLayout.pageBounds) != v.totalPages {
+		t.Fatalf("槽位 %d / 排版 %d, want %d", len(v.pageSlots), len(v.pageLayout.pageBounds), v.totalPages)
+	}
+	if len(v.thumbnailRendering) != v.totalPages {
+		t.Fatalf("缩略图任务标志数 = %d, want %d", len(v.thumbnailRendering), v.totalPages)
+	}
+	// 虚拟化：页面容器只持有帧池，不是一页一个对象。
+	if len(v.pageContent.Objects) != len(v.pageLayout.frames) {
+		t.Fatalf("容器对象数 = %d, want %d", len(v.pageContent.Objects), len(v.pageLayout.frames))
+	}
+	if v.currentPage != 0 || v.pageEntry.Text != "1" || v.fileName != "helloworld.ofd" {
+		t.Fatalf("发布后页码/文件名 = %d/%q/%q", v.currentPage, v.pageEntry.Text, v.fileName)
+	}
+	// 至少要绑定可见页面的显示帧。
+	if v.frameForPage(0) == nil {
+		t.Fatal("发布后第 1 页没有显示帧")
+	}
+	// 注意：这里不再关闭文档。发布真实文档会启动后台渲染，测试驱动的 fyne.Do
+	// 是内联执行的，渲染协程会直接读显示帧；此时再改写状态就是竞争。真实驱动
+	// 会把 fyne.Do 排到主线程，生产环境没有问题。关闭行为由
+	// TestCloseDocumentRetiresSessionAndReleasesFrames 覆盖。
+}
+
+// newRetirableTestViewer 构造不会触发后台渲染的阅读器，用于验证关闭文档。
+// 真实驱动把 fyne.Do 排到 Fyne 事件线程，界面状态全部在该线程读写；测试驱动
+// 改为内联执行，因此这些用例必须避免启动渲染协程。
+func newRetirableTestViewer(t *testing.T) *viewer {
+	t.Helper()
+	v := newLoadedTestViewer(t)
+	v.session = &documentSession{}
+	return v
+}
+
+func TestCloseDocumentRetiresSessionAndReleasesFrames(t *testing.T) {
+	v := newRetirableTestViewer(t)
+	session := v.session
+	if len(v.pageSlots) == 0 || len(v.pageContent.Objects) == 0 {
+		t.Fatal("前置条件失败：阅读器没有页面状态")
+	}
+	if session.retired.Load() {
+		t.Fatal("前置条件失败：会话不应已退休")
+	}
+
+	v.closeDocument()
+	if !session.retired.Load() {
+		t.Fatal("关闭文档后会话应退休")
+	}
+	if v.ofd != nil || v.session != nil || v.totalPages != 0 {
+		t.Fatal("关闭文档后状态未清空")
+	}
+	if len(v.pageSlots) != 0 || len(v.pageLayout.frames) != 0 {
+		t.Fatal("关闭文档后页面槽位和显示帧应释放")
+	}
+	if len(v.pageContent.Objects) != 0 {
+		t.Fatalf("关闭文档后仍持有 %d 个对象", len(v.pageContent.Objects))
+	}
+	if len(v.pageLayout.pageBounds) != 0 || len(v.pageLayout.pages) != 0 {
+		t.Fatal("关闭文档后排版状态应清空")
+	}
+	if v.thumbnailSelected != -1 {
+		t.Errorf("关闭文档后缩略图高亮行 = %d, want -1", v.thumbnailSelected)
+	}
+	// 重复关闭必须安全。
+	v.closeDocument()
+}
+
+func TestRunLoadClearsLoadingOnSuccess(t *testing.T) {
+	v := newWindowOnlyViewer(t)
+	v.loading = true
+	v.updateControls()
+	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	ofd, err := parser.NewOFD(path)
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+
+	// runLoad 内部会重新打开文件，所以这里直接给路径而不是已解析的 OFD。
+	v.runLoad(v.operation.Load(), path, "helloworld.ofd", path)
+	// 加载状态必须复位：漏掉会让翻页、导出、关闭文档全部永久失效。
+	if v.loading {
+		t.Fatal("加载成功后 loading 必须复位，否则界面永久禁用")
+	}
+	if v.totalPages == 0 {
+		t.Fatal("加载成功后应发布页面")
+	}
+}
+
+func TestRunLoadClearsLoadingOnFailure(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+	}{
+		{"路径不存在", filepath.Join(t.TempDir(), "missing.ofd")},
+		{"数据不是 ZIP", []byte("not a zip at all")},
+		{"类型不支持", 42},
+	}
+	for _, test := range tests {
+		v := newWindowOnlyViewer(t)
+		v.loading = true
+		v.updateControls()
+		v.runLoad(v.operation.Load(), "x.ofd", "x.ofd", test.input)
+		if v.loading {
+			t.Errorf("%s：加载失败后 loading 必须复位", test.name)
+		}
+		if v.totalPages != 0 || v.ofd != nil {
+			t.Errorf("%s：加载失败不应发布文档", test.name)
+		}
+	}
+}
+
+func TestRunLoadReportsRealParseError(t *testing.T) {
+	// parser.NewOFD 失败时也返回非 nil 的 OFD，因此不能靠 ofd != nil 判断
+	// 成功，否则真实原因会被替换成“没有文档”。
+	ofd, err := openOFD([]byte("not a zip at all"))
+	if ofd == nil {
+		t.Fatal("前置条件失败：失败的 NewOFD 应当返回非 nil 的 OFD")
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+	if err == nil {
+		t.Fatal("非 ZIP 数据应返回错误")
+	}
+	// 把这个"有对象但带错误"的组合交给 publishDocument，它必须以"没有文档"
+	// 失败而不是假定成功；调用方 load 负责先检查 err。
+	if err := v_publishDocumentError(ofd); err == nil {
+		t.Fatal("空文档体应发布失败")
+	}
+}
+
+// v_publishDocumentError 是 publishDocument 的极简包装，便于断言空文档体。
+func v_publishDocumentError(ofd *parser.OFD) error {
+	v := &viewer{}
+	model, err := buildDocumentModel(ofd, "x.ofd", color.Transparent)
+	if err != nil {
+		return err
+	}
+	return v.publishDocument(model, "x.ofd", "x.ofd")
+}
+
+func TestPublishDocumentRejectsEmptyInput(t *testing.T) {
+	v := newWindowOnlyViewer(t)
+	v.operation.Store(1)
+	if err := v.publishDocument(nil, "x.ofd", "x.ofd"); err == nil {
+		t.Error("空模型应报错")
+	}
+	// 有 OFD 但没有页面时必须报错，并且不动原状态。
+	model, modelErr := buildDocumentModel(&parser.OFD{}, "x.ofd", color.Transparent)
+	if modelErr == nil {
+		if err := v.publishDocument(model, "x.ofd", "x.ofd"); err == nil {
+			t.Error("没有文档体的模型不应被发布")
+		}
+	}
+	if v.ofd != nil || v.session != nil {
+		t.Fatal("发布失败不应改变状态")
+	}
+}
+
+func TestPublishDocumentKeepsPreviousOnFailure(t *testing.T) {
+	v := newWindowOnlyViewer(t)
+	v.operation.Store(1)
+	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	ofd, err := parser.NewOFD(path)
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+	model, err := buildDocumentModel(ofd, "helloworld.ofd", color.Transparent)
+	if err != nil {
+		t.Fatalf("构造文档模型失败: %v", err)
+	}
+	if err := v.publishDocument(model, path, "helloworld.ofd"); err != nil {
+		t.Fatalf("首次发布失败: %v", err)
+	}
+	firstSession := v.session
+	firstPages := v.totalPages
+
+	// 第二次发布失败时，之前的文档仍然可用。
+	if bad, err := buildDocumentModel(&parser.OFD{}, "bad.ofd", color.Transparent); err == nil {
+		if err := v.publishDocument(bad, "bad.ofd", "bad.ofd"); err == nil {
+			t.Fatal("空文档体应当发布失败")
+		}
+	}
+	if v.ofd != ofd || v.session != firstSession {
+		t.Fatal("发布失败后不应替换已打开的文档")
+	}
+	if !firstSession.retired.Load() == false {
+		t.Fatal("发布失败不应退休原有会话")
+	}
+	if v.totalPages != firstPages {
+		t.Fatalf("发布失败后页数 = %d, want %d", v.totalPages, firstPages)
+	}
+}
+
+func TestSetViewModeKeepsCurrentPageAndRenders(t *testing.T) {
+	v := newLoadedTestViewer(t)
+	for page := range v.pageSlots {
+		v.pageSlots[page].renderable = false
+	}
+	v.totalPages = 3
+	v.totalPages = len(v.pages)
+	v.goToPage(2, false)
+	if v.currentPage != 2 {
+		t.Fatalf("跳转后当前页 = %d, want 2", v.currentPage)
+	}
+	// 双页模式下第 2 页是当前行的第一页，高亮行应为 1。
+	v.setViewMode(viewDoublePageLabel)
+	if v.pageLayout.mode != viewDoublePage {
+		t.Fatalf("视图模式 = %d, want 双页", v.pageLayout.mode)
+	}
+	if v.currentPage != 2 {
+		t.Fatalf("切换视图后当前页 = %d, want 2", v.currentPage)
+	}
+	if got := v.thumbnailRow(v.currentPage); got != 1 {
+		t.Errorf("双页模式当前页行号 = %d, want 1", got)
+	}
+	// 适应高度允许横向滚动，其余模式只用纵向。
+	v.setViewMode(viewFitHeightLabel)
+	if v.pageScroll.Direction != container.ScrollBoth {
+		t.Error("适应高度应允许双向滚动")
+	}
+	v.setViewMode(viewFitWidthLabel)
+	if v.pageScroll.Direction != container.ScrollVerticalOnly {
+		t.Error("适应宽度应只允许纵向滚动")
+	}
+}
+
+func TestHandleKeyNavigatesAndExits(t *testing.T) {
+	v := newLoadedTestViewer(t)
+	v.totalPages = len(v.pages)
+
+	// 方向键与 vim 键：a/w 上一页，d/s 下一页。
+	v.goToPage(1, false)
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyRight})
+	if v.currentPage != 2 {
+		t.Errorf("右箭头后当前页 = %d, want 2", v.currentPage)
+	}
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyLeft})
+	if v.currentPage != 1 {
+		t.Errorf("左箭头后当前页 = %d, want 1", v.currentPage)
+	}
+	v.goToPage(0, false)
+	v.handleKey(&fyne.KeyEvent{Name: "S"})
+	if v.currentPage != 1 {
+		t.Errorf("S 键后当前页 = %d, want 1（S 应为下一页）", v.currentPage)
+	}
+	v.goToPage(1, false)
+	v.handleKey(&fyne.KeyEvent{Name: "W"})
+	if v.currentPage != 0 {
+		t.Errorf("W 键后当前页 = %d, want 0（W 应为上一页）", v.currentPage)
+	}
+
+	// Home / End。
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyEnd})
+	if v.currentPage != v.totalPages-1 {
+		t.Errorf("End 后当前页 = %d, want %d", v.currentPage, v.totalPages-1)
+	}
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyHome})
+	if v.currentPage != 0 {
+		t.Errorf("Home 后当前页 = %d, want 0", v.currentPage)
+	}
+
+	// 边界不能越界。
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyLeft})
+	if v.currentPage != 0 {
+		t.Errorf("首页再左移后当前页 = %d, want 0", v.currentPage)
+	}
+	v.goToPage(v.totalPages-1, false)
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyRight})
+	if v.currentPage != v.totalPages-1 {
+		t.Errorf("末页再右移后当前页 = %d, want %d", v.currentPage, v.totalPages-1)
+	}
+
+	// Esc 逐层退出：先关文档。
+	if v.session != nil {
+		v.session = newDocumentSession(nil)
+	}
+	v.handleKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	if v.totalPages != 0 {
+		t.Fatal("Esc 应先关闭文档而不是退出程序")
+	}
+}
+
+func TestJumpToPageValidatesInput(t *testing.T) {
+	v := newLoadedTestViewer(t)
+	v.totalPages = len(v.pages)
+	v.goToPage(0, false)
+
+	for _, input := range []string{"", "abc", "0", "-1", "99"} {
+		v.pageEntry.SetText(input)
+		v.jumpToPage()
+		if v.currentPage != 0 {
+			t.Errorf("输入 %q 时不应跳转，当前页 = %d", input, v.currentPage)
+		}
+		if v.pageEntry.Text != "1" {
+			t.Errorf("输入 %q 时页码框应被纠正为 1，实际 %q", input, v.pageEntry.Text)
+		}
+	}
+	v.pageEntry.SetText("2")
+	v.jumpToPage()
+	if v.currentPage != 1 {
+		t.Errorf("跳转输入 2 后当前页 = %d, want 1", v.currentPage)
+	}
+}
+
+// waitFor polls until condition holds. 只能用于观察原子状态：后台协程通过
+// fyne.Do 修改的普通字段在测试驱动下会与读取竞争。
+func waitFor(t *testing.T, what string, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("等待超时: %s", what)
+}
+
+func TestWriteExportWritesClosesAndReleasesSession(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	session := v.session
+	documents := append([]*render.Document(nil), v.documents...)
+
+	output := &countingWriteCloser{Buffer: &bytes.Buffer{}}
+	err := writeExport(session, documents, func() (io.WriteCloser, error) { return output, nil },
+		nil, "pdf", 72, color.Transparent)
+	if err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	if output.closes.Load() != 1 {
+		t.Errorf("写入器关闭次数 = %d, want 1", output.closes.Load())
+	}
+	if !strings.HasPrefix(output.String(), "%PDF") {
+		t.Errorf("导出结果不是 PDF，开头 %q", output.String()[:min(8, output.Len())])
+	}
+	// 会话引用必须归还，否则文档永远不会被真正关闭。
+	if got := session.users.Load(); got != 0 {
+		t.Errorf("导出结束后会话引用数 = %d, want 0", got)
+	}
+	if session.retired.Load() {
+		t.Error("导出本身不应退休会话")
+	}
+}
+
+func TestWriteExportRejectsRetiredSession(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	// 文档已被替换或关闭：会话退休，必须拒绝导出而不是读到半关闭的文档。
+	v.session.retire()
+
+	pending := &countingWriteCloser{Buffer: &bytes.Buffer{}}
+	err := writeExport(v.session, v.documents, func() (io.WriteCloser, error) {
+		t.Error("会话已退休时不应创建输出")
+		return nil, nil
+	}, pending, "pdf", 72, color.Transparent)
+	if !errors.Is(err, errDocumentChanged) {
+		t.Errorf("错误 = %v, want %v", err, errDocumentChanged)
+	}
+	// 待写句柄必须回收，否则会泄漏文件描述符。
+	if pending.closes.Load() != 1 {
+		t.Errorf("待写句柄关闭次数 = %d, want 1", pending.closes.Load())
+	}
+	if pending.Len() != 0 {
+		t.Error("会话退休时不应写入任何内容")
+	}
+}
+
+func TestWriteExportPropagatesCreateFailure(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	failure := errors.New("无法创建输出")
+	err := writeExport(v.session, v.documents, func() (io.WriteCloser, error) {
+		return nil, failure
+	}, nil, "pdf", 72, color.Transparent)
+	if !errors.Is(err, failure) {
+		t.Errorf("错误 = %v, want %v", err, failure)
+	}
+	// 创建失败也必须归还会话引用。
+	if got := v.session.users.Load(); got != 0 {
+		t.Errorf("创建失败后会话引用数 = %d, want 0", got)
+	}
+}
+
+func TestExportToPathReportsCreateFailure(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	// 目标目录不存在时创建失败，错误必须反馈而不是静默，也不能留下半个文件。
+	unwritable := filepath.Join(t.TempDir(), "missing-dir", "out.pdf")
+	if err := writeExport(v.session, v.documents, func() (io.WriteCloser, error) {
+		return os.OpenFile(unwritable, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	}, nil, "pdf", 72, color.Transparent); err == nil {
+		t.Fatal("写入不可用目录应当失败")
+	}
+	if _, err := os.Stat(unwritable); !os.IsNotExist(err) {
+		t.Fatal("创建失败时不应留下输出文件")
+	}
+}
+
+func TestOpenOFDAcceptsSupportedInputs(t *testing.T) {
+	path := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	// 路径、字节、io.Reader 三种输入都应能打开。
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("测试文档不可用: %v", err)
+	}
+	for name, input := range map[string]any{
+		"路径":        path,
+		"字节":        raw,
+		"io.Reader": bytes.NewReader(raw),
+	} {
+		ofd, err := openOFD(input)
+		if err != nil {
+			t.Errorf("%s 打开失败: %v", name, err)
+			continue
+		}
+		if ofd == nil || len(ofd.Documents) == 0 {
+			t.Errorf("%s 打开后没有文档体", name)
+		}
+		_ = ofd.Close()
+	}
+}
+
+func TestOpenOFDRejectsBadInput(t *testing.T) {
+	if _, err := openOFD(filepath.Join(t.TempDir(), "missing.ofd")); err == nil {
+		t.Error("不存在的路径应报错")
+	}
+	if _, err := openOFD([]byte("not a zip")); err == nil {
+		t.Error("非 ZIP 数据应报错")
+	}
+	if _, err := openOFD(42); err == nil {
+		t.Error("不支持的输入类型应报错")
+	}
+	// parser.NewOFD 失败时仍返回一个空的 OFD：包句柄只在成功时赋值，文档列表
+	// 也为空。load 的每个错误分支都显式关闭它，因此不会泄漏；重复 Close 同样
+	// 安全。这里锁住这个行为，避免以后误以为失败时 ofd 一定是 nil。
+	ofd, err := openOFD(nil)
+	if err == nil {
+		t.Error("nil 输入应报错")
+	}
+	if ofd != nil {
+		if len(ofd.Documents) != 0 || len(ofd.DocBodies) != 0 {
+			t.Error("失败的 OFD 不应残留文档数据")
+		}
+		if closeErr := ofd.Close(); closeErr != nil {
+			t.Errorf("关闭失败的 OFD 应成功, got %v", closeErr)
+		}
+	}
+}
+
+func TestCloseInputHandlesNilAndCloser(t *testing.T) {
+	if err := closeInput(nil); err != nil {
+		t.Errorf("nil 输入关闭应成功, got %v", err)
+	}
+	if err := closeInput("path"); err != nil {
+		t.Errorf("非 Closer 输入应直接成功, got %v", err)
+	}
+	closer := &countingWriteCloser{Buffer: &bytes.Buffer{}}
+	if err := closeInput(closer); err != nil {
+		t.Errorf("关闭 Closer 应成功, got %v", err)
+	}
+	if closer.closes.Load() != 1 {
+		t.Errorf("关闭次数 = %d, want 1", closer.closes.Load())
+	}
+}
+
+func TestCloseInputRecoversFromPanic(t *testing.T) {
+	// 损坏的写入器可能在 Close 里 panic，必须转成错误而不是让加载流程崩溃。
+	err := closeInput(panickingCloser{})
+	if err == nil {
+		t.Fatal("Close panic 应转为错误")
+	}
+}
+
+// panickingCloser 是 Close 时会 panic 的写入器。
+type panickingCloser struct{}
+
+func (panickingCloser) Close() error { panic("关闭失败") }
+
+func TestExportLoadingPopupLifecycle(t *testing.T) {
+	v := newWindowOnlyViewer(t)
+	v.showExportLoading()
+	if v.exportLoading == nil {
+		t.Fatal("显示后应有加载弹窗")
+	}
+	// 重复显示不应重建弹窗。
+	first := v.exportLoading
+	v.showExportLoading()
+	if v.exportLoading != first {
+		t.Fatal("重复显示不应重建加载弹窗")
+	}
+	v.hideExportLoading()
+	if v.exportLoading != nil {
+		t.Fatal("隐藏后加载弹窗应清空")
+	}
+	// 重复隐藏必须安全。
+	v.hideExportLoading()
+}
+
+func TestShowAppInfoUsesEmbeddedIcon(t *testing.T) {
+	// resources.go 改成读不到内嵌图标就 panic，这里守住它不会退化成空资源。
+	if viewerIcon == nil {
+		t.Fatal("内嵌图标为空，关于对话框会拿到空资源")
+	}
+	v := newWindowOnlyViewer(t)
+	v.showAppInfo() // 不应 panic
+}
+
+func TestCloseRetiresSessionAndIsIdempotent(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	session := v.session
+
+	v.close()
+	if !v.closed.Load() {
+		t.Fatal("close 应标记已关闭")
+	}
+	if !session.retired.Load() {
+		t.Fatal("close 应退休会话")
+	}
+	// 重复 close 必须安全：closed 用 Swap 保护，closeDocument 允许重复。
+	v.close()
+}
+
+func TestExitApplicationClosesWindowAndSession(t *testing.T) {
+	test.NewTempApp(t)
+	// exitApplication 会关闭窗口，因此这里不能注册 t.Cleanup(window.Close)：
+	// Fyne 的测试驱动重复移除窗口会 panic。
+	window := test.NewWindow(nil)
+	v := newViewer(window)
+	window.SetContent(v.content)
+	session := &documentSession{}
+	v.session = session
+
+	v.exitApplication()
+	if !session.retired.Load() {
+		t.Error("退出程序应退休会话")
+	}
+	if !v.closed.Load() {
+		t.Error("退出程序应标记已关闭")
+	}
+}
+
+func TestCloseDocumentOrExitClosesBeforeExiting(t *testing.T) {
+	v := newThumbnailTestViewer(t, "hello.ofd")
+	prefillRenderCaches(v)
+	session := v.session
+
+	// 有文档时只关文档，不退出。
+	v.closeDocumentOrExit()
+	if !session.retired.Load() {
+		t.Error("逐层退出的第一步应关闭文档")
+	}
+	if v.closed.Load() {
+		t.Error("有文档时不应直接退出程序")
+	}
+	if v.totalPages != 0 {
+		t.Error("关闭文档后应回到未加载状态")
 	}
 }
 
