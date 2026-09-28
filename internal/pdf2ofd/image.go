@@ -357,20 +357,40 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 	// RGBA（预乘），PNG 编码会对低 alpha 像素做反预乘，把接近透明的颜色放大成
 	// 红/品红色边缘。
 	rgba := image.NewNRGBA(image.Rect(0, 0, width, height))
+	// 逐像素调用 image.At 会为每个像素在堆上装箱一个 color.Color，是软掩码
+	// 合成的最大分配来源。这里改用不装箱的取值路径。
 	for y := 0; y < height; y++ {
-		maskY := y * maskHeight / height
-		if maskY >= maskHeight {
-			maskY = maskHeight - 1
-		}
+		maskY := pdfSoftMaskRow(y, maskHeight, height)
+		maskBase := maskY * maskWidth
+		row := rgba.PixOffset(0, y)
+		sx := bounds.Min.X
+		sy := bounds.Min.Y + y
 		for x := 0; x < width; x++ {
-			maskX := x * maskWidth / width
-			if maskX >= maskWidth {
-				maskX = maskWidth - 1
+			maskX := pdfSoftMaskColumn(x, maskWidth, width)
+			var r, g, b uint8
+			switch source := baseImage.(type) {
+			case *image.YCbCr:
+				value := source.YCbCrAt(sx+x, sy)
+				r, g, b = color.YCbCrToRGB(value.Y, value.Cb, value.Cr)
+			case *image.Gray:
+				value := source.GrayAt(sx+x, sy).Y
+				r, g, b = value, value, value
+			case *image.NRGBA:
+				pix := source.PixOffset(sx+x, sy)
+				r, g, b = source.Pix[pix], source.Pix[pix+1], source.Pix[pix+2]
+			case *image.RGBA:
+				// 预乘颜色必须先反预乘，否则半透明像素会被放大成亮边。
+				value := source.RGBAAt(sx+x, sy)
+				r, g, b = value.R, value.G, value.B
+				if alpha := value.A; alpha != 0 && alpha != 0xff {
+					r, g, b = unpremultiplyPDF(r, alpha), unpremultiplyPDF(g, alpha), unpremultiplyPDF(b, alpha)
+				}
+			default:
+				converted := color.NRGBAModel.Convert(baseImage.At(sx+x, sy)).(color.NRGBA)
+				r, g, b = converted.R, converted.G, converted.B
 			}
-			base := color.NRGBAModel.Convert(baseImage.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.NRGBA)
-			alpha := samples[maskY*maskWidth+maskX]
-			target := rgba.PixOffset(x, y)
-			rgba.Pix[target], rgba.Pix[target+1], rgba.Pix[target+2], rgba.Pix[target+3] = base.R, base.G, base.B, alpha
+			target := row + x*4
+			rgba.Pix[target], rgba.Pix[target+1], rgba.Pix[target+2], rgba.Pix[target+3] = r, g, b, samples[maskBase+maskX]
 		}
 	}
 	var encoded bytes.Buffer
@@ -378,6 +398,23 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		return nil, false
 	}
 	return encoded.Bytes(), true
+}
+
+// pdfSoftMaskRow/Column 按最近邻把目标坐标映射到掩码坐标。
+func pdfSoftMaskRow(y, maskHeight, height int) int {
+	maskY := y * maskHeight / height
+	if maskY >= maskHeight {
+		maskY = maskHeight - 1
+	}
+	return maskY
+}
+
+func pdfSoftMaskColumn(x, maskWidth, width int) int {
+	maskX := x * maskWidth / width
+	if maskX >= maskWidth {
+		maskX = maskWidth - 1
+	}
+	return maskX
 }
 
 // hasJBIG2Filter 判断图像流是否使用 JBIG2Decode 过滤器。
@@ -1384,4 +1421,9 @@ func encodePDFImageMask(ctx *model.Context, stream *types.StreamDict, maskColor 
 		return nil, "", fmt.Errorf("编码 ImageMask PNG 失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
+}
+
+// unpremultiplyPDF 把预乘通道还原为非预乘值，与 color.NRGBAModel 的行为一致。
+func unpremultiplyPDF(value, alpha uint8) uint8 {
+	return uint8((uint32(value) * 0xffff / uint32(alpha)) >> 8)
 }
