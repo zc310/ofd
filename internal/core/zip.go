@@ -62,8 +62,11 @@ type Package struct {
 	token  *packageToken
 
 	fileMap map[string]int
-	entries []Entry
-	once    sync.Once
+	// lowerMap 是条目名的小写索引，值为 -1 表示该小写名对应多个条目。
+	// 仅在精确匹配失败时用于兜底，且只在唯一匹配时生效。
+	lowerMap map[string]int
+	entries  []Entry
+	once     sync.Once
 
 	mu       sync.RWMutex
 	closed   bool
@@ -161,16 +164,28 @@ func (p *Package) ensureIndex() {
 	p.once.Do(func() {
 		if p.reader == nil {
 			p.fileMap = map[string]int{}
+			p.lowerMap = map[string]int{}
 			p.entries = []Entry{}
 			return
 		}
 		fileMap := make(map[string]int, len(p.reader.File))
+		lowerMap := make(map[string]int, len(p.reader.File))
 		entries := make([]Entry, 0, len(p.reader.File))
 		for index, file := range p.reader.File {
-			fileMap[lookupName(file.Name)] = index
+			name := lookupName(file.Name)
+			fileMap[name] = index
+			// 同一个精确名字重复出现时也按歧义处理：包内条目重名本身已有风险，
+			// 不在此处替调用方挑一个。
+			key := strings.ToLower(name)
+			if _, seen := lowerMap[key]; seen {
+				lowerMap[key] = -1
+			} else {
+				lowerMap[key] = index
+			}
 			entries = append(entries, entryFromZipFile(p.token, index, file))
 		}
 		p.fileMap = fileMap
+		p.lowerMap = lowerMap
 		p.entries = entries
 	})
 }
@@ -253,7 +268,7 @@ func (p *Package) Open(fileName string) (io.ReadCloser, error) {
 	if p.closed {
 		return nil, ErrPackageClosed
 	}
-	index, ok := p.fileMap[lookupName(fileName)]
+	index, ok := p.lookupIndex(fileName)
 	if !ok {
 		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, lookupName(fileName))
 	}
@@ -385,8 +400,15 @@ func (p *Package) lookupIndex(fileName string) (int, bool) {
 		return 0, false
 	}
 	p.ensureIndex()
-	index, ok := p.fileMap[lookupName(fileName)]
-	return index, ok
+	name := lookupName(fileName)
+	if index, ok := p.fileMap[name]; ok {
+		return index, true
+	}
+	index, ok := p.lowerMap[strings.ToLower(name)]
+	if !ok || index < 0 {
+		return 0, false
+	}
+	return index, true
 }
 
 func lookupName(fileName string) string {
