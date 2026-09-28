@@ -1,5 +1,9 @@
 # 动作示例
 # 覆盖点击打开 URI、书签跳转、音频/视频播放与附件动作（GotoA 打开文档内附件）。
+# 三个 GotoA 均显式带 NewWindow 新窗口参数，覆盖 true/false 两种取值：
+#   demo-note 打开文本附件（true）；demo-ofd 打开内嵌的最小单页 OFD 测试文件（true，
+#   单页单文字，由本工具 --deterministic 生成，字节内联为 data_base64，保持单文件可重建）；
+#   demo-inline 打开文本附件（false，同一窗口）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml -o test/testdata/actions.ofd --format auto --deterministic --validate
@@ -25,6 +29,18 @@ document:
       usage: source
       file_name: demo-note.txt
       data_base64: 6L+Z5piv6YCa6L+HIEdvdG9BIOmZhOS7tuWKqOS9nOaJk+W8gOeahOmZhOS7tuOAggo=
+    - id: demo-ofd
+      name: mini.ofd
+      format: ofd
+      usage: source
+      file_name: mini.ofd
+      data_base64: UEsDBBQACAAIAAAAIewAAAAAAAAAAAAAAAAHAAkAT0ZELnhtbFVUBQABAAAAAFyOsUrEQBBAfyVsfzt7FiIymYNzCVgFJNqK7G7OhexOSFaTdPYWVnb+gzZ+koefISYeqN3jvWFmcDOGJrt3Xe855mItlchcNGx93OXisipWJ2JDWBY6G0MT+1zcptSeAgzDILm2feuM5G4HR2p9LLKrP4s0m2pqXS7KQgtCzWbLdprhPNa8gKbgo0dYGCufGkf7l4ePt6f9++Pn6zPC4vCsczeJO+LarszCCAd5qD8fkJJKrhH+WYTfty+YE2k21+pb3wUXkxxDMw/NbaYt24kQykLT1wBQSwcIbIWTrtYAAAAuAQAAUEsDBBQACAAIAAAAIewAAAAAAAAAAAAAAAAeAAkARG9jXzAvUGFnZXMvUGFnZV8wL0NvbnRlbnQueG1sVVQFAAEAAAAAPM7BSsNAGATgV/mZu93dVERk/y20pVAQLFhBjzH5jZF0NyRbk3jy7sGTN99BLz6SxccQrHqbwzDz2Um/qehemrYMnmFGGiQ+C3npC8bFenFwjImzq7QQ6jeVbxm3MdYnSnVdNwo3eVtLNgpNoRJtjuDsLPgoPjp7mg7S0HLOSEDroRbGNOQDnF1LH8+u7ySLtJwzxqBp2Po8bQZGommsyWhNJgEtgo+MQ9B5+SAMo0GLsqoYsdnK79Is5EKXDA26YpgEbvf6+Pn+vPt4+np7seqv4/Zxf+ys+vE5q/7BapUW4r4HAFBLBwglxKC75QAAABEBAABQSwMEFAAIAAgAAAAh7AAAAAAAAAAAAAAAABUACQBEb2NfMC9Eb2N1bWVudFJlcy54bWxVVAUAAQAAAAAApABb/zw/eG1sIHZlcnNpb249IjEuMCIgZW5jb2Rpbmc9IlVURi04Ij8+PFJlcyB4bWxucz0iaHR0cDovL3d3dy5vZmRzcGVjLm9yZy8yMDE2IiBCYXNlTG9jPSJSZXMiPjxGb250cz48Rm9udCBJRD0iNCIgRm9udE5hbWU9IuWui+S9kyIgQ2hhcnNldD0idW5pY29kZSIvPjwvRm9udHM+PC9SZXM+AwBQSwcIqjBPE6sAAACkAAAAUEsDBBQACAAIAAAAIewAAAAAAAAAAAAAAAASAAkARG9jXzAvRG9jdW1lbnQueG1sVVQFAAEAAAAATI7dasMwDEZfxfh+kVPG/lBc1ppBYYUwluthXC8xxFKJ3cV9+xG2sdxIQkLnO7gtcRRffkqBqZF1paTw5PgUqG9k9/5y8yC3Gg27S/SURYkjpUYOOZ+fAOZ5rvjzlM7eVTz1sFH1ndS45xiZjM1W49GWjkI+GH2LcLSlo5APRmNre/88eauxHa4pODvuuGgllNjUSmwe7xHa4ZqCs+OOi0b4f/iTefNJr+aqxBFhfURYmyyA9NPEwTSylmJnk39l18hlmWCpHwr2TNlTXngSfpOTRjDsLtFT1t8DAFBLBwh/liEt3AAAADUBAABQSwECFAAUAAgACAAAACHsbIWTrtYAAAAuAQAABwAJAAAAAAAAAAAAAAAAAAAAT0ZELnhtbFVUBQABAAAAAFBLAQIUABQACAAIAAAAIewlxKC75QAAABEBAAAeAAkAAAAAAAAAAAAAABQBAABEb2NfMC9QYWdlcy9QYWdlXzAvQ29udGVudC54bWxVVAUAAQAAAABQSwECFAAUAAgACAAAACHsqjBPE6sAAACkAAAAFQAJAAAAAAAAAAAAAABOAgAARG9jXzAvRG9jdW1lbnRSZXMueG1sVVQFAAEAAAAAUEsBAhQAFAAIAAgAAAAh7H+WIS3cAAAANQEAABIACQAAAAAAAAAAAAAARQMAAERvY18wL0RvY3VtZW50LnhtbFVUBQABAAAAAFBLBQYAAAAABAAEACgBAABqBAAAAAA=
+    - id: demo-inline
+      name: inline.txt
+      format: txt
+      usage: source
+      file_name: inline.txt
+      data_base64: TmV3V2luZG93PWZhbHNlIOekuuS+i++8muWcqOWQjOS4gOeql+WPo+aJk+W8gOeahOaWh+acrOmZhOS7tuOAggo=
   actions:
     - event: CLICK
       uri:
@@ -42,6 +58,17 @@ document:
       movie:
         resource_id: 22
         operator: Play
+    # GotoA 顺序有约束：webreader 按动作顺序生成热区，并以最后一条附件链接为准
+    #（TestDocumentClickActionsMatchPageText 断言 demo-note），故 demo-ofd、demo-inline
+    # 必须排在 demo-note 之前。
+    - event: CLICK
+      goto_a:
+        attach_id: demo-ofd
+        new_window: true
+    - event: CLICK
+      goto_a:
+        attach_id: demo-inline
+        new_window: false
     - event: CLICK
       goto_a:
         attach_id: demo-note
@@ -93,6 +120,24 @@ pages:
         width: 170
         height: 8
         value: 打开附件 说明.txt（GotoA）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 20
+        y: 92
+        width: 170
+        height: 8
+        value: 打开附件 mini.ofd（GotoA 新窗口）
+        font: 宋体
+        size: 4
+        fill: true
+      - type: text
+        x: 20
+        y: 106
+        width: 170
+        height: 8
+        value: 打开附件 inline.txt（GotoA 同窗口）
         font: 宋体
         size: 4
         fill: true
