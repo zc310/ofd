@@ -3,6 +3,8 @@ package parser
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -562,6 +564,165 @@ func TestAnnotationsLoadOnDemand(t *testing.T) {
 	}
 	if len(doc.annotations) != 0 {
 		t.Fatalf("未加载注解缓存 = %d, want 0", len(doc.annotations))
+	}
+}
+
+// annotationsPackage 构造声明了 Annotations 的最小 OFD 包，extra 里的条目会覆盖默认值。
+func annotationsPackage(t *testing.T, extra map[string]string) []byte {
+	t.Helper()
+	document := `<?xml version="1.0" encoding="UTF-8"?><ofd:Document xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:CommonData><ofd:MaxUnitID>5</ofd:MaxUnitID>` +
+		`<ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea></ofd:CommonData>` +
+		`<ofd:Pages><ofd:Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages>` +
+		`<ofd:Annotations>Annotations.xml</ofd:Annotations></ofd:Document>`
+	ofd := `<?xml version="1.0" encoding="UTF-8"?><ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">` +
+		`<ofd:DocBody><ofd:DocInfo><ofd:DocID>t</ofd:DocID><ofd:Version>1.0</ofd:Version></ofd:DocInfo>` +
+		`<ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot></ofd:DocBody></ofd:OFD>`
+	page := `<?xml version="1.0" encoding="UTF-8"?><ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:Area><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:Area>` +
+		`<ofd:Content><ofd:Layer ID="4"/></ofd:Content></ofd:Page>`
+
+	entries := map[string]string{
+		"OFD.xml":                        ofd,
+		"Doc_0/Document.xml":             document,
+		"Doc_0/Pages/Page_0/Content.xml": page,
+	}
+	for name, value := range extra {
+		entries[name] = value
+	}
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	for name, value := range entries {
+		writer, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func TestMissingAnnotationsIndexIsTreatedAsNoAnnotations(t *testing.T) {
+	parsed, err := NewOFD(annotationsPackage(t, nil))
+	if err != nil {
+		t.Fatalf("注解索引文件缺失时应能解析文档: %v", err)
+	}
+	defer parsed.Close()
+
+	if len(parsed.Documents) != 1 {
+		t.Fatalf("document count = %d, want 1", len(parsed.Documents))
+	}
+	doc := parsed.Documents[0]
+	if doc.PageCount() != 1 {
+		t.Fatalf("page count = %d, want 1", doc.PageCount())
+	}
+	if err := doc.Pages[0].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.GetAnnotation(1); got != nil {
+		t.Fatalf("无注解时 GetAnnotation 返回 = %+v", got)
+	}
+	if doc.AnnotationPageCount() != 0 {
+		t.Fatalf("annotation page count = %d, want 0", doc.AnnotationPageCount())
+	}
+}
+
+func TestBrokenAnnotationsIndexStillFails(t *testing.T) {
+	_, err := NewOFD(annotationsPackage(t, map[string]string{
+		"Doc_0/Annotations.xml": "<ofd:Annotations><ofd:Page PageID=",
+	}))
+	if err == nil {
+		t.Fatal("注解索引文件存在但 XML 非法时应返回错误")
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("错误不应是文件不存在: %v", err)
+	}
+}
+
+// signaturesPackage 构造 DocBody/Signatures 指向缺失索引的最小 OFD 包。
+func signaturesPackage(t *testing.T, extra map[string]string) []byte {
+	t.Helper()
+	ofd := `<?xml version="1.0" encoding="UTF-8"?><ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">` +
+		`<ofd:DocBody><ofd:DocInfo><ofd:DocID>t</ofd:DocID><ofd:Version>1.0</ofd:Version></ofd:DocInfo>` +
+		`<ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot>` +
+		`<ofd:Signatures>/Doc_0/Signs/Signatures.xml</ofd:Signatures></ofd:DocBody></ofd:OFD>`
+	document := `<?xml version="1.0" encoding="UTF-8"?><ofd:Document xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:CommonData><ofd:MaxUnitID>5</ofd:MaxUnitID>` +
+		`<ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea></ofd:CommonData>` +
+		`<ofd:Pages><ofd:Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>`
+	page := `<?xml version="1.0" encoding="UTF-8"?><ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:Area><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:Area>` +
+		`<ofd:Content><ofd:Layer ID="4"/></ofd:Content></ofd:Page>`
+
+	entries := map[string]string{
+		"OFD.xml":                        ofd,
+		"Doc_0/Document.xml":             document,
+		"Doc_0/Pages/Page_0/Content.xml": page,
+	}
+	for name, value := range extra {
+		entries[name] = value
+	}
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	for name, value := range entries {
+		writer, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func TestMissingSignaturesIndexIsTreatedAsUnsigned(t *testing.T) {
+	parsed, err := NewOFD(signaturesPackage(t, nil))
+	if err != nil {
+		t.Fatalf("签名索引文件缺失时应能解析文档: %v", err)
+	}
+	defer parsed.Close()
+
+	if len(parsed.Documents) != 1 {
+		t.Fatalf("document count = %d, want 1", len(parsed.Documents))
+	}
+	doc := parsed.Documents[0]
+	if doc.PageCount() != 1 {
+		t.Fatalf("page count = %d, want 1", doc.PageCount())
+	}
+	if err := doc.Pages[0].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.GetSignature("1"); got != nil {
+		t.Fatalf("无签名时 GetSignature 返回 = %+v", got)
+	}
+	seen := 0
+	doc.ForEachSignature(func(string, *models.Signature) bool {
+		seen++
+		return true
+	})
+	if seen != 0 {
+		t.Fatalf("签名数量 = %d, want 0", seen)
+	}
+}
+
+func TestBrokenSignaturesIndexStillFails(t *testing.T) {
+	_, err := NewOFD(signaturesPackage(t, map[string]string{
+		"Doc_0/Signs/Signatures.xml": "<ofd:Signatures MaxSignId=",
+	}))
+	if err == nil {
+		t.Fatal("签名索引文件存在但 XML 非法时应返回错误")
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("错误不应是文件不存在: %v", err)
 	}
 }
 
