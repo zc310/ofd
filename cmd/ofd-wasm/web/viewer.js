@@ -352,6 +352,7 @@ const exportCancel = document.querySelector('#export-cancel');
 const exportRange = document.querySelector('#export-range');
 const exportCustomRange = document.querySelector('#export-custom-range');
 const exportDPI = document.querySelector('#export-dpi');
+const exportDPIField = document.querySelector('#export-dpi-field');
 const exportFormat = document.querySelector('#export-format');
 const exportBackground = document.querySelector('#export-background');
 const exportBackgroundField = document.querySelector('#export-background-field');
@@ -468,6 +469,13 @@ const remoteFileQueryKey = 'file';
 const remoteFileNameQueryKey = 'name';
 // remoteFileTimeout 限制下载耗时：远端无响应时不能让启动页一直停在「正在下载」。
 const remoteFileTimeout = 120_000;
+// pdfExportDPI 是导出 PDF 时固定使用的 DPI。PDF 走矢量输出，文字与路径都保留，
+// 这个值不决定图像质量，只参与毫米到 PDF 点的换算：72 让页面保持物理尺寸
+// （210mm → 595.3pt，即标准 A4）。沿用图片模式的 DPI 会把页面等比放大，
+// A4 在 150 下会变成 1240pt。
+const pdfExportDPI = 72;
+// exportDPIMax 必须与 webreader 的 maxDPI 一致，否则界面上填得进去、渲染时才报错。
+const exportDPIMax = 600;
 // remoteFileMaxBytes 限制远程文档大小。地址由外部提供且不受本地文件选择器约束，
 // 超过上限时直接失败，避免把超大响应整体读进内存。
 const remoteFileMaxBytes = 256 << 20;
@@ -3605,8 +3613,16 @@ function updateExportRangeControl() {
 }
 
 function updateExportFormatControl() {
-  const text = exportFormat.value === 'txt';
-  exportDPI.disabled = text;
+  const format = exportFormat.value;
+  // 只有 PNG/JPG 是位图输出，DPI 决定图像分辨率。PDF 走矢量输出，该值只参与
+  // 毫米到 PDF 点的换算（导出时固定发 pdfExportDPI），TXT 也不用它。
+  // 字段行必须跟着 input 一起显隐：input 一直可读但外层 hidden 时用户改不了，
+  // 导出会静默沿用上一次的默认值。
+  const raster = format === 'png' || format === 'jpg';
+  exportDPI.disabled = !raster;
+  exportDPIField.hidden = !raster;
+  // 背景颜色对 PDF 仍然有意义（矢量页面的底色），只在纯文字导出时无关。
+  const text = format === 'txt';
   exportBackground.disabled = text;
   exportBackgroundField.hidden = text;
 }
@@ -3924,7 +3940,7 @@ async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
       await saveRenderStream(
          (pages, options, onChunk) => engine.renderStream(pages, { ...options, format: 'pdf' }, onChunk),
         indexes,
-        { dpi, background },
+        { dpi: pdfExportDPI, background },
         `${baseName}-document.pdf`,
         'application/pdf',
         saveFile,
@@ -3997,8 +4013,8 @@ async function startExport() {
     return;
   }
   dpi = Number(exportDPI.value);
-  if (!Number.isInteger(dpi) || dpi < 1 || dpi > 1200) {
-    exportError.textContent = 'DPI 必须是 1-1200 之间的整数';
+  if (!Number.isInteger(dpi) || dpi < 1 || dpi > exportDPIMax) {
+    exportError.textContent = `DPI 必须是 1-${exportDPIMax} 之间的整数`;
     exportError.hidden = false;
     return;
   }

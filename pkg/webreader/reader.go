@@ -2489,6 +2489,10 @@ func (r *Reader) RenderPDF(indices []int, options RenderOptions) (outputBytes []
 
 // RenderPDFTo 将多个页面按传入顺序写入 output，保留文字和矢量内容。
 // output 会在 PDF 生成过程中接收数据，适合流式保存大 PDF，因此不限制页数。
+//
+// 注意 options.DPI 在这里不是图像分辨率：PDF 不做栅格化，该值只用于把页面的
+// 毫米尺寸换算成 PDF 点，因此 72 才能保持物理尺寸（A4 输出为 595.3 x 841.9 pt），
+// 传入更高的值会把页面等比放大。导出 PDF 时不应把它暴露给用户。
 func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOptions) (err error) {
 	if r == nil {
 		return errors.New("文档引擎为空")

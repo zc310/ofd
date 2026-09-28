@@ -55,7 +55,7 @@
     .toolbar-group.page-group { position: relative; }
     .document-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; min-width: 200px; gap: 4px; padding: 6px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
     .document-menu[hidden] { display: none; }
-    .document-menu button { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; color: #172033; font: inherit; text-align: left; cursor: pointer; }
+    .document-menu button { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; color: #172033; font: inherit; text-align: left; cursor: pointer; }
     .document-menu button:hover:not(:disabled) { background: #e8f1fb; }
     .document-menu button:disabled { opacity: .5; cursor: default; }
     .document-menu .material-symbols-outlined { font-size: 18px; }
@@ -690,7 +690,7 @@
       </div>
       <div class="export-field" id="export-dpi-field" hidden>
         <label for="export-dpi">DPI</label>
-        <input id="export-dpi" type="number" min="1" max="1200" step="1" value="150">
+        <input id="export-dpi" type="number" min="1" max="600" step="1" value="150">
       </div>
       <div class="export-field">
         <label for="export-format">格式</label>
@@ -709,7 +709,7 @@
           <option value="black">黑色</option>
         </select>
       </div>
-      <p class="export-hint">多页图片将导出为 ZIP；PDF 按所选 DPI 栅格化并保持页面物理尺寸；JPG 不支持透明色，选择透明时使用白色背景；TXT 导出不使用 DPI 和背景颜色。</p>
+      <p class="export-hint">多页图片将导出为 ZIP；PDF 为矢量输出并保持页面物理尺寸，不使用 DPI；JPG 不支持透明色，选择透明时使用白色背景；TXT 导出不使用 DPI 和背景颜色。</p>
       <p id="export-error" class="export-error" role="alert" hidden></p>
       <div class="export-actions">
         <button id="export-cancel" type="button">取消</button>
