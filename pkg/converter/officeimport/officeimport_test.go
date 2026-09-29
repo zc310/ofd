@@ -48,14 +48,14 @@ func TestConvertDocxToPDFAndOFD(t *testing.T) {
 	}
 	docx := writeTestDocx(t)
 	var pdf bytes.Buffer
-	if err := converter.Convert("docx", "pdf", docx, &pdf); err != nil {
+	if err := converter.Convert(ctxTODO, "docx", "pdf", docx, &pdf); err != nil {
 		t.Fatalf("docx→pdf 失败: %v", err)
 	}
 	if !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("docx→pdf 输出不是 PDF")
 	}
 	var ofd bytes.Buffer
-	if err := converter.Convert("docx", "ofd", docx, &ofd); err != nil {
+	if err := converter.Convert(ctxTODO, "docx", "ofd", docx, &ofd); err != nil {
 		t.Fatalf("docx→ofd 失败: %v", err)
 	}
 	if !bytes.HasPrefix(ofd.Bytes(), []byte("PK")) {

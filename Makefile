@@ -41,7 +41,9 @@ endif
 PLATFORM := $(GOOS)-$(GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
 # VERSION 是唯一的版本号来源：查看器的关于对话框和 Android APK 都用它。
-VERSION ?= 0.0.5
+# 与 git tag 保持一致；改动时也要同步 cmd/ofd-viewer 的 defaultVersion，
+# TestVersionMatchesMakefile 会守住这一点。
+VERSION ?= 0.1.2
 VERSION_LDFLAG := -X main.applicationVersion=v$(VERSION)
 GO_LDFLAGS := -s -w
 GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS)"
@@ -62,6 +64,7 @@ ARCHIVE := $(BIN_DIR)/ofd-archive$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 SIGNER_DEMO := $(BIN_DIR)/ofd-signer-demo$(BIN_SUFFIX)
 INVOICE := $(BIN_DIR)/ofd-invoice$(BIN_SUFFIX)
+SERVER := $(BIN_DIR)/ofd-server$(BIN_SUFFIX)
 WASM := cmd/ofd-wasm/web/ofd.wasm
 WASM_EXEC := cmd/ofd-wasm/web/wasm_exec.js
 WASM_VIEWER := cmd/ofd-wasm/web/viewer.js
@@ -71,6 +74,12 @@ WASM_ICON_FONT := cmd/ofd-wasm/web/material-symbols-outlined-subset.woff2
 WASM_SERVICE_WORKER := cmd/ofd-wasm/web/service-worker.js
 WASM_WEB_DIR := cmd/ofd-wasm/web
 WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
+# WASM_WEB_EXCLUDES 是打包 Web 目录时排除的子目录。浏览器脚本的测试只在仓库内使用
+# （make test-wasm-web），发布产物里既用不到也不该带上。
+WASM_WEB_EXCLUDES := test
+# 循环变量不能叫 dir：$(dir) 是 Make 内置函数名，$(dir) 会被解析成函数调用而不是
+# 变量，展开出空值。sub 不会与内置函数冲突。
+WASM_WEB_EXCLUDE_FLAGS := $(foreach sub,$(WASM_WEB_EXCLUDES),-x "$(notdir $(WASM_WEB_DIR))/$(sub)/*" -x "$(notdir $(WASM_WEB_DIR))/$(sub)/")
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
@@ -81,6 +90,7 @@ ARCHIVE_PACKAGE := $(DIST_DIR)/ofd-archive-$(PLATFORM).zip
 CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
 SIGNER_DEMO_PACKAGE := $(DIST_DIR)/ofd-signer-demo-$(PLATFORM).zip
 INVOICE_PACKAGE := $(DIST_DIR)/ofd-invoice-$(PLATFORM).zip
+SERVER_PACKAGE := $(DIST_DIR)/ofd-server-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
 ANDROID_VIEWER_ZIP := $(DIST_DIR)/ofd-viewer-android.zip
 ANDROID_VIEWER_APP_ID := github.com.zc310.ofd.viewer
@@ -89,8 +99,8 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= $(VERSION)
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(INVOICE) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(INVOICE_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -107,7 +117,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-archive package-creator package-signer-demo package-invoice clean help FORCE
+.PHONY: all build build-tools build-wasm test-wasm-web build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
 
 all: package
 
@@ -115,6 +125,7 @@ help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
 		'make build-wasm               Build the browser WASM engine' \
+		'make test-wasm-web           Run the browser reader script tests' \
 		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-wasm-web         Package the browser WASM web directory' \
 		'make package-viewer           Build the OFD viewer package' \
@@ -160,6 +171,12 @@ build-tools: $(TOOL_BUILD_TARGETS)
 # 缓存版本由 CACHE_NAME 的哈希管理：任一资源内容变化，缓存名变化，新 Service
 # Worker 安装时删除旧缓存并重新缓存全部资源。
 build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
+
+# test-wasm-web 运行浏览器阅读器的脚本测试。这些测试从 viewer.js 原文按括号配平切出
+# 待测函数并在 Node 里用桩驱动，不需要 npm 依赖或 jsdom；改动 viewer.js 的断行、
+# 导出和注解入口时必须一并运行。
+test-wasm-web:
+	@node cmd/ofd-wasm/web/test/run.mjs
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
@@ -233,6 +250,10 @@ $(INVOICE): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-invoice
 
+$(SERVER): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-server
+
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -250,7 +271,8 @@ package-wasm-web: $(WASM_WEB_PACKAGE)
 $(WASM_WEB_PACKAGE): build-wasm FORCE
 	@mkdir -p "$(DIST_DIR)"
 	@rm -f "$@"
-	@cd "$(dir $(WASM_WEB_DIR))" && "$(ZIP)" -qr "$(abspath $@)" "$(notdir $(WASM_WEB_DIR))"
+	@cd "$(dir $(WASM_WEB_DIR))" && "$(ZIP)" -qr "$(abspath $@)" "$(notdir $(WASM_WEB_DIR))" \
+		$(WASM_WEB_EXCLUDE_FLAGS)
 
 package-arm64:
 	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 package-tools
@@ -365,6 +387,18 @@ $(INVOICE_PACKAGE): $(INVOICE) cmd/ofd-invoice/README.md
 	@cp "$(INVOICE)" "$(PACKAGE_DIR)/ofd-invoice/ofd-invoice$(BIN_SUFFIX)"
 	@cp "cmd/ofd-invoice/README.md" "$(PACKAGE_DIR)/ofd-invoice/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-invoice"
+
+package-server: $(SERVER_PACKAGE)
+
+$(SERVER_PACKAGE): $(SERVER) cmd/ofd-server/README.md cmd/ofd-server/example-config.json
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-server"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-server"
+	@rm -f "$@"
+	@cp "$(SERVER)" "$(PACKAGE_DIR)/ofd-server/ofd-server$(BIN_SUFFIX)"
+	@cp "cmd/ofd-server/README.md" "$(PACKAGE_DIR)/ofd-server/README.md"
+	@cp "cmd/ofd-server/example-config.json" "$(PACKAGE_DIR)/ofd-server/example-config.json"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-server"
 
 $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@mkdir -p "$(DIST_DIR)"

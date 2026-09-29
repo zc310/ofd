@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -90,8 +91,8 @@ func (nopWriteCloser) Close() error { return nil }
 
 // Image 渲染 OFD 文档。输出格式由 PNG、JPG、SVG、EPS、TeX 或 WithFormat 选项决定，
 // 默认 PNG；输出目标由 Writer 或 ImageWriter 选项提供。
-func Image(input interface{}, opts ...Option) error {
-	conv := newConverter(opts...)
+func Image(ctx context.Context, input interface{}, opts ...Option) error {
+	conv := newConverter(ctx, opts...)
 	if err := conv.validateConfig(); err != nil {
 		return err
 	}
@@ -99,13 +100,13 @@ func Image(input interface{}, opts ...Option) error {
 }
 
 // ImageDocument 将已解析的 OFD 文档渲染为图像或矢量格式。
-func ImageDocument(doc *render.Document, opts ...Option) error {
-	return ImageDocuments([]*render.Document{doc}, opts...)
+func ImageDocument(ctx context.Context, doc *render.Document, opts ...Option) error {
+	return ImageDocuments(ctx, []*render.Document{doc}, opts...)
 }
 
 // ImageDocuments 将多个已解析的 OFD 文档体按全局页码渲染为图像或矢量格式。
-func ImageDocuments(documents []*render.Document, opts ...Option) error {
-	conv := newConverter(opts...)
+func ImageDocuments(ctx context.Context, documents []*render.Document, opts ...Option) error {
+	conv := newConverter(ctx, opts...)
 	if len(collectDocumentPages(documents)) == 0 {
 		return errors.New("文档没有页面")
 	}

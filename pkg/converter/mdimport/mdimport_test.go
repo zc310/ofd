@@ -62,7 +62,7 @@ func TestMarkdownImporterRegistered(t *testing.T) {
 
 func TestConvertMarkdownToOFD(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.Convert("md", "ofd", []byte(sampleMarkdown), &output); err != nil {
+	if err := converter.Convert(ctxTODO, "md", "ofd", []byte(sampleMarkdown), &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	assertValidOFD(t, output.Bytes())
@@ -71,7 +71,7 @@ func TestConvertMarkdownToOFD(t *testing.T) {
 func TestConvertMarkdownSkipsRemoteImages(t *testing.T) {
 	source := "# 远程图片\n\n![remote](https://example.com/a.png)\n\n结束。\n"
 	var output bytes.Buffer
-	if err := converter.Convert("markdown", "ofd", []byte(source), &output); err != nil {
+	if err := converter.Convert(ctxTODO, "markdown", "ofd", []byte(source), &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	assertValidOFD(t, output.Bytes())
@@ -86,7 +86,7 @@ func TestConvertMarkdownLocalImage(t *testing.T) {
 		t.Fatalf("写入 Markdown 失败: %v", err)
 	}
 	var output bytes.Buffer
-	if err := converter.Convert("md", "ofd", mdPath, &output); err != nil {
+	if err := converter.Convert(ctxTODO, "md", "ofd", mdPath, &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	if !bytes.Contains(output.Bytes(), []byte("PNG")) {
@@ -97,7 +97,7 @@ func TestConvertMarkdownLocalImage(t *testing.T) {
 
 func TestConvertMarkdownFromReader(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.Convert("markdown", "ofd", strings.NewReader("# reader\n\n正文\n"), &output); err != nil {
+	if err := converter.Convert(ctxTODO, "markdown", "ofd", strings.NewReader("# reader\n\n正文\n"), &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	assertValidOFD(t, output.Bytes())
@@ -106,7 +106,7 @@ func TestConvertMarkdownFromReader(t *testing.T) {
 func TestConvertMarkdownLetterheadFrontMatter(t *testing.T) {
 	source := "---\nletterhead:\n  org: \"××省档案局文件\"\n  doc_no: \"×档发〔2026〕1号\"\n  signatory: \"张三\"\n  serial_no: \"000018\"\n  security: \"内部\"\n  urgency: \"特急\"\nfooter:\n  page_number: true\nsign:\n  org: \"××省档案局\"\n  date: \"2026年9月19日\"\ncolophon:\n  cc: \"省委办公厅，省政府办公厅。\"\n  issued_by: \"××省档案局办公室\"\n  issued_date: \"2026年9月19日\"\n---\n\n# 公文标题\n\n正文内容。\n"
 	var output bytes.Buffer
-	if err := converter.Convert("md", "ofd", []byte(source), &output); err != nil {
+	if err := converter.Convert(ctxTODO, "md", "ofd", []byte(source), &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	assertValidOFD(t, output.Bytes())

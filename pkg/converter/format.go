@@ -2,6 +2,7 @@ package converter
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -201,8 +202,12 @@ func ImportFormats() []string {
 // Convert 在输入格式 from 与输出格式 to 之间转换。from 为空时按文件扩展名或
 // 内容识别。to 为 "ofd" 时使用导入器（X→OFD）；from 为 "ofd" 时使用导出器
 // （OFD→X）；两者都不是时先导入为 OFD 再导出。
-func Convert(from, to string, input any, output io.Writer, opts ...Option) error {
-	conv := newConverter(opts...)
+func Convert(ctx context.Context, from, to string, input any, output io.Writer, opts ...Option) error {
+	conv := newConverter(ctx, opts...)
+	// 入口先查一次：取消后再走一遍格式解析只是白花时间。
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	to = normalizeFormatName(to)
 	if to == "" {
 		return errors.New("未指定输出格式")
@@ -294,8 +299,11 @@ func sniffInputFormat(data []byte) (string, error) {
 // Encode 解析 input 中的 OFD 文档，并按 format 选择注册的编码器写入 output。
 // format 可以是注册名（"pdf"、"text"、"markdown"、"jpeg"）、别名（"txt"、"md"、
 // "jpg"）或带点/不带点的文件扩展名（".png"、"svg"）。
-func Encode(format string, input any, output io.Writer, opts ...Option) error {
-	conv := newConverter(opts...)
+func Encode(ctx context.Context, format string, input any, output io.Writer, opts ...Option) error {
+	conv := newConverter(ctx, opts...)
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	f, err := lookupFormat(format)
 	if err != nil {
 		return err
@@ -316,12 +324,16 @@ func encodeWithConverterFormat(format string, input any, output io.Writer, conv 
 
 // EncodeDocuments 按 format 选择注册的编码器，直接写入已解析的文档。
 // 当 output 为 nil 时，逐页图像格式使用 Option 中通过 Writer 或 ImageWriter 提供的写入器。
-func EncodeDocuments(format string, documents []*render.Document, output io.Writer, opts ...Option) error {
+func EncodeDocuments(ctx context.Context, format string, documents []*render.Document, output io.Writer, opts ...Option) error {
+	conv := newConverter(ctx, opts...)
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	f, err := lookupFormat(format)
 	if err != nil {
 		return err
 	}
-	return f.encoder.Encode(documents, output, newConverter(opts...))
+	return f.encoder.Encode(documents, output, conv)
 }
 
 // encodeOFD 为处理 OFD 输入的编码器复用统一的解析流程：input 已是文档切片时直接使用，
@@ -332,6 +344,11 @@ func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*rend
 		defer closeOFD(ofd)
 	}
 	if err != nil {
+		return err
+	}
+	// 解析可能是整个转换里最重的一段（WAN 兆页文档解析要按百毫秒计），
+	// 解析完再查一次，别在已经无望的情况下开始渲染。
+	if err := conv.checkCancelled(); err != nil {
 		return err
 	}
 	if ofd != nil {
@@ -349,6 +366,9 @@ func documentsFromInput(input any, conv *Converter) ([]*render.Document, *parser
 }
 
 func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *parser.OFD, error) {
+	if err := conv.checkCancelled(); err != nil {
+		return nil, nil, err
+	}
 	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
 		PageCacheCapacity: conv.pageCacheCapacity,
 		PageCacheBytes:    conv.pageCacheBytes,
@@ -361,6 +381,9 @@ func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *pars
 	}
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
+		if err := conv.checkCancelled(); err != nil {
+			return nil, ofd, err
+		}
 		documents = append(documents, render.NewDocumentWithDPI(conv.bgColor, document, conv.dpi))
 	}
 	if len(collectDocumentPages(documents)) == 0 {

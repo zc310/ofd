@@ -2,6 +2,7 @@
 package converter
 
 import (
+	"context"
 	"image"
 	"image/color"
 	"io"
@@ -34,6 +35,13 @@ type Converter struct {
 	allowRemote       bool
 	noSandbox         bool
 	tempDir           string
+
+	// ctx 是本次转换的取消信号。
+	//
+	// 放在 Converter 里而不是给 Encoder/Importer/Transformer 的方法签名逐个加
+	// 参数：这三个接口的每个实现都已经拿到 conv，多加一个参数要改二十来处却什么
+	// 也多不出来。放进已有的配置载体后，任何持有 conv 的代码都能查取消。
+	ctx context.Context
 }
 
 // Option 配置选项类型
@@ -49,9 +57,13 @@ var defaultConverter = &Converter{
 	thumbnail:       0,
 }
 
-// newConverter 创建转换器
-func newConverter(options ...Option) *Converter {
+// newConverter 创建转换器。ctx 为 nil 时按 context.Background() 处理。
+func newConverter(ctx context.Context, options ...Option) *Converter {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	conv := &Converter{
+		ctx:               ctx,
 		dpi:               defaultConverter.dpi,
 		format:            defaultConverter.format,
 		htmlImageFormat:   defaultConverter.htmlImageFormat,
@@ -69,6 +81,23 @@ func newConverter(options ...Option) *Converter {
 		opt(conv)
 	}
 	return conv
+}
+
+// Context 返回本次转换的取消信号，永不为 nil。
+func (c *Converter) Context() context.Context {
+	if c == nil || c.ctx == nil {
+		return context.Background()
+	}
+	return c.ctx
+}
+
+// checkCancelled 返回取消错误，未取消时返回 nil。
+//
+// 约定：取消类错误原样返回 ctx.Err()，不包装。调用方要区分 context.Canceled
+// （服务关停，任务该重排）与 context.DeadlineExceeded（任务超时，该重试），
+// 一旦被包成"转换失败: context canceled" 这个区分就没了。
+func (c *Converter) checkCancelled() error {
+	return c.Context().Err()
 }
 
 // SofficePath 返回配置的 LibreOffice 可执行文件路径；为空表示自动查找。

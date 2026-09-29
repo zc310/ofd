@@ -2,6 +2,7 @@ package converter
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -42,13 +43,13 @@ func (e *htmlEncoder) htmlFromDocuments(documents []*render.Document, output io.
 
 // HTML 将 input 中的 OFD 文档转换为单个 HTML 文件。
 // 默认每页使用内嵌 PNG 图片，也可以通过 HTMLJPG 或 HTMLSVG 选择 JPG 或 SVG。
-func HTML(input any, output io.Writer, opts ...Option) error {
-	return Encode("html", input, output, opts...)
+func HTML(ctx context.Context, input any, output io.Writer, opts ...Option) error {
+	return Encode(ctx, "html", input, output, opts...)
 }
 
 // HTMLDocuments 将多个已解析的 OFD 文档体按全局页码写入单个 HTML 文件。
-func HTMLDocuments(documents []*render.Document, output io.Writer, opts ...Option) error {
-	return EncodeDocuments("html", documents, output, opts...)
+func HTMLDocuments(ctx context.Context, documents []*render.Document, output io.Writer, opts ...Option) error {
+	return EncodeDocuments(ctx, "html", documents, output, opts...)
 }
 
 func htmlDocuments(documents []*render.Document, title string, output io.Writer, conv *Converter) error {
@@ -70,6 +71,10 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 		return fmt.Errorf("写入 HTML 头部失败: %w", err)
 	}
 	err = walkDocumentPages(documents, start, end, func(pageInfo documentPage) error {
+		// 每页栅格化前查一次取消。
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		page, err := pageInfo.document.Page(pageInfo.document.Pages[pageInfo.pageIndex])
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", pageInfo.pageNumber, err)

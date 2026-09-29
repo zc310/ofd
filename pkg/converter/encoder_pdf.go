@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -38,13 +39,13 @@ func (e *pdfEncoder) encodeDocuments(documents []*render.Document, output io.Wri
 const maxPDFRenderWorkers = 4
 
 // PDF 解析 input 中的 OFD 文档并按全局页码写入一个 PDF。
-func PDF(input any, output io.Writer, opts ...Option) error {
-	return Encode("pdf", input, output, opts...)
+func PDF(ctx context.Context, input any, output io.Writer, opts ...Option) error {
+	return Encode(ctx, "pdf", input, output, opts...)
 }
 
 // PDFDocuments 将多个已解析的 OFD 文档体按全局页码写入同一个 PDF。
-func PDFDocuments(documents []*render.Document, output io.Writer, opts ...Option) error {
-	return EncodeDocuments("pdf", documents, output, opts...)
+func PDFDocuments(ctx context.Context, documents []*render.Document, output io.Writer, opts ...Option) error {
+	return EncodeDocuments(ctx, "pdf", documents, output, opts...)
 }
 
 func pdfDocumentsWithConverter(documents []*render.Document, output io.Writer, conv *Converter) error {
@@ -71,6 +72,9 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 		return err
 	}
 	for _, page := range pages {
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		surface, err := page.document.Page(page.document.Pages[page.pageIndex])
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
@@ -113,6 +117,13 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		go func() {
 			defer pool.Done()
 			for job := range jobs {
+				// 已取消时只把 finished 标记掉，不做渲染：否则取消后还要
+				// 继续跑完这一批的全部页面才停。
+				if err := conv.checkCancelled(); err != nil {
+					job.err = err
+					job.finished.Done()
+					continue
+				}
 				job.surface, job.err = job.page.document.Page(job.page.document.Pages[job.page.pageIndex])
 				job.finished.Done()
 			}
@@ -127,6 +138,11 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 	// 不会在上一批写入期间访问共享的字体状态。
 	batch := make([]documentPage, 0, workers)
 	flush := func() error {
+		// 每批派发前查一次。并行渲染是最贵的一段，而一批只做完几页，
+		// 不查的话取消要等到整批结束才生效。
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		jobsInBatch := make([]*pageJob, len(batch))
 		var finished sync.WaitGroup
 		finished.Add(len(batch))
@@ -169,6 +185,6 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 }
 
 // pdfDocumentsWithWorkers 是测试用的向后兼容包装。
-func pdfDocumentsWithWorkers(documents []*render.Document, output io.Writer, workers int) error {
-	return pdfDocumentsWithWorkersConv(documents, output, workers, newConverter())
+func pdfDocumentsWithWorkers(ctx context.Context, documents []*render.Document, output io.Writer, workers int) error {
+	return pdfDocumentsWithWorkersConv(documents, output, workers, newConverter(ctx))
 }

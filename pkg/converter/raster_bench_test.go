@@ -46,7 +46,7 @@ func runRasterBench(b *testing.B, backend string) {
 		var buf bytes.Buffer
 		b.StartTimer()
 		writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
-		if err := ImageDocument(doc, PNG(), writer, RasterBackend(backend), DPI(dpiBench), Page(1)); err != nil {
+		if err := ImageDocument(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpiBench), Page(1)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -75,7 +75,7 @@ func TestRasterBackendTimingSummary(t *testing.T) {
 				var buf bytes.Buffer
 				writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
 				start := time.Now()
-				if err := ImageDocument(doc, PNG(), writer, RasterBackend(backend), DPI(dpi), Page(1)); err != nil {
+				if err := ImageDocument(ctxTODO, doc, PNG(), writer, RasterBackend(backend), DPI(dpi), Page(1)); err != nil {
 					t.Fatalf("%s/%s: %v", name, backend, err)
 				}
 				elapsed += time.Since(start)

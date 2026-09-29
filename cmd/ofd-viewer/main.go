@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -56,7 +57,9 @@ const (
 var applicationVersion = "v" + defaultVersion
 
 // defaultVersion 是未注入时的兜底版本号，与 Makefile 的 VERSION 保持一致。
-const defaultVersion = "0.0.5"
+// 只在 go run / go build（不经 Makefile）时用到；TestVersionMatchesMakefile
+// 会在两者不一致时让测试失败。
+const defaultVersion = "0.1.2"
 
 const (
 	exportFormatPDF = ".pdf（Portable Document Format）"
@@ -1130,10 +1133,10 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		for _, doc := range exportDocs {
 			parsedDocs = append(parsedDocs, doc.Document)
 		}
-		return canvasConverter.TextDocuments(parsedDocs, output)
+		return canvasConverter.TextDocuments(context.Background(), parsedDocs, output)
 	}
 	if strings.EqualFold(format, "pdf") {
-		return canvasConverter.PDFDocuments(exportDocs, output)
+		return canvasConverter.PDFDocuments(context.Background(), exportDocs, output)
 	}
 	option := exportImageOption(format)
 	imageOptions := []canvasConverter.Option{
@@ -1141,7 +1144,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		option,
 	}
 	if pageCount == 1 {
-		return canvasConverter.ImageDocuments(exportDocs,
+		return canvasConverter.ImageDocuments(context.Background(), exportDocs,
 			append(imageOptions, canvasConverter.Writer(func(int) (io.WriteCloser, error) {
 				return &noCloseWriter{Writer: output}, nil
 			}))...,
@@ -1150,7 +1153,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 
 	archive := zip.NewWriter(output)
 	extension := strings.ToLower(format)
-	err := canvasConverter.ImageDocuments(exportDocs,
+	err := canvasConverter.ImageDocuments(context.Background(), exportDocs,
 		append(imageOptions,
 			canvasConverter.Writer(func(page int) (io.WriteCloser, error) {
 				entry, err := archive.Create(fmt.Sprintf("page-%04d.%s", page, extension))
