@@ -104,6 +104,14 @@ func TestFormatFromExtensionSupportsMarkdown(t *testing.T) {
 	}
 }
 
+func TestFormatFromExtensionSupportsTIFF(t *testing.T) {
+	for _, path := range []string{"output.tif", "output.tiff"} {
+		if got := formatFromExtension(path); got != "tiff" {
+			t.Fatalf("formatFromExtension(%q) = %q, want tiff", path, got)
+		}
+	}
+}
+
 func TestBatchOutputPathPreservesRelativePath(t *testing.T) {
 	inputRoot := filepath.FromSlash("/input")
 	outputRoot := filepath.FromSlash("/output")
@@ -114,6 +122,9 @@ func TestBatchOutputPathPreservesRelativePath(t *testing.T) {
 	}
 	if got, want := batchOutputPath(inputRoot, outputRoot, input, "png", true), filepath.FromSlash("/output/nested/document"); got != want {
 		t.Fatalf("image output = %q, want %q", got, want)
+	}
+	if got, want := batchOutputPath(inputRoot, outputRoot, input, "tiff", false), filepath.FromSlash("/output/nested/document.tiff"); got != want {
+		t.Fatalf("TIFF output = %q, want %q", got, want)
 	}
 }
 

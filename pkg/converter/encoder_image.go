@@ -89,7 +89,7 @@ type nopWriteCloser struct {
 
 func (nopWriteCloser) Close() error { return nil }
 
-// Image 渲染 OFD 文档。输出格式由 PNG、JPG、SVG、EPS、TeX 或 WithFormat 选项决定，
+// Image 渲染 OFD 文档。输出格式由 PNG、JPG、TIFF、SVG、EPS、TeX 或 WithFormat 选项决定，
 // 默认 PNG；输出目标由 Writer 或 ImageWriter 选项提供。
 func Image(ctx context.Context, input interface{}, opts ...Option) error {
 	conv := newConverter(ctx, opts...)

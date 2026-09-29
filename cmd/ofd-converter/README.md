@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式，也支持将 PDF、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -31,7 +31,7 @@ ofd-converter --help
 | `-o`, `-output`        | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                                                            |
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                  |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                  |
-| `-format`              | 输出格式: `ofd`, `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `svg`, `eps`, `tex`                                      |
+| `-format`              | 输出格式: `ofd`, `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                              |
 | `-from`                | 输入格式（可选）: `pdf`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                   |
@@ -49,7 +49,7 @@ ofd-converter --help
 | `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                    |
 | `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                              |
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                            |
-| `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                  |
+| `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                 |
 | `-recursive`           | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                                                            |
 | `-overwrite`           | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败                                                    |
 | `-skip-existing`       | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                                                          |
@@ -68,8 +68,8 @@ ofd-converter --help
 | `-soffice`                                                               | Office 文档 → PDF/OFD             | 仅影响 LibreOffice 调用                              |
 | `-office-timeout`                                                        | Office 文档、HTML/MHTML → PDF/OFD | 单次转换超时秒数，默认 120                           |
 | `-temp-dir`                                                              | Office/HTML/MHTML 输入            | 外部工具临时目录                                     |
-| `-page` | OFD → PDF/txt/md/图片 | 选择要转换的页面；对导入类输入不生效 |
-| `-md-tables` | OFD → Markdown | 识别无边框表格并输出 GFM 表格，默认关闭 |
+| `-page`                                                                  | OFD → PDF/txt/md/图片             | 选择要转换的页面；对导入类输入不生效                 |
+| `-md-tables`                                                             | OFD → Markdown                    | 识别无边框表格并输出 GFM 表格，默认关闭              |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
@@ -85,7 +85,7 @@ ofd-converter --help
 | `0`    | 转换成功                                                                   |
 | `1`    | 转换失败；批量模式下表示至少有一个文件失败，具体失败文件与原因写入标准错误 |
 | `2`    | 参数错误，例如缺少输入文件、未知选项、批量模式参数冲突或不支持的格式       |
-| `130`  | 用户按 Ctrl-C 主动停止。转换在页与页之间检查该信号，不会跑完当前文件     |
+| `130`  | 用户按 Ctrl-C 主动停止。转换在页与页之间检查该信号，不会跑完当前文件       |
 
 ### 中断
 
@@ -176,6 +176,7 @@ ofd-converter -format markdown -md-tables input.ofd output.md
 ```bash
 ofd-converter -format png input.ofd output.png
 ofd-converter -format jpg -bg white input.ofd output.jpg
+ofd-converter -format tiff -dpi 300 input.ofd output.tiff
 ofd-converter -format svg input.ofd output.svg
 ```
 
@@ -203,10 +204,11 @@ ofd-converter -format png -o pages/ input.ofd
 ofd-converter -format png -dir -o pages input.ofd
 ```
 
+TIFF 输出为单个 TIFF 文件；多页 OFD 会写成多页 TIFF，支持 `.tif` 和 `.tiff` 扩展名。TIFF 使用 Deflate 压缩；背景默认为白色，DPI 由 `-dpi` 控制。
+
 ### 批量转换
 
-批量模式递归查找输入目录下扩展名为 `.ofd` 的普通文件，以及所有已注册导入器的输入文件（PDF、Markdown、Office 文档等），扩展名大小写不敏感。文本、Markdown、HTML、PDF、OFD
-每个输入生成一个文件，并保留输入目录的相对路径；图片格式每个输入使用独立目录保存页面图片：
+批量模式递归查找输入目录下扩展名为 `.ofd` 的普通文件，以及所有已注册导入器的输入文件（PDF、Markdown、Office 文档等），扩展名大小写不敏感。文本、Markdown、HTML、PDF、OFD 和 TIFF 每个输入生成一个文件，并保留输入目录的相对路径；PNG/JPEG/SVG 等逐页图像格式每个输入使用独立目录保存页面图像：
 
 ```bash
 # 默认使用 4 个并发任务，递归转换为 PDF
@@ -237,6 +239,7 @@ ofd-converter input.ofd - > output.pdf
 ofd-converter -format txt input.ofd - > output.txt
 ofd-converter -format md input.ofd - > output.md
 ofd-converter -format png -page 1 input.ofd - > page1.png
+ofd-converter -format tiff input.ofd - > pages.tiff
 ```
 
-多页图片输出时文件名格式为 `page-0001.png` 等。
+多页 PNG/JPEG 等图像输出时文件名格式为 `page-0001.png` 等；TIFF 输出为单个多页文件。

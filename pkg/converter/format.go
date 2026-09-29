@@ -24,7 +24,7 @@ type Kind int
 const (
 	// KindDocument 输出单个文档，例如 PDF、HTML、文本和 Markdown。
 	KindDocument Kind = iota
-	// KindImage 逐页输出图像或矢量，例如 PNG、JPEG、SVG、EPS 和 TeX。
+	// KindImage 输出图像或矢量，例如 PNG、JPEG、TIFF、SVG、EPS 和 TeX。
 	KindImage
 )
 
