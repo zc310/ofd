@@ -15,6 +15,8 @@ import (
 type Converter struct {
 	dpi               geom.Resolution
 	format            string // png, jpeg, svg, eps, tex
+	imageOCREnabled   bool
+	imageOCRLanguage  string
 	rasterBackend     string // 非空时 PNG/JPG 走该栅格后端（BackendGG 等）
 	htmlImageFormat   string // png, svg
 	bgColor           color.Color
@@ -66,6 +68,7 @@ func newConverter(ctx context.Context, options ...Option) *Converter {
 		ctx:               ctx,
 		dpi:               defaultConverter.dpi,
 		format:            defaultConverter.format,
+		imageOCRLanguage:  "chi_sim+eng",
 		htmlImageFormat:   defaultConverter.htmlImageFormat,
 		bgColor:           defaultConverter.bgColor,
 		page:              defaultConverter.page,
@@ -81,6 +84,19 @@ func newConverter(ctx context.Context, options ...Option) *Converter {
 		opt(conv)
 	}
 	return conv
+}
+
+// ImageOCREnabled 返回图片导入时是否启用 OCR。
+func (c *Converter) ImageOCREnabled() bool {
+	return c != nil && c.imageOCREnabled
+}
+
+// ImageOCRLanguage 返回图片导入使用的 OCR 语言。
+func (c *Converter) ImageOCRLanguage() string {
+	if c == nil || c.imageOCRLanguage == "" {
+		return "chi_sim+eng"
+	}
+	return c.imageOCRLanguage
 }
 
 // Context 返回本次转换的取消信号，永不为 nil。

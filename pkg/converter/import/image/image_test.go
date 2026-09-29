@@ -55,6 +55,40 @@ func TestConvertPNGToOFDAddsTextLayer(t *testing.T) {
 	}
 }
 
+func TestConvertPNGWithOCROffOmitsTextLayer(t *testing.T) {
+	data := testPNG(t, color.RGBA{R: 255, A: 255})
+	var output bytes.Buffer
+	if err := image.Convert(context.Background(), data, &output, image.WithOCREngine(fakeEngine{}), image.WithOCR(false)); err != nil {
+		t.Fatal(err)
+	}
+	of, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer of.Close()
+	items := of.Documents[0].Pages[0].Content().Layer[0].Items
+	if len(items) != 1 {
+		t.Fatalf("item count = %d, want only image", len(items))
+	}
+}
+
+func TestConverterImportDefaultsOCRToOff(t *testing.T) {
+	data := testPNG(t, color.RGBA{R: 255, A: 255})
+	var output bytes.Buffer
+	if err := converter.Convert(context.Background(), "png", "ofd", data, &output); err != nil {
+		t.Fatal(err)
+	}
+	of, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer of.Close()
+	items := of.Documents[0].Pages[0].Content().Layer[0].Items
+	if len(items) != 1 {
+		t.Fatalf("default converter import item count = %d, want image only", len(items))
+	}
+}
+
 func TestConvertMultiPageTIFFToOFD(t *testing.T) {
 	images := []stdimage.Image{
 		stdimage.NewRGBA(stdimage.Rect(0, 0, 40, 30)),

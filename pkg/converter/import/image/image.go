@@ -32,6 +32,7 @@ const (
 // Options 控制图片导入和 OCR。
 type Options struct {
 	Engine         ocr.Engine
+	OCRLanguage    string
 	DPI            float64
 	TextMode       TextMode
 	MinConfidence  float64
@@ -47,6 +48,29 @@ type Option func(*Options)
 func WithOCREngine(engine ocr.Engine) Option { return func(o *Options) { o.Engine = engine } }
 func WithDPI(dpi float64) Option             { return func(o *Options) { o.DPI = dpi } }
 func WithTextMode(mode TextMode) Option      { return func(o *Options) { o.TextMode = mode } }
+func WithOCR(enabled bool) Option {
+	return func(o *Options) {
+		if enabled {
+			if o.Engine == nil {
+				o.Engine = ocr.NewTesseract("", o.OCRLanguage)
+			}
+			if o.TextMode == TextOff {
+				o.TextMode = TextInvisible
+			}
+			return
+		}
+		o.Engine = nil
+		o.TextMode = TextOff
+	}
+}
+func WithOCRLanguage(language string) Option {
+	return func(o *Options) {
+		o.OCRLanguage = language
+		if engine, ok := o.Engine.(*ocr.Tesseract); ok {
+			engine.Language = language
+		}
+	}
+}
 func WithMinConfidence(value float64) Option { return func(o *Options) { o.MinConfidence = value } }
 func WithMaxPages(value int) Option          { return func(o *Options) { o.MaxPages = value } }
 func WithMaxPagePixels(value int64) Option   { return func(o *Options) { o.MaxPagePixels = value } }
@@ -56,6 +80,7 @@ func WithMaxInputBytes(value int64) Option   { return func(o *Options) { o.MaxIn
 func defaultOptions() Options {
 	return Options{
 		Engine:         ocr.NewTesseract("", ""),
+		OCRLanguage:    "chi_sim+eng",
 		DPI:            300,
 		TextMode:       TextInvisible,
 		MaxPages:       1000,
@@ -136,7 +161,10 @@ func (i *Importer) MIME() string {
 }
 
 func (i *Importer) Import(input any, output io.Writer, conv *converter.Converter) error {
-	return Convert(conv.Context(), input, output)
+	return Convert(conv.Context(), input, output,
+		WithOCR(conv.ImageOCREnabled()),
+		WithOCRLanguage(conv.ImageOCRLanguage()),
+	)
 }
 
 func init() {

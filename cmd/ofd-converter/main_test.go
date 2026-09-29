@@ -37,6 +37,21 @@ func TestParseArgsSupportsBatchMode(t *testing.T) {
 	}
 }
 
+func TestParseArgsSupportsImageOCR(t *testing.T) {
+	opts, err := parseArgs([]string{"--ocr", "--ocr-language", "chi_sim+eng", "scan.png", "scan.ofd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.ocr || opts.ocrLanguage != "chi_sim+eng" {
+		t.Fatalf("OCR options = enabled:%v language:%q", opts.ocr, opts.ocrLanguage)
+	}
+	if options, err := parseArgs([]string{"scan.png", "scan.ofd"}); err != nil {
+		t.Fatal(err)
+	} else if options.ocr || options.ocrLanguage != "chi_sim+eng" {
+		t.Fatalf("default OCR options = enabled:%v language:%q", options.ocr, options.ocrLanguage)
+	}
+}
+
 func TestParseArgsRejectsMixedBatchAndSingleFileArguments(t *testing.T) {
 	for _, args := range [][]string{
 		{"--input-dir", "input", "input.ofd"},
