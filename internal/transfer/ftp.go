@@ -41,7 +41,7 @@ type FTPSink struct {
 	// BaseDir 是允许写入的远端根目录。留空表示远端用户登录后的家目录。
 	BaseDir string
 	// TLSConfig 非 nil 时使用隐式 FTPS（连上直接握手）。默认使用显式 FTPS
-	// （先读 220，再用 AUTH TLS 升级），这是更常见的部署形态。
+	// （先读 220，再用 AUTH TLS 升级），这是更常见地部署形态。
 	TLSConfig *tls.Config
 	// Implicit 为真时使用隐式 FTPS；为假时使用显式 FTPS。
 	Implicit bool
@@ -60,9 +60,25 @@ type FTPSink struct {
 	// logger 只记结构化字段，绝不记凭据。
 	logger *slog.Logger
 
-	mu      sync.Mutex
-	conn    *ftp.ServerConn
-	control net.Conn // 底层 TCP 连接，用于设置 deadline
+	// pool 是连接池，由注册目标持有、派生的子目录实例共享。
+	//
+	// 共享而不是各自持有，是因为登录一次（TLS 握手 + 认证往返）在远端可能
+	// 几百毫秒；逐页输出几百个文件时，逐任务重连的代价不可接受。
+	pool   *connPool[*ftpConn]
+	poolMu sync.Mutex
+	// OwnsPool 区分注册目标与 WithBaseDir 派生的实例。只有前者关池。
+	//
+	// 外部（cmd/ofd-server）从配置构造注册目标时置 true；派生实例不带它。
+	OwnsPool bool
+	// dirs 记住已建过的远端目录，避免逐页输出时每个文件都重跑一遍建目录。
+	// WithBaseDir 逐字段构造新实例，所以派生实例天然是空记忆。
+	dirs madeDirs
+
+	// MaxIdle 与 IdleTTL 覆盖池的默认参数，0 表示用默认值。
+	//
+	// 这个结构体不参与序列化（配置类型在 cmd/ofd-server），所以不带 json 标签。
+	MaxIdle int
+	IdleTTL time.Duration
 }
 
 // DefaultFTPTimeout 是 FTP 连接与操作的默认超时。
@@ -96,6 +112,10 @@ func (s *FTPSink) WithBaseDir(sub string) (*FTPSink, error) {
 	default:
 		merged = path.Join(base, sub)
 	}
+	// 必须先让父对象的池建好再复制指针：父的池是惰性初始化的，若此刻还是
+	// nil，派生实例会拿到 nil 并各自建一个自己的池——共享就消失了，而
+	// "每个任务一条新连接"正是连接池要解决的问题。
+	s.ensurePool()
 	// 逐字段构造，不能 *clone = *s：FTPSink 内含 sync.Mutex，整体赋值会拷贝锁
 	// （go vet 会直接报 assignment copies lock value）。连接也不共享——
 	// 一个任务 Close 掉另一个任务正在用的连接比多握手一次糟糕得多。
@@ -112,6 +132,10 @@ func (s *FTPSink) WithBaseDir(sub string) (*FTPSink, error) {
 		Overwrite:   s.Overwrite,
 		DisableEPSV: s.DisableEPSV,
 		logger:      s.logger,
+		pool:        s.pool,
+		MaxIdle:     s.MaxIdle,
+		IdleTTL:     s.IdleTTL,
+		// ownsPool 保持 false：派生实例不负责关闭共享池。
 	}, nil
 }
 
@@ -170,21 +194,16 @@ func (s *FTPSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 	if err != nil {
 		return Location{}, err
 	}
-	// 连接是复用的，上一轮设的 deadline 早已过期，每个操作前都要刷新。
-	s.refreshDeadline()
-	// 任何失败都要断开：连接可能已经处于半坏状态，复用只会把问题放大。
+	// 任何失败都丢弃连接：它可能已处于半坏状态，放回池里只会让下一个任务在
+	// 写到一半时才暴露问题。
 	committed := false
-	defer func() {
-		if !committed {
-			s.drop()
-		}
-	}()
+	defer func() { s.release(conn, committed) }()
 
-	if err := s.ensureDirs(conn, path.Dir(remote)); err != nil {
+	if err := s.ensureDirs(conn.server, path.Dir(remote)); err != nil {
 		return Location{}, err
 	}
 	if !s.Overwrite {
-		if exists, err := s.exists(conn, remote); err != nil {
+		if exists, err := s.exists(conn.server, remote); err != nil {
 			return Location{}, err
 		} else if exists {
 			return Location{}, fmt.Errorf("%w: FTP 上目标文件已存在且不允许覆盖: %s", ErrExists, remote)
@@ -193,8 +212,12 @@ func (s *FTPSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 
 	// Stor 不接受 context：上传过程中无法中断。ctx 至少管住前面的连接与目录
 	// 创建，超时由 FTP 服务器自己的会话时限兜底。
-	stored, err := s.store(conn, remote, r)
+	stored, err := s.store(conn.server, remote, r)
 	if err != nil {
+		// 上传失败可能是"目录在我们建完之后又被删了"，此时目录记忆已经不可信。
+		// 清掉它，下次会重新走一遍建目录流程——这比让同一个任务里后续所有
+		// 文件都撞同一个错要好。
+		s.dirs.forgetAll()
 		return Location{}, err
 	}
 	committed = true
@@ -260,13 +283,21 @@ func (s *FTPSink) ensureDirs(conn *ftp.ServerConn, dir string) error {
 			return errors.New("FTP 输出目录不能包含 ..")
 		}
 		current = current + "/" + part
+		// 逐级记忆而不是记整条路径：多页输出常是 4 级目录、200 个文件，
+		// 每次都跑一遍就是 800 次 MakeDir（已存在时还要再列一次目录区分 550），
+		// 全是浪费的往返。
+		if s.dirs.has(current) {
+			continue
+		}
 		if err := conn.MakeDir(current); err != nil {
 			// 550 通常是"已存在"，换一种说法询问一次以区分。
 			if exists, queryErr := s.dirExists(conn, current); queryErr == nil && exists {
+				s.dirs.add(current)
 				continue
 			}
 			return fmt.Errorf("创建 FTP 目录 %s 失败: %w", current, err)
 		}
+		s.dirs.add(current)
 	}
 	return nil
 }
@@ -298,12 +329,39 @@ func (s *FTPSink) exists(conn *ftp.ServerConn, remote string) (bool, error) {
 }
 
 // acquire 复用已建立的连接，必要时新建。
-func (s *FTPSink) acquire(ctx context.Context) (*ftp.ServerConn, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.conn != nil {
-		return s.conn, nil
+// acquire 从池里取一条可用连接。
+func (s *FTPSink) acquire(ctx context.Context) (*ftpConn, error) {
+	pool := s.ensurePool()
+	conn, err := pool.get(ctx)
+	if err != nil {
+		return nil, err
 	}
+	s.refreshDeadline(conn)
+	return conn, nil
+}
+
+// ensurePool 惰性建池。
+func (s *FTPSink) ensurePool() *connPool[*ftpConn] {
+	if s.pool != nil {
+		return s.pool
+	}
+	s.poolMu.Lock()
+	defer s.poolMu.Unlock()
+	if s.pool == nil {
+		s.pool = &connPool[*ftpConn]{
+			dial:    s.dial,
+			alive:   ftpAlive,
+			release: ftpConnClose,
+			maxIdle: s.MaxIdle,
+			idleTTL: s.IdleTTL,
+		}
+		s.pool.startSweeper()
+	}
+	return s.pool
+}
+
+// dial 建立一条新连接：自己拨号而不是 ftp.Dial，原因见 dialer 那段注释。
+func (s *FTPSink) dial(ctx context.Context) (*ftpConn, error) {
 	timeout := s.Timeout
 	if timeout <= 0 {
 		timeout = DefaultFTPTimeout
@@ -359,45 +417,68 @@ func (s *FTPSink) acquire(ctx context.Context) (*ftp.ServerConn, error) {
 		// 凭据本身可能出现在某些服务器的响应里，错误信息要过一遍。
 		return nil, fmt.Errorf("FTP 登录失败（用户 %q）: %s", s.User, redact(err.Error(), s.Password))
 	}
-	s.conn = conn
-	s.control = control
 	s.log().Info("已连接 FTP 服务器", "addr", s.Addr, "user", s.User, "tls", s.TLSConfig != nil)
-	return conn, nil
+	return &ftpConn{server: conn, control: control}, nil
+}
+
+// ftpConn 是一条 FTP 连接及其底层 TCP 连接。
+//
+// 两者必须成对：ServerConn 不导出底层连接，设不了 deadline。
+type ftpConn struct {
+	server  *ftp.ServerConn
+	control net.Conn
+}
+
+// ftpAlive 探活。NOOP 只走控制连接，一次往返。
+//
+// 池里的连接空闲久了会被服务端单方面关闭，而这个检查必须发生在上传**之前**：
+// 一旦开始写数据才发现连接已死，调用方给的 io.Reader 已经被读掉一截，没法重放
+// ——那会变成静默的数据损坏，而不是一个干净的错误。
+func ftpAlive(c *ftpConn) error {
+	return c.server.NoOp()
+}
+
+// ftpConnClose 硬关连接。
+//
+// 不发 QUIT：QUIT 要等服务端的 221 回应，而可能被……丢弃早已不可达，
+// 那一等就是整个清扫 goroutine 卡住。直接关控制连接即可——连接本来就要丢，
+// 没有谁需要一次礼貌的道别。
+func ftpConnClose(c *ftpConn) {
+	if c == nil {
+		return
+	}
+	if c.control != nil {
+		_ = c.control.Close()
+	}
 }
 
 // refreshDeadline 把控制连接的读写 deadline 推到未来。
 //
 // 必须在每个操作前调用：连接是复用的，上一轮设的 deadline 早就过了。
-func (s *FTPSink) refreshDeadline() {
-	if s.control == nil {
+func (s *FTPSink) refreshDeadline(c *ftpConn) {
+	if c == nil || c.control == nil {
 		return
 	}
 	timeout := s.Timeout
 	if timeout <= 0 {
 		timeout = DefaultFTPTimeout
 	}
-	_ = s.control.SetDeadline(time.Now().Add(timeout))
+	_ = c.control.SetDeadline(time.Now().Add(timeout))
 }
 
-// drop 断开并清空连接。
-func (s *FTPSink) drop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.dropLocked()
-}
-
-func (s *FTPSink) dropLocked() {
-	if s.conn == nil {
+// release 归还或丢弃连接。
+//
+// 失败时 discard 而不是 put：连接可能已经半坏，放回池里会让下一个任务在
+// 写到一半时才暴露问题。
+func (s *FTPSink) release(c *ftpConn, reusable bool) {
+	if c == nil {
 		return
 	}
-	if err := s.conn.Quit(); err != nil {
-		s.log().Debug("FTP 退出时报错", "err", err)
+	if reusable {
+		s.ensurePool().put(c)
+		return
 	}
-	s.conn = nil
-	if s.control != nil {
-		_ = s.control.Close()
-		s.control = nil
-	}
+	s.ensurePool().discard(c)
 }
 
 // Close 关闭连接。
@@ -405,9 +486,14 @@ func (s *FTPSink) dropLocked() {
 // Sink 接口没有 Close，调用方用可选的 io.Closer 断言来收尾；不实现也可以，
 // 只是每次 PUT 都要重新握手。
 func (s *FTPSink) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.dropLocked()
+	// 派生实例不关池：连接是共享的，一个任务收尾时把池关掉，会连带掐掉
+	// 正在上传的其它任务。只有注册目标（ownsPool）才有这个权力。
+	if !s.OwnsPool {
+		return nil
+	}
+	if s.pool != nil {
+		s.pool.close()
+	}
 	return nil
 }
 

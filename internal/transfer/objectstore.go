@@ -262,6 +262,8 @@ type WebDAVSink struct {
 	Password string
 	// BaseDir 是允许写入的远端目录（相对 endpoint 根）。
 	BaseDir string
+	// dirs 记住已建过的远端目录，避免逐页输出时每个文件都重跑一遍 MkdirAll。
+	dirs madeDirs
 	// Timeout 是单次请求超时，0 时取 DefaultWebDAVTimeout。
 	Timeout time.Duration
 	// MaxBytes 单文件上限，0 时用 DefaultMaxBytes。
@@ -353,11 +355,16 @@ func (s *WebDAVSink) Put(ctx context.Context, name string, r io.Reader) (Locatio
 	if base != "" {
 		remote = base + "/" + trimmed
 	}
-	// WebDAV 的 MKCOL 建目录是幂等的语义由实现决定，逐级建一次最省事。
-	if base != "" {
+	// 目录记忆：逐页输出常是同一个目录几百个文件，而 MkdirAll 每个文件都要
+	// 跑一遍（逐级 MKCOL），全是浪费的往返。
+	//
+	// WebDAV 的 MKCOL 建目录是否幂等由实现决定，所以首次仍然逐级试建，
+	// 只是不重复建。
+	if base != "" && !s.dirs.has(base) {
 		if err := client.MkdirAll(base, 0o750); err != nil {
 			return Location{}, fmt.Errorf("创建 WebDAV 目录 %s 失败: %w", base, redactError(err, s.Password))
 		}
+		s.dirs.add(base)
 	}
 	if !s.Overwrite {
 		if _, statErr := client.Stat(remote); statErr == nil {
@@ -378,6 +385,8 @@ func (s *WebDAVSink) Put(ctx context.Context, name string, r io.Reader) (Locatio
 		if counter.exceeded {
 			return Location{}, fmt.Errorf("内容超过上限 %d 字节", limit)
 		}
+		// 失败可能是"目录在我们建完之后又被删了"，目录记忆已不可信，清掉它。
+		s.dirs.forgetAll()
 		return Location{}, fmt.Errorf("写入 WebDAV 失败: %w", redactError(err, s.Password))
 	}
 	return Location{Kind: "webdav", Path: remote, Size: counter.n,
