@@ -521,28 +521,19 @@ pages:
                       r: 255
                       g: 255
                       b: 255
-                  - edge_flag: 1
+                  - edge_flag: 0
                     color:
                       r: 255
                   - x: 150
-                    edge_flag: 2
+                    edge_flag: 0
                     color:
                       r: 255
-                      g: 255
-                  - x: 150
-                    edge_flag: 1
-                    color:
                       g: 255
                   - x: 150
                     "y": 72
                     edge_flag: 2
                     color:
                       g: 255
-                      b: 255
-                  - x: 150
-                    "y": 72
-                    edge_flag: 1
-                    color:
                       b: 255
                   - "y": 72
                     edge_flag: 2
