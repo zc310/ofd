@@ -292,6 +292,98 @@ func TestContentRejectsPathOutsideOutputDir(t *testing.T) {
 	}
 }
 
+// TestContentRejectsSymlinkOutputDir 物理路径越过 output_dir 时不能仅靠词法路径检查放行。
+func TestContentRejectsSymlinkOutputDir(t *testing.T) {
+	s, store, cfg := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.pdf"), []byte("SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(cfg.OutputDir, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("当前平台不支持符号链接: %v", err)
+	}
+	job := &jobstore.Job{ID: "symlink-dir", To: "pdf", CreatedAt: time.Now().UTC()}
+	if err := store.Enqueue(job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(jobstore.LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish(job.ID, jobstore.StateSucceeded, jobstore.Output{
+		Kind: convertersvc.OutputDir, Path: link, Files: []string{"secret.pdf"},
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	got := do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content?name=secret.pdf", "")
+	if got.status == fasthttp.StatusOK || strings.Contains(got.body, "SECRET") {
+		t.Fatalf("不应通过输出目录符号链接读取外部文件，状态=%d，响应=%q", got.status, got.body)
+	}
+}
+
+// TestContentRejectsSymlinkFile 产物文件本身是符号链接时也不能被跟随读取。
+func TestContentRejectsSymlinkFile(t *testing.T) {
+	s, store, cfg := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	dir := filepath.Join(cfg.OutputDir, "symlink-file")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.pdf")
+	if err := os.WriteFile(secret, []byte("SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(dir, "result.pdf")); err != nil {
+		t.Skipf("当前平台不支持符号链接: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "safe.pdf"), []byte("SAFE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	job := &jobstore.Job{ID: "symlink-file", To: "pdf", CreatedAt: time.Now().UTC()}
+	if err := store.Enqueue(job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(jobstore.LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish(job.ID, jobstore.StateSucceeded, jobstore.Output{
+		Kind: convertersvc.OutputDir, Path: dir, Files: []string{"result.pdf", "safe.pdf"},
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	got := do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content?name=result.pdf", "")
+	if got.status == fasthttp.StatusOK || strings.Contains(got.body, "SECRET") {
+		t.Fatalf("不应跟随产物文件符号链接读取外部文件，状态=%d，响应=%q", got.status, got.body)
+	}
+
+	got = do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content", "")
+	if got.status != fasthttp.StatusOK {
+		t.Fatalf("安全产物仍应可以打包下载，状态=%d，响应=%q", got.status, got.body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader([]byte(got.body)), int64(len(got.body)))
+	if err != nil {
+		t.Fatalf("下载结果不是有效 ZIP：%v", err)
+	}
+	for _, file := range zr.File {
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if file.Name == "result.pdf" || strings.Contains(string(data), "SECRET") {
+			t.Fatalf("归档不应包含符号链接产物，条目=%q，内容=%q", file.Name, data)
+		}
+	}
+}
+
 // TestContentMissingFileOnDisk 记录里有、磁盘上没有了（被外部清理）。
 func TestContentMissingFileOnDisk(t *testing.T) {
 	s, store, cfg := newTestServer(t)
@@ -353,26 +445,22 @@ func TestRecordedFilesFiltering(t *testing.T) {
 	}
 }
 
-// TestEnsureInside 目录包含性检查。
-func TestEnsureInside(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "out")
+// TestRecordedFileNameFiltering 清单条目必须是单一文件名。
+func TestRecordedFileNameFiltering(t *testing.T) {
 	cases := []struct {
-		path  string
+		name  string
 		valid bool
 	}{
-		{filepath.Join(dir, "a.pdf"), true},
-		{filepath.Join(dir, "sub", "a.pdf"), true},
-		{filepath.Join(dir, "..", "etc", "passwd"), false},
-		{dir, true},
-		{"/etc/passwd", false},
+		{"result.pdf", true},
+		{"../secret", false},
+		{`sub\secret`, false},
+		{".", false},
+		{"..", false},
+		{"", false},
 	}
 	for _, tc := range cases {
-		err := ensureInside(dir, tc.path)
-		if tc.valid && err != nil {
-			t.Errorf("ensureInside(%q) 应通过: %v", tc.path, err)
-		}
-		if !tc.valid && err == nil {
-			t.Errorf("ensureInside(%q) 应被拒", tc.path)
+		if got := isRecordedFileName(tc.name); got != tc.valid {
+			t.Errorf("isRecordedFileName(%q) = %v，期望 %v", tc.name, got, tc.valid)
 		}
 	}
 }
