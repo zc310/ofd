@@ -13,6 +13,26 @@
 
 ### 破坏性变更
 
+- `pkg/converter/pdfimport` 的 `Convert` 与 `ConvertFile` 新增首个参数
+  `context.Context`。
+
+  ```go
+  // 之前
+  pdfimport.Convert(input, output)
+  pdfimport.ConvertFile(pdfPath, ofdPath)
+  // 现在
+  pdfimport.Convert(ctx, input, output)
+  pdfimport.ConvertFile(ctx, pdfPath, ofdPath)
+  ```
+
+  调用方传 `context.Background()` 即可保持原行为。
+
+  起因是 pdfcpu 0.16 给 `api.ReadContext`、`api.ValidateContext`、`PageDict`
+  等函数都加了 `context.Context` 首参。PDF→OFD 的读取与校验两步在损坏或超大
+  文件上本身就耗时很久，能在那里被取消比事后检查 `ctx.Err()` 有用。PDF 导入器
+  从注册表收到 `*converter.Converter`，直接传 `conv.Context()`，与包内其余入口
+  的取消语义一致。
+
 - `pkg/converter` 的转换入口新增首个参数 `context.Context`。
 
   ```go

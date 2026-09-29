@@ -238,10 +238,8 @@ func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
 	// 未知字段报错，与配置文件同一套。请求体被静默忽略未知字段时代价特别大：
 	// 写错 file_name 会安静地退回默认产物名 output.pdf，调用方拿到的是
 	// "转换成功但名字不对"，排查起来比直接报错费时间得多。
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "请求体不是合法 JSON: "+err.Error())
+	if err := decodeStrictJSON(body, &request); err != nil {
+		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "解析请求体失败: "+err.Error())
 		return
 	}
 	// stream 走同步：产物只在内存里，异步提交的结果没有任何人能取到。

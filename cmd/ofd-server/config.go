@@ -320,11 +320,10 @@ func LoadConfig(path string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("读取配置失败: %w", err)
 		}
-		decoder := json.NewDecoder(strings.NewReader(string(data)))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(cfg); err != nil {
-			// 未知字段直接报错：配置里的拼写错误如果被静默忽略，表现出来是
-			// "服务起来了但用了默认值"，排查起来非常费时间。
+		// 未知字段直接报错：配置里的拼写错误如果被静默忽略，表现出来是
+		// "服务起来了但用了默认值"，排查起来非常费时间。尾随内容同样拒绝，
+		// 理由见 decodeStrictJSON。
+		if err := decodeStrictJSON(data, cfg); err != nil {
 			return nil, fmt.Errorf("解析配置失败: %w", err)
 		}
 	}
