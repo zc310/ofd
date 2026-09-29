@@ -20,6 +20,7 @@
   "notify_workers": 4,
   "job_timeout": "300s",
   "max_job_attempts": 3,
+  "job_retry_backoff": "5s",
   "retention": "168h",
   "soffice_path": "",
   "chrome_path": "",

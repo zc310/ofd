@@ -175,6 +175,12 @@ type Output struct {
 	Key    string `json:"key,omitempty"`
 	URL    string `json:"url,omitempty"`
 	Size   int64  `json:"size"`
+	// Files 是产物的文件名清单，逐页输出会有多项。
+	//
+	// 单有这个字段是不够的：调用方能指定 output.filename，但产物名由格式扩展名
+	// 决定，逐页输出还会带页号（thumb-0001.png）。只报目录等于让调用方还得去
+	// 猜文件名或者列目录——那正是"不然用户如何知道"要解决的问题。
+	Files []string `json:"files,omitempty"`
 }
 
 // Store 是任务存储。
@@ -453,6 +459,14 @@ func (s *Store) Finish(id string, state State, output Output, failure string) er
 
 // accumulate 把一个终态任务的用量累加进计数。
 func accumulate(tx *bolt.Tx, job *Job, state State) error {
+	// 首次记账时记下时间，作为"这些数字从什么时候开始"的起点。
+	// 少了它，调用方看到 1234 次转换却不知道该按什么时间跨度算速率。
+	stats := tx.Bucket(bucketStats)
+	if stats.Get(statsSinceKey) == nil {
+		if err := stats.Put(statsSinceKey, nowBytes()); err != nil {
+			return err
+		}
+	}
 	for _, key := range statsKeys(job, state) {
 		var delta uint64
 		switch key[0] {
@@ -476,6 +490,32 @@ func accumulate(tx *bolt.Tx, job *Job, state State) error {
 		}
 	}
 	return nil
+}
+
+// RecordDirect 直接写入一条任务记录，不进任何队列。
+//
+// 供同步转换使用：这类转换由 HTTP 请求自己执行，没有 worker 参与，所以不能
+// 经 Enqueue——那会把任务丢进通道队列，runner 就会把它领走再转换一遍，
+// 等于同一个任务跑两次。
+//
+// 状态直接置为 running 而不是 queued：任务确实在执行中，而且这样它会出现在
+// 队列深度的 running 计数里，运维能看到"有一个同步转换在跑"。
+func (s *Store) RecordDirect(job *Job) error {
+	if job == nil || job.ID == "" {
+		return fmt.Errorf("任务必须有 ID")
+	}
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = time.Now().UTC()
+	}
+	job.State = StateRunning
+	job.StartedAt = time.Now().UTC()
+	return s.db.Update(func(tx *bolt.Tx) error {
+		raw, err := json.Marshal(job)
+		if err != nil {
+			return err
+		}
+		return putJob(tx, job, raw)
+	})
 }
 
 // RecordUsage 回写任务的实际输入格式与输入字节数。
@@ -664,10 +704,20 @@ const (
 	statSeparator = "\x00"
 )
 
+// statsSinceKey 是第一次记账的时间，格式与任务记录里的时间一致（UTC RFC3339）。
+//
+// 放在 const 块外：[]byte("since") 不是编译期常量。
+var statsSinceKey = []byte("since")
+
+// nowBytes 返回当前时间的 RFC3339 字节表示。
+func nowBytes() []byte {
+	return []byte(time.Now().UTC().Format(time.RFC3339))
+}
+
 // statsKeys 返回该任务涉及的计数键。
 //
 // from 取 FromActual 而非 From：From 是调用方声明的值，而输入格式由服务端
-// 解析、不采信调用方文件名（见 Job.From 的说明）。失败的��务没有
+// 解析、不采信调用方文件名（见 Job.From 的说明）。失败的任务没有
 // FromActual，统一归到 unknown——不能用声明值补，那样会把"没判出来"和
 // "判成这个格式"混成一类。
 func statsKeys(job *Job, state State) (keys [][]byte) {
@@ -720,6 +770,11 @@ func addStats(tx *bolt.Tx, key []byte, delta uint64) error {
 
 // StatsSnapshot 是某一时刻的全部计数。
 type StatsSnapshot struct {
+	// Since 是第一次记账的时间。没有转换发生过时为零值。
+	//
+	// 没有它，调用方只看到一个总数却不知道该按什么时间跨度算速率——
+	// "1234 次转换"在一周和一年里是完全不同的两件事。
+	Since time.Time `json:"since"`
 	// Jobs 按 输入格式 -> 输出格式 -> 状态 索引的转换次数。
 	Jobs map[StatsTriple]uint64
 	// InputBytes 按输入格式索引的输入字节总量。
@@ -779,13 +834,23 @@ func (s *Store) Snapshot() (StatsSnapshot, error) {
 		OutputBytes: make(map[StatsPair]uint64),
 	}
 	err := s.db.View(func(tx *bolt.Tx) error {
-		return tx.Bucket(bucketStats).ForEach(func(key, value []byte) error {
+		stats := tx.Bucket(bucketStats)
+		if raw := stats.Get(statsSinceKey); len(raw) > 0 {
+			if since, err := time.Parse(time.RFC3339, string(raw)); err == nil {
+				snap.Since = since
+			}
+		}
+		return stats.ForEach(func(key, value []byte) error {
 			if len(key) == 0 || len(value) != 8 {
 				// 不是本包写的键，跳过而不是报错：同一个库可能被别的工具
 				// 打开过，静默跳过比整个 /metrics 挂掉好。
 				return nil
 			}
 			count := binary.BigEndian.Uint64(value)
+			if key[0] == 's' && string(key) == string(statsSinceKey) {
+				// since 不是指标，已在上面单独处理。
+				return nil
+			}
 			labels := strings.Split(string(key[1:]), statSeparator)
 			switch key[0] {
 			case statKeyJobs:

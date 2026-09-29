@@ -84,7 +84,7 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 	}
 	defer jobRunner.Stop()
 
-	server := NewServer(cfg, store, registry, list, &RemoteTargets{}, testLogger())
+	server := NewServer(cfg, store, registry, list, &RemoteTargets{}, convert, testLogger())
 	// 真实监听一个空闲端口。
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -109,8 +109,10 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 	// 提交。
 	payload := ofdPayload(t)
 	body, _ := json.Marshal(map[string]any{
-		"input":  map[string]any{"kind": "upload", "filename": "a.ofd", "bytes": payload},
-		"output": map[string]any{"kind": "stream", "format": "pdf"},
+		"input": map[string]any{"kind": "upload", "file_name": "a.ofd", "bytes": payload},
+		// 用 dir 而不是 stream：stream 现在是同步语义（响应体直接是产物），
+		// 没有 202 可轮询、也不发通知。异步加通知这条路径要单独测。
+		"output": map[string]any{"kind": "dir", "format": "pdf"},
 		"notify": map[string]any{"target": "loop"},
 	})
 	resp, err := httpClient.Post("http://"+addr+"/v1/convert", "application/json", bytes.NewReader(body))
@@ -156,7 +158,7 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 		t.Errorf("InputBytes = %d，应为正的落盘字节数", stored.InputBytes)
 	}
 	output, _ := final["output"].(map[string]any)
-	if output["kind"] != "stream" {
+	if output["kind"] != "dir" {
 		t.Errorf("输出类型 = %v", output["kind"])
 	}
 	if size, _ := output["size"].(float64); size <= 0 {
@@ -182,7 +184,7 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 
 	// 目录输出走另一条路径：确认文件真的落在 output_dir 下。
 	dirBody, _ := json.Marshal(map[string]any{
-		"input":  map[string]any{"kind": "upload", "filename": "a.ofd", "bytes": payload},
+		"input":  map[string]any{"kind": "upload", "file_name": "a.ofd", "bytes": payload},
 		"output": map[string]any{"kind": "dir", "format": "pdf"},
 	})
 	resp, err = httpClient.Post("http://"+addr+"/v1/convert", "application/json", bytes.NewReader(dirBody))
@@ -210,15 +212,24 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 		t.Fatalf("目录输出任务未成功: %v", final)
 	}
 	// 结果落在 outDir/<任务 ID>/ 下，按任务隔离。
+	//
+	// 只检查这个任务自己的子目录，不统计 outDir 下的总项数——同一个测试里
+	// 前面那个任务也留下了目录，计数会随测试顺序变。
 	entries, err := os.ReadDir(outDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || !entries[0].IsDir() {
-		t.Fatalf("outDir 下应有且仅有一个任务子目录，实际 %d 项", len(entries))
+	found := false
+	for _, entry := range entries {
+		if entry.Name() == dirID {
+			if !entry.IsDir() {
+				t.Fatalf("%s 不是目录", dirID)
+			}
+			found = true
+		}
 	}
-	if entries[0].Name() != dirID {
-		t.Errorf("子目录名 = %q，期望任务 ID %s", entries[0].Name(), dirID)
+	if !found {
+		t.Fatalf("outDir 下没有任务 %s 的子目录，现有: %v", dirID, names(entries))
 	}
 	produced, err := os.ReadDir(filepath.Join(outDir, dirID))
 	if err != nil {

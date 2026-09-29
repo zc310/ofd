@@ -140,7 +140,7 @@ func (s *MinioSink) Put(ctx context.Context, name string, r io.Reader) (Location
 	}
 	if !s.Overwrite {
 		if _, statErr := conn.StatObject(ctx, s.Bucket, object, minio.StatObjectOptions{}); statErr == nil {
-			return Location{}, fmt.Errorf("目标对象已存在且不允许覆盖: %s/%s", s.Bucket, object)
+			return Location{}, fmt.Errorf("%w: 目标对象已存在且不允许覆盖: %s/%s", ErrExists, s.Bucket, object)
 		} else if !isObjectNotFound(statErr) {
 			// 认证失败、网络问题之类不能当成"不存在"，否则会把覆盖检查
 			// 变成一个假阳性，然后让写入去覆盖别人的数据。
@@ -361,7 +361,7 @@ func (s *WebDAVSink) Put(ctx context.Context, name string, r io.Reader) (Locatio
 	}
 	if !s.Overwrite {
 		if _, statErr := client.Stat(remote); statErr == nil {
-			return Location{}, fmt.Errorf("目标文件已存在且不允许覆盖: %s", remote)
+			return Location{}, fmt.Errorf("%w: 目标文件已存在且不允许覆盖: %s", ErrExists, remote)
 		} else if !isNotFound(statErr) {
 			return Location{}, fmt.Errorf("查询 WebDAV 文件失败: %w", redactError(statErr, s.Password))
 		}

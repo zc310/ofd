@@ -71,43 +71,55 @@ const DefaultStreamLimit int64 = 64 << 20
 // Input 描述待转换文档的来源。
 type Input struct {
 	// Kind 为 InputUpload 或 InputURL。
-	Kind string
+	Kind string `json:"kind"`
 	// Format 可选的显式输入格式。为空时按文件名扩展名与魔数识别。
-	Format string
-	// Filename 是上传的原始文件名，仅用于识别格式，不直接用于转换。
-	Filename string
+	Format string `json:"format,omitempty"`
+	// FileName 是上传的原始文件名，仅用于识别格式，不直接用于转换。
+	FileName string `json:"file_name,omitempty"`
 	// Bytes 是 Kind 为 InputUpload 时的内容。
-	Bytes []byte
+	Bytes []byte `json:"bytes,omitempty"`
 	// URL 是 Kind 为 InputURL 时的地址，必须通过服务端白名单。
-	URL string
+	URL string `json:"url,omitempty"`
 }
 
 // Output 描述转换结果的落点。
 type Output struct {
-	// Kind 为 OutputStream 或 OutputDir。
-	Kind string
+	// Kind 为 OutputStream、OutputDir，或某个远端目标类型。
+	Kind string `json:"kind"`
 	// Format 输出格式，如 "pdf"、"markdown"、"png"。
-	Format string
-	// Dir 是 Kind 为 OutputDir 时的根目录。
-	Dir string
+	Format string `json:"format"`
+	// FileName 是产物文件名的基名，不含扩展名——扩展名由 Format 决定。
+	//
+	// 为什么给基名而不是完整文件名：扩展名本来就是格式决定的，让调用方也能
+	// 指定就多了一处可能自相矛盾的地方（声明 pdf 却起名 .txt）。基名已经能
+	// 表达调用方的意图（发票号、客户编号），又不与之冲突。
+	//
+	// 为空时用默认值：单文件是 "output"，逐页输出是 "page"。
+	//
+	// 必须是单个路径组件，不含分隔符——否则就等于给了调用方一条穿越到
+	// output_dir 之外的路径。完整路径仍由服务端决定（output_dir 之下、
+	// 每个任务一个子目录），这一层隔离不受影响。
+	FileName string `json:"file_name"`
+	// Dir 是 Kind 为 OutputDir 时 output_dir 之下的相对子路径。
+	Dir string `json:"dir"`
 	// MaxStreamBytes 限制 stream 输出的内存占用，0 时取 DefaultStreamLimit。
-	MaxStreamBytes int64
+	MaxStreamBytes int64 `json:"max_stream_bytes,omitempty"`
+	// Remote 指向一个服务端预注册的远端目标，Kind 为远端类型时必填。
+	Remote RemoteOutput `json:"remote,omitempty"`
+}
 
-	// FTP 目标。Kind 为 OutputFTP 时必填，且 Target 必须是服务端已注册的名字。
-	// 调用方不能直接给地址与凭据——那等于让它往任意主机上传、往任意账号写数据。
-	// BaseDir 是已注册目标下的子目录，可为空。
-	FTPTarget string
-	FTPDir    string
-
-	// S3Target 与 S3Prefix 同理，对象存储目标与桶内前缀。
-	S3Target string
-	S3Prefix string
-	// WebDAVTarget 与 WebDAVDir 同理。
-	WebDAVTarget string
-	WebDAVDir    string
-	// SFTPTarget 与 SFTPDir 同理。
-	SFTPTarget string
-	SFTPDir    string
+// RemoteOutput 描述远端落点。
+//
+// 四个协议共用一组字段，而不是每种协议一组（ftp_target/ftp_dir、
+// s3_target/s3_prefix、…）：kind 已经表明用哪种协议，再按协议分字段是冗余的，
+// 而且调用方无法从字段名判断该填哪个、填完产物落在哪。
+type RemoteOutput struct {
+	// Target 是服务端配置里注册的目标名。调用方不能直接给地址与凭据——那等于
+	// 让它往任意主机上传、往任意账号写数据。
+	Target string `json:"target"`
+	// Path 是该目标下的子路径，语义由目标自身的配置决定：FTP/SFTP/WebDAV 是
+	// 远端 base_dir，S3 是桶内 prefix。调用方不必、也无法区分。
+	Path string `json:"path,omitempty"`
 }
 
 // Spec 是一次转换的完整描述。
@@ -140,8 +152,8 @@ type Result struct {
 	Format string `json:"format"`
 	// MIME 输出的 MIME 类型。
 	MIME string `json:"mime"`
-	// Filename 输出文件名，stream 时有值。
-	Filename string `json:"filename,omitempty"`
+	// FileName 输出文件名，stream 时有值。
+	FileName string `json:"file_name,omitempty"`
 	// Bytes stream 输出的内容。
 	Bytes []byte `json:"-"`
 	// Dir 目录输出的根路径。
@@ -256,6 +268,11 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 	}
 
 	extension := primaryExtension(outFormat.Extensions)
+	// 文件名先校验：等到产出阶段才发现非法，任务已经占了队列和一次转换。
+	naming, err := newOutputNaming(spec.Output.FileName, extension)
+	if err != nil {
+		return Result{}, err
+	}
 	opts := append(s.options(spec), converter.WithFormat(outFormat.Name))
 	written := map[string]int64{}
 	// locations 记录每个文件实际写到了哪里。远端目标的完整路径由 Sink 拼出
@@ -267,7 +284,9 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 	if outFormat.Kind == converter.KindImage {
 		// 逐页格式：每页一个文件，靠 Writer 回调拿到输出位置。
 		opts = append(opts, converter.Writer(func(page int) (io.WriteCloser, error) {
-			name := fmt.Sprintf("page-%04d%s", page+1, extension)
+			// 转换器给的页号已经是从 1 开始的（pages.go 里 len(pages)+1），
+			// 这里不能再 +1——那会让第一页被命名成 page-0002.png。
+			name := naming.page(page)
 			writer := newSinkWriter(sink, name, written, locations)
 			writers = append(writers, writer)
 			return writer, nil
@@ -275,7 +294,7 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 	} else {
 		// 文档格式：整体一个文件。必须给非 nil 的 writer，PDF 编码器会直接拒绝
 		// nil 输出。
-		writer := newSinkWriter(sink, "output"+extension, written, locations)
+		writer := newSinkWriter(sink, naming.single(), written, locations)
 		writers = append(writers, writer)
 		main = writer
 	}
@@ -301,13 +320,13 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 		if !ok {
 			return Result{}, fmt.Errorf("%w: stream 输出应使用内存目标", ErrUnsupported)
 		}
-		result.Filename = "output" + extension
+		result.FileName = naming.single()
 		result.Bytes = buffer.Bytes()
 	default:
 		for _, name := range sortedNames(written) {
 			result.Files = append(result.Files, File{Name: name, Size: written[name]})
 		}
-		result.Filename = result.Files[0].Name
+		result.FileName = result.Files[0].Name
 		result.Dir = writtenDir(outputKind, spec, locations)
 	}
 	result.TookMs = time.Since(started).Milliseconds()
@@ -343,7 +362,7 @@ func IsHeavy(in Input, outputFormat string) bool {
 	if in.Format != "" {
 		return isHeavyFormat(in.Format)
 	}
-	return isHeavyFormat(filepath.Ext(in.Filename))
+	return isHeavyFormat(filepath.Ext(in.FileName))
 }
 
 // heavyFormats 是走 LibreOffice 或 Chrome 的格式。
@@ -375,7 +394,7 @@ func (s *Service) source(ctx context.Context, in Input) (transfer.Source, error)
 		if len(in.Bytes) == 0 {
 			return nil, fmt.Errorf("%w: 上传内容为空", ErrBadRequest)
 		}
-		return transfer.NewBytesSource(in.Bytes, filepath.Base(in.Filename)), nil
+		return transfer.NewBytesSource(in.Bytes, filepath.Base(in.FileName)), nil
 	case InputURL:
 		if s.Allowlist == nil {
 			return nil, fmt.Errorf("%w: 服务未启用 URL 输入", ErrBadRequest)
@@ -433,7 +452,7 @@ func resolveInputFormat(in Input) (string, string, error) {
 		}
 		return "", "", fmt.Errorf("%w: 未知输入格式 %q", ErrUnsupported, in.Format)
 	}
-	if ext := filepath.Ext(in.Filename); ext != "" {
+	if ext := filepath.Ext(in.FileName); ext != "" {
 		if name, canon, ok := formatForExtension(ext); ok {
 			return name, canon, nil
 		}
@@ -645,16 +664,13 @@ func (s *Service) sinkFor(kind string, spec Spec) (transfer.Sink, error) {
 // 与通知目标同一套逻辑——如果让请求带地址，它就能被当作往任意主机上传数据的
 // 通道，SSRF 防护也随之全废。
 func (s *Service) ftpSink(spec Spec) (transfer.Sink, error) {
-	if spec.Output.FTPTarget == "" {
-		return nil, fmt.Errorf("%w: ftp 输出必须指定已注册的 output.ftp_target", ErrBadRequest)
-	}
-	registered, ok := s.FTPTargets[spec.Output.FTPTarget]
-	if !ok || registered == nil {
-		return nil, fmt.Errorf("%w: 未注册的 FTP 目标 %q", ErrBadRequest, spec.Output.FTPTarget)
+	registered, err := s.lookupFTPTarget(spec)
+	if err != nil {
+		return nil, err
 	}
 	// 每个任务派生一份：连接与"已创建目录"状态不能跨任务共享。
 	// WithBaseDir 会拒绝含 ".." 的子目录，不静默把输出放到配置范围之外。
-	derived, err := registered.WithBaseDir(spec.Output.FTPDir)
+	derived, err := registered.WithBaseDir(spec.Output.Remote.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
@@ -663,14 +679,13 @@ func (s *Service) ftpSink(spec Spec) (transfer.Sink, error) {
 
 // s3Sink 取出已注册的对象存储目标。
 func (s *Service) s3Sink(spec Spec) (transfer.Sink, error) {
-	if spec.Output.S3Target == "" {
-		return nil, fmt.Errorf("%w: s3 输出必须指定已注册的 output.s3_target", ErrBadRequest)
+	registered, err := s.lookupS3Target(spec)
+	if err != nil {
+		return nil, err
 	}
-	registered, ok := s.S3Targets[spec.Output.S3Target]
-	if !ok || registered == nil {
-		return nil, fmt.Errorf("%w: 未注册的 S3 目标 %q", ErrBadRequest, spec.Output.S3Target)
-	}
-	derived, err := registered.WithBasePrefix(spec.Output.S3Prefix)
+	// S3 用 prefix 而不是目录名，其余协议用 base_dir——差异由 Sink 自己承担，
+	// 调用方只给一个 path。
+	derived, err := registered.WithBasePrefix(spec.Output.Remote.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
@@ -679,18 +694,69 @@ func (s *Service) s3Sink(spec Spec) (transfer.Sink, error) {
 
 // webdavSink 取出已注册的 WebDAV 目标。
 func (s *Service) webdavSink(spec Spec) (transfer.Sink, error) {
-	if spec.Output.WebDAVTarget == "" {
-		return nil, fmt.Errorf("%w: webdav 输出必须指定已注册的 output.webdav_target", ErrBadRequest)
+	registered, err := s.lookupWebDAVTarget(spec)
+	if err != nil {
+		return nil, err
 	}
-	registered, ok := s.WebDAVTargets[spec.Output.WebDAVTarget]
-	if !ok || registered == nil {
-		return nil, fmt.Errorf("%w: 未注册的 WebDAV 目标 %q", ErrBadRequest, spec.Output.WebDAVTarget)
-	}
-	derived, err := registered.WithBaseDir(spec.Output.WebDAVDir)
+	derived, err := registered.WithBaseDir(spec.Output.Remote.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
 	return derived, nil
+}
+
+// 四个 lookup 薄助手：把"必须已注册"这条规则和错误文案统一起来。
+//
+// 目标必须已注册：地址与凭据只存在于服务端配置里，调用方能给的只是一个名字。
+// 与通知目标同一套逻辑——如果让请求带地址，它就能被当作往任意主机上传数据的
+// 通道，SSRF 防护也随之全废。
+
+func (s *Service) lookupFTPTarget(spec Spec) (*transfer.FTPSink, error) {
+	name := spec.Output.Remote.Target
+	if name == "" {
+		return nil, fmt.Errorf("%w: ftp 输出必须指定已注册的 output.remote.target", ErrBadRequest)
+	}
+	sink, ok := s.FTPTargets[name]
+	if !ok || sink == nil {
+		return nil, fmt.Errorf("%w: 未注册的 FTP 目标 %q", ErrBadRequest, name)
+	}
+	return sink, nil
+}
+
+func (s *Service) lookupS3Target(spec Spec) (*transfer.MinioSink, error) {
+	name := spec.Output.Remote.Target
+	if name == "" {
+		return nil, fmt.Errorf("%w: s3 输出必须指定已注册的 output.remote.target", ErrBadRequest)
+	}
+	sink, ok := s.S3Targets[name]
+	if !ok || sink == nil {
+		return nil, fmt.Errorf("%w: 未注册的 S3 目标 %q", ErrBadRequest, name)
+	}
+	return sink, nil
+}
+
+func (s *Service) lookupWebDAVTarget(spec Spec) (*transfer.WebDAVSink, error) {
+	name := spec.Output.Remote.Target
+	if name == "" {
+		return nil, fmt.Errorf("%w: webdav 输出必须指定已注册的 output.remote.target", ErrBadRequest)
+	}
+	sink, ok := s.WebDAVTargets[name]
+	if !ok || sink == nil {
+		return nil, fmt.Errorf("%w: 未注册的 WebDAV 目标 %q", ErrBadRequest, name)
+	}
+	return sink, nil
+}
+
+func (s *Service) lookupSFTPTarget(spec Spec) (*transfer.SFTPSink, error) {
+	name := spec.Output.Remote.Target
+	if name == "" {
+		return nil, fmt.Errorf("%w: sftp 输出必须指定已注册的 output.remote.target", ErrBadRequest)
+	}
+	sink, ok := s.SFTPTargets[name]
+	if !ok || sink == nil {
+		return nil, fmt.Errorf("%w: 未注册的 SFTP 目标 %q", ErrBadRequest, name)
+	}
+	return sink, nil
 }
 
 // writtenDir 报告结果实际落在哪个目录。
@@ -720,14 +786,11 @@ func writtenDir(kind string, spec Spec, locations map[string]transfer.Location) 
 
 // sftpSink 取出已注册的 SFTP 目标。
 func (s *Service) sftpSink(spec Spec) (transfer.Sink, error) {
-	if spec.Output.SFTPTarget == "" {
-		return nil, fmt.Errorf("%w: sftp 输出必须指定已注册的 output.sftp_target", ErrBadRequest)
+	registered, err := s.lookupSFTPTarget(spec)
+	if err != nil {
+		return nil, err
 	}
-	registered, ok := s.SFTPTargets[spec.Output.SFTPTarget]
-	if !ok || registered == nil {
-		return nil, fmt.Errorf("%w: 未注册的 SFTP 目标 %q", ErrBadRequest, spec.Output.SFTPTarget)
-	}
-	derived, err := registered.WithBaseDir(spec.Output.SFTPDir)
+	derived, err := registered.WithBaseDir(spec.Output.Remote.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}

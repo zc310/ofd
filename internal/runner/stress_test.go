@@ -15,6 +15,7 @@ import (
 	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"
 	"github.com/zc310/ofd/internal/notify"
+	"github.com/zc310/ofd/internal/transfer"
 )
 
 // fakeConverter 是受控的转换器：能按通道阻塞、能统计并发数、能按需失败。
@@ -85,7 +86,7 @@ func (c *fakeConverter) Run(ctx context.Context, spec convertersvc.Spec) (conver
 	}
 	return convertersvc.Result{
 		Kind: convertersvc.OutputStream, Format: spec.Output.Format,
-		MIME: "application/octet-stream", Filename: "output.pdf",
+		MIME: "application/octet-stream", FileName: "output.pdf",
 		Bytes: []byte("%PDF-1.7\n" + jobID), TookMs: 1,
 	}, nil
 }
@@ -154,7 +155,7 @@ func newStressRunner(t *testing.T, cfg Config, convert Converter) (*Runner, *job
 func enqueueWith(t *testing.T, store *jobstore.Store, id string, lane jobstore.Lane, format string) {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
-		"input":  map[string]any{"kind": "upload", "filename": "a.ofd"},
+		"input":  map[string]any{"kind": "upload", "file_name": "a.ofd"},
 		"output": map[string]any{"kind": "stream", "format": format, "dir": id},
 	})
 	if err != nil {
@@ -376,7 +377,7 @@ func TestStressNotificationStorm(t *testing.T) {
 		id := fmt.Sprintf("j%04d", i)
 		jobIDs = append(jobIDs, id)
 		raw, _ := json.Marshal(map[string]any{
-			"input":  map[string]any{"kind": "upload", "filename": "a.ofd"},
+			"input":  map[string]any{"kind": "upload", "file_name": "a.ofd"},
 			"output": map[string]any{"kind": "stream", "format": "pdf", "dir": id},
 		})
 		if err := store.Enqueue(&jobstore.Job{
@@ -509,4 +510,41 @@ func newCountingHook(t *testing.T, delivered *atomic.Int32, mu *sync.Mutex, ids 
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+// TestExistsIsNotRetryable 目标已存在必须直接判死。
+//
+// 重试一个"文件已存在"永远还是已存在。而 output.dir 允许指向共享目录
+// （调用方主动放弃任务隔离），同名冲突因此是常见失败——不判死就是每次
+// 白白跑 3 遍转换。
+func TestExistsIsNotRetryable(t *testing.T) {
+	if retryableJob(fmt.Errorf("%w: 输出文件已存在", transfer.ErrExists)) {
+		t.Error("目标已存在不应重试")
+	}
+}
+
+// TestExistsWrappedByOtherErrors 哨兵错误被包多层也要能认出来。
+func TestExistsWrappedByOtherErrors(t *testing.T) {
+	inner := fmt.Errorf("%w: 目标文件已存在且不允许覆盖: /out/a.pdf", transfer.ErrExists)
+	outer := fmt.Errorf("写入第 1 页失败: %w", inner)
+	if retryableJob(outer) {
+		t.Error("包了两层的 ErrExists 仍不应重试")
+	}
+}
+
+// TestBackoffGrows 退避按次数指数增长。
+func TestBackoffGrows(t *testing.T) {
+	r := &Runner{cfg: Config{Backoff: 5 * time.Second}}
+	first := r.backoff(1)
+	second := r.backoff(2)
+	if first != 5*time.Second {
+		t.Errorf("首次退避 = %v，期望 5s", first)
+	}
+	if second <= first {
+		t.Errorf("第二次退避 %v 应大于第一次 %v", second, first)
+	}
+	// 上限 10 分钟，不能无限增长。
+	if late := r.backoff(30); late > 10*time.Minute {
+		t.Errorf("第 30 次退避 = %v，应封顶在 10m", late)
+	}
 }

@@ -229,6 +229,7 @@ func run(opts *options) error {
 		NotifyWorkers:  cfg.NotifyWorkers,
 		JobTimeout:     cfg.JobTimeout.Duration(),
 		MaxJobAttempts: cfg.MaxJobAttempts,
+		Backoff:        cfg.JobRetryBackoff.Duration(),
 		Retention:      cfg.Retention.Duration(),
 		PruneInterval:  cfg.Retention.Duration() / 24,
 	}, log)
@@ -242,7 +243,7 @@ func run(opts *options) error {
 	defer jobRunner.Stop()
 
 	remote := &RemoteTargets{FTP: ftpSinks, S3: s3Sinks, WebDAV: webdavSinks, SFTP: sftpSinks}
-	server := NewServer(cfg, store, registry, list, remote, log)
+	server := NewServer(cfg, store, registry, list, remote, convert, log)
 	// 数据库已经打开、worker 已经起来，就绪探针可以放行。
 	// 端口由 fasthttp 内部监听，绑定失败会让 Start 返回错误并终止进程，
 	// 所以这里不需要额外的就绪状态机。

@@ -187,7 +187,7 @@ func (s *FTPSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 		if exists, err := s.exists(conn, remote); err != nil {
 			return Location{}, err
 		} else if exists {
-			return Location{}, fmt.Errorf("FTP 上目标文件已存在且不允许覆盖: %s", remote)
+			return Location{}, fmt.Errorf("%w: FTP 上目标文件已存在且不允许覆盖: %s", ErrExists, remote)
 		}
 	}
 

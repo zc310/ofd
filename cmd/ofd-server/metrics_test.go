@@ -57,7 +57,7 @@ func TestMetricsCountsAfterConversion(t *testing.T) {
 	// 转换 -> RecordUsage -> Finish，验证的是计数真正从转换结果里取值。
 	convert := convertersvc.New(filepath.Join(s.cfg.OutputDir, "tmp"), nil)
 	result, err := convert.Run(t.Context(), convertersvc.Spec{
-		Input:  convertersvc.Input{Kind: convertersvc.InputUpload, Filename: "a.ofd", Bytes: decodePayload(t)},
+		Input:  convertersvc.Input{Kind: convertersvc.InputUpload, FileName: "a.ofd", Bytes: decodePayload(t)},
 		Output: convertersvc.Output{Kind: convertersvc.OutputStream, Format: "pdf"},
 	})
 	if err != nil {
@@ -133,7 +133,7 @@ func TestMetricsCountsSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restarted := NewServer(cfg, fresh, registry, list, &RemoteTargets{}, testLogger())
+	restarted := NewServer(cfg, fresh, registry, list, &RemoteTargets{}, convertersvc.New("", nil), testLogger())
 
 	got := do(t, newPipeServer(t, restarted.Handler()), fasthttp.MethodGet, "/metrics", "")
 	if !strings.Contains(got.body, `ofd_conversions_total{from="ofd",to="pdf",state="succeeded"} 1`) {
@@ -362,15 +362,15 @@ func TestProcReadFailuresAreNonFatal(t *testing.T) {
 	}
 }
 
-// TestMetricsDoesNotExposeFilenames 输出里不应出现任何文件名或路径。
+// TestMetricsDoesNotExposeFileNames 输出里不应出现任何文件名或路径。
 //
 // 转换量是运营数据，文档名不是。label 只有 from/to/state，
 // 基数也受限于格式组合数。
-func TestMetricsDoesNotExposeFilenames(t *testing.T) {
+func TestMetricsDoesNotExposeFileNames(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	client := newPipeServer(t, s.Handler())
 	if err := s.store.Enqueue(&jobstore.Job{ID: "secret-doc", To: "pdf",
-		Request: []byte(`{"input":{"filename":"invoice-2026-private.ofd"}}`)}); err != nil {
+		Request: []byte(`{"input":{"file_name":"invoice-2026-private.ofd"}}`)}); err != nil {
 		t.Fatal(err)
 	}
 	got := do(t, client, fasthttp.MethodGet, "/metrics", "")
