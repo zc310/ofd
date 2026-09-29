@@ -13,10 +13,12 @@ import (
 
 // Converter 配置转换器
 type Converter struct {
-	dpi               geom.Resolution
-	format            string // png, jpeg, svg, eps, tex
-	imageOCREnabled   bool
-	imageOCRLanguage  string
+	dpi              geom.Resolution
+	format           string // png, jpeg, svg, eps, tex
+	imageOCREnabled  bool
+	imageOCRLanguage string
+	// inputPassword 是加密输入文档（目前只有 PDF）的打开口令，空表示未提供。
+	inputPassword     string
 	rasterBackend     string // 非空时 PNG/JPG 走该栅格后端（BackendGG 等）
 	htmlImageFormat   string // png, svg
 	bgColor           color.Color
@@ -84,6 +86,18 @@ func newConverter(ctx context.Context, options ...Option) *Converter {
 		opt(conv)
 	}
 	return conv
+}
+
+// InputPassword 返回加密输入文档的打开口令，空表示未提供。
+//
+// 目前只有 PDF 输入会用它（见 pdfimport）。放在 Converter 上而不是
+// Importer 接口的额外参数上，是为了不给 Importer/Encoder/Transformer
+// 三个接口都加参数——那二十来处实现并不因此多出任何能力。
+func (c *Converter) InputPassword() string {
+	if c == nil {
+		return ""
+	}
+	return c.inputPassword
 }
 
 // ImageOCREnabled 返回图片导入时是否启用 OCR。

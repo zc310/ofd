@@ -51,6 +51,7 @@ ofd-converter --help
 | `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                    |
 | `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                              |
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                            |
+| `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                          |
 | `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                 |
 | `-recursive`           | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                                                            |
 | `-overwrite`           | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败                                                    |
@@ -90,6 +91,20 @@ ofd-converter --help
 | `1`    | 转换失败；批量模式下表示至少有一个文件失败，具体失败文件与原因写入标准错误 |
 | `2`    | 参数错误，例如缺少输入文件、未知选项、批量模式参数冲突或不支持的格式       |
 | `130`  | 用户按 Ctrl-C 主动停止。转换在页与页之间检查该信号，不会跑完当前文件       |
+
+### 加密文档
+
+`-password` 提供打开口令，目前只作用于 PDF 输入。口令不对时转换直接失败并说明
+原因，不重试：
+
+```bash
+ofd-converter -password 'secret' -format ofd enc.pdf out.ofd
+```
+
+口令会出现在进程命令行里，同主机其他用户可从 `ps` 读到。批量处理加密文档时应
+确认执行环境可信。
+
+OFD 的包级加密（GB/T 33190）目前不支持：这样的文件会报解析失败。
 
 ### 中断
 

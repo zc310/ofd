@@ -13,7 +13,36 @@
 
 - `pkg/converter` 增加图片导入 OCR 开关和语言选项；`ofd-converter` 提供 `--ocr` 与 `--ocr-language`，默认不调用 Tesseract。
 
+- `ofd-converter` 新增 `--password`，`pkg/converter` 新增 `WithPassword` 选项：
+  加密 PDF 输入此前一律报 "encryption setup: please provide the correct
+  password"。口令放在 `Converter` 上而非 `Importer` 接口参数上，与
+  `SofficePath()`、`ChromePath()` 同一套路——给三个接口都加参数要动二十来处
+  实现，并不因此多出任何能力。
+
+  `pdf2ofd` 另导出 `ErrEncrypted` 与 `ErrWrongPassword`：前者补个口令能继续，
+  后者是口令给错了、重试同一份不会变，两者要能分开判断。
+
+  OFD 的包级加密（GB/T 33190）仍不支持。`--password` 的值会出现在进程命令行，
+  同主机其他用户可从 `ps` 读到。
+
+
 ### 破坏性变更
+
+- `pkg/converter/import/pdf` 与 `internal/pdf2ofd` 的 `Convert`、`ConvertFile`
+  新增末位参数 `password string`。
+
+  ```go
+  // 之前
+  pdf.Convert(ctx, input, output)
+  // 现在
+  pdf.Convert(ctx, input, output, password)
+  ```
+
+  传 `""` 保持原行为。
+
+  口令错误用 `errors.Is` 匹配 pdfcpu 的 `ErrWrongPassword` /
+  `ErrOwnerPasswordRequired`，不比对消息文本——库改一次措辞，字符串方案就失效，
+  而失效方式是"加密文档不再被识别成加密文档"。
 
 - `pkg/converter/import/pdf` 的 `Convert` 与 `ConvertFile` 新增首个参数
   `context.Context`。

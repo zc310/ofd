@@ -212,6 +212,17 @@ func WithMarkdownTables(enabled bool) Option {
 	}
 }
 
+// WithPassword 设置加密输入文档的打开口令。
+//
+// 目前只作用于 PDF 输入：口令交给 pdfcpu 用于解密，OFD 的包级加密尚不支持。
+// 空口令表示未提供，此时遇到加密文档会报"该文档已加密"，而不是给出一个
+// 难以理解的解析失败。
+func WithPassword(password string) Option {
+	return func(c *Converter) {
+		c.inputPassword = password
+	}
+}
+
 // RasterBackend 指定 PNG/JPG 输出使用的栅格后端名（如 "canvas"、"gg"、
 // "ftgg"、"tinyskia"）。仅对 PNG/JPEG 生效；空字符串表示使用 canvas 矢量
 // 表面光栅化（默认）。使用 canvas 之外的后端需在程序中空白导入对应插件包，

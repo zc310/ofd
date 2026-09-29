@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/pkg/creator"
@@ -23,7 +24,7 @@ import (
 // Convert 把 PDF 输入（文件路径、[]byte、io.Reader 或 io.ReadSeeker）转换为
 // OFD 包。转换保留基本页面几何、文字、路径和 JPEG/PNG 图像 XObject，
 // 不使用原生 PDF 渲染器。
-func Convert(gctx context.Context, input any, output io.Writer) error {
+func Convert(gctx context.Context, input any, output io.Writer, password string) error {
 	data, err := readPDFInput(input)
 	if err != nil {
 		return err
@@ -31,16 +32,16 @@ func Convert(gctx context.Context, input any, output io.Writer) error {
 	if output == nil {
 		return errors.New("OFD 输出写入器为空")
 	}
-	err = pdfToOFDBytes(gctx, data, output)
+	err = pdfToOFDBytes(gctx, data, output, password)
 	if err != nil && strings.Contains(err.Error(), "PDF 解析器异常") {
 		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
-			return pdfToOFDBytes(gctx, repaired, output)
+			return pdfToOFDBytes(gctx, repaired, output, password)
 		}
 	}
 	return err
 }
 
-func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer) (err error) {
+func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("解析 PDF 失败: %v", recovered)
@@ -48,6 +49,8 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer) (err err
 	}()
 	conf := model.NewDefaultConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
+	conf.UserPW = password
+	conf.OwnerPW = password
 	ctx, err, panicked := readPDFContext(gctx, data, conf)
 	if panicked {
 		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
@@ -55,6 +58,14 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer) (err err
 		}
 	}
 	if err != nil {
+		// 口令不对时 pdfcpu 的消息是英文且不点明成因，转换器不该把
+		// "please provide the correct password" 直接甩给用户。
+		if isPasswordError(err) {
+			if password == "" {
+				return fmt.Errorf("%w: PDF 已加密，请用 --password 提供打开口令", ErrEncrypted)
+			}
+			return fmt.Errorf("%w: PDF 口令不正确", ErrWrongPassword)
+		}
 		return fmt.Errorf("读取 PDF 失败: %w", err)
 	}
 	if err := api.ValidateContext(gctx, ctx); err != nil {
@@ -111,8 +122,25 @@ func readPDFContext(gctx context.Context, data []byte, conf *model.Configuration
 	return ctx, err, false
 }
 
+// ErrEncrypted 表示输入 PDF 已加密但没有可用口令。
+var ErrEncrypted = errors.New("文档已加密")
+
+// ErrWrongPassword 表示提供的口令无法打开 PDF。
+//
+// 与 ErrEncrypted 分开是因为处置不同：前者调用方补个口令就能继续，后者
+// 是口令给错了，重试同一份不会变。
+var ErrWrongPassword = errors.New("口令不正确")
+
+// isPasswordError 判断错误是否源于加密口令。
+//
+// 用 errors.Is 匹配 pdfcpu 的哨兵而不是比对消息文本——库改一次措辞
+// 这层就失效，而失效方式是"加密文档不再被识别成加密文档"，正是最难查的那种。
+func isPasswordError(err error) bool {
+	return errors.Is(err, pdfcpu.ErrWrongPassword) || errors.Is(err, pdfcpu.ErrOwnerPasswordRequired)
+}
+
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(gctx context.Context, pdfPath, ofdPath string) error {
+func ConvertFile(gctx context.Context, pdfPath, ofdPath string, password string) error {
 	if strings.TrimSpace(ofdPath) == "" {
 		return errors.New("OFD 输出文件名为空")
 	}
@@ -136,7 +164,7 @@ func ConvertFile(gctx context.Context, pdfPath, ofdPath string) error {
 			_ = os.Remove(tempPath)
 		}
 	}()
-	if err := Convert(gctx, pdfPath, file); err != nil {
+	if err := Convert(gctx, pdfPath, file, password); err != nil {
 		return err
 	}
 	if err := file.Close(); err != nil {

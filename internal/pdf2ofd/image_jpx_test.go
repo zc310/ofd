@@ -56,7 +56,7 @@ func convertJPXImage(t *testing.T, jp2 []byte) image.Image {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

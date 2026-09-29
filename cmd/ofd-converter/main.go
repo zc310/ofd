@@ -83,6 +83,7 @@ type options struct {
 	landscape         bool
 	noPrintBackground bool
 	allowRemote       bool
+	password          string
 	ocr               bool
 	ocrLanguage       string
 	markdownTables    bool
@@ -196,6 +197,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印，交换纸张宽高（仅 HTML/MHTML 生效）")
 	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
 	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
+	flags.StringVar(&opts.password, "password", "", "加密输入文档的打开口令（目前仅 PDF）")
 	flags.BoolVar(&opts.ocr, "ocr", false, "图片转 OFD 时启用 OCR 文字层，默认关闭")
 	flags.StringVar(&opts.ocrLanguage, "ocr-language", opts.ocrLanguage, "图片 OCR 语言，需与本机 Tesseract 语言包一致")
 	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
@@ -221,7 +223,8 @@ func normalizeConverterArgs(args []string) []string {
 		"external-workers": true, "soffice": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
-		"ocr": true, "ocr-language": true,
+		"password": true,
+		"ocr":      true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
 	result := make([]string, len(args))
@@ -668,6 +671,9 @@ func convertImported(opts *options, from, to string) error {
 	var option []converter.Option
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
+	}
+	if opts.password != "" {
+		option = append(option, converter.WithPassword(opts.password))
 	}
 	option = append(option, officeOptions(opts)...)
 	option = append(option, imageOCROptions(opts)...)
