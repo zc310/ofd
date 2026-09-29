@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
-	"image/png"
 	"io"
 	"os"
 
 	"github.com/hhrutter/tiff"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/ocr"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
@@ -351,7 +351,7 @@ func makePage(ctx context.Context, page image.Image, opts Options, index int) (c
 	width := float64(bounds.Dx()) / opts.DPI * 25.4
 	height := float64(bounds.Dy()) / opts.DPI * 25.4
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, page); err != nil {
+	if err := media.EncodePNG(&encoded, page); err != nil {
 		return creator.Page{}, creator.PageSize{}, fmt.Errorf("编码页面图片失败: %w", err)
 	}
 	resourceID := uint64(index + 1)

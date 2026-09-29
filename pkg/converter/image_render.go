@@ -6,11 +6,10 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"io"
 	"log/slog"
 
 	"github.com/kovidgoyal/imaging"
-	wpng "github.com/woozymasta/png"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -44,7 +43,7 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) error 
 
 		switch c.format {
 		case "png":
-			if err := encodePNG(w, page.Rasterize(c.dpi)); err != nil {
+			if err := media.EncodePNGLevel(w, page.Rasterize(c.dpi), 7); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		case "jpeg", "jpg":
@@ -87,7 +86,7 @@ func (c *Converter) renderRasterPage(pageNumber int, img image.Image) error {
 
 		switch c.format {
 		case "png":
-			if err := encodePNG(w, img); err != nil {
+			if err := media.EncodePNGLevel(w, img, 7); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		default: // jpeg / jpg
@@ -109,13 +108,6 @@ func (c *Converter) renderRasterPage(pageNumber int, img image.Image) error {
 	}
 
 	return nil
-}
-
-// encodePNG 使用 woozymasta/png（klauspost zlib 实现）写出 PNG；level 7
-// 压缩下输出体积与标准库默认压缩相当但速度更快。
-func encodePNG(w io.Writer, img image.Image) error {
-	encoder := &wpng.Encoder{CompressionLevel: wpng.CompressionLevel(7)}
-	return encoder.Encode(w, img)
 }
 
 // resizeThumbnail 生成缩略图

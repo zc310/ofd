@@ -3,9 +3,9 @@ package pdf2ofd
 import (
 	"bytes"
 	"image"
-	"image/png"
 	"math"
 
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -409,7 +409,7 @@ func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY f
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, img); err != nil {
+	if err := media.EncodePNG(&encoded, img); err != nil {
 		return nil
 	}
 	return encoded.Bytes()

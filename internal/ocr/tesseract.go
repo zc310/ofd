@@ -6,13 +6,14 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"image/png"
 	"io"
 	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/zc310/ofd/internal/media"
 )
 
 // Tesseract 调用系统中的 tesseract 命令行程序。
@@ -42,7 +43,7 @@ func (t *Tesseract) Recognize(ctx context.Context, input image.Image) ([]TextBlo
 	}
 	name := file.Name()
 	defer func() { _ = os.Remove(name) }()
-	if err := png.Encode(file, input); err != nil {
+	if err := media.EncodePNG(file, input); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("编码 OCR 输入图片失败: %w", err)
 	}

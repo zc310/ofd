@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"image/png"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/zc310/ofd/internal/media"
 )
 
 const defaultMaxResponseBytes int64 = 8 << 20
@@ -65,7 +66,7 @@ func (h *HTTPClient) Recognize(ctx context.Context, input image.Image) ([]TextBl
 	}
 
 	var body bytes.Buffer
-	if err := png.Encode(&body, input); err != nil {
+	if err := media.EncodePNG(&body, input); err != nil {
 		return nil, fmt.Errorf("编码 OCR 请求图片失败: %w", err)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), &body)

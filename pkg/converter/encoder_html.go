@@ -11,11 +11,11 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"image/png"
 	"io"
 	"strconv"
 	"strings"
 
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -110,7 +110,7 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 }
 
 func encodeHTMLPNG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {
-	return png.Encode(output, page.Rasterize(dpi))
+	return media.EncodePNG(output, page.Rasterize(dpi))
 }
 
 func encodeHTMLJPG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {

@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/woozymasta/png"
 	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
@@ -2652,12 +2652,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
-	// 与 pkg/converter.encodePNG 保持一致，改用 woozymasta/png 写 PNG：它的
-	// filter 步骤带 SSE2/SSSE3 汇编内核，level 7 下输出体积与标准库默认压缩
-	// 相当，但编码更快。非 amd64 走纯 Go 回退路径，实测仍快于标准库，不会给
-	// 其它架构带来负优化；设 PNG_PUREGO=1 可强制关闭汇编。输出像素与标准库一致。
-	encoder := png.Encoder{CompressionLevel: png.CompressionLevel(7)}
-	if err := encoder.Encode(&output, rendered); err != nil {
+	if err := media.EncodePNGLevel(&output, rendered, 7); err != nil {
 		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
 	}
 	return output.Bytes(), nil

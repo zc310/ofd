@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"testing"
 
+	ofdmedia "github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -110,7 +111,7 @@ func TestConvertSkipsUnsupportedImageFilter(t *testing.T) {
 }
 
 func TestConvertJBIG2GrayscaleImage(t *testing.T) {
-	// 非 ImageMask 的 JBIG2 位图按 1 位 DeviceGray 输出为不透明灰度 PNG。
+	// 无全局段的 JBIG2 DeviceGray 图像保留为独立 JBIG2 资源。
 	content := []byte("q 100 0 0 100 0 0 cm /Im1 Do Q")
 	image := "<< /Type /XObject /Subtype /Image /Width 3562 /Height 851 /ColorSpace /DeviceGray" +
 		" /BitsPerComponent 1 /Filter /JBIG2Decode /Length " + itoa(len(jbig2SampleMask)) +
@@ -145,11 +146,14 @@ func TestConvertJBIG2GrayscaleImage(t *testing.T) {
 	if media == nil {
 		t.Fatal("JBIG2 image has no media")
 	}
+	if media.Format != "JBIG2" {
+		t.Fatalf("JBIG2 image format = %q, want JBIG2", media.Format)
+	}
 	data, err := ofd.Documents[0].FileCache.Read(media.MediaFile.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, err := png.Decode(bytes.NewReader(data))
+	img, err := ofdmedia.DecodeBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
