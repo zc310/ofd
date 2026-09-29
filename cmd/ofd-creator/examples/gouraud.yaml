@@ -1,0 +1,426 @@
+# GouraudShd 三角网格渐变
+# 1 页 6 格覆盖不同网格类型：单三角形、三角带（EdgeFlag=1 连续拼接）、
+# 扇形辐射（EdgeFlag=2，中心向外）、独立三角对（EdgeFlag=0 分组起始），
+# 以及 Extend=0 / Extend=1+Back Color 对照（灰色衬底用于显示网格未覆盖
+# 区域是透明透出还是被 BackColor 填充）。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud.yaml -o test/testdata/gouraud.ofd --format auto --deterministic --validate
+
+version: 1
+document:
+  id: gouraud
+  title: GouraudShd 三角网格渐变
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    name: A4
+pages:
+  - items:
+      - type: text
+        x: 15
+        y: 10
+        width: 180
+        height: 8
+        value: GouraudShd 三角网格渐变
+        font: 宋体
+        size: 5
+        fill: true
+      - type: text
+        x: 15
+        y: 20
+        width: 180
+        height: 5
+        value: 顶点线性插值；EdgeFlag：0 新三角形 / 1 三角带 / 2 扇形；Extend 决定网格未覆盖区域
+        font: 宋体
+        size: 3
+        fill: true
+        fill_color:
+          r: 80
+          g: 80
+          b: 80
+
+      # 第 1 行左：单三角形（基线类型，三顶点红绿蓝）。
+      - type: text
+        x: 15
+        y: 26
+        width: 82
+        height: 5
+        value: 单三角形（RGB）
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 32
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 15
+        y: 32
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 0
+                y: 0
+                color:
+                  r: 255
+              - x: 82
+                y: 0
+                color:
+                  g: 255
+              - x: 41
+                y: 48
+                color:
+                  b: 255
+
+      # 第 1 行右：三角带，EdgeFlag=1 连续拼接出 6 个三角形。
+      - type: text
+        x: 113
+        y: 26
+        width: 82
+        height: 5
+        value: 三角带（EdgeFlag=1）
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 113
+        y: 32
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 113
+        y: 32
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 0
+                y: 0
+                color:
+                  r: 255
+              - x: 0
+                y: 48
+                color:
+                  b: 255
+              - x: 27
+                y: 0
+                color:
+                  r: 255
+                  g: 255
+              - x: 27
+                y: 48
+                edge_flag: 1
+                color:
+                  r: 255
+                  b: 255
+              - x: 55
+                y: 0
+                edge_flag: 1
+                color:
+                  g: 255
+              - x: 55
+                y: 48
+                edge_flag: 1
+                color:
+                  r: 255
+                  g: 255
+                  b: 255
+              - x: 82
+                y: 0
+                edge_flag: 1
+                color:
+                  g: 255
+                  b: 255
+              - x: 82
+                y: 48
+                edge_flag: 1
+                color:
+                  b: 128
+
+      # 第 2 行左：扇形辐射，EdgeFlag=2 复用前两点（中心与上一环点），
+      # 末点回到起点闭合整圈。
+      - type: text
+        x: 15
+        y: 94
+        width: 82
+        height: 5
+        value: 扇形（EdgeFlag=2）
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 100
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 15
+        y: 100
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 41
+                y: 24
+                color:
+                  r: 255
+                  g: 255
+                  b: 255
+              - x: 79
+                y: 24
+                color:
+                  r: 255
+              - x: 68
+                y: 39
+                color:
+                  r: 255
+                  g: 165
+              - x: 41
+                y: 45
+                edge_flag: 2
+                color:
+                  r: 255
+                  g: 255
+              - x: 14
+                y: 39
+                edge_flag: 2
+                color:
+                  g: 255
+              - x: 3
+                y: 24
+                edge_flag: 2
+                color:
+                  g: 255
+                  b: 255
+              - x: 14
+                y: 9
+                edge_flag: 2
+                color:
+                  b: 255
+              - x: 41
+                y: 3
+                edge_flag: 2
+                color:
+                  r: 128
+                  b: 255
+              - x: 68
+                y: 9
+                edge_flag: 2
+                color:
+                  r: 255
+                  b: 255
+              - x: 79
+                y: 24
+                edge_flag: 2
+                color:
+                  r: 255
+
+      # 第 2 行右：EdgeFlag=0 起始新三角形，两组顶点互不相连。
+      - type: text
+        x: 113
+        y: 94
+        width: 82
+        height: 5
+        value: 独立三角对（EdgeFlag=0）
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 113
+        y: 100
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 113
+        y: 100
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 0
+                y: 0
+                color:
+                  r: 255
+              - x: 38
+                y: 0
+                color:
+                  g: 255
+              - x: 19
+                y: 42
+                color:
+                  b: 255
+              - x: 44
+                y: 6
+                edge_flag: 0
+                color:
+                  g: 255
+                  b: 255
+              - x: 82
+                y: 6
+                color:
+                  r: 255
+                  b: 255
+              - x: 63
+                y: 42
+                color:
+                  r: 255
+                  g: 255
+
+      # 第 3 行左：Extend=0（缺省），网格未覆盖且边缘夹取不命中的区域透明，
+      # 露出下方灰色衬底。
+      - type: text
+        x: 15
+        y: 162
+        width: 82
+        height: 5
+        value: Extend=0 未覆盖透明
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 15
+        y: 168
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 15
+        y: 168
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 0
+                y: 0
+                color:
+                  r: 255
+              - x: 82
+                y: 0
+                color:
+                  g: 255
+              - x: 82
+                y: 48
+                color:
+                  b: 255
+
+      # 第 3 行右：同一网格加 Extend=1 与 BackColor，未覆盖区域填充橙色。
+      - type: text
+        x: 113
+        y: 162
+        width: 82
+        height: 5
+        value: Extend=1 + BackColor
+        font: 宋体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 113
+        y: 168
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 113
+        y: 168
+        width: 82
+        height: 48
+        data: M 0 0 L 82 0 L 82 48 L 0 48 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            extend: 1
+            back_color:
+              r: 255
+              g: 160
+              b: 0
+            points:
+              - x: 0
+                y: 0
+                color:
+                  r: 255
+              - x: 82
+                y: 0
+                color:
+                  g: 255
+              - x: 82
+                y: 48
+                color:
+                  b: 255
+
+      - type: text
+        x: 15
+        y: 228
+        width: 180
+        height: 5
+        value: 下排同一网格：Extend=0 未覆盖处透明（露出灰底），Extend=1 显示 BackColor 橙色
+        font: 宋体
+        size: 3
+        fill: true
+        fill_color:
+          r: 80
+          g: 80
+          b: 80

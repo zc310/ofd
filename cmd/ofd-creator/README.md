@@ -372,6 +372,8 @@ pages:
 
 着色合集实例见 `cmd/ofd-creator/examples/shading.yaml`，覆盖 Axial/Radial/Gouraud/LaGouraud 及 Direct/Repeat/Reflect 映射。
 
+三角网格渐变实例见 `cmd/ofd-creator/examples/gouraud.yaml`，单页六格覆盖单三角形、EdgeFlag=1 三角带、EdgeFlag=2 扇形、EdgeFlag=0 独立三角对，以及 Extend=0 与 Extend=1+Back Color 的未覆盖区域对照。
+
 底纹翻转与图案填充实例见 `cmd/ofd-creator/examples/pattern-reflect.yaml`，第 1 页覆盖底纹 ReflectMethod 的 Normal/Row/Column/RowAndColumn 平铺，第 2 页为 Pattern 图案填充示例（自 shading.yaml 移入）。
 
 径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
