@@ -27,6 +27,8 @@ const maxZipEntryBytes = 1 << 30
 // errNoLocalContent 表示该任务的产物不在本服务能取回的地方。
 var errNoLocalContent = errors.New("产物不通过本端点提供")
 
+var errUnsafeArtifact = errors.New("产物不是安全的普通文件")
+
 // handleContent 取回任务产物。
 //
 // 两种用法：
@@ -111,32 +113,76 @@ func checkServableOutput(out jobstore.Output) error {
 
 // resolveOutputDir 校验并返回产物目录。
 //
-// 两道检查：必须落在配置的 output_dir 之下；且必须与任务记录里的路径一致
-// （Clean 之后）。第二道是为了防"配置被改过"这种情况——把 output_dir 指到
-// 别处之后，历史任务记录的路径仍然有效，但已经不在新配置的范围里了。
-func (s *Server) resolveOutputDir(job *jobstore.Job) (string, error) {
+// 先用词法路径检查任务目录必须落在配置的 output_dir 之下，再用 os.Root
+// 固定目录句柄读取产物。这样既能防止配置修改导致历史任务越界，也能防止
+// 输出目录或产物文件中的符号链接把读取重定向到 output_dir 外。
+func (s *Server) resolveOutputDir(job *jobstore.Job) (*os.Root, error) {
 	dir := job.Output.Path
 	if dir == "" {
-		return "", fmt.Errorf("%w：任务记录里没有产物路径", errNoLocalContent)
+		return nil, fmt.Errorf("%w：任务记录里没有产物路径", errNoLocalContent)
 	}
-	cleanRoot := filepath.Clean(s.cfg.OutputDir)
-	cleanDir := filepath.Clean(dir)
+	cleanRoot, err := filepath.Abs(filepath.Clean(s.cfg.OutputDir))
+	if err != nil {
+		return nil, fmt.Errorf("%w：无法解析配置的 output_dir: %v", errNoLocalContent, err)
+	}
+	cleanDir, err := filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return nil, fmt.Errorf("%w：无法解析产物目录: %v", errNoLocalContent, err)
+	}
 	rel, err := filepath.Rel(cleanRoot, cleanDir)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		// 落点不在 output_dir 之下，直接拒绝而不是尝试读取。
-		return "", fmt.Errorf("%w：产物路径 %q 不在配置的 output_dir 之下", errNoLocalContent, dir)
+		return nil, fmt.Errorf("%w：产物路径 %q 不在配置的 output_dir 之下", errNoLocalContent, dir)
 	}
-	info, err := os.Stat(cleanDir)
+	root, err := os.OpenRoot(cleanRoot)
+	if err != nil {
+		return nil, fmt.Errorf("无法打开配置的 output_dir: %w", err)
+	}
+	if err := rejectSymlinkPath(root, rel); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	dirRoot, err := root.OpenRoot(rel)
+	_ = root.Close()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("产物目录已不存在（可能已被外部清理）：%s", cleanDir)
+			return nil, fmt.Errorf("产物目录已不存在（可能已被外部清理）：%s", cleanDir)
 		}
-		return "", err
+		return nil, fmt.Errorf("产物目录不可用：%w", err)
 	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("产物路径不是目录：%s", cleanDir)
+	return dirRoot, nil
+}
+
+// rejectSymlinkPath 在打开目录前拒绝已有的符号链接路径段。后续的 os.Root
+// 操作也会把并发路径变化限制在输出目录内，因此此检查用于明确拒绝符号链接，
+// 真正的路径安全边界由根目录句柄保证。
+func rejectSymlinkPath(root *os.Root, path string) error {
+	path = filepath.Clean(path)
+	if path == "." {
+		return nil
 	}
-	return cleanDir, nil
+	current := ""
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		if current == "" {
+			current = component
+		} else {
+			current = filepath.Join(current, component)
+		}
+		info, err := root.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("产物目录不可用：%w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w：产物目录不能包含符号链接", errNoLocalContent)
+		}
+	}
+	return nil
 }
 
 // serveOneFile 返回单个产物文件。
@@ -145,23 +191,17 @@ func (s *Server) resolveOutputDir(job *jobstore.Job) (string, error) {
 // output.dir 允许指向共享目录（显式指定时不追加任务 ID），同一个目录里可能
 // 躺着别的任务的产物。按记录清单做精确匹配既挡了 ../ 穿越，也挡了跨任务
 // 读取——清单是转换结束时由服务端写下的，调用方改不动。
-func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir string, job *jobstore.Job, name string) {
+func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobstore.Job, name string) {
+	defer dir.Close()
 	target, ok := recordedFile(job.Output.Files, name)
 	if !ok {
 		writeError(ctx, fasthttp.StatusNotFound, "file_not_found",
 			fmt.Sprintf("任务 %s 没有名为 %q 的产物", job.ID, name))
 		return
 	}
-	full := filepath.Join(dir, target)
-	// 清单里的名字也不该被信任到能越出目录——配置万一被改、或者记录被篡改。
-	if err := ensureInside(dir, full); err != nil {
-		s.log.Error("产物路径越界", "job", job.ID, "file", name, "err", err)
-		writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "产物不可取回")
-		return
-	}
-	file, err := os.Open(full)
+	file, err := openRecordedFile(dir, target)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || errors.Is(err, errUnsafeArtifact) {
 			writeError(ctx, fasthttp.StatusNotFound, "file_not_found",
 				fmt.Sprintf("产物文件已不存在：%s", target))
 			return
@@ -189,9 +229,10 @@ func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir string, job *jobstor
 //
 // 用流式而不是先读进内存：逐页 PNG 的产物动辄几百 MB，buffer 起来会随并发
 // 线性放大，而这里没有任何理由把它整份驻留。
-func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir string, job *jobstore.Job) {
+func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobstore.Job) {
 	files := recordedFiles(job.Output.Files)
 	if len(files) == 0 {
+		_ = dir.Close()
 		writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
 		return
 	}
@@ -201,14 +242,11 @@ func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir string, job *jobstor
 		`attachment; filename="`+headerSafe(job.ID)+`.zip"`)
 	ctx.Response.Header.Set("Cache-Control", "no-store")
 	ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer dir.Close()
 		zw := zip.NewWriter(w)
 		defer func() { _ = zw.Close() }()
 		for _, name := range files {
-			full := filepath.Join(dir, name)
-			if err := ensureInside(dir, full); err != nil {
-				continue
-			}
-			src, err := os.Open(full)
+			src, err := openRecordedFile(dir, name)
 			if err != nil {
 				continue
 			}
@@ -227,10 +265,39 @@ func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir string, job *jobstor
 	})
 }
 
+func openRecordedFile(dir *os.Root, name string) (*os.File, error) {
+	info, err := dir.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%w：产物文件是符号链接", errUnsafeArtifact)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w：产物文件不是普通文件", errUnsafeArtifact)
+	}
+	// 即使 Lstat 与 Open 之间文件被并发替换为符号链接，os.Root.Open 也会将
+	// 解析结果限制在输出目录内，避免借此访问目录外的文件。
+	file, err := dir.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if !openedInfo.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, fmt.Errorf("%w：产物文件打开后不是普通文件", errUnsafeArtifact)
+	}
+	return file, nil
+}
+
 // recordedFile 在任务记录的文件清单里找精确匹配。
 func recordedFile(files []string, name string) (string, bool) {
 	for _, f := range files {
-		if f == name {
+		if f == name && isRecordedFileName(f) {
 			return f, true
 		}
 	}
@@ -244,7 +311,7 @@ func recordedFile(files []string, name string) (string, bool) {
 func recordedFiles(files []string) []string {
 	out := make([]string, 0, len(files))
 	for _, f := range files {
-		if f == "" || strings.ContainsAny(f, `/\`) || f == "." || f == ".." {
+		if !isRecordedFileName(f) {
 			continue
 		}
 		out = append(out, f)
@@ -252,16 +319,8 @@ func recordedFiles(files []string) []string {
 	return out
 }
 
-// ensureInside 确认 path 位于 dir 之内。
-func ensureInside(dir, path string) error {
-	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
-	if err != nil {
-		return err
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("路径 %q 越出目录 %q", path, dir)
-	}
-	return nil
+func isRecordedFileName(name string) bool {
+	return name != "" && !strings.ContainsAny(name, `/\`) && name != "." && name != ".."
 }
 
 // contentTypeFor 由扩展名推断 Content-Type。
