@@ -91,6 +91,27 @@ type response struct {
 	jobID string
 	// contentType 是响应的 Content-Type。
 	contentType string
+	// headers 保留全部响应头，供需要断言单个头的用例使用。
+	headers map[string]string
+}
+
+// collectHeaders 收集响应头。
+func collectHeaders(h *fasthttp.ResponseHeader) map[string]string {
+	out := make(map[string]string, 8)
+	h.VisitAll(func(key, value []byte) {
+		out[string(key)] = string(value)
+	})
+	return out
+}
+
+// header 取响应头，不区分大小写（HTTP 头名本身不敏感）。
+func (r response) header(name string) string {
+	for k, v := range r.headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
 }
 
 func do(t *testing.T, client *fasthttp.Client, method, path, body string) response {
@@ -128,6 +149,7 @@ func doAuth(t *testing.T, client *fasthttp.Client, method, path, body, token str
 		contentLength: resp.Header.ContentLength(),
 		jobID:         string(resp.Header.Peek(jobIDHeader)),
 		contentType:   string(resp.Header.ContentType()),
+		headers:       collectHeaders(&resp.Header),
 	}
 }
 
