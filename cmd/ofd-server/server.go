@@ -142,6 +142,7 @@ func (s *Server) routes() *router.Router {
 	// 不会也不该持有业务令牌，把它们挡在门外只会让健康检查一直失败。
 	r.POST("/v1/convert", s.requireAPIKey(s.handleSubmit))
 	r.GET("/v1/jobs/{id}", s.requireAPIKey(s.handleGetJob))
+	r.GET("/v1/jobs/{id}/content", s.requireAPIKey(s.handleContent))
 	r.POST("/v1/jobs/{id}/cancel", s.requireAPIKey(s.handleCancelJob))
 	// /metrics 要令牌：它暴露转换量与格式分布，属于运营数据，而默认监听
 	// 所有网卡。Prometheus 支持在 scrape_configs 里配 bearer_token_file，

@@ -41,11 +41,11 @@ Commits。
 **提交接口。** `POST /v1/convert` 需要 Bearer 令牌。`output.kind` 决定同步还是
 异步：
 
-| `kind` | 状态码 | 响应体 | 产物落点 |
-|---|---|---|---|
-| `stream` | `200` | 产物字节 | 不落盘 |
-| `dir` | `202` | 任务 ID | `output_dir/<任务 ID>/` |
-| `ftp` / `s3` / `webdav` / `sftp` | `202` | 任务 ID | 由目标方存储管 |
+| `kind`                           | 状态码 | 响应体   | 产物落点                |
+|----------------------------------|--------|----------|-------------------------|
+| `stream`                         | `200`  | 产物字节 | 不落盘                  |
+| `dir`                            | `202`  | 任务 ID  | `output_dir/<任务 ID>/` |
+| `ftp` / `s3` / `webdav` / `sftp` | `202`  | 任务 ID  | 由目标方存储管          |
 
 `stream` 是同步的：它的产物只在内存里，异步提交的结果没有任何人能取到。同步
 转换由请求自己执行，并发上限取该通道的 `fast_workers` / `heavy_workers`，满了
@@ -58,12 +58,12 @@ Commits。
 给基名而不是完整文件名，是因为扩展名本就由格式决定，允许一并指定就多了一处
 自相矛盾的地方。逐页输出的基名替换 `page` 段、页号保留：
 
-| `file_name` | `format` | 产物名 |
-|---|---|---|
-| 不填 | `pdf` | `output.pdf` |
-| `INV-2026-0815` | `pdf` | `INV-2026-0815.pdf` |
-| `report.final.pdf` | `pdf` | `report.final.pdf`（不重复追加扩展名） |
-| `thumb` | `png` | `thumb-0001.png`、`thumb-0002.png`…… |
+| `file_name`        | `format` | 产物名                                 |
+|--------------------|----------|----------------------------------------|
+| 不填               | `pdf`    | `output.pdf`                           |
+| `INV-2026-0815`    | `pdf`    | `INV-2026-0815.pdf`                    |
+| `report.final.pdf` | `pdf`    | `report.final.pdf`（不重复追加扩展名） |
+| `thumb`            | `png`    | `thumb-0001.png`、`thumb-0002.png`……   |
 
 `file_name` 必须是单个路径组件（不含分隔符、NUL、控制字符，不是 `.` 或 `..`，
 长度受限），否则提交阶段返回 `400`。`GET /v1/jobs/{id}` 的 `output.files` 列出
@@ -121,6 +121,15 @@ LibreOffice 与 Chrome 解析，两者都是解析不可信输入的经典目标
 并在配置顶层设 `allow_insecure_ftp` / `allow_insecure_s3`。SFTP 的主机密钥
 校验同理：`host_key_sha256` 与 `host_key_file` 都不配置时服务拒绝启动，确需
 跳过要显式设 `insecure_ignore_host_key: true`。
+
+**`GET /v1/jobs/{id}/content`** 取回 `dir` 输出的产物：单个文件直接返回，
+多个文件流式打包成 zip，`?name=` 可指定其中一个。需要令牌。
+
+只服务本地产物——`stream` 的内容在提交响应里已给完、不落盘；远端目标的产物在
+FTP/S3/WebDAV/SFTP 上，本服务不回源。
+
+`name` 必须在该任务记录的 `output.files` 里精确匹配。`output.dir` 允许指向共享
+目录，同一目录里可能躺着别的任务的产物，直接拼路径等于让调用方读到别人的文件。
 
 **提交接口拒绝未知字段**，与配置文件同一套严格解码。拼错字段名会返回 `400`，
 而不是让任务照常成功、产物名安静地退回默认值。请求里的 `lane` 同样返回 `400`
