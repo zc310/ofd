@@ -81,6 +81,13 @@ type FTPSink struct {
 	IdleTTL time.Duration
 }
 
+func (s *FTPSink) MaxBytesLimit() int64 {
+	if s.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return s.MaxBytes
+}
+
 // DefaultFTPTimeout 是 FTP 连接与操作的默认超时。
 const DefaultFTPTimeout = 60 * time.Second
 

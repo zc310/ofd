@@ -58,6 +58,13 @@ type MinioSink struct {
 	conn *minio.Client
 }
 
+func (s *MinioSink) MaxBytesLimit() int64 {
+	if s.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return s.MaxBytes
+}
+
 // DefaultMinioTimeout 是对象存储单次请求的默认超时。
 const DefaultMinioTimeout = 2 * time.Minute
 
@@ -275,6 +282,13 @@ type WebDAVSink struct {
 
 	mu   sync.Mutex
 	sink *gowebdav.Client
+}
+
+func (s *WebDAVSink) MaxBytesLimit() int64 {
+	if s.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return s.MaxBytes
 }
 
 // DefaultWebDAVTimeout 是 WebDAV 单次请求的默认超时。
