@@ -158,7 +158,7 @@ make package-invoice
 Linux amd64 默认会生成 Linux amd64/ARM64、macOS、Windows x86_64/ARM64 程序包以及 Android APK 和 APK ZIP；
 Linux ARM64 会生成五个 Linux 程序包（不含 `ofd-viewer`）；Windows 和 macOS 下的默认构建会生成
 `ofd-viewer`、`ofd-converter`、`ofd-validator`、`ofd-analyzer`、`ofd-archive`、`ofd-creator`、
-`ofd-signer-demo` 和 `ofd-invoice` 各个 ZIP，不会编译 `ofd-thumbnailer`。
+`ofd-signer-demo`、`ofd-invoice` 和 `ofd-server` 各个 ZIP，不会编译 `ofd-thumbnailer`。
 
 每个 ZIP 包都包含对应的二进制文件和 README。`ofd-thumbnailer` 的安装包还包含 `ofd.thumbnailer`；Linux 安装包额外包含 `install.sh`，解压后可执行：
 
@@ -1174,6 +1174,20 @@ go run ./cmd/ofd-invoice --pretty -o invoice.json invoice.ofd
 ```
 
 字段包括发票代码/号码、开票日期、校验码、机器编号、不含税金额、税额、价税合计（小写与大写）、税控码、收款人/复核人/开票人、购销方资料以及逐行价税明细；金额、数量、税率使用精确十进制表示。附件缺失或不可用时返回错误，不处理 PDF 等非 OFD 输入。库 API（`github.com/zc310/ofd/pkg/invoice` 的 `Extract`）可直接在外部代码中复用。完整用法见 [`cmd/ofd-invoice/README.md`](cmd/ofd-invoice/README.md)。
+
+### ofd-server 异步转换服务
+
+`ofd-server` 把转换能力做成 HTTP 服务：提交任务后立即返回 `202` 与任务 ID，转换在后台队列执行，完成后回调通知。适合需要批量转换、不希望调用方长时间占用连接的批处理场景。
+
+```bash
+make package-server
+# 或
+go run ./cmd/ofd-server -c ofd-server.json
+```
+
+端点为 `POST /v1/convert`（提交）、`GET /v1/jobs/{id}`（查询）、`POST /v1/jobs/{id}/cancel`（取消排队中的任务）与 `/healthz`、`/readyz`。默认监听 `:9705`，结果可输出为单个流文件或按任务隔离的目录；日志可选写标准输出或带轮转的文件。
+
+与 `ofd-converter` 相比，它多了队列与并发控制、任务状态持久化、崩溃恢复和 Webhook 通知，代价是需要配置文件和数据库目录。完整用法、配置项与注意事项见 [`cmd/ofd-server/README.md`](cmd/ofd-server/README.md)。
 
 </details>
 

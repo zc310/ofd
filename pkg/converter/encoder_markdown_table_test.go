@@ -33,7 +33,7 @@ func TestMarkdownDetectsBorderlessTable(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output, WithMarkdownTables(true)); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output, WithMarkdownTables(true)); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -60,7 +60,7 @@ func TestMarkdownTableMergesMultilineCells(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output, WithMarkdownTables(true)); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output, WithMarkdownTables(true)); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -78,7 +78,7 @@ func TestMarkdownDoesNotTreatParagraphsAsTable(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output, WithMarkdownTables(true)); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output, WithMarkdownTables(true)); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -97,7 +97,7 @@ func TestMarkdownTablesDefaultOff(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -119,7 +119,7 @@ func TestMarkdownTableEscapesPipe(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output, WithMarkdownTables(true)); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output, WithMarkdownTables(true)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), `a\|b`) {

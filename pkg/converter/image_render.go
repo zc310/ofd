@@ -153,6 +153,11 @@ func (c *Converter) renderDocuments(documents []*render.Document) error {
 	pages = pages[pageStart:pageEnd]
 
 	for _, page := range pages {
+		// 每页之前查一次取消：万页文档渲染到第 9999 页被取消，等于把
+		// 99.98% 的算力白扔了。
+		if err := c.checkCancelled(); err != nil {
+			return err
+		}
 		// PNG/JPEG 指定了栅格后端时直接经 RasterizePage 取图，跳过 canvas
 		// 矢量表面的创建与光栅化。
 		if c.useRasterBackend() {

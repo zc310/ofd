@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"context"
 	"errors"
 	"io"
 	"math"
@@ -28,7 +29,7 @@ func (e *textEncoder) Encode(input any, output io.Writer, conv *Converter) error
 }
 
 func (e *textEncoder) textFromDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
-	pages, err := extractPageTexts(documents, conv.page)
+	pages, err := extractPageTexts(documents, conv.page, conv)
 	if err != nil {
 		return err
 	}
@@ -49,17 +50,17 @@ func textDocuments(pages []string, output io.Writer) error {
 
 // Text 提取 input 中 OFD 文档的文字并写入 output。
 // 不会保留字体、颜色和布局信息；不同文字对象按行输出，不同页面使用分页符分隔。
-func Text(input any, output io.Writer, opts ...Option) error {
-	return Encode("text", input, output, opts...)
+func Text(ctx context.Context, input any, output io.Writer, opts ...Option) error {
+	return Encode(ctx, "text", input, output, opts...)
 }
 
 // TextDocument 提取已解析 OFD 文档中的文字并写入 output。
-func TextDocument(doc *parser.Document, output io.Writer, opts ...Option) error {
-	return TextDocuments([]*parser.Document{doc}, output, opts...)
+func TextDocument(ctx context.Context, doc *parser.Document, output io.Writer, opts ...Option) error {
+	return TextDocuments(ctx, []*parser.Document{doc}, output, opts...)
 }
 
 // TextDocuments 按全局页码提取多个已解析 OFD 文档体中的文字并写入 output。
-func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Option) error {
+func TextDocuments(ctx context.Context, documents []*parser.Document, output io.Writer, opts ...Option) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
@@ -67,11 +68,14 @@ func TextDocuments(documents []*parser.Document, output io.Writer, opts ...Optio
 	for i, d := range documents {
 		docs[i] = &render.Document{Document: d}
 	}
-	return textFromRenderDocuments(docs, output, newConverter(opts...))
+	return textFromRenderDocuments(docs, output, newConverter(ctx, opts...))
 }
 
 func textFromRenderDocuments(documents []*render.Document, output io.Writer, conv *Converter) error {
-	pages, err := extractPageTexts(documents, conv.page)
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
+	pages, err := extractPageTexts(documents, conv.page, conv)
 	if err != nil {
 		return err
 	}
@@ -79,13 +83,16 @@ func textFromRenderDocuments(documents []*render.Document, output io.Writer, con
 }
 
 // extractPageTexts 提取每个页面的纯文本表示。
-func extractPageTexts(documents []*render.Document, page int) ([]string, error) {
+func extractPageTexts(documents []*render.Document, page int, conv *Converter) ([]string, error) {
 	pages, err := collectTextPages(documents, page)
 	if err != nil {
 		return nil, err
 	}
 	textPages := make([]string, len(pages))
 	for i, p := range pages {
+		if err := conv.checkCancelled(); err != nil {
+			return nil, err
+		}
 		textPages[i] = strings.Join(arrangeTextLayout(p.Entries, p.Width), "\n")
 	}
 	return textPages, nil

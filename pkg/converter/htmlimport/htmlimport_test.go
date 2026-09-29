@@ -73,14 +73,14 @@ func TestConvertHTMLToPDFAndOFD(t *testing.T) {
 <body><h1>HTML 转换测试</h1><p>Hello HTML</p>
 <img src="https://example.com/remote.png" width="100" height="50"></body></html>`)
 	var pdf bytes.Buffer
-	if err := converter.Convert("html", "pdf", html, &pdf, converter.WithChromeNoSandbox(true)); err != nil {
+	if err := converter.Convert(ctxTODO, "html", "pdf", html, &pdf, converter.WithChromeNoSandbox(true)); err != nil {
 		t.Fatalf("html→pdf 失败: %v", err)
 	}
 	if !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("html→pdf 输出不是 PDF")
 	}
 	var ofd bytes.Buffer
-	if err := converter.Convert("html", "ofd", html, &ofd, converter.WithChromeNoSandbox(true)); err != nil {
+	if err := converter.Convert(ctxTODO, "html", "ofd", html, &ofd, converter.WithChromeNoSandbox(true)); err != nil {
 		t.Fatalf("html→ofd 失败: %v", err)
 	}
 	if !bytes.HasPrefix(ofd.Bytes(), []byte("PK")) {
@@ -106,7 +106,7 @@ func TestConvertMHTMLToPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pdf bytes.Buffer
-	if err := converter.Convert("mhtml", "pdf", path, &pdf, converter.WithChromeNoSandbox(true)); err != nil {
+	if err := converter.Convert(ctxTODO, "mhtml", "pdf", path, &pdf, converter.WithChromeNoSandbox(true)); err != nil {
 		t.Fatalf("mhtml→pdf 失败: %v", err)
 	}
 	if !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {

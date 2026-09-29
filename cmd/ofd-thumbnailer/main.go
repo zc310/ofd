@@ -45,7 +45,7 @@ func runWithTimeout() error {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- realMain()
+		done <- realMain(ctx)
 	}()
 
 	select {
@@ -56,7 +56,7 @@ func runWithTimeout() error {
 	}
 }
 
-func realMain() error {
+func realMain(ctx context.Context) error {
 	if len(os.Args) != 4 {
 		return fmt.Errorf("%w: usage: %s <input> <output> <size>",
 			ErrInvalidArgs, filepath.Base(os.Args[0]))
@@ -71,7 +71,7 @@ func realMain() error {
 	}
 
 	if isOFDFile(inputFile) {
-		return generateOFDThumbnail(inputFile, outputFile, size)
+		return generateOFDThumbnail(ctx, inputFile, outputFile, size)
 	}
 
 	return generateImageThumbnail(inputFile, outputFile, size)
@@ -113,8 +113,8 @@ func resizeImage(img image.Image, size int) image.Image {
 	return imaging.Resize(img, 0, size, imaging.Lanczos)
 }
 
-func generateOFDThumbnail(input, output string, size int) error {
-	return converter.Image(input,
+func generateOFDThumbnail(ctx context.Context, input, output string, size int) error {
+	return converter.Image(ctx, input,
 		converter.Thumbnail(size),
 		converter.ImageWriter(func(page int, img image.Image) error {
 			return imaging.Save(img, output)

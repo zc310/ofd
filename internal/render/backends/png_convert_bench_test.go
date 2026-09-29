@@ -51,7 +51,7 @@ func BenchmarkConvertPngPage1(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if err := converter.ImageDocument(doc, converter.DPI(dpiVal), converter.Page(1), converter.Writer(fw)); err != nil {
+				if err := converter.ImageDocument(ctxTODO, doc, converter.DPI(dpiVal), converter.Page(1), converter.Writer(fw)); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -64,7 +64,7 @@ func BenchmarkConvertPngPage1(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if err := converter.ImageDocument(doc, converter.DPI(dpiVal), converter.Page(1), converter.ImageWriter(iw)); err != nil {
+				if err := converter.ImageDocument(ctxTODO, doc, converter.DPI(dpiVal), converter.Page(1), converter.ImageWriter(iw)); err != nil {
 					b.Fatal(err)
 				}
 			}

@@ -10,7 +10,7 @@ import (
 
 func TestImageDocumentWithoutWriterPreservesNoOutputBehavior(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}})
-	if err := ImageDocument(doc); err != nil {
+	if err := ImageDocument(ctxTODO, doc); err != nil {
 		t.Fatal(err)
 	}
 }

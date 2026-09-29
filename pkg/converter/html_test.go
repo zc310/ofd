@@ -16,7 +16,7 @@ import (
 func TestHTMLDocumentsEmbedsPNGPage(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}})
 	var output bytes.Buffer
-	if err := HTMLDocuments([]*render.Document{doc}, &output); err != nil {
+	if err := HTMLDocuments(ctxTODO, []*render.Document{doc}, &output); err != nil {
 		t.Fatal(err)
 	}
 	content := output.String()
@@ -31,7 +31,7 @@ func TestHTMLDocumentsEmbedsPNGPage(t *testing.T) {
 func TestHTMLDocumentsEmbedsSVGPage(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}})
 	var output bytes.Buffer
-	if err := HTMLDocuments([]*render.Document{doc}, &output, HTMLSVG()); err != nil {
+	if err := HTMLDocuments(ctxTODO, []*render.Document{doc}, &output, HTMLSVG()); err != nil {
 		t.Fatal(err)
 	}
 	content := output.String()
@@ -46,7 +46,7 @@ func TestHTMLDocumentsEmbedsSVGPage(t *testing.T) {
 func TestHTMLDocumentsEmbedsJPGPage(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}}})
 	var output bytes.Buffer
-	if err := HTMLDocuments([]*render.Document{doc}, &output, HTMLJPG()); err != nil {
+	if err := HTMLDocuments(ctxTODO, []*render.Document{doc}, &output, HTMLJPG()); err != nil {
 		t.Fatal(err)
 	}
 	content := output.String()
@@ -69,7 +69,7 @@ func TestHTMLDocumentsEmbedsJPGPage(t *testing.T) {
 func TestHTMLDocumentsSupportsSinglePage(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, &parser.Document{Pages: []*parser.Page{{}, {}}})
 	var output bytes.Buffer
-	if err := HTMLDocuments([]*render.Document{doc}, &output, Page(2)); err != nil {
+	if err := HTMLDocuments(ctxTODO, []*render.Document{doc}, &output, Page(2)); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(output.String(), "class=\"page\"") != 1 {

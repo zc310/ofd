@@ -2,15 +2,18 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image/color"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zip"
@@ -49,6 +52,12 @@ var (
 )
 
 type options struct {
+	// ctx 是本次运行的取消信号。
+	//
+	// 放在 options 里而不是给下面十几个函数逐个加参数：这个结构体已经承载了
+	// format、dpi、timeout 等全部运行参数，转换调用链上的函数一律只收
+	// *options，再单开一个 ctx 参数只会让签名重复而信息量不增。
+	ctx               context.Context
 	input             string
 	output            string
 	inputDir          string
@@ -80,6 +89,11 @@ type options struct {
 }
 
 func main() {
+	// Ctrl-C 立即停止：批量转换时不该跑完当前文件乃至整个目录。转换入口
+	// 会在页与页之间检查这个信号。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -88,7 +102,15 @@ func main() {
 	if opts.help {
 		return
 	}
+	opts.ctx = ctx
 	if err := run(opts); err != nil {
+		// Ctrl-C 是用户主动停止，不是转换失败。报"转换失败"既不准确，
+		// 也会让人以为文档有问题而重试——而它根本没有失败。
+		// 130 是 SIGINT 的惯例退出码。
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "已取消。")
+			os.Exit(130)
+		}
 		fmt.Fprintln(os.Stderr, "转换失败:", err)
 		os.Exit(1)
 	}
@@ -639,7 +661,7 @@ func convertImported(opts *options, from, to string) error {
 	}
 	option = append(option, officeOptions(opts)...)
 	option = append(option, markdownTablesOption(opts, to)...)
-	err := converter.Convert(from, to, opts.input, output, option...)
+	err := converter.Convert(opts.ctx, from, to, opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -733,7 +755,7 @@ func convertToHTML(opts *options) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	err := converter.Encode("html", opts.input, output, option...)
+	err := converter.Encode(opts.ctx, "html", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -765,7 +787,7 @@ func convertToText(opts *options, format string) error {
 		option = append(option, converter.Page(opts.page))
 	}
 	option = append(option, markdownTablesOption(opts, registryFormatName(format))...)
-	err := converter.Encode(registryFormatName(format), opts.input, output, option...)
+	err := converter.Encode(opts.ctx, registryFormatName(format), opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -785,7 +807,7 @@ func convertToPDF(opts *options, _ string) error {
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
-	err := converter.Encode("pdf", opts.input, output, option...)
+	err := converter.Encode(opts.ctx, "pdf", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr
@@ -816,12 +838,12 @@ func convertToImage(opts *options, format string) error {
 func convertSinglePage(opts *options, format string, option []converter.Option) error {
 	output := opts.output
 	if output == "" || output == "-" {
-		return converter.Image(opts.input, append(option, converter.Writer(func(int) (io.WriteCloser, error) {
+		return converter.Image(opts.ctx, opts.input, append(option, converter.Writer(func(int) (io.WriteCloser, error) {
 			return nopWriteCloser{Writer: os.Stdout}, nil
 		}))...)
 	}
 	output = ensureExtension(output, format)
-	return converter.Image(opts.input, append(option, converter.Writer(func(int) (io.WriteCloser, error) {
+	return converter.Image(opts.ctx, opts.input, append(option, converter.Writer(func(int) (io.WriteCloser, error) {
 		return os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	}))...)
 }
@@ -842,7 +864,7 @@ func convertAllPages(opts *options, format string, option []converter.Option) er
 func convertToZip(opts *options, format string, option []converter.Option) error {
 	var file *os.File
 	var archive *zip.Writer
-	err := converter.Image(opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
+	err := converter.Image(opts.ctx, opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
 		if archive == nil {
 			var err error
 			file, err = os.Create(opts.output)
@@ -872,7 +894,7 @@ func convertToZip(opts *options, format string, option []converter.Option) error
 
 func convertToDirectory(opts *options, format string, option []converter.Option) error {
 	created := false
-	return converter.Image(opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
+	return converter.Image(opts.ctx, opts.input, append(option, converter.Writer(func(page int) (io.WriteCloser, error) {
 		if !created {
 			if err := os.MkdirAll(opts.output, 0755); err != nil {
 				return nil, err

@@ -94,49 +94,49 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 	}
 	for _, tc := range cases {
 		var output bytes.Buffer
-		if err := Encode(tc.format, formatFixture, &output, Page(1), DPI(72)); err != nil {
-			t.Fatalf("Encode(%q) 失败: %v", tc.format, err)
+		if err := Encode(ctxTODO, tc.format, formatFixture, &output, Page(1), DPI(72)); err != nil {
+			t.Fatalf("Encode(ctxTODO, %q) 失败: %v", tc.format, err)
 		}
 		if !bytes.HasPrefix(output.Bytes(), tc.prefix) {
-			t.Fatalf("Encode(%q) 输出前缀 %v, want %v", tc.format, output.Bytes()[:min(4, output.Len())], tc.prefix)
+			t.Fatalf("Encode(ctxTODO, %q) 输出前缀 %v, want %v", tc.format, output.Bytes()[:min(4, output.Len())], tc.prefix)
 		}
 	}
 
 	var text bytes.Buffer
-	if err := Encode("txt", formatFixture, &text, Page(1)); err != nil {
-		t.Fatalf("Encode(txt) 失败: %v", err)
+	if err := Encode(ctxTODO, "txt", formatFixture, &text, Page(1)); err != nil {
+		t.Fatalf("Encode(ctxTODO, txt) 失败: %v", err)
 	}
 	if text.Len() == 0 {
-		t.Fatal("Encode(txt) 没有输出文本")
+		t.Fatal("Encode(ctxTODO, txt) 没有输出文本")
 	}
 
 	var combined bytes.Buffer
-	if err := Encode("md", formatFixture, &combined, Page(1)); err != nil {
-		t.Fatalf("Encode(md) 失败: %v", err)
+	if err := Encode(ctxTODO, "md", formatFixture, &combined, Page(1)); err != nil {
+		t.Fatalf("Encode(ctxTODO, md) 失败: %v", err)
 	}
 	if !bytes.HasPrefix(combined.Bytes(), []byte("# Hello World")) {
-		t.Fatalf("Encode(md) 输出 = %q", combined.String())
+		t.Fatalf("Encode(ctxTODO, md) 输出 = %q", combined.String())
 	}
 }
 
 func TestEncodeRejectsUnknownFormatAndMissingImageOutput(t *testing.T) {
 	fixture := filepath.Clean(formatFixture)
-	if err := Encode("webp", fixture, &bytes.Buffer{}); err == nil {
-		t.Fatal("Encode(webp) 期望返回错误")
+	if err := Encode(ctxTODO, "webp", fixture, &bytes.Buffer{}); err == nil {
+		t.Fatal("Encode(ctxTODO, webp) 期望返回错误")
 	}
-	if err := Encode("png", fixture, nil); err == nil {
-		t.Fatal("Encode(png, nil) 期望返回未设置图像输出参数错误")
+	if err := Encode(ctxTODO, "png", fixture, nil); err == nil {
+		t.Fatal("Encode(ctxTODO, png, nil) 期望返回未设置图像输出参数错误")
 	}
 }
 
 func TestWithFormatOptionSelectsRegisteredEncoder(t *testing.T) {
 	var output bytes.Buffer
-	if err := Image(formatFixture, WithFormat("svg"), Page(1), Writer(func(int) (io.WriteCloser, error) {
+	if err := Image(ctxTODO, formatFixture, WithFormat("svg"), Page(1), Writer(func(int) (io.WriteCloser, error) {
 		return &nopWriteCloser{&output}, nil
 	})); err != nil {
-		t.Fatalf("Image(WithFormat(svg)) 失败: %v", err)
+		t.Fatalf("Image(ctxTODO, WithFormat(svg)) 失败: %v", err)
 	}
 	if !bytes.Contains(output.Bytes(), []byte("<svg")) {
-		t.Fatalf("Image(WithFormat(svg)) 输出不是 SVG: %q", output.String()[:min(64, output.Len())])
+		t.Fatalf("Image(ctxTODO, WithFormat(svg)) 输出不是 SVG: %q", output.String()[:min(64, output.Len())])
 	}
 }

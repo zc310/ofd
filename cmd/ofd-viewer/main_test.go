@@ -2053,3 +2053,36 @@ func TestDocumentTitlePrefersMetadataAndFallsBackToFileName(t *testing.T) {
 		t.Fatalf("empty title = %q, want %q", got, "未加载文档")
 	}
 }
+
+// TestVersionMatchesMakefile 守住版本号的单一来源约定。
+//
+// Makefile 的 VERSION 与这里的 defaultVersion 是同一个版本号的两个副本：前者
+// 经 -ldflags 注入，后者是 go run / go build 未经 Makefile 时的兜底。两者曾
+// 漂移到相差 9 个版本（Makefile 0.0.5 而 git tag 已是 v0.1.2），而当时只有一行
+// 注释在声明"保持一致"——注释不拦人，测试才拦得住。
+func TestVersionMatchesMakefile(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatalf("读取 Makefile 失败: %v", err)
+	}
+	const prefix = "VERSION ?= "
+	var makefileVersion string
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			makefileVersion = strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+			break
+		}
+	}
+	if makefileVersion == "" {
+		t.Fatal("Makefile 里找不到 VERSION ?= 赋值")
+	}
+	if makefileVersion != defaultVersion {
+		t.Errorf("版本号不一致：Makefile VERSION=%s，cmd/ofd-viewer defaultVersion=%s；"+
+			"改动时两处都要更新", makefileVersion, defaultVersion)
+	}
+	// 注入后的运行时值应以 v 开头，且带上 Makefile 的版本号。
+	if want := "v" + makefileVersion; applicationVersion != want && applicationVersion != "v"+defaultVersion {
+		t.Errorf("applicationVersion = %q，期望 v%s", applicationVersion, makefileVersion)
+	}
+}

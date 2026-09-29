@@ -33,14 +33,14 @@ func TestRender_PDF_helloworld(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "helloworld.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, converter.PDF("testdata/helloworld.ofd", f))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/helloworld.ofd", f))
 }
 
 // 文字渐变必须先栅格化：否则 PDF 后端会把自定义 Gradient 写成只有
 // /ColorSpace 的空着色图案，MuPDF/PyMuPDF 会报 "cannot load shading function"。
 func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, converter.PDF("testdata/shading.ofd", &output))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/shading.ofd", &output))
 	re := regexp.MustCompile(`(?s)/PatternType\s*2\s*/Shading\s*<<(.*?)>>`)
 	for _, match := range re.FindAllStringSubmatch(output.String(), -1) {
 		shading := match[1]
@@ -57,7 +57,7 @@ func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 // 渐变文字必须保留真实文字 + 原生着色图案（可复制），而不是栅格化成图片。
 func TestRender_PDF_gradientTextKeepsText(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, converter.PDF("testdata/intro.ofd", &output))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/intro.ofd", &output))
 	found := false
 	for _, stream := range inflatePDFStreams(output.Bytes()) {
 		// canvas 把着色图案文字写成 “/Pattern cs /P? scn ... [..]TJ”。
@@ -109,13 +109,13 @@ func TestRender_PDF_999(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "999.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, converter.PDF("testdata/999.ofd", f))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/999.ofd", f))
 }
 func TestRender_PDF_ano(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "ano.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, converter.PDF("testdata/ano.ofd", f))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/ano.ofd", f))
 }
 func BenchmarkRenderPDFIntro(b *testing.B) {
 	var output bytes.Buffer
@@ -123,7 +123,7 @@ func BenchmarkRenderPDFIntro(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		output.Reset()
-		if err := converter.PDF("testdata/intro.ofd", &output); err != nil {
+		if err := converter.PDF(ctxTODO, "testdata/intro.ofd", &output); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -131,19 +131,19 @@ func BenchmarkRenderPDFIntro(b *testing.B) {
 
 func TestRender_PDF_huawei(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, converter.PDF("testdata/huawei.ofd", &output))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/huawei.ofd", &output))
 	assert.Contains(t, output.String(), "/ShadingType 2")
 }
 func TestRender_PDF_intro_page7(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "intro_page_7.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, converter.PDF("testdata/intro.ofd", f, converter.Page(40)))
+	assert.Nil(t, converter.PDF(ctxTODO, "testdata/intro.ofd", f, converter.Page(40)))
 }
 
 func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 	var output bytes.Buffer
-	err := converter.Image("testdata/intro.ofd",
+	err := converter.Image(ctxTODO, "testdata/intro.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return bufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -156,7 +156,7 @@ func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 }
 
 func TestRender_Image(t *testing.T) {
-	assert.Nil(t, converter.Image("testdata/ano.ofd",
+	assert.Nil(t, converter.Image(ctxTODO, "testdata/ano.ofd",
 		converter.ImageWriter(func(page int, img image.Image) error {
 			return imaging.Save(img, filepath.Join(tmpDir, fmt.Sprintf("ano_%d.png", page)))
 		}),

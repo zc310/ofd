@@ -31,7 +31,7 @@ func TestImageRasterBackendGGProducesPNG(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
-	if err := ImageDocument(doc, PNG(), writer, RasterBackend("gg"), Page(1)); err != nil {
+	if err := ImageDocument(ctxTODO, doc, PNG(), writer, RasterBackend("gg"), Page(1)); err != nil {
 		t.Fatalf("gg 栅格后端 PNG 输出失败: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -61,7 +61,7 @@ func TestImageRasterBackendGGJPEG(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := Writer(func(int) (io.WriteCloser, error) { return nopWriteCloser{&buf}, nil })
-	if err := ImageDocument(doc, JPG(), writer, RasterBackend("gg"), Page(1)); err != nil {
+	if err := ImageDocument(ctxTODO, doc, JPG(), writer, RasterBackend("gg"), Page(1)); err != nil {
 		t.Fatalf("gg 栅格后端 JPEG 输出失败: %v", err)
 	}
 	if _, _, err := image.DecodeConfig(bytes.NewReader(buf.Bytes())); err != nil {

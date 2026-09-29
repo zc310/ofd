@@ -25,7 +25,7 @@ func TestTextDocumentExtractsPageTextInOrder(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	// 默认模式按行合并：同一 Y 的三个对象在一行，按 X 排序
@@ -41,7 +41,7 @@ func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 	}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "p1\n\np2\n"; got != want {
@@ -49,7 +49,7 @@ func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 	}
 
 	output.Reset()
-	if err := TextDocument(doc, &output, Page(2)); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output, Page(2)); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "p2\n"; got != want {
@@ -61,7 +61,7 @@ func TestTextDocumentsRejectInvalidGlobalPage(t *testing.T) {
 	documents := []*parser.Document{{Pages: []*parser.Page{parser.NewPage(models.PageContent{})}}}
 	for _, page := range []int{-1, 2} {
 		var output bytes.Buffer
-		err := TextDocuments(documents, &output, Page(page))
+		err := TextDocuments(ctxTODO, documents, &output, Page(page))
 		if err == nil {
 			t.Fatalf("Page(%d) returned nil error", page)
 		}
@@ -81,7 +81,7 @@ func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := TextDocuments(documents, &output); err != nil {
+	if err := TextDocuments(ctxTODO, documents, &output); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "d1p1\n\nd2p1\n\nd2p2\n"; got != want {
@@ -89,7 +89,7 @@ func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
 	}
 
 	output.Reset()
-	if err := TextDocuments(documents, &output, Page(2)); err != nil {
+	if err := TextDocuments(ctxTODO, documents, &output, Page(2)); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "d2p1\n"; got != want {
@@ -106,7 +106,7 @@ func TestTextDocumentSkipsInvisibleText(t *testing.T) {
 	}}}}
 
 	var output bytes.Buffer
-	if err := TextDocument(&parser.Document{Pages: []*parser.Page{parser.NewPage(models.PageContent{Content: content})}}, &output); err != nil {
+	if err := TextDocument(ctxTODO, &parser.Document{Pages: []*parser.Page{parser.NewPage(models.PageContent{Content: content})}}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "vis\n"; got != want {
@@ -125,7 +125,7 @@ func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
 		}}}}})}}
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	// 新格式: 无页面标题，编号标题自动识别为 H3，章节标题识别为 H2
@@ -135,7 +135,7 @@ func TestMarkdownDocumentFormatsPagesAndEscapesMarkdown(t *testing.T) {
 	}
 
 	output.Reset()
-	if err := MarkdownDocument(doc, &output, Page(2)); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output, Page(2)); err != nil {
 		t.Fatal(err)
 	}
 	// Page(2) 只处理第2页，但输出时页面索引是基于过滤后的结果（即第1页）
@@ -176,7 +176,7 @@ func TestTextDocumentLayoutModeIndentByPosition(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -200,7 +200,7 @@ func TestTextDocumentLayoutModeSeparatesRowsByY(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -226,7 +226,7 @@ func TestTextDocumentLayoutModeDefaultBehavior(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -253,7 +253,7 @@ func TestTextDocumentLayoutCountsWideCharactersAsTwoColumns(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	// 列单位 210/80 = 2.625，R 的列号 round(50/2.625)=19，中占两列 → 17 个空格
@@ -276,7 +276,7 @@ func TestTextDocumentUsesPagePhysicalWidthForAlignment(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	// 列单位 105/80 = 1.3125，R 的列号 round(50/1.3125)=38，L 占一列 → 37 个空格
@@ -294,7 +294,7 @@ func TestMarkdownDocumentsSkipsLeadingSeparatorForEmptyFirstPage(t *testing.T) {
 	}}
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -318,7 +318,7 @@ func TestMarkdownDocumentsClampsHeadingLevelToSix(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -334,7 +334,7 @@ func TestMarkdownUsesDocumentTitle(t *testing.T) {
 	page := parser.NewPage(models.PageContent{Content: textContent("正文")})
 	doc := &render.Document{Document: &parser.Document{Pages: []*parser.Page{page}}}
 	var output bytes.Buffer
-	conv := newConverter()
+	conv := newConverter(ctxTODO)
 	conv.docTitle = "年度报告"
 	if err := markdownDocuments([]*render.Document{doc}, &output, conv); err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestMarkdownTitleFallsBackToDefault(t *testing.T) {
 	page := parser.NewPage(models.PageContent{Content: textContent("正文")})
 	doc := &render.Document{Document: &parser.Document{Pages: []*parser.Page{page}}}
 	var output bytes.Buffer
-	if err := markdownDocuments([]*render.Document{doc}, &output, newConverter()); err != nil {
+	if err := markdownDocuments([]*render.Document{doc}, &output, newConverter(ctxTODO)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(output.String(), "# OFD 文档\n\n") {
@@ -367,7 +367,7 @@ func TestMarkdownAddsBlankLineBeforeIndentedParagraph(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -388,7 +388,7 @@ func TestMarkdownAddsBlankLineBeforeArticleMarker(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -409,7 +409,7 @@ func TestMarkdownKeepsMidPageNumberRow(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "\n2\n") {
@@ -427,7 +427,7 @@ func TestMarkdownDropsPageEdgeNumberRows(t *testing.T) {
 	)
 
 	var output bytes.Buffer
-	if err := MarkdownDocument(doc, &output); err != nil {
+	if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()
@@ -451,7 +451,7 @@ func TestMarkdownOutputIsDeterministic(t *testing.T) {
 	var first string
 	for i := 0; i < 20; i++ {
 		var output bytes.Buffer
-		if err := MarkdownDocument(doc, &output); err != nil {
+		if err := MarkdownDocument(ctxTODO, doc, &output); err != nil {
 			t.Fatal(err)
 		}
 		if i == 0 {
@@ -475,7 +475,7 @@ func TestTextDocumentSanitizesNonUTF8TextValue(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := output.String(), "中文\n"; got != want {
@@ -498,7 +498,7 @@ func TestTextDocumentClampsLeadingSpacesForOutOfPagePosition(t *testing.T) {
 	doc := &parser.Document{Pages: []*parser.Page{page}}
 
 	var output bytes.Buffer
-	if err := TextDocument(doc, &output); err != nil {
+	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
 	// 列单位 210/80 = 2.625。near 的 X 最小，排在行首并占 4 列；far 的偏移

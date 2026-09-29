@@ -29,7 +29,7 @@ func TestPDFIntroParallel(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := PDFDocuments(documents, &output, PDFParallel(true)); err != nil {
+	if err := PDFDocuments(ctxTODO, documents, &output, PDFParallel(true)); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
@@ -77,7 +77,7 @@ func benchmarkPDFDocumentsOption(b *testing.B, option Option) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		output.Reset()
-		if err := PDFDocuments(documents, &output, option); err != nil {
+		if err := PDFDocuments(ctxTODO, documents, &output, option); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -102,7 +102,7 @@ func benchmarkPDFDocumentsWorkers(b *testing.B, workers int) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		output.Reset()
-		if err := pdfDocumentsWithWorkers(documents, &output, workers); err != nil {
+		if err := pdfDocumentsWithWorkers(ctxTODO, documents, &output, workers); err != nil {
 			b.Fatal(err)
 		}
 	}
