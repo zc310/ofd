@@ -40,7 +40,18 @@ func textDocuments(pages []string, output io.Writer) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
-	text := strings.Join(pages, "\n\n")
+	var builder strings.Builder
+	for i, page := range pages {
+		if i > 0 {
+			previous := pages[i-1]
+			if previous != "" && !strings.HasSuffix(previous, "\n") {
+				builder.WriteByte('\n')
+			}
+			builder.WriteByte('\f')
+		}
+		builder.WriteString(page)
+	}
+	text := builder.String()
 	if text != "" {
 		text += "\n"
 	}

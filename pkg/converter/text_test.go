@@ -44,7 +44,7 @@ func TestTextDocumentSeparatesPagesAndSupportsPageSelection(t *testing.T) {
 	if err := TextDocument(ctxTODO, doc, &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "p1\n\np2\n"; got != want {
+	if got, want := output.String(), "p1\n\fp2\n"; got != want {
 		t.Fatalf("text = %q, want %q", got, want)
 	}
 
@@ -84,7 +84,7 @@ func TestTextDocumentsUseGlobalPageNumbers(t *testing.T) {
 	if err := TextDocuments(ctxTODO, documents, &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "d1p1\n\nd2p1\n\nd2p2\n"; got != want {
+	if got, want := output.String(), "d1p1\n\fd2p1\n\fd2p2\n"; got != want {
 		t.Fatalf("text = %q, want %q", got, want)
 	}
 
