@@ -345,6 +345,13 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		}
 		notifyTarget = request.Notify.Target
 		notifyEvents = request.Notify.Events
+		// 事件名在这里校验，而不是留着到投递时静默过滤。拼错的后果是该任务
+		// 一条通知都收不到，而调用方能观察到的只有"没收到"——那是最难查的
+		// 失败形态。事件集合随请求演进，旧的拼法今天合法不代表一直合法。
+		if err := validateNotifyEvents(notifyEvents); err != nil {
+			return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+				msg: "notify.events 非法: " + err.Error()}
+		}
 	}
 
 	if err := s.checkRemoteTarget(&request.Output); err != nil {
@@ -378,6 +385,21 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		NotifyEvents: notifyEvents,
 		CreatedAt:    time.Now().UTC(),
 	}, nil
+}
+
+// validateNotifyEvents 校验请求里的 notify.events。
+//
+// 接受 succeeded、failed 与通配符 *，与配置侧 notify_targets[].events 同一套
+// 名字（notify.KnownEvent 是唯一的判定处）。空列表合法，表示不收窄、沿用目标
+// 自己的订阅集合。
+func validateNotifyEvents(events []string) error {
+	for _, name := range events {
+		if !notify.KnownEvent(name) {
+			return fmt.Errorf("未知事件 %q，可用 %s / %s / %s",
+				name, notify.EventSucceeded, notify.EventFailed, notify.EventWildcard)
+		}
+	}
+	return nil
 }
 
 // validateRelativeSubdir 校验 output_dir 之下的相对子路径。

@@ -113,3 +113,46 @@ func TestNormalizeOutputKindIsIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// TestSubmitNotifyEventsUnknownRejected 未知事件名必须在提交阶段报 400。
+//
+// notify.events 接线之后，填一个拼错的事件名意味着这个任务一条通知都收不到。
+// 调用方能观察到的只有"没收到"——那是最难查的失败形态，所以不能等到投递时
+// 才静默过滤掉。
+func TestSubmitNotifyEventsUnknownRejected(t *testing.T) {
+	s, store, _ := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+
+	for _, events := range []string{`["typo"]`, `["succeeded ","succeeded"]`, `[""]`, `["SUCCEEDED"]`} {
+		t.Run(events, func(t *testing.T) {
+			body := strings.Replace(submitBodyWith(t, "pdf", "dir"),
+				`"output":{`, `"notify":{"target":"erp","events":`+events+`},"output":{`, 1)
+			got := do(t, client, fasthttp.MethodPost, "/v1/convert", body)
+			if got.status != fasthttp.StatusBadRequest {
+				t.Fatalf("events=%s 状态码 = %d，期望 400；实际 %s", events, got.status, got.body)
+			}
+		})
+	}
+	if depth, err := store.QueueDepth(); err != nil {
+		t.Fatal(err)
+	} else if total := depth[jobstore.StateQueued] + depth[jobstore.StateRunning]; total != 0 {
+		t.Errorf("队列里有 %d 个任务，非法事件名不该入队", total)
+	}
+}
+
+// TestSubmitNotifyEventsAccepted 合法事件名照常受理。
+func TestSubmitNotifyEventsAccepted(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+
+	for _, events := range []string{`["succeeded"]`, `["failed"]`, `["succeeded","failed"]`, `["*"]`} {
+		t.Run(events, func(t *testing.T) {
+			body := strings.Replace(submitBodyWith(t, "pdf", "dir"),
+				`"output":{`, `"notify":{"target":"erp","events":`+events+`},"output":{`, 1)
+			got := do(t, client, fasthttp.MethodPost, "/v1/convert", body)
+			if got.status != fasthttp.StatusAccepted {
+				t.Fatalf("events=%s 状态码 = %d，期望 202；实际 %s", events, got.status, got.body)
+			}
+		})
+	}
+}

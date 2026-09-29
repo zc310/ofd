@@ -530,6 +530,15 @@ func TestConfigValidation(t *testing.T) {
 		{"通知用明文 http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://evil.example.com"}}}, true},
 		{"通知用 https", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "https://ok.example.com"}}}, false},
 		{"通知用回环 http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://127.0.0.1:9000"}}}, false},
+		// 事件名拼错会让该目标一条通知都不收，唯一能观察到的现象是"没收到"。
+		{"通知 events 拼错", map[string]any{"notify_targets": map[string]any{"a": map[string]any{
+			"url": "https://ok.example.com", "events": []string{"succeded"}}}}, true},
+		{"通知 events 大小写不对", map[string]any{"notify_targets": map[string]any{"a": map[string]any{
+			"url": "https://ok.example.com", "events": []string{"Succeeded"}}}}, true},
+		{"通知 events 合法", map[string]any{"notify_targets": map[string]any{"a": map[string]any{
+			"url": "https://ok.example.com", "events": []string{"succeeded", "failed", "*"}}}}, false},
+		{"通知 events 留空", map[string]any{"notify_targets": map[string]any{"a": map[string]any{
+			"url": "https://ok.example.com"}}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -327,6 +327,15 @@ func (r *Runner) scheduleNotify(job *jobstore.Job, state jobstore.State, output 
 	if state != jobstore.StateSucceeded {
 		event = notify.EventFailed
 	}
+	// 请求里的 notify.events 收窄本任务要收的事件；留空则沿用目标自己的订阅
+	// 集合。判在这里而不是投递时，是为了让不该发的通知根本不入队——既不污染
+	// delivery 表，也不占用一次投递配额。
+	//
+	// 与目标侧是取交集：notify.events 只在目标愿意收的范围里再收窄，不会把
+	// 目标显式拒掉的事件放回来。
+	if !notify.Subscribes(job.NotifyEvents, event) {
+		return
+	}
 	payload := map[string]any{
 		"job_id":  job.ID,
 		"state":   string(state),
