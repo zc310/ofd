@@ -58,9 +58,18 @@ type SFTPSink struct {
 
 	logger *slog.Logger
 
-	mu   sync.Mutex
-	conn *ssh.Client
-	cl   *sftp.Client
+	// pool 是连接池，由注册目标持有、派生的子目录实例共享。理由同 FTP：
+	// SSH 握手 + 认证往返在远端可能几百毫秒，逐任务重连不可接受。
+	pool   *connPool[*sftpConn]
+	poolMu sync.Mutex
+	// OwnsPool 区分注册目标与 WithBaseDir 派生的实例，只有前者关池。
+	OwnsPool bool
+	// dirs 记住已建过的远端目录，避免逐页输出时每个文件都重跑一遍 MkdirAll。
+	// WithBaseDir 逐字段构造新实例，所以派生实例天然是空记忆。
+	dirs madeDirs
+	// MaxIdle 与 IdleTTL 覆盖池的默认参数，0 表示用默认值。
+	MaxIdle int
+	IdleTTL time.Duration
 }
 
 // DefaultSFTPTimeout 是 SFTP 连接与操作的默认超时。
@@ -121,6 +130,10 @@ func (s *SFTPSink) WithBaseDir(dir string) (*SFTPSink, error) {
 	default:
 		base = path.Join(base, cleaned)
 	}
+	// 必须先让父对象的池建好再复制指针：父的池是惰性初始化的，若此刻还是
+	// nil，派生实例会拿到 nil 并各自建一个自己的池——共享就消失了，而
+	// "每个任务一条新连接"正是连接池要解决的问题。
+	s.ensurePool()
 	// 逐字段构造：SFTPSink 内含 sync.Mutex，整体赋值会拷贝锁。
 	return &SFTPSink{
 		Addr:                  s.Addr,
@@ -134,6 +147,11 @@ func (s *SFTPSink) WithBaseDir(dir string) (*SFTPSink, error) {
 		MaxBytes:              s.MaxBytes,
 		Overwrite:             s.Overwrite,
 		logger:                s.logger,
+		// 共享连接池：不带的话每个派生实例都会建自己的空池，池等于没有。
+		pool:    s.pool,
+		MaxIdle: s.MaxIdle,
+		IdleTTL: s.IdleTTL,
+		// OwnsPool 保持 false：派生实例收尾时无权关闭共享池。
 	}, nil
 }
 
@@ -165,14 +183,22 @@ func (s *SFTPSink) Put(ctx context.Context, name string, r io.Reader) (Location,
 		return Location{}, err
 	}
 
-	client, err := s.acquire(ctx)
+	conn, err := s.acquire(ctx)
 	if err != nil {
 		return Location{}, err
 	}
-	if base != "" {
+	// 任何失败都丢弃连接：它可能已半坏，放回池里只会让下一个任务在写到
+	// 一半时才暴露问题。
+	committed := false
+	defer func() { s.release(conn, committed) }()
+	client := conn.client
+	// 目录记忆：逐页输出常是同一个目录几百个文件，而 MkdirAll 每个文件都要
+	// 跑一遍（每级一次 Stat 加可能的 Mkdir），全是浪费的往返。
+	if base != "" && !s.dirs.has(base) {
 		if err := client.MkdirAll(base); err != nil {
 			return Location{}, fmt.Errorf("创建 SFTP 目录 %s 失败: %w", base, redactError(err, s.Auth.Password))
 		}
+		s.dirs.add(base)
 	}
 	if !s.Overwrite {
 		if _, statErr := client.Stat(remote); statErr == nil {
@@ -198,28 +224,57 @@ func (s *SFTPSink) Put(ctx context.Context, name string, r io.Reader) (Location,
 	if counter.exceeded {
 		// 超限时远端已经写进去一半。留着截断的文件比删掉更糟：调用方
 		// 看到文件存在就会去取，取到的是残缺内容。删除失败只能记日志——
-		// 清理不该掩盖真正的失败原因。
+		// 清理不该掩盖真正地失败原因。
 		if err := client.Remove(remote); err != nil {
 			s.log().Warn("删除超限的残留文件失败", "path", remote, "written", written, "err", err)
 		}
 		return Location{}, fmt.Errorf("内容超过上限 %d 字节（已写入 %d 字节后中止）", limit, written)
 	}
 	if copyErr != nil {
+		// 失败可能是"目录在我们建完之后又被删了"，目录记忆已不可信，清掉它。
+		s.dirs.forgetAll()
 		return Location{}, fmt.Errorf("写入 SFTP 失败: %w", redactError(copyErr, s.Auth.Password))
 	}
 	if closeErr != nil {
 		return Location{}, fmt.Errorf("关闭 SFTP 文件失败: %w", redactError(closeErr, s.Auth.Password))
 	}
+	committed = true
 	return Location{Kind: "sftp", Path: remote, Size: counter.n}, nil
 }
 
-// acquire 复用连接，必要时新建。
-func (s *SFTPSink) acquire(ctx context.Context) (*sftp.Client, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.cl != nil {
-		return s.cl, nil
+// acquire 从池里取一条可用连接。
+func (s *SFTPSink) acquire(ctx context.Context) (*sftpConn, error) {
+	pool := s.ensurePool()
+	conn, err := pool.get(ctx)
+	if err != nil {
+		return nil, err
 	}
+	return conn, nil
+}
+
+// ensurePool 惰性建池。
+func (s *SFTPSink) ensurePool() *connPool[*sftpConn] {
+	if s.pool != nil {
+		return s.pool
+	}
+	s.poolMu.Lock()
+	defer s.poolMu.Unlock()
+	if s.pool == nil {
+		s.pool = &connPool[*sftpConn]{
+			dial:    s.dial,
+			alive:   sftpAlive,
+			release: sftpConnClose,
+			maxIdle: s.MaxIdle,
+			idleTTL: s.IdleTTL,
+		}
+		s.pool.startSweeper()
+	}
+	return s.pool
+}
+
+// dial 建立一条新连接：ssh 握手 + 认证 + 启动 SFTP 会话。
+// dial 建立一条新连接：ssh 握手 + 认证 + 启动 SFTP 会话。
+func (s *SFTPSink) dial(ctx context.Context) (*sftpConn, error) {
 	if !s.Auth.configured() {
 		return nil, errors.New("未配置任何 SFTP 认证方式（私钥文件、agent 或口令）")
 	}
@@ -262,10 +317,40 @@ func (s *SFTPSink) acquire(ctx context.Context) (*sftp.Client, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("启动 SFTP 会话失败: %w", redactError(err, s.Auth.Password))
 	}
-	s.conn = client
-	s.cl = fileClient
 	s.log().Info("已连接 SFTP 服务器", "addr", s.Addr, "user", s.User)
-	return fileClient, nil
+	return &sftpConn{sshConn: client, client: fileClient}, nil
+}
+
+// sftpConn 是一条 SFTP 会话及其底层的 ssh 连接。
+//
+// 两者成对保存：关会话不关底层连接会漏掉 socket，反之则会在会话仍被引用时
+// 把它的通道打断。
+type sftpConn struct {
+	sshConn *ssh.Client
+	client  *sftp.Client
+}
+
+// sftpAlive 探活。Getwd 是一次 SFTP 往返（一个 SSH_FXP_REALPATH 请求）。
+//
+// 与 FTP 同理，这个检查必须发生在写入**之前**：连接空闲久了会被服务端关闭，
+// 而一旦开始写才发现连接已死，调用方的 io.Reader 已经读掉一截，没法重放——
+// 那会变成静默的数据损坏，而不是干净的错误。
+func sftpAlive(c *sftpConn) error {
+	_, err := c.client.Getwd()
+	return err
+}
+
+// sftpConnClose 硬关连接。
+//
+// 不走 sftp.Client.Close()：它会发 FXP_CLOSE 并等回应，可能被……丢弃
+// 早已不可达，那一等会让清扫 goroutine 卡住。关底层 ssh 连接即已足够。
+func sftpConnClose(c *sftpConn) {
+	if c == nil {
+		return
+	}
+	if c.sshConn != nil {
+		_ = c.sshConn.Close()
+	}
 }
 
 // hostKeyCallback 构造主机密钥校验回调。
@@ -333,24 +418,35 @@ func (s *SFTPSink) authMethods() ([]ssh.AuthMethod, error) {
 	return methods, nil
 }
 
+// release 归还或丢弃连接。
+//
+// 失败时 discard 而不是 put：连接可能已半坏，放回池里会让下一个任务在写到
+// 一半时才暴露问题。
+func (s *SFTPSink) release(c *sftpConn, reusable bool) {
+	if c == nil {
+		return
+	}
+	if reusable {
+		s.ensurePool().put(c)
+		return
+	}
+	s.ensurePool().discard(c)
+}
+
 // Close 关闭连接。
+//
+// Sink 接口没有 Close，调用方用可选的 io.Closer 断言来收尾；不实现也可以，
+// 只是每次 Put 都要重新握手。
 func (s *SFTPSink) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var firstErr error
-	if s.cl != nil {
-		if err := s.cl.Close(); err != nil {
-			firstErr = err
-		}
-		s.cl = nil
+	// 派生实例不关池：连接是共享的，一个任务收尾时把池关掉，会连带掐掉
+	// 正在上传的其它任务。只有注册目标（OwnsPool）才有这个权力。
+	if !s.OwnsPool {
+		return nil
 	}
-	if s.conn != nil {
-		if err := s.conn.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		s.conn = nil
+	if s.pool != nil {
+		s.pool.close()
 	}
-	return firstErr
+	return nil
 }
 
 // cleanAbsoluteRemote 规整远端绝对路径：去掉重复与尾随斜杠，保留前导斜杠。

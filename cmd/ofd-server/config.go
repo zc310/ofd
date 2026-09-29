@@ -192,6 +192,18 @@ type FTPTargetConfig struct {
 	Password string `json:"password"`
 	// BaseDir 是允许写入的远端根目录，空表示用户家目录。
 	BaseDir string `json:"base_dir"`
+
+	// MaxIdle 是空闲连接上限，超出的直接断开。0 时取 2。
+	//
+	// 池是给突发用的，不是常驻连接数：一个目标常驻十几条连接没有意义，
+	// 而服务端那边的会话表是要占资源的。
+	MaxIdle int `json:"max_idle"`
+	// IdleTTL 是连接最多空闲多久，超过主动断开。0 时取 2 分钟。
+	//
+	// 服务端会在空闲一段时间后自行关闭会话，这个值应该比它短一些，
+	// 这样回收是我们主动做的，而不是等到下次取用时探活才发现。
+	IdleTTL Duration `json:"idle_ttl"`
+
 	// Insecure 允许明文 FTP。明文下账号密码在链路上没有任何保护，
 	// 生产环境不应开启；开启后启动时会记一条 WARN。
 	Insecure bool `json:"insecure"`
@@ -261,6 +273,16 @@ type SFTPTargetConfig struct {
 	Auth SFTPAuthConfig `json:"auth"`
 	// BaseDir 是允许写入的远端目录，空表示登录用户的家目录。
 	BaseDir string `json:"base_dir"`
+	// MaxIdle 是空闲连接上限，超出的直接断开。0 时取 2。
+	//
+	// 池是给突发用的，不是常驻连接数：一个目标常驻十几条连接没有意义，
+	// 而服务端那边的会话表是要占资源的。
+	MaxIdle int `json:"max_idle"`
+	// IdleTTL 是连接最多空闲多久，超过主动断开。0 时取 2 分钟。
+	//
+	// 服务端会在空闲一段时间后自行关闭会话，这个值应该比它短一些，
+	// 这样回收是我们主动做的，而不是等到下次取用时探活才发现。
+	IdleTTL Duration `json:"idle_ttl"`
 	// HostKeySHA256 是预期的主机密钥指纹（ssh-keygen 打印的那个）。
 	HostKeySHA256 string `json:"host_key_sha256"`
 	// HostKeyFile 是 known_hosts 文件路径。
@@ -522,7 +544,13 @@ func (c *Config) NotifyRegistry() *notify.Registry {
 func (c *Config) FTPSinks() (map[string]*transfer.FTPSink, error) {
 	sinks := make(map[string]*transfer.FTPSink, len(c.FTPTargets))
 	for name, target := range c.FTPTargets {
+		// ownsPool：这是配置里的长期单例，由它负责关闭连接池。
+		// WithBaseDir 派生的副本不带这个标记，收尾时不会掐掉别人的连接。
 		sink := &transfer.FTPSink{
+			OwnsPool: true,
+			// 连接池挂在注册目标上，派生的子目录实例共享它。
+			MaxIdle:   target.MaxIdle,
+			IdleTTL:   target.IdleTTL.Duration(),
 			Addr:      target.Addr,
 			User:      target.User,
 			Password:  target.Password,
@@ -607,9 +635,12 @@ func (c *Config) SFTPSinks() map[string]*transfer.SFTPSink {
 	sinks := make(map[string]*transfer.SFTPSink, len(c.SFTPTargets))
 	for name, target := range c.SFTPTargets {
 		sink := &transfer.SFTPSink{
-			Addr:    target.Addr,
-			User:    target.User,
-			BaseDir: target.BaseDir,
+			OwnsPool: true,
+			MaxIdle:  target.MaxIdle,
+			IdleTTL:  target.IdleTTL.Duration(),
+			Addr:     target.Addr,
+			User:     target.User,
+			BaseDir:  target.BaseDir,
 			Auth: transfer.SFTPAuth{
 				PrivateKeyFile:       target.Auth.PrivateKeyFile,
 				PrivateKeyPassphrase: target.Auth.PrivateKeyPassphrase,

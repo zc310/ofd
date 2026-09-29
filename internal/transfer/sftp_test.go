@@ -40,6 +40,15 @@ type testSSHServer struct {
 	listener net.Listener
 	wg       sync.WaitGroup
 
+	// mu 保护 sessions 与 liveSessions。
+	mu sync.Mutex
+	// sessions 是接受的 SSH 连接总数。连接池是否跨任务复用只能看它。
+	sessions int
+	// liveSessions 是当前存活的连接数。
+	liveSessions int
+	// mkdirs 统计 MKDIR 次数。目录记忆是否生效只能看它。
+	mkdirs int
+
 	// requireUser 是唯一接受的用户名。
 	requireUser string
 	// password 是接受的口令；为空表示只支持公钥认证。
@@ -84,12 +93,53 @@ func newTestSSHServer(t *testing.T) *testSSHServer {
 	go server.acceptLoop()
 	t.Cleanup(func() {
 		_ = ln.Close()
-		server.wg.Wait()
+		// 有限等待，不无限等。
+		//
+		// 连接池的连接按设计活过任务，所以"服务端所有连接都已关闭"不再是
+		// 单个用例结束时成立的前提。无限等会在这里挂死——这不是被测代码
+		// 的问题，而是测试的前提过时了。
+		server.waitIdle(2 * time.Second)
 	})
 	return server
 }
 
 func (s *testSSHServer) addr() string { return s.listener.Addr().String() }
+
+// sessionCount 返回接受的 SSH 连接总数。连接池是否跨任务复用只能看它。
+func (s *testSSHServer) sessionCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessions
+}
+
+// mkdircount 返回 MKDIR 命令次数。
+func (s *testSSHServer) mkdircount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mkdirs
+}
+
+// idleConnections 返回当前存活的连接数。
+func (s *testSSHServer) idleConnections() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.liveSessions
+}
+
+// waitIdle 等待所有连接处理结束，最多等 d。
+func (s *testSSHServer) waitIdle(d time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+		// 超时不算失败：连接池的连接本来就可能还开着。剩下的连接会随
+		// 测试进程退出而消失。
+	}
+}
 
 // hostKey 返回服务端主机公钥，供构造 known_hosts 或比对指纹。
 func (s *testSSHServer) hostKey() ssh.PublicKey { return s.hostSigner.PublicKey() }
@@ -123,9 +173,18 @@ func (s *testSSHServer) acceptLoop() {
 		if err != nil {
 			return
 		}
+		s.mu.Lock()
+		s.sessions++
+		s.liveSessions++
+		s.mu.Unlock()
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer func() {
+				s.mu.Lock()
+				s.liveSessions--
+				s.mu.Unlock()
+			}()
 			s.serve(conn)
 		}()
 	}
@@ -190,13 +249,15 @@ func (s *testSSHServer) serveSession(channel ssh.Channel, requests <-chan *ssh.R
 		if req.WantReply {
 			_ = req.Reply(true, nil)
 		}
-		handlers := inMemoryHandlers{root: s.root}
-		server := sftp.NewRequestServer(channel, sftp.Handlers{
-			FileGet:  handlers,
-			FilePut:  handlers,
-			FileCmd:  handlers,
-			FileList: handlers,
-		})
+		// 包一层计数：目录记忆是否生效，只能看服务端收到了几次 MKDIR。
+		inner := inMemoryHandlers{root: s.root}
+		handlers := sftp.Handlers{
+			FileGet:  inner,
+			FilePut:  inner,
+			FileCmd:  countingFileCmd{inner: inner, count: &s.mkdirs, mu: &s.mu},
+			FileList: inner,
+		}
+		server := sftp.NewRequestServer(channel, handlers)
 		_ = server.Serve()
 		_ = server.Close()
 		return
@@ -557,8 +618,13 @@ func TestSFTPSinkWithBaseDir(t *testing.T) {
 		if base.BaseDir != "/root" {
 			t.Fatalf("原 BaseDir 被改成 %q", base.BaseDir)
 		}
-		if got.cl != nil || got.conn != nil {
-			t.Error("副本不应继承连接")
+		// 副本共享连接池但不拥有它：不拥有是刻意的——副本在任务收尾时会
+		// 调 Close()，若它有权关池，就会掐掉并发任务的连接。
+		if got.OwnsPool {
+			t.Error("副本不应拥有连接池")
+		}
+		if err := got.Close(); err != nil {
+			t.Errorf("副本 Close(): %v", err)
 		}
 	}
 	// ".." 必须在拼接前拒绝：path.Join 之后它就消失了。
@@ -630,4 +696,152 @@ func TestNormalizeFingerprint(t *testing.T) {
 			t.Errorf("normalizeFingerprint(%q) = %q，期望 %q", tc.in, got, tc.want)
 		}
 	}
+}
+
+// TestSFTPSinkReusesConnectionAcrossTasks 跨任务复用连接。
+//
+// 池挂在注册目标上、WithBaseDir 派生的实例共享它，所以连续几个任务之间不该
+// 重新握手。改造前每个任务一条新连接，几十毫秒的 SSH 握手乘以任务数就是
+// 可观的固定开销；逐页输出时更明显。
+func TestSFTPSinkReusesConnectionAcrossTasks(t *testing.T) {
+	server := newTestSSHServer(t)
+	sink := &SFTPSink{
+		Addr: server.addr(), User: "uploader", Auth: SFTPAuth{Password: "secret"},
+		BaseDir: "/base", Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+		HostKeySHA256: ssh.FingerprintSHA256(server.hostKey()),
+	}
+	defer sink.Close()
+
+	// 三个"任务"：每个都是一次 WithBaseDir + Put + Close。
+	//
+	// 子目录各不相同：测试服务器的 Stat 对已存在目录返回"不存在"（见
+	// TestSSHServerStatReportsMissingDirectories），重复对同一目录建目录
+	// 会失败。真实 SFTP 服务器没有这个毛病，但也没必要让这个用例踩它。
+	for i := 0; i < 3; i++ {
+		derived, err := sink.WithBaseDir(fmt.Sprintf("task-%d", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := derived.Put(context.Background(), "output.pdf", strings.NewReader("x")); err != nil {
+			t.Fatalf("第 %d 次上传失败: %v", i+1, err)
+		}
+		if err := derived.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := server.sessionCount(); got != 1 {
+		t.Errorf("SSH 会话数 = %d，期望 1（跨任务应复用连接）", got)
+	}
+}
+
+// TestSFTPSinkDerivedCloseKeepsPoolOpen 派生实例收尾不能关掉共享池。
+//
+// 这是所有权边界：一个任务结束时若把池关掉，会连带掐掉并发任务的连接。
+func TestSFTPSinkDerivedCloseKeepsPoolOpen(t *testing.T) {
+	server := newTestSSHServer(t)
+	sink := &SFTPSink{
+		Addr: server.addr(), User: "uploader", Auth: SFTPAuth{Password: "secret"},
+		BaseDir: "/base", Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+		HostKeySHA256: ssh.FingerprintSHA256(server.hostKey()),
+	}
+	defer sink.Close()
+
+	first, err := sink.WithBaseDir("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Put(context.Background(), "one.pdf", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	// 第一个任务收尾。
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// 第二个任务还能用上池里那条连接。
+	second, err := sink.WithBaseDir("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Put(context.Background(), "two.pdf", strings.NewReader("y")); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := server.sessionCount(); got != 1 {
+		t.Errorf("SSH 会话数 = %d，期望 1（派生 Close 不该影响池）", got)
+	}
+}
+
+// TestSFTPSinkClosesPoolOnClose 注册目标关闭时池里的连接要断。
+func TestSFTPSinkClosesPoolOnClose(t *testing.T) {
+	server := newTestSSHServer(t)
+	sink := &SFTPSink{
+		Addr: server.addr(), User: "uploader", Auth: SFTPAuth{Password: "secret"},
+		BaseDir: "/base", Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+		HostKeySHA256: ssh.FingerprintSHA256(server.hostKey()),
+	}
+	derived, err := sink.WithBaseDir("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := derived.Put(context.Background(), "one.pdf", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := derived.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if server.idleConnections() == 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("注册目标关闭后池里的连接仍未断开，剩余 %d 条", server.idleConnections())
+}
+
+// TestSFTPSinkDerivedSharesPool 派生实例必须与原对象共享同一个池。
+//
+// 这条守住一个曾经真实存在的缺陷：池是惰性建的，若 WithBaseDir 在父的池还是
+// nil 时就复制指针，派生实例会各自建一个空池——于是每个任务一条新连接，
+// 连接池形同虚设，而所有上传都成功、没有任何错误信号。
+func TestSFTPSinkDerivedSharesPool(t *testing.T) {
+	server := newTestSSHServer(t)
+	sink := &SFTPSink{
+		Addr: server.addr(), User: "uploader", Auth: SFTPAuth{Password: "secret"},
+		BaseDir: "/base", Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+		HostKeySHA256: ssh.FingerprintSHA256(server.hostKey()),
+	}
+	defer sink.Close()
+
+	derived, err := sink.WithBaseDir("sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derived.pool == nil {
+		t.Fatal("派生实例的池为 nil")
+	}
+	if derived.pool != sink.pool {
+		t.Errorf("派生实例建了自己的池（%p != %p），连接不会跨任务复用", derived.pool, sink.pool)
+	}
+}
+
+// countingFileCmd 包一层统计 MKDIR 次数，其余透传。
+type countingFileCmd struct {
+	inner inMemoryHandlers
+	count *int
+	mu    *sync.Mutex
+}
+
+func (c countingFileCmd) Filecmd(r *sftp.Request) error {
+	if r.Method == "Mkdir" {
+		c.mu.Lock()
+		*c.count++
+		c.mu.Unlock()
+	}
+	return c.inner.Filecmd(r)
 }

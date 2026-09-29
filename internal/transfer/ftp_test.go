@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -32,6 +33,12 @@ type testFTPServer struct {
 	// pasvHostOverride 让 PASV 回报一个与控制连接不同的主机，用来验证
 	// 客户端不会盲从（trustPasvIP 的意义）。
 	pasvHostOverride string
+	// logins 统计成功登录次数。连接池是否生效只能看它：复用连接时它不增长。
+	logins int
+	// mkdirs 统计 MKDIR 命令次数。目录记忆是否生效只能看它。
+	mkdirs int
+	// live 是当前存活的控制连接数。池是否被真正关掉只能看它。
+	live atomic.Int64
 
 	conns sync.WaitGroup
 }
@@ -70,6 +77,23 @@ func (s *testFTPServer) record(remote string) {
 	s.files = append(s.files, remote)
 }
 
+// mkdircount 返回 MKDIR 命令次数。
+func (s *testFTPServer) mkdircount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mkdirs
+}
+
+// liveConnections 返回当前存活的控制连接数。
+func (s *testFTPServer) liveConnections() int { return int(s.live.Load()) }
+
+// loginCount 返回成功登录次数。
+func (s *testFTPServer) loginCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.logins
+}
+
 func (s *testFTPServer) written() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,8 +107,10 @@ func (s *testFTPServer) acceptLoop() {
 			return
 		}
 		s.conns.Add(1)
+		s.live.Add(1)
 		go func() {
 			defer s.conns.Done()
+			defer s.live.Add(-1)
 			s.serve(conn)
 		}()
 	}
@@ -128,12 +154,19 @@ func (s *testFTPServer) serve(conn net.Conn) {
 		case "PASS":
 			if arg == s.password {
 				authenticated = true
+				s.mu.Lock()
+				s.logins++
+				s.mu.Unlock()
 				write("230 已登录")
 			} else {
 				write("530 密码错误")
 			}
 		case "TYPE":
 			write("200 类型已设为 %s", arg)
+		case "NOOP":
+			// 真实 FTP 服务器都响应 NOOP；连接池靠它做空闲探活。
+			// 不实现的话每次取用都探活失败、丢弃重拨，复用就测不出来。
+			write("200 NOOP ok")
 		case "SYST":
 			write("215 UNIX Type: L8")
 		case "PWD":
@@ -177,6 +210,9 @@ func (s *testFTPServer) serve(conn net.Conn) {
 			write("227 进入被动模式 (%s,%d,%d)", host, high, low)
 			dataListener = ln
 		case "MKD":
+			s.mu.Lock()
+			s.mkdirs++
+			s.mu.Unlock()
 			target, err := s.path(arg)
 			if err != nil {
 				write("550 %v", err)
@@ -334,9 +370,9 @@ func TestFTPSinkReusesConnection(t *testing.T) {
 	if got := len(server.written()); got != 4 {
 		t.Errorf("远端应有 4 个文件，实际 %d", got)
 	}
-	// 连接只建立一次。
-	if sink.conn == nil {
-		t.Error("连接应仍保持打开")
+	// 连接只建立一次：四个文件之间应当复用同一条控制连接。
+	if got := server.loginCount(); got != 1 {
+		t.Errorf("登录次数 = %d，期望 1（连接应被复用）", got)
 	}
 }
 
@@ -361,7 +397,8 @@ func TestFTPSinkCreatesRemoteDirectories(t *testing.T) {
 }
 
 func TestFTPSinkWithBaseDir(t *testing.T) {
-	base := &FTPSink{Addr: "h:21", BaseDir: "/root", Insecure: true}
+	// OwnsPool 模拟"配置里的注册目标"：它才是关闭连接池的那一个。
+	base := &FTPSink{Addr: "h:21", BaseDir: "/root", Insecure: true, OwnsPool: true}
 	cases := []struct {
 		sub  string
 		want string
@@ -384,9 +421,23 @@ func TestFTPSinkWithBaseDir(t *testing.T) {
 		if base.BaseDir != "/root" {
 			t.Fatalf("原 BaseDir 被改成 %q", base.BaseDir)
 		}
-		// 副本不能共享连接。
-		if got.conn != nil {
-			t.Error("副本不应继承连接")
+		// 副本共享连接池，但不拥有它。
+		//
+		// 共享是刻意的：登录一次（TLS 握手 + 认证往返）在远端可能几百毫秒，
+		// 逐任务重连的代价不可接受。不拥有同样是刻意的——副本在任务收尾时
+		// 会调 Close()，若它有权关池，就会把并发任务的连接一起掐掉。
+		if got.pool != base.pool && got.pool != nil {
+			t.Error("副本应与原对象共享连接池")
+		}
+		if got.OwnsPool {
+			t.Error("副本不应拥有连接池：它的 Close() 会掐掉其它任务的连接")
+		}
+		// 副本收尾不能影响原对象的池。
+		if err := got.Close(); err != nil {
+			t.Errorf("副本 Close(): %v", err)
+		}
+		if !base.OwnsPool {
+			t.Error("原对象应拥有连接池")
 		}
 	}
 	// 未配 BaseDir 时子目录就是 BaseDir。
@@ -619,4 +670,78 @@ func TestCountingReaderLimits(t *testing.T) {
 	if err != nil || string(n) != "abc" || ok.n != 3 {
 		t.Errorf("正常读取失败: %q %v %d", n, err, ok.n)
 	}
+}
+
+// TestFTPSinkDerivedSharesPool 派生实例必须与原对象共享同一个池。
+//
+// 与 SFTP 同因：池惰性初始化，WithBaseDir 若在父的池还是 nil 时复制指针，
+// 派生实例就会各自建池，"每个任务一条新连接"照旧发生。
+func TestFTPSinkDerivedSharesPool(t *testing.T) {
+	server := newTestFTPServer(t, "u", "p")
+	sink := &FTPSink{
+		Addr: server.addr(), User: "u", Password: "p", BaseDir: "/base",
+		Insecure: true, Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+	}
+	defer sink.Close()
+
+	derived, err := sink.WithBaseDir("sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derived.pool == nil || derived.pool != sink.pool {
+		t.Errorf("派生实例未与原对象共享连接池（derived=%p sink=%p）", derived.pool, sink.pool)
+	}
+	// 两次"任务"之间应当复用连接。
+	for i, sub := range []string{"a", "b"} {
+		d, err := sink.WithBaseDir(sub)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.Put(context.Background(), "out.pdf", strings.NewReader("x")); err != nil {
+			t.Fatalf("第 %d 次上传失败: %v", i+1, err)
+		}
+		if err := d.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := server.loginCount(); got != 1 {
+		t.Errorf("登录次数 = %d，期望 1（跨任务应复用连接）", got)
+	}
+}
+
+// TestFTPSinkClosesPoolOnClose 注册目标关闭时必须真的断开池里的连接。
+//
+// 与 SFTP 侧同名用例对称。OwnsPool 的语义是"只有配置里声明的那个才关池"，
+// 关不掉就是连接泄漏——进程退出前那些连接会一直挂在服务端的会话表上。
+func TestFTPSinkClosesPoolOnClose(t *testing.T) {
+	server := newTestFTPServer(t, "u", "p")
+	sink := &FTPSink{
+		Addr: server.addr(), User: "u", Password: "p",
+		Insecure: true, Timeout: 10 * time.Second, Overwrite: true, OwnsPool: true,
+	}
+	derived, err := sink.WithBaseDir("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := derived.Put(context.Background(), "one.pdf", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	// 派生实例收尾不能关池，否则会掐掉并发任务。
+	if err := derived.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := server.liveConnections(); got != 1 {
+		t.Errorf("派生实例 Close 后存活连接 = %d，期望仍为 1（共享池不该被关）", got)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if server.liveConnections() == 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("注册目标关闭后池里的连接仍未断开，剩余 %d 条", server.liveConnections())
 }
