@@ -384,6 +384,26 @@ func TestStreamLimit(t *testing.T) {
 	}
 }
 
+func TestRemoteSinkLimitAppliesWhileConverting(t *testing.T) {
+	svc := newService(t)
+	svc.WebDAVTargets = map[string]*transfer.WebDAVSink{
+		"tiny": {Endpoint: "https://127.0.0.1:1/dav", MaxBytes: 8},
+	}
+	_, err := svc.Run(context.Background(), Spec{
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
+		Output: Output{Kind: OutputWebDAV, Format: "pdf", Remote: RemoteOutput{Target: "tiny"}},
+	})
+	if err == nil {
+		t.Fatal("远端单文件超过 8 字节上限应在转换写入阶段失败")
+	}
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("错误应标记为 ErrTooLarge，实际: %v", err)
+	}
+	if strings.Contains(err.Error(), "WebDAV") || strings.Contains(err.Error(), "连接") {
+		t.Fatalf("超过上限应在连接远端之前失败，实际错误: %v", err)
+	}
+}
+
 func TestConcurrentRuns(t *testing.T) {
 	svc := newService(t)
 	ofd := ofdSample(t)

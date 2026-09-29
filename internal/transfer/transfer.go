@@ -66,6 +66,13 @@ type Sink interface {
 	Put(ctx context.Context, name string, r io.Reader) (Location, error)
 }
 
+// LimitedSink 表示对单个输出文件有明确大小上限的 Sink。
+// 上限由转换服务在写入阶段执行，避免完整结果先缓存到内存后才失败。
+type LimitedSink interface {
+	Sink
+	MaxBytesLimit() int64
+}
+
 // BytesSource 是内存来源，用于测试与小文件。
 type BytesSource struct {
 	Data []byte
@@ -139,6 +146,8 @@ type BufferSink struct {
 	limit int64
 }
 
+func (s *BufferSink) MaxBytesLimit() int64 { return s.limit }
+
 // NewBufferSink 构造内存目标，limit 为 0 时用 DefaultMaxBytes。
 func NewBufferSink(limit int64) *BufferSink {
 	if limit <= 0 {
@@ -171,6 +180,13 @@ type DirSink struct {
 	// Overwrite 为真时允许覆盖已存在的普通文件。默认只新建：既避免误覆盖，也
 	// 顺带杜绝了"目标是指向目录外的符号链接"这一类写入劫持。
 	Overwrite bool
+}
+
+func (s *DirSink) MaxBytesLimit() int64 {
+	if s.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return s.MaxBytes
 }
 
 // NewDirSink 构造目录目标。

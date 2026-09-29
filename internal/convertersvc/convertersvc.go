@@ -526,12 +526,14 @@ func sniffMagic(data []byte) (string, bool) {
 // sinkWriter 把转换器的 io.Writer 输出适配成 transfer.Sink 的一次 Put。
 //
 // 转换器要的是一个可写的流，而 Sink.Put 要的是一个完整的 reader，两者对不上，
-// 只能先在内存里攒完再交出去。代价是单个输出文件要在内存里待到结束：stream
-// 输出受 MaxStreamBytes 约束，dir 输出受页缓存上限约束，都不会无限增长。
+// 只能先在内存里攒完再交出去。每个 sinkWriter 都在 Write 阶段执行 Sink 的
+// 单文件大小上限，避免等到完整结果缓存后再由远端 Sink 拒绝。
 type sinkWriter struct {
-	sink transfer.Sink
-	name string
-	size map[string]int64
+	sink  transfer.Sink
+	name  string
+	limit int64
+	err   error
+	size  map[string]int64
 	// locations 非 nil 时记录 Sink 返回的位置，供 Result.Dir 使用。
 	locations map[string]transfer.Location
 	buf       bytes.Buffer
@@ -539,22 +541,51 @@ type sinkWriter struct {
 }
 
 func newSinkWriter(sink transfer.Sink, name string, size map[string]int64, locations map[string]transfer.Location) *sinkWriter {
-	return &sinkWriter{sink: sink, name: name, size: size, locations: locations}
+	var limit int64
+	if limited, ok := sink.(transfer.LimitedSink); ok {
+		limit = limited.MaxBytesLimit()
+	}
+	return &sinkWriter{sink: sink, name: name, limit: limit, size: size, locations: locations}
 }
 
-func (w *sinkWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
+func (w *sinkWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	if w.flushed {
+		return 0, errors.New("输出文件已写入 Sink")
+	}
+	if w.limit > 0 {
+		remaining := w.limit - int64(w.buf.Len())
+		if remaining <= 0 {
+			w.err = fmt.Errorf("输出文件 %q 超过上限 %d 字节", w.name, w.limit)
+			w.buf = bytes.Buffer{}
+			return 0, w.err
+		}
+		if int64(len(p)) > remaining {
+			w.err = fmt.Errorf("输出文件 %q 超过上限 %d 字节", w.name, w.limit)
+			w.buf = bytes.Buffer{}
+			return 0, w.err
+		}
+	}
+	return w.buf.Write(p)
+}
 
 // Close 交给调用方把内容落进 Sink。转换器一般不调 Close，所以 dir 场景由
 // Run 在 Convert 返回后统一 Flush。
 func (w *sinkWriter) Close() error { return w.Flush() }
 
 func (w *sinkWriter) Flush() error {
+	if w.err != nil {
+		return w.err
+	}
 	// 幂等：转换器会 Close 一次，Run 收尾时再兜底调一次。
 	if w.flushed {
 		return nil
 	}
 	data := w.buf.Bytes()
 	location, err := w.sink.Put(context.Background(), w.name, bytes.NewReader(data))
+	w.buf = bytes.Buffer{}
 	if err != nil {
 		return err
 	}
@@ -564,7 +595,6 @@ func (w *sinkWriter) Flush() error {
 	if w.locations != nil {
 		w.locations[w.name] = location
 	}
-	w.buf.Reset()
 	w.flushed = true
 	return nil
 }

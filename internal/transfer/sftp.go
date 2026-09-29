@@ -72,6 +72,13 @@ type SFTPSink struct {
 	IdleTTL time.Duration
 }
 
+func (s *SFTPSink) MaxBytesLimit() int64 {
+	if s.MaxBytes <= 0 {
+		return DefaultMaxBytes
+	}
+	return s.MaxBytes
+}
+
 // DefaultSFTPTimeout 是 SFTP 连接与操作的默认超时。
 const DefaultSFTPTimeout = 60 * time.Second
 
