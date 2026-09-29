@@ -18,6 +18,7 @@
   "notify_workers": 4,
   "job_timeout": "0s",
   "max_job_attempts": 0,
+  "job_retry_backoff": "5s",
   "retention": "168h",
   "allow_input_url_hosts": [
     "files.example.com",

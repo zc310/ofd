@@ -123,6 +123,12 @@ type Config struct {
 	JobTimeout Duration `json:"job_timeout"`
 	// MaxJobAttempts 是任务自动重试次数，0 表示只试一次。
 	MaxJobAttempts int `json:"max_job_attempts"`
+	// JobRetryBackoff 是首次重试的等待时长，之后按次数指数翻倍，上限 10 分钟。
+	//
+	// 这一项过去没有对应的配置，runner 拿到的值一直是 0，于是"按退避重新排队"
+	// 实际是零延迟立即重试——一批任务同时失败时会形成惊群，把 worker 反复
+	// 占满去跑注定失败的转换。
+	JobRetryBackoff Duration `json:"job_retry_backoff"`
 	// Retention 是终态任务的保留时长。
 	Retention Duration `json:"retention"`
 
@@ -349,6 +355,11 @@ func (c *Config) applyDefaults() {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	if c.JobRetryBackoff <= 0 {
+		// 0 意味着"零延迟重试"，那是惊群而不是退避。5 秒是让远端与文件系统
+		// 有时间恢复的量级；已经失败的转换立刻重跑不会有不同结果。
+		c.JobRetryBackoff = Duration(5 * time.Second)
 	}
 	if c.LogFile == "" {
 		c.LogFile = "ofd-server.log"

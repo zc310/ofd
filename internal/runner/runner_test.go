@@ -51,7 +51,7 @@ func newRunner(t *testing.T, cfg Config) (*Runner, *jobstore.Store, string) {
 func requestFor(t *testing.T, to string, body []byte) json.RawMessage {
 	t.Helper()
 	request, err := json.Marshal(map[string]any{
-		"input":  map[string]any{"kind": "upload", "filename": "a.ofd", "bytes": body},
+		"input":  map[string]any{"kind": "upload", "file_name": "a.ofd", "bytes": body},
 		"output": map[string]any{"kind": "stream", "format": to},
 	})
 	if err != nil {

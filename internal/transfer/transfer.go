@@ -13,12 +13,20 @@ package transfer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// ErrExists 表示目标已存在且该目标不允许覆盖。
+//
+// 单列一个哨兵错误而不是靠消息文本判断，是因为调用方需要据此决定要不要重试：
+// 重试一个"文件已存在"永远还是已存在，白白耗掉 worker 与退避时间。而它恰恰是
+// output.dir 指向共享目录、多个任务写同名文件时必然出现的错误。
+var ErrExists = errors.New("目标已存在")
 
 // DefaultMaxBytes 是单个文件的默认上限。输入与输出共用同一个上限常量，但可以
 // 分别覆盖。
@@ -215,7 +223,7 @@ func (s *DirSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 	// 时间窗影响。临时文件与目标同目录，link 不会跨文件系统。
 	if err := os.Link(tmpName, target); err != nil {
 		if os.IsExist(err) {
-			return Location{}, fmt.Errorf("输出文件已存在且不允许覆盖: %s", target)
+			return Location{}, fmt.Errorf("%w: 输出文件已存在且不允许覆盖: %s", ErrExists, target)
 		}
 		return Location{}, fmt.Errorf("落盘输出失败: %w", err)
 	}

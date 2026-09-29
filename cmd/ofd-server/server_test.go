@@ -19,6 +19,7 @@ import (
 	"github.com/valyala/fasthttp/fasthttputil"
 
 	"github.com/zc310/ofd/internal/allowlist"
+	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"
 	"github.com/zc310/ofd/internal/notify"
 )
@@ -64,7 +65,7 @@ func newTestServerWithList(t *testing.T, entries []string) (*Server, *jobstore.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewServer(cfg, store, registry, list, &RemoteTargets{}, testLogger()), store, cfg, list
+	return NewServer(cfg, store, registry, list, &RemoteTargets{}, convertersvc.New(cfg.TempDir, list), testLogger()), store, cfg, list
 }
 
 // newPipeServer 起一个内存监听的服务，返回 client 与地址。
@@ -84,6 +85,12 @@ func newPipeServer(t *testing.T, handler fasthttp.RequestHandler) *fasthttp.Clie
 type response struct {
 	status int
 	body   string
+	// contentLength 与 body 实际长度可能不一致：响应被截断时能测出来。
+	contentLength int
+	// jobID 是 X-OFD-Job-Id 响应头，只有同步转换会带。
+	jobID string
+	// contentType 是响应的 Content-Type。
+	contentType string
 }
 
 func do(t *testing.T, client *fasthttp.Client, method, path, body string) response {
@@ -115,7 +122,13 @@ func doAuth(t *testing.T, client *fasthttp.Client, method, path, body, token str
 	if err := client.Do(req, resp); err != nil {
 		t.Fatalf("%s %s 失败: %v", method, path, err)
 	}
-	return response{status: resp.StatusCode(), body: string(resp.Body())}
+	return response{
+		status:        resp.StatusCode(),
+		body:          string(resp.Body()),
+		contentLength: resp.Header.ContentLength(),
+		jobID:         string(resp.Header.Peek(jobIDHeader)),
+		contentType:   string(resp.Header.ContentType()),
+	}
 }
 
 func (r response) decode(t *testing.T) map[string]any {
@@ -138,11 +151,26 @@ func ofdPayload(t *testing.T) string {
 	return ""
 }
 
+// submitBody 构造异步提交（dir 输出）的请求体。
+//
+// 默认用 dir 而不是 stream：stream 是同步语义，响应体直接是产物字节，没有
+// 202 可轮询。需要测 stream 的用例用 submitInlineBody。
 func submitBody(t *testing.T, to string) string {
 	t.Helper()
+	return submitBodyWith(t, to, "dir")
+}
+
+// submitInlineBody 构造同步提交（stream 输出）的请求体。
+func submitInlineBody(t *testing.T, to string) string {
+	t.Helper()
+	return submitBodyWith(t, to, "stream")
+}
+
+func submitBodyWith(t *testing.T, to, kind string) string {
+	t.Helper()
 	body := map[string]any{
-		"input":  map[string]any{"kind": "upload", "filename": "a.ofd", "bytes": ofdPayload(t)},
-		"output": map[string]any{"kind": "stream", "format": to},
+		"input":  map[string]any{"kind": "upload", "file_name": "a.ofd", "bytes": ofdPayload(t)},
+		"output": map[string]any{"kind": kind, "format": to},
 	}
 	raw, _ := json.Marshal(body)
 	return string(raw)
@@ -188,7 +216,7 @@ func TestSubmitAndQuery(t *testing.T) {
 }
 
 func TestSubmitValidation(t *testing.T) {
-	s, _, cfg := newTestServer(t)
+	s, _, _ := newTestServer(t)
 	client := newPipeServer(t, s.Handler())
 
 	cases := []struct {
@@ -201,11 +229,11 @@ func TestSubmitValidation(t *testing.T) {
 		{"非 JSON", "not json", fasthttp.StatusBadRequest, "invalid_request"},
 		{"未知输入种类", `{"input":{"kind":"s3","url":"x"},"output":{"format":"pdf"}}`, fasthttp.StatusBadRequest, "invalid_request"},
 		{"URL 缺地址", `{"input":{"kind":"url"},"output":{"format":"pdf"}}`, fasthttp.StatusBadRequest, "invalid_request"},
-		{"上传内容为空", `{"input":{"kind":"upload","filename":"a.ofd"},"output":{"format":"pdf"}}`, fasthttp.StatusBadRequest, "invalid_request"},
-		{"缺输出格式", `{"input":{"kind":"upload","filename":"a.ofd","bytes":"eA=="}}`, fasthttp.StatusBadRequest, "invalid_request"},
-		{"未注册通知目标", `{"input":{"kind":"upload","filename":"a.ofd","bytes":"eA=="},"output":{"format":"pdf"},"notify":{"target":"nope"}}`, fasthttp.StatusBadRequest, "unknown_notify_target"},
+		{"上传内容为空", `{"input":{"kind":"upload","file_name":"a.ofd"},"output":{"format":"pdf"}}`, fasthttp.StatusBadRequest, "invalid_request"},
+		{"缺输出格式", `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"eA=="}}`, fasthttp.StatusBadRequest, "invalid_request"},
+		{"未注册通知目标", `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"eA=="},"output":{"format":"pdf"},"notify":{"target":"nope"}}`, fasthttp.StatusBadRequest, "unknown_notify_target"},
 		// 输出目录必须由服务端决定，不能让调用方指定任意路径。
-		{"越界的输出目录", `{"input":{"kind":"upload","filename":"a.ofd","bytes":"eA=="},"output":{"format":"pdf","kind":"dir","dir":"/etc"}}`, fasthttp.StatusBadRequest, "invalid_request"},
+		{"越界的输出目录", `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"eA=="},"output":{"format":"pdf","kind":"dir","dir":"/etc"}}`, fasthttp.StatusBadRequest, "invalid_request"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -218,11 +246,12 @@ func TestSubmitValidation(t *testing.T) {
 			}
 		})
 	}
-	// output_dir 之下的子目录是允许的。
-	body := `{"input":{"kind":"upload","filename":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"format":"pdf","kind":"dir","dir":"` + filepath.Join(cfg.OutputDir, "sub") + `"}}`
+	// output_dir 之下的相对子目录是允许的。
+	body := `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) +
+		`"},"output":{"format":"pdf","kind":"dir","dir":"a/b/c"}}`
 	got := do(t, client, fasthttp.MethodPost, "/v1/convert", body)
 	if got.status != fasthttp.StatusAccepted {
-		t.Errorf("output_dir 之下的目录应被接受，实际 %d: %s", got.status, got.body)
+		t.Errorf("output_dir 之下的相对子目录应被接受，实际 %d: %s", got.status, got.body)
 	}
 }
 
@@ -236,7 +265,7 @@ func TestLaneAssignment(t *testing.T) {
 
 	// HTML 输出要拉起 Chrome，走重通道。内容仍用 OFD，
 	// 格式判定只看 input/output 组合，不看内容。
-	body := `{"input":{"kind":"upload","filename":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"format":"html"}}`
+	body := `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"format":"html"}}`
 	got = do(t, client, fasthttp.MethodPost, "/v1/convert", body)
 	heavy := got.decode(t)["lane"]
 
@@ -255,11 +284,14 @@ func TestLaneAssignment(t *testing.T) {
 		t.Errorf("URL 输入应走 heavy，实际 %v", lane)
 	}
 
-	// 通道是服务端定的，调用方塞不进来。
-	body = `{"input":{"kind":"upload","filename":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"format":"pdf"},"lane":"heavy"}`
+	// 通道是服务端按格式判定的。请求里的 lane 会被拒绝而不是被忽略：
+	// 静默忽略会让调用方以为自己拿到了 heavy 优先级、实际走了 fast，
+	// 这种"看起来生效了"的偏差比直接报错难查得多。
+	body = `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) +
+		`"},"output":{"format":"pdf"},"lane":"heavy"}`
 	got = do(t, client, fasthttp.MethodPost, "/v1/convert", body)
-	if got.decode(t)["lane"] != "fast" {
-		t.Errorf("调用方指定的 lane 应被忽略，实际 %v", got.decode(t)["lane"])
+	if got.status != fasthttp.StatusBadRequest {
+		t.Errorf("请求里带 lane 应被拒绝，实际 %d: %s", got.status, got.body)
 	}
 	_ = store
 }
@@ -356,7 +388,7 @@ func TestBodySizeLimit(t *testing.T) {
 	cfg.MaxUploadBytes = 100
 	client := newPipeServer(t, s.Handler())
 
-	big := `{"input":{"kind":"upload","filename":"a.ofd","bytes":"` + strings.Repeat("A", 500) + `"}}`
+	big := `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + strings.Repeat("A", 500) + `"}}`
 	got := do(t, client, fasthttp.MethodPost, "/v1/convert", big)
 	if got.status != fasthttp.StatusRequestEntityTooLarge {
 		t.Errorf("超限请求应返回 413，实际 %d: %s", got.status, got.body)
@@ -625,7 +657,7 @@ func TestStartAndShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Listen = addr
-	s2 := NewServer(cfg, store, s.registry, list, &RemoteTargets{}, testLogger())
+	s2 := NewServer(cfg, store, s.registry, list, &RemoteTargets{}, s.convert, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -677,7 +709,7 @@ func TestAPIKeyRequired(t *testing.T) {
 	// 请求体故意不合法（upload 缺 bytes）。这样"通过认证"的证据不是
 	// 202，而是 400 + invalid_request：说明令牌过了、请求进了业务校验。
 	// 用合法请求体的话，202 既能表示认证通过也能表示别的因素，不够干净。
-	body := `{"input":{"kind":"upload","filename":"a.ofd"},"output":{"format":"pdf"}}`
+	body := `{"input":{"kind":"upload","file_name":"a.ofd"},"output":{"format":"pdf"}}`
 
 	cases := []struct {
 		name       string
@@ -756,5 +788,40 @@ func TestAPIKeyRequiredByConfig(t *testing.T) {
 		if _, err := LoadConfig(path); err == nil {
 			t.Errorf("api_key = %q 时应拒绝启动", token)
 		}
+	}
+}
+
+// TestUnknownRequestFieldsRejected 请求体里的未知字段必须报错。
+//
+// 静默忽略未知字段在提交接口上代价特别大：把 file_name 拼错，任务照样成功、
+// 产物名安静地退回 output.pdf，调用方拿到的是"成功但名字不对"——比直接 400
+// 难查得多。配置文件那边早就开了严格解码，请求体这里以前漏了。
+func TestUnknownRequestFieldsRejected(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	payload := ofdPayload(t)
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		// 用旧字段名 filename：改名之后老调用方会直接收到明确的错误，
+		// 而不是悄悄丢掉这个值。
+		{"旧的文件名字段", `{"input":{"kind":"upload","filename":"a.ofd","bytes":"` + payload +
+			`"},"output":{"kind":"dir","format":"pdf"}}`},
+		{"拼错的文件名字段", `{"input":{"kind":"upload","file_nmae":"a.ofd","bytes":"` + payload +
+			`"},"output":{"kind":"dir","format":"pdf"}}`},
+		{"拼错的输出字段", `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + payload +
+			`"},"output":{"kind":"dir","format":"pdf","file_nmae":"x"}}`},
+		{"旧的远端字段", `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + payload +
+			`"},"output":{"kind":"s3","s3_target":"minio"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := do(t, client, fasthttp.MethodPost, "/v1/convert", tc.body)
+			if got.status != fasthttp.StatusBadRequest {
+				t.Errorf("状态 = %d，期望 400: %s", got.status, truncate(got.body))
+			}
+		})
 	}
 }

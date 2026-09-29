@@ -57,7 +57,7 @@ func newService(t *testing.T) *Service {
 func TestRunOFDToPDFStream(t *testing.T) {
 	svc := newService(t)
 	res, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "sample.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "sample.ofd", Bytes: ofdSample(t)},
 		Output: Output{Kind: OutputStream, Format: "pdf"},
 	})
 	if err != nil {
@@ -69,8 +69,8 @@ func TestRunOFDToPDFStream(t *testing.T) {
 	if res.MIME != "application/pdf" {
 		t.Errorf("MIME = %q", res.MIME)
 	}
-	if !strings.HasSuffix(res.Filename, ".pdf") {
-		t.Errorf("文件名 = %q", res.Filename)
+	if !strings.HasSuffix(res.FileName, ".pdf") {
+		t.Errorf("文件名 = %q", res.FileName)
 	}
 	if len(res.Bytes) < 5 || string(res.Bytes[:5]) != "%PDF-" {
 		t.Errorf("输出不是 PDF: %q", truncate(res.Bytes))
@@ -83,7 +83,7 @@ func TestRunOFDToPDFStream(t *testing.T) {
 func TestRunOFDToText(t *testing.T) {
 	svc := newService(t)
 	res, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Kind: OutputStream, Format: "text"},
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestRunToDir(t *testing.T) {
 	svc := newService(t)
 	dir := filepath.Join(t.TempDir(), "out")
 	res, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Kind: OutputDir, Format: "pdf", Dir: dir},
 	})
 	if err != nil {
@@ -137,7 +137,7 @@ func TestRunOFDToPNGDir(t *testing.T) {
 	svc := newService(t)
 	dir := filepath.Join(t.TempDir(), "pages")
 	res, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Kind: OutputDir, Format: "png", Dir: dir},
 	})
 	if err != nil {
@@ -161,7 +161,7 @@ func TestRunOFDToPNGDir(t *testing.T) {
 func TestRunImageToStreamRejected(t *testing.T) {
 	svc := newService(t)
 	_, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Kind: OutputStream, Format: "png"},
 	})
 	if err == nil {
@@ -180,15 +180,15 @@ func TestRunRejectsBadSpecs(t *testing.T) {
 		spec Spec
 	}{
 		{"空上传", Spec{
-			Input:  Input{Kind: InputUpload, Filename: "a.ofd"},
+			Input:  Input{Kind: InputUpload, FileName: "a.ofd"},
 			Output: Output{Format: "pdf"},
 		}},
 		{"未知输出格式", Spec{
-			Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+			Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Format: "nope"},
 		}},
 		{"未知输入格式", Spec{
-			Input:  Input{Kind: InputUpload, Format: "nope", Filename: "a.ofd", Bytes: ofd},
+			Input:  Input{Kind: InputUpload, Format: "nope", FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Format: "pdf"},
 		}},
 		{"无法识别输入", Spec{
@@ -196,15 +196,15 @@ func TestRunRejectsBadSpecs(t *testing.T) {
 			Output: Output{Format: "pdf"},
 		}},
 		{"未知输出种类", Spec{
-			Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+			Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Kind: "ftp", Format: "pdf"},
 		}},
 		{"未知输入种类", Spec{
-			Input:  Input{Kind: "s3", Filename: "a.ofd", Bytes: ofd},
+			Input:  Input{Kind: "s3", FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Format: "pdf"},
 		}},
 		{"dir 缺目录", Spec{
-			Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+			Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Kind: OutputDir, Format: "pdf"},
 		}},
 	}
@@ -223,13 +223,13 @@ func TestRunRejectsBadSpecs(t *testing.T) {
 // 一个 OFD 内容配 .pdf 名字，如果被当成 PDF 送去解析，要么报错要么产出乱码，
 // 两者都说明请求本身是错的。旧写法依赖 HTML 导入器，本机没有 Chrome 时只能
 // 整条跳过，等于没验证；这里改用 pdf↔ofd，不依赖任何外部程序。
-func TestInputFormatNotTakenFromFilename(t *testing.T) {
+func TestInputFormatNotTakenFromFileName(t *testing.T) {
 	svc := newService(t)
 	ofd := ofdSample(t)
 
 	// 显式声明 input.format 时以声明为准，冲突的扩展名被忽略。
 	res, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.pdf", Format: "ofd", Bytes: ofd},
+		Input:  Input{Kind: InputUpload, FileName: "a.pdf", Format: "ofd", Bytes: ofd},
 		Output: Output{Format: "pdf"},
 	})
 	if err != nil {
@@ -242,7 +242,7 @@ func TestInputFormatNotTakenFromFilename(t *testing.T) {
 	// 不声明格式、按 .pdf 识别：内容其实是 OFD，必须报错，
 	// 不能把 OFD 静默送进 PDF 解析器。
 	if _, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.pdf", Bytes: ofd},
+		Input:  Input{Kind: InputUpload, FileName: "a.pdf", Bytes: ofd},
 		Output: Output{Format: "pdf"},
 	}); err == nil {
 		t.Error("OFD 内容配 .pdf 名字应报错，不能静默转换")
@@ -256,14 +256,14 @@ func TestResolveInputFormat(t *testing.T) {
 		ext    string
 		ok     bool
 	}{
-		{Input{Filename: "a.ofd"}, "ofd", ".ofd", true},
-		{Input{Filename: "a.pdf"}, "pdf", ".pdf", true},
-		{Input{Filename: "a.docx"}, "docx", ".docx", true},
-		{Input{Filename: "A.DOCX"}, "docx", ".docx", true},
-		{Input{Filename: "a.docx", Format: "ofd"}, "ofd", ".ofd", true},
+		{Input{FileName: "a.ofd"}, "ofd", ".ofd", true},
+		{Input{FileName: "a.pdf"}, "pdf", ".pdf", true},
+		{Input{FileName: "a.docx"}, "docx", ".docx", true},
+		{Input{FileName: "A.DOCX"}, "docx", ".docx", true},
+		{Input{FileName: "a.docx", Format: "ofd"}, "ofd", ".ofd", true},
 		{Input{Format: "pdf"}, "pdf", ".pdf", true},
 		{Input{Bytes: []byte("%PDF-1.7")}, "pdf", ".pdf", true},
-		{Input{Filename: "a.xyz"}, "", "", false},
+		{Input{FileName: "a.xyz"}, "", "", false},
 		{Input{Bytes: []byte("nothing")}, "", "", false},
 	}
 	for _, tc := range cases {
@@ -304,11 +304,11 @@ func TestLane(t *testing.T) {
 		spec Spec
 		want Lane
 	}{
-		{Spec{Input: Input{Filename: "a.ofd"}, Output: Output{Format: "pdf"}}, LaneFast},
-		{Spec{Input: Input{Filename: "a.ofd"}, Output: Output{Format: "text"}}, LaneFast},
-		{Spec{Input: Input{Filename: "a.ofd"}, Output: Output{Format: "png"}}, LaneFast},
-		{Spec{Input: Input{Filename: "a.ofd"}, Output: Output{Format: "html"}}, LaneHeavy},
-		{Spec{Input: Input{Filename: "a.docx"}, Output: Output{Format: "pdf"}}, LaneHeavy},
+		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "pdf"}}, LaneFast},
+		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "text"}}, LaneFast},
+		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "png"}}, LaneFast},
+		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "html"}}, LaneHeavy},
+		{Spec{Input: Input{FileName: "a.docx"}, Output: Output{Format: "pdf"}}, LaneHeavy},
 		{Spec{Input: Input{Format: "xlsx"}, Output: Output{Format: "pdf"}}, LaneHeavy},
 		{Spec{Input: Input{Format: "ofd"}, Output: Output{Format: "pptx"}}, LaneHeavy},
 		// URL 输入默认走重路径：网络 I/O 不该占住快速通道。
@@ -316,7 +316,7 @@ func TestLane(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if got := svc.Lane(tc.spec); got != tc.want {
-			t.Errorf("Lane(%s→%s) = %s，期望 %s", tc.spec.Input.Filename, tc.spec.Output.Format, got, tc.want)
+			t.Errorf("Lane(%s→%s) = %s，期望 %s", tc.spec.Input.FileName, tc.spec.Output.Format, got, tc.want)
 		}
 	}
 }
@@ -353,7 +353,7 @@ func TestTempDirCleaned(t *testing.T) {
 	temp := t.TempDir()
 	svc := New(temp, nil)
 	_, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Format: "pdf"},
 	})
 	if err != nil {
@@ -376,7 +376,7 @@ func TestTempDirCleaned(t *testing.T) {
 func TestStreamLimit(t *testing.T) {
 	svc := newService(t)
 	_, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
 		Output: Output{Format: "pdf", MaxStreamBytes: 8},
 	})
 	if err == nil {
@@ -393,7 +393,7 @@ func TestConcurrentRuns(t *testing.T) {
 		go func() {
 			dir := filepath.Join(t.TempDir(), "out")
 			_, err := svc.Run(context.Background(), Spec{
-				Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+				Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 				Output: Output{Kind: OutputDir, Format: "pdf", Dir: dir},
 			})
 			errs <- err
@@ -425,14 +425,14 @@ func TestRunRejectsUnregisteredRemoteTargets(t *testing.T) {
 		{"ftp 未指定目标", Output{Kind: OutputFTP, Format: "pdf"}},
 		{"s3 未指定目标", Output{Kind: OutputS3, Format: "pdf"}},
 		{"webdav 未指定目标", Output{Kind: OutputWebDAV, Format: "pdf"}},
-		{"ftp 目标未注册", Output{Kind: OutputFTP, Format: "pdf", FTPTarget: "nope"}},
-		{"s3 目标未注册", Output{Kind: OutputS3, Format: "pdf", S3Target: "nope"}},
-		{"webdav 目标未注册", Output{Kind: OutputWebDAV, Format: "pdf", WebDAVTarget: "nope"}},
+		{"ftp 目标未注册", Output{Kind: OutputFTP, Format: "pdf", Remote: RemoteOutput{Target: "nope"}}},
+		{"s3 目标未注册", Output{Kind: OutputS3, Format: "pdf", Remote: RemoteOutput{Target: "nope"}}},
+		{"webdav 目标未注册", Output{Kind: OutputWebDAV, Format: "pdf", Remote: RemoteOutput{Target: "nope"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := svc.Run(context.Background(), Spec{
-				Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+				Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 				Output: tc.output,
 			})
 			if err == nil {
@@ -448,8 +448,8 @@ func TestRunRejectsUnregisteredRemoteTargets(t *testing.T) {
 		"down": {Addr: "127.0.0.1:1", User: "u", Password: "password123", Insecure: true, Timeout: time.Second},
 	}
 	_, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
-		Output: Output{Kind: OutputFTP, Format: "pdf", FTPTarget: "down"},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
+		Output: Output{Kind: OutputFTP, Format: "pdf", Remote: RemoteOutput{Target: "down"}},
 	})
 	if err == nil {
 		t.Fatal("端点不可达应报错")
@@ -472,12 +472,12 @@ func TestRunRejectsEscapingPrefixes(t *testing.T) {
 		"ok": {Endpoint: "https://dav.example.com/", BaseDir: "base"},
 	}
 	cases := []Spec{
-		{Input: Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
-			Output: Output{Kind: OutputFTP, Format: "pdf", FTPTarget: "ok", FTPDir: "../escape"}},
-		{Input: Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
-			Output: Output{Kind: OutputS3, Format: "pdf", S3Target: "ok", S3Prefix: "../escape"}},
-		{Input: Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofdSample(t)},
-			Output: Output{Kind: OutputWebDAV, Format: "pdf", WebDAVTarget: "ok", WebDAVDir: "../escape"}},
+		{Input: Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
+			Output: Output{Kind: OutputFTP, Format: "pdf", Remote: RemoteOutput{Target: "ok", Path: "../escape"}}},
+		{Input: Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
+			Output: Output{Kind: OutputS3, Format: "pdf", Remote: RemoteOutput{Target: "ok", Path: "../escape"}}},
+		{Input: Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
+			Output: Output{Kind: OutputWebDAV, Format: "pdf", Remote: RemoteOutput{Target: "ok", Path: "../escape"}}},
 	}
 	for _, spec := range cases {
 		if _, err := svc.Run(context.Background(), spec); err == nil {
@@ -497,7 +497,7 @@ func TestResultDirIncludesConfiguredBase(t *testing.T) {
 	svc.WebDAVTargets = map[string]*transfer.WebDAVSink{}
 	_ = rec
 	// 直接验证 writtenDir：给它一个 Sink 报回来的真实位置。
-	spec := Spec{Output: Output{Kind: OutputWebDAV, Format: "pdf", WebDAVDir: "2026/09/28"}}
+	spec := Spec{Output: Output{Kind: OutputWebDAV, Format: "pdf", Remote: RemoteOutput{Target: "dav", Path: "2026/09/28"}}}
 	locations := map[string]transfer.Location{
 		"output.pdf": {Kind: "webdav", Path: "incoming/ofd/2026/09/28/output.pdf", Size: 7},
 	}
@@ -539,10 +539,10 @@ func TestRunRejectsUnregisteredSFTPTargets(t *testing.T) {
 	svc := newService(t)
 	ofd := ofdSample(t)
 	for _, spec := range []Spec{
-		{Input: Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
+		{Input: Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
 			Output: Output{Kind: OutputSFTP, Format: "pdf"}},
-		{Input: Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
-			Output: Output{Kind: OutputSFTP, Format: "pdf", SFTPTarget: "nope"}},
+		{Input: Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
+			Output: Output{Kind: OutputSFTP, Format: "pdf", Remote: RemoteOutput{Target: "nope"}}},
 	} {
 		if _, err := svc.Run(context.Background(), spec); err == nil {
 			t.Errorf("%+v 应报错", spec.Output)
@@ -555,8 +555,8 @@ func TestRunRejectsUnregisteredSFTPTargets(t *testing.T) {
 		"noverify": {Addr: "127.0.0.1:1", User: "u", Auth: transfer.SFTPAuth{Password: "secret"}},
 	}
 	_, err := svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
-		Output: Output{Kind: OutputSFTP, Format: "pdf", SFTPTarget: "noverify"},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
+		Output: Output{Kind: OutputSFTP, Format: "pdf", Remote: RemoteOutput{Target: "noverify"}},
 	})
 	if err == nil {
 		t.Fatal("未配置主机密钥校验应报错")
@@ -571,8 +571,8 @@ func TestRunRejectsUnregisteredSFTPTargets(t *testing.T) {
 			HostKeySHA256: "SHA256:whatever"},
 	}
 	_, err = svc.Run(context.Background(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: ofd},
-		Output: Output{Kind: OutputSFTP, Format: "pdf", SFTPTarget: "ok", SFTPDir: "../escape"},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofd},
+		Output: Output{Kind: OutputSFTP, Format: "pdf", Remote: RemoteOutput{Target: "ok", Path: "../escape"}},
 	})
 	if err == nil || !errors.Is(err, ErrBadRequest) {
 		t.Errorf("子目录带 .. 应被拒为请求错误，实际 %v", err)
@@ -590,7 +590,7 @@ func TestResultReportsInputFormatAndBytes(t *testing.T) {
 
 	payload := ofdSample(t)
 	res, err := svc.Run(t.Context(), Spec{
-		Input:  Input{Kind: InputUpload, Format: "ofd", Filename: "a.ofd", Bytes: payload},
+		Input:  Input{Kind: InputUpload, Format: "ofd", FileName: "a.ofd", Bytes: payload},
 		Output: Output{Kind: OutputStream, Format: "pdf"},
 	})
 	if err != nil {
@@ -614,7 +614,7 @@ func TestInputBytesIsMaterializedSize(t *testing.T) {
 	svc := New(dir, nil)
 	payload := ofdSample(t)
 	res, err := svc.Run(t.Context(), Spec{
-		Input:  Input{Kind: InputUpload, Filename: "a.ofd", Bytes: payload},
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: payload},
 		Output: Output{Kind: OutputStream, Format: "pdf"},
 	})
 	if err != nil {

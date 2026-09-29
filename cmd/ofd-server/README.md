@@ -28,21 +28,31 @@ EOF
 `/proc/<pid>/environ` 对同用户可读，而配置文件常常是 0644 跟着镜像和备份
 走一圈。写在配置里用 `api_key` 也行。
 
-提交一次转换：
+提交一次转换。`output.kind` 决定它是同步还是异步。先看最简单的同步形态——
+`stream` 直接把产物作为响应体返回：
 
 ```bash
+AUTH="Authorization: Bearer $OFD_SERVER_API_KEY"
+
 python3 - <<'PY' > req.json
 import base64, json
 data = open("sample.ofd", "rb").read()
 print(json.dumps({
-    "input":  {"kind": "upload", "filename": "a.ofd",
+    "input":  {"kind": "upload", "file_name": "a.ofd",
                "bytes": base64.b64encode(data).decode()},
     "output": {"kind": "stream", "format": "pdf"},
 }))
 PY
 
-AUTH="Authorization: Bearer $OFD_SERVER_API_KEY"
+# 响应体就是 PDF 本身；另有 X-Ofd-Job-Id 响应头可供事后查询
+curl -sS -H "$AUTH" -X POST --data-binary @req.json \
+     http://127.0.0.1:9705/v1/convert -o result.pdf
+```
 
+把 `"kind": "stream"` 换成 `"kind": "dir"` 就走异步：提交立即返回 `202` 与任务
+ID，转换在后台队列执行，结果落在 `output_dir/<任务 ID>/`：
+
+```bash
 ID=$(curl -sS -H "$AUTH" -X POST --data-binary @req.json \
      http://127.0.0.1:9705/v1/convert | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
@@ -60,11 +70,67 @@ Authorization: Bearer <api_key>     # 命令行与脚本
 X-OFD-Api-Key: <api_key>            # 浏览器页面
 ```
 
+请求体里的 `input.file_name` 与 `output.file_name` 是本接口自己的字段，与
+`multipart/form-data` 表单里的 `filename` 无关——后者是 HTML 规范定的名字，
+两者不通用。
+
 `/healthz` 与 `/readyz` 不需要令牌：kubelet 与负载均衡器不持有业务令牌，
 挡掉它们只会让健康检查一直失败、容器被反复重启。
 
 令牌比较用 `crypto/subtle.ConstantTimeCompare`，逐字节提前返回的写法会把
 密钥前缀的信息泄进响应时间。
+
+### `GET /v1/stats`
+
+转换量统计的 JSON 视图，需要令牌。与 `/metrics` 同源不同形——同一个 jobstore
+计数渲染成两种格式，所以两边数字必然一致，可以互相对账。
+
+```jsonc
+{
+  "started_at": "2026-09-29T03:16:49Z",  // 服务启动时刻
+  "uptime_seconds": 8,                   // 到本次抓取的运行时长
+  "since": "2026-09-29T03:16:55Z",       // 首次记账时间；没有转换时省略
+  "note": "口径说明，字段含义见下",
+  "totals": {
+    "conversions": 2,                 // 计入统计的终态任务数
+    "succeeded": 2,
+    "failed": 0,
+    "input_bytes": 4738,
+    "output_bytes": 523537
+  },
+  "queue": {                          // 抓取瞬间的瞬时值，与上面的累计值不是一回事
+    "queued": 0,                      // 含重试退避中的任务
+    "running": 0,
+    "workers": {"fast": 4, "heavy": 1, "notify": 4}
+  },
+  "formats": [                        // 按 输入格式 -> 输出格式 分组
+    {"from": "ofd", "to": "pdf", "conversions": 1, "succeeded": 1, "failed": 0,
+     "input_bytes": 4738, "output_bytes": 249961}
+  ]
+}
+```
+
+`started_at` 与 `since` 要一起看：服务重启后 `started_at` 会变而 `since` 不变，
+两者相差很大就说明这些累计数字跨过了重启——既没被清零，也不是新起的一段。
+只看 `conversions` 是看不出这一点的。
+
+`uptime_seconds` 在每次抓取时现算，不是启动时算好的定值。
+
+几条容易读错的口径，都写在响应的 `note` 字段里：
+
+- **计数是累计值，不受 `retention` 影响。** 任务记录会被清理，计数独立存放，
+  所以"总转换量"真的是自服务启动以来的总量，不是"最近 N 天"。
+- **`conversions` 不含已取消的任务。** `Cancel` 绕过了记账——取消的任务没进
+  转换。所以 `conversions` 也不等于提交总数，提交总数服务端不留存。
+- **`from` 用服务端判定的实际格式**，不是调用方声明的值。失败任务没走到判定
+  格式那步，归为 `unknown`，并带 `label_unknown: true` 标记以便与真实格式
+  区分，排序时排在最后。
+- **`formats[].input_bytes` 是该输入格式的总输入量**，不是这一条转换路径的量。
+  输入字节只按 `from` 索引，所以同一 `from` 的多行会重复计入，各行相加大于
+  `totals.input_bytes`。这是口径的已知代价，不是 bug；`output_bytes` 则是精确的。
+- **`input_bytes` 是"实际读入的字节"**，不是"提交的字节"。URL 输入的转换如果
+  失败，这部分记为 0。
+- `formats` 始终是空数组而非 `null`，调用方可以直接遍历。
 
 ### `GET /metrics`
 
@@ -72,13 +138,13 @@ Prometheus 文本格式（`text/plain; version=0.0.4`），需要令牌。
 
 本服务自己的累计计数：
 
-| 指标 | 类型 | 标签 | 含义 |
-|---|---|---|---|
-| `ofd_conversions_total` | counter | `from`, `to`, `state` | 到达终态的转换任务数 |
-| `ofd_input_bytes_total` | counter | `from` | 输入字节总量 |
-| `ofd_output_bytes_total` | counter | `from`, `to` | 输出字节总量 |
-| `ofd_queue_depth` | gauge | `state` | 未终结任务数（`queued` / `running`） |
-| `ofd_workers` | gauge | `lane` | 各通道 worker 数（`fast` / `heavy` / `notify`） |
+| 指标                     | 类型    | 标签                  | 含义                                            |
+|--------------------------|---------|-----------------------|-------------------------------------------------|
+| `ofd_conversions_total`  | counter | `from`, `to`, `state` | 到达终态的转换任务数                            |
+| `ofd_input_bytes_total`  | counter | `from`                | 输入字节总量                                    |
+| `ofd_output_bytes_total` | counter | `from`, `to`          | 输出字节总量                                    |
+| `ofd_queue_depth`        | gauge   | `state`               | 未终结任务数（`queued` / `running`）            |
+| `ofd_workers`            | gauge   | `lane`                | 各通道 worker 数（`fast` / `heavy` / `notify`） |
 
 外加 Go 运行时与进程指标：`go_goroutines`、`go_threads`、
 `go_memstats_*`、`go_gc_pause_seconds`、`go_info`、
@@ -142,7 +208,7 @@ scrape_configs:
 {
   "input": {
     "kind": "upload",          // "upload" | "url"
-    "filename": "a.ofd",
+    "file_name": "a.ofd",
     "bytes": "<base64>",      // kind=upload 时必填
     "format": "ofd",          // 可选。显式声明输入格式
     "url": "https://…/a.ofd"  // kind=url 时必填
@@ -151,6 +217,8 @@ scrape_configs:
     "kind": "stream",         // "stream" | "dir"
     "format": "pdf",
     "dir": "/…/out/sub"       // 可选，只能在配置的 output_dir 之下
+    "file_name": "INV-2026-0815",  // 可选，产物文件名的基名，不含扩展名
+    "remote": {"target": "minio", "path": "incoming/2026/08"}  // 仅远端 kind
   },
   "notify": { "target": "erp" },
   "high_priority": false
@@ -208,39 +276,40 @@ scrape_configs:
 拼写错误会直接报 `unknown field`，而不是静默用默认值——后者表现为"服务起来了
 但参数没生效"，排查起来很费时间。
 
-| 字段                           | 默认                 | 说明                                                  |
-|--------------------------------|----------------------|-------------------------------------------------------|
-| `listen`                       | `:9705`              | 监听地址，host 为空表示所有网卡                       |
+| 字段                           | 默认                 | 说明                                                     |
+|--------------------------------|----------------------|----------------------------------------------------------|
+| `listen`                       | `:9705`              | 监听地址，host 为空表示所有网卡                          |
 | `api_key`                      | **必填**             | 访问 `/v1/*` 的 Bearer 令牌；也可用 `OFD_SERVER_API_KEY` |
-| `db_path`                      | **必填**             | bbolt 任务库                                          |
-| `temp_dir`                     | `$TMPDIR/ofd-server` | 转换期间的临时目录                                    |
-| `output_dir`                   | **必填**             | 结果根目录                                            |
-| `log_level`                    | `info`               | `debug`/`info`/`warn`/`error`                         |
-| `log_dir`                      | 空（只写 stdout）    | 日志目录，自动创建。空表示不落文件                    |
-| `log_file`                     | `ofd-server.log`     | `log_dir` 下的文件名                                  |
-| `log_max_size_mb`              | 100                  | 单文件大小上限，超过即轮转                            |
-| `log_max_backups`              | 10                   | 保留的历史文件个数                                    |
-| `log_max_age_days`             | 30                   | 历史日志保留天数                                      |
-| `log_compress`                 | `false`              | 是否 gzip 压缩轮转出的历史日志                        |
-| `log_to_stdout`                | 跟着 `log_dir` 走    | 是否同时写标准输出，见下                              |
-| `max_upload_bytes`             | 64 MiB               | 请求体上限                                            |
-| `max_stream_bytes`             | 64 MiB               | stream 输出内存上限                                   |
-| `fast_workers`                 | 4                    | 快速通道并发                                          |
-| `heavy_workers`                | 1                    | 重通道并发，见下                                      |
-| `notify_workers`               | 4                    | 通知投递并发                                          |
-| `job_timeout`                  | 0（不限）            | 单次转换超时                                          |
-| `max_job_attempts`             | 0（不重试）          | 任务自动重试次数                                      |
-| `retention`                    | 168h                 | 终态任务保留时长                                      |
-| `allow_input_url_hosts`        | `[]`                 | URL 输入白名单，**默认关闭**                          |
-| `url_timeout`                  | 30s                  | 拉取远程输入的超时                                    |
-| `notify_targets`               | `{}`                 | 预注册通知目标                                        |
-| `ftp_targets`                  | `{}`                 | 预注册 FTP/FTPS 目标                                  |
-| `s3_targets`                   | `{}`                 | 预注册 S3 兼容对象存储目标                            |
-| `webdav_targets`               | `{}`                 | 预注册 WebDAV 目标                                    |
-| `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                          |
-| `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                  |
-| `soffice_path` / `chrome_path` | 自动探测             | 外部转换程序路径                                      |
-| `chrome_no_sandbox`            | `false`              | 给 Chrome 加 `--no-sandbox`；容器内非 root 运行时需要 |
+| `db_path`                      | **必填**             | bbolt 任务库                                             |
+| `temp_dir`                     | `$TMPDIR/ofd-server` | 转换期间的临时目录                                       |
+| `output_dir`                   | **必填**             | 结果根目录                                               |
+| `log_level`                    | `info`               | `debug`/`info`/`warn`/`error`                            |
+| `log_dir`                      | 空（只写 stdout）    | 日志目录，自动创建。空表示不落文件                       |
+| `log_file`                     | `ofd-server.log`     | `log_dir` 下的文件名                                     |
+| `log_max_size_mb`              | 100                  | 单文件大小上限，超过即轮转                               |
+| `log_max_backups`              | 10                   | 保留的历史文件个数                                       |
+| `log_max_age_days`             | 30                   | 历史日志保留天数                                         |
+| `log_compress`                 | `false`              | 是否 gzip 压缩轮转出的历史日志                           |
+| `log_to_stdout`                | 跟着 `log_dir` 走    | 是否同时写标准输出，见下                                 |
+| `max_upload_bytes`             | 64 MiB               | 请求体上限                                               |
+| `max_stream_bytes`             | 64 MiB               | stream 输出内存上限                                      |
+| `fast_workers`                 | 4                    | 快速通道并发                                             |
+| `heavy_workers`                | 1                    | 重通道并发，见下                                         |
+| `notify_workers`               | 4                    | 通知投递并发                                             |
+| `job_timeout`                  | 0（不限）            | 单次转换超时                                             |
+| `max_job_attempts`             | 0（不重试）          | 任务自动重试次数                                         |
+| `job_retry_backoff`            | `5s`                 | 首次重试的等待时长，之后按次数指数翻倍                   |
+| `retention`                    | 168h                 | 终态任务保留时长                                         |
+| `allow_input_url_hosts`        | `[]`                 | URL 输入白名单，**默认关闭**                             |
+| `url_timeout`                  | 30s                  | 拉取远程输入的超时                                       |
+| `notify_targets`               | `{}`                 | 预注册通知目标                                           |
+| `ftp_targets`                  | `{}`                 | 预注册 FTP/FTPS 目标                                     |
+| `s3_targets`                   | `{}`                 | 预注册 S3 兼容对象存储目标                               |
+| `webdav_targets`               | `{}`                 | 预注册 WebDAV 目标                                       |
+| `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                             |
+| `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                     |
+| `soffice_path` / `chrome_path` | 自动探测             | 外部转换程序路径                                         |
+| `chrome_no_sandbox`            | `false`              | 给 Chrome 加 `--no-sandbox`；容器内非 root 运行时需要    |
 
 环境变量可覆盖 `listen`、`db_path`、`temp_dir`、`output_dir`、`log_level`、
 `max_upload_bytes`（前缀 `OFD_SERVER_`）。配置里没有的项不要靠环境变量补，
@@ -302,6 +371,60 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 魔数），再用该格式的规范扩展名给临时文件命名，转换库的输入路径由服务端生成。
 魔数只能分出 OFD 与 PDF，分不出来时要求显式声明，不猜。
 
+### 产物文件名
+
+`output.file_name` 指定产物文件名的**基名**，扩展名由 `output.format` 决定：
+
+| `file_name`        | `format` | 产物名                                 |
+|--------------------|----------|----------------------------------------|
+| 不填               | `pdf`    | `output.pdf`                           |
+| `INV-2026-0815`    | `pdf`    | `INV-2026-0815.pdf`                    |
+| `report.final.pdf` | `pdf`    | `report.final.pdf`（不重复追加扩展名） |
+| `report.final`     | `pdf`    | `report.final.pdf`（基名可含点）       |
+| 不填               | `png`    | `page-0001.png`、`page-0002.png`……     |
+| `thumb`            | `png`    | `thumb-0001.png`、`thumb-0002.png`……   |
+
+给基名而不是完整文件名，是因为扩展名本就由格式决定：让调用方也能指定就多了一处
+可能自相矛盾的地方（声明 `pdf` 却起名 `.txt`）。逐页输出时基名替换 `page` 段、
+页号保留。
+
+产物名出现在 `GET /v1/jobs/{id}` 的 `output.files` 里，逐页输出会有多项。只报
+目录等于让调用方自己猜名字或去列目录，那正是这个字段要解决的问题。
+
+**文件名必须是单个路径组件**：不含 `/`、`\`、NUL、不是 `.` 或 `..`、不含控制
+字符、基名不超过 200 字节。违反这些的请求在提交阶段就返回 `400`，不会占队列
+位置。完整路径仍由服务端决定（`output_dir` 之下、每个任务一个子目录），任务
+隔离不受影响。
+
+### `stream` 是同步的，`dir` 才是异步的
+
+`output.kind` 决定接口语义，不只是换个落点：
+
+| kind     | 状态码 | 响应体   | 产物落点                |
+|----------|--------|----------|-------------------------|
+| `stream` | `200`  | 产物字节 | 不落盘                  |
+| `dir`    | `202`  | 任务 ID  | `output_dir/<任务 ID>/` |
+| 远端目标 | `202`  | 任务 ID  | 由目标方存储管          |
+
+`stream` 必须同步：它的产物只在内存里，异步提交的结果没有任何人能取到——任务
+照样记为 `succeeded`、`size` 照样报得出来，但内容随内存里的 `Result` 一起丢掉，
+转换被完整执行一遍而产出为零。
+
+同步转换由请求自己执行，并发上限取该通道的 `fast_workers` / `heavy_workers`；
+满了返回 `503` 加 `Retry-After`，而不是让调用方挂在连接上等。它不共用异步任务的
+worker 池，因此两种请求互相限制不了对方的 CPU 占用。好处是客户端断连能直接取消
+转换，不必再起一个监视协程。
+
+同步转换照样写任务记录，所以 `GET /v1/jobs/{id}` 与 `GET /v1/stats` 都不会漏掉
+它。响应头带 `X-Ofd-Job-Id` 与 `X-Ofd-Took-Ms`。
+
+**同步转换不发通知**：结果已经在响应里了，再回调一次没有意义。`dir` 与远端目标
+仍按配置投递通知。
+
+失败时直接返回 `4xx`/`5xx` 与错误体，而不是 `202` 再去轮询；任务记录仍写成
+`failed`，所以统计里的失败数包含同步转换。客户端主动断开记为 `cancelled` 而非
+`failed`——那不是转换失败，混在一起会让失败率虚高。
+
 ### 图像格式不能用 `stream` 输出
 
 `png`/`jpeg`/`svg` 等是逐页输出，塞不进单文件流。这类请求返回 `400`，提示改用
@@ -316,7 +439,15 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 目录不会被自动清理。`retention` 只清任务记录，不删产物。需要回收得靠外部的
 定时任务或卷的生命周期策略。
 
-### 通道由服务端判定，请求里的 `lane` 会被忽略
+要注意**回收只能按文件时间，不能按任务**：`retention`（默认 7 天）到期后任务
+记录被清掉，此后无法从服务侧判断某个文件属于哪个任务。所以外部清理只能用
+mtime，且要留出足够长的时间窗——按 mtime 删和按"最后一次修改"判断是同一件事，
+一个正在转换的任务的产物也在被写。
+
+需要长期留存、或本来就有归档要求的，就直接用远端输出目标：产物落在
+S3/FTP/SFTP/WebDAV 上，服务端不碰，生命周期由那边的存储策略管。
+
+### 通道由服务端判定，请求里的 `lane` 会被拒绝
 
 `fast` 是纯 Go 的 OFD 解析与 PDF/文本/Markdown/图像输出；`heavy` 是需要拉起
 外部进程的（Office 走 LibreOffice、HTML/MHTML 走 Chrome）以及 URL 输入
@@ -327,6 +458,11 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 
 通道写进任务记录供队列分派，提交后不可改——事后改会让已入队的任务和实际执行的
 资源池对不上。
+
+请求体里的 `lane` 会被**拒绝**（`400`）而不是被忽略。静默忽略会让调用方以为
+自己拿到了 heavy 优先级、实际走了 fast，这种"看起来生效了"的偏差比直接报错
+难查得多。同理，请求体里的未知字段一律报错——包括把 `file_name` 拼错的情况：
+那会让任务照常成功、产物名安静地退回 `output.pdf`。
 
 ### URL 输入默认关闭
 
@@ -359,23 +495,34 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 "output": {
   "kind": "ftp",        // "ftp" | "s3" | "webdav" | "sftp"
   "format": "pdf",
-  "ftp_target": "archive",   // 必须是服务端已注册的目标名
-  "ftp_dir": "2026/09/28"    // 已注册目标下的子目录，可选
+  "file_name": "INV-2026-0815",   // 可选，基名
+  // 四个协议共用同一组字段：kind 已经表明用哪种协议，再按协议分字段是冗余的，
+  // 而且调用方无法从字段名判断该填哪个。
+  "remote": {
+    "target": "archive",         // 必须是服务端已注册的目标名
+    "path": "2026/09/28"         // 已注册目标下的子路径，可选
+  }
 }
 ```
 
-`s3` 用 `s3_target`/`s3_prefix`，`webdav` 用 `webdav_target`/`webdav_dir`，
-`sftp` 用 `sftp_target`/`sftp_dir`。**目标名
-必须已注册**：地址、桶、凭据只存在于服务端配置里，调用方能给的只是一个名字。
-如果让请求带地址，它就能被当作往任意主机上传数据的通道。
+`path` 的含义由目标自身的配置决定：FTP/SFTP/WebDAV 是远端 `base_dir`，S3 是
+桶内 prefix。调用方不必、也无法区分。
+
+**`target` 必须已注册**：地址、桶、凭据只存在于服务端配置里，调用方能给的只是
+一个名字。如果让请求带地址，它就能被当作往任意主机上传数据的通道。
+
+`remote` 只在 `kind` 为远端类型时有效。本地落点（`stream` / `dir`）带上它会被
+拒绝，而不是静默忽略——静默忽略会让人以为产物传上了远端、其实落在本地。
 
 逐页图像格式（`png` 等）在远程输出下同样按页分文件，命名为
 `page-0001.png`、`page-0002.png`……
 
 共同规则：
 
-- 子目录不能是绝对路径、不能含 `..`。`path.Join` 会把 `..` 规整掉，所以这个
-  检查必须发生在拼接**之前**，否则输出会静默落到配置范围之外。
+- `path` 不能是绝对路径、不能含 `..` 段。`path.Join` 会把 `..` 规整掉，所以这个
+  检查必须发生在拼接**之前**，否则输出会静默落到配置范围之外。检查是**逐段**
+  判断而不是整串匹配 `..`：`v1.2`、`a..b` 这类合法名字带两个点是常事，整串匹配
+  会把它们一起误杀。
 - 默认不覆盖同名文件/对象。要覆盖需显式 `overwrite: true`。
 - 单文件大小受 `max_bytes` 限制，超限直接失败——远端往往是别人的机器。
 
@@ -415,7 +562,7 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 
 | 方式               | 密钥存放     | 说明                                            |
 |--------------------|--------------|-------------------------------------------------|
-| `agent_socket`     | 不进配置文件 | 最干净：私钥与已解��的口令都由 agent 持有       |
+| `agent_socket`     | 不进配置文件 | 最干净：私钥与已解密的口令都由 agent 持有       |
 | `private_key_file` | 文件路径     | 主流做法；私钥加密时用 `private_key_passphrase` |
 | `password`         | 配置文件     | 内网临时可用。配置文件里的口令等同于明文存储    |
 

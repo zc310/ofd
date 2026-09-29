@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -56,19 +57,36 @@ type Server struct {
 	log       *slog.Logger
 	ready     func() bool
 	router    *router.Router
+	// startedAt 是服务对象创建时刻，用于 /v1/stats 的启动时间与运行时长。
+	//
+	// 记在 NewServer 而不是 Start：测试里普遍直接用 Handler() 而不启动
+	// 监听器，记在 Start 会让绝大多数用例的启动时间恒为零。NewServer 与
+	// Start 之间只有准备步骤，差值在毫秒级。
+	startedAt time.Time
 	// apiKey 是访问 /v1/* 的令牌，按字节保存以配合定长比较。
 	apiKey []byte
+	// convert 供 stream 输出的同步转换使用；异步路径用的是 runner 手上的
+	// 那一个，两者是不同的 Service 实例但共用同一个 TempDir。
+	convert *convertersvc.Service
+	// inlineFast 与 inlineHeavy 限制同步转换的并发，按通道分开。
+	inlineFast, inlineHeavy chan struct{}
+	inlineOnce              sync.Once
 }
 
 // NewServer 构造 HTTP 层。
-func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, list *allowlist.List, targets *RemoteTargets, log *slog.Logger) *Server {
+func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, list *allowlist.List, targets *RemoteTargets, convert *convertersvc.Service, log *slog.Logger) *Server {
 	if targets == nil {
 		targets = &RemoteTargets{}
 	}
+	if convert == nil {
+		// 同步转换没有可用的转换器时，stream 请求会明确报错而不是崩在空指针上。
+		convert = convertersvc.New("", list)
+	}
 	s := &Server{cfg: cfg, store: store, registry: registry, allowlist: list,
 		ftp: targets.FTP, s3: targets.S3, webdav: targets.WebDAV,
-		sftp: targets.SFTP, log: log}
+		sftp: targets.SFTP, convert: convert, log: log}
 	s.apiKey = []byte(cfg.APIKey)
+	s.startedAt = time.Now().UTC()
 	s.router = s.routes()
 	return s
 }
@@ -129,6 +147,9 @@ func (s *Server) routes() *router.Router {
 	// 所有网卡。Prometheus 支持在 scrape_configs 里配 bearer_token_file，
 	// 采集端多一份配置，好过把数据敞着。
 	r.GET("/metrics", s.requireAPIKey(s.handleMetrics))
+	// 转换量统计的 JSON 视图，与 /metrics 同源不同形。放在 /v1 下是因为
+	// 它是业务数据（转换量与格式分布），且沿用同一套令牌。
+	r.GET("/v1/stats", s.requireAPIKey(s.handleStats))
 	return r
 }
 
@@ -162,6 +183,9 @@ func (s *Server) requireAPIKey(next fasthttp.RequestHandler) fasthttp.RequestHan
 }
 
 // apiKeyHeader 是浏览器友好的令牌头名。
+// 注意：fasthttp 会把自定义头名规范化成 X-Ofd-*（每个连字符后首字母大写，
+// 不保留缩写全大写）。HTTP 头名大小写不敏感，所以 Peek 与 Set 都能对上，
+// 但抓包看到的是 X-Ofd-Job-Id 而不是 X-OFD-Job-Id，文档按前者写。
 const apiKeyHeader = "X-OFD-Api-Key"
 
 func (s *Server) apiKeyMatches(presented []byte) bool {
@@ -210,10 +234,21 @@ func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var request submitRequest
-	if err := json.Unmarshal(body, &request); err != nil {
+	// 未知字段报错，与配置文件同一套。请求体被静默忽略未知字段时代价特别大：
+	// 写错 file_name 会安静地退回默认产物名 output.pdf，调用方拿到的是
+	// "转换成功但名字不对"，排查起来比直接报错费时间得多。
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
 		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "请求体不是合法 JSON: "+err.Error())
 		return
 	}
+	// stream 走同步：产物只在内存里，异步提交的结果没有任何人能取到。
+	if request.Output.Kind == convertersvc.OutputStream {
+		s.handleConvertInline(ctx, &request)
+		return
+	}
+
 	job, err := s.buildJob(&request)
 	if err != nil {
 		writeError(ctx, statusForRequestError(err), codeForRequestError(err), err.Error())
@@ -257,24 +292,34 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 	if request.Output.Format == "" {
 		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "output.format 不能为空"}
 	}
+	// 文件名在这里就拒掉，而不是等转换跑完才失败：非法文件名是请求本身的问题，
+	// 让它占一个队列位置再报 failed 是白排队。完整规则见 convertersvc。
+	if err := convertersvc.ValidateOutputFileName(request.Output.FileName); err != nil {
+		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: err.Error()}
+	}
 	// 任务 ID 先定下来：输出目录要用它做隔离。
 	id := newJobID()
 
-	// 输出根目录由服务端决定：让调用方传任意路径等于让它往任何位置写文件。
-	// 只允许在配置的 output_dir 之下。
-	outputRoot := request.Output.Dir
-	if outputRoot == "" {
-		outputRoot = s.cfg.OutputDir
-	} else if !isUnderRoot(s.cfg.OutputDir, outputRoot) {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
-			msg: "output.dir 必须位于服务配置的 output_dir 之下"}
-	}
-	// 每个任务独占一个子目录。
+	// output.dir 是 output_dir 之下的**相对**子路径，由调用方指定结果落点。
 	//
-	// 不隔离的话，所有 dir 输出的任务都往同一个目录写 "output.pdf"，
-	// 而 DirSink 默认不允许覆盖：第二个任务（哪怕是顺序执行的）必然以
-	// "输出文件已存在" 失败。并发时更糟，两个任务会互相抢同一个文件名。
-	request.Output.Dir = filepath.Join(outputRoot, id)
+	// 只接受相对路径：让调用方写绝对路径等于要求它知道服务端 output_dir 配成了
+	// 什么，那是服务端自己的布局，不该成为接口契约的一部分。
+	//
+	// 未指定时用任务 ID 作子目录，每个任务独占一个目录。不隔离的话，所有 dir
+	// 输出的任务都往同一个目录写 "output.pdf"，而 DirSink 默认不允许覆盖：
+	// 第二个任务（哪怕顺序执行）必然以"输出文件已存在"失败。
+	//
+	// 显式指定了就不加任务 ID —— 调用方写了什么就落在什么位置。代价是并发
+	// 任务若写同一目录且同名文件会撞：后者失败，错误是明确的"文件已存在"，
+	// 不是静默覆盖。要避免就在 dir 或 filename 里带上区分。
+	relative := strings.TrimSpace(request.Output.Dir)
+	if relative == "" {
+		relative = id
+	} else if err := validateRelativeSubdir(relative); err != nil {
+		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+			msg: "output.dir 非法: " + err.Error()}
+	}
+	request.Output.Dir = filepath.Join(s.cfg.OutputDir, relative)
 	request.Output.MaxStreamBytes = s.cfg.MaxStreamBytes
 
 	notifyTarget := ""
@@ -323,24 +368,45 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 	}, nil
 }
 
-// isUnderRoot 判断 path 是否位于 root 之下。
+// validateRelativeSubdir 校验 output_dir 之下的相对子路径。
 //
-// 用 filepath.Rel 而不是前缀比较：前缀比较会被 "/data/../etc" 与 "/data-other"
-// 这类输入绕过，而 Clean 后的相对路径不会。root 为空时视为不限制，交由上层
-// 保证 root 已被配置。
-func isUnderRoot(root, path string) bool {
-	if root == "" {
-		return false
+// 判据是"必须是干净的相对路径"：不是绝对路径、不含 `..` 段、不含 NUL 与
+// 控制字符、长度受限。满足这些时 filepath.Join(root, rel) 落在 root 之内是
+// 结构性成立的，不依赖逐个排除。
+//
+// 逐段检查 `..` 而不是对整个路径做一次 Rel 比较，是因为 Rel 的结果在
+// Windows 上还受盘符与大小写影响，而"任何一段是 .. 就拒绝"这条规则在
+// 两个平台上的行为完全一致。
+func validateRelativeSubdir(rel string) error {
+	if filepath.IsAbs(rel) {
+		return fmt.Errorf("必须是相对路径，不能是绝对路径: %q", rel)
 	}
-	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
-	if err != nil {
-		return false
+	if strings.ContainsRune(rel, 0) {
+		return fmt.Errorf("不能包含空字符")
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return false
+	for _, r := range rel {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("不能包含控制字符")
+		}
 	}
-	return true
+	if len(rel) > maxSubdirBytes {
+		return fmt.Errorf("长度 %d 字节，超过 %d 上限", len(rel), maxSubdirBytes)
+	}
+	// 统一分隔符后再逐段判断，Windows 上传 a\b\..\c 也要挡住。
+	normalized := strings.ReplaceAll(rel, `\`, "/")
+	if normalized == "" {
+		return fmt.Errorf("不能为空")
+	}
+	for _, seg := range strings.Split(normalized, "/") {
+		if seg == ".." {
+			return fmt.Errorf("不能包含 .. 段: %q", rel)
+		}
+	}
+	return nil
 }
+
+// maxSubdirBytes 是 output.dir 的字节上限，给 output_dir 与文件名留余量。
+const maxSubdirBytes = 400
 
 // checkInputURL 在提交阶段就校验 URL 输入。
 //
@@ -581,49 +647,75 @@ func (s *Server) Start(ctx context.Context) error {
 // 两条规则：目标名必须已注册（否则是拿它当任意主机上传的通道），子目录不能带
 // ".." 或绝对路径（否则能写到配置范围之外）。
 func (s *Server) checkRemoteTarget(out *convertersvc.Output) error {
-	type spec struct {
-		kind      string
-		target    string
-		dir       string
-		targetKey string
-		dirKey    string
+	remoteKinds := map[string]bool{
+		convertersvc.OutputFTP:    true,
+		convertersvc.OutputS3:     true,
+		convertersvc.OutputWebDAV: true,
+		convertersvc.OutputSFTP:   true,
 	}
-	specs := []spec{
-		{convertersvc.OutputFTP, out.FTPTarget, out.FTPDir, "ftp_target", "ftp_dir"},
-		{convertersvc.OutputS3, out.S3Target, out.S3Prefix, "s3_target", "s3_prefix"},
-		{convertersvc.OutputWebDAV, out.WebDAVTarget, out.WebDAVDir, "webdav_target", "webdav_dir"},
-		{convertersvc.OutputSFTP, out.SFTPTarget, out.SFTPDir, "sftp_target", "sftp_dir"},
-	}
-	for _, sp := range specs {
-		isRemote := sp.kind != convertersvc.OutputStream && sp.kind != convertersvc.OutputDir
-		if out.Kind != sp.kind {
-			if sp.target != "" {
-				return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
-					msg: fmt.Sprintf("output.%s 只在 output.kind 为 %s 时有效", sp.targetKey, sp.kind)}
-			}
-			continue
-		}
-		if !isRemote {
-			continue
-		}
-		if sp.target == "" {
+	isRemote := remoteKinds[out.Kind]
+	if !isRemote {
+		// 本地落点不该带 remote：给了也没地方用，静默忽略会让调用方以为自己
+		// 传了远程目标、产物其实落在了本地。
+		if out.Remote.Target != "" || out.Remote.Path != "" {
 			return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
-				msg: fmt.Sprintf("output.%s 不能为空", sp.targetKey)}
+				msg: fmt.Sprintf("output.remote 只在 output.kind 为 ftp/s3/webdav/sftp 时有效，当前是 %s", out.Kind)}
 		}
-		if !s.remoteTargetRegistered(sp.kind, sp.target) {
-			return &requestError{kind: "unknown_remote_target", status: fasthttp.StatusBadRequest,
-				msg: fmt.Sprintf("未注册的 %s 目标 %q", sp.kind, sp.target)}
-		}
-		if dir := sp.dir; dir != "" {
-			if strings.Contains(dir, "..") || strings.HasPrefix(dir, "/") ||
-				strings.ContainsAny(dir, "\\") || strings.ContainsRune(dir, 0) {
-				return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
-					msg: fmt.Sprintf("output.%s 不能是绝对路径或包含 ..", sp.dirKey)}
-			}
+		return nil
+	}
+	if out.Remote.Target == "" {
+		return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+			msg: "output.remote.target 不能为空"}
+	}
+	if !s.remoteTargetRegistered(out.Kind, out.Remote.Target) {
+		return &requestError{kind: "unknown_remote_target", status: fasthttp.StatusBadRequest,
+			msg: fmt.Sprintf("未注册的 %s 目标 %q", out.Kind, out.Remote.Target)}
+	}
+	if path := out.Remote.Path; path != "" {
+		if err := validateRemotePath(path); err != nil {
+			return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+				msg: "output.remote.path 非法: " + err.Error()}
 		}
 	}
 	return nil
 }
+
+// validateRemotePath 校验远端目标下的相对子路径。
+//
+// 逐段判断 `..` 而不是对整串做 Contains：`a..b/c` 是合法路径名，含 `..` 的
+// 子串却会被误杀。而 ".." 作为**一段**才是穿越——这一点上 Contains 与分段
+// 判断的结论正好相反，误杀比漏判更常见（文件名里带两个点的到处都是）。
+//
+// 远端路径不套用 validateRelativeSubdir 的单组件限制：S3 的 prefix 天然就是
+// 多段的（incoming/2026/08），限制成一段会让它没法用。分段穿越与绝对路径
+// 才是要挡的。
+func validateRemotePath(path string) error {
+	if strings.ContainsRune(path, 0) {
+		return fmt.Errorf("不能包含空字符")
+	}
+	for _, r := range path {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("不能包含控制字符")
+		}
+	}
+	if len(path) > maxRemotePathBytes {
+		return fmt.Errorf("长度 %d 字节，超过 %d 上限", len(path), maxRemotePathBytes)
+	}
+	// 统一分隔符后逐段判断，两个平台上行为一致。
+	normalized := strings.ReplaceAll(path, `\`, "/")
+	if strings.HasPrefix(normalized, "/") {
+		return fmt.Errorf("不能是绝对路径: %q", path)
+	}
+	for _, seg := range strings.Split(normalized, "/") {
+		if seg == ".." {
+			return fmt.Errorf("不能包含 .. 段: %q", path)
+		}
+	}
+	return nil
+}
+
+// maxRemotePathBytes 是 output.remote.path 的字节上限。
+const maxRemotePathBytes = 500
 
 // remoteTargetRegistered 报告目标名是否在对应注册表里。
 func (s *Server) remoteTargetRegistered(kind, name string) bool {

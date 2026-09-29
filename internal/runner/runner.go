@@ -25,6 +25,7 @@ import (
 	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"
 	"github.com/zc310/ofd/internal/notify"
+	"github.com/zc310/ofd/internal/transfer"
 )
 
 // DefaultBackoff 是任务失败后的重试退避基数，按 Attempt 指数放大。
@@ -248,6 +249,9 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 		Kind: result.Kind,
 		Path: outputPath(result),
 		Size: totalSize(result),
+		// 文件名清单要让调用方知道产物叫什么。逐页输出会有多项，只报目录
+		// 的话调用方得自己猜名字或去列目录。
+		Files: fileNames(result),
 	}, "")
 }
 
@@ -286,7 +290,11 @@ func retryableJob(cause error) bool {
 	switch {
 	case errors.Is(cause, convertersvc.ErrBadRequest),
 		errors.Is(cause, convertersvc.ErrUnsupported),
-		errors.Is(cause, convertersvc.ErrTooLarge):
+		errors.Is(cause, convertersvc.ErrTooLarge),
+		// 目标已存在：重试多少次都还是已存在。而 output.dir 允许指向共享
+		// 目录（调用方主动放弃任务隔离），同名冲突因此是常见失败，不该
+		// 白白耗掉 3 次转换与退避。
+		errors.Is(cause, transfer.ErrExists):
 		return false
 	default:
 		return true
@@ -454,9 +462,27 @@ func specFromJob(job *jobstore.Job) (convertersvc.Spec, error) {
 
 func outputPath(result convertersvc.Result) string {
 	if result.Kind == convertersvc.OutputStream {
-		return result.Filename
+		return result.FileName
 	}
 	return result.Dir
+}
+
+// fileNames 提取产物的文件名清单。
+//
+// stream 输出的名字在 FileName 里，dir 与远端输出在 Files 里；两者都取，
+// 免得调用方要按 kind 分支。
+func fileNames(result convertersvc.Result) []string {
+	if len(result.Files) > 0 {
+		names := make([]string, 0, len(result.Files))
+		for _, file := range result.Files {
+			names = append(names, file.Name)
+		}
+		return names
+	}
+	if result.FileName != "" {
+		return []string{result.FileName}
+	}
+	return nil
 }
 
 func totalSize(result convertersvc.Result) int64 {

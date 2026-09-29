@@ -176,7 +176,7 @@ func (s *SFTPSink) Put(ctx context.Context, name string, r io.Reader) (Location,
 	}
 	if !s.Overwrite {
 		if _, statErr := client.Stat(remote); statErr == nil {
-			return Location{}, fmt.Errorf("目标文件已存在且不允许覆盖: %s", remote)
+			return Location{}, fmt.Errorf("%w: 目标文件已存在且不允许覆盖: %s", ErrExists, remote)
 		} else if !isSFTPNotFound(statErr) {
 			// 认证失败、权限不足之类不能当成"文件不存在"，否则覆盖检查就
 			// 变成假阳性，然后去覆盖别人的文件。
