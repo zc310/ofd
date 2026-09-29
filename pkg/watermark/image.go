@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
 	"strings"
 
 	_ "image/jpeg"
+
+	"github.com/zc310/ofd/internal/media"
 )
 
 var pngSignature = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
@@ -67,7 +68,7 @@ func bakeImageAlpha(data []byte, opacity uint8) ([]byte, error) {
 		}
 	}
 	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, dst); err != nil {
+	if err := media.EncodePNG(&buffer, dst); err != nil {
 		return nil, fmt.Errorf("编码图片失败: %w", err)
 	}
 	return buffer.Bytes(), nil

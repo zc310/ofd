@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"image/png"
 	"math"
 
 	gobig2 "github.com/dkrisman/gobig2"
@@ -16,6 +15,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/coloricc"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -394,7 +394,7 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 		return nil, false
 	}
 	return encoded.Bytes(), true
@@ -489,6 +489,63 @@ func pdfJBIG2Image(ctx *model.Context, stream *types.StreamDict) (*image.Gray, e
 	return gray, nil
 }
 
+// pdfJBIG2Standalone 把不依赖全局段的 PDF JBIG2 图像段流封装为独立 JBIG2 文件。
+func pdfJBIG2Standalone(ctx *model.Context, stream *types.StreamDict) ([]byte, bool) {
+	if stream == nil || len(pdfJBIG2Globals(ctx, stream)) != 0 {
+		return nil, false
+	}
+	colorSpace, found := stream.Find("ColorSpace")
+	if !found {
+		return nil, false
+	}
+	if ctx != nil {
+		resolved, err := dereferencePDFObject(ctx, colorSpace)
+		if err != nil {
+			return nil, false
+		}
+		colorSpace = resolved
+	}
+	name, ok := colorSpace.(types.Name)
+	if !ok || name.Value() != "DeviceGray" {
+		return nil, false
+	}
+	bpc, ok := integerValue(stream.Dict["BitsPerComponent"])
+	if !ok || bpc != 1 {
+		return nil, false
+	}
+	data := jbig2StreamBytes(stream)
+	if len(data) == 0 {
+		return nil, false
+	}
+	if _, found := stream.Find("ImageMask"); found {
+		return nil, false
+	}
+	if _, found := stream.Find("SMask"); found {
+		return nil, false
+	}
+	if decode, found := stream.Find("Decode"); found {
+		if values, ok := decode.(types.Array); ok && len(values) >= 2 {
+			min, minOK := dereferencedPDFNumber(ctx, values[0])
+			max, maxOK := dereferencedPDFNumber(ctx, values[1])
+			if !minOK || !maxOK || min != 0 || max != 1 {
+				return nil, false
+			}
+		} else {
+			return nil, false
+		}
+	}
+	// PDF embeds a headerless segment stream and omits EOP/EOF; standalone JBIG2
+	// needs a file header, page count, and terminal page/document segments.
+	result := make([]byte, 0, len(data)+27)
+	result = append(result, 0x97, 'J', 'B', '2', '\r', '\n', 0x1a, '\n', 0x01, 0, 0, 0, 1)
+	result = append(result, data...)
+	result = append(result,
+		0, 0, 0, 0, 49, 0, 1, 0, 0, 0, 0,
+		0, 0, 0, 0, 51, 0, 0, 0, 0, 0,
+	)
+	return result, true
+}
+
 // encodePDFJBIG2Image 把 JBIG2 灰度位图输出为 OFD 图像：ImageMask 按填充色着色，
 // 普通图像按 /Decode 反相后输出灰度 PNG。
 func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *image.Gray, maskColor pdfColor) ([]byte, string, error) {
@@ -526,7 +583,7 @@ func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *ima
 			}
 		}
 		var encoded bytes.Buffer
-		if err := png.Encode(&encoded, rgba); err != nil {
+		if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 			return nil, "", fmt.Errorf("编码 JBIG2 蒙版失败: %w", err)
 		}
 		return encoded.Bytes(), "PNG", nil
@@ -539,7 +596,7 @@ func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *ima
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, out); err != nil {
+	if err := media.EncodePNGFast(&encoded, out); err != nil {
 		return nil, "", fmt.Errorf("编码 JBIG2 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -638,7 +695,7 @@ func encodePDFJPXImage(ctx *model.Context, stream *types.StreamDict, maskColor p
 // encodePNGImage 把图像编码为 PNG。
 func encodePNGImage(img image.Image) ([]byte, string, error) {
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, img); err != nil {
+	if err := media.EncodePNGFast(&encoded, img); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -714,6 +771,9 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 	// JBIG2Decode（T.88）由 gobig2 解码为灰度位图，再按 ImageMask 或 1 位图像
 	// 输出。pdfcpu 不处理该过滤器，必须在此之前拦截。
 	if hasJBIG2Filter(stream) {
+		if data, ok := pdfJBIG2Standalone(ctx, stream); ok {
+			return data, "JBIG2", nil
+		}
 		gray, err := pdfJBIG2Image(ctx, stream)
 		if err != nil {
 			return nil, "", err
@@ -797,7 +857,7 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 			copy(gray.Pix[y*gray.Stride:], raw[y*width:(y+1)*width])
 		}
 		var encoded bytes.Buffer
-		if err := png.Encode(&encoded, gray); err != nil {
+		if err := media.EncodePNGFast(&encoded, gray); err != nil {
 			return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 		}
 		return encoded.Bytes(), "PNG", nil
@@ -810,7 +870,7 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -956,7 +1016,7 @@ func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, heigh
 		img = rgba
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, img); err != nil {
+	if err := media.EncodePNGFast(&encoded, img); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1189,7 +1249,7 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 Indexed PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1379,7 +1439,7 @@ func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) (
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 CMYK PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1417,7 +1477,7 @@ func encodePDFImageMask(ctx *model.Context, stream *types.StreamDict, maskColor 
 		}
 	}
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 ImageMask PNG 失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil

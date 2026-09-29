@@ -1782,7 +1782,7 @@ func imageFormatFromPrefix(format string, data []byte, source DataSource) string
 	switch format {
 	case "JPG":
 		return "JPEG"
-	case "JPEG", "PNG", "BMP", "TIFF", "GIF", "WEBP":
+	case "JPEG", "PNG", "BMP", "TIFF", "GIF", "WEBP", "JBIG2":
 		return format
 	}
 	if len(prefix) >= 8 && bytes.Equal(prefix[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {

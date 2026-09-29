@@ -3,11 +3,11 @@ package pdf2ofd
 import (
 	"bytes"
 	"image"
-	"image/png"
 	"math"
 	"strings"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -381,7 +381,7 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	}
 
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return false
 	}
 	img := creator.Image{X: fillBounds[0], Y: fillBounds[1], Width: widthMM, Height: heightMM, Data: encoded.Bytes(), Format: "PNG"}
