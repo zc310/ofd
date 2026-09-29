@@ -51,7 +51,7 @@ func (h *htmlImporter) Import(input any, output io.Writer, conv *converter.Conve
 	if err != nil {
 		return err
 	}
-	return pdf2ofd.Convert(pdf, output)
+	return pdf2ofd.Convert(conv.Context(), pdf, output)
 }
 
 // htmlTransformer 把 HTML/MHTML 直接转换为 PDF。

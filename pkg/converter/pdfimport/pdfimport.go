@@ -10,6 +10,7 @@
 package pdfimport
 
 import (
+	"context"
 	"io"
 
 	"github.com/zc310/ofd/internal/pdf2ofd"
@@ -23,18 +24,18 @@ func (p *pdfImporter) Name() string         { return "pdf" }
 func (p *pdfImporter) Extensions() []string { return []string{".pdf"} }
 func (p *pdfImporter) MIME() string         { return "application/pdf" }
 
-func (p *pdfImporter) Import(input any, output io.Writer, _ *converter.Converter) error {
-	return pdf2ofd.Convert(input, output)
+func (p *pdfImporter) Import(input any, output io.Writer, conv *converter.Converter) error {
+	return pdf2ofd.Convert(conv.Context(), input, output)
 }
 
 // Convert 将 PDF 输入转换为 OFD 文档，input 支持 PDF 文件路径、[]byte 或 io.Reader。
-func Convert(input any, output io.Writer) error {
-	return pdf2ofd.Convert(input, output)
+func Convert(ctx context.Context, input any, output io.Writer) error {
+	return pdf2ofd.Convert(ctx, input, output)
 }
 
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(pdfPath, ofdPath string) error {
-	return pdf2ofd.ConvertFile(pdfPath, ofdPath)
+func ConvertFile(ctx context.Context, pdfPath, ofdPath string) error {
+	return pdf2ofd.ConvertFile(ctx, pdfPath, ofdPath)
 }
 
 func init() {

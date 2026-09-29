@@ -21,7 +21,7 @@ func TestConvertMultiplyFillBecomesTranslucent(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -65,7 +65,7 @@ func TestConvertNormalFillStaysOpaque(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

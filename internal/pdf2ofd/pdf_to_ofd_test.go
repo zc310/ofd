@@ -25,7 +25,7 @@ import (
 func TestConvertBasicPage(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("q 2 w 1 0 0 RG 72 72 m 144 72 l 144 144 l 72 144 l h S Q BT /F1 12 Tf 72 200 Td (Hello) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(output.Bytes(), []byte("PK")) {
@@ -65,7 +65,7 @@ func TestConvertBasicPage(t *testing.T) {
 func TestConvertHonorsNonZeroMediaBoxAndUserUnit(t *testing.T) {
 	pdf := testutil.MinimalPDFWithPage([]byte("0 0 1 rg 10 20 30 40 re f"), "[10 20 110 220]", 2)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -89,7 +89,7 @@ func TestConvertHonorsNonZeroMediaBoxAndUserUnit(t *testing.T) {
 func TestConvertUsesTextMatrixScale(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("BT /F1 1 Tf 20 0 0 20 72 200 Tm (Hello) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -113,7 +113,7 @@ func TestConvertUsesTextMatrixScale(t *testing.T) {
 func TestConvertCJKMilimeterCTMScale(t *testing.T) {
 	pdf := cjkFontPDF([]byte("2.8346 0 0 2.8346 0 0 cm BT /F1 6.7028 Tf 68.5 130 Td <91CD> Tj ET"))
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -143,7 +143,7 @@ func TestConvertCJKMilimeterCTMScale(t *testing.T) {
 func TestConvertCJKKerningAdvance(t *testing.T) {
 	pdf := cjkFontPDF([]byte("2.8346 0 0 2.8346 0 0 cm BT /F1 6.7028 Tf 68.5 130 Td [<91CD> 30 <5E86>] TJ ET"))
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -171,7 +171,7 @@ func TestConvertCJKKerningAdvance(t *testing.T) {
 func TestConvertEmitsHScaleForHorizontalScaling(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 150 Tz 20 200 Td (Hi) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -194,7 +194,7 @@ func TestConvertEmitsHScaleForHorizontalScaling(t *testing.T) {
 func TestConvertEmitsRotationForRotatedText(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("q 0.7071 -0.7071 0.7071 0.7071 100 100 cm BT /F1 20 Tf 0 0 Td (AB) Tj ET Q"), 200, 200)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -219,7 +219,7 @@ func TestConvertTextLeadingAdvancesText(t *testing.T) {
 	// TL 设置行距，T* 用它换行。忽略 TL 会让后续文字落在同一行造成公式错位。
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td 14 TL (abc) Tj T* (def) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -247,7 +247,7 @@ func TestConvertWhitespaceOnlyShowAdvancesText(t *testing.T) {
 	// 前导空格的位移而整体左移（代码块 "    >>>" 的缩进会消失）。
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td (A) Tj (   ) Tj (B) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -367,7 +367,7 @@ func TestConvertInlineImageMaskEmitsImage(t *testing.T) {
 	content := []byte("q 144 0 0 144 0 0 cm\nBI\n/IM true\n/W 1\n/H 1\n/BPC 1\nID \x00\nEI\nQ")
 	pdf := testutil.MinimalPDF(content, 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -393,7 +393,7 @@ func TestConvertInlineColorImageEmitsImage(t *testing.T) {
 	content := []byte("q 144 0 0 144 0 0 cm\nBI\n/CS /RGB\n/W 1\n/H 1\n/BPC 8\nID \xff\x00\x00\nEI\nQ")
 	pdf := testutil.MinimalPDF(content, 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -449,7 +449,7 @@ func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -526,7 +526,7 @@ func TestConvertYCCKJPEGToRGB(t *testing.T) {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -640,7 +640,7 @@ func TestPDFInterpreterHandlesSCNColorComponents(t *testing.T) {
 func TestConvertClosesImplicitFillSubpaths(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("0.5 0.5 0.5 rg 10 10 m 100 10 l 100 20 l 10 20 l f*"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -665,7 +665,7 @@ func TestConvertClosesImplicitFillSubpaths(t *testing.T) {
 func TestConvertExplicitlyDisablesStrokeForFillOnlyPaths(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("0 0 1 rg 10 20 30 40 re f"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -689,7 +689,7 @@ func TestConvertExplicitlyDisablesStrokeForFillOnlyPaths(t *testing.T) {
 func TestConvertScalesLineWidthByCTM(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("2 w 0.5 0 0 0.5 0 0 cm 0 0 m 100 0 l S"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -879,7 +879,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 				t.Skipf("测试文件不存在，跳过: %v", err)
 			}
 			var output bytes.Buffer
-			if err := Convert(data, &output); err != nil {
+			if err := Convert(t.Context(), data, &output); err != nil {
 				t.Fatal(err)
 			}
 			if !bytes.HasPrefix(output.Bytes(), []byte("PK")) {
@@ -1050,7 +1050,7 @@ func TestConvertAppliesPathClip(t *testing.T) {
 	content := []byte("q 20 20 60 40 re W n 10 10 200 200 re f Q")
 	pdf := testutil.MinimalPDF(content, 300, 300)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -1083,7 +1083,7 @@ func TestCommitPendingClipOnlyAffectsCurrentScope(t *testing.T) {
 	content := []byte("q 20 20 60 40 re W n Q 10 10 200 200 re f")
 	pdf := testutil.MinimalPDF(content, 300, 300)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -1181,7 +1181,7 @@ func TestMergeAdjacentTextItemsPreservesCGTransform(t *testing.T) {
 func TestConvertWritesConverterMetadata(t *testing.T) {
 	pdf := testutil.MinimalPDF([]byte("BT /F1 12 Tf 20 200 Td (Hello) Tj ET"), 144, 288)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofdXML := readOFDXML(t, output.Bytes())
@@ -1204,7 +1204,7 @@ func TestConvertPreservesSourceProducer(t *testing.T) {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
 	var output bytes.Buffer
-	if err := Convert(data, &output); err != nil {
+	if err := Convert(t.Context(), data, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofdXML := readOFDXML(t, output.Bytes())

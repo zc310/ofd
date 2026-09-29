@@ -4,6 +4,7 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -22,7 +23,7 @@ import (
 // Convert 把 PDF 输入（文件路径、[]byte、io.Reader 或 io.ReadSeeker）转换为
 // OFD 包。转换保留基本页面几何、文字、路径和 JPEG/PNG 图像 XObject，
 // 不使用原生 PDF 渲染器。
-func Convert(input any, output io.Writer) error {
+func Convert(gctx context.Context, input any, output io.Writer) error {
 	data, err := readPDFInput(input)
 	if err != nil {
 		return err
@@ -30,16 +31,16 @@ func Convert(input any, output io.Writer) error {
 	if output == nil {
 		return errors.New("OFD 输出写入器为空")
 	}
-	err = pdfToOFDBytes(data, output)
+	err = pdfToOFDBytes(gctx, data, output)
 	if err != nil && strings.Contains(err.Error(), "PDF 解析器异常") {
 		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
-			return pdfToOFDBytes(repaired, output)
+			return pdfToOFDBytes(gctx, repaired, output)
 		}
 	}
 	return err
 }
 
-func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
+func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("解析 PDF 失败: %v", recovered)
@@ -47,20 +48,20 @@ func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
 	}()
 	conf := model.NewDefaultConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
-	ctx, err, panicked := readPDFContext(data, conf)
+	ctx, err, panicked := readPDFContext(gctx, data, conf)
 	if panicked {
 		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
-			ctx, err, _ = readPDFContext(repaired, conf)
+			ctx, err, _ = readPDFContext(gctx, repaired, conf)
 		}
 	}
 	if err != nil {
 		return fmt.Errorf("读取 PDF 失败: %w", err)
 	}
-	if err := api.ValidateContext(ctx); err != nil {
+	if err := api.ValidateContext(gctx, ctx); err != nil {
 		// 部分可正常读取的 PDF 带有损坏的历史 Info 日期。保留已提取的
 		// 元数据，去掉不可用的 Info 引用后重新校验页面和内容对象。
 		ctx.Info = nil
-		if retryErr := api.ValidateContext(ctx); retryErr != nil {
+		if retryErr := api.ValidateContext(gctx, ctx); retryErr != nil {
 			return fmt.Errorf("验证 PDF 失败: %w", err)
 		}
 	}
@@ -82,7 +83,7 @@ func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
 	}
 	fontCache := make(map[types.Object]pdfFontInfo, 8)
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		page, err := convertPDFPage(ctx, pageNumber, &document, fontCache)
+		page, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache)
 		if err != nil {
 			return fmt.Errorf("转换 PDF 第 %d 页失败: %w", pageNumber, err)
 		}
@@ -92,26 +93,26 @@ func pdfToOFDBytes(data []byte, output io.Writer) (err error) {
 		document.PageSize = creator.PageSize{Width: document.Pages[0].Area.PhysicalBox.Width, Height: document.Pages[0].Area.PhysicalBox.Height}
 	}
 	// PDF 目录大纲转换为 OFD 大纲；原文档要求显示大纲面板时同步设置显示偏好。
-	document.Outlines = convertOutlines(ctx)
-	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(ctx) {
+	document.Outlines = convertOutlines(gctx, ctx)
+	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(gctx, ctx) {
 		document.Preferences = &creator.ViewPreferences{PageMode: creator.PageModeUseOutlines}
 	}
 	return creator.CreateWithOptions(document, output, creator.CreateOptions{PreserveEmbeddedFonts: true})
 }
 
-func readPDFContext(data []byte, conf *model.Configuration) (ctx *model.Context, err error, panicked bool) {
+func readPDFContext(gctx context.Context, data []byte, conf *model.Configuration) (ctx *model.Context, err error, panicked bool) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("PDF 解析器异常: %v", recovered)
 			panicked = true
 		}
 	}()
-	ctx, err = api.ReadContext(bytes.NewReader(data), conf)
+	ctx, err = api.ReadContext(gctx, bytes.NewReader(data), conf)
 	return ctx, err, false
 }
 
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(pdfPath, ofdPath string) error {
+func ConvertFile(gctx context.Context, pdfPath, ofdPath string) error {
 	if strings.TrimSpace(ofdPath) == "" {
 		return errors.New("OFD 输出文件名为空")
 	}
@@ -135,7 +136,7 @@ func ConvertFile(pdfPath, ofdPath string) error {
 			_ = os.Remove(tempPath)
 		}
 	}()
-	if err := Convert(pdfPath, file); err != nil {
+	if err := Convert(gctx, pdfPath, file); err != nil {
 		return err
 	}
 	if err := file.Close(); err != nil {
@@ -169,8 +170,8 @@ func readPDFInput(input any) ([]byte, error) {
 	}
 }
 
-func convertPDFPage(ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo) (creator.Page, error) {
-	pageDict, _, inherited, err := ctx.PageDict(pageNumber, false)
+func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo) (creator.Page, error) {
+	pageDict, _, inherited, err := ctx.PageDict(gctx, pageNumber, false)
 	if err != nil {
 		return creator.Page{}, err
 	}

@@ -26,7 +26,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 		"<< /Title (2.1 节) /Parent 9 0 R /Dest [4 0 R /FitR 10 20 100 80] >>",
 	}
 	var output bytes.Buffer
-	if err := Convert(assemblePDF(objects), &output); err != nil {
+	if err := Convert(t.Context(), assemblePDF(objects), &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -118,7 +118,7 @@ func TestConvertOutlineNamedDestinationAndRotation(t *testing.T) {
 		"<< /Title (命名目标) /Parent 4 0 R /Dest (chapter) >>",
 	}
 	var output bytes.Buffer
-	if err := Convert(assemblePDF(objects), &output); err != nil {
+	if err := Convert(t.Context(), assemblePDF(objects), &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

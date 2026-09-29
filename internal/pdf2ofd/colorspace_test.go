@@ -127,7 +127,7 @@ func TestConvertSeparationPageBackgroundStaysWhite(t *testing.T) {
 	content := []byte("q /Cs8 cs 0 scn 0 0 226.95 301.99 re f Q 0 0 0 rg 10 10 20 20 re f")
 	pdf := separationPDF(content)
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -189,7 +189,7 @@ func separationPDF(content []byte) []byte {
 func testPDFContext(t *testing.T) *model.Context {
 	t.Helper()
 	pdf := separationPDF([]byte("q Q"))
-	ctx, err, _ := readPDFContext(pdf, model.NewDefaultConfiguration())
+	ctx, err, _ := readPDFContext(t.Context(), pdf, model.NewDefaultConfiguration())
 	if err != nil {
 		t.Fatal(err)
 	}

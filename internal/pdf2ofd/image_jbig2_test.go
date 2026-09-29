@@ -32,7 +32,7 @@ func TestConvertJBIG2ImageMask(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -88,7 +88,7 @@ func TestConvertSkipsUnsupportedImageFilter(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatalf("unsupported image filter aborted conversion: %v", err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -125,7 +125,7 @@ func TestConvertJBIG2GrayscaleImage(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

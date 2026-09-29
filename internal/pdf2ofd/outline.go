@@ -1,6 +1,7 @@
 package pdf2ofd
 
 import (
+	"context"
 	"math"
 	"strings"
 
@@ -14,7 +15,7 @@ const maxOutlineDepth = 64
 
 // convertOutlines 把 PDF 目录的 /Outlines 大纲树转换为 OFD 大纲。没有大纲或
 // 大纲不可解析时返回 nil。
-func convertOutlines(ctx *model.Context) []creator.Outline {
+func convertOutlines(gctx context.Context, ctx *model.Context) []creator.Outline {
 	if ctx == nil || ctx.XRefTable == nil {
 		return nil
 	}
@@ -26,12 +27,12 @@ func convertOutlines(ctx *model.Context) []creator.Outline {
 	if first == nil {
 		return nil
 	}
-	return convertOutlineSiblings(ctx, *first, pdfPageGeometries(ctx), 0)
+	return convertOutlineSiblings(gctx, ctx, *first, pdfPageGeometries(gctx, ctx), 0)
 }
 
 // convertOutlineSiblings 转换同一层的大纲项链表（First/Next）。seen 用于截断
 // 损坏文件中的循环引用。
-func convertOutlineSiblings(ctx *model.Context, first types.IndirectRef, geometries []pdfPageInfo, depth int) []creator.Outline {
+func convertOutlineSiblings(gctx context.Context, ctx *model.Context, first types.IndirectRef, geometries []pdfPageInfo, depth int) []creator.Outline {
 	if depth > maxOutlineDepth {
 		return nil
 	}
@@ -47,7 +48,7 @@ func convertOutlineSiblings(ctx *model.Context, first types.IndirectRef, geometr
 		if err != nil || dict == nil {
 			break
 		}
-		if outline, ok := convertOutlineItem(ctx, dict, geometries, depth); ok {
+		if outline, ok := convertOutlineItem(gctx, ctx, dict, geometries, depth); ok {
 			outlines = append(outlines, outline)
 		}
 		current = dict.IndirectRefEntry("Next")
@@ -55,7 +56,7 @@ func convertOutlineSiblings(ctx *model.Context, first types.IndirectRef, geometr
 	return outlines
 }
 
-func convertOutlineItem(ctx *model.Context, dict types.Dict, geometries []pdfPageInfo, depth int) (creator.Outline, bool) {
+func convertOutlineItem(gctx context.Context, ctx *model.Context, dict types.Dict, geometries []pdfPageInfo, depth int) (creator.Outline, bool) {
 	// OFD 要求大纲标题非空，缺少标题的 PDF 大纲项直接跳过。
 	title := pdfOutlineTitle(ctx, dict)
 	if title == "" {
@@ -73,19 +74,19 @@ func convertOutlineItem(ctx *model.Context, dict types.Dict, geometries []pdfPag
 		outline.Count = &value
 		outline.Expanded = &expanded
 	}
-	if action, ok := pdfOutlineAction(ctx, dict, geometries); ok {
+	if action, ok := pdfOutlineAction(gctx, ctx, dict, geometries); ok {
 		outline.Actions = []creator.Action{action}
 	}
 	if first := dict.IndirectRefEntry("First"); first != nil {
-		outline.Children = convertOutlineSiblings(ctx, *first, geometries, depth+1)
+		outline.Children = convertOutlineSiblings(gctx, ctx, *first, geometries, depth+1)
 	}
 	return outline, true
 }
 
-func pdfOutlineAction(ctx *model.Context, dict types.Dict, geometries []pdfPageInfo) (creator.Action, bool) {
+func pdfOutlineAction(gctx context.Context, ctx *model.Context, dict types.Dict, geometries []pdfPageInfo) (creator.Action, bool) {
 	// /Dest 优先于 /A：两者同时存在时以 /Dest 为准。
 	if object, found := dict.Find("Dest"); found {
-		if gotoAction, ok := pdfGotoAction(ctx, object, geometries); ok {
+		if gotoAction, ok := pdfGotoAction(gctx, ctx, object, geometries); ok {
 			return creator.Action{Event: creator.ActionEventClick, Goto: gotoAction}, true
 		}
 	}
@@ -107,7 +108,7 @@ func pdfOutlineAction(ctx *model.Context, dict types.Dict, geometries []pdfPageI
 		if !found {
 			return creator.Action{}, false
 		}
-		if gotoAction, ok := pdfGotoAction(ctx, dest, geometries); ok {
+		if gotoAction, ok := pdfGotoAction(gctx, ctx, dest, geometries); ok {
 			return creator.Action{Event: creator.ActionEventClick, Goto: gotoAction}, true
 		}
 	case "URI":
@@ -120,12 +121,12 @@ func pdfOutlineAction(ctx *model.Context, dict types.Dict, geometries []pdfPageI
 
 // pdfGotoAction 把 PDF 目标（数组或命名目标）转换为 OFD 页面跳转动作，坐标
 // 统一换算为毫米。无法解析页面时返回 false，由调用方忽略该动作。
-func pdfGotoAction(ctx *model.Context, object types.Object, geometries []pdfPageInfo) (*creator.GotoAction, bool) {
-	array, ok := pdfDestArray(ctx, object)
+func pdfGotoAction(gctx context.Context, ctx *model.Context, object types.Object, geometries []pdfPageInfo) (*creator.GotoAction, bool) {
+	array, ok := pdfDestArray(gctx, ctx, object)
 	if !ok || len(array) == 0 {
 		return nil, false
 	}
-	pageIndex, ok := pdfDestPageIndex(ctx, array[0])
+	pageIndex, ok := pdfDestPageIndex(gctx, ctx, array[0])
 	if !ok || pageIndex < 0 || pageIndex >= len(geometries) {
 		return nil, false
 	}
@@ -202,7 +203,7 @@ func pdfGotoAction(ctx *model.Context, object types.Object, geometries []pdfPage
 
 // pdfDestArray 解析目标对象：既可以是目标数组，也可以是指向 /Dests 或名称树
 // 的命名目标（Name/String）。
-func pdfDestArray(ctx *model.Context, object types.Object) (types.Array, bool) {
+func pdfDestArray(gctx context.Context, ctx *model.Context, object types.Object) (types.Array, bool) {
 	resolved, err := ctx.XRefTable.Dereference(object)
 	if err != nil || resolved == nil {
 		return nil, false
@@ -215,7 +216,7 @@ func pdfDestArray(ctx *model.Context, object types.Object) (types.Array, bool) {
 		if err != nil || name == "" {
 			return nil, false
 		}
-		array, err := ctx.XRefTable.DereferenceDestArray(name)
+		array, err := ctx.XRefTable.DereferenceDestArray(gctx, name)
 		if err != nil {
 			return nil, false
 		}
@@ -226,12 +227,12 @@ func pdfDestArray(ctx *model.Context, object types.Object) (types.Array, bool) {
 
 // pdfDestPageIndex 把目标数组第一项（页面对象的间接引用）解析为从 0 开始的
 // 页面索引。远程跳转中的整数页序号不属于本文档页面，返回 false。
-func pdfDestPageIndex(ctx *model.Context, object types.Object) (int, bool) {
+func pdfDestPageIndex(gctx context.Context, ctx *model.Context, object types.Object) (int, bool) {
 	reference, ok := object.(types.IndirectRef)
 	if !ok {
 		return 0, false
 	}
-	pageNumber, err := ctx.XRefTable.PageNumber(reference.ObjectNumber.Value())
+	pageNumber, err := ctx.XRefTable.PageNumber(gctx, reference.ObjectNumber.Value())
 	if err != nil || pageNumber <= 0 {
 		return 0, false
 	}
@@ -251,13 +252,13 @@ func pdfDestNumber(ctx *model.Context, array types.Array, index int) (float64, b
 
 // pdfPageGeometries 返回每页的几何信息，用于把目标坐标换算到对应页面的
 // OFD 页面坐标系。页面索引与转换时的页码一致。
-func pdfPageGeometries(ctx *model.Context) []pdfPageInfo {
+func pdfPageGeometries(gctx context.Context, ctx *model.Context) []pdfPageInfo {
 	if ctx.PageCount <= 0 {
 		return nil
 	}
 	geometries := make([]pdfPageInfo, 0, ctx.PageCount)
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		pageDict, _, inherited, err := ctx.PageDict(pageNumber, false)
+		pageDict, _, inherited, err := ctx.PageDict(gctx, pageNumber, false)
 		if err != nil {
 			geometries = append(geometries, pdfPageInfo{userUnit: 1})
 			continue
@@ -308,7 +309,7 @@ func pdfTextString(ctx *model.Context, dict types.Dict, key string) string {
 }
 
 // pdfPageModeUseOutlines 判断 PDF 目录是否要求打开时显示大纲面板。
-func pdfPageModeUseOutlines(ctx *model.Context) bool {
+func pdfPageModeUseOutlines(gctx context.Context, ctx *model.Context) bool {
 	if ctx == nil || ctx.XRefTable == nil || ctx.XRefTable.PageMode == nil {
 		return false
 	}
