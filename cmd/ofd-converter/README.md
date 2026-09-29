@@ -37,6 +37,8 @@ ofd-converter --help
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                   |
 | `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                |
 | `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                         |
+| `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                          |
+| `-ocr-language`        | Tesseract OCR 语言，默认 `chi_sim+eng`；可指定单个语言或组合，需安装对应语言包                                                  |
 | `-dir`                 | 不压缩，将多页图片直接保存到输出目录下的多个文件                                                                                |
 | `-workers`             | 批量转换并发数，默认 `4`                                                                                                        |
 | `-external-workers`    | 外部工具（LibreOffice/Chrome）批量转换并发数，默认 `2`                                                                          |
@@ -71,11 +73,13 @@ ofd-converter --help
 | `-page`                                                                  | OFD → PDF/txt/md/图片             | 选择要转换的页面；对导入类输入不生效                 |
 | `-md-tables`                                                             | OFD → Markdown                    | 识别无边框表格并输出 GFM 表格，默认关闭              |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
+| `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
 
 - `-paper` 和 `-landscape` **不会**改变 OFD → PDF、Markdown → OFD、Office → OFD/PDF 的页面尺寸。OFD → PDF 保留原页面尺寸；Markdown → OFD 使用固定 A4 版式；Office → OFD/PDF 使用源文档自身的页面设置。
+- 图片转 OFD 默认只嵌入图片；指定 `-ocr` 后才调用本机 Tesseract，默认语言为 `chi_sim+eng`，即简体中文与英文。
 - 因此，例如把 `-landscape` 用在 `ofd-converter input.ofd output.pdf` 上不会有任何效果。
 
 ## 退出码

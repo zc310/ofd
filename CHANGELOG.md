@@ -11,6 +11,8 @@
 
 ## 未发布
 
+- `pkg/converter` 增加图片导入 OCR 开关和语言选项；`ofd-converter` 提供 `--ocr` 与 `--ocr-language`，默认不调用 Tesseract。
+
 ### 破坏性变更
 
 - `pkg/converter/import/pdf` 的 `Convert` 与 `ConvertFile` 新增首个参数
@@ -18,11 +20,11 @@
 
   ```go
   // 之前
-  pdfimport.Convert(input, output)
-  pdfimport.ConvertFile(pdfPath, ofdPath)
+  pdf.Convert(input, output)
+  pdf.ConvertFile(pdfPath, ofdPath)
   // 现在
-  pdfimport.Convert(ctx, input, output)
-  pdfimport.ConvertFile(ctx, pdfPath, ofdPath)
+  pdf.Convert(ctx, input, output)
+  pdf.ConvertFile(ctx, pdfPath, ofdPath)
   ```
 
   调用方传 `context.Background()` 即可保持原行为。

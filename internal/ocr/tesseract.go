@@ -55,7 +55,7 @@ func (t *Tesseract) Recognize(ctx context.Context, input image.Image) ([]TextBlo
 	}
 	language := t.Language
 	if language == "" {
-		language = "eng"
+		language = "chi_sim+eng"
 	}
 	psm := t.PSM
 	if psm <= 0 {

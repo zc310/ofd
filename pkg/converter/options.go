@@ -51,6 +51,16 @@ func PNG() Option { return WithFormat("png") }
 // JPG 设置为JPEG格式
 func JPG() Option { return WithFormat("jpeg") }
 
+// ImageOCR 设置图片导入时是否启用 OCR。默认关闭。
+func ImageOCR(enabled bool) Option {
+	return func(c *Converter) { c.imageOCREnabled = enabled }
+}
+
+// ImageOCRLanguage 设置图片导入使用的 OCR 语言。
+func ImageOCRLanguage(language string) Option {
+	return func(c *Converter) { c.imageOCRLanguage = strings.TrimSpace(language) }
+}
+
 // SVG 设置为 SVG 格式
 func SVG() Option { return WithFormat("svg") }
 
