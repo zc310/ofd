@@ -88,6 +88,30 @@
 - PDF 由 WASM 按块生成并直接转发到保存流；多页图片 ZIP 逐页写入，Central Directory 在最后写出。浏览器不支持文件写入流时，仍会在导出结束后使用 Blob 下载。
 
 
+
+## 脚本测试
+
+浏览器脚本没有构建步骤，也没有 npm 依赖。`test/` 下的测试用 Node 直接运行：从
+`viewer.js` **原文按括号配平切出待测函数**，在 `with (state)` 环境里用桩驱动，
+因此测的是页面上实际运行的那份代码，而不是复制一份逻辑。
+
+```bash
+make test-wasm-web                                    # 运行全部
+node cmd/ofd-wasm/web/test/run.mjs                    # 等价
+node cmd/ofd-wasm/web/test/local-fonts.test.mjs       # 单个文件
+```
+
+约定：
+
+- 新增/移动/改名 `viewer.js` 里的函数后，测试里对应的 `sliceFunction` 要同步；
+  切不到会直接报出函数名，不会静默跳过。
+- `harness.mjs` 只提供切片与断言工具，不要在测试文件里重抄被测逻辑。
+- 桩一律写成闭包引用 `state`，不要写成对象方法：`with (state)` 里
+  `localStorage.getItem(...)` 会把 `this` 绑到 `state.localStorage` 上。
+- 改动 `viewer.js` 的断行、`?file=` 远程入口或系统字体入口时必须运行本套测试。
+- 少数只能从源码断言顺序/守卫的地方（行为测试覆盖不到的调用点）标为"结构守卫"，
+  在测试里注明原因。
+
 ## 构建
 
 在仓库根目录执行：
