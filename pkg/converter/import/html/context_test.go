@@ -1,4 +1,4 @@
-package mdimport_test
+package html_test
 
 import "context"
 

@@ -1263,10 +1263,10 @@ func main() {
 import (
     "os"
     "github.com/zc310/ofd/pkg/converter"
-    _ "github.com/zc310/ofd/pkg/converter/mdimport"     // Markdown → OFD
-    _ "github.com/zc310/ofd/pkg/converter/pdfimport"    // PDF → OFD
-    _ "github.com/zc310/ofd/pkg/converter/officeimport" // Office → PDF/OFD（需安装 LibreOffice）
-    _ "github.com/zc310/ofd/pkg/converter/htmlimport"   // HTML/MHTML → PDF/OFD（需安装 Chrome/Chromium）
+    _ "github.com/zc310/ofd/pkg/converter/import/markdown" // Markdown → OFD
+    _ "github.com/zc310/ofd/pkg/converter/import/pdf"      // PDF → OFD
+    _ "github.com/zc310/ofd/pkg/converter/import/office"   // Office → PDF/OFD（需安装 LibreOffice）
+    _ "github.com/zc310/ofd/pkg/converter/import/html"     // HTML/MHTML → PDF/OFD（需安装 Chrome/Chromium）
 )
 
 func main() {

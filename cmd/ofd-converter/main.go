@@ -21,14 +21,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/pkg/converter"
 	// 注册 "ofd" 输出格式（PDF→OFD）；按需引入，避免默认链接 pdfcpu。
-	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/pdf"
 	// 注册 Markdown→OFD 导入器（输入格式 "md"）。
-	_ "github.com/zc310/ofd/pkg/converter/mdimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	// 注册 Office（doc/docx/odt/rtf/wps/pptx/xlsx 等）导入器与→PDF 转换器。
-	_ "github.com/zc310/ofd/pkg/converter/officeimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/office"
 	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
 	"github.com/zc310/ofd/internal/utils"
-	_ "github.com/zc310/ofd/pkg/converter/htmlimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/html"
+	// 注册 PNG/JPEG/TIFF→OFD 图片导入器。
+	_ "github.com/zc310/ofd/pkg/converter/import/image"
 
 	// 注册可选栅格后端，供 --raster-backend 选择（PNG/JPG）。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"

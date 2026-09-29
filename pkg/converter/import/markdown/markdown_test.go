@@ -1,4 +1,4 @@
-package mdimport_test
+package markdown_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/pkg/converter"
-	_ "github.com/zc310/ofd/pkg/converter/mdimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	"github.com/zc310/ofd/pkg/validator"
 )
 

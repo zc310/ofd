@@ -1,13 +1,13 @@
-// Package mdimport 为 converter 注册 Markdown→OFD 导入器（输入格式 "markdown"）。
+// Package markdown 为 converter 注册 Markdown→OFD 导入器（输入格式 "markdown"）。
 //
 // 该包依赖 internal/layout 与 goldmark，单独成包是为了让只做 OFD→X 的使用方
 // 不必链接这些依赖；需要 Markdown→OFD 时按空白导入启用：
 //
-//	import _ "github.com/zc310/ofd/pkg/converter/mdimport"
+//	import _ "github.com/zc310/ofd/pkg/converter/import/markdown"
 //
 // 之后即可使用 converter.Convert("md", "ofd", ...)。出于安全和确定性考虑，
 // 远程图片不会被下载，只在日志中给出警告。
-package mdimport
+package markdown
 
 import (
 	"fmt"
