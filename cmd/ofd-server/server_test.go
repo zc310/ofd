@@ -287,7 +287,7 @@ func TestLaneAssignment(t *testing.T) {
 
 	// HTML 输出要拉起 Chrome，走重通道。内容仍用 OFD，
 	// 格式判定只看 input/output 组合，不看内容。
-	body := `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"format":"html"}}`
+	body := `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) + `"},"output":{"kind":"dir","format":"html"}}`
 	got = do(t, client, fasthttp.MethodPost, "/v1/convert", body)
 	heavy := got.decode(t)["lane"]
 
@@ -300,7 +300,7 @@ func TestLaneAssignment(t *testing.T) {
 	// URL 输入走重通道：耗时由对端决定，不该占住快速通道。
 	s2, _, _, _ := newTestServerWithList(t, []string{"example.com"})
 	client2 := newPipeServer(t, s2.Handler())
-	urlBody := `{"input":{"kind":"url","url":"https://example.com/a.ofd","format":"ofd"},"output":{"format":"pdf"}}`
+	urlBody := `{"input":{"kind":"url","url":"https://example.com/a.ofd","format":"ofd"},"output":{"kind":"dir","format":"pdf"}}`
 	got = do(t, client2, fasthttp.MethodPost, "/v1/convert", urlBody)
 	if lane := got.decode(t)["lane"]; lane != "heavy" {
 		t.Errorf("URL 输入应走 heavy，实际 %v", lane)
@@ -310,7 +310,7 @@ func TestLaneAssignment(t *testing.T) {
 	// 静默忽略会让调用方以为自己拿到了 heavy 优先级、实际走了 fast，
 	// 这种"看起来生效了"的偏差比直接报错难查得多。
 	body = `{"input":{"kind":"upload","file_name":"a.ofd","bytes":"` + ofdPayload(t) +
-		`"},"output":{"format":"pdf"},"lane":"heavy"}`
+		`"},"output":{"kind":"dir","format":"pdf"},"lane":"heavy"}`
 	got = do(t, client, fasthttp.MethodPost, "/v1/convert", body)
 	if got.status != fasthttp.StatusBadRequest {
 		t.Errorf("请求里带 lane 应被拒绝，实际 %d: %s", got.status, got.body)

@@ -242,7 +242,20 @@ func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
 		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "解析请求体失败: "+err.Error())
 		return
 	}
-	// stream 走同步：产物只在内存里，异步提交的结果没有任何人能取到。
+	// 决定同步还是异步之前先规范化 output.kind。
+	//
+	// 空值按 stream 处理，判定必须发生在规范化之后：直接拿字面量比较
+	// `kind == "stream"`，省略字段的请求会被送进异步队列，随后按 stream 处理、
+	// 产物只留在内存里随 Result 丢弃——任务报 succeeded，而调用方拿不到任何
+	// 东西。顺带把未知值也从"入队后在 worker 里失败"提前到提交阶段报 400：
+	// 那种失败要等几秒后才出现在任务日志里，而日志里看不出是 kind 写错了。
+	kind, err := convertersvc.NormalizeOutputKind(request.Output.Kind)
+	if err != nil {
+		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	request.Output.Kind = kind
+
 	if request.Output.Kind == convertersvc.OutputStream {
 		s.handleConvertInline(ctx, &request)
 		return
