@@ -1,0 +1,103 @@
+{
+  "listen": ":9705",
+  "api_key": "REPLACE_WITH_A_REAL_API_KEY",
+  "db_path": "/var/lib/ofd-server/jobs.db",
+  "temp_dir": "/var/tmp/ofd-server",
+  "output_dir": "/var/lib/ofd-server/out",
+  "log_level": "info",
+  "log_dir": "/var/log/ofd-server",
+  "log_file": "ofd-server.log",
+  "log_max_size_mb": 100,
+  "log_max_backups": 10,
+  "log_max_age_days": 30,
+  "log_compress": true,
+  "max_upload_bytes": 67108864,
+  "max_stream_bytes": 67108864,
+  "fast_workers": 4,
+  "heavy_workers": 1,
+  "notify_workers": 4,
+  "job_timeout": "0s",
+  "max_job_attempts": 0,
+  "retention": "168h",
+  "allow_input_url_hosts": [
+    "files.example.com",
+    "*.cdn.example.com",
+    "10.0.0.0/8"
+  ],
+  "url_timeout": "30s",
+  "notify_targets": {
+    "erp": {
+      "url": "https://erp.example.com/hooks/ofd",
+      "secret": "REPLACE_WITH_A_REAL_SECRET",
+      "events": [
+        "succeeded",
+        "failed"
+      ],
+      "timeout_seconds": 10
+    }
+  },
+  "ftp_targets": {
+    "archive": {
+      "addr": "ftps.archive.example.com:21",
+      "user": "ofd-uploader",
+      "password": "REPLACE_WITH_A_REAL_PASSWORD",
+      "base_dir": "/incoming/ofd",
+      "insecure": false,
+      "implicit": false,
+      "insecure_skip_verify": false,
+      "disable_epsv": false,
+      "timeout_seconds": 60,
+      "max_bytes": 268435456,
+      "overwrite": false
+    }
+  },
+  "s3_targets": {
+    "minio": {
+      "endpoint": "minio.internal:9000",
+      "secure": true,
+      "region": "",
+      "access_key": "REPLACE_WITH_A_REAL_ACCESS_KEY",
+      "secret_key": "REPLACE_WITH_A_REAL_SECRET_KEY",
+      "session_token": "",
+      "bucket": "converted",
+      "prefix": "incoming/ofd",
+      "timeout_seconds": 120,
+      "max_bytes": 268435456,
+      "overwrite": false
+    }
+  },
+  "webdav_targets": {
+    "share": {
+      "endpoint": "https://dav.example.com/remote.php/dav/files/converted",
+      "user": "ofd-uploader",
+      "password": "REPLACE_WITH_A_REAL_PASSWORD",
+      "base_dir": "incoming",
+      "timeout_seconds": 120,
+      "max_bytes": 268435456,
+      "overwrite": false
+    }
+  },
+  "sftp_targets": {
+    "archive": {
+      "addr": "sftp.example.com:22",
+      "user": "ofd-uploader",
+      "auth": {
+        "private_key_file": "/etc/ofd-server/sftp/id_ed25519",
+        "private_key_passphrase": "",
+        "password": ""
+      },
+      "base_dir": "/incoming/ofd",
+      "host_key_sha256": "SHA256:REPLACE_WITH_REAL_HOST_KEY_FINGERPRINT",
+      "host_key_file": "",
+      "insecure_ignore_host_key": false,
+      "timeout_seconds": 60,
+      "max_bytes": 268435456,
+      "overwrite": false
+    }
+  },
+  "soffice_path": "",
+  "chrome_path": "",
+  "chrome_no_sandbox": false,
+  "allow_insecure_ftp": false,
+  "allow_insecure_s3": false
+}
