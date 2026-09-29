@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -136,6 +137,51 @@ func TestContentZipsMultipleFiles(t *testing.T) {
 	}
 	if seen["page-0001.png"] != "one" || seen["page-0002.png"] != "two" {
 		t.Errorf("zip 内容 = %v", seen)
+	}
+}
+
+// TestBuildArchiveRejectsOversizedEntry 归档条目超过上限时必须整体失败，不能写入截断条目。
+func TestBuildArchiveRejectsOversizedEntry(t *testing.T) {
+	s, _, cfg := newTestServer(t)
+	dir := filepath.Join(cfg.OutputDir, "archive-limit")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "large.bin"), []byte("123456"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	archive, _, err := s.buildArchive(root, []string{"large.bin"}, 5)
+	if err == nil || !errors.Is(err, errArtifactTooLarge) {
+		t.Fatalf("超限归档错误 = %v，期望 errArtifactTooLarge", err)
+	}
+	if archive != nil {
+		t.Fatal("超限归档不应返回临时文件")
+	}
+}
+
+// TestBuildArchiveRejectsMissingEntry 归档条目缺失时必须整体失败，不能静默跳过。
+func TestBuildArchiveRejectsMissingEntry(t *testing.T) {
+	s, _, cfg := newTestServer(t)
+	dir := filepath.Join(cfg.OutputDir, "archive-missing")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	archive, _, err := s.buildArchive(root, []string{"missing.pdf"}, maxZipEntryBytes)
+	if err == nil || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("缺失产物错误 = %v，期望文件不存在错误", err)
+	}
+	if archive != nil {
+		t.Fatal("缺失产物不应返回临时文件")
 	}
 }
 
@@ -360,27 +406,14 @@ func TestContentRejectsSymlinkFile(t *testing.T) {
 		t.Fatalf("不应跟随产物文件符号链接读取外部文件，状态=%d，响应=%q", got.status, got.body)
 	}
 
+	got = do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content?name=safe.pdf", "")
+	if got.status != fasthttp.StatusOK || got.body != "SAFE" {
+		t.Fatalf("普通产物仍应可单独下载，状态=%d，响应=%q", got.status, got.body)
+	}
+
 	got = do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content", "")
-	if got.status != fasthttp.StatusOK {
-		t.Fatalf("安全产物仍应可以打包下载，状态=%d，响应=%q", got.status, got.body)
-	}
-	zr, err := zip.NewReader(bytes.NewReader([]byte(got.body)), int64(len(got.body)))
-	if err != nil {
-		t.Fatalf("下载结果不是有效 ZIP：%v", err)
-	}
-	for _, file := range zr.File {
-		rc, err := file.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := io.ReadAll(rc)
-		_ = rc.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if file.Name == "result.pdf" || strings.Contains(string(data), "SECRET") {
-			t.Fatalf("归档不应包含符号链接产物，条目=%q，内容=%q", file.Name, data)
-		}
+	if got.status == fasthttp.StatusOK {
+		t.Fatalf("包含符号链接条目的归档必须整体失败，实际返回 200 和 %d 字节", len(got.body))
 	}
 }
 
@@ -411,6 +444,39 @@ func TestContentMissingFileOnDisk(t *testing.T) {
 	}
 }
 
+// TestContentArchiveFailsWhenEntryMissing 整份归档中的文件缺失时不能返回不完整 ZIP。
+func TestContentArchiveFailsWhenEntryMissing(t *testing.T) {
+	s, store, cfg := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	dir := filepath.Join(cfg.OutputDir, "archive-missing-entry")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "present.pdf"), []byte("PRESENT"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	job := &jobstore.Job{ID: "archive-missing", To: "pdf", CreatedAt: time.Now().UTC()}
+	if err := store.Enqueue(job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(jobstore.LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish(job.ID, jobstore.StateSucceeded, jobstore.Output{
+		Kind: convertersvc.OutputDir, Path: dir, Files: []string{"present.pdf", "missing.pdf"},
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	got := do(t, client, fasthttp.MethodGet, "/v1/jobs/"+job.ID+"/content", "")
+	if got.status != fasthttp.StatusNotFound {
+		t.Fatalf("归档文件缺失时状态=%d，期望 404: %s", got.status, got.body)
+	}
+	if strings.Contains(got.body, "PRESENT") || got.contentType == "application/zip" {
+		t.Fatalf("文件缺失时不应返回部分归档，Content-Type=%q，响应=%q", got.contentType, got.body)
+	}
+}
+
 // TestContentRequiresAPIKey 产物属于业务数据，要令牌。
 func TestContentRequiresAPIKey(t *testing.T) {
 	s, store, cfg := newTestServer(t)
@@ -432,16 +498,6 @@ func TestContentJobNotFound(t *testing.T) {
 	got := do(t, client, fasthttp.MethodGet, "/v1/jobs/nope/content", "")
 	if got.status != fasthttp.StatusNotFound {
 		t.Errorf("状态 = %d，期望 404", got.status)
-	}
-}
-
-// TestRecordedFilesFiltering 清单里含路径分隔符的条目要被剔除。
-func TestRecordedFilesFiltering(t *testing.T) {
-	in := []string{"ok.pdf", "../escape.pdf", `a\b.pdf`, "..", ".", "", "sub/dir.pdf"}
-	got := recordedFiles(in)
-	want := []string{"ok.pdf"}
-	if len(got) != len(want) || got[0] != want[0] {
-		t.Errorf("recordedFiles(%v) = %v，期望 %v", in, got, want)
 	}
 }
 

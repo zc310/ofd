@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +22,12 @@ import (
 // 放大；流式写 zip 就不会，但一个失控的大文件仍可能把磁盘写满，所以单条
 // 仍设上限。
 const maxZipEntryBytes = 1 << 30
+
+var errArtifactTooLarge = errors.New("产物文件超过 ZIP 单项大小上限")
+
+var errArtifactChanged = errors.New("归档期间产物文件发生变化")
+
+var errInvalidArtifactList = errors.New("任务产物清单包含无效文件名")
 
 // errNoLocalContent 表示该任务的产物不在本服务能取回的地方。
 var errNoLocalContent = errors.New("产物不通过本端点提供")
@@ -145,7 +150,7 @@ func (s *Server) resolveOutputDir(job *jobstore.Job) (*os.Root, error) {
 	dirRoot, err := root.OpenRoot(rel)
 	_ = root.Close()
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("产物目录已不存在（可能已被外部清理）：%s", cleanDir)
 		}
 		return nil, fmt.Errorf("产物目录不可用：%w", err)
@@ -173,7 +178,7 @@ func rejectSymlinkPath(root *os.Root, path string) error {
 		}
 		info, err := root.Lstat(current)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
 			return fmt.Errorf("产物目录不可用：%w", err)
@@ -201,7 +206,7 @@ func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobst
 	}
 	file, err := openRecordedFile(dir, target)
 	if err != nil {
-		if os.IsNotExist(err) || errors.Is(err, errUnsafeArtifact) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errUnsafeArtifact) {
 			writeError(ctx, fasthttp.StatusNotFound, "file_not_found",
 				fmt.Sprintf("产物文件已不存在：%s", target))
 			return
@@ -230,10 +235,42 @@ func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobst
 // 用流式而不是先读进内存：逐页 PNG 的产物动辄几百 MB，buffer 起来会随并发
 // 线性放大，而这里没有任何理由把它整份驻留。
 func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobstore.Job) {
-	files := recordedFiles(job.Output.Files)
+	files := job.Output.Files
 	if len(files) == 0 {
 		_ = dir.Close()
 		writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
+		return
+	}
+	for _, name := range files {
+		if !isRecordedFileName(name) {
+			_ = dir.Close()
+			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", errInvalidArtifactList.Error())
+			return
+		}
+	}
+	archive, size, err := s.buildArchive(dir, files, maxZipEntryBytes)
+	_ = dir.Close()
+	if err != nil {
+		s.log.Error("生成产物归档失败", "job", job.ID, "err", err)
+		switch {
+		case errors.Is(err, os.ErrNotExist), errors.Is(err, errUnsafeArtifact):
+			writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "归档中的产物文件不可用")
+		case errors.Is(err, errArtifactTooLarge):
+			writeError(ctx, fasthttp.StatusRequestEntityTooLarge, "file_too_large", err.Error())
+		case errors.Is(err, errArtifactChanged):
+			writeError(ctx, fasthttp.StatusConflict, "artifact_changed", err.Error())
+		case errors.Is(err, errInvalidArtifactList):
+			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", err.Error())
+		default:
+			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "生成产物归档失败")
+		}
+		return
+	}
+	maxInt := int64(int(^uint(0) >> 1))
+	if size > maxInt {
+		_ = archive.Close()
+		_ = os.Remove(archive.Name())
+		writeError(ctx, fasthttp.StatusRequestEntityTooLarge, "archive_too_large", "ZIP 归档超过当前平台的响应大小上限")
 		return
 	}
 	ctx.SetStatusCode(fasthttp.StatusOK)
@@ -241,28 +278,114 @@ func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobst
 	ctx.Response.Header.Set("Content-Disposition",
 		`attachment; filename="`+headerSafe(job.ID)+`.zip"`)
 	ctx.Response.Header.Set("Cache-Control", "no-store")
-	ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
-		defer dir.Close()
-		zw := zip.NewWriter(w)
-		defer func() { _ = zw.Close() }()
-		for _, name := range files {
-			src, err := openRecordedFile(dir, name)
-			if err != nil {
-				continue
-			}
-			entry, err := zw.Create(name)
-			if err != nil {
-				_ = src.Close()
-				continue
-			}
-			// 限制单条大小：包一层 LimitReader，EOF 时不当作错误。
-			_, err = io.Copy(entry, io.LimitReader(src, maxZipEntryBytes))
-			_ = src.Close()
-			if err != nil && !errors.Is(err, io.EOF) {
-				continue
-			}
+	ctx.SetBodyStream(&removeOnClose{File: archive, path: archive.Name()}, int(size))
+}
+
+// buildArchive 在响应开始前把完整 ZIP 写入临时文件。任意条目无法完整读取、
+// 超过大小限制或 ZIP 收尾失败时，删除临时文件并返回错误，不向客户端发送部分归档。
+func (s *Server) buildArchive(dir *os.Root, files []string, maxEntryBytes int64) (*os.File, int64, error) {
+	tmp, err := os.CreateTemp(s.cfg.TempDir, ".ofd-content-*.zip")
+	if err != nil {
+		return nil, 0, fmt.Errorf("创建归档临时文件失败: %w", err)
+	}
+	path := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(path)
+	}
+	zw := zip.NewWriter(tmp)
+	for _, name := range files {
+		src, err := openRecordedFile(dir, name)
+		if err != nil {
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("打开产物 %q 失败: %w", name, err)
 		}
-	})
+		info, err := src.Stat()
+		if err != nil {
+			_ = src.Close()
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("读取产物 %q 信息失败: %w", name, err)
+		}
+		if info.Size() > maxEntryBytes {
+			_ = src.Close()
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("%w: %s 为 %d 字节，上限为 %d 字节", errArtifactTooLarge, name, info.Size(), maxEntryBytes)
+		}
+		entry, err := zw.Create(name)
+		if err != nil {
+			_ = src.Close()
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
+		}
+		written, copyErr := io.CopyN(entry, src, info.Size())
+		if copyErr != nil {
+			_ = src.Close()
+			_ = zw.Close()
+			cleanup()
+			if errors.Is(copyErr, io.EOF) {
+				return nil, 0, fmt.Errorf("%w: %s 原大小 %d 字节，实际读取 %d 字节", errArtifactChanged, name, info.Size(), written)
+			}
+			return nil, 0, fmt.Errorf("读取产物 %q 失败: %w", name, copyErr)
+		}
+		if written != info.Size() {
+			_ = src.Close()
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("%w: %s 原大小 %d 字节，实际读取 %d 字节", errArtifactChanged, name, info.Size(), written)
+		}
+		var extra [1]byte
+		n, readErr := src.Read(extra[:])
+		closeErr := src.Close()
+		if n != 0 || !errors.Is(readErr, io.EOF) {
+			_ = zw.Close()
+			cleanup()
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return nil, 0, fmt.Errorf("检查产物 %q 是否变化失败: %w", name, readErr)
+			}
+			return nil, 0, fmt.Errorf("%w: %s 在归档期间增长", errArtifactChanged, name)
+		}
+		if closeErr != nil {
+			_ = zw.Close()
+			cleanup()
+			return nil, 0, fmt.Errorf("关闭产物 %q 失败: %w", name, closeErr)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		cleanup()
+		return nil, 0, fmt.Errorf("完成 ZIP 归档失败: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return nil, 0, fmt.Errorf("同步 ZIP 归档失败: %w", err)
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		cleanup()
+		return nil, 0, fmt.Errorf("读取 ZIP 归档信息失败: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, 0, fmt.Errorf("定位 ZIP 归档失败: %w", err)
+	}
+	return tmp, info.Size(), nil
+}
+
+type removeOnClose struct {
+	*os.File
+	path string
+}
+
+func (f *removeOnClose) Close() error {
+	err := f.File.Close()
+	removeErr := os.Remove(f.path)
+	if err != nil {
+		return err
+	}
+	return removeErr
 }
 
 func openRecordedFile(dir *os.Root, name string) (*os.File, error) {
@@ -302,21 +425,6 @@ func recordedFile(files []string, name string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// recordedFiles 取出清单里的合法条目。
-//
-// 过滤掉含路径分隔符的条目：清单理论上只会有基名（转换器生成的），但这是
-// 一个"按名字读文件"的路径，值不值得再挡一道由成本决定——挡一道很便宜。
-func recordedFiles(files []string) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		if !isRecordedFileName(f) {
-			continue
-		}
-		out = append(out, f)
-	}
-	return out
 }
 
 func isRecordedFileName(name string) bool {
