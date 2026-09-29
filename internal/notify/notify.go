@@ -36,17 +36,7 @@ type Target struct {
 }
 
 // subscribes 判断目标是否订阅该事件。
-func (t Target) subscribes(event string) bool {
-	if len(t.Events) == 0 {
-		return true
-	}
-	for _, name := range t.Events {
-		if name == event || name == "*" {
-			return true
-		}
-	}
-	return false
-}
+func (t Target) subscribes(event string) bool { return Subscribes(t.Events, event) }
 
 // DefaultTimeout 是单次投递的默认超时。
 //
@@ -58,7 +48,40 @@ const DefaultTimeout = 10 * time.Second
 const (
 	EventSucceeded = "succeeded"
 	EventFailed    = "failed"
+	// EventWildcard 在订阅列表里表示"全部事件"，与配置侧同一套写法。
+	EventWildcard = "*"
 )
+
+// KnownEvent 判断 name 是不是受支持的事件名。
+//
+// 供提交阶段校验调用方的 notify.events 用。接线之后一个拼错的事件名会让该
+// 任务一条通知都收不到，而调用方唯一的线索是"没收到"——所以拼错必须在提交
+// 阶段就报错，不能等到投递时静默过滤掉。
+func KnownEvent(name string) bool {
+	switch name {
+	case EventSucceeded, EventFailed, EventWildcard:
+		return true
+	}
+	return false
+}
+
+// Subscribes 判断订阅列表是否覆盖该事件。
+//
+// 列表为空表示不收窄——这正是 notify.events 与 Target.Events 共用的语义：
+// 留空则沿用目标自己的订阅集合。
+//
+// 两个来源都过这一处：两个字段同名同义，各写一份判定迟早漂移。
+func Subscribes(events []string, event string) bool {
+	if len(events) == 0 {
+		return true
+	}
+	for _, name := range events {
+		if name == event || name == EventWildcard {
+			return true
+		}
+	}
+	return false
+}
 
 // 投递所用的请求头。
 const (

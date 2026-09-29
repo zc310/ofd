@@ -503,6 +503,15 @@ func (c *Config) validate() error {
 			// 交给链路上的任何人。本地联调用回环地址豁免。
 			return fmt.Errorf("通知目标 %s 的 url 必须是 https（本地联调可用 http://127.0.0.1）", name)
 		}
+		// 事件名拼错的后果是该目标一条通知都不收，而唯一能观察到的现象是
+		// "没收到"——配置里的一处笔误，表现为回调地址静默失效。与请求侧的
+		// notify.events 共用 notify.KnownEvent，两处不允许出现不同的名字集合。
+		for _, event := range target.Events {
+			if !notify.KnownEvent(event) {
+				return fmt.Errorf("通知目标 %s 的 events 含未知事件 %q，可用 %s / %s / %s",
+					name, event, notify.EventSucceeded, notify.EventFailed, notify.EventWildcard)
+			}
+		}
 	}
 	return nil
 }

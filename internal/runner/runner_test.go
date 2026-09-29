@@ -493,3 +493,80 @@ type wrappedError struct {
 
 func (e *wrappedError) Error() string { return e.msg }
 func (e *wrappedError) Unwrap() error { return e.inner }
+
+// TestRunnerNotifyEventsNarrowDelivery 请求里的 notify.events 收窄本任务要收的
+// 事件。
+//
+// 字段从引入起就存在（随 NotifyTarget 一起），但 runner 从未读过它：server 把它
+// 存进任务记录，之后没有任何代码读它。留空收窄、填了就生效，中间没有第三种
+// 状态——否则又是那种"字段被接受了但没按你想的方式工作"的静默失效。
+func TestRunnerNotifyEventsNarrowDelivery(t *testing.T) {
+	cases := []struct {
+		name       string
+		jobEvents  []string
+		tgtEvents  []string
+		wantServed bool
+	}{
+		{name: "留空沿用目标默认", jobEvents: nil, tgtEvents: nil, wantServed: true},
+		{name: "目标默认下只收失败", jobEvents: []string{notify.EventFailed}, tgtEvents: nil, wantServed: false},
+		{name: "通配等于不收窄", jobEvents: []string{notify.EventWildcard}, tgtEvents: nil, wantServed: true},
+		{name: "目标已订阅时收窄生效", jobEvents: []string{notify.EventFailed}, tgtEvents: nil, wantServed: false},
+		// 交集语义：请求侧不能把目标显式拒掉的事件放回来。
+		{name: "不能越过目标的订阅", jobEvents: []string{notify.EventSucceeded}, tgtEvents: []string{notify.EventFailed}, wantServed: false},
+		{name: "两边都订阅才发", jobEvents: []string{notify.EventSucceeded}, tgtEvents: []string{notify.EventSucceeded}, wantServed: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			dir := t.TempDir()
+			store, err := jobstore.Open(filepath.Join(dir, "jobs.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			deliverer := notify.NewDeliverer(notify.NewRegistry(map[string]notify.Target{
+				"erp": {URL: srv.URL, Secret: "k", Events: tc.tgtEvents},
+			}), &http.Client{Timeout: 2 * time.Second})
+			r := New(store, convertersvc.New(filepath.Join(dir, "tmp"), nil), deliverer,
+				Config{FastWorkers: 1, PollInterval: 10 * time.Millisecond, NotifyWorkers: 1}, quietLogger())
+			defer r.Stop()
+
+			if err := store.Enqueue(&jobstore.Job{
+				ID: "j1", Lane: jobstore.LaneFast, From: "ofd", To: "pdf",
+				Request:      requestFor(t, "pdf", ofdBytes(t)),
+				NotifyTarget: "erp", NotifyEvents: tc.jobEvents,
+				CreatedAt: time.Now().UTC(),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			// 任务本身要跑完，才能区分"任务没转"与"通知被收窄掉了"。
+			waitFor(t, "任务成功", func() bool {
+				job, _ := store.Get("j1")
+				return job != nil && job.State.Terminal()
+			})
+			if tc.wantServed {
+				waitFor(t, "通知已送达", func() bool { return hits.Load() >= 1 })
+			} else {
+				// 不该发就不能发：等任务结束再确认一次投递表为空。
+				time.Sleep(150 * time.Millisecond)
+				if got := hits.Load(); got != 0 {
+					t.Errorf("被收窄的事件仍投递了 %d 次", got)
+				}
+				pending, _ := store.ListDeliveries(jobstore.DeliveryPending, 0)
+				done, _ := store.ListDeliveries(jobstore.DeliveryDone, 0)
+				if len(pending)+len(done) != 0 {
+					t.Errorf("不该入队却排了 %d 条通知", len(pending)+len(done))
+				}
+			}
+		})
+	}
+}
