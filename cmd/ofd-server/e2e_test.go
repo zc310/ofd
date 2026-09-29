@@ -287,7 +287,9 @@ func TestURLInputAdmission(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _, _, _ := newTestServerWithList(t, tc.entries)
 			client := newPipeServer(t, s.Handler())
-			body := fmt.Sprintf(`{"input":{"kind":"url","url":%q,"format":"ofd"},"output":{"format":"pdf"}}`, tc.url)
+			// 显式写 kind=dir：本表断言的是 URL 白名单的准入结果，要的是 202 与
+			// 任务 ID。省略 kind 等同 stream，会走同步路径返回 200，测不到准入。
+			body := fmt.Sprintf(`{"input":{"kind":"url","url":%q,"format":"ofd"},"output":{"kind":"dir","format":"pdf"}}`, tc.url)
 			got := do(t, client, fasthttp.MethodPost, "/v1/convert", body)
 			if got.status != tc.status {
 				t.Fatalf("状态 = %d，期望 %d: %s", got.status, tc.status, got.body)
