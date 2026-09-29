@@ -1,12 +1,12 @@
 # OFD 测试文档索引
 
-本目录保存解析、校验、文字提取、渲染和格式转换使用的 OFD fixture。下表登记本目录下全部 42 个 `.ofd` 文件；文档体、页面、对象、文字、图片、字体等数量来自 `cmd/ofd-analyzer` 的当前分析结果。`来源` 列标注生成 manifest、合并来源或外部收集的分类。文件大小使用 K/M 表示（1K = 1000 bytes，1M = 1000000 bytes）。数量会随着 fixture 内容变化而变化，特性说明则以便于选取测试样例为目标。
+本目录保存解析、校验、文字提取、渲染和格式转换使用的 OFD fixture。下表登记本目录下全部 43 个 `.ofd` 文件；文档体、页面、对象、文字、图片、字体等数量来自 `cmd/ofd-analyzer` 的当前分析结果。`来源` 列标注生成 manifest、合并来源或外部收集的分类。文件大小使用 K/M 表示（1K = 1000 bytes，1M = 1000000 bytes）。数量会随着 fixture 内容变化而变化，特性说明则以便于选取测试样例为目标。
 
 来源分两类：`OFD.xml` 中带 `Creator=ofd-creator` 的文件由本仓库的创建器生成，表中给出对应的生成来源 manifest；其余文件（`999.ofd`、`ano.ofd`、`huawei.ofd`、`intro.ofd`、`multi_demo.ofd`、`zsbk.ofd`）为手工构造或外部收集的样本，原始发布者、授权许可和来源链接尚未逐一核实；如需再分发或用于生产，请自行确认相应权利。
 
 `markdown/` 和 `pdf/` 子目录保存的是 Markdown、PDF 等非 OFD 格式的导入测试输入，不在本表登记。
 
-想先看某个 fixture 的实际渲染效果，可用项目部署的 WASM 阅读器：<https://zc310.github.io/ofd-wasm/>。打开页面后点击「打开文件」选择本目录下的 `.ofd`，或直接把文件拖入页面；OFD 在浏览器本地解析和渲染，文件不会上传。页面还提供缩略图、搜索、双页阅读和「使用本机字体」等选项，便于横向比对不同样例。注意该页面是独立发布的构建，渲染结果可能落后于仓库当前源码。
+想先看某个 fixture 的实际渲染效果，可用项目部署的 WASM 阅读器：<https://zc310.github.io/ofd-wasm/>。打开页面后点击「打开文件」选择本目录下的 `.ofd`，或直接把文件拖入页面；OFD 在浏览器本地解析和渲染，文件不会上传。页面还提供缩略图、搜索、双页阅读和「使用系统字体」等选项，便于横向比对不同样例。注意该页面是独立发布的构建，渲染结果可能落后于仓库当前源码。
 
 ## 文件清单
 
@@ -27,6 +27,7 @@
 | [`draw-params.ofd`](draw-params.ofd)           |  1.9K | 1 文档，1 页，10 对象，92 字符，1 字体，3 DrawParam                                           | 绘制参数继承示例；`thick` 继承 `base` 并改线宽，`dashed` 再继承 `thick` 并改为虚线和蓝色描边。                                                                                                                                                                                                                                                        | 生成：[`draw-params.yaml`](../../cmd/ofd-creator/examples/draw-params.yaml)                                                                       |
 | [`drawparam.ofd`](drawparam.ofd)               |  6.8K | 1 文档，4 页，94 对象，1204 字符，1 字体，12 DrawParam，1 颜色空间                            | 绘制参数示例；覆盖 DrawParam 引用与对象级属性、线宽、Cap、Join、MiterLimit、虚线及颜色，适合验证绘制参数继承和路径描边。                                                                                                                                                                                                                              | 手工构造；反推 [`drawparam.yaml`](../../cmd/ofd-creator/examples/drawparam.yaml)                                                                  |
 | [`font-styles.ofd`](font-styles.ofd)           |  3.6K | 1 文档，2 页，48 对象，1004 字符，4 字体，1 颜色空间                                          | 字体样式矩阵；覆盖 100--900 字重、常规/斜体、字号、HScale、填充/描边文字，以及轴向和径向渐变文字。                                                                                                                                                                                                                                                    | 生成：[`font-styles.yaml`](../../cmd/ofd-creator/examples/font-styles.yaml)                                                                       |
+| [`gouraud.ofd`](gouraud.ofd)                   |  2.3K | 1 文档，1 页，21 对象，213 字符，1 字体                                                       | Gouraud 三角网格渐变样例；覆盖单三角形、EdgeFlag=1 连续拼接三角带、EdgeFlag=2 扇形和 EdgeFlag=0 独立三角对，并以同一网格对照 Extend=0 未覆盖区透明与 Extend=1+Back Color 橙色填充，适合网格拓扑解析、顶点颜色插值和 Extend/BackColor 渲染回归测试。                                                                                                   | 生成：[`gouraud.yaml`](../../cmd/ofd-creator/examples/gouraud.yaml)                                                                               |
 | [`hello.ofd`](hello.ofd)                       |  1.5K | 1 文档，1 页，2 对象，21 字符，1 字体                                                         | 最小 Hello World 文档；适合快速验证 OFD 打开、基础文字读取和最小渲染链路。                                                                                                                                                                                                                                                                            | 生成：[`hello.yaml`](../../cmd/ofd-creator/examples/hello.yaml)                                                                                   |
 | [`helloworld.ofd`](helloworld.ofd)             |  2.4K | 1 文档，2 页，10 对象，42 字符，1 字体                                                        | 基础创建器输出；包含英文和中文文字，以及轴向/径向渐变矩形，适合 converter API、PDF 输出和渐变渲染测试。                                                                                                                                                                                                                                               | 生成：[`helloworld.yaml`](../../cmd/ofd-creator/examples/helloworld.yaml)                                                                         |
 | [`huawei.ofd`](huawei.ofd)                     |  3.1K | 1 文档，1 页，8 对象，8 路径，0 字符                                                          | Huawei 图标提取结果；由渐变填充的路径和 CTM 组成，包含轴向/径向 Shading，适合测试路径变换、渐变渲染和无文字文档。                                                                                                                                                                                                                                     | 外部收集；反推 [`huawei.yaml`](../../cmd/ofd-creator/examples/huawei.yaml)                                                                        |
@@ -93,6 +94,7 @@
 - 椭圆径向渐变：`radial-ellipse.ofd`
 - 轴向渐变 Extend：`axial-extend.ofd`
 - 径向渐变 Extend：`radial-extend.ofd`
+- 三角网格渐变：`gouraud.ofd`
 - 裁剪区：`clips.ofd`
 - 图案填充与底纹翻转：`pattern-fill.ofd`、`pattern-reflect.ofd`
 - 页面区域：`page-area.ofd`
