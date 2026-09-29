@@ -62,7 +62,7 @@ func (o *officeImporter) Import(input any, output io.Writer, conv *converter.Con
 	if err != nil {
 		return err
 	}
-	return pdf2ofd.Convert(pdf, output)
+	return pdf2ofd.Convert(conv.Context(), pdf, output)
 }
 
 // officeTransformer 把 Office 文档直接转换为 PDF。

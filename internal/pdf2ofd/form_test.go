@@ -24,7 +24,7 @@ func TestConvertFormXObjectAppliesMatrix(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -80,7 +80,7 @@ func TestConvertFormGroupAlphaKeepsOuterOpacity(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -122,7 +122,7 @@ func TestConvertBlendModeFormDoesNotApplyGroupAlpha(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

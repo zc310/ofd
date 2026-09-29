@@ -34,7 +34,7 @@ func TestConvertEmitsAxialShadingForScrollOperator(t *testing.T) {
 	content := []byte("q 0 0 100 100 re W n /Sh1 sh Q")
 	pdf := shadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -68,7 +68,7 @@ func TestConvertEmitsRadialShadingForScrollOperator(t *testing.T) {
 	content := []byte("q 0 0 100 100 re W n /Sh1 sh Q")
 	pdf := shadingPDF(content, "<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [50 50 0 50 50 50] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 0 0] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -100,7 +100,7 @@ func TestConvertShadingCoordinatesAreRelativeToPathBoundary(t *testing.T) {
 	content := []byte("q 0 0 100 100 re W n /Sh1 sh Q")
 	pdf := shadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 100 100 100] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -128,7 +128,7 @@ func TestConvertEmitsShadingForPatternFill(t *testing.T) {
 	content := []byte("/Pattern cs /P1 scn 0 0 100 100 re f")
 	pdf := patternShadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -161,7 +161,7 @@ func TestConvertPatternShadingIgnoresContentCTM(t *testing.T) {
 	content := []byte("q 2 0 0 2 0 0 cm /Pattern cs /P1 scn 0 0 100 100 re f Q")
 	pdf := patternShadingPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -204,7 +204,7 @@ func TestConvertEmitsShadingForGradientTextFill(t *testing.T) {
 	content := []byte("/Pattern cs /P1 scn BT /F1 12 Tf 20 100 Td (Hi) Tj ET")
 	pdf := gradientTextPDF(content, "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>")
 	var output bytes.Buffer
-	if err := Convert(pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
