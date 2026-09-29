@@ -1,4 +1,4 @@
-// Package officeimport 为 converter 注册 Office 文档（doc/docx/odt/rtf/wps/
+// Package office 为 converter 注册 Office 文档（doc/docx/odt/rtf/wps/
 // pptx/xlsx 等）的导入器，以及到 PDF 的直接转换器。转换通过 LibreOffice
 // 命令行完成：X→OFD 走 LibreOffice 转 PDF 后再由 pdf2ofd 生成 OFD；
 // X→PDF 则由 LibreOffice 直接输出。
@@ -6,12 +6,12 @@
 // 该包依赖 LibreOffice 可执行文件，单独成包是为了让不需要 Office 转换的
 // 使用方不必链接这些依赖；需要时按空白导入启用：
 //
-//	import _ "github.com/zc310/ofd/pkg/converter/officeimport"
+//	import _ "github.com/zc310/ofd/pkg/converter/import/office"
 //
 // 之后即可使用 converter.Convert("docx", "ofd", ...) 或
 // converter.Convert("docx", "pdf", ...)。运行环境必须安装 LibreOffice，
 // 否则返回明确错误。
-package officeimport
+package office
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package htmlimport_test
+package markdown_test
 
 import "context"
 

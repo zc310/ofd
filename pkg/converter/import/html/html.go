@@ -1,16 +1,16 @@
-// Package htmlimport 为 converter 注册 HTML/MHTML 导入器，以及到 PDF 的直接
+// Package html 为 converter 注册 HTML/MHTML 导入器，以及到 PDF 的直接
 // 转换器。渲染通过 chromedp 驱动 Chrome/Chromium 的打印引擎完成：X→OFD 走
 // Chrome 转 PDF 后再由 pdf2ofd 生成 OFD；X→PDF 则由 Chrome 直接输出。
 //
 // 该包依赖 Chrome/Chromium 可执行文件，单独成包是为了让不需要 HTML 转换的
 // 使用方不必链接 chromedp；需要时按空白导入启用：
 //
-//	import _ "github.com/zc310/ofd/pkg/converter/htmlimport"
+//	import _ "github.com/zc310/ofd/pkg/converter/import/html"
 //
 // 之后即可使用 converter.Convert("mhtml", "pdf", ...) 或
 // converter.Convert("html", "ofd", ...)。运行环境必须安装 Chrome/Chromium，
 // 否则返回明确错误。
-package htmlimport
+package html
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package officeimport_test
+package office_test
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/office"
 	"github.com/zc310/ofd/pkg/converter"
-	_ "github.com/zc310/ofd/pkg/converter/officeimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/office"
 	"github.com/zc310/ofd/pkg/validator"
 )
 

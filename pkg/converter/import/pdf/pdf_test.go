@@ -1,4 +1,4 @@
-package pdfimport_test
+package pdf_test
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/pkg/converter"
-	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/pdf"
 )
 
 func TestPDFImporterRegistered(t *testing.T) {

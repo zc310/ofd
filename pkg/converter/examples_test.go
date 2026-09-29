@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/zc310/ofd/pkg/converter"
-	_ "github.com/zc310/ofd/pkg/converter/mdimport"
-	_ "github.com/zc310/ofd/pkg/converter/pdfimport"
+	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
+	_ "github.com/zc310/ofd/pkg/converter/import/pdf"
 )
 
 type exampleBufferWriteCloser struct {

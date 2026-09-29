@@ -1,4 +1,4 @@
-package officeimport_test
+package office_test
 
 import "context"
 

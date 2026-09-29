@@ -28,10 +28,11 @@ import (
 	"github.com/zc310/ofd/pkg/converter"
 	// 服务需要支持全部已注册格式，导入器靠 init() 注册，必须显式链接：
 	// 否则 ImporterByName 查不到 docx/pdf/html，请求会以"无法识别输入格式"被拒。
-	_ "github.com/zc310/ofd/pkg/converter/htmlimport"   // HTML/MHTML→OFD
-	_ "github.com/zc310/ofd/pkg/converter/mdimport"     // Markdown→OFD
-	_ "github.com/zc310/ofd/pkg/converter/officeimport" // Office→OFD 与 →PDF
-	_ "github.com/zc310/ofd/pkg/converter/pdfimport"    // PDF→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/html"     // HTML/MHTML→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/image"    // PNG/JPEG/TIFF→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/markdown" // Markdown→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/office"   // Office→OFD 与 →PDF
+	_ "github.com/zc310/ofd/pkg/converter/import/pdf"      // PDF→OFD
 )
 
 // Lane 是转换任务所属的执行通道，用于在任务队列里分配不同的并发额度。
@@ -215,7 +216,7 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 	if !ok {
 		return Result{}, fmt.Errorf("%w: 未知输出格式 %s", ErrUnsupported, spec.Output.Format)
 	}
-	outputKind, err := normalizeOutputKind(spec.Output.Kind)
+	outputKind, err := NormalizeOutputKind(spec.Output.Kind)
 	if err != nil {
 		return Result{}, err
 	}
@@ -587,7 +588,17 @@ func wrapConvertError(err error) error {
 	return err
 }
 
-func normalizeOutputKind(kind string) (string, error) {
+// NormalizeOutputKind 把 output.kind 规范化为内部使用的标准值：空值按 stream
+// 处理，忽略大小写与首尾空白，未知值报 ErrBadRequest。
+//
+// 导出是因为 HTTP 层必须在决定同步还是异步之前先做同一套判定。空值意味着
+// stream——若 HTTP 层用字面比较判断 `kind == "stream"`，省略字段的请求会被
+// 送进异步队列，随后按 stream 处理、产物只留在内存里随 Result 丢弃：任务报
+// succeeded 而调用方拿不到任何东西。规范化放在这里而不是各写一份，是为了让
+// 提交阶段与 worker 阶段永远得出同一个结论。
+//
+// 幂等：规范化后的值再规范化仍得到自身。
+func NormalizeOutputKind(kind string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", OutputStream:
 		return OutputStream, nil

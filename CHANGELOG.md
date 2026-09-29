@@ -13,7 +13,7 @@
 
 ### 破坏性变更
 
-- `pkg/converter/pdfimport` 的 `Convert` 与 `ConvertFile` 新增首个参数
+- `pkg/converter/import/pdf` 的 `Convert` 与 `ConvertFile` 新增首个参数
   `context.Context`。
 
   ```go

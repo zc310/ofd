@@ -1,6 +1,6 @@
 # PDF 转 OFD 支持清单
 
-本文档描述 `internal/pdf2ofd`（经 `pkg/converter/pdfimport` 暴露为
+本文档描述 `internal/pdf2ofd`（经 `pkg/converter/import/pdf` 暴露为
 `converter.Convert("pdf", "ofd", ...)` 与 `ofd-converter` 的 PDF 输入）当前对
 PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解析 PDF 对象结构，
 自研内容流解释器还原页面几何、文字、路径与图像，并经 `pkg/creator` 输出 OFD 包。

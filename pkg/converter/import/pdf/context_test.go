@@ -1,4 +1,4 @@
-package pdfimport_test
+package pdf_test
 
 import "context"
 
