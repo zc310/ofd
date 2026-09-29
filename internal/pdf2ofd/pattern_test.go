@@ -27,7 +27,7 @@ func TestConvertEmitsImageForTilingPatternFill(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -66,7 +66,7 @@ func TestConvertComposesDenseTilingPatternIntoImage(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -120,7 +120,7 @@ func TestConvertAppliesImageSoftMask(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -171,7 +171,7 @@ func TestConvertImageNegativeYMatrixEmitsFlipCTM(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -221,7 +221,7 @@ func TestConvertSoftMaskKeepsBaseColorAtLowAlpha(t *testing.T) {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output); err != nil {
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

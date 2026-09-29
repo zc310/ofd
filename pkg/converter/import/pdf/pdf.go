@@ -25,17 +25,17 @@ func (p *pdfImporter) Extensions() []string { return []string{".pdf"} }
 func (p *pdfImporter) MIME() string         { return "application/pdf" }
 
 func (p *pdfImporter) Import(input any, output io.Writer, conv *converter.Converter) error {
-	return pdf2ofd.Convert(conv.Context(), input, output)
+	return pdf2ofd.Convert(conv.Context(), input, output, conv.InputPassword())
 }
 
 // Convert 将 PDF 输入转换为 OFD 文档，input 支持 PDF 文件路径、[]byte 或 io.Reader。
-func Convert(ctx context.Context, input any, output io.Writer) error {
-	return pdf2ofd.Convert(ctx, input, output)
+func Convert(ctx context.Context, input any, output io.Writer, password string) error {
+	return pdf2ofd.Convert(ctx, input, output, password)
 }
 
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(ctx context.Context, pdfPath, ofdPath string) error {
-	return pdf2ofd.ConvertFile(ctx, pdfPath, ofdPath)
+func ConvertFile(ctx context.Context, pdfPath, ofdPath string, password string) error {
+	return pdf2ofd.ConvertFile(ctx, pdfPath, ofdPath, password)
 }
 
 func init() {
