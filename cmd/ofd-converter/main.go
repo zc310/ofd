@@ -173,10 +173,10 @@ func parseArgs(args []string) (*options, error) {
 		flags.PrintDefaults()
 	})
 	flags := root.Flags()
-	flags.StringVarP(&output, "output", "o", "", "输出文件路径或目录，多页图片时可为 .zip 文件或目录")
+	flags.StringVarP(&output, "output", "o", "", "输出文件路径或目录，多页 PNG/JPEG 等图像可为 .zip 文件或目录，TIFF 始终为单个文件")
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
-	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, txt, md, markdown, html, png, jpg, svg, eps, tex")
+	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
 	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
@@ -281,6 +281,9 @@ func runSingle(opts *options) error {
 	if format == "pdf" {
 		return convertToPDF(opts, format)
 	}
+	if format == "tiff" {
+		return convertToTIFF(opts)
+	}
 	if format == "txt" || format == "md" {
 		return convertToText(opts, format)
 	}
@@ -366,7 +369,7 @@ func runBatch(opts *options) error {
 	skipped := 0
 	seenOutputs := make(map[string]string, len(inputs))
 	for _, input := range inputs {
-		output := batchOutputPath(inputRoot, outputRoot, input, format, opts.page == 0 && isImageFormat(format))
+		output := batchOutputPath(inputRoot, outputRoot, input, format, opts.page == 0 && isImageFormat(format) && format != "tiff")
 		key := filepath.Clean(output)
 		if previous, exists := seenOutputs[key]; exists {
 			return fmt.Errorf("多个输入文件映射到同一输出路径: %s 和 %s", previous, input)
@@ -727,7 +730,7 @@ func validateOutputPath(opts *options, format string) error {
 		output = ensureExtension(output, format)
 	} else if format == "html" {
 		output = ensureExtension(output, "html")
-	} else if format != "pdf" && opts.page > 0 {
+	} else if format == "tiff" || (format != "pdf" && opts.page > 0) {
 		output = ensureExtension(output, format)
 	}
 	if sameFilePath(opts.input, output) {
@@ -810,6 +813,32 @@ func convertToPDF(opts *options, _ string) error {
 		option = append(option, converter.Page(opts.page))
 	}
 	err := converter.Encode(opts.ctx, "pdf", opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func convertToTIFF(opts *options) error {
+	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
+	if opts.output != "" && opts.output != "-" {
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "tiff")}
+		output = fileOutput
+	}
+	option := []converter.Option{
+		converter.DPI(float64(opts.dpi)),
+		converter.BgColor(parseBgColor(opts.bg)),
+	}
+	if opts.rasterBackend != "" {
+		option = append(option, converter.RasterBackend(opts.rasterBackend))
+	}
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	err := converter.Encode(opts.ctx, "tiff", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr

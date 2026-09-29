@@ -2,9 +2,13 @@ package converter
 
 import (
 	"bytes"
+	"encoding/binary"
+	"image"
 	"io"
 	"path/filepath"
 	"testing"
+
+	"github.com/hhrutter/tiff"
 )
 
 const formatFixture = "../../test/testdata/helloworld.ofd"
@@ -17,6 +21,7 @@ func TestFormatRegistryCoversAllEncoders(t *testing.T) {
 		"markdown": KindDocument,
 		"png":      KindImage,
 		"jpeg":     KindImage,
+		"tiff":     KindImage,
 		"svg":      KindImage,
 		"eps":      KindImage,
 		"tex":      KindImage,
@@ -67,6 +72,8 @@ func TestFormatRegistryResolvesAliasesAndExtensions(t *testing.T) {
 		"PNG":       "png",
 		".jpg":      "jpeg",
 		".jpeg":     "jpeg",
+		".tif":      "tiff",
+		".tiff":     "tiff",
 		".md":       "markdown",
 		".markdown": "markdown",
 		".txt":      "text",
@@ -91,6 +98,7 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 		{"png", []byte{0x89, 'P', 'N', 'G'}},
 		{"jpg", []byte{0xFF, 0xD8}},
 		{"jpeg", []byte{0xFF, 0xD8}},
+		{"tiff", []byte{'I', 'I', 42, 0}},
 	}
 	for _, tc := range cases {
 		var output bytes.Buffer
@@ -116,6 +124,35 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 	}
 	if !bytes.HasPrefix(combined.Bytes(), []byte("# Hello World")) {
 		t.Fatalf("Encode(ctxTODO, md) 输出 = %q", combined.String())
+	}
+}
+
+func TestEncodeTIFFWritesMultipageDocument(t *testing.T) {
+	var output bytes.Buffer
+	if err := Encode(ctxTODO, "tiff", "../../test/testdata/multi_demo.ofd", &output, DPI(72)); err != nil {
+		t.Fatal(err)
+	}
+	config, err := tiff.DecodeConfig(bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatalf("TIFF config: %v", err)
+	}
+	if config.Width == 0 || config.Height == 0 {
+		t.Fatalf("TIFF dimensions = %dx%d", config.Width, config.Height)
+	}
+	if _, _, err := image.Decode(bytes.NewReader(output.Bytes())); err != nil {
+		t.Fatalf("decode first TIFF page: %v", err)
+	}
+
+	data := output.Bytes()
+	var order binary.ByteOrder = binary.LittleEndian
+	if data[0] == 'M' {
+		order = binary.BigEndian
+	}
+	ifdOffset := int(order.Uint32(data[4:8]))
+	entryCount := int(order.Uint16(data[ifdOffset : ifdOffset+2]))
+	nextOffset := ifdOffset + 2 + entryCount*12
+	if nextOffset+4 > len(data) || order.Uint32(data[nextOffset:nextOffset+4]) == 0 {
+		t.Fatal("TIFF has no second page IFD")
 	}
 }
 
