@@ -117,18 +117,6 @@ func TestRender_PDF_ano(t *testing.T) {
 	defer f.Close()
 	assert.Nil(t, converter.PDF(ctxTODO, "testdata/ano.ofd", f))
 }
-func BenchmarkRenderPDFIntro(b *testing.B) {
-	var output bytes.Buffer
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		output.Reset()
-		if err := converter.PDF(ctxTODO, "testdata/intro.ofd", &output); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func TestRender_PDF_huawei(t *testing.T) {
 	var output bytes.Buffer
 	assert.Nil(t, converter.PDF(ctxTODO, "testdata/huawei.ofd", &output))
