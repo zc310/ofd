@@ -1289,7 +1289,7 @@ func TestAttachmentDataRejectsUnknown(t *testing.T) {
 func TestMediaExposeMetadataAndData(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
 	if os.IsNotExist(err) {
-		t.Skip("magazine.ofd  is unavailable")
+		t.Skip("ano.ofd  is unavailable")
 	}
 	if err != nil {
 		t.Fatal(err)
