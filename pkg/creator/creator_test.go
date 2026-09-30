@@ -1266,6 +1266,55 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	}
 }
 
+// TestCreateTextCodeDeltasWithoutExplicitCodes 不写 text_codes 时也应补全 Delta。
+//
+// 补全逻辑原先只在 len(codes) > 0 的分支里，而 manifest 里绝大多数文字对象不写
+// text_codes——那条早退路径直接把 completeDeltas 丢了。于是
+// --complete-text-code-deltas 对真实输入从不生效，只有显式列了 text_codes 的
+// 用例才走到。
+func TestCreateTextCodeDeltasWithoutExplicitCodes(t *testing.T) {
+	document := Document{
+		ID: "implicit-deltas",
+		Pages: []Page{{Items: []Item{
+			Text{X: 1, Y: 2, Width: 30, Height: 10, Size: 10, Value: "abc"},
+		}}},
+	}
+	data, err := MarshalWithOptions(document, CreateOptions{CompleteTextCodeDeltas: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd := newTestOFD(t, data)
+	defer ofd.Close()
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	// n 个字符产生 n-1 个间隔：3 个字符是 2 个 delta，与显式 codes 的既有用例一致。
+	if len(code.DeltaX) != 2 || len(code.DeltaY) != 2 {
+		t.Fatalf("未显式给 text_codes 时未补全: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
+	}
+	if code.DeltaX[0] <= 0 {
+		t.Errorf("补出的 DeltaX 应为正宽度，实际 %v", code.DeltaX)
+	}
+}
+
+// TestCreateTextCodeDeltasOffByDefault 不开开关时不该补全。
+func TestCreateTextCodeDeltasOffByDefault(t *testing.T) {
+	document := Document{
+		ID: "no-implicit-deltas",
+		Pages: []Page{{Items: []Item{
+			Text{X: 1, Y: 2, Width: 30, Height: 10, Size: 10, Value: "abc"},
+		}}},
+	}
+	data, err := Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd := newTestOFD(t, data)
+	defer ofd.Close()
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	if len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
+		t.Errorf("未开开关却补了值: DeltaX=%v DeltaY=%v", code.DeltaX, code.DeltaY)
+	}
+}
+
 func TestCreateTextCGTransforms(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "cg-transform-test",
