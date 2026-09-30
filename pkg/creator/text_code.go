@@ -14,7 +14,7 @@ import (
 const defaultTextSize = 4.2333333333
 
 // completeTextCodes 补充 TextCode 的默认起点，并按选项补充字符位置增量。
-func completeTextCodes(codes []TextCode, value string, width, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) []TextCode {
+func completeTextCodes(codes []TextCode, value string, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) []TextCode {
 	baseline := height
 	if baseline <= 0 {
 		baseline = size
@@ -32,7 +32,7 @@ func completeTextCodes(codes []TextCode, value string, width, height, size, hSca
 		code := TextCode{Value: value, X: &x, Y: &y}
 		if completeDeltas && runeCountOf(value) > 1 {
 			face := findTextFace(fontName, fonts, size, weight, italic)
-			code.DeltaX, code.DeltaY = makeTextCodeDeltas([]rune(value), width, size, hScale, direction, runeCountOf(value), face)
+			code.DeltaX, code.DeltaY = makeTextCodeDeltas([]rune(value), size, hScale, direction, face)
 		}
 		return []TextCode{code}
 	}
@@ -72,7 +72,7 @@ func completeTextCodes(codes []TextCode, value string, width, height, size, hSca
 		}
 		if completeDeltas && total > 1 && runeCountOf(code.Value) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 			face := findTextFace(fontName, fonts, size, weight, italic)
-			deltaX, deltaY := makeTextCodeDeltas([]rune(code.Value), width, size, hScale, direction, total, face)
+			deltaX, deltaY := makeTextCodeDeltas([]rune(code.Value), size, hScale, direction, face)
 			code.DeltaX = deltaX
 			code.DeltaY = deltaY
 		}
@@ -91,7 +91,10 @@ func runeCountOf(value string) int {
 	return len(value)
 }
 
-func makeTextCodeDeltas(runes []rune, width, size, hScale float64, direction, total int, face *canvas.FontFace) ([]float64, []float64) {
+// makeTextCodeDeltas 按字体度量计算字符间增量；字体缺失或该字形缺失时，退回
+// 一 em 宽（size*hScale）作为默认字距。规格里字符的默认推进量就是一 em，用随
+// 意一个替代字体度量反而会让字距与阅读端不一致。
+func makeTextCodeDeltas(runes []rune, size, hScale float64, direction int, face *canvas.FontFace) ([]float64, []float64) {
 	count := len(runes) - 1
 	deltaX := make([]float64, count)
 	deltaY := make([]float64, count)
@@ -105,12 +108,12 @@ func makeTextCodeDeltas(runes []rune, width, size, hScale float64, direction, to
 		hScale = 1
 	}
 	fallback := size * hScale
-	if face == nil && width > 0 && total > 0 {
-		fallback = width / float64(total)
-	}
 	for index, r := range runes[:count] {
 		advance := fallback
-		if face != nil {
+		// 只有字体真正包含该字形时才用字体度量：缺字时 TextWidth 返回的是
+		// .notdef 的推进量（通常非 0），直接当字符宽度会让补出的 Delta 偏小，
+		// 文字挤在一起（例如用西文字体排中文）。缺字时退回 em 宽的近似值。
+		if faceHasGlyph(face, r) {
 			advance = face.TextWidth(string(r)) * hScale
 		}
 		if !finiteTextCodeNumber(advance) || advance == 0 {
@@ -146,8 +149,15 @@ func findTextFace(name string, fonts []Font, size float64, weight int, italic bo
 		style |= canvas.FontItalic
 	}
 	for _, value := range fonts {
-		if strings.TrimSpace(value.Name) != name || len(value.Data) == 0 {
+		if strings.TrimSpace(value.Name) != name && strings.TrimSpace(value.FamilyName) != name {
 			continue
+		}
+		if len(value.Data) == 0 {
+			// 只声明名称的系统字体：用它的族名（如 楷体）解析系统字体。
+			if familyName := strings.TrimSpace(value.FamilyName); familyName != "" {
+				name = familyName
+			}
+			break
 		}
 		family := canvas.NewFontFamily(name)
 		if err := family.LoadFont(value.Data, 0, style); err == nil {
@@ -165,6 +175,32 @@ func findTextFace(name string, fonts []Font, size float64, weight int, italic bo
 	return nil
 }
 
+// chineseFontGroups 把同一中文字体的中英文族名与常见文件名归为一组。系统字体
+// 索引可能只认其中一种写法（例如 fontconfig 认「宋体」却不认「SimSun」），按组
+// 尝试才能命中用户指定的字体，而不是误用别的中文字体。
+var chineseFontGroups = []struct {
+	names []string
+	files []string
+}{
+	{[]string{"宋体", "宋体GB2312", "SimSun", "NSimSun"}, []string{"simsun.ttc", "simsun.ttf", "SimSun.ttf", "Songti.ttc"}},
+	{[]string{"黑体", "黑体GB2312", "SimHei"}, []string{"simhei.ttf", "simhei.ttc", "SimHei.ttf"}},
+	{[]string{"楷体", "楷体GB2312", "KaiTi", "SimKai"}, []string{"simkai.ttf", "SimKai.ttf"}},
+	{[]string{"仿宋", "仿宋GB2312", "FangSong", "SimFang"}, []string{"simfang.ttf", "SimFang.ttf"}},
+}
+
+// chineseFontGroup 返回指定字体所属的中文字体组的中英文族名与候选文件名。
+func chineseFontGroup(name string) (names, files []string, ok bool) {
+	name = strings.TrimSpace(name)
+	for _, group := range chineseFontGroups {
+		for _, candidate := range group.names {
+			if strings.EqualFold(candidate, name) {
+				return group.names, group.files, true
+			}
+		}
+	}
+	return nil, nil, false
+}
+
 func loadSystemFontFamily(name string, style canvas.FontStyle) (family *canvas.FontFamily) {
 	defer func() {
 		if recover() != nil {
@@ -172,33 +208,64 @@ func loadSystemFontFamily(name string, style canvas.FontStyle) (family *canvas.F
 		}
 	}()
 
-	family = canvas.NewFontFamily(name)
-	if family.LoadSystemFont(name, style) == nil {
-		return family
+	// 指定的中文字体：按同组的中英文族名和常见文件名依次尝试。
+	if names, files, ok := chineseFontGroup(name); ok {
+		for _, candidateStyle := range relaxFontStyles(style) {
+			for _, candidate := range names {
+				family := canvas.NewFontFamily(candidate)
+				if family.LoadSystemFont(candidate, candidateStyle) == nil {
+					return family
+				}
+			}
+		}
+		if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
+			family := canvas.NewFontFamily(name)
+			if family.LoadFontFile(path, style) == nil {
+				return family
+			}
+		}
+		// 本机确实没有该中文字体：返回 nil，由调用方使用默认字距，而不是退到
+		// 别的中文字体度量。
+		return nil
 	}
 
-	if strings.EqualFold(name, "宋体") || strings.EqualFold(name, "simsun") {
-		if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simsun.ttc"); err == nil && family.LoadFontFile(path, style) == nil {
+	for _, candidateStyle := range relaxFontStyles(style) {
+		family := canvas.NewFontFamily(name)
+		if family.LoadSystemFont(name, candidateStyle) == nil {
 			return family
 		}
 	}
-	if strings.EqualFold(name, "黑体") || strings.EqualFold(name, "simhei") {
-		if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf"); err == nil && family.LoadFontFile(path, style) == nil {
-			return family
-		}
-	}
-
 	for _, candidate := range []string{
-		"仿宋", "FangSong", "NSimSum", "楷体", "KaiTi", "黑体", "SimHei",
-		"Noto Sans CJK SC", "WenQuanYi Micro Hei", "Cantarell", "Noto Sans",
-		"Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times",
+		"Cantarell", "Noto Sans", "Noto Serif", "DejaVu Sans", "DejaVu Serif", "Times",
 	} {
-		fallback := canvas.NewFontFamily(candidate)
-		if fallback.LoadSystemFont(candidate, style) == nil {
-			return fallback
+		for _, candidateStyle := range relaxFontStyles(style) {
+			fallback := canvas.NewFontFamily(candidate)
+			if fallback.LoadSystemFont(candidate, candidateStyle) == nil {
+				return fallback
+			}
 		}
 	}
 	return nil
+}
+
+// relaxFontStyles 返回按优先级放宽的样式序列：某族没有请求的粗体/斜体字面时，
+// 先用同族的常规字面度量（渲染端会对常规字形合成粗体/斜体），避免因为缺字面而
+// 误用别的字体族。
+func relaxFontStyles(style canvas.FontStyle) []canvas.FontStyle {
+	styles := []canvas.FontStyle{style}
+	if style&canvas.FontItalic != 0 {
+		styles = append(styles, style&^canvas.FontItalic)
+	}
+	if style&canvas.FontBold != 0 {
+		styles = append(styles, style&^canvas.FontBold, canvas.FontRegular)
+	}
+	return styles
+}
+
+// faceHasGlyph 判断字体是否真的包含该码位的字形。缺字时 TextWidth 会返回
+// .notdef 的推进量（通常非 0），不能当作字符宽度。
+func faceHasGlyph(face *canvas.FontFace, r rune) bool {
+	return face != nil && face.Font != nil && face.Font.GlyphIndex(r) != 0
 }
 
 func normalizeTextCodeDirection(direction int) int {
@@ -235,7 +302,7 @@ func completeClipsTextCodes(clips *Clips, fonts []Font, completeDeltas bool) *Cl
 				continue
 			}
 			copyText := *text
-			copyText.TextCodes = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Width, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic, completeDeltas)
+			copyText.TextCodes = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic, completeDeltas)
 			result.Items[clipIndex].Areas[areaIndex].Text = &copyText
 		}
 	}
