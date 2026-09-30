@@ -30,11 +30,6 @@ func EncodePNG(w io.Writer, img image.Image) error {
 	return encodePNG(w, img, wpng.DefaultCompression)
 }
 
-// EncodePNGFast 使用最快的无损压缩级别和池化缓冲区写出图像。
-func EncodePNGFast(w io.Writer, img image.Image) error {
-	return encodePNG(w, img, wpng.BestSpeed)
-}
-
 // EncodePNGLevel 使用指定压缩级别和池化缓冲区写出图像。
 func EncodePNGLevel(w io.Writer, img image.Image, level int) error {
 	return encodePNG(w, img, wpng.CompressionLevel(level))

@@ -394,7 +394,7 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, false
 	}
 	return encoded.Bytes(), true
@@ -583,7 +583,7 @@ func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *ima
 			}
 		}
 		var encoded bytes.Buffer
-		if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+		if err := media.EncodePNG(&encoded, rgba); err != nil {
 			return nil, "", fmt.Errorf("编码 JBIG2 蒙版失败: %w", err)
 		}
 		return encoded.Bytes(), "PNG", nil
@@ -596,7 +596,7 @@ func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *ima
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, out); err != nil {
+	if err := media.EncodePNG(&encoded, out); err != nil {
 		return nil, "", fmt.Errorf("编码 JBIG2 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -695,7 +695,7 @@ func encodePDFJPXImage(ctx *model.Context, stream *types.StreamDict, maskColor p
 // encodePNGImage 把图像编码为 PNG。
 func encodePNGImage(img image.Image) ([]byte, string, error) {
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, img); err != nil {
+	if err := media.EncodePNG(&encoded, img); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -843,6 +843,17 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 	if bpc == maxPDFImageBitsPerComponent {
 		return encodePDFImage16(ctx, stream, width, height, components, cmyk)
 	}
+	if components == 1 {
+		gray, err := decodePDFGrayImage(ctx, stream, width, height, bpc)
+		if err != nil {
+			return nil, "", err
+		}
+		var encoded bytes.Buffer
+		if err := media.EncodePNG(&encoded, gray); err != nil {
+			return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
+		}
+		return encoded.Bytes(), "PNG", nil
+	}
 	raw, err := decodePDFImageSamples(ctx, stream, width, height, components, bpc)
 	if err != nil {
 		return nil, "", err
@@ -850,17 +861,6 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 	if components == 4 {
 		// 非 DCT 编码的 DeviceCMYK 样本已是油墨值（0 表示无油墨），无需反相。
 		return encodePDFCMYKImage(&image.CMYK{Pix: raw, Stride: width * 4, Rect: image.Rect(0, 0, width, height)}, false, cmyk)
-	}
-	if components == 1 {
-		gray := image.NewGray(image.Rect(0, 0, width, height))
-		for y := 0; y < height; y++ {
-			copy(gray.Pix[y*gray.Stride:], raw[y*width:(y+1)*width])
-		}
-		var encoded bytes.Buffer
-		if err := media.EncodePNGFast(&encoded, gray); err != nil {
-			return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
-		}
-		return encoded.Bytes(), "PNG", nil
 	}
 	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
@@ -870,10 +870,59 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
+}
+
+// decodePDFGrayImage 把单通道 PDF 图像转换为 Gray。8 位默认灰度图直接复用
+// PDF 解码后的 Content，避免先分配交错样本缓冲区再复制到 image.Gray.Pix。
+func decodePDFGrayImage(ctx *model.Context, stream *types.StreamDict, width, height, bpc int) (*image.Gray, error) {
+	if bpc < 1 || bpc > maxPDFImageBitsPerComponent {
+		return nil, fmt.Errorf("不支持的图像位深 %d", bpc)
+	}
+	rowBytes := (width*bpc + 7) / 8
+	data := stream.Content
+	if width <= 0 || height <= 0 || rowBytes <= 0 || len(data) < rowBytes*height {
+		return nil, errors.New("PNG 图像数据长度无效")
+	}
+	if bpc == 8 && pdfGrayDecodeIsIdentity(ctx, stream) {
+		return &image.Gray{
+			Pix:    data[:width*height],
+			Stride: width,
+			Rect:   image.Rect(0, 0, width, height),
+		}, nil
+	}
+	decode := pdfImageDecode(ctx, stream, 1)
+	maxValue := float64(uint32(1)<<uint(bpc) - 1)
+	gray := image.NewGray(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		row := data[y*rowBytes : (y+1)*rowBytes]
+		for x := 0; x < width; x++ {
+			normalized := float64(readPDFImageSample(row, x, bpc)) / maxValue
+			gray.Pix[y*gray.Stride+x] = floatToByte(decode[0] + normalized*(decode[1]-decode[0]))
+		}
+	}
+	return gray, nil
+}
+
+func pdfGrayDecodeIsIdentity(ctx *model.Context, stream *types.StreamDict) bool {
+	object, found := stream.Find("Decode")
+	if !found {
+		return true
+	}
+	resolved, err := dereferencePDFObject(ctx, object)
+	if err != nil {
+		return false
+	}
+	array, ok := resolved.(types.Array)
+	if !ok || len(array) < 2 {
+		return false
+	}
+	low, lowOK := numberValue(array[0])
+	high, highOK := numberValue(array[1])
+	return lowOK && highOK && low == 0 && high == 1
 }
 
 // maxPDFImageBitsPerComponent 是 PDF 图像支持的每分量最大位数。
@@ -1016,7 +1065,7 @@ func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, heigh
 		img = rgba
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, img); err != nil {
+	if err := media.EncodePNG(&encoded, img); err != nil {
 		return nil, "", fmt.Errorf("编码 PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1249,7 +1298,7 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 Indexed PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1439,7 +1488,7 @@ func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) (
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 CMYK PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
@@ -1477,7 +1526,7 @@ func encodePDFImageMask(ctx *model.Context, stream *types.StreamDict, maskColor 
 		}
 	}
 	var encoded bytes.Buffer
-	if err := media.EncodePNGFast(&encoded, rgba); err != nil {
+	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 ImageMask PNG 失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
