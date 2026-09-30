@@ -160,6 +160,22 @@ func (c *LRU[K, V]) Len() int {
 }
 
 // Weight 返回当前缓存条目的总权重。
+// Values 返回当前缓存的全部值，按最近使用顺序。
+//
+// 调用方据此做收尾（如释放条目持有的重资源）时要注意：拿到的只是快照，之后
+// 缓存仍可能被并发修改；因此适合在已经停用该缓存之后调用。
+func (c *LRU[K, V]) Values() []V {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	values := make([]V, 0, len(c.items))
+	for element := c.order.Front(); element != nil; element = element.Next() {
+		if entry, ok := element.Value.(lruEntry[K, V]); ok {
+			values = append(values, entry.value)
+		}
+	}
+	return values
+}
+
 func (c *LRU[K, V]) Weight() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()

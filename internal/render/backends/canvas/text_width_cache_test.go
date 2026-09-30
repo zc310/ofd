@@ -14,7 +14,7 @@ func TestCachedTextWidthMatchesUncached(t *testing.T) {
 	if err != nil {
 		t.Skipf("DejaVu Sans 不可用: %v", err)
 	}
-	family, err := loadCachedEmbeddedFont("WidthCache", data, FontRegular, nil)
+	family, err := loadCachedEmbeddedFont(NewFonts(nil), "WidthCache", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("加载嵌入字体失败: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestCachedTextWidthSeparatesSizeAndValue(t *testing.T) {
 	if err != nil {
 		t.Skipf("DejaVu Sans 不可用: %v", err)
 	}
-	family, err := loadCachedEmbeddedFont("WidthCacheSize", data, FontRegular, nil)
+	family, err := loadCachedEmbeddedFont(NewFonts(nil), "WidthCacheSize", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("加载嵌入字体失败: %v", err)
 	}

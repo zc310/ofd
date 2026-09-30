@@ -55,14 +55,44 @@ type fallbackRegistration struct {
 // 空字符串只用于 fallbackRegistry 中的进程级默认字体；公开回退字体族名禁止为空。
 const defaultFallbackKey = ""
 
+// systemFontKey 以字体**文件**而非字体名标识一次系统字体加载。
+//
+// 此前用 (name, style) 作键，但 name 是逻辑名、文件是系统匹配的结果，两者不是
+// 一一对应：多个逻辑名（文档里声明的族名、回退候选表里的名字）会解析到同一个
+// 字体文件。实测渲染一个 5 页的中文文档时 simkai.ttf 被加载两次，各持一份
+// 11.8 MB 的字体数据与解析结果——键不同，资源却是同一份。
+//
+// 改用文件路径后这类重复自然合并。带上 size 与 mtime 是为了区分"同一路径上被
+// 换掉的字体"（测试环境换字体、或用户升级字体包）：那种情况下旧的解析结果必须
+// 失效，否则会继续用旧字形渲染。
 type systemFontKey struct {
-	name  string
+	path  string
+	size  int64
+	mtime int64
 	style drawing.FontStyle
 }
 
 type systemFontCacheEntry struct {
 	family   *canvas.FontFamily
 	renderMu *sync.Mutex
+	// holders 登记正在使用该字体族的字体引擎实例。
+	//
+	// 字体族本身很重：一个 CJK 字体约 50 MB（文件字节只占五分之一，其余是解码
+	// 后的字形轮廓）。此前缓存无上限也无淘汰，而每个 render.Document 各自持有
+	// 指针，长会话里浏览多个文档会持续累积。
+	//
+	// 有了 holders 才能安全淘汰：只要还有文档持有该族就不能动它——这同时也
+	// 保证了 fontRenderLocks 不会在文档仍在绘制时被删掉，导致同一字体拿到两把
+	// 锁而被并发渲染。降到 0 时才可以连同渲染锁一起释放。
+	holders map[*Fonts]struct{}
+}
+
+// retain 登记持有者。
+func (e *systemFontCacheEntry) retain(f *Fonts) {
+	if e.holders == nil {
+		e.holders = make(map[*Fonts]struct{}, 1)
+	}
+	e.holders[f] = struct{}{}
 }
 
 // embeddedFontKey 标识一次内嵌字体解析结果。相同字体数据、样式、族名和字形
@@ -94,6 +124,8 @@ type Fonts struct {
 	renderLocks    map[*canvas.FontFamily]*sync.Mutex
 	pathCacheMu    sync.Mutex
 	pathCache      map[fontPathKey]*canvas.Path
+	// closed 标记 Close 已调用，重复调用直接返回。
+	closed         bool
 	textLineMu     sync.Mutex
 	textLineCache  map[textLineKey]*canvas.Text
 	textWidthMu    sync.Mutex
@@ -308,29 +340,147 @@ func (p *Fonts) RenderLock(handle drawing.FontFamily) *sync.Mutex {
 // 重复字符串反复整形与解析字形轮廓。返回的 canvas.Path 不可变，跨对象
 // 复用安全；缓存有界，超出后整体清空。
 
-func loadCachedSystemFont(name string, style drawing.FontStyle) (*canvas.FontFamily, bool) {
-	key := systemFontKey{name: name, style: style}
+// Close 释放本实例持有的全部字体族引用。
+//
+// 字体族很重（一个 CJK 字体约 50 MB：文件字节只占五分之一，其余是解码后的
+// 字形轮廓），而渲染文档通常只在打开期间需要它们。文档关闭后若不释放，引用
+// 计数降不到 0，包级缓存就永远留着这份轮廓；WASM 侧浏览多个文档时这些内存
+// 会累积，而线性内存不归还给宿主。
+//
+// 幂等：重复调用不会重复释放。
+func (p *Fonts) Close() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.closed = true
+	// 三个字段都持有字体族：按资源 id 登记的、已锁定的回退族、以及回退面列表。
+	// 漏掉任何一个都会让对应字体留在全局缓存里。
+	families := make([]*canvas.FontFamily, 0, len(p.Fonts)+len(p.fallbacks)+len(p.fallbackFaces))
+	for _, family := range p.Fonts {
+		families = append(families, family)
+	}
+	for _, family := range p.fallbacks {
+		families = append(families, family)
+	}
+	for _, face := range p.fallbackFaces {
+		families = append(families, face.family)
+	}
+	p.Fonts = map[models.StRefID]*canvas.FontFamily{}
+	p.fallbacks = map[string]*canvas.FontFamily{}
+	p.fallbackFaces = nil
+	p.pathCache = map[fontPathKey]*canvas.Path{}
+	p.mu.Unlock()
+
+	releaseFontFamilies(families)
+}
+
+// releaseFontFamilies 解除这些字体族的持有者引用，无人再持有的从缓存与渲染锁
+// 表中移除。
+func releaseFontFamilies(families []*canvas.FontFamily) {
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	released := make(map[*canvas.FontFamily]bool, len(families))
+	for _, family := range families {
+		if family == nil || released[family] {
+			continue
+		}
+		released[family] = true
+		for key, entry := range systemFontCache {
+			if entry.family != family {
+				continue
+			}
+			entry.holders = nil
+			// 没人再持有：连同渲染锁一起移除，字体族随之可被回收。此刻仍持有
+			// 该族的文档都已释放过，删锁不会让同一字体拿到两把锁。
+			delete(systemFontCache, key)
+			delete(fontRenderLocks, family)
+		}
+	}
+}
+
+func loadCachedSystemFont(p *Fonts, name string, style drawing.FontStyle) (*canvas.FontFamily, bool) {
+	// 先把逻辑名解析成字体文件，键才建得准。解析不出来就走原路径让 canvas 报错，
+	// 不在这里替它猜。
+	filename, ok := canvas.FindSystemFont(name, canvasStyle(style))
+	if !ok {
+		return nil, false
+	}
+	key, ok := systemFontKeyForFile(filename, style)
+	if !ok {
+		return nil, false
+	}
+
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
 	if entry := systemFontCache[key]; entry != nil {
+		entry.retain(p)
+		slog.Debug("reuse system font", "family", name, "file", filename, "style", style)
 		return entry.family, true
 	}
 
 	family := canvas.NewFontFamily(name)
-	slog.Debug("load system font", "family", name, "style", style)
+	slog.Debug("load system font", "family", name, "file", filename, "style", style)
 	if err := family.LoadSystemFont(name, canvasStyle(style)); err != nil {
 		return nil, false
 	}
 	entry := &systemFontCacheEntry{family: family, renderMu: &sync.Mutex{}}
+	entry.retain(p)
 	systemFontCache[key] = entry
 	fontRenderLocks[family] = entry.renderMu
 	return family, true
 }
 
+// loadCachedFontFile 按确切的文件路径加载并缓存字体，返回共享的 FontFamily。
+//
+// 与 loadCachedSystemFont 的区别是调用方已经拿到了文件路径，不必再让 canvas 去
+// 匹配系统字体。两者共用同一张缓存表，因此"经族名匹配到的字体"与"直接按路径
+// 加载的同一文件"会合并成一份——这正是重复加载的来源。
+func loadCachedFontFile(p *Fonts, filename, name string, style drawing.FontStyle) (*canvas.FontFamily, bool) {
+	key, ok := systemFontKeyForFile(filename, style)
+	if !ok {
+		return nil, false
+	}
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	if entry := systemFontCache[key]; entry != nil {
+		entry.retain(p)
+		return entry.family, true
+	}
+	family := canvas.NewFontFamily(name)
+	slog.Debug("load font file", "family", name, "file", filename, "style", style)
+	if err := family.LoadFontFile(filename, canvasStyle(style)); err != nil {
+		return nil, false
+	}
+	entry := &systemFontCacheEntry{family: family, renderMu: &sync.Mutex{}}
+	entry.retain(p)
+	systemFontCache[key] = entry
+	fontRenderLocks[family] = entry.renderMu
+	return family, true
+}
+
+// systemFontKeyForFile 用字体文件的身份构造缓存键。
+func systemFontKeyForFile(filename string, style drawing.FontStyle) (systemFontKey, bool) {
+	info, err := os.Stat(filename)
+	if err != nil {
+		return systemFontKey{}, false
+	}
+	return systemFontKey{
+		path:  filename,
+		size:  info.Size(),
+		mtime: info.ModTime().UnixNano(),
+		style: style,
+	}, true
+}
+
 // loadCachedEmbeddedFont 按字体数据、样式、族名与字形映射缓存内嵌字体解析结果，
 // 使同一字体在多次转换（或多文档）间只做一次 fontfix 修复与 canvas 解析。返回的
 // 字体族注册了共享渲染锁，与系统字体缓存一致地串行化同一字体的绘制。
-func loadCachedEmbeddedFont(name string, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) (*canvas.FontFamily, error) {
+func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) (*canvas.FontFamily, error) {
 	key := embeddedFontKey{
 		name:           name,
 		style:          style,
@@ -554,7 +704,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 			p.mu.Lock()
 			mappings := p.glyphMappingList(id)
 			p.mu.Unlock()
-			if family, err := loadCachedEmbeddedFont(fontName, data, fontStyle, mappings); err == nil {
+			if family, err := loadCachedEmbeddedFont(p, fontName, data, fontStyle, mappings); err == nil {
 				return family, "", nil
 			}
 		}
@@ -571,7 +721,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 			return true
 		}
 		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(data))
-		if family, err := loadCachedEmbeddedFont(fontName, data, fontStyle, nil); err == nil {
+		if family, err := loadCachedEmbeddedFont(p, fontName, data, fontStyle, nil); err == nil {
 			matched = family
 			return false
 		}
@@ -599,7 +749,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		}
 	} else {
 		for _, candidate := range systemFontCandidates(ft) {
-			if family, ok := loadCachedSystemFont(candidate, fontStyle); ok {
+			if family, ok := loadCachedSystemFont(p, candidate, fontStyle); ok {
 				return family, "", nil
 			}
 		}
@@ -615,6 +765,12 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	if group != "" {
 		if files, ok := cjkFontFiles[group]; ok && len(files) > 0 {
 			if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
+				// 走缓存：这条路此前直接 LoadFontFile，同一个字体系在文档里出现多次就会
+				// 重复读入同一份十几 MB 的字体。实测渲染一个 5 页中文文档时 simkai.ttf
+				// 被读了两遍。
+				if cached, ok := loadCachedFontFile(p, fontPath, group, fontStyle); ok {
+					return cached, "", nil
+				}
 				slog.Debug("load fallback system font file", "family", group, "path", fontPath, "style", fontStyle)
 				if err := family.LoadFontFile(fontPath, canvasStyle(fontStyle)); err == nil {
 					return family, "", nil

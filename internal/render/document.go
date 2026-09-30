@@ -101,6 +101,19 @@ const (
 	defaultRenderDPI   = 96
 )
 
+// Close 释放文档持有的渲染期资源，最重要的是字体。
+//
+// 字体是这里最重的资源：一个 CJK 字体的轮廓约 50 MB，远大于文档本身。不显式
+// 释放时，包级字体缓存会一直持有它，浏览多个文档的会话里这些内存会累积。
+//
+// 幂等，且关闭后不应再使用该文档。
+func (d *Document) Close() {
+	if d == nil || d.fonts == nil {
+		return
+	}
+	d.fonts.Close()
+}
+
 func NewDocument(background color.Color, doc *parser.Document) *Document {
 	return NewDocumentWithDPI(background, doc, geom.DPI(defaultRenderDPI))
 }
