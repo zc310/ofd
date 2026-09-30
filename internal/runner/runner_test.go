@@ -500,6 +500,20 @@ func (e *wrappedError) Unwrap() error { return e.inner }
 // 字段从引入起就存在（随 NotifyTarget 一起），但 runner 从未读过它：server 把它
 // 存进任务记录，之后没有任何代码读它。留空收窄、填了就生效，中间没有第三种
 // 状态——否则又是那种"字段被接受了但没按你想的方式工作"的静默失效。
+// waitForSettled 等到投递队列彻底安静：既没有待投递也没有重试中的条目。
+func waitForSettled(t *testing.T, store *jobstore.Store) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pending, _ := store.ListDeliveries(jobstore.DeliveryPending, 0)
+		done, _ := store.ListDeliveries(jobstore.DeliveryDone, 0)
+		if len(pending) == 0 && len(done) == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestRunnerNotifyEventsNarrowDelivery(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -556,8 +570,19 @@ func TestRunnerNotifyEventsNarrowDelivery(t *testing.T) {
 			if tc.wantServed {
 				waitFor(t, "通知已送达", func() bool { return hits.Load() >= 1 })
 			} else {
-				// 不该发就不能发：等任务结束再确认一次投递表为空。
-				time.Sleep(150 * time.Millisecond)
+				// 等任务真的跑到终态，而不是睡固定时间再猜。睡眠会在负载高时
+				// 于任务完成前就断言，看到的是"还没投递"——恰好与期望一致，
+				// 于是测试通过；真正的回归（该收窄的没收窄）却要等任务完成
+				// 之后才暴露，那时就太晚了。这条断言本来就该以任务终态为
+				// 同步点。
+				waitFor(t, "任务已终结", func() bool {
+					job, _ := store.Get("j1")
+					return job != nil && job.State.Terminal()
+				})
+				// 终态后投递要么已入队要么已被拒。等一小段时间让投递循环
+				// 有机会把它取走——这一段是必要的，因为断言的是"最终没有"，
+				// 而不是"此刻还没有"。
+				waitForSettled(t, store)
 				if got := hits.Load(); got != 0 {
 					t.Errorf("被收窄的事件仍投递了 %d 次", got)
 				}
