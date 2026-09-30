@@ -525,9 +525,9 @@ func pdfJBIG2Standalone(ctx *model.Context, stream *types.StreamDict) ([]byte, b
 	}
 	if decode, found := stream.Find("Decode"); found {
 		if values, ok := decode.(types.Array); ok && len(values) >= 2 {
-			min, minOK := dereferencedPDFNumber(ctx, values[0])
-			max, maxOK := dereferencedPDFNumber(ctx, values[1])
-			if !minOK || !maxOK || min != 0 || max != 1 {
+			decodeMin, minOK := dereferencedPDFNumber(ctx, values[0])
+			decodeMax, maxOK := dereferencedPDFNumber(ctx, values[1])
+			if !minOK || !maxOK || decodeMin != 0 || decodeMax != 1 {
 				return nil, false
 			}
 		} else {

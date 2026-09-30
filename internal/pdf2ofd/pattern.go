@@ -60,8 +60,8 @@ func (p *pdfInterpreter) resolvePattern(resources types.Dict, name string) *pdfP
 	case types.Dict:
 		dict = value
 	case types.StreamDict:
-		copy := value
-		dict, stream = value.Dict, &copy
+		streamValue := value
+		dict, stream = value.Dict, &streamValue
 	case *types.StreamDict:
 		if value == nil {
 			return nil

@@ -134,8 +134,8 @@ func TestDecodeFreeFormPointsEdgeFlag3ReusesFirstEdge(t *testing.T) {
 		if point.flag != wantFlag[i] {
 			t.Fatalf("point %d flag = %d, want %d", i, point.flag, wantFlag[i])
 		}
-		close := func(a, b uint8) bool { d := int(a) - int(b); return d >= -2 && d <= 2 }
-		if !close(point.color.r, wantColor[i].r) || !close(point.color.g, wantColor[i].g) || !close(point.color.b, wantColor[i].b) {
+		withinTolerance := func(a, b uint8) bool { d := int(a) - int(b); return d >= -2 && d <= 2 }
+		if !withinTolerance(point.color.r, wantColor[i].r) || !withinTolerance(point.color.g, wantColor[i].g) || !withinTolerance(point.color.b, wantColor[i].b) {
 			t.Fatalf("point %d color = %+v, want %+v", i, point.color, wantColor[i])
 		}
 	}
@@ -264,10 +264,10 @@ func buildAdobeTensorPatchStream(corners [4][2]float64) []byte {
 	color := [3]uint8{200, 10, 10}
 	writer := &meshBitWriter{}
 	writer.write(0, 8)
-	max := float64(math.MaxUint32)
+	maxCoordinate := float64(math.MaxUint32)
 	for _, point := range points {
-		writer.write(uint32(point[0]*max), 32)
-		writer.write(uint32(point[1]*max), 32)
+		writer.write(uint32(point[0]*maxCoordinate), 32)
+		writer.write(uint32(point[1]*maxCoordinate), 32)
 	}
 	for i := 0; i < 4; i++ {
 		for _, component := range color {
@@ -280,15 +280,15 @@ func buildAdobeTensorPatchStream(corners [4][2]float64) []byte {
 // buildLatticeMeshStream 按行优先构造 Type 5 规则网格的位流（无 EdgeFlag）。
 func buildLatticeMeshStream(verticesPerRow int, colors [][3]uint8) []byte {
 	writer := &meshBitWriter{}
-	max := float64(math.MaxUint32)
+	maxCoordinate := float64(math.MaxUint32)
 	rows := len(colors) / verticesPerRow
 	for row := 0; row < rows; row++ {
 		for column := 0; column < verticesPerRow; column++ {
 			index := row*verticesPerRow + column
 			x := float64(column) / float64(verticesPerRow-1)
 			y := float64(row) / float64(rows-1)
-			writer.write(uint32(x*max), 32)
-			writer.write(uint32(y*max), 32)
+			writer.write(uint32(x*maxCoordinate), 32)
+			writer.write(uint32(y*maxCoordinate), 32)
 			for _, component := range colors[index] {
 				writer.write(uint32(component), 8)
 			}
