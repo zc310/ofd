@@ -1307,6 +1307,12 @@ func TestPDFImageDataSupportsOtherBitDepths(t *testing.T) {
 			want:    [][3]uint8{{0, 0, 0}, {255, 255, 255}},
 		},
 		{
+			name:    "8 位灰度直接编码",
+			dict:    gray(8),
+			content: []byte{32, 224},
+			want:    [][3]uint8{{32, 32, 32}, {224, 224, 224}},
+		},
+		{
 			name: "16 位灰度",
 			dict: types.Dict{
 				"Width": types.Integer(1), "Height": types.Integer(1),
