@@ -1392,6 +1392,32 @@ func TestFitTextBoundaryMovesTopUpWithoutMovingBaseline(t *testing.T) {
 	}
 }
 
+// TestFitTextBoundaryExtendsBottomForDescenders 保护下伸覆盖：基线落在边界底边
+// （码位 Y == Height）时字形下伸会落到边界外，被按 Boundary 裁剪的阅读器切掉；
+// 校正必须把底边下移到 baseline+descent，同时基线不动。
+func TestFitTextBoundaryExtendsBottomForDescenders(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	family := canvas.NewFontFamily("BoundaryBottom")
+	if err := family.LoadFont(data, 0, canvas.FontRegular); err != nil {
+		t.Fatalf("加载字体失败: %v", err)
+	}
+	const size = 10.0
+	face := family.Face(size*2.83465, canvas.Black, canvas.FontRegular, canvas.FontNormal)
+	x, y := 0.0, 10.0 // 基线落在边界底边
+	value := Text{X: 0, Y: 0, Width: 50, Height: 10, Size: size, TextCodes: []TextCode{{Value: "gjpqy", X: &x, Y: &y}}}
+	baseline := value.Y + y
+	fitTextBoundary(&value, face)
+	if got := value.Y + *value.TextCodes[0].Y; math.Abs(got-baseline) > 1e-6 {
+		t.Fatalf("基线位置被改动: %v -> %v", baseline, got)
+	}
+	if bottom := value.Y + value.Height; bottom < baseline+face.Metrics().Descent-1e-6 {
+		t.Fatalf("边界底边未覆盖下伸: bottom=%v baseline+descent=%v", bottom, baseline+face.Metrics().Descent)
+	}
+}
+
 // TestCreateTextCodeDeltasOffByDefault 不开开关时不该补全。
 func TestCreateTextCodeDeltasOffByDefault(t *testing.T) {
 	document := Document{
