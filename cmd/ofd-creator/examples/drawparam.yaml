@@ -150,7 +150,7 @@ pages:
             height: 19
             value: 'DrawParam: LineWidth 线宽'
             font: Noto Sans CJK SC
-            size: 14
+            size: 12
             fill_color: {}
             text_codes:
               - value: 'DrawParam: LineWidth 线宽'
@@ -313,7 +313,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 139
+            "y": 135
             width: 35
             height: 5
             value: 0.1mm
@@ -339,7 +339,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 147
+            "y": 143
             width: 35
             height: 5
             value: 0.5mm
@@ -365,7 +365,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 156
+            "y": 152
             width: 35
             height: 5
             value: 1.0mm
@@ -391,7 +391,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 166
+            "y": 162
             width: 35
             height: 5
             value: 2.0mm
@@ -417,7 +417,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 179
+            "y": 175
             width: 35
             height: 5
             value: 4.0mm
@@ -854,7 +854,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 125
+            "y": 121
             width: 35
             height: 5
             value: 2 2
@@ -883,7 +883,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 135
+            "y": 131
             width: 35
             height: 5
             value: 4 2
@@ -912,7 +912,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 145
+            "y": 141
             width: 35
             height: 5
             value: 8 4
@@ -941,7 +941,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 155
+            "y": 151
             width: 35
             height: 5
             value: 2 4
@@ -972,7 +972,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 165
+            "y": 161
             width: 35
             height: 5
             value: 1 2 4 2
@@ -1015,7 +1015,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 193
+            "y": 189
             width: 35
             height: 5
             value: Offset=0
@@ -1045,7 +1045,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 203
+            "y": 199
             width: 35
             height: 5
             value: Offset=3
@@ -1075,7 +1075,7 @@ pages:
             stroke_color: {}
           - type: text
             x: 155
-            "y": 213
+            "y": 209
             width: 35
             height: 5
             value: Offset=6
