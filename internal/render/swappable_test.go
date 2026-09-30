@@ -92,6 +92,8 @@ func (fakeFontEngine) FaceObject(FontFamily, models.TextObject, *CTColor) FontFa
 	return nil
 }
 func (fakeFontEngine) RenderLock(FontFamily) *sync.Mutex { return &sync.Mutex{} }
+
+func (fakeFontEngine) Close() {}
 func (fakeFontEngine) RegisterPageGlyphs(*parser.Document, *parser.Page, *models.PageContent) {
 }
 func (fakeFontEngine) UseFallbackFont(string) error              { return nil }

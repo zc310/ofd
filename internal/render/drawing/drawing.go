@@ -241,6 +241,9 @@ type FontEngine interface {
 	FaceObject(family FontFamily, object models.TextObject, fill *CTColor) FontFace
 	// RenderLock 返回串行化该字体族渲染的互斥锁。
 	RenderLock(family FontFamily) *sync.Mutex
+	// Close 释放该实例持有的字体资源。渲染文档关闭时调用，使无主的字体族
+	// 能被回收——字体很重，一个 CJK 字体约 50 MB。实现必须幂等。
+	Close()
 	// RegisterPageGlyphs 扫描页面文字并登记 Unicode→字形映射。
 	RegisterPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent)
 	// UseFallbackFont 使引擎在缺失字体时使用已全局注册的回退字体族。

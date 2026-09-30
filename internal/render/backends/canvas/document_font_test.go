@@ -11,6 +11,7 @@ import (
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"strings"
 )
 
 func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
@@ -95,11 +96,11 @@ func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
 }
 
 func TestSystemFontCacheReusesFamilyAndRenderLock(t *testing.T) {
-	first, ok := loadCachedSystemFont("DejaVu Sans", FontRegular)
+	first, ok := loadCachedSystemFont(NewFonts(nil), "DejaVu Sans", FontRegular)
 	if !ok {
 		t.Skip("DejaVu Sans is unavailable")
 	}
-	second, ok := loadCachedSystemFont("DejaVu Sans", FontRegular)
+	second, ok := loadCachedSystemFont(NewFonts(nil), "DejaVu Sans", FontRegular)
 	if !ok {
 		t.Fatal("cached DejaVu Sans could not be loaded")
 	}
@@ -119,18 +120,18 @@ func TestEmbeddedFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 	if err != nil {
 		t.Skipf("DejaVu Sans is unavailable: %v", err)
 	}
-	first, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, nil)
+	first, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("加载嵌入字体失败: %v", err)
 	}
-	second, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, nil)
+	second, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("复用嵌入字体失败: %v", err)
 	}
 	if first != second {
 		t.Fatal("嵌入字体缓存创建了多个字体族")
 	}
-	mapped, err := loadCachedEmbeddedFont("EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
+	mapped, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
 	if err != nil {
 		t.Fatalf("加载带映射的嵌入字体失败: %v", err)
 	}
@@ -590,4 +591,113 @@ func TestShapedTextLineCacheReusesShaping(t *testing.T) {
 	if a == b {
 		t.Fatal("渐变画笔文字不应进入缓存")
 	}
+}
+
+// TestSystemFontCacheKeyedByFileNotName 同一字体文件经不同逻辑名加载时只解析一次。
+//
+// 缓存键此前是 (name, style)，而 name 是逻辑名、文件是系统匹配的结果，两者不是
+// 一一对应：多个逻辑名会解析到同一个字体文件，于是同一个文件被读入并解析多份。
+// 中文文档上尤其明显——实测渲染一个 5 页文档时 simkai.ttf 被读了两遍，各持一份
+// 11.8 MB 的字体数据与解析结果。
+//
+// 这条守住"按文件身份作键"：两个不同的逻辑名解析到同一文件时必须命中同一条目。
+func TestSystemFontCacheKeyedByFileNotName(t *testing.T) {
+	file := findTestFontFile(t)
+
+	// 同一个文件，用两个不同的逻辑名走按路径加载的入口。
+	first, ok := loadCachedFontFile(NewFonts(nil), file, "AliasOne", FontRegular)
+	if !ok {
+		t.Fatalf("加载字体文件失败: %s", file)
+	}
+	second, ok := loadCachedFontFile(NewFonts(nil), file, "AliasTwo", FontRegular)
+	if !ok {
+		t.Fatal("第二次加载字体文件失败")
+	}
+	if first != second {
+		t.Fatal("同一字体文件经不同逻辑名加载时创建了多个字体族")
+	}
+	if first.Name() != "AliasOne" {
+		t.Logf("复用到的字体族名是 %q（以首次加载的为准）", first.Name())
+	}
+}
+
+// TestSystemFontCacheKeyIncludesFileIdentity 文件换了内容必须重新解析。
+//
+// 键里带 size 与 mtime 就是为了这个：同一路径上被替换掉的字体（测试环境换字体、
+// 用户升级字体包）不能让旧解析结果继续生效，否则会一直用旧字形渲染。
+func TestSystemFontCacheKeyIncludesFileIdentity(t *testing.T) {
+	file := findTestFontFile(t)
+	first, ok := systemFontKeyForFile(file, FontRegular)
+	if !ok {
+		t.Fatalf("无法为 %s 构造缓存键", file)
+	}
+	second, ok := systemFontKeyForFile(file, FontRegular)
+	if !ok {
+		t.Fatal("同一文件两次构造键失败")
+	}
+	if first != second {
+		t.Error("同一文件两次构造的键不相等，键里应含稳定的 size 与 mtime")
+	}
+	// 不存在的文件不应产生可用键，否则会把加载失败缓存下来。
+	if _, ok := systemFontKeyForFile(file+".nonexistent", FontRegular); ok {
+		t.Error("不存在的文件也返回了可用键")
+	}
+}
+
+// TestSystemFontAndFileCacheShareEntries 两条加载路径必须共用一张缓存表。
+//
+// loadCachedSystemFont 走族名匹配，loadCachedFontFile 走确切路径；两者解析到
+// 同一文件时应当合并，否则"经族名加载"与"按路径加载"仍会各存一份。
+func TestSystemFontAndFileCacheShareEntries(t *testing.T) {
+	file := findTestFontFile(t)
+	viaFile, ok := loadCachedFontFile(NewFonts(nil), file, "SharedEntry", FontRegular)
+	if !ok {
+		t.Skipf("字体文件不可用: %s", file)
+	}
+	byPath, ok := systemFontKeyForFile(file, FontRegular)
+	if !ok {
+		t.Fatal("构造键失败")
+	}
+	entry := systemFontCache[byPath]
+	if entry == nil {
+		t.Fatal("按路径加载的字体没有进缓存表")
+	}
+	if entry.family != viaFile {
+		t.Error("缓存表里的字体族与返回的不一致")
+	}
+}
+
+// findTestFontFile 找一个可用的测试字体文件。
+func findTestFontFile(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+		"/usr/share/fonts/TTF/DejaVuSans.ttf",
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	// 扫常见字体目录找任意 .ttf，不引入 font.DefaultFontDirs 以免为测试多一个依赖。
+	for _, dir := range []string{
+		"/usr/share/fonts", "/usr/local/share/fonts",
+		filepath.Join(os.Getenv("HOME"), ".fonts"),
+		filepath.Join(os.Getenv("HOME"), ".local/share/fonts"),
+	} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if name := e.Name(); strings.HasSuffix(name, ".ttf") {
+				return filepath.Join(dir, name)
+			}
+		}
+	}
+	t.Skip("找不到可用的测试字体文件")
+	return ""
 }

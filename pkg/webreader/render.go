@@ -285,7 +285,14 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Reso
 		_ = document.UseFallbackFont(family)
 	}
 	if r.renderDocs == nil {
-		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, nil)
+		// 淘汰时必须释放文档：它持有的字体族是全局缓存里最重的部分（一个 CJK
+		// 字体约 50 MB），不释放的话浏览多个文档时缓存只增不减。
+		//
+		// 同步调用是安全的：淘汰回调在 LRU 锁内执行，Close 走的是 fontCacheMu，
+		// 两者之间没有回路。
+		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, func(_ renderDocumentKey, evicted *render.Document) {
+			evicted.Close()
+		})
 	}
 	r.renderDocs.Add(key, document)
 	return document, nil
@@ -302,14 +309,38 @@ func (r *Reader) Close() error {
 		return nil
 	}
 	r.closed = true
+	// r.pages 里的渲染文档是 Open 时逐个建的，字体正是它们加载的；renderDocs
+	// 是之后按需建的另一个缓存。两批实例不同，只关后者等于没关。
+	pageDocs := make([]*render.Document, 0, len(r.pages))
+	seen := make(map[*render.Document]bool, len(r.pages))
+	for _, ref := range r.pages {
+		if ref.document != nil && !seen[ref.document] {
+			seen[ref.document] = true
+			pageDocs = append(pageDocs, ref.document)
+		}
+	}
 	r.pages = nil
 	r.text = nil
 	r.search = nil
 	r.fallbackFamily = ""
 	r.fallbackFamilies = nil
 	r.renderDocsMu.Lock()
+	cached := r.renderDocs
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
+	// 释放每个渲染文档持有的字体。r.pages 里的 document 与缓存里的是同一批，
+	// 这里统一按缓存里的逐个释放即可——Close 幂等，重复调用不会误删别人的字体。
+	if cached != nil {
+		for _, doc := range cached.Values() {
+			if !seen[doc] {
+				doc.Close()
+			}
+		}
+	}
+	// Close 幂等，重复调用不会误删他人仍在用的字体。
+	for _, doc := range pageDocs {
+		doc.Close()
+	}
 	ofd := r.ofd
 	r.ofd = nil
 	if ofd == nil {
