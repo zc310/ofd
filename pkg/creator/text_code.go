@@ -29,7 +29,12 @@ func completeTextCodes(codes []TextCode, value string, width, height, size, hSca
 		// 单段整体文本：X/Y 必为默认值，直接构造，零多余拷贝。
 		x := 0.0
 		y := baseline
-		return []TextCode{{Value: value, X: &x, Y: &y}}
+		code := TextCode{Value: value, X: &x, Y: &y}
+		if completeDeltas && runeCountOf(value) > 1 {
+			face := findTextFace(fontName, fonts, size, weight, italic)
+			code.DeltaX, code.DeltaY = makeTextCodeDeltas([]rune(value), width, size, hScale, direction, runeCountOf(value), face)
+		}
+		return []TextCode{code}
 	}
 	// 已提供 codes：先扫描是否真的需要改写，不需要则原样返回（零分配）。
 	changed := false
