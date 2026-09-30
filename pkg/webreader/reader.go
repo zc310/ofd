@@ -578,6 +578,7 @@ type Reader struct {
 	mu               sync.RWMutex
 	cacheMu          sync.Mutex
 	renderDocsMu     sync.Mutex
+	metadataMu       sync.Mutex
 	closed           bool
 	ofd              *parser.OFD
 	pages            []pageRef
@@ -587,6 +588,58 @@ type Reader struct {
 	text             *utils.LRU[int, []TextRun]
 	search           *utils.LRU[int, searchPage]
 	options          RenderOptions
+	metadata         *readerMetadata
+}
+
+// readerMetadata 缓存文档生命周期内不变的元数据，避免重复计算。
+type readerMetadata struct {
+	outlineOnce sync.Once
+	outlineVal  OutlineTree
+	outlineErr  error
+
+	preferencesOnce sync.Once
+	preferencesVal  ViewPreferences
+	preferencesErr  error
+
+	pageLinksOnce sync.Once
+	pageLinksVal  []PageLink
+	pageLinksErr  error
+
+	signaturesOnce sync.Once
+	signaturesVal  []SignatureInfo
+	signaturesErr  error
+
+	annotationsOnce sync.Once
+	annotationsVal  []AnnotationInfo
+	annotationsErr  error
+
+	pageMediaActionsOnce sync.Once
+	pageMediaActionsVal  []PageLink
+	pageMediaActionsErr  error
+
+	statsOnce sync.Once
+	statsVal  DocumentStats
+	statsErr  error
+
+	fontListOnce sync.Once
+	fontListVal  []FontInfo
+	fontListErr  error
+
+	fontsOnce sync.Once
+	fontsVal  []FontResource
+	fontsErr  error
+
+	versionsOnce sync.Once
+	versionsVal  []VersionInfo
+	versionsErr  error
+
+	attachmentsOnce sync.Once
+	attachmentsVal  []AttachmentInfo
+	attachmentsErr  error
+
+	mediaOnce sync.Once
+	mediaVal  []MediaInfo
+	mediaErr  error
 }
 
 type searchPage struct {
@@ -631,8 +684,9 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	}
 
 	r := &Reader{
-		ofd:     ofd,
-		options: RenderOptions{DPI: defaultDPI, Background: color.Transparent},
+		ofd:      ofd,
+		options:  RenderOptions{DPI: defaultDPI, Background: color.Transparent},
+		metadata: &readerMetadata{},
 	}
 	for documentIndex, document := range ofd.Documents {
 		renderDocument := render.NewDocument(r.options.Background, document)
@@ -829,6 +883,15 @@ func (r *Reader) Outline() (OutlineTree, error) {
 	if r.ofd == nil {
 		return OutlineTree{}, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.outlineOnce.Do(func() {
+		r.metadata.outlineVal = r.computeOutline()
+	})
+	return r.metadata.outlineVal, r.metadata.outlineErr
+}
+
+func (r *Reader) computeOutline() OutlineTree {
 	var result OutlineTree
 	base := 0
 	for _, document := range r.ofd.Documents {
@@ -866,7 +929,7 @@ func (r *Reader) Outline() (OutlineTree, error) {
 		}
 		base += len(document.Pages)
 	}
-	return result, nil
+	return result
 }
 
 // Preferences 返回文档声明的阅读器显示偏好（取第一个声明了偏好的文档体）。
@@ -883,6 +946,15 @@ func (r *Reader) Preferences() (ViewPreferences, error) {
 	if r.ofd == nil {
 		return ViewPreferences{}, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.preferencesOnce.Do(func() {
+		r.metadata.preferencesVal = r.computePreferences()
+	})
+	return r.metadata.preferencesVal, r.metadata.preferencesErr
+}
+
+func (r *Reader) computePreferences() ViewPreferences {
 	for _, document := range r.ofd.Documents {
 		if document == nil || document.VPreferences == nil {
 			continue
@@ -898,9 +970,9 @@ func (r *Reader) Preferences() (ViewPreferences, error) {
 			}
 			result.Zoom = preferences.Zoom.Value
 		}
-		return result, nil
+		return result
 	}
-	return ViewPreferences{}, nil
+	return ViewPreferences{}
 }
 
 // convertOutlineDest 把 OFD 目标转换为对调用方友好的位置与缩放描述。
@@ -1047,6 +1119,15 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.fontsOnce.Do(func() {
+		r.metadata.fontsVal, r.metadata.fontsErr = r.computeFonts()
+	})
+	return r.metadata.fontsVal, r.metadata.fontsErr
+}
+
+func (r *Reader) computeFonts() ([]FontResource, error) {
 	resources := make([]FontResource, 0)
 	seen := make(map[string]struct{})
 	for documentIndex, document := range r.ofd.Documents {
@@ -1089,6 +1170,15 @@ func (r *Reader) FontList() ([]FontInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.fontListOnce.Do(func() {
+		r.metadata.fontListVal, r.metadata.fontListErr = r.computeFontList()
+	})
+	return r.metadata.fontListVal, r.metadata.fontListErr
+}
+
+func (r *Reader) computeFontList() ([]FontInfo, error) {
 	fonts := make([]FontInfo, 0)
 	seen := make(map[string]struct{})
 	for documentIndex, document := range r.ofd.Documents {
@@ -1233,6 +1323,15 @@ func (r *Reader) Versions() ([]VersionInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.versionsOnce.Do(func() {
+		r.metadata.versionsVal, r.metadata.versionsErr = r.computeVersions()
+	})
+	return r.metadata.versionsVal, r.metadata.versionsErr
+}
+
+func (r *Reader) computeVersions() ([]VersionInfo, error) {
 	infos := make([]VersionInfo, 0)
 	for scope, document := range r.ofd.Documents {
 		if document == nil || scope >= len(r.ofd.DocBodies) {
@@ -1311,6 +1410,15 @@ func (r *Reader) Attachments() ([]AttachmentInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.attachmentsOnce.Do(func() {
+		r.metadata.attachmentsVal, r.metadata.attachmentsErr = r.computeAttachments()
+	})
+	return r.metadata.attachmentsVal, r.metadata.attachmentsErr
+}
+
+func (r *Reader) computeAttachments() ([]AttachmentInfo, error) {
 	infos := make([]AttachmentInfo, 0)
 	for scope, document := range r.ofd.Documents {
 		if document == nil || document.Document.Attachments == nil {
@@ -1447,6 +1555,15 @@ func (r *Reader) Media() ([]MediaInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.mediaOnce.Do(func() {
+		r.metadata.mediaVal, r.metadata.mediaErr = r.computeMedia()
+	})
+	return r.metadata.mediaVal, r.metadata.mediaErr
+}
+
+func (r *Reader) computeMedia() ([]MediaInfo, error) {
 	infos := make([]MediaInfo, 0)
 	for scope, document := range r.ofd.Documents {
 		if document == nil {
@@ -1538,6 +1655,15 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.annotationsOnce.Do(func() {
+		r.metadata.annotationsVal, r.metadata.annotationsErr = r.computeAnnotations()
+	})
+	return r.metadata.annotationsVal, r.metadata.annotationsErr
+}
+
+func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 	infos := make([]AnnotationInfo, 0)
 	pageIndex := make(map[models.StID]int, len(r.pages))
 	for index, ref := range r.pages {
@@ -1697,6 +1823,15 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.pageLinksOnce.Do(func() {
+		r.metadata.pageLinksVal, r.metadata.pageLinksErr = r.computePageLinks()
+	})
+	return r.metadata.pageLinksVal, r.metadata.pageLinksErr
+}
+
+func (r *Reader) computePageLinks() ([]PageLink, error) {
 	pageIndex := make(map[models.StID]int, len(r.pages))
 	for index, ref := range r.pages {
 		if ref.page != nil {
@@ -1974,6 +2109,15 @@ func (r *Reader) PageMediaActions() ([]PageLink, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.pageMediaActionsOnce.Do(func() {
+		r.metadata.pageMediaActionsVal, r.metadata.pageMediaActionsErr = r.computePageMediaActions()
+	})
+	return r.metadata.pageMediaActionsVal, r.metadata.pageMediaActionsErr
+}
+
+func (r *Reader) computePageMediaActions() ([]PageLink, error) {
 	actions := make([]PageLink, 0)
 	seenDocument := make(map[int]bool)
 	for index, ref := range r.pages {
@@ -2065,6 +2209,15 @@ func (r *Reader) Signatures() ([]SignatureInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.signaturesOnce.Do(func() {
+		r.metadata.signaturesVal, r.metadata.signaturesErr = r.computeSignatures()
+	})
+	return r.metadata.signaturesVal, r.metadata.signaturesErr
+}
+
+func (r *Reader) computeSignatures() ([]SignatureInfo, error) {
 	pageIndex := make(map[models.StID]int, len(r.pages))
 	for index, ref := range r.pages {
 		if ref.page != nil {
@@ -2196,6 +2349,15 @@ func (r *Reader) Stats() (DocumentStats, error) {
 	if r.closed {
 		return DocumentStats{}, errors.New("文档引擎已经关闭")
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.statsOnce.Do(func() {
+		r.metadata.statsVal, r.metadata.statsErr = r.computeStats()
+	})
+	return r.metadata.statsVal, r.metadata.statsErr
+}
+
+func (r *Reader) computeStats() (DocumentStats, error) {
 	stats := DocumentStats{}
 	if r.ofd == nil {
 		return stats, nil
