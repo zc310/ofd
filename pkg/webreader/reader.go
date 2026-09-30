@@ -38,6 +38,18 @@ const (
 	// 避免浏览/搜索大文档时把所有页面的布局快照都留在内存中。
 	textCacheCapacity   = 64
 	searchCacheCapacity = 64
+	// textCacheBytes 与 searchCacheBytes 是上面两个缓存的字节预算。
+	//
+	// 预算不是可有可无的补充：一页文字的体积随文档密度差两个数量级（实测稀疏页
+	// 1.4 KB、密集页 154 KB），只按页数封顶时缓存占用会在 90 KB 到 9.8 MB 之间
+	// 浮动，调用方无法预判。WASM 侧的可用内存有限，这种不确定性会直接表现为
+	// 某个文档能开、换个文档就 OOM。
+	//
+	// 取 16 MB 是因为它高于常见文档的实际占用（典型页 16 KB，64 页约 1 MB），
+	// 又给密集文档（ano.ofd 每页 154 KB）留出约 100 页的余量；条目数上限仍在
+	// 生效，所以稀疏文档最多也就是 64 页。
+	textCacheBytes   = 16 << 20
+	searchCacheBytes = 16 << 20
 )
 
 const (
@@ -126,8 +138,8 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 		_ = ofd.Close()
 		return nil, errors.New("OFD 文档没有页面")
 	}
-	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
-	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
+	r.text = newTextCache()
+	r.search = newSearchCache()
 	return r, nil
 }
 
