@@ -11,6 +11,9 @@
 # 注意：test/testdata/huawei.ofd 是外部收集样例（README 来源分类），本配置为反推复刻，
 # 输出到 /tmp，不覆盖 fixture。
 
+#
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/huawei.yaml -o test/testdata/huawei.ofd --format auto --deterministic --validate --complete-text-code-deltas
 version: 1
 document:
   id: 68e2a11b94cd4a8db7c9001f00000000

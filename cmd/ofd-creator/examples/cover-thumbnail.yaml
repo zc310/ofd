@@ -5,7 +5,7 @@
 # 输出 <Thumbnail> 子元素）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/cover-thumbnail.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/cover-thumbnail.yaml -o test/testdata/cover-thumbnail.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/cover-thumbnail.yaml -o test/testdata/cover-thumbnail.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

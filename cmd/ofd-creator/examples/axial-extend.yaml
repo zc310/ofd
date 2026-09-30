@@ -2,7 +2,7 @@
 # 轴向渐变 Extend 示例；轴线短于矩形，分别展示 Extend 0、1、2、3。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/axial-extend.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/axial-extend.yaml -o test/testdata/axial-extend.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/axial-extend.yaml -o test/testdata/axial-extend.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

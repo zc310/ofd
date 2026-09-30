@@ -3,7 +3,7 @@
 # 字号、轴向与径向渐变文字、纯色与半透明文字、等宽字体。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml -o test/testdata/font-styles.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/font-styles.yaml -o test/testdata/font-styles.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

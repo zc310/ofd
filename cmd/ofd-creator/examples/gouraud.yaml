@@ -5,7 +5,7 @@
 # 区域是透明透出还是被 BackColor 填充）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud.yaml -o test/testdata/gouraud.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud.yaml -o test/testdata/gouraud.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

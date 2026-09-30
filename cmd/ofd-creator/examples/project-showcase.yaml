@@ -1,7 +1,7 @@
 # OFD 项目介绍页示例
 #
 # 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/project-showcase.yaml -o test/testdata/project-showcase.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/project-showcase.yaml -o test/testdata/project-showcase.ofd --format auto --deterministic --validate --complete-text-code-deltas
 #
 # 页面中的 GitHub 地址支持点击打开：
 #   https://github.com/zc310/ofd

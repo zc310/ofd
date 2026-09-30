@@ -8,7 +8,7 @@
 #   遮挡处移除 2 条水印文字（27→25），以保持内容对象数与 MaxUnitID=37 不变
 #   （pkg/watermark 的自动 ID 测试依赖该值）。
 # 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/annotations.yaml -o test/testdata/annotations.ofd --validate --deterministic
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/annotations.yaml -o test/testdata/annotations.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 

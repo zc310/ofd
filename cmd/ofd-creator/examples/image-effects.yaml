@@ -2,7 +2,7 @@
 # 图片效果示例；蓝色小图分别演示显式 `Clips` 圆角裁剪与圆角边框、ImageMask 半透明蒙版和损坏资源的 Substitution 替代图。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/image-effects.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/image-effects.yaml -o test/testdata/image-effects.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/image-effects.yaml -o test/testdata/image-effects.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:
