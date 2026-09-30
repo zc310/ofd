@@ -120,6 +120,8 @@ node cmd/ofd-wasm/web/test/local-fonts.test.mjs       # 单个文件
 make build-wasm
 ```
 
+构建会自动检测 `wasm-opt`：找到时优化 WASM，未找到时显示警告并使用未优化版本。
+
 该命令会生成：
 
 ```text
