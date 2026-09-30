@@ -576,7 +576,7 @@ type OpenOptions struct {
 // Reader 负责持有文档资源，使用完毕后必须调用 Close。
 type Reader struct {
 	mu               sync.RWMutex
-	cacheMu          sync.Mutex
+	cacheMu          sync.RWMutex
 	renderDocsMu     sync.Mutex
 	metadataMu       sync.Mutex
 	closed           bool
@@ -1097,8 +1097,8 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
+	r.cacheMu.RLock()
+	defer r.cacheMu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -2532,8 +2532,8 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	query = strings.TrimSpace(query)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
+	r.cacheMu.RLock()
+	defer r.cacheMu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -2578,16 +2578,34 @@ func indexRunes(text, needle []rune) int {
 	if len(needle) == 0 {
 		return 0
 	}
-	for index := 0; index+len(needle) <= len(text); index++ {
-		matched := true
-		for offset := range needle {
-			if text[index+offset] != needle[offset] {
-				matched = false
-				break
-			}
+	if len(needle) > len(text) {
+		return -1
+	}
+	lps := make([]int, len(needle))
+	length := 0
+	for i := 1; i < len(needle); {
+		if needle[i] == needle[length] {
+			length++
+			lps[i] = length
+			i++
+		} else if length > 0 {
+			length = lps[length-1]
+		} else {
+			lps[i] = 0
+			i++
 		}
-		if matched {
-			return index
+	}
+	for i, j := 0, 0; i < len(text); {
+		if text[i] == needle[j] {
+			i++
+			j++
+			if j == len(needle) {
+				return i - j
+			}
+		} else if j > 0 {
+			j = lps[j-1]
+		} else {
+			i++
 		}
 	}
 	return -1
@@ -2799,9 +2817,13 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}
 
-	var output bytes.Buffer
+	estimatedSize := int(pixels * 4)
+	if estimatedSize < 1024 {
+		estimatedSize = 1024
+	}
+	output := bytes.NewBuffer(make([]byte, 0, estimatedSize))
 	if format == RenderSVG {
-		if err := page.Write(&output, "svg"); err != nil {
+		if err := page.Write(output, "svg"); err != nil {
 			return nil, fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
 		}
 		return output.Bytes(), nil
@@ -2809,18 +2831,22 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI))
 	if format == RenderJPG {
 		rendered = opaqueImage(rendered, color.White)
-		if err := jpeg.Encode(&output, rendered, &jpeg.Options{Quality: 90}); err != nil {
+		if err := jpeg.Encode(output, rendered, &jpeg.Options{Quality: 90}); err != nil {
 			return nil, fmt.Errorf("编码第 %d 页 JPG 失败: %w", index, err)
 		}
 		return output.Bytes(), nil
 	}
-	if err := media.EncodePNGLevel(&output, rendered, 7); err != nil {
+	if err := media.EncodePNGLevel(output, rendered, 7); err != nil {
 		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
 	}
 	return output.Bytes(), nil
 }
 
 func opaqueImage(source image.Image, background color.Color) image.Image {
+	if rgba, ok := source.(*image.RGBA); ok {
+		draw.Draw(rgba, rgba.Bounds(), &image.Uniform{C: background}, image.Point{}, draw.Src)
+		return rgba
+	}
 	bounds := source.Bounds()
 	result := image.NewRGBA(bounds)
 	draw.Draw(result, bounds, &image.Uniform{C: background}, image.Point{}, draw.Src)
@@ -2970,13 +2996,4 @@ func cloneTextRuns(source []TextRun) []TextRun {
 		cloned[index].Glyphs = append([]Glyph(nil), run.Glyphs...)
 	}
 	return cloned
-}
-
-func sameColor(left, right color.Color) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	lr, lg, lb, la := left.RGBA()
-	rr, rg, rb, ra := right.RGBA()
-	return lr == rr && lg == rg && lb == rb && la == ra
 }
