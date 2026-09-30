@@ -7,6 +7,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"crypto/sha256"
 	"github.com/tdewolff/canvas"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -805,4 +806,78 @@ func copyTestFont(t *testing.T) string {
 		t.Fatalf("写入临时字体失败: %v", err)
 	}
 	return path
+}
+
+// TestSystemFontCacheStoresOneEntryPerFile 同一个字体文件在缓存里只存一份。
+//
+// 这是一次性排查的结论固化下来的：系统字体缓存的键曾是 (逻辑名, 样式)，而逻辑名
+// 与文件不是一一对应，多个名字会解析到同一个文件，于是同一份字体被读入并解析多
+// 遍——一个 CJK 字体约 50 MB，重复一份就是白付 50 MB 和一次解析。
+//
+// 直接数缓存里每个文件路径有几条即可判定，不需要暴露任何诊断接口。
+func TestSystemFontCacheStoresOneEntryPerFile(t *testing.T) {
+	file := findTestFontFile(t)
+
+	// 同一个文件用两个不同的逻辑名加载。
+	if _, ok := loadCachedFontFile(NewFonts(nil), file, "AliasOne", FontRegular); !ok {
+		t.Skipf("字体文件不可用: %s", file)
+	}
+	if _, ok := loadCachedFontFile(NewFonts(nil), file, "AliasTwo", FontRegular); !ok {
+		t.Fatal("第二次加载字体文件失败")
+	}
+	// 样式不进这项检查：不同样式是不同的渲染需求，本就该各存一条。这里只守
+	// "同一文件 + 同一样式"不被重复存储。
+
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	perFile := map[string]int{}
+	for key := range systemFontCache {
+		perFile[key.path]++
+	}
+	for path, n := range perFile {
+		if n > 1 {
+			t.Errorf("字体文件 %s 在缓存里有 %d 条，期望 1 条", filepath.Base(path), n)
+		}
+	}
+}
+
+// TestEmbeddedFontsArePerDocument 内嵌字体按文档持有，不进全局表。
+//
+// 内嵌字体是文档自带资源，每份文档的字节都不同，跨文档复用价值低；而放进全局
+// 缓存意味着永远无法回收。改成按 Fonts 实例持有后随文档关闭释放。
+//
+// 这条守着"别把它挪回全局"：那是内存问题，不是风格问题。
+func TestEmbeddedFontsArePerDocument(t *testing.T) {
+	fontsA := NewFonts(nil)
+	fontsB := NewFonts(nil)
+
+	if fontsA.embeddedFonts == nil || fontsB.embeddedFonts == nil {
+		t.Fatal("两个实例都应有独立的内嵌字体表")
+	}
+	key := embeddedFontKey{name: "X", dataDigest: sha256.Sum256([]byte("x"))}
+	fontsA.embeddedFonts[key] = nil
+	if _, shared := fontsB.embeddedFonts[key]; shared {
+		t.Error("两个文档实例的内嵌字体表是同一个")
+	}
+}
+
+// TestCloseReleasesEmbeddedFonts 关闭后内嵌字体与修复器一并释放。
+//
+// 内嵌字体的解析结果（含 fontfix.Repairer 持有的修复后字体与 cmap）只对本实例
+// 有意义，文档关闭即成垃圾；不清掉的话它们会随 Fonts 实例一直活着。
+func TestCloseReleasesEmbeddedFonts(t *testing.T) {
+	fonts := NewFonts(nil)
+	fonts.embeddedRepairers[[sha256.Size]byte{7}] = nil
+	fonts.Fonts[models.StRefID(1)] = nil
+
+	fonts.Close()
+
+	if len(fonts.embeddedFonts) != 0 {
+		t.Errorf("关闭后仍持有 %d 个内嵌字体族", len(fonts.embeddedFonts))
+	}
+	if len(fonts.embeddedRepairers) != 0 {
+		t.Errorf("关闭后仍持有 %d 个修复器", len(fonts.embeddedRepairers))
+	}
+	// 幂等：重复关闭不应出问题。
+	fonts.Close()
 }
