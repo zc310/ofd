@@ -1783,7 +1783,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 			built := builtItem{id: s.allocate(), item: item}
 			switch value := item.(type) {
 			case Text:
-				value.TextCodes = completeTextCodes(value.TextCodes, value.Value, value.Width, value.Height, value.Size, value.HScale, value.ReadDirection, value.Font, s.document.Fonts, value.Weight, value.Italic, s.completeTextCodeDeltas)
+				value.TextCodes = completeTextCodes(value.TextCodes, value.Value, value.Height, value.Size, value.HScale, value.ReadDirection, value.Font, s.document.Fonts, value.Weight, value.Italic, s.completeTextCodeDeltas)
 				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if err := validateText(value); err != nil {

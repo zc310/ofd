@@ -1295,6 +1295,75 @@ func TestCreateTextCodeDeltasWithoutExplicitCodes(t *testing.T) {
 	}
 }
 
+// TestCreateTextCodeDeltasFallBackForMissingGlyph 保护缺字回退：字体内没有该字形时
+// TextWidth 返回的是 .notdef 推进量（通常非 0），若直接当字符宽度会让补出的 Delta
+// 偏小、文字挤在一起。用只含西文的字体排中文即可复现，此时应按 em 宽兜底。
+func TestCreateTextCodeDeltasFallBackForMissingGlyph(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	document := Document{
+		ID:    "missing-glyph-deltas",
+		Fonts: []Font{{Name: "Embedded Sans", Format: "ttf", Data: data}},
+		Pages: []Page{{Items: []Item{
+			Text{X: 1, Y: 2, Width: 60, Height: 14, Size: 10, Value: "中文测试", Font: "Embedded Sans"},
+		}}},
+	}
+	out, err := MarshalWithOptions(document, CreateOptions{CompleteTextCodeDeltas: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd := newTestOFD(t, out)
+	defer ofd.Close()
+	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
+	if len(code.DeltaX) != 3 {
+		t.Fatalf("中文字符串应补出 3 个 DeltaX，实际 %v", code.DeltaX)
+	}
+	for i, delta := range code.DeltaX {
+		if math.Abs(delta-10) > 0.01 {
+			t.Fatalf("缺字应回退到 em 宽 10mm，DeltaX[%d]=%v（全角字宽 10mm，.notdef 约 5.4mm）", i, delta)
+		}
+	}
+}
+
+// TestChineseFontGroupResolvesAlias 保护中文字体别名解析：系统字体索引只认中文
+// 族名（如「宋体」）时，英文名（如 SimSun）也必须归到同一组，才能用指定字体度量。
+func TestChineseFontGroupResolvesAlias(t *testing.T) {
+	for _, name := range []string{"SimSun", "宋体", "NSimSun"} {
+		names, _, ok := chineseFontGroup(name)
+		if !ok {
+			t.Fatalf("%q 应识别为宋体组", name)
+		}
+		hasSong := false
+		for _, candidate := range names {
+			if candidate == "宋体" {
+				hasSong = true
+				break
+			}
+		}
+		if !hasSong {
+			t.Errorf("%q 所属组应包含「宋体」，实际 %v", name, names)
+		}
+	}
+	if _, _, ok := chineseFontGroup("DejaVu Sans"); ok {
+		t.Error("西文字体不应归入中文字体组")
+	}
+}
+
+// TestLoadSystemFontFamilyResolvesChineseAlias 本机装有宋体时，SimSun 必须解析到
+// 含中文字形的宋体，而不是被候选列表带到别的字体。
+func TestLoadSystemFontFamilyResolvesChineseAlias(t *testing.T) {
+	family := loadSystemFontFamily("SimSun", canvas.FontRegular)
+	if family == nil {
+		t.Skip("本机未安装宋体")
+	}
+	face := family.Face(10*2.83465, canvas.Black, canvas.FontRegular, canvas.FontNormal)
+	if face == nil || face.Font == nil || face.Font.GlyphIndex('宋') == 0 {
+		t.Fatal("SimSun 未解析到包含中文字形的宋体")
+	}
+}
+
 // TestCreateTextCodeDeltasOffByDefault 不开开关时不该补全。
 func TestCreateTextCodeDeltasOffByDefault(t *testing.T) {
 	document := Document{
