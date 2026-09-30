@@ -219,10 +219,15 @@ func TestAnalyzeResourceFixtures(t *testing.T) {
 	if drawParamReport.ColorSpaces.Declared != 1 || drawParamReport.Fonts.Declared != 1 {
 		t.Fatalf("resource summaries = colors %+v fonts %+v", drawParamReport.ColorSpaces, drawParamReport.Fonts)
 	}
-	if drawParamReport.Resources.Files != 2 {
-		t.Fatalf("resource files = %d, want 2", drawParamReport.Resources.Files)
+	// 资源文件数 = 公共资源 + 文档资源（见 analyzer.go 的 ResourceFiles）。
+	// 旧版 fixture 里有 PublicRes.xml 和 DocumentRes.xml 两个文件；e3c0a9f 用更新
+	// 后的创建器重建后只剩 DocumentRes.xml，所以是 1 不是 2。
+	if drawParamReport.Resources.Files != 1 {
+		t.Fatalf("resource files = %d, want 1", drawParamReport.Resources.Files)
 	}
-	if !hasIDReference(drawParamReport.IDReferences, "doc[0]/draw-param:20", "doc[0]/draw-param:10", "relative") {
+	// 继承关系同样跟着 StID 重排：旧版是 draw-param:20 继承 :10，新版
+	// draw-param:11 继承 :2（StID 11 即 manifest 里的 dp-20，继承 dp-10）。
+	if !hasIDReference(drawParamReport.IDReferences, "doc[0]/draw-param:11", "doc[0]/draw-param:2", "relative") {
 		t.Fatalf("missing DrawParam relative reference: %+v", drawParamReport.IDReferences)
 	}
 
