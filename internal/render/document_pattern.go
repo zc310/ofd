@@ -2,7 +2,6 @@ package render
 
 import (
 	"math"
-	"strconv"
 	"strings"
 
 	"github.com/zc310/ofd/internal/models"
@@ -154,25 +153,12 @@ func translationMatrix(x, y float64) *models.CTM {
 }
 
 func patternCTM(pattern *models.CtPattern) (models.CTM, bool) {
-	if pattern == nil || len(pattern.CTM) == 0 {
+	// CTM 由 models.CTM 在 XML 解析时完成有限性校验；nil 表示未指定，按单位矩阵。
+	if pattern == nil || pattern.CTM == nil {
 		return models.IdentityMatrix, true
 	}
-	values := make([]float64, 0, len(pattern.CTM))
-	for _, value := range pattern.CTM {
-		v, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return models.IdentityMatrix, false
-		}
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return models.IdentityMatrix, false
-		}
-		values = append(values, v)
-	}
-	if len(values) != 6 {
-		return models.IdentityMatrix, false
-	}
-	ctm := models.CTM{values[0], values[1], values[2], values[3], values[4], values[5]}
-	if !ctm.IsFinite() || values[0]*values[3]-values[1]*values[2] == 0 {
+	ctm := *pattern.CTM
+	if !ctm.IsFinite() || ctm[0]*ctm[3]-ctm[1]*ctm[2] == 0 {
 		return models.IdentityMatrix, false
 	}
 	return ctm, true

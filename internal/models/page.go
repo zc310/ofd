@@ -470,8 +470,8 @@ type CtPattern struct {
 	ReflectMethod string `xml:"ReflectMethod,attr,omitempty"` // Normal, Row, Column, RowAndColumn
 	// RelativeTo 图案坐标的参考对象，可为 Page 或 Object。
 	RelativeTo string `xml:"RelativeTo,attr,omitempty"` // Page, Object
-	// CTM 图案单元使用的坐标变换矩阵。
-	CTM StArray `xml:"CTM,attr,omitempty"`
+	// CTM 图案单元使用的坐标变换矩阵；缺省时为 nil，按单位矩阵处理。
+	CTM *CTM `xml:"CTM,attr,omitempty"`
 }
 
 // CellContent 图案填充单元的内容。
