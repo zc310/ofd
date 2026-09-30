@@ -8,6 +8,9 @@
 # 双资源文件结构被 internal/parser 与 pkg/analyzer 的测试锁定；本配置重建时会
 # 自动重排 ID 并把资源并入单个 DocumentRes.xml，因此输出到 /tmp，不覆盖 fixture。
 
+#
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/drawparam.yaml -o test/testdata/drawparam.ofd --format auto --deterministic --validate --complete-text-code-deltas
 version: 1
 document:
   id: drawparam-demo-20260903

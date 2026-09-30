@@ -6,7 +6,7 @@
 #   demo-inline 打开文本附件（false，同一窗口）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml -o test/testdata/actions.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/actions.yaml -o test/testdata/actions.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

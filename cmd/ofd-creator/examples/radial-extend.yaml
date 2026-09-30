@@ -4,6 +4,9 @@
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml -o radial-extend.ofd --format auto --deterministic --validate
 
+#
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml -o test/testdata/radial-extend.ofd --format auto --deterministic --validate --complete-text-code-deltas
 version: 1
 document:
   id: radial-extend
