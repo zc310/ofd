@@ -31,6 +31,8 @@ type Document struct {
 	svgCanvases  *utils.LRU[string, SVGScene]
 	sealMu       sync.Mutex
 	sealDocs     map[[32]byte]*sealDocEntry
+	ctColorMu    sync.Mutex
+	ctColorCache map[*models.CTColor]*CTColor
 }
 
 type imageKeyLock struct {
@@ -55,7 +57,11 @@ type renderBudget struct {
 func (b *renderBudget) reset() {
 	b.compositeExpansions = 0
 
-	b.compositeResources = make(map[models.StID]int)
+	if b.compositeResources != nil {
+		clear(b.compositeResources)
+	} else {
+		b.compositeResources = make(map[models.StID]int)
+	}
 	b.patternTiles = 0
 	b.offscreenPixels = 0
 }
@@ -107,11 +113,11 @@ const (
 // 释放时，包级字体缓存会一直持有它，浏览多个文档的会话里这些内存会累积。
 //
 // 幂等，且关闭后不应再使用该文档。
-func (d *Document) Close() {
-	if d == nil || d.fonts == nil {
+func (p *Document) Close() {
+	if p == nil || p.fonts == nil {
 		return
 	}
-	d.fonts.Close()
+	p.fonts.Close()
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {

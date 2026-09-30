@@ -198,7 +198,9 @@ func applyCGTransformWidths(widths []float64, runes []rune, transforms []models.
 	if len(transforms) == 0 || len(widths) == 0 {
 		return
 	}
-	byPosition := make(map[int]models.CTCGTransform, len(transforms))
+	byPosition := transformMapPool.Get().(map[int]models.CTCGTransform)
+	defer transformMapPool.Put(byPosition)
+	clear(byPosition)
 	for _, transform := range transforms {
 		byPosition[transform.CodePosition] = transform
 	}

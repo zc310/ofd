@@ -3,6 +3,7 @@ package render
 import (
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 
 	"github.com/zc310/ofd/internal/models"
@@ -485,23 +486,68 @@ func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
 	b := img.Bounds()
 	minX, minY := b.Max.X, b.Max.Y
 	maxX, maxY := b.Min.X, b.Min.Y
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			_, _, _, alpha := img.At(x, y).RGBA()
-			if alpha <= 8*257 {
-				continue
+	switch src := img.(type) {
+	case *image.NRGBA:
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			row := src.Pix[y*src.Stride:]
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if uint32(row[x*4+3]) <= 8 {
+					continue
+				}
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
 			}
-			if x < minX {
-				minX = x
+		}
+	case *image.RGBA:
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			row := src.Pix[y*src.Stride:]
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if uint32(row[x*4+3])*257 <= 8*257 {
+					continue
+				}
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
 			}
-			if y < minY {
-				minY = y
-			}
-			if x > maxX {
-				maxX = x
-			}
-			if y > maxY {
-				maxY = y
+		}
+	default:
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				_, _, _, alpha := img.At(x, y).RGBA()
+				if alpha <= 8*257 {
+					continue
+				}
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
 			}
 		}
 	}
@@ -513,11 +559,7 @@ func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
 
 func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
 	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	for y := y0; y < y1; y++ {
-		for x := x0; x < x1; x++ {
-			out.Set(x-x0, y-y0, img.At(x, y))
-		}
-	}
+	draw.Draw(out, out.Bounds(), img, image.Point{x0, y0}, draw.Src)
 	return out
 }
 

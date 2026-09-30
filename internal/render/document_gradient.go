@@ -2,7 +2,6 @@ package render
 
 import (
 	"image/color"
-	"math"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -17,20 +16,19 @@ type ofdLinearGradient struct {
 	mapType string
 	mapUnit float64
 	extend  int
+
+	dx, dy, d2, unit float64
 }
 
 func (g *ofdLinearGradient) At(x, y float64) color.RGBA {
-	dx, dy := g.end.X-g.start.X, g.end.Y-g.start.Y
-	d2 := dx*dx + dy*dy
-	if d2 == 0 {
+	if g.d2 == 0 {
 		return g.stops.At(0)
 	}
-	projection := ((x-g.start.X)*dx + (y-g.start.Y)*dy) / math.Sqrt(d2)
-	unit := math.Sqrt(d2)
+	projection := ((x-g.start.X)*g.dx + (y-g.start.Y)*g.dy) / g.unit
 	if g.mapUnit > 0 && (g.mapType == "Repeat" || g.mapType == "Reflect") {
 		return g.stops.At(mapGradientValue(projection/g.mapUnit, g.mapType))
 	}
-	return gradientColor(g.stops, projection/unit, g.extend)
+	return gradientColor(g.stops, projection/g.unit, g.extend)
 }
 
 // ofdRadialGradient 将普通径向插值交给 geom.RadialGradient 处理，存在时再根据 OFD
