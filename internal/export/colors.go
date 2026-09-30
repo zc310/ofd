@@ -127,7 +127,7 @@ func (e *documentExporter) exportColor(value *models.CTColor) (*manifest.Color, 
 			YStep:         value.Pattern.YStep,
 			ReflectMethod: value.Pattern.ReflectMethod,
 			RelativeTo:    value.Pattern.RelativeTo,
-			CTM:           exportStringFloatArray(value.Pattern.CTM),
+			CTM:           exportCTM(value.Pattern.CTM),
 			Thumbnail:     uint64(value.Pattern.CellContent.Thumbnail),
 			Items:         items,
 		}

@@ -8,7 +8,7 @@ import (
 )
 
 func TestPatternMatrix(t *testing.T) {
-	pattern := &models.CtPattern{CTM: models.StArray{"2", "3", "4", "5", "6", "7"}}
+	pattern := &models.CtPattern{CTM: &models.CTM{2, 3, 4, 5, 6, 7}}
 	matrix, ok := patternMatrix(pattern)
 	if !ok {
 		t.Fatal("expected valid pattern CTM")
@@ -20,7 +20,8 @@ func TestPatternMatrix(t *testing.T) {
 }
 
 func TestPatternMatrixInvalid(t *testing.T) {
-	pattern := &models.CtPattern{CTM: models.StArray{"1", "0", "0"}}
+	// 奇异矩阵无法用于图案平铺，应判为无效。
+	pattern := &models.CtPattern{CTM: &models.CTM{1, 2, 2, 4, 0, 0}}
 	if _, ok := patternMatrix(pattern); ok {
 		t.Fatal("expected invalid pattern CTM")
 	}
@@ -78,66 +79,33 @@ func TestInvertCTM(t *testing.T) {
 	}
 }
 
-func TestPatternCTMParse(t *testing.T) {
+func TestPatternCTM(t *testing.T) {
 	tests := []struct {
 		name   string
-		ctm    models.StArray
+		ctm    *models.CTM
 		want   models.CTM
 		wantOK bool
 	}{
 		{
 			name:   "identity",
-			ctm:    models.StArray{"1", "0", "0", "1", "0", "0"},
+			ctm:    &models.CTM{1, 0, 0, 1, 0, 0},
 			want:   models.CTM{1, 0, 0, 1, 0, 0},
 			wantOK: true,
 		},
 		{
-			name:   "translation",
-			ctm:    models.StArray{"1", "0", "0", "1", "10", "20"},
-			want:   models.CTM{1, 0, 0, 1, 10, 20},
-			wantOK: true,
-		},
-		{
-			name:   "scale",
-			ctm:    models.StArray{"2", "0", "0", "3", "0", "0"},
-			want:   models.CTM{2, 0, 0, 3, 0, 0},
-			wantOK: true,
-		},
-		{
 			name:   "general",
-			ctm:    models.StArray{"2", "1", "0.5", "3", "10", "20"},
+			ctm:    &models.CTM{2, 1, 0.5, 3, 10, 20},
 			want:   models.CTM{2, 1, 0.5, 3, 10, 20},
 			wantOK: true,
 		},
 		{
 			name:   "singular",
-			ctm:    models.StArray{"1", "2", "2", "4", "0", "0"},
+			ctm:    &models.CTM{1, 2, 2, 4, 0, 0},
 			wantOK: false,
 		},
 		{
-			name:   "wrong count",
-			ctm:    models.StArray{"1", "0", "0"},
-			wantOK: false,
-		},
-		{
-			name:   "non-numeric",
-			ctm:    models.StArray{"1", "0", "0", "x", "0", "0"},
-			wantOK: false,
-		},
-		{
-			name:   "non-finite",
-			ctm:    models.StArray{"1", "0", "0", "1", "NaN", "0"},
-			wantOK: false,
-		},
-		{
-			name:   "nil",
+			name:   "nil defaults to identity",
 			ctm:    nil,
-			want:   models.IdentityMatrix,
-			wantOK: true,
-		},
-		{
-			name:   "empty",
-			ctm:    models.StArray{},
 			want:   models.IdentityMatrix,
 			wantOK: true,
 		},

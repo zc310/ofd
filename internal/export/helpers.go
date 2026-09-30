@@ -23,6 +23,7 @@ func exportBox(box *models.StBox) *manifest.Box {
 	return &manifest.Box{X: box.X, Y: box.Y, Width: width, Height: height}
 }
 
+// exportCTM 导出可选的坐标变换矩阵；nil 返回 nil。
 func exportCTM(ctm *models.CTM) []float64 {
 	if ctm == nil {
 		return nil
