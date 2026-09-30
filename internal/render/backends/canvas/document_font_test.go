@@ -120,28 +120,33 @@ func TestEmbeddedFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 	if err != nil {
 		t.Skipf("DejaVu Sans is unavailable: %v", err)
 	}
-	first, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, nil)
+	fonts := NewFonts(nil)
+	first, err := loadCachedEmbeddedFont(fonts, "EmbeddedCache", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("加载嵌入字体失败: %v", err)
 	}
-	second, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, nil)
+	second, err := loadCachedEmbeddedFont(fonts, "EmbeddedCache", data, FontRegular, nil)
 	if err != nil {
 		t.Fatalf("复用嵌入字体失败: %v", err)
 	}
 	if first != second {
-		t.Fatal("嵌入字体缓存创建了多个字体族")
+		t.Fatal("同一文档内嵌字体缓存创建了多个字体族")
 	}
-	mapped, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
+	if fonts.RenderLock(first) != fonts.RenderLock(second) {
+		t.Fatal("同一文档内同一字体族应共享渲染锁")
+	}
+	mapped, err := loadCachedEmbeddedFont(fonts, "EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
 	if err != nil {
 		t.Fatalf("加载带映射的嵌入字体失败: %v", err)
 	}
 	if mapped == first {
 		t.Fatal("不同字形映射不应复用同一字体族")
 	}
-	firstFonts := NewFonts(nil)
-	secondFonts := NewFonts(nil)
-	if firstFonts.RenderLock(first) != secondFonts.RenderLock(second) {
-		t.Fatal("嵌入字体缓存未共享渲染锁")
+	// 内嵌字体缓存绑定在文档上：不同文档各有各的字体族。
+	if other, err := loadCachedEmbeddedFont(NewFonts(nil), "EmbeddedCache", data, FontRegular, nil); err != nil {
+		t.Fatalf("加载内嵌字体失败: %v", err)
+	} else if other == first {
+		t.Fatal("不同文档不应共享内嵌字体族")
 	}
 }
 
@@ -700,4 +705,104 @@ func findTestFontFile(t *testing.T) string {
 	}
 	t.Skip("找不到可用的测试字体文件")
 	return ""
+}
+
+// TestReleaseSystemFontsHonorsRefCount 保护缓存按引用计数淘汰：一个实例释放时
+// 若仍有其它实例持有同一字体族，系统字体缓存条目与渲染锁都不能被删。无条件删除
+// 会让去重失效，并让同一字体族在缓存表外被再次加载、拿到另一把渲染锁并发绘制。
+func TestReleaseSystemFontsHonorsRefCount(t *testing.T) {
+	file := copyTestFont(t)
+	first := NewFonts(nil)
+	second := NewFonts(nil)
+	family, ok := loadCachedFontFile(first, file, "RefCount", FontRegular)
+	if !ok {
+		t.Skipf("字体文件不可用: %s", file)
+	}
+	other, ok := loadCachedFontFile(second, file, "RefCount", FontRegular)
+	if !ok || other != family {
+		t.Fatal("同一文件未能复用同一字体族")
+	}
+	key, _ := systemFontKeyForFile(file, FontRegular)
+
+	releaseSystemFonts(first)
+	if systemFontCache[key] == nil {
+		t.Error("仍有实例持有时系统字体缓存条目被删除")
+	}
+	if fontRenderLocks[family] == nil {
+		t.Error("仍有实例持有时渲染锁被删除")
+	}
+
+	releaseSystemFonts(second)
+	if systemFontCache[key] != nil {
+		t.Error("无人持有后系统字体缓存条目未删除")
+	}
+	if fontRenderLocks[family] != nil {
+		t.Error("无人持有后渲染锁未删除")
+	}
+}
+
+// TestReleaseSystemFontsIgnoresFontMapReset 保护释放不依赖 p.Fonts：字体表被
+// RegisterGlyphs/UseFallbackFont 重置后，已加载过的字体族会从表中消失，释放必须
+// 仍按持有者解除引用计数，否则缓存条目永远淘汰不掉。
+func TestReleaseSystemFontsIgnoresFontMapReset(t *testing.T) {
+	file := copyTestFont(t)
+	fonts := NewFonts(nil)
+	family, ok := loadCachedFontFile(fonts, file, "Orphan", FontRegular)
+	if !ok {
+		t.Skipf("字体文件不可用: %s", file)
+	}
+	// 模拟字体表被重置：此时已无法从 p.Fonts 反查到该字体族。
+	fonts.mu.Lock()
+	fonts.Fonts = map[models.StRefID]*canvas.FontFamily{}
+	fonts.mu.Unlock()
+
+	releaseSystemFonts(fonts)
+	key, _ := systemFontKeyForFile(file, FontRegular)
+	if systemFontCache[key] != nil || fontRenderLocks[family] != nil {
+		t.Fatal("字体表重置后引用计数未解除，缓存条目与渲染锁仍在")
+	}
+}
+
+// TestCloseDropsEmbeddedFontCaches 保护内嵌字体与修复器缓存绑定在文档上：
+// Close 后本实例的缓存必须被丢弃，不再钉住解析后的重资源。
+func TestCloseDropsEmbeddedFontCaches(t *testing.T) {
+	data, err := os.ReadFile(findTestFontFile(t))
+	if err != nil {
+		t.Skipf("读取测试字体失败: %v", err)
+	}
+	fonts := NewFonts(nil)
+	if _, err := loadCachedEmbeddedFont(fonts, "CloseEmbedded", data, FontRegular, nil); err != nil {
+		t.Fatalf("加载内嵌字体失败: %v", err)
+	}
+	_ = embeddedRepairer(fonts, data)
+
+	fonts.embeddedMu.Lock()
+	fontsCount := len(fonts.embeddedFonts)
+	repairerCount := len(fonts.embeddedRepairers)
+	fonts.embeddedMu.Unlock()
+	if fontsCount == 0 || repairerCount == 0 {
+		t.Fatalf("内嵌字体/修复器未进入实例缓存: fonts=%d repairers=%d", fontsCount, repairerCount)
+	}
+
+	fonts.Close()
+	fonts.embeddedMu.Lock()
+	defer fonts.embeddedMu.Unlock()
+	if len(fonts.embeddedFonts) != 0 || len(fonts.embeddedRepairers) != 0 {
+		t.Fatalf("Close 后内嵌字体/修复器缓存未被丢弃: fonts=%d repairers=%d",
+			len(fonts.embeddedFonts), len(fonts.embeddedRepairers))
+	}
+}
+
+// copyTestFont 把测试字体复制到独立临时路径，使缓存键（含路径）不与其它测试共享。
+func copyTestFont(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(findTestFontFile(t))
+	if err != nil {
+		t.Skipf("读取测试字体失败: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "refcount.ttf")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("写入临时字体失败: %v", err)
+	}
+	return path
 }

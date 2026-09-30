@@ -29,16 +29,13 @@ import (
 // 字体面与文字样式适配见 font_face.go。
 
 var (
-	onceFonts         sync.Once
-	fontCacheMu       sync.Mutex
-	systemFontCache   = make(map[systemFontKey]*systemFontCacheEntry)
-	embeddedFontCache = make(map[embeddedFontKey]*embeddedFontCacheEntry)
-	// embeddedRepairerCache 按字体字节摘要缓存 fontfix.Repairer。同一份内嵌
-	// 字体在文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；
-	// Repairer 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与
-	// 输出 cmap 表。WithGlyphs 不改写缓存状态，可安全并发调用。
-	embeddedRepairerCache = make(map[[sha256.Size]byte]*fontfix.Repairer)
-	fontRenderLocks       = make(map[*canvas.FontFamily]*sync.Mutex)
+	onceFonts       sync.Once
+	fontCacheMu     sync.Mutex
+	systemFontCache = make(map[systemFontKey]*systemFontCacheEntry)
+	// fontRenderLocks 串行化系统字体族的绘制。内嵌字体族属于单个文档，其渲染锁
+	// 由 Fonts.renderLocks 按实例持有，不进这张全局表——表键是指针，留在全局表
+	// 会一直强引用字体族，文档关闭后也无法回收。
+	fontRenderLocks = make(map[*canvas.FontFamily]*sync.Mutex)
 	// 全局回退字体注册表：同一字体族全局只保存一份解析结果和一份字体数据引用，
 	// 首个 render.Document 注册后即锁定；后续文档缺字体时默认全部使用已锁定字体。
 	fallbackRegistry = make(map[string]*fallbackRegistration)
@@ -72,27 +69,35 @@ type systemFontKey struct {
 	style drawing.FontStyle
 }
 
-type systemFontCacheEntry struct {
-	family   *canvas.FontFamily
-	renderMu *sync.Mutex
-	// holders 登记正在使用该字体族的字体引擎实例。
-	//
-	// 字体族本身很重：一个 CJK 字体约 50 MB（文件字节只占五分之一，其余是解码
-	// 后的字形轮廓）。此前缓存无上限也无淘汰，而每个 render.Document 各自持有
-	// 指针，长会话里浏览多个文档会持续累积。
-	//
-	// 有了 holders 才能安全淘汰：只要还有文档持有该族就不能动它——这同时也
-	// 保证了 fontRenderLocks 不会在文档仍在绘制时被删掉，导致同一字体拿到两把
-	// 锁而被并发渲染。降到 0 时才可以连同渲染锁一起释放。
+// fontHolders 登记正在使用某个共享字体族的字体引擎实例，用于引用计数淘汰。
+//
+// 字体族本身很重：一个 CJK 字体约 50 MB（文件字节只占五分之一，其余是解码
+// 后的字形轮廓）。此前缓存无上限也无淘汰，而每个 render.Document 各自持有
+// 指针，长会话里浏览多个文档会持续累积。有了引用计数才能安全淘汰：只要还有
+// 文档持有该族就不能动它——这同时也保证了 fontRenderLocks 不会在文档仍在绘制
+// 时被删掉，导致同一字体拿到两把锁而被并发渲染。降到 0 时才连同渲染锁释放。
+type fontHolders struct {
 	holders map[*Fonts]struct{}
 }
 
 // retain 登记持有者。
-func (e *systemFontCacheEntry) retain(f *Fonts) {
-	if e.holders == nil {
-		e.holders = make(map[*Fonts]struct{}, 1)
+func (h *fontHolders) retain(f *Fonts) {
+	if h.holders == nil {
+		h.holders = make(map[*Fonts]struct{}, 1)
 	}
-	e.holders[f] = struct{}{}
+	h.holders[f] = struct{}{}
+}
+
+// release 解除一个持有者，返回是否已无人再持有。
+func (h *fontHolders) release(f *Fonts) bool {
+	delete(h.holders, f)
+	return len(h.holders) == 0
+}
+
+type systemFontCacheEntry struct {
+	family   *canvas.FontFamily
+	renderMu *sync.Mutex
+	fontHolders
 }
 
 // embeddedFontKey 标识一次内嵌字体解析结果。相同字体数据、样式、族名和字形
@@ -104,11 +109,9 @@ type embeddedFontKey struct {
 	mappingsDigest [sha256.Size]byte
 }
 
-type embeddedFontCacheEntry struct {
-	family   *canvas.FontFamily
-	renderMu *sync.Mutex
-}
-
+// embeddedFonts/embeddedRepairers 按文档（Fonts 实例）持有内嵌字体解析结果，
+// 随文档关闭一并释放。内嵌字体是文档自带资源，跨文档复用价值有限，却会因全局
+// 缓存长期钉住重资源，因此不放在包级缓存里。
 type Fonts struct {
 	*parser.Document
 	Fonts          map[models.StRefID]*canvas.FontFamily
@@ -122,8 +125,15 @@ type Fonts struct {
 	generation     uint64
 	renderLocksMu  sync.Mutex
 	renderLocks    map[*canvas.FontFamily]*sync.Mutex
-	pathCacheMu    sync.Mutex
-	pathCache      map[fontPathKey]*canvas.Path
+	embeddedMu     sync.Mutex
+	embeddedFonts  map[embeddedFontKey]*canvas.FontFamily
+	// embeddedRepairers 按字体字节摘要缓存 fontfix.Repairer。同一份内嵌字体在
+	// 文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；Repairer
+	// 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与输出 cmap 表。
+	// WithGlyphs 不改写缓存状态，可安全并发调用。
+	embeddedRepairers map[[sha256.Size]byte]*fontfix.Repairer
+	pathCacheMu       sync.Mutex
+	pathCache         map[fontPathKey]*canvas.Path
 	// closed 标记 Close 已调用，重复调用直接返回。
 	closed         bool
 	textLineMu     sync.Mutex
@@ -238,14 +248,16 @@ func NewFonts(doc *parser.Document) *Fonts {
 		}
 	})
 	return &Fonts{
-		Document:       doc,
-		Fonts:          make(map[models.StRefID]*canvas.FontFamily),
-		fallbacks:      make(map[string]*canvas.FontFamily),
-		fallbackByFont: make(map[models.StRefID]string),
-		glyphMappings:  make(map[models.StRefID]map[rune]uint16),
-		loadLocks:      make(map[models.StRefID]*sync.Mutex),
-		renderLocks:    make(map[*canvas.FontFamily]*sync.Mutex),
-		pathCache:      make(map[fontPathKey]*canvas.Path),
+		Document:          doc,
+		Fonts:             make(map[models.StRefID]*canvas.FontFamily),
+		fallbacks:         make(map[string]*canvas.FontFamily),
+		fallbackByFont:    make(map[models.StRefID]string),
+		glyphMappings:     make(map[models.StRefID]map[rune]uint16),
+		loadLocks:         make(map[models.StRefID]*sync.Mutex),
+		renderLocks:       make(map[*canvas.FontFamily]*sync.Mutex),
+		embeddedFonts:     make(map[embeddedFontKey]*canvas.FontFamily),
+		embeddedRepairers: make(map[[sha256.Size]byte]*fontfix.Repairer),
+		pathCache:         make(map[fontPathKey]*canvas.Path),
 	}
 }
 
@@ -358,47 +370,41 @@ func (p *Fonts) Close() {
 		return
 	}
 	p.closed = true
-	// 三个字段都持有字体族：按资源 id 登记的、已锁定的回退族、以及回退面列表。
-	// 漏掉任何一个都会让对应字体留在全局缓存里。
-	families := make([]*canvas.FontFamily, 0, len(p.Fonts)+len(p.fallbacks)+len(p.fallbackFaces))
-	for _, family := range p.Fonts {
-		families = append(families, family)
-	}
-	for _, family := range p.fallbacks {
-		families = append(families, family)
-	}
-	for _, face := range p.fallbackFaces {
-		families = append(families, face.family)
-	}
 	p.Fonts = map[models.StRefID]*canvas.FontFamily{}
 	p.fallbacks = map[string]*canvas.FontFamily{}
 	p.fallbackFaces = nil
 	p.pathCache = map[fontPathKey]*canvas.Path{}
 	p.mu.Unlock()
 
-	releaseFontFamilies(families)
+	// 内嵌字体与修复器只属于本实例，清空即可回收（返回的回退族由全局注册表持有，
+	// 不在此列）。置为空表而非 nil，避免关闭后仍有并发访问时向 nil map 写入 panic。
+	p.embeddedMu.Lock()
+	p.embeddedFonts = map[embeddedFontKey]*canvas.FontFamily{}
+	p.embeddedRepairers = make(map[[sha256.Size]byte]*fontfix.Repairer)
+	p.embeddedMu.Unlock()
+
+	releaseSystemFonts(p)
 }
 
-// releaseFontFamilies 解除这些字体族的持有者引用，无人再持有的从缓存与渲染锁
-// 表中移除。
-func releaseFontFamilies(families []*canvas.FontFamily) {
+// releaseSystemFonts 解除 p 对系统字体缓存中所有条目（含 fontRenderLocks）的持有；
+// 仅当再无任何字体引擎实例持有时才移除条目，使字体族可被回收。
+//
+// 这里遍历整张缓存而不是按 p.Fonts 枚举字体族：p.Fonts 会因 RegisterGlyphs、
+// UseFallbackFont/RemoveFallbackFont 被重置，已加载过的字体族会从表里消失，若只
+// 依赖 p.Fonts 反查，这些族的持有就永远解除不掉，引用计数降不到 0，缓存条目一直
+// 留在全局表里。逐个按持有者解除才能保证 retain/release 平衡。
+//
+// 必须按引用计数判断而不能无条件删除：同一字体文件常被多个文档共享（这正是缓存
+// 去重的目的），若在第一个文档关闭时就删掉条目与渲染锁，后续文档仍在绘制该字体族
+// ——fontRenderLocks 缺失会让 RenderLock 回退到实例级锁，同一字体族就可能拿到两把
+// 锁而被并发渲染。
+func releaseSystemFonts(p *Fonts) {
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
-	released := make(map[*canvas.FontFamily]bool, len(families))
-	for _, family := range families {
-		if family == nil || released[family] {
-			continue
-		}
-		released[family] = true
-		for key, entry := range systemFontCache {
-			if entry.family != family {
-				continue
-			}
-			entry.holders = nil
-			// 没人再持有：连同渲染锁一起移除，字体族随之可被回收。此刻仍持有
-			// 该族的文档都已释放过，删锁不会让同一字体拿到两把锁。
+	for key, entry := range systemFontCache {
+		if entry.release(p) {
 			delete(systemFontCache, key)
-			delete(fontRenderLocks, family)
+			delete(fontRenderLocks, entry.family)
 		}
 	}
 }
@@ -478,8 +484,8 @@ func systemFontKeyForFile(filename string, style drawing.FontStyle) (systemFontK
 }
 
 // loadCachedEmbeddedFont 按字体数据、样式、族名与字形映射缓存内嵌字体解析结果，
-// 使同一字体在多次转换（或多文档）间只做一次 fontfix 修复与 canvas 解析。返回的
-// 字体族注册了共享渲染锁，与系统字体缓存一致地串行化同一字体的绘制。
+// 使同一字体在本文档的多次加载中只做一次 fontfix 修复与 canvas 解析。缓存在
+// Fonts 实例上，随文档关闭释放。
 func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) (*canvas.FontFamily, error) {
 	key := embeddedFontKey{
 		name:           name,
@@ -487,47 +493,46 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 		dataDigest:     sha256.Sum256(data),
 		mappingsDigest: hashGlyphMappings(mappings),
 	}
-	fontCacheMu.Lock()
-	if entry := embeddedFontCache[key]; entry != nil {
-		fontCacheMu.Unlock()
-		return entry.family, nil
+	p.embeddedMu.Lock()
+	if family := p.embeddedFonts[key]; family != nil {
+		p.embeddedMu.Unlock()
+		return family, nil
 	}
-	fontCacheMu.Unlock()
+	p.embeddedMu.Unlock()
 
 	family := canvas.NewFontFamily(name)
-	if err := loadEmbeddedFont(family, data, style, mappings); err != nil {
+	if err := loadEmbeddedFont(p, family, data, style, mappings); err != nil {
 		return nil, err
 	}
-	renderMu := &sync.Mutex{}
-	fontCacheMu.Lock()
-	if existing := embeddedFontCache[key]; existing != nil {
-		fontCacheMu.Unlock()
-		return existing.family, nil
+	p.embeddedMu.Lock()
+	if existing := p.embeddedFonts[key]; existing != nil {
+		p.embeddedMu.Unlock()
+		return existing, nil
 	}
-	embeddedFontCache[key] = &embeddedFontCacheEntry{family: family, renderMu: renderMu}
-	fontRenderLocks[family] = renderMu
-	fontCacheMu.Unlock()
+	p.embeddedFonts[key] = family
+	p.embeddedMu.Unlock()
 	return family, nil
 }
 
-// embeddedRepairer 返回该字体字节对应的 fontfix.Repairer，必要时创建。
-// 与 embeddedFontCache 一样按进程生命周期缓存，不做淘汰。
-func embeddedRepairer(data []byte) *fontfix.Repairer {
+// embeddedRepairer 返回该字体字节对应的 fontfix.Repairer，必要时创建。修复器与
+// 内嵌字体族一样按 Fonts 实例缓存，随文档关闭释放。
+func embeddedRepairer(p *Fonts, data []byte) *fontfix.Repairer {
 	digest := sha256.Sum256(data)
-	fontCacheMu.Lock()
-	repairer := embeddedRepairerCache[digest]
-	fontCacheMu.Unlock()
-	if repairer != nil {
+	p.embeddedMu.Lock()
+	if repairer := p.embeddedRepairers[digest]; repairer != nil {
+		p.embeddedMu.Unlock()
 		return repairer
 	}
-	repairer = fontfix.NewRepairer(data)
-	fontCacheMu.Lock()
-	if existing := embeddedRepairerCache[digest]; existing != nil {
-		fontCacheMu.Unlock()
+	p.embeddedMu.Unlock()
+
+	repairer := fontfix.NewRepairer(data)
+	p.embeddedMu.Lock()
+	if existing := p.embeddedRepairers[digest]; existing != nil {
+		p.embeddedMu.Unlock()
 		return existing
 	}
-	embeddedRepairerCache[digest] = repairer
-	fontCacheMu.Unlock()
+	p.embeddedRepairers[digest] = repairer
+	p.embeddedMu.Unlock()
 	return repairer
 }
 
@@ -1038,9 +1043,9 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
 // mappings 为文档提供的 Unicode→字形映射，用于让缺少 Unicode cmap 的子集字体
 // 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
-func loadEmbeddedFont(family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) error {
+func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) error {
 	if len(mappings) > 0 {
-		if fixed, err := embeddedRepairer(data).WithGlyphs(mappings); err == nil {
+		if fixed, err := embeddedRepairer(p, data).WithGlyphs(mappings); err == nil {
 			slog.Debug("load embedded font with glyph mappings", "family", family.Name(), "style", style, "mappings", len(mappings))
 			if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
 				return nil
