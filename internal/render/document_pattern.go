@@ -158,7 +158,7 @@ func patternCTM(pattern *models.CtPattern) (models.CTM, bool) {
 		return models.IdentityMatrix, true
 	}
 	ctm := *pattern.CTM
-	if !ctm.IsFinite() || ctm[0]*ctm[3]-ctm[1]*ctm[2] == 0 {
+	if !ctm.IsInvertible() {
 		return models.IdentityMatrix, false
 	}
 	return ctm, true
