@@ -1,0 +1,114 @@
+# 构建 WASM 阅读器并发布到 GitHub Pages。
+#
+# 页面放在站点根下的 wasm/ 子目录，访问地址：
+#   https://zc310.github.io/ofd/wasm/
+#
+# 页面里所有资源都是相对路径（./viewer.js、fetch('ofd.wasm')、
+# importScripts('wasm_exec.js')），Service Worker 也是用相对路径注册且没写死
+# scope，作用域自动等于所在目录，所以整体搬到子目录下不用改任何代码。
+name: Pages
+
+on:
+  push:
+    branches: ["main"]
+    # 只在这些路径变化时重建：ofd.wasm 有二十多兆，每次提交都重编太浪费。
+    #
+    # 下面是 ofd.wasm 的依赖闭包（go list 逐层展开确认，不是猜的）：cmd/ofd-wasm
+    # 直接依赖 pkg/webreader 和 internal/render/backends/canvas，其余由此间接
+    # 引入。改这些地方会改变 WASM 产物；internal/ 或 pkg/ 下的其它包不会，
+    # 所以不用 internal/**、pkg/** 这种通配。
+    paths:
+      - "cmd/ofd-wasm/**"
+      - "pkg/webreader/**"
+      - "internal/parser/**"
+      - "internal/render/**"
+      - "internal/models/**"
+      - "internal/media/**"
+      - "internal/utils/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/pages.yml"
+  # 手动触发用于验证 Pages 配置，不受 paths 限制。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一分支只保留最新一次部署：排队中的旧构建直接取消。
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # 用官方 release 的预编译 binaryen，不用 apt 的：noble 源里只有 108，
+      # 而 Makefile 的 WASM_OPT_FLAGS 含 --enable-bulk-memory-opt、
+      # --disable-strings、--disable-compact-imports，这三个 108 不认，
+      # wasm-opt 会报 "Unknown option" 直接退出——Makefile 那步没有兜底，
+      # 构建就挂了。实测 108 只能省 8% 体积，不值得为此放弃优化。
+      - name: Install binaryen
+        run: |
+          BINARYEN_VERSION=133
+          BASE="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}"
+          FILE="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl -sSL --fail --max-time 600 -o "/tmp/$FILE" "$BASE/$FILE"
+          curl -sSL --fail --max-time 60 -o "/tmp/$FILE.sha256" "$BASE/$FILE.sha256"
+          (cd /tmp && sha256sum -c "$FILE.sha256")
+          tar -xzf "/tmp/$FILE" -C /tmp
+          sudo install -m755 "/tmp/binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
+          # 选项与 Makefile 的 WASM_OPT_FLAGS 对齐，版本不够会在这一步暴露，
+          # 而不是等到 make build-wasm 才失败。
+          wasm-opt --enable-bulk-memory-opt --disable-strings --disable-compact-imports --version
+
+      # build-wasm 负责三件事：编译 ofd.wasm、按需跑 wasm_opt、从 GOROOT 复制
+      # wasm_exec.js，并按各资源内容哈希重算 service-worker.js 里的 CACHE_NAME。
+      - name: Build WASM
+        run: make build-wasm
+
+      # viewer.js 的改动要在 Node 里跑一遍：这些测试从源码按括号配平切出待测
+      # 函数，改了断行或导出就会失效。
+      - name: Test web scripts
+        run: make test-wasm-web
+
+      # upload-pages-artifact 不支持排除项，先把要发布的文件挑到 _site。
+      # 只放 wasm/ 子目录，仓库其余内容不进 Pages。
+      #
+      # 剔掉 test/：那是本地跑 make test-wasm-web 用的测试脚本，页面上没有入口。
+      # README.md 和 THIRD_PARTY_NOTICES.md 保留——后者是第三方许可声明。
+      - name: Stage site
+        run: |
+          mkdir -p _site/wasm
+          cp -a cmd/ofd-wasm/web/. _site/wasm/
+          rm -rf _site/wasm/test
+          echo "发布内容："
+          find _site -type f | sort
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
