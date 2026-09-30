@@ -104,9 +104,9 @@ func completeTextCodes(codes []TextCode, value string, height, size, hScale floa
 	return result, nil
 }
 
-// fitTextBoundary 按字体度量校正文字对象边界：各段基线位置不变，只在字形的上伸
-// 部分超出边界上沿时把边界上移并加高。部分第三方阅读器会按 Boundary 裁剪文字，
-// Height 小于字体上伸高度时字顶就会被切掉。
+// fitTextBoundary 按字体度量把文字对象边界扩展到装得下字形：各段基线位置不变，
+// 只在上伸/下伸部分超出边界时向上/向下扩，能容纳时不动。部分第三方阅读器按
+// Boundary 裁剪文字，边界过矮会切掉字顶，基线压在边界底边时又会切掉字底。
 func fitTextBoundary(value *Text, face *canvas.FontFace) {
 	if value == nil || face == nil || value.CTM != nil {
 		return
@@ -144,19 +144,23 @@ func fitTextBoundary(value *Text, face *canvas.FontFace) {
 		}
 		minY, maxY = offset, offset
 	}
-	oldY := value.Y
-	glyphTop := oldY + minY - metrics.Ascent
-	// 边界已能容纳上伸部分时不动，避免改动本就合适的边界。
-	if value.Height > 0 && glyphTop >= oldY {
+	oldTop := value.Y
+	oldBottom := oldTop + value.Height
+	glyphTop := oldTop + minY - metrics.Ascent
+	glyphBottom := oldTop + maxY + metrics.Descent
+	newTop, newBottom := oldTop, oldBottom
+	if glyphTop < newTop {
+		newTop = glyphTop
+	}
+	if glyphBottom > newBottom {
+		newBottom = glyphBottom
+	}
+	if newTop == oldTop && newBottom == oldBottom {
 		return
 	}
-	newBottom := oldY + value.Height
-	if bottom := oldY + maxY + metrics.Descent; bottom > newBottom {
-		newBottom = bottom
-	}
-	shift := glyphTop - oldY
-	value.Y = glyphTop
-	value.Height = newBottom - glyphTop
+	shift := newTop - oldTop
+	value.Y = newTop
+	value.Height = newBottom - newTop
 	// 边界上沿移动后，码位原点要反向平移，保证各段基线仍落在原来的位置。
 	for index := range value.TextCodes {
 		if y := value.TextCodes[index].Y; y != nil {
