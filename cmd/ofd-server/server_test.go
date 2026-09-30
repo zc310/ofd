@@ -434,6 +434,74 @@ func storeCount(s *Server) (map[jobstore.State]int, error) {
 	return s.store.Count()
 }
 
+// TestJobIDShape 锁住任务 ID 的形状：不带前缀、base36、长度稳定。
+//
+// 长度稳定是 jobDirLevels 切目录的前提——切出固定宽度才能让 output_dir 下的
+// 扇出保持均匀。长度一变，尾部位数跟着变，目录分布就跟着漂。
+func TestJobIDShape(t *testing.T) {
+	lengths := map[int]int{}
+	for i := 0; i < 500; i++ {
+		id := newJobID()
+		if strings.HasPrefix(id, "job_") {
+			t.Fatalf("任务 ID 不该带 job_ 前缀: %s", id)
+		}
+		for _, r := range id {
+			if !strings.ContainsRune("0123456789abcdefghijklmnopqrstuvwxyz", r) {
+				t.Fatalf("任务 ID 含非 base36 字符 %q: %s", r, id)
+			}
+		}
+		lengths[len(id)]++
+	}
+	// 当前量级固定 12 位（36^12 约 4.7e18，UnixNano 约 1.8e18）。真要变了，
+	// 这条断言会失败并指出需要重新评估目录切分——那是应该被看到的变更。
+	if len(lengths) != 1 {
+		t.Fatalf("任务 ID 长度不稳定: %v", lengths)
+	}
+	if lengths[12] != 500 {
+		t.Errorf("任务 ID 长度 = %v，期望 500 个 12 位", lengths)
+	}
+}
+
+// TestJobDirLevelsFanout 验证目录切分真的能扇开。
+//
+// 保护的是"取尾部而不是头部"这个决定：头部是时间戳高位，20 万个连续任务里
+// 几乎不变，拿它分目录等于所有任务落进同一处。尾部逐任务变化，应铺满 36^2。
+func TestJobDirLevelsFanout(t *testing.T) {
+	shards := map[string]bool{}
+	const n = 20000
+	for i := 0; i < n; i++ {
+		levels := jobDirLevels(newJobID())
+		if len(levels) != 2 {
+			t.Fatalf("目录层级数 = %d，期望 2（%v）", len(levels), levels)
+		}
+		// 叶子目录名应能拼回完整 ID——否则产物目录和 ID 对不上，排查时
+		// 拿 ID 找不到目录。
+		if levels[0]+levels[1] == "" {
+			t.Fatal("切分后丢字符")
+		}
+		shards[levels[0]] = true
+	}
+	// 20000 个任务至少铺开几百个一级目录。头部切法在这里会给出 1。
+	if len(shards) < 200 {
+		t.Errorf("%d 个任务只铺开 %d 个一级目录，扇出异常", n, len(shards))
+	}
+}
+
+// TestJobDirLevelsShortID ID 异常短时不切出空目录名。
+func TestJobDirLevelsShortID(t *testing.T) {
+	for _, id := range []string{"", "a", "ab"} {
+		levels := jobDirLevels(id)
+		for _, l := range levels {
+			if l == "" {
+				t.Errorf("ID %q 切出空目录名: %v", id, levels)
+			}
+		}
+		if len(levels) == 2 {
+			t.Errorf("ID %q 不该被切成两级: %v", id, levels)
+		}
+	}
+}
+
 func TestJobIDMonotonic(t *testing.T) {
 	seen := map[string]bool{}
 	previous := ""

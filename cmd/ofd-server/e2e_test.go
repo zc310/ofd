@@ -211,29 +211,14 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 	if final["state"] != "succeeded" {
 		t.Fatalf("目录输出任务未成功: %v", final)
 	}
-	// 结果落在 outDir/<任务 ID>/ 下，按任务隔离。
+	// 结果落在 outDir/<尾2位>/<ID 剩余段>/ 下（见 jobDirLevels），按任务隔离。
 	//
-	// 只检查这个任务自己的子目录，不统计 outDir 下的总项数——同一个测试里
+	// 只检查这个任务自己的叶子目录，不统计 outDir 下的总项数——同一个测试里
 	// 前面那个任务也留下了目录，计数会随测试顺序变。
-	entries, err := os.ReadDir(outDir)
+	jobDir := filepath.Join(append([]string{outDir}, jobDirLevels(dirID)...)...)
+	produced, err := os.ReadDir(jobDir)
 	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, entry := range entries {
-		if entry.Name() == dirID {
-			if !entry.IsDir() {
-				t.Fatalf("%s 不是目录", dirID)
-			}
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("outDir 下没有任务 %s 的子目录，现有: %v", dirID, names(entries))
-	}
-	produced, err := os.ReadDir(filepath.Join(outDir, dirID))
-	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("读任务目录 %q 失败: %v", jobDir, err)
 	}
 	if len(produced) == 0 {
 		t.Fatal("任务子目录里没有产出文件")
@@ -249,8 +234,8 @@ func TestEndToEndConvertAndNotify(t *testing.T) {
 	}
 	// 任务记录里的路径应指向这个子目录。
 	output, _ = final["output"].(map[string]any)
-	if output["path"] != filepath.Join(outDir, dirID) {
-		t.Errorf("记录里的输出路径 = %v，期望 %s", output["path"], filepath.Join(outDir, dirID))
+	if output["path"] != jobDir {
+		t.Errorf("记录里的输出路径 = %v，期望 %s", output["path"], jobDir)
 	}
 }
 

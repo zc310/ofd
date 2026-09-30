@@ -68,7 +68,8 @@ func TestConcurrentDirOutputIsolated(t *testing.T) {
 			t.Errorf("任务 %s 状态 = %s，错误 = %q", id, job.State, job.Error)
 			continue
 		}
-		want := filepath.Join(cfg.OutputDir, id)
+		// 落点是按 ID 切出的两级子目录（见 jobDirLevels），不是 ID 本身。
+		want := filepath.Join(append([]string{cfg.OutputDir}, jobDirLevels(id)...)...)
 		if job.Output.Path != want {
 			t.Errorf("任务 %s 输出目录 = %q，期望 %q", id, job.Output.Path, want)
 		}
@@ -79,7 +80,7 @@ func TestConcurrentDirOutputIsolated(t *testing.T) {
 	// 子目录互不相同。
 	seen := map[string]bool{}
 	for _, id := range ids {
-		sub := filepath.Join(cfg.OutputDir, id)
+		sub := filepath.Join(append([]string{cfg.OutputDir}, jobDirLevels(id)...)...)
 		if seen[sub] {
 			t.Errorf("输出目录重复: %s", sub)
 		}
@@ -197,9 +198,10 @@ func TestOutputDirOverridesJobIsolation(t *testing.T) {
 		t.Errorf("落点 %q 里出现了任务 ID %q", resolvedDir(specified), specified)
 	}
 
-	// 未指定：仍然每个任务一个子目录，否则同目录同名文件会互相覆盖失败。
+	// 未指定：仍然每个任务一个子目录（按 ID 切两级），否则同目录同名文件会互相
+	// 覆盖失败。
 	defaulted := submit("")
-	if want := filepath.Join(cfg.OutputDir, defaulted); resolvedDir(defaulted) != want {
+	if want := filepath.Join(append([]string{cfg.OutputDir}, jobDirLevels(defaulted)...)...); resolvedDir(defaulted) != want {
 		t.Errorf("未指定 dir 时落点 = %q，期望 %q", resolvedDir(defaulted), want)
 	}
 }
