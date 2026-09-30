@@ -26,6 +26,11 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 		t.Fatalf("document count = %d, want 1", len(ofd.Documents))
 	}
 	doc := ofd.Documents[0]
+	// 这里的 ID 是 fixture 里实际写入的 StID，不是 example manifest 里的资源名。
+	// 名字（dp-10、dp-20…）只是 manifest 内部的名字，创建器按出现顺序分配
+	// StID，两者对不上：drawparam.yaml 的 dp-10 落到 StID 2，dp-20 落到 11。
+	// 早先这里按名字的字面值查（10/12/20/21/22），在 fixture 由 e3c0a9f 用更新后
+	// 的创建器重建之前恰好成立，重建后就全错位了。属性值本身没变，仍按下表断言。
 	for _, test := range []struct {
 		id        uint64
 		lineWidth float64
@@ -33,11 +38,11 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 		join      string
 		stroke    string
 	}{
-		{10, 0.353, "Butt", "Miter", "0 0 0"},
-		{12, 3, "Round", "Round", "0 0 200"},
-		{20, 4, "Butt", "Miter", "0 100 255"},
-		{21, 3, "Round", "Round", "255 100 0"},
-		{22, 1, "Butt", "Miter", "0 180 0"},
+		{2, 0.353, "Butt", "Miter", "0 0 0"},
+		{4, 3, "Round", "Round", "0 0 200"},
+		{11, 4, "Butt", "Miter", "0 100 255"},
+		{12, 3, "Round", "Round", "255 100 0"},
+		{13, 1, "Butt", "Miter", "0 180 0"},
 	} {
 		dp := doc.GetDrawParam(models.StID(test.id))
 		if dp == nil {
@@ -63,19 +68,24 @@ func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 	if path.StrokeColor == nil || path.StrokeColor.Value == nil {
 		t.Fatal("PathObject StrokeColor was not parsed")
 	}
-	miterPath := findPathByID(doc.Pages[1].Content().Layer[0].Items, 51)
+	// 同样按新 fixture 的 StID 查：旧版的 ID=51/31 在重建后已经不存在。
+	// 旧 ID=51（LineWidth=3）对应新的 ID=53。
+	miterPath := findPathByID(doc.Pages[1].Content().Layer[0].Items, 53)
 	if miterPath == nil || miterPath.LineWidth != 3 {
 		if miterPath == nil {
-			t.Fatal("page 2 PathObject ID=51 was not parsed")
+			t.Fatal("page 2 PathObject ID=53 was not parsed")
 		}
-		t.Fatalf("page 2 PathObject ID=51 LineWidth = %g, want 3", miterPath.LineWidth)
+		t.Fatalf("page 2 PathObject ID=53 LineWidth = %g, want 3", miterPath.LineWidth)
 	}
-	drawParamPath := findPathByID(doc.Pages[3].Content().Layer[0].Items, 31)
-	if drawParamPath == nil || drawParamPath.DrawParam != 18 {
+	// 这里要验的是"引用 DrawParam 的路径能解析出该参数"，所以挑一个真的引用了
+	// DrawParam 的对象。旧版用 ID=31 引用 StID=18（manifest 里的 dp-18）；新
+	// fixture 里 dp-18 拿到 StID=13，引用它的路径是 ID=104。
+	drawParamPath := findPathByID(doc.Pages[3].Content().Layer[0].Items, 104)
+	if drawParamPath == nil || drawParamPath.DrawParam != 13 {
 		if drawParamPath == nil {
-			t.Fatal("page 4 PathObject ID=31 was not parsed")
+			t.Fatal("page 4 PathObject ID=104 was not parsed")
 		}
-		t.Fatalf("PathObject ID=31 DrawParam = %d, want 18", drawParamPath.DrawParam)
+		t.Fatalf("PathObject ID=104 DrawParam = %d, want 13", drawParamPath.DrawParam)
 	}
 }
 
