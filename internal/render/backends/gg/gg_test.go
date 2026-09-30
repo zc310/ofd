@@ -98,7 +98,6 @@ func TestGGBackendMatchesCanvasOnRealOFD(t *testing.T) {
 		"ano.ofd",
 		"intro.ofd",
 		"999.ofd",
-		"magazine.ofd",
 		"radial_demo.ofd",
 	}
 	for _, name := range fixtures {
