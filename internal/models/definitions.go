@@ -582,6 +582,12 @@ func (c *CTM) IsFinite() bool {
 	return true
 }
 
+// IsInvertible 判断矩阵是否可逆：分量有限且行列式非零。图案平铺等需要求逆的
+// 场景用它判断矩阵是否可用，nil 按单位矩阵处理。
+func (c *CTM) IsInvertible() bool {
+	return c.IsFinite() && c[0]*c[3]-c[1]*c[2] != 0
+}
+
 // String 返回字符串表示
 func (c *CTM) String() string {
 	return fmt.Sprintf("[%.4f %.4f %.4f %.4f %.4f %.4f]",
