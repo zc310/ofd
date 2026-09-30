@@ -9,6 +9,8 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+
+	"github.com/zc310/ofd/internal/utils"
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -182,8 +184,50 @@ func (r *Reader) textAt(index int) []TextRun {
 		return runs
 	}
 	runs := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily)
-	r.text.Add(index, runs)
+	r.text.AddWeighted(index, runs, textRunsWeight(runs))
 	return runs
+}
+
+// newTextCache 与 newSearchCache 构造按条目数与字节预算双重限制的缓存。
+//
+// 四处需要同样的构造（打开文档，以及换用/移除回退字体时重建），写成内联
+// 迟早有一处漏改——漏改的那处预算会静默失效，调用方看不出区别。
+func newTextCache() *utils.LRU[int, []TextRun] {
+	return utils.NewWeightedLRU[int, []TextRun](textCacheCapacity, textCacheBytes, nil)
+}
+
+func newSearchCache() *utils.LRU[int, searchPage] {
+	return utils.NewWeightedLRU[int, searchPage](searchCacheCapacity, searchCacheBytes, nil)
+}
+
+// textRunsWeight 估算一页文字快照的内存占用，用作缓存的计量权重。
+//
+// 不用 unsafe.Sizeof：那一处会把整个包拖进 unsafe，而这个估算不需要精确到
+// 字节——它只用于决定何时逐出，取整到几十字节的误差无关紧要。真正要紧的是
+// 分量齐全：字形里每个 Glyph 都自带一个 Text string，漏掉它会低估一个数量级。
+//
+// 实测每页占用：稀疏页约 1.4 KB，密集页（ano.ofd，2200 字形）约 154 KB，
+// 相差 110 倍。按页数封顶时缓存占用会在 90 KB 到 9.8 MB 之间浮动，全看文档
+// 碰巧是哪一类；按字节封顶才 predictable。
+const (
+	// textRunWeightOverhead 是 TextRun 结构体本身的估算字节数（不含变长部分）。
+	textRunWeightOverhead = 96
+	// glyphWeightOverhead 是 Glyph 结构体本身的估算字节数（不含其 Text）。
+	glyphWeightOverhead = 64
+)
+
+func textRunsWeight(runs []TextRun) int64 {
+	var total int64
+	for i := range runs {
+		run := &runs[i]
+		total += textRunWeightOverhead
+		total += int64(len(run.Text)) + int64(len(run.FontFamily))
+		for j := range run.Glyphs {
+			total += glyphWeightOverhead + int64(len(run.Glyphs[j].Text))
+		}
+	}
+	// 切片自身的底层数组
+	return total + int64(len(runs))*textRunWeightOverhead
 }
 
 func textFontFamily(document *render.Document, scope int, id uint64, fallback string) string {

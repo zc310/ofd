@@ -9,7 +9,6 @@ import (
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // FontResource 描述文档中可注入浏览器的嵌入字体。
@@ -151,8 +150,8 @@ func (r *Reader) UseFallbackFont(family string) error {
 	r.renderDocsMu.Lock()
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
-	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
-	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
+	r.text = newTextCache()
+	r.search = newSearchCache()
 	return nil
 }
 
@@ -197,8 +196,8 @@ func (r *Reader) RemoveFallbackFont(family string) error {
 	r.renderDocsMu.Lock()
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
-	r.text = utils.NewLRU[int, []TextRun](textCacheCapacity, nil)
-	r.search = utils.NewLRU[int, searchPage](searchCacheCapacity, nil)
+	r.text = newTextCache()
+	r.search = newSearchCache()
 	return nil
 }
 
