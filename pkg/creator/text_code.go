@@ -13,8 +13,9 @@ import (
 
 const defaultTextSize = 4.2333333333
 
-// completeTextCodes 补充 TextCode 的默认起点，并按选项补充字符位置增量。
-func completeTextCodes(codes []TextCode, value string, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) []TextCode {
+// completeTextCodes 补充 TextCode 的默认起点，并按选项补充字符位置增量。返回的
+// 字体面供 fitTextBoundary 校正文字边界；未加载字体时为 nil。
+func completeTextCodes(codes []TextCode, value string, height, size, hScale float64, direction int, fontName string, fonts []Font, weight int, italic, completeDeltas bool) ([]TextCode, *canvas.FontFace) {
 	baseline := height
 	if baseline <= 0 {
 		baseline = size
@@ -22,19 +23,37 @@ func completeTextCodes(codes []TextCode, value string, height, size, hScale floa
 			baseline = defaultTextSize
 		}
 	}
+	// 字体只在需要补 Delta，或边界高度可能放不下字形时才加载——这两种情况都要
+	// 按字体度量处理，其它情况加载字体只是白解析一遍。
+	effectiveSize := size
+	if effectiveSize == 0 {
+		effectiveSize = defaultTextSize
+	}
+	needFace := completeDeltas || height <= 0 || height < effectiveSize
+	var face *canvas.FontFace
+	loaded := false
+	textFace := func() *canvas.FontFace {
+		if !loaded {
+			loaded = true
+			face = findTextFace(fontName, fonts, size, weight, italic)
+		}
+		return face
+	}
 	if len(codes) == 0 {
 		if runeCountOf(value) == 0 {
-			return codes
+			return codes, nil
 		}
 		// 单段整体文本：X/Y 必为默认值，直接构造，零多余拷贝。
 		x := 0.0
 		y := baseline
 		code := TextCode{Value: value, X: &x, Y: &y}
 		if completeDeltas && runeCountOf(value) > 1 {
-			face := findTextFace(fontName, fonts, size, weight, italic)
-			code.DeltaX, code.DeltaY = makeTextCodeDeltas([]rune(value), size, hScale, direction, face)
+			code.DeltaX, code.DeltaY = makeTextCodeDeltas([]rune(value), size, hScale, direction, textFace())
 		}
-		return []TextCode{code}
+		if needFace {
+			return []TextCode{code}, textFace()
+		}
+		return []TextCode{code}, nil
 	}
 	// 已提供 codes：先扫描是否真的需要改写，不需要则原样返回（零分配）。
 	changed := false
@@ -53,7 +72,10 @@ func completeTextCodes(codes []TextCode, value string, height, size, hScale floa
 		}
 	}
 	if !changed {
-		return codes
+		if needFace {
+			return codes, textFace()
+		}
+		return codes, nil
 	}
 	result := append([]TextCode(nil), codes...)
 	total := 0
@@ -71,13 +93,76 @@ func completeTextCodes(codes []TextCode, value string, height, size, hScale floa
 			code.Y = &y
 		}
 		if completeDeltas && total > 1 && runeCountOf(code.Value) > 1 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-			face := findTextFace(fontName, fonts, size, weight, italic)
-			deltaX, deltaY := makeTextCodeDeltas([]rune(code.Value), size, hScale, direction, face)
+			deltaX, deltaY := makeTextCodeDeltas([]rune(code.Value), size, hScale, direction, textFace())
 			code.DeltaX = deltaX
 			code.DeltaY = deltaY
 		}
 	}
-	return result
+	if needFace {
+		return result, textFace()
+	}
+	return result, nil
+}
+
+// fitTextBoundary 按字体度量校正文字对象边界：各段基线位置不变，只在字形的上伸
+// 部分超出边界上沿时把边界上移并加高。部分第三方阅读器会按 Boundary 裁剪文字，
+// Height 小于字体上伸高度时字顶就会被切掉。
+func fitTextBoundary(value *Text, face *canvas.FontFace) {
+	if value == nil || face == nil || value.CTM != nil {
+		return
+	}
+	metrics := face.Metrics()
+	if metrics.Ascent <= 0 {
+		return
+	}
+	// 基线由码位 Y 相对边界上沿的偏移决定；manifest 可以给出与 Height 不一致的
+	// 显式 text_codes，因此不能用 Height 代替。取最小/最大偏移分别对应最上一行
+	// 上伸、最下一行下伸。
+	minY, maxY, hasY := 0.0, 0.0, false
+	for _, code := range value.TextCodes {
+		if code.Y == nil {
+			continue
+		}
+		if !hasY {
+			minY, maxY, hasY = *code.Y, *code.Y, true
+			continue
+		}
+		if *code.Y < minY {
+			minY = *code.Y
+		}
+		if *code.Y > maxY {
+			maxY = *code.Y
+		}
+	}
+	if !hasY {
+		offset := value.Height
+		if offset <= 0 {
+			offset = value.Size
+			if offset == 0 {
+				offset = defaultTextSize
+			}
+		}
+		minY, maxY = offset, offset
+	}
+	oldY := value.Y
+	glyphTop := oldY + minY - metrics.Ascent
+	// 边界已能容纳上伸部分时不动，避免改动本就合适的边界。
+	if value.Height > 0 && glyphTop >= oldY {
+		return
+	}
+	newBottom := oldY + value.Height
+	if bottom := oldY + maxY + metrics.Descent; bottom > newBottom {
+		newBottom = bottom
+	}
+	shift := glyphTop - oldY
+	value.Y = glyphTop
+	value.Height = newBottom - glyphTop
+	// 边界上沿移动后，码位原点要反向平移，保证各段基线仍落在原来的位置。
+	for index := range value.TextCodes {
+		if y := value.TextCodes[index].Y; y != nil {
+			*y -= shift
+		}
+	}
 }
 
 // runeCountOf 统计字符串的字符数；对 ASCII 快路径直接取 len，否则交给
@@ -302,7 +387,7 @@ func completeClipsTextCodes(clips *Clips, fonts []Font, completeDeltas bool) *Cl
 				continue
 			}
 			copyText := *text
-			copyText.TextCodes = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic, completeDeltas)
+			copyText.TextCodes, _ = completeTextCodes(copyText.TextCodes, copyText.Value, copyText.Boundary.Height, copyText.Size, copyText.HScale, copyText.ReadDirection, copyText.Font, fonts, copyText.Weight, copyText.Italic, completeDeltas)
 			result.Items[clipIndex].Areas[areaIndex].Text = &copyText
 		}
 	}

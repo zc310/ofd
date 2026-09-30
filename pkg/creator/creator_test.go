@@ -1364,6 +1364,34 @@ func TestLoadSystemFontFamilyResolvesChineseAlias(t *testing.T) {
 	}
 }
 
+// TestFitTextBoundaryMovesTopUpWithoutMovingBaseline 保护文字边界校正：Height 小于
+// 字体上伸高度时，边界上沿上移并加高以容纳字形，但基线位置必须不变，否则文字会
+// 在页面上下跳动。
+func TestFitTextBoundaryMovesTopUpWithoutMovingBaseline(t *testing.T) {
+	data, err := os.ReadFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+	if err != nil {
+		t.Skipf("DejaVu Sans is unavailable: %v", err)
+	}
+	family := canvas.NewFontFamily("BoundaryFit")
+	if err := family.LoadFont(data, 0, canvas.FontRegular); err != nil {
+		t.Fatalf("加载字体失败: %v", err)
+	}
+	face := family.Face(18*2.83465, canvas.Black, canvas.FontRegular, canvas.FontNormal)
+	x, y := 0.0, 12.0
+	value := Text{X: 20, Y: 10, Width: 100, Height: 14, Size: 18, TextCodes: []TextCode{{Value: "字", X: &x, Y: &y}}}
+	baseline := value.Y + y
+	fitTextBoundary(&value, face)
+	if value.Y >= 10 {
+		t.Fatalf("边界上沿应上移，实际 Y=%v", value.Y)
+	}
+	if got := value.Y + *value.TextCodes[0].Y; math.Abs(got-baseline) > 1e-6 {
+		t.Fatalf("基线位置被改动: %v -> %v", baseline, got)
+	}
+	if ascent := face.Metrics().Ascent; ascent > value.Height+1e-6 {
+		t.Fatalf("边界高度仍放不下上伸部分: height=%v ascent=%v", value.Height, ascent)
+	}
+}
+
 // TestCreateTextCodeDeltasOffByDefault 不开开关时不该补全。
 func TestCreateTextCodeDeltasOffByDefault(t *testing.T) {
 	document := Document{
