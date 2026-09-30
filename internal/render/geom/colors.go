@@ -61,14 +61,19 @@ func (g Grad) At(t float64) color.RGBA {
 	} else if g[len(g)-1].Offset <= t {
 		return g[len(g)-1].Color
 	}
-	for i, after := range g[1:] {
-		if t < after.Offset {
-			before := g[i]
-			u := (t - before.Offset) / (after.Offset - before.Offset)
-			return colorLerp(before.Color, after.Color, u)
+	lo, hi := 0, len(g)-1
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if g[mid].Offset <= t {
+			lo = mid + 1
+		} else {
+			hi = mid
 		}
 	}
-	return g[len(g)-1].Color
+	before := g[lo-1]
+	after := g[lo]
+	u := (t - before.Offset) / (after.Offset - before.Offset)
+	return colorLerp(before.Color, after.Color, u)
 }
 
 // ToLinear 把色标集合绑定到线性渐变。

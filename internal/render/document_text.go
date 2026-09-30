@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
@@ -402,30 +403,16 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 	}
 	for i, glyph := range glyphs {
 		if i > 0 {
-			// 前一个字形的宽度只测量一次：定位步进与自然步进对比复用同一个值。
-			// textGlyphWidth 会对单字做一次完整整形，是本循环最贵的操作，
-			// 重复测量会白白多花一倍的整形开销。
-			prevWidth := -1.0
-			prevGlyphWidth := func() float64 {
-				if prevWidth < 0 {
-					prevWidth = textGlyphWidth(face, glyphs[i-1])
-				}
-				return prevWidth
-			}
-			// 有显式 DeltaX/DeltaY 时不需要按字体字宽步进，
-			// 避免为每个字形额外做一次文字整形。
+			prevWidth := textGlyphWidth(face, glyphs[i-1])
 			glyphWidth := 0.0
 			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-				glyphWidth = prevGlyphWidth()
+				glyphWidth = prevWidth
 			}
 			deltaX, deltaY := textAdvance(glyphWidth, object, code, i-1)
 			posX += deltaX
 			posY += deltaY
-			// 显式步进出现纵向位移或明显回退时（换行、基线调整），断开当前文本串：
-			// 合并绘制只按字体自然步进水平排布，忽略这些位移会把多行文字压成一行，
-			// 后续行跑到页外而不可见。
 			if len(run) > 0 {
-				naturalX := prevGlyphWidth() * textHScale(object)
+				naturalX := prevWidth * textHScale(object)
 				if textAdvanceDiffers(deltaX, deltaY, naturalX) {
 					flushRun()
 				}
@@ -461,6 +448,12 @@ func renderableTextValue(value string) bool {
 	return false
 }
 
+var transformMapPool = sync.Pool{
+	New: func() any {
+		return make(map[int]models.CTCGTransform)
+	},
+}
+
 func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
 	if len(transforms) == 0 {
 		glyphs := make([]textGlyph, len(runes))
@@ -469,7 +462,9 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 		}
 		return glyphs
 	}
-	byPosition := make(map[int]models.CTCGTransform, len(transforms))
+	byPosition := transformMapPool.Get().(map[int]models.CTCGTransform)
+	defer transformMapPool.Put(byPosition)
+	clear(byPosition)
 	for _, transform := range transforms {
 		byPosition[transform.CodePosition] = transform
 	}

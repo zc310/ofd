@@ -116,6 +116,10 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 		mapUnit: shd.MapUnit,
 		extend:  shd.Extend,
 	}
+	gradient.dx = end.X - start.X
+	gradient.dy = end.Y - start.Y
+	gradient.d2 = gradient.dx*gradient.dx + gradient.dy*gradient.dy
+	gradient.unit = math.Sqrt(gradient.d2)
 	addOFDGradientStops(&gradient.stops, shd.Segment, resolve)
 	return gradient
 }

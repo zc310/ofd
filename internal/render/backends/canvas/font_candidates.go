@@ -3,6 +3,7 @@ package canvas
 import (
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
@@ -14,7 +15,12 @@ import (
 // 本文件实现系统字体候选匹配：PostScript 名别名、通用字体族分类、CJK 字体组
 // 到系统文件的映射、等宽字体回退，以及回退字体名归一化。
 
+var systemFontCandidatesCache sync.Map
+
 func systemFontCandidates(ft *models.Font) []string {
+	if cached, ok := systemFontCandidatesCache.Load(ft); ok {
+		return cached.([]string)
+	}
 	names := make([]string, 0, 5)
 	seen := make(map[string]bool, 5)
 	add := func(name string) {
@@ -38,6 +44,7 @@ func systemFontCandidates(ft *models.Font) []string {
 			add("monospace")
 		}
 	}
+	systemFontCandidatesCache.Store(ft, names)
 	return names
 }
 

@@ -42,6 +42,11 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	if source == nil {
 		return nil
 	}
+	p.ctColorMu.Lock()
+	defer p.ctColorMu.Unlock()
+	if cc, ok := p.ctColorCache[source]; ok {
+		return cc
+	}
 	cc := &CTColor{}
 	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
 		cc.Value = p.colorRGBA(*source)
@@ -49,6 +54,10 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	}
 
 	cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
+	if p.ctColorCache == nil {
+		p.ctColorCache = make(map[*models.CTColor]*CTColor)
+	}
+	p.ctColorCache[source] = cc
 	return cc
 }
 

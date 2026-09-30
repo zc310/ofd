@@ -381,7 +381,7 @@ func (p *Path) StartPos() Point {
 
 // Coords returns all the coordinates of the segment start/end points. It omits zero-length CloseCmds.
 func (p *Path) Coords() []Point {
-	coords := []Point{}
+	coords := make([]Point, 0, p.Len())
 	for i := 0; i < len(p.d); {
 		cmd := p.d[i]
 		i += cmdLen(cmd)

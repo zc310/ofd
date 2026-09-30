@@ -12,7 +12,11 @@ import (
 	"github.com/tdewolff/canvas"
 
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/utils"
 )
+
+var toCanvasPathCache = utils.NewLRU[*geom.Path, *canvas.Path](128, nil)
+var fromCanvasPathCache = utils.NewLRU[*canvas.Path, *geom.Path](128, nil)
 
 // FromCanvasMatrix 把 canvas.Matrix 转为 geom.Matrix（两者布局一致）。
 func FromCanvasMatrix(m canvas.Matrix) geom.Matrix { return geom.Matrix(m) }
@@ -23,6 +27,9 @@ func ToCanvasMatrix(m geom.Matrix) canvas.Matrix { return canvas.Matrix(m) }
 // FromCanvasPath 把 canvas.Path 转为 geom.Path。椭圆弧保留为弧段，由 geom
 // 在需要时展开。
 func FromCanvasPath(p *canvas.Path) *geom.Path {
+	if cached, ok := fromCanvasPathCache.Get(p); ok {
+		return cached
+	}
 	out := &geom.Path{}
 	if p == nil || p.Empty() {
 		return out
@@ -50,11 +57,15 @@ func FromCanvasPath(p *canvas.Path) *geom.Path {
 			out.Close()
 		}
 	}
+	fromCanvasPathCache.Add(p, out)
 	return out
 }
 
 // ToCanvasPath 把 geom.Path 转为 canvas.Path。
 func ToCanvasPath(p *geom.Path) *canvas.Path {
+	if cached, ok := toCanvasPathCache.Get(p); ok {
+		return cached
+	}
 	out := &canvas.Path{}
 	if p == nil {
 		return out
@@ -82,6 +93,7 @@ func ToCanvasPath(p *geom.Path) *canvas.Path {
 			out.Close()
 		}
 	}
+	toCanvasPathCache.Add(p, out)
 	return out
 }
 
