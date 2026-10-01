@@ -63,7 +63,7 @@ Linux 和 Windows 桌面版需要目标平台的图形开发环境；Windows 交
 
 项目提供一个无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm`](cmd/ofd-wasm)。解析和渲染运行在单个 Web Worker 中，使用一个 WASM 实例和一个 Reader 管理文档状态；页面和缩略图按可视区域附近懒加载，并分别缓存渲染结果。
 
-在线预览：<https://zc310.github.io/ofd-wasm/>
+在线预览：<https://zc310.github.io/ofd/wasm/>
 
 ### 构建和运行
 
@@ -191,19 +191,6 @@ CC=x86_64-w64-mingw32-gcc GOOS=windows CGO_ENABLED=1 GOARCH=amd64 make package
 Fyne 查看器需要目标平台的图形开发库。Windows 版查看器使用 `-H=windowsgui` 编译，不显示命令行窗口。
 
 </details>
-
-## Flatpak
-
-仓库根目录包含 `io.github.zc310.ofd.json` 及其桌面集成文件，可用于构建 OFD Viewer 的 Flatpak 包。构建依赖已通过 `go.mod.json` 和 `modules.txt` 固定，避免 Flatpak 构建阶段联网下载 Go 模块。
-
-```bash
-flatpak run org.flatpak.Builder --user --install --force-clean --disable-rofiles-fuse build-dir io.github.zc310.ofd.json
-flatpak run io.github.zc310.ofd
-```
-
-正式提交 Flathub 前，需要将 manifest 中的源码 commit 更新为包含当前 Flatpak 文件的 `v0.0.5` 发布 commit，并在本机安装 `flatpak-builder`、`appstreamcli` 后完成元数据检查。
-
-Flatpak 版本以只读方式访问真实的 `~/.local/share/fonts` 用户字体目录和宿主机系统目录（`host-os`），用于渲染未内嵌字体的 OFD 文档。
 
 ## 快速开始
 
