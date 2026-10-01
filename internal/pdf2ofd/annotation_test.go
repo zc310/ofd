@@ -57,6 +57,46 @@ func TestConvertRendersAnnotationAppearance(t *testing.T) {
 	}
 }
 
+func TestConvertSkipsInvisibleAnnotationAppearance(t *testing.T) {
+	form := "1 0 0 rg 0 0 40 40 re f"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>",
+		"<< /Length 3 >>\nstream\nq Q\nendstream",
+		"<< /Type /Annot /Subtype /Square /Rect [10 10 50 50] /F 5 /AP << /N 6 0 R >> >>",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 40 40] /Length " + itoa(len(form)) + " >>\nstream\n" + form + "\nendstream",
+	}
+	page := parseConvertedPage(t, objects)
+	for _, path := range layerPaths(page.Content().Layer[0]) {
+		if path.FillColor != nil && path.FillColor.Value != nil && path.FillColor.Value.R == 255 && path.FillColor.Value.G == 0 && path.FillColor.Value.B == 0 {
+			t.Fatal("annotation with Invisible flag was rendered")
+		}
+	}
+}
+
+func TestConvertAnnotationGraphicsStackIsScoped(t *testing.T) {
+	pageContent := "0 0 1 rg q 1 0 0 rg 0 0 10 10 re f"
+	appearance := "Q 10 10 20 20 re f"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>",
+		"<< /Length " + itoa(len(pageContent)) + " >>\nstream\n" + pageContent + "\nendstream",
+		"<< /Type /Annot /Subtype /Square /Rect [10 10 30 30] /F 4 /AP << /N 6 0 R >> >>",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length " + itoa(len(appearance)) + " >>\nstream\n" + appearance + "\nendstream",
+	}
+	page := parseConvertedPage(t, objects)
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 2 {
+		t.Fatalf("path objects = %d, want page content and annotation appearance", len(paths))
+	}
+	color := paths[1].FillColor
+	if color == nil || color.Value == nil || color.Value.R != 0 || color.Value.G != 0 || color.Value.B != 0 {
+		t.Fatalf("annotation inherited page graphics stack: fill = %+v, want default black", color)
+	}
+}
+
 func TestConvertAnnotationFontScopesToAppearanceResources(t *testing.T) {
 	// 注解外观有自己的资源字典，允许使用与页面同名的字体资源（如 /F1）。
 	// 若按资源名复用页面已缓存的字体，外观会误用页面字体并按错误编码解码，
