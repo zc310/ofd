@@ -62,6 +62,46 @@ func TestConvertFormXObjectAppliesMatrix(t *testing.T) {
 	}
 }
 
+func TestConvertFormXObjectClipsToBBox(t *testing.T) {
+	form := "0 0 20 20 re f"
+	content := "q /Fm Do Q 1 0 0 rg 50 50 10 10 re f"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Fm 4 0 R >> >> /Contents 5 0 R >>",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >> /Length " + itoa(len(form)) + " >>\nstream\n" + form + "\nendstream",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
+	}
+	page := parseConvertedPage(t, objects)
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 2 {
+		t.Fatalf("path objects = %d, want form path and following page path", len(paths))
+	}
+	if paths[0].Clips == nil || len(paths[0].Clips.Clip) == 0 {
+		t.Fatal("Form XObject content has no implicit BBox clip")
+	}
+	if paths[1].Clips != nil {
+		t.Fatal("Form XObject BBox clip leaked into following page content")
+	}
+}
+
+func TestConvertFormXObjectGraphicsStackIsScoped(t *testing.T) {
+	form := "Q"
+	content := "q /Fm Do 10 10 10 10 re f Q"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Fm 4 0 R >> >> /Contents 5 0 R >>",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << >> /Length " + itoa(len(form)) + " >>\nstream\n" + form + "\nendstream",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
+	}
+	page := parseConvertedPage(t, objects)
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 1 {
+		t.Fatalf("page path objects = %d, want 1 after Form's unmatched Q", len(paths))
+	}
+}
+
 func TestConvertFormGroupAlphaKeepsOuterOpacity(t *testing.T) {
 	// Form XObject 是透明度组：外层 /ca 0.5 必须保留为组透明度，不能被 Form
 	// 内部的重置 gs（ca=1）覆盖。OFD 没有混合模式，这里只验证组透明度。
