@@ -75,9 +75,7 @@
     .recent-item:hover { background: #e8f1fb; }
     .recent-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-item small { grid-column: 1 / -1; color: #667188; font-size: 12px; }
-     .search-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: flex; min-width: 310px; align-items: center; gap: 6px; padding: 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; }
-     .search-panel[hidden] { display: none; }
-     .info-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; min-width: 280px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
+      .info-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; min-width: 280px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
      .info-panel[hidden] { display: none; }
      .info-content { padding: 8px; }
      .info-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px; border-bottom: 1px solid #d7dce5; color: #667188; font-size: 12px; }
@@ -156,8 +154,8 @@
     .skip-link:focus { transform: translateY(0); }
     #page-number { width: 58px; }
     #zoom-label { min-width: 48px; color: #d5dceb; text-align: center; }
-    #search { min-width: 130px; flex: 1; }
-    #search-status { color: #49556a; font-size: 13px; white-space: nowrap; }
+     #search { min-width: 0; width: 100%; }
+     #search-status { flex: 1 1 auto; min-width: 0; overflow: hidden; color: #49556a; font-size: 12px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
     #status { display: flex; min-height: 1.5em; align-items: center; gap: 10px; padding: 8px 18px; background: #eef1f5; color: #49556a; font-size: 13px; }
     #status-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
      #status-message.copy-feedback { color: #2f7d4a; }
@@ -215,14 +213,13 @@
     body.dark-reading .thumbnail:hover { border-color: #80b4e5; }
     body.dark-reading .thumbnail.active { border-color: #80b4e5; box-shadow: inset 0 0 0 2px #80b4e5, 0 3px 10px #00000050; }
      body.dark-reading .page-card { box-shadow: 0 4px 20px #00000060; }
-    body.dark-reading .search-panel, body.dark-reading .view-panel, body.dark-reading .info-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
+     body.dark-reading .view-panel, body.dark-reading .info-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
     body.dark-reading .zoom-menu { border-color: #536074; background: #252c38; color: #e6ebf2; }
     body.dark-reading .zoom-menu button { border-color: #536074; background: #303947; color: #e6ebf2; }
     body.dark-reading .zoom-menu button:hover { background: #3a465a; }
     body.dark-reading .document-menu { border-color: #536074; background: #252c38; color: #e6ebf2; }
     body.dark-reading .document-menu button { color: #e6ebf2; }
     body.dark-reading .document-menu button:hover:not(:disabled) { background: #3a465a; }
-    body.dark-reading .search-panel input { border-color: #536074; background: #303947; color: #e6ebf2; }
      body.dark-reading .view-option { color: #e6ebf2; }
      body.dark-reading .view-option select, body.dark-reading .view-option input[type="color"] { border-color: #536074; background: #303947; color: #e6ebf2; }
     body.dark-reading .recent-panel { border-color: #536074; background: #252c38; color: #e6ebf2; }
@@ -252,11 +249,13 @@
           #sidebar { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
         }
        #sidebar-tabs { position: relative; display: flex; flex: 0 0 auto; gap: 3px; padding: 0 10px; }
-       #sidebar-tabs > button { flex: 1 1 0; min-width: 0; padding: 5px 4px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        #sidebar-tabs > button { flex: 1 1 0; min-width: 0; padding: 5px 3px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
        #sidebar-tabs > button:hover { background: #ffffff80; }
-       #sidebar-tabs > button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
-       body.dark-reading #sidebar-tabs > button { color: #aeb9ca; }
-       body.dark-reading #sidebar-tabs > button.active { border-color: #536074; background: #303947; color: #e6ebf2; }
+        #sidebar-tabs > button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
+        body.dark-reading #sidebar-tabs > button { color: #aeb9ca; }
+        body.dark-reading #sidebar-tabs > button.active { border-color: #536074; background: #303947; color: #e6ebf2; }
+        #sidebar-tab-search { flex: 0 0 30px; padding: 4px !important; }
+        #sidebar-tab-search .material-symbols-outlined { font-size: 18px; }
        #sidebar-tab-more { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
        #sidebar-tab-more .material-symbols-outlined { font-size: 16px; transition: transform .15s; }
        #sidebar-tab-more[aria-expanded="true"] .material-symbols-outlined { transform: rotate(180deg); }
@@ -271,8 +270,30 @@
        body.dark-reading .sidebar-more-menu button.active { background: #2b4a6b; color: #cfe3f7; }
        #thumbnails { flex: 1 1 auto; min-height: 0; overflow: auto; padding-left: 8px; scrollbar-width: none; }
        .sidebar-filter { flex: 0 0 auto; box-sizing: border-box; width: auto; margin: 0 10px; min-height: 30px; padding: 4px 8px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; color: #172033; font: inherit; }
-       .sidebar-filter[hidden] { display: none; }
-       body.dark-reading .sidebar-filter { border-color: #536074; background: #303947; color: #e6ebf2; }
+        .sidebar-filter[hidden] { display: none; }
+        body.dark-reading .sidebar-filter { border-color: #536074; background: #303947; color: #e6ebf2; }
+        #search-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 8px; }
+        #search-panel[hidden] { display: none; }
+        .sidebar-search-form { display: flex; flex: 0 0 auto; gap: 5px; padding: 0 10px; }
+        .sidebar-search-form input { flex: 1 1 auto; min-width: 0; }
+        .sidebar-search-form button { flex: 0 0 auto; }
+        body.dark-reading .sidebar-search-form input { border-color: #536074; background: #303947; color: #e6ebf2; }
+        .sidebar-search-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 0 10px; }
+        .sidebar-search-actions button { min-width: 32px; }
+        body.dark-reading #search-status { color: #aeb9ca; }
+        #search-results { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 8px 8px; scrollbar-width: thin; }
+        .search-empty { margin: 10px 4px; color: #7b8798; font-size: 13px; }
+        body.dark-reading .search-empty { color: #9aa7b8; }
+        .search-result-page { margin: 10px 4px 3px; color: #667188; font-size: 11px; font-weight: 600; }
+        body.dark-reading .search-result-page { color: #aeb9ca; }
+        .search-result { display: block; width: 100%; min-height: 0; margin: 0 0 2px; padding: 6px; border: 0; border-radius: 4px; background: transparent; color: #26313f; text-align: left; }
+        .search-result:hover { background: #ffffffb0; }
+        .search-result[aria-current="true"] { background: #dbe8f6; color: #10508f; }
+        .search-result-snippet { display: block; overflow: hidden; font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+        body.dark-reading .search-result { color: #d7dee8; }
+        body.dark-reading .search-result:hover { background: #ffffff1a; }
+        body.dark-reading .search-result[aria-current="true"] { background: #2b4a6b; color: #cfe3f7; }
+        .search-result-limit { margin: 6px 4px; color: #7b8798; font-size: 11px; }
        .sidebar-resizer { position: absolute; top: 0; right: -9px; width: 12px; height: 100%; cursor: col-resize; touch-action: none; }
        .sidebar-resizer::after { position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: transparent; content: ""; }
        .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .sidebar-resizer.dragging::after { background: #80b4e5; }
@@ -483,10 +504,9 @@
 
 
       .page-group > span { display: inline-flex; align-items: center; }
-      .view-panel, .recent-panel, .search-panel { position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 0; }
-        .search-panel { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; max-width: none; transform: none; }
-        .info-panel { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; max-width: none; transform: none; }
-        .recent-panel, .search-panel, .info-panel { width: auto; }
+       .view-panel, .recent-panel { position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 0; }
+         .info-panel { position: fixed; top: calc(var(--header-height, 0px) + 8px); right: 10px; left: 10px; max-width: none; transform: none; }
+         .recent-panel, .info-panel { width: auto; }
 
 
        .view-panel { width: min(240px, calc(100vw - 20px)); }
@@ -504,7 +524,9 @@
        #sidebar-tabs { margin: 0; padding: 0; }
        #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #thumbnails[hidden] { display: none; }
-        #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
+          #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
+        #search-panel { flex: 1 1 auto; max-height: none; overflow: hidden; }
+        .sidebar-search-form button, .sidebar-search-actions button { min-width: 40px; min-height: 40px; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
@@ -566,14 +588,7 @@
       </div>
     </div>
     <div class="toolbar-group search-group" aria-label="搜索">
-       <button id="search-toggle" type="button" title="搜索" aria-label="搜索" disabled aria-controls="search-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
-      <div id="search-panel" class="search-panel" hidden>
-        <input id="search" type="search" placeholder="搜索文字" disabled>
-         <button id="search-button" type="button" title="查找" aria-label="查找" disabled><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
-         <button id="search-previous" type="button" title="上一个搜索结果" disabled aria-label="上一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-         <button id="search-next" type="button" title="下一个搜索结果" disabled aria-label="下一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
-        <span id="search-status" aria-live="polite"></span>
-      </div>
+        <button id="search-toggle" type="button" title="搜索" aria-label="搜索" disabled aria-controls="search-panel"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
     </div>
     <div class="toolbar-group view-group" aria-label="显示设置">
        <button id="view-toggle" type="button" title="显示设置" aria-label="显示设置" disabled aria-controls="view-panel" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
@@ -747,6 +762,7 @@
         <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="active">缩略图</button>
         <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
         <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks">书签</button>
+        <button id="sidebar-tab-search" type="button" role="tab" aria-selected="false" aria-label="搜索" title="搜索" aria-controls="search-panel"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
         <button id="sidebar-tab-more" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sidebar-more-menu">
           <span id="sidebar-tab-more-label">更多</span>
           <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
@@ -761,6 +777,18 @@
         </div>
       </div>
       <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
+      <aside id="search-panel" role="tabpanel" aria-label="全文搜索" hidden>
+        <form id="sidebar-search-form" class="sidebar-search-form" role="search">
+          <input id="search" type="search" placeholder="搜索文字" disabled>
+          <button id="search-button" type="submit" title="查找" aria-label="查找" disabled><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+        </form>
+        <div class="sidebar-search-actions" role="group" aria-label="搜索结果导航">
+          <button id="search-previous" type="button" title="上一个搜索结果" disabled aria-label="上一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+          <button id="search-next" type="button" title="下一个搜索结果" disabled aria-label="下一个搜索结果"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+          <span id="search-status" aria-live="polite"></span>
+        </div>
+        <div id="search-results" aria-live="polite"><p class="search-empty">输入文字搜索文档</p></div>
+      </aside>
       <div id="outline-toolbar" class="outline-toolbar" role="group" aria-label="大纲操作" hidden>
         <button id="outline-expand-all" type="button">展开全部</button>
         <button id="outline-collapse-all" type="button">折叠全部</button>
