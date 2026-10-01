@@ -189,9 +189,7 @@ func (p *pdfInterpreter) appendImageData(data []byte, format string) error {
 	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm）。OFD
 	// 图片缺省按边界正放，这里输出负缩放 CTM 让阅读器镜像。
 	image.CTM = imageFlipCTM(p.state.ctm, width, height)
-	// 图片对象在阅读器侧默认使用 {Width,0,0,Height,0,0} 的 CTM，
-	// 裁剪区坐标需要抵消该缩放后才能使用毫米坐标。
-	if clips := p.buildClips(minX, minY, true, width, height); clips != nil {
+	if clips := p.buildClips(minX, minY); clips != nil {
 		image.Clips = clips
 	}
 	p.page.Items = append(p.page.Items, image)

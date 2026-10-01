@@ -157,7 +157,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 			}
 		}
 	}
-	if clips := p.buildClips(minX, minY, false, 0, 0); clips != nil {
+	if clips := p.buildClips(minX, minY); clips != nil {
 		path.Clips = clips
 	}
 	path.Alpha = ofdAlpha(p.pathOpacity(fill, stroke))
@@ -198,10 +198,9 @@ func closeSubpathsForFill(commands []pdfPathCommand) []pdfPathCommand {
 }
 
 // buildClips 把当前图形状态中的裁剪区转换为 OFD Clips。
-// objX、objY 是图元边界（与图元 X/Y 相同的毫米坐标）。isImage 为 true 时
-// 图片对象默认带有 {Width,0,0,Height,0,0} 的 CTM，需要为裁剪面积设置逆缩放
-// 的 CTM 来抵消，使裁剪数据统一使用毫米坐标。
-func (p *pdfInterpreter) buildClips(objX, objY float64, isImage bool, imageWidth, imageHeight float64) *creator.Clips {
+// objX、objY 是图元边界（与图元 X/Y 相同的毫米坐标）。裁剪路径以相对图元边界的
+// 毫米坐标写入 OFD，不需要按图元类型额外缩放。
+func (p *pdfInterpreter) buildClips(objX, objY float64) *creator.Clips {
 	if len(p.state.clips) == 0 || p.page == nil || p.page.Area == nil || p.page.Area.PhysicalBox == nil {
 		return nil
 	}
@@ -212,9 +211,6 @@ func (p *pdfInterpreter) buildClips(objX, objY float64, isImage bool, imageWidth
 			continue
 		}
 		area := creator.ClipArea{Path: clipPath}
-		if isImage && imageWidth > 0 && imageHeight > 0 {
-			area.CTM = &creator.CTM{1 / imageWidth, 0, 0, 1 / imageHeight, 0, 0}
-		}
 		items = append(items, creator.Clip{Areas: []creator.ClipArea{area}})
 	}
 	if len(items) == 0 {
@@ -226,7 +222,7 @@ func (p *pdfInterpreter) buildClips(objX, objY float64, isImage bool, imageWidth
 // clipPathFor 把设备坐标的裁剪路径转换为相对图元边界的 OFD 裁剪路径。
 // 阅读器计算裁剪时使用 页面 Y = 页高 - (局部 Y + 图元 Y)，而图元（路径/图片）
 // 的页面范围是 [图元 Y, 图元 Y+高]（顶部为图元 Y）。因此局部 Y 取
-// 页面顶部坐标减去图元 Y，路径和图片一致。图片额外用 CTM 抵消默认缩放。
+// 页面顶部坐标减去图元 Y，路径和图片一致。
 func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (*creator.ClipPath, bool) {
 	local := func(x, y float64) (float64, float64) {
 		mx, my := p.pagePoint(x, y)
