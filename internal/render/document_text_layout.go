@@ -37,7 +37,29 @@ type TextLayout struct {
 // TextLayouts 返回页面文字的字符级布局。字符步进使用渲染器的字体度量、
 // DeltaX/DeltaY、ReadDirection 和 CTM 基础计算，避免网页字体度量造成高亮偏移。
 func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
-	if p == nil || page == nil {
+	return p.textLayouts(page, nil)
+}
+
+// TextLayoutsForRuns 返回指定 run 的字符级布局，结果按页面绘制顺序排列。
+// run 索引与 TextValues 返回的顺序一致。
+func (p *Document) TextLayoutsForRuns(page *parser.Page, runIndices []int) []TextLayout {
+	if len(runIndices) == 0 {
+		return nil
+	}
+	selected := make(map[int]struct{}, len(runIndices))
+	for _, index := range runIndices {
+		if index >= 0 {
+			selected[index] = struct{}{}
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	return p.textLayouts(page, selected)
+}
+
+func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}) []TextLayout {
+	if p == nil || p.Document == nil || page == nil {
 		return nil
 	}
 	lease, err := page.AcquireLease()
@@ -50,33 +72,97 @@ func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
 	if content == nil {
 		return nil
 	}
+	runIndex := 0
 	for _, template := range content.Template {
 		if content := p.Document.GetTemplate(models.StID(template.TemplateID)); content != nil {
-			collectTextLayouts(content.Content, &layouts, p)
+			collectTextLayouts(content.Content, &layouts, p, selected, &runIndex)
 		}
 	}
 	if content.Content != nil {
 		for _, layer := range content.Content.Layer {
 			if layer != nil {
-				collectTextLayoutBlock(&layer.CTPageBlock, &layouts, p)
+				collectTextLayoutBlock(&layer.CTPageBlock, &layouts, p, selected, &runIndex)
 			}
 		}
 	}
 	return layouts
 }
 
-func collectTextLayouts(content *models.Content, layouts *[]TextLayout, document *Document) {
+// TextValues 返回页面中可见的非空 TextCode 文本，顺序与 TextLayouts 一致。
+// 搜索等只需读取文字内容的调用方可避免构建字符级几何信息。
+func (p *Document) TextValues(page *parser.Page) []string {
+	if p == nil || p.Document == nil || page == nil {
+		return nil
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		return nil
+	}
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return nil
+	}
+	values := make([]string, 0)
+	for _, template := range content.Template {
+		if templateContent := p.Document.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
+			collectTextValues(templateContent.Content, &values)
+		}
+	}
+	if content.Content != nil {
+		for _, layer := range content.Content.Layer {
+			if layer != nil {
+				collectTextValuesBlock(&layer.CTPageBlock, &values)
+			}
+		}
+	}
+	return values
+}
+
+func collectTextValues(content *models.Content, values *[]string) {
 	if content == nil {
 		return
 	}
 	for _, layer := range content.Layer {
 		if layer != nil {
-			collectTextLayoutBlock(&layer.CTPageBlock, layouts, document)
+			collectTextValuesBlock(&layer.CTPageBlock, values)
 		}
 	}
 }
 
-func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, document *Document) {
+func collectTextValuesBlock(block *models.CTPageBlock, values *[]string) {
+	if block == nil {
+		return
+	}
+	for _, item := range block.Items {
+		switch item.Kind {
+		case models.PageItemText:
+			if !item.Text.VisibleValue() {
+				continue
+			}
+			for _, code := range item.Text.TextCode {
+				if code.Value != "" {
+					*values = append(*values, code.Value)
+				}
+			}
+		case models.PageItemBlock:
+			collectTextValuesBlock(&item.Block.CTPageBlock, values)
+		}
+	}
+}
+
+func collectTextLayouts(content *models.Content, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
+	if content == nil {
+		return
+	}
+	for _, layer := range content.Layer {
+		if layer != nil {
+			collectTextLayoutBlock(&layer.CTPageBlock, layouts, document, selected, runIndex)
+		}
+	}
+}
+
+func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
 	if block == nil {
 		return
 	}
@@ -89,12 +175,17 @@ func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, do
 			codePosition := 0
 			for _, code := range item.Text.TextCode {
 				if code.Value != "" {
-					*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
+					if selected == nil {
+						*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
+					} else if _, ok := selected[*runIndex]; ok {
+						*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
+					}
+					*runIndex = *runIndex + 1
 				}
 				codePosition += len([]rune(code.Value))
 			}
 		case models.PageItemBlock:
-			collectTextLayoutBlock(&item.Block.CTPageBlock, layouts, document)
+			collectTextLayoutBlock(&item.Block.CTPageBlock, layouts, document, selected, runIndex)
 		}
 	}
 }

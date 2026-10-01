@@ -92,7 +92,7 @@ func BenchmarkTextCold(b *testing.B) {
 	}
 }
 
-// BenchmarkSearch 全文搜索。遍历所有页并建索引，是这个包最重的单项。
+// BenchmarkSearch 重复全文搜索：首轮建立索引，后续复用缓存索引。
 func BenchmarkSearch(b *testing.B) {
 	r := benchReader(b, "1000-pages.ofd")
 	b.ReportAllocs()
@@ -103,8 +103,42 @@ func BenchmarkSearch(b *testing.B) {
 	}
 }
 
-// BenchmarkSearchCached 连续两次搜索。它衡量的正是文字缓存对搜索有没有用——
-// 若这一项与 BenchmarkSearch 相当，说明搜索的时间不花在重建文字布局上。
+// BenchmarkSearchNoMatch 重复执行无命中搜索，首轮建立索引、后续命中索引缓存。
+func BenchmarkSearchNoMatch(b *testing.B) {
+	r := benchReader(b, "1000-pages.ofd")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := r.Search("不存在的查询内容"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkSearchNoMatchCold 每次清空搜索索引缓存，测量完整无命中扫描的成本。
+func BenchmarkSearchNoMatchCold(b *testing.B) {
+	r := benchReader(b, "1000-pages.ofd")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		r.search = newSearchCache(len(r.pages))
+		if _, err := r.Search("不存在的查询内容"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkSearchCold 每次清空搜索索引缓存，测量全页搜索与命中布局的冷路径。
+func BenchmarkSearchCold(b *testing.B) {
+	r := benchReader(b, "1000-pages.ofd")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		r.search = newSearchCache(len(r.pages))
+		if _, err := r.Search("文"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkSearchCached 先预热搜索索引，再测连续搜索复用索引与命中 run 布局的成本。
 func BenchmarkSearchCached(b *testing.B) {
 	r := benchReader(b, "1000-pages.ofd")
 	if _, err := r.Search("文"); err != nil {

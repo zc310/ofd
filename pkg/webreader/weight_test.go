@@ -59,7 +59,7 @@ func TestSearchPageWeightCountsBothParts(t *testing.T) {
 func TestCachesAreByteWeighted(t *testing.T) {
 	r := &Reader{}
 	r.text = newTextCache()
-	r.search = newSearchCache()
+	r.search = newSearchCache(1)
 	if got := r.text.Weight(); got != 0 {
 		t.Errorf("空缓存权重 = %d，期望 0", got)
 	}

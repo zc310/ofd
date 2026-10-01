@@ -196,8 +196,12 @@ func newTextCache() *utils.LRU[int, []TextRun] {
 	return utils.NewWeightedLRU[int, []TextRun](textCacheCapacity, textCacheBytes, nil)
 }
 
-func newSearchCache() *utils.LRU[int, searchPage] {
-	return utils.NewWeightedLRU[int, searchPage](searchCacheCapacity, searchCacheBytes, nil)
+func newSearchCache(pageCount int) *utils.LRU[int, searchPage] {
+	capacity := minInt(pageCount, searchCacheCapacity)
+	if capacity < 1 {
+		capacity = 1
+	}
+	return utils.NewWeightedLRU[int, searchPage](capacity, searchCacheBytes, nil)
 }
 
 // textRunsWeight 估算一页文字快照的内存占用，用作缓存的计量权重。

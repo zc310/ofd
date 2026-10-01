@@ -151,7 +151,7 @@ func (r *Reader) UseFallbackFont(family string) error {
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
 	r.text = newTextCache()
-	r.search = newSearchCache()
+	r.search = newSearchCache(len(r.pages))
 	return nil
 }
 
@@ -197,7 +197,7 @@ func (r *Reader) RemoveFallbackFont(family string) error {
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
 	r.text = newTextCache()
-	r.search = newSearchCache()
+	r.search = newSearchCache(len(r.pages))
 	return nil
 }
 
