@@ -279,7 +279,7 @@ func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands 
 				continue
 			}
 			image := creator.Image{X: minXmm, Y: minYmm, Width: width, Height: height, Data: data, Format: format}
-			if clips := p.buildPathClip(fillCommands, minXmm, minYmm, true, width, height); clips != nil {
+			if clips := p.buildPathClip(fillCommands, minXmm, minYmm); clips != nil {
 				image.Clips = clips
 			}
 			p.page.Items = append(p.page.Items, image)
@@ -385,7 +385,7 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 		return false
 	}
 	img := creator.Image{X: fillBounds[0], Y: fillBounds[1], Width: widthMM, Height: heightMM, Data: encoded.Bytes(), Format: "PNG"}
-	if clips := p.buildPathClip(fillCommands, fillBounds[0], fillBounds[1], true, widthMM, heightMM); clips != nil {
+	if clips := p.buildPathClip(fillCommands, fillBounds[0], fillBounds[1]); clips != nil {
 		img.Clips = clips
 	}
 	p.page.Items = append(p.page.Items, img)
@@ -403,7 +403,7 @@ func clampInt(value, low, high int) int {
 }
 
 // buildPathClip 把一条设备坐标路径转换为单个 OFD 裁剪区域。
-func (p *pdfInterpreter) buildPathClip(commands []pdfPathCommand, objX, objY float64, isImage bool, width, height float64) *creator.Clips {
+func (p *pdfInterpreter) buildPathClip(commands []pdfPathCommand, objX, objY float64) *creator.Clips {
 	if len(commands) == 0 {
 		return nil
 	}
@@ -412,9 +412,6 @@ func (p *pdfInterpreter) buildPathClip(commands []pdfPathCommand, objX, objY flo
 		return nil
 	}
 	area := creator.ClipArea{Path: clipPath}
-	if isImage && width > 0 && height > 0 {
-		area.CTM = &creator.CTM{1 / width, 0, 0, 1 / height, 0, 0}
-	}
 	return &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{area}}}}
 }
 

@@ -63,7 +63,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 				stroke := false
 				path.Stroke = false
 				path.StrokeSet = &stroke
-				if clips := p.buildClips(path.X, path.Y, false, 0, 0); clips != nil {
+				if clips := p.buildClips(path.X, path.Y); clips != nil {
 					path.Clips = clips
 				}
 				path.Alpha = ofdAlpha(p.fillOpacity())
@@ -92,7 +92,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	stroke := false
 	path.Stroke = false
 	path.StrokeSet = &stroke
-	if clips := p.buildClips(path.X, path.Y, false, 0, 0); clips != nil {
+	if clips := p.buildClips(path.X, path.Y); clips != nil {
 		path.Clips = clips
 	}
 	p.page.Items = append(p.page.Items, *path)
