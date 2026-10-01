@@ -375,6 +375,8 @@ const zoomLabel = document.querySelector('#zoom-label');
 const searchInput = document.querySelector('#search');
 const searchToggle = document.querySelector('#search-toggle');
 const searchPanel = document.querySelector('#search-panel');
+const searchForm = document.querySelector('#sidebar-search-form');
+const searchResultsElement = document.querySelector('#search-results');
 const mobileToolbarToggle = document.querySelector('#mobile-toolbar-toggle');
 const searchButton = document.querySelector('#search-button');
 const searchPrevious = document.querySelector('#search-previous');
@@ -412,6 +414,7 @@ const sidebarToggle = document.querySelector('#sidebar-toggle');
 const sidebarTabThumbnails = document.querySelector('#sidebar-tab-thumbnails');
 const sidebarTabOutline = document.querySelector('#sidebar-tab-outline');
 const sidebarTabBookmarks = document.querySelector('#sidebar-tab-bookmarks');
+const sidebarTabSearch = document.querySelector('#sidebar-tab-search');
 const sidebarTabMore = document.querySelector('#sidebar-tab-more');
 const sidebarTabMoreLabel = document.querySelector('#sidebar-tab-more-label');
 const sidebarMoreMenu = document.querySelector('#sidebar-more-menu');
@@ -512,6 +515,7 @@ const activeMedia = new Map();
 let linkRequest;
 let searchResults = [];
 let activeSearchResult = -1;
+const searchResultDOMLimit = 200;
 let searchGeneration = 0;
 let searchRequest;
 let openRequest;
@@ -568,11 +572,12 @@ const sidebarTabStorageKey = 'ofd-sidebar-tab';
 let activeSidebarTab = (() => {
   try {
     const value = localStorage.getItem(sidebarTabStorageKey);
-    return ['thumbnails', 'outline', 'bookmarks', 'fonts'].includes(value) ? value : 'thumbnails';
+    return ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts'].includes(value) ? value : 'thumbnails';
   } catch (_) {
     return 'thumbnails';
   }
 })();
+let searchReturnSidebarTab = 'thumbnails';
 let outlineNodes = [];
 let bookmarkNodes = [];
 let sidebarFilterValue = '';
@@ -2358,7 +2363,8 @@ function updateNavigation() {
   copyAllTextButton.disabled = documentActionBusy || pageInfos.length === 0;
   searchInput.disabled = pageInfos.length === 0;
   searchToggle.disabled = pageInfos.length === 0;
-  searchButton.disabled = pageInfos.length === 0;
+  searchToggle.setAttribute('aria-pressed', String(activeSidebarTab === 'search'));
+  searchButton.disabled = pageInfos.length === 0 || Boolean(searchRequest);
   searchPrevious.disabled = searchResults.length === 0;
   searchNext.disabled = searchResults.length === 0;
   zoomOut.disabled = pageInfos.length === 0;
@@ -2406,6 +2412,78 @@ function throwIfDocumentActionCancelled(generation) {
 
 function updateSearchStatus(message) {
   searchStatus.textContent = message;
+  renderSearchResults();
+}
+
+function searchResultSnippet(result) {
+  const text = String(result.text || '').replace(/\s+/gu, ' ').trim();
+  const query = searchInput.value.trim().toLowerCase();
+  const match = text.toLowerCase().indexOf(query);
+  const start = match < 0 ? 0 : Math.max(0, match - 34);
+  const end = Math.min(text.length, start + 84);
+  return `${start ? '...' : ''}${text.slice(start, end)}${end < text.length ? '...' : ''}`;
+}
+
+function renderSearchResults() {
+  if (!searchResultsElement) return;
+  const fragment = document.createDocumentFragment();
+  const query = searchInput.value.trim();
+  if (!searchResults.length) {
+    const empty = document.createElement('p');
+    empty.className = 'search-empty';
+    if (searchStatus.textContent.startsWith('搜索中')) empty.textContent = '正在搜索...';
+    else if (searchStatus.textContent.startsWith('搜索失败')) empty.textContent = searchStatus.textContent;
+    else if (searchStatus.textContent.startsWith('按 Enter')) empty.textContent = '按 Enter 搜索';
+    else empty.textContent = query ? '没有匹配结果' : '输入文字搜索文档';
+    fragment.append(empty);
+    searchResultsElement.replaceChildren(fragment);
+    return;
+  }
+
+  let rendered = 0;
+  let previousPage = -1;
+  const start = Math.min(Math.max(0, activeSearchResult - Math.floor(searchResultDOMLimit / 2)),
+    Math.max(0, searchResults.length - searchResultDOMLimit));
+  const end = Math.min(searchResults.length, start + searchResultDOMLimit);
+  for (let index = start; index < end; index++) {
+    const result = searchResults[index];
+    if (result.page !== previousPage) {
+      const page = document.createElement('h3');
+      page.className = 'search-result-page';
+      page.textContent = `第 ${result.page + 1} 页`;
+      fragment.append(page);
+      previousPage = result.page;
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'search-result';
+    button.dataset.index = String(index);
+    button.setAttribute('aria-current', String(index === activeSearchResult));
+    button.title = String(result.text || '');
+    const snippet = document.createElement('span');
+    snippet.className = 'search-result-snippet';
+    snippet.textContent = searchResultSnippet(result);
+    button.append(snippet);
+    fragment.append(button);
+    rendered++;
+  }
+  if (searchResults.length > rendered) {
+    const limit = document.createElement('p');
+    limit.className = 'search-result-limit';
+    limit.textContent = `显示第 ${start + 1}-${end} 条，共 ${searchResults.length} 条；可用上下箭头继续浏览。`;
+    fragment.append(limit);
+  }
+  searchResultsElement.replaceChildren(fragment);
+  searchResultsElement.querySelector('.search-result[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest' });
+}
+
+function selectSearchResult(index, collapseSidebar = true) {
+  if (!Number.isInteger(index) || index < 0 || index >= searchResults.length) return;
+  activeSearchResult = index;
+  updateSearchStatus(`第 ${activeSearchResult + 1} / ${searchResults.length} 处`);
+  pageCards.forEach((card, page) => { if (card) buildTextLayer(page); });
+  goTo(searchResults[index].page);
+  if (collapseSidebar) collapseSidebarAfterJump();
 }
 
 function keepThumbnailVisible(button) {
@@ -3493,6 +3571,7 @@ async function openSelectedFile(selected, options = {}) {
   textCache.clear();
   searchResults = [];
   activeSearchResult = -1;
+  searchInput.value = '';
   searchGeneration++;
   linkRequest?.cancel();
   linkRequest = undefined;
@@ -3761,11 +3840,11 @@ async function searchDocument() {
   const query = searchInput.value.trim();
   searchRequest?.cancel();
   searchRequest = undefined;
+  searchResults = [];
+  activeSearchResult = -1;
+  pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
   if (!query || !pageInfos.length) {
-    searchResults = [];
-    activeSearchResult = -1;
     updateSearchStatus('');
-    pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
     updateNavigation();
     return;
   }
@@ -3787,9 +3866,9 @@ async function searchDocument() {
     if (activeSearchResult >= 0) goTo(results[activeSearchResult].page);
   } catch (error) {
     if (generation !== searchGeneration || isCancelledError(error)) return;
-    updateSearchStatus(`搜索失败：${error.message}`);
     searchResults = [];
     activeSearchResult = -1;
+    updateSearchStatus(`搜索失败：${error.message}`);
   } finally {
     if (generation === searchGeneration) {
       searchRequest = undefined;
@@ -3801,10 +3880,7 @@ async function searchDocument() {
 
 function moveSearchResult(step) {
   if (!searchResults.length) return;
-  activeSearchResult = (activeSearchResult + step + searchResults.length) % searchResults.length;
-  updateSearchStatus(`第 ${activeSearchResult + 1} / ${searchResults.length} 处`);
-  pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
-  goTo(searchResults[activeSearchResult].page);
+  selectSearchResult((activeSearchResult + step + searchResults.length) % searchResults.length, false);
 }
 
 function escapeHTML(value) {
@@ -4496,16 +4572,20 @@ async function printSelectedPages(indexes) {
 }
 
 function setSearchPanelOpen(open) {
-  if (open) headerHeight();
-  searchPanel.hidden = !open;
-  searchToggle.setAttribute('aria-expanded', String(open));
   if (open) {
+    if (activeSidebarTab !== 'search') searchReturnSidebarTab = activeSidebarTab;
     setRecentPanelOpen(false);
     setViewPanelOpen(false);
     setZoomMenuOpen(false);
     setDocumentMenuOpen(false);
+    if (!sidebarShown()) setThumbnailsVisible(true);
+    setSidebarTab('search');
+    searchToggle.setAttribute('aria-expanded', 'true');
     searchInput.focus();
+    return;
   }
+  if (activeSidebarTab === 'search') setSidebarTab(searchReturnSidebarTab);
+  searchToggle.setAttribute('aria-expanded', 'false');
 }
 
 function setReadingMode(enabled) {
@@ -4526,7 +4606,6 @@ function setViewPanelOpen(open) {
   viewToggle.setAttribute('aria-expanded', String(open));
   if (open) {
     setRecentPanelOpen(false);
-    setSearchPanelOpen(false);
     setZoomMenuOpen(false);
     setDocumentMenuOpen(false);
   }
@@ -4538,7 +4617,6 @@ function setZoomMenuOpen(open) {
   zoomMenuToggle.setAttribute('aria-expanded', String(open));
   if (open) {
     setRecentPanelOpen(false);
-    setSearchPanelOpen(false);
     setViewPanelOpen(false);
     setDocumentMenuOpen(false);
   }
@@ -4550,7 +4628,6 @@ function setDocumentMenuOpen(open) {
   documentMenuToggle.setAttribute('aria-expanded', String(open));
   if (open) {
     setRecentPanelOpen(false);
-    setSearchPanelOpen(false);
     setViewPanelOpen(false);
     setZoomMenuOpen(false);
   }
@@ -4561,7 +4638,6 @@ function setMobileToolbarExpanded(expanded) {
   header?.classList.toggle('mobile-toolbar-expanded', expanded);
   if (expanded) {
     setRecentPanelOpen(false);
-    setSearchPanelOpen(false);
     setViewPanelOpen(false);
   }
   requestAnimationFrame(() => headerHeight());
@@ -4602,7 +4678,7 @@ function restorePanelScroll(panel) {
   if (element) element.scrollTop = sidebarScroll[panel] || 0;
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
 const sidebarMoreTabs = ['fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
 const sidebarMoreLabels = { fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名' };
 
@@ -4613,9 +4689,12 @@ function applySidebarPanels() {
   const visible = sidebarShown();
   sidebarElement.hidden = !visible;
   const active = tab => visible && activeSidebarTab === tab;
+  searchToggle.setAttribute('aria-expanded', String(active('search')));
+  searchToggle.setAttribute('aria-pressed', String(activeSidebarTab === 'search'));
   thumbnailsElement.hidden = !active('thumbnails');
   if (outlineElement) outlineElement.hidden = !active('outline');
   if (bookmarksElement) bookmarksElement.hidden = !active('bookmarks');
+  if (searchPanel) searchPanel.hidden = !active('search');
   if (fontsElement) fontsElement.hidden = !active('fonts');
   if (versionsElement) versionsElement.hidden = !active('versions');
   if (attachmentsElement) attachmentsElement.hidden = !active('attachments');
@@ -4641,6 +4720,7 @@ function applySidebarPanels() {
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
+    [sidebarTabSearch, 'search'],
   ];
   tabs.forEach(([button, tab]) => {
     button?.classList.toggle('active', activeSidebarTab === tab);
@@ -4680,7 +4760,6 @@ function setSidebarMoreOpen(open) {
   sidebarTabMore?.setAttribute('aria-expanded', String(open));
   if (open) {
     setViewPanelOpen(false);
-    setSearchPanelOpen(false);
     setZoomMenuOpen(false);
     setDocumentMenuOpen(false);
   }
@@ -4689,8 +4768,11 @@ function setSidebarMoreOpen(open) {
 function setSidebarTab(tab) {
   if (!sidebarTabs.includes(tab)) tab = 'thumbnails';
   const changed = activeSidebarTab !== tab;
+  if (tab === 'search' && changed) searchReturnSidebarTab = activeSidebarTab;
   if ((activeSidebarTab === 'media' || activeSidebarTab === 'signatures') && tab !== activeSidebarTab) revokeMediaURLs();
   activeSidebarTab = tab;
+  searchToggle.setAttribute('aria-expanded', String(tab === 'search'));
+  searchToggle.setAttribute('aria-pressed', String(tab === 'search'));
   if (changed) {
     try {
       localStorage.setItem(sidebarTabStorageKey, tab);
@@ -4707,6 +4789,8 @@ function setSidebarTab(tab) {
   } else if (tab === 'bookmarks') {
     renderBookmarks();
     updateOutlineActive();
+  } else if (tab === 'search') {
+    renderSearchResults();
   } else if (tab === 'versions') {
     renderVersions();
   } else if (tab === 'attachments') {
@@ -6678,9 +6762,29 @@ pageNumber.addEventListener('change', () => {
   pageNumber.value = target;
   goTo(target - 1);
 });
-searchButton.addEventListener('click', searchDocument);
-searchInput.addEventListener('keydown', event => { if (event.key === 'Enter') searchDocument(); });
-searchToggle.addEventListener('click', () => setSearchPanelOpen(searchPanel.hidden));
+searchForm.addEventListener('submit', event => {
+  event.preventDefault();
+  void searchDocument();
+});
+searchInput.addEventListener('input', () => {
+  searchGeneration++;
+  searchRequest?.cancel();
+  searchRequest = undefined;
+  searchResults = [];
+  activeSearchResult = -1;
+  pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
+  searchButton.disabled = pageInfos.length === 0;
+  updateSearchStatus(searchInput.value.trim() ? '按 Enter 搜索' : '');
+  updateNavigation();
+});
+searchResultsElement.addEventListener('click', event => {
+  const button = event.target.closest('.search-result');
+  if (!button || !searchResultsElement.contains(button)) return;
+  selectSearchResult(Number(button.dataset.index));
+});
+searchToggle.addEventListener('click', () => {
+  setSearchPanelOpen(activeSidebarTab !== 'search' || !sidebarShown());
+});
 searchPrevious.addEventListener('click', () => moveSearchResult(-1));
 searchNext.addEventListener('click', () => moveSearchResult(1));
 zoomOut.addEventListener('click', () => setZoom(zoom - 0.25));
@@ -6704,6 +6808,10 @@ showThumbnails.addEventListener('change', () => setThumbnailsVisible(showThumbna
 sidebarTabThumbnails?.addEventListener('click', () => setSidebarTab('thumbnails'));
 sidebarTabOutline?.addEventListener('click', () => setSidebarTab('outline'));
 sidebarTabBookmarks?.addEventListener('click', () => setSidebarTab('bookmarks'));
+sidebarTabSearch?.addEventListener('click', () => {
+  setSidebarTab('search');
+  searchInput.focus();
+});
 sidebarTabMore?.addEventListener('click', () => setSidebarMoreOpen(sidebarMoreMenu?.hidden));
 sidebarMoreFonts?.addEventListener('click', () => setSidebarTab('fonts'));
 sidebarMoreVersions?.addEventListener('click', () => setSidebarTab('versions'));
@@ -6731,6 +6839,7 @@ sidebarTabsElement?.addEventListener('keydown', event => {
     [sidebarTabThumbnails, 'thumbnails'],
     [sidebarTabOutline, 'outline'],
     [sidebarTabBookmarks, 'bookmarks'],
+    [sidebarTabSearch, 'search'],
     [sidebarTabMore, ''],
   ].filter(([button]) => button && !button.hidden);
   const index = tabs.findIndex(([button]) => button === document.activeElement);
@@ -6789,6 +6898,7 @@ if (sidebarResizer) {
 }
 sidebarScrollPanels.outline = outlineElement;
 sidebarScrollPanels.bookmarks = bookmarksElement;
+sidebarScrollPanels.search = searchResultsElement;
 sidebarScrollPanels.fonts = fontsElement;
 sidebarScrollPanels.versions = versionsElement;
 sidebarScrollPanels.attachments = attachmentsElement;
@@ -6907,7 +7017,7 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.key === 'Escape') {
-    if (!searchPanel.hidden) setSearchPanelOpen(false);
+    if (activeSidebarTab === 'search') setSearchPanelOpen(false);
     else if (!viewPanel.hidden) setViewPanelOpen(false);
     else if (zoomMenu && !zoomMenu.hidden) setZoomMenuOpen(false);
     else if (documentMenu && !documentMenu.hidden) setDocumentMenuOpen(false);
@@ -6971,7 +7081,6 @@ window.addEventListener('keydown', event => {
 document.addEventListener('click', event => {
   if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
-  if (!searchPanel.hidden && !event.target.closest('.search-group')) setSearchPanelOpen(false);
   if (zoomMenu && !zoomMenu.hidden && !event.target.closest('.zoom-group')) setZoomMenuOpen(false);
   if (documentMenu && !documentMenu.hidden && !event.target.closest('.page-group')) setDocumentMenuOpen(false);
   if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
