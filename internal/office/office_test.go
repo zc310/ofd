@@ -2,11 +2,13 @@ package office
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFindSofficeRejectsMissingExplicitPath(t *testing.T) {
@@ -96,6 +98,94 @@ func TestConvertToPDFRejectsUnreadableTempDir(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "创建临时目录失败") {
 		t.Fatalf("不存在的临时目录应报错，实际: %v", err)
 	}
+}
+
+func TestConvertToPDFWithFakeSofficeRejectsFailures(t *testing.T) {
+	input := writeOfficeTestInput(t)
+	cases := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{name: "命令失败", script: "printf '转换失败\\n' >&2\nexit 7", want: "LibreOffice 转换失败"},
+		{name: "没有输出", script: "exit 0", want: "LibreOffice 未生成 PDF"},
+		{name: "空输出", script: "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; : > \"$out/input.pdf\"", want: "LibreOffice 生成的 PDF 为空"},
+		{name: "无效输出", script: "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; printf 'not a PDF' > \"$out/input.pdf\"", want: "LibreOffice 生成的 PDF 无效"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			soffice := writeFakeSoffice(t, test.script)
+			_, err := ConvertToPDF(context.Background(), input, Options{Soffice: soffice})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("错误 = %v，期望包含 %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestConvertToPDFWithFakeSofficeHonorsTimeout(t *testing.T) {
+	if err := ensureUnixTestShell(); err != nil {
+		t.Skip(err)
+	}
+	input := writeOfficeTestInput(t)
+	marker := filepath.Join(t.TempDir(), "child-finished")
+	soffice := writeFakeSoffice(t, "(sleep 0.5; touch '"+marker+"') &\nwait")
+	started := time.Now()
+	_, err := ConvertToPDF(context.Background(), input, Options{Soffice: soffice, Timeout: 50 * time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "转换超时") {
+		t.Fatalf("超时错误 = %v，期望转换超时", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("超时后返回过慢: %s", elapsed)
+	}
+	time.Sleep(600 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("超时后进程组中的子进程仍在运行")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
+func TestConvertToPDFWithFakeSofficeAcceptsPDF(t *testing.T) {
+	input := writeOfficeTestInput(t)
+	data, err := ConvertToPDF(context.Background(), input, Options{
+		Soffice: writeFakeSoffice(t, "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; printf '%%PDF-1.7\\n' > \"$out/input.pdf\""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "%PDF-1.7\n" {
+		t.Fatalf("PDF 数据 = %q", data)
+	}
+}
+
+func writeOfficeTestInput(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "input.fodt")
+	if err := os.WriteFile(path, []byte(fodtSample), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeFakeSoffice(t *testing.T, body string) string {
+	t.Helper()
+	if err := ensureUnixTestShell(); err != nil {
+		t.Skip(err)
+	}
+	path := filepath.Join(t.TempDir(), "soffice")
+	script := "#!/bin/sh\nset -eu\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func ensureUnixTestShell() error {
+	if _, err := exec.LookPath("sh"); err != nil {
+		return errors.New("测试需要 sh")
+	}
+	return nil
 }
 
 const fodtSample = `<?xml version="1.0" encoding="UTF-8"?>
