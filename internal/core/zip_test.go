@@ -103,6 +103,27 @@ func TestPackageLookupFallsBackToUniqueCaseInsensitiveName(t *testing.T) {
 	}
 }
 
+func TestPackageExactLookupDoesNotBuildCaseInsensitiveIndex(t *testing.T) {
+	archive, err := OpenBytes(newTestZip(t, map[string][]byte{"nested/data": []byte("content")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	if _, ok := archive.Lookup("nested/data"); !ok {
+		t.Fatal("exact lookup failed")
+	}
+	if archive.lowerMap != nil {
+		t.Fatal("exact lookup eagerly built the case-insensitive index")
+	}
+	if _, ok := archive.Lookup("NESTED/DATA"); !ok {
+		t.Fatal("case-insensitive fallback lookup failed")
+	}
+	if archive.lowerMap == nil {
+		t.Fatal("fallback lookup did not build the case-insensitive index")
+	}
+}
+
 func TestPackageLookupRejectsAmbiguousCaseInsensitiveName(t *testing.T) {
 	archiveData := newTestZip(t, map[string][]byte{
 		"Doc_0/Tpls/Content.xml": []byte("lower"),
