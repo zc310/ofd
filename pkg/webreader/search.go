@@ -47,6 +47,7 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	}
 	needle := strings.ToLower(query)
 	needleRunes := []rune(needle)
+	searchTable := buildRuneSearchTable(needleRunes)
 	results := make([]SearchResult, 0)
 	for pageIndex := range r.pages {
 		runs := r.textAt(pageIndex)
@@ -56,7 +57,7 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 			run := runs[runIndex]
 			start := 0
 			for {
-				found := indexRunes(text[start:], needleRunes)
+				found := indexRunesWithTable(text[start:], needleRunes, searchTable)
 				if found < 0 {
 					break
 				}
@@ -79,13 +80,9 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	return results, nil
 }
 
-func indexRunes(text, needle []rune) int {
-	if len(needle) == 0 {
-		return 0
-	}
-	if len(needle) > len(text) {
-		return -1
-	}
+// buildRuneSearchTable 构造 KMP 的最长前缀表。一次 Search 中查询词不变，
+// 因此该表应在搜索开始时构造一次，而不是为每个候选文字对象重复分配。
+func buildRuneSearchTable(needle []rune) []int {
 	lps := make([]int, len(needle))
 	length := 0
 	for i := 1; i < len(needle); {
@@ -99,6 +96,16 @@ func indexRunes(text, needle []rune) int {
 			lps[i] = 0
 			i++
 		}
+	}
+	return lps
+}
+
+func indexRunesWithTable(text, needle []rune, lps []int) int {
+	if len(needle) == 0 {
+		return 0
+	}
+	if len(needle) > len(text) {
+		return -1
 	}
 	for i, j := 0, 0; i < len(text); {
 		if text[i] == needle[j] {

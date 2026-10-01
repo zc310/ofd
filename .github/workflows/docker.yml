@@ -1,0 +1,84 @@
+# 打 tag 时构建 ofd-server 镜像并推到 GHCR；PR 上只构建不推送。
+#
+# 两条触发路径：
+#   tag v*        构建并推送，镜像 tag 由 git tag 推导（v0.1.4 → 0.1.4）
+#   pull_request  仅构建。Dockerfile 写错要在合并前就暴露，而不是等发版才发现。
+#                 这一条是 GitHub 模板里带的，比只监听 tag 周全。
+#
+# 不在 main 上产生 latest：latest 会让"这个镜像对应哪次提交"变得不可知，正式
+# 部署出错时很难回溯是哪份代码。需要追踪 main 的开发镜像时用 ghcr.io 的 digest
+# 引用。
+#
+# 只做 linux/amd64：Dockerfile 里 arm64 分支改用 apt 装 Chromium，在 CI 上要靠
+# QEMU 模拟构建，一个镜像多花二十多分钟。需要 arm64 镜像时在自托管 arm runner
+# 上构建，不要靠 QEMU。
+#
+# 不跑容器做冒烟测试：镜像内置的 docker-config.json 把 api_key 留空，不给令牌
+# 容器会直接拒绝启动（这是有意的，放占位符等于随镜像发布一把公开的钥匙），
+# 所以"跑起来看是否正常"必须先造令牌，反而把流程弄复杂。Dockerfile 自带的
+# RUN ofd-server --help 与 HEALTHCHECK /readyz 已经在构建期验证了二进制可执行。
+name: Docker
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    # 只在与构建相关的文件变动时才跑：一次完整构建要装 LibreOffice 与 Chrome，
+    # 不加限制的话每个 PR（包括只改文档的）都要等十几分钟。
+    paths:
+      - "cmd/ofd-server/**"
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+      - "internal/**"
+      - "pkg/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+  packages: write        # 推 GHCR；PR 上不推送，这个权限用不上
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # buildx 负责缓存、并发导出与正确的 TARGETARCH 传递。Dockerfile 里按
+      # TARGETARCH 选 Chrome deb 或 Chromium，只做 amd64 时不会走到后者。
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 用 GITHUB_TOKEN 登录 ghcr.io：不需要额外配 secret，也不会把仓库凭据
+      # 写进日志。GITHUB_TOKEN 的包推送权限由顶层 packages: write 提供。
+      #
+      # PR 上跳过登录：来自 fork 的 PR 其 GITHUB_TOKEN 是只读的，登录与推送都会
+      # 失败，而这个 job 本来就不该对外推送。
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cmd/ofd-server/Dockerfile
+          platforms: linux/amd64
+          # PR 上没有 tag 可用（github.ref_name 形如 123/merge，不是合法镜像 tag），
+          # 用 PR 号占位。这里有值就说明是 tag 路径。
+          tags: |
+            ghcr.io/${{ github.repository }}/ofd-server:${{ github.ref_name#v }}
+            ghcr.io/${{ github.repository }}/ofd-server:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/ofd-server:pr-${{ github.event.number }}
+          push: ${{ github.event_name != 'pull_request' }}
+          # PR 上把镜像载入 runner 本地：只构建的话 buildx 不产出任何可用结果，
+          # 载入后才能确认这一步真的构建出了可运行的镜像，而不只是没报错。
+          load: ${{ github.event_name == 'pull_request' }}
+          # 镜像有 apt 安装、Chrome 下载和 Go 编译三层，缓存命中能省掉大部分时间。
+          # mode=max 连中间层一起缓存，否则每层都要重新跑。
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

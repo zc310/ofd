@@ -123,3 +123,27 @@ func TestBuildSearchIndexMatchesSearch(t *testing.T) {
 		t.Errorf("候选 = %v，期望 [0 2]（第 0 段小写、第 2 段大写开头）", candidates)
 	}
 }
+
+func TestIndexRunesWithPrebuiltTable(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		query string
+		want  int
+	}{
+		{name: "KMP fallback", text: "abababc", query: "ababd", want: -1},
+		{name: "match after fallback", text: "abcabcabcd", query: "abcabcd", want: 3},
+		{name: "unicode", text: "文档阅读器", query: "阅读", want: 2},
+		{name: "query longer than text", text: "短", query: "很长的查询", want: -1},
+		{name: "empty query", text: "text", query: "", want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			text, query := []rune(test.text), []rune(test.query)
+			got := indexRunesWithTable(text, query, buildRuneSearchTable(query))
+			if got != test.want {
+				t.Fatalf("indexRunesWithTable(%q, %q) = %d, want %d", test.text, test.query, got, test.want)
+			}
+		})
+	}
+}

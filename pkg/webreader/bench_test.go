@@ -119,6 +119,40 @@ func BenchmarkSearchCached(b *testing.B) {
 	}
 }
 
+// BenchmarkSearchTableReuse 对比每个候选文字对象都重建 KMP 表与一次构建后复用。
+// 该基准隔离了查询表本身的成本，便于确认 Search 中的复用优化没有被整本文档
+// 的解析、缓存或结果构造成本掩盖。
+func BenchmarkSearchTableReuse(b *testing.B) {
+	needle := []rune("查询目标")
+	text := []rune("这是一段用于搜索的中文文字，包含查询目标。")
+	texts := make([][]rune, 1024)
+	for index := range texts {
+		texts[index] = text
+	}
+
+	b.Run("Rebuild", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for iteration := 0; iteration < b.N; iteration++ {
+			for _, candidate := range texts {
+				benchmarkSearchSink += indexRunesWithTable(candidate, needle, buildRuneSearchTable(needle))
+			}
+		}
+	})
+	b.Run("Reuse", func(b *testing.B) {
+		table := buildRuneSearchTable(needle)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for iteration := 0; iteration < b.N; iteration++ {
+			for _, candidate := range texts {
+				benchmarkSearchSink += indexRunesWithTable(candidate, needle, table)
+			}
+		}
+	})
+}
+
+var benchmarkSearchSink int
+
 // BenchmarkRenderPage 渲染单页为 PNG。WASM 侧翻页的主成本。
 func BenchmarkRenderPage(b *testing.B) {
 	r := benchReader(b, "1000-pages.ofd")
