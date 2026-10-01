@@ -122,7 +122,7 @@ func (s *HTTPSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		request.Header.Set("User-Agent", s.UserAgent)
 	}
 
-	addrs, err := s.Allowlist.ResolveAndCheck(parsed.Hostname())
+	addrs, err := s.Allowlist.ResolveAndCheckContext(ctx, parsed.Hostname())
 	if err != nil {
 		return nil, fmt.Errorf("拒绝拉取 %s: %w", parsed.Hostname(), err)
 	}
@@ -178,7 +178,7 @@ func (s *HTTPSource) transport() *http.Transport {
 			if err != nil {
 				return nil, err
 			}
-			addrs, err := s.Allowlist.ResolveAndCheck(host)
+			addrs, err := s.Allowlist.ResolveAndCheckContext(ctx, host)
 			if err != nil {
 				return nil, fmt.Errorf("拒绝连接 %s: %w", host, err)
 			}

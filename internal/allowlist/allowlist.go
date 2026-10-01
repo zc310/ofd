@@ -223,6 +223,15 @@ func (l *List) AllowResolved(addrs []netip.Addr) error {
 // 校验放在真正拨号的那一刻（自定义 net.Dialer.DialContext）执行，否则检查与连接之间
 // 存在时间窗，攻击者可用 DNS rebinding 在窗口内把域名改指到内网。
 func (l *List) ResolveAndCheck(host string) ([]netip.Addr, error) {
+	return l.ResolveAndCheckContext(context.Background(), host)
+}
+
+// ResolveAndCheckContext 按白名单校验 host 的解析结果，并使 DNS 查询响应 ctx 取消。
+// 拨号前的校验应使用请求自身的 context，避免 DNS 阻塞绕过请求超时。
+func (l *List) ResolveAndCheckContext(ctx context.Context, host string) ([]netip.Addr, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	name := strings.TrimSpace(host)
 	if name == "" {
 		return nil, fmt.Errorf("主机名为空")
@@ -236,7 +245,7 @@ func (l *List) ResolveAndCheck(host string) ([]netip.Addr, error) {
 	if !l.AllowedHost(name) {
 		return nil, fmt.Errorf("主机不在白名单: %s", name)
 	}
-	ips, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", name)
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", name)
 	if err != nil {
 		return nil, fmt.Errorf("解析 %s 失败: %w", name, err)
 	}

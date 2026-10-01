@@ -1,6 +1,8 @@
 package allowlist
 
 import (
+	"context"
+	"errors"
 	"net/netip"
 	"strings"
 	"testing"
@@ -158,6 +160,15 @@ func TestTranslationPrefixesRejected(t *testing.T) {
 		if err := list.AllowAddr(netip.MustParseAddr(addr)); err == nil {
 			t.Errorf("AllowAddr(%s) 应当拒绝", addr)
 		}
+	}
+}
+
+func TestResolveAndCheckContextHonorsCancellation(t *testing.T) {
+	list := mustParse(t, "dns-cancellation.invalid")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := list.ResolveAndCheckContext(ctx, "dns-cancellation.invalid"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("已取消的 DNS 查询错误 = %v，期望 context.Canceled", err)
 	}
 }
 
