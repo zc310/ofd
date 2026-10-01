@@ -2,8 +2,10 @@ package render
 
 import (
 	"archive/zip"
+	"encoding/xml"
 	"fmt"
 	"image/color"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,11 +102,43 @@ func TestCompositeTextStaysVectorText(t *testing.T) {
 	if !strings.Contains(svg, "<text") {
 		t.Fatalf("文字型复合图元应输出 <text> 而非位图，实际 SVG:\n%s", svg)
 	}
-	if !strings.Contains(svg, "海关总署") {
-		t.Errorf("SVG 应保留原始文字内容，实际未找到:\n%s", svg)
+	if text := svgTextContent(t, svg); !strings.Contains(text, "海关总署") {
+		t.Errorf("SVG 文本节点拼接后应保留原始文字内容，得到 %q", text)
 	}
 	if strings.Contains(svg, "<image") {
 		t.Errorf("文字型复合图元不应产生位图，实际 SVG:\n%s", svg)
+	}
+}
+
+// svgTextContent 拼接 SVG 中的文本节点，避免测试依赖字体 shaping 对文字的分段。
+func svgTextContent(t *testing.T, svg string) string {
+	t.Helper()
+	decoder := xml.NewDecoder(strings.NewReader(svg))
+	var text strings.Builder
+	textDepth := 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				return text.String()
+			}
+			t.Fatalf("解析 SVG 失败: %v", err)
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			if value.Name.Local == "text" || value.Name.Local == "tspan" {
+				textDepth++
+			}
+		case xml.EndElement:
+			if value.Name.Local == "text" || value.Name.Local == "tspan" {
+				textDepth--
+			}
+		case xml.CharData:
+			if textDepth == 0 {
+				continue
+			}
+			text.Write([]byte(value))
+		}
 	}
 }
 
