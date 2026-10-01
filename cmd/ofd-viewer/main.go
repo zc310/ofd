@@ -113,6 +113,10 @@ func main() {
 		initialFile = validOFDFile(os.Args[1])
 	}
 
+	// 放在窗口创建之前：只是写几个小文件，不需要等界面就绪；而放在后面会让用户先
+	// 看到窗口再看到菜单里冒出新条目。失败只记日志，不影响启动。
+	installDesktopIntegration()
+
 	a := app.NewWithID(applicationID)
 	w := a.NewWindow(applicationTitle())
 	w.Resize(fyne.NewSize(windowWidth, windowHeight))
