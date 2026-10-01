@@ -63,10 +63,11 @@ type Package struct {
 
 	fileMap map[string]int
 	// lowerMap 是条目名的小写索引，值为 -1 表示该小写名对应多个条目。
-	// 仅在精确匹配失败时用于兜底，且只在唯一匹配时生效。
-	lowerMap map[string]int
-	entries  []Entry
-	once     sync.Once
+	// 仅在精确匹配失败后按需构建，且只在唯一匹配时生效。
+	lowerMap  map[string]int
+	entries   []Entry
+	once      sync.Once
+	lowerOnce sync.Once
 
 	mu       sync.RWMutex
 	closed   bool
@@ -169,24 +170,38 @@ func (p *Package) ensureIndex() {
 			return
 		}
 		fileMap := make(map[string]int, len(p.reader.File))
-		lowerMap := make(map[string]int, len(p.reader.File))
 		entries := make([]Entry, 0, len(p.reader.File))
 		for index, file := range p.reader.File {
 			name := lookupName(file.Name)
 			fileMap[name] = index
+			entries = append(entries, entryFromZipFile(p.token, index, file))
+		}
+		p.fileMap = fileMap
+		p.entries = entries
+	})
+}
+
+func (p *Package) ensureLowerIndex() {
+	if p == nil {
+		return
+	}
+	p.lowerOnce.Do(func() {
+		if p.reader == nil {
+			p.lowerMap = map[string]int{}
+			return
+		}
+		lowerMap := make(map[string]int, len(p.reader.File))
+		for index, file := range p.reader.File {
+			key := strings.ToLower(lookupName(file.Name))
 			// 同一个精确名字重复出现时也按歧义处理：包内条目重名本身已有风险，
 			// 不在此处替调用方挑一个。
-			key := strings.ToLower(name)
 			if _, seen := lowerMap[key]; seen {
 				lowerMap[key] = -1
 			} else {
 				lowerMap[key] = index
 			}
-			entries = append(entries, entryFromZipFile(p.token, index, file))
 		}
-		p.fileMap = fileMap
 		p.lowerMap = lowerMap
-		p.entries = entries
 	})
 }
 
@@ -404,6 +419,7 @@ func (p *Package) lookupIndex(fileName string) (int, bool) {
 	if index, ok := p.fileMap[name]; ok {
 		return index, true
 	}
+	p.ensureLowerIndex()
 	index, ok := p.lowerMap[strings.ToLower(name)]
 	if !ok || index < 0 {
 		return 0, false
