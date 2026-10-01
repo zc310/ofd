@@ -372,18 +372,18 @@ type textGlyph struct {
 }
 
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
+	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
+		if renderableTextValue(code.Value) {
+			p.drawTextGlyph(ctx, faces, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
+		}
+		return
+	}
+
 	// 字形宽度与字形映射与填充无关，统一使用共享字体面。
 	face := faces.base
 	runes := []rune(code.Value)
 	glyphs := textCodeGlyphs(face, runes, object.CGTransform, codePosition)
 	if len(glyphs) == 0 {
-		return
-	}
-	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		if !renderableTextValue(code.Value) {
-			return
-		}
-		p.drawTextGlyph(ctx, faces, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
 		return
 	}
 
