@@ -393,6 +393,54 @@ func TestPDFImageMaskPaintsZeroSamples(t *testing.T) {
 	}
 }
 
+func TestConvertIndirectImageMaskUsesCurrentFillColor(t *testing.T) {
+	content := []byte("1 0 0 rg q 100 0 0 100 0 0 cm /Im1 Do Q 0 0 1 rg q 100 0 0 100 100 0 cm /Im1 Do Q")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 1 /ImageMask 6 0 R /Length 1 >>\nstream\n\x00\nendstream",
+		"true",
+	}
+	var output bytes.Buffer
+	if err := Convert(t.Context(), assemblePDF(objects), &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	images := layerImages(page.Content().Layer[0])
+	if len(images) != 2 {
+		t.Fatalf("image objects = %d, want 2", len(images))
+	}
+	wantColors := [][3]uint32{{0xffff, 0, 0}, {0, 0, 0xffff}}
+	for index, image := range images {
+		media := ofd.Documents[0].GetMedia(models.StID(image.ResourceID))
+		if media == nil {
+			t.Fatalf("image %d media is missing", index+1)
+		}
+		data, err := ofd.Documents[0].FileCache.Read(media.MediaFile.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, g, b, a := decoded.At(0, 0).RGBA()
+		if r != wantColors[index][0] || g != wantColors[index][1] || b != wantColors[index][2] || a != 0xffff {
+			t.Fatalf("indirect ImageMask %d pixel = (%d, %d, %d, %d), want opaque %v", index+1, r, g, b, a, wantColors[index])
+		}
+	}
+}
+
 func TestConvertInlineImageMaskEmitsImage(t *testing.T) {
 	// dvips 等生产者用 1x1 内联图像掩码画表格线，转换必须保留它们。
 	content := []byte("q 144 0 0 144 0 0 cm\nBI\n/IM true\n/W 1\n/H 1\n/BPC 1\nID \x00\nEI\nQ")

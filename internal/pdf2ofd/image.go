@@ -64,7 +64,7 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 	if *subtype == "Image" {
 		// 单个图像解码失败（例如 JPXDecode 等不支持的过滤器）不应中断整页
 		// 转换，跳过该图像继续处理其余内容。
-		if reference, ok := object.(types.IndirectRef); ok && !pdfImageIsMask(stream) {
+		if reference, ok := object.(types.IndirectRef); ok && !pdfImageIsMask(p.ctx, stream) {
 			if p.imageCache == nil {
 				p.imageCache = make(map[types.IndirectRef]pdfImageDataCache)
 			}
@@ -199,12 +199,16 @@ func (p *pdfInterpreter) appendImageData(data []byte, format string) error {
 }
 
 // pdfImageIsMask 判断图像是否是依赖当前填充色的 ImageMask。
-func pdfImageIsMask(stream *types.StreamDict) bool {
+func pdfImageIsMask(ctx *model.Context, stream *types.StreamDict) bool {
 	if stream == nil {
 		return false
 	}
 	value, found := stream.Find("ImageMask")
 	if !found {
+		return false
+	}
+	value, err := dereferencePDFObject(ctx, value)
+	if err != nil {
 		return false
 	}
 	boolean, ok := value.(types.Boolean)
@@ -591,7 +595,7 @@ func pdfJBIG2Standalone(ctx *model.Context, stream *types.StreamDict) ([]byte, b
 	if len(data) == 0 {
 		return nil, false
 	}
-	if _, found := stream.Find("ImageMask"); found {
+	if pdfImageIsMask(ctx, stream) {
 		return nil, false
 	}
 	if _, found := stream.Find("SMask"); found {
@@ -638,11 +642,7 @@ func encodePDFJBIG2Image(ctx *model.Context, stream *types.StreamDict, gray *ima
 	bounds := gray.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	imageMask := false
-	if value, found := stream.Find("ImageMask"); found {
-		if boolean, ok := value.(types.Boolean); ok {
-			imageMask = boolean.Value()
-		}
-	}
+	imageMask = pdfImageIsMask(ctx, stream)
 	if imageMask {
 		rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 		for y := 0; y < height; y++ {
@@ -896,16 +896,14 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 	if !wok || !hok || !widthOK || !heightOK {
 		return nil, "", errors.New("PNG 图像尺寸无效")
 	}
-	if imageMask, found := stream.Find("ImageMask"); found {
-		if value, ok := imageMask.(types.Boolean); ok && value.Value() {
-			if bpc == 0 {
-				bpc = 1
-			}
-			if bpc != 1 {
-				return nil, "", errors.New("ImageMask 仅支持 1 位图像")
-			}
-			return encodePDFImageMask(ctx, stream, maskColor, width, height)
+	if pdfImageIsMask(ctx, stream) {
+		if bpc == 0 {
+			bpc = 1
 		}
+		if bpc != 1 {
+			return nil, "", errors.New("ImageMask 仅支持 1 位图像")
+		}
+		return encodePDFImageMask(ctx, stream, maskColor, width, height)
 	}
 	components, indexed, palette, err := pdfImageColorSpace(ctx, stream)
 	if err != nil {
