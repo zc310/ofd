@@ -15,6 +15,23 @@ import (
 	"github.com/zc310/ofd/internal/models"
 )
 
+func TestResolvePagePathMatchesStLocResolve(t *testing.T) {
+	for _, test := range []struct {
+		base     models.StLoc
+		location models.StLoc
+	}{
+		{base: "Doc_0", location: "Pages/Page_0/Content.xml"},
+		{base: "Doc_0/Pages", location: "../Shared/Page.xml"},
+		{base: "Doc_0", location: "/Doc_1/Page.xml"},
+		{base: "", location: "./Page.xml"},
+	} {
+		want := test.location.Resolve(test.base)
+		if got := resolvePagePath(test.base, test.location); got != want {
+			t.Errorf("resolvePagePath(%q, %q) = %q, want %q", test.base, test.location, got, want)
+		}
+	}
+}
+
 func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
 	ofd, err := NewOFD(filepath.Join("..", "..", "test", "testdata", "drawparam.ofd"))
 	if err != nil {
