@@ -17,6 +17,9 @@ import (
 func TestGBT33190PDFRoundTripSimilarity(t *testing.T) {
 	pdftoppm, err := exec.LookPath("pdftoppm")
 	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("CI 环境必须安装 pdftoppm: %v", err)
+		}
 		t.Skipf("未找到 pdftoppm，跳过 PDF 视觉相似度测试: %v", err)
 	}
 	original, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "standards", "GBT_33190-2016.pdf"))

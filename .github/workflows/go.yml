@@ -32,7 +32,8 @@ jobs:
             libegl1-mesa-dev \
             libffi-dev \
             libxcursor-dev \
-            libvulkan-dev
+            libvulkan-dev \
+            poppler-utils
 
       - name: Set up Go
         uses: actions/setup-go@v6
