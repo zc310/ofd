@@ -108,6 +108,24 @@ type deviceCMYKPairColors [4][3]float32
 
 var deviceCMYKPairLUT [256 * 256]deviceCMYKPairColors
 var deviceCMYKPairLUTOnce sync.Once
+var deviceCMYK8Normalized [256]float32
+
+var deviceCMYK8Default struct {
+	sync.Once
+	converter CMYK8Converter
+}
+
+// CMYK8Converter 是可复用的 8 位 CMYK 转 RGB 转换器。
+// 创建后直接使用已初始化的查找表，适合整张图像的像素循环。
+type CMYK8Converter struct {
+	lut *[256 * 256]deviceCMYKPairColors
+}
+
+// NewCMYK8Converter 创建一个复用查找表的 8 位 CMYK 转换器。
+func NewCMYK8Converter() CMYK8Converter {
+	deviceCMYKPairLUTOnce.Do(initDeviceCMYKPairLUT)
+	return CMYK8Converter{lut: &deviceCMYKPairLUT}
+}
 
 // DeviceCMYKToRGB 用 Adobe/poppler 的 4 色印刷矩阵模型把 CMYK 油墨量（0-1）
 // 转换为 sRGB 分量（0-1）。当没有可用的 ICC 配置文件时，internal/pdf2ofd 与
@@ -136,20 +154,30 @@ func DeviceCMYKToRGB(c, m, y, k float64) (float64, float64, float64) {
 
 // DeviceCMYK8ToRGB 把 8 位 CMYK 油墨量转换为 8 位 RGB。
 func DeviceCMYK8ToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
-	deviceCMYKPairLUTOnce.Do(initDeviceCMYKPairLUT)
-	cmColors := deviceCMYKPairLUT[int(c)*256+int(m)]
-	yf, kf := float64(y)/255, float64(k)/255
+	deviceCMYK8Default.Do(func() {
+		deviceCMYK8Default.converter = NewCMYK8Converter()
+	})
+	return deviceCMYK8Default.converter.ToRGB(c, m, y, k)
+}
+
+// ToRGB 将 8 位 CMYK 油墨量转换为 8 位 RGB。
+func (converter CMYK8Converter) ToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
+	cmColors := converter.lut[int(c)*256+int(m)]
+	yf, kf := deviceCMYK8Normalized[y], deviceCMYK8Normalized[k]
 	w0 := (1 - yf) * (1 - kf)
 	w1 := yf * (1 - kf)
 	w2 := (1 - yf) * kf
 	w3 := yf * kf
-	r := float64(cmColors[0][0])*w0 + float64(cmColors[1][0])*w1 + float64(cmColors[2][0])*w2 + float64(cmColors[3][0])*w3
-	g := float64(cmColors[0][1])*w0 + float64(cmColors[1][1])*w1 + float64(cmColors[2][1])*w2 + float64(cmColors[3][1])*w3
-	b := float64(cmColors[0][2])*w0 + float64(cmColors[1][2])*w1 + float64(cmColors[2][2])*w2 + float64(cmColors[3][2])*w3
+	r := cmColors[0][0]*w0 + cmColors[1][0]*w1 + cmColors[2][0]*w2 + cmColors[3][0]*w3
+	g := cmColors[0][1]*w0 + cmColors[1][1]*w1 + cmColors[2][1]*w2 + cmColors[3][1]*w3
+	b := cmColors[0][2]*w0 + cmColors[1][2]*w1 + cmColors[2][2]*w2 + cmColors[3][2]*w3
 	return uint8(r*255 + 0.5), uint8(g*255 + 0.5), uint8(b*255 + 0.5)
 }
 
 func initDeviceCMYKPairLUT() {
+	for value := range deviceCMYK8Normalized {
+		deviceCMYK8Normalized[value] = float32(value) / 255
+	}
 	for c := 0; c < 256; c++ {
 		cf := float64(c) / 255
 		for m := 0; m < 256; m++ {
