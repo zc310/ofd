@@ -49,13 +49,22 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	needleRunes := []rune(needle)
 	searchTable := buildRuneSearchTable(needleRunes)
 	results := make([]SearchResult, 0)
+	type match struct {
+		layoutIndex int
+		start       int
+		end         int
+	}
 	for pageIndex := range r.pages {
-		runs := r.textAt(pageIndex)
-		indexed := r.searchAt(pageIndex, runs)
+		indexed := r.searchAt(pageIndex)
+		var matches []match
+		var layoutRunIndices []int
 		for _, runIndex := range indexed.byRune[needleRunes[0]] {
+			if runIndex < 0 || runIndex >= len(indexed.runs) {
+				continue
+			}
 			text := indexed.runs[runIndex]
-			run := runs[runIndex]
 			start := 0
+			layoutIndex := -1
 			for {
 				found := indexRunesWithTable(text[start:], needleRunes, searchTable)
 				if found < 0 {
@@ -63,18 +72,36 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 				}
 				found += start
 				end := found + len(needleRunes)
-				result := SearchResult{Page: pageIndex, Run: runIndex, Text: run.Text, Start: found, End: end}
-				glyphStart := minInt(found, len(run.Glyphs))
-				glyphEnd := minInt(end, len(run.Glyphs))
-				for _, glyph := range run.Glyphs[glyphStart:glyphEnd] {
-					result.Rects = append(result.Rects, Rect{X: glyph.X, Y: glyph.Y, Width: glyph.Width, Height: glyph.Height, Angle: glyph.Angle})
+				if layoutIndex < 0 {
+					layoutIndex = len(layoutRunIndices)
+					layoutRunIndices = append(layoutRunIndices, runIndex)
 				}
-				results = append(results, result)
+				matches = append(matches, match{layoutIndex: layoutIndex, start: found, end: end})
 				start = end
 				if start >= len(text) {
 					break
 				}
 			}
+		}
+		if len(matches) == 0 {
+			continue
+		}
+		layouts := r.pages[pageIndex].document.TextLayoutsForRuns(r.pages[pageIndex].page, layoutRunIndices)
+		for _, found := range matches {
+			if found.layoutIndex < 0 || found.layoutIndex >= len(layouts) {
+				continue
+			}
+			layout := layouts[found.layoutIndex]
+			result := SearchResult{
+				Page: pageIndex, Run: layoutRunIndices[found.layoutIndex], Text: layout.Text,
+				Start: found.start, End: found.end,
+			}
+			glyphStart := minInt(found.start, len(layout.Glyphs))
+			glyphEnd := minInt(found.end, len(layout.Glyphs))
+			for _, glyph := range layout.Glyphs[glyphStart:glyphEnd] {
+				result.Rects = append(result.Rects, Rect{X: glyph.X, Y: glyph.Y, Width: glyph.Width, Height: glyph.Height, Angle: glyph.Angle})
+			}
+			results = append(results, result)
 		}
 	}
 	return results, nil
@@ -130,11 +157,17 @@ func minInt(left, right int) int {
 	return right
 }
 
-func (r *Reader) searchAt(index int, runs []TextRun) searchPage {
+func (r *Reader) searchAt(index int) searchPage {
 	if indexed, ok := r.search.Get(index); ok {
 		return indexed
 	}
-	indexed := buildSearchIndex(runs)
+	var indexed searchPage
+	if runs, ok := r.text.Get(index); ok {
+		indexed = buildSearchIndex(runs)
+	} else {
+		ref := r.pages[index]
+		indexed = buildSearchIndexFromTexts(ref.document.TextValues(ref.page))
+	}
 	r.search.AddWeighted(index, indexed, searchPageWeight(indexed))
 	return indexed
 }
@@ -172,6 +205,19 @@ func buildSearchIndex(runs []TextRun) searchPage {
 		runs:   make([][]rune, len(runs)),
 		byRune: make(map[rune][]int),
 	}
+	seen := make(map[rune]int, 128)
+	for runIndex, run := range runs {
+		indexed.runs[runIndex] = []rune(strings.ToLower(run.Text))
+		registerSearchRun(&indexed, seen, runIndex)
+	}
+	return indexed
+}
+
+func buildSearchIndexFromTexts(texts []string) searchPage {
+	indexed := searchPage{
+		runs:   make([][]rune, len(texts)),
+		byRune: make(map[rune][]int),
+	}
 	// seen 记的是"这个字符最后出现在哪个 run"，整页只建一次。
 	//
 	// 此前每个 run 新建一个 map[rune]struct{}，一个 500 行的页面就是 500 次
@@ -181,16 +227,20 @@ func buildSearchIndex(runs []TextRun) searchPage {
 	// 用 runIndex+1 当代次标记，省掉逐次 clear：值相同才说明本 run 已登记过。
 	// 不用 0 是因为首个 run 的代次就是 1，0 恰好适合表示"没登记过"。
 	seen := make(map[rune]int, 128)
-	for runIndex, run := range runs {
-		indexed.runs[runIndex] = []rune(strings.ToLower(run.Text))
-		generation := runIndex + 1
-		for _, value := range indexed.runs[runIndex] {
-			if seen[value] == generation {
-				continue
-			}
-			seen[value] = generation
-			indexed.byRune[value] = append(indexed.byRune[value], runIndex)
-		}
+	for runIndex, text := range texts {
+		indexed.runs[runIndex] = []rune(strings.ToLower(text))
+		registerSearchRun(&indexed, seen, runIndex)
 	}
 	return indexed
+}
+
+func registerSearchRun(indexed *searchPage, seen map[rune]int, runIndex int) {
+	generation := runIndex + 1
+	for _, value := range indexed.runs[runIndex] {
+		if seen[value] == generation {
+			continue
+		}
+		seen[value] = generation
+		indexed.byRune[value] = append(indexed.byRune[value], runIndex)
+	}
 }

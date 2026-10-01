@@ -34,10 +34,10 @@ const (
 	// maxAttachmentBytes 是单个附件默认允许读取的最大字节数，硬上限为 maxAttachmentBytesHard。
 	maxAttachmentBytes     = 32 << 20
 	maxAttachmentBytesHard = 128 << 20
-	// textCacheCapacity 和 searchCacheCapacity 限制按页缓存的文字与搜索索引，
-	// 避免浏览/搜索大文档时把所有页面的布局快照都留在内存中。
+	// 文字缓存只保留近期的完整字形布局；较轻的搜索索引允许覆盖常见的千页文档，
+	// 并由 searchCacheBytes 限制密集文档的实际占用。
 	textCacheCapacity   = 64
-	searchCacheCapacity = 64
+	searchCacheCapacity = 1024
 	// textCacheBytes 与 searchCacheBytes 是上面两个缓存的字节预算。
 	//
 	// 预算不是可有可无的补充：一页文字的体积随文档密度差两个数量级（实测稀疏页
@@ -139,7 +139,7 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 		return nil, errors.New("OFD 文档没有页面")
 	}
 	r.text = newTextCache()
-	r.search = newSearchCache()
+	r.search = newSearchCache(len(r.pages))
 	return r, nil
 }
 
