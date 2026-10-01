@@ -62,18 +62,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 镜像 tag 在 shell 里算好再用。GitHub 表达式没有 ${var#pattern} 这类参数
+      # 展开，写成 ${{ github.ref_name#v }} 会在解析阶段报 "Unexpected symbol"。
+      #
+      # tag 路径推两个：去 v 前缀的版本号（0.1.4）与原 tag 名（v0.1.4），两种写法
+      # 都拉得到，不用记住哪个才是"官方"的。PR 路径 github.ref_name 形如
+      # 123/merge，不是合法镜像 tag，改用 PR 号占位——只 load 到 runner 本地，
+      # 不会推上去。
+      - name: Resolve image tags
+        id: tags
+        run: |
+          image="ghcr.io/${{ github.repository }}/ofd-server"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$image:pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            ref="${GITHUB_REF_NAME#v}"
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$image:$ref" >> "$GITHUB_OUTPUT"
+            echo "$image:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: cmd/ofd-server/Dockerfile
           platforms: linux/amd64
-          # PR 上没有 tag 可用（github.ref_name 形如 123/merge，不是合法镜像 tag），
-          # 用 PR 号占位。这里有值就说明是 tag 路径。
-          tags: |
-            ghcr.io/${{ github.repository }}/ofd-server:${{ github.ref_name#v }}
-            ghcr.io/${{ github.repository }}/ofd-server:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}/ofd-server:pr-${{ github.event.number }}
+          tags: ${{ steps.tags.outputs.tags }}
           push: ${{ github.event_name != 'pull_request' }}
           # PR 上把镜像载入 runner 本地：只构建的话 buildx 不产出任何可用结果，
           # 载入后才能确认这一步真的构建出了可运行的镜像，而不只是没报错。
