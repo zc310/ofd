@@ -73,7 +73,7 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 		// 元数据，去掉不可用的 Info 引用后重新校验页面和内容对象。
 		ctx.Info = nil
 		if retryErr := api.ValidateContext(gctx, ctx); retryErr != nil {
-			return fmt.Errorf("验证 PDF 失败: %w", err)
+			return fmt.Errorf("验证 PDF 失败: %w", retryErr)
 		}
 	}
 	if ctx.PageCount == 0 {
@@ -93,8 +93,9 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 		Pages:          make([]creator.Page, 0, ctx.PageCount),
 	}
 	fontCache := make(map[types.Object]pdfFontInfo, 8)
+	imageCache := make(map[types.IndirectRef]pdfImageDataCache, 8)
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		page, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache)
+		page, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache, imageCache)
 		if err != nil {
 			return fmt.Errorf("转换 PDF 第 %d 页失败: %w", pageNumber, err)
 		}
@@ -198,7 +199,7 @@ func readPDFInput(input any) ([]byte, error) {
 	}
 }
 
-func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo) (creator.Page, error) {
+func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache) (creator.Page, error) {
 	pageDict, _, inherited, err := ctx.PageDict(gctx, pageNumber, false)
 	if err != nil {
 		return creator.Page{}, err
@@ -231,7 +232,7 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 	if err != nil {
 		return creator.Page{}, fmt.Errorf("读取页面内容失败: %w", err)
 	}
-	interpreter := newPDFInterpreter(ctx, &page, document, info, fontCache)
+	interpreter := newPDFInterpreter(ctx, &page, document, info, fontCache, imageCache)
 	if err := interpreter.parse(content, resources, nil, 0); err != nil {
 		return creator.Page{}, err
 	}
@@ -292,11 +293,14 @@ func dereferenceDict(ctx *model.Context, object types.Object, found bool) (types
 	return ctx.XRefTable.DereferenceDict(object)
 }
 
-func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator.Document, info pdfPageInfo, fontCache map[types.Object]pdfFontInfo) *pdfInterpreter {
+func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator.Document, info pdfPageInfo, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache) *pdfInterpreter {
 	if fontCache == nil {
 		fontCache = map[types.Object]pdfFontInfo{}
 	}
-	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fontCache: fontCache, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
+	if imageCache == nil {
+		imageCache = map[types.IndirectRef]pdfImageDataCache{}
+	}
+	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fontCache: fontCache, imageCache: imageCache, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
 		ctm: identityPDFMatrix(), textMatrix: identityPDFMatrix(), lineMatrix: identityPDFMatrix(), fontSize: 12,
 		fill: pdfColor{r: 0, g: 0, b: 0}, stroke: pdfColor{r: 0, g: 0, b: 0}, lineWidth: 1, hScale: 100,
 		fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,

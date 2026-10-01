@@ -15,6 +15,8 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -83,6 +85,35 @@ func TestConvertHonorsNonZeroMediaBoxAndUserUnit(t *testing.T) {
 	}
 	if got := box.Height; got < 141.0 || got > 142.0 {
 		t.Fatalf("page height = %gmm, want about 141.11mm", got)
+	}
+}
+
+func TestConvertPageMediaBoxOverridesParentMediaBox(t *testing.T) {
+	content := []byte("q Q")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 200] >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+	}
+	pdf := assemblePDF(objects)
+
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	box, err := ofd.Documents[0].Pages[0].PhysicalBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 100 * pdfPointToMillimeter
+	if math.Abs(box.Width-want) > 0.01 || math.Abs(box.Height-want) > 0.01 {
+		t.Fatalf("page size = %gx%gmm, want %gx%gmm from page MediaBox", box.Width, box.Height, want, want)
 	}
 }
 
@@ -407,6 +438,39 @@ func TestConvertInlineColorImageEmitsImage(t *testing.T) {
 	}
 	if images := layerImages(page.Content().Layer[0]); len(images) != 1 {
 		t.Fatalf("image objects = %d, want 1", len(images))
+	}
+}
+
+func TestConvertReusesImageDataAcrossPages(t *testing.T) {
+	content := []byte("q 100 0 0 100 0 0 cm /Im1 Do Q")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im1 7 0 R >> >> /Contents 5 0 R >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im1 7 0 R >> >> /Contents 6 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n\xff\x00\x00\nendstream",
+	}
+	ctx, err, _ := readPDFContext(t.Context(), assemblePDF(objects), model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatal(err)
+	}
+	document := &creator.Document{Pages: make([]creator.Page, 0, 2)}
+	fontCache := make(map[types.Object]pdfFontInfo)
+	imageCache := make(map[types.IndirectRef]pdfImageDataCache)
+	for pageNumber := 1; pageNumber <= 2; pageNumber++ {
+		page, err := convertPDFPage(t.Context(), ctx, pageNumber, document, fontCache, imageCache)
+		if err != nil {
+			t.Fatalf("page %d: %v", pageNumber, err)
+		}
+		document.Pages = append(document.Pages, page)
+	}
+	if len(imageCache) != 1 {
+		t.Fatalf("image cache entries = %d, want 1", len(imageCache))
 	}
 }
 

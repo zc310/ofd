@@ -3,7 +3,6 @@ package render
 import (
 	"crypto/sha256"
 	"image/color"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,6 +185,5 @@ func componentByte(value int) uint8 {
 // 有 Profile 时由 colorSpaceTransformer 走 ICC 色彩管理，这里只按 Type 与
 // 调色板近似解释分量。
 func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
-	r, g, b := coloricc.DeviceCMYKToRGB(float64(c)/255, float64(m)/255, float64(y)/255, float64(k)/255)
-	return uint8(math.Round(255 * r)), uint8(math.Round(255 * g)), uint8(math.Round(255 * b))
+	return coloricc.DeviceCMYK8ToRGB(c, m, y, k)
 }
