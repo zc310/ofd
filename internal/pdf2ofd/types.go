@@ -45,6 +45,12 @@ type pdfFontInfo struct {
 	bold, italic bool
 }
 
+// pdfImageDataCache 保存与当前 PDF 图像对象对应的已编码媒体数据。
+type pdfImageDataCache struct {
+	data   []byte
+	format string
+}
+
 type pdfPathCommand struct {
 	op     string
 	values []float64
@@ -106,6 +112,9 @@ type pdfInterpreter struct {
 	// 查 cmap，是多页 PDF 转换的主要开销。加载完成后的 pdfFontInfo 视为不可变，
 	// 可直接共享。
 	fontCache map[types.Object]pdfFontInfo
+	// imageCache 按间接图像对象缓存解码结果。多页 PDF 经常重复引用同一张
+	// 扫描图，缓存可以避免每次 Do 都重新解码 JPEG/JPX 并重新编码 PNG。
+	imageCache map[types.IndirectRef]pdfImageDataCache
 	// pendingClip 保存 W/W* 指定的裁剪路径，待下一个路径绘制操作生效。
 	pendingClip    []pdfPathCommand
 	hasPendingClip bool

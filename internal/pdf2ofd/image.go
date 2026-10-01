@@ -39,6 +39,22 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 	if *subtype == "Image" {
 		// 单个图像解码失败（例如 JPXDecode 等不支持的过滤器）不应中断整页
 		// 转换，跳过该图像继续处理其余内容。
+		if reference, ok := object.(types.IndirectRef); ok && !pdfImageIsMask(stream) {
+			if p.imageCache == nil {
+				p.imageCache = make(map[types.IndirectRef]pdfImageDataCache)
+			}
+			if cached, hit := p.imageCache[reference]; hit {
+				_ = p.appendImageData(cached.data, cached.format)
+				return nil
+			}
+			data, format, imageErr := pdfImageData(p.ctx, stream, p.state.fill)
+			if imageErr == nil {
+				p.imageCache[reference] = pdfImageDataCache{data: data, format: format}
+				_ = p.appendImageData(data, format)
+				return nil
+			}
+			return nil
+		}
 		_ = p.appendImage(stream)
 		return nil
 	}
@@ -63,6 +79,22 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			}
 		}
 		formState.ctm = multiplyPDFMatrix(formState.ctm, matrix)
+		// Form XObject 的 BBox 是隐式裁剪区；只应用 Matrix 而不应用 BBox 会让
+		// 表单内容溢出其声明边界（常见于图章、剪切模板与重复图块）。
+		if bbox := pdfNumberArray(p.ctx, stream.Dict["BBox"]); len(bbox) >= 4 {
+			corners := [][2]float64{{bbox[0], bbox[1]}, {bbox[2], bbox[1]}, {bbox[2], bbox[3]}, {bbox[0], bbox[3]}}
+			commands := make([]pdfPathCommand, 0, len(corners)+1)
+			for index, corner := range corners {
+				x, y := transformPDFPoint(corner[0], corner[1], formState.ctm)
+				op := "L"
+				if index == 0 {
+					op = "M"
+				}
+				commands = append(commands, pdfPathCommand{op: op, values: []float64{x, y}})
+			}
+			commands = append(commands, pdfPathCommand{op: "Z"})
+			formState.clips = append(append([]pdfClipRegion(nil), formState.clips...), pdfClipRegion{commands: commands})
+		}
 		formResources := resources
 		if object, found := stream.Find("Resources"); found {
 			if value, err := p.ctx.XRefTable.DereferenceDict(object); err == nil {
@@ -70,12 +102,11 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			}
 		}
 		parentState := p.state
-		parentStackLength := len(p.stack)
+		parentStack := p.stack
+		p.stack = nil
 		err := p.parse(stream.Content, formResources, &formState, depth+1)
 		p.state = parentState
-		if len(p.stack) > parentStackLength {
-			p.stack = p.stack[:parentStackLength]
-		}
+		p.stack = parentStack
 		return err
 	}
 	return nil
@@ -113,6 +144,11 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 	if err != nil {
 		return err
 	}
+	return p.appendImageData(data, format)
+}
+
+// appendImageData 把已经完成解码的图像数据按当前 CTM 放入页面。
+func (p *pdfInterpreter) appendImageData(data []byte, format string) error {
 	points := make([][2]float64, 4)
 	points[0][0], points[0][1] = transformPDFPoint(0, 0, p.state.ctm)
 	points[1][0], points[1][1] = transformPDFPoint(1, 0, p.state.ctm)
@@ -135,6 +171,19 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 	}
 	p.page.Items = append(p.page.Items, image)
 	return nil
+}
+
+// pdfImageIsMask 判断图像是否是依赖当前填充色的 ImageMask。
+func pdfImageIsMask(stream *types.StreamDict) bool {
+	if stream == nil {
+		return false
+	}
+	value, found := stream.Find("ImageMask")
+	if !found {
+		return false
+	}
+	boolean, ok := value.(types.Boolean)
+	return ok && boolean.Value()
 }
 
 // inlineImageKeys 把内联图像字典的缩写键展开为 pdfImageData 使用的完整键。
@@ -1466,8 +1515,7 @@ func pdfStreamContent(stream *types.StreamDict) []byte {
 // 这里不加载 ICC profile，属于近似转换；渲染端 internal/render 使用同一套模型，
 // 保证同一 CMYK 颜色在转换与渲染两条路径上一致。
 func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
-	r, g, b := coloricc.DeviceCMYKToRGB(float64(c)/255, float64(m)/255, float64(y)/255, float64(k)/255)
-	return uint8(math.Round(255 * r)), uint8(math.Round(255 * g)), uint8(math.Round(255 * b))
+	return coloricc.DeviceCMYK8ToRGB(c, m, y, k)
 }
 
 // encodePDFCMYKImage 将 CMYK 图像转换为 RGB PNG；invert 为 true 时先对四个

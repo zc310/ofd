@@ -1,6 +1,7 @@
 package coloricc
 
 import (
+	"math/rand"
 	"os"
 	"testing"
 )
@@ -53,6 +54,59 @@ func TestDeviceCMYKToRGBMatchesPrintModel(t *testing.T) {
 			t.Fatalf("DeviceCMYKToRGB(%v,%v,%v,%v) = %v, want %v", tc.c, tc.m, tc.y, tc.k, got, want)
 		}
 	}
+}
+
+func TestDeviceCMYKToRGBKeepsRoundedResults(t *testing.T) {
+	random := rand.New(rand.NewSource(1))
+	for i := 0; i < 10000; i++ {
+		components := [4]float64{
+			float64(random.Intn(256)) / 255,
+			float64(random.Intn(256)) / 255,
+			float64(random.Intn(256)) / 255,
+			float64(random.Intn(256)) / 255,
+		}
+		red, green, blue := DeviceCMYKToRGB(components[0], components[1], components[2], components[3])
+		got := [3]float64{red, green, blue}
+		want := deviceCMYKReference(components)
+		for channel := range got {
+			if uint8(got[channel]*255+0.5) != uint8(want[channel]*255+0.5) {
+				t.Fatalf("分量 %v 的通道 %d 取整结果改变: 得到 %g，原结果 %g", components, channel, got[channel], want[channel])
+			}
+		}
+	}
+}
+
+func TestDeviceCMYK8ToRGBMatchesFloatConversion(t *testing.T) {
+	random := rand.New(rand.NewSource(2))
+	for i := 0; i < 10000; i++ {
+		components := [4]uint8{uint8(random.Intn(256)), uint8(random.Intn(256)), uint8(random.Intn(256)), uint8(random.Intn(256))}
+		got := [3]uint8{}
+		got[0], got[1], got[2] = DeviceCMYK8ToRGB(components[0], components[1], components[2], components[3])
+		red, green, blue := DeviceCMYKToRGB(float64(components[0])/255, float64(components[1])/255, float64(components[2])/255, float64(components[3])/255)
+		want := [3]uint8{uint8(red*255 + 0.5), uint8(green*255 + 0.5), uint8(blue*255 + 0.5)}
+		if got != want {
+			t.Fatalf("分量 %v 的转换结果为 %v，原浮点路径为 %v", components, got, want)
+		}
+	}
+}
+
+// deviceCMYKReference 保留原始计算过程，用于确认优化不改变取整后的颜色。
+func deviceCMYKReference(components [4]float64) [3]float64 {
+	var result [3]float64
+	for mask := 0; mask < 16; mask++ {
+		weight := 1.0
+		for ink := range components {
+			if mask&(1<<ink) != 0 {
+				weight *= components[ink]
+			} else {
+				weight *= 1 - components[ink]
+			}
+		}
+		for channel := range result {
+			result[channel] += deviceCMYKMatrix[mask][channel] * weight
+		}
+	}
+	return result
 }
 
 func TestCMYKTransformationWithProfile(t *testing.T) {

@@ -104,6 +104,11 @@ var deviceCMYKMatrix = [16][3]float64{
 	{0, 0, 0},                // 青 + 品红 + 黄 + 黑
 }
 
+type deviceCMYKPairColors [4][3]float32
+
+var deviceCMYKPairLUT [256 * 256]deviceCMYKPairColors
+var deviceCMYKPairLUTOnce sync.Once
+
 // DeviceCMYKToRGB 用 Adobe/poppler 的 4 色印刷矩阵模型把 CMYK 油墨量（0-1）
 // 转换为 sRGB 分量（0-1）。当没有可用的 ICC 配置文件时，internal/pdf2ofd 与
 // internal/render 都回退到该模型，保证同一 CMYK 颜色在两条路径上一致。
@@ -112,22 +117,55 @@ var deviceCMYKMatrix = [16][3]float64{
 // 纯黑 (35,31,32)。相比逐油墨独立吸收的近似模型，混合色（尤其青 + 黄得到的绿）
 // 更接近 poppler/Adobe 的渲染结果。
 func DeviceCMYKToRGB(c, m, y, k float64) (float64, float64, float64) {
-	amounts := [4]float64{c, m, y, k}
+	// 将 16 项按青/品红与黄/黑分成两组权重；每像素只算 8 个组合权重，
+	// 再与既有矩阵相乘，避免为每个矩阵项重复计算四个分量的乘积。
+	cmWeights := [4]float64{(1 - c) * (1 - m), c * (1 - m), (1 - c) * m, c * m}
+	ykWeights := [4]float64{(1 - y) * (1 - k), y * (1 - k), (1 - y) * k, y * k}
 	var r, g, b float64
-	for mask := 0; mask < 16; mask++ {
-		weight := 1.0
-		for ink := 0; ink < 4; ink++ {
-			if mask&(1<<ink) != 0 {
-				weight *= amounts[ink]
-			} else {
-				weight *= 1 - amounts[ink]
-			}
+	for cm := 0; cm < 4; cm++ {
+		for yk := 0; yk < 4; yk++ {
+			weight := cmWeights[cm] * ykWeights[yk]
+			mask := cm | (yk << 2)
+			r += deviceCMYKMatrix[mask][0] * weight
+			g += deviceCMYKMatrix[mask][1] * weight
+			b += deviceCMYKMatrix[mask][2] * weight
 		}
-		r += deviceCMYKMatrix[mask][0] * weight
-		g += deviceCMYKMatrix[mask][1] * weight
-		b += deviceCMYKMatrix[mask][2] * weight
 	}
 	return r, g, b
+}
+
+// DeviceCMYK8ToRGB 把 8 位 CMYK 油墨量转换为 8 位 RGB。
+func DeviceCMYK8ToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
+	deviceCMYKPairLUTOnce.Do(initDeviceCMYKPairLUT)
+	cmColors := deviceCMYKPairLUT[int(c)*256+int(m)]
+	yf, kf := float64(y)/255, float64(k)/255
+	w0 := (1 - yf) * (1 - kf)
+	w1 := yf * (1 - kf)
+	w2 := (1 - yf) * kf
+	w3 := yf * kf
+	r := float64(cmColors[0][0])*w0 + float64(cmColors[1][0])*w1 + float64(cmColors[2][0])*w2 + float64(cmColors[3][0])*w3
+	g := float64(cmColors[0][1])*w0 + float64(cmColors[1][1])*w1 + float64(cmColors[2][1])*w2 + float64(cmColors[3][1])*w3
+	b := float64(cmColors[0][2])*w0 + float64(cmColors[1][2])*w1 + float64(cmColors[2][2])*w2 + float64(cmColors[3][2])*w3
+	return uint8(r*255 + 0.5), uint8(g*255 + 0.5), uint8(b*255 + 0.5)
+}
+
+func initDeviceCMYKPairLUT() {
+	for c := 0; c < 256; c++ {
+		cf := float64(c) / 255
+		for m := 0; m < 256; m++ {
+			mf := float64(m) / 255
+			cmWeights := [4]float64{(1 - cf) * (1 - mf), cf * (1 - mf), (1 - cf) * mf, cf * mf}
+			colors := &deviceCMYKPairLUT[c*256+m]
+			for cm, weight := range cmWeights {
+				for yk := 0; yk < 4; yk++ {
+					mask := cm | (yk << 2)
+					colors[yk][0] += float32(deviceCMYKMatrix[mask][0] * weight)
+					colors[yk][1] += float32(deviceCMYKMatrix[mask][1] * weight)
+					colors[yk][2] += float32(deviceCMYKMatrix[mask][2] * weight)
+				}
+			}
+		}
+	}
 }
 
 // defaultCache 按 OFD_CMYK_ICC 的当前取值缓存默认转换器；路径变化时重新加载，
