@@ -1,6 +1,6 @@
 // Package office 通过 LibreOffice 命令行把 Office 文档（docx/doc/odt/rtf/wps/
-// pptx/xlsx 等）转换为 PDF。转换依赖目标机器已安装 LibreOffice，本包只做进程
-// 调用与临时文件管理，不引入任何第三方依赖。
+// pptx/xlsx 等）转换为 PDF。转换依赖目标机器已安装 LibreOffice；本包负责进程
+// 调用、临时文件管理及用 pdfcpu 校验转换结果。
 package office
 
 import (
@@ -14,6 +14,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 // EnvSoffice 是覆盖 LibreOffice 可执行文件路径的环境变量名。
@@ -162,7 +165,34 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	if !bytes.HasPrefix(data, []byte("%PDF-")) {
 		return nil, errors.New("LibreOffice 生成的 PDF 无效")
 	}
+	if err := validatePDF(ctx, data); err != nil {
+		return nil, fmt.Errorf("LibreOffice 生成的 PDF 无效: %w", err)
+	}
 	return data, nil
+}
+
+func validatePDF(ctx context.Context, data []byte) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	conf := model.NewDefaultConfiguration()
+	conf.ValidationMode = model.ValidationRelaxed
+	pdfContext, err := api.ReadContext(ctx, bytes.NewReader(data), conf)
+	if err != nil {
+		return fmt.Errorf("读取 PDF 失败: %w", err)
+	}
+	if err := api.ValidateContext(ctx, pdfContext); err != nil {
+		// 与 PDF 导入路径一致：损坏的 Info 日期不应使页面结构有效的 PDF
+		// 被判为无效，去掉 Info 后重试完整结构校验。
+		pdfContext.Info = nil
+		if retryErr := api.ValidateContext(ctx, pdfContext); retryErr != nil {
+			return fmt.Errorf("校验 PDF 结构失败: %w", retryErr)
+		}
+	}
+	if pdfContext.PageCount == 0 {
+		return errors.New("PDF 没有页面")
+	}
+	return nil
 }
 
 // findPDF 在输出目录中查找转换结果。转换成功后通常只生成一个 PDF 文件。
