@@ -498,6 +498,7 @@ function trimTextCache() {
 }
 let pageCards = [];
 let thumbnailButtons = [];
+let activeThumbnailButton;
 let current = 0;
 let documentGeneration = 0;
 let injectedFonts = new Map();
@@ -691,6 +692,8 @@ let statusBeforeCopy;
 let recentFiles = [];
 let currentDocumentKey = '';
 let pageSpreads = [];
+let mountedPageSpreads = new Set();
+let pageSpreadsGeneration = -1;
 let pageVirtualTrack;
 let pageVirtualWindow;
 let pageAnchor = 0;
@@ -708,6 +711,7 @@ let thumbnailTrackScrollHeight = 0;
 let thumbnailTrackScale = 1;
 let thumbnailSlots = [];
 let thumbnailSlotByPage = [];
+let mountedThumbnailIndexes = new Set();
 let pageLoadToken = 0;
 const pageInfoRequests = new Map();
 let pageVirtualUpdateTimer;
@@ -923,8 +927,9 @@ function updatePageVirtualTranslate() {
   const content = pageTrackContentFromScroll(scrollTop);
   if (Math.abs(content - pageAnchor) > pageAnchorResetDrift()) {
     pageAnchor = content;
-    pageSpreads.forEach(spread => {
-      if (spread.element) spread.element.style.top = `${spread.offset - pageAnchor}px`;
+    mountedPageSpreads.forEach(position => {
+      const spread = pageSpreads[position];
+      if (spread?.element) spread.element.style.top = `${spread.offset - pageAnchor}px`;
     });
   }
   const translate = scrollTop - content + pageAnchor;
@@ -995,6 +1000,28 @@ function pageSpreadPositionForPage(index) {
   return spreadPositionForPage(index);
 }
 
+// pageSpreadRange 返回与内容区间相交的 spread 下标范围。spread.offset 按页面顺序
+// 单调递增，滚动时用二分跳过大文档中绝大多数不可见页面。
+function pageSpreadRange(viewTop, viewBottom) {
+  let low = 0;
+  let high = pageSpreads.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    const spread = pageSpreads[mid];
+    if (spread.offset + spread.height < viewTop) low = mid + 1;
+    else high = mid;
+  }
+  const start = low;
+  low = start;
+  high = pageSpreads.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (pageSpreads[mid].offset <= viewBottom) low = mid + 1;
+    else high = mid;
+  }
+  return [start, low];
+}
+
 function thumbnailSlotsForLayout() {
   const indexes = pageLayoutIsDouble()
     ? pageSpreads.flatMap(spread => spread.pages)
@@ -1029,7 +1056,8 @@ function updateThumbnailVirtualTranslate() {
   const content = thumbnailContentFromScroll(scrollTop);
   if (Math.abs(content - thumbnailAnchor) > pageAnchorResetDrift()) {
     thumbnailAnchor = content;
-    thumbnailButtons.forEach((button, index) => {
+    mountedThumbnailIndexes.forEach(index => {
+      const button = thumbnailButtons[index];
       if (button) resizeThumbnail(index, button);
     });
   }
@@ -1139,6 +1167,7 @@ function mountPageSpread(position) {
   element.className = 'page-spread';
   element.dataset.position = position;
   spread.element = element;
+  mountedPageSpreads.add(position);
   pageVirtualWindow.append(element);
   spread.pages.forEach(index => {
     if (index < 0) {
@@ -1157,6 +1186,7 @@ function mountPageSpread(position) {
     if (!info) {
       element.remove();
       spread.element = undefined;
+      mountedPageSpreads.delete(position);
       return;
     }
     const card = document.createElement('article');
@@ -1210,7 +1240,10 @@ function ensurePageMounted(index) {
 
 function unmountPageSpread(position) {
   const spread = pageSpreads[position];
-  if (!spread?.element) return;
+  if (!spread?.element) {
+    mountedPageSpreads.delete(position);
+    return;
+  }
   spread.pages.forEach(index => {
     if (index >= 0) {
       const card = pageCards[index];
@@ -1230,6 +1263,7 @@ function unmountPageSpread(position) {
   });
   spread.element.remove();
   spread.element = undefined;
+  mountedPageSpreads.delete(position);
 }
 
 function applyPageWidthToSpread(spread) {
@@ -1266,13 +1300,18 @@ function applyPageWidthToSpread(spread) {
 
 function updatePageVirtualWindow(updateCurrent = true) {
   if (!pageVirtualTrack || !pageSpreads.length) return;
-  if (!pageInfos.length || pageSpreads.some(spread => spread.pages.some(index => index >= 0 && !pageInfos[index]))) return;
+  if (!pageInfos.length || pageSpreadsGeneration !== documentGeneration) return;
   updatePageVirtualTranslate();
   const buffer = Math.max(window.innerHeight, 800);
   const scrollTop = pageTrackScrollY();
   const viewTop = pageTrackContentFromScroll(scrollTop - buffer);
   const viewBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight + buffer);
-  pageSpreads.forEach((spread, position) => {
+  const [start, end] = pageSpreadRange(viewTop, viewBottom);
+  for (const position of mountedPageSpreads) {
+    if (position < start || position >= end) unmountPageSpread(position);
+  }
+  for (let position = start; position < end; position += 1) {
+    const spread = pageSpreads[position];
     const visible = spread.offset + spread.height >= viewTop && spread.offset <= viewBottom;
     if (visible) {
       mountPageSpread(position);
@@ -1289,16 +1328,23 @@ function updatePageVirtualWindow(updateCurrent = true) {
         }
       });
     }
-    else unmountPageSpread(position);
-  });
+  }
   if (!updateCurrent) return;
   const viewportTop = pageTrackContentFromScroll(scrollTop);
   const viewportBottom = pageTrackContentFromScroll(scrollTop + window.innerHeight);
-  const visible = pageSpreads
-    .map((spread, position) => ({ spread, position }))
-    .filter(({ spread }) => spread.element && spread.offset + spread.height >= viewportTop && spread.offset <= viewportBottom)
-    .sort((left, right) => Math.abs(left.spread.offset - viewportTop) - Math.abs(right.spread.offset - viewportTop));
-  const index = firstPageInSpread(visible[0]?.position ?? currentSpreadPosition());
+  const [visibleStart, visibleEnd] = pageSpreadRange(viewportTop, viewportBottom);
+  let closestPosition = -1;
+  let closestDistance = Infinity;
+  for (let position = visibleStart; position < visibleEnd; position += 1) {
+    const spread = pageSpreads[position];
+    if (!spread.element) continue;
+    const distance = Math.abs(spread.offset - viewportTop);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestPosition = position;
+    }
+  }
+  const index = firstPageInSpread(closestPosition >= 0 ? closestPosition : currentSpreadPosition());
   if (index >= 0 && index !== current) {
     setCurrent(index, false);
     scheduleThumbnailFollow();
@@ -1332,10 +1378,14 @@ function createThumbnail(index) {
   label.textContent = index + 1;
   thumbnail.append(label);
   thumbnailButtons[index] = thumbnail;
+  mountedThumbnailIndexes.add(index);
   thumbnailVirtualWindow.append(thumbnail);
   resizeThumbnail(index, thumbnail);
   thumbnail.classList.toggle('active', index === current);
-  if (index === current) thumbnail.setAttribute('aria-current', 'page');
+  if (index === current) {
+    thumbnail.setAttribute('aria-current', 'page');
+    activeThumbnailButton = thumbnail;
+  }
   loadThumbnail(index);
 }
 
@@ -1398,8 +1448,9 @@ function updateThumbnailVirtualWindow(targetSlot = -1) {
   const required = new Set();
   for (let slot = start; slot < end; slot += 1) required.add(slot);
   if (targetSlot >= 0) required.add(targetSlot);
-  thumbnailSlots.forEach((index, slot) => {
-    if (index < 0 || !required.has(slot)) return;
+  const ensureSlot = slot => {
+    const index = thumbnailSlots[slot];
+    if (index === undefined || index < 0) return;
     if (!thumbnailButtons[index]) {
       createThumbnail(index);
     } else {
@@ -1407,13 +1458,17 @@ function updateThumbnailVirtualWindow(targetSlot = -1) {
       const image = thumbnailButtons[index].querySelector('img');
       if (image?.hidden || !image?.src) loadThumbnail(index);
     }
-  });
-  thumbnailSlots.forEach((index, slot) => {
-    if (index < 0 || required.has(slot) || !thumbnailButtons[index]) return;
+  };
+  for (let slot = start; slot < end; slot += 1) ensureSlot(slot);
+  if (targetSlot >= 0 && (targetSlot < start || targetSlot >= end)) ensureSlot(targetSlot);
+  for (const index of mountedThumbnailIndexes) {
+    const slot = thumbnailSlotForPage(index);
+    if (required.has(slot)) continue;
     cancelThumbnailRequest(index);
-    thumbnailButtons[index].remove();
+    thumbnailButtons[index]?.remove();
     delete thumbnailButtons[index];
-  });
+    mountedThumbnailIndexes.delete(index);
+  }
 }
 
 function documentKey(file) {
@@ -2403,13 +2458,16 @@ function setCurrent(index, syncThumbnail = true) {
     updateThumbnailVirtualWindow(thumbnailSlotForPage(index));
     keepThumbnailVisible(thumbnailButtons[index]);
   }
-  thumbnailButtons.forEach((button, buttonIndex) => {
-    if (!button) return;
-    const active = buttonIndex === current;
-    button.classList.toggle('active', active);
-    if (active) button.setAttribute('aria-current', 'page');
-    else button.removeAttribute('aria-current');
-  });
+  const nextThumbnail = thumbnailButtons[current];
+  if (activeThumbnailButton !== nextThumbnail) {
+    activeThumbnailButton?.classList.remove('active');
+    activeThumbnailButton?.removeAttribute('aria-current');
+  }
+  if (nextThumbnail) {
+    nextThumbnail.classList.add('active');
+    nextThumbnail.setAttribute('aria-current', 'page');
+  }
+  activeThumbnailButton = nextThumbnail;
   if (changed) updateOutlineActive();
   if (changed) playPageEntryMedia(index);
   if (zoomMode === 'page') fitPageZoom();
@@ -3131,7 +3189,11 @@ function buildPages() {
   thumbnailsElement.replaceChildren();
   pageCards = [];
   thumbnailButtons = [];
+  activeThumbnailButton = undefined;
   pageSpreads = pageSpreadGroups().map(pages => ({ pages, offset: 0, height: 0, width: 0 }));
+  mountedPageSpreads = new Set();
+  mountedThumbnailIndexes = new Set();
+  pageSpreadsGeneration = documentGeneration;
   pageVirtualTrack = document.createElement('div');
   pageVirtualTrack.className = 'page-virtual-track';
   pagesElement.append(pageVirtualTrack);
@@ -3445,7 +3507,11 @@ async function openSelectedFile(selected, options = {}) {
   thumbnailsElement.replaceChildren();
   pageCards = [];
   thumbnailButtons = [];
+  activeThumbnailButton = undefined;
+  mountedPageSpreads = new Set();
+  mountedThumbnailIndexes = new Set();
   pageSpreads = [];
+  pageSpreadsGeneration = -1;
   pageVirtualTrack = undefined;
   pageVirtualWindow = undefined;
   pageAnchor = 0;
@@ -3545,6 +3611,9 @@ async function openSelectedFile(selected, options = {}) {
     if (generation !== documentGeneration || isCancelledError(error)) return false;
     pageInfos = [];
     pageSpreads = [];
+    mountedPageSpreads = new Set();
+    mountedThumbnailIndexes = new Set();
+    pageSpreadsGeneration = -1;
     pageVirtualTrack = undefined;
     pageVirtualWindow = undefined;
     pageAnchor = 0;
@@ -3636,9 +3705,13 @@ function cancelOpening() {
   textCache.clear();
   pageInfos = [];
   pageSpreads = [];
+  mountedPageSpreads = new Set();
+  mountedThumbnailIndexes = new Set();
+  pageSpreadsGeneration = -1;
   if (!infoPanel.hidden) updateDocumentInfo();
   pageCards = [];
   thumbnailButtons = [];
+  activeThumbnailButton = undefined;
   pageVirtualTrack = undefined;
   pageVirtualWindow = undefined;
   pageAnchor = 0;
@@ -5414,6 +5487,8 @@ function applyVersionPages(pages) {
   pageCards.forEach((card, index) => { card.hidden = versionPageFilter ? !versionPageFilter.has(index) : false; });
   thumbnailButtons.forEach(button => button?.remove());
   thumbnailButtons = [];
+  activeThumbnailButton = undefined;
+  mountedThumbnailIndexes = new Set();
   thumbnailSlots = thumbnailSlotsForLayout();
   thumbnailSlotByPage = [];
   thumbnailSlots.forEach((index, slot) => {
