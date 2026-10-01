@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"math"
+	"sync"
 
 	gobig2 "github.com/dkrisman/gobig2"
 	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
@@ -18,6 +19,30 @@ import (
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/pkg/creator"
 )
+
+const cmykRGBAPoolMaxBytes = 32 << 20
+
+var cmykRGBABufferPool sync.Pool
+
+func acquireCMYKRGBA(bounds image.Rectangle) *image.RGBA {
+	size := 4 * bounds.Dx() * bounds.Dy()
+	if size > 0 && size <= cmykRGBAPoolMaxBytes {
+		if value := cmykRGBABufferPool.Get(); value != nil {
+			buffer := value.([]byte)
+			if cap(buffer) >= size {
+				return &image.RGBA{Pix: buffer[:size], Stride: 4 * bounds.Dx(), Rect: bounds}
+			}
+		}
+	}
+	return image.NewRGBA(bounds)
+}
+
+func releaseCMYKRGBA(img *image.RGBA) {
+	if img == nil || len(img.Pix) > cmykRGBAPoolMaxBytes {
+		return
+	}
+	cmykRGBABufferPool.Put(img.Pix[:0])
+}
 
 func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) error {
 	dict, ok := dereferencedSubDict(p.ctx, resources, "XObject")
@@ -1415,14 +1440,18 @@ func jpegAdobeTransform(data []byte) (byte, bool) {
 // （图像内嵌的 ICCBased 配置文件，或环境变量 OFD_CMYK_ICC 指定的默认配置），
 // 不可用时回退到近似油墨模型。渲染端 internal/render 采用同样的优先级。
 type cmykConverter struct {
-	icc *coloricc.Transformer
+	icc   *coloricc.Transformer
+	fast8 *coloricc.CMYK8Converter
 }
 
 func (c cmykConverter) toRGB(cyan, magenta, yellow, black uint8) (uint8, uint8, uint8) {
 	if c.icc != nil {
 		return c.icc.ToRGB([]uint8{cyan, magenta, yellow, black})
 	}
-	return cmykInkToRGB(cyan, magenta, yellow, black)
+	if c.fast8 == nil {
+		return coloricc.DeviceCMYK8ToRGB(cyan, magenta, yellow, black)
+	}
+	return c.fast8.ToRGB(cyan, magenta, yellow, black)
 }
 
 func (c cmykConverter) toRGB16(cyan, magenta, yellow, black uint16) (uint16, uint16, uint16) {
@@ -1442,7 +1471,8 @@ func pdfImageCMYKConverter(ctx *model.Context, stream *types.StreamDict) cmykCon
 		return cmykConverter{icc: transformer}
 	}
 	transformer, _ := coloricc.DefaultCMYK()
-	return cmykConverter{icc: transformer}
+	fast8 := coloricc.NewCMYK8Converter()
+	return cmykConverter{icc: transformer, fast8: &fast8}
 }
 
 // pdfImageICCProfile 读取 ICCBased 图像颜色空间内嵌的 4 分量 ICC 配置文件。
@@ -1522,17 +1552,37 @@ func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
 // 分量取反，用于还原 Go 解码 Adobe CMYK JPEG 时引入的反相。
 func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) ([]byte, string, error) {
 	bounds := img.Bounds()
-	rgba := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			index := img.PixOffset(x, y)
-			c, m, yellow, k := img.Pix[index], img.Pix[index+1], img.Pix[index+2], img.Pix[index+3]
-			if invert {
-				c, m, yellow, k = 255-c, 255-m, 255-yellow, 255-k
+	rgba := acquireCMYKRGBA(bounds)
+	defer releaseCMYKRGBA(rgba)
+	width := bounds.Dx()
+	if converter.icc == nil {
+		fastConverter := coloricc.NewCMYK8Converter()
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			source := img.Pix[img.PixOffset(bounds.Min.X, y):]
+			target := rgba.Pix[rgba.PixOffset(bounds.Min.X, y):]
+			for x := 0; x < width; x++ {
+				index := x * 4
+				c, m, yellow, k := source[index], source[index+1], source[index+2], source[index+3]
+				if invert {
+					c, m, yellow, k = 255-c, 255-m, 255-yellow, 255-k
+				}
+				r, g, b := fastConverter.ToRGB(c, m, yellow, k)
+				target[index], target[index+1], target[index+2], target[index+3] = r, g, b, 255
 			}
-			r, g, b := converter.toRGB(c, m, yellow, k)
-			target := rgba.PixOffset(x, y)
-			rgba.Pix[target], rgba.Pix[target+1], rgba.Pix[target+2], rgba.Pix[target+3] = r, g, b, 255
+		}
+	} else {
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			source := img.Pix[img.PixOffset(bounds.Min.X, y):]
+			target := rgba.Pix[rgba.PixOffset(bounds.Min.X, y):]
+			for x := 0; x < width; x++ {
+				index := x * 4
+				c, m, yellow, k := source[index], source[index+1], source[index+2], source[index+3]
+				if invert {
+					c, m, yellow, k = 255-c, 255-m, 255-yellow, 255-k
+				}
+				r, g, b := converter.toRGB(c, m, yellow, k)
+				target[index], target[index+1], target[index+2], target[index+3] = r, g, b, 255
+			}
 		}
 	}
 	var encoded bytes.Buffer
