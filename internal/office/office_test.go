@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zc310/ofd/internal/testutil"
 )
 
 func TestFindSofficeRejectsMissingExplicitPath(t *testing.T) {
@@ -111,6 +113,7 @@ func TestConvertToPDFWithFakeSofficeRejectsFailures(t *testing.T) {
 		{name: "没有输出", script: "exit 0", want: "LibreOffice 未生成 PDF"},
 		{name: "空输出", script: "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; : > \"$out/input.pdf\"", want: "LibreOffice 生成的 PDF 为空"},
 		{name: "无效输出", script: "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; printf 'not a PDF' > \"$out/input.pdf\"", want: "LibreOffice 生成的 PDF 无效"},
+		{name: "损坏的 PDF 结构", script: "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; printf '%%PDF-1.7\\nnot a valid PDF' > \"$out/input.pdf\"", want: "LibreOffice 生成的 PDF 无效"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -148,15 +151,24 @@ func TestConvertToPDFWithFakeSofficeHonorsTimeout(t *testing.T) {
 
 func TestConvertToPDFWithFakeSofficeAcceptsPDF(t *testing.T) {
 	input := writeOfficeTestInput(t)
+	validPDF := filepath.Join(t.TempDir(), "valid.pdf")
+	if err := os.WriteFile(validPDF, testutil.MinimalPDF(nil, 100, 100), 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; cp " + shellQuote(validPDF) + " \"$out/input.pdf\""
 	data, err := ConvertToPDF(context.Background(), input, Options{
-		Soffice: writeFakeSoffice(t, "out=\"\"; previous=\"\"; for arg in \"$@\"; do if [ \"$previous\" = \"--outdir\" ]; then out=\"$arg\"; fi; previous=\"$arg\"; done; printf '%%PDF-1.7\\n' > \"$out/input.pdf\""),
+		Soffice: writeFakeSoffice(t, script),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "%PDF-1.7\n" {
-		t.Fatalf("PDF 数据 = %q", data)
+	if !strings.HasPrefix(string(data), "%PDF-") {
+		t.Fatalf("PDF 数据缺少文件头: %q", data[:min(len(data), 16)])
 	}
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func writeOfficeTestInput(t *testing.T) string {
