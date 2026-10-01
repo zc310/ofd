@@ -637,7 +637,7 @@ func (p *Document) parse(body models.DocBody) error {
 	p.Pages = make([]*Page, 0, len(p.Document.Pages.Pages))
 	for _, page := range p.Document.Pages.Pages {
 		pageDef := page
-		pagePath := pageDef.BaseLoc.Resolve(p.BaseLoc)
+		pagePath := resolvePagePath(p.BaseLoc, pageDef.BaseLoc)
 		p.Pages = append(p.Pages, &Page{
 			ID: pageDef.ID,
 			metadata: func() (models.StBox, error) {
@@ -711,6 +711,16 @@ func (p *Document) parse(body models.DocBody) error {
 	}
 
 	return nil
+}
+
+// resolvePagePath 与 StLoc.Resolve 保持相同的规范化语义，但相对路径只需
+// 一次 path.Join。页面目录在打开时逐页解析，该路径避免每页重复创建 Join 参数切片。
+func resolvePagePath(base, location models.StLoc) models.StLoc {
+	value := location.String()
+	if strings.HasPrefix(value, "/") {
+		return models.StLoc(path.Clean(value))
+	}
+	return models.StLoc(strings.TrimPrefix(path.Join(base.String(), value), "./"))
 }
 
 func (p *Document) parseTemplates() error {
