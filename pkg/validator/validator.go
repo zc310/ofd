@@ -811,7 +811,8 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 	docIDs := make(map[string]string)
 	fontScopes := make(map[string]map[string]struct{})
 	sharedFonts := make(map[string]bool)
-	for _, name := range sortedDocumentNames(documents) {
+	documentNames := sortedDocumentNames(documents)
+	for _, name := range documentNames {
 		doc := documents[name]
 		if !doc.ofd {
 			continue
@@ -861,7 +862,7 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 		}
 	}
 
-	for _, name := range sortedDocumentNames(documents) {
+	for _, name := range documentNames {
 		doc := documents[name]
 		if !doc.ofd {
 			continue
@@ -1401,6 +1402,7 @@ func (v *Validator) checkDigests(documents map[string]*xmlDocument, archive *pac
 				method = strings.ToUpper(strings.TrimSpace(value))
 			}
 		}
+		hashFunc, hashSupported := digestHash(method)
 		for _, reference := range descendants(doc.root, "Reference") {
 			fileRef := reference.AttrValue("FileRef")
 			checkValueNode := firstChild(reference, "CheckValue")
@@ -1416,8 +1418,7 @@ func (v *Validator) checkDigests(documents map[string]*xmlDocument, archive *pac
 			if !ok || target.isDir {
 				continue
 			}
-			hashFunc, ok := digestHash(method)
-			if !ok {
+			if !hashSupported {
 				report.addIssue(issueAt(reference, SeverityError, StageDigest, "digest.method_unsupported", fmt.Sprintf("不支持的摘要算法 %s", method), doc.file.name), v.opts.MaxErrors)
 				continue
 			}
