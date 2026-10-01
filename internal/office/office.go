@@ -4,6 +4,7 @@
 package office
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -157,6 +158,9 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	}
 	if len(data) == 0 {
 		return nil, errors.New("LibreOffice 生成的 PDF 为空")
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		return nil, errors.New("LibreOffice 生成的 PDF 无效")
 	}
 	return data, nil
 }
