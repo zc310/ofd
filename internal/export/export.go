@@ -3,10 +3,10 @@ package export
 
 import (
 	"bytes"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path"

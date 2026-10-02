@@ -6,7 +6,7 @@
 package invoice
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"math/big"
 	"regexp"
 	"strings"

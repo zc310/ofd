@@ -2,7 +2,7 @@ package analyzer
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"

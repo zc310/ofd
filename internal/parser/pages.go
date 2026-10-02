@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"github.com/goccy/go-json"
 	"io"
 	"sync"
 	"sync/atomic"

@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
+
+	"github.com/goccy/go-json"
 )
 
 // decodeStrictJSON 严格解析 JSON：既拒绝未知字段，也拒绝尾随内容。
