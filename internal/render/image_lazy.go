@@ -86,7 +86,7 @@ func (e *EncodedImage) ColorModel() color.Model {
 	return e.config.ColorModel
 }
 
-// weight 估算该图片在缓存中的内存占用：编码字节 + 解码后的像素。只读取
+// Weight 估算该图片在缓存中的内存占用：编码字节 + 解码后的像素。只读取
 // 图片头（DecodeConfig）获取尺寸与颜色模型，不触发完整解码。
 func (e *EncodedImage) Weight() int64 {
 	if e == nil {
