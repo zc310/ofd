@@ -18,13 +18,17 @@ import (
 	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/analyzer"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
 const (
+	// SchemaVersion 是归档清单与报告的模式版本。
+	//
+	// 它是格式版本，与发行版本无关：清单或报告结构变了才改，工具发版不改。归档
+	// verify 会比对报告里的这个值，因此改它等于作废此前生成的归档。
 	SchemaVersion = "1"
-	ToolVersion   = "0.0.1"
 
 	StatusPassed      = "passed"
 	StatusWarning     = "warning"
@@ -32,6 +36,14 @@ const (
 	StatusNotAssessed = "not_assessed"
 	StatusUnsupported = "unsupported"
 )
+
+// ToolVersion 是归档工具的版本。
+//
+// 取自 internal/version，与 --version 输出、查看器关于对话框同源。此前是写死的
+// "0.0.1"，发版时没人跟着动，报告里长期显示着一个早已不存在的版本。
+//
+// 注意归档 verify 从不比对工具版本值（只要求非空），所以发版不会让旧归档失效。
+var ToolVersion = version.Version
 
 type Options struct {
 	ValidatorOptions  []validator.Option

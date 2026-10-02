@@ -11,6 +11,8 @@ import (
 	"github.com/klauspost/compress/zip"
 
 	"github.com/xuri/excelize/v2"
+
+	"github.com/zc310/ofd/pkg/archive"
 )
 
 func TestRunDefaultsToCheckJSON(t *testing.T) {
@@ -49,8 +51,11 @@ func TestRunHelpWritesUsage(t *testing.T) {
 func TestRunVersionWritesVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--version"}, &stdout, &stderr)
-	if code != exitOK || stdout.String() != "0.0.1\n" || stderr.Len() != 0 {
-		t.Fatalf("code = %d, stdout = %q, stderr = %s", code, stdout.String(), stderr.String())
+	// 期望值引用 archive.ToolVersion 而不是写死字面量：--version 与报告里的
+	// tool.version 必须同源，写死字面量只会在下一次发版时变成莫名其妙的失败。
+	want := archive.ToolVersion + "\n"
+	if code != exitOK || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("code = %d, stdout = %q, 期望 %q, stderr = %s", code, stdout.String(), want, stderr.String())
 	}
 }
 

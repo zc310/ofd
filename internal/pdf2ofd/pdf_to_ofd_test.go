@@ -1403,9 +1403,11 @@ func TestConvertWritesConverterMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofdXML := readOFDXML(t, output.Bytes())
+	// 版本号引用 converterVersion 而不是写死字面量：它跟着 internal/version 走，
+	// 断言写死字面量只会在下一次发版时变成一条莫名其妙的失败。
 	for _, want := range []string{
 		"<Creator>zc310/ofd</Creator>",
-		"<CreatorVersion>0.0.1</CreatorVersion>",
+		"<CreatorVersion>" + converterVersion + "</CreatorVersion>",
 		`<CustomData Name="SourceFormat">PDF</CustomData>`,
 	} {
 		if !bytes.Contains(ofdXML, []byte(want)) {

@@ -15,6 +15,8 @@ import (
 
 	fontpkg "github.com/tdewolff/font"
 	"github.com/xuri/excelize/v2"
+
+	"github.com/zc310/ofd/internal/version"
 )
 
 func TestValidateMinimalPackage(t *testing.T) {
@@ -784,4 +786,14 @@ func hasIssueFileCode(report Report, code, file string) bool {
 		}
 	}
 	return false
+}
+
+// TestToolVersionFollowsBuildVersion 守住工具版本与发行版本同源。
+//
+// ToolVersion 曾是写死的 "0.0.1"，发版时没人跟着动：--version 输出和报告里的
+// tool.version 会长期显示一个早已不存在的版本，而这种失真不会引起任何报错。
+func TestToolVersionFollowsBuildVersion(t *testing.T) {
+	if ToolVersion != version.Version {
+		t.Errorf("ToolVersion = %q，期望与 internal/version.Version（%q）同源", ToolVersion, version.Version)
+	}
 }

@@ -3,17 +3,24 @@ package analyzer
 
 import (
 	"errors"
-	"github.com/goccy/go-json"
 	"io"
 	"time"
+
+	"github.com/goccy/go-json"
+
+	"github.com/zc310/ofd/internal/version"
 )
 
-const (
-	// SchemaVersion 是分析工具 JSON 报告的模式版本。
-	SchemaVersion = "1"
-	// ToolVersion 是 analyzer 的工具版本。
-	ToolVersion = "0.0.1"
-)
+// SchemaVersion 是分析工具 JSON 报告的模式版本。
+//
+// 它是 JSON 报告的格式版本，与发行版本无关：报告结构变了才改，工具发版不改。
+const SchemaVersion = "1"
+
+// ToolVersion 是 analyzer 的工具版本。
+//
+// 取自 internal/version，与 --version 输出、查看器关于对话框同源。此前是写死的
+// "0.0.1"，发版时没人跟着动，报告里长期显示着一个早已不存在的版本。
+var ToolVersion = version.Version
 
 // Status 表示分析结果是否完整。
 type Status string

@@ -37,6 +37,7 @@ import (
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/version"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
 )
 
@@ -52,14 +53,13 @@ const (
 	thumbnailDPI  = 36
 )
 
-// applicationVersion 由构建系统通过 -ldflags "-X main.applicationVersion=..."
-// 注入，Makefile 用单一 VERSION 变量同时驱动这里和 Android APK 的版本号。
-var applicationVersion = "v" + defaultVersion
-
-// defaultVersion 是未注入时的兜底版本号，与 Makefile 的 VERSION 保持一致。
-// 只在 go run / go build（不经 Makefile）时用到；TestVersionMatchesMakefile
-// 会在两者不一致时让测试失败。
-const defaultVersion = "0.1.2"
+// displayVersion 返回关于对话框里显示的版本号。
+//
+// internal/version.Version 是构建期注入的裸版本号（Makefile 的 VERSION），v 前缀
+// 只在这一层加：报告和 OFD 元数据里的版本字段沿用无前缀形式。
+func displayVersion() string {
+	return "v" + version.Version
+}
 
 const (
 	exportFormatPDF = ".pdf（Portable Document Format）"
@@ -1232,7 +1232,7 @@ func (v *viewer) showAppInfo() {
 	content := container.NewVBox(
 		container.NewCenter(icon),
 		widget.NewLabelWithStyle("OFD Viewer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("版本: "+applicationVersion),
+		widget.NewLabel("版本: "+displayVersion()),
 		widget.NewLabel("OFD 文档查看器"),
 		widget.NewLabel("应用 ID: "+applicationID),
 		widget.NewLabel("项目地址:"),

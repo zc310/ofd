@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/zc310/ofd/internal/version"
 )
 
 // Status 表示整个 OFD 包的校验结论。
@@ -133,7 +135,10 @@ type ToolInfo struct {
 }
 
 // ToolVersion 是校验器报告中的工具版本。
-const ToolVersion = "0.0.1"
+//
+// 取自 internal/version，与 --version 输出、查看器关于对话框同源。此前是写死的
+// "0.0.1"，发版时没人跟着动，报告里长期显示着一个早已不存在的版本。
+var ToolVersion = version.Version
 
 func newReport(input string) Report {
 	return Report{

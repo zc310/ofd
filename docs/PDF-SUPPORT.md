@@ -111,7 +111,7 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | xref 损坏或 free-list 异常 |  ✅  | 自动重建经典 xref（`repairPDFXRef`）后重试。                                           |
 | 解析异常（panic）          |  ✅  | recover 并在修复 xref 后重试一次。                                                     |
 | 损坏的 `Info` 日期         |  ✅  | 忽略 Info 引用重新校验，保留已提取元数据。                                             |
-| 文档元数据                 |  ✅  | `Title/Author/Subject` 映射到 `DocInfo`；`Creator=zc310/ofd`、`CreatorVersion=0.0.1`。 |
+| 文档元数据                 |  ✅  | `Title/Author/Subject` 映射到 `DocInfo`；`Creator=zc310/ofd`、`CreatorVersion` 为当前构建版本（见根目录 `Makefile` 的 `VERSION`）。 |
 | 溯源信息                   |  ✅  | `CustomData SourceFormat=PDF`；PDF `Producer` 保留在 `CustomData SourceProducer`。     |
 
 ## 暂不支持的能力

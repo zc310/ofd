@@ -26,6 +26,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/version"
 )
 
 func TestPageAtCenter(t *testing.T) {
@@ -2054,35 +2055,18 @@ func TestDocumentTitlePrefersMetadataAndFallsBackToFileName(t *testing.T) {
 	}
 }
 
-// TestVersionMatchesMakefile 守住版本号的单一来源约定。
+// TestDisplayVersionHasVPrefix 守住关于对话框的展示格式。
 //
-// Makefile 的 VERSION 与这里的 defaultVersion 是同一个版本号的两个副本：前者
-// 经 -ldflags 注入，后者是 go run / go build 未经 Makefile 时的兜底。两者曾
-// 漂移到相差 9 个版本（Makefile 0.0.5 而 git tag 已是 v0.1.2），而当时只有一行
-// 注释在声明"保持一致"——注释不拦人，测试才拦得住。
-func TestVersionMatchesMakefile(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
-	if err != nil {
-		t.Fatalf("读取 Makefile 失败: %v", err)
+// 版本号本身是 internal/version.Version（Makefile 注入的裸版本号），Makefile 与
+// 它的一致性由 internal/version 包的 TestVersionMatchesMakefile 负责；查看器这里
+// 只负责加 v 前缀。少了前缀关于对话框会显示 "版本: 0.1.2"，与文档和 release tag
+// 的写法对不上。
+func TestDisplayVersionHasVPrefix(t *testing.T) {
+	got := displayVersion()
+	if !strings.HasPrefix(got, "v") {
+		t.Errorf("displayVersion() = %q，期望带 v 前缀", got)
 	}
-	const prefix = "VERSION ?= "
-	var makefileVersion string
-	for _, line := range strings.Split(string(raw), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, prefix) {
-			makefileVersion = strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
-			break
-		}
-	}
-	if makefileVersion == "" {
-		t.Fatal("Makefile 里找不到 VERSION ?= 赋值")
-	}
-	if makefileVersion != defaultVersion {
-		t.Errorf("版本号不一致：Makefile VERSION=%s，cmd/ofd-viewer defaultVersion=%s；"+
-			"改动时两处都要更新", makefileVersion, defaultVersion)
-	}
-	// 注入后的运行时值应以 v 开头，且带上 Makefile 的版本号。
-	if want := "v" + makefileVersion; applicationVersion != want && applicationVersion != "v"+defaultVersion {
-		t.Errorf("applicationVersion = %q，期望 v%s", applicationVersion, makefileVersion)
+	if want := "v" + version.Version; got != want {
+		t.Errorf("displayVersion() = %q，期望 %q", got, want)
 	}
 }
