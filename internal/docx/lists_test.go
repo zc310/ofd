@@ -1,4 +1,4 @@
-package converter
+package docx
 
 import (
 	"testing"
@@ -45,7 +45,7 @@ func TestDetectListItem(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.text, func(t *testing.T) {
-			item, ok := detectListItem(tc.text)
+			item, ok := DetectListItem(tc.text)
 			if ok != tc.wantOK {
 				t.Fatalf("判定为条目 = %v，期望 %v（得到 %+v）", ok, tc.wantOK, item)
 			}
@@ -62,15 +62,15 @@ func TestDetectListItem(t *testing.T) {
 
 func TestFilterCredibleListItems(t *testing.T) {
 	// 构造按行号对齐的切片，中间可用 gap() 插入非条目行来切断连续段。
-	items := func(parts ...any) []listItem {
-		var out []listItem
+	items := func(parts ...any) []ListItem {
+		var out []ListItem
 		for _, part := range parts {
 			switch value := part.(type) {
 			case [2]int:
-				out = append(out, listItem{level: 0, order: value[1], marker: listMarkerOf(value[0])})
+				out = append(out, ListItem{level: 0, order: value[1], marker: listMarkerOf(value[0])})
 			case int:
 				for i := 0; i < value; i++ {
-					out = append(out, listItem{})
+					out = append(out, ListItem{})
 				}
 			}
 		}
@@ -80,7 +80,7 @@ func TestFilterCredibleListItems(t *testing.T) {
 	const gap = 1
 	cases := []struct {
 		name  string
-		items []listItem
+		items []ListItem
 		want  bool
 	}{
 		{"连续递增", items([2]int{arabic, 1}, [2]int{arabic, 2}, [2]int{arabic, 3}), true},
@@ -125,8 +125,8 @@ func TestStripListMarker(t *testing.T) {
 		{"普通段落", "普通段落"},
 	}
 	for _, tc := range cases {
-		if got := stripListMarker(tc.in); got != tc.want {
-			t.Errorf("stripListMarker(%q) = %q，期望 %q", tc.in, got, tc.want)
+		if got := StripListMarker(tc.in); got != tc.want {
+			t.Errorf("StripListMarker(%q) = %q，期望 %q", tc.in, got, tc.want)
 		}
 	}
 }

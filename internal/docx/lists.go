@@ -1,11 +1,10 @@
-package converter
+package docx
 
 import (
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/zc310/ofd/internal/docx"
 	"github.com/zc310/ofd/internal/textdoc"
 )
 
@@ -43,8 +42,8 @@ var (
 	}
 )
 
-// listItem 是识别出的一个列表条目。
-type listItem struct {
+// ListItem 是识别出的一个列表条目。
+type ListItem struct {
 	// level 是层级，0 起算，映射到 w:ilvl。中文序号与阿拉伯序号都是一级：
 	// 多级序号已经按上面的理由排除。
 	level int
@@ -54,34 +53,34 @@ type listItem struct {
 	marker string
 }
 
-// detectListItem 判断一行文字是否是列表条目，是则返回条目信息。
+// DetectListItem 判断一行文字是否是列表条目，是则返回条目信息。
 //
 // 只看行首标记：条目序号一定出现在行首，而行内的顿号、括号、引号都不该被
 // 当成序号。序号从 0 起的（「0.1mm」）在行级即可排除；「必须从 1 开始」是段级
 // 要求，由 FilterCredibleListItems 校验。
-func detectListItem(text string) (listItem, bool) {
+func DetectListItem(text string) (ListItem, bool) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
-		return listItem{}, false
+		return ListItem{}, false
 	}
 	// 纯数字行是页码，不是条目。
-	if pageNumberRegex.MatchString(trimmed) || dashPageNumberRegex.MatchString(trimmed) {
-		return listItem{}, false
+	if textdoc.PageNumberRegex.MatchString(trimmed) || textdoc.DashPageNumberRegex.MatchString(trimmed) {
+		return ListItem{}, false
 	}
 
 	if loc := arabicListRegex.FindStringSubmatchIndex(trimmed); loc != nil {
 		if !separatedFollowsMarker(trimmed, loc[1]) {
-			return listItem{}, false
+			return ListItem{}, false
 		}
 		value, err := strconv.Atoi(capturedGroup(trimmed, loc, 2))
 		if err != nil || value < 1 {
-			return listItem{}, false
+			return ListItem{}, false
 		}
-		return listItem{level: 0, order: value, marker: "arabic"}, true
+		return ListItem{level: 0, order: value, marker: "arabic"}, true
 	}
 	if loc := chineseOrdinalRegex.FindStringSubmatchIndex(trimmed); loc != nil {
 		if !separatedFollowsMarker(trimmed, loc[1]) {
-			return listItem{}, false
+			return ListItem{}, false
 		}
 		// 两个捕获组只有一个参与匹配，另一个的起止下标是 -1。
 		digit := capturedGroup(trimmed, loc, 2)
@@ -90,16 +89,16 @@ func detectListItem(text string) (listItem, bool) {
 		}
 		order := parseChineseNumeral(digit)
 		if order <= 0 {
-			return listItem{}, false
+			return ListItem{}, false
 		}
-		return listItem{level: 0, order: order, marker: "chinese"}, true
+		return ListItem{level: 0, order: order, marker: "chinese"}, true
 	}
 	if bulletListRegex.MatchString(trimmed) {
 		// 项目符号没有序号，连续性无从验证；行级即认定，段级要求由
 		// runCredible 放宽。
-		return listItem{level: 0, order: 1, marker: "bullet"}, true
+		return ListItem{level: 0, order: 1, marker: "bullet"}, true
 	}
-	return listItem{}, false
+	return ListItem{}, false
 }
 
 // capturedGroup 取出第 group 个捕获组的文本。未参与匹配的组起止下标都是 -1，
@@ -165,8 +164,8 @@ func parseChineseNumeral(text string) int {
 //
 // 按段筛选而不是整页一刀切：一页里可能只有部分行构成列表，其余是巧合。实测
 // 项目立项报告首页的「一、」「二、」与紧随其后的「1. 2. 3.」就是两个独立列表。
-func FilterCredibleListItems(items []listItem) []listItem {
-	filtered := make([]listItem, len(items))
+func FilterCredibleListItems(items []ListItem) []ListItem {
+	filtered := make([]ListItem, len(items))
 	for _, run := range listRuns(items) {
 		if !run.credible() {
 			continue
@@ -183,7 +182,7 @@ type listRun struct {
 	// indexes 是段内各行在输入切片中的下标。
 	indexes []int
 	// items 是段内各行的条目，顺序与 indexes 一致。
-	items []listItem
+	items []ListItem
 	// hasBullet 表示段内含项目符号行。
 	hasBullet bool
 }
@@ -191,7 +190,7 @@ type listRun struct {
 // listRuns 把条目行切成连续段。序号回退到 1 也算断段：Word 的自动编号总是
 // 从 1 渲染，「二、」紧接「1.」是两个列表，并成一段会把「二、」重编号成「1.」，
 // 等于改写内容。
-func listRuns(items []listItem) []listRun {
+func listRuns(items []ListItem) []listRun {
 	var runs []listRun
 	current := listRun{}
 	previous := 0
@@ -238,18 +237,18 @@ func (r listRun) credible() bool {
 	return r.hasBullet || len(r.indexes) >= 2
 }
 
-// docxListProperties 返回把条目挂到 numbering.xml 上的段落属性。
-func docxListProperties(item listItem) *docx.NumberingProps {
-	return &docx.NumberingProps{Level: docx.IntVal(item.level), NumID: docx.IntVal(1)}
+// listProperties 返回把条目挂到 numbering.xml 上的段落属性。
+func listProperties(item ListItem) *NumberingProps {
+	return &NumberingProps{Level: IntVal(item.level), NumID: IntVal(1)}
 }
 
-// stripListMarker 去掉条目行首的序号或项目符号，只保留正文。真实列表里序号由
+// StripListMarker 去掉条目行首的序号或项目符号，只保留正文。真实列表里序号由
 // Word 自动渲染，留在正文里会显示两遍。
-func stripListMarker(text string) string {
+func StripListMarker(text string) string {
 	// 只剥离被判定为条目的行首序号。多段序号（「1.2.」）不是条目，但会被
 	// arabicListRegex 的单段分支匹配掉前半截，直接替换会留下「2. 二级条目」
 	// 这样的残缺文本。
-	if _, ok := detectListItem(text); !ok {
+	if _, ok := DetectListItem(text); !ok {
 		return strings.TrimSpace(text)
 	}
 	for _, pattern := range []*regexp.Regexp{arabicListRegex, chineseOrdinalRegex, bulletListRegex} {
@@ -260,9 +259,9 @@ func stripListMarker(text string) string {
 	return strings.TrimSpace(text)
 }
 
-// rowListMarker 返回行内第一个非空文字对象的文本。OFD 常把序号与正文拆成同一行
+// RowListMarker 返回行内第一个非空文字对象的文本。OFD 常把序号与正文拆成同一行
 // 的多个文字对象，条目文字此时在第二个对象上，所以判定要看整行而不是单个对象。
-func rowListMarker(row []textdoc.Entry) (string, bool) {
+func RowListMarker(row []textdoc.Entry) (string, bool) {
 	for _, entry := range row {
 		if text := strings.TrimSpace(entry.Text); text != "" {
 			return text, true
