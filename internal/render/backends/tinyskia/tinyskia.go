@@ -277,12 +277,9 @@ func (h *tinyskiaHooks) strokeStyle(style rastercore.StrokeStyle) {
 		h.ctx.SetLineDashOffset(0)
 		return
 	}
-	scaled := make([]float64, len(style.Dashes))
-	for i, d := range style.Dashes {
-		scaled[i] = d * style.Width
-	}
-	h.ctx.SetLineDash(scaled)
-	h.ctx.SetLineDashOffset(style.DashOffset * style.Width)
+	// rastercore 已把虚线换算成设备像素，直接使用。
+	h.ctx.SetLineDash(style.Dashes)
+	h.ctx.SetLineDashOffset(style.DashOffset)
 }
 
 // addStops 把 geom 的渐变停靠点复制进 tinyskia 渐变对象。

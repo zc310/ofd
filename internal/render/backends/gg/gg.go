@@ -170,14 +170,9 @@ func (h *ggHooks) strokeStyle(style rastercore.StrokeStyle) {
 		h.dc.ClearDash()
 		return
 	}
-	// canvas 在渲染时把虚线长度与相位按线宽缩放（ScaleDash），gg 的原生
-	// 虚线是设备像素绝对单位，因此这里做同样的缩放。
-	scaled := make([]float64, len(style.Dashes))
-	for i, d := range style.Dashes {
-		scaled[i] = d * style.Width
-	}
-	h.dc.SetDash(scaled...)
-	h.dc.SetDashOffset(style.DashOffset * style.Width)
+	// rastercore 已把虚线换算成设备像素，直接使用。
+	h.dc.SetDash(style.Dashes...)
+	h.dc.SetDashOffset(style.DashOffset)
 }
 
 // fillGGPath 把 rastercore 的设备像素路径写入复用的 gg 路径缓冲，避免每次

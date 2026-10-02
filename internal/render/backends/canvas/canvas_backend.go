@@ -75,8 +75,29 @@ func (b *canvasBackend) CopyStrokeToFill() {
 }
 
 func (b *canvasBackend) SetStrokeWidth(w float64) { b.ctx.SetStrokeWidth(w) }
+
+// SetDashes 把 OFD 的绝对长度虚线换算到 canvas 的比例虚线语义。
+//
+// canvas 的虚线是相对线宽的比例：各渲染器输出前会按线宽缩放虚线数组与相位
+// （canvas.ScaleDash，见上游提交 76412ab「Setting dashes in Canvas is
+// proportional to the stroke width」，同一提交引入的 Dashed=[3,3] 等常量
+// 也是比例值）。而 OFD 的 DashPattern/DashOffset 以毫米为单位、与
+// LineWidth 无关，PDF 32000-1 §9.3.6 与 SVG 规范同样规定虚线是用户空间
+// 长度、不随线宽缩放。
+//
+// 因此这里先除掉线宽，由 canvas 侧再乘回来，净效果为零。其余栅格后端由
+// rastercore 直接按毫米换算，无需补偿，所以只在本适配层做一次。
 func (b *canvasBackend) SetDashes(offset float64, dashes ...float64) {
-	b.ctx.SetDashes(offset, dashes...)
+	lineWidth := b.ctx.Style.StrokeWidth
+	if !(lineWidth > 0) {
+		b.ctx.SetDashes(offset, dashes...)
+		return
+	}
+	scaled := make([]float64, len(dashes))
+	for i, d := range dashes {
+		scaled[i] = d / lineWidth
+	}
+	b.ctx.SetDashes(offset/lineWidth, scaled...)
 }
 func (b *canvasBackend) SetStrokeCapper(cap geom.Capper) {
 	b.ctx.SetStrokeCapper(canvasconv.ToCanvasCapper(cap))

@@ -112,7 +112,10 @@ func SceneDirect(t testing.TB, ctx *canvas.Context, fontPath string) {
 	ctx.SetFill(nil)
 	ctx.SetStrokeColor(cNavy)
 	ctx.SetStrokeWidth(1.2)
-	ctx.SetDashes(0, 3, 1.2)
+	// 线宽 1.2、OFD 虚线 3/1.2 经 canvasBackend.SetDashes 折算后为 2.5/1.0，
+	// 这里写折算后的字面值，使两条路径输出逐像素相等；若该折算被改动，这里
+	// 的常量不会跟着变，TestCanvasBackendParity 会失败。
+	ctx.SetDashes(0, 2.5, 1)
 	ctx.SetStrokeCapper(canvas.RoundCap)
 	ctx.SetStrokeJoiner(canvas.RoundJoin)
 	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(RoundedRectPath(8, 8, 192, 132, 12)))
