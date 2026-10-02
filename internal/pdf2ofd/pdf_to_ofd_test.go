@@ -321,13 +321,37 @@ func TestPDFTextDeltasUsePDFWidthsWhenFontAdvanceMismatch(t *testing.T) {
 	}
 }
 
-func TestPDFTextDeltasSkipWhenFontAdvanceMatches(t *testing.T) {
+// 即使内嵌字体字宽与 /Widths 完全一致，也必须输出 DeltaX：OFD 的字符推进量
+// 由 TextCode@DeltaX 给出，只按 DeltaX 排版的阅读器在缺失时拿到 0 步进，会把
+// 整段文字叠在首字符位置。
+func TestPDFTextDeltasEmittedEvenWhenFontAdvanceMatches(t *testing.T) {
 	font := pdfFontInfo{
 		widths:      map[int]float64{65: 602, 66: 602},
 		glyphWidths: map[uint16]float64{65: 602, 66: 602},
 	}
-	if deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1); deltas != nil {
-		t.Fatalf("deltas = %v, want nil when font advance matches /Widths", deltas)
+	deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	if len(deltas) != 1 {
+		t.Fatalf("deltas = %v, want length 1", deltas)
+	}
+	want := 602.0 / 1000 * 10 * pdfPointToMillimeter
+	if math.Abs(deltas[0]-want) > 1e-9 {
+		t.Fatalf("deltas[0] = %g, want %g", deltas[0], want)
+	}
+}
+
+// 无内嵌字体字宽表时同样按 /Widths 合成 DeltaX。intro.ofd 经 PDF 回转后第 3 页
+// 的 INTRODUCTION 与“关于澎思”在官方阅读器里叠在首字符上，根因就是缺少 DeltaX。
+func TestPDFTextDeltasSynthesizedWhenGlyphWidthsUnknown(t *testing.T) {
+	font := pdfFontInfo{
+		widths: map[int]float64{65: 602, 66: 602},
+	}
+	deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	if len(deltas) != 1 {
+		t.Fatalf("deltas = %v, want length 1", deltas)
+	}
+	want := 602.0 / 1000 * 10 * pdfPointToMillimeter
+	if math.Abs(deltas[0]-want) > 1e-9 {
+		t.Fatalf("deltas[0] = %g, want %g", deltas[0], want)
 	}
 }
 
@@ -1187,6 +1211,88 @@ func TestConvertAppliesPathClip(t *testing.T) {
 	}
 	if clipped == 0 {
 		t.Fatal("expected W/W* 裁剪写入图元 Clips")
+	}
+}
+
+// TestConvertWritesClipPathFillTrue 验证裁剪路径显式写 Fill="true"。
+// CT_Path 的 Fill 缺省为 false，裁剪区域由路径的填充范围界定：省略 Fill 时
+// 阅读器按未填充处理，裁剪区为空、图元被整块裁掉。intro.ofd 的 135 个裁剪
+// 路径全部显式写 Fill="true"，第 12 页满幅背景图在官方阅读器里消失即源于此。
+func TestConvertWritesClipPathFillTrue(t *testing.T) {
+	content := []byte("q 20 20 60 40 re W n 10 10 200 200 re f Q")
+	pdf := testutil.MinimalPDF(content, 300, 300)
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, layer := range page.Content().Layer {
+		for _, path := range layerPaths(layer) {
+			if path.Clips == nil || len(path.Clips.Clip) == 0 {
+				continue
+			}
+			for _, clip := range path.Clips.Clip {
+				for _, area := range clip.Area {
+					if area.Path == nil {
+						continue
+					}
+					checked++
+					if !area.Path.Fill {
+						t.Fatal("裁剪路径未显式 Fill=\"true\"，阅读器按 Fill 缺省 false 处理会把图元整块裁掉")
+					}
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("未找到裁剪路径")
+	}
+}
+
+// TestConvertWritesClipTransFlagFalse 验证输出的裁剪区带 TransFlag="false"。
+// 裁剪路径已经写成图元局部毫米坐标，缺省（规范为 true）时阅读器会把图元 CTM 再
+// 叠加一次：整页大图的 CTM 约为 {321,0,0,242,0,0}，裁剪区膨胀到十万毫米量级，
+// 图片被整块裁没——intro.ofd 经 PDF 回转后第 12 页背景图在官方阅读器里消失。
+func TestConvertWritesClipTransFlagFalse(t *testing.T) {
+	content := []byte("q 20 20 60 40 re W n 10 10 200 200 re f Q")
+	pdf := testutil.MinimalPDF(content, 300, 300)
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range archive.File {
+		if !strings.HasSuffix(entry.Name, "Content.xml") {
+			continue
+		}
+		reader, openErr := entry.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		raw, readErr := io.ReadAll(reader)
+		_ = reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if bytes.Contains(raw, []byte(`TransFlag="false"`)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("裁剪区缺少 TransFlag=\"false\"，阅读器会把图元 CTM 叠加到毫米坐标的裁剪路径上")
 	}
 }
 
