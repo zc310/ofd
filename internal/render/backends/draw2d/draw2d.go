@@ -279,11 +279,6 @@ func (h *draw2dHooks) strokeStyle(style rastercore.StrokeStyle) {
 		h.gc.SetLineDash(nil, 0)
 		return
 	}
-	// canvas 在渲染时把虚线长度与相位按线宽缩放（ScaleDash），draw2d 的
-	// 虚线同样乘线宽以保持一致。
-	scaled := make([]float64, len(style.Dashes))
-	for i, d := range style.Dashes {
-		scaled[i] = d * style.Width
-	}
-	h.gc.SetLineDash(scaled, style.DashOffset*style.Width)
+	// rastercore 已把虚线换算成设备像素，直接使用。
+	h.gc.SetLineDash(style.Dashes, style.DashOffset)
 }

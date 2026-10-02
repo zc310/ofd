@@ -21,13 +21,18 @@ import (
 )
 
 // StrokeStyle 是换算到设备像素后的描边造型，交给 Hooks 写入光栅库。
+//
+// 虚线长度与相位和线宽一样是用户空间长度，按 dpmm 与矩阵缩放换算成设备
+// 像素即可。OFD 的 DashPattern/DashOffset 以毫米为单位、与线宽无关，
+// PDF 32000-1 §9.3.6 与 SVG 规范也都规定虚线不随线宽缩放，所以换算因子
+// 里不能带线宽。
 type StrokeStyle struct {
 	Width      float64 // 设备像素线宽
 	Cap        geom.Capper
 	Join       geom.Joiner
 	MiterLimit float64
-	Dashes     []float64 // 原始（逻辑毫米）虚线数组，由 Hooks 按线宽缩放
-	DashOffset float64   // 原始（逻辑毫米）相位
+	Dashes     []float64 // 设备像素虚线数组
+	DashOffset float64   // 设备像素相位
 }
 
 // DeviceOp 是设备路径的一段。
@@ -334,6 +339,18 @@ func (c *Core) SetFillRule(rule geom.FillRule) {
 	c.hooks.SetFillRule(rule)
 }
 
+// scaleDashes 把逻辑毫米的虚线数组换算成设备像素，不修改入参切片。
+func scaleDashes(dashes []float64, unit float64) []float64 {
+	if len(dashes) == 0 || unit == 1 {
+		return dashes
+	}
+	scaled := make([]float64, len(dashes))
+	for i, d := range dashes {
+		scaled[i] = d * unit
+	}
+	return scaled
+}
+
 // DrawPath 按当前样式绘制路径（x,y 为路径平移到画布的偏移）。
 func (c *Core) DrawPath(x, y float64, p *geom.Path) {
 	stroke := c.strokeActive && c.strokeWidth > 0
@@ -342,13 +359,14 @@ func (c *Core) DrawPath(x, y float64, p *geom.Path) {
 	}
 	m := c.mx.Translate(x, y)
 	c.buildDevice(p, m)
+	unit := c.dpmm * MatrixScale(m)
 	style := StrokeStyle{
-		Width:      c.strokeWidth * c.dpmm * MatrixScale(m),
+		Width:      c.strokeWidth * unit,
 		Cap:        c.strokeCap,
 		Join:       c.strokeJoin,
 		MiterLimit: c.miterLimit,
-		Dashes:     c.dashes,
-		DashOffset: c.dashOffset,
+		Dashes:     scaleDashes(c.dashes, unit),
+		DashOffset: c.dashOffset * unit,
 	}
 	c.hooks.DrawDevicePath(&c.device, m, c.fillActive, stroke, c.fillGradient, c.strokeGrad, style)
 }

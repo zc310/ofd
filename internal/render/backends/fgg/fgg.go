@@ -171,12 +171,9 @@ func (h *fggHooks) strokeStyle(style rastercore.StrokeStyle) {
 		h.dc.SetDashOffset(0)
 		return
 	}
-	scaled := make([]float64, len(style.Dashes))
-	for i, d := range style.Dashes {
-		scaled[i] = d * style.Width
-	}
-	h.dc.SetDash(scaled...)
-	h.dc.SetDashOffset(style.DashOffset * style.Width)
+	// rastercore 已把虚线换算成设备像素，直接使用。
+	h.dc.SetDash(style.Dashes...)
+	h.dc.SetDashOffset(style.DashOffset)
 }
 
 // fggPattern 是 fogleman 的逐像素 Pattern，复刻 gogpu gradBrush 的采样
