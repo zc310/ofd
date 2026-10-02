@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"encoding/pem"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"

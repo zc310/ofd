@@ -3,8 +3,8 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/json"
 	"errors"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"

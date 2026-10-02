@@ -3,11 +3,12 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/goccy/go-json"
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/utils"

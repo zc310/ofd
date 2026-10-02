@@ -2,8 +2,8 @@ package archive
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"

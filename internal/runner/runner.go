@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	json "github.com/goccy/go-json"
+	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"

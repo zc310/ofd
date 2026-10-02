@@ -2,7 +2,7 @@ package ocr
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"image"
 	"image/png"
 	"net/http"

@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	json "github.com/goccy/go-json"
+	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
