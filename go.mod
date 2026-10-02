@@ -20,7 +20,7 @@ require (
 	github.com/gogpu/gg v0.52.5
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
-	github.com/hhrutter/tiff v1.0.6
+	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.1
 	github.com/knroy/go-xml v1.4.0
