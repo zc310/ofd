@@ -216,8 +216,15 @@ func (p *pdfInterpreter) buildClips(objX, objY float64) *creator.Clips {
 	if len(items) == 0 {
 		return nil
 	}
-	return &creator.Clips{Items: items}
+	return &creator.Clips{Items: items, TransFlag: &clipTransFlag}
 }
+
+// clipTransFlag 表示裁剪区域已处于图元局部毫米坐标，不再叠加图元 CTM。
+// 缺省（规范为 true）时阅读器会把图元 CTM 再乘到裁剪路径上：整页大图的 CTM 约为
+// {321,0,0,242,0,0}，裁剪区因此膨胀到十万毫米量级，图片被整块裁没——
+// intro.ofd 经 PDF 回转后第 12 页的背景图在官方阅读器里消失就是这个原因。
+// 现有测试文档中的裁剪区也都显式写 TransFlag="false"。
+var clipTransFlag = false
 
 // clipPathFor 把设备坐标的裁剪路径转换为相对图元边界的 OFD 裁剪路径。
 // 阅读器计算裁剪时使用 页面 Y = 页高 - (局部 Y + 图元 Y)，而图元（路径/图片）
@@ -269,9 +276,17 @@ func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (
 	if height == 0 {
 		height = 0.001
 	}
+	stroke := false
 	return &creator.ClipPath{
 		Boundary: creator.Box{X: minX, Y: minY, Width: width, Height: height},
 		Data:     strings.TrimSpace(data.String()),
+		// 裁剪区域由路径的填充范围界定，必须显式 Fill="true"：CT_Path 的 Fill
+		// 缺省为 false，省略时阅读器按未填充处理，裁剪区为空、图元被整块裁掉。
+		// intro.ofd 的 135 个裁剪路径全部显式写 Fill="true"，且同时关闭描边。
+		Fill:      true,
+		Stroke:    stroke,
+		StrokeSet: &stroke,
+		Rule:      "NonZero",
 	}, true
 }
 
