@@ -228,6 +228,38 @@ func docxEmbedIDs(document string) []string {
 	}
 }
 
+// TestDOCXDropsAnnotationWatermarkByDefault 校验批注层的水印文字默认被剔除，
+// 且能用 WithDOCXAnnotations 保留。ano.ofd 首页的「保密资料」水印由 81 个
+// 批注文字对象组成，同页真实正文只有 5 个对象——过滤前后段落数差异巨大。
+func TestDOCXDropsAnnotationWatermarkByDefault(t *testing.T) {
+	const source = "../../test/testdata/ano.ofd"
+	var filtered, kept bytes.Buffer
+	if err := converter.DOCX(context.Background(), source, &filtered, converter.Page(1)); err != nil {
+		t.Fatalf("默认转换失败: %v", err)
+	}
+	if err := converter.DOCX(context.Background(), source, &kept, converter.Page(1),
+		converter.WithDOCXAnnotations(true)); err != nil {
+		t.Fatalf("保留批注转换失败: %v", err)
+	}
+	clean := docxParts(t, filtered.Bytes())["word/document.xml"]
+	raw := docxParts(t, kept.Bytes())["word/document.xml"]
+
+	if strings.Contains(clean, "保密资料") {
+		t.Error("默认输出不应包含批注层的水印文字")
+	}
+	if !strings.Contains(raw, "保密资料") {
+		t.Error("WithDOCXAnnotations(true) 应保留批注层文字")
+	}
+	// 页面图层的真实正文两种模式下都必须保留。
+	for _, want := range []string{"可信安全浏览器", "应用开发指南"} {
+		if !strings.Contains(clean, want) {
+			t.Errorf("过滤水印后丢失了正文 %q", want)
+		}
+	}
+	// 不能用 run 数多少来断言：去掉水印条目后 textdoc.Rows 的行聚类会改变，
+	// 表格识别结果随之改变，段落数可能反而变多。水印是否残留只按文本判定。
+}
+
 func TestDOCXPageSelection(t *testing.T) {
 	var output bytes.Buffer
 	if err := converter.DOCX(context.Background(), "../../test/testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {

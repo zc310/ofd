@@ -37,6 +37,38 @@ type Entry struct {
 	// Bold 与 Italic 供逐 run 还原字符形态，Weight 达到 boldWeight 即视为粗体。
 	Bold   bool
 	Italic bool
+
+	// Source 记录该条目来自页面的哪一部分。同样的文字放在不同位置，含义差别
+	// 很大：页面图层是正文，模板层常放页眉页脚与页面装饰，批注层则是水印、
+	// 印章、签章这类叠加在正文上的标记。是否采信由输出格式决定，因此这里
+	// 只如实记录来源而不做过滤。
+	Source EntrySource
+}
+
+// EntrySource 是文字条目的来源。
+type EntrySource int
+
+const (
+	// EntrySourcePage 是页面自身图层里的文字，即正文。
+	EntrySourcePage EntrySource = iota
+	// EntrySourceTemplate 是页面模板里的文字，常是页眉页脚与页面边框装饰。
+	EntrySourceTemplate
+	// EntrySourceAnnotation 是批注外观里的文字，即叠加在正文上的水印、印章与
+	// 签章标记。实测保密宣传册的整页「保密资料」水印就属于这一类：81 个文字
+	// 对象分布在批注里，而页面图层只有 5 个真实内容对象。
+	EntrySourceAnnotation
+)
+
+// String 返回来源的短名称，供日志与测试断言使用。
+func (s EntrySource) String() string {
+	switch s {
+	case EntrySourceTemplate:
+		return "template"
+	case EntrySourceAnnotation:
+		return "annotation"
+	default:
+		return "page"
+	}
 }
 
 // boldWeight 是 OFD Weight 判定粗体的阈值，与渲染层保持一致。
@@ -52,6 +84,26 @@ type Page struct {
 	// 继续提取。纯文本与 Markdown 输出不使用这两个字段。
 	Source *parser.Page
 	Owner  *parser.Document
+}
+
+// WithoutSource 返回剔除指定来源条目后的页面副本。批注里的水印与印章属于叠加
+// 标记，不是正文，结构化输出通常要排除；模板层的页眉页脚则常是真内容，
+// 是否剔除由调用方决定。
+func (p Page) WithoutSource(drop EntrySource) Page {
+	if len(p.Entries) == 0 {
+		return p
+	}
+	kept := make([]Entry, 0, len(p.Entries))
+	for _, entry := range p.Entries {
+		if entry.Source != drop {
+			kept = append(kept, entry)
+		}
+	}
+	if len(kept) == len(p.Entries) {
+		return p
+	}
+	p.Entries = kept
+	return p
 }
 
 // Count 统计所有文档体的非空页面总数。
@@ -126,40 +178,40 @@ func ExtractPage(doc *parser.Document, page *parser.Page) Page {
 	entries := make([]Entry, 0)
 	for _, template := range content.Template {
 		if templateContent := doc.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
-			appendPageContentText(doc, templateContent.Content, &entries, 0)
+			appendPageContentText(doc, templateContent.Content, &entries, 0, EntrySourceTemplate)
 		}
 	}
-	appendPageContentText(doc, content.Content, &entries, 0)
+	appendPageContentText(doc, content.Content, &entries, 0, EntrySourcePage)
 	if annot := doc.GetAnnotation(page.ID); annot != nil {
 		for _, item := range annot.Annots {
 			if item == nil || !item.Visible.Value(true) || item.Appearance == nil {
 				continue
 			}
-			appendTextItems(doc, item.Appearance.Items, &entries, 0)
+			appendTextItems(doc, item.Appearance.Items, &entries, 0, EntrySourceAnnotation)
 		}
 	}
 	result.Entries = entries
 	return result
 }
 
-func appendPageContentText(doc *parser.Document, content *models.Content, entries *[]Entry, depth int) {
+func appendPageContentText(doc *parser.Document, content *models.Content, entries *[]Entry, depth int, source EntrySource) {
 	if content == nil {
 		return
 	}
 	// 与渲染顺序保持一致：背景层先于其他图层处理。
 	for _, layer := range content.Layer {
 		if layer != nil && layer.Type == "Background" {
-			appendTextItems(doc, layer.Items, entries, depth)
+			appendTextItems(doc, layer.Items, entries, depth, source)
 		}
 	}
 	for _, layer := range content.Layer {
 		if layer != nil && layer.Type != "Background" {
-			appendTextItems(doc, layer.Items, entries, depth)
+			appendTextItems(doc, layer.Items, entries, depth, source)
 		}
 	}
 }
 
-func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]Entry, depth int) {
+func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]Entry, depth int, source EntrySource) {
 	if depth > maxTextCompositeDepth {
 		return
 	}
@@ -187,16 +239,17 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 				FontName: textEntryFontName(doc, *item.Text),
 				Bold:     item.Text.Weight >= boldWeight,
 				Italic:   item.Text.Italic,
+				Source:   source,
 			})
 		case models.PageItemBlock:
-			appendTextItems(doc, item.Block.Items, entries, depth)
+			appendTextItems(doc, item.Block.Items, entries, depth, source)
 		case models.PageItemComposite:
 			if !item.Composite.VisibleValue() {
 				continue
 			}
 			unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID))
 			if unit != nil {
-				appendTextItems(doc, unit.Content.Items, entries, depth+1)
+				appendTextItems(doc, unit.Content.Items, entries, depth+1, source)
 			}
 		}
 	}

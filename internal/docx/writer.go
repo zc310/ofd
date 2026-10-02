@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +53,10 @@ func TwipsFromPoints(pt float64) int { return int(pt*20 + 0.5) }
 // HalfPoints 把磅换算成 w:sz 使用的半磅单位。字号与长度不同，w:sz 取 2×pt，
 // 直接传 twip 会让字号放大 10 倍（实测标题变成 160pt，一行放不下就竖排换行）。
 func HalfPoints(pt float64) int { return int(pt*2 + 0.5) }
+
+// maxNumberingLevels 是 numbering.xml 定义的层级数。Word 的 w:lvl 最多 9 级，
+// 这里默认给 3 级，够覆盖「1.」/「1.1.」/「1.1.1.」这类多级编号。
+const maxNumberingLevels = 3
 
 // Options 控制文档级设置。零值表示使用 A4 纵向与默认页边距。
 type Options struct {
@@ -410,6 +415,28 @@ func textdocPositive(value float64) bool {
 	return value > 0 && value == value
 }
 
+// docxNumberingLevels 生成多级十进制编号定义。第 n 级的 lvlText 是 "%1.%2." 这种
+// 形式，包含到本级为止的全部上级序号；缩进按层级递增 420 twip。
+func docxNumberingLevels() []*Level {
+	levels := make([]*Level, 0, maxNumberingLevels)
+	for i := 0; i < maxNumberingLevels; i++ {
+		text := "%1."
+		for n := 2; n <= i+1; n++ {
+			text += "%" + strconv.Itoa(n) + "."
+		}
+		levels = append(levels, &Level{
+			Index:  i,
+			Start:  IntVal(1),
+			Format: StringVal("decimal"),
+			Text:   StringVal(text),
+			Properties: &ParagraphProperties{
+				Indent: &Indent{Left: intPtr(420 * (i + 1)), Hanging: intPtr(420)},
+			},
+		})
+	}
+	return levels
+}
+
 // createPart 打开一个新的 ZIP 条目。Modified 取零值让输出可复现。
 func (w *Writer) createPart(name string) (io.Writer, error) {
 	header := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Time{}}
@@ -579,19 +606,8 @@ func (w *Writer) writeNumbering() error {
 	payload := &NumberingRoot{
 		XMLName:   xml.Name{Local: "w:numbering"},
 		Namespace: namespaceWordprocessing,
-		Abstract: []*AbstractNumbering{{
-			AbstractID: 0,
-			Levels: []*Level{{
-				Index:  0,
-				Start:  IntVal(1),
-				Format: StringVal("decimal"),
-				Text:   StringVal("%1."),
-				Properties: &ParagraphProperties{
-					Indent: &Indent{Left: intPtr(420), Hanging: intPtr(420)},
-				},
-			}},
-		}},
-		Numbers: []*NumberInstance{{NumID: 1, AbstractID: 0}},
+		Abstract:  []*AbstractNumbering{{AbstractID: 0, Levels: docxNumberingLevels()}},
+		Numbers:   []*NumberInstance{{NumID: 1, AbstractID: 0}},
 	}
 	return w.writePart(partNumbering, payload)
 }

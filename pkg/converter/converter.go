@@ -33,6 +33,7 @@ type Converter struct {
 	markdownTables    bool   // Markdown 输出是否识别表格
 	docxTablesOff     bool   // DOCX 输出关闭表格识别；取反存储以取得默认开启的语义
 	docxImagesOff     bool   // DOCX 输出关闭图片内嵌
+	docxAnnotations   bool   // DOCX 输出保留批注层文字，默认剔除水印与印章
 	sofficePath       string
 	officeTimeout     time.Duration
 	chromePath        string
@@ -211,6 +212,14 @@ func (c *Converter) DOCXImages() bool {
 		return true
 	}
 	return !c.docxImagesOff
+}
+
+// DOCXAnnotations 返回 OFD 转 DOCX 时是否保留批注层的文字，默认剔除。
+func (c *Converter) DOCXAnnotations() bool {
+	if c == nil {
+		return false
+	}
+	return c.docxAnnotations
 }
 
 // MarkdownTables 返回 OFD 转 Markdown 时是否识别并输出表格，默认关闭。

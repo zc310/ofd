@@ -47,7 +47,7 @@ func (e *docxEncoder) encodeDocuments(documents []*render.Document, output io.Wr
 			if err := conv.checkCancelled(); err != nil {
 				return err
 			}
-			if err := writeDocxPage(w, page, index, len(pages), conv.DOCXTables(), images[index]); err != nil {
+			if err := writeDocxPage(w, page, index, len(pages), conv.DOCXTables(), conv.DOCXAnnotations(), images[index]); err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", index+1, err)
 			}
 		}
@@ -76,8 +76,8 @@ func docxPagesOptions(pages []textdoc.Page, title string) docx.Options {
 }
 
 // writeDocxPage 输出一页的块序列，并在需要时补分页符。
-func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, detectTables bool, images []textdoc.Image) error {
-	for _, block := range docxBlockSequence(page.Entries, page.Height, detectTables, images) {
+func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, detectTables, includeAnnotations bool, images []textdoc.Image) error {
+	for _, block := range docxBlockSequence(page.Entries, page.Height, detectTables, images, includeAnnotations) {
 		var err error
 		switch block.kind {
 		case docxBlockImage:

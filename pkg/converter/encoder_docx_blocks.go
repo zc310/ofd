@@ -45,13 +45,37 @@ type docxBlock struct {
 	columnWidths []float64
 	// image 是图片块携带的图片条目。
 	image *textdoc.Image
+	// listItems 是本块内每行对应的列表条目，与 rows 一一对应。
+	listItems []listItem
 }
 
 // docxBlockSequence 返回一页的块序列。detectTables 决定是否识别表格，
 // images 是同页的可内嵌图片，按纵向锚点与文字块交错。
-func docxBlockSequence(entries []textdoc.Entry, pageHeight float64, detectTables bool, images []textdoc.Image) []docxBlock {
+func docxBlockSequence(entries []textdoc.Entry, pageHeight float64, detectTables bool, images []textdoc.Image, includeAnnotations bool) []docxBlock {
+	if !includeAnnotations {
+		entries = dropAnnotatedEntries(entries)
+	}
 	blocks := docxTextBlocks(entries, pageHeight, detectTables)
 	return mergeDocxImages(blocks, images)
+}
+
+// dropAnnotatedEntries 剔除批注来源的文字条目。
+//
+// 批注在 OFD 里承载的是叠加在正文上的标记：整页水印、电子印章、签章位置、
+// 阅读批注。实测保密宣传册首页的「保密资料」水印由 81 个批注文字对象组成，
+// 而同页真实正文只有 5 个对象——不剔除的话 DOCX 的每个段落都会被水印文字
+// 淹没。因此默认排除，需要保留叠加层时用 WithDOCXAnnotations 打开。
+//
+// 模板层不剔除：它常放页眉页脚与标题栏，是真内容。pkg/invoice 取票面标题
+// 就依赖模板文字层（选字号最大的一条），在提取层过滤会连带影响它。
+func dropAnnotatedEntries(entries []textdoc.Entry) []textdoc.Entry {
+	kept := make([]textdoc.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Source != textdoc.EntrySourceAnnotation {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }
 
 // mergeDocxImages 按纵向锚点把图片插入文字块序列，保持各自内部的顺序不变。
@@ -113,6 +137,7 @@ func docxTextBlocks(entries []textdoc.Entry, pageHeight float64, detectTables bo
 	}
 
 	rowInfos := make([]markdownRowInfo, len(rows))
+	rawItems := make([]listItem, len(rows))
 	for i, row := range rows {
 		if inTable[i] {
 			continue
@@ -120,9 +145,28 @@ func docxTextBlocks(entries []textdoc.Entry, pageHeight float64, detectTables bo
 		maxSize := textdoc.RowSize(row)
 		rowText := strings.TrimSpace(textdoc.JoinText(row))
 		level := detectHeadingLevel(rowText, maxSize, bodyFontSize)
+		// 带行首编号的行按列表条目处理，不参与标题层级归一化。真实的
+		// 「1.2.3 标题」仍会走编号标题分支——isNumberedHeader 先于字号判定，
+		// 那类行的行首序号不带后续空格，不被列表正则命中。
+		if _, isItem := rowListMarker(row); isItem {
+			if item, ok := detectListItem(rowText); ok {
+				rawItems[i] = item
+				rowInfos[i] = markdownRowInfo{text: rowText, maxSize: maxSize, isList: true}
+				continue
+			}
+		}
 		rowInfos[i] = markdownRowInfo{text: rowText, maxSize: maxSize, level: level, isTitle: level > 0}
 	}
 	normalizeHeadingLevels(rowInfos, inTable)
+
+	// 只保留可信连续段里的条目；被清空的行按普通段落处理。
+	rawItems = FilterCredibleListItems(rawItems)
+	for i := range rowInfos {
+		rowInfos[i].isList = rawItems[i].marker != ""
+		if rowInfos[i].isList {
+			rowInfos[i].isTitle = false
+		}
+	}
 
 	starts := markdownParagraphStarts(rows, inTable, rowInfos)
 	blocks := make([]docxBlock, 0, len(rows))
@@ -134,20 +178,23 @@ func docxTextBlocks(entries []textdoc.Entry, pageHeight float64, detectTables bo
 		if inTable[i] {
 			continue
 		}
-		// 段落边界：页首、paragraphStarts 判定的新段起点、标题自带一段，
-		// 以及紧跟在标题之后的那一行都不能并进上一段。
+		// 段落边界：页首、paragraphStarts 判定的新段起点、标题自带一段、
+		// 列表条目各自成段，以及紧跟在标题之后的那一行都不能并进上一段。
 		isHeading := rowInfos[i].isTitle
-		newBlock := i == 0 || starts[i] || isHeading || (i > 0 && rowInfos[i-1].isTitle)
+		isList := rowInfos[i].isList
+		newBlock := i == 0 || starts[i] || isHeading || isList ||
+			(i > 0 && (rowInfos[i-1].isTitle || rowInfos[i-1].isList))
 		if newBlock {
 			kind := docxBlockParagraph
 			if isHeading {
 				kind = docxBlockHeading
 			}
 			blocks = append(blocks, docxBlock{
-				kind:   kind,
-				anchor: docxBlockAnchor(textdoc.RowTop(rows[i])),
-				level:  rowInfos[i].level,
-				rows:   [][]textdoc.Entry{rows[i]},
+				kind:      kind,
+				anchor:    docxBlockAnchor(textdoc.RowTop(rows[i])),
+				level:     rowInfos[i].level,
+				rows:      [][]textdoc.Entry{rows[i]},
+				listItems: []listItem{rawItems[i]},
 			})
 			continue
 		}
@@ -296,21 +343,46 @@ func accumulateColumnWidths(row []textdoc.Entry, widths []float64) {
 // OFD 的硬换行位置由排版器决定，流式输出交给 Word 重排。
 func (b docxBlock) docxParagraph() *docx.Paragraph {
 	paragraph := &docx.Paragraph{}
+	properties := &docx.ParagraphProperties{}
 	if b.kind == docxBlockHeading {
-		paragraph.Properties = &docx.ParagraphProperties{
-			Style: docx.StringVal("Heading" + strconv.Itoa(b.level)),
-		}
+		properties.Style = docx.StringVal("Heading" + strconv.Itoa(b.level))
 	}
-	for _, row := range b.rows {
+	for index, row := range b.rows {
+		// 列表条目在 Word 里由 numbering.xml 自动渲染序号，正文里必须去掉
+		// 行首序号，否则会显示两遍。
+		item, isItem := listItemAt(b.listItems, index)
+		if isItem {
+			properties.Numbering = docxListProperties(item)
+		}
+		first := true
 		for _, entry := range row {
 			text := strings.TrimSpace(entry.Text)
 			if text == "" {
 				continue
 			}
+			if isItem && first {
+				text = stripListMarker(text)
+				first = false
+				if text == "" {
+					continue
+				}
+			}
 			paragraph.Runs = append(paragraph.Runs, docxRun(entry, text))
 		}
 	}
+	if properties.Style != nil || properties.Numbering != nil {
+		paragraph.Properties = properties
+	}
 	return paragraph
+}
+
+// listItemAt 返回下标对应的列表条目。
+func listItemAt(items []listItem, index int) (listItem, bool) {
+	if index < 0 || index >= len(items) {
+		return listItem{}, false
+	}
+	item := items[index]
+	return item, item.marker != ""
 }
 
 // docxRun 把一个文字条目转成带格式的 w:r。
