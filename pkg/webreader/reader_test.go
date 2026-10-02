@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"math"
 	"os"
 	"path/filepath"
@@ -132,6 +133,15 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 	if len(jpgData) == 0 || !bytes.HasPrefix(jpgData, []byte{0xff, 0xd8, 0xff}) {
 		t.Fatal("rendered data is not JPG")
+	}
+	// 只验魔数不够：全白空页也是合法 JPG，opaqueImage 曾用 draw.Src 把内容
+	// 整体抹掉，这里必须解码后确认页面内容还在。
+	jpgImage, err := jpeg.Decode(bytes.NewReader(jpgData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nonWhitePixels(jpgImage) == 0 {
+		t.Fatal("JPG 渲染结果是一张全白空页，页面内容丢失")
 	}
 
 	svgData, err := reader.RenderPage(0, RenderOptions{Format: RenderSVG})
@@ -1714,4 +1724,20 @@ func TestSignatureCertificateAndValueExport(t *testing.T) {
 	if _, err := reader.SignatureCertificate(info.Scope, info.ID, "unknown"); err == nil {
 		t.Fatal("未知证书层级应返回错误")
 	}
+}
+
+// nonWhitePixels 统计明显不是纯白的像素数，用于判断图像里是否真的有内容。
+// JPG 有损，不能要求逐字节相等，只用宽松阈值区分「有内容」与「全白空页」。
+func nonWhitePixels(img image.Image) int {
+	bounds := img.Bounds()
+	count := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0xf000 || g < 0xf000 || b < 0xf000 {
+				count++
+			}
+		}
+	}
+	return count
 }

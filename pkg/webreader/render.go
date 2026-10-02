@@ -252,9 +252,35 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+// opaqueImage 把可能带透明通道的页面渲染结果合到不透明背景上。
+//
+// 背景要垫在内容之下，因此 RGBA 快路径必须按 premultiplied 的
+// 「C + B*(1-A)」逐像素原地混合；早先这里误用 draw.Src，把整页像素替换成
+// 背景色又不绘制源图，页面内容被整体抹掉，JPG 输出是一张全白空页。
+// image.RGBA 按定义是 alpha 预乘的，所以该式成立；非 RGBA 输入走通用分支，
+// 由 draw.Over 正确合成。
 func opaqueImage(source image.Image, background color.Color) image.Image {
 	if rgba, ok := source.(*image.RGBA); ok {
-		draw.Draw(rgba, rgba.Bounds(), &image.Uniform{C: background}, image.Point{}, draw.Src)
+		red, green, blue, _ := background.RGBA()
+		// 背景是不透明的，预乘值与直通值一致，取高 8 位即为 8 位分量。
+		backR, backG, backB := uint8(red>>8), uint8(green>>8), uint8(blue>>8)
+		pix := rgba.Pix
+		for i := 0; i+3 < len(pix); i += 4 {
+			alpha := pix[i+3]
+			if alpha == 0xff {
+				continue
+			}
+			if alpha == 0 {
+				pix[i], pix[i+1], pix[i+2] = backR, backG, backB
+				pix[i+3] = 0xff
+				continue
+			}
+			inv := 255 - int(alpha)
+			pix[i] = addClamped(int(pix[i]), int(backR)*inv/255)
+			pix[i+1] = addClamped(int(pix[i+1]), int(backG)*inv/255)
+			pix[i+2] = addClamped(int(pix[i+2]), int(backB)*inv/255)
+			pix[i+3] = 0xff
+		}
 		return rgba
 	}
 	bounds := source.Bounds()
@@ -262,6 +288,15 @@ func opaqueImage(source image.Image, background color.Color) image.Image {
 	draw.Draw(result, bounds, &image.Uniform{C: background}, image.Point{}, draw.Src)
 	draw.Draw(result, bounds, source, bounds.Min, draw.Over)
 	return result
+}
+
+// addClamped 返回 a+b，溢出 255 时收敛到 255。
+func addClamped(a, b int) uint8 {
+	if sum := a + b; sum > 255 {
+		return 255
+	} else {
+		return uint8(sum)
+	}
 }
 
 // pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。
