@@ -22,6 +22,18 @@ OFD 桌面查看器，当前版本为 `v0.0.5`，支持连续阅读和按需渲�
 - 支持 Android 文件选择、文档查看和 APK 打包
 - Android 返回键连续按两次后确认退出程序
 - 信息按钮查看应用信息和 GitHub 项目地址
+- Linux 启动时检查自己是不是 `.ofd` 的默认阅读器，不是就询问是否设置，可勾选“不再提示”并被记住
+- 右侧菜单提供“设为默认阅读器”，已是默认阅读器时打勾；不支持的系统不显示该项
+
+## 默认阅读器
+
+只有 Linux（不含 Flatpak）支持自动检测和设置文件关联：
+
+- 检测顺序是 `xdg-mime`、`gio`，最后直接读 `$XDG_CONFIG_HOME/mimeapps.list`（只取 `[Default Applications]` 段）。探测不出结果时不弹提示，菜单项也不打勾——缺命令的精简系统上弹了也只能失败。
+- 设置通过 `xdg-mime default` 或 `gio mime --default` 完成，由命令保留 `mimeapps.list` 里已有的分组和格式；命令失败会把命令输出带进错误信息。
+- 启动时带文件参数运行（`ofd-viewer doc.ofd`）不提示：命令行用法是明确的意图。
+- “不再提示”记在应用偏好里（`default-reader-prompt-dismissed`），成功设置默认阅读器后也会自动记住。删除偏好才能恢复提示。
+- macOS、Windows、Android 和 Flatpak 的文件关联由各自的系统设置或安装流程管理，右侧菜单不显示“设为默认阅读器”。
 
 ## 使用
 
