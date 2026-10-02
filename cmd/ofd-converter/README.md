@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -26,39 +26,40 @@ ofd-converter --help
 
 ## 选项
 
-| 选项                   | 说明                                                                                                                            |
-|------------------------|---------------------------------------------------------------------------------------------------------------------------------|
-| `-o`, `-output`        | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                                                            |
-| `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                  |
-| `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                  |
-| `-format`              | 输出格式: `ofd`, `pdf`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                              |
-| `-from`                | 输入格式（可选）: `pdf`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
-| `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                |
-| `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                   |
-| `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                |
-| `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                         |
-| `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                          |
-| `-ocr-language`        | Tesseract OCR 语言，默认 `chi_sim+eng`；可指定单个语言或组合，需安装对应语言包                                                  |
-| `-dir`                 | 不压缩，将多页图片直接保存到输出目录下的多个文件                                                                                |
-| `-workers`             | 批量转换并发数，默认 `4`                                                                                                        |
-| `-external-workers`    | 外部工具（LibreOffice/Chrome）批量转换并发数，默认 `2`                                                                          |
-| `-soffice`             | LibreOffice 可执行文件路径；缺省按 `OFD_SOFFICE`、`PATH` 和常见安装路径查找；仅 Office 文档输入使用                             |
-| `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；仅 HTML/MHTML 输入使用      |
-| `-temp-dir`            | 外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录                                                                |
-| `-office-timeout`      | Office/HTML 文档转换超时秒数；`0` 表示默认 120 秒                                                                               |
-| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；**仅 HTML/MHTML 经 Chrome 打印时生效**，默认 `A4`              |
-| `-landscape`           | 横向打印，交换纸张宽高；**仅 HTML/MHTML 经 Chrome 打印时生效**，需与 `-paper` 配合使用                                          |
-| `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                    |
-| `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                              |
-| `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                            |
-| `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                          |
-| `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                 |
-| `-no-docx-tables`      | OFD 转 DOCX 时不按文字位置识别表格，只输出纯文字段落；默认开启识别，双栏正文或公式排版可能误判                                  |
-| `-no-docx-images`      | OFD 转 DOCX 时不内嵌图片；默认内嵌，每页最多 64 张，SVG 等矢量图始终跳过                                                        |
-| `-docx-annotations`    | OFD 转 DOCX 时保留批注层文字；默认剔除水印与印章等叠加标记                                                                     |
-| `-recursive`           | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                                                            |
-| `-overwrite`           | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败                                                    |
-| `-skip-existing`       | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                                                          |
+| 选项                   | 说明                                                                                                                                                  |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `-o`, `-output`        | 输出文件路径或目录，多页图片时可为 `.zip` 文件或目录                                                                                                  |
+| `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
+| `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
+| `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
+| `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
+| `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
+| `-dpi`                 | 输出分辨率 (1-1200)，默认 96                                                                                                                          |
+| `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                                      |
+| `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                                               |
+| `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                                                |
+| `-ocr-language`        | Tesseract OCR 语言，默认 `chi_sim+eng`；可指定单个语言或组合，需安装对应语言包                                                                        |
+| `-dir`                 | 不压缩，将多页图片直接保存到输出目录下的多个文件                                                                                                      |
+| `-workers`             | 批量转换并发数，默认 `4`                                                                                                                              |
+| `-external-workers`    | 外部工具（LibreOffice/Chrome）批量转换并发数，默认 `2`                                                                                                |
+| `-soffice`             | LibreOffice 可执行文件路径；缺省按 `OFD_SOFFICE`、`PATH` 和常见安装路径查找；仅 Office 文档输入使用                                                   |
+| `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；仅 HTML/MHTML 输入使用                            |
+| `-temp-dir`            | 外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录                                                                                      |
+| `-office-timeout`      | Office/HTML 文档转换超时秒数；`0` 表示默认 120 秒                                                                                                     |
+| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；**仅 HTML/MHTML 经 Chrome 打印时生效**，默认 `A4`                                    |
+| `-landscape`           | 横向打印，交换纸张宽高；**仅 HTML/MHTML 经 Chrome 打印时生效**，需与 `-paper` 配合使用                                                                |
+| `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                                          |
+| `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                                                    |
+| `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                                                  |
+| `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                                               |
+| `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                                       |
+| `-no-html-text-layer`  | OFD 转 HTML 时不输出透明文字层；默认输出，关闭后文字不可选中、不可浏览器内查找、不可朗读                                                              |
+| `-no-docx-tables`      | OFD 转 DOCX 时不按文字位置识别表格，只输出纯文字段落；默认开启识别，双栏正文或公式排版可能误判                                                        |
+| `-no-docx-images`      | OFD 转 DOCX 时不内嵌图片；默认内嵌，每页最多 64 张，SVG 等矢量图始终跳过                                                                              |
+| `-docx-annotations`    | OFD 转 DOCX 时保留批注层文字；默认剔除水印与印章等叠加标记                                                                                            |
+| `-recursive`           | 批量转换时递归扫描输入目录，默认开启；可使用 `-recursive=false` 关闭                                                                                  |
+| `-overwrite`           | 批量转换时覆盖已有输出，默认开启；使用 `-overwrite=false` 将已有输出记为失败                                                                          |
+| `-skip-existing`       | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                                                                                |
 
 输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
@@ -76,9 +77,10 @@ ofd-converter --help
 | `-temp-dir`                                                              | Office/HTML/MHTML 输入            | 外部工具临时目录                                     |
 | `-page`                                                                  | OFD → PDF/txt/md/图片             | 选择要转换的页面；对导入类输入不生效                 |
 | `-md-tables`                                                             | OFD → Markdown                    | 识别无边框表格并输出 GFM 表格，默认关闭              |
-| `-no-docx-tables`                                                        | OFD → DOCX                        | 关闭表格识别，只输出文字段落                        |
-| `-no-docx-images`                                                        | OFD → DOCX                        | 关闭图片内嵌                                        |
-| `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                          |
+| `-no-html-text-layer`                                                    | OFD → HTML                        | 关闭透明文字层                                       |
+| `-no-docx-tables`                                                        | OFD → DOCX                        | 关闭表格识别，只输出文字段落                         |
+| `-no-docx-images`                                                        | OFD → DOCX                        | 关闭图片内嵌                                         |
+| `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
@@ -136,6 +138,19 @@ ofd-converter input.md output.ofd
 ofd-converter -from md -format ofd input.md output.ofd
 ```
 
+### 图片转 OFD
+
+图片按页面尺寸整幅嵌入，不做版面切分。默认只嵌图片，**不产生文字层**——文档体积最小，但既不能搜索也不能复制文字。
+
+加 `-ocr` 后会调用本机 Tesseract 识别文字，生成一个**不可见文字层**盖在图片上：视觉仍是原图，但文字可选中、可被浏览器和 PDF 阅读器内查找。Tesseract 未安装或语言包缺失时会返回明确错误，不会静默降级。默认语言 `chi_sim+eng`（简体中文 + 英文），可用 `-ocr-language` 换成 `eng`、`chi_sim` 或其它已安装语言的组合。
+
+扫描件要得到可搜索的 PDF 时，图片 → OFD（带 OCR）→ PDF 是比直接转 PDF 更可控的路径。
+
+```bash
+ofd-converter scan.png output.ofd
+ofd-converter -ocr -ocr-language chi_sim+eng scan.png output.ofd
+```
+
 ### Office 文档转 OFD / PDF
 
 通过 LibreOffice 命令行转换 Office 文档：转 OFD 时先转 PDF 再复用 PDF→OFD（保留文字层），转 PDF 时直接输出。需要目标机器已安装 LibreOffice；未安装会返回明确错误。支持 `doc/docx/odt/rtf/wps`、`ppt/pptx/odp`、`xls/xlsx/ods` 等常见格式。页面尺寸沿用源文档设置，`-paper` 和 `-landscape` 在此方向不生效。
@@ -188,14 +203,11 @@ Markdown 转换只提取文字内容，不保留字体、颜色和页面布局�
 - 只有位于页面顶部或底部的纯页码行（如 `12`、`- 12 -`、`— 12 —`）会被过滤；页面中部的纯数字行（如代码行号、数据）会保留。
 - 正文中的 Markdown 特殊字符（`\`、`` ` ``、`*`、`_`、`[`、`]`、`<`、`>`、`|`、`~` 及行首标记）会被转义。
 
-## 输出 DOCX
+## 输出格式说明
 
-```bash
-ofd-converter 文档.ofd 文档.docx
-```
+### OFD 转 Word（DOCX）
 
-输出的是**可编辑的 Word 文本**，不是页面截图：OFD 的绝对坐标被转换成 Word 的
-标题、段落与带框线表格，文字可以直接改字、复制、重排。
+输出的是**可编辑的 Word 文本**，不是页面截图：OFD 的绝对坐标被转换成 Word 的标题、段落、列表、带框线表格与内嵌图片，文字可以直接改字、复制、重排。
 
 代价是版面不再固定。换字体或改文字后 Word 会按自己的规则重排，所以发票、
 证照这类依赖精确位置的版式会走形——这类需求请继续用 PDF 输出。
@@ -224,7 +236,12 @@ ofd-converter 文档.ofd 文档.docx
 用 `-no-docx-tables` 关闭表格识别（双栏正文、公式排版容易被误判成表格），
 用 `-no-docx-images` 关闭图片内嵌。
 
-## 输出格式说明
+```bash
+ofd-converter 文档.ofd 文档.docx
+ofd-converter -docx-annotations 文档.ofd 文档.docx
+```
+
+### Markdown 的表格识别
 
 使用 `-md-tables` 时，还会根据文字的水平位置和空白间隔识别**无边框表格**（OFD 没有表格语义，表格只是文字对象的位置组合），输出 GFM 表格：第一行作为表头，跨多行的单元格会按纵向位置合并到同一行。该识别依赖版面位置，双栏正文、公式排版等可能被误判，因此默认关闭。
 
@@ -247,10 +264,15 @@ ofd-converter -format svg input.ofd output.svg
 
 HTML 默认将每页渲染为内嵌 PNG；使用 `-html-format jpg` 或 `-html-format svg` 时则分别使用内嵌 JPG 或 SVG 写入 HTML。三种模式都不依赖外部资源，并保留页面尺寸和浏览器打印分页。HTML 的 `<title>` 优先使用 OFD 第一个文档体的非空 `DocInfo.Title`，没有标题时使用 `OFD 文档`。
 
+页面上叠有一层**透明文字层**：视觉由页面图像承担，文字层让页面里的文字可选中、可被浏览器内查找（Ctrl+F）、可被屏幕阅读器朗读。它不内嵌字体，字号用容器查询单位随页面缩放，对产物体积影响可忽略（两页文档约 210 字节、0.2%）。代价是文字度量由浏览器用系统字体完成，与 OFD 版面可能有细微偏差，用 `-no-html-text-layer` 可关掉。
+
+`-html-format svg` 会把页面用到的字体整份 base64 内嵌（canvas 的 SVG 写入器不做子集化），单页可达 10MB 以上，仅适合小文档试验，不建议用于正式输出。
+
 ```bash
 ofd-converter -format html input.ofd output.html
 ofd-converter -format html -html-format jpg input.ofd output.html
 ofd-converter -format html -html-format svg input.ofd output.html
+ofd-converter -format html --no-html-text-layer input.ofd output.html
 ```
 
 ### 转换指定页面

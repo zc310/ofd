@@ -67,6 +67,7 @@ type options struct {
 	format            string
 	from              string
 	htmlFormat        string
+	noHTMLTextLayer   bool
 	dpi               int
 	rasterBackend     string
 	page              int
@@ -185,6 +186,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, docx, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
 	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
+	flags.BoolVar(&opts.noHTMLTextLayer, "no-html-text-layer", false, "OFD 转 HTML 时不输出透明文字层（默认输出，文字因此可选中、可查找、可朗读）")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
 	flags.StringVar(&opts.rasterBackend, "raster-backend", "", "PNG/JPG 栅格后端: canvas, gg, ftgg, tinyskia, draw2d；缺省 canvas(矢量表面光栅化)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
@@ -222,7 +224,7 @@ func parseArgs(args []string) (*options, error) {
 
 func normalizeConverterArgs(args []string) []string {
 	longFlags := map[string]bool{
-		"format": true, "from": true, "html-format": true, "input-dir": true, "output-dir": true,
+		"format": true, "from": true, "html-format": true, "no-html-text-layer": true, "input-dir": true, "output-dir": true,
 		"output": true,
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
 		"raster-backend":   true,
@@ -779,6 +781,7 @@ func convertToHTML(opts *options) error {
 		converter.DPI(float64(opts.dpi)),
 		converter.BgColor(parseBgColor(opts.bg)),
 	}
+	option = append(option, converter.WithHTMLTextLayer(!opts.noHTMLTextLayer))
 	if opts.htmlFormat == "svg" {
 		option = append(option, converter.HTMLSVG())
 	} else if opts.htmlFormat == "jpg" {
