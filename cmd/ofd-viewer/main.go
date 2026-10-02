@@ -132,6 +132,11 @@ func main() {
 	if initialFile != "" {
 		viewer.load(initialFile, filepath.Base(initialFile), initialFile)
 	}
+	// 默认阅读器的探测要 fork 子进程，放在窗口显示之后但在事件循环之前：只是读
+	// 系统配置，不会拖住界面，而菜单项和启动提示都复用这个结果。提示本身交给
+	// maybePromptDefaultReader 在事件循环里弹出。
+	viewer.defaultReader = detectDefaultReader()
+	maybePromptDefaultReader(viewer, initialFile != "")
 	a.Run()
 }
 
@@ -189,6 +194,9 @@ type viewer struct {
 	thumbnailRendering []atomic.Bool
 	closed             atomic.Bool
 	backDeadline       time.Time
+	// defaultReader 是启动时探测到的 .ofd 默认阅读器状态。右侧菜单和启动提示
+	// 共用同一份结果，不各自重新查询——每次开菜单都 fork 一次子进程没有必要。
+	defaultReader defaultReaderState
 }
 
 type pageViewMode int
@@ -832,18 +840,19 @@ func (v *viewer) showMenu() {
 	}
 	viewItem := fyne.NewMenuItem("视图", nil)
 	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
+	// 文件关联与文档状态无关，因此这一项不受 loading/exporting 影响；平台不支持
+	// 时整项不出现。
+	menuItems := []*fyne.MenuItem{exportItem, viewItem}
+	menuItems = append(menuItems, defaultReaderMenuItems(v.defaultReader, v.setDefaultReaderFromMenu)...)
 	closeLabel := "退出程序"
 	if v.hasPages() {
 		closeLabel = "关闭文档"
 	}
 	closeItem := fyne.NewMenuItemWithIcon(closeLabel, theme.CancelIcon(), v.closeDocumentOrExit)
 	closeItem.Disabled = v.loading || v.exporting
-	menu := fyne.NewMenu("菜单",
-		exportItem,
-		viewItem,
-		closeItem,
-		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo),
-	)
+	menuItems = append(menuItems, closeItem,
+		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo))
+	menu := fyne.NewMenu("菜单", menuItems...)
 	canvas := v.window.Canvas()
 	widget.ShowPopUpMenuAtRelativePosition(menu, canvas, fyne.NewPos(0, v.menuButton.Size().Height), v.menuButton)
 }
