@@ -199,22 +199,16 @@ func pdfCJKFullWidth(name string) bool {
 	}
 }
 
-// pdfTextDeltas 在嵌入字体的字形宽度与 PDF /Widths 不一致时，按 /Widths 生成
-// 逐字符位置增量（毫米）。部分生产者（如 ReportLab）会写入与 unitsPerEm 不匹配
-// 的 hmtx，阅读器若直接使用字体字宽会把代码等文字挤在一起。ctmScale 与字号统一
+// pdfTextDeltas 按 PDF /Widths 生成逐字符位置增量（毫米）。ctmScale 与字号统一
 // 传递当前 CTM 的平均缩放，保证“整页按 1mm 排版”的文档里增量仍是物理毫米。
+//
+// 一律输出 DeltaX，不因内嵌字体字宽与 /Widths 一致就省略：OFD 的字符推进量由
+// TextCode@DeltaX 给出，阅读器可以只按 DeltaX 排版而完全不查字体 hmtx。缺失
+// DeltaX 时这类阅读器拿到 0 步进，整段文字会叠在首字符位置——
+// intro.ofd 经 PDF 回转后第 3 页的 INTRODUCTION 叠在 “I” 上、“关于澎思” 叠在
+// “关” 上就是这个现象。本项目渲染器另有 hmtx 回退，所以自测渲染看不出来。
 func pdfTextDeltas(codes []uint16, text string, font pdfFontInfo, size, charSpacing, wordSpacing, hScale, userUnit, ctmScale float64) []float64 {
-	if len(codes) < 2 || len(font.glyphWidths) == 0 || len([]rune(text)) != len(codes) {
-		return nil
-	}
-	needs := false
-	for _, code := range codes {
-		if fontWidth, ok := font.glyphWidths[code]; !ok || math.Abs(fontWidth-pdfCodeWidth(code, font)) > 0.5 {
-			needs = true
-			break
-		}
-	}
-	if !needs {
+	if len(codes) < 2 || len([]rune(text)) != len(codes) {
 		return nil
 	}
 	scale := hScale / 100
