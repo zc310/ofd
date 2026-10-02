@@ -765,6 +765,9 @@ func appendClips(parent *etree.Element, value *Clips, drawParamIDs, fontIDs map[
 		return
 	}
 	element := parent.CreateElement("Clips")
+	if value.TransFlag != nil {
+		element.CreateAttr("TransFlag", strconv.FormatBool(*value.TransFlag))
+	}
 	for _, clip := range value.Items {
 		clipXML(element, clip, drawParamIDs, fontIDs)
 	}

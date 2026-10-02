@@ -11,6 +11,15 @@
 
 ## 未发布
 
+- `pkg/creator` 的 `Clips` 增加 `TransFlag *bool` 字段，用于写出 OFD
+  `Clips@TransFlag`。该属性此前无法表达：`Clips` 在 XSD 中缺少此属性定义，
+  写出后会被结构校验判为非法，而真实 OFD（含官方阅读器样例）与
+  `internal/models` 的解析侧一直按 `false` 处理。缺省（规范为 `true`）时
+  阅读器会把图元 CTM 叠加到裁剪路径上，裁剪路径已在图元局部毫米坐标时会
+  被放大 CTM 倍。
+
+  `pdf2ofd` 转换的 PDF 现在对全部裁剪区写 `TransFlag="false"`。
+
 - `pkg/converter` 增加图片导入 OCR 开关和语言选项；`ofd-converter` 提供 `--ocr` 与 `--ocr-language`，默认不调用 Tesseract。
 
 - `ofd-converter` 新增 `--password`，`pkg/converter` 新增 `WithPassword` 选项：

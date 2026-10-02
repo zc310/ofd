@@ -382,7 +382,7 @@ func completeClipsTextCodes(clips *Clips, fonts []Font, completeDeltas bool) *Cl
 	if clips == nil {
 		return nil
 	}
-	result := &Clips{Items: append([]Clip(nil), clips.Items...)}
+	result := &Clips{Items: append([]Clip(nil), clips.Items...), TransFlag: clips.TransFlag}
 	for clipIndex := range result.Items {
 		result.Items[clipIndex].Areas = append([]ClipArea(nil), result.Items[clipIndex].Areas...)
 		for areaIndex := range result.Items[clipIndex].Areas {

@@ -778,6 +778,9 @@ func streamClips(w *streamXMLWriter, value *Clips, drawParamIDs, fontIDs map[str
 		return
 	}
 	w.Start("Clips")
+	if value.TransFlag != nil {
+		w.Attr("TransFlag", strconv.FormatBool(*value.TransFlag))
+	}
 	for _, clip := range value.Items {
 		w.Start("Clip")
 		for _, area := range clip.Areas {

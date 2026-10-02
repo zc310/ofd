@@ -2277,6 +2277,45 @@ func TestCreateGraphicCTMAndPathClips(t *testing.T) {
 	checkGeneratedPackage(t, data)
 }
 
+// TestCreateClipTransFlag 验证 Clips.TransFlag 会写入 XML，并且不会被
+// completeClipsTextCodes 重建 Clips 时丢掉。裁剪路径已在图元局部毫米坐标时
+// 必须显式写 false，否则阅读器按缺省 true 把图元 CTM 叠加上去。
+func TestCreateClipTransFlag(t *testing.T) {
+	transFlag := false
+	data, err := Marshal(Document{
+		ID: "clip-trans-flag",
+		Pages: []Page{{Items: []Item{
+			Path{
+				X: 1, Y: 1, Width: 40, Height: 30, Data: "M 0 0 L 40 30 C",
+				Clips: &Clips{
+					TransFlag: &transFlag,
+					Items: []Clip{{Areas: []ClipArea{{
+						Path: &ClipPath{
+							Boundary: Box{X: 0, Y: 0, Width: 20, Height: 20},
+							Data:     "M 0 0 L 20 0 L 20 20 C",
+							Fill:     true,
+						},
+					}}}},
+				},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := readArchiveEntry(t, data, "Doc_0/Pages/Page_0/Content.xml")
+	if !bytes.Contains(content, []byte(`TransFlag="false"`)) {
+		t.Fatalf("Clips 未写入 TransFlag=\"false\"：%s", content)
+	}
+	ofd := newTestOFD(t, data)
+	defer ofd.Close()
+	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
+	if path.Clips == nil || path.Clips.TransFlag == nil || *path.Clips.TransFlag {
+		t.Fatalf("TransFlag 未正确生成: %+v", path.Clips)
+	}
+	checkGeneratedPackage(t, data)
+}
+
 func TestCreateTextClip(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "text-clip-test",
