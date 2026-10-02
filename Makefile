@@ -40,13 +40,17 @@ endif
 
 PLATFORM := $(GOOS)-$(GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
-# VERSION 是唯一的版本号来源：查看器的关于对话框和 Android APK 都用它。
-# 与 git tag 保持一致；改动时也要同步 cmd/ofd-viewer 的 defaultVersion，
-# TestVersionMatchesMakefile 会守住这一点。
-VERSION ?= 0.1.2
-VERSION_LDFLAG := -X main.applicationVersion=v$(VERSION)
+# VERSION 是全仓库唯一的版本号来源：命令行程序的 --version、查看器关于对话框、
+# Android APK 版本名，以及报告和转换产物里的工具版本都读它（注入点见
+# internal/version.Version）。与 git tag 保持一致；改动时也要同步
+# internal/version.Version 的兜底值，TestVersionMatchesMakefile 会守住这一点。
+#
+# 注入值不带 v 前缀：前缀只属于展示层（查看器的关于对话框），报告和 OFD 元数据
+# 里的版本字段沿用无前缀形式。
+VERSION ?= 0.1.4
+VERSION_LDFLAG := -X github.com/zc310/ofd/internal/version.Version=$(VERSION)
 GO_LDFLAGS := -s -w
-GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS)"
+GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG)"
 VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 WASM_OPT ?= wasm-opt
 WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers

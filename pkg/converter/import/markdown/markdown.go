@@ -17,14 +17,18 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/layout"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
-const (
-	converterName    = "zc310/ofd"
-	converterVersion = "0.0.1"
-)
+// converterName 写入 OFD DocInfo/Creator，标识转换工具本身。
+const converterName = "zc310/ofd"
+
+// converterVersion 写入 OFD DocInfo/CreatorVersion，取自 internal/version，与
+// pdf2ofd 的写入同源。此前写死 "0.0.1"，转换产物的元数据因此长期显示着一个早已
+// 不存在的版本。
+var converterVersion = version.Version
 
 // markdownImporter 把 Markdown 输入导入为 OFD。
 type markdownImporter struct{}
