@@ -525,12 +525,25 @@ func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image 
 	return applyImageMask(img, mask)
 }
 
+// clipBleedMM 是允许忽略的裁剪内缩量，按毫米计。排版软件给出的出血边通常是
+// 零点几毫米，用物理尺寸衡量比用像素数衡量更稳定：同一张图缩放到不同分辨率
+// 后判定结果不会变，也避免高分辨率扫描件因为内缩折算出几十像素而被误判为
+// 真实裁切。
+const clipBleedMM = 0.5
+
 // clipCoversImage 判断裁剪路径在图像像素坐标下是否完全覆盖图像范围。
 // 常见的由生产者生成的 OFD 会为图片附上与原图等大的矩形裁切（多为版面出血
 // 裁切：贴边图四周留 1-3px 的出血边），此时掩码不会改变任何有效像素，跳过
 // 昂贵的全分辨率掩码合成，让 JPEG/PNG 源图可以按原字节直传 PDF。
-// 容差按图像短边的 1.5% 计（下限 2px）：允许一个极细的出血边框，小图
-// （短边 <~130px）仍走掩码路径，避免把真实内容裁切误判为可跳过。
+// 容差取图像短边的 1.5% 与 clipBleedMM 折算像素数中的较大者（下限 2px）：
+// 小图（短边 <~130px）仍走掩码路径，避免把真实内容裁切误判为可跳过。
+//
+// 跳过掩码还有一层必要性：烘焙出来的掩码会在图片四周留下内缩的一圈全透明
+// 像素，而 canvas 的 PDF 写入器对非不透明图片一律附加 SMask 并写死
+// /Interpolate true。渲染器按 /Interpolate 对 SMask 做双线性插值时，这圈透明
+// 像素会与内部像素混成一条半透明过渡带；源图在被裁掉的那圈里 RGB 通常是黑，
+// 两者叠加就是一圈贴着图元 Boundary 的灰色矩形框。官方 PDF 对同类裁剪用矢量
+// `re W n` 而不带 SMask，视觉上不会出现这条边。
 func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
 	if clip == nil || width <= 0 || height <= 0 || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
 		return false
@@ -542,6 +555,9 @@ func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
 	maskPath := clip.Copy().Transform(inverse)
 	b := maskPath.Bounds()
 	eps := math.Max(2.0, 0.015*float64(min(width, height)))
+	if perPx := millimeterPerPixel(m); perPx > 0 {
+		eps = math.Max(eps, clipBleedMM/perPx)
+	}
 	if b.X0 > eps || b.Y0 > eps || b.X1 < float64(width)-eps || b.Y1 < float64(height)-eps {
 		return false
 	}
@@ -551,6 +567,21 @@ func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
 		return false
 	}
 	return area >= 0.99*boxArea
+}
+
+// millimeterPerPixel 返回矩阵 m 下单个图像像素对应的页面毫米数，取两轴较小值，
+// 使按毫米折算出的像素容差在两轴上都偏保守。m 非有限或退化时返回 0。
+func millimeterPerPixel(m geom.Matrix) float64 {
+	if !finiteMatrix(m) {
+		return 0
+	}
+	sx := math.Hypot(m[0][0], m[1][0])
+	sy := math.Hypot(m[0][1], m[1][1])
+	scale := math.Min(sx, sy)
+	if !finiteFloat(scale) || scale <= 0 {
+		return 0
+	}
+	return scale
 }
 
 func polygonArea(points []geom.Point) float64 {

@@ -201,6 +201,51 @@ func TestClipCoversImageSkipsScaledFullRectangleClip(t *testing.T) {
 	}
 }
 
+func TestClipCoversImageSkipsSubMillimeterBleedClip(t *testing.T) {
+	// test/testdata/intro.ofd 第 39 页的图标图元：源图为不透明调色板 PNG，
+	// 裁剪路径按版面出血内缩约 0.37mm。125x60 像素下折算约 2.1px，略大于旧的
+	// 2px 容差，导致掩码被烘焙进图片；canvas 的 PDF 写入器随后附加 SMask 并写
+	// 死 /Interpolate true，插值把内缩的一圈全透明像素与内部像素混成灰边。
+	// 该裁剪必须被识别为出血并跳过，图片才能按原字节直传且不带 SMask。
+	const (
+		scaleX = 21.9989 / 125.0
+		scaleY = 10.5686 / 60.0
+		bleed  = 0.371
+	)
+	img := image.NewRGBA(image.Rect(0, 0, 125, 60))
+	m := geom.Matrix{{scaleX, 0, 0}, {0, scaleY, 0}}
+	width := 125 * scaleX
+	height := 60 * scaleY
+	clip := geom.Rectangle(width-2*bleed, height-2*bleed).Translate(bleed, bleed)
+	out := imageWithClip(img, clip, m)
+	if out != image.Image(img) {
+		t.Fatal("expected a sub-millimeter bleed clip to be skipped")
+	}
+}
+
+func TestClipCoversImageAppliesMillimeterScaleCrop(t *testing.T) {
+	// 与上面的出血裁剪相反，内缩 1.5mm 已是真实裁剪，必须照常烘焙掩码。
+	const (
+		scaleX = 21.9989 / 125.0
+		scaleY = 10.5686 / 60.0
+		crop   = 1.5
+	)
+	img := image.NewNRGBA(image.Rect(0, 0, 125, 60))
+	for y := 0; y < 60; y++ {
+		for x := 0; x < 125; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+	m := geom.Matrix{{scaleX, 0, 0}, {0, scaleY, 0}}
+	width := 125 * scaleX
+	height := 60 * scaleY
+	clip := geom.Rectangle(width-2*crop, height-2*crop).Translate(crop, crop)
+	out := imageWithClip(img, clip, m)
+	if out == image.Image(img) {
+		t.Fatal("expected a 1.5mm crop to produce a masked image")
+	}
+}
+
 func TestClipCoversImageAppliesPartialRectangleClip(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 100, 50))
 	for y := 0; y < 50; y++ {
