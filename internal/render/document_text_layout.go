@@ -204,15 +204,24 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 			height *= ctmYScale
 		}
 	}
+	// Size 必须是**实际绘制尺寸**，而不是 Object 里声明的原始 Size。
+	// OFD 允许用很小的 Size 配一个放大倍数的 CTM 来排大标题——intro.ofd 里
+	// 就是 Size="1" 配 CTM="9.8778 0 0 9.8778 0 0"，画出 9.88mm 的字。
+	// 这里若原样返回 object.Size，消费方拿它换算字号就会小 9.88 倍：
+	// HTML 文字层会是一条 1mm 的细线，WASM 阅读器同理。渲染路径的
+	// textCTMLinearMatrix 也按同一系数放大，两者必须一致。
+	effectiveSize := object.Size
+	if ctmYScale > 0 {
+		effectiveSize *= ctmYScale
+	}
 	layout := TextLayout{
 		Text:          code.Value,
 		X:             box.X + code.X,
 		Y:             box.Y + code.Y - height,
 		Width:         box.Width,
 		Height:        height,
+		Size:          effectiveSize,
 		Font:          uint64(object.Font),
-		Size:          object.Size,
-		Weight:        object.Weight,
 		ReadDirection: object.ReadDirection,
 		CharDirection: object.CharDirection,
 		Bold:          object.Weight >= 650,
