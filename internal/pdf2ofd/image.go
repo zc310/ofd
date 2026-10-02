@@ -137,25 +137,26 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 	return nil
 }
 
-// imageFlipCTM 判断图像是否需要镜像，并返回 OFD 图片对象的 CTM。仅处理轴对齐
-// （无旋转/斜切）的 CTM：X 缩放为负表示水平镜像，Y 缩放为负表示垂直镜像。
-// OFD 图片缺省 CTM 为 {Width,0,0,Height,0,0}，镜像时对相应轴取负并平移一个
+// imageObjectCTM 返回 OFD 图片对象的 CTM，一律显式输出。PDF 常通过负的缩放
+// CTM 翻转扫描图像（例如 595 0 0 -842 ... cm），此时对相应轴取负并平移一个
 // 边界长度，使图像仍落在原边界内。
-func imageFlipCTM(ctm [6]float64, width, height float64) *creator.CTM {
-	if ctm[1] != 0 || ctm[2] != 0 {
-		return nil
-	}
-	vertical := ctm[3] < 0
-	horizontal := ctm[0] < 0
-	if !vertical && !horizontal {
-		return nil
-	}
+//
+// 不镜像时也输出 {Width,0,0,Height,0,0}：OFD 规范允许省略 CTM 并按边界尺寸
+// 取缺省值，但并非所有阅读器都实现该缺省——缺少 CTM 时图片无处安放，整页满幅
+// 背景图会直接不显示。现有 OFD（含官方阅读器样例 intro.ofd）的图片对象全部
+// 显式带 CTM，转换结果保持一致。
+//
+// 旋转或斜切的 PDF CTM（b、c 非零）无法用轴对齐矩阵精确表达：OFD 的图片 CTM
+// 以图像像素为单位，而 PDF 的单位正方形还要经过页面旋转与 userUnit 换算。此类
+// 图片（intro.ofd 第 12 页的满幅背景图，倾角 0.09°）退化为轴对齐缩放：位置与
+// 尺寸正确，仅丢失不足 0.7mm 的亚度级倾斜，好过因缺少 CTM 而完全不显示。
+func imageObjectCTM(ctm [6]float64, width, height float64) *creator.CTM {
 	matrix := creator.CTM{width, 0, 0, height, 0, 0}
-	if horizontal {
+	if ctm[0] < 0 {
 		matrix[0] = -width
 		matrix[4] = width
 	}
-	if vertical {
+	if ctm[3] < 0 {
 		matrix[3] = -height
 		matrix[5] = height
 	}
@@ -186,9 +187,10 @@ func (p *pdfInterpreter) appendImageData(data []byte, format string) error {
 	}
 	width, height := math.Max(maxX-minX, 0.001), math.Max(maxY-minY, 0.001)
 	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format, Alpha: ofdAlpha(p.fillOpacity())}
-	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm）。OFD
-	// 图片缺省按边界正放，这里输出负缩放 CTM 让阅读器镜像。
-	image.CTM = imageFlipCTM(p.state.ctm, width, height)
+	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm），由
+	// imageObjectCTM 输出负缩放 CTM 让阅读器镜像；不翻转时同样输出显式缩放
+	// CTM，官方阅读器才不会因缺少 CTM 而不显示图片。
+	image.CTM = imageObjectCTM(p.state.ctm, width, height)
 	if clips := p.buildClips(minX, minY); clips != nil {
 		image.Clips = clips
 	}

@@ -551,6 +551,11 @@ type CTM [6]float64
 type Clips struct {
 	// Items 是裁剪区域定义列表。
 	Items []Clip
+	// TransFlag 指定裁剪区域是否应用图元自身的 CTM。缺省（nil）时按规范取
+	// true，即裁剪路径坐标处于图元 CTM 之前坐标系；裁剪路径已经是图元局部
+	// 毫米坐标时必须显式设为 false，否则阅读器会把 CTM 再叠加一次，把裁剪区
+	// 放大 CTM 倍。OFD 规范与现有测试文档中的裁剪区都显式写 false。
+	TransFlag *bool
 }
 
 // Clip 描述一个裁剪区域定义。

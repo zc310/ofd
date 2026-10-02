@@ -412,7 +412,7 @@ func (p *pdfInterpreter) buildPathClip(commands []pdfPathCommand, objX, objY flo
 		return nil
 	}
 	area := creator.ClipArea{Path: clipPath}
-	return &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{area}}}}
+	return &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{area}}}, TransFlag: &clipTransFlag}
 }
 
 // invertAffineMatrix 求 2x3 仿射矩阵的逆矩阵。

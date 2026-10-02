@@ -140,6 +140,7 @@
                     <xs:sequence>
                         <xs:element name="Clip" type="CT_Clip" maxOccurs="unbounded" />
                     </xs:sequence>
+                    <xs:attribute name="TransFlag" type="xs:boolean" default="true" />
                 </xs:complexType>
             </xs:element>
         </xs:sequence>

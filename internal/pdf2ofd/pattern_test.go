@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"math"
 	"strings"
 	"testing"
 
@@ -201,6 +202,49 @@ func TestConvertImageNegativeYMatrixEmitsFlipCTM(t *testing.T) {
 	}
 	if ctm[0] < width*0.99 || ctm[0] > width*1.01 {
 		t.Fatalf("CTM X scale = %g, want ~%g (width)", ctm[0], width)
+	}
+}
+
+// TestConvertImageAlwaysEmitsCTM 验证普通（未镜像）图片也输出显式 CTM。
+// OFD 规范允许省略并按边界尺寸取缺省值，但并非所有阅读器都实现该缺省：缺少
+// CTM 时图片无处安放，整页满幅背景图直接不显示。现有 OFD（含官方阅读器样例
+// intro.ofd）的图片对象全部显式带 CTM。
+func TestConvertImageAlwaysEmitsCTM(t *testing.T) {
+	content := []byte("q 100 0 0 100 0 0 cm /Im1 Do Q")
+	base := "\xff\x00\x00\xff\x00\x00\x00\x00\xff\x00\x00\xff"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 12 >>\nstream\n" + base + "\nendstream",
+	}
+	pdf := assemblePDF(objects)
+
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	images := layerImages(page.Content().Layer[0])
+	if len(images) != 1 {
+		t.Fatalf("image objects = %d, want 1", len(images))
+	}
+	ctm := images[0].CTM
+	if ctm == nil {
+		t.Fatal("普通图片缺少 CTM，官方阅读器可能不显示（intro.ofd 第 12 页背景图消失）")
+	}
+	width, height := images[0].Boundary.Width, images[0].Boundary.Height
+	if math.Abs(ctm[0]-width) > 0.01 || math.Abs(ctm[3]-height) > 0.01 {
+		t.Fatalf("CTM scale = (%g, %g), want boundary (%g, %g)", ctm[0], ctm[3], width, height)
 	}
 }
 
