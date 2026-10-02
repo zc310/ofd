@@ -264,12 +264,16 @@ func (w *Writer) closeDocument() error {
 }
 
 // AddParagraph 追加一个段落。
+//
+// 不含任何 w:r 的段落会被跳过：整行只有空白时 trim 后不剩内容，产出的是没有
+// 文字的空段落，对版面没有贡献却会在 Word 里占一行。分页符段落自带 w:r，
+// 不受影响。
 func (w *Writer) AddParagraph(p *Paragraph) error {
 	if w.encoder == nil {
 		return errors.New("DOCX 写入器未打开")
 	}
-	if p == nil {
-		p = &Paragraph{}
+	if p == nil || len(p.Runs) == 0 {
+		return nil
 	}
 	w.blocks++
 	return encodeBlock(w.encoder, "w:p", p)

@@ -11,6 +11,11 @@ import (
 	"github.com/zc310/ofd/internal/textdoc"
 )
 
+// 本文件只负责把 DOCX 编码器接进转换注册表，并把文档流交给 internal/docx。
+// 版面结构推断（标题层级、段落边界、表格、列表）在 internal/docx 的 blocks.go
+// 与 lists.go 里，它们复用 internal/textdoc 的 Entry/Rows/DetectTables，
+// 不依赖本包，因此 DOCX 的实现细节不散落在各个编码器之间。
+
 func init() { Register(&docxEncoder{}) }
 
 type docxEncoder struct{}
@@ -37,7 +42,7 @@ func (e *docxEncoder) encodeDocuments(documents []*render.Document, output io.Wr
 	images := map[int][]textdoc.Image{}
 	if conv.DOCXImages() {
 		for index, page := range pages {
-			images[index] = textdoc.ExtractImages(page.Owner, page.Source, maxDocxImagesPerPage)
+			images[index] = textdoc.ExtractImages(page.Owner, page.Source, docx.MaxImagesPerPage)
 		}
 	}
 	return docx.Write(output, docxPagesOptions(pages, conv.docTitle), func(w *docx.Writer) error {
@@ -47,17 +52,16 @@ func (e *docxEncoder) encodeDocuments(documents []*render.Document, output io.Wr
 			if err := conv.checkCancelled(); err != nil {
 				return err
 			}
-			if err := writeDocxPage(w, page, index, len(pages), conv.DOCXTables(), conv.DOCXAnnotations(), images[index]); err != nil {
+			if err := writeDocxPage(w, page, index, len(pages), docx.PageOptions{
+				Tables:      conv.DOCXTables(),
+				Annotations: conv.DOCXAnnotations(),
+			}, images[index]); err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", index+1, err)
 			}
 		}
 		return nil
 	})
 }
-
-// maxDocxImagesPerPage 限制单页内嵌的图片数量。整版图片类的 OFD（例如把每页
-// 当成一张扫描图）会在这里被截断，避免长篇扫描件产出体量失控的 docx。
-const maxDocxImagesPerPage = 64
 
 // docxPagesOptions 以首个有内容的页面尺寸作为整篇文档的纸张大小。OFD 允许每页
 // 尺寸不同，而 DOCX 的页面设置是节级属性，流式输出不做逐页分节，统一按首页
@@ -76,22 +80,16 @@ func docxPagesOptions(pages []textdoc.Page, title string) docx.Options {
 }
 
 // writeDocxPage 输出一页的块序列，并在需要时补分页符。
-func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, detectTables, includeAnnotations bool, images []textdoc.Image) error {
-	for _, block := range docxBlockSequence(page.Entries, page.Height, detectTables, images, includeAnnotations) {
+func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, options docx.PageOptions, images []textdoc.Image) error {
+	for _, block := range docx.BlockSequence(page.Entries, page.Height, options, images) {
 		var err error
-		switch block.kind {
-		case docxBlockImage:
-			err = w.AddImage(block.image.Data, block.image.Extension, block.image.Width, block.image.Height)
-		case docxBlockTable:
-			err = w.AddTable(block.docxTable())
-		case docxBlockHeading, docxBlockParagraph:
-			paragraph := block.docxParagraph()
-			// 整行只有空白时 trim 后不剩内容，产出的是没有 w:r 的空段落。
-			// 它对版面没有贡献，还会在 Word 里占一行，直接跳过。
-			if len(paragraph.Runs) == 0 {
-				continue
-			}
-			err = w.AddParagraph(paragraph)
+		switch block.Kind {
+		case docx.BlockImage:
+			err = w.AddImage(block.Image.Data, block.Image.Extension, block.Image.Width, block.Image.Height)
+		case docx.BlockTable:
+			err = w.AddTable(block.Table())
+		default:
+			err = w.AddParagraph(block.Paragraph())
 		}
 		if err != nil {
 			return err
@@ -106,10 +104,10 @@ func writeDocxPage(w *docx.Writer, page textdoc.Page, index, total int, detectTa
 
 // DOCX 将 input 中的 OFD 文档转换为单个 WordprocessingML 文档。
 //
-// 输出是流式版面：OFD 的绝对坐标被转换成 Word 段落、标题与表格，文字可直接
-// 编辑与重排，但换字体或改文字后版式会随之变化——这与 OFD 的固定版式不同。
-// 字号与字体名按 OFD 原值写入，不嵌入字体文件，实际效果取决于打开方的系统字体。
-// 图片、矢量图形与列表暂不输出，只保留文字与表格。
+// 输出是流式版面：OFD 的绝对坐标被转换成 Word 段落、标题、列表、表格与内嵌
+// 图片，文字可直接编辑与重排，但换字体或改文字后版式会随之变化——这与 OFD 的
+// 固定版式不同。字号与字体名按 OFD 原值写入，不嵌入字体文件，实际效果取决于打开
+// 方的系统字体。批注层的水印与印章默认剔除，可用 WithDOCXAnnotations 保留。
 func DOCX(ctx context.Context, input any, output io.Writer, opts ...Option) error {
 	return Encode(ctx, "docx", input, output, opts...)
 }
