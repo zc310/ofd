@@ -212,6 +212,25 @@ func WithMarkdownTables(enabled bool) Option {
 	}
 }
 
+// WithDOCXTables 设置 OFD 转 DOCX 时是否识别并输出表格，默认开启。
+// 识别复用 Markdown 的几何推断（X 对齐与空白间隔），而 DOCX 里表格带框线与
+// 单元格边界，一旦误判比纯文字输出更难接受，因此默认开启、允许关闭。
+func WithDOCXTables(enabled bool) Option {
+	return func(c *Converter) {
+		c.docxTablesOff = !enabled
+	}
+}
+
+// WithDOCXImages 设置 OFD 转 DOCX 时是否内嵌图片，默认开启。
+// 只内嵌 WordprocessingML 能直接承载的栅格格式；SVG 等矢量图片会被跳过，
+// 因为转成位图会损失清晰度。每页最多内嵌 64 张，避免整版图片类的文档产出
+// 体量失控的文件。
+func WithDOCXImages(enabled bool) Option {
+	return func(c *Converter) {
+		c.docxImagesOff = !enabled
+	}
+}
+
 // WithPassword 设置加密输入文档的打开口令。
 //
 // 目前只作用于 PDF 输入：口令交给 pdfcpu 用于解密，OFD 的包级加密尚不支持。

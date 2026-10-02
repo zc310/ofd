@@ -31,6 +31,8 @@ type Converter struct {
 	fileWriter        func(page int) (io.WriteCloser, error)
 	docTitle          string // 文档标题，由 HTML 等编码器使用
 	markdownTables    bool   // Markdown 输出是否识别表格
+	docxTablesOff     bool   // DOCX 输出关闭表格识别；取反存储以取得默认开启的语义
+	docxImagesOff     bool   // DOCX 输出关闭图片内嵌
 	sofficePath       string
 	officeTimeout     time.Duration
 	chromePath        string
@@ -193,6 +195,22 @@ func (c *Converter) TempDir() string {
 		return ""
 	}
 	return c.tempDir
+}
+
+// DOCXTables 返回 OFD 转 DOCX 时是否识别并输出表格，默认开启。
+func (c *Converter) DOCXTables() bool {
+	if c == nil {
+		return true
+	}
+	return !c.docxTablesOff
+}
+
+// DOCXImages 返回 OFD 转 DOCX 时是否内嵌图片，默认开启。
+func (c *Converter) DOCXImages() bool {
+	if c == nil {
+		return true
+	}
+	return !c.docxImagesOff
 }
 
 // MarkdownTables 返回 OFD 转 Markdown 时是否识别并输出表格，默认关闭。

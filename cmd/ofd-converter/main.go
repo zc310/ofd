@@ -87,6 +87,8 @@ type options struct {
 	ocr               bool
 	ocrLanguage       string
 	markdownTables    bool
+	noDocxTables      bool
+	noDocxImages      bool
 	recursive         bool
 	overwrite         bool
 	skipExisting      bool
@@ -179,7 +181,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVarP(&output, "output", "o", "", "输出文件路径或目录，多页 PNG/JPEG 等图像可为 .zip 文件或目录，TIFF 始终为单个文件")
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
-	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
+	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, docx, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
 	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
@@ -201,6 +203,8 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.ocr, "ocr", false, "图片转 OFD 时启用 OCR 文字层，默认关闭")
 	flags.StringVar(&opts.ocrLanguage, "ocr-language", opts.ocrLanguage, "图片 OCR 语言，需与本机 Tesseract 语言包一致")
 	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
+	flags.BoolVar(&opts.noDocxTables, "no-docx-tables", false, "OFD 转 DOCX 时不按位置识别表格（默认开启，双栏正文可能误判）")
+	flags.BoolVar(&opts.noDocxImages, "no-docx-images", false, "OFD 转 DOCX 时不内嵌图片（默认内嵌，每页上限 64 张，SVG 等矢量图始终跳过）")
 	flags.BoolVar(&opts.chromeNoSandbox, "chrome-no-sandbox", false, "禁用 Chrome 沙箱（容器或 root 环境可能需要）")
 	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
 	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
@@ -223,6 +227,7 @@ func normalizeConverterArgs(args []string) []string {
 		"external-workers": true, "soffice": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
+		"no-docx-tables": true, "no-docx-images": true,
 		"password": true,
 		"ocr":      true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
@@ -297,6 +302,9 @@ func runSingle(opts *options) error {
 	}
 	if format == "html" {
 		return convertToHTML(opts)
+	}
+	if format == "docx" {
+		return convertToDOCX(opts)
 	}
 	return convertToImage(opts, format)
 }
@@ -780,6 +788,26 @@ func convertToHTML(opts *options) error {
 		option = append(option, converter.Page(opts.page))
 	}
 	err := converter.Encode(opts.ctx, "html", opts.input, output, option...)
+	if fileOutput != nil {
+		if closeErr := fileOutput.Finish(err == nil); err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func convertToDOCX(opts *options) error {
+	var output io.Writer = os.Stdout
+	var fileOutput *lazyFileWriter
+	if opts.output != "" && opts.output != "-" {
+		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "docx")}
+		output = fileOutput
+	}
+	option := []converter.Option{converter.WithDOCXImages(!opts.noDocxImages)}
+	if opts.page > 0 {
+		option = append(option, converter.Page(opts.page))
+	}
+	err := converter.Encode(opts.ctx, "docx", opts.input, output, option...)
 	if fileOutput != nil {
 		if closeErr := fileOutput.Finish(err == nil); err == nil {
 			err = closeErr

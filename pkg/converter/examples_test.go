@@ -1,6 +1,7 @@
 package converter_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"fmt"
@@ -117,6 +118,32 @@ func ExampleHTML() {
 	err := converter.HTML(ctx, "../../test/testdata/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/png;base64,")))
 	// Output: true
+}
+
+func ExampleDOCX() {
+	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
+	// 长任务应传入带超时的 context。
+	ctx := context.Background()
+
+	var output bytes.Buffer
+	err := converter.DOCX(ctx, "../../test/testdata/helloworld.ofd", &output, converter.Page(1))
+	fmt.Println(err == nil && docxHasPart(output.Bytes(), "word/document.xml"))
+	// Output: true
+}
+
+// docxHasPart 报告产物里是否存在指定部件。DOCX 是 ZIP 容器，光判断签名不足以
+// 确认包结构正确。
+func docxHasPart(data []byte, name string) bool {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return false
+	}
+	for _, file := range reader.File {
+		if file.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func ExampleHTMLSVG() {
