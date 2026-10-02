@@ -231,6 +231,16 @@ func WithDOCXImages(enabled bool) Option {
 	}
 }
 
+// WithDOCXAnnotations 设置 OFD 转 DOCX 时是否保留批注层的文字，默认剔除。
+// 批注承载的是叠加在正文上的标记——整页水印、电子印章、签章位置、阅读批注。
+// 实测保密宣传册首页的「保密资料」水印由 81 个批注文字对象组成，同页真实正文
+// 只有 5 个，不剔除时每个段落都会被水印文字淹没。需要保留叠加层时打开它。
+func WithDOCXAnnotations(enabled bool) Option {
+	return func(c *Converter) {
+		c.docxAnnotations = enabled
+	}
+}
+
 // WithPassword 设置加密输入文档的打开口令。
 //
 // 目前只作用于 PDF 输入：口令交给 pdfcpu 用于解密，OFD 的包级加密尚不支持。

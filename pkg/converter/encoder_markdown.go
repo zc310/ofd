@@ -257,6 +257,8 @@ type markdownRowInfo struct {
 	maxSize float64
 	level   int
 	isTitle bool
+	// isList 由 DOCX 的列表识别写入，Markdown 路径不使用，保持 false。
+	isList bool
 }
 
 // markdownParagraphStarts 判断每个正文行是否为段落起点。段落边界按以下信号：

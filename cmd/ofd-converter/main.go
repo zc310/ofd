@@ -89,6 +89,7 @@ type options struct {
 	markdownTables    bool
 	noDocxTables      bool
 	noDocxImages      bool
+	docxAnnotations   bool
 	recursive         bool
 	overwrite         bool
 	skipExisting      bool
@@ -205,6 +206,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
 	flags.BoolVar(&opts.noDocxTables, "no-docx-tables", false, "OFD 转 DOCX 时不按位置识别表格（默认开启，双栏正文可能误判）")
 	flags.BoolVar(&opts.noDocxImages, "no-docx-images", false, "OFD 转 DOCX 时不内嵌图片（默认内嵌，每页上限 64 张，SVG 等矢量图始终跳过）")
+	flags.BoolVar(&opts.docxAnnotations, "docx-annotations", false, "OFD 转 DOCX 时保留批注层文字（默认剔除水印与印章等叠加标记）")
 	flags.BoolVar(&opts.chromeNoSandbox, "chrome-no-sandbox", false, "禁用 Chrome 沙箱（容器或 root 环境可能需要）")
 	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
 	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
@@ -227,7 +229,7 @@ func normalizeConverterArgs(args []string) []string {
 		"external-workers": true, "soffice": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
-		"no-docx-tables": true, "no-docx-images": true,
+		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password": true,
 		"ocr":      true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
@@ -803,7 +805,10 @@ func convertToDOCX(opts *options) error {
 		fileOutput = &lazyFileWriter{path: ensureExtension(opts.output, "docx")}
 		output = fileOutput
 	}
-	option := []converter.Option{converter.WithDOCXImages(!opts.noDocxImages)}
+	option := []converter.Option{
+		converter.WithDOCXImages(!opts.noDocxImages),
+		converter.WithDOCXAnnotations(opts.docxAnnotations),
+	}
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}
