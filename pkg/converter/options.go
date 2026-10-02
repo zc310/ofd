@@ -212,6 +212,18 @@ func WithMarkdownTables(enabled bool) Option {
 	}
 }
 
+// WithHTMLTextLayer 设置 HTML 输出是否附带透明文字层，默认开启。
+//
+// 文字层让页面里的文字可选中、可被浏览器内查找、可被屏幕阅读器朗读，而视觉
+// 仍由页面图像承担。它不内嵌字体，字号用容器查询单位随页面缩放，因此对
+// 产物体积几乎没有影响。文字度量由浏览器用系统字体完成，与 OFD 版面可能有
+// 细微偏差；关闭后回到纯图像输出。
+func WithHTMLTextLayer(enabled bool) Option {
+	return func(c *Converter) {
+		c.htmlTextLayerOff = !enabled
+	}
+}
+
 // WithDOCXTables 设置 OFD 转 DOCX 时是否识别并输出表格，默认开启。
 // 识别复用 Markdown 的几何推断（X 对齐与空白间隔），而 DOCX 里表格带框线与
 // 单元格边界，一旦误判比纯文字输出更难接受，因此默认开启、允许关闭。

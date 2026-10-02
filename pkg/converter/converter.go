@@ -31,6 +31,7 @@ type Converter struct {
 	fileWriter        func(page int) (io.WriteCloser, error)
 	docTitle          string // 文档标题，由 HTML 等编码器使用
 	markdownTables    bool   // Markdown 输出是否识别表格
+	htmlTextLayerOff  bool   // HTML 输出关闭文字层；取反存储以取得默认开启的语义
 	docxTablesOff     bool   // DOCX 输出关闭表格识别；取反存储以取得默认开启的语义
 	docxImagesOff     bool   // DOCX 输出关闭图片内嵌
 	docxAnnotations   bool   // DOCX 输出保留批注层文字，默认剔除水印与印章
@@ -56,7 +57,7 @@ type Option func(*Converter)
 
 // 默认配置
 var defaultConverter = &Converter{
-	dpi:             geom.DPI(300),
+	dpi:             geom.DPI(96),
 	format:          "png",
 	htmlImageFormat: "png",
 	bgColor:         color.Transparent,
@@ -220,6 +221,14 @@ func (c *Converter) DOCXAnnotations() bool {
 		return false
 	}
 	return c.docxAnnotations
+}
+
+// htmlTextLayer 返回 HTML 输出是否附带透明文字层，默认开启。
+func (c *Converter) htmlTextLayer() bool {
+	if c == nil {
+		return true
+	}
+	return !c.htmlTextLayerOff
 }
 
 // MarkdownTables 返回 OFD 转 Markdown 时是否识别并输出表格，默认关闭。

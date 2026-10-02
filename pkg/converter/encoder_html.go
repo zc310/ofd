@@ -98,7 +98,14 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 				return fmt.Errorf("编码第%d页 PNG 失败: %w", pageInfo.pageNumber, err)
 			}
 		}
-		return writeHTMLPage(output, pageInfo.pageNumber, page.Width(), page.Height(), data.Bytes(), conv.htmlImageFormat)
+		var textLayer strings.Builder
+		if conv.htmlTextLayer() {
+			layouts := pageInfo.document.TextLayouts(pageInfo.document.Pages[pageInfo.pageIndex])
+			if err := writeHTMLTextLayer(&textLayer, layouts, page.Width(), page.Height()); err != nil {
+				return fmt.Errorf("处理第%d页文字层失败: %w", pageInfo.pageNumber, err)
+			}
+		}
+		return writeHTMLPage(output, pageInfo.pageNumber, page.Width(), page.Height(), data.Bytes(), conv.htmlImageFormat, textLayer.String())
 	})
 	if err != nil {
 		return err
@@ -125,9 +132,15 @@ func opaqueImage(source image.Image, background color.Color) image.Image {
 	return result
 }
 
-func writeHTMLPage(output io.Writer, number int, width, height float64, data []byte, format string) error {
+// writeHTMLPage 输出一页。textLayer 非空时作为页面图像之上的透明文字层写出，
+// 使文字可选中、可被浏览器内查找、可被朗读。
+//
+// 图像的 alt 只在没有文字层时才有意义：有文字层时屏幕阅读器会读文字层，
+// 再读一遍 alt 会造成重复。
+func writeHTMLPage(output io.Writer, number int, width, height float64, data []byte, format string, textLayer string) error {
 	if format == "svg" {
-		_, err := fmt.Fprintf(output, "<section class=\"page\" aria-label=\"第%d页\" style=\"width:%smm;height:%smm\">%s</section>\n", number, htmlNumber(width), htmlNumber(height), data)
+		_, err := fmt.Fprintf(output, "<section class=\"page\" aria-label=\"第%d页\" style=\"width:%smm;height:%smm\">%s%s</section>\n",
+			number, htmlNumber(width), htmlNumber(height), data, textLayer)
 		return err
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
@@ -135,7 +148,12 @@ func writeHTMLPage(output io.Writer, number int, width, height float64, data []b
 	if format == "jpg" {
 		mimeType = "image/jpeg"
 	}
-	_, err := fmt.Fprintf(output, "<section class=\"page\" aria-label=\"第%d页\" style=\"width:%smm;height:%smm\"><img src=\"data:%s;base64,%s\" alt=\"第%d页\"></section>\n", number, htmlNumber(width), htmlNumber(height), mimeType, encoded, number)
+	alt := ""
+	if textLayer == "" {
+		alt = fmt.Sprintf(" alt=\"第%d页\"", number)
+	}
+	_, err := fmt.Fprintf(output, "<section class=\"page\" aria-label=\"第%d页\" style=\"width:%smm;height:%smm\"><img src=\"data:%s;base64,%s\"%s>%s</section>\n",
+		number, htmlNumber(width), htmlNumber(height), mimeType, encoded, alt, textLayer)
 	return err
 }
 
@@ -144,7 +162,7 @@ func htmlHeader(title string) string {
 	if title == "" {
 		title = "OFD 文档"
 	}
-	return "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + html.EscapeString(title) + "</title>\n<style>html,body{margin:0;padding:0;background:#eef1f5}.document{padding:24px}.page{box-sizing:border-box;margin:0 auto 24px;background:#fff;overflow:hidden;box-shadow:0 2px 12px #17203326}.page img,.page svg{display:block;width:100%;height:100%}@media print{html,body{background:#fff}.document{padding:0}.page{margin:0;box-shadow:none;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}}</style>\n</head>\n<body><main class=\"document\">\n"
+	return "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>" + html.EscapeString(title) + "</title>\n<style>html,body{margin:0;padding:0;background:#eef1f5}.document{padding:24px}.page{box-sizing:border-box;margin:0 auto 24px;background:#fff;overflow:hidden;box-shadow:0 2px 12px #17203326}.page{position:relative;container-type:inline-size}.page img,.page svg{display:block;width:100%;height:100%}.text-layer{position:absolute;inset:0;overflow:hidden}.text-run{position:absolute;overflow:hidden;color:transparent;line-height:1;white-space:pre;font-family:sans-serif}.text-run:hover{background:#2476bd0d}.text-run::selection{color:transparent;background:#3b82f699}@media print{html,body{background:#fff}.document{padding:0}.page{margin:0;box-shadow:none;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}}</style>\n</head>\n<body><main class=\"document\">\n"
 }
 
 func htmlFooter() string {
