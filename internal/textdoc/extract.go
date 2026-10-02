@@ -29,13 +29,29 @@ type Entry struct {
 	Y     float64
 	Size  float64
 	Width float64
+
+	// FontName 是字体资源里的字体名，解析不到时为空串。OFD 只在文字对象上给
+	// FontID，名字要查文档体的字体资源；结构化输出（DOCX 的 w:rFonts）需要它，
+	// 纯文本与 Markdown 则不关心。
+	FontName string
+	// Bold 与 Italic 供逐 run 还原字符形态，Weight 达到 boldWeight 即视为粗体。
+	Bold   bool
+	Italic bool
 }
+
+// boldWeight 是 OFD Weight 判定粗体的阈值，与渲染层保持一致。
+const boldWeight = 650
 
 // Page 保存单页的文字条目以及该页物理尺寸，用于按列对齐和页眉页脚判定。
 type Page struct {
 	Entries []Entry
 	Width   float64
 	Height  float64
+
+	// Source 是提取来源，供需要非文字图元的输出格式（DOCX 内嵌图片）回到原页面
+	// 继续提取。纯文本与 Markdown 输出不使用这两个字段。
+	Source *parser.Page
+	Owner  *parser.Document
 }
 
 // Count 统计所有文档体的非空页面总数。
@@ -68,7 +84,10 @@ func Collect(documents []*parser.Document, start, end int) []Page {
 				continue
 			}
 			if index >= start && index < end {
-				pages = append(pages, ExtractPage(doc, p))
+				extracted := ExtractPage(doc, p)
+				extracted.Source = p
+				extracted.Owner = doc
+				pages = append(pages, extracted)
 			}
 			index++
 			if index >= end {
@@ -159,7 +178,16 @@ func appendTextItems(doc *parser.Document, items []models.PageItem, entries *[]E
 			}
 			x, y := textEntryPosition(*item.Text)
 			value := EnsureUTF8(text.String())
-			*entries = append(*entries, Entry{Text: value, X: x, Y: y, Size: item.Text.Size, Width: textEntryWidth(*item.Text, value)})
+			*entries = append(*entries, Entry{
+				Text:     value,
+				X:        x,
+				Y:        y,
+				Size:     item.Text.Size,
+				Width:    textEntryWidth(*item.Text, value),
+				FontName: textEntryFontName(doc, *item.Text),
+				Bold:     item.Text.Weight >= boldWeight,
+				Italic:   item.Text.Italic,
+			})
 		case models.PageItemBlock:
 			appendTextItems(doc, item.Block.Items, entries, depth)
 		case models.PageItemComposite:
@@ -199,6 +227,22 @@ func textEntryWidth(object models.TextObject, text string) float64 {
 		size = 6
 	}
 	return float64(DisplayWidth(text)) * size * 0.5
+}
+
+// textEntryFontName 把文字对象的字体引用解析成字体名。OFD 只在文字对象上给
+// FontID，名字要查文档体的字体资源。查不到时返回空串，由调用方决定回退字体。
+func textEntryFontName(doc *parser.Document, object models.TextObject) string {
+	if doc == nil || object.Font <= 0 {
+		return ""
+	}
+	font := doc.GetFont(models.StID(object.Font))
+	if font == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(font.FontName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(font.FamilyName)
 }
 
 func textFillDisabled(object models.TextObject) bool {
