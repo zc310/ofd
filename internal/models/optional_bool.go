@@ -57,14 +57,3 @@ func (o *OptionalBool) UnmarshalXMLAttr(attr xml.Attr) error {
 	o.v = &b
 	return nil
 }
-
-// MarshalXMLAttr 实现 XML 属性序列化
-func (o OptionalBool) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	if o.v == nil {
-		return xml.Attr{}, nil
-	}
-	if *o.v {
-		return xml.Attr{Name: name, Value: "true"}, nil
-	}
-	return xml.Attr{Name: name, Value: "false"}, nil
-}

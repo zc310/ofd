@@ -2,8 +2,6 @@ package models
 
 import (
 	"encoding/xml"
-
-	"github.com/zc310/ofd/internal/spec"
 )
 
 // Document OFD 文档主体定义。
@@ -254,14 +252,4 @@ type CustomTag struct {
 	SchemaLoc *StLoc `xml:"SchemaLoc,omitempty"`
 	// FileLoc 自定义标签数据文件的位置。
 	FileLoc StLoc `xml:"FileLoc"`
-}
-
-// String 返回 Document 的 XML 字符串表示，并设置 OFD 命名空间。
-func (p *Document) String() string {
-	p.XMLNS = spec.Namespace
-	buf, err := xml.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return ""
-	}
-	return xml.Header + string(buf)
 }
