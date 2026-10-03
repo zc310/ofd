@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/entrywriter"
@@ -60,7 +61,9 @@ type Options struct {
 	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的结果。
 	Deterministic bool
-	// Signatures 是签名处理方式，空值跳过签名处理。
+	// Signatures 是签名处理方式。零值等价于 creator.SignatureDrop，与包级说明
+	// 一致：任何字节改动都会使已有摘要失效，保留一份摘要已失效的签名比直接移除
+	// 更容易误导。需要保留签名条目（例如作为原始证据）时显式选 preserve。
 	Signatures creator.SignatureMode
 	// Limits 限制输入与输出的规模，零值使用默认限制。
 	Limits Limits
@@ -186,6 +189,9 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 			if !existing[name] {
 				return nil, fmt.Errorf("delete 目标条目不存在: %s", name)
 			}
+			if strings.EqualFold(name, spec.RootDocument) {
+				return nil, fmt.Errorf("不能删除 %s：它是包的入口，删除后输出不是合法 OFD", spec.RootDocument)
+			}
 			result.deletes[name] = true
 		default:
 			return nil, fmt.Errorf("不支持的操作类型: %q", operation.Kind)
@@ -276,6 +282,62 @@ func openAny(input any) (*core.Package, error) {
 	}
 }
 
+// rootDocumentBytes 产出输出包中 OFD.xml 的最终字节。
+//
+// 单独处理是因为主循环跳过了它，而它恰恰可能被显式 Set 覆盖：此前无论用户
+// 是否要求替换 OFD.xml，这里都写出原始字节，导致 Set 被静默忽略。
+//
+// 另外 SignatureDrop 只删签名条目、不改 OFD.xml，会留下指向已删除条目的
+// DocBody/Signatures 引用，产出不再是合法 OFD。这里同步摘掉该引用。
+func rootDocumentBytes(pkg *core.Package, plan *plan, options Options) ([]byte, error) {
+	data, err := pkg.Read(spec.RootDocument)
+	if err != nil {
+		return nil, fmt.Errorf("读取 OFD.xml 失败: %w", err)
+	}
+	if custom, ok := plan.sets[spec.RootDocument]; ok {
+		data = custom
+	}
+	if options.Signatures != creator.SignatureDrop {
+		return data, nil
+	}
+	stripped, changed, err := stripSignaturesRef(data)
+	if err != nil {
+		return nil, fmt.Errorf("清理 OFD.xml 的签名引用失败: %w", err)
+	}
+	if changed && options.OnWarning != nil {
+		options.OnWarning("已移除 OFD.xml 中的 DocBody/Signatures 引用，否则输出会指向已删除的签名条目")
+	}
+	return stripped, nil
+}
+
+// stripSignaturesRef 摘掉 OFD.xml 里 DocBody/Signatures 的签名列表引用，返回新
+// 字节与是否发生了改动。没有该引用时原样返回。
+func stripSignaturesRef(data []byte) ([]byte, bool, error) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(data); err != nil {
+		return nil, false, err
+	}
+	root := doc.Root()
+	if root == nil {
+		return nil, false, errors.New("OFD.xml 没有根元素")
+	}
+	var removed []*etree.Element
+	for _, el := range root.FindElements("./DocBody/Signatures") {
+		removed = append(removed, el)
+	}
+	if len(removed) == 0 {
+		return data, false, nil
+	}
+	for _, el := range removed {
+		el.Parent().RemoveChild(el)
+	}
+	out, err := doc.WriteToBytes()
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
 // signatureDirs 收集包内所有签名目录（含历史 Signs 布局）。
 func signatureDirs(pkg *core.Package) ([]string, error) {
 	dirs := make(map[string]bool)
@@ -307,10 +369,10 @@ func signatureDirs(pkg *core.Package) ([]string, error) {
 func rebuild(pkg *core.Package, plan *plan, options Options, w io.Writer) error {
 	writer := zip.NewWriter(w)
 	state := entrywriter.New(writer, entrywriter.Config{Compression: options.Compression, CompressionLevel: options.CompressionLevel, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning})
-	rootData, err := pkg.Read(spec.RootDocument)
+	rootData, err := rootDocumentBytes(pkg, plan, options)
 	if err != nil {
 		_ = writer.Close()
-		return fmt.Errorf("读取 OFD.xml 失败: %w", err)
+		return err
 	}
 
 	for _, entry := range pkg.Entries() {
@@ -323,6 +385,7 @@ func rebuild(pkg *core.Package, plan *plan, options Options, w io.Writer) error 
 		}
 		if creator.InSignatureDir(name, plan.signDirs...) {
 			if options.Signatures == creator.SignatureDrop {
+				state.Warn(fmt.Sprintf("签名条目 %s 已移除：字节改动已使其摘要失效", name))
 				continue
 			}
 			state.Warn(fmt.Sprintf("签名条目 %s 已保留，改动后的条目摘要可能失效", name))
