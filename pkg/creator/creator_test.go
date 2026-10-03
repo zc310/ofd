@@ -20,7 +20,7 @@ import (
 	"github.com/tdewolff/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -1802,8 +1802,8 @@ func TestCreatePermissionsAndViewPreferences(t *testing.T) {
 			ValidPeriod: &ValidPeriod{Start: start, End: end},
 		},
 		Preferences: &ViewPreferences{
-			PageMode: PageModeFullScreen, PageLayout: PageLayoutTwoPageL,
-			TabDisplay: TabDisplayFileName, HideToolbar: &hideToolbar, Zoom: &zoom,
+			PageMode: spec.PageModeFullScreen, PageLayout: spec.PageLayoutTwoPageL,
+			TabDisplay: spec.TabDisplayFileName, HideToolbar: &hideToolbar, Zoom: &zoom,
 		},
 		Pages: []Page{{}},
 	})
@@ -1822,7 +1822,7 @@ func TestCreatePermissionsAndViewPreferences(t *testing.T) {
 	if document.Permissions.Print == nil || !document.Permissions.Print.Printable || document.Permissions.Print.Copies != 3 || document.Permissions.ValidPeriod == nil || document.Permissions.ValidPeriod.StartDate.IsZero() || document.Permissions.ValidPeriod.EndDate.IsZero() {
 		t.Fatalf("打印或有效期设置未正确生成: %+v", document.Permissions)
 	}
-	if document.VPreferences == nil || document.VPreferences.PageMode == nil || string(*document.VPreferences.PageMode) != PageModeFullScreen || document.VPreferences.PageLayout == nil || string(*document.VPreferences.PageLayout) != PageLayoutTwoPageL || document.VPreferences.TabDisplay == nil || string(*document.VPreferences.TabDisplay) != TabDisplayFileName || document.VPreferences.HideToolbar == nil || !*document.VPreferences.HideToolbar {
+	if document.VPreferences == nil || document.VPreferences.PageMode == nil || string(*document.VPreferences.PageMode) != spec.PageModeFullScreen || document.VPreferences.PageLayout == nil || string(*document.VPreferences.PageLayout) != spec.PageLayoutTwoPageL || document.VPreferences.TabDisplay == nil || string(*document.VPreferences.TabDisplay) != spec.TabDisplayFileName || document.VPreferences.HideToolbar == nil || !*document.VPreferences.HideToolbar {
 		t.Fatalf("视图首选项未正确生成: %+v", document.VPreferences)
 	}
 	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -2542,7 +2542,7 @@ func TestCreateWritesPageAreaAndLayerType(t *testing.T) {
 				ContentBox:     &Box{X: 10, Y: 10, Width: 190, Height: 277},
 				BleedBox:       &Box{X: -3, Y: -3, Width: 216, Height: 303},
 			},
-			LayerType: LayerForeground,
+			LayerType: spec.LayerForeground,
 			Items: []Item{
 				Path{X: 1, Y: 1, Width: 10, Height: 10, Data: "M 0 0 L 10 10 C"},
 			},
@@ -2565,7 +2565,7 @@ func TestCreateWritesPageAreaAndLayerType(t *testing.T) {
 	if area.PhysicalBox.Width != 210 || area.PhysicalBox.Height != 297 || area.ApplicationBox == nil || area.ApplicationBox.X != 5 || area.ContentBox == nil || area.ContentBox.Width != 190 || area.BleedBox == nil || area.BleedBox.X != -3 {
 		t.Fatalf("页面区域未正确生成: %+v", area)
 	}
-	if page.Content() == nil || len(page.Content().Layer) != 1 || page.Content().Layer[0].Type != LayerForeground {
+	if page.Content() == nil || len(page.Content().Layer) != 1 || page.Content().Layer[0].Type != spec.LayerForeground {
 		t.Fatalf("图层类型未正确生成: %+v", page.Content())
 	}
 	checkGeneratedPackage(t, data)
@@ -2604,13 +2604,13 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 		Pages: []Page{{
 			Layers: []Layer{
 				{
-					Type: LayerBackground,
+					Type: spec.LayerBackground,
 					Items: []Item{
 						Path{X: 1, Y: 1, Width: 20, Height: 20, Data: "M 0 0 L 20 20 C"},
 					},
 				},
 				{
-					Type: LayerForeground,
+					Type: spec.LayerForeground,
 					Items: []Item{
 						Text{X: 2, Y: 2, Width: 20, Height: 5, Value: "前景", Font: "Test Sans"},
 					},
@@ -2636,7 +2636,7 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 		t.Fatalf("图层数量 = %d, want 2", len(page.Content().Layer))
 	}
 	layers := page.Content().Layer
-	if layers[0].Type != LayerBackground || layers[1].Type != LayerForeground {
+	if layers[0].Type != spec.LayerBackground || layers[1].Type != spec.LayerForeground {
 		t.Fatalf("图层顺序 = %q, %q", layers[0].Type, layers[1].Type)
 	}
 	if countItemsOfKind(layers[0].Items, models.PageItemPath) != 1 || countItemsOfKind(layers[1].Items, models.PageItemText) != 1 {
@@ -2667,7 +2667,7 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 		},
 		Pages: []Page{{
 			Layers: []Layer{{
-				Type:      LayerForeground,
+				Type:      spec.LayerForeground,
 				DrawParam: "accent",
 				Items: []Item{
 					Path{X: 1, Y: 1, Width: 20, Height: 20, Data: "M 0 0 L 20 20 C", DrawParam: "base"},
@@ -2853,8 +2853,8 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	if _, err := Marshal(Document{
 		ID: "invalid-layers",
 		Pages: []Page{{
-			LayerType: LayerForeground,
-			Layers:    []Layer{{Type: LayerBackground}},
+			LayerType: spec.LayerForeground,
+			Layers:    []Layer{{Type: spec.LayerBackground}},
 		}},
 	}); err == nil {
 		t.Fatal("Marshal accepted mixed layer configuration")
@@ -2945,7 +2945,7 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	}
 	if _, err := Marshal(Document{
 		ID:          "invalid-preferences",
-		Preferences: &ViewPreferences{ZoomMode: ZoomModeFitWidth, Zoom: func() *float64 { value := 1.0; return &value }()},
+		Preferences: &ViewPreferences{ZoomMode: spec.ZoomModeFitWidth, Zoom: func() *float64 { value := 1.0; return &value }()},
 		Pages:       []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted both ZoomMode and Zoom")

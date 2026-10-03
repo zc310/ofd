@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func build(document Document) (*packageState, error) {
@@ -417,7 +418,7 @@ func signaturesXML(state *buildState) ([]byte, error) {
 		element.CreateAttr("ID", signature.value.ID)
 		signatureType := signature.value.Type
 		if signatureType == "" {
-			signatureType = "Seal"
+			signatureType = spec.SigTypeSeal
 		}
 		element.CreateAttr("Type", signatureType)
 		element.CreateAttr("BaseLoc", "Signatures/"+signature.baseName)
@@ -1258,7 +1259,7 @@ func (s *buildState) prepareSignatures(values []Signature, pageCount int) error 
 	seenDataNames := make(map[string]bool, len(values))
 	for index, value := range values {
 		if value.Type == "" {
-			value.Type = "Seal"
+			value.Type = spec.SigTypeSeal
 		}
 		if value.CheckMethod == "" {
 			value.CheckMethod = "MD5"
@@ -1772,7 +1773,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 		}
 		layerType := layer.Type
 		if layerType == "" {
-			layerType = LayerBody
+			layerType = spec.LayerBody
 		}
 		layerDrawParam, err := s.drawParamID(layer.DrawParam)
 		if err != nil {

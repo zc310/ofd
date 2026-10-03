@@ -16,9 +16,9 @@ import (
 	fontpkg "github.com/tdewolff/font"
 	"github.com/xuri/excelize/v2"
 
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestValidateMinimalPackage(t *testing.T) {

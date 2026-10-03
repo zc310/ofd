@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 

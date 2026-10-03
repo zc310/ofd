@@ -9,7 +9,7 @@ import (
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // OFD 表示一个OFD文档解析器

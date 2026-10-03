@@ -19,6 +19,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Convert 把 PDF 输入（文件路径、[]byte、io.Reader 或 io.ReadSeeker）转换为
@@ -107,7 +108,7 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 	// PDF 目录大纲转换为 OFD 大纲；原文档要求显示大纲面板时同步设置显示偏好。
 	document.Outlines = convertOutlines(gctx, ctx)
 	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(gctx, ctx) {
-		document.Preferences = &creator.ViewPreferences{PageMode: creator.PageModeUseOutlines}
+		document.Preferences = &creator.ViewPreferences{PageMode: spec.PageModeUseOutlines}
 	}
 	return creator.CreateWithOptions(document, output, creator.CreateOptions{PreserveEmbeddedFonts: true})
 }

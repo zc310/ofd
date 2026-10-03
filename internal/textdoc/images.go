@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 本文件提取页面里的栅格图片。ExtractPage 只处理文字，图片图元被直接丢弃，
@@ -81,12 +82,12 @@ func appendImageItems(doc *parser.Document, content *models.Content, images *[]I
 	}
 	// 与 appendPageContentText 同样先处理背景层。
 	for _, layer := range content.Layer {
-		if layer != nil && layer.Type == "Background" {
+		if layer != nil && layer.Type == spec.LayerBackground {
 			appendImageItemsFrom(doc, layer.Items, images, depth)
 		}
 	}
 	for _, layer := range content.Layer {
-		if layer != nil && layer.Type != "Background" {
+		if layer != nil && layer.Type != spec.LayerBackground {
 			appendImageItemsFrom(doc, layer.Items, images, depth)
 		}
 	}

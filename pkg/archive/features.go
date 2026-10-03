@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/core"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // encryptionsFile 是 OFD 表达加密的文件名，见 GB/T 33190 的包内结构。

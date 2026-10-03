@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/knroy/go-xml/xsd"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Files 保存校验器使用的 OFD XSD 集合。文件名和相对路径保持不变，

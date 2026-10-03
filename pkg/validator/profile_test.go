@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // archiveProfileEntry 是构造 profile 测试包时使用的条目。

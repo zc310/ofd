@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // signedFixture 是带签名列表的样例。

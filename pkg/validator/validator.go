@@ -25,7 +25,7 @@ import (
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (

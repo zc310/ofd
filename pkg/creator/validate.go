@@ -14,6 +14,7 @@ import (
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
 	"github.com/zc310/ofd/internal/schema"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func validateOFDSchema(data []byte, rootName string) error {
@@ -79,7 +80,7 @@ func defaultAnnotationDate(document Document) time.Time {
 
 func validatePage(value Page) error {
 	for index, template := range value.Templates {
-		if template.ZOrder != "" && template.ZOrder != "Background" && template.ZOrder != "Foreground" {
+		if template.ZOrder != "" && template.ZOrder != spec.ZOrderBackground && template.ZOrder != spec.ZOrderForeground {
 			return fmt.Errorf("模板引用 %d 的叠放顺序无效: %q", index+1, template.ZOrder)
 		}
 		if template.ID == 0 {
@@ -167,7 +168,7 @@ func validateAnnotationPage(value AnnotationPage, pageCount int) error {
 }
 
 func validateTemplate(value TemplatePage) error {
-	if value.ZOrder != "" && value.ZOrder != "Background" && value.ZOrder != "Foreground" {
+	if value.ZOrder != "" && value.ZOrder != spec.ZOrderBackground && value.ZOrder != spec.ZOrderForeground {
 		return fmt.Errorf("叠放顺序无效: %q", value.ZOrder)
 	}
 	if value.Area != nil {
@@ -192,7 +193,7 @@ func validateTemplateReferences(pages PageProvider, templates []TemplatePage, te
 			return err
 		}
 		for refIndex, ref := range page.Templates {
-			if ref.ZOrder != "" && ref.ZOrder != "Background" && ref.ZOrder != "Foreground" {
+			if ref.ZOrder != "" && ref.ZOrder != spec.ZOrderBackground && ref.ZOrder != spec.ZOrderForeground {
 				return fmt.Errorf("页面 %d 模板引用 %d 的叠放顺序无效: %q", pageIndex+1, refIndex+1, ref.ZOrder)
 			}
 			if !known[ref.ID] {
@@ -459,17 +460,17 @@ func validatePreferences(value *ViewPreferences) error {
 		return nil
 	}
 	switch value.PageMode {
-	case "", PageModeNone, PageModeFullScreen, PageModeUseOutlines, PageModeUseThumbs, PageModeUseCustomTags, PageModeUseLayers, PageModeUseAttatchs, PageModeUseBookmarks:
+	case "", spec.PageModeNone, spec.PageModeFullScreen, spec.PageModeUseOutlines, spec.PageModeUseThumbs, spec.PageModeUseCustomTags, spec.PageModeUseLayers, spec.PageModeUseAttatchs, spec.PageModeUseBookmarks:
 	default:
 		return fmt.Errorf("页面模式无效: %q", value.PageMode)
 	}
 	switch value.PageLayout {
-	case "", PageLayoutOnePage, PageLayoutOneColumn, PageLayoutTwoPageL, PageLayoutTwoColumnL, PageLayoutTwoPageR, PageLayoutTwoColumnR:
+	case "", spec.PageLayoutOnePage, spec.PageLayoutOneColumn, spec.PageLayoutTwoPageL, spec.PageLayoutTwoColumnL, spec.PageLayoutTwoPageR, spec.PageLayoutTwoColumnR:
 	default:
 		return fmt.Errorf("页面布局无效: %q", value.PageLayout)
 	}
 	switch value.TabDisplay {
-	case "", TabDisplayDocTitle, TabDisplayFileName:
+	case "", spec.TabDisplayDocTitle, spec.TabDisplayFileName:
 	default:
 		return fmt.Errorf("标签显示方式无效: %q", value.TabDisplay)
 	}
@@ -477,7 +478,7 @@ func validatePreferences(value *ViewPreferences) error {
 		return errors.New("ZoomMode 与 Zoom 不能同时设置")
 	}
 	switch value.ZoomMode {
-	case "", ZoomModeDefault, ZoomModeFitHeight, ZoomModeFitWidth, ZoomModeFitRect:
+	case "", spec.ZoomModeDefault, spec.ZoomModeFitHeight, spec.ZoomModeFitWidth, spec.ZoomModeFitRect:
 	default:
 		return fmt.Errorf("缩放模式无效: %q", value.ZoomMode)
 	}
@@ -488,7 +489,7 @@ func validatePreferences(value *ViewPreferences) error {
 }
 
 func validateLayerType(value string) error {
-	if value != "" && value != LayerBody && value != LayerBackground && value != LayerForeground && value != LayerCustom {
+	if value != "" && value != spec.LayerBody && value != spec.LayerBackground && value != spec.LayerForeground && value != spec.LayerCustom {
 		return fmt.Errorf("图层类型无效: %q", value)
 	}
 	return nil
@@ -770,7 +771,7 @@ func validateSignature(value Signature, pageCount int) error {
 	if !validXMLID(value.ID) {
 		return errors.New("签名 ID 不能为空")
 	}
-	if value.Type != "" && value.Type != "Seal" && value.Type != "Sign" {
+	if value.Type != "" && value.Type != spec.SigTypeSeal && value.Type != spec.SigTypeSign {
 		return fmt.Errorf("签名类型无效: %q", value.Type)
 	}
 	if strings.TrimSpace(value.ProviderName) == "" {
@@ -817,10 +818,10 @@ func validateSignature(value Signature, pageCount int) error {
 		}
 		seenStampIDs[stamp.ID] = true
 	}
-	if value.Type == "Sign" && !hasResource(value.SignedValue, value.SignedValueSource) {
+	if value.Type == spec.SigTypeSign && !hasResource(value.SignedValue, value.SignedValueSource) {
 		return errors.New("Sign 签名必须设置 SignedValue")
 	}
-	if value.Type == "Seal" && !hasResource(value.SealFile, value.SealSource) && !hasResource(value.SignedValue, value.SignedValueSource) {
+	if value.Type == spec.SigTypeSeal && !hasResource(value.SealFile, value.SealSource) && !hasResource(value.SignedValue, value.SignedValueSource) {
 		return errors.New("Seal 签名必须设置 SealFile 或 SignedValue")
 	}
 	if hasResource(value.SealFile, value.SealSource) && hasResource(value.SignedValue, value.SignedValueSource) {

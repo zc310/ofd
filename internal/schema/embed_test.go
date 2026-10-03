@@ -10,7 +10,7 @@ import (
 
 	"github.com/knroy/go-xml/xsd"
 
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestDefaultCompilesAllRootSchemas(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestConvertOutlinesToOFD(t *testing.T) {
@@ -99,7 +100,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 		t.Fatalf("FitR Top/Bottom = %v/%v", *fitR.Top, *fitR.Bottom)
 	}
 
-	if document.VPreferences == nil || document.VPreferences.PageMode == nil || *document.VPreferences.PageMode != models.PageModeUseOutlines {
+	if document.VPreferences == nil || document.VPreferences.PageMode == nil || string(*document.VPreferences.PageMode) != spec.PageModeUseOutlines {
 		t.Fatalf("显示偏好未设置 UseOutlines: %+v", document.VPreferences)
 	}
 }

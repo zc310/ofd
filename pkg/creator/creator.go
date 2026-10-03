@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (

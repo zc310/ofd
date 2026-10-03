@@ -25,9 +25,9 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
