@@ -134,7 +134,7 @@ func assessClauses(report Report) []MatrixClause {
 		appendixAttachmentPathClause(a),
 		appendixAttachmentMetadataClause(a),
 		clause("A.3", "附件格式转换", "无法嵌入原格式时可转换为 OFD 副本，同时保留原件。", MatrixUnsupported, "当前版本不执行附件格式转换，只原样复制原始附件。", []string{"analysis.attachments", "archive.attachments"}, "attachment-preservation", true, "转换策略和副本格式需由业务制度确定。"),
-		clause("A.4", "音视频附件", "保留原始编码格式，并建议生成低码率预览版本。", MatrixNotAssessed, "当前版本不生成音视频预览版本。", []string{"analysis.attachments", "features.media"}, "not-implemented", true, "需增加媒体编码识别和预览生成能力。"),
+		clause("A.4", "音视频附件", "保留原始编码格式，并建议生成低码率预览版本。", MatrixNotAssessed, "当前版本不生成音视频预览版本。", []string{"analysis.attachments", "features.audio", "features.video"}, "not-implemented", true, "需增加媒体编码识别和预览生成能力。"),
 	}
 	return clauses
 }
@@ -261,9 +261,9 @@ func attachmentClause(report analyzer.Report) MatrixClause {
 
 func encryptionClause(features FeatureSummary) MatrixClause {
 	if features.Encryption > 0 {
-		return clause("6.8", "加密与权限", "长期保存档案类 OFD 不应使用无法长期解密的加密；必要时应归档密钥。", MatrixFailed, "检测到加密相关 XML 元素。", []string{"features.encryption"}, "feature-scan", true, "需要结合实际加密容器和密钥管理制度复核。")
+		return clause("6.8", "加密与权限", "长期保存档案类 OFD 不应使用无法长期解密的加密；必要时应归档密钥。", MatrixFailed, "检测到包内 "+encryptionsFile+"。", []string{"features.encryption"}, "feature-scan", true, "需要结合实际加密容器和密钥管理制度复核。")
 	}
-	return clause("6.8", "加密与权限", "长期保存档案类 OFD 不应使用无法长期解密的加密；必要时应归档密钥。", MatrixManualReview, "未检测到加密相关 XML 元素，但是否存在容器级或业务侧加密仍需人工确认。", []string{"features.encryption"}, "feature-scan", true, "未检测到不等于证明不存在所有加密和权限控制。")
+	return clause("6.8", "加密与权限", "长期保存档案类 OFD 不应使用无法长期解密的加密；必要时应归档密钥。", MatrixManualReview, "未检测到包内 "+encryptionsFile+"，但是否存在容器级或业务侧加密仍需人工确认。", []string{"features.encryption"}, "feature-scan", true, "未检测到不等于证明不存在所有加密和权限控制。")
 }
 
 func versionClause(report analyzer.Report) MatrixClause {

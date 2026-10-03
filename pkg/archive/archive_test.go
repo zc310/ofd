@@ -508,3 +508,95 @@ func TestToolVersionFollowsBuildVersion(t *testing.T) {
 		t.Error("SchemaVersion 不应与发行版本混用：它是报告格式版本")
 	}
 }
+
+// TestScanFeaturesUsesRealOFDElements 保护特征扫描只认 OFD 命名空间下的真实
+// 元素。早先的实现用元素名直接匹配且不限定命名空间，导致三类错误：多媒体由
+// MultiMedia 表达而非 audio/video/media 元素（计数恒为 0）、加密由包内
+// Encryptions.xml 表达而非 encrypt 元素（同样恒为 0）、其它命名空间的同名
+// 元素会被误计。
+func TestScanFeaturesUsesRealOFDElements(t *testing.T) {
+	input := filepath.Join("..", "..", "test", "testdata", "media-actions.ofd")
+	features, err := scanFeatures(input, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 该样例含 MultiMedia 与 Sound/Movie 动作，两类都必须被清点到。
+	if features.Media == 0 {
+		t.Error("MultiMedia 未被计入 media")
+	}
+	if features.Audio == 0 || features.Video == 0 {
+		t.Errorf("音频/视频未按 MultiMedia 的 Type 区分: audio=%d video=%d", features.Audio, features.Video)
+	}
+	if features.Actions == 0 {
+		t.Error("Actions 容器内的 Action 未被计入")
+	}
+}
+
+// TestScanFeaturesCountsEncryptionByFile 保护加密按包内文件判定。OFD 模式中
+// 没有任何加密元素，早先匹配 encrypt/encryption/encrypteddoc 三种拼写恒为 0。
+func TestScanFeaturesCountsEncryptionByFile(t *testing.T) {
+	features, err := scanFeatures(filepath.Join("..", "..", "test", "testdata", "media-actions.ofd"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if features.Encryption != 0 {
+		t.Errorf("无加密的样例报出 encryption=%d", features.Encryption)
+	}
+
+	encrypted := writePackageWithEntry(t, map[string]string{
+		"OFD.xml":         minimalOFDXML,
+		"Encryptions.xml": `<?xml version="1.0" encoding="UTF-8"?><Encryptions xmlns="http://www.ofdspec.org/2016"/>`,
+	})
+	features, err = scanFeatures(encrypted, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if features.Encryption != 1 {
+		t.Errorf("含 Encryptions.xml 的包未报出加密，got %d", features.Encryption)
+	}
+}
+
+// TestScanFeaturesIgnoresForeignNamespace 保护其它命名空间的同名元素不被误计。
+// 内嵌 SVG 或自定义 XML 里出现 <media>、<Extension> 不应计入 OFD 要素。
+func TestScanFeaturesIgnoresForeignNamespace(t *testing.T) {
+	path := writePackageWithEntry(t, map[string]string{
+		"OFD.xml": minimalOFDXML,
+		"Doc_0/custom.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<root xmlns="urn:other"><media/><Extension/><Action/><MultiMedia Type="Audio"/></root>`,
+	})
+	features, err := scanFeatures(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if features.Media != 0 || features.Extensions != 0 || features.Actions != 0 || features.Audio != 0 {
+		t.Errorf("其它命名空间的元素被计入 OFD 要素: %+v", features)
+	}
+}
+
+const minimalOFDXML = `<?xml version="1.0" encoding="UTF-8"?>
+<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`
+
+// writePackageWithEntry 写出仅含指定条目的最小 ZIP。
+func writePackageWithEntry(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "probe.ofd")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	writer := zip.NewWriter(file)
+	for name, content := range entries {
+		target, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := target.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
