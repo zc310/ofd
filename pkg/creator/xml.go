@@ -13,7 +13,7 @@ func rootXML(state *buildState) ([]byte, error) {
 	root := doc.CreateElement("OFD")
 	root.CreateAttr("xmlns", ofNamespace)
 	root.CreateAttr("Version", "1.0")
-	root.CreateAttr("DocType", "OFD")
+	root.CreateAttr("DocType", state.docType)
 	body := root.CreateElement("DocBody")
 	info := body.CreateElement("DocInfo")
 	info.CreateElement("DocID").SetText(state.document.ID)

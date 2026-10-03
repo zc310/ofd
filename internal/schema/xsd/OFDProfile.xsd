@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OFDProfile.xsd 是 OFD.xsd 的 profile overlay，只放宽 DocType 属性的取值
+  限制，其余部分与 GB/T 33190—2016 发布的 OFD.xsd 完全一致。
+
+  背景：GB/T 33190 把 DocType 固定为 "OFD"（fixed="OFD" 加单值枚举），而
+  GB/T 42133—2022《信息技术 OFD档案应用指南》6.2.1 要求档案长期保存文件取
+  "OFD-A"，《电子病历版式文档技术要求》（征求意见稿）7.1 要求电子病历取
+  "OFD-H"。后两者是对前者的修订，直接用官方模式校验会把合规文件判为错误。
+
+  因此校验器只在文档声明了非基础 profile 时改用本 overlay；基础 profile 仍走
+  OFD.xsd，GB/T 33190 的严格一致性检查不受影响。overlay 只负责不产生假阳性，
+  profile 的具体要求由校验器的 profile 规则负责，两者职责不同。
+
+  TestProfileSchemaDiffersOnlyInDocType 断言本文件与 OFD.xsd 的差异仅限
+  DocType 属性声明，防止上游模式更新后两者悄悄漂移。
+-->
+<xs:schema xmlns="http://www.ofdspec.org/2016" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.ofdspec.org/2016" elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+    <xs:include schemaLocation="Definitions.xsd" />
+    <xs:element name="OFD">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="DocBody" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="DocInfo" type="CT_DocInfo" />
+                            <xs:element name="DocRoot" type="ST_Loc" />
+                            <xs:element name="Versions" minOccurs="0">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="Version" maxOccurs="unbounded">
+                                            <xs:complexType>
+                                                <xs:attribute name="ID" type="xs:ID" use="required" />
+                                                <xs:attribute name="Index" type="xs:int"
+                                                    use="required" />
+                                                <xs:attribute name="Current" type="xs:boolean"
+                                                    default="false" />
+                                                <xs:attribute name="BaseLoc" type="ST_Loc"
+                                                    use="required" />
+                                            </xs:complexType>
+                                        </xs:element>
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="Signatures" type="ST_Loc" minOccurs="0" />
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+            <xs:attribute name="Version" type="xs:string" use="required" fixed="1.0" />
+            <xs:attribute name="DocType" use="required">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:enumeration value="OFD" />
+                        <xs:enumeration value="OFD-A" />
+                        <xs:enumeration value="OFD-H" />
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:attribute>
+        </xs:complexType>
+    </xs:element>
+    <xs:complexType name="CT_DocInfo">
+        <xs:sequence>
+            <xs:element name="DocID" type="xs:string" />
+            <xs:element name="Title" type="xs:string" minOccurs="0" />
+            <xs:element name="Author" type="xs:string" minOccurs="0" />
+            <xs:element name="Subject" type="xs:string" minOccurs="0" />
+            <xs:element name="Abstract" type="xs:string" minOccurs="0" />
+            <xs:element name="CreationDate" type="xs:date" minOccurs="0" />
+            <xs:element name="ModDate" type="xs:date" minOccurs="0" />
+            <xs:element name="DocUsage" type="xs:string" minOccurs="0" />
+            <xs:element name="Cover" type="ST_Loc" minOccurs="0" />
+            <xs:element name="Keywords" minOccurs="0">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="Keyword" type="xs:string" maxOccurs="unbounded" />
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="Creator" type="xs:string" minOccurs="0" />
+            <xs:element name="CreatorVersion" type="xs:string" minOccurs="0" />
+            <xs:element name="CustomDatas" minOccurs="0">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="CustomData" maxOccurs="unbounded">
+                            <xs:complexType>
+                                <xs:simpleContent>
+                                    <xs:extension base="xs:string">
+                                        <xs:attribute name="Name" type="xs:string" use="required" />
+                                    </xs:extension>
+                                </xs:simpleContent>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>

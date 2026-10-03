@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -3600,6 +3602,112 @@ func TestCreateCompressionLevelDefaultInvariant(t *testing.T) {
 	for _, file := range archive.File {
 		if file.Method != zip.Store {
 			t.Fatalf("store 模式应忽略压缩级别，条目 %s 使用 %d", file.Name, file.Method)
+		}
+	}
+}
+
+// readRootDocType 读取生成包中 OFD.xml 根节点的 DocType 属性。
+func readRootDocType(t *testing.T, data []byte) string {
+	t.Helper()
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range archive.File {
+		if entry.Name != "OFD.xml" {
+			continue
+		}
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(content); err != nil {
+			t.Fatal(err)
+		}
+		root := doc.Root()
+		if root == nil {
+			t.Fatal("OFD.xml 没有根节点")
+		}
+		return root.SelectAttrValue("DocType", "")
+	}
+	t.Fatal("包内缺少 OFD.xml")
+	return ""
+}
+
+// TestCreateDocTypeDefaultsToBaseProfile 保护未指定 DocType 时仍写出基础
+// profile 取值 "OFD"，不因新增可配项改变既有输出。
+func TestCreateDocTypeDefaultsToBaseProfile(t *testing.T) {
+	data, err := Marshal(Document{
+		ID:       "doc-type-default",
+		PageSize: A4,
+		Pages:    []Page{{Items: []Item{Text{X: 20, Y: 30, Width: 80, Height: 10, Value: "A", Font: "SimSun"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readRootDocType(t, data); got != spec.DocTypeOFD {
+		t.Fatalf("DocType = %q, want %q", got, spec.DocTypeOFD)
+	}
+}
+
+// TestCreateDocTypeWritesProfileValue 保护 CreateOptions.DocType 能写出各
+// profile 取值，并确认解析侧能读回同一个值。
+func TestCreateDocTypeWritesProfileValue(t *testing.T) {
+	for _, docType := range spec.DocTypes {
+		t.Run(docType, func(t *testing.T) {
+			data, err := MarshalWithOptions(Document{
+				ID:       "doc-type-" + docType,
+				PageSize: A4,
+				Pages:    []Page{{Items: []Item{Text{X: 20, Y: 30, Width: 80, Height: 10, Value: "A", Font: "SimSun"}}}},
+			}, CreateOptions{Compression: CompressionAuto, DocType: docType})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := readRootDocType(t, data); got != docType {
+				t.Fatalf("DocType = %q, want %q", got, docType)
+			}
+			ofd := newTestOFD(t, data)
+			defer ofd.Close()
+			if got := ofd.DocType; got != docType {
+				t.Fatalf("解析回来的 DocType = %q, want %q", got, docType)
+			}
+		})
+	}
+}
+
+// TestCreateDocTypeTrimsSpaceAndRejectsUnknown 保护 DocType 的归一化与校验：
+// 首尾空白被去除，未知取值（含大小写错误的 OFD-a）报错而不是静默写出。
+func TestCreateDocTypeTrimsSpaceAndRejectsUnknown(t *testing.T) {
+	data, err := MarshalWithOptions(Document{
+		ID:       "doc-type-trim",
+		PageSize: A4,
+		Pages:    []Page{{Items: []Item{Text{X: 20, Y: 30, Width: 80, Height: 10, Value: "A", Font: "SimSun"}}}},
+	}, CreateOptions{Compression: CompressionAuto, DocType: "  " + spec.DocTypeOFDA + " "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readRootDocType(t, data); got != spec.DocTypeOFDA {
+		t.Fatalf("DocType = %q, want %q", got, spec.DocTypeOFDA)
+	}
+
+	// "OFD" 是合法的基础 profile 取值，不在拒绝列表内。
+	for _, invalid := range []string{"ofd-a", "ofd-h", "OFD_A", "OFD-ARCHIVE", "OFD A"} {
+		_, err := MarshalWithOptions(Document{
+			ID:       "doc-type-invalid",
+			PageSize: A4,
+			Pages:    []Page{{Items: []Item{Text{X: 20, Y: 30, Width: 80, Height: 10, Value: "A", Font: "SimSun"}}}},
+		}, CreateOptions{Compression: CompressionAuto, DocType: invalid})
+		if err == nil {
+			t.Fatalf("DocType %q 未被拒绝", invalid)
+		}
+		if !strings.Contains(err.Error(), "DocType") {
+			t.Errorf("DocType %q 的错误信息未说明字段: %v", invalid, err)
 		}
 	}
 }
