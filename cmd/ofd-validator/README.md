@@ -104,7 +104,7 @@ ofd-validator -o report.xlsx document.ofd
 | `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
 | `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
 | `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
-| `--doc-type OFD\|OFD-A\|OFD-H`      | 自动        | 额外校验的 OFD profile；留空时按文档声明的 `DocType` 自动判定。与 `ofd-creator --doc-type` 同义，注意与 `ofd-archive --profile`（档案元数据 profile 文件）无关 |
+| `--doc-type OFD\|OFD-A\|OFD-H`      | 自动        | 额外校验的 OFD profile；留空时按文档声明的 `DocType` 自动判定 |
 | `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |
 | `--max-errors N`                     | `100`       | 最多记录的校验错误数量；`0` 表示不限制                 |
 | `--max-input-size BYTES`             | `536870912` | ZIP 原始输入数据的最大字节数，即 512 MiB               |
@@ -121,7 +121,8 @@ ofd-validator -o report.xlsx document.ofd
 
 ## OFD profile 校验
 
-文件在 `OFD.xml` 根节点声明的 `DocType` 决定了按哪套 profile 规则校验：
+文件在 `OFD.xml` 根节点声明的 `DocType` 决定了按哪套规则校验。本文把这样一套规则称为一个
+profile，它由 `DocType` 取值决定：
 
 ```text
 OFD     基础版式文档（GB/T 33190—2016），不做 profile 校验
@@ -129,7 +130,7 @@ OFD-A   档案长期保存（GB/T 42133—2022《信息技术 OFD档案应用指
 OFD-H   电子病历版式文档（GB/T 48666-2026《电子病历版式文档技术要求》，征求意见稿）
 ```
 
-声明 `OFD-A` 即表示该文件承诺满足 GB/T 42133，校验器会自动应用对应规则，不需要额外参数。`OFD-H` 继承 `OFD-A` 的全部规则，因为电子病历标准声明其数据内容与组织应符合 GB/T 42133。
+声明 `OFD-A` 即表示该文件承诺满足 GB/T 42133，校验器会自动应用对应规则，不需要额外参数。`OFD-H` 以 `OFD-A` 为基础，因为电子病历标准声明其数据内容与组织应符合 GB/T 42133；在此之上它既可以收窄继承来的规则，也可以新增自己的规则。
 
 用 `--doc-type` 可以在不改写文件 `DocType` 的前提下预检，例如检查一份基础 OFD 是否已满足长期保存要求：
 
@@ -149,13 +150,25 @@ ofd-validator --doc-type OFD-A --mode strict input.ofd
 | `profile.<p>.document_action_not_goto`        | GB/T 42133 6.2.2 c)     | 文档动作仅保留文档内跳转         |
 | `profile.<p>.page_action_not_goto`            | GB/T 42133 6.2.3 c)     | 页面动作仅保留文档内跳转         |
 | `profile.<p>.outline_action_not_goto`         | GB/T 42133 6.2.5 a)     | 大纲节点动作仅保留文档内跳转     |
-| `profile.<p>.image_format`                    | GB/T 42133 6.2.6 e)     | 栅格图像限六种格式               |
+| `profile.<p>.image_format`                    | 见下表                  | 栅格图像格式在允许清单内         |
 | `profile.<p>.colorspace_type`                 | GB/T 42133 6.3.1 b)     | 颜色空间限灰度、RGB、CMYK        |
 | `profile.<p>.pageblock_depth`                 | GB/T 42133 6.2.3 e)     | 页面块嵌套不超过 3 层            |
+| `profile.ofd_h.signature_coverage`            | GB/T 48666 8 c)         | 签名保护范围覆盖除列表外的内容   |
 
-`<p>` 是 profile 取值的小写下划线形式（`ofd_a`、`ofd_h`）。
+`<p>` 是 `DocType` 取值的小写下划线形式（`ofd_a`、`ofd_h`）。
 
-GB/T 42133 中「去除×××」一类条款本质是转换动作而非合规条件，校验器只判定并上报「有 ×× 但 profile 不允许」，不修改文档；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款暂未实现。`OFD-H` 目前只继承 `OFD-A` 的规则，GB/T 48666-2026 目前为征求意见稿，条款可能变化。
+`image_format` 的允许清单按 `DocType` 不同：OFD-H 若沿用 GB/T 42133 的六种，判定会比
+GB/T 48666 宽松（后者只允许四种），因此 OFD-H 以同名规则覆盖为四项：
+
+| `DocType` | 依据                | 允许格式                              |
+|-----------|---------------------|---------------------------------------|
+| `OFD-A`   | GB/T 42133 6.2.6 e) | BMP、JPEG、PNG、JBIG2、JPEG2000、TIFF |
+| `OFD-H`   | GB/T 48666 7.2 d)   | BMP、JPEG、TIFF、PNG                  |
+
+`signature_coverage` 只在 OFD-H 下执行，且仅在包内存在签名列表时检查；未覆盖的
+文件记为警告而非错误。
+
+GB/T 42133 中「去除×××」一类条款本质是转换动作而非合规条件，校验器只判定并上报「有 ×× 但 profile 不允许」，不修改文档；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款暂未实现。`OFD-H` 已实现 GB/T 48666 的图像格式与签名覆盖两条规则，其余条款（字体全嵌入、元数据与保密等级、附件与版本）因需要额外字段约定或阈值判断暂未实现；该标准目前为征求意见稿，条款可能变化。
 
 ## 报告格式
 
