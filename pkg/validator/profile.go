@@ -64,15 +64,27 @@ func profileFor(docType string) *profile {
 }
 
 // resolvedRules 沿继承链收集规则，父 profile 的规则排在前面。
+//
+// 同名规则由子 profile 覆盖：子 profile 重新声明相同 Code 即视为覆盖，父 profile
+// 的版本被丢弃。标准之间对同一要素给出不同要求时必须这样处理，否则继承会把
+// 父标准更宽松的约束带到子标准里——例如 GB/T 42133 6.2.6 e) 允许六种栅格图像
+// 格式，GB/T 48666 7.2 d) 只允许四种，OFD-H 若直接继承六种就会比 48666 宽松。
 func (p *profile) resolvedRules() []profileRule {
 	if p == nil {
 		return nil
 	}
 	inherited := p.Inherits.resolvedRules()
+	overridden := make(map[string]bool, len(p.Rules))
+	for _, rule := range p.Rules {
+		overridden[rule.Code] = true
+	}
 	rules := make([]profileRule, 0, len(inherited)+len(p.Rules))
-	rules = append(rules, inherited...)
-	rules = append(rules, p.Rules...)
-	return rules
+	for _, rule := range inherited {
+		if !overridden[rule.Code] {
+			rules = append(rules, rule)
+		}
+	}
+	return append(rules, p.Rules...)
 }
 
 // profileContext 是规则执行上下文。复用校验器已解析的文档树与包索引，
@@ -111,7 +123,22 @@ func (c *profileContext) profileName() string {
 // ofdMedicalRules 是 GB/T 48666-2026《电子病历版式文档技术要求》在本阶段
 // 可机器判定的规则。该标准目前为征求意见稿，条款可能变化，因此暂不加入需要
 // 阈值或启发式判断的条款。
-var ofdMedicalRules = []profileRule{}
+var ofdMedicalRules = []profileRule{
+	{
+		// 7.2 d)：版式文档内使用的图像格式应限 BMP、JPEG、TIFF 及 PNG。
+		// 该标准比 GB/T 42133 6.2.6 e) 少了 JBIG2 与 JPEG2000，因此覆盖父
+		// profile 的同名规则；直接继承会让判定比标准宽松。
+		Code:  "image_format",
+		Title: "栅格图像格式在允许清单内",
+		Check: checkImageFormats(allowedImageFormatsMedical, "GB/T 48666 7.2 d)"),
+	},
+	{
+		// 8 c)：签名的保护范围应涵盖不包含注释列表、签名列表等文件的全部内容。
+		Code:  "signature_coverage",
+		Title: "签名保护范围覆盖全部内容",
+		Check: checkSignatureCoverage,
+	},
+}
 
 // ofdArchiveRules 是 GB/T 42133—2022《信息技术 OFD档案应用指南》在本阶段
 // 可机器判定的规则。条款号标注在每条规则的注释中。
@@ -168,7 +195,7 @@ var ofdArchiveRules = []profileRule{
 		// 6.2.6 e)：栅格图像格式限于 BMP、JPEG、PNG、JBIG2、JPEG2000 和 TIFF。
 		Code:  "image_format",
 		Title: "栅格图像格式在允许清单内",
-		Check: checkImageFormats,
+		Check: checkImageFormats(allowedImageFormatsArchive, "GB/T 42133 6.2.6 e)"),
 	},
 	{
 		// 6.3.1 b)：颜色空间类型限于灰度、RGB、CMYK 之一。
@@ -333,6 +360,17 @@ func sortedKeys(set map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// hasBaseName 判断包内是否存在指定基名的条目。OFD 规范允许同一类文件出现在
+// 不同目录层级（例如各文档体下各有 Signatures.xml），按基名判断更贴近语义。
+func (p *packageIndex) hasBaseName(base string) bool {
+	for name, entry := range p.files {
+		if !entry.isDir && path.Base(name) == base {
+			return true
+		}
+	}
+	return false
 }
 
 // sortedNames 返回包索引中的条目名，按字典序排列。

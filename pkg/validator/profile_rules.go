@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"fmt"
 	"path"
 	"strings"
 
@@ -10,11 +11,18 @@ import (
 // maxPageBlockDepth 是 GB/T 42133 6.2.3 e) 规定的页面块嵌套层数上限。
 const maxPageBlockDepth = 3
 
-// allowedImageFormats 是 GB/T 42133 6.2.6 e) 允许的六种栅格图像格式。
-// 比较用小写扩展名，不含点号。
-var allowedImageFormats = map[string]bool{
+// allowedImageFormatsArchive 是 GB/T 42133 6.2.6 e) 允许的六种栅格图像格式。
+// 比较用小写扩展名，不含点号；jpg/jp2/jpeg2000/tiff 是对应格式的常见别名。
+var allowedImageFormatsArchive = map[string]bool{
 	"bmp": true, "jpeg": true, "jpg": true, "png": true,
 	"jbig2": true, "jp2": true, "jpeg2000": true, "tif": true, "tiff": true,
+}
+
+// allowedImageFormatsMedical 是 GB/T 48666 7.2 d) 允许的四种栅格图像格式。
+// 比 GB/T 42133 少了 JBIG2 与 JPEG2000，因此 OFD-H 必须覆盖父 profile 的同名规则，
+// 否则只含这两种格式的文件会被判为合规。
+var allowedImageFormatsMedical = map[string]bool{
+	"bmp": true, "jpeg": true, "jpg": true, "png": true, "tif": true, "tiff": true,
 }
 
 // allowedColorSpaceTypes 是 GB/T 42133 6.3.1 b) 允许的颜色空间类型，比较不区分大小写。
@@ -176,22 +184,24 @@ func hasGotoChild(node *xdm.Node) bool {
 	return false
 }
 
-// checkImageFormats 对应 GB/T 42133 6.2.6 e)：栅格图像格式限于 BMP、JPEG、
-// PNG、JBIG2、JPEG2000 和 TIFF，其他格式应在归档前转换。
-func checkImageFormats(ctx *profileContext) {
-	for _, entry := range ctx.imageResources() {
-		extension := strings.ToLower(strings.TrimPrefix(path.Ext(entry.file), "."))
-		if extension == "" || allowedImageFormats[extension] {
-			continue
+// checkImageFormats 生成「栅格图像格式在允许清单内」的规则。allowed 为允许清单，
+// clause 为报错时引用的条款号。不同标准的清单不同时分别生成规则实例，由
+// profile 的同名规则覆盖机制决定实际生效的那一个。
+func checkImageFormats(allowed map[string]bool, clause string) func(*profileContext) {
+	return func(ctx *profileContext) {
+		for _, entry := range ctx.imageResources() {
+			extension := strings.ToLower(strings.TrimPrefix(path.Ext(entry.file), "."))
+			if extension == "" || allowed[extension] {
+				continue
+			}
+			ctx.report.addIssue(Issue{
+				Severity: SeverityError,
+				Stage:    StageProfile,
+				Code:     ctx.issueCode("image_format"),
+				Message:  fmt.Sprintf("栅格图像格式 .%s 不在允许清单内（%s）", extension, clause),
+				File:     entry.file,
+			}, ctx.maxErrors)
 		}
-		ctx.report.addIssue(Issue{
-			Severity: SeverityError,
-			Stage:    StageProfile,
-			Code:     ctx.issueCode("image_format"),
-			Message: "栅格图像格式 ." + extension + " 不在允许清单内，" +
-				"应转换为 BMP、JPEG、PNG、JBIG2、JPEG2000 或 TIFF（GB/T 42133 6.2.6 e）",
-			File: entry.file,
-		}, ctx.maxErrors)
 	}
 }
 
@@ -253,4 +263,66 @@ func pageBlockDepth(node *xdm.Node, current int) int {
 		}
 	}
 	return deepest
+}
+
+// checkSignatureCoverage 对应 GB/T 48666 8 c)：签名的保护范围应涵盖不包含注释
+// 列表、签名列表等文件的电子病历全部内容。
+//
+// 判定方式：收集包内全部条目（签名值数据与本 Signatures.xml 自身除外，它们不是
+// 被保护的内容），减去签名 References 里已登记的文件，差额即未被保护的部分。
+// 只在包内存在签名时检查，没有签名的电子病历由 7.3 e) 的「宜包含生效信息」
+// 覆盖，那是建议而非强制。
+func checkSignatureCoverage(ctx *profileContext) {
+	if !ctx.archive.hasBaseName("Signatures.xml") {
+		return
+	}
+	covered := ctx.signedFiles()
+	for _, name := range sortedPackageNames(ctx.archive.files) {
+		entry := ctx.archive.files[name]
+		if entry.isDir || signatureCoverageSkipBase[path.Base(name)] || covered[name] {
+			continue
+		}
+		ctx.report.addIssue(Issue{
+			Severity: SeverityWarning,
+			Stage:    StageProfile,
+			Code:     ctx.issueCode("signature_coverage"),
+			Message: fmt.Sprintf("文件 %s 未纳入签名保护范围，GB/T 48666 8 c) 要求签名保护"+
+				"除注释列表与签名列表外的全部内容", name),
+			File: name,
+		}, ctx.maxErrors)
+	}
+}
+
+// signatureCoverageSkipBase 是包内存在但不属于被保护内容的条目基名。签名的
+// 摘要值与签名列表自身是签名的产物而非被签名内容；OFD.xml 由签名另行保护
+// 入口关系，条目级的完整性由摘要值保证。判断用基名而非完整路径，因为签名文件夹
+// 的层级由文档体决定，并不固定。
+var signatureCoverageSkipBase = map[string]bool{
+	"OFD.xml":         true,
+	"Signatures.xml":  true,
+	"SignedValue.dat": true,
+	"entriesmap.dat":  true,
+	"decryptseed.dat": true,
+}
+
+// signedFiles 返回签名 References 里已登记的文件路径。解析不出路径的引用跳过，
+// 路径错误由摘要校验阶段单独报告。
+func (c *profileContext) signedFiles() map[string]bool {
+	files := make(map[string]bool)
+	for _, name := range sortedDocumentNames(c.documents) {
+		doc := c.documents[name]
+		if doc == nil || doc.root == nil || doc.rootName != "Signature" {
+			continue
+		}
+		for _, reference := range descendants(doc.root, "Reference") {
+			fileRef := strings.TrimSpace(reference.AttrValue("FileRef"))
+			if fileRef == "" {
+				continue
+			}
+			if resolved, err := resolvePackagePath(name, fileRef); err == nil {
+				files[resolved] = true
+			}
+		}
+	}
+	return files
 }
