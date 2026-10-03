@@ -16,7 +16,9 @@ import (
 	fontpkg "github.com/tdewolff/font"
 	"github.com/xuri/excelize/v2"
 
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/version"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 func TestValidateMinimalPackage(t *testing.T) {
@@ -795,5 +797,111 @@ func hasIssueFileCode(report Report, code, file string) bool {
 func TestToolVersionFollowsBuildVersion(t *testing.T) {
 	if ToolVersion != version.Version {
 		t.Errorf("ToolVersion = %q，期望与 internal/version.Version（%q）同源", ToolVersion, version.Version)
+	}
+}
+
+// minimalDocTypePackage 生成一个除 DocType 外符合官方 XSD 的最小包。
+func minimalDocTypePackage(t *testing.T) []byte {
+	t.Helper()
+	data, err := creator.MarshalWithOptions(creator.Document{
+		ID:       "validator-doctype",
+		Title:    "DocType 校验",
+		PageSize: creator.A4,
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Text{X: 20, Y: 30, Width: 100, Height: 10, Value: "内容", Font: "SimSun"},
+		}}},
+	}, creator.CreateOptions{Compression: creator.CompressionAuto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// rewriteDocType 直接改写包内 OFD.xml 的 DocType 属性，绕过生成端的取值白名单，
+// 用于构造本应被拒绝的包。
+func rewriteDocType(t *testing.T, data []byte, docType string) []byte {
+	t.Helper()
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	writer := zip.NewWriter(&out)
+	for _, entry := range archive.File {
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Name == "OFD.xml" {
+			text := string(content)
+			start := strings.Index(text, `DocType="`)
+			if start < 0 {
+				t.Fatal("OFD.xml 缺少 DocType 属性")
+			}
+			valueStart := start + len(`DocType="`)
+			end := strings.Index(text[valueStart:], `"`)
+			content = []byte(text[:valueStart] + docType + text[valueStart+end:])
+		}
+		target, err := writer.CreateHeader(&zip.FileHeader{Name: entry.Name, Method: zip.Deflate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := target.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+// TestValidateAcceptsProfileDocType 保护 profile 声明不再被官方模式的 DocType
+// 单值枚举判为错误：GB/T 42133 要求档案长期保存文件取 "OFD-A"，电子病历标准
+// 要求取 "OFD-H"，两者都是合规文件，严格模式下也不应报 XSD 错误。
+func TestValidateAcceptsProfileDocType(t *testing.T) {
+	base := minimalDocTypePackage(t)
+	for _, docType := range spec.DocTypes {
+		data := rewriteDocType(t, base, docType)
+		validator, err := New(WithMode(ModeStrict), WithSkipXSD(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		report := validator.ValidateReader(context.Background(), bytes.NewReader(data), "profile.ofd")
+		if report.HasErrors() {
+			t.Errorf("DocType=%q 被判为错误：%+v", docType, report.Issues)
+		}
+	}
+}
+
+// TestValidateRejectsUnknownDocType 保护 overlay 只对已知 profile 生效：未知
+// 取值仍按官方模式校验并给出准确原因，不会因为引入 overlay 而放宽检查。
+func TestValidateRejectsUnknownDocType(t *testing.T) {
+	base := minimalDocTypePackage(t)
+	for _, docType := range []string{"ofd", "ofd-a", "OFD_A", "OFD-X", "OFD-A ", ""} {
+		data := rewriteDocType(t, base, docType)
+		validator, err := New(WithMode(ModeStrict), WithSkipXSD(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		report := validator.ValidateReader(context.Background(), bytes.NewReader(data), "profile.ofd")
+		if !report.HasErrors() {
+			t.Errorf("DocType=%q 未被拒绝", docType)
+			continue
+		}
+		found := false
+		for _, issue := range report.Issues {
+			if issue.Stage == StageXSD && strings.Contains(issue.Message, "DocType") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("DocType=%q 的错误信息未指向 DocType：%+v", docType, report.Issues)
+		}
 	}
 }
