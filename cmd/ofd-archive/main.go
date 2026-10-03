@@ -50,6 +50,8 @@ type options struct {
 	maxAttachmentSize int64
 	help              bool
 	version           bool
+	dryRun            bool
+	dropUnreferenced  bool
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -109,6 +111,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return statusExit(report.Status)
 	}
+	if opts.command == "preserve" {
+		return runPreserve(opts, stdout, stderr)
+	}
 	if opts.command == "manifest" {
 		manifest, report, manifestErr := archive.BuildManifest(context.Background(), opts.input, metadata, opts.profile, archiveOptions)
 		if manifestErr != nil {
@@ -152,10 +157,13 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		switch cmd.Name() {
 		case "verify":
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-archive verify [选项] archive-directory/")
+		case "preserve":
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-archive preserve [选项] --output out.ofd input.ofd")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "      按 GB/T 42133 长期保存处理改造文件，--dry-run 只列出计划改动")
 		case "check", "manifest", "matrix", "prepare":
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "用法：ofd-archive %s [选项] input.ofd\n", cmd.Name())
 		default:
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-archive [check|manifest|matrix|prepare] [选项] input.ofd")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-archive [check|manifest|matrix|prepare|preserve] [选项] input.ofd")
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "      ofd-archive verify [选项] archive-directory/")
 		}
 		flags := cmd.Root().PersistentFlags()
@@ -168,6 +176,8 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.metadata, "metadata", "", "档案著录元数据 JSON/YAML 文件")
 	flags.StringVar(&opts.profile, "profile", "", "档案字段 profile JSON/YAML 文件；与 --doc-type 无关")
 	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-validator --doc-type 同义")
+	flags.BoolVar(&opts.dryRun, "dry-run", false, "preserve 只列出计划改动，不写出文件")
+	flags.BoolVar(&opts.dropUnreferenced, "drop-unreferenced", false, "preserve 删除无人引用的条目（GB/T 42133 6.2.1 c)）；默认只报告不删除，引用闭包不完整时拒绝删除")
 	flags.StringVar(&opts.format, "format", opts.format, "输出格式：text、json、markdown 或 xlsx")
 	flags.BoolVar(&opts.pretty, "pretty", false, "缩进 JSON 输出")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
@@ -185,7 +195,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.IntVar(&opts.maxXMLDepth, "max-xml-depth", opts.maxXMLDepth, "单个 XML 文件的最大嵌套深度")
 	flags.Int64Var(&opts.maxAttachmentSize, "max-attachment-size", opts.maxAttachmentSize, "提取附件的最大字节数")
 	flags.BoolVar(&opts.version, "version", false, "输出工具版本")
-	for _, name := range []string{"check", "manifest", "matrix", "prepare", "verify"} {
+	for _, name := range []string{"check", "manifest", "matrix", "prepare", "preserve", "verify"} {
 		command := name
 		child := &cobra.Command{Use: command + " [flags] input.ofd", SilenceErrors: true, SilenceUsage: true, RunE: captureCommand(opts, command), Args: cobra.ArbitraryArgs}
 		if command == "verify" {
@@ -256,6 +266,8 @@ func validateOptions(opts *options) error {
 		}
 	} else if (opts.command == "check" || opts.command == "prepare" || opts.command == "verify") && opts.format != "text" && opts.format != "json" && opts.format != "markdown" {
 		return fmt.Errorf("不支持的输出格式 %q", opts.format)
+	} else if opts.command == "preserve" && opts.format != "text" && opts.format != "json" {
+		return fmt.Errorf("preserve 不支持的输出格式 %q", opts.format)
 	} else if opts.command == "manifest" && opts.format != "json" {
 		return fmt.Errorf("不支持的输出格式 %q", opts.format)
 	}
@@ -285,6 +297,28 @@ func validateOptions(opts *options) error {
 	}
 	if opts.command != "prepare" && opts.output != "" && opts.output != "-" && utils.SamePath(opts.input, opts.output) {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
+	}
+	if opts.command == "preserve" {
+		if opts.dryRun {
+			// --dry-run 不写文件，因此不要求输出路径；但显式给了就必须拒绝，
+			// 静默忽略用户指定的输出路径比报错更难排查。
+			if opts.output != "" {
+				return errors.New("preserve --dry-run 不写出文件，请去掉 --output")
+			}
+		} else {
+			// 转换是本工具唯一会改写文件的子命令，输出必须显式给出，
+			// 避免默认路径把用户的原始文件覆盖掉。
+			if opts.output == "" || opts.output == "-" {
+				return errors.New("preserve 必须使用 --output 指定转换后的 OFD 输出路径")
+			}
+		}
+		if !opts.dryRun {
+			if dir := filepath.Dir(opts.output); dir != "" {
+				if _, err := os.Stat(dir); err != nil {
+					return fmt.Errorf("输出目录：%w", err)
+				}
+			}
+		}
 	}
 	if opts.maxErrors < 0 || opts.maxInputSize < 0 || opts.maxFileSize < 0 || opts.maxTotalSize < 0 || opts.maxEntries < 0 || opts.maxXMLBytes < 0 || opts.maxXMLNodes < 0 || opts.maxXMLDepth < 0 || opts.maxAttachmentSize < 0 {
 		return errors.New("大小和错误数量限制不能为负数")

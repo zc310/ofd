@@ -40,7 +40,7 @@ func TestRunHelpWritesUsage(t *testing.T) {
 			}
 			expectedUsage := "ofd-archive verify"
 			if flag != "verify --help" {
-				expectedUsage = "ofd-archive [check|manifest|matrix|prepare]"
+				expectedUsage = "ofd-archive [check|manifest|matrix|prepare|preserve]"
 			}
 			for _, expected := range []string{"ofd-archive - OFD 档案预检和归档准备工具", expectedUsage, "-format"} {
 				if !strings.Contains(stdout.String(), expected) {
