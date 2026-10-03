@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/beevik/etree"
@@ -494,6 +495,10 @@ func convert(pkg *core.Package, options Options) (Result, []replace.Operation, e
 		}
 	}
 
+	if err := normalizePageArea(pkg, docType, docEntry, pages, &result, operations, options); err != nil {
+		return result, nil, err
+	}
+
 	var deletes []string
 	if err := applyUnreferenced(pkg, options, &result, &deletes); err != nil {
 		return result, nil, err
@@ -652,4 +657,311 @@ func resolveDocType(pkg *core.Package, requested string) (string, error) {
 	}
 	// 未声明或声明为未知取值时按基础 profile 处理，不擅自施加档案转换。
 	return spec.DocTypeOFD, nil
+}
+
+// pageArea 是页面设置（CT_PageArea）的可比较形式。
+//
+// 刻意解析成数值再比较，而不是比对 XML 文本：文本比对会把 "210" 与 "210.0"
+// 判成不同设置，于是本该省略的 Area 留在原地，6.2.3 b) 静默失效。
+type pageArea struct {
+	physical             models.StBox
+	application, content *models.StBox
+	bleed                *models.StBox
+	// source 是该设置在页面里对应的 Area 元素，写入 CommonData 时克隆它。
+	//
+	// 克隆而非新建节点：OFD 的命名空间由源文件声明形式决定（默认 xmlns 或
+	// xmlns:ofd 前缀），手工给 etree 的 Space 赋 URI 会写出未声明的前缀，
+	// 产出非良构 XML。
+	source *etree.Element
+}
+
+// key 返回用于去重与比较的规范键。
+func (a pageArea) key() string {
+	var b strings.Builder
+	writeBox(&b, &a.physical)
+	for _, box := range []*models.StBox{a.application, a.content, a.bleed} {
+		if box == nil {
+			b.WriteString("-|")
+			continue
+		}
+		writeBox(&b, box)
+	}
+	return b.String()
+}
+
+func writeBox(b *strings.Builder, box *models.StBox) {
+	fmt.Fprintf(b, "%g %g %g %g|", box.X, box.Y, box.Width, box.Height)
+}
+
+// parsePageArea 解析页面的 Area 元素。未带 OFD 命名空间或不是 Area 时返回 false。
+func parsePageArea(el *etree.Element) (pageArea, bool) {
+	if el.Tag != "Area" || el.NamespaceURI() != spec.Namespace {
+		return pageArea{}, false
+	}
+	area := pageArea{}
+	for _, child := range el.ChildElements() {
+		if child.NamespaceURI() != spec.Namespace {
+			continue
+		}
+		box, ok := parseBox(child)
+		if !ok {
+			return pageArea{}, false
+		}
+		switch child.Tag {
+		case "PhysicalBox":
+			area.physical = box
+		case "ApplicationBox":
+			area.application = &box
+		case "ContentBox":
+			area.content = &box
+		case "BleedBox":
+			area.bleed = &box
+		}
+	}
+	area.source = el
+	return area, true
+}
+
+// parseBox 解析 ST_Box 文本值。ST_Box 是空格分隔的四个数字。
+func parseBox(el *etree.Element) (models.StBox, bool) {
+	var box models.StBox
+	fields := strings.Fields(el.Text())
+	if len(fields) != 4 {
+		return box, false
+	}
+	targets := []*float64{&box.X, &box.Y, &box.Width, &box.Height}
+	for i, field := range fields {
+		value, err := strconv.ParseFloat(field, 64)
+		if err != nil {
+			return box, false
+		}
+		*targets[i] = value
+	}
+	return box, true
+}
+
+// normalizePageArea 实现 GB/T 42133 6.2.3 a) 与 b)。
+//
+// a) 把使用最多的页面设置确定为文档默认设置，写入 Document.xml 的
+//
+//	CommonData/PageArea；b) 页面设置与默认设置相同时，省略该页的 Area 节点。
+//
+// b) 的前提是省略后仍能正确渲染——已确认 internal/parser 与 pkg/analyzer 在
+// 页面缺 Area 时都会回退到 CommonData/PageArea。CommonData/PageArea 在 XSD 中
+// 没有 minOccurs（即必填），因此 a) 不可省略，即使所有页面都没写 Area 也必须
+// 保留原有的默认值。
+func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []string,
+	result *Result, operations map[string][]byte, options Options) error {
+
+	if docType != spec.DocTypeOFDA && docType != spec.DocTypeOFDH {
+		return nil
+	}
+	if len(pages) == 0 {
+		return nil
+	}
+
+	// 收集各页面的 Area，并记录首次出现顺序用于并列时定序。
+	var order []string
+	counts := map[string]int{}
+	byKey := map[string]pageArea{}
+	for _, page := range pages {
+		doc, err := loadXML(pkg, page)
+		if err != nil {
+			return err
+		}
+		for _, el := range doc.Root().ChildElements() {
+			area, ok := parsePageArea(el)
+			if !ok {
+				continue
+			}
+			key := area.key()
+			if _, seen := byKey[key]; !seen {
+				order = append(order, key)
+				byKey[key] = area
+			}
+			counts[key]++
+		}
+	}
+	if len(order) == 0 {
+		// 没有页面显式声明 Area，默认设置无从确定，保持原样。
+		return nil
+	}
+
+	// 使用最多者胜出；并列时取页面顺序靠前者，保证同一输入结果稳定。
+	winner := order[0]
+	for _, key := range order[1:] {
+		if counts[key] > counts[winner] {
+			winner = key
+		}
+	}
+	defaultArea := byKey[winner]
+
+	// a) 写入 CommonData/PageArea。
+	//
+	// established 为假表示默认设置没能落到 CommonData/PageArea——例如 Document.xml
+	// 自身不在 OFD 命名空间下（test/testdata/intro.ofd 就是这种，28 页用
+	// http://www.ofdspec.org/2016、42 页用遗留的 http://www.ofdspec.org，混在一个包里）。
+	// 此时页面省略 Area 后会回退到 CommonData 里那个未必相同的旧默认值，页面尺寸
+	// 会静默改变，所以必须跳过 b)。
+	established, err := writeDefaultPageArea(pkg, docEntry, defaultArea, operations)
+	if err != nil {
+		return err
+	}
+	if established {
+		result.Changes = append(result.Changes, Change{
+			Entry:  docEntry,
+			Clause: "GB/T 42133 6.2.3 a)",
+			Action: fmt.Sprintf("将使用最多的页面设置（%d/%d 页）确定为文档默认设置", counts[winner], len(pages)),
+			Count:  1,
+		})
+	} else {
+		options.warn("未能把页面默认设置写入 CommonData/PageArea（文档根节点不在 OFD 命名空间下或缺少 CommonData），" +
+			"GB/T 42133 6.2.3 b) 的页面 Area 省略已跳过")
+		return nil
+	}
+
+	// b) 省略与默认设置相同的页面 Area
+	omitted := 0
+	for _, page := range pages {
+		data, ok := operations[page]
+		if !ok {
+			// 页面未因其他条款被改写，需要单独载入
+			raw, err := pkg.Read(page)
+			if err != nil {
+				return fmt.Errorf("读取 %s 失败: %w", page, err)
+			}
+			data = raw
+		}
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(data); err != nil {
+			return fmt.Errorf("解析 %s 失败: %w", page, err)
+		}
+		dropped := false
+		for _, el := range doc.Root().ChildElements() {
+			area, ok := parsePageArea(el)
+			if !ok || area.key() != winner {
+				continue
+			}
+			doc.Root().RemoveChild(el)
+			dropped = true
+		}
+		if !dropped {
+			continue
+		}
+		out, err := doc.WriteToBytes()
+		if err != nil {
+			return fmt.Errorf("序列化 %s 失败: %w", page, err)
+		}
+		operations[page] = out
+		omitted++
+	}
+	if omitted > 0 {
+		result.Changes = append(result.Changes, Change{
+			Entry:  "(页面设置)",
+			Clause: "GB/T 42133 6.2.3 b)",
+			Action: "省略与文档默认设置相同的页面 Area 节点",
+			Count:  omitted,
+		})
+		result.Entries = append(result.Entries, pages...)
+	}
+	return nil
+}
+
+// loadXML 读取并解析包内一个 XML 条目。
+func loadXML(pkg *core.Package, path string) (*etree.Document, error) {
+	data, err := pkg.Read(path)
+	if err != nil {
+		return nil, fmt.Errorf("读取 %s 失败: %w", path, err)
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(data); err != nil {
+		return nil, fmt.Errorf("解析 %s 失败: %w", path, err)
+	}
+	return doc, nil
+}
+
+// writeDefaultPageArea 把默认页面设置写入 CommonData/PageArea。
+//
+// 返回值表示「文档默认设置是否已确立为 area」，而非「本次是否改动了字节」：
+// 既有默认值已经等于 area 时同样算确立，此时不重复改写文件。
+func writeDefaultPageArea(pkg *core.Package, docEntry string, area pageArea,
+	operations map[string][]byte) (bool, error) {
+
+	data, ok := operations[docEntry]
+	if !ok {
+		raw, err := pkg.Read(docEntry)
+		if err != nil {
+			return false, fmt.Errorf("读取 %s 失败: %w", docEntry, err)
+		}
+		data = raw
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(data); err != nil {
+		return false, fmt.Errorf("解析 %s 失败: %w", docEntry, err)
+	}
+	root := doc.Root()
+	common := findChild(root, "CommonData")
+	if common == nil {
+		// 没有 CommonData 就无处安放默认设置，属文件本身不合规，不在此处构造。
+		return false, nil
+	}
+	if existing := findChild(common, "PageArea"); existing != nil {
+		if current, ok := parsePageArea(existing); ok && current.key() == area.key() {
+			// 既有默认设置已是目标值，无需改写；b) 仍可安全执行。
+			return true, nil
+		}
+		common.RemoveChild(existing)
+	}
+	replacement := area.element("PageArea")
+	if replacement == nil {
+		return false, nil
+	}
+	insertPageArea(common, replacement)
+	out, err := doc.WriteToBytes()
+	if err != nil {
+		return false, fmt.Errorf("序列化 %s 失败: %w", docEntry, err)
+	}
+	operations[docEntry] = out
+	return true, nil
+}
+
+// insertPageArea 按 CT_CommonData 的 xs:sequence 顺序插入 PageArea：紧随
+// MaxUnitID，且在 PublicRes 之前。序列类型要求顺序固定，插到末尾会让输出
+// 通不过 XSD 校验。
+func insertPageArea(common, area *etree.Element) {
+	// 插在 MaxUnitID 之后的第一个元素之前；若 MaxUnitID 是唯一元素则追加到末尾。
+	// 用 InsertChild(before) 而不是按下标插入：etree 的子节点序列含空白文本，
+	// 下标的含义随原文件有无格式化空白而变，按元素定位才稳定。
+	for _, child := range common.ChildElements() {
+		if child.Tag == "MaxUnitID" && child.NamespaceURI() == spec.Namespace {
+			continue
+		}
+		if child.NamespaceURI() != spec.Namespace {
+			continue
+		}
+		common.InsertChild(child, area)
+		return
+	}
+	common.AddChild(area)
+}
+
+// findChild 查找 OFD 命名空间下的直接子元素。
+func findChild(parent *etree.Element, tag string) *etree.Element {
+	for _, el := range parent.ChildElements() {
+		if el.Tag == tag && el.NamespaceURI() == spec.Namespace {
+			return el
+		}
+	}
+	return nil
+}
+
+// element 返回该页面设置的副本，改成指定标签名。命名空间随克隆一并保留。
+func (a pageArea) element(tag string) *etree.Element {
+	if a.source == nil {
+		// 理论上不会发生：pageArea 只由 parsePageArea 产生。
+		return nil
+	}
+	clone := a.source.Copy()
+	clone.Tag = tag
+	return clone
 }
