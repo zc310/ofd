@@ -322,11 +322,14 @@ func TestPreserveRemovesPageActions(t *testing.T) {
 			`</TextObject></Content><Actions>` + actionXML(false) + actionXML(true) + `</Actions></Page>`,
 	})
 	result, after := appliedChangesBytes(t, src, Options{DocType: "OFD-A"})
-	// 页级的 2 个非 Goto 动作，加上图元对象级的 1 个，共 3 处。
-	var removed int
+	// 只统计动作类条款：页面设置归并也会改动 Content.xml，不该计入。
+	removed := 0
 	for _, change := range result.Changes {
-		removed += change.Count
+		if change.Clause == "GB/T 42133 6.2.3 c)" || change.Clause == "GB/T 42133 6.3.3 b)" {
+			removed += change.Count
+		}
 	}
+	// 页面级 1 个非 Goto，TextObject 内 2 个，共 3 个。
 	if removed != 3 {
 		t.Errorf("共去除 %d 个动作，预期 3 个：%+v", removed, result.Changes)
 	}
@@ -399,8 +402,12 @@ func TestPreserveDoesNotTouchPageActionsAsDocumentScope(t *testing.T) {
 			`<Content/><Actions>` + actionXML(false) + `</Actions></Page>`,
 	})
 	result, _ := appliedChangesBytes(t, src, Options{DocType: "OFD-A"})
+	// 页面设置归并（6.2.3 a)）本就要改 Document.xml，故只检查动作类条款的归属。
 	for _, change := range result.Changes {
-		if change.Entry == "Doc_0/Document.xml" {
+		isAction := change.Clause == "GB/T 42133 6.2.2 c)" ||
+			change.Clause == "GB/T 42133 6.2.3 c)" ||
+			change.Clause == "GB/T 42133 6.3.3 b)"
+		if isAction && change.Entry == "Doc_0/Document.xml" {
 			t.Errorf("页面动作被记到文档动作条款下：%+v", change)
 		}
 	}
@@ -527,5 +534,179 @@ func TestUnreferencedRefusedWhenClosureIncomplete(t *testing.T) {
 	}
 	if !reported {
 		t.Errorf("未报告闭包不完整，警告：%v", warnings)
+	}
+}
+
+// pageXML 拼一个带指定 Area 的页面描述。
+func pageXML(id, area string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<Page` + ns + ` ID="` + id + `">` + area +
+		`<Content><TextObject ID="9" Boundary="0 0 10 10"><TextCode X="0" Y="5">A</TextCode></TextObject></Content></Page>`
+}
+
+const (
+	areaA4 = `<Area><PhysicalBox>0 0 595 842</PhysicalBox></Area>`
+	areaA5 = `<Area><PhysicalBox>0 0 595 842</PhysicalBox><ContentBox>0 0 575 812</ContentBox></Area>`
+)
+
+// TestPageAreaPromotesMostUsedAsDefault 覆盖 6.2.3 a)：使用最多的页面设置
+// 升为文档默认设置，写入 CommonData/PageArea。
+func TestPageAreaPromotesMostUsedAsDefault(t *testing.T) {
+	// 五页：A 四页、B 一页，A 应成为默认。
+	pages := `<Pages>` +
+		`<Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/>` +
+		`<Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>` +
+		`<Page ID="3" BaseLoc="Pages/Page_2/Content.xml"/>` +
+		`<Page ID="4" BaseLoc="Pages/Page_3/Content.xml"/>` +
+		`<Page ID="5" BaseLoc="Pages/Page_4/Content.xml"/>` +
+		`</Pages>`
+	files := map[string]string{
+		"OFD.xml": ofdXML(),
+		"Doc_0/Document.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<Document` + ns + `><CommonData><MaxUnitID>99</MaxUnitID>` +
+			`<PageArea><PhysicalBox>0 0 100 100</PhysicalBox></PageArea></CommonData>` +
+			pages + `</Document>`,
+		"Doc_0/Pages/Page_0/Content.xml": pageXML("1", areaA4),
+		"Doc_0/Pages/Page_1/Content.xml": pageXML("2", areaA4),
+		"Doc_0/Pages/Page_2/Content.xml": pageXML("3", areaA4),
+		"Doc_0/Pages/Page_3/Content.xml": pageXML("4", areaA4),
+		"Doc_0/Pages/Page_4/Content.xml": pageXML("5", areaA5),
+	}
+	result, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
+
+	doc := after["Doc_0/Document.xml"]
+	if !strings.Contains(doc, "595 842") {
+		t.Errorf("CommonData/PageArea 未更新为使用最多的设置：\n%s", doc)
+	}
+	if strings.Contains(doc, "0 0 100 100") {
+		t.Errorf("原有默认设置未被替换：\n%s", doc)
+	}
+	// PageArea 必须紧随 MaxUnitID：CT_CommonData 是 xs:sequence，顺序错则 XSD 不过。
+	maxIdx := strings.Index(doc, "MaxUnitID")
+	areaIdx := strings.Index(doc, "PageArea")
+	pagesIdx := strings.Index(doc, "<Pages")
+	if !(maxIdx < areaIdx && areaIdx < pagesIdx) {
+		t.Errorf("PageArea 位置不对，应在 MaxUnitID 之后、Pages 之前：\n%s", doc)
+	}
+	var promoted bool
+	for _, change := range result.Changes {
+		if change.Clause == "GB/T 42133 6.2.3 a)" {
+			promoted = true
+		}
+	}
+	if !promoted {
+		t.Error("未按 6.2.3 a) 记录改动")
+	}
+}
+
+// TestPageAreaOmitsMatchingPages 覆盖 6.2.3 b)：与默认设置相同的页面省略 Area。
+func TestPageAreaOmitsMatchingPages(t *testing.T) {
+	pages := `<Pages>` +
+		`<Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/>` +
+		`<Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>` +
+		`</Pages>`
+	files := map[string]string{
+		"OFD.xml": ofdXML(),
+		"Doc_0/Document.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<Document` + ns + `><CommonData><MaxUnitID>99</MaxUnitID>` +
+			`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea></CommonData>` +
+			pages + `</Document>`,
+		// 两页都与文档默认相同，都应被省略。
+		"Doc_0/Pages/Page_0/Content.xml": pageXML("1", areaA4),
+		"Doc_0/Pages/Page_1/Content.xml": pageXML("2", areaA4),
+	}
+	result, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
+	for _, name := range []string{"Doc_0/Pages/Page_0/Content.xml", "Doc_0/Pages/Page_1/Content.xml"} {
+		if strings.Contains(after[name], "<Area>") {
+			t.Errorf("%s 的 Area 应被省略：\n%s", name, after[name])
+		}
+		if !strings.Contains(after[name], "<Content>") {
+			t.Errorf("%s 的页面内容被误删：\n%s", name, after[name])
+		}
+	}
+	var omitted bool
+	for _, change := range result.Changes {
+		if change.Clause == "GB/T 42133 6.2.3 b)" {
+			omitted = true
+			if change.Count != 2 {
+				t.Errorf("应省略 2 页，实际 %d 页", change.Count)
+			}
+		}
+	}
+	if !omitted {
+		t.Error("未按 6.2.3 b) 记录改动")
+	}
+}
+
+// TestPageAreaKeepsNonMatchingPage 确认与默认设置不同的页面保留自己的 Area。
+func TestPageAreaKeepsNonMatchingPage(t *testing.T) {
+	pages := `<Pages>` +
+		`<Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/>` +
+		`<Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>` +
+		`</Pages>`
+	files := map[string]string{
+		"OFD.xml": ofdXML(),
+		"Doc_0/Document.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<Document` + ns + `><CommonData><MaxUnitID>99</MaxUnitID>` +
+			`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea></CommonData>` +
+			pages + `</Document>`,
+		// A4 四页占优，B 成为默认；A4 的四页省略，B 自己那页保留。
+		"Doc_0/Pages/Page_0/Content.xml": pageXML("1", areaA4),
+		"Doc_0/Pages/Page_1/Content.xml": pageXML("2", areaA5),
+	}
+	_, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
+	// 两页设置不同，各出现一次，按页面顺序取前者为默认，故第一页被省略、第二页保留。
+	if strings.Contains(after["Doc_0/Pages/Page_0/Content.xml"], "<Area>") {
+		t.Errorf("成为默认设置的那页应省略 Area：\n%s", after["Doc_0/Pages/Page_0/Content.xml"])
+	}
+	if !strings.Contains(after["Doc_0/Pages/Page_1/Content.xml"], "<Area>") {
+		t.Errorf("非默认设置的页面应保留 Area：\n%s", after["Doc_0/Pages/Page_1/Content.xml"])
+	}
+}
+
+// TestPageAreaComparesNumerically 确认按数值而非文本比较页面设置。
+// 文本比对会把 "210" 与 "210.0" 判成不同设置，于是 6.2.3 b) 静默失效。
+func TestPageAreaComparesNumerically(t *testing.T) {
+	pages := `<Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages>`
+	files := map[string]string{
+		"OFD.xml": ofdXML(),
+		"Doc_0/Document.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<Document` + ns + `><CommonData><MaxUnitID>99</MaxUnitID>` +
+			`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea></CommonData>` +
+			pages + `</Document>`,
+		// 与文档默认数值相同但写法不同。
+		"Doc_0/Pages/Page_0/Content.xml": pageXML("1",
+			`<Area><PhysicalBox>0.0 0.00 595.0 842.000</PhysicalBox></Area>`),
+	}
+	files["Doc_0/Document.xml"] = strings.Replace(files["Doc_0/Document.xml"],
+		`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea>`, "", 1)
+	_, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
+	// 写法不同但数值相同，应被判定为与默认一致而省略。
+	if strings.Contains(after["Doc_0/Pages/Page_0/Content.xml"], "<Area>") {
+		t.Errorf("数值相同的页面设置应被识别为一致并省略 Area：\n%s",
+			after["Doc_0/Pages/Page_0/Content.xml"])
+	}
+}
+
+// TestPageAreaSkippedForBaseDocType 确认基础 profile 不做页面设置归并。
+// 基础 profile 不承诺满足 GB/T 42133，改写页面结构属无依据的破坏。
+func TestPageAreaSkippedForBaseDocType(t *testing.T) {
+	pages := `<Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages>`
+	files := map[string]string{
+		"OFD.xml": ofdXML(),
+		"Doc_0/Document.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<Document` + ns + `><CommonData><MaxUnitID>99</MaxUnitID>` +
+			`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea></CommonData>` +
+			pages + `</Document>`,
+		"Doc_0/Pages/Page_0/Content.xml": pageXML("1", areaA4),
+	}
+	result, err := Plan(buildOFD(t, files), Options{DocType: "OFD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range result.Changes {
+		if change.Clause == "GB/T 42133 6.2.3 a)" || change.Clause == "GB/T 42133 6.2.3 b)" {
+			t.Errorf("基础 profile 不应做页面设置归并，却有改动 %+v", change)
+		}
 	}
 }
