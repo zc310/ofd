@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zip"
@@ -45,6 +46,45 @@ func TestPackageReadsContentAndXML(t *testing.T) {
 	if string(leading) != "leading slash" {
 		t.Fatalf("leading = %q, want %q", leading, "leading slash")
 	}
+}
+
+// 自定义 deflate 解压器会复用 bufio.Reader 与 flate 解压器，反复/并发打开同一条目
+// 必须每次都返回完整且正确的内容，不能读到上一次复用残留的字节。
+func TestPooledDeflateReusesWithoutStaleData(t *testing.T) {
+	content := bytes.Repeat([]byte("OFD-页面内容-"), 4096)
+	archiveData := newTestZip(t, map[string][]byte{"Doc_0/Document.xml": content})
+	archive, err := OpenBytes(archiveData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	read := func() {
+		got, err := archive.Read("Doc_0/Document.xml")
+		if err != nil {
+			t.Errorf("读取失败: %v", err)
+			return
+		}
+		if !bytes.Equal(got, content) {
+			t.Errorf("内容不一致: len=%d want %d", len(got), len(content))
+		}
+	}
+
+	for i := 0; i < 50; i++ {
+		read()
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				read()
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestPackageExposesEntryMetadataAndLookup(t *testing.T) {
