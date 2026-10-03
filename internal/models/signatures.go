@@ -9,11 +9,3 @@ type Signatures struct {
 	MaxSignID  *string     `xml:"MaxSignId,omitempty"`
 	Signatures []Signature `xml:"Signature,omitempty"`
 }
-
-// SigType 签名类型枚举
-type SigType string
-
-const (
-	SigTypeSeal SigType = "Seal"
-	SigTypeSign SigType = "Sign"
-)
