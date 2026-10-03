@@ -450,17 +450,6 @@ type Layer struct {
 	Items []Item
 }
 
-const (
-	// LayerBody 表示普通正文图层。
-	LayerBody = "Body"
-	// LayerBackground 表示背景图层。
-	LayerBackground = "Background"
-	// LayerForeground 表示前景图层。
-	LayerForeground = "Foreground"
-	// LayerCustom 表示自定义图层。
-	LayerCustom = "Custom"
-)
-
 // Item 是 OFD 页面上的对象，可使用 Text、Path、Image、Composite 或 PageBlock。
 type Item interface {
 	isItem()
@@ -1257,31 +1246,6 @@ type ViewPreferences struct {
 	// Zoom 是自定义缩放比例。
 	Zoom *float64
 }
-
-const (
-	PageModeNone          = "None"
-	PageModeFullScreen    = "FullScreen"
-	PageModeUseOutlines   = "UseOutlines"
-	PageModeUseThumbs     = "UseThumbs"
-	PageModeUseCustomTags = "UseCustomTags"
-	PageModeUseLayers     = "UseLayers"
-	PageModeUseAttatchs   = "UseAttatchs"
-	PageModeUseBookmarks  = "UseBookmarks"
-
-	PageLayoutOnePage    = "OnePage"
-	PageLayoutOneColumn  = "OneColumn"
-	PageLayoutTwoPageL   = "TwoPageL"
-	PageLayoutTwoColumnL = "TwoColumnL"
-	PageLayoutTwoPageR   = "TwoPageR"
-	PageLayoutTwoColumnR = "TwoColumnR"
-
-	TabDisplayDocTitle = "DocTitle"
-	TabDisplayFileName = "FileName"
-	ZoomModeDefault    = "Default"
-	ZoomModeFitHeight  = "FitHeight"
-	ZoomModeFitWidth   = "FitWidth"
-	ZoomModeFitRect    = "FitRect"
-)
 
 func (Image) isItem() {}
 

@@ -15,7 +15,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Kind 表示输出格式的类别，用于调用方按类别分发转换行为。

@@ -1,5 +1,8 @@
-// Package spec 定义 OFD 规范的固定常量，供解析、创建、校验等各包共享。
+// Package spec 定义 OFD 规范的固定常量，供解析、创建、校验等各包共享，也供
+// 外部使用者构造和校验 OFD 文档时引用，避免在各处硬编码字符串。
 package spec
+
+import "slices"
 
 // Namespace 是标准 OFD 命名空间。
 const Namespace = "http://www.ofdspec.org/2016"
@@ -31,10 +34,5 @@ var DocTypes = []string{DocTypeOFD, DocTypeOFDA, DocTypeOFDH}
 
 // IsDocType 判断 value 是否为已知 DocType 取值。
 func IsDocType(value string) bool {
-	for _, known := range DocTypes {
-		if value == known {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(DocTypes, value)
 }

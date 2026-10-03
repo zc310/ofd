@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/archive"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 

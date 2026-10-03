@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/zc310/ofd/internal/core"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // MissingReference 描述一处指向包内不存在文件的引用。

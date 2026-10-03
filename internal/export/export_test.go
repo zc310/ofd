@@ -13,8 +13,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"go.yaml.in/yaml/v3"
 )
 

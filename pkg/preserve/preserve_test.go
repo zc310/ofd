@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/core"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // fixtureOf 是测试样例在 testdata 里的路径。

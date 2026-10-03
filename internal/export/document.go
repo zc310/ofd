@@ -13,7 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // errSkipAction 表示在批注外观转换中跳过目标页面缺失的无效动作。

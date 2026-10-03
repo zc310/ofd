@@ -23,8 +23,8 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/entrywriter"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // OrphanMode 控制文档目录之外的条目如何处理。

@@ -22,8 +22,8 @@ import (
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -285,7 +285,7 @@ func buildSignaturesXML(id, baseName string) []byte {
 	root.CreateElement("MaxSignId").SetText("MaxSignId-1")
 	element := root.CreateElement("Signature")
 	element.CreateAttr("ID", id)
-	element.CreateAttr("Type", "Seal")
+	element.CreateAttr("Type", spec.SigTypeSeal)
 	element.CreateAttr("BaseLoc", "Signatures/"+baseName)
 	out, _ := doc.WriteToBytes()
 	return out

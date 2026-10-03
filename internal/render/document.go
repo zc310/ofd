@@ -15,6 +15,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type Document struct {
@@ -383,12 +384,12 @@ func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer,
 		return
 	}
 	for _, layer := range layers {
-		if layer != nil && layer.Type == "Background" {
+		if layer != nil && layer.Type == spec.LayerBackground {
 			p.layer(ctx, layer, pb, budget)
 		}
 	}
 	for _, layer := range layers {
-		if layer != nil && layer.Type != "Background" {
+		if layer != nil && layer.Type != spec.LayerBackground {
 			p.layer(ctx, layer, pb, budget)
 		}
 	}

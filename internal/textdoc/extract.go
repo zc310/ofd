@@ -11,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -200,12 +201,12 @@ func appendPageContentText(doc *parser.Document, content *models.Content, entrie
 	}
 	// 与渲染顺序保持一致：背景层先于其他图层处理。
 	for _, layer := range content.Layer {
-		if layer != nil && layer.Type == "Background" {
+		if layer != nil && layer.Type == spec.LayerBackground {
 			appendTextItems(doc, layer.Items, entries, depth, source)
 		}
 	}
 	for _, layer := range content.Layer {
-		if layer != nil && layer.Type != "Background" {
+		if layer != nil && layer.Type != spec.LayerBackground {
 			appendTextItems(doc, layer.Items, entries, depth, source)
 		}
 	}

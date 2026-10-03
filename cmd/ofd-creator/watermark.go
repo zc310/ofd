@@ -14,12 +14,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/sign"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/watermark"
 )
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestVersionsListsPagesFromFileList(t *testing.T) {
@@ -869,7 +870,7 @@ func TestOutlineResolvesPageAndBookmark(t *testing.T) {
 		Title:       "大纲测试",
 		PageSize:    creator.A4,
 		Pages:       []creator.Page{{}, {}},
-		Preferences: &creator.ViewPreferences{PageMode: creator.PageModeUseOutlines},
+		Preferences: &creator.ViewPreferences{PageMode: spec.PageModeUseOutlines},
 		Bookmarks:   []creator.Bookmark{{Name: "第三章", Goto: creator.GotoAction{Page: 1}}},
 		Outlines: []creator.Outline{
 			{
@@ -897,7 +898,7 @@ func TestOutlineResolvesPageAndBookmark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取大纲失败: %v", err)
 	}
-	if tree.PageMode != string(creator.PageModeUseOutlines) {
+	if tree.PageMode != string(spec.PageModeUseOutlines) {
 		t.Fatalf("PageMode = %q, 期望 UseOutlines", tree.PageMode)
 	}
 	if len(tree.Nodes) != 3 {
@@ -946,13 +947,13 @@ func TestPreferencesExposeDocumentZoom(t *testing.T) {
 		return reader
 	}
 
-	modeReader := openWithPreferences(t, &creator.ViewPreferences{ZoomMode: creator.ZoomModeFitWidth})
+	modeReader := openWithPreferences(t, &creator.ViewPreferences{ZoomMode: spec.ZoomModeFitWidth})
 	modePreferences, err := modeReader.Preferences()
 	if err != nil {
 		t.Fatalf("读取显示偏好失败: %v", err)
 	}
-	if modePreferences.ZoomMode != creator.ZoomModeFitWidth {
-		t.Fatalf("ZoomMode = %q, 期望 %q", modePreferences.ZoomMode, creator.ZoomModeFitWidth)
+	if modePreferences.ZoomMode != spec.ZoomModeFitWidth {
+		t.Fatalf("ZoomMode = %q, 期望 %q", modePreferences.ZoomMode, spec.ZoomModeFitWidth)
 	}
 
 	zoomValue := 1.75

@@ -13,9 +13,9 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
-	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/archive"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestRunDefaultsToCheckJSON(t *testing.T) {

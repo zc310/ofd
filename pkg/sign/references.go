@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // collectReferences 计算文档体的签名引用（相对签名目录）。

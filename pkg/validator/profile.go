@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/knroy/go-xml/xdm"
-	"github.com/zc310/ofd/internal/spec"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // profileRule 是单条 profile 规则。规则只做判定并上报，不修改文档——

@@ -242,7 +242,7 @@ func main() {
 
 页面坐标、边界和文字字号的单位均为毫米。`PageSize` 未设置时默认使用 A4；输出 XML 使用 OFD 默认命名空间，普通属性保持无命名空间。
 
-可以使用 `Document.DrawParams` 抽取公共线条和颜色配置。图层、文字、路径和图片通过绘制参数的 `Name` 引用；`Relative` 可声明绘制参数继承关系：
+可以使用 `Document.DrawParams` 抽取公共线条和颜色配置。图层、文字、路径和图片通过绘制参数的 `Name` 引用；`Relative` 可声明绘制参数继承关系（下文示例中的 `spec.` 常量来自 `github.com/zc310/ofd/pkg/spec`）：
 
 ```go
 document := creator.Document{
@@ -260,7 +260,7 @@ document := creator.Document{
 		},
 	},
 	Pages: []creator.Page{{Layers: []creator.Layer{{
-		Type:      creator.LayerForeground,
+		Type:      spec.LayerForeground,
 		DrawParam: "blue-line",
 		Items: []creator.Item{
 			creator.Path{
@@ -386,10 +386,10 @@ document := creator.Document{
 		Print: &creator.PrintSettings{Printable: true, Copies: &copies},
 	},
 	Preferences: &creator.ViewPreferences{
-		PageMode:    creator.PageModeFullScreen,
-		PageLayout:  creator.PageLayoutOneColumn,
+		PageMode:    spec.PageModeFullScreen,
+		PageLayout:  spec.PageLayoutOneColumn,
 		HideToolbar: &hideToolbar,
-		ZoomMode:    creator.ZoomModeFitWidth,
+		ZoomMode:    spec.ZoomModeFitWidth,
 	},
 	Pages: []creator.Page{{Items: []creator.Item{
 		creator.Text{X: 10, Y: 10, Width: 50, Height: 8, Value: "正文"},
@@ -852,14 +852,14 @@ page := creator.Page{
 		ContentBox:     &creator.Box{X: 10, Y: 10, Width: 190, Height: 277},
 		BleedBox:       &creator.Box{X: -3, Y: -3, Width: 216, Height: 303},
 	},
-	LayerType: creator.LayerForeground,
+	LayerType: spec.LayerForeground,
 	Items: []creator.Item{
 		creator.Text{Value: "前景内容"},
 	},
 }
 ```
 
-可用图层类型为 `LayerBody`、`LayerBackground`、`LayerForeground` 和 `LayerCustom`。页面区域的 `PhysicalBox` 未设置时会使用文档的 `PageSize`。
+可用图层类型为 `spec.LayerBody`、`spec.LayerBackground`、`spec.LayerForeground` 和 `spec.LayerCustom`。页面区域的 `PhysicalBox` 未设置时会使用文档的 `PageSize`。
 
 也可以在 `Document.Area` 中设置文档默认页面区域。页面未单独设置区域时，阅读器可使用该文档级区域：
 
@@ -897,10 +897,10 @@ document := creator.Document{
 ```go
 page := creator.Page{
 	Layers: []creator.Layer{
-		{Type: creator.LayerBackground, Items: []creator.Item{
+		{Type: spec.LayerBackground, Items: []creator.Item{
 			creator.Path{X: 0, Y: 0, Width: 210, Height: 297, Data: "M 0 0 L 210 297 C"},
 		}},
-		{Type: creator.LayerForeground, Items: []creator.Item{
+		{Type: spec.LayerForeground, Items: []creator.Item{
 			creator.Text{X: 20, Y: 20, Width: 100, Height: 10, Value: "前景内容"},
 		}},
 	},
