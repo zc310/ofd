@@ -84,12 +84,3 @@ type Keywords struct {
 	// Keyword 关键词列表。
 	Keyword []string `xml:"Keyword"`
 }
-
-// String 返回 OFD 文档的 XML 字符串表示。
-func (p *OFD) String() string {
-	buf, err := xml.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return ""
-	}
-	return xml.Header + string(buf)
-}

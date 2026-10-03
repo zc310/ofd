@@ -56,11 +56,6 @@ func (p *StID) parseUint(s string) uint64 {
 	}
 	return val
 }
-func (p *StID) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	// 将无符号整型转换为字符串
-	str := strconv.FormatUint(uint64(*p), 10)
-	return e.EncodeElement(str, start)
-}
 
 // StRefID 引用ID类型
 type StRefID StID
@@ -96,18 +91,6 @@ func (p *StArray) UnmarshalXMLAttr(attr xml.Attr) error {
 	return nil
 }
 
-// MarshalXML 将StArray序列化为XML字符串
-func (p *StArray) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	// 用空格拼接字符串数组
-	str := strings.Join(*p, " ")
-	return e.EncodeElement(str, start)
-}
-
-// MarshalXMLAttr 将字符串数组编码为 XML 属性。
-func (p StArray) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	return xml.Attr{Name: name, Value: strings.Join(p, " ")}, nil
-}
-
 // StPos 位置坐标类型
 type StPos struct {
 	X float64
@@ -136,13 +119,6 @@ func (p *StPos) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 func (p *StPos) UnmarshalXMLAttr(attr xml.Attr) error {
 	return p.parseFromString(attr.Value)
-}
-
-// MarshalXML 将 StPos 序列化为 XML 字符串
-func (p *StPos) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	// 格式化为 "x,y" 字符串
-	str := fmt.Sprintf("%f,%f", p.X, p.Y)
-	return e.EncodeElement(str, start)
 }
 
 func (p *StPos) parseFromString(s string) error {
@@ -392,41 +368,6 @@ func (t *DateTime) parseTime(v string) error {
 	return fmt.Errorf("无法解析时间: %s", v)
 }
 
-// MarshalXML 自定义XML序列化方法
-func (t *DateTime) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	if t.IsZero() {
-		return nil
-	}
-
-	// 判断时分秒是否为0
-	if t.Time.Hour() == 0 && t.Time.Minute() == 0 && t.Time.Second() == 0 {
-		return e.EncodeElement(t.Format("2006-01-02"), start)
-	}
-
-	// 否则使用完整时间格式
-	return e.EncodeElement(t.Format("2006-01-02T15:04:05"), start)
-}
-
-// MarshalXMLAttr 自定义XML属性序列化方法
-func (t *DateTime) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	if t.IsZero() {
-		return xml.Attr{}, nil
-	}
-
-	var value string
-	// 判断时分秒是否为0
-	if t.Time.Hour() == 0 && t.Time.Minute() == 0 && t.Time.Second() == 0 {
-		value = t.Format("2006-01-02")
-	} else {
-		value = t.Format("2006-01-02T15:04:05")
-	}
-
-	return xml.Attr{
-		Name:  name,
-		Value: value,
-	}, nil
-}
-
 type Color struct {
 	color.RGBA
 }
@@ -445,18 +386,6 @@ func (c *Color) UnmarshalXMLAttr(attr xml.Attr) error {
 	return c.parse(attr.Value)
 }
 
-// MarshalXML 生成 XML
-func (c Color) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	return e.EncodeElement(c.String(), start)
-}
-
-// MarshalXMLAttr 生成 XML 属性
-func (c Color) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	return xml.Attr{
-		Name:  name,
-		Value: c.String(),
-	}, nil
-}
 func (c *Color) parseInt(s string) (int, error) {
 	s = strings.TrimSpace(s)
 

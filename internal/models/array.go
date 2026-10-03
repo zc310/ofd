@@ -117,21 +117,6 @@ func (s StArrayF) String() string {
 	return strings.Join(strs, " ")
 }
 
-// MarshalXML 实现 xml.Marshaler 接口
-func (s StArrayF) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	content := s.String()
-	return e.EncodeElement(content, start)
-}
-
-// MarshalXMLAttr 实现 xml.MarshalerAttr 接口
-func (s StArrayF) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	content := s.String()
-	return xml.Attr{
-		Name:  name,
-		Value: content,
-	}, nil
-}
-
 type StArrayI []int
 
 // UnmarshalXML 实现 xml.Unmarshaler 接口
@@ -185,19 +170,4 @@ func (s StArrayI) String() string {
 		strs[i] = strconv.Itoa(v)
 	}
 	return strings.Join(strs, " ")
-}
-
-// MarshalXML 实现 xml.Marshaler 接口
-func (s StArrayI) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	content := s.String()
-	return e.EncodeElement(content, start)
-}
-
-// MarshalXMLAttr 实现 xml.MarshalerAttr 接口
-func (s StArrayI) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	content := s.String()
-	return xml.Attr{
-		Name:  name,
-		Value: content,
-	}, nil
 }

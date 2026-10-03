@@ -164,13 +164,6 @@ func (b *StBox) UnmarshalXMLAttr(attr xml.Attr) error {
 	return b.parseFromString(attr.Value)
 }
 
-// MarshalXML 将盒子区域编码为 XML 元素文本。
-func (p *StBox) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	// 格式化为"X Y Width Height"字符串
-	value := fmt.Sprintf("%g %g %g %g", p.X, p.Y, p.Width, p.Height)
-	return e.EncodeElement(value, start)
-}
-
 // String 返回按 X、Y、Width、Height 顺序排列的字符串表示。
 func (p *StBox) String() string {
 	return fmt.Sprintf("%g %g %g %g", p.X, p.Y, p.Width, p.Height)

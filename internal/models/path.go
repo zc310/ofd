@@ -89,15 +89,6 @@ func (p *SVGPath) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return nil
 }
 
-// MarshalXML 将路径命令编码为 XML 元素文本。
-func (p SVGPath) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	// 构建路径字符串
-	pathStr := p.String()
-
-	// 编码为XML
-	return e.EncodeElement(pathStr, start)
-}
-
 // pathTokens 路径数据的令牌视图。对纯 ASCII 数据使用偏移表按需切片，
 // 避免 strings.Fields 为每个坐标分配字符串头；含非 ASCII 字节时回退到
 // strings.Fields 以保持与拆分语义一致。
