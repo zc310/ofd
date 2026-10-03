@@ -69,12 +69,24 @@ type FileInfo struct {
 	Algorithm string `json:"algorithm"`
 }
 
+// FeatureSummary 是包内 OFD 要素的清点结果，用于生成检查提示与符合性矩阵的
+// 判断依据，不是合规判定——判定见 pkg/validator 的 profile 规则。
+//
+// 统计只认 OFD 命名空间下的真实元素，口径与 profile 规则对齐，避免同一文件在
+// 两个工具下得出相反结论。
 type FeatureSummary struct {
-	Actions    int `json:"actions,omitempty"`
-	Audio      int `json:"audio,omitempty"`
-	Video      int `json:"video,omitempty"`
-	Media      int `json:"media,omitempty"`
+	// Actions 是 Actions 容器内 Action 元素的总数，含文档、页面、大纲与批注。
+	Actions int `json:"actions,omitempty"`
+	// Audio 是 MultiMedia 元素中 Type="Audio" 的数量。
+	Audio int `json:"audio,omitempty"`
+	// Video 是 MultiMedia 元素中 Type="Video" 的数量。
+	Video int `json:"video,omitempty"`
+	// Media 是 MultiMedia 元素总数，含图像、音频与视频。
+	Media int `json:"media,omitempty"`
+	// Encryption 是包内是否存在 Encryptions.xml，为 0 或 1。OFD 用该文件表达
+	// 加密，文档 XML 中没有对应元素。
 	Encryption int `json:"encryption,omitempty"`
+	// Extensions 是 Extension 元素的数量。
 	Extensions int `json:"extensions,omitempty"`
 }
 

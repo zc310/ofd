@@ -9,7 +9,11 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/spec"
 )
+
+// encryptionsFile 是 OFD 表达加密的文件名，见 GB/T 33190 的包内结构。
+const encryptionsFile = "Encryptions.xml"
 
 func scanFeatures(filename string, maxXMLBytes int64) (FeatureSummary, error) {
 	packageReader, err := openPackage(filename)
@@ -20,6 +24,12 @@ func scanFeatures(filename string, maxXMLBytes int64) (FeatureSummary, error) {
 	var summary FeatureSummary
 	var scanErr error
 	err = packageReader.WalkEntries(func(entry core.Entry) bool {
+		// 加密在 OFD 里由包内 Encryptions.xml 表达，文档 XML 中没有对应元素。
+		// 早先的实现匹配 encrypt/encryption/encrypteddoc 三种元素名，而三者
+		// 都不在 OFD 模式中，该计数对合规文件恒为 0。
+		if !entry.IsDir && strings.EqualFold(filepath.Base(entry.Path), encryptionsFile) {
+			summary.Encryption = 1
+		}
 		if entry.IsDir || filepath.Ext(entry.Path) != ".xml" {
 			return true
 		}
@@ -47,6 +57,13 @@ func scanFeatures(filename string, maxXMLBytes int64) (FeatureSummary, error) {
 	return summary, nil
 }
 
+// scanXML 统计包内 XML 的 OFD 要素。统计口径与 pkg/validator 的 profile 规则
+// 对齐，只认 OFD 命名空间下的真实元素，避免两处结论相反。
+//
+// 早前的实现用元素名直接匹配且不限定命名空间，因此有两类问题：一是 audio、
+// video、media、encrypt 等元素名在 OFD 模式中根本不存在（多媒体由 MultiMedia
+// 表达、加密由 Encryptions.xml 表达），这些计数对合规文件恒为 0；二是包内若有
+// 其它命名空间的同名元素（内嵌 SVG、自定义 XML 等）会被误计。
 func scanXML(reader io.Reader, summary *FeatureSummary, maxXMLBytes int64) error {
 	var limited *io.LimitedReader
 	if maxXMLBytes > 0 && maxXMLBytes < int64(^uint64(0)>>1) {
@@ -54,6 +71,9 @@ func scanXML(reader io.Reader, summary *FeatureSummary, maxXMLBytes int64) error
 		reader = limited
 	}
 	decoder := xml.NewDecoder(reader)
+	// actionDepth 记录当前嵌套在几个 Actions 容器内：动作只统计 Actions 下的
+	// Action，不把任意同名元素算进去。
+	actionDepth := 0
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
@@ -65,26 +85,51 @@ func scanXML(reader io.Reader, summary *FeatureSummary, maxXMLBytes int64) error
 		if err != nil {
 			return err
 		}
-		start, ok := token.(xml.StartElement)
-		if !ok {
-			continue
-		}
-		local := strings.ToLower(start.Name.Local)
-		switch local {
-		case "action":
-			summary.Actions++
-		case "audio":
-			summary.Audio++
-		case "video":
-			summary.Video++
-		case "media":
-			summary.Media++
-		case "encrypt", "encryption", "encrypteddoc":
-			summary.Encryption++
-		case "extension", "extensions":
-			summary.Extensions++
+		switch element := token.(type) {
+		case xml.StartElement:
+			if element.Name.Space != spec.Namespace {
+				// 跳过整个子树，其 EndElement 不会上抛，actionDepth 不会失衡。
+				if err := decoder.Skip(); err != nil {
+					return err
+				}
+				continue
+			}
+			switch element.Name.Local {
+			case "Actions":
+				actionDepth++
+			case "Action":
+				if actionDepth > 0 {
+					summary.Actions++
+				}
+			case "MultiMedia":
+				// 多媒体在 OFD 中是带 Type 属性的 MultiMedia 元素，没有独立的
+				// audio/video/media 元素。
+				summary.Media++
+				switch strings.TrimSpace(xmlAttrValue(element.Attr, "Type")) {
+				case "Audio":
+					summary.Audio++
+				case "Video":
+					summary.Video++
+				}
+			case "Extension":
+				summary.Extensions++
+			}
+		case xml.EndElement:
+			if element.Name.Local == "Actions" && actionDepth > 0 {
+				actionDepth--
+			}
 		}
 	}
+}
+
+// xmlAttrValue 返回指定属性值。
+func xmlAttrValue(attributes []xml.Attr, name string) string {
+	for _, attribute := range attributes {
+		if attribute.Name.Local == name {
+			return attribute.Value
+		}
+	}
+	return ""
 }
 
 func extractAttachments(input, output string, attachments []Attachment, maxSize int64) ([]Attachment, []Issue, error) {
