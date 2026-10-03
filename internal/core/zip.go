@@ -75,6 +75,7 @@ type Package struct {
 }
 
 func newPackage(reader *zip.Reader, closer io.Closer) *Package {
+	registerDecompressor(reader)
 	return &Package{reader: reader, closer: closer, token: &packageToken{}}
 }
 
