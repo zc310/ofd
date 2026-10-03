@@ -165,36 +165,11 @@ func (p *CT_VPreferences) UnmarshalXML(d *xml.Decoder, start xml.StartElement) e
 // PageMode 文档打开时的页面显示模式。
 type PageMode string
 
-const (
-	// PageModeNone 使用默认页面显示模式。
-	PageModeNone PageMode = "None"
-	// PageModeFullScreen 以全屏模式显示文档。
-	PageModeFullScreen PageMode = "FullScreen"
-	// PageModeUseOutlines 显示文档大纲面板。
-	PageModeUseOutlines PageMode = "UseOutlines"
-	// 其他页面显示模式由 OFD 规范定义。
-)
-
 // PageLayout 文档打开时的页面布局方式。
 type PageLayout string
 
-const (
-	// PageLayoutOneColumn 以单列方式显示页面。
-	PageLayoutOneColumn PageLayout = "OneColumn"
-	// PageLayoutTwoPageL 以双页方式显示页面，页面从左向右排列。
-	PageLayoutTwoPageL PageLayout = "TwoPageL"
-	// 其他页面布局方式由 OFD 规范定义。
-)
-
 // TabDisplay 文档标签中显示的标题类型。
 type TabDisplay string
-
-const (
-	// TabDisplayDocTitle 在标签中显示文档标题。
-	TabDisplayDocTitle TabDisplay = "DocTitle"
-	// TabDisplayFileName 在标签中显示文件名。
-	TabDisplayFileName TabDisplay = "FileName"
-)
 
 // ZoomSetting 文档打开时的页面缩放设置。
 type ZoomSetting struct {

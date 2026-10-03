@@ -129,19 +129,6 @@ func (s *StArrayF) parsePlainSequence(str string) error {
 	return nil
 }
 
-// 转换为普通字符串
-func (s StArrayF) String() string {
-	if len(s) == 0 {
-		return ""
-	}
-
-	strs := make([]string, len(s))
-	for i, v := range s {
-		strs[i] = strconv.FormatFloat(v, 'f', -1, 64)
-	}
-	return strings.Join(strs, " ")
-}
-
 type StArrayI []int
 
 // UnmarshalXML 实现 xml.Unmarshaler 接口
@@ -183,17 +170,4 @@ func (s *StArrayI) parseMixedSequence(str string) error {
 
 	*s = result
 	return nil
-}
-
-// 转换为普通字符串
-func (s StArrayI) String() string {
-	if len(s) == 0 {
-		return ""
-	}
-
-	strs := make([]string, len(s))
-	for i, v := range s {
-		strs[i] = strconv.Itoa(v)
-	}
-	return strings.Join(strs, " ")
 }
