@@ -461,6 +461,12 @@ func (p *Document) forgetPageResources(page *Page) {
 }
 
 func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Page) {
+	// 页面没有任何页面级资源（只用文档级资源）时无事可做。大文档每次淘汰页面
+	// 都会走到这里，若仍分配 O(页数) 的替换表切片，会成为页面加载的主要分配。
+	if len(resources.media) == 0 && len(resources.drawParams) == 0 && len(resources.fonts) == 0 &&
+		len(resources.colorSpaces) == 0 && len(resources.composites) == 0 {
+		return
+	}
 	used := make([]pageResources, 0, len(p.Pages))
 	for _, page := range p.Pages {
 		if page == nil || page == excluded {
@@ -631,9 +637,20 @@ func (p *Document) ensurePageLoaded(page *Page) error {
 
 func (p *Document) parse(body models.DocBody) error {
 	var err error
-	if err = p.FileCache.ReadXML(body.DocRoot.Resolve("/").String(), &p.Document); err != nil {
+	docPath := body.DocRoot.Resolve("/").String()
+	var docLimit int64
+	if entry, ok := p.FileCache.Lookup(docPath); ok {
+		docLimit = xmlReadLimit(entry.UncompressedSize)
+	}
+	docData, err := p.FileCache.ReadLimit(docPath, docLimit)
+	if err != nil {
+		return fmt.Errorf("读取 XML 文件失败: %w", err)
+	}
+	document, err := models.ParseDocumentXML(docData)
+	if err != nil {
 		return err
 	}
+	p.Document = *document
 	p.Pages = make([]*Page, 0, len(p.Document.Pages.Pages))
 	for _, page := range p.Document.Pages.Pages {
 		pageDef := page
