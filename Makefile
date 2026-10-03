@@ -54,8 +54,8 @@ GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG)"
 VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 WASM_OPT ?= wasm-opt
 WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers
-DIST_DIR := dist
-BUILD_DIR := .build
+DIST_DIR := /tmp/ofd/dist
+BUILD_DIR := /tmp/ofd/.build
 BIN_DIR := $(BUILD_DIR)/bin/$(PLATFORM)
 PACKAGE_DIR := $(BUILD_DIR)/packages/$(PLATFORM)
 
