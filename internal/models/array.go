@@ -44,6 +44,12 @@ func (s *StArrayF) parseString(str string) error {
 
 // 解析混合序列
 func (s *StArrayF) parseMixedSequence(str string) error {
+	// 绝大多数输入是不含 g 展开标记的浮点序列（DashPattern、DeltaX/DeltaY 等）。
+	// 走快速路径：预分配结果并按 token 数一次写满，避免 append 扩容。
+	if strings.IndexByte(str, 'g') < 0 {
+		return s.parsePlainSequence(str)
+	}
+
 	var result StArrayF
 	parts := strings.Fields(str)
 
@@ -104,6 +110,25 @@ func (s *StArrayF) parseMixedSequence(str string) error {
 	return nil
 }
 
+// parsePlainSequence 解析不含 g 展开标记的浮点序列。预分配结果切片，按下标写入，
+// 避免 strings.Fields 之后逐次 append 的多次分配与拷贝。
+func (s *StArrayF) parsePlainSequence(str string) error {
+	parts := strings.Fields(str)
+	if len(parts) > stArrayFMaxElements {
+		return fmt.Errorf("数组元素数量超过上限 %d", stArrayFMaxElements)
+	}
+	result := make(StArrayF, len(parts))
+	for i, p := range parts {
+		v, err := parseFiniteFloat(p, "数组元素")
+		if err != nil {
+			return fmt.Errorf("无效的浮点数 %q: %w", p, err)
+		}
+		result[i] = v
+	}
+	*s = result
+	return nil
+}
+
 // 转换为普通字符串
 func (s StArrayF) String() string {
 	if len(s) == 0 {
@@ -147,8 +172,9 @@ func (s *StArrayI) parseString(str string) error {
 
 // 解析混合序列
 func (s *StArrayI) parseMixedSequence(str string) error {
-	var result StArrayI
 	parts := strings.Fields(str)
+	// 预分配：token 数是结果元素数的上界（非法 token 会被跳过），避免 append 扩容。
+	result := make(StArrayI, 0, len(parts))
 	for _, p := range parts {
 		if v, err := strconv.Atoi(p); err == nil {
 			result = append(result, v)
