@@ -38,6 +38,7 @@ type options struct {
 	pretty        bool
 	skipXSD       bool
 	noDigest      bool
+	docType       string
 	noScanXML     bool
 	failOnWarning bool
 	version       bool
@@ -78,6 +79,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		validator.WithMaxXMLDepth(opts.maxXMLDepth),
 		validator.WithSkipXSD(opts.skipXSD),
 		validator.WithCheckDigest(!opts.noDigest),
+		validator.WithDocType(opts.docType),
 		validator.WithScanXML(!opts.noScanXML),
 		validator.WithFailOnWarning(opts.failOnWarning),
 	}
@@ -154,6 +156,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.IntVar(&opts.maxXMLDepth, "max-xml-depth", opts.maxXMLDepth, "单个 XML 文件的最大嵌套深度")
 	flags.BoolVar(&opts.pretty, "pretty", false, "缩进 JSON 输出")
 	flags.BoolVar(&opts.skipXSD, "skip-xsd", false, "跳过 XSD 校验；等价于 structural 模式的 XSD 阶段")
+	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-creator --doc-type 同义")
 	flags.BoolVar(&opts.noDigest, "no-digest", false, "跳过签名摘要校验")
 	flags.BoolVar(&opts.noScanXML, "no-scan-xml", false, "只解析由 OFD 引用到的 XML 文件")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")

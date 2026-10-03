@@ -104,6 +104,7 @@ ofd-validator -o report.xlsx document.ofd
 | `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
 | `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
 | `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
+| `--doc-type OFD\|OFD-A\|OFD-H`      | 自动        | 额外校验的 OFD profile；留空时按文档声明的 `DocType` 自动判定。与 `ofd-creator --doc-type` 同义，注意与 `ofd-archive --profile`（档案元数据 profile 文件）无关 |
 | `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |
 | `--max-errors N`                     | `100`       | 最多记录的校验错误数量；`0` 表示不限制                 |
 | `--max-input-size BYTES`             | `536870912` | ZIP 原始输入数据的最大字节数，即 512 MiB               |
@@ -117,6 +118,44 @@ ofd-validator -o report.xlsx document.ofd
 | `-h`, `--help`                       | 关闭        | 显示命令帮助                                           |
 
 大小参数使用字节数，不支持 `64M`、`512M` 等单位后缀。限制参数不能为负数。
+
+## OFD profile 校验
+
+文件在 `OFD.xml` 根节点声明的 `DocType` 决定了按哪套 profile 规则校验：
+
+```text
+OFD     基础版式文档（GB/T 33190—2016），不做 profile 校验
+OFD-A   档案长期保存（GB/T 42133—2022《信息技术 OFD档案应用指南》）
+OFD-H   电子病历版式文档（GB/T 48666-2026《电子病历版式文档技术要求》，征求意见稿）
+```
+
+声明 `OFD-A` 即表示该文件承诺满足 GB/T 42133，校验器会自动应用对应规则，不需要额外参数。`OFD-H` 继承 `OFD-A` 的全部规则，因为电子病历标准声明其数据内容与组织应符合 GB/T 42133。
+
+用 `--doc-type` 可以在不改写文件 `DocType` 的前提下预检，例如检查一份基础 OFD 是否已满足长期保存要求：
+
+```bash
+ofd-validator --doc-type OFD-A --mode strict input.ofd
+```
+
+报告的 `profile` 字段给出本次实际应用的 profile——它是「按哪套规则校验的」，未必等于文件声明的值：用 `--doc-type OFD-A` 预检基础 OFD 时该字段为 `OFD-A`，文件本身仍声明 `OFD`。JSON 输出中的 `checks` 会包含名为 `profile` 的检查项。当前实现的规则：
+
+| 问题码                                       | 依据                    | 内容                             |
+|----------------------------------------------|-------------------------|----------------------------------|
+| `profile.<p>.single_document`                 | GB/T 42133 6.2.1 c)     | 归档文件不使用多文档机制         |
+| `profile.<p>.encrypted`                       | GB/T 42133 6.16         | 长期保存文件不含加密选项         |
+| `profile.<p>.permissions_present`             | GB/T 42133 6.2.2 a)     | `Document.xml` 不含权限声明      |
+| `profile.<p>.vpreferences_present`            | GB/T 42133 6.2.2 b)     | `Document.xml` 不含视图首选项    |
+| `profile.<p>.extensions_present`              | GB/T 42133 6.2.2 e)     | `Document.xml` 不含扩展信息      |
+| `profile.<p>.document_action_not_goto`        | GB/T 42133 6.2.2 c)     | 文档动作仅保留文档内跳转         |
+| `profile.<p>.page_action_not_goto`            | GB/T 42133 6.2.3 c)     | 页面动作仅保留文档内跳转         |
+| `profile.<p>.outline_action_not_goto`         | GB/T 42133 6.2.5 a)     | 大纲节点动作仅保留文档内跳转     |
+| `profile.<p>.image_format`                    | GB/T 42133 6.2.6 e)     | 栅格图像限六种格式               |
+| `profile.<p>.colorspace_type`                 | GB/T 42133 6.3.1 b)     | 颜色空间限灰度、RGB、CMYK        |
+| `profile.<p>.pageblock_depth`                 | GB/T 42133 6.2.3 e)     | 页面块嵌套不超过 3 层            |
+
+`<p>` 是 profile 取值的小写下划线形式（`ofd_a`、`ofd_h`）。
+
+GB/T 42133 中「去除×××」一类条款本质是转换动作而非合规条件，校验器只判定并上报「有 ×× 但 profile 不允许」，不修改文档；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款暂未实现。`OFD-H` 目前只继承 `OFD-A` 的规则，GB/T 48666-2026 目前为征求意见稿，条款可能变化。
 
 ## 报告格式
 

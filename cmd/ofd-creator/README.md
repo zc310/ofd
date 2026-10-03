@@ -277,6 +277,40 @@ ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
 - 保留原始命名空间风格：默认 `xmlns` 文档的水印使用无前缀元素，`xmlns:ofd` 文档的新增索引/页面文件以及 `--appearance` 原始外观片段均套用 `ofd` 前缀；无既有注解索引时从 `Document.xml` 根元素继承前缀。自备外观片段无法解析时直接报错，不会静默写成空 `<Appearance/>`。
 - 水印编辑逻辑以库的形式公开在 `pkg/watermark`：`Add`、`Replace`、`Remove` 三个函数接收任意输入（路径/字节/`io.Reader`/`*core.Package`）与 `Target`，外观自动分配 ID；`Watermark.Appearance` 可直接放入原始 XML 片段，或用 `watermark.TextAppearance`/`watermark.ImageAppearance` 生成平铺/居中的文字或图片外观（`TextOptions.Rotation` 指定文字旋转角度，`TextOptions.CTM` 直接透传变换矩阵、优先级更高）；`Watermark.Image` 提供图片水印的资源嵌入能力。
 
+## OFD profile（DocType）
+
+`OFD.xml` 根节点的 `DocType` 属性声明文档遵循的 profile，取值区分大小写：
+
+```text
+OFD     基础版式文档（GB/T 33190—2016），默认值
+OFD-A   档案长期保存（GB/T 42133—2022《信息技术 OFD档案应用指南》）
+OFD-H   电子病历版式文档（GB/T 48666-2026《电子病历版式文档技术要求》，征求意见稿）
+```
+
+GB/T 33190 把该属性固定为 `OFD`，后两份标准在它之上把取值收紧为 `OFD-A` 与 `OFD-H`，因此生成这两类文件必须显式声明。`OFD-A` 与 `OFD-H` 是标准之间的叠加关系：`OFD-H` 在 `OFD-A` 的基础上追加医疗领域要求。
+
+取值来源有两处，命令行优先：
+
+```bash
+# 命令行指定
+ofd-creator -i document.yaml -o result.ofd --doc-type OFD-A
+
+# 或在 manifest 的 document 下声明
+```
+
+```yaml
+version: 1
+document:
+  id: archive-001
+  doc_type: OFD-A
+```
+
+两处都留空时使用 `OFD`。传入未知取值（包括大小写错误，如 `ofd-a`）会报错并列出可用取值，不会静默写入。
+
+`ofd-creator export` 在导出 manifest 时会保留非基础取值，因此 `export` 后再 `ofd-creator` 重建不会把 profile 退回 `OFD`。
+
+`--validate` 会按生成的 `DocType` 自动应用对应校验：`OFD-A` 与 `OFD-H` 除 GB/T 33190 基础模式与 XSD 外，还会执行 [ofd-validator 的 profile 规则](ofd-validator/README.md#ofd-profile-校验)。但标准的「去除×××」一类条款本质是转换动作而非合规条件，归档处理流水线负责，校验器只判定并上报；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款也尚未实现。
+
 ## 压缩策略
 
 ```text

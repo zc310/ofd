@@ -37,6 +37,14 @@ ofd-archive verify archive-directory/
 
 使用 profile 时，将 `--profile profile.json` 加到 `prepare` 或 `manifest` 命令中；profile 文件会在 `prepare` 结果的 `metadata/` 中原样保存并纳入固定性清单。
 
+`--profile` 只用于档案字段，与 OFD 的 profile 无关。指定 OFD profile 用 `--doc-type`：
+
+```bash
+ofd-archive check --doc-type OFD-A document.ofd
+```
+
+`--doc-type` 与 [ofd-validator](ofd-validator/README.md#ofd-profile-校验)、`ofd-creator` 同义，取 `OFD`、`OFD-A` 或 `OFD-H`，留空时按文件声明的 `DocType` 自动判定。本工具面向 GB/T 42133 的归档预检场景，因此对声明 `OFD-A` 的文件会自动应用该标准的 profile 规则；`--doc-type` 用于在不改写文件 `DocType` 的前提下预检一份基础 OFD 是否已满足长期保存要求。规则只判定并上报，不修改文档。
+
 准备目录结构：
 
 ```text

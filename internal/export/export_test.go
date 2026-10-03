@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/creator"
 	"go.yaml.in/yaml/v3"
 )
@@ -561,5 +563,53 @@ func TestExportPreservesPageResourceXMLAndFiles(t *testing.T) {
 	}
 	if len(document.Pages[0].Resources) != 1 || string(document.Pages[0].Resources[0].Data) == "" || len(document.Pages[0].Resources[0].Files) != 1 {
 		t.Fatalf("built page resource was not preserved: %+v", document.Pages[0].Resources)
+	}
+}
+
+// TestExportPreservesProfileDocType 保护 export 保留非基础 DocType：往返
+// export → manifest → ofd-creator 会经过 manifest 落地，漏掉该字段会把档案
+// 长期保存文件悄悄退回基础 profile。
+func TestExportPreservesProfileDocType(t *testing.T) {
+	for _, docType := range spec.DocTypes {
+		t.Run(docType, func(t *testing.T) {
+			data, err := creator.MarshalWithOptions(creator.Document{
+				ID:       "export-doc-type",
+				Title:    "导出 DocType",
+				PageSize: creator.A4,
+				Pages: []creator.Page{{Items: []creator.Item{
+					creator.Text{X: 20, Y: 30, Width: 100, Height: 10, Value: "内容", Font: "SimSun"},
+				}}},
+			}, creator.CreateOptions{Compression: creator.CompressionAuto, DocType: docType})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := filepath.Join(t.TempDir(), "input.ofd")
+			if err := os.WriteFile(input, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := WriteManifest(input, &output, Options{AssetRoot: t.TempDir()}); err != nil {
+				t.Fatal(err)
+			}
+			manifestPath := filepath.Join(t.TempDir(), "document.yaml")
+			if err := os.WriteFile(manifestPath, output.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, _, err := manifest.Load(manifestPath, "yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := loaded.Document.DocType
+			if docType == spec.DocTypeOFD {
+				// 基础 profile 是默认值，不写字段以保持 manifest 简洁。
+				if got != "" {
+					t.Fatalf("基础 profile 的 doc_type = %q, want 空", got)
+				}
+				return
+			}
+			if got != docType {
+				t.Fatalf("doc_type = %q, want %q", got, docType)
+			}
+		})
 	}
 }

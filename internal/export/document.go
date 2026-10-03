@@ -13,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/spec"
 )
 
 // errSkipAction 表示在批注外观转换中跳过目标页面缺失的无效动作。
@@ -20,6 +21,12 @@ var errSkipAction = errors.New("跳转引用目标页面不存在")
 
 func (e *documentExporter) documentInfo() (manifest.Document, error) {
 	info := manifest.Document{}
+	// DocType 是 OFD.xml 根节点的属性而非 DocInfo 内容，但同样属于文档级声明，
+	// 必须一并导出，否则 export → manifest → create 的往返会把它退回基础
+	// profile。基础 profile 是默认值，省略不写以保持 manifest 简洁。
+	if docType := strings.TrimSpace(e.ofd.DocType); docType != "" && docType != spec.DocTypeOFD {
+		info.DocType = docType
+	}
 	if err := e.prepareAttachmentIDs(); err != nil {
 		return manifest.Document{}, err
 	}

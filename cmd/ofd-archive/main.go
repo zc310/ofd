@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/archive"
 	"github.com/zc310/ofd/pkg/validator"
@@ -29,6 +30,7 @@ type options struct {
 	output            string
 	metadata          string
 	profile           string
+	docType           string
 	format            string
 	formatSet         bool
 	pretty            bool
@@ -164,7 +166,8 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags := root.PersistentFlags()
 	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；prepare 使用它作为归档目录")
 	flags.StringVar(&opts.metadata, "metadata", "", "档案著录元数据 JSON/YAML 文件")
-	flags.StringVar(&opts.profile, "profile", "", "档案字段 profile JSON/YAML 文件")
+	flags.StringVar(&opts.profile, "profile", "", "档案字段 profile JSON/YAML 文件；与 --doc-type 无关")
+	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-validator --doc-type 同义")
 	flags.StringVar(&opts.format, "format", opts.format, "输出格式：text、json、markdown 或 xlsx")
 	flags.BoolVar(&opts.pretty, "pretty", false, "缩进 JSON 输出")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
@@ -241,6 +244,9 @@ func (opts *options) formatFlagChanged(root *cobra.Command) bool {
 }
 
 func validateOptions(opts *options) error {
+	if docType := strings.TrimSpace(opts.docType); docType != "" && !spec.IsDocType(docType) {
+		return fmt.Errorf("不支持的 OFD profile %q，可用取值: %s", opts.docType, strings.Join(spec.DocTypes, "、"))
+	}
 	if opts.command == "matrix" && !opts.formatSet && strings.EqualFold(filepath.Ext(opts.output), ".xlsx") {
 		opts.format = "xlsx"
 	}
@@ -293,7 +299,7 @@ func validateOptions(opts *options) error {
 }
 
 func makeArchiveOptions(opts *options) archive.Options {
-	return archive.Options{ValidatorOptions: []validator.Option{validator.WithMode(validator.Mode(opts.mode)), validator.WithMaxErrors(opts.maxErrors), validator.WithMaxInputSize(opts.maxInputSize), validator.WithMaxFileSize(opts.maxFileSize), validator.WithMaxTotalSize(opts.maxTotalSize), validator.WithMaxEntries(opts.maxEntries), validator.WithMaxXMLBytes(opts.maxXMLBytes), validator.WithMaxXMLNodes(opts.maxXMLNodes), validator.WithMaxXMLDepth(opts.maxXMLDepth), validator.WithSkipXSD(opts.skipXSD), validator.WithCheckDigest(!opts.noDigest), validator.WithScanXML(!opts.noScanXML)}, FailOnWarning: opts.failOnWarning, MaxAttachmentSize: opts.maxAttachmentSize, MaxXMLBytes: opts.maxXMLBytes}
+	return archive.Options{ValidatorOptions: []validator.Option{validator.WithMode(validator.Mode(opts.mode)), validator.WithMaxErrors(opts.maxErrors), validator.WithMaxInputSize(opts.maxInputSize), validator.WithMaxFileSize(opts.maxFileSize), validator.WithMaxTotalSize(opts.maxTotalSize), validator.WithMaxEntries(opts.maxEntries), validator.WithMaxXMLBytes(opts.maxXMLBytes), validator.WithMaxXMLNodes(opts.maxXMLNodes), validator.WithMaxXMLDepth(opts.maxXMLDepth), validator.WithSkipXSD(opts.skipXSD), validator.WithCheckDigest(!opts.noDigest), validator.WithScanXML(!opts.noScanXML), validator.WithDocType(opts.docType)}, FailOnWarning: opts.failOnWarning, MaxAttachmentSize: opts.maxAttachmentSize, MaxXMLBytes: opts.maxXMLBytes}
 }
 
 func runVerify(opts *options, stdout, stderr io.Writer) int {

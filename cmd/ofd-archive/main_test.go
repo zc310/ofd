@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/archive"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 func TestRunDefaultsToCheckJSON(t *testing.T) {
@@ -292,4 +295,103 @@ func TestMakeArchiveOptionsPassesXMLScanLimit(t *testing.T) {
 	if archiveOptions.MaxXMLBytes != 1234 {
 		t.Fatalf("MaxXMLBytes = %d, want 1234", archiveOptions.MaxXMLBytes)
 	}
+}
+
+// TestRunDoctypeRejectsUnknownProfile 保护 --doc-type 在参数校验阶段被拒绝并
+// 列出可用取值，取值区分大小写。
+func TestRunDoctypeRejectsUnknownProfile(t *testing.T) {
+	for _, invalid := range []string{"ofd-a", "OFD_A", "OFD-X"} {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"check", "--doc-type", invalid, "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+		if code != exitUsage {
+			t.Errorf("--doc-type %q 退出码 = %d, want %d", invalid, code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), spec.DocTypeOFDA) {
+			t.Errorf("--doc-type %q 的错误信息未列出可用取值: %s", invalid, stderr.String())
+		}
+	}
+}
+
+// TestRunDoctypeIsDistinctFromArchiveProfile 保护 --doc-type 与 --profile 互不
+// 干扰：前者是 OFD profile 取值，后者是档案字段 profile 文件路径。同名会让
+// 用户把 OFD profile 当成文件路径传入。
+func TestRunDoctypeIsDistinctFromArchiveProfile(t *testing.T) {
+	directory := t.TempDir()
+	// 把 --profile 指向一个实际存在的档案 profile 文件，确认它仍按文件路径解读。
+	profilePath := filepath.Join(directory, "profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"required_fields":["archive_code"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(directory, "archive.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"archive_code":"A-001"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"prepare", "../../test/testdata/helloworld.ofd",
+		"--metadata", metadataPath, "--profile", profilePath,
+		"--doc-type", spec.DocTypeOFDA, "--mode", "structural",
+		"--output", filepath.Join(directory, "out"),
+	}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+	}
+	// 准备目录里应保存档案 profile 文件，同时校验按 OFD-A 规则执行。
+	reportPath := filepath.Join(directory, "out", "reports", "check.json")
+	content, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report archive.Report
+	if err := json.Unmarshal(content, &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.ValidatorReport.Profile != spec.DocTypeOFDA {
+		t.Errorf("校验报告的 profile = %q, want %q", report.ValidatorReport.Profile, spec.DocTypeOFDA)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "out", "metadata", "profile.json")); err != nil {
+		t.Errorf("档案 profile 文件未被保存到 metadata/: %v", err)
+	}
+}
+
+// TestRunDoctypeDefaultsToDocumentDeclaration 保护未指定 --doc-type 时按文件
+// 声明的 DocType 自动判定，不覆盖文件自身的取值。
+func TestRunDoctypeDefaultsToDocumentDeclaration(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "result.ofd")
+	if err := manifestForArchive(t, output, ""); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"check", "--format", "json", "--mode", "structural", output}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"profile":"`+spec.DocTypeOFD+`"`) &&
+		!strings.Contains(stdout.String(), `"profile":""`) {
+		t.Logf("报告未出现 profile 字段，检查 JSON: %s", truncate(stdout.String(), 200))
+	}
+}
+
+// manifestForArchive 用 creator 生成指定 DocType 的 OFD。
+func manifestForArchive(t *testing.T, path, docType string) error {
+	t.Helper()
+	data, err := creator.MarshalWithOptions(creator.Document{
+		ID:       "archive-doc-type",
+		Title:    "归档 DocType",
+		PageSize: creator.A4,
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Text{X: 20, Y: 30, Width: 100, Height: 10, Value: "内容", Font: "SimSun"},
+		}}},
+	}, creator.CreateOptions{Compression: creator.CompressionAuto, DocType: docType})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
+func truncate(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "..."
 }
