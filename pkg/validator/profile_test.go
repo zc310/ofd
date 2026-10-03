@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -395,7 +398,13 @@ func TestProfileRuleImageFormat(t *testing.T) {
 // injectImageResource 注入一张被页面引用的栅格图像，extension 只给扩展名。
 func injectImageResource(t *testing.T, extension string) []byte {
 	t.Helper()
-	data := profileDocTypePackage(t, spec.DocTypeOFDA)
+	return injectImageResourceFor(t, spec.DocTypeOFDA, extension)
+}
+
+// injectImageResourceFor 在指定 DocType 的包里注入一张被页面引用的栅格图像。
+func injectImageResourceFor(t *testing.T, docType, extension string) []byte {
+	t.Helper()
+	data := profileDocTypePackage(t, docType)
 	data = replaceArchiveEntry(t, data,
 		archiveProfileEntry{name: "Doc_0/DocumentRes.xml", content: `<?xml version="1.0" encoding="UTF-8"?>
 <Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"><MultiMedias><MultiMedia ID="9" Type="Image"><MediaFile>Image_0.` + extension + `</MediaFile></MultiMedia></MultiMedias></Res>`},
@@ -442,21 +451,23 @@ func TestProfileRuleOutlineActionOnlyGoto(t *testing.T) {
 	assertProfileCode(t, data, "profile.ofd_a.outline_action_not_goto")
 }
 
-// TestProfileMedicalInheritsArchiveRules 保护 OFD-H 继承 OFD-A 的全部规则：
-// 电子病历标准声明数据内容与组织应符合 GB/T 42133。
+// TestProfileMedicalInheritsArchiveRules 保护 OFD-H 至少继承 OFD-A 的全部规则。
+// OFD-H 可以覆盖父规则（如 image_format 收窄清单）也可以新增自己的规则
+// （如 signature_coverage），但不能丢掉任何一条——那会让电子病历文件绕过
+// GB/T 42133 的归档约束。
 func TestProfileMedicalInheritsArchiveRules(t *testing.T) {
 	archive := profileFor(spec.DocTypeOFDA).resolvedRules()
 	medical := profileFor(spec.DocTypeOFDH).resolvedRules()
 	if len(medical) < len(archive) {
 		t.Fatalf("OFD-H 规则数 %d 少于 OFD-A 的 %d", len(medical), len(archive))
 	}
-	archiveCodes := make(map[string]bool, len(archive))
-	for _, rule := range archive {
-		archiveCodes[rule.Code] = true
-	}
+	medicalCodes := make(map[string]bool, len(medical))
 	for _, rule := range medical {
-		if !archiveCodes[rule.Code] {
-			t.Errorf("OFD-H 规则 %q 不在 OFD-A 规则集中", rule.Code)
+		medicalCodes[rule.Code] = true
+	}
+	for _, rule := range archive {
+		if !medicalCodes[rule.Code] {
+			t.Errorf("OFD-A 规则 %q 未被 OFD-H 继承", rule.Code)
 		}
 	}
 	// 同一条违规在两个 profile 下都应被报出，只是问题码前缀不同。
@@ -468,4 +479,178 @@ func TestProfileMedicalInheritsArchiveRules(t *testing.T) {
 
 func containsCode(codes []string, want string) bool {
 	return slices.Contains(codes, want)
+}
+
+// TestProfileImageFormatDiffersByDocType 锁定 GB/T 42133 与 GB/T 48666 的图像
+// 格式清单差异：42133 6.2.6 e) 允许六种（含 JBIG2、JPEG2000），48666 7.2 d)
+// 只允许四种。OFD-H 若直接继承父 profile 的清单，判定就会比 48666 宽松，
+// 只含 JBIG2 的电子病历文件会被误判为合规。
+func TestProfileImageFormatDiffersByDocType(t *testing.T) {
+	for _, testCase := range []struct {
+		extension string
+		archiveOK bool
+		medicalOK bool
+	}{
+		{"png", true, true},
+		{"jpg", true, true},
+		{"tiff", true, true},
+		{"bmp", true, true},
+		{"jbig2", true, false}, // 42133 允许，48666 不允许
+		{"jp2", true, false},   // JPEG2000 同上
+		{"gif", false, false},  // 两者都不允许
+	} {
+		t.Run(testCase.extension, func(t *testing.T) {
+			archiveCodes := profileIssues(t, injectImageResourceFor(t, spec.DocTypeOFDA, testCase.extension))
+			medicalCodes := profileIssues(t, injectImageResourceFor(t, spec.DocTypeOFDH, testCase.extension))
+			if got := containsCode(archiveCodes, "profile.ofd_a.image_format"); got != !testCase.archiveOK {
+				t.Errorf("OFD-A 报出问题=%v，期望=%v（码 %v）", got, !testCase.archiveOK, archiveCodes)
+			}
+			if got := containsCode(medicalCodes, "profile.ofd_h.image_format"); got != !testCase.medicalOK {
+				t.Errorf("OFD-H 报出问题=%v，期望=%v（码 %v）", got, !testCase.medicalOK, medicalCodes)
+			}
+		})
+	}
+}
+
+// TestProfileRuleOverrideReplacesInherited 保护同名规则由子 profile 覆盖而非
+// 叠加：OFD-H 重新声明 image_format 后，OFD-A 的六种清单不应再出现在 OFD-H 的
+// 规则集中，否则同一个码会被执行两次。
+func TestProfileRuleOverrideReplacesInherited(t *testing.T) {
+	seen := map[string]int{}
+	for _, profile := range []*profile{profileFor(spec.DocTypeOFDA), profileFor(spec.DocTypeOFDH)} {
+		counts := map[string]int{}
+		for _, rule := range profile.resolvedRules() {
+			counts[rule.Code]++
+		}
+		for code, count := range counts {
+			if count != 1 {
+				t.Errorf("profile %s 的规则 %q 出现 %d 次，应为 1 次", profile.Name, code, count)
+			}
+		}
+		for code := range counts {
+			seen[code]++
+		}
+	}
+	// image_format 应在两个 profile 中都存在，且各自只有一份实现。
+	if seen["image_format"] != 2 {
+		t.Errorf("image_format 规则在两个 profile 中出现 %d 次，期望 2 次", seen["image_format"])
+	}
+}
+
+// TestProfileInheritsArchiveRuleCount 保护覆盖机制不会把父规则集整体丢掉。
+// OFD-H 覆盖 image_format 并新增 signature_coverage，因此规则数应比 OFD-A 多
+// 恰好一条（覆盖不减数，新增加一）。
+func TestProfileInheritsArchiveRuleCount(t *testing.T) {
+	archive := profileFor(spec.DocTypeOFDA).resolvedRules()
+	medical := profileFor(spec.DocTypeOFDH).resolvedRules()
+	if len(medical) != len(archive)+1 {
+		t.Errorf("OFD-H 规则数 = %d，OFD-A = %d；覆盖一条并新增一条后应多 1", len(medical), len(archive))
+	}
+	archiveCodes := map[string]bool{}
+	for _, rule := range archive {
+		archiveCodes[rule.Code] = true
+	}
+	// OFD-H 新增的规则（signature_coverage）不在 OFD-A 中，属预期。
+	for _, rule := range medical {
+		if !archiveCodes[rule.Code] && rule.Code != "signature_coverage" {
+			t.Errorf("OFD-H 出现非预期的额外规则 %q", rule.Code)
+		}
+	}
+}
+
+// TestProfileSignatureCoverage 对应 GB/T 48666 8 c)：签名保护范围应涵盖除
+// 注释列表与签名列表外的全部内容。用仓库内带签名的样例验证规则既能报出未覆盖
+// 的文件，也不会把签名自身的产物误判为未保护。
+func TestProfileSignatureCoverage(t *testing.T) {
+	original, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "zsbk.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 样例本身声明 OFD-H 之外的基础 profile，改写后才会应用 48666 规则。
+	data := rewriteDocType(t, original, spec.DocTypeOFDH)
+	codes := profileIssues(t, data)
+	if !containsCode(codes, "profile.ofd_h.signature_coverage") {
+		t.Fatalf("带签名的 OFD-H 未报出签名覆盖问题，实际码: %v", codes)
+	}
+
+	// 补齐签名引用后不应再报：把包内除签名自身之外的文件都登记进 References。
+	covered := coverAllPackageFiles(t, data)
+	if codes := profileIssues(t, covered); containsCode(codes, "profile.ofd_h.signature_coverage") {
+		t.Errorf("全部文件已登记进签名 References，仍报出覆盖问题: %v", codes)
+	}
+
+	// OFD-A 不含该规则——GB/T 42133 没有等价条款。
+	if codes := profileIssues(t, data); containsCode(codes, "profile.ofd_a.signature_coverage") {
+		t.Errorf("OFD-A 不应执行签名覆盖规则: %v", codes)
+	}
+}
+
+// coverAllPackageFiles 重写每个 Signature.xml 的 References，把包内全部文件
+// （签名自身产物除外）登记为已签名。
+func coverAllPackageFiles(t *testing.T, data []byte) []byte {
+	t.Helper()
+	source, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	writer := zip.NewWriter(&out)
+	for _, entry := range source.File {
+		content, err := readZipEntry(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasSuffix(entry.Name, "Signature.xml") {
+			content = []byte(withFullReferences(string(content), source))
+		}
+		target, err := writer.CreateHeader(&zip.FileHeader{Name: entry.Name, Method: zip.Deflate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := target.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+// withFullReferences 用包内全部非签名文件重建 References。样例的 Signature.xml
+// 使用 ofd: 前缀，因此按带前缀与不带前缀两种形式匹配闭合标签。
+func withFullReferences(signatureXML string, source *zip.Reader) string {
+	var references strings.Builder
+	for _, entry := range source.File {
+		name := entry.Name
+		base := path.Base(name)
+		// Signature.xml 本身要纳入保护（规则只排除签名列表与签名值），
+		// 签名列表与签名值是签名产物，不在保护范围内。
+		if base == "Signatures.xml" || strings.HasSuffix(base, "SignedValue.dat") ||
+			base == "OFD.xml" {
+			continue
+		}
+		references.WriteString(`<ofd:Reference FileRef="/` + name + `"><ofd:CheckValue>AA==</ofd:CheckValue><ofd:CheckMethod>MD5</ofd:CheckMethod></ofd:Reference>`)
+	}
+	block := "<ofd:References>" + references.String() + "</ofd:References>"
+	if start := strings.Index(signatureXML, "<ofd:References>"); start >= 0 {
+		end := strings.Index(signatureXML, "</ofd:References>") + len("</ofd:References>")
+		return signatureXML[:start] + block + signatureXML[end:]
+	}
+	// 没有 References 时插到 SignedValue 之前，保证是 Signature 的最后一个子元素。
+	for _, closing := range []string{"</ofd:SignedValue>", "</SignedValue>"} {
+		if strings.Contains(signatureXML, closing) {
+			return strings.Replace(signatureXML, closing, block+closing, 1)
+		}
+	}
+	return signatureXML + block
+}
+
+func readZipEntry(entry *zip.File) ([]byte, error) {
+	reader, err := entry.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
 }
