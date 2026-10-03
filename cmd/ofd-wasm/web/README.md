@@ -162,6 +162,21 @@ http://localhost:8080/?file=https%3A%2F%2Fexample.com%2Fsample.ofd&name=%E6%A0%B
 - 跨域地址需要目标服务器返回 `Access-Control-Allow-Origin`，否则浏览器会阻止读取；同源部署（含把 `.ofd` 放在 `web` 目录或其子目录下的静态服务）没有这个限制。
 - 下载失败只提示错误，不会锁死页面：启动页和「打开文件」、拖放入口保持可用。
 
+## 内存诊断面板
+
+页面地址带上 `?debug=1` 时，左上角会出现一个常驻的内存诊断面板，默认隐藏，适合排查大文档、系统字体或长时间浏览时的内存占用：
+
+```text
+http://localhost:8080/?debug=1
+```
+
+- 面板同时显示 **WASM 线性内存（保留）**、Go 运行时的存活堆/已用堆/系统堆/已归还 OS、GC 次数，以及浏览器侧的页面缓存、缩略图缓存、文字缓存、挂载页数和回退字体字节；Chromium 下还会显示 JS 堆。
+- **WASM 线性内存只增不减**：`WebAssembly.Memory` 只支持增长，GC 只把空闲页标记为可复用，不会把地址空间还给浏览器。因此「线性内存（保留）」大于「Go 存活堆」是正常的，面板底部有同样的说明。
+- 面板每 1.5 秒自动刷新，也可手动点「刷新」；点「GC」会触发 `ofd.gc()`（Go `runtime.GC()` + `debug.FreeOSMemory()`），可观察 `heapReleased` 上升但线性内存不变。
+- 拖动标题即可移动面板，位置会记忆到 `localStorage`（`ofd-debug-pos`），窗口尺寸变化时自动夹回视口内。
+- 开关会记忆到 `localStorage`（`ofd-debug`）：`?debug=1` 打开并记住，`?debug=0` 关闭并记住；关闭按钮与控制台的 `window.__debug(true/false)` 也会记住选择。控制台仍可用 `window.__readMemory()` 打印一次完整快照。
+- 修改 `viewer.js`/`worker.js`/`index.html` 后需要重算 `CACHE_NAME`（见下节），否则旧 shell 缓存仍会命中。
+
 ## 资源缓存与更新
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。`service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。

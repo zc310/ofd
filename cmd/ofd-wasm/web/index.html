@@ -134,6 +134,23 @@
       body.dark-reading .about-dialog { background: #252c38; color: #e6ebf2; }
       body.dark-reading .about-dialog::backdrop { background: #17203366; }
       body.dark-reading #version-link { color: #80b4e5; }
+      .debug-panel { position: fixed; top: calc(var(--header-height, 0px) + 10px); left: 10px; z-index: 40; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 640px); overflow: auto; padding: 10px 12px; border: 1px solid #c6cedb; border-radius: 8px; background: #fffffff2; color: #172033; box-shadow: 0 8px 28px #17203340; font-size: 12px; }
+      .debug-panel[hidden] { display: none; }
+      .debug-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #d7dce5; color: #49556a; font-weight: 600; }
+      .debug-drag { cursor: move; user-select: none; touch-action: none; }
+      .debug-panel.dragging { user-select: none; }
+      .debug-actions { display: inline-flex; gap: 4px; }
+      .debug-actions button { min-height: 24px; padding: 1px 7px; font-size: 12px; }
+      .debug-section-title { margin: 8px 0 4px; color: #667188; font-size: 11px; font-weight: 600; }
+      .debug-section-title:first-child { margin-top: 0; }
+      .debug-row { display: flex; gap: 8px; padding: 1px 0; font-variant-numeric: tabular-nums; }
+      .debug-label { flex: 1 1 auto; min-width: 0; color: #667188; }
+      .debug-value { flex: 0 0 auto; color: #172033; }
+      .debug-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid #d7dce5; color: #667188; font-size: 11px; line-height: 1.5; }
+      body.dark-reading .debug-panel { border-color: #536074; background: #252c38f2; color: #e6ebf2; }
+      body.dark-reading .debug-header { border-color: #475365; color: #c6d0dd; }
+      body.dark-reading .debug-section-title, body.dark-reading .debug-label, body.dark-reading .debug-note { color: #aeb9ca; }
+      body.dark-reading .debug-value { color: #e6ebf2; }
      .file-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
     .file-button:hover { background: #4b95dc; }
     #cancel-open[hidden] { display: none; }
@@ -671,6 +688,17 @@
     <span id="render-progress-label" hidden></span>
     <button id="cancel-action" type="button" hidden>取消操作</button>
   </div>
+  <aside id="debug-panel" class="debug-panel" hidden aria-label="内存诊断">
+    <div class="debug-header">
+      <span id="debug-drag" class="debug-drag" title="拖动移动面板">内存诊断</span>
+      <span class="debug-actions">
+        <button id="debug-refresh" type="button" title="刷新">刷新</button>
+        <button id="debug-gc" type="button" title="强制回收 Go 内存">GC</button>
+        <button id="debug-close" type="button" title="关闭" aria-label="关闭">✕</button>
+      </span>
+    </div>
+    <div id="debug-body" class="debug-body"></div>
+  </aside>
   <dialog id="print-dialog" class="print-dialog" aria-labelledby="print-title">
     <form id="print-form" class="print-form">
       <h2 id="print-title">打印范围</h2>
