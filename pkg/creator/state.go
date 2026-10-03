@@ -14,6 +14,7 @@ type buildState struct {
 	pages                  PageProvider
 	pageCount              int
 	completeTextCodeDeltas bool
+	docType                string
 	pageSize               PageSize
 	pageIDs                []uint64
 	templateIDs            []uint64

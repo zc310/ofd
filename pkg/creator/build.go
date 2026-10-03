@@ -512,6 +512,11 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 	if pages == nil {
 		pages = slicePages{pages: document.Pages}
 	}
+	docType, err := normalizeDocType(options.DocType)
+	if err != nil {
+		return nil, err
+	}
+	options.DocType = docType
 	pageCount := pages.PageCount()
 	if !options.PreserveEmbeddedFonts {
 		if err := subsetEmbeddedFonts(&document); err != nil {
@@ -554,6 +559,7 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 		pages:                  pages,
 		pageCount:              pageCount,
 		completeTextCodeDeltas: options.CompleteTextCodeDeltas,
+		docType:                options.DocType,
 		pageSize:               pageSize,
 		drawParamIDs:           make(map[string]uint64),
 		drawParamIndexes:       make(map[string]int),

@@ -33,6 +33,28 @@ type CreateOptions struct {
 	PreserveEmbeddedFonts bool
 	// CompleteTextCodeDeltas 按字体度量自动补全缺失的 DeltaX 和 DeltaY。
 	CompleteTextCodeDeltas bool
+	// DocType 是 OFD.xml 根节点 DocType 属性的取值，留空时使用基础 profile
+	// spec.DocTypeOFD。除基础 profile 外，GB/T 42133—2022（档案长期保存，
+	// "OFD-A"）与 GB/T 48666-2026（电子病历，"OFD-H"）分别收紧了 DocType
+	// 取值，生成对应文件时须显式设置。
+	DocType string
+}
+
+// normalizeDocType 归一化 DocType 取值：去除首尾空白，留空时取基础 profile。
+// 未识别的取值直接报错，避免把拼写错误静默写进 OFD.xml。
+//
+// 归一化的唯一实现放在这里，createWithPages 与 prepare 都调用它：前者用于
+// 入口处快速失败，后者保证 buildState 一律拿到合法值——prepare 还有一条
+// 只传零值 CreateOptions 的调用路径（build），漏掉归一化会写出空 DocType。
+func normalizeDocType(value string) (string, error) {
+	docType := strings.TrimSpace(value)
+	if docType == "" {
+		return spec.DocTypeOFD, nil
+	}
+	if !spec.IsDocType(docType) {
+		return "", fmt.Errorf("不支持的 DocType %q，可用取值: %s", docType, strings.Join(spec.DocTypes, "、"))
+	}
+	return docType, nil
 }
 
 // Create 将完整的 OFD ZIP 文件包写入 w。
@@ -71,6 +93,9 @@ func createWithPages(document Document, pages PageProvider, w io.Writer, options
 	}
 	if options.Compression != CompressionAuto && options.Compression != CompressionDeflate && options.Compression != CompressionStore {
 		return fmt.Errorf("不支持的 ZIP 压缩策略: %q", options.Compression)
+	}
+	if _, err := normalizeDocType(options.DocType); err != nil {
+		return err
 	}
 	level, err := NormalizeCompressionLevel(options.CompressionLevel)
 	if err != nil {
