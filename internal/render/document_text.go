@@ -273,7 +273,9 @@ func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object mode
 	if !finiteMatrix(matrix) {
 		return
 	}
-	ctx.DrawPath(0, 0, path.Transform(matrix))
+	// path 可能是字体轮廓缓存里的共享对象，Path.Transform 原地修改；不复制
+	// 会把平移累积到缓存上，同一字形在后续页面/重渲染时越偏越远。
+	ctx.DrawPath(0, 0, path.Copy().Transform(matrix))
 }
 
 // textFillDisabled 判断文字对象是否明确禁止填充。
@@ -695,7 +697,10 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 		paint = faces.runPaint(runX, runY, face.Fill())
 	}
 	p.applyTextPathFill(ctx, paint, object)
-	ctx.DrawPath(0, 0, path.Transform(matrix))
+	// path 可能来自字体轮廓缓存（同一字形/字体跨对象、跨页面复用），而
+	// Path.Transform 是原地修改。必须先复制，否则平移会累积到缓存对象上，
+	// 后续渲染同一字形时坐标持续偏移，最终移出页面。
+	ctx.DrawPath(0, 0, path.Copy().Transform(matrix))
 }
 
 // applyTextPathFill 设置走路径文字的填充与描边状态。
