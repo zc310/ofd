@@ -40,7 +40,7 @@ require (
 	github.com/studio-b12/gowebdav v0.13.0
 	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
 	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
-	github.com/tdewolff/minify/v2 v2.24.17
+	github.com/tdewolff/minify/v2 v2.24.18
 	github.com/tdewolff/parse/v2 v2.8.16
 	github.com/valyala/fasthttp v1.74.0
 	github.com/woozymasta/png v1.2.0
