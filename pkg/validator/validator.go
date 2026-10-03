@@ -72,6 +72,14 @@ type Options struct {
 	FailOnWarning bool
 	// Schemas 指定使用的 XSD 模式集合。
 	Schemas *schema.Set
+	// DocType 指定要额外校验的 OFD profile，取值同 OFD.xml 根节点的 DocType
+	// 属性。留空表示按文档声明的值自动判定：声明 OFD-A 时应用 GB/T 42133 的
+	// 规则，声明 OFD-H 时在其基础上叠加电子病历要求，基础 OFD 不做 profile
+	// 校验。
+	DocType string
+	// CheckProfile 控制是否执行 profile 校验。Profile 非空时会自动启用，
+	// 显式设为 false 可只做基础模式校验。
+	CheckProfile bool
 }
 
 // Option 修改校验器配置。
@@ -106,6 +114,22 @@ func WithSkipXSD(value bool) Option { return func(o *Options) { o.CheckXSD = !va
 
 // WithScanXML 控制是否扫描未被主引用链到达的 XML 文件。
 func WithScanXML(value bool) Option { return func(o *Options) { o.ScanXML = value } }
+
+// WithDocType 指定要额外校验的 OFD profile，取值同 OFD.xml 根节点的 DocType
+// 属性。留空表示按文档声明的值自动判定。显式指定可在不改写 DocType 的前提下
+// 预检，例如用 WithDocType(spec.DocTypeOFDA) 检查一份基础 OFD 是否满足
+// GB/T 42133。
+func WithDocType(value string) Option {
+	return func(o *Options) {
+		o.DocType = value
+		if value != "" {
+			o.CheckProfile = true
+		}
+	}
+}
+
+// WithCheckProfile 控制是否执行 profile 校验。
+func WithCheckProfile(value bool) Option { return func(o *Options) { o.CheckProfile = value } }
 
 // WithCheckDigest 控制是否校验签名摘要。
 func WithCheckDigest(value bool) Option { return func(o *Options) { o.CheckDigest = value } }
@@ -152,6 +176,9 @@ func New(options ...Option) (*Validator, error) {
 	}
 	if opts.Mode != ModeStrict && opts.Mode != ModeCompat && opts.Mode != ModeStructural {
 		return nil, fmt.Errorf("不支持的校验模式 %q", opts.Mode)
+	}
+	if opts.DocType != "" && !spec.IsDocType(opts.DocType) {
+		return nil, fmt.Errorf("不支持的 OFD profile %q，可用取值: %s", opts.DocType, strings.Join(spec.DocTypes, "、"))
 	}
 	if opts.Mode == ModeStructural {
 		opts.CheckXSD = false
@@ -386,6 +413,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	}
 
 	v.semanticChecks(documents, archive, report)
+	v.profileChecks(documents, archive, report)
 	if v.opts.CheckDigest {
 		v.checkDigests(documents, archive, report)
 		if report.hasStageErrors(StageDigest) {
@@ -533,7 +561,9 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, 
 		refs = collectReferences(doc)
 	}
 	if v.opts.CheckXSD && rootIsOFD {
-		schema, ok := v.opts.Schemas.Schema(root.Name.Local)
+		// DocType 声明了非基础 profile 时改用 overlay，否则 GB/T 42133 的
+		// "OFD-A" 会被官方模式的单值枚举判为错误。
+		schema, ok := v.opts.Schemas.SchemaFor(root.Name.Local, root.AttrValue("DocType"))
 		if !ok {
 			report.addIssue(issueAt(root, v.xsdSeverity(), StageXSD, "xsd.schema_missing", "没有为此根元素注册内置 XSD 模式", file.name), v.opts.MaxErrors)
 			if v.opts.Mode == ModeCompat {

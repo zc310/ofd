@@ -39,6 +39,7 @@ const (
 	StageXSD       Stage = "xsd"
 	StageReference Stage = "reference"
 	StageSemantic  Stage = "semantic"
+	StageProfile   Stage = "profile"
 	StageDigest    Stage = "digest"
 )
 
@@ -118,6 +119,13 @@ type Report struct {
 	Summary Summary `json:"summary"`
 	// Checks 是各校验阶段的结果列表。
 	Checks []CheckResult `json:"checks"`
+	// Profile 是本次实际应用的 OFD profile（DocType 取值），为空表示未做
+	// profile 校验。校验行为随文件声明变化，报告需显式给出依据。
+	//
+	// 它记录的是“按哪套规则校验的”，未必等于文件声明的值：用 --doc-type OFD-A
+	// 预检一份基础 OFD 时此处为 OFD-A，而文件本身仍声明 OFD。因此这里用
+	// Profile 而非 DocType，避免被误读成文件自身的 DocType。
+	Profile string `json:"profile,omitempty"`
 	// Issues 是校验发现的问题列表。
 	Issues []Issue `json:"issues"`
 	// StartedAt 是校验开始时间。
@@ -242,6 +250,9 @@ func (r *Report) addIssue(issue Issue, maxErrors int) {
 	}
 }
 
+// setProfile 记录本次应用的 OFD profile。
+func (r *Report) setProfile(name string) { r.Profile = name }
+
 func (r *Report) setCheck(name, status string) {
 	for i := range r.Checks {
 		if r.Checks[i].Name == name {
@@ -345,6 +356,8 @@ func checkLabel(name string) string {
 		return "文件引用"
 	case "semantic":
 		return "语义"
+	case "profile":
+		return "profile"
 	case "digest":
 		return "摘要"
 	default:
