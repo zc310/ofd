@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -1064,4 +1068,151 @@ func testPNG(width, height int) []byte {
 		panic(err)
 	}
 	return buffer.Bytes()
+}
+
+// readRootDocTypeFromOFD 读取 OFD 包根文档的 DocType 属性。
+func readRootDocTypeFromOFD(t *testing.T, path string) string {
+	t.Helper()
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	for _, entry := range archive.File {
+		if entry.Name != "OFD.xml" {
+			continue
+		}
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := etree.NewDocument()
+		if err := document.ReadFromBytes(content); err != nil {
+			t.Fatal(err)
+		}
+		return document.Root().SelectAttrValue("DocType", "")
+	}
+	t.Fatal("包内缺少 OFD.xml")
+	return ""
+}
+
+const docTypeManifestBody = "document:\n  id: doc-type-cli\n  page_size:\n    name: A4\n"
+
+// TestRunWritesManifestDocType 保护 manifest 的 document.doc_type 会传到生成的
+// OFD：文档规范要求由 manifest 完整描述文档，不能只在 Go API 里可设。
+func TestRunWritesManifestDocType(t *testing.T) {
+	for _, docType := range spec.DocTypes {
+		t.Run(docType, func(t *testing.T) {
+			directory := t.TempDir()
+			input := filepath.Join(directory, "document.yaml")
+			output := filepath.Join(directory, "result.ofd")
+			manifest := "version: 1\n" + docTypeManifestBody + "  doc_type: " + docType + "\npages:\n  - items: []\n"
+			if err := os.WriteFile(input, []byte(manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"-i", input, "-o", output, "--validate"}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+			}
+			if got := readRootDocTypeFromOFD(t, output); got != docType {
+				t.Fatalf("DocType = %q, want %q", got, docType)
+			}
+		})
+	}
+}
+
+// TestRunDocTypeFlagOverridesManifest 保护 --doc-type 显式给出时覆盖 manifest，
+// 用于临时按某个 profile 生成而不用改 manifest。
+func TestRunDocTypeFlagOverridesManifest(t *testing.T) {
+	directory := t.TempDir()
+	input := filepath.Join(directory, "document.yaml")
+	output := filepath.Join(directory, "result.ofd")
+	manifest := "version: 1\n" + docTypeManifestBody + "  doc_type: " + spec.DocTypeOFDH + "\npages:\n  - items: []\n"
+	if err := os.WriteFile(input, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-i", input, "-o", output, "--doc-type", spec.DocTypeOFDA, "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if got := readRootDocTypeFromOFD(t, output); got != spec.DocTypeOFDA {
+		t.Fatalf("DocType = %q, want %q", got, spec.DocTypeOFDA)
+	}
+}
+
+// TestRunDefaultsDocTypeToBaseProfile 保护未指定 doc_type 时仍为基础 profile，
+// 不因新增选项改变既有输出。
+func TestRunDefaultsDocTypeToBaseProfile(t *testing.T) {
+	directory := t.TempDir()
+	input := filepath.Join(directory, "document.yaml")
+	output := filepath.Join(directory, "result.ofd")
+	if err := os.WriteFile(input, []byte("version: 1\n"+docTypeManifestBody+"pages:\n  - items: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-i", input, "-o", output, "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if got := readRootDocTypeFromOFD(t, output); got != spec.DocTypeOFD {
+		t.Fatalf("DocType = %q, want %q", got, spec.DocTypeOFD)
+	}
+}
+
+// TestRunRejectsUnknownDocType 保护未知取值在参数校验阶段就被拒绝并给出可用
+// 取值，包含 --doc-type 与 manifest 两处来源，且区分大小写。
+func TestRunRejectsUnknownDocType(t *testing.T) {
+	directory := t.TempDir()
+	for _, invalid := range []string{"ofd-a", "OFD_A", "OFD-X"} {
+		t.Run("flag/"+invalid, func(t *testing.T) {
+			input := filepath.Join(directory, "a.yaml")
+			if err := os.WriteFile(input, []byte("version: 1\n"+docTypeManifestBody+"pages:\n  - items: []\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"-i", input, "-o", filepath.Join(directory, "x.ofd"), "--doc-type", invalid}, &stdout, &stderr)
+			if code != exitUsage {
+				t.Fatalf("run exit code = %d, want %d", code, exitUsage)
+			}
+			if !strings.Contains(stderr.String(), spec.DocTypeOFDA) {
+				t.Errorf("错误信息未列出可用取值: %s", stderr.String())
+			}
+		})
+		t.Run("manifest/"+invalid, func(t *testing.T) {
+			input := filepath.Join(directory, "b.yaml")
+			body := "version: 1\n" + docTypeManifestBody + "  doc_type: " + invalid + "\npages:\n  - items: []\n"
+			if err := os.WriteFile(input, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"-i", input, "-o", filepath.Join(directory, "y.ofd")}, &stdout, &stderr); code == exitOK {
+				t.Fatal("manifest 中的未知 doc_type 未被拒绝")
+			}
+		})
+	}
+}
+
+// TestRunRejectsUnknownManifestDocTypeField 保护 doc_type 走严格字段校验：拼错的
+// 字段名不应被静默忽略。manifest 按 snake_case 拆开复合 XML 属性，与 DocUsage →
+// doc_usage、PageSize → page_size 一致，因此正确字段名是 doc_type 而非旧名
+// doctype——旧名必须被拒绝，否则改名等于没改。
+func TestRunRejectsUnknownManifestDocTypeField(t *testing.T) {
+	for _, field := range []string{"doctype", "doc-type", "docType"} {
+		t.Run(field, func(t *testing.T) {
+			directory := t.TempDir()
+			input := filepath.Join(directory, "document.yaml")
+			body := "version: 1\n" + docTypeManifestBody + "  " + field + ": OFD-A\npages:\n  - items: []\n"
+			if err := os.WriteFile(input, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"-i", input, "-o", filepath.Join(directory, "r.ofd")}, &stdout, &stderr); code == exitOK {
+				t.Fatalf("字段名 %q 未被拒绝", field)
+			}
+		})
+	}
 }

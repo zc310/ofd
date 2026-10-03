@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/spec"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/validator"
@@ -40,6 +41,7 @@ type options struct {
 	check                  bool
 	deterministic          bool
 	completeTextCodeDeltas bool
+	docType                string
 	stream                 bool
 	help                   bool
 }
@@ -89,7 +91,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitResource
 	}
 	compression := creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression)))
-	createOptions := creator.CreateOptions{Compression: compression, CompressionLevel: opts.compressionLevel, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas}
+	// --doc-type 显式给出时覆盖 manifest 的 document.doc_type，两者都留空则用基础 profile。
+	docType := strings.TrimSpace(opts.docType)
+	if docType == "" {
+		docType = strings.TrimSpace(m.Document.DocType)
+	}
+	createOptions := creator.CreateOptions{Compression: compression, CompressionLevel: opts.compressionLevel, Deterministic: opts.deterministic, CompleteTextCodeDeltas: opts.completeTextCodeDeltas, DocType: docType}
 	if opts.stream && !opts.check && opts.output != "-" {
 		if err := writeOutputStream(opts, document, createOptions, stderr); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
@@ -223,6 +230,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.check, "check", false, "只解析并校验 manifest，不写出 OFD")
 	flags.BoolVar(&opts.deterministic, "deterministic", false, "使用固定 ZIP 时间，生成可复现的 OFD")
 	flags.BoolVar(&opts.completeTextCodeDeltas, "complete-text-code-deltas", false, "自动补全多字符 TextCode 的 DeltaX 和 DeltaY")
+	flags.StringVar(&opts.docType, "doc-type", "", "OFD profile：OFD（基础，GB/T 33190）、OFD-A（档案长期保存，GB/T 42133）、OFD-H（电子病历）；留空时取 manifest 的 document.doc_type 或基础 profile")
 	flags.BoolVar(&opts.stream, "stream", false, "以流式方式读取资源和写出 OFD，避免大资源整体驻留内存")
 	if err := root.Execute(); err != nil {
 		return nil, err
@@ -250,6 +258,9 @@ func validateOptions(opts *options) error {
 	}
 	if _, err := creator.NormalizeCompressionLevel(opts.compressionLevel); err != nil {
 		return err
+	}
+	if docType := strings.TrimSpace(opts.docType); docType != "" && !spec.IsDocType(docType) {
+		return fmt.Errorf("不支持的 OFD profile %q，可用取值: %s", opts.docType, strings.Join(spec.DocTypes, "、"))
 	}
 	if opts.format != "auto" {
 		format := strings.ToLower(strings.TrimSpace(opts.format))
