@@ -3,6 +3,16 @@
 // 水印以页面注解文件（<PageAnnot>）中的 Type="Watermark" 注解表示。本包
 // 复用 pkg/replace 的 ZIP 重建框架：先按包内结构定位目标页面与注解文件，
 // 计算出一组条目操作后交给 replace.Files 执行。
+//
+// 签名处理由内嵌的 replace.Options 决定，未额外包装。加水印会改动页面内容，
+// 已有签名的摘要随即失效，而 replace.Options.Signatures 的零值等价于
+// SignatureDrop，即签名条目会被移除——处理已签名文档时若要保留签名作为原始
+// 证据，必须显式设置：
+//
+//	options.Options = replace.Options{Signatures: creator.SignaturePreserve}
+//
+// 内嵌字段不能在复合字面量里直接赋值，因此上面写成先构造再赋给内嵌字段。
+// SignaturePreserve 会保留签名条目并逐条提示摘要可能失效。
 package watermark
 
 import (
