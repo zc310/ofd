@@ -18,6 +18,41 @@ func TestStArrayFExpandsRepeatedValues(t *testing.T) {
 	}
 }
 
+// 无 g 展开标记的常见输入走快速路径，结果必须与逐 token 解析一致。
+func TestStArrayFPlainSequence(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want StArrayF
+	}{
+		{"2 3", StArrayF{2, 3}},
+		{"1.5 -0.5\t4e2\n7", StArrayF{1.5, -0.5, 400, 7}},
+		{"  10  ", StArrayF{10}},
+		{"", StArrayF{}},
+	} {
+		var values StArrayF
+		if err := values.parseString(tc.in); err != nil {
+			t.Fatalf("parseString(%q): %v", tc.in, err)
+		}
+		if len(values) != len(tc.want) {
+			t.Fatalf("parseString(%q) = %v, want %v", tc.in, values, tc.want)
+		}
+		for i := range tc.want {
+			if values[i] != tc.want[i] {
+				t.Fatalf("parseString(%q) = %v, want %v", tc.in, values, tc.want)
+			}
+		}
+	}
+}
+
+func TestStArrayFPlainSequenceRejectsMalformedFloat(t *testing.T) {
+	for _, input := range []string{"1 nope", "NaN", "Inf", "1 2 3x"} {
+		var values StArrayF
+		if err := values.parseString(input); err == nil {
+			t.Fatalf("input %q was accepted", input)
+		}
+	}
+}
+
 func TestStArrayFRejectsExcessiveRepeatCount(t *testing.T) {
 	var values StArrayF
 	if err := values.parseString("g 9223372036854775807 1"); err == nil {
