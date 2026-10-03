@@ -294,6 +294,12 @@ func RenderPDF(w io.Writer, report Report, options PDFOptions) error {
 			}
 			codeStage += "引擎代码=" + issue.EngineCode
 		}
+		if len(issue.Clause) > 0 {
+			if codeStage != "" {
+				codeStage += "  "
+			}
+			codeStage += "依据=" + strings.Join(issue.Clause, "、")
+		}
 		if codeStage != "" {
 			appendIssueLines(&issueLines, smallFace, codeStage, smallLineHeight, contentWidth-16)
 		}

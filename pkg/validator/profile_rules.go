@@ -42,7 +42,7 @@ func checkSingleDocument(ctx *profileContext) {
 		}
 		if count > 1 {
 			ctx.addIssue(doc.root, doc.file.name, "single_document",
-				"归档文件不使用多文档机制，OFD.xml 出现 %d 个 DocBody（GB/T 42133 6.2.1 c）", count)
+				"归档文件不使用多文档机制，OFD.xml 出现 %d 个 DocBody", count)
 		}
 	}
 }
@@ -65,13 +65,13 @@ func checkNoEncryption(ctx *profileContext) {
 
 // checkDocumentNodeAbsent 生成“文档根节点不得出现指定元素”的规则。
 // GB/T 42133 6.2.2 要求去除权限声明、视图首选项与扩展信息。
-func checkDocumentNodeAbsent(ruleCode, element, label string) func(*profileContext) {
+func checkDocumentNodeAbsent(element, label string) func(*profileContext) {
 	return func(ctx *profileContext) {
 		for _, doc := range ctx.documentRoots() {
 			for _, child := range doc.root.Children {
 				if child.Kind == xdm.KindElement && child.Name.Local == element {
-					ctx.addIssue(child, doc.file.name, ruleCode,
-						"文档根节点不应包含%s（%s）（GB/T 42133 6.2.2）", label, element)
+					ctx.addIssue(child, doc.file.name, ctx.ruleCode,
+						"文档根节点不应包含%s（%s）", label, element)
 				}
 			}
 		}
@@ -89,7 +89,7 @@ func checkActionOnlyGoto(scope string) func(*profileContext) {
 			}
 			if !hasGotoChild(node) {
 				ctx.addIssue(node, entry.file, actionRuleCode(scope),
-					"%s动作不是文档内跳转（Goto），长期保存时应去除（GB/T 42133 6.2.2 c / 6.2.3 c）", scope)
+					"%s动作不是文档内跳转（Goto），长期保存时应去除", scope)
 			}
 		}
 	}
@@ -104,7 +104,7 @@ func checkOutlineActionOnlyGoto(ctx *profileContext) {
 		}
 		if !hasGotoChild(entry.node) {
 			ctx.addIssue(entry.node, entry.file, "outline_action_not_goto",
-				"大纲节点动作不是文档内跳转（Goto），长期保存时应去除（GB/T 42133 6.2.5 a）")
+				"大纲节点动作不是文档内跳转（Goto），长期保存时应去除")
 		}
 	}
 }
@@ -187,7 +187,7 @@ func hasGotoChild(node *xdm.Node) bool {
 // checkImageFormats 生成「栅格图像格式在允许清单内」的规则。allowed 为允许清单，
 // clause 为报错时引用的条款号。不同标准的清单不同时分别生成规则实例，由
 // profile 的同名规则覆盖机制决定实际生效的那一个。
-func checkImageFormats(allowed map[string]bool, clause string) func(*profileContext) {
+func checkImageFormats(allowed map[string]bool) func(*profileContext) {
 	return func(ctx *profileContext) {
 		for _, entry := range ctx.imageResources() {
 			extension := strings.ToLower(strings.TrimPrefix(path.Ext(entry.file), "."))
@@ -198,8 +198,9 @@ func checkImageFormats(allowed map[string]bool, clause string) func(*profileCont
 				Severity: SeverityError,
 				Stage:    StageProfile,
 				Code:     ctx.issueCode("image_format"),
-				Message:  fmt.Sprintf("栅格图像格式 .%s 不在允许清单内（%s）", extension, clause),
+				Message:  fmt.Sprintf("栅格图像格式 .%s 不在允许清单内", extension),
 				File:     entry.file,
+				Clause:   ctx.clause,
 			}, ctx.maxErrors)
 		}
 	}

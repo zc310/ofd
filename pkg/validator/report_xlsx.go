@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -333,7 +334,7 @@ func writeValidatorXLSXIssues(file *excelize.File, report Report, styles xlsxVal
 	if err := file.SetCellStyle("问题", "A2", "K2", styles.subtitle); err != nil {
 		return fmt.Errorf("设置 XLSX 问题副标题样式失败：%w", err)
 	}
-	headers := []string{"序号", "严重级别", "阶段", "代码", "引擎代码", "文件", "行", "列", "XML 路径", "信息", "提示"}
+	headers := []string{"序号", "严重级别", "阶段", "代码", "依据", "引擎代码", "文件", "行", "列", "XML 路径", "信息", "提示"}
 	if err := file.SetSheetRow("问题", "A4", &headers); err != nil {
 		return fmt.Errorf("写入 XLSX 问题表头失败：%w", err)
 	}
@@ -354,6 +355,7 @@ func writeValidatorXLSXIssues(file *excelize.File, report Report, styles xlsxVal
 			issue.SeverityZh,
 			issue.StageZh,
 			issue.Code,
+			strings.Join(issue.Clause, "、"),
 			issue.EngineCode,
 			issue.File,
 			line,

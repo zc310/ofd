@@ -17,6 +17,15 @@ type profileRule struct {
 	Code string
 	// Title 是规则的简短说明，用于报告展示。
 	Title string
+	// Clause 是本规则依据的标准条款，写入 Issue 供下游按条款筛选与统计。
+	//
+	// 用切片而非单值：同一判据在不同宿主下依据不同条款时要分别列出，例如
+	// 文档级与页面级动作去除分别依据 GB/T 42133 6.2.2 c) 与 6.2.3 c)。
+	//
+	// 条款号只在这里定义一次。规则上方的注释不再重复条款号，报告消息也不再把
+	// 条款号拼进自然语言——此前三处各写一遍，已经出现过规则注释写「6.2.2 a)」
+	// 而报告消息写「6.2.2」的粒度不一致。
+	Clause []string
 	// Check 执行检查，发现违规时通过 ctx 上报。
 	Check func(ctx *profileContext)
 }
@@ -97,6 +106,21 @@ type profileContext struct {
 	maxErrors int
 	// media 按资源 ID 索引的多媒体与复合图元文件位置，用于判定图像格式。
 	media map[string]string
+	// ruleCode 与 clause 是当前规则的问题码与依据条款，由执行入口写入。
+	//
+	// 放在 context 上而不是逐个 addIssue 传参，是因为它们属于规则自身的属性：
+	// 同一条规则的每次上报都相同，让每个检查函数自己记得传是重复劳动，也是此前
+	// 条款号散落在消息字符串里、且与规则注释不一致的根源。
+	ruleCode string
+	clause   []string
+}
+
+// withRule 返回一个带当前规则问题码与条款的 context 副本。
+func (c *profileContext) withRule(ruleCode string, clause []string) *profileContext {
+	copied := *c
+	copied.ruleCode = ruleCode
+	copied.clause = clause
+	return &copied
 }
 
 // addIssue 按 profile 阶段上报问题。规则码不含 profile 前缀，这里统一补全，
@@ -112,6 +136,7 @@ func (c *profileContext) addIssue(node *xdm.Node, file, ruleCode, format string,
 		Code:     "profile." + strings.ToLower(strings.ReplaceAll(c.profileName(), "-", "_")) + "." + ruleCode,
 		Message:  message,
 		File:     file,
+		Clause:   c.clause,
 	}, c.maxErrors)
 }
 
@@ -125,18 +150,18 @@ func (c *profileContext) profileName() string {
 // 阈值或启发式判断的条款。
 var ofdMedicalRules = []profileRule{
 	{
-		// 7.2 d)：版式文档内使用的图像格式应限 BMP、JPEG、TIFF 及 PNG。
-		// 该标准比 GB/T 42133 6.2.6 e) 少了 JBIG2 与 JPEG2000，因此覆盖父
-		// profile 的同名规则；直接继承会让判定比标准宽松。
-		Code:  "image_format",
-		Title: "栅格图像格式在允许清单内",
-		Check: checkImageFormats(allowedImageFormatsMedical, "GB/T 48666 7.2 d)"),
+		// 该标准比 GB/T 42133 少 JBIG2 与 JPEG2000，因此覆盖父 profile 的同名
+		// 规则；直接继承会让判定比标准宽松。
+		Code:   "image_format",
+		Title:  "栅格图像格式在允许清单内",
+		Clause: []string{"GB/T 48666 7.2 d)"},
+		Check:  checkImageFormats(allowedImageFormatsMedical),
 	},
 	{
-		// 8 c)：签名的保护范围应涵盖不包含注释列表、签名列表等文件的全部内容。
-		Code:  "signature_coverage",
-		Title: "签名保护范围覆盖全部内容",
-		Check: checkSignatureCoverage,
+		Code:   "signature_coverage",
+		Title:  "签名保护范围覆盖全部内容",
+		Clause: []string{"GB/T 48666 8 c)"},
+		Check:  checkSignatureCoverage,
 	},
 }
 
@@ -144,70 +169,70 @@ var ofdMedicalRules = []profileRule{
 // 可机器判定的规则。条款号标注在每条规则的注释中。
 var ofdArchiveRules = []profileRule{
 	{
-		// 6.2.1 c)：归档的 OFD 文件不使用多文档机制。
-		Code:  "single_document",
-		Title: "归档文件不使用多文档机制",
-		Check: checkSingleDocument,
+		Code:   "single_document",
+		Title:  "归档文件不使用多文档机制",
+		Clause: []string{"GB/T 42133 6.2.1 c)"},
+		Check:  checkSingleDocument,
 	},
 	{
-		// 6.16：用于长期保存的 OFD 文件不使用任何加密选项。
-		Code:  "encrypted",
-		Title: "长期保存文件不含加密",
-		Check: checkNoEncryption,
+		Code:   "encrypted",
+		Title:  "长期保存文件不含加密",
+		Clause: []string{"GB/T 42133 6.16"},
+		Check:  checkNoEncryption,
 	},
 	{
-		// 6.2.2 a)：去除文件中的权限声明（Permissions）。
-		Code:  "permissions_present",
-		Title: "文档根节点不含权限声明",
-		Check: checkDocumentNodeAbsent("permissions_present", "Permissions", "权限声明"),
+		Code:   "permissions_present",
+		Title:  "文档根节点不含权限声明",
+		Clause: []string{"GB/T 42133 6.2.2 a)"},
+		Check:  checkDocumentNodeAbsent("Permissions", "权限声明"),
 	},
 	{
-		// 6.2.2 b)：去除文件中的视图首选项（VPreferences）。
-		Code:  "vpreferences_present",
-		Title: "文档根节点不含视图首选项",
-		Check: checkDocumentNodeAbsent("vpreferences_present", "VPreferences", "视图首选项"),
+		Code:   "vpreferences_present",
+		Title:  "文档根节点不含视图首选项",
+		Clause: []string{"GB/T 42133 6.2.2 b)"},
+		Check:  checkDocumentNodeAbsent("VPreferences", "视图首选项"),
 	},
 	{
-		// 6.2.2 e)：去除文件中的扩展信息（Extensions）。
-		Code:  "extensions_present",
-		Title: "文档根节点不含扩展信息",
-		Check: checkDocumentNodeAbsent("extensions_present", "Extensions", "扩展信息"),
+		Code:   "extensions_present",
+		Title:  "文档根节点不含扩展信息",
+		Clause: []string{"GB/T 42133 6.2.2 e)"},
+		Check:  checkDocumentNodeAbsent("Extensions", "扩展信息"),
 	},
 	{
-		// 6.2.2 c)：去除类型不是文档内跳转（Goto）的文档动作。
-		Code:  "document_action_not_goto",
-		Title: "文档动作仅保留文档内跳转",
-		Check: checkActionOnlyGoto("文档"),
+		Code:   "document_action_not_goto",
+		Title:  "文档动作仅保留文档内跳转",
+		Clause: []string{"GB/T 42133 6.2.2 c)"},
+		Check:  checkActionOnlyGoto("文档"),
 	},
 	{
-		// 6.2.3 c)：去除其中类型不是文档内跳转的页面动作。
-		Code:  "page_action_not_goto",
-		Title: "页面动作仅保留文档内跳转",
-		Check: checkActionOnlyGoto("页面"),
+		Code:   "page_action_not_goto",
+		Title:  "页面动作仅保留文档内跳转",
+		Clause: []string{"GB/T 42133 6.2.3 c)"},
+		Check:  checkActionOnlyGoto("页面"),
 	},
 	{
-		// 6.2.5 a)：去除大纲节点中类型不为文档内跳转的动作。
-		Code:  "outline_action_not_goto",
-		Title: "大纲节点动作仅保留文档内跳转",
-		Check: checkOutlineActionOnlyGoto,
+		Code:   "outline_action_not_goto",
+		Title:  "大纲节点动作仅保留文档内跳转",
+		Clause: []string{"GB/T 42133 6.2.5 a)"},
+		Check:  checkOutlineActionOnlyGoto,
 	},
 	{
-		// 6.2.6 e)：栅格图像格式限于 BMP、JPEG、PNG、JBIG2、JPEG2000 和 TIFF。
-		Code:  "image_format",
-		Title: "栅格图像格式在允许清单内",
-		Check: checkImageFormats(allowedImageFormatsArchive, "GB/T 42133 6.2.6 e)"),
+		Code:   "image_format",
+		Title:  "栅格图像格式在允许清单内",
+		Clause: []string{"GB/T 42133 6.2.6 e)"},
+		Check:  checkImageFormats(allowedImageFormatsArchive),
 	},
 	{
-		// 6.3.1 b)：颜色空间类型限于灰度、RGB、CMYK 之一。
-		Code:  "colorspace_type",
-		Title: "颜色空间类型在允许清单内",
-		Check: checkColorSpaceTypes,
+		Code:   "colorspace_type",
+		Title:  "颜色空间类型在允许清单内",
+		Clause: []string{"GB/T 42133 6.3.1 b)"},
+		Check:  checkColorSpaceTypes,
 	},
 	{
-		// 6.2.3 e)：去除页面内容中的页面块（PageBlock）嵌套，必要时不超 3 层。
-		Code:  "pageblock_depth",
-		Title: "页面块嵌套不超过 3 层",
-		Check: checkPageBlockDepth,
+		Code:   "pageblock_depth",
+		Title:  "页面块嵌套不超过 3 层",
+		Clause: []string{"GB/T 42133 6.2.3 e)"},
+		Check:  checkPageBlockDepth,
 	},
 }
 
@@ -415,7 +440,8 @@ func (v *Validator) profileChecks(documents map[string]*xmlDocument, archive *pa
 		if rule.Check == nil {
 			continue
 		}
-		rule.Check(ctx)
+		// 问题码与条款随规则注入 context，检查函数不必自己记得传。
+		rule.Check(ctx.withRule(rule.Code, rule.Clause))
 	}
 	if report.hasStageErrors(StageProfile) {
 		report.setCheck("profile", "failed")

@@ -89,6 +89,11 @@ type Issue struct {
 	Code string `json:"code"`
 	// EngineCode 是底层校验引擎提供的问题代码。
 	EngineCode string `json:"engine_code,omitempty"`
+	// Clause 是本问题依据的标准条款，供档案系统按条款筛选与统计。
+	//
+	// 此前条款号只混在 Message 的自然语言里，JSON 输出无法按条款检索；同一判据
+	// 在不同宿主下依据不同条款时列出全部条款。
+	Clause []string `json:"clause,omitempty"`
 	// Message 是问题的详细描述。
 	Message string `json:"message"`
 	// Hint 是针对问题的处理提示。
@@ -435,6 +440,11 @@ func RenderText(w io.Writer, report Report) error {
 					return err
 				}
 			}
+			if len(issue.Clause) > 0 {
+				if _, err := fmt.Fprintf(w, " 依据=%s", strings.Join(issue.Clause, "、")); err != nil {
+					return err
+				}
+			}
 			if _, err := io.WriteString(w, "\n"); err != nil {
 				return err
 			}
@@ -477,6 +487,11 @@ func RenderMarkdown(w io.Writer, report Report) error {
 		}
 		if issue.EngineCode != "" {
 			if err := write("- 引擎代码：`%s`\n", escapeMarkdown(issue.EngineCode)); err != nil {
+				return err
+			}
+		}
+		if len(issue.Clause) > 0 {
+			if err := write("- 依据：%s\n", escapeMarkdown(strings.Join(issue.Clause, "、"))); err != nil {
 				return err
 			}
 		}
