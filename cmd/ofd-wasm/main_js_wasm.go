@@ -77,6 +77,7 @@ func main() {
 	api.Set("streamAck", js.FuncOf(app.streamAck))
 	api.Set("cancelStream", js.FuncOf(app.cancelStream))
 	api.Set("memStats", js.FuncOf(app.memStats))
+	api.Set("gc", js.FuncOf(app.gc))
 	js.Global().Set("ofd", api)
 
 	select {}
@@ -303,6 +304,23 @@ func (a *wasmApp) memStats(_ js.Value, _ []js.Value) any {
 		"stackSys":     stats.StackSys,
 		"totalAlloc":   stats.TotalAlloc,
 		"sys":          stats.Sys,
+		"numGC":        stats.NumGC,
+	})
+}
+
+// gc 主动触发 Go 运行时垃圾回收并尝试把空闲内存归还操作系统，返回回收后的
+// 统计。只影响内存，不关闭当前文档，用于内存诊断面板的「强制回收」按钮。
+// 注意 WASM 线性内存只会增长，FreeOSMemory 只能让空闲页可复用，不会缩小
+// 浏览器实际保留的地址空间。
+func (a *wasmApp) gc(_ js.Value, _ []js.Value) any {
+	runtime.GC()
+	debug.FreeOSMemory()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return objectValue(map[string]any{
+		"heapAlloc":    stats.HeapAlloc,
+		"heapInuse":    stats.HeapInuse,
+		"heapReleased": stats.HeapReleased,
 		"numGC":        stats.NumGC,
 	})
 }

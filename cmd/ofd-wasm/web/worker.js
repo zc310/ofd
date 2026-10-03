@@ -12,6 +12,21 @@ const queuedRequests = new Set();
 const activeRequests = new Set();
 const cancelledRequests = new Set();
 let running = false;
+// goInstance 保留 Go 运行实例，用于读取 WebAssembly 线性内存的真实大小。
+// wasm_exec.js 在 run() 里把实例挂到 _inst，exports.mem 是 WebAssembly.Memory。
+let goInstance = null;
+
+// wasmLinearBytes 返回 WebAssembly 线性内存当前保留的字节数。Go 运行时只会
+// 增长线性内存、不会缩小，所以该值单调不减，反映浏览器实际占用的地址空间；
+// 与 Go MemStats 的存活堆配合可以看出 GC 后仍保留的空闲空间。
+function wasmLinearBytes() {
+  try {
+    const mem = goInstance?._inst?.exports?.mem;
+    return mem?.buffer ? mem.buffer.byteLength : 0;
+  } catch (_) {
+    return 0;
+  }
+}
 
 function errorText(error) {
   return error instanceof Error ? error.message : String(error);
@@ -38,6 +53,7 @@ function reportStartFailure(error) {
 async function start() {
   try {
     const go = new Go();
+    goInstance = go;
     const response = await fetch('ofd.wasm');
     if (!response.ok) {
       reportStartFailure(new Error(`加载 ofd.wasm 失败: ${response.status}`));
@@ -84,8 +100,13 @@ async function execute(message) {
       return unwrap(self.ofd.removeFallbackFont(message.family));
     case 'close':
       return unwrap(self.ofd.close());
-    case 'memStats':
-      return unwrap(self.ofd.memStats());
+    case 'memStats': {
+      const stats = unwrap(self.ofd.memStats());
+      stats.linearBytes = wasmLinearBytes();
+      return stats;
+    }
+    case 'gc':
+      return unwrap(self.ofd.gc());
     case 'info':
       return unwrap(self.ofd.info());
     case 'outline':

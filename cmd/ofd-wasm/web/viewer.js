@@ -193,6 +193,10 @@ class OFDWorkerClient {
     return this.request('memStats');
   }
 
+  gc() {
+    return this.request('gc');
+  }
+
   renderPage(index, options) {
     return this.request('renderPage', { index, options });
   }
@@ -404,6 +408,12 @@ const infoToggle = document.querySelector('#info-toggle');
 const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
 const infoBody = document.querySelector('#info-body');
+const debugPanel = document.querySelector('#debug-panel');
+const debugBody = document.querySelector('#debug-body');
+const debugRefresh = document.querySelector('#debug-refresh');
+const debugGC = document.querySelector('#debug-gc');
+const debugClose = document.querySelector('#debug-close');
+const debugDrag = document.querySelector('#debug-drag');
 const sidebarElement = document.querySelector('#sidebar');
 const sidebarTabsElement = document.querySelector('#sidebar-tabs');
 const sidebarFilter = document.querySelector('#sidebar-filter');
@@ -1573,6 +1583,31 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// collectMemoryReport 汇总浏览器侧与 WASM 侧的内存口径，供控制台报告和
+// 内存诊断面板共用，避免两处各维护一份。
+function collectMemoryReport() {
+  let mountedPages = 0;
+  for (const image of document.querySelectorAll('.page-image')) {
+    if (!image.hidden && image.src) mountedPages++;
+  }
+  let fontBytes = 0;
+  for (const data of fallbackFontData.values()) fontBytes += data.byteLength || 0;
+  const jsHeap = (typeof performance !== 'undefined' && performance.memory)
+    ? performance.memory.usedJSHeapSize
+    : null;
+  return {
+    pageCacheBytes: pageCache.bytes,
+    thumbnailCacheBytes: thumbnailCache.bytes,
+    textCacheSize: textCache.size,
+    pageRequests: pageRequests.size,
+    pageCardRequests: pageCardRequests.size,
+    pageInfoRequests: pageInfoRequests.size,
+    fontBytes,
+    mountedPages,
+    jsHeap,
+  };
+}
+
 // 内存诊断：打印浏览器侧各缓存与 WASM 运行时内存占用。可在控制台调用
 // window.__readMemory() 手动收集当前数据。
 async function reportMemory(trigger = '手动') {
@@ -1580,28 +1615,23 @@ async function reportMemory(trigger = '手动') {
   try {
     wasm = await engine.memStats();
   } catch (_) {}
-  let mountedPages = 0;
-  for (const image of document.querySelectorAll('.page-image')) {
-    if (!image.hidden && image.src) mountedPages++;
-  }
-  let fontBytes = 0;
-  for (const data of fallbackFontData.values()) fontBytes += data.byteLength || 0;
+  const report = collectMemoryReport();
   const summary = {
-    '页面缓存': formatFileSize(pageCache.bytes),
-    '缩略图缓存': formatFileSize(thumbnailCache.bytes),
-    '文字缓存条目': textCache.size,
-    '页面请求': pageRequests.size,
-    '页面卡片请求': pageCardRequests.size,
-    '页面信息请求': pageInfoRequests.size,
+    '页面缓存': formatFileSize(report.pageCacheBytes),
+    '缩略图缓存': formatFileSize(report.thumbnailCacheBytes),
+    '文字缓存条目': report.textCacheSize,
+    '页面请求': report.pageRequests,
+    '页面卡片请求': report.pageCardRequests,
+    '页面信息请求': report.pageInfoRequests,
     '最近文件(驻留内存)': '按需加载',
-    '回退字体(JS侧)': formatFileSize(fontBytes),
-    '挂载页数(解码位图)': mountedPages,
+    '回退字体(JS侧)': formatFileSize(report.fontBytes),
+    '挂载页数(解码位图)': report.mountedPages,
   };
   console.group(`[OFD] 内存报告 ${trigger}`);
   console.table(summary);
   if (wasm) {
-    console.log('[OFD] WASM 运行时(Go MemStats)', {
-      WASM线性内存: formatFileSize(wasm.sys),
+    console.log('[OFD] WASM 运行时', {
+      WASM线性内存: formatFileSize(wasm.linearBytes || 0),
       heapSys: formatFileSize(wasm.heapSys),
       heapInuse: formatFileSize(wasm.heapInuse),
       heapAlloc: formatFileSize(wasm.heapAlloc),
@@ -1613,6 +1643,193 @@ async function reportMemory(trigger = '手动') {
   }
   console.groupEnd();
   return { ...summary, wasm };
+}
+
+// debugMemoryRows 把内存口径整理成分组行，纯函数便于测试。WASM 线性内存
+// 只增不减，所以单独强调「保留」与「存活堆」的差别。
+function debugMemoryRows(report, wasm) {
+  const wasmRows = [];
+  if (wasm) {
+    wasmRows.push(['线性内存（保留）', formatFileSize(wasm.linearBytes || 0)]);
+    wasmRows.push(['Go 存活堆 heapAlloc', formatFileSize(wasm.heapAlloc)]);
+    wasmRows.push(['Go 已用堆 heapInuse', formatFileSize(wasm.heapInuse)]);
+    wasmRows.push(['Go 系统堆 heapSys', formatFileSize(wasm.heapSys)]);
+    wasmRows.push(['已归还 OS heapReleased', formatFileSize(wasm.heapReleased)]);
+    wasmRows.push(['堆对象', String(wasm.heapObjects)]);
+    wasmRows.push(['累计分配', formatFileSize(wasm.totalAlloc)]);
+    wasmRows.push(['GC 次数', String(wasm.numGC)]);
+  } else {
+    wasmRows.push(['状态', 'WASM 未就绪']);
+  }
+  const browserRows = [
+    ['页面缓存', formatFileSize(report.pageCacheBytes)],
+    ['缩略图缓存', formatFileSize(report.thumbnailCacheBytes)],
+    ['文字缓存条目', String(report.textCacheSize)],
+    ['页面请求', String(report.pageRequests)],
+    ['页面卡片请求', String(report.pageCardRequests)],
+    ['页面信息请求', String(report.pageInfoRequests)],
+    ['回退字体（JS）', formatFileSize(report.fontBytes)],
+    ['挂载页数（解码位图）', String(report.mountedPages)],
+  ];
+  if (report.jsHeap !== null && report.jsHeap !== undefined) {
+    browserRows.push(['JS 堆（Chromium）', formatFileSize(report.jsHeap)]);
+  }
+  return {
+    sections: [
+      { title: 'WASM 运行时', rows: wasmRows },
+      { title: '浏览器缓存', rows: browserRows },
+    ],
+    note: 'WASM 线性内存只增不减：GC 只把空闲页标记为可复用，不会把地址空间还给浏览器。因此「线性内存（保留）」大于「Go 存活堆」是正常的。',
+  };
+}
+
+function renderDebugPanel(report, wasm) {
+  if (!debugBody) return;
+  const { sections, note } = debugMemoryRows(report, wasm);
+  const fragment = document.createDocumentFragment();
+  for (const section of sections) {
+    const heading = document.createElement('div');
+    heading.className = 'debug-section-title';
+    heading.textContent = section.title;
+    fragment.append(heading);
+    for (const [label, value] of section.rows) {
+      const row = document.createElement('div');
+      row.className = 'debug-row';
+      const labelElement = document.createElement('span');
+      labelElement.className = 'debug-label';
+      labelElement.textContent = label;
+      const valueElement = document.createElement('span');
+      valueElement.className = 'debug-value';
+      valueElement.textContent = value;
+      row.append(labelElement, valueElement);
+      fragment.append(row);
+    }
+  }
+  const noteElement = document.createElement('p');
+  noteElement.className = 'debug-note';
+  noteElement.textContent = note;
+  fragment.append(noteElement);
+  debugBody.replaceChildren(fragment);
+}
+
+async function refreshDebugPanel() {
+  if (!debugPanel || debugPanel.hidden) return;
+  let wasm = null;
+  try {
+    wasm = await engine.memStats();
+  } catch (_) {}
+  renderDebugPanel(collectMemoryReport(), wasm);
+}
+
+let debugRefreshTimer;
+
+function startDebugAutoRefresh() {
+  stopDebugAutoRefresh();
+  debugRefreshTimer = setInterval(() => { void refreshDebugPanel(); }, 1500);
+}
+
+function stopDebugAutoRefresh() {
+  if (debugRefreshTimer) {
+    clearInterval(debugRefreshTimer);
+    debugRefreshTimer = undefined;
+  }
+}
+
+function setDebugPanelOpen(open) {
+  if (!debugPanel) return;
+  const show = !!open;
+  debugPanel.hidden = !show;
+  if (show) {
+    restoreDebugPosition();
+    void refreshDebugPanel();
+    startDebugAutoRefresh();
+  } else {
+    stopDebugAutoRefresh();
+  }
+}
+
+// setDebugEnabled 切换面板并记忆开关，供关闭按钮与控制台 window.__debug() 使用。
+function setDebugEnabled(enabled) {
+  try { localStorage.setItem(debugStorageKey, String(!!enabled)); } catch (_) {}
+  setDebugPanelOpen(enabled);
+}
+
+// clampDebugPosition 把面板左上角限制在视口内，返回新坐标。纯函数便于测试。
+function clampDebugPosition(left, top, width, height, viewportWidth, viewportHeight) {
+  const maxLeft = Math.max(0, viewportWidth - width);
+  const maxTop = Math.max(0, viewportHeight - height);
+  return {
+    left: Math.min(Math.max(0, left), maxLeft),
+    top: Math.min(Math.max(0, top), maxTop),
+  };
+}
+
+// debugPositionFromStorage 解析记忆的面板位置；格式无效时返回 null。
+function debugPositionFromStorage(raw) {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (!Number.isFinite(value?.left) || !Number.isFinite(value?.top)) return null;
+    return { left: value.left, top: value.top };
+  } catch (_) {
+    return null;
+  }
+}
+
+function applyDebugPosition(left, top) {
+  if (!debugPanel) return;
+  const clamped = clampDebugPosition(left, top, debugPanel.offsetWidth, debugPanel.offsetHeight, window.innerWidth, window.innerHeight);
+  debugPanel.style.left = `${clamped.left}px`;
+  debugPanel.style.top = `${clamped.top}px`;
+}
+
+function restoreDebugPosition() {
+  if (!debugPanel) return;
+  let raw = null;
+  try { raw = localStorage.getItem(debugPositionStorageKey); } catch (_) {}
+  const position = debugPositionFromStorage(raw);
+  if (position) applyDebugPosition(position.left, position.top);
+}
+
+function saveDebugPosition() {
+  if (!debugPanel) return;
+  const rect = debugPanel.getBoundingClientRect();
+  try {
+    localStorage.setItem(debugPositionStorageKey, JSON.stringify({
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+    }));
+  } catch (_) {}
+}
+
+async function runDebugGC() {
+  try {
+    await engine.gc();
+  } catch (_) {}
+  await refreshDebugPanel();
+}
+
+// 内存诊断面板：默认隐藏，?debug=1 打开并记忆到 localStorage，?debug=0 关闭。
+const debugQueryKey = 'debug';
+const debugStorageKey = 'ofd-debug';
+const debugPositionStorageKey = 'ofd-debug-pos';
+
+// debugRequested 读取 URL 里的 debug 参数；未提供时返回 undefined，以便回落到
+// 上次记忆的开关。'0' 与 'false' 视为关闭。
+function debugRequested(search = window.location.search) {
+  const params = new URLSearchParams(search);
+  if (!params.has(debugQueryKey)) return undefined;
+  const value = params.get(debugQueryKey);
+  return value !== '0' && value !== 'false';
+}
+
+function debugEnabled() {
+  const requested = debugRequested();
+  if (requested !== undefined) {
+    try { localStorage.setItem(debugStorageKey, String(requested)); } catch (_) {}
+    return requested;
+  }
+  try { return localStorage.getItem(debugStorageKey) === 'true'; } catch (_) { return false; }
 }
 
 function formatRecentDate(timestamp) {
@@ -3684,7 +3901,6 @@ async function openSelectedFile(selected, options = {}) {
     void loadOutline();
     void fetchPageLinks(generation);
     void saveRecentFile(selected);
-    void reportMemory('打开文档');
     return true;
   } catch (error) {
     if (generation !== documentGeneration || isCancelledError(error)) return false;
@@ -6954,6 +7170,50 @@ window.addEventListener('resize', () => {
   scheduleVirtualUpdate();
 });
 updateBackToTop();
+// 内存诊断面板：默认隐藏，?debug=1 打开（记忆到 localStorage，?debug=0 关闭）。
+// 控制台也可用 window.__debug(true/false) 切换，window.__readMemory() 仍可收集快照。
+debugClose?.addEventListener('click', () => setDebugEnabled(false));
+debugRefresh?.addEventListener('click', () => { void refreshDebugPanel(); });
+debugGC?.addEventListener('click', () => { void runDebugGC(); });
+// 拖动标题移动面板，位置记忆到 localStorage；窗口尺寸变化时重新夹到视口内。
+if (debugDrag && debugPanel) {
+  let debugDragState = null;
+  debugDrag.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const rect = debugPanel.getBoundingClientRect();
+    debugDragState = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    debugPanel.classList.add('dragging');
+    try { debugDrag.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+  });
+  debugDrag.addEventListener('pointermove', event => {
+    if (!debugDragState || event.pointerId !== debugDragState.pointerId) return;
+    applyDebugPosition(event.clientX - debugDragState.offsetX, event.clientY - debugDragState.offsetY);
+  });
+  const stopDebugDrag = event => {
+    if (!debugDragState) return;
+    debugDragState = null;
+    debugPanel.classList.remove('dragging');
+    try { debugDrag.releasePointerCapture(event.pointerId); } catch (_) {}
+    saveDebugPosition();
+  };
+  debugDrag.addEventListener('pointerup', stopDebugDrag);
+  debugDrag.addEventListener('pointercancel', stopDebugDrag);
+  window.addEventListener('resize', () => {
+    if (debugPanel.hidden || !debugPanel.style.left) return;
+    applyDebugPosition(parseFloat(debugPanel.style.left), parseFloat(debugPanel.style.top));
+  });
+}
+if (debugEnabled()) setDebugPanelOpen(true);
+window.__debug = value => {
+  const current = debugPanel ? debugPanel.hidden : false;
+  setDebugEnabled(value === undefined ? current : !!value);
+  return !!debugPanel && !debugPanel.hidden;
+};
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).catch(error => {
@@ -6961,7 +7221,6 @@ if ('serviceWorker' in navigator) {
     });
   });
   window.__readMemory = trigger => reportMemory(trigger || '手动');
-  void reportMemory('启动');
 }
 if ('launchQueue' in window && typeof window.launchQueue.setConsumer === 'function') {
   window.launchQueue.setConsumer(async launchParams => {
