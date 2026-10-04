@@ -1,4 +1,3 @@
-// Command ofd-server 提供异步 OFD 转换的 HTTP 服务。
 package main
 
 import (

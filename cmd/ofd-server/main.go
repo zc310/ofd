@@ -1,4 +1,4 @@
-// 命令 ofd-server 提供异步 OFD 转换的 HTTP 服务。
+// Command ofd-server 提供异步 OFD 转换的 HTTP 服务。
 //
 //	POST /v1/convert              提交转换，返回 202 与任务 ID
 //	GET  /v1/jobs/{id}            查询任务状态

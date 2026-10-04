@@ -1,4 +1,4 @@
-// 命令 ofd-converter 将 OFD 文档转换为 PDF、文本、Markdown 或图像等格式。
+// Command ofd-converter 将 OFD 文档转换为 PDF、文本、Markdown 或图像等格式。
 package main
 
 import (

@@ -1,4 +1,4 @@
-// 命令 ofd-signer-demo 是 github.com/zc310/ofd 提供的演示签名器，
+// Command ofd-signer-demo 是 github.com/zc310/ofd 提供的演示签名器，
 // 用于演示 ofd-creator merge --sign-cmd 协议与 SES 结构。
 //
 // 它从标准输入读取 ofd-creator 生成的 Signature.xml，用内存中的 SM2 自签名

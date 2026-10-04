@@ -1,6 +1,5 @@
 //go:build js && wasm
 
-// 命令 ofd-wasm 将 OFD 文档引擎暴露给浏览器 JavaScript。
 package main
 
 import (

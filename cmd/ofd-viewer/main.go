@@ -1,4 +1,4 @@
-// 命令 ofd-viewer 提供 OFD 文档的图形化查看和导出功能。
+// Command ofd-viewer 提供 OFD 文档的图形化查看和导出功能。
 package main
 
 import (
