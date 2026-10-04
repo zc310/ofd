@@ -1049,7 +1049,7 @@ func TestRequestThumbnailRenderCachesRealRender(t *testing.T) {
 
 func TestUpdateThumbnailCellUsesCacheAndRequestsOnMiss(t *testing.T) {
 	v := newThumbnailTestViewer(t, "helloworld.ofd")
-	cell := newThumbnailCell()
+	cell := newThumbnailCell(color.White)
 
 	// 缓存命中：直接用缓存图像，标签显示页码。
 	cached := toRGBA(image.NewRGBA(image.Rect(0, 0, 2, 2)))

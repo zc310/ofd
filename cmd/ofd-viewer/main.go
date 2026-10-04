@@ -192,8 +192,15 @@ type viewer struct {
 	// 同步高亮时需要自己比较，避免重复 Select。
 	thumbnailSelected  int
 	thumbnailRendering []atomic.Bool
-	closed             atomic.Bool
-	backDeadline       time.Time
+	// thumbnailCells 记录已创建的缩略图单元。widget.List 不导出单元，切换阅读
+	// 背景色时只能靠这份登记逐个改色；单元数量只与可见行数有关。
+	thumbnailCells []*thumbnailCell
+	// backgroundMode 是选中的背景色预设 key，backgroundCustom 是"自定义"项
+	// 取到的颜色。两者都被记住，启动时恢复。
+	backgroundMode   string
+	backgroundCustom color.Color
+	closed           atomic.Bool
+	backDeadline     time.Time
 	// defaultReader 是启动时探测到的 .ofd 默认阅读器状态。右侧菜单和启动提示
 	// 共用同一份结果，不各自重新查询——每次开菜单都 fork 一次子进程没有必要。
 	defaultReader defaultReaderState
@@ -229,6 +236,8 @@ type pageMeta struct {
 type pageFrame struct {
 	frame *fyne.Container
 	image *fyneCanvas.Image
+	// background 是纸张底色。页面按透明背景渲染，未上色区域由它透出。
+	background *fyneCanvas.Rectangle
 	// page 是当前绑定的全局页码，-1 表示空闲。
 	page int
 }
@@ -292,6 +301,9 @@ type continuousLayout struct {
 	margin     float32
 	minSize    fyne.Size
 	viewport   fyne.Size
+	// background 是新建显示帧时纸张矩形的填充色，由 viewer 按用户选择的背景色
+	// 写入；为 nil 时按白色处理。
+	background color.Color
 	// geometry 记录当前 pageBounds 对应的几何条件。页面排版只依赖视口、
 	// 视图模式和页数，与滚动位置无关，因此几何不变时可以整段复用。
 	geometry layoutGeometry
@@ -336,14 +348,20 @@ func (l *continuousLayout) setPages(pages []*pageMeta) {
 }
 
 func (l *continuousLayout) growFrames(count int) {
+	fill := l.background
+	if fill == nil {
+		fill = color.White
+	}
 	for len(l.frames) < count {
 		image := fyneCanvas.NewImageFromImage(nil)
 		image.FillMode = fyneCanvas.ImageFillContain
 		image.ScaleMode = fyneCanvas.ImageScaleSmooth
+		background := fyneCanvas.NewRectangle(fill)
 		l.frames = append(l.frames, &pageFrame{
-			frame: container.NewStack(fyneCanvas.NewRectangle(color.White), image),
-			image: image,
-			page:  -1,
+			frame:      container.NewStack(background, image),
+			image:      image,
+			background: background,
+			page:       -1,
 		})
 	}
 }
@@ -590,23 +608,30 @@ func (l *continuousLayout) notifyViewportChange() {
 // OnSelected 处理，这里不再单独实现 Tapped，否则一次点击会触发两次跳转。
 type thumbnailCell struct {
 	widget.BaseWidget
-	content *fyne.Container
-	image   *fyneCanvas.Image
-	label   *widget.Label
+	content    *fyne.Container
+	image      *fyneCanvas.Image
+	background *fyneCanvas.Rectangle
+	label      *widget.Label
 }
 
-func newThumbnailCell() *thumbnailCell {
+// newThumbnailCell 创建缩略图单元。fill 是纸张底色，由调用方给出当前的阅读背景色。
+func newThumbnailCell(fill color.Color) *thumbnailCell {
+	if fill == nil {
+		fill = color.White
+	}
 	imageObject := fyneCanvas.NewImageFromImage(nil)
 	imageObject.FillMode = fyneCanvas.ImageFillContain
 	imageObject.ScaleMode = fyneCanvas.ImageScaleSmooth
 	imageObject.SetMinSize(fyne.NewSize(130, 100))
-	imageArea := container.NewStack(fyneCanvas.NewRectangle(color.White), imageObject)
+	background := fyneCanvas.NewRectangle(fill)
+	imageArea := container.NewStack(background, imageObject)
 	label := widget.NewLabel("")
 	label.Alignment = fyne.TextAlignCenter
 	cell := &thumbnailCell{
-		content: container.NewVBox(imageArea, label),
-		image:   imageObject,
-		label:   label,
+		content:    container.NewVBox(imageArea, label),
+		image:      imageObject,
+		background: background,
+		label:      label,
 	}
 	cell.ExtendBaseWidget(cell)
 	return cell
@@ -672,15 +697,29 @@ func updateThumbnailCell(cell *thumbnailCell, page int, v *viewer) {
 	cell.image.Refresh()
 }
 
+// newThumbnailCell 按当前阅读背景色创建缩略图单元并登记，切换背景色时才能把
+// 已存在的单元一起改色。
+func (v *viewer) newThumbnailCell() *thumbnailCell {
+	cell := newThumbnailCell(v.pageBackground())
+	v.thumbnailCells = append(v.thumbnailCells, cell)
+	return cell
+}
+
 func newViewer(window fyne.Window) *viewer {
-	v := &viewer{window: window, thumbnailSelected: -1}
+	mode, custom := loadDocumentBackground()
+	v := &viewer{
+		window:            window,
+		thumbnailSelected: -1,
+		backgroundMode:    mode,
+		backgroundCustom:  custom,
+	}
 	v.pageImages = v.newPageImageCache()
 	v.thumbnails = newThumbnailCache()
 	v.thumbnailList = widget.NewList(
 		func() int { return v.thumbnailRowCount() },
 		func() fyne.CanvasObject {
-			firstCell := newThumbnailCell()
-			secondCell := newThumbnailCell()
+			firstCell := v.newThumbnailCell()
+			secondCell := v.newThumbnailCell()
 			if !v.isDoublePage() {
 				secondCell.Hide()
 			}
@@ -716,7 +755,7 @@ func newViewer(window fyne.Window) *viewer {
 		v.goToPage(page, true)
 	}
 
-	v.pageLayout = &continuousLayout{mode: viewFitWidth, gap: 12, margin: 12}
+	v.pageLayout = &continuousLayout{mode: viewFitWidth, gap: 12, margin: 12, background: v.pageBackground()}
 	// 视口尺寸变化只能通过布局感知，滚动事件覆盖不到拖动窗口大小的场景。
 	// 这里只补渲染，不改当前页等界面状态，避免在布局过程中改动控件。
 	v.pageLayout.onViewportChange = func() {
@@ -840,9 +879,13 @@ func (v *viewer) showMenu() {
 	}
 	viewItem := fyne.NewMenuItem("视图", nil)
 	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
+	// 背景色与文档状态无关：加载和导出期间切换都只是改矩形填充色，因此这一项
+	// 始终可用，切换后立即生效且不需要重新渲染页面。
+	backgroundItem := fyne.NewMenuItem("背景色", nil)
+	backgroundItem.ChildMenu = fyne.NewMenu("背景色", v.documentBackgroundMenuItems()...)
 	// 文件关联与文档状态无关，因此这一项不受 loading/exporting 影响；平台不支持
 	// 时整项不出现。
-	menuItems := []*fyne.MenuItem{exportItem, viewItem}
+	menuItems := []*fyne.MenuItem{exportItem, viewItem, backgroundItem}
 	menuItems = append(menuItems, defaultReaderMenuItems(v.defaultReader, v.setDefaultReaderFromMenu)...)
 	closeLabel := "退出程序"
 	if v.hasPages() {
