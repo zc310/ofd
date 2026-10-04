@@ -1,6 +1,6 @@
 # Hello World OFD 示例
 # 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/hello.yaml -o test/testdata/hello.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/hello.yaml -o testdata/hello.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 

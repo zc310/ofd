@@ -54,7 +54,7 @@ func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style F
 }
 
 func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestSelectFallbackPrefersMatchingFontFamily(t *testing.T) {
 }
 
 func TestIntroEmbeddedFontsLoad(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 // 加载失败并回退到系统字体、正文渲染成乱码；修复后必须按内嵌字体加载并登记好
 // 页面字形映射。
 func TestImageNotFoundLeftTextFontLoads(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ofdrw", "testImageNotFound.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw", "testImageNotFound.ofd"))
 	if err != nil {
 		t.Skipf("样例不可用: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestImageNotFoundLeftTextFontLoads(t *testing.T) {
 }
 
 func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 }
 
 func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
 }
 
 func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestSystemFontCandidatesSkipsGenericForCJK(t *testing.T) {
 // 相同字体/字号/样式/纯色画笔/文本必须复用同一个 *canvas.Text，避免重复
 // 整形；渐变画笔不进入缓存（每次返回新对象）。
 func TestShapedTextLineCacheReusesShaping(t *testing.T) {
-	fontPath := filepath.Join("..", "..", "..", "..", "test", "testdata", "DejaVuSans.ttf")
+	fontPath := filepath.Join("..", "..", "..", "..", "testdata", "DejaVuSans.ttf")
 	if _, err := os.Stat(fontPath); err != nil {
 		if _, err := os.Stat("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"); err == nil {
 			fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"

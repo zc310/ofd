@@ -1,5 +1,5 @@
 # 文档体 B（multi-doc.ofd 的组成部分）
-# 与 multi-doc-b.yaml 一同生成后 ZIP 级合并为 test/testdata/multi-doc.ofd。
+# 与 multi-doc-b.yaml 一同生成后 ZIP 级合并为 testdata/multi-doc.ofd。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/multi-doc-b.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/multi-doc-b.yaml -o /tmp/multi-doc-b.ofd --format auto --deterministic --validate

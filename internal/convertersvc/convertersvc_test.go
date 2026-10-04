@@ -23,14 +23,14 @@ import (
 func ofdSample(t *testing.T) []byte {
 	t.Helper()
 	for _, name := range []string{"sample.ofd", "basic.ofd", "actions.ofd", "link.ofd"} {
-		path := filepath.Join("..", "..", "test", "testdata", name)
+		path := filepath.Join("..", "..", "testdata", name)
 		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
 			return data
 		}
 	}
 	// 逐级向上找，避免依赖具体目录名。
 	var found string
-	filepath.Walk(filepath.Join("..", "..", "test", "testdata"), func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(filepath.Join("..", "..", "testdata"), func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() || found != "" {
 			return nil
 		}

@@ -165,7 +165,7 @@ func (r response) decode(t *testing.T) map[string]any {
 func ofdPayload(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"sample.ofd", "actions.ofd", "link.ofd"} {
-		if data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name)); err == nil && len(data) > 0 {
+		if data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name)); err == nil && len(data) > 0 {
 			return base64.StdEncoding.EncodeToString(data)
 		}
 	}

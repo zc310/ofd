@@ -20,7 +20,7 @@ import (
 func testOFDPath(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"helloworld.ofd", "sample.ofd", "intro.ofd"} {
-		path := filepath.Join("..", "..", "test", "testdata", name)
+		path := filepath.Join("..", "..", "testdata", name)
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
@@ -37,7 +37,7 @@ func testMultiPageDocument(t *testing.T, minPages int) ([]*render.Document, int)
 	t.Helper()
 	candidates := []string{"multi_demo.ofd", "actions.ofd", "link.ofd", "helloworld.ofd"}
 	for _, name := range candidates {
-		path := filepath.Join("..", "..", "test", "testdata", name)
+		path := filepath.Join("..", "..", "testdata", name)
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}

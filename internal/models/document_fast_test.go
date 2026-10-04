@@ -16,7 +16,7 @@ import (
 // documentXMLFromOFD 从 OFD 包中取出文档主体 XML 的原始字节。
 func documentXMLFromOFD(tb testing.TB, name string) []byte {
 	tb.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		tb.Skipf("测试文档 %s 不可用: %v", name, err)
 	}

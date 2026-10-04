@@ -2,7 +2,7 @@
 # 径向渐变示例；第 1 页覆盖同心、偏心和三色色标，第 2 页为图 36 的 Extend，后 3 页按 GB/T 33190 图 37 分别绘制 Direct、Repeat、Reflect。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-gradient.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-gradient.yaml -o test/testdata/radial-gradient.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-gradient.yaml -o testdata/radial-gradient.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

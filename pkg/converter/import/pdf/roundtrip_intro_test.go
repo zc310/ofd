@@ -75,7 +75,7 @@ func TestIntroPDFRoundTripSimilarity(t *testing.T) {
 		t.Skipf("未找到 pdftoppm，跳过 PDF 视觉相似度测试: %v", err)
 	}
 
-	source := filepath.Join("..", "..", "..", "..", "test", "testdata", "pdf", "intro.pdf")
+	source := filepath.Join("..", "..", "..", "..", "testdata", "pdf", "intro.pdf")
 	original, err := os.ReadFile(source)
 	if err != nil {
 		t.Skipf("缺少 %s，跳过: %v", source, err)
@@ -151,7 +151,7 @@ func TestIntroOFDToPDFSimilarity(t *testing.T) {
 		t.Skipf("未找到 pdftoppm，跳过 PDF 视觉相似度测试: %v", err)
 	}
 
-	base := filepath.Join("..", "..", "..", "..", "test", "testdata")
+	base := filepath.Join("..", "..", "..", "..", "testdata")
 	ofdSource := filepath.Join(base, "intro.ofd")
 	pdfSource := filepath.Join(base, "pdf", "intro.pdf")
 

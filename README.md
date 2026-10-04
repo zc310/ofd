@@ -1060,20 +1060,20 @@ if err := merge.Pages([]merge.Source{{Path: "a.ofd"}, {Path: "b.ofd"}}, output, 
 `xmllint`、外部模式文件或网络。校验结果会统一生成报告，支持终端查看、归档或交给 CI 和其他程序处理：
 
 ```bash
-go run ./cmd/ofd-validator --format text test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator --format text testdata/helloworld.ofd
 ```
 
 报告支持文本、Markdown、JSON、PDF 和 XLSX 五种格式：
 
 ```bash
-go run ./cmd/ofd-validator --format json --pretty test/testdata/helloworld.ofd > report.json
-go run ./cmd/ofd-validator --format markdown -o report.md test/testdata/helloworld.ofd
-go run ./cmd/ofd-validator -o report.md test/testdata/helloworld.ofd
-go run ./cmd/ofd-validator -o report.json test/testdata/helloworld.ofd
-go run ./cmd/ofd-validator -o report.txt test/testdata/helloworld.ofd
+go run ./cmd/ofd-validator --format json --pretty testdata/helloworld.ofd > report.json
+go run ./cmd/ofd-validator --format markdown -o report.md testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.md testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.json testdata/helloworld.ofd
+go run ./cmd/ofd-validator -o report.txt testdata/helloworld.ofd
 go run ./cmd/ofd-validator --format pdf --font /path/to/SimSun.ttf \
-  -o report.pdf test/testdata/helloworld.ofd
-go run ./cmd/ofd-validator --format xlsx -o report.xlsx test/testdata/helloworld.ofd
+  -o report.pdf testdata/helloworld.ofd
+go run ./cmd/ofd-validator --format xlsx -o report.xlsx testdata/helloworld.ofd
 ```
 
 未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
@@ -1101,25 +1101,25 @@ go run ./cmd/ofd-validator --format xlsx -o report.xlsx test/testdata/helloworld
 
 ```bash
 # 默认输出纯文本报告
-go run ./cmd/ofd-analyzer test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer testdata/helloworld.ofd
 
 # 输出适合程序处理的 JSON 报告
-go run ./cmd/ofd-analyzer --format json test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format json testdata/helloworld.ofd
 
 # 输出缩进后的 JSON 报告文件
 go run ./cmd/ofd-analyzer --format json --pretty \
-  -o analyzer-report.json test/testdata/multi_demo.ofd
+  -o analyzer-report.json testdata/multi_demo.ofd
 
 # 输出 Markdown 报告
-go run ./cmd/ofd-analyzer --format text -o analyzer-report.txt test/testdata/helloworld.ofd
-go run ./cmd/ofd-analyzer --format markdown -o analyzer-report.md test/testdata/helloworld.ofd
-go run ./cmd/ofd-analyzer -o analyzer-report.json test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format text -o analyzer-report.txt testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format markdown -o analyzer-report.md testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer -o analyzer-report.json testdata/helloworld.ofd
 
 # 输出 PDF 报告；PDF 报告需要可用字体
-go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format pdf --font /path/to/font.ttf -o analyzer-report.pdf testdata/helloworld.ofd
 
 # 输出 XLSX 报告
-go run ./cmd/ofd-analyzer --format xlsx -o analyzer-report.xlsx test/testdata/helloworld.ofd
+go run ./cmd/ofd-analyzer --format xlsx -o analyzer-report.xlsx testdata/helloworld.ofd
 
 # 指定 SM2 UID、签名值格式、证书链信任根和离线 CRL
 go run ./cmd/ofd-analyzer --signature-uid custom-id --signature-format auto --signature-roots roots.pem test.ofd
@@ -1184,11 +1184,11 @@ go run ./cmd/ofd-server -c ofd-server.json
 `ofd-archive` 在现有校验器和分析器之上提供面向档案处理的预检、技术清单、归档准备目录和固定性验证。它会原样保留输入 OFD，记录档案著录元数据、分析报告、附件副本和 SHA-256 清单，不会自动修改签名文档或删除动作、媒体、注释和附件：
 
 ```bash
-go run ./cmd/ofd-archive check --format text test/testdata/helloworld.ofd
-go run ./cmd/ofd-archive check --format markdown test/testdata/helloworld.ofd > /tmp/ofd-check.md
-go run ./cmd/ofd-archive manifest --format json --pretty test/testdata/helloworld.ofd
-go run ./cmd/ofd-archive matrix --mode structural test/testdata/helloworld.ofd > /tmp/ofd-matrix.md
-go run ./cmd/ofd-archive prepare test/testdata/helloworld.ofd \
+go run ./cmd/ofd-archive check --format text testdata/helloworld.ofd
+go run ./cmd/ofd-archive check --format markdown testdata/helloworld.ofd > /tmp/ofd-check.md
+go run ./cmd/ofd-archive manifest --format json --pretty testdata/helloworld.ofd
+go run ./cmd/ofd-archive matrix --mode structural testdata/helloworld.ofd > /tmp/ofd-matrix.md
+go run ./cmd/ofd-archive prepare testdata/helloworld.ofd \
   --metadata archive.json --output /tmp/ofd-archive
 go run ./cmd/ofd-archive verify /tmp/ofd-archive
 ```
@@ -1201,7 +1201,7 @@ go run ./cmd/ofd-archive verify /tmp/ofd-archive
 
 ```bash
 go run ./cmd/ofd-archive matrix --mode structural --format xlsx \
-  --output /tmp/ofd-matrix.xlsx test/testdata/helloworld.ofd
+  --output /tmp/ofd-matrix.xlsx testdata/helloworld.ofd
 ```
 
 OFD 文件可以包含多个文档体。转换器和查看器按 `DocBody` 出现顺序合并页面，`Page(n)` 和命令行 `-page n` 使用合并后的全局页码。

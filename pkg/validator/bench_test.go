@@ -11,7 +11,7 @@ import (
 // validatorBenchFile 读取 testdata 下的 OFD 文档；缺失时跳过基准。
 func validatorBenchFile(b *testing.B, name string) []byte {
 	b.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		b.Skipf("测试文档 %s 不可用: %v", name, err)
 	}

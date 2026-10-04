@@ -102,7 +102,7 @@ func TestGGBackendMatchesCanvasOnRealOFD(t *testing.T) {
 	}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "..", "..", "test", "testdata", name)
+			path := filepath.Join("..", "..", "..", "..", "testdata", name)
 			ofd, err := parser.NewOFD(path)
 			if err != nil {
 				t.Skipf("解析失败（环境相关）: %v", err)

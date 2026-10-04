@@ -175,7 +175,7 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 ```bash
 go build -o /tmp/ofd-signer-demo ./cmd/ofd-signer-demo
 go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
-  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures test/testdata/hello.ofd
+  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/hello.ofd
 ```
 
 重签名通常配合 `--signatures drop`（先清掉旧签名）或有 `--pages` 的模型级合并使用。

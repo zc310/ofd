@@ -50,7 +50,7 @@ func renderSequence(t *testing.T, reader *Reader, pages []int) []byte {
 // 若直接变换缓存对象，同一字形在后续渲染时会把平移不断累积，最终整体移出
 // 页面——表现为「刚打开能看到，滚动回来就没了」。
 func TestRenderPageKeepsTextAfterVisitingOtherPages(t *testing.T) {
-	path := filepath.Join("..", "..", "test", "testdata", "other", "sample0.ofd")
+	path := filepath.Join("..", "..", "testdata", "other", "sample0.ofd")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Skipf("缺少测试文档 %s: %v", path, err)

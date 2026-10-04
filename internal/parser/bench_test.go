@@ -8,7 +8,7 @@ import (
 
 func parserBenchFile(b *testing.B, name string) []byte {
 	b.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		b.Skipf("测试文档 %s 不可用: %v", name, err)
 	}

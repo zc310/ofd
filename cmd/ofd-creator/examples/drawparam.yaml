@@ -4,13 +4,13 @@
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/drawparam.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/drawparam.yaml -o /tmp/drawparam.ofd --format auto --deterministic --validate
-# 注意：test/testdata/drawparam.ofd 是手工样例，DrawParam ID（10/12/20/21/22）和
+# 注意：testdata/drawparam.ofd 是手工样例，DrawParam ID（10/12/20/21/22）和
 # 双资源文件结构被 internal/parser 与 pkg/analyzer 的测试锁定；本配置重建时会
 # 自动重排 ID 并把资源并入单个 DocumentRes.xml，因此输出到 /tmp，不覆盖 fixture。
 
 #
 # 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/drawparam.yaml -o test/testdata/drawparam.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/drawparam.yaml -o testdata/drawparam.ofd --format auto --deterministic --validate --complete-text-code-deltas
 version: 1
 document:
   id: drawparam-demo-20260903
