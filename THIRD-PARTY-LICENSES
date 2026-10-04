@@ -1,7 +1,3 @@
-# Third Party Licenses
-# This file lists the licenses of third-party dependencies used in this project.
-# Generated from go.mod dependencies.
-
 ## Direct Dependencies
 
 ### fyne.io/fyne/v2 v2.8.1
@@ -12,7 +8,11 @@ Source: https://github.com/fyne-io/fyne
 License: MIT
 Source: https://github.com/BurntSushi/toml
 
-### github.com/beevik/etree v1.8.0
+### github.com/FloatTech/gg v1.1.3
+License: MIT
+Source: https://github.com/FloatTech/gg
+
+### github.com/beevik/etree v1.8.1
 License: MIT
 Source: https://github.com/beevik/etree
 
@@ -20,11 +20,11 @@ Source: https://github.com/beevik/etree
 License: BSD-3-Clause
 Source: https://github.com/benoitkugler/textlayout
 
-### github.com/chromedp/cdproto v0.0.0-20260912003405-686a5c723acc
+### github.com/chromedp/cdproto v0.157.5
 License: MIT
 Source: https://github.com/chromedp/cdproto
 
-### github.com/chromedp/chromedp v0.16.0
+### github.com/chromedp/chromedp v0.19.1
 License: MIT
 Source: https://github.com/chromedp/chromedp
 
@@ -32,19 +32,43 @@ Source: https://github.com/chromedp/chromedp
 License: MIT
 Source: https://github.com/dkrisman/gobig2
 
-### github.com/emmansun/gmsm v0.44.1
+### github.com/emmansun/gmsm v0.45.0
 License: Apache-2.0
 Source: https://github.com/emmansun/gmsm
+
+### github.com/fasthttp/router v1.5.4
+License: BSD-3-Clause
+Source: https://github.com/fasthttp/router
+
+### github.com/fogleman/gg v1.3.0
+License: MIT
+Source: https://github.com/fogleman/gg
 
 ### github.com/go-text/typesetting v0.3.5
 License: BSD-3-Clause
 Source: https://github.com/go-text/typesetting
 
+### github.com/goccy/go-json v0.11.2
+License: MIT
+Source: https://github.com/goccy/go-json
+
+### github.com/gogpu/gg v0.52.5
+License: MIT
+Source: https://github.com/gogpu/gg
+
 ### github.com/h2non/filetype v1.1.3
 License: MIT
 Source: https://github.com/h2non/filetype
 
-### github.com/knroy/go-xml v1.3.1
+### github.com/jlaffaye/ftp v0.2.4
+License: ISC
+Source: https://github.com/jlaffaye/ftp
+
+### github.com/klauspost/compress v1.20.1
+License: Apache-2.0
+Source: https://github.com/klauspost/compress
+
+### github.com/knroy/go-xml v1.4.0
 License: MIT
 Source: https://github.com/knroy/go-xml
 
@@ -52,13 +76,37 @@ Source: https://github.com/knroy/go-xml
 License: MIT
 Source: https://github.com/kovidgoyal/imaging
 
+### github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
+License: BSD-2-Clause
+Source: https://github.com/llgcode/draw2d
+
+### github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
+License: BSD-3-Clause
+Source: https://github.com/lumifloat/tinyskia
+
+### github.com/minio/minio-go/v7 v7.3.0
+License: Apache-2.0
+Source: https://github.com/minio/minio-go/v7
+
+### github.com/mrjoshuak/go-jpeg2000 v1.5.12
+License: Apache-2.0
+Source: https://github.com/mrjoshuak/go-jpeg2000
+
+### github.com/natefinch/lumberjack/v3 v3.0.0-alpha
+License: MIT
+Source: https://github.com/natefinch/lumberjack/v3
+
 ### github.com/ncruces/zenity v0.10.15
 License: MIT
 Source: https://github.com/ncruces/zenity
 
-### github.com/pdfcpu/pdfcpu v0.15.0
+### github.com/pdfcpu/pdfcpu v0.16.0
 License: Apache-2.0
 Source: https://github.com/pdfcpu/pdfcpu
+
+### github.com/pkg/sftp v1.13.11
+License: BSD-2-Clause
+Source: https://github.com/pkg/sftp
 
 ### github.com/rymdport/portal v0.4.2
 License: MIT
@@ -72,6 +120,10 @@ Source: https://github.com/spf13/cobra
 License: MIT
 Source: https://github.com/stretchr/testify
 
+### github.com/studio-b12/gowebdav v0.13.0
+License: BSD-3-Clause
+Source: https://github.com/studio-b12/gowebdav
+
 ### github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
 License: MIT
 Source: https://github.com/tdewolff/canvas
@@ -80,9 +132,17 @@ Source: https://github.com/tdewolff/canvas
 License: MIT
 Source: https://github.com/tdewolff/font
 
-### github.com/tdewolff/minify/v2 v2.24.17
+### github.com/tdewolff/minify/v2 v2.24.19
 License: MIT
 Source: https://github.com/tdewolff/minify
+
+### github.com/valyala/fasthttp v1.74.0
+License: MIT
+Source: https://github.com/valyala/fasthttp
+
+### github.com/woozymasta/png v1.2.0
+License: BSD-3-Clause
+Source: https://github.com/woozymasta/png
 
 ### github.com/xuri/excelize/v2 v2.11.0
 License: BSD-3-Clause
@@ -92,9 +152,13 @@ Source: https://github.com/xuri/excelize
 License: MIT
 Source: https://github.com/yuin/goldmark
 
-### github.com/zc310/fontfix v0.0.2
+### github.com/zc310/fontfix v0.0.3-0.20260927235621-9e5b20635fc8
 License: Apache-2.0
 Source: https://github.com/zc310/fontfix
+
+### go.etcd.io/bbolt v1.5.0
+License: MIT
+Source: https://github.com/etcd-io/bbolt
 
 ### go.yaml.in/yaml/v3 v3.0.5
 License: Apache-2.0
@@ -138,10 +202,6 @@ Source: https://github.com/BurntSushi/xgb
 License: MIT
 Source: https://github.com/BurntSushi/xgbutil
 
-### github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
-License: MIT
-Source: https://github.com/ByteArena/poly2tri-go
-
 ### github.com/FyshOS/fancyfs v0.0.1
 License: MIT
 Source: https://github.com/FyshOS/fancyfs
@@ -165,10 +225,6 @@ Source: https://github.com/anthonynsimon/bild
 ### github.com/benoitkugler/textprocessing v0.0.6
 License: BSD-3-Clause
 Source: https://github.com/benoitkugler/textprocessing
-
-### github.com/chromedp/sysutil v1.1.0
-License: MIT
-Source: https://github.com/chromedp/sysutil
 
 ### github.com/clipperhouse/uax29/v2 v2.7.0
 License: MIT
@@ -210,22 +266,6 @@ Source: https://github.com/go-gl/gl
 License: BSD-3-Clause
 Source: https://github.com/go-gl/glfw
 
-### github.com/gobwas/httphead v0.1.0
-License: MIT
-Source: https://github.com/gobwas/httphead
-
-### github.com/gobwas/pool v0.2.1
-License: MIT
-Source: https://github.com/gobwas/pool
-
-### github.com/gobwas/ws v1.4.0
-License: MIT
-Source: https://github.com/gobwas/ws
-
-### github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
-License: BSD-3-Clause
-Source: https://github.com/go-json-experiment/json
-
 ### github.com/go-text/render v0.2.1
 License: BSD-3-Clause
 Source: https://github.com/go-text/render
@@ -234,10 +274,6 @@ Source: https://github.com/go-text/render
 License: BSD-3-Clause
 Source: https://github.com/godbus/dbus
 
-### github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
-License: BSD-3-Clause
-Source: https://github.com/golang/freetype
-
 ### github.com/hack-pad/go-indexeddb v0.3.2
 License: MIT
 Source: https://github.com/hack-pad/go-indexeddb
@@ -245,10 +281,6 @@ Source: https://github.com/hack-pad/go-indexeddb
 ### github.com/hack-pad/safejs v0.1.1
 License: MIT
 Source: https://github.com/hack-pad/safejs
-
-### github.com/hhrutter/tiff v1.0.6
-License: BSD-3-Clause
-Source: https://github.com/hhrutter/tiff
 
 ### github.com/inconshreveable/mousetrap v1.1.0
 License: BSD-3-Clause
@@ -294,10 +326,6 @@ Source: https://github.com/richardlehane/mscfb
 License: BSD-3-Clause
 Source: https://github.com/richardlehane/msoleps
 
-### github.com/spf13/pflag v1.0.10
-License: BSD-3-Clause
-Source: https://github.com/spf13/pflag
-
 ### github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
 License: MIT
 Source: https://github.com/srwiley/oksvg
@@ -309,10 +337,6 @@ Source: https://github.com/srwiley/rasterx
 ### github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
 License: MIT
 Source: https://github.com/srwiley/scanx
-
-### github.com/tdewolff/parse/v2 v2.8.16
-License: MIT
-Source: https://github.com/tdewolff/parse
 
 ### github.com/tiendc/go-deepcopy v1.7.2
 License: MIT
@@ -329,14 +353,6 @@ Source: https://github.com/xuri/efp
 ### github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9
 License: BSD-3-Clause
 Source: https://github.com/xuri/nfp
-
-### golang.org/x/crypto v0.57.0
-License: BSD-3-Clause
-Source: https://github.com/golang/crypto
-
-### golang.org/x/net v0.59.0
-License: BSD-3-Clause
-Source: https://github.com/golang/net
 
 ### golang.org/x/sync v0.23.0
 License: BSD-3-Clause
@@ -365,9 +381,11 @@ Source: https://star-tex.org/x/tex
 ## License Summary
 
 The project uses the following license types:
-- MIT: ~70 packages
-- BSD-3-Clause: ~31 packages
-- Apache-2.0: 5 packages
+- MIT: 53 packages
+- BSD-3-Clause: 29 packages
+- Apache-2.0: 8 packages
+- BSD-2-Clause: 2 packages
+- ISC: 1 package
 - GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)
 
 All dependencies are compatible with the project's license.
