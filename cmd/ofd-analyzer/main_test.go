@@ -48,7 +48,7 @@ func TestParseArgsSupportsVersion(t *testing.T) {
 }
 
 func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	for _, test := range []struct {
 		extension string
 		format    string
@@ -73,7 +73,7 @@ func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 }
 
 func TestValidateOptionsPreservesExplicitFormatForOutputExtension(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	opts := &options{input: input, output: filepath.Join(t.TempDir(), "report.json"), format: "text", formatSet: true}
 	if err := validateOptions(opts); err != nil {
 		t.Fatal(err)
@@ -94,14 +94,14 @@ func TestParseArgsSignatureOptions(t *testing.T) {
 }
 
 func TestValidateOptionsRejectsInvalidSignatureFormat(t *testing.T) {
-	opts := &options{input: filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"), format: "text", signatureFormat: "invalid"}
+	opts := &options{input: filepath.Join("..", "..", "testdata", "helloworld.ofd"), format: "text", signatureFormat: "invalid"}
 	if err := validateOptions(opts); err == nil {
 		t.Fatal("expected invalid signature format error")
 	}
 }
 
 func TestRunAcceptsSignatureFormatOption(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "999.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "json", "--signature-format", "raw", input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"verification_checked":true`) || !strings.Contains(stdout.String(), `"verification_valid":false`) {
@@ -110,7 +110,7 @@ func TestRunAcceptsSignatureFormatOption(t *testing.T) {
 }
 
 func TestRunRejectsInvalidSignatureRoots(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "999.ofd")
 	roots := filepath.Join(t.TempDir(), "roots.pem")
 	if err := os.WriteFile(roots, []byte("not a certificate"), 0600); err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestRunRejectsInvalidSignatureRoots(t *testing.T) {
 }
 
 func TestRunAcceptsSignatureRoots(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "999.ofd")
 	signedValue := readArchiveEntry(t, input, "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := parser.ParseSignedValue(signedValue)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestRunAcceptsSignatureRoots(t *testing.T) {
 }
 
 func TestRunRejectsInvalidSignatureCRL(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "999.ofd")
 	crl := filepath.Join(t.TempDir(), "revoked.crl")
 	if err := os.WriteFile(crl, []byte("not a CRL"), 0600); err != nil {
 		t.Fatal(err)
@@ -155,14 +155,14 @@ func TestRunRejectsInvalidSignatureCRL(t *testing.T) {
 }
 
 func TestValidateOptionsRejectsUnsupportedFormat(t *testing.T) {
-	opts := &options{input: filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"), format: "html"}
+	opts := &options{input: filepath.Join("..", "..", "testdata", "helloworld.ofd"), format: "html"}
 	if err := validateOptions(opts); err == nil {
 		t.Fatal("expected unsupported format error")
 	}
 }
 
 func TestValidateOptionsRejectsFontForNonPDF(t *testing.T) {
-	opts := &options{input: filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"), format: "text", font: "font.ttf"}
+	opts := &options{input: filepath.Join("..", "..", "testdata", "helloworld.ofd"), format: "text", font: "font.ttf"}
 	if err := validateOptions(opts); err == nil {
 		t.Fatal("expected --font validation error")
 	}
@@ -170,7 +170,7 @@ func TestValidateOptionsRejectsFontForNonPDF(t *testing.T) {
 
 func TestRunWritesJSONReport(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--format", "json", "--pretty", filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")}, &stdout, &stderr)
+	code := run([]string{"--format", "json", "--pretty", filepath.Join("..", "..", "testdata", "helloworld.ofd")}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
 	}
@@ -188,7 +188,7 @@ func TestRunWritesJSONReport(t *testing.T) {
 
 func TestRunDefaultsToTextReport(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")}, &stdout, &stderr)
+	code := run([]string{filepath.Join("..", "..", "testdata", "helloworld.ofd")}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.HasPrefix(stdout.String(), "OFD 分析报告") {
 		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
@@ -196,14 +196,14 @@ func TestRunDefaultsToTextReport(t *testing.T) {
 
 func TestRunTreeAddsPackageTree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--tree", "--format", "json", filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")}, &stdout, &stderr)
+	code := run([]string{"--tree", "--format", "json", filepath.Join("..", "..", "testdata", "helloworld.ofd")}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"tree"`) || !strings.Contains(stdout.String(), `"name":"Doc_0"`) {
 		t.Fatalf("exit code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
 }
 
 func TestRunRejectsOverwritingInput(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-o", input, input}, &stdout, &stderr)
 	if code != exitUsage || !strings.Contains(stderr.String(), "覆盖") {
@@ -227,7 +227,7 @@ func TestRunAnalysisFailureStillWritesFailedReport(t *testing.T) {
 }
 
 func TestRunFailOnWarningReturnsFailure(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "ano.ofd")
+	input := filepath.Join("..", "..", "testdata", "ano.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "json", "--fail-on-warning", input}, &stdout, &stderr)
 	if code != exitFailed {
@@ -239,7 +239,7 @@ func TestRunFailOnWarningReturnsFailure(t *testing.T) {
 }
 
 func TestRunWritesTextAndMarkdownReports(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	for _, test := range []struct {
 		format string
 		want   string
@@ -262,7 +262,7 @@ func TestRunWritesPDFReport(t *testing.T) {
 	if _, err := os.Stat(font); err != nil {
 		t.Skipf("test font unavailable: %v", err)
 	}
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "pdf", "--font", font, input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !bytes.HasPrefix(stdout.Bytes(), []byte("%PDF-")) {
@@ -271,7 +271,7 @@ func TestRunWritesPDFReport(t *testing.T) {
 }
 
 func TestRunWritesXLSXReport(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "xlsx", input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || len(stdout.Bytes()) < 1000 {

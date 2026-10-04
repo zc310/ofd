@@ -580,7 +580,7 @@ func TestPDFImageDataDecodesFiltersBeforeDCTDecode(t *testing.T) {
 }
 
 func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
-	pdf, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "pdf", "sample0.pdf"))
+	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf", "sample0.pdf"))
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestConvertYCCKJPEGToRGB(t *testing.T) {
 	// RA_CI.pdf 第 4 页的 GitHub 图标是 Adobe YCCK（APP14 transform=2）CMYK
 	// JPEG。只处理 transform=0 时会把 CMYK JPEG 原样嵌入 OFD，阅读器按 RGB
 	// 解码后整幅反相（白底变黑底）。转换后应为白底 PNG。
-	pdf, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "pdf", "RA_CI.pdf"))
+	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf", "RA_CI.pdf"))
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func fakeSFNTWithGlyphCount(numGlyphs uint16) []byte {
 }
 
 func TestConvertTestdataPDFs(t *testing.T) {
-	paths, err := filepath.Glob("../../test/testdata/pdf/*.pdf")
+	paths, err := filepath.Glob("../../testdata/pdf/*.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1419,7 +1419,7 @@ func TestConvertWritesConverterMetadata(t *testing.T) {
 // TestConvertPreservesSourceProducer 验证源 PDF 的生产者保留在自定义元数据中，
 // 不会被转换工具标识覆盖而丢失。
 func TestConvertPreservesSourceProducer(t *testing.T) {
-	data, err := os.ReadFile("../../test/testdata/pdf/sample0.pdf")
+	data, err := os.ReadFile("../../testdata/pdf/sample0.pdf")
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}

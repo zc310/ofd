@@ -65,7 +65,7 @@ func docxParagraphTexts(t *testing.T, document string) []string {
 
 func TestDOCXProducesValidPackage(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../test/testdata/helloworld.ofd", &output); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	parts := docxParts(t, output.Bytes())
@@ -91,7 +91,7 @@ func TestDOCXProducesValidPackage(t *testing.T) {
 
 func TestDOCXPreservesFontNameAndSize(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../test/testdata/helloworld.ofd", &output); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	document := docxParts(t, output.Bytes())["word/document.xml"]
@@ -108,7 +108,7 @@ func TestDOCXPreservesFontNameAndSize(t *testing.T) {
 
 func TestDOCXTablesToggle(t *testing.T) {
 	// intro.ofd 全篇能识别出 20 余个表格，适合做表格开关的回归样例。
-	const source = "../../test/testdata/intro.ofd"
+	const source = "../../testdata/intro.ofd"
 	var withTables, withoutTables bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &withTables, converter.WithDOCXTables(true)); err != nil {
 		t.Fatalf("开启表格转换失败: %v", err)
@@ -154,7 +154,7 @@ func TestDOCXTablesToggle(t *testing.T) {
 // 以及 WithDOCXImages(false) 能整体关掉内嵌。
 func TestDOCXEmbedsImages(t *testing.T) {
 	// image-effects.ofd 第 1 页有 3 张 PNG 图片。
-	const source = "../../test/testdata/image-effects.ofd"
+	const source = "../../testdata/image-effects.ofd"
 	var output bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
@@ -232,7 +232,7 @@ func docxEmbedIDs(document string) []string {
 // 且能用 WithDOCXAnnotations 保留。ano.ofd 首页的「保密资料」水印由 81 个
 // 批注文字对象组成，同页真实正文只有 5 个对象——过滤前后段落数差异巨大。
 func TestDOCXDropsAnnotationWatermarkByDefault(t *testing.T) {
-	const source = "../../test/testdata/ano.ofd"
+	const source = "../../testdata/ano.ofd"
 	var filtered, kept bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &filtered, converter.Page(1)); err != nil {
 		t.Fatalf("默认转换失败: %v", err)
@@ -262,7 +262,7 @@ func TestDOCXDropsAnnotationWatermarkByDefault(t *testing.T) {
 
 func TestDOCXPageSelection(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../test/testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	// 只选一页时不应输出分页符，否则末尾会多出一个空段落。

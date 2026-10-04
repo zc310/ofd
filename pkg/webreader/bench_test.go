@@ -29,7 +29,7 @@ import (
 // 每个构建环境都有，跳过与"这个包坏了"是两件事。
 func benchFile(b *testing.B, name string) []byte {
 	b.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		b.Skipf("测试文档 %s 不可用: %v", name, err)
 	}

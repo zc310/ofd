@@ -73,7 +73,7 @@ func TestPageUsesA4ForInvalidPhysicalBox(t *testing.T) {
 }
 
 func TestDocumentPageIsSafeForConcurrentCalls(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

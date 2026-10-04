@@ -29,7 +29,7 @@ func ExamplePDF() {
 	output, err := os.CreateTemp("", "ofd-example-*.pdf")
 	if err == nil {
 		defer os.Remove(output.Name())
-		err = converter.PDF(ctx, "../../test/testdata/intro.ofd", output)
+		err = converter.PDF(ctx, "../../testdata/intro.ofd", output)
 		if closeErr := output.Close(); err == nil {
 			err = closeErr
 		}
@@ -44,7 +44,7 @@ func ExampleMarkdown() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Markdown(ctx, "../../test/testdata/helloworld.ofd", &output, converter.Page(1))
+	err := converter.Markdown(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1))
 	// 标题使用 OFD 文档的 DocInfo.Title，没有标题时回退为 “OFD 文档”。
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("# Hello World")))
 	// Output: true
@@ -58,7 +58,7 @@ func ExamplePNG() {
 	dir, err := os.MkdirTemp("", "ofd-example-")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = converter.Image(ctx, "../../test/testdata/ano.ofd",
+		err = converter.Image(ctx, "../../testdata/ano.ofd",
 			converter.Writer(func(page int) (io.WriteCloser, error) {
 				return os.Create(filepath.Join(dir, fmt.Sprintf("ano_%d.png", page)))
 			}),
@@ -78,7 +78,7 @@ func ExampleJPG() {
 	dir, err := os.MkdirTemp("", "ofd-example-")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = converter.Image(ctx, "../../test/testdata/intro.ofd",
+		err = converter.Image(ctx, "../../testdata/intro.ofd",
 			converter.Writer(func(page int) (io.WriteCloser, error) {
 				return os.Create(filepath.Join(dir, fmt.Sprintf("intro_%d.jpg", page)))
 			}),
@@ -98,7 +98,7 @@ func ExampleSVG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../test/testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -115,7 +115,7 @@ func ExampleHTML() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../test/testdata/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
+	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/png;base64,")))
 	// Output: true
 }
@@ -126,7 +126,7 @@ func ExampleDOCX() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.DOCX(ctx, "../../test/testdata/helloworld.ofd", &output, converter.Page(1))
+	err := converter.DOCX(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1))
 	fmt.Println(err == nil && docxHasPart(output.Bytes(), "word/document.xml"))
 	// Output: true
 }
@@ -152,7 +152,7 @@ func ExampleHTMLSVG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../test/testdata/helloworld.ofd", &output, converter.HTMLSVG(), converter.Page(1))
+	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.HTMLSVG(), converter.Page(1))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("<svg")))
 	// Output: true
 }
@@ -163,7 +163,7 @@ func ExampleHTMLJPG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../test/testdata/helloworld.ofd", &output, converter.HTMLJPG(), converter.Page(1))
+	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.HTMLJPG(), converter.Page(1))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/jpeg;base64,")))
 	// Output: true
 }
@@ -174,7 +174,7 @@ func ExampleEPS() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../test/testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -191,7 +191,7 @@ func ExampleTeX() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../test/testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -208,7 +208,7 @@ func ExampleConvert() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Convert(ctx, "ofd", "pdf", "../../test/testdata/helloworld.ofd", &output)
+	err := converter.Convert(ctx, "ofd", "pdf", "../../testdata/helloworld.ofd", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("%PDF-")))
 	// Output: true
 }
@@ -219,7 +219,7 @@ func ExampleConvert_pdfToOFD() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Convert(ctx, "pdf", "ofd", "../../test/testdata/pdf/sample0.pdf", &output)
+	err := converter.Convert(ctx, "pdf", "ofd", "../../testdata/pdf/sample0.pdf", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
 }
@@ -230,7 +230,7 @@ func ExampleConvert_markdownToOFD() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Convert(ctx, "md", "ofd", "../../test/testdata/markdown/sample.md", &output)
+	err := converter.Convert(ctx, "md", "ofd", "../../testdata/markdown/sample.md", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
 }

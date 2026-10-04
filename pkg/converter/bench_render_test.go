@@ -1,10 +1,8 @@
-package test
+package converter
 
 import (
 	"bytes"
 	"testing"
-
-	"github.com/zc310/ofd/pkg/converter"
 )
 
 // 端到端 OFD→PDF 的速度基准，用四个形态差异较大的样例：
@@ -26,7 +24,7 @@ func benchmarkRenderPDF(b *testing.B, name string) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		output.Reset()
-		if err := converter.PDF(ctxTODO, "testdata/"+name+".ofd", &output); err != nil {
+		if err := PDF(ctxTODO, "../../testdata/"+name+".ofd", &output); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -3,7 +3,7 @@
 # 第 2 页 Pattern 图案填充示例（条纹/星形单元，自 examples/shading.yaml 移入）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml -o test/testdata/pattern-reflect.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/pattern-reflect.yaml -o testdata/pattern-reflect.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

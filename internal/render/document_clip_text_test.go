@@ -63,7 +63,7 @@ func clipsInkBox(t *testing.T, img *image.RGBA, po *models.PathObject, dpi float
 // 其文字裁剪区、位图与页面高度。
 func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *models.CtText, *image.RGBA, float64) {
 	t.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "clips.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "clips.ofd"))
 	if err != nil {
 		t.Skipf("样例不可用: %v", err)
 	}

@@ -6,7 +6,7 @@
 # 运行（图片资源路径相对仓库根，asset-root 以 manifest 所在目录为基准，
 # 需 ../../.. 回到仓库根，缺该参数会报图片读取失败）：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --asset-root ../../.. --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --asset-root ../../.. -o test/testdata/advanced-features.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --asset-root ../../.. -o testdata/advanced-features.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

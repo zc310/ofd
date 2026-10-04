@@ -20,7 +20,7 @@ import (
 
 func TestRunDefaultsToCheckJSON(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--format", "json", "--mode", "structural", "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+	code := run([]string{"--format", "json", "--mode", "structural", "../../testdata/helloworld.ofd"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
 	}
@@ -72,7 +72,7 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 
 func TestRunCheckWritesMarkdown(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"check", "--format", "markdown", "--mode", "structural", "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+	code := run([]string{"check", "--format", "markdown", "--mode", "structural", "../../testdata/helloworld.ofd"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
 	}
@@ -88,7 +88,7 @@ func TestRunCheckWritesMarkdown(t *testing.T) {
 }
 
 func TestParseArgsPrepareRequiresMetadataAndOutput(t *testing.T) {
-	opts, err := parseArgs([]string{"prepare", "../../test/testdata/helloworld.ofd"}, &bytes.Buffer{})
+	opts, err := parseArgs([]string{"prepare", "../../testdata/helloworld.ofd"}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestRunPrepareWritesReportAndDirectory(t *testing.T) {
 	}
 	output := filepath.Join(directory, "prepared")
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"prepare", "--mode", "structural", "--metadata", metadata, "--output", output, "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+	code := run([]string{"prepare", "--mode", "structural", "--metadata", metadata, "--output", output, "../../testdata/helloworld.ofd"}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), "OFD 归档预检报告") {
 		t.Fatalf("code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
@@ -122,7 +122,7 @@ func TestRunPrepareThenVerify(t *testing.T) {
 	}
 	output := filepath.Join(directory, "prepared")
 	var prepareStdout, prepareStderr bytes.Buffer
-	if code := run([]string{"prepare", "--mode", "structural", "--metadata", metadata, "--output", output, "../../test/testdata/helloworld.ofd"}, &prepareStdout, &prepareStderr); code != exitOK {
+	if code := run([]string{"prepare", "--mode", "structural", "--metadata", metadata, "--output", output, "../../testdata/helloworld.ofd"}, &prepareStdout, &prepareStderr); code != exitOK {
 		t.Fatalf("prepare code = %d, stdout = %s, stderr = %s", code, prepareStdout.String(), prepareStderr.String())
 	}
 	var verifyStdout, verifyStderr bytes.Buffer
@@ -136,7 +136,7 @@ func TestRunPrepareThenVerify(t *testing.T) {
 }
 
 func TestRunCheckFailOnWarning(t *testing.T) {
-	input := "../../test/testdata/project-showcase.ofd"
+	input := "../../testdata/project-showcase.ofd"
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"check", "--mode", "structural", input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), "状态：warning") {
@@ -161,7 +161,7 @@ func TestParseArgsAcceptsInputBeforeOptions(t *testing.T) {
 }
 
 func TestValidateOptionsRejectsReportOverwritingInput(t *testing.T) {
-	input := "../../test/testdata/helloworld.ofd"
+	input := "../../testdata/helloworld.ofd"
 	opts, err := parseArgs([]string{"check", "--format", "json", "--output", input, input}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestManifestDefaultsToJSON(t *testing.T) {
 
 func TestRunMatrixWritesMarkdown(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"matrix", "--mode", "structural", "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+	code := run([]string{"matrix", "--mode", "structural", "../../testdata/helloworld.ofd"}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), "条文符合性矩阵") || !strings.Contains(stdout.String(), "6.1.1") {
 		t.Fatalf("code = %d, stdout = %s, stderr = %s", code, stdout.String(), stderr.String())
 	}
@@ -192,7 +192,7 @@ func TestRunMatrixWritesMarkdown(t *testing.T) {
 func TestRunMatrixWritesXLSX(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "matrix.xlsx")
-	code := run([]string{"matrix", "--mode", "structural", "--output", output, "../../test/testdata/helloworld.ofd"}, &bytes.Buffer{}, &bytes.Buffer{})
+	code := run([]string{"matrix", "--mode", "structural", "--output", output, "../../testdata/helloworld.ofd"}, &bytes.Buffer{}, &bytes.Buffer{})
 	if code != exitOK {
 		t.Fatalf("code = %d", code)
 	}
@@ -253,7 +253,7 @@ func TestRunMatrixWritesXLSX(t *testing.T) {
 }
 
 func TestMatrixInfersXLSXFromOutputExtension(t *testing.T) {
-	input := "../../test/testdata/helloworld.ofd"
+	input := "../../testdata/helloworld.ofd"
 	opts, err := parseArgs([]string{"matrix", input, "--output", "matrix.xlsx"}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
@@ -267,7 +267,7 @@ func TestMatrixInfersXLSXFromOutputExtension(t *testing.T) {
 }
 
 func TestCheckRejectsXLSXFormat(t *testing.T) {
-	opts, err := parseArgs([]string{"check", "--format", "xlsx", "../../test/testdata/helloworld.ofd"}, &bytes.Buffer{})
+	opts, err := parseArgs([]string{"check", "--format", "xlsx", "../../testdata/helloworld.ofd"}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestCheckRejectsXLSXFormat(t *testing.T) {
 }
 
 func TestMatrixAcceptsExplicitXLSXFormat(t *testing.T) {
-	opts, err := parseArgs([]string{"matrix", "--format", "xlsx", "../../test/testdata/helloworld.ofd"}, &bytes.Buffer{})
+	opts, err := parseArgs([]string{"matrix", "--format", "xlsx", "../../testdata/helloworld.ofd"}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestMatrixAcceptsExplicitXLSXFormat(t *testing.T) {
 }
 
 func TestMakeArchiveOptionsPassesXMLScanLimit(t *testing.T) {
-	opts, err := parseArgs([]string{"check", "--max-xml-bytes", "1234", "../../test/testdata/helloworld.ofd"}, &bytes.Buffer{})
+	opts, err := parseArgs([]string{"check", "--max-xml-bytes", "1234", "../../testdata/helloworld.ofd"}, &bytes.Buffer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestMakeArchiveOptionsPassesXMLScanLimit(t *testing.T) {
 func TestRunDoctypeRejectsUnknownProfile(t *testing.T) {
 	for _, invalid := range []string{"ofd-a", "OFD_A", "OFD-X"} {
 		var stdout, stderr bytes.Buffer
-		code := run([]string{"check", "--doc-type", invalid, "../../test/testdata/helloworld.ofd"}, &stdout, &stderr)
+		code := run([]string{"check", "--doc-type", invalid, "../../testdata/helloworld.ofd"}, &stdout, &stderr)
 		if code != exitUsage {
 			t.Errorf("--doc-type %q 退出码 = %d, want %d", invalid, code, exitUsage)
 		}
@@ -328,7 +328,7 @@ func TestRunDoctypeIsDistinctFromArchiveProfile(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	code := run([]string{
-		"prepare", "../../test/testdata/helloworld.ofd",
+		"prepare", "../../testdata/helloworld.ofd",
 		"--metadata", metadataPath, "--profile", profilePath,
 		"--doc-type", spec.DocTypeOFDA, "--mode", "structural",
 		"--output", filepath.Join(directory, "out"),

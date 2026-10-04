@@ -1474,7 +1474,7 @@ func TestCreateTextCGTransforms(t *testing.T) {
 }
 
 func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
-	fontData, err := os.ReadFile("../../test/testdata/simkai.ttf")
+	fontData, err := os.ReadFile("../../testdata/simkai.ttf")
 	if os.IsNotExist(err) {
 		t.Skip("simkai.ttf  is unavailable")
 	}
@@ -2717,7 +2717,7 @@ func checkGeneratedPackage(t *testing.T, data []byte) {
 
 func testEmbeddedFontData(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile("../../test/testdata/intro.ofd")
+	data, err := os.ReadFile("../../testdata/intro.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}

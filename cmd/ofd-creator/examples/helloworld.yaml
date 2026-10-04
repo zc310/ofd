@@ -2,7 +2,7 @@
 # 基础创建器输出；包含英文和中文文字，以及轴向/径向渐变矩形，适合 converter API、PDF 输出和渐变渲染测试。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/helloworld.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/helloworld.yaml -o test/testdata/helloworld.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/helloworld.yaml -o testdata/helloworld.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

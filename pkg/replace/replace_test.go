@@ -12,7 +12,7 @@ import (
 )
 
 func testdataPath(names ...string) string {
-	parts := append([]string{"..", "..", "test", "testdata"}, names...)
+	parts := append([]string{"..", "..", "testdata"}, names...)
 	return filepath.Join(parts...)
 }
 

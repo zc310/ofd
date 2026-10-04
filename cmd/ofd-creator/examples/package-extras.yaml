@@ -2,7 +2,7 @@
 # 包结构示例；包含文本附件、自定义标签架构与数据、扩展属性和自定义数据。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/package-extras.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/package-extras.yaml -o test/testdata/package-extras.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/package-extras.yaml -o testdata/package-extras.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

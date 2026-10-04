@@ -11,7 +11,7 @@ import (
 	"github.com/hhrutter/tiff"
 )
 
-const formatFixture = "../../test/testdata/helloworld.ofd"
+const formatFixture = "../../testdata/helloworld.ofd"
 
 func TestFormatRegistryCoversAllEncoders(t *testing.T) {
 	kinds := map[string]Kind{
@@ -129,7 +129,7 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 
 func TestEncodeTIFFWritesMultipageDocument(t *testing.T) {
 	var output bytes.Buffer
-	if err := Encode(ctxTODO, "tiff", "../../test/testdata/multi_demo.ofd", &output, DPI(72)); err != nil {
+	if err := Encode(ctxTODO, "tiff", "../../testdata/multi_demo.ofd", &output, DPI(72)); err != nil {
 		t.Fatal(err)
 	}
 	config, err := tiff.DecodeConfig(bytes.NewReader(output.Bytes()))

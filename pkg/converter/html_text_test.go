@@ -36,7 +36,7 @@ func allSpans(t *testing.T, document string) []string {
 // 常见的抱怨。
 func TestHTMLTextLayerMakesTextSelectable(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.HTML(context.Background(), "../../test/testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
+	if err := converter.HTML(context.Background(), "../../testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	document := output.String()
@@ -72,7 +72,7 @@ func TestHTMLTextLayerMakesTextSelectable(t *testing.T) {
 // 这样页面缩放时文字层与页面图像一起缩放，不会错位。
 func TestHTMLTextLayerCoordinatesArePercentages(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.HTML(context.Background(), "../../test/testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
+	if err := converter.HTML(context.Background(), "../../testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	document := output.String()
@@ -104,7 +104,7 @@ func TestHTMLTextLayerCoordinatesArePercentages(t *testing.T) {
 // TestHTMLWithoutTextLayerKeepsImageOnly 确认关掉文字层后回到纯图像输出，
 // 且 alt 恢复——有文字层时屏幕阅读器会读文字层，再读 alt 会重复。
 func TestHTMLWithoutTextLayerKeepsImageOnly(t *testing.T) {
-	const source = "../../test/testdata/helloworld.ofd"
+	const source = "../../testdata/helloworld.ofd"
 	var plain, layered bytes.Buffer
 	if err := converter.HTML(context.Background(), source, &plain, converter.Page(1), converter.WithHTMLTextLayer(false)); err != nil {
 		t.Fatalf("关闭文字层转换失败: %v", err)
@@ -127,7 +127,7 @@ func TestHTMLWithoutTextLayerKeepsImageOnly(t *testing.T) {
 
 // TestHTMLTextLayerDoesNotBreakImageOutput 确认加文字层不影响页面图像本身。
 func TestHTMLTextLayerDoesNotBreakImageOutput(t *testing.T) {
-	const source = "../../test/testdata/helloworld.ofd"
+	const source = "../../testdata/helloworld.ofd"
 	var plain, layered bytes.Buffer
 	if err := converter.HTML(context.Background(), source, &plain, converter.Page(1), converter.WithHTMLTextLayer(false)); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestHTMLTextLayerNeverEmpty(t *testing.T) {
 	for _, source := range []string{"helloworld.ofd", "image-effects.ofd", "ano.ofd"} {
 		t.Run(source, func(t *testing.T) {
 			var output bytes.Buffer
-			if err := converter.HTML(context.Background(), "../../test/testdata/"+source, &output,
+			if err := converter.HTML(context.Background(), "../../testdata/"+source, &output,
 				converter.Page(1)); err != nil {
 				t.Fatalf("转换失败: %v", err)
 			}
@@ -168,7 +168,7 @@ func TestHTMLTextLayerNeverEmpty(t *testing.T) {
 // 写坏会让整个 HTML 被浏览器丢弃。
 func TestHTMLOutputRemainsWellFormedXML(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.HTML(context.Background(), "../../test/testdata/helloworld.ofd", &output); err != nil {
+	if err := converter.HTML(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	document := output.String()

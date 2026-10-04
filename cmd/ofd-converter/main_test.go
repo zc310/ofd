@@ -207,7 +207,7 @@ func TestRunBatchRejectsInvalidOptions(t *testing.T) {
 func TestRunBatchConvertsFilesWithRelativeOutputPaths(t *testing.T) {
 	inputRoot := t.TempDir()
 	outputRoot := filepath.Join(t.TempDir(), "output")
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestRunBatchConvertsFilesWithRelativeOutputPaths(t *testing.T) {
 func TestRunBatchExistingOutputPolicies(t *testing.T) {
 	inputRoot := t.TempDir()
 	outputRoot := filepath.Join(t.TempDir(), "output")
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestValidateOutputPathRejectsInputFile(t *testing.T) {
 func TestRunInvalidPageDoesNotCreateOutput(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "invalid.pdf")
 	opts := &options{
-		input:  filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"),
+		input:  filepath.Join("..", "..", "testdata", "multi_demo.ofd"),
 		output: output,
 		format: "pdf",
 		page:   99,

@@ -17,7 +17,7 @@ import (
 )
 
 func fixturePath(name string) string {
-	return filepath.Join("..", "..", "test", "testdata", name)
+	return filepath.Join("..", "..", "testdata", name)
 }
 
 func TestAnalyzeHelloWorld(t *testing.T) {

@@ -1,4 +1,4 @@
-# 华为图标提取结果反推配置（test/testdata/huawei.ofd）
+# 华为图标提取结果反推配置（testdata/huawei.ofd）
 # 单页 8 个路径 + AxialShd/RadialShd 渐变填充与 Clips 裁剪、15 处 CTM，无文字。
 # 原始样例含 9 个严格校验错误（PageArea 元素顺序、Clips 位置、DocInfo 顺序），
 # 重建产物为严格有效版本。
@@ -8,7 +8,7 @@
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/huawei.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/huawei.yaml -o /tmp/huawei.ofd --format auto --deterministic --validate
-# 注意：test/testdata/huawei.ofd 是外部收集样例（README 来源分类），本配置为反推复刻，
+# 注意：testdata/huawei.ofd 是外部收集样例（README 来源分类），本配置为反推复刻，
 # 输出到 /tmp，不覆盖 fixture。
 
 version: 1
