@@ -10,9 +10,9 @@ require (
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
 	github.com/chromedp/cdproto v0.157.5
-	github.com/chromedp/chromedp v0.18.0
+	github.com/chromedp/chromedp v0.19.1
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
-	github.com/emmansun/gmsm v0.44.1
+	github.com/emmansun/gmsm v0.45.0
 	github.com/fasthttp/router v1.5.4
 	github.com/fogleman/gg v1.3.0
 	github.com/go-text/typesetting v0.3.5
@@ -40,7 +40,7 @@ require (
 	github.com/studio-b12/gowebdav v0.13.0
 	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
 	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
-	github.com/tdewolff/minify/v2 v2.24.18
+	github.com/tdewolff/minify/v2 v2.24.19
 	github.com/tdewolff/parse/v2 v2.8.16
 	github.com/valyala/fasthttp v1.74.0
 	github.com/woozymasta/png v1.2.0
