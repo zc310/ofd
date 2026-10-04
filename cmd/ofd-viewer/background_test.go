@@ -218,6 +218,12 @@ func TestMenuEntriesCarryIcons(t *testing.T) {
 	if view.ChildMenu == nil || len(view.ChildMenu.Items) != 4 {
 		t.Fatalf("视图子菜单项 = %v，期望 4 项", view.ChildMenu)
 	}
+	// 四种视图模式靠图标区分"适应宽度"和"适应高度"，缺一个图标这一项就退回纯文字。
+	for _, item := range view.ChildMenu.Items {
+		if item.Icon == nil {
+			t.Errorf("视图子菜单的 %s 项缺少图标", item.Label)
+		}
+	}
 	background := entries["背景色"]
 	if background.ChildMenu == nil || len(background.ChildMenu.Items) != len(documentBackgroundPresets) {
 		t.Fatalf("背景色子菜单项 = %v，期望 %d 项", background.ChildMenu, len(documentBackgroundPresets))

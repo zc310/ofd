@@ -236,8 +236,6 @@ func documentBackgroundSwatch(value color.Color) fyne.Resource {
 	if value == nil {
 		return nil
 	}
-	const svgHead = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">`
-	const svgTail = `</svg>`
 	var body, name string
 	if value == color.Transparent {
 		name = "swatch-transparent.svg"
@@ -251,7 +249,7 @@ func documentBackgroundSwatch(value color.Color) fyne.Resource {
 		name = "swatch-" + hex + ".svg"
 		body = fmt.Sprintf(`<rect x="1" y="1" width="14" height="14" rx="3" fill="#%s" stroke="#7d838d" stroke-width="1"/>`, hex)
 	}
-	return fyne.NewStaticResource(name, []byte(svgHead+body+svgTail))
+	return fyne.NewStaticResource(name, []byte(svgIconHead+body+svgIconTail))
 }
 
 // showCustomDocumentBackground 打开取色器确认后应用自定义背景色，返回对话框便于
