@@ -21,7 +21,7 @@ import (
 )
 
 func testdataPath(names ...string) string {
-	parts := append([]string{"..", "..", "test", "testdata"}, names...)
+	parts := append([]string{"..", "..", "testdata"}, names...)
 	return filepath.Join(parts...)
 }
 
@@ -443,7 +443,7 @@ func TestOrphanModes(t *testing.T) {
 }
 
 func TestMergeSmokeOverTestdata(t *testing.T) {
-	paths, err := filepath.Glob(filepath.Join("..", "..", "test", "testdata", "*.ofd"))
+	paths, err := filepath.Glob(filepath.Join("..", "..", "testdata", "*.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

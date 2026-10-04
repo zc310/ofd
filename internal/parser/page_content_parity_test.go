@@ -14,9 +14,9 @@ import (
 )
 
 func TestFastVsStdlibParity(t *testing.T) {
-	matches, _ := filepath.Glob(filepath.Join("..", "..", "test", "testdata", "*.ofd"))
+	matches, _ := filepath.Glob(filepath.Join("..", "..", "testdata", "*.ofd"))
 	if len(matches) == 0 {
-		matches, _ = filepath.Glob(filepath.Join("..", "..", "test", "testdata", "**", "*.ofd"))
+		matches, _ = filepath.Glob(filepath.Join("..", "..", "testdata", "**", "*.ofd"))
 	}
 	count := 0
 	for _, fixture := range matches {

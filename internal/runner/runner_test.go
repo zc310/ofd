@@ -24,7 +24,7 @@ func quietLogger() *slog.Logger {
 func ofdBytes(t *testing.T) []byte {
 	t.Helper()
 	for _, name := range []string{"sample.ofd", "actions.ofd", "link.ofd"} {
-		if data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", name)); err == nil && len(data) > 0 {
+		if data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name)); err == nil && len(data) > 0 {
 			return data
 		}
 	}

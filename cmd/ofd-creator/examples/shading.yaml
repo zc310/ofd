@@ -4,7 +4,7 @@
 # 原第 5 页 Pattern 图案填充示例已移至 examples/pattern-reflect.yaml 第 2 页。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/shading.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/shading.yaml -o test/testdata/shading.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/shading.yaml -o testdata/shading.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

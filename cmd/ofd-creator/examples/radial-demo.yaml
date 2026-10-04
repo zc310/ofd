@@ -3,7 +3,7 @@
 # Extend/MapType 映射，以及径向渐变的 Extend 与 MapType。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-demo.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-demo.yaml -o test/testdata/radial_demo.ofd --format auto --deterministic --validate
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-demo.yaml -o testdata/radial_demo.ofd --format auto --deterministic --validate
 
 
 version: 1

@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewOFDAcceptsReader(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestNewOFDAcceptsReader(t *testing.T) {
 }
 
 func TestOFDOpenReaderDoesNotCloseReader(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestOFDOpenReaderReturnsReadError(t *testing.T) {
 }
 
 func TestOFDOpenFailurePreservesCurrentDocument(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

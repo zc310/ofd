@@ -43,7 +43,7 @@ func TestMagazinePDFRoundTripSimilarity(t *testing.T) {
 		t.Skipf("未找到 pdftoppm，跳过 PDF 视觉相似度测试: %v", err)
 	}
 
-	source := filepath.Join("..", "..", "..", "..", "test", "testdata", "pdf", "magazine.pdf")
+	source := filepath.Join("..", "..", "..", "..", "testdata", "pdf", "magazine.pdf")
 	original, err := os.ReadFile(source)
 	if err != nil {
 		t.Skipf("缺少 %s，跳过: %v", source, err)

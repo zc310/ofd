@@ -134,7 +134,7 @@ func TestRunExportWritesManifest(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "exported", "document.yaml")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"export", "-i", filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"), "-o", output, "--asset-root", "assets"}, &stdout, &stderr); code != exitOK {
+	if code := run([]string{"export", "-i", filepath.Join("..", "..", "testdata", "helloworld.ofd"), "-o", output, "--asset-root", "assets"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run export exit code = %d, stderr = %s", code, stderr.String())
 	}
 	data, err := os.ReadFile(output)
@@ -150,7 +150,7 @@ func TestRunExportWritesManifest(t *testing.T) {
 }
 
 func TestRunExportWritesJSONAndTOMLManifests(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	for _, format := range []string{"json", "toml"} {
 		t.Run(format, func(t *testing.T) {
 			directory := t.TempDir()
@@ -167,7 +167,7 @@ func TestRunExportWritesJSONAndTOMLManifests(t *testing.T) {
 }
 
 func TestRunExportJSONIndent(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	directory := t.TempDir()
 	compact := filepath.Join(directory, "compact.json")
 	pretty := filepath.Join(directory, "pretty.json")
@@ -196,7 +196,7 @@ func TestRunExportJSONIndent(t *testing.T) {
 func TestRunExportRejectsMultipleDocumentBodies(t *testing.T) {
 	directory := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"export", "-i", filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), "-o", filepath.Join(directory, "document.yaml"), "--asset-root", "assets"}, &stdout, &stderr); code != exitResource {
+	if code := run([]string{"export", "-i", filepath.Join("..", "..", "testdata", "multi_demo.ofd"), "-o", filepath.Join(directory, "document.yaml"), "--asset-root", "assets"}, &stdout, &stderr); code != exitResource {
 		t.Fatalf("run export exit code = %d, stderr = %s", code, stderr.String())
 	}
 }
@@ -205,7 +205,7 @@ func TestRunExportSelectsDocumentBody(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "document.yaml")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"export", "-i", filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), "-o", output, "--document", "1"}, &stdout, &stderr); code != exitOK {
+	if code := run([]string{"export", "-i", filepath.Join("..", "..", "testdata", "multi_demo.ofd"), "-o", output, "--document", "1"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run selected export exit code = %d, stderr = %s", code, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(directory, "assets")); err != nil {
@@ -216,7 +216,7 @@ func TestRunExportSelectsDocumentBody(t *testing.T) {
 func TestRunExportAllWritesBundle(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundle")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"export-all", "-i", filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), "-o", root}, &stdout, &stderr); code != exitOK {
+	if code := run([]string{"export-all", "-i", filepath.Join("..", "..", "testdata", "multi_demo.ofd"), "-o", root}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run export-all exit code = %d, stderr = %s", code, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, "index.yaml")); err != nil {
@@ -229,7 +229,7 @@ func TestRunExportAllWritesBundle(t *testing.T) {
 
 func TestRunExportAllRejectsStandardOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"export-all", "-i", filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd"), "-o", "-"}, &stdout, &stderr); code != exitUsage {
+	if code := run([]string{"export-all", "-i", filepath.Join("..", "..", "testdata", "multi_demo.ofd"), "-o", "-"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("run export-all stdout exit code = %d, stderr = %s", code, stderr.String())
 	}
 }
@@ -256,8 +256,8 @@ func TestRunMergeWritesValidatedDocument(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
 	var stdout, stderr bytes.Buffer
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
-	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--validate"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge exit code = %d, stderr = %s", code, stderr.String())
 	}
@@ -276,7 +276,7 @@ func TestRunMergeWritesValidatedDocument(t *testing.T) {
 
 func TestRunMergeRejectsUsageErrors(t *testing.T) {
 	directory := t.TempDir()
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "merged.ofd")
 	cases := [][]string{
 		{"merge", "-o", output},
@@ -297,7 +297,7 @@ func TestRunMergeRejectsUsageErrors(t *testing.T) {
 
 func TestRunMergeSignatureModes(t *testing.T) {
 	directory := t.TempDir()
-	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "999.ofd")
 	output := filepath.Join(directory, "merged.ofd")
 
 	var stdout, stderr bytes.Buffer
@@ -320,7 +320,7 @@ func TestRunMergeSignatureModes(t *testing.T) {
 
 func TestRunMergeReportsSignatureRewriteWarning(t *testing.T) {
 	directory := t.TempDir()
-	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "999.ofd")
 	output := filepath.Join(directory, "merged.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", signed, "-i", signed, "-o", output, "--signatures", "rewrite"}, &stdout, &stderr); code != exitOK {
@@ -334,8 +334,8 @@ func TestRunMergeReportsSignatureRewriteWarning(t *testing.T) {
 func TestRunMergePages(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
-	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "2,1", "--validate"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge --pages exit code = %d, stderr = %s", code, stderr.String())
@@ -356,7 +356,7 @@ func TestRunMergePages(t *testing.T) {
 func TestRunMergePagesRejectsIncompatibleFlags(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	cases := [][]string{
 		{"merge", "-i", hello, "-o", output, "--pages", "0"},
 		{"merge", "-i", hello, "-o", output, "--pages", "1", "--signatures", "rewrite"},
@@ -374,8 +374,8 @@ func TestRunMergePagesRejectsIncompatibleFlags(t *testing.T) {
 func TestRunMergePagesBySource(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
-	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "s2:1;s1", "--validate"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge --pages s2:1;s1 exit code = %d, stderr = %s", code, stderr.String())
@@ -385,7 +385,7 @@ func TestRunMergePagesBySource(t *testing.T) {
 func TestRunMergePagesOverridesMetadata(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", hello, "-o", output, "--pages", "1", "--document-id", "cli-id", "--title", "CLI 标题", "--validate"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge metadata exit code = %d, stderr = %s", code, stderr.String())
@@ -401,8 +401,8 @@ func TestRunMergePagesOverridesMetadata(t *testing.T) {
 func TestRunMergePagesConcurrency(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
-	helloworld := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
+	helloworld := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--pages", "1", "--workers", "2", "--validate"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge --workers exit code = %d, stderr = %s", code, stderr.String())
@@ -418,7 +418,7 @@ func TestRunMergePagesConcurrency(t *testing.T) {
 func TestRunMergeVerifySignatures(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	signed := filepath.Join("..", "..", "test", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "999.ofd")
 
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", signed, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {
@@ -430,7 +430,7 @@ func TestRunMergeVerifySignatures(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	if code := run([]string{"merge", "-i", hello, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("no signature exit code = %d, stderr = %s", code, stderr.String())
 	}
@@ -445,7 +445,7 @@ func TestRunMergeSignCmd(t *testing.T) {
 	}
 	directory := t.TempDir()
 	output := filepath.Join(directory, "signed.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", hello, "-o", output, "--pages", "1", "--sign-cmd", "cat", "--verify-signatures"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge --sign-cmd exit code = %d, stderr = %s", code, stderr.String())
@@ -457,7 +457,7 @@ func TestRunMergeSignCmd(t *testing.T) {
 
 func TestRunReplaceSetAddDelete(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	setFile := filepath.Join(directory, "doc.xml")
 	if err := os.WriteFile(setFile, []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document/>"), 0o644); err != nil {
 		t.Fatal(err)
@@ -511,7 +511,7 @@ func TestRunReplaceUsageErrors(t *testing.T) {
 
 func TestRunReplaceXMLCheckDefault(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	badFile := filepath.Join(directory, "bad.xml")
 	if err := os.WriteFile(badFile, []byte("<Document><unclosed>"), 0o644); err != nil {
 		t.Fatal(err)
@@ -536,7 +536,7 @@ func TestRunReplaceXMLCheckDefault(t *testing.T) {
 
 func TestRunReplaceVerifySignatures(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	setFile := filepath.Join(directory, "doc.xml")
 	if err := os.WriteFile(setFile, []byte("<Document/>"), 0o644); err != nil {
 		t.Fatal(err)
@@ -560,7 +560,7 @@ func TestRunReplaceSignCmd(t *testing.T) {
 		t.Skip("使用 cat 作为外部签名命令")
 	}
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	setFile := filepath.Join(directory, "doc.xml")
 	if err := os.WriteFile(setFile, []byte("<Document/>"), 0o644); err != nil {
 		t.Fatal(err)
@@ -604,7 +604,7 @@ func TestRunMergeSignMetadataFlags(t *testing.T) {
 	}
 	directory := t.TempDir()
 	output := filepath.Join(directory, "signed.ofd")
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	var stdout, stderr bytes.Buffer
 	args := []string{
 		"merge", "-i", hello, "-o", output, "--pages", "1", "--sign-cmd", "cat",
@@ -640,7 +640,7 @@ func TestRunMergeSignMetadataFlags(t *testing.T) {
 
 func TestRunWatermarkAdd(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "wm.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -674,7 +674,7 @@ func TestRunWatermarkAdd(t *testing.T) {
 
 func TestRunWatermarkAddValidate(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "wm.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -686,7 +686,7 @@ func TestRunWatermarkAddValidate(t *testing.T) {
 
 func TestRunWatermarkReplaceRemove(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	added := filepath.Join(directory, "wm.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -742,7 +742,7 @@ func TestRunWatermarkReplaceRemove(t *testing.T) {
 }
 
 func TestRunWatermarkUsageErrors(t *testing.T) {
-	hello := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	hello := filepath.Join("..", "..", "testdata", "hello.ofd")
 	var stdout, stderr bytes.Buffer
 	for name, args := range map[string][]string{
 		"缺操作":   {"watermark", "-i", hello, "-o", "out.ofd"},
@@ -770,7 +770,7 @@ func TestRunWatermarkUsageErrors(t *testing.T) {
 
 func TestRunWatermarkLayoutCenter(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "center.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -804,7 +804,7 @@ func TestRunWatermarkLayoutCenter(t *testing.T) {
 
 func TestRunWatermarkRotate(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "rotate.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -838,7 +838,7 @@ func TestRunWatermarkSign(t *testing.T) {
 		t.Skip("使用 cat 作为外部签名命令")
 	}
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "signed-watermark.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -867,7 +867,7 @@ func TestRunWatermarkImage(t *testing.T) {
 	if err := os.WriteFile(imageFile, testPNG(120, 60), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "image.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -913,7 +913,7 @@ func TestRunWatermarkAddResolvesFontName(t *testing.T) {
 	// --font 传字体名称时应解析为数值字体 ID，产出合法外观；默认（不传 --font）
 	// 也会自动选用文档中的字体，不再写出默认的非法 ID 4。
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "font-name.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -943,7 +943,7 @@ func TestRunWatermarkAddResolvesFontName(t *testing.T) {
 func TestRunWatermarkFontFromPublicRes(t *testing.T) {
 	// multi_demo.ofd 的字体位于 PublicRes，且 ID 20/21，默认自动选 ID 20。
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd")
+	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
 	output := filepath.Join(directory, "public-res.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -963,7 +963,7 @@ func TestRunWatermarkImageRemoveReclaims(t *testing.T) {
 	if err := os.WriteFile(imageFile, testPNG(40, 20), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	added := filepath.Join(directory, "image.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{
@@ -1023,7 +1023,7 @@ func readPackageBytesEntry(t *testing.T, path, entry string) []byte {
 
 func TestRunWatermarkInvisible(t *testing.T) {
 	directory := t.TempDir()
-	input := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	input := filepath.Join("..", "..", "testdata", "hello.ofd")
 	output := filepath.Join(directory, "invisible.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{

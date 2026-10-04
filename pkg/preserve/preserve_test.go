@@ -11,7 +11,7 @@ import (
 )
 
 // fixtureOf 是测试样例在 testdata 里的路径。
-const fixtureOf = "../../test/testdata/"
+const fixtureOf = "../../testdata/"
 
 // docXML 取出包内 Document.xml 的内容。
 func docXML(t *testing.T, file string) []byte {
@@ -509,10 +509,10 @@ func TestUnreferencedDeletedWhenOptedIn(t *testing.T) {
 }
 
 // TestUnreferencedRefusedWhenClosureIncomplete 是安全性的核心：闭包不可信时，
-// 即使显式要求删除也必须拒绝。test/testdata/intro.ofd 的命名空间缺 "/2016"
+// 即使显式要求删除也必须拒绝。testdata/intro.ofd 的命名空间缺 "/2016"
 // 后缀，其 123 个条目会全被误判为无人引用。
 func TestUnreferencedRefusedWhenClosureIncomplete(t *testing.T) {
-	const legacy = "../../test/testdata/intro.ofd"
+	const legacy = "../../testdata/intro.ofd"
 	var warnings []string
 	var out bytes.Buffer
 	_, err := Apply(legacy, &out, Options{

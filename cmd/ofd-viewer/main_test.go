@@ -472,7 +472,7 @@ func TestStartedRenderAlwaysClosesLoadingHint(t *testing.T) {
 	}
 
 	// 渲染成功路径：同样必须关闭提示。
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -794,7 +794,7 @@ func TestSyncThumbnailSelectionFollowsCurrentPage(t *testing.T) {
 // openTestDocuments 解析测试文档并构造导出用的渲染文档。
 func openTestDocuments(t *testing.T, name string, background color.Color) []*render.Document {
 	t.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", name))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
 	}
@@ -981,7 +981,7 @@ func newThumbnailTestViewer(t *testing.T, name string) *viewer {
 	test.NewTempApp(t)
 	window := test.NewWindow(nil)
 	t.Cleanup(window.Close)
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", name))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
 	}
@@ -1158,7 +1158,7 @@ func TestExportFormatCodeAndBackground(t *testing.T) {
 func TestPublishDocumentReplacesStateAndSession(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.operation.Store(1)
-	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -1251,7 +1251,7 @@ func TestRunLoadClearsLoadingOnSuccess(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.loading = true
 	v.updateControls()
-	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -1341,7 +1341,7 @@ func TestPublishDocumentRejectsEmptyInput(t *testing.T) {
 func TestPublishDocumentKeepsPreviousOnFailure(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.operation.Store(1)
-	path := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -1577,7 +1577,7 @@ func TestExportToPathReportsCreateFailure(t *testing.T) {
 }
 
 func TestOpenOFDAcceptsSupportedInputs(t *testing.T) {
-	path := filepath.Join("..", "..", "test", "testdata", "hello.ofd")
+	path := filepath.Join("..", "..", "testdata", "hello.ofd")
 	// 路径、字节、io.Reader 三种输入都应能打开。
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -1849,7 +1849,7 @@ func TestPageSlotStatesKeepsEntryForEveryPage(t *testing.T) {
 }
 
 func TestRenderPageImageAllowsConcurrentPages(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)

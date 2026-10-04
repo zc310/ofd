@@ -142,4 +142,4 @@ CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并�
 混合模式近似；`image_jbig2_test.go`、`image_jpx_test.go` 覆盖 JBIG2/JPEG2000 解码；
 `annotation_test.go`、`form_test.go`、`text_test.go` 分别覆盖注释外观、Form 矩阵与
 字体样式标记；`outline_test.go` 覆盖大纲层级、`Dest` 坐标换算与命名目标；
-`TestConvertTestdataPDFs` 会对 `test/testdata/pdf/` 下的固定样本做端到端转换校验。
+`TestConvertTestdataPDFs` 会对 `testdata/pdf/` 下的固定样本做端到端转换校验。

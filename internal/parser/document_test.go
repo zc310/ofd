@@ -33,7 +33,7 @@ func TestResolvePagePathMatchesStLocResolve(t *testing.T) {
 }
 
 func TestDrawParamSampleParsesAndResolvesStyles(t *testing.T) {
-	ofd, err := NewOFD(filepath.Join("..", "..", "test", "testdata", "drawparam.ofd"))
+	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "drawparam.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestPageCacheEvictsOldestLoadedPage(t *testing.T) {
 }
 
 func TestPageCacheUsesPageZipEntrySize(t *testing.T) {
-	ofd, err := NewOFD(filepath.Join("..", "..", "test", "testdata", "helloworld.ofd"))
+	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 // signedFixture 是带签名列表的样例。
-const signedFixture = "../../test/testdata/999.ofd"
+const signedFixture = "../../testdata/999.ofd"
 
 // countSignatureEntries 统计输出包内的签名条目数。
 func countSignatureEntries(t *testing.T, data []byte) int {

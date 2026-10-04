@@ -1,19 +1,17 @@
-package test
+package converter
 
 import (
 	"bytes"
 	"io"
 	"strings"
 	"testing"
-
-	"github.com/zc310/ofd/pkg/converter"
 )
 
 func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
-	input := "testdata/multi_demo.ofd"
+	input := "../../testdata/multi_demo.ofd"
 
 	var text bytes.Buffer
-	if err := converter.Text(ctxTODO, input, &text); err != nil {
+	if err := Text(ctxTODO, input, &text); err != nil {
 		t.Fatal(err)
 	}
 	markers := []string{
@@ -33,7 +31,7 @@ func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
 	}
 
 	var selectedText bytes.Buffer
-	if err := converter.Text(ctxTODO, input, &selectedText, converter.Page(3)); err != nil {
+	if err := Text(ctxTODO, input, &selectedText, Page(3)); err != nil {
 		t.Fatal(err)
 	}
 	if got := selectedText.String(); !strings.Contains(got, markers[1]) || strings.Contains(got, markers[0]) || strings.Contains(got, markers[2]) {
@@ -41,14 +39,14 @@ func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
 	}
 
 	var pdf bytes.Buffer
-	if err := converter.PDF(ctxTODO, input, &pdf); err != nil {
+	if err := PDF(ctxTODO, input, &pdf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(pdf.String(), "/Count 4") {
 		t.Fatalf("PDF does not contain four pages")
 	}
 	var selectedPDF bytes.Buffer
-	if err := converter.PDF(ctxTODO, input, &selectedPDF, converter.Page(3)); err != nil {
+	if err := PDF(ctxTODO, input, &selectedPDF, Page(3)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(selectedPDF.String(), "/Count 1") {
@@ -56,10 +54,10 @@ func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
 	}
 
 	var pages []int
-	if err := converter.Image(ctxTODO, input,
-		converter.DPI(10),
-		converter.PNG(),
-		converter.Writer(func(page int) (io.WriteCloser, error) {
+	if err := Image(ctxTODO, input,
+		DPI(10),
+		PNG(),
+		Writer(func(page int) (io.WriteCloser, error) {
 			pages = append(pages, page)
 			return discardWriteCloser{}, nil
 		}),
@@ -71,11 +69,11 @@ func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
 	}
 
 	pages = nil
-	if err := converter.Image(ctxTODO, input,
-		converter.DPI(10),
-		converter.PNG(),
-		converter.Page(3),
-		converter.Writer(func(page int) (io.WriteCloser, error) {
+	if err := Image(ctxTODO, input,
+		DPI(10),
+		PNG(),
+		Page(3),
+		Writer(func(page int) (io.WriteCloser, error) {
 			pages = append(pages, page)
 			return discardWriteCloser{}, nil
 		}),

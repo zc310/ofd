@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 }
 
 func testdataPath(name string) string {
-	return filepath.Join("..", "..", "test", "testdata", name)
+	return filepath.Join("..", "..", "testdata", name)
 }
 
 func TestSignAddsSignature(t *testing.T) {

@@ -5,7 +5,7 @@
 # color_space=2 的 GRAY 分量色，演示默认与显式两条颜色空间引用链。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/default-cs.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/default-cs.yaml -o test/testdata/default-cs.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/default-cs.yaml -o testdata/default-cs.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

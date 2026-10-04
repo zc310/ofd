@@ -529,7 +529,7 @@ func convert(pkg *core.Package, options Options) (Result, []replace.Operation, e
 //
 // 只在显式开启 DropUnreferenced 时才删除，且闭包不完整时一律拒绝。删除不可逆，
 // 而闭包的正确性完全依赖引用识别是否穷尽——漏掉一种引用形式就等于删掉在用文件。
-// test/testdata/intro.ofd 的命名空间缺 "/2016" 后缀，解析失败后其引用的字体
+// testdata/intro.ofd 的命名空间缺 "/2016" 后缀，解析失败后其引用的字体
 // 全部落进候选，正是这个保护要拦住的情形。
 func applyUnreferenced(pkg *core.Package, options Options, result *Result, deletes *[]string) error {
 	index, err := validator.PackageReferences(context.Background(), pkg, validatorOptions(options)...)
@@ -799,7 +799,7 @@ func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []stri
 	// a) 写入 CommonData/PageArea。
 	//
 	// established 为假表示默认设置没能落到 CommonData/PageArea——例如 Document.xml
-	// 自身不在 OFD 命名空间下（test/testdata/intro.ofd 就是这种，28 页用
+	// 自身不在 OFD 命名空间下（testdata/intro.ofd 就是这种，28 页用
 	// http://www.ofdspec.org/2016、42 页用遗留的 http://www.ofdspec.org，混在一个包里）。
 	// 此时页面省略 Area 后会回退到 CommonData 里那个未必相同的旧默认值，页面尺寸
 	// 会静默改变，所以必须跳过 b)。
