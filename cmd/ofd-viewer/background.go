@@ -84,20 +84,28 @@ func resolveDocumentBackground(mode string, custom color.Color) color.Color {
 	return custom
 }
 
-// documentBackgroundHex 把自定义颜色写成 #rrggbb，便于存进偏好。
+// documentBackgroundHex 把颜色写成 #rrggbb（带透明度时为 #rrggbbaa），便于存进
+// 偏好。格式与 Fyne 取色器自己记录最近使用颜色的写法一致。
 func documentBackgroundHex(value color.Color) string {
 	normal := color.NRGBAModel.Convert(value).(color.NRGBA)
-	return fmt.Sprintf("#%02x%02x%02x", normal.R, normal.G, normal.B)
+	if normal.A == 0xff {
+		return fmt.Sprintf("#%02x%02x%02x", normal.R, normal.G, normal.B)
+	}
+	return fmt.Sprintf("#%02x%02x%02x%02x", normal.R, normal.G, normal.B, normal.A)
 }
 
-// parseDocumentBackgroundHex 解析偏好里的自定义颜色。格式不符时返回 false，
-// 不能把解析失败的字符串当成颜色使用。
+// parseDocumentBackgroundHex 解析偏好里的颜色。格式不符时返回 false，不能把解析
+// 失败的字符串当成颜色使用。
 func parseDocumentBackgroundHex(value string) (color.Color, bool) {
-	if len(value) != 7 || !strings.HasPrefix(value, "#") {
+	if value == "" || value[0] != '#' || (len(value) != 7 && len(value) != 9) {
 		return nil, false
 	}
 	parsed := color.NRGBA{A: 0xff}
-	for i := 0; i < 3; i++ {
+	channels := 3
+	if len(value) == 9 {
+		channels = 4
+	}
+	for i := 0; i < channels; i++ {
 		high, ok := hexDigit(value[1+i*2])
 		if !ok {
 			return nil, false
@@ -113,6 +121,8 @@ func parseDocumentBackgroundHex(value string) (color.Color, bool) {
 			parsed.G = high<<4 | low
 		case 2:
 			parsed.B = high<<4 | low
+		case 3:
+			parsed.A = high<<4 | low
 		}
 	}
 	return parsed, true
@@ -193,14 +203,22 @@ func (v *viewer) applyDocumentBackground() {
 	}
 }
 
-// documentBackgroundMenuItems 生成"背景色"子菜单。背景色与文档状态无关，导出
-// 和加载期间也允许切换，因此这里不置 Disabled。
+// documentBackgroundMenuItems 生成"背景色"子菜单。每项带一个色卡图标，用户不必
+// 逐个点开试色。背景色与文档状态无关，导出和加载期间也允许切换，因此这里不置
+// Disabled。
 func (v *viewer) documentBackgroundMenuItems() []*fyne.MenuItem {
 	items := make([]*fyne.MenuItem, 0, len(documentBackgroundPresets))
 	for _, preset := range documentBackgroundPresets {
 		current := preset
 		item := fyne.NewMenuItem(current.Label, nil)
 		item.Checked = v.backgroundMode == current.Key
+		// 自定义项的色卡跟着用户取到的颜色走；还没取过色时不画色卡，避免用一个
+		// 假颜色误导。
+		swatch := current.Color
+		if swatch == nil {
+			swatch = v.backgroundCustom
+		}
+		item.Icon = documentBackgroundSwatch(swatch)
 		if current.Key == "custom" {
 			item.Action = func() { v.showCustomDocumentBackground() }
 		} else {
@@ -211,15 +229,51 @@ func (v *viewer) documentBackgroundMenuItems() []*fyne.MenuItem {
 	return items
 }
 
-// showCustomDocumentBackground 打开取色器确认后应用自定义背景色。
-func (v *viewer) showCustomDocumentBackground() {
+// documentBackgroundSwatch 返回表示该背景色的圆角色卡。菜单项只能放图标资源，
+// 所以用内联 SVG 画方块；资源名带颜色值，Fyne 按名字缓存资源，同名会串色。
+// 透明色画成对角双色块，和白色预设区分得开。
+func documentBackgroundSwatch(value color.Color) fyne.Resource {
+	if value == nil {
+		return nil
+	}
+	const svgHead = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">`
+	const svgTail = `</svg>`
+	var body, name string
+	if value == color.Transparent {
+		name = "swatch-transparent.svg"
+		body = `<rect x="1" y="1" width="14" height="14" rx="3" fill="#ffffff"/>` +
+			`<path d="M1 15 L15 1 L15 15 Z" fill="#c8cdd6"/>` +
+			`<rect x="1" y="1" width="14" height="14" rx="3" fill="none" stroke="#7d838d" stroke-width="1"/>`
+	} else {
+		// SVG 填充只取 RGB：八位十六进制带 alpha 不是所有 SVG 解析器都认，
+		// 透明度对色卡本身也没有意义。
+		hex := strings.TrimPrefix(documentBackgroundHex(value), "#")[:6]
+		name = "swatch-" + hex + ".svg"
+		body = fmt.Sprintf(`<rect x="1" y="1" width="14" height="14" rx="3" fill="#%s" stroke="#7d838d" stroke-width="1"/>`, hex)
+	}
+	return fyne.NewStaticResource(name, []byte(svgHead+body+svgTail))
+}
+
+// showCustomDocumentBackground 打开取色器确认后应用自定义背景色，返回对话框便于
+// 测试断言。
+func (v *viewer) showCustomDocumentBackground() *dialog.ColorPickerDialog {
 	if v.closed.Load() {
+		return nil
+	}
+	picker := dialog.NewColorPicker("自定义背景色", "选择页面背景颜色", v.applyCustomDocumentBackground, v.window)
+	// Fyne 的简易取色器只有固定调色板和灰阶，选不了任意颜色；Advanced 才有色轮和
+	// RGB/HSL/Alpha 通道，SetColor 也只在 Advanced 下有效。初值取当前生效的颜色，
+	// 重新打开时能接着上次调的位置。
+	picker.Advanced = true
+	picker.SetColor(v.pageBackground())
+	picker.Show()
+	return picker
+}
+
+// applyCustomDocumentBackground 应用取色器的结果。
+func (v *viewer) applyCustomDocumentBackground(value color.Color) {
+	if value == nil || v.closed.Load() {
 		return
 	}
-	dialog.ShowColorPicker("自定义背景色", "选择页面背景颜色", func(value color.Color) {
-		if value == nil || v.closed.Load() {
-			return
-		}
-		v.setDocumentBackground("custom", value)
-	}, v.window)
+	v.setDocumentBackground("custom", value)
 }
