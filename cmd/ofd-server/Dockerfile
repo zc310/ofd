@@ -23,7 +23,7 @@
 # ---------------------------------------------------------------- 构建阶段
 # CGO_ENABLED=0：cmd/ofd-server 不需要 cgo 依赖（已验证），静态二进制可以
 # 直接放进 Ubuntu 运行阶段，不必带 Go 工具链或 glibc 兼容问题。
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
 
 ENV CGO_ENABLED=0 \
     GOOS=linux \
