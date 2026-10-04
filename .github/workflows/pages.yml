@@ -51,7 +51,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache: true
 
       # 用官方 release 的预编译 binaryen，不用 apt 的：noble 源里只有 108，
