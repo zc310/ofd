@@ -1,6 +1,6 @@
 module github.com/zc310/ofd
 
-go 1.26.4
+go 1.27
 
 require (
 	fyne.io/fyne/v2 v2.8.1
@@ -9,8 +9,8 @@ require (
 	github.com/FloatTech/gg v1.1.3
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.0.0-20260922220944-a19bff23514f
-	github.com/chromedp/chromedp v0.16.0
+	github.com/chromedp/cdproto v0.157.5
+	github.com/chromedp/chromedp v0.18.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.44.1
 	github.com/fasthttp/router v1.5.4
@@ -71,7 +71,6 @@ require (
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chewxy/math32 v1.11.2 // indirect
-	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
@@ -84,11 +83,7 @@ require (
 	github.com/go-fonts/latin-modern v0.3.3 // indirect
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
-	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/render v0.2.1 // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogpu/gpucontext v0.31.3 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
@@ -138,6 +133,6 @@ require (
 
 replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
 
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20260929133513-9bed81679f0d
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261004015143-31a1cddb8a93
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac

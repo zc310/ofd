@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -130,42 +132,49 @@ func ConvertFileToPDF(ctx context.Context, path string, options Options) ([]byte
 	if width <= 0 || height <= 0 {
 		width, height = 210, 297
 	}
-	printParams := page.PrintToPDF().
-		WithPaperWidth(width / mmPerInch).
-		WithPaperHeight(height / mmPerInch).
-		WithLandscape(options.Landscape).
-		WithPrintBackground(options.PrintBackground).
-		WithPreferCSSPageSize(false)
+	landscape := options.Landscape
+	printBackground := options.PrintBackground
+	preferCSSPageSize := false
+	printParams := page.PrintToPDFParams{
+		PaperWidth:        width / mmPerInch,
+		PaperHeight:       height / mmPerInch,
+		Landscape:         &landscape,
+		PrintBackground:   &printBackground,
+		PreferCSSPageSize: &preferCSSPageSize,
+	}
 
-	actions := []chromedp.Action{}
+	actions := []chromedp.Action[chromedp.Void]{}
 	if !options.AllowRemoteResources {
 		// 默认只允许本地与 data: 资源，阻断所有外部网络请求，保证安全与确定性。
 		// CDP 使用 WHATWG URLPattern 语法，模式必须包含 host 与 path（如
 		// "http://*:*/*"），写成 "http://*" 不会命中任何请求。
 		actions = append(actions,
-			network.Enable(),
-			network.SetBlockedURLs().WithURLPatterns([]*network.BlockPattern{
+			emptyCommandAction(network.Enable, network.EnableParams{}),
+			emptyCommandAction(network.SetBlockedURLs, network.SetBlockedURLsParams{URLPatterns: []*network.BlockPattern{
 				{URLPattern: "http://*:*/*", Block: true},
 				{URLPattern: "https://*:*/*", Block: true},
 				{URLPattern: "ftp://*:*/*", Block: true},
 				{URLPattern: "ws://*:*/*", Block: true},
 				{URLPattern: "wss://*:*/*", Block: true},
-			}),
+			}}),
 		)
 	}
 	var pdfData []byte
 	actions = append(actions,
 		chromedp.Navigate("file://"+filepath.ToSlash(absolute)),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			if err := waitForLoad(ctx); err != nil {
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			if err := waitForLoad(ctx, t); err != nil {
 				return err
 			}
-			var err error
-			pdfData, _, err = printParams.Do(ctx)
-			return err
+			result, err := cdp.Call(ctx, t, page.PrintToPDF, printParams)
+			if err != nil {
+				return err
+			}
+			pdfData = result.Data
+			return nil
 		}),
 	)
-	if err := chromedp.Run(browserCtx, actions...); err != nil {
+	if err := chromedp.Do(browserCtx, actions...); err != nil {
 		if runCtx.Err() != nil {
 			return nil, fmt.Errorf("Chrome 渲染超时（%s）", timeout)
 		}
@@ -180,12 +189,23 @@ func ConvertFileToPDF(ctx context.Context, path string, options Options) ([]byte
 	return pdfData, nil
 }
 
+// emptyCommandAction 把返回 cdp.Empty 的 CDP 命令包装成无返回值的 chromedp 动作。
+func emptyCommandAction[P any](cmd cdp.Command[P, cdp.Empty], params P) chromedp.Action[chromedp.Void] {
+	return chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		_, err := cdp.Call(ctx, t, cmd, params)
+		return err
+	})
+}
+
 // waitForLoad 等待文档加载完成，确保内联资源已就绪后再打印。
-func waitForLoad(ctx context.Context) error {
-	return chromedp.Evaluate(`new Promise(resolve => {
+func waitForLoad(ctx context.Context, t *chromedp.Target) error {
+	_, err := chromedp.Evaluate[bool](`new Promise(resolve => {
         if (document.readyState === 'complete') { resolve(true); return; }
         window.addEventListener('load', () => resolve(true), { once: true });
-    })`, nil).Do(ctx)
+    })`, func(params *runtime.EvaluateParams) {
+		params.AwaitPromise = new(true)
+	})(ctx, t)
+	return err
 }
 
 // removeAllRetry 删除临时目录。Chrome 退出后可能仍在写用户数据目录，
