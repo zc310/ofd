@@ -412,6 +412,8 @@ pages:
 
 径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
 
+径向渐变 Extend 与 MapType / MapUnit 实例见 `cmd/ofd-creator/examples/radial-extend.yaml`，4 页 18 格覆盖 MapType=Direct/Repeat/Reflect × Extend 0/1/2/3（MapUnit=12，红→黄→蓝三色段）及 start_point 偏离圆心的偏心径向对照，含 Repeat/Reflect 平铺镜像与起始圆白色圆孔。
+
 封面与复合图元缩略图实例见 `cmd/ofd-creator/examples/cover-thumbnail.yaml`，包含 Cover 封面（base64 内嵌小图写入 `Doc_0/Cover/`）与复合图元 Thumbnail 缩略图引用。
 
 文档默认颜色空间实例见 `cmd/ofd-creator/examples/default-cs.yaml`，声明 DefaultCS 指向 RGB 颜色空间，并演示 GRAY 分量色的显式 color_space 引用。

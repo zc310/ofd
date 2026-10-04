@@ -397,9 +397,9 @@ pages:
         fill: true
         fill_color:
           radial:
-            start_point: 40 70
+            start_point: 95 90
             start_radius: 10
-            end_point: 50 90
+            end_point: 105 110
             end_radius: 70
             map_type: Direct
             segments:
@@ -432,9 +432,9 @@ pages:
         fill: true
         fill_color:
           radial:
-            start_point: 40 70
+            start_point: 95 90
             start_radius: 10
-            end_point: 50 90
+            end_point: 105 110
             end_radius: 70
             map_type: Repeat
             segments:
@@ -467,9 +467,9 @@ pages:
         fill: true
         fill_color:
           radial:
-            start_point: 40 70
+            start_point: 95 90
             start_radius: 10
-            end_point: 50 90
+            end_point: 105 110
             end_radius: 70
             map_type: Reflect
             segments:
