@@ -220,7 +220,7 @@
     .page-surface.rotated { transform: translate(-50%, -50%) rotate(90deg); }
     .page-surface.rotated-180 { transform: translate(-50%, -50%) rotate(180deg); }
     .page-surface.rotated-270 { transform: translate(-50%, -50%) rotate(270deg); }
-     .page-surface > .page-image, .page-surface > .text-layer, .page-surface > .link-layer { position: absolute; inset: 0; }
+     .page-surface > .page-image, .page-surface > .text-layer, .page-surface > .link-layer, .page-surface > .media-layer { position: absolute; inset: 0; }
      body.dark-reading { background: #1b2029; color: #e6ebf2; }
      body.dark-reading .reader { background: #1f252f; }
        body.dark-reading #status { background: #252c38; color: #aeb9ca; }
@@ -480,6 +480,8 @@
      .link-hotspot { position: absolute; box-sizing: border-box; margin: 0; padding: 0; border: none; background: transparent; pointer-events: auto; cursor: pointer; border-radius: 2px; }
      .link-hotspot:hover, .link-hotspot:focus-visible { background: #2476bd33; outline: 1px solid #2476bd99; }
      body.dark-reading .link-hotspot:hover, body.dark-reading .link-hotspot:focus-visible { background: #6fb3f033; outline: 1px solid #6fb3f099; }
+     .media-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+     .media-layer > video { position: absolute; box-sizing: border-box; margin: 0; padding: 0; background: #000; pointer-events: auto; object-fit: contain; }
     .text-run { position: absolute; overflow: hidden; color: transparent; font-family: sans-serif; line-height: 1; white-space: pre; }
     .text-run:hover { background: #2476bd0d; }
     .text-run::selection { color: transparent; background: #3b82f699; }
