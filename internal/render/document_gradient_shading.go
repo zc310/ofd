@@ -16,9 +16,17 @@ func (g *ofdRadialGradient) At(x, y float64) color.RGBA {
 		if g.mapUnit <= 0 {
 			return g.base.At(x, y)
 		}
-		dx, dy := x-g.c0.X, y-g.c0.Y
-		distance := math.Sqrt(dx*dx+dy*dy) - g.r0
-		return gradientColor(g.stops, mapGradientValue(distance/g.mapUnit, g.mapType), g.extend)
+		// 绘制区域由两圆插值族与 Extend 位决定（Extend=0 时只画起始圆到终止圆
+		// 之间的区域）。颜色用插值族参数 t：t 处插值圆的圆心在 C0 与 C1 连线
+		// 上移动，因此各圈圆心不相同（偏心），中心点左上与右下落在不同圈上、
+		// 颜色不同。t 按半径增长 |r1-r0| 折算成沿中心点连线的绘制长度，再以
+		// MapUnit 划分区间。
+		t, ok := g.base.RadialParameter(x, y, g.extend)
+		if !ok {
+			return color.RGBA{}
+		}
+		value := t * math.Abs(g.r1-g.r0) / g.mapUnit
+		return g.stops.At(mapGradientValue(value, g.mapType))
 	}
 	// Direct：按两圆插值族的参数 t 应用 Extend 位。一个点可能同时落在多个
 	// 圆上，由 RadialParameter 依据 Extend 允许的根取较大的 t；没有任何可用
@@ -67,9 +75,14 @@ func (g *ofdEllipticalGradient) At(x, y float64) color.RGBA {
 	ay := rotY + cy
 
 	if g.hasMapType && g.mapUnit > 0 {
-		dx, dy := ax-g.c0.X, ay-g.c0.Y
-		distance := math.Sqrt(dx*dx+dy*dy) - g.r0
-		return gradientColor(g.stops, mapGradientValue(distance/g.mapUnit, g.mapType), g.extend)
+		// 与圆形径向一致：绘制区域由两圆插值族与 Extend 位界定，颜色用插值族
+		// 参数 t 分带（各圈圆心沿中心点连线偏移）。
+		t, ok := g.base.RadialParameter(ax, ay, g.extend)
+		if !ok {
+			return color.RGBA{}
+		}
+		value := t * math.Abs(g.r1-g.r0) / g.mapUnit
+		return g.stops.At(mapGradientValue(value, g.mapType))
 	}
 	return g.base.At(ax, ay)
 }
@@ -120,6 +133,10 @@ func newOFDLinearGradient(shd *models.CTAxialShd, transform func(models.StPos) g
 	gradient.dy = end.Y - start.Y
 	gradient.d2 = gradient.dx*gradient.dx + gradient.dy*gradient.dy
 	gradient.unit = math.Sqrt(gradient.d2)
+	// GB/T 33190 表 29：Repeat/Reflect 省略 MapUnit 时默认值为轴线长度。
+	if gradient.mapUnit <= 0 && (shd.MapType == "Repeat" || shd.MapType == "Reflect") {
+		gradient.mapUnit = gradient.unit
+	}
 	addOFDGradientStops(&gradient.stops, shd.Segment, resolve)
 	return gradient
 }
@@ -178,15 +195,17 @@ func isAxialRadialShading(source *models.CTColor) bool {
 	return source != nil && (source.AxialShd != nil || source.RadialShd != nil)
 }
 
-// radialMapUnit 返回 Repeat/Reflect 的区间长度。MapUnit 省略时用起止半径差，
-// 使终止圆之外继续按该区间平铺或反射，而不是退回 Direct。
+// radialMapUnit 返回 Repeat/Reflect 的区间长度。GB/T 33190 表 30 规定省略
+// MapUnit 时的默认值为中心点连线长度，但同心径向渐变的中心点连线为 0，没有
+// 可用周期；此时按起止半径差划分区间，使同心 Repeat/Reflect 沿半径方向平铺或
+// 反射（与图 37 的色带宽度一致）。
 func radialMapUnit(shd *models.CTRadialShd) float64 {
 	if shd.MapUnit > 0 {
 		return shd.MapUnit
 	}
-	span := math.Abs(shd.EndRadius - shd.StartRadius)
+	span := math.Hypot(shd.EndPoint.X-shd.StartPoint.X, shd.EndPoint.Y-shd.StartPoint.Y)
 	if span == 0 {
-		return 0
+		return math.Abs(shd.EndRadius - shd.StartRadius)
 	}
 	return span
 }

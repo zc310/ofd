@@ -79,25 +79,121 @@ func TestOFDGradientStopsFillOmittedEndpoints(t *testing.T) {
 	}
 }
 
-func TestRadialMapUnitDefaultsToRadiusSpan(t *testing.T) {
+// GB/T 33190 表 30：省略 MapUnit 时 Repeat/Reflect 的区间长度为中心点连线
+// 长度；两圆同心时该长度为 0，退回起止半径差，否则同心 Repeat 没有可用周期。
+func TestRadialMapUnitDefaultsToCenterLineLength(t *testing.T) {
+	segment := []models.Segment{
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	}
 	shd := &models.CTRadialShd{
 		StartPoint:  models.StPos{X: 0, Y: 0},
-		EndPoint:    models.StPos{X: 0, Y: 0},
+		EndPoint:    models.StPos{X: 10, Y: 10},
 		StartRadius: 10,
 		EndRadius:   70,
 		MapType:     "Repeat",
-		Segment: []models.Segment{
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
-			{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
-		},
+		// 该测试只关心 MapUnit 缺省值，用 Extend=3 覆盖整个平面。
+		Extend:  3,
+		Segment: segment,
 	}
-	gradient := newOFDRadialGradient(shd, func(point models.StPos) geom.Point {
-		return geom.Point{X: point.X, Y: point.Y}
-	}, nil)
-	// 半径 70 是第一周期终点（蓝），半径 80 进入下一周期，应回到偏黄而不是停在蓝。
-	outer := gradient.At(80, 0)
+	omitted := newOFDRadialGradient(shd, identityGradientTransform, nil)
+	shd.MapUnit = math.Hypot(10, 10)
+	explicit := newOFDRadialGradient(shd, identityGradientTransform, nil)
+	// 半径 60 处按中心点连线长度取到区间中部；按半径差（60）会落到接近终点色。
+	if got, want := omitted.At(60, 0), explicit.At(60, 0); got != want {
+		t.Fatalf("省略 MapUnit 的 Repeat 取色 = %v，显式中心点连线长度 = %v", got, want)
+	} else if got.B-got.R > 40 {
+		t.Fatalf("省略 MapUnit 的 Repeat 半径 60 取色 = %v，期望区间中部而非终点蓝", got)
+	}
+
+	// 同心：中心点连线长度为 0，退回起止半径差，半径 70 是第一周期终点（蓝），
+	// 半径 80 进入下一周期，应回到偏黄而不是停在蓝。
+	concentric := *shd
+	concentric.EndPoint = models.StPos{X: 0, Y: 0}
+	concentric.MapUnit = 0
+	outer := newOFDRadialGradient(&concentric, identityGradientTransform, nil).At(80, 0)
 	if outer.B > outer.R {
-		t.Fatalf("repeat beyond end radius = %v, want a new cycle toward yellow", outer)
+		t.Fatalf("同心 Repeat 半径 80 取色 = %v，期望进入下一周期（偏黄）", outer)
+	}
+}
+
+// 径向 Repeat/Reflect 的绘制区域由两圆插值族与 Extend 位界定：Extend=0 时只
+// 绘制起始圆与终止圆之间的区域，起始圆内部与终止圆之外都不着色（GB/T 33190
+// 图 37 的 Repeat/Reflect 只占终止椭圆范围，其余由页面背景透出）。颜色按以
+// 起始圆圆心的径向距离分带。
+func TestOFDRadialGradientRepeatReflectOnlyPaintInsideBand(t *testing.T) {
+	startColor := color.RGBA{R: 255, G: 255, A: 255}
+	newShd := func(mapType string, extend int) *models.CTRadialShd {
+		return &models.CTRadialShd{
+			StartPoint:  models.StPos{X: 40, Y: 70},
+			StartRadius: 10,
+			EndPoint:    models.StPos{X: 50, Y: 90},
+			EndRadius:   70,
+			MapType:     mapType,
+			Extend:      extend,
+			Segment: []models.Segment{
+				{Color: models.CTColor{Value: &models.Color{RGBA: startColor}}},
+				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			},
+		}
+	}
+	at := func(mapType string, extend int, x, y float64) color.RGBA {
+		return newOFDRadialGradient(newShd(mapType, extend), identityGradientTransform, nil).At(x, y)
+	}
+	for _, mapType := range []string{"Repeat", "Reflect"} {
+		if got := at(mapType, 0, 40, 70); got != (color.RGBA{}) {
+			t.Fatalf("%s Extend=0 起始圆内取色 = %v，期望透明", mapType, got)
+		}
+		if got := at(mapType, 0, 0, 0); got != (color.RGBA{}) {
+			t.Fatalf("%s Extend=0 终止圆外取色 = %v，期望透明", mapType, got)
+		}
+		// 起始圆外侧紧邻处接近起始色，说明留白区域止于起始圆。
+		if got := at(mapType, 0, 40, 82); got.R < 200 || got.B > 60 {
+			t.Fatalf("%s Extend=0 起始圆外侧取色 = %v，期望接近起始色", mapType, got)
+		}
+		// Extend 第 0 位放开起始侧，第 1 位放开终止侧。
+		if got := at(mapType, 1, 40, 70); got.A == 0 {
+			t.Fatalf("%s Extend=1 起始圆内取色 = %v，期望按区间内规则绘制", mapType, got)
+		}
+		if got := at(mapType, 1, 0, 0); got != (color.RGBA{}) {
+			t.Fatalf("%s Extend=1 终止圆外取色 = %v，期望透明", mapType, got)
+		}
+		if got := at(mapType, 2, 0, 0); got.A == 0 {
+			t.Fatalf("%s Extend=2 终止圆外取色 = %v，期望按区间内规则绘制", mapType, got)
+		}
+		if got := at(mapType, 2, 40, 70); got != (color.RGBA{}) {
+			t.Fatalf("%s Extend=2 起始圆内取色 = %v，期望透明", mapType, got)
+		}
+	}
+}
+
+// 椭圆径向（Eccentricity/Angle）的 Repeat/Reflect 与圆形一致：Extend=0 时只画
+// 起始椭圆到终止椭圆之间的区域。
+func TestOFDEllipticalRadialRepeatOnlyPaintsInsideBand(t *testing.T) {
+	gradient := func(extend int) geom.Gradient {
+		return newOFDRadialGradient(&models.CTRadialShd{
+			StartPoint:   models.StPos{X: 40, Y: 70},
+			StartRadius:  10,
+			EndPoint:     models.StPos{X: 50, Y: 90},
+			EndRadius:    70,
+			Eccentricity: 0.5,
+			Angle:        30,
+			MapType:      "Repeat",
+			Extend:       extend,
+			Segment: []models.Segment{
+				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, G: 255, A: 255}}}},
+				{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+			},
+		}, identityGradientTransform, nil)
+	}
+	if got := gradient(0).At(40, 70); got != (color.RGBA{}) {
+		t.Fatalf("椭圆 Repeat Extend=0 起始圆内取色 = %v，期望透明", got)
+	}
+	if got := gradient(0).At(0, 0); got != (color.RGBA{}) {
+		t.Fatalf("椭圆 Repeat Extend=0 终止圆外取色 = %v，期望透明", got)
+	}
+	if got := gradient(1).At(40, 70); got.A == 0 {
+		t.Fatalf("椭圆 Repeat Extend=1 起始圆内取色 = %v，期望按区间内规则绘制", got)
 	}
 }
 
@@ -127,6 +223,26 @@ func TestOFDLinearGradientMapModes(t *testing.T) {
 	got := reflect.At(17.5, 0)
 	if got.R <= got.B {
 		t.Fatalf("expected reflect to move back toward the first stop, got %v", got)
+	}
+}
+
+// GB/T 33190 表 29：轴向 Repeat/Reflect 的 MapUnit 缺省值为轴线长度。
+func TestAxialMapUnitDefaultsToAxisLength(t *testing.T) {
+	segment := []models.Segment{
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}},
+		{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+	}
+	shd := &models.CTAxialShd{
+		StartPoint: models.StPos{X: 0, Y: 0},
+		EndPoint:   models.StPos{X: 10, Y: 0},
+		MapType:    "Repeat",
+		Segment:    segment,
+	}
+	omitted := newOFDLinearGradient(shd, identityGradientTransform, nil)
+	shd.MapUnit = 10
+	explicit := newOFDLinearGradient(shd, identityGradientTransform, nil)
+	if got, want := omitted.At(15, 0), explicit.At(15, 0); got != want {
+		t.Fatalf("省略 MapUnit 的轴向 Repeat 取色 = %v，显式轴线长度 = %v", got, want)
 	}
 }
 
