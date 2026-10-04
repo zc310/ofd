@@ -1218,6 +1218,8 @@ function mountPageSpread(position) {
     textLayer.className = 'text-layer';
     const linkLayer = document.createElement('div');
     linkLayer.className = 'link-layer';
+    const mediaLayer = document.createElement('div');
+    mediaLayer.className = 'media-layer';
     image.addEventListener('load', () => {
       image.classList.add('loaded');
       clearPageLoading(card, image);
@@ -1229,7 +1231,7 @@ function mountPageSpread(position) {
       markPageFailed(index);
       showPageError(index, '页面图片加载失败');
     });
-    surface.append(image, textLayer, linkLayer);
+    surface.append(image, textLayer, linkLayer, mediaLayer);
     card.append(surface);
     element.append(card);
     pageCards[index] = card;
@@ -1273,6 +1275,7 @@ function unmountPageSpread(position) {
       pageCache.clearIndex('page', index);
       thumbnailCache.clearIndex('thumbnail', index);
       if (card) resizeObserver?.unobserve(card);
+      rehomeEmbeddedMedia(index);
       delete pageCards[index];
     }
   });
@@ -6605,10 +6608,72 @@ function stopActiveMedia(key) {
   });
 }
 
+// rehomeEmbeddedMedia 页面卡片被虚拟化回收时，把嵌在该页的影片窗口移回弹出式
+// 窗口；否则播放会继续，但画面随卡片一起脱离文档而不可见。
+function rehomeEmbeddedMedia(pageIndex) {
+  activeMedia.forEach(entry => {
+    if (!entry || entry.placement !== 'embedded' || entry.placementPage !== pageIndex) return;
+    placeMediaElement(entry, { media_kind: 'movie' });
+  });
+}
+
+// mediaPlacementTarget 返回动作对应的嵌入式播放层；动作没有图元外观区域、
+// 页面未挂载或页面尺寸无效时返回 null，此时按规范改用弹出式窗口。
+function mediaPlacementTarget(action) {
+  const boundary = action?.boundary;
+  if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
+      !(boundary.width > 0) || !(boundary.height > 0)) return null;
+  const index = Number(action.page);
+  if (!Number.isInteger(index) || index < 0) return null;
+  const info = pageInfos[index];
+  if (!info || !(info.width > 0) || !(info.height > 0)) return null;
+  const layer = pageCards[index]?.querySelector('.media-layer');
+  if (!layer) return null;
+  return { layer, info, boundary };
+}
+
+// placeMediaElement 按 GB/T 33190—2016 第 12 章摆放影片窗口：图元关联的
+// 播放使用图元外观区域作为嵌入式播放窗口，其他情况使用弹出式窗口。同一
+// 资源被不同图元触发时复用同一个 <video>，因此这里只移动位置。
+function placeMediaElement(entry, action) {
+  const element = entry.element;
+  if (action?.media_kind !== 'movie') return;
+  const target = mediaPlacementTarget(action);
+  ['left', 'top', 'width', 'height', 'max-width', 'max-height', 'transform', 'z-index'].forEach(name => {
+    element.style.removeProperty(name);
+  });
+  if (!target) {
+    entry.placement = 'popup';
+    entry.placementPage = -1;
+    element.style.position = 'fixed';
+    element.style.left = '50%';
+    element.style.top = '50%';
+    element.style.transform = 'translate(-50%, -50%)';
+    element.style.zIndex = '40';
+    element.style.maxWidth = 'min(720px, 80vw)';
+    element.style.maxHeight = '70vh';
+    element.style.background = '#000';
+    document.body.append(element);
+    return;
+  }
+  const { layer, info, boundary } = target;
+  entry.placement = 'embedded';
+  entry.placementPage = Number(action.page);
+  element.style.position = 'absolute';
+  element.style.left = `${(boundary.x / info.width) * 100}%`;
+  element.style.top = `${(boundary.y / info.height) * 100}%`;
+  element.style.width = `${(boundary.width / info.width) * 100}%`;
+  element.style.height = `${(boundary.height / info.height) * 100}%`;
+  layer.append(element);
+}
+
 async function ensureMediaElement(action) {
   const key = mediaActionKey(action);
   const existing = activeMedia.get(key);
-  if (existing) return existing;
+  if (existing) {
+    placeMediaElement(existing, action);
+    return existing;
+  }
   const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0);
   if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
     throw new Error('媒体资源为空');
@@ -6620,20 +6685,10 @@ async function ensureMediaElement(action) {
   const element = document.createElement(action.media_kind === 'sound' ? 'audio' : 'video');
   element.src = url;
   element.preload = 'auto';
-  if (action.media_kind === 'movie') {
-    element.controls = true;
-    element.style.position = 'fixed';
-    element.style.left = '50%';
-    element.style.top = '50%';
-    element.style.transform = 'translate(-50%, -50%)';
-    element.style.zIndex = '40';
-    element.style.maxWidth = 'min(720px, 80vw)';
-    element.style.maxHeight = '70vh';
-    element.style.background = '#000';
-    document.body.append(element);
-  }
-  const entry = { element, url };
+  if (action.media_kind === 'movie') element.controls = true;
+  const entry = { element, url, placement: 'none', placementPage: -1 };
   activeMedia.set(key, entry);
+  placeMediaElement(entry, action);
   element.addEventListener('ended', () => {
     if (!element.loop) stopActiveMedia(key);
   });
