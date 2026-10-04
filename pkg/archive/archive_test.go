@@ -16,7 +16,7 @@ import (
 )
 
 func TestPrepareAndVerifyCreatesSelfContainedDirectory(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	metadata := Metadata{ArchiveCode: "A-1", FondsCode: "F-1"}
 	options := DefaultOptions()
@@ -43,7 +43,7 @@ func TestPrepareAndVerifyCreatesSelfContainedDirectory(t *testing.T) {
 }
 
 func TestVerifyDetectsFixityMismatch(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -69,7 +69,7 @@ func TestVerifyDetectsFixityMismatch(t *testing.T) {
 }
 
 func TestVerifyDetectsManifestTampering(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -95,7 +95,7 @@ func TestVerifyDetectsManifestTampering(t *testing.T) {
 }
 
 func TestVerifyDetectsInvalidStoredCheckReport(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -112,7 +112,7 @@ func TestVerifyDetectsInvalidStoredCheckReport(t *testing.T) {
 }
 
 func TestVerifyDetectsStoredReportSourceMismatch(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -146,7 +146,7 @@ func TestVerifyDetectsStoredReportSourceMismatch(t *testing.T) {
 }
 
 func TestBuildManifestRetainsSourceHash(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
 	manifest, _, err := BuildManifest(context.Background(), input, Metadata{}, "", options)
@@ -171,7 +171,7 @@ func TestBuildManifestRejectsUnsupportedProfileExtension(t *testing.T) {
 	if err := os.WriteFile(profile, []byte(`{"required_fields":["archive_code"]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
 	if _, _, err := BuildManifest(context.Background(), input, Metadata{ArchiveCode: "A-1"}, profile, options); err == nil {
@@ -220,7 +220,7 @@ func TestScanXMLHonorsSizeLimit(t *testing.T) {
 }
 
 func TestPrepareRejectsNonEmptyOutputDirectory(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	if err := os.MkdirAll(output, 0o700); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestPrepareCopiesProfileAndVerifiesIt(t *testing.T) {
 	if err := os.WriteFile(profile, profileData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(directory, "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -320,7 +320,7 @@ func TestLoadMetadataRejectsUnknownJSONField(t *testing.T) {
 }
 
 func TestVerifyDetectsUnregisteredFile(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -340,7 +340,7 @@ func TestVerifyDetectsUnregisteredFile(t *testing.T) {
 }
 
 func TestPrepareCopiesAttachmentAndRegistersFixity(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "multi_demo.ofd")
+	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -367,7 +367,7 @@ func TestPrepareCopiesAttachmentAndRegistersFixity(t *testing.T) {
 }
 
 func TestVerifyRejectsSymlink(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	output := filepath.Join(t.TempDir(), "archive")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
@@ -409,7 +409,7 @@ func TestFixitySupportsSpacesInPaths(t *testing.T) {
 }
 
 func TestPrepareRejectsSymlinkOutputDirectory(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	directory := t.TempDir()
 	realOutput := filepath.Join(directory, "real")
 	if err := os.MkdirAll(realOutput, 0o700); err != nil {
@@ -427,7 +427,7 @@ func TestPrepareRejectsSymlinkOutputDirectory(t *testing.T) {
 }
 
 func TestVerifyRejectsSymlinkArchiveRoot(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	directory := t.TempDir()
 	realOutput := filepath.Join(directory, "real")
 	options := DefaultOptions()
@@ -445,7 +445,7 @@ func TestVerifyRejectsSymlinkArchiveRoot(t *testing.T) {
 }
 
 func TestBuildMatrixIncludesClauseStatuses(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	options := DefaultOptions()
 	options.ValidatorOptions = []validator.Option{validator.WithMode(validator.ModeStructural)}
 	matrix, err := BuildMatrix(context.Background(), input, options)
@@ -468,7 +468,7 @@ func TestBuildMatrixIncludesClauseStatuses(t *testing.T) {
 }
 
 func TestZipFixtureCanBeRead(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	file, err := os.Open(input)
 	if err != nil {
 		t.Fatal(err)
@@ -515,7 +515,7 @@ func TestToolVersionFollowsBuildVersion(t *testing.T) {
 // Encryptions.xml 表达而非 encrypt 元素（同样恒为 0）、其它命名空间的同名
 // 元素会被误计。
 func TestScanFeaturesUsesRealOFDElements(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "media-actions.ofd")
+	input := filepath.Join("..", "..", "testdata", "media-actions.ofd")
 	features, err := scanFeatures(input, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -535,7 +535,7 @@ func TestScanFeaturesUsesRealOFDElements(t *testing.T) {
 // TestScanFeaturesCountsEncryptionByFile 保护加密按包内文件判定。OFD 模式中
 // 没有任何加密元素，早先匹配 encrypt/encryption/encrypteddoc 三种拼写恒为 0。
 func TestScanFeaturesCountsEncryptionByFile(t *testing.T) {
-	features, err := scanFeatures(filepath.Join("..", "..", "test", "testdata", "media-actions.ofd"), 0)
+	features, err := scanFeatures(filepath.Join("..", "..", "testdata", "media-actions.ofd"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

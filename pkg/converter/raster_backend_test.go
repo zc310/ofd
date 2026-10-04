@@ -18,7 +18,7 @@ import (
 // TestImageRasterBackendGGProducesPNG 验证 RasterBackend("gg") 时 PNG 输出
 // 经 gg 栅格后端生成，且为可解码的非空 PNG。
 func TestImageRasterBackendGGProducesPNG(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	if _, err := os.Stat(input); err != nil {
 		t.Skipf("缺少测试文档: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestImageRasterBackendGGProducesPNG(t *testing.T) {
 
 // TestImageRasterBackendGGJPEG 验证 RasterBackend("gg") 同样支持 JPEG 输出。
 func TestImageRasterBackendGGJPEG(t *testing.T) {
-	input := filepath.Join("..", "..", "test", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
 	if _, err := os.Stat(input); err != nil {
 		t.Skipf("缺少测试文档: %v", err)
 	}

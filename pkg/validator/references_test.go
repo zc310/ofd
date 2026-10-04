@@ -17,15 +17,15 @@ import (
 // 若实现分叉，这个测试会先发现。
 func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 	fixtures := []string{
-		"../../test/testdata/999.ofd",
-		"../../test/testdata/actions.ofd",
-		"../../test/testdata/annotations.ofd",
-		"../../test/testdata/permissions.ofd",
-		"../../test/testdata/preferences.ofd",
-		"../../test/testdata/package-extras.ofd",
-		"../../test/testdata/clips.ofd",
-		"../../test/testdata/media-actions.ofd",
-		"../../test/testdata/zsbk.ofd",
+		"../../testdata/999.ofd",
+		"../../testdata/actions.ofd",
+		"../../testdata/annotations.ofd",
+		"../../testdata/permissions.ofd",
+		"../../testdata/preferences.ofd",
+		"../../testdata/package-extras.ofd",
+		"../../testdata/clips.ofd",
+		"../../testdata/media-actions.ofd",
+		"../../testdata/zsbk.ofd",
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture, func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 // 也计入可达集合。它们不再往下解析，但必须被认作「有人引用」，否则会被
 // 6.2.1 c) 当作无人引用的条目删掉。
 func TestPackageReferencesKeepsReferencedFontsAndMedia(t *testing.T) {
-	const fixture = "../../test/testdata/image-effects.ofd"
+	const fixture = "../../testdata/image-effects.ofd"
 	index, err := PackageReferences(context.Background(), fixture)
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
@@ -164,12 +164,12 @@ func buildOFDWithOrphan(t *testing.T) []byte {
 
 // TestPackageReferencesRefusesToJudgeInvalidNamespace 是本组最关键的测试。
 //
-// test/testdata/intro.ofd 的命名空间是 http://www.ofdspec.org，缺 "/2016"
+// testdata/intro.ofd 的命名空间是 http://www.ofdspec.org，缺 "/2016"
 // 后缀，validator 报 namespace.invalid。解析失败后该文件里的引用一个也收集不到，
 // 于是它的 74 个字体会全部落进「无人引用」。若不记录 Unparsed，这个包会显示
 // 「124 个条目中 74 个可删」——照做就是毁掉一份真实文件。
 func TestPackageReferencesRefusesToJudgeInvalidNamespace(t *testing.T) {
-	const legacy = "../../test/testdata/intro.ofd"
+	const legacy = "../../testdata/intro.ofd"
 	index, err := PackageReferences(context.Background(), legacy)
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
@@ -208,7 +208,7 @@ func TestPackageReferencesRefusesToJudgeInvalidNamespace(t *testing.T) {
 // TestPackageReferencesCompleteForValidNamespace 确认命名空间正确的样例闭包完整，
 // 否则上一条的保护会过于宽松、让 6.2.1 c) 永远无法执行。
 func TestPackageReferencesCompleteForValidNamespace(t *testing.T) {
-	index, err := PackageReferences(context.Background(), "../../test/testdata/cover-thumbnail.ofd")
+	index, err := PackageReferences(context.Background(), "../../testdata/cover-thumbnail.ofd")
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
 	}

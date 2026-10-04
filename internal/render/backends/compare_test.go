@@ -25,7 +25,7 @@ import (
 	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 )
 
-const stress999Path = "../../../test/testdata/999.ofd"
+const stress999Path = "../../../testdata/999.ofd"
 
 // stress999Document 打开 999.ofd 并返回可复用的渲染文档（页面/字体一次到位）。
 func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *parser.OFD) {

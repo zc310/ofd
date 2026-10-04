@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const preserveFixture = "../../test/testdata/"
+const preserveFixture = "../../testdata/"
 
 // TestPreserveRequiresOutput 确认转换必须显式给出输出路径。这是本工具唯一会
 // 改写文件的子命令，默认路径一旦有误就会覆盖用户的原始文件。

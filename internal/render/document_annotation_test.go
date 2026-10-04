@@ -14,7 +14,7 @@ import (
 // TestSignoutStampCompositeAnnotationRendersInk 回归：手写签名以 CompositeObject
 // 形式的 Stamp 注解出现，annot 必须绘制复合图元，而不是像以前那样整类跳过。
 func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ofdrw", "signout.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw", "signout.ofd"))
 	if err != nil {
 		t.Skipf("样例不可用: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 }
 
 func TestAnoStampAnnotationRendersText(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestAnoStampAnnotationRendersText(t *testing.T) {
 }
 
 func TestAnoPageIncludesStampAnnotation(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "test", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

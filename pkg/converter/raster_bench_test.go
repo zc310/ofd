@@ -22,7 +22,7 @@ import (
 // benchDoc 只解析一次文档，跨基准复用，避免把解析耗时算进栅格化对比。
 func benchDoc(tb testing.TB, name string) *render.Document {
 	tb.Helper()
-	file := filepath.Join("..", "..", "test", "testdata", name)
+	file := filepath.Join("..", "..", "testdata", name)
 	if _, err := os.Stat(file); err != nil {
 		tb.Skipf("缺少测试文档: %v", err)
 	}

@@ -3,7 +3,7 @@
 # 第 2 页演示同一图元的多个 Clip 取交集（规格：多 Clip 时最终裁剪区为所有 Clip 的交集）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml -o test/testdata/clips.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/clips.yaml -o testdata/clips.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

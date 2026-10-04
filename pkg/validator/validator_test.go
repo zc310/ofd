@@ -737,7 +737,7 @@ func testFont(t *testing.T) ([]byte, *fontpkg.SFNT) {
 			return data, sfnt
 		}
 	}
-	if archiveData, err := os.ReadFile("../../test/testdata/intro.ofd"); err == nil {
+	if archiveData, err := os.ReadFile("../../testdata/intro.ofd"); err == nil {
 		if archive, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData))); err == nil {
 			for _, entry := range archive.File {
 				if !strings.HasSuffix(entry.Name, "font_83_83.cff") {

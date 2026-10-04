@@ -14,7 +14,7 @@ import (
 )
 
 func TestParseSignedValueSES(t *testing.T) {
-	data := readZipEntry(t, filepath.Join("..", "..", "test", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := ParseSignedValue(data)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestSignedValuePathResolvesRelativeAndAbsoluteLocations(t *testing.T) {
 }
 
 func TestDocumentParsesSignedValues(t *testing.T) {
-	ofd, err := NewOFD(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestDocumentParsesSignedValues(t *testing.T) {
 }
 
 func TestVerifySESSignedValueDetectsTamperedSignedData(t *testing.T) {
-	data := readZipEntry(t, filepath.Join("..", "..", "test", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := ParseSignedValue(data)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestVerifySESSignedValueDetectsTamperedSignedData(t *testing.T) {
 }
 
 func TestVerifySESSignedValueReportsUnconfiguredCRLAsUnknown(t *testing.T) {
-	data := readZipEntry(t, filepath.Join("..", "..", "test", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := ParseSignedValue(data)
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestVerifySESSignedValueReportsUnconfiguredCRLAsUnknown(t *testing.T) {
 }
 
 func TestVerifySESSignedValueSupportsRawSignatureAndUIDOptions(t *testing.T) {
-	data := readZipEntry(t, filepath.Join("..", "..", "test", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := ParseSignedValue(data)
 	if err != nil {
 		t.Fatal(err)
@@ -259,12 +259,12 @@ func rawSM2Signature(r, s *big.Int) []byte {
 }
 
 func TestVerifySignatureDigestDetectsChangedReference(t *testing.T) {
-	data := readZipEntry(t, filepath.Join("..", "..", "test", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := ParseSignedValue(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	packageData, err := os.ReadFile(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	packageData, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestVerifySignatureDigestDetectsChangedReference(t *testing.T) {
 }
 
 func TestDocumentKeepsNonASN1SignedValue(t *testing.T) {
-	ofd, err := NewOFD(filepath.Join("..", "..", "test", "testdata", "999.ofd"))
+	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

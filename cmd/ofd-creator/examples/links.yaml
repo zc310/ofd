@@ -5,7 +5,7 @@
 #   - 承载动作的 PathObject 设为不可见，仅作为点击热区
 # Web 阅读器（ofd-wasm）会在页面上按注解边界叠加可点击热区。
 # 生成：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/links.yaml -o test/testdata/links.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/links.yaml -o testdata/links.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 

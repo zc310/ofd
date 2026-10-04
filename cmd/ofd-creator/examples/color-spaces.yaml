@@ -2,9 +2,9 @@
 # 颜色空间示例；覆盖 GRAY、CMYK、RGB 调色板和带 sRGB ICC Profile 的 RGB。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml -o test/testdata/color-spaces.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/color-spaces.yaml -o testdata/color-spaces.ofd --format auto --deterministic --validate --complete-text-code-deltas
 #
-# 期望渲染值（PNG 与 PDF 一致，详见 test/testdata/README.md 的「颜色空间渲染基准」）：
+# 期望渲染值（PNG 与 PDF 一致，详见 testdata/README.md 的「颜色空间渲染基准」）：
 #   GRAY  64 -> (64,64,64)      GRAY 180 -> (180,180,180)
 #   CMYK 255 0 0 0 -> (0,173,239)    印刷青
 #   CMYK   0 255 0 0 -> (236,0,140)  印刷品红

@@ -2,7 +2,7 @@
 # 绘制参数继承示例；`thick` 继承 `base` 并改线宽，`dashed` 再继承 `thick` 并改为虚线和蓝色描边。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/draw-params.yaml --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/draw-params.yaml -o test/testdata/draw-params.ofd --format auto --deterministic --validate --complete-text-code-deltas
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/draw-params.yaml -o testdata/draw-params.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:

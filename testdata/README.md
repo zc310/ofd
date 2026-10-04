@@ -109,16 +109,16 @@
 以下命令从仓库根目录运行：
 
 ```text
-go run ./cmd/ofd-analyzer --format text test/testdata/helloworld.ofd
-go run ./cmd/ofd-converter -format pdf test/testdata/intro.ofd /tmp/intro.pdf
-go run ./cmd/ofd-converter -format png -page 1 test/testdata/ano.ofd /tmp/ano-page-1.png
+go run ./cmd/ofd-analyzer --format text testdata/helloworld.ofd
+go run ./cmd/ofd-converter -format pdf testdata/intro.ofd /tmp/intro.pdf
+go run ./cmd/ofd-converter -format png -page 1 testdata/ano.ofd /tmp/ano-page-1.png
 go test ./internal/render ./test -count=1
 ```
 
 刷新本表中的结构摘要可对全部 fixture 重新执行分析：
 
 ```text
-for f in test/testdata/*.ofd; do go run ./cmd/ofd-analyzer --format json "$f"; done
+for f in testdata/*.ofd; do go run ./cmd/ofd-analyzer --format json "$f"; done
 ```
 
 创建器示例的 manifest 位于 [`cmd/ofd-creator/examples`](../../cmd/ofd-creator/examples)。修改这些 manifest 或对应 fixture 时，应执行 `--check`、`--validate` 和必要的严格校验。
