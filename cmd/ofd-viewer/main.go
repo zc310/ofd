@@ -864,6 +864,14 @@ func (v *viewer) showMenu() {
 	if v.closed.Load() {
 		return
 	}
+	menu := v.buildMenu()
+	canvas := v.window.Canvas()
+	widget.ShowPopUpMenuAtRelativePosition(menu, canvas, fyne.NewPos(0, v.menuButton.Size().Height), v.menuButton)
+}
+
+// buildMenu 组装右侧菜单。菜单项的启用状态和图标都在这里决定，单独拆出来才能被
+// 测试直接断言，不必真的弹出菜单。
+func (v *viewer) buildMenu() *fyne.Menu {
 	exportItem := fyne.NewMenuItemWithIcon("导出", theme.DocumentSaveIcon(), v.showExportDialog)
 	exportItem.Disabled = !v.hasPages() || v.loading || v.exporting
 	viewItems := []*fyne.MenuItem{
@@ -877,11 +885,11 @@ func (v *viewer) showMenu() {
 		item.Checked = v.pageLayout.mode == viewModes[i]
 		item.Disabled = v.loading || v.exporting
 	}
-	viewItem := fyne.NewMenuItem("视图", nil)
+	viewItem := fyne.NewMenuItemWithIcon("视图", theme.ZoomFitIcon(), nil)
 	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
 	// 背景色与文档状态无关：加载和导出期间切换都只是改矩形填充色，因此这一项
 	// 始终可用，切换后立即生效且不需要重新渲染页面。
-	backgroundItem := fyne.NewMenuItem("背景色", nil)
+	backgroundItem := fyne.NewMenuItemWithIcon("背景色", theme.ColorPaletteIcon(), nil)
 	backgroundItem.ChildMenu = fyne.NewMenu("背景色", v.documentBackgroundMenuItems()...)
 	// 文件关联与文档状态无关，因此这一项不受 loading/exporting 影响；平台不支持
 	// 时整项不出现。
@@ -895,9 +903,7 @@ func (v *viewer) showMenu() {
 	closeItem.Disabled = v.loading || v.exporting
 	menuItems = append(menuItems, closeItem,
 		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo))
-	menu := fyne.NewMenu("菜单", menuItems...)
-	canvas := v.window.Canvas()
-	widget.ShowPopUpMenuAtRelativePosition(menu, canvas, fyne.NewPos(0, v.menuButton.Size().Height), v.menuButton)
+	return fyne.NewMenu("菜单", menuItems...)
 }
 
 func (v *viewer) showExportDialog() {
