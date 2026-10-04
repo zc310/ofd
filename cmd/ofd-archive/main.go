@@ -1,4 +1,4 @@
-// 命令 ofd-archive 提供 OFD 档案预检、清单、归档准备和固定性验证。
+// Command ofd-archive 提供 OFD 档案预检、清单、归档准备和固定性验证。
 package main
 
 import (

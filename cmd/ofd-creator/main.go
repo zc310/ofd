@@ -1,4 +1,4 @@
-// 命令 ofd-creator 根据 JSON、YAML 或 TOML manifest 创建 OFD 文件。
+// Command ofd-creator 根据 JSON、YAML 或 TOML manifest 创建 OFD 文件。
 package main
 
 import (

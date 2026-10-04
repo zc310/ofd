@@ -1,4 +1,4 @@
-// 命令 ofd-validator 校验 OFD 文件结构、资源和签名等内容。
+// Command ofd-validator 校验 OFD 文件结构、资源和签名等内容。
 package main
 
 import (

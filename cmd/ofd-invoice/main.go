@@ -1,4 +1,4 @@
-// 命令 ofd-invoice 从 OFD 电子发票中抽取结构化发票信息并输出 JSON。
+// Command ofd-invoice 从 OFD 电子发票中抽取结构化发票信息并输出 JSON。
 package main
 
 import (
