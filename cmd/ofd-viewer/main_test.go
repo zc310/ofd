@@ -2070,3 +2070,30 @@ func TestDisplayVersionHasVPrefix(t *testing.T) {
 		t.Errorf("displayVersion() = %q，期望 %q", got, want)
 	}
 }
+
+// TestDefaultWindowSizeFitsA4Page 守住首屏正好放得下一整页 A4。
+//
+// 默认视图是“适应宽度”：页面宽度等于页面区宽度，整页 A4 需要的高度可以事先算出来。
+// 窗口高度若只按窗口本身的 A4 比例给，工具栏会把页面挤到屏幕外，读者还得手动拉一点
+// 滚动条才看得全页——这正是要防的回归。工具栏高度取自工具栏 MinSize，所以工具栏日后
+// 加了更高的控件，这条断言会先失败，提示同步更新这里。
+func TestDefaultWindowSizeFitsA4Page(t *testing.T) {
+	test.NewTempApp(t)
+	v := newViewer(test.NewWindow(nil))
+	size := v.defaultWindowSize()
+
+	toolbarHeight := v.toolbar.MinSize().Height
+	pageWidth := size.Width - 2*pageMargin
+	pageHeight := size.Height - toolbarHeight - 2*pageMargin
+	if want := a4PageHeight(float32(windowWidth - 2*pageMargin)); pageHeight < want-0.5 {
+		t.Errorf("页面区 %.0f×%.0f 放不下整页 A4（需要高 %.0f，工具栏 %.0f）",
+			pageWidth, pageHeight, want, toolbarHeight)
+	}
+	// 反过来也不能给得过分：多出来的空白同样没有意义，A4 页面之下留一整屏灰底。
+	if pageHeight > a4PageHeight(float32(windowWidth-2*pageMargin))+pageMargin {
+		t.Errorf("页面区高 %.0f，比整页 A4 高出太多", pageHeight)
+	}
+	if toolbarHeight <= 0 {
+		t.Fatal("工具栏高度不应为 0")
+	}
+}

@@ -47,11 +47,21 @@ var errDocumentChanged = errors.New("文档已更改")
 const (
 	applicationID = "io.github.zc310.ofd"
 	projectURL    = "https://github.com/zc310/ofd"
-	windowWidth   = 800
-	windowHeight  = 600
-	viewerDPI     = 96
-	thumbnailDPI  = 36
+	// windowWidth 是启动窗口宽度。高度不写死：A4 的 210:297 比例只对页面区成立，
+	// 工具栏和页面边距都排在页面之外，因此高度由 defaultWindowSize 按工具栏的实际
+	// 高度算出来（见 a4PageHeight）。
+	windowWidth  = 700
+	pageMargin   = 12
+	viewerDPI    = 96
+	thumbnailDPI = 36
 )
+
+// a4PageHeight 返回 A4 竖版页面在给定宽度下的高度。首屏要正好放下一整页 A4，窗口高度
+// 就得由页面高度反推，而不是让整个窗口去凑 A4 比例——那样工具栏会把页面挤到屏幕外，
+// 读者还得手动拉一点滚动条才能看全一页。
+func a4PageHeight(width float32) float32 {
+	return width * 297 / 210
+}
 
 // displayVersion 返回关于对话框里显示的版本号。
 //
@@ -119,15 +129,18 @@ func main() {
 
 	a := app.NewWithID(applicationID)
 	w := a.NewWindow(applicationTitle())
-	w.Resize(fyne.NewSize(windowWidth, windowHeight))
-	w.CenterOnScreen()
 	w.SetMaster()
 
 	viewer := newViewer(w)
 	w.SetContent(viewer.content)
+	w.Resize(viewer.defaultWindowSize())
 	w.Canvas().SetOnTypedKey(viewer.handleKey)
 	w.SetOnClosed(viewer.close)
 	w.Show()
+	// 居中放在 Show 之后：窗口显示前驱动还没有真实几何信息，按那时的尺寸算偏移只会
+	// 把窗口放到屏幕一角。Fyne 2.x 没有对外的屏幕尺寸接口，居中只能让驱动按当前显示器
+	// 算，因此必须等窗口真正创建之后再请求。
+	w.CenterOnScreen()
 
 	if initialFile != "" {
 		viewer.load(initialFile, filepath.Base(initialFile), initialFile)
@@ -153,6 +166,7 @@ type viewer struct {
 	menuButton      *widget.Button
 	documentTitle   *widget.Label
 	pageToolbar     *fyne.Container
+	toolbar         *fyne.Container
 	pageLabel       *widget.Label
 	pageEntry       *widget.Entry
 	thumbnailToggle *widget.Button
@@ -755,7 +769,7 @@ func newViewer(window fyne.Window) *viewer {
 		v.goToPage(page, true)
 	}
 
-	v.pageLayout = &continuousLayout{mode: viewFitWidth, gap: 12, margin: 12, background: v.pageBackground()}
+	v.pageLayout = &continuousLayout{mode: viewFitWidth, gap: pageMargin, margin: pageMargin, background: v.pageBackground()}
 	// 视口尺寸变化只能通过布局感知，滚动事件覆盖不到拖动窗口大小的场景。
 	// 这里只补渲染，不改当前页等界面状态，避免在布局过程中改动控件。
 	v.pageLayout.onViewportChange = func() {
@@ -798,6 +812,7 @@ func newViewer(window fyne.Window) *viewer {
 	v.pageToolbar = pageToolbar
 	rightToolbar := container.NewHBox(pageToolbar, v.menuButton)
 	toolbar := container.NewBorder(nil, nil, leftToolbar, rightToolbar, container.NewCenter(v.documentTitle))
+	v.toolbar = toolbar
 	thumbnailPanel := container.NewBorder(widget.NewLabel("页面"), nil, nil, nil, v.thumbnailList)
 	thumbnailPanel.Hide()
 	documentArea := container.NewHSplit(thumbnailPanel, v.pageScroll)
@@ -807,6 +822,17 @@ func newViewer(window fyne.Window) *viewer {
 	v.content = container.NewBorder(toolbar, nil, nil, nil, documentArea)
 	v.updateControls()
 	return v
+}
+
+// defaultWindowSize 返回启动窗口尺寸：宽度固定，高度按“首屏放得下一整页 A4”反推。
+//
+// 默认视图是“适应宽度”，页面宽度等于页面区宽度，因此整页 A4 需要的高度就是
+// a4PageHeight(页面区宽度)。窗口高度还要加上工具栏和上下页面边距——工具栏高度直接
+// 取工具栏的 MinSize，工具栏日后加了更高的控件，窗口会自动跟着长高，不必回来改常数。
+func (v *viewer) defaultWindowSize() fyne.Size {
+	pageWidth := float32(windowWidth - 2*pageMargin)
+	pageHeight := a4PageHeight(pageWidth)
+	return fyne.NewSize(windowWidth, pageHeight+2*pageMargin+v.toolbar.MinSize().Height)
 }
 
 // newPageImageCache 创建阅读区页面图像缓存。页面图像在 96 DPI 下体积可观，
@@ -875,10 +901,10 @@ func (v *viewer) buildMenu() *fyne.Menu {
 	exportItem := fyne.NewMenuItemWithIcon("导出", theme.DocumentSaveIcon(), v.showExportDialog)
 	exportItem.Disabled = !v.hasPages() || v.loading || v.exporting
 	viewItems := []*fyne.MenuItem{
-		fyne.NewMenuItem(viewFitPageLabel, func() { v.setViewMode(viewFitPageLabel) }),
-		fyne.NewMenuItem(viewFitWidthLabel, func() { v.setViewMode(viewFitWidthLabel) }),
-		fyne.NewMenuItem(viewFitHeightLabel, func() { v.setViewMode(viewFitHeightLabel) }),
-		fyne.NewMenuItem(viewDoublePageLabel, func() { v.setViewMode(viewDoublePageLabel) }),
+		fyne.NewMenuItemWithIcon(viewFitPageLabel, viewModeIcon(viewFitPage), func() { v.setViewMode(viewFitPageLabel) }),
+		fyne.NewMenuItemWithIcon(viewFitWidthLabel, viewModeIcon(viewFitWidth), func() { v.setViewMode(viewFitWidthLabel) }),
+		fyne.NewMenuItemWithIcon(viewFitHeightLabel, viewModeIcon(viewFitHeight), func() { v.setViewMode(viewFitHeightLabel) }),
+		fyne.NewMenuItemWithIcon(viewDoublePageLabel, viewModeIcon(viewDoublePage), func() { v.setViewMode(viewDoublePageLabel) }),
 	}
 	viewModes := []pageViewMode{viewFitPage, viewFitWidth, viewFitHeight, viewDoublePage}
 	for i, item := range viewItems {
