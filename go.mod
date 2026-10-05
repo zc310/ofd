@@ -9,7 +9,7 @@ require (
 	github.com/FloatTech/gg v1.1.3
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.157.5
+	github.com/chromedp/cdproto v0.157.6
 	github.com/chromedp/chromedp v0.19.1
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
@@ -23,7 +23,7 @@ require (
 	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.1
-	github.com/knroy/go-xml v1.4.0
+	github.com/knroy/go-xml v1.5.0
 	github.com/kovidgoyal/imaging v1.8.23
 	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
@@ -31,7 +31,7 @@ require (
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 	github.com/ncruces/zenity v0.10.15
-	github.com/pdfcpu/pdfcpu v0.16.0
+	github.com/pdfcpu/pdfcpu v0.16.1
 	github.com/pkg/sftp v1.13.11
 	github.com/rymdport/portal v0.4.2
 	github.com/spf13/cobra v1.10.2
@@ -133,6 +133,6 @@ require (
 
 replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
 
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261004015143-31a1cddb8a93
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261005053740-ff4e4884e50d
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
