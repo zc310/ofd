@@ -160,38 +160,49 @@ func NewRadialGradient(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 // RadialParameter 返回点 (x,y) 在两圆插值族 ((1-t)·C0+t·C1, R0+t·dr) 中的参数 t，
 // 以及该点是否存在可用的解。参数 t 是 PDF/pixman 的同一参数：圆的半径为 R0+t·dr。
 //
-// 一个点可能同时落在两个圆上，按绘制顺序取较大的 t（后绘制的圆覆盖先绘制的）。
-// 轴外的根只有在对应方向允许延伸时才参与选择：extend 第 0 位允许 t<0（起点侧），
-// 第 1 位允许 t>1（终点侧）；[0,1] 内的根始终可用。半径 R0+t·dr 为负的圆被排除。
-// 没有任何可用解时 ok 为 false，表示该点不在着色范围内（未延伸区域保持透明）。
+// 一个点可能同时落在两个圆上，两类根分别取较大的 t：轴内根属于扫描本身，轴外根
+// 只有在该方向允许延伸时才算可用（extend 第 0 位允许 t<0 起点侧，第 1 位允许
+// t>1 终点侧）。半径 R0+t·dr 为负的圆被排除。没有任何可用解时 ok 为 false，
+// 表示该点不在着色范围内（未延伸区域保持透明）。
 //
-// 不同 Extend 组合会因此得到不同结果：例如点同时落在 t=0.3 与 t=1.8 两个圆上时，
-// Extend 含终点位就取 1.8（终点色），否则取 0.3（轴内渐变），与 PDF 渲染一致。
+// 轴内根优先于轴外根：延伸只负责扫描范围之外的点，不该覆盖扫描已经给出的颜色。
+// 若把两类根放进同一个「取最大 t」的池子，由于任何 t>1 的根都大于任何 t<=1 的根，
+// 终点侧延伸会把终止圆附近整片区域压成终点色——Extend 含终点位时那片区域是纯蓝，
+// 而同一批点在 Extend=0 与 Extend=3 下仍保留渐变，三者自相矛盾。
+// 不同 Extend 组合的差异只出现在扫描覆盖不到的点：例如点只落在 t=1.8 上（轴内无根）时，
+// Extend 含终点位取 1.8（终点色），否则透明。
 func (g *RadialGradient) RadialParameter(x, y float64, extend int) (float64, bool) {
 	pd := Point{x, y}.Sub(g.C0)
 	b := pd.Dot(g.cd) + g.R0*g.dr
 	c := pd.Dot(pd) - g.R0*g.R0
 	a := g.a
-	allowed := func(t float64) bool {
-		if math.IsNaN(t) || g.R0+g.dr*t < 0 {
-			return false
-		}
-		switch {
-		case t < 0:
-			return extend&1 != 0
-		case t > 1:
-			return extend&2 != 0
-		}
-		return true
+
+	// usable 判断 t 处的族成员是否存在，即半径不为负。
+	usable := func(t float64) bool {
+		return !math.IsNaN(t) && g.R0+g.dr*t >= 0
 	}
 
-	best, found := 0.0, false
+	bestCore, haveCore := 0.0, false
+	bestExt, haveExt := 0.0, false
 	consider := func(t float64) {
-		if !allowed(t) {
+		if !usable(t) {
 			return
 		}
-		if !found || t > best {
-			best, found = t, true
+		if t >= 0 && t <= 1 {
+			if !haveCore || t > bestCore {
+				bestCore, haveCore = t, true
+			}
+			return
+		}
+		if t < 0 {
+			if extend&1 == 0 {
+				return
+			}
+		} else if extend&2 == 0 {
+			return
+		}
+		if !haveExt || t > bestExt {
+			bestExt, haveExt = t, true
 		}
 	}
 
@@ -200,19 +211,22 @@ func (g *RadialGradient) RadialParameter(x, y float64, extend int) (float64, boo
 			return 0, false
 		}
 		consider(c / (2.0 * b))
-		return best, found
+	} else {
+		discr := b*b - a*c
+		if discr < 0 {
+			return 0, false
+		}
+		sqrtDiscr := math.Sqrt(discr)
+		inva := 1.0 / a
+		consider((b - sqrtDiscr) * inva)
+		consider((b + sqrtDiscr) * inva)
 	}
 
-	discr := b*b - a*c
-	if discr < 0 {
-		return 0, false
+	if haveCore {
+		return bestCore, true
 	}
-	sqrtDiscr := math.Sqrt(discr)
-	inva := 1.0 / a
-	consider((b - sqrtDiscr) * inva)
-	consider((b + sqrtDiscr) * inva)
-	if found {
-		return best, true
+	if haveExt {
+		return bestExt, true
 	}
 	return 0, false
 }
@@ -242,6 +256,15 @@ func (g *RadialGradient) At(x, y float64) color.RGBA {
 	pd := Point{x, y}.Sub(g.C0)
 	b := pd.Dot(g.cd) + g.R0*g.dr
 	c := pd.Dot(pd) - g.R0*g.R0
+
+	// 判别式为负说明该点不在插值族的任何一个圆上：偏心且两圆外离或相交时，
+	// 起始圆与终止圆之间存在这样的空隙。此时必须返回透明，不能落到下面的
+	// 端点色兜底，否则 Extend=3 会在这些空隙里涂上起始色，而只向起始侧延伸的
+	// Extend=1（走 RadialParameter）返回透明，两者对同一点给出不同结果。
+	discr := b*b - g.a*c
+	if discr < 0 {
+		return Transparent
+	}
 	t0, t1 := solveQuadraticFormula(g.a, -2.0*b, c)
 
 	valid := func(t float64) bool {
@@ -250,7 +273,8 @@ func (g *RadialGradient) At(x, y float64) color.RGBA {
 	hasPositive := func(t float64) bool {
 		return !math.IsNaN(t) && t > 0 && g.R0+g.dr*t >= 0
 	}
-	// 取较大的有效 t（solveQuadraticFormula 返回 t0 <= t1）。
+	// 取较大的有效 t（solveQuadraticFormula 返回 t0 <= t1）。依据 PDF 32000-1
+	// 8.7.4.5.4 与 pixman：一个点同时落在两个圆上时，只有较大的 t 参与着色。
 	if valid(t1) {
 		return g.Grad.At(t1)
 	}

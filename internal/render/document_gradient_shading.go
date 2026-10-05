@@ -224,8 +224,20 @@ func newOFDRadialGradient(shd *models.CTRadialShd, transform func(models.StPos) 
 	// 起始圆退化为焦点的偏心渐变也走 ofdRadialGradient：焦点背面的根半径为负，
 	// 原生夹取会错误地铺上起点色。文字另见 textShadingGradient。
 	focal := geom.Equal(shd.StartRadius, 0) && c0 != c1
+
+	// 还有一类几何不能交给原生矢量路径：两圆外离或相交时
+	// a = |C1-C0|²-(r1-r0)² > 0，插值族的圆向外发散，既可能在两圆之间留下
+	// 判别式为负的空隙（原生只能在 [0,1] 之外夹取端点色、无法留空），
+	// 又会让 t>1 的延伸根压过 t<=1 的扫描根（原生按最大有效根取值）。
+	// 这两点都无法用 PDF/SVG 的原生径向着色表达：那边由阅读器按自己的规则求值，
+	// 绕开这里的 At/RadialParameter，导出的 PDF 与 SVG 会与栅格渲染不一致
+	// （外离几何下 Extend=3 的终止圆附近在 PDF 里被压成一片纯终点色）。
+	// 内含与同心几何 a<=0 既无空隙、也没有反向的延伸根，原生等价，保持矢量输出。
+	axis := c1.Sub(c0)
+	diff := shd.EndRadius - shd.StartRadius
+	nativeSafe := axis.Dot(axis) <= diff*diff
 	if !hasElliptical {
-		if !hasMapType && shd.Extend == 3 && !focal {
+		if !hasMapType && shd.Extend == 3 && !focal && nativeSafe {
 			gradient := geom.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
 			addOFDGradientStops(&gradient.Grad, shd.Segment, resolve)
 			return gradient
