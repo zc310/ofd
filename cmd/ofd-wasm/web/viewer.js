@@ -464,9 +464,9 @@ const openDocumentOptions = {
 };
 const fallbackFontURLs = [
   {
-    family: 'Smiley Sans',
-    url: 'https://cdn.jsdelivr.net/gh/deepin-community/fonts-smiley-sans@master/SmileySans-Oblique.ttf.woff2',
-    alternateURL: 'https://raw.githubusercontent.com/deepin-community/fonts-smiley-sans/master/SmileySans-Oblique.ttf.woff2',
+    family: 'Noto Sans SC',
+    url: 'https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf',
+    alternateURL: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',
     weight: 400,
   },
 ];
