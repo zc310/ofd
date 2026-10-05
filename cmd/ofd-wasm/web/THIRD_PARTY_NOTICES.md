@@ -13,14 +13,24 @@ Regenerate the font after editing `icons.json` (see `Makefile` target
 - License: Apache License 2.0
 - License text: <https://www.apache.org/licenses/LICENSE-2.0>
 
-## Smiley Sans (得意黑)
+## Noto Sans SC (思源黑体)
 
-Smiley Sans is used by the web reader as a remote fallback font when an OFD
-document does not provide a suitable embedded font. The reader uses the
-original font files and does not include a modified copy in this repository.
+Noto Sans SC is used by the web reader as a remote fallback font when an OFD
+document does not provide a suitable embedded font. The reader fetches the font
+at runtime and does not include a copy in this repository. Two mirrors of the
+same typeface are configured so that one stays available if the other is
+unreachable:
 
-- Source: <https://github.com/atelier-anchor/smiley-sans>
-- Copyright: 2022--2024 atelierAnchor <https://atelier-anchor.com>
+- Primary: `@reogrid/font-sc` npm package, `NotoSansSC-Regular.ttf` (TrueType,
+  used by the WASM renderer to read glyphs)
+- Alternate: `@fontsource/noto-sans-sc` npm package,
+  `noto-sans-sc-chinese-simplified-400-normal.woff2` (WOFF2, smaller; used
+  when registering a browser `FontFace`)
+
+Both packages redistribute unmodified upstream font binaries.
+
+- Source: <https://github.com/notofonts/noto-cjk>
+- Copyright: Google LLC
 - License: SIL Open Font License 1.1
 - License text: <https://scripts.sil.org/OFL>
-- Reserved Font Names: `Smiley`, `得意黑`
+- Reserved Font Names: `Noto`
