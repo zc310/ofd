@@ -1,8 +1,11 @@
 # 径向渐变 Extend 与 MapType / MapUnit 示例
-# 4 页 18 个路径（起止圆短于所在圆）：第 1 页展示 Direct 下 Extend 0、1、2、3 的延伸
+# 5 页 22 个路径（起止圆短于所在圆）：第 1 页展示 Direct 下 Extend 0、1、2、3 的延伸
 # 行为（红→黄→蓝三色段按 0/0.5/1 均匀分布），下排为 Direct 的 Repeat/Reflect 对照，
 # 第 2、3 页分别覆盖 MapType=Repeat / Reflect × Extend 0/1/2/3（MapUnit=12），
-# 第 4 页为 start_point 偏离圆心的偏心径向 Extend 对照。
+# 第 4、5 页为 start_point 偏离圆心的偏心径向 Extend 对照：两页各四格几何完全相同、
+# 只有 Extend 不同，可直接横向对比。第 4 页取两圆外离几何（start=(18,35) r=8 →
+# end=(52,35) r=18，圆心距 34 > r0+r1=26），第 5 页取内含几何（start=(18,35) r=6 →
+# end=(25,35) r=14，圆心距 7 < 半径差 8）。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/radial-extend.yaml -o radial-extend.ofd --format auto --deterministic --validate
@@ -26,7 +29,7 @@ pages:
         width: 180
         height: 8
         value: 径向渐变 Extend / MapType / MapUnit（GB/T 33190 表 30）
-        font: 宋体
+        font: 楷体
         size: 5
         fill: true
       - type: text
@@ -35,7 +38,7 @@ pages:
         width: 70
         height: 6
         value: Extend=0 不延伸
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -73,7 +76,7 @@ pages:
         width: 70
         height: 6
         value: Extend=1 向起点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -111,7 +114,7 @@ pages:
         width: 70
         height: 6
         value: Extend=2 向终点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -149,7 +152,7 @@ pages:
         width: 70
         height: 6
         value: Extend=3 两侧都延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -187,7 +190,7 @@ pages:
         width: 70
         height: 6
         value: MapType=Repeat MapUnit=3
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -225,7 +228,7 @@ pages:
         width: 70
         height: 6
         value: MapType=Reflect MapUnit=6
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -264,7 +267,7 @@ pages:
         width: 180
         height: 8
         value: MapType=Repeat × Extend 0-3（MapUnit=12）
-        font: 宋体
+        font: 楷体
         size: 5
         fill: true
       - type: text
@@ -273,7 +276,7 @@ pages:
         width: 70
         height: 6
         value: Extend=0 不延伸
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -312,7 +315,7 @@ pages:
         width: 70
         height: 6
         value: Extend=1 向起点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -351,7 +354,7 @@ pages:
         width: 70
         height: 6
         value: Extend=2 向终点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -390,7 +393,7 @@ pages:
         width: 70
         height: 6
         value: Extend=3 两侧都延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -430,7 +433,7 @@ pages:
         width: 180
         height: 8
         value: MapType=Reflect × Extend 0-3（MapUnit=12）
-        font: 宋体
+        font: 楷体
         size: 5
         fill: true
       - type: text
@@ -439,7 +442,7 @@ pages:
         width: 70
         height: 6
         value: Extend=0 不延伸
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -478,7 +481,7 @@ pages:
         width: 70
         height: 6
         value: Extend=1 向起点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -517,7 +520,7 @@ pages:
         width: 70
         height: 6
         value: Extend=2 向终点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -556,7 +559,7 @@ pages:
         width: 70
         height: 6
         value: Extend=3 两侧都延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -596,7 +599,7 @@ pages:
         width: 180
         height: 8
         value: 偏心径向（start_point 非中心）× Extend 0-3
-        font: 宋体
+        font: 楷体
         size: 5
         fill: true
       - type: text
@@ -605,7 +608,7 @@ pages:
         width: 70
         height: 6
         value: Extend=0 不延伸
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -619,7 +622,7 @@ pages:
         fill_color:
           radial:
             map_type: Direct
-            start_point: 45 35
+            start_point: 18 35
             start_radius: 8
             end_point: 52 35
             end_radius: 18
@@ -643,7 +646,7 @@ pages:
         width: 70
         height: 6
         value: Extend=1 向起点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -657,7 +660,7 @@ pages:
         fill_color:
           radial:
             map_type: Direct
-            start_point: 30 21
+            start_point: 18 35
             start_radius: 8
             end_point: 52 35
             end_radius: 18
@@ -681,7 +684,7 @@ pages:
         width: 70
         height: 6
         value: Extend=2 向终点延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -719,7 +722,7 @@ pages:
         width: 70
         height: 6
         value: Extend=3 两侧都延长
-        font: 宋体
+        font: 楷体
         size: 3.5
         fill: true
       - type: path
@@ -737,6 +740,168 @@ pages:
             start_radius: 8
             end_point: 52 35
             end_radius: 18
+            extend: 3
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 255
+                  g: 230
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+  - items:
+      - type: text
+        x: 15
+        y: 12
+        width: 180
+        height: 8
+        value: 偏心径向（start_point 非中心）× Extend 0-3
+        font: 楷体
+        size: 5
+        fill: true
+      - type: text
+        x: 20
+        y: 30
+        width: 70
+        height: 6
+        value: Extend=0 不延伸
+        font: 楷体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 20
+        y: 38
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            map_type: Direct
+            start_point: 18 35
+            start_radius: 6
+            end_point: 25 35
+            end_radius: 14
+            extend: 0
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 255
+                  g: 230
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 120
+        y: 30
+        width: 70
+        height: 6
+        value: Extend=1 向起点延长
+        font: 楷体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 120
+        y: 38
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            map_type: Direct
+            start_point: 18 35
+            start_radius: 6
+            end_point: 25 35
+            end_radius: 14
+            extend: 1
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 255
+                  g: 230
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 20
+        y: 124
+        width: 70
+        height: 6
+        value: Extend=2 向终点延长
+        font: 楷体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 20
+        y: 132
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            map_type: Direct
+            start_point: 18 35
+            start_radius: 6
+            end_point: 25 35
+            end_radius: 14
+            extend: 2
+            segments:
+              - color:
+                  r: 230
+                  g: 50
+                  b: 50
+              - color:
+                  r: 255
+                  g: 230
+                  b: 50
+              - color:
+                  r: 50
+                  g: 50
+                  b: 230
+      - type: text
+        x: 120
+        y: 124
+        width: 70
+        height: 6
+        value: Extend=3 两侧都延长
+        font: 楷体
+        size: 3.5
+        fill: true
+      - type: path
+        x: 120
+        y: 132
+        width: 70
+        height: 70
+        data: M 35 0 A 35 35 0 1 1 35 70 A 35 35 0 1 1 35 0 C
+        stroke: false
+        fill: true
+        fill_color:
+          radial:
+            map_type: Direct
+            start_point: 18 35
+            start_radius: 6
+            end_point: 25 35
+            end_radius: 14
             extend: 3
             segments:
               - color:

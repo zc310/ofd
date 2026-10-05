@@ -445,7 +445,7 @@ pages:
 
 径向渐变综合实例见 `examples/radial_demo.yaml`，覆盖 Eccentricity/Angle、轴向与径向的 Extend/MapType。
 
-径向渐变 Extend 与 MapType / MapUnit 实例见 `cmd/ofd-creator/examples/radial-extend.yaml`，4 页 18 格覆盖 MapType=Direct/Repeat/Reflect × Extend 0/1/2/3（MapUnit=12，红→黄→蓝三色段）及 start_point 偏离圆心的偏心径向对照，含 Repeat/Reflect 平铺镜像与起始圆白色圆孔。
+径向渐变 Extend 与 MapType / MapUnit 实例见 `cmd/ofd-creator/examples/radial-extend.yaml`，5 页 22 格覆盖 MapType=Direct/Repeat/Reflect × Extend 0/1/2/3（MapUnit=12，红→黄→蓝三色段）及 start_point 偏离圆心的偏心径向对照（含 Repeat/Reflect 平铺镜像与起始圆白色圆孔）；末两页几何相同、仅 Extend 不同，可在两圆外离与内含两种偏心几何下对照 Extend 的延伸行为。
 
 封面与复合图元缩略图实例见 `cmd/ofd-creator/examples/cover-thumbnail.yaml`，包含 Cover 封面（base64 内嵌小图写入 `Doc_0/Cover/`）与复合图元 Thumbnail 缩略图引用。
 
