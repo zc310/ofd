@@ -3,7 +3,11 @@
 ## Google Material Symbols
 
 `material-symbols-outlined-subset.woff2` is a subset of Google Material Symbols
-Outlined. It contains only the icon ligatures used by this web reader.
+Outlined. It contains only the icon ligatures listed in `icons.json`, which is
+the single source of truth for the icon set: the font is generated from that
+file, and `test/icons.test.mjs` fails if the code uses an icon missing from it.
+Regenerate the font after editing `icons.json` (see `Makefile` target
+`wasm-icon-font`), then recompute the Service Worker `CACHE_NAME`.
 
 - Source: <https://fonts.google.com/icons>
 - License: Apache License 2.0

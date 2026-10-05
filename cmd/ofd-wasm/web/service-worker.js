@@ -1,7 +1,7 @@
 // CACHE_NAME 由 make build-wasm / make package-wasm-web 根据
 // index.html、viewer.js、worker.js、wasm_exec.js、ofd.wasm 的内容哈希生成
 // ofd-reader-shell_<hash>；资源路径保持固定，发布时重新构建即可。
-const CACHE_NAME = 'ofd-reader-shell_defbb1a75dc1a6b6';
+const CACHE_NAME = 'ofd-reader-shell_fc4cdca5abba9226';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -19,7 +19,14 @@ const SHELL_FILES = [
 const freshRequest = url => new Request(url, { cache: 'no-cache' });
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_FILES.map(freshRequest))));
+  // 逐个添加而不是 addAll：addAll 里任何一个文件取不到就整批失败，新 SW 装不上，
+  // 浏览器会永久继续用旧缓存，而且没有任何提示。逐个添加失败只影响那一个资源，
+  // 运行时再报错，便于定位。
+  event.waitUntil(caches.open(CACHE_NAME).then(async cache => {
+    const settled = await Promise.allSettled(SHELL_FILES.map(file => cache.add(freshRequest(file))));
+    const failed = SHELL_FILES.filter((_, index) => settled[index].status === 'rejected');
+    if (failed.length) console.warn('[OFD] shell 资源缓存失败:', failed);
+  }));
   self.skipWaiting();
 });
 
@@ -44,13 +51,18 @@ self.addEventListener('fetch', event => {
   // 时的应用外壳。
   if (/\.ofd$/i.test(url.pathname)) return;
   if (request.mode === 'navigate' || url.pathname.endsWith('/index.html')) {
-    event.respondWith(fetch(request, { cache: 'no-cache' }).then(response => {
-      if (response.ok) {
+    // index.html 与 viewer.js/worker.js/ofd.wasm 一样走缓存优先，让整个 shell 永远
+    // 是同一版本。曾经让导航强制走网络，结果是新 SW 装好后这一页变成"新 HTML +
+    // 旧 JS/WASM"：HTML 里可能引用了新接口，而旧 wasm 里根本没有，两边静默错配。
+    // 改回缓存优先后代价只是整体滞后一次打开，换版由刷新按钮提示用户点一次。
+    event.respondWith(
+      caches.match('./index.html').then(cached => cached || fetch(request).then(response => {
+        if (!response.ok) return response;
         const copy = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
-      }
-      return response;
-    }).catch(() => caches.match('./index.html')));
+        return response;
+      })),
+    );
     return;
   }
   // viewer.js 用 ?file= 下载远程文档时带 cache: 'no-store'，这类响应同样不能

@@ -185,10 +185,20 @@ http://localhost:8080/?debug=1
 
 `?file=` 下载的远程文档不参与这套缓存：请求带 `cache: 'no-store'`，Service Worker 直接放行，既不写入 shell 缓存也不读取缓存，因此不会占用 shell 缓存空间或命中陈旧文档。
 
-客户端已经做了两处兜底，不依赖服务器配置即可保证更新：
+整个 shell（`index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 和图标字体）统一走缓存优先，保证任何时刻页面上的 HTML 与 JS/WASM 一定是同一版本。代价是换版必须由用户点一次：Service Worker 换新只影响**下一次**打开，当前这一页已经在内存里跑着旧资源。
+
+因此 `viewer.js` 监听 Service Worker 的更新，在新 SW `activated` 后给出提示：
+
+- 顶部横幅（`#update-banner`）写明"重新加载即可使用最新功能"，带「立即更新」按钮；关掉后本次会话不再打扰（记在 `sessionStorage`，刷新换版后自然失效）。
+- 工具栏文件名后的刷新按钮（`#refresh-button`）同时出现并呼吸提示，关闭横幅后仍可从它主动换版。**无更新时该按钮不渲染也不占位**（HTML 里常驻 `hidden`），所以它不是常驻的"手动刷新"入口。
+
+  注意 `#refresh-button` 的 `hidden` 必须配一条 `#refresh-button[hidden] { display: none }`：元素自己设了 `display: inline-flex`，优先级高于 `hidden` 属性的默认 `display: none`，漏掉这条按钮就会在无更新时照样显示。`test/refresh-button.test.mjs` 守住了这一点。
+- `navigator.serviceWorker.controller` 为 `null` 说明是首次访问，`updatefound` 只是新 SW 刚装上、页面资源本来就是网络最新的，这种情况不提示；`statechange` 只在 `activated` 时提示，`redundant`（SW 字节相同被丢弃）不是更新。
+
+客户端不依赖服务器配置的兜底：
 
 - 注册时使用 `{ updateViaCache: 'none' }`（`viewer.js`），浏览器检查 Service Worker 更新时绕过 HTTP 缓存，发布后第一次导航就能检测到新版本。
-- 安装预缓存时通过 `{ cache: 'no-cache' }` 的请求写入新缓存（`service-worker.js`），导航请求同样强制 `no-cache`，确保新缓存写入的是最新字节且 `index.html` 每次导航都会重新校验。
+- 安装预缓存逐个 `cache.add` 而不是 `cache.addAll`（`service-worker.js`）。`addAll` 是原子的，任一资源取不到就整批失败、新 SW 装不上，浏览器会永久继续用旧缓存且没有任何提示；逐个添加失败只影响那一个资源，并在控制台列出失败项。
 - 独立的 `ofd-fonts` 缓存（`viewer.js` 维护的回退字体，内容寻址不可变）在应用更新时会被保留，不会被清理；每次构建只淘汰 `ofd-reader-shell_*` 旧缓存。
 
 
@@ -248,6 +258,22 @@ ofd.close()
 ### 页面与字体
 
 - 工具栏图标使用本地 `material-symbols-outlined-subset.woff2`，只包含当前页面使用的 Material Symbols 图标连字，不依赖 Google Fonts 远程加载。
+- 侧栏页签（缩略图 `grid_view`、大纲 `account_tree`、书签 `bookmark`、更多 `expand_more`、搜索 `search`）采用图标在上、文字在下的纵向排布。侧栏页签是 `flex: 1 1 0` 平分宽度，横向排布时图标会把"缩略图"这类三字标签挤成省略号；纵向排布靠 `#sidebar-tabs > button.sidebar-has-icon { flex-direction: column }` 实现。文字必须包在 `.sidebar-tab-label` 里，且 `#sidebar-tab-more-label` 这个 id 不能改——JS 用它在选中"更多"子项时把文字换成对应名称。
+- 「更多」菜单里的字体、版本、附件、资源、注解、签名是图标在左、文字在右的横向排布（菜单项本来就是 flex，只需加 `gap`）。图标尺寸统一由 `.sidebar-tab-icon` / `.sidebar-menu-icon` 控制，不要在 `#sidebar-tab-more .material-symbols-outlined` 这类高特异性选择器里再写 `font-size`，否则单个页签的图标会比其它的小一号。
+- 搜索页签只有图标没有文字，仍走 `sidebar-has-icon` 纵向布局，但内容顶部对齐（`justify-content: flex-start`），否则图标在整行里垂直居中，会与其它页签的图标错开半个行高。
+- 图标清单的唯一来源是 `icons.json`：字体按它子集化，`test/icons.test.mjs` 检查代码里用到的每个图标都在清单内，以及 CSS 的 `font-variation-settings` 和 `@font-face` 的 `font-weight` 与清单的 `axes` 一致。缺图标的症状是页面上显示为空白，所以新增图标必须走这条流程：
+
+```bash
+# 1. 在 icons.json 的 icons 里加图标名，按字典序插入
+# 2. 重新生成子集字体
+make wasm-icon-font
+# 3. 重算 CACHE_NAME，否则 Service Worker 字节不变、浏览器不会换版
+make build-wasm
+# 4. 验证
+make test-wasm-web
+```
+
+  `@font-face` 的 `font-weight` 必须等于 `axes.wght`（当前 500）。Google Fonts 按 `icon_names` 返回的是该字重的实例，写成 400 会导致浏览器匹配不到该字重而回退字体，整片图标变成空白——这是替换字体时最容易漏的一步。
 - 本地 Material Symbols 字体来源于 Google Material Symbols，遵循 Apache License 2.0；第三方声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - `ofd.pages()` 返回所有页面的页数和尺寸。
 - 页面尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。

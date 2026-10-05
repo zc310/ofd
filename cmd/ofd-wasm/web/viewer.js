@@ -330,6 +330,10 @@ const startupProgress = document.querySelector('#startup-progress');
 const startupProgressLabel = document.querySelector('#startup-progress-label');
 const file = document.querySelector('#file');
 const documentName = document.querySelector('#document-name');
+const refreshButton = document.querySelector('#refresh-button');
+const updateBanner = document.querySelector('#update-banner');
+const updateBannerReload = document.querySelector('#update-banner-reload');
+const updateBannerDismiss = document.querySelector('#update-banner-dismiss');
 const cancelOpen = document.querySelector('#cancel-open');
 const recentToggle = document.querySelector('#recent-toggle');
 const recentPanel = document.querySelector('#recent-panel');
@@ -618,14 +622,20 @@ let sidebarScroll = {};
 let sidebarScrollPersistTimer;
 const sidebarScrollPanels = {};
 const sidebarWidthStorageKey = 'ofd-sidebar-width';
+// 默认 320px：侧栏页签是 6 个 flex: 1 1 0 平分宽度（缩略图、大纲、书签、更多、
+// 搜索、更多在下拉里），页签区左右 padding 共 20px、按钮之间 5 个 3px gap，
+// 按钮自身还要让出 6px padding 与 1px×2 边框，因此每个页签的文字净宽约为
+// (宽度 - 35) / 6 - 8。320px 时约 39.5px，"缩略图"三个字（12px 字号约 36px）
+// 才能完整显示并留一点余量；6 个页签时 280px 只剩 32.8px，会被截成"缩略…"。
+const defaultSidebarWidth = 320;
 let sidebarWidth = (() => {
   try {
     const stored = localStorage.getItem(sidebarWidthStorageKey);
-    if (stored == null) return 210;
+    if (stored == null) return defaultSidebarWidth;
     const value = Number(stored);
-    return Number.isFinite(value) ? Math.max(140, Math.min(520, value)) : 210;
+    return Number.isFinite(value) ? Math.max(140, Math.min(520, value)) : defaultSidebarWidth;
   } catch (_) {
-    return 210;
+    return defaultSidebarWidth;
   }
 })();
 let renderFormat = (() => {
@@ -6721,6 +6731,75 @@ async function playMediaAction(action) {
   }
 }
 
+// UPDATE_DISMISS_KEY 只在当前页面会话内记住"这次先不更新"，用 sessionStorage
+// 而不是模块级变量，是为了让关闭横幅与显示横幅的代码不必共享状态。
+const UPDATE_DISMISS_KEY = 'ofd-update-dismissed';
+
+// markUpdateAvailable 提示有新版本：显示工具栏刷新按钮 + 顶部横幅。
+// shell 资源（含 index.html）统一走缓存优先，换版必须整页重载一次，所以要把
+// "有新版了"说清楚，并给一个明确的立即更新入口；用户关闭横幅后按钮仍然可见，
+// 随时可以主动换版。
+function markUpdateAvailable() {
+  if (refreshButton) {
+    // 按钮平时 hidden，只有确认有新版本才显示；不占位也不误导。
+    refreshButton.hidden = false;
+    refreshButton.title = '阅读器有新版本，点击重新加载';
+    refreshButton.setAttribute('aria-label', '阅读器有新版本，点击重新加载');
+  }
+  if (!updateBanner) return;
+  let dismissed = false;
+  try {
+    dismissed = window.sessionStorage.getItem(UPDATE_DISMISS_KEY) === '1';
+  } catch {
+    // 隐私模式等场景下 sessionStorage 不可用，忽略并直接显示横幅。
+  }
+  updateBanner.hidden = dismissed;
+}
+
+// dismissUpdateBanner 关闭横幅。再次检测到新版本时同一会话内不再打扰，但按钮的
+// 高亮保留，用户仍可从工具栏主动换版。
+function dismissUpdateBanner() {
+  if (!updateBanner) return;
+  updateBanner.hidden = true;
+  try {
+    window.sessionStorage.setItem(UPDATE_DISMISS_KEY, '1');
+  } catch {
+    // 存不下就只在本次隐藏。
+  }
+}
+
+// watchServiceWorkerUpdate 监听新 Service Worker 装好，把刷新按钮标成可换版。
+//
+// controller 为 null 说明是首次访问（SW 刚装上、页面资源本来就是网络最新的），
+// 这种 updatefound 不代表"有更新"，不能提示，否则每次首访都误报。
+function watchServiceWorkerUpdate(registration) {
+  // 横幅和按钮都没有（例如页面结构被裁剪）就没法提示，直接跳过。
+  if ((!updateBanner && !refreshButton) || !navigator.serviceWorker.controller) return registration;
+  let reported = false;
+  const announce = installing => {
+    if (!installing || reported) return;
+    installing.addEventListener('statechange', () => {
+      // activated：新 SW 已接管。redundant：装到一半发现字节相同被丢弃，
+      // 说明没有新版本。两者都不再变化，只需在 activated 时提示。
+      if (installing.state !== 'activated') return;
+      reported = true;
+      markUpdateAvailable();
+    });
+  };
+  if (registration.waiting) {
+    // 上一轮已经装好一个在等待的 SW（例如上次没关掉页面），直接接上。
+    announce(registration.waiting);
+  }
+  registration.addEventListener('updatefound', () => announce(registration.installing));
+  return registration;
+}
+
+// reloadReader 重新加载页面以应用新版本。Service Worker 的 activate 会先清理旧
+// 缓存再让新 SW 接管，因此这里直接 reload 就能拿到新资源，无需额外清缓存。
+function reloadReader() {
+  window.location.reload();
+}
+
 // openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。
 function openPageLink(link) {
   if (link.media_kind === 'sound' || link.media_kind === 'movie') {
@@ -7212,6 +7291,9 @@ localFontsSelect?.addEventListener('change', () => {
 });
 renderFormatSelect.addEventListener('change', () => setRenderFormat(renderFormatSelect.value));
 backToTop.addEventListener('click', scrollToTop);
+refreshButton?.addEventListener('click', reloadReader);
+updateBannerReload?.addEventListener('click', reloadReader);
+updateBannerDismiss?.addEventListener('click', dismissUpdateBanner);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualTranslate, { passive: true });
@@ -7271,9 +7353,11 @@ window.__debug = value => {
 };
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).catch(error => {
-      console.warn('[OFD] Service Worker 注册失败', error);
-    });
+    navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' })
+      .then(registration => watchServiceWorkerUpdate(registration))
+      .catch(error => {
+        console.warn('[OFD] Service Worker 注册失败', error);
+      });
   });
   window.__readMemory = trigger => reportMemory(trigger || '手动');
 }

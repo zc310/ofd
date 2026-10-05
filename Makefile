@@ -176,6 +176,31 @@ build-tools: $(TOOL_BUILD_TARGETS)
 # Worker 安装时删除旧缓存并重新缓存全部资源。
 build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
+# 图标子集字体按 cmd/ofd-wasm/web/icons.json 重新生成。该文件是图标清单的唯一
+# 来源：字体由它生成，web/test/icons.test.mjs 也会检查代码里用到的图标都在清单内。
+# 改完清单后执行 make wasm-icon-font，再执行 make build-wasm 重算 CACHE_NAME，否则
+# Service Worker 字节不变，浏览器会继续用旧字体。
+#
+# Google Fonts 的 icon_names 参数会返回只含所列图标的子集；实测体积随图标数线性
+# 增长（约 100 字节/个），可用于确认参数生效而不是拿到了完整字体。
+WASM_ICON_MANIFEST := cmd/ofd-wasm/web/icons.json
+WASM_ICON_FAMILY := $(shell python3 -c "import json;print(json.load(open('$(WASM_ICON_MANIFEST)'))['family'])")
+WASM_ICON_AXES := $(shell python3 -c "import json;a=json.load(open('$(WASM_ICON_MANIFEST)'))['axes'];print('opsz,wght,FILL,GRAD@%d,%d,%d,%d'%(a['opsz'],a['wght'],a['FILL'],a['GRAD']))")
+WASM_ICON_NAMES := $(shell python3 -c "import json;print(','.join(json.load(open('$(WASM_ICON_MANIFEST)'))['icons']))")
+WASM_ICON_COUNT := $(shell python3 -c "import json;print(len(json.load(open('$(WASM_ICON_MANIFEST)'))['icons']))")
+
+wasm-icon-font:
+	@url="https://fonts.googleapis.com/css2?family=$$(python3 -c "import urllib.parse;print(urllib.parse.quote('$(WASM_ICON_FAMILY)'))"):$(WASM_ICON_AXES)&icon_names=$(WASM_ICON_NAMES)"; \
+	css=$$(curl -sS --fail --max-time 60 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36" "$$url"); \
+	font=$$(printf '%s' "$$css" | grep -oE 'https://fonts.gstatic.com/[^)]+' | head -1); \
+	if [ -z "$$font" ]; then echo "错误: Google Fonts 未返回字体 URL，清单可能写了不存在的图标名。" >&2; exit 1; fi; \
+	tmp="$(WASM_ICON_FONT).tmp"; \
+	curl -sS --fail --max-time 120 -o "$$tmp" "$$font"; \
+	if [ "$$(head -c 4 "$$tmp")" != "wOF2" ]; then echo "错误: 下载的不是 woff2。" >&2; rm -f "$$tmp"; exit 1; fi; \
+	mv "$$tmp" "$(WASM_ICON_FONT)"; \
+	echo "已按 $(WASM_ICON_COUNT) 个图标重新生成 $(WASM_ICON_FONT)，请接着执行 make build-wasm 重算 CACHE_NAME。"
+
+
 # test-wasm-web 运行浏览器阅读器的脚本测试。这些测试从 viewer.js 原文按括号配平切出
 # 待测函数并在 Node 里用桩驱动，不需要 npm 依赖或 jsdom；改动 viewer.js 的断行、
 # 导出和注解入口时必须一并运行。
