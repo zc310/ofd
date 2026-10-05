@@ -308,8 +308,9 @@ func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator
 	}}
 }
 
-// applyExtGState 读取 ExtGState 的不透明度 ca/CA。混合模式与软掩码暂不处理，
-// 缺失的键保留当前取值。
+// applyExtGState 读取 ExtGState 的不透明度 ca/CA、混合模式 BM 与软掩码 SMask。
+// 缺失的键保留当前取值；SMask 显式为 /None 时清除软掩码。混合模式中只有
+// Multiply 有近似实现（见 approximateMultiplyFill），其余模式按原样绘制。
 func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 	if resources == nil || name == "" {
 		return
@@ -346,6 +347,9 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 				p.state.blendMode = name.Value()
 			}
 		}
+	}
+	if _, found := dict.Find("SMask"); found {
+		p.state.lumMask = pdfExtGStateSoftMask(p.ctx, dict)
 	}
 }
 

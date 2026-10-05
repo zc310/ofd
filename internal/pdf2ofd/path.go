@@ -407,51 +407,35 @@ func (p *pdfInterpreter) pathOpacity(fill, stroke bool) float64 {
 	}
 }
 
-// approximateMultiplyFill 把 Multiply 混合的纯色填充近似为半透明叠加。选择
-// 不透明度 a = op·(255−minC)/255，并反推修正色 C′，使白色背景上仍渲染出原始
-// 高亮色：Normal 结果 (1−a)·255 + a·C′ = (1−op)·255 + op·C。这样深色内容以
-// a·C′ 透出（黑字可见），背景仍接近原色。OFD 没有混合模式，这是标准兼容近似。
+// approximateMultiplyFill 把 Multiply 混合的填充近似为半透明叠加。选择不透明度
+// a = op·(255−minC)/255，并反推修正色 C′，使白色背景上仍渲染出原始高亮色：
+// Normal 结果 (1−a)·255 + a·C′ = (1−op)·255 + op·C。这样深色内容以 a·C′ 透出
+// （黑字可见），背景仍接近原色。OFD 没有混合模式，这是标准兼容近似。
+//
+// 渐变没有单一背景色可反推，按每个色标独立套用同一近似：色标各自带上 aᵢ 的
+// Alpha，路径级 Alpha 归为完全不透明，避免与色标 Alpha 重复相乘。合成结果对
+// 每个色标与纯色情形一致。
 func (p *pdfInterpreter) approximateMultiplyFill(path *creator.Path) {
 	if !strings.EqualFold(p.state.blendMode, "Multiply") {
 		return
 	}
 	color := path.FillColor
-	if color == nil || color.Axial != nil || color.Radial != nil || color.Gouraud != nil || color.LaGouraud != nil || color.Pattern != nil {
+	if color == nil {
 		return
 	}
 	opacity := p.fillOpacity()
 	if opacity <= 0 {
 		return
 	}
-	minimum := int(color.R)
-	if int(color.G) < minimum {
-		minimum = int(color.G)
-	}
-	if int(color.B) < minimum {
-		minimum = int(color.B)
-	}
-	if minimum >= 255 {
+	if p.approximateMultiplyGradient(color, opacity) {
+		path.Alpha = nil
 		return
 	}
-	a := opacity * float64(255-minimum) / 255
-	if a < 0.05 {
-		a = 0.05
+	adjusted, a, ok := approximateMultiplyColor(*color, opacity)
+	if !ok {
+		return
 	}
-	scale := opacity / a
-	channel := func(value uint8) uint8 {
-		result := 255 - scale*float64(255-int(value))
-		if result < 0 {
-			return 0
-		}
-		if result > 255 {
-			return 255
-		}
-		return uint8(math.Round(result))
-	}
-	path.FillColor = &creator.Color{
-		R: channel(color.R), G: channel(color.G), B: channel(color.B),
-		Components: color.Components, ColorSpace: color.ColorSpace, Index: color.Index, Alpha: color.Alpha,
-	}
+	path.FillColor = &adjusted
 	path.Alpha = ofdAlpha(a)
 }
 
@@ -562,4 +546,83 @@ func pdfColorFromComponents(args []any) (pdfColor, bool) {
 
 func colorToCreator(value pdfColor) *creator.Color {
 	return &creator.Color{R: value.r, G: value.g, B: value.b}
+}
+
+// approximateMultiplyColor 对单个颜色套用 Multiply 的半透明近似，返回修正色与
+// 不透明度。颜色接近纯白（minC 接近 255）时 Multiply 与 Normal 等价，不作处理。
+func approximateMultiplyColor(color creator.Color, opacity float64) (creator.Color, float64, bool) {
+	minimum := int(color.R)
+	if int(color.G) < minimum {
+		minimum = int(color.G)
+	}
+	if int(color.B) < minimum {
+		minimum = int(color.B)
+	}
+	if minimum >= 255 {
+		return color, 0, false
+	}
+	a := opacity * float64(255-minimum) / 255
+	if a < 0.05 {
+		a = 0.05
+	}
+	scale := opacity / a
+	channel := func(value uint8) uint8 {
+		result := 255 - scale*float64(255-int(value))
+		if result < 0 {
+			return 0
+		}
+		if result > 255 {
+			return 255
+		}
+		return uint8(math.Round(result))
+	}
+	return creator.Color{
+		R: channel(color.R), G: channel(color.G), B: channel(color.B),
+		Components: color.Components, ColorSpace: color.ColorSpace, Index: color.Index, Alpha: color.Alpha,
+	}, a, true
+}
+
+// approximateMultiplyGradient 对渐变的每个色标套用 Multiply 近似。OFD 的色标
+// 颜色自带 Alpha，因此不透明度落在色标上而不是路径上。
+func (p *pdfInterpreter) approximateMultiplyGradient(color *creator.Color, opacity float64) bool {
+	applied := false
+	forEachGradientColor(color, func(stop *creator.Color) {
+		adjusted, a, ok := approximateMultiplyColor(*stop, opacity)
+		if !ok {
+			return
+		}
+		alpha := ofdAlpha(a)
+		adjusted.Alpha = alpha
+		*stop = adjusted
+		applied = true
+	})
+	return applied
+}
+
+// forEachGradientColor 遍历渐变里的每个颜色：轴向与径向的色标，以及网格渐变的
+// 控制点与背景色。Pattern 没有可改写的颜色，直接跳过。
+func forEachGradientColor(color *creator.Color, visit func(*creator.Color)) {
+	switch {
+	case color.Axial != nil:
+		forEachStopColor(color.Axial.Segments, visit)
+	case color.Radial != nil:
+		forEachStopColor(color.Radial.Segments, visit)
+	case color.Gouraud != nil:
+		for i := range color.Gouraud.Points {
+			visit(&color.Gouraud.Points[i].Color)
+		}
+		if color.Gouraud.BackColor != nil {
+			visit(color.Gouraud.BackColor)
+		}
+	case color.LaGouraud != nil:
+		for i := range color.LaGouraud.Points {
+			visit(&color.LaGouraud.Points[i].Color)
+		}
+	}
+}
+
+func forEachStopColor(segments []creator.ColorStop, visit func(*creator.Color)) {
+	for i := range segments {
+		visit(&segments[i].Color)
+	}
 }
