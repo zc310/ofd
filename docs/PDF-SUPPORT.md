@@ -43,7 +43,7 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | 内联图像 `BI/ID/EI`         |  ⚠️  | 缩写键展开；未给出 `ColorSpace` 时按规范默认 DeviceGray。                                                                                                                                                                                                                                                                                                      |
 | `sh`（Shading）             |  ⚠️  | ShadingType 2/3 输出为 OFD `AxialShd`/`RadialShd`，函数按 32 段采样；ShadingType 4（自由）/5（规则）/6/7（补丁）网格着色输出为矢量 `GouraudShd`/`LaGouraudShd`（Type 5 保留每行顶点数，Type 7 按 Coons 曲面细分）；控制点超过上限或裁剪区无法还原为路径时回退为带透明度的位图。Type 1 忽略。                                                                   |
 | Pattern 填充                |  ⚠️  | PatternType 1（平铺图案）展开为图片对象，图块过多时按最大图块数合成单张密集图；PatternType 2（图案着色）输出为渐变。图案自身的 `Matrix`、BBox 与颜色空间参与计算。                                                                                                                                                                                             |
-| 透明组、`gs`（ExtGState）   |  ⚠️  | 读取 ExtGState 的 `ca`/`CA` 作为填充/描边不透明度并输出为 OFD 透明度；Form XObject 作为透明度组，`BM` 为 Normal 时 `Do` 时的外层 `ca`/`CA` 作为组透明度保留（不被 Form 内 `gs` 覆盖）。OFD 无混合模式：`/BM /Multiply` 的纯色填充近似为半透明（按白色背景还原原色并让文字透出，见高亮注释），其余 `/BM` 忽略且不套用外层 `ca`/`CA`；软掩码与 `/Group` 不保留。 |
+| 透明组、`gs`（ExtGState）   |  ⚠️  | 读取 ExtGState 的 `ca`/`CA` 作为填充/描边不透明度并输出为 OFD 透明度；Form XObject 作为透明度组，`BM` 为 Normal 时 `Do` 时的外层 `ca`/`CA` 作为组透明度保留（不被 Form 内 `gs` 覆盖）。OFD 无混合模式：`/BM /Multiply` 的填充近似为半透明——纯色按白色背景还原原色并让文字透出，渐变（轴向/径向/网格）按每个色标独立套用同一近似、Alpha 落在色标上；其余 `/BM`（如 `Screen`、`HardLight`）忽略且不套用外层 `ca`/`CA`。`/SMask` 为 `/S /Luminosity` 且其 `/G` 最终解析到图像时，把该灰度图像作为 alpha 烘进随后绘制的图像；`/SMask /None` 清除软掩码。掩码由矢量内容（嵌套 Form）生成时无法还原为 alpha，仍然丢弃。`/Group` 不保留。 |
 
 ## 文本
 
@@ -85,7 +85,7 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | `CCITTFaxDecode`               |  ✅  | 由 pdfcpu 解码后重编码为 PNG（扫描件 ImageMask 常见）。                                                                                                                         |
 | `JBIG2Decode`                  |  ✅  | 由 `github.com/dkrisman/gobig2` 解码为灰度位图；支持 `/JBIG2Globals`、`/Decode` 反相，`ImageMask` 按填充色着色，也可作为 `/SMask`。                                             |
 | `JPXDecode`                    |  ✅  | 由 `github.com/mrjoshuak/go-jpeg2000`（纯 Go JPEG 2000）解码，支持 JP2 与裸码流、灰度/彩色/RGBA 与 `/Decode` 反相；也可作为 `/SMask`。CMYK 裸码流按库的 colr 处理，可能不准确。 |
-| `SMask`（软蒙版）              |  ⚠️  | 8 位软蒙版作为 PNG alpha 通道应用到图像；1 位蒙版与其他子类型忽略。                                                                                                             |
+| `SMask`（软蒙版）              |  ⚠️  | 图像自身 `/SMask`：8 位软蒙版作为 PNG alpha 通道应用到图像；1 位蒙版与其他子类型忽略。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject），此时该灰度图像作为 alpha 烘进图像；`/G` 为矢量内容（嵌套 Form）或 `/S` 为 Alpha/Luminosity 以外类型时忽略。 |
 | 透明度                         |  ⚠️  | 图像、路径、文字的 `ca`/`CA` 转换为 OFD 透明度（0-255）；不实现混合模式与透明组。                                                                                               |
 
 ## 注释
@@ -120,7 +120,7 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 |----------------------------------------------|---------------------------------------------------------------|
 | 链接、表单域、弹窗等交互注解                 | 忽略（仅保留 `/AP` 外观）                                     |
 | ShadingType 1、PatternType 之外的着色        | 忽略（回退为纯色或不填充）                                    |
-| 混合模式、软掩码 1 位、透明组（`/Group`）    | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色填充近似为半透明） |
+| 混合模式（`Multiply` 之外的 `/BM`）、1 位软蒙版、非 Luminosity 的 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
 | 数字签名、附件、嵌入式 JavaScript/PostScript | 忽略                                                          |
 | 大纲其他动作（GoToR、JavaScript、Launch 等） | 忽略（仅保留 `GoTo` 与 URI）                                  |
 | `Ts` 文字上浮、Type3 `d0/d1` 度量            | 忽略                                                          |

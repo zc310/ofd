@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"math"
+	"strings"
 	"sync"
 
 	gobig2 "github.com/dkrisman/gobig2"
@@ -68,16 +69,24 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			if p.imageCache == nil {
 				p.imageCache = make(map[types.IndirectRef]pdfImageDataCache)
 			}
-			if cached, hit := p.imageCache[reference]; hit {
-				_ = p.appendImageData(cached.data, cached.format)
-				return nil
+			// 缓存保存未套用软掩码的数据：同一图像可能在有掩码与无掩码的两种
+			// 图形状态下各绘制一次，掩码必须在取出缓存之后套用。
+			cached, hit := p.imageCache[reference]
+			if !hit {
+				data, format, imageErr := pdfImageData(p.ctx, stream, p.state.fill)
+				if imageErr != nil {
+					return nil
+				}
+				cached = pdfImageDataCache{data: data, format: format}
+				p.imageCache[reference] = cached
 			}
-			data, format, imageErr := pdfImageData(p.ctx, stream, p.state.fill)
-			if imageErr == nil {
-				p.imageCache[reference] = pdfImageDataCache{data: data, format: format}
-				_ = p.appendImageData(data, format)
-				return nil
+			data, format := cached.data, cached.format
+			if mask := p.state.lumMask; mask != nil {
+				if masked, ok := applyPDFImageSoftMask(p.ctx, data, mask); ok {
+					data, format = masked, "PNG"
+				}
 			}
+			_ = p.appendImageData(data, format)
 			return nil
 		}
 		_ = p.appendImage(stream)
@@ -385,6 +394,126 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 		return data, format, nil
 	}
 	return masked, "PNG", nil
+}
+
+// pdfExtGStateSoftMask 解析 ExtGState 的 /SMask，返回可用的掩码图像流。
+//
+// 只处理 /S /Luminosity 且掩码由图像生成的情况：Illustrator CS 导出的高光与
+// 柔边图层都是这个形态（三层嵌套：Form XObject → gs /SMask → 亮度掩码 → 又一个
+// 绘制灰度图像的 Form）。OFD 没有软掩码语义，返回的图像会被当作 alpha 烘进被
+// 遮蔽的图像里，因此无法还原成图像的掩码一律返回 nil，保持原有行为。
+func pdfExtGStateSoftMask(ctx *model.Context, dict types.Dict) *types.StreamDict {
+	if dict == nil {
+		return nil
+	}
+	object, found := dict.Find("SMask")
+	if !found || object == nil {
+		return nil
+	}
+	resolved, err := ctx.XRefTable.Dereference(object)
+	if err != nil || resolved == nil {
+		return nil
+	}
+	if _, isName := resolved.(types.Name); isName {
+		// /SMask /None：显式清除软掩码。
+		return nil
+	}
+	// 亮度掩码是普通字典（/Type /Mask），不是流字典。
+	mask, err := ctx.XRefTable.DereferenceDict(resolved)
+	if err != nil || mask == nil {
+		return nil
+	}
+	if subtype, found := mask.Find("S"); found {
+		if name, isName := subtype.(types.Name); isName && name.Value() != "Luminosity" {
+			return nil
+		}
+	}
+	group, found := mask.Find("G")
+	if !found {
+		return nil
+	}
+	return pdfLuminosityMaskImage(ctx, group)
+}
+
+// pdfLuminosityMaskImage 从亮度掩码的 /G 取出实际承载灰度信息的图像流。
+// /G 可以直接是图像，也可以是仅调用一次 Do 绘制图像的 Form XObject。
+func pdfLuminosityMaskImage(ctx *model.Context, object types.Object) *types.StreamDict {
+	stream, _, err := ctx.XRefTable.DereferenceStreamDict(object)
+	if err != nil || stream == nil {
+		return nil
+	}
+	subtype := stream.NameEntry("Subtype")
+	if subtype == nil {
+		return nil
+	}
+	if *subtype == "Image" {
+		return stream
+	}
+	if *subtype != "Form" || stream.Decode() != nil {
+		return nil
+	}
+	resources, ok := pdfStreamResources(ctx, stream)
+	if !ok {
+		return nil
+	}
+	xobjects, ok := dereferencedSubDict(ctx, resources, "XObject")
+	if !ok {
+		return nil
+	}
+	return pdfFormDrawnImage(ctx, xobjects, stream.Content)
+}
+
+// pdfFormDrawnImage 扫描 Form 内容，返回其中第一个 Do 操作绘制的图像 XObject。
+// 亮度掩码的 Form 只做一次矩阵变换加一次 Do，直接扫描比完整解释内容流更稳。
+func pdfFormDrawnImage(ctx *model.Context, xobjects types.Dict, content []byte) *types.StreamDict {
+	tokens := newPDFContentTokenizer(content)
+	operands := []any{}
+	for {
+		value, ok, err := tokens.next()
+		if err != nil || !ok {
+			return nil
+		}
+		operator, isOperator := value.(string)
+		if !isOperator || strings.HasPrefix(operator, "/") {
+			operands = append(operands, value)
+			continue
+		}
+		if operator == "Do" && len(operands) > 0 {
+			// 词法器把 /Name 产出为 pdfName，不是 types.Name。
+			if name := anyName(operands[len(operands)-1]); name != "" {
+				if image := pdfXObjectImage(ctx, xobjects, name); image != nil {
+					return image
+				}
+			}
+		}
+		operands = operands[:0]
+	}
+}
+
+// pdfXObjectImage 按名字从 XObject 资源字典取出图像流；不是图像则返回 nil。
+func pdfXObjectImage(ctx *model.Context, xobjects types.Dict, name string) *types.StreamDict {
+	object, found := xobjects.Find(name)
+	if !found {
+		return nil
+	}
+	stream, _, err := ctx.XRefTable.DereferenceStreamDict(object)
+	if err != nil || stream == nil {
+		return nil
+	}
+	if subtype := stream.NameEntry("Subtype"); subtype == nil || *subtype != "Image" {
+		return nil
+	}
+	return stream
+}
+
+// pdfStreamResources 取出流的 /Resources 字典，缺省时返回 nil。
+func pdfStreamResources(ctx *model.Context, stream *types.StreamDict) (types.Dict, bool) {
+	object, found := stream.Find("Resources")
+	if !found {
+		return nil, false
+	}
+	value, err := ctx.XRefTable.DereferenceDict(object)
+	return value, err == nil && value != nil
 }
 
 // pdfImageSoftMask 解析图像 /SMask 引用的软掩码流；不存在时返回 nil。

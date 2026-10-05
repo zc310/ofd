@@ -85,6 +85,10 @@ type pdfGraphicsState struct {
 	// Normal/Compatible 时才按纯透明度近似；其它混合模式单独套用 ca/CA 会引入
 	// 更大偏差，因此保持原样。
 	blendMode string
+	// lumMask 是 ExtGState 的 /SMask（/S /Luminosity）解析出的掩码图像流，
+	// 为 nil 表示当前没有软掩码。OFD 没有软掩码语义，该图像会被当作 alpha
+	// 烘进随后绘制的图像里，因此只在掩码确实由图像生成时才非 nil。
+	lumMask *types.StreamDict
 	// clips 是当前生效的裁剪区域（设备坐标），按 PDF 的 W/W* 逐个求交。
 	clips []pdfClipRegion
 }
