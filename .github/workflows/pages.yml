@@ -13,13 +13,22 @@ on:
     branches: ["main"]
     # 只在这些路径变化时重建：ofd.wasm 有二十多兆，每次提交都重编太浪费。
     #
-    # 下面是 ofd.wasm 的依赖闭包（go list 逐层展开确认，不是猜的）：cmd/ofd-wasm
-    # 直接依赖 pkg/webreader 和 internal/render/backends/canvas，其余由此间接
-    # 引入。改这些地方会改变 WASM 产物；internal/ 或 pkg/ 下的其它包不会，
-    # 所以不用 internal/**、pkg/** 这种通配。
+    # 下面是 ofd.wasm 的依赖闭包，可用下面这条命令核对（务必用 wasm 目标，
+    # 宿主机下 cmd/ofd-wasm 没有可构建文件，go list 会只列出它自己）：
+    #
+    #   GOOS=js GOARCH=wasm go list -deps ./cmd/ofd-wasm \
+    #     | grep '^github.com/zc310/ofd/' | sed 's|github.com/zc310/ofd/||' \
+    #     | cut -d/ -f1-2 | sort -u
+    #
+    # 新增依赖包后要同步补进来，漏掉的包改动不会触发部署，用户会一直用旧版页面。
+    # internal/spec 迁到 pkg/spec、fastxml 与 coloricc/core 都是后来补进闭包的。
     paths:
       - "cmd/ofd-wasm/**"
+      - "pkg/spec/**"
       - "pkg/webreader/**"
+      - "internal/coloricc/**"
+      - "internal/core/**"
+      - "internal/fastxml/**"
       - "internal/parser/**"
       - "internal/render/**"
       - "internal/models/**"
