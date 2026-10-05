@@ -33,7 +33,40 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace` 和 `watermark` 子命令，分别用于导出 manifest、批量导出、合并 OFD、替换/新增/删除包内条目以及添加/替换/删除水印。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace`、`watermark` 和 `schema` 子命令，分别用于导出 manifest、批量导出、合并 OFD、替换/新增/删除包内条目、添加/替换/删除水印以及输出 manifest 字段参考文档。详见下文各节。
+
+## manifest 字段参考
+
+`schema` 子命令输出 manifest 全部字段的类型和说明，用于查证某个字段怎么写、含义是什么：
+
+```bash
+ofd-creator schema              # 输出 Markdown 到标准输出
+ofd-creator schema -o schema.md # 写入文件
+ofd-creator schema --format json
+```
+
+字段说明取自 `internal/manifest/manifest.go` 的文档注释，由 `go generate ./internal/manifest` 生成到 `internal/manifest/fielddocs.go`，因此不会与实现脱节。改动 manifest 的字段、类型或注释后必须重新生成，`internal/manifest` 的同步守卫测试会检查生成结果与源码是否一致。
+
+结构体按首次到达的路径分组。manifest 的字段路径构成一棵树，而结构体构成一张图：复合对象可以嵌套复合对象，同一个结构体（例如 `Item`）会在几十条路径下出现，因此每个结构体只列一次，表中给出的路径是首次到达它的示例路径：
+
+```markdown
+## Item
+
+描述页面、模板或复合图形中的图元。
+
+示例路径：`templates[].items[]`。
+
+| 字段 | 类型 | 可省略 | 说明 |
+|------|------|:------:|------|
+| `type` | `string` | 是 | 图元类型。 |
+| `items` | `[]Item` | 是 | 定义复合或页面块图元的子图元。 |
+```
+
+字段的完整路径是在示例路径后追加字段名，结构体字段还要追加 `[]`，例如 `pages[].items[].fill_color.axial.segments[]`。
+
+“可省略”列表示 manifest tag 是否带 `omitempty`，它只描述序列化行为，不等于“必填”：`version` 带 `omitempty`，但缺省或不是 1 仍会被拒绝。
+
+`--format json` 输出同样的内容，供其它工具消费，字段名使用 `omitempty` 而不是含义模糊的 `required`。
 
 ## 导出 OFD 配置
 
