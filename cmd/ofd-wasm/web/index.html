@@ -41,6 +41,31 @@
     .brand { display: flex; min-width: 180px; flex: 1 1 220px; align-items: center; gap: 10px; }
     .brand strong { white-space: nowrap; }
     #document-name { overflow: hidden; max-width: 260px; color: #b9c4d6; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    /* 刷新按钮紧跟文件名，只在检测到新版本时出现，因此它不是常驻的"手动刷新"
+       入口，平时 hidden 不占位。hidden 必须显式声明成 display: none：下面自己
+       设了 display: inline-flex，会盖掉 hidden 属性带来的默认 display: none。 */
+    #refresh-button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #7fc4a0; cursor: pointer; animation: refresh-pulse 1.8s ease-in-out infinite; }
+    #refresh-button[hidden] { display: none; }
+    #refresh-button:hover { background: #ffffff1f; color: #fff; }
+    #refresh-button:focus-visible { outline: 2px solid #80b4e5; outline-offset: 2px; }
+    #refresh-button .material-symbols-outlined { font-size: 17px; }
+    body.dark-reading #refresh-button { color: #86d3a8; }
+    body.dark-reading #refresh-button:hover { background: #ffffff14; color: #e6ebf2; }
+    @keyframes refresh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    @media (prefers-reduced-motion: reduce) { #refresh-button { animation: none; } }
+    /* 新版本横幅：shell 资源整体走缓存优先，换版必须由用户点一次，所以要把
+       "有新版了"说清楚，不能只靠工具栏按钮的呼吸动画。 */
+    /* 横幅放在 header 内部并占满一行：header 是 sticky，横幅随工具栏一起固定，
+       header 变高会把阅读区自然推下去，不用在 JS 里测量高度再设偏移。 */
+    /* 横幅在 header 内独占第一行（order: -1），上方只有 header 的 padding-top 需要
+       抵消；下方与 .brand 之间还有 header 的 gap，负 margin-bottom 一并抵消，
+       否则工具栏上方会留一条 header 底色的缝，看起来像没铺满。 */
+    #update-banner { flex: 1 0 100%; order: -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin: -10px -18px -10px; padding: 8px 18px; background: #1f6f4a; color: #fff; font-size: 13px; line-height: 1.5; }
+    #update-banner[hidden] { display: none; }
+    #update-banner button { min-height: 30px; padding: 3px 14px; border: 1px solid #ffffff66; border-radius: 15px; background: #ffffff1f; color: #fff; font: inherit; cursor: pointer; }
+    #update-banner button:hover { background: #ffffff33; }
+    #update-banner button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    #update-banner-dismiss { margin-left: auto; padding: 3px 10px; border-color: transparent; background: transparent; }
      .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid #ffffff2e; }
     .toolbar-group.search-group { position: relative; min-width: 0; }
     .toolbar-group.view-group { position: relative; }
@@ -158,7 +183,7 @@
     #file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
     button, input { font: inherit; }
      button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
-      @font-face { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: 400; font-display: block; src: url('material-symbols-outlined-subset.woff2') format('woff2'); }
+      @font-face { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: 500; font-display: block; src: url('material-symbols-outlined-subset.woff2') format('woff2'); }
       .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-size: 19px; line-height: 1; font-feature-settings: 'rlig'; font-variation-settings: 'wght' 500, 'FILL' 0, 'GRAD' 0, 'opsz' 20; }
      .mobile-toolbar-toggle { display: none; }
     header button { border-color: #ffffff38; background: #263552; color: #fff; }
@@ -256,7 +281,9 @@
      body.dark-reading:fullscreen { background: #1b2029; }
      body.dark-reading:fullscreen .reader { background: #1f252f; }
 
-      .reader { --thumbnail-column: 210px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
+      /* --thumbnail-column 的初值必须与 viewer.js 的 defaultSidebarWidth 一致，
+        否则脚本执行前的那一帧会用旧宽度渲染侧栏，页签文字会闪一下再跳。 */
+     .reader { --thumbnail-column: 320px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
       .reader.hide-thumbnails { grid-template-columns: minmax(0, 1fr); }
        .reader > #sidebar { grid-column: 1; }
        .reader > #pages { grid-column: 2; }
@@ -266,19 +293,29 @@
           #sidebar { max-height: calc(100dvh - var(--header-height, 0px) - 32px); }
         }
        #sidebar-tabs { position: relative; display: flex; flex: 0 0 auto; gap: 3px; padding: 0 10px; }
-        #sidebar-tabs > button { flex: 1 1 0; min-width: 0; padding: 5px 3px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        /* 图标在上、文字在下：侧栏 tab 是 flex: 1 1 0 平分宽度，纵向排布能在
+           窄侧栏里放下图标而不挤掉文字；横向的话图标会把两字标签截成省略号。 */
+        #sidebar-tabs > button { flex: 1 1 0; min-width: 0; padding: 5px 3px; border: 1px solid transparent; border-radius: 6px; background: #00000000; color: #5b6675; font-size: 12px; white-space: nowrap; overflow: hidden; cursor: pointer; }
+        #sidebar-tabs > button.sidebar-has-icon { display: flex; flex-direction: column; gap: 2px; align-items: center; justify-content: center; }
+        .sidebar-tab-icon { font-size: 17px; }
+        .sidebar-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
        #sidebar-tabs > button:hover { background: #ffffff80; }
         #sidebar-tabs > button.active { border-color: #c3cbd6; background: var(--document-background, #fff); color: #172033; font-weight: 600; }
         body.dark-reading #sidebar-tabs > button { color: #aeb9ca; }
         body.dark-reading #sidebar-tabs > button.active { border-color: #536074; background: #303947; color: #e6ebf2; }
-        #sidebar-tab-search { flex: 0 0 30px; padding: 4px !important; }
-        #sidebar-tab-search .material-symbols-outlined { font-size: 18px; }
-       #sidebar-tab-more { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
-       #sidebar-tab-more .material-symbols-outlined { font-size: 16px; transition: transform .15s; }
+        /* 搜索页签与其余页签一样是图标在上、文字在下，因此同样参与宽度平分；
+           早期只有图标时固定成 30px 窄条，现在文字已经补上，不能再写死宽度。 */
+        #sidebar-tab-search { flex: 1 1 0; min-width: 0; }
+       /* 图标尺寸统一交给 .sidebar-tab-icon，这里只留展开时的旋转动画；
+         若在此再写 font-size，它的选择器特异性高于 .sidebar-tab-icon，
+         「更多」的图标会比其它 tab 偏小。 */
+       #sidebar-tab-more .material-symbols-outlined { transition: transform .15s; }
        #sidebar-tab-more[aria-expanded="true"] .material-symbols-outlined { transform: rotate(180deg); }
        .sidebar-more-menu { position: absolute; top: calc(100% + 4px); right: 10px; z-index: 3; display: flex; flex-direction: column; min-width: 120px; padding: 4px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; }
        .sidebar-more-menu[hidden] { display: none; }
-       .sidebar-more-menu button { display: flex; align-items: center; justify-content: flex-start; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; color: #172033; font-size: 13px; text-align: left; cursor: pointer; }
+       .sidebar-more-menu button { display: flex; gap: 8px; align-items: center; justify-content: flex-start; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; color: #172033; font-size: 13px; text-align: left; cursor: pointer; }
+       .sidebar-menu-icon { flex: 0 0 auto; font-size: 16px; color: #7c8798; }
+       .sidebar-more-menu button.active .sidebar-menu-icon, .sidebar-more-menu button:hover .sidebar-menu-icon { color: inherit; }
        .sidebar-more-menu button:hover { background: #f1f5f9; }
        .sidebar-more-menu button.active { background: #dbe8f6; color: #10508f; font-weight: 600; }
        body.dark-reading .sidebar-more-menu { border-color: #536074; background: #252c38; }
@@ -504,6 +541,10 @@
       header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto; gap: 7px 6px; align-items: center; padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
       header > * { margin: 0; }
       .brand { grid-column: 1 / -1; min-width: 0; }
+      /* 移动端 header 是 grid，上面的 flex: 1 0 100% 不再起作用，横幅会只占 7 列
+         里的第一列；且 header > * { margin: 0 } 会抹掉负边距。所以这里改成
+         grid-column 跨满整行，并按移动端的 padding 重新算负边距。 */
+      #update-banner { grid-column: 1 / -1; margin: calc(-8px - env(safe-area-inset-top)) -10px -7px; }
       #document-name { max-width: calc(100vw - 150px); }
       .toolbar-group { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; padding: 0 0 3px; border-left: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
       .toolbar-group > * { flex: 0 0 auto; white-space: nowrap; }
@@ -561,6 +602,9 @@
       body.sidebar-sheet #sidebar-toggle { display: none; }
       body.sidebar-sheet .sidebar-backdrop { display: block; }
       #sidebar-tabs > button { min-height: 40px; }
+      /* 纵向排布比纯文字高，小屏上把图标缩一点，避免按钮超出 40px 触控目标。 */
+      #sidebar-tabs > button.sidebar-has-icon { gap: 1px; padding: 4px 2px; }
+      .sidebar-tab-icon { font-size: 16px; }
       #outline .outline-label, #bookmarks .outline-label { padding-top: 9px; padding-bottom: 9px; }
     }
      @media (max-width: 380px) {
@@ -589,9 +633,15 @@
   </section>
   <a class="skip-link" href="#pages">跳到阅读区</a>
   <header>
+    <div id="update-banner" hidden>
+      <span>阅读器有新版本可用，重新加载即可使用最新功能。</span>
+      <button id="update-banner-reload" type="button">立即更新</button>
+      <button id="update-banner-dismiss" type="button" aria-label="关闭提示" title="关闭提示"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+    </div>
     <div class="brand">
       <strong id="about-link" style="cursor: pointer;" title="关于">OFD WASM 阅读器</strong>
       <span id="document-name">未打开文档</span>
+      <button id="refresh-button" type="button" hidden><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
     </div>
     <div class="toolbar-group file-group">
        <label class="file-button" for="file" title="打开文件"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span><span class="button-text">打开</span></label>
@@ -789,21 +839,21 @@
     <div id="sidebar">
       <div id="sidebar-handle" class="sidebar-handle" role="button" tabindex="0" aria-label="收起侧栏"></div>
       <div id="sidebar-tabs" role="tablist" aria-label="导航视图">
-        <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="active">缩略图</button>
-        <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline">大纲</button>
-        <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks">书签</button>
-        <button id="sidebar-tab-search" type="button" role="tab" aria-selected="false" aria-label="搜索" title="搜索" aria-controls="search-panel"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
-        <button id="sidebar-tab-more" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sidebar-more-menu">
-          <span id="sidebar-tab-more-label">更多</span>
-          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+        <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="sidebar-has-icon active"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">grid_view</span><span class="sidebar-tab-label">缩略图</span></button>
+        <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline" class="sidebar-has-icon"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">account_tree</span><span class="sidebar-tab-label">大纲</span></button>
+        <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks" class="sidebar-has-icon"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">bookmark</span><span class="sidebar-tab-label">书签</span></button>
+        <button id="sidebar-tab-search" type="button" role="tab" class="sidebar-has-icon" aria-selected="false" aria-controls="search-panel"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">search</span><span class="sidebar-tab-label">搜索</span></button>
+        <button id="sidebar-tab-more" type="button" class="sidebar-has-icon" aria-haspopup="true" aria-expanded="false" aria-controls="sidebar-more-menu">
+          <span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">expand_more</span>
+          <span id="sidebar-tab-more-label" class="sidebar-tab-label">更多</span>
         </button>
         <div id="sidebar-more-menu" class="sidebar-more-menu" role="menu" hidden>
-          <button id="sidebar-more-fonts" type="button" role="menuitem" aria-controls="fonts">字体</button>
-          <button id="sidebar-more-versions" type="button" role="menuitem" aria-controls="versions">版本</button>
-          <button id="sidebar-more-attachments" type="button" role="menuitem" aria-controls="attachments">附件</button>
-          <button id="sidebar-more-media" type="button" role="menuitem" aria-controls="media">资源</button>
-          <button id="sidebar-more-annotations" type="button" role="menuitem" aria-controls="annotations">注解</button>
-          <button id="sidebar-more-signatures" type="button" role="menuitem" aria-controls="signatures">签名</button>
+          <button id="sidebar-more-fonts" type="button" role="menuitem" aria-controls="fonts"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">font_download</span><span>字体</span></button>
+          <button id="sidebar-more-versions" type="button" role="menuitem" aria-controls="versions"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">history</span><span>版本</span></button>
+          <button id="sidebar-more-attachments" type="button" role="menuitem" aria-controls="attachments"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">attach_file</span><span>附件</span></button>
+          <button id="sidebar-more-media" type="button" role="menuitem" aria-controls="media"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">folder</span><span>资源</span></button>
+          <button id="sidebar-more-annotations" type="button" role="menuitem" aria-controls="annotations"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">sticky_note_2</span><span>注解</span></button>
+          <button id="sidebar-more-signatures" type="button" role="menuitem" aria-controls="signatures"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">draw</span><span>签名</span></button>
         </div>
       </div>
       <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
