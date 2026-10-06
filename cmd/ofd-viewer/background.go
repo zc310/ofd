@@ -42,6 +42,10 @@ var documentBackgroundPresets = []documentBackgroundPreset{
 	{Key: "adw-solarized", Label: "柔光羊皮", Color: rgbColor(0xfd, 0xf6, 0xe3)},
 	{Key: "Peninsula-dark", Label: "半岛墨蓝", Color: rgbColor(0x20, 0x25, 0x2b)},
 	{Key: "Plano2", Label: "晴空浅灰", Color: rgbColor(0xee, 0xf2, 0xf5)},
+	{Key: "mist-blue", Label: "浅雾蓝", Color: rgbColor(0xed, 0xf5, 0xfc)},
+	{Key: "mint-green", Label: "薄荷浅绿", Color: rgbColor(0xed, 0xf8, 0xf1)},
+	{Key: "blush-pink", Label: "樱花浅粉", Color: rgbColor(0xff, 0xf1, 0xf3)},
+	{Key: "lavender", Label: "薰衣草浅紫", Color: rgbColor(0xf5, 0xf0, 0xfc)},
 	{Key: "custom", Label: documentBackgroundCustomLabel},
 }
 
