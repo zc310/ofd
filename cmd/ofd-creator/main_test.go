@@ -38,6 +38,42 @@ func TestParseArgsTextCodeDeltaOptionDefaultsOff(t *testing.T) {
 	}
 }
 
+func TestValidateSignFlagsRequiresCommand(t *testing.T) {
+	tests := []signFlags{
+		{signStamp: true},
+		{signStampSeams: true},
+		{signSeal: "seal.esl"},
+	}
+	for _, flags := range tests {
+		if err := validateSignFlags(&flags); err == nil {
+			t.Fatal("签章参数缺少 --sign-cmd 时应返回错误")
+		}
+	}
+	if err := validateSignFlags(&signFlags{signStamp: true, signStampSeams: true, signCmd: "signer"}); err == nil {
+		t.Fatal("--sign-stamp 与 --sign-stamp-seams 同时使用应返回错误")
+	}
+}
+
+func TestValidateSignFlagsRejectsInvalidSeamNumbers(t *testing.T) {
+	base := signFlags{signCmd: "signer", signStampSeams: true, signStampSeamSize: 40, signStampSeamMinStrip: 2}
+	cases := []struct {
+		name string
+		edit func(*signFlags)
+	}{
+		{name: "负边长", edit: func(f *signFlags) { f.signStampSeamSize = -1 }},
+		{name: "负最小条带", edit: func(f *signFlags) { f.signStampSeamMinStrip = -1 }},
+		{name: "负分组页数", edit: func(f *signFlags) { f.signStampSeamGroupPages = -1 }},
+		{name: "负拆分份数", edit: func(f *signFlags) { f.signStampSeamPieces = -1 }},
+	}
+	for _, test := range cases {
+		flags := base
+		test.edit(&flags)
+		if err := validateSignFlags(&flags); err == nil {
+			t.Errorf("%s 应返回错误", test.name)
+		}
+	}
+}
+
 func TestRunCreatesValidatedYAMLDocument(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "document.yaml")

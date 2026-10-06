@@ -56,10 +56,10 @@ ofd-creator schema --format json
 
 示例路径：`templates[].items[]`。
 
-| 字段 | 类型 | 可省略 | 说明 |
-|------|------|:------:|------|
-| `type` | `string` | 是 | 图元类型。 |
-| `items` | `[]Item` | 是 | 定义复合或页面块图元的子图元。 |
+| 字段    | 类型     | 可省略 | 说明                           |
+|---------|----------|:------:|--------------------------------|
+| `type`  | `string` |   是   | 图元类型。                     |
+| `items` | `[]Item` |   是   | 定义复合或页面块图元的子图元。 |
 ```
 
 字段的完整路径是在示例路径后追加字段名，结构体字段还要追加 `[]`，例如 `pages[].items[].fill_color.axial.segments[]`。
@@ -201,7 +201,9 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 - 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）；
 - `--sign-provider`、`--sign-provider-version`、`--sign-company`、`--sign-method`、`--sign-check-method` 分别设置 `SignedInfo` 的 `Provider` 名称/版本/公司、`SignatureMethod`（默认 `1.2.156.10197.1.501`）和 `References@CheckMethod`（默认 `SM3`）；这些值同时通过上面的环境变量传给命令。
 - 重签会删除文档体已有的签名文件，包括当前布局的 `Signatures/` 和历史生产者使用的 `Signs/`（`Signatures.xml`/`Signs.xml` 及其目录），避免旧签名残留。
-- `--sign-stamp` 会在 `Signature.xml` 写入 `StampAnnot`，让阅读器把 `SignedValue.dat` 里的印章图片绘制到页面上；默认放在文档体首页右下角（40mm），可用 `--sign-stamp-page` 指定页面 ID、`--sign-stamp-boundary "x y width height"`（毫米）指定位置。真实印章图片来自签名值（外部命令输出的 `SES_ESPictrueInfo`），演示签名器 `ofd-signer-demo` 会生成一张 SVG（红圈“中”字）占位图。
+- `--sign-stamp` 会在 `Signature.xml` 写入 `StampAnnot`，让阅读器把 `SignedValue.dat` 里的印章图片绘制到页面上；默认放在文档体首页右下角（40mm），可用 `--sign-stamp-page` 指定页面 ID、`--sign-stamp-boundary "x y width height"`（毫米）指定位置。真实印章图片来自签名值（外部命令输出的 `SES_ESPictrueInfo`），演示签名器 `ofd-signer-demo` 会运行时渲染带「非正式印章」声明的测试章 PNG。
+- `--sign-stamp-seams` 会把同一枚印章按参与页面数量切成条带，在同一文档体每页边缘写入一个 `StampAnnot`；`--sign-stamp-seam-edge left|right|top|bottom|all` 选择边缘，默认 `right`，`all` 会在每页同时覆盖四个边缘；左右边缘使用竖向条带，顶部和底部使用横向条带；`--sign-stamp-seam-pages all|odd|even|1,3,5-7|11-|-10` 选择参与页面，默认 `all`，页码从 1 开始，`11-` 表示第 11 页到末页，`-10` 表示第 1 页到第 10 页；`--sign-stamp-seam-group-pages 20` 可将参与页面按每 20 页分组，每组独立拼成一枚章；分组模式不能同时指定 `--sign-stamp-seam-pieces`。总页数不整除分组页数时，末尾不足两页的组按完整印章处理（单页无法自成一枚骑缝章，例如 5 页按 2 页分组得到 2+2+1，最后一页画整章）。未分组时，`--sign-stamp-seam-pieces` 可显式指定拆分份数，必须与参与页面数一致，省略时自动使用参与页面数。每个标注通过 `Clip` 显示不同条带，所有页面拼回完整骑缝章。定位按每页自身 `Area/PhysicalBox` 计算，缺失时回退文档公共 `PageArea`；印章默认沿对应边缘居中；`--sign-stamp-seam-x` 控制上下边缘的水平位置，`--sign-stamp-seam-y` 控制左右边缘的垂直位置，负值表示居中。`--sign-stamp-seam-size` 设置边长（默认 40mm），`--sign-stamp-seam-min-strip` 设置每页裁片最小宽度（默认 2mm，建议 4 或 8mm）；不足时直接报错。该模式与 `--sign-stamp` 互斥，并要求阅读器支持 `StampAnnot.Clip`。
+- `--sign-seal <路径>` 指定独立的电子印章文件（`.esl`，可由 `ofd-seal` 生成）。提供后签名目录会同时包含 `Seal.esl`，且 `Signature.xml` 写入 `<Seal BaseLoc="Seal.esl"/>`，印章图片优先从该文件解析。
 
 仓库提供最小示例签名器 `cmd/ofd-signer-demo`，可用来验证整条链路（它现场生成 SM2 自签名证书，签署 SES 印章与 `TBS_Sign`）：
 
@@ -209,6 +211,51 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 go build -o /tmp/ofd-signer-demo ./cmd/ofd-signer-demo
 go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
   --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/hello.ofd
+```
+
+多页文档可以按 OFDRW 样例使用 `Clip` 将同一枚印章切成条带，贴到每页右边缘：
+
+```bash
+go run ./cmd/ofd-creator merge -o /tmp/seam-signed.ofd \
+  --sign-cmd /tmp/ofd-signer-demo \
+  --sign-stamp-seams --sign-stamp-seam-size 40 \
+  --verify-signatures testdata/999.ofd
+```
+
+每页写入一个 `StampAnnot`，所有标注引用同一份签章数据；页面尺寸可不同，位置会按每页自身的 `Area/PhysicalBox` 计算。
+
+指定页码列表或范围：
+
+```bash
+go run ./cmd/ofd-creator merge -o /tmp/seam-selected.ofd \
+  --sign-cmd /tmp/ofd-signer-demo \
+  --sign-stamp-seams \
+  --sign-stamp-seam-edge right \
+  --sign-stamp-seam-pages 1,3,5-7 \
+  --verify-signatures testdata/999.ofd
+```
+
+每 20 页重新拼一枚骑缝章。40mm 印章每页条带为 2mm，达到默认最小条带宽度；如果希望更清晰，可将印章边长提高到 80mm：
+
+```bash
+go run ./cmd/ofd-creator merge -o /tmp/seam-group20.ofd \
+  --sign-cmd /tmp/ofd-signer-demo \
+  --sign-stamp-seams \
+  --sign-stamp-seam-edge right \
+  --sign-stamp-seam-pages 5- \
+  --sign-stamp-seam-group-pages 20 \
+  --sign-stamp-seam-size 40 \
+  --verify-signatures testdata/other/GBT_33190-2016.ofd
+```
+
+四边同时添加条带：
+
+```bash
+go run ./cmd/ofd-creator merge -o /tmp/seam-all-edges.ofd \
+  --sign-cmd /tmp/ofd-signer-demo \
+  --sign-stamp-seams --sign-stamp-seam-edge all \
+  --sign-stamp-seam-size 40 \
+  --verify-signatures testdata/999.ofd
 ```
 
 重签名通常配合 `--signatures drop`（先清掉旧签名）或有 `--pages` 的模型级合并使用。
@@ -264,7 +311,7 @@ ofd-creator replace -i in.ofd -o out.ofd \
 - 任何字节改动都会使已有签名摘要失效，因此 `--signatures` 默认 `drop`（丢弃签名目录），也可显式选择 `preserve` 或 `rewrite`；`rewrite` 与 `preserve` 等价，因为路径不会改变。
 - 新内容若命中 `.xml` 条目（`--set`/`--add`），默认会先解析校验良构性（含根元素）；可用 `--no-validate` 关闭。`--validate` 则是在替换后对整体输出执行严格 OFD 校验，两者作用不同。
 - `--verify-signatures` 在替换后校验输出文档的签名摘要与密码学签名：只报告结果不因摘要失效而失败，签名结构损坏等输出级错误返回资源错误退出码（与 `merge --verify-signatures` 一致）。
-- 也可以像 `merge` 一样在替换后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge` 的 `--sign-*` 一致。`--signatures` 默认 `drop` 会先丢弃旧签名，再按替换后的内容签署新签名。
+- 也可以像 `merge` 一样在替换后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-stamp-seams`/`--sign-stamp-seam-edge`/`--sign-stamp-seam-pages`/`--sign-stamp-seam-pieces`/`--sign-stamp-seam-size`/`--sign-stamp-seam-x`/`--sign-stamp-seam-y`/`--sign-seal`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge` 的 `--sign-*` 一致。`--signatures` 默认 `drop` 会先丢弃旧签名，再按替换后的内容签署新签名。
 - 支持 `--compression`、`--deterministic`、`--validate`，以及 `--max-entries`/`--max-entry-mb`/`--max-total-mb` 解压规模限制。
 - `--output -` 可以把结果写入标准输出；`replace` 不支持从标准输入读取 OFD。
 
@@ -306,7 +353,7 @@ ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
 - 注解属性：`--id`（0 自动分配，取 `MaxUnitID` 与页面内既有注解 ID 之后）、`--creator`、`--subtype`、`--visible`/`--print`/`--no-zoom`/`--no-rotate`、`--read-only`、`--remark`、`--parameter Name=Value`（可重复）。
 - 默认门控：文档 `Permissions/Watermark=false` 时拒绝任何修改（`--skip-permissions-check` 跳过）；`ReadOnly` 缺省或为 `true` 的水印拒绝 `replace`/`remove`（`--skip-readonly-check` 跳过）。本命令写出的水印显式标记 `ReadOnly=false`，可直接再删。
 - 清理：`remove` 后某页无任何注解会删除该页注解文件，索引与 `Document.xml` 的 `<Annotations>` 同步清理。
-- 复用 `replace` 框架，因此 `--compression`/`--compression-level`/`--deterministic`/`--validate`/`--max-entries`/`--max-entry-mb`/`--max-total-mb`/`--signatures` 行为一致：任何修改都会使既有签名摘要失效，`--signatures` 默认 `drop`。也可以像 `replace`/`merge` 一样在修改后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge`/`replace` 的 `--sign-*` 一致；`--verify-signatures` 在写出前校验输出文档的签名摘要与密码学签名。`--output -` 写标准输出，不支持从标准输入读取。
+- 复用 `replace` 框架，因此 `--compression`/`--compression-level`/`--deterministic`/`--validate`/`--max-entries`/`--max-entry-mb`/`--max-total-mb`/`--signatures` 行为一致：任何修改都会使既有签名摘要失效，`--signatures` 默认 `drop`。也可以像 `replace`/`merge` 一样在修改后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-stamp-seams`/`--sign-stamp-seam-edge`/`--sign-stamp-seam-pages`/`--sign-stamp-seam-pieces`/`--sign-stamp-seam-size`/`--sign-stamp-seam-x`/`--sign-stamp-seam-y`/`--sign-seal`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge`/`replace` 的 `--sign-*` 一致；`--verify-signatures` 在写出前校验输出文档的签名摘要与密码学签名。`--output -` 写标准输出，不支持从标准输入读取。
 - 保留原始命名空间风格：默认 `xmlns` 文档的水印使用无前缀元素，`xmlns:ofd` 文档的新增索引/页面文件以及 `--appearance` 原始外观片段均套用 `ofd` 前缀；无既有注解索引时从 `Document.xml` 根元素继承前缀。自备外观片段无法解析时直接报错，不会静默写成空 `<Appearance/>`。
 - 水印编辑逻辑以库的形式公开在 `pkg/watermark`：`Add`、`Replace`、`Remove` 三个函数接收任意输入（路径/字节/`io.Reader`/`*core.Package`）与 `Target`，外观自动分配 ID；`Watermark.Appearance` 可直接放入原始 XML 片段，或用 `watermark.TextAppearance`/`watermark.ImageAppearance` 生成平铺/居中的文字或图片外观（`TextOptions.Rotation` 指定文字旋转角度，`TextOptions.CTM` 直接透传变换矩阵、优先级更高）；`Watermark.Image` 提供图片水印的资源嵌入能力。
 
@@ -342,7 +389,7 @@ document:
 
 `ofd-creator export` 在导出 manifest 时会保留非基础取值，因此 `export` 后再 `ofd-creator` 重建不会把 profile 退回 `OFD`。
 
-`--validate` 会按生成的 `DocType` 自动应用对应校验：`OFD-A` 与 `OFD-H` 除 GB/T 33190 基础模式与 XSD 外，还会执行 [ofd-validator 的 profile 规则](ofd-validator/README.md#ofd-profile-校验)。但标准的「去除×××」一类条款本质是转换动作而非合规条件，归档处理流水线负责，校验器只判定并上报；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款也尚未实现。
+`--validate` 会按生成的 `DocType` 自动应用对应校验：`OFD-A` 与 `OFD-H` 除 GB/T 33190 基础模式与 XSD 外，还会执行 [ofd-validator 的 profile 规则](../ofd-validator/README.md#ofd-profile-校验)。但标准的「去除×××」一类条款本质是转换动作而非合规条件，归档处理流水线负责，校验器只判定并上报；字型子集化、图像插值、扫描件分层等需要阈值或启发式判断的条款也尚未实现。
 
 ## 压缩策略
 

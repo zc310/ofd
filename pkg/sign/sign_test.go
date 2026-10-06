@@ -2,6 +2,8 @@ package sign
 
 import (
 	"bytes"
+	"crypto/md5"
+	"crypto/sha1"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmansun/gmsm/sm3"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/pkg/merge"
 )
@@ -63,6 +66,61 @@ func TestSignAddsSignature(t *testing.T) {
 	}
 	if len(statuses) != 1 || !statuses[0].DigestValid {
 		t.Fatalf("签名摘要应有效: %+v", statuses)
+	}
+}
+
+func TestSignatureDigestSupportsDeclaredMethods(t *testing.T) {
+	data := []byte("signature digest test")
+	md5Sum := md5.Sum(data)
+	sha1Sum := sha1.Sum(data)
+	sm3Hash := sm3.New()
+	_, _ = sm3Hash.Write(data)
+	sm3Sum := sm3Hash.Sum(nil)
+	for _, test := range []struct {
+		method string
+		want   []byte
+	}{
+		{method: "MD5", want: md5Sum[:]},
+		{method: "SHA1", want: sha1Sum[:]},
+		{method: "SM3", want: sm3Sum},
+		{method: "1.2.156.10197.1.401", want: sm3Sum},
+	} {
+		got, err := signatureDigest(test.method, data)
+		if err != nil {
+			t.Errorf("method=%s: unexpected error: %v", test.method, err)
+			continue
+		}
+		if !bytes.Equal(got, test.want) {
+			t.Errorf("method=%s: digest = %x, want %x", test.method, got, test.want)
+		}
+	}
+	if _, err := signatureDigest("SHA256", data); err == nil {
+		t.Fatal("不支持的摘要算法应返回错误")
+	}
+}
+
+func TestSignSHA1CheckMethodVerifiesDigest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("helper 进程命令依赖类 Unix 路径")
+	}
+	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	if err := Sign(input, &buffer, Options{
+		Command:     os.Args[0],
+		CheckMethod: "SHA1",
+		Environment: []string{"OFD_SIGN_HELPER=1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	statuses, err := merge.VerifySignatures(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || !statuses[0].DigestValid {
+		t.Fatalf("SHA1 签名摘要应有效: %+v", statuses)
 	}
 }
 
@@ -168,6 +226,183 @@ func TestSignWritesStampAnnot(t *testing.T) {
 	}
 	if !bytes.Contains(signatures, []byte(`Type="Seal"`)) {
 		t.Fatalf("Signatures.xml 应声明 Seal 类型:\n%s", signatures)
+	}
+}
+
+func TestSignWritesSeamStampAnnotations(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("helper 进程命令依赖类 Unix 路径")
+	}
+	input, err := os.ReadFile(testdataPath("999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	if err := Sign(input, &buffer, Options{
+		Command:     os.Args[0],
+		Environment: []string{"OFD_SIGN_HELPER=1"},
+		StampSeam: &StampSeamOptions{
+			Size: 40,
+			Y:    -1,
+		},
+	}); err != nil {
+		t.Fatalf("Sign 骑缝章失败: %v", err)
+	}
+
+	pkg, err := core.OpenBytes(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	signature, err := pkg.Read("Doc_0/Signatures/Signature_sign-1.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bytes.Count(signature, []byte("<StampAnnot")); got != 5 {
+		t.Fatalf("5 页文档应写入 5 个骑缝 StampAnnot，实际 %d:\n%s", got, signature)
+	}
+	for _, want := range []string{
+		`PageRef="10" Boundary="202 50 40 40" Clip="0 0 8 40"`,
+		`PageRef="92" Boundary="194 128.5 40 40" Clip="8 0 8 40"`,
+		`PageRef="629" Boundary="170 128.5 40 40" Clip="32 0 8 40"`,
+	} {
+		if !bytes.Contains(signature, []byte(want)) {
+			t.Errorf("骑缝 StampAnnot 缺少 %s:\n%s", want, signature)
+		}
+	}
+	statuses, err := merge.VerifySignatures(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 1 || !statuses[0].DigestValid {
+		t.Fatalf("骑缝章签名摘要应有效: %+v", statuses)
+	}
+}
+
+func TestSignWritesLeftSeamStampAnnotations(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("helper 进程命令依赖类 Unix 路径")
+	}
+	input, err := os.ReadFile(testdataPath("999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	if err := Sign(input, &buffer, Options{
+		Command:     os.Args[0],
+		Environment: []string{"OFD_SIGN_HELPER=1"},
+		StampSeam: &StampSeamOptions{
+			Edge: "left",
+			Size: 40,
+			Y:    -1,
+		},
+	}); err != nil {
+		t.Fatalf("Sign 左边缘骑缝章失败: %v", err)
+	}
+
+	pkg, err := core.OpenBytes(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	signature, err := pkg.Read("Doc_0/Signatures/Signature_sign-1.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`PageRef="10" Boundary="0 50 40 40" Clip="0 0 8 40"`,
+		`PageRef="92" Boundary="-8 128.5 40 40" Clip="8 0 8 40"`,
+	} {
+		if !bytes.Contains(signature, []byte(want)) {
+			t.Errorf("左边缘骑缝 StampAnnot 缺少 %s:\n%s", want, signature)
+		}
+	}
+}
+
+func TestSelectSeamPages(t *testing.T) {
+	pages := []pageGeometry{{id: "1"}, {id: "2"}, {id: "3"}, {id: "4"}, {id: "5"}}
+	tests := []struct {
+		mode string
+		want []string
+	}{
+		{mode: "", want: []string{"1", "2", "3", "4", "5"}},
+		{mode: "all", want: []string{"1", "2", "3", "4", "5"}},
+		{mode: "odd", want: []string{"1", "3", "5"}},
+		{mode: "even", want: []string{"2", "4"}},
+		{mode: "1,3-4", want: []string{"1", "3", "4"}},
+		{mode: "4-", want: []string{"4", "5"}},
+		{mode: "-2", want: []string{"1", "2"}},
+	}
+	for _, test := range tests {
+		got, err := selectSeamPages(pages, test.mode)
+		if err != nil {
+			t.Errorf("mode=%q: unexpected error: %v", test.mode, err)
+			continue
+		}
+		if len(got) != len(test.want) {
+			t.Errorf("mode=%q: got %d pages, want %d", test.mode, len(got), len(test.want))
+			continue
+		}
+		for index, page := range got {
+			if page.id != test.want[index] {
+				t.Errorf("mode=%q page[%d] = %q, want %q", test.mode, index, page.id, test.want[index])
+			}
+		}
+	}
+	if _, err := selectSeamPages(pages, "middle"); err == nil {
+		t.Fatal("不支持的骑缝页面选择应返回错误")
+	}
+}
+
+func TestSignWritesSealBaseLoc(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("helper 进程命令依赖类 Unix 路径")
+	}
+	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealPath := filepath.Join(t.TempDir(), "Seal.esl")
+	sealBytes := []byte("fake-seal-der-bytes")
+	if err := os.WriteFile(sealPath, sealBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	if err := Sign(input, &buffer, Options{
+		Command:     os.Args[0],
+		Environment: []string{"OFD_SIGN_HELPER=1"},
+		Seal:        sealPath,
+	}); err != nil {
+		t.Fatalf("Sign 失败: %v", err)
+	}
+
+	pkg, err := core.OpenBytes(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pkg.Close() }()
+	if !pkg.Has("Doc_0/Signatures/Seal.esl") {
+		t.Fatal("电子印章文件应被打包进签名目录")
+	}
+	gotSeal, err := pkg.Read("Doc_0/Signatures/Seal.esl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotSeal, sealBytes) {
+		t.Fatal("打包后的 Seal.esl 内容应与输入一致")
+	}
+	signature, err := pkg.Read("Doc_0/Signatures/Signature_sign-1.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seal 的 BaseLoc 是子元素而非属性：写成属性时阅读器解析出的 BaseLoc 为空，
+	// 会把空路径解析成签名目录本身并报"打开文件失败: Doc_0/Signatures"。
+	if !bytes.Contains(signature, []byte(`<Seal><BaseLoc>Seal.esl</BaseLoc></Seal>`)) {
+		t.Fatalf("Signature.xml 应以子元素形式声明 Seal/BaseLoc:\n%s", signature)
+	}
+	// 独立印章文件必须被签名引用覆盖，否则它会被替换而不会被发现。
+	if !bytes.Contains(signature, []byte(`FileRef="Seal.esl"`)) {
+		t.Fatalf("签名引用应包含 Seal.esl:\n%s", signature)
 	}
 }
 

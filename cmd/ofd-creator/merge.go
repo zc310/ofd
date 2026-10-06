@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -272,16 +273,17 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 }
 
 func validateMergeOptions(opts *mergeOptions) error {
+	if err := validateSignFlags(&opts.signFlags); err != nil {
+		return err
+	}
 	if len(opts.inputs) == 0 {
 		return errors.New("至少需要一个 OFD 输入文件")
 	}
 	if strings.TrimSpace(opts.output) == "" {
 		return errors.New("缺少合并后的 OFD 输出文件")
 	}
-	for _, input := range opts.inputs {
-		if input == "-" {
-			return errors.New("merge 不支持从标准输入读取")
-		}
+	if slices.Contains(opts.inputs, "-") {
+		return errors.New("merge 不支持从标准输入读取")
 	}
 	if opts.output != "-" {
 		for _, input := range opts.inputs {

@@ -90,6 +90,9 @@ func parseReplaceArgs(args []string, output io.Writer) (*replaceOptions, error) 
 }
 
 func validateReplaceOptions(opts *replaceOptions) error {
+	if err := validateSignFlags(&opts.signFlags); err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.input) == "" {
 		return errors.New("缺少输入的 OFD 文件")
 	}

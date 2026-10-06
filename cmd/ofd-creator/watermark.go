@@ -183,6 +183,9 @@ func parseWatermarkArgs(args []string, output io.Writer) (*watermarkOptions, err
 }
 
 func validateWatermarkOptions(opts *watermarkOptions) error {
+	if err := validateSignFlags(&opts.signFlags); err != nil {
+		return err
+	}
 	switch opts.action {
 	case "add", "replace", "remove":
 	default:
@@ -490,10 +493,10 @@ func parseBox(text string) (creator.Box, error) {
 
 func parseMatchIDs(specs []string) ([]uint64, error) {
 	ids := make([]uint64, 0, len(specs))
-	for _, spec := range specs {
-		id, err := strconv.ParseUint(strings.TrimSpace(spec), 10, 64)
+	for _, s := range specs {
+		id, err := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("无效的注解 ID %q", spec)
+			return nil, fmt.Errorf("无效的注解 ID %q", s)
 		}
 		ids = append(ids, id)
 	}
