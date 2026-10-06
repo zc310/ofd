@@ -1257,38 +1257,61 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		} else if verification != nil {
 			p.verificationResults[body.ID] = verification
 		}
-		var sealData *SealData
-		var buf []byte
-		if sig.SignedInfo.Seal != nil {
-			seFile := sig.SignedInfo.Seal.BaseLoc.Resolve(seDir).String()
-			if buf, err = p.FileCache.Read(seFile); err != nil {
-				return err
-			}
-
-			if sealData, err = ExtractSealData(buf); err != nil {
-				slog.Error(fmt.Sprintf("提取签章失败(%s): %v", seFile, err))
-				continue
-			}
-			for _, annot := range sig.SignedInfo.StampAnnot {
-				p.seals[models.StID(annot.PageRef)] = append(p.seals[models.StID(annot.PageRef)], &SealInfo{StampAnnot: annot, SealData: sealData})
-			}
-		} else {
-			if len(sig.SignedInfo.StampAnnot) > 0 {
-				if buf, err = p.FileCache.Read(sig.SignedValue.Resolve(seDir).String()); err != nil {
-					slog.Warn("读取签名值失败", "signature", body.ID, "file", sig.SignedValue.Resolve(seDir).String(), "error", err)
-					continue
-				}
-				if sealData, err = ExtractSealData(buf); err != nil {
-					slog.Warn("提取签章失败", "file", sig.SignedValue.Resolve(seDir).String(), "error", err)
-					continue
-				}
-				for _, annot := range sig.SignedInfo.StampAnnot {
-					p.seals[models.StID(annot.PageRef)] = append(p.seals[models.StID(annot.PageRef)], &SealInfo{StampAnnot: annot, SealData: sealData})
-				}
-			}
-		}
+		p.loadSeals(body.ID, &sig, seDir)
 	}
 	return nil
+}
+
+// loadSeals 按优先级取出印章数据并登记到 StampAnnot 指向的页面。
+//
+// 两个来源的优先级是 Seal@BaseLoc 指向的独立印章文件优先、SignedValue.dat
+// 内嵌印章次之，与 GB/T 33190 的产物形态一致：真实签名服务把印章单独落盘并
+// 引用，同一份印章也签进 SignedValue。
+//
+// 独立印章文件读不到或解析不出印章时退回内嵌印章，而不是中止解析。此前这里
+// 直接 return err，一份坏印章会让整份文档打不开（转换、分析和阅读器全部失败），
+// 而同一段代码里 SignedValue 缺失只是告警——两者不对称，坏印章的破坏力被放大了。
+// 包是否合法仍由 pkg/validator 的 reference.missing 判定，解析侧只负责尽力渲染。
+func (p *Document) loadSeals(signatureID string, sig *models.Signature, seDir models.StLoc) {
+	if len(sig.SignedInfo.StampAnnot) == 0 {
+		return
+	}
+	if sig.SignedInfo.Seal != nil {
+		sealFile := sig.SignedInfo.Seal.BaseLoc.Resolve(seDir).String()
+		data, err := p.FileCache.Read(sealFile)
+		if err == nil {
+			var sealData *SealData
+			if sealData, err = ExtractSealData(data); err == nil {
+				p.registerSeal(sig, sealData)
+				return
+			}
+		}
+		slog.Warn("读取电子印章文件失败，回退到签名值内嵌印章",
+			"signature", signatureID, "file", sealFile, "error", err)
+	}
+	if sig.SignedValue == "" {
+		return
+	}
+	signedValuePath := sig.SignedValue.Resolve(seDir).String()
+	buf, err := p.FileCache.Read(signedValuePath)
+	if err != nil {
+		slog.Warn("读取签名值失败", "signature", signatureID, "file", signedValuePath, "error", err)
+		return
+	}
+	sealData, err := ExtractSealData(buf)
+	if err != nil {
+		slog.Warn("提取签章失败", "signature", signatureID, "file", signedValuePath, "error", err)
+		return
+	}
+	p.registerSeal(sig, sealData)
+}
+
+// registerSeal 把同一份印章登记到该签名所有 StampAnnot 指向的页面。
+func (p *Document) registerSeal(sig *models.Signature, sealData *SealData) {
+	for _, annot := range sig.SignedInfo.StampAnnot {
+		pageID := models.StID(annot.PageRef)
+		p.seals[pageID] = append(p.seals[pageID], &SealInfo{StampAnnot: annot, SealData: sealData})
+	}
 }
 
 func (p *Document) parseAnnotations() error {
