@@ -69,12 +69,17 @@ SES_Header ::= SEQUENCE {
 - 用自签名证书封装公钥（`SM2WithSM3`）；
 - 计算 `Signature.xml` 的 SM3 摘要作为 `TBS_Sign.DataHash`；
 - 用 SM2 分别签署 `SES_Seal_Info`（印章内部签名）和 `TBS_Sign`（外层签名）；
-- 生成一张 PNG 印章占位图（`SES_ESPictrueInfo.Type = "png"`）：红色圆环加「中」字，
-  空白区域透明，尺寸 938×938（`SES_ESPictrueInfo.Width/Height` 与图元尺寸一致）。
+- 现场渲染一张 PNG 印章图（`SES_ESPictrueInfo.Type = "png"`）：由
+  `internal/sealimg` 生成的双线圆章，顶部「OFD 测试专用章」、底部「非正式印章」、中心
+  五角星及其下方的「zc310/ofd」小字，尺寸 512×512（`SES_ESPictrueInfo.Width/Height`
+  与图元尺寸一致）。
+
+  这张图自带「非正式印章」声明，因此可以被单独复制传播而不至于被误认为真章；
+  早期版本内嵌一张 938×938 的红圈「中」字 PNG，既没有这行声明，也不像章。
 
 与真实印章样例的差异：真实印章的 `esID`、`SES_Header.VID`、`Property.Name`
 和证书来自厂商/CA，`SES_ESPictrueInfo.Data` 是真实印章图片；本演示器用固定的
-厂商/项目标识和现场生成的占位图代替，其余字段类型与顺序保持一致。
+厂商/项目标识和 `internal/sealimg` 渲染的测试图代替，其余字段类型与顺序保持一致。
 
 ## 让印章显示在页面上
 

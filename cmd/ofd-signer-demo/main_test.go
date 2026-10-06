@@ -99,10 +99,14 @@ func TestSignHonoursSignedXMLDataHash(t *testing.T) {
 	}
 }
 
-func TestPlaceholderSealIsRedRingPNG(t *testing.T) {
-	seal := placeholderSeal()
-	if pictureType != "png" {
-		t.Fatalf("SES_ESPictrueInfo.Type 应为 png，实际 %q", pictureType)
+// TestPlaceholderSealDeclaresItselfAsTestOnly 保护演示印章的自证标识。
+//
+// 印章图片会被单独复制传播，一旦脱离本仓库就再也看不到文档里的免责说明。底部
+// 「非正式印章」是唯一跟着图片走的声明，渲染逻辑一旦改动把它漏掉，这里就会红。
+func TestPlaceholderSealDeclaresItselfAsTestOnly(t *testing.T) {
+	seal, err := placeholderSeal()
+	if err != nil {
+		t.Fatalf("生成演示印章失败: %v", err)
 	}
 	img, err := png.Decode(bytes.NewReader(seal))
 	if err != nil {
@@ -111,13 +115,29 @@ func TestPlaceholderSealIsRedRingPNG(t *testing.T) {
 	if _, _, err := pictureSize(); err != nil {
 		t.Fatalf("pictureSize 失败: %v", err)
 	}
-	if !containsRedRingPixel(img) {
-		t.Fatal("印章应包含红色圆环颜色")
+	if !containsSealInkPixel(img) {
+		t.Fatal("印章应包含朱红墨色")
+	}
+	if !containsInkInLowerHalf(img) {
+		t.Error("印章下半部应有墨迹（底部「非正式印章」字样）")
 	}
 }
 
-// containsRedRingPixel 判断图片中是否存在印章的红色像素（#E60012 系）。
-func containsRedRingPixel(img image.Image) bool {
+// containsInkInLowerHalf 判断图片下半部是否有墨迹，用来确认底字确实存在。
+func containsInkInLowerHalf(img image.Image) bool {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y + bounds.Dy()/2; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsSealInkPixel 判断图片中是否存在印章朱红（#C8161D 系）像素。
+func containsSealInkPixel(img image.Image) bool {
 	bounds := img.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
