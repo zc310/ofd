@@ -1458,6 +1458,10 @@ err = converter.HTML("input.ofd", &svgHTML,
 - [xiaoqidun/ofdgo](https://github.com/xiaoqidun/ofdgo)，支持异常内嵌字体（缺失 `OS/2` 表、缺失字形 `cmap` 映射，以及裸 CFF 的 SFNT 包装与度量补齐）的修复。本项目通过其独立移植 [github.com/zc310/fontfix](https://github.com/zc310/fontfix) 引入该能力；fontfix 的字体修复实现派生自该项目（Copyright 2025-2026 Xiao Qi Dun），并已大幅简化与修改
 - [tdewolff/canvas](https://github.com/tdewolff/canvas)、[tdewolff/font](https://github.com/tdewolff/font) 与 [lumifloat/tinyskia](https://github.com/lumifloat/tinyskia)，分别是本项目 PDF/SVG 与文字路径渲染、字体解析、可选栅格后端的上游；本项目通过派生移植 [github.com/zc310/canvas](https://github.com/zc310/canvas)、[github.com/zc310/font](https://github.com/zc310/font) 与 [github.com/zc310/tinyskia](https://github.com/zc310/tinyskia) 引入，并针对 OFD 渲染做了修复与性能优化
 
+以下项目的测试与示例 OFD 文档被本项目取用为测试夹具，集中在 [`testdata/ofdrw/`](testdata/ofdrw/)。本项目只使用其文档文件，未使用其代码：
+
+- [ofdrw/ofdrw](https://github.com/ofdrw/ofdrw)（Apache-2.0），取用其样例文档覆盖签名与签章、批注与外部资源、模板与附件、字体修复与图片缺失回退等回归场景：`999.ofd`（5 页真实发票类文档，含 Stamp 注解、签名、附件与二维码）、`ano.ofd`（批注与外部资源样例，55 个注解、9 种嵌入字体）、`zsbk.ofd`（双签名/印章业务文档）、`intro.ofd`（42 页大文档，嵌入字体修复与历史根命名空间）、`signout.ofd`（Stamp 注解以复合图元形式出现）、`不规范资源路径.ofd`（印章位图无透明通道需按键去白底）、`testImageNotFound.ofd`（图片资源缺失时文字字体仍能加载）。这些文件按 Apache-2.0 使用，版权归 ofdrw 项目作者所有
+
 项目依赖的第三方库许可清单见 [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)。
 
 ## 许可证
