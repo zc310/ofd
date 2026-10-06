@@ -905,3 +905,140 @@ func TestValidateRejectsUnknownDocType(t *testing.T) {
 		}
 	}
 }
+
+// makeColorSpaceArchive 构造一个只含 Res/ColorSpaces.xml 的最小包，
+// extraFiles 用于放入 Profile 指向的二进制内容。
+func makeColorSpaceArchive(t *testing.T, colorSpace string, extraFiles map[string]string) []byte {
+	t.Helper()
+	files := map[string]string{
+		"OFD.xml":                        `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":             `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>1</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`,
+		"Doc_0/Pages/Page_0/Content.xml": `<Page xmlns="http://www.ofdspec.org/2016"><Area><PhysicalBox>0 0 210 297</PhysicalBox></Area></Page>`,
+		"Doc_0/DocumentRes.xml":          `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res"/>`,
+		// ColorSpaces.xml 放在文档体目录下并声明 BaseLoc="Res"，Profile 里的相对
+		// 路径才按 OFD 规则解析到 Doc_0/Res/。放到 Doc_0/Res/ 下会多拼一层。
+		"Doc_0/ColorSpaces.xml": `<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="Res">` + colorSpace + `</Res>`,
+	}
+	entries := make([]archiveEntry, 0, len(files))
+	for name, content := range files {
+		entries = append(entries, archiveEntry{name: name, content: content})
+	}
+	for name, content := range extraFiles {
+		entries = append(entries, archiveEntry{name: name, content: content})
+	}
+	return makeArchiveEntries(t, entries...)
+}
+
+func validateColorSpace(t *testing.T, archiveData []byte) Report {
+	t.Helper()
+	instance, err := New(WithMode(ModeStructural), WithCheckDigest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return instance.ValidateReader(context.Background(), bytes.NewReader(archiveData), "colorspace.ofd")
+}
+
+// TestColorSpaceChecksAcceptBinaryPalette Profile 指向按通道数平铺的原始二进制
+// 调色板时不应报错：GB/T 33190 没有规定 Profile 的文件格式，渲染端按调色板解释。
+func TestColorSpaceChecksAcceptBinaryPalette(t *testing.T) {
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB" Profile="palette.bin"/></ColorSpaces>`,
+		map[string]string{"Doc_0/Res/palette.bin": "\xff\x00\x00\x00\xff\x00\x00\x00\xff\xff\xff\x00"})
+	report := validateColorSpace(t, archiveData)
+	if hasIssueCode(report, "semantic.color_profile_unusable") {
+		t.Fatalf("合法二进制调色板不应报不可用: %+v", report.Issues)
+	}
+}
+
+// TestColorProfileUsable 守住判定分支：能解析为 ICC 时一律可用；否则只有「不带
+// acsp 签名且长度是通道数整数倍」才算原始二进制调色板。损坏的 ICC 配置文件也可能
+// 恰好整除，那种文件被当成调色板会画出颜色完全不同的东西。
+func TestColorProfileUsable(t *testing.T) {
+	icc := make([]byte, 132) // 132 = 3×44，可被 RGB 通道数整除
+	copy(icc[36:40], "acsp")
+	cases := []struct {
+		name     string
+		data     []byte
+		channels int
+		iccOK    bool
+		want     bool
+	}{
+		{"ICC 可解析", make([]byte, 128), 3, true, true},
+		{"ICC 可解析且内容像调色板", make([]byte, 12), 3, true, true},
+		{"原始调色板 3 通道", []byte{255, 0, 0, 0, 255, 0}, 3, false, true},
+		{"原始调色板 1 通道", []byte{0, 128, 255}, 1, false, true},
+		{"原始调色板 4 通道", make([]byte, 16), 4, false, true},
+		{"损坏的 ICC 恰好整除", icc, 3, false, false},
+		{"无法整除", []byte{1, 2, 3, 4, 5}, 3, false, false},
+		{"空文件", nil, 3, false, false},
+	}
+	for _, tc := range cases {
+		if got := colorProfileUsable(tc.data, tc.channels, tc.iccOK); got != tc.want {
+			t.Errorf("%s: colorProfileUsable = %v，期望 %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestColorSpaceChecksRejectBrokenICCProfile 带 acsp 签名但解析不出转换器的文件
+// 确实不可用，必须报出来——这类文件的长度常能整除，静默当调色板会画出完全不同的
+// 颜色。
+func TestColorSpaceChecksRejectBrokenICCProfile(t *testing.T) {
+	icc := make([]byte, 128)
+	copy(icc[36:40], "acsp")
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB" Profile="p.icc"/></ColorSpaces>`,
+		map[string]string{"Doc_0/Res/p.icc": string(icc)})
+	report := validateColorSpace(t, archiveData)
+	if !hasIssueCode(report, "semantic.color_profile_unusable") {
+		t.Fatalf("解析不出的 ICC 配置文件应报告不可用: %+v", report.Issues)
+	}
+}
+
+// TestColorSpaceChecksRejectUnusableProfile 既不是 ICC、长度也无法被通道数整除时
+// 必须报出来：这种颜色空间取色会静默回退成黑色，报告里要能看出是「不支持」。
+func TestColorSpaceChecksRejectUnusableProfile(t *testing.T) {
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB" Profile="bad.bin"/></ColorSpaces>`,
+		map[string]string{"Doc_0/Res/bad.bin": "\x01\x02\x03\x04\x05"})
+	report := validateColorSpace(t, archiveData)
+	if !hasIssueCode(report, "semantic.color_profile_unusable") {
+		t.Fatalf("不可用的 Profile 应报告: %+v", report.Issues)
+	}
+}
+
+// TestColorSpaceChecksRejectDamagedICCProfile 损坏的 ICC 配置文件若长度恰好被通道
+// 数整除，也不能被当成调色板解释——那会画出一个颜色完全不同的东西。
+func TestColorSpaceChecksRejectDamagedICCProfile(t *testing.T) {
+	icc := make([]byte, 132) // 132 = 3×44，能被 RGB 通道数整除
+	copy(icc[36:40], "acsp")
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB" Profile="dmg.icc"/></ColorSpaces>`,
+		map[string]string{"Doc_0/Res/dmg.icc": string(icc)})
+	report := validateColorSpace(t, archiveData)
+	if !hasIssueCode(report, "semantic.color_profile_unusable") {
+		t.Fatalf("损坏的 ICC 配置文件应报告不可用而不是当调色板: %+v", report.Issues)
+	}
+}
+
+// TestColorSpaceChecksRejectEmptyProfile 空文件同样不可用。
+func TestColorSpaceChecksRejectEmptyProfile(t *testing.T) {
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB" Profile="empty.bin"/></ColorSpaces>`,
+		map[string]string{"Doc_0/Res/empty.bin": ""})
+	report := validateColorSpace(t, archiveData)
+	if !hasIssueCode(report, "semantic.color_profile_empty") {
+		t.Fatalf("空 Profile 应报告: %+v", report.Issues)
+	}
+}
+
+// TestColorSpaceChecksAcceptMissingInlineProfile 未声明 Profile 的颜色空间不应被
+// 报出问题，内联 Palette 与无 Profile 是两条正常路径。
+func TestColorSpaceChecksAcceptMissingInlineProfile(t *testing.T) {
+	archiveData := makeColorSpaceArchive(t,
+		`<ColorSpaces><ColorSpace ID="1" Type="RGB"/><ColorSpace ID="2" Type="RGB"><Palette><CV>255 0 0</CV></Palette></ColorSpace></ColorSpaces>`,
+		nil)
+	report := validateColorSpace(t, archiveData)
+	if hasIssueCode(report, "semantic.color_profile_unusable") || hasIssueCode(report, "semantic.color_profile_empty") {
+		t.Fatalf("未声明 Profile 的颜色空间不应报错: %+v", report.Issues)
+	}
+}
