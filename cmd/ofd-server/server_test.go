@@ -548,7 +548,7 @@ func TestConfigDefaults(t *testing.T) {
 		{"默认通知并发", cfg.NotifyWorkers, 4},
 		{"默认保留时长", cfg.Retention.Duration(), 7 * 24 * time.Hour},
 		{"默认 URL 超时", cfg.URLTimeout.Duration(), 30 * time.Second},
-		// 没配重试次数就不自动重试：转换大多��定性的。
+		// 没配重试次数就不自动重试：转换大多非幂等的。
 		{"默认重试次数", cfg.MaxJobAttempts, 0},
 	}
 	for _, tc := range checks {
