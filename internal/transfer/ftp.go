@@ -103,7 +103,7 @@ func (s *FTPSink) WithBaseDir(sub string) (*FTPSink, error) {
 	sub = cleanRemoteBase(sub)
 	// 必须在拼接之前拒绝：path.Join 会把 ".." 规整掉，
 	// path.Join("/root", "../etc") 得到 "/etc"——等到 Put 里再检查就晚了，
-	// 那个��候 BaseDir 里已经找不到 ".." 了。输出目录静默跑到配置范围之外，
+	// 那个时候 BaseDir 里已经找不到 ".." 了。输出目录静默跑到配置范围之外，
 	// 比直接报错糟得多。
 	for _, part := range strings.Split(sub, "/") {
 		if part == ".." {

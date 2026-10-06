@@ -11,7 +11,7 @@ import (
 
 // placeholderSeal 返回演示用的印章图片。
 //
-// 图片由 internal/sealimg 现场渲染：底部印有「非正式印章」，顶��是项目来源，
+// 图片由 internal/sealimg 现场渲染：底部印有「非正式印章」，顶部是项目来源，
 // 中间是五角星。它不是有效签章，只让 SignedValue.dat 结构和页面渲染效果完整——
 // 真实印章图片来自单位备案，证书来自 CA。
 //

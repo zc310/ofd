@@ -450,7 +450,7 @@ func TestBackoffGrowsAndCaps(t *testing.T) {
 	for attempt := 1; attempt <= 20; attempt++ {
 		got := r.backoff(attempt)
 		if got <= 0 {
-			t.Fatalf("第 %d 次退避时间应���正，实际 %v", attempt, got)
+			t.Fatalf("第 %d 次退避时间应为正，实际 %v", attempt, got)
 		}
 		if previous != 0 && got < previous {
 			t.Errorf("退避不应缩短: 第 %d 次 %v < 上次 %v", attempt, got, previous)
