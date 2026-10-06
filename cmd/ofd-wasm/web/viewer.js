@@ -622,12 +622,14 @@ let sidebarScroll = {};
 let sidebarScrollPersistTimer;
 const sidebarScrollPanels = {};
 const sidebarWidthStorageKey = 'ofd-sidebar-width';
-// 默认 320px：侧栏页签是 6 个 flex: 1 1 0 平分宽度（缩略图、大纲、书签、更多、
-// 搜索、更多在下拉里），页签区左右 padding 共 20px、按钮之间 5 个 3px gap，
-// 按钮自身还要让出 6px padding 与 1px×2 边框，因此每个页签的文字净宽约为
-// (宽度 - 35) / 6 - 8。320px 时约 39.5px，"缩略图"三个字（12px 字号约 36px）
-// 才能完整显示并留一点余量；6 个页签时 280px 只剩 32.8px，会被截成"缩略…"。
-const defaultSidebarWidth = 320;
+// 默认 270px：侧栏页签是 5 个 flex: 1 1 0 平分宽度（页面、大纲、书签、搜索、
+// 更多），页签区左右 padding 共 20px、按钮之间 4 个 3px gap，按钮自身还要让出
+// 6px padding 与 1px×2 边框，因此每个页签的文字净宽约为 (宽度 - 32) / 5 - 8。
+// 270px 时约 39.6px，而页签文字都是两字（12px 字号约 24px），余量约 15px，
+// 不会被 text-overflow 截断。此前的"缩略图"是唯一的三字页签（约 36px），
+// 与更窄的侧栏不匹配，已改为"页面"两字。用户可用右侧拖拽条自由调整，
+// 该值记在 localStorage。
+const defaultSidebarWidth = 270;
 let sidebarWidth = (() => {
   try {
     const stored = localStorage.getItem(sidebarWidthStorageKey);
@@ -677,6 +679,10 @@ const documentBackgroundThemes = {
   'adw-solarized': '#fdf6e3',
   'Peninsula-dark': '#20252b',
   Plano2: '#eef2f5',
+  'mist-blue': '#edf5fc',
+  'mint-green': '#edf8f1',
+  'blush-pink': '#fff1f3',
+  lavender: '#f5f0fc',
 };
 let documentBackgroundMode = 'white';
 let documentBackgroundCustomColor = '#ffffff';
