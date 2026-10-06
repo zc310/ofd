@@ -218,19 +218,80 @@ func TestRenderEnglishTextNeedsNoCJKFont(t *testing.T) {
 }
 
 // TestRenderFallsBackToEnglishWhenNoCJKFont 中文文案在中文字体缺失时退回英文
-// 文案而不是整体报错。这里显式点名一个纯拉丁字体触发失败，再用自动选字体验证
-// 回退路径本身可用。
+// 文案而不是整体报错。
+//
+// 候选列表被换成「几个装不上的中文字体名 + 一个可用的纯拉丁字体」，精确模拟 CI
+// runner：mesa 依赖链只带进日文与 Arphic 字体，列表里的中文字体一个都匹配不到，
+// 只有 DejaVu 之类可加载。指望运行环境真的缺中文字体不行——CI 上恰好缺字体只能
+// 证明「那边会红」，换台装了思源黑体的机器就变成永远跳过，证明不了回退分支本身。
 func TestRenderFallsBackToEnglishWhenNoCJKFont(t *testing.T) {
+	latin := latinOnlyFont(t)
+	if latin == "" {
+		t.Skip("系统没有可用的纯拉丁字体，无法模拟缺中文字体的环境")
+	}
+	original := fontCandidates
+	defer func() { fontCandidates = original }()
+	fontCandidates = []string{
+		"Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "SimHei",
+		latin,
+	}
+
+	// 中文文案在缺中文字体时必须回退，而不是报错。
 	faces, text, err := resolveFaces(Options{Language: LanguageChinese}, 256)
 	if err != nil {
-		// 系统确实没有中文字体：应当已经回退到英文文案。
-		if !text.needsCJK() {
-			t.Fatalf("缺中文字体时文案仍是中文，未回退: %+v", text)
-		}
-		return
+		t.Fatalf("中文文案应回退到英文文案而不是报错: %v", err)
+	}
+	if text != textEnglish {
+		t.Fatalf("回退后的文案 = %+v，期望英文文案", text)
+	}
+	if text.needsCJK() {
+		t.Fatalf("回退后的文案仍被判定为需要中文字形: %+v", text)
 	}
 	if faces.main == nil || faces.top == nil || faces.center == nil {
-		t.Fatal("resolveFaces 返回了空字体")
+		t.Fatal("回退后三档字体未取齐")
+	}
+
+	// 回退出的英文图必须真的画了字，不能是空图或只有外框。
+	img, err := Render(Options{Width: 256, Height: 256, Language: LanguageChinese})
+	if err != nil {
+		t.Fatalf("回退后渲染失败: %v", err)
+	}
+	if inkInRect(img, 128-40, 40, 128+40, 100) == 0 {
+		t.Error("回退后的英文顶部文案所在窗口没有墨迹")
+	}
+}
+
+// TestFontCandidatesCoverLatinForEnglishText 守住英文文案的兜底字体：候选列表
+// 末尾必须留有纯拉丁字体，否则在没有中文字体的系统上（CI runner 就是）英文
+// 回退找不到任何字体，演示与测试直接报错。
+func TestFontCandidatesCoverLatinForEnglishText(t *testing.T) {
+	latin := latinOnlyFont(t)
+	if latin == "" {
+		t.Skip("系统没有可用的纯拉丁字体，跳过")
+	}
+	found := false
+	for _, candidate := range fontCandidates {
+		if candidate == latin {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("候选列表缺少纯拉丁字体 %q，英文文案在无中文字体的系统上无法出图", latin)
+	}
+}
+
+// TestRenderFailsWhenNoUsableFontAtAll 连拉丁字体都没有时必须报错：这时候确实
+// 画不出字，返回一张空图比报错更难排查。
+func TestRenderFailsWhenNoUsableFontAtAll(t *testing.T) {
+	original := fontCandidates
+	defer func() { fontCandidates = original }()
+	fontCandidates = []string{"不存在的字体名 SealimgFallbackTest"}
+
+	for _, language := range []Language{LanguageChinese, LanguageEnglish} {
+		if _, err := Render(Options{Width: 128, Height: 128, Language: language}); err == nil {
+			t.Errorf("Language=%d 没有任何可用字体时应报错", language)
+		}
 	}
 }
 
