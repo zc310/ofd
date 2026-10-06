@@ -204,6 +204,111 @@ go get github.com/zc310/ofd@latest
 
 该命令用于将本项目作为 Go 库引入，不会安装桌面阅读器或命令行程序。桌面版和命令行程序请参考上面的构建说明及后续的打包章节。
 
+本项目使用了 `github.com/tdewolff/font` 和 `github.com/tdewolff/canvas` 的修改版本。Go 不会继承依赖的 `replace` 指令，因此**必须在自己的 `go.mod` 中再声明一次**，否则会编译失败：
+
+```bash
+go mod edit -replace github.com/tdewolff/font=github.com/zc310/font@v0.0.0-20260928001413-b20a21f7a3b5
+go mod edit -replace github.com/tdewolff/canvas=github.com/zc310/canvas@v0.0.0-20261004015143-31a1cddb8a93
+go mod tidy
+```
+
+等价的 `go.mod` 片段：
+
+```gomod
+replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261004015143-31a1cddb8a93
+```
+
+漏掉 `canvas` 这条会在编译时报 `cg.Extend undefined (type *canvas.LinearGradient has no field or method Extend)`——渐变的 `Extend` 属性需要修改版 `canvas` 的接口。声明后运行 `go mod tidy` 让版本收敛，再执行 `go build`。
+
+完整可运行的调用方式见 [`ofd-viewer`](https://github.com/zc310/ofd-viewer)，该仓库就是一个基于本库的桌面阅读器。
+
+#### 转换与渲染示例
+
+转换入口的第一个参数是取消信号，命令行工具一般传 `context.Background()`，长任务应传入带超时的 `context`。以 OFD 转 PDF 为例：
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+
+	"github.com/zc310/ofd/pkg/converter"
+)
+
+func main() {
+	input, err := os.Open("input.ofd")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer input.Close()
+
+	output, err := os.Create("output.pdf")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer output.Close()
+
+	if err := converter.PDF(context.Background(), input, output); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+`input` 可以是文件路径、`*os.File` 或字节切片；`converter.Image`、`converter.Text`、`converter.Markdown` 等入口用法一致，并支持 `converter.Page(n)`、`converter.DPI(dpi)` 等选项。完整示例见 [`pkg/converter/examples_test.go`](pkg/converter/examples_test.go)。
+
+如果需要在程序里内嵌一个阅读器（按需渲染页面、取文字、导出），可以直接使用 `pkg/webreader`——桌面版 [`ofd-viewer`](https://github.com/zc310/ofd-viewer) 和浏览器版 `ofd-wasm` 都基于同一套接口实现：
+
+```go
+package main
+
+import (
+	"fmt"
+	"image/color"
+	"log"
+	"os"
+
+	"github.com/zc310/ofd/pkg/webreader"
+)
+
+func main() {
+	data, err := os.ReadFile("input.ofd")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	reader, err := webreader.Open(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer reader.Close()
+
+	fmt.Println("总页数：", reader.PageCount())
+
+	// 按需渲染单页为 PNG 字节流，交给界面显示。
+	png, err := reader.RenderPage(0, webreader.RenderOptions{
+		DPI:        144,
+		Background: color.White,
+		Format:     webreader.RenderPNG,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = png
+
+	// 页面文字可用于搜索、复制；RenderPDFTo 可导出选中的页面。
+	runs, err := reader.Text(0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("首页文字段数：", len(runs))
+}
+```
+
+`webreader.Open` 打开文档后必须调用 `Close` 释放资源。页面图像与文字都按页缓存，长文档建议在 `Open` 时通过 `webreader.OpenOptions` 调整缓存容量；渲染页建议显式指定 `DPI`（1~600），否则使用默认值。
+
 <details>
 <summary>创建 OFD</summary>
 
