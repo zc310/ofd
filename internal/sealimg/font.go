@@ -19,6 +19,13 @@ var fontCandidates = []string{
 	"WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Droid Sans Fallback",
 	"Microsoft YaHei", "微软雅黑", "SimHei", "黑体",
 	"PingFang SC", "Hiragino Sans GB", "STHeiti", "Heiti SC",
+	// 纯拉丁兜底。只有英文文案会用到它们：英文文案全 ASCII，任何常规拉丁字体
+	// 都能满足，而上面那些中文字体在英文系统上一个都装不上——CI runner 就是
+	// 这种情况，mesa 依赖链只带进日文与 Arphic 字体，列表里一个都匹配不到。
+	// 放在最后是刻意的：中文文案遇到它们会被 supportsText 挡掉，中文系统选中的
+	// 字体因此不受影响。
+	"DejaVu Sans", "Liberation Sans", "Noto Sans", "FreeSans",
+	"Helvetica", "Arial", "DejaVu Serif", "Liberation Serif",
 }
 
 // pointsPerUnit 是 canvas 字体接口的换算系数：Face 的字号单位是磅，而本包的
