@@ -33,12 +33,79 @@ const (
 	ShapeEllipse
 )
 
-// 固定文案。改动会让演示产物和回归基线一起变化，确有必要时再改。
-const (
-	TopText    = "OFD 测试专用章"
-	BottomText = "非正式印章"
-	CenterText = "zc310/ofd"
+// sealText 是一套印章文案。
+type sealText struct {
+	top    string
+	bottom string
+	center string
+}
+
+// needsCJK 报告这套文案是否需要中文字形。
+func (t sealText) needsCJK() bool {
+	for _, r := range t.top + t.bottom + t.center {
+		if r > 0x2E80 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t sealText) probe() string { return t.top + t.bottom + t.center }
+
+// 两套固定文案。改动会让演示产物和回归基线一起变化，确有必要时再改。
+//
+// 英文文案不是中文的翻译版对照，而是给「系统没有中文字体」的环境准备的等价
+// 替代：中文系统缺中文字体说明安装不完整，英文系统缺中文字体却很常见（最小
+// 容器、只装了 Latin 子集的 CI 镜像）。这时若仍强求中文，Render 会直接报错，
+// 演示命令跑不起来、渲染测试整片跳过，等于这条链路在英文环境完全没被验证。
+// 两套文案承担同样的声明：顶部标明用途，底部声明不是真章，中间标识来源。
+var (
+	textChinese = sealText{
+		top:    "OFD 测试专用章",
+		bottom: "非正式印章",
+		center: "zc310/ofd",
+	}
+	textEnglish = sealText{
+		top:    "OFD TEST SEAL ONLY",
+		bottom: "NOT A VALID SEAL",
+		center: "zc310/ofd",
+	}
 )
+
+// 默认文案是中文，保留导出名供调用方与测试直接引用。
+var (
+	TopText    = textChinese.top
+	BottomText = textChinese.bottom
+	CenterText = textChinese.center
+)
+
+// Language 是印章文案语言。
+type Language int
+
+const (
+	// LanguageAuto 按系统语言环境选择：环境变量指示英文时用英文文案，
+	// 其余（含未设置、POSIX）都用中文文案。
+	LanguageAuto Language = iota
+	// LanguageChinese 强制中文文案。
+	LanguageChinese
+	// LanguageEnglish 强制英文文案，只要求拉丁字形。
+	LanguageEnglish
+)
+
+// resolveText 按选项与系统语言环境确定文案。
+func resolveText(language Language) sealText {
+	switch language {
+	case LanguageChinese:
+		return textChinese
+	case LanguageEnglish:
+		return textEnglish
+	default:
+		if systemLanguage() {
+			return textEnglish
+		}
+		return textChinese
+	}
+}
 
 const (
 	// defaultSize 是缺省输出像素。
@@ -71,6 +138,8 @@ type Options struct {
 	FontName string
 	// Shape 是外框形状，默认圆形。
 	Shape Shape
+	// Language 是文案语言，默认按系统语言环境自动选择。
+	Language Language
 }
 
 func (o Options) size() (width, height int) {
@@ -89,22 +158,12 @@ func (o Options) size() (width, height int) {
 
 // Render 渲染印章图片，输出透明底的位图。
 //
-// 需要系统安装覆盖中文的字体；找不到时返回错误并提示用 Options.FontName 指定，
-// 不静默退回缺字形的字体——底字是中文，缺字形出来的图 unusable。
+// 中文文案需要系统安装覆盖中文的字体；找不到时自动退回英文文案重试，只要求
+// 拉丁字形，让没有中文字体的英文系统也能出图。英文文案同样缺字形时（既没有
+// 中文字体也没有任何拉丁字体）才返回错误并提示用 Options.FontName 指定。
 func Render(opts Options) (*image.RGBA, error) {
 	width, height := opts.size()
-	face, err := loadFace(opts.FontName, float64(min(width, height))*textSizeRatio)
-	if err != nil {
-		return nil, err
-	}
-	topFace := face
-	if opts.Shape == ShapeEllipse {
-		topFace, err = loadFace(opts.FontName, float64(min(width, height))*ellipseTopTextSizeRatio)
-		if err != nil {
-			return nil, err
-		}
-	}
-	centerFace, err := loadFace(opts.FontName, float64(min(width, height))*centerTextSizeRatio)
+	faces, text, err := resolveFaces(opts, min(width, height))
 	if err != nil {
 		return nil, err
 	}
@@ -116,15 +175,15 @@ func Render(opts Options) (*image.RGBA, error) {
 	layout := newSealLayout(canvasWidth, canvasHeight)
 	pen.drawBorders(layout)
 	pen.drawStar(layout)
-	pen.drawCenterText(centerFace, layout, CenterText)
+	pen.drawCenterText(faces.center, layout, text.center)
 	// 顶字从左往右排（dir=-1）；底字保持左往右排并使用正常字形。
 	topLayout := topTextLayout(layout, opts.Shape)
 	topSpacingRatio := spacingRatio
 	if opts.Shape == ShapeEllipse {
 		topSpacingRatio = ellipseTopSpacingRatio
 	}
-	pen.drawArcText(topFace, topLayout, TopText, arcTop, -1, false, topSpacingRatio)
-	pen.drawArcText(face, layout, BottomText, arcBottom, 1, false, spacingRatio)
+	pen.drawArcText(faces.top, topLayout, text.top, arcTop, -1, false, topSpacingRatio)
+	pen.drawArcText(faces.main, layout, text.bottom, arcBottom, 1, false, spacingRatio)
 	// 超采样后缩回目标尺寸。CatmullRom 是双三次卷积，比双线性更锐利，
 	// 弧形文字的斜边受益最明显。
 	small := image.NewRGBA(image.Rect(0, 0, width, height))
