@@ -8,13 +8,17 @@ package sign
 
 import (
 	"bytes"
+	"crypto/md5"
+	"crypto/sha1"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +60,14 @@ type Options struct {
 	// Stamp 控制是否在 Signature.xml 写入 StampAnnot，让阅读器把印章图片绘制到页面上。
 	// 为 nil 时不写入 StampAnnot（只验签，不显示印章）。
 	Stamp *StampOptions
+	// StampSeam 在同一文档体的每个页面右边缘写入一条同一印章的裁片。
+	// 所有标注引用同一份 Seal，按页面顺序拼回完整骑缝章。
+	StampSeam *StampSeamOptions
+	// Seal 指定独立的电子印章文件（DER 编码的 SES_Seal，如 .esl）。提供时
+	// Signature.xml 会写入 <Seal BaseLoc="Seal.esl"/> 并把该文件一起写入包，
+	// 阅读器优先从独立印章文件提取印章图。SignedValue.dat 仍内嵌印章，
+	// 作为阅读器未识别 Seal 元素时的回退路径。
+	Seal string
 	// References 控制 SignedInfo/References 覆盖的文件集合；为 nil 时签名文档体目录下的全部文件（不含 OFD.xml）。
 	References *ReferenceOptions
 	// Environment 是传递给外部命令的额外环境变量，格式为 KEY=VALUE。
@@ -79,8 +91,32 @@ type StampOptions struct {
 	Boundary string
 }
 
+// StampSeamOptions 描述跨整个文档体页面序列的骑缝章。
+// 每页按自身 Area/PhysicalBox 定位，缺失时回退文档公共 PageArea。
+type StampSeamOptions struct {
+	// Edge 是骑缝章贴靠的页面边缘，支持 "left"、"right"、"top" 与 "bottom"；
+	// 空值默认为 "right"。
+	Edge string
+	// Pages 选择参与分片的页码，支持 "all"、"odd"、"even"；空值默认为 "all"。
+	Pages string
+	// Pieces 是印章拆分份数；零值按参与分片的页数计算，非零时必须与参与页数相等。
+	Pieces int
+	// GroupPages 是每组骑缝章覆盖的页数；零值表示所有参与页面共用一枚章。
+	GroupPages int
+	// Size 是印章边长，单位为毫米；零值使用默认值。
+	Size float64
+	// MinStrip 是每页裁片的最小宽度，单位为毫米；零值使用 2mm。
+	MinStrip float64
+	// X 是上下边缘时印章左边坐标，单位为毫米；负值按页面水平居中。
+	X float64
+	// Y 是印章底边坐标，单位为毫米；负值按页面垂直居中，零值可贴页面底部。
+	Y float64
+}
+
 // defaultStampSize 是默认印章边长（毫米）。
 const defaultStampSize = 40.0
+
+const defaultMinSeamStrip = 2.0
 
 type entry struct {
 	name   string
@@ -158,12 +194,41 @@ func Sign(input any, w io.Writer, options Options) error {
 		}
 
 		baseName := "Signature_" + id + ".xml"
-		var stamp *stampAnnot
+		var stamps []*stampAnnot
+		if options.Stamp != nil && options.StampSeam != nil {
+			return errors.New("Stamp 与 StampSeam 不能同时使用")
+		}
 		if options.Stamp != nil {
-			stamp, err = resolveStamp(*options.Stamp, docDir, entries)
+			stamp, stampErr := resolveStamp(*options.Stamp, docDir, entries)
+			if stampErr != nil {
+				return stampErr
+			}
+			stamps = append(stamps, stamp)
+		}
+		if options.StampSeam != nil {
+			stamps, err = resolveStampSeams(*options.StampSeam, docDir, entries)
 			if err != nil {
 				return err
 			}
+		}
+		var sealBaseLoc string
+		if options.Seal != "" {
+			sealData, err := os.ReadFile(options.Seal)
+			if err != nil {
+				return fmt.Errorf("读取电子印章文件失败: %w", err)
+			}
+			sealBaseLoc = "Seal.esl"
+			references = append(references, sealBaseLoc)
+			sort.Strings(references)
+			sealEntryName := path.Join(signatureDir, sealBaseLoc)
+			added = append(added, entry{
+				name:   sealEntryName,
+				data:   sealData,
+				method: zip.Deflate,
+			})
+			// index 的数据在 added 之前构建，新打包进来的 Seal.esl 必须手动登记，
+			// 否则 SignedInfo/References 算摘要时在 files 里找不到它。
+			index[sealEntryName] = sealData
 		}
 		signatureXML, err := buildSignatureXML(signatureXMLInput{
 			id:              id,
@@ -177,8 +242,9 @@ func Sign(input any, w io.Writer, options Options) error {
 			references:      references,
 			files:           index,
 			signatureBase:   signatureDir,
-			stamp:           stamp,
+			stamps:          stamps,
 			stampID:         stampID,
+			sealBaseLoc:     sealBaseLoc,
 		})
 		if err != nil {
 			return err
@@ -224,14 +290,16 @@ type signatureXMLInput struct {
 	references      []string
 	files           map[string][]byte
 	signatureBase   string
-	stamp           *stampAnnot
+	stamps          []*stampAnnot
 	stampID         string
+	sealBaseLoc     string
 }
 
 // stampAnnot 是写入 Signature.xml 的 StampAnnot 属性值。
 type stampAnnot struct {
 	pageRef  string
 	boundary string
+	clip     string
 }
 
 func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
@@ -258,16 +326,34 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("签名引用目标不存在: %s", target)
 		}
-		digest := sm3.Sum(data)
+		digest, err := signatureDigest(input.checkMethod, data)
+		if err != nil {
+			return nil, err
+		}
 		element := references.CreateElement("Reference")
 		element.CreateAttr("FileRef", reference)
-		element.CreateElement("CheckValue").SetText(base64.StdEncoding.EncodeToString(digest[:]))
+		element.CreateElement("CheckValue").SetText(base64.StdEncoding.EncodeToString(digest))
 	}
-	if input.stamp != nil {
+	for index, item := range input.stamps {
 		stamp := info.CreateElement("StampAnnot")
-		stamp.CreateAttr("ID", input.stampID)
-		stamp.CreateAttr("PageRef", input.stamp.pageRef)
-		stamp.CreateAttr("Boundary", input.stamp.boundary)
+		stampID := input.stampID
+		if len(input.stamps) > 1 {
+			stampID = fmt.Sprintf("%s-stamp-%d", input.stampID, index+1)
+		}
+		stamp.CreateAttr("ID", stampID)
+		stamp.CreateAttr("PageRef", item.pageRef)
+		stamp.CreateAttr("Boundary", item.boundary)
+		if item.clip != "" {
+			stamp.CreateAttr("Clip", item.clip)
+		}
+	}
+	if input.sealBaseLoc != "" {
+		// Seal 的 BaseLoc 是子元素而不是属性：真实产物（如 ofdrw 的样例）写的是
+		// <Seal><BaseLoc>/Doc_0/Signs/Sign_0/Seal.esl</BaseLoc></Seal>。
+		// 写成属性时 models.Seal.BaseLoc 为空，parser 会把空路径解析成签名目录
+		// 本身并报"打开文件失败: Doc_0/Signatures"。
+		seal := info.CreateElement("Seal")
+		seal.CreateElement("BaseLoc").SetText(input.sealBaseLoc)
 	}
 	root.CreateElement("SignedValue").SetText(input.signedValue)
 	out, err := doc.WriteToBytes()
@@ -275,6 +361,23 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 		return nil, fmt.Errorf("生成 Signature.xml 失败: %w", err)
 	}
 	return out, nil
+}
+
+func signatureDigest(method string, data []byte) ([]byte, error) {
+	var newHash func() hash.Hash
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "MD5":
+		newHash = md5.New
+	case "SHA1":
+		newHash = sha1.New
+	case "SM3", "1.2.156.10197.1.401":
+		newHash = sm3.New
+	default:
+		return nil, fmt.Errorf("签名摘要算法无效: %q", method)
+	}
+	digest := newHash()
+	_, _ = digest.Write(data)
+	return digest.Sum(nil), nil
 }
 
 func buildSignaturesXML(id, baseName string) []byte {

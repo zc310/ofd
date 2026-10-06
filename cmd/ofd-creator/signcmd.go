@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
+	"strings"
 	"sync"
 
 	"github.com/spf13/pflag"
@@ -74,6 +76,22 @@ func signStamp(opts *signFlags) *sign.StampOptions {
 	return &sign.StampOptions{PageRef: opts.signStampPage, Boundary: opts.signStampBoundary}
 }
 
+func signStampSeam(opts *signFlags) *sign.StampSeamOptions {
+	if !opts.signStampSeams {
+		return nil
+	}
+	return &sign.StampSeamOptions{
+		Edge:       opts.signStampSeamEdge,
+		Pages:      opts.signStampSeamPages,
+		Pieces:     opts.signStampSeamPieces,
+		GroupPages: opts.signStampSeamGroupPages,
+		Size:       opts.signStampSeamSize,
+		MinStrip:   opts.signStampSeamMinStrip,
+		X:          opts.signStampSeamX,
+		Y:          opts.signStampSeamY,
+	}
+}
+
 func signReferences(opts *signFlags) *sign.ReferenceOptions {
 	if len(opts.signInclude) == 0 && len(opts.signExclude) == 0 && !opts.signRoot {
 		return nil
@@ -92,6 +110,8 @@ func buildSignOptions(opts *signFlags, deterministic bool) sign.Options {
 		CheckMethod:     opts.signCheckMethod,
 		Deterministic:   deterministic,
 		Stamp:           signStamp(opts),
+		StampSeam:       signStampSeam(opts),
+		Seal:            opts.signSeal,
 		References:      signReferences(opts),
 	}
 }
@@ -107,6 +127,16 @@ func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
 	flags.BoolVar(&opts.signStamp, "sign-stamp", false, "在 Signature.xml 写入 StampAnnot，让阅读器绘制印章图片")
 	flags.StringVar(&opts.signStampPage, "sign-stamp-page", "", "签章页面 ID，默认文档体首页")
 	flags.StringVar(&opts.signStampBoundary, "sign-stamp-boundary", "", "签章位置 \"x y width height\"（毫米），默认首页右下角")
+	flags.BoolVar(&opts.signStampSeams, "sign-stamp-seams", false, "在同一文档体各页面边缘写入骑缝章（默认右缘，见 --sign-stamp-seam-edge）")
+	flags.StringVar(&opts.signStampSeamEdge, "sign-stamp-seam-edge", "right", "骑缝章贴靠边缘：left、right、top、bottom 或 all")
+	flags.StringVar(&opts.signStampSeamPages, "sign-stamp-seam-pages", "all", "参与骑缝分片的页面：all、odd、even，或 1,3,5-7、11-、-10 等页码")
+	flags.IntVar(&opts.signStampSeamPieces, "sign-stamp-seam-pieces", 0, "骑缝章拆分份数；0 按参与页面数计算")
+	flags.IntVar(&opts.signStampSeamGroupPages, "sign-stamp-seam-group-pages", 0, "每组骑缝章覆盖页数；0 表示所有参与页共用一枚章")
+	flags.Float64Var(&opts.signStampSeamSize, "sign-stamp-seam-size", 40, "骑缝章边长（毫米），默认 40")
+	flags.Float64Var(&opts.signStampSeamMinStrip, "sign-stamp-seam-min-strip", 2, "每页骑缝条带最小宽度（毫米），默认 2；建议 4 或 8")
+	flags.Float64Var(&opts.signStampSeamX, "sign-stamp-seam-x", -1, "上下边缘骑缝章左边 X 坐标（毫米），负值表示水平居中")
+	flags.Float64Var(&opts.signStampSeamY, "sign-stamp-seam-y", -1, "骑缝章底边 Y 坐标（毫米），负值表示垂直居中")
+	flags.StringVar(&opts.signSeal, "sign-seal", "", "独立电子印章文件（DER 编码的 .esl），打入签名目录并在 Signature.xml 中引用")
 	flags.StringArrayVar(&opts.signInclude, "sign-include", nil, "签名引用白名单 glob（相对文档体目录，可重复）")
 	flags.StringArrayVar(&opts.signExclude, "sign-exclude", nil, "签名引用排除 glob（相对文档体目录，可重复）")
 	flags.BoolVar(&opts.signRoot, "sign-root", false, "把 OFD.xml 纳入签名引用")
@@ -114,17 +144,65 @@ func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
 
 // signFlags 是一组外部签名选项，merge 与 replace 共用。
 type signFlags struct {
-	signCmd             string
-	signID              string
-	signProvider        string
-	signProviderVersion string
-	signCompany         string
-	signMethod          string
-	signCheckMethod     string
-	signStamp           bool
-	signStampPage       string
-	signStampBoundary   string
-	signInclude         []string
-	signExclude         []string
-	signRoot            bool
+	signCmd                 string
+	signID                  string
+	signProvider            string
+	signProviderVersion     string
+	signCompany             string
+	signMethod              string
+	signCheckMethod         string
+	signStamp               bool
+	signStampPage           string
+	signStampBoundary       string
+	signStampSeams          bool
+	signStampSeamEdge       string
+	signStampSeamPages      string
+	signStampSeamPieces     int
+	signStampSeamGroupPages int
+	signStampSeamSize       float64
+	signStampSeamMinStrip   float64
+	signStampSeamX          float64
+	signStampSeamY          float64
+	signSeal                string
+	signInclude             []string
+	signExclude             []string
+	signRoot                bool
+}
+
+func validateSignFlags(opts *signFlags) error {
+	requested := opts.signStamp || opts.signStampSeams || strings.TrimSpace(opts.signSeal) != ""
+	if requested && strings.TrimSpace(opts.signCmd) == "" {
+		return fmt.Errorf("指定签章参数时必须同时提供 --sign-cmd")
+	}
+	if opts.signStamp && opts.signStampSeams {
+		return fmt.Errorf("--sign-stamp 与 --sign-stamp-seams 不能同时使用")
+	}
+	if opts.signStampSeams {
+		for _, value := range []struct {
+			name string
+			v    float64
+		}{
+			{"--sign-stamp-seam-size", opts.signStampSeamSize},
+			{"--sign-stamp-seam-min-strip", opts.signStampSeamMinStrip},
+			{"--sign-stamp-seam-x", opts.signStampSeamX},
+			{"--sign-stamp-seam-y", opts.signStampSeamY},
+		} {
+			if math.IsNaN(value.v) || math.IsInf(value.v, 0) {
+				return fmt.Errorf("%s 必须是有限数值，实际 %v", value.name, value.v)
+			}
+		}
+		if opts.signStampSeamSize < 0 {
+			return fmt.Errorf("--sign-stamp-seam-size 不能为负数，实际 %g", opts.signStampSeamSize)
+		}
+		if opts.signStampSeamMinStrip < 0 {
+			return fmt.Errorf("--sign-stamp-seam-min-strip 不能为负数，实际 %g", opts.signStampSeamMinStrip)
+		}
+		if opts.signStampSeamGroupPages < 0 {
+			return fmt.Errorf("--sign-stamp-seam-group-pages 不能为负数，实际 %d", opts.signStampSeamGroupPages)
+		}
+		if opts.signStampSeamPieces < 0 {
+			return fmt.Errorf("--sign-stamp-seam-pieces 不能为负数，实际 %d", opts.signStampSeamPieces)
+		}
+	}
+	return nil
 }
