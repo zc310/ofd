@@ -143,16 +143,20 @@ func parseChannelValue(text string) (int, bool) {
 
 // colorSpaceComponents8 返回颜色在自身颜色空间下的分量，已按 BitsPerComponent
 // 归一化到 0-255。Value 优先，否则按 Index 从调色板取分量。
+//
+// 分量个数与颜色空间不匹配属未定义行为，处理方式是「缺的补 0、多余的忽略」：
+// 缺通道取 0 等价于该通道按默认颜色取值，多余通道直接丢弃。两种都是文档可以
+// 观察到的确定行为，总好过因为一个坏颜色让整份文档无法转换。
 func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace) ([]uint8, bool) {
 	channels := colorSpaceChannels(space)
 	bits := spaceBitsPerComponent(space)
 	if source.Value != nil {
 		if values, count, ok := source.Value.Components(); ok {
-			if count < channels {
-				return nil, false
-			}
 			result := make([]uint8, channels)
 			for i := 0; i < channels; i++ {
+				if i >= count {
+					break // 缺通道：留 0，即默认颜色
+				}
 				result[i] = scaleComponent(values[i], bits)
 			}
 			return result, true

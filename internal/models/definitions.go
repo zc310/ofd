@@ -419,6 +419,12 @@ func (c *Color) parseInt(s string) (int, error) {
 }
 
 // 解析字符串 "156 82 35"、"156 82 35 255" 或 16 位分量 "0 0 0 65535"
+//
+// 分量个数不做校验：个数由颜色空间决定（GRAY 1 个、RGB 3 个、CMYK 4 个），而
+// Color 解析属性时拿不到颜色空间。个数与颜色空间不匹配属未定义行为，实测有文档
+// 会写出 4 分量 RGB、2 分量 GRAY、5 分量 CMYK 这类值；此处若报错，异常会一路
+// 冒泡到整页解析失败，一个坏颜色就能让整份文档无法转换。改为照原样保留分量个数，
+// 由渲染端拿到颜色空间后决定「缺的补 0、多余的忽略」。
 func (c *Color) parse(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -429,46 +435,51 @@ func (c *Color) parse(s string) error {
 	}
 
 	parts := strings.Fields(s)
-	// 颜色分量数量由颜色空间决定：GRAY 1 个、RGB 3 个、CMYK 4 个。
-	if len(parts) != 1 && len(parts) != 3 && len(parts) != 4 {
-		return fmt.Errorf("无效的颜色格式: %s，预期 1、3 或 4 个分量", s)
-	}
-
 	parsed := [4]int{}
-	highest := 0
-	for i := range parts {
-		val, err := c.parseInt(parts[i])
+	stored := 0
+	for i, part := range parts {
+		val, err := c.parseInt(part)
 		if err != nil {
-			return fmt.Errorf("颜色中的数字 '%s' 无效: %v", parts[i], err)
+			// 只有无法解释成整数才算解析失败。越界值与负值都不是错误：GB/T 33190
+			// 表 27 规定「当颜色通道的取值超出了相应的区间，则按照默认颜色来
+			// 处理」，实测文档里确实存在 -1 与 65536 这类值。报错会让异常冒泡到
+			// 整页解析失败，一个坏颜色就能让整份文档无法转换。
+			return fmt.Errorf("颜色中的数字 '%s' 无效: %v", part, err)
 		}
-		if val < 0 || val > 65535 {
-			return fmt.Errorf("颜色值超出范围 0-65535: %d", val)
-		}
-		parsed[i] = val
-		if val > highest {
-			highest = val
+		// 只保留前 4 个分量：任何颜色空间最多用 4 个，多余的按未定义行为忽略。
+		// 循环必须按 parsed 的长度截断，否则 Value="255 0 0 0 0" 这类 5 分量
+		// 输入会越界写 panic。
+		if i < len(parsed) {
+			parsed[i] = val
+			stored++
 		}
 	}
 
 	values := [4]uint8{0, 0, 0, 255}
-	if highest > 255 {
-		// 分量使用 16 位表示（如 Value="0 0 0 65535"）：保留高位转到 8 位，
-		// 与 pdf2ofd/render 的颜色分量转换方式一致。
-		for i := range parts {
-			values[i] = uint8(uint16(parsed[i]) >> 8)
-		}
-	} else {
-		for i := range parts {
-			values[i] = uint8(parsed[i])
+	// 这是没有颜色空间时的回退表示。拿不到 BitsPerComponent，只能按各通道自身的
+	// 量级归一化：<=255 原样保留，<=65535 视为 16 位并右移 8 位，再大则任何合法
+	// BPC 都装不下（表 25 的 BPC 上限是 16），按表 27 取默认颜色 0。
+	//
+	// 不再用「出现大于 255 的分量就整组按 16 位解释」的组判据：它会让
+	// "65536 0 0 65535" 的第 4 个分量落到 8 位区间外而取 0，alpha 变全透明，
+	// 填充整块消失——这比颜色略有偏差严重得多。真正按位深归一化的是渲染端的
+	// colorSpaceComponents8。
+	for i := 0; i < stored; i++ {
+		switch value := parsed[i]; {
+		case value < 0:
+			values[i] = 0
+		case value <= 255:
+			values[i] = uint8(value)
+		case value <= 0xFFFF:
+			values[i] = uint8(value >> 8)
+		default:
+			values[i] = 0
 		}
 	}
 
-	// 单分量（GRAY）与三分量（RGB）默认完全不透明；四分量按颜色空间解释，
-	// 存储在第 4 个分量中。
-	if len(parts) == 1 {
-		values[3] = 255
-	}
-	if len(parts) == 3 {
+	// 只有四分量时第 4 个分量按颜色空间解释（CMYK 的黑），存在 alpha 位置；
+	// 其余情形（1、2、3 个分量，以及多于 4 个）都按完全不透明处理。
+	if stored != 4 {
 		values[3] = 255
 	}
 
