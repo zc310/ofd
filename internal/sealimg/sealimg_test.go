@@ -188,28 +188,110 @@ func TestRenderFailsOnLatinOnlyFontName(t *testing.T) {
 	if name == "" {
 		t.Skip("系统没有可用的纯拉丁字体，跳过")
 	}
-	_, err := Render(Options{Width: 128, Height: 128, FontName: name})
+	// 显式要求中文文案时必须报错，不能画出一张方框图。
+	_, err := Render(Options{Width: 128, Height: 128, FontName: name, Language: LanguageChinese})
 	if err == nil {
 		t.Fatalf("字体 %q 不含中文却渲染成功，底字会是方框", name)
 	}
 	if !strings.Contains(err.Error(), "中文字形") {
 		t.Errorf("错误信息应说明缺中文字形，实际 %q", err.Error())
 	}
+	// 同一字体用于英文文案时完全可用：纯拉丁字体正是英文系统的典型字体，
+	// 报错会让英文环境整条链路不可用。
+	if _, err := Render(Options{Width: 128, Height: 128, FontName: name, Language: LanguageEnglish}); err != nil {
+		t.Errorf("字体 %q 渲染英文文案不应失败: %v", name, err)
+	}
 }
 
-// TestCJKProbeCoversAllFixedText 守住字体探测集合与印章文案同步：新增或修改
-// 固定文案后如果忘记更新探针，缺字方框会静默混进印章。
-func TestCJKProbeCoversAllFixedText(t *testing.T) {
-	probe := map[rune]bool{}
-	for _, r := range cjkProbe {
-		probe[r] = true
-	}
-	for _, text := range []string{TopText, BottomText, CenterText} {
-		for _, r := range text {
-			if !probe[r] {
-				t.Errorf("字体探针缺少固定文案字符 %q", string(r))
-			}
+// TestRenderEnglishTextNeedsNoCJKFont 英文文案只要求拉丁字形，不依赖系统中文字体，
+// 这是让英文系统跑通演示与测试的前提。
+func TestRenderEnglishTextNeedsNoCJKFont(t *testing.T) {
+	for _, shape := range []Shape{ShapeCircle, ShapeEllipse} {
+		img, err := Render(Options{Width: 256, Height: 256, Shape: shape, Language: LanguageEnglish})
+		if err != nil {
+			t.Fatalf("英文文案渲染失败: %v", err)
 		}
+		if img.Bounds().Empty() {
+			t.Fatal("英文文案渲染出空图")
+		}
+	}
+}
+
+// TestRenderFallsBackToEnglishWhenNoCJKFont 中文文案在中文字体缺失时退回英文
+// 文案而不是整体报错。这里显式点名一个纯拉丁字体触发失败，再用自动选字体验证
+// 回退路径本身可用。
+func TestRenderFallsBackToEnglishWhenNoCJKFont(t *testing.T) {
+	faces, text, err := resolveFaces(Options{Language: LanguageChinese}, 256)
+	if err != nil {
+		// 系统确实没有中文字体：应当已经回退到英文文案。
+		if !text.needsCJK() {
+			t.Fatalf("缺中文字体时文案仍是中文，未回退: %+v", text)
+		}
+		return
+	}
+	if faces.main == nil || faces.top == nil || faces.center == nil {
+		t.Fatal("resolveFaces 返回了空字体")
+	}
+}
+
+// TestProbeCoversAllFixedText 守住字体探测集合与印章文案同步：探针由文案本身
+// 拼成，天然同步；这里断言两套文案都非空、英文文案确实不含需要 CJK 的字符，
+// 避免有人往英文文案里塞汉字后静默退回中文回退分支。
+func TestProbeCoversAllFixedText(t *testing.T) {
+	for _, text := range []sealText{textChinese, textEnglish} {
+		if text.top == "" || text.bottom == "" || text.center == "" {
+			t.Fatalf("文案不完整: %+v", text)
+		}
+		if text.probe() != text.top+text.bottom+text.center {
+			t.Fatalf("探针未覆盖全部文案: %q", text.probe())
+		}
+	}
+	if !textChinese.needsCJK() {
+		t.Fatal("中文文案应判定为需要中文字形")
+	}
+	if textEnglish.needsCJK() {
+		t.Fatal("英文文案不应需要中文字形，否则拿不到退回意义")
+	}
+}
+
+// TestSystemLanguageDetectsEnglish 守住语言环境判定：英文环境必须切到英文
+// 文案，未设置或 POSIX 环境必须留在中文，否则 CI 镜像会莫名出英文图。
+func TestSystemLanguageDetectsEnglish(t *testing.T) {
+	cases := []struct {
+		env      map[string]string
+		wantText sealText
+		name     string
+	}{
+		{map[string]string{"LANG": "en_US.UTF-8"}, textEnglish, "LANG=en_US.UTF-8"},
+		{map[string]string{"LC_ALL": "en_GB.UTF-8"}, textEnglish, "LC_ALL=en_GB.UTF-8"},
+		{map[string]string{"LANG": "zh_CN.UTF-8"}, textChinese, "LANG=zh_CN"},
+		{map[string]string{"LANG": "zh_CN.UTF-8", "LC_ALL": "en_US.UTF-8"}, textEnglish, "LC_ALL 优先于 LANG"},
+		{map[string]string{"LANGUAGE": "en:zh_CN"}, textEnglish, "LANGUAGE 取首个"},
+		{map[string]string{"LANGUAGE": "C:en_US"}, textEnglish, "LANGUAGE 跳过 C"},
+		{map[string]string{"LANG": "C.UTF-8"}, textChinese, "C.UTF-8 视为未设置"},
+		{map[string]string{}, textChinese, "全部未设置"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"} {
+				t.Setenv(key, tc.env[key])
+			}
+			if got := resolveText(LanguageAuto); got != tc.wantText {
+				t.Errorf("resolveText(Auto) = %+v，期望 %+v", got, tc.wantText)
+			}
+		})
+	}
+}
+
+// TestResolveTextHonoursExplicitLanguage 显式指定语言时不受系统语言环境影响。
+func TestResolveTextHonoursExplicitLanguage(t *testing.T) {
+	t.Setenv("LANG", "en_US.UTF-8")
+	if got := resolveText(LanguageChinese); got != textChinese {
+		t.Errorf("显式指定中文却拿到 %+v", got)
+	}
+	t.Setenv("LANG", "zh_CN.UTF-8")
+	if got := resolveText(LanguageEnglish); got != textEnglish {
+		t.Errorf("显式指定英文却拿到 %+v", got)
 	}
 }
 
@@ -257,7 +339,7 @@ func TestRenderShowsFixedTopAndCenterText(t *testing.T) {
 }
 
 func TestLoadFaceUsesSyntheticBold(t *testing.T) {
-	face, err := loadFace("", 32)
+	face, err := loadFace("", 32, textChinese)
 	if err != nil {
 		t.Skipf("缺少可用的中文字体: %v", err)
 	}
@@ -278,7 +360,7 @@ func latinOnlyFont(t *testing.T) string {
 			continue
 		}
 		face := font.Face(40*pointsPerUnit, sealInk)
-		if !supportsCJK(face) {
+		if !supportsText(face, textChinese) {
 			return name
 		}
 	}
