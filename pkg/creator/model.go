@@ -15,9 +15,9 @@ type PageSize struct {
 
 // Box 描述页面区域或图元边界，单位为毫米。
 type Box struct {
-	// X 是区域左下角的横坐标，单位为毫米。
+	// X 是区域左上角的横坐标，单位为毫米。
 	X float64
-	// Y 是区域左下角的纵坐标，单位为毫米。
+	// Y 是区域左上角的纵坐标，单位为毫米。
 	Y float64
 	// Width 是区域宽度，单位为毫米。
 	Width float64
@@ -457,9 +457,9 @@ type Item interface {
 
 // Text 是文字对象，Size 表示字号，单位为毫米。
 type Text struct {
-	// X 是文字对象左下角的横坐标，单位为毫米。
+	// X 是文字对象左上角的横坐标，单位为毫米。
 	X float64
-	// Y 是文字对象左下角的纵坐标，单位为毫米。
+	// Y 是文字对象左上角的纵坐标，单位为毫米。
 	Y float64
 	// Width 是文字对象宽度，单位为毫米。
 	Width float64
@@ -644,9 +644,9 @@ func (Text) isItem() {}
 // Path 是路径对象。Data 使用 OFD 缩略路径语法，例如
 // "M 10 10 L 100 10 L 100 100 C"。
 type Path struct {
-	// X 是路径对象左下角的横坐标，单位为毫米。
+	// X 是路径对象左上角的横坐标，单位为毫米。
 	X float64
-	// Y 是路径对象左下角的纵坐标，单位为毫米。
+	// Y 是路径对象左上角的纵坐标，单位为毫米。
 	Y float64
 	// Width 是路径对象宽度，单位为毫米。
 	Width float64
@@ -699,9 +699,9 @@ func (Path) isItem() {}
 // Image 是图片对象，Data 保存编码后的图片数据。
 // Format 是 PNG 或 JPEG 等 OFD 图片格式；为空时会尽量根据文件头识别。
 type Image struct {
-	// X 是图片对象左下角的横坐标，单位为毫米。
+	// X 是图片对象左上角的横坐标，单位为毫米。
 	X float64
-	// Y 是图片对象左下角的纵坐标，单位为毫米。
+	// Y 是图片对象左上角的纵坐标，单位为毫米。
 	Y float64
 	// Width 是图片对象宽度，单位为毫米。
 	Width float64
@@ -1268,9 +1268,9 @@ type CompositeGraphicUnit struct {
 
 // Composite 是页面中的复合图元对象。
 type Composite struct {
-	// X 是复合图元左下角的横坐标，单位为毫米。
+	// X 是复合图元左上角的横坐标，单位为毫米。
 	X float64
-	// Y 是复合图元左下角的纵坐标，单位为毫米。
+	// Y 是复合图元左上角的纵坐标，单位为毫米。
 	Y float64
 	// Width 是复合图元宽度，单位为毫米。
 	Width float64
