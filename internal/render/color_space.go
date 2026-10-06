@@ -32,8 +32,8 @@ func (p *Document) colorRGBA(source models.CTColor) color.RGBA {
 		return ofdColorRGBA(source)
 	}
 	if transformer := p.colorSpaceTransformer(space); transformer != nil {
-		if components, ok := colorSpaceBytes(source, space); ok {
-			r, g, b := transformer.ToRGB(components)
+		if components, ok := colorSpaceComponents8(source, space); ok {
+			r, g, b := transformer.ToRGB(transformerOrderComponents(space, components))
 			alpha := uint8(255)
 			if source.Alpha != nil {
 				alpha = *source.Alpha
@@ -89,13 +89,78 @@ func colorSpaceChannels(space *models.ColorSpace) int {
 	}
 }
 
-// colorSpaceBytes 返回颜色在自身颜色空间下的分量（0-255）。Value 优先，
-// 否则按 Index 从调色板取分量。
-func colorSpaceBytes(source models.CTColor, space *models.ColorSpace) ([]uint8, bool) {
+// spaceBitsPerComponent 返回颜色空间声明的每通道位数，缺省或非法时按 8 处理。
+// GB/T 33190 表 25 规定有效取值为 1、2、4、8、16，缺省值为 8。
+func spaceBitsPerComponent(space *models.ColorSpace) int {
+	switch space.BitsPerComponent {
+	case 1, 2, 4, 8, 16:
+		return space.BitsPerComponent
+	default:
+		return 8
+	}
+}
+
+// scaleComponent 按 BitsPerComponent 把通道取值归一化到 0-255。
+//
+// GB/T 33190 表 27：BPC 有效时颜色通道取值区间为 [0, 2^BPC-1]，超出区间按默认
+// 颜色处理。默认颜色是各通道全 0（表 26：Value 与 Index 都不出现时的取值），
+// 这里对越界通道取 0 而不是截断到上限——截断会把本该作废的颜色画成满墨。
+func scaleComponent(value, bits int) uint8 {
+	// 调用方应当先经 spaceBitsPerComponent 消毒；这里再兜一层，避免非法位数导致
+	// 1<<bits 负移位 panic——渲染路径上任何 panic 都会毁掉整页。
+	switch bits {
+	case 1, 2, 4, 8, 16:
+	default:
+		bits = 8
+	}
+	highest := 1<<bits - 1
+	if value < 0 || value > highest {
+		return 0
+	}
+	return uint8((value*255 + highest/2) / highest)
+}
+
+// parseChannelValue 解析单个颜色通道取值，支持标准允许的 "#" 十六进制写法
+// （表 27：采用 16 进制表示时应以 "#" 加以标识，例如 "#11 #22 #33 #44"）。
+func parseChannelValue(text string) (int, bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0, false
+	}
+	if strings.HasPrefix(text, "#") {
+		value, err := strconv.ParseInt(text[1:], 16, 32)
+		if err != nil {
+			return 0, false
+		}
+		return int(value), true
+	}
+	value, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+// colorSpaceComponents8 返回颜色在自身颜色空间下的分量，已按 BitsPerComponent
+// 归一化到 0-255。Value 优先，否则按 Index 从调色板取分量。
+func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace) ([]uint8, bool) {
 	channels := colorSpaceChannels(space)
+	bits := spaceBitsPerComponent(space)
 	if source.Value != nil {
-		value := source.Value
-		return []uint8{value.R, value.G, value.B, value.A}[:channels], true
+		if values, count, ok := source.Value.Components(); ok {
+			if count < channels {
+				return nil, false
+			}
+			result := make([]uint8, channels)
+			for i := 0; i < channels; i++ {
+				result[i] = scaleComponent(values[i], bits)
+			}
+			return result, true
+		}
+		// 没有原文（例如代码直接构造的颜色）：RGBA 里已经是 0-255，不再按位深缩放。
+		rgba := source.Value.RGBA
+		normalized := [4]uint8{rgba.R, rgba.G, rgba.B, rgba.A}
+		return normalized[:channels], true
 	}
 	if space.Palette == nil || source.Index < 0 || source.Index >= len(space.Palette.CV) {
 		return nil, false
@@ -106,18 +171,31 @@ func colorSpaceBytes(source models.CTColor, space *models.ColorSpace) ([]uint8, 
 	}
 	result := make([]uint8, channels)
 	for i := 0; i < channels; i++ {
-		parsed, err := strconv.Atoi(strings.TrimSpace(string(entry[i])))
-		if err != nil {
+		value, ok := parseChannelValue(string(entry[i]))
+		if !ok {
 			return nil, false
 		}
-		result[i] = componentByte(parsed)
+		result[i] = scaleComponent(value, bits)
 	}
 	return result, true
 }
 
+// transformerOrderComponents 把分量重排成 coloricc 与 ICC 转换器约定的顺序。
+//
+// coloricc.DeviceCMYK8ToRGB 与 ICC 转换器都按 PDF DeviceCMYK 的青、品红、黄、
+// 黑解释四分量，而 GB/T 33190 表 27 规定的 OFD CMYK 顺序是青、黄、品红、黑。
+// 两条路径（ICC 与内置油墨模型）都必须在这里换序，否则同一份 OFD 在有无 CMYK
+// ICC 配置的机器上会画出不同的颜色。
+func transformerOrderComponents(space *models.ColorSpace, components []uint8) []uint8 {
+	if len(components) < 4 || !strings.EqualFold(strings.TrimSpace(space.Type), "CMYK") {
+		return components
+	}
+	return []uint8{components[0], components[2], components[1], components[3]}
+}
+
 // resolveColorSpaceColor 按颜色空间类型把 CTColor 的分量转换为 RGBA。
 func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor) color.RGBA {
-	components, ok := colorSpaceComponents(source, space)
+	components, ok := colorSpaceComponents8(source, space)
 	if !ok {
 		return ofdColorRGBA(source)
 	}
@@ -127,55 +205,23 @@ func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor) col
 	}
 	switch strings.ToUpper(strings.TrimSpace(space.Type)) {
 	case "GRAY":
-		if len(components) < 1 {
-			return ofdColorRGBA(source)
-		}
-		value := componentByte(components[0])
+		value := components[0]
 		return premultiplied(value, value, value, alpha)
 	case "CMYK":
+		// OFD 的 CMYK 通道顺序是青、黄、品红、黑（GB/T 33190 表 27），与 PDF 的
+		// DeviceCMYK 相反，换序后交给按 PDF 顺序实现的油墨模型。
 		if len(components) < 4 {
 			return ofdColorRGBA(source)
 		}
-		r, g, b := cmykInkToRGB(componentByte(components[0]), componentByte(components[1]), componentByte(components[2]), componentByte(components[3]))
+		ink := transformerOrderComponents(space, components)
+		r, g, b := cmykInkToRGB(ink[0], ink[1], ink[2], ink[3])
 		return premultiplied(r, g, b, alpha)
 	default:
 		if len(components) < 3 {
 			return ofdColorRGBA(source)
 		}
-		return premultiplied(componentByte(components[0]), componentByte(components[1]), componentByte(components[2]), alpha)
+		return premultiplied(components[0], components[1], components[2], alpha)
 	}
-}
-
-// colorSpaceComponents 返回颜色在当前颜色空间下的分量：优先使用 Value，
-// 否则按 Index 从调色板取分量。
-func colorSpaceComponents(source models.CTColor, space *models.ColorSpace) ([]int, bool) {
-	if source.Value != nil {
-		value := source.Value
-		return []int{int(value.R), int(value.G), int(value.B), int(value.A)}, true
-	}
-	if space.Palette == nil || source.Index < 0 || source.Index >= len(space.Palette.CV) {
-		return nil, false
-	}
-	entry := space.Palette.CV[source.Index]
-	components := make([]int, 0, len(entry))
-	for _, item := range entry {
-		value, err := strconv.Atoi(strings.TrimSpace(string(item)))
-		if err != nil {
-			return nil, false
-		}
-		components = append(components, value)
-	}
-	return components, true
-}
-
-func componentByte(value int) uint8 {
-	if value < 0 {
-		return 0
-	}
-	if value > 255 {
-		return 255
-	}
-	return uint8(value)
 }
 
 // cmykInkToRGB 在没有可用 ICC Profile 时，用 Adobe/poppler 的 4 色印刷矩阵模型
