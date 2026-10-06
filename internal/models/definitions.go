@@ -370,6 +370,24 @@ func (t *DateTime) parseTime(v string) error {
 
 type Color struct {
 	color.RGBA
+	// raw 与 nraw 保存按 ST_Array 原文解析出的通道整数取值与通道数。
+	//
+	// 必须保留原文：通道的取值范围由颜色空间的 BitsPerComponent 决定（GB/T 33190
+	// 表 27：BPC 有效时取值区间为 [0, 2^BPC-1]），同一串数字在 BPC=8 与 BPC=4 下
+	// 含义完全不同——"15 0 0 0" 分别是 6% 青与满青。压成 uint8 之后两者都是 15，
+	// 渲染端拿到颜色空间也无从还原。XML 属性反序列化发生在资源解析之前，
+	// Color.parse 拿不到 BitsPerComponent，只能把原文留给渲染端归一化。
+	raw  [4]int
+	nraw int
+}
+
+// Components 返回按 ST_Array 原文解析出的通道取值与通道数。ok 为 false 表示这个
+// 颜色没有原文（例如代码直接构造的 Color），此时调用方应回退到 RGBA 的 8 位分量。
+func (c Color) Components() (values [4]int, count int, ok bool) {
+	if c.nraw == 0 {
+		return [4]int{}, 0, false
+	}
+	return c.raw, c.nraw, true
 }
 
 // UnmarshalXML 解析 XML 元素
@@ -405,7 +423,7 @@ func (c *Color) parse(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		*c = Color{
-			RGBA: color.RGBA{R: 0, G: 0, B: 0, A: 255},
+			R: 0, G: 0, B: 0, A: 255,
 		}
 		return nil
 	}
@@ -460,6 +478,9 @@ func (c *Color) parse(s string) error {
 		B: values[2],
 		A: values[3],
 	}
+	// 保留原文，供渲染端按颜色空间的 BitsPerComponent 归一化。
+	c.raw = parsed
+	c.nraw = len(parts)
 	return nil
 }
 
