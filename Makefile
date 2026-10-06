@@ -67,6 +67,7 @@ ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 ARCHIVE := $(BIN_DIR)/ofd-archive$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 SIGNER_DEMO := $(BIN_DIR)/ofd-signer-demo$(BIN_SUFFIX)
+SEAL := $(BIN_DIR)/ofd-seal$(BIN_SUFFIX)
 INVOICE := $(BIN_DIR)/ofd-invoice$(BIN_SUFFIX)
 SERVER := $(BIN_DIR)/ofd-server$(BIN_SUFFIX)
 WASM := cmd/ofd-wasm/web/ofd.wasm
@@ -93,6 +94,7 @@ ANALYZER_PACKAGE := $(DIST_DIR)/ofd-analyzer-$(PLATFORM).zip
 ARCHIVE_PACKAGE := $(DIST_DIR)/ofd-archive-$(PLATFORM).zip
 CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
 SIGNER_DEMO_PACKAGE := $(DIST_DIR)/ofd-signer-demo-$(PLATFORM).zip
+SEAL_PACKAGE := $(DIST_DIR)/ofd-seal-$(PLATFORM).zip
 INVOICE_PACKAGE := $(DIST_DIR)/ofd-invoice-$(PLATFORM).zip
 SERVER_PACKAGE := $(DIST_DIR)/ofd-server-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
@@ -103,8 +105,8 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= $(VERSION)
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(SEAL) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(SEAL_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -275,6 +277,10 @@ $(SIGNER_DEMO): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-signer-demo
 
+$(SEAL): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-seal
+
 $(INVOICE): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-invoice
@@ -361,6 +367,8 @@ package-creator: $(CREATOR_PACKAGE)
 
 package-signer-demo: $(SIGNER_DEMO_PACKAGE)
 
+package-seal: $(SEAL_PACKAGE)
+
 package-invoice: $(INVOICE_PACKAGE)
 
 $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
@@ -407,6 +415,15 @@ $(SIGNER_DEMO_PACKAGE): $(SIGNER_DEMO) cmd/ofd-signer-demo/README.md
 	@cp "$(SIGNER_DEMO)" "$(PACKAGE_DIR)/ofd-signer-demo/ofd-signer-demo$(BIN_SUFFIX)"
 	@cp "cmd/ofd-signer-demo/README.md" "$(PACKAGE_DIR)/ofd-signer-demo/README.md"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-signer-demo"
+
+$(SEAL_PACKAGE): $(SEAL) cmd/ofd-seal/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-seal"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-seal"
+	@rm -f "$@"
+	@cp "$(SEAL)" "$(PACKAGE_DIR)/ofd-seal/ofd-seal$(BIN_SUFFIX)"
+	@cp "cmd/ofd-seal/README.md" "$(PACKAGE_DIR)/ofd-seal/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-seal"
 
 $(INVOICE_PACKAGE): $(INVOICE) cmd/ofd-invoice/README.md
 	@mkdir -p "$(DIST_DIR)"

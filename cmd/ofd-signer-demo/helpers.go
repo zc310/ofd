@@ -2,46 +2,39 @@ package main
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/x509/pkix"
-	_ "embed"
-	"encoding/asn1"
 	"fmt"
-	"image/png"
+	"image"
+	_ "image/png"
 
-	"github.com/emmansun/gmsm/sm2"
+	"github.com/zc310/ofd/internal/sealimg"
 )
 
-//go:embed seal.png
-var seal []byte
-
-// pkixName 生成简单的证书主体名称。
-func pkixName(commonName string) pkix.Name {
-	return pkix.Name{CommonName: commonName, Organization: []string{"OFD Signer Demo"}}
-}
-
-// publicKeyOf 返回 SM2 私钥对应的公钥。
-func publicKeyOf(privateKey *sm2.PrivateKey) *ecdsa.PublicKey {
-	return &privateKey.PublicKey
-}
-
-// sm2WithSM3OIDValue 返回 SM2 + SM3 签名算法 OID。
-func sm2WithSM3OIDValue() asn1.ObjectIdentifier {
-	return asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 501}
-}
-
-// placeholderSeal 返回内嵌在 seal.png 中的 PNG 印章占位图。
+// placeholderSeal 返回演示用的印章图片。
 //
-// 印章主体为红色圆环加「中」字，颜色均为红色 #E60012 系，空白区域透明；
-// 渲染不依赖 CJK 字体。演示印章不是有效签章，仅用于让 SignedValue.dat 结构和
-// 页面渲染效果完整。
-func placeholderSeal() []byte {
-	return seal
+// 图片由 internal/sealimg 现场渲染：底部印有「非正式印章」，顶��是项目来源，
+// 中间是五角星。它不是有效签章，只让 SignedValue.dat 结构和页面渲染效果完整——
+// 真实印章图片来自单位备案，证书来自 CA。
+//
+// 早期版本内嵌一张 938x938 的 PNG 占位图（红圈加「中」字）。改为渲染之后不再
+// 维护二进制资源，印章外观也与其他测试产物统一；demo 本来每次运行都重新生成
+// 密钥和证书，输出本来就不固定，因此不影响任何确定性约定。
+func placeholderSeal() ([]byte, error) {
+	return sealimg.RenderPNG(sealimg.Options{Width: 512, Height: 512})
 }
 
 // pictureSize 返回演示印章图片的宽高，用于填充 SES_ESPictrueInfo.Width/Height。
 func pictureSize() (int, int, error) {
-	config, err := png.DecodeConfig(bytes.NewReader(seal))
+	data, err := placeholderSeal()
+	if err != nil {
+		return 0, 0, fmt.Errorf("生成演示印章图片失败: %w", err)
+	}
+	return pictureSizeOf(data)
+}
+
+// pictureSizeOf 读取印章图片的像素尺寸。SES_ESPictrueInfo.Width/Height 必须与
+// 图片实际尺寸一致，不能凭空填。
+func pictureSizeOf(data []byte) (int, int, error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return 0, 0, fmt.Errorf("解析演示印章图片失败: %w", err)
 	}

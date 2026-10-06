@@ -5,21 +5,20 @@
 // 证书分别签署 SES 印章信息和外层 TBS_Sign，向标准输出写出 SignedValue.dat。
 // 证书、私钥和印章图片都在进程内生成，仅用于演示与测试，不能用于生产环境，
 // 也不会建立可验证的信任链。
+//
+// 实际的 SES 数据结构与组装逻辑在 internal/ses 包中；本程序只提供参数化的
+// 演示封装，并复用内嵌的占位印章图片。
 package main
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
-	"encoding/asn1"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"time"
 
 	"github.com/emmansun/gmsm/sm2"
-	"github.com/emmansun/gmsm/sm3"
-	gmx509 "github.com/emmansun/gmsm/smx509"
+	"github.com/zc310/ofd/internal/ses"
 )
 
 // 以下标识写入 SES_Seal_Info 和外部命令环境变量，用于说明签名由本演示程序制作。
@@ -37,62 +36,10 @@ const (
 	pictureType = "png"
 
 	// headerID 是 SES_Header.ID 的固定值，GM/T 0031 规定为 "ES"。
-	headerID = "ES"
+	headerID = ses.HeaderID
 	// sealVersion 是 SES 结构版本号；演示器使用与 OFD 规范配套的 V4。
-	sealVersion = 4
+	sealVersion = ses.SealVersion
 )
-
-type sesSignature struct {
-	TBS                tbsSign
-	Certificate        []byte
-	SignatureAlgorithm asn1.ObjectIdentifier
-	Signature          asn1.BitString
-}
-
-type tbsSign struct {
-	Version      int
-	Seal         sesSeal
-	SignTime     time.Time `asn1:"generalized"`
-	DataHash     asn1.BitString
-	PropertyInfo string `asn1:"ia5"`
-}
-
-type sesSeal struct {
-	SealInfo           sesSealInfo
-	Certificate        []byte
-	SignatureAlgorithm asn1.ObjectIdentifier
-	Signature          asn1.BitString
-}
-
-type sesSealInfo struct {
-	Header   sesHeader
-	ESID     string `asn1:"ia5"`
-	Property sesProperty
-	Picture  sesPicture
-}
-
-type sesHeader struct {
-	ID      string `asn1:"ia5"`
-	Version int
-	VID     string `asn1:"ia5"`
-}
-
-type sesProperty struct {
-	Type            int
-	Name            string `asn1:"utf8"`
-	CertificateType int
-	CertList        [][]byte
-	CreateTime      time.Time `asn1:"generalized"`
-	ValidFrom       time.Time `asn1:"generalized"`
-	ValidTo         time.Time `asn1:"generalized"`
-}
-
-type sesPicture struct {
-	Type   string `asn1:"ia5"`
-	Data   []byte
-	Width  int
-	Height int
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -165,67 +112,29 @@ func sign(signatureXML []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = publicKey
 
-	sealWidth, sealHeight, err := pictureSize()
+	picture, err := placeholderSeal()
 	if err != nil {
 		return nil, err
 	}
-	sealInfo := sesSealInfo{
-		Header: sesHeader{ID: headerID, Version: sealVersion, VID: demoProvider + "/" + demoVersion},
-		ESID:   demoProvider + "-" + id + "@" + producer,
-		Property: sesProperty{
-			Type:            1,
-			Name:            demoProvider + " " + demoVersion + " (演示印章, " + producer + ")",
-			CertificateType: 1,
-			CertList:        [][]byte{certificateDER},
-			CreateTime:      now,
-			ValidFrom:       now,
-			ValidTo:         now.AddDate(10, 0, 0),
-		},
-		Picture: sesPicture{Type: pictureType, Data: placeholderSeal(), Width: sealWidth, Height: sealHeight},
-	}
-	sealInfoDER, err := asn1.Marshal(sealInfo)
+	sealWidth, sealHeight, err := pictureSizeOf(picture)
 	if err != nil {
-		return nil, fmt.Errorf("编码 SES_Seal_Info 失败: %w", err)
+		return nil, err
 	}
-	sealSignature, err := signSM2(publicKey, privateKey, sealInfoDER)
+	seal, err := ses.BuildSeal(ses.SealParams{
+		Provider:    demoProvider + "/" + demoVersion,
+		ESID:        demoProvider + "-" + id + "@" + producer,
+		Name:        demoProvider + " " + demoVersion + " (演示印章, " + producer + ")",
+		PictureType: pictureType,
+		PictureData: picture,
+		Width:       sealWidth,
+		Height:      sealHeight,
+	}, certificateDER, privateKey, now)
 	if err != nil {
-		return nil, fmt.Errorf("签署印章信息失败: %w", err)
+		return nil, err
 	}
-	seal := sesSeal{
-		SealInfo:           sealInfo,
-		Certificate:        certificateDER,
-		SignatureAlgorithm: sm2WithSM3OIDValue(),
-		Signature:          sealSignature,
-	}
-
-	dataHash := sm3.Sum(signatureXML)
-	tbs := tbsSign{
-		Version:      sealVersion,
-		Seal:         seal,
-		SignTime:     now,
-		DataHash:     asn1.BitString{Bytes: dataHash[:], BitLength: len(dataHash) * 8},
-		PropertyInfo: signaturePath(id),
-	}
-	tbsDER, err := asn1.Marshal(tbs)
-	if err != nil {
-		return nil, fmt.Errorf("编码 TBS_Sign 失败: %w", err)
-	}
-	outerSignature, err := signSM2(publicKey, privateKey, tbsDER)
-	if err != nil {
-		return nil, fmt.Errorf("签署 TBS_Sign 失败: %w", err)
-	}
-
-	signedValue, err := asn1.Marshal(sesSignature{
-		TBS:                tbs,
-		Certificate:        certificateDER,
-		SignatureAlgorithm: sm2WithSM3OIDValue(),
-		Signature:          outerSignature,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("编码 SignedValue.dat 失败: %w", err)
-	}
-	return signedValue, nil
+	return ses.BuildSignedValue(signatureXML, seal, certificateDER, privateKey, signaturePath(id), now)
 }
 
 // signaturePath 返回 TBS_Sign.PropertyInfo 使用的签名 XML 包内路径。
@@ -238,44 +147,10 @@ func signaturePath(id string) string {
 	return "/" + document + "/Signatures/Signature_" + id + ".xml"
 }
 
-func signSM2(publicKey *ecdsa.PublicKey, privateKey *sm2.PrivateKey, data []byte) (asn1.BitString, error) {
-	digest, err := sm2.CalculateSM2Hash(publicKey, data, nil)
-	if err != nil {
-		return asn1.BitString{}, err
-	}
-	r, s, err := sm2.Sign(rand.Reader, &privateKey.PrivateKey, digest)
-	if err != nil {
-		return asn1.BitString{}, err
-	}
-	signature, err := asn1.Marshal(struct {
-		R *big.Int
-		S *big.Int
-	}{R: r, S: s})
-	if err != nil {
-		return asn1.BitString{}, err
-	}
-	return asn1.BitString{Bytes: signature, BitLength: len(signature) * 8}, nil
-}
-
 func newCertificate(now time.Time) (*ecdsa.PublicKey, *sm2.PrivateKey, []byte, error) {
-	privateKey, err := sm2.GenerateKey(rand.Reader)
+	key, publicKey, certificateDER, err := ses.NewSelfSignedCertificate(demoProvider+" ("+producer+")", "OFD Signer Demo", now)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("生成 SM2 私钥失败: %w", err)
+		return nil, nil, nil, err
 	}
-	template := &gmx509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkixName(demoProvider + " (" + producer + ")"),
-		Issuer:                pkixName(demoProvider + " (" + producer + ")"),
-		NotBefore:             now.Add(-time.Hour),
-		NotAfter:              now.AddDate(10, 0, 0),
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		KeyUsage:              gmx509.KeyUsageDigitalSignature | gmx509.KeyUsageCertSign,
-		SignatureAlgorithm:    gmx509.SM2WithSM3,
-	}
-	certificateDER, err := gmx509.CreateCertificate(rand.Reader, template, template, publicKeyOf(privateKey), privateKey)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("签发演示证书失败: %w", err)
-	}
-	return publicKeyOf(privateKey), privateKey, certificateDER, nil
+	return publicKey, key, certificateDER, nil
 }
