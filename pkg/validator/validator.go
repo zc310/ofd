@@ -23,6 +23,7 @@ import (
 	"github.com/knroy/go-xml/xsd"
 	"github.com/tdewolff/font"
 	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
@@ -910,6 +911,97 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 		})
 	}
 	v.fontChecks(documents, archive, report)
+	v.colorSpaceChecks(documents, archive, report)
+}
+
+// colorSpaceChannelsByType 返回颜色空间类型的通道数，供 Profile 调色板判读使用。
+// 与 GB/T 33190 表 27 一致：灰度 1 个通道、RGB 3 个、CMYK 4 个。
+func colorSpaceChannelsByType(value string) int {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "GRAY":
+		return 1
+	case "CMYK":
+		return 4
+	default:
+		return 3
+	}
+}
+
+// colorProfileICCSignatureOffset 是 ICC 头中 'acsp' 签名的偏移（ISO 15076-1）。
+const colorProfileICCSignatureOffset = 36
+
+// looksLikeICCProfile 粗判一份颜色配置文件是否意在作为 ICC 配置文件。
+func looksLikeICCProfile(data []byte) bool {
+	const signature = "acsp"
+	return len(data) >= colorProfileICCSignatureOffset+len(signature) &&
+		string(data[colorProfileICCSignatureOffset:colorProfileICCSignatureOffset+len(signature)]) == signature
+}
+
+// colorProfileUsable 判断颜色配置文件能否使用：能解析为 ICC 配置文件，或能按
+// 原始二进制调色板解释（长度是通道数的整数倍且不带 ICC 签名）。
+//
+// 单独抽出来是为了能直接测「iccOK 为真」这条分支——造一个能被 coloricc 解析的
+// ICC 配置文件需要真实色彩管理数据，测试里既不便也不应依赖系统字体/配置。
+func colorProfileUsable(data []byte, channels int, iccOK bool) bool {
+	if len(data) == 0 {
+		return false
+	}
+	if iccOK {
+		return true
+	}
+	// 用 'acsp' 签名而不是「长度能否被通道数整除」来排除 ICC：损坏的 ICC 配置文件
+	// 也可能恰好整除，那种文件被当成调色板会解释出一个颜色完全不同的东西。
+	return !looksLikeICCProfile(data) && len(data)%channels == 0
+}
+
+// colorSpaceChecks 校验颜色空间声明的 Profile 指向的文件确实可用。
+//
+// GB/T 33190 只说 Profile「指向包内颜色配置文件」（表 25），XSD 里也仅是 ST_Loc，
+// 没有规定格式；实际既有 ICC 配置文件，也有按通道数平铺的原始调色板。渲染端两种
+// 都支持，但都不成立时颜色会静默回退成黑色——报告里看不出是「不支持」还是
+// 「本来就是黑色」，因此在这里显式报出来。
+func (v *Validator) colorSpaceChecks(documents map[string]*xmlDocument, archive *packageIndex, report *Report) {
+	reported := make(map[string]bool)
+	for _, name := range sortedDocumentNames(documents) {
+		doc := documents[name]
+		if doc == nil || !doc.ofd {
+			continue
+		}
+		walkOFDElements(doc.root, func(node *xdm.Node) {
+			if node.Name.Local != "ColorSpace" {
+				return
+			}
+			value := strings.TrimSpace(node.AttrValue("Profile"))
+			if value == "" {
+				return
+			}
+			resolved, err := resolveResourcePath(doc, value)
+			if err != nil {
+				report.addIssue(issueAt(node, SeverityError, StageSemantic, "semantic.color_profile_path_invalid", fmt.Sprintf("颜色空间 %s 的 Profile 无效：%v", value, err), name), v.opts.MaxErrors)
+				return
+			}
+			if reported[resolved] {
+				return
+			}
+			reported[resolved] = true
+			file, ok := archive.get(resolved)
+			if !ok {
+				// 文件缺失已由引用检查报告，这里不重复。
+				return
+			}
+			data := file.data
+			if len(data) == 0 {
+				report.addIssue(issueAt(node, SeverityWarning, StageSemantic, "semantic.color_profile_empty", fmt.Sprintf("颜色空间 Profile %s 是空文件", resolved), name), v.opts.MaxErrors)
+				return
+			}
+			channels := colorSpaceChannelsByType(node.AttrValue("Type"))
+			_, iccErr := coloricc.New(data, channels)
+			if colorProfileUsable(data, channels, iccErr == nil) {
+				return
+			}
+			report.addIssue(issueAt(node, SeverityWarning, StageSemantic, "semantic.color_profile_unusable", fmt.Sprintf("颜色空间 Profile %s 既不是可解析的 ICC 配置文件，也不是按 %d 通道平铺的二进制调色板，该颜色空间取色将回退为默认颜色", resolved, channels), name), v.opts.MaxErrors)
+		})
+	}
 }
 
 type fontResourceInfo struct {
