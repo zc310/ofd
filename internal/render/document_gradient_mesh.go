@@ -259,8 +259,11 @@ func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.S
 	triangles := make([]ofdMeshTriangle, 0)
 	var previous [3]ofdMeshVertex
 	hasPrevious := false
+	// 控制点每三个构成一个三角形；EdgeFlag 为 1/2 时本点与上一个三角形共享
+	// 一条边，用前两个顶点替换掉新三角形中不再需要的顶点（见图 40）。
 	for index := 0; index < len(shd.Point); {
 		point := shd.Point[index]
+		// 首个控制点，或 EdgeFlag=0（方向标志为 0）：另起一个三角形。
 		if !hasPrevious || point.EdgeFlag == 0 {
 			if index+2 >= len(shd.Point) {
 				break
@@ -281,12 +284,17 @@ func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.S
 			continue
 		}
 		vertex := newGouraudVertex(point, transform, resolve)
+		// 方向标志语义见 GB/T 33190 图 40「方向标志的控制作用」：
+		//   1 → 复用上一个三角形的 V1-V2 边，拼成四边形；
+		//   2 → 复用 V0-V2 边，拼成四边形。
+		// 两者的共同点是新三角形与上一个三角形共享一条边，因此网格连续；
+		// EdgeFlag=0 不共享边，两个三角形各自独立填充。
 		switch point.EdgeFlag {
 		case 1:
 			previous = [3]ofdMeshVertex{previous[1], previous[2], vertex}
 		case 3:
 			// 规范只定义 0/1/2，但个别文件沿用 PDF 语义写出 EdgeFlag=3
-			// （复用上一个三角形的 v0-v1 边），这里宽容处理避免丢三角形。
+			// （复用上一个三角形的 V0-V1 边），这里宽容处理避免丢三角形。
 			previous = [3]ofdMeshVertex{previous[0], previous[1], vertex}
 		default:
 			previous = [3]ofdMeshVertex{previous[0], previous[2], vertex}
