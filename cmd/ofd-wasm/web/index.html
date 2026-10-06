@@ -283,7 +283,7 @@
 
       /* --thumbnail-column 的初值必须与 viewer.js 的 defaultSidebarWidth 一致，
         否则脚本执行前的那一帧会用旧宽度渲染侧栏，页签文字会闪一下再跳。 */
-     .reader { --thumbnail-column: 320px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
+     .reader { --thumbnail-column: 270px; display: grid; grid-template-columns: var(--thumbnail-column) minmax(0, 1fr); gap: 16px; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 16px 16px 16px 0; background: #e0e4e9; }
       .reader.hide-thumbnails { grid-template-columns: minmax(0, 1fr); }
        .reader > #sidebar { grid-column: 1; }
        .reader > #pages { grid-column: 2; }
@@ -683,6 +683,10 @@
              <option value="adw-solarized">柔光羊皮</option>
              <option value="Peninsula-dark">半岛墨蓝</option>
              <option value="Plano2">晴空浅灰</option>
+             <option value="mist-blue">浅雾蓝</option>
+             <option value="mint-green">薄荷浅绿</option>
+             <option value="blush-pink">樱花浅粉</option>
+             <option value="lavender">薰衣草浅紫</option>
              <option value="custom">自定义</option>
            </select><input id="document-background-color" type="color" value="#ffffff" aria-label="自定义文档背景色" hidden></label>
           <label class="view-option">页面布局<select id="page-layout" aria-label="页面布局">
@@ -839,7 +843,7 @@
     <div id="sidebar">
       <div id="sidebar-handle" class="sidebar-handle" role="button" tabindex="0" aria-label="收起侧栏"></div>
       <div id="sidebar-tabs" role="tablist" aria-label="导航视图">
-        <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="sidebar-has-icon active"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">grid_view</span><span class="sidebar-tab-label">缩略图</span></button>
+        <button id="sidebar-tab-thumbnails" type="button" role="tab" aria-selected="true" aria-controls="thumbnails" class="sidebar-has-icon active"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">grid_view</span><span class="sidebar-tab-label">页面</span></button>
         <button id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="outline" class="sidebar-has-icon"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">account_tree</span><span class="sidebar-tab-label">大纲</span></button>
         <button id="sidebar-tab-bookmarks" type="button" role="tab" aria-selected="false" aria-controls="bookmarks" class="sidebar-has-icon"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">bookmark</span><span class="sidebar-tab-label">书签</span></button>
         <button id="sidebar-tab-search" type="button" role="tab" class="sidebar-has-icon" aria-selected="false" aria-controls="search-panel"><span class="material-symbols-outlined sidebar-tab-icon" aria-hidden="true">search</span><span class="sidebar-tab-label">搜索</span></button>
