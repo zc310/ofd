@@ -333,7 +333,7 @@ func TestRunMergeRejectsUsageErrors(t *testing.T) {
 
 func TestRunMergeSignatureModes(t *testing.T) {
 	directory := t.TempDir()
-	signed := filepath.Join("..", "..", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	output := filepath.Join(directory, "merged.ofd")
 
 	var stdout, stderr bytes.Buffer
@@ -356,7 +356,7 @@ func TestRunMergeSignatureModes(t *testing.T) {
 
 func TestRunMergeReportsSignatureRewriteWarning(t *testing.T) {
 	directory := t.TempDir()
-	signed := filepath.Join("..", "..", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	output := filepath.Join(directory, "merged.ofd")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", signed, "-i", signed, "-o", output, "--signatures", "rewrite"}, &stdout, &stderr); code != exitOK {
@@ -454,7 +454,7 @@ func TestRunMergePagesConcurrency(t *testing.T) {
 func TestRunMergeVerifySignatures(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
-	signed := filepath.Join("..", "..", "testdata", "999.ofd")
+	signed := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"merge", "-i", signed, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {

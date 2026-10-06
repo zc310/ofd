@@ -13,7 +13,7 @@ import (
 )
 
 func TestPDFIntroParallel(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func BenchmarkPDFDocumentsParallelOption(b *testing.B) {
 
 func benchmarkPDFDocumentsOption(b *testing.B, option Option) {
 	b.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func benchmarkPDFDocumentsOption(b *testing.B, option Option) {
 
 func benchmarkPDFDocumentsWorkers(b *testing.B, workers int) {
 	b.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		b.Fatal(err)
 	}

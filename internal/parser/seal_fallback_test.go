@@ -24,7 +24,7 @@ import (
 // 独立印章文件缺失时的回退行为。
 func buildSealPackage(t *testing.T, sealElement string, extra map[string][]byte) []byte {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func buildSealPackage(t *testing.T, sealElement string, extra map[string][]byte)
 	archive := zip.NewWriter(&output)
 	for _, file := range reader.File {
 		if file.Name == "Doc_0/Signs/Sign_0/Signature.xml" && sealElement != "" {
-			content := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), file.Name)
+			content := readZipEntry(t, filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"), file.Name)
 			text := string(content)
 			// Seal 必须落在 SignedInfo 内（models.SignedInfo.Seal），
 			// 插到 SignedValue 之前会被解析成 SignedInfo 的兄弟节点而读不到。
@@ -49,7 +49,7 @@ func buildSealPackage(t *testing.T, sealElement string, extra map[string][]byte)
 			}
 			continue
 		}
-		content := readZipEntry(t, filepath.Join("..", "..", "testdata", "999.ofd"), file.Name)
+		content := readZipEntry(t, filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"), file.Name)
 		if err := writeZipEntry(archive, file.Name, content); err != nil {
 			t.Fatal(err)
 		}

@@ -29,7 +29,7 @@ func ExamplePDF() {
 	output, err := os.CreateTemp("", "ofd-example-*.pdf")
 	if err == nil {
 		defer os.Remove(output.Name())
-		err = converter.PDF(ctx, "../../testdata/intro.ofd", output)
+		err = converter.PDF(ctx, "../../testdata/ofdrw/intro.ofd", output)
 		if closeErr := output.Close(); err == nil {
 			err = closeErr
 		}
@@ -58,7 +58,7 @@ func ExamplePNG() {
 	dir, err := os.MkdirTemp("", "ofd-example-")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = converter.Image(ctx, "../../testdata/ano.ofd",
+		err = converter.Image(ctx, "../../testdata/ofdrw/ano.ofd",
 			converter.Writer(func(page int) (io.WriteCloser, error) {
 				return os.Create(filepath.Join(dir, fmt.Sprintf("ano_%d.png", page)))
 			}),
@@ -78,7 +78,7 @@ func ExampleJPG() {
 	dir, err := os.MkdirTemp("", "ofd-example-")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = converter.Image(ctx, "../../testdata/intro.ofd",
+		err = converter.Image(ctx, "../../testdata/ofdrw/intro.ofd",
 			converter.Writer(func(page int) (io.WriteCloser, error) {
 				return os.Create(filepath.Join(dir, fmt.Sprintf("intro_%d.jpg", page)))
 			}),

@@ -28,7 +28,7 @@ func parserBenchOFD(b *testing.B, name string) *OFD {
 // BenchmarkOpen 测量读取 OFD 容器、文档 XML、资源索引及页面目录的成本；
 // 页面内容本身仍按需加载。
 func BenchmarkOpen(b *testing.B) {
-	for _, name := range []string{"helloworld.ofd", "ano.ofd", "1000-pages.ofd"} {
+	for _, name := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "1000-pages.ofd"} {
 		b.Run(name, func(b *testing.B) {
 			data := parserBenchFile(b, name)
 			b.SetBytes(int64(len(data)))

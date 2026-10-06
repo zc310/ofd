@@ -19,7 +19,7 @@ import (
 
 func testOFDPath(t *testing.T) string {
 	t.Helper()
-	for _, name := range []string{"helloworld.ofd", "sample.ofd", "intro.ofd"} {
+	for _, name := range []string{"helloworld.ofd", "sample.ofd", "ofdrw/intro.ofd"} {
 		path := filepath.Join("..", "..", "testdata", name)
 		if _, err := os.Stat(path); err == nil {
 			return path

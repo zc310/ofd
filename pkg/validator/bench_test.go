@@ -30,7 +30,7 @@ func BenchmarkValidate(b *testing.B) {
 		{name: "Structural", mode: ModeStructural},
 	} {
 		b.Run(mode.name, func(b *testing.B) {
-			for _, document := range []string{"helloworld.ofd", "ano.ofd", "1000-pages.ofd"} {
+			for _, document := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "1000-pages.ofd"} {
 				b.Run(document, func(b *testing.B) {
 					data := validatorBenchFile(b, document)
 					validator, err := New(WithMode(mode.mode))

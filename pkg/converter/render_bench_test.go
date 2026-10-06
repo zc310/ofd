@@ -44,7 +44,7 @@ func BenchmarkRenderSVG999Page1(b *testing.B) {
 
 func benchmarkRenderFormat(b *testing.B, renderFunc func(*bytes.Buffer, []*render.Document) error) {
 	b.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		b.Fatal(err)
 	}

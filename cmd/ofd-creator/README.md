@@ -219,7 +219,7 @@ go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
 go run ./cmd/ofd-creator merge -o /tmp/seam-signed.ofd \
   --sign-cmd /tmp/ofd-signer-demo \
   --sign-stamp-seams --sign-stamp-seam-size 40 \
-  --verify-signatures testdata/999.ofd
+  --verify-signatures testdata/ofdrw/999.ofd
 ```
 
 每页写入一个 `StampAnnot`，所有标注引用同一份签章数据；页面尺寸可不同，位置会按每页自身的 `Area/PhysicalBox` 计算。
@@ -232,7 +232,7 @@ go run ./cmd/ofd-creator merge -o /tmp/seam-selected.ofd \
   --sign-stamp-seams \
   --sign-stamp-seam-edge right \
   --sign-stamp-seam-pages 1,3,5-7 \
-  --verify-signatures testdata/999.ofd
+  --verify-signatures testdata/ofdrw/999.ofd
 ```
 
 每 20 页重新拼一枚骑缝章。40mm 印章每页条带为 2mm，达到默认最小条带宽度；如果希望更清晰，可将印章边长提高到 80mm：
@@ -255,7 +255,7 @@ go run ./cmd/ofd-creator merge -o /tmp/seam-all-edges.ofd \
   --sign-cmd /tmp/ofd-signer-demo \
   --sign-stamp-seams --sign-stamp-seam-edge all \
   --sign-stamp-seam-size 40 \
-  --verify-signatures testdata/999.ofd
+  --verify-signatures testdata/ofdrw/999.ofd
 ```
 
 重签名通常配合 `--signatures drop`（先清掉旧签名）或有 `--pages` 的模型级合并使用。

@@ -61,7 +61,7 @@ func BenchmarkRasterDraw2D(b *testing.B)   { runRasterBench(b, "draw2d") }
 
 // TestRasterBackendTimingSummary 输出人类可读的平均耗时与输出体积。
 func TestRasterBackendTimingSummary(t *testing.T) {
-	files := []string{"helloworld.ofd", "intro.ofd"}
+	files := []string{"helloworld.ofd", "ofdrw/intro.ofd"}
 	backends := []string{"canvas", "gg", "ftgg", "tinyskia", "draw2d"}
 	const dpi = 150.0
 	rounds := 8

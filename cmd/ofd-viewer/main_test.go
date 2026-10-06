@@ -716,7 +716,7 @@ func TestPageTopSearch(t *testing.T) {
 }
 
 func TestScrollByViewportMovesOneScreen(t *testing.T) {
-	v := newThumbnailTestViewer(t, "999.ofd")
+	v := newThumbnailTestViewer(t, "ofdrw/999.ofd")
 	prefillRenderCaches(v)
 	if v.totalPages < 3 {
 		t.Skipf("测试文档页数不足: %d", v.totalPages)
@@ -901,7 +901,7 @@ func TestExportDocumentsToWriterDoesNotCloseCallerOutput(t *testing.T) {
 		}
 	}
 	// 多页图片走 ZIP 分支，同样不能关闭外部输出。
-	multi := openTestDocuments(t, "999.ofd", color.Transparent)
+	multi := openTestDocuments(t, "ofdrw/999.ofd", color.Transparent)
 	output := &countingWriteCloser{Buffer: &bytes.Buffer{}}
 	if err := exportDocumentsToWriter(multi, output, "png", 72, color.Transparent); err != nil {
 		t.Fatalf("多页导出失败: %v", err)
@@ -913,7 +913,7 @@ func TestExportDocumentsToWriterDoesNotCloseCallerOutput(t *testing.T) {
 
 func TestExportDocumentsToWriterZipsMultiPageImages(t *testing.T) {
 	// 5 页文档导出图片必须打包成 ZIP，且每页一个条目。
-	documents := openTestDocuments(t, "999.ofd", color.Transparent)
+	documents := openTestDocuments(t, "ofdrw/999.ofd", color.Transparent)
 	var buffer bytes.Buffer
 	if err := exportDocumentsToWriter(documents, &buffer, "png", 72, color.Transparent); err != nil {
 		t.Fatalf("多页图片导出失败: %v", err)

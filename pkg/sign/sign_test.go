@@ -25,8 +25,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testdataPath(name string) string {
-	return filepath.Join("..", "..", "testdata", name)
+func testdataPath(names ...string) string {
+	return filepath.Join(append([]string{"..", "..", "testdata"}, names...)...)
 }
 
 func TestSignAddsSignature(t *testing.T) {
@@ -128,7 +128,7 @@ func TestSignRemovesLegacySignsDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("999.ofd"))
+	input, err := os.ReadFile(testdataPath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestSignWritesSeamStampAnnotations(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("999.ofd"))
+	input, err := os.ReadFile(testdataPath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestSignWritesLeftSeamStampAnnotations(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("999.ofd"))
+	input, err := os.ReadFile(testdataPath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

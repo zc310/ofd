@@ -17,7 +17,7 @@ import (
 // 若实现分叉，这个测试会先发现。
 func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 	fixtures := []string{
-		"../../testdata/999.ofd",
+		"../../testdata/ofdrw/999.ofd",
 		"../../testdata/actions.ofd",
 		"../../testdata/annotations.ofd",
 		"../../testdata/permissions.ofd",
@@ -25,7 +25,7 @@ func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 		"../../testdata/package-extras.ofd",
 		"../../testdata/clips.ofd",
 		"../../testdata/media-actions.ofd",
-		"../../testdata/zsbk.ofd",
+		"../../testdata/ofdrw/zsbk.ofd",
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture, func(t *testing.T) {
@@ -164,12 +164,12 @@ func buildOFDWithOrphan(t *testing.T) []byte {
 
 // TestPackageReferencesRefusesToJudgeInvalidNamespace 是本组最关键的测试。
 //
-// testdata/intro.ofd 的命名空间是 http://www.ofdspec.org，缺 "/2016"
+// testdata/ofdrw/intro.ofd 的命名空间是 http://www.ofdspec.org，缺 "/2016"
 // 后缀，validator 报 namespace.invalid。解析失败后该文件里的引用一个也收集不到，
 // 于是它的 74 个字体会全部落进「无人引用」。若不记录 Unparsed，这个包会显示
 // 「124 个条目中 74 个可删」——照做就是毁掉一份真实文件。
 func TestPackageReferencesRefusesToJudgeInvalidNamespace(t *testing.T) {
-	const legacy = "../../testdata/intro.ofd"
+	const legacy = "../../testdata/ofdrw/intro.ofd"
 	index, err := PackageReferences(context.Background(), legacy)
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
