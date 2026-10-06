@@ -471,6 +471,95 @@ func TestOFDGouraudGradientUsesEdgeFlags(t *testing.T) {
 	}
 }
 
+// TestOFDGouraudGradientEdgeFlagTopology 对照 GB/T 33190 图 40「方向标志的
+// 控制作用」逐格验证三角形拓扑：EdgeFlag=0 产生两个互不相连的三角形，
+// EdgeFlag=1 复用 V1-V2 边、EdgeFlag=2 复用 V0-V2 边，各与上一个三角形
+// 拼成一个四边形。
+func TestOFDGouraudGradientEdgeFlagTopology(t *testing.T) {
+	red := basicMeshColor(color.RGBA{R: 255, A: 255})
+	grn := basicMeshColor(color.RGBA{G: 255, A: 255})
+	blu := basicMeshColor(color.RGBA{B: 255, A: 255})
+
+	triangles := func(points ...models.GouraudPoint) int {
+		return len(newOFDGouraudGradient(&models.CTGouraudShd{Point: points},
+			identityGradientTransform, nil).(*ofdMeshGradient).triangles)
+	}
+
+	// EdgeFlag=0：每三点一个三角形，两个三角形彼此独立。
+	if got := triangles(
+		models.GouraudPoint{X: 5, Y: 15, Color: red},
+		models.GouraudPoint{X: 0, Y: 8, Color: grn},
+		models.GouraudPoint{X: 10, Y: 8, Color: blu},
+		models.GouraudPoint{X: 5, Y: 3, EdgeFlag: 0, Color: red},
+		models.GouraudPoint{X: 0, Y: -4, Color: grn},
+		models.GouraudPoint{X: 10, Y: -4, Color: blu},
+	); got != 2 {
+		t.Fatalf("EdgeFlag=0 triangle count = %d, want 2", got)
+	}
+	// EdgeFlag=1 与 2 都只新增一个三角形，与上一个三角形共享一条边。
+	for _, flag := range []int{1, 2} {
+		if got := triangles(
+			models.GouraudPoint{X: 5, Y: 15, Color: red},
+			models.GouraudPoint{X: 0, Y: 8, Color: grn},
+			models.GouraudPoint{X: 10, Y: 8, Color: blu},
+			models.GouraudPoint{X: 5, Y: 1, EdgeFlag: flag, Color: red},
+		); got != 2 {
+			t.Fatalf("EdgeFlag=%d triangle count = %d, want 2", flag, got)
+		}
+	}
+
+	// 顶点拓扑：共享边决定第二个三角形的位置。
+	// EdgeFlag=1 复用 V1-V2 边（此处为 (0,8)-(10,8) 水平边），新点落在其下方，
+	// 四边形为 V0-V1-新点-V2，菱形内部（含上下两个三角形）都必须被填充。
+	diamond := newOFDGouraudGradient(&models.CTGouraudShd{
+		Point: []models.GouraudPoint{
+			{X: 5, Y: 15, Color: red},
+			{X: 0, Y: 8, Color: grn},
+			{X: 10, Y: 8, Color: blu},
+			{X: 5, Y: 1, EdgeFlag: 1, Color: red},
+		},
+	}, identityGradientTransform, nil)
+	for _, probe := range []struct {
+		name   string
+		x, y   float64
+		inside bool
+	}{
+		{"上三角形内", 5, 10, true},
+		{"下三角形内（仅 EdgeFlag=1 复用边才存在）", 5, 4, true},
+		{"共享边之外", 5, 18, false},
+		{"左侧之外", -5, 8, false},
+	} {
+		if got := diamond.At(probe.x, probe.y).A > 200; got != probe.inside {
+			t.Fatalf("EdgeFlag=1 %s：覆盖=%v，期望 %v", probe.name, got, probe.inside)
+		}
+	}
+
+	// EdgeFlag=2 复用 V0-V2 边（此处为 (5,15)-(10,8)），新点在右上，
+	// 四边形为 V1-V0-新点-V2，右上区域（仅 EdgeFlag=2 复用边才存在）必须被填充。
+	quad := newOFDGouraudGradient(&models.CTGouraudShd{
+		Point: []models.GouraudPoint{
+			{X: 5, Y: 15, Color: red},
+			{X: 0, Y: 8, Color: grn},
+			{X: 10, Y: 8, Color: blu},
+			{X: 15, Y: 15, EdgeFlag: 2, Color: red},
+		},
+	}, identityGradientTransform, nil)
+	for _, probe := range []struct {
+		name   string
+		x, y   float64
+		inside bool
+	}{
+		{"左三角形内", 3, 10, true},
+		{"右三角形内（仅 EdgeFlag=2 复用边才存在）", 12, 12, true},
+		{"下方之外", 8, 3, false},
+		{"右侧之外", 20, 12, false},
+	} {
+		if got := quad.At(probe.x, probe.y).A > 200; got != probe.inside {
+			t.Fatalf("EdgeFlag=2 %s：覆盖=%v，期望 %v", probe.name, got, probe.inside)
+		}
+	}
+}
+
 func TestOFDLaGouraudGradientBuildsLattice(t *testing.T) {
 	gradient := newOFDLaGouraudGradient(&models.CTLaGouraudShd{
 		VerticesPerRow: 2,
