@@ -78,7 +78,7 @@ func TestColorSpaceComponentsNormalizesGrayAndRGB(t *testing.T) {
 	full := map[int]string{1: "1", 2: "3", 4: "15", 8: "255", 16: "65535"}
 	for bits, value := range full {
 		space := rgbSpace(bits)
-		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value+" 0 0")}, space)
+		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value+" 0 0")}, space, nil)
 		if !ok {
 			t.Fatalf("BPC=%d 取分量失败", bits)
 		}
@@ -88,7 +88,7 @@ func TestColorSpaceComponentsNormalizesGrayAndRGB(t *testing.T) {
 	}
 	// GRAY 单通道同理。
 	for bits, value := range full {
-		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value)}, graySpace(bits))
+		components, ok := colorSpaceComponents8(models.CTColor{Value: colorValue(t, value)}, graySpace(bits), nil)
 		if !ok {
 			t.Fatalf("GRAY BPC=%d 取分量失败", bits)
 		}
@@ -118,7 +118,7 @@ func TestResolveColorSpaceColorCMYKChannelOrder(t *testing.T) {
 		{"0 0 0 0", color.RGBA{255, 255, 255, 255}, "全 0 无油墨为纯白"},
 	}
 	for _, tc := range cases {
-		got := resolveColorSpaceColor(space, models.CTColor{Value: colorValue(t, tc.value)})
+		got := resolveColorSpaceColor(space, models.CTColor{Value: colorValue(t, tc.value)}, nil)
 		if got != tc.want {
 			t.Errorf("CMYK %q → %v，期望 %v（%s）", tc.value, got, tc.want, tc.note)
 		}
@@ -131,7 +131,7 @@ func TestResolveColorSpaceColorCMYKAcrossBitsPerComponent(t *testing.T) {
 	full := map[int]string{1: "1", 2: "3", 4: "15", 8: "255", 16: "65535"}
 	var reference color.RGBA
 	for _, bits := range []int{1, 2, 4, 8, 16} {
-		got := resolveColorSpaceColor(cmykSpace(bits), models.CTColor{Value: colorValue(t, full[bits]+" 0 0 0")})
+		got := resolveColorSpaceColor(cmykSpace(bits), models.CTColor{Value: colorValue(t, full[bits]+" 0 0 0")}, nil)
 		if bits == 1 {
 			reference = got
 			continue
@@ -141,8 +141,8 @@ func TestResolveColorSpaceColorCMYKAcrossBitsPerComponent(t *testing.T) {
 		}
 	}
 	// 越界通道按默认颜色（全 0）处理，不截断到上限。
-	outOfRange := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "2 0 0 0")})
-	zero := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "0 0 0 0")})
+	outOfRange := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "2 0 0 0")}, nil)
+	zero := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "0 0 0 0")}, nil)
 	if outOfRange != zero {
 		t.Errorf("BPC=1 越界值 2 → %v，期望按默认颜色处理得到 %v", outOfRange, zero)
 	}
@@ -209,14 +209,14 @@ func TestColorSpaceComponents8ReadsPaletteWithHex(t *testing.T) {
 		BitsPerComponent: 4,
 		Palette:          &models.Palette{CV: []models.StArray{{"#F", "#0", "#0"}, {"0", "#F", "#0"}}},
 	}
-	red, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space)
+	red, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space, nil)
 	if !ok {
 		t.Fatal("按 Index 取调色板分量失败")
 	}
 	if red[0] != 255 || red[1] != 0 || red[2] != 0 {
 		t.Errorf("调色板 0 = %v，期望满值红", red)
 	}
-	green, ok := colorSpaceComponents8(models.CTColor{Index: 1}, space)
+	green, ok := colorSpaceComponents8(models.CTColor{Index: 1}, space, nil)
 	if !ok {
 		t.Fatal("按 Index 取调色板分量失败")
 	}
@@ -224,7 +224,7 @@ func TestColorSpaceComponents8ReadsPaletteWithHex(t *testing.T) {
 		t.Errorf("调色板 1 = %v，期望满值绿", green)
 	}
 	// Index 越界时按默认颜色处理：取不到分量，交由调用方回退。
-	if _, ok := colorSpaceComponents8(models.CTColor{Index: 99}, space); ok {
+	if _, ok := colorSpaceComponents8(models.CTColor{Index: 99}, space, nil); ok {
 		t.Error("越界 Index 不应取到分量")
 	}
 }
@@ -244,5 +244,109 @@ func TestColorComponentsPreservesRawChannels(t *testing.T) {
 	direct := models.Color{RGBA: color.RGBA{R: 1, G: 2, B: 3, A: 4}}
 	if _, _, ok := direct.Components(); ok {
 		t.Error("直接构造的 Color 不应报告原文通道")
+	}
+}
+
+// TestLooksLikeICCProfile 靠 'acsp' 签名区分「意在作为 ICC 配置文件」与「原始
+// 二进制调色板」。损坏的 ICC 配置文件也可能恰好被通道数整除，判长度会把那种文件
+// 当成调色板，解释出一个颜色完全不同的东西。
+func TestLooksLikeICCProfile(t *testing.T) {
+	if looksLikeICCProfile(nil) {
+		t.Error("空数据不应判为 ICC")
+	}
+	if looksLikeICCProfile(make([]byte, 24)) {
+		t.Error("24 字节填充数据不应判为 ICC")
+	}
+	icc := make([]byte, 132)
+	copy(icc[36:40], "acsp")
+	if !looksLikeICCProfile(icc) {
+		t.Error("偏移 36 处有 acsp 签名应判为 ICC")
+	}
+	if looksLikeICCProfile(make([]byte, 39)) {
+		t.Error("长度不足 40 字节无法容纳签名，不应判为 ICC")
+	}
+}
+
+// TestPaletteEntryReadsProfileBinaryPalette Profile 指向原始二进制调色板时，
+// Index 应按通道数平铺取到对应条目；越界按默认颜色处理，不回绕。
+func TestPaletteEntryReadsProfileBinaryPalette(t *testing.T) {
+	profile := []byte{
+		255, 0, 0, // Index 0 红
+		0, 255, 0, // Index 1 绿
+		0, 0, 255, // Index 2 蓝
+	}
+	space := rgbSpace(8)
+	want := [][]uint8{{255, 0, 0}, {0, 255, 0}, {0, 0, 255}}
+	for index, expected := range want {
+		entry, ok := paletteEntry(index, space, profile, 3)
+		if !ok {
+			t.Fatalf("Index=%d 应取到条目", index)
+		}
+		for i := range expected {
+			if entry[i] != expected[i] {
+				t.Errorf("Index=%d 分量 %d = %d，期望 %d", index, i, entry[i], expected[i])
+			}
+		}
+	}
+	// 越界：区间超出文件长度，不能回绕取到别的颜色。
+	if _, ok := paletteEntry(3, space, profile, 3); ok {
+		t.Error("Index 越界不应取到条目")
+	}
+	if _, ok := paletteEntry(100, space, profile, 3); ok {
+		t.Error("Index=100 越界不应取到条目")
+	}
+	if _, ok := paletteEntry(-1, space, profile, 3); ok {
+		t.Error("负 Index 不应取到条目")
+	}
+	// GRAY 调色板每项 1 字节。
+	gray, ok := paletteEntry(1, graySpace(8), []byte{0, 128, 255}, 1)
+	if !ok || gray[0] != 128 {
+		t.Errorf("GRAY 调色板 Index=1 = %v，期望 [128]", gray)
+	}
+}
+
+// TestPaletteEntryPrefersInlinePalette 内联 Palette 优先于 Profile 指向的调色板。
+func TestPaletteEntryPrefersInlinePalette(t *testing.T) {
+	space := &models.ColorSpace{
+		Type: "RGB",
+		// 内联 Index 0 为白，Profile Index 0 为红，内联应胜出。
+		Palette: &models.Palette{CV: []models.StArray{{"255", "255", "255"}}},
+	}
+	entry, ok := paletteEntry(0, space, []byte{255, 0, 0}, 3)
+	if !ok {
+		t.Fatal("应取到内联条目")
+	}
+	if entry[0] != 255 || entry[1] != 255 || entry[2] != 255 {
+		t.Errorf("内联优先应得白色，得到 %v", entry)
+	}
+	// 内联范围外的 Index 不再回落到 Profile：颜色空间声明了内联调色板就以它为准。
+	if _, ok := paletteEntry(5, space, []byte{255, 0, 0}, 3); ok {
+		t.Error("内联调色板越界时不应回落到 Profile 调色板")
+	}
+}
+
+// TestColorSpaceComponents8FromProfilePalette 端到端：只有 Profile、没有内联
+// Palette 的颜色空间也应能按 Index 取到颜色，而不是回退成黑色。
+func TestColorSpaceComponents8FromProfilePalette(t *testing.T) {
+	space := rgbSpace(8)
+	components, ok := colorSpaceComponents8(models.CTColor{Index: 1}, space, []byte{255, 0, 0, 0, 255, 0})
+	if !ok {
+		t.Fatal("应从 Profile 调色板取到分量")
+	}
+	want := [3]uint8{0, 255, 0}
+	for i := range want {
+		if components[i] != want[i] {
+			t.Errorf("分量 %d = %d，期望 %d", i, components[i], want[i])
+		}
+	}
+}
+
+// TestColorSpaceComponents8AppliesBitsPerComponentToProfilePalette Profile 调色板
+// 里的字节是通道取值，同样要按 BitsPerComponent 归一化：BPC=1 时满值是 1 而不是 255。
+func TestColorSpaceComponents8AppliesBitsPerComponentToProfilePalette(t *testing.T) {
+	space := rgbSpace(1)
+	components, ok := colorSpaceComponents8(models.CTColor{Index: 0}, space, []byte{1, 0, 0})
+	if !ok || components[0] != 255 {
+		t.Errorf("BPC=1 满值红分量 = %v，期望 [255 0 0]", components)
 	}
 }
