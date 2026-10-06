@@ -131,7 +131,7 @@ ofd-archive preserve --doc-type OFD-A --dry-run --format json --pretty document.
 页面设置归并（6.2.3 a) b)）有几处需要说明：
 
 - **页面设置按数值比较，不比文本。** `"210"` 与 `"210.0"` 是同一设置；若按文本比对，本该省略的 `Area` 会留在原地，b) 静默失效。
-- **b) 依赖 a) 成功。** 页面省略 `Area` 后会回退到 `CommonData/PageArea`（`internal/parser` 与 `pkg/analyzer` 都做这个回退）。若默认设置没能写入 `CommonData`——例如 `Document.xml` 自身不在 OFD 命名空间下——b) 会一并跳过，否则页面尺寸会静默改变。`testdata/intro.ofd` 正是这种文件：同一个包里 28 页用 `http://www.ofdspec.org/2016`、42 页用遗留的 `http://www.ofdspec.org`，而它的 `Document.xml` 属后者。
+- **b) 依赖 a) 成功。** 页面省略 `Area` 后会回退到 `CommonData/PageArea`（`internal/parser` 与 `pkg/analyzer` 都做这个回退）。若默认设置没能写入 `CommonData`——例如 `Document.xml` 自身不在 OFD 命名空间下——b) 会一并跳过，否则页面尺寸会静默改变。`../../testdata/ofdrw/intro.ofd` 正是这种文件：同一个包里 28 页用 `http://www.ofdspec.org/2016`、42 页用遗留的 `http://www.ofdspec.org`，而它的 `Document.xml` 属后者。
 - **只处理 OFD 命名空间下的元素**，遗留命名空间的页面原样保留。
 - **默认设置并列时**按页面顺序取靠前者，保证同一输入结果稳定。
 - `PageArea` 在 `CT_CommonData` 中紧随 `MaxUnitID`；序列类型要求顺序固定，插到末尾会让输出通不过 XSD。
@@ -148,7 +148,7 @@ ofd-archive preserve --doc-type OFD-A --drop-unreferenced --output out.ofd docum
 
 判定「无人引用」用的是 `ofd-validator` 的同一套引用识别与路径解析逻辑（见 `validator.PackageReferences`），因此「校验通过」与「闭包完整」两个结论不会互相矛盾。引用闭包从 `OFD.xml` 出发按嵌套引用遍历，字体、图像等叶子资源也计入可达集合。
 
-闭包不完整时**一律拒绝删除**，并在警告中说明原因。三种情况会让闭包不可信：引用指向不存在的文件、引用路径越过包根、被引用的 XML 无法解析（命名空间或根元素不符时引用收集不到）。这不是过度保守——`testdata/intro.ofd` 的命名空间缺 `/2016` 后缀，解析失败后它引用的字体会全部落进「无人引用」列表（该文件共 123 个条目），照单删除就是毁掉一份真实文件。完整清单用 `--format json` 查看。
+闭包不完整时**一律拒绝删除**，并在警告中说明原因。三种情况会让闭包不可信：引用指向不存在的文件、引用路径越过包根、被引用的 XML 无法解析（命名空间或根元素不符时引用收集不到）。这不是过度保守——`../../testdata/ofdrw/intro.ofd` 的命名空间缺 `/2016` 后缀，解析失败后它引用的字体会全部落进「无人引用」列表（该文件共 123 个条目），照单删除就是毁掉一份真实文件。完整清单用 `--format json` 查看。
 
 尚未实现的条款：6.2.5 b)（目标书签或页面不存在时去除动作）、6.2.3 d) e)（图层改名、页面块扁平化）、6.2.6（资源归并）、6.3.1、6.3.2（裁剪区几何判断）、6.3.3 c) d) e)（标准用「宜去除」，属建议，本阶段不做）、6.4、6.5、6.6（绘制参数与文字对象归并，需阈值判断）、6.13（签名去技术化）、6.14（版本）、6.15（附件）、6.16（加密解密）。其中 6.3.3 b) 目前只去除非 Goto 动作，图元对象上的 Goto 动作按标准应转为链接注释，该转换尚未实现，故予以保留而非删除。
 

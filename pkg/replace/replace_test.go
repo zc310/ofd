@@ -220,7 +220,7 @@ func TestDeterministicOutput(t *testing.T) {
 
 func TestDefaultDropsSignatures(t *testing.T) {
 	// 999.ofd 含历史 Signs 布局的真实签名。
-	data, err := os.ReadFile(testdataPath("999.ofd"))
+	data, err := os.ReadFile(testdataPath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Skipf("缺少 999.ofd: %v", err)
 	}

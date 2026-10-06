@@ -412,7 +412,7 @@ func TestExportPreservesGouraudLaGouraudAndPatternColors(t *testing.T) {
 func TestExportPreservesItemClips(t *testing.T) {
 	assetRoot := t.TempDir()
 	var output bytes.Buffer
-	input := filepath.Join("..", "..", "testdata", "intro.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd")
 	if err := WriteManifest(input, &output, Options{AssetRoot: assetRoot}); err != nil {
 		t.Fatal(err)
 	}

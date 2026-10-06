@@ -2717,7 +2717,7 @@ func checkGeneratedPackage(t *testing.T, data []byte) {
 
 func testEmbeddedFontData(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile("../../testdata/intro.ofd")
+	data, err := os.ReadFile("../../testdata/ofdrw/intro.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}

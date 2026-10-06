@@ -152,7 +152,7 @@ func TestIntroOFDToPDFSimilarity(t *testing.T) {
 	}
 
 	base := filepath.Join("..", "..", "..", "..", "testdata")
-	ofdSource := filepath.Join(base, "intro.ofd")
+	ofdSource := filepath.Join(base, "ofdrw/intro.ofd")
 	pdfSource := filepath.Join(base, "pdf", "intro.pdf")
 
 	ofdBytes, err := os.ReadFile(ofdSource)

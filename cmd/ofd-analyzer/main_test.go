@@ -101,7 +101,7 @@ func TestValidateOptionsRejectsInvalidSignatureFormat(t *testing.T) {
 }
 
 func TestRunAcceptsSignatureFormatOption(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "json", "--signature-format", "raw", input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"verification_checked":true`) || !strings.Contains(stdout.String(), `"verification_valid":false`) {
@@ -110,7 +110,7 @@ func TestRunAcceptsSignatureFormatOption(t *testing.T) {
 }
 
 func TestRunRejectsInvalidSignatureRoots(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	roots := filepath.Join(t.TempDir(), "roots.pem")
 	if err := os.WriteFile(roots, []byte("not a certificate"), 0600); err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestRunRejectsInvalidSignatureRoots(t *testing.T) {
 }
 
 func TestRunAcceptsSignatureRoots(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	signedValue := readArchiveEntry(t, input, "Doc_0/Signs/Sign_0/SignedValue.dat")
 	value, err := parser.ParseSignedValue(signedValue)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestRunAcceptsSignatureRoots(t *testing.T) {
 }
 
 func TestRunRejectsInvalidSignatureCRL(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "999.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/999.ofd")
 	crl := filepath.Join(t.TempDir(), "revoked.crl")
 	if err := os.WriteFile(crl, []byte("not a CRL"), 0600); err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestRunAnalysisFailureStillWritesFailedReport(t *testing.T) {
 }
 
 func TestRunFailOnWarningReturnsFailure(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "ano.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "json", "--fail-on-warning", input}, &stdout, &stderr)
 	if code != exitFailed {

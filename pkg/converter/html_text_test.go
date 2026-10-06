@@ -146,7 +146,7 @@ func TestHTMLTextLayerDoesNotBreakImageOutput(t *testing.T) {
 // 至少有一个片段。空的 text-layer 只会留下无意义的节点，也会让「有没有文字
 // 层」这个判断失真。
 func TestHTMLTextLayerNeverEmpty(t *testing.T) {
-	for _, source := range []string{"helloworld.ofd", "image-effects.ofd", "ano.ofd"} {
+	for _, source := range []string{"helloworld.ofd", "image-effects.ofd", "ofdrw/ano.ofd"} {
 		t.Run(source, func(t *testing.T) {
 			var output bytes.Buffer
 			if err := converter.HTML(context.Background(), "../../testdata/"+source, &output,

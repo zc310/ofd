@@ -562,7 +562,7 @@ func TestProfileInheritsArchiveRuleCount(t *testing.T) {
 // 注释列表与签名列表外的全部内容。用仓库内带签名的样例验证规则既能报出未覆盖
 // 的文件，也不会把签名自身的产物误判为未保护。
 func TestProfileSignatureCoverage(t *testing.T) {
-	original, err := os.ReadFile(filepath.Join("..", "..", "testdata", "zsbk.ofd"))
+	original, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/zsbk.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

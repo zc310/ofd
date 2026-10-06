@@ -509,10 +509,10 @@ func TestUnreferencedDeletedWhenOptedIn(t *testing.T) {
 }
 
 // TestUnreferencedRefusedWhenClosureIncomplete 是安全性的核心：闭包不可信时，
-// 即使显式要求删除也必须拒绝。testdata/intro.ofd 的命名空间缺 "/2016"
+// 即使显式要求删除也必须拒绝。testdata/ofdrw/intro.ofd 的命名空间缺 "/2016"
 // 后缀，其 123 个条目会全被误判为无人引用。
 func TestUnreferencedRefusedWhenClosureIncomplete(t *testing.T) {
-	const legacy = "../../testdata/intro.ofd"
+	const legacy = "../../testdata/ofdrw/intro.ofd"
 	var warnings []string
 	var out bytes.Buffer
 	_, err := Apply(legacy, &out, Options{

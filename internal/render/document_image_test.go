@@ -202,7 +202,7 @@ func TestClipCoversImageSkipsScaledFullRectangleClip(t *testing.T) {
 }
 
 func TestClipCoversImageSkipsSubMillimeterBleedClip(t *testing.T) {
-	// testdata/intro.ofd 第 39 页的图标图元：源图为不透明调色板 PNG，
+	// testdata/ofdrw/intro.ofd 第 39 页的图标图元：源图为不透明调色板 PNG，
 	// 裁剪路径按版面出血内缩约 0.37mm。125x60 像素下折算约 2.1px，略大于旧的
 	// 2px 容差，导致掩码被烘焙进图片；canvas 的 PDF 写入器随后附加 SMask 并写
 	// 死 /Interpolate true，插值把内缩的一圈全透明像素与内部像素混成灰边。
@@ -308,7 +308,7 @@ func TestDecodeRasterImageKeepsRawPNGBytes(t *testing.T) {
 }
 
 func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestDocumentDecodeImageCacheReusesInstance(t *testing.T) {
 }
 
 func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ type benchmarkImageMedia struct {
 
 func benchmarkImageDocument(b *testing.B) (*Document, []benchmarkImageMedia) {
 	b.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		b.Fatal(err)
 	}

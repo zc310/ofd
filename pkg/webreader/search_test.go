@@ -52,7 +52,7 @@ func TestSearchAvoidsFullTextCache(t *testing.T) {
 }
 
 func TestTextValuesMatchTextLayoutOrder(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestTextValuesMatchTextLayoutOrder(t *testing.T) {
 }
 
 func TestTextLayoutsForRunsPreservesPageOrder(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestTextLayoutsForRunsPreservesPageOrder(t *testing.T) {
 }
 
 func TestSearchResultsMatchTextSnapshots(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

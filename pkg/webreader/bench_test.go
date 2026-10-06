@@ -49,7 +49,7 @@ func benchReader(b *testing.B, name string) *Reader {
 
 // BenchmarkOpen 打开文档的成本。这是整条链路的固定开销，WASM 侧每次换文档都要付。
 func BenchmarkOpen(b *testing.B) {
-	for _, doc := range []string{"helloworld.ofd", "ano.ofd", "1000-pages.ofd"} {
+	for _, doc := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "1000-pages.ofd"} {
 		b.Run(doc, func(b *testing.B) {
 			data := benchFile(b, doc)
 			b.ReportAllocs()
@@ -241,7 +241,7 @@ func BenchmarkPages(b *testing.B) {
 //
 // 这一项会触发字体解析与子系统加载，是首次打开时容易被忽略的一段。
 func BenchmarkFonts(b *testing.B) {
-	r := benchReader(b, "ano.ofd")
+	r := benchReader(b, "ofdrw/ano.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Fonts(); err != nil {

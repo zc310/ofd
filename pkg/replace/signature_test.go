@@ -52,7 +52,7 @@ func zipEntry(t *testing.T, data []byte, name string) string {
 }
 
 // signedFixture 是带签名列表的样例。
-const signedFixture = "../../testdata/zsbk.ofd"
+const signedFixture = "../../testdata/ofdrw/zsbk.ofd"
 
 // runOnSigned 对签名样例执行一次条目替换。
 func runOnSigned(t *testing.T, ops []Operation, options Options) ([]byte, []string) {

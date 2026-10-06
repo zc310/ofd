@@ -364,7 +364,7 @@ func TestOfdPrefixPreserved(t *testing.T) {
 	// 999.ofd 使用 ofd: 前缀，目标页面 92 尚无注解文件。
 	// Appearance 中的原始片段也须套用 ofd 前缀，避免写出空命名空间元素。
 	var buffer bytes.Buffer
-	err := Add(readTestdata(t, "999.ofd"), Target{Pages: []int{1}}, Watermark{
+	err := Add(readTestdata(t, "ofdrw/999.ofd"), Target{Pages: []int{1}}, Watermark{
 		Creator:     "watermark-test",
 		LastModDate: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
 		Appearance:  []byte(`<TextObject ID="900" Boundary="0 0 10 10" Font="20" Size="9"><TextCode X="0" Y="0">保密</TextCode></TextObject>`),
@@ -837,7 +837,7 @@ func TestPrefixDerivedFromDocumentWhenNoIndex(t *testing.T) {
 	// 999.ofd 使用 ofd: 前缀但没有既有注解索引，新索引与页面文件应从
 	// Document.xml 根元素继承前缀。
 	var buffer bytes.Buffer
-	err := Add(readTestdata(t, "999.ofd"), Target{Pages: []int{0}}, Watermark{
+	err := Add(readTestdata(t, "ofdrw/999.ofd"), Target{Pages: []int{0}}, Watermark{
 		Creator:     "watermark-test",
 		LastModDate: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
 	}, &buffer, Options{})

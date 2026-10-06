@@ -52,7 +52,7 @@ func TestAnalyzeHelloWorld(t *testing.T) {
 }
 
 func TestAnalyzeSignatureDigest(t *testing.T) {
-	report, err := Analyze(fixturePath("999.ofd"))
+	report, err := Analyze(fixturePath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestAnalyzeSignatureDigest(t *testing.T) {
 }
 
 func TestAnalyzeMalformedSignedValueAddsSignatureWarning(t *testing.T) {
-	data := replaceArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat", []byte("not-an-asn1-signed-value"))
+	data := replaceArchiveEntry(t, fixturePath("ofdrw/999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat", []byte("not-an-asn1-signed-value"))
 	report, err := Analyze(data)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestAnalyzeMalformedSignedValueAddsSignatureWarning(t *testing.T) {
 }
 
 func TestAnalyzeSignatureOptionsOverrideVerification(t *testing.T) {
-	report, err := Analyze(fixturePath("999.ofd"), WithSignatureFormat("RAW"), WithSignatureUID("non-default-user-id"))
+	report, err := Analyze(fixturePath("ofdrw/999.ofd"), WithSignatureFormat("RAW"), WithSignatureUID("non-default-user-id"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +167,14 @@ func TestAnalyzeSignatureOptionsOverrideVerification(t *testing.T) {
 }
 
 func TestAnalyzeRejectsInvalidSignatureCRL(t *testing.T) {
-	_, err := Analyze(fixturePath("999.ofd"), WithSignatureCRLsPEM([]byte("not-a-crl")))
+	_, err := Analyze(fixturePath("ofdrw/999.ofd"), WithSignatureCRLsPEM([]byte("not-a-crl")))
 	if err == nil || !strings.Contains(err.Error(), "解析 CRL") {
 		t.Fatalf("invalid CRL error = %v", err)
 	}
 }
 
 func TestAnalyzeMissingSignedValueAddsSignatureWarning(t *testing.T) {
-	data := removeArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	data := removeArchiveEntry(t, fixturePath("ofdrw/999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
 	report, err := Analyze(data)
 	if err != nil {
 		t.Fatal(err)
@@ -198,9 +198,9 @@ func TestAnalyzeMissingSignedValueAddsSignatureWarning(t *testing.T) {
 }
 
 func TestAnalyzeResolvesRelativeSignedValuePath(t *testing.T) {
-	signatureXML := readArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml")
+	signatureXML := readArchiveEntry(t, fixturePath("ofdrw/999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml")
 	signatureXML = bytes.Replace(signatureXML, []byte("<ofd:SignedValue>/Doc_0/Signs/Sign_0/SignedValue.dat</ofd:SignedValue>"), []byte("<ofd:SignedValue>SignedValue.dat</ofd:SignedValue>"), 1)
-	data := replaceArchiveEntry(t, fixturePath("999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml", signatureXML)
+	data := replaceArchiveEntry(t, fixturePath("ofdrw/999.ofd"), "Doc_0/Signs/Sign_0/Signature.xml", signatureXML)
 	report, err := Analyze(data)
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestAnalyzeResourceFixtures(t *testing.T) {
 		t.Fatalf("missing DrawParam relative reference: %+v", drawParamReport.IDReferences)
 	}
 
-	anoReport, err := Analyze(fixturePath("ano.ofd"))
+	anoReport, err := Analyze(fixturePath("ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

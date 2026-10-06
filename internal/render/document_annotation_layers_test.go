@@ -105,7 +105,7 @@ func isRedAt(img image.Image, x, y int) bool {
 // TestAnnoStampAnnotationRendersText 确保既有的 ano.ofd 整页水印（Type=Stamp）仍绘制为最上层，
 // 与 Watermark 分层改动互不影响。
 func TestAnnoStampAnnotationRemainsVisible(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

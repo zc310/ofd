@@ -94,7 +94,7 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 }
 
 func TestOpenAndRenderPage(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 }
 
 func TestPagesWithIntroDocument(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "intro.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func makeMinimalOFDBundle(t *testing.T) []byte {
 }
 
 func TestRenderPageConcurrent(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +443,7 @@ func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 }
 
 func TestRenderPages(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +603,7 @@ func TestFontsClosedReaderReturnsError(t *testing.T) {
 }
 
 func TestFontsExposeEmbeddedDataAndTextFamily(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -659,7 +659,7 @@ func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
 		}
 		return data
 	}
-	embedded, err := Open(readData("ano.ofd"))
+	embedded, err := Open(readData("ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -968,7 +968,7 @@ func TestPreferencesExposeDocumentZoom(t *testing.T) {
 }
 
 func TestFontListIncludesDeclaredFonts(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1217,7 +1217,7 @@ func TestAttachmentsExposeMetadataAndData(t *testing.T) {
 		name string
 	}{
 		{"multi_demo.ofd", "original_invoice.xml"},
-		{"999.ofd", "original_invoice"},
+		{"ofdrw/999.ofd", "original_invoice"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -1279,7 +1279,7 @@ func TestAttachmentsExposeMetadataAndData(t *testing.T) {
 }
 
 func TestAttachmentDataRejectsUnknown(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1298,7 +1298,7 @@ func TestAttachmentDataRejectsUnknown(t *testing.T) {
 }
 
 func TestMediaExposeMetadataAndData(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("ano.ofd  is unavailable")
 	}
@@ -1351,7 +1351,7 @@ func TestMediaExposeMetadataAndData(t *testing.T) {
 }
 
 func TestAnnotationsExposeMetadata(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1558,8 +1558,8 @@ func TestSignaturesExposeMetadataAndSeals(t *testing.T) {
 		seals   bool
 		certs   bool
 	}{
-		{"zsbk.ofd", 1, true, true},
-		{"999.ofd", 1, false, true},
+		{"ofdrw/zsbk.ofd", 1, true, true},
+		{"ofdrw/999.ofd", 1, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -1645,8 +1645,8 @@ func TestStatsSummarizeResources(t *testing.T) {
 		media       bool
 		signatures  bool
 	}{
-		{"999.ofd", true, true, true},
-		{"zsbk.ofd", false, true, true},
+		{"ofdrw/999.ofd", true, true, true},
+		{"ofdrw/zsbk.ofd", false, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -1681,7 +1681,7 @@ func TestStatsSummarizeResources(t *testing.T) {
 }
 
 func TestSignatureCertificateAndValueExport(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

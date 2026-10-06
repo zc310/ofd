@@ -93,7 +93,7 @@ func TestOpaqueSealFixtureBackgroundKeyedOut(t *testing.T) {
 // TestOFDSealDocumentCached 回归：OFD 印章文档在多次渲染同一页面时必须只
 // 解析/缓存一次，避免每次渲染都重新解包印章并重新加载其字体。
 func TestOFDSealDocumentCached(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Skipf("999.ofd 不可用: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestOFDSealDocumentCached(t *testing.T) {
 }
 
 func Test999StampSealInheritsFallbackFont(t *testing.T) {
-	sealDocument, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
+	sealDocument, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +461,7 @@ func TestOFDSealClipKeepsVectorOrientation(t *testing.T) {
 			float64(hiX+1) * mmPerPx, float64(hiY+1) * mmPerPx, sum / n * mmPerPx, true
 	}
 
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "999.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Skipf("999.ofd 不可用: %v", err)
 	}

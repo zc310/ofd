@@ -58,7 +58,7 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 }
 
 func TestAnoStampAnnotationRendersText(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestAnoStampAnnotationRendersText(t *testing.T) {
 }
 
 func TestAnoPageIncludesStampAnnotation(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

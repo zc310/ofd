@@ -147,7 +147,7 @@ func TestSeamStampEndToEndRendersOnCorrectEdge(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("外部签名命令依赖类 Unix 工具")
 	}
-	input, err := os.ReadFile(filepath.Join("..", "..", "testdata", "999.ofd"))
+	input, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Skipf("999.ofd 不可用: %v", err)
 	}

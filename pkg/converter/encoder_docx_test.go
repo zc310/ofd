@@ -108,7 +108,7 @@ func TestDOCXPreservesFontNameAndSize(t *testing.T) {
 
 func TestDOCXTablesToggle(t *testing.T) {
 	// intro.ofd 全篇能识别出 20 余个表格，适合做表格开关的回归样例。
-	const source = "../../testdata/intro.ofd"
+	const source = "../../testdata/ofdrw/intro.ofd"
 	var withTables, withoutTables bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &withTables, converter.WithDOCXTables(true)); err != nil {
 		t.Fatalf("开启表格转换失败: %v", err)
@@ -232,7 +232,7 @@ func docxEmbedIDs(document string) []string {
 // 且能用 WithDOCXAnnotations 保留。ano.ofd 首页的「保密资料」水印由 81 个
 // 批注文字对象组成，同页真实正文只有 5 个对象——过滤前后段落数差异巨大。
 func TestDOCXDropsAnnotationWatermarkByDefault(t *testing.T) {
-	const source = "../../testdata/ano.ofd"
+	const source = "../../testdata/ofdrw/ano.ofd"
 	var filtered, kept bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &filtered, converter.Page(1)); err != nil {
 		t.Fatalf("默认转换失败: %v", err)

@@ -6,7 +6,7 @@
 
 ## SES 结构（V4）
 
-输出遵循 GM/T 0031 的 V4 电子印章结构，与 `testdata/999.ofd` 等真实样例一致：
+输出遵循 GM/T 0031 的 V4 电子印章结构，与 `../../testdata/ofdrw/999.ofd` 等真实样例一致：
 
 ```asn1
 SES_Signature ::= SEQUENCE {

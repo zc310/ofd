@@ -48,7 +48,7 @@ func documentXMLFromOFD(tb testing.TB, name string) []byte {
 func TestParseDocumentXMLMatchesEncodingXML(t *testing.T) {
 	for _, name := range []string{
 		"helloworld.ofd",
-		"intro.ofd",
+		"ofdrw/intro.ofd",
 		"preferences.ofd",
 		"annotations.ofd",
 		"multi_doc.ofd",

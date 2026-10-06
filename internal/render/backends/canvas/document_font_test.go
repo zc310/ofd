@@ -54,7 +54,7 @@ func useFallback(t *testing.T, fonts *Fonts, data []byte, family string, style F
 }
 
 func TestLoadFontConcurrentUsesOneCachedFamily(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestSelectFallbackPrefersMatchingFontFamily(t *testing.T) {
 }
 
 func TestIntroEmbeddedFontsLoad(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "intro.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestImageNotFoundLeftTextFontLoads(t *testing.T) {
 }
 
 func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestAnoFont115UsesDeclaredEmbeddedFont(t *testing.T) {
 }
 
 func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestAnoAnnotationFontWithoutFileDoesNotUseSubsetFont(t *testing.T) {
 }
 
 func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ano.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/ano.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

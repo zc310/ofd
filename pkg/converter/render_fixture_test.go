@@ -56,7 +56,7 @@ func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 // 渐变文字必须保留真实文字 + 原生着色图案（可复制），而不是栅格化成图片。
 func TestRender_PDF_gradientTextKeepsText(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/intro.ofd", &output))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/intro.ofd", &output))
 	found := false
 	for _, stream := range inflatePDFStreams(output.Bytes()) {
 		// canvas 把着色图案文字写成 “/Pattern cs /P? scn ... [..]TJ”。
@@ -108,13 +108,13 @@ func TestRender_PDF_999(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "999.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/999.ofd", f))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/999.ofd", f))
 }
 func TestRender_PDF_ano(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "ano.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/ano.ofd", f))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/ano.ofd", f))
 }
 func TestRender_PDF_huawei(t *testing.T) {
 	var output bytes.Buffer
@@ -125,12 +125,12 @@ func TestRender_PDF_intro_page7(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "intro_page_7.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/intro.ofd", f, Page(40)))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofdrw/intro.ofd", f, Page(40)))
 }
 
 func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 	var output bytes.Buffer
-	err := Image(ctxTODO, "../../testdata/intro.ofd",
+	err := Image(ctxTODO, "../../testdata/ofdrw/intro.ofd",
 		Writer(func(int) (io.WriteCloser, error) {
 			return bufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -143,7 +143,7 @@ func TestRender_SVG_intro_page15KeepsSimpleCompositesVector(t *testing.T) {
 }
 
 func TestRender_Image(t *testing.T) {
-	assert.Nil(t, Image(ctxTODO, "../../testdata/ano.ofd",
+	assert.Nil(t, Image(ctxTODO, "../../testdata/ofdrw/ano.ofd",
 		ImageWriter(func(page int, img image.Image) error {
 			return imaging.Save(img, filepath.Join(tmpDir, fmt.Sprintf("ano_%d.png", page)))
 		}),

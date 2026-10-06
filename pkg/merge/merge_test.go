@@ -95,8 +95,8 @@ func TestMergeRegeneratesDuplicateDocID(t *testing.T) {
 func TestMergeRewritesAbsoluteSignaturePaths(t *testing.T) {
 	// 999.ofd 的签名清单使用 /Doc_0/... 绝对包内路径。
 	data := mergeToBytes(t, []string{
-		testdataPath("999.ofd"),
-		testdataPath("999.ofd"),
+		testdataPath("ofdrw/999.ofd"),
+		testdataPath("ofdrw/999.ofd"),
 	}, Options{Signatures: creator.SignatureRewrite})
 
 	pkg := openMerged(t, data)
@@ -115,7 +115,7 @@ func TestMergeRewritesAbsoluteSignaturePaths(t *testing.T) {
 }
 
 func TestSignaturePreserveRejectsRenamedAbsolutePaths(t *testing.T) {
-	err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &bytes.Buffer{}, Options{Signatures: creator.SignaturePreserve})
+	err := Files([]string{testdataPath("ofdrw/999.ofd"), testdataPath("ofdrw/999.ofd")}, &bytes.Buffer{}, Options{Signatures: creator.SignaturePreserve})
 	if err == nil {
 		t.Fatalf("preserve 模式下签名绝对路径无法保留时应返回错误")
 	}
@@ -123,8 +123,8 @@ func TestSignaturePreserveRejectsRenamedAbsolutePaths(t *testing.T) {
 
 func TestSignatureDropRemovesSignatureFiles(t *testing.T) {
 	data := mergeToBytes(t, []string{
-		testdataPath("999.ofd"),
-		testdataPath("999.ofd"),
+		testdataPath("ofdrw/999.ofd"),
+		testdataPath("ofdrw/999.ofd"),
 	}, Options{Signatures: creator.SignatureDrop})
 
 	pkg := openMerged(t, data)
@@ -394,7 +394,7 @@ func TestMergeRejectsUnsafeDocRoot(t *testing.T) {
 
 func TestSignatureRewriteEmitsWarning(t *testing.T) {
 	var warnings []string
-	data := mergeToBytes(t, []string{testdataPath("999.ofd"), testdataPath("999.ofd")}, Options{
+	data := mergeToBytes(t, []string{testdataPath("ofdrw/999.ofd"), testdataPath("ofdrw/999.ofd")}, Options{
 		Signatures: creator.SignatureRewrite,
 		OnWarning:  func(message string) { warnings = append(warnings, message) },
 	})
@@ -1005,7 +1005,7 @@ func signatureActions(events []SignatureEvent) map[SignatureAction]int {
 func TestMergeSignatureEvents(t *testing.T) {
 	preserved := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignaturePreserve, OnSignature: on})
+		return Files([]string{testdataPath("ofdrw/999.ofd")}, &buffer, Options{Signatures: creator.SignaturePreserve, OnSignature: on})
 	})
 	if signatureActions(preserved)[SignaturePreserved] != 1 {
 		t.Fatalf("preserve 事件 = %+v", preserved)
@@ -1013,7 +1013,7 @@ func TestMergeSignatureEvents(t *testing.T) {
 
 	rewritten := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite, OnSignature: on})
+		return Files([]string{testdataPath("ofdrw/999.ofd"), testdataPath("ofdrw/999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite, OnSignature: on})
 	})
 	if signatureActions(rewritten)[SignatureRewritten] != 1 {
 		t.Fatalf("rewrite 事件 = %+v", rewritten)
@@ -1021,7 +1021,7 @@ func TestMergeSignatureEvents(t *testing.T) {
 
 	dropped := collectSignatureEvents(t, func(on func(SignatureEvent)) error {
 		var buffer bytes.Buffer
-		return Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureDrop, OnSignature: on})
+		return Files([]string{testdataPath("ofdrw/999.ofd"), testdataPath("ofdrw/999.ofd")}, &buffer, Options{Signatures: creator.SignatureDrop, OnSignature: on})
 	})
 	if signatureActions(dropped)[SignatureDropped] != 2 {
 		t.Fatalf("drop 事件 = %+v", dropped)
@@ -1029,7 +1029,7 @@ func TestMergeSignatureEvents(t *testing.T) {
 }
 
 func TestVerifySignatures(t *testing.T) {
-	statuses, err := VerifySignatures(testdataPath("999.ofd"))
+	statuses, err := VerifySignatures(testdataPath("ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatalf("VerifySignatures 失败: %v", err)
 	}
@@ -1041,7 +1041,7 @@ func TestVerifySignatures(t *testing.T) {
 	}
 
 	var buffer bytes.Buffer
-	if err := Files([]string{testdataPath("999.ofd"), testdataPath("999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite}); err != nil {
+	if err := Files([]string{testdataPath("ofdrw/999.ofd"), testdataPath("ofdrw/999.ofd")}, &buffer, Options{Signatures: creator.SignatureRewrite}); err != nil {
 		t.Fatalf("合并失败: %v", err)
 	}
 	merged, err := VerifySignatures(buffer.Bytes())
@@ -1056,7 +1056,7 @@ func TestVerifySignatures(t *testing.T) {
 func TestPagesSignatureEvents(t *testing.T) {
 	var events []SignatureEvent
 	var buffer bytes.Buffer
-	err := Pages([]Source{{Path: testdataPath("999.ofd")}}, &buffer, PageOptions{
+	err := Pages([]Source{{Path: testdataPath("ofdrw/999.ofd")}}, &buffer, PageOptions{
 		Pages:       []int{1},
 		OnSignature: func(event SignatureEvent) { events = append(events, event) },
 	})

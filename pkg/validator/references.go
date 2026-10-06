@@ -41,7 +41,7 @@ type ReferenceIndex struct {
 	// Unparsed 是被引用到但无法解析的 XML。命名空间或根元素不符时引用识别
 	// 不可信，该文件里的引用全部收集不到。
 	//
-	// 这一项直接决定能否删除条目：testdata/intro.ofd 的命名空间缺
+	// 这一项直接决定能否删除条目：testdata/ofdrw/intro.ofd 的命名空间缺
 	// "/2016" 后缀，解析失败后它引用的 74 个字体会全部落进「无人引用」，
 	// 照单删除就是在真实文件上毁数据。
 	Unparsed []string
