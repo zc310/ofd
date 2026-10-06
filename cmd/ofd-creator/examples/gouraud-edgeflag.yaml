@@ -1,0 +1,231 @@
+# GouraudShd 方向标志（EdgeFlag）对照示例
+# 1 页 3 格，逐格还原 GB/T 33190 图 40「方向标志的控制作用」：
+#   EdgeFlag=0 —— 两个彼此独立的三角形 (Va,Vb,Vc) 与 (Vd,Ve,Vf)，无共享边；
+#   EdgeFlag=1 —— Vd 复用 Vb-Vc 边，与上三角拼成菱形；
+#   EdgeFlag=2 —— Vd 复用 Va-Vc 边，与上三角拼成平行四边形。
+# 只有 1、2 会产生共享边从而拼成连续网格；0 表示两个互不相连的三角形，
+# 各自独立填充，重叠区域的合成顺序由阅读器决定（规范未定义）。
+# 每格下方留白处可见形状轮廓：0 的两三角之间有空白，1/2 则拼成完整四边形。
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud-edgeflag.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/gouraud-edgeflag.yaml -o testdata/gouraud-edgeflag.ofd --format auto --deterministic --validate --complete-text-code-deltas
+
+version: 1
+document:
+  id: gouraud-edgeflag
+  title: GouraudShd 方向标志对照
+  creator: ofd-creator
+  creator_version: 0.0.1
+  page_size:
+    width: 180
+    height: 76
+pages:
+  - items:
+      - type: text
+        x: 8
+        y: 8
+        width: 164
+        height: 7
+        value: GouraudShd 方向标志（EdgeFlag）对照 —— GB/T 33190 图 40
+        font: 思源黑体
+        size: 4.5
+        fill: true
+      - type: text
+        x: 8
+        y: 16
+        width: 164
+        height: 5
+        value: 0 另起三角形（无共享边）；1 复用 V1-V2 边；2 复用 V0-V2 边
+        font: 思源黑体
+        size: 3
+        fill: true
+        fill_color:
+          r: 80
+          g: 80
+          b: 80
+
+      # 第 1 格：EdgeFlag=0 —— 两个独立三角形，保留原始 6 点坐标。
+      # 两三角重叠约 90mm²，因无共享边，重叠区合成顺序取决于阅读器。
+      - type: text
+        x: 8
+        y: 19
+        width: 52
+        height: 6
+        value: EdgeFlag=0 两个独立三角形
+        font: 思源黑体
+        size: 3
+        fill: true
+      - type: path
+        x: 8
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 8
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              # 第一个三角形 (Va,Vb,Vc)
+              - x: 4
+                y: 4
+                color:
+                  r: 255
+              - x: 34
+                y: 8
+                color:
+                  g: 255
+              - x: 10
+                y: 32
+                color:
+                  b: 255
+              # 第二个三角形 (Vd,Ve,Vf)：EdgeFlag=0 明确另起，无共享边
+              - x: 38
+                y: 4
+                edge_flag: 0
+                color:
+                  r: 255
+                  g: 255
+              - x: 8
+                y: 26
+                color:
+                  r: 255
+                  b: 255
+              - x: 38
+                y: 32
+                color:
+                  g: 255
+                  b: 255
+
+      # 第 2 格：EdgeFlag=1 —— Vd 复用 Vb-Vc 边，与上三角拼成菱形。
+      - type: text
+        x: 60
+        y: 19
+        width: 52
+        height: 6
+        value: EdgeFlag=1 复用 Vb-Vc 成菱形
+        font: 思源黑体
+        size: 3
+        fill: true
+      - type: path
+        x: 60
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 60
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 22
+                y: 32
+                color:
+                  r: 255
+              - x: 2
+                y: 15
+                color:
+                  g: 255
+              - x: 42
+                y: 15
+                color:
+                  b: 255
+              # 复用 V1-V2（即 Vb-Vc）水平边，向下拼出菱形下半部
+              - x: 22
+                y: 2
+                edge_flag: 1
+                color:
+                  r: 255
+                  g: 255
+
+      # 第 3 格：EdgeFlag=2 —— Vd 复用 Va-Vc 边，与上三角拼成平行四边形。
+      - type: text
+        x: 112
+        y: 19
+        width: 66
+        height: 6
+        value: EdgeFlag=2 复用 Va-Vc 成平行四边形
+        font: 思源黑体
+        size: 3
+        fill: true
+      - type: path
+        x: 112
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          r: 242
+          g: 242
+          b: 246
+      - type: path
+        x: 112
+        y: 28
+        width: 44
+        height: 34
+        data: M 0 0 L 44 0 L 44 34 L 0 34 C
+        stroke: false
+        fill: true
+        fill_color:
+          gouraud:
+            points:
+              - x: 6
+                y: 32
+                color:
+                  r: 255
+              - x: 2
+                y: 6
+                color:
+                  g: 255
+              - x: 38
+                y: 6
+                color:
+                  b: 255
+              # 复用 V0-V2（即 Va-Vc）斜边，向右上拼出平行四边形右半部
+              - x: 42
+                y: 32
+                edge_flag: 2
+                color:
+                  r: 255
+                  g: 255
+
+      # 底部说明：三格共享同一组顶点颜色约定，便于逐点核对插值结果。
+      - type: text
+        x: 8
+        y: 66
+        width: 164
+        height: 5
+        value: 三格顶点均取红/绿/蓝/黄：红 Va、绿 Vb、蓝 Vc、黄 Vd。第 1 格另加品红 Ve、青色 Vf 构成第二个独立三角形。
+        font: 思源黑体
+        size: 2.6
+        fill: true
+        fill_color:
+          r: 90
+          g: 90
+          b: 90
