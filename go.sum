@@ -266,8 +266,8 @@ github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3i
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
-github.com/zc310/canvas v0.0.0-20261005053740-ff4e4884e50d h1:T/0ZBI0c9lkcVjeLNP4i8+b/dDSU9EexTA/2R2ITYvk=
-github.com/zc310/canvas v0.0.0-20261005053740-ff4e4884e50d/go.mod h1:FYDyKM0MxbBWVKAepMdvs8nCeW8/MunAuWIh/7WahDc=
+github.com/zc310/canvas v0.0.0-20261008070440-b9392fe346d9 h1:sIOFUppma4/zp/FnI3lA7o6qZRXM392f/3Q/FQuJM3k=
+github.com/zc310/canvas v0.0.0-20261008070440-b9392fe346d9/go.mod h1:FYDyKM0MxbBWVKAepMdvs8nCeW8/MunAuWIh/7WahDc=
 github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5 h1:2DkU0Vc3E1rrMBGmthEwD0wb16jykm4CV3W1bBOOocI=
 github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5/go.mod h1:9iJxCj3+cXmFYXmdS8yi+FId9aQBRMVK8TPIzO2JVuQ=
 github.com/zc310/fontfix v0.0.3-0.20261008003548-25f9b65742e4 h1:+49l3wR4cz44q6DvhEUeOsJFBfVsvs+t9/L9LnKzRoQ=

@@ -2,6 +2,7 @@ package render
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
@@ -18,6 +19,16 @@ func uriActions(uri string) *models.Actions {
 	}
 }
 
+// gotoActions 构造一组只含 CLICK 内部跳转的动作。
+func gotoActions(kind models.DestType, pageID models.StID) *models.Actions {
+	return &models.Actions{
+		Action: []models.CtAction{{
+			Event: models.ActionEventClick,
+			Goto:  &models.ActionGoto{Dest: &models.CtDest{Type: kind, PageID: models.StRefID(pageID)}},
+		}},
+	}
+}
+
 func textItem(boundary models.StBox, actions *models.Actions) models.PageItem {
 	return models.PageItem{
 		Kind: models.PageItemText,
@@ -27,13 +38,19 @@ func textItem(boundary models.StBox, actions *models.Actions) models.PageItem {
 	}
 }
 
-// TestCollectItemExternalLinksOnlyTakesClickURI 守住热区提取只认 CLICK 外部链接：
-// 页面跳转、附件与媒体动作都不是 PDF 注解能表达的，不应混进外链列表。
-func TestCollectItemExternalLinksOnlyTakesClickURI(t *testing.T) {
-	gotoAction := &models.Actions{Action: []models.CtAction{{
-		Event: models.ActionEventClick,
-		Goto:  &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeXYZ, PageID: 2}},
-	}}}
+// staticResolver 只认识一个目标页，用于验证跳转解析。
+func staticResolver(pageID models.StID, ref LinkTargetRef) PageLinkResolver {
+	return func(id models.StID) (LinkTargetRef, bool) {
+		if id != pageID {
+			return LinkTargetRef{}, false
+		}
+		return ref, true
+	}
+}
+
+// TestCollectItemLinksOnlyTakesClickURI 守住热区提取只认 CLICK 外部链接：
+// 页面跳转要能解析出目标页才导出，其余事件（PO/DO）不是 PDF 注解能表达的。
+func TestCollectItemLinksOnlyTakesClickURI(t *testing.T) {
 	uriOnPointerUp := &models.Actions{Action: []models.CtAction{{
 		Event: models.ActionEventPO,
 		URI:   &models.ActionURI{URI: "https://pointerup.example"},
@@ -45,13 +62,12 @@ func TestCollectItemExternalLinksOnlyTakesClickURI(t *testing.T) {
 
 	box := models.StBox{X: 10, Y: 20, Width: 30, Height: 4}
 	links := make([]drawing.PageLink, 0)
-	collectItemExternalLinks([]models.PageItem{
-		textItem(box, gotoAction),
+	collectItemLinks([]models.PageItem{
 		textItem(box, uriOnPointerUp),
 		textItem(box, emptyURI),
 		textItem(box, nil),
 		textItem(box, uriActions("https://example.com")),
-	}, &links)
+	}, nil, &links)
 
 	if len(links) != 1 {
 		t.Fatalf("只应产出 1 个外部链接，实际 %d: %+v", len(links), links)
@@ -61,12 +77,12 @@ func TestCollectItemExternalLinksOnlyTakesClickURI(t *testing.T) {
 	}
 }
 
-// TestCollectItemExternalLinksRecursesIntoBlocks 守住嵌套 PageBlock 中的链接
-// 也会被收集：复合图元里的文字同样可点。
-func TestCollectItemExternalLinksRecursesIntoBlocks(t *testing.T) {
+// TestCollectItemLinksRecursesIntoBlocks 守住嵌套 PageBlock 中的链接也会被收集：
+// 复合图元里的文字同样可点。
+func TestCollectItemLinksRecursesIntoBlocks(t *testing.T) {
 	box := models.StBox{X: 1, Y: 2, Width: 3, Height: 4}
 	links := make([]drawing.PageLink, 0)
-	collectItemExternalLinks([]models.PageItem{{
+	collectItemLinks([]models.PageItem{{
 		Kind: models.PageItemBlock,
 		Block: &models.PageBlock{
 			Items: []models.PageItem{
@@ -74,41 +90,192 @@ func TestCollectItemExternalLinksRecursesIntoBlocks(t *testing.T) {
 				textItem(box, uriActions("https://nested.example")),
 			},
 		},
-	}}, &links)
+	}}, nil, &links)
 
 	if len(links) != 1 || links[0].URI != "https://nested.example" {
 		t.Fatalf("嵌套块中的链接未被收集: %+v", links)
 	}
 }
 
-// TestCollectItemExternalLinksKeepsInvisibleItems 守住不可见图元上的链接仍然导出。
+// TestCollectItemLinksKeepsInvisibleItems 守住不可见图元上的链接仍然导出。
 //
 // OFD 里链接热区常写成 Visible="false" 的 PathObject——热区只是点击范围，不该
 // 画出来。若因不可见而跳过，用户会得到一个点不动的 PDF。
-func TestCollectItemExternalLinksKeepsInvisibleItems(t *testing.T) {
+func TestCollectItemLinksKeepsInvisibleItems(t *testing.T) {
 	invisible := textItem(models.StBox{X: 0, Y: 0, Width: 10, Height: 5}, uriActions("https://invisible.example"))
 	invisible.Text.Visible = models.OptionalBool{}
 
 	links := make([]drawing.PageLink, 0)
-	collectItemExternalLinks([]models.PageItem{invisible}, &links)
+	collectItemLinks([]models.PageItem{invisible}, nil, &links)
 	if len(links) != 1 {
 		t.Fatalf("不可见图元的链接应保留，实际 %d", len(links))
 	}
 }
 
-// TestCollectItemExternalLinksRejectsUnusableBoundary 守住宽高为零的热区被丢弃：
+// TestCollectItemLinksRejectsUnusableBoundary 守住宽高为零的热区被丢弃：
 // 零面积矩形点不中，写进 PDF 只会留下一个永远触发不了的注解。
-func TestCollectItemExternalLinksRejectsUnusableBoundary(t *testing.T) {
+func TestCollectItemLinksRejectsUnusableBoundary(t *testing.T) {
 	links := make([]drawing.PageLink, 0)
-	collectItemExternalLinks([]models.PageItem{
+	collectItemLinks([]models.PageItem{
 		textItem(models.StBox{X: 0, Y: 0, Width: 0, Height: 5}, uriActions("https://zero-width.example")),
 		textItem(models.StBox{X: 0, Y: 0, Width: 5, Height: 0}, uriActions("https://zero-height.example")),
 		textItem(models.StBox{X: math.NaN(), Y: 0, Width: 5, Height: 5}, uriActions("https://nan.example")),
 		textItem(models.StBox{X: 0, Y: 0, Width: 5, Height: 5}, uriActions("https://ok.example")),
-	}, &links)
+	}, nil, &links)
 
 	if len(links) != 1 || links[0].URI != "https://ok.example" {
 		t.Fatalf("应只剩 1 个可用热区，实际 %+v", links)
+	}
+}
+
+// TestCollectItemLinksSkipsGotoWithoutResolver 守住未提供解析器时内部跳转被丢弃。
+//
+// 提取方不知道最终会输出哪些页时，产出指向不存在页面的链接比不产出更糟。
+func TestCollectItemLinksSkipsGotoWithoutResolver(t *testing.T) {
+	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	links := make([]drawing.PageLink, 0)
+	collectItemLinks([]models.PageItem{
+		textItem(box, gotoActions(models.DestTypeXYZ, 3)),
+	}, nil, &links)
+	if len(links) != 0 {
+		t.Fatalf("无解析器时不应导出内部跳转: %+v", links)
+	}
+}
+
+// TestCollectItemLinksResolvesGotoToTarget 守住内部跳转被换算成输出页序。
+func TestCollectItemLinksResolvesGotoToTarget(t *testing.T) {
+	box := models.StBox{X: 6, Y: 7, Width: 8, Height: 9}
+	links := make([]drawing.PageLink, 0)
+	collectItemLinks([]models.PageItem{
+		textItem(box, gotoActions(models.DestTypeXYZ, 3)),
+	}, staticResolver(3, LinkTargetRef{Index: 1, Height: 297}), &links)
+
+	if len(links) != 1 {
+		t.Fatalf("内部跳转数 = %d", len(links))
+	}
+	link := links[0]
+	if link.URI != "" {
+		t.Fatalf("内部跳转不应带 URI: %q", link.URI)
+	}
+	if link.Target == nil {
+		t.Fatal("缺少跳转目标")
+	}
+	if link.Target.Page != 1 || link.Target.PageHeight != 297 {
+		t.Fatalf("目标页序/高度 = %d/%v", link.Target.Page, link.Target.PageHeight)
+	}
+	if link.Target.Type != drawing.DestXYZ {
+		t.Fatalf("目标类型 = %v", link.Target.Type)
+	}
+	if link.X != 6 || link.Y != 7 || link.Width != 8 || link.Height != 9 {
+		t.Fatalf("热区未取图元边界: %+v", link)
+	}
+}
+
+// TestCollectItemLinksDropsGotoWhenTargetMissing 守住目标页不在输出时链接被丢弃，
+// 而不是写出指向不存在页面的注解。
+func TestCollectItemLinksDropsGotoWhenTargetMissing(t *testing.T) {
+	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	links := make([]drawing.PageLink, 0)
+	collectItemLinks([]models.PageItem{
+		textItem(box, gotoActions(models.DestTypeXYZ, 99)),
+	}, staticResolver(3, LinkTargetRef{Index: 1, Height: 297}), &links)
+	if len(links) != 0 {
+		t.Fatalf("目标页缺失时应丢弃链接: %+v", links)
+	}
+}
+
+// TestCollectItemLinksTakesFirstResolvableClickAction 守住同一图元上多个 CLICK
+// 动作时按文档顺序取第一个可解析的：顺序即语义，跳过无法解析的跳转继续往后找。
+func TestCollectItemLinksTakesFirstResolvableClickAction(t *testing.T) {
+	resolve := staticResolver(3, LinkTargetRef{Index: 0, Height: 297})
+
+	// 目标页不存在时跳过该跳转，改取后面的外链。
+	unreachable := &models.Actions{Action: []models.CtAction{
+		{Event: models.ActionEventClick, Goto: &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeXYZ, PageID: 99}}},
+		{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://after-dead-goto.example"}},
+	}}
+	box := models.StBox{X: 0, Y: 0, Width: 5, Height: 5}
+	links := make([]drawing.PageLink, 0)
+	collectItemLinks([]models.PageItem{textItem(box, unreachable)}, resolve, &links)
+	if len(links) != 1 || links[0].URI != "https://after-dead-goto.example" {
+		t.Fatalf("应跳过失效跳转取外链: %+v", links)
+	}
+
+	// 顺序在前的跳转有效时就用它，不看后面的外链。
+	reachable := &models.Actions{Action: []models.CtAction{
+		{Event: models.ActionEventClick, Goto: &models.ActionGoto{Dest: &models.CtDest{Type: models.DestTypeXYZ, PageID: 3}}},
+		{Event: models.ActionEventClick, URI: &models.ActionURI{URI: "https://later.example"}},
+	}}
+	links = links[:0]
+	collectItemLinks([]models.PageItem{textItem(box, reachable)}, resolve, &links)
+	if len(links) != 1 || links[0].URI != "" || links[0].Target == nil {
+		t.Fatalf("应取顺序在前的跳转: %+v", links)
+	}
+}
+
+// TestLinkDestTypeMapsEveryOFDType 守住 OFD 的 Dest@Type 全部有对应，未知类型退化为
+// Fit 而不是被丢弃（目标页仍应能打开）。
+func TestLinkDestTypeMapsEveryOFDType(t *testing.T) {
+	cases := map[models.DestType]drawing.DestType{
+		models.DestTypeFit:  drawing.DestFit,
+		models.DestTypeFitH: drawing.DestFitH,
+		models.DestTypeFitV: drawing.DestFitV,
+		models.DestTypeXYZ:  drawing.DestXYZ,
+		models.DestTypeFitR: drawing.DestFitR,
+	}
+	for input, want := range cases {
+		got, ok := linkDestType(input)
+		if !ok || got != want {
+			t.Fatalf("Dest@Type=%q → %v(ok=%v)，期望 %v", input, got, ok, want)
+		}
+	}
+	if got, ok := linkDestType(models.DestType("Bogus")); ok || got != drawing.DestFit {
+		t.Fatalf("未知类型应退化为 Fit，实际 %v(ok=%v)", got, ok)
+	}
+}
+
+// TestOptionalValueDefaultsToZero 守住可选坐标缺省按 0 处理——缺省与显式 0 在各
+// DestType 下语义一致。
+func TestOptionalValueDefaultsToZero(t *testing.T) {
+	if got := optionalValue(nil); got != 0 {
+		t.Fatalf("缺省值 = %v", got)
+	}
+	value := 12.5
+	if got := optionalValue(&value); got != 12.5 {
+		t.Fatalf("显式值 = %v", got)
+	}
+}
+
+// TestLinkAnchorNameIsStableAndUniquePerDestination 守住锚点名由目标内容决定：
+// 提取是逐页流式的，没有共享序号可用，而同名锚点会在名称树里自动去重。
+func TestLinkAnchorNameIsStableAndUniquePerDestination(t *testing.T) {
+	base := drawing.LinkTarget{
+		Page: 2, Type: drawing.DestXYZ, Left: 10, Top: 20, PageHeight: 297,
+	}
+	name := linkAnchorName(base)
+	if name != linkAnchorName(base) {
+		t.Fatal("同一目标的锚点名不稳定")
+	}
+	if strings.ContainsAny(name, " ()%/#") {
+		t.Fatalf("锚点名含需要转义的字符: %q", name)
+	}
+	if !strings.HasPrefix(name, "ofd_2_") {
+		t.Fatalf("锚点名应带目标页序: %q", name)
+	}
+	variants := []drawing.LinkTarget{
+		func() drawing.LinkTarget { v := base; v.Page = 3; return v }(),
+		func() drawing.LinkTarget { v := base; v.Type = drawing.DestFit; return v }(),
+		func() drawing.LinkTarget { v := base; v.Left = 11; return v }(),
+		func() drawing.LinkTarget { v := base; v.Top = 21; return v }(),
+		func() drawing.LinkTarget { v := base; v.PageHeight = 210; return v }(),
+	}
+	seen := map[string]bool{name: true}
+	for _, variant := range variants {
+		other := linkAnchorName(variant)
+		if seen[other] {
+			t.Fatalf("不同目标得到同名锚点 %q", other)
+		}
+		seen[other] = true
 	}
 }
 
@@ -140,9 +307,9 @@ func TestPageLinkRectNormalizesNegativeExtent(t *testing.T) {
 	}
 }
 
-// TestCollectAnnotationExternalLinksUsesAppearanceBoundary 守住注解链接的热区取
+// TestCollectAnnotationLinksUsesAppearanceBoundary 守住注解链接的热区取
 // Appearance 自身的 Boundary（页面绝对位置），而不是外观图元相对注解的 Boundary。
-func TestCollectAnnotationExternalLinksUsesAppearanceBoundary(t *testing.T) {
+func TestCollectAnnotationLinksUsesAppearanceBoundary(t *testing.T) {
 	annot := &models.PageAnnot{
 		Annots: []*models.Annot{{
 			Type: models.AnnotTypeLink,
@@ -164,7 +331,7 @@ func TestCollectAnnotationExternalLinksUsesAppearanceBoundary(t *testing.T) {
 		}},
 	}
 	links := make([]drawing.PageLink, 0)
-	collectAnnotationExternalLinks(annot, &links)
+	collectAnnotationLinks(annot, nil, &links)
 
 	if len(links) != 1 {
 		t.Fatalf("注解链接数 = %d", len(links))
@@ -178,9 +345,9 @@ func TestCollectAnnotationExternalLinksUsesAppearanceBoundary(t *testing.T) {
 	}
 }
 
-// TestCollectAnnotationExternalLinksSkipsUnusableBoundary 守住外观边界缺失或零面积
-// 的注解被丢弃，而不是产出无效热区。
-func TestCollectAnnotationExternalLinksSkipsUnusableBoundary(t *testing.T) {
+// TestCollectAnnotationLinksSkipsUnusableBoundary 守住外观边界缺失或零面积的
+// 注解被丢弃，而不是产出无效热区。
+func TestCollectAnnotationLinksSkipsUnusableBoundary(t *testing.T) {
 	path := func(uri string) models.PageItem {
 		return models.PageItem{
 			Kind: models.PageItemPath,
@@ -205,22 +372,22 @@ func TestCollectAnnotationExternalLinksSkipsUnusableBoundary(t *testing.T) {
 		{Type: models.AnnotTypeLink},
 	}}
 	links := make([]drawing.PageLink, 0)
-	collectAnnotationExternalLinks(annot, &links)
+	collectAnnotationLinks(annot, nil, &links)
 
 	if len(links) != 1 || links[0].URI != "https://kept.example" {
 		t.Fatalf("应只剩 1 个可用注解热区，实际 %+v", links)
 	}
 }
 
-// TestPageExternalLinksEmptyWithoutDocument 守住文档或页面缺失时返回空链接而不是
-// panic：多文档体里可能有未加载的页，提取链接不该让整篇转换失败。
-func TestPageExternalLinksEmptyWithoutDocument(t *testing.T) {
+// TestPageExternalLinksIgnoresInternalTargets 守住只要外部链接的调用方不会被内部
+// 跳转干扰：未提供解析器时内部跳转一律不产出。
+func TestPageExternalLinksIgnoresInternalTargets(t *testing.T) {
 	empty := &Document{}
 	if links := empty.PageExternalLinks(nil); links != nil {
 		t.Fatalf("nil 页面应返回 nil，实际 %+v", links)
 	}
 	var nilDocument *Document
-	if links := nilDocument.PageExternalLinks(nil); links != nil {
+	if links := nilDocument.PageLinks(nil, nil); links != nil {
 		t.Fatalf("nil 文档应返回 nil，实际 %+v", links)
 	}
 }

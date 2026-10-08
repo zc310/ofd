@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -68,6 +69,7 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 			err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
 		}
 	}()
+	pageLinks := r.pdfPageLinks(indices)
 	for position, index := range indices {
 		page, pageErr := r.pdfPage(index, background, geom.DPI(dpi))
 		if pageErr != nil {
@@ -79,24 +81,70 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 		if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(height) || math.IsInf(height, 0) || width*height > maxRenderPixels {
 			return fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
 		}
-		if addErr := pdfDoc.AddPage(page, r.pdfPageLinks(index)); addErr != nil {
+		if addErr := pdfDoc.AddPage(page, pageLinks[position]); addErr != nil {
 			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, addErr)
 		}
 	}
 	return nil
 }
 
-// pdfPageLinks 返回导出页的外部链接热区，供 PDF 生成可点击区域。热区尺寸是页面
-// 物理尺寸，与导出 DPI 无关，因此复用采集时的毫米值即可。
-func (r *Reader) pdfPageLinks(index int) []drawing.PageLink {
-	if index < 0 || index >= len(r.pages) {
-		return nil
+// pdfPageLinks 返回导出页的链接热区，供 PDF 生成可点击区域。热区尺寸是页面物理
+// 尺寸，与导出 DPI 无关，因此复用采集时的毫米值即可。
+//
+// resolve 把跳转目标解析到 indices 里的输出位置，因此只把本次导出的页登记进去：
+// indices 之外的页不在输出里，指向它们的链接无法解析。
+func (r *Reader) pdfPageLinks(indices []int) [][]drawing.PageLink {
+	links := make([][]drawing.PageLink, len(indices))
+	if len(indices) == 0 {
+		return links
 	}
-	ref := r.pages[index]
-	if ref.page == nil || ref.document == nil {
-		return nil
+	// 页 ID 只在文档体内唯一，因此解析器按文档体分别建立。
+	targets := make(map[*render.Document]map[models.StID]render.LinkTargetRef)
+	for index, pageIndex := range indices {
+		if pageIndex < 0 || pageIndex >= len(r.pages) {
+			continue
+		}
+		ref := r.pages[pageIndex]
+		if ref.page == nil || ref.document == nil {
+			continue
+		}
+		byPage, ok := targets[ref.document]
+		if !ok {
+			byPage = make(map[models.StID]render.LinkTargetRef)
+			targets[ref.document] = byPage
+		}
+		if _, exists := byPage[ref.page.ID]; exists {
+			continue
+		}
+		byPage[ref.page.ID] = render.LinkTargetRef{Index: index, Height: r.pdfPageHeight(ref)}
 	}
-	return ref.document.PageExternalLinks(ref.page)
+	resolvers := make(map[*render.Document]render.PageLinkResolver, len(targets))
+	for document, byPage := range targets {
+		resolvers[document] = func(pageID models.StID) (render.LinkTargetRef, bool) {
+			target, ok := byPage[pageID]
+			return target, ok
+		}
+	}
+	for index, pageIndex := range indices {
+		if pageIndex < 0 || pageIndex >= len(r.pages) {
+			continue
+		}
+		ref := r.pages[pageIndex]
+		if ref.page == nil || ref.document == nil {
+			continue
+		}
+		links[index] = ref.document.PageLinks(ref.page, resolvers[ref.document])
+	}
+	return links
+}
+
+// pdfPageHeight 读取页面物理高度；只读页面 Area，不加载页面内容或资源。
+func (r *Reader) pdfPageHeight(ref pageRef) float64 {
+	box, err := ref.page.PhysicalBoxMetadata()
+	if err != nil || !box.IsFinite() || box.Height <= 0 {
+		return 0
+	}
+	return box.Height
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。
