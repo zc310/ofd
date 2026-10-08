@@ -15,12 +15,14 @@ import (
 type fakePDFDocument struct {
 	pages int
 	added []VectorSurface
+	links [][]PageLink
 	close int
 }
 
-func (d *fakePDFDocument) AddPage(page VectorSurface) error {
+func (d *fakePDFDocument) AddPage(page VectorSurface, links []PageLink) error {
 	d.pages++
 	d.added = append(d.added, page)
+	d.links = append(d.links, links)
 	return nil
 }
 
@@ -46,7 +48,7 @@ func TestRegisterPDFDocumentFactory(t *testing.T) {
 	if doc != PDFDocument(fake) {
 		t.Fatal("NewPDFDocument did not use the registered factory")
 	}
-	if err := doc.AddPage(nil); err != nil {
+	if err := doc.AddPage(nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := doc.Close(); err != nil {

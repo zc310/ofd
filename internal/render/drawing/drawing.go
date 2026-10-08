@@ -13,6 +13,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -275,9 +276,35 @@ type PDFOptions struct {
 	LossyImages bool // 图片使用有损编码
 }
 
+// PageLink 是页面上一个可点击热区，坐标为距页顶的毫米值。
+//
+// 当前只承载外部链接（URI）。内部跳转需要目标页在输出中的序号，热区提取方
+// 未必知道后续是否会裁页，因此暂不在此表达；PDF 后遇到失效目标应直接丢弃。
+type PageLink struct {
+	// URI 是外部链接地址。
+	URI string
+	// X、Y 为热区左上角距页顶的距离，Width、Height 为热区尺寸。
+	X, Y, Width, Height float64
+}
+
+// Rect 把热区换算成以页面左下角为原点、y 向上的矩形，宽高为正。
+//
+// PDF 坐标系原点在左下角且 y 向上，而 OFD 坐标距页顶向下；真实文档的 Boundary
+// 存在负宽高（internal/models 的 Boundary 注释对此有说明），换算时用 min/max
+// 归一化，不能直接交换两端。
+func (l PageLink) Rect(pageHeight float64) (x0, y0, x1, y1 float64) {
+	return math.Min(l.X, l.X+l.Width),
+		pageHeight - math.Max(l.Y, l.Y+l.Height),
+		math.Max(l.X, l.X+l.Width),
+		pageHeight - math.Min(l.Y, l.Y+l.Height)
+}
+
 // PDFDocument 是中性的 PDF 多页文档写入器：按页序逐页加入矢量表面。
 type PDFDocument interface {
-	AddPage(page VectorSurface) error
+	// AddPage 写入一页矢量内容，并把这页的外部链接热区一并挂到该页注解上。
+	// links 可以为空。链接与页面内容在同一次调用里交给实现，避免实现方依赖
+	// 「必须在开始下一页之前调用 AddLink」这类隐式时序约定。
+	AddPage(page VectorSurface, links []PageLink) error
 	Close() error
 }
 

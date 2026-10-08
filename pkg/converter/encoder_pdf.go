@@ -79,7 +79,7 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-		if err := pdfDoc.AddPage(surface); err != nil {
+		if err := pdfDoc.AddPage(surface, page.document.PageExternalLinks(page.document.Pages[page.pageIndex])); err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 	}
@@ -160,7 +160,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			if job.surface == nil {
 				return fmt.Errorf("处理第%d页失败: 页面画布为空", page.pageNumber)
 			}
-			if err := pdfDoc.AddPage(job.surface); err != nil {
+			if err := pdfDoc.AddPage(job.surface, page.document.PageExternalLinks(page.document.Pages[page.pageIndex])); err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 			}
 		}
