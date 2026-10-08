@@ -103,6 +103,75 @@ func TestConvertMarkdownFromReader(t *testing.T) {
 	assertValidOFD(t, output.Bytes())
 }
 
+// 围栏代码块的语言标记要落到 OFD 文字层；缩进代码块没有语言，不应凭空造一个。
+func TestConvertMarkdownFencedCodeLanguageLabel(t *testing.T) {
+	values := ofdTextValues(t, sampleMarkdown)
+	found := false
+	for _, value := range values {
+		if value == "go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("围栏代码块的语言标记 go 未写入 OFD")
+	}
+
+	indented := ofdTextValues(t, "段落。\n\n    indented code\n    second line\n")
+	want := map[string]bool{"段落。": true, "indented code": true, "second line": true}
+	for _, value := range indented {
+		if value == "" {
+			continue
+		}
+		if !want[value] {
+			t.Fatalf("缩进代码块出现了预期外的文字 %q", value)
+		}
+		delete(want, value)
+	}
+	if len(want) > 0 {
+		t.Fatalf("缺少文字 %v", want)
+	}
+}
+
+// ofdTextValues 转换 Markdown 并返回 OFD 页面文字层的全部文字值。
+func ofdTextValues(t *testing.T, source string) []string {
+	t.Helper()
+	var output bytes.Buffer
+	if err := converter.Convert(ctxTODO, "md", "ofd", []byte(source), &output); err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len()))
+	if err != nil {
+		t.Fatalf("读取 OFD 失败: %v", err)
+	}
+	var values []string
+	for _, file := range archive.File {
+		if !strings.Contains(file.Name, "/Pages/") {
+			continue
+		}
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatalf("打开 %s 失败: %v", file.Name, err)
+		}
+		content, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", file.Name, err)
+		}
+		for _, part := range strings.Split(string(content), "<TextCode") {
+			if !strings.Contains(part, ">") {
+				continue
+			}
+			if index := strings.Index(part, ">"); index >= 0 {
+				rest := part[index+1:]
+				if end := strings.Index(rest, "<"); end >= 0 {
+					values = append(values, rest[:end])
+				}
+			}
+		}
+	}
+	return values
+}
+
 func TestConvertMarkdownLetterheadFrontMatter(t *testing.T) {
 	source := "---\nletterhead:\n  org: \"××省档案局文件\"\n  doc_no: \"×档发〔2026〕1号\"\n  signatory: \"张三\"\n  serial_no: \"000018\"\n  security: \"内部\"\n  urgency: \"特急\"\nfooter:\n  page_number: true\nsign:\n  org: \"××省档案局\"\n  date: \"2026年9月19日\"\ncolophon:\n  cc: \"省委办公厅，省政府办公厅。\"\n  issued_by: \"××省档案局办公室\"\n  issued_date: \"2026年9月19日\"\n---\n\n# 公文标题\n\n正文内容。\n"
 	var output bytes.Buffer

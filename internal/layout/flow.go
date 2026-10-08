@@ -16,14 +16,18 @@ var headingScale = [6]float64{1.8, 1.5, 1.25, 1.1, 0.95, 0.85}
 
 // 默认配色。纯黑文字在屏幕上偏硬，正文使用近黑色。
 var (
-	colorText     = &creator.Color{R: 0x1f, G: 0x23, B: 0x28}
-	colorLink     = &creator.Color{R: 0x0b, G: 0x57, B: 0xd0}
-	colorCode     = &creator.Color{R: 0xa6, G: 0x1e, B: 0x4e}
-	colorQuote    = &creator.Color{R: 0x57, G: 0x60, B: 0x6a}
-	colorCodeBG   = &creator.Color{R: 0xf4, G: 0xf5, B: 0xf7}
-	colorRule     = &creator.Color{R: 0xd0, G: 0xd7, B: 0xde}
-	colorBorder   = &creator.Color{R: 0xc4, G: 0xcb, B: 0xd1}
-	colorHeaderBG = &creator.Color{R: 0xef, G: 0xf2, B: 0xf5}
+	colorText   = &creator.Color{R: 0x1f, G: 0x23, B: 0x28}
+	colorLink   = &creator.Color{R: 0x0b, G: 0x57, B: 0xd0}
+	colorCode   = &creator.Color{R: 0xa6, G: 0x1e, B: 0x4e}
+	colorQuote  = &creator.Color{R: 0x57, G: 0x60, B: 0x6a}
+	colorCodeBG = &creator.Color{R: 0xf4, G: 0xf5, B: 0xf7}
+	// colorCodeLabel 是代码块语言标签的文字色，比代码正文更浅。
+	colorCodeLabel = &creator.Color{R: 0x6b, G: 0x74, B: 0x80}
+	// colorInlineCodeBG 是行内代码的底色，比代码块面板略深。
+	colorInlineCodeBG = &creator.Color{R: 0xe9, G: 0xec, B: 0xf0}
+	colorRule         = &creator.Color{R: 0xd0, G: 0xd7, B: 0xde}
+	colorBorder       = &creator.Color{R: 0xc4, G: 0xcb, B: 0xd1}
+	colorHeaderBG     = &creator.Color{R: 0xef, G: 0xf2, B: 0xf5}
 	// colorRed 是公文版头的机关标志和分隔线颜色。
 	colorRed = &creator.Color{R: 0xcc, G: 0x00, B: 0x00}
 )
@@ -657,26 +661,124 @@ func (e *engine) emitListItem(b *Block) {
 	e.emitParagraph(inlines, b.Indent)
 }
 
+// codeTabWidth 是代码块中制表符展开成的空格数。
+const codeTabWidth = 4
+
+// emitCode 绘制代码块。面板按页分段：每页能容纳的连续代码行共用一个圆角矩形，
+// 跨页时下一页另起一块，这样既能拿到整块背景，又不破坏流式分页。
 func (e *engine) emitCode(b *Block) {
+	lines := splitCodeLines(b.Code)
+	if len(lines) == 0 {
+		return
+	}
 	size := ptToMM(e.opts.MonoSize)
 	lineHeight := size * e.opts.CodeLineHeight
 	key := metricKey{mono: true}
-	raw := strings.Split(strings.ReplaceAll(b.Code, "\r\n", "\n"), "\n")
+	paddingX := e.opts.CodePaddingX
+	paddingY := e.opts.CodePaddingY
+
+	// 语言标签只出现在代码块第一段，且占用面板顶部的一部分高度。
+	label := strings.TrimSpace(b.CodeLang)
+	labelHeight := e.codeLabelHeight(label)
+
+	for start := 0; start < len(lines); {
+		head := 0.0
+		if start == 0 {
+			head = labelHeight
+		}
+		e.ensureHeight(paddingY + head + lineHeight)
+		// 面板顶部留白也要落在版心内，否则紧贴页顶时面板会伸进页边距。
+		if limit := e.contentTop - paddingY; e.y > limit {
+			e.y = limit
+		}
+		count := int(math.Floor((e.y - e.contentBottom - paddingY - head + 0.001) / lineHeight))
+		if count < 1 {
+			count = 1
+		}
+		if count > len(lines)-start {
+			count = len(lines) - start
+		}
+
+		// 面板覆盖标签、本页全部代码行和上下内边距：游标自底向上，故下边界是
+		// e.y 减去标签、代码行和下内边距。
+		body := head + float64(count)*lineHeight
+		e.fillRoundedPanel(e.contentLeft, e.y-body-paddingY, e.contentWidth, body+paddingY*2,
+			e.opts.CodeRadius, colorCodeBG)
+		if head > 0 {
+			e.emitCodeLabel(label, e.contentLeft+paddingX, e.y, e.opts.CodeLabelSize)
+		}
+		for _, line := range lines[start : start+count] {
+			text := expandCodeTabs(line)
+			baseline := e.y - ascent(size, key)
+			if strings.TrimSpace(text) != "" {
+				e.addText(text, e.contentLeft+paddingX, baseline, atom{
+					text:  text,
+					key:   key,
+					size:  size,
+					color: colorCode,
+					width: measureWidth(text, size, key),
+				})
+			}
+			e.y -= lineHeight
+		}
+		start += count
+	}
+	e.space(e.blockGap())
+}
+
+// codeLabelHeight 返回语言标签连同其下间距占用的总高度；无标签时为 0。
+func (e *engine) codeLabelHeight(label string) float64 {
+	if label == "" || e.opts.CodeLabelSize <= 0 {
+		return 0
+	}
+	return ptToMM(e.opts.CodeLabelSize)*e.opts.LineHeight + e.opts.CodeLabelGap
+}
+
+// emitCodeLabel 在代码面板顶部绘制语言标记。labelTop 是标签基线以上的高度起点，
+// 标签用等宽字体的较小字号，与代码正文左对齐。
+func (e *engine) emitCodeLabel(label string, x, top, sizePT float64) {
+	size := ptToMM(sizePT)
+	key := metricKey{mono: true}
+	e.addText(label, x, top-ascent(size, key), atom{
+		text:  label,
+		key:   key,
+		size:  size,
+		color: colorCodeLabel,
+		width: measureWidth(label, size, key),
+	})
+	e.y = top - size*e.opts.LineHeight - e.opts.CodeLabelGap
+}
+
+// splitCodeLines 按行拆分代码块文本，去掉尾随空行；行内保留前导空白。
+func splitCodeLines(code string) []string {
+	raw := strings.Split(strings.ReplaceAll(code, "\r\n", "\n"), "\n")
 	for len(raw) > 0 && strings.TrimSpace(raw[len(raw)-1]) == "" {
 		raw = raw[:len(raw)-1]
 	}
-	for _, line := range raw {
-		text := strings.ReplaceAll(line, "\t", "    ")
-		e.ensureHeight(lineHeight)
-		e.fillRect(e.contentLeft, e.y-lineHeight, e.contentWidth, lineHeight, colorCodeBG)
-		baseline := e.y - ascent(size, key)
-		item := atom{text: text, key: key, size: size, color: colorCode, width: measureWidth(text, size, key)}
-		if strings.TrimSpace(text) != "" {
-			e.addText(text, e.contentLeft+3, baseline, item)
-		}
-		e.y -= lineHeight
+	return raw
+}
+
+// expandCodeTabs 把行首制表符展开为固定宽度的空格，其余制表符替换为单个空格。
+func expandCodeTabs(line string) string {
+	if !strings.ContainsRune(line, '\t') {
+		return line
 	}
-	e.space(e.blockGap())
+	var builder strings.Builder
+	leading := true
+	for _, r := range line {
+		switch {
+		case r == '\t' && leading:
+			builder.WriteString(strings.Repeat(" ", codeTabWidth))
+		case r == '\t':
+			builder.WriteByte(' ')
+		default:
+			builder.WriteRune(r)
+		}
+		if r != ' ' && r != '\t' {
+			leading = false
+		}
+	}
+	return builder.String()
 }
 
 func (e *engine) emitQuote(b *Block) {
@@ -1033,10 +1135,47 @@ func (e *engine) writeLine(line []atom, left float64) {
 	height := size * e.opts.LineHeight
 	e.ensureHeight(height)
 	baseline := e.y - ascent(size, key)
+	// 底色必须先于文字进入图元顺序，否则会被文字盖住。
+	e.drawInlineCodeBackgrounds(line, left, baseline)
 	for _, run := range mergeRuns(line, left) {
 		e.addText(run.text, run.x, baseline, atom{text: run.text, key: run.key, size: run.size, color: run.color, width: run.width, strike: run.strike, strikeWidth: run.strikeWidth})
 	}
 	e.y -= height
+}
+
+// drawInlineCodeBackgrounds 给行内代码绘制底色矩形。segment.go 为每个行内代码
+// 片段分配了唯一的 glue 值并禁止跨段断开，因此同一行内 glue 相同的相邻 atom
+// 恰好构成一个完整的行内代码区间，x 的累加方式与 mergeRuns 保持一致。
+func (e *engine) drawInlineCodeBackgrounds(line []atom, left, baseline float64) {
+	padX := e.opts.InlineCodePaddingX
+	padY := e.opts.InlineCodePaddingY
+	if padX <= 0 && padY <= 0 {
+		return
+	}
+	x := left
+	glue, size := 0, 0.0
+	startX, endX := 0.0, 0.0
+	flush := func() {
+		if glue > 0 && endX > startX {
+			mono := metricKey{mono: true}
+			// 游标自底向上：底边在基线之下 descent+内边距，顶边在基线之上
+			// ascent+内边距，故 fillRect 的 y（下边界）要减去 descent。
+			bottom := baseline - descent(size, mono) - padY
+			height := ascent(size, mono) + descent(size, mono) + padY*2
+			e.fillRect(startX-padX, bottom, endX-startX+2*padX, height, colorInlineCodeBG)
+		}
+	}
+	for _, item := range line {
+		if item.glue > 0 && item.glue != glue {
+			flush()
+			glue, startX, size = item.glue, x, item.size
+		}
+		if item.glue > 0 {
+			endX = x + item.width
+		}
+		x += item.width
+	}
+	flush()
 }
 
 // textRun 是同一行内相邻、样式一致且可合并的文本片段。
@@ -1153,6 +1292,50 @@ func (e *engine) fillRectPage(x, y, width, height float64, color *creator.Color)
 
 func rectPath(width, height float64) string {
 	return fmt.Sprintf("M 0 0 L %g 0 L %g %g L 0 %g C", width, width, height, height)
+}
+
+// fillRoundedPanel 绘制圆角填充面板。y 是面板下边界（排版游标，自底向上），
+// 坐标换算与 fillRect 相同；半径超过短边一半时收敛到一半，避免相邻圆角
+// 的弧线互相穿插。
+func (e *engine) fillRoundedPanel(x, y, width, height, radius float64, color *creator.Color) {
+	if width <= 0 || height <= 0 {
+		return
+	}
+	radius = math.Min(radius, math.Min(width, height)/2)
+	if radius <= 0 {
+		e.fillRect(x, y, width, height, color)
+		return
+	}
+	stroke := false
+	e.add(creator.Path{
+		X:         x,
+		Y:         e.opts.PageHeight - (y + height),
+		Width:     width,
+		Height:    height,
+		Data:      roundedRectPath(width, height, radius),
+		Fill:      true,
+		Stroke:    stroke,
+		StrokeSet: &stroke,
+		LineWidth: 0,
+		FillColor: color,
+	})
+}
+
+// roundedRectPath 生成顺时针圆角矩形路径：起点在左上角圆角的切点，四段直线
+// 之间用半径为 r 的四分之一圆弧连接，sweep 恒为 1。
+func roundedRectPath(width, height, r float64) string {
+	return fmt.Sprintf(
+		"M %g %g L %g %g A %g %g 0 0 1 %g %g L %g %g A %g %g 0 0 1 %g %g L %g %g A %g %g 0 0 1 %g %g L %g %g A %g %g 0 0 1 %g %g C",
+		r, 0.0,
+		width-r, 0.0,
+		r, r, width, r,
+		width, height-r,
+		r, r, width-r, height,
+		r, height,
+		r, r, 0.0, height-r,
+		0.0, r,
+		r, r, r, 0.0,
+	)
 }
 
 func ptToMM(pt float64) float64 { return pt * mmPerPoint }

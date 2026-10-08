@@ -2,9 +2,11 @@ package layout
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -315,20 +317,21 @@ func TestBuildCodeLineSpacingUsesCodeLineHeight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build 失败: %v", err)
 	}
-	var tops []float64
+	// 代码背景已合并成整块面板，行距要按文字基线判断，不能再按背景条带。
+	var baselines []float64
 	for _, page := range document.Pages {
 		for _, item := range page.Items {
-			if path, ok := item.(creator.Path); ok && colorEqual(path.FillColor, 244, 245, 247) {
-				tops = append(tops, path.Y)
+			if text, ok := item.(creator.Text); ok && colorEqual(text.FillColor, 166, 30, 78) {
+				baselines = append(baselines, text.Y+text.Height)
 			}
 		}
 	}
-	if len(tops) < 2 {
-		t.Fatalf("代码背景不足: %d", len(tops))
+	if len(baselines) != 3 {
+		t.Fatalf("代码行数不符预期: %d", len(baselines))
 	}
 	want := ptToMM(options.MonoSize) * options.CodeLineHeight
-	for index := 1; index < len(tops); index++ {
-		if delta := tops[index] - tops[index-1]; delta < want-0.001 || delta > want+0.001 {
+	for index := 1; index < len(baselines); index++ {
+		if delta := baselines[index] - baselines[index-1]; delta < want-0.001 || delta > want+0.001 {
 			t.Fatalf("代码行距 %.4f 不符合预期 %.4f", delta, want)
 		}
 	}
@@ -336,6 +339,251 @@ func TestBuildCodeLineSpacingUsesCodeLineHeight(t *testing.T) {
 	if want >= body {
 		t.Fatalf("代码行距应小于正文行距: code=%.4f body=%.4f", want, body)
 	}
+}
+
+// 代码背景已从逐行色带改为整块圆角面板，这里守住面板边界、内边距和跨页行为。
+func TestBuildCodeRendersSingleRoundedPanelPerPage(t *testing.T) {
+	options := DefaultOptions()
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindCode,
+		Code: "package main\n\nfunc main() {\n\tprintln(1)\n}",
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	if len(document.Pages) != 1 {
+		t.Fatalf("页数不符预期: %d", len(document.Pages))
+	}
+	panels := codePanels(document)
+	if len(panels) != 1 {
+		t.Fatalf("同一页的代码背景应合并成一块，实际 %d 块", len(panels))
+	}
+	panel := panels[0]
+	if !strings.Contains(panel.Data, " A ") {
+		t.Fatalf("代码背景应使用圆角路径，实际 %q", panel.Data)
+	}
+	if options.CodeRadius <= 0 {
+		t.Skip("未配置圆角半径")
+	}
+	if _, err := models.ParsePathData(panel.Data); err != nil {
+		t.Fatalf("圆角路径语法非法: %v (%s)", err, panel.Data)
+	}
+	// 面板高度 = 代码行总高 + 上下内边距，宽度与版心一致。
+	want := 5*ptToMM(options.MonoSize)*options.CodeLineHeight + options.CodePaddingY*2
+	if math.Abs(panel.Height-want) > 0.01 {
+		t.Fatalf("面板高度 %.3f 不符预期 %.3f", panel.Height, want)
+	}
+	if math.Abs(panel.Width-(options.PageWidth-options.MarginLeft-options.MarginRight)) > 0.01 {
+		t.Fatalf("面板宽度 %.3f 与版心宽不符", panel.Width)
+	}
+	// 代码文字必须落在面板内缩范围内。
+	for _, item := range document.Pages[0].Items {
+		text, ok := item.(creator.Text)
+		if !ok || !colorEqual(text.FillColor, 166, 30, 78) {
+			continue
+		}
+		if text.X < options.MarginLeft+options.CodePaddingX-0.01 {
+			t.Fatalf("代码文字左边距 %.3f 未留出内边距", text.X)
+		}
+	}
+}
+
+// 代码块跨页时每页各起一块面板，且面板不得越出版心上下边界。
+func TestBuildCodePanelStaysInsideContentAreaAcrossPages(t *testing.T) {
+	options := DefaultOptions()
+	var code strings.Builder
+	for i := 0; i < 120; i++ {
+		code.WriteString("line\n")
+	}
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindCode,
+		Code: code.String(),
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	if len(document.Pages) < 2 {
+		t.Fatalf("代码块应跨页，实际 %d 页", len(document.Pages))
+	}
+	for index, page := range document.Pages {
+		panels := codePanelsOf(page)
+		if len(panels) != 1 {
+			t.Fatalf("第 %d 页代码背景应恰好一块，实际 %d 块", index+1, len(panels))
+		}
+		panel := panels[0]
+		if panel.Y < options.MarginTop-0.01 {
+			t.Fatalf("第 %d 页面板顶端 %.3f 越出版心", index+1, panel.Y)
+		}
+		if panel.Y+panel.Height > options.PageHeight-options.MarginBottom+0.01 {
+			t.Fatalf("第 %d 页面板底端 %.3f 越出版心", index+1, panel.Y+panel.Height)
+		}
+	}
+}
+
+// 围栏代码块的语言标记应绘制在面板顶部，字号小于代码正文。
+func TestBuildCodeLanguageLabelRendersInsidePanel(t *testing.T) {
+	options := DefaultOptions()
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:     KindCode,
+		Code:     "package main",
+		CodeLang: "go",
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	panels := codePanels(document)
+	if len(panels) != 1 {
+		t.Fatalf("代码背景应恰好一块，实际 %d 块", len(panels))
+	}
+	var label *creator.Text
+	for index, item := range document.Pages[0].Items {
+		text, ok := item.(creator.Text)
+		if ok && text.Value == "go" {
+			copied := text
+			label = &copied
+			// 底色必须排在语言标签之前，否则标签会被面板盖住。
+			_ = index
+		}
+	}
+	if label == nil {
+		t.Fatal("未绘制语言标签")
+	}
+	if label.Size >= ptToMM(options.MonoSize) {
+		t.Fatalf("语言标签字号 %.3f 应小于代码字号 %.3f", label.Size, ptToMM(options.MonoSize))
+	}
+	if !colorEqual(label.FillColor, 0x6b, 0x74, 0x80) {
+		t.Fatalf("语言标签颜色 %v 不符预期", label.FillColor)
+	}
+	// 标签与代码都在面板内。
+	for _, item := range document.Pages[0].Items {
+		text, ok := item.(creator.Text)
+		if !ok || (text.Value != "go" && text.Value != "package main") {
+			continue
+		}
+		if text.Y < panels[0].Y || text.Y+text.Height > panels[0].Y+panels[0].Height {
+			t.Fatalf("文字 %q 未落在代码面板内", text.Value)
+		}
+	}
+}
+
+// 没有语言标记的代码块不应多出标签文字，面板也不应因此变高。
+func TestBuildCodeWithoutLanguageLabelHasNoLabel(t *testing.T) {
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind: KindCode,
+		Code: "package main",
+	}}}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	for _, item := range document.Pages[0].Items {
+		if text, ok := item.(creator.Text); ok && text.Value != "package main" {
+			t.Fatalf("出现了预期外的文字 %q", text.Value)
+		}
+	}
+}
+
+// 行内代码应有底色矩形，且底色在图元顺序上先于文字。
+func TestBuildInlineCodeDrawsBackgroundBeforeText(t *testing.T) {
+	options := DefaultOptions()
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:    KindParagraph,
+		Inlines: []Inline{{Text: "调用 "}, {Text: "Run()", Code: true}, {Text: " 完成"}},
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	backgroundIndex, textIndex := -1, -1
+	for index, item := range document.Pages[0].Items {
+		switch value := item.(type) {
+		case creator.Path:
+			if colorEqual(value.FillColor, 0xe9, 0xec, 0xf0) && backgroundIndex < 0 {
+				backgroundIndex = index
+			}
+		case creator.Text:
+			// mergeRuns 会把行内代码后的空白并进前一段，故按前缀匹配。
+			if strings.HasPrefix(value.Value, "Run()") {
+				textIndex = index
+			}
+		}
+	}
+	if backgroundIndex < 0 {
+		t.Fatal("行内代码缺少底色矩形")
+	}
+	if textIndex < 0 {
+		t.Fatal("行内代码文字缺失")
+	}
+	if backgroundIndex > textIndex {
+		t.Fatalf("底色应先于文字绘制，实际底色序号 %d、文字序号 %d", backgroundIndex, textIndex)
+	}
+}
+
+// 行内代码底色应覆盖文字宽度并向上下各留出内边距。
+func TestBuildInlineCodeBackgroundCoversText(t *testing.T) {
+	options := DefaultOptions()
+	document, err := Build(&Document{Blocks: []Block{{
+		Kind:    KindParagraph,
+		Inlines: []Inline{{Text: "调用 "}, {Text: "Run()", Code: true}, {Text: " 完成"}},
+	}}}, options)
+	if err != nil {
+		t.Fatalf("Build 失败: %v", err)
+	}
+	var background *creator.Path
+	var text *creator.Text
+	for _, item := range document.Pages[0].Items {
+		switch value := item.(type) {
+		case creator.Path:
+			if colorEqual(value.FillColor, 0xe9, 0xec, 0xf0) {
+				copied := value
+				background = &copied
+			}
+		case creator.Text:
+			if strings.HasPrefix(value.Value, "Run()") {
+				copied := value
+				text = &copied
+			}
+		}
+	}
+	if background == nil || text == nil {
+		t.Fatalf("行内代码底色或文字缺失: %v %v", background != nil, text != nil)
+	}
+	// 底色只覆盖 glue 段本身，不含 mergeRuns 并入的尾随空白。
+	codeWidth := measureWidth("Run()", text.Size, metricKey{mono: true})
+	if background.X > text.X-options.InlineCodePaddingX+0.01 {
+		t.Fatalf("底色左边 %.3f 未覆盖文字并留出内边距", background.X)
+	}
+	if background.X+background.Width < text.X+codeWidth+options.InlineCodePaddingX-0.01 {
+		t.Fatalf("底色右边 %.3f 未覆盖代码文字并留出内边距", background.X+background.Width)
+	}
+	if background.Height < text.Height+options.InlineCodePaddingY*2-0.01 {
+		t.Fatalf("底色高度 %.3f 不足以容纳文字与内边距", background.Height)
+	}
+	// 底色必须完整罩住文字框：creator 的 Text.Y 与 Path.Y 都是距页顶距离，
+	// 文字框和底色矩形都向下延伸，因此直接比较上下沿。
+	if background.Y > text.Y+0.01 {
+		t.Fatalf("底色顶边 %.3f 低于文字顶边 %.3f", background.Y, text.Y)
+	}
+	if background.Y+background.Height < text.Y+text.Height-0.01 {
+		t.Fatalf("底色底边 %.3f 高于文字底边 %.3f", background.Y+background.Height, text.Y+text.Height)
+	}
+}
+
+// codePanels 收集全部页面上的代码块背景。
+func codePanels(document *creator.Document) []creator.Path {
+	var panels []creator.Path
+	for _, page := range document.Pages {
+		panels = append(panels, codePanelsOf(page)...)
+	}
+	return panels
+}
+
+func codePanelsOf(page creator.Page) []creator.Path {
+	var panels []creator.Path
+	for _, item := range page.Items {
+		if path, ok := item.(creator.Path); ok && colorEqual(path.FillColor, 244, 245, 247) {
+			panels = append(panels, path)
+		}
+	}
+	return panels
 }
 
 func TestBuildLetterheadRendersOnFirstPage(t *testing.T) {

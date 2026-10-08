@@ -271,7 +271,12 @@ func alignmentOf(alignment extast.Alignment) layout.Align {
 }
 
 func (p *mdParser) codeBlock(node ast.Node) layout.Block {
-	return layout.Block{Kind: layout.KindCode, Code: p.codeText(node)}
+	block := layout.Block{Kind: layout.KindCode, Code: p.codeText(node)}
+	// 缩进代码块没有语言标记，只有围栏代码块才带 ``` 后的标识符。
+	if fenced, ok := node.(*ast.FencedCodeBlock); ok {
+		block.CodeLang = strings.TrimSpace(string(fenced.Language(p.source)))
+	}
+	return block
 }
 
 func (p *mdParser) codeText(block ast.Node) string {
@@ -283,11 +288,12 @@ func (p *mdParser) codeText(block ast.Node) string {
 		return ""
 	}
 	lines := value.Lines()
+	// goldmark 的行段 Value 自带该行的换行符（代码块内的软换行也包含在内），
+	// 直接拼接即可；再补一个 '\n' 会让每行之间多出空行，代码块高度翻倍。
 	var builder strings.Builder
 	for index := 0; index < lines.Len(); index++ {
 		segment := lines.At(index)
 		builder.Write(segment.Value(p.source))
-		builder.WriteByte('\n')
 	}
 	return strings.TrimRight(builder.String(), "\n")
 }
