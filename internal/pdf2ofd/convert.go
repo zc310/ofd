@@ -48,7 +48,22 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 			err = fmt.Errorf("解析 PDF 失败: %v", recovered)
 		}
 	}()
-	conf := model.NewDefaultConfiguration()
+	// 无状态配置：只用 pdfcpu 内置的默认配置，不碰磁盘上的配置目录。
+	//
+	// 这里不能用 model.NewDefaultConfiguration()：它会读全局 model.ConfigPath，
+	// 非 "disable" 时调用 os.UserConfigDir() 并创建配置目录。js/wasm 下没有
+	// 文件系统，那一步会报 "config problem: mkdir /tmp: not implemented on js"，
+	// PDF 导入直接失败。而这份配置是在本包内部创建的，调用方（cmd/ofd-wasm 等）
+	// 没法从外面注入，只能在这里自己拿无状态的那份。
+	//
+	// 用户字体因此不可用，但 PDF 导入本来就不依赖它：字形来自 PDF 自带的
+	// 字体程序，输出 OFD 的字体由 pkg/creator 按 OFD 规范内嵌。
+	conf, err := api.LoadConfiguration(api.ConfigurationOptions{
+		Mode: api.ConfigurationModeStateless,
+	})
+	if err != nil {
+		return fmt.Errorf("加载 pdfcpu 配置失败: %w", err)
+	}
 	conf.ValidationMode = model.ValidationRelaxed
 	conf.UserPW = password
 	conf.OwnerPW = password
