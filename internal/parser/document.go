@@ -225,17 +225,6 @@ func (p *Document) ForEachPage(fn func(index int, page *Page) bool) {
 	}
 }
 
-// collectCompositeUnits 收集资源中的复合图元定义。
-func (p *Document) collectCompositeUnits(pr *models.Res) {
-	if pr.CompositeGraphicUnits == nil {
-		return
-	}
-	for _, unit := range pr.CompositeGraphicUnits.CompositeGraphicUnit {
-		u := unit
-		p.compositeUnits[u.ID] = &u
-	}
-}
-
 func (p *Document) parsePublicRes() error {
 	if len(p.CommonData.PublicRes) == 0 {
 		return nil
@@ -303,57 +292,80 @@ func (p *Document) parsePageResourceFilePath(filePath models.StLoc, resolveMedia
 	return &resource, nil
 }
 
-func (p *Document) registerPageResource(resource *models.Res, filePath models.StLoc, resolveMedia bool, resources *pageResources) {
-	if resource == nil || resources == nil {
+// resourceBase 返回资源文件中相对路径的基准目录：资源文件所在目录加上资源自身的
+// BaseLoc。空 BaseLoc 与 "." 都会落在资源文件所在目录上，交给 path.Join 清理。
+func resourceBase(filePath models.StLoc, baseLoc models.StLoc) models.StLoc {
+	return filePath.Dir().Join(string(baseLoc))
+}
+
+// collectResource 把资源文件里的图片、复合图元、绘制参数、字体和颜色空间登记到
+// 文档级索引；collected 非 nil 时同时登记到页面级索引，供页面淘汰时按归属撤销。
+// resolveMedia 控制是否把图片的相对路径转换为绝对路径（Public 资源不需要）。
+func (p *Document) collectResource(resource *models.Res, filePath models.StLoc, resolveMedia bool, collected *pageResources) {
+	if resource == nil {
 		return
 	}
-	p.resourcesMu.Lock()
-	defer p.resourcesMu.Unlock()
+	base := resourceBase(filePath, resource.BaseLoc)
 	if resource.MultiMedias != nil {
 		for _, media := range resource.MultiMedias.MultiMedia {
-			if resolveMedia && !strings.HasPrefix(media.MediaFile.String(), "/") {
-				base := filePath.Dir()
-				if resource.BaseLoc != "" && resource.BaseLoc != "." {
-					base = base.Join(string(resource.BaseLoc))
-				}
-				media.MediaFile = base.Join(string(media.MediaFile)).Clean()
+			if resolveMedia {
+				media.MediaFile = media.MediaFile.Resolve(base)
 			}
 			p.res[media.ID] = media
-			resources.media[media.ID] = media
+			if collected != nil {
+				collected.media[media.ID] = media
+			}
 		}
 	}
 	if resource.CompositeGraphicUnits != nil {
 		for _, unit := range resource.CompositeGraphicUnits.CompositeGraphicUnit {
 			u := unit
 			p.compositeUnits[u.ID] = &u
-			resources.composites[u.ID] = &u
+			if collected != nil {
+				collected.composites[u.ID] = &u
+			}
 		}
 	}
 	if resource.DrawParams != nil {
 		for _, param := range resource.DrawParams.DrawParam {
 			p.drawParams[param.ID] = param
-			resources.drawParams[param.ID] = param
+			if collected != nil {
+				collected.drawParams[param.ID] = param
+			}
 		}
 	}
 	if resource.Fonts != nil {
 		for _, font := range resource.Fonts.Font {
 			if font.FontFile != "" {
-				font.FontFile = font.FontFile.Resolve(filePath.Dir().Join(string(resource.BaseLoc)))
+				font.FontFile = font.FontFile.Resolve(base)
 			}
 			p.fontRes[font.ID] = &font
-			resources.fonts[font.ID] = &font
+			if collected != nil {
+				collected.fonts[font.ID] = &font
+			}
 		}
 	}
 	if resource.ColorSpaces != nil {
 		for _, space := range resource.ColorSpaces.ColorSpace {
 			s := space
 			if s.Profile != "" {
-				s.Profile = s.Profile.Resolve(filePath.Dir().Join(string(resource.BaseLoc)))
+				s.Profile = s.Profile.Resolve(base)
 			}
 			p.colorSpaces[s.ID] = &s
-			resources.colorSpaces[s.ID] = &s
+			if collected != nil {
+				collected.colorSpaces[s.ID] = &s
+			}
 		}
 	}
+}
+
+func (p *Document) registerPageResource(resource *models.Res, filePath models.StLoc, resolveMedia bool, resources *pageResources) {
+	if resource == nil || resources == nil {
+		return
+	}
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	p.collectResource(resource, filePath, resolveMedia, resources)
 }
 
 func resourceSize(resource *models.Res) int64 {
@@ -410,44 +422,7 @@ func (p *Document) parseResourceFilePath(path models.StLoc, resolveMedia bool) (
 	if err := p.FileCache.ReadXML(path.String(), &pr); err != nil {
 		return nil, err
 	}
-
-	if pr.MultiMedias != nil {
-		for _, media := range pr.MultiMedias.MultiMedia {
-			if resolveMedia && !strings.HasPrefix(media.MediaFile.String(), "/") {
-				base := path.Dir()
-				if pr.BaseLoc != "" && pr.BaseLoc != "." {
-					base = base.Join(string(pr.BaseLoc))
-				}
-				media.MediaFile = base.Join(string(media.MediaFile)).Clean()
-			}
-			p.res[media.ID] = media
-		}
-	}
-
-	p.collectCompositeUnits(&pr)
-
-	if pr.DrawParams != nil {
-		for _, param := range pr.DrawParams.DrawParam {
-			p.drawParams[param.ID] = param
-		}
-	}
-	if pr.Fonts != nil {
-		for _, font := range pr.Fonts.Font {
-			if font.FontFile != "" {
-				font.FontFile = font.FontFile.Resolve(path.Dir().Join(string(pr.BaseLoc)))
-			}
-			p.fontRes[font.ID] = &font
-		}
-	}
-	if pr.ColorSpaces != nil {
-		for _, space := range pr.ColorSpaces.ColorSpace {
-			s := space
-			if s.Profile != "" {
-				s.Profile = s.Profile.Resolve(path.Dir().Join(string(pr.BaseLoc)))
-			}
-			p.colorSpaces[s.ID] = &s
-		}
-	}
+	p.collectResource(&pr, path, resolveMedia, nil)
 	return &pr, nil
 }
 
@@ -944,6 +919,21 @@ func (p *Document) GetTemplate(id models.StID) *models.PageContent {
 	return content
 }
 
+// resourceEntry 是遍历资源表时的快照条目：回调期间不持有锁，只能读到拷贝。
+type resourceEntry[K comparable, V any] struct {
+	id    K
+	value V
+}
+
+// snapshotEntries 复制资源表，让调用方在释放读锁后遍历。
+func snapshotEntries[K comparable, V any](source map[K]V) []resourceEntry[K, V] {
+	entries := make([]resourceEntry[K, V], 0, len(source))
+	for id, value := range source {
+		entries = append(entries, resourceEntry[K, V]{id: id, value: value})
+	}
+	return entries
+}
+
 // ForEachSignedValue 遍历已解析的签名值。
 // 回调返回 false 时停止遍历。
 func (p *Document) ForEachSignedValue(fn func(id string, value *SignedValue) bool) {
@@ -951,16 +941,7 @@ func (p *Document) ForEachSignedValue(fn func(id string, value *SignedValue) boo
 		return
 	}
 	p.signatureMu.RLock()
-	values := make([]struct {
-		id    string
-		value *SignedValue
-	}, 0, len(p.signedValues))
-	for id, value := range p.signedValues {
-		values = append(values, struct {
-			id    string
-			value *SignedValue
-		}{id: id, value: value})
-	}
+	values := snapshotEntries(p.signedValues)
 	p.signatureMu.RUnlock()
 	for _, item := range values {
 		if !fn(item.id, item.value) {
@@ -975,19 +956,10 @@ func (p *Document) ForEachSignature(fn func(id string, signature *models.Signatu
 		return
 	}
 	p.signatureMu.RLock()
-	signatures := make([]struct {
-		id        string
-		signature *models.Signature
-	}, 0, len(p.signs))
-	for id, signature := range p.signs {
-		signatures = append(signatures, struct {
-			id        string
-			signature *models.Signature
-		}{id: id, signature: signature})
-	}
+	signatures := snapshotEntries(p.signs)
 	p.signatureMu.RUnlock()
 	for _, item := range signatures {
-		if !fn(item.id, item.signature) {
+		if !fn(item.id, item.value) {
 			return
 		}
 	}
@@ -1094,19 +1066,10 @@ func (p *Document) ForEachMedia(fn func(id models.StID, media *models.MultiMedia
 		return
 	}
 	p.resourcesMu.RLock()
-	resources := make([]struct {
-		id    models.StID
-		media *models.MultiMedia
-	}, 0, len(p.res))
-	for id, media := range p.res {
-		resources = append(resources, struct {
-			id    models.StID
-			media *models.MultiMedia
-		}{id: id, media: media})
-	}
+	resources := snapshotEntries(p.res)
 	p.resourcesMu.RUnlock()
 	for _, resource := range resources {
-		if !fn(resource.id, resource.media) {
+		if !fn(resource.id, resource.value) {
 			return
 		}
 	}
@@ -1147,19 +1110,10 @@ func (p *Document) ForEachFont(fn func(id models.StID, font *models.Font) bool) 
 		return
 	}
 	p.resourcesMu.RLock()
-	fonts := make([]struct {
-		id   models.StID
-		font *models.Font
-	}, 0, len(p.fontRes))
-	for id, font := range p.fontRes {
-		fonts = append(fonts, struct {
-			id   models.StID
-			font *models.Font
-		}{id: id, font: font})
-	}
+	fonts := snapshotEntries(p.fontRes)
 	p.resourcesMu.RUnlock()
 	for _, resource := range fonts {
-		if !fn(resource.id, resource.font) {
+		if !fn(resource.id, resource.value) {
 			return
 		}
 	}
