@@ -182,6 +182,98 @@ func cjkFontGroup(ft *models.Font) string {
 	return ""
 }
 
+// cjkFallbackFamilies 是覆盖中日韩统一表意文字的常见系统族名，按优先级排列。
+// fontconfig 会把通用的 sans-serif/serif 解析成 Latin-only 字体（通常是
+// DejaVu 系），中文会整片变成豆腐块；这些族名只在已选字体确实缺中文字形时
+// 才作为替代被试，不改变原有候选顺序。
+var cjkFallbackFamilies = []string{
+	"Noto Sans CJK SC",
+	"Noto Sans SC",
+	"Source Han Sans SC",
+	"思源黑体",
+	"WenQuanYi Zen Hei",
+	"WenQuanYi Micro Hei",
+	"Microsoft YaHei",
+	"PingFang SC",
+	"SimHei",
+	"Hiragino Sans GB",
+	"Noto Serif CJK SC",
+	"Noto Serif SC",
+	"SimSun",
+}
+
+// cjkFixedWidthFamilies 是既有等宽度量又能覆盖中文的常见系统族名。
+// 等宽族里 Latin-only 的候选（DejaVu Sans Mono、Nimbus Mono PS 等）很常见，
+// 而 OFD 的等宽字体常常承载中文注释，因此单独列一份带 CJK 的候选。
+var cjkFixedWidthFamilies = []string{
+	"Noto Sans Mono CJK SC",
+	"Source Han Mono",
+	"Sarasa Mono SC",
+	"Sarasa Mono",
+	"Sarasa Gothic",
+	"Maple Mono NF CN",
+	"Noto Sans Mono CJK TC",
+}
+
+// cjkProbeRune 是判断字体是否覆盖中文的探测字符（"中"）。
+const cjkProbeRune = '中'
+
+// cjkProbeSize 是覆盖探测用的字号。只需能构造出字体面，字号不影响字形查找。
+const cjkProbeSize = 12.0
+
+// familyCoversCJK 判断字体族在给定样式下是否真的有中文字形。
+// FontFamily 按 style 存放字体，同一 style 再次载入会覆盖前一个，因此这里
+// 只能检查该 style 当前实际生效的那份字体，不能指望同族多字体逐字形回退。
+func familyCoversCJK(family *canvas.FontFamily, style drawing.FontStyle) bool {
+	if family == nil {
+		return false
+	}
+	face := family.Face(cjkProbeSize, canvas.Black, canvasStyle(style), canvas.FontNormal)
+	if face == nil || face.Font == nil {
+		return false
+	}
+	return face.Font.GlyphIndex(cjkProbeRune) != 0
+}
+
+// familyCoversText 判断字体族能否画出对象里的全部字符。
+//
+// 按字体名或文档内容去猜「这份文档有没有中文」都不可靠：Markdown 转出来的
+// OFD 声明的逻辑字体是 sans-serif/Consolas这类通用名，名字里没有任何中文
+// 线索，但正文全是中文。字形覆盖是唯一可靠的判据——已经画不出来的字符，
+// 换哪个候选都一样 tofu，不如换个真能画的。
+//
+// 探测按去重后的字符集做，并限制上限：OFD 文字对象可能整页一段文字，逐字符
+// 查表在大文档上是热点。超过上限就认为覆盖不足，宁可多换一次字体，也不要
+// 在明显缺字的文档上继续用 Latin-only 字体。
+func familyCoversText(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
+	if family == nil {
+		return false
+	}
+	face := family.Face(cjkProbeSize, canvas.Black, canvasStyle(style), canvas.FontNormal)
+	if face == nil || face.Font == nil {
+		return false
+	}
+	seen := make(map[rune]bool, 32)
+	for _, code := range object.TextCode {
+		for _, r := range code.Value {
+			if seen[r] {
+				continue
+			}
+			if face.Font.GlyphIndex(r) == 0 {
+				return false
+			}
+			seen[r] = true
+			if len(seen) >= textCoverageProbeLimit {
+				return true
+			}
+		}
+	}
+	return true
+}
+
+// textCoverageProbeLimit 是单个文字对象做字形覆盖探测的最大字符数。
+const textCoverageProbeLimit = 512
+
 // fixedWidthFontFamilies 是常见等宽字体的系统族名，按优先级排列。
 var fixedWidthFontFamilies = []string{
 	"Noto Sans Mono CJK SC",

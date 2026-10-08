@@ -409,7 +409,15 @@ func releaseSystemFonts(p *Fonts) {
 	}
 }
 
+// systemFontLookupUsable 报告能否按族名查系统字体。浏览器/wasm 环境没有可枚举
+// 的系统字体目录，tdewolff/font 在那里遍历目录时会空指针崩溃，因此必须先挡住。
+// wasm 的字体由 RegisterFallbackFont 注册后走 selectFallback 路径。
+func systemFontLookupUsable() bool { return runtime.GOOS != "js" }
+
 func loadCachedSystemFont(p *Fonts, name string, style drawing.FontStyle) (*canvas.FontFamily, bool) {
+	if !systemFontLookupUsable() {
+		return nil, false
+	}
 	// 先把逻辑名解析成字体文件，键才建得准。解析不出来就走原路径让 canvas 报错，
 	// 不在这里替它猜。
 	filename, ok := canvas.FindSystemFont(name, canvasStyle(style))
