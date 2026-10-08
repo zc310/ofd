@@ -208,7 +208,7 @@ go get github.com/zc310/ofd@latest
 
 ```bash
 go mod edit -replace github.com/tdewolff/font=github.com/zc310/font@v0.0.0-20260928001413-b20a21f7a3b5
-go mod edit -replace github.com/tdewolff/canvas=github.com/zc310/canvas@v0.0.0-20261004015143-31a1cddb8a93
+go mod edit -replace github.com/tdewolff/canvas=github.com/zc310/canvas@v0.0.0-20261008081244-a01253362cef
 go mod tidy
 ```
 
@@ -216,12 +216,12 @@ go mod tidy
 
 ```gomod
 replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261004015143-31a1cddb8a93
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261008081244-a01253362cef
 ```
 
 漏掉 `canvas` 这条会在编译时报 `cg.Extend undefined (type *canvas.LinearGradient has no field or method Extend)`——渐变的 `Extend` 属性需要修改版 `canvas` 的接口。声明后运行 `go mod tidy` 让版本收敛，再执行 `go build`。
 
-完整可运行的调用方式见 [`ofd-viewer`](https://github.com/zc310/ofd-viewer)，该仓库就是一个基于本库的桌面阅读器。
+完整可运行的调用方式见 [`ofd-viewer`](https://github.com/zc310/ofd-viewer) 与 [`ofd-toolbox`](https://github.com/zc310/ofd-toolbox)，前者是基于本库的桌面阅读器，后者是基于本库的纯前端工具箱（转换、校验、分析、发票抽取、水印与合并，整个应用编译成一个 WebAssembly 模块，文件不上传）。
 
 #### 转换与渲染示例
 
