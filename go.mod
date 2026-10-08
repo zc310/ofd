@@ -134,6 +134,6 @@ require (
 
 replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
 
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261008074648-bad7ca119a3a
+replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261008081244-a01253362cef
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
