@@ -286,7 +286,10 @@ func Plan(input any, options Options) (Result, error) {
 	}
 	defer func() { _ = src.pkg.Close() }()
 
-	result, _, err := convert(src.pkg, options)
+	// 预检不删除任何东西，因此不写 deletes、也不填 UnreferencedDropped。
+	// 让 convert 区分这一点：否则 Result 会把"计划删 N 个"报成"已删除 N 个"，
+	// 而 UnreferencedDropped 的语义是"实际被删除的条目数"。
+	result, _, err := convert(src.pkg, options, true)
 	return result, err
 }
 
@@ -303,7 +306,7 @@ func Apply(input any, w io.Writer, options Options) (Result, error) {
 	}
 	defer func() { _ = src.pkg.Close() }()
 
-	result, operations, err := convert(src.pkg, options)
+	result, operations, err := convert(src.pkg, options, false)
 	if err != nil {
 		return result, err
 	}
@@ -425,7 +428,8 @@ func verifyNoRegression(baseline map[string]bool, output []byte, docType string)
 }
 
 // convert 在内存中执行全部转换，返回改动清单与待写入的条目操作。
-func convert(pkg *core.Package, options Options) (Result, []replace.Operation, error) {
+// dryRun 为真时只计算计划：不产生删除操作，也不虚报删除数量。
+func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace.Operation, error) {
 	docType, err := resolveDocType(pkg, options.DocType)
 	if err != nil {
 		return Result{}, nil, err
@@ -500,7 +504,7 @@ func convert(pkg *core.Package, options Options) (Result, []replace.Operation, e
 	}
 
 	var deletes []string
-	if err := applyUnreferenced(pkg, options, &result, &deletes); err != nil {
+	if err := applyUnreferenced(pkg, options, &result, &deletes, dryRun); err != nil {
 		return result, nil, err
 	}
 
@@ -531,7 +535,7 @@ func convert(pkg *core.Package, options Options) (Result, []replace.Operation, e
 // 而闭包的正确性完全依赖引用识别是否穷尽——漏掉一种引用形式就等于删掉在用文件。
 // testdata/ofdrw/intro.ofd 的命名空间缺 "/2016" 后缀，解析失败后其引用的字体
 // 全部落进候选，正是这个保护要拦住的情形。
-func applyUnreferenced(pkg *core.Package, options Options, result *Result, deletes *[]string) error {
+func applyUnreferenced(pkg *core.Package, options Options, result *Result, deletes *[]string, dryRun bool) error {
 	index, err := validator.PackageReferences(context.Background(), pkg, validatorOptions(options)...)
 	if err != nil {
 		return fmt.Errorf("解析引用闭包失败: %w", err)
@@ -551,6 +555,11 @@ func applyUnreferenced(pkg *core.Package, options Options, result *Result, delet
 	if !options.DropUnreferenced {
 		options.warn("有 %d 个条目无人引用（GB/T 42133 6.2.1 c)），本次只报告不删除；加 --drop-unreferenced 执行删除",
 			len(orphans))
+		return nil
+	}
+	if dryRun {
+		// 预检：候选照列，但不产生删除操作，UnreferencedDropped 保持 0。
+		// 调用方据此显示"将删除"，而不是"已删除"。
 		return nil
 	}
 	*deletes = append(*deletes, orphans...)

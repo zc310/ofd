@@ -97,6 +97,11 @@ func writeUnreferenced(opts *options, result preserve.Result, stdout io.Writer) 
 	case result.ClosureIncomplete:
 		_, _ = fmt.Fprintf(stdout, "无人引用条目\t%d 个（引用闭包不完整，未删除）\n", len(result.Unreferenced))
 		_, _ = fmt.Fprintf(stdout, "闭包不完整原因\t%s\n", result.ClosureReason)
+	case opts.dryRun && opts.dropUnreferenced:
+		// 预检不真删，UnreferencedDropped 保持 0；此时要说"将删除"，
+		// 而不是落到 default 分支去提示"加 --drop-unreferenced"——
+		// 用户已经加过了。
+		_, _ = fmt.Fprintf(stdout, "无人引用条目\t将删除 %d 个（--dry-run，未实际删除）\n", len(result.Unreferenced))
 	case result.UnreferencedDropped > 0:
 		_, _ = fmt.Fprintf(stdout, "无人引用条目\t已删除 %d 个（GB/T 42133 6.2.1 c)）\n", result.UnreferencedDropped)
 	default:
