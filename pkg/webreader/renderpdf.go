@@ -85,7 +85,64 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, addErr)
 		}
 	}
-	return nil
+	return r.addPDFOutlines(pdfDoc, indices)
+}
+
+// addPDFOutlines 把文档大纲写入导出的 PDF。
+//
+// 大纲是文档级的，与页面的选取顺序无关，但仍需按本次导出的页建立页序映射：
+// indices 之外的页不在输出里，指向它们的条目会被丢弃。indices 可以乱序也可以
+// 重复，因此页序取该页在导出序列中的位置。
+func (r *Reader) addPDFOutlines(pdfDoc render.PDFDocument, indices []int) error {
+	outlines := make([]render.PageOutline, 0, 16)
+	for _, document := range r.distinctDocuments(indices) {
+		resolver := r.pdfOutlineResolver(indices, document)
+		outlines = append(outlines, document.Outlines(resolver)...)
+	}
+	if len(outlines) == 0 {
+		return nil
+	}
+	return pdfDoc.AddOutlines(outlines)
+}
+
+// pdfOutlineResolver 为单个文档体建立页序解析器。
+func (r *Reader) pdfOutlineResolver(indices []int, document *render.Document) render.PageLinkResolver {
+	targets := make(map[models.StID]render.LinkTargetRef)
+	for position, pageIndex := range indices {
+		if pageIndex < 0 || pageIndex >= len(r.pages) {
+			continue
+		}
+		ref := r.pages[pageIndex]
+		if ref.document != document || ref.page == nil {
+			continue
+		}
+		if _, exists := targets[ref.page.ID]; exists {
+			continue
+		}
+		targets[ref.page.ID] = render.LinkTargetRef{Index: position, Height: r.pdfPageHeight(ref)}
+	}
+	return func(pageID models.StID) (render.LinkTargetRef, bool) {
+		target, ok := targets[pageID]
+		return target, ok
+	}
+}
+
+// distinctDocuments 按首次出现顺序返回 indices 涉及的文档体。
+func (r *Reader) distinctDocuments(indices []int) []*render.Document {
+	documents := make([]*render.Document, 0, 4)
+	seen := make(map[*render.Document]bool, 4)
+	for _, pageIndex := range indices {
+		if pageIndex < 0 || pageIndex >= len(r.pages) {
+			continue
+		}
+		document := r.pages[pageIndex].document
+		if document == nil || seen[document] {
+			continue
+		}
+		seen[document] = true
+		documents = append(documents, document)
+	}
+	return documents
 }
 
 // pdfPageLinks 返回导出页的链接热区，供 PDF 生成可点击区域。热区尺寸是页面物理
@@ -141,10 +198,17 @@ func (r *Reader) pdfPageLinks(indices []int) [][]drawing.PageLink {
 // pdfPageHeight 读取页面物理高度；只读页面 Area，不加载页面内容或资源。
 func (r *Reader) pdfPageHeight(ref pageRef) float64 {
 	box, err := ref.page.PhysicalBoxMetadata()
-	if err != nil || !box.IsFinite() || box.Height <= 0 {
-		return 0
+	if err == nil && box.Width > 0 && box.Height > 0 {
+		return box.Height
 	}
-	return box.Height
+	// 页面自身没有定义有效尺寸时回退到文档公共 PageArea，再回退 A4。少了这一步，
+	// 跳转坐标会以 0 参与从页顶原点到页底原点的换算，落点会上下颠倒。
+	area := models.CtPageArea{}
+	if ref.document != nil && ref.document.Document != nil {
+		area = ref.document.CommonData.PageArea
+	}
+	area.EnsurePhysicalBox()
+	return area.PhysicalBox.Height
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。
