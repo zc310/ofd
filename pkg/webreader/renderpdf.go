@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
@@ -78,11 +79,24 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 		if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(height) || math.IsInf(height, 0) || width*height > maxRenderPixels {
 			return fmt.Errorf("第 %d 页 PDF 渲染尺寸过大", position+1)
 		}
-		if addErr := pdfDoc.AddPage(page); addErr != nil {
+		if addErr := pdfDoc.AddPage(page, r.pdfPageLinks(index)); addErr != nil {
 			return fmt.Errorf("处理 PDF 第 %d 页失败: %w", position+1, addErr)
 		}
 	}
 	return nil
+}
+
+// pdfPageLinks 返回导出页的外部链接热区，供 PDF 生成可点击区域。热区尺寸是页面
+// 物理尺寸，与导出 DPI 无关，因此复用采集时的毫米值即可。
+func (r *Reader) pdfPageLinks(index int) []drawing.PageLink {
+	if index < 0 || index >= len(r.pages) {
+		return nil
+	}
+	ref := r.pages[index]
+	if ref.page == nil || ref.document == nil {
+		return nil
+	}
+	return ref.document.PageExternalLinks(ref.page)
 }
 
 // pdfPage 获取 PDF 渲染所需的页面画布；调用方必须持有 Reader 读锁。

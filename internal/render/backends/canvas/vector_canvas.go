@@ -68,7 +68,7 @@ func newCanvasPDFDocument(w io.Writer, options drawing.PDFOptions) (drawing.PDFD
 	}, nil
 }
 
-func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface) error {
+func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface, links []drawing.PageLink) error {
 	surface, ok := page.(canvasVectorSurface)
 	if !ok {
 		return errors.New("不兼容的矢量表面")
@@ -79,6 +79,12 @@ func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface) error {
 		d.doc.NewPage(surface.c.W, surface.c.H)
 	}
 	surface.c.RenderTo(d.doc)
+	// 注解必须挂在当前页上：canvas 在 NewPage/Close 时才把页对象写出，所以只能在
+	// RenderTo 之后、开下一页之前添加，本文件的 AddPage 恰好圈定了这个窗口。
+	for _, link := range links {
+		x0, y0, x1, y1 := link.Rect(surface.c.H)
+		d.doc.AddLink(link.URI, canvas.Rect{X0: x0, Y0: y0, X1: x1, Y1: y1})
+	}
 	return nil
 }
 
