@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -236,8 +237,102 @@ func TestPageArchiveSizeIncludesUniqueResourceXML(t *testing.T) {
 	pagePath := models.StLoc("Doc_0/Pages/Page_0/Content.xml")
 	resourceSize := int64(len("resource"))
 	want := int64(len("page-content")) + resourceSize
-	if got := pageArchiveSize(fileCache, pagePath, []models.StLoc{"Res.xml", "Res.xml"}); got != want {
+	resourcePath := models.StLoc("Doc_0/Pages/Page_0/Res.xml")
+	if got := pageArchiveSize(fileCache, pagePath, []models.StLoc{resourcePath, resourcePath}); got != want {
 		t.Fatalf("页面归档权重 = %d, want %d", got, want)
+	}
+}
+
+// buildPageResPackage 生成只含一个页面的最小 OFD 包：pageRes 为 Content.xml 中
+// 的 PageRes 取值，entries 为额外的包内条目。
+func buildPageResPackage(t *testing.T, pageRes string, entries map[string]string) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<Page xmlns="http://www.ofdspec.org/2016">
+  <PageRes>` + pageRes + `</PageRes>
+  <Content><Layer ID="1"/></Content>
+</Page>`
+	files := map[string]string{
+		"OFD.xml":                        `<?xml version="1.0" encoding="UTF-8"?><OFD xmlns="http://www.ofdspec.org/2016"><DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":             `<?xml version="1.0" encoding="UTF-8"?><Document xmlns="http://www.ofdspec.org/2016"><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`,
+		"Doc_0/Pages/Page_0/Content.xml": content,
+	}
+	for name, value := range entries {
+		files[name] = value
+	}
+	for name, value := range files {
+		writer, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func openPageResDocument(t *testing.T, data []byte) *Document {
+	t.Helper()
+	ofd, err := NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+	if len(ofd.Documents) != 1 {
+		t.Fatalf("document count = %d, want 1", len(ofd.Documents))
+	}
+	return ofd.Documents[0]
+}
+
+// 渲染链路上容忍把 PageRes 写成相对文档体目录的路径。
+func TestPageResourceFallsBackToDocumentBase(t *testing.T) {
+	entries := map[string]string{
+		"Doc_0/Pages/Page_0/PageRes.xml": `<Res xmlns="http://www.ofdspec.org/2016"><DrawParams><DrawParam ID="7" LineWidth="0.5"/></DrawParams></Res>`,
+	}
+	doc := openPageResDocument(t, buildPageResPackage(t, "Pages/Page_0/PageRes.xml", entries))
+	page := doc.Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatalf("页面资源回退后仍读取失败: %v", err)
+	}
+	locations := page.PageResourceLocations()
+	if len(locations) != 1 || locations[0] != "Doc_0/Pages/Page_0/PageRes.xml" {
+		t.Fatalf("页面资源路径 = %v, want [Doc_0/Pages/Page_0/PageRes.xml]", locations)
+	}
+}
+
+// 页面目录下的资源文件优先于文档体目录下的同名文件。
+func TestPageResourcePrefersPageDirectory(t *testing.T) {
+	entries := map[string]string{
+		"Doc_0/Pages/Page_0/PageRes.xml": `<Res xmlns="http://www.ofdspec.org/2016"><DrawParams><DrawParam ID="7" LineWidth="0.5"/></DrawParams></Res>`,
+		"Doc_0/PageRes.xml":              `<Res xmlns="http://www.ofdspec.org/2016"><DrawParams><DrawParam ID="9" LineWidth="9"/></DrawParams></Res>`,
+	}
+	doc := openPageResDocument(t, buildPageResPackage(t, "PageRes.xml", entries))
+	if err := doc.Pages[0].EnsureLoaded(); err != nil {
+		t.Fatalf("页面资源读取失败: %v", err)
+	}
+	if got := doc.Pages[0].PageResourceLocations(); len(got) != 1 || got[0] != "Doc_0/Pages/Page_0/PageRes.xml" {
+		t.Fatalf("页面资源路径 = %v, want 页面目录下的 PageRes.xml", got)
+	}
+	if doc.GetDrawParam(models.StID(9)) != nil {
+		t.Fatal("文档体目录下的同名资源不应被读入")
+	}
+}
+
+// 两处都没有资源文件时按规范基准（页面目录）报错。
+func TestPageResourceMissingKeepsPageDirectoryPath(t *testing.T) {
+	doc := openPageResDocument(t, buildPageResPackage(t, "Pages/Page_0/PageRes.xml", nil))
+	err := doc.Pages[0].EnsureLoaded()
+	if err == nil {
+		t.Fatal("缺失页面资源文件时应返回错误")
+	}
+	if !strings.Contains(err.Error(), "Doc_0/Pages/Page_0/Pages/Page_0/PageRes.xml") {
+		t.Fatalf("错误信息 = %v, want 页面目录基准的路径", err)
 	}
 }
 
