@@ -1244,9 +1244,18 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 	} else if !filepath.IsAbs(assetRoot) {
 		assetRoot = filepath.Join(baseDir, assetRoot)
 	}
-	root, err := filepath.Abs(assetRoot)
-	if err != nil {
-		return creator.Document{}, fmt.Errorf("资源根目录无效: %w", err)
+	// 资源根目录为空表示所有资源都内联（DataBase64 或由 LoadAsset 提供），
+	// 根本没有需要落到磁盘的路径。此时不能调 filepath.Abs：它对空串求值等
+	// 于取当前工作目录，而 js/wasm 环境没有工作目录，
+	// os.Getwd 会返回 "getwd: not implemented on js"，把一个纯内存的构建
+	// 挡在门外。浏览器里 merge.Pages 正是这条路径。
+	root := ""
+	if assetRoot != "" {
+		abs, err := filepath.Abs(assetRoot)
+		if err != nil {
+			return creator.Document{}, fmt.Errorf("资源根目录无效: %w", err)
+		}
+		root = abs
 	}
 	store := assetStore{root: root, loader: options.LoadAsset}
 	loadResource := func(file, encoded string) ([]byte, creator.DataSource, error) {
