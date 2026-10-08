@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
@@ -53,6 +54,14 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	// --version 对所有子命令一致生效，因此集中在这里处理：creator 有六个各自
+	// 构建 cobra 树的子命令，逐个注册会得到六份行为，而其中一份迟早漏掉。
+	rest, ok := stripVersionFlag(args)
+	if ok {
+		_, _ = fmt.Fprintln(stdout, version.Version)
+		return exitOK
+	}
+	args = rest
 	if len(args) > 0 && strings.EqualFold(args[0], "export-all") {
 		return runExportAll(args[1:], stdout, stderr)
 	}
@@ -179,6 +188,18 @@ func writeOutputStream(opts *options, document creator.Document, createOptions c
 		return fmt.Errorf("替换输出文件失败: %w", err)
 	}
 	return nil
+}
+
+// stripVersionFlag 取出 --version/-v 并返回剩余参数。
+func stripVersionFlag(args []string) ([]string, bool) {
+	for index, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			rest := make([]string, 0, len(args)-1)
+			rest = append(rest, args[:index]...)
+			return append(rest, args[index+1:]...), true
+		}
+	}
+	return args, false
 }
 
 func parseArgs(args []string, output io.Writer) (*options, error) {
