@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func readPDFDestinations(t *testing.T, data []byte) map[string]string {
 			case types.Name:
 				parts = append(parts, v.Value())
 			case types.Float:
-				parts = append(parts, fmt.Sprintf("%.4g", float64(v)))
+				parts = append(parts, strconv.FormatFloat(float64(v), 'f', -1, 64))
 			case types.Integer:
 				parts = append(parts, fmt.Sprintf("%d", int(v)))
 			}
@@ -308,13 +309,12 @@ func TestPDFExportEmitsInternalJumpsFromAnnotations(t *testing.T) {
 	}
 	// 目标页必须正确：第 1 页的跳转指向 page2，第 2 页的指向 page1。
 	//
-	// 样本的跳转是 Dest@Type="XYZ" Left="0" Top="0"，即定位到目标页左上角。canvas
-	// 用矩形分量反推目的地类型，x 为 0 时矩形退化成「只有 y」而被判为 FitH：落点
-	// 仍是目标页顶端（841.9pt 即 A4 页高），但页高会一并适配窗口。
-	if want := "page2 FitH 841.9"; destinations[forward.destName] != want {
+	// 样本的跳转是 Dest@Type="XYZ" Left="0" Top="0"，即定位到目标页左上角。坐标 0
+	// 曾让目的地类型被误判，现按显式类型写出；841.9pt 是 A4 页高，即顶端位置。
+	if want := "page2 XYZ 0 841.88976 0"; destinations[forward.destName] != want {
 		t.Errorf("向前跳目标 = %q，期望 %q", destinations[forward.destName], want)
 	}
-	if want := "page1 FitH 841.9"; destinations[backward.destName] != want {
+	if want := "page1 XYZ 0 841.88976 0"; destinations[backward.destName] != want {
 		t.Errorf("向后跳目标 = %q，期望 %q", destinations[backward.destName], want)
 	}
 }
@@ -360,5 +360,91 @@ func TestPDFExportInternalJumpsMatchInParallelPath(t *testing.T) {
 	}
 	if serialAnnots != 3 || serialDests != 2 {
 		t.Fatalf("应导出 3 条链接注解与 2 个命名目标，实际 %d / %d", serialAnnots, serialDests)
+	}
+}
+
+// TestPDFExportWritesEveryDestinationType 验证五种跳转目标类型与缩放比例都精确写入
+// PDF 命名目标。
+//
+// 用例样本 testdata/link-destinations.ofd 的六个热区分别使用 Fit、FitH、FitV、
+// XYZ、XYZ 带缩放、FitR，坐标均不为零——坐标为零时相邻类型无法区分（坐标为零的
+// XYZ 会被判成 FitH），所以这里刻意用非零坐标。
+func TestPDFExportWritesEveryDestinationType(t *testing.T) {
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/link-destinations.ofd", &output); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	data := output.Bytes()
+	annots := readPDFLinkAnnotations(t, data)
+	destinations := readPDFDestinations(t, data)
+
+	// 六个向前跳加一个向后跳。
+	if len(annots) != 7 || len(destinations) != 7 {
+		t.Fatalf("链接注解 %d 个、命名目标 %d 个，期望各 7 个", len(annots), len(destinations))
+	}
+	byKind := make(map[string][]string)
+	for name, destination := range destinations {
+		fields := strings.Fields(destination)
+		if len(fields) < 2 {
+			t.Fatalf("命名目标 %q 内容异常: %q", name, destination)
+		}
+		byKind[fields[1]] = append(byKind[fields[1]], destination)
+	}
+
+	const ptPerMm = 72.0 / 25.4
+	mm := func(v float64) float64 { return v * ptPerMm }
+	want := []struct {
+		kind string
+		nums []float64
+		page string
+	}{
+		// Fit 无参数。
+		{"Fit", nil, "page2"},
+		// top=120 → y=297-120=177；left=60 直接取 x。
+		{"FitH", []float64{mm(177)}, "page2"},
+		{"FitV", []float64{mm(60)}, "page2"},
+		// (40,80) → x=40，y=297-80=217。
+		{"XYZ", []float64{mm(40), mm(217), 0}, "page2"},
+		// 同一位置，zoom=2。
+		{"XYZ", []float64{mm(40), mm(217), mm(2)}, "page2"},
+		// FitR 30,60–180,150 → PDF 的四个数是 [左下x 左下y 右上x 右上y]，即
+		// [left, 297-top, right, 297-bottom]。
+		{"FitR", []float64{mm(30), mm(297 - 60), mm(180), mm(297 - 150)}, "page2"},
+		// 第 2 页跳回第 1 页，(0,0) 即顶端。
+		{"XYZ", []float64{0, mm(297), 0}, "page1"},
+	}
+	if len(byKind["XYZ"]) != 3 || len(byKind["FitH"]) != 1 || len(byKind["FitV"]) != 1 ||
+		len(byKind["FitR"]) != 1 || len(byKind["Fit"]) != 1 {
+		t.Fatalf("目的地类型分布异常: %+v", byKind)
+	}
+	for _, w := range want {
+		candidates := byKind[w.kind]
+		matched := false
+		for _, candidate := range candidates {
+			fields := strings.Fields(candidate)
+			if fields[0] != w.page {
+				continue
+			}
+			nums := fields[2:]
+			if len(nums) != len(w.nums) {
+				continue
+			}
+			ok := true
+			for i, wantNum := range w.nums {
+				num, err := strconv.ParseFloat(nums[i], 64)
+				if err != nil || math.Abs(num-wantNum) > 0.01 {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("/%s 目标页 %s 坐标不匹配，期望 %v，实际候选 %v",
+				w.kind, w.page, w.nums, candidates)
+		}
 	}
 }
