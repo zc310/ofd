@@ -276,13 +276,47 @@ type PDFOptions struct {
 	LossyImages bool // 图片使用有损编码
 }
 
+// DestType 是内部跳转目标的位置类型，与 OFD 的 Dest@Type 一一对应。
+type DestType int
+
+const (
+	// DestFit 让目标页整页适配窗口，不指定位置。
+	DestFit DestType = iota
+	// DestFitH 让目标页高度适配窗口，并滚动到 Top。
+	DestFitH
+	// DestFitV 让目标页宽度适配窗口，并滚动到 Left。
+	DestFitV
+	// DestXYZ 定位到目标页的 (Left, Top)，缩放沿用当前值。
+	DestXYZ
+	// DestFitR 把目标页的 Left/Top/Right/Bottom 矩形适配窗口。
+	DestFitR
+)
+
+// LinkTarget 描述内部跳转的目标位置。
+type LinkTarget struct {
+	// Name 是锚点名，全文档唯一；PDF 通过文档名称树解析它。同一目标位置的不同
+	// 链接应共用同名锚点，名称树会自然去重。
+	Name string
+	// Page 是目标页在输出中的页序号（从 0 起）。实现方应校验它落在实际写出的
+	// 页数范围内。
+	Page int
+	// Type 决定下面哪些分量有意义。
+	Type DestType
+	// Left/Top/Right/Bottom 是目标位置，单位 mm，原点在目标页左上角。
+	Left, Top, Right, Bottom float64
+	// PageHeight 是目标页高度（mm），用于把 OFD 的左上角原点换算成 PDF 的
+	// 左下角原点。
+	PageHeight float64
+}
+
 // PageLink 是页面上一个可点击热区，坐标为距页顶的毫米值。
 //
-// 当前只承载外部链接（URI）。内部跳转需要目标页在输出中的序号，热区提取方
-// 未必知道后续是否会裁页，因此暂不在此表达；PDF 后遇到失效目标应直接丢弃。
+// URI 与 Target 二选一：URI 非空表示外部链接，否则由 Target 表达内部跳转。
 type PageLink struct {
 	// URI 是外部链接地址。
 	URI string
+	// Target 是内部跳转目标，为 nil 时本条是外部链接。
+	Target *LinkTarget
 	// X、Y 为热区左上角距页顶的距离，Width、Height 为热区尺寸。
 	X, Y, Width, Height float64
 }

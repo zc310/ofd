@@ -3,6 +3,9 @@ package converter
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -18,11 +21,86 @@ type pdfLinkAnnotation struct {
 	destName string
 }
 
+// readPDFDestinations 读回 Catalog 名称树里的全部命名目标，返回 名称 → 目的地描述。
+func readPDFDestinations(t *testing.T, data []byte) map[string]string {
+	t.Helper()
+	ctx := readPDFContext(t, data)
+	namesEntry, ok := ctx.RootDict.Find("Names")
+	if !ok {
+		return nil
+	}
+	namesDict, ok := namesEntry.(types.Dict)
+	if !ok {
+		return nil
+	}
+	destsEntry, ok := namesDict.Find("Dests")
+	if !ok {
+		return nil
+	}
+	destsDict, ok := destsEntry.(types.Dict)
+	if !ok {
+		return nil
+	}
+	listEntry, ok := destsDict.Find("Names")
+	if !ok {
+		return nil
+	}
+	list, ok := listEntry.(types.Array)
+	if !ok {
+		return nil
+	}
+	destinations := make(map[string]string, len(list)/2)
+	for i := 0; i+1 < len(list); i += 2 {
+		key := stringValue(list[i])
+		ref, ok := list[i+1].(types.IndirectRef)
+		if !ok {
+			continue
+		}
+		dict, err := ctx.Dereference(ref)
+		if err != nil {
+			t.Fatalf("解析命名目标 %q 失败: %v", key, err)
+		}
+		target, ok := dict.(types.Dict)
+		if !ok {
+			continue
+		}
+		destination, ok := target.Find("D")
+		if !ok {
+			continue
+		}
+		values, ok := destination.(types.Array)
+		if !ok {
+			continue
+		}
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			if pageRef, ok := value.(types.IndirectRef); ok {
+				if pageNumber, err := ctx.XRefTable.PageNumber(context.Background(), int(pageRef.ObjectNumber)); err == nil {
+					parts = append(parts, "page"+strconv.Itoa(pageNumber))
+					continue
+				}
+				parts = append(parts, "pageObj"+strconv.Itoa(int(pageRef.ObjectNumber)))
+				continue
+			}
+			switch v := value.(type) {
+			case types.Name:
+				parts = append(parts, v.Value())
+			case types.Float:
+				parts = append(parts, fmt.Sprintf("%.4g", float64(v)))
+			case types.Integer:
+				parts = append(parts, fmt.Sprintf("%d", int(v)))
+			}
+		}
+		destinations[key] = strings.Join(parts, " ")
+	}
+	return destinations
+}
+
 // readPDFLinkAnnotations 回读 PDF 中的全部链接注解。
 //
 // pdfcpu 只在测试二进制里被引入：pkg/converter 的库代码刻意不链接它，
 // 以免只做 OFD→X 的使用方拖进这份依赖。
-func readPDFLinkAnnotations(t *testing.T, data []byte) []pdfLinkAnnotation {
+func readPDFContext(t *testing.T, data []byte) *model.Context {
 	t.Helper()
 	gctx := context.Background()
 	conf := model.NewDefaultConfiguration()
@@ -34,6 +112,13 @@ func readPDFLinkAnnotations(t *testing.T, data []byte) []pdfLinkAnnotation {
 	if err := api.ValidateContext(gctx, ctx); err != nil {
 		t.Fatalf("校验 PDF 失败: %v", err)
 	}
+	return ctx
+}
+
+func readPDFLinkAnnotations(t *testing.T, data []byte) []pdfLinkAnnotation {
+	t.Helper()
+	gctx := context.Background()
+	ctx := readPDFContext(t, data)
 	pages := ctx.PageCount
 	results := make([]pdfLinkAnnotation, 0, 4)
 	for page := 1; page <= pages; page++ {
@@ -80,14 +165,17 @@ func readPDFLinkAnnotations(t *testing.T, data []byte) []pdfLinkAnnotation {
 	return results
 }
 
+// floatValues 取出数组里的全部数值。值为 0 的坐标会被 pdfcpu 解析成 Integer 而
+// 不是 Float（PDF 数字对象不区分整数与小数），两种都要收。
 func floatValues(values types.Array) []float64 {
 	result := make([]float64, 0, len(values))
 	for _, value := range values {
-		number, ok := value.(types.Float)
-		if !ok {
-			continue
+		switch number := value.(type) {
+		case types.Float:
+			result = append(result, float64(number))
+		case types.Integer:
+			result = append(result, float64(number))
 		}
-		result = append(result, float64(number))
 	}
 	return result
 }
@@ -107,8 +195,7 @@ func stringValue(object types.Object) string {
 // TestPDFExportEmitsExternalLinksFromAnnotation 验证 OFD 页面注解上的外部链接会
 // 变成 PDF 里可点击的链接注解。
 //
-// 用例样本 testdata/links.ofd 的第 1 页有一个指向 GitHub 的 Link 注解；另外两个
-// 是页面跳转，PDF 导出暂不支持，应被丢弃而不是写成坏的注解。
+// 用例样本 testdata/links.ofd 的第 1 页有一个指向 GitHub 的 Link 注解。
 func TestPDFExportEmitsExternalLinksFromAnnotation(t *testing.T) {
 	var output bytes.Buffer
 	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
@@ -118,15 +205,14 @@ func TestPDFExportEmitsExternalLinksFromAnnotation(t *testing.T) {
 
 	uris := make([]string, 0, len(annots))
 	for _, annot := range annots {
-		uris = append(uris, annot.uri)
+		if annot.uri != "" {
+			uris = append(uris, annot.uri)
+		}
 	}
 	if len(uris) != 1 || uris[0] != "https://github.com/zc310/ofd" {
 		t.Fatalf("PDF 应只含 1 条外部链接注解，实际 %d 条: %+v", len(uris), uris)
 	}
 	for _, annot := range annots {
-		if annot.uri == "" {
-			t.Errorf("第 %d 页存在没有 URI 的链接注解（页面跳转不应被导出）: %+v", annot.page, annot)
-		}
 		if len(annot.rect) != 4 {
 			t.Errorf("链接注解 Rect 不完整: %+v", annot.rect)
 		}
@@ -144,10 +230,17 @@ func TestPDFExportLinkRectMatchesAnnotationBoundary(t *testing.T) {
 	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
-	annots := readPDFLinkAnnotations(t, output.Bytes())
-	if len(annots) != 1 {
-		t.Fatalf("链接注解数 = %d", len(annots))
+	readAllAnnots := readPDFLinkAnnotations(t, output.Bytes())
+	var uriAnnot *pdfLinkAnnotation
+	for i, annot := range readAllAnnots {
+		if annot.uri == "https://github.com/zc310/ofd" {
+			uriAnnot = &readAllAnnots[i]
+		}
 	}
+	if uriAnnot == nil {
+		t.Fatal("未找到指向 GitHub 的链接注解")
+	}
+	annots := []pdfLinkAnnotation{*uriAnnot}
 	const ptPerMm = 72.0 / 25.4
 	want := []float64{30 * ptPerMm, (297 - 190) * ptPerMm, 180 * ptPerMm, (297 - 180) * ptPerMm}
 	got := annots[0].rect
@@ -170,5 +263,102 @@ func TestPDFExportWithoutLinksHasNoAnnotations(t *testing.T) {
 	}
 	if annots := readPDFLinkAnnotations(t, output.Bytes()); len(annots) != 0 {
 		t.Fatalf("无链接文档不应产生链接注解，实际 %+v", annots)
+	}
+}
+
+// TestPDFExportEmitsInternalJumpsFromAnnotations 验证页面跳转变成 PDF 命名目标，
+// 且前后两个方向都成立。
+//
+// 样本 testdata/links.ofd 有两个跳转：第 1 页跳到第 2 页（向前），第 2 页跳回第 1
+// 页（向后）。向后跳是必须覆盖的方向——canvas 的 AddAnchor 只能把锚点绑到当前
+// 页，实现改用 AddAnchorToPage 才能表达。
+func TestPDFExportEmitsInternalJumpsFromAnnotations(t *testing.T) {
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	data := output.Bytes()
+	annots := readPDFLinkAnnotations(t, data)
+	destinations := readPDFDestinations(t, data)
+
+	// 每条内部跳转注解都要有 /Dest，且该名字必须能在名称树里查到。
+	internal := make([]pdfLinkAnnotation, 0, 2)
+	for _, annot := range annots {
+		if annot.uri == "" {
+			internal = append(internal, annot)
+		}
+	}
+	if len(internal) != 2 {
+		t.Fatalf("内部跳转注解数 = %d（应为 2）: %+v", len(internal), annots)
+	}
+	forward, backward := internal[0], internal[1]
+	if forward.page != 1 || backward.page != 2 {
+		t.Fatalf("跳转所在页不符：第 1 页向前跳、第 2 页向后跳，实际 %d / %d", forward.page, backward.page)
+	}
+	for _, annot := range internal {
+		if annot.destName == "" {
+			t.Fatalf("内部跳转缺少 /Dest: %+v", annot)
+		}
+		if _, ok := destinations[annot.destName]; !ok {
+			t.Fatalf("名称树里查不到 %q: %+v", annot.destName, destinations)
+		}
+	}
+	if forward.destName == backward.destName {
+		t.Fatalf("指向不同页的两个跳转不应共用锚点: %q", forward.destName)
+	}
+	// 目标页必须正确：第 1 页的跳转指向 page2，第 2 页的指向 page1。
+	//
+	// 样本的跳转是 Dest@Type="XYZ" Left="0" Top="0"，即定位到目标页左上角。canvas
+	// 用矩形分量反推目的地类型，x 为 0 时矩形退化成「只有 y」而被判为 FitH：落点
+	// 仍是目标页顶端（841.9pt 即 A4 页高），但页高会一并适配窗口。
+	if want := "page2 FitH 841.9"; destinations[forward.destName] != want {
+		t.Errorf("向前跳目标 = %q，期望 %q", destinations[forward.destName], want)
+	}
+	if want := "page1 FitH 841.9"; destinations[backward.destName] != want {
+		t.Errorf("向后跳目标 = %q，期望 %q", destinations[backward.destName], want)
+	}
+}
+
+// TestPDFExportDropsJumpsToPagesOutsidePageRange 守住目标页被页码范围裁掉时跳转
+// 被丢弃，而不是写出指向不存在页面的链接。
+func TestPDFExportDropsJumpsToPagesOutsidePageRange(t *testing.T) {
+	// 只导出第 2 页：第 2 页那条跳回第 1 页的链接目标已不在输出里。
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/links.ofd", &output,
+		Page(2)); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	data := output.Bytes()
+	ctx := readPDFContext(t, data)
+	if ctx.PageCount != 1 {
+		t.Fatalf("输出页数 = %d，期望 1", ctx.PageCount)
+	}
+	annots := readPDFLinkAnnotations(t, data)
+	if len(annots) != 0 {
+		t.Fatalf("目标页被裁掉后不应留下任何链接: %+v", annots)
+	}
+	if destinations := readPDFDestinations(t, data); len(destinations) != 0 {
+		t.Fatalf("目标页被裁掉后不应留下命名目标: %+v", destinations)
+	}
+}
+
+// TestPDFExportInternalJumpsMatchInParallelPath 守住并行渲染路径产出与串行一致的
+// 链接。两条路径各自建一次页序映射，容易只改一处。
+func TestPDFExportInternalJumpsMatchInParallelPath(t *testing.T) {
+	export := func(opts ...Option) (int, int) {
+		var output bytes.Buffer
+		if err := PDF(context.Background(), "../../testdata/links.ofd", &output, opts...); err != nil {
+			t.Fatalf("导出 PDF 失败: %v", err)
+		}
+		return len(readPDFLinkAnnotations(t, output.Bytes())), len(readPDFDestinations(t, output.Bytes()))
+	}
+	serialAnnots, serialDests := export()
+	parallelAnnots, parallelDests := export(PDFParallel(true))
+	if serialAnnots != parallelAnnots || serialDests != parallelDests {
+		t.Fatalf("串行 (注解 %d, 目标 %d) 与并行 (注解 %d, 目标 %d) 不一致",
+			serialAnnots, serialDests, parallelAnnots, parallelDests)
+	}
+	if serialAnnots != 3 || serialDests != 2 {
+		t.Fatalf("应导出 3 条链接注解与 2 个命名目标，实际 %d / %d", serialAnnots, serialDests)
 	}
 }

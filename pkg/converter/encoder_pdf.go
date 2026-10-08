@@ -71,15 +71,18 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	if err != nil {
 		return err
 	}
+	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
+	resolvers := newPageLinkResolvers(pages)
 	for _, page := range pages {
 		if err := conv.checkCancelled(); err != nil {
 			return err
 		}
-		surface, err := page.document.Page(page.document.Pages[page.pageIndex])
+		surface, err := page.document.Page(page.page)
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-		if err := pdfDoc.AddPage(surface, page.document.PageExternalLinks(page.document.Pages[page.pageIndex])); err != nil {
+		links := page.document.PageLinks(page.page, resolvers[page.document])
+		if err := pdfDoc.AddPage(surface, links); err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 	}
@@ -103,6 +106,8 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 	if err != nil {
 		return err
 	}
+	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
+	resolvers := newPageLinkResolvers(collectSelectedPages(documents, pageStart, pageEnd))
 	workers = max(1, min(workers, pageEnd-pageStart))
 	type pageJob struct {
 		page     documentPage
@@ -124,7 +129,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 					job.finished.Done()
 					continue
 				}
-				job.surface, job.err = job.page.document.Page(job.page.document.Pages[job.page.pageIndex])
+				job.surface, job.err = job.page.document.Page(job.page.page)
 				job.finished.Done()
 			}
 		}()
@@ -160,7 +165,8 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			if job.surface == nil {
 				return fmt.Errorf("处理第%d页失败: 页面画布为空", page.pageNumber)
 			}
-			if err := pdfDoc.AddPage(job.surface, page.document.PageExternalLinks(page.document.Pages[page.pageIndex])); err != nil {
+			links := page.document.PageLinks(page.page, resolvers[page.document])
+			if err := pdfDoc.AddPage(job.surface, links); err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 			}
 		}
