@@ -88,7 +88,26 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 	}
-	return nil
+	return addDocumentOutlines(pdfDoc, documents, resolvers)
+}
+
+// addDocumentOutlines 把各文档体的大纲汇总写入同一个 PDF。
+//
+// 多文档体时按传入顺序依次追加，层级在每个文档体内部独立计算：PDF 的大纲树是
+// 一棵，跨文档体拼成同级会让后者的顶层项挂到前者的子项下。
+func addDocumentOutlines(pdfDoc render.PDFDocument, documents []*render.Document,
+	resolvers map[*render.Document]render.PageLinkResolver) error {
+	outlines := make([]render.PageOutline, 0, 16)
+	for _, document := range documents {
+		if document == nil || document.Document == nil {
+			continue
+		}
+		outlines = append(outlines, document.Outlines(resolvers[document])...)
+	}
+	if len(outlines) == 0 {
+		return nil
+	}
+	return pdfDoc.AddOutlines(outlines)
 }
 
 // closePDFDocument 在所有退出路径上收尾 PDF 文档。
@@ -203,7 +222,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			return err
 		}
 	}
-	return nil
+	return addDocumentOutlines(pdfDoc, documents, resolvers)
 }
 
 // pdfDocumentsWithWorkers 是测试用的向后兼容包装。

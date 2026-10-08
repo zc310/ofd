@@ -13,16 +13,22 @@ import (
 
 // fakePDFDocument 记录 PDF 文档工厂的调用情况。
 type fakePDFDocument struct {
-	pages int
-	added []VectorSurface
-	links [][]PageLink
-	close int
+	pages    int
+	added    []VectorSurface
+	links    [][]PageLink
+	outlines []PageOutline
+	close    int
 }
 
 func (d *fakePDFDocument) AddPage(page VectorSurface, links []PageLink) error {
 	d.pages++
 	d.added = append(d.added, page)
 	d.links = append(d.links, links)
+	return nil
+}
+
+func (d *fakePDFDocument) AddOutlines(outlines []PageOutline) error {
+	d.outlines = outlines
 	return nil
 }
 
