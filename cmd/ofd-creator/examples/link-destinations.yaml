@@ -1,0 +1,362 @@
+# 跳转目标类型示例
+# 覆盖 Goto/Dest 的五种目标类型与缩放比例：
+#   - Fit   整页适配窗口，不指定位置
+#   - FitH  页高适配窗口，并滚动到 Top
+#   - FitV  页宽适配窗口，并滚动到 Left
+#   - XYZ   定位到 (Left, Top)，缩放取 Zoom；Zoom 省略时保持阅读器当前缩放
+#   - FitR  把 Left/Top/Right/Bottom 矩形适配窗口
+#
+# 每个目标的坐标都不为零，以便与「坐标为零」的情形区分开：坐标为零时目标类型容易
+# 被相邻类型吞掉，例如 Left 为 0 的 XYZ 与 FitH 无法区分。
+#
+# 热区用不可见的 PathObject 承载，与 links.yaml 相同：热区只是点击范围，不该画出来。
+# PDF 导出会把这些跳转写成命名目标，转 PDF 后同样可点击。
+#
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/link-destinations.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/link-destinations.yaml -o testdata/link-destinations.ofd --format auto --deterministic --validate --complete-text-code-deltas
+
+version: 1
+document:
+  id: link-destinations
+  title: 跳转目标类型示例
+  creator: ofd-creator
+  creator_version: "1"
+  page_size:
+    name: A4
+  creation_date: "2026-10-08T00:00:00Z"
+  annotations:
+    # 五种目标类型都指向第 2 页，只有目标参数不同。
+    - page: 0
+      items:
+        - id: 301
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 150
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: Fit
+        - id: 302
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 168
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: FitH
+                    top: 120
+        - id: 303
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 186
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: FitV
+                    left: 60
+        - id: 304
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 204
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: XYZ
+                    left: 40
+                    top: 80
+        - id: 305
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 222
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: XYZ
+                    left: 40
+                    top: 80
+                    zoom: 2
+        - id: 306
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 240
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 1
+                    type: FitR
+                    left: 30
+                    top: 60
+                    right: 180
+                    bottom: 150
+    # 第 2 页跳回第 1 页，方向与上面相反，用来验证向后跳转。
+    - page: 1
+      items:
+        - id: 307
+          type: Link
+          creator: ofd-creator
+          last_mod_date: "2026-10-08"
+          boundary:
+            x: 30
+            "y": 150
+            width: 150
+            height: 10
+          items:
+            - type: path
+              x: 0
+              "y": 0
+              width: 150
+              height: 10
+              data: M 0 0 L 150 0 L 150 10 L 0 10 C
+              stroke: false
+              fill: false
+              visible: false
+              actions:
+                - event: CLICK
+                  goto:
+                    page: 0
+                    type: XYZ
+                    left: 0
+                    top: 0
+
+pages:
+  - items:
+      - type: text
+        x: 30
+        "y": 100
+        width: 150
+        height: 14
+        value: 跳转目标类型示例 · 第 1 页
+        font: 楷体
+        size: 12
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 145
+        width: 150
+        height: 8
+        value: 下列热区分别对应五种目标类型，目标参数互不相同
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 90
+          g: 90
+          b: 90
+      - type: text
+        x: 32
+        "y": 151
+        width: 150
+        height: 8
+        value: Fit · 整页适配
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 32
+        "y": 169
+        width: 150
+        height: 8
+        value: FitH · 页高适配，滚动到 120mm
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 32
+        "y": 187
+        width: 150
+        height: 8
+        value: FitV · 页宽适配，滚动到 60mm
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 32
+        "y": 205
+        width: 150
+        height: 8
+        value: XYZ · 定位到 (40mm, 80mm)
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 32
+        "y": 223
+        width: 150
+        height: 8
+        value: XYZ · 同一位置，缩放 2 倍
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 32
+        "y": 241
+        width: 150
+        height: 8
+        value: FitR · 缩放到 30,60 至 180,150
+        font: 楷体
+        size: 8
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+  - items:
+      - type: text
+        x: 30
+        "y": 100
+        width: 150
+        height: 14
+        value: 跳转目标类型示例 · 第 2 页
+        font: 楷体
+        size: 12
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 140
+        width: 150
+        height: 10
+        value: 上面五个热区都指向本页
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 90
+          g: 90
+          b: 90
+      - type: text
+        x: 30
+        "y": 145
+        width: 150
+        height: 10
+        value: ← 返回第 1 页
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
