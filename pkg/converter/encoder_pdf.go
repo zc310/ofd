@@ -56,7 +56,8 @@ func pdfDocumentsWithConverter(documents []*render.Document, output io.Writer, c
 	return pdfDocumentsWithWorkersConv(documents, output, workers, conv)
 }
 
-func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Converter) error {
+// pdfDocumentsSerial 串行渲染各页写入 PDF。
+func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Converter) (err error) {
 	pages := collectDocumentPages(documents)
 	if len(pages) == 0 {
 		return errors.New("文档没有页面")
@@ -71,6 +72,7 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	if err != nil {
 		return err
 	}
+	defer closePDFDocument(pdfDoc, &err)
 	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
 	resolvers := newPageLinkResolvers(pages)
 	for _, page := range pages {
@@ -86,10 +88,23 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 	}
-	return pdfDoc.Close()
+	return nil
 }
 
-func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer, workers int, conv *Converter) error {
+// closePDFDocument 在所有退出路径上收尾 PDF 文档。
+//
+// PDF 只有在写出交叉引用表与 trailer 之后才可打开，而这两样都由 Close 写出。
+// 转换中途失败时若不关闭，输出会停在半截：文件能打开但缺页面，或干脆无法解析。
+// 因此这里无论成功还是失败都关闭；关闭失败只在没有其它错误时上报，避免用收尾
+// 错误盖掉真正的失败原因。
+func closePDFDocument(pdfDoc render.PDFDocument, err *error) {
+	if closeErr := pdfDoc.Close(); closeErr != nil && *err == nil {
+		*err = fmt.Errorf("关闭 PDF 文档失败: %w", closeErr)
+	}
+}
+
+// pdfDocumentsWithWorkersConv 分批并行渲染页面、再按页序串行写入 PDF。
+func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer, workers int, conv *Converter) (err error) {
 	if output == nil {
 		return errors.New("未设置 PDF 输出参数")
 	}
@@ -106,6 +121,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 	if err != nil {
 		return err
 	}
+	defer closePDFDocument(pdfDoc, &err)
 	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
 	resolvers := newPageLinkResolvers(collectSelectedPages(documents, pageStart, pageEnd))
 	workers = max(1, min(workers, pageEnd-pageStart))
@@ -187,7 +203,7 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			return err
 		}
 	}
-	return pdfDoc.Close()
+	return nil
 }
 
 // pdfDocumentsWithWorkers 是测试用的向后兼容包装。
