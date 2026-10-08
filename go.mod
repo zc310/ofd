@@ -23,8 +23,8 @@ require (
 	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.1
-	github.com/knroy/go-xml v1.5.0
-	github.com/kovidgoyal/imaging v1.8.23
+	github.com/knroy/go-xml v1.6.0
+	github.com/kovidgoyal/imaging v1.8.24-0.20261007033220-40391a359a37
 	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/minio/minio-go/v7 v7.3.0
@@ -46,7 +46,7 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/fontfix v0.0.3-0.20260927235621-9e5b20635fc8
+	github.com/zc310/fontfix v0.0.3-0.20261008003548-25f9b65742e4
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.57.0
@@ -101,7 +101,7 @@ require (
 	github.com/kovidgoyal/go-parallel v1.1.1 // indirect
 	github.com/kovidgoyal/go-shm v1.0.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
-	github.com/mattn/go-runewidth v0.0.30 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/molecule-man/go-brrr v1.2.0 // indirect
