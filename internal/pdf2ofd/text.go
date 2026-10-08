@@ -264,6 +264,11 @@ func decodePDFText(data []byte, font pdfFontInfo) (string, []uint16) {
 			builder.WriteString(value)
 			continue
 		}
+		// 无 ToUnicode 的 CID 字体靠内嵌 cmap 的字符集映射还原，见 cidUnicode。
+		if value, ok := font.cidUnicode(code); ok {
+			builder.WriteString(value)
+			continue
+		}
 		if decoder != nil {
 			if decoded, err := decoder.NewDecoder().Bytes(raw); err == nil && len(decoded) > 0 {
 				builder.WriteString(string(decoded))

@@ -44,9 +44,18 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		}
 	}
 	descriptorObject, found := dict.Find("FontDescriptor")
-	if !found && len(dict.ArrayEntry("DescendantFonts")) > 0 {
-		if descendant, descendantErr := p.ctx.XRefTable.DereferenceDict(dict.ArrayEntry("DescendantFonts")[0]); descendantErr == nil && descendant != nil {
-			descriptorObject, found = descendant.Find("FontDescriptor")
+	if !found {
+		// Type0 字体的 FontDescriptor 在 DescendantFonts[0] 里。DescendantFonts 常用
+		// 间接引用（/DescendantFonts 12 0 R），而 ArrayEntry 只做类型断言不解引用，
+		// 直接读会得到 nil，于是子字体的 FontDescriptor 连同 FontFile3 一起丢失——
+		// 中文字体全部退化成没有字形数据的空字体，页面上表现为文字不可见。
+		// Widths 那里已经用 DereferenceArray，这里同样必须走解引用。
+		if object, hasDescendants := dict.Find("DescendantFonts"); hasDescendants {
+			if descendants, descendantsErr := p.ctx.XRefTable.DereferenceArray(object); descendantsErr == nil && len(descendants) > 0 {
+				if descendant, descendantErr := p.ctx.XRefTable.DereferenceDict(descendants[0]); descendantErr == nil && descendant != nil {
+					descriptorObject, found = descendant.Find("FontDescriptor")
+				}
+			}
 		}
 	}
 	if descriptor, err := p.ctx.XRefTable.DereferenceDict(descriptorObject); found && err == nil && descriptor != nil {
@@ -76,16 +85,20 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		}
 	}
 	font.glyphWidths = pdfFontGlyphWidths(font.data, font.codeToGID)
-	if descendants := dict.ArrayEntry("DescendantFonts"); len(descendants) > 0 {
-		if descendant, err := p.ctx.XRefTable.DereferenceDict(descendants[0]); err == nil && descendant != nil {
-			defaultWidthObject, found := descendant.Find("DW")
-			if value, ok := numberValue(defaultWidthObject); found && ok {
-				font.defaultW = value
+	if object, hasDescendants := dict.Find("DescendantFonts"); hasDescendants {
+		// 与上面读 FontDescriptor 同一原因：DescendantFonts 是间接引用时 ArrayEntry
+		// 返回 nil，/DW、/W 与 CIDToGIDMap 会连同字体数据一起丢掉。
+		if descendants, err := p.ctx.XRefTable.DereferenceArray(object); err == nil && len(descendants) > 0 {
+			if descendant, descendantErr := p.ctx.XRefTable.DereferenceDict(descendants[0]); descendantErr == nil && descendant != nil {
+				defaultWidthObject, found := descendant.Find("DW")
+				if value, ok := numberValue(defaultWidthObject); found && ok {
+					font.defaultW = value
+				}
+				if object, found := descendant.Find("W"); found {
+					p.loadCIDWidths(font, object)
+				}
+				p.loadCIDToGID(font, descendant)
 			}
-			if object, found := descendant.Find("W"); found {
-				p.loadCIDWidths(font, object)
-			}
-			p.loadCIDToGID(font, descendant)
 		}
 	}
 	// CID 字体没有 /Encoding + /Widths 布局，/W 按 CID 给出字宽。嵌入字体的
@@ -94,6 +107,51 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	if font.codeBytes == 2 && font.sfnt != nil {
 		font.glyphWidths = pdfCIDFontGlyphWidths(font.widths, font.sfnt)
 	}
+	prepareCIDUnicode(font)
+}
+
+// prepareCIDUnicode 为没有 /ToUnicode 的 CID 字体开启 cmap 反查。
+//
+// 不能靠遍历 /W 来预生成映射：子集字体的 /W 通常只列少数几个 CID（其余用 /DW
+// 默认宽度），这份文档三个中文字体的 /W 各只有 2、8、7 项，而实际用到 74、25、20
+// 个字形。因此改为由 pdfFontInfo.cidUnicode 按正文实际出现的 CID 惰性反查。
+func prepareCIDUnicode(font *pdfFontInfo) {
+	// 有 ToUnicode 时以它为准，不用字符集反查的结果覆盖。
+	if len(font.toUnicode) > 0 || font.codeBytes != 2 || font.sfnt == nil {
+		return
+	}
+	font.cidFromCmap = true
+	if font.toUnicode == nil {
+		font.toUnicode = map[uint16]string{}
+	}
+}
+
+// unicodeForGlyph 从 cmap 的反向映射里取出该字形对应的真实 Unicode。
+//
+// 修复后的 CID CFF 里同一个 GID 有两条码位：私有区的 F0000+CID 与字符集给出的
+// Unicode。私有区码位必须排除，否则正文会写进 U+F0000 一段的字符。
+func unicodeForGlyph(sfnt *fontparser.SFNT, glyph uint16) (string, bool) {
+	for _, r := range sfnt.GlyphToUnicode(glyph) {
+		if r < 0 || isPrivateUseRune(r) {
+			continue
+		}
+		return string(r), true
+	}
+	return "", false
+}
+
+// isPrivateUseRune 判断码位是否落在 Unicode 三个私有区。fontfix 用 F0000 段
+// 承载 CID→字形映射，这里排除的正是它自己写进去的那些码位。
+func isPrivateUseRune(r rune) bool {
+	switch {
+	case r >= 0xE000 && r <= 0xF8FF: // BMP 私有区
+		return true
+	case r >= 0xF0000 && r <= 0xFFFFD: // 私有区 A
+		return true
+	case r >= 0x100000 && r <= 0x10FFFD: // 私有区 B
+		return true
+	}
+	return false
 }
 
 // applySimpleEncoding 按简单字体的 /Encoding 补齐 code→Unicode 映射。Type3 与

@@ -1652,3 +1652,93 @@ func TestPDFImageDataPreserves16BitPNG(t *testing.T) {
 		t.Fatalf("16 位 RGB 像素 = (%d,%d,%d)", r, g, b)
 	}
 }
+
+// TestCIDFontIndirectDescendantFontsLoadsFontAndWidths 守住 Type0 字体在
+// DescendantFonts 为间接引用时仍能加载字体数据。
+//
+// DescendantFonts 常写成 `/DescendantFonts 8 0 R`，而 pdfcpu 的 Dict.ArrayEntry
+// 只做类型断言不解引用，直接读会得到 nil。此前 FontDescriptor（FontFile 字体
+// 数据）与 /DW、/W、CIDToGIDMap 整块丢失：中文字体变成没有字形数据的空字体，
+// 页面上文字不可见；补上字体数据后又因宽度全缺而所有字叠在同一位置。
+// /Widths 早已用 DereferenceArray，这两处必须同样解引用。
+//
+// 样例为 testdata/pdf 下的公众号物料 PDF，其中 4 个字体全是 Identity-H 的
+// Type0 CID 字体，DescendantFonts 均为间接引用，且正文全部中文。该目录未纳入
+// 版本库，缺失时跳过。
+func TestCIDFontIndirectDescendantFontsLoadsFontAndWidths(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "pdf", "搜一搜公众号推广物料及示例.pdf")
+	pdfData, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("样例不可用，跳过: %v", err)
+	}
+	ctx, err, _ := readPDFContext(t.Context(), pdfData, model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatal(err)
+	}
+	document := &creator.Document{Pages: make([]creator.Page, 0, 16)}
+	fontCache := make(map[types.Object]pdfFontInfo)
+	imageCache := make(map[types.IndirectRef]pdfImageDataCache)
+	if _, err := convertPDFPage(t.Context(), ctx, 1, document, fontCache, imageCache); err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+	embedded, cidFonts := 0, 0
+	for _, font := range fontCache {
+		if font.codeBytes != 2 {
+			continue
+		}
+		cidFonts++
+		if len(font.data) > 0 {
+			embedded++
+		}
+	}
+	if cidFonts == 0 {
+		t.Skip("该样例第一页未使用双字节 CID 字体")
+	}
+	if embedded != cidFonts {
+		t.Errorf("读到字体数据的 CID 字体 %d/%d，DescendantFonts 间接引用可能未解引用", embedded, cidFonts)
+	}
+}
+
+// TestIsPrivateUseRune 守住私有区判定。fontfix 用 U+F0000 段承载 CID→字形映射，
+// 反查 cmap 时必须排除这些码位，否则正文会写进私有区字符而不是真实 Unicode。
+func TestIsPrivateUseRune(t *testing.T) {
+	for _, r := range []rune{0xE000, 0xE8FF, 0xF0000, 0xF0001, 0xFFFFD, 0x100000, 0x10FFFD} {
+		if !isPrivateUseRune(r) {
+			t.Errorf("isPrivateUseRune(%U) = false, want true", r)
+		}
+	}
+	// 紧贴私有区边界的真实字符：U+D7FF 是中日韩统一表意文字，BMP 私有区自 U+E000
+	// 起；U+F900 起是 CJK 兼容表意文字，BMP 私有区止于 U+F8FF。
+	for _, r := range []rune{0x0020, 0x4E00, 0xD7FF, 0xF900, 0xFFFF, 0xFFFFE, 0x10FFFE} {
+		if isPrivateUseRune(r) {
+			t.Errorf("isPrivateUseRune(%U) = true, want false", r)
+		}
+	}
+}
+
+// TestPrepareCIDUnicodeKeepsToUnicode 守住优先级：已有 /ToUnicode 时不得开启
+// cmap 反查，PDF 明确给出的映射必须原样保留。单字节简单字体走
+// applySimpleEncoding，也不得混入。
+func TestPrepareCIDUnicodeKeepsToUnicode(t *testing.T) {
+	withToUnicode := pdfFontInfo{codeBytes: 2, toUnicode: map[uint16]string{0x41: "A"}}
+	prepareCIDUnicode(&withToUnicode)
+	if withToUnicode.cidFromCmap {
+		t.Error("已有 ToUnicode 时不应开启 cmap 反查")
+	}
+
+	simple := pdfFontInfo{codeBytes: 1}
+	prepareCIDUnicode(&simple)
+	if simple.cidFromCmap {
+		t.Error("单字节简单字体不应开启 cmap 反查")
+	}
+
+	// cmap 未解析时同样不开启：无从反查。
+	noSFNT := pdfFontInfo{codeBytes: 2}
+	prepareCIDUnicode(&noSFNT)
+	if noSFNT.cidFromCmap {
+		t.Error("cmap 未解析时不应开启反查")
+	}
+}
