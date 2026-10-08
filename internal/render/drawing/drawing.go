@@ -335,12 +335,27 @@ func (l PageLink) Rect(pageHeight float64) (x0, y0, x1, y1 float64) {
 		pageHeight - math.Min(l.Y, l.Y+l.Height)
 }
 
+// PageOutline 是文档大纲中的一个条目，按文档顺序排列。
+type PageOutline struct {
+	// Title 是条目标题。
+	Title string
+	// Level 是嵌套层级，0 为顶层。条目之间的层级差决定树的形状，因此被丢弃的
+	// 条目不应在层级里留下空洞。
+	Level int
+	// Target 是条目指向的位置，为 nil 表示该条目没有可用的页面目标。
+	Target *LinkTarget
+}
+
 // PDFDocument 是中性的 PDF 多页文档写入器：按页序逐页加入矢量表面。
 type PDFDocument interface {
 	// AddPage 写入一页矢量内容，并把这页的外部链接热区一并挂到该页注解上。
 	// links 可以为空。链接与页面内容在同一次调用里交给实现，避免实现方依赖
 	// 「必须在开始下一页之前调用 AddLink」这类隐式时序约定。
 	AddPage(page VectorSurface, links []PageLink) error
+	// AddOutlines 写入文档大纲。大纲是文档级的而非页面级的，实现方需要等信息
+	// 齐备后再写，因此与 AddPage 分开调用；必须在至少一页写入之后、Close 之前
+	// 调用，因为此时才存在可绑定的目标页。
+	AddOutlines(outlines []PageOutline) error
 	Close() error
 }
 

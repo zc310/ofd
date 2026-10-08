@@ -15,6 +15,8 @@ type closeErrStub struct {
 
 func (s *closeErrStub) AddPage(render.VectorSurface, []render.PageLink) error { return nil }
 
+func (s *closeErrStub) AddOutlines([]render.PageOutline) error { return nil }
+
 func (s *closeErrStub) Close() error {
 	s.closed++
 	return s.err

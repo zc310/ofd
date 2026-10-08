@@ -13,6 +13,7 @@ type (
 	PDFOptions    = drawing.PDFOptions
 	PDFDocument   = drawing.PDFDocument
 	PageLink      = drawing.PageLink
+	PageOutline   = drawing.PageOutline
 )
 
 // newPDFDocument 是当前 PDF 写入器工厂；默认未注册，需空白导入 canvas 后端包

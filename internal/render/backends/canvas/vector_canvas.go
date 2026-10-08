@@ -120,6 +120,23 @@ func destSpec(target drawing.LinkTarget) pdf.Dest {
 	return pdf.Dest{Kind: pdf.DestFit}
 }
 
+func (d *canvasPDFDocument) AddOutlines(outlines []drawing.PageOutline) error {
+	if d.doc == nil {
+		// 目标页尚不存在，绑定页序没有意义。调用方应至少写入一页。
+		return errors.New("尚未写入任何页面，无法添加大纲")
+	}
+	for _, outline := range outlines {
+		if outline.Target == nil {
+			// PDF 的每个大纲条目都必须有目标；没有目标的条目在提取阶段就已被
+			// 丢弃，这里再挡一次以防自定义调用方直接构造。
+			continue
+		}
+		d.doc.AddOutlineToPage(outline.Target.Page, outline.Target.PageHeight,
+			outline.Title, outline.Level, destSpec(*outline.Target))
+	}
+	return nil
+}
+
 func (d *canvasPDFDocument) Close() error {
 	if d.doc == nil {
 		return nil
