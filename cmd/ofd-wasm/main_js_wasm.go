@@ -5,7 +5,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/klauspost/compress/zip"
 	"image/color"
 	"math"
 	"runtime"
@@ -15,7 +14,10 @@ import (
 	"sync"
 	"syscall/js"
 
+	"github.com/klauspost/compress/zip"
+
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/webreader"
 )
 
@@ -36,10 +38,11 @@ const (
 
 func main() {
 	console := js.Global().Get("console")
-	console.Call("log", "%c╔══════════════════════════════════════════╗", "color: #2476bd; font-weight: bold;")
-	console.Call("log", "%c║       OFD WASM 阅读器 v0.1.1              ║", "color: #2476bd; font-weight: bold;")
-	console.Call("log", "%c╚══════════════════════════════════════════╝", "color: #2476bd; font-weight: bold;")
-	console.Call("log", "%c基于 Go + WebAssembly 构建", "color: #667188;")
+	title := "color: #2476bd; font-weight: bold;"
+	console.Call("log", "%c╔%s╗", title, strings.Repeat("═", wasmBannerWidth))
+	console.Call("log", "%c║%s║", title, centerBanner(fmt.Sprintf("OFD WASM 阅读器 v%s", version.Version)))
+	console.Call("log", "%c╚%s╝", title, strings.Repeat("═", wasmBannerWidth))
+	console.Call("log", "%c基于 Go + WebAssembly 构建 · 全部处理在本机完成，文件不上传", "color: #667188;")
 	console.Call("log", "%cGitHub: https://github.com/zc310/ofd", "color: #2f7d4a;")
 	app := &wasmApp{}
 	api := js.Global().Get("Object").New()
