@@ -28,6 +28,7 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/import/office"
 	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/version"
 	_ "github.com/zc310/ofd/pkg/converter/import/html"
 	// 注册 PNG/JPEG/TIFF→OFD 图片导入器。
 	_ "github.com/zc310/ofd/pkg/converter/import/image"
@@ -51,7 +52,24 @@ var (
 	ErrInvalidFormat   = errors.New("不支持的输出格式")
 	ErrNoInput         = errors.New("未指定输入文件")
 	ErrInputOutputSame = errors.New("输入文件和输出路径不能相同")
+	// ErrUsage 标记参数与配置错误，用来和转换执行失败区分：前者是命令没写对，
+	// 退出码 2；后者是文档没转出来，退出码 1。批量模式里逐个文件的转换失败
+	// 仍按 1 处理，不受这个哨兵影响。
+	ErrUsage = errors.New("参数错误")
 )
+
+// usageError 把参数校验错误标记为 ErrUsage，保留原始错误信息。
+func usageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w：%w", ErrUsage, err)
+}
+
+// usageErrorf 是 usageError 的格式化版本。
+func usageErrorf(format string, args ...any) error {
+	return usageError(fmt.Errorf(format, args...))
+}
 
 type options struct {
 	// ctx 是本次运行的取消信号。
@@ -95,6 +113,7 @@ type options struct {
 	overwrite         bool
 	skipExisting      bool
 	help              bool
+	version           bool
 }
 
 func main() {
@@ -111,6 +130,10 @@ func main() {
 	if opts.help {
 		return
 	}
+	if opts.version {
+		fmt.Fprintln(os.Stdout, version.Version)
+		return
+	}
 	opts.ctx = ctx
 	if err := run(opts); err != nil {
 		// Ctrl-C 是用户主动停止，不是转换失败。报"转换失败"既不准确，
@@ -119,6 +142,12 @@ func main() {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, "已取消。")
 			os.Exit(130)
+		}
+		// 参数错误要让脚本能区分「命令写错了」和「文档有问题」，
+		// 前者重试没有意义。
+		if errors.Is(err, ErrUsage) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
 		}
 		fmt.Fprintln(os.Stderr, "转换失败:", err)
 		os.Exit(1)
@@ -136,6 +165,9 @@ func parseArgs(args []string) (*options, error) {
 		SilenceUsage:  true,
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, positional []string) error {
+			if opts.version {
+				return nil
+			}
 			batchMode := opts.inputDir != "" || opts.outputDir != ""
 			if batchMode {
 				if opts.inputDir == "" || opts.outputDir == "" {
@@ -213,6 +245,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.recursive, "recursive", opts.recursive, "批量转换时递归扫描输入目录")
 	flags.BoolVar(&opts.overwrite, "overwrite", opts.overwrite, "批量转换时覆盖已有输出文件，默认开启")
 	flags.BoolVar(&opts.skipExisting, "skip-existing", opts.skipExisting, "批量转换时跳过已有输出文件")
+	flags.BoolVar(&opts.version, "version", false, "输出工具版本")
 	if err := root.Execute(); err != nil {
 		if strings.Contains(err.Error(), "unknown flag") || strings.Contains(err.Error(), "unknown command") {
 			return nil, err
@@ -264,36 +297,38 @@ func run(opts *options) error {
 }
 
 func runSingle(opts *options) error {
+	// 本函数的参数校验一律包成 ErrUsage：命令写错了退出码是 2，文档本身
+	// 转不出来才是 1。混在一起时脚本无法区分该改命令还是该换文件。
 	if _, err := os.Stat(opts.input); err != nil {
-		return fmt.Errorf("输入文件: %w", err)
+		return usageErrorf("输入文件: %w", err)
 	}
 	from := resolveInputFormat(opts)
 	format, err := resolveOutputFormat(opts)
 	if err != nil {
-		return err
+		return usageError(err)
 	}
 	// 非 OFD 输入（如 PDF）先导入再导出，统一走 converter.Convert。
 	if from != "ofd" {
 		return convertImported(opts, from, format)
 	}
 	if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
-		return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
+		return usageErrorf("%w: %s", ErrInvalidFormat, format)
 	}
 	if opts.dpi < 1 || opts.dpi > 1200 {
-		return errors.New("dpi 必须在 1-1200 之间")
+		return usageError(errors.New("dpi 必须在 1-1200 之间"))
 	}
 	if opts.page < 0 {
-		return errors.New("page 不能小于 0")
+		return usageError(errors.New("page 不能小于 0"))
 	}
 	if format == "html" {
 		htmlFormat := strings.ToLower(strings.TrimSpace(opts.htmlFormat))
 		if htmlFormat != "png" && htmlFormat != "jpg" && htmlFormat != "svg" {
-			return errors.New("html-format 必须是 png、jpg 或 svg")
+			return usageError(errors.New("html-format 必须是 png、jpg 或 svg"))
 		}
 		opts.htmlFormat = htmlFormat
 	}
 	if err := validateOutputPath(opts, format); err != nil {
-		return err
+		return usageError(err)
 	}
 	if format == "pdf" {
 		return convertToPDF(opts, format)
@@ -324,64 +359,68 @@ type batchResult struct {
 }
 
 func runBatch(opts *options) error {
+	// 批量模式的参数校验同样标记为 ErrUsage：目录没给对、格式拼错都是命令
+	// 写错了，退出码 2。逐个文件的转换失败由 batchError 汇总，仍是 1。
 	if opts.workers < 1 {
-		return errors.New("workers 必须大于 0")
+		return usageError(errors.New("workers 必须大于 0"))
 	}
 	// 未显式设置（或传入非正值）时使用默认并发，兼容直接构造 options 的调用方。
 	if opts.externalWorkers < 1 {
 		opts.externalWorkers = defaultOfficeWorkers
 	}
 	if opts.page < 0 {
-		return errors.New("page 不能小于 0")
+		return usageError(errors.New("page 不能小于 0"))
 	}
 	if opts.skipExisting && !opts.overwrite {
-		return errors.New("--skip-existing 不能与 --overwrite=false 同时使用")
+		return usageError(errors.New("--skip-existing 不能与 --overwrite=false 同时使用"))
 	}
 	if opts.format == "" {
-		return errors.New("批量转换必须通过 --format 指定输出格式")
+		return usageError(errors.New("批量转换必须通过 --format 指定输出格式"))
 	}
 	format := normalizeFormat(opts.format)
 	if format != "ofd" {
 		if _, ok := converter.FormatByName(registryFormatName(format)); !ok {
-			return fmt.Errorf("%w: %s", ErrInvalidFormat, format)
+			return usageErrorf("%w: %s", ErrInvalidFormat, format)
 		}
 	}
 	if format == "html" {
 		htmlFormat := strings.ToLower(strings.TrimSpace(opts.htmlFormat))
 		if htmlFormat != "png" && htmlFormat != "jpg" && htmlFormat != "svg" {
-			return errors.New("html-format 必须是 png、jpg 或 svg")
+			return usageError(errors.New("html-format 必须是 png、jpg 或 svg"))
 		}
 	}
+	// 批量模式的目录级校验同样是命令写错了，退出码 2；单个文件转换失败仍然
+	// 汇总成一次批量错误（退出码 1）。
 	inputRoot, err := filepath.Abs(opts.inputDir)
 	if err != nil {
-		return fmt.Errorf("输入目录路径无效: %w", err)
+		return usageErrorf("输入目录路径无效: %w", err)
 	}
 	outputRoot, err := filepath.Abs(opts.outputDir)
 	if err != nil {
-		return fmt.Errorf("输出目录路径无效: %w", err)
+		return usageErrorf("输出目录路径无效: %w", err)
 	}
 	inputInfo, err := os.Stat(inputRoot)
 	if err != nil {
-		return fmt.Errorf("输入目录: %w", err)
+		return usageErrorf("输入目录: %w", err)
 	}
 	if !inputInfo.IsDir() {
-		return errors.New("批量输入路径不是目录")
+		return usageError(errors.New("批量输入路径不是目录"))
 	}
 	if outputInfo, statErr := os.Stat(outputRoot); statErr == nil && !outputInfo.IsDir() {
-		return errors.New("批量输出路径不是目录")
+		return usageError(errors.New("批量输出路径不是目录"))
 	} else if statErr != nil && !os.IsNotExist(statErr) {
-		return fmt.Errorf("输出目录: %w", statErr)
+		return usageErrorf("输出目录: %w", statErr)
 	}
 	if utils.SamePath(inputRoot, outputRoot) {
-		return errors.New("批量输入目录和输出目录不能相同")
+		return usageError(errors.New("批量输入目录和输出目录不能相同"))
 	}
 
 	inputs, err := collectBatchInputs(inputRoot, outputRoot, opts.recursive)
 	if err != nil {
-		return err
+		return usageError(err)
 	}
 	if len(inputs) == 0 {
-		return errors.New("输入目录中没有可转换的文件")
+		return usageError(errors.New("输入目录中没有可转换的文件"))
 	}
 
 	jobs := make([]batchJob, 0, len(inputs))
@@ -392,7 +431,7 @@ func runBatch(opts *options) error {
 		output := batchOutputPath(inputRoot, outputRoot, input, format, opts.page == 0 && isImageFormat(format) && format != "tiff")
 		key := filepath.Clean(output)
 		if previous, exists := seenOutputs[key]; exists {
-			return fmt.Errorf("多个输入文件映射到同一输出路径: %s 和 %s", previous, input)
+			return usageErrorf("多个输入文件映射到同一输出路径: %s 和 %s", previous, input)
 		}
 		seenOutputs[key] = input
 		if batchOutputExists(output) {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -1250,5 +1251,31 @@ func TestRunRejectsUnknownManifestDocTypeField(t *testing.T) {
 				t.Fatalf("字段名 %q 未被拒绝", field)
 			}
 		})
+	}
+}
+
+// TestVersionFlagWorksForEverySubcommand 记录 --version 的集中处理。
+//
+// creator 的六个子命令各自构建 cobra 树，逐个注册 --version 会出现"某个子命令
+// 忘了"的漂移；这里锁定根命令与子命令都返回同一个版本号，且不进入业务处理。
+func TestVersionFlagWorksForEverySubcommand(t *testing.T) {
+	for _, args := range [][]string{
+		{"--version"},
+		{"-v"},
+		{"merge", "--version"},
+		{"replace", "-v"},
+		{"export", "--version", "-i", "missing.ofd", "-o", "-"},
+		{"export-all", "--version"},
+		{"watermark", "--version"},
+		{"schema", "--version"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := run(args, &stdout, &stderr)
+		if code != exitOK {
+			t.Fatalf("run(%v) = %d，stderr = %q", args, code, stderr.String())
+		}
+		if strings.TrimSpace(stdout.String()) != version.Version {
+			t.Fatalf("run(%v) 输出 %q，期望版本号 %q", args, stdout.String(), version.Version)
+		}
 	}
 }

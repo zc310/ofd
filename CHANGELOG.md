@@ -11,6 +11,30 @@
 
 ## 未发布
 
+- `ofd-converter` 把「命令写法不对」和「文档转不出来」的退出码分开：参数、目录、格式
+  与取值范围错误从 `1` 改为 `2`，与 README 早已写明的约定一致。
+
+  受影响的场景：输入文件不存在、不支持的输出格式、`-dpi`/`-page`/`-html-format` 取值
+  越界、输入与输出指向同一文件、批量模式未指定 `-format`、批量目录不存在或与输出目录
+  相同。批量模式下**单个文件**转换失败仍汇总为 `1`，退出码 `0`/`130` 不变。
+
+  分层靠 `ErrUsage` 哨兵：参数校验错误包一层，`main` 里按 `errors.Is` 分流。转换路径
+  与批量并发逻辑未改动。
+
+- `ofd-converter` 与 `ofd-creator` 新增 `--version`（`ofd-creator` 另有 `-v`），输出发行
+  版本号并立即返回，不读取输入文件。此前这两个工具传入 `--version` 会因未知选项返回 `2`。
+
+  版本号仍只有 Makefile 的 `VERSION` 一个来源，经 `-X` 注入 `internal/version.Version`。
+  `ofd-creator` 在命令分发前统一截获该参数，根命令与 `merge`、`replace`、`export`、
+  `export-all`、`watermark`、`schema` 六个子命令行为一致——六个子命令各自构建 cobra
+  树，逐个注册必然漂移。
+
+  同时为所有命令行工具补齐原本缺失的退出码文档：`cmd/ofd-creator`（`0`/`2`/`3`/`4`/
+  `5`/`6` 六档）、`cmd/ofd-seal`（`0`/`1`/`2`）、`cmd/ofd-server`（`0`/`1`/`2`，并写明
+  运行期转换失败不影响退出码）、`cmd/ofd-signer-demo`（`0`/`1`，并写明它不解析输入 XML）
+  与 `cmd/ofd-thumbnailer`（只有 `0`/`1`，freedesktop 缩略图规范只要求「成功 0、失败非 0」）。
+  这些是纯文档补充，行为未变。
+
 - 渲染与转换在解析页面 `PageRes` 时新增一条路径回退：先按页面内容文件所在目录
   解析（规范基准），该路径在包内不存在时再回退到文档体目录 `Doc_N`。
 

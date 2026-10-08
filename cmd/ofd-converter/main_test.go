@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/internal/version"
 )
 
 func TestParseArgsSupportsHelp(t *testing.T) {
@@ -426,5 +429,84 @@ func TestIsImageFormatUsesRegistryKind(t *testing.T) {
 		if isImageFormat(format) {
 			t.Errorf("isImageFormat(%q) = true, want false", format)
 		}
+	}
+}
+
+// TestUsageErrorsAreMarkedAsExitCodeTwo 锁定退出码的分层：命令写错了（参数、目录、
+// 格式、范围、输入输出同路径）是 ErrUsage，退出码 2；文档本身转不出来才是 1。
+//
+// 两者混在一起时，脚本无法判断该改命令还是该换文件——批量任务里一个拼错的
+// --format 会让整批看起来像"文件有问题"。
+func TestUsageErrorsAreMarkedAsExitCodeTwo(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.ofd")
+	if err := os.WriteFile(input, []byte("input"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(dir, "out")
+
+	for _, test := range []struct {
+		name string
+		opts options
+	}{
+		{name: "输入文件不存在", opts: options{input: filepath.Join(dir, "missing.ofd"), format: "pdf", dpi: 150}},
+		{name: "不支持的输出格式", opts: options{input: input, output: filepath.Join(dir, "o.pdf"), format: "bogus", dpi: 150}},
+		{name: "dpi 越界", opts: options{input: input, output: filepath.Join(dir, "o.pdf"), format: "pdf", dpi: 0}},
+		{name: "page 为负", opts: options{input: input, output: filepath.Join(dir, "o.pdf"), format: "pdf", dpi: 150, page: -1}},
+		{name: "html-format 非法", opts: options{input: input, output: filepath.Join(dir, "o.html"), format: "html", dpi: 150, htmlFormat: "webp"}},
+		{name: "输入输出同路径", opts: options{input: input, output: input, format: "pdf", dpi: 150}},
+		{name: "批量未指定格式", opts: options{inputDir: dir, outputDir: outputDir, workers: 1}},
+		{name: "批量格式非法", opts: options{inputDir: dir, outputDir: outputDir, format: "bogus", workers: 1}},
+		{name: "批量目录不存在", opts: options{inputDir: filepath.Join(dir, "missing"), outputDir: outputDir, format: "pdf", workers: 1}},
+		{name: "批量输入输出同目录", opts: options{inputDir: dir, outputDir: dir, format: "pdf", workers: 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := run(&test.opts)
+			if err == nil {
+				t.Fatal("run 返回 nil error")
+			}
+			if !errors.Is(err, ErrUsage) {
+				t.Fatalf("error = %v，应标记为 ErrUsage（退出码 2）", err)
+			}
+		})
+	}
+}
+
+// TestBatchFileFailuresKeepExitCodeOne 确认批量里单个文件转换失败仍汇总成普通错误：
+// 它们是文档问题，不能因为新增的 ErrUsage 分层被当成参数错误（退出码 2）。
+func TestBatchFileFailuresKeepExitCodeOne(t *testing.T) {
+	inputDir := t.TempDir()
+	outputDir := filepath.Join(t.TempDir(), "out")
+	if err := os.WriteFile(filepath.Join(inputDir, "broken.pdf"), []byte("not a pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := run(&options{inputDir: inputDir, outputDir: outputDir, format: "pdf", workers: 1})
+	if err == nil {
+		t.Fatal("损坏输入应导致批量失败")
+	}
+	if errors.Is(err, ErrUsage) {
+		t.Fatalf("批量文件失败不应标记为 ErrUsage：%v", err)
+	}
+}
+
+// TestParseArgsSupportsVersion 记录 --version 与其它参数共存时仍只输出版本号：
+// 版本查询不该要求输入文件，也不该先做参数校验。
+func TestParseArgsSupportsVersion(t *testing.T) {
+	opts, err := parseArgs([]string{"--version", "--format", "pdf", "input.ofd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.version {
+		t.Fatal("--version 未设置 version")
+	}
+	opts, err = parseArgs([]string{"-h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.help {
+		t.Fatal("-h 未设置 help")
+	}
+	if got := version.Version; got == "" {
+		t.Fatal("version.Version 不应为空")
 	}
 }
