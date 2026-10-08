@@ -448,3 +448,265 @@ func TestPDFExportWritesEveryDestinationType(t *testing.T) {
 		}
 	}
 }
+
+// pdfOutlineEntry 是从生成结果里读回的一条大纲记录。
+type pdfOutlineEntry struct {
+	object  int
+	title   string
+	level   int
+	page    int
+	kind    string
+	nums    []float64
+	hasDest bool
+	// count 是该条目的后代数量，只有非叶子才有。
+	count int
+	// hasChildren 依据 /First 判断是否为父节点。
+	hasChildren bool
+}
+
+// readPDFOutlines 读回 PDF 的大纲树，返回按对象顺序排列的条目与被丢弃的条目数。
+//
+// 大纲对象的字典键按字母序写出（/Count /Dest /First /Parent /Title），因此逐个
+// 对象解析而不是靠固定顺序。标题按带 BOM 的 UTF-16BE 解码。
+func readPDFOutlines(t *testing.T, data []byte) ([]pdfOutlineEntry, bool) {
+	t.Helper()
+	ctx := readPDFContext(t, data)
+	root, ok := ctx.RootDict.Find("Outlines")
+	if !ok {
+		return nil, false
+	}
+	ref, ok := root.(types.IndirectRef)
+	if !ok {
+		t.Fatalf("Outlines 不是间接引用: %T", root)
+	}
+	dict, err := ctx.Dereference(ref)
+	if err != nil {
+		t.Fatalf("解析大纲根失败: %v", err)
+	}
+	rootDict, ok := dict.(types.Dict)
+	if !ok {
+		t.Fatalf("大纲根不是字典: %T", dict)
+	}
+	entries := make([]pdfOutlineEntry, 0, 8)
+	seen := map[int]bool{}
+	// 沿 /First 与 /Next 深度优先遍历，顺序与 PDF 阅读器展示的一致。
+	var walk func(object int)
+	walk = func(object int) {
+		if seen[object] {
+			return
+		}
+		seen[object] = true
+		obj, err := ctx.XRefTable.Dereference(types.IndirectRef{ObjectNumber: types.Integer(object)})
+		if err != nil {
+			t.Fatalf("解析大纲对象 %d 失败: %v", object, err)
+		}
+		entry, ok := obj.(types.Dict)
+		if !ok {
+			return
+		}
+		record := pdfOutlineEntry{object: object, count: -1}
+		if title, ok := entry.Find("Title"); ok {
+			record.title = decodePDFTextString(title)
+		}
+		if count, ok := entry.Find("Count"); ok {
+			if n, ok := count.(types.Integer); ok {
+				record.count = int(n)
+			}
+		}
+		if _, ok := entry.Find("First"); ok {
+			record.hasChildren = true
+		}
+		if dest, ok := entry.Find("Dest"); ok {
+			record.hasDest = true
+			values, ok := dest.(types.Array)
+			if !ok || len(values) < 2 {
+				t.Fatalf("大纲目的地不是数组: %v", dest)
+			}
+			targetRef, ok := values[0].(types.IndirectRef)
+			if !ok {
+				t.Fatalf("目的地首项不是页引用: %v", values[0])
+			}
+			if number, err := ctx.XRefTable.PageNumber(context.Background(), int(targetRef.ObjectNumber)); err == nil {
+				record.page = number
+			}
+			record.kind = stringValue(values[1])
+			for _, value := range values[2:] {
+				// 值为 0 的坐标被 pdfcpu 解析成 Integer（PDF 数字对象不区分整数与
+				// 小数），两种都要收。
+				switch number := value.(type) {
+				case types.Float:
+					record.nums = append(record.nums, float64(number))
+				case types.Integer:
+					record.nums = append(record.nums, float64(number))
+				}
+			}
+		}
+		entries = append(entries, record)
+		if child, ok := entry.Find("First"); ok {
+			if childRef, ok := child.(types.IndirectRef); ok {
+				walk(int(childRef.ObjectNumber))
+			}
+		}
+		if next, ok := entry.Find("Next"); ok {
+			if nextRef, ok := next.(types.IndirectRef); ok {
+				walk(int(nextRef.ObjectNumber))
+			}
+		}
+	}
+	if first, ok := rootDict.Find("First"); ok {
+		if firstRef, ok := first.(types.IndirectRef); ok {
+			walk(int(firstRef.ObjectNumber))
+		}
+	}
+	return entries, true
+}
+
+// decodePDFTextString 按带 BOM 的 UTF-16BE 解码 PDF 文本字符串。
+func decodePDFTextString(object types.Object) string {
+	raw, ok := object.(types.StringLiteral)
+	if !ok {
+		return stringValue(object)
+	}
+	bytes := []byte(raw)
+	if len(bytes) < 2 || bytes[0] != 0xfe || bytes[1] != 0xff {
+		return string(bytes)
+	}
+	// PDF 文本字符串里 "("、")"、"\\" 写作 "\\x" 的转义形式，pdfcpu 原样返回。
+	// 逐字节先去掉反斜杠，再按 UTF-16BE 取码点——转义使字节数与码点数不再一一对应。
+	unescaped := make([]byte, 0, len(bytes))
+	for i := 2; i < len(bytes); i++ {
+		if bytes[i] == '\\' && i+1 < len(bytes) {
+			i++
+		}
+		unescaped = append(unescaped, bytes[i])
+	}
+	var out []rune
+	for i := 0; i+1 < len(unescaped); i += 2 {
+		out = append(out, rune(int(unescaped[i])<<8|int(unescaped[i+1])))
+	}
+	return string(out)
+}
+
+// TestPDFExportEmitsOutlineTree 验证文档大纲变成 PDF 大纲树。
+//
+// 用例样本 testdata/outlines.ofd 的五个条目覆盖顶层与两级嵌套、五种跳转目标类型、
+// 按书签名跳转，以及一个只有 URI 没有页面目标、应被丢弃的条目。
+func TestPDFExportEmitsOutlineTree(t *testing.T) {
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	entries, ok := readPDFOutlines(t, output.Bytes())
+	if !ok {
+		t.Fatal("PDF 没有大纲")
+	}
+	wantTitles := []string{"概述", "适用范围", "术语", "版面", "附注", "引用附录"}
+	if len(entries) != len(wantTitles) {
+		t.Fatalf("大纲条目 %d 条，期望 %d 条（无页面目标的条目应被丢弃）: %+v",
+			len(entries), len(wantTitles), titles(entries))
+	}
+	for i, title := range wantTitles {
+		if entries[i].title != title {
+			t.Errorf("第 %d 条标题 = %q，期望 %q", i, entries[i].title, title)
+		}
+		if !entries[i].hasDest {
+			t.Errorf("%s 缺少目的地", title)
+		}
+	}
+	// 只有 URI 动作的条目没有页面目标，不应出现在目录里。
+	for _, entry := range entries {
+		if strings.Contains(entry.title, "仅外部链接") {
+			t.Error("只有 URI 的条目不应导出")
+		}
+	}
+	// 概述是唯一有子项的节点。
+	for _, entry := range entries {
+		wantChildren := entry.title == "概述"
+		if entry.hasChildren != wantChildren {
+			t.Errorf("%s hasChildren = %v，期望 %v", entry.title, entry.hasChildren, wantChildren)
+		}
+	}
+	if entries[0].count != 2 {
+		t.Errorf("概述的后代数 = %d，期望 2", entries[0].count)
+	}
+}
+
+// TestPDFExportOutlineDestinations 验证每个大纲条目的目标页与目的地类型。
+func TestPDFExportOutlineDestinations(t *testing.T) {
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	entries, ok := readPDFOutlines(t, output.Bytes())
+	if !ok {
+		t.Fatal("PDF 没有大纲")
+	}
+	mm := func(v float64) float64 { return v * 72.0 / 25.4 }
+	want := []struct {
+		title string
+		page  int
+		kind  string
+		nums  []float64
+	}{
+		{"概述", 1, "Fit", nil},
+		{"适用范围", 1, "XYZ", []float64{mm(40), mm(297 - 80), 0}},
+		{"术语", 1, "FitR", []float64{mm(30), mm(297 - 150), mm(180), mm(297 - 250)}},
+		{"版面", 2, "FitV", []float64{mm(60)}},
+		{"附注", 2, "XYZ", []float64{mm(40), mm(297 - 180), mm(2)}},
+		// 书签名「附录」指向第 3 页距顶 200mm。
+		{"引用附录", 3, "FitH", []float64{mm(297 - 200)}},
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("条目数 = %d，期望 %d", len(entries), len(want))
+	}
+	for i, w := range want {
+		got := entries[i]
+		if got.title != w.title || got.page != w.page || got.kind != w.kind {
+			t.Errorf("第 %d 条 = %q→第%d页/%s，期望 %q→第%d页/%s",
+				i, got.title, got.page, got.kind, w.title, w.page, w.kind)
+			continue
+		}
+		if len(got.nums) != len(w.nums) {
+			t.Errorf("%s 数值项 %d 个，期望 %d 个: %v", w.title, len(got.nums), len(w.nums), got.nums)
+			continue
+		}
+		for j, expect := range w.nums {
+			if math.Abs(got.nums[j]-expect) > 0.01 {
+				t.Errorf("%s 第 %d 个数值 = %v，期望 %v", w.title, j, got.nums[j], expect)
+			}
+		}
+	}
+}
+
+// TestPDFExportOutlineDropsEntriesWhosePageIsCropped 守住目标页被页码范围裁掉时
+// 大纲条目被丢弃，而不是留下跳错的目录。
+func TestPDFExportOutlineDropsEntriesWhosePageIsCropped(t *testing.T) {
+	// 只导出第 1 页：所有指向第 2、3 页的条目都应消失，只剩第 1 页的三个。
+	var output bytes.Buffer
+	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output, Page(1)); err != nil {
+		t.Fatalf("导出 PDF 失败: %v", err)
+	}
+	entries, ok := readPDFOutlines(t, output.Bytes())
+	if !ok {
+		t.Fatal("PDF 没有大纲")
+	}
+	for _, entry := range entries {
+		if entry.title == "引用附录" {
+			t.Fatalf("目标页被裁掉后「引用附录」不应保留: %+v", titles(entries))
+		}
+		if entry.page > 1 {
+			t.Errorf("%s 指向第 %d 页，超出导出范围", entry.title, entry.page)
+		}
+	}
+	if len(entries) != 3 {
+		t.Errorf("应剩第 1 页的 3 条，实际 %d 条: %v", len(entries), titles(entries))
+	}
+}
+
+func titles(entries []pdfOutlineEntry) []string {
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry.title)
+	}
+	return result
+}
