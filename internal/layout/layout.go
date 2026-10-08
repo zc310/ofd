@@ -90,6 +90,8 @@ type Block struct {
 	Inlines []Inline
 	// Code 是代码块纯文本。
 	Code string
+	// CodeLang 是围栏代码块的语言标记（``` 后的标识符），为空表示无语言。
+	CodeLang string
 	// Image 是块级图片。
 	Image *Image
 	// Table 是表格。
@@ -189,6 +191,18 @@ type Options struct {
 	LineHeight float64
 	// CodeLineHeight 是代码块的行高倍率；小于 LineHeight 可以让代码更紧凑。
 	CodeLineHeight float64
+	// CodePaddingX 和 CodePaddingY 是代码面板内边距，文字与面板边缘的留白。
+	CodePaddingX float64
+	CodePaddingY float64
+	// CodeRadius 是代码面板圆角半径（毫米）；不超过面板短边的一半。
+	CodeRadius float64
+	// CodeLabelSize 是语言标签字号（磅）；0 时不绘制语言标签。
+	CodeLabelSize float64
+	// CodeLabelGap 是语言标签与首行代码之间的间距（毫米）。
+	CodeLabelGap float64
+	// InlineCodePaddingX 和 InlineCodePaddingY 是行内代码底色的内边距。
+	InlineCodePaddingX float64
+	InlineCodePaddingY float64
 	// BlockSpacing 是块间距，单位为正文行高的倍率。
 	BlockSpacing float64
 	// BodyFamily 和 MonoFamily 是逻辑字体族名。
@@ -216,10 +230,17 @@ func DefaultOptions() Options {
 		MonoSize:     10.5,
 		LineHeight:   1.5,
 		// 代码行距比正文更紧凑，避免代码块显得松散。
-		CodeLineHeight: 1.1,
-		BlockSpacing:   0.6,
-		BodyFamily:     "sans-serif",
-		MonoFamily:     "Consolas",
+		CodeLineHeight:     1.1,
+		CodePaddingX:       2,
+		CodePaddingY:       1.6,
+		CodeRadius:         1.2,
+		CodeLabelSize:      8,
+		CodeLabelGap:       1.2,
+		InlineCodePaddingX: 0.8,
+		InlineCodePaddingY: 0.4,
+		BlockSpacing:       0.6,
+		BodyFamily:         "sans-serif",
+		MonoFamily:         "Consolas",
 	}
 }
 
@@ -238,14 +259,21 @@ func GBTOptions() Options {
 		BodySize:     16, // 三号
 		MonoSize:     10.5,
 		// 每面 22 行撑满版心高度 225mm。
-		LineHeight:     (225.0 / 22.0) / ptToMM(16),
-		CodeLineHeight: 1.1,
-		BlockSpacing:   0,
-		BodyFamily:     "FangSong",
-		MonoFamily:     "Consolas",
-		HeiFamily:      "SimHei",
-		KaiFamily:      "KaiTi",
-		TitleFamily:    "STZhongsong",
-		SongFamily:     "SimSun",
+		LineHeight:         (225.0 / 22.0) / ptToMM(16),
+		CodeLineHeight:     1.1,
+		CodePaddingX:       2,
+		CodePaddingY:       1.6,
+		CodeRadius:         1.2,
+		CodeLabelSize:      8,
+		CodeLabelGap:       1.2,
+		InlineCodePaddingX: 0.8,
+		InlineCodePaddingY: 0.4,
+		BlockSpacing:       0,
+		BodyFamily:         "FangSong",
+		MonoFamily:         "Consolas",
+		HeiFamily:          "SimHei",
+		KaiFamily:          "KaiTi",
+		TitleFamily:        "STZhongsong",
+		SongFamily:         "SimSun",
 	}
 }
