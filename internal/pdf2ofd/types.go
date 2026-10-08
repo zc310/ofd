@@ -6,6 +6,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/tdewolff/font"
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -40,9 +41,44 @@ type pdfFontInfo struct {
 	codeToGID   map[uint16]uint16
 	glyphWidths map[uint16]float64
 	sfnt        *fontparser.SFNT
+	// cidFromCmap 标记可以从内嵌 cmap 反查 CID 对应的 Unicode，见 cidUnicode。
+	// 只有 CID 字体且自带字符集映射时置位。
+	cidFromCmap bool
 	// bold、italic 是依据字体名称推断的样式，写入文字对象后阅读器才能
 	// 选中与嵌入字体匹配的样式，避免对已是斜体/粗体的字体再叠加合成样式。
 	bold, italic bool
+}
+
+// cidUnicode 把 CID 还原成 Unicode，查不到时返回 false。
+//
+// CID 只是子字体的字形编号，不携带字符语义：/Encoding 为 Identity-H 时也只表示
+// 2 字节码原样传给子字体。PDF 没有 /ToUnicode 时，字符集映射只存在于 CFF 的
+// charset 里；fontfix 包装裸 CFF 时已把 Unicode 连同字形 ID 一并写进 cmap
+// （F0000+CID 与 Unicode 两条映射指向同一 GID），所以用 GlyphRune(CID) 取 GID
+// 再由 GlyphToUnicode 反查即可，不必在本仓库另存一份字符集表。
+//
+// 少了这一步，中文 CID 会退化成 U+FFFD：文字层码位错误，阅读器按 cmap 查到的
+// 字形也就与原文不符（表现为「画出来了但字是错的」）。
+//
+// 反查结果写回 toUnicode 复用。decodePDFText 以值传递 pdfFontInfo，但 map 是引用
+// 类型，写入对后续调用可见；每个不同 CID 只查一次。
+func (f pdfFontInfo) cidUnicode(code uint16) (string, bool) {
+	if !f.cidFromCmap || f.sfnt == nil {
+		return "", false
+	}
+	if value, ok := f.toUnicode[code]; ok {
+		return value, true
+	}
+	glyph := f.sfnt.GlyphIndex(fontfix.GlyphRune(code))
+	if glyph == 0 {
+		return "", false
+	}
+	value, ok := unicodeForGlyph(f.sfnt, glyph)
+	if !ok {
+		return "", false
+	}
+	f.toUnicode[code] = value
+	return value, true
 }
 
 // pdfImageDataCache 保存与当前 PDF 图像对象对应的已编码媒体数据。
