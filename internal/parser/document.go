@@ -379,6 +379,8 @@ func resourceSize(resource *models.Res) int64 {
 	return size
 }
 
+// pageArchiveSize 汇总页面内容文件与已解析的页面资源文件在包内占用的字节数。
+// pageResources 必须是包内路径，由 resolvePageResourcePath 解析后传入。
 func pageArchiveSize(fileCache *core.Package, pagePath models.StLoc, pageResources []models.StLoc) int64 {
 	if fileCache == nil {
 		return 0
@@ -386,7 +388,7 @@ func pageArchiveSize(fileCache *core.Package, pagePath models.StLoc, pageResourc
 	paths := make(map[string]struct{}, len(pageResources)+1)
 	paths[pagePath.String()] = struct{}{}
 	for _, resource := range pageResources {
-		paths[pagePath.Dir().Join(resource.String()).String()] = struct{}{}
+		paths[resource.String()] = struct{}{}
 	}
 	const maxInt64Uint = uint64(^uint64(0) >> 1)
 	var size uint64
@@ -678,14 +680,16 @@ func (p *Document) parse(body models.DocBody) error {
 					colorSpaces: make(map[models.StID]*models.ColorSpace),
 					composites:  make(map[models.StID]*models.CompositeGraphicUnit),
 				}
+				resolvedPageRes := make([]models.StLoc, 0, len(content.PageRes))
 				for _, resource := range content.PageRes {
-					resourcePath := pagePath.Dir().Join(resource.String())
+					resourcePath := p.resolvePageResourcePath(pagePath.Dir(), resource)
+					resolvedPageRes = append(resolvedPageRes, resourcePath)
 					target.pageResPath = append(target.pageResPath, resourcePath)
 					if _, resourceErr := p.parsePageResourceFilePath(resourcePath, true, &target.resources); resourceErr != nil {
 						return resourceErr
 					}
 				}
-				if size := pageArchiveSize(p.FileCache, pagePath, content.PageRes); size > 0 {
+				if size := pageArchiveSize(p.FileCache, pagePath, resolvedPageRes); size > 0 {
 					target.cacheSize.Store(size)
 				}
 				return nil
@@ -738,6 +742,26 @@ func resolvePagePath(base, location models.StLoc) models.StLoc {
 		return models.StLoc(path.Clean(value))
 	}
 	return models.StLoc(strings.TrimPrefix(path.Join(base.String(), value), "./"))
+}
+
+// resolvePageResourcePath 先按页面内容文件所在目录解析 PageRes，这是规范约定的
+// 基准；该路径不存在时再回退到文档体目录，因为部分生产者把 PageRes 写成相对
+// 文档体（Doc_N）的路径。两种写法都指向同一个文件时以页面目录为准。两者都不
+// 存在时返回页面目录下的路径，让错误信息继续反映规范基准。
+// 只在渲染与转换链路上回退，校验器与分析器仍按规范基准报错。
+func (p *Document) resolvePageResourcePath(pageDir models.StLoc, resource models.StLoc) models.StLoc {
+	resolved := pageDir.Join(resource.String())
+	if resource.IsAbsolute() || p.FileCache == nil {
+		return resolved
+	}
+	if p.FileCache.Has(resolved.String()) {
+		return resolved
+	}
+	fallback := p.BaseLoc.Join(resource.String())
+	if fallback != resolved && p.FileCache.Has(fallback.String()) {
+		return fallback
+	}
+	return resolved
 }
 
 func (p *Document) parseTemplates() error {
