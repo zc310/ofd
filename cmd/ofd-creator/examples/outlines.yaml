@@ -1,0 +1,224 @@
+# 文档大纲示例
+# 覆盖 PDF 大纲能表达的几种目标写法：
+#   - 顶层条目与两级嵌套，验证树形结构与展开状态
+#   - 五种跳转目标类型（Fit / FitH / FitV / XYZ / FitR）与缩放比例
+#   - 按书签名跳转：条目不写页面目标，改为引用 Document.Bookmarks 中的名字
+#   - 没有页面目标的条目：PDF 的每个大纲条目都必须有目标，这类条目会被丢弃
+#
+# 目标坐标刻意不全为零：坐标为零时相邻类型无法区分，坐标为零的 XYZ 会被误判为
+# 页高适配。页面本身的整页适配条目除外，它本就无需坐标。
+#
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/outlines.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/outlines.yaml -o testdata/outlines.ofd --format auto --deterministic --validate --complete-text-code-deltas
+
+version: 1
+document:
+  id: outlines
+  title: 文档大纲示例
+  creator: ofd-creator
+  creator_version: "1"
+  page_size:
+    name: A4
+  creation_date: "2026-10-08T00:00:00Z"
+  # 供大纲条目按名称引用的书签。
+  bookmarks:
+    - name: 附录
+      goto:
+        page: 2
+        type: FitH
+        top: 200
+  outlines:
+    # 顶层条目：整页适配，无需坐标。
+    - title: 概述
+      count: 2
+      expanded: true
+      actions:
+        - event: CLICK
+          goto:
+            page: 0
+            type: Fit
+      children:
+        - title: 适用范围
+          actions:
+            - event: CLICK
+              goto:
+                page: 0
+                type: XYZ
+                left: 40
+                top: 80
+        - title: 术语
+          actions:
+            - event: CLICK
+              goto:
+                page: 0
+                type: FitR
+                left: 30
+                top: 150
+                right: 180
+                bottom: 250
+    # 页宽适配并滚动到指定位置。
+    - title: 版面
+      actions:
+        - event: CLICK
+          goto:
+            page: 1
+            type: FitV
+            left: 60
+    # 定位到指定坐标并放大。
+    - title: 附注
+      actions:
+        - event: CLICK
+          goto:
+            page: 1
+            type: XYZ
+            left: 40
+            top: 180
+            zoom: 2
+    # 按书签名跳转，不直接写页面目标。
+    - title: 引用附录
+      actions:
+        - event: CLICK
+          goto:
+            bookmark: 附录
+    # 只有 URI 动作，PDF 大纲条目没有可落地的页面目标，导出时会被丢弃。
+    - title: 仅外部链接
+      actions:
+        - event: CLICK
+          uri:
+            uri: https://github.com/zc310/ofd
+
+pages:
+  - items:
+      - type: text
+        x: 30
+        "y": 100
+        width: 150
+        height: 16
+        value: 文档大纲示例 · 第 1 页
+        font: 楷体
+        size: 14
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 75
+        width: 150
+        height: 10
+        value: 概述 · 适用范围
+        font: 楷体
+        size: 10
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 145
+        width: 150
+        height: 10
+        value: 概述 · 术语
+        font: 楷体
+        size: 10
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 255
+        width: 150
+        height: 10
+        value: 第 1 页其余内容
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 120
+          g: 120
+          b: 120
+  - items:
+      - type: text
+        x: 30
+        "y": 100
+        width: 150
+        height: 16
+        value: 文档大纲示例 · 第 2 页
+        font: 楷体
+        size: 14
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 75
+        width: 150
+        height: 10
+        value: 版面
+        font: 楷体
+        size: 10
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 175
+        width: 150
+        height: 10
+        value: 附注
+        font: 楷体
+        size: 10
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 195
+        width: 150
+        height: 10
+        value: 附录
+        font: 楷体
+        size: 10
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+  - items:
+      - type: text
+        x: 30
+        "y": 100
+        width: 150
+        height: 16
+        value: 文档大纲示例 · 附录
+        font: 楷体
+        size: 14
+        fill: true
+        fill_color:
+          r: 30
+          g: 70
+          b: 140
+      - type: text
+        x: 30
+        "y": 195
+        width: 150
+        height: 10
+        value: 书签「附录」指向本页距顶 200mm 处
+        font: 楷体
+        size: 9
+        fill: true
+        fill_color:
+          r: 120
+          g: 120
+          b: 120
