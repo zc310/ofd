@@ -1,6 +1,8 @@
 package canvas
 
 import (
+	"log/slog"
+
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
 
@@ -181,16 +183,59 @@ func (f canvasFontFace) ShapedRun(value string) drawing.TextRun {
 }
 
 // FaceObject 为字体族与文字对象创建一个中性字体面。fill 为文字填充色/渐变。
+//
+// 选中的字体族画不出对象里的某些字符时（例如 sans-serif 被 fontconfig 解析成
+// Latin-only 的 DejaVu Sans，而正文是中文），换一个真能画出来的系统字体。
+// FontFamily 没有逐字形回退，同一 style 再载入字体只会覆盖前一个，因此只能
+// 整族替换。渲染与文字层度量都经由本函数，替换决策一致，不会出现「按 A 字体
+// 度量、按 B 字体绘制」导致的文字层错位。
 func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, fill *drawing.CTColor) drawing.FontFace {
 	cf, ok := family.(*canvas.FontFamily)
 	if !ok || cf == nil {
 		return nil
+	}
+	if fallback := p.cjkFallbackFamily(cf, object); fallback != nil {
+		cf = fallback
 	}
 	face := buildTextFace(cf, object, fill)
 	if face == nil {
 		return nil
 	}
 	return canvasFontFace{fonts: p, face: face}
+}
+
+// cjkFallbackFamily 在当前字体族画不出对象文字时，另找一个能画出来的系统字体；
+// 原字体族够用时返回 nil，让调用方沿用它。等宽对象先试等宽的 CJK 字体——
+// 代码块里的中文注释必须保持等宽度量，否则缩进会全部错位。
+//
+// 找不到替代时返回 nil 而不是硬换：把拉丁文画成另一种拉丁字体，好过整段画不出来。
+func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextObject) *canvas.FontFamily {
+	if !systemFontLookupUsable() {
+		// wasm 没有可枚举的系统字体，缺字要靠注册的回退字体解决。
+		return nil
+	}
+	style := textFontStyle(object.Weight, object.Italic)
+	if familyCoversText(family, object, style) {
+		return nil
+	}
+	// 族名就是当初选中的候选名：系统字体取候选族名，等宽回退统一叫
+	// "fixed-width"，内嵌字体取 OFD 里的字体名。因此按族名判断等宽够用，
+	// 也避免在 OFD 没有等宽标志的情况下靠 HScale 之类的间接特征去猜。
+	order := cjkFallbackFamilies
+	if isFixedWidthName(family.Name()) {
+		order = cjkFixedWidthFamilies
+	}
+	for _, name := range order {
+		candidate, ok := loadCachedSystemFont(p, name, style)
+		if !ok || candidate == family {
+			continue
+		}
+		if familyCoversText(candidate, object, style) {
+			slog.Debug("fallback to CJK-capable system font", "from", family.Name(), "to", name)
+			return candidate
+		}
+	}
+	return nil
 }
 
 // buildTextFace 根据文字对象样式创建 canvas 字体面。
