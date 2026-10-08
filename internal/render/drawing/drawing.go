@@ -304,6 +304,8 @@ type LinkTarget struct {
 	Type DestType
 	// Left/Top/Right/Bottom 是目标位置，单位 mm，原点在目标页左上角。
 	Left, Top, Right, Bottom float64
+	// Zoom 是 DestXYZ 的缩放倍率；0 表示保持阅读器当前缩放。
+	Zoom float64
 	// PageHeight 是目标页高度（mm），用于把 OFD 的左上角原点换算成 PDF 的
 	// 左下角原点。
 	PageHeight float64

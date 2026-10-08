@@ -89,50 +89,35 @@ func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface, links []drawing.
 			continue
 		}
 		// 名称树在 Close 时才构建，锚点可以先于目标页登记，因此向前跳和向后跳
-		// 都能表达；AddAnchor 只能绑到当前页，向后跳必须走 AddAnchorToPage。
-		d.doc.AddAnchorToPage(link.Target.Page, link.Target.Name, anchorRect(*link.Target))
+		// 都能表达；AddAnchor 只能绑到当前页，向后跳必须走带页序的接口。
+		d.doc.AddDestToPage(link.Target.Page, link.Target.PageHeight, link.Target.Name,
+			destSpec(*link.Target))
 		d.doc.AddLink("#"+link.Target.Name, rect)
 	}
 	return nil
 }
 
-// anchorRect 把 OFD 跳转目标换算成 canvas 用来推导目的地类型的矩形。
+// destSpec 把 OFD 跳转目标原样映射为 canvas 的目的地描述。
 //
-// canvas 不接受显式的目的地类型，而是按矩形的分量组合反推：全零→Fit、
-// 只有 y→FitH、只有 x→FitV、某个轴相等→XYZ、否则 FitR。所以这里必须喂出恰好
-// 命中对应分支的形状；OFD 坐标原点在左上角且 y 向下，PDF 在左下角且 y 向上，需要
-// 按目标页高翻转。
-//
-// 两处已知的精度损失，源于 canvas 用矩形反推类型而非显式声明：
-//
-//   - DestXYZ 的 Left 为 0 时，矩形退化成「只有 y」，被反推为 FitH，落点仍是目标
-//     页上同一个位置，但会顺带把页高适配到窗口，而不是保持原缩放。Left 非 0 时
-//     能正确产出 XYZ。
-//   - DestFitV 的 Left 为 0 时退化为整页 Fit（FitV 0 本就是左对齐，与 Fit 几乎
-//     等价）。
-//
-// 另有 Zoom 始终丢失：canvas 把 XYZ 的缩放硬编码为 0，即保持当前缩放。OFD 未给
-// Dest@Zoom 时这正是应有行为，只在文档显式指定缩放时无法满足。
-func anchorRect(target drawing.LinkTarget) canvas.Rect {
+// canvas 的 Dest 坐标同样以左上角为原点、单位 mm，由 AddDestToPage 按目标页高翻转到
+// PDF 的左下角原点，因此这里不做任何翻转。目的地类型逐类对应，不经过「用矩形形状
+// 反推类型」的中间层——那会把 Left 为 0 的 XYZ 误判成 FitH，并且无法表达 Zoom。
+func destSpec(target drawing.LinkTarget) pdf.Dest {
 	switch target.Type {
-	case drawing.DestFit:
-		// 全零命中整页适配分支。
-		return canvas.Rect{}
 	case drawing.DestFitH:
-		y := target.PageHeight - target.Top
-		return canvas.Rect{X0: 0, Y0: y, X1: 0, Y1: y}
+		return pdf.Dest{Kind: pdf.DestFitH, Y: target.Top}
 	case drawing.DestFitV:
-		return canvas.Rect{X0: target.Left, Y0: 0, X1: target.Left, Y1: 0}
+		return pdf.Dest{Kind: pdf.DestFitV, X: target.Left}
 	case drawing.DestXYZ:
-		x, y := target.Left, target.PageHeight-target.Top
-		return canvas.Rect{X0: x, Y0: y, X1: x, Y1: y}
+		return pdf.Dest{Kind: pdf.DestXYZ, X: target.Left, Y: target.Top, Zoom: target.Zoom}
 	case drawing.DestFitR:
-		return canvas.Rect{
-			X0: target.Left, Y0: target.PageHeight - target.Bottom,
-			X1: target.Right, Y1: target.PageHeight - target.Top,
+		return pdf.Dest{
+			Kind: pdf.DestFitR,
+			X0:   target.Left, Y0: target.Bottom,
+			X1: target.Right, Y1: target.Top,
 		}
 	}
-	return canvas.Rect{}
+	return pdf.Dest{Kind: pdf.DestFit}
 }
 
 func (d *canvasPDFDocument) Close() error {

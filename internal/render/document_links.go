@@ -197,6 +197,7 @@ func linkTarget(dest models.CtDest, resolve PageLinkResolver) (drawing.LinkTarge
 		Top:        optionalValue(dest.Top),
 		Right:      optionalValue(dest.Right),
 		Bottom:     optionalValue(dest.Bottom),
+		Zoom:       optionalValue(dest.Zoom),
 		PageHeight: ref.Height,
 	}
 	target.Name = linkAnchorName(target)
@@ -206,8 +207,8 @@ func linkTarget(dest models.CtDest, resolve PageLinkResolver) (drawing.LinkTarge
 // optionalValue 读取可选坐标，缺省按 0 处理。
 //
 // 缺省 0 与显式 0 在各 DestType 下语义一致（规范未定义坐标即按 0），因此无需
-// 区分。Zoom 同样可选，但 PDF 的 XYZ 目的地把缩放写死为 0（保持当前缩放），
-// 表达不了 OFD 的 Zoom，这里整体不读取。
+// 区分。Dest@Zoom 同样可选，缺省 0 表示保持阅读器当前缩放，与 PDF 的 XYZ 目的地
+// 对缩放为 0 的解释一致。
 func optionalValue(value *float64) float64 {
 	if value == nil {
 		return 0
@@ -243,7 +244,8 @@ func linkAnchorName(target drawing.LinkTarget) string {
 	var scratch [8]byte
 	for _, value := range []float64{
 		float64(target.Page), float64(target.Type),
-		target.Left, target.Top, target.Right, target.Bottom, target.PageHeight,
+		target.Left, target.Top, target.Right, target.Bottom,
+		target.Zoom, target.PageHeight,
 	} {
 		binary.LittleEndian.PutUint64(scratch[:], math.Float64bits(value))
 		_, _ = hash.Write(scratch[:])
