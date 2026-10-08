@@ -554,16 +554,26 @@ func TestBuildInlineCodeBackgroundCoversText(t *testing.T) {
 	if background.X+background.Width < text.X+codeWidth+options.InlineCodePaddingX-0.01 {
 		t.Fatalf("底色右边 %.3f 未覆盖代码文字并留出内边距", background.X+background.Width)
 	}
-	if background.Height < text.Height+options.InlineCodePaddingY*2-0.01 {
-		t.Fatalf("底色高度 %.3f 不足以容纳文字与内边距", background.Height)
+	// 上下沿以基线为基准断言，不与文字框（Text.Height 直接取字号）比较。
+	//
+	// 底色高度是 ascent+descent+2×内边距，上下沿分别落在基线之上 ascent+内边距、
+	// 之下 descent+内边距处；而文字框高度只是字号，两者口径本就不同。要求底色
+	// 罩住整个文字框等于要求 ascent+内边距 ≥ 字号，这个比值随系统等宽字体变化：
+	// 本机 Noto/Consolas 约 0.94 成立，CI 上约 0.83 不成立（底色顶边反而比文字框
+	// 顶边低 0.3mm），但字形墨迹并没有超出底色——真正的墨迹范围就是
+	// ascent+descent，底色按它绘制才是正确口径。
+	//
+	// 因此改为断言底色覆盖基线两侧的完整墨迹范围并各留出内边距，与字体无关。
+	key := metricKey{mono: true}
+	size := text.Size
+	baseline := text.Y + text.Size // Text.Y 是文字框顶边，加字号到底边即基线
+	aboveBaseline := ascent(size, key) + options.InlineCodePaddingY
+	belowBaseline := descent(size, key) + options.InlineCodePaddingY
+	if background.Y > baseline-aboveBaseline+0.01 {
+		t.Fatalf("底色顶边 %.3f 未覆盖基线之上的墨迹与内边距（应在 %.3f 以内）", background.Y, baseline-aboveBaseline)
 	}
-	// 底色必须完整罩住文字框：creator 的 Text.Y 与 Path.Y 都是距页顶距离，
-	// 文字框和底色矩形都向下延伸，因此直接比较上下沿。
-	if background.Y > text.Y+0.01 {
-		t.Fatalf("底色顶边 %.3f 低于文字顶边 %.3f", background.Y, text.Y)
-	}
-	if background.Y+background.Height < text.Y+text.Height-0.01 {
-		t.Fatalf("底色底边 %.3f 高于文字底边 %.3f", background.Y+background.Height, text.Y+text.Height)
+	if background.Y+background.Height < baseline+belowBaseline-0.01 {
+		t.Fatalf("底色底边 %.3f 未覆盖基线之下的墨迹与内边距（应在 %.3f 以外）", background.Y+background.Height, baseline+belowBaseline)
 	}
 }
 
@@ -1519,6 +1529,69 @@ func TestMeasureWidthStableAcrossBufferReuse(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// TestInlineCodeBackgroundIndependentOfFontMetrics 守住行内代码底色的上下沿断言
+// 与系统等宽字体的 ascent/descent 比例无关。
+//
+// 底色按 ascent+descent+2×内边距绘制，字形墨迹范围正是 ascent+descent；但文字框
+// 的 Height 直接取字号。要求底色罩住整个文字框等于要求
+// ascent+内边距 ≥ 字号，这个比值随字体而变——本机约 0.94 成立，某些 CI 镜像约
+// 0.83 不成立，测试便在无代码变更时因换机器而失败。这里用一组跨度很大的度量
+// 重跑同一断言，确认底色始终贴着基线两侧的墨迹范围。
+func TestInlineCodeBackgroundIndependentOfFontMetrics(t *testing.T) {
+	metricsOnce.Do(initMetrics)
+	key := metricKey{mono: true}
+	original := metricAsc[key]
+	defer func() { metricAsc[key] = original }()
+
+	for _, ratio := range []float64{0.70, 0.8327, 0.9448, 1.10} {
+		metricAsc[key] = ratio
+		options := DefaultOptions()
+		document, err := Build(&Document{Blocks: []Block{{
+			Kind:    KindParagraph,
+			Inlines: []Inline{{Text: "调用 "}, {Text: "Run()", Code: true}, {Text: " 完成"}},
+		}}}, options)
+		if err != nil {
+			t.Fatalf("ascent 比例 %.4f: Build 失败: %v", ratio, err)
+		}
+		var background *creator.Path
+		var text *creator.Text
+		for _, item := range document.Pages[0].Items {
+			switch value := item.(type) {
+			case creator.Path:
+				if colorEqual(value.FillColor, 0xe9, 0xec, 0xf0) {
+					copied := value
+					background = &copied
+				}
+			case creator.Text:
+				if strings.HasPrefix(value.Value, "Run()") {
+					copied := value
+					text = &copied
+				}
+			}
+		}
+		if background == nil || text == nil {
+			t.Fatalf("ascent 比例 %.4f: 行内代码底色或文字缺失", ratio)
+		}
+		baseline := text.Y + text.Size
+		above := ascent(text.Size, key) + options.InlineCodePaddingY
+		below := descent(text.Size, key) + options.InlineCodePaddingY
+		if background.Y > baseline-above+0.01 {
+			t.Errorf("ascent 比例 %.4f: 底色顶边 %.3f 未覆盖基线之上的墨迹", ratio, background.Y)
+		}
+		if background.Y+background.Height < baseline+below-0.01 {
+			t.Errorf("ascent 比例 %.4f: 底色底边 %.3f 未覆盖基线之下的墨迹", ratio, background.Y+background.Height)
+		}
+		// 底色左右仍须覆盖代码文字并留出内边距。
+		codeWidth := measureWidth("Run()", text.Size, key)
+		if background.X > text.X-options.InlineCodePaddingX+0.01 {
+			t.Errorf("ascent 比例 %.4f: 底色左边 %.3f 未覆盖文字", ratio, background.X)
+		}
+		if background.X+background.Width < text.X+codeWidth+options.InlineCodePaddingX-0.01 {
+			t.Errorf("ascent 比例 %.4f: 底色右边 %.3f 未覆盖代码文字", ratio, background.X+background.Width)
 		}
 	}
 }
