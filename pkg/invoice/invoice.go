@@ -1,16 +1,19 @@
-// Package invoice 从 OFD 电子发票中抽取结构化发票信息。
+// Package invoice 从 OFD 电子发票中抽取结构化发票信息，并支持多票汇总、对账
+// 报表与合并打印。
 //
 // 抽取以 OFD 包内嵌的发票结构化附件（通常为 Doc_0/Attachs/original_invoice.xml）
 // 为主，附件缺失不可用时返回错误；页面文字层只用于补齐票面视觉字段（发票标题、
 // 价税合计大写金额），并据此推断发票类型。不涉及 PDF 等非 OFD 输入。
+//
+// 单张发票用 Extract；多张发票用 ExtractBatch 批量抽取并汇总金额（按销售方、
+// 发票类型和开票月份分组），用 WriteCSV 与 WriteXLSX 导出对账报表，用 MergePDF
+// 合并成一个便于打印的 PDF。金额基于任意精度有理数，求和后按最小货币单位舍入，
+// 红字（红冲）发票的负金额照常参与合计。
+//
+// 批量处理默认严格：任一输入抽不出发票结构化附件即整批报错，避免金额在无人
+// 察觉时少算；BatchOptions.SkipBroken 与 BatchOptions.Dedup 分别放宽失败输入
+// 和排除重复发票，两者都会改变参与合计的口径。
 package invoice
-
-import (
-	"github.com/goccy/go-json"
-	"math/big"
-	"regexp"
-	"strings"
-)
 
 // Invoice 是一张电子发票的抽取结果。
 type Invoice struct {
@@ -86,86 +89,4 @@ type Detail struct {
 	TaxRate *Decimal `json:"tax_rate,omitempty"`
 	// TaxAmount 是税额。
 	TaxAmount *Decimal `json:"tax_amount,omitempty"`
-}
-
-// Decimal 表示精确的十进制数值（金额、数量、税率），基于任意精度的有理数。
-// JSON 序列化为十进制字符串（如 "123.45"），避免浮点误差。
-type Decimal struct {
-	rat *big.Rat
-}
-
-// MarshalJSON 把 Decimal 输出为十进制字符串。
-func (d *Decimal) MarshalJSON() ([]byte, error) {
-	if d == nil || d.rat == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(decimalString(d.rat))
-}
-
-// String 返回 Decimal 的十进制字符串表示。
-func (d *Decimal) String() string {
-	return decimalString(d.rat)
-}
-
-var numberPattern = regexp.MustCompile(`[+-]?[0-9]+(?:\.[0-9]+)?`)
-
-// newDecimal 从文本中提取第一个十进制数值；找不到合法数值时返回 nil。
-func newDecimal(text string) *Decimal {
-	match := numberPattern.FindString(strings.TrimSpace(text))
-	if match == "" {
-		return nil
-	}
-	rat, ok := new(big.Rat).SetString(match)
-	if !ok {
-		return nil
-	}
-	return &Decimal{rat: rat}
-}
-
-// percentDecimal 把「13%」「13」「0.13」等税率文本解析为小数形式（0.13）。
-// 带百分号的按百分比处理；不带百分号的，绝对值大于 1 视为百分比，否则视为小数。
-func percentDecimal(text string) *Decimal {
-	trimmed := strings.TrimSpace(text)
-	percent := strings.HasSuffix(trimmed, "%")
-	cleaned := strings.TrimSuffix(trimmed, "%")
-	decimal := newDecimal(cleaned)
-	if decimal == nil || decimal.rat == nil {
-		return nil
-	}
-	if !percent && new(big.Rat).Abs(new(big.Rat).Set(decimal.rat)).Cmp(big.NewRat(1, 1)) <= 0 {
-		return decimal
-	}
-	return &Decimal{rat: new(big.Rat).Quo(decimal.rat, big.NewRat(100, 1))}
-}
-
-// decimalString 把有理数输出为十进制字符串；无法整除的小数部分最多展开 64 位。
-func decimalString(rat *big.Rat) string {
-	if rat == nil {
-		return ""
-	}
-	if rat.Sign() == 0 {
-		return "0"
-	}
-	sign := ""
-	value := new(big.Rat).Set(rat)
-	if value.Sign() < 0 {
-		sign = "-"
-		value.Neg(value)
-	}
-	num := value.Num()
-	den := value.Denom()
-	integer, remainder := new(big.Int).QuoRem(num, den, new(big.Int))
-	if remainder.Sign() == 0 {
-		return sign + integer.String()
-	}
-	var fraction strings.Builder
-	scale := new(big.Int).Set(remainder)
-	ten := big.NewInt(10)
-	for i := 0; i < 64 && scale.Sign() != 0; i++ {
-		scale.Mul(scale, ten)
-		digit, next := new(big.Int).QuoRem(scale, den, new(big.Int))
-		fraction.WriteString(digit.String())
-		scale = next
-	}
-	return sign + integer.String() + "." + fraction.String()
 }

@@ -62,6 +62,11 @@ func FromCanvasPath(p *canvas.Path) *geom.Path {
 }
 
 // ToCanvasPath 把 geom.Path 转为 canvas.Path。
+//
+// 结果按 *geom.Path 指针缓存，因此**同一个 Path 对象画过一次之后不要再改内容**：
+// Reset 后重新填充再画会拿到首次的缓存，所有图元都落在第一次的位置上（表现为
+// 多个图元叠在一起，只看得出第一个）。要重复绘制同一形状就每次新建 Path，或先把
+// 数据拷走再改。
 func ToCanvasPath(p *geom.Path) *canvas.Path {
 	if cached, ok := toCanvasPathCache.Get(p); ok {
 		return cached
