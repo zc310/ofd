@@ -18,8 +18,14 @@ import (
 
 const maxAttachmentBytes = 16 << 20
 
-// ErrNoAttachment 表示 OFD 包内未找到可用的发票结构化附件。
+// ErrNoAttachment 表示 OFD 包内未找到发票结构化附件。
 var ErrNoAttachment = errors.New("未找到 OFD 发票结构化附件（Attachs 目录下的 XML）")
+
+// ErrNotInvoice 表示附件存在，但里面不是发票数据：既没有发票代码，也没有价税合计。
+//
+// 与 ErrNoAttachment 分开是因为两者的后续动作不同：找不到附件时厂商可能把附件放在了
+// 别处（值得确认），而附件里没有发票数据就是这份文档本身不是发票（没什么可查）。
+var ErrNotInvoice = errors.New("附件不是发票数据：既无发票代码，也无价税合计")
 
 // 常见发票附加 XML 的文件名首选项，优先匹配规范的 original_invoice.xml。
 var preferredAttachment = "Doc_0/Attachs/original_invoice.xml"
@@ -27,9 +33,12 @@ var preferredAttachment = "Doc_0/Attachs/original_invoice.xml"
 // Extract 从 OFD 电子发票中抽取发票信息。input 支持文件路径（string）、
 // 文件数据（[]byte）或 io.Reader。
 //
-// 抽取以上一节内嵌结构化附件为主：先尝试 Doc_0/Attachs/original_invoice.xml，
-// 不存在时扫描所有包含 attach 的 XML 条目，取第一个能解析出有效发票数据的文件。
+// 抽取以 OFD 包内嵌的结构化附件为主：先尝试 Doc_0/Attachs/original_invoice.xml，
+// 不存在时扫描所有包含 attach 的 XML 条目，取第一个带发票代码或价税合计的文件。
 // 之后读取页面文字层补齐票面标题与价税合计大写金额，并按标题推断发票类型。
+//
+// 附件存在但没有发票代码也没有价税合计时返回 ErrNotInvoice，不返回空壳：这种附件
+// 多半是版式说明或签章属性，兜一个几乎全空的 Invoice 会让调用方看不出出错。
 func Extract(input any) (*Invoice, error) {
 	data, err := readInput(input)
 	if err != nil {
@@ -102,6 +111,9 @@ func findAttachment(pkg *core.Package) (string, error) {
 		}
 	}
 	sort.Strings(candidates)
+	// 记下"读到过能解析但不是发票"的候选：这时报"不是发票"比报"没有附件"准确，
+	// 调用方能区分"附件放错地方"与"这份文档根本不是发票"。
+	sawNonInvoice := false
 	for _, path := range candidates {
 		raw, err := pkg.ReadLimit(path, maxAttachmentBytes)
 		if err != nil {
@@ -111,9 +123,13 @@ func findAttachment(pkg *core.Package) (string, error) {
 		if err := decodeXML(raw, &document); err != nil {
 			continue
 		}
-		if !isEmptyAttachment(document) {
+		if hasInvoiceData(document) {
 			return path, nil
 		}
+		sawNonInvoice = true
+	}
+	if sawNonInvoice {
+		return "", ErrNotInvoice
 	}
 	return "", ErrNoAttachment
 }
@@ -168,13 +184,18 @@ type goodsItem struct {
 	TaxAmount            string `xml:"TaxAmount"`
 }
 
-// isEmptyAttachment 判断附件是否缺少任何有效发票内容。
-func isEmptyAttachment(document invoiceAttachment) bool {
-	return strings.TrimSpace(document.InvoiceCode) == "" &&
-		strings.TrimSpace(document.InvoiceNo) == "" &&
-		strings.TrimSpace(document.Buyer.BuyerName) == "" &&
-		strings.TrimSpace(document.Seller.SellerName) == "" &&
-		len(document.GoodsInfos.Items) == 0
+// hasInvoiceData 判断附件里是否带发票的标志性数据：发票代码或价税合计。
+//
+// 只认这两个字段，而不是"有没有填任何内容"。OFD 的 Attachs 目录里不只有发票数据，
+// 还可能有版式说明、签章属性之类的 XML，甚至只填一个购方名称。用"非空即有效"判定
+// 会给这类文档兜一个几乎全空的 Invoice——调用方拿到的是空壳，看不出哪里不对，
+// 后面汇总出 0 元也只会被当成"这批票没金额"。
+//
+// 两个字段取或：定额发票、卷式发票可能没有发票代码但有金额，代码齐全的票也可能缺
+// 金额字段。两者皆无才认定不是发票。
+func hasInvoiceData(document invoiceAttachment) bool {
+	return strings.TrimSpace(document.InvoiceCode) != "" ||
+		strings.TrimSpace(document.TaxInclusiveTotalAmount) != ""
 }
 
 // parseAttachment 把附件 XML 映射到 Invoice 模型。
@@ -183,8 +204,8 @@ func parseAttachment(raw []byte) (*Invoice, error) {
 	if err := decodeXML(raw, &document); err != nil {
 		return nil, err
 	}
-	if isEmptyAttachment(document) {
-		return nil, ErrNoAttachment
+	if !hasInvoiceData(document) {
+		return nil, ErrNotInvoice
 	}
 	invoice := &Invoice{}
 	invoice.MachineNumber = strings.TrimSpace(document.MachineNo)
