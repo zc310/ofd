@@ -82,35 +82,48 @@ type mergeSheet struct {
 }
 
 // groupSheets 按页序把源页面分组到各张纸上，并给出每张纸的尺寸。
+//
+// 三种页面各走各的路：汇总页（fullSheet）独占一张纸；fitSource 模式下一页一纸、
+// 尺寸就是源页尺寸；其余按网格填格，格号在这里就地分配。
 func groupSheets(entries []sheetEntry, layout sheetLayout) []mergeSheet {
 	if len(entries) == 0 {
 		return nil
 	}
-	if layout.fitSource {
-		// 逐页原样出纸：每页一张纸，尺寸就是源页尺寸，1:1 不缩放。
-		sheets := make([]mergeSheet, 0, len(entries))
-		for _, entry := range entries {
-			sheets = append(sheets, mergeSheet{
-				width:   entry.width,
-				height:  entry.height,
-				entries: []sheetEntry{entry},
-			})
-		}
-		return sheets
-	}
-	perSheet := layout.capacity()
-	sheets := make([]mergeSheet, 0, (len(entries)+perSheet-1)/perSheet)
-	for start := 0; start < len(entries); start += perSheet {
-		end := start + perSheet
-		if end > len(entries) {
-			end = len(entries)
+	var sheets []mergeSheet
+	var current []sheetEntry
+	flush := func() {
+		if len(current) == 0 {
+			return
 		}
 		sheets = append(sheets, mergeSheet{
 			width:   layout.width,
 			height:  layout.height,
-			entries: entries[start:end],
+			entries: current,
 		})
+		current = nil
 	}
+	for _, entry := range entries {
+		if entry.fullSheet || layout.fitSource {
+			flush()
+			width, height := entry.width, entry.height
+			if !layout.fitSource {
+				// 指定了纸张就按纸张出：汇总页跟着输出纸张走，而不是自己那个尺寸。
+				width, height = layout.width, layout.height
+			}
+			sheets = append(sheets, mergeSheet{
+				width:   width,
+				height:  height,
+				entries: []sheetEntry{entry},
+			})
+			continue
+		}
+		if len(current) == layout.capacity() {
+			flush()
+		}
+		entry.index = len(current)
+		current = append(current, entry)
+	}
+	flush()
 	return sheets
 }
 
@@ -183,7 +196,7 @@ func renderSheet(sheet mergeSheet, layout sheetLayout) (render.VectorSurface, er
 			if drawErr != nil {
 				return
 			}
-			x, y, width, height := sheetCell(layout, entry)
+			x, y, width, height := sheetCell(layout, sheet, entry)
 			scale, dx, dy := fitTransform(entry.width, entry.height, x, y, width, height)
 			ctx.Push()
 			// dy 是自上而下的落位，绘制上下文自下而上，换算后票才不会落到下半个格子。
@@ -202,10 +215,12 @@ func renderSheet(sheet mergeSheet, layout sheetLayout) (render.VectorSurface, er
 	return surface, nil
 }
 
-// sheetCell 返回源页面在纸上的目标格子。
-func sheetCell(layout sheetLayout, entry sheetEntry) (x, y, width, height float64) {
-	if layout.fitSource {
-		return 0, 0, entry.width, entry.height
+// sheetCell 返回源页面在纸上的目标区域。
+//
+// 独占整张纸的页面（汇总页、fitSource 模式）铺满全纸，其余按格号取格子。
+func sheetCell(layout sheetLayout, sheet mergeSheet, entry sheetEntry) (x, y, width, height float64) {
+	if entry.fullSheet || layout.fitSource {
+		return 0, 0, sheet.width, sheet.height
 	}
 	return layout.cell(entry.index)
 }
@@ -229,7 +244,11 @@ func drawCellBorders(ctx render.DrawContext, layout sheetLayout, sheet mergeShee
 	ctx.SetStrokeWidth(cellBorderWidth)
 	ctx.SetDashes(cellBorderDashOffset, cellBorderDashes...)
 	for _, entry := range sheet.entries {
-		x, y, width, height := sheetCell(layout, entry)
+		if entry.fullSheet {
+			// 独占整张纸的汇总页没有可裁的东西，不画格线。
+			continue
+		}
+		x, y, width, height := sheetCell(layout, sheet, entry)
 		bottom := canvasOrigin(sheet.height, y, height)
 		// 每个格子必须新建 Path：转换层按 *geom.Path 指针缓存转换结果
 		// （canvasconv.ToCanvasPath），复用一个对象再 Reset 会拿到首次的缓存，
@@ -257,7 +276,7 @@ func writeSheetOutlines(pdfDoc render.PDFDocument, sheets []mergeSheet, layout s
 				continue
 			}
 			seen[entry.title] = true
-			x, y, _, _ := sheetCell(layout, entry)
+			x, y, _, _ := sheetCell(layout, sheet, entry)
 			outlines = append(outlines, render.PageOutline{
 				Title: entry.title,
 				Level: 0,

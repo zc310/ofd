@@ -232,6 +232,12 @@ func parseArgs(args []string, stdout, stderr io.Writer) (*options, error) {
 
 // validate 校验选项组合，不合规的组合按参数错误处理。
 func validate(opts *options) error {
+	// 先查位置参数里混进来的布尔值：这是最"粗心"的一类错误，且会掩盖后面的
+	// 所有其它检查（--cover true 没带 --merge-pdf 时，报的会是"cover 需要配合
+	// merge-pdf"，与真实原因无关）。
+	if err := rejectBooleanValues(opts.inputs); err != nil {
+		return err
+	}
 	if opts.format != "" {
 		switch opts.format {
 		case formatJSON, formatCSV, formatXLSX:
@@ -300,6 +306,25 @@ func validate(opts *options) error {
 		if opts.mergePDF != "" && samePathAny(opts.mergePDF, opts.inputs) {
 			return errors.New("合并 PDF 不能覆盖输入 OFD 文件")
 		}
+	}
+	return nil
+}
+
+// rejectBooleanValues 拒绝混进位置参数的布尔字面量。
+//
+// 布尔选项（--cover、--pretty、--dedup …）不接受单独的值：pflag 不会把后一个词吃成
+// 选项值，于是 "--cover true" 里的 true 变成位置参数，报出来是"找不到 true 这个文件"，
+// 与真实原因毫无关联。文件确实存在时按正常输入处理。
+func rejectBooleanValues(inputs []string) error {
+	for _, path := range inputs {
+		if path != "true" && path != "false" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		return fmt.Errorf("位置参数 %q 不存在；它看起来是布尔选项的值——"+
+			"布尔选项请写成 --cover 或 --cover=true，不要写 --cover true", path)
 	}
 	return nil
 }
