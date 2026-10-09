@@ -1,0 +1,401 @@
+# OFD 表格示例
+# 生成：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/table.yaml -o /tmp/table.ofd --format auto --validate
+
+version: 1
+
+document:
+  id: table-demo
+  title: OFD 表格示例
+  author: ofd-creator
+  creator: ofd-creator
+  creator_version: "1"
+  page_size:
+    name: A4
+
+resources:
+  fonts:
+    - name: 楷体
+      family_name: 楷体
+      charset: prc
+    - name: SimHei
+      family_name: SimHei
+      charset: prc
+
+pages:
+  - items:
+      - type: table
+        x: 20
+        y: 30
+        width: 170
+        header_rows: 1
+        caption: "表 1 文件属性"
+        caption_style:
+          font: SimHei
+          size: 5.0
+          weight: 700
+          align: center
+          offset_y: -6
+        continuation_caption: "{caption}（续）"
+        style:
+          horizontal_lines: true
+          vertical_lines: true
+          line_width: 0.15
+          outer_line_width: 0.35
+          header_line_width: 0.3
+          stroke_color:
+            r: 0
+            g: 0
+            b: 0
+          header_fill_color:
+            r: 220
+            g: 220
+            b: 220
+          header_font: SimHei
+          header_size: 5.0
+          header_weight: 700
+        rows:
+          - cells:
+              - value: 文件名
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 类型
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 大小
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: report.pdf
+                font: 楷体
+                size: 4.2
+              - value: PDF 文档
+                font: 楷体
+                size: 4.2
+              - value: 1.2 MB
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: data.xlsx
+                font: 楷体
+                size: 4.2
+              - value: Excel 表格
+                font: 楷体
+                size: 4.2
+              - value: 856 KB
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: image.png
+                font: 楷体
+                size: 4.2
+              - value: 图片
+                font: 楷体
+                size: 4.2
+              - value: 256 KB
+                font: 楷体
+                size: 4.2
+                align: right
+
+  - items:
+      - type: table
+        x: 20
+        y: 30
+        width: 170
+        header_rows: 1
+        caption: "表 2 合并单元格示例"
+        caption_style:
+          font: SimHei
+          size: 5.0
+          weight: 700
+          align: center
+          offset_y: -6
+        style:
+          horizontal_lines: true
+          vertical_lines: true
+          line_width: 0.15
+          outer_line_width: 0.3
+          header_line_width: 0.2
+          stroke_color:
+            r: 0
+            g: 0
+            b: 0
+          header_fill_color:
+            r: 230
+            g: 240
+            b: 255
+          header_font: SimHei
+          header_size: 5.0
+          header_weight: 700
+        rows:
+          - cells:
+              - value: 产品信息
+                font: 楷体
+                size: 4.2
+                align: center
+                col_span: 2
+              - value: 数量
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 金额
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: 类别 A
+                font: 楷体
+                size: 4.2
+                align: center
+                row_span: 2
+              - value: 项目 A1
+                font: 楷体
+                size: 4.2
+              - value: 10
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 100.00
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: 项目 A2
+                font: 楷体
+                size: 4.2
+              - value: 20
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 200.00
+                font: 楷体
+                size: 4.2
+                align: right
+          - cells:
+              - value: 类别 B
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 项目 B1
+                font: 楷体
+                size: 4.2
+              - value: 5
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 50.00
+                font: 楷体
+                size: 4.2
+                align: right
+
+  - items:
+      - type: table
+        x: 20
+        y: 30
+        width: 170
+        header_rows: 1
+        caption: "表 3 无边框示例"
+        caption_style:
+          font: SimHei
+          size: 5.0
+          weight: 700
+          align: center
+          offset_y: -6
+        style:
+          horizontal_lines: true
+          vertical_lines: false
+          line_width: 0.2
+          outer_line_width: 0.4
+          header_line_width: 0.35
+          stroke_color:
+            r: 0
+            g: 0
+            b: 0
+          header_fill_color:
+            r: 240
+            g: 240
+            b: 240
+          header_font: SimHei
+          header_size: 5.0
+          header_weight: 700
+        rows:
+          - cells:
+              - value: 名称
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 描述
+                font: 楷体
+                size: 4.2
+                align: center
+          - cells:
+              - value: 项目 1
+                font: 楷体
+                size: 4.2
+              - value: 这是第一项
+                font: 楷体
+                size: 4.2
+          - cells:
+              - value: 项目 2
+                font: 楷体
+                size: 4.2
+              - value: 这是第二项
+                font: 楷体
+                size: 4.2
+          - cells:
+              - value: 项目 3
+                font: 楷体
+                size: 4.2
+              - value: 这是第三项
+                font: 楷体
+                size: 4.2
+
+  - items:
+      - type: table
+        x: 20
+        y: 30
+        width: 170
+        header_rows: 1
+        caption: "表 4 换行与缩进示例"
+        caption_style:
+          font: SimHei
+          size: 5.0
+          weight: 700
+          align: center
+          offset_y: -6
+        style:
+          horizontal_lines: true
+          vertical_lines: true
+          line_width: 0.2
+          outer_line_width: 0.4
+          header_line_width: 0.35
+          stroke_color:
+            r: 0
+            g: 0
+            b: 0
+          header_fill_color:
+            r: 230
+            g: 240
+            b: 255
+          header_font: SimHei
+          header_size: 5.0
+          header_weight: 700
+        rows:
+          - cells:
+              - value: 场景
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 内容
+                font: 楷体
+                size: 4.2
+                align: center
+          - cells:
+              - value: 自动换行
+                font: 楷体
+                size: 4.2
+              - value: 这是一段很长的中文说明文字，当它超过单元格宽度时会自动换行显示，无需手动插入换行符。
+                font: 楷体
+                size: 4.2
+          - cells:
+              - value: 显式换行
+                font: 楷体
+                size: 4.2
+              - value: "第一行内容\n第二行内容"
+                font: 楷体
+                size: 4.2
+          - cells:
+              - value: 首行缩进
+                font: 楷体
+                size: 4.2
+              - value: 首行缩进两个字宽度，续行不缩进，形成常见的段落排版效果。
+                font: 楷体
+                size: 4.2
+                first_line_indent: 8.4
+          - cells:
+              - value: 悬挂缩进
+                font: 楷体
+                size: 4.2
+              - value: 首行顶格，换行后的续行缩进两个字的宽度，形成悬挂缩进效果。
+                font: 楷体
+                size: 4.2
+                hanging_indent: 8.4
+
+  - items:
+      - type: table
+        x: 20
+        y: 30
+        width: 170
+        header_rows: 1
+        caption: "表 5 Markdown 单元格示例"
+        caption_style:
+          font: SimHei
+          size: 5.0
+          weight: 700
+          align: center
+          offset_y: -6
+        style:
+          horizontal_lines: true
+          vertical_lines: true
+          line_width: 0.2
+          outer_line_width: 0.4
+          header_line_width: 0.35
+          stroke_color:
+            r: 0
+            g: 0
+            b: 0
+          header_fill_color:
+            r: 235
+            g: 245
+            b: 235
+          header_font: SimHei
+          header_size: 5.0
+          header_weight: 700
+          code_font: SimHei
+        rows:
+          - cells:
+              - value: 格式
+                font: 楷体
+                size: 4.2
+                align: center
+              - value: 示例
+                font: 楷体
+                size: 4.2
+                align: center
+          - cells:
+              - value: 粗体
+                font: 楷体
+                size: 4.2
+              - value: "**加粗文字**"
+                font: 楷体
+                size: 4.2
+                format: markdown
+          - cells:
+              - value: 斜体
+                font: 楷体
+                size: 4.2
+              - value: "*斜体文字*"
+                font: 楷体
+                size: 4.2
+                format: markdown
+          - cells:
+              - value: 行内代码
+                font: 楷体
+                size: 4.2
+              - value: "调用 `fmt.Println()` 输出"
+                font: 楷体
+                size: 4.2
+                format: markdown
+          - cells:
+              - value: 混合样式
+                font: 楷体
+                size: 4.2
+              - value: "普通**粗体**普通*斜体*普通`代码`"
+                font: 楷体
+                size: 4.2
+                format: markdown

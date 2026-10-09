@@ -1309,3 +1309,121 @@ type PageBlock struct {
 }
 
 func (PageBlock) isItem() {}
+
+// Table 是页面中的表格对象，自动跨页，支持边框控制和单元格样式。
+type Table struct {
+	// X 是表格左上角的横坐标，单位为毫米。
+	X float64
+	// Y 是表格左上角的纵坐标，单位为毫米。
+	Y float64
+	// Width 是表格总宽度，单位为毫米。
+	Width float64
+	// Rows 是表格的行，每行包含若干单元格。
+	Rows []TableRow
+	// ColumnWidths 是各列宽度（毫米），为空时均分 Width。
+	ColumnWidths []float64
+	// Style 是表格整体样式。
+	Style TableStyle
+	// HeaderRows 是表头行数，跨页时重复显示。
+	HeaderRows int
+	// Visible 指定表格是否可见。
+	Visible *bool
+	// DrawParam 是表格引用的绘制参数名称。
+	DrawParam string
+	// Caption 是表题文字，如 "表 13 文件属性"。
+	Caption string
+	// CaptionStyle 是表题样式。
+	CaptionStyle *CaptionStyle
+	// ContinuationCaption 是续表题文字，支持 {caption} 占位符。
+	ContinuationCaption string
+	// ContinuationCaptionStyle 是续表题样式。
+	ContinuationCaptionStyle *CaptionStyle
+}
+
+// TableRow 是表格中的一行。
+type TableRow struct {
+	// Cells 是该行的单元格列表。
+	Cells []TableCell
+	// Height 是行高（毫米），为 0 时根据内容自动计算。
+	Height float64
+}
+
+// TableCell 是表格中的一个单元格。
+type TableCell struct {
+	// Value 是单元格文本内容。
+	Value string
+	// Font 是字体资源名称。
+	Font string
+	// Size 是字号，单位为毫米。
+	Size float64
+	// Weight 是字重。
+	Weight int
+	// Italic 指定是否斜体。
+	Italic bool
+	// Align 是文本对齐方式：left/center/right。
+	Align string
+	// ColSpan 是横向合并的列数。
+	ColSpan int
+	// RowSpan 是纵向合并的行数。
+	RowSpan int
+	// FirstLineIndent 是首行缩进，单位为毫米。
+	FirstLineIndent float64
+	// HangingIndent 是续行（第 2 行起）缩进，单位为毫米。
+	HangingIndent float64
+	// Format 指定单元格文本格式："text"（默认，纯文本）或 "markdown"
+	// （解析行内 Markdown：**粗体**、*斜体*、`代码`、~~删除线~~）。
+	Format string
+	// FillColor 是单元格背景色。
+	FillColor *Color
+}
+
+// TableStyle 控制表格边框样式。
+type TableStyle struct {
+	// HorizontalLines 控制是否绘制横线。
+	HorizontalLines bool
+	// VerticalLines 控制是否绘制竖线。
+	VerticalLines bool
+	// LineWidth 是内部线宽，单位为毫米。
+	LineWidth float64
+	// StrokeColor 是边框颜色。
+	StrokeColor *Color
+	// OuterLineWidth 是外框线宽，为 0 时使用 LineWidth。
+	OuterLineWidth float64
+	// HeaderLineWidth 是表头下方分隔线宽，为 0 时使用 LineWidth。
+	HeaderLineWidth float64
+	// OuterStrokeColor 是外框颜色，为空时使用 StrokeColor。
+	OuterStrokeColor *Color
+	// HeaderStrokeColor 是表头分隔线颜色，为空时使用 StrokeColor。
+	HeaderStrokeColor *Color
+	// HeaderFillColor 是表头背景色。
+	HeaderFillColor *Color
+	// HeaderFont 是表头字体资源名称。
+	HeaderFont string
+	// HeaderSize 是表头字号。
+	HeaderSize float64
+	// HeaderWeight 是表头字重。
+	HeaderWeight int
+	// CodeFont 是 Markdown 行内代码（`code`）使用的字体资源名称，
+	// 为空时沿用单元格字体。
+	CodeFont string
+}
+
+// CaptionStyle 控制表题/续表题的样式。
+type CaptionStyle struct {
+	// Font 是字体资源名称。
+	Font string
+	// Size 是字号，单位为毫米。
+	Size float64
+	// Weight 是字重。
+	Weight int
+	// Italic 指定是否斜体。
+	Italic bool
+	// Align 是对齐方式：left/center/right。
+	Align string
+	// Color 是文字颜色。
+	Color *Color
+	// OffsetY 是表题相对于表格顶部的 Y 偏移（毫米）。
+	OffsetY float64
+}
+
+func (Table) isItem() {}

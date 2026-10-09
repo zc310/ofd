@@ -1891,17 +1891,27 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.composite = value.ResourceID
 				built.drawParam, err = s.drawParamID(value.DrawParam)
-			case PageBlock:
-				var nestedLayers []builtLayer
-				if err := s.prepareLayers(value.Items, nil, &nestedLayers, pageCount, fmt.Sprintf("%s 图层 %d 的嵌套页面块 %d", context, layerIndex+1, itemIndex+1)); err != nil {
-					return err
-				}
-				for _, nestedLayer := range nestedLayers {
-					built.pageBlock = append(built.pageBlock, nestedLayer.items...)
-				}
-			default:
-				return fmt.Errorf("%s 图层 %d 的对象 %d 类型 %T 不受支持", context, layerIndex+1, itemIndex+1, item)
+		case PageBlock:
+			var nestedLayers []builtLayer
+			if err := s.prepareLayers(value.Items, nil, &nestedLayers, pageCount, fmt.Sprintf("%s 图层 %d 的嵌套页面块 %d", context, layerIndex+1, itemIndex+1)); err != nil {
+				return err
 			}
+			for _, nestedLayer := range nestedLayers {
+				built.pageBlock = append(built.pageBlock, nestedLayer.items...)
+			}
+		case Table:
+			if err := validateTable(value); err != nil {
+				return fmt.Errorf("%s 图层 %d 的表格对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
+			}
+			expanded, err := s.expandTable(value, pageCount, context, layerIndex+1, itemIndex+1)
+			if err != nil {
+				return err
+			}
+			layerResult.items = append(layerResult.items, expanded...)
+			continue
+		default:
+			return fmt.Errorf("%s 图层 %d 的对象 %d 类型 %T 不受支持", context, layerIndex+1, itemIndex+1, item)
+		}
 			if err != nil {
 				return fmt.Errorf("%s 图层 %d 的对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 			}
@@ -1946,6 +1956,44 @@ func (s *buildState) preparePattern(pattern *Pattern, pageCount int, context str
 	pattern.building = false
 	pattern.prepared = true
 	return nil
+}
+
+func (s *buildState) expandTable(table Table, pageCount int, context string, layerIndex, itemIndex int) ([]builtItem, error) {
+	pageHeight := s.pageSize.Height
+	layout, err := layoutTable(table, s.pageSize.Width, pageHeight)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []builtItem
+	for _, seg := range layout.segments {
+		if caption := layout.generateCaption(seg); caption != nil {
+			codes, face := completeTextCodes(caption.TextCodes, caption.Value, caption.Height, caption.Size, caption.HScale, caption.ReadDirection, caption.Font, s.document.Fonts, caption.Weight, caption.Italic, s.completeTextCodeDeltas)
+			caption.TextCodes = codes
+			fitTextBoundary(caption, face)
+			fontID, err := s.fontID(caption.Font)
+			if err != nil {
+				return nil, fmt.Errorf("%s 图层 %d 的表格对象 %d 表题字体: %w", context, layerIndex, itemIndex, err)
+			}
+			items = append(items, builtItem{id: s.allocate(), item: *caption, font: fontID})
+		}
+
+		for _, p := range layout.generateBorderPaths(seg) {
+			items = append(items, builtItem{id: s.allocate(), item: p})
+		}
+
+		for _, t := range layout.generateCellTexts(seg) {
+			codes, face := completeTextCodes(t.TextCodes, t.Value, t.Height, t.Size, t.HScale, t.ReadDirection, t.Font, s.document.Fonts, t.Weight, t.Italic, s.completeTextCodeDeltas)
+			t.TextCodes = codes
+			fitTextBoundary(&t, face)
+			fontID, err := s.fontID(t.Font)
+			if err != nil {
+				return nil, fmt.Errorf("%s 图层 %d 的表格对象 %d 单元格字体: %w", context, layerIndex, itemIndex, err)
+			}
+			items = append(items, builtItem{id: s.allocate(), item: t, font: fontID})
+		}
+	}
+	return items, nil
 }
 
 func (s *buildState) prepareComposites() error {

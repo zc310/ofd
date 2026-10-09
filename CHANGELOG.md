@@ -11,6 +11,26 @@
 
 ## 未发布
 
+- `pkg/creator` 新增 `Table` 图元，可直接在页面中绘制表格；`ofd-creator` 的 manifest
+  新增 `type: table` 及配套字段。
+
+  `Table` 支持列宽（`ColumnWidths`）、表头行数（`HeaderRows`，跨页重复）、单元格合并
+  （`ColSpan`/`RowSpan`，边框自动跳过合并区域内部线）、自动跨页、表题与续表题
+  （`Caption`/`ContinuationCaption`，后者支持 `{caption}` 占位符）。样式上可分别控制
+  横线/竖线、内部线宽、外框线宽、表头分隔线宽与表头字体字号。单元格支持对齐
+  （left/center/right）、缩进（`FirstLineIndent`/`HangingIndent`）与自动换行：
+  `\n` 强制换行，超宽按宽度自动断行，CJK 逐字断、ASCII 按词断。
+
+  表格在生成阶段展开为标准的 `PathObject`（边框）与 `TextObject`（文字），不引入新的
+  OFD 元素，与现有阅读器兼容。manifest 的新字段为 `rows`、`column_widths`、`header_rows`、
+  `style`、`caption`、`caption_style`、`continuation_caption`、`continuation_caption_style`
+  以及单元格的 `col_span`、`row_span`、`align`、`first_line_indent`、`hanging_indent`。
+
+  单元格可设 `Format: "markdown"` 解析行内 Markdown：`**粗体**`、`*斜体*`、`` `代码` ``、
+  `~~删除线~~`。样式在生成时按变化处拆成多个 `TextObject`（同一基线、X 依次累加），
+  行内代码使用 `TableStyle.CodeFont` 指定的字体。manifest 对应 `format`（单元格）与
+  `code_font`（样式）字段。
+
 - `ofd-converter` 把「命令写法不对」和「文档转不出来」的退出码分开：参数、目录、格式
   与取值范围错误从 `1` 改为 `2`，与 README 早已写明的约定一致。
 

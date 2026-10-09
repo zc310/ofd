@@ -6,12 +6,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/pkg/creator"
@@ -1048,6 +1049,100 @@ type Item struct {
 	ImageMask uint64 `json:"image_mask,omitempty" yaml:"image_mask,omitempty" toml:"image_mask,omitempty"`
 	// Border 定义图像边框样式。
 	Border *ImageBorder `json:"border,omitempty" yaml:"border,omitempty" toml:"border,omitempty"`
+	// Rows 定义表格行（仅当 type 为 "table" 时有效）。
+	Rows []TableRow `json:"rows,omitempty" yaml:"rows,omitempty" toml:"rows,omitempty"`
+	// ColumnWidths 定义各列宽度（仅当 type 为 "table" 时有效）。
+	ColumnWidths []float64 `json:"column_widths,omitempty" yaml:"column_widths,omitempty" toml:"column_widths,omitempty"`
+	// HeaderRows 定义表头行数（仅当 type 为 "table" 时有效）。
+	HeaderRows int `json:"header_rows,omitempty" yaml:"header_rows,omitempty" toml:"header_rows,omitempty"`
+	// Style 定义表格样式（仅当 type 为 "table" 时有效）。
+	Style *TableStyle `json:"style,omitempty" yaml:"style,omitempty" toml:"style,omitempty"`
+	// Caption 定义表题文字（仅当 type 为 "table" 时有效）。
+	Caption string `json:"caption,omitempty" yaml:"caption,omitempty" toml:"caption,omitempty"`
+	// CaptionStyle 定义表题样式（仅当 type 为 "table" 时有效）。
+	CaptionStyle *CaptionStyle `json:"caption_style,omitempty" yaml:"caption_style,omitempty" toml:"caption_style,omitempty"`
+	// ContinuationCaption 定义续表题文字（仅当 type 为 "table" 时有效）。
+	ContinuationCaption string `json:"continuation_caption,omitempty" yaml:"continuation_caption,omitempty" toml:"continuation_caption,omitempty"`
+	// ContinuationCaptionStyle 定义续表题样式（仅当 type 为 "table" 时有效）。
+	ContinuationCaptionStyle *CaptionStyle `json:"continuation_caption_style,omitempty" yaml:"continuation_caption_style,omitempty" toml:"continuation_caption_style,omitempty"`
+}
+
+// TableRow 定义表格行。
+type TableRow struct {
+	// Cells 定义该行包含的单元格。
+	Cells []TableCell `json:"cells,omitempty" yaml:"cells,omitempty" toml:"cells,omitempty"`
+}
+
+// TableCell 定义表格单元格。
+type TableCell struct {
+	// Value 定义单元格文本内容。
+	Value string `json:"value,omitempty" yaml:"value,omitempty" toml:"value,omitempty"`
+	// Font 定义字体。
+	Font string `json:"font,omitempty" yaml:"font,omitempty" toml:"font,omitempty"`
+	// Size 定义字号。
+	Size float64 `json:"size,omitempty" yaml:"size,omitempty" toml:"size,omitempty"`
+	// Weight 定义字重。
+	Weight int `json:"weight,omitempty" yaml:"weight,omitempty" toml:"weight,omitempty"`
+	// Italic 指示是否斜体。
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty" toml:"italic,omitempty"`
+	// Align 定义对齐方式（left/center/right）。
+	Align string `json:"align,omitempty" yaml:"align,omitempty" toml:"align,omitempty"`
+	// ColSpan 定义横向合并的列数。
+	ColSpan int `json:"col_span,omitempty" yaml:"col_span,omitempty" toml:"col_span,omitempty"`
+	// RowSpan 定义纵向合并的行数。
+	RowSpan int `json:"row_span,omitempty" yaml:"row_span,omitempty" toml:"row_span,omitempty"`
+	// FirstLineIndent 定义首行缩进。
+	FirstLineIndent float64 `json:"first_line_indent,omitempty" yaml:"first_line_indent,omitempty" toml:"first_line_indent,omitempty"`
+	// HangingIndent 定义续行缩进。
+	HangingIndent float64 `json:"hanging_indent,omitempty" yaml:"hanging_indent,omitempty" toml:"hanging_indent,omitempty"`
+	// Format 定义文本格式（text/markdown）。
+	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
+	// FillColor 定义单元格背景色。
+	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
+}
+
+// TableStyle 定义表格样式。
+type TableStyle struct {
+	// HorizontalLines 指示是否绘制横线。
+	HorizontalLines bool `json:"horizontal_lines,omitempty" yaml:"horizontal_lines,omitempty" toml:"horizontal_lines,omitempty"`
+	// VerticalLines 指示是否绘制竖线。
+	VerticalLines bool `json:"vertical_lines,omitempty" yaml:"vertical_lines,omitempty" toml:"vertical_lines,omitempty"`
+	// LineWidth 定义内部线宽。
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
+	// StrokeColor 定义边框颜色。
+	StrokeColor *Color `json:"stroke_color,omitempty" yaml:"stroke_color,omitempty" toml:"stroke_color,omitempty"`
+	// OuterLineWidth 定义外框线宽。
+	OuterLineWidth float64 `json:"outer_line_width,omitempty" yaml:"outer_line_width,omitempty" toml:"outer_line_width,omitempty"`
+	// HeaderLineWidth 定义表头分隔线宽。
+	HeaderLineWidth float64 `json:"header_line_width,omitempty" yaml:"header_line_width,omitempty" toml:"header_line_width,omitempty"`
+	// HeaderFillColor 定义表头背景色。
+	HeaderFillColor *Color `json:"header_fill_color,omitempty" yaml:"header_fill_color,omitempty" toml:"header_fill_color,omitempty"`
+	// HeaderFont 定义表头字体。
+	HeaderFont string `json:"header_font,omitempty" yaml:"header_font,omitempty" toml:"header_font,omitempty"`
+	// HeaderSize 定义表头字号。
+	HeaderSize float64 `json:"header_size,omitempty" yaml:"header_size,omitempty" toml:"header_size,omitempty"`
+	// HeaderWeight 定义表头字重。
+	HeaderWeight int `json:"header_weight,omitempty" yaml:"header_weight,omitempty" toml:"header_weight,omitempty"`
+	// CodeFont 定义 Markdown 行内代码使用的字体。
+	CodeFont string `json:"code_font,omitempty" yaml:"code_font,omitempty" toml:"code_font,omitempty"`
+}
+
+// CaptionStyle 定义表题样式。
+type CaptionStyle struct {
+	// Font 定义字体。
+	Font string `json:"font,omitempty" yaml:"font,omitempty" toml:"font,omitempty"`
+	// Size 定义字号。
+	Size float64 `json:"size,omitempty" yaml:"size,omitempty" toml:"size,omitempty"`
+	// Weight 定义字重。
+	Weight int `json:"weight,omitempty" yaml:"weight,omitempty" toml:"weight,omitempty"`
+	// Italic 指示是否斜体。
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty" toml:"italic,omitempty"`
+	// Align 定义对齐方式。
+	Align string `json:"align,omitempty" yaml:"align,omitempty" toml:"align,omitempty"`
+	// Color 定义文字颜色。
+	Color *Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
+	// OffsetY 定义相对于表格顶部的 Y 偏移。
+	OffsetY float64 `json:"offset_y,omitempty" yaml:"offset_y,omitempty" toml:"offset_y,omitempty"`
 }
 
 // Clip 描述图元的裁剪区域集合。
@@ -1111,7 +1206,7 @@ type ClipPath struct {
 // ClipText 描述用于裁剪的文本。
 type ClipText struct {
 	// Boundary 指定裁剪文本边界。
-	Boundary Box `json:"boundary,omitempty" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
+	Boundary Box `json:"boundary" yaml:"boundary,omitempty" toml:"boundary,omitempty"`
 	// CTM 指定裁剪文本的坐标变换矩阵。
 	CTM []float64 `json:"ctm,omitempty" yaml:"ctm,omitempty" toml:"ctm,omitempty"`
 	// Font 指定裁剪文本使用的字体名称。
@@ -1656,9 +1751,117 @@ func (i Item) build() (creator.Item, error) {
 			return nil, err
 		}
 		return creator.PageBlock{Items: items}, nil
+	case "table":
+		return i.buildTable()
 	default:
-		return nil, fmt.Errorf("不支持的图元类型 %q，仅支持 text、path、image、composite、page-block", i.Type)
+		return nil, fmt.Errorf("不支持的图元类型 %q，仅支持 text、path、image、composite、page-block、table", i.Type)
 	}
+}
+
+func (i Item) buildTable() (creator.Table, error) {
+	table := creator.Table{
+		X:                   i.X,
+		Y:                   i.Y,
+		Width:               i.Width,
+		ColumnWidths:        i.ColumnWidths,
+		HeaderRows:          i.HeaderRows,
+		Caption:             i.Caption,
+		ContinuationCaption: i.ContinuationCaption,
+	}
+
+	if i.Style != nil {
+		style := creator.TableStyle{
+			HorizontalLines: i.Style.HorizontalLines,
+			VerticalLines:   i.Style.VerticalLines,
+			LineWidth:       i.Style.LineWidth,
+			OuterLineWidth:  i.Style.OuterLineWidth,
+			HeaderLineWidth: i.Style.HeaderLineWidth,
+			HeaderFont:      i.Style.HeaderFont,
+			HeaderSize:      i.Style.HeaderSize,
+			HeaderWeight:    i.Style.HeaderWeight,
+			CodeFont:        i.Style.CodeFont,
+		}
+		if i.Style.StrokeColor != nil {
+			c, err := buildColor(i.Style.StrokeColor)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("style.stroke_color: %w", err)
+			}
+			style.StrokeColor = c
+		}
+		if i.Style.HeaderFillColor != nil {
+			c, err := buildColor(i.Style.HeaderFillColor)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("style.header_fill_color: %w", err)
+			}
+			style.HeaderFillColor = c
+		}
+		table.Style = style
+	}
+
+	if i.CaptionStyle != nil {
+		cs, err := i.CaptionStyle.build()
+		if err != nil {
+			return creator.Table{}, fmt.Errorf("caption_style: %w", err)
+		}
+		table.CaptionStyle = cs
+	}
+
+	if i.ContinuationCaptionStyle != nil {
+		cs, err := i.ContinuationCaptionStyle.build()
+		if err != nil {
+			return creator.Table{}, fmt.Errorf("continuation_caption_style: %w", err)
+		}
+		table.ContinuationCaptionStyle = cs
+	}
+
+	for _, row := range i.Rows {
+		var cells []creator.TableCell
+		for _, cell := range row.Cells {
+			tc := creator.TableCell{
+				Value:           cell.Value,
+				Font:            cell.Font,
+				Size:            cell.Size,
+				Weight:          cell.Weight,
+				Italic:          cell.Italic,
+				Align:           cell.Align,
+				ColSpan:         cell.ColSpan,
+				RowSpan:         cell.RowSpan,
+				FirstLineIndent: cell.FirstLineIndent,
+				HangingIndent:   cell.HangingIndent,
+				Format:          cell.Format,
+			}
+			if cell.FillColor != nil {
+				c, err := buildColor(cell.FillColor)
+				if err != nil {
+					return creator.Table{}, fmt.Errorf("cell.fill_color: %w", err)
+				}
+				tc.FillColor = c
+			}
+			cells = append(cells, tc)
+		}
+		table.Rows = append(table.Rows, creator.TableRow{Cells: cells})
+	}
+
+	return table, nil
+}
+
+func (cs CaptionStyle) build() (*creator.CaptionStyle, error) {
+	style := &creator.CaptionStyle{
+		Font:    cs.Font,
+		Size:    cs.Size,
+		Weight:  cs.Weight,
+		Italic:  cs.Italic,
+		Align:   cs.Align,
+		OffsetY: cs.OffsetY,
+	}
+	if cs.Color != nil {
+		c, err := buildColor(cs.Color)
+		if err != nil {
+			return nil, err
+		}
+		style.Color = c
+	}
+	return style, nil
 }
 
 func buildItems(values []Item) ([]creator.Item, error) {
