@@ -1364,6 +1364,41 @@ func validateItemColors(item Item, check func(*Color) error) error {
 				return err
 			}
 		}
+	case Table:
+		return validateTableColors(value, check)
+	}
+	return nil
+}
+
+func validateTableColors(table Table, check func(*Color) error) error {
+	if err := check(table.Style.StrokeColor); err != nil {
+		return err
+	}
+	if err := check(table.Style.OuterStrokeColor); err != nil {
+		return err
+	}
+	if err := check(table.Style.HeaderStrokeColor); err != nil {
+		return err
+	}
+	if err := check(table.Style.HeaderFillColor); err != nil {
+		return err
+	}
+	if table.CaptionStyle != nil {
+		if err := check(table.CaptionStyle.Color); err != nil {
+			return err
+		}
+	}
+	if table.ContinuationCaptionStyle != nil {
+		if err := check(table.ContinuationCaptionStyle.Color); err != nil {
+			return err
+		}
+	}
+	for _, row := range table.Rows {
+		for _, cell := range row.Cells {
+			if err := check(cell.FillColor); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -1564,6 +1599,32 @@ func validateCompositeResource(value CompositeGraphicUnit) error {
 	}
 	if len(value.Items) == 0 {
 		return errors.New("复合图元内容不能为空")
+	}
+	return nil
+}
+
+func validateTable(value Table) error {
+	if len(value.Rows) == 0 {
+		return errors.New("表格至少需要一行")
+	}
+	if !validSize(value.Width, 1) {
+		return fmt.Errorf("表格宽度无效: %.6g", value.Width)
+	}
+	if value.HeaderRows < 0 || value.HeaderRows >= len(value.Rows) {
+		return fmt.Errorf("表头行数 %d 超出范围 (0-%d)", value.HeaderRows, len(value.Rows)-1)
+	}
+	for i, row := range value.Rows {
+		if len(row.Cells) == 0 {
+			return fmt.Errorf("表格第 %d 行没有单元格", i+1)
+		}
+		for j, cell := range row.Cells {
+			if cell.ColSpan < 0 {
+				return fmt.Errorf("表格第 %d 行第 %d 列的 ColSpan 无效: %d", i+1, j+1, cell.ColSpan)
+			}
+			if cell.RowSpan < 0 {
+				return fmt.Errorf("表格第 %d 行第 %d 列的 RowSpan 无效: %d", i+1, j+1, cell.RowSpan)
+			}
+		}
 	}
 	return nil
 }

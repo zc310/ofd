@@ -473,6 +473,9 @@ pages:
 - `image`
 - `composite`
 - `page-block`
+- `table`
+
+`table` 图元在页面上绘制表格，支持列宽（`column_widths`）、表头行数（`header_rows`，跨页重复）、单元格合并（单元格的 `col_span`/`row_span`）、自动跨页、表题与续表题（`caption`/`continuation_caption`，后者支持 `{caption}` 占位符）。`style` 可分别控制横线/竖线开关、内部线宽（`line_width`）、外框线宽（`outer_line_width`）、表头分隔线宽（`header_line_width`）与表头字体字号（`header_font`/`header_size`/`header_weight`）。单元格支持对齐（`align`：left/center/right）、缩进（`first_line_indent`/`hanging_indent`，单位毫米）与自动换行：`value` 中的 `\n` 强制换行，超宽时按宽度自动断行（CJK 逐字断、ASCII 按词断）。单元格设 `format: markdown` 时按行内 Markdown 解析：`**粗体**`、`*斜体*`、`` `代码` ``（用 `style.code_font` 指定的字体）、`~~删除线~~`；样式变化处会拆成多个文字对象。表格在生成阶段展开为标准的 `PathObject` 与 `TextObject`，不引入新的 OFD 元素。完整示例见 `cmd/ofd-creator/examples/table.yaml`。
 
 还支持 `draw_params`、`color_spaces`、`templates`、`layers`、`ctm`、`fill_color`、`stroke_color`、`text_codes`、`cg_transforms`、渐变和 Pattern 填充。
 

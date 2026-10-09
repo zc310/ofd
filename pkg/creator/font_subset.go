@@ -178,6 +178,23 @@ func (c fontUsageCollector) collectItem(item Item) {
 		c.collectClips(value.Clips)
 	case PageBlock:
 		c.collectItems(value.Items)
+	case Table:
+		collectTableFontUsage(value, c.used)
+	}
+}
+
+func collectTableFontUsage(table Table, used map[string]*fontUsage) {
+	if table.Caption != "" && table.CaptionStyle != nil && table.CaptionStyle.Font != "" {
+		collectTextFontUsage(table.CaptionStyle.Font, table.Caption, nil, nil, used)
+	}
+	if table.ContinuationCaption != "" && table.ContinuationCaptionStyle != nil && table.ContinuationCaptionStyle.Font != "" {
+		continuation := strings.ReplaceAll(table.ContinuationCaption, "{caption}", table.Caption)
+		collectTextFontUsage(table.ContinuationCaptionStyle.Font, continuation, nil, nil, used)
+	}
+	for _, row := range table.Rows {
+		for _, cell := range row.Cells {
+			collectTextFontUsage(cell.Font, cell.Value, nil, nil, used)
+		}
 	}
 }
 
