@@ -2,6 +2,8 @@ package render
 
 import (
 	"errors"
+	"slices"
+	"sync"
 
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -44,12 +46,43 @@ func RegisterFallbackFontFactory(register func(data []byte, family string, style
 	}
 }
 
+// 已注册回退字体族名，按注册顺序去重。
+//
+// 这里是核心侧记账而不是问 canvas 的注册表：RegisterFallbackFont 本就是
+// 全局注册的唯一入口，在这一层记下族名，枚举就不必依赖具体字体引擎实现。
+var (
+	registeredFallbackMu sync.Mutex
+	registeredFallbacks  []string
+)
+
 // RegisterFallbackFont 在进程内全局注册回退字体；需已导入字体引擎实现。
 func RegisterFallbackFont(data []byte, family string, style FontStyle) error {
 	if registerFallbackFontFn == nil {
 		return errNoFontEngine
 	}
-	return registerFallbackFontFn(data, family, style)
+	if err := registerFallbackFontFn(data, family, style); err != nil {
+		return err
+	}
+	registeredFallbackMu.Lock()
+	defer registeredFallbackMu.Unlock()
+	if slices.Contains(registeredFallbacks, family) {
+		return nil
+	}
+	registeredFallbacks = append(registeredFallbacks, family)
+	return nil
+}
+
+// RegisteredFallbackFamilies 返回已全局注册的回退字体族名，按注册顺序。
+//
+// 供那些不走 Reader、直接拿 *Document 编码的调用方使用：字体注册进引擎
+// 只是一半，另一半是把族名 UseFallbackFont 到具体文档上，否则文档渲染时
+// 仍按缺字体处理，页面上一个字都没有。
+func RegisteredFallbackFamilies() []string {
+	registeredFallbackMu.Lock()
+	defer registeredFallbackMu.Unlock()
+	families := make([]string, len(registeredFallbacks))
+	copy(families, registeredFallbacks)
+	return families
 }
 
 // FallbackFontData 返回已全局注册回退字体族的首个来源数据。
