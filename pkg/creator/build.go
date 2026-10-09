@@ -543,6 +543,14 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 	if !validSize(pageSize.Width, pageSize.Height) {
 		return nil, fmt.Errorf("页面尺寸无效: %.6g x %.6g", pageSize.Width, pageSize.Height)
 	}
+	// 装在字体子集化之后：子集化按整表统计用字，拆分不增删任何单元格与文字，
+	// 两者的用字集合本就相同。页面数在这里就要定下来，后面 pageIDs、跳转与书签
+	// 的页码下标都以它为界。
+	pages, err = newSplittingPages(pages, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	pageCount = pages.PageCount()
 	if document.Area != nil {
 		if err := validatePageArea(document.Area); err != nil {
 			return nil, fmt.Errorf("文档页面区域无效: %w", err)
@@ -1891,27 +1899,37 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				}
 				built.composite = value.ResourceID
 				built.drawParam, err = s.drawParamID(value.DrawParam)
-		case PageBlock:
-			var nestedLayers []builtLayer
-			if err := s.prepareLayers(value.Items, nil, &nestedLayers, pageCount, fmt.Sprintf("%s 图层 %d 的嵌套页面块 %d", context, layerIndex+1, itemIndex+1)); err != nil {
-				return err
+			case PageBlock:
+				var nestedLayers []builtLayer
+				if err := s.prepareLayers(value.Items, nil, &nestedLayers, pageCount, fmt.Sprintf("%s 图层 %d 的嵌套页面块 %d", context, layerIndex+1, itemIndex+1)); err != nil {
+					return err
+				}
+				for _, nestedLayer := range nestedLayers {
+					built.pageBlock = append(built.pageBlock, nestedLayer.items...)
+				}
+			case Figure:
+				if err := s.validateFigure(value); err != nil {
+					return fmt.Errorf("%s 图层 %d 的图片块 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
+				}
+				expanded, err := s.expandFigure(value, context, layerIndex+1, itemIndex+1)
+				if err != nil {
+					return err
+				}
+				layerResult.items = append(layerResult.items, expanded...)
+				continue
+			case Table:
+				if err := validateTable(value); err != nil {
+					return fmt.Errorf("%s 图层 %d 的表格对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
+				}
+				expanded, err := s.expandTable(value, pageCount, context, layerIndex+1, itemIndex+1)
+				if err != nil {
+					return err
+				}
+				layerResult.items = append(layerResult.items, expanded...)
+				continue
+			default:
+				return fmt.Errorf("%s 图层 %d 的对象 %d 类型 %T 不受支持", context, layerIndex+1, itemIndex+1, item)
 			}
-			for _, nestedLayer := range nestedLayers {
-				built.pageBlock = append(built.pageBlock, nestedLayer.items...)
-			}
-		case Table:
-			if err := validateTable(value); err != nil {
-				return fmt.Errorf("%s 图层 %d 的表格对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
-			}
-			expanded, err := s.expandTable(value, pageCount, context, layerIndex+1, itemIndex+1)
-			if err != nil {
-				return err
-			}
-			layerResult.items = append(layerResult.items, expanded...)
-			continue
-		default:
-			return fmt.Errorf("%s 图层 %d 的对象 %d 类型 %T 不受支持", context, layerIndex+1, itemIndex+1, item)
-		}
 			if err != nil {
 				return fmt.Errorf("%s 图层 %d 的对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 			}
@@ -1958,11 +1976,19 @@ func (s *buildState) preparePattern(pattern *Pattern, pageCount int, context str
 	return nil
 }
 
+// expandTable 把一张表格展开成边框路径与文字图元。
+//
+// 页面顶层的超页表格已由 splittingPages 拆成各自不超页的片段，因此这里出现的
+// 多段表格必然位于不能跨页的上下文（模板、复合图元、图案、注解、PageBlock），
+// 报错而不是把行画到页底之外。
 func (s *buildState) expandTable(table Table, pageCount int, context string, layerIndex, itemIndex int) ([]builtItem, error) {
 	pageHeight := s.pageSize.Height
 	layout, err := layoutTable(table, s.pageSize.Width, pageHeight)
 	if err != nil {
 		return nil, err
+	}
+	if err := ensureTableFits(layout, len(table.Rows)); err != nil {
+		return nil, fmt.Errorf("%s 图层 %d 的表格对象 %d: %w", context, layerIndex, itemIndex, err)
 	}
 
 	var items []builtItem
@@ -1982,7 +2008,8 @@ func (s *buildState) expandTable(table Table, pageCount int, context string, lay
 			items = append(items, builtItem{id: s.allocate(), item: p})
 		}
 
-		for _, t := range layout.generateCellTexts(seg) {
+		cellTexts, strikePaths, rulePaths := layout.generateCellTexts(seg)
+		for _, t := range cellTexts {
 			codes, face := completeTextCodes(t.TextCodes, t.Value, t.Height, t.Size, t.HScale, t.ReadDirection, t.Font, s.document.Fonts, t.Weight, t.Italic, s.completeTextCodeDeltas)
 			t.TextCodes = codes
 			fitTextBoundary(&t, face)
@@ -1991,6 +2018,11 @@ func (s *buildState) expandTable(table Table, pageCount int, context string, lay
 				return nil, fmt.Errorf("%s 图层 %d 的表格对象 %d 单元格字体: %w", context, layerIndex, itemIndex, err)
 			}
 			items = append(items, builtItem{id: s.allocate(), item: t, font: fontID})
+		}
+		// 删除线与分隔线排在文字之后：OFD 按对象顺序绘制，线画在文字前会被
+		// 字形压住边缘。
+		for _, p := range append(strikePaths, rulePaths...) {
+			items = append(items, builtItem{id: s.allocate(), item: p})
 		}
 	}
 	return items, nil
@@ -2200,4 +2232,59 @@ func (s *buildState) documentImageID(id uint64) bool {
 		}
 	}
 	return false
+}
+
+// figureMedia 按资源 ID 回查文档里声明的图片，供 Figure 读取像素尺寸。
+func (s *buildState) figureMedia(id uint64) (Image, bool) {
+	for _, media := range s.document.Media {
+		if media.ID == id && media.Type == "Image" {
+			return Image{Data: media.Data, Source: media.Source, Format: media.Format, Name: media.Name}, true
+		}
+	}
+	return Image{}, false
+}
+
+// validateFigure 校验带说明的图片图元，能按资源 ID 回查图片数据。
+func (s *buildState) validateFigure(value Figure) error {
+	return validateFigure(value, s.figureMedia)
+}
+
+// expandFigure 把带说明的图片块展开为图片对象与说明文字两个图元。
+//
+// 图片在前、说明在后，与阅读顺序一致。
+func (s *buildState) expandFigure(figure Figure, context string, layerIndex, itemIndex int) ([]builtItem, error) {
+	geometry, err := resolveFigure(figure, s.figureMedia)
+	if err != nil {
+		return nil, fmt.Errorf("%s 图层 %d 的图片块 %d 无效: %w", context, layerIndex, itemIndex, err)
+	}
+
+	image := figure.Image
+	image.X = geometry.X
+	image.Y = geometry.Y
+	image.Width = geometry.Width
+	image.Height = geometry.Height
+	imageID, err := s.imageID(image)
+	if err != nil {
+		return nil, fmt.Errorf("%s 图层 %d 的图片块 %d 图片资源: %w", context, layerIndex, itemIndex, err)
+	}
+	drawParam, err := s.drawParamID(image.DrawParam)
+	if err != nil {
+		return nil, fmt.Errorf("%s 图层 %d 的图片块 %d 绘制参数: %w", context, layerIndex, itemIndex, err)
+	}
+	items := []builtItem{{id: s.allocate(), item: image, image: imageID, drawParam: drawParam}}
+
+	caption := figureCaption(figure, geometry)
+	if caption == nil {
+		return items, nil
+	}
+	codes, face := completeTextCodes(caption.TextCodes, caption.Value, caption.Height, caption.Size,
+		caption.HScale, caption.ReadDirection, caption.Font, s.document.Fonts,
+		caption.Weight, caption.Italic, s.completeTextCodeDeltas)
+	caption.TextCodes = codes
+	fitTextBoundary(caption, face)
+	fontID, err := s.fontID(caption.Font)
+	if err != nil {
+		return nil, fmt.Errorf("%s 图层 %d 的图片块 %d 说明文字字体: %w", context, layerIndex, itemIndex, err)
+	}
+	return append(items, builtItem{id: s.allocate(), item: *caption, font: fontID}), nil
 }

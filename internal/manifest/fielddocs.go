@@ -336,6 +336,11 @@ var SchemaDocs = []TypeDoc{
 		{Name: "caption_style", Type: "*CaptionStyle", Doc: "定义表题样式（仅当 type 为 \"table\" 时有效）。", Optional: true},
 		{Name: "continuation_caption", Type: "string", Doc: "定义续表题文字（仅当 type 为 \"table\" 时有效）。", Optional: true},
 		{Name: "continuation_caption_style", Type: "*CaptionStyle", Doc: "定义续表题样式（仅当 type 为 \"table\" 时有效）。", Optional: true},
+		{Name: "align", Type: "string", Doc: "指定图片与说明文字共用的水平对齐（仅当 type 为 \"figure\" 时有效）。", Optional: true},
+		{Name: "image_width", Type: "float64", Doc: "定义图片宽度（仅当 type 为 \"figure\" 时有效）。", Optional: true},
+		{Name: "image_fill_width", Type: "bool", Doc: "指示 image_width 是否按图块宽度的比例解释（仅当 type 为 \"figure\" 时有效）。", Optional: true},
+		{Name: "image_height", Type: "float64", Doc: "定义图片高度（仅当 type 为 \"figure\" 时有效）。", Optional: true},
+		{Name: "fit", Type: "string", Doc: "指定图片在给定尺寸内的适配方式：contain 保持比例，stretch 拉伸（仅当 type 为 \"figure\" 时有效）。", Optional: true},
 	}},
 	{Name: "TemplateRef", Path: "pages[].templates[]", Doc: "描述页面对模板页的引用。", Fields: []FieldDoc{
 		{Name: "id", Type: "uint64", Doc: "指定所引用的模板页。", Optional: true},
@@ -485,6 +490,8 @@ var SchemaDocs = []TypeDoc{
 		{Name: "header_font", Type: "string", Doc: "定义表头字体。", Optional: true},
 		{Name: "header_size", Type: "float64", Doc: "定义表头字号。", Optional: true},
 		{Name: "header_weight", Type: "int", Doc: "定义表头字重。", Optional: true},
+		{Name: "strike_color", Type: "*Color", Doc: "定义 Markdown 删除线的颜色；不设时与边框同色。", Optional: true},
+		{Name: "rule_color", Type: "*Color", Doc: "定义 Markdown 分隔线的颜色；不设时与边框同色。", Optional: true},
 		{Name: "code_font", Type: "string", Doc: "定义 Markdown 行内代码使用的字体。", Optional: true},
 	}},
 	{Name: "CaptionStyle", Path: "templates[].items[].caption_style", Doc: "定义表题样式。", Fields: []FieldDoc{
@@ -494,7 +501,7 @@ var SchemaDocs = []TypeDoc{
 		{Name: "italic", Type: "bool", Doc: "指示是否斜体。", Optional: true},
 		{Name: "align", Type: "string", Doc: "定义对齐方式。", Optional: true},
 		{Name: "color", Type: "*Color", Doc: "定义文字颜色。", Optional: true},
-		{Name: "offset_y", Type: "float64", Doc: "定义相对于表格顶部的 Y 偏移。", Optional: true},
+		{Name: "gap", Type: "float64", Doc: "定义说明文字与所标注对象之间的间距，单位毫米。", Optional: true},
 	}},
 	{Name: "PageImage", Path: "pages[].resources[].images[]", Doc: "描述页面资源中的图像。", Fields: []FieldDoc{
 		{Name: "id", Type: "uint64", Doc: "标识页面图像资源。", Optional: true},

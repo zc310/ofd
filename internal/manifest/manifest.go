@@ -1065,6 +1065,16 @@ type Item struct {
 	ContinuationCaption string `json:"continuation_caption,omitempty" yaml:"continuation_caption,omitempty" toml:"continuation_caption,omitempty"`
 	// ContinuationCaptionStyle 定义续表题样式（仅当 type 为 "table" 时有效）。
 	ContinuationCaptionStyle *CaptionStyle `json:"continuation_caption_style,omitempty" yaml:"continuation_caption_style,omitempty" toml:"continuation_caption_style,omitempty"`
+	// Align 指定图片与说明文字共用的水平对齐（仅当 type 为 "figure" 时有效）。
+	Align string `json:"align,omitempty" yaml:"align,omitempty" toml:"align,omitempty"`
+	// ImageWidth 定义图片宽度（仅当 type 为 "figure" 时有效）。
+	ImageWidth float64 `json:"image_width,omitempty" yaml:"image_width,omitempty" toml:"image_width,omitempty"`
+	// ImageFillWidth 指示 image_width 是否按图块宽度的比例解释（仅当 type 为 "figure" 时有效）。
+	ImageFillWidth bool `json:"image_fill_width,omitempty" yaml:"image_fill_width,omitempty" toml:"image_fill_width,omitempty"`
+	// ImageHeight 定义图片高度（仅当 type 为 "figure" 时有效）。
+	ImageHeight float64 `json:"image_height,omitempty" yaml:"image_height,omitempty" toml:"image_height,omitempty"`
+	// Fit 指定图片在给定尺寸内的适配方式：contain 保持比例，stretch 拉伸（仅当 type 为 "figure" 时有效）。
+	Fit string `json:"fit,omitempty" yaml:"fit,omitempty" toml:"fit,omitempty"`
 }
 
 // TableRow 定义表格行。
@@ -1123,6 +1133,10 @@ type TableStyle struct {
 	HeaderSize float64 `json:"header_size,omitempty" yaml:"header_size,omitempty" toml:"header_size,omitempty"`
 	// HeaderWeight 定义表头字重。
 	HeaderWeight int `json:"header_weight,omitempty" yaml:"header_weight,omitempty" toml:"header_weight,omitempty"`
+	// StrikeColor 定义 Markdown 删除线的颜色；不设时与边框同色。
+	StrikeColor *Color `json:"strike_color,omitempty" yaml:"strike_color,omitempty" toml:"strike_color,omitempty"`
+	// RuleColor 定义 Markdown 分隔线的颜色；不设时与边框同色。
+	RuleColor *Color `json:"rule_color,omitempty" yaml:"rule_color,omitempty" toml:"rule_color,omitempty"`
 	// CodeFont 定义 Markdown 行内代码使用的字体。
 	CodeFont string `json:"code_font,omitempty" yaml:"code_font,omitempty" toml:"code_font,omitempty"`
 }
@@ -1141,8 +1155,8 @@ type CaptionStyle struct {
 	Align string `json:"align,omitempty" yaml:"align,omitempty" toml:"align,omitempty"`
 	// Color 定义文字颜色。
 	Color *Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
-	// OffsetY 定义相对于表格顶部的 Y 偏移。
-	OffsetY float64 `json:"offset_y,omitempty" yaml:"offset_y,omitempty" toml:"offset_y,omitempty"`
+	// Gap 定义说明文字与所标注对象之间的间距，单位毫米。
+	Gap float64 `json:"gap,omitempty" yaml:"gap,omitempty" toml:"gap,omitempty"`
 }
 
 // Clip 描述图元的裁剪区域集合。
@@ -1753,8 +1767,10 @@ func (i Item) build() (creator.Item, error) {
 		return creator.PageBlock{Items: items}, nil
 	case "table":
 		return i.buildTable()
+	case "figure":
+		return i.buildFigure()
 	default:
-		return nil, fmt.Errorf("不支持的图元类型 %q，仅支持 text、path、image、composite、page-block、table", i.Type)
+		return nil, fmt.Errorf("不支持的图元类型 %q，仅支持 text、path、image、composite、page-block、table、figure", i.Type)
 	}
 }
 
@@ -1780,6 +1796,20 @@ func (i Item) buildTable() (creator.Table, error) {
 			HeaderSize:      i.Style.HeaderSize,
 			HeaderWeight:    i.Style.HeaderWeight,
 			CodeFont:        i.Style.CodeFont,
+		}
+		if i.Style.StrikeColor != nil {
+			c, err := buildColor(i.Style.StrikeColor)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("style.strike_color: %w", err)
+			}
+			style.StrikeColor = c
+		}
+		if i.Style.RuleColor != nil {
+			c, err := buildColor(i.Style.RuleColor)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("style.rule_color: %w", err)
+			}
+			style.RuleColor = c
 		}
 		if i.Style.StrokeColor != nil {
 			c, err := buildColor(i.Style.StrokeColor)
@@ -1847,12 +1877,12 @@ func (i Item) buildTable() (creator.Table, error) {
 
 func (cs CaptionStyle) build() (*creator.CaptionStyle, error) {
 	style := &creator.CaptionStyle{
-		Font:    cs.Font,
-		Size:    cs.Size,
-		Weight:  cs.Weight,
-		Italic:  cs.Italic,
-		Align:   cs.Align,
-		OffsetY: cs.OffsetY,
+		Font:   cs.Font,
+		Size:   cs.Size,
+		Weight: cs.Weight,
+		Italic: cs.Italic,
+		Align:  cs.Align,
+		Gap:    cs.Gap,
 	}
 	if cs.Color != nil {
 		c, err := buildColor(cs.Color)
@@ -2388,4 +2418,67 @@ func resolveAssetPath(root, name string) (string, error) {
 		return "", errors.New("资源路径不能离开资源根目录")
 	}
 	return path, nil
+}
+
+// buildFigure 把 manifest 图元转换为带说明文字的图片块。
+//
+// 图片数据沿用 image 图元那套字段（data / data_base64 / resource_id），
+// 图块宽度沿用 width，几何由 figure 自己的字段决定。
+func (i Item) buildFigure() (creator.Figure, error) {
+	if i.ResourceID == 0 && i.DataBase64 == "" {
+		return creator.Figure{}, errors.New("figure.resource_id 或 data_base64 至少设置一个")
+	}
+	if i.ResourceID != 0 && i.DataBase64 != "" {
+		return creator.Figure{}, errors.New("figure.resource_id 不能与 data_base64 同时设置")
+	}
+	clips, err := buildClips(i.Clips)
+	if err != nil {
+		return creator.Figure{}, fmt.Errorf("clips: %w", err)
+	}
+	border, err := buildImageBorder(i.Border)
+	if err != nil {
+		return creator.Figure{}, fmt.Errorf("border: %w", err)
+	}
+	data, err := decodeOptionalBytes(i.DataBase64)
+	if err != nil {
+		return creator.Figure{}, fmt.Errorf("data_base64: %w", err)
+	}
+	ctm, err := buildCTM(i.CTM)
+	if err != nil {
+		return creator.Figure{}, fmt.Errorf("ctm: %w", err)
+	}
+	var captionStyle *creator.CaptionStyle
+	if i.CaptionStyle != nil {
+		captionStyle, err = i.CaptionStyle.build()
+		if err != nil {
+			return creator.Figure{}, fmt.Errorf("caption_style: %w", err)
+		}
+	}
+	figure := creator.Figure{
+		X:              i.X,
+		Y:              i.Y,
+		Width:          i.Width,
+		Align:          i.Align,
+		ImageWidth:     i.ImageWidth,
+		ImageFillWidth: i.ImageFillWidth,
+		ImageHeight:    i.ImageHeight,
+		Fit:            i.Fit,
+		Caption:        i.Caption,
+		CaptionStyle:   captionStyle,
+		Image: creator.Image{
+			Data:         data,
+			ResourceID:   i.ResourceID,
+			Format:       i.Format,
+			Name:         i.Name,
+			Visible:      i.Visible,
+			Substitution: i.Substitution,
+			ImageMask:    i.ImageMask,
+			Alpha:        i.Alpha,
+			DrawParam:    i.DrawParam,
+			CTM:          ctm,
+			Clips:        clips,
+			Border:       border,
+		},
+	}
+	return figure, nil
 }

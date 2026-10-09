@@ -1883,3 +1883,37 @@ func intList(values []int) string {
 func finite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
+
+// validateFigure 校验带说明的图片图元。
+//
+// 图片本身的合法性由 resolveFigure 与 validateImage 分别负责：前者解尺寸与对齐，
+// 后者校验资源、格式与边框样式。
+func validateFigure(value Figure, lookup figureMediaLookup) error {
+	if !finite(value.X) || !finite(value.Y) {
+		return fmt.Errorf("图块坐标无效: %.6g %.6g", value.X, value.Y)
+	}
+	geometry, err := resolveFigure(value, lookup)
+	if err != nil {
+		return err
+	}
+	if !validSize(geometry.Width, geometry.Height) {
+		return fmt.Errorf("图片尺寸无效: %.6g x %.6g", geometry.Width, geometry.Height)
+	}
+	if value.CaptionStyle != nil && value.CaptionStyle.Gap < 0 {
+		return fmt.Errorf("说明文字间距无效: %.6g", value.CaptionStyle.Gap)
+	}
+	// 展开后的图片对象才带完整几何信息，借它复用既有的图片校验。
+	image := value.Image
+	image.X = geometry.X
+	image.Y = geometry.Y
+	image.Width = geometry.Width
+	image.Height = geometry.Height
+	if image.ResourceID != 0 {
+		// 引用已声明的资源时图片数据不在图元里，资源是否有效由 prepareLayers 校验。
+		if len(image.Data) > 0 || image.Format != "" || image.Name != "" {
+			return errors.New("图片块不能同时设置 resource_id 和图片数据、格式或名称")
+		}
+		return nil
+	}
+	return validateImage(image)
+}

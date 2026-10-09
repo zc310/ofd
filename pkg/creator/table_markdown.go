@@ -1,6 +1,7 @@
 package creator
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -18,6 +19,9 @@ type styledRun struct {
 	italic bool
 	code   bool
 	strike bool
+	// rule 表示这是一条 Markdown 分隔线（---），不是文字。它独占一行，
+	// 由 createCellTexts 画成横贯单元格的横线。
+	rule bool
 }
 
 // cellMarkdown 是表格单元格行内 Markdown 的解析器。creator 逐页串行构建，
@@ -26,13 +30,22 @@ var cellMarkdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 // parseMarkdownRuns 把单元格文本解析为带样式的行内片段。仅处理行内语法
 // （粗体、斜体、行内代码、删除线）；块级结构在单元格内无意义，按行内内容
-// 摊平处理。
+// 摊平处理，但块与块之间仍按换行分隔。
 func parseMarkdownRuns(value string) []styledRun {
 	source := []byte(value)
 	root := cellMarkdown.Parser().Parse(text.NewReader(source))
+	return blockRuns(root, source, styleState{})
+}
+
+// blockRuns 依次展开块级子节点，并在相邻块之间补换行。不补的话两段文字会
+// 首尾相接粘成一行（列表的每个条目就是一个独立块）。
+func blockRuns(node ast.Node, source []byte, st styleState) []styledRun {
 	var runs []styledRun
-	for child := root.FirstChild(); child != nil; child = child.NextSibling() {
-		runs = append(runs, inlineRuns(child, source, styleState{})...)
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if len(runs) > 0 {
+			runs = append(runs, styledRun{text: "\n"})
+		}
+		runs = append(runs, inlineRuns(child, source, st)...)
 	}
 	return runs
 }
@@ -43,6 +56,43 @@ type styleState struct {
 	italic bool
 	code   bool
 	strike bool
+	// listDepth 是当前所处的列表嵌套层数，用于缩进项目符号。
+	listDepth int
+}
+
+// listIndentUnit 是每层列表嵌套的缩进。用两个空格：断行时单个空格会被当作词
+// 分隔符丢弃，两个及以上则作为下一词的前缀保留下来。
+const listIndentUnit = "  "
+
+// listMarker 返回列表条目前的符号：无序列表用实心圆点，有序列表用"1." 这样的
+// 序号（起始值取自源码的列表起始编号）。
+func listMarker(list *ast.List, index int) string {
+	if !list.IsOrdered() {
+		return "• "
+	}
+	return strconv.Itoa(list.Start+index-1) + ". "
+}
+
+// listRuns 把列表展开为带项目符号的行内片段：每个条目一行，嵌套列表按层级缩进。
+// 单元格宽度有限，条目文字换行后不会跟随项目符号缩进——那种排版要用单元格的
+// HangingIndent 表达。
+func listRuns(list *ast.List, source []byte, st styleState) []styledRun {
+	var runs []styledRun
+	index := 0
+	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
+		if index > 0 {
+			runs = append(runs, styledRun{text: "\n"})
+		}
+		index++
+		if indent := strings.Repeat(listIndentUnit, st.listDepth); indent != "" {
+			runs = append(runs, styledRun{text: indent})
+		}
+		runs = append(runs, styledRun{text: listMarker(list, index)})
+		nested := st
+		nested.listDepth++
+		runs = append(runs, blockRuns(child, source, nested)...)
+	}
+	return runs
 }
 
 func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
@@ -52,10 +102,12 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		if content := string(value.Segment.Value(source)); content != "" {
 			runs = append(runs, styledRun{text: content, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike})
 		}
-		if value.HardLineBreak() {
+		// 硬换行（行尾两空格）与软换行（源码里的单个换行）都按强制换行处理。
+		// Markdown 的软换行默认渲染成空格，那是给正文的排版约定；表格单元格
+		// 里换行是用户明确写出来的意图，按空格吞掉会让多行内容挤成一行，
+		// 且与同单元格的纯文本格式（\n 即换行）不一致。
+		if value.HardLineBreak() || value.SoftLineBreak() {
 			runs = append(runs, styledRun{text: "\n"})
-		} else if value.SoftLineBreak() {
-			runs = append(runs, styledRun{text: " "})
 		}
 		return runs
 	case *ast.String:
@@ -74,6 +126,27 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		next := st
 		next.strike = true
 		return childrenRuns(value, source, next)
+	case *extast.TaskCheckBox:
+		// 任务列表的勾选状态是内容的一部分，不能丢：默认分支只展开子节点，
+		// 而 TaskCheckBox 是叶子，丢掉后"- [x] 完成"与"- [ ] 待办"长得一样。
+		//
+		// 用 ASCII 方括号而不是 ☑/☐：实测思源黑体与 SmileySans 都没有这两个
+		// 字形，会渲染成豆腐块，而方括号任何字体都有。
+		mark := "[ ] "
+		if value.IsChecked {
+			mark = "[x] "
+		}
+		return []styledRun{{text: mark, strike: st.strike}}
+	case *ast.ThematicBreak:
+		// 分隔线不是文字，但也不是可以丢掉的东西：丢掉后 "上\n---\n下" 里的
+		// 分界就消失了。用一个空文字的 rule 片段占一行，由 createCellTexts 画线。
+		return []styledRun{{text: "\n", rule: true}}
+	case *ast.List:
+		// 每个列表项是一个独立块，项与项之间要换行，否则 "- 甲\n- 乙" 挤成"甲乙"。
+		return listRuns(value, source, st)
+	case *ast.ListItem:
+		// 列表项自身也可能含块（嵌套列表），同样按块分隔。
+		return blockRuns(value, source, st)
 	default:
 		return childrenRuns(node, source, st)
 	}

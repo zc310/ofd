@@ -1,12 +1,11 @@
 # 高级图元与资源特性示例
 # 覆盖文档级注解（Stamp 图章 + Highlight 高亮，Highlight 带 Remark 批注说明与
 # Print=false 打印控制）、复合图元 CompositeObject、模板页引用、图片资源
-# （圆角边框、ImageMask 蒙版、Substitution 替代图，取自仓库 docs/screenshots 截图）、
+# （圆角边框、ImageMask 蒙版、Substitution 替代图，用内嵌的小示意图代替真实截图）、
 # 轴向/Gouraud/底纹渐变、虚线线型与裁剪区。
-# 运行（图片资源路径相对仓库根，asset-root 以 manifest 所在目录为基准，
-# 需 ../../.. 回到仓库根，缺该参数会报图片读取失败）：
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --asset-root ../../.. --format auto --check
-#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --asset-root ../../.. -o testdata/advanced-features.ofd --format auto --deterministic --validate --complete-text-code-deltas
+# 运行：
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml --format auto --check
+#   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/advanced-features.yaml -o testdata/advanced-features.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:
@@ -81,17 +80,17 @@ document:
 resources:
   images:
     - id: 101
-      name: linux.png
+      name: bars.png
       format: PNG
-      file: docs/screenshots/viewer/linux.png
+      data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwBAMAAAAcOGL8AAAAD1BMVEX///8vb7AaP2uaxOjZ5vLwmo2TAAAAN0lEQVR42mIYHkBhUGtgNoaBUQ2kakAXHZEaFAVhYFTD4NPAiNuYUQ2jGgZMgxIJgGEUEAUAAwBMZpAFMb5BNQAAAABJRU5ErkJggg=="
     - id: 102
-      name: android.png
+      name: horizontal.png
       format: PNG
-      file: docs/screenshots/viewer/android.png
+      data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwBAMAAAAcOGL8AAAAD1BMVEX///8vb7AaP2uaxOjZ5vLwmo2TAAAAPUlEQVR42mIYHkBhEGoQxAUERjVQoIH2EWeMBkY1UEXDAOY4HAlqVANRGuia40Y1UE8DzSNOiQTAMCwAYADyRErRKJN/XAAAAABJRU5ErkJggg=="
     - id: 103
-      name: windows.png
+      name: grid.png
       format: PNG
-      file: docs/screenshots/viewer/windows.png
+      data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwBAMAAAAcOGL8AAAAD1BMVEX///8vb7AaP2uaxOjZ5vLwmo2TAAAAM0lEQVR42mIYHkCJBMDAwMDAoECqDaMaRjUMXQ2MgnAgMKphVAMlGkZz3KgGcjUMeQAYAPNDE32Y7JGeAAAAAElFTkSuQmCC"
   public: []
   composites:
     - id: 301
