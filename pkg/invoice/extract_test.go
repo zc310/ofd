@@ -68,6 +68,16 @@ func invoiceContentXML(title, upperAmount string) string {
 // buildInvoiceOFD 组装一个最小合法 OFD，可包含发票附件与页面文字层。
 func buildInvoiceOFD(t testing.TB, attachmentName, attachment string, content string) []byte {
 	t.Helper()
+	var files map[string]string
+	if attachment != "" {
+		files = map[string]string{attachmentName: attachment}
+	}
+	return buildInvoiceOFDFiles(t, files, content)
+}
+
+// buildInvoiceOFDFiles 按给定包内文件生成 OFD，content 为空时用默认票面文字层。
+func buildInvoiceOFDFiles(t testing.TB, extra map[string]string, content string) []byte {
+	t.Helper()
 	if content == "" {
 		content = invoiceContentXML("增值税电子普通发票", "壹佰壹拾叁元整")
 	}
@@ -89,8 +99,11 @@ func buildInvoiceOFD(t testing.TB, attachmentName, attachment string, content st
 </Document>`,
 		"Doc_0/Pages/Page_0/Content.xml": content,
 	}
-	if attachment != "" {
-		files[attachmentName] = attachment
+	for name, value := range extra {
+		if value == "" {
+			continue
+		}
+		files[name] = value
 	}
 	var data bytes.Buffer
 	archive := zip.NewWriter(&data)
@@ -237,11 +250,68 @@ func TestExtractMissingAttachmentErrors(t *testing.T) {
 	}
 }
 
-func TestExtractEmptyPreferredAttachmentRejected(t *testing.T) {
+// TestExtractNonInvoiceAttachmentRejected 确认附件存在但没有发票数据时报"不是发票"。
+//
+// 附件在、也能解析，只是里面既没有发票代码也没有价税合计——比如厂商把版式说明或
+// 签章属性放在了 Attachs 里。这时兜一个几乎全空的 Invoice 最糟：调用方看不出哪里
+// 不对，汇总会安静地算出 0 元。
+func TestExtractNonInvoiceAttachmentRejected(t *testing.T) {
 	data := buildInvoiceOFD(t, "Doc_0/Attachs/original_invoice.xml",
 		`<?xml version="1.0"?><Root/>`, "")
-	if _, err := Extract(data); !errors.Is(err, ErrNoAttachment) {
-		t.Fatalf("错误 = %v, want ErrNoAttachment", err)
+	_, err := Extract(data)
+	if !errors.Is(err, ErrNotInvoice) {
+		t.Fatalf("错误 = %v, want ErrNotInvoice", err)
+	}
+	if errors.Is(err, ErrNoAttachment) {
+		t.Error("ErrNotInvoice 不应同时满足 ErrNoAttachment：两者后续动作不同")
+	}
+	if !strings.Contains(err.Error(), "Doc_0/Attachs/original_invoice.xml") {
+		t.Errorf("错误信息应指明是哪个附件，实际：%v", err)
+	}
+}
+
+// TestExtractAttachmentWithOnlySomeInvoiceFields 确认只填部分字段的附件仍按发票处理。
+//
+// 定额发票、卷式发票可能没有发票代码但有价税合计，反之亦然；两个字段取或，
+// 两者皆无才算不是发票。
+func TestExtractAttachmentWithOnlySomeInvoiceFields(t *testing.T) {
+	cases := []struct {
+		name       string
+		attachment string
+	}{
+		{name: "只有发票代码", attachment: `<?xml version="1.0"?>
+<Invoice><InvoiceCode>033001900111</InvoiceCode><InvoiceNo>1</InvoiceNo></Invoice>`},
+		{name: "只有价税合计", attachment: `<?xml version="1.0"?>
+<Invoice><TaxInclusiveTotalAmount>113.00</TaxInclusiveTotalAmount><InvoiceNo>1</InvoiceNo></Invoice>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := Extract(buildInvoiceOFD(t, "Doc_0/Attachs/original_invoice.xml",
+				c.attachment, ""))
+			if err != nil {
+				t.Fatalf("应识别为发票，实际报错：%v", err)
+			}
+			if c.name == "只有发票代码" && got.Code != "033001900111" {
+				t.Errorf("Code = %q", got.Code)
+			}
+			if c.name == "只有价税合计" && got.TotalAmount.String() != "113" {
+				t.Errorf("TotalAmount = %q", got.TotalAmount)
+			}
+		})
+	}
+}
+
+// TestExtractKeepsPartialInvoiceWithWarnings 确认"是发票但字段残缺"仍抽出结果，
+// 由 Check 报出自洽性问题，而不是在抽取阶段就拒掉。
+func TestExtractKeepsPartialInvoiceWithWarnings(t *testing.T) {
+	data := buildInvoiceOFD(t, "Doc_0/Attachs/original_invoice.xml", `<?xml version="1.0"?>
+<Invoice><InvoiceCode>033001900111</InvoiceCode></Invoice>`, "")
+	got, err := Extract(data)
+	if err != nil {
+		t.Fatalf("应抽出结果，实际报错：%v", err)
+	}
+	if issues := got.Check(); len(issues) == 0 {
+		t.Error("字段残缺的发票应由 Check 报出异常")
 	}
 }
 
@@ -395,4 +465,30 @@ func TestGarbageInputErrors(t *testing.T) {
 
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
+}
+
+// TestFindAttachmentSkipsNonInvoiceCandidates 确认回退扫描会跳过非发票的候选，
+// 并在全部候选都不是发票时报"不是发票"而不是"没有附件"。
+func TestFindAttachmentSkipsNonInvoiceCandidates(t *testing.T) {
+	files := map[string]string{
+		"Doc_0/Attachs/layout_note.xml": `<?xml version="1.0"?><Layout><Note>版式说明</Note></Layout>`,
+		"Doc_0/Attachs/sign_attr.xml":   `<?xml version="1.0"?><Sign><Buyer>某某公司</Buyer></Sign>`,
+	}
+	data := buildInvoiceOFDFiles(t, files, "")
+	_, err := Extract(data)
+	if !errors.Is(err, ErrNotInvoice) {
+		t.Fatalf("错误 = %v, want ErrNotInvoice", err)
+	}
+
+	// 候选里混进一个真发票时应选中它，而不是被前面两个非发票候选带偏。
+	files["Doc_0/Attachs/zz_invoice.xml"] = `<?xml version="1.0"?>
+<Invoice><InvoiceCode>033001900111</InvoiceCode><InvoiceNo>7</InvoiceNo>
+<TaxInclusiveTotalAmount>113.00</TaxInclusiveTotalAmount></Invoice>`
+	got, err := Extract(buildInvoiceOFDFiles(t, files, ""))
+	if err != nil {
+		t.Fatalf("应从候选中选出真发票，实际报错：%v", err)
+	}
+	if got.Number != "7" {
+		t.Errorf("Number = %q, want 7", got.Number)
+	}
 }
