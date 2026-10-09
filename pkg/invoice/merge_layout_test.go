@@ -437,7 +437,6 @@ func renderSheetPDF(t *testing.T, border bool) []byte {
 	if err != nil {
 		t.Fatalf("解析版面失败: %v", err)
 	}
-	placeEntries(entries, layout)
 	var buffer bytes.Buffer
 	doc, err := render.NewPDFDocument(&buffer, render.PDFOptions{Compress: false})
 	if err != nil {
@@ -684,7 +683,6 @@ func sheetContentStream(t *testing.T, options MergeOptions, fixtures ...invoiceF
 	if err != nil {
 		t.Fatalf("解析版面失败: %v", err)
 	}
-	placeEntries(entries, layout)
 	var buffer bytes.Buffer
 	doc, err := render.NewPDFDocument(&buffer, render.PDFOptions{Compress: false})
 	if err != nil {
@@ -760,4 +758,77 @@ func keysOf(set map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TestCoverPageTakesItsOwnSheet 确认汇总对账页独占一张纸，不被塞进拼版格位。
+//
+// 汇总页是给一整页看的内容：跟着 --nup 9 挤进九宫格左上角那一格之后，字只有原来
+// 的三分之一，等于白生成。独占一张纸时它与票页同样大小，一眼能看清合计。
+func TestCoverPageTakesItsOwnSheet(t *testing.T) {
+	first := plainInvoice("a.ofd", "033001900111", "1", "2026-09-01")
+	second := first
+	second.name, second.number = "b.ofd", "2"
+	third := first
+	third.name, third.number = "c.ofd", "3"
+
+	entries := []sheetEntry{
+		{width: 210, height: 297, title: "发票汇总对账表", fullSheet: true},
+		{width: 210, height: 140, title: "a.ofd"},
+		{width: 210, height: 140, title: "b.ofd"},
+		{width: 210, height: 140, title: "c.ofd"},
+	}
+	layout, err := resolveSheetLayout(MergeOptions{NUp: 9}, entryPageSizes(entries[1:]))
+	if err != nil {
+		t.Fatalf("解析版面失败: %v", err)
+	}
+	sheets := groupSheets(entries, layout)
+	if len(sheets) != 2 {
+		t.Fatalf("汇总页 + 3 张票（9 宫格）应是 2 张纸，实际 %d 张", len(sheets))
+	}
+	if len(sheets[0].entries) != 1 || !sheets[0].entries[0].fullSheet {
+		t.Errorf("第一张纸应只含汇总页，实际 %d 项", len(sheets[0].entries))
+	}
+	if len(sheets[1].entries) != 3 {
+		t.Errorf("第二张纸应装 3 张票，实际 %d 张", len(sheets[1].entries))
+	}
+	// 汇总页铺满整张纸，不落在某个格子里。
+	x, y, width, height := sheetCell(layout, sheets[0], sheets[0].entries[0])
+	if x != 0 || y != 0 || width != sheets[0].width || height != sheets[0].height {
+		t.Errorf("汇总页应铺满整张纸，实际 (%v,%v %.0fx%.0f)，纸面 %.0fx%.0f",
+			x, y, width, height, sheets[0].width, sheets[0].height)
+	}
+	// 票页仍按格位落：九宫格的第一格远小于整张纸。
+	tx, ty, tw, _ := sheetCell(layout, sheets[1], sheets[1].entries[0])
+	if tw >= sheets[1].width || tx == 0 && ty == 0 && tw == sheets[1].width {
+		t.Errorf("票页应落在某个格子里，实际格宽 %.1f（纸宽 %.1f）", tw, sheets[1].width)
+	}
+}
+
+// TestCoverFollowsOutputPaper 确认汇总页与票页用同一张输出纸。
+//
+// 方向由 auto 按占用率决定（A5 上 210×140 的票在 2×2 横向更省），所以这里不比
+// 具体横竖，只要求汇总页与票页同纸——打印时两张纸叠在一起才不会被当成两种规格。
+func TestCoverFollowsOutputPaper(t *testing.T) {
+	entries := []sheetEntry{
+		{width: 210, height: 297, title: "汇总", fullSheet: true},
+		{width: 210, height: 140, title: "a.ofd"},
+	}
+	layout, err := resolveSheetLayout(MergeOptions{NUp: 4, Paper: "A5"},
+		entryPageSizes(entries[1:]))
+	if err != nil {
+		t.Fatalf("解析版面失败: %v", err)
+	}
+	sheets := groupSheets(entries, layout)
+	if len(sheets) != 2 {
+		t.Fatalf("应是 2 张纸，实际 %d", len(sheets))
+	}
+	if sheets[0].width != sheets[1].width || sheets[0].height != sheets[1].height {
+		t.Errorf("汇总页 %.0fx%.0f 与票页 %.0fx%.0f 应同纸",
+			sheets[0].width, sheets[0].height, sheets[1].width, sheets[1].height)
+	}
+	// 票页仍缩到格子里：2×2 的格子远小于整张 A5。
+	_, _, cellWidth, _ := sheetCell(layout, sheets[1], sheets[1].entries[0])
+	if cellWidth >= sheets[1].width {
+		t.Errorf("票页应缩进格子，实际格宽 %.1f、纸宽 %.1f", cellWidth, sheets[1].width)
+	}
 }

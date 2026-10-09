@@ -129,17 +129,17 @@ func MergePDF(ctx context.Context, sources []Source, w io.Writer, options MergeO
 		// 汇总页的 OFD 句柄同样要活到 PDF 写完，和发票文档一样不能提前关闭。
 		closers = append(closers, closer)
 		entries = append([]sheetEntry{{
-			document: cover,
-			page:     cover.Document.Pages[0],
-			width:    coverPageWidth,
-			height:   coverPageHeight,
-			title:    coverTitleLabel(options.CoverTitle),
+			document:  cover,
+			page:      cover.Document.Pages[0],
+			width:     coverPageWidth,
+			height:    coverPageHeight,
+			title:     coverTitleLabel(options.CoverTitle),
+			fullSheet: true,
 		}}, entries...)
 	}
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("没有可输出的页面")
 	}
-	placeEntries(entries, layout)
 	if err := writeMergePDF(ctx, w, entries, layout); err != nil {
 		return nil, err
 	}

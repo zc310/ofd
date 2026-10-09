@@ -261,6 +261,9 @@ type sheetEntry struct {
 	index int
 	// title 是这张纸的大纲标题，空串表示不写大纲。
 	title string
+	// fullSheet 为真时这张页面独占一张纸，不参与拼版格位。汇总对账表走这条：
+	// 它是给整张纸看的内容，压进九宫格的一个格子里就没人读了。
+	fullSheet bool
 }
 
 // canvasOrigin 把「自纸张上边缘起算」的落位换算成绘制上下文的平移量。
@@ -279,21 +282,6 @@ func entryPageSizes(entries []sheetEntry) []pageSize {
 		sizes = append(sizes, pageSize{width: entry.width, height: entry.height})
 	}
 	return sizes
-}
-
-// placeEntries 按版面把源页面切分到各张纸上。
-//
-// fitSource 模式下每页一张纸、缩放为 1、不留白：不给任何选项时合并结果与旧行为
-// 逐页同构，不会因为新增参数改变既有输出。
-func placeEntries(entries []sheetEntry, layout sheetLayout) {
-	if layout.fitSource {
-		return
-	}
-	perSheet := layout.capacity()
-	for index := range entries {
-		entries[index].sheet = index / perSheet
-		entries[index].index = index % perSheet
-	}
 }
 
 // fitTransform 计算把 width×height 的源页放进 x/y/w/h 格子的等比缩放与位移。

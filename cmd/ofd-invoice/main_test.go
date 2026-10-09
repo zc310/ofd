@@ -557,3 +557,29 @@ func TestRunMergePDFRejectsBadLayout(t *testing.T) {
 		}
 	}
 }
+
+// TestRunBooleanFlagWithSeparateValueExplainsIt 确认误写成 "--cover true" 时
+// 错误信息指向真实原因。
+//
+// pflag 不会把布尔选项后面那个词吃成选项值，于是 true 变成位置参数，报出来是
+// "找不到 true 这个文件"——与真实原因毫无关联，用户很容易去建一个叫 true 的文件。
+func TestRunBooleanFlagWithSeparateValueExplainsIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.ofd"), buildInvoiceOFD(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"--input-dir", dir, "--cover", "true"},
+		{"--input-dir", dir, "--skip-broken", "false"},
+		{"--input-dir", dir, "true"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := run(args, &stdout, &stderr)
+		if code != exitUsage {
+			t.Errorf("run(%v) = %d，期望 %d", args, code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "布尔选项") {
+			t.Errorf("run(%v) 的错误信息应说明布尔选项的写法，实际：%q", args, stderr.String())
+		}
+	}
+}
