@@ -239,12 +239,16 @@ func coverRow(values []string, y, size float64, bold bool) []creator.Item {
 		if index < len(coverWidths) {
 			width = coverWidths[index]
 		}
-		left := x
-		// 表头同样右对齐：金额列表头左对齐、数值右对齐时两者会错开一整个列宽。
-		if coverAlignRight[index] {
-			left = x + width - textWidth(value, size)
+		// 空单元格不生成图元：红字发票那行只有项目列有文字，其余列是占位空串。
+		// creator 校验文字内容不能为空，生成了整份汇总页都创建失败。
+		if value != "" {
+			left := x
+			// 表头同样右对齐：金额列表头左对齐、数值右对齐时两者会错开一整个列宽。
+			if coverAlignRight[index] {
+				left = x + width - textWidth(value, size)
+			}
+			items = append(items, coverText(left, y, width, size, value, bold))
 		}
-		items = append(items, coverText(left, y, width, size, value, bold))
 		x += width
 	}
 	return items

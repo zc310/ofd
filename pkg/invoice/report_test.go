@@ -13,6 +13,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/xuri/excelize/v2"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 // TestWriteCSVIncludesFailedAndTotal 确认 CSV 明细里失败项占一行、末行是合计，
@@ -301,6 +302,59 @@ func TestCoverKeepsSinglePageWhenShort(t *testing.T) {
 	}
 	if pages[0].title != defaultCoverTitle {
 		t.Errorf("默认标题 = %q，期望 %q", pages[0].title, defaultCoverTitle)
+	}
+}
+
+// TestCoverWithRedInvoicesIsCreatable 确认含红字发票的汇总页能真正生成 OFD。
+//
+// 红字发票那行只有项目列有文字，金额列是占位空串。此前 coverRow 对每个值都生成
+// 文字图元，空串被 creator 校验拦下（"文字内容不能为空"），整份汇总页创建失败——
+// 只要这批发票里有红字发票，--cover 就完全不可用。
+func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
+	first := plainInvoice("a.ofd", "033001900111", "1", "2026-09-01")
+	red := plainInvoice("b.ofd", "033001900111", "2", "2026-09-20")
+	red.amount, red.tax, red.total = "-100.00", "-13.00", "-113.00"
+	batch := mustExtractBatch(t, batchSources(first, red), BatchOptions{})
+	if batch.Summary.Red != 1 {
+		t.Fatalf("应识别出 1 张红字发票，实际 %d", batch.Summary.Red)
+	}
+
+	pages := coverPages(batch.Summary, "")
+	provider := coverPageProvider{}
+	for _, data := range pages {
+		provider.pages = append(provider.pages, coverPage(data))
+	}
+	meta := creator.Document{
+		ID:       "cover-red",
+		PageSize: creator.PageSize{Width: coverPageWidth, Height: coverPageHeight},
+		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
+	}
+	var buffer bytes.Buffer
+	if err := creator.CreateWithPages(meta, provider, &buffer); err != nil {
+		t.Fatalf("含红字发票的汇总页应能生成: %v", err)
+	}
+	if buffer.Len() == 0 {
+		t.Fatal("生成的汇总页为空")
+	}
+}
+
+// TestCoverRowSkipsEmptyCells 确认占位空串不生成文字图元。
+func TestCoverRowSkipsEmptyCells(t *testing.T) {
+	items := coverRow([]string{"其中红字发票 3 张", "", "", "", ""}, 100, coverBodySize, false)
+	if len(items) != 1 {
+		t.Fatalf("只有项目列有文字，应只生成 1 个图元，实际 %d 个", len(items))
+	}
+	text, ok := items[0].(creator.Text)
+	if !ok {
+		t.Fatalf("图元类型 = %T，期望 creator.Text", items[0])
+	}
+	if !strings.Contains(text.Value, "红字发票") {
+		t.Errorf("图元文字 = %q，应含红字发票说明", text.Value)
+	}
+	// 非空列仍要正常生成，且落在各自的列位置上。
+	full := coverRow([]string{"甲", "3", "1.00", "0.13", "1.13"}, 100, coverBodySize, false)
+	if len(full) != 5 {
+		t.Errorf("完整行应生成 5 个图元，实际 %d 个", len(full))
 	}
 }
 
