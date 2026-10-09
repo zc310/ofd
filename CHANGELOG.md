@@ -11,6 +11,20 @@
 
 ## 未发布
 
+- `pkg/creator` 新增 `Figure` 图元：带说明文字的图片块，生成时展开为一个 `ImageObject`
+  与一个 `TextObject`。`Image` 仍是对应 `ImageObject` 的叶子图元，未改动。
+
+  `Figure.Width` 是对齐参照框，`Align`（left/center/right）同时作用于图片与说明文字；
+  `ImageWidth`/`ImageHeight` 给定一个时按图片原始比例补出另一个，两者都不给时
+  `ImageFillWidth` 按图块宽度的比例解释，否则填满图块宽、再退到图片原始尺寸（96dpi）。
+  `Fit` 默认为 `contain`（按原始比例装进给定尺寸框），设为 `stretch` 则拉伸填满。
+  图片只给 `resource_id` 时按比例推尺寸会回文档资源里读图片头。
+
+  `Caption` 留空不画说明，编号由使用者自行写在文字里。`CaptionStyle.Gap` 定义说明与
+  它所标注对象的间距，取代原先的 `OffsetY`：后者只对表格表题有意义（负值表示在表格
+  上方），且原先表题占位是"表格内容整体下移一个字号"，`Table.Y` 并非内容顶边；
+  改为 `Gap` 后 `Table.Y` 就是表格内容顶边，与 `Figure.Y` 是图片顶边一致。
+
 - `pkg/creator` 新增 `Table` 图元，可直接在页面中绘制表格；`ofd-creator` 的 manifest
   新增 `type: table` 及配套字段。
 
@@ -21,13 +35,24 @@
   （left/center/right）、缩进（`FirstLineIndent`/`HangingIndent`）与自动换行：
   `\n` 强制换行，超宽按宽度自动断行，CJK 逐字断、ASCII 按词断。
 
+  页面顶层的表格超过一页高时自动拆页：每页放得下的行，表头在续页重复，超出的行
+  依次落到后续页并配续表题。拆页只作用于页面顶层；表格位于模板页、复合图元、图案、
+  注解或 `PageBlock` 内时无法新增页面，这种情况改为报错而不是把行画到页底之外。
+
   表格在生成阶段展开为标准的 `PathObject`（边框）与 `TextObject`（文字），不引入新的
   OFD 元素，与现有阅读器兼容。manifest 的新字段为 `rows`、`column_widths`、`header_rows`、
   `style`、`caption`、`caption_style`、`continuation_caption`、`continuation_caption_style`
   以及单元格的 `col_span`、`row_span`、`align`、`first_line_indent`、`hanging_indent`。
 
   单元格可设 `Format: "markdown"` 解析行内 Markdown：`**粗体**`、`*斜体*`、`` `代码` ``、
-  `~~删除线~~`。样式在生成时按变化处拆成多个 `TextObject`（同一基线、X 依次累加），
+  `~~删除线~~`（OFD 的 `TextObject` 无删除线属性，按被划文字的 X 与宽度另画
+  `PathObject` 横线，宽度取被划文字的实际宽度；颜色可用 `TableStyle.StrikeColor` 指定，
+  默认与边框同色）。分隔线（`***`/`___`）独占一行，横贯单元格内容区，默认细且浅灰
+  （`TableStyle.RuleColor` 可指定颜色）——同色粗线会被当成多出来的框线。列表支持 `-` 无序与 `1.` 有序，嵌套按层级缩进；任务列表的
+  `[x]`/`[ ]` 保留为文字，不用 ☑/☐——实测常用中文字体都没有这两个字形。
+
+  Markdown 单元格里的换行一律断行，不按正文约定折成空格——此前软换行被渲染成空格，
+  多行内容会挤成一行。样式在生成时按变化处拆成多个 `TextObject`（同一基线、X 依次累加），
   行内代码使用 `TableStyle.CodeFont` 指定的字体。manifest 对应 `format`（单元格）与
   `code_font`（样式）字段。
 

@@ -1370,8 +1370,10 @@ type TableCell struct {
 	FirstLineIndent float64
 	// HangingIndent 是续行（第 2 行起）缩进，单位为毫米。
 	HangingIndent float64
-	// Format 指定单元格文本格式："text"（默认，纯文本）或 "markdown"
-	// （解析行内 Markdown：**粗体**、*斜体*、`代码`、~~删除线~~）。
+	// Format 指定单元格文本格式："text"（默认，纯文本）或 "markdown"。
+	// markdown 解析行内语法（**粗体**、*斜体*、`代码`、~~删除线~~）与列表
+	// （- 无序、1. 有序，按层级缩进）；源码里的换行一律断行，不按 Markdown
+	// 正文的软换行约定折成空格。
 	Format string
 	// FillColor 是单元格背景色。
 	FillColor *Color
@@ -1403,6 +1405,10 @@ type TableStyle struct {
 	HeaderSize float64
 	// HeaderWeight 是表头字重。
 	HeaderWeight int
+	// StrikeColor 是 Markdown 删除线（~~删除~~）的颜色；为空时与表格边框同色。
+	StrikeColor *Color
+	// RuleColor 是 Markdown 分隔线（---）的颜色；为空时与表格边框同色。
+	RuleColor *Color
 	// CodeFont 是 Markdown 行内代码（`code`）使用的字体资源名称，
 	// 为空时沿用单元格字体。
 	CodeFont string
@@ -1422,8 +1428,9 @@ type CaptionStyle struct {
 	Align string
 	// Color 是文字颜色。
 	Color *Color
-	// OffsetY 是表题相对于表格顶部的 Y 偏移（毫米）。
-	OffsetY float64
+	// Gap 是说明文字与它所标注对象之间的间距，单位毫米，取正数。
+	// 说明文字处在对象哪一侧由所在图元决定：表格表题在上，图片说明在下。
+	Gap float64
 }
 
 func (Table) isItem() {}

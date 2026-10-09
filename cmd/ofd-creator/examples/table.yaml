@@ -1,4 +1,4 @@
-# OFD 表格示例
+# OFD 表格与带说明图片块示例
 # 生成：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/table.yaml -o /tmp/table.ofd --format auto --validate
 
@@ -35,7 +35,7 @@ pages:
           size: 5.0
           weight: 700
           align: center
-          offset_y: -6
+          gap: 6
         continuation_caption: "{caption}（续）"
         style:
           horizontal_lines: true
@@ -114,7 +114,7 @@ pages:
           size: 5.0
           weight: 700
           align: center
-          offset_y: -6
+          gap: 6
         style:
           horizontal_lines: true
           vertical_lines: true
@@ -205,7 +205,7 @@ pages:
           size: 5.0
           weight: 700
           align: center
-          offset_y: -6
+          gap: 6
         style:
           horizontal_lines: true
           vertical_lines: false
@@ -267,7 +267,7 @@ pages:
           size: 5.0
           weight: 700
           align: center
-          offset_y: -6
+          gap: 6
         style:
           horizontal_lines: true
           vertical_lines: true
@@ -338,7 +338,7 @@ pages:
           size: 5.0
           weight: 700
           align: center
-          offset_y: -6
+          gap: 6
         style:
           horizontal_lines: true
           vertical_lines: true
@@ -395,7 +395,73 @@ pages:
               - value: 混合样式
                 font: 楷体
                 size: 4.2
-              - value: "普通**粗体**普通*斜体*普通`代码`"
+              - value: |
+                  普通**粗体**普通*斜体*普通~~删除线~~`行内代码`
+                  ---
+                  无序列表：
+                  - 第一项
+                  - 第二项
+                    - 嵌套项
+                  - 第三项
+                  ---
+                  有序列表：
+                  1. 第一步
+                  2. 第二步
+                  3. 第三步
+                  ---
+                  任务列表：
+                  - [x] 已完成
+                  - [ ] 待办
                 font: 楷体
                 size: 4.2
                 format: markdown
+  - items:
+      - type: text
+        x: 20
+        y: 20
+        width: 170
+        height: 7
+        value: "表 6 带说明的图片块（figure）"
+        size: 5.0
+        font: SimHei
+        weight: 700
+      - type: figure
+        x: 20
+        y: 34
+        width: 170
+        align: center
+        caption: "图 1 居中，按给定宽度等比缩放"
+        caption_style:
+          font: 楷体
+          size: 4.2
+          gap: 3
+        image_width: 70
+        format: PNG
+        data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg=="
+      - type: figure
+        x: 20
+        y: 92
+        width: 170
+        align: left
+        caption: "图 2 居左，宽度取图块的四分之一"
+        caption_style:
+          font: 楷体
+          size: 4.2
+        image_width: 0.25
+        image_fill_width: true
+        format: PNG
+        data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg=="
+      - type: figure
+        x: 20
+        y: 140
+        width: 170
+        align: right
+        caption: "图 3 居右，contain 按原始比例缩到给定尺寸内"
+        caption_style:
+          font: 楷体
+          size: 4.2
+        image_width: 60
+        image_height: 30
+        fit: contain
+        format: PNG
+        data_base64: "iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwAgMAAACTeJdcAAAADFBMVEX///8vb7AaP2uaxOgQookGAAAAK0lEQVR42mKgC2ign8T///8HtQSMNcASoaGhw0wCwRqVoI7EKqyAYUABYADntv6/h3YNygAAAABJRU5ErkJggg=="

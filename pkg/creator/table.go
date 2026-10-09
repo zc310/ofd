@@ -11,12 +11,24 @@ const (
 	defaultTableLineWidth   = 0.3
 	defaultTableCellPadding = 3.0
 	defaultCaptionSize      = 5.0
-	defaultCaptionOffsetY   = -6
-	// defaultCaptionGap 是表题底部与表格内容顶部之间的间距（毫米）。
+	// defaultCaptionGap 是说明文字与它所标注对象之间的默认间距（毫米）。
+	// 正数，处在对象哪一侧由上下文决定：表格表题在上，图片说明在下。
 	defaultCaptionGap = 6.0
 	// textBaselineRatio 是汉字视觉中心相对基线的比例（基线上方），
 	// 用于让单元格文字在行内视觉居中。
 	textBaselineRatio = 0.37
+	// strikeBaselineRatio 是删除线相对基线的位置（基线上方），落在字身中部。
+	strikeBaselineRatio = 0.32
+	// strikeLineWidthRatio 是删除线宽相对字号的比例。
+	strikeLineWidthRatio = 0.06
+	// ruleBaselineOffset 是分隔线相对基线的位置（基线上方，单位为字号倍数），
+	// 落在行内上下留白的中间。
+	ruleBaselineOffset = 0.75
+	// ruleLineWidthRatio 是分隔线宽相对字号的比例。分隔线只是块内的视觉分界，
+	// 不该和表格边框争分量，所以比删除线还细一档，4.2mm 字号下约 0.21mm。
+	ruleLineWidthRatio = 0.05
+	// ruleColorGray 是分隔线的默认灰度（三通道同值）。
+	ruleColorGray = 160
 )
 
 type tableLayout struct {
@@ -40,9 +52,9 @@ type cellRef struct {
 }
 
 type tableSegment struct {
-	startRow   int
-	endRow     int
-	isFirst    bool
+	startRow       int
+	endRow         int
+	isFirst        bool
 	isContinuation bool
 }
 
@@ -204,23 +216,10 @@ func (l *tableLayout) calculateRows() {
 	l.adjustRowSpanHeights()
 
 	l.rowY = make([]float64, numRows+1)
-	contentTop := l.table.Y
-	if l.table.Caption != "" {
-		captionSize := defaultCaptionSize
-		offsetY := float64(defaultCaptionOffsetY)
-		if l.table.CaptionStyle != nil {
-			if l.table.CaptionStyle.Size > 0 {
-				captionSize = l.table.CaptionStyle.Size
-			}
-			if l.table.CaptionStyle.OffsetY != 0 {
-				offsetY = l.table.CaptionStyle.OffsetY
-			}
-		}
-		// 表题顶部在 table.Y+offsetY（offsetY 为负则位于表格上方），
-		// 表格内容紧接表题底部下方 captionGap，避免表题与表格之间出现大空隙。
-		contentTop = l.table.Y + offsetY + captionSize + defaultCaptionGap
-	}
-	l.rowY[0] = contentTop
+	// table.Y 就是表格内容的顶边。表题在内容上方，占用内容之外的空间，
+	// 不再把内容整体往下推——否则 table.Y 落在表题与内容之间的空档里，
+	// 跨页切分与外部按 Y 定位都得绕开它。
+	l.rowY[0] = l.table.Y
 	for i := 0; i < numRows; i++ {
 		l.rowY[i+1] = l.rowY[i] + l.rowHeights[i]
 	}
@@ -314,39 +313,134 @@ func (l *tableLayout) cellWidth(colIdx, colSpan int) float64 {
 	return width
 }
 
+// calculateSegments 按页底把表格切成若干段，每段各自不超页。
+//
+// 高度预算从表格内容顶边 table.Y 算起：表题在内容上方，不占页内高度，
+// 所以这里与 rowY[0] 同值。续页还要为重复的表头行让出高度，那部分只有
+// 重复表头时才出现。
+//
+// 切分点避开跨行合并单元格：把合并区域从中间切开，两侧都会缺半格边框。
 func (l *tableLayout) calculateSegments() {
 	numRows := len(l.table.Rows)
 	if numRows == 0 {
 		return
 	}
 
-	availableHeight := l.pageHeight - l.table.Y
-	if availableHeight <= 0 {
-		availableHeight = l.pageHeight / 2
+	budget := l.pageHeight - l.rowY[0]
+	if budget <= 0 {
+		budget = l.pageHeight / 2
 	}
+	headerHeight := 0.0
+	for rowIdx := 0; rowIdx < l.table.HeaderRows && rowIdx < numRows; rowIdx++ {
+		headerHeight += l.rowHeights[rowIdx]
+	}
+	groupEnds := l.rowGroupEnds()
 
 	startRow := 0
-	for rowIdx := 1; rowIdx < numRows; rowIdx++ {
-		segmentHeight := l.rowY[rowIdx] - l.rowY[startRow]
-		if segmentHeight > availableHeight {
-			l.segments = append(l.segments, tableSegment{
-				startRow:       startRow,
-				endRow:         rowIdx,
-				isFirst:        startRow == 0,
-				isContinuation: startRow > 0,
-			})
-			startRow = rowIdx
+	for startRow < numRows {
+		available := budget
+		if startRow > 0 {
+			// 续页顶部要重复表头，数据行只剩这么高。
+			available = budget - headerHeight
+			if available <= 0 {
+				available = budget
+			}
 		}
-	}
 
-	if startRow < numRows {
+		endRow := startRow
+		used := 0.0
+		for endRow < numRows && used+l.rowHeights[endRow] <= available {
+			used += l.rowHeights[endRow]
+			endRow++
+		}
+		if endRow == startRow {
+			// 单行就比一整页还高：只能让它溢出，否则永远切不动。
+			endRow = startRow + 1
+		}
+		if groupEnd := groupEnds[endRow-1]; groupEnd > endRow-1 {
+			endRow = groupEnd + 1
+		}
+
 		l.segments = append(l.segments, tableSegment{
 			startRow:       startRow,
-			endRow:         numRows,
+			endRow:         endRow,
 			isFirst:        startRow == 0,
 			isContinuation: startRow > 0,
 		})
+		startRow = endRow
 	}
+}
+
+// rowGroupEnds 返回每个行下标作为跨行合并单元格起点时，该单元格覆盖到的末行
+// 下标；该行不是合并起点时返回它自己。
+func (l *tableLayout) rowGroupEnds() []int {
+	ends := make([]int, len(l.table.Rows))
+	for rowIdx := range ends {
+		ends[rowIdx] = rowIdx
+	}
+	for rowIdx, row := range l.table.Rows {
+		for _, cell := range row.Cells {
+			if cell.RowSpan < 2 {
+				continue
+			}
+			end := rowIdx + cell.RowSpan - 1
+			if end > len(ends)-1 {
+				end = len(ends) - 1
+			}
+			if end > ends[rowIdx] {
+				ends[rowIdx] = end
+			}
+		}
+	}
+	return ends
+}
+
+// tableFragments 把表格拆成各自不超页的片段表格：续页重复表头行，并把续表题
+// 当作该片段的表题，于是每个片段都是一张完整表格，可以直接交给 layoutTable。
+//
+// 表格本来就放得下时只返回原表格，调用方据此判断页面无需拆分。
+func (l *tableLayout) tableFragments() []Table {
+	if len(l.segments) <= 1 {
+		return []Table{l.table}
+	}
+
+	headerRows := l.table.HeaderRows
+	fragments := make([]Table, 0, len(l.segments))
+	for index, seg := range l.segments {
+		fragment := l.table
+		if index == 0 {
+			fragment.Rows = l.table.Rows[:seg.endRow]
+		} else {
+			rows := make([]TableRow, 0, headerRows+seg.endRow-seg.startRow)
+			rows = append(rows, l.table.Rows[:headerRows]...)
+			rows = append(rows, l.table.Rows[seg.startRow:seg.endRow]...)
+			fragment.Rows = rows
+			caption, style := l.continuationCaption()
+			fragment.Caption = caption
+			fragment.CaptionStyle = style
+			fragment.ContinuationCaption = ""
+			fragment.ContinuationCaptionStyle = nil
+		}
+		fragments = append(fragments, fragment)
+	}
+	return fragments
+}
+
+// continuationCaption 返回续表题文字与样式，{caption} 占位符替换成原表题。
+// 没有配置续表题时返回空串——续页就不带表题。
+func (l *tableLayout) continuationCaption() (string, *CaptionStyle) {
+	if l.table.ContinuationCaption == "" {
+		return "", nil
+	}
+	caption := l.table.ContinuationCaption
+	if strings.Contains(caption, "{caption}") {
+		caption = strings.ReplaceAll(caption, "{caption}", l.table.Caption)
+	}
+	style := l.table.ContinuationCaptionStyle
+	if style == nil {
+		style = l.table.CaptionStyle
+	}
+	return caption, style
 }
 
 func (l *tableLayout) outerLineWidth() float64 {
@@ -375,6 +469,15 @@ func (l *tableLayout) strokeColor() *Color {
 		return l.table.Style.StrokeColor
 	}
 	return &Color{R: 0, G: 0, B: 0}
+}
+
+// strikeColor 返回删除线颜色，未指定时与表格边框同色——删除线是边框的延伸，
+// 单独给一种颜色会让单元格里多出一处不一致的色调。
+func (l *tableLayout) strikeColor() *Color {
+	if l.table.Style.StrikeColor != nil {
+		return l.table.Style.StrikeColor
+	}
+	return l.strokeColor()
 }
 
 func (l *tableLayout) generateBorderPaths(seg tableSegment) []Path {
@@ -461,10 +564,10 @@ func (l *tableLayout) createHorizontalLine(x0, y, x1, width float64, color *Colo
 	data := fmt.Sprintf("M %.3f %.3f L %.3f %.3f C", 0.0, 0.0, x1-x0, 0.0)
 	return Path{
 		X: x0, Y: y, Width: x1 - x0, Height: width,
-		Data:       data,
-		Stroke:     true,
+		Data:        data,
+		Stroke:      true,
 		StrokeColor: color,
-		LineWidth:  width,
+		LineWidth:   width,
 	}
 }
 
@@ -472,15 +575,20 @@ func (l *tableLayout) createVerticalLine(x, y0, y1, width float64, color *Color)
 	data := fmt.Sprintf("M %.3f %.3f L %.3f %.3f C", 0.0, 0.0, 0.0, y1-y0)
 	return Path{
 		X: x, Y: y0, Width: width, Height: y1 - y0,
-		Data:       data,
-		Stroke:     true,
+		Data:        data,
+		Stroke:      true,
 		StrokeColor: color,
-		LineWidth:  width,
+		LineWidth:   width,
 	}
 }
 
-func (l *tableLayout) generateCellTexts(seg tableSegment) []Text {
+// generateCellTexts 返回该段内的文字图元与删除线路径。两者按绘制顺序交替出现
+// 才是对的：线要盖在文字上，但线在文字之前画会被 subsequently 的文字压住边缘，
+// 所以实际写出时先画全部文字、再画全部删除线。
+func (l *tableLayout) generateCellTexts(seg tableSegment) ([]Text, []Path, []Path) {
 	var texts []Text
+	var strikes []Path
+	var rules []Path
 	padding := defaultTableCellPadding
 
 	for rowIdx := seg.startRow; rowIdx < seg.endRow; rowIdx++ {
@@ -514,16 +622,22 @@ func (l *tableLayout) generateCellTexts(seg tableSegment) []Text {
 				cellHeight += l.rowHeights[rowIdx+r]
 			}
 
-			texts = append(texts, l.createCellTexts(cell, cellX, cellY, cellWidth, cellHeight, padding, rowIdx)...)
+			cellTexts, cellStrikes, cellRules := l.createCellTexts(cell, cellX, cellY, cellWidth, cellHeight, padding, rowIdx)
+			texts = append(texts, cellTexts...)
+			strikes = append(strikes, cellStrikes...)
+			rules = append(rules, cellRules...)
 
 			colIdx += colSpan
 		}
 	}
 
-	return texts
+	return texts, strikes, rules
 }
 
-func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, cellHeight, padding float64, rowIdx int) []Text {
+// createCellTexts 返回单元格内的文字图元，以及删除线片段。OFD 的 TextObject
+// 没有删除线属性，只能另画横线，所以两者必须一起产出：线要盖在被划掉的文字上，
+// 与文字共用同一套 X 累进，分开算会错位。
+func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, cellHeight, padding float64, rowIdx int) ([]Text, []Path, []Path) {
 	size := cell.Size
 	if size == 0 {
 		size = 4.2
@@ -568,10 +682,17 @@ func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, c
 	firstBaseline := cellY + cellHeight/2 - totalHeight/2 + lineHeight/2 + textBaselineRatio*size
 
 	var texts []Text
+	var strikes []Path
+	var rules []Path
 	for i, lineRuns := range lines {
 		indent := cellLineIndent(cell, i)
 		lineWidth := 0.0
+		hasRule := false
 		for _, run := range lineRuns {
+			if run.rule {
+				hasRule = true
+				continue
+			}
 			lineWidth += estimateTextWidth(run.text, size)
 		}
 		var textX float64
@@ -584,6 +705,11 @@ func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, c
 			textX = cellX + padding + indent
 		}
 		baseline := firstBaseline + float64(i)*lineHeight
+		if hasRule {
+			// 分隔线横贯整个单元格内容区（去掉内边距），与文字对齐方式无关。
+			rules = append(rules, l.rulePath(cellX+padding, cellWidth-2*padding, baseline, size))
+			continue
+		}
 		// 同一行内按样式变化拆成多个 TextObject，共享基线、X 依次累加。
 		// 文本首尾空格不写入 TextObject，只累加到 X 偏移——部分阅读器会忽略
 		// 对象首尾空格，写在内容里会导致相邻片段间距不一致。
@@ -621,12 +747,62 @@ func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, c
 					Italic:    runItalic,
 					TextCodes: []TextCode{{Value: body, Y: &offset}},
 				})
+				if run.strike {
+					strikes = append(strikes, l.strikePath(runX, bodyWidth, baseline, size))
+				}
 				runX += bodyWidth
 			}
 			runX += estimateTextWidth(trailing, size)
 		}
 	}
-	return texts
+	return texts, strikes, rules
+}
+
+// rulePath 生成一条 Markdown 分隔线：横贯单元格内容区的细横线。
+//
+// 线位取基线上方半个行距，与上下文字留出呼吸；线宽比删除线略粗一点，
+// 分隔线的视觉权重本来就高于删除线。
+func (l *tableLayout) rulePath(x, width, baseline, size float64) Path {
+	lineWidth := size * ruleLineWidthRatio
+	y := baseline - size*ruleBaselineOffset
+	return Path{
+		X:           x,
+		Y:           y - lineWidth/2,
+		Width:       width,
+		Height:      lineWidth,
+		Data:        fmt.Sprintf("M %.3f %.3f L %.3f %.3f C", 0.0, 0.0, width, 0.0),
+		Stroke:      true,
+		LineWidth:   lineWidth,
+		StrokeColor: l.ruleColor(),
+	}
+}
+
+// ruleColor 返回分隔线颜色。未指定时用浅灰而不是边框色：分隔线是块内分界，
+// 与表格边框同色会让它看起来像多出来的一道框线，读者会去找它围的是什么。
+func (l *tableLayout) ruleColor() *Color {
+	if l.table.Style.RuleColor != nil {
+		return l.table.Style.RuleColor
+	}
+	return &Color{R: ruleColorGray, G: ruleColorGray, B: ruleColorGray}
+}
+
+// strikePath 生成一段删除线：横贯 runX 起、width 宽的细横线。
+//
+// 线高在基线上方 strikeBaselineRatio 倍字号处——约在汉字字身中部，与常见排版的
+// 删除线位置一致。线宽取字号的固定比例，太细在缩放后容易断掉。
+func (l *tableLayout) strikePath(runX, width, baseline, size float64) Path {
+	lineWidth := size * strikeLineWidthRatio
+	y := baseline - size*strikeBaselineRatio
+	return Path{
+		X:           runX,
+		Y:           y - lineWidth/2,
+		Width:       width,
+		Height:      lineWidth,
+		Data:        fmt.Sprintf("M %.3f %.3f L %.3f %.3f C", 0.0, 0.0, width, 0.0),
+		Stroke:      true,
+		LineWidth:   lineWidth,
+		StrokeColor: l.strikeColor(),
+	}
 }
 
 func (l *tableLayout) generateCaption(seg tableSegment) *Text {
@@ -652,7 +828,6 @@ func (l *tableLayout) createCaptionText(text string, style *CaptionStyle) *Text 
 	font := "SimHei"
 	weight := 700
 	align := "center"
-	offsetY := float64(defaultCaptionOffsetY)
 
 	if style != nil {
 		if style.Size > 0 {
@@ -667,9 +842,6 @@ func (l *tableLayout) createCaptionText(text string, style *CaptionStyle) *Text 
 		if style.Align != "" {
 			align = style.Align
 		}
-		if style.OffsetY != 0 {
-			offsetY = style.OffsetY
-		}
 	}
 
 	textWidth := estimateTextWidth(text, size)
@@ -683,12 +855,13 @@ func (l *tableLayout) createCaptionText(text string, style *CaptionStyle) *Text 
 		textX = l.table.X
 	}
 
-	textY := l.table.Y + offsetY
+	// 表题在表格内容上方：题底距 table.Y 一个 Gap，题顶再往上一个字号。
+	textY := l.table.Y - captionGap(style) - size
 
 	return &Text{
-		X:     textX,
-		Y:     textY,
-		Width: textWidth,
+		X:      textX,
+		Y:      textY,
+		Width:  textWidth,
 		Height: size,
 		Value:  text,
 		Font:   font,
@@ -844,7 +1017,8 @@ func tokenizeCellText(text string) []string {
 	return tokens
 }
 
-// styledToken 是带样式的断行单元。forceBreak 为真表示强制换行标记。
+// styledToken 是带样式的断行单元。forceBreak 为真表示强制换行标记，rule 为真
+// 表示该单元是一条分隔线而非文字。
 type styledToken struct {
 	text       string
 	bold       bool
@@ -852,6 +1026,7 @@ type styledToken struct {
 	code       bool
 	strike     bool
 	forceBreak bool
+	rule       bool
 }
 
 // cellRuns 返回单元格文本对应的行内片段：Format 为 "markdown" 时解析行内
@@ -894,6 +1069,15 @@ func wrapStyledRuns(runs []styledRun, firstWidth, contWidth, size float64) [][]s
 			flush()
 			continue
 		}
+		if token.rule {
+			// 分隔线独占一行：先把已攒的文字冲掉，线本身不占宽度。
+			if len(current) > 0 {
+				flush()
+			}
+			lines = append(lines, []styledRun{{rule: true}})
+			lineIndex++
+			continue
+		}
 		tokenWidth := estimateTextWidth(token.text, size)
 		if currentWidth+tokenWidth > width() && len(current) > 0 {
 			flush()
@@ -922,15 +1106,33 @@ func wrapStyledRuns(runs []styledRun, firstWidth, contWidth, size float64) [][]s
 	return lines
 }
 
-// tokenizeStyledRuns 把行内片段展开成带样式的断行单元；\n 变成强制换行标记。
+// tokenizeStyledRuns 把行内片段展开成带样式的断行单元；\n 变成强制换行标记，
+// 分隔线变成独占一行的 rule 单元。相邻的强制换行会被合并，否则一次块分隔加上
+// 分隔线自带的换行会多出一整行空白。
 func tokenizeStyledRuns(runs []styledRun) []styledToken {
 	var tokens []styledToken
+	appendBreak := func() {
+		if len(tokens) == 0 {
+			return
+		}
+		if last := tokens[len(tokens)-1]; last.forceBreak || last.rule {
+			return
+		}
+		tokens = append(tokens, styledToken{forceBreak: true})
+	}
 	appendText := func(text string, run styledRun) {
 		for _, token := range tokenizeCellText(text) {
 			tokens = append(tokens, styledToken{text: token, bold: run.bold, italic: run.italic, code: run.code, strike: run.strike})
 		}
 	}
 	for _, run := range runs {
+		if run.rule {
+			// 分隔线本身没有文字，长度为零的文本经 tokenizeCellText 会产出空结果。
+			// 换行交给两侧的块分隔去补，这里只放线本身。
+			appendBreak()
+			tokens = append(tokens, styledToken{rule: true})
+			continue
+		}
 		text := run.text
 		for {
 			idx := strings.IndexByte(text, '\n')
@@ -938,7 +1140,7 @@ func tokenizeStyledRuns(runs []styledRun) []styledToken {
 				break
 			}
 			appendText(text[:idx], run)
-			tokens = append(tokens, styledToken{forceBreak: true})
+			appendBreak()
 			text = text[idx+1:]
 		}
 		appendText(text, run)
@@ -971,4 +1173,12 @@ func tokensToRuns(tokens []styledToken) []styledRun {
 
 func sameRunStyle(run styledRun, token styledToken) bool {
 	return run.bold == token.bold && run.italic == token.italic && run.code == token.code && run.strike == token.strike
+}
+
+// captionGap 返回说明文字与所标注对象的间距，未设置时用默认值。
+func captionGap(style *CaptionStyle) float64 {
+	if style == nil || style.Gap <= 0 {
+		return defaultCaptionGap
+	}
+	return style.Gap
 }
