@@ -117,6 +117,15 @@ func RegisterFallbackFont(source FontSource) error {
 	return render.RegisterFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
 }
 
+// FallbackFontData 返回已全局注册的回退字体族的首个来源数据。
+//
+// 注册表由字体引擎持有，调用方拿不到 FontData 本体（app 侧一般只记族名与
+// 体积，字节留在引擎里）。这个口子给那些要用已注册字形的调用方——例如把
+// 某族字体再注册到另一个族名下，供按固定逻辑字体名取字形的路径使用。
+func FallbackFontData(family string) ([]byte, bool) {
+	return render.FallbackFontData(family)
+}
+
 // UseFallbackFont 使当前文档缺失字体时使用已全局注册的回退字体族。
 // 该字体族必须先通过 RegisterFallbackFont 注册。文字和搜索快照会失效，
 // 因为它们的字形度量可能使用了不同的回退字体。
