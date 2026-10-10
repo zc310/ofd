@@ -39,8 +39,8 @@ type PageLinkResolver func(pageID models.StID) (LinkTargetRef, bool)
 //
 // page 为 nil，或页面内容读取失败时返回 nil：链接是附加信息，读不到内容就没有
 // 热区可言，不应让整个转换失败。
-func (d *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []drawing.PageLink {
-	if d == nil || d.Document == nil || page == nil {
+func (p *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []drawing.PageLink {
+	if p == nil || p.Document == nil || page == nil {
 		return nil
 	}
 	links := make([]drawing.PageLink, 0, 4)
@@ -55,13 +55,13 @@ func (d *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []draw
 	})
 	// 模板页上的链接同样可点：模板按 ZOrder 叠加到页面，其图元坐标已是页面坐标。
 	for _, ref := range page.Template() {
-		template := d.GetTemplate(models.StID(ref.TemplateID))
+		template := p.GetTemplate(models.StID(ref.TemplateID))
 		if template == nil || template.Content == nil {
 			continue
 		}
 		collectLinks(template.Content.Layer, resolve, &links)
 	}
-	collectAnnotationLinks(d.GetAnnotation(page.ID), resolve, &links)
+	collectAnnotationLinks(p.GetAnnotation(page.ID), resolve, &links)
 	if len(links) == 0 {
 		return nil
 	}
@@ -69,8 +69,8 @@ func (d *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []draw
 }
 
 // PageExternalLinks 只返回外部链接热区，供不处理内部跳转的调用方使用。
-func (d *Document) PageExternalLinks(page *parser.Page) []drawing.PageLink {
-	return d.PageLinks(page, nil)
+func (p *Document) PageExternalLinks(page *parser.Page) []drawing.PageLink {
+	return p.PageLinks(page, nil)
 }
 
 // collectLinks 遍历图层，把图元上带边界的 CLICK 链接追加到 links。

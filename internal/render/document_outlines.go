@@ -18,20 +18,20 @@ import (
 // Outlines 返回文档大纲的扁平条目序列，按文档顺序排列。
 //
 // resolve 与 PageLinks 用的是同一套解析器：目标页必须在输出里才能建立跳转。
-func (d *Document) Outlines(resolve PageLinkResolver) []drawing.PageOutline {
-	if d == nil || d.Document == nil || d.Document.Outlines == nil {
+func (p *Document) Outlines(resolve PageLinkResolver) []drawing.PageOutline {
+	if p == nil || p.Document == nil || p.Document.Outlines == nil {
 		return nil
 	}
 	bookmarks := make(map[string]models.CtDest)
-	if d.Document.Bookmarks != nil {
-		for _, bookmark := range d.Document.Bookmarks.Bookmarks {
+	if p.Document.Bookmarks != nil {
+		for _, bookmark := range p.Document.Bookmarks.Bookmarks {
 			if bookmark.Name != "" {
 				bookmarks[bookmark.Name] = bookmark.Dest
 			}
 		}
 	}
-	outlines := make([]drawing.PageOutline, 0, len(d.Document.Outlines.OutlineElems))
-	collectOutlines(d.Document.Outlines.OutlineElems, resolve, bookmarks, 0, &outlines)
+	outlines := make([]drawing.PageOutline, 0, len(p.Document.Outlines.OutlineElems))
+	collectOutlines(p.Document.Outlines.OutlineElems, resolve, bookmarks, 0, &outlines)
 	if len(outlines) == 0 {
 		return nil
 	}

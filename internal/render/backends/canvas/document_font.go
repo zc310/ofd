@@ -118,7 +118,7 @@ type embeddedFontKey struct {
 	mappingsDigest [sha256.Size]byte
 }
 
-// embeddedFonts/embeddedRepairers 按文档（Fonts 实例）持有内嵌字体解析结果，
+// Fonts embeddedFonts/embeddedRepairers 按文档（Fonts 实例）持有内嵌字体解析结果，
 // 随文档关闭一并释放。内嵌字体是文档自带资源，跨文档复用价值有限，却会因全局
 // 缓存长期钉住重资源，因此不放在包级缓存里。
 type Fonts struct {

@@ -75,7 +75,7 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	}
 
 	img, err := p.decodeImage(resMedia.MediaFile.Clean(), resMedia.Format)
-	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && models.StID(object.Substitution) != models.StID(resMedia.ID) {
+	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && models.StID(object.Substitution) != resMedia.ID {
 		if fallback := p.Document.GetMedia(models.StID(object.Substitution)); fallback != nil {
 			if decoded, decodeErr := p.decodeImage(fallback.MediaFile.Clean(), fallback.Format); decodeErr == nil && decoded != nil && !decoded.Bounds().Empty() {
 				img = decoded
@@ -663,7 +663,7 @@ func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin,
 		yi := row * src.YStride
 		oi := out.PixOffset(src.Rect.Min.X, y)
 		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for col := 0; col < width; col++ {
+		for col := range width {
 			// 子采样取样下标直接用标准库的 YOffset/COffset：它们按
 			// x/2-minX/2 这样的绝对换算，自行按 (x-minX)>>1 换算会在
 			// 图像原点非零时取到错误的色度。
@@ -715,10 +715,7 @@ func runMaskRows(workers, height int, fn func(lo, hi int)) {
 	rows := (height + workers - 1) / workers
 	var wg sync.WaitGroup
 	for lo := 0; lo < height; lo += rows {
-		hi := lo + rows
-		if hi > height {
-			hi = height
-		}
+		hi := min(lo+rows, height)
 		wg.Add(1)
 		go func(lo, hi int) {
 			defer wg.Done()
@@ -754,7 +751,7 @@ func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin,
 		si := src.PixOffset(src.Rect.Min.X, y)
 		oi := out.PixOffset(src.Rect.Min.X, y)
 		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for col := 0; col < width; col++ {
+		for range width {
 			out.Pix[oi+0] = src.Pix[si+0]
 			out.Pix[oi+1] = src.Pix[si+1]
 			out.Pix[oi+2] = src.Pix[si+2]
@@ -789,7 +786,7 @@ func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, m
 		si := src.PixOffset(src.Rect.Min.X, y)
 		oi := out.PixOffset(src.Rect.Min.X, y)
 		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for col := 0; col < width; col++ {
+		for range width {
 			ma := mask.Pix[mi+3]
 			r, g, b, a := src.Pix[si+0], src.Pix[si+1], src.Pix[si+2], src.Pix[si+3]
 			switch {

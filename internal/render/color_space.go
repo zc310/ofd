@@ -226,7 +226,7 @@ func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace, prof
 	if source.Value != nil {
 		if values, count, ok := source.Value.Components(); ok {
 			result := make([]uint8, channels)
-			for i := 0; i < channels; i++ {
+			for i := range channels {
 				if i >= count {
 					break // 缺通道：留 0，即默认颜色
 				}
@@ -244,7 +244,7 @@ func colorSpaceComponents8(source models.CTColor, space *models.ColorSpace, prof
 		return nil, false
 	}
 	result := make([]uint8, channels)
-	for i := 0; i < channels; i++ {
+	for i := range channels {
 		result[i] = scaleComponent(int(entry[i]), bits)
 	}
 	return result, true
@@ -262,8 +262,8 @@ func paletteEntry(index int, space *models.ColorSpace, profile []uint8, channels
 			return nil, false
 		}
 		result := make([]uint8, channels)
-		for i := 0; i < channels; i++ {
-			value, ok := parseChannelValue(string(entry[i]))
+		for i := range channels {
+			value, ok := parseChannelValue(entry[i])
 			if !ok {
 				return nil, false
 			}
