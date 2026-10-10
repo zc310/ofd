@@ -263,6 +263,8 @@ func familyCoversText(family *canvas.FontFamily, object models.TextObject, style
 				return false
 			}
 			seen[r] = true
+			// 超出上限就当作覆盖：宁可多换一次字体，也不要在明显缺字的
+			// 文档上继续用 Latin-only 字体。
 			if len(seen) >= textCoverageProbeLimit {
 				return true
 			}
