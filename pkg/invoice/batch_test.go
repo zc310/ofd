@@ -203,13 +203,23 @@ func TestInvoiceCheckAcceptsConsistentTicket(t *testing.T) {
 	}
 }
 
-// TestInvoiceIDRequiresCodeAndNumber 确认缺代码或号码时没有稳定标识。
-func TestInvoiceIDRequiresCodeAndNumber(t *testing.T) {
-	if got := (&Invoice{Number: "1"}).ID(); got != "" {
-		t.Errorf("缺代码时 ID 应为空，实际 %q", got)
+// TestInvoiceIDFallsBackToNumber 确认代码与号码都在时返回「代码-号码」，只有号码时
+// 返回号码，两者皆缺才没有标识。
+//
+// 全电发票与铁路电子客票没有发票代码，若此时返回空串，它们的 ID 全是空：Check 逐条
+// 报「无法唯一标识」，--dedup 也永远认不出这些票。
+func TestInvoiceIDFallsBackToNumber(t *testing.T) {
+	if got := (&Invoice{Number: "1"}).ID(); got != "1" {
+		t.Errorf("缺代码时 ID 应退化为号码，实际 %q", got)
 	}
 	if got := (&Invoice{Code: "1", Number: "2"}).ID(); got != "1-2" {
 		t.Errorf("ID = %q，期望 1-2", got)
+	}
+	if got := (&Invoice{Code: "1"}).ID(); got != "" {
+		t.Errorf("缺号码时 ID 应为空，实际 %q", got)
+	}
+	if got := (&Invoice{}).ID(); got != "" {
+		t.Errorf("代码与号码皆缺时 ID 应为空，实际 %q", got)
 	}
 }
 
@@ -257,5 +267,25 @@ func TestBatchJSONKeepsMoneyAsString(t *testing.T) {
 func TestInvoiceJSONIsWriteOnlyStillHolds(t *testing.T) {
 	if _, ok := any(&Decimal{}).(json.Unmarshaler); ok {
 		t.Error("Decimal 不应实现 json.Unmarshaler；本测试提醒届时同步更新 TestInvoiceJSONIsWriteOnly")
+	}
+}
+
+// TestRailwayTicketsAreDeduplicated 确认铁路电子客票这类没有发票代码的票也能去重。
+//
+// 同一个 20 位全电发票号码的两张票：既不能被标成重复，也不该报「无法唯一标识」。
+func TestRailwayTicketsAreDeduplicated(t *testing.T) {
+	sources := []Source{
+		{Name: "a.ofd", Input: railwayTicketOFD(t)},
+		{Name: "b.ofd", Input: railwayTicketOFD(t)},
+	}
+	batch := mustExtractBatch(t, sources, BatchOptions{Dedup: true})
+	if len(batch.ActiveItems()) != 1 {
+		t.Errorf("去重后应只剩 1 张票，实际 %d 张", len(batch.ActiveItems()))
+	}
+	if len(batch.Skipped) != 1 {
+		t.Fatalf("应有 1 张被跳过，实际 %d 张", len(batch.Skipped))
+	}
+	if issues := batch.Items[0].Issues; len(issues) != 0 {
+		t.Errorf("铁路客票不应报「无法唯一标识」，实际 %v", issues)
 	}
 }

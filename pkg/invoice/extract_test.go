@@ -492,3 +492,115 @@ func TestFindAttachmentSkipsNonInvoiceCandidates(t *testing.T) {
 		t.Errorf("Number = %q, want 7", got.Number)
 	}
 }
+
+// railwayAttachment 是一份 rai 分类法的铁路电子客票附件，元素名与增值税票毫无
+// 重叠，附件路径也不是 original_invoice.xml。
+const railwayAttachment = `<?xml version="1.0" encoding="UTF-8"?>
+<xbrl xmlns:rai="http://xbrl.mof.gov.cn/taxonomy/2021-11-30/rai" xmlns:iso4217="http://xbrl.org/2003/iso4217">
+<context id="As_Of_2026_10_10">
+  <entity><identifier scheme="http://xbrl.mof.gov.cn">26139166872000312489</identifier></entity>
+  <period><instant>2026-10-10</instant></period>
+</context>
+<unit id="CNY"><measure>iso4217:CNY</measure></unit>
+<rai:TypeOfVoucher contextRef="As_Of_2026_10_10">电子发票（铁路电子客票）</rai:TypeOfVoucher>
+<rai:ElectronicInvoiceRailwayETicketNumber contextRef="As_Of_2026_10_10">26139166872000312489</rai:ElectronicInvoiceRailwayETicketNumber>
+<rai:DateOfIssue contextRef="As_Of_2026_10_10">2026-10-10</rai:DateOfIssue>
+<rai:IssueParty contextRef="As_Of_2026_10_10" xsi:nil="true"/>
+<rai:IssuePartyCode contextRef="As_Of_2026_10_10" xsi:nil="true"/>
+<rai:TrainNumber contextRef="As_Of_2026_10_10">G1861</rai:TrainNumber>
+<rai:SeatLevel contextRef="As_Of_2026_10_10">二等座</rai:SeatLevel>
+<rai:Fare contextRef="As_Of_2026_10_10" unitRef="CNY" decimals="2">98.00</rai:Fare>
+<rai:Name contextRef="As_Of_2026_10_10">刘师岩</rai:Name>
+<rai:TotalAmountExcludingTax contextRef="As_Of_2026_10_10" unitRef="CNY" decimals="2">89.91</rai:TotalAmountExcludingTax>
+<rai:TaxRate contextRef="As_Of_2026_10_10" unitRef="CNY" decimals="2">0.09</rai:TaxRate>
+<rai:TaxAmount contextRef="As_Of_2026_10_10" unitRef="CNY" decimals="2">8.09</rai:TaxAmount>
+<rai:NameOfPurchaser contextRef="As_Of_2026_10_10">晶品科技股份有限公司</rai:NameOfPurchaser>
+<rai:UnifiedSocialCreditCodeOfPurchaser contextRef="As_Of_2026_10_10">91110115317982874F</rai:UnifiedSocialCreditCodeOfPurchaser>
+</xbrl>`
+
+// railwayTicketOFD 组装一张铁路电子客票的 OFD。
+func railwayTicketOFD(t testing.TB) []byte {
+	t.Helper()
+	return buildInvoiceOFD(t, "Doc_0/Attachs/rai_issuer_20261010_26139166872000312489.xml",
+		railwayAttachment, invoiceContentXML("电子发票（铁路电子客票）", ""))
+}
+
+// TestExtractRailwayETicket 确认铁路电子客票能抽出全部可用字段。
+//
+// 这类票此前报 ErrNotInvoice：附件走 rai 分类法，元素名与增值税票没有交集，既没有
+// 发票代码也没有价税合计，hasInvoiceData 三个标志字段一个都对不上。
+func TestExtractRailwayETicket(t *testing.T) {
+	got, err := Extract(railwayTicketOFD(t))
+	if err != nil {
+		t.Fatalf("铁路电子客票应能抽出结果，实际报错：%v", err)
+	}
+	if got.Number != "26139166872000312489" {
+		t.Errorf("Number = %q, want 全电发票号码", got.Number)
+	}
+	if got.Code != "" {
+		t.Errorf("Code = %q, 铁路客票没有发票代码", got.Code)
+	}
+	if got.Type != "铁路电子客票" {
+		t.Errorf("Type = %q, want 铁路电子客票", got.Type)
+	}
+	if got.Date != "2026-10-10" {
+		t.Errorf("Date = %q", got.Date)
+	}
+	if got.Amount.String() != "89.91" || got.TaxAmount.String() != "8.09" ||
+		got.TotalAmount.String() != "98" {
+		t.Errorf("金额 = %s/%s/%s, want 89.91/8.09/98",
+			got.Amount, got.TaxAmount, got.TotalAmount)
+	}
+	if got.Buyer.Name != "晶品科技股份有限公司" || got.Buyer.Code != "91110115317982874F" {
+		t.Errorf("购买方 = %+v", got.Buyer)
+	}
+	if len(got.Details) != 1 || got.Details[0].Name != "票价" {
+		t.Fatalf("明细 = %+v, want 一行票价", got.Details)
+	}
+	if got.Details[0].TaxRate.String() != "0.09" {
+		t.Errorf("明细税率 = %s, want 0.09", got.Details[0].TaxRate)
+	}
+	if issues := got.Check(); len(issues) != 0 {
+		t.Errorf("自洽的铁路客票不应报异常，实际 %v", issues)
+	}
+}
+
+// TestRailwayETicketHasStableID 确认铁路客票参与去重：它没有发票代码，标识退化为
+// 20 位全电发票号码，附件的 context/entity/identifier 里也是这个值。
+func TestRailwayETicketHasStableID(t *testing.T) {
+	got, err := Extract(railwayTicketOFD(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id := got.ID(); id != "26139166872000312489" {
+		t.Errorf("ID = %q, want 全电发票号码", id)
+	}
+}
+
+// TestRailwayTicketFallsBackToChinaRailway 确认票方未填承运方时按「中国铁路」兜底。
+//
+// 落到「未知销售方」等于把整批火车票从按销售方的对账里抹掉；票方一旦填了
+// IssueParty，就必须用票方的，不能被这个兜底盖住。
+func TestRailwayTicketFallsBackToChinaRailway(t *testing.T) {
+	got, err := Extract(railwayTicketOFD(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Seller.Name != "中国铁路" {
+		t.Errorf("Seller.Name = %q, want 中国铁路", got.Seller.Name)
+	}
+	if got.Seller.Code != "" {
+		t.Errorf("Seller.Code = %q, 兜底名不配税号", got.Seller.Code)
+	}
+
+	var document invoiceAttachment
+	if err := decodeXML([]byte(railwayAttachment), &document); err != nil {
+		t.Fatal(err)
+	}
+	document.RailwaySellerName = "中国铁路北京局集团有限公司"
+	document.RailwaySellerTaxID = "91110000100000001A"
+	if seller := railwayTicket(document).Seller; seller.Name != "中国铁路北京局集团有限公司" ||
+		seller.Code != "91110000100000001A" {
+		t.Errorf("票方填了销方时应以票方为准，实际 %+v", seller)
+	}
+}
