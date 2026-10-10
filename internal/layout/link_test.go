@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zc310/ofd/internal/models"
+
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -126,27 +128,50 @@ func TestBuildSkipsActionForEmptyHref(t *testing.T) {
 	}
 }
 
-// 表格单元格里的链接同样要挂上动作：纵向表格走 addText，横排表格直接构造
-// creator.Text，两条路都得覆盖。
+// 表格单元格里的链接要落成动作，竖排与横排两条路都要覆盖。
+//
+// 竖排表格改用 creator.Table 后链接经 TextRun.Href 由创建器展开时生成；横排表格
+// 仍是 layout 直接构造文字对象。两条路各自出过问题，只测一条会漏。
 func TestBuildLinksInsideTableCell(t *testing.T) {
-	document, err := Build(&Document{Blocks: []Block{{
-		Kind: KindTable,
-		Table: &Table{
-			Header: []Cell{{{Text: "名称"}}, {{Text: "链接"}}},
-			Rows:   [][]Cell{{{{Text: "示例"}}, {{Text: "站点", Link: true, Href: "https://example.com"}}}},
-			Align:  []Align{AlignLeft, AlignLeft},
-		},
-	}}}, DefaultOptions())
-	if err != nil {
-		t.Fatalf("Build 失败: %v", err)
+	cases := []struct {
+		name string
+		land bool
+	}{
+		{name: "竖排", land: false},
+		{name: "横排", land: true},
 	}
-	found := false
-	for _, text := range textItems(document) {
-		if hrefOf(text) == "https://example.com" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("表格单元格里的链接没有挂上动作")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			document, err := Build(&Document{Blocks: []Block{{
+				Kind: KindTable,
+				Table: &Table{
+					Header:    []Cell{{{Text: "名称"}}, {{Text: "链接"}}},
+					Rows:      [][]Cell{{{{Text: "示例"}}, {{Text: "站点", Link: true, Href: "https://example.com"}}}},
+					Align:     []Align{AlignLeft, AlignLeft},
+					Landscape: c.land,
+				},
+			}}}, DefaultOptions())
+			if err != nil {
+				t.Fatalf("Build 失败: %v", err)
+			}
+			pages := expandDocument(t, document, DefaultOptions())
+			found := false
+			for _, page := range pages {
+				for _, item := range pageItems(page) {
+					if item.Kind != models.PageItemText || item.Text == nil ||
+						item.Text.Actions == nil {
+						continue
+					}
+					for _, action := range item.Text.Actions.Action {
+						if action.URI != nil && action.URI.URI == "https://example.com" {
+							found = true
+						}
+					}
+				}
+			}
+			if !found {
+				t.Error("表格单元格里的链接没有落成文字对象的动作")
+			}
+		})
 	}
 }

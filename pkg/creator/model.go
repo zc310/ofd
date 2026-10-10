@@ -1377,12 +1377,39 @@ type TableCell struct {
 	Format string
 	// FillColor 是单元格背景色。
 	FillColor *Color
+	// Runs 是单元格内带样式的文字片段。非空时按片段逐段渲染，Value 与 Format
+	// 都被忽略；两者与 Runs 同时设置会被校验拒绝，避免「设了却不生效」的静默分歧。
+	//
+	// 用途是把已经解析好的行内结构原样传进来，不必先拼成 markdown 源码再让创建器
+	// 重新解析一遍——往返会出问题：正文里的 `*` `_` `[` 是普通字符，重新拼串再解析
+	// 就会变成斜体或坏掉链接。
+	Runs []TextRun
 	// Actions 是单元格的点击动作，作用范围是整个单元格。
 	//
 	// 表格文字在落笔时按样式拆成多个文字对象，单元格级的动作会挂到其中每一个
 	// 上：热区因此覆盖整格，与 PDF 表格里链接注解盖住单元格的做法一致。要让
 	// 单元格里的某几段文字各自可点，得把动作写在那些文字对象上。
 	Actions []Action
+}
+
+// TextRun 是表格单元格内的一段同样式文字。
+//
+// 与 TableCell 上的整格样式字段并存而不是取代它们：整格字段是单段单元格的简写，
+// Runs 处理一段里还要分粗体、行内代码、链接的情况。
+type TextRun struct {
+	// Text 是这一段的文字。
+	Text string
+	// Bold 为真时按粗体渲染。
+	Bold bool
+	// Italic 为真时按斜体渲染。
+	Italic bool
+	// Code 为真时用表格的 CodeFont 渲染。
+	Code bool
+	// Strike 为真时在文字中部画删除线。
+	Strike bool
+	// Href 是这一段的点击目标。非空时只有这一段可点，并按链接蓝着色；为空时沿用
+	// 单元格的 Actions。
+	Href string
 }
 
 // TableStyle 控制表格边框样式。
