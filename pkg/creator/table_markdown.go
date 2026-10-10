@@ -19,9 +19,27 @@ type styledRun struct {
 	italic bool
 	code   bool
 	strike bool
+	// href 是这一段的点击目标，来自 Markdown 的 [文字](网址) 与自动链接。
+	// 非空时只让这一段可点，为空时用单元格自己的 Actions。
+	href string
+	// link 标记这一段处在链接语法内，决定是否按链接着色。与 href 分开：着色由
+	// 语法决定，点击由目标决定，纯锚点也是链接着色但点不动——与正文一致。
+	link bool
 	// rule 表示这是一条 Markdown 分隔线（---），不是文字。它独占一行，
 	// 由 createCellTexts 画成横贯单元格的横线。
 	rule bool
+}
+
+// linkHref 判断 Markdown 链接目标能否作为点击目标。
+//
+// 纯锚点（#章节）指向文档内部的标题，表格单元格没有大纲可跳，挂上去只是个点了
+// 没反应的热区，因此不生成动作。空目标同理。
+func linkHref(destination string) string {
+	trimmed := strings.TrimSpace(destination)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return ""
+	}
+	return trimmed
 }
 
 // cellMarkdown 是表格单元格行内 Markdown 的解析器。creator 逐页串行构建，
@@ -56,6 +74,10 @@ type styleState struct {
 	italic bool
 	code   bool
 	strike bool
+	// href 是当前所处的链接目标，随递归进入链接节点叠加。
+	href string
+	// link 表示当前处在链接语法内。
+	link bool
 	// listDepth 是当前所处的列表嵌套层数，用于缩进项目符号。
 	listDepth int
 }
@@ -100,7 +122,7 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 	case *ast.Text:
 		var runs []styledRun
 		if content := string(value.Segment.Value(source)); content != "" {
-			runs = append(runs, styledRun{text: content, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike})
+			runs = append(runs, styledRun{text: content, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike, href: st.href, link: st.link})
 		}
 		// 硬换行（行尾两空格）与软换行（源码里的单个换行）都按强制换行处理。
 		// Markdown 的软换行默认渲染成空格，那是给正文的排版约定；表格单元格
@@ -111,7 +133,7 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		}
 		return runs
 	case *ast.String:
-		return []styledRun{{text: string(value.Value), bold: st.bold, italic: st.italic, code: st.code, strike: st.strike}}
+		return []styledRun{{text: string(value.Value), bold: st.bold, italic: st.italic, code: st.code, strike: st.strike, href: st.href}}
 	case *ast.CodeSpan:
 		return []styledRun{{text: plainTextOf(value, source), code: true, strike: st.strike}}
 	case *ast.Emphasis:
@@ -126,6 +148,16 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		next := st
 		next.strike = true
 		return childrenRuns(value, source, next)
+	case *ast.Link:
+		next := st
+		next.href = linkHref(string(value.Destination))
+		next.link = true
+		return childrenRuns(value, source, next)
+	case *ast.AutoLink:
+		// 自动链接没有子节点，显示文字就是网址本身。
+		url := string(value.URL(source))
+		return []styledRun{{text: url, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike,
+			href: linkHref(url), link: true}}
 	case *extast.TaskCheckBox:
 		// 任务列表的勾选状态是内容的一部分，不能丢：默认分支只展开子节点，
 		// 而 TaskCheckBox 是叶子，丢掉后"- [x] 完成"与"- [ ] 待办"长得一样。

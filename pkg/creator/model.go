@@ -1413,6 +1413,8 @@ type TableStyle struct {
 	HeaderWeight int
 	// StrikeColor 是 Markdown 删除线（~~删除~~）的颜色；为空时与表格边框同色。
 	StrikeColor *Color
+	// LinkColor 是 Markdown 行内链接（[文字](网址)）的文字颜色；为空时用默认链接蓝。
+	LinkColor *Color
 	// RuleColor 是 Markdown 分隔线（---）的颜色；为空时与表格边框同色。
 	RuleColor *Color
 	// CodeFont 是 Markdown 行内代码（`code`）使用的字体资源名称，
