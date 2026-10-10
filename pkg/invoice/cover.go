@@ -293,7 +293,6 @@ func coverTableOf(title string, rows [][]string, geometry coverGeometry) coverTa
 			LineWidth:       0.15,
 			OuterLineWidth:  0.3,
 			HeaderLineWidth: 0.25,
-			HeaderFillColor: &creator.Color{R: 238, G: 238, B: 242},
 			HeaderFont:      coverFont,
 			HeaderSize:      coverHeadSize,
 			HeaderWeight:    700,
