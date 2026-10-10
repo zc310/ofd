@@ -876,10 +876,11 @@ func (e *engine) emitTable(b *Block) {
 	for index := range widths {
 		widths[index] += extra
 	}
-	e.drawTableRow(table.Header, widths, padding, sizeMM, true, table.Align)
-	for _, row := range table.Rows {
-		e.drawTableRow(row, widths, padding, sizeMM, false, table.Align)
-	}
+	// 竖排表格交给 creator.Table：跨页重复表头、单元格换行与链接都由创建器负责。
+	// 这里按页高把表切成分片，逐片顺着排版游标落下——创建器的自动拆页发生在
+	// prepare 阶段，那时页数已定死，而流式排版要知道这张表实际占了多高（含分页）
+	// 才能摆后面的块。
+	e.emitCreatorTable(e.creatorTableFor(table, widths, sizeMM))
 	e.space(e.blockGap())
 }
 

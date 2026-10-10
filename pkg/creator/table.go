@@ -1247,6 +1247,21 @@ type styledToken struct {
 // cellRuns 返回单元格文本对应的行内片段：Format 为 "markdown" 时解析行内
 // Markdown 语法，其余按单段纯文本处理。
 func cellRuns(cell TableCell) []styledRun {
+	// 预解析片段优先：调用方已经把行内结构拆好了，不必再走一遍 markdown 源码。
+	if len(cell.Runs) > 0 {
+		runs := make([]styledRun, 0, len(cell.Runs))
+		for _, run := range cell.Runs {
+			if run.Text == "" {
+				continue
+			}
+			runs = append(runs, styledRun{
+				text: run.Text, bold: run.Bold, italic: run.Italic,
+				code: run.Code, strike: run.Strike,
+				href: run.Href, link: run.Href != "",
+			})
+		}
+		return runs
+	}
 	if strings.EqualFold(strings.TrimSpace(cell.Format), "markdown") {
 		return parseMarkdownRuns(cell.Value)
 	}

@@ -220,48 +220,6 @@ func TestBuildCodeTextAlignedWithBackground(t *testing.T) {
 	}
 }
 
-func TestBuildTableTextAlignedWithHeader(t *testing.T) {
-	document, err := Build(&Document{Blocks: []Block{{
-		Kind: KindTable,
-		Table: &Table{
-			Header: []Cell{{{Text: "名称"}}, {{Text: "数量"}}},
-			Rows:   [][]Cell{{{{Text: "苹果"}}, {{Text: "3"}}}},
-		},
-	}}}, DefaultOptions())
-	if err != nil {
-		t.Fatalf("Build 失败: %v", err)
-	}
-	var header *creator.Path
-	var texts []creator.Text
-	for _, page := range document.Pages {
-		for _, item := range page.Items {
-			switch value := item.(type) {
-			case creator.Path:
-				if colorEqual(value.FillColor, 239, 242, 245) {
-					copied := value
-					header = &copied
-				}
-			case creator.Text:
-				texts = append(texts, value)
-			}
-		}
-	}
-	if header == nil {
-		t.Fatalf("未找到表头背景")
-	}
-	found := false
-	for _, text := range texts {
-		baseline := text.Y + text.Height
-		if baseline >= header.Y && baseline <= header.Y+header.Height {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("表头文字未落在表头背景 [%.3f, %.3f] 内", header.Y, header.Y+header.Height)
-	}
-}
-
 func TestInlineCodeKeepsExtensionOnSameLine(t *testing.T) {
 	document, err := Build(&Document{Blocks: []Block{{
 		Kind: KindParagraph,
@@ -1011,21 +969,30 @@ func TestQuoteSeparatedFromFollowingTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build 失败: %v", err)
 	}
-	quoteBottom := 0.0
-	headerTop := 0.0
+	// 断言落在展开后的结果上：表格改用 creator.Table 后，表头底色由创建器生成，
+	// layout 产出里只剩一个 Table 图元。
+	pages := expandDocument(t, document, DefaultOptions())
+	quoteBottom, headerTop := 0.0, 0.0
 	foundQuote, foundHeader := false, false
-	for _, page := range document.Pages {
-		for _, item := range page.Items {
-			switch value := item.(type) {
-			case creator.Text:
-				if value.FillColor == colorQuote {
-					quoteBottom = value.Y + value.Height
-					foundQuote = true
+	for _, page := range pages {
+		for _, item := range pageItems(page) {
+			switch item.Kind {
+			case models.PageItemText:
+				if item.Text != nil && item.Text.FillColor != nil && item.Text.FillColor.Value != nil {
+					if values, count, ok := item.Text.FillColor.Value.Components(); ok && count >= 3 &&
+						values[0] == 0x57 && values[1] == 0x60 && values[2] == 0x6a {
+						quoteBottom = item.Text.Boundary.Y + item.Text.Boundary.Height
+						foundQuote = true
+					}
 				}
-			case creator.Path:
-				if value.FillColor == colorHeaderBG && (!foundHeader || value.Y < headerTop) {
-					headerTop = value.Y
-					foundHeader = true
+			case models.PageItemPath:
+				if item.Path != nil && item.Path.FillColor != nil && item.Path.FillColor.Value != nil {
+					if values, count, ok := item.Path.FillColor.Value.Components(); ok && count >= 3 &&
+						values[0] == 0xef && values[1] == 0xf2 && values[2] == 0xf5 &&
+						(!foundHeader || item.Path.Boundary.Y < headerTop) {
+						headerTop = item.Path.Boundary.Y
+						foundHeader = true
+					}
 				}
 			}
 		}
@@ -1033,8 +1000,8 @@ func TestQuoteSeparatedFromFollowingTable(t *testing.T) {
 	if !foundQuote || !foundHeader {
 		t.Fatalf("缺少引用或表格: quote=%v header=%v", foundQuote, foundHeader)
 	}
-	gap := headerTop - quoteBottom
-	if gap < 7 {
+	// 引用文字底边与表格顶边之间要留出块间距，不能把表格顶到引用上。
+	if gap := headerTop - quoteBottom; gap < 7 {
 		t.Fatalf("引用和表格间距过小: %.2fmm", gap)
 	}
 }

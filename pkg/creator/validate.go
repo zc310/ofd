@@ -1627,6 +1627,16 @@ func validateTable(value Table, pageCount int, mediaIDs map[uint64]bool, mediaTy
 			if err := validateActions(cell.Actions, pageCount, mediaIDs, mediaTypes, attachmentIDs, bookmarkNames); err != nil {
 				return fmt.Errorf("表格第 %d 行第 %d 列的动作无效: %w", i+1, j+1, err)
 			}
+			// 与 manifest 的「文件路径与 data_base64 互斥」同理：两套写法同时给，
+			// 调用方只会以为是自己写的那套生效了。
+			if len(cell.Runs) > 0 && (cell.Value != "" || strings.TrimSpace(cell.Format) != "") {
+				return fmt.Errorf("表格第 %d 行第 %d 列同时设置了 Runs 与 Value/Format", i+1, j+1)
+			}
+			for k, run := range cell.Runs {
+				if run.Text == "" {
+					return fmt.Errorf("表格第 %d 行第 %d 列第 %d 个文字片段为空", i+1, j+1, k+1)
+				}
+			}
 		}
 	}
 	return nil
