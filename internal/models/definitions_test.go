@@ -7,37 +7,56 @@ import (
 	"testing"
 )
 
-func TestStIDUnmarshalXMLInvalidValueUsesZero(t *testing.T) {
-	var id StID = 42
-	if err := xml.Unmarshal([]byte("<ID>invalid</ID>"), &id); err != nil {
+// 非数字 ID 在所有解析入口必须得到同一个值：对象 ID 与引用它的 StRefID 用同一
+// 套映射，字符串 ID 才可能被引用解析到。此前标准库入口失败置 0、快速入口取
+// CRC64，同一个字符串 ID 在不同路径得到不同值。
+func TestStIDNonNumericValueUsesSameFallbackAcrossEntryPoints(t *testing.T) {
+	var element StID
+	if err := xml.Unmarshal([]byte("<ID>item_1</ID>"), &element); err != nil {
 		t.Fatal(err)
 	}
-	if id != 0 {
-		t.Fatalf("StID = %d, want 0", id)
-	}
-}
-
-func TestStIDUnmarshalXMLAttrInvalidValueUsesZero(t *testing.T) {
-	var document struct {
+	var attributeHolder struct {
 		ID StID `xml:"ID,attr"`
 	}
-	if err := xml.Unmarshal([]byte(`<Document ID="invalid"/>`), &document); err != nil {
+	if err := xml.Unmarshal([]byte(`<Document ID="item_1"/>`), &attributeHolder); err != nil {
 		t.Fatal(err)
 	}
-	if document.ID != 0 {
-		t.Fatalf("StID = %d, want 0", document.ID)
+	attribute := attributeHolder.ID
+	var text StID
+	if err := text.UnmarshalText([]byte("item_1")); err != nil {
+		t.Fatal(err)
+	}
+	if element == 0 {
+		t.Fatal("非数字 ID 不应落到 0（0 表示无效）")
+	}
+	if element != attribute || attribute != text {
+		t.Fatalf("元素 %d、属性 %d、文本 %d：非数字 ID 的解析结果应一致", element, attribute, text)
 	}
 }
 
-func TestStRefIDUnmarshalXMLAttrInvalidValueUsesZero(t *testing.T) {
-	var document struct {
-		RefID StRefID `xml:"RefID,attr"`
-	}
-	if err := xml.Unmarshal([]byte(`<Document RefID="invalid"/>`), &document); err != nil {
+func TestStIDDistinctNonNumericValuesStayDistinct(t *testing.T) {
+	var first, second StID
+	if err := first.UnmarshalText([]byte("item_1")); err != nil {
 		t.Fatal(err)
 	}
-	if document.RefID != 0 {
-		t.Fatalf("StRefID = %d, want 0", document.RefID)
+	if err := second.UnmarshalText([]byte("item_2")); err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("不同字符串 ID 解析成同一值 %d", first)
+	}
+}
+
+func TestStRefIDAttributeMatchesStIDAttribute(t *testing.T) {
+	var document struct {
+		ID  StID    `xml:"ID,attr"`
+		Ref StRefID `xml:"RefID,attr"`
+	}
+	if err := xml.Unmarshal([]byte(`<Document ID="item_1" RefID="item_1"/>`), &document); err != nil {
+		t.Fatal(err)
+	}
+	if StID(document.Ref) != document.ID {
+		t.Fatalf("引用 %d 与对象 ID %d 不一致，字符串 ID 无法被引用解析到", document.Ref, document.ID)
 	}
 }
 

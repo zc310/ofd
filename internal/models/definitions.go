@@ -21,24 +21,12 @@ func (p *StID) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		return err
 	}
 
-	val, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		slog.Error("解析 StID 失败", slog.String("value", s), slog.Any("error", err))
-		val = 0
-	}
-
-	*p = StID(val)
+	*p = StID(p.parseUint(s))
 	return nil
 }
 
 func (p *StID) UnmarshalXMLAttr(attr xml.Attr) error {
-	val, err := strconv.ParseUint(attr.Value, 10, 64)
-	if err != nil {
-		slog.Error("解析 StID 属性失败", slog.String("value", attr.Value), slog.Any("error", err))
-		val = 0
-	}
-
-	*p = StID(val)
+	*p = StID(p.parseUint(attr.Value))
 	return nil
 }
 
@@ -47,6 +35,11 @@ func (p *StID) UnmarshalText(text []byte) error {
 	*p = StID(val)
 	return nil
 }
+
+// parseUint 解析十进制 ID，非数字值回退到 CRC64 哈希。所有解析入口都必须走这里：
+// 对象 ID 和引用其的 StRefID 用同一套映射，字符串 ID 才可能被引用解析到；此前
+// 标准库入口（UnmarshalXML/UnmarshalXMLAttr）失败置 0、快速入口取哈希，同一个
+// 字符串 ID 在不同路径得到不同值，引用永远对不上。
 func (p *StID) parseUint(s string) uint64 {
 	val, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {

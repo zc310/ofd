@@ -76,6 +76,35 @@ func TestParsePageContentXMLKeepsSelfClosedPageBlock(t *testing.T) {
 	}
 }
 
+// TestParsePageContentXMLNonNumericIDsMatchAcrossItemKinds 回归：快速解析器里
+// PageBlock 走 UnmarshalText、Text/Path/Image 走 UnmarshalXMLAttr，非数字 ID 曾
+// 分别得到 CRC64 哈希和 0。同一字符串 ID 在不同图元类型上必须一致。
+func TestParsePageContentXMLNonNumericIDsMatchAcrossItemKinds(t *testing.T) {
+	data := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">
+  <ofd:Content><ofd:Layer ID="2">
+    <ofd:PageBlock ID="item_1"><ofd:TextObject ID="item_1" Boundary="0 0 10 10" Font="1" Size="3"/></ofd:PageBlock>
+  </ofd:Layer></ofd:Content>
+</ofd:Page>`)
+
+	pc, err := ParsePageContentXML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := pc.Content.Layer[0].Items
+	if len(items) != 1 || items[0].Block == nil || len(items[0].Block.Items) != 1 {
+		t.Fatalf("未解析到 PageBlock/TextObject: %+v", items)
+	}
+	blockID := items[0].Block.ID
+	textID := items[0].Block.Items[0].Text.ID
+	if blockID == 0 {
+		t.Fatal("非数字 ID 不应落到 0")
+	}
+	if blockID != textID {
+		t.Fatalf("PageBlock ID = %d 与 TextObject ID = %d 不一致", blockID, textID)
+	}
+}
+
 // TestStBoxAllowsNegativeWidth 回归：右对齐文字会把 Boundary 写成负宽度并让
 // TextCode 的 X 偏移到负值，解析不应因此报错。
 func TestStBoxAllowsNegativeWidth(t *testing.T) {
