@@ -686,11 +686,7 @@ func pathXML(parent *etree.Element, item builtItem, value Path, pageIDs []uint64
 	}
 	appendClips(element, value.Clips, drawParamIDs, fontIDs)
 	setGraphicStyleAttributes(element, value.LineWidth, value.Cap, value.Join, value.MiterLimit, value.DashOffset, value.DashPattern, value.Alpha)
-	if value.StrokeSet != nil {
-		element.CreateAttr("Stroke", strconv.FormatBool(*value.StrokeSet))
-	} else if value.Stroke {
-		element.CreateAttr("Stroke", "true")
-	}
+	element.CreateAttr("Stroke", pathStrokeValue(value.Stroke, value.StrokeSet))
 	if value.Fill {
 		element.CreateAttr("Fill", "true")
 	}
@@ -801,11 +797,7 @@ func clipPathXML(parent *etree.Element, value ClipPath) {
 		element.CreateAttr("CTM", numberList(value.CTM[:]))
 	}
 	setGraphicStyleAttributes(element, value.LineWidth, value.Cap, value.Join, value.MiterLimit, value.DashOffset, value.DashPattern, value.Alpha)
-	if value.StrokeSet != nil {
-		element.CreateAttr("Stroke", strconv.FormatBool(*value.StrokeSet))
-	} else if value.Stroke {
-		element.CreateAttr("Stroke", "true")
-	}
+	element.CreateAttr("Stroke", pathStrokeValue(value.Stroke, value.StrokeSet))
 	if value.Fill {
 		element.CreateAttr("Fill", "true")
 	}
@@ -1066,4 +1058,17 @@ func setGraphicStyleAttributes(element *etree.Element, lineWidth float64, cap, j
 	if alpha != nil {
 		element.CreateAttr("Alpha", strconv.Itoa(int(*alpha)))
 	}
+}
+
+// pathStrokeValue 返回 CT_Path 的 Stroke 属性取值。
+//
+// 该属性的 schema 缺省是 true（internal/schema/xsd/Page.xsd 的 CT_Path），不写出来
+// 就等于描边：只填充的路径会被套上缺省的 0.25mm 黑边，把压在它上面的浅色边框线盖成
+// 深色粗线。Stroke 是普通 bool，Go 零值就是明确的「不描边」，因此照实写出；显式设过
+// StrokeSet 时以它为准。
+func pathStrokeValue(stroke bool, set *bool) string {
+	if set != nil {
+		return strconv.FormatBool(*set)
+	}
+	return strconv.FormatBool(stroke)
 }
