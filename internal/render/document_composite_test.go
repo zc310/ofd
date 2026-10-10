@@ -180,8 +180,20 @@ func TestCompositeContentExtent(t *testing.T) {
 		t.Errorf("反推范围 = %.2fx%.2f, want 578.2x748.3", w, h)
 	}
 
+	// 无 CTM 时内容坐标系与对象坐标系重合，Boundary 本身就是内容范围。
+	// 火车票印章等把整页尺寸写进单元声明却只画一小块内容，需要据此识别
+	// 声明尺寸不可信并切换到按内容建画布。
+	now, noh, nok := compositeContentExtent(models.CompositeObject{
+		CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{Boundary: box}},
+	})
+	if !nok {
+		t.Fatal("无 CTM 时应以 Boundary 作为内容范围")
+	}
+	if now != box.Width || noh != box.Height {
+		t.Errorf("无 CTM 内容范围 = %.4fx%.4f, want %.4fx%.4f", now, noh, box.Width, box.Height)
+	}
+
 	for name, object := range map[string]models.CompositeObject{
-		"无 CTM": {CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{Boundary: box}}},
 		"旋转 CTM": {CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{
 			CTM: &models.CTM{0.3528, 0.2, -0.2, 0.3528, 0, 0}, Boundary: box}}},
 		"零缩放": {CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{

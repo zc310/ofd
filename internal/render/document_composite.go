@@ -32,21 +32,27 @@ const (
 const compositeInkMaxAreaRatio = 0.5
 
 // compositeContentExtent 由 CompositeObject 的 Boundary 与 CTM 反推复合单元的
-// 内容范围，即单元坐标系里实际会被映射到 Boundary 的区域。旋转或错切下
-// Boundary 与内容范围不再一一对应，此时不做反推。
+// 内容范围，即单元坐标系里实际会被映射到 Boundary 的区域。无 CTM 时内容坐标系
+// 与对象坐标系重合，Boundary 本身就是内容范围；旋转或错切下 Boundary 与内容
+// 范围不再一一对应，此时不做反推。
 func compositeContentExtent(object models.CompositeObject) (width, height float64, ok bool) {
-	if object.CTM == nil || !object.CTM.IsFinite() {
-		return 0, 0, false
+	if object.CTM == nil {
+		width = object.Boundary.Width
+		height = object.Boundary.Height
+	} else {
+		ctm := *object.CTM
+		if !ctm.IsFinite() {
+			return 0, 0, false
+		}
+		if math.Abs(ctm[1]) > compositeAxisEpsilon || math.Abs(ctm[2]) > compositeAxisEpsilon {
+			return 0, 0, false
+		}
+		if ctm[0] == 0 || ctm[3] == 0 {
+			return 0, 0, false
+		}
+		width = object.Boundary.Width / math.Abs(ctm[0])
+		height = object.Boundary.Height / math.Abs(ctm[3])
 	}
-	ctm := *object.CTM
-	if math.Abs(ctm[1]) > compositeAxisEpsilon || math.Abs(ctm[2]) > compositeAxisEpsilon {
-		return 0, 0, false
-	}
-	if ctm[0] == 0 || ctm[3] == 0 {
-		return 0, 0, false
-	}
-	width = object.Boundary.Width / math.Abs(ctm[0])
-	height = object.Boundary.Height / math.Abs(ctm[3])
 	if !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return 0, 0, false
 	}
@@ -196,8 +202,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		return
 	}
 	unit := p.Document.GetCompositeUnit(models.StID(object.ResourceID))
-	ok := unit != nil
-	if !ok || unit == nil {
+	if unit == nil {
 		return
 	}
 	if !budget.allowComposite(models.StID(object.ResourceID)) {
@@ -229,7 +234,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if p.renderSimpleCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip) {
 		return
 	}
-	if p.renderCompositeTextVector(ctx, object, unit, dp, pb, parentCTM, parentClip, w, h) {
+	if p.renderCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip, cropToInk, w, h) {
 		return
 	}
 
@@ -268,7 +273,9 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		canvasBox, tight = models.StBox{Width: w, Height: h}, false
 		raster = p.rasterizeCompositeUnit(unit, dp, canvasBox, false, w, h, dpi, compositeDepth, budget)
 	}
-	if cropToInk && !tight {
+	// cropToInk 为真时 tight 必为假：收缩画布只在按内容范围建画布（cropToInk
+	// 为假）时发生，上面的回退分支也已把 tight 复位。这里等价于判断 cropToInk。
+	if cropToInk {
 		if resampled, ok := p.resampleCompositeUnit(unit, dp, raster, w, h, dpi,
 			object.Boundary, p.dpi.DPI(), compositeDepth, budget); ok {
 			// 重画的结果已经裁到可见范围，不能再走 tight 分支：那个分支把画布
@@ -312,11 +319,11 @@ func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *
 		return nil, false
 	}
 	mmPerPx := 25.4 / dpi
-	inkWidth := float64(cx1-cx0) * mmPerPx
-	inkHeight := float64(cy1-cy0) * mmPerPx
-	inkX := float64(cx0) * mmPerPx
+	inkWidth := (cx1 - cx0) * mmPerPx
+	inkHeight := (cy1 - cy0) * mmPerPx
+	inkX := cx0 * mmPerPx
 	// 图像坐标换算到画布坐标：y 由自顶端向下改为自底端向上。
-	inkY := h - float64(cy1)*mmPerPx
+	inkY := h - cy1*mmPerPx
 	// 可见范围本就占满画布时没有可省的：重画只会白费一遍。
 	if inkWidth*inkHeight > compositeInkMaxAreaRatio*w*h {
 		return nil, false
@@ -485,18 +492,20 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	return true
 }
 
-// renderCompositeTextVector 把只含文字的复合图元直接画进页面矢量表面，使
-// PDF/SVG 保留真实文字（可复制、可检索），而不是烘焙成位图。
+// renderCompositeVector 把纯矢量内容（文字、路径、嵌套块）的复合图元直接画进
+// 页面矢量表面，使 PDF/SVG 保留真实文字与矢量轮廓，而不是烘焙成位图。
 //
-// y.ofd 的每个复合单元只有一行文字。此前这类单元全部走栅格化回退：文字被
-// 压进位图，PDF 里没有任何文字算子，pdftotext 提取 0 字符；同时离屏画布按
-// 单元声明的整页尺寸分配，白白消耗预算并挤掉后续单元。
+// y.ofd 的每个复合单元只有一行文字，火车票印章则是描边圆环加旋转文字并包在
+// PageBlock 里。此前只有纯文字单元能走矢量分支，印章这类"路径+文字+块"的
+// 内容全部走栅格化：离屏画布按声明尺寸分配，一枚 30mm 的章被放进 210mm 的
+// 坐标系，DPI 塌到输出 DPI 的七分之一，缩放回页面就是一团糊。
 //
-// 位置映射与栅格化分支保持一致：单元画布 (0,0)-(w,h) 映射到 Boundary，
-// 因此这里用同一矩阵变换页面上下文，再以完整单元坐标系绘制文字。
-func (p *Document) renderCompositeTextVector(ctx DrawContext, object models.CompositeObject,
+// 位置映射与栅格化分支保持一致：单元画布 (0,0)-(w,h) 映射到 Boundary，因此
+// 这里用同一矩阵变换页面上下文，再以完整单元坐标系绘制内容。图像与裁剪区
+// 仍需独立绘制表面，交回栅格化回退。
+func (p *Document) renderCompositeVector(ctx DrawContext, object models.CompositeObject,
 	unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox,
-	parentCTM *models.CTM, parentClip *geom.Path, w, h float64) bool {
+	parentCTM *models.CTM, parentClip *geom.Path, cropToInk bool, w, h float64) bool {
 	if unit == nil || len(unit.Content.Items) == 0 {
 		return false
 	}
@@ -505,23 +514,15 @@ func (p *Document) renderCompositeTextVector(ctx DrawContext, object models.Comp
 	if parentCTM != nil || parentClip != nil || object.Clips != nil {
 		return false
 	}
-	// 只处理纯文字单元。混有路径、图像或嵌套复合图元时单元需要独立绘制
-	// 表面（例如图案填充的单元格），保持栅格化。
-	items := make([]models.PageItem, 0, len(unit.Content.Items))
-	for _, item := range unit.Content.Items {
-		if item.Kind != models.PageItemText || item.Text == nil {
-			return false
-		}
-		text := *item.Text
-		if !text.VisibleValue() || !text.CTM.IsFinite() || !text.Boundary.IsFinite() {
-			return false
-		}
-		// Composite Alpha 表示复合图元整体透明度。矢量分支没有独立的透明度
-		// 分组，与单路径分支一致地合并到文字填充色。
-		if object.Alpha != nil {
-			text.FillColor = cloneCompositeColor(text.FillColor, graphicOpacity(object.Alpha))
-		}
-		items = append(items, models.PageItem{Kind: models.PageItemText, Text: &text})
+	// cropToInk 为真表示声明尺寸可信、内容铺满单元坐标系，栅格化分支会裁掉
+	// 透明边后把可见面板拉伸铺满 Boundary（intro.ofd 依赖该行为）。矢量分支
+	// 不做裁边缩放，直接按单元坐标系映射，这里交回栅格化保持原语义。
+	if cropToInk {
+		return false
+	}
+	items, ok := copyCompositeVectorItems(unit.Content.Items, object.Alpha, 0)
+	if !ok {
+		return false
 	}
 
 	box := object.Boundary
@@ -538,14 +539,73 @@ func (p *Document) renderCompositeTextVector(ctx DrawContext, object models.Comp
 	return true
 }
 
+// copyCompositeVectorItems 复制复合单元里可矢量绘制的内容，供矢量分支直接
+// 绘制，避免就地修改文档模型。图像、嵌套复合图元以及非法/不可见图元无法可靠
+// 地并入父级绘制表面，返回 ok=false 交回栅格化。Composite Alpha 表示整体
+// 透明度，矢量分支没有独立透明度分组，与单路径分支一致地合并到颜色里。
+func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) ([]models.PageItem, bool) {
+	if depth > maxCompositeDepth {
+		return nil, false
+	}
+	out := make([]models.PageItem, 0, len(items))
+	for _, item := range items {
+		switch item.Kind {
+		case models.PageItemText:
+			if item.Text == nil {
+				return nil, false
+			}
+			text := *item.Text
+			if !text.VisibleValue() || !text.CTM.IsFinite() || !text.Boundary.IsFinite() {
+				return nil, false
+			}
+			text.FillColor, text.StrokeColor = compositeAlphaColors(alpha, text.FillColor, text.StrokeColor)
+			out = append(out, models.PageItem{Kind: models.PageItemText, Text: &text})
+		case models.PageItemPath:
+			if item.Path == nil {
+				return nil, false
+			}
+			pathObject := *item.Path
+			if !pathObject.VisibleValue() || !pathObject.CTM.IsFinite() || !pathObject.Boundary.IsFinite() {
+				return nil, false
+			}
+			pathObject.FillColor, pathObject.StrokeColor = compositeAlphaColors(alpha, pathObject.FillColor, pathObject.StrokeColor)
+			out = append(out, models.PageItem{Kind: models.PageItemPath, Path: &pathObject})
+		case models.PageItemBlock:
+			if item.Block == nil {
+				return nil, false
+			}
+			sub, ok := copyCompositeVectorItems(item.Block.Items, alpha, depth+1)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, models.PageItem{Kind: models.PageItemBlock, Block: &models.PageBlock{
+				Items: sub,
+			}})
+		default:
+			return nil, false
+		}
+	}
+	return out, true
+}
+
+// compositeAlphaColors 把复合图元整体透明度合并到填充与描边色上。矢量分支没有
+// 独立的透明度分组，与单路径分支一致地直接改颜色；alpha 为空时原样返回。
+func compositeAlphaColors(alpha *uint8, fill, stroke *models.CTColor) (*models.CTColor, *models.CTColor) {
+	if alpha == nil {
+		return fill, stroke
+	}
+	opacity := graphicOpacity(alpha)
+	return cloneCompositeColor(fill, opacity), cloneCompositeColor(stroke, opacity)
+}
+
 func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
 	if source == nil || source.Value == nil {
 		return source
 	}
-	copy := *source
-	copy.Value = &models.Color{RGBA: source.Value.RGBA}
-	copy.Value.RGBA = scaleAlpha(copy.Value.RGBA, alpha)
-	return &copy
+	clone := *source
+	clone.Value = &models.Color{RGBA: source.Value.RGBA}
+	clone.Value.RGBA = scaleAlpha(clone.Value.RGBA, alpha)
+	return &clone
 }
 
 func simpleCompositePath(object models.PathObject) bool {
@@ -566,74 +626,75 @@ func simpleCompositePath(object models.PathObject) bool {
 // contentImageBounds 返回离屏复合单元中非透明内容的像素包围盒。
 func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
 	b := img.Bounds()
-	minX, minY := b.Max.X, b.Max.Y
-	maxX, maxY := b.Min.X, b.Min.Y
 	switch src := img.(type) {
 	case *image.NRGBA:
-		for y := b.Min.Y; y < b.Max.Y; y++ {
-			row := src.Pix[y*src.Stride:]
-			for x := b.Min.X; x < b.Max.X; x++ {
-				if uint32(row[x*4+3]) <= 8 {
-					continue
-				}
-				if x < minX {
-					minX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y > maxY {
-					maxY = y
-				}
-			}
-		}
+		return scanPixAlphaBounds(src.Pix, src.Stride, b)
 	case *image.RGBA:
-		for y := b.Min.Y; y < b.Max.Y; y++ {
-			row := src.Pix[y*src.Stride:]
-			for x := b.Min.X; x < b.Max.X; x++ {
-				if uint32(row[x*4+3])*257 <= 8*257 {
-					continue
-				}
-				if x < minX {
-					minX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y > maxY {
-					maxY = y
-				}
-			}
-		}
+		return scanPixAlphaBounds(src.Pix, src.Stride, b)
 	default:
-		for y := b.Min.Y; y < b.Max.Y; y++ {
-			for x := b.Min.X; x < b.Max.X; x++ {
-				_, _, _, alpha := img.At(x, y).RGBA()
-				if alpha <= 8*257 {
-					continue
-				}
-				if x < minX {
-					minX = x
-				}
-				if y < minY {
-					minY = y
-				}
-				if x > maxX {
-					maxX = x
-				}
-				if y > maxY {
-					maxY = y
-				}
+		return scanImageAlphaBounds(img, b)
+	}
+}
+
+// scanPixAlphaBounds 在 4 字节/像素、alpha 位于第 4 字节的像素缓冲上求非透明
+// 内容包围盒。NRGBA 与 RGBA 的 alpha 位置与阈值判定一致，共用这一份扫描。
+func scanPixAlphaBounds(pix []byte, stride int, b image.Rectangle) (x0, y0, x1, y1 float64) {
+	minX, minY := b.Max.X, b.Max.Y
+	maxX, maxY := b.Min.X, b.Min.Y
+	found := false
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		row := pix[y*stride:]
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if row[x*4+3] <= 8 {
+				continue
+			}
+			found = true
+			if x < minX {
+				minX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y > maxY {
+				maxY = y
 			}
 		}
 	}
-	if minX > maxX || minY > maxY {
+	if !found {
+		return 0, 0, 0, 0
+	}
+	return float64(minX), float64(minY), float64(maxX + 1), float64(maxY + 1)
+}
+
+// scanImageAlphaBounds 是任意 image.Image 的通用扫描，alpha 为 16 位值。
+func scanImageAlphaBounds(img image.Image, b image.Rectangle) (x0, y0, x1, y1 float64) {
+	minX, minY := b.Max.X, b.Max.Y
+	maxX, maxY := b.Min.X, b.Min.Y
+	found := false
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, alpha := img.At(x, y).RGBA(); alpha <= 8*257 {
+				continue
+			}
+			found = true
+			if x < minX {
+				minX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
+	}
+	if !found {
 		return 0, 0, 0, 0
 	}
 	return float64(minX), float64(minY), float64(maxX + 1), float64(maxY + 1)
@@ -641,7 +702,7 @@ func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
 
 func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
 	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	draw.Draw(out, out.Bounds(), img, image.Point{x0, y0}, draw.Src)
+	draw.Draw(out, out.Bounds(), img, image.Point{X: x0, Y: y0}, draw.Src)
 	return out
 }
 

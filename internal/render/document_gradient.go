@@ -182,13 +182,13 @@ func scaleGradientOpacity(gradient geom.Gradient, opacity uint8) geom.Gradient {
 	}
 	switch value := gradient.(type) {
 	case *geom.LinearGradient:
-		copy := *value
-		copy.Grad = scaleStops(value.Grad)
-		return &copy
+		clone := *value
+		clone.Grad = scaleStops(value.Grad)
+		return &clone
 	case *geom.RadialGradient:
-		copy := *value
-		copy.Grad = scaleStops(value.Grad)
-		return &copy
+		clone := *value
+		clone.Grad = scaleStops(value.Grad)
+		return &clone
 	default:
 		return &ofdOpacityGradient{Gradient: gradient, opacity: opacity}
 	}
