@@ -35,7 +35,11 @@ type Inline struct {
 	Italic bool
 	Code   bool
 	Strike bool
-	Link   bool
+	// Link 为真时按链接着色。
+	Link bool
+	// Href 是点击目标，落到图元的 CLICK 动作上。为空时只是着色、不可点击——
+	// Markdown 的空目标链接（如 `[文字]()`）属于这种，着色仍要保留。
+	Href string
 }
 
 // Cell 是一个表格单元格的行内内容。
