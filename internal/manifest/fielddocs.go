@@ -491,6 +491,7 @@ var SchemaDocs = []TypeDoc{
 		{Name: "header_size", Type: "float64", Doc: "定义表头字号。", Optional: true},
 		{Name: "header_weight", Type: "int", Doc: "定义表头字重。", Optional: true},
 		{Name: "strike_color", Type: "*Color", Doc: "定义 Markdown 删除线的颜色；不设时与边框同色。", Optional: true},
+		{Name: "link_color", Type: "*Color", Doc: "定义 Markdown 行内链接的文字颜色；不设时用默认链接蓝。", Optional: true},
 		{Name: "rule_color", Type: "*Color", Doc: "定义 Markdown 分隔线的颜色；不设时与边框同色。", Optional: true},
 		{Name: "code_font", Type: "string", Doc: "定义 Markdown 行内代码使用的字体。", Optional: true},
 	}},

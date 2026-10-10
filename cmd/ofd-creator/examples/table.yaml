@@ -118,6 +118,22 @@ pages:
                 font: 楷体
                 size: 4.2
                 align: right
+          # markdown 格式单元格里的链接：只让被包住的那一段可点，与整格动作并存时
+          # 以段内链接为准。纯锚点（#章节）与空目标不生成动作，但仍按链接着色——
+          # 与正文里这两个的观感一致。链接色可用 style.link_color 覆盖。
+          - cells:
+              - value: 段内链接
+                font: 楷体
+                size: 4.2
+              - value: 见 [项目主页](https://github.com/zc310/ofd) 与 <https://example.net>
+                font: 楷体
+                size: 4.2
+                format: markdown
+              - value: 锚点 [跳](#第一节) 无动作
+                font: 楷体
+                size: 4.2
+                format: markdown
+                align: right
 
   - items:
       - type: table

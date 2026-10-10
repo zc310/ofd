@@ -1137,6 +1137,8 @@ type TableStyle struct {
 	HeaderWeight int `json:"header_weight,omitempty" yaml:"header_weight,omitempty" toml:"header_weight,omitempty"`
 	// StrikeColor 定义 Markdown 删除线的颜色；不设时与边框同色。
 	StrikeColor *Color `json:"strike_color,omitempty" yaml:"strike_color,omitempty" toml:"strike_color,omitempty"`
+	// LinkColor 定义 Markdown 行内链接的文字颜色；不设时用默认链接蓝。
+	LinkColor *Color `json:"link_color,omitempty" yaml:"link_color,omitempty" toml:"link_color,omitempty"`
 	// RuleColor 定义 Markdown 分隔线的颜色；不设时与边框同色。
 	RuleColor *Color `json:"rule_color,omitempty" yaml:"rule_color,omitempty" toml:"rule_color,omitempty"`
 	// CodeFont 定义 Markdown 行内代码使用的字体。
@@ -1812,6 +1814,13 @@ func (i Item) buildTable() (creator.Table, error) {
 				return creator.Table{}, fmt.Errorf("style.rule_color: %w", err)
 			}
 			style.RuleColor = c
+		}
+		if i.Style.LinkColor != nil {
+			c, err := buildColor(i.Style.LinkColor)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("style.link_color: %w", err)
+			}
+			style.LinkColor = c
 		}
 		if i.Style.StrokeColor != nil {
 			c, err := buildColor(i.Style.StrokeColor)

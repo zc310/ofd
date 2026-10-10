@@ -613,6 +613,20 @@ func (l *tableLayout) strikeColor() *Color {
 	return l.strokeColor()
 }
 
+// defaultTableLinkColor 是 Markdown 单元格内链接的默认文字色。
+//
+// 取值与正文的链接色一致（internal/layout 的 colorLink）：同一份文档里，
+// 正文里的链接和表格单元格里的链接不该是两种蓝。
+var defaultTableLinkColor = &Color{R: 0x0b, G: 0x57, B: 0xd0}
+
+// linkColor 返回链接文字颜色。
+func (l *tableLayout) linkColor() *Color {
+	if l.table.Style.LinkColor != nil {
+		return l.table.Style.LinkColor
+	}
+	return defaultTableLinkColor
+}
+
 // generateHeaderFills 返回表头行的背景填充路径。
 //
 // HeaderFillColor 此前只是个声明：模型、校验、manifest 转换三处都认它，绘制侧却
@@ -936,9 +950,16 @@ func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, c
 					Weight:    runWeight,
 					Italic:    runItalic,
 					TextCodes: []TextCode{{Value: body, Y: &offset}},
+					// 段内链接只让这一段可点；没有链接的段沿用单元格动作，
 					// 单元格动作挂到拆出的每个文字对象上，热区才是整格。
-					Actions: cell.Actions,
+					Actions: runActions(run, cell.Actions),
 				})
+				if run.link {
+					// 链接着色只写进这一段，表格其余文字仍是默认的黑。
+					fill := true
+					texts[len(texts)-1].Fill = &fill
+					texts[len(texts)-1].FillColor = l.linkColor()
+				}
 				if run.strike {
 					strikes = append(strikes, l.strikePath(runX, bodyWidth, baseline, size))
 				}
@@ -1217,6 +1238,8 @@ type styledToken struct {
 	italic     bool
 	code       bool
 	strike     bool
+	href       string
+	link       bool
 	forceBreak bool
 	rule       bool
 }
@@ -1314,7 +1337,7 @@ func tokenizeStyledRuns(runs []styledRun) []styledToken {
 	}
 	appendText := func(text string, run styledRun) {
 		for _, token := range tokenizeCellText(text) {
-			tokens = append(tokens, styledToken{text: token, bold: run.bold, italic: run.italic, code: run.code, strike: run.strike})
+			tokens = append(tokens, styledToken{text: token, bold: run.bold, italic: run.italic, code: run.code, strike: run.strike, href: run.href, link: run.link})
 		}
 	}
 	for _, run := range runs {
@@ -1358,13 +1381,17 @@ func tokensToRuns(tokens []styledToken) []styledRun {
 			runs[len(runs)-1].text += token.text
 			continue
 		}
-		runs = append(runs, styledRun{text: token.text, bold: token.bold, italic: token.italic, code: token.code, strike: token.strike})
+		runs = append(runs, styledRun{text: token.text, bold: token.bold, italic: token.italic, code: token.code, strike: token.strike, href: token.href, link: token.link})
 	}
 	return runs
 }
 
+// sameRunStyle 判断两个断行单元能否并成同一段。href 与 link 必须一并比较：相邻的
+// 两个不同链接若样式全同且并成一段，只会挂上前一个地址并按前一个的着色，后一个
+// 链接就点不动了。
 func sameRunStyle(run styledRun, token styledToken) bool {
-	return run.bold == token.bold && run.italic == token.italic && run.code == token.code && run.strike == token.strike
+	return run.bold == token.bold && run.italic == token.italic && run.code == token.code &&
+		run.strike == token.strike && run.href == token.href && run.link == token.link
 }
 
 // captionGap 返回说明文字与所标注对象的间距，未设置时用默认值。
@@ -1373,4 +1400,15 @@ func captionGap(style *CaptionStyle) float64 {
 		return defaultCaptionGap
 	}
 	return style.Gap
+}
+
+// runActions 返回该行内片段的动作：片段自带链接时用链接，否则沿用单元格动作。
+//
+// 两者不能叠加——一个文字对象挂两条 URI 动作，阅读器只会取其中一条，另一条成了
+// 静默失效的配置。片段级链接优先，因为它更具体。
+func runActions(run styledRun, cellActions []Action) []Action {
+	if href := linkHref(run.href); href != "" {
+		return []Action{{Event: ActionEventClick, URI: &URIAction{URI: href}}}
+	}
+	return cellActions
 }
