@@ -2,7 +2,10 @@ package pdf2ofd
 
 import (
 	"strings"
+	"time"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -31,4 +34,22 @@ func pdfDocumentMetadata(sourceProducer string) (name, toolVersion string, custo
 		customDatas = append(customDatas, creator.CustomData{Name: "SourceProducer", Value: producer})
 	}
 	return converterName, converterVersion, customDatas
+}
+
+// pdfDocumentDates 读取 PDF /Info 的创建与修改时间。
+//
+// 日期字符串形如 D:YYYYMMDDHHmmSSOHH'mm'，缺项或格式异常时返回零值，由创建器
+// 按自己的规则兜底。转换出的链接注解用文档日期填 LastModDate，文档没有日期时
+// 它们会全部落到 1970-01-01。
+func pdfDocumentDates(ctx *model.Context) (created, modified time.Time) {
+	if ctx == nil || ctx.XRefTable == nil {
+		return created, modified
+	}
+	if value, ok := types.DateTime(ctx.XRefTable.CreationDate, true); ok {
+		created = value
+	}
+	if value, ok := types.DateTime(ctx.XRefTable.ModDate, true); ok {
+		modified = value
+	}
+	return created, modified
 }

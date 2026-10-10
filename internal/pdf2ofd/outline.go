@@ -74,7 +74,7 @@ func convertOutlineItem(gctx context.Context, ctx *model.Context, dict types.Dic
 		outline.Count = &value
 		outline.Expanded = &expanded
 	}
-	if action, ok := pdfOutlineAction(gctx, ctx, dict, geometries); ok {
+	if action, ok := pdfClickAction(gctx, ctx, dict, geometries); ok {
 		outline.Actions = []creator.Action{action}
 	}
 	if first := dict.IndirectRefEntry("First"); first != nil {
@@ -83,7 +83,12 @@ func convertOutlineItem(gctx context.Context, ctx *model.Context, dict types.Dic
 	return outline, true
 }
 
-func pdfOutlineAction(gctx context.Context, ctx *model.Context, dict types.Dict, geometries []pdfPageInfo) (creator.Action, bool) {
+// pdfClickAction 读取 PDF 条目上的点击动作并转换为 OFD 动作。
+//
+// 大纲项和链接注解用的是同一套动作语法，这里只认 /Dest 与 /A（GoTo、URI）：
+// 其余动作类型（Launch、GoToR、Named、Movie、Sound）在 OFD 里没有等价物，转换
+// 过去只能变成一个点了没反应的热点，不如丢掉。
+func pdfClickAction(gctx context.Context, ctx *model.Context, dict types.Dict, geometries []pdfPageInfo) (creator.Action, bool) {
 	// /Dest 优先于 /A：两者同时存在时以 /Dest 为准。
 	if object, found := dict.Find("Dest"); found {
 		if gotoAction, ok := pdfGotoAction(gctx, ctx, object, geometries); ok {
@@ -112,7 +117,7 @@ func pdfOutlineAction(gctx context.Context, ctx *model.Context, dict types.Dict,
 			return creator.Action{Event: creator.ActionEventClick, Goto: gotoAction}, true
 		}
 	case "URI":
-		if uri := pdfOutlineURI(ctx, actionDict); uri != "" {
+		if uri := pdfActionURI(ctx, actionDict); uri != "" {
 			return creator.Action{Event: creator.ActionEventClick, URI: &creator.URIAction{URI: uri}}, true
 		}
 	}
@@ -276,7 +281,7 @@ func pdfOutlineTitle(ctx *model.Context, dict types.Dict) string {
 	return strings.TrimSpace(pdfTextString(ctx, dict, "Title"))
 }
 
-func pdfOutlineURI(ctx *model.Context, dict types.Dict) string {
+func pdfActionURI(ctx *model.Context, dict types.Dict) string {
 	return strings.TrimSpace(pdfTextString(ctx, dict, "URI"))
 }
 

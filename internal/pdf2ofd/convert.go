@@ -110,17 +110,26 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 	}
 	fontCache := make(map[types.Object]pdfFontInfo, 8)
 	imageCache := make(map[types.IndirectRef]pdfImageDataCache, 8)
+	// 内部跳转要按页号定位目标页，页面几何必须先全部拿到。
+	geometries := pdfPageGeometries(gctx, ctx)
+	linkID := linkAnnotationIDBase
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		page, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache, imageCache)
+		page, links, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache, imageCache, geometries, &linkID)
 		if err != nil {
 			return fmt.Errorf("转换 PDF 第 %d 页失败: %w", pageNumber, err)
 		}
 		document.Pages = append(document.Pages, page)
+		if len(links) > 0 {
+			document.Annotations = append(document.Annotations, creator.AnnotationPage{
+				Page: pageNumber - 1, Items: links,
+			})
+		}
 	}
 	if len(document.Pages) > 0 {
 		document.PageSize = creator.PageSize{Width: document.Pages[0].Area.PhysicalBox.Width, Height: document.Pages[0].Area.PhysicalBox.Height}
 	}
 	// PDF 目录大纲转换为 OFD 大纲；原文档要求显示大纲面板时同步设置显示偏好。
+	document.CreationDate, document.ModDate = pdfDocumentDates(ctx)
 	document.Outlines = convertOutlines(gctx, ctx)
 	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(gctx, ctx) {
 		document.Preferences = &creator.ViewPreferences{PageMode: spec.PageModeUseOutlines}
@@ -215,14 +224,14 @@ func readPDFInput(input any) ([]byte, error) {
 	}
 }
 
-func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache) (creator.Page, error) {
+func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache, geometries []pdfPageInfo, linkID *uint64) (creator.Page, []creator.Annotation, error) {
 	pageDict, _, inherited, err := ctx.PageDict(gctx, pageNumber, false)
 	if err != nil {
-		return creator.Page{}, err
+		return creator.Page{}, nil, err
 	}
 	info, err := pdfPageInfoFor(ctx, pageDict, inherited)
 	if err != nil {
-		return creator.Page{}, err
+		return creator.Page{}, nil, err
 	}
 	width := info.maxX - info.minX
 	height := info.maxY - info.minY
@@ -241,22 +250,22 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 		resourceObject, found := pageDict.Find("Resources")
 		resources, err = dereferenceDict(ctx, resourceObject, found)
 		if err != nil {
-			return creator.Page{}, err
+			return creator.Page{}, nil, err
 		}
 	}
 	content, err := ctx.XRefTable.PageContent(pageDict, pageNumber)
 	if err != nil {
-		return creator.Page{}, fmt.Errorf("读取页面内容失败: %w", err)
+		return creator.Page{}, nil, fmt.Errorf("读取页面内容失败: %w", err)
 	}
 	interpreter := newPDFInterpreter(ctx, &page, document, info, fontCache, imageCache)
 	if err := interpreter.parse(content, resources, nil, 0); err != nil {
-		return creator.Page{}, err
+		return creator.Page{}, nil, err
 	}
 	// 注解（外观流）绘制在页面内容之上。
 	interpreter.renderAnnotations(pageDict)
 	// 合并相邻单字文字对象，减少 OFD 文字对象数量，逐字定位保持不变。
 	page.Items = mergeAdjacentTextItems(page.Items)
-	return page, nil
+	return page, convertPageLinks(gctx, ctx, pageDict, info, geometries, linkID), nil
 }
 
 func pdfPageInfoFor(ctx *model.Context, page types.Dict, inherited *model.InheritedPageAttrs) (pdfPageInfo, error) {

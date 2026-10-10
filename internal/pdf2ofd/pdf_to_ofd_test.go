@@ -534,8 +534,10 @@ func TestConvertReusesImageDataAcrossPages(t *testing.T) {
 	document := &creator.Document{Pages: make([]creator.Page, 0, 2)}
 	fontCache := make(map[types.Object]pdfFontInfo)
 	imageCache := make(map[types.IndirectRef]pdfImageDataCache)
+	linkID := linkAnnotationIDBase
+	geometries := pdfPageGeometries(t.Context(), ctx)
 	for pageNumber := 1; pageNumber <= 2; pageNumber++ {
-		page, err := convertPDFPage(t.Context(), ctx, pageNumber, document, fontCache, imageCache)
+		page, _, err := convertPDFPage(t.Context(), ctx, pageNumber, document, fontCache, imageCache, geometries, &linkID)
 		if err != nil {
 			t.Fatalf("page %d: %v", pageNumber, err)
 		}
@@ -1681,7 +1683,8 @@ func TestCIDFontIndirectDescendantFontsLoadsFontAndWidths(t *testing.T) {
 	document := &creator.Document{Pages: make([]creator.Page, 0, 16)}
 	fontCache := make(map[types.Object]pdfFontInfo)
 	imageCache := make(map[types.IndirectRef]pdfImageDataCache)
-	if _, err := convertPDFPage(t.Context(), ctx, 1, document, fontCache, imageCache); err != nil {
+	linkID := linkAnnotationIDBase
+	if _, _, err := convertPDFPage(t.Context(), ctx, 1, document, fontCache, imageCache, pdfPageGeometries(t.Context(), ctx), &linkID); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	embedded, cidFonts := 0, 0
