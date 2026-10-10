@@ -2004,6 +2004,10 @@ func (s *buildState) expandTable(table Table, pageCount int, context string, lay
 			items = append(items, builtItem{id: s.allocate(), item: *caption, font: fontID})
 		}
 
+		// 表头底色排在边框线之前：底色是整片区域，画在框线之后会把线盖住。
+		for _, p := range layout.generateHeaderFills(seg) {
+			items = append(items, builtItem{id: s.allocate(), item: p})
+		}
 		for _, p := range layout.generateBorderPaths(seg) {
 			items = append(items, builtItem{id: s.allocate(), item: p})
 		}
