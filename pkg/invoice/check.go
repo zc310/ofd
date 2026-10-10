@@ -14,16 +14,24 @@ var errUnparsableDate = errors.New("开票日期格式无法识别")
 // 「2026年09月18日」，两种都要认；认不出来时在 Check 里报告，不静默跳过。
 var invoiceDateLayouts = []string{"2006-01-02", "2006年01月02日", "2006-1-2", "20060102"}
 
-// ID 返回发票的稳定标识（发票代码 + 号码）。缺代码或号码时返回空字符串——
-// 这类票无法参与去重，也不能当作同一张票合并。
+// ID 返回发票的稳定标识。发票代码与号码都在时返回「代码-号码」，只有号码时返回
+// 号码，两样都缺才返回空字符串。
+//
+// 全电发票（数电票）自落地起就没有发票代码，只有 20 位全电发票号码，铁路电子客票
+// 同理——它的号码在附件的 context/entity/identifier 里就是这张票的标识。原先要求
+// 代码与号码同时在场，这些票的 ID 全是空串：Check 逐条报「无法唯一标识」，去重也
+// 永远认不出它们。两样皆无才是真的无法定位。
 func (i *Invoice) ID() string {
 	if i == nil {
 		return ""
 	}
 	code := strings.TrimSpace(i.Code)
 	number := strings.TrimSpace(i.Number)
-	if code == "" || number == "" {
+	if number == "" {
 		return ""
+	}
+	if code == "" {
+		return number
 	}
 	return code + "-" + number
 }
@@ -65,7 +73,7 @@ func (i *Invoice) Check() []string {
 	}
 	var issues []string
 	if i.ID() == "" {
-		issues = append(issues, "缺少发票代码或号码，无法唯一标识")
+		issues = append(issues, "缺少发票号码，无法唯一标识")
 	}
 	if _, err := i.InvoiceDate(); err != nil {
 		issues = append(issues, "开票日期格式无法识别："+i.Date)

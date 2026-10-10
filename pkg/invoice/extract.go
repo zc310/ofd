@@ -21,11 +21,12 @@ const maxAttachmentBytes = 16 << 20
 // ErrNoAttachment 表示 OFD 包内未找到发票结构化附件。
 var ErrNoAttachment = errors.New("未找到 OFD 发票结构化附件（Attachs 目录下的 XML）")
 
-// ErrNotInvoice 表示附件存在，但里面不是发票数据：既没有发票代码，也没有价税合计。
+// ErrNotInvoice 表示附件存在，但里面不是发票数据：既没有发票代码或铁路电子
+// 客票号，也没有价税合计。
 //
 // 与 ErrNoAttachment 分开是因为两者的后续动作不同：找不到附件时厂商可能把附件放在了
 // 别处（值得确认），而附件里没有发票数据就是这份文档本身不是发票（没什么可查）。
-var ErrNotInvoice = errors.New("附件不是发票数据：既无发票代码，也无价税合计")
+var ErrNotInvoice = errors.New("附件不是发票数据：既无发票代码或铁路电子客票号，也无价税合计")
 
 // 常见发票附加 XML 的文件名首选项，优先匹配规范的 original_invoice.xml。
 var preferredAttachment = "Doc_0/Attachs/original_invoice.xml"
@@ -136,6 +137,10 @@ func findAttachment(pkg *core.Package) (string, error) {
 
 // invoiceAttachment 是发票结构化附件的 XML 解析模型。字段按元素名匹配，
 // 与命名空间无关；命名以税额控开具的 original_invoice.xml 字段为准。
+//
+// 末尾一组是铁路电子客票（票面「电子发票（铁路电子客票）」）的字段，走 rai
+// 分类法，元素名与增值税票毫无重叠。增值税票不会带这些元素，所以只在
+// RailwayTicketNumber 非空时整组启用。
 type invoiceAttachment struct {
 	MachineNo               string           `xml:"MachineNo"`
 	InvoiceCode             string           `xml:"InvoiceCode"`
@@ -152,6 +157,18 @@ type invoiceAttachment struct {
 	Buyer                   buyerAttachment  `xml:"Buyer"`
 	Seller                  sellerAttachment `xml:"Seller"`
 	GoodsInfos              goodsAttachment  `xml:"GoodsInfos"`
+
+	RailwayTicketNumber string `xml:"ElectronicInvoiceRailwayETicketNumber"`
+	RailwayVoucherType  string `xml:"TypeOfVoucher"`
+	RailwayIssueDate    string `xml:"DateOfIssue"`
+	RailwaySellerName   string `xml:"IssueParty"`
+	RailwaySellerTaxID  string `xml:"IssuePartyCode"`
+	RailwayBuyerName    string `xml:"NameOfPurchaser"`
+	RailwayBuyerTaxID   string `xml:"UnifiedSocialCreditCodeOfPurchaser"`
+	RailwayFare         string `xml:"Fare"`
+	RailwayAmount       string `xml:"TotalAmountExcludingTax"`
+	RailwayTaxAmount    string `xml:"TaxAmount"`
+	RailwayTaxRate      string `xml:"TaxRate"`
 }
 
 type buyerAttachment struct {
@@ -184,17 +201,19 @@ type goodsItem struct {
 	TaxAmount            string `xml:"TaxAmount"`
 }
 
-// hasInvoiceData 判断附件里是否带发票的标志性数据：发票代码或价税合计。
+// hasInvoiceData 判断附件里是否带发票的标志性数据：发票代码、铁路电子客票号
+// 或价税合计。
 //
-// 只认这两个字段，而不是"有没有填任何内容"。OFD 的 Attachs 目录里不只有发票数据，
+// 只认这几个字段，而不是"有没有填任何内容"。OFD 的 Attachs 目录里不只有发票数据，
 // 还可能有版式说明、签章属性之类的 XML，甚至只填一个购方名称。用"非空即有效"判定
 // 会给这类文档兜一个几乎全空的 Invoice——调用方拿到的是空壳，看不出哪里不对，
 // 后面汇总出 0 元也只会被当成"这批票没金额"。
 //
-// 两个字段取或：定额发票、卷式发票可能没有发票代码但有金额，代码齐全的票也可能缺
-// 金额字段。两者皆无才认定不是发票。
+// 三个字段取或：定额发票、卷式发票可能没有发票代码但有金额，代码齐全的票也可能缺
+// 金额字段；铁路电子客票没有发票代码，只有客票号与票价。三者皆无才认定不是发票。
 func hasInvoiceData(document invoiceAttachment) bool {
 	return strings.TrimSpace(document.InvoiceCode) != "" ||
+		strings.TrimSpace(document.RailwayTicketNumber) != "" ||
 		strings.TrimSpace(document.TaxInclusiveTotalAmount) != ""
 }
 
@@ -206,6 +225,9 @@ func parseAttachment(raw []byte) (*Invoice, error) {
 	}
 	if !hasInvoiceData(document) {
 		return nil, ErrNotInvoice
+	}
+	if strings.TrimSpace(document.RailwayTicketNumber) != "" {
+		return railwayTicket(document), nil
 	}
 	invoice := &Invoice{}
 	invoice.MachineNumber = strings.TrimSpace(document.MachineNo)
@@ -236,6 +258,55 @@ func parseAttachment(raw []byte) (*Invoice, error) {
 		invoice.Details = append(invoice.Details, parseGoodsItem(item))
 	}
 	return invoice, nil
+}
+
+// railwayTicketType 是铁路电子客票在汇总里的类型名，与票面「电子发票（铁路电子
+// 客票）」一致，便于按类型分组时与增值税票分开。
+const railwayTicketType = "铁路电子客票"
+
+// railwaySellerName 是铁路电子客票缺销方时的兜底展示名。
+//
+// 票方不填承运方（附件的 IssueParty 为空，票面也没有），落到分组逻辑里就是
+// 「未知销售方」——那等于把整批火车票从按销售方的对账里抹掉了。票面印的是
+// 「中国铁路」，拿它当分组名能把这类票聚到一起。它不是票面给出的法定名称
+// （实际开票人是具体铁路局，如中国铁路北京局集团有限公司），所以仅在销方缺失
+// 时兜底；哪天票方填了 IssueParty，就用票方的。
+const railwaySellerName = "中国铁路"
+
+// railwayTicket 把铁路电子客票的字段映射到 Invoice。
+//
+// 与增值税票的差别都来自票种本身，不是字段缺失：没有发票代码（只有 20 位全电发票
+// 号码）、没有收款人复核人开票人、票面不载明销方、没有商品明细——票面只有一行
+// 「票价」。价税合计取票价，不含税金额与税额由附件单独给出，正好构成一行明细，
+// Check 的两处自校验因此仍然成立。
+func railwayTicket(document invoiceAttachment) *Invoice {
+	seller := Party{Name: strings.TrimSpace(document.RailwaySellerName), Code: strings.TrimSpace(document.RailwaySellerTaxID)}
+	if seller.Name == "" && seller.Code == "" {
+		seller.Name = railwaySellerName
+	}
+	return &Invoice{
+		Title:       strings.TrimSpace(document.RailwayVoucherType),
+		Type:        railwayTicketType,
+		Number:      strings.TrimSpace(document.RailwayTicketNumber),
+		Date:        strings.TrimSpace(document.RailwayIssueDate),
+		Amount:      newDecimal(document.RailwayAmount),
+		TaxAmount:   newDecimal(document.RailwayTaxAmount),
+		TotalAmount: newDecimal(document.RailwayFare),
+		Buyer:       Party{Name: strings.TrimSpace(document.RailwayBuyerName), Code: strings.TrimSpace(document.RailwayBuyerTaxID)},
+		Seller:      seller,
+		Details:     []Detail{railwayFareDetail(document)},
+	}
+}
+
+// railwayFareDetail 是票价那一行明细。金额取不含税金额、税额取税额，明细汇总因此
+// 与票面合计对得上。
+func railwayFareDetail(document invoiceAttachment) Detail {
+	return Detail{
+		Name:      "票价",
+		Amount:    newDecimal(document.RailwayAmount),
+		TaxRate:   percentDecimal(document.RailwayTaxRate),
+		TaxAmount: newDecimal(document.RailwayTaxAmount),
+	}
 }
 
 func parseGoodsItem(item goodsItem) Detail {
@@ -371,6 +442,10 @@ func invoiceType(title string) string {
 	switch {
 	case title == "":
 		return ""
+	case strings.Contains(title, "铁路电子客票"):
+		// 铁路电子客票的全电发票号码是 20 位、没有发票代码，票面也没有"普通/
+		// 专用"字样，落到 default 会被算成普通发票，与增值税票混在一组里。
+		return railwayTicketType
 	case strings.Contains(title, "专用"):
 		return "专用发票"
 	case strings.Contains(title, "通行费"):
