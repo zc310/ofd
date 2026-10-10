@@ -1207,6 +1207,3 @@ func fontFamilyUsableSafe(family *canvas.FontFamily) (usable bool) {
 		face.Font.SFNT.OS2 != nil && face.Font.SFNT.Cmap != nil &&
 		face.Font.SFNT.Maxp != nil
 }
-
-// canvasFontFace 是 FontFace 的 canvas 实现：把 canvas.FontFace 的字形轮廓
-// 与度量转换为与绘制库无关的 geom 类型，是核心包内字体能力的适配层。

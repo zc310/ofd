@@ -54,11 +54,11 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if textFillDisabled(object) && object.Stroke {
 		fill = nil
 	} else {
-		if object.FillColor != nil {
+		if hasColorValue(object.FillColor) {
 			fill = p.updateCtColor(object.FillColor)
 		}
 	}
-	if object.StrokeColor != nil {
+	if hasColorValue(object.StrokeColor) {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Alpha != nil {
@@ -119,7 +119,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 }
 
 func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
-	if object.FillColor != nil {
+	if hasColorValue(object.FillColor) {
 		return object.FillColor
 	}
 	if dp != nil {

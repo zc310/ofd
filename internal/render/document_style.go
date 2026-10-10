@@ -38,6 +38,14 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
 }
 
+// hasColorValue 判断颜色元素是否携带实际颜色信息。空元素（如 <StrokeColor/>）
+// 不带任何颜色值，等价于未指定，应回退到 DrawParam 的颜色而不是覆盖成黑色。
+func hasColorValue(source *models.CTColor) bool {
+	return source != nil && (source.Value != nil || source.ColorSpace != 0 || source.Index != 0 ||
+		source.GouraudShd != nil || source.LaGourandShd != nil || source.LaGouraudShd != nil ||
+		source.AxialShd != nil || source.RadialShd != nil || source.Pattern != nil)
+}
+
 func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	if source == nil {
 		return nil
@@ -126,7 +134,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		effective.DashOffset = dp.DashOffset
 	}
 
-	if object.FillColor != nil {
+	if hasColorValue(object.FillColor) {
 		fill = p.updateCtColor(object.FillColor)
 	}
 	if object.Fill {
@@ -138,7 +146,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		ctx.ClearFill()
 	}
 
-	if object.StrokeColor != nil {
+	if hasColorValue(object.StrokeColor) {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Stroke.Value(true) {
