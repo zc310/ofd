@@ -379,15 +379,18 @@ func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []layout.Inl
 		return p.inlines(value, bold, italic, true)
 	case *ast.Link:
 		children := p.inlines(value, bold, italic, strike)
+		href := linkHref(string(value.Destination))
 		for index := range children {
 			children[index].Link = true
+			children[index].Href = href
 		}
 		if len(children) == 0 {
-			children = []layout.Inline{{Text: string(value.Destination), Link: true}}
+			children = []layout.Inline{{Text: string(value.Destination), Link: true, Href: href}}
 		}
 		return children
 	case *ast.AutoLink:
-		return []layout.Inline{{Text: string(value.URL(p.source)), Bold: bold, Italic: italic, Strike: strike, Link: true}}
+		url := string(value.URL(p.source))
+		return []layout.Inline{{Text: url, Bold: bold, Italic: italic, Strike: strike, Link: true, Href: linkHref(url)}}
 	case *ast.Image:
 		alt := p.plainText(value)
 		if alt == "" {
@@ -427,4 +430,20 @@ func (p *mdParser) appendText(builder *strings.Builder, node ast.Node) {
 			p.appendText(builder, child)
 		}
 	}
+}
+
+// linkHref 判断 Markdown 链接目标能否作为图元的点击目标。
+//
+// 纯锚点（`#章节`）指向文档内部的标题，而转换器不把 Markdown 标题写成 OFD 大纲，
+// 挂上去只会得到一个点了没反应的热区，因此不生成动作。空目标同理——`[文字]()`
+// 仍按链接着色，但不可点击。
+//
+// 其余目标原样保留：相对路径也照抄，不拿 Markdown 文件所在目录拼成绝对路径。
+// 文档可能被单独分发，把本机路径写进产物既不可移植也泄漏了目录结构。
+func linkHref(destination string) string {
+	trimmed := strings.TrimSpace(destination)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return ""
+	}
+	return trimmed
 }

@@ -17,6 +17,7 @@ type styledRune struct {
 	color  *creator.Color
 	glue   int
 	strike bool
+	href   string
 }
 
 // segments 按 Unicode UAX #14 断行规则把行内内容切成不可断开的段。
@@ -51,6 +52,7 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			color:  colorText,
 			glue:   glue,
 			strike: inline.Strike,
+			href:   inline.Href,
 		}
 		switch {
 		case inline.Code:
@@ -105,6 +107,7 @@ func buildSegment(text []rune, offset int, styles []styledRune) []atom {
 			space:  isWhitespace(chunk),
 			glue:   style.glue,
 			strike: style.strike,
+			href:   style.href,
 		})
 		index = end
 	}

@@ -46,6 +46,8 @@ type atom struct {
 	strike bool
 	// strikeWidth 是删除线应覆盖的宽度（不含合并进来的尾随空白）；为 0 时用 width。
 	strikeWidth float64
+	// href 是该字符段的点击目标，写入图元的 CLICK 动作；为空表示不可点击。
+	href string
 }
 
 // engine 在排版过程中维护当前页面、纵向游标和字体资源。
@@ -1002,6 +1004,7 @@ func (e *engine) drawTableRowLandscape(cells []Cell, widths []float64, rowTop, r
 						Size:          sizeS,
 						Fill:          &fill,
 						FillColor:     item.color,
+						Actions:       linkActions(item.href),
 						CharDirection: 270,
 					})
 				}
@@ -1138,7 +1141,7 @@ func (e *engine) writeLine(line []atom, left float64) {
 	// 底色必须先于文字进入图元顺序，否则会被文字盖住。
 	e.drawInlineCodeBackgrounds(line, left, baseline)
 	for _, run := range mergeRuns(line, left) {
-		e.addText(run.text, run.x, baseline, atom{text: run.text, key: run.key, size: run.size, color: run.color, width: run.width, strike: run.strike, strikeWidth: run.strikeWidth})
+		e.addText(run.text, run.x, baseline, atom{text: run.text, key: run.key, size: run.size, color: run.color, width: run.width, strike: run.strike, strikeWidth: run.strikeWidth, href: run.href})
 	}
 	e.y -= height
 }
@@ -1188,6 +1191,7 @@ type textRun struct {
 	width       float64
 	strike      bool
 	strikeWidth float64
+	href        string
 }
 
 // mergeRuns 合并相邻的同样式文本，并把空白并入前一个片段，避免生成
@@ -1206,7 +1210,10 @@ func mergeRuns(line []atom, left float64) []textRun {
 		}
 		if len(runs) > 0 {
 			last := &runs[len(runs)-1]
-			if last.key == item.key && last.size == item.size && last.color == item.color && last.strike == item.strike {
+			// href 必须一并比较：相邻的两个不同链接如果并成一个文字对象，只会
+			// 挂上前一个的 URL，后一个链接就点不动了。
+			if last.key == item.key && last.size == item.size && last.color == item.color &&
+				last.strike == item.strike && last.href == item.href {
 				last.text += item.text
 				last.width += item.width
 				last.strikeWidth += item.width
@@ -1214,7 +1221,7 @@ func mergeRuns(line []atom, left float64) []textRun {
 				continue
 			}
 		}
-		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width})
+		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width, href: item.href})
 		x += item.width
 	}
 	return runs
@@ -1235,6 +1242,7 @@ func (e *engine) addText(text string, x, baseline float64, item atom) {
 		Italic:    item.key.italic,
 		Fill:      &fill,
 		FillColor: item.color,
+		Actions:   linkActions(item.href),
 	})
 	if item.strike {
 		// 删除线只覆盖实际字符，不含合并进来的尾随空白。
@@ -1246,6 +1254,19 @@ func (e *engine) addText(text string, x, baseline float64, item atom) {
 			e.fillRect(x, baseline+item.size*0.3, strikeWidth, item.size*0.05, item.color)
 		}
 	}
+}
+
+// linkActions 把点击目标转成图元的 CLICK 动作。空目标返回 nil：挂一条空 URI 的
+// 动作会被创建器判为非法，整份文档都生成不出来。
+func linkActions(href string) []creator.Action {
+	if href == "" {
+		return nil
+	}
+	// 显式写 CLICK，不依赖创建器的默认值：它是阅读器与 PDF 导出唯一认的事件。
+	return []creator.Action{{
+		Event: creator.ActionEventClick,
+		URI:   &creator.URIAction{URI: href},
+	}}
 }
 
 // fillRect 绘制填充矩形。y 是矩形在排版游标（自底向上）中的下边界，

@@ -138,6 +138,8 @@ ofd-converter -from pdf -format ofd input.pdf output.ofd
 
 Markdown 输入会被重新排版为 A4 固定版式，支持标题、段落、列表、引用、代码块、GFM 表格和本地图片；代码块使用系统等宽字体（优先 Noto Sans Mono CJK SC / DejaVu Sans Mono 等）。出于安全和确定性考虑，**不会抓取远程图片**（`http`/`https` 地址会被跳过并记录警告）。相对图片路径以 Markdown 文件所在目录为基准。`-paper` 和 `-landscape` 对 Markdown 输入不生效。
 
+行内链接与自动链接会写成文字图元上的 `CLICK` 动作，OFD 阅读器与 PDF 导出都能点。目标原样保留，相对路径不拼成绝对路径。空目标（`[文字]()`）与纯锚点（`[文字](#标题)`）只按链接配色、不生成动作——Markdown 标题不会被写成 OFD 大纲，锚点无处可跳。
+
 ```bash
 ofd-converter input.md output.ofd
 ofd-converter -from md -format ofd input.md output.ofd
