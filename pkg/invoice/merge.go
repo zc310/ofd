@@ -322,11 +322,7 @@ func coverDocument(summary Summary, title string) (*render.Document, io.Closer, 
 			Height: coverPageHeight,
 		},
 	}
-	layout := coverPages(summary, title)
-	pages := make([]creator.Page, 0, len(layout))
-	for _, data := range layout {
-		pages = append(pages, coverPage(data))
-	}
+	pages := coverPages(summary, title)
 	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages},
 		creator.CreateOptions{})
 	if err != nil {
