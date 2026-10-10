@@ -101,6 +101,23 @@ pages:
                 font: 楷体
                 size: 4.2
                 align: right
+          # 单元格级链接：动作作用于整格，热区覆盖该单元格全部文字。
+          - cells:
+              - value: 项目主页
+                font: 楷体
+                size: 4.2
+              - value: 整格可点
+                font: 楷体
+                size: 4.2
+                actions:
+                  - event: CLICK
+                    uri:
+                      uri: https://github.com/zc310/ofd
+                      target: _blank
+              - value: 点击本格跳转
+                font: 楷体
+                size: 4.2
+                align: right
 
   - items:
       - type: table

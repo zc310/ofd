@@ -1377,6 +1377,12 @@ type TableCell struct {
 	Format string
 	// FillColor 是单元格背景色。
 	FillColor *Color
+	// Actions 是单元格的点击动作，作用范围是整个单元格。
+	//
+	// 表格文字在落笔时按样式拆成多个文字对象，单元格级的动作会挂到其中每一个
+	// 上：热区因此覆盖整格，与 PDF 表格里链接注解盖住单元格的做法一致。要让
+	// 单元格里的某几段文字各自可点，得把动作写在那些文字对象上。
+	Actions []Action
 }
 
 // TableStyle 控制表格边框样式。
