@@ -10,7 +10,9 @@ import (
 const (
 	defaultTableLineWidth   = 0.3
 	defaultTableCellPadding = 3.0
-	defaultCaptionSize      = 5.0
+	// defaultTableCellSize 是单元格未指定字号时的默认字号（毫米）。
+	defaultTableCellSize = 4.2
+	defaultCaptionSize   = 5.0
 	// defaultCaptionGap 是说明文字与它所标注对象之间的默认间距（毫米）。
 	// 正数，处在对象哪一侧由上下文决定：表格表题在上，图片说明在下。
 	defaultCaptionGap = 6.0
@@ -72,13 +74,16 @@ func layoutTable(table Table, pageWidth, pageHeight float64) (*tableLayout, erro
 	if err := l.calculateColumns(); err != nil {
 		return nil, err
 	}
-	l.calculateOccupied()
 	l.calculateRows()
 	l.calculateSegments()
 
 	return l, nil
 }
 
+// calculateColumns 定下列数、占用网格、列宽与列边界位置。
+//
+// 占用网格必须在列宽之前算好：自动列宽要知道每个单元格落在哪几列，合并单元格才能
+// 把宽度需求摊到它跨越的列上。
 func (l *tableLayout) calculateColumns() error {
 	l.numCols = 0
 	for _, row := range l.table.Rows {
@@ -97,6 +102,7 @@ func (l *tableLayout) calculateColumns() error {
 	if l.numCols == 0 {
 		return fmt.Errorf("表格没有有效的列")
 	}
+	l.calculateOccupied()
 
 	if len(l.table.ColumnWidths) > 0 {
 		if len(l.table.ColumnWidths) < l.numCols {
@@ -105,11 +111,7 @@ func (l *tableLayout) calculateColumns() error {
 		l.colWidths = make([]float64, l.numCols)
 		copy(l.colWidths, l.table.ColumnWidths[:l.numCols])
 	} else {
-		l.colWidths = make([]float64, l.numCols)
-		equalWidth := l.table.Width / float64(l.numCols)
-		for i := range l.colWidths {
-			l.colWidths[i] = equalWidth
-		}
+		l.colWidths = l.autoColumnWidths()
 	}
 
 	l.colX = make([]float64, l.numCols+1)
@@ -119,6 +121,150 @@ func (l *tableLayout) calculateColumns() error {
 	}
 
 	return nil
+}
+
+// autoColumnWidths 按单元格内容估算列宽。
+//
+// 没给 ColumnWidths 时按内容分配比均分合理得多：一列写「金额」另一列写
+// 「2026年10月10日」时，均分会把前者撑得很空、后者折成好几行。列宽需求按最长
+// 一行算（能放下就不折行），再按比例缩放到 Table.Width，合计恒等于 Width——
+// 列边界是对外承诺的，不能因为自动而漂移。
+//
+// 度量沿用断行时的同一套估算（汉字一个字号、ASCII 半个字号）。换成真实字体度量
+// 会让「量出来的宽」和「折行用的宽」不一致，窄一点的列反而折得更凶。
+func (l *tableLayout) autoColumnWidths() []float64 {
+	padding := defaultTableCellPadding * 2
+	natural := make([]float64, l.numCols)
+	floor := make([]float64, l.numCols)
+	for col := range natural {
+		// 空单元格至少要能放下内边距，否则这一列的宽度是 0，边框线会叠在一起。
+		natural[col] = padding
+		floor[col] = padding
+	}
+
+	for rowIdx, row := range l.table.Rows {
+		colIdx := 0
+		for _, cell := range row.Cells {
+			for colIdx < l.numCols && l.occupied[rowIdx][colIdx] && !l.isCellStart(rowIdx, colIdx) {
+				colIdx++
+			}
+			if colIdx >= l.numCols {
+				break
+			}
+			span := cell.ColSpan
+			if span < 1 {
+				span = 1
+			}
+			demand, widest := l.cellWidthDemand(cell, rowIdx < l.table.HeaderRows, padding)
+			for c := 0; c < span && colIdx+c < l.numCols; c++ {
+				if share := demand / float64(span); share > natural[colIdx+c] {
+					natural[colIdx+c] = share
+				}
+				// floor 是一个不可再分的排版单元的宽度：CJK 是单字，ASCII 是一个词。
+				// 压到它以下时断行会把词劈开，或者折行算出的行数对不上。
+				if share := widest / float64(span); share > floor[colIdx+c] {
+					floor[colIdx+c] = share
+				}
+			}
+			colIdx += span
+		}
+	}
+
+	budget := l.table.Width
+	total := 0.0
+	sumFloor := 0.0
+	for col := range natural {
+		total += natural[col]
+		sumFloor += floor[col]
+	}
+	if total <= 0 || budget <= 0 {
+		return natural
+	}
+	if sumFloor >= budget {
+		// 连不可拆分的宽度都放不下，按内容分配只会让每列都不可用；退回均分，
+		// 至少每列等宽、可折行。
+		return equalColumnWidths(budget, l.numCols)
+	}
+	widths := make([]float64, l.numCols)
+	if total <= budget {
+		// 内容比表格窄：按需求比例放大填满 Width，不留下宽度与声明不符的表格。
+		for col := range widths {
+			widths[col] = natural[col] * budget / total
+		}
+		return widths
+	}
+	// 内容比表格宽：先保住每列的 floor，剩余宽度按超出 floor 的部分分配。
+	extra := budget - sumFloor
+	need := 0.0
+	for col := range natural {
+		if natural[col] > floor[col] {
+			need += natural[col] - floor[col]
+		}
+	}
+	for col := range widths {
+		widths[col] = floor[col]
+		if need > 0 && natural[col] > floor[col] {
+			widths[col] += extra * (natural[col] - floor[col]) / need
+		}
+	}
+	return widths
+}
+
+// equalColumnWidths 把总宽等分给各列。
+func equalColumnWidths(total float64, numCols int) []float64 {
+	widths := make([]float64, numCols)
+	if numCols <= 0 {
+		return widths
+	}
+	each := total / float64(numCols)
+	for col := range widths {
+		widths[col] = each
+	}
+	return widths
+}
+
+// cellWidthDemand 返回单元格对列宽的需求：填满时需要的宽度，以及其中最宽的一个
+// 不可断行单元的宽度（含内边距）。
+func (l *tableLayout) cellWidthDemand(cell TableCell, isHeader bool, padding float64) (demand, widest float64) {
+	size := l.cellSize(cell, isHeader)
+	lineWidth := 0.0
+	for _, token := range tokenizeStyledRuns(cellRuns(cell)) {
+		if token.forceBreak || token.rule {
+			if lineWidth > demand {
+				demand = lineWidth
+			}
+			lineWidth = 0
+			if token.rule {
+				// 分隔线按整行宽度画，不参与列宽需求。
+				continue
+			}
+			continue
+		}
+		width := estimateTextWidth(token.text, size)
+		if width > widest {
+			widest = width
+		}
+		lineWidth += width
+	}
+	if lineWidth > demand {
+		demand = lineWidth
+	}
+	return demand + padding, widest + padding
+}
+
+// cellSize 返回单元格的字号：单元格自己指定的优先，表头行再看表格的表头字号。
+//
+// 估算列宽、估算行高和真正落笔都必须走这一个函数。三处各写一份「cell.Size 为零
+// 就用 4.2」的话，改了其中一处就会量出的宽与折行用的宽不一致，列宽和换行同时错。
+func (l *tableLayout) cellSize(cell TableCell, isHeader bool) float64 {
+	size := cell.Size
+	if size == 0 {
+		size = defaultTableCellSize
+	}
+	if isHeader && l.table.Style.HeaderSize > 0 {
+		size = l.table.Style.HeaderSize
+	}
+	return size
 }
 
 func (l *tableLayout) calculateOccupied() {
@@ -225,34 +371,21 @@ func (l *tableLayout) calculateRows() {
 	}
 }
 
+// isCellStart 判断网格位置 (row,col) 是否为某个单元格的起点。
+//
+// 判据是归属网格：该位置的 owner 必须就是它自己。此前遍历所有行去找「第 col 列有
+// 单元格起始」，完全没考虑行内合并——被上一行跨行单元格覆盖的位置也会被当成起点，
+// 于是合并区域里的每个格子都被当成独立单元格再处理一遍。
 func (l *tableLayout) isCellStart(row, col int) bool {
-	for _, rowData := range l.table.Rows {
-		colIdx := 0
-		for _, cell := range rowData.Cells {
-			for colIdx < l.numCols && l.occupied[row][colIdx] && colIdx < col {
-				colIdx++
-			}
-			if colIdx == col {
-				return true
-			}
-			colSpan := cell.ColSpan
-			if colSpan < 1 {
-				colSpan = 1
-			}
-			colIdx += colSpan
-		}
+	if row < 0 || row >= len(l.owner) || col < 0 || col >= l.numCols {
+		return false
 	}
-	return false
+	ref := l.owner[row][col]
+	return ref.row == row && ref.col == col
 }
 
 func (l *tableLayout) estimateCellHeight(cell TableCell, cellWidth float64, isHeader bool) float64 {
-	size := cell.Size
-	if size == 0 {
-		size = 4.2
-	}
-	if isHeader && l.table.Style.HeaderSize > 0 {
-		size = l.table.Style.HeaderSize
-	}
+	size := l.cellSize(cell, isHeader)
 	padding := defaultTableCellPadding
 	firstWidth := cellWidth - 2*padding - cell.FirstLineIndent
 	contWidth := cellWidth - 2*padding - cell.HangingIndent
@@ -638,19 +771,13 @@ func (l *tableLayout) generateCellTexts(seg tableSegment) ([]Text, []Path, []Pat
 // 没有删除线属性，只能另画横线，所以两者必须一起产出：线要盖在被划掉的文字上，
 // 与文字共用同一套 X 累进，分开算会错位。
 func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, cellHeight, padding float64, rowIdx int) ([]Text, []Path, []Path) {
-	size := cell.Size
-	if size == 0 {
-		size = 4.2
-	}
+	isHeader := rowIdx < l.table.HeaderRows
+	size := l.cellSize(cell, isHeader)
 	font := cell.Font
 	weight := cell.Weight
 	italic := cell.Italic
 
-	isHeader := rowIdx < l.table.HeaderRows
 	if isHeader {
-		if l.table.Style.HeaderSize > 0 {
-			size = l.table.Style.HeaderSize
-		}
 		if l.table.Style.HeaderFont != "" {
 			font = l.table.Style.HeaderFont
 		}
