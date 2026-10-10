@@ -259,3 +259,32 @@ func shadingPDF(content []byte, shading string) []byte {
 	}
 	return assemblePDF(objects)
 }
+
+func TestConvertShadingAppliesExtGStateFillAlpha(t *testing.T) {
+	// sh 绘制的着色同样受当前非描边透明度 ca 影响（alphatrans.pdf：/GS1 gs
+	// 设 ca=0.5 后 /Sh1 sh）。忽略它会把半透明渐变渲染成不透明色块。
+	content := "q 0 0 100 100 re W n /GS1 gs /Sh1 sh Q"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /ExtGState << /GS1 5 0 R >> /Shading << /Sh1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
+		"<< /Type /ExtGState /ca 0.5 >>",
+		"<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [0 0 100 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> /Extend [true true] >>",
+	}
+	page := parseConvertedPage(t, objects)
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 1 {
+		t.Fatalf("path objects = %d, want 1", len(paths))
+	}
+	if paths[0].FillColor == nil || paths[0].FillColor.AxialShd == nil {
+		t.Fatalf("fill color = %+v, want axial shading", paths[0].FillColor)
+	}
+	alpha := paths[0].Alpha
+	if alpha == nil {
+		t.Fatal("着色路径 Alpha 为 nil，ca=0.5 未生效")
+	}
+	if *alpha < 126 || *alpha > 130 {
+		t.Fatalf("着色路径 Alpha = %d, want ~128", *alpha)
+	}
+}
