@@ -124,7 +124,8 @@ func MergePDF(ctx context.Context, sources []Source, w io.Writer, options MergeO
 		return nil, err
 	}
 	if options.Cover {
-		cover, closer, err := coverDocument(batch.Summary, options.CoverTitle)
+		coverPage := coverSheetSize(layout)
+		cover, closer, err := coverDocument(batch.Summary, options.CoverTitle, coverPage.width, coverPage.height)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +134,8 @@ func MergePDF(ctx context.Context, sources []Source, w io.Writer, options MergeO
 		entries = append([]sheetEntry{{
 			document:  cover,
 			page:      cover.Document.Pages[0],
-			width:     coverPageWidth,
-			height:    coverPageHeight,
+			width:     coverPage.width,
+			height:    coverPage.height,
 			title:     coverTitleLabel(options.CoverTitle),
 			fullSheet: true,
 		}}, entries...)
@@ -322,8 +323,27 @@ func closeAll(closers []io.Closer) {
 	}
 }
 
+// coverSheetSize 返回汇总页的纸张尺寸。
+//
+// 汇总页恒为纵向：拼版的输出纸可能被 auto 选成横向（--nup 4 时 210×140 的票在
+// 2×2 横向更省），若跟着横向，210×297 的汇总页会被 fitTransform 缩到 0.7 倍塞进
+// 横向纸里，缩在左半张、右半张全空，且字号跟着变小。
+//
+// 纸张本身沿用输出纸（打印时不会变成两种规格），只是取其纵向。fitSource 模式没有
+// 输出纸，汇总页用自己的 A4。
+func coverSheetSize(layout sheetLayout) (size pageSize) {
+	if layout.fitSource || layout.width <= 0 || layout.height <= 0 {
+		return pageSize{width: coverDefaultPageWidth, height: coverDefaultPageHeight}
+	}
+	size.width, size.height = layout.width, layout.height
+	if size.width > size.height {
+		size.width, size.height = size.height, size.width
+	}
+	return size
+}
+
 // coverDocument 生成汇总对账页，返回渲染文档与必须保持打开的 OFD 句柄。
-func coverDocument(summary Summary, title string) (*render.Document, io.Closer, error) {
+func coverDocument(summary Summary, title string, pageWidth, pageHeight float64) (*render.Document, io.Closer, error) {
 	if strings.TrimSpace(title) == "" {
 		title = defaultCoverTitle
 	}
@@ -332,11 +352,11 @@ func coverDocument(summary Summary, title string) (*render.Document, io.Closer, 
 		Title:   title,
 		Creator: creatorName,
 		PageSize: creator.PageSize{
-			Width:  coverPageWidth,
-			Height: coverPageHeight,
+			Width:  pageWidth,
+			Height: pageHeight,
 		},
 	}
-	pages := coverPages(summary, title)
+	pages := coverPages(summary, title, pageWidth, pageHeight)
 	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages},
 		creator.CreateOptions{})
 	if err != nil {

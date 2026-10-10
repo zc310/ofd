@@ -7,20 +7,24 @@ import (
 	"github.com/zc310/ofd/pkg/creator"
 )
 
-// 汇总页的排版常量，单位毫米。页面按 A4 竖排，版心左右各留 18mm。
+// 汇总页的排版常量，单位毫米。默认按 A4 竖排，版心左右各留 18mm。
+//
+// 页面尺寸不是写死的：拼版的输出纸可能被 auto 选成横向（例如 --nup 4 时 210×140
+// 的票在 2×2 横向更省），汇总页恒为纵向，版心与列宽都要跟着实际纸张重算。
 const (
-	coverPageWidth    = 210.0
-	coverPageHeight   = 297.0
-	coverMarginLeft   = 18.0
-	coverMarginRight  = 18.0
-	coverMarginTop    = 20.0
-	coverMarginBottom = 20.0
-	coverTitleSize    = 6.0
-	coverTitleGap     = 3.0
-	coverNoteSize     = 3.4
-	coverNoteGap      = 3.0
-	coverHeadSize     = 3.6
-	coverBodySize     = 3.2
+	// coverDefaultPageWidth、coverDefaultPageHeight 是 A4 纵向尺寸。
+	coverDefaultPageWidth  = 210.0
+	coverDefaultPageHeight = 297.0
+	coverMarginLeft        = 18.0
+	coverMarginRight       = 18.0
+	coverMarginTop         = 20.0
+	coverMarginBottom      = 20.0
+	coverTitleSize         = 6.0
+	coverTitleGap          = 3.0
+	coverNoteSize          = 3.4
+	coverNoteGap           = 3.0
+	coverHeadSize          = 3.6
+	coverBodySize          = 3.2
 	// coverGap 是相邻两张表之间的纵向间距。
 	coverGap = 7.0
 	// coverTextHeightRatio 是文字框高相对字号的比例，文字基线落在框底。
@@ -33,16 +37,49 @@ const (
 	// 表的表题正好落在上一张表的下边框上。
 	coverCaptionBlock = coverCaptionGap + coverBodySize + 0.8
 
-	// coverContentWidth 是版心宽度。
-	coverContentWidth = coverPageWidth - coverMarginLeft - coverMarginRight
-	// coverLabelWidth 是行首项目列的宽度，数值列从它之后开始。列宽合计等于版心
-	// 宽度，多出的项目名才有地方放。
-	coverLabelWidth = 68.0
-	// coverCountWidth 是张数列的宽度。
-	coverCountWidth = 16.0
-	// coverValueWidth 是每个金额列的宽度。
-	coverValueWidth = 30.0
+	// coverLabelRatio 是行首项目列占版心宽度的比例。数值列从它之后开始，列宽
+	// 合计恒等于版心宽度，多出的项目名才有地方放。
+	coverLabelRatio = 0.39
+	// coverCountRatio 是张数列占版心宽度的比例。
+	coverCountRatio = 0.09
 )
+
+// coverGeometry 是一组页面尺寸下的汇总页版心与列宽。
+//
+// 不能写死：汇总页恒为纵向，纸张却由拼版的输出纸决定——--nup 4 时 auto 会把
+// 输出纸选成横向（210×140 的票在 2×2 横向更省），汇总页要跟着换成同一张纸的
+// 纵向，版心与列宽都得重算。
+type coverGeometry struct {
+	pageWidth    float64
+	pageHeight   float64
+	contentWidth float64
+	labelWidth   float64
+	countWidth   float64
+	valueWidth   float64
+}
+
+// newCoverGeometry 由页面尺寸推出版心与各列宽度。
+func newCoverGeometry(pageWidth, pageHeight float64) coverGeometry {
+	content := pageWidth - coverMarginLeft - coverMarginRight
+	if content <= 0 {
+		content = pageWidth
+	}
+	label := content * coverLabelRatio
+	count := content * coverCountRatio
+	return coverGeometry{
+		pageWidth:    pageWidth,
+		pageHeight:   pageHeight,
+		contentWidth: content,
+		labelWidth:   label,
+		countWidth:   count,
+		valueWidth:   (content - label - count) / 3,
+	}
+}
+
+// widths 返回与 coverHeader 一一对应的列宽。
+func (g coverGeometry) widths() []float64 {
+	return []float64{g.labelWidth, g.countWidth, g.valueWidth, g.valueWidth, g.valueWidth}
+}
 
 const (
 	// creatorName 写进汇总页的 Creator 元数据。
@@ -54,9 +91,6 @@ const (
 	// coverNote 是汇总页上固定出现的口径说明。
 	coverNote = "金额单位：元；红字发票金额为负，已参与合计。"
 )
-
-// coverWidths 与 coverHeader 一一对应的列宽。
-var coverWidths = []float64{coverLabelWidth, coverCountWidth, coverValueWidth, coverValueWidth, coverValueWidth}
 
 // coverHeader 是各张表共用的表头。
 var coverHeader = []string{"项目", "张数", "不含税金额", "税额", "价税合计"}
@@ -95,11 +129,12 @@ func (p coverPageProvider) PageAt(index int) (creator.Page, error) {
 //
 // 每张表是独立的 creator.Table：换行、表头底色、框线与跨页切分都由创建器负责，
 // 这里只决定"哪些表放哪一页"。放不下一页的表单独占一页，由创建器再切成多页。
-func coverPages(summary Summary, title string) []creator.Page {
+func coverPages(summary Summary, title string, pageWidth, pageHeight float64) []creator.Page {
+	geometry := newCoverGeometry(pageWidth, pageHeight)
 	if strings.TrimSpace(title) == "" {
 		title = defaultCoverTitle
 	}
-	tables := coverTables(summary, title)
+	tables := coverTables(summary, title, geometry)
 
 	var pages []creator.Page
 	var placed []placedTable
@@ -108,8 +143,8 @@ func coverPages(summary Summary, title string) []creator.Page {
 	for _, table := range tables {
 		// y 是这张表（含表题）的顶边。放不下就换页，单表比一页还高时也照样
 		// 放上去，由创建器切分——这里不切是因为切了也不知道切在哪一行。
-		if len(placed) > 0 && y+table.blockHeight() > coverPageHeight-coverMarginBottom {
-			pages = append(pages, coverPage(len(pages) == 0, title, placed))
+		if len(placed) > 0 && y+table.blockHeight() > geometry.pageHeight-coverMarginBottom {
+			pages = append(pages, coverPage(len(pages) == 0, title, placed, geometry))
 			placed = nil
 			y = coverContTableTop
 		}
@@ -118,7 +153,7 @@ func coverPages(summary Summary, title string) []creator.Page {
 		y += table.blockHeight() + coverGap
 	}
 	if len(placed) > 0 {
-		pages = append(pages, coverPage(len(pages) == 0, title, placed))
+		pages = append(pages, coverPage(len(pages) == 0, title, placed, geometry))
 	}
 	return pages
 }
@@ -145,10 +180,10 @@ func (c coverTable) blockHeight() float64 {
 
 // coverPage 拼出一页汇总内容。标题与口径说明只在首页出现——续页是同一份汇总的
 // 后续部分，再画一遍会与表格内容叠在一起。
-func coverPage(first bool, title string, tables []placedTable) creator.Page {
+func coverPage(first bool, title string, tables []placedTable, geometry coverGeometry) creator.Page {
 	page := creator.Page{
 		Area: &creator.PageArea{PhysicalBox: &creator.Box{
-			X: 0, Y: 0, Width: coverPageWidth, Height: coverPageHeight,
+			X: 0, Y: 0, Width: geometry.pageWidth, Height: geometry.pageHeight,
 		}},
 	}
 	if !first {
@@ -159,8 +194,8 @@ func coverPage(first bool, title string, tables []placedTable) creator.Page {
 		}
 		return page
 	}
-	page.Items = append(page.Items, coverText(coverMarginLeft, coverTitleTop, coverContentWidth, coverTitleSize, title, true))
-	page.Items = append(page.Items, coverText(coverMarginLeft, coverNoteTop, coverContentWidth, coverNoteSize, coverNote, false))
+	page.Items = append(page.Items, coverText(coverMarginLeft, coverTitleTop, geometry.contentWidth, coverTitleSize, title, true))
+	page.Items = append(page.Items, coverText(coverMarginLeft, coverNoteTop, geometry.contentWidth, coverNoteSize, coverNote, false))
 
 	for _, placed := range tables {
 		table := placed.table.table
@@ -192,7 +227,7 @@ func coverText(x, y, width, size float64, value string, bold bool) creator.Item 
 //
 // 合计单独一张且不写表题：它是其余各表的基数，再标一次"合计"反而像另一组数据。
 // 其中红字发票那行只有项目列有文字，其余列留空——空单元格不生成图元。
-func coverTables(summary Summary, title string) []coverTable {
+func coverTables(summary Summary, title string, geometry coverGeometry) []coverTable {
 	total := [][]string{{
 		fmt.Sprintf("发票合计 %d 张", summary.Count),
 		fmt.Sprintf("%d", summary.Count),
@@ -204,7 +239,7 @@ func coverTables(summary Summary, title string) []coverTable {
 		total = append(total, []string{fmt.Sprintf("其中红字发票 %d 张", summary.Red), "", "", "", ""})
 	}
 
-	tables := []coverTable{coverTableOf("", total)}
+	tables := []coverTable{coverTableOf("", total, geometry)}
 	for _, group := range []struct {
 		title  string
 		groups []Group
@@ -232,17 +267,17 @@ func coverTables(summary Summary, title string) []coverTable {
 				moneyText(entry.TotalAmount),
 			})
 		}
-		tables = append(tables, coverTableOf(group.title, rows))
+		tables = append(tables, coverTableOf(group.title, rows, geometry))
 	}
 	return tables
 }
 
 // coverTableOf 造一张带表头与框线的表，并算出它占用的高度。
-func coverTableOf(title string, rows [][]string) coverTable {
+func coverTableOf(title string, rows [][]string, geometry coverGeometry) coverTable {
 	table := creator.Table{
 		X:            coverMarginLeft,
-		Width:        coverContentWidth,
-		ColumnWidths: coverWidths,
+		Width:        geometry.contentWidth,
+		ColumnWidths: geometry.widths(),
 		HeaderRows:   1,
 		Caption:      title,
 		ContinuationCaption: func() string {
@@ -294,7 +329,7 @@ func coverTableOf(title string, rows [][]string) coverTable {
 	}
 
 	// 高度只算内容区：表题画在内容顶边之上，由 captionHeight 单独记账。
-	height, err := creator.TableHeight(table, coverPageWidth)
+	height, err := creator.TableHeight(table, geometry.pageWidth)
 	if err != nil {
 		// 高度算不出来（列数与行数不一致等）时按行数估一个，交给创建器报错，
 		// 不在这里再叠一层校验错误。

@@ -39,7 +39,7 @@ func TestCoverTableWrapsLongSellerName(t *testing.T) {
 func TestCoverPagesUseCreatorTable(t *testing.T) {
 	summary := Summary{Count: 2, BySeller: longSellerGroups(2)}
 	tables := 0
-	for _, page := range coverPages(summary, "") {
+	for _, page := range coverPages(summary, "", coverDefaultPageWidth, coverDefaultPageHeight) {
 		for _, item := range page.Items {
 			if _, ok := item.(creator.Table); ok {
 				tables++
@@ -54,7 +54,7 @@ func TestCoverPagesUseCreatorTable(t *testing.T) {
 // 表多于一页时，标题与口径说明只在首页出现，续页再画一遍会与表格叠在一起。
 func TestCoverHeaderOnlyOnFirstPage(t *testing.T) {
 	summary := Summary{Count: 200, BySeller: longSellerGroups(200)}
-	pages := coverPages(summary, "发票汇总对账表")
+	pages := coverPages(summary, "发票汇总对账表", coverDefaultPageWidth, coverDefaultPageHeight)
 	if len(pages) < 2 {
 		t.Fatalf("200 个销售方应分多页，实际 %d 页", len(pages))
 	}
@@ -89,7 +89,7 @@ func TestCoverTablesLeaveGapAboveCaptions(t *testing.T) {
 	// 两组数据：短的走单页，200 个销售方的会分页，续页首表也带表题。
 	summaries := []Summary{summary, {Count: 200, BySeller: longSellerGroups(200)}}
 	for _, s := range summaries {
-		for pageIndex, page := range coverPages(s, "") {
+		for pageIndex, page := range coverPages(s, "", coverDefaultPageWidth, coverDefaultPageHeight) {
 			var placed []creator.Table
 			for _, item := range page.Items {
 				table, ok := item.(creator.Table)
@@ -102,7 +102,7 @@ func TestCoverTablesLeaveGapAboveCaptions(t *testing.T) {
 				}
 				if len(placed) > 0 {
 					previous := placed[len(placed)-1]
-					height, err := creator.TableHeight(previous, coverPageWidth)
+					height, err := creator.TableHeight(previous, coverDefaultPageWidth)
 					if err != nil {
 						t.Fatalf("上一张表的高度算不出来: %v", err)
 					}
@@ -127,7 +127,7 @@ func TestCoverTablesLeaveGapAboveCaptions(t *testing.T) {
 
 // coverPageProvider 的越界页码要报错，而不是返回零值页。
 func TestCoverPageProviderRejectsOutOfRange(t *testing.T) {
-	provider := coverPageProvider{pages: coverPages(Summary{Count: 1}, "")}
+	provider := coverPageProvider{pages: coverPages(Summary{Count: 1}, "", coverDefaultPageWidth, coverDefaultPageHeight)}
 	if _, err := provider.PageAt(-1); err == nil {
 		t.Error("负数页码应报错")
 	}
