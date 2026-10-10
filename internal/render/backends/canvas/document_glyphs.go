@@ -10,7 +10,7 @@ import (
 // 字形；把文档自身的权威映射注入字体后，渲染就能按原始文本走正常文字接口，
 // 在 PDF 等输出中保留可复制、可搜索的文字。
 
-// registerPageGlyphs 扫描页面（含模板与注释）的文字对象并登记字形映射。
+// RegisterPageGlyphs 扫描页面（含模板与注释）的文字对象并登记字形映射。
 func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent) {
 	if p == nil || doc == nil || content == nil {
 		return
