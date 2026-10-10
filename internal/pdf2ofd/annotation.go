@@ -3,29 +3,39 @@ package pdf2ofd
 import (
 	"math"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
+
+// pageAnnotationDicts 返回页面 /Annots 中的注解字典，保持 PDF 中的顺序。
+func pageAnnotationDicts(ctx *model.Context, pageDict types.Dict) []types.Dict {
+	object, found := pageDict.Find("Annots")
+	if !found {
+		return nil
+	}
+	resolved, err := ctx.XRefTable.Dereference(object)
+	if err != nil || resolved == nil {
+		return nil
+	}
+	array, ok := resolved.(types.Array)
+	if !ok {
+		return nil
+	}
+	annotations := make([]types.Dict, 0, len(array))
+	for _, entry := range array {
+		annotation, err := ctx.XRefTable.DereferenceDict(entry)
+		if err != nil || annotation == nil {
+			continue
+		}
+		annotations = append(annotations, annotation)
+	}
+	return annotations
+}
 
 // renderAnnotations 把页面注解的外观流（/AP /N）绘制到页面上。没有外观流的
 // 注解（例如部分仅有弹窗内容的文本注解）跳过。
 func (p *pdfInterpreter) renderAnnotations(pageDict types.Dict) {
-	object, found := pageDict.Find("Annots")
-	if !found {
-		return
-	}
-	resolved, err := p.ctx.XRefTable.Dereference(object)
-	if err != nil || resolved == nil {
-		return
-	}
-	array, ok := resolved.(types.Array)
-	if !ok {
-		return
-	}
-	for _, entry := range array {
-		annotation, err := p.ctx.XRefTable.DereferenceDict(entry)
-		if err != nil || annotation == nil {
-			continue
-		}
+	for _, annotation := range pageAnnotationDicts(p.ctx, pageDict) {
 		p.renderAnnotation(annotation)
 	}
 }
