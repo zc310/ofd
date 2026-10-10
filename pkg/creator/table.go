@@ -613,6 +613,69 @@ func (l *tableLayout) strikeColor() *Color {
 	return l.strokeColor()
 }
 
+// generateHeaderFills 返回表头行的背景填充路径。
+//
+// HeaderFillColor 此前只是个声明：模型、校验、manifest 转换三处都认它，绘制侧却
+// 从来没有对应的图元，于是声明了也没有任何效果。表头底色是识别表头的主要视觉
+// 手段，缺了它，长表格跨页后重复的表头行只能靠加粗字重区分。
+//
+// 按单元格画而不是按整行画一条：表头行里可能有 ColSpan/RowSpan 合并的单元格，
+// 逐格画才不会在合并区域上留下缝。跨页片段同理——tableFragments 把表头行放在
+// 每个片段的开头，这里照常画。
+func (l *tableLayout) generateHeaderFills(seg tableSegment) []Path {
+	color := l.table.Style.HeaderFillColor
+	if color == nil || l.table.HeaderRows <= 0 {
+		return nil
+	}
+	lastRow := seg.endRow
+	if lastRow >= l.table.HeaderRows {
+		lastRow = l.table.HeaderRows - 1
+	}
+	var paths []Path
+	for row := seg.startRow; row <= lastRow; row++ {
+		for col := 0; col < l.numCols; col++ {
+			if !l.occupied[row][col] || !l.isCellStart(row, col) {
+				continue
+			}
+			ref := l.cellOwner(row, col)
+			colSpan, rowSpan := l.cellSpan(ref)
+			// 单元格可能跨出行片段（表头行只占片段首行、行内合并到下一行），
+			// 画到片段边界为止，多出来的部分由后续片段自己画。
+			if limit := seg.endRow + 1 - row; rowSpan > limit {
+				rowSpan = limit
+			}
+			if rowSpan <= 0 {
+				continue
+			}
+			x := l.colX[col]
+			width := l.colX[col+colSpan] - x
+			y := l.rowY[row]
+			height := l.rowY[row+rowSpan] - y
+			if width <= 0 || height <= 0 {
+				continue
+			}
+			data := fmt.Sprintf("M 0 0 L %.3f 0 L %.3f %.3f L 0 %.3f C", width, width, height, height)
+			paths = append(paths, Path{
+				X: x, Y: y, Width: width, Height: height,
+				Data: data, Fill: true, FillColor: color,
+			})
+		}
+	}
+	return paths
+}
+
+// cellSpan 返回以 ref 为起点的单元格横跨的列数与行数。
+func (l *tableLayout) cellSpan(ref cellRef) (colSpan, rowSpan int) {
+	colSpan, rowSpan = 1, 1
+	for colSpan < l.numCols-ref.col && l.owner[ref.row][ref.col+colSpan] == ref {
+		colSpan++
+	}
+	for rowSpan < len(l.owner)-ref.row && l.owner[ref.row+rowSpan][ref.col] == ref {
+		rowSpan++
+	}
+	return colSpan, rowSpan
+}
+
 func (l *tableLayout) generateBorderPaths(seg tableSegment) []Path {
 	var paths []Path
 	strokeColor := l.strokeColor()
