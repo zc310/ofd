@@ -47,7 +47,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	}
 	fillSource := resolvePathColor(object.FillColor, dpFillColor)
 	strokeSource := resolvePathColor(object.StrokeColor, dpStrokeColor)
-	fillIsMesh := isMeshColor(fillSource) || needsRasterGradient(fillGradient)
+	fillIsMesh := isMeshColor(fillSource) || needsRasterGradient(fillGradient, object.Alpha)
 	var pattern *models.CtPattern
 	if fillSource != nil {
 		pattern = fillSource.Pattern
@@ -74,7 +74,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 			ctx.ClearFill()
 		}
 	}
-	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || needsRasterGradient(strokeGradient))
+	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || needsRasterGradient(strokeGradient, object.Alpha))
 	if strokeRaster && object.Fill {
 		// 描边稍后会作为栅格图片绘制，且必须盖在填充之上。这里先把剩余的
 		// 实色/矢量填充画掉；否则最后的 ctx.DrawPath 会用填充盖住描边内侧，
@@ -132,7 +132,15 @@ func isShadingColor(color *models.CTColor) bool {
 // needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。Repeat/Reflect、
 // 椭圆和焦点径向会栅格化；Extend=0/1/2 的轴向/径向路径渐变同样如此，因为
 // SVG 等矢量写入器无法表达单向延伸（文字另见 textShadingGradient）。
-func needsRasterGradient(gradient geom.Gradient) bool {
+// 半透明渐变（对象 Alpha<255 或色标带 Alpha）也必须栅格化：canvas 的 PDF
+// 写入器把渐变写成 Pattern/Shading 时只写 DeviceRGB，丢弃色标 Alpha。
+func needsRasterGradient(gradient geom.Gradient, objectAlpha *uint8) bool {
+	if gradient == nil {
+		return false
+	}
+	if graphicOpacity(objectAlpha) < 255 || gradientHasTransparency(gradient) {
+		return true
+	}
 	switch value := gradient.(type) {
 	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:
 		return true
@@ -141,6 +149,31 @@ func needsRasterGradient(gradient geom.Gradient) bool {
 	default:
 		return false
 	}
+}
+
+// gradientHasTransparency 判断渐变是否存在非完全不透明的色标。
+func gradientHasTransparency(gradient geom.Gradient) bool {
+	var stops geom.Grad
+	switch value := gradient.(type) {
+	case *geom.LinearGradient:
+		stops = value.Grad
+	case *geom.RadialGradient:
+		stops = value.Grad
+	case *ofdLinearGradient:
+		stops = value.stops
+	case *ofdRadialGradient:
+		stops = value.stops
+	case *ofdEllipticalGradient:
+		stops = value.stops
+	default:
+		return false
+	}
+	for _, stop := range stops {
+		if stop.Color.A != 255 {
+			return true
+		}
+	}
+	return false
 }
 
 // drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。

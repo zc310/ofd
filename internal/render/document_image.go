@@ -122,6 +122,11 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	if !finiteMatrix(m) {
 		return
 	}
+	// 图元 Alpha 在图片合成时施加；完全不透明时跳过，避免物化 NRGBA 破坏
+	// canvas 后端按源字节直传 PDF 的快路径。
+	if opacity := graphicOpacity(object.Alpha); opacity < 255 {
+		img = applyImageAlpha(img, opacity)
+	}
 	ctx.RenderImage(img, m)
 	p.drawImageBorder(ctx, object, pb.Height)
 }
