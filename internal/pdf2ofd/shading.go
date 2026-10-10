@@ -95,6 +95,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	if clips := p.buildClips(path.X, path.Y); clips != nil {
 		path.Clips = clips
 	}
+	path.Alpha = ofdAlpha(p.fillOpacity())
 	p.page.Items = append(p.page.Items, *path)
 }
 
