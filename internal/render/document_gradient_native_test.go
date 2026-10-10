@@ -57,3 +57,54 @@ func TestNewOFDRadialGradientNativeSafety(t *testing.T) {
 		})
 	}
 }
+
+// TestNeedsRasterGradientHandlesTransparency 锁定半透明渐变必须走栅格化：
+// canvas 的 PDF 写入器把渐变写成 Pattern/Shading 时只写 DeviceRGB，丢弃色标
+// Alpha，只有栅格化后再按图片嵌入才能保住透明度。
+func TestNeedsRasterGradientHandlesTransparency(t *testing.T) {
+	opaque := geom.Grad{
+		{Offset: 0, Color: color.RGBA{R: 255, A: 255}},
+		{Offset: 1, Color: color.RGBA{B: 255, A: 255}},
+	}
+	transparentStop := geom.Grad{
+		{Offset: 0, Color: color.RGBA{R: 255, A: 255}},
+		{Offset: 1, Color: color.RGBA{B: 255, A: 128}},
+	}
+	half := uint8(128)
+	linear := func(stops geom.Grad) *geom.LinearGradient {
+		g := geom.NewLinearGradient(geom.Point{}, geom.Point{X: 100})
+		g.Grad = stops
+		return g
+	}
+
+	tests := []struct {
+		name   string
+		fill   geom.Gradient
+		alpha  *uint8
+		expect bool
+	}{
+		{"不透明渐变无对象 Alpha 走原生", linear(opaque), nil, false},
+		{"不透明渐变带对象 Alpha 需栅格化", linear(opaque), &half, true},
+		{"半透明色标需栅格化", linear(transparentStop), nil, true},
+		{"OFD 采样渐变始终栅格化", &ofdLinearGradient{}, nil, true},
+		{"nil 渐变不处理", nil, nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := needsRasterGradient(tc.fill, tc.alpha); got != tc.expect {
+				t.Fatalf("needsRasterGradient = %v，期望 %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestGradientHasTransparency(t *testing.T) {
+	opaque := geom.Grad{{Offset: 0, Color: color.RGBA{A: 255}}, {Offset: 1, Color: color.RGBA{A: 255}}}
+	if gradientHasTransparency(&ofdLinearGradient{stops: opaque}) {
+		t.Fatal("全不透明色标被判定为透明")
+	}
+	translucent := geom.Grad{{Offset: 0, Color: color.RGBA{A: 255}}, {Offset: 1, Color: color.RGBA{A: 0}}}
+	if !gradientHasTransparency(&ofdLinearGradient{stops: translucent}) {
+		t.Fatal("含 A=0 色标的渐变未被判定为透明")
+	}
+}

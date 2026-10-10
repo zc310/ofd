@@ -1226,3 +1226,48 @@ func TestMaskRowWorkersFallsBackToSerial(t *testing.T) {
 		t.Errorf("空图应串行，得到 %d", got)
 	}
 }
+
+func TestImageObjectAlphaRendersTranslucent(t *testing.T) {
+	// ImageObject 的 Alpha 必须作用到图片合成：半透明白图叠在黑底上应得到
+	// 灰色像素，此前普通图片对象漏用 Alpha，整幅图以不变的不透明度绘制。
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for i := range img.Pix {
+		img.Pix[i] = 0xff
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	half := uint8(128)
+	document := creator.Document{
+		ID:       "image-alpha",
+		PageSize: creator.PageSize{Width: 20, Height: 20},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Path{X: 0, Y: 0, Width: 20, Height: 20, Data: "M 0 0 L 20 0 L 20 20 L 0 20 C", Fill: true, FillColor: &creator.Color{R: 0, G: 0, B: 0}},
+			creator.Image{X: 0, Y: 0, Width: 20, Height: 20, Data: encoded.Bytes(), Format: "PNG", Alpha: &half},
+		}}},
+	}
+	var ofdBytes bytes.Buffer
+	if err := creator.Create(document, &ofdBytes); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(ofdBytes.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	raster, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := raster.Bounds()
+	r, g, b, _ := raster.At(bounds.Dx()/2, bounds.Dy()/2).RGBA()
+	if r>>8 > 200 || g>>8 > 200 || b>>8 > 200 {
+		t.Fatalf("中心像素 = %d,%d,%d，图片 Alpha=128 未生效（渲染成不透明）", r>>8, g>>8, b>>8)
+	}
+	if r>>8 < 40 {
+		t.Fatalf("中心像素 = %d,%d,%d，图片未绘制", r>>8, g>>8, b>>8)
+	}
+}
