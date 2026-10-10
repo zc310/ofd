@@ -290,6 +290,25 @@ func collectSheetEntries(sources []mergeSource, items []Item) ([]sheetEntry, err
 			if err != nil {
 				return nil, fmt.Errorf("读取 %s 第 %d 页尺寸失败: %w", source.item.Name, index+1, err)
 			}
+			// 页面没有自己的 Area 时按文档公共 PageArea 兜底：卷式发票等票种
+			// 常常只在 CommonData 里给一次页面尺寸，页面上不重复写。解析器的
+			// PhysicalBoxMetadata 只读页面自身的 Area，不会回退（阅读器那边
+			// 另有一个 normalizePageBox 做同样的兜底）。
+			if box.Width <= 0 || box.Height <= 0 {
+				fallback := source.rendered.CommonData.PageArea
+				fallback.EnsurePhysicalBox()
+				if fallback.PhysicalBox.Width > 0 && fallback.PhysicalBox.Height > 0 {
+					box = fallback.PhysicalBox
+				}
+			}
+			// 仍然没有尺寸就没法落到纸上。这里报清楚是哪张票的哪一页，
+			// 不然它会一路带到建页面时才炸成"矢量表面尺寸无效: 0 x 0"——
+			// 那句话既不说是谁的问题，也不说为什么。
+			if box.Width <= 0 || box.Height <= 0 {
+				return nil, fmt.Errorf("%s 第 %d 页没有可用的物理尺寸（%.0f x %.0f）："+
+					"该页可能没有页面内容，且文档公共 PageArea 也没有给出尺寸",
+					source.item.Name, index+1, box.Width, box.Height)
+			}
 			entries = append(entries, sheetEntry{
 				document: source.rendered,
 				page:     page,
