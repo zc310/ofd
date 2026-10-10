@@ -126,6 +126,15 @@ func FallbackFontData(family string) ([]byte, bool) {
 	return render.FallbackFontData(family)
 }
 
+// UnregisterFallbackFont 声明某个字体族不再需要，释放其字节。
+//
+// 仍被打开的文档引用着它时不会立即删除，而是等最后一个文档放手——那些文档
+// 还要用它渲染，提前释放会出问题。因此界面上的"删除"对已打开的文档是延迟
+// 生效的，这是有意的。
+func UnregisterFallbackFont(family string) error {
+	return render.UnregisterFallbackFont(family)
+}
+
 // UseFallbackFont 使当前文档缺失字体时使用已全局注册的回退字体族。
 // 该字体族必须先通过 RegisterFallbackFont 注册。文字和搜索快照会失效，
 // 因为它们的字形度量可能使用了不同的回退字体。

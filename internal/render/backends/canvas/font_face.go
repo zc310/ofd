@@ -210,13 +210,15 @@ func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, 
 //
 // 找不到替代时返回 nil 而不是硬换：把拉丁文画成另一种拉丁字体，好过整段画不出来。
 func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextObject) *canvas.FontFamily {
-	if !systemFontLookupUsable() {
-		// wasm 没有可枚举的系统字体，缺字要靠注册的回退字体解决。
-		return nil
-	}
 	style := textFontStyle(object.Weight, object.Italic)
 	if familyCoversText(family, object, style) {
 		return nil
+	}
+	if !systemFontLookupUsable() {
+		// wasm 没有可枚举的系统字体，改查已注册的回退字体：浏览器里用户注册了
+		// 什么就用什么兜底。此前这里直接返回 nil，于是注册的字画不出的中文
+		// 只能变成一片空白——而空白在产物上看不出原因，也没有报错。
+		return p.registeredFallbackCovering(family, object, style)
 	}
 	// 族名就是当初选中的候选名：系统字体取候选族名，等宽回退统一叫
 	// "fixed-width"，内嵌字体取 OFD 里的字体名。因此按族名判断等宽够用，
@@ -233,6 +235,40 @@ func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextO
 		if familyCoversText(candidate, object, style) {
 			slog.Debug("fallback to CJK-capable system font", "from", family.Name(), "to", name)
 			return candidate
+		}
+	}
+	return nil
+}
+
+// registeredFallbackCovering 在已注册的回退字体里找一个能画出对象文字的族。
+//
+// 这是 wasm 下的缺字兜底：那里没有可枚举的系统字体，可用的只有用户注册
+// 进来的那几份。先挑样式对得上的，再退到任意样式——粗体用常规体画好过
+// 整段画不出来。找不到就返回 nil，让调用方沿用原字体（画成豆腐块，而不是
+// 整段空白）。
+//
+// 换字体会改变度量，所以只在原字体确实画不出时才换：文字层与绘制都经由
+// FaceObject，二者看到的是同一份决策，不会出现"按 A 度量、按 B 绘制"。
+func (p *Fonts) registeredFallbackCovering(
+	current *canvas.FontFamily, object models.TextObject, style drawing.FontStyle,
+) *canvas.FontFamily {
+	p.mu.Lock()
+	faces := append([]fallbackFace(nil), p.fallbackFaces...)
+	p.mu.Unlock()
+	// 两轮：先只要样式匹配的，再放宽到任意样式。
+	for _, sameStyleOnly := range []bool{true, false} {
+		for _, face := range faces {
+			if face.family == nil || face.family == current {
+				continue
+			}
+			if sameStyleOnly && face.style.CSS() != style.CSS() {
+				continue
+			}
+			if familyCoversText(face.family, object, style) {
+				slog.Debug("fallback to registered font",
+					"from", current.Name(), "to", face.family.Name())
+				return face.family
+			}
 		}
 	}
 	return nil

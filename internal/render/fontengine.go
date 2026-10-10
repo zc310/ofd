@@ -92,3 +92,23 @@ func FallbackFontData(family string) ([]byte, bool) {
 	}
 	return fallbackFontDataFn(family)
 }
+
+// unregisterFallbackFontFn 是后端提供的反注册实现，由字体引擎实现在导入时登记。
+var unregisterFallbackFontFn func(family string) error
+
+// RegisterFallbackFontUnregisterer 登记反注册实现。
+func RegisterFallbackFontUnregisterer(unregisterer func(family string) error) {
+	unregisterFallbackFontFn = unregisterer
+}
+
+// UnregisterFallbackFont 声明某个字体族不再需要，释放其字节。
+//
+// 仍被打开的文档引用着它时不会立即删除，而是等最后一个文档放手——那些文档
+// 还要用它渲染，提前释放会出问题。因此界面上的"删除"对已打开的文档是延迟
+// 生效的，这是有意的。
+func UnregisterFallbackFont(family string) error {
+	if unregisterFallbackFontFn == nil {
+		return errors.New("未导入字体引擎实现")
+	}
+	return unregisterFallbackFontFn(family)
+}

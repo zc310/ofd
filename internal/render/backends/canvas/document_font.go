@@ -47,6 +47,15 @@ type fallbackRegistration struct {
 	sources  []fallbackFontSource
 	ready    bool
 	renderMu *sync.Mutex
+	// refs 是当前仍持有该族字形引用的 Fonts 实例数。
+	//
+	// 注册表持有字体字节的唯一理由是"还有文档要用它"。没有这个计数就无法判断
+	// 能否释放，而提前释放会让并发的两份渲染拿到同一族名的两个 FontFamily——
+	// renderMu 也随之变成两把锁，等宽度量与绘制就可能错开。
+	refs int
+	// dropped 表示调用方已声明不再需要这个族。若此刻仍有人持有（refs>0），
+	// 真正删除要等最后一个持有者放手，见 releaseFallbackFamily。
+	dropped bool
 }
 
 // 空字符串只用于 fallbackRegistry 中的进程级默认字体；公开回退字体族名禁止为空。
@@ -370,6 +379,13 @@ func (p *Fonts) Close() {
 		return
 	}
 	p.closed = true
+	// 逐族放手，否则注册表的引用计数只增不减，字体字节永远等不到释放。
+	// 调用方没声明删除时 releaseFallbackFamily 只减计数不删表，行为不变。
+	fontCacheMu.Lock()
+	for family := range p.fallbacks {
+		releaseFallbackFamily(family)
+	}
+	fontCacheMu.Unlock()
 	p.Fonts = map[models.StRefID]*canvas.FontFamily{}
 	p.fallbacks = map[string]*canvas.FontFamily{}
 	p.fallbackFaces = nil
@@ -863,8 +879,34 @@ func fallbackFontData(family string) ([]byte, bool) {
 	return reg.sources[0].data, true
 }
 
-// UseFallbackFont 使当前字体上下文在缺失字体时使用已全局注册的回退字体族。
-// 该字体族必须先通过 RegisterFallbackFont 注册；其全部已注册样式都会生效。
+// RemoveFallbackFont 移除本字体上下文先前通过 UseFallbackFont 登记的回退字体族，
+// 使缺失字体不再回退到该族。全局注册表不回滚，但本上下文的回退集合与解析缓存会
+// 重建，后续渲染即恢复为内嵌或默认字体。
+func (p *Fonts) RemoveFallbackFont(family string) {
+	if p == nil || family == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.fallbacks[family]; !ok && !p.hasFallbackFace(family, drawing.FontRegular) {
+		return
+	}
+	delete(p.fallbacks, family)
+	fontCacheMu.Lock()
+	releaseFallbackFamily(family)
+	fontCacheMu.Unlock()
+	kept := p.fallbackFaces[:0]
+	for _, face := range p.fallbackFaces {
+		if face.name != family {
+			kept = append(kept, face)
+		}
+	}
+	p.fallbackFaces = kept
+	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
+	p.fallbackByFont = make(map[models.StRefID]string)
+	p.generation++
+}
+
 func (p *Fonts) UseFallbackFont(family string) error {
 	if p == nil {
 		return fmt.Errorf("字体上下文为空")
@@ -890,36 +932,15 @@ func (p *Fonts) UseFallbackFont(family string) error {
 	for _, source := range reg.sources {
 		p.applyFallbackFace(family, source.style, reg.family)
 	}
+	// 登记持有：注册表据此判断字节何时可以真正释放。
+	fontCacheMu.Lock()
+	acquireFallbackFamily(family)
+	fontCacheMu.Unlock()
 	// 回退集合变化后需重建按字体 ID 的解析缓存。
 	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
 	p.fallbackByFont = make(map[models.StRefID]string)
 	p.generation++
 	return nil
-}
-
-// RemoveFallbackFont 移除本字体上下文先前通过 UseFallbackFont 登记的回退字体族，
-// 使缺失字体不再回退到该族。全局注册表不回滚，但本上下文的回退集合与解析缓存会
-// 重建，后续渲染即恢复为内嵌或默认字体。
-func (p *Fonts) RemoveFallbackFont(family string) {
-	if p == nil || family == "" {
-		return
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if _, ok := p.fallbacks[family]; !ok && !p.hasFallbackFace(family, drawing.FontRegular) {
-		return
-	}
-	delete(p.fallbacks, family)
-	kept := p.fallbackFaces[:0]
-	for _, face := range p.fallbackFaces {
-		if face.name != family {
-			kept = append(kept, face)
-		}
-	}
-	p.fallbackFaces = kept
-	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
-	p.fallbackByFont = make(map[models.StRefID]string)
-	p.generation++
 }
 
 func (p *Fonts) hasFallbackFace(family string, style drawing.FontStyle) bool {
@@ -948,6 +969,64 @@ func (p *Fonts) applyFallbackFace(family string, style drawing.FontStyle, global
 		}
 	}
 	p.fallbackFaces = append(p.fallbackFaces, fallbackFace{family: globalFamily, style: style, name: family})
+}
+
+// acquireFallbackFamily 记一次持有。必须在 fontCacheMu 已持有时调用。
+func acquireFallbackFamily(family string) {
+	if family == "" {
+		return
+	}
+	if reg := fallbackRegistry[family]; reg != nil {
+		reg.refs++
+		reg.dropped = false
+	}
+}
+
+// releaseFallbackFamily 记一次放手；引用归零且调用方已声明不再需要时释放字节。
+//
+// 未声明不再需要（dropped=false）时只减计数不删：这是在正常关闭一个文档，
+// 用户没点删除，字体还要留给下一个文档用。
+func releaseFallbackFamily(family string) {
+	if family == "" {
+		return
+	}
+	reg := fallbackRegistry[family]
+	if reg == nil {
+		return
+	}
+	if reg.refs > 0 {
+		reg.refs--
+	}
+	if reg.refs == 0 && reg.dropped {
+		delete(fallbackRegistry, family)
+	}
+}
+
+// UnregisterFallbackFont 声明某个字体族不再需要，释放其字节。
+//
+// 仍被打开的文档引用着它时不会立即删除，而是等最后一个文档放手——那些文档
+// 还要用它渲染，提前释放会出问题。因此界面上的"删除"对已打开的文档是延迟
+// 生效的，这是有意的。
+func UnregisterFallbackFont(family string) error {
+	if family == "" {
+		return fmt.Errorf("回退字体族名为空")
+	}
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	reg := fallbackRegistry[family]
+	if reg == nil {
+		return fmt.Errorf("回退字体族 %q 未注册", family)
+	}
+	if family == defaultFallbackKey {
+		// 进程级默认字体是所有文档的最后一道兜底，反注册会让后续文档直接
+		// 渲染失败，而用户界面上并没有、也不该有它的条目。
+		return fmt.Errorf("回退字体族 %q 是内置默认字体，不能移除", family)
+	}
+	reg.dropped = true
+	if reg.refs == 0 {
+		delete(fallbackRegistry, family)
+	}
+	return nil
 }
 
 // registerFallbackFamily 把 字体族+样式+数据 注册到全局注册表。

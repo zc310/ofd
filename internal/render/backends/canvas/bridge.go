@@ -28,6 +28,7 @@ func init() {
 	render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
 		return NewFonts(doc)
 	})
+	render.RegisterFallbackFontUnregisterer(UnregisterFallbackFont)
 	// 矢量表面与 PDF 写入器。
 	render.RegisterVectorSurfaceFactory(newCanvasVectorSurface)
 	render.RegisterPDFDocumentFactory(newCanvasPDFDocument)

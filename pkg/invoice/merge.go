@@ -71,8 +71,10 @@ type MergeOptions struct {
 //
 // 默认行为与旧版一致：不给 Paper/NUp 时每页按自身尺寸 1:1 输出，不缩放不补白。
 //
-// 汇总页由 pkg/creator 现生成一张 OFD 再并入同一份 PDF，因此需要系统里能解析到
-// 中文字体；解析不到时汇总页文字可能缺失，此时发票页面本身不受影响。
+// 汇总页由 pkg/creator 现生成一张 OFD 再并入同一份 PDF。它只声明逻辑字体名
+// coverFont，字形由渲染环节解析——所以真正的前提是那个名字能被解析到一份含
+// 中文字形的字体（浏览器里没有系统字体，需调用方先注册）。解析不到时汇总页
+// 文字缺失，而失败没有任何报错，发票页面本身不受影响。
 func MergePDF(ctx context.Context, sources []Source, w io.Writer, options MergeOptions) (*Batch, error) {
 	if w == nil {
 		return nil, fmt.Errorf("PDF 输出写入器为空")
@@ -260,15 +262,8 @@ func parseDocuments(ctx context.Context, items []Item, payloads []Source,
 		}
 		rendered := render.NewDocumentWithDPI(color.Transparent, document, geom.DPI(96))
 		// 编码前把全局注册的回退字体挂到文档上。
-		//
-		// 这一步不能省：字体注册进引擎只是让引擎"有"这份字形，而渲染时是按
-		// 文档自己的字体清单找字体的，不登记就等于没有——页面看着正常，实际上
-		// 一个字都没画出来。走 Reader 的转换路径由 Reader 负责登记，这里直接
-		// 拿 *render.Document 输出，得自己补上。
-		for _, family := range render.RegisteredFallbackFamilies() {
-			if err := rendered.UseFallbackFont(family); err != nil {
-				return nil, closers, fmt.Errorf("应用回退字体 %q 失败: %w", family, err)
-			}
+		if err := applyFallbackFonts(rendered); err != nil {
+			return nil, closers, err
 		}
 		sources = append(sources, mergeSource{
 			rendered: rendered,
@@ -355,5 +350,29 @@ func coverDocument(summary Summary, title string) (*render.Document, io.Closer, 
 		_ = ofd.Close()
 		return nil, nil, fmt.Errorf("解析汇总页失败: 没有文档")
 	}
-	return render.NewDocumentWithDPI(color.Transparent, ofd.Documents[0], geom.DPI(96)), ofd, nil
+	rendered := render.NewDocumentWithDPI(color.Transparent, ofd.Documents[0], geom.DPI(96))
+	// 汇总页与发票页走同一条取字路径，也必须挂上回退字体。
+	if err := applyFallbackFonts(rendered); err != nil {
+		_ = ofd.Close()
+		return nil, nil, err
+	}
+	return rendered, ofd, nil
+}
+
+// applyFallbackFonts 把全局注册的回退字体逐个挂到渲染文档上。
+//
+// 这一步不能省：字体注册进引擎只是让引擎"有"这份字形，而渲染时是按文档自己
+// 的字体清单找字体的，不登记就等于没有——页面看着正常，实际上一个字都没画
+// 出来。走 Reader 的转换路径由 Reader 负责登记，这里直接拿 *render.Document
+// 输出，得自己补上。
+//
+// 发票页与汇总页都要调：两边都含逻辑字体（汇总页全文都是），漏了任一边就是
+// 那一页空白而不报错，而发票页有字、汇总页没字的组合尤其难发现。
+func applyFallbackFonts(rendered *render.Document) error {
+	for _, family := range render.RegisteredFallbackFamilies() {
+		if err := rendered.UseFallbackFont(family); err != nil {
+			return fmt.Errorf("应用回退字体 %q 失败: %w", family, err)
+		}
+	}
+	return nil
 }
