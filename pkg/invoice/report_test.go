@@ -288,7 +288,7 @@ func TestCoverPaginatesLongGroups(t *testing.T) {
 
 	// 行数不因分页丢失：按销售方汇总表应是表头加 120 行。
 	rows := 0
-	for _, table := range coverTables(summary, "分页测试") {
+	for _, table := range coverTables(summary, "分页测试", newCoverGeometry(coverDefaultPageWidth, coverDefaultPageHeight)) {
 		if table.table.Caption == "按销售方汇总" {
 			rows += len(table.table.Rows)
 		}
@@ -321,10 +321,10 @@ func TestCoverTablesSplitAcrossPages(t *testing.T) {
 // coverOFD 生成汇总页并解析回 OFD。
 func coverOFD(t *testing.T, summary Summary, title string) *parser.OFD {
 	t.Helper()
-	pages := coverPages(summary, title)
+	pages := coverPages(summary, title, coverDefaultPageWidth, coverDefaultPageHeight)
 	document := creator.Document{
 		ID:       "cover-test",
-		PageSize: creator.PageSize{Width: coverPageWidth, Height: coverPageHeight},
+		PageSize: creator.PageSize{Width: coverDefaultPageWidth, Height: coverDefaultPageHeight},
 		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
 	}
 	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages}, creator.CreateOptions{})
@@ -384,7 +384,7 @@ func coverTextOf(t *testing.T, ofd *parser.OFD) string {
 func TestCoverKeepsSinglePageWhenShort(t *testing.T) {
 	batch := mustExtractBatch(t, batchSources(plainInvoice("a.ofd", "033001900111", "1", "2026-09-01")),
 		BatchOptions{})
-	pages := coverPages(batch.Summary, "")
+	pages := coverPages(batch.Summary, "", coverDefaultPageWidth, coverDefaultPageHeight)
 	if len(pages) != 1 {
 		t.Fatalf("单张发票的汇总页应为 1 页，实际 %d", len(pages))
 	}
@@ -411,11 +411,11 @@ func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
 		t.Fatalf("应识别出 1 张红字发票，实际 %d", batch.Summary.Red)
 	}
 
-	pages := coverPages(batch.Summary, "")
+	pages := coverPages(batch.Summary, "", coverDefaultPageWidth, coverDefaultPageHeight)
 	provider := coverPageProvider{pages: pages}
 	meta := creator.Document{
 		ID:       "cover-red",
-		PageSize: creator.PageSize{Width: coverPageWidth, Height: coverPageHeight},
+		PageSize: creator.PageSize{Width: coverDefaultPageWidth, Height: coverDefaultPageHeight},
 		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
 	}
 	var buffer bytes.Buffer
@@ -435,7 +435,7 @@ func TestCoverTableSkipsEmptyCells(t *testing.T) {
 	table := coverTableOf("", [][]string{
 		{"甲", "3", "1.00", "0.13", "1.13"},
 		{"其中红字发票 3 张", "", "", "", ""},
-	}).table
+	}, newCoverGeometry(coverDefaultPageWidth, coverDefaultPageHeight)).table
 	if len(table.Rows) != 3 {
 		t.Fatalf("表头加两行应共 3 行，实际 %d 行", len(table.Rows))
 	}

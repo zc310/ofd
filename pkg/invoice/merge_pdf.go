@@ -107,8 +107,10 @@ func groupSheets(entries []sheetEntry, layout sheetLayout) []mergeSheet {
 			flush()
 			width, height := entry.width, entry.height
 			if !layout.fitSource {
-				// 指定了纸张就按纸张出：汇总页跟着输出纸张走，而不是自己那个尺寸。
-				width, height = layout.width, layout.height
+				// 指定了纸张就按纸张出：汇总页用同一张纸的纵向，不是自己那个尺寸。
+				// auto 可能把输出纸选成横向（--nup 4 时 210×140 的票在 2×2 横向更
+				// 省），跟着横向的话 210×297 的汇总页会被缩到 0.7 倍塞进左半张。
+				width, height = coverSheetSize(layout).width, coverSheetSize(layout).height
 			}
 			sheets = append(sheets, mergeSheet{
 				width:   width,

@@ -804,11 +804,12 @@ func TestCoverPageTakesItsOwnSheet(t *testing.T) {
 	}
 }
 
-// TestCoverFollowsOutputPaper 确认汇总页与票页用同一张输出纸。
+// TestCoverKeepsPortraitOnLandscapeSheets 确认输出纸被选成横向时汇总页仍是纵向。
 //
-// 方向由 auto 按占用率决定（A5 上 210×140 的票在 2×2 横向更省），所以这里不比
-// 具体横竖，只要求汇总页与票页同纸——打印时两张纸叠在一起才不会被当成两种规格。
-func TestCoverFollowsOutputPaper(t *testing.T) {
+// --nup 4 时 auto 会把输出纸选成横向（210×140 的票在 2×2 横向更省）。汇总页此前
+// 跟着横向，210×297 的内容被 fitTransform 缩到 0.7 倍塞进左半张纸，右半张全空、
+// 字号跟着变小。汇总页要的是同一张纸的纵向。
+func TestCoverKeepsPortraitOnLandscapeSheets(t *testing.T) {
 	entries := []sheetEntry{
 		{width: 210, height: 297, title: "汇总", fullSheet: true},
 		{width: 210, height: 140, title: "a.ofd"},
@@ -820,15 +821,45 @@ func TestCoverFollowsOutputPaper(t *testing.T) {
 	}
 	sheets := groupSheets(entries, layout)
 	if len(sheets) != 2 {
-		t.Fatalf("应是 2 张纸，实际 %d", len(sheets))
+		t.Fatalf("应是 2 张纸，实际 %d 张", len(sheets))
 	}
-	if sheets[0].width != sheets[1].width || sheets[0].height != sheets[1].height {
-		t.Errorf("汇总页 %.0fx%.0f 与票页 %.0fx%.0f 应同纸",
-			sheets[0].width, sheets[0].height, sheets[1].width, sheets[1].height)
+	cover, ticket := sheets[0], sheets[1]
+	// 同一张纸的两边长，只是方向相反。
+	if cover.width != ticket.height || cover.height != ticket.width {
+		t.Errorf("汇总页 %.0fx%.0f 应是票页 %.0fx%.0f 的纵向",
+			cover.width, cover.height, ticket.width, ticket.height)
+	}
+	if cover.width > cover.height {
+		t.Errorf("汇总页应为纵向，实际 %.0fx%.0f", cover.width, cover.height)
 	}
 	// 票页仍缩到格子里：2×2 的格子远小于整张 A5。
-	_, _, cellWidth, _ := sheetCell(layout, sheets[1], sheets[1].entries[0])
-	if cellWidth >= sheets[1].width {
-		t.Errorf("票页应缩进格子，实际格宽 %.1f、纸宽 %.1f", cellWidth, sheets[1].width)
+	_, _, cellWidth, _ := sheetCell(layout, ticket, ticket.entries[0])
+	if cellWidth >= ticket.width {
+		t.Errorf("票页应缩进格子，实际格宽 %.1f、纸宽 %.1f", cellWidth, ticket.width)
 	}
+}
+
+// 汇总页的纸张尺寸与它的落位必须一致，否则整页会被缩放塞进纸里。
+func TestCoverPageMatchesItsSheet(t *testing.T) {
+	for _, options := range []MergeOptions{
+		{NUp: 1}, {NUp: 2}, {NUp: 4}, {NUp: 4, Paper: "A5"}, {NUp: 3, Paper: "A3"},
+	} {
+		size := coverSheetSize(mustResolveLayout(t, options, 210, 140))
+		if size.width > size.height {
+			t.Errorf("%+v：汇总页应为纵向，实际 %.0fx%.0f", options, size.width, size.height)
+		}
+		if size.width <= 0 || size.height <= 0 {
+			t.Errorf("%+v：汇总页尺寸无效 %.0fx%.0f", options, size.width, size.height)
+		}
+	}
+}
+
+// mustResolveLayout 按给定票源解析版面。
+func mustResolveLayout(t *testing.T, options MergeOptions, width, height float64) sheetLayout {
+	t.Helper()
+	layout, err := resolveSheetLayout(options, entryPageSizes([]sheetEntry{{width: width, height: height}}))
+	if err != nil {
+		t.Fatalf("%+v 解析版面失败: %v", options, err)
+	}
+	return layout
 }
