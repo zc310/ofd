@@ -545,7 +545,7 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 				return err
 			}
 		case txml.EndTagToken:
-			tc.Value = sb.String()
+			tc.Value = decodeTextEscapes(sb.String())
 			return nil
 		}
 	}
