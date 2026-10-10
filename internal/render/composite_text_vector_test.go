@@ -229,8 +229,10 @@ func truncateSVG(svg string) string {
 	return svg[:200] + " ...(截断)..."
 }
 
-// 混有路径的复合单元需要独立绘制表面，保持栅格化。
-func TestCompositeMixedContentFallsBackToRaster(t *testing.T) {
+// 文字与路径混合、且声明尺寸不可信的复合单元也应保持矢量：火车票印章就是
+// 描边圆环加旋转文字，此前全部被烘焙成位图，一枚 30mm 的章被放进整页坐标系
+// 后 DPI 塌缩，缩放回页面就是一团糊。
+func TestCompositeMixedContentStaysVector(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mixed.ofd")
 	content := `<?xml version="1.0" encoding="UTF-8"?><ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">` +
@@ -278,7 +280,89 @@ func TestCompositeMixedContentFallsBackToRaster(t *testing.T) {
 	}
 
 	svg := compositePageSVG(t, path)
-	if strings.Contains(svg, "<text") {
-		t.Errorf("文字与路径混合的复合单元应回退栅格化，不应输出 <text>:\n%s", svg)
+	if !strings.Contains(svg, "<text") {
+		t.Fatalf("文字与路径混合的复合单元应保持矢量文字，实际 SVG:\n%s", svg)
+	}
+	if text := svgTextContent(t, svg); !strings.Contains(text, "海关总署") {
+		t.Errorf("SVG 文本节点应保留原始文字，得到 %q", text)
+	}
+	if strings.Contains(svg, "<image") {
+		t.Errorf("纯矢量内容的复合单元不应产生位图，实际 SVG:\n%s", svg)
+	}
+}
+
+// writeCompositePartsOFD 用给定的页面内容与资源写出最小 OFD，供多组复合图元
+// 场景复用。
+func writeCompositePartsOFD(t *testing.T, content, res string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "composite.ofd")
+	document := `<?xml version="1.0" encoding="UTF-8"?><ofd:Document xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:CommonData><ofd:MaxUnitID>9</ofd:MaxUnitID>` +
+		`<ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea>` +
+		`<ofd:DocumentRes>DocumentRes.xml</ofd:DocumentRes></ofd:CommonData>` +
+		`<ofd:Pages><ofd:Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>`
+	ofd := `<?xml version="1.0" encoding="UTF-8"?><ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">` +
+		`<ofd:DocBody><ofd:DocInfo><ofd:DocID>t</ofd:DocID><ofd:Version>1.0</ofd:Version></ofd:DocInfo>` +
+		`<ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot></ofd:DocBody></ofd:OFD>`
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	for name, data := range map[string]string{
+		"OFD.xml": ofd, "Doc_0/Document.xml": document,
+		"Doc_0/DocumentRes.xml": res, "Doc_0/Pages/Page_0/Content.xml": content,
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// 火车票印章的写法：单位变换（无 CTM）的复合图元，声明尺寸是整页 210×297，
+// 实际内容只有 30×20，且包在 PageBlock 里、含描边圆环和旋转文字。声明尺寸与
+// Boundary 严重不符，必须按 Boundary 建内容画布并保持矢量，否则章被压进整页
+// 坐标系后 DPI 塌缩，缩放回页面就是一团糊。
+func TestCompositeSealLikeBlockStaysVector(t *testing.T) {
+	content := `<?xml version="1.0" encoding="UTF-8"?><ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:Area><ofd:PhysicalBox>0 0 210 140</ofd:PhysicalBox></ofd:Area><ofd:Content>` +
+		`<ofd:Layer ID="3" Type="Body">` +
+		`<ofd:CompositeObject ID="4" Boundary="90 4 30 20" ResourceID="5"/>` +
+		`</ofd:Layer></ofd:Content></ofd:Page>`
+	res := `<?xml version="1.0" encoding="UTF-8"?><ofd:Res xmlns:ofd="http://www.ofdspec.org/2016">` +
+		`<ofd:CompositeGraphicUnits><ofd:CompositeGraphicUnit ID="5" Width="210" Height="297">` +
+		`<ofd:Content ID="6"><ofd:PageBlock ID="7">` +
+		`<ofd:PathObject ID="8" Boundary="-0.5 -0.5 31 21" LineWidth="1">` +
+		`<ofd:StrokeColor Value="255 0 0"/>` +
+		`<ofd:AbbreviatedData>M 1 10.5 B 1 5.253294 7.491871 1 15.5 1 B 23.50813 1 30 5.253294 30 10.5 B 30 15.74671 23.50813 20 15.5 20 B 7.491871 20 1 15.74671 1 10.5 C</ofd:AbbreviatedData>` +
+		`</ofd:PathObject>` +
+		`<ofd:TextObject ID="9" Boundary="0 0 30 20" Size="2.47" Font="1" CTM="0.2646864 -0.9643345 0.9643345 0.2646864 3.707355 8.771232">` +
+		`<ofd:FillColor Value="255 0 0"/><ofd:TextCode X="-1.235" Y="0.8904">全</ofd:TextCode></ofd:TextObject>` +
+		`<ofd:TextObject ID="10" Boundary="4.5 7.5913 38 8.94" Size="2.47" Font="1">` +
+		`<ofd:FillColor Value="255 0 0"/><ofd:TextCode X="2" Y="4.299" DeltaX="2.906 2.906 2.906 2.906 2.906">国家税务总局</ofd:TextCode></ofd:TextObject>` +
+		`</ofd:PageBlock></ofd:Content></ofd:CompositeGraphicUnit></ofd:CompositeGraphicUnits></ofd:Res>`
+
+	svg := compositePageSVG(t, writeCompositePartsOFD(t, content, res))
+	if !strings.Contains(svg, "<text") {
+		t.Fatalf("印章类复合单元应保持矢量文字，实际 SVG:\n%s", truncateSVG(svg))
+	}
+	if text := svgTextContent(t, svg); !strings.Contains(text, "国家税务总局") {
+		t.Errorf("SVG 文本节点应保留印章文字，得到 %q", text)
+	}
+	if !strings.Contains(svg, "<path") {
+		t.Errorf("印章圆环应保持矢量路径，实际 SVG:\n%s", truncateSVG(svg))
+	}
+	if strings.Contains(svg, "<image") {
+		t.Errorf("印章类纯矢量内容不应产生位图，实际 SVG:\n%s", truncateSVG(svg))
 	}
 }
