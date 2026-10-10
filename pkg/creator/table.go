@@ -936,6 +936,8 @@ func (l *tableLayout) createCellTexts(cell TableCell, cellX, cellY, cellWidth, c
 					Weight:    runWeight,
 					Italic:    runItalic,
 					TextCodes: []TextCode{{Value: body, Y: &offset}},
+					// 单元格动作挂到拆出的每个文字对象上，热区才是整格。
+					Actions: cell.Actions,
 				})
 				if run.strike {
 					strikes = append(strikes, l.strikePath(runX, bodyWidth, baseline, size))

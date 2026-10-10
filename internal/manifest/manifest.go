@@ -1109,6 +1109,8 @@ type TableCell struct {
 	Format string `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty"`
 	// FillColor 定义单元格背景色。
 	FillColor *Color `json:"fill_color,omitempty" yaml:"fill_color,omitempty" toml:"fill_color,omitempty"`
+	// Actions 定义单元格的点击动作，作用范围是整个单元格。
+	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 }
 
 // TableStyle 定义表格样式。
@@ -1867,6 +1869,11 @@ func (i Item) buildTable() (creator.Table, error) {
 				}
 				tc.FillColor = c
 			}
+			actions, err := buildActions(cell.Actions)
+			if err != nil {
+				return creator.Table{}, fmt.Errorf("cell.actions: %w", err)
+			}
+			tc.Actions = actions
 			cells = append(cells, tc)
 		}
 		table.Rows = append(table.Rows, creator.TableRow{Cells: cells})

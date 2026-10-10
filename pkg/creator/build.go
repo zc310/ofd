@@ -1918,7 +1918,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				layerResult.items = append(layerResult.items, expanded...)
 				continue
 			case Table:
-				if err := validateTable(value); err != nil {
+				if err := validateTable(value, pageCount, s.mediaIDs, s.mediaTypes, s.attachmentIDs, s.bookmarkNames); err != nil {
 					return fmt.Errorf("%s 图层 %d 的表格对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}
 				expanded, err := s.expandTable(value, pageCount, context, layerIndex+1, itemIndex+1)

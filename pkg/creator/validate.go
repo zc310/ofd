@@ -1603,7 +1603,7 @@ func validateCompositeResource(value CompositeGraphicUnit) error {
 	return nil
 }
 
-func validateTable(value Table) error {
+func validateTable(value Table, pageCount int, mediaIDs map[uint64]bool, mediaTypes map[uint64]string, attachmentIDs, bookmarkNames map[string]bool) error {
 	if len(value.Rows) == 0 {
 		return errors.New("表格至少需要一行")
 	}
@@ -1623,6 +1623,9 @@ func validateTable(value Table) error {
 			}
 			if cell.RowSpan < 0 {
 				return fmt.Errorf("表格第 %d 行第 %d 列的 RowSpan 无效: %d", i+1, j+1, cell.RowSpan)
+			}
+			if err := validateActions(cell.Actions, pageCount, mediaIDs, mediaTypes, attachmentIDs, bookmarkNames); err != nil {
+				return fmt.Errorf("表格第 %d 行第 %d 列的动作无效: %w", i+1, j+1, err)
 			}
 		}
 	}

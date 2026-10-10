@@ -385,7 +385,7 @@ func TestValidateTable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateTable(tt.table)
+			err := validateTable(tt.table, 1, nil, nil, nil, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateTable() error = %v, wantErr %v", err, tt.wantErr)
 			}

@@ -696,3 +696,47 @@ func boolPointer(value bool) *bool {
 func float64ptr(value float64) *float64 {
 	return &value
 }
+
+// 表格单元格的点击动作要转换到 creator.TableCell 上。
+//
+// TableCell 此前没有 Actions，Markdown 表格里的链接会退化成纯文本；这条守着
+// manifest 到 creator 的这一段接线。
+func TestBuildTableCellActions(t *testing.T) {
+	value := Manifest{
+		Version:  1,
+		Document: Document{ID: "cell-actions"},
+		Pages: []Page{{Items: []Item{{
+			Type: "table", X: 20, Y: 30, Width: 160, HeaderRows: 1,
+			Rows: []TableRow{
+				{Cells: []TableCell{{Value: "名称"}, {Value: "说明"}}},
+				{Cells: []TableCell{
+					{Value: "示例"},
+					{Value: "整格可点", Actions: []Action{{
+						Event: "CLICK",
+						URI:   &URIAction{URI: "https://example.com/cell"},
+					}}},
+				}},
+			},
+		}}}},
+	}
+	document, err := value.Build(t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := document.Pages[0].Items[0].(creator.Table)
+	if !ok {
+		t.Fatalf("第一个对象不是表格，实际 %T", document.Pages[0].Items[0])
+	}
+	plain := table.Rows[1].Cells[0]
+	if len(plain.Actions) != 0 {
+		t.Errorf("未声明动作的单元格不应有动作，实际 %+v", plain.Actions)
+	}
+	linked := table.Rows[1].Cells[1]
+	if len(linked.Actions) != 1 || linked.Actions[0].URI == nil ||
+		linked.Actions[0].URI.URI != "https://example.com/cell" {
+		t.Fatalf("单元格动作未转换: %+v", linked.Actions)
+	}
+	if linked.Actions[0].Event != creator.ActionEventClick {
+		t.Errorf("动作事件 = %q, want CLICK", linked.Actions[0].Event)
+	}
+}

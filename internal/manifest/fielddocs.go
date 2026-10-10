@@ -580,6 +580,7 @@ var SchemaDocs = []TypeDoc{
 		{Name: "hanging_indent", Type: "float64", Doc: "定义续行缩进。", Optional: true},
 		{Name: "format", Type: "string", Doc: "定义文本格式（text/markdown）。", Optional: true},
 		{Name: "fill_color", Type: "*Color", Doc: "定义单元格背景色。", Optional: true},
+		{Name: "actions", Type: "[]Action", Doc: "定义单元格的点击动作，作用范围是整个单元格。", Optional: true},
 	}},
 	{Name: "Point", Path: "document.actions[].region.areas[].start", Doc: "描述二维坐标点。", Fields: []FieldDoc{
 		{Name: "x", Type: "float64", Doc: "指定横坐标。", Optional: true},
