@@ -278,3 +278,18 @@ func bytesReaderFor(value Image) *bytes.Reader {
 	}
 	return bytes.NewReader(value.Data)
 }
+
+// TableHeight 返回表格内容区从顶边到最后一行的总高，单位毫米。
+//
+// 用于把多张表依次排在同一页上：摆下一张表要知道上一张有多高，而这个高度由行高
+// 与单元格换行决定，调用方按字号估算必然对不上。
+//
+// 不含表题：表题在内容上方，计入会让调用方重复预留间距。页高不参与计算，
+// 所以这个值与表格最终落在第几页无关。
+func TableHeight(table Table, pageWidth float64) (float64, error) {
+	layout, err := layoutTable(table, pageWidth, 0)
+	if err != nil {
+		return 0, err
+	}
+	return layout.rowY[len(layout.rowY)-1] - layout.rowY[0], nil
+}

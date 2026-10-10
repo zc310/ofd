@@ -13,6 +13,8 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/xuri/excelize/v2"
+	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -265,7 +267,10 @@ func TestMergePDFRejectsOversizedBatch(t *testing.T) {
 	}
 }
 
-// TestCoverPaginatesLongGroups 确认分组很多时汇总页分页，且不丢行。
+// TestCoverPaginatesLongGroups 确认分组很多时汇总页会分页，且不丢行。
+//
+// coverPages 只负责把表分配到页上，单表超出一页时由创建器切成多页，所以页数要从
+// 真正生成的 OFD 里数。
 func TestCoverPaginatesLongGroups(t *testing.T) {
 	groups := make([]Group, 0, 120)
 	for index := 0; index < 120; index++ {
@@ -275,21 +280,104 @@ func TestCoverPaginatesLongGroups(t *testing.T) {
 			Count: 1,
 		})
 	}
-	pages := coverPages(Summary{Count: 120, BySeller: groups}, "分页测试")
-	if len(pages) < 3 {
-		t.Fatalf("120 个销售方应分多页，实际 %d 页", len(pages))
+	summary := Summary{Count: 120, BySeller: groups}
+	pages := coverPageCount(t, summary, "分页测试")
+	if pages < 3 {
+		t.Fatalf("120 个销售方应分多页，实际 %d 页", pages)
 	}
+
+	// 行数不因分页丢失：按销售方汇总表应是表头加 120 行。
 	rows := 0
-	for _, page := range pages {
-		for _, layout := range page.tables {
-			if layout.table.title == "按销售方汇总" {
-				rows += len(layout.table.rows)
+	for _, table := range coverTables(summary, "分页测试") {
+		if table.table.Caption == "按销售方汇总" {
+			rows += len(table.table.Rows)
+		}
+	}
+	if rows != len(groups)+1 {
+		t.Errorf("按销售方汇总表应有表头加 %d 行，实际 %d 行", len(groups), rows-1)
+	}
+}
+
+// TestCoverTablesSplitAcrossPages 确认每一张表都真的排进了 OFD，行一个不少。
+func TestCoverTablesSplitAcrossPages(t *testing.T) {
+	groups := make([]Group, 0, 120)
+	for index := 0; index < 120; index++ {
+		groups = append(groups, Group{
+			Key:   "TAX000",
+			Name:  "销售方甲" + strconv.Itoa(index),
+			Count: 1,
+		})
+	}
+	summary := Summary{Count: 120, BySeller: groups}
+	ofd := coverOFD(t, summary, "")
+	text := coverTextOf(t, ofd)
+	for _, group := range groups {
+		if !strings.Contains(text, group.Name) {
+			t.Fatalf("销售方 %q 在生成结果里缺失", group.Name)
+		}
+	}
+}
+
+// coverOFD 生成汇总页并解析回 OFD。
+func coverOFD(t *testing.T, summary Summary, title string) *parser.OFD {
+	t.Helper()
+	pages := coverPages(summary, title)
+	document := creator.Document{
+		ID:       "cover-test",
+		PageSize: creator.PageSize{Width: coverPageWidth, Height: coverPageHeight},
+		Fonts:    []creator.Font{{Name: coverFont, FamilyName: coverFont, Charset: "prc"}},
+	}
+	encoded, err := creator.MarshalWithPages(document, coverPageProvider{pages: pages}, creator.CreateOptions{})
+	if err != nil {
+		t.Fatalf("生成汇总页失败: %v", err)
+	}
+	ofd, err := parser.NewOFD(encoded)
+	if err != nil {
+		t.Fatalf("解析汇总页失败: %v", err)
+	}
+	t.Cleanup(func() { _ = ofd.Close() })
+	return ofd
+}
+
+func coverPageCount(t *testing.T, summary Summary, title string) int {
+	t.Helper()
+	ofd := coverOFD(t, summary, title)
+	if len(ofd.Documents) == 0 {
+		t.Fatal("生成的 OFD 没有文档体")
+	}
+	return len(ofd.Documents[0].Pages)
+}
+
+// coverTextOf 提取生成结果里的全部文字。
+func coverTextOf(t *testing.T, ofd *parser.OFD) string {
+	t.Helper()
+	var builder strings.Builder
+	for _, document := range ofd.Documents {
+		for _, page := range document.Pages {
+			var content models.PageContent
+			if err := page.WithPageContent(func(c *models.PageContent) error {
+				content = *c
+				return nil
+			}); err != nil {
+				t.Fatalf("读取页面内容失败: %v", err)
+			}
+			if content.Content == nil {
+				continue
+			}
+			for _, layer := range content.Content.Layer {
+				for _, item := range layer.Items {
+					if item.Text == nil {
+						continue
+					}
+					for _, code := range item.Text.TextCode {
+						builder.WriteString(code.Value)
+					}
+					builder.WriteByte('\n')
+				}
 			}
 		}
 	}
-	if rows != len(groups) {
-		t.Errorf("分页后应保留全部 %d 行销售方，实际 %d 行", len(groups), rows)
-	}
+	return builder.String()
 }
 
 // TestCoverKeepsSinglePageWhenShort 确认少量发票只生成一页汇总。
@@ -300,8 +388,12 @@ func TestCoverKeepsSinglePageWhenShort(t *testing.T) {
 	if len(pages) != 1 {
 		t.Fatalf("单张发票的汇总页应为 1 页，实际 %d", len(pages))
 	}
-	if pages[0].title != defaultCoverTitle {
-		t.Errorf("默认标题 = %q，期望 %q", pages[0].title, defaultCoverTitle)
+	title, ok := coverPageText(pages[0])
+	if !ok {
+		t.Fatal("首页应含标题文字")
+	}
+	if title != defaultCoverTitle {
+		t.Errorf("默认标题 = %q，期望 %q", title, defaultCoverTitle)
 	}
 }
 
@@ -320,10 +412,7 @@ func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
 	}
 
 	pages := coverPages(batch.Summary, "")
-	provider := coverPageProvider{}
-	for _, data := range pages {
-		provider.pages = append(provider.pages, coverPage(data))
-	}
+	provider := coverPageProvider{pages: pages}
 	meta := creator.Document{
 		ID:       "cover-red",
 		PageSize: creator.PageSize{Width: coverPageWidth, Height: coverPageHeight},
@@ -338,23 +427,28 @@ func TestCoverWithRedInvoicesIsCreatable(t *testing.T) {
 	}
 }
 
-// TestCoverRowSkipsEmptyCells 确认占位空串不生成文字图元。
-func TestCoverRowSkipsEmptyCells(t *testing.T) {
-	items := coverRow([]string{"其中红字发票 3 张", "", "", "", ""}, 100, coverBodySize, false)
-	if len(items) != 1 {
-		t.Fatalf("只有项目列有文字，应只生成 1 个图元，实际 %d 个", len(items))
+// TestCoverTableSkipsEmptyCells 确认占位空串不生成空单元格。
+//
+// 红字发票那行只有项目列有文字，金额列是占位空串。空单元格交给创建器会被
+// "文字内容不能为空"校验拦下，整份汇总页都生成不出来。
+func TestCoverTableSkipsEmptyCells(t *testing.T) {
+	table := coverTableOf("", [][]string{
+		{"甲", "3", "1.00", "0.13", "1.13"},
+		{"其中红字发票 3 张", "", "", "", ""},
+	}).table
+	if len(table.Rows) != 3 {
+		t.Fatalf("表头加两行应共 3 行，实际 %d 行", len(table.Rows))
 	}
-	text, ok := items[0].(creator.Text)
-	if !ok {
-		t.Fatalf("图元类型 = %T，期望 creator.Text", items[0])
-	}
-	if !strings.Contains(text.Value, "红字发票") {
-		t.Errorf("图元文字 = %q，应含红字发票说明", text.Value)
-	}
-	// 非空列仍要正常生成，且落在各自的列位置上。
-	full := coverRow([]string{"甲", "3", "1.00", "0.13", "1.13"}, 100, coverBodySize, false)
+	full := table.Rows[1].Cells
 	if len(full) != 5 {
-		t.Errorf("完整行应生成 5 个图元，实际 %d 个", len(full))
+		t.Errorf("完整行应生成 5 个单元格，实际 %d 个", len(full))
+	}
+	spare := table.Rows[2].Cells
+	if len(spare) != 1 {
+		t.Fatalf("只有项目列有文字，应只生成 1 个单元格，实际 %d 个", len(spare))
+	}
+	if !strings.Contains(spare[0].Value, "红字发票") {
+		t.Errorf("单元格文字 = %q，应含红字发票说明", spare[0].Value)
 	}
 }
 
@@ -627,4 +721,14 @@ func TestWriteXLSXColorsMoneyNegatives(t *testing.T) {
 	if mark != "红字" {
 		t.Errorf("红字列 = %q，期望 红字", mark)
 	}
+}
+
+// coverPageText 取汇总页上的标题文字。
+func coverPageText(page creator.Page) (string, bool) {
+	for _, item := range page.Items {
+		if text, ok := item.(creator.Text); ok {
+			return text.Value, true
+		}
+	}
+	return "", false
 }
