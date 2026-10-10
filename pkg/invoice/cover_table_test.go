@@ -74,29 +74,54 @@ func TestCoverHeaderOnlyOnFirstPage(t *testing.T) {
 	}
 }
 
-// 同一页上的多张表不能互相压叠：creator.Table 按 TableHeight 报告占用高度，
-// 这里逐表断言顶边与上一张表的底边留得出间距。
-func TestCoverTablesDoNotOverlap(t *testing.T) {
+// 同一页上的相邻两张表之间要留得出 coverGap 的间距。
+//
+// 创建器把表题画在 table.Y 之上，若只按内容高度排布，下一张表的表题会正好
+// 落在上一张表的下边框上——表题与上方表格贴在一起就是这么来的。
+func TestCoverTablesLeaveGapAboveCaptions(t *testing.T) {
 	summary := Summary{
 		Count:    6,
 		BySeller: longSellerGroups(3),
 		ByType:   []Group{{Key: "01", Name: "增值税专用发票", Count: 4}},
 		ByMonth:  []Group{{Key: "2026-07", Name: "2026-07", Count: 2}},
 	}
-	tables := coverTables(summary, "")
-	if len(tables) != 4 {
-		t.Fatalf("合计、三张分组表应共 4 张，实际 %d 张", len(tables))
+	checked := 0
+	// 两组数据：短的走单页，200 个销售方的会分页，续页首表也带表题。
+	summaries := []Summary{summary, {Count: 200, BySeller: longSellerGroups(200)}}
+	for _, s := range summaries {
+		for pageIndex, page := range coverPages(s, "") {
+			var placed []creator.Table
+			for _, item := range page.Items {
+				table, ok := item.(creator.Table)
+				if !ok {
+					continue
+				}
+				if captionTop := table.Y - coverCaptionBlock; table.Caption != "" && captionTop < coverMarginTop-0.01 {
+					t.Errorf("第 %d 页「%s」的表题顶边 %.2fmm 越出版心上边 %.2fmm",
+						pageIndex+1, table.Caption, captionTop, coverMarginTop)
+				}
+				if len(placed) > 0 {
+					previous := placed[len(placed)-1]
+					height, err := creator.TableHeight(previous, coverPageWidth)
+					if err != nil {
+						t.Fatalf("上一张表的高度算不出来: %v", err)
+					}
+					captionTop := table.Y
+					if table.Caption != "" {
+						captionTop -= coverCaptionBlock
+					}
+					if gap := captionTop - (previous.Y + height); gap < coverGap-0.01 {
+						t.Errorf("第 %d 页「%s」与上一张表只隔了 %.2fmm，应至少 %.2fmm",
+							pageIndex+1, table.Caption, gap, coverGap)
+					}
+					checked++
+				}
+				placed = append(placed, table)
+			}
+		}
 	}
-	y := coverFirstTableTop
-	for index, table := range tables {
-		if table.height <= 0 {
-			t.Errorf("第 %d 张表高度为 %.2f，应为正数", index+1, table.height)
-		}
-		y += table.height + coverGap
-		if y > coverPageHeight-coverMarginBottom && index < len(tables)-1 {
-			t.Errorf("第 %d 张表排到 %.2fmm 已超出版心，但后面还有 %d 张表",
-				index+1, y, len(tables)-index-1)
-		}
+	if checked == 0 {
+		t.Fatal("没有可比对的相邻表，样例数据不足")
 	}
 }
 

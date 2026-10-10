@@ -27,6 +27,11 @@ const (
 	coverTextHeightRatio = 1.4
 	// coverCaptionGap 是表题与表格内容之间的间距。
 	coverCaptionGap = 2.5
+	// coverCaptionBlock 是一行表题在表格内容上方占掉的高度：题底距表格顶边
+	// 一个 coverCaptionGap，题身一个字号。创建器把表题画在 table.Y 之上，
+	// 排布时必须把它单独算进这张表占用的高度，混进表格高度里等于让下一张
+	// 表的表题正好落在上一张表的下边框上。
+	coverCaptionBlock = coverCaptionGap + coverBodySize + 0.8
 
 	// coverContentWidth 是版心宽度。
 	coverContentWidth = coverPageWidth - coverMarginLeft - coverMarginRight
@@ -65,8 +70,9 @@ const (
 	coverNoteTop = coverTitleTop + coverTitleSize + coverTitleGap
 	// coverFirstTableTop 是首页第一张表的顶边，已让出标题与口径说明。
 	coverFirstTableTop = coverNoteTop + coverNoteSize*coverTextHeightRatio + coverNoteGap
-	// coverContTableTop 是续页表格的顶边，续页没有标题与口径说明。
-	coverContTableTop = coverMarginTop
+	// coverContTableTop 是续页第一张表的顶边，续页没有标题与口径说明，但首张
+	// 表通常带表题，表题画在顶边之上，要给它让出位置，否则会顶出版心上边。
+	coverContTableTop = coverMarginTop + coverCaptionBlock
 )
 
 // coverPageProvider 按索引提供汇总页，是 creator.PageProvider 的实现。
@@ -100,15 +106,16 @@ func coverPages(summary Summary, title string) []creator.Page {
 	// 首页要留出标题与口径说明两行；续页没有它们，表格从版心顶边开始。
 	y := coverFirstTableTop
 	for _, table := range tables {
-		// 放不下就换页。单表比一页还高时也照样放上去，由创建器切分——这里
-		// 不切是因为切了也不知道切在哪一行。
-		if len(placed) > 0 && y+table.height > coverPageHeight-coverMarginBottom {
+		// y 是这张表（含表题）的顶边。放不下就换页，单表比一页还高时也照样
+		// 放上去，由创建器切分——这里不切是因为切了也不知道切在哪一行。
+		if len(placed) > 0 && y+table.blockHeight() > coverPageHeight-coverMarginBottom {
 			pages = append(pages, coverPage(len(pages) == 0, title, placed))
 			placed = nil
 			y = coverContTableTop
 		}
-		placed = append(placed, placedTable{table: table, top: y})
-		y += table.height + coverGap
+		// placedTable.top 记的是表格内容的顶边：表题画在它上面 coverCaptionBlock 处。
+		placed = append(placed, placedTable{table: table, top: y + table.captionHeight})
+		y += table.blockHeight() + coverGap
 	}
 	if len(placed) > 0 {
 		pages = append(pages, coverPage(len(pages) == 0, title, placed))
@@ -124,8 +131,16 @@ type placedTable struct {
 
 // coverTable 是待排布的一张表，连同它占用的高度。
 type coverTable struct {
-	table  creator.Table
+	table creator.Table
+	// height 是表格内容区的高度，不含表题。
 	height float64
+	// captionHeight 是表题占掉的高度，画在内容顶边之上；无表题为 0。
+	captionHeight float64
+}
+
+// blockHeight 是这张表连表题一起占掉的高度，即它在纵向节奏里的步长。
+func (c coverTable) blockHeight() float64 {
+	return c.captionHeight + c.height
 }
 
 // coverPage 拼出一页汇总内容。标题与口径说明只在首页出现——续页是同一份汇总的
@@ -278,17 +293,18 @@ func coverTableOf(title string, rows [][]string) coverTable {
 		table.Rows = append(table.Rows, creator.TableRow{Cells: cells})
 	}
 
-	// 高度含表题占位：表题在内容上方，连续排布时它也占地方。
+	// 高度只算内容区：表题画在内容顶边之上，由 captionHeight 单独记账。
 	height, err := creator.TableHeight(table, coverPageWidth)
 	if err != nil {
 		// 高度算不出来（列数与行数不一致等）时按行数估一个，交给创建器报错，
 		// 不在这里再叠一层校验错误。
 		height = coverHeaderHeight() + float64(len(table.Rows))*coverRowHeight()
 	}
+	captionHeight := 0.0
 	if title != "" {
-		height += coverCaptionGap + coverBodySize + 0.8
+		captionHeight = coverCaptionBlock
 	}
-	return coverTable{table: table, height: height}
+	return coverTable{table: table, height: height, captionHeight: captionHeight}
 }
 
 // coverCellAlign 返回列的对齐方式：项目列居左，张数与三个金额列居右，
