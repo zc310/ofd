@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/canvas/text"
@@ -453,7 +454,7 @@ func loadCachedSystemFont(p *Fonts, name string, style drawing.FontStyle) (*canv
 		return entry.family, true
 	}
 
-	family := canvas.NewFontFamily(name)
+	family := canvas.NewFontFamily(cssFontFamilyName(name))
 	slog.Debug("load system font", "family", name, "file", filename, "style", style)
 	if err := family.LoadSystemFont(name, canvasStyle(style)); err != nil {
 		return nil, false
@@ -481,7 +482,7 @@ func loadCachedFontFile(p *Fonts, filename, name string, style drawing.FontStyle
 		entry.retain(p)
 		return entry.family, true
 	}
-	family := canvas.NewFontFamily(name)
+	family := canvas.NewFontFamily(cssFontFamilyName(name))
 	slog.Debug("load font file", "family", name, "file", filename, "style", style)
 	if err := family.LoadFontFile(filename, canvasStyle(style)); err != nil {
 		return nil, false
@@ -507,6 +508,33 @@ func systemFontKeyForFile(filename string, style drawing.FontStyle) (systemFontK
 	}, true
 }
 
+// cssFontFamilyName 把字体族名规范成合法的 CSS 标识符。canvas 的 SVG/TeX 输出把
+// 族名直接拼进 font 简写且不加引号，而 OFD 内嵌字体常带子集前缀（如
+// "BCCDEE+FZHTK--GBK1-0"），"+" 不是合法的 CSS 标识符字符，会让整条 font 声明
+// 作废，浏览器退回默认字号（文字明显变大）。把非法字符替换为 "-" 既让声明生效，
+// 又保留各族名之间的差异。
+func cssFontFamilyName(name string) string {
+	if name == "" {
+		return name
+	}
+	var b strings.Builder
+	b.Grow(len(name) + 1)
+	for _, r := range name {
+		switch {
+		case r == '-' || r == '_' || r == ' ' || unicode.IsLetter(r) || unicode.IsDigit(r) || r >= 0x80:
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	safe := b.String()
+	// 标识符不能以数字开头（如 "0"），补一个字母前缀。
+	if safe != "" && unicode.IsDigit([]rune(safe)[0]) {
+		return "f" + safe
+	}
+	return safe
+}
+
 // loadCachedEmbeddedFont 按字体数据、样式、族名与字形映射缓存内嵌字体解析结果，
 // 使同一字体在本文档的多次加载中只做一次 fontfix 修复与 canvas 解析。缓存在
 // Fonts 实例上，随文档关闭释放。
@@ -524,7 +552,7 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 	}
 	p.embeddedMu.Unlock()
 
-	family := canvas.NewFontFamily(name)
+	family := canvas.NewFontFamily(cssFontFamilyName(name))
 	if err := loadEmbeddedFont(p, family, data, style, mappings); err != nil {
 		return nil, err
 	}
@@ -786,7 +814,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	if family, ok := loadFixedWidthFont(ft, fontStyle); ok {
 		return family, "", nil
 	}
-	family := canvas.NewFontFamily(fontName)
+	family := canvas.NewFontFamily(cssFontFamilyName(fontName))
 	// 逻辑字体没有嵌入数据时按族名匹配系统字体。OFD 的 FontName 通常是
 	// 资源名（如 F0），不能拿来匹配，必须以 FamilyName（如"仿宋_GB2312"、
 	// "方正小标宋_GBK"）为准。
@@ -1052,7 +1080,7 @@ func registerFallbackFamily(family string, style drawing.FontStyle, data []byte)
 	defer reg.renderMu.Unlock()
 	fontFamily := reg.family
 	if len(reg.sources) == 0 || !sameFallbackFontData(reg.sources, digest) {
-		fontFamily = canvas.NewFontFamily(family)
+		fontFamily = canvas.NewFontFamily(cssFontFamilyName(family))
 		for _, source := range reg.sources {
 			if err := loadFallbackFace(fontFamily, source.data, source.style); err != nil {
 				if len(reg.sources) == 0 {
