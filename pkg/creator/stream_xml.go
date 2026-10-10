@@ -556,11 +556,7 @@ func streamPath(w *streamXMLWriter, item builtItem, value Path, pageIDs []uint64
 		w.AttrFloatList("CTM", value.CTM[:])
 	}
 	streamGraphicStyle(w, value.LineWidth, value.Cap, value.Join, value.MiterLimit, value.DashOffset, value.DashPattern, value.Alpha)
-	if value.StrokeSet != nil {
-		w.Attr("Stroke", strconv.FormatBool(*value.StrokeSet))
-	} else if value.Stroke {
-		w.Attr("Stroke", "true")
-	}
+	w.Attr("Stroke", pathStrokeValue(value.Stroke, value.StrokeSet))
 	if value.Fill {
 		w.Attr("Fill", "true")
 	}
@@ -813,11 +809,7 @@ func streamClipPath(w *streamXMLWriter, value ClipPath) {
 		w.AttrFloatList("CTM", value.CTM[:])
 	}
 	streamGraphicStyle(w, value.LineWidth, value.Cap, value.Join, value.MiterLimit, value.DashOffset, value.DashPattern, value.Alpha)
-	if value.StrokeSet != nil {
-		w.Attr("Stroke", strconv.FormatBool(*value.StrokeSet))
-	} else if value.Stroke {
-		w.Attr("Stroke", "true")
-	}
+	w.Attr("Stroke", pathStrokeValue(value.Stroke, value.StrokeSet))
 	if value.Fill {
 		w.Attr("Fill", "true")
 	}

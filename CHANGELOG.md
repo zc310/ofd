@@ -11,6 +11,13 @@
 
 ## 未发布
 
+- `pkg/creator` 生成路径图元时一律显式写出 `Stroke`。`CT_Path` 的 `Stroke` 在 schema 里
+  缺省为 `true`（`internal/schema/xsd/Page.xsd`），此前省略该属性的填充路径会按 schema
+  继承到描边，再配上缺省的 0.25mm 线宽与缺省黑色描边色，被套上一圈本不该有的黑边。
+  带底色的表格最明显：表头底色矩形被描黑，压在上面的 0.2mm 浅灰边框线盖成又粗又深的
+  线，整张表看起来像黑色网格。`Stroke` 是普通 bool，零值即明确的不描边，因此照实写出；
+  显式设过 `StrokeSet` 的仍以它为准。
+
 - `pkg/creator` 新增 `TableCell.Runs` 与 `TextRun`，让调用方直接交出已经解析好的行内片段
   （粗体、斜体、等宽、删除线、链接），不必再拼回 Markdown 源码交给创建器二次解析。
   `Runs` 与 `Value`/`Format` 互斥，同时给出会报错的校验。此前 `creator.Table` 只能收整段
