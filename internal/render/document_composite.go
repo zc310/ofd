@@ -268,6 +268,15 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		canvasBox, tight = models.StBox{Width: w, Height: h}, false
 		raster = p.rasterizeCompositeUnit(unit, dp, canvasBox, false, w, h, dpi, compositeDepth, budget)
 	}
+	if cropToInk && !tight {
+		if resampled, ok := p.resampleCompositeUnit(unit, dp, raster, w, h, dpi,
+			object.Boundary, p.dpi.DPI(), compositeDepth, budget); ok {
+			// 重画的结果已经裁到可见范围，不能再走 tight 分支：那个分支把画布
+			// 映射到 Boundary 的子矩形，而这里要的正是「裁掉透明边后铺满整个
+			// Boundary」。裁剪在这里做，映射留给整块 Boundary。
+			raster, cropToInk, tight = resampled, false, false
+		}
+	}
 
 	// 这里使用调用方传入的输出分辨率，根据复合单元在页面上的放置宽度
 	// 推算离屏栅格分辨率；实际值还会受到上下限和离屏像素预算限制。
@@ -276,6 +285,79 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	}
 
 	p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip)
+}
+
+// resampleCompositeUnit 按首遍量到的可见范围重画一遍复合单元，返回裁到可见
+// 范围的离屏图。
+//
+// 离屏 DPI 由「输出 DPI × Boundary 宽 ÷ 单元宽」推得，前提是单元内容铺满整个
+// 单元坐标系。生产方经常不满足：一枚 30×20mm 的发票监制章被放进声明为整张 A4
+// 的 CompositeGraphicUnit 里，于是这个前提不成立，DPI 塌到四十左右，章在离屏画布
+// 上只有五十像素宽，再拉伸到输出分辨率就是一团糊——同一枚章直接画在页面上则完全
+// 清晰，差别只在写法。
+//
+// 这里用首遍栅格化实测的可见范围替代声明尺寸：画布收缩到该范围（离屏像素同时
+// 大幅下降），DPI 相应提高，使可见内容在页面上正好达到输出分辨率。首遍量到的范围
+// 来自真实绘制结果，因此带旋转 CTM、带描边的单元同样适用——compositeInkRect 对
+// 这些情况直接放弃推断，正是它接不了的活。
+//
+// 两处坐标系的差别容易踩：contentImageBounds 返回图像坐标（y 自顶端向下），而
+// canvasBox 与画布平移用的是画布坐标（y 向上），两者差一个 h-y-height。少这一步
+// 换算，收缩后的画布会落在单元的另一端，重画结果整幅空白。
+func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
+	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
+	compositeDepth int, budget *renderBudget) (image.Image, bool) {
+	cx0, cy0, cx1, cy1 := contentImageBounds(raster)
+	if cx1 <= cx0 || cy1 <= cy0 {
+		return nil, false
+	}
+	mmPerPx := 25.4 / dpi
+	inkWidth := float64(cx1-cx0) * mmPerPx
+	inkHeight := float64(cy1-cy0) * mmPerPx
+	inkX := float64(cx0) * mmPerPx
+	// 图像坐标换算到画布坐标：y 由自顶端向下改为自底端向上。
+	inkY := h - float64(cy1)*mmPerPx
+	// 可见范围本就占满画布时没有可省的：重画只会白费一遍。
+	if inkWidth*inkHeight > compositeInkMaxAreaRatio*w*h {
+		return nil, false
+	}
+	// DPI 取「可见内容按 Boundary 宽铺开后仍等于输出分辨率」的值。
+	next := box.Width * outDPI / inkWidth
+	if !finiteFloat(next) || next <= 0 {
+		return nil, false
+	}
+	next = math.Min(next, 1200)
+	// 提升不足两成就不值得多画一遍。
+	if next < dpi*1.2 {
+		return nil, false
+	}
+	// 画布收缩到可见范围并留边距：字形轮廓可能略微溢出 Boundary，而首遍是低
+	// DPI 栅格，细笔画本身就可能被量化掉。
+	pad := compositeInkMarginAbs + compositeInkMarginRatio*math.Max(inkWidth, inkHeight)
+	x0 := math.Max(inkX-pad, 0)
+	y0 := math.Max(inkY-pad, 0)
+	x1 := math.Min(inkX+inkWidth+pad, w)
+	y1 := math.Min(inkY+inkHeight+pad, h)
+	iw, ih := x1-x0, y1-y0
+	if iw <= 0 || ih <= 0 || !finiteFloat(iw) || !finiteFloat(ih) {
+		return nil, false
+	}
+	// 预算按两遍合计计费：首遍已经扣过一次，这里再扣收缩后这一遍。
+	if !budget.allowOffscreenPixels(iw, ih, next) {
+		return nil, false
+	}
+	out := p.rasterizeCompositeUnit(unit, dp,
+		models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true, w, h, next, compositeDepth, budget)
+	if compositeRasterBlank(out) {
+		return nil, false
+	}
+	// 裁到重画后的实际可见范围：调用方按整块 Boundary 贴图，多余的透明边会让
+	// 内容整体缩小。
+	nx0, ny0, nx1, ny1 := contentImageBounds(out)
+	if nx1 <= nx0 || ny1 <= ny0 {
+		return nil, false
+	}
+	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), true
 }
 
 // placeCompositeImage 把已栅格化的复合单元内容按 CompositeObject 的 Boundary
