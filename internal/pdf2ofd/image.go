@@ -924,7 +924,35 @@ func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, he
 		}
 		return resampleImageGray(decoded, width, height), nil
 	}
+	// DCTDecode（JPEG）掩码：按图像解码成灰度样本。此前只处理 JBIG2/JPX 与未压缩
+	// 样本，JPEG 掩码只能走到 decodePDFImageSamples（按裸样解读码）而失败，掩码被
+	// 静默丢弃——带掩码的图像整幅不透明。建筑图纸常把「白线黑底的图案 + 灰度掩码」
+	// 存成一对 JPEG，丢掉掩码后整片铺成黑块。
+	if hasDCTFilter(stream) {
+		jpegData := stream.Content
+		if !isJPEGData(jpegData) {
+			jpegData = stream.Raw
+		}
+		if !isJPEGData(jpegData) {
+			return nil, errors.New("JPEG 掩码数据无效")
+		}
+		decoded, err := jpeg.Decode(bytes.NewReader(jpegData))
+		if err != nil {
+			return nil, fmt.Errorf("JPEG 掩码解码失败: %w", err)
+		}
+		return resampleImageGray(decoded, width, height), nil
+	}
 	return decodePDFImageSamples(ctx, stream, width, height, 1, bpc)
+}
+
+// hasDCTFilter 判断流的过滤管线里是否含 DCTDecode（JPEG）。
+func hasDCTFilter(stream *types.StreamDict) bool {
+	for _, filter := range stream.FilterPipeline {
+		if filter.Name == "DCTDecode" {
+			return true
+		}
+	}
+	return false
 }
 
 // resampleImageGray 把任意图像按最近邻缩放为 width×height 的灰度样本，用于软掩码。

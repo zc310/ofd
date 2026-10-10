@@ -119,8 +119,9 @@ type imagePlacement struct {
 	ctm  [6]float64
 }
 
-// singlePatternImage 提取平铺图案内容中唯一的图像 XObject 及其放置矩阵。
-// 内容里出现其他绘制操作时返回 false，调用方回退到纯色填充。
+// singlePatternImage 提取平铺图案内容中唯一的图像 XObject 及其放置矩阵。内容里
+// 出现裁剪以外的绘制操作（成段路径、填充、描边、文字、内联图像等）时返回 false，
+// 调用方回退到纯色填充。裁剪序列（q/Q/cm/gs/re/W/W*/n）不影响图像摆放，予以放过。
 func singlePatternImage(content []byte) (imagePlacement, bool) {
 	tokens := newPDFContentTokenizer(content)
 	var placement imagePlacement
@@ -161,7 +162,12 @@ func singlePatternImage(content []byte) (imagePlacement, bool) {
 			}
 			placement = imagePlacement{name: name, ctm: ctm}
 			found = true
-		case "BT", "ET", "m", "l", "c", "v", "y", "re", "h", "S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "sh", "BI":
+		case "re":
+			// 裁剪用的矩形：`<rect> re W n` 只定义裁剪区，不绘制内容。图案单元
+			// 常把图像包在这种裁剪里（Ghostscript 导出的建筑图纸即如此），必须放过，
+			// 否则整类图案被判为「非图像图案」而丢弃。真正的绘制操作（m/l/c/v/y/h、
+			// f/S/B/b/sh 等）仍然拒绝，纯矢量图案不会因此被误判成图像。
+		case "BT", "ET", "m", "l", "c", "v", "y", "h", "S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "sh", "BI":
 			// 图案单元包含图像以外的绘制内容，暂不支持。
 			return imagePlacement{}, false
 		}
