@@ -469,12 +469,15 @@ func (s *Store) Finish(id string, state State, output Output, failure string) er
 		job.Output = output
 		job.Error = failure
 		job.FinishedAt = time.Now().UTC()
-		// 计数与状态迁移同一个事务：job 是这里 load 出来的，已经带着
-		// RecordUsage 写好的 FromActual 与 InputBytes，所以不需要改签名
-		// 传递额外参数，也不会出现"状态已终结但用量没记上"的中间态。
-		// 这比另开一个事务更便宜——Finish 本来就要写盘。
-		if err := accumulate(tx, job, state); err != nil {
-			return err
+		// 取消不是一次转换。它仍进入终态索引，但不能进入累计转换统计；
+		// 队列取消与同步转换取消都经此路径区分。
+		if state != StateCancelled {
+			// 计数与状态迁移同一个事务：job 是这里 load 出来的，已经带着
+			// RecordUsage 写好的 FromActual 与 InputBytes，所以不需要改签名
+			// 传递额外参数，也不会出现"状态已终结但用量没记上"的中间态。
+			if err := accumulate(tx, job, state); err != nil {
+				return err
+			}
 		}
 		raw, err := json.Marshal(job)
 		if err != nil {

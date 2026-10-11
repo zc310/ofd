@@ -186,8 +186,7 @@ func TestStatsRequiresAPIKey(t *testing.T) {
 
 // TestStatsCancelledNotCounted 取消的任务不计入 conversions。
 //
-// Cancel 绕过记账——取消的任务没进转换，把它算成一次转换会让
-// "总转换量"大于真正做过的转换数。
+// 排队取消与同步任务被 Finish 为 cancelled 都不计入累计转换量。
 func TestStatsCancelledNotCounted(t *testing.T) {
 	s, store, _ := newTestServer(t)
 	client := newPipeServer(t, s.Handler())
@@ -197,6 +196,13 @@ func TestStatsCancelledNotCounted(t *testing.T) {
 	if err := store.Cancel("c1"); err != nil {
 		t.Fatal(err)
 	}
+	inline := &jobstore.Job{ID: "inline-cancelled", To: "pdf", InputBytes: 128}
+	if err := store.RecordDirect(inline); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish(inline.ID, jobstore.StateCancelled, jobstore.Output{}, "context canceled"); err != nil {
+		t.Fatal(err)
+	}
 	view := fetchStats(t, client)
 	if view.Totals.Conversions != 0 {
 		t.Errorf("取消的任务不应计入，conversions = %d", view.Totals.Conversions)
@@ -204,6 +210,10 @@ func TestStatsCancelledNotCounted(t *testing.T) {
 	// 但它确实占着/曾占过队列，所以深度口径里能看到它已离开。
 	if view.Queue.Queued == nil {
 		t.Error("queued 缺失")
+	}
+	prom := do(t, client, fasthttp.MethodGet, "/metrics", "").body
+	if strings.Contains(prom, `state="cancelled"`) || strings.Contains(prom, `state="succeeded"`) {
+		t.Errorf("取消的同步任务不应生成转换统计样本，/metrics 包含取消或成功状态: %s", prom)
 	}
 }
 
