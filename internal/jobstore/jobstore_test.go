@@ -510,6 +510,70 @@ func TestCompactShrinksAndKeepsData(t *testing.T) {
 	}
 }
 
+func TestShouldCompactUsesReclaimableSpaceThreshold(t *testing.T) {
+	cases := []struct {
+		fileSize int64
+		free     int64
+		want     bool
+	}{
+		{fileSize: 1 << 30, free: compactMinFreeBytes - 1, want: false},
+		{fileSize: 1 << 30, free: (1<<30)/compactMinFreeRatio - 1, want: false},
+		{fileSize: 1 << 30, free: (1 << 30) / compactMinFreeRatio, want: true},
+		{fileSize: compactMinFreeBytes, free: compactMinFreeBytes, want: true},
+	}
+	for _, tc := range cases {
+		if got := shouldCompact(tc.fileSize, tc.free); got != tc.want {
+			t.Errorf("shouldCompact(%d, %d) = %v, want %v", tc.fileSize, tc.free, got, tc.want)
+		}
+	}
+}
+
+func TestCompactCoordinatesConcurrentStoreAccess(t *testing.T) {
+	store, _ := openStore(t)
+	start := make(chan struct{})
+	errs := make(chan error, 65)
+	var group sync.WaitGroup
+	for worker := range 8 {
+		group.Add(1)
+		go func(worker int) {
+			defer group.Done()
+			<-start
+			for index := range 8 {
+				id := fmt.Sprintf("compact-%d-%d", worker, index)
+				if err := store.Enqueue(newJob(id, LaneFast, OrderNormal)); err != nil {
+					errs <- err
+					return
+				}
+				if _, err := store.Get(id); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}(worker)
+	}
+	group.Add(1)
+	go func() {
+		defer group.Done()
+		<-start
+		errs <- store.Compact()
+	}()
+	close(start)
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("并发访问或压缩失败: %v", err)
+		}
+	}
+	counts, err := store.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := counts[StateQueued]; got != 64 {
+		t.Fatalf("压缩后 queued = %d, want 64", got)
+	}
+}
+
 func TestOpenRejectsEmptyPath(t *testing.T) {
 	if _, err := Open(""); err == nil {
 		t.Error("空路径应被拒绝")
