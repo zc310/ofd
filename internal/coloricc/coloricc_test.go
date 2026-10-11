@@ -18,6 +18,23 @@ func TestNewRejectsInvalidProfile(t *testing.T) {
 	}
 }
 
+func TestTransformerCacheIsBounded(t *testing.T) {
+	previous := buildCache
+	buildCache = newTransformerCache()
+	t.Cleanup(func() { buildCache = previous })
+
+	for i := 0; i <= transformerCacheEntries; i++ {
+		key := cacheKey{digest: [32]byte{byte(i), byte(i >> 8)}, channels: 3}
+		buildCache.AddWeighted(key, &Transformer{}, 1)
+	}
+	if got := buildCache.Len(); got > transformerCacheEntries {
+		t.Fatalf("cache entries = %d, want at most %d", got, transformerCacheEntries)
+	}
+	if got := buildCache.Weight(); got > transformerCacheBytes {
+		t.Fatalf("cache weight = %d, want at most %d", got, transformerCacheBytes)
+	}
+}
+
 func TestDefaultCMYKRequiresExplicitProfile(t *testing.T) {
 	// 未设置 OFD_CMYK_ICC 时不启用默认 ICC，调用方应回退近似模型。
 	t.Setenv("OFD_CMYK_ICC", "")

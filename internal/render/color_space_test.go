@@ -1,11 +1,13 @@
 package render
 
 import (
+	"crypto/sha256"
 	"encoding/xml"
 	"image/color"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 // colorValue 构造一个已按 ST_Array 原文解析出通道取值的颜色。
@@ -264,6 +266,45 @@ func TestLooksLikeICCProfile(t *testing.T) {
 	}
 	if looksLikeICCProfile(make([]byte, 39)) {
 		t.Error("长度不足 40 字节无法容纳签名，不应判为 ICC")
+	}
+}
+
+func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
+	document := &Document{}
+	space := rgbSpace(8)
+	space.Palette = &models.Palette{CV: []models.StArray{{"0", "0", "0"}}}
+	document.colorSpaceResources(space)
+	document.colorSpaceResources(space)
+
+	if got := len(document.colorSpaces); got != 1 {
+		t.Fatalf("same color space created %d cache entries, want 1", got)
+	}
+	other := rgbSpace(8)
+	other.Palette = &models.Palette{CV: []models.StArray{{"255", "255", "255"}}}
+	document.colorSpaceResources(other)
+	if got := len(document.colorSpaces); got != 2 {
+		t.Fatalf("distinct color spaces created %d cache entries, want 2", got)
+	}
+}
+
+func TestProfilePaletteCacheIsBounded(t *testing.T) {
+	previous := profilePaletteCache
+	profilePaletteCache = utils.NewWeightedLRU[[sha256.Size]byte, []byte](
+		colorProfileCacheEntries, colorProfileCacheBytes, nil,
+	)
+	t.Cleanup(func() { profilePaletteCache = previous })
+
+	for index := 0; index <= colorProfileCacheEntries; index++ {
+		var digest [sha256.Size]byte
+		digest[0] = byte(index)
+		digest[1] = byte(index >> 8)
+		profilePaletteCache.AddWeighted(digest, []byte{byte(index)}, 1)
+	}
+	if got := profilePaletteCache.Len(); got > colorProfileCacheEntries {
+		t.Fatalf("cache entries = %d, want at most %d", got, colorProfileCacheEntries)
+	}
+	if got := profilePaletteCache.Weight(); got > colorProfileCacheBytes {
+		t.Fatalf("cache weight = %d, want at most %d", got, colorProfileCacheBytes)
 	}
 }
 

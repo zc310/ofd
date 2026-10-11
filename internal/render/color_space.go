@@ -9,22 +9,27 @@ import (
 
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 // colorResolver 把 OFD 颜色按其颜色空间解析为 RGBA。
 type colorResolver func(models.CTColor) color.RGBA
 
-// iccTransformerCache 按 ICC 配置文件内容缓存转换器。
-var iccTransformerCache = struct {
-	mu    sync.Mutex
-	items map[[sha256.Size]byte]*coloricc.Transformer
-}{items: make(map[[sha256.Size]byte]*coloricc.Transformer)}
+const (
+	colorProfileCacheEntries = 128
+	colorProfileCacheBytes   = 32 << 20
+)
 
-// profilePaletteCache 按配置文件内容缓存从 Profile 读到的原始调色板。
-var profilePaletteCache = struct {
-	mu    sync.Mutex
-	items map[[sha256.Size]byte][]byte
-}{items: make(map[[sha256.Size]byte][]byte)}
+// Profile 调色板按内容摘要去重，并限制长期进程处理不同文档时的保留量。
+var profilePaletteCache = utils.NewWeightedLRU[[sha256.Size]byte, []byte](
+	colorProfileCacheEntries, colorProfileCacheBytes, nil,
+)
+
+type colorSpaceResources struct {
+	once        sync.Once
+	palette     []byte
+	transformer *coloricc.Transformer
+}
 
 // colorRGBA 解析 CTColor。颜色空间为 GRAY/RGB/CMYK 时按对应分量解释，
 // 存在调色板且未给出 Value 时按 Index 取色。未引用颜色空间时沿用默认的
@@ -37,8 +42,8 @@ func (p *Document) colorRGBA(source models.CTColor) color.RGBA {
 	if space == nil {
 		return ofdColorRGBA(source)
 	}
-	palette := p.colorSpacePalette(space)
-	if transformer := p.colorSpaceTransformer(space); transformer != nil {
+	palette, transformer := p.colorSpaceResources(space)
+	if transformer != nil {
 		if components, ok := colorSpaceComponents8(source, space, palette); ok {
 			r, g, b := transformer.ToRGB(transformerOrderComponents(space, components))
 			alpha := uint8(255)
@@ -51,6 +56,39 @@ func (p *Document) colorRGBA(source models.CTColor) color.RGBA {
 	return resolveColorSpaceColor(space, source, palette)
 }
 
+// colorSpaceResources 缓存当前文档的 Profile 读取、摘要计算与转换器构建结果。
+func (p *Document) colorSpaceResources(space *models.ColorSpace) ([]byte, *coloricc.Transformer) {
+	if p == nil || space == nil {
+		return nil, nil
+	}
+	p.colorSpacesMu.Lock()
+	if p.colorSpaces == nil {
+		p.colorSpaces = make(map[*models.ColorSpace]*colorSpaceResources)
+	}
+	resources := p.colorSpaces[space]
+	if resources == nil {
+		resources = &colorSpaceResources{}
+		p.colorSpaces[space] = resources
+	}
+	p.colorSpacesMu.Unlock()
+	resources.once.Do(func() {
+		var data []byte
+		var digest [sha256.Size]byte
+		if p.Document != nil && p.FileCache != nil {
+			profilePath := strings.TrimSpace(space.Profile.String())
+			if profilePath != "" {
+				data, _ = p.FileCache.Read(profilePath)
+				if len(data) > 0 {
+					digest = sha256.Sum256(data)
+				}
+			}
+		}
+		resources.palette = profilePalette(space, data, digest)
+		resources.transformer = colorSpaceTransformer(space, data)
+	})
+	return resources.palette, resources.transformer
+}
+
 // looksLikeICCProfile 粗判一份配置文件是否意在作为 ICC 配置文件。
 //
 // ICC 头在偏移 36 处有 'acsp' 签名（ISO 15076-1）。判它而不是「长度能否被通道
@@ -60,84 +98,34 @@ func looksLikeICCProfile(data []byte) bool {
 	return len(data) >= 40 && string(data[36:40]) == "acsp"
 }
 
-// colorSpaceProfilePalette 从 Profile 指向的文件读出原始二进制调色板。
-//
-// GB/T 33190 只说 Profile「指向包内颜色配置文件」（表 25），XSD 里也仅是 ST_Loc，
-// 没有规定文件格式。实际文件有两类：ICC 配置文件，以及按通道数平铺的原始调色板
-// （每个 Index 连续 channels 个字节）。ICC 解析失败且文件确实不像 ICC 时按后者
-// 解释，否则这类文件的颜色会静默回退成黑色。
-func (p *Document) colorSpaceProfilePalette(space *models.ColorSpace) []byte {
-	if space == nil || p.FileCache == nil {
+// profilePalette 将 Profile 数据解释为原始二进制调色板。规范没有限定 Profile
+// 文件格式，实际文档既可能放 ICC，也可能放按通道平铺的调色板；ICC 文件及长度
+// 不完整的数据不能误当成调色板。摘要由调用方计算，供同一颜色空间的资源解析复用。
+func profilePalette(space *models.ColorSpace, data []byte, digest [sha256.Size]byte) []byte {
+	if space == nil || len(data) == 0 || (space.Palette != nil && len(space.Palette.CV) > 0) {
 		return nil
 	}
-	profilePath := strings.TrimSpace(space.Profile.String())
-	if profilePath == "" {
-		return nil
-	}
-	channels := colorSpaceChannels(space)
-	data, err := p.FileCache.Read(profilePath)
-	if err != nil || len(data) == 0 {
-		return nil
-	}
-	digest := sha256.Sum256(data)
-	profilePaletteCache.mu.Lock()
-	cached, ok := profilePaletteCache.items[digest]
-	profilePaletteCache.mu.Unlock()
-	if ok {
-		if len(cached) == 0 {
-			return nil
-		}
+	if cached, ok := profilePaletteCache.Get(digest); ok {
 		return cached
 	}
-	if looksLikeICCProfile(data) || len(data)%channels != 0 {
+	if looksLikeICCProfile(data) || len(data)%colorSpaceChannels(space) != 0 {
 		// 记下「不可用」，避免同一份坏文件每次都重新读盘判定。
-		profilePaletteCache.mu.Lock()
-		profilePaletteCache.items[digest] = nil
-		profilePaletteCache.mu.Unlock()
+		profilePaletteCache.AddWeighted(digest, nil, 1)
 		return nil
 	}
-	profilePaletteCache.mu.Lock()
-	profilePaletteCache.items[digest] = data
-	profilePaletteCache.mu.Unlock()
+	profilePaletteCache.AddWeighted(digest, data, int64(len(data)))
 	return data
 }
 
-// colorSpacePalette 返回颜色空间可用的调色板字节：内联 Palette 优先，其次是
-// Profile 指向的原始二进制调色板。内联优先的规则由 CT_ColorSpace 的顺序语义
-// 决定——两者都声明时以内联为准。
-func (p *Document) colorSpacePalette(space *models.ColorSpace) []byte {
+// colorSpaceTransformer 从已读取的 Profile 获取 ICC 转换器；CMYK 没有可用
+// Profile 时使用进程默认 CMYK 配置文件。
+func colorSpaceTransformer(space *models.ColorSpace, data []byte) *coloricc.Transformer {
 	if space == nil {
 		return nil
 	}
-	if space.Palette != nil && len(space.Palette.CV) > 0 {
-		return nil // 内联调色板由 colorSpaceComponents8 直接处理
-	}
-	return p.colorSpaceProfilePalette(space)
-}
-
-// colorSpaceTransformer 返回该颜色空间的 ICC 转换器：优先使用资源自带的
-// Profile 配置文件，CMYK 没有配置文件时使用进程默认 CMYK 配置文件。
-func (p *Document) colorSpaceTransformer(space *models.ColorSpace) *coloricc.Transformer {
-	if space == nil {
-		return nil
-	}
-	if profilePath := strings.TrimSpace(space.Profile.String()); profilePath != "" && p.FileCache != nil {
-		data, err := p.FileCache.Read(profilePath)
-		if err == nil && len(data) > 0 {
-			digest := sha256.Sum256(data)
-			iccTransformerCache.mu.Lock()
-			transformer := iccTransformerCache.items[digest]
-			iccTransformerCache.mu.Unlock()
-			if transformer != nil {
-				return transformer
-			}
-			transformer, err = coloricc.New(data, colorSpaceChannels(space))
-			if err == nil {
-				iccTransformerCache.mu.Lock()
-				iccTransformerCache.items[digest] = transformer
-				iccTransformerCache.mu.Unlock()
-				return transformer
-			}
+	if len(data) > 0 {
+		if transformer, err := coloricc.New(data, colorSpaceChannels(space)); err == nil {
+			return transformer
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(space.Type), "CMYK") {
