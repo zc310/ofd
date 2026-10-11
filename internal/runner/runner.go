@@ -447,6 +447,11 @@ func (r *Runner) pruneLoop(ctx context.Context) {
 			} else if n > 0 {
 				r.log.Info("已清理终态通知", "count", n)
 			}
+			if compacted, err := r.store.CompactIfNeeded(); err != nil {
+				r.log.Error("压缩任务库失败", "err", err)
+			} else if compacted {
+				r.log.Info("已压缩任务库")
+			}
 		}
 	}
 }

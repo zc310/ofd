@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -188,6 +189,7 @@ type Store struct {
 	// path 单独保存一份：bbolt 在 Close() 之后会把 db.path 清空，而 Compact 需要
 	// 在关闭之后重新打开，读 db.Path() 会拿到空串。
 	path   string
+	mu     sync.RWMutex
 	db     *bolt.DB
 	closed bool
 }
@@ -230,11 +232,36 @@ func Open(path string) (*Store, error) {
 
 // Close 关闭数据库。
 func (s *Store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
 		return nil
 	}
 	s.closed = true
-	return s.db.Close()
+	err := s.db.Close()
+	s.db = nil
+	return err
+}
+
+func (s *Store) view(fn func(*bolt.Tx) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.db == nil {
+		return fmt.Errorf("任务库已关闭")
+	}
+	return s.db.View(fn)
+}
+
+func (s *Store) update(fn func(*bolt.Tx) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.db == nil {
+		return fmt.Errorf("任务库已关闭")
+	}
+	return s.db.Update(fn)
 }
 
 // queueKey 构造队列键：优先级前缀 + 大端时间戳 + 任务 ID。
@@ -272,7 +299,7 @@ func (s *Store) Enqueue(job *Job) error {
 		job.Lane = LaneFast
 	}
 	job.State = StateQueued
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		raw, err := json.Marshal(job)
 		if err != nil {
 			return err
@@ -367,7 +394,7 @@ func promoteDue(tx *bolt.Tx, now time.Time) (int, error) {
 // 到期的延迟任务会先被搬进通道队列，因此重试任务到了 DueAt 就能被取走。
 func (s *Store) Claim(lane Lane) (*Job, error) {
 	var claimed *Job
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		if _, err := promoteDue(tx, time.Now()); err != nil {
 			return err
 		}
@@ -430,7 +457,7 @@ func (s *Store) Finish(id string, state State, output Output, failure string) er
 	if !state.Terminal() {
 		return fmt.Errorf("状态 %s 不是终态", state)
 	}
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		job, err := loadJob(tx, id)
 		if err != nil {
 			return err
@@ -509,7 +536,7 @@ func (s *Store) RecordDirect(job *Job) error {
 	}
 	job.State = StateRunning
 	job.StartedAt = time.Now().UTC()
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		raw, err := json.Marshal(job)
 		if err != nil {
 			return err
@@ -524,7 +551,7 @@ func (s *Store) RecordDirect(job *Job) error {
 // 重试、取消、关停等路径调用。分开写让"终态"这个语义保持干净：一个方法
 // 只管状态迁移，一个只管用量记账。
 func (s *Store) RecordUsage(id string, fromActual string, inputBytes int64) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		job, err := loadJob(tx, id)
 		if err != nil {
 			return err
@@ -544,7 +571,7 @@ func (s *Store) RecordUsage(id string, fromActual string, inputBytes int64) erro
 // 只允许取消 queued：已经 running 的任务正占着外部进程，中途杀掉它只会留下
 // 半截输出，不如让它跑完再由调用方决定要不要丢弃结果。
 func (s *Store) Cancel(id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		job, err := loadJob(tx, id)
 		if err != nil {
 			return err
@@ -571,7 +598,7 @@ func (s *Store) Cancel(id string) error {
 
 func (s *Store) Get(id string) (*Job, error) {
 	var job *Job
-	err := s.db.View(func(tx *bolt.Tx) error {
+	err := s.view(func(tx *bolt.Tx) error {
 		raw := tx.Bucket(bucketJobs).Get([]byte(id))
 		if raw == nil {
 			return nil
@@ -601,7 +628,7 @@ func loadJob(tx *bolt.Tx, id string) (*Job, error) {
 // ListByState 按状态列出任务，limit 为 0 表示不限。用于管理接口与排障。
 func (s *Store) ListByState(state State, limit int) ([]Job, error) {
 	var result []Job
-	err := s.db.View(func(tx *bolt.Tx) error {
+	err := s.view(func(tx *bolt.Tx) error {
 		cursor := tx.Bucket(bucketByState).Cursor()
 		for key, _ := cursor.Seek(stateIndexPrefix(state)); key != nil; key, _ = cursor.Next() {
 			if len(key) <= 1+8 || statesByCode[key[0]] != state {
@@ -643,7 +670,7 @@ func (s *Store) Count() (map[State]int, error) {
 // 这类任务的转换进程已经随进程一起消失，不重排就会永远卡住。启动时调用一次。
 func (s *Store) Recover() (int, error) {
 	var recovered int
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		jobs := tx.Bucket(bucketJobs)
 		cursor := tx.Bucket(bucketByState).Cursor()
 		type pending struct {
@@ -807,7 +834,7 @@ type StatsPair struct {
 // 一定对。
 func (s *Store) QueueDepth() (map[State]int, error) {
 	depth := map[State]int{}
-	err := s.db.View(func(tx *bolt.Tx) error {
+	err := s.view(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketByState)
 		if bucket == nil {
 			return nil
@@ -833,7 +860,7 @@ func (s *Store) Snapshot() (StatsSnapshot, error) {
 		InputBytes:  make(map[string]uint64),
 		OutputBytes: make(map[StatsPair]uint64),
 	}
-	err := s.db.View(func(tx *bolt.Tx) error {
+	err := s.view(func(tx *bolt.Tx) error {
 		stats := tx.Bucket(bucketStats)
 		if raw := stats.Get(statsSinceKey); len(raw) > 0 {
 			if since, err := time.Parse(time.RFC3339, string(raw)); err == nil {
@@ -880,7 +907,7 @@ func (s *Store) Snapshot() (StatsSnapshot, error) {
 // 清理（配合 Store.Compact 做文件收缩）。
 func (s *Store) Prune(cutoff time.Time) (int, error) {
 	var removed int
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		jobs := tx.Bucket(bucketJobs)
 		byState := tx.Bucket(bucketByState)
 		for _, state := range []State{StateSucceeded, StateFailed, StateCancelled} {
@@ -912,6 +939,42 @@ func (s *Store) Prune(cutoff time.Time) (int, error) {
 	return removed, err
 }
 
+const (
+	compactMinFreeBytes = 64 << 20
+	compactMinFreeRatio = 4
+)
+
+// CompactIfNeeded 在至少有 64 MiB 且占文件四分之一以上可回收空间时压缩数据库。
+// bbolt 的空闲页会复用但不会归还给文件系统；按阈值触发避免每轮清理都复制数据库。
+func (s *Store) CompactIfNeeded() (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("任务库已关闭")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return false, fmt.Errorf("任务库已关闭")
+	}
+	stats := s.db.Stats()
+	pageSize := int64(s.db.Info().PageSize)
+	freeBytes := int64(stats.FreePageN) * pageSize
+	info, err := os.Stat(s.path)
+	if err != nil {
+		return false, fmt.Errorf("读取任务库大小失败: %w", err)
+	}
+	if !shouldCompact(info.Size(), freeBytes) {
+		return false, nil
+	}
+	if err := s.compactAndReopenLocked(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func shouldCompact(fileSize, freeBytes int64) bool {
+	return freeBytes >= compactMinFreeBytes && fileSize > 0 && freeBytes >= fileSize/compactMinFreeRatio
+}
+
 // Compact 把数据库收缩到实际使用量并原子替换原文件。
 //
 // bbolt 删除键后只把页标记为空闲，文件不会自动变小；任务记录不断增删时需要定期
@@ -922,14 +985,27 @@ func (s *Store) Prune(cutoff time.Time) (int, error) {
 // 文件 → 替换原文件 → 重新以可写方式打开。任何一步失败都要把原库重新打开，
 // 否则后续调用会因连接已关闭而全部失败。
 func (s *Store) Compact() error {
+	if s == nil {
+		return fmt.Errorf("任务库已关闭")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.db == nil {
 		return fmt.Errorf("任务库已关闭")
 	}
-	source := s.path
+	return s.compactAndReopenLocked()
+}
 
+func (s *Store) compactAndReopenLocked() error {
+	source := s.path
 	if err := s.db.Close(); err != nil {
+		s.db = nil
+		if reopenErr := s.reopen(); reopenErr != nil {
+			return fmt.Errorf("关闭任务库失败且重开也失败: %v / %w", err, reopenErr)
+		}
 		return err
 	}
+	s.db = nil
 	if err := s.compactLocked(source); err != nil {
 		if reopenErr := s.reopen(); reopenErr != nil {
 			return fmt.Errorf("压缩失败且重开任务库也失败: %v / %w", err, reopenErr)

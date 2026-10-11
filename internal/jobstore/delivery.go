@@ -66,7 +66,7 @@ func (s *Store) ScheduleDeliveries(items []Delivery) error {
 		return nil
 	}
 	now := time.Now().UTC()
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketDeliveries)
 		for i := range items {
 			item := items[i]
@@ -101,7 +101,7 @@ func (s *Store) ScheduleDeliveries(items []Delivery) error {
 // limit 为 0 表示取全部到期记录。
 func (s *Store) ClaimDueDeliveries(now time.Time, limit int) ([]Delivery, error) {
 	var claimed []Delivery
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketDeliveries)
 		type entry struct {
 			key []byte
@@ -184,7 +184,7 @@ func (s *Store) FailDelivery(id, reason string, next time.Duration) error {
 }
 
 func (s *Store) updateDelivery(id string, mutate func(*Delivery) error) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketDeliveries)
 		cursor := bucket.Cursor()
 		for key, raw := cursor.First(); key != nil; key, raw = cursor.Next() {
@@ -221,7 +221,7 @@ func (s *Store) updateDelivery(id string, mutate func(*Delivery) error) error {
 // 语义下重投是安全的，接收方按投递 ID 去重。
 func (s *Store) RecoverInflight() (int, error) {
 	var recovered int
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketDeliveries)
 		type entry struct {
 			key []byte
@@ -269,7 +269,7 @@ func (s *Store) RecoverInflight() (int, error) {
 // ListDeliveries 按状态列出投递记录，limit 为 0 表示不限。用于管理接口与排障。
 func (s *Store) ListDeliveries(state DeliveryState, limit int) ([]Delivery, error) {
 	var result []Delivery
-	err := s.db.View(func(tx *bolt.Tx) error {
+	err := s.view(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketDeliveries).ForEach(func(_, value []byte) error {
 			var delivery Delivery
 			if err := json.Unmarshal(value, &delivery); err != nil {
@@ -301,7 +301,7 @@ var errStopIteration = errors.New("停止遍历")
 // 记录就看不出曾经漏过。
 func (s *Store) PruneDeliveries(cutoff time.Time) (int, error) {
 	var removed int
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err := s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketDeliveries)
 		var victims [][]byte
 		cursor := bucket.Cursor()
