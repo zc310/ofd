@@ -1,7 +1,11 @@
 package pdf2ofd
 
 import (
+	"archive/zip"
 	"bytes"
+	"io"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/zc310/ofd/internal/parser"
@@ -287,4 +291,133 @@ func TestConvertShadingAppliesExtGStateFillAlpha(t *testing.T) {
 	if *alpha < 126 || *alpha > 130 {
 		t.Fatalf("着色路径 Alpha = %d, want ~128", *alpha)
 	}
+}
+
+// writeMeshBits 按位打包一个 Type 7 网格补丁流。
+type writeMeshBits struct {
+	data    []byte
+	current uint32
+	filled  int
+}
+
+func (w *writeMeshBits) put(value uint32, bits int) {
+	for i := bits - 1; i >= 0; i-- {
+		w.current = w.current<<1 | ((value >> uint(i)) & 1)
+		w.filled++
+		if w.filled == 8 {
+			w.data = append(w.data, byte(w.current))
+			w.current, w.filled = 0, 0
+		}
+	}
+}
+
+func (w *writeMeshBits) done() []byte {
+	if w.filled > 0 {
+		w.data = append(w.data, byte(w.current<<uint(8-w.filled)))
+		w.current, w.filled = 0, 0
+	}
+	return w.data
+}
+
+// freeFormTriangle 写出一个 Type 4 自由三角网格：边标志 + 三个顶点。
+// 坐标 12 位、函数输入 8 位。
+func freeFormTriangle(w *writeMeshBits, vertices [3][3]int) {
+	w.put(0, 2) // BitsPerFlag=2，flag=0 表示全新三角形
+	for _, vertex := range vertices {
+		w.put(uint32(vertex[0]), 12)
+		w.put(uint32(vertex[1]), 12)
+		w.put(uint32(vertex[2]), 8)
+	}
+}
+
+func TestConvertFillsPathWithMeshShadingPattern(t *testing.T) {
+	// PatternType 2（着色图案）经 scn 选中后作为路径填充色。网格着色此前在
+	// shadingColor 里直接返回 nil，路径保留 defaultW 的黑色填充，整页渐变
+	// 背景会变成一块黑板（tensor-allflags-withfunction.pdf）。
+	//
+	// 颜色由 /Function 从网格输入求值（1 入 1 出，映射到红通道）。
+	// Decode 把 12 位原始值线性映射到 0..100。网格只覆盖页面的左半部分，
+	// Gouraud 的边缘延展会把颜色铺满整条路径，网格外实际上并没有着色，
+	// 因此填充路径必须收缩到网格包围盒。
+	const half = 2048
+	var w writeMeshBits
+	freeFormTriangle(&w, [3][3]int{{0, 0, 0}, {half, 0, 128}, {0, 4095, 255}})
+	freeFormTriangle(&w, [3][3]int{{half, 0, 128}, {half, 4095, 200}, {0, 4095, 255}})
+	stream := w.done()
+
+	meshDict := "<< /ShadingType 4 /ColorSpace /DeviceRGB " +
+		"/Decode [0 100 0 100 0 1] /Function 7 0 R " +
+		"/BitsPerCoordinate 12 /BitsPerComponent 8 /BitsPerFlag 2 " +
+		"/Length " + itoa(len(stream)) + " >>stream\n" + string(stream) + "\nendstream"
+	content := []byte("/Pattern cs /P1 scn 0 0 100 100 re f")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Pattern << /P1 5 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /Pattern /PatternType 2 /Shading 6 0 R >>",
+		meshDict,
+		// 1 入 1 出：把网格输入值映射到红通道，绿蓝固定为 0。
+		"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 0 0] /N 1 >>",
+	}
+	pdf := assemblePDF(objects)
+
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	pageXML := extractPageContent(t, output.Bytes())
+	// 此前这里只剩一条纯黑 FillColor 的整页矩形，渐变完全丢失。
+	if !strings.Contains(pageXML, "<GouraudShd") && !strings.Contains(pageXML, "<LaGouraudShd") {
+		t.Fatalf("mesh shading pattern fell back to a solid fill:\n%s", pageXML)
+	}
+	// 颜色必须由 /Function 求值：输入 128/255 映射到红通道 128/255。
+	if !strings.Contains(pageXML, `<Color Value="128 0 0"/>`) {
+		t.Fatalf("mesh colour was not evaluated through /Function:\n%s", pageXML)
+	}
+	// 填充路径必须收缩到网格包围盒（约半页宽 50mm），否则 Gouraud 的边缘延展
+	// 会把整条 100x100 的路径涂满。
+	const boundaryPrefix = `<PathObject ID="3" Boundary="0 0 `
+	index := strings.Index(pageXML, boundaryPrefix)
+	if index < 0 {
+		t.Fatalf("path object boundary not found:\n%s", pageXML)
+	}
+	rest := pageXML[index+len(boundaryPrefix):]
+	fields := strings.Fields(rest)
+	if len(fields) < 2 {
+		t.Fatalf("path boundary is malformed:\n%s", pageXML)
+	}
+	width, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		t.Fatalf("path width %q is not a number:\n%s", fields[0], pageXML)
+	}
+	if width > 55 {
+		t.Fatalf("path width = %.2fmm, want ~50mm (the mesh bounds), not the full 100mm", width)
+	}
+}
+
+// extractPageContent 解出转换结果第一页的 Content.xml。
+func extractPageContent(t *testing.T, ofd []byte) string {
+	t.Helper()
+	reader, err := zip.NewReader(bytes.NewReader(ofd), int64(len(ofd)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range reader.File {
+		if file.Name != "Doc_0/Pages/Page_0/Content.xml" {
+			continue
+		}
+		handle, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer handle.Close()
+		data, err := io.ReadAll(handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	t.Fatal("page content not found in OFD")
+	return ""
 }
