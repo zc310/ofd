@@ -523,6 +523,10 @@ func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image 
 		return img
 	}
 	mask := imageClipMask(clip, m, w, h)
+	if mask == nil {
+		// 无法实现裁剪时跳过图片内容，避免显示原本应被裁掉的区域。
+		return image.NewNRGBA(bounds)
+	}
 	return applyImageMask(img, mask)
 }
 
@@ -606,6 +610,9 @@ func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.RGB
 	}
 	maskPath := clip.Copy().Transform(inverse)
 	surface := newOffscreenSurface(float64(width), float64(height), geom.DPMM(1))
+	if surface == nil {
+		return nil
+	}
 	surface.SetFillColor(color.White)
 	surface.DrawPath(0, 0, maskPath)
 	return surface.Raster()

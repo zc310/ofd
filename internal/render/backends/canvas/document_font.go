@@ -124,19 +124,20 @@ type embeddedFontKey struct {
 // 缓存长期钉住重资源，因此不放在包级缓存里。
 type Fonts struct {
 	*parser.Document
-	Fonts          map[models.StRefID]*canvas.FontFamily
-	fallbacks      map[string]*canvas.FontFamily
-	fallbackFaces  []fallbackFace
-	fallbackByFont map[models.StRefID]string
-	glyphMappings  map[models.StRefID]map[rune]uint16
-	mu             sync.Mutex
-	loadLocksMu    sync.Mutex
-	loadLocks      map[models.StRefID]*sync.Mutex
-	generation     uint64
-	renderLocksMu  sync.Mutex
-	renderLocks    map[*canvas.FontFamily]*sync.Mutex
-	embeddedMu     sync.Mutex
-	embeddedFonts  map[embeddedFontKey]*canvas.FontFamily
+	Fonts            map[models.StRefID]*canvas.FontFamily
+	fallbacks        map[string]*canvas.FontFamily
+	fallbackFaces    []fallbackFace
+	fallbackByFont   map[models.StRefID]string
+	glyphMappings    map[models.StRefID]map[rune]uint16
+	glyphCollections *utils.LRU[*models.Content, glyphCollection]
+	mu               sync.Mutex
+	loadLocksMu      sync.Mutex
+	loadLocks        map[models.StRefID]*sync.Mutex
+	generation       uint64
+	renderLocksMu    sync.Mutex
+	renderLocks      map[*canvas.FontFamily]*sync.Mutex
+	embeddedMu       sync.Mutex
+	embeddedFonts    map[embeddedFontKey]*canvas.FontFamily
 	// embeddedRepairers 按字体字节摘要缓存 fontfix.Repairer。同一份内嵌字体在
 	// 文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；Repairer
 	// 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与输出 cmap 表。
@@ -279,6 +280,9 @@ func (p *Fonts) RegisterGlyphs(id models.StRefID, pairs map[rune]uint16) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
 	mapping := p.glyphMappings[id]
 	if mapping == nil {
 		mapping = make(map[rune]uint16, len(pairs))
@@ -390,6 +394,7 @@ func (p *Fonts) Close() {
 	p.Fonts = map[models.StRefID]*canvas.FontFamily{}
 	p.fallbacks = map[string]*canvas.FontFamily{}
 	p.fallbackFaces = nil
+	p.glyphCollections = nil
 	p.pathCache = map[fontPathKey]*canvas.Path{}
 	p.mu.Unlock()
 

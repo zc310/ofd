@@ -630,9 +630,9 @@ func scanPixAlphaBounds(pix []byte, stride int, b image.Rectangle) (x0, y0, x1, 
 	maxX, maxY := b.Min.X, b.Min.Y
 	found := false
 	for y := b.Min.Y; y < b.Max.Y; y++ {
-		row := pix[y*stride:]
+		row := pix[(y-b.Min.Y)*stride:]
 		for x := b.Min.X; x < b.Max.X; x++ {
-			if row[x*4+3] <= 8 {
+			if row[(x-b.Min.X)*4+3] <= 8 {
 				continue
 			}
 			found = true
