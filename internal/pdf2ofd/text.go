@@ -369,6 +369,10 @@ func fallbackPDFCode(value byte) string {
 	return "\uFFFD"
 }
 
+// maxToUnicodeCodes 限制 ToUnicode CMap 展开出的码位数量上限。键是 uint16
+// 码位，65536 已是可用键的总数，再多只是重复覆盖。
+const maxToUnicodeCodes = 1 << 16
+
 func parsePDFToUnicode(data []byte) map[uint16]string {
 	result := map[uint16]string{}
 	tokens := tokenizePDFCMap(string(data))
@@ -429,8 +433,18 @@ func parsePDFToUnicode(data []byte) map[uint16]string {
 			if !ok {
 				continue
 			}
-			for code := source; code <= end; code++ {
-				result[code] = start
+			// code 必须是 int：pdfHexUint 返回 uint16，用 uint16 递增时
+			// 终点为 0xFFFF 会回绕成 0，code <= end 恒真，死循环且 SIGTERM
+			// 无效（basicapi.pdf）。
+			//
+			// 展开量同时按码位空间封顶。result 以 uint16 码位为键，最多只能有
+			// 65536 个不同条目，多展开只是重复写同一个键；不封顶时一个几 KB 的
+			// 畸形 CMap（每行一个 <0000> <FFFF> 区间）就能让内存涨到 GB 级。
+			for code, expanded := int(source), 0; code <= int(end); code, expanded = code+1, expanded+1 {
+				if expanded >= maxToUnicodeCodes || len(result) >= maxToUnicodeCodes {
+					return result
+				}
+				result[uint16(code)] = start
 				start = incrementPDFUnicode(start)
 			}
 			index += 2
