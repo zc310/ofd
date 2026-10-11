@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/valyala/fasthttp"
@@ -45,34 +47,34 @@ var errUnsafeArtifact = errors.New("产物不是安全的普通文件")
 // 只服务本地 dir 输出的产物。stream 输出的内容在响应里当场给完了、不落盘，
 // 没有可取的东西；远端目标的产物在 FTP/S3/WebDAV/SFTP 上，由那边的存储
 // 负责——本服务不该替别人回源。
-func (s *Server) handleContent(ctx *fasthttp.RequestCtx) {
-	id, ok := pathParam(ctx, "id")
+func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathParam(r, "id")
 	if !ok {
-		writeError(ctx, fasthttp.StatusNotFound, "not_found", "任务 ID 不合法")
+		writeError(w, fasthttp.StatusNotFound, "not_found", "任务 ID 不合法")
 		return
 	}
 	job, err := s.store.Get(id)
 	if err != nil {
 		s.log.Error("查询任务失败", "job", id, "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "查询失败")
+		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "查询失败")
 		return
 	}
 	if job == nil {
-		writeError(ctx, fasthttp.StatusNotFound, "job_not_found", "任务不存在")
+		writeError(w, fasthttp.StatusNotFound, "job_not_found", "任务不存在")
 		return
 	}
 	if !job.State.Terminal() {
-		writeError(ctx, fasthttp.StatusConflict, "job_not_finished",
+		writeError(w, fasthttp.StatusConflict, "job_not_finished",
 			fmt.Sprintf("任务处于 %s，还没到终态", job.State))
 		return
 	}
 	if job.State != jobstore.StateSucceeded {
-		writeError(ctx, fasthttp.StatusConflict, "job_not_succeeded",
+		writeError(w, fasthttp.StatusConflict, "job_not_succeeded",
 			fmt.Sprintf("任务终态为 %s，没有可取回的产物", job.State))
 		return
 	}
 	if err := checkServableOutput(job.Output); err != nil {
-		writeError(ctx, fasthttp.StatusConflict, "not_downloadable", err.Error())
+		writeError(w, fasthttp.StatusConflict, "not_downloadable", err.Error())
 		return
 	}
 
@@ -82,20 +84,20 @@ func (s *Server) handleContent(ctx *fasthttp.RequestCtx) {
 	dir, err := s.resolveOutputDir(job)
 	if err != nil {
 		s.log.Error("产物目录不可用", "job", id, "err", err)
-		writeError(ctx, fasthttp.StatusConflict, "not_downloadable", err.Error())
+		writeError(w, fasthttp.StatusConflict, "not_downloadable", err.Error())
 		return
 	}
 
-	requested := string(ctx.QueryArgs().Peek("name"))
+	requested := r.URL.Query().Get("name")
 	if requested != "" {
-		s.serveOneFile(ctx, dir, job, requested)
+		s.serveOneFile(w, dir, job, requested)
 		return
 	}
 	if len(job.Output.Files) == 1 {
-		s.serveOneFile(ctx, dir, job, job.Output.Files[0])
+		s.serveOneFile(w, dir, job, job.Output.Files[0])
 		return
 	}
-	s.serveArchive(ctx, dir, job)
+	s.serveArchive(w, dir, job)
 }
 
 // checkServableOutput 判断该任务的产物能否由本端点提供。
@@ -196,55 +198,58 @@ func rejectSymlinkPath(root *os.Root, path string) error {
 // output.dir 允许指向共享目录（显式指定时不追加任务 ID），同一个目录里可能
 // 躺着别的任务的产物。按记录清单做精确匹配既挡了 ../ 穿越，也挡了跨任务
 // 读取——清单是转换结束时由服务端写下的，调用方改不动。
-func (s *Server) serveOneFile(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobstore.Job, name string) {
+func (s *Server) serveOneFile(w http.ResponseWriter, dir *os.Root, job *jobstore.Job, name string) {
 	defer dir.Close()
 	target, ok := recordedFile(job.Output.Files, name)
 	if !ok {
-		writeError(ctx, fasthttp.StatusNotFound, "file_not_found",
+		writeError(w, fasthttp.StatusNotFound, "file_not_found",
 			fmt.Sprintf("任务 %s 没有名为 %q 的产物", job.ID, name))
 		return
 	}
 	file, err := openRecordedFile(dir, target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errUnsafeArtifact) {
-			writeError(ctx, fasthttp.StatusNotFound, "file_not_found",
+			writeError(w, fasthttp.StatusNotFound, "file_not_found",
 				fmt.Sprintf("产物文件已不存在：%s", target))
 			return
 		}
 		s.log.Error("打开产物失败", "job", job.ID, "file", target, "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
+		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
 		return
 	}
+	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		_ = file.Close()
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
+		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
 		return
 	}
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType(contentTypeFor(target))
-	ctx.Response.Header.Set("Content-Disposition",
+	w.Header().Set("Content-Type", contentTypeFor(target))
+	w.Header().Set("Content-Disposition",
 		`attachment; filename="`+headerSafe(target)+`"`)
 	// 产物不该被中间层缓存住：任务同名重跑后内容会变，而 URL 不变。
-	ctx.Response.Header.Set("Cache-Control", "no-store")
-	ctx.SetBodyStream(file, int(info.Size()))
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.CopyN(w, file, info.Size()); err != nil {
+		s.log.Debug("传输产物失败", "job", job.ID, "file", target, "err", err)
+	}
 }
 
 // serveArchive 把多个产物打成 zip 流式返回。
 //
 // 用流式而不是先读进内存：逐页 PNG 的产物动辄几百 MB，buffer 起来会随并发
 // 线性放大，而这里没有任何理由把它整份驻留。
-func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobstore.Job) {
+func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore.Job) {
 	files := job.Output.Files
 	if len(files) == 0 {
 		_ = dir.Close()
-		writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
+		writeError(w, fasthttp.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
 		return
 	}
 	for _, name := range files {
 		if !isRecordedFileName(name) {
 			_ = dir.Close()
-			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", errInvalidArtifactList.Error())
+			writeError(w, fasthttp.StatusInternalServerError, "internal_error", errInvalidArtifactList.Error())
 			return
 		}
 	}
@@ -254,15 +259,15 @@ func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobst
 		s.log.Error("生成产物归档失败", "job", job.ID, "err", err)
 		switch {
 		case errors.Is(err, os.ErrNotExist), errors.Is(err, errUnsafeArtifact):
-			writeError(ctx, fasthttp.StatusNotFound, "file_not_found", "归档中的产物文件不可用")
+			writeError(w, fasthttp.StatusNotFound, "file_not_found", "归档中的产物文件不可用")
 		case errors.Is(err, errArtifactTooLarge):
-			writeError(ctx, fasthttp.StatusRequestEntityTooLarge, "file_too_large", err.Error())
+			writeError(w, fasthttp.StatusRequestEntityTooLarge, "file_too_large", err.Error())
 		case errors.Is(err, errArtifactChanged):
-			writeError(ctx, fasthttp.StatusConflict, "artifact_changed", err.Error())
+			writeError(w, fasthttp.StatusConflict, "artifact_changed", err.Error())
 		case errors.Is(err, errInvalidArtifactList):
-			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", err.Error())
+			writeError(w, fasthttp.StatusInternalServerError, "internal_error", err.Error())
 		default:
-			writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "生成产物归档失败")
+			writeError(w, fasthttp.StatusInternalServerError, "internal_error", "生成产物归档失败")
 		}
 		return
 	}
@@ -270,15 +275,21 @@ func (s *Server) serveArchive(ctx *fasthttp.RequestCtx, dir *os.Root, job *jobst
 	if size > maxInt {
 		_ = archive.Close()
 		_ = os.Remove(archive.Name())
-		writeError(ctx, fasthttp.StatusRequestEntityTooLarge, "archive_too_large", "ZIP 归档超过当前平台的响应大小上限")
+		writeError(w, fasthttp.StatusRequestEntityTooLarge, "archive_too_large", "ZIP 归档超过当前平台的响应大小上限")
 		return
 	}
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType("application/zip")
-	ctx.Response.Header.Set("Content-Disposition",
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Disposition",
 		`attachment; filename="`+headerSafe(job.ID)+`.zip"`)
-	ctx.Response.Header.Set("Cache-Control", "no-store")
-	ctx.SetBodyStream(&removeOnClose{File: archive, path: archive.Name()}, int(size))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.CopyN(w, archive, size); err != nil {
+		s.log.Debug("传输产物归档失败", "job", job.ID, "err", err)
+	}
+	name := archive.Name()
+	_ = archive.Close()
+	_ = os.Remove(name)
 }
 
 // buildArchive 在响应开始前把完整 ZIP 写入临时文件。任意条目无法完整读取、
@@ -372,20 +383,6 @@ func (s *Server) buildArchive(dir *os.Root, files []string, maxEntryBytes int64)
 		return nil, 0, fmt.Errorf("定位 ZIP 归档失败: %w", err)
 	}
 	return tmp, info.Size(), nil
-}
-
-type removeOnClose struct {
-	*os.File
-	path string
-}
-
-func (f *removeOnClose) Close() error {
-	err := f.File.Close()
-	removeErr := os.Remove(f.path)
-	if err != nil {
-		return err
-	}
-	return removeErr
 }
 
 func openRecordedFile(dir *os.Root, name string) (*os.File, error) {

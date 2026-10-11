@@ -2,10 +2,9 @@ package main
 
 import (
 	"math"
+	"net/http"
 	"sort"
 	"time"
-
-	"github.com/valyala/fasthttp"
 
 	"github.com/zc310/ofd/internal/jobstore"
 )
@@ -18,11 +17,11 @@ import (
 //
 // 计数是累计值，不受 retention 影响：任务记录会被 Prune 清理，而这些计数
 // 独立存在，因此"总转换量"真的是自服务启动以来的总量，不是"最近 N 天"。
-func (s *Server) handleStats(ctx *fasthttp.RequestCtx) {
+func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 	snap, err := s.store.Snapshot()
 	if err != nil {
 		s.log.Error("读取统计失败", "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "读取统计失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "读取统计失败")
 		return
 	}
 	depth, err := s.store.QueueDepth()
@@ -32,7 +31,7 @@ func (s *Server) handleStats(ctx *fasthttp.RequestCtx) {
 		s.log.Error("读取队列深度失败", "err", err)
 		depth = nil
 	}
-	writeJSON(ctx, fasthttp.StatusOK, buildStatsView(snap, depth, s.cfg, s.startedAt))
+	writeJSON(w, http.StatusOK, buildStatsView(snap, depth, s.cfg, s.startedAt))
 }
 
 // statsView 是 /v1/stats 的响应体。
