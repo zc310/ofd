@@ -193,7 +193,9 @@ type Service struct {
 	// WebDAVTargets 是预注册的 WebDAV 目标。
 	WebDAVTargets map[string]*transfer.WebDAVSink
 	// SFTPTargets 是预注册的 SFTP 目标。
-	SFTPTargets map[string]*transfer.SFTPSink
+	SFTPTargets   map[string]*transfer.SFTPSink
+	convertOutput func(context.Context, string, string, string, io.Writer,
+		func(int) (io.WriteCloser, error), ...converter.Option) error
 }
 
 // New 构造服务。
@@ -206,7 +208,7 @@ func New(tempDir string, list *allowlist.List) *Service {
 }
 
 // Run 执行一次转换。
-func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
+func (s *Service) Run(ctx context.Context, spec Spec) (result Result, runErr error) {
 	started := time.Now()
 	inputFormat, inExt, err := resolveInputFormat(spec.Input)
 	if err != nil {
@@ -281,29 +283,40 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 	// 那样报出来的位置和文件真正所在的地方对不上。
 	locations := map[string]transfer.Location{}
 	var writers []*sinkWriter
+	succeeded := false
+	defer func() {
+		if succeeded {
+			return
+		}
+		if err := rollbackPublished(ctx, sink, writers); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+	}()
 	var main io.Writer
 	if outFormat.Kind == converter.KindImage {
 		// 逐页格式：每页一个文件，靠 Writer 回调拿到输出位置。
-		opts = append(opts, converter.Writer(func(page int) (io.WriteCloser, error) {
+		pageWriter := func(page int) (io.WriteCloser, error) {
 			// 转换器给的页号已经是从 1 开始的（pages.go 里 len(pages)+1），
 			// 这里不能再 +1——那会让第一页被命名成 page-0002.png。
 			name := naming.page(page)
 			writer := newSinkWriter(sink, name, written, locations)
 			writers = append(writers, writer)
 			return writer, nil
-		}))
+		}
+		if err := s.runConvert(ctx, inputFormat, outFormat.Name, inputPath, main, pageWriter, opts...); err != nil {
+			return Result{}, wrapConvertError(err)
+		}
 	} else {
 		// 文档格式：整体一个文件。必须给非 nil 的 writer，PDF 编码器会直接拒绝
 		// nil 输出。
 		writer := newSinkWriter(sink, naming.single(), written, locations)
 		writers = append(writers, writer)
 		main = writer
+		if err := s.runConvert(ctx, inputFormat, outFormat.Name, inputPath, main, nil, opts...); err != nil {
+			return Result{}, wrapConvertError(err)
+		}
 	}
-	if err := converter.Convert(ctx, inputFormat, outFormat.Name, inputPath, main, opts...); err != nil {
-		return Result{}, wrapConvertError(err)
-	}
-	// 转换器正常会 Close 每个 writer；这里兜底再 Flush 一次（幂等），
-	// 免得某个编码器忘了 Close 就留下空文件。
+	// 转换器正常会 Close 每个 writer；这里兜底 Flush 尚未提交的输出。
 	for _, writer := range writers {
 		if err := writer.Flush(); err != nil {
 			return Result{}, wrapConvertError(err)
@@ -313,7 +326,7 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 		return Result{}, fmt.Errorf("%w: 转换没有产出任何文件", ErrUnsupported)
 	}
 
-	result := Result{Kind: outputKind, Format: outFormat.Name, MIME: outFormat.MIME,
+	result = Result{Kind: outputKind, Format: outFormat.Name, MIME: outFormat.MIME,
 		InputFormat: inputFormat, InputBytes: inputSize}
 	switch outputKind {
 	case OutputStream:
@@ -331,7 +344,44 @@ func (s *Service) Run(ctx context.Context, spec Spec) (Result, error) {
 		result.Dir = writtenDir(outputKind, spec, locations)
 	}
 	result.TookMs = time.Since(started).Milliseconds()
+	succeeded = true
 	return result, nil
+}
+
+func (s *Service) runConvert(ctx context.Context, from, to, input string, output io.Writer,
+	pageWriter func(int) (io.WriteCloser, error), opts ...converter.Option) error {
+	if s.convertOutput != nil {
+		return s.convertOutput(ctx, from, to, input, output, pageWriter, opts...)
+	}
+	if pageWriter != nil {
+		opts = append(opts, converter.Writer(pageWriter))
+	}
+	return converter.Convert(ctx, from, to, input, output, opts...)
+}
+
+func rollbackPublished(ctx context.Context, sink transfer.Sink, writers []*sinkWriter) error {
+	var locations []transfer.Location
+	for _, writer := range writers {
+		if writer.committed {
+			locations = append(locations, writer.location)
+		}
+	}
+	if len(locations) == 0 {
+		return nil
+	}
+	rollback, ok := sink.(transfer.RollbackSink)
+	if !ok {
+		return fmt.Errorf("%w: sink 不支持多文件回滚", transfer.ErrRollback)
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	var failures []error
+	for i := len(locations) - 1; i >= 0; i-- {
+		if err := rollback.Rollback(cleanupCtx, locations[i]); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // Lane 报告该任务应走哪条通道。
@@ -523,21 +573,20 @@ func sniffMagic(data []byte) (string, bool) {
 	return "", false
 }
 
-// sinkWriter 把转换器的 io.Writer 输出适配成 transfer.Sink 的一次 Put。
-//
-// 转换器要的是一个可写的流，而 Sink.Put 要的是一个完整的 reader，两者对不上，
-// 只能先在内存里攒完再交出去。每个 sinkWriter 都在 Write 阶段执行 Sink 的
-// 单文件大小上限，避免等到完整结果缓存后再由远端 Sink 拒绝。
+// sinkWriter 把转换器的 io.Writer 输出暂存到单页有界缓冲，再交给 Sink.Put。
+// 后续转换失败时，Run 会回滚本次尝试已提交的文件。
 type sinkWriter struct {
 	sink  transfer.Sink
 	name  string
 	limit int64
 	err   error
+	buf   bytes.Buffer
 	size  map[string]int64
 	// locations 非 nil 时记录 Sink 返回的位置，供 Result.Dir 使用。
 	locations map[string]transfer.Location
-	buf       bytes.Buffer
 	flushed   bool
+	committed bool
+	location  transfer.Location
 }
 
 func newSinkWriter(sink transfer.Sink, name string, size map[string]int64, locations map[string]transfer.Location) *sinkWriter {
@@ -553,7 +602,7 @@ func (w *sinkWriter) Write(p []byte) (int, error) {
 		return 0, w.err
 	}
 	if w.flushed {
-		return 0, errors.New("输出文件已写入 Sink")
+		return 0, errors.New("输出文件已封存")
 	}
 	if w.limit > 0 {
 		remaining := w.limit - int64(w.buf.Len())
@@ -571,15 +620,14 @@ func (w *sinkWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
-// Close 交给调用方把内容落进 Sink。转换器一般不调 Close，所以 dir 场景由
-// Run 在 Convert 返回后统一 Flush。
+// Close 提交当前文件到 Sink；Run 会在后续转换失败时回滚已提交的文件。
 func (w *sinkWriter) Close() error { return w.Flush() }
 
 func (w *sinkWriter) Flush() error {
 	if w.err != nil {
 		return w.err
 	}
-	// 幂等：转换器会 Close 一次，Run 收尾时再兜底调一次。
+	// 幂等：转换器可能 Close，Run 收尾时也会兜底 Flush。
 	if w.flushed {
 		return nil
 	}
@@ -595,6 +643,8 @@ func (w *sinkWriter) Flush() error {
 	if w.locations != nil {
 		w.locations[w.name] = location
 	}
+	w.location = location
+	w.committed = true
 	w.flushed = true
 	return nil
 }

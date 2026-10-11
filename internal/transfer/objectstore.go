@@ -177,6 +177,20 @@ func (s *MinioSink) Put(ctx context.Context, name string, r io.Reader) (Location
 	return Location{Kind: "s3", Bucket: s.Bucket, Key: object, URL: url, Size: info.Size}, nil
 }
 
+func (s *MinioSink) Rollback(ctx context.Context, location Location) error {
+	if s.Overwrite || location.Kind != "s3" || location.Bucket == "" || location.Key == "" {
+		return fmt.Errorf("%w: S3 目标不具备安全回滚条件", ErrRollback)
+	}
+	conn, err := s.acquire()
+	if err != nil {
+		return fmt.Errorf("%w: 连接 S3 回滚目标失败: %v", ErrRollback, err)
+	}
+	if err := conn.RemoveObject(ctx, location.Bucket, location.Key, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("%w: 删除 S3 回滚目标失败: %v", ErrRollback, redactError(err, s.SecretKey))
+	}
+	return nil
+}
+
 // EndpointURL 拼出对象的可访问地址，用于任务状态展示。
 func (s *MinioSink) EndpointURL() string {
 	scheme := "http"
@@ -405,6 +419,23 @@ func (s *WebDAVSink) Put(ctx context.Context, name string, r io.Reader) (Locatio
 	}
 	return Location{Kind: "webdav", Path: remote, Size: counter.n,
 		URL: strings.TrimSuffix(s.Endpoint, "/") + "/" + remote}, nil
+}
+
+func (s *WebDAVSink) Rollback(ctx context.Context, location Location) error {
+	if s.Overwrite || location.Kind != "webdav" || location.Path == "" {
+		return fmt.Errorf("%w: WebDAV 目标不具备安全回滚条件", ErrRollback)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: 回滚取消: %v", ErrRollback, err)
+	}
+	client, err := s.acquire()
+	if err != nil {
+		return fmt.Errorf("%w: 连接 WebDAV 回滚目标失败: %v", ErrRollback, err)
+	}
+	if err := client.Remove(location.Path); err != nil {
+		return fmt.Errorf("%w: 删除 WebDAV 回滚目标失败: %v", ErrRollback, redactError(err, s.Password))
+	}
+	return nil
 }
 
 // acquire 复用客户端。

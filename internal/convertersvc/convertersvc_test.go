@@ -13,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/allowlist"
 	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/pkg/converter"
 )
 
 // ofdSample 取一个真实的小型 OFD 作为转换输入。
@@ -153,6 +154,89 @@ func TestRunOFDToPNGDir(t *testing.T) {
 		if file.Size == 0 {
 			t.Errorf("%s 是空文件", file.Name)
 		}
+	}
+}
+
+func TestRunDoesNotPublishPagesWhenLaterPageFails(t *testing.T) {
+	svc := newService(t)
+	dir := filepath.Join(t.TempDir(), "pages")
+	spec := Spec{
+		Input:  Input{Kind: InputUpload, FileName: "a.ofd", Bytes: ofdSample(t)},
+		Output: Output{Kind: OutputDir, Format: "png", Dir: dir},
+	}
+	svc.convertOutput = func(_ context.Context, _, _, _ string, _ io.Writer,
+		pageWriter func(int) (io.WriteCloser, error), _ ...converter.Option) error {
+		writer, err := pageWriter(1)
+		if err != nil {
+			return err
+		}
+		if _, err := io.WriteString(writer, "page one"); err != nil {
+			return err
+		}
+		if err := writer.Close(); err != nil {
+			return err
+		}
+		return errors.New("injected failure on next page")
+	}
+	if _, err := svc.Run(context.Background(), spec); err == nil {
+		t.Fatal("后续页面失败应返回错误")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("转换失败不应发布部分页面，残留: %v", entries)
+	}
+
+	svc.convertOutput = func(_ context.Context, _, _, _ string, _ io.Writer,
+		pageWriter func(int) (io.WriteCloser, error), _ ...converter.Option) error {
+		for page := 1; page <= 2; page++ {
+			writer, err := pageWriter(page)
+			if err != nil {
+				return err
+			}
+			if _, err := io.WriteString(writer, "page output"); err != nil {
+				return err
+			}
+			if err := writer.Close(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	result, err := svc.Run(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("相同目标目录的后续尝试应成功: %v", err)
+	}
+	if len(result.Files) != 2 {
+		t.Fatalf("成功尝试产物数 = %d，期望 2", len(result.Files))
+	}
+
+	commitDir := filepath.Join(t.TempDir(), "pages")
+	if err := os.MkdirAll(commitDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	preexisting := filepath.Join(commitDir, "page-0002.png")
+	if err := os.WriteFile(preexisting, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec.Output.Dir = commitDir
+	_, err = svc.Run(context.Background(), spec)
+	if !errors.Is(err, transfer.ErrExists) {
+		t.Fatalf("已有第二页应保留 ErrExists，实际: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(commitDir, "page-0001.png")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("第二页冲突后应回滚本次已发布的第一页，stat err = %v", err)
+	}
+	if got, err := os.ReadFile(preexisting); err != nil || string(got) != "keep" {
+		t.Fatalf("回滚不能删除原有第二页，内容=%q err=%v", got, err)
+	}
+	if err := os.Remove(preexisting); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Run(context.Background(), spec); err != nil {
+		t.Fatalf("发布冲突消除后重试应成功: %v", err)
 	}
 }
 

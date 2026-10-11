@@ -231,6 +231,23 @@ func (s *FTPSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 	return Location{Kind: "ftp", Path: remote, Size: stored}, nil
 }
 
+func (s *FTPSink) Rollback(ctx context.Context, location Location) error {
+	if s.Overwrite || location.Kind != "ftp" || location.Path == "" {
+		return fmt.Errorf("%w: FTP 目标不具备安全回滚条件", ErrRollback)
+	}
+	conn, err := s.acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: 连接 FTP 回滚目标失败: %v", ErrRollback, err)
+	}
+	deleted := false
+	defer func() { s.release(conn, deleted) }()
+	if err := conn.server.Delete(location.Path); err != nil {
+		return fmt.Errorf("%w: 删除 FTP 回滚目标失败: %v", ErrRollback, redactError(err, s.Password))
+	}
+	deleted = true
+	return nil
+}
+
 // store 上传并返回实际字节数。
 //
 // 包一层 countingReader 限制大小：Stor 会一路读到底，失控的转换能把远端磁盘
