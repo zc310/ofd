@@ -70,7 +70,10 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 	if len(bbox) < 4 {
 		return
 	}
-	if form.Decode() != nil {
+	previousSource := p.setSource(appearance, "annotation")
+	defer func() { p.source = previousSource }()
+	if err := p.decodeStream(form, 0); err != nil {
+		p.report("annotation.decode", err.Error())
 		return
 	}
 	matrix := identityPDFMatrix()
@@ -83,6 +86,7 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 	state := pdfGraphicsState{
 		ctm: placement, textMatrix: identityPDFMatrix(), lineMatrix: identityPDFMatrix(), fontSize: 12,
 		fill: pdfColor{}, stroke: pdfColor{}, lineWidth: 1, hScale: 100, fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,
+		miterLimit: 10,
 	}
 	saved := p.state
 	savedStack := p.stack
@@ -102,6 +106,7 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 	p.stack = savedStack
 	if err != nil {
 		p.state = saved
+		p.report("annotation.parse", err.Error())
 		return
 	}
 	p.state = saved

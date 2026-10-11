@@ -11,6 +11,14 @@
 
 ## 未发布
 
+- PDF 导入入口现在默认实施资源预算：输入 512MiB、10,000 页、1,000,000 个对象，
+  单流解压 256MiB、累计解压 1GiB、单图片 100,000,000 像素、累计图片处理
+  250,000,000 像素、单字体 64MiB、输出图元 1,000,000、处理量 10,000,000、
+  递归深度 64。超过预算的文档现在失败；需要处理更大文档的调用方可通过
+  `converter.WithPDFImportOptions` 或 PDF 包的 `ConvertWithOptions` 调整。
+  `ofd-converter` 新增 `--pdf-strict`、`--pdf-max-input-bytes`、
+  `--pdf-max-image-pixels` 与 `--pdf-max-total-image-pixels`，PDF 导入诊断写入标准错误。
+
 - 修复 PDF 转 OFD 丢失平铺图案填充：Ghostscript 导出的建筑图纸把图案单元写成
   「q 裁剪矩形 re W n q 矩阵 cm /图像 Do Q Q」，裁剪矩形此前让整类图案被判为
   「非图像图案」而丢弃；图案的底图与掩码还是一对 DCTDecode(JPEG)，软掩码此前

@@ -1,14 +1,58 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/internal/version"
+	"github.com/zc310/ofd/pkg/converter"
 )
+
+func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
+	dir := t.TempDir()
+	input, output := filepath.Join(dir, "input.pdf"), filepath.Join(dir, "output.ofd")
+	if err := os.WriteFile(input, testutil.MinimalPDF([]byte("BT /F1 12 Tf 7 Tr (A) Tj ET"), 200, 200), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(output, []byte("existing output"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-max-input-bytes=4096", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", input, output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.pdfStrict || opts.pdfMaxInputBytes != 4096 || opts.pdfMaxImagePixels != 100 || opts.pdfMaxTotalImagePixels != 200 {
+		t.Fatalf("opts=%+v", opts)
+	}
+	var diagnostics bytes.Buffer
+	opts.diagnosticsWriter = &diagnostics
+	err = run(opts)
+	if !errors.Is(err, converter.ErrPDFImportUnsupported) || !strings.Contains(diagnostics.String(), "[text.clip]") {
+		t.Fatalf("error=%v diagnostics=%s", err, diagnostics.String())
+	}
+	data, err := os.ReadFile(output)
+	if err != nil || string(data) != "existing output" {
+		t.Fatalf("read=%v data=%q", err, data)
+	}
+	opts.pdfStrict, opts.pdfMaxInputBytes = false, 1
+	if err := run(opts); !errors.Is(err, converter.ErrPDFImportLimitExceeded) || errors.Is(err, ErrUsage) {
+		t.Fatalf("budget error=%v", err)
+	}
+	for _, args := range [][]string{{"--pdf-max-input-bytes=-1", input, output}, {"--pdf-max-image-pixels=-1", "--input-dir", dir, "--output-dir", filepath.Join(dir, "out"), "--format", "ofd"}} {
+		opts, err := parseArgs(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := run(opts); !errors.Is(err, ErrUsage) {
+			t.Fatalf("args=%v error=%v", args, err)
+		}
+	}
+}
 
 func TestParseArgsSupportsHelp(t *testing.T) {
 	for _, arg := range []string{"--help", "-h"} {

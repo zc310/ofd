@@ -52,6 +52,10 @@ ofd-converter --help
 | `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                                                    |
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                                                  |
 | `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                                               |
+| `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
+| `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
+| `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
+| `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 250,000,000 |
 | `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                                       |
 | `-no-html-text-layer`  | OFD 转 HTML 时不输出透明文字层；默认输出，关闭后文字不可选中、不可浏览器内查找、不可朗读                                                              |
 | `-no-docx-tables`      | OFD 转 DOCX 时不按文字位置识别表格，只输出纯文字段落；默认开启识别，双栏正文或公式排版可能误判                                                        |
@@ -84,6 +88,7 @@ ofd-converter --help
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
+| `-pdf-strict`、`-pdf-max-*` | PDF 导入，以及 Office/HTML → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML 直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -104,6 +109,8 @@ ofd-converter --help
 `2` 与 `1` 的界线是「命令要不要改」：前者重试没有意义，后者可能是文档本身有问题，
 批量任务里更需要靠这个区分判断是否该整体重跑。批量模式下**单个文件**转换失败仍
 按 `1` 汇总，不会因为参数分层被记成 `2`。
+
+PDF 预算参数的负值或超出允许范围返回 `2`；文档超过预算、严格模式遇到诊断返回 `1`。
 
 ### 加密文档
 
@@ -132,7 +139,16 @@ OFD 的包级加密（GB/T 33190）目前不支持：这样的文件会报解析
 ```bash
 ofd-converter input.pdf output.ofd
 ofd-converter -from pdf -format ofd input.pdf output.ofd
+ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
 ```
+
+PDF 导入默认限制输入、页数、对象数、解压流、图片像素、字体、输出图元、处理量与
+递归深度。所有预算超限都会终止转换。CLI 可调整输入和图片预算；完整默认值及库 API
+见 [PDF 支持清单](../../docs/PDF-SUPPORT.md#资源预算与诊断)。
+
+普通模式遇到已识别的内容缺失或近似转换，会继续生成 OFD，并向标准错误报告诊断码、
+输入文件、页号、对象编号与资源名。`--pdf-strict` 在首条诊断后失败，已有输出文件保留。
+严格模式针对已报告的转换缺口，不代表完整实现 PDF 规范。
 
 ### Markdown 转 OFD
 

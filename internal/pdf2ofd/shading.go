@@ -47,8 +47,11 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	if !found {
 		return
 	}
+	previousSource := p.setSource(object, name)
+	defer func() { p.source = previousSource }()
 	shading := p.parseShading(object, 0)
 	if shading == nil {
+		p.report("shading.unsupported", "着色资源无法完整转换")
 		return
 	}
 	// 网格着色（Type 4/5/6/7）优先输出为矢量网格，超出上限或裁剪区无法还原
@@ -68,12 +71,12 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 					path.Clips = clips
 				}
 				path.Alpha = ofdAlpha(p.fillOpacity())
-				p.page.Items = append(p.page.Items, *path)
+				p.appendItem(*path)
 				return
 			}
 		}
 		if image := p.meshImage(shading, matrix); image != nil {
-			p.page.Items = append(p.page.Items, *image)
+			p.appendItem(*image)
 		}
 		return
 	}
@@ -97,7 +100,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 		path.Clips = clips
 	}
 	path.Alpha = ofdAlpha(p.fillOpacity())
-	p.page.Items = append(p.page.Items, *path)
+	p.appendItem(*path)
 }
 
 // parseShading 解析着色字典。仅支持轴向（Type 2）与径向（Type 3）渐变。
@@ -126,6 +129,7 @@ func (p *pdfInterpreter) parseShading(object types.Object, depth int) *pdfShadin
 	}
 	shadingType, _ := dereferencedPDFNumber(p.ctx, dict["ShadingType"])
 	if shadingType < 2 || shadingType > 7 {
+		p.report("shading.type", fmt.Sprintf("Shading Type %g 尚未支持", shadingType))
 		return nil
 	}
 	spaces := p.parseColorSpaceObject(dict, "ColorSpace", depth)
@@ -204,7 +208,11 @@ func (p *pdfInterpreter) parseMeshData(object types.Object, dict types.Dict) *pd
 	if err != nil || stream == nil {
 		return nil
 	}
-	data := pdfStreamContent(stream)
+	if err := p.decodeStream(stream, 0); err != nil {
+		p.report("shading.decode", err.Error())
+		return nil
+	}
+	data := stream.Content
 	if len(data) == 0 {
 		return nil
 	}
@@ -286,11 +294,11 @@ func (p *pdfInterpreter) emitMeshFill(shading *pdfShading, path *creator.Path) b
 			path.Clips = clips
 		}
 		path.Alpha = ofdAlpha(p.fillOpacity())
-		p.page.Items = append(p.page.Items, *path)
+		p.appendItem(*path)
 		return true
 	}
 	if image := p.meshImage(shading, matrix); image != nil {
-		p.page.Items = append(p.page.Items, *image)
+		p.appendItem(*image)
 		return true
 	}
 	return false

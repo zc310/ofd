@@ -1378,6 +1378,14 @@ Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）通过 LibreOffice 命令�
 
 HTML/MHTML（html/htm/mhtml/mht）通过 Chrome/Chromium 打印引擎转换，默认禁止加载外部资源，纸张默认 A4；可用 `converter.WithChrome(path)`、`converter.WithPaperSize("A4")`、`converter.WithLandscape(true)`、`converter.WithAllowRemoteResources(true)` 等选项控制。
 
+PDF 导入可通过 `converter.WithPDFImportOptions(converter.PDFImportOptions{...})`
+设置资源预算、同步 `OnDiagnostic` 回调和 `Strict` 严格模式。配置也作用于 Office/HTML
+转换到 OFD 时的 PDF 阶段。`Limits` 的零值字段采用默认预算；超限错误用
+`errors.Is(err, converter.ErrPDFImportLimitExceeded)` 判断，严格模式的内容缺失错误用
+`converter.ErrPDFImportUnsupported` 判断。也可直接调用 PDF 导入包的
+`ConvertWithOptions` / `ConvertFileWithOptions`。默认值、诊断来源和示例见
+[PDF 支持清单](docs/PDF-SUPPORT.md#资源预算与诊断)。
+
 ### OFD 转图像
 
 #### 转换为 PNG

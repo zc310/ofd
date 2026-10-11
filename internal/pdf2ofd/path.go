@@ -120,6 +120,10 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		lineWidth = hairlineLineWidthMM
 	}
 	path := creator.Path{X: minX, Y: minY, Width: width, Height: height, Data: strings.TrimSpace(data.String()), Stroke: stroke, StrokeSet: &stroke, Fill: fill, Rule: rule, LineWidth: lineWidth, StrokeColor: colorToCreator(p.state.stroke), FillColor: colorToCreator(p.state.fill)}
+	path.Cap = [...]string{"Butt", "Round", "Square"}[p.state.lineCap]
+	path.Join = [...]string{"Miter", "Round", "Bevel"}[p.state.lineJoin]
+	// PDF 的 M 是斜接长度与半线宽的倍率，OFD 则保存中心线到斜接顶点的毫米距离。
+	path.MiterLimit = p.state.miterLimit * lineWidth / 2
 	// OFD 的 DashPattern 以线宽为单位（渲染端按线宽缩放），而 PDF 的 d 是绝对
 	// 长度，因此这里除以生效线宽换算成倍数。线宽为 0 时渲染端用默认线宽。
 	if len(p.state.dashPattern) > 0 {
@@ -170,7 +174,7 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		p.approximateMultiplyFill(&path)
 	}
 	if fill || stroke {
-		p.page.Items = append(p.page.Items, path)
+		p.appendItem(path)
 	}
 	p.path = nil
 }
@@ -281,6 +285,10 @@ func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (
 		height = 0.001
 	}
 	stroke := false
+	rule := "NonZero"
+	if region.evenOdd {
+		rule = "Even-Odd"
+	}
 	return &creator.ClipPath{
 		Boundary: creator.Box{X: minX, Y: minY, Width: width, Height: height},
 		Data:     strings.TrimSpace(data.String()),
@@ -290,7 +298,7 @@ func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (
 		Fill:      true,
 		Stroke:    stroke,
 		StrokeSet: &stroke,
-		Rule:      "NonZero",
+		Rule:      rule,
 	}, true
 }
 

@@ -65,6 +65,8 @@ func (p *pdfInterpreter) resolveColorSpace(resources types.Dict, name string) *p
 	if resources != nil {
 		if spaces, ok := dereferencedSubDict(p.ctx, resources, "ColorSpace"); ok {
 			if object, found := spaces.Find(name); found {
+				previousSource := p.setSource(object, name)
+				defer func() { p.source = previousSource }()
 				return p.parseColorSpace(object, 0)
 			}
 		}
@@ -75,6 +77,7 @@ func (p *pdfInterpreter) resolveColorSpace(resources types.Dict, name string) *p
 // parseColorSpace 解析颜色空间对象，支持名称、数组和间接引用。
 func (p *pdfInterpreter) parseColorSpace(object types.Object, depth int) *pdfColorSpace {
 	if depth > 8 {
+		p.report("color.depth", "颜色空间嵌套超过当前解析能力")
 		return nil
 	}
 	object, err := dereferencePDFObject(p.ctx, object)
@@ -109,6 +112,9 @@ func (p *pdfInterpreter) parseColorSpaceArray(array types.Array, depth int) *pdf
 	case "DeviceN":
 		return p.parseDeviceNSpace(array, depth)
 	default:
+		if family == "CalGray" || family == "CalRGB" || family == "Lab" {
+			p.report("color.calibrated", family+" 校准参数尚未支持，按设备颜色空间近似")
+		}
 		return namedColorSpace(family)
 	}
 }
@@ -128,12 +134,20 @@ func (p *pdfInterpreter) parseICCBasedSpace(array types.Array) *pdfColorSpace {
 		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
 			components = int(n)
 		}
-		profileData = pdfStreamContent(&value)
+		if err := p.decodeStream(&value, 0); err == nil {
+			profileData = value.Content
+		} else {
+			p.report("color.icc", err.Error())
+		}
 	case *types.StreamDict:
 		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
 			components = int(n)
 		}
-		profileData = pdfStreamContent(value)
+		if err := p.decodeStream(value, 0); err == nil {
+			profileData = value.Content
+		} else {
+			p.report("color.icc", err.Error())
+		}
 	}
 	space := &pdfColorSpace{family: "ICCBased", components: components}
 	switch components {
@@ -147,6 +161,8 @@ func (p *pdfInterpreter) parseICCBasedSpace(array types.Array) *pdfColorSpace {
 	if len(profileData) > 0 {
 		if transformer, err := coloricc.New(profileData, components); err == nil {
 			space.icc = transformer
+		} else {
+			p.report("color.icc", "ICC 配置文件无法应用，按设备颜色近似: "+err.Error())
 		}
 	}
 	return space
@@ -169,13 +185,13 @@ func (p *pdfInterpreter) parseIndexedSpace(array types.Array, depth int) *pdfCol
 		return nil
 	}
 	if stream, ok := lookup.(types.StreamDict); ok {
-		if err := stream.Decode(); err != nil {
+		if err := p.decodeStream(&stream, 0); err != nil {
 			return nil
 		}
 		lookup = stream
 	}
 	if stream, ok := lookup.(*types.StreamDict); ok {
-		if err := stream.Decode(); err != nil {
+		if err := p.decodeStream(stream, 0); err != nil {
 			return nil
 		}
 		lookup = *stream
@@ -318,13 +334,15 @@ type pdfFunction struct {
 	bounds []float64
 	enc3   []float64
 	// Type 4 PostScript 计算函数。
-	code []byte
+	calculator *pdfCalculator
 }
 
 func (p *pdfInterpreter) parseFunction(object types.Object, depth int) *pdfFunction {
 	if depth > 8 {
 		return nil
 	}
+	previousSource := p.setSource(object, p.source.Resource)
+	defer func() { p.source = previousSource }()
 	object, err := dereferencePDFObject(p.ctx, object)
 	if err != nil || object == nil {
 		return nil
@@ -346,12 +364,14 @@ func (p *pdfInterpreter) parseFunction(object types.Object, depth int) *pdfFunct
 
 func (p *pdfInterpreter) parseFunctionStream(stream *types.StreamDict, depth int) *pdfFunction {
 	fnType, _ := dereferencedPDFNumber(p.ctx, stream.Dict["FunctionType"])
-	if err := stream.Decode(); err != nil {
+	if err := p.decodeStream(stream, 0); err != nil {
+		p.report("function.decode", err.Error())
 		return nil
 	}
-	fn := &pdfFunction{fnType: int(fnType), domain: pdfNumberArray(p.ctx, stream.Dict["Domain"]), rng: pdfNumberArray(p.ctx, stream.Dict["Range"]), samples: append([]byte(nil), stream.Content...)}
+	fn := &pdfFunction{fnType: int(fnType), domain: pdfNumberArray(p.ctx, stream.Dict["Domain"]), rng: pdfNumberArray(p.ctx, stream.Dict["Range"])}
 	switch fn.fnType {
 	case 0:
+		fn.samples = append([]byte(nil), stream.Content...)
 		fn.size = pdfIntArray(p.ctx, stream.Dict["Size"])
 		if bits, ok := dereferencedPDFNumber(p.ctx, stream.Dict["BitsPerSample"]); ok {
 			fn.bits = int(bits)
@@ -365,7 +385,20 @@ func (p *pdfInterpreter) parseFunctionStream(stream *types.StreamDict, depth int
 			return nil
 		}
 	case 4:
-		// PostScript 计算函数暂不支持求值，保留原始代码以便降级处理。
+		calculator, err := compilePDFCalculator(stream.Content, fn.domain, fn.rng, p.control)
+		if err != nil {
+			p.report("function.type4", err.Error())
+			return nil
+		}
+		// 函数可能在资源解析完成后才求值，诊断仍应指向原函数对象。
+		source := p.source
+		calculator.onError = func(err error) {
+			previous := p.source
+			p.source = source
+			p.report("function.type4", err.Error())
+			p.source = previous
+		}
+		fn.calculator = calculator
 	default:
 		return nil
 	}
@@ -435,6 +468,11 @@ func (f *pdfFunction) eval(input []float64) ([]float64, bool) {
 		return f.evalExponential(inputs)
 	case 3:
 		return f.evalStitching(inputs)
+	case 4:
+		if f.calculator == nil {
+			return nil, false
+		}
+		return f.calculator.eval(inputs)
 	default:
 		return nil, false
 	}
