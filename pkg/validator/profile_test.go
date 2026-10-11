@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/beevik/etree"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -249,12 +250,7 @@ func assertProfileCode(t *testing.T, data []byte, want string) {
 func injectDocumentChild(t *testing.T, data []byte, snippet string) []byte {
 	t.Helper()
 	const name = "Doc_0/Document.xml"
-	original := readArchiveEntry(t, data, name)
-	if !strings.HasSuffix(strings.TrimSpace(original), "</Document>") {
-		t.Fatalf("%s 结构异常，无法注入", name)
-	}
-	updated := strings.Replace(original, "</Document>", snippet+"</Document>", 1)
-	return replaceArchiveEntry(t, data, archiveProfileEntry{name: name, content: updated})
+	return injectProfileXML(t, data, name, "Document", snippet)
 }
 
 // injectPageRootChild 在首个页面 Content.xml 的根节点末尾插入片段。Page 的
@@ -266,12 +262,7 @@ func injectPageRootChild(t *testing.T, data []byte, snippet string) []byte {
 	if name == "" {
 		t.Fatal("包内没有 Content.xml")
 	}
-	original := readArchiveEntry(t, data, name)
-	updated := strings.Replace(original, "</Page>", snippet+"</Page>", 1)
-	if updated == original {
-		t.Fatalf("%s 结构异常，无法注入", name)
-	}
-	return replaceArchiveEntry(t, data, archiveProfileEntry{name: name, content: updated})
+	return injectProfileXML(t, data, name, "Page", snippet)
 }
 
 // injectPageContent 在首个页面 Content.xml 的 Layer 内插入片段。
@@ -281,10 +272,39 @@ func injectPageContent(t *testing.T, data []byte, snippet string) []byte {
 	if name == "" {
 		t.Fatal("包内没有 Content.xml")
 	}
-	original := readArchiveEntry(t, data, name)
-	updated := strings.Replace(original, "</Layer>", snippet+"</Layer>", 1)
-	if updated == original {
-		t.Fatalf("%s 结构异常，无法注入", name)
+	return injectProfileXML(t, data, name, "Layer", snippet)
+}
+
+// injectProfileXML 按局部名称定位元素，测试片段仍属于 OFD 命名空间。
+func injectProfileXML(t *testing.T, data []byte, name, target, snippet string) []byte {
+	t.Helper()
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(readArchiveEntry(t, data, name)); err != nil {
+		t.Fatal(err)
+	}
+	root := doc.Root()
+	if root == nil {
+		t.Fatalf("%s 没有根元素", name)
+	}
+	parent := root
+	if root.Tag != target {
+		parent = root.FindElement(".//" + target)
+	}
+	if parent == nil {
+		t.Fatalf("%s 缺少 %s 元素，无法注入", name, target)
+	}
+	fragment := etree.NewDocument()
+	if err := fragment.ReadFromString("<Fragment>" + snippet + "</Fragment>"); err != nil {
+		t.Fatal(err)
+	}
+	for _, element := range fragment.Root().ChildElements() {
+		child := element.Copy()
+		child.CreateAttr("xmlns", spec.Namespace)
+		parent.AddChild(child)
+	}
+	updated, err := doc.WriteToString()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return replaceArchiveEntry(t, data, archiveProfileEntry{name: name, content: updated})
 }

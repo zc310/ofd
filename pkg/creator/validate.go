@@ -10,22 +10,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beevik/etree"
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 func validateOFDSchema(data []byte, rootName string) error {
-	tree, err := xdm.Parse(bytes.NewReader(data), xdm.ParseOptions{MaxBytes: -1, MaxNodes: -1, MaxDepth: -1})
+	root, err := parseXMLRoot(data)
 	if err != nil {
 		return err
 	}
-	if tree.Root == nil || len(tree.Root.ChildElements()) != 1 {
-		return errors.New("XML 文档必须且只能包含一个根元素")
-	}
-	root := tree.Root.ChildElements()[0]
+	return validateOFDNodeSchema(root, rootName)
+}
+
+// validateOFDNodeSchema 复用已解析的资源树，避免索引与文件检查再次解析 XML。
+func validateOFDNodeSchema(root *xdm.Node, rootName string) error {
 	if root.Name.Local != rootName || root.Name.URI != ofNamespace {
 		return fmt.Errorf("根元素必须是 OFD 命名空间中的 %s", rootName)
 	}
@@ -752,7 +753,7 @@ func validateExtension(value Extension) error {
 		return errors.New("内联扩展 DataXML 不能设置 DataName")
 	}
 	if len(value.DataXML) > 0 {
-		if _, err := rawXMLChildren(value.DataXML); err != nil {
+		if err := validateRawXML(value.DataXML); err != nil {
 			return fmt.Errorf("扩展 DataXML 无效: %w", err)
 		}
 	}
@@ -853,14 +854,6 @@ func validateDocumentVersion(value DocumentVersion) error {
 		if err := validateOFDSchema(value.DocRoot, "Document"); err != nil {
 			return fmt.Errorf("文档版本根文件不符合 Document.xsd: %w", err)
 		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(value.DocRoot); err != nil {
-			return fmt.Errorf("文档版本根文件 XML 无效: %w", err)
-		}
-		root := doc.Root()
-		if root == nil || root.Tag != "Document" || root.NamespaceURI() != ofNamespace {
-			return errors.New("文档版本根文件必须是 OFD 命名空间中的 Document")
-		}
 	}
 	if err := validateLeafFileName(value.DocRootName); err != nil {
 		return fmt.Errorf("文档版本根文件名无效: %w", err)
@@ -949,16 +942,8 @@ func validateLeafFileName(value string) error {
 	return nil
 }
 
-func validateResExternalFiles(data []byte, resourceName string, files []string) error {
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return err
-	}
-	root := doc.Root()
-	if root == nil {
-		return errors.New("资源 XML 根元素为空")
-	}
-	baseLoc := strings.TrimSpace(root.SelectAttrValue("BaseLoc", "."))
+func validateResExternalFiles(root *xdm.Node, resourceName string, files []string) error {
+	baseLoc := strings.TrimSpace(root.AttrValue("BaseLoc"))
 	if baseLoc == "" {
 		baseLoc = "."
 	}
@@ -976,23 +961,23 @@ func validateResExternalFiles(data []byte, resourceName string, files []string) 
 		provided[path.Clean(path.Join(path.Dir(resourceName), file))] = true
 	}
 	refs := make([]string, 0)
-	for _, element := range root.FindElements("ColorSpaces/ColorSpace") {
-		if value := strings.TrimSpace(element.SelectAttrValue("Profile", "")); value != "" {
+	for _, element := range xmlElements(root, "ColorSpaces/ColorSpace") {
+		if value := strings.TrimSpace(element.AttrValue("Profile")); value != "" {
 			refs = append(refs, value)
 		}
 	}
-	for _, element := range root.FindElements("Fonts/Font") {
-		fontFile := element.FindElement("FontFile")
+	for _, element := range xmlElements(root, "Fonts/Font") {
+		fontFile := xmlChild(element, "FontFile")
 		if fontFile != nil {
-			if value := strings.TrimSpace(fontFile.Text()); value != "" {
+			if value := strings.TrimSpace(fontFile.StringValue()); value != "" {
 				refs = append(refs, value)
 			}
 		}
 	}
-	for _, element := range root.FindElements("MultiMedias/MultiMedia") {
-		media := element.FindElement("MediaFile")
-		if media != nil && strings.TrimSpace(media.Text()) != "" {
-			refs = append(refs, strings.TrimSpace(media.Text()))
+	for _, element := range xmlElements(root, "MultiMedias/MultiMedia") {
+		media := xmlChild(element, "MediaFile")
+		if media != nil && strings.TrimSpace(media.StringValue()) != "" {
+			refs = append(refs, strings.TrimSpace(media.StringValue()))
 		}
 	}
 	for index, reference := range refs {
@@ -1870,7 +1855,7 @@ func imageFormatFromPrefix(format string, data []byte, source DataSource) string
 }
 
 func number(value float64) string {
-	return string(appendFloat(nil, value))
+	return string(ofdxml.AppendFloat(nil, value))
 }
 
 func boxString(x, y, width, height float64) string {

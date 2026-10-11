@@ -368,16 +368,16 @@ func TestConvertFillsPathWithMeshShadingPattern(t *testing.T) {
 	}
 	pageXML := extractPageContent(t, output.Bytes())
 	// 此前这里只剩一条纯黑 FillColor 的整页矩形，渐变完全丢失。
-	if !strings.Contains(pageXML, "<GouraudShd") && !strings.Contains(pageXML, "<LaGouraudShd") {
+	if !strings.Contains(pageXML, "<ofd:GouraudShd") && !strings.Contains(pageXML, "<ofd:LaGouraudShd") {
 		t.Fatalf("mesh shading pattern fell back to a solid fill:\n%s", pageXML)
 	}
 	// 颜色必须由 /Function 求值：输入 128/255 映射到红通道 128/255。
-	if !strings.Contains(pageXML, `<Color Value="128 0 0"/>`) {
+	if !strings.Contains(pageXML, `<ofd:Color Value="128 0 0"/>`) {
 		t.Fatalf("mesh colour was not evaluated through /Function:\n%s", pageXML)
 	}
 	// 填充路径必须收缩到网格包围盒（约半页宽 50mm），否则 Gouraud 的边缘延展
 	// 会把整条 100x100 的路径涂满。
-	const boundaryPrefix = `<PathObject ID="3" Boundary="0 0 `
+	const boundaryPrefix = `<ofd:PathObject ID="3" Boundary="0 0 `
 	index := strings.Index(pageXML, boundaryPrefix)
 	if index < 0 {
 		t.Fatalf("path object boundary not found:\n%s", pageXML)

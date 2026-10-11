@@ -1,9 +1,40 @@
 package creator
 
 import (
+	"fmt"
 	"io"
 	"testing"
+
+	"github.com/zc310/ofd/internal/ofdxml"
 )
+
+func BenchmarkStreamColor(b *testing.B) {
+	w := ofdxml.New()
+	color := &Color{R: 128, G: 190, B: 220}
+	b.ReportAllocs()
+	for b.Loop() {
+		w.Reset()
+		streamColor(w, "FillColor", color)
+		_ = w.Bytes()
+	}
+}
+
+func BenchmarkPreparePublicResources(b *testing.B) {
+	document := Document{ID: "public-resources", Pages: []Page{{}}}
+	for index := 0; index < 10; index++ {
+		document.PublicRes = append(document.PublicRes, PublicResource{
+			Name:  fmt.Sprintf("Assets/%d/Res.xml", index),
+			Data:  []byte(fmt.Sprintf(`<ofd:Res xmlns:ofd="http://www.ofdspec.org/2016" BaseLoc="."><ofd:MultiMedias><ofd:MultiMedia ID="%d" Type="Audio" Format="wav"><ofd:MediaFile>media.bin</ofd:MediaFile></ofd:MultiMedia></ofd:MultiMedias></ofd:Res>`, 100+index)),
+			Files: []PublicResourceFile{{Path: "media.bin", Data: []byte("audio")}},
+		})
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := prepare(document, slicePages{pages: document.Pages}, CreateOptions{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
 
 func BenchmarkR(b *testing.B) {
 	document := benchmarkDocument()
