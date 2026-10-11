@@ -193,6 +193,11 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		}
 		finished.Wait()
 		for index, page := range batch {
+			// 每页写出前再查一次：并行路径的 worker 只覆盖渲染段，写页段若不查，
+			// 取消后同一批的后续页仍会照写。串行路径每页都查，这里保持一致。
+			if err := conv.checkCancelled(); err != nil {
+				return err
+			}
 			job := jobsInBatch[index]
 			if job.err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, job.err)
