@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -516,10 +518,17 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func isLoopbackURL(url string) bool {
-	return strings.HasPrefix(url, "http://127.0.0.1") ||
-		strings.HasPrefix(url, "http://[::1]") ||
-		strings.HasPrefix(url, "http://localhost")
+func isLoopbackURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "http") || parsed.Hostname() == "" {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
 }
 
 // Allowlist 构造 URL 输入的访问白名单。
