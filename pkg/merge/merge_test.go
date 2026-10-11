@@ -875,10 +875,10 @@ func TestPagesRetainsNavigation(t *testing.T) {
 	}
 	pkg := openMerged(t, buffer.Bytes())
 	root := readEntry(t, pkg, "Doc_0/Document.xml")
-	if count := strings.Count(root, "<Bookmark "); count != 2 {
+	if count := strings.Count(root, "<ofd:Bookmark "); count != 2 {
 		t.Fatalf("期望保留 2 个书签，实际 %d:\n%s", count, root)
 	}
-	if count := strings.Count(root, "<OutlineElem"); count != 2 {
+	if count := strings.Count(root, "<ofd:OutlineElem"); count != 2 {
 		t.Fatalf("期望保留 2 个大纲项，实际 %d", count)
 	}
 }
@@ -892,10 +892,10 @@ func TestPagesDropsGotoToUnselectedPage(t *testing.T) {
 	}
 	pkg := openMerged(t, buffer.Bytes())
 	root := readEntry(t, pkg, "Doc_0/Document.xml")
-	if count := strings.Count(root, "<Bookmark "); count != 0 {
+	if count := strings.Count(root, "<ofd:Bookmark "); count != 0 {
 		t.Fatalf("目标页未保留的书签应被丢弃，实际 %d", count)
 	}
-	if !strings.Contains(root, "<OutlineElem") {
+	if !strings.Contains(root, "<ofd:OutlineElem") {
 		t.Fatalf("大纲项应保留（仅动作被丢弃）:\n%s", root)
 	}
 }
@@ -941,7 +941,7 @@ func TestPagesRetainsAnnotations(t *testing.T) {
 	}
 	pkg := openMerged(t, buffer.Bytes())
 	root := readEntry(t, pkg, "Doc_0/Annotations.xml")
-	if count := strings.Count(root, "<Page "); count != 2 {
+	if count := strings.Count(root, "<ofd:Page "); count != 2 {
 		t.Fatalf("期望 2 个带注解的页面，实际 %d:\n%s", count, root)
 	}
 }
@@ -955,7 +955,7 @@ func TestPagesDoesNotDuplicateAnnotations(t *testing.T) {
 	}
 	pkg := openMerged(t, buffer.Bytes())
 	root := readEntry(t, pkg, "Doc_0/Annotations.xml")
-	if count := strings.Count(root, "<Page "); count != 1 {
+	if count := strings.Count(root, "<ofd:Page "); count != 1 {
 		t.Fatalf("期望 1 个带注解的页面，实际 %d:\n%s", count, root)
 	}
 }

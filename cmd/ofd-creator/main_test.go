@@ -829,7 +829,7 @@ func TestRunWatermarkLayoutCenter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("缺少页面注解文件: %v", err)
 	}
-	for _, want := range []string{"<TextCode X=\"87\" Y=\"144\">保密资料</TextCode>", `Alpha="127"`} {
+	for _, want := range []string{"<ofd:TextCode X=\"87\" Y=\"144\">保密资料</ofd:TextCode>", `Alpha="127"`} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Fatalf("居中外观缺少 %q:\n%s", want, page)
 		}
@@ -863,7 +863,7 @@ func TestRunWatermarkRotate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("缺少页面注解文件: %v", err)
 	}
-	for _, want := range []string{`CTM="0.7071 0.7071 -0.7071 0.7071 0 0"`, `<TextCode X="155.524" Y="28.6316">保密资料</TextCode>`} {
+	for _, want := range []string{`CTM="0.7071 0.7071 -0.7071 0.7071 0 0"`, `<ofd:TextCode X="155.524" Y="28.6316">保密资料</ofd:TextCode>`} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Fatalf("旋转外观缺少 %q:\n%s", want, page)
 		}
@@ -926,7 +926,7 @@ func TestRunWatermarkImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 DocumentRes 失败: %v", err)
 	}
-	if !bytes.Contains(res, []byte(`Type="Image" Format="PNG"`)) || !bytes.Contains(res, []byte("<MediaFile>Images/Image_")) {
+	if !bytes.Contains(res, []byte(`Type="Image" Format="PNG"`)) || !bytes.Contains(res, []byte("<ofd:MediaFile>Images/Image_")) {
 		t.Fatalf("DocumentRes 未注册图片媒体:\n%s", res)
 	}
 	match := regexp.MustCompile(`Images/(Image_\d+\.png)`).FindSubmatch(res)
@@ -1008,7 +1008,7 @@ func TestRunWatermarkImageRemoveReclaims(t *testing.T) {
 	}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("add image exit code = %d, stderr = %s", code, stderr.String())
 	}
-	if res := readPackageBytesEntry(t, added, "Doc_0/DocumentRes.xml"); !bytes.Contains(res, []byte("<MediaFile>")) {
+	if res := readPackageBytesEntry(t, added, "Doc_0/DocumentRes.xml"); !bytes.Contains(res, []byte("<ofd:MediaFile>")) {
 		t.Fatalf("应注册图片媒体:\n%s", res)
 	}
 
@@ -1030,7 +1030,7 @@ func TestRunWatermarkImageRemoveReclaims(t *testing.T) {
 	}
 	defer func() { _ = pkg.Close() }()
 	res, _ := pkg.Read("Doc_0/DocumentRes.xml")
-	if bytes.Contains(res, []byte("MultiMedias")) || bytes.Contains(res, []byte("<MediaFile>")) {
+	if bytes.Contains(res, []byte("MultiMedias")) || bytes.Contains(res, []byte("<ofd:MediaFile>")) {
 		t.Fatalf("删除水印后应回收媒体:\n%s", res)
 	}
 	for _, entry := range pkg.Entries() {

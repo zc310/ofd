@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 
 	"github.com/tdewolff/canvas"
@@ -487,7 +486,7 @@ func TestCreateRawExtensionXMLPreservesMixedText(t *testing.T) {
 		t.Fatal(err)
 	}
 	extensionXML := readArchiveEntry(t, data, "Doc_0/Extensions/Extensions.xml")
-	if !bytes.Contains(extensionXML, []byte(`>before`)) || !bytes.Contains(extensionXML, []byte(`<Config>inside</Config>after</Data>`)) {
+	if !bytes.Contains(extensionXML, []byte(`>before`)) || !bytes.Contains(extensionXML, []byte(`<Config>inside</Config>after</ofd:Data>`)) {
 		t.Fatalf("raw extension mixed text was not preserved: %s", extensionXML)
 	}
 	checkGeneratedPackage(t, data)
@@ -817,7 +816,7 @@ func TestCreateSignaturesDigestAdditionalPackageFile(t *testing.T) {
 	digest := md5.Sum(resource)
 	want := base64.StdEncoding.EncodeToString(digest[:])
 	signature := readArchiveEntry(t, data, "Doc_0/Signatures/Signature_sig-resource.xml")
-	if !bytes.Contains(signature, []byte(`<CheckValue>`+want+`</CheckValue>`)) {
+	if !bytes.Contains(signature, []byte(`<ofd:CheckValue>`+want+`</ofd:CheckValue>`)) {
 		t.Fatalf("signature digest for additional package file is incorrect: %s", signature)
 	}
 	checkGeneratedPackage(t, data)
@@ -867,7 +866,7 @@ func TestCreateSignaturesAvoidsMaxSignIDCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 	signatures := readArchiveEntry(t, data, "Doc_0/Signatures.xml")
-	if bytes.Contains(signatures, []byte(`<MaxSignId>MaxSignId-1</MaxSignId>`)) {
+	if bytes.Contains(signatures, []byte(`<ofd:MaxSignId>MaxSignId-1</ofd:MaxSignId>`)) {
 		t.Fatalf("MaxSignId collided with signature ID: %s", signatures)
 	}
 	checkGeneratedPackage(t, data)
@@ -1844,7 +1843,7 @@ func TestCreatePermissionsAndViewPreferences(t *testing.T) {
 			t.Fatal(readErr)
 		}
 	}
-	if !bytes.Contains(documentXML, []byte("<Zoom>1.25</Zoom>")) {
+	if !bytes.Contains(documentXML, []byte("<ofd:Zoom>1.25</ofd:Zoom>")) {
 		t.Fatalf("缩放比例 XML 未正确生成: %+v", document.VPreferences.Zoom)
 	}
 	checkGeneratedPackage(t, data)
@@ -3626,15 +3625,14 @@ func readRootDocType(t *testing.T, data []byte) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(content); err != nil {
+		root, err := parseXMLRoot(content)
+		if err != nil {
 			t.Fatal(err)
 		}
-		root := doc.Root()
 		if root == nil {
 			t.Fatal("OFD.xml 没有根节点")
 		}
-		return root.SelectAttrValue("DocType", "")
+		return root.AttrValue("DocType")
 	}
 	t.Fatal("包内缺少 OFD.xml")
 	return ""

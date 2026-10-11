@@ -1,4 +1,4 @@
-package creator
+package ofdxml
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ func referenceAppendEscaped(dst []byte, value string, textMode bool) []byte {
 	for index := 0; index < len(value); {
 		r, size := utf8.DecodeRuneInString(value[index:])
 		if r == utf8.RuneError && size == 1 {
-			dst = append(dst, xmlReplacementChar...)
+			dst = append(dst, replacement...)
 			index++
 			continue
 		}
@@ -51,16 +51,12 @@ func referenceAppendEscaped(dst []byte, value string, textMode bool) []byte {
 				dst = append(dst, "&#xA;"...)
 			}
 		case '\r':
-			if textMode {
-				dst = append(dst, '\r')
-			} else {
-				dst = append(dst, "&#xD;"...)
-			}
+			dst = append(dst, "&#xD;"...)
 		default:
 			if isXMLChar(r) {
 				dst = append(dst, value[index:index+size]...)
 			} else {
-				dst = append(dst, xmlReplacementChar...)
+				dst = append(dst, replacement...)
 			}
 		}
 		index += size
@@ -79,7 +75,7 @@ func TestAppendEscapedMatchesReference(t *testing.T) {
 		"DEL:\x7f 合法?",
 		"混合<b>标签</b>与&amp;实体",
 		"多字节：\u65e5\u672c\u8a9e\x1e尾",
-		"\xf0\x9f\x98\x80 emoji 结尾", // 4 字节 rune
+		"\xf0\x9f\x98\x80 emoji 结尾", // 四字节字符。
 		"invalid utf8: \xe4\xb8\xad\xff\xfe 中文",
 		"开头特殊&，中间<，结尾>",
 		strings.Repeat("平铺的文本", 20),
@@ -87,8 +83,7 @@ func TestAppendEscapedMatchesReference(t *testing.T) {
 	for _, value := range inputs {
 		for _, textMode := range []bool{true, false} {
 			want := referenceAppendEscaped(nil, value, textMode)
-			w := newStreamXMLWriter()
-			w.Reset()
+			w := &Writer{}
 			w.appendEscaped(value, textMode)
 			got := w.Bytes()
 			if !bytes.Equal(got, want) {
@@ -102,7 +97,7 @@ func TestAppendEscapedMatchesReference(t *testing.T) {
 // （如 PDF 文本里的控制符）会被替换为 U+FFFD，否则生成的 OFD 无法解析
 // （PCDATA invalid Char value）。
 func TestStreamXMLWriterReplacesInvalidXMLChars(t *testing.T) {
-	w := newStreamXMLWriter()
+	w := New()
 	w.Start("TextCode")
 	w.Text("A\x1DB\x00C\x0bD\x0cE")
 	w.End()
@@ -120,7 +115,7 @@ func TestStreamXMLWriterReplacesInvalidXMLChars(t *testing.T) {
 		t.Fatalf("生成的 XML 无法解析: %v\n%s", err, out)
 	}
 
-	attr := newStreamXMLWriter()
+	attr := New()
 	attr.Start("TextObject")
 	attr.Attr("Value", "x\x1Dy")
 	attr.End()
@@ -134,39 +129,32 @@ func TestStreamXMLWriterReplacesInvalidXMLChars(t *testing.T) {
 	}
 }
 
-// referenceAppendFloat 是 appendFloat 的参考实现：strconv 'f'4 + 尾零裁剪，
-// 作为差分测试的基准。
-func referenceAppendFloat(dst []byte, value float64) []byte {
-	if !finite(value) {
-		value = 0
+// referenceFloat 使用标准库格式化与字符串裁剪作为独立基准，
+// 不复用生产代码的整数快路径和字节切片裁剪逻辑。
+func referenceFloat(value float64) string {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return "0"
 	}
-	start := len(dst)
-	dst = strconv.AppendFloat(dst, value, 'f', numberPrecision, 64)
-	end := len(dst)
-	for end > start+1 && dst[end-1] == '0' {
-		end--
+	formatted := strconv.FormatFloat(value, 'f', 4, 64)
+	formatted = strings.TrimSuffix(strings.TrimRight(formatted, "0"), ".")
+	if formatted == "-0" {
+		return "0"
 	}
-	if end > start+1 && dst[end-1] == '.' {
-		end--
-	}
-	dst = dst[:end]
-	if end == start+2 && dst[start] == '-' && dst[start+1] == '0' {
-		dst[start] = '0'
-		dst = dst[:start+1]
-	}
-	return dst
+	return formatted
 }
 
-// TestAppendFloatMatchesReference 用随机与边界值差分验证 appendFloat 与
+// TestAppendFloatMatchesReference 用随机与边界值差分验证 AppendFloat 与
 // strconv 'f'4 裁剪语义逐字节一致，防止整数快路径与兜底路径产生分叉。
 func TestAppendFloatMatchesReference(t *testing.T) {
 	checks := []float64{
-		0, -0.0, 1, -1, 42, -42, 1000000, -1000000,
+		0, math.Copysign(0, -1), 1, -1, 42, -42, 1000000, -1000000,
 		0.5, -0.5, 0.25, -0.25, 96.35, -96.35, 4.2333333333,
 		0.00004, -0.00004, 0.00005, -0.00005, 0.9999, -0.9999,
 		595.2745, 595.2746, 123.4567, -0.4, 1e15, -1e15,
 		9.223372036854775e18, -9.223372036854775e18,
 		math.MaxFloat64, math.SmallestNonzeroFloat64,
+		0x1p63, -0x1p63, math.Nextafter(0x1p63, 0),
+		math.NaN(), math.Inf(1), math.Inf(-1),
 	}
 	for _, value := range checks {
 		compareFloat(t, value)
@@ -183,8 +171,8 @@ func TestAppendFloatMatchesReference(t *testing.T) {
 
 func compareFloat(t *testing.T, value float64) {
 	t.Helper()
-	want := string(referenceAppendFloat(nil, value))
-	got := string(appendFloat(nil, value))
+	want := referenceFloat(value)
+	got := string(AppendFloat(nil, value))
 	if want != got {
 		t.Fatalf("value=%v: got %q, want %q", value, got, want)
 	}

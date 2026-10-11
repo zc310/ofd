@@ -232,6 +232,47 @@ func TestCreateStreamsSourceLargerThanHeap(t *testing.T) {
 	}
 }
 
+func TestCreateSignatureSourcesReferenceStoredData(t *testing.T) {
+	for _, mode := range []string{"Sign", "Seal"} {
+		t.Run(mode, func(t *testing.T) {
+			signature := Signature{
+				ID: "source-signature", Type: mode, ProviderName: "test",
+				References: []SignatureReference{{FileRef: "../Document.xml"}},
+			}
+			if mode == "Sign" {
+				signature.SignedValueSource = zeroDataSource{size: 8}
+			} else {
+				signature.SealSource = zeroDataSource{size: 8}
+			}
+			data, err := Marshal(Document{ID: "signature-source", Pages: []Page{{}}, Signatures: []Signature{signature}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries := openZipEntries(t, data)
+			root, err := parseXMLRoot(entries["Doc_0/Signatures/Signature_source-signature.xml"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "Data/source-signature.bin"
+			if mode == "Seal" {
+				want = "Data/source-signature.seal"
+				seal := xmlElements(root, "SignedInfo/Seal/BaseLoc")
+				if len(seal) != 1 || seal[0].StringValue() != want {
+					t.Fatalf("Seal 元素未指向来源数据: %s", entries["Doc_0/Signatures/Signature_source-signature.xml"])
+				}
+			}
+			value := xmlChild(root, "SignedValue")
+			if value == nil || value.StringValue() != want {
+				t.Fatalf("SignedValue 未指向来源数据: %s", entries["Doc_0/Signatures/Signature_source-signature.xml"])
+			}
+			if len(entries["Doc_0/Signatures/"+want]) != 8 {
+				t.Fatalf("签名数据条目不存在: %s", want)
+			}
+			checkGeneratedPackage(t, data)
+		})
+	}
+}
+
 type zeroDataSource struct{ size int64 }
 
 func (s zeroDataSource) Open() (io.ReadCloser, error) {

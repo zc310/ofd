@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/beevik/etree"
+	"github.com/knroy/go-xml/xdm"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -123,7 +124,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 			}
 		}
 	}
-	pageWriter := newStreamXMLWriter()
+	pageWriter := ofdxml.New()
 	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
 		page, pageErr := state.pages.PageAt(pageIndex)
 		if pageErr != nil {
@@ -315,93 +316,99 @@ func populateSignatureDigests(state *buildState, sink entrySink) error {
 }
 
 func attachmentsXML(state *buildState) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("Attachments")
-	root.CreateAttr("xmlns", ofNamespace)
+	w := ofdxml.New()
+	w.Start("Attachments")
 	for _, attachment := range state.attachments {
-		element := root.CreateElement("Attachment")
-		element.CreateAttr("ID", attachment.value.ID)
-		element.CreateAttr("Name", attachment.value.Name)
+		w.Start("Attachment")
+		w.Attr("ID", attachment.value.ID)
+		w.Attr("Name", attachment.value.Name)
 		if attachment.value.Format != "" {
-			element.CreateAttr("Format", attachment.value.Format)
+			w.Attr("Format", attachment.value.Format)
 		}
 		if !attachment.value.CreationDate.IsZero() {
-			element.CreateAttr("CreationDate", attachment.value.CreationDate.Format(time.RFC3339))
+			w.Attr("CreationDate", attachment.value.CreationDate.Format(time.RFC3339))
 		}
 		if !attachment.value.ModDate.IsZero() {
-			element.CreateAttr("ModDate", attachment.value.ModDate.Format(time.RFC3339))
+			w.Attr("ModDate", attachment.value.ModDate.Format(time.RFC3339))
 		}
-		element.CreateAttr("Size", number(float64(resourceSize(attachment.value.Data, attachment.value.Source))))
+		w.AttrFloat("Size", float64(resourceSize(attachment.value.Data, attachment.value.Source)))
 		if attachment.value.Visible != nil {
-			element.CreateAttr("Visible", strconv.FormatBool(*attachment.value.Visible))
+			w.Attr("Visible", strconv.FormatBool(*attachment.value.Visible))
 		}
 		if attachment.value.Usage != "" {
-			element.CreateAttr("Usage", attachment.value.Usage)
+			w.Attr("Usage", attachment.value.Usage)
 		}
-		element.CreateElement("FileLoc").SetText("Files/" + attachment.name)
+		w.Element("FileLoc", "Files/"+attachment.name)
+		w.End()
 	}
-	return documentBytes(doc)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func customTagsXML(state *buildState) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("CustomTags")
-	root.CreateAttr("xmlns", ofNamespace)
+	w := ofdxml.New()
+	w.Start("CustomTags")
 	for _, tag := range state.customTags {
-		element := root.CreateElement("CustomTag")
-		element.CreateAttr("NameSpace", tag.value.NameSpace)
+		w.Start("CustomTag")
+		w.Attr("NameSpace", tag.value.NameSpace)
 		if tag.schemaName != "" {
-			element.CreateElement("SchemaLoc").SetText("Schemas/" + tag.schemaName)
+			w.Element("SchemaLoc", "Schemas/"+tag.schemaName)
 		}
-		element.CreateElement("FileLoc").SetText("Data/" + tag.dataName)
+		w.Element("FileLoc", "Data/"+tag.dataName)
+		w.End()
 	}
-	return documentBytes(doc)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func extensionsXML(state *buildState) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("Extensions")
-	root.CreateAttr("xmlns", ofNamespace)
+	w := ofdxml.New()
+	w.Start("Extensions")
+	// 无前缀的 DataXML 原先继承 OFD 默认命名空间，保留这项语义。
+	w.Attr("xmlns", ofNamespace)
 	for _, extension := range state.extensions {
-		element := root.CreateElement("Extension")
-		element.CreateAttr("AppName", extension.value.AppName)
-		element.CreateAttr("RefId", strconv.FormatUint(extension.value.RefID, 10))
+		w.Start("Extension")
+		w.Attr("AppName", extension.value.AppName)
+		w.AttrUint("RefId", extension.value.RefID)
 		if extension.value.Company != "" {
-			element.CreateAttr("Company", extension.value.Company)
+			w.Attr("Company", extension.value.Company)
 		}
 		if extension.value.AppVersion != "" {
-			element.CreateAttr("AppVersion", extension.value.AppVersion)
+			w.Attr("AppVersion", extension.value.AppVersion)
 		}
 		if !extension.value.Date.IsZero() {
-			element.CreateAttr("Date", extension.value.Date.Format(time.RFC3339))
+			w.Attr("Date", extension.value.Date.Format(time.RFC3339))
 		}
 		for _, property := range extension.value.Properties {
-			item := element.CreateElement("Property")
-			item.CreateAttr("Name", property.Name)
+			w.Start("Property")
+			w.Attr("Name", property.Name)
 			if property.Type != "" {
-				item.CreateAttr("Type", property.Type)
+				w.Attr("Type", property.Type)
 			}
-			item.SetText(property.Value)
+			w.Text(property.Value)
+			w.End()
 		}
 		if extension.value.Data != "" {
-			element.CreateElement("Data").SetText(extension.value.Data)
+			w.Element("Data", extension.value.Data)
 		} else if len(extension.value.DataXML) > 0 {
-			dataElement := element.CreateElement("Data")
-			if err := appendRawXML(dataElement, extension.value.DataXML); err != nil {
+			w.Start("Data")
+			if err := appendRawXML(w, extension.value.DataXML); err != nil {
 				return nil, fmt.Errorf("扩展 %q 的 DataXML 无效: %w", extension.value.AppName, err)
 			}
+			w.End()
 		}
 		if extension.dataName != "" {
-			element.CreateElement("ExtendData").SetText("Data/" + extension.dataName)
+			w.Element("ExtendData", "Data/"+extension.dataName)
 		}
+		w.End()
 	}
-	return documentBytes(doc)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func signaturesXML(state *buildState) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("Signatures")
-	root.CreateAttr("xmlns", ofNamespace)
+	w := ofdxml.New()
+	w.Start("Signatures")
 	if len(state.signatures) > 0 {
 		maxSignID := "MaxSignId-" + strconv.Itoa(len(state.signatures))
 		used := make(map[string]bool, len(state.signatures))
@@ -411,102 +418,112 @@ func signaturesXML(state *buildState) ([]byte, error) {
 		for used[maxSignID] {
 			maxSignID += "-1"
 		}
-		root.CreateElement("MaxSignId").SetText(maxSignID)
+		w.Element("MaxSignId", maxSignID)
 	}
 	for _, signature := range state.signatures {
-		element := root.CreateElement("Signature")
-		element.CreateAttr("ID", signature.value.ID)
+		w.Start("Signature")
+		w.Attr("ID", signature.value.ID)
 		signatureType := signature.value.Type
 		if signatureType == "" {
 			signatureType = spec.SigTypeSeal
 		}
-		element.CreateAttr("Type", signatureType)
-		element.CreateAttr("BaseLoc", "Signatures/"+signature.baseName)
+		w.Attr("Type", signatureType)
+		w.Attr("BaseLoc", "Signatures/"+signature.baseName)
+		w.End()
 	}
-	return documentBytes(doc)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("Signature")
-	root.CreateAttr("xmlns", ofNamespace)
-	info := root.CreateElement("SignedInfo")
-	provider := info.CreateElement("Provider")
-	provider.CreateAttr("ProviderName", resource.value.ProviderName)
+	w := ofdxml.New()
+	w.Start("Signature")
+	w.Start("SignedInfo")
+	w.Start("Provider")
+	w.Attr("ProviderName", resource.value.ProviderName)
 	if resource.value.ProviderVersion != "" {
-		provider.CreateAttr("Version", resource.value.ProviderVersion)
+		w.Attr("Version", resource.value.ProviderVersion)
 	}
 	if resource.value.Company != "" {
-		provider.CreateAttr("Company", resource.value.Company)
+		w.Attr("Company", resource.value.Company)
 	}
+	w.End()
 	if resource.value.Method != "" {
-		info.CreateElement("SignatureMethod").SetText(resource.value.Method)
+		w.Element("SignatureMethod", resource.value.Method)
 	}
 	if !resource.value.Date.IsZero() {
-		info.CreateElement("SignatureDateTime").SetText(resource.value.Date.Format(time.RFC3339))
+		w.Element("SignatureDateTime", resource.value.Date.Format(time.RFC3339))
 	}
-	references := info.CreateElement("References")
+	w.Start("References")
 	method := resource.value.CheckMethod
 	if method == "" {
 		method = "MD5"
 	}
-	references.CreateAttr("CheckMethod", method)
+	w.Attr("CheckMethod", method)
 	for _, reference := range resource.value.References {
-		element := references.CreateElement("Reference")
-		element.CreateAttr("FileRef", reference.FileRef)
-		element.CreateElement("CheckValue").SetText(base64.StdEncoding.EncodeToString(reference.CheckValue))
+		w.Start("Reference")
+		w.Attr("FileRef", reference.FileRef)
+		w.Element("CheckValue", base64.StdEncoding.EncodeToString(reference.CheckValue))
+		w.End()
 	}
+	w.End()
 	for _, stamp := range resource.value.StampAnnots {
-		element := info.CreateElement("StampAnnot")
-		element.CreateAttr("ID", stamp.ID)
-		element.CreateAttr("PageRef", strconv.FormatUint(pageIDs[stamp.Page], 10))
-		element.CreateAttr("Boundary", boxString(stamp.Boundary.X, stamp.Boundary.Y, stamp.Boundary.Width, stamp.Boundary.Height))
+		w.Start("StampAnnot")
+		w.Attr("ID", stamp.ID)
+		w.AttrUint("PageRef", pageIDs[stamp.Page])
+		w.AttrBox("Boundary", stamp.Boundary.X, stamp.Boundary.Y, stamp.Boundary.Width, stamp.Boundary.Height)
 		if stamp.Clip != nil {
-			element.CreateAttr("Clip", boxString(stamp.Clip.X, stamp.Clip.Y, stamp.Clip.Width, stamp.Clip.Height))
+			w.AttrBox("Clip", stamp.Clip.X, stamp.Clip.Y, stamp.Clip.Width, stamp.Clip.Height)
 		}
+		w.End()
 	}
-	if len(resource.value.SealFile) > 0 {
-		seal := info.CreateElement("Seal")
-		seal.CreateElement("BaseLoc").SetText("Data/" + resource.sealName)
+	if hasResource(resource.value.SealFile, resource.value.SealSource) {
+		w.Start("Seal")
+		w.Element("BaseLoc", "Data/"+resource.sealName)
+		w.End()
 	}
+	w.End() // SignedInfo
 	signedValueName := resource.valueName
-	if len(resource.value.SignedValue) > 0 {
+	if hasResource(resource.value.SignedValue, resource.value.SignedValueSource) {
 		signedValueName = "Data/" + signedValueName
-	} else if len(resource.value.SealFile) > 0 {
+	} else if hasResource(resource.value.SealFile, resource.value.SealSource) {
 		signedValueName = "Data/" + resource.sealName
 	}
-	root.CreateElement("SignedValue").SetText(signedValueName)
-	return documentBytes(doc)
+	w.Element("SignedValue", signedValueName)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func versionXML(resource versionResource) ([]byte, error) {
-	doc := newXMLDocument()
-	root := doc.CreateElement("DocVersion")
-	root.CreateAttr("xmlns", ofNamespace)
-	root.CreateAttr("ID", resource.value.ID)
+	w := ofdxml.New()
+	w.Start("DocVersion")
+	w.Attr("ID", resource.value.ID)
 	if resource.value.Version != "" {
-		root.CreateAttr("Version", resource.value.Version)
+		w.Attr("Version", resource.value.Version)
 	}
 	if resource.value.Name != "" {
-		root.CreateAttr("Name", resource.value.Name)
+		w.Attr("Name", resource.value.Name)
 	}
 	if !resource.value.CreationDate.IsZero() {
-		root.CreateAttr("CreationDate", resource.value.CreationDate.Format("2006-01-02"))
+		w.Attr("CreationDate", resource.value.CreationDate.Format("2006-01-02"))
 	}
-	files := root.CreateElement("FileList")
+	w.Start("FileList")
 	for _, file := range resource.value.Files {
-		element := files.CreateElement("File")
-		element.CreateAttr("ID", file.ID)
-		element.SetText(file.Path)
+		w.Start("File")
+		w.Attr("ID", file.ID)
+		w.Text(file.Path)
+		w.End()
 	}
+	w.End()
 	rootPath := resource.rootName
 	if rootPath == "" {
 		rootPath = "../Document.xml"
 	} else {
 		rootPath = "Files/" + rootPath
 	}
-	root.CreateElement("DocRoot").SetText(rootPath)
-	return documentBytes(doc)
+	w.Element("DocRoot", rootPath)
+	w.End()
+	return w.Bytes(), nil
 }
 
 func prepare(document Document, pages PageProvider, options CreateOptions) (*buildState, error) {
@@ -999,8 +1016,8 @@ func reserveRawResourceIDs(reserve func(uint64, string) error, data []byte) erro
 	if len(data) == 0 {
 		return nil
 	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil || doc.Root() == nil {
+	root, err := parseXMLRoot(data)
+	if err != nil {
 		return nil
 	}
 	for _, pattern := range []string{
@@ -1010,8 +1027,8 @@ func reserveRawResourceIDs(reserve func(uint64, string) error, data []byte) erro
 		"MultiMedias/MultiMedia",
 		"CompositeGraphicUnits/CompositeGraphicUnit",
 	} {
-		for _, element := range doc.Root().FindElements(pattern) {
-			id, err := strconv.ParseUint(strings.TrimSpace(element.SelectAttrValue("ID", "")), 10, 64)
+		for _, element := range xmlElements(root, pattern) {
+			id, err := strconv.ParseUint(strings.TrimSpace(element.AttrValue("ID")), 10, 64)
 			if err != nil || id == 0 || id > maxOFDID {
 				continue
 			}
@@ -1118,26 +1135,22 @@ func (s *buildState) preparePublicResources(values []PublicResource) error {
 		if len(value.Data) == 0 {
 			return fmt.Errorf("公共资源 %d 数据不能为空", index+1)
 		}
-		if err := validateOFDSchema(value.Data, "Res"); err != nil {
+		root, err := parseXMLRoot(value.Data)
+		if err != nil {
+			return fmt.Errorf("公共资源 %s XML 无效: %w", name, err)
+		}
+		if err := validateOFDNodeSchema(root, "Res"); err != nil {
 			return fmt.Errorf("公共资源 %s 不符合 Res.xsd: %w", name, err)
 		}
-		if err := registerPageResourceResources(s, value.Data, -1, index); err != nil {
+		if err := registerRawResourceNodes(s, root, -1, index); err != nil {
 			return fmt.Errorf("公共资源 %s 资源索引无效: %w", name, err)
 		}
 		files, err := preparePublicResourceFiles(value.Files, name)
 		if err != nil {
 			return err
 		}
-		if err := validateResExternalFiles(value.Data, name, publicResourceFilePaths(files)); err != nil {
+		if err := validateResExternalFiles(root, name, publicResourceFilePaths(files)); err != nil {
 			return fmt.Errorf("公共资源 %s 的外部文件引用无效: %w", name, err)
-		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(value.Data); err != nil {
-			return fmt.Errorf("公共资源 %s XML 无效: %w", name, err)
-		}
-		root := doc.Root()
-		if root == nil || root.Tag != "Res" || root.NamespaceURI() != ofNamespace {
-			return fmt.Errorf("公共资源 %s 根元素必须是 OFD 命名空间中的 Res", name)
 		}
 		seen[name] = true
 		s.publicResources = append(s.publicResources, publicResource{name: name, data: value.Data, files: files})
@@ -1355,23 +1368,19 @@ func (s *buildState) preparePageResources(pageIndex int, resources []PageResourc
 			return nil, fmt.Errorf("页面 %d 资源文件 %d 不能同时设置 Data 和 Images", pageIndex+1, resourceIndex+1)
 		}
 		if len(resource.Data) > 0 {
-			if err := validateOFDSchema(resource.Data, "Res"); err != nil {
-				return nil, fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
-			}
-			doc := etree.NewDocument()
-			if err := doc.ReadFromBytes(resource.Data); err != nil {
+			root, err := parseXMLRoot(resource.Data)
+			if err != nil {
 				return nil, fmt.Errorf("页面 %d 资源文件 %d XML 无效: %w", pageIndex+1, resourceIndex+1, err)
 			}
-			root := doc.Root()
-			if root == nil || root.Tag != "Res" || root.NamespaceURI() != ofNamespace {
-				return nil, fmt.Errorf("页面 %d 资源文件 %d 根元素必须是 OFD 命名空间中的 Res", pageIndex+1, resourceIndex+1)
+			if err := validateOFDNodeSchema(root, "Res"); err != nil {
+				return nil, fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
 			}
 			files, err := preparePageResourceFiles(resource.Files, pageIndex, resourceIndex)
 			if err != nil {
 				return nil, err
 			}
 			resourceName := fmt.Sprintf("Pages/Page_%d/PageRes_%d_%d.xml", pageIndex, pageIndex, resourceIndex)
-			if err := validateResExternalFiles(resource.Data, resourceName, pageResourceFilePaths(files)); err != nil {
+			if err := validateResExternalFiles(root, resourceName, pageResourceFilePaths(files)); err != nil {
 				return nil, fmt.Errorf("页面 %d 资源文件 %d 的外部文件引用无效: %w", pageIndex+1, resourceIndex+1, err)
 			}
 			result = append(result, pageResource{
@@ -1458,17 +1467,20 @@ func (s *buildState) collectPageImageIDs(pages PageProvider) error {
 }
 
 func registerPageResourceResources(s *buildState, data []byte, pageIndex, resourceIndex int) error {
-	if err := validateOFDSchema(data, "Res"); err != nil {
-		return fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
+	root, err := parseXMLRoot(data)
+	if err != nil {
 		return fmt.Errorf("页面 %d 资源文件 %d XML 无效: %w", pageIndex+1, resourceIndex+1, err)
 	}
-	root := doc.Root()
+	if err := validateOFDNodeSchema(root, "Res"); err != nil {
+		return fmt.Errorf("页面 %d 资源文件 %d 不符合 Res.xsd: %w", pageIndex+1, resourceIndex+1, err)
+	}
+	return registerRawResourceNodes(s, root, pageIndex, resourceIndex)
+}
+
+func registerRawResourceNodes(s *buildState, root *xdm.Node, pageIndex, resourceIndex int) error {
 	seenIDs := make(map[uint64]bool)
-	register := func(element *etree.Element, kind string, callback func(uint64, *etree.Element) error) error {
-		id, err := strconv.ParseUint(strings.TrimSpace(element.SelectAttrValue("ID", "")), 10, 64)
+	register := func(element *xdm.Node, kind string, callback func(uint64, *xdm.Node) error) error {
+		id, err := strconv.ParseUint(strings.TrimSpace(element.AttrValue("ID")), 10, 64)
 		if err != nil || id == 0 || id > maxOFDID {
 			return fmt.Errorf("页面 %d 资源文件 %d 的 %s ID 无效", pageIndex+1, resourceIndex+1, kind)
 		}
@@ -1487,17 +1499,17 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 		s.collectRawResourceReferences(element, kind, pageIndex, resourceIndex)
 		return nil
 	}
-	for _, element := range root.FindElements("ColorSpaces/ColorSpace") {
-		if err := register(element, "ColorSpace", func(id uint64, element *etree.Element) error {
+	for _, element := range xmlElements(root, "ColorSpaces/ColorSpace") {
+		if err := register(element, "ColorSpace", func(id uint64, element *xdm.Node) error {
 			if _, exists := s.colorSpaces[id]; exists {
 				return fmt.Errorf("页面资源 ColorSpace ID 重复: %d", id)
 			}
-			typeName := element.SelectAttrValue("Type", "")
+			typeName := element.AttrValue("Type")
 			if typeName != "GRAY" && typeName != "RGB" && typeName != "CMYK" {
 				return fmt.Errorf("页面资源 ColorSpace 类型无效: %q", typeName)
 			}
 			bits := 8
-			if raw := element.SelectAttrValue("BitsPerComponent", ""); raw != "" {
+			if raw := element.AttrValue("BitsPerComponent"); raw != "" {
 				parsed, parseErr := strconv.Atoi(raw)
 				if parseErr != nil {
 					return fmt.Errorf("页面资源 ColorSpace BitsPerComponent 无效: %q", raw)
@@ -1507,16 +1519,16 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 				}
 				bits = parsed
 			}
-			paletteSize := len(element.FindElements("Palette/CV"))
+			paletteSize := len(xmlElements(element, "Palette/CV"))
 			s.colorSpaces[id] = colorSpaceInfo{channels: colorSpaceChannels(typeName), bits: bits, paletteSize: paletteSize}
 			return nil
 		}); err != nil {
 			return err
 		}
 	}
-	for _, element := range root.FindElements("DrawParams/DrawParam") {
-		if err := register(element, "DrawParam", func(id uint64, element *etree.Element) error {
-			name := strings.TrimSpace(element.SelectAttrValue("Name", ""))
+	for _, element := range xmlElements(root, "DrawParams/DrawParam") {
+		if err := register(element, "DrawParam", func(id uint64, element *xdm.Node) error {
+			name := strings.TrimSpace(element.AttrValue("Name"))
 			if name == "" {
 				name = fmt.Sprintf("#%d", id)
 			}
@@ -1531,9 +1543,9 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 			return err
 		}
 	}
-	for _, element := range root.FindElements("Fonts/Font") {
-		if err := register(element, "Font", func(id uint64, element *etree.Element) error {
-			name := strings.TrimSpace(element.SelectAttrValue("FontName", ""))
+	for _, element := range xmlElements(root, "Fonts/Font") {
+		if err := register(element, "Font", func(id uint64, element *xdm.Node) error {
+			name := strings.TrimSpace(element.AttrValue("FontName"))
 			if name == "" {
 				return errors.New("页面资源 FontName 不能为空")
 			}
@@ -1546,12 +1558,12 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 			return err
 		}
 	}
-	for _, element := range root.FindElements("MultiMedias/MultiMedia") {
-		if err := register(element, "MultiMedia", func(id uint64, element *etree.Element) error {
+	for _, element := range xmlElements(root, "MultiMedias/MultiMedia") {
+		if err := register(element, "MultiMedia", func(id uint64, element *xdm.Node) error {
 			if s.mediaIDs[id] || s.pageImageIDs[id] {
 				return fmt.Errorf("页面资源 MultiMedia ID 重复: %d", id)
 			}
-			mediaType := element.SelectAttrValue("Type", "")
+			mediaType := element.AttrValue("Type")
 			if mediaType != "Image" && mediaType != "Audio" && mediaType != "Video" {
 				return fmt.Errorf("页面资源 MultiMedia 类型无效: %q", mediaType)
 			}
@@ -1565,8 +1577,8 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 			return err
 		}
 	}
-	for _, element := range root.FindElements("CompositeGraphicUnits/CompositeGraphicUnit") {
-		if err := register(element, "CompositeGraphicUnit", func(id uint64, element *etree.Element) error {
+	for _, element := range xmlElements(root, "CompositeGraphicUnits/CompositeGraphicUnit") {
+		if err := register(element, "CompositeGraphicUnit", func(id uint64, element *xdm.Node) error {
 			if _, exists := s.compositeIDs[id]; exists {
 				return fmt.Errorf("页面资源 CompositeGraphicUnit ID 重复: %d", id)
 			}
@@ -1584,12 +1596,12 @@ func registerPageResourceResources(s *buildState, data []byte, pageIndex, resour
 	return nil
 }
 
-func (s *buildState) collectRawResourceReferences(element *etree.Element, kind string, pageIndex, resourceIndex int) {
+func (s *buildState) collectRawResourceReferences(element *xdm.Node, kind string, pageIndex, resourceIndex int) {
 	source := fmt.Sprintf("页面 %d 资源文件 %d", pageIndex+1, resourceIndex+1)
 	if pageIndex < 0 {
 		source = fmt.Sprintf("公共资源 %d", resourceIndex+1)
 	}
-	var walk func(*etree.Element)
+	var walk func(*xdm.Node)
 	add := func(referenceKind, raw, context string) {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
@@ -1600,10 +1612,10 @@ func (s *buildState) collectRawResourceReferences(element *etree.Element, kind s
 			s.rawReferences = append(s.rawReferences, rawResourceReference{kind: referenceKind, value: id, text: raw, source: source + context})
 		}
 	}
-	walk = func(node *etree.Element) {
-		if node.Tag == "DrawParam" {
-			if relative := strings.TrimSpace(node.SelectAttrValue("Relative", "")); relative != "" {
-				if childID, err := strconv.ParseUint(strings.TrimSpace(node.SelectAttrValue("ID", "")), 10, 64); err == nil {
+	walk = func(node *xdm.Node) {
+		if node.Name.Local == "DrawParam" {
+			if relative := strings.TrimSpace(node.AttrValue("Relative")); relative != "" {
+				if childID, err := strconv.ParseUint(strings.TrimSpace(node.AttrValue("ID")), 10, 64); err == nil {
 					if parentID, err := strconv.ParseUint(relative, 10, 64); err == nil {
 						s.rawDrawRelations[childID] = parentID
 					}
@@ -1619,22 +1631,22 @@ func (s *buildState) collectRawResourceReferences(element *etree.Element, kind s
 			{name: "Relative", kind: "draw-param"},
 			{name: "Font", kind: "font"},
 		} {
-			if value := node.SelectAttrValue(attribute.name, ""); value != "" {
+			if value := node.AttrValue(attribute.name); value != "" {
 				add(attribute.kind, value, " "+attribute.name)
 			}
 		}
-		if raw := node.SelectAttrValue("ResourceID", ""); raw != "" {
+		if raw := node.AttrValue("ResourceID"); raw != "" {
 			kind := "media-or-composite"
-			if node.Tag == "CompositeObject" {
+			if node.Name.Local == "CompositeObject" {
 				kind = "composite"
-			} else if node.Tag == "ImageObject" {
+			} else if node.Name.Local == "ImageObject" {
 				kind = "image"
 			}
 			add(kind, raw, " ResourceID")
 		}
 		for _, name := range []string{"Thumbnail", "Substitution"} {
-			if child := node.FindElement(name); child != nil {
-				add("image", child.Text(), " "+name)
+			if child := xmlChild(node, name); child != nil {
+				add("image", child.StringValue(), " "+name)
 			}
 		}
 		for _, child := range node.ChildElements() {

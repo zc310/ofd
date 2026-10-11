@@ -1412,9 +1412,9 @@ func TestConvertWritesConverterMetadata(t *testing.T) {
 	// 版本号引用 converterVersion 而不是写死字面量：它跟着 internal/version 走，
 	// 断言写死字面量只会在下一次发版时变成一条莫名其妙的失败。
 	for _, want := range []string{
-		"<Creator>zc310/ofd</Creator>",
-		"<CreatorVersion>" + converterVersion + "</CreatorVersion>",
-		`<CustomData Name="SourceFormat">PDF</CustomData>`,
+		"<ofd:Creator>zc310/ofd</ofd:Creator>",
+		"<ofd:CreatorVersion>" + converterVersion + "</ofd:CreatorVersion>",
+		`<ofd:CustomData Name="SourceFormat">PDF</ofd:CustomData>`,
 	} {
 		if !bytes.Contains(ofdXML, []byte(want)) {
 			t.Fatalf("OFD.xml 缺少 %q:\n%s", want, ofdXML)
@@ -1434,12 +1434,12 @@ func TestConvertPreservesSourceProducer(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofdXML := readOFDXML(t, output.Bytes())
-	needle := []byte(`<CustomData Name="SourceProducer">`)
+	needle := []byte(`<ofd:CustomData Name="SourceProducer">`)
 	index := bytes.Index(ofdXML, needle)
 	if index < 0 {
 		t.Fatalf("OFD.xml 缺少 SourceProducer:\n%s", ofdXML)
 	}
-	if bytes.HasPrefix(ofdXML[index+len(needle):], []byte("</CustomData>")) {
+	if bytes.HasPrefix(ofdXML[index+len(needle):], []byte("</ofd:CustomData>")) {
 		t.Fatal("SourceProducer 为空")
 	}
 }

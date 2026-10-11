@@ -157,7 +157,7 @@ func ofdTextValues(t *testing.T, source string) []string {
 		if err != nil {
 			t.Fatalf("读取 %s 失败: %v", file.Name, err)
 		}
-		for _, part := range strings.Split(string(content), "<TextCode") {
+		for _, part := range strings.Split(string(content), "<ofd:TextCode") {
 			if !strings.Contains(part, ">") {
 				continue
 			}

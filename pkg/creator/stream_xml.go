@@ -1,323 +1,18 @@
 package creator
 
 import (
-	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/zc310/ofd/internal/ofdxml"
 )
 
-// xmlReplacementChar 用于替换 XML 1.0 不允许的字符（如 PDF 文本里的控制符）。
-// 直接写入会让生成的 OFD 无法解析（PCDATA invalid Char value）。
-var xmlReplacementChar = []byte("\uFFFD")
-
-// isXMLChar 判断 rune 是否允许出现在 XML 1.0 文档中。
-func isXMLChar(r rune) bool {
-	switch {
-	case r == 0x09 || r == 0x0A || r == 0x0D:
-		return true
-	case r >= 0x20 && r <= 0xD7FF:
-		return true
-	case r >= 0xE000 && r <= 0xFFFD:
-		return true
-	case r >= 0x10000 && r <= 0x10FFFF:
-		return true
-	default:
-		return false
-	}
-}
-
-// streamXMLWriter 是页面高频生成路径使用的轻量 XML 写入器。
-// 它只支持 creator 所需的操作，不在内存中保留 XML 树。
-type streamXMLWriter struct {
-	buf   []byte
-	stack []string
-	open  bool
-}
-
-func newStreamXMLWriter() *streamXMLWriter {
-	w := &streamXMLWriter{buf: make([]byte, 0, 4096), stack: make([]string, 0, 8)}
-	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
-	return w
-}
-
-// Reset 清空缓冲区与元素栈。调用方需重新写入 XML 声明。
-func (w *streamXMLWriter) Reset() {
-	w.buf = w.buf[:0]
-	w.stack = w.stack[:0]
-	w.open = false
-}
-
-func (w *streamXMLWriter) Start(name string) {
-	w.closeStart()
-	w.buf = append(w.buf, '<')
-	w.buf = append(w.buf, name...)
-	w.stack = append(w.stack, name)
-	w.open = true
-}
-
-func (w *streamXMLWriter) Attr(name, value string) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	w.appendAttrText(value)
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrUint(name string, value uint64) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	w.buf = strconv.AppendUint(w.buf, value, 10)
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrInt(name string, value int) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	w.buf = strconv.AppendInt(w.buf, int64(value), 10)
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrFloat(name string, value float64) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	w.buf = appendFloat(w.buf, value)
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrBox(name string, x, y, width, height float64) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	w.buf = appendFloat(w.buf, x)
-	w.buf = append(w.buf, ' ')
-	w.buf = appendFloat(w.buf, y)
-	w.buf = append(w.buf, ' ')
-	w.buf = appendFloat(w.buf, width)
-	w.buf = append(w.buf, ' ')
-	w.buf = appendFloat(w.buf, height)
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrFloatList(name string, values []float64) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	for index, value := range values {
-		if index > 0 {
-			w.buf = append(w.buf, ' ')
-		}
-		w.buf = appendFloat(w.buf, value)
-	}
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) AttrIntList(name string, values []int) {
-	if !w.open {
-		return
-	}
-	w.startAttr(name)
-	for index, value := range values {
-		if index > 0 {
-			w.buf = append(w.buf, ' ')
-		}
-		w.buf = strconv.AppendInt(w.buf, int64(value), 10)
-	}
-	w.buf = append(w.buf, '"')
-}
-
-func (w *streamXMLWriter) startAttr(name string) {
-	w.buf = append(w.buf, ' ')
-	w.buf = append(w.buf, name...)
-	w.buf = append(w.buf, '=', '"')
-}
-
-// numberPrecision 是 OFD XML 中浮点数保留的小数位数。0.0001mm（0.1µm）远低于
-// 任何渲染分辨率，同时避免浮点噪声导致的超长输出（如 96.34784444444446）。
-const numberPrecision = 4
-
-// maxInt64Float 是可安全转换到 int64 的最大 float64（math.MaxInt64 的浮点值）。
-const maxInt64Float = float64(math.MaxInt64)
-
-// appendFloat 以固定小数位输出浮点数，去掉末尾多余的 0 和小数点，且不使用
-// 科学计数法（部分阅读器无法解析）。极小值四舍五入为 0，避免 "-0"。
-func appendFloat(dst []byte, value float64) []byte {
-	if !finite(value) {
-		value = 0
-	}
-	// 整数快路径：strconv 'f'4 对精确整数输出 "N.0000"，裁剪后与
-	// AppendInt 逐字节一致，可完全跳过浮点格式化。
-	if value == math.Trunc(value) && value >= -maxInt64Float && value <= maxInt64Float {
-		return strconv.AppendInt(dst, int64(value), 10)
-	}
-	start := len(dst)
-	dst = strconv.AppendFloat(dst, value, 'f', numberPrecision, 64)
-	end := len(dst)
-	for end > start+1 && dst[end-1] == '0' {
-		end--
-	}
-	if end > start+1 && dst[end-1] == '.' {
-		end--
-	}
-	dst = dst[:end]
-	if end == start+2 && dst[start] == '-' && dst[start+1] == '0' {
-		dst[start] = '0'
-		dst = dst[:start+1]
-	}
-	return dst
-}
-
-func (w *streamXMLWriter) Text(value string) {
-	w.closeStart()
-	w.appendText(value)
-}
-
-func (w *streamXMLWriter) End() {
-	if len(w.stack) == 0 {
-		return
-	}
-	name := w.stack[len(w.stack)-1]
-	w.stack = w.stack[:len(w.stack)-1]
-	if w.open {
-		w.buf = append(w.buf, '/', '>')
-		w.open = false
-		return
-	}
-	w.buf = append(w.buf, '<', '/')
-	w.buf = append(w.buf, name...)
-	w.buf = append(w.buf, '>')
-}
-
-func (w *streamXMLWriter) Bytes() []byte {
-	for len(w.stack) > 0 {
-		w.End()
-	}
-	return w.buf
-}
-
-func (w *streamXMLWriter) closeStart() {
-	if w.open {
-		w.buf = append(w.buf, '>')
-		w.open = false
-	}
-}
-
-// escapeSeek 标记 ASCII 特殊字节：置位表示该字节需要逐字处理（XML 非法
-// 控制符或 & < > " \t \n \r），不能原样批量追加。字节 >= 0x80 一律走
-// rune 校验路径（含无效 UTF-8 序列替换）。
-var escapeSeek = func() (table [256]bool) {
-	for _, b := range []byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\t\n\r&<>\"") {
-		table[b] = true
-	}
-	return table
-}()
-
-func (w *streamXMLWriter) appendText(value string) {
-	w.appendEscaped(value, true)
-}
-
-func (w *streamXMLWriter) appendAttrText(value string) {
-	w.appendEscaped(value, false)
-}
-
-// appendEscaped 批量追加字符串内容：常见文本几乎不含特殊字节，扫描阶段
-// 只做字节查表，纯 ASCII 段一次整段追加，避免逐 rune 解码。
-func (w *streamXMLWriter) appendEscaped(value string, textMode bool) {
-	for plain := 0; plain < len(value); {
-		index := plain
-		for index < len(value) {
-			b := value[index]
-			if b >= utf8.RuneSelf || escapeSeek[b] {
-				break
-			}
-			index++
-		}
-		if index == len(value) {
-			w.buf = append(w.buf, value[plain:]...)
-			return
-		}
-		if index > plain {
-			w.buf = append(w.buf, value[plain:index]...)
-		}
-		b := value[index]
-		if b < utf8.RuneSelf {
-			w.appendSpecial(b, textMode)
-			plain = index + 1
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(value[index:])
-		if r == utf8.RuneError && size == 1 {
-			w.buf = append(w.buf, xmlReplacementChar...)
-			plain = index + 1
-			continue
-		}
-		if isXMLChar(r) {
-			w.buf = append(w.buf, value[index:index+size]...)
-		} else {
-			w.buf = append(w.buf, xmlReplacementChar...)
-		}
-		plain = index + size
-	}
-}
-
-// appendSpecial 处理单个 ASCII 特殊字节。textMode 下 > 转义为 &gt;、" \t
-// \n \r 原样输出；属性上下文要么转义要么原样透传合法字符；其余命中字节
-// 均为 XML 非法控制符，替换为 U+FFFD。
-func (w *streamXMLWriter) appendSpecial(b byte, textMode bool) {
-	switch b {
-	case '&':
-		w.buf = append(w.buf, "&amp;"...)
-	case '<':
-		w.buf = append(w.buf, "&lt;"...)
-	case '"':
-		if textMode {
-			w.buf = append(w.buf, '"')
-		} else {
-			w.buf = append(w.buf, "&quot;"...)
-		}
-	case '\t':
-		if textMode {
-			w.buf = append(w.buf, '\t')
-		} else {
-			w.buf = append(w.buf, "&#x9;"...)
-		}
-	case '\n':
-		if textMode {
-			w.buf = append(w.buf, '\n')
-		} else {
-			w.buf = append(w.buf, "&#xA;"...)
-		}
-	case '\r':
-		if textMode {
-			w.buf = append(w.buf, '\r')
-		} else {
-			w.buf = append(w.buf, "&#xD;"...)
-		}
-	case '>':
-		if textMode {
-			w.buf = append(w.buf, "&gt;"...)
-		} else {
-			w.buf = append(w.buf, '>')
-		}
-	default:
-		w.buf = append(w.buf, xmlReplacementChar...)
-	}
-}
+// 页面和模板复用同一个 ofdxml 缓冲区，业务代码只负责元素顺序。
+type streamXMLWriter = ofdxml.Writer
 
 func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer, w *streamXMLWriter) []byte {
 	w.Reset()
-	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 	w.Start("Page")
-	w.Attr("xmlns", ofNamespace)
 	for _, template := range page.Templates {
 		w.Start("Template")
 		w.AttrUint("TemplateID", template.ID)
@@ -346,9 +41,7 @@ func streamPageXML(state *buildState, page Page, pageResources []pageResource, l
 
 func streamTemplateXML(state *buildState, templateIndex int, w *streamXMLWriter) []byte {
 	w.Reset()
-	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 	w.Start("Page")
-	w.Attr("xmlns", ofNamespace)
 	template := state.document.Templates[templateIndex]
 	if template.Area != nil {
 		w.Start("Area")
@@ -369,6 +62,9 @@ func streamElementText(w *streamXMLWriter, name, value string) {
 }
 
 func streamPageArea(w *streamXMLWriter, value *PageArea, pageSize PageSize) {
+	if value == nil {
+		value = &PageArea{}
+	}
 	physical := value.PhysicalBox
 	if physical == nil {
 		physical = &Box{Width: pageSize.Width, Height: pageSize.Height}
@@ -877,11 +573,11 @@ func streamColor(w *streamXMLWriter, name string, value *Color) {
 	}
 	w.Start(name)
 	if len(value.Components) > 0 {
-		w.Attr("Value", intList(value.Components))
+		w.AttrIntList("Value", value.Components)
 	} else if value.Index != nil {
 		w.AttrInt("Index", *value.Index)
 	} else {
-		w.Attr("Value", strconv.Itoa(int(value.R))+" "+strconv.Itoa(int(value.G))+" "+strconv.Itoa(int(value.B)))
+		w.AttrIntList("Value", []int{int(value.R), int(value.G), int(value.B)})
 	}
 	if value.ColorSpace != 0 {
 		w.AttrUint("ColorSpace", value.ColorSpace)
@@ -892,13 +588,13 @@ func streamColor(w *streamXMLWriter, name string, value *Color) {
 	if value.Pattern != nil {
 		pattern := value.Pattern
 		w.Start("Pattern")
-		w.Attr("Width", number(pattern.Width))
-		w.Attr("Height", number(pattern.Height))
+		w.AttrFloat("Width", pattern.Width)
+		w.AttrFloat("Height", pattern.Height)
 		if pattern.XStep != 0 {
-			w.Attr("XStep", number(pattern.XStep))
+			w.AttrFloat("XStep", pattern.XStep)
 		}
 		if pattern.YStep != 0 {
-			w.Attr("YStep", number(pattern.YStep))
+			w.AttrFloat("YStep", pattern.YStep)
 		}
 		if pattern.ReflectMethod != "" {
 			w.Attr("ReflectMethod", pattern.ReflectMethod)
