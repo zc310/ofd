@@ -294,9 +294,13 @@ func TestConvertWhitespaceOnlyShowAdvancesText(t *testing.T) {
 	if len(texts) != 2 {
 		t.Fatalf("text objects = %d, want 2", len(texts))
 	}
-	// "A" 宽 6pt，"   " 宽 18pt，因此 "B" 相对 "A" 右移 24pt ≈ 8.47mm。
+	// MinimalPDF 用的是无 /Widths 的 /Helvetica，字宽取基础 14 内置度量：
+	// "A" 为 667/1000 em，" " 为 278/1000 em。12pt 下 "A" 宽 8.004pt，
+	// "   " 宽 10.008pt，"B" 相对 "A" 共右移 18.012pt ≈ 6.35mm。
+	// （此前这里按每字符 500/1000 em 写成 24pt，那是缺字宽时的等宽回退值，
+	// 补上基础 14 度量后不再是正确期望。）
 	gap := texts[1].Boundary.X - texts[0].Boundary.X
-	want := 24 * pdfPointToMillimeter
+	want := (667.0 + 3.0*278.0) / 1000.0 * 12.0 * pdfPointToMillimeter
 	if math.Abs(gap-want) > 0.05 {
 		t.Fatalf("text gap = %gmm, want about %gmm", gap, want)
 	}
