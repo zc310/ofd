@@ -12,7 +12,7 @@ import (
 
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
-	_ "github.com/zc310/ofd/pkg/converter/import/pdf"
+	pdfimport "github.com/zc310/ofd/pkg/converter/import/pdf"
 )
 
 type exampleBufferWriteCloser struct {
@@ -222,6 +222,37 @@ func ExampleConvert_pdfToOFD() {
 	err := converter.Convert(ctx, "pdf", "ofd", "../../testdata/pdf/sample0.pdf", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
+}
+
+func ExampleWithPDFImportOptions() {
+	var output bytes.Buffer
+	var diagnostics []converter.PDFImportDiagnostic
+	err := converter.Convert(context.Background(), "pdf", "ofd", "../../testdata/pdf/sample0.pdf", &output,
+		converter.WithPDFImportOptions(converter.PDFImportOptions{
+			Limits:       converter.PDFImportLimits{MaxInputBytes: 32 << 20, MaxImagePixels: 20_000_000},
+			OnDiagnostic: func(d converter.PDFImportDiagnostic) { diagnostics = append(diagnostics, d) },
+		}))
+	// Strict: true 可要求遇到已报告的内容缺失或近似转换时直接失败。
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
+	// Output: true
+}
+
+func ExampleConvert_pdfImportEntrypoints() {
+	ctx := context.Background()
+	options := pdfimport.Options{Limits: pdfimport.Limits{MaxInputBytes: 32 << 20}}
+	var output bytes.Buffer
+	err := pdfimport.ConvertWithOptions(ctx, "../../testdata/pdf/sample0.pdf", &output, "", options)
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
+
+	dir, err := os.MkdirTemp("", "pdf-import-example-*")
+	if err == nil {
+		defer os.RemoveAll(dir)
+		err = pdfimport.ConvertFileWithOptions(ctx, "../../testdata/pdf/sample0.pdf", filepath.Join(dir, "output.ofd"), "", options)
+	}
+	fmt.Println(err == nil)
+	// Output:
+	// true
+	// true
 }
 
 func ExampleConvert_markdownToOFD() {

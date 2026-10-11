@@ -30,6 +30,7 @@ type pdfPatternPaint struct {
 type pdfTilingPattern struct {
 	content   []byte
 	resources types.Dict
+	source    Diagnostic
 	// matrix 把图案空间映射到页面默认坐标空间。
 	matrix       [6]float64
 	xstep, ystep float64
@@ -50,6 +51,8 @@ func (p *pdfInterpreter) resolvePattern(resources types.Dict, name string) *pdfP
 	if !found {
 		return nil
 	}
+	previousSource := p.setSource(raw, name)
+	defer func() { p.source = previousSource }()
 	resolved, err := dereferencePDFObject(p.ctx, raw)
 	if err != nil {
 		return nil
@@ -87,11 +90,12 @@ func (p *pdfInterpreter) resolvePattern(resources types.Dict, name string) *pdfP
 		}
 		return &pdfPatternPaint{shading: shading}
 	case 1:
-		if stream == nil || stream.Decode() != nil || len(stream.Content) == 0 {
+		if stream == nil || p.decodeStream(stream, 0) != nil || len(stream.Content) == 0 {
 			return nil
 		}
 		tiling := &pdfTilingPattern{
 			content: append([]byte(nil), stream.Content...),
+			source:  p.source,
 			matrix:  identityPDFMatrix(),
 		}
 		if matrix := pdfNumberArray(p.ctx, dict["Matrix"]); len(matrix) == 6 {
@@ -122,8 +126,11 @@ type imagePlacement struct {
 // singlePatternImage 提取平铺图案内容中唯一的图像 XObject 及其放置矩阵。内容里
 // 出现裁剪以外的绘制操作（成段路径、填充、描边、文字、内联图像等）时返回 false，
 // 调用方回退到纯色填充。裁剪序列（q/Q/cm/gs/re/W/W*/n）不影响图像摆放，予以放过。
-func singlePatternImage(content []byte) (imagePlacement, bool) {
+func singlePatternImage(content []byte, controls ...*conversionControl) (imagePlacement, bool) {
 	tokens := newPDFContentTokenizer(content)
+	if len(controls) > 0 {
+		tokens.control = controls[0]
+	}
 	var placement imagePlacement
 	found := false
 	ctm := identityPDFMatrix()
@@ -141,6 +148,10 @@ func singlePatternImage(content []byte) (imagePlacement, bool) {
 		}
 		switch operator {
 		case "q":
+			if tokens.control != nil && int64(len(stack)) >= tokens.control.options.Limits.MaxDepth {
+				tokens.control.limit("graphics_state_depth", int64(len(stack))+1, tokens.control.options.Limits.MaxDepth)
+				return imagePlacement{}, false
+			}
 			stack = append(stack, ctm)
 		case "Q":
 			if len(stack) > 0 {
@@ -182,11 +193,20 @@ func singlePatternImage(content []byte) (imagePlacement, bool) {
 // emitTilingFill 把平铺图案填充展开为若干图片对象，实现 PDF PatternType 1
 // 背景图的转换。仅支持单元内容为单个图像且页面未旋转的情形。
 func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands []pdfPathCommand, fillBounds [4]float64) bool {
+	if pattern != nil {
+		previousSource := p.source
+		p.source = pattern.source
+		defer func() { p.source = previousSource }()
+	}
 	if pattern == nil || p.page == nil || p.info.rotate != 0 || p.info.userUnit != 1 {
+		if pattern != nil {
+			p.report("pattern.tiling", "当前页面旋转或 UserUnit 下的平铺图案尚未支持")
+		}
 		return false
 	}
-	placement, ok := singlePatternImage(pattern.content)
+	placement, ok := singlePatternImage(pattern.content, p.control)
 	if !ok {
+		p.report("pattern.tiling", "平铺图案包含路径、文字或多图片，当前无法完整保留")
 		return false
 	}
 	xobjects, ok := dereferencedSubDict(p.ctx, pattern.resources, "XObject")
@@ -201,8 +221,9 @@ func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands 
 	if err != nil || stream == nil || stream.NameEntry("Subtype") == nil || *stream.NameEntry("Subtype") != "Image" {
 		return false
 	}
-	data, format, err := pdfImageData(p.ctx, stream, pdfColor{})
+	data, format, err := p.imageData(stream, pdfColor{})
 	if err != nil {
+		p.report("pattern.image", err.Error())
 		return false
 	}
 
@@ -288,7 +309,9 @@ func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands 
 			if clips := p.buildPathClip(fillCommands, minXmm, minYmm); clips != nil {
 				image.Clips = clips
 			}
-			p.page.Items = append(p.page.Items, image)
+			if !p.appendItem(image) {
+				return true
+			}
 		}
 	}
 	return true
@@ -314,6 +337,16 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	}
 	if xstep <= 0 || ystep <= 0 {
 		return false
+	}
+	if p.control != nil {
+		configuration, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return false
+		}
+		pixels, err := p.control.imagePixels(int64(configuration.Width), int64(configuration.Height))
+		if err != nil || p.control.addImagePixels(pixels) != nil {
+			return false
+		}
 	}
 	tile, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -346,8 +379,14 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	// 按图案单元的原生像素密度生成覆盖填充范围的位图。
 	outWidth := int(math.Ceil((pMaxX - pMinX) * float64(tileWidth) / math.Abs(a)))
 	outHeight := int(math.Ceil((pMaxY - pMinY) * float64(tileHeight) / math.Abs(d)))
-	if outWidth <= 0 || outHeight <= 0 || int64(outWidth)*int64(outHeight) > maxTilingComposedPixels {
+	if outWidth <= 0 || outHeight <= 0 || int64(outWidth) > maxTilingComposedPixels/int64(outHeight) {
 		return false
+	}
+	if p.control != nil {
+		pixels, err := p.control.imagePixels(int64(outWidth), int64(outHeight))
+		if err != nil || p.control.addImagePixels(pixels) != nil {
+			return false
+		}
 	}
 
 	widthMM := fillBounds[2] - fillBounds[0]
@@ -360,6 +399,9 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	bounds := tile.Bounds()
 	rgba := image.NewRGBA(image.Rect(0, 0, outWidth, outHeight))
 	for oy := 0; oy < outHeight; oy++ {
+		if p.control != nil && p.control.check() != nil {
+			return false
+		}
 		mmY := fillBounds[1] + (float64(oy)+0.5)*stepY
 		for ox := 0; ox < outWidth; ox++ {
 			mmX := fillBounds[0] + (float64(ox)+0.5)*stepX
@@ -394,7 +436,7 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	if clips := p.buildPathClip(fillCommands, fillBounds[0], fillBounds[1]); clips != nil {
 		img.Clips = clips
 	}
-	p.page.Items = append(p.page.Items, img)
+	p.appendItem(img)
 	return true
 }
 

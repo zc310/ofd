@@ -26,23 +26,46 @@ import (
 // OFD 包。转换保留基本页面几何、文字、路径和 JPEG/PNG 图像 XObject，
 // 不使用原生 PDF 渲染器。
 func Convert(gctx context.Context, input any, output io.Writer, password string) error {
-	data, err := readPDFInput(input)
-	if err != nil {
+	return ConvertWithOptions(gctx, input, output, password, Options{})
+}
+
+// ConvertWithOptions 在资源预算内转换 PDF，并按选项报告无法完整保留的内容。
+func ConvertWithOptions(gctx context.Context, input any, output io.Writer, password string, options Options) (err error) {
+	if gctx == nil {
+		gctx = context.Background()
+	}
+	defer func() {
+		if gctx.Err() != nil {
+			err = gctx.Err()
+		}
+	}()
+	if err := gctx.Err(); err != nil {
 		return err
 	}
 	if output == nil {
 		return errors.New("OFD 输出写入器为空")
 	}
-	err = pdfToOFDBytes(gctx, data, output, password)
+	options, err = options.Normalize()
+	if err != nil {
+		return err
+	}
+	control := &conversionControl{ctx: gctx, options: options}
+	data, err := readPDFInputLimited(gctx, input, options.Limits.MaxInputBytes)
+	if err != nil {
+		return err
+	}
+	err = pdfToOFDBytes(gctx, data, output, password, control)
 	if err != nil && strings.Contains(err.Error(), "PDF 解析器异常") {
-		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
-			return pdfToOFDBytes(gctx, repaired, output, password)
+		if repaired, repairErr := repairPDFXRefWithLimits(data, options.Limits, control); repairErr == nil {
+			return pdfToOFDBytes(gctx, repaired, output, password, control)
+		} else if errors.Is(repairErr, ErrLimitExceeded) {
+			return repairErr
 		}
 	}
 	return err
 }
 
-func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password string) (err error) {
+func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password string, control *conversionControl) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("解析 PDF 失败: %v", recovered)
@@ -67,13 +90,28 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 	conf.ValidationMode = model.ValidationRelaxed
 	conf.UserPW = password
 	conf.OwnerPW = password
+	l := control.options.Limits
+	conf.Limits.MaxInputBytes = l.MaxInputBytes
+	conf.Limits.MaxStreamBytes = l.MaxStreamBytes
+	conf.Limits.MaxDecodeBytes = l.MaxDecodedStreamBytes
+	conf.Limits.MaxImagePixels = l.MaxImagePixels
+	conf.Limits.MaxObjectCount = int(l.MaxObjects)
+	conf.Limits.MaxXRefEntries = int(l.MaxObjects)
+	conf.Limits.MaxObjectStreamCount = int(l.MaxObjects)
+	conf.Limits.MaxRecursionDepth = int(l.MaxDepth)
 	ctx, err, panicked := readPDFContext(gctx, data, conf)
 	if panicked {
-		if repaired, repairErr := repairPDFXRef(data); repairErr == nil {
+		if repaired, repairErr := repairPDFXRefWithLimits(data, l, control); repairErr == nil {
 			ctx, err, _ = readPDFContext(gctx, repaired, conf)
+		} else if errors.Is(repairErr, ErrLimitExceeded) {
+			return repairErr
 		}
 	}
 	if err != nil {
+		err = control.parserError(err)
+		if errors.Is(err, ErrLimitExceeded) {
+			return err
+		}
 		// 口令不对时 pdfcpu 的消息是英文且不点明成因，转换器不该把
 		// "please provide the correct password" 直接甩给用户。
 		if isPasswordError(err) {
@@ -84,16 +122,32 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 		}
 		return fmt.Errorf("读取 PDF 失败: %w", err)
 	}
+	if err := control.accountParsedStreams(ctx); err != nil {
+		return err
+	}
 	if err := api.ValidateContext(gctx, ctx); err != nil {
+		err = control.parserError(err)
+		if errors.Is(err, ErrLimitExceeded) {
+			return err
+		}
 		// 部分可正常读取的 PDF 带有损坏的历史 Info 日期。保留已提取的
 		// 元数据，去掉不可用的 Info 引用后重新校验页面和内容对象。
 		ctx.Info = nil
 		if retryErr := api.ValidateContext(gctx, ctx); retryErr != nil {
-			return fmt.Errorf("验证 PDF 失败: %w", retryErr)
+			return fmt.Errorf("验证 PDF 失败: %w", control.parserError(retryErr))
 		}
+	}
+	if err := control.accountParsedStreams(ctx); err != nil {
+		return err
 	}
 	if ctx.PageCount == 0 {
 		return errors.New("PDF 没有页面")
+	}
+	if int64(ctx.PageCount) > l.MaxPages {
+		return control.limit("pages", int64(ctx.PageCount), l.MaxPages)
+	}
+	if err := control.check(); err != nil {
+		return err
 	}
 
 	creatorName, creatorVersion, customDatas := pdfDocumentMetadata(ctx.Creator)
@@ -114,7 +168,10 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 	geometries := pdfPageGeometries(gctx, ctx)
 	linkID := linkAnnotationIDBase
 	for pageNumber := 1; pageNumber <= ctx.PageCount; pageNumber++ {
-		page, links, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache, imageCache, geometries, &linkID)
+		if err := control.check(); err != nil {
+			return err
+		}
+		page, links, err := convertPDFPage(gctx, ctx, pageNumber, &document, fontCache, imageCache, geometries, &linkID, control)
 		if err != nil {
 			return fmt.Errorf("转换 PDF 第 %d 页失败: %w", pageNumber, err)
 		}
@@ -133,6 +190,9 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 	document.Outlines = convertOutlines(gctx, ctx)
 	if len(document.Outlines) > 0 && pdfPageModeUseOutlines(gctx, ctx) {
 		document.Preferences = &creator.ViewPreferences{PageMode: spec.PageModeUseOutlines}
+	}
+	if err := control.check(); err != nil {
+		return err
 	}
 	return creator.CreateWithOptions(document, output, creator.CreateOptions{PreserveEmbeddedFonts: true})
 }
@@ -167,6 +227,11 @@ func isPasswordError(err error) bool {
 
 // ConvertFile 是 Convert 的按路径便捷形式。
 func ConvertFile(gctx context.Context, pdfPath, ofdPath string, password string) error {
+	return ConvertFileWithOptions(gctx, pdfPath, ofdPath, password, Options{})
+}
+
+// ConvertFileWithOptions 在临时文件中完成转换，成功后替换目标文件。
+func ConvertFileWithOptions(gctx context.Context, pdfPath, ofdPath string, password string, options Options) error {
 	if strings.TrimSpace(ofdPath) == "" {
 		return errors.New("OFD 输出文件名为空")
 	}
@@ -190,7 +255,7 @@ func ConvertFile(gctx context.Context, pdfPath, ofdPath string, password string)
 			_ = os.Remove(tempPath)
 		}
 	}()
-	if err := Convert(gctx, pdfPath, file, password); err != nil {
+	if err := ConvertWithOptions(gctx, pdfPath, file, password, options); err != nil {
 		return err
 	}
 	if err := file.Close(); err != nil {
@@ -204,27 +269,65 @@ func ConvertFile(gctx context.Context, pdfPath, ofdPath string, password string)
 }
 
 func readPDFInput(input any) ([]byte, error) {
-	switch value := input.(type) {
-	case string:
-		data, err := os.ReadFile(value)
-		if err != nil {
-			return nil, fmt.Errorf("读取 PDF 文件失败: %w", err)
-		}
-		return data, nil
-	case []byte:
-		return append([]byte(nil), value...), nil
-	case io.Reader:
-		data, err := io.ReadAll(value)
+	options, _ := (Options{}).Normalize()
+	return readPDFInputLimited(context.Background(), input, options.Limits.MaxInputBytes)
+}
+
+type pdfInputReader struct {
+	ctx   context.Context
+	input io.Reader
+}
+
+func (r pdfInputReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.input.Read(data)
+}
+
+func readPDFInputLimited(ctx context.Context, input any, limit int64) ([]byte, error) {
+	read := func(r io.Reader) ([]byte, error) {
+		data, err := io.ReadAll(io.LimitReader(pdfInputReader{ctx, r}, limit+1))
 		if err != nil {
 			return nil, fmt.Errorf("读取 PDF 输入失败: %w", err)
 		}
+		if int64(len(data)) > limit {
+			return nil, &LimitError{Resource: "input_bytes", Limit: limit, Actual: int64(len(data))}
+		}
 		return data, nil
+	}
+	switch value := input.(type) {
+	case string:
+		file, err := os.Open(value)
+		if err != nil {
+			return nil, fmt.Errorf("读取 PDF 文件失败: %w", err)
+		}
+		defer func() { _ = file.Close() }()
+		if stat, err := file.Stat(); err == nil && stat.Size() > limit {
+			return nil, &LimitError{Resource: "input_bytes", Limit: limit, Actual: stat.Size()}
+		}
+		return read(file)
+	case []byte:
+		if int64(len(value)) > limit {
+			return nil, &LimitError{Resource: "input_bytes", Limit: limit, Actual: int64(len(value))}
+		}
+		return append([]byte(nil), value...), nil
+	case io.Reader:
+		return read(value)
 	default:
 		return nil, fmt.Errorf("不支持的 PDF 输入类型 %T", input)
 	}
 }
 
-func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache, geometries []pdfPageInfo, linkID *uint64) (creator.Page, []creator.Annotation, error) {
+func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, document *creator.Document, fontCache map[types.Object]pdfFontInfo, imageCache map[types.IndirectRef]pdfImageDataCache, geometries []pdfPageInfo, linkID *uint64, controls ...*conversionControl) (creator.Page, []creator.Annotation, error) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	if control == nil {
+		options, _ := (Options{}).Normalize()
+		control = &conversionControl{ctx: gctx, options: options}
+	}
 	pageDict, _, inherited, err := ctx.PageDict(gctx, pageNumber, false)
 	if err != nil {
 		return creator.Page{}, nil, err
@@ -253,16 +356,21 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 			return creator.Page{}, nil, err
 		}
 	}
-	content, err := ctx.XRefTable.PageContent(pageDict, pageNumber)
+	content, err := controlledPageContent(ctx, pageDict, control)
 	if err != nil {
 		return creator.Page{}, nil, fmt.Errorf("读取页面内容失败: %w", err)
 	}
 	interpreter := newPDFInterpreter(ctx, &page, document, info, fontCache, imageCache)
+	interpreter.control = control
+	interpreter.source.Page = pageNumber
 	if err := interpreter.parse(content, resources, nil, 0); err != nil {
 		return creator.Page{}, nil, err
 	}
 	// 注解（外观流）绘制在页面内容之上。
 	interpreter.renderAnnotations(pageDict)
+	if err := control.check(); err != nil {
+		return creator.Page{}, nil, err
+	}
 	// 合并相邻单字文字对象，减少 OFD 文字对象数量，逐字定位保持不变。
 	page.Items = mergeAdjacentTextItems(page.Items)
 	return page, convertPageLinks(gctx, ctx, pageDict, info, geometries, linkID), nil
@@ -328,7 +436,8 @@ func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator
 	return &pdfInterpreter{ctx: ctx, page: page, document: document, info: info, fontCache: fontCache, imageCache: imageCache, fonts: map[string]pdfFontInfo{}, fontAliases: map[string]string{}, state: pdfGraphicsState{
 		ctm: identityPDFMatrix(), textMatrix: identityPDFMatrix(), lineMatrix: identityPDFMatrix(), fontSize: 12,
 		fill: pdfColor{r: 0, g: 0, b: 0}, stroke: pdfColor{r: 0, g: 0, b: 0}, lineWidth: 1, hScale: 100,
-		fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1,
+		miterLimit: 10,
+		fillAlpha:  1, strokeAlpha: 1, groupAlpha: 1,
 	}}
 }
 
@@ -347,9 +456,17 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 	if !found {
 		return
 	}
+	previousSource := p.setSource(raw, name)
+	defer func() { p.source = previousSource }()
 	dict, err := p.ctx.XRefTable.DereferenceDict(raw)
 	if err != nil || dict == nil {
 		return
+	}
+	// ExtGState 与独立绘图操作符使用相同的线宽、线帽、连接和斜接参数语义。
+	for _, setting := range [...]struct{ key, op string }{{"LW", "w"}, {"LC", "J"}, {"LJ", "j"}, {"ML", "M"}} {
+		if value, ok := dereferencedPDFNumber(p.ctx, dict[setting.key]); ok {
+			_ = p.operator(setting.op, []any{value}, nil, 0)
+		}
 	}
 	if value, found := dict.Find("ca"); found {
 		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
@@ -369,11 +486,26 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
 			if name, ok := number.(types.Name); ok {
 				p.state.blendMode = name.Value()
+				if !isNormalBlendMode(p.state.blendMode) {
+					p.report("graphics.blend", "混合模式 "+p.state.blendMode+" 只能近似保留")
+				}
 			}
 		}
 	}
 	if _, found := dict.Find("SMask"); found {
-		p.state.lumMask = pdfExtGStateSoftMask(p.ctx, dict)
+		if p.control != nil {
+			if err := p.preflightGraphicsMask(dict["SMask"]); err != nil {
+				p.report("image.mask_graphics", err.Error())
+				return
+			}
+		}
+		p.state.lumMask = pdfExtGStateSoftMask(p.ctx, dict, p.control)
+		if p.state.lumMask == nil {
+			mask, _ := dereferencePDFObject(p.ctx, dict["SMask"])
+			if flag, ok := mask.(types.Name); !ok || flag.Value() != "None" {
+				p.report("image.mask_graphics", "图形状态软掩码无法还原为单图像，保留未遮罩内容")
+			}
+		}
 	}
 }
 
@@ -399,7 +531,14 @@ func clampOpacity(value float64) float64 {
 }
 
 func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *pdfGraphicsState, depth int) error {
-	if depth > 16 {
+	maximum := int64(16)
+	if p.control != nil {
+		maximum = p.control.options.Limits.MaxDepth
+	}
+	if int64(depth) > maximum && p.control != nil {
+		return p.control.limit("form_depth", int64(depth), maximum)
+	}
+	if int64(depth) > maximum {
 		return errors.New("PDF Form XObject 嵌套过深")
 	}
 	if inherited != nil {
@@ -409,8 +548,14 @@ func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *
 		p.state.ctm = identityPDFMatrix()
 	}
 	tokens := newPDFContentTokenizer(content)
+	tokens.control = p.control
 	operands := []any{}
 	for {
+		if p.control != nil {
+			if err := p.control.check(); err != nil {
+				return err
+			}
+		}
 		value, ok, err := tokens.next()
 		if err != nil {
 			return err
@@ -434,7 +579,7 @@ func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *
 		}
 		operands = append(operands, value)
 	}
-	return nil
+	return p.control.check()
 }
 
 func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, depth int) error {
@@ -446,10 +591,17 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 	}
 	switch op {
 	case "q":
+		if p.control != nil && int64(len(p.stack)) >= p.control.options.Limits.MaxDepth {
+			return p.control.limit("graphics_state_depth", int64(len(p.stack))+1, p.control.options.Limits.MaxDepth)
+		}
 		p.stack = append(p.stack, p.state)
 	case "Q":
 		if len(p.stack) > 0 {
+			// 文本矩阵属于文字对象的定位状态，不随 q/Q 保存和恢复；文字参数
+			// （字号、间距、升降等）仍随图形状态恢复。
+			textMatrix, lineMatrix := p.state.textMatrix, p.state.lineMatrix
 			p.state = p.stack[len(p.stack)-1]
+			p.state.textMatrix, p.state.lineMatrix = textMatrix, lineMatrix
 			p.stack = p.stack[:len(p.stack)-1]
 		}
 	case "cm":
@@ -465,6 +617,18 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		}
 	case "w":
 		p.state.lineWidth = floatArg(0)
+	case "J":
+		if value := int(floatArg(0)); value >= 0 && value <= 2 {
+			p.state.lineCap = value
+		}
+	case "j":
+		if value := int(floatArg(0)); value >= 0 && value <= 2 {
+			p.state.lineJoin = value
+		}
+	case "M":
+		if value := floatArg(0); value >= 1 {
+			p.state.miterLimit = value
+		}
 	case "d":
 		// [array] phase d：设置虚线数组与起始偏移；空数组恢复实线。
 		p.state.dashPattern = nil
@@ -571,8 +735,13 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		p.state.wordSpacing = floatArg(0)
 	case "Tz":
 		p.state.hScale = floatArg(0)
+	case "Ts":
+		p.state.textRise = floatArg(0)
 	case "Tr":
 		p.state.renderMode = int(floatArg(0))
+		if p.state.renderMode >= 4 && p.state.renderMode <= 7 {
+			p.report("text.clip", "文字字形裁剪尚未支持")
+		}
 	case "Tj":
 		if len(args) > 0 {
 			p.showText(anyBytes(args[0]), nil)
@@ -584,7 +753,7 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 					if data, ok := value.(pdfString); ok {
 						p.showText([]byte(data), nil)
 					} else {
-						p.adjustText(-anyFloat(value) / 1000 * p.state.fontSize)
+						p.adjustText(-anyFloat(value) / 1000 * p.state.fontSize * p.state.hScale / 100)
 					}
 				}
 			}
@@ -643,6 +812,7 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		if len(p.path) > 0 {
 			p.pendingClip = append([]pdfPathCommand(nil), p.path...)
 			p.hasPendingClip = true
+			p.pendingClipEvenOdd = op == "W*"
 		}
 	case "S":
 		p.commitPendingClip()
@@ -697,13 +867,15 @@ func (p *pdfInterpreter) commitPendingClip() {
 	}
 	p.hasPendingClip = false
 	region := p.pendingClip
+	evenOdd := p.pendingClipEvenOdd
 	p.pendingClip = nil
+	p.pendingClipEvenOdd = false
 	if len(region) == 0 {
 		return
 	}
 	clips := make([]pdfClipRegion, 0, len(p.state.clips)+1)
 	clips = append(clips, p.state.clips...)
-	clips = append(clips, pdfClipRegion{commands: region})
+	clips = append(clips, pdfClipRegion{commands: region, evenOdd: evenOdd})
 	p.state.clips = clips
 }
 
@@ -721,10 +893,14 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 				if cached, hit := p.fontCache[object]; hit {
 					font = cached
 				} else {
+					previousSource := p.setSource(object, name)
 					p.loadFont(&font, object)
+					p.source = previousSource
 					p.fontCache[object] = font
 				}
 			}
+		} else {
+			p.report("font.resource", "找不到字体资源字典")
 		}
 	}
 	family := strings.TrimPrefix(name, "/")

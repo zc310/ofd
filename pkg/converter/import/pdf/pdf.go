@@ -25,7 +25,29 @@ func (p *pdfImporter) Extensions() []string { return []string{".pdf"} }
 func (p *pdfImporter) MIME() string         { return "application/pdf" }
 
 func (p *pdfImporter) Import(input any, output io.Writer, conv *converter.Converter) error {
-	return pdf2ofd.Convert(conv.Context(), input, output, conv.InputPassword())
+	return pdf2ofd.ConvertWithOptions(conv.Context(), input, output, conv.InputPassword(), conv.PDFImportOptions())
+}
+
+// Options 控制资源预算、诊断回调和严格模式；零值使用默认预算。
+type Options = converter.PDFImportOptions
+type Limits = converter.PDFImportLimits
+type Diagnostic = converter.PDFImportDiagnostic
+type LimitError = converter.PDFImportLimitError
+
+var ErrLimitExceeded = converter.ErrPDFImportLimitExceeded
+var ErrUnsupported = converter.ErrPDFImportUnsupported
+
+// DefaultLimits 返回 PDF 导入的默认预算。
+func DefaultLimits() Limits { return converter.DefaultPDFImportLimits() }
+
+// ConvertWithOptions 使用指定的资源预算、诊断回调和严格模式转换 PDF。
+func ConvertWithOptions(ctx context.Context, input any, output io.Writer, password string, options Options) error {
+	return pdf2ofd.ConvertWithOptions(ctx, input, output, password, options)
+}
+
+// ConvertFileWithOptions 在转换成功后原子替换输出文件。
+func ConvertFileWithOptions(ctx context.Context, pdfPath, ofdPath string, password string, options Options) error {
+	return pdf2ofd.ConvertFileWithOptions(ctx, pdfPath, ofdPath, password, options)
 }
 
 // Convert 将 PDF 输入转换为 OFD 文档，input 支持 PDF 文件路径、[]byte 或 io.Reader。

@@ -46,16 +46,22 @@ func releaseCMYKRGBA(img *image.RGBA) {
 }
 
 func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) error {
+	previousSource := p.setSource(nil, name)
+	defer func() { p.source = previousSource }()
 	dict, ok := dereferencedSubDict(p.ctx, resources, "XObject")
 	if !ok {
+		p.report("resource.missing", "找不到 XObject 资源字典")
 		return nil
 	}
 	object, found := dict.Find(name)
 	if !found {
+		p.report("resource.missing", "找不到 XObject 资源 "+name)
 		return nil
 	}
+	p.setSource(object, name)
 	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
 	if err != nil || stream == nil {
+		p.report("resource.invalid", fmt.Sprintf("无法读取 XObject: %v", err))
 		return err
 	}
 	subtype := stream.NameEntry("Subtype")
@@ -69,12 +75,13 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			if p.imageCache == nil {
 				p.imageCache = make(map[types.IndirectRef]pdfImageDataCache)
 			}
-			// 缓存保存未套用软掩码的数据：同一图像可能在有掩码与无掩码的两种
-			// 图形状态下各绘制一次，掩码必须在取出缓存之后套用。
+			// 图像自身的 Mask/SMask 与图形状态无关，合成结果可缓存；ExtGState
+			// 软掩码则必须在取出缓存后应用，同一图像可能在两种图形状态下绘制。
 			cached, hit := p.imageCache[reference]
 			if !hit {
-				data, format, imageErr := pdfImageData(p.ctx, stream, p.state.fill)
+				data, format, imageErr := p.imageData(stream, p.state.fill)
 				if imageErr != nil {
+					p.report("image.decode", imageErr.Error())
 					return nil
 				}
 				cached = pdfImageDataCache{data: data, format: format}
@@ -82,21 +89,34 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			}
 			data, format := cached.data, cached.format
 			if mask := p.state.lumMask; mask != nil {
-				if masked, ok := applyPDFImageSoftMask(p.ctx, data, mask); ok {
+				if masked, ok := p.applyImageSoftMask(data, mask); ok {
 					data, format = masked, "PNG"
 				}
 			}
 			_ = p.appendImageData(data, format)
 			return nil
 		}
-		_ = p.appendImage(stream)
+		if err := p.appendImage(stream); err != nil {
+			p.report("image.decode", err.Error())
+		}
 		return nil
 	}
 	if *subtype == "Form" {
-		if stream.Decode() != nil {
+		if err := p.decodeStream(stream, 0); err != nil {
+			p.report("form.decode", err.Error())
 			return nil
 		}
 		formState := p.state
+		formResources := resources
+		if object, found := stream.Find("Resources"); found {
+			if value, err := p.ctx.XRefTable.DereferenceDict(object); err == nil {
+				formResources = value
+			}
+		}
+		// 单次 sh 的透明组可在已转换的背景上局部合成 Multiply。组内的
+		// /BM /Normal、ca=1 是组内容的状态，不能抹掉 Do 时的混合与透明度。
+		multiplyShading := p.isMultiplyShadingForm(stream, formResources)
+		itemStart := len(p.page.Items)
 		// Form 作为透明度组绘制。OFD 没有混合模式：仅在 BM 为 Normal 时把外层
 		// gs 的 ca/CA 累积为组透明度，并重置局部 ca/CA，避免 Form 内的 gs
 		// （常见 ca=1）覆盖外层的不透明度。BM 为 Multiply/HardLight 等时，单独
@@ -105,6 +125,10 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			formState.groupAlpha = p.groupOpacity() * math.Min(p.state.fillAlpha, p.state.strokeAlpha)
 			formState.fillAlpha = 1
 			formState.strokeAlpha = 1
+		}
+		if multiplyShading {
+			formState.groupAlpha, formState.fillAlpha, formState.strokeAlpha = 1, 1, 1
+			formState.blendMode = "Normal"
 		}
 		matrix := identityPDFMatrix()
 		if array := stream.ArrayEntry("Matrix"); len(array) == 6 {
@@ -129,45 +153,40 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			commands = append(commands, pdfPathCommand{op: "Z"})
 			formState.clips = append(append([]pdfClipRegion(nil), formState.clips...), pdfClipRegion{commands: commands})
 		}
-		formResources := resources
-		if object, found := stream.Find("Resources"); found {
-			if value, err := p.ctx.XRefTable.DereferenceDict(object); err == nil {
-				formResources = value
-			}
-		}
 		parentState := p.state
 		parentStack := p.stack
 		p.stack = nil
 		err := p.parse(stream.Content, formResources, &formState, depth+1)
 		p.state = parentState
 		p.stack = parentStack
+		if err == nil && multiplyShading && len(p.page.Items) == itemStart+1 {
+			if path, ok := p.page.Items[itemStart].(creator.Path); ok && path.Fill && !path.Stroke {
+				image, blendErr := p.multiplyShadingImage(path, p.page.Items[:itemStart], p.fillOpacity())
+				if blendErr != nil {
+					p.report("graphics.blend", "Multiply 着色组无法合成: "+blendErr.Error())
+					p.approximateMultiplyFill(&path)
+					p.page.Items[itemStart] = path
+				} else if image != nil {
+					p.page.Items = p.page.Items[:itemStart]
+					p.appendItem(*image)
+				}
+			}
+		}
 		return err
 	}
+	p.report("xobject.unsupported", "不支持的 XObject 类型 "+*subtype)
 	return nil
 }
 
-// imageObjectCTM 返回 OFD 图片对象的 CTM，一律显式输出。PDF 常通过负的缩放
-// CTM 翻转扫描图像（例如 595 0 0 -842 ... cm），此时对相应轴取负并平移一个
-// 边界长度，使图像仍落在原边界内。
-//
-// 不镜像时也输出 {Width,0,0,Height,0,0}：OFD 规范允许省略 CTM 并按边界尺寸
-// 取缺省值，但并非所有阅读器都实现该缺省——缺少 CTM 时图片无处安放，整页满幅
-// 背景图会直接不显示。现有 OFD（含官方阅读器样例 intro.ofd）的图片对象全部
-// 显式带 CTM，转换结果保持一致。
-//
-// 旋转或斜切的 PDF CTM（b、c 非零）无法用轴对齐矩阵精确表达：OFD 的图片 CTM
-// 以图像像素为单位，而 PDF 的单位正方形还要经过页面旋转与 userUnit 换算。此类
-// 图片（intro.ofd 第 12 页的满幅背景图，倾角 0.09°）退化为轴对齐缩放：位置与
-// 尺寸正确，仅丢失不足 0.7mm 的亚度级倾斜，好过因缺少 CTM 而完全不显示。
-func imageObjectCTM(ctm [6]float64, width, height float64) *creator.CTM {
-	matrix := creator.CTM{width, 0, 0, height, 0, 0}
-	if ctm[0] < 0 {
-		matrix[0] = -width
-		matrix[4] = width
-	}
-	if ctm[3] < 0 {
-		matrix[3] = -height
-		matrix[5] = height
+// imageObjectCTM 从已经换算到页面毫米坐标的四角恢复完整仿射变换。
+// points 按 PDF 的左下、右下、左上、右上排列；OFD 图像空间则以左上为原点、
+// y 向下。以包围盒为局部原点，保留旋转、错切、镜像和页面旋转后的轴方向。
+func imageObjectCTM(points [4][2]float64, minX, minY float64) *creator.CTM {
+	topLeft, topRight, bottomLeft := points[2], points[3], points[0]
+	matrix := creator.CTM{
+		topRight[0] - topLeft[0], topRight[1] - topLeft[1],
+		bottomLeft[0] - topLeft[0], bottomLeft[1] - topLeft[1],
+		topLeft[0] - minX, topLeft[1] - minY,
 	}
 	return &matrix
 }
@@ -175,7 +194,7 @@ func imageObjectCTM(ctm [6]float64, width, height float64) *creator.CTM {
 // appendImage 把解码后的图像按当前 CTM 的包围盒放入页面。内联图像与图像
 // XObject 共用该逻辑。
 func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
-	data, format, err := pdfImageData(p.ctx, stream, p.state.fill)
+	data, format, err := p.imageData(stream, p.state.fill)
 	if err != nil {
 		return err
 	}
@@ -184,26 +203,25 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 
 // appendImageData 把已经完成解码的图像数据按当前 CTM 放入页面。
 func (p *pdfInterpreter) appendImageData(data []byte, format string) error {
-	points := make([][2]float64, 4)
+	var points [4][2]float64
 	points[0][0], points[0][1] = transformPDFPoint(0, 0, p.state.ctm)
 	points[1][0], points[1][1] = transformPDFPoint(1, 0, p.state.ctm)
 	points[2][0], points[2][1] = transformPDFPoint(0, 1, p.state.ctm)
 	points[3][0], points[3][1] = transformPDFPoint(1, 1, p.state.ctm)
 	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
-	for _, point := range points {
+	for i, point := range points {
 		x, y := p.pagePoint(point[0], point[1])
+		points[i] = [2]float64{x, y}
 		minX, minY, maxX, maxY = math.Min(minX, x), math.Min(minY, y), math.Max(maxX, x), math.Max(maxY, y)
 	}
 	width, height := math.Max(maxX-minX, 0.001), math.Max(maxY-minY, 0.001)
 	image := creator.Image{X: minX, Y: minY, Width: width, Height: height, Data: data, Format: format, Alpha: ofdAlpha(p.fillOpacity())}
-	// PDF 常通过负的缩放 CTM 翻转扫描图像（例如 595 0 0 -842 ... cm），由
-	// imageObjectCTM 输出负缩放 CTM 让阅读器镜像；不翻转时同样输出显式缩放
-	// CTM，官方阅读器才不会因缺少 CTM 而不显示图片。
-	image.CTM = imageObjectCTM(p.state.ctm, width, height)
+	// 一律显式输出 CTM，兼容未实现图片缺省矩阵的阅读器。
+	image.CTM = imageObjectCTM(points, minX, minY)
 	if clips := p.buildClips(minX, minY); clips != nil {
 		image.Clips = clips
 	}
-	p.page.Items = append(p.page.Items, image)
+	p.appendItem(image)
 	return nil
 }
 
@@ -250,6 +268,8 @@ var inlineImageFilterNames = map[string]string{
 }
 
 func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer) error {
+	previousSource := p.setSource(nil, "inline image")
+	defer func() { p.source = previousSource }()
 	dict, data, err := tokens.inlineImage()
 	if err != nil {
 		return err
@@ -274,7 +294,9 @@ func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer) error {
 		stream.FilterPipeline = pipeline
 	}
 	// 与图像 XObject 一致：解码失败只跳过该图像。
-	_ = p.appendImage(stream)
+	if err := p.appendImage(stream); err != nil {
+		p.report("image.decode", err.Error())
+	}
 	return nil
 }
 
@@ -378,22 +400,11 @@ func isJPEGData(data []byte) bool {
 	return len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
 }
 
-// pdfImageData 编码图像为 PNG/JPEG；若图像带有 SMask（软掩码），则把掩码
+// pdfImageData 编码图像为 PNG/JPEG；若图像带有 Mask 或 SMask，则把掩码
 // 作为 alpha 通道应用到图像上，避免透明区域被绘制成不透明色块。
 func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
-	data, format, err := pdfImageDataRaw(ctx, stream, maskColor)
-	if err != nil {
-		return nil, "", err
-	}
-	maskStream := pdfImageSoftMask(ctx, stream)
-	if maskStream == nil {
-		return data, format, nil
-	}
-	masked, ok := applyPDFImageSoftMask(ctx, data, maskStream)
-	if !ok {
-		return data, format, nil
-	}
-	return masked, "PNG", nil
+	p := pdfInterpreter{ctx: ctx}
+	return p.imageData(stream, maskColor)
 }
 
 // pdfExtGStateSoftMask 解析 ExtGState 的 /SMask，返回可用的掩码图像流。
@@ -402,7 +413,7 @@ func pdfImageData(ctx *model.Context, stream *types.StreamDict, maskColor pdfCol
 // 柔边图层都是这个形态（三层嵌套：Form XObject → gs /SMask → 亮度掩码 → 又一个
 // 绘制灰度图像的 Form）。OFD 没有软掩码语义，返回的图像会被当作 alpha 烘进被
 // 遮蔽的图像里，因此无法还原成图像的掩码一律返回 nil，保持原有行为。
-func pdfExtGStateSoftMask(ctx *model.Context, dict types.Dict) *types.StreamDict {
+func pdfExtGStateSoftMask(ctx *model.Context, dict types.Dict, controls ...*conversionControl) *types.StreamDict {
 	if dict == nil {
 		return nil
 	}
@@ -432,12 +443,12 @@ func pdfExtGStateSoftMask(ctx *model.Context, dict types.Dict) *types.StreamDict
 	if !found {
 		return nil
 	}
-	return pdfLuminosityMaskImage(ctx, group)
+	return pdfLuminosityMaskImage(ctx, group, controls...)
 }
 
 // pdfLuminosityMaskImage 从亮度掩码的 /G 取出实际承载灰度信息的图像流。
 // /G 可以直接是图像，也可以是仅调用一次 Do 绘制图像的 Form XObject。
-func pdfLuminosityMaskImage(ctx *model.Context, object types.Object) *types.StreamDict {
+func pdfLuminosityMaskImage(ctx *model.Context, object types.Object, controls ...*conversionControl) *types.StreamDict {
 	stream, _, err := ctx.XRefTable.DereferenceStreamDict(object)
 	if err != nil || stream == nil {
 		return nil
@@ -460,13 +471,16 @@ func pdfLuminosityMaskImage(ctx *model.Context, object types.Object) *types.Stre
 	if !ok {
 		return nil
 	}
-	return pdfFormDrawnImage(ctx, xobjects, stream.Content)
+	return pdfFormDrawnImage(ctx, xobjects, stream.Content, controls...)
 }
 
 // pdfFormDrawnImage 扫描 Form 内容，返回其中第一个 Do 操作绘制的图像 XObject。
 // 亮度掩码的 Form 只做一次矩阵变换加一次 Do，直接扫描比完整解释内容流更稳。
-func pdfFormDrawnImage(ctx *model.Context, xobjects types.Dict, content []byte) *types.StreamDict {
+func pdfFormDrawnImage(ctx *model.Context, xobjects types.Dict, content []byte, controls ...*conversionControl) *types.StreamDict {
 	tokens := newPDFContentTokenizer(content)
+	if len(controls) > 0 {
+		tokens.control = controls[0]
+	}
 	operands := []any{}
 	for {
 		value, ok, err := tokens.next()
@@ -728,6 +742,9 @@ func pdfJBIG2Standalone(ctx *model.Context, stream *types.StreamDict) ([]byte, b
 		return nil, false
 	}
 	if _, found := stream.Find("SMask"); found {
+		return nil, false
+	}
+	if _, found := stream.Find("Mask"); found {
 		return nil, false
 	}
 	if decode, found := stream.Find("Decode"); found {

@@ -77,43 +77,48 @@ type options struct {
 	// 放在 options 里而不是给下面十几个函数逐个加参数：这个结构体已经承载了
 	// format、dpi、timeout 等全部运行参数，转换调用链上的函数一律只收
 	// *options，再单开一个 ctx 参数只会让签名重复而信息量不增。
-	ctx               context.Context
-	input             string
-	output            string
-	inputDir          string
-	outputDir         string
-	format            string
-	from              string
-	htmlFormat        string
-	noHTMLTextLayer   bool
-	dpi               int
-	rasterBackend     string
-	page              int
-	bg                string
-	dir               bool
-	workers           int
-	externalWorkers   int
-	soffice           string
-	officeTimeout     int
-	chrome            string
-	chromeNoSandbox   bool
-	tempDir           string
-	paper             string
-	landscape         bool
-	noPrintBackground bool
-	allowRemote       bool
-	password          string
-	ocr               bool
-	ocrLanguage       string
-	markdownTables    bool
-	noDocxTables      bool
-	noDocxImages      bool
-	docxAnnotations   bool
-	recursive         bool
-	overwrite         bool
-	skipExisting      bool
-	help              bool
-	version           bool
+	ctx                    context.Context
+	input                  string
+	output                 string
+	inputDir               string
+	outputDir              string
+	format                 string
+	from                   string
+	htmlFormat             string
+	noHTMLTextLayer        bool
+	dpi                    int
+	rasterBackend          string
+	page                   int
+	bg                     string
+	dir                    bool
+	workers                int
+	externalWorkers        int
+	soffice                string
+	officeTimeout          int
+	chrome                 string
+	chromeNoSandbox        bool
+	tempDir                string
+	paper                  string
+	landscape              bool
+	noPrintBackground      bool
+	allowRemote            bool
+	password               string
+	pdfStrict              bool
+	pdfMaxInputBytes       int64
+	pdfMaxImagePixels      int64
+	pdfMaxTotalImagePixels int64
+	diagnosticsWriter      io.Writer
+	ocr                    bool
+	ocrLanguage            string
+	markdownTables         bool
+	noDocxTables           bool
+	noDocxImages           bool
+	docxAnnotations        bool
+	recursive              bool
+	overwrite              bool
+	skipExisting           bool
+	help                   bool
+	version                bool
 }
 
 func main() {
@@ -235,6 +240,10 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
 	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
 	flags.StringVar(&opts.password, "password", "", "加密输入文档的打开口令（目前仅 PDF）")
+	flags.BoolVar(&opts.pdfStrict, "pdf-strict", false, "PDF 导入遇到内容缺失或近似转换诊断时失败")
+	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
+	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
+	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 2.5 亿像素")
 	flags.BoolVar(&opts.ocr, "ocr", false, "图片转 OFD 时启用 OCR 文字层，默认关闭")
 	flags.StringVar(&opts.ocrLanguage, "ocr-language", opts.ocrLanguage, "图片 OCR 语言，需与本机 Tesseract 语言包一致")
 	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
@@ -265,8 +274,9 @@ func normalizeConverterArgs(args []string) []string {
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
-		"password": true,
-		"ocr":      true, "ocr-language": true,
+		"password":   true,
+		"pdf-strict": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true,
+		"ocr": true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
 	result := make([]string, len(args))
@@ -290,10 +300,17 @@ func normalizeConverterArgs(args []string) []string {
 }
 
 func run(opts *options) error {
+	if _, err := (converter.PDFImportOptions{Limits: opts.pdfLimits()}).Normalize(); err != nil {
+		return usageError(err)
+	}
 	if opts.inputDir != "" || opts.outputDir != "" {
 		return runBatch(opts)
 	}
 	return runSingle(opts)
+}
+
+func (opts *options) pdfLimits() converter.PDFImportLimits {
+	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels}
 }
 
 func runSingle(opts *options) error {
@@ -720,6 +737,17 @@ func convertImported(opts *options, from, to string) error {
 		output = fileOutput
 	}
 	var option []converter.Option
+	diagnostics := opts.diagnosticsWriter
+	if diagnostics == nil {
+		diagnostics = os.Stderr
+	}
+	option = append(option, converter.WithPDFImportOptions(converter.PDFImportOptions{
+		Limits: opts.pdfLimits(),
+		Strict: opts.pdfStrict,
+		OnDiagnostic: func(d converter.PDFImportDiagnostic) {
+			_, _ = fmt.Fprintf(diagnostics, "PDF 导入警告 [%s] %s 第 %d 页，对象 %d/%d，资源 %q：%s\n", d.Code, opts.input, d.Page, d.Object, d.Generation, d.Resource, d.Message)
+		},
+	}))
 	if opts.page > 0 {
 		option = append(option, converter.Page(opts.page))
 	}

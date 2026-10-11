@@ -2,6 +2,7 @@ package pdf2ofd
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math"
 	"strings"
 	"unicode/utf16"
@@ -18,33 +19,43 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if len(data) == 0 {
 		return
 	}
+	if p.control != nil {
+		remaining := p.control.options.Limits.MaxOperations - p.control.operations
+		unicodeBytes := fontUnicodeExpansion(p.fonts[p.state.fontName])
+		if int64(len(data)) > remaining/unicodeBytes {
+			p.control.limit("operations", p.control.options.Limits.MaxOperations+1, p.control.options.Limits.MaxOperations)
+			return
+		}
+		p.control.operations += int64(len(data))
+	}
 	font := p.fonts[p.state.fontName]
 	text, codes := decodePDFText(data, font)
+	if p.control != nil {
+		p.control.operations += int64(len(text))
+	}
 	if strings.TrimSpace(text) == "" {
 		// 纯空白 Tj 不产生文字对象，但仍需推进文本矩阵，否则后续文字会
 		// 丢失前导空格的位移而整体左移（如代码块中的 "    >>>"）。
 		p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))
 		return
 	}
-	x, y := transformPDFPoint(p.state.textMatrix[4], p.state.textMatrix[5], p.state.ctm)
+	// Ts 沿文字空间的 y 轴平移基线，不改变后续字符推进的文本矩阵。
+	x, y := transformPDFPoint(p.state.textMatrix[4]+p.state.textMatrix[2]*p.state.textRise, p.state.textMatrix[5]+p.state.textMatrix[3]*p.state.textRise, p.state.ctm)
 	x, y = p.pagePoint(x, y)
-	// PDF 常把实际文字缩放放在 Tm 中，而 Tf 仍为 1。文本矩阵同时决定水平
-	// 推进量和字符垂直尺寸；忽略它会让这类页面的文字渲染成几乎不可见的小点。
-	textScaleX := math.Hypot(p.state.textMatrix[0], p.state.textMatrix[2])
-	textScaleY := math.Hypot(p.state.textMatrix[1], p.state.textMatrix[3])
-	if textScaleX == 0 {
-		textScaleX = 1
+	// 按合成矩阵的 y 轴长度换算字号和本地推进量，其余缩放、错切、镜像及页面
+	// 旋转保留在 OFD CTM 中。仅输出旋转角会丢失字形的横向拉伸和倾斜。
+	matrix := multiplyPDFMatrix(p.state.ctm, p.state.textMatrix)
+	textScale := math.Hypot(matrix[2], matrix[3])
+	if textScale == 0 {
+		textScale = 1
 	}
-	if textScaleY == 0 {
-		textScaleY = 1
-	}
-	// 整页坐标用 cm 放大排版（如通勤发票把用户单位定为 1mm）时，Tf/Tm 给出的
-	// “字号”仍按该坐标系计。向量与路径的线宽都已计入 CTM 平均缩放，文字的字号
-	// 和推进量省略它会把字形画得过小、占位挤在左下角。这里与路径一致使用
-	// pdfMatrixScale，旋转等保角变换不影响字号。
-	ctmScale := pdfMatrixScale(p.state.ctm)
-	width := pdfTextWidth(codes, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale) * p.info.userUnit * pdfPointToMillimeter * ctmScale
-	size := p.state.fontSize * textScaleY * p.info.userUnit * pdfPointToMillimeter * ctmScale
+	factor := textScale * p.info.userUnit * pdfPointToMillimeter
+	px, py := p.pagePoint(0, 0)
+	xx, xy := p.pagePoint(matrix[0], matrix[1])
+	yx, yy := p.pagePoint(-matrix[2], -matrix[3])
+	textCTM := creator.CTM{(xx - px) / factor, (xy - py) / factor, (yx - px) / factor, (yy - py) / factor, 0, 0}
+	width := pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale) * factor
+	size := p.state.fontSize * factor
 	fontName := p.state.fontName
 	if alias := p.fontAliases[fontName]; alias != "" {
 		fontName = alias
@@ -63,25 +74,16 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	// Height 后 creator 的默认基线随之下移；字体度量与字号共用 Tm/CTM 缩放。
 	baseline := math.Max(size, size*font.ascent/1000)
 	descent := size * font.descent / 1000
-	item := creator.Text{X: x, Y: y - baseline, Width: math.Max(width, 0.001), Height: math.Max(baseline+descent, 0.001), Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke,
+	item := creator.Text{Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke,
 		Weight: weight, Italic: font.italic,
 		TextCodes:   []creator.TextCode{{Value: text, Y: &baseline}},
 		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
 		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
-	// 合并 CTM 与文本矩阵后其 x 轴方向决定文字的排版角度。OFD 文字不带 CTM 时
-	// 只能水平排版，旋转文字（如 45° 的图章/水印）会丢失角度而变成水平。带旋转
-	// 时输出纯旋转 CTM，并把 Boundary 反推为“码位原点经 CTM 变换后落在笔位置”。
-	if rotation := -math.Atan2(
-		p.state.ctm[1]*p.state.textMatrix[0]+p.state.ctm[3]*p.state.textMatrix[1],
-		p.state.ctm[0]*p.state.textMatrix[0]+p.state.ctm[2]*p.state.textMatrix[1],
-	); math.Abs(rotation) > 1e-4 {
-		cos, sin := math.Cos(rotation), math.Sin(rotation)
-		item.CTM = &creator.CTM{cos, sin, -sin, cos, 0, 0}
-		// 渲染端按 CTM 变换码位原点后再叠加 Boundary，因此 X/Y 需扣除
-		// 显式基线的旋转偏移，保证基线起点仍落在 (x, y)。
-		item.X = x + sin*baseline
-		item.Y = y - cos*baseline
+	placePDFText(&item, x, y, math.Max(width, 0.001), baseline, descent, textCTM)
+	if stroke {
+		item.DrawParam = p.textStrokeDrawParam()
 	}
+	item.Clips = p.buildClips(item.X, item.Y)
 	// PDF 的 Tz 同时缩放字形宽度和推进量。这里只把推进量计入 Width/DeltaX，
 	// 若不同时输出 OFD 的 HScale，字形本身会按原宽绘制（横向未拉伸），
 	// 导致 Tz≠100 的标题等文字偏窄、与相邻行字距失真。OFD HScale 默认 1。
@@ -98,11 +100,59 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if transforms := pdfTextGlyphTransforms(codes, text, font); len(transforms) > 0 {
 		item.CGTransforms = transforms
 	}
-	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, ctmScale); len(deltas) > 0 {
+	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, textScale); len(deltas) > 0 {
 		item.TextCodes[0].DeltaX = deltas
 	}
-	p.page.Items = append(p.page.Items, item)
+	p.appendItem(item)
 	p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))
+}
+
+func fontUnicodeExpansion(font pdfFontInfo) int64 {
+	if font.maxUnicodeBytes > 0 {
+		return font.maxUnicodeBytes + 1
+	}
+	return 5
+}
+
+// textStrokeDrawParam 保留 PDF 用描边模拟加粗或绘制空心字的线宽与连接样式。
+// 线宽属于 PDF 用户空间，不随字号或 Tm 放大；相同参数在文档内复用资源。
+func (p *pdfInterpreter) textStrokeDrawParam() string {
+	lineWidth := p.state.lineWidth * p.info.userUnit * pdfPointToMillimeter * pdfMatrixScale(p.state.ctm)
+	if p.state.lineWidth <= 0 {
+		lineWidth = hairlineLineWidthMM
+	}
+	param := creator.DrawParam{
+		LineWidth:  lineWidth,
+		Cap:        [...]string{"Butt", "Round", "Square"}[p.state.lineCap],
+		Join:       [...]string{"Miter", "Round", "Bevel"}[p.state.lineJoin],
+		MiterLimit: p.state.miterLimit * lineWidth / 2,
+	}
+	for _, existing := range p.document.DrawParams {
+		if existing.LineWidth == param.LineWidth && existing.Cap == param.Cap && existing.Join == param.Join && existing.MiterLimit == param.MiterLimit {
+			return existing.Name
+		}
+	}
+	param.Name = fmt.Sprintf("pdf-text-stroke-%d", len(p.document.DrawParams)+1)
+	p.document.DrawParams = append(p.document.DrawParams, param)
+	return param.Name
+}
+
+// placePDFText 把字形框变换为页面包围盒，并以 CTM 平移补偿边界原点的变化。
+// TextCode 的基线偏移保持本地坐标值，变换后仍落在源 PDF 的基线起点。
+func placePDFText(item *creator.Text, x, y, width, ascent, descent float64, matrix creator.CTM) {
+	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+	for _, corner := range [4][2]float64{{0, -ascent}, {width, -ascent}, {0, descent}, {width, descent}} {
+		cx := matrix[0]*corner[0] + matrix[2]*corner[1]
+		cy := matrix[1]*corner[0] + matrix[3]*corner[1]
+		minX, minY = math.Min(minX, cx), math.Min(minY, cy)
+		maxX, maxY = math.Max(maxX, cx), math.Max(maxY, cy)
+	}
+	item.X, item.Y = x+minX, y+minY
+	item.Width, item.Height = math.Max(maxX-minX, 0.001), math.Max(maxY-minY, 0.001)
+	matrix[4], matrix[5] = -minX-matrix[2]*ascent, -minY-matrix[3]*ascent
+	if math.Abs(matrix[0]-1) > 1e-9 || math.Abs(matrix[1]) > 1e-9 || math.Abs(matrix[2]) > 1e-9 || math.Abs(matrix[3]-1) > 1e-9 || math.Abs(matrix[4]) > 1e-9 || math.Abs(matrix[5]) > 1e-9 {
+		item.CTM = &matrix
+	}
 }
 
 func pdfTextGlyphTransforms(codes []uint16, text string, font pdfFontInfo) []creator.CGTransform {
@@ -378,11 +428,21 @@ func fallbackPDFCode(value byte) string {
 // 码位，65536 已是可用键的总数，再多只是重复覆盖。
 const maxToUnicodeCodes = 1 << 16
 
-func parsePDFToUnicode(data []byte) map[uint16]string {
+func parsePDFToUnicode(data []byte, controls ...*conversionControl) map[uint16]string {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	if control.consumeOperations(int64(len(data))) != nil {
+		return nil
+	}
 	result := map[uint16]string{}
 	tokens := tokenizePDFCMap(string(data))
 	mode := ""
 	for index := 0; index < len(tokens); index++ {
+		if control.check() != nil {
+			return result
+		}
 		token := tokens[index]
 		switch token {
 		case "beginbfchar":
@@ -422,13 +482,13 @@ func parsePDFToUnicode(data []byte) map[uint16]string {
 			// bfrange 的第三项为 "<start>"（连续递增）或 "[...]"（逐个列出）。
 			if tokens[index+2] == "[" {
 				cursor := index + 3
-				for code := source; code <= end && cursor < len(tokens); code, cursor = code+1, cursor+1 {
+				for code := int(source); code <= int(end) && cursor < len(tokens); code, cursor = code+1, cursor+1 {
 					if tokens[cursor] == "]" {
 						cursor++
 						break
 					}
 					if value, ok := pdfHexString(tokens[cursor]); ok {
-						result[code] = value
+						result[uint16(code)] = value
 					}
 				}
 				index = cursor - 1
@@ -446,6 +506,9 @@ func parsePDFToUnicode(data []byte) map[uint16]string {
 			// 65536 个不同条目，多展开只是重复写同一个键；不封顶时一个几 KB 的
 			// 畸形 CMap（每行一个 <0000> <FFFF> 区间）就能让内存涨到 GB 级。
 			for code, expanded := int(source), 0; code <= int(end); code, expanded = code+1, expanded+1 {
+				if control.consumeOperations(int64(len(start))+1) != nil {
+					return result
+				}
 				if expanded >= maxToUnicodeCodes || len(result) >= maxToUnicodeCodes {
 					return result
 				}

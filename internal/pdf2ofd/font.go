@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
@@ -20,7 +21,11 @@ import (
 func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	dict, err := p.ctx.XRefTable.DereferenceDict(object)
 	if err != nil || dict == nil {
+		p.report("font.resource", fmt.Sprintf("无法读取字体资源: %v", err))
 		return
+	}
+	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type3" {
+		p.report("font.type3", "Type3 字形绘制尚未支持，使用逻辑字体保留文字层")
 	}
 	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type0" {
 		font.codeBytes = 2
@@ -29,6 +34,9 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		if name, ok := encoding.(types.Name); ok {
 			font.encoding = name.Value()
 		}
+	}
+	if strings.HasSuffix(font.encoding, "-V") {
+		p.report("text.vertical", "竖排字体 W2/DW2 与垂直推进尚未支持，按横排近似")
 	}
 	if baseFont := dict.NameEntry("BaseFont"); baseFont != nil {
 		font.familyName = decodePDFName(strings.TrimPrefix(*baseFont, "/"))
@@ -71,8 +79,10 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	}
 	if object, found := dict.Find("ToUnicode"); found {
 		if stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object); err == nil && stream != nil {
-			if stream.Decode() == nil {
-				font.toUnicode = parsePDFToUnicode(stream.Content)
+			if err := p.decodeStream(stream, 0); err == nil {
+				font.toUnicode = parsePDFToUnicode(stream.Content, p.control)
+			} else {
+				p.report("font.unicode", "字体 ToUnicode 无法解码: "+err.Error())
 			}
 		}
 	}
@@ -120,6 +130,12 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		font.glyphWidths = pdfCIDFontGlyphWidths(font.widths, font.sfnt)
 	}
 	prepareCIDUnicode(font)
+	font.maxUnicodeBytes = 4
+	for _, value := range font.toUnicode {
+		if int64(len(value)) > font.maxUnicodeBytes {
+			font.maxUnicodeBytes = int64(len(value))
+		}
+	}
 }
 
 // loadFontVerticalMetrics 保留 PDF 字体的垂直范围，供 OFD Boundary 包住下伸笔画。
@@ -330,7 +346,11 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 		return
 	}
 	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
-	if err != nil || stream == nil || stream.Decode() != nil {
+	if err != nil || stream == nil {
+		return
+	}
+	if err := p.decodeStream(stream, 0); err != nil {
+		p.report("font.glyphmap", err.Error())
 		return
 	}
 	font.cidToGID = make(map[uint16]uint16, len(stream.Content)/2)
@@ -607,14 +627,31 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		case subtype != nil && *subtype == "Type1C":
 			format = "otf"
 		default:
+			p.report("font.format", "内嵌字体流格式尚未支持")
 			return
 		}
 	}
 	if !found {
+		if _, hasType1 := descriptor.Find("FontFile"); hasType1 {
+			p.report("font.type1", "内嵌 Type1 字体程序尚未支持，使用逻辑字体回退")
+		}
 		return
 	}
 	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
-	if err != nil || stream == nil || stream.Decode() != nil || len(stream.Content) == 0 {
+	if err != nil || stream == nil {
+		p.report("font.decode", fmt.Sprintf("内嵌字体流不可用: %v", err))
+		return
+	}
+	maximum := int64(0)
+	if p.control != nil {
+		maximum = p.control.options.Limits.MaxFontBytes
+	}
+	if err := p.decodeStream(stream, maximum); err != nil {
+		p.report("font.decode", err.Error())
+		return
+	}
+	if len(stream.Content) == 0 {
+		p.report("font.decode", "内嵌字体流为空")
 		return
 	}
 	data := append([]byte(nil), stream.Content...)
@@ -630,10 +667,15 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		if repaired, repairErr := fontfix.Repair(data); repairErr == nil {
 			data = repaired
 		} else if len(data) < 4 || string(data[:4]) != "OTTO" {
+			p.report("font.decode", "内嵌 CFF 字体无法修复或解析")
 			return
 		}
 	}
 	font.format = format
+	if p.control != nil && int64(len(data)) > maximum {
+		p.control.limit("font_bytes", int64(len(data)), maximum)
+		return
+	}
 	font.data = data
 }
 
@@ -727,6 +769,10 @@ func (p *pdfInterpreter) loadCIDWidths(font *pdfFontInfo, object types.Object) {
 			index++
 			continue
 		}
+		if first < 0 || first > math.MaxUint16 || first != math.Trunc(first) {
+			p.report("font.widths", "CID 字宽的起始码位无效")
+			return
+		}
 		index++
 		if index >= len(widths) {
 			break
@@ -734,6 +780,13 @@ func (p *pdfInterpreter) loadCIDWidths(font *pdfFontInfo, object types.Object) {
 		if values, err := p.ctx.XRefTable.DereferenceArray(widths[index]); err == nil {
 			index++
 			for offset, value := range values {
+				if p.control.consumeOperations(1) != nil {
+					return
+				}
+				if int(first)+offset > math.MaxUint16 {
+					p.report("font.widths", "CID 字宽超出码位范围")
+					return
+				}
 				if width, ok := p.dereferencedNumber(value); ok {
 					font.widths[int(first)+offset] = width
 				}
@@ -744,12 +797,19 @@ func (p *pdfInterpreter) loadCIDWidths(font *pdfFontInfo, object types.Object) {
 		if !ok || index+1 >= len(widths) {
 			break
 		}
+		if second < first || second > math.MaxUint16 || second != math.Trunc(second) {
+			p.report("font.widths", "CID 字宽的结束码位无效")
+			return
+		}
 		width, ok := p.dereferencedNumber(widths[index+1])
 		if !ok {
 			index++
 			continue
 		}
 		for code := int(first); code <= int(second); code++ {
+			if p.control.consumeOperations(1) != nil {
+				return
+			}
 			font.widths[code] = width
 		}
 		index += 2

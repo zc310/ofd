@@ -43,6 +43,7 @@ type pdfFontInfo struct {
 	sfnt        *fontparser.SFNT
 	// ascent、descent 保存基线上方和下方的字形范围，单位为千分之一 em，均为非负值。
 	ascent, descent float64
+	maxUnicodeBytes int64
 	// cidFromCmap 标记可以从内嵌 cmap 反查 CID 对应的 Unicode，见 cidUnicode。
 	// 只有 CID 字体且自带字符集映射时置位。
 	cidFromCmap bool
@@ -106,9 +107,12 @@ type pdfGraphicsState struct {
 	// sc/scn 与 SC/SCN 的分量（例如 Separation 的 tint 值）。
 	fillSpace, strokeSpace           *pdfColorSpace
 	lineWidth                        float64
+	lineCap, lineJoin                int
+	miterLimit                       float64
 	renderMode                       int
 	charSpacing, wordSpacing, hScale float64
 	textLeading                      float64
+	textRise                         float64
 	// dashPattern、dashOffset 是 `d` 设置的虚线数组与起始偏移（PDF 用户空间
 	// 单位）。空数组表示实线。
 	dashPattern []float64
@@ -136,9 +140,12 @@ type pdfColor struct{ r, g, b uint8 }
 // pdfClipRegion 是一个 PDF 裁剪区域，commands 中的坐标已应用 CTM。
 type pdfClipRegion struct {
 	commands []pdfPathCommand
+	evenOdd  bool
 }
 
 type pdfInterpreter struct {
+	control                        *conversionControl
+	source                         Diagnostic
 	ctx                            *model.Context
 	page                           *creator.Page
 	document                       *creator.Document
@@ -158,6 +165,7 @@ type pdfInterpreter struct {
 	// 扫描图，缓存可以避免每次 Do 都重新解码 JPEG/JPX 并重新编码 PNG。
 	imageCache map[types.IndirectRef]pdfImageDataCache
 	// pendingClip 保存 W/W* 指定的裁剪路径，待下一个路径绘制操作生效。
-	pendingClip    []pdfPathCommand
-	hasPendingClip bool
+	pendingClip        []pdfPathCommand
+	hasPendingClip     bool
+	pendingClipEvenOdd bool
 }

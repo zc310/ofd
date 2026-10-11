@@ -19,6 +19,7 @@ type Converter struct {
 	imageOCRLanguage string
 	// inputPassword 是加密输入文档（目前只有 PDF）的打开口令，空表示未提供。
 	inputPassword     string
+	pdfImportOptions  PDFImportOptions
 	rasterBackend     string // 非空时 PNG/JPG 走该栅格后端（BackendGG 等）
 	htmlImageFormat   string // png, svg
 	bgColor           color.Color

@@ -11,48 +11,62 @@ type pdfName string
 type pdfString []byte
 
 type pdfContentTokenizer struct {
-	data []byte
-	pos  int
+	data    []byte
+	pos     int
+	depth   int64
+	control *conversionControl
 }
 
 func newPDFContentTokenizer(data []byte) *pdfContentTokenizer {
 	return &pdfContentTokenizer{data: data}
 }
 func (t *pdfContentTokenizer) next() (any, bool, error) {
-	t.skipSpace()
-	if t.pos >= len(t.data) {
-		return nil, false, nil
-	}
-	switch t.data[t.pos] {
-	case '/':
-		value, err := t.name()
-		return value, true, err
-	case '(':
-		value, err := t.literal()
-		return pdfString(value), true, err
-	case '<':
-		if t.pos+1 < len(t.data) && t.data[t.pos+1] == '<' {
-			value, err := t.dict()
+	// 无意义的分隔符用循环跳过，避免恶意的连续 ] 或 > 造成递归栈溢出。
+	for {
+		t.skipSpace()
+		if t.pos >= len(t.data) {
+			return nil, false, nil
+		}
+		if t.control != nil {
+			if err := t.control.check(); err != nil {
+				return nil, false, err
+			}
+			if t.control.operations >= t.control.options.Limits.MaxOperations {
+				return nil, false, t.control.limit("operations", t.control.operations+1, t.control.options.Limits.MaxOperations)
+			}
+			t.control.operations++
+		}
+		switch t.data[t.pos] {
+		case '/':
+			value, err := t.name()
 			return value, true, err
-		}
-		value, err := t.hex()
-		return pdfString(value), true, err
-	case '[':
-		value, err := t.array()
-		return value, true, err
-	case ']':
-		t.pos++
-		return t.next()
-	default:
-		token := t.word()
-		if token == "" {
+		case '(':
+			value, err := t.literal()
+			return pdfString(value), true, err
+		case '<':
+			if t.pos+1 < len(t.data) && t.data[t.pos+1] == '<' {
+				value, err := t.dict()
+				return value, true, err
+			}
+			value, err := t.hex()
+			return pdfString(value), true, err
+		case '[':
+			value, err := t.array()
+			return value, true, err
+		case ']':
 			t.pos++
-			return t.next()
+			continue
+		default:
+			token := t.word()
+			if token == "" {
+				t.pos++
+				continue
+			}
+			if number, err := strconv.ParseFloat(token, 64); err == nil {
+				return number, true, nil
+			}
+			return token, true, nil
 		}
-		if number, err := strconv.ParseFloat(token, 64); err == nil {
-			return number, true, nil
-		}
-		return token, true, nil
 	}
 }
 func (t *pdfContentTokenizer) skipSpace() {
@@ -226,9 +240,20 @@ func (t *pdfContentTokenizer) inlineImage() (map[string]any, []byte, error) {
 	}
 	start := t.pos
 	for t.pos < len(t.data) {
+		if t.control != nil && (t.pos-start)%4096 == 0 {
+			if err := t.control.check(); err != nil {
+				return nil, nil, err
+			}
+			if int64(t.pos-start) > t.control.options.Limits.MaxStreamBytes {
+				return nil, nil, t.control.limit("stream_bytes", int64(t.pos-start), t.control.options.Limits.MaxStreamBytes)
+			}
+		}
 		if t.data[t.pos] == 'E' && t.pos+1 < len(t.data) && t.data[t.pos+1] == 'I' && t.pos > start && isPDFWhitespace(t.data[t.pos-1]) {
 			after := t.pos + 2
 			if after >= len(t.data) || isPDFWhitespace(t.data[after]) || isPDFDelimiter(t.data[after]) {
+				if t.control != nil && int64(t.pos-start-1) > t.control.options.Limits.MaxStreamBytes {
+					return nil, nil, t.control.limit("stream_bytes", int64(t.pos-start-1), t.control.options.Limits.MaxStreamBytes)
+				}
 				data := append([]byte(nil), t.data[start:t.pos-1]...)
 				t.pos = after
 				return dict, data, nil
@@ -259,6 +284,10 @@ func isPDFDelimiter(c byte) bool {
 
 // dict 解析内容流中的 << ... >> 字典，主要用于内联图像的 DecodeParms。
 func (t *pdfContentTokenizer) dict() (map[string]any, error) {
+	if err := t.enterContainer(); err != nil {
+		return nil, err
+	}
+	defer func() { t.depth-- }()
 	t.pos += 2
 	result := map[string]any{}
 	for {
@@ -293,6 +322,10 @@ func (t *pdfContentTokenizer) dict() (map[string]any, error) {
 }
 
 func (t *pdfContentTokenizer) array() ([]any, error) {
+	if err := t.enterContainer(); err != nil {
+		return nil, err
+	}
+	defer func() { t.depth-- }()
 	t.pos++
 	result := []any{}
 	for {
@@ -312,4 +345,20 @@ func (t *pdfContentTokenizer) array() ([]any, error) {
 			result = append(result, value)
 		}
 	}
+}
+
+func (t *pdfContentTokenizer) enterContainer() error {
+	maximum := int64(64)
+	if t.control != nil {
+		maximum = t.control.options.Limits.MaxDepth
+	}
+	if t.depth >= maximum {
+		err := &LimitError{Resource: "content_depth", Actual: t.depth + 1, Limit: maximum}
+		if t.control != nil {
+			t.control.fail(err)
+		}
+		return err
+	}
+	t.depth++
+	return nil
 }

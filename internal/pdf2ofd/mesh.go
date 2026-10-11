@@ -39,11 +39,15 @@ const maxMeshTriangles = 300000
 const patchTessellationSteps = 6
 
 type meshBitReader struct {
-	data []byte
-	pos  int
+	data    []byte
+	pos     int
+	control *conversionControl
 }
 
 func (r *meshBitReader) read(bits int) (uint32, bool) {
+	if r.control.consumeOperations(1) != nil {
+		return 0, false
+	}
 	if bits <= 0 {
 		return 0, true
 	}
@@ -98,12 +102,15 @@ type meshVertex struct {
 }
 
 // decodeMeshTriangles 把网格着色解析为三角形集合（坐标位于着色空间）。
-func decodeMeshTriangles(shading *pdfShading) [][3]meshVertex {
+func decodeMeshTriangles(shading *pdfShading, controls ...*conversionControl) [][3]meshVertex {
 	if shading == nil || shading.mesh == nil || shading.colorSpace == nil || len(shading.mesh.data) == 0 {
 		return nil
 	}
 	mesh := shading.mesh
 	reader := &meshBitReader{data: mesh.data}
+	if len(controls) > 0 {
+		reader.control = controls[0]
+	}
 	switch mesh.kind {
 	case 4:
 		return decodeFreeFormMesh(mesh, reader, shading)
@@ -137,12 +144,15 @@ type ofdMeshPoint struct {
 // decodeMeshPoints 把网格着色解码为 OFD 控制点。自由网格与补丁网格返回按
 // 三角形排列的点（使用 EdgeFlag，可为零），规则网格返回行优先排列的点并附
 // 每行顶点数。
-func decodeMeshPoints(shading *pdfShading) (points []ofdMeshPoint, verticesPerRow int, ok bool) {
+func decodeMeshPoints(shading *pdfShading, controls ...*conversionControl) (points []ofdMeshPoint, verticesPerRow int, ok bool) {
 	if shading == nil || shading.mesh == nil || shading.colorSpace == nil || len(shading.mesh.data) == 0 {
 		return nil, 0, false
 	}
 	mesh := shading.mesh
 	reader := &meshBitReader{data: mesh.data}
+	if len(controls) > 0 {
+		reader.control = controls[0]
+	}
 	switch mesh.kind {
 	case 4:
 		points, ok = decodeFreeFormPoints(mesh, reader, shading)
@@ -263,7 +273,7 @@ func decodeLatticePoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdfS
 // meshVectorColor 把网格着色转换为 OFD 矢量网格填充。path 提供局部坐标原点，
 // 与其它渐变一样，控制点坐标相对路径边界左上角。
 func (p *pdfInterpreter) meshVectorColor(shading *pdfShading, matrix [6]float64, path *creator.Path) (*creator.Color, bool) {
-	points, perRow, ok := decodeMeshPoints(shading)
+	points, perRow, ok := decodeMeshPoints(shading, p.control)
 	if !ok || len(points) == 0 || len(points) > maxVectorMeshPoints {
 		return nil, false
 	}
@@ -317,7 +327,7 @@ func (p *pdfInterpreter) meshBackColor(shading *pdfShading) (*creator.Color, int
 // meshImage 是矢量网格输出的回退路径：当控制点超过上限或裁剪区无法还原为路径
 // 时，把网格着色软光栅化为带透明度的 PNG 位图，三角形之外的像素保持透明。
 func (p *pdfInterpreter) meshImage(shading *pdfShading, matrix [6]float64) *creator.Image {
-	triangles := decodeMeshTriangles(shading)
+	triangles := decodeMeshTriangles(shading, p.control)
 	if len(triangles) == 0 {
 		return nil
 	}
@@ -346,7 +356,7 @@ func (p *pdfInterpreter) meshImage(shading *pdfShading, matrix [6]float64) *crea
 	if math.IsInf(minX, 1) || !(maxX > minX) || !(maxY > minY) {
 		return nil
 	}
-	imageData := rasterizeMeshTriangles(converted, minX, minY, maxX, maxY)
+	imageData := rasterizeMeshTriangles(converted, minX, minY, maxX, maxY, p.control)
 	if imageData == nil {
 		return nil
 	}
@@ -365,16 +375,29 @@ const meshRasterPixelsPerMM = 6.0
 const maxMeshRasterPixels = 8 << 20
 
 // rasterizeMeshTriangles 用重心坐标对三角形做 Gouraud 光栅化，返回 PNG 数据。
-func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY float64) []byte {
-	width := int(math.Ceil((maxX - minX) * meshRasterPixelsPerMM))
-	height := int(math.Ceil((maxY - minY) * meshRasterPixelsPerMM))
-	if width*height > maxMeshRasterPixels {
-		scale := math.Sqrt(float64(maxMeshRasterPixels) / float64(width*height))
-		width = int(float64(width) * scale)
-		height = int(float64(height) * scale)
+func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY float64, controls ...*conversionControl) []byte {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
 	}
+	w := math.Ceil((maxX - minX) * meshRasterPixelsPerMM)
+	h := math.Ceil((maxY - minY) * meshRasterPixelsPerMM)
+	if math.IsInf(w, 0) || math.IsInf(h, 0) || math.IsNaN(w) || math.IsNaN(h) {
+		return nil
+	}
+	if w*h > maxMeshRasterPixels {
+		scale := math.Sqrt(float64(maxMeshRasterPixels) / (w * h))
+		w, h = w*scale, h*scale
+	}
+	width, height := int(w), int(h)
 	if width <= 0 || height <= 0 {
 		return nil
+	}
+	if control != nil {
+		pixels, err := control.imagePixels(int64(width), int64(height))
+		if err != nil || control.addImagePixels(pixels) != nil {
+			return nil
+		}
 	}
 	scaleX := float64(width) / (maxX - minX)
 	scaleY := float64(height) / (maxY - minY)
@@ -405,6 +428,9 @@ func rasterizeMeshTriangles(triangles []meshTriangleMM, minX, minY, maxX, maxY f
 		}
 		c0, c1, c2 := triangle.c[0], triangle.c[1], triangle.c[2]
 		for py := loY; py <= hiY; py++ {
+			if hiX >= loX && control.consumeOperations(int64(hiX-loX)+1) != nil {
+				return nil
+			}
 			fy := float64(py) + 0.5
 			for px := loX; px <= hiX; px++ {
 				fx := float64(px) + 0.5

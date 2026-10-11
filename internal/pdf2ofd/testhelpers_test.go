@@ -3,9 +3,28 @@ package pdf2ofd
 import (
 	"bytes"
 	"fmt"
+	"testing"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/parser"
 )
+
+// parseContentPage 用基础字体构造单页 PDF，验证内容操作符的转换结果。
+func parseContentPage(t *testing.T, content string) *parser.Page {
+	t.Helper()
+	return parseContentPageAttrs(t, content, "")
+}
+
+func parseContentPageAttrs(t *testing.T, content, pageAttrs string) *parser.Page {
+	t.Helper()
+	return parseConvertedPage(t, []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] " + pageAttrs + " /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+	})
+}
 
 // layerTexts 返回图层文档序列表中的全部文字对象。
 func layerTexts(layer *models.Layer) []models.TextObject {
