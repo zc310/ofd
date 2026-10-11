@@ -141,6 +141,10 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		if shading := p.state.fillPaint.shading; shading != nil {
 			if color := p.shadingColor(shading, path.X, path.Y); color != nil {
 				path.FillColor = color
+			} else if shading.mesh != nil && p.emitMeshFill(shading, &path) {
+				// 网格着色图案已按矢量网格（或位图）另行发出，这条路径不再绘制。
+				fill = false
+				path.Fill = false
 			}
 		} else if tiling := p.state.fillPaint.tiling; tiling != nil {
 			// 平铺图案以图片对象形式展开，不再用纯色填充路径。
