@@ -15,6 +15,7 @@ import (
 	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"
 	"github.com/zc310/ofd/internal/notify"
+	"github.com/zc310/ofd/internal/transfer"
 )
 
 func quietLogger() *slog.Logger {
@@ -467,6 +468,7 @@ func TestRetryableJobClassification(t *testing.T) {
 		convertersvc.ErrBadRequest,
 		convertersvc.ErrUnsupported,
 		convertersvc.ErrTooLarge,
+		transfer.ErrRollback,
 	}
 	for _, err := range permanent {
 		if retryableJob(err) {

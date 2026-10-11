@@ -249,6 +249,23 @@ func (s *SFTPSink) Put(ctx context.Context, name string, r io.Reader) (Location,
 	return Location{Kind: "sftp", Path: remote, Size: counter.n}, nil
 }
 
+func (s *SFTPSink) Rollback(ctx context.Context, location Location) error {
+	if s.Overwrite || location.Kind != "sftp" || location.Path == "" {
+		return fmt.Errorf("%w: SFTP 目标不具备安全回滚条件", ErrRollback)
+	}
+	conn, err := s.acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: 连接 SFTP 回滚目标失败: %v", ErrRollback, err)
+	}
+	deleted := false
+	defer func() { s.release(conn, deleted) }()
+	if err := conn.client.Remove(location.Path); err != nil {
+		return fmt.Errorf("%w: 删除 SFTP 回滚目标失败: %v", ErrRollback, redactError(err, s.Auth.Password))
+	}
+	deleted = true
+	return nil
+}
+
 // acquire 从池里取一条可用连接。
 func (s *SFTPSink) acquire(ctx context.Context) (*sftpConn, error) {
 	pool := s.ensurePool()

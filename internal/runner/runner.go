@@ -220,7 +220,7 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 	}
 	result, err := r.convert.Run(runCtx, spec)
 	if err != nil {
-		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+		if errors.Is(err, context.Canceled) && ctx.Err() != nil && !errors.Is(err, transfer.ErrRollback) {
 			// 服务正在关闭，不算这个任务失败。
 			//
 			// 写成 failed 会同时做两件错事：任务状态变成终态、给调用方发一条
@@ -291,6 +291,7 @@ func retryableJob(cause error) bool {
 	case errors.Is(cause, convertersvc.ErrBadRequest),
 		errors.Is(cause, convertersvc.ErrUnsupported),
 		errors.Is(cause, convertersvc.ErrTooLarge),
+		errors.Is(cause, transfer.ErrRollback),
 		// 目标已存在：重试多少次都还是已存在。而 output.dir 允许指向共享
 		// 目录（调用方主动放弃任务隔离），同名冲突因此是常见失败，不该
 		// 白白耗掉 3 次转换与退避。

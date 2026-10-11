@@ -28,6 +28,10 @@ import (
 // output.dir 指向共享目录、多个任务写同名文件时必然出现的错误。
 var ErrExists = errors.New("目标已存在")
 
+// ErrRollback 表示一组输出未能完整发布且部分产物无法回滚。
+// 这种状态不能自动重试，否则下一次会撞上本次残留文件。
+var ErrRollback = errors.New("输出回滚失败")
+
 // DefaultMaxBytes 是单个文件的默认上限。输入与输出共用同一个上限常量，但可以
 // 分别覆盖。
 const DefaultMaxBytes int64 = 64 << 20
@@ -44,7 +48,8 @@ type Location struct {
 	// URL 是可直接访问的地址，由具体后端可选地填充。
 	URL string `json:"url,omitempty"`
 	// Size 是写入的字节数。
-	Size int64 `json:"size"`
+	Size     int64 `json:"size"`
+	fileInfo os.FileInfo
 }
 
 // Source 是待转换文档的来源。每次任务独占一个 Source，用完应当调用 Close 释放
@@ -64,6 +69,13 @@ type Source interface {
 type Sink interface {
 	// Put 把 r 的内容写入名为 name 的目标，返回可定位的结果。
 	Put(ctx context.Context, name string, r io.Reader) (Location, error)
+}
+
+// RollbackSink 可以删除本次调用成功创建的产物，用于多文件提交失败时回滚。
+// 实现不得删除调用前已存在的目标。
+type RollbackSink interface {
+	Sink
+	Rollback(context.Context, Location) error
 }
 
 // LimitedSink 表示对单个输出文件有明确大小上限的 Sink。
@@ -168,6 +180,14 @@ func (s *BufferSink) Put(ctx context.Context, name string, r io.Reader) (Locatio
 	return Location{Kind: "stream", Path: name, Size: int64(len(data))}, nil
 }
 
+func (s *BufferSink) Rollback(_ context.Context, location Location) error {
+	if location.Kind != "stream" {
+		return fmt.Errorf("%w: 内存目标位置无效", ErrRollback)
+	}
+	s.buf = nil
+	return nil
+}
+
 // Bytes 返回已写入的内容。
 func (s *BufferSink) Bytes() []byte { return s.buf }
 
@@ -243,7 +263,39 @@ func (s *DirSink) Put(ctx context.Context, name string, r io.Reader) (Location, 
 		}
 		return Location{}, fmt.Errorf("落盘输出失败: %w", err)
 	}
-	return Location{Kind: "dir", Path: target, Size: written}, nil
+	info, err := os.Lstat(target)
+	if err != nil {
+		_ = os.Remove(target)
+		return Location{}, fmt.Errorf("读取新建输出文件状态失败: %w", err)
+	}
+	return Location{Kind: "dir", Path: target, Size: written, fileInfo: info}, nil
+}
+
+func (s *DirSink) Rollback(ctx context.Context, location Location) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: 回滚取消: %v", ErrRollback, err)
+	}
+	if s.Overwrite || location.Kind != "dir" || location.fileInfo == nil {
+		return fmt.Errorf("%w: 目录目标不具备可验证的回滚凭据", ErrRollback)
+	}
+	target, err := ResolveInRoot(s.Root, filepath.Base(location.Path))
+	if err != nil || filepath.Clean(target) != filepath.Clean(location.Path) {
+		return fmt.Errorf("%w: 回滚路径无效: %s", ErrRollback, location.Path)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("%w: 检查回滚目标失败: %v", ErrRollback, err)
+	}
+	if !os.SameFile(location.fileInfo, info) {
+		return fmt.Errorf("%w: 回滚目标已被替换: %s", ErrRollback, target)
+	}
+	if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%w: 删除回滚目标失败: %v", ErrRollback, err)
+	}
+	return nil
 }
 
 // ResolveInRoot 把 name 解析到 root 之内，并拒绝任何路径逃逸。
