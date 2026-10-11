@@ -22,12 +22,21 @@ type pdfMeshData struct {
 	bitsPerFlag       int
 	verticesPerRow    int
 	decode            []float64
-	data              []byte
+	// streamComponents 是每个顶点流里编码的分量数。函数型网格着色编码的是
+	// 函数输入（通常 1 个），不等于颜色空间分量数；按颜色空间分量数读会让
+	// 位流错位，坐标与颜色一起错。
+	streamComponents int
+	data             []byte
 }
 
 // maxMeshTriangles 限制单个网格着色展开的三角形数量，避免超大网格生成
 // 难以处理的 OFD 文件。
 const maxMeshTriangles = 300000
+
+// patchTessellationSteps 是每个 Type 6/7 补丁在 u、v 方向的细分数。补丁是
+// 双三次/Coons 曲面，细分越细越贴近原曲面；6 段在常规补丁尺寸下已看不出刻面，
+// 单个补丁 72 个三角形，配合 maxMeshTriangles 仍受上限保护。
+const patchTessellationSteps = 6
 
 type meshBitReader struct {
 	data []byte
@@ -47,6 +56,11 @@ func (r *meshBitReader) read(bits int) (uint32, bool) {
 		r.pos++
 	}
 	return value, true
+}
+
+// align 把读取位置推进到下一个字节边界。Type 6/7 的每个补丁以字节对齐结束。
+func (r *meshBitReader) align() {
+	r.pos = (r.pos + 7) / 8 * 8
 }
 
 func (m *pdfMeshData) maxCoordinate() float64 {
@@ -509,81 +523,167 @@ func decodeLatticeMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfSha
 // decodePatchMesh 解析 Coons（Type 6）与 Tensor（Type 7）补丁网格。每个补丁按
 // 双三次/Coons 曲面采样为三角形，颜色在四个角点颜色间双线性插值。
 func decodePatchMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShading) [][3]meshVertex {
+	// 函数型网格着色（Type 6/7 同样适用）流里编码的是函数输入，读取的分量数
+	// 必须取输入维数而不是颜色空间分量数，否则整个补丁错位。
 	components := shading.colorSpace.components
+	useFunction := len(shading.functions) > 0
+	if useFunction {
+		components = mesh.streamComponents
+		if components <= 0 {
+			components = 1
+		}
+	}
 	pointCount := 12
 	if mesh.kind == 7 {
 		pointCount = 16
 	}
+	// patchPointIndex 是规范（PDF 32000-1 表 90）的 4×4 张量点阵排列：p0..p3
+	// 是左边（u=0），p3..p6 是上边，p6..p9 是右边，p9..p11 是下边，p12..p15
+	// 是 4 个内部点。每个元素是把第 i 个流控制点放进 lattice[u][v] 的位置。
+	var previous [16][2]float64
+	var previousColors [4]pdfColor
+	havePrevious := false
 	var triangles [][3]meshVertex
 	for len(triangles) < maxMeshTriangles {
-		flag, ok := reader.read(mesh.bitsPerFlag)
+		rawFlag, ok := reader.read(mesh.bitsPerFlag)
 		if !ok {
 			break
 		}
+		flag := int(rawFlag) & 3
+		var points [16][2]float64
+		var colors [4]pdfColor
+		startPoint, startColor := 0, 0
 		if flag != 0 {
-			// 共享边的补丁暂不支持；停止以当前位置继续按“新补丁”解析会
-			// 错位，因此直接返回已解析的部分。
-			break
+			// flag 1/2/3：本补丁的左边/上边/右边与上一补丁共享，共享的 4 个
+			// 控制点与 2 个角颜色在流中省略，从上一补丁对应边取回。
+			// 规范只定义 flag 0..3；没有可共享的上一补丁时无法定位，停止。
+			if !havePrevious {
+				break
+			}
+			for i := 0; i < 4; i++ {
+				points[i] = previous[(flag*3+i)%12]
+			}
+			colors[0], colors[1] = previousColors[flag], previousColors[(flag+1)%4]
+			startPoint, startColor = 4, 2
 		}
-		points := make([][2]float64, pointCount)
-		valid := true
-		for i := 0; i < pointCount; i++ {
+		for i := startPoint; i < pointCount; i++ {
 			rawX, okX := reader.read(mesh.bitsPerCoordinate)
 			rawY, okY := reader.read(mesh.bitsPerCoordinate)
 			if !okX || !okY {
-				valid = false
-				break
+				return triangles
 			}
 			points[i] = [2]float64{mesh.decodeCoordinate(rawX, 0), mesh.decodeCoordinate(rawY, 1)}
 		}
-		if !valid {
-			break
-		}
-		colors := make([][3]float64, 4)
-		for i := 0; i < 4; i++ {
-			componentsValues := make([]float64, components)
-			for c := 0; c < components; c++ {
-				raw, ok := reader.read(mesh.bitsPerComponent)
-				if !ok {
-					return triangles
-				}
-				componentsValues[c] = mesh.decodeComponent(raw, c)
-			}
-			color, ok := shading.colorSpace.colorFromComponents(componentsValues)
+		for i := startColor; i < 4; i++ {
+			color, ok := readMeshColor(mesh, reader, shading, components)
 			if !ok {
 				return triangles
 			}
-			colors[i] = [3]float64{float64(color.r), float64(color.g), float64(color.b)}
+			colors[i] = color
 		}
-		if mesh.kind == 7 && len(points) >= 16 {
-			// Adobe 生成的 Tensor 网格把控制点按 Coons 边界顺序（p0..p11）排列，
-			// 4 个内部点 p12..p15 追加在末尾，因此角点为 p0/p3/p6/p9。
-			triangles = append(triangles, tessellateCoonsPatch(points[:12], colors)...)
-		} else {
-			triangles = append(triangles, tessellateCoonsPatch(points, colors)...)
+		// 每个补丁后位流按字节对齐（规范要求补齐到字节边界）。
+		reader.align()
+		lattice := patchLattice(points)
+		sample := coonsSample
+		if mesh.kind == 7 {
+			sample = tensorSample
 		}
+		triangles = append(triangles, tessellateGrid(sample(lattice, colors), patchTessellationSteps)...)
+		previous, previousColors, havePrevious = points, colors, true
 	}
 	return triangles
 }
 
-// tessellateCoonsPatch 把 12 控制点的 Coons 曲面采样为三角形。
-func tessellateCoonsPatch(points [][2]float64, colors [][3]float64) [][3]meshVertex {
-	const steps = 3
-	sample := func(u, v float64) (float64, float64, pdfColor) {
-		bottom := bezierPoint(points[0], points[1], points[2], points[3], u)
-		top := bezierPoint(points[9], points[8], points[7], points[6], u)
-		left := bezierPoint(points[0], points[11], points[10], points[9], v)
-		right := bezierPoint(points[3], points[4], points[5], points[6], v)
-		corners := [4][2]float64{points[0], points[3], points[6], points[9]}
+// patchPointIndex 把补丁流中的第 i 个控制点映射到 4×4 张量点阵的 [u][v] 位置。
+var patchPointIndex = [16][2]int{
+	{0, 0}, {0, 1}, {0, 2}, {0, 3}, {1, 3}, {2, 3}, {3, 3}, {3, 2},
+	{3, 1}, {3, 0}, {2, 0}, {1, 0}, {1, 1}, {1, 2}, {2, 2}, {2, 1},
+}
+
+// patchLattice 按规范顺序把 16 个流控制点放进 [u][v] 点阵。Type 6 只使用
+// 前 12 个边界点，内部 4 格留零，由 Coons 采样补齐；Type 7 使用全部 16 点。
+func patchLattice(points [16][2]float64) [4][4][2]float64 {
+	var lattice [4][4][2]float64
+	for i, index := range patchPointIndex {
+		lattice[index[0]][index[1]] = points[i]
+	}
+	return lattice
+}
+
+// patchSample 在单位参数域 [0,1]² 上返回补丁的坐标与颜色。
+type patchSample func(u, v float64) (float64, float64, pdfColor)
+
+// tensorSample 对 Type 7 的 16 点张量点阵做双三次 Bézier 求值与角点颜色双线性插值。
+// 角点颜色顺序与规范一致：colors[0..3] 对应 (0,0)、(0,1)、(1,1)、(1,0)。
+func tensorSample(lattice [4][4][2]float64, colors [4]pdfColor) patchSample {
+	return func(u, v float64) (float64, float64, pdfColor) {
+		bu := bezierBasis(u)
+		bv := bezierBasis(v)
+		var x, y float64
+		for i := 0; i < 4; i++ {
+			for j := 0; j < 4; j++ {
+				w := bu[i] * bv[j]
+				x += w * lattice[i][j][0]
+				y += w * lattice[i][j][1]
+			}
+		}
+		return x, y, patchCornerColor(colors, u, v)
+	}
+}
+
+// coonsSample 对 Type 6 的 12 点 Coons 曲面求值：四条边界曲线相加后减去
+// 双线性混合项。边界为 lattice 的 u=0/u=1 两列与 v=0/v=1 两行。
+func coonsSample(lattice [4][4][2]float64, colors [4]pdfColor) patchSample {
+	return func(u, v float64) (float64, float64, pdfColor) {
+		left := bezierPoint(lattice[0][0], lattice[0][1], lattice[0][2], lattice[0][3], v)
+		right := bezierPoint(lattice[3][0], lattice[3][1], lattice[3][2], lattice[3][3], v)
+		bottom := bezierPoint(lattice[0][0], lattice[1][0], lattice[2][0], lattice[3][0], u)
+		top := bezierPoint(lattice[0][3], lattice[1][3], lattice[2][3], lattice[3][3], u)
+		corners := [4][2]float64{lattice[0][0], lattice[3][0], lattice[3][3], lattice[0][3]}
 		bilinearity := [2]float64{
 			(1-u)*(1-v)*corners[0][0] + u*(1-v)*corners[1][0] + u*v*corners[2][0] + (1-u)*v*corners[3][0],
 			(1-u)*(1-v)*corners[0][1] + u*(1-v)*corners[1][1] + u*v*corners[2][1] + (1-u)*v*corners[3][1],
 		}
-		x := (1-v)*bottom[0] + v*top[0] + (1-u)*left[0] + u*right[0] - bilinearity[0]
-		y := (1-v)*bottom[1] + v*top[1] + (1-u)*left[1] + u*right[1] - bilinearity[1]
-		return x, y, bilinearColor(colors, u, v)
+		x := (1-u)*left[0] + u*right[0] + (1-v)*bottom[0] + v*top[0] - bilinearity[0]
+		y := (1-u)*left[1] + u*right[1] + (1-v)*bottom[1] + v*top[1] - bilinearity[1]
+		return x, y, patchCornerColor(colors, u, v)
 	}
-	return tessellateGrid(sample, steps)
+}
+
+// patchCornerColor 在四个角点颜色间双线性插值。角点顺序与规范一致：
+// colors[0]@(0,0)、colors[1]@(0,1)、colors[2]@(1,1)、colors[3]@(1,0)。
+func patchCornerColor(colors [4]pdfColor, u, v float64) pdfColor {
+	weights := [4]float64{(1 - u) * (1 - v), (1 - u) * v, u * v, u * (1 - v)}
+	red := weights[0]*float64(colors[0].r) + weights[1]*float64(colors[1].r) + weights[2]*float64(colors[2].r) + weights[3]*float64(colors[3].r)
+	green := weights[0]*float64(colors[0].g) + weights[1]*float64(colors[1].g) + weights[2]*float64(colors[2].g) + weights[3]*float64(colors[3].g)
+	blue := weights[0]*float64(colors[0].b) + weights[1]*float64(colors[1].b) + weights[2]*float64(colors[2].b) + weights[3]*float64(colors[3].b)
+	clamp := func(value float64) uint8 {
+		if value <= 0 {
+			return 0
+		}
+		if value >= 255 {
+			return 255
+		}
+		return uint8(math.Round(value))
+	}
+	return pdfColor{r: clamp(red), g: clamp(green), b: clamp(blue)}
+}
+
+// readMeshColor 读取一个补丁角点的颜色。函数型网格着色流里编码的是函数输入，
+// 颜色由函数求值得到；否则按颜色空间分量解码。
+func readMeshColor(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShading, components int) (pdfColor, bool) {
+	values := make([]float64, components)
+	for c := 0; c < components; c++ {
+		raw, ok := reader.read(mesh.bitsPerComponent)
+		if !ok {
+			return pdfColor{}, false
+		}
+		values[c] = mesh.decodeComponent(raw, c)
+	}
+	if len(shading.functions) > 0 {
+		return shading.meshColorAt(values)
+	}
+	return shading.colorSpace.colorFromComponents(values)
 }
 
 func tessellateGrid(sample func(u, v float64) (float64, float64, pdfColor), steps int) [][3]meshVertex {
@@ -612,6 +712,26 @@ func readMeshVertex(mesh *pdfMeshData, reader *meshBitReader, components int, sh
 	if !okX || !okY {
 		return meshVertex{}, false
 	}
+	// 函数型网格着色：流里编码的是函数输入，颜色由函数求值得到。
+	if len(shading.functions) > 0 {
+		stored := mesh.streamComponents
+		if stored <= 0 {
+			stored = 1
+		}
+		values := make([]float64, stored)
+		for c := 0; c < stored; c++ {
+			raw, ok := reader.read(mesh.bitsPerComponent)
+			if !ok {
+				return meshVertex{}, false
+			}
+			values[c] = mesh.decodeComponent(raw, c)
+		}
+		color, ok := shading.meshColorAt(values)
+		if !ok {
+			return meshVertex{}, false
+		}
+		return meshVertex{x: mesh.decodeCoordinate(rawX, 0), y: mesh.decodeCoordinate(rawY, 1), color: color, flag: flag, usable: true}, true
+	}
 	values := make([]float64, components)
 	for c := 0; c < components; c++ {
 		raw, ok := reader.read(mesh.bitsPerComponent)
@@ -638,29 +758,6 @@ func bezierPoint(p0, p1, p2, p3 [2]float64, t float64) [2]float64 {
 		b[0]*p0[0] + b[1]*p1[0] + b[2]*p2[0] + b[3]*p3[0],
 		b[0]*p0[1] + b[1]*p1[1] + b[2]*p2[1] + b[3]*p3[1],
 	}
-}
-
-// bilinearColor 在四个角点颜色间双线性插值。colors 顺序为 (0,0)、(1,0)、
-// (1,1)、(0,1)。
-func bilinearColor(colors [][3]float64, u, v float64) pdfColor {
-	c00, c10, c11, c01 := colors[0], colors[1], colors[2], colors[3]
-	w00 := (1 - u) * (1 - v)
-	w10 := u * (1 - v)
-	w11 := u * v
-	w01 := (1 - u) * v
-	r := w00*c00[0] + w10*c10[0] + w11*c11[0] + w01*c01[0]
-	g := w00*c00[1] + w10*c10[1] + w11*c11[1] + w01*c01[1]
-	b := w00*c00[2] + w10*c10[2] + w11*c11[2] + w01*c01[2]
-	clamp := func(value float64) uint8 {
-		if value <= 0 {
-			return 0
-		}
-		if value >= 255 {
-			return 255
-		}
-		return uint8(math.Round(value))
-	}
-	return pdfColor{r: clamp(r), g: clamp(g), b: clamp(b)}
 }
 
 func maxInt(a, b int) int {

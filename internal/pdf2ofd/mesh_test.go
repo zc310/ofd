@@ -246,21 +246,12 @@ func TestConvertLatticeMeshEmitsLaGouraudPath(t *testing.T) {
 	}
 }
 
-// buildAdobeTensorPatchStream 按 Adobe 顺序构造单个 Type 7 网格补丁的位流：
-// 12 个边界控制点（Coons 顺序）+ 4 个内部点 + 4 个角点颜色。
+// buildAdobeTensorPatchStream 按规范（PDF 32000-1 表 90）顺序构造单个 Type 7
+// 张量补丁的位流：16 个控制点按 4×4 点阵排列（左边、上边、右边、下边、4 个
+// 内部点），随后是 4 个角点颜色。
 func buildAdobeTensorPatchStream(corners [4][2]float64) []byte {
-	// corners 顺序为 p0、p3、p6、p9。
-	p0, p3, p6, p9 := corners[0], corners[1], corners[2], corners[3]
-	lerp := func(a, b [2]float64, t float64) [2]float64 {
-		return [2]float64{a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t}
-	}
-	points := [][2]float64{
-		p0, lerp(p0, p3, 1.0/3), lerp(p0, p3, 2.0/3), p3,
-		lerp(p3, p6, 1.0/3), lerp(p3, p6, 2.0/3), p6,
-		lerp(p6, p9, 1.0/3), lerp(p6, p9, 2.0/3), p9,
-		lerp(p9, p0, 1.0/3), lerp(p9, p0, 2.0/3),
-		{0.5, 0.5}, {0.5, 0.5}, {0.5, 0.5}, {0.5, 0.5},
-	}
+	// corners 顺序为 p0、p3、p6、p9，即点阵角 (0,0)、(0,1)、(1,1)、(1,0)。
+	points := tensorPatchPointsFromCorners(corners)
 	color := [3]uint8{200, 10, 10}
 	writer := &meshBitWriter{}
 	writer.write(0, 8)
@@ -275,6 +266,100 @@ func buildAdobeTensorPatchStream(corners [4][2]float64) []byte {
 		}
 	}
 	return writer.bytes()
+}
+
+// tensorPatchPointsFromCorners 由 4 个角点（p0、p3、p6、p9）双线性生成 4×4
+// 点阵，并按规范顺序摊平成 16 个流控制点。
+func tensorPatchPointsFromCorners(corners [4][2]float64) [16][2]float64 {
+	p00, p03, p33, p30 := corners[0], corners[1], corners[2], corners[3]
+	var lattice [4][4][2]float64
+	for i := 0; i < 4; i++ {
+		u := float64(i) / 3
+		for j := 0; j < 4; j++ {
+			v := float64(j) / 3
+			lattice[i][j] = [2]float64{
+				(1-u)*(1-v)*p00[0] + u*(1-v)*p30[0] + u*v*p33[0] + (1-u)*v*p03[0],
+				(1-u)*(1-v)*p00[1] + u*(1-v)*p30[1] + u*v*p33[1] + (1-u)*v*p03[1],
+			}
+		}
+	}
+	return flattenPatchLattice(lattice)
+}
+
+// flattenPatchLattice 把 4×4 点阵按规范顺序摊平成 16 个流控制点。
+func flattenPatchLattice(lattice [4][4][2]float64) [16][2]float64 {
+	var points [16][2]float64
+	for i, index := range patchPointIndex {
+		points[i] = lattice[index[0]][index[1]]
+	}
+	return points
+}
+
+// TestDecodeTensorPatchSharesEdgeAcrossFlags 回归：Type 7 的 flag 1/2/3 表示当前
+// 补丁与上一补丁共享一条边，共享的 4 个控制点与 2 个角颜色在流中省略。解码器
+// 此前在 flag != 0 时直接停止，多补丁网格（如 tensor-allflags-withfunction.pdf
+// 用满 0/1/2/3 的 2×2 网格）只剩第一块。
+func TestDecodeTensorPatchSharesEdgeAcrossFlags(t *testing.T) {
+	const coordBits = 16
+	const size = 100.0
+	maxCoord := float64(uint32(1)<<coordBits - 1)
+	writer := &meshBitWriter{}
+	writePoint := func(point [2]float64) {
+		writer.write(uint32(point[0]/size*maxCoord+0.5), coordBits)
+		writer.write(uint32(point[1]/size*maxCoord+0.5), coordBits)
+	}
+	writeColor := func(value uint8) {
+		for i := 0; i < 3; i++ {
+			writer.write(uint32(value), 8)
+		}
+	}
+	// 补丁 1：flag 0，完整写出 16 个控制点与 4 个角颜色。
+	writer.write(0, 8)
+	for _, point := range buildAdobeTensorPatchStreamPoints(0, 0, 50) {
+		writePoint(point)
+	}
+	for i := 0; i < 4; i++ {
+		writeColor(200)
+	}
+	writer.align()
+	// 补丁 2：flag 1 复用补丁 1 的共享边，只写 12 个新控制点与 2 个角颜色。
+	second := buildAdobeTensorPatchStreamPoints(50, 50, 50)
+	writer.write(1, 8)
+	for _, point := range second[4:] {
+		writePoint(point)
+	}
+	writeColor(10)
+	writeColor(10)
+
+	shading := &pdfShading{
+		shadingType: 7,
+		colorSpace:  deviceRGBSpace,
+		mesh: &pdfMeshData{
+			kind:              7,
+			bitsPerCoordinate: coordBits,
+			bitsPerComponent:  8,
+			bitsPerFlag:       8,
+			decode:            []float64{0, size, 0, size, 0, 1, 0, 1, 0, 1},
+			data:              writer.bytes(),
+		},
+	}
+	triangles := decodePatchMesh(shading.mesh, &meshBitReader{data: shading.mesh.data}, shading)
+	want := 2 * patchTessellationSteps * patchTessellationSteps * 2
+	if len(triangles) != want {
+		t.Fatalf("三角形数 = %d，期望 %d（两个补丁都必须输出）", len(triangles), want)
+	}
+}
+
+// buildAdobeTensorPatchStreamPoints 生成一个 origin 起、边长 size 的规则补丁的
+// 16 个规范顺序控制点。
+func buildAdobeTensorPatchStreamPoints(originX, originY, size float64) [16][2]float64 {
+	var lattice [4][4][2]float64
+	for i := 0; i < 4; i++ {
+		for j := 0; j < 4; j++ {
+			lattice[i][j] = [2]float64{originX + float64(j)/3*size, originY + float64(i)/3*size}
+		}
+	}
+	return flattenPatchLattice(lattice)
 }
 
 // buildLatticeMeshStream 按行优先构造 Type 5 规则网格的位流（无 EdgeFlag）。
@@ -315,3 +400,10 @@ func (w *meshBitWriter) write(value uint32, bits int) {
 }
 
 func (w *meshBitWriter) bytes() []byte { return w.data }
+
+// align 把写入位置补齐到下一个字节边界，与解码端的 meshBitReader.align 对应。
+func (w *meshBitWriter) align() {
+	if remainder := w.pos % 8; remainder != 0 {
+		w.pos += 8 - remainder
+	}
+}
