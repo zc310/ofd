@@ -41,8 +41,8 @@ pages:
           horizontal_lines: true
           vertical_lines: true
           line_width: 0.15
-          outer_line_width: 0.35
-          header_line_width: 0.3
+          outer_line_width: 0.29
+          header_line_width: 0.26
           stroke_color:
             r: 0
             g: 0
@@ -152,8 +152,8 @@ pages:
           horizontal_lines: true
           vertical_lines: true
           line_width: 0.15
-          outer_line_width: 0.3
-          header_line_width: 0.2
+          outer_line_width: 0.29
+          header_line_width: 0.26
           stroke_color:
             r: 0
             g: 0
@@ -242,9 +242,9 @@ pages:
         style:
           horizontal_lines: true
           vertical_lines: false
-          line_width: 0.2
-          outer_line_width: 0.4
-          header_line_width: 0.35
+          line_width: 0.15
+          outer_line_width: 0.29
+          header_line_width: 0.26
           stroke_color:
             r: 0
             g: 0
@@ -375,9 +375,9 @@ pages:
         style:
           horizontal_lines: true
           vertical_lines: true
-          line_width: 0.2
-          outer_line_width: 0.4
-          header_line_width: 0.35
+          line_width: 0.15
+          outer_line_width: 0.29
+          header_line_width: 0.26
           stroke_color:
             r: 0
             g: 0
