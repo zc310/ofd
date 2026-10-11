@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -237,20 +238,19 @@ func TestRenderMetricsStableOrder(t *testing.T) {
 }
 
 // responseContentType 读一次 /metrics 的 Content-Type。
-func responseContentType(t *testing.T, client *fasthttp.Client) string {
+func responseContentType(t *testing.T, client *testHTTPClient) string {
 	t.Helper()
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	req.Header.SetMethod(fasthttp.MethodGet)
-	req.Header.SetHost("ofd-server.test")
-	req.SetRequestURI("/metrics")
-	req.Header.Set("Authorization", "Bearer "+testAPIKey)
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(resp)
-	if err := client.Do(req, resp); err != nil {
+	req, err := http.NewRequest(http.MethodGet, client.baseURL+"/metrics", nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return string(resp.Header.ContentType())
+	req.Header.Set("Authorization", "Bearer "+testAPIKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	return resp.Header.Get("Content-Type")
 }
 
 // TestRuntimeMetricsExposed 确认运行时指标真的出现在输出里。

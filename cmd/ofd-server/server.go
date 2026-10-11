@@ -6,8 +6,10 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"path/filepath"
@@ -21,7 +23,6 @@ import (
 
 	"github.com/zc310/ofd/internal/allowlist"
 
-	"github.com/fasthttp/router"
 	"github.com/valyala/fasthttp"
 
 	"github.com/zc310/ofd/internal/convertersvc"
@@ -43,8 +44,7 @@ type RemoteTargets struct {
 
 // Server 是 HTTP 层。
 //
-// 路由手写而不是引入 fasthttp/router：接口只有 5 个，引入一个额外模块换不来
-// 什么，而依赖越少这个服务越好审计。
+// 路由使用标准库 ServeMux，避免额外路由依赖并支持请求 context 的断连取消。
 type Server struct {
 	cfg       *Config
 	store     *jobstore.Store
@@ -56,7 +56,7 @@ type Server struct {
 	sftp      map[string]*transfer.SFTPSink
 	log       *slog.Logger
 	ready     func() bool
-	router    *router.Router
+	router    http.Handler
 	// startedAt 是服务对象创建时刻，用于 /v1/stats 的启动时间与运行时长。
 	//
 	// 记在 NewServer 而不是 Start：测试里普遍直接用 Handler() 而不启动
@@ -67,7 +67,8 @@ type Server struct {
 	apiKey []byte
 	// convert 供 stream 输出的同步转换使用；异步路径用的是 runner 手上的
 	// 那一个，两者是不同的 Service 实例但共用同一个 TempDir。
-	convert *convertersvc.Service
+	convert   *convertersvc.Service
+	inlineRun func(context.Context, convertersvc.Spec) (convertersvc.Result, error)
 	// inlineFast 与 inlineHeavy 限制同步转换的并发，按通道分开。
 	inlineFast, inlineHeavy chan struct{}
 	inlineOnce              sync.Once
@@ -84,7 +85,7 @@ func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, li
 	}
 	s := &Server{cfg: cfg, store: store, registry: registry, allowlist: list,
 		ftp: targets.FTP, s3: targets.S3, webdav: targets.WebDAV,
-		sftp: targets.SFTP, convert: convert, log: log}
+		sftp: targets.SFTP, convert: convert, inlineRun: convert.Run, log: log}
 	s.apiKey = []byte(cfg.APIKey)
 	s.startedAt = time.Now().UTC()
 	s.router = s.routes()
@@ -94,99 +95,81 @@ func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, li
 // SetReadyFunc 注入就绪探针。
 func (s *Server) SetReadyFunc(fn func() bool) { s.ready = fn }
 
-// Handler 返回 fasthttp 请求处理函数。
+// Handler 返回服务的 HTTP 处理器。
 //
 // 在路由外面包一层做两件事：限制请求体大小，以及兜住处理函数里的 panic。
 // 两者都放在这里而不是各自分发器里，是因为它们对所有端点一视同仁。
-func (s *Server) Handler() fasthttp.RequestHandler {
-	routed := s.router.Handler
-	limit := s.cfg.MaxUploadBytes
-	return func(ctx *fasthttp.RequestCtx) {
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			// 一个畸形请求的边界问题应该表现为 500，而不是整个进程退出。
 			if rec := recover(); rec != nil {
-				s.log.Error("请求处理 panic", "path", string(ctx.Path()), "panic", rec)
-				writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "服务内部错误")
+				s.log.Error("请求处理 panic", "path", r.URL.Path, "panic", rec)
+				writeError(w, http.StatusInternalServerError, "internal_error", "服务内部错误")
 			}
 		}()
-		// fasthttp 的 MaxRequestBodySize 也会拦，但它返回的是纯文本；
-		// 这里先拦一次，好让错误响应保持统一的 JSON 形状。
-		if int64(len(ctx.Request.Body())) > limit {
-			writeError(ctx, fasthttp.StatusRequestEntityTooLarge, "payload_too_large",
-				fmt.Sprintf("请求体超过 %d 字节", limit))
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes))
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
+					fmt.Sprintf("请求体超过 %d 字节", s.cfg.MaxUploadBytes))
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_request", "读取请求体失败")
 			return
 		}
-		routed(ctx)
-	}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		s.router.ServeHTTP(w, r)
+	})
 }
 
-// routes 构造路由表。
-func (s *Server) routes() *router.Router {
-	r := router.New()
-	// 关掉路径自动纠正：默认的 RedirectTrailingSlash 对 GET 无害，但
-	// 对 POST 是危险的——重定向既可能变成 GET，也可能丢掉请求体，
-	// 调用方只会看到一句莫名其妙的 301。
-	r.RedirectTrailingSlash = false
-	r.RedirectFixedPath = false
-	// 未知路径与错误方法由我们统一给 JSON 响应，而不是 fasthttp 的纯文本。
-	r.NotFound = func(ctx *fasthttp.RequestCtx) {
-		writeError(ctx, fasthttp.StatusNotFound, "not_found", "未知路径")
+func (s *Server) routes() http.Handler {
+	r := http.NewServeMux()
+	method := func(want string, next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, req *http.Request) {
+			if req.Method != want {
+				writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "方法不允许")
+				return
+			}
+			next(w, req)
+		}
 	}
-	r.MethodNotAllowed = func(ctx *fasthttp.RequestCtx) {
-		writeError(ctx, fasthttp.StatusMethodNotAllowed, "method_not_allowed", "方法不允许")
+	secured := func(next http.HandlerFunc) http.HandlerFunc {
+		return s.requireAPIKey(next)
 	}
-
-	r.GET("/healthz", s.handleHealth)
-	r.GET("/readyz", s.handleReady)
-	// /v1/* 全部要令牌。探针不设限：编排系统的 kubelet 与负载均衡器
-	// 不会也不该持有业务令牌，把它们挡在门外只会让健康检查一直失败。
-	r.POST("/v1/convert", s.requireAPIKey(s.handleSubmit))
-	r.GET("/v1/jobs/{id}", s.requireAPIKey(s.handleGetJob))
-	r.GET("/v1/jobs/{id}/content", s.requireAPIKey(s.handleContent))
-	r.POST("/v1/jobs/{id}/cancel", s.requireAPIKey(s.handleCancelJob))
-	// /metrics 要令牌：它暴露转换量与格式分布，属于运营数据，而默认监听
-	// 所有网卡。Prometheus 支持在 scrape_configs 里配 bearer_token_file，
-	// 采集端多一份配置，好过把数据敞着。
-	r.GET("/metrics", s.requireAPIKey(s.handleMetrics))
-	// 转换量统计的 JSON 视图，与 /metrics 同源不同形。放在 /v1 下是因为
-	// 它是业务数据（转换量与格式分布），且沿用同一套令牌。
-	r.GET("/v1/stats", s.requireAPIKey(s.handleStats))
+	r.HandleFunc("/healthz", method(http.MethodGet, s.handleHealth))
+	r.HandleFunc("/readyz", method(http.MethodGet, s.handleReady))
+	r.HandleFunc("/v1/convert", method(http.MethodPost, secured(s.handleSubmit)))
+	r.HandleFunc("/v1/jobs/{id}/content", method(http.MethodGet, secured(s.handleContent)))
+	r.HandleFunc("/v1/jobs/{id}/cancel", method(http.MethodPost, secured(s.handleCancelJob)))
+	r.HandleFunc("/v1/jobs/{id}", method(http.MethodGet, secured(s.handleGetJob)))
+	r.HandleFunc("/v1/stats", method(http.MethodGet, secured(s.handleStats)))
+	r.HandleFunc("/metrics", method(http.MethodGet, secured(s.handleMetrics)))
+	r.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "未知路径")
+	})
 	return r
 }
 
 // requireAPIKey 校验 Bearer 令牌，通过后转交 next。
-//
-// 令牌从两个位置取，缺一不可：
-//
-//	Authorization: Bearer <key>    标准形式，命令行与脚本用这个
-//	X-OFD-Api-Key: <key>           给浏览器页面用——fetch 也能设请求头，
-//	                               但一旦将来要支持 Cookie 会话或表单
-//	                               提交，自定义头是比自定义鉴权更省事的方向
-//
-// 比较用 subtle.ConstantTimeCompare：逐字节提前返回的写法会把密钥前缀
-// 的信息泄进响应时间，足够被多次采样还原出整个令牌。
-func (s *Server) requireAPIKey(next fasthttp.RequestHandler) fasthttp.RequestHandler {
-	return func(ctx *fasthttp.RequestCtx) {
-		presented := ctx.Request.Header.Peek("Authorization")
-		if token, ok := bytes.CutPrefix(presented, []byte("Bearer ")); ok {
-			if s.apiKeyMatches(token) {
-				next(ctx)
-				return
-			}
-		}
-		if direct := ctx.Request.Header.Peek(apiKeyHeader); s.apiKeyMatches(direct) {
-			next(ctx)
+func (s *Server) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		presented := []byte(r.Header.Get("Authorization"))
+		if token, ok := bytes.CutPrefix(presented, []byte("Bearer ")); ok && s.apiKeyMatches(token) {
+			next(w, r)
 			return
 		}
-		ctx.Response.Header.Set("WWW-Authenticate", `Bearer realm="ofd-server"`)
-		writeError(ctx, fasthttp.StatusUnauthorized, "unauthorized", "缺少或无效的 API 令牌")
+		if direct := r.Header.Get(apiKeyHeader); s.apiKeyMatches([]byte(direct)) {
+			next(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="ofd-server"`)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "缺少或无效的 API 令牌")
 	}
 }
 
 // apiKeyHeader 是浏览器友好的令牌头名。
-// 注意：fasthttp 会把自定义头名规范化成 X-Ofd-*（每个连字符后首字母大写，
-// 不保留缩写全大写）。HTTP 头名大小写不敏感，所以 Peek 与 Set 都能对上，
-// 但抓包看到的是 X-Ofd-Job-Id 而不是 X-OFD-Job-Id，文档按前者写。
 const apiKeyHeader = "X-OFD-Api-Key"
 
 func (s *Server) apiKeyMatches(presented []byte) bool {
@@ -199,16 +182,16 @@ func (s *Server) apiKeyMatches(presented []byte) bool {
 	return subtle.ConstantTimeCompare(presented, s.apiKey) == 1
 }
 
-func (s *Server) handleHealth(ctx *fasthttp.RequestCtx) {
-	writeJSON(ctx, fasthttp.StatusOK, map[string]any{"status": "ok"})
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (s *Server) handleReady(ctx *fasthttp.RequestCtx) {
+func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 	if s.ready != nil && !s.ready() {
-		writeError(ctx, fasthttp.StatusServiceUnavailable, "not_ready", "尚未就绪")
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "尚未就绪")
 		return
 	}
-	writeJSON(ctx, fasthttp.StatusOK, map[string]any{"status": "ready"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
 }
 
 // submitRequest 是提交转换的请求体。
@@ -228,10 +211,20 @@ type submitNotify struct {
 	Events []string `json:"events,omitempty"`
 }
 
-func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
-	body := ctx.Request.Body()
+func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
+				fmt.Sprintf("请求体超过 %d 字节", s.cfg.MaxUploadBytes))
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_request", "读取请求体失败")
+		return
+	}
 	if len(body) == 0 {
-		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "请求体为空")
+		writeError(w, http.StatusBadRequest, "invalid_request", "请求体为空")
 		return
 	}
 	var request submitRequest
@@ -239,7 +232,7 @@ func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
 	// 写错 file_name 会安静地退回默认产物名 output.pdf，调用方拿到的是
 	// "转换成功但名字不对"，排查起来比直接报错费时间得多。
 	if err := decodeStrictJSON(body, &request); err != nil {
-		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", "解析请求体失败: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid_request", "解析请求体失败: "+err.Error())
 		return
 	}
 	// 决定同步还是异步之前先规范化 output.kind。
@@ -251,30 +244,30 @@ func (s *Server) handleSubmit(ctx *fasthttp.RequestCtx) {
 	// 那种失败要等几秒后才出现在任务日志里，而日志里看不出是 kind 写错了。
 	kind, err := convertersvc.NormalizeOutputKind(request.Output.Kind)
 	if err != nil {
-		writeError(ctx, fasthttp.StatusBadRequest, "invalid_request", err.Error())
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	request.Output.Kind = kind
 
 	if request.Output.Kind == convertersvc.OutputStream {
-		s.handleConvertInline(ctx, &request)
+		s.handleConvertInline(w, r, &request)
 		return
 	}
 
 	job, err := s.buildJob(&request)
 	if err != nil {
-		writeError(ctx, statusForRequestError(err), codeForRequestError(err), err.Error())
+		writeError(w, statusForRequestError(err), codeForRequestError(err), err.Error())
 		return
 	}
 	if err := s.store.Enqueue(job); err != nil {
 		s.log.Error("入队失败", "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "入队失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "入队失败")
 		return
 	}
 	s.log.Info("已受理", "job", job.ID, "lane", job.Lane, "to", job.To)
 	// 202：任务已受理但尚未开始。同步返回结果需要另一个端点，
 	// 而不是让这个请求挂着等——那会把 HTTP 连接数和队列深度绑在一起。
-	writeJSON(ctx, fasthttp.StatusAccepted, map[string]any{
+	writeJSON(w, http.StatusAccepted, map[string]any{
 		"id":         job.ID,
 		"state":      job.State,
 		"lane":       job.Lane,
@@ -486,51 +479,47 @@ func (s *Server) checkInputURL(raw string) error {
 }
 
 // handleGetJob 返回任务状态。
-func (s *Server) handleGetJob(ctx *fasthttp.RequestCtx) {
-	id, ok := pathParam(ctx, "id")
+func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathParam(r, "id")
 	if !ok {
-		writeError(ctx, fasthttp.StatusNotFound, "not_found", "任务 ID 不合法")
+		writeError(w, http.StatusNotFound, "not_found", "任务 ID 不合法")
 		return
 	}
 	job, err := s.store.Get(id)
 	if err != nil {
 		s.log.Error("查询任务失败", "job", id, "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "查询失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "查询失败")
 		return
 	}
 	if job == nil {
-		writeError(ctx, fasthttp.StatusNotFound, "job_not_found", "任务不存在")
+		writeError(w, http.StatusNotFound, "job_not_found", "任务不存在")
 		return
 	}
-	writeJSON(ctx, fasthttp.StatusOK, jobView(job))
+	writeJSON(w, http.StatusOK, jobView(job))
 }
 
 // handleCancelJob 取消仍在排队的任务。
-func (s *Server) handleCancelJob(ctx *fasthttp.RequestCtx) {
-	id, ok := pathParam(ctx, "id")
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathParam(r, "id")
 	if !ok {
-		writeError(ctx, fasthttp.StatusNotFound, "not_found", "任务 ID 不合法")
+		writeError(w, http.StatusNotFound, "not_found", "任务 ID 不合法")
 		return
 	}
 	if err := s.store.Cancel(id); err != nil {
 		if strings.Contains(err.Error(), "任务不存在") {
-			writeError(ctx, fasthttp.StatusNotFound, "job_not_found", "任务不存在")
+			writeError(w, http.StatusNotFound, "job_not_found", "任务不存在")
 			return
 		}
 		// 运行中或已终结的任务取消不了，属于调用方的状态判断问题。
-		writeError(ctx, fasthttp.StatusConflict, "not_cancellable", err.Error())
+		writeError(w, http.StatusConflict, "not_cancellable", err.Error())
 		return
 	}
-	writeJSON(ctx, fasthttp.StatusOK, map[string]any{"id": id, "state": jobstore.StateCancelled})
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "state": jobstore.StateCancelled})
 }
 
 // pathParam 读取路径参数。
-func pathParam(ctx *fasthttp.RequestCtx, name string) (string, bool) {
-	value := ctx.UserValue(name)
-	if value == nil {
-		return "", false
-	}
-	text := fmt.Sprint(value)
+func pathParam(r *http.Request, name string) (string, bool) {
+	text := r.PathValue(name)
 	if text == "" {
 		return "", false
 	}
@@ -588,21 +577,21 @@ func codeForRequestError(err error) string {
 	return "invalid_request"
 }
 
-func writeJSON(ctx *fasthttp.RequestCtx, status int, payload any) {
+func writeJSON(w http.ResponseWriter, status int, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetContentType("application/json; charset=utf-8")
-		ctx.SetBodyString(`{"code":"internal_error","message":"响应序列化失败"}`)
+		status = http.StatusInternalServerError
+		raw = []byte(`{"code":"internal_error","message":"响应序列化失败"}`)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(raw); err != nil {
 		return
 	}
-	ctx.SetStatusCode(status)
-	ctx.SetContentType("application/json; charset=utf-8")
-	ctx.SetBody(raw)
 }
 
-func writeError(ctx *fasthttp.RequestCtx, status int, code, message string) {
-	writeJSON(ctx, status, map[string]string{"code": code, "message": message})
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]string{"code": code, "message": message})
 }
 
 // jobSeq 为任务 ID 提供单调递增的来源。
@@ -671,37 +660,24 @@ func jobDirLevels(id string) []string {
 	return []string{id[split:], id[:split]}
 }
 
-// bodySizeLimit 把 int64 的上限转成 fasthttp 用的 int。
-//
-// 32 位构建下 int 是 32 位，直接强转会溢出成负数，配置里写了个大值反而让所有
-// 请求都被拒。这里钳到当前平台的最大值。
-func bodySizeLimit(limit int64) int {
-	maxInt := int64(^uint(0) >> 1)
-	if limit > maxInt {
-		return int(maxInt)
-	}
-	return int(limit)
-}
-
 // Start 监听并服务，直到 ctx 取消或监听失败。
 //
 // 停止时先停止接收新请求，再等在途请求结束，最后由调用方停 runner——
 // 顺序反过来会让正在转换的任务被硬生生掐断。
 func (s *Server) Start(ctx context.Context) error {
-	server := &fasthttp.Server{
-		// 不设 Name：fasthttp 会把它当 Server 头发出去，暴露服务名没有收益。
-		Handler:            s.Handler(),
-		MaxRequestBodySize: bodySizeLimit(s.cfg.MaxUploadBytes),
-		ReadTimeout:        30 * time.Second,
-		WriteTimeout:       60 * time.Second,
-		IdleTimeout:        120 * time.Second,
-		// 不发默认 Server 头：暴露实现细节没有收益。
-		NoDefaultServerHeader: true,
+	server := &http.Server{
+		Addr:              s.cfg.Listen,
+		Handler:           s.Handler(),
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	errCh := make(chan error, 1)
 	go func() {
 		s.log.Info("开始监听", "addr", s.cfg.Listen)
-		if err := server.ListenAndServe(s.cfg.Listen); err != nil && !errors.Is(err, net.ErrClosed) {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
 		}
@@ -713,7 +689,7 @@ func (s *Server) Start(ctx context.Context) error {
 		// 给在途请求留出完成时间。
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := server.ShutdownWithContext(shutdownCtx); err != nil {
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			// 超时说明还有长请求没收尾。进程本来就要退出，没有更温和的手段，
 			// 记下来让部署侧知道这次是硬退。
 			s.log.Error("优雅退出未完成，将强制退出", "err", err)

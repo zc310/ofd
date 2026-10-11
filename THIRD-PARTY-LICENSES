@@ -36,10 +36,6 @@ Source: https://github.com/dkrisman/gobig2
 License: Apache-2.0
 Source: https://github.com/emmansun/gmsm
 
-### github.com/fasthttp/router v1.5.4
-License: BSD-3-Clause
-Source: https://github.com/fasthttp/router
-
 ### github.com/fogleman/gg v1.3.0
 License: MIT
 Source: https://github.com/fogleman/gg

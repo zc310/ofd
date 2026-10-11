@@ -267,7 +267,7 @@ func TestStatsSurvivePrune(t *testing.T) {
 	}
 }
 
-func fetchStats(t *testing.T, client *fasthttp.Client) statsView {
+func fetchStats(t *testing.T, client *testHTTPClient) statsView {
 	t.Helper()
 	got := do(t, client, fasthttp.MethodGet, "/v1/stats", "")
 	if got.status != fasthttp.StatusOK {

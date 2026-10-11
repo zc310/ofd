@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/valyala/fasthttp"
 
+	"github.com/zc310/ofd/internal/convertersvc"
 	"github.com/zc310/ofd/internal/jobstore"
 )
 
@@ -234,6 +237,56 @@ func TestFinishInlineRecordsCancellation(t *testing.T) {
 	if got.State != jobstore.StateCancelled {
 		t.Errorf("状态 = %s，期望 cancelled（客户端主动放弃不算转换失败）", got.State)
 	}
+}
+
+func TestInlineCancelsWhenTCPClientDisconnects(t *testing.T) {
+	s, store, _ := newTestServer(t)
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	s.inlineRun = func(ctx context.Context, _ convertersvc.Spec) (convertersvc.Result, error) {
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return convertersvc.Result{}, ctx.Err()
+	}
+	client := newPipeServer(t, s.Handler())
+	addr := strings.TrimPrefix(client.baseURL, "http://")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := submitInlineBody(t, "pdf")
+	if _, err := fmt.Fprintf(conn, "POST /v1/convert HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", addr, testAPIKey, len(body), body); err != nil {
+		_ = conn.Close()
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		_ = conn.Close()
+		t.Fatal("同步转换没有启动")
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("客户端 TCP 断连后转换 context 未取消")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs, err := store.ListByState(jobstore.StateCancelled, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(jobs) != 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("断连后的同步任务未记录为 cancelled")
 }
 
 func truncate(s string) string {

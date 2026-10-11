@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/valyala/fasthttp"
 
 	"github.com/zc310/ofd/internal/jobstore"
 )
@@ -27,11 +26,11 @@ const promContentType = "text/plain; version=" + prometheusTextVersion + "; char
 // 标签只有 from、to、state 三个有限集合值，是刻意的约束。基数一旦随任务数
 // 或文件名增长，就是几百万条 series——那是把 Prometheus 和本服务一起拖垮的
 // 标准做法。单任务的明细在 jobstore 里，/metrics 只负责聚合。
-func (s *Server) handleMetrics(ctx *fasthttp.RequestCtx) {
+func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	snap, err := s.store.Snapshot()
 	if err != nil {
 		s.log.Error("读取统计失败", "err", err)
-		writeError(ctx, fasthttp.StatusInternalServerError, "internal_error", "读取统计失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "读取统计失败")
 		return
 	}
 	// 队列深度是 gauge，每次抓取现算。读失败时仍然输出累计计数与运行时指标：
@@ -42,9 +41,11 @@ func (s *Server) handleMetrics(ctx *fasthttp.RequestCtx) {
 		s.log.Error("读取队列深度失败", "err", err)
 		depth = nil
 	}
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType(promContentType)
-	ctx.SetBody(renderMetrics(snap, depth, s.cfg.FastWorkers, s.cfg.HeavyWorkers, s.cfg.NotifyWorkers))
+	w.Header().Set("Content-Type", promContentType)
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(renderMetrics(snap, depth, s.cfg.FastWorkers, s.cfg.HeavyWorkers, s.cfg.NotifyWorkers)); err != nil {
+		s.log.Debug("写 metrics 响应失败", "err", err)
+	}
 }
 
 // renderMetrics 渲染 Prometheus 文本格式。

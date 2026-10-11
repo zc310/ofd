@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +18,6 @@ import (
 	"github.com/goccy/go-json"
 
 	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttputil"
 
 	"github.com/zc310/ofd/internal/allowlist"
 	"github.com/zc310/ofd/internal/convertersvc"
@@ -68,18 +69,17 @@ func newTestServerWithList(t *testing.T, entries []string) (*Server, *jobstore.S
 	return NewServer(cfg, store, registry, list, &RemoteTargets{}, convertersvc.New(cfg.TempDir, list), testLogger()), store, cfg, list
 }
 
-// newPipeServer 起一个内存监听的服务，返回 client 与地址。
-func newPipeServer(t *testing.T, handler fasthttp.RequestHandler) *fasthttp.Client {
+type testHTTPClient struct {
+	*http.Client
+	baseURL string
+}
+
+// newPipeServer 起一个临时 HTTP 服务，测试请求经过真实 net/http 连接栈。
+func newPipeServer(t *testing.T, handler http.Handler) *testHTTPClient {
 	t.Helper()
-	ln := fasthttputil.NewInmemoryListener()
-	server := &fasthttp.Server{Handler: handler}
-	go func() { _ = server.Serve(ln) }()
-	t.Cleanup(func() {
-		_ = server.Shutdown()
-	})
-	return &fasthttp.Client{
-		Dial: func(addr string) (net.Conn, error) { return ln.Dial() },
-	}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return &testHTTPClient{Client: server.Client(), baseURL: server.URL}
 }
 
 type response struct {
@@ -96,11 +96,13 @@ type response struct {
 }
 
 // collectHeaders 收集响应头。
-func collectHeaders(h *fasthttp.ResponseHeader) map[string]string {
+func collectHeaders(h http.Header) map[string]string {
 	out := make(map[string]string, 8)
-	h.VisitAll(func(key, value []byte) {
-		out[string(key)] = string(value)
-	})
+	for key, values := range h {
+		if len(values) != 0 {
+			out[key] = values[0]
+		}
+	}
 	return out
 }
 
@@ -114,7 +116,7 @@ func (r response) header(name string) string {
 	return ""
 }
 
-func do(t *testing.T, client *fasthttp.Client, method, path, body string) response {
+func do(t *testing.T, client *testHTTPClient, method, path, body string) response {
 	t.Helper()
 	return doAuth(t, client, method, path, body, testAPIKey)
 }
@@ -124,32 +126,36 @@ func do(t *testing.T, client *fasthttp.Client, method, path, body string) respon
 // 绝大多数用例只关心业务行为，令牌在 do 里统一补上；只有验证认证本身的
 // 用例才用 doAuth 传空串或错值——否则每个用例都得先处理 401，认证
 // 相关的断言也就淹没在噪音里。
-func doAuth(t *testing.T, client *fasthttp.Client, method, path, body, token string) response {
+func doAuth(t *testing.T, client *testHTTPClient, method, path, body, token string) response {
 	t.Helper()
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	req.Header.SetMethod(method)
-	// Host 必填：fasthttp 的 client 不会替请求补上。
-	req.Header.SetHost("ofd-server.test")
-	req.SetRequestURI(path)
+	var requestBody io.Reader
+	if body != "" {
+		requestBody = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, client.baseURL+path, requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	if body != "" {
-		req.SetBodyString(body)
-	}
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(resp)
-	if err := client.Do(req, resp); err != nil {
+	resp, err := client.Do(req)
+	if err != nil {
 		t.Fatalf("%s %s 失败: %v", method, path, err)
 	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("读取 %s %s 响应失败: %v", method, path, err)
+	}
+	contentLength := int(resp.ContentLength)
 	return response{
-		status:        resp.StatusCode(),
-		body:          string(resp.Body()),
-		contentLength: resp.Header.ContentLength(),
-		jobID:         string(resp.Header.Peek(jobIDHeader)),
-		contentType:   string(resp.Header.ContentType()),
-		headers:       collectHeaders(&resp.Header),
+		status:        resp.StatusCode,
+		body:          string(responseBody),
+		contentLength: contentLength,
+		jobID:         resp.Header.Get(jobIDHeader),
+		contentType:   resp.Header.Get("Content-Type"),
+		headers:       collectHeaders(resp.Header),
 	}
 }
 
@@ -843,21 +849,20 @@ func TestAPIKeyHeaderVariants(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	client := newPipeServer(t, s.Handler())
 
-	req := fasthttp.AcquireRequest()
-	req.Header.SetMethod(fasthttp.MethodGet)
-	req.Header.SetHost("ofd-server.test")
-	req.SetRequestURI("/v1/jobs/does-not-exist")
-	req.Header.Set(apiKeyHeader, testAPIKey)
-	resp := fasthttp.AcquireResponse()
-	if err := client.Do(req, resp); err != nil {
+	req, err := http.NewRequest(http.MethodGet, client.baseURL+"/v1/jobs/does-not-exist", nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// 令牌通过了，落到"任务不存在"而不是 401。
-	if resp.StatusCode() == fasthttp.StatusUnauthorized {
-		t.Fatalf("X-OFD-Api-Key 未被接受: %d", resp.StatusCode())
+	req.Header.Set(apiKeyHeader, testAPIKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
 	}
-	fasthttp.ReleaseRequest(req)
-	fasthttp.ReleaseResponse(resp)
+	defer resp.Body.Close()
+	// 令牌通过了，落到"任务不存在"而不是 401。
+	if resp.StatusCode == fasthttp.StatusUnauthorized {
+		t.Fatalf("X-OFD-Api-Key 未被接受: %d", resp.StatusCode)
+	}
 }
 
 // TestProbesDoNotRequireKey 探针必须保持免鉴权。
