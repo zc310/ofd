@@ -46,7 +46,8 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	// SVG 向量嵌入：无裁剪时直接将 SVG 画布以矢量方式嵌入页面画布，
 	// 使 PDF 输出保持矢量（边框、文字等清晰），而非 96dpi 位图。
 	if isSVGFormat(resMedia.Format, resMedia.MediaFile) &&
-		(object.Clips == nil || len(object.Clips.Clip) == 0) && parentClip == nil {
+		(object.Clips == nil || len(object.Clips.Clip) == 0) && parentClip == nil &&
+		graphicOpacity(object.Alpha) == 255 && object.ImageMask == 0 {
 		if svg, err := p.decodeSVGScene(resMedia.MediaFile, resMedia.Format); err == nil && svg.Width() > 0 && svg.Height() > 0 {
 			// svg 画布为 y 向上、左下角原点坐标系，而 imageMatrixWH 面向
 			// y 向下（图像像素）坐标系，需先翻转 y 轴再应用放置矩阵。
@@ -59,15 +60,10 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 					rendered := svg.RenderVector(ctx, m)
 					p.svgMu.Unlock()
 					if rendered {
+						p.drawImageBorder(ctx, object, pb.Height)
 						return
 					}
-					// 非矢量后端：栅格化 SVG 后再经 RenderImage 贴回，
-					// 保持图形内容可见（失矢量清晰度）。
-					svgImage := svg.Rasterize(geom.DPI(96))
-					if svgImage != nil && !svgImage.Bounds().Empty() {
-						ctx.RenderImage(svgImage, m)
-						return
-					}
+					// 非矢量后端走下面的位图路径，按像素尺寸重新计算放置矩阵。
 				}
 			}
 		}
@@ -175,7 +171,7 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 	if border.BorderColor != nil {
 		stroke = p.colorRGBA(*border.BorderColor)
 	}
-	ctx.SetStrokeColor(stroke)
+	ctx.SetStrokeColor(scaleAlpha(stroke, graphicOpacity(object.Alpha)))
 	ctx.DrawPath(box.X, pageHeight-(box.Y+box.Height), path)
 }
 

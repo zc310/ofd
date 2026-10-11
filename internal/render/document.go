@@ -32,8 +32,10 @@ type Document struct {
 	svgCanvases   *utils.LRU[string, SVGScene]
 	sealMu        sync.Mutex
 	sealDocs      map[[32]byte]*sealDocEntry
+	sealClosed    bool
+	closeOnce     sync.Once
 	ctColorMu     sync.Mutex
-	ctColorCache  map[*models.CTColor]*CTColor
+	ctColorCache  *utils.LRU[*models.CTColor, *CTColor]
 	colorSpacesMu sync.Mutex
 	colorSpaces   map[*models.ColorSpace]*colorSpaceResources
 }
@@ -103,11 +105,12 @@ func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 }
 
 const (
-	imageCacheCapacity = 128
-	imageCacheBytes    = 64 << 20
-	svgCacheCapacity   = 64
-	svgCacheBytes      = 16 << 20
-	defaultRenderDPI   = 96
+	imageCacheCapacity   = 128
+	imageCacheBytes      = 64 << 20
+	svgCacheCapacity     = 64
+	svgCacheBytes        = 16 << 20
+	defaultRenderDPI     = 96
+	ctColorCacheCapacity = 256
 )
 
 // Close 释放文档持有的渲染期资源，最重要的是字体。
@@ -120,12 +123,25 @@ func (p *Document) Close() {
 	if p == nil {
 		return
 	}
-	if p.fonts != nil {
-		p.fonts.Close()
-	}
-	p.colorSpacesMu.Lock()
-	p.colorSpaces = nil
-	p.colorSpacesMu.Unlock()
+	p.closeOnce.Do(func() {
+		p.sealMu.Lock()
+		p.sealClosed = true
+		seals := p.sealDocs
+		p.sealDocs = nil
+		p.sealMu.Unlock()
+		for _, entry := range seals {
+			entry.close()
+		}
+		if p.fonts != nil {
+			p.fonts.Close()
+		}
+		p.ctColorMu.Lock()
+		p.ctColorCache = nil
+		p.ctColorMu.Unlock()
+		p.colorSpacesMu.Lock()
+		p.colorSpaces = nil
+		p.colorSpacesMu.Unlock()
+	})
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
@@ -333,7 +349,12 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	}
 	pb := content.Area.PhysicalBox
 	annots := p.Document.GetAnnotation(page.ID)
-	// Watermark 水印注解按背景层绘制，位于模板之后、页面内容之前。
+	for _, template := range content.Template {
+		if !p.templateForeground(template) {
+			p.template(ctx, template, pb, budget)
+		}
+	}
+	// Watermark 水印注解位于背景模板之后、页面内容之前。
 	if annots != nil {
 		for _, item := range annots.Annots {
 			if item != nil && item.Type == models.AnnotTypeWatermark {
@@ -341,12 +362,13 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 			}
 		}
 	}
-	for _, template := range content.Template {
-		p.template(ctx, template, pb, budget)
-	}
-
 	if content.Content != nil {
 		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
+	}
+	for _, template := range content.Template {
+		if p.templateForeground(template) {
+			p.template(ctx, template, pb, budget)
+		}
 	}
 	if seal {
 		p.drawSeals(ctx, page.ID, pb)
@@ -366,6 +388,19 @@ func (p *Document) Template(ctx DrawContext, template models.Template, pb models
 	var budget renderBudget
 	budget.reset()
 	p.template(ctx, template, pb, &budget)
+}
+
+func (p *Document) templateForeground(template models.Template) bool {
+	order := template.ZOrder
+	if order == "" {
+		for _, definition := range p.Document.CommonData.TemplatePages {
+			if definition.ID == models.StID(template.TemplateID) {
+				order = definition.ZOrder
+				break
+			}
+		}
+	}
+	return order == "Foreground"
 }
 
 func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 const (
@@ -52,8 +53,11 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	}
 	p.ctColorMu.Lock()
 	defer p.ctColorMu.Unlock()
-	if cc, ok := p.ctColorCache[source]; ok {
-		return cc
+	if p.ctColorCache != nil {
+		if cc, ok := p.ctColorCache.Get(source); ok {
+			copy := *cc
+			return &copy
+		}
 	}
 	cc := &CTColor{}
 	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
@@ -63,10 +67,11 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 
 	cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
 	if p.ctColorCache == nil {
-		p.ctColorCache = make(map[*models.CTColor]*CTColor)
+		p.ctColorCache = utils.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
 	}
-	p.ctColorCache[source] = cc
-	return cc
+	p.ctColorCache.Add(source, cc)
+	copy := *cc
+	return &copy
 }
 
 func identityGradientTransform(point models.StPos) geom.Point {
@@ -202,11 +207,11 @@ func graphicOpacity(alpha *uint8) uint8 {
 
 func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {
 	if stroke == nil || (!stroke.HasValue && stroke.Gradient == nil) {
-		ctx.SetStrokeColor(geom.Black)
+		ctx.SetStrokeColor(scaleAlpha(geom.Black, graphicOpacity(object.Alpha)))
 	} else if stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else {
-		ctx.SetStrokeColor(stroke.Value)
+		ctx.SetStrokeColor(scaleAlpha(stroke.Value, graphicOpacity(object.Alpha)))
 	}
 	ctx.SetStrokeCapper(getLineCap(object.Cap))
 	joiner := getLineJoin(object.Join)
