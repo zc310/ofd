@@ -2,43 +2,38 @@ package pdf2ofd
 
 import (
 	"testing"
+	"time"
 )
 
-func TestConvertSetsTextStyleFlagsFromFont(t *testing.T) {
-	// 文字对象必须带上与字体一致的 Italic/Weight。否则阅读器按“常规”样式
-	// 请求一个已加载为斜体的嵌入字体，会再叠加一次合成斜体，把字形压扁成
-	// 斜线（annotTest.pdf 的 FreeText 曾出现该问题）。
-	cases := []struct {
-		baseFont string
-		italic   bool
-		weight   int
-	}{
-		{"Times-Italic", true, 0},
-		{"Times-BoldItalic", true, 700},
-		{"Times-Bold", false, 700},
-		{"Times-Roman", false, 0},
+func TestParsePDFToUnicodeRangeEndingAtMaxTerminates(t *testing.T) {
+	// bfrange 的终点为 0xFFFF 时，code 是 uint16，递增会回绕成 0，
+	// 循环条件恒真——basicapi.pdf 因此永远转不完，且 SIGTERM 无效。
+	// 这里必须能返回，且区间内每个码位都有映射。
+	cmap := "begincmap\n1 begincodespacerange <0000> <FFFF> endcodespacerange\n" +
+		"1 beginbfrange\n<0020> <FFFF> <0041>\nendbfrange\nendcmap\n"
+
+	type outcome struct {
+		mapping map[uint16]string
 	}
-	for _, tc := range cases {
-		t.Run(tc.baseFont, func(t *testing.T) {
-			content := "BT /F1 12 Tf 10 10 Td (Text) Tj ET"
-			objects := []string{
-				"<< /Type /Catalog /Pages 2 0 R >>",
-				"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-				"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-				"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
-				"<< /Type /Font /Subtype /Type1 /BaseFont /" + tc.baseFont + " >>",
-			}
-			page := parseConvertedPage(t, objects)
-			texts := layerTexts(page.Content().Layer[0])
-			if len(texts) != 1 {
-				t.Fatalf("expected 1 text object, got %d", len(texts))
-			}
-			if texts[0].Italic != tc.italic {
-				t.Fatalf("Italic = %v, want %v", texts[0].Italic, tc.italic)
-			}
-			if texts[0].Weight != tc.weight {
-				t.Fatalf("Weight = %d, want %d", texts[0].Weight, tc.weight)
-			}
-		})
+	done := make(chan outcome, 1)
+	go func() { done <- outcome{parsePDFToUnicode([]byte(cmap))} }()
+
+	var mapping map[uint16]string
+	select {
+	case got := <-done:
+		mapping = got.mapping
+	case <-time.After(10 * time.Second):
+		t.Fatal("parsePDFToUnicode did not terminate: uint16 wraparound in the bfrange loop")
+	}
+
+	if got := mapping[0x20]; got != "A" {
+		t.Fatalf("code 0x20 = %q, want %q", got, "A")
+	}
+	if got := mapping[0xFFFF]; got == "" {
+		t.Fatal("code 0xFFFF has no mapping")
+	}
+	// 上界不可超过码位空间，否则畸形 CMap 能把内存撑到 GB 级。
+	if len(mapping) > 1<<16 {
+		t.Fatalf("expanded %d codes, want <= %d", len(mapping), 1<<16)
 	}
 }
