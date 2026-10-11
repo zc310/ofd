@@ -212,16 +212,7 @@ func run(opts *options) error {
 	convert.URLTimeout = cfg.URLTimeout.Duration()
 	convert.DefaultOptions = convertOptions
 
-	// 通知用的出网客户端不跟随重定向：回调地址是我们自己配的，
-	// 跟到别处没有好处，还可能把签名头与任务内容带到第三方。
-	deliverer := notify.NewDeliverer(registry, &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			MaxIdleConnsPerHost: 4,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	})
+	deliverer := notify.NewDeliverer(registry, newNotifyHTTPClient())
 
 	jobRunner := runner.New(store, convert, deliverer, runner.Config{
 		FastWorkers:    cfg.FastWorkers,
@@ -256,4 +247,19 @@ func run(opts *options) error {
 		"fast_workers", cfg.FastWorkers,
 		"heavy_workers", cfg.HeavyWorkers)
 	return server.Start(ctx)
+}
+
+func newNotifyHTTPClient() *http.Client {
+	// 回调地址是显式配置的；重定向可能把签名头与任务内容带到第三方。
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			MaxIdleConnsPerHost: 4,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
 }
