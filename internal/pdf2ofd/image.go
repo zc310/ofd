@@ -545,7 +545,14 @@ func pdfImageSoftMask(ctx *model.Context, stream *types.StreamDict) *types.Strea
 
 // applyPDFImageSoftMask 把灰度软掩码作为 alpha 通道应用到已编码的图像上，
 // 返回带透明度的 PNG。base 必须是可解码的 PNG/JPEG。
-func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.StreamDict) ([]byte, bool) {
+func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.StreamDict, controls ...*conversionControl) ([]byte, bool) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	if control.check() != nil {
+		return nil, false
+	}
 	baseImage, _, err := image.Decode(bytes.NewReader(base))
 	if err != nil {
 		return nil, false
@@ -560,13 +567,25 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		maskBPC = 1
 	}
 	if !hasJBIG2Filter(maskStream) && !hasJPXFilter(maskStream) {
-		if maskBPC > 8 {
-			// 高位深软掩码缺少通用样本解码路径，保持原图。
+		if maskBPC > 8 && maskBPC != 16 {
 			return nil, false
 		}
 		if len(maskStream.Content) == 0 && maskStream.Decode() != nil {
 			return nil, false
 		}
+	}
+	// 任一输入使用 16 位通道时，颜色与 alpha 都写入非预乘的 16 位 PNG。
+	// 不能先把掩码压到 8 位，否则相邻 alpha 样本会合并、渐变出现色阶。
+	highPrecision := maskBPC == 16
+	switch baseImage.(type) {
+	case *image.Gray16, *image.RGBA64, *image.NRGBA64:
+		highPrecision = true
+	}
+	if highPrecision {
+		return applyPDFImageSoftMask16(ctx, baseImage, maskStream, maskWidth, maskHeight, maskBPC, control)
+	}
+	if control.consumeOperations(int64(maskWidth)*int64(maskHeight)) != nil {
+		return nil, false
 	}
 	samples, err := pdfImageMaskSamples(ctx, maskStream, maskWidth, maskHeight, maskBPC)
 	if err != nil {
@@ -574,6 +593,9 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 	}
 	bounds := baseImage.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
+	if control.consumeOperations(int64(width)*int64(height)) != nil {
+		return nil, false
+	}
 	// 基础图像本身不透明，这里写入的是非预乘 RGB。必须使用 NRGBA：若写入
 	// RGBA（预乘），PNG 编码会对低 alpha 像素做反预乘，把接近透明的颜色放大成
 	// 红/品红色边缘。
@@ -581,6 +603,9 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 	// 逐像素调用 image.At 会为每个像素在堆上装箱一个 color.Color，是软掩码
 	// 合成的最大分配来源。这里改用不装箱的取值路径。
 	for y := 0; y < height; y++ {
+		if control.check() != nil {
+			return nil, false
+		}
 		maskY := pdfSoftMaskRow(y, maskHeight, height)
 		maskBase := maskY * maskWidth
 		row := rgba.PixOffset(0, y)
@@ -1252,7 +1277,7 @@ func pdfImageDecode(ctx *model.Context, stream *types.StreamDict, components int
 		return values
 	}
 	for i := 0; i < components*2; i++ {
-		if value, ok := numberValue(array[i]); ok {
+		if value, ok := dereferencedPDFNumber(ctx, array[i]); ok {
 			values[i] = value
 		}
 	}
@@ -1317,15 +1342,28 @@ func encodePDFImage16(ctx *model.Context, stream *types.StreamDict, width, heigh
 	return encoded.Bytes(), "PNG", nil
 }
 
-func decodePDFImageSamples16(ctx *model.Context, stream *types.StreamDict, width, height, components int) ([]uint16, error) {
+func decodePDFImageSamples16(ctx *model.Context, stream *types.StreamDict, width, height, components int, controls ...*conversionControl) ([]uint16, error) {
+	if components < 1 || components > 4 || width <= 0 || height <= 0 || width > int(^uint(0)>>1)/components/2 {
+		return nil, errors.New("16 位图像尺寸或颜色分量数量无效")
+	}
 	rowBytes := width * components * 2
 	data := stream.Content
-	if width <= 0 || height <= 0 || rowBytes <= 0 || len(data) < rowBytes*height {
+	if height > len(data)/rowBytes {
 		return nil, errors.New("PNG 图像数据长度无效")
+	}
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	if err := control.consumeOperations(int64(width) * int64(height) * int64(components)); err != nil {
+		return nil, err
 	}
 	decode := pdfImageDecode(ctx, stream, components)
 	samples := make([]uint16, width*height*components)
 	for y := 0; y < height; y++ {
+		if err := control.check(); err != nil {
+			return nil, err
+		}
 		row := data[y*rowBytes : (y+1)*rowBytes]
 		for x := 0; x < width; x++ {
 			for c := 0; c < components; c++ {

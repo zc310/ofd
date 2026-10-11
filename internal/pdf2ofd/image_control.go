@@ -253,7 +253,7 @@ func (p *pdfInterpreter) applyImageSoftMask(data []byte, mask *types.StreamDict)
 			return nil, false
 		}
 	}
-	masked, ok := applyPDFImageSoftMask(p.ctx, data, mask)
+	masked, ok := applyPDFImageSoftMask(p.ctx, data, mask, p.control)
 	if !ok {
 		p.report("image.mask", "软掩码无法解码，保留原图")
 	}

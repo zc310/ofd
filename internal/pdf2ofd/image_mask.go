@@ -24,6 +24,14 @@ func (p *pdfInterpreter) imageMaskData(stream *types.StreamDict, data []byte, fo
 				p.report("image.mask", "软掩码不是可用的图像流，保留原图")
 				return data, format
 			}
+			if mask.Dict["Matte"] != nil {
+				masked, err := p.imageMatteData(stream, mask)
+				if err != nil {
+					p.report("image.mask_matte", err.Error()+"，保留基础图")
+					return data, format
+				}
+				return masked, "PNG"
+			}
 			if masked, ok := p.applyImageSoftMask(data, mask); ok {
 				return masked, "PNG"
 			}
