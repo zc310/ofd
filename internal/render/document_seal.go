@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"image"
 	"image/color"
 	"image/draw"
@@ -163,17 +164,34 @@ func clampInt(v, lo, hi int) int {
 // 解析其内嵌字体（实测占印章页渲染耗时的近一半）。mu 串行化对共享文档的
 // 绘制，保证平行渲染安全。
 type sealDocEntry struct {
-	mu  sync.Mutex
-	ofd *parser.OFD
-	doc *Document
+	mu     sync.Mutex
+	ofd    *parser.OFD
+	doc    *Document
+	closed bool
+}
+
+func (entry *sealDocEntry) close() {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.closed {
+		return
+	}
+	entry.closed = true
+	entry.doc.Close()
+	_ = entry.ofd.Close()
 }
 
 // sealDocument 返回印章对应的缓存文档，不存在时解析并缓存。key 由印章
 // 数据与父文档回退字体列表共同决定，确保回退字体变化时不会复用旧文档。
 func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
-	key := sealCacheKey(data, p.fallbackFontFamilies())
+	fallbacks := p.fallbackFontFamilies()
+	key := sealCacheKey(data, fallbacks)
 
 	p.sealMu.Lock()
+	if p.sealClosed {
+		p.sealMu.Unlock()
+		return nil, errors.New("渲染文档已关闭")
+	}
 	entry := p.sealDocs[key]
 	p.sealMu.Unlock()
 	if entry != nil {
@@ -189,8 +207,9 @@ func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
 		return nil, nil
 	}
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	for _, family := range p.fallbackFontFamilies() {
+	for _, family := range fallbacks {
 		if err := doc.UseFallbackFont(family); err != nil {
+			doc.Close()
 			_ = ofd.Close()
 			return nil, err
 		}
@@ -198,9 +217,14 @@ func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
 
 	entry = &sealDocEntry{ofd: &ofd, doc: doc}
 	p.sealMu.Lock()
+	if p.sealClosed {
+		p.sealMu.Unlock()
+		entry.close()
+		return nil, errors.New("渲染文档已关闭")
+	}
 	if existing := p.sealDocs[key]; existing != nil {
 		p.sealMu.Unlock()
-		_ = ofd.Close()
+		entry.close()
 		return existing, nil
 	}
 	if p.sealDocs == nil {
@@ -233,6 +257,9 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	// 缓存文档可能被并行渲染复用，串行化本印章的绘制。
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	if entry.closed {
+		return errors.New("印章文档已关闭")
+	}
 
 	page, err := entry.ofd.Documents[0].GetPage(0)
 	if err != nil {

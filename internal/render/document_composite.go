@@ -480,10 +480,8 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	path.Transform(matrix)
 
 	// Composite Alpha 表示复合图元整体透明度。当前情况只有一个纯色填充，
-	// 因此可以直接合并到填充颜色中，不需要创建独立的透明度分组。
-	if object.Alpha != nil {
-		pathObject.FillColor = cloneCompositeColor(pathObject.FillColor, graphicOpacity(object.Alpha))
-	}
+	// 合并到图元 Alpha，保留原始颜色指针供缓存复用。
+	pathObject.Alpha = compositeItemAlpha(pathObject.Alpha, object.Alpha)
 	ctx.Push()
 	defer ctx.Pop()
 	// 该分支只处理纯填充路径（simpleCompositePath 要求未勾边），描边缩放不适用。
@@ -542,7 +540,7 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 // copyCompositeVectorItems 复制复合单元里可矢量绘制的内容，供矢量分支直接
 // 绘制，避免就地修改文档模型。图像、嵌套复合图元以及非法/不可见图元无法可靠
 // 地并入父级绘制表面，返回 ok=false 交回栅格化。Composite Alpha 表示整体
-// 透明度，矢量分支没有独立透明度分组，与单路径分支一致地合并到颜色里。
+// 透明度，矢量分支没有独立透明度分组，合并到子图元 Alpha 后由绘制函数处理。
 func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) ([]models.PageItem, bool) {
 	if depth > maxCompositeDepth {
 		return nil, false
@@ -558,7 +556,7 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 			if !text.VisibleValue() || !text.CTM.IsFinite() || !text.Boundary.IsFinite() {
 				return nil, false
 			}
-			text.FillColor, text.StrokeColor = compositeAlphaColors(alpha, text.FillColor, text.StrokeColor)
+			text.Alpha = compositeItemAlpha(text.Alpha, alpha)
 			out = append(out, models.PageItem{Kind: models.PageItemText, Text: &text})
 		case models.PageItemPath:
 			if item.Path == nil {
@@ -568,7 +566,7 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 			if !pathObject.VisibleValue() || !pathObject.CTM.IsFinite() || !pathObject.Boundary.IsFinite() {
 				return nil, false
 			}
-			pathObject.FillColor, pathObject.StrokeColor = compositeAlphaColors(alpha, pathObject.FillColor, pathObject.StrokeColor)
+			pathObject.Alpha = compositeItemAlpha(pathObject.Alpha, alpha)
 			out = append(out, models.PageItem{Kind: models.PageItemPath, Path: &pathObject})
 		case models.PageItemBlock:
 			if item.Block == nil {
@@ -588,24 +586,13 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 	return out, true
 }
 
-// compositeAlphaColors 把复合图元整体透明度合并到填充与描边色上。矢量分支没有
-// 独立的透明度分组，与单路径分支一致地直接改颜色；alpha 为空时原样返回。
-func compositeAlphaColors(alpha *uint8, fill, stroke *models.CTColor) (*models.CTColor, *models.CTColor) {
-	if alpha == nil {
-		return fill, stroke
+// compositeItemAlpha 合并父子图元透明度，不复制颜色或修改资源模型。
+func compositeItemAlpha(child, parent *uint8) *uint8 {
+	if parent == nil {
+		return child
 	}
-	opacity := graphicOpacity(alpha)
-	return cloneCompositeColor(fill, opacity), cloneCompositeColor(stroke, opacity)
-}
-
-func cloneCompositeColor(source *models.CTColor, alpha uint8) *models.CTColor {
-	if source == nil || source.Value == nil {
-		return source
-	}
-	clone := *source
-	clone.Value = &models.Color{RGBA: source.Value.RGBA}
-	clone.Value.RGBA = scaleAlpha(clone.Value.RGBA, alpha)
-	return &clone
+	alpha := uint8(uint16(graphicOpacity(child)) * uint16(*parent) / 255)
+	return &alpha
 }
 
 func simpleCompositePath(object models.PathObject) bool {
