@@ -2,13 +2,16 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/benoitkugler/textlayout/fonts/glyphsnames"
 	"github.com/benoitkugler/textlayout/fonts/simpleencodings"
+	pdffont "github.com/pdfcpu/pdfcpu/pkg/font"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/tdewolff/font"
 	"github.com/zc310/fontfix"
@@ -76,7 +79,9 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	// /Differences 字形名。必须按标准字形表补出 Unicode，否则解码会退化成
 	// 原始字节，正文出现乱码。ToUnicode 优先，仅补齐缺失的编码。
 	if font.codeBytes == 1 {
-		p.applySimpleEncoding(font, dict)
+		if mapping := p.applySimpleEncoding(font, dict); len(font.widths) == 0 {
+			applyCoreFontWidths(font, mapping)
+		}
 	}
 	font.codeToGID = p.pdfFontCodeToGID(*font, dict)
 	if len(font.data) > 0 {
@@ -158,10 +163,12 @@ func isPrivateUseRune(r rune) bool {
 // 部分子集字体没有 /ToUnicode，只给出 /Encoding 的 /Differences（标准字形名）。
 // 不补齐时 decodePDFText 会退回原始字节，正文出现乱码。已有 ToUnicode 的编码
 // 保持不变，仅补充缺失项。
-func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict) {
+//
+// 返回本次按 /Encoding 得到的 code→Unicode 映射，供基础 14 字体补字宽复用。
+func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict) map[uint16]string {
 	encodingObject, found := dict.Find("Encoding")
 	if !found {
-		return
+		return nil
 	}
 	mapping := map[uint16]string{}
 	switch value := encodingObject.(type) {
@@ -170,7 +177,7 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 	default:
 		encodingDict, err := p.ctx.XRefTable.DereferenceDict(encodingObject)
 		if err != nil || encodingDict == nil {
-			return
+			return nil
 		}
 		base := "StandardEncoding"
 		if baseName := encodingDict.NameEntry("BaseEncoding"); baseName != nil {
@@ -202,7 +209,7 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 		}
 	}
 	if len(mapping) == 0 {
-		return
+		return nil
 	}
 	if font.toUnicode == nil {
 		font.toUnicode = map[uint16]string{}
@@ -211,6 +218,58 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 		if _, exists := font.toUnicode[code]; !exists {
 			font.toUnicode[code] = value
 		}
+	}
+	return mapping
+}
+
+// coreFontName 归一化 /BaseFont 并判断是否属于 PDF 基础 14 字体。子集前缀
+// （ABCDEF+Helvetica）要去掉；非基础 14 返回空串。
+func coreFontName(baseFont string) string {
+	name := baseFont
+	// Type1 的子集前缀固定为 6 个字母加 '+'（如 LTHEGL+FZHTK--GBK1-0）。
+	if index := strings.IndexByte(name, '+'); index >= 0 && index == 6 {
+		name = name[index+1:]
+	}
+	if pdffont.IsCoreFont(name) {
+		return name
+	}
+	return ""
+}
+
+// applyCoreFontWidths 用基础 14 字体的内置字宽补齐 font.widths。
+//
+// 这 14 个字体按 PDF 规范不要求写 /Widths，阅读器必须自带度量。不补时
+// pdfCodeWidth 会对每个字符回落到 defaultW（500），整段文字按等宽推进，
+// 字距与实际排版不符（"Hello ASCII" 会算成 27.16mm，正确值是 25.53mm）。
+//
+// mapping 是 applySimpleEncoding 得到的 code→Unicode；字体没写 /Encoding 时
+// 按规范默认使用标准编码。
+func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint16]string) {
+	name := coreFontName(font.familyName)
+	if name == "" {
+		return
+	}
+	if len(mapping) == 0 {
+		// 无 /Encoding：基础 14 默认标准编码。
+		mapping = map[uint16]string{}
+		fillPDFBaseEncoding("StandardEncoding", mapping)
+	}
+	widths := make(map[int]float64, len(mapping))
+	for code, text := range mapping {
+		r, size := utf8.DecodeRuneInString(text)
+		if r == utf8.RuneError || size == 0 {
+			continue
+		}
+		// 只用首码位查字宽：/Differences 指向的合成字形（uniXXXX、字母加
+		// 变音符）没有独立宽度，查不到时交给 defaultW。
+		width, err := pdffont.CharWidth(context.Background(), name, r)
+		if err != nil || width <= 0 {
+			continue
+		}
+		widths[int(code)] = float64(width)
+	}
+	if len(widths) > 0 {
+		font.widths = widths
 	}
 }
 
