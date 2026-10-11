@@ -2,12 +2,123 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
+	fontparser "github.com/tdewolff/font"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/creator"
+	"golang.org/x/image/font/gofont/goregular"
 )
+
+func TestConvertTextBoundaryContainsFontDescendersWithoutMovingBaseline(t *testing.T) {
+	// 使用首页标题的字号、位置和黑体度量；单字 Tj 同时覆盖文字合并路径。
+	for _, tc := range []struct {
+		name       string
+		descriptor string
+		ascent     float64
+		descent    float64
+		textState  string
+	}{
+		{"title", "/Ascent 859 /Descent -156 /FontBBox [-12 -156 996 859]", 1, 0.156, "BT /F1 26.04 Tf 155.76012 493.5474 Td"},
+		{"font bbox exceeds metrics", "/Ascent 900 /Descent -100 /FontBBox [-12 -300 996 1200]", 1.2, 0.3, "BT /F1 26.04 Tf 155.76012 493.5474 Td"},
+		{"text matrix scale", "/Ascent 859 /Descent -156 /FontBBox [-12 -156 996 859]", 1, 0.156, "BT /F1 1 Tf 26.04 0 0 26.04 155.76012 493.5474 Tm"},
+		{"ctm scale", "/Ascent 859 /Descent -156 /FontBBox [-12 -156 996 859]", 1, 0.156, "2 0 0 2 0 0 cm BT /F1 13.02 Tf 77.88006 246.7737 Td"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := tc.textState + " <7535> Tj <5B50> Tj ET"
+			objects := []string{
+				"<< /Type /Catalog /Pages 2 0 R >>",
+				"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+				"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.32 841.92] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+				fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+				"<< /Type /Font /Subtype /Type0 /BaseFont /SimHei /Encoding /UniGB-UCS2-H /DescendantFonts [6 0 R] >>",
+				"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /SimHei /DW 1000 /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> /FontDescriptor 7 0 R >>",
+				"<< /Type /FontDescriptor /FontName /SimHei /Flags 4 /CapHeight 688 /ItalicAngle 0 /StemV 76 " + tc.descriptor + " >>",
+			}
+			page := parseConvertedPage(t, objects)
+			texts := layerTexts(page.Content().Layer[0])
+			if len(texts) != 1 || len(texts[0].TextCode) != 1 || texts[0].TextCode[0].Value != "电子" {
+				t.Fatalf("expected one merged title text, got %+v", texts)
+			}
+			text := texts[0]
+			code := text.TextCode[0]
+			size := 26.04 * pdfPointToMillimeter
+			wantBaseline := 348.3726 * pdfPointToMillimeter
+			if got := text.Boundary.Y + code.Y; math.Abs(got-wantBaseline) > 0.0002 {
+				t.Fatalf("baseline = %g, want %g", got, wantBaseline)
+			}
+			if code.Y+0.0002 < size*tc.ascent {
+				t.Fatalf("boundary clips ascent: baseline offset %g, ascent %g", code.Y, size*tc.ascent)
+			}
+			if got := text.Boundary.Height - code.Y; got+0.0002 < size*tc.descent {
+				t.Fatalf("boundary clips descenders: space below baseline %g, descent %g", got, size*tc.descent)
+			}
+			if len(code.DeltaX) != 1 || math.Abs(code.DeltaX[0]-size) > 0.0002 {
+				t.Fatalf("merged glyph advance = %v, want %g", code.DeltaX, size)
+			}
+		})
+	}
+}
+
+func TestConvertTextBoundaryIncludesEmbeddedFontBounds(t *testing.T) {
+	// 描述符刻意给出很小的范围，实际下伸范围必须取自内嵌字体。
+	content := "BT /F1 20 Tf 30 100 Td (gj) Tj ET"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+		"<< /Type /Font /Subtype /TrueType /BaseFont /GoRegular /Encoding /WinAnsiEncoding /FirstChar 0 /LastChar 255 /Widths [" + strings.Repeat("600 ", 256) + "] /FontDescriptor 6 0 R >>",
+		"<< /Type /FontDescriptor /FontName /GoRegular /Flags 32 /Ascent 1 /Descent -1 /FontBBox [0 -1 1 1] /CapHeight 1 /ItalicAngle 0 /StemV 80 /FontFile2 7 0 R >>",
+		fmt.Sprintf("<< /Length %d /Length1 %d >>\nstream\n%s\nendstream", len(goregular.TTF), len(goregular.TTF), goregular.TTF),
+	}
+	page := parseConvertedPage(t, objects)
+	texts := layerTexts(page.Content().Layer[0])
+	if len(texts) != 1 || len(texts[0].TextCode) != 1 || texts[0].TextCode[0].Value != "gj" {
+		t.Fatalf("expected one embedded-font text, got %+v", texts)
+	}
+	sfnt, err := fontparser.ParseSFNT(goregular.TTF, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := texts[0]
+	code := text.TextCode[0]
+	size := 20 * pdfPointToMillimeter
+	wantDescent := -float64(sfnt.Head.YMin) / float64(sfnt.Head.UnitsPerEm) * size
+	if got := text.Boundary.Height - code.Y; got+0.0002 < wantDescent {
+		t.Fatalf("embedded glyph bounds clipped: space below baseline %g, want >= %g", got, wantDescent)
+	}
+	if got := text.Boundary.Y + code.Y; math.Abs(got-100*pdfPointToMillimeter) > 0.0002 {
+		t.Fatalf("baseline moved to %g", got)
+	}
+}
+
+func TestMergeTextPreservesExplicitOrigins(t *testing.T) {
+	x, y := 0.0, 8.0
+	first := creator.Text{X: 10, Y: 20, Width: 8, Height: 10, Size: 8, Font: "F", Value: "a", TextCodes: []creator.TextCode{{Value: "a", X: &x, Y: &y}}}
+	second := first
+	second.X = 18
+	second.Value = "b"
+	second.TextCodes = []creator.TextCode{{Value: "b", X: &x, Y: &y}}
+	items := mergeAdjacentTextItems([]creator.Item{first, second})
+	if len(items) != 1 {
+		t.Fatalf("expected one merged text, got %d", len(items))
+	}
+	merged := items[0].(creator.Text)
+	code := merged.TextCodes[0]
+	if code.X == nil || *code.X != x || code.Y == nil || *code.Y != y {
+		t.Fatalf("merged text lost explicit origin: %+v", code)
+	}
+	otherY := y + 1
+	second.TextCodes = []creator.TextCode{{Value: "b", X: &x, Y: &otherY}}
+	if got := len(mergeAdjacentTextItems([]creator.Item{first, second})); got != 2 {
+		t.Fatalf("merged texts with different baselines: got %d items", got)
+	}
+}
 
 func TestConvertSetsTextStyleFlagsFromFont(t *testing.T) {
 	// 文字对象必须带上与字体一致的 Italic/Weight。否则阅读器按“常规”样式

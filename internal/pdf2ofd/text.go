@@ -59,8 +59,13 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if font.bold {
 		weight = 700
 	}
-	item := creator.Text{X: x, Y: y - size, Width: math.Max(width, 0.001), Height: math.Max(size, 0.001), Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke,
+	// Boundary 的底边必须包含基线下的笔画。基线显式写入 TextCode，避免扩展
+	// Height 后 creator 的默认基线随之下移；字体度量与字号共用 Tm/CTM 缩放。
+	baseline := math.Max(size, size*font.ascent/1000)
+	descent := size * font.descent / 1000
+	item := creator.Text{X: x, Y: y - baseline, Width: math.Max(width, 0.001), Height: math.Max(baseline+descent, 0.001), Value: text, Font: fontName, Size: size, Fill: &fill, Stroke: stroke,
 		Weight: weight, Italic: font.italic,
+		TextCodes:   []creator.TextCode{{Value: text, Y: &baseline}},
 		FillColor:   ofdColorOpacity(colorToCreator(p.state.fill), p.fillOpacity()),
 		StrokeColor: ofdColorOpacity(colorToCreator(p.state.stroke), p.strokeOpacity())}
 	// 合并 CTM 与文本矩阵后其 x 轴方向决定文字的排版角度。OFD 文字不带 CTM 时
@@ -72,10 +77,10 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	); math.Abs(rotation) > 1e-4 {
 		cos, sin := math.Cos(rotation), math.Sin(rotation)
 		item.CTM = &creator.CTM{cos, sin, -sin, cos, 0, 0}
-		// creator 会把文字码位的 Y 填为行高，渲染端按 CTM 变换码位原点后再叠加
-		// Boundary，因此 X/Y 需扣除该旋转偏移，保证基线起点仍落在 (x, y)。
-		item.X = x + sin*size
-		item.Y = y - cos*size
+		// 渲染端按 CTM 变换码位原点后再叠加 Boundary，因此 X/Y 需扣除
+		// 显式基线的旋转偏移，保证基线起点仍落在 (x, y)。
+		item.X = x + sin*baseline
+		item.Y = y - cos*baseline
 	}
 	// PDF 的 Tz 同时缩放字形宽度和推进量。这里只把推进量计入 Width/DeltaX，
 	// 若不同时输出 OFD 的 HScale，字形本身会按原宽绘制（横向未拉伸），
@@ -94,7 +99,7 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 		item.CGTransforms = transforms
 	}
 	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize*textScaleX, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, ctmScale); len(deltas) > 0 {
-		item.TextCodes = []creator.TextCode{{Value: text, DeltaX: deltas}}
+		item.TextCodes[0].DeltaX = deltas
 	}
 	p.page.Items = append(p.page.Items, item)
 	p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))

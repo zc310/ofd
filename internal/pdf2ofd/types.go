@@ -41,6 +41,8 @@ type pdfFontInfo struct {
 	codeToGID   map[uint16]uint16
 	glyphWidths map[uint16]float64
 	sfnt        *fontparser.SFNT
+	// ascent、descent 保存基线上方和下方的字形范围，单位为千分之一 em，均为非负值。
+	ascent, descent float64
 	// cidFromCmap 标记可以从内嵌 cmap 反查 CID 对应的 Unicode，见 cidUnicode。
 	// 只有 CID 字体且自带字符集映射时置位。
 	cidFromCmap bool

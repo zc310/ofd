@@ -66,6 +66,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		if value, ok := numberValue(missingWidthObject); found && ok {
 			font.defaultW = value
 		}
+		p.loadFontVerticalMetrics(font, descriptor)
 		p.loadEmbeddedFont(font, descriptor)
 	}
 	if object, found := dict.Find("ToUnicode"); found {
@@ -87,6 +88,12 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	if len(font.data) > 0 {
 		if sfnt, err := fontparser.ParseSFNT(font.data, 0); err == nil && sfnt != nil {
 			font.sfnt = sfnt
+			// 内嵌字体的实际字形范围可能超出 PDF 描述符的上伸、下伸度量。
+			if sfnt.Head != nil && sfnt.Head.UnitsPerEm > 0 {
+				scale := 1000 / float64(sfnt.Head.UnitsPerEm)
+				font.ascent = math.Max(font.ascent, float64(sfnt.Head.YMax)*scale)
+				font.descent = math.Max(font.descent, -float64(sfnt.Head.YMin)*scale)
+			}
 		}
 	}
 	font.glyphWidths = pdfFontGlyphWidths(font.data, font.codeToGID)
@@ -113,6 +120,25 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		font.glyphWidths = pdfCIDFontGlyphWidths(font.widths, font.sfnt)
 	}
 	prepareCIDUnicode(font)
+}
+
+// loadFontVerticalMetrics 保留 PDF 字体的垂直范围，供 OFD Boundary 包住下伸笔画。
+// FontBBox 与 Ascent/Descent 取并集，缺失度量时由内嵌字体的 head 表补充。
+func (p *pdfInterpreter) loadFontVerticalMetrics(font *pdfFontInfo, descriptor types.Dict) {
+	if value, ok := p.dereferencedNumber(descriptor["Ascent"]); ok {
+		font.ascent = math.Max(0, value)
+	}
+	if value, ok := p.dereferencedNumber(descriptor["Descent"]); ok {
+		font.descent = math.Max(0, -value)
+	}
+	if box, err := p.ctx.XRefTable.DereferenceArray(descriptor["FontBBox"]); err == nil && len(box) == 4 {
+		if value, ok := p.dereferencedNumber(box[1]); ok {
+			font.descent = math.Max(font.descent, -value)
+		}
+		if value, ok := p.dereferencedNumber(box[3]); ok {
+			font.ascent = math.Max(font.ascent, value)
+		}
+	}
 }
 
 // prepareCIDUnicode 为没有 /ToUnicode 的 CID 字体开启 cmap 反查。
