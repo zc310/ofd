@@ -93,11 +93,24 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | `CCITTFaxDecode`               |  ✅  | 由 pdfcpu 解码后重编码为 PNG（扫描件 ImageMask 常见）。                                                                                                                         |
 | `JBIG2Decode`                  |  ✅  | 由 `github.com/dkrisman/gobig2` 解码为灰度位图；支持 `/JBIG2Globals`、`/Decode` 反相，`ImageMask` 按填充色着色，也可作为 `/SMask`。                                             |
 | `JPXDecode`                    |  ✅  | 由 `github.com/mrjoshuak/go-jpeg2000`（纯 Go JPEG 2000）解码，支持 JP2 与裸码流、灰度/彩色/RGBA 与 `/Decode` 反相；也可作为 `/SMask`。CMYK 裸码流按库的 colr 处理，可能不准确。 |
-| `SMask`（软蒙版）              |  ⚠️  | 图像自身 `/SMask`：1/2/4/8 位灰度样本及 JPEG/JPX/JBIG2 灰度掩码作为 PNG alpha 通道应用到图像；高位深普通栅格软蒙版仍未支持。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject），此时该灰度图像作为 alpha 烘进图像；`/G` 为矢量内容（嵌套 Form）或 `/S` 为 Alpha/Luminosity 以外类型时忽略。 |
+| `SMask`（软蒙版） | ⚠️ | 图像自身 `/SMask`：1/2/4/8/16 位普通灰度样本及 JPEG/JPX/JBIG2 灰度掩码作为 PNG alpha 通道应用到图像。普通 16 位掩码或 16 位底图使用 16 位非预乘 PNG，保留颜色与透明度精度；`Decode` 的区间、反相及间接数值保留。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject）；矢量掩码与一般透明组尚未支持。 |
 | 透明度                         |  ⚠️  | 图像、路径、文字的 `ca`/`CA` 转换为 OFD 透明度（0-255）；不实现混合模式与透明组。                                                                                               |
 
 图片的 `/Interpolate` 尚未单独保留；遮罩合成阶段使用最近邻，生成 PNG 在阅读器放大
 显示时仍按阅读器的图片插值规则处理，极低分辨率样本的二值透明边缘可能显示为平滑过渡。
+
+软掩码合成沿用基础图尺寸，按最近邻对齐不同尺寸的掩码；JPEG/JPX/JBIG2 掩码沿用
+现有的 8 位灰度解码路径。图像自身 `/SMask` 的 `/Matte` 支持普通栅格及 8 位 JPEG 的
+DeviceGray/RGB/CMYK：先应用基础图和掩码的 `Decode`，在原颜色空间还原预混合
+分量，再转换为 RGB 并写入 alpha；保留 8/16 位输出精度，alpha 为 0 时颜色置零。
+JPEG 底图与 JPEG 灰度掩码均支持 Matte；Adobe CMYK/YCCK 先撤销 Go 解码反相，
+再应用 PDF `Decode`，在 CMYK 分量中去底色。JPEG 实际尺寸须与声明一致；支持
+外层 Flate 包装，额外 JPEG 解码计入预算。与码流变换冲突的 `ColorTransform` 覆盖
+暂未支持。带 Matte 的掩码必须与基础图同尺寸；JPX/JBIG2、校准或 ICC 颜色空间的
+Matte 暂未支持。无效或不支持的 Matte 报告 `image.mask_matte`，普通模式保留基础图，
+严格模式失败。掩码采样、Matte 逐分量还原与逐像素合成
+计入 `MaxOperations`，解码、合成及缓存遵循图片预算；逐行检查取消。损坏掩码在
+普通模式报告并保留基础图，严格模式失败。
 
 Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指令与 `copy/roll` 的
 处理量计入 `MaxOperations`，过程嵌套受 `MaxDepth` 约束。当前实现另有 64 层过程、
@@ -139,7 +152,7 @@ Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指
 | 链接                                 | 转为 OFD `Link` 注解（`/Dest` 与 `/A` 的 `GoTo`/`URI`），热区挂在不可见路径上；页内跳转按目标页几何换算坐标，旋转与越界矩形一并处理 |
 | 表单域、弹窗等其余交互注解            | 忽略（仅保留 `/AP` 外观）                                     |
 | ShadingType 1、PatternType 之外的着色        | 忽略（回退为纯色或不填充）                                    |
-| 混合模式（`Multiply` 之外的 `/BM`）、高位深普通栅格软蒙版、非 Luminosity 的图形状态 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
+| 混合模式（`Multiply` 之外的 `/BM`）、非 Luminosity 的图形状态 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
 | JPEG/JPX/JBIG2 图像的颜色键遮罩 | 报告诊断；普通模式保留基础图，严格模式失败 |
 | 数字签名、附件、嵌入式 JavaScript/PostScript | 忽略                                                          |
 | 大纲与链接的其他动作（GoToR、JavaScript、Launch 等） | 忽略（仅保留 `GoTo` 与 URI）                    |
@@ -228,3 +241,9 @@ CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并�
 网格函数、Type 3 子函数、预算/取消/诊断及 Separation/轴向渐变的实际渲染。
 `blend_group_test.go` 覆盖单次着色组的 Multiply 背景合成、组外不透明度、预算及
 `VectorApple.pdf` 标签的颜色/字母对比；该样例文件缺失时只跳过样例视觉回归。
+`image_softmask_test.go` 覆盖 16 位颜色/alpha 精度、灰度底图、Decode 区间与间接数值、
+尺寸对齐、部分透明的实际渲染、Flate 掩码、预算/缓存、损坏掩码回退及合成中取消。
+`image_matte_test.go` 覆盖白/黑 Matte 去底色、灰度/CMYK 原颜色空间还原、8/16 位
+精度、Decode 顺序、透明/不透明端点、间接 Matte 数值、实际渲染及诊断/预算/缓存。
+`image_matte_jpeg_test.go` 覆盖 JPEG 底图/掩码、灰度/RGB、独立生成的 Adobe CMYK/YCCK
+样本、双方 Decode、16 位 alpha、Flate 包装、额外解码预算、缓存及实际尺寸/变换诊断。
