@@ -3,6 +3,7 @@ package canvas
 import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 // 本文件负责从 OFD 文本对象中收集“Unicode 码位 → 字形 ID”映射，并登记到字体
@@ -10,7 +11,14 @@ import (
 // 字形；把文档自身的权威映射注入字体后，渲染就能按原始文本走正常文字接口，
 // 在 PDF 等输出中保留可复制、可搜索的文字。
 
-// RegisterPageGlyphs 扫描页面（含模板与注释）的文字对象并登记字形映射。
+// 内容由解析器加载后保持只读；重新加载时 Content 指针改变。缓存只保留少量
+// 最近内容，避免字形扫描缓存随文档页数增长并长期持有被淘汰的页面。
+const glyphCollectionCapacity = 8
+
+type glyphCollection map[models.StRefID]map[rune]uint16
+
+// RegisterPageGlyphs 收集页面（含模板与注释）的字形映射。命中扫描缓存后仍登记
+// 映射，保证其他页面更新同一字符的字形后，重绘本页能恢复对应映射。
 func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, content *models.PageContent) {
 	if p == nil || doc == nil || content == nil {
 		return
@@ -21,9 +29,9 @@ func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, cont
 		if err != nil || templateContent == nil {
 			continue
 		}
-		collectContentGlyphs(templateContent.Content, collected)
+		mergeGlyphCollection(collected, p.contentGlyphs(templateContent.Content))
 	}
-	collectContentGlyphs(content.Content, collected)
+	mergeGlyphCollection(collected, p.contentGlyphs(content.Content))
 	if page != nil {
 		if annot := doc.GetAnnotation(page.ID); annot != nil {
 			for _, item := range annot.Annots {
@@ -36,6 +44,41 @@ func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, cont
 	}
 	for id, pairs := range collected {
 		p.RegisterGlyphs(id, pairs)
+	}
+}
+
+func (p *Fonts) contentGlyphs(content *models.Content) glyphCollection {
+	if content == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	if p.glyphCollections == nil {
+		p.glyphCollections = utils.NewLRU[*models.Content, glyphCollection](glyphCollectionCapacity, nil)
+	}
+	if collected, ok := p.glyphCollections.Get(content); ok {
+		return collected
+	}
+	collected := make(glyphCollection)
+	collectContentGlyphs(content, collected)
+	p.glyphCollections.Add(content, collected)
+	return collected
+}
+
+// 缓存里的映射只读，合并时复制到本次登记集合，保持模板、页面、注解的覆盖顺序。
+func mergeGlyphCollection(target, source glyphCollection) {
+	for id, pairs := range source {
+		mapping := target[id]
+		if mapping == nil {
+			mapping = make(map[rune]uint16, len(pairs))
+			target[id] = mapping
+		}
+		for r, glyph := range pairs {
+			mapping[r] = glyph
+		}
 	}
 }
 

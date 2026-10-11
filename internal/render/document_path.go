@@ -213,6 +213,9 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 		return false
 	}
 	surface := newOffscreenSurface(width, height, resolution)
+	if surface == nil {
+		return false
+	}
 	surface.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
 	surface.DrawPath(0, 0, paintPath.Copy().Translate(-bounds.X0, -bounds.Y0))
 	var meshImage image.Image = surface.Raster()
