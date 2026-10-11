@@ -602,8 +602,14 @@ func TestConfigValidation(t *testing.T) {
 		{"缺 output_dir", map[string]any{"output_dir": ""}, true},
 		{"通知目标缺 url", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"secret": "s"}}}, true},
 		{"通知用明文 http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://evil.example.com"}}}, true},
+		{"通知拒绝 localhost 前缀主机", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://localhost.attacker.example/hook"}}}, true},
+		{"通知拒绝伪装成回环的 IPv4 前缀", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://127.0.0.1.attacker.example/hook"}}}, true},
 		{"通知用 https", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "https://ok.example.com"}}}, false},
 		{"通知用回环 http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://127.0.0.1:9000"}}}, false},
+		{"通知用 localhost http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://localhost:9000/hook"}}}, false},
+		{"通知用 IPv6 回环 http", map[string]any{"notify_targets": map[string]any{"a": map[string]any{"url": "http://[::1]:9000/hook"}}}, false},
+		{"WebDAV 拒绝 localhost 前缀主机", map[string]any{"webdav_targets": map[string]any{"a": map[string]any{"endpoint": "http://localhost.attacker.example/dav"}}}, true},
+		{"WebDAV 用回环 http", map[string]any{"webdav_targets": map[string]any{"a": map[string]any{"endpoint": "http://127.0.0.1:9000/dav"}}}, false},
 		// 事件名拼错会让该目标一条通知都不收，唯一能观察到的现象是"没收到"。
 		{"通知 events 拼错", map[string]any{"notify_targets": map[string]any{"a": map[string]any{
 			"url": "https://ok.example.com", "events": []string{"succeded"}}}}, true},
