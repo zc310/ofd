@@ -88,3 +88,15 @@ func TestOFDLaGouraudRejectsPartialTailRow(t *testing.T) {
 		t.Fatal("含尾行的规则网格应整体拒绝，而不是静默丢弃尾行")
 	}
 }
+
+func TestMeshGradientHullMatchesTriangleBounds(t *testing.T) {
+	triangles := []ofdMeshTriangle{
+		{p0: geom.Point{X: 2, Y: 3}, p1: geom.Point{X: 8, Y: 1}, p2: geom.Point{X: 5, Y: 9}},
+		{p0: geom.Point{X: -4, Y: 6}, p1: geom.Point{X: 7, Y: -2}, p2: geom.Point{X: 1, Y: 4}},
+	}
+	gradient := newMeshGradient(triangles, nil, false, nil, nil).(*ofdMeshGradient)
+	want := geom.Rect{X0: -4, Y0: -2, X1: 8, Y1: 9}
+	if gradient.hull != want {
+		t.Fatalf("mesh hull = %+v, want %+v", gradient.hull, want)
+	}
+}

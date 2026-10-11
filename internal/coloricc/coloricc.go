@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/kovidgoyal/imaging/prism/meta/icc"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 // Transformer 把某个设备颜色空间（1/3/4 通道）的颜色转换为 sRGB。
@@ -19,6 +20,8 @@ type Transformer struct {
 	pipeline *icc.Pipeline
 	channels int
 	mu       sync.Mutex
+	in       [4]float64
+	out      [4]float64
 }
 
 type cacheKey struct {
@@ -26,10 +29,16 @@ type cacheKey struct {
 	channels int
 }
 
-var buildCache = struct {
-	sync.Mutex
-	items map[cacheKey]*Transformer
-}{items: make(map[cacheKey]*Transformer)}
+const (
+	transformerCacheEntries = 128
+	transformerCacheBytes   = 32 << 20
+)
+
+var buildCache = newTransformerCache()
+
+func newTransformerCache() *utils.LRU[cacheKey, *Transformer] {
+	return utils.NewWeightedLRU[cacheKey, *Transformer](transformerCacheEntries, transformerCacheBytes, nil)
+}
 
 // New 解析 ICC 配置文件并按输入通道数创建到 sRGB 的转换管线。
 // inputChannels 必须与配置文件的颜色空间一致（GRAY=1、RGB=3、CMYK=4）。
@@ -42,12 +51,9 @@ func New(profileData []byte, inputChannels int) (*Transformer, error) {
 		return nil, fmt.Errorf("不支持的 ICC 输入通道数: %d", inputChannels)
 	}
 	key := cacheKey{digest: sha256.Sum256(profileData), channels: inputChannels}
-	buildCache.Lock()
-	if cached := buildCache.items[key]; cached != nil {
-		buildCache.Unlock()
+	if cached, ok := buildCache.Get(key); ok && cached != nil {
 		return cached, nil
 	}
-	buildCache.Unlock()
 
 	profile, err := icc.DecodeProfile(bytes.NewReader(profileData))
 	if err != nil {
@@ -58,9 +64,8 @@ func New(profileData []byte, inputChannels int) (*Transformer, error) {
 		return nil, fmt.Errorf("创建 ICC 转换失败: %w", err)
 	}
 	transformer := &Transformer{pipeline: pipeline, channels: inputChannels}
-	buildCache.Lock()
-	buildCache.items[key] = transformer
-	buildCache.Unlock()
+	// 转换管线通常大于压缩后的配置文件，按源数据的 4 倍估算缓存权重。
+	buildCache.AddWeighted(key, transformer, int64(len(profileData))*4)
 	return transformer, nil
 }
 
@@ -69,17 +74,18 @@ func (t *Transformer) ToRGB(components []uint8) (uint8, uint8, uint8) {
 	if t == nil || len(components) < t.channels {
 		return 0, 0, 0
 	}
-	// 管线中的变换器可能改变通道数，输入/输出缓冲都按 4 通道分配，
-	// TransformGeneral 会在每步之后把输出复制回输入。
-	in := make([]float64, 4)
-	out := make([]float64, 4)
-	for i := 0; i < t.channels; i++ {
-		in[i] = float64(components[i]) / 255
-	}
+	// 管线中的变换器可能改变通道数，输入/输出缓冲都按 4 通道分配。
+	// 缓冲属于 Transformer，并由同一把锁保护，避免每次颜色转换都分配切片。
 	t.mu.Lock()
-	t.pipeline.TransformGeneral(out, in)
+	clear(t.in[:])
+	clear(t.out[:])
+	for i := 0; i < t.channels; i++ {
+		t.in[i] = float64(components[i]) / 255
+	}
+	t.pipeline.TransformGeneral(t.out[:], t.in[:])
+	r, g, b := t.out[0], t.out[1], t.out[2]
 	t.mu.Unlock()
-	return uint8(out[0]*255 + 0.5), uint8(out[1]*255 + 0.5), uint8(out[2]*255 + 0.5)
+	return uint8(r*255 + 0.5), uint8(g*255 + 0.5), uint8(b*255 + 0.5)
 }
 
 // deviceCMYKMatrix 是 Adobe/poppler 使用的 4 色印刷矩阵模型的 16 个油墨组合项。

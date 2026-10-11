@@ -378,11 +378,18 @@ func newMeshGradient(triangles []ofdMeshTriangle, backColor *models.CTColor, ext
 		extend:    extend,
 		area:      area,
 	}
-	points := make([]geom.Point, 0, len(triangles)*3)
-	for _, triangle := range triangles {
-		points = append(points, triangle.p0, triangle.p1, triangle.p2)
+	gradient.hull = geom.Rect{
+		X0: math.Inf(1), Y0: math.Inf(1),
+		X1: math.Inf(-1), Y1: math.Inf(-1),
 	}
-	gradient.hull = geom.RectFromPoints(points...)
+	for _, triangle := range triangles {
+		for _, point := range [3]geom.Point{triangle.p0, triangle.p1, triangle.p2} {
+			gradient.hull.X0 = math.Min(gradient.hull.X0, point.X)
+			gradient.hull.Y0 = math.Min(gradient.hull.Y0, point.Y)
+			gradient.hull.X1 = math.Max(gradient.hull.X1, point.X)
+			gradient.hull.Y1 = math.Max(gradient.hull.Y1, point.Y)
+		}
+	}
 	if backColor != nil {
 		gradient.backColor = meshColor(*backColor, resolve)
 	}

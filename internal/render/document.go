@@ -20,20 +20,22 @@ import (
 
 type Document struct {
 	*parser.Document
-	background   color.Color
-	dpi          geom.Resolution
-	fonts        FontEngine
-	fallbacks    []string
-	fallbackMu   sync.RWMutex
-	imageLocksMu sync.Mutex
-	imageLocks   map[string]*imageKeyLock
-	svgMu        sync.Mutex
-	images       *utils.LRU[string, image.Image]
-	svgCanvases  *utils.LRU[string, SVGScene]
-	sealMu       sync.Mutex
-	sealDocs     map[[32]byte]*sealDocEntry
-	ctColorMu    sync.Mutex
-	ctColorCache map[*models.CTColor]*CTColor
+	background    color.Color
+	dpi           geom.Resolution
+	fonts         FontEngine
+	fallbacks     []string
+	fallbackMu    sync.RWMutex
+	imageLocksMu  sync.Mutex
+	imageLocks    map[string]*imageKeyLock
+	svgMu         sync.Mutex
+	images        *utils.LRU[string, image.Image]
+	svgCanvases   *utils.LRU[string, SVGScene]
+	sealMu        sync.Mutex
+	sealDocs      map[[32]byte]*sealDocEntry
+	ctColorMu     sync.Mutex
+	ctColorCache  map[*models.CTColor]*CTColor
+	colorSpacesMu sync.Mutex
+	colorSpaces   map[*models.ColorSpace]*colorSpaceResources
 }
 
 type imageKeyLock struct {
@@ -115,10 +117,15 @@ const (
 //
 // 幂等，且关闭后不应再使用该文档。
 func (p *Document) Close() {
-	if p == nil || p.fonts == nil {
+	if p == nil {
 		return
 	}
-	p.fonts.Close()
+	if p.fonts != nil {
+		p.fonts.Close()
+	}
+	p.colorSpacesMu.Lock()
+	p.colorSpaces = nil
+	p.colorSpacesMu.Unlock()
 }
 
 func NewDocument(background color.Color, doc *parser.Document) *Document {
