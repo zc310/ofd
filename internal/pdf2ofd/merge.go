@@ -185,6 +185,11 @@ func (r *textMergeRun) build() creator.Text {
 	}
 	merged.Value = value.String()
 	merged.TextCodes = []creator.TextCode{{Value: merged.Value, DeltaX: deltas}}
+	// 边界可以比基线偏移更高；合并时保留显式原点，避免基线退回框底。
+	if len(r.first.TextCodes) == 1 {
+		merged.TextCodes[0].X = r.first.TextCodes[0].X
+		merged.TextCodes[0].Y = r.first.TextCodes[0].Y
+	}
 	if len(transforms) > 0 {
 		merged.CGTransforms = transforms
 	} else {
@@ -201,6 +206,11 @@ func sameMergeTextStyle(a, b creator.Text) bool {
 	if !nearPDFFloat(a.Size, b.Size, 1e-6) || !nearPDFFloat(a.Y, b.Y, 1e-4) || !nearPDFFloat(a.Height, b.Height, 1e-6) {
 		return false
 	}
+	ax, ay := mergeTextOrigin(a)
+	bx, by := mergeTextOrigin(b)
+	if !nearPDFFloat(ax, bx, 1e-6) || !nearPDFFloat(ay, by, 1e-6) {
+		return false
+	}
 	if a.Stroke != b.Stroke || !sameOptionalBool(a.Fill, b.Fill) {
 		return false
 	}
@@ -214,6 +224,19 @@ func sameMergeTextStyle(a, b creator.Text) bool {
 		return false
 	}
 	return sameOptionalBool(a.Visible, b.Visible)
+}
+
+func mergeTextOrigin(text creator.Text) (x, y float64) {
+	y = text.Height
+	if len(text.TextCodes) == 1 {
+		if value := text.TextCodes[0].X; value != nil {
+			x = *value
+		}
+		if value := text.TextCodes[0].Y; value != nil {
+			y = *value
+		}
+	}
+	return x, y
 }
 
 func nearPDFFloat(a, b, epsilon float64) bool {
