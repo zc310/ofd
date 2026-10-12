@@ -30,14 +30,24 @@ func TestPDFImportOptionsReachBothPublicEntrypoints(t *testing.T) {
 	}
 }
 
-func TestPDFStrictImportReportsClippingAndStopsOutput(t *testing.T) {
+func TestPDFStrictImportSupportsGlyphClipping(t *testing.T) {
 	input := testutil.MinimalPDF([]byte("BT /F1 12 Tf 7 Tr (A) Tj ET"), 200, 200)
 	var diagnostics []converter.PDFImportDiagnostic
 	var output bytes.Buffer
 	err := converter.Convert(t.Context(), "pdf", "ofd", input, &output, converter.WithPDFImportOptions(converter.PDFImportOptions{
 		Strict: true, OnDiagnostic: func(d converter.PDFImportDiagnostic) { diagnostics = append(diagnostics, d) },
 	}))
-	if !errors.Is(err, converter.ErrPDFImportUnsupported) || output.Len() != 0 || len(diagnostics) != 1 || diagnostics[0].Code != "text.clip" || diagnostics[0].Page != 1 {
+	if err != nil || output.Len() == 0 || len(diagnostics) != 0 {
+		t.Fatalf("error=%v diagnostics=%+v output=%d", err, diagnostics, output.Len())
+	}
+}
+
+func TestPDFStrictImportReportsMissingResourceAndStopsOutput(t *testing.T) {
+	input := testutil.MinimalPDF([]byte("/Missing Do"), 200, 200)
+	var diagnostics []converter.PDFImportDiagnostic
+	var output bytes.Buffer
+	err := converter.Convert(t.Context(), "pdf", "ofd", input, &output, converter.WithPDFImportOptions(converter.PDFImportOptions{Strict: true, OnDiagnostic: func(d converter.PDFImportDiagnostic) { diagnostics = append(diagnostics, d) }}))
+	if !errors.Is(err, converter.ErrPDFImportUnsupported) || output.Len() != 0 || len(diagnostics) != 1 || diagnostics[0].Code != "resource.missing" || diagnostics[0].Page != 1 {
 		t.Fatalf("error=%v diagnostics=%+v output=%d", err, diagnostics, output.Len())
 	}
 }

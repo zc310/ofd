@@ -58,9 +58,9 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | `BT/ET`、`Tf`、`Tm`、`Td/TD/TL/T\*` | ✅ | 保留文字矩阵与图形矩阵的完整仿射变换（旋转、错切、镜像、非均匀缩放），重算 `Boundary` 并补偿平移；`q/Q` 恢复文字参数，保留文本矩阵的推进。 |
 | `Tc`（字距）、`Tw`（词距）、`Tz`（水平缩放） |  ✅  | `Tz` 同时输出为 OFD `HScale`（`hScale/100`）并计入推进量（`DeltaX`）；`Tc`/`Tw` 计入宽度与 `DeltaX`。 |
 | `Tj/TJ/'/"`                                  |  ✅  | `TJ` 的数值偏移折算为字间推进；纯空白输出只推进文本矩阵，避免后续文字左移。                       |
-| `Tr`（渲染模式）                             |  ⚠️  | 0/2/4/6 按填充、1/2/5/6 按描边；填充加描边同时输出颜色。                                          |
+| `Tr`（渲染模式） | ✅ | 普通字体 0/2/4/6 填充、1/2/5/6 描边；4–7 在 `BT…ET` 内累积字形并集，到 `ET` 与已有裁剪求交，`q/Q` 恢复裁剪。3/7 保留无笔画文字层。 |
 | `Ts`（文字升降） | ✅ | 沿文字空间 y 轴改变基线，不改变后续推进。 |
-| Type3 `d0/d1` 与 CharProcs | ❌ | 字形绘制尚未实现；报告诊断，并通过 `/Encoding` 尽量保留文字层。 |
+| Type3 `d0/d1` 与 CharProcs | ⚠️ | 执行字形内容流，支持现有路径、图片及 Form 绘制；应用 `FontMatrix`、字号、文字矩阵、`Tz/Ts` 和原字宽。字形资源优先取字体 Resources，缺省使用页面资源。3/7 不绘制，4–7 不增加字形裁剪。复杂图形继承内容流解释器的限制。 |
 | 相邻单字文字对象                             |  ✅  | 转换后合并相邻同样式单字对象（同字体/字号/基线/颜色/`HScale`、水平、无 CTM/Clips/Actions），逐字定位不变。 |
 | 字体样式（`Weight`/`Italic`）                |  ✅  | 依据字体描述符与族名判定粗体/斜体并写入文字对象，避免渲染器对内嵌字体再次做伪斜体处理。           |
 | 渐变填充的文字（`sh` 或图案着色填充）         |  ⚠️  | 文字使用渐变/图案着色填充时，按文字位置取样为 RGB 并写入 `FillColor`（保留近似纯色），不输出 OFD 渐变。 |
@@ -73,6 +73,8 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | 简单字体 `/Encoding`（`/Differences` + 基础编码） |  ✅  | 字形名经 Unicode 映射还原；基础编码覆盖 WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。                                                                           |
 | 预定义 CJK CMap                                   |  ⚠️  | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。全角 CMap（`Uni*` UCS2/UTF16）非 ASCII 字形回退为 1000/1000 字宽，避免缺 `DW`/`W` 时推进偏窄。 |
 | `Widths` + `FirstChar`、CID `/W`、`DW` | ✅ | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）；字号与本地增量按组合矩阵 y 轴长度换算，余下变换保留在文字 CTM 中。 |
+| CID `/W2`、`DW2` | ✅ | 支持逐 CID 三元组数组和 CID 区间两种 W2 格式、间接条目；DW2 缺省为 `[880 -1000]`，水平原点偏移缺省为 W/DW 的一半。字形原点与垂直推进分别处理，竖排 TJ 不乘 Tz；双字节空格不加 Tw。 |
+| 嵌入 Encoding CMap | ⚠️ | 支持固定 1/2 字节代码空间、`cidchar/cidrange`、WMode 与 Identity-H/V UseCMap；W/W2、CIDToGIDMap 按映射后的 CID 索引，ToUnicode 仍按原代码索引。变长、3/4 字节代码与非 Identity UseCMap 尚未完整支持。 |
 | 内嵌字体（TrueType/CFF 包装）                     |  ⚠️  | 保留嵌入数据（`PreserveEmbeddedFonts`）；字形映射走 `CIDToGIDMap` 或字体 cmap，`CGTransform` 输出实际字形。CFF 包装后按 `FontMatrix` 修正 `head.unitsPerEm`，避免 1/2048 字体被放大。 |
 | 不连续 CID / 子集字体                             |  ✅  | 经 fontfix 私有区映射（F0000+CID）判定字形存在，避免误丢整段文字。                                                                                                                    |
 | 字体族名（含 `#XX` 十六进制转义）                 |  ✅  | 按原始字节再解释为 UTF-8，非法转义时原样保留。                                                                                                                                        |
@@ -228,10 +230,9 @@ Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指
 | 混合模式（`Multiply` 之外的 `/BM`）、非 Luminosity 的图形状态 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
 | 数字签名、附件、嵌入式 JavaScript/PostScript | 忽略                                                          |
 | 大纲与链接的其他动作（GoToR、JavaScript、Launch 等） | 忽略（仅保留 `GoTo` 与 URI）                    |
-| `Tr=4–7` 的字形裁剪 | 报告诊断；绘制部分保留，字形裁剪未实现 |
-| 竖排 CMap 的 `/W2`、`/DW2` | 报告诊断；编码仍可还原，垂直推进未实现 |
+| 预定义 CJK CMap 的完整字符代码→CID 和竖排替换字形 | 仍沿用已有 Unicode/字宽近似；完整字形与 W2 定位验收使用 Identity-V 或支持的嵌入 Encoding CMap。尚未实现 OpenType vert/vrt2 等竖排替换。 |
 | CalGray/CalRGB/Lab 校准参数 | 报告诊断，按设备颜色空间近似 |
-| Type3 CharProcs | 报告诊断，字形绘制未实现 |
+| Type3 内部的复杂混合、透明组与不支持内容操作 | 继承普通内容流解释器的诊断及近似范围；不将整个 Type3 字体直接替代为逻辑字体。 |
 
 ## 资源预算与诊断
 
@@ -427,3 +428,25 @@ JPEG 色度上采样及图片放大插值仍有阅读器差异；样例 RGB 白/
 独立 ImageMagick YCCK 样本的对应采样与 Poppler 一致。当前 MuPDF 将 K=1
 显示为 (0,0,0)，Poppler 和既有 CMYK 近似为 (35,31,32)；保留此色彩转换差异，
 不声称与两个阅读器同时一致。放大交界仍受图片插值影响。
+
+`text_fidelity_test.go`、`text_vertical_test.go` 与 `font_type3_test.go` 覆盖普通字体
+`Tr=4–7` 的字形并集、ET 生效时机、q/Q、空裁剪、字形洞、升降/水平缩放及旋转/
+错切/镜像；W2/DW2 两种格式、默认度量、间接数组、CID 映射、原点、字距/TJ 与
+单/双字节 Tw；Type3 d0/d1、FontMatrix、颜色继承、独立字形状态、页面/字体资源、
+Form 与图片绘制、递归预算、严格诊断、诊断回调取消及 Unicode 文字层。
+内嵌普通字体直接转换为裁剪路径，保留 CIDToGIDMap 与原字形；非内嵌字体使用
+逐代码定位的 OFD 文字裁剪区，依赖阅读器的字体替代。Form 的文字对象、路径和
+字体资源作用域与外层隔离，避免内部 BT 或同名字体污染外部裁剪和文字。
+
+Type3 的 CharProc 可见内容另行绘制，Unicode 用合法的空轮廓 TrueType 字体承载。
+每个 Unicode 码位使用不同 glyph ID，避免 PDF 子集化把不同字符合并；Tr=3/7
+及被空裁剪隐藏的普通文字也保留文字层。独立样例往返 PDF 经 pdftotext 能提取
+`RgO`、`ABAB`，竖排按行提取 `A/B/C/D`。有 mutool/pdftoppm 时，回归另渲染源
+PDF，与 OFD 的实心区域对照；缺工具会记录省略，不把内部一致性当作源保真。
+
+当前环境的 MuPDF 对 Type3 Tr=1/2/5/6 的 d1 字形使用描边颜色；Poppler 与本实现
+保持 CharProc 定义和调用方非描边颜色，MuPDF 的现行实现也已明确这一规范行为。
+Type3 Tr=3/7 不绘制，4–7 不增加裁剪区。保留阅读器差异，不声称在所有模式下与
+当前 MuPDF 同时一致。Type3 位图字形继承已有 `/Interpolate` 缺口：低分辨率放大
+交界的平滑程度可能不同，位置与四角原色有回归，整幅交界差异不算视觉通过。
+复杂 Encoding CMap、预定义 CJK 的完整 CID 映射及竖排替换字形仍属于剩余限制。

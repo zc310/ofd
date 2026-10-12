@@ -200,6 +200,13 @@ func (p *pdfInterpreter) setSource(object types.Object, resource string) Diagnos
 }
 
 func (p *pdfInterpreter) appendItem(item creator.Item) bool {
+	for _, clip := range p.state.clips {
+		if clip.empty {
+			if _, text := item.(creator.Text); !text {
+				return false
+			}
+		}
+	}
 	if p.control != nil {
 		if p.control.check() != nil {
 			return false

@@ -24,9 +24,6 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		p.report("font.resource", fmt.Sprintf("无法读取字体资源: %v", err))
 		return
 	}
-	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type3" {
-		p.report("font.type3", "Type3 字形绘制尚未支持，使用逻辑字体保留文字层")
-	}
 	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type0" {
 		font.codeBytes = 2
 	}
@@ -35,9 +32,8 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 			font.encoding = name.Value()
 		}
 	}
-	if strings.HasSuffix(font.encoding, "-V") {
-		p.report("text.vertical", "竖排字体 W2/DW2 与垂直推进尚未支持，按横排近似")
-	}
+	font.vertical = strings.HasSuffix(font.encoding, "-V")
+	p.loadFontWritingMode(font, dict)
 	if baseFont := dict.NameEntry("BaseFont"); baseFont != nil {
 		font.familyName = decodePDFName(strings.TrimPrefix(*baseFont, "/"))
 	}
@@ -120,6 +116,9 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 					p.loadCIDWidths(font, object)
 				}
 				p.loadCIDToGID(font, descendant)
+				if font.vertical {
+					p.loadCIDVerticalMetrics(font, descendant)
+				}
 			}
 		}
 	}
@@ -135,6 +134,9 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		if int64(len(value)) > font.maxUnicodeBytes {
 			font.maxUnicodeBytes = int64(len(value))
 		}
+	}
+	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type3" {
+		p.loadType3Font(font, dict)
 	}
 }
 
@@ -164,7 +166,7 @@ func (p *pdfInterpreter) loadFontVerticalMetrics(font *pdfFontInfo, descriptor t
 // 个字形。因此改为由 pdfFontInfo.cidUnicode 按正文实际出现的 CID 惰性反查。
 func prepareCIDUnicode(font *pdfFontInfo) {
 	// 有 ToUnicode 时以它为准，不用字符集反查的结果覆盖。
-	if len(font.toUnicode) > 0 || font.codeBytes != 2 || font.sfnt == nil {
+	if len(font.toUnicode) > 0 || (font.codeBytes != 2 && font.codeToCID == nil) || font.sfnt == nil {
 		return
 	}
 	font.cidFromCmap = true
@@ -360,7 +362,7 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 }
 
 func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map[uint16]uint16 {
-	if len(font.data) == 0 || font.codeBytes != 1 {
+	if len(font.data) == 0 || font.codeBytes != 1 || font.codeToCID != nil {
 		return nil
 	}
 	sfnt, err := fontparser.ParseSFNT(font.data, 0)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/korean"
@@ -15,7 +16,7 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-func (p *pdfInterpreter) showText(data []byte, _ []float64) {
+func (p *pdfInterpreter) showText(data []byte, resources types.Dict, depth int) {
 	if len(data) == 0 {
 		return
 	}
@@ -33,12 +34,28 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if p.control != nil {
 		p.control.operations += int64(len(text))
 	}
+	if font.type3 == nil && p.state.renderMode >= 4 && p.state.renderMode <= 7 {
+		p.textClipActive = true
+	}
+	if font.vertical || font.type3 != nil {
+		p.showPositionedText(text, codes, font, resources, depth)
+		return
+	}
 	if strings.TrimSpace(text) == "" {
 		// 纯空白 Tj 不产生文字对象，但仍需推进文本矩阵，否则后续文字会
 		// 丢失前导空格的位移而整体左移（如代码块中的 "    >>>"）。
 		p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))
 		return
 	}
+	item := p.makeText(text, codes, font)
+	if p.textClipping() {
+		p.addTextClip(text, codes, font, item)
+	}
+	p.appendText(item, font)
+	p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))
+}
+
+func (p *pdfInterpreter) makeText(text string, codes []uint16, font pdfFontInfo) creator.Text {
 	// Ts 沿文字空间的 y 轴平移基线，不改变后续字符推进的文本矩阵。
 	x, y := transformPDFPoint(p.state.textMatrix[4]+p.state.textMatrix[2]*p.state.textRise, p.state.textMatrix[5]+p.state.textMatrix[3]*p.state.textRise, p.state.ctm)
 	x, y = p.pagePoint(x, y)
@@ -103,8 +120,7 @@ func (p *pdfInterpreter) showText(data []byte, _ []float64) {
 	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, textScale); len(deltas) > 0 {
 		item.TextCodes[0].DeltaX = deltas
 	}
-	p.appendItem(item)
-	p.adjustText(pdfTextWidth(codes, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale))
+	return item
 }
 
 func fontUnicodeExpansion(font pdfFontInfo) int64 {
@@ -156,7 +172,7 @@ func placePDFText(item *creator.Text, x, y, width, ascent, descent float64, matr
 }
 
 func pdfTextGlyphTransforms(codes []uint16, text string, font pdfFontInfo) []creator.CGTransform {
-	if len(codes) == 0 || len(font.data) == 0 || (font.codeBytes != 2 && len(font.codeToGID) == 0) {
+	if len(codes) == 0 || len(font.data) == 0 || (font.codeBytes != 2 && len(font.codeToGID) == 0 && font.codeToCID == nil) {
 		return nil
 	}
 	glyphCount := embeddedFontGlyphCount(font.data)
@@ -178,9 +194,10 @@ func pdfTextGlyphTransforms(codes []uint16, text string, font pdfFontInfo) []cre
 		if count <= 0 {
 			break
 		}
-		glyph := code
-		mapped := font.codeBytes == 2
-		if value, ok := font.cidToGID[code]; ok {
+		cid := pdfCIDCode(code, font)
+		glyph := cid
+		mapped := font.codeBytes == 2 || font.codeToCID != nil
+		if value, ok := font.cidToGID[cid]; ok {
 			glyph = value
 			mapped = true
 		}
@@ -218,7 +235,7 @@ func pdfTextWidth(codes []uint16, font pdfFontInfo, size, charSpacing, wordSpaci
 
 // pdfCodeWidth 返回单个字符在 PDF /Widths 中的宽度（千分之一 em）。
 func pdfCodeWidth(code uint16, font pdfFontInfo) float64 {
-	value, ok := font.widths[int(code)]
+	value, ok := font.widths[int(pdfCIDCode(code, font))]
 	if !ok {
 		value = font.defaultW
 		// CJK 变长 CMap 中的 ASCII 单字节码按半角处理，否则数字和

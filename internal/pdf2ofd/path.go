@@ -18,8 +18,12 @@ func (p *pdfInterpreter) moveText(x, y float64) {
 }
 
 func (p *pdfInterpreter) adjustText(x float64) {
-	p.state.textMatrix[4] += p.state.textMatrix[0] * x
-	p.state.textMatrix[5] += p.state.textMatrix[1] * x
+	axis := 0
+	if p.fonts[p.state.fontName].vertical {
+		axis = 2
+	}
+	p.state.textMatrix[4] += p.state.textMatrix[axis] * x
+	p.state.textMatrix[5] += p.state.textMatrix[axis+1] * x
 }
 
 func (p *pdfInterpreter) moveTo(x, y float64) {
@@ -214,12 +218,28 @@ func (p *pdfInterpreter) buildClips(objX, objY float64) *creator.Clips {
 	}
 	items := make([]creator.Clip, 0, len(p.state.clips))
 	for _, region := range p.state.clips {
-		clipPath, ok := p.clipPathFor(region, objX, objY)
-		if !ok {
-			continue
+		areas := make([]creator.ClipArea, 0, len(region.texts)+1)
+		if clipPath, ok := p.clipPathFor(region, objX, objY); ok {
+			areas = append(areas, creator.ClipArea{Path: clipPath})
 		}
-		area := creator.ClipArea{Path: clipPath}
-		items = append(items, creator.Clip{Areas: []creator.ClipArea{area}})
+		for _, text := range region.texts {
+			matrix := creator.CTM{1, 0, 0, 1, 0, 0}
+			if text.CTM != nil {
+				matrix = *text.CTM
+			}
+			matrix[4] += text.X - objX
+			matrix[5] += text.Y - objY
+			fill := true
+			area := creator.ClipArea{CTM: &matrix, Text: &creator.ClipText{
+				Boundary: creator.Box{Width: text.Width, Height: text.Height}, Font: text.Font,
+				Size: text.Size, Value: text.Value, TextCodes: text.TextCodes, Fill: &fill,
+				HScale: text.HScale, Weight: text.Weight, Italic: text.Italic,
+			}}
+			areas = append(areas, area)
+		}
+		if len(areas) > 0 {
+			items = append(items, creator.Clip{Areas: areas})
+		}
 	}
 	if len(items) == 0 {
 		return nil

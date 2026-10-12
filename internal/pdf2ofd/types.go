@@ -49,8 +49,16 @@ type pdfFontInfo struct {
 	cidFromCmap bool
 	// bold、italic 是依据字体名称推断的样式，写入文字对象后阅读器才能
 	// 选中与嵌入字体匹配的样式，避免对已是斜体/粗体的字体再叠加合成样式。
-	bold, italic bool
+	bold, italic         bool
+	vertical             bool
+	verticalMetrics      map[uint16]pdfVerticalMetric
+	codeToCID            map[uint16]uint16
+	identityCMap         bool
+	defaultVY, defaultW1 float64
+	type3                *pdfType3Font
 }
+
+type pdfVerticalMetric struct{ advance, x, y float64 }
 
 // cidUnicode 把 CID 还原成 Unicode，查不到时返回 false。
 //
@@ -72,7 +80,11 @@ func (f pdfFontInfo) cidUnicode(code uint16) (string, bool) {
 	if value, ok := f.toUnicode[code]; ok {
 		return value, true
 	}
-	glyph := f.sfnt.GlyphIndex(fontfix.GlyphRune(code))
+	cid := pdfCIDCode(code, f)
+	glyph := f.sfnt.GlyphIndex(fontfix.GlyphRune(cid))
+	if mapped, ok := f.cidToGID[cid]; ok {
+		glyph = mapped
+	}
 	if glyph == 0 {
 		return "", false
 	}
@@ -141,6 +153,8 @@ type pdfColor struct{ r, g, b uint8 }
 type pdfClipRegion struct {
 	commands []pdfPathCommand
 	evenOdd  bool
+	texts    []creator.Text
+	empty    bool
 }
 
 type pdfInterpreter struct {
@@ -168,4 +182,8 @@ type pdfInterpreter struct {
 	pendingClip        []pdfPathCommand
 	hasPendingClip     bool
 	pendingClipEvenOdd bool
+	// 字形裁剪属于文字对象，ET 时才并入图形状态，不随 q/Q 恢复。
+	textClip       pdfClipRegion
+	textClipActive bool
+	type3Uncolored bool
 }
