@@ -51,6 +51,7 @@ VERSION ?= 0.1.4
 VERSION_LDFLAG := -X github.com/zc310/ofd/internal/version.Version=$(VERSION)
 GO_LDFLAGS := -s -w
 GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG)"
+WASM_GO_BUILD_FLAGS ?= $(GO_BUILD_FLAGS) -tags latex
 VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 WASM_OPT ?= wasm-opt
 WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers
@@ -213,7 +214,7 @@ $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
 	@tmp="$@.tmp"; opt="$@.opt"; \
 	trap 'rm -f "$$tmp" "$$opt"' EXIT; \
-	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(GO_BUILD_FLAGS) -o "$$tmp" ./cmd/ofd-wasm; \
+	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(WASM_GO_BUILD_FLAGS) -o "$$tmp" ./cmd/ofd-wasm; \
 	if command -v "$(WASM_OPT)" >/dev/null 2>&1; then \
 		"$(WASM_OPT)" $(WASM_OPT_FLAGS) "$$tmp" -o "$$opt"; \
 		mv "$$opt" "$@"; \
