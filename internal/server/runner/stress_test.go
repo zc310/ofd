@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/transfer"
 )
 
 // fakeConverter 是受控的转换器：能按通道阻塞、能统计并发数、能按需失败。

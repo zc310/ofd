@@ -21,14 +21,14 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/allowlist"
+	"github.com/zc310/ofd/internal/server/allowlist"
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/transfer"
 )
 
 // RemoteTargets 是各类远程输出目标的注册表。
@@ -604,7 +604,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // 做同刻 tie-break。这里的单调只是让 ID 自身有序，顺带保证唯一。
 //
 // 不用雪花 ID：bbolt 对数据库文件加排他锁，本服务按单节点设计（见
-// internal/jobstore 的说明），雪花 ID 的机器位在这里无处安放——单进程下
+// internal/server/jobstore 的说明），雪花 ID 的机器位在这里无处安放——单进程下
 // 进程内原子量就够，引入机器位反而多一个"怎么分配"的无解问题。
 var jobSeq atomic.Uint64
 

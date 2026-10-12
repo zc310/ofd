@@ -12,8 +12,8 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // TestInlineStreamReturnsContent 同步转换必须真的把产物交回来。

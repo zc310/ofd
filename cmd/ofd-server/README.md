@@ -860,12 +860,12 @@ SQLite 或外部队列。
 
 ## 目录
 
-| 路径                    | 职责                                                         |
-|-------------------------|--------------------------------------------------------------|
-| `cmd/ofd-server`        | HTTP 层与配置                                                |
-| `internal/runner`       | 编排：双通道 worker、任务与通知循环                          |
-| `internal/convertersvc` | 单次转换；输入格式解析、通道判定                             |
-| `internal/jobstore`     | bbolt 任务队列、延迟重试、通知队列                           |
-| `internal/notify`       | 预注册目标投递、HMAC 签名                                    |
-| `internal/transfer`     | Source/Sink（内存、文件、HTTP、目录、FTP、S3、WebDAV、SFTP） |
-| `internal/allowlist`    | URL 输入白名单与地址策略                                     |
+| 路径                           | 职责                                                         |
+|--------------------------------|--------------------------------------------------------------|
+| `cmd/ofd-server`               | HTTP 层与配置                                                |
+| `internal/server/runner`       | 编排：双通道 worker、任务与通知循环                          |
+| `internal/server/convertersvc` | 单次转换；输入格式解析、通道判定                             |
+| `internal/server/jobstore`     | bbolt 任务队列、延迟重试、通知队列                           |
+| `internal/server/notify`       | 预注册目标投递、HMAC 签名                                    |
+| `internal/server/transfer`     | Source/Sink（内存、文件、HTTP、目录、FTP、S3、WebDAV、SFTP） |
+| `internal/server/allowlist`    | URL 输入白名单与地址策略                                     |

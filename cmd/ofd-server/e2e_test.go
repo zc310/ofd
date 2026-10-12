@@ -15,11 +15,11 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/allowlist"
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/runner"
+	"github.com/zc310/ofd/internal/server/allowlist"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/runner"
 )
 
 // 端到端：真的起 HTTP 端口，走 fasthttp 服务、队列、worker、转换、通知回环。

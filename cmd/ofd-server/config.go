@@ -14,9 +14,9 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/allowlist"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/allowlist"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/transfer"
 )
 
 // Duration 是能从 JSON 里读出两种写法的时长。

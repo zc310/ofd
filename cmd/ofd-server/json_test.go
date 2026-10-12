@@ -6,7 +6,7 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // TestDecodeStrictJSON 严格解码的边界。

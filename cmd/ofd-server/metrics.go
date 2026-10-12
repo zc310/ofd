@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // Prometheus 文本格式版本。改动这个值意味着所有采集端要同步升级解析器。

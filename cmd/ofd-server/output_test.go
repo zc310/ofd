@@ -11,10 +11,10 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/runner"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/runner"
+	"github.com/zc310/ofd/internal/server/transfer"
 )
 
 // dir 输出的任务必须互不干扰。

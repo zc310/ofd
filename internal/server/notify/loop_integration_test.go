@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
 )
 
 // 接收方前两次返回 500，第三次成功，验证退避重试最终能收敛。

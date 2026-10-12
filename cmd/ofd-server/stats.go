@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // handleStats 输出转换量统计的 JSON 视图。

@@ -11,8 +11,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/zc310/ofd/internal/allowlist"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/allowlist"
+	"github.com/zc310/ofd/internal/server/transfer"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
