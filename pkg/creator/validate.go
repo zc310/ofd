@@ -520,7 +520,7 @@ func validateText(value Text) error {
 		}
 	}
 	for index, code := range value.TextCodes {
-		if strings.TrimSpace(code.Value) == "" {
+		if code.Value == "" {
 			return fmt.Errorf("TextCode %d 内容不能为空", index+1)
 		}
 		if code.X != nil && !finite(*code.X) {
@@ -1701,7 +1701,7 @@ func validateClipText(value ClipText) error {
 		return fmt.Errorf("字重无效: %d", value.Weight)
 	}
 	for index, code := range value.TextCodes {
-		if strings.TrimSpace(code.Value) == "" {
+		if code.Value == "" {
 			return fmt.Errorf("TextCode %d 内容不能为空", index+1)
 		}
 		if code.X != nil && !finite(*code.X) || code.Y != nil && !finite(*code.Y) {

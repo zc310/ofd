@@ -57,7 +57,14 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 		p.report("resource.missing", "找不到 XObject 资源 "+name)
 		return nil
 	}
-	p.setSource(object, name)
+	return p.paintXObject(object, name, resources, depth)
+}
+
+// 按对象引用执行 XObject，资源名称只用于诊断；软掩码可直接执行 G，
+// 无需在继承资源中插入临时名称而覆盖 Form 内部的同名资源。
+func (p *pdfInterpreter) paintXObject(object types.Object, name string, resources types.Dict, depth int) error {
+	previousSource := p.setSource(object, name)
+	defer func() { p.source = previousSource }()
 	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
 	if err != nil || stream == nil {
 		p.report("resource.invalid", fmt.Sprintf("无法读取 XObject: %v", err))

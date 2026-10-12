@@ -373,6 +373,9 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 	}
 	// 合并相邻单字文字对象，减少 OFD 文字对象数量，逐字定位保持不变。
 	page.Items = mergeAdjacentTextItems(page.Items)
+	if err := positionPDFSemanticTexts(page.Items, document.Fonts, control); err != nil {
+		return creator.Page{}, nil, err
+	}
 	return page, convertPageLinks(gctx, ctx, pageDict, info, geometries, linkID), nil
 }
 

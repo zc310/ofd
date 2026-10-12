@@ -55,13 +55,13 @@ func TestType3CharProcsPaintPathsAndKeepUnicodeWithoutFallbackInk(t *testing.T) 
 				}
 			}
 			if wantPaths == 0 {
-				code := texts[0].TextCode[0]
-				if code.Value != "ABAB" || len(code.DeltaX) != 3 {
-					t.Fatalf("invisible Type3 semantics lost: %+v", code)
+				codes := texts[0].TextCode
+				if len(codes) != 4 {
+					t.Fatalf("invisible Type3 positioned semantics lost: %+v", codes)
 				}
-				for _, delta := range code.DeltaX {
-					if math.Abs(delta-27*pdfPointToMillimeter) > .001 {
-						t.Fatalf("invisible Type3 advance=%g", delta)
+				for i, code := range codes {
+					if code.Value != string("ABAB"[i]) || math.Abs((code.X-codes[0].X)-27*float64(i)*pdfPointToMillimeter) > .001 || math.Abs(code.Y-codes[0].Y) > .001 {
+						t.Fatalf("invisible Type3 position %d=%+v", i, code)
 					}
 				}
 			}

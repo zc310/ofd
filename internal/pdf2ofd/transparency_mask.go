@@ -127,23 +127,9 @@ func (p *pdfInterpreter) applyTransparencyMask(img *image.NRGBA, mask *pdfTransp
 		page := creator.Page{Area: p.page.Area}
 		child := newPDFInterpreter(p.ctx, &page, p.document, p.info, p.fontCache, p.imageCache)
 		child.control, child.source, child.state = p.control, p.source, mask.state
-		resources := types.Dict{"XObject": types.Dict{"Mask": mask.group}}
 		// 掩码使用自己的资源字典，缺省时沿用 gs 时的资源；CTM 在 gs 时捕获，
 		// 不随后续图元的变换重新定位。
-		for key, value := range mask.resources {
-			if key != "XObject" {
-				resources[key] = value
-			}
-		}
-		if original, ok := dereferencedSubDict(p.ctx, mask.resources, "XObject"); ok {
-			objects := types.Dict{}
-			for key, value := range original {
-				objects[key] = value
-			}
-			objects["Mask"] = mask.group
-			resources["XObject"] = objects
-		}
-		if err := child.xobject("Mask", resources, mask.depth); err != nil {
+		if err := child.paintXObject(mask.group, "SMask", mask.resources, mask.depth); err != nil {
 			return err
 		}
 		mask.items, mask.loaded = page.Items, true

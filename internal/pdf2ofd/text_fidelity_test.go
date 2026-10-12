@@ -220,7 +220,7 @@ func TestTextClippingNonEmbeddedFontUsesPositionedTextAreas(t *testing.T) {
 }
 
 func TestSemanticFontHasDistinctUnicodeAndEmptyContours(t *testing.T) {
-	data, err := pdfSemanticFont(map[uint32]string{1: "A中𠀀"}, nil)
+	data, err := pdfSemanticFont(map[uint32]string{1: "A中𠀀"}, pdfFontInfo{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

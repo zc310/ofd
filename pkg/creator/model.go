@@ -508,7 +508,7 @@ type Text struct {
 // TextCode 描述文字对象中的一段文字及其定位信息。
 // X、Y 为空时沿用文字对象的排版位置；DeltaX、DeltaY 表示字符位置增量。
 type TextCode struct {
-	// Value 是该文字分段的内容。
+	// Value 是该文字分段的内容，可为纯空白字符串，但不能是空字符串。
 	Value string
 	// X 是分段起始横坐标，单位为毫米；为空时沿用排版位置。
 	X *float64
