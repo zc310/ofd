@@ -33,6 +33,7 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown" // Markdown→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/office"   // Office→OFD 与 →PDF
 	_ "github.com/zc310/ofd/pkg/converter/import/pdf"      // PDF→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/xps"      // XPS→OFD 与 →PDF
 )
 
 // Lane 是转换任务所属的执行通道，用于在任务队列里分配不同的并发额度。
@@ -41,7 +42,7 @@ type Lane string
 const (
 	// LaneFast 是纯 Go 的快速路径：OFD 解析与 PDF/文本/Markdown/图像输出。
 	LaneFast Lane = "fast"
-	// LaneHeavy 需要拉起外部进程（LibreOffice、Chrome），单次耗时与内存都高得多，
+	// LaneHeavy 需要拉起外部进程（LibreOffice、Chrome、xpstopdf），单次耗时与内存都高得多，
 	// 必须与 LaneFast 分开限流，否则一批 Office 文档就能把服务打满。
 	LaneHeavy Lane = "heavy"
 )
@@ -214,7 +215,7 @@ func (s *Service) Run(ctx context.Context, spec Spec) (result Result, runErr err
 	if err != nil {
 		return Result{}, err
 	}
-	outFormat, ok := converter.FormatByName(spec.Output.Format)
+	outFormat, ok := serviceOutputFormat(spec.Output.Format)
 	if !ok {
 		return Result{}, fmt.Errorf("%w: 未知输出格式 %s", ErrUnsupported, spec.Output.Format)
 	}
@@ -348,6 +349,19 @@ func (s *Service) Run(ctx context.Context, spec Spec) (result Result, runErr err
 	return result, nil
 }
 
+// serviceOutputFormat 返回服务支持的输出格式。OFD 没有编码器注册项，因为它是
+// converter.Convert 的导入目标而不是 OFD→X 编码器；服务仍需把它作为单文件输出
+// 暴露出来，才能支持 PDF/XPS/Office/HTML → OFD。
+func serviceOutputFormat(name string) (*converter.Format, bool) {
+	if normalize(name) == "ofd" {
+		return &converter.Format{
+			Name: "ofd", Kind: converter.KindDocument,
+			Extensions: []string{".ofd"}, MIME: "application/ofd",
+		}, true
+	}
+	return converter.FormatByName(name)
+}
+
 func (s *Service) runConvert(ctx context.Context, from, to, input string, output io.Writer,
 	pageWriter func(int) (io.WriteCloser, error), opts ...converter.Option) error {
 	if s.convertOutput != nil {
@@ -386,7 +400,7 @@ func rollbackPublished(ctx context.Context, sink transfer.Sink, writers []*sinkW
 
 // Lane 报告该任务应走哪条通道。
 //
-// 判据是"是否会拉起外部进程"：Office 文档走 LibreOffice，HTML 输出走 Chrome，
+// 判据是"是否会拉起外部进程"：Office 文档走 LibreOffice，HTML 输出走 Chrome，XPS 走 xpstopdf，
 // 以及两者之间的直接转换器。它们比纯 Go 路径慢一个数量级以上。
 func (s *Service) Lane(spec Spec) Lane {
 	if IsHeavy(spec.Input, spec.Output.Format) {
@@ -397,7 +411,7 @@ func (s *Service) Lane(spec Spec) Lane {
 
 // IsHeavy 报告该输入输出组合是否属于重通道。
 //
-// 判据有两类：一是会不会拉起外部进程（Office 走 LibreOffice、HTML 走 Chrome），
+// 判据有两类：一是会不会拉起外部进程（Office 走 LibreOffice、HTML 走 Chrome、XPS 走 xpstopdf），
 // 二是输入是不是要从网络拉——URL 输入的耗时由对端决定，不该占住快速通道。
 // 这两类都慢在"不可预期"上，而 fast 通道的用途正是保证可预期的请求不被拖住。
 //
@@ -416,11 +430,11 @@ func IsHeavy(in Input, outputFormat string) bool {
 	return isHeavyFormat(filepath.Ext(in.FileName))
 }
 
-// heavyFormats 是走 LibreOffice 或 Chrome 的格式。
+// heavyFormats 是走 LibreOffice、Chrome 或 xpstopdf 的格式。
 var heavyFormats = map[string]bool{
 	"doc": true, "docx": true, "xls": true, "xlsx": true,
 	"ppt": true, "pptx": true, "odt": true, "ods": true, "odp": true, "rtf": true,
-	"html": true, "htm": true,
+	"html": true, "htm": true, "xps": true,
 }
 
 func isHeavyFormat(name string) bool {

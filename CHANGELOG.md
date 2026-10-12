@@ -11,6 +11,10 @@
 
 ## 未发布
 
+- `cmd/ofd-converter` 新增 XPS 输入支持：通过系统 `xpstopdf` 将 XPS 转为 PDF，支持直接输出 PDF 或继续转换为 OFD；可用 `--xpstopdf` 或 `OFD_XPSTOPDF` 指定工具路径。
+- `cmd/ofd-converter` 新增 `--pdf-max-operations`，可单独调整 PDF 导入的处理量预算；默认仍为 10,000,000。
+- `ofd-server` 接入 XPS 输入并支持 `xps → ofd`：服务端链接 XPS 导入器、将 XPS 任务分配到 heavy 通道，并支持通过 `xpstopdf_path` 与 `pdf_max_operations` 配置外部工具和 PDF 处理量预算。
+
 - `pkg/creator.TextCode.Value` 支持纯空白定位段，文字及文字裁剪中的空格可独立保存
   原始位置；空字符串仍被拒绝。PDF 导入的空轮廓语义字体保留源字宽与显式定位，
   避免往返 PDF 提取时把同一单词拆行或丢失小幅字距调整。

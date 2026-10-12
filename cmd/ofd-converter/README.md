@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、XPS、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -32,7 +32,7 @@ ofd-converter --help
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
 | `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
-| `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
+| `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 96                                                                                                                          |
 | `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                                      |
@@ -41,11 +41,12 @@ ofd-converter --help
 | `-ocr-language`        | Tesseract OCR 语言，默认 `chi_sim+eng`；可指定单个语言或组合，需安装对应语言包                                                                        |
 | `-dir`                 | 不压缩，将多页图片直接保存到输出目录下的多个文件                                                                                                      |
 | `-workers`             | 批量转换并发数，默认 `4`                                                                                                                              |
-| `-external-workers`    | 外部工具（LibreOffice/Chrome）批量转换并发数，默认 `2`                                                                                                |
+| `-external-workers`    | 外部工具（LibreOffice/Chrome/xpstopdf）批量转换并发数，默认 `2`                                                                                      |
 | `-soffice`             | LibreOffice 可执行文件路径；缺省按 `OFD_SOFFICE`、`PATH` 和常见安装路径查找；仅 Office 文档输入使用                                                   |
+| `-xpstopdf`            | `xpstopdf` 可执行文件路径；缺省按 `OFD_XPSTOPDF`、`PATH` 查找；仅 XPS 输入使用                                                                       |
 | `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；仅 HTML/MHTML 输入使用                            |
-| `-temp-dir`            | 外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录                                                                                      |
-| `-office-timeout`      | Office/HTML 文档转换超时秒数；`0` 表示默认 120 秒                                                                                                     |
+| `-temp-dir`            | 外部工具（LibreOffice/Chrome/xpstopdf）临时文件目录；缺省使用系统临时目录                                                                            |
+| `-office-timeout`      | Office/HTML/XPS 文档转换超时秒数；`0` 表示默认 120 秒                                                                                                |
 | `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；**仅 HTML/MHTML 经 Chrome 打印时生效**，默认 `A4`                                    |
 | `-landscape`           | 横向打印，交换纸张宽高；**仅 HTML/MHTML 经 Chrome 打印时生效**，需与 `-paper` 配合使用                                                                |
 | `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                                          |
@@ -56,6 +57,7 @@ ofd-converter --help
 | `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
 | `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 250,000,000 |
+| `-pdf-max-operations` | PDF 转换处理量上限，`0` 使用默认 10,000,000 |
 | `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                                       |
 | `-no-html-text-layer`  | OFD 转 HTML 时不输出透明文字层；默认输出，关闭后文字不可选中、不可浏览器内查找、不可朗读                                                              |
 | `-no-docx-tables`      | OFD 转 DOCX 时不按文字位置识别表格，只输出纯文字段落；默认开启识别，双栏正文或公式排版可能误判                                                        |
@@ -66,7 +68,7 @@ ofd-converter --help
 | `-skip-existing`       | 批量转换时跳过已有输出，不计为失败；不能与 `-overwrite=false` 同时使用                                                                                |
 | `-version`             | 输出工具版本后立即返回，不读取输入文件                                                                                                                |
 
-输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
+输出格式可通过 `-format` 指定，也可根据输出文件扩展名自动推断（`.zip` 需要显式指定 `-format`）。输入默认为 OFD，PDF、XPS 等其它输入按文件扩展名识别为对应导入器，也可用 `-from` 显式指定。多个文档体按出现顺序合并，页码从所有文档体的第一张页面开始连续计算。
 批量转换时必须通过 `-format` 指定统一的输出格式；默认使用 4 个并发任务，单个文件失败后会继续转换其他文件，全部任务完成后返回失败汇总。
 
 ### 选项作用范围
@@ -78,8 +80,9 @@ ofd-converter --help
 | `-paper`、`-landscape`                                                   | HTML/MHTML → PDF/OFD              | 作为打印参数交给 Chrome，控制纸张尺寸和方向          |
 | `-no-print-background`、`-allow-remote`、`-chrome-no-sandbox`、`-chrome` | HTML/MHTML → PDF/OFD              | 仅影响 Chrome 渲染行为                               |
 | `-soffice`                                                               | Office 文档 → PDF/OFD             | 仅影响 LibreOffice 调用                              |
-| `-office-timeout`                                                        | Office 文档、HTML/MHTML → PDF/OFD | 单次转换超时秒数，默认 120                           |
-| `-temp-dir`                                                              | Office/HTML/MHTML 输入            | 外部工具临时目录                                     |
+| `-xpstopdf`                                                              | XPS → PDF/OFD                     | 仅影响 xpstopdf 调用                                |
+| `-office-timeout`                                                        | Office 文档、HTML/MHTML、XPS → PDF/OFD | 单次转换超时秒数，默认 120                       |
+| `-temp-dir`                                                              | Office/HTML/MHTML/XPS 输入        | 外部工具临时目录                                     |
 | `-page`                                                                  | OFD → PDF/txt/md/图片             | 选择要转换的页面；对导入类输入不生效                 |
 | `-md-tables`                                                             | OFD → Markdown                    | 识别无边框表格并输出 GFM 表格，默认关闭              |
 | `-no-html-text-layer`                                                    | OFD → HTML                        | 关闭透明文字层                                       |
@@ -88,7 +91,7 @@ ofd-converter --help
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
-| `-pdf-strict`、`-pdf-max-*` | PDF 导入，以及 Office/HTML → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML 直接输出 PDF 时不生效 |
+| `-pdf-strict`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -186,6 +189,18 @@ ofd-converter --soffice /opt/libreoffice/program/soffice --office-timeout 300 re
 ```
 
 批量转换 Office 文档或 HTML/MHTML 时通过 `-external-workers`（默认 2）限制同时运行的 LibreOffice/Chrome 进程数，普通输入仍使用 `-workers`。
+
+### XPS 转 OFD / PDF
+
+XPS 输入通过系统的 `xpstopdf` 转换为 PDF，再由现有 PDF 导入器转换为 OFD。需要目标机器安装 libgxps；也可以通过 `-xpstopdf` 或 `OFD_XPSTOPDF` 指定可执行文件路径。XPS 转 PDF 时不会经过 OFD 中间格式。
+
+```bash
+ofd-converter input.xps output.pdf
+ofd-converter input.xps output.ofd
+ofd-converter -xpstopdf /usr/bin/xpstopdf input.xps output.ofd
+```
+
+XPS 与 Office/HTML 输入一样受 `-office-timeout` 和 `-temp-dir` 控制；批量转换时受 `-external-workers` 限制。
 
 ### HTML/MHTML 转 OFD / PDF
 

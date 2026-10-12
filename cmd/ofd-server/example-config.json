@@ -98,6 +98,8 @@
   },
   "soffice_path": "",
   "chrome_path": "",
+  "xpstopdf_path": "",
+  "pdf_max_operations": 0,
   "chrome_no_sandbox": false,
   "allow_insecure_ftp": false,
   "allow_insecure_s3": false

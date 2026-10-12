@@ -149,6 +149,14 @@ func run(opts *options) error {
 	if cfg.OfficePath != "" {
 		convertOptions = append(convertOptions, converter.WithSoffice(cfg.OfficePath))
 	}
+	if cfg.XpstopdfPath != "" {
+		convertOptions = append(convertOptions, converter.WithXpstopdf(cfg.XpstopdfPath))
+	}
+	if cfg.PDFMaxOperations != 0 {
+		convertOptions = append(convertOptions, converter.WithPDFImportOptions(converter.PDFImportOptions{
+			Limits: converter.PDFImportLimits{MaxOperations: cfg.PDFMaxOperations},
+		}))
+	}
 	if cfg.ChromePath != "" {
 		convertOptions = append(convertOptions, converter.WithChrome(cfg.ChromePath))
 	}
