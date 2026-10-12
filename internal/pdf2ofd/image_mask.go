@@ -11,18 +11,35 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// imageMaskData 将图像自身的遮罩烘进 PNG。PDF 的 SMask 优先于 Mask；忽略的
-// Mask 不解码，也不扣除预算。损坏的遮罩在普通模式保留基础图，严格模式报告失败。
+// imageMaskData 将图像自身的遮罩烘进 PNG。内嵌 JPX opacity 与外置 SMask
+// 冲突时，普通模式优先保留常见阅读器的外置 SMask 外观并报告诊断。
+// SMask 优先于 Mask；忽略的遮罩不解码，也不扣除图片预算。
+// 损坏的有效遮罩在普通模式保留基础图，严格模式报告失败。
 func (p *pdfInterpreter) imageMaskData(stream *types.StreamDict, data []byte, format string) ([]byte, string) {
+	embedded := p.imageUsesEmbeddedSoftMask(stream)
+	if embedded && stream.Dict["SMask"] == nil {
+		return data, format // 没有外置 SMask 时，使用已经编码的内嵌 opacity。
+	}
 	if object := stream.Dict["SMask"]; object != nil {
 		resolved, err := dereferencePDFObject(p.ctx, object)
 		if name, ok := resolved.(types.Name); err == nil && ok && name.Value() == "None" {
+			if embedded {
+				return data, format
+			}
 			// 没有有效软掩码时继续使用 Mask。
 		} else {
 			mask := pdfMaskStream(resolved)
 			if err != nil || mask == nil {
 				p.report("image.mask", "软掩码不是可用的图像流，保留原图")
 				return data, format
+			}
+			if embedded {
+				// 非零 SMaskInData 本不应与 SMask 同时出现。此处复现 MuPDF/
+				// Poppler 的外观选择；外置 alpha 替换内嵌 alpha，不相乘。
+				p.report("image.mask_priority", "JPX 同时含内嵌 opacity 与外置 SMask，采用外置 SMask 以保留常见阅读器外观")
+				if p.control.check() != nil {
+					return data, format
+				}
 			}
 			if mask.Dict["Matte"] != nil {
 				masked, err := p.imageMatteData(stream, mask)
@@ -60,6 +77,32 @@ func (p *pdfInterpreter) imageMaskData(stream *types.StreamDict, data []byte, fo
 	return masked, "PNG"
 }
 
+func (p *pdfInterpreter) imageUsesEmbeddedSoftMask(stream *types.StreamDict) bool {
+	if !hasJPXFilter(stream) || pdfImageIsMask(p.ctx, stream) {
+		return false
+	}
+	value, ok := dereferencedPDFNumber(p.ctx, stream.Dict["SMaskInData"])
+	return ok && (value == 1 || value == 2)
+}
+
+// 图像关联的软掩码覆盖当前图形状态软掩码；显式二值 Mask 不属于软掩码。
+// /SMask /None 不覆盖图形状态。非法 SMask 已由 imageMaskData 报告，不能因此
+// 擅自改用另一来源的 alpha。此选择只用于当前绘制，不改变 q/Q 保存的状态。
+func (p *pdfInterpreter) imageHasOwnSoftMask(stream *types.StreamDict) bool {
+	if p.imageUsesEmbeddedSoftMask(stream) {
+		return true
+	}
+	object := stream.Dict["SMask"]
+	if object == nil {
+		return false
+	}
+	resolved, err := dereferencePDFObject(p.ctx, object)
+	if name, ok := resolved.(types.Name); err == nil && ok && name.Value() == "None" {
+		return false
+	}
+	return true
+}
+
 func pdfMaskStream(object types.Object) *types.StreamDict {
 	switch value := object.(type) {
 	case types.StreamDict:
@@ -93,8 +136,14 @@ func (p *pdfInterpreter) reserveImageDecode(data []byte) error {
 // applyImageColorKey 按 Decode 和颜色转换之前的整数采样值逐分量匹配闭区间。
 // Indexed 匹配调色板索引，不能匹配转换后的 RGB（不同索引可能有相同颜色）。
 func (p *pdfInterpreter) applyImageColorKey(data []byte, stream *types.StreamDict, ranges types.Array) ([]byte, error) {
-	if hasDCTFilter(stream) || hasJPXFilter(stream) || hasJBIG2Filter(stream) {
-		return nil, fmt.Errorf("JPEG/JPX/JBIG2 颜色键尚未支持")
+	if hasJPXFilter(stream) {
+		return p.applyJPXColorKey(data, stream, ranges)
+	}
+	if hasDCTFilter(stream) {
+		return p.applyJPEGColorKey(stream, ranges)
+	}
+	if hasJBIG2Filter(stream) {
+		return p.applyJBIG2ColorKey(stream, ranges)
 	}
 	components, indexed, _, err := pdfImageColorSpace(p.ctx, stream)
 	if err != nil {
@@ -104,20 +153,12 @@ func (p *pdfInterpreter) applyImageColorKey(data []byte, stream *types.StreamDic
 		components = 1
 	}
 	bpc, _ := integerValue(stream.Dict["BitsPerComponent"])
-	if components < 1 || components > 4 || len(ranges) != components*2 || (bpc != 1 && bpc != 2 && bpc != 4 && bpc != 8 && bpc != 16) {
+	if bpc != 1 && bpc != 2 && bpc != 4 && bpc != 8 && bpc != 16 {
 		return nil, fmt.Errorf("颜色键的分量数或图像位深无效")
 	}
-	maxSample := float64(uint32(1)<<uint(bpc) - 1)
-	var limits [8]uint32
-	for i, object := range ranges {
-		value, ok := dereferencedPDFNumber(p.ctx, object)
-		if !ok || math.IsNaN(value) || value < 0 || value > maxSample || value != math.Trunc(value) {
-			return nil, fmt.Errorf("颜色键区间不是有效的整数采样值")
-		}
-		limits[i] = uint32(value)
-		if i%2 == 1 && limits[i] < limits[i-1] {
-			return nil, fmt.Errorf("颜色键区间上下限颠倒")
-		}
+	limits, err := p.imageColorKeyLimits(ranges, components, bpc)
+	if err != nil {
+		return nil, err
 	}
 	width, _ := integerValue(stream.Dict["Width"])
 	height, _ := integerValue(stream.Dict["Height"])
@@ -138,6 +179,26 @@ func (p *pdfInterpreter) applyImageColorKey(data []byte, stream *types.StreamDic
 		}
 		return false
 	})
+}
+
+// JPX 按码流位深校验区间，普通栅格按字典位深；区间数只包含颜色分量。
+func (p *pdfInterpreter) imageColorKeyLimits(ranges types.Array, components, bits int) ([8]uint32, error) {
+	var limits [8]uint32
+	if components < 1 || components > 4 || len(ranges) != components*2 || bits < 1 || bits > 16 {
+		return limits, fmt.Errorf("颜色键的分量数或图像位深无效")
+	}
+	maximum := float64(uint32(1)<<uint(bits) - 1)
+	for i, object := range ranges {
+		value, ok := dereferencedPDFNumber(p.ctx, object)
+		if !ok || math.IsNaN(value) || value < 0 || value > maximum || value != math.Trunc(value) {
+			return limits, fmt.Errorf("颜色键区间不是有效的整数采样值")
+		}
+		limits[i] = uint32(value)
+		if i%2 == 1 && limits[i] < limits[i-1] {
+			return limits, fmt.Errorf("颜色键区间上下限颠倒")
+		}
+	}
+	return limits, nil
 }
 
 // applyImageExplicitMask 的语义与 ImageMask 相同：默认采样 0 绘制、1 透明，
@@ -189,7 +250,7 @@ func (p *pdfInterpreter) applyImageExplicitMask(data []byte, mask *types.StreamD
 		sampleMask.Dict[key] = value
 	}
 	sampleMask.Dict["Decode"] = types.Array{types.Float(decode[0]), types.Float(decode[1])}
-	samples, err := pdfImageMaskSamples(p.ctx, &sampleMask, width, height, 1)
+	samples, err := pdfImageMaskSamples(p.ctx, &sampleMask, width, height, 1, p.control)
 	if err != nil {
 		return nil, err
 	}

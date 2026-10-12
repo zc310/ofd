@@ -240,7 +240,7 @@ func TestPDFBrokenExplicitMaskReportsAndKeepsBaseImage(t *testing.T) {
 	}
 }
 
-func TestPDFJPEGColorKeyReportsUnsupported(t *testing.T) {
+func TestPDFJPEGColorKeyStrictConversionMakesMatchedSamplesTransparent(t *testing.T) {
 	var jpegData bytes.Buffer
 	if err := jpeg.Encode(&jpegData, image.NewGray(image.Rect(0, 0, 2, 2)), nil); err != nil {
 		t.Fatal(err)
@@ -250,8 +250,11 @@ func TestPDFJPEGColorKeyReportsUnsupported(t *testing.T) {
 	var output bytes.Buffer
 	var diagnostics []Diagnostic
 	err := ConvertWithOptions(t.Context(), pdf, &output, "", Options{Strict: true, OnDiagnostic: func(d Diagnostic) { diagnostics = append(diagnostics, d) }})
-	if !errors.Is(err, ErrUnsupported) || output.Len() != 0 || len(diagnostics) != 1 || diagnostics[0].Code != "image.mask_explicit" {
+	if err != nil || output.Len() == 0 || len(diagnostics) != 0 {
 		t.Fatalf("error=%v diagnostics=%v", err, diagnostics)
+	}
+	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(0, 0); got.A != 0 {
+		t.Fatalf("JPEG key did not remove black sample: %v", got)
 	}
 }
 

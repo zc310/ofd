@@ -14,6 +14,7 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 	// PDF 目录的 /Outlines 必须转换为 OFD 大纲：标题、层级、跳转目标（含 XYZ/
 	// FitH/FitR 坐标换算）和 URI 动作都要保留，否则书签会全部丢失。
 	content := "q Q"
+	// PDF 1.7 的中文文本字符串使用带 BOM 的 UTF-16BE，不能直接写无标记 UTF-8。
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R /Outlines 6 0 R /PageMode /UseOutlines >>",
 		"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
@@ -21,10 +22,10 @@ func TestConvertOutlinesToOFD(t *testing.T) {
 		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << >> /Contents 5 0 R >>",
 		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
 		"<< /Type /Outlines /First 7 0 R /Last 9 0 R /Count 4 >>",
-		"<< /Title (第一章) /Parent 6 0 R /Dest [3 0 R /XYZ 0 100 1] /Next 8 0 R >>",
-		"<< /Title (链接) /Parent 6 0 R /A << /S /URI /URI (https://example.com) >> /Next 9 0 R >>",
-		"<< /Title (第二章) /Parent 6 0 R /First 10 0 R /Last 10 0 R /Count 1 /Dest [4 0 R /FitH 50] >>",
-		"<< /Title (2.1 节) /Parent 9 0 R /Dest [4 0 R /FitR 10 20 100 80] >>",
+		"<< /Title <FEFF7B2C4E007AE0> /Parent 6 0 R /Dest [3 0 R /XYZ 0 100 1] /Next 8 0 R >>",
+		"<< /Title <FEFF94FE63A5> /Parent 6 0 R /A << /S /URI /URI (https://example.com) >> /Next 9 0 R >>",
+		"<< /Title <FEFF7B2C4E8C7AE0> /Parent 6 0 R /First 10 0 R /Last 10 0 R /Count 1 /Dest [4 0 R /FitH 50] >>",
+		"<< /Title <FEFF0032002E003100208282> /Parent 9 0 R /Dest [4 0 R /FitR 10 20 100 80] >>",
 	}
 	var output bytes.Buffer
 	if err := Convert(t.Context(), assemblePDF(objects), &output, ""); err != nil {

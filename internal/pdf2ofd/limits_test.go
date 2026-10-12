@@ -266,7 +266,9 @@ func TestPDFParserLimitAdapterKeepsOrdinaryErrors(t *testing.T) {
 func TestPDFPixelBudgetUsesJPXAndJBIG2Headers(t *testing.T) {
 	jpx := encodeJPX(t, jpxTestSource(), jpeg2000.FormatJP2)
 	requireBudgetError(t, budgetImagePDF("/Im0 Do", budgetImage(1, 1, "/Filter /JPXDecode", jpx)), Limits{MaxImagePixels: 4}, "image_pixels")
-	jb := budgetImagePDF("/Im0 Do", budgetImage(1, 1, "/Filter /JBIG2Decode", []byte(jbig2SampleMask)))
+	// JBIG2 必须声明 1 位灰度；尺寸仍故意小于码流，保护真实尺寸预算检查。
+	jbImage := fmt.Sprintf("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /JBIG2Decode /Length %d >>\nstream\n%s\nendstream", len(jbig2SampleMask), jbig2SampleMask)
+	jb := budgetImagePDF("/Im0 Do", jbImage)
 	requireBudgetError(t, jb, Limits{MaxImagePixels: 4}, "image_pixels")
 	requireBudgetError(t, jb, Limits{MaxTotalImagePixels: 4}, "total_image_pixels")
 }

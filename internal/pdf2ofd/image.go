@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	gobig2 "github.com/dkrisman/gobig2"
-	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/coloricc"
@@ -87,13 +86,7 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 				cached = pdfImageDataCache{data: data, format: format}
 				p.imageCache[reference] = cached
 			}
-			data, format := cached.data, cached.format
-			if mask := p.state.lumMask; mask != nil {
-				if masked, ok := p.applyImageSoftMask(data, mask); ok {
-					data, format = masked, "PNG"
-				}
-			}
-			_ = p.appendImageData(data, format)
+			_ = p.appendImageWithGraphicsMask(stream, cached.data, cached.format)
 			return nil
 		}
 		if err := p.appendImage(stream); err != nil {
@@ -197,6 +190,17 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 	data, format, err := p.imageData(stream, p.state.fill)
 	if err != nil {
 		return err
+	}
+	return p.appendImageWithGraphicsMask(stream, data, format)
+}
+
+// 内联、非缓存和缓存图像共用绘制时的软掩码选择。只在图像没有关联软掩码
+// 时应用图形状态掩码，缓存内容本身不受当前状态影响；整体 ca 在图元上保留。
+func (p *pdfInterpreter) appendImageWithGraphicsMask(stream *types.StreamDict, data []byte, format string) error {
+	if mask := p.state.lumMask; mask != nil && !p.imageHasOwnSoftMask(stream) {
+		if masked, ok := p.applyImageSoftMask(data, mask); ok {
+			data, format = masked, "PNG"
+		}
 	}
 	return p.appendImageData(data, format)
 }
@@ -557,6 +561,10 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 	if err != nil {
 		return nil, false
 	}
+	if hasJPXFilter(maskStream) {
+		p := pdfInterpreter{ctx: ctx, control: control}
+		return p.applyJPXSoftMask(baseImage, maskStream)
+	}
 	maskWidth, okW := integerValue(maskStream.Dict["Width"])
 	maskHeight, okH := integerValue(maskStream.Dict["Height"])
 	if !okW || !okH || maskWidth <= 0 || maskHeight <= 0 {
@@ -587,12 +595,15 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 	if control.consumeOperations(int64(maskWidth)*int64(maskHeight)) != nil {
 		return nil, false
 	}
-	samples, err := pdfImageMaskSamples(ctx, maskStream, maskWidth, maskHeight, maskBPC)
+	samples, err := pdfImageMaskSamples(ctx, maskStream, maskWidth, maskHeight, maskBPC, control)
 	if err != nil {
 		return nil, false
 	}
 	bounds := baseImage.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
+	width, height, err := pdfSoftMaskCompositionSize(bounds, maskWidth, maskHeight, control)
+	if err != nil {
+		return nil, false
+	}
 	if control.consumeOperations(int64(width)*int64(height)) != nil {
 		return nil, false
 	}
@@ -609,30 +620,30 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		maskY := pdfSoftMaskRow(y, maskHeight, height)
 		maskBase := maskY * maskWidth
 		row := rgba.PixOffset(0, y)
-		sx := bounds.Min.X
-		sy := bounds.Min.Y + y
+		sy := bounds.Min.Y + pdfSoftMaskRow(y, bounds.Dy(), height)
 		for x := 0; x < width; x++ {
 			maskX := pdfSoftMaskColumn(x, maskWidth, width)
+			sx := bounds.Min.X + pdfSoftMaskColumn(x, bounds.Dx(), width)
 			var r, g, b uint8
 			switch source := baseImage.(type) {
 			case *image.YCbCr:
-				value := source.YCbCrAt(sx+x, sy)
+				value := source.YCbCrAt(sx, sy)
 				r, g, b = color.YCbCrToRGB(value.Y, value.Cb, value.Cr)
 			case *image.Gray:
-				value := source.GrayAt(sx+x, sy).Y
+				value := source.GrayAt(sx, sy).Y
 				r, g, b = value, value, value
 			case *image.NRGBA:
-				pix := source.PixOffset(sx+x, sy)
+				pix := source.PixOffset(sx, sy)
 				r, g, b = source.Pix[pix], source.Pix[pix+1], source.Pix[pix+2]
 			case *image.RGBA:
 				// 预乘颜色必须先反预乘，否则半透明像素会被放大成亮边。
-				value := source.RGBAAt(sx+x, sy)
+				value := source.RGBAAt(sx, sy)
 				r, g, b = value.R, value.G, value.B
 				if alpha := value.A; alpha != 0 && alpha != 0xff {
 					r, g, b = unpremultiplyPDF(r, alpha), unpremultiplyPDF(g, alpha), unpremultiplyPDF(b, alpha)
 				}
 			default:
-				converted := color.NRGBAModel.Convert(baseImage.At(sx+x, sy)).(color.NRGBA)
+				converted := color.NRGBAModel.Convert(baseImage.At(sx, sy)).(color.NRGBA)
 				r, g, b = converted.R, converted.G, converted.B
 			}
 			target := row + x*4
@@ -644,23 +655,6 @@ func applyPDFImageSoftMask(ctx *model.Context, base []byte, maskStream *types.St
 		return nil, false
 	}
 	return encoded.Bytes(), true
-}
-
-// pdfSoftMaskRow/Column 按最近邻把目标坐标映射到掩码坐标。
-func pdfSoftMaskRow(y, maskHeight, height int) int {
-	maskY := y * maskHeight / height
-	if maskY >= maskHeight {
-		maskY = maskHeight - 1
-	}
-	return maskY
-}
-
-func pdfSoftMaskColumn(x, maskWidth, width int) int {
-	maskX := x * maskWidth / width
-	if maskX >= maskWidth {
-		maskX = maskWidth - 1
-	}
-	return maskX
 }
 
 // hasJBIG2Filter 判断图像流是否使用 JBIG2Decode 过滤器。
@@ -715,7 +709,14 @@ func pdfJBIG2Globals(ctx *model.Context, stream *types.StreamDict) []byte {
 }
 
 // pdfJBIG2Image 用 gobig2 把 JBIG2Decode 段流解码为灰度位图（0 为墨、255 为纸）。
-func pdfJBIG2Image(ctx *model.Context, stream *types.StreamDict) (*image.Gray, error) {
+func pdfJBIG2Image(ctx *model.Context, stream *types.StreamDict, controls ...*conversionControl) (*image.Gray, error) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	if err := control.check(); err != nil {
+		return nil, err
+	}
 	data := jbig2StreamBytes(stream)
 	if len(data) == 0 {
 		return nil, errors.New("JBIG2 图像数据为空")
@@ -724,7 +725,16 @@ func pdfJBIG2Image(ctx *model.Context, stream *types.StreamDict) (*image.Gray, e
 	if err != nil {
 		return nil, fmt.Errorf("JBIG2 解码失败: %w", err)
 	}
-	decoded, err := decoder.Decode()
+	var decoded image.Image
+	if control != nil {
+		decoded, err = decoder.DecodeContext(control.ctx)
+	} else {
+		decoded, err = decoder.Decode()
+	}
+	// gobig2 包装取消错误；转换入口必须原样返回调用方的 context 错误。
+	if cancelled := control.check(); cancelled != nil {
+		return nil, cancelled
+	}
 	if err != nil {
 		return nil, fmt.Errorf("JBIG2 解码失败: %w", err)
 	}
@@ -875,66 +885,14 @@ func jpxStreamBytes(stream *types.StreamDict) []byte {
 	return nil
 }
 
-// encodePDFJPXImage 用纯 Go JPEG 2000 解码库把 JPXDecode 图像转为 PNG。库会按
-// JP2 的 colr 信息做颜色转换，输出灰度或 RGBA；`/Decode [1 0]` 视为反相。
-func encodePDFJPXImage(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
-	data := jpxStreamBytes(stream)
-	if len(data) == 0 {
-		return nil, "", errors.New("JPX 图像数据为空")
+// encodePDFJPXImage 将上下文及预算传入统一的原分量解码路径。
+func encodePDFJPXImage(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor, controls ...*conversionControl) ([]byte, string, error) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
 	}
-	decoded, err := jpeg2000.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, "", fmt.Errorf("JPX 解码失败: %w", err)
-	}
-	if decoded == nil || decoded.Bounds().Empty() {
-		return nil, "", errors.New("JPX 解码结果无效")
-	}
-	decodeMin, decodeMax := 0.0, 1.0
-	if decode, found := stream.Find("Decode"); found {
-		if array, ok := decode.(types.Array); ok && len(array) >= 2 {
-			if value, ok := dereferencedPDFNumber(ctx, array[0]); ok {
-				decodeMin = value
-			}
-			if value, ok := dereferencedPDFNumber(ctx, array[1]); ok {
-				decodeMax = value
-			}
-		}
-	}
-	invert := decodeMax < decodeMin
-	imageMask := false
-	if value, found := stream.Find("ImageMask"); found {
-		if boolean, ok := value.(types.Boolean); ok {
-			imageMask = boolean.Value()
-		}
-	}
-	bounds := decoded.Bounds()
-	if imageMask {
-		rgba := image.NewRGBA(bounds)
-		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-			for x := bounds.Min.X; x < bounds.Max.X; x++ {
-				ink := color.GrayModel.Convert(decoded.At(x, y)).(color.Gray).Y < 128
-				if invert {
-					ink = !ink
-				}
-				if ink {
-					rgba.SetRGBA(x, y, color.RGBA{R: maskColor.r, G: maskColor.g, B: maskColor.b, A: 255})
-				}
-			}
-		}
-		return encodePNGImage(rgba)
-	}
-	if !invert {
-		return encodePNGImage(decoded)
-	}
-	out := image.NewNRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			value := color.NRGBAModel.Convert(decoded.At(x, y)).(color.NRGBA)
-			value.R, value.G, value.B = 255-value.R, 255-value.G, 255-value.B
-			out.SetNRGBA(x, y, value)
-		}
-	}
-	return encodePNGImage(out)
+	p := pdfInterpreter{ctx: ctx, control: control}
+	return p.encodeJPXImage(stream, maskColor)
 }
 
 // encodePNGImage 把图像编码为 PNG。
@@ -947,24 +905,49 @@ func encodePNGImage(img image.Image) ([]byte, string, error) {
 }
 
 // pdfImageMaskSamples 解码软掩码样本：JBIG2 掩码用 gobig2，其余走通用样本解码。
-func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, height, bpc int) ([]byte, error) {
+func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, height, bpc int, controls ...*conversionControl) ([]byte, error) {
 	if hasJBIG2Filter(stream) {
-		gray, err := pdfJBIG2Image(ctx, stream)
+		gray, err := pdfJBIG2Image(ctx, stream, controls...)
 		if err != nil {
 			return nil, err
 		}
 		return resampleGrayMask(gray, width, height), nil
 	}
 	if hasJPXFilter(stream) {
-		data := jpxStreamBytes(stream)
-		if len(data) == 0 {
-			return nil, errors.New("JPX 掩码数据为空")
+		var control *conversionControl
+		if len(controls) > 0 {
+			control = controls[0]
 		}
-		decoded, err := jpeg2000.Decode(bytes.NewReader(data))
+		p := pdfInterpreter{ctx: ctx, control: control}
+		source := *stream
+		if pdfImageIsMask(ctx, stream) && stream.Dict["ColorSpace"] == nil {
+			source.Dict = stream.Dict.Clone().(types.Dict)
+			source.Dict["ColorSpace"] = types.Name("DeviceGray")
+		}
+		info, err := p.jpxHeader(&source, false)
 		if err != nil {
-			return nil, fmt.Errorf("JPX 掩码解码失败: %w", err)
+			return nil, err
 		}
-		return resampleImageGray(decoded, width, height), nil
+		if info.family != "DeviceGray" || (pdfImageIsMask(ctx, stream) && info.metadata.BitsPerComponent[0] != 1) {
+			return nil, fmt.Errorf("JPX 掩码需要灰度分量，ImageMask 必须为 1 位")
+		}
+		m := info.metadata
+		decoded, err := p.jpxImagePlanes(&source, info, m.Width, m.Height, false)
+		if err != nil {
+			return nil, err
+		}
+		maximum := float64(uint32(1)<<uint(m.BitsPerComponent[0]) - 1)
+		samples := make([]byte, width*height)
+		for y := 0; y < height; y++ {
+			if err := control.check(); err != nil {
+				return nil, err
+			}
+			row := pdfSoftMaskRow(y, m.Height, height) * m.Width
+			for x := 0; x < width; x++ {
+				samples[y*width+x] = floatToByte(float64(decoded.Components[0][row+pdfSoftMaskColumn(x, m.Width, width)]) / maximum)
+			}
+		}
+		return samples, nil
 	}
 	// DCTDecode（JPEG）掩码：按图像解码成灰度样本。此前只处理 JBIG2/JPX 与未压缩
 	// 样本，JPEG 掩码只能走到 decodePDFImageSamples（按裸样解读码）而失败，掩码被
@@ -1040,14 +1023,14 @@ func resampleGrayMask(gray *image.Gray, width, height int) []byte {
 	return samples
 }
 
-func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor) ([]byte, string, error) {
+func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor, controls ...*conversionControl) ([]byte, string, error) {
 	// JBIG2Decode（T.88）由 gobig2 解码为灰度位图，再按 ImageMask 或 1 位图像
 	// 输出。pdfcpu 不处理该过滤器，必须在此之前拦截。
 	if hasJBIG2Filter(stream) {
 		if data, ok := pdfJBIG2Standalone(ctx, stream); ok {
 			return data, "JBIG2", nil
 		}
-		gray, err := pdfJBIG2Image(ctx, stream)
+		gray, err := pdfJBIG2Image(ctx, stream, controls...)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1055,7 +1038,7 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 	}
 	// JPXDecode（JPEG 2000）由纯 Go 解码库处理。
 	if hasJPXFilter(stream) {
-		return encodePDFJPXImage(ctx, stream, maskColor)
+		return encodePDFJPXImage(ctx, stream, maskColor, controls...)
 	}
 	// 图像颜色空间可能内嵌 ICC 配置文件；CMYK 图像优先用它转换到 RGB。
 	cmyk := pdfImageCMYKConverter(ctx, stream)
@@ -1073,6 +1056,18 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 			jpegData = append([]byte(nil), stream.Raw...)
 		} else {
 			return nil, "", errors.New("JPEG 图像解码失败")
+		}
+		if stream.Dict["Decode"] != nil && !pdfImageIsMask(ctx, stream) {
+			var control *conversionControl
+			if len(controls) > 0 {
+				control = controls[0]
+			}
+			p := pdfInterpreter{ctx: ctx, control: control}
+			if data, changed, err := p.jpegDecodeData(stream, jpegData); err != nil {
+				return nil, "", err
+			} else if changed {
+				return data, "PNG", nil
+			}
 		}
 		// DeviceCMYK JPEG 直接嵌入 OFD 时，多数渲染器会按 Adobe 约定解码成
 		// 反相颜色（整幅变黑）。这里转换为 RGB PNG，保证红章等彩色图像正确。

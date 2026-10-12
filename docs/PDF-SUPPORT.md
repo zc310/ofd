@@ -82,35 +82,108 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 
 | 标准范围                       | 状态 | 说明                                                                                                                                                                            |
 |--------------------------------|:----:|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `DCTDecode`（JPEG）            |  ⚠️  | JPEG 数据直接嵌入 OFD；DeviceCMYK JPEG（含 Adobe APP14 反相约定）转为 RGB PNG。                                                                                                 |
+| `DCTDecode`（JPEG） | ⚠️ | 缺省/恒等 Decode 的 Gray/RGB JPEG 保留原字节；8 位 Gray/RGB/CMYK 的非恒等 Decode 在原分量中映射后输出 PNG。DeviceCMYK JPEG（含 Adobe APP14 反相约定）转为 RGB PNG；支持 Adobe CMYK/YCCK 与外层 Flate 包装。 |
 | `FlateDecode` 解码后的栅格数据 |  ⚠️  | 8 位 DeviceGray/DeviceRGB、DeviceCMYK（油墨值）与 Indexed 调色板图像重编码为 PNG。                                                                                              |
 | `ImageMask`（1 位蒙版）        |  ⚠️  | 0 采样按当前填充色着色；仅支持 1 位蒙版。                                                                                                                                       |
-| `Decode` 数组（反相）          |  ✅  |                                                                                                                                                                                 |
+| `Decode` 数组（反相） | ⚠️ | 普通栅格、8 位 JPEG、Matte 与颜色键路径保留 Decode 区间及反相；普通 JPX 按规范忽略 Decode。普通 JBIG2 图像目前只保留 Decode 反相，任意区间由 Matte/颜色键路径支持。 |
 | 图像仿射变换（`cm`） | ✅ | 从页面四角恢复完整图片 `CTM`，保留旋转、错切、镜像，并结合页面 Rotate、CropBox 原点和 UserUnit。 |
-| `/Mask`（颜色键或显式遮罩） | ⚠️ | 颜色键按 `/Decode` 与颜色转换之前的原始整数采样值匹配闭区间，支持普通栅格数据的 1/2/4/8/16 位 DeviceGray/RGB/CMYK 与 Indexed（按索引匹配）；JPEG/JPX/JBIG2 颜色键尚未支持。显式遮罩支持独立的 1 位 `ImageMask`，默认 0 绘制、1 透明，`Decode [1 0]` 反相；不同尺寸按最近邻对齐，以两者各轴最大分辨率合成 PNG，16 位基础图保留颜色精度。`SMask` 优先于 `Mask`；损坏或不支持的遮罩报告诊断，普通模式保留基础图、严格模式失败。 |
+| `/Mask`（颜色键或显式遮罩） | ⚠️ | 颜色键按 `/Decode` 与颜色转换之前的原始整数采样值匹配闭区间，支持普通栅格数据的 1/2/4/8/16 位 DeviceGray/RGB/CMYK 与 Indexed（按索引匹配）、JPX 的 1–16 位 DeviceGray/RGB/CMYK 原分量、8 位 JPEG Gray/RGB/CMYK 及 1 位 JBIG2 Gray。显式遮罩支持独立的 1 位 `ImageMask`，默认 0 绘制、1 透明，`Decode [1 0]` 反相；不同尺寸按最近邻对齐，以两者各轴最大分辨率合成 PNG，16 位基础图保留颜色精度。`SMask` 优先于 `Mask`；损坏或不支持的遮罩报告诊断，普通模式保留基础图、严格模式失败。 |
 | 颜色空间 | ⚠️ | 图像支持 DeviceGray/CalGray、DeviceRGB/CalRGB、DeviceCMYK、Indexed 与部分 ICCBased；CalGray/CalRGB 的校准参数报告近似诊断。Lab、Separation/DeviceN 图像目前跳过并报告；路径/文字的 Separation/DeviceN 支持 Type 0/2/3/4 tint 函数。 |
 | tint 与着色函数 | ⚠️ | Type 0 采样（8/16/1/2/4/12 位，多线性插值）、Type 2 指数插值、Type 3 拼接；Type 4 支持 PDF 规定的 42 个计算操作符（包括 `true/false`）、嵌套 `if/ifelse`、整数/实数类型及 `Domain/Range` 裁剪，用于 Separation/DeviceN 与渐变/网格着色函数。轴向/径向渐变仍按 32 段采样，函数不连续点可能被分段插值平滑。 |
 | `CCITTFaxDecode`               |  ✅  | 由 pdfcpu 解码后重编码为 PNG（扫描件 ImageMask 常见）。                                                                                                                         |
 | `JBIG2Decode`                  |  ✅  | 由 `github.com/dkrisman/gobig2` 解码为灰度位图；支持 `/JBIG2Globals`、`/Decode` 反相，`ImageMask` 按填充色着色，也可作为 `/SMask`。                                             |
-| `JPXDecode`                    |  ✅  | 由 `github.com/mrjoshuak/go-jpeg2000`（纯 Go JPEG 2000）解码，支持 JP2 与裸码流、灰度/彩色/RGBA 与 `/Decode` 反相；也可作为 `/SMask`。CMYK 裸码流按库的 colr 处理，可能不准确。 |
-| `SMask`（软蒙版） | ⚠️ | 图像自身 `/SMask`：1/2/4/8/16 位普通灰度样本及 JPEG/JPX/JBIG2 灰度掩码作为 PNG alpha 通道应用到图像。普通 16 位掩码或 16 位底图使用 16 位非预乘 PNG，保留颜色与透明度精度；`Decode` 的区间、反相及间接数值保留。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject）；矢量掩码与一般透明组尚未支持。 |
+| `JPXDecode` | ⚠️ | 由 `github.com/mrjoshuak/go-jpeg2000` 的原整数分量接口解码；支持 JP2/裸码流的 DeviceGray/RGB/CMYK、同位深 1–16 位无符号样本、灰度软掩码，以及 `SMaskInData=1/2` 的内嵌透明度。普通图像忽略 PDF `Decode` 和字典位深；ImageMask 保留二值 Decode 反相。超过 8 位输出 16 位 PNG；CMYK 沿用现有颜色转换近似。复杂颜色空间与通道结构尚未支持。 |
+| `SMask`（软蒙版） | ⚠️ | 图像自身 `/SMask`：1/2/4/8/16 位普通灰度样本、1–16 位 JPX 原灰度分量及 JPEG/JBIG2 灰度掩码作为 PNG alpha 应用到图像。底图或掩码高于 8 位时使用 16 位非预乘 PNG。普通栅格的 `Decode` 区间、反相及间接数值保留；JPX 的 Decode 被忽略。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject）；矢量掩码与一般透明组尚未支持。 |
 | 透明度                         |  ⚠️  | 图像、路径、文字的 `ca`/`CA` 转换为 OFD 透明度（0-255）；不实现混合模式与透明组。                                                                                               |
 
 图片的 `/Interpolate` 尚未单独保留；遮罩合成阶段使用最近邻，生成 PNG 在阅读器放大
 显示时仍按阅读器的图片插值规则处理，极低分辨率样本的二值透明边缘可能显示为平滑过渡。
 
-软掩码合成沿用基础图尺寸，按最近邻对齐不同尺寸的掩码；JPEG/JPX/JBIG2 掩码沿用
-现有的 8 位灰度解码路径。图像自身 `/SMask` 的 `/Matte` 支持普通栅格及 8 位 JPEG 的
+JPX 颜色键支持 JP2 与裸码流，按实际码流位深及尺寸读取原分量，忽略 PDF
+`Decode` 和字典位深。先按 `cdef` 确定逻辑颜色顺序，再匹配全部颜色分量的闭区间；
+比较发生在 CMYK/sYCC 等颜色转换前，不比较 PNG 的 RGB，也不先降到 8 位。
+有损逆变换的分量先舍入并截断到有效整数范围；额外原分量解码及 PNG 合成均计入
+图片与处理量预算，逐行检查取消，重复绘制缓存结果。外置 SMask 或非零
+`SMaskInData` 覆盖颜色键，忽略的键不校验、不解码。无效区间报告
+`image.mask_explicit`，普通模式保留基础图，严格模式失败。
+
+JPEG/JBIG2 颜色键共用 Matte 的原采样读取。JPEG 在 JPEG 颜色变换之后、PDF
+`Decode` 之前匹配全部分量的闭区间；Adobe CMYK/YCCK 先撤销 Go 解码器的反相，
+不能按油墨值或已转换的 RGB 匹配。支持 8 位 Gray/RGB/CMYK、外层 Flate 包装，
+实际尺寸和分量数须与声明一致；与码流变换冲突的 `ColorTransform` 覆盖报告缺口。
+JBIG2 匹配二值采样 0/1，支持现有全局段读取和受控解压，实际尺寸须与声明一致。
+匹配后在原颜色空间应用 `Decode`，再输出带二值 alpha 的 PNG；间接键数组及端点
+保留。额外原采样解码和 PNG 合成分别计入图片/处理量预算，逐行检查取消，重复
+绘制缓存结果。外置 SMask 覆盖颜色键；无效键或不支持结构报告
+`image.mask_explicit`，普通模式保留基础图，严格模式失败。
+
+软掩码合成取基础图与掩码各轴的最大分辨率，分别按最近邻对齐，避免高分辨率
+掩码被压到底图尺寸而丢失细线、局部透明及渐变。普通、JPEG/JBIG2 和 JPX
+掩码共用这一合成尺寸规则，图像自身与受支持的图形状态软掩码均适用。JPEG/JBIG2
+掩码沿用现有的 8 位灰度解码路径。JPX 按码流实际尺寸和位深读取原灰度分量；超过 8 位时
+保留完整 16 位 alpha，相邻样本不会先被合并成同一个 8 位值。图像自身 `/SMask` 的 `/Matte` 支持普通栅格及 8 位 JPEG 的
 DeviceGray/RGB/CMYK：先应用基础图和掩码的 `Decode`，在原颜色空间还原预混合
 分量，再转换为 RGB 并写入 alpha；保留 8/16 位输出精度，alpha 为 0 时颜色置零。
 JPEG 底图与 JPEG 灰度掩码均支持 Matte；Adobe CMYK/YCCK 先撤销 Go 解码反相，
 再应用 PDF `Decode`，在 CMYK 分量中去底色。JPEG 实际尺寸须与声明一致；支持
 外层 Flate 包装，额外 JPEG 解码计入预算。与码流变换冲突的 `ColorTransform` 覆盖
-暂未支持。带 Matte 的掩码必须与基础图同尺寸；JPX/JBIG2、校准或 ICC 颜色空间的
-Matte 暂未支持。无效或不支持的 Matte 报告 `image.mask_matte`，普通模式保留基础图，
+暂未支持。Matte 也支持 1 位 DeviceGray JBIG2 底图和 JBIG2 灰度掩码；掩码可搭配
+普通栅格或 JPEG 的 DeviceGray/RGB/CMYK 底图。先在原灰度样本上应用双方 `Decode`，
+掩码的部分透明度端点保留为 16 位直到去底色完成，再按底图精度写入 8/16 位 PNG。
+JBIG2 实际尺寸须与声明一致；支持已有的 `JBIG2Globals` 全局段读取与受控解压，
+额外解码计入像素和处理量预算，解码器在段间检查取消并原样返回 context 错误。
+JBIG2 暂只支持单一过滤器。Matte 也支持 JP2 与裸 JPEG 2000 码流的 DeviceGray/RGB/CMYK
+底图及 JPX 灰度掩码：从整数样本平面还原颜色，避免先经 JP2 的 CMYK→RGB 转换或
+把第四个颜色分量误当作 alpha。支持同位深的 1–16 位无符号分量；按码流位深归一化，
+超过 8 位时输出 16 位 PNG，并保留 JPX 掩码的透明度精度。PDF 规范规定 JPX 的
+`BitsPerComponent` 和普通图像的 `Decode` 被忽略；普通与 Matte 路径均遵守此规则，
+只有 1 位 ImageMask/显式遮罩保留 Decode 反相。未指定 PDF `ColorSpace` 时，可由 JP2 的灰度/RGB/CMYK
+枚举颜色信息推导；裸码流仍需显式指定颜色空间。Matte 路径的实际尺寸必须与声明一致，额外解码
+计入像素与处理量预算，JP2 盒扫描也受处理量预算约束。JPX 暂只支持单一过滤器；
+调色板、`cmap` 通道映射、ICC、额外颜色变换、有符号或混合位深分量尚未支持；
+支持 `cdef` 通过 Association 指定逻辑颜色顺序，颜色分量可重排，单个作用于全部
+颜色的 opacity 可以位于任意平面。条目的排列次序不影响映射。先按通道定义调整
+采样平面引用，再做 Matte、反预乘及颜色转换，不额外复制逐像素数据。
+重复、缺失、颜色关联不完整或与 `SMaskInData` 不一致的通道定义报告诊断。
+逐颜色 opacity、多 opacity 尚未支持；普通三分量 JP2 支持颜色重排后再做
+sYCC、eYCC、YCbCr2/3、PhotoYCC 和 CMY 转换。
+Matte 路径仍不支持 `SMaskInData` 内嵌透明度。JPX 解码前后及逐行合成检查取消，
+解码库内部没有 context 接口。
+带 Matte 的掩码必须与基础图同尺寸；校准或 ICC 颜色空间的 Matte 暂未支持。
+无效或不支持的 Matte 报告 `image.mask_matte`，普通模式保留基础图，
 严格模式失败。掩码采样、Matte 逐分量还原与逐像素合成
 计入 `MaxOperations`，解码、合成及缓存遵循图片预算；逐行检查取消。损坏掩码在
 普通模式报告并保留基础图，严格模式失败。
+
+普通 JPX 与 Matte 共用原分量解码和结构校验。普通 JPX 支持 `SMaskInData=1` 的
+非预乘透明度及 `SMaskInData=2` 的预乘透明度；后者先在原颜色分量中反预乘，再
+转换为 RGB 并写入 PNG。`SMaskInData` 缺省或为 0 时忽略码流额外 alpha，保持
+不透明。`SMaskInData=1/2` 且没有外置 `SMask` 时，使用内嵌透明度并忽略 `Mask`。
+非零 `SMaskInData` 本不应与 `SMask` 同时出现；对此冲突，普通模式按已验证的
+MuPDF/Poppler 行为优先应用外置 `SMask`，并报告 `image.mask_priority`，严格模式
+拒绝兼容转换。外置 alpha 替换内嵌 alpha，不相乘；选中的遮罩计入解码/图片/处理量
+预算，重复绘制缓存结果并只报告一次。损坏的外置 SMask 报告诊断并保留内嵌透明度，
+预算超限始终终止转换。缺省或为 0 时仍按 `SMask` 优先于 `Mask` 的规则选择。
+被忽略的显式 `Mask` 不解码，也不扣除其图片预算。普通图像的解码和输出写入计入处理量
+预算，基础解码只计一次像素，重复绘制命中缓存。尚未支持的 JPX 调色板、`cmap`、
+ICC、其余颜色变换、有符号或混合位深结构在普通模式报告 `image.decode` 并跳过
+该图片，其余页面内容保留；严格模式终止。损坏或不支持的 JPX 软掩码报告 `image.mask`
+并按既有规则保留底图或严格失败。
+普通三分量 JP2 从原样本读取 sYCC/eYCC、YCbCr2/3、PhotoYCC 和 CMY：先应用
+`cdef`，再转换为 RGB。sYCC 修正为 BT.601 矩阵，避免解码库原 BT.709 系数造成
+非中性色偏差；色度中心按码流位深计算，直到输出 PNG 才量化，高于 8 位时保留
+16 位输出。eYCC 按 OpenJPEG `color_esycc_to_rgb` 的无符号样本逆矩阵转换，
+修正原先复用 BT.709 简化式造成的非中性色偏差；YCbCr2/3、PhotoYCC、CMY
+沿用既有转换语义。
+颜色转换逐分量计入处理量预算，像素预算只计一次解码，重复绘制命中缓存。
+这些颜色变换尚不能用于 Matte、灰度掩码或内嵌 opacity 组合。
+
+图像关联的软掩码（外置 `SMask` 或 JPX 内嵌 opacity）覆盖当前 ExtGState 的
+图形状态软掩码；不会再用图形状态掩码替换已经合成的 alpha。`SMask /None` 或
+只有显式二值 `Mask` 时，图形状态软掩码仍适用；整体 `ca`、组透明度继续保留。
+缓存、非缓存与内联图像共用这项绘制选择，选择只作用于当前图像，不修改 q/Q
+保存的图形状态或缓存媒体。ExtGState 的 Form 解析仍在设置 gs 时执行并计入流/
+处理量预算；被图像覆盖的图形状态掩码不执行额外像素解码及合成。
 
 Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指令与 `copy/roll` 的
 处理量计入 `MaxOperations`，过程嵌套受 `MaxDepth` 约束。当前实现另有 64 层过程、
@@ -153,7 +226,6 @@ Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指
 | 表单域、弹窗等其余交互注解            | 忽略（仅保留 `/AP` 外观）                                     |
 | ShadingType 1、PatternType 之外的着色        | 忽略（回退为纯色或不填充）                                    |
 | 混合模式（`Multiply` 之外的 `/BM`）、非 Luminosity 的图形状态 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
-| JPEG/JPX/JBIG2 图像的颜色键遮罩 | 报告诊断；普通模式保留基础图，严格模式失败 |
 | 数字签名、附件、嵌入式 JavaScript/PostScript | 忽略                                                          |
 | 大纲与链接的其他动作（GoToR、JavaScript、Launch 等） | 忽略（仅保留 `GoTo` 与 URI）                    |
 | `Tr=4–7` 的字形裁剪 | 报告诊断；绘制部分保留，字形裁剪未实现 |
@@ -247,3 +319,111 @@ CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并�
 精度、Decode 顺序、透明/不透明端点、间接 Matte 数值、实际渲染及诊断/预算/缓存。
 `image_matte_jpeg_test.go` 覆盖 JPEG 底图/掩码、灰度/RGB、独立生成的 Adobe CMYK/YCCK
 样本、双方 Decode、16 位 alpha、Flate 包装、额外解码预算、缓存及实际尺寸/变换诊断。
+`image_matte_jbig2_test.go` 覆盖独立构造的 JBIG2 黑/白采样、底图与掩码 Decode、
+部分透明端点、16 位 alpha、JPEG/CMYK 输入组合、全局段解压与间接数值、实际渲染、
+额外解码预算、缓存、损坏掩码回退以及段间取消。
+`image_matte_jpx_test.go` 覆盖 JP2/裸码流的灰度/RGB/CMYK 原分量、1–16 位采样、
+透明度精度、JPX Decode 忽略规则、缺省颜色空间推导、JPEG/JBIG2 输入组合、实际渲染、
+额外解码与盒扫描预算、缓存及不支持结构的诊断/回退。
+另内嵌 OpenJPEG 2.5.0 独立生成的 RGB 与 16 位灰度码流，逐点验证原分量，
+避免仅靠同一 Go 编解码器的往返验证。直接 OFD PNG 与往返 PDF 一致，只证明输出
+路径一致，不能证明与源 PDF 的视觉保真。测试 JP2 的颜色和 opacity 必须包含相应
+通道定义；Go 编码器不会自动写入 `cdef`，四分量样例在外部阅读器中可能被误解。
+源 PDF 应另用独立阅读器渲染对比；对 Decode、预乘/缺省内嵌透明度或高位深掩码的
+处理存在阅读器差异时，须记录源渲染差异。DeviceCMYK 仍受各阅读器的颜色转换影响。
+`image_jpx_precision_test.go` 覆盖普通 JP2/裸码流的 Decode 忽略规则、码流位深、
+灰度/RGB/CMYK 颜色精度、变化的 16 位 RGB、16 位软掩码相邻 alpha 与尺寸对齐、
+内嵌透明度及反预乘、缺省透明度忽略、二值遮罩反相、实际渲染、预算/缓存和诊断/取消。
+另覆盖 `cdef` 的颜色/透明度声明、完整性、重复通道、关联及 opacity 类型不一致。
+`image_jpx_channels_test.go` 覆盖 RGB/CMYK 的 8/16 位颜色重排、opacity 位于首个
+平面、反预乘、缺省透明度忽略、Matte 顺序及条目次序无关；使用独立 OpenJPEG
+码流验证颜色关联，并以源 PDF 的独立阅读器渲染作为视觉对照。
+`image_jpx_colour_test.go` 覆盖重排后的 sYCC/YCbCr2/3/PhotoYCC/CMY/eYCC、
+8/12/16 位精度、非中性及边界颜色的独立 BT.601 对照，以及处理量预算与缓存。
+另内嵌独立 OpenJPEG 的重排 sYCC 码流；源 PDF 的 MuPDF 渲染与本实现最多相差
+一个 8 位等级。在当前环境中，Poppler 对该 JP2 的 colr=18 未执行 sYCC→RGB，
+直接显示 Y/Cb/Cr 值，因此源 PDF 的两个阅读器结果不同，不能声称与两者同时一致。
+`image_jpx_eycc_test.go` 使用 OpenJPEG 单精度参考的固定数值，覆盖 8/12/16 位
+无符号 eYCC、中性及非中性色、边界/超色域截断、重排、高位深低位保留及预算/缓存。
+另内嵌独立 OpenJPEG 的 eYCC 码流验证实际解码。在当前环境中，MuPDF 和 Poppler
+对 eYCC 的 colr=24 都未执行颜色矩阵转换，源 PDF 显示的是 Y/Cb/Cr 样本，
+与本实现存在明显差异；视觉验收使用 OpenJPEG eYCC 固定参考值构造的等价 RGB PDF，
+并明确保留两种源阅读器的对比结果，不声称与其未转换的显示结果一致。
+`image_mask_priority_test.go` 覆盖无外置 SMask 时内嵌 opacity 对显式 Mask 的忽略、
+损坏引用/压缩流及超预算尺寸、SMaskInData=0 的外置掩码保留、图像软掩码覆盖图形状态、
+ca 保留、缓存/q/Q 隔离、非缓存路径及实际渲染。
+`image_mask_conflict_test.go` 覆盖普通模式对冲突外置 SMask 的兼容选择、替换而非
+相乘的 alpha、16 位颜色保留、缓存/诊断次数、选中遮罩预算、严格拒绝及取消。
+视觉样例保留原始冲突条目；普通模式的黑色外置 SMask 与源 PDF 的 MuPDF/Poppler
+均显示为纯蓝背景。图像 SMask 覆盖图形状态、无图像 SMask 时使用图形状态、Q 后
+恢复不透明这三项也与两个源阅读器吻合。
+`image_mask_jpx_test.go` 覆盖 JP2/裸码流颜色键的全部分量闭区间、1–16 位码流
+位深、Decode 忽略、实际尺寸、相邻 16 位采样、CMYK/sYCC 转换前匹配、cdef 重排、
+间接区间、软掩码优先级、预算/缓存、无效区间回退及合成中取消；另使用固定
+OpenJPEG 16 位码流验证原采样。独立视觉样例的 8 位 RGB 与重排 RGB 色块内部
+颜色与当前 Poppler 源渲染一致；当前 MuPDF 对这些颜色键的源渲染不同，两个阅读器
+均未区分 16 位颜色键样例中的相邻采样。对比保留这些差异，并用显式 RGB 色块
+参考 PDF 验证应透明区域的底色与应保留区域的颜色，不声称与所有源阅读器一致。
+低码率 Part 1 MQ 码流的截断编码轮数已修复：按包头实际轮数停止解码，并在
+每个有效系数的剩余区间中点还原幅值，避免把终止填充误解为未编码的低位细节。
+项目通过本地 `replace` 使用 `../third_party/go-jpeg2000` 中的 fork 及基于
+v1.5.12 的解码补丁；包解析、渐进解码和 TileDecoder 共用修复后的 MQ 路径，
+完整编码块保持原结果。普通图片、颜色键、软掩码及 Matte 共用修复后的原分量。
+灰度/RGB、8/16 位、1/3 层分辨率与五档码率的 40 个独立 OpenJPEG 组合，整数
+输出逐点一致；这项验证不代表所有 JPX 编码结构或所有阅读器显示均已一致。
+补丁来源和维护方式见该目录的 `OFD-PATCH.md`，原 MIT 许可保留。
+
+`image_jpx_lowrate_test.go` 固化五组独立 OpenJPEG 码流及逐点参考值，覆盖 JP2/
+裸码流、截断 MQ、灰度/RGB、多层小波、8/16 位及全空编码块。另保护低码率颜色键、
+软掩码和 Matte，防止不同路径继续使用错误低位。fork 依赖中的回归覆盖完整/
+截断 MQ 块的解码、空轮数和实际包头轮数。
+低码率页面样例分别用 MuPDF、Poppler 渲染源 PDF，并保留优化前/后 OFD 与往返
+PDF。普通灰度、RGB 和软掩码在中心采样处与 MuPDF 最多相差两个 8 位等级，
+原 RGB 偏差最高达 110；颜色键与 Poppler 的匹配区域一致，MuPDF 仍未应用该
+样例的颜色键。放大时 Poppler 的最近邻和 OFD/MuPDF 的平滑插值不同；原分量
+回归逐点比较原尺寸整数值，不用放大插值结果替代码流解码验收。
+本样例颜色键的透明边缘在 OFD 与往返 PDF 中心采样处最多相差 8 个等级，属于
+已有图片插值差异；遮罩原尺寸的 alpha 回归逐点一致，不把该边缘差异记为通过。
+
+`image_softmask_resolution_test.go` 覆盖单像素底图与高分辨率软掩码、交叉长宽的
+各轴保留、4/8/16 位 alpha、相邻 16 位值、非零底图原点、Flate/JPEG/JPX/JBIG2
+掩码及图形状态掩码。合成新增像素计入累计预算，交叉长宽生成的更大栅格须通过
+单图/平台上限检查；处理量按输出像素预留，逐行检查取消，重复图像绘制缓存合成
+结果。Matte 路径仍要求掩码与底图同尺寸。
+独立源 PDF 的透明条纹、细线和普通四级 alpha 的内部采样与 MuPDF/Poppler
+对照；高分辨率 16 位 JPX SMask 与 MuPDF 对照。当前 Poppler 对该 JPX 掩码
+源显示存在布局异常，保留其源图结果，不声称与之相同。图片插值规则仍由阅读器
+决定，本项修复保留原始遮罩细节，不完整实现 `/Interpolate`。
+本样例内部采样与 MuPDF 最多相差一个 8 位等级，前三项与 Poppler 最多相差
+两个等级；直接 OFD 与往返 PDF 的对应采样最多相差一个等级。遮罩坐标乘法使用
+64 位整数，避免 32 位/wasm 平台上长条图片在最近邻对齐时溢出。
+坐标函数及其回归使用真实源码独立通过 `GOARCH=386 go test`；整包的 386
+验证被 `go-xml/xdm` 中既有的年份常量超出 int 范围所阻塞，不代表整项目已通过
+32 位编译。
+
+`image_mask_compressed_test.go` 覆盖 JPEG Gray/RGB、Adobe CMYK/YCCK 的原分量
+匹配、Decode 顺序、全部分量闭区间、JBIG2 0/1 极性、Flate 包装、间接键及压缩
+全局段、预算/缓存、SMask 优先级、实际尺寸/ColorTransform 诊断、回退及取消。
+另独立构造 MMR 黑白混合 JBIG2 码流，验证匹配区域而非只验证常量图片。
+源 PDF 的五组内部色块采样在 MuPDF、Poppler、OFD 及往返 PDF 中一致，支持
+透明背景、JPEG/JBIG2 Decode 反相及 Adobe CMYK 键的匹配/不匹配。
+JPEG 色度上采样及图片放大插值仍有阅读器差异；样例 RGB 白/红交界在源阅读器
+中带窄色带，而 OFD 的透明过渡不同，不把交界差异记为视觉一致。CMYK 色彩转换
+继续沿用已有近似。
+
+普通 8 位 JPEG 的显式非恒等 `Decode` 在原分量中映射，再转换为 RGB PNG，
+支持灰度反相/区间、RGB 各分量不同区间、Adobe CMYK/YCCK。端点可在 [0,1]
+之外，映射后截断到有效颜色范围；间接 Decode 数组、端点、位深和尺寸可解析。
+无效数组/非有限端点、不支持结构、实际尺寸不匹配或冲突 ColorTransform 在该
+路径报告 `image.decode`，普通模式跳过图像，严格模式失败。源字典不改写。
+缺省/恒等 Gray/RGB Decode 保留原 JPEG 字节；缺省/恒等 CMYK 沿用已有转换。
+首次原分量解码已由预检计入像素，PNG 合成另计输出像素及处理量，逐行检查取消，
+重复绘制缓存结果。Matte、颜色键和显式/软掩码与此路径组合保持原颜色空间顺序。
+
+`image_jpeg_decode_test.go` 覆盖普通 JPEG 的灰度反相/区间与截断、RGB 分量区间、
+独立构造的 Adobe CMYK/YCCK、恒等原字节保留、Flate 与间接数值、预算/缓存、
+遮罩组合、有限端点/尺寸/ColorTransform 校验、严格诊断及取消。独立源 PDF 的
+灰度/RGB/Flate 色块内部与 MuPDF 最多相差一个 8 位等级，与 Poppler 一致；
+独立 ImageMagick YCCK 样本的对应采样与 Poppler 一致。当前 MuPDF 将 K=1
+显示为 (0,0,0)，Poppler 和既有 CMYK 近似为 (35,31,32)；保留此色彩转换差异，
+不声称与两个阅读器同时一致。放大交界仍受图片插值影响。
