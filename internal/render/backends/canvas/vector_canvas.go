@@ -8,8 +8,8 @@ import (
 
 	"github.com/tdewolff/canvas"
 	cimage "github.com/tdewolff/canvas/image"
-	"github.com/tdewolff/canvas/renderers"
 	"github.com/tdewolff/canvas/renderers/pdf"
+	"github.com/tdewolff/canvas/renderers/svg"
 
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -29,13 +29,17 @@ func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 	var writer canvas.Writer
 	switch format {
 	case "svg":
-		writer = renderers.SVG()
-	case "eps":
-		writer = renderers.EPS()
-	case "tex":
-		writer = renderers.TeX()
+		writer = func(w io.Writer, c *canvas.Canvas) error {
+			renderer := svg.New(w, c.W, c.H, nil)
+			c.RenderTo(renderer)
+			return renderer.Close()
+		}
 	default:
-		return fmt.Errorf("不支持的矢量格式 %q", format)
+		var ok bool
+		writer, ok = extraVectorWriter(format)
+		if !ok {
+			return fmt.Errorf("不支持的矢量格式 %q", format)
+		}
 	}
 	return s.c.Write(w, writer)
 }
