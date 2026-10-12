@@ -1232,6 +1232,46 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 	checkGeneratedPackage(t, data)
 }
 
+func TestCreateTextCodesPreservePositionedSpacesAndRejectEmptySegments(t *testing.T) {
+	x, y := 4.0, 3.0
+	for _, clipped := range []bool{false, true} {
+		text := Text{X: 1, Y: 2, Width: 20, Height: 5, Size: 3, Font: "Helvetica",
+			TextCodes: []TextCode{{Value: "A"}, {Value: " ", X: &x, Y: &y}, {Value: "B"}},
+		}
+		if clipped {
+			text.Clips = &Clips{Items: []Clip{{Areas: []ClipArea{{Text: &ClipText{
+				Boundary: Box{Width: 20, Height: 5}, Size: 3, Font: "Helvetica",
+				TextCodes: []TextCode{{Value: " ", X: &x, Y: &y}},
+			}}}}}}
+		}
+		document := Document{ID: "positioned-spaces", Pages: []Page{{Items: []Item{text}}}}
+		data, err := Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ofd := newTestOFD(t, data)
+		parsed := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
+		space := parsed.TextCode[1]
+		if space.Value != " " || space.X != x || space.Y != y {
+			t.Fatalf("positioned space changed: %+v", space)
+		}
+		if clipped && parsed.Clips.Clip[0].Area[0].Text.TextCode[0].Value != " " {
+			t.Fatal("space in text clip changed")
+		}
+		_ = ofd.Close()
+		checkGeneratedPackage(t, data)
+		if clipped {
+			text.Clips.Items[0].Areas[0].Text.TextCodes[0].Value = ""
+		} else {
+			text.TextCodes[1].Value = ""
+		}
+		document.Pages[0].Items[0] = text
+		if _, err := Marshal(document); err == nil {
+			t.Fatal("empty TextCode accepted")
+		}
+	}
+}
+
 func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 	document := Document{
 		ID: "text-code-delta-test",

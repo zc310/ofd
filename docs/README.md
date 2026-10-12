@@ -13,6 +13,20 @@
 | [OFFICE-SUPPORT.md](OFFICE-SUPPORT.md) | Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）转 OFD/PDF 支持范围  |
 | [HTML-SUPPORT.md](HTML-SUPPORT.md)     | HTML/MHTML 转 OFD/PDF 的支持范围与打印选项                           |
 
+## 库使用指南
+
+| 文档 | 内容 |
+|------|------|
+| [创建器库指南](../pkg/creator/README.md) | Go 创建 API、文字定位、资源、页面组织、附加结构和流式创建。 |
+
+## 开发与维护
+
+支持清单用于查询能力和限制；跨文件实现说明、测试入口及依赖维护记录放在对应代码目录。
+
+| 文档 | 内容 |
+|------|------|
+| [PDF 转换维护说明](../internal/pdf2ofd/README.md) | 转换链路、不变量、回归入口、外部字体、独立阅读器验证与依赖补丁。 |
+
 ## 标准资料
 
 [standards/](standards/) 目录存放项目中使用的国家标准原始文本，供格式学习和开发参考：

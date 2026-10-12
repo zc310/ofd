@@ -99,13 +99,15 @@ func (p *pdfInterpreter) loadType3Font(font *pdfFontInfo, dict types.Dict) {
 	}
 	// 空轮廓 TrueType 字体仅承载 Unicode：可见字形由 CharProcs 绘制，文字层
 	// 仍能作为原生文字写入往返 PDF，且不会叠加替代字体的可见笔画。
-	data, err := pdfSemanticFont(font.toUnicode, p.control)
+	semanticSource := *font
+	semanticSource.type3 = f
+	data, err := pdfSemanticFont(font.toUnicode, semanticSource, p.control)
 	if err != nil {
 		p.report("font.type3", err.Error())
 		return
 	}
 	font.type3 = f
-	font.data, font.format, font.familyName = data, "ttf", "PDFType3Text"
+	font.data, font.format, font.familyName = data, "ttf", pdfSemanticFontFamily
 	font.sfnt, _ = fontparser.ParseSFNT(data, 0)
 	font.bold, font.italic = false, false
 }

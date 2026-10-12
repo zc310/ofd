@@ -5,14 +5,22 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/zc310/ofd/pkg/creator"
 )
 
+const pdfSemanticFontFamily = "PDFType3Text"
+
 // pdfSemanticFont 构造无笔画的合法 TrueType 字体。每个 Unicode 码位使用不同
-// glyph ID，PDF 子集化的 ToUnicode 才不会把多个字符合并成同一个字符。
-func pdfSemanticFont(mapping map[uint32]string, control *conversionControl) ([]byte, error) {
+// glyph ID，并保留源水平字宽，供 PDF 子集化的 ToUnicode 与提取框使用。
+func pdfSemanticFont(mapping map[uint32]string, source pdfFontInfo, control *conversionControl) ([]byte, error) {
+	advances, err := pdfSemanticAdvances(source, control)
+	if err != nil {
+		return nil, err
+	}
 	set := map[rune]bool{' ': true, '\uFFFD': true}
 	for _, value := range mapping {
 		if control.consumeOperations(int64(len(value))) != nil {
@@ -70,9 +78,36 @@ func pdfSemanticFont(mapping map[uint32]string, control *conversionControl) ([]b
 	tables["glyf"] = make([]byte, 4)
 	tables["loca"] = make([]byte, (count+1)*2)
 	hmtx := make([]byte, count*4)
-	for i := 0; i < count; i++ {
-		u16(hmtx, i*4, 1000)
+	defaultAdvance := source.defaultW
+	if source.widths == nil && defaultAdvance == 0 {
+		defaultAdvance = 1000
 	}
+	if source.type3 != nil {
+		defaultAdvance *= math.Hypot(source.type3.matrix[0], source.type3.matrix[1]) * 1000
+	}
+	width := func(v float64) uint16 {
+		if !calculatorFinite(v) {
+			return 1000
+		}
+		return uint16(math.Round(math.Max(0, math.Min(math.MaxUint16, v))))
+	}
+	u16(hmtx, 0, width(defaultAdvance))
+	maxAdvance := width(defaultAdvance)
+	for i, r := range runes {
+		advance, ok := advances[r]
+		if !ok {
+			advance = defaultAdvance
+			if source.type3 == nil && source.sfnt != nil && source.sfnt.Head != nil && source.sfnt.Head.UnitsPerEm > 0 {
+				if glyph := source.sfnt.GlyphIndex(r); glyph != 0 {
+					advance = float64(source.sfnt.GlyphAdvance(glyph)) * 1000 / float64(source.sfnt.Head.UnitsPerEm)
+				}
+			}
+		}
+		w := width(advance)
+		u16(hmtx, (i+1)*4, w)
+		maxAdvance = max(maxAdvance, w)
+	}
+	u16(hhea, 10, maxAdvance)
 	tables["hmtx"] = hmtx
 	cmap := make([]byte, 12+16+len(runes)*12)
 	u16(cmap, 2, 1)
@@ -89,7 +124,7 @@ func pdfSemanticFont(mapping map[uint32]string, control *conversionControl) ([]b
 		u32(cmap, o+8, uint32(i+1))
 	}
 	tables["cmap"] = cmap
-	nameString := "PDFType3Text"
+	nameString := pdfSemanticFontFamily
 	name := make([]byte, 6+4*12+len(nameString)*2)
 	u16(name, 2, 4)
 	u16(name, 4, 54)
@@ -170,6 +205,145 @@ func pdfSemanticFont(mapping map[uint32]string, control *conversionControl) ([]b
 	return data, nil
 }
 
+// 空轮廓也需要源字体的水平字宽：固定全角宽会让比例文字的提取框互相
+// 重叠，导致阅读器把同一基线上的单词拆行。实际位置仍由 TextCode 增量控制。
+func pdfSemanticAdvances(source pdfFontInfo, control *conversionControl) (map[rune]float64, error) {
+	type candidate struct {
+		code   uint64
+		width  float64
+		single bool
+	}
+	selected := make(map[rune]candidate)
+	add := func(code uint64, value string) error {
+		if err := control.consumeOperations(int64(len(value)) + 1); err != nil {
+			return err
+		}
+		count := utf8.RuneCountInString(value)
+		if count == 0 {
+			return nil
+		}
+		advance := pdfCodeWidth(code, source) / float64(count)
+		if source.type3 != nil {
+			advance *= math.Hypot(source.type3.matrix[0], source.type3.matrix[1]) * 1000
+		}
+		if !calculatorFinite(advance) {
+			return nil
+		}
+		for _, r := range value {
+			old, found := selected[r]
+			// 一对一映射优先于连字拆分；同一 Unicode 的不同源代码按最小
+			// 代码确定参考字宽，保证 map 遍历顺序不影响输出和字体复用。
+			if !found || (count == 1 && !old.single) || ((count == 1) == old.single && code < old.code) {
+				selected[r] = candidate{code: code, width: advance, single: count == 1}
+			}
+		}
+		return nil
+	}
+	if source.encodingCMap == nil {
+		for code, value := range source.toUnicode {
+			if err := add(uint64(code), value); err != nil {
+				return nil, err
+			}
+		}
+		if source.codeBytes != 2 && source.predefined == nil && (source.widths != nil || source.defaultW != 0) {
+			for code := uint32(0); code < 256; code++ {
+				if _, found := source.toUnicode[code]; !found {
+					if err := add(uint64(code), fallbackPDFCode(byte(code))); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+	for code, value := range source.encodedUnicode {
+		if err := add(code, value); err != nil {
+			return nil, err
+		}
+	}
+	advances := make(map[rune]float64, len(selected))
+	for r, c := range selected {
+		advances[r] = c.width
+	}
+	return advances, nil
+}
+
+// 语义文字不需要整形或轮廓合并；显式增量逐字写成定位段，避免通用
+// 渲染器合并文本串时把小幅 Tc/Tw/TJ 调整吸收到字体的自然步进中。
+func pdfSemanticTextCodes(item creator.Text, control *conversionControl) ([]creator.TextCode, error) {
+	positioned := false
+	for _, code := range item.TextCodes {
+		positioned = positioned || len(code.DeltaX) > 0 || len(code.DeltaY) > 0
+	}
+	if !positioned {
+		return item.TextCodes, nil
+	}
+	codes := make([]creator.TextCode, 0, len(item.TextCodes))
+	for _, code := range item.TextCodes {
+		if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
+			codes = append(codes, code)
+			continue
+		}
+		if err := control.consumeOperations(int64(len(code.Value))); err != nil {
+			return nil, err
+		}
+		x, y := 0.0, item.Height
+		if code.X != nil {
+			x = *code.X
+		}
+		if code.Y != nil {
+			y = *code.Y
+		}
+		index := 0
+		for _, r := range code.Value {
+			if index > 0 {
+				if index-1 < len(code.DeltaX) {
+					x += code.DeltaX[index-1]
+				}
+				if index-1 < len(code.DeltaY) {
+					y += code.DeltaY[index-1]
+				}
+			}
+			px, py := x, y
+			codes = append(codes, creator.TextCode{Value: string(r), X: &px, Y: &py})
+			index++
+		}
+	}
+	return codes, nil
+}
+
+// 在单字图元合并之后固定语义层的位置，Type3 的逐字语义对象也会在合并时
+// 重新形成 DeltaX。只处理本转换器生成的空轮廓字体，常规文字保留原有整形路径。
+func positionPDFSemanticTexts(items []creator.Item, fonts []creator.Font, control *conversionControl) error {
+	if err := control.consumeOperations(int64(len(fonts))); err != nil {
+		return err
+	}
+	semantic := make(map[string]bool)
+	for _, font := range fonts {
+		if font.FamilyName == pdfSemanticFontFamily && len(font.Data) > 0 {
+			semantic[font.Name] = true
+		}
+	}
+	if len(semantic) == 0 {
+		return control.check()
+	}
+	if err := control.consumeOperations(int64(len(items))); err != nil {
+		return err
+	}
+	for i, item := range items {
+		text, ok := item.(creator.Text)
+		if !ok || !semantic[text.Font] {
+			continue
+		}
+		codes, err := pdfSemanticTextCodes(text, control)
+		if err != nil {
+			return err
+		}
+		text.TextCodes = codes
+		items[i] = text
+	}
+	return control.check()
+}
+
 // Tr=3/7 的不可见文字仍须保留往返 PDF 文字层。空轮廓字体允许后端按原生
 // 文字输出，无需依赖透明颜色，也不会绘制字形。生成字体按内容摘要复用。
 func (p *pdfInterpreter) appendText(item creator.Text, font pdfFontInfo) {
@@ -207,7 +381,7 @@ func (p *pdfInterpreter) semanticText(item creator.Text, font pdfFontInfo) (crea
 		nextCode++
 	}
 	mapping[0] = item.Value
-	data, err := pdfSemanticFont(mapping, p.control)
+	data, err := pdfSemanticFont(mapping, font, p.control)
 	if err != nil {
 		p.report("text.semantic", err.Error())
 		return item, false
@@ -223,7 +397,7 @@ func (p *pdfInterpreter) semanticText(item creator.Text, font pdfFontInfo) (crea
 		}
 	}
 	if !found {
-		p.document.Fonts = append(p.document.Fonts, creator.Font{Name: name, FamilyName: "PDFType3Text", Charset: "unicode", Format: "ttf", Data: data})
+		p.document.Fonts = append(p.document.Fonts, creator.Font{Name: name, FamilyName: pdfSemanticFontFamily, Charset: "unicode", Format: "ttf", Data: data})
 	}
 	fill := true
 	item.Fill = &fill

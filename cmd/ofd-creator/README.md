@@ -2,6 +2,8 @@
 
 `ofd-creator` 根据 JSON、YAML 或 TOML manifest 创建 OFD 文件包。
 
+在 Go 程序中直接使用文档模型和创建 API，见 [创建器库指南](../../pkg/creator/README.md)。
+
 使用本工具创建或生成文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。生成结果应根据实际业务、法律和合规要求进行独立复核。
 
 ## 构建
