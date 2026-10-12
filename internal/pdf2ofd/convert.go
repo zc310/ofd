@@ -583,6 +583,13 @@ func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *
 }
 
 func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, depth int) error {
+	if p.type3Uncolored {
+		switch op {
+		case "g", "G", "rg", "RG", "k", "K", "cs", "CS", "sc", "SC", "scn", "SCN":
+			p.report("font.type3_color", "d1 未着色字形不能设置颜色，保留调用方颜色")
+			return p.control.check()
+		}
+	}
 	floatArg := func(index int) float64 {
 		if index >= len(args) {
 			return 0
@@ -707,6 +714,9 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		}
 	case "BT":
 		p.state.textMatrix, p.state.lineMatrix = identityPDFMatrix(), identityPDFMatrix()
+		p.textClip, p.textClipActive = pdfClipRegion{}, false
+	case "ET":
+		p.commitTextClip()
 	case "Tf":
 		if len(args) >= 2 {
 			p.state.fontName = anyName(args[0])
@@ -739,21 +749,22 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		p.state.textRise = floatArg(0)
 	case "Tr":
 		p.state.renderMode = int(floatArg(0))
-		if p.state.renderMode >= 4 && p.state.renderMode <= 7 {
-			p.report("text.clip", "文字字形裁剪尚未支持")
-		}
 	case "Tj":
 		if len(args) > 0 {
-			p.showText(anyBytes(args[0]), nil)
+			p.showText(anyBytes(args[0]), resources, depth)
 		}
 	case "TJ":
 		if len(args) > 0 {
 			if values, ok := args[0].([]any); ok {
 				for _, value := range values {
 					if data, ok := value.(pdfString); ok {
-						p.showText([]byte(data), nil)
+						p.showText([]byte(data), resources, depth)
 					} else {
-						p.adjustText(-anyFloat(value) / 1000 * p.state.fontSize * p.state.hScale / 100)
+						advance := -anyFloat(value) / 1000 * p.state.fontSize
+						if !p.fonts[p.state.fontName].vertical {
+							advance *= p.state.hScale / 100
+						}
+						p.adjustText(advance)
 					}
 				}
 			}
@@ -761,14 +772,14 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 	case "'":
 		p.moveText(0, -p.state.textLeading)
 		if len(args) > 0 {
-			p.showText(anyBytes(args[0]), nil)
+			p.showText(anyBytes(args[0]), resources, depth)
 		}
 	case "\"":
 		if len(args) >= 3 {
 			p.state.wordSpacing = floatArg(0)
 			p.state.charSpacing = floatArg(1)
 			p.moveText(0, -p.state.textLeading)
-			p.showText(anyBytes(args[2]), nil)
+			p.showText(anyBytes(args[2]), resources, depth)
 		}
 	case "m":
 		if len(args) >= 2 {
@@ -921,12 +932,17 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 		if value.Name != name {
 			continue
 		}
-		if value.Format == font.format && bytes.Equal(value.Data, font.data) {
+		if value.Format == font.format && bytes.Equal(value.Data, font.data) &&
+			(len(font.data) > 0 || (value.FamilyName == family && value.Bold == font.bold && value.Italic == font.italic)) {
 			return
 		}
 		// 资源名只在 PDF 页面内局部有效：同名资源在另一页可能指向不同的
 		// 内嵌字体，因此不能按名称合并字体。
-		digest := sha256.Sum256(append([]byte(font.format+":"), font.data...))
+		identity := font.format + ":"
+		if len(font.data) == 0 {
+			identity = fmt.Sprintf("%s:%s:%t:%t", font.format, family, font.bold, font.italic)
+		}
+		digest := sha256.Sum256(append([]byte(identity), font.data...))
 		documentName = name + "-" + hex.EncodeToString(digest[:])[:12]
 		break
 	}

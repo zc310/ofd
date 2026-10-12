@@ -16,7 +16,7 @@ import (
 func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	dir := t.TempDir()
 	input, output := filepath.Join(dir, "input.pdf"), filepath.Join(dir, "output.ofd")
-	if err := os.WriteFile(input, testutil.MinimalPDF([]byte("BT /F1 12 Tf 7 Tr (A) Tj ET"), 200, 200), 0600); err != nil {
+	if err := os.WriteFile(input, testutil.MinimalPDF([]byte("/Missing Do"), 200, 200), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(output, []byte("existing output"), 0600); err != nil {
@@ -32,7 +32,7 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	var diagnostics bytes.Buffer
 	opts.diagnosticsWriter = &diagnostics
 	err = run(opts)
-	if !errors.Is(err, converter.ErrPDFImportUnsupported) || !strings.Contains(diagnostics.String(), "[text.clip]") {
+	if !errors.Is(err, converter.ErrPDFImportUnsupported) || !strings.Contains(diagnostics.String(), "[resource.missing]") {
 		t.Fatalf("error=%v diagnostics=%s", err, diagnostics.String())
 	}
 	data, err := os.ReadFile(output)
@@ -51,6 +51,26 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 		if err := run(opts); !errors.Is(err, ErrUsage) {
 			t.Fatalf("args=%v error=%v", args, err)
 		}
+	}
+}
+
+func TestPDFStrictImportAcceptsGlyphClipping(t *testing.T) {
+	dir := t.TempDir()
+	input, output := filepath.Join(dir, "clip.pdf"), filepath.Join(dir, "clip.ofd")
+	if err := os.WriteFile(input, testutil.MinimalPDF([]byte("BT /F1 12 Tf 7 Tr (A) Tj ET 0 0 200 200 re f"), 200, 200), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := parseArgs([]string{"--from", "pdf", "--pdf-strict", input, output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diagnostics bytes.Buffer
+	opts.diagnosticsWriter = &diagnostics
+	if err := run(opts); err != nil || diagnostics.Len() != 0 {
+		t.Fatalf("clip import=%v diagnostics=%s", err, diagnostics.String())
+	}
+	if info, err := os.Stat(output); err != nil || info.Size() == 0 {
+		t.Fatalf("clip output missing: %v", err)
 	}
 }
 

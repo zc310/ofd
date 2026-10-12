@@ -68,6 +68,10 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 		return nil
 	}
 	if *subtype == "Image" {
+		if p.type3Uncolored && !pdfImageIsMask(p.ctx, stream) {
+			p.report("font.type3_color", "d1 未着色字形只能绘制 ImageMask 图像")
+			return p.control.check()
+		}
 		// 单个图像解码失败（例如 JPXDecode 等不支持的过滤器）不应中断整页
 		// 转换，跳过该图像继续处理其余内容。
 		if reference, ok := object.(types.IndirectRef); ok && !pdfImageIsMask(p.ctx, stream) {
@@ -148,10 +152,21 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 		}
 		parentState := p.state
 		parentStack := p.stack
+		parentTextClip, parentTextClipActive := p.textClip, p.textClipActive
+		parentPath, parentPendingClip := p.path, p.pendingClip
+		parentHasPendingClip, parentPendingEvenOdd := p.hasPendingClip, p.pendingClipEvenOdd
+		parentFonts, parentAliases := p.fonts, p.fontAliases
+		p.textClip, p.textClipActive = pdfClipRegion{}, false
+		p.path, p.pendingClip, p.hasPendingClip = nil, nil, false
+		p.fonts, p.fontAliases = map[string]pdfFontInfo{}, map[string]string{}
 		p.stack = nil
 		err := p.parse(stream.Content, formResources, &formState, depth+1)
 		p.state = parentState
 		p.stack = parentStack
+		p.textClip, p.textClipActive = parentTextClip, parentTextClipActive
+		p.path, p.pendingClip = parentPath, parentPendingClip
+		p.hasPendingClip, p.pendingClipEvenOdd = parentHasPendingClip, parentPendingEvenOdd
+		p.fonts, p.fontAliases = parentFonts, parentAliases
 		if err == nil && multiplyShading && len(p.page.Items) == itemStart+1 {
 			if path, ok := p.page.Items[itemStart].(creator.Path); ok && path.Fill && !path.Stroke {
 				image, blendErr := p.multiplyShadingImage(path, p.page.Items[:itemStart], p.fillOpacity())
@@ -187,6 +202,10 @@ func imageObjectCTM(points [4][2]float64, minX, minY float64) *creator.CTM {
 // appendImage 把解码后的图像按当前 CTM 的包围盒放入页面。内联图像与图像
 // XObject 共用该逻辑。
 func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
+	if p.type3Uncolored && !pdfImageIsMask(p.ctx, stream) {
+		p.report("font.type3_color", "d1 未着色字形只能绘制 ImageMask 图像")
+		return p.control.check()
+	}
 	data, format, err := p.imageData(stream, p.state.fill)
 	if err != nil {
 		return err
