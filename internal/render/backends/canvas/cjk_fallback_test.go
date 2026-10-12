@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 )

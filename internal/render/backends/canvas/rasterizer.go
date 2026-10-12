@@ -3,8 +3,8 @@ package canvas
 import (
 	"image"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers/rasterizer"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 )

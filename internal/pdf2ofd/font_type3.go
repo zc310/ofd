@@ -6,7 +6,7 @@ import (
 
 	"github.com/benoitkugler/textlayout/fonts/simpleencodings"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 )
 
 type pdfType3Font struct {
@@ -110,7 +110,7 @@ func (p *pdfInterpreter) loadType3Font(font *pdfFontInfo, dict types.Dict) {
 	font.bold, font.italic = false, false
 }
 
-func (p *pdfInterpreter) drawType3Glyph(font pdfFontInfo, code uint16, pageResources types.Dict, depth int) error {
+func (p *pdfInterpreter) drawType3Glyph(font pdfFontInfo, code uint64, pageResources types.Dict, depth int) error {
 	f := font.type3
 	name := f.names[byte(code)]
 	object := f.charProcs[name]

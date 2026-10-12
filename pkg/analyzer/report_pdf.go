@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tdewolff/canvas"
-	pdfrenderer "github.com/tdewolff/canvas/renderers/pdf"
+	"github.com/zc310/canvas"
+	pdfrenderer "github.com/zc310/canvas/renderers/pdf"
 )
 
 // PDFOptions 配置 PDF 报告生成选项。

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/font"
+	"github.com/zc310/canvas"
+	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/utils"

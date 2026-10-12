@@ -7,9 +7,9 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 )
 
-func TestConvertMultiplyFillBecomesTranslucent(t *testing.T) {
-	// Multiply 混合的纯色填充（如高亮注释）应近似为半透明，使下方文字透出：
-	// 不透明度 a = (255-minC)/255，修正色 C′ = 255 - (255-C)/a。
+func TestConvertMultiplyFillKeepsSourceOnTransparentBackdrop(t *testing.T) {
+	// Without an existing backdrop Multiply retains the original source color
+	// and coverage. A page with no painted backdrop must not introduce black.
 	content := []byte("q /GS gs 0.984314 0.360784 0.537255 rg 0 0 100 100 re f Q")
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",
@@ -33,24 +33,13 @@ func TestConvertMultiplyFillBecomesTranslucent(t *testing.T) {
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
-	paths := layerPaths(page.Content().Layer[0])
-	if len(paths) != 1 {
-		t.Fatalf("path objects = %d, want 1", len(paths))
+	if images := layerImages(page.Content().Layer[0]); len(images) != 1 {
+		t.Fatalf("composited images=%d", len(images))
 	}
-	path := paths[0]
-	if path.Alpha == nil {
-		t.Fatal("multiply fill should be translucent; Alpha is nil")
-	}
-	// minC = 92 → a = 163/255 ≈ 0.639 → 不透明度 a*255 ≈ 163。
-	if got := *path.Alpha; got < 160 || got > 166 {
-		t.Fatalf("Alpha = %d, want ~163", got)
-	}
-	color := path.FillColor
-	if color == nil || color.Value == nil {
-		t.Fatal("multiply fill has no solid color")
-	}
-	if color.Value.R < 240 || color.Value.G > 7 || color.Value.B < 62 || color.Value.B > 80 {
-		t.Fatalf("corrected color = %v, want ~(249,0,70)", color.Value.RGBA)
+	img := decodeFirstPageImage(t, output.Bytes())
+	c := img.NRGBAAt(img.Bounds().Dx()/2, img.Bounds().Dy()/2)
+	if absByteDifference(c.R, 251) > 2 || absByteDifference(c.G, 92) > 2 || absByteDifference(c.B, 137) > 2 || c.A != 255 {
+		t.Fatalf("Multiply on empty backdrop=%v", c)
 	}
 }
 

@@ -3,8 +3,8 @@ package pdf2ofd
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
@@ -18,31 +18,19 @@ func (p *pdfInterpreter) loadFontWritingMode(font *pdfFontInfo, dict types.Dict)
 	if name, ok := object.(types.Name); ok {
 		font.encoding = name.Value()
 		font.vertical = strings.HasSuffix(font.encoding, "-V")
+		if cmap, err := loadPDFPredefinedCMap(font.encoding); err != nil {
+			p.report("font.cmap", err.Error())
+		} else if cmap != nil {
+			font.predefined = cmap
+			font.vertical = cmap.vertical
+		}
 		return
 	}
 	stream := pdfMaskStream(object)
 	if stream == nil {
 		return
 	}
-	if err := p.decodeStream(stream, 0); err != nil {
-		p.report("font.cmap", err.Error())
-		return
-	}
-	if err := p.control.consumeOperations(int64(len(stream.Content))); err != nil {
-		return
-	}
-	tokens := tokenizePDFCMap(string(stream.Content))
-	for i, token := range tokens {
-		if token == "/WMode" && i+1 < len(tokens) {
-			mode, err := strconv.Atoi(tokens[i+1])
-			if err != nil || (mode != 0 && mode != 1) {
-				p.report("font.cmap", "CMap WMode 必须为 0 或 1")
-				return
-			}
-			font.vertical = mode == 1
-		}
-	}
-	p.loadEncodingCMap(font, stream, tokens)
+	p.loadEncodingCMap(font, stream)
 }
 
 func (p *pdfInterpreter) loadCIDVerticalMetrics(font *pdfFontInfo, dict types.Dict) {
@@ -134,7 +122,7 @@ func (p *pdfInterpreter) loadCIDVerticalMetrics(font *pdfFontInfo, dict types.Di
 	}
 }
 
-func pdfCodeVerticalMetric(code uint16, font pdfFontInfo) pdfVerticalMetric {
+func pdfCodeVerticalMetric(code uint64, font pdfFontInfo) pdfVerticalMetric {
 	if m, ok := font.verticalMetrics[pdfCIDCode(code, font)]; ok {
 		return m
 	}
@@ -146,12 +134,12 @@ func pdfCodeVerticalMetric(code uint16, font pdfFontInfo) pdfVerticalMetric {
 }
 
 // 一个代码可以映射多个 Unicode 码位，但仍只占一个 PDF 字形和一次推进。
-func pdfCodeTexts(text string, codes []uint16, font pdfFontInfo) []string {
+func pdfCodeTexts(text string, codes []uint64, font pdfFontInfo) []string {
 	runes := []rune(text)
 	parts := make([]string, len(codes))
 	position := 0
 	for i, code := range codes {
-		count := len([]rune(font.toUnicode[code]))
+		count := len([]rune(pdfCodeUnicode(code, font)))
 		if count == 0 {
 			count = 1
 		}
@@ -162,16 +150,36 @@ func pdfCodeTexts(text string, codes []uint16, font pdfFontInfo) []string {
 	return parts
 }
 
-func (p *pdfInterpreter) showPositionedText(text string, codes []uint16, font pdfFontInfo, resources types.Dict, depth int) {
+func (p *pdfInterpreter) showPositionedText(text string, codes []uint64, font pdfFontInfo, resources types.Dict, depth int) {
 	parts := pdfCodeTexts(text, codes, font)
 	for i, code := range codes {
 		if p.control.check() != nil {
 			return
 		}
+		if font.substitute {
+			for _, lookup := range font.verticalSubstitutions {
+				if p.control.consumeOperations(int64(len(lookup))) != nil {
+					return
+				}
+			}
+		}
+		if font.vertical && font.type3 == nil && !font.verticalMissingReported {
+			r, _ := utf8.DecodeRuneInString(parts[i])
+			if pdfVerticalPresentationRune(r) != r && (len(font.data) == 0 || (font.substitute && pdfVerticalSubstituteGlyph(parts[i], font) == font.sfnt.GlyphIndex(r))) {
+				p.report("font.vertical_glyph", "缺少可用的竖排替代字形，保留原始文字并按普通字形近似")
+				font.verticalMissingReported = true
+				p.fonts[p.state.fontName] = font
+				if p.control.check() != nil {
+					return
+				}
+			}
+		}
 		matrix := p.state.textMatrix
 		if font.vertical {
 			m := pdfCodeVerticalMetric(code, font)
-			x, y := -m.x*p.state.fontSize/1000*p.state.hScale/100, -m.y*p.state.fontSize/1000
+			// W2 locates the horizontal glyph origin relative to the vertical
+			// origin. Tz scales the glyph itself, not this displacement.
+			x, y := -m.x*p.state.fontSize/1000, -m.y*p.state.fontSize/1000
 			p.state.textMatrix[4] += matrix[0]*x + matrix[2]*y
 			p.state.textMatrix[5] += matrix[1]*x + matrix[3]*y
 		}
@@ -188,9 +196,9 @@ func (p *pdfInterpreter) showPositionedText(text string, codes []uint16, font pd
 			p.source = previous
 		}
 		if strings.TrimSpace(parts[i]) != "" {
-			item := p.makeText(parts[i], []uint16{code}, font)
+			item := p.makeText(parts[i], []uint64{code}, font)
 			if p.textClipping() && font.type3 == nil {
-				p.addTextClip(parts[i], []uint16{code}, font, item)
+				p.addTextClip(parts[i], []uint64{code}, font, item)
 			}
 			// Type3 的可见内容已经由 CharProc 发出；语义字体的字形为空。
 			if font.type3 != nil {
@@ -205,7 +213,7 @@ func (p *pdfInterpreter) showPositionedText(text string, codes []uint16, font pd
 		if font.vertical {
 			advance := pdfCodeVerticalMetric(code, font).advance*p.state.fontSize/1000 + p.state.charSpacing
 			// Tw 只应用于单字节代码 32，不是 ToUnicode 映射后的空格。
-			if (font.codeBytes == 1 || pdfCJKVariableWidth(font.encoding)) && code == 32 {
+			if pdfCodeWordSpacing(code, font) {
 				advance += p.state.wordSpacing
 			}
 			p.adjustText(advance)

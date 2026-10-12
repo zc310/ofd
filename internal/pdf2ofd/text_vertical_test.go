@@ -11,7 +11,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -38,6 +38,12 @@ func verticalTextPDF(t *testing.T, content, metrics string, encodingCMap ...stri
 		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(mapData), mapData),
 	}
 	if len(encodingCMap) > 0 {
+		if strings.Contains(encodingCMap[0], "<00> <FF>") {
+			for _, code := range []string{"0000", "FFFF", "0001", "0002", "0003", "0004", "0020"} {
+				cmap = strings.ReplaceAll(cmap, "<"+code+">", "<"+code[2:]+">")
+			}
+			objects[8] = fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(cmap), cmap)
+		}
 		objects[4] = strings.Replace(objects[4], "/Encoding /Identity-V", "/Encoding 11 0 R", 1)
 		objects = append(objects, fmt.Sprintf("<< /Type /CMap /CMapName /TestVertical /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /WMode 1 /Length %d >>\nstream\n%s\nendstream", len(encodingCMap[0]), encodingCMap[0]))
 	}
@@ -84,7 +90,7 @@ func TestVerticalTextW2DW2OriginsSpacingAndTJ(t *testing.T) {
 	pdf := verticalTextPDF(t, "BT /F1 20 Tf 50 Tz 2 Tc 50 Tw 80 160 Td [<00010002> 200 <0003000400200001>] TJ ET", "/DW2 [950 -1300] /W2 [1 [-1200 300 700 -900 500 800] 3 3 -1100 400 900]")
 	doc, page, _ := textFidelityConvert(t, pdf)
 	texts := layerTexts(page.Content().Layer[0])
-	want := [][2]float64{{77, 54}, {75, 78}, {76, 100}, {75, 121}, {77, 164}}
+	want := [][2]float64{{74, 54}, {70, 78}, {72, 100}, {70, 121}, {74, 164}}
 	if len(texts) != len(want) {
 		t.Fatalf("vertical texts=%d, want %d", len(texts), len(want))
 	}
@@ -101,7 +107,7 @@ func TestVerticalTextDefaultMetricsAndTextRise(t *testing.T) {
 	pdf := verticalTextPDF(t, "BT /F1 20 Tf 150 Tz 5 Ts 80 160 Td <000100020003> Tj ET", "")
 	_, page, _ := textFidelityConvert(t, pdf)
 	texts := layerTexts(page.Content().Layer[0])
-	for i, want := range [][2]float64{{71, 52.6}, {65, 72.6}, {68, 92.6}} {
+	for i, want := range [][2]float64{{74, 52.6}, {70, 72.6}, {72, 92.6}} {
 		x, y := textModelOrigin(texts[i])
 		if math.Abs(x-want[0]) > .002 || math.Abs(y-want[1]) > .002 {
 			t.Fatalf("default metric glyph %d=(%g,%g), want %v", i, x, y, want)

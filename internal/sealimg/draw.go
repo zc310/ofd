@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers/rasterizer"
 )
 
 // sealInk 是朱红印章色，alpha 200：全不透明会像印刷图，全透明又盖不住底字，

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/text"
-	"github.com/tdewolff/font"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/text"
+	"github.com/zc310/font"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"

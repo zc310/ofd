@@ -12,7 +12,6 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
-	"github.com/zc310/ofd/pkg/creator"
 )
 
 // maskedImagePDF 构造一份最小 PDF：ExtGState 的 /SMask 指向亮度掩码，掩码的 /G
@@ -63,56 +62,6 @@ func TestExtGStateSoftMaskNoneKeepsImageOpaque(t *testing.T) {
 	img := decodeFirstPageImage(t, output.Bytes())
 	if alpha := img.NRGBAAt(0, 0).A; alpha != 0xff {
 		t.Errorf("/SMask /None 时 alpha = %d，期望 255", alpha)
-	}
-}
-
-func TestApproximateMultiplyGradientAppliesPerStop(t *testing.T) {
-	interpreter := &pdfInterpreter{state: pdfGraphicsState{blendMode: "Multiply", fillAlpha: 1}}
-	color := &creator.Color{Axial: &creator.AxialShading{Segments: []creator.ColorStop{
-		{Position: 0, PositionSet: true, Color: creator.Color{R: 200, G: 150, B: 150}},
-		{Position: 1, PositionSet: true, Color: creator.Color{R: 255, G: 255, B: 255}},
-	}}}
-	if !interpreter.approximateMultiplyGradient(color, 1) {
-		t.Fatal("轴向渐变的 Multiply 近似未生效")
-	}
-	segments := color.Axial.Segments
-	alpha := segments[0].Color.Alpha
-	if alpha == nil || *alpha == 0xff {
-		t.Errorf("中间色色标 Alpha = %v，期望按最暗分量推出的非完全不透明值", alpha)
-	}
-	// a = op·(255−minC)/255 = (255−150)/255 ≈ 0.412
-	if alpha != nil && (*alpha < 100 || *alpha > 110) {
-		t.Errorf("色标 Alpha = %d，期望约 105（(255−150)/255）", *alpha)
-	}
-	// 修正色把最暗分量压到 0，深色内容仍能透出。
-	if segments[0].Color.G != 0 || segments[0].Color.B != 0 {
-		t.Errorf("修正色 = (%d,%d,%d)，期望最暗分量被压到 0", segments[0].Color.R, segments[0].Color.G, segments[0].Color.B)
-	}
-	if segments[0].Color.R >= 200 {
-		t.Errorf("修正色 R = %d，期望被反推为更亮的高亮色", segments[0].Color.R)
-	}
-	// 纯白色色标下 Multiply 与 Normal 等价，不应改写。
-	if segments[1].Color.Alpha != nil {
-		t.Errorf("白色色标不应被改写，Alpha = %d", *segments[1].Color.Alpha)
-	}
-}
-
-func TestApproximateMultiplyMeshGradientApplies(t *testing.T) {
-	interpreter := &pdfInterpreter{state: pdfGraphicsState{blendMode: "Multiply", fillAlpha: 1}}
-	color := &creator.Color{Gouraud: &creator.GouraudShading{
-		Points: []creator.GouraudPoint{
-			{X: 0, Y: 0, Color: creator.Color{R: 200, G: 150, B: 150}},
-			{X: 5, Y: 0, Color: creator.Color{R: 255, G: 255, B: 255}},
-		},
-	}}
-	if !interpreter.approximateMultiplyGradient(color, 1) {
-		t.Fatal("网格渐变的 Multiply 近似未生效")
-	}
-	if color.Gouraud.Points[0].Color.Alpha == nil {
-		t.Error("网格渐变的中间色控制点应带上 Alpha")
-	}
-	if color.Gouraud.Points[1].Color.Alpha != nil {
-		t.Error("网格渐变的白色控制点不应被改写")
 	}
 }
 

@@ -1,0 +1,11 @@
+# Local test fonts stay outside version control.
+*.ttf
+*.otf
+*.ttc
+*.woff
+*.woff2
+*.ttf.gz
+*.otf.gz
+*.ttc.gz
+*.woff.gz
+*.woff2.gz

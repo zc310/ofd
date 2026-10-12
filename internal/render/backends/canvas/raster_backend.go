@@ -3,7 +3,7 @@ package canvas
 import (
 	"image"
 
-	tcanvas "github.com/tdewolff/canvas"
+	tcanvas "github.com/zc310/canvas"
 
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"

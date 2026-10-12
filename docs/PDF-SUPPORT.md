@@ -43,13 +43,22 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | 内联图像 `BI/ID/EI`         |  ⚠️  | 缩写键展开；未给出 `ColorSpace` 时按规范默认 DeviceGray。                                                                                                                                                                                                                                                                                                      |
 | `sh`（Shading）             |  ⚠️  | ShadingType 2/3 输出为 OFD `AxialShd`/`RadialShd`，函数按 32 段采样；ShadingType 4（自由）/5（规则）/6/7（补丁）网格着色输出为矢量 `GouraudShd`/`LaGouraudShd`（Type 5 保留每行顶点数，Type 7 按 Coons 曲面细分）；控制点超过上限或裁剪区无法还原为路径时回退为带透明度的位图。Type 1 忽略。                                                                   |
 | Pattern 填充                |  ⚠️  | PatternType 1（平铺图案）展开为图片对象，图块过多时按最大图块数合成单张密集图；PatternType 2（图案着色）输出为渐变。图案自身的 `Matrix`、BBox 与颜色空间参与计算。                                                                                                                                                                                             |
-| 透明组、`gs`（ExtGState）   |  ⚠️  | 读取 ExtGState 的 `ca`/`CA` 作为填充/描边不透明度并输出为 OFD 透明度；Form XObject 作为透明度组，`BM` 为 Normal 时 `Do` 时的外层 `ca`/`CA` 作为组透明度保留（不被 Form 内 `gs` 覆盖）。OFD 无混合模式：`/BM /Multiply` 的填充近似为半透明——纯色按白色背景还原原色并让文字透出，渐变（轴向/径向/网格）按每个色标独立套用同一近似、Alpha 落在色标上；其余 `/BM`（如 `Screen`、`HardLight`）忽略且不套用外层 `ca`/`CA`。`/SMask` 为 `/S /Luminosity` 且其 `/G` 最终解析到图像时，把该灰度图像作为 alpha 烘进随后绘制的图像；`/SMask /None` 清除软掩码。掩码由矢量内容（嵌套 Form）生成时无法还原为 alpha，仍然丢弃。`/Group` 不保留。 |
+| 透明组、`gs`（ExtGState） | ⚠️ | `ca`/`CA` 分别保留填充与描边不透明度。Form 的 `/Group /S /Transparency` 支持隔离、非隔离、嵌套与路径/图片挖空组，内部先合成，再应用 `Do` 时的外层透明度与混合模式。15 种标准非 Normal 混合模式在实际背景上局部合成；BM 数组选取首个受支持模式。正式软掩码组支持 Alpha/Luminosity、矢量/图片/嵌套 Form、设置时的 CTM、BC 与 TR；`SMask /None` 清除状态。合成使用 300dpi RGB 栅格，属于诊断可见的近似。 |
 
-`Multiply` 透明组中只含一次轴向/径向 `sh` 绘制时，保留 Form 调用时的混合与不透明度，
-以 300dpi 在已转换的背景上局部合成为带 alpha 的 PNG；组内 `/BM /Normal` 或 `ca=1`
-不会清除组外混合状态。该路径修复了 `VectorApple.pdf` 标签的渐变遮住底色和字母的问题。
-合成基于转换后的 sRGB 背景，仍属于近似，严格模式仍报告 `graphics.blend`；多次绘制、
-其他混合模式和一般透明组尚未完整支持。背景重绘、栅格缓冲和合成计入资源预算。
+透明合成只处理图元、组边界与现有裁剪区的交集，区域外保留原有矢量图元。
+非隔离组保存初始背景和组自身的 alpha，结束组时撤销背景贡献，避免背景被绘制两次；
+隔离组从透明背景开始，挖空组按形状恢复初始背景。非组 Form 按普通图形状态继承，
+内部 gs 可以正常改变 ca/CA。没有必要整组合成的非隔离 Normal 不透明组，以及只有
+一次 Normal 路径/着色绘制的组，继续输出矢量；其余组输出带 alpha 的 PNG。
+已生成的组栅格直接参与父组，避免重复编码、解码和重采样。VectorApple 和公众号物料
+样例仍在默认资源预算内通过。背景重绘、缓冲、字体/图片重载、像素处理与输出图元
+计入相应预算，逐行检查取消，掩码循环受 Form 深度预算约束。
+
+栅格化文字的原文、位置和增量保留在合法空轮廓字体的文字层中，往返 PDF 仍可提取。
+颜色空间先沿用现有转换链转为 RGB；CMYK/ICC 原空间混合、印刷叠印、8 位量化、
+抗锯齿边缘和高倍放大仍可能与源 PDF 有差异。挖空文字的 TK 整体形状尚未完整支持，
+报告 `graphics.knockout_text`；AIS 按栅格覆盖率近似并报告 `graphics.alpha_shape`。
+`graphics.blend`、`graphics.group`、`graphics.mask` 仍使 Strict 失败且不写出部分 OFD。
 
 ## 文本
 
@@ -71,10 +80,11 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 |---------------------------------------------------|:----:|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ToUnicode` CMap（`bfchar`/`bfrange`）            |  ✅  | 支持条目计数前缀、数组目标与增量 range。                                                                                                                                              |
 | 简单字体 `/Encoding`（`/Differences` + 基础编码） |  ✅  | 字形名经 Unicode 映射还原；基础编码覆盖 WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。                                                                           |
-| 预定义 CJK CMap                                   |  ⚠️  | GBK-EUC（含 V/2K/p）、ETen-B5、CNS-EUC、KSC-EUC/UHC、`Uni*` UCS2/UTF16；变长编码按首字节切分。全角 CMap（`Uni*` UCS2/UTF16）非 ASCII 字形回退为 1000/1000 字宽，避免缺 `DW`/`W` 时推进偏窄。 |
+| 预定义 CJK CMap | ✅ | 内置 Adobe-GB1/CNS1/Japan1/Korea1 的 150 个横排/竖排 Encoding CMap 与四份 CID→Unicode 表，保留完整 CID 区间、继承和竖排覆盖。按代码空间识别 1–4 字节编码，含 GBK2K、CNS-EUC、UTF-16 代理对及 UTF-8/32。W/W2、CIDToGIDMap 按 CID 查询；ToUnicode 仍按原始代码查询。缺省 DW=1000，不再按半角/全角猜测覆盖原度量。 |
+| 竖排替换字形 | ⚠️ | 内嵌字体保留 CMap 与 CIDToGIDMap 指定的字形，CID CFF 使用 charset 对应的实际 GID。非内嵌竖排字体尝试匹配并嵌入系统替代字体，优先按字符集语言选择 vrt2，再选择 vert；支持 SingleSubst 格式 1/2 与 Extension，缺少匹配替换时尝试字体中的 Unicode 竖排形式。文字层保留原始括号、标点。缺字体或竖排轮廓会诊断，Strict 停止；上下文/多字形 GSUB 尚未支持。 |
 | `Widths` + `FirstChar`、CID `/W`、`DW` | ✅ | CID 字宽用于内嵌字体 hmtx 缺失或不一致时的 `DeltaX`（阈值 0.5/1000）；字号与本地增量按组合矩阵 y 轴长度换算，余下变换保留在文字 CTM 中。 |
 | CID `/W2`、`DW2` | ✅ | 支持逐 CID 三元组数组和 CID 区间两种 W2 格式、间接条目；DW2 缺省为 `[880 -1000]`，水平原点偏移缺省为 W/DW 的一半。字形原点与垂直推进分别处理，竖排 TJ 不乘 Tz；双字节空格不加 Tw。 |
-| 嵌入 Encoding CMap | ⚠️ | 支持固定 1/2 字节代码空间、`cidchar/cidrange`、WMode 与 Identity-H/V UseCMap；W/W2、CIDToGIDMap 按映射后的 CID 索引，ToUnicode 仍按原代码索引。变长、3/4 字节代码与非 Identity UseCMap 尚未完整支持。 |
+| 嵌入 Encoding CMap | ✅ | 按代码空间识别固定或混合 1–4 字节代码，保留代码长度，区分 `<01>` 与 `<0001>`。支持 `cidchar/cidrange`、`notdefchar/notdefrange`、WMode，以及预定义名称或流形式的 UseCMap 递归继承；支持上述 Adobe CJK CMap 与 Identity-H/V。本地映射覆盖继承映射，同层重复定义以最后一项为准；流字典的 UseCMap/WMode 优先于程序中的声明。W/W2、CIDToGIDMap 按 CID 索引，ToUnicode 按原始代码及长度查询。未知名称、循环继承、歧义代码空间及无效 CID 映射报告诊断。 |
 | 内嵌字体（TrueType/CFF 包装）                     |  ⚠️  | 保留嵌入数据（`PreserveEmbeddedFonts`）；字形映射走 `CIDToGIDMap` 或字体 cmap，`CGTransform` 输出实际字形。CFF 包装后按 `FontMatrix` 修正 `head.unitsPerEm`，避免 1/2048 字体被放大。 |
 | 不连续 CID / 子集字体                             |  ✅  | 经 fontfix 私有区映射（F0000+CID）判定字形存在，避免误丢整段文字。                                                                                                                    |
 | 字体族名（含 `#XX` 十六进制转义）                 |  ✅  | 按原始字节再解释为 UTF-8，非法转义时原样保留。                                                                                                                                        |
@@ -95,8 +105,8 @@ PDF 规范（ISO 32000-1/-2）的支持范围。主要实现方式：pdfcpu 解�
 | `CCITTFaxDecode`               |  ✅  | 由 pdfcpu 解码后重编码为 PNG（扫描件 ImageMask 常见）。                                                                                                                         |
 | `JBIG2Decode`                  |  ✅  | 由 `github.com/dkrisman/gobig2` 解码为灰度位图；支持 `/JBIG2Globals`、`/Decode` 反相，`ImageMask` 按填充色着色，也可作为 `/SMask`。                                             |
 | `JPXDecode` | ⚠️ | 由 `github.com/mrjoshuak/go-jpeg2000` 的原整数分量接口解码；支持 JP2/裸码流的 DeviceGray/RGB/CMYK、同位深 1–16 位无符号样本、灰度软掩码，以及 `SMaskInData=1/2` 的内嵌透明度。普通图像忽略 PDF `Decode` 和字典位深；ImageMask 保留二值 Decode 反相。超过 8 位输出 16 位 PNG；CMYK 沿用现有颜色转换近似。复杂颜色空间与通道结构尚未支持。 |
-| `SMask`（软蒙版） | ⚠️ | 图像自身 `/SMask`：1/2/4/8/16 位普通灰度样本、1–16 位 JPX 原灰度分量及 JPEG/JBIG2 灰度掩码作为 PNG alpha 应用到图像。底图或掩码高于 8 位时使用 16 位非预乘 PNG。普通栅格的 `Decode` 区间、反相及间接数值保留；JPX 的 Decode 被忽略。ExtGState 图形状态 `/SMask`：仅 `/S /Luminosity` 支持，掩码的 `/G` 需能解析到图像流（直接是图像，或仅调用一次 `Do` 绘制图像的 Form XObject）；矢量掩码与一般透明组尚未支持。 |
-| 透明度                         |  ⚠️  | 图像、路径、文字的 `ca`/`CA` 转换为 OFD 透明度（0-255）；不实现混合模式与透明组。                                                                                               |
+| `SMask`（软蒙版） | ⚠️ | 图像自身 `/SMask`：1/2/4/8/16 位普通灰度样本、1–16 位 JPX 原灰度分量及 JPEG/JBIG2 灰度掩码作为 PNG alpha 应用到图像。底图或掩码高于 8 位时使用 16 位非预乘 PNG。普通栅格的 `Decode` 区间、反相及间接数值保留；JPX 的 Decode 被忽略。ExtGState 正式透明组掩码支持 Alpha/Luminosity 与完整 Form 内容，以 300dpi 应用到路径、文字、图片和组；BC 保留组边界外的初始值，TR 作用于组内。旧式单图片 Luminosity 包装沿用图片合成路径。 |
+| 透明度 | ⚠️ | 图像、路径、文字的 `ca`/`CA` 转为 OFD 透明度；填充与描边分别保留。复杂混合与透明组局部栅格化，保留文字提取层，见上文限制。 |
 
 图片的 `/Interpolate` 尚未单独保留；遮罩合成阶段使用最近邻，生成 PNG 在阅读器放大
 显示时仍按阅读器的图片插值规则处理，极低分辨率样本的二值透明边缘可能显示为平滑过渡。
@@ -227,10 +237,10 @@ Type 4 使用有符号 32 位整数和双精度实数；解析 token、执行指
 | 链接                                 | 转为 OFD `Link` 注解（`/Dest` 与 `/A` 的 `GoTo`/`URI`），热区挂在不可见路径上；页内跳转按目标页几何换算坐标，旋转与越界矩形一并处理 |
 | 表单域、弹窗等其余交互注解            | 忽略（仅保留 `/AP` 外观）                                     |
 | ShadingType 1、PatternType 之外的着色        | 忽略（回退为纯色或不填充）                                    |
-| 混合模式（`Multiply` 之外的 `/BM`）、非 Luminosity 的图形状态 `/SMask`、透明组（`/Group`） | 忽略（`ca`/`CA` 透明度保留；`Multiply` 纯色与渐变填充近似为半透明；图像与 Luminosity 图形状态软蒙版在可图像化时保留） |
+| 原颜色空间混合、透明组和软掩码的精确矢量语义 | 支持常见 RGB 外观的 300dpi 局部合成；OFD 中不保留原 PDF 的组/BM/SMask 对象语义。CMYK/ICC、叠印、TK 和 AIS 等特殊情况仍有近似或缺口。 |
 | 数字签名、附件、嵌入式 JavaScript/PostScript | 忽略                                                          |
 | 大纲与链接的其他动作（GoToR、JavaScript、Launch 等） | 忽略（仅保留 `GoTo` 与 URI）                    |
-| 预定义 CJK CMap 的完整字符代码→CID 和竖排替换字形 | 仍沿用已有 Unicode/字宽近似；完整字形与 W2 定位验收使用 Identity-V 或支持的嵌入 Encoding CMap。尚未实现 OpenType vert/vrt2 等竖排替换。 |
+| 竖排替代字体的上下文/多字形 GSUB，以及不可用的系统字体 | 简单 vert/vrt2 与 Unicode 竖排形式已支持；复杂替换报告诊断。没有可用字体时保留原始文字并按普通字形近似，Strict 停止。浏览器/Android 环境不枚举系统字体，依赖内嵌字体。 |
 | CalGray/CalRGB/Lab 校准参数 | 报告诊断，按设备颜色空间近似 |
 | Type3 内部的复杂混合、透明组与不支持内容操作 | 继承普通内容流解释器的诊断及近似范围；不将整个 Type3 字体直接替代为逻辑字体。 |
 
@@ -312,8 +322,17 @@ CJK 解码、裁剪、内联图像、ImageMask、CMYK JPEG、文字对象合并�
 16 位颜色精度、`SMask` 优先级、遮罩缓存与预算、错误诊断及透明背景的实际渲染。
 `function_type4_test.go` 覆盖计算操作符、分支、Domain/Range、DeviceN 多输入、
 网格函数、Type 3 子函数、预算/取消/诊断及 Separation/轴向渐变的实际渲染。
-`blend_group_test.go` 覆盖单次着色组的 Multiply 背景合成、组外不透明度、预算及
+`blend_group_test.go` 覆盖着色组的 Multiply 背景合成、组外不透明度、预算及
 `VectorApple.pdf` 标签的颜色/字母对比；该样例文件缺失时只跳过样例视觉回归。
+`transparency_test.go` 覆盖 15 种混合模式的双色背景和部分透明度、隔离/非隔离/挖空
+及嵌套组、注解外观定位、Alpha/Luminosity 矢量掩码、BC/TR、捕获的 CTM、页面旋转、
+None 和图片掩码优先级、分别保留 ca/CA、文字提取、严格 OFD 校验与预算/取消/循环。
+源 PDF 与 OFD 的中间色平坦区域逐通道比较，往返 PDF 另做同样的显示对照。
+当前 MuPDF 1.21 与 Poppler 22.12 对挖空和 TR 有差异：挖空以 MuPDF 为参照，TR 以
+Poppler 为参照，其余样例同时比较两者。AIS 另保护形状覆盖率的预期颜色，仍报告近似。
+可通过 `OFD_TRANSPARENCY_EVIDENCE_DIR` 导出源 PDF、OFD 栅格和独立阅读器栅格。
+往返路径还修复了 canvas PDF 写入器复用相同填充/描边颜色时未恢复共享不透明度的问题；
+该依赖补丁位于 `../third_party/canvas`，发布时需同步。
 `image_softmask_test.go` 覆盖 16 位颜色/alpha 精度、灰度底图、Decode 区间与间接数值、
 尺寸对齐、部分透明的实际渲染、Flate 掩码、预算/缓存、损坏掩码回退及合成中取消。
 `image_matte_test.go` 覆盖白/黑 Matte 去底色、灰度/CMYK 原颜色空间还原、8/16 位
@@ -449,4 +468,66 @@ PDF，与 OFD 的实心区域对照；缺工具会记录省略，不把内部一
 Type3 Tr=3/7 不绘制，4–7 不增加裁剪区。保留阅读器差异，不声称在所有模式下与
 当前 MuPDF 同时一致。Type3 位图字形继承已有 `/Interpolate` 缺口：低分辨率放大
 交界的平滑程度可能不同，位置与四角原色有回归，整幅交界差异不算视觉通过。
-复杂 Encoding CMap、预定义 CJK 的完整 CID 映射及竖排替换字形仍属于剩余限制。
+竖排替代字体的上下文/多字形 GSUB 仍属于剩余限制。
+
+`font_cmap_predefined_test.go` 独立按 Adobe 源文件逐行核对 345,937 条 CID 记录的
+首、中、末值，并校验资源 SHA-256；四个字符集的「中」、竖排标点覆盖、W/W2
+查找、DW 缺省、单/双字节 Tw、GBK2K/CNS-EUC 多字节和 UTF-16 代理对另有回归。
+原始资源、版权许可及可重复打包脚本位于 `internal/pdf2ofd/cmaps/`；转换不依赖
+系统 CMap 文件或网络。这里只内置映射数据，不包含测试字体。
+
+中文视觉与字形回归从 `OFD_CJK_TEST_FONT` 指定的外部字体路径加载，或尝试可用
+系统字体；需要覆盖中文与竖排标点的 TrueType 字体（TTC 使用首个字体面）。
+没有合适字体时明确跳过相关测试，不下载字体、不在仓库保存字体文件。可运行：
+
+```sh
+OFD_CJK_TEST_FONT=/path/to/cjk-font.ttf go test ./internal/pdf2ofd -run 'TestCJK' -count=1 -v
+```
+
+有测试字体与 mutool/pdftoppm 时，中文竖排括号、逗号和句号与独立源阅读器对照，
+同时验证 W2 原点、Tz/Tc、字形裁剪和 q/Q。非内嵌字体的替换路径也单独测试，
+往返 PDF 保留 `（中），。` 原始文字。字体缺失的普通/Strict 策略、诊断回调取消、
+字体大小预算、GSUB 操作预算、vrt2 优先级和子表择一规则不依赖外部中文字体。
+多 FD CFF 的字形子集化仍未实现；PDF 输出现在按字体自动使用完整嵌入回退，
+保留原始字形程序、FDSelect 与全部局部/全局子程序，其他字体继续子集化。
+
+`font_cmap_embedded_test.go` 覆盖同值不同长度的原始代码、混合 1–4 字节代码、
+ToUnicode 数组/连续区间、非 Identity 名称和流形式 UseCMap、字典优先级、
+本地覆盖及 notdef 回退。CID 区间通过排序后的区间查询，不逐代码展开；四字节
+notdef 全范围和 FFFFFFFF 终点有回归。继承遵守 MaxDepth，解码、解析、区间整理
+及文字查询计入流/处理量预算；取消与诊断回调取消原样返回 context 错误。
+代码空间按各字节边界识别，损坏或截断代码仅消耗一个字节，保留后续有效代码。
+
+专项 PDF 使用现有 Go 字体，无需另存测试字体。八组横排/竖排、普通/字形裁剪、
+直接/继承编码样例验证 W/W2、CIDToGIDMap、Tz/Tc/Tw/TJ 和往返 PDF 文字提取，
+并与 MuPDF/Poppler 的源页面实心区域对照。W2 的横向原点偏移只乘字号，
+不再额外乘 Tz；Tz 继续缩放字形。源阅读器对变长 ToUnicode 的提取存在差异，
+回归直接断言原代码映射和往返提取结果，不以源阅读器提取作为唯一依据。
+
+### 多 FD CFF 的 PDF 输出
+
+默认 OFD→PDF 输出遇到含多个 Font DICT 的 CFF 时完整嵌入该字体；TTC 先提取
+所选字体面，不把整个集合写入 PDF。创建 OFD 的默认字体处理也保留多 FD CFF，
+避免生成测试或业务 OFD 时提前进入不支持的子程序重排路径。完整字体会增大 PDF，
+但不再因 `only single-font CFFs are supported` 在关闭输出时失败。
+
+CID-keyed CFF 使用原生 `FontFile3 /CIDFontType0C` 字体流，其 CFF 字节保持完整。
+PDF Encoding CMap 把紧凑字符代码映射到原始 CFF charset 中的 CID，字宽按 CID
+写出；CIDFontType0 不使用仅适用于 TrueType 的 CIDToGIDMap。ToUnicode 从实际
+绘制的源文本生成，保留共享字形的不同 Unicode 字符、连字文本及补充平面字符，
+避免从字体 cmap 反查时误选部首字符或私有区码位。
+
+转换器和 Web 阅读器共用逐字体回退；Web 阅读器不再因为有一个 CFF/TTC
+回退字体就关闭整份文档的字体子集化。实现位于工作区本地的
+`../third_party/canvas` 与 `../third_party/font` fork，通过 go.mod replace 使用；
+发布时需要同步这两处依赖补丁。
+
+`pkg/converter/pdf_cff_test.go` 从 `OFD_CFF_TEST_FONT`（或系统字体）加载覆盖中文的
+多 FD OTF/TTC，另用 `OFD_CFF_CID_TEST_FONT` 加载 CID≠GID 的子集字体。
+`OFD_CFF_SINGLE_TEST_FONT` 可指定普通单 FD CFF，验证其子集化与文字输出。
+无合适字体时跳过，不保存或下载测试字体。回归检查完整 CFF 字节、混合 TrueType
+仍子集化、CGTransform 字形、两页输出、原始文字提取，并用 MuPDF/Poppler
+对照 PDF 与 OFD 字形墨迹。底层 fork 回归另保护重复导出不改写字体、源文本
+ToUnicode、字符代码上限，以及其他子集化错误以 error 返回。
+当前两个 fork 单独运行默认 go vet 仍有既有的 CFF2 不可达代码和未指定字段名的
+canvas Point/Rect 初始化提示；项目相关包的 go vet 通过。

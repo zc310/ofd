@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tdewolff/font"
+	"github.com/zc310/font"
 )
 
 // subsetEmbeddedFonts 只保留文字对象实际引用的字形。由于子集化会重新分配字形编号，
@@ -291,6 +291,13 @@ func subsetFont(resource *Font, usage *fontUsage) error {
 			resource.Format = "otf"
 			return nil
 		}
+	}
+	if sfnt.IsCFF && sfnt.CFF != nil && sfnt.CFF.NumFontDicts() > 1 {
+		// 子程序重排尚不能安全处理多 Font DICT，保留所选字体面的完整程序
+		// 与原始字形编号。
+		resource.Data = sfnt.Write()
+		resource.Format = "otf"
+		return nil
 	}
 	// 字体源数据已解析，重新根据 cmap 获取字符对应的字形编号。
 	glyphs := make([]uint16, 0, len(usage.glyphs))

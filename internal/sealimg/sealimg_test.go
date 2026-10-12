@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tdewolff/canvas"
+	"github.com/zc310/canvas"
 )
 
 // inkRows 统计印章图片里非透明像素在每行的分布。

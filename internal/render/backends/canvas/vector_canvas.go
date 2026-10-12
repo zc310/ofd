@@ -6,10 +6,10 @@ import (
 	"image"
 	"io"
 
-	"github.com/tdewolff/canvas"
-	cimage "github.com/tdewolff/canvas/image"
-	"github.com/tdewolff/canvas/renderers/pdf"
-	"github.com/tdewolff/canvas/renderers/svg"
+	"github.com/zc310/canvas"
+	cimage "github.com/zc310/canvas/image"
+	"github.com/zc310/canvas/renderers/pdf"
+	"github.com/zc310/canvas/renderers/svg"
 
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"

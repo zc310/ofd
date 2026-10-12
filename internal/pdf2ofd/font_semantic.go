@@ -12,7 +12,7 @@ import (
 
 // pdfSemanticFont 构造无笔画的合法 TrueType 字体。每个 Unicode 码位使用不同
 // glyph ID，PDF 子集化的 ToUnicode 才不会把多个字符合并成同一个字符。
-func pdfSemanticFont(mapping map[uint16]string, control *conversionControl) ([]byte, error) {
+func pdfSemanticFont(mapping map[uint32]string, control *conversionControl) ([]byte, error) {
 	set := map[rune]bool{' ': true, '\uFFFD': true}
 	for _, value := range mapping {
 		if control.consumeOperations(int64(len(value))) != nil {
@@ -23,7 +23,7 @@ func pdfSemanticFont(mapping map[uint16]string, control *conversionControl) ([]b
 		}
 	}
 	for code := 0; code < 256; code++ {
-		value, ok := mapping[uint16(code)]
+		value, ok := mapping[uint32(code)]
 		if !ok {
 			value = fallbackPDFCode(byte(code))
 		}
@@ -182,33 +182,53 @@ func (p *pdfInterpreter) appendText(item creator.Text, font pdfFontInfo) {
 		}
 	}
 	if item.Fill != nil && !*item.Fill && !item.Stroke {
-		mapping := make(map[uint16]string, len(font.toUnicode)+1)
-		for code, value := range font.toUnicode {
-			mapping[code] = value
-		}
-		mapping[0] = item.Value
-		data, err := pdfSemanticFont(mapping, p.control)
-		if err != nil {
-			p.report("text.semantic", err.Error())
+		var ok bool
+		item, ok = p.semanticText(item, font)
+		if !ok {
 			return
 		}
-		digest := sha256.Sum256(data)
-		name := fmt.Sprintf("pdf-semantic-%x", digest[:8])
-		found := false
-		for _, f := range p.document.Fonts {
-			if bytes.Equal(f.Data, data) {
-				name = f.Name
-				found = true
-				break
-			}
-		}
-		if !found {
-			p.document.Fonts = append(p.document.Fonts, creator.Font{Name: name, FamilyName: "PDFType3Text", Charset: "unicode", Format: "ttf", Data: data})
-		}
-		fill := true
-		item.Fill = &fill
-		item.Font = name
-		item.CGTransforms = nil
 	}
 	p.appendItem(item)
+}
+
+func (p *pdfInterpreter) semanticText(item creator.Text, font pdfFontInfo) (creator.Text, bool) {
+	mapping := make(map[uint32]string, len(font.toUnicode)+len(font.encodedUnicode)+1)
+	for code, value := range font.toUnicode {
+		mapping[code] = value
+	}
+	// 空轮廓字体只需要 Unicode 覆盖；把带代码长度的映射放入独立空闲键，
+	// 避免同值不同长度的 PDF 字符代码覆盖彼此的文字。
+	nextCode := uint32(256)
+	for _, value := range font.encodedUnicode {
+		for mapping[nextCode] != "" {
+			nextCode++
+		}
+		mapping[nextCode] = value
+		nextCode++
+	}
+	mapping[0] = item.Value
+	data, err := pdfSemanticFont(mapping, p.control)
+	if err != nil {
+		p.report("text.semantic", err.Error())
+		return item, false
+	}
+	digest := sha256.Sum256(data)
+	name := fmt.Sprintf("pdf-semantic-%x", digest[:8])
+	found := false
+	for _, f := range p.document.Fonts {
+		if bytes.Equal(f.Data, data) {
+			name = f.Name
+			found = true
+			break
+		}
+	}
+	if !found {
+		p.document.Fonts = append(p.document.Fonts, creator.Font{Name: name, FamilyName: "PDFType3Text", Charset: "unicode", Format: "ttf", Data: data})
+	}
+	fill := true
+	item.Fill = &fill
+	item.Font = name
+	item.CGTransforms = nil
+	item.FillColor = &creator.Color{}
+	return item, true
 }

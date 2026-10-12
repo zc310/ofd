@@ -21,7 +21,7 @@ import (
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
-	"github.com/tdewolff/font"
+	"github.com/zc310/font"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/core"

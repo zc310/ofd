@@ -1,11 +1,13 @@
 package pdf2ofd
 
 import (
+	"image"
 	"regexp"
 
+	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -31,14 +33,14 @@ type pdfPageInfo struct {
 type pdfFontInfo struct {
 	widths      map[int]float64
 	defaultW    float64
-	toUnicode   map[uint16]string
+	toUnicode   map[uint32]string
 	cidToGID    map[uint16]uint16
 	codeBytes   int
 	familyName  string
 	encoding    string
 	format      string
 	data        []byte
-	codeToGID   map[uint16]uint16
+	codeToGID   map[uint32]uint16
 	glyphWidths map[uint16]float64
 	sfnt        *fontparser.SFNT
 	// ascent、descent 保存基线上方和下方的字形范围，单位为千分之一 em，均为非负值。
@@ -49,13 +51,17 @@ type pdfFontInfo struct {
 	cidFromCmap bool
 	// bold、italic 是依据字体名称推断的样式，写入文字对象后阅读器才能
 	// 选中与嵌入字体匹配的样式，避免对已是斜体/粗体的字体再叠加合成样式。
-	bold, italic         bool
-	vertical             bool
-	verticalMetrics      map[uint16]pdfVerticalMetric
-	codeToCID            map[uint16]uint16
-	identityCMap         bool
-	defaultVY, defaultW1 float64
-	type3                *pdfType3Font
+	bold, italic            bool
+	vertical                bool
+	verticalMetrics         map[uint16]pdfVerticalMetric
+	predefined              *pdfPredefinedCMap
+	encodingCMap            *pdfEncodingCMap
+	encodedUnicode          map[uint64]string
+	substitute              bool
+	verticalSubstitutions   [][]tables.SingleSubs
+	verticalMissingReported bool
+	defaultVY, defaultW1    float64
+	type3                   *pdfType3Font
 }
 
 type pdfVerticalMetric struct{ advance, x, y float64 }
@@ -73,11 +79,11 @@ type pdfVerticalMetric struct{ advance, x, y float64 }
 //
 // 反查结果写回 toUnicode 复用。decodePDFText 以值传递 pdfFontInfo，但 map 是引用
 // 类型，写入对后续调用可见；每个不同 CID 只查一次。
-func (f pdfFontInfo) cidUnicode(code uint16) (string, bool) {
+func (f pdfFontInfo) cidUnicode(code uint64) (string, bool) {
 	if !f.cidFromCmap || f.sfnt == nil {
 		return "", false
 	}
-	if value, ok := f.toUnicode[code]; ok {
+	if value := pdfCodeUnicode(code, f); value != "" {
 		return value, true
 	}
 	cid := pdfCIDCode(code, f)
@@ -92,7 +98,11 @@ func (f pdfFontInfo) cidUnicode(code uint16) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	f.toUnicode[code] = value
+	if f.encodingCMap != nil {
+		f.encodedUnicode[code] = value
+	} else {
+		f.toUnicode[uint32(code)] = value
+	}
 	return value, true
 }
 
@@ -131,18 +141,19 @@ type pdfGraphicsState struct {
 	dashOffset  float64
 	// fillAlpha、strokeAlpha 是 ExtGState 的 ca/CA 不透明度（0-1）。
 	fillAlpha, strokeAlpha float64
-	// groupAlpha 是外层 Form XObject 在 Do 时的组透明度。OFD 没有混合模式，
-	// 这里忽略 PDF 的 BM，但保留组透明度：Form 内容里的 gs 重置 ca/CA 时，
-	// 组透明度仍然生效，避免外层不透明被内层 ca=1 覆盖。
-	groupAlpha float64
-	// blendMode 是 ExtGState 的 BM 名称。OFD 无法表达混合模式，只在 BM 为
-	// Normal/Compatible 时才按纯透明度近似；其它混合模式单独套用 ca/CA 会引入
-	// 更大偏差，因此保持原样。
+	// groupAlpha 仅用于可以直接输出矢量的单次 Normal 组绘制；组内 gs 不得
+	// 覆盖外层透明度。多图元组在独立合成缓冲中处理。
+	groupAlpha    float64
+	groupAlphaSet bool
+	// blendMode 是 ExtGState 的 BM 名称；非 Normal 模式在实际背景上合成。
 	blendMode string
 	// lumMask 是 ExtGState 的 /SMask（/S /Luminosity）解析出的掩码图像流，
 	// 为 nil 表示当前没有软掩码。OFD 没有软掩码语义，该图像会被当作 alpha
 	// 烘进随后绘制的图像里，因此只在掩码确实由图像生成时才非 nil。
-	lumMask *types.StreamDict
+	lumMask           *types.StreamDict
+	softMask          *pdfTransparencyMask
+	constantMaskBlack bool
+	alphaIsShape      bool
 	// clips 是当前生效的裁剪区域（设备坐标），按 PDF 的 W/W* 逐个求交。
 	clips []pdfClipRegion
 }
@@ -183,7 +194,11 @@ type pdfInterpreter struct {
 	hasPendingClip     bool
 	pendingClipEvenOdd bool
 	// 字形裁剪属于文字对象，ET 时才并入图形状态，不随 q/Q 恢复。
-	textClip       pdfClipRegion
-	textClipActive bool
-	type3Uncolored bool
+	textClip           pdfClipRegion
+	textClipActive     bool
+	type3Uncolored     bool
+	transparency       *pdfTransparencyGroup
+	parseDepth         int
+	transparencyShape  *image.NRGBA
+	transparencyRaster *image.NRGBA
 }

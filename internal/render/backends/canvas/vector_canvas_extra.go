@@ -5,9 +5,9 @@ package canvas
 import (
 	"io"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/ps"
-	"github.com/tdewolff/canvas/renderers/tex"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers/ps"
+	"github.com/zc310/canvas/renderers/tex"
 )
 
 func extraVectorWriter(format string) (canvas.Writer, bool) {

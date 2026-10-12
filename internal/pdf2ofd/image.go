@@ -110,23 +110,6 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 				formResources = value
 			}
 		}
-		// 单次 sh 的透明组可在已转换的背景上局部合成 Multiply。组内的
-		// /BM /Normal、ca=1 是组内容的状态，不能抹掉 Do 时的混合与透明度。
-		multiplyShading := p.isMultiplyShadingForm(stream, formResources)
-		itemStart := len(p.page.Items)
-		// Form 作为透明度组绘制。OFD 没有混合模式：仅在 BM 为 Normal 时把外层
-		// gs 的 ca/CA 累积为组透明度，并重置局部 ca/CA，避免 Form 内的 gs
-		// （常见 ca=1）覆盖外层的不透明度。BM 为 Multiply/HardLight 等时，单独
-		// 套用 ca/CA 会与混合效果叠加出更大偏差，因此保持原有叠加方式。
-		if isNormalBlendMode(p.state.blendMode) {
-			formState.groupAlpha = p.groupOpacity() * math.Min(p.state.fillAlpha, p.state.strokeAlpha)
-			formState.fillAlpha = 1
-			formState.strokeAlpha = 1
-		}
-		if multiplyShading {
-			formState.groupAlpha, formState.fillAlpha, formState.strokeAlpha = 1, 1, 1
-			formState.blendMode = "Normal"
-		}
 		matrix := identityPDFMatrix()
 		if array := stream.ArrayEntry("Matrix"); len(array) == 6 {
 			for i := range matrix {
@@ -134,6 +117,24 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 			}
 		}
 		formState.ctm = multiplyPDFMatrix(formState.ctm, matrix)
+		group, groupErr := p.beginTransparencyGroup(stream, formResources, formState)
+		if groupErr != nil {
+			return groupErr
+		}
+		parentGroup := p.transparency
+		groupDict, _ := p.ctx.XRefTable.DereferenceDict(stream.Dict["Group"])
+		if groupDict != nil && groupDict.NameEntry("S") != nil && *groupDict.NameEntry("S") == "Transparency" {
+			if group != nil {
+				p.transparency = group
+			}
+			formState.groupAlpha, formState.fillAlpha, formState.strokeAlpha = 1, 1, 1
+			formState.groupAlphaSet = true
+			if group == nil {
+				formState.groupAlpha = p.fillOpacity()
+			}
+			formState.blendMode, formState.lumMask, formState.softMask = "Normal", nil, nil
+			formState.constantMaskBlack = false
+		}
 		// Form XObject 的 BBox 是隐式裁剪区；只应用 Matrix 而不应用 BBox 会让
 		// 表单内容溢出其声明边界（常见于图章、剪切模板与重复图块）。
 		if bbox := pdfNumberArray(p.ctx, stream.Dict["BBox"]); len(bbox) >= 4 {
@@ -167,18 +168,9 @@ func (p *pdfInterpreter) xobject(name string, resources types.Dict, depth int) e
 		p.path, p.pendingClip = parentPath, parentPendingClip
 		p.hasPendingClip, p.pendingClipEvenOdd = parentHasPendingClip, parentPendingEvenOdd
 		p.fonts, p.fontAliases = parentFonts, parentAliases
-		if err == nil && multiplyShading && len(p.page.Items) == itemStart+1 {
-			if path, ok := p.page.Items[itemStart].(creator.Path); ok && path.Fill && !path.Stroke {
-				image, blendErr := p.multiplyShadingImage(path, p.page.Items[:itemStart], p.fillOpacity())
-				if blendErr != nil {
-					p.report("graphics.blend", "Multiply 着色组无法合成: "+blendErr.Error())
-					p.approximateMultiplyFill(&path)
-					p.page.Items[itemStart] = path
-				} else if image != nil {
-					p.page.Items = p.page.Items[:itemStart]
-					p.appendItem(*image)
-				}
-			}
+		p.transparency = parentGroup
+		if err == nil && group != nil {
+			err = p.finishTransparencyGroup(group)
 		}
 		return err
 	}
@@ -216,6 +208,13 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 // 内联、非缓存和缓存图像共用绘制时的软掩码选择。只在图像没有关联软掩码
 // 时应用图形状态掩码，缓存内容本身不受当前状态影响；整体 ca 在图元上保留。
 func (p *pdfInterpreter) appendImageWithGraphicsMask(stream *types.StreamDict, data []byte, format string) error {
+	// 图片关联的软掩码只在本次绘制覆盖图形状态软掩码；q/Q 与后续矢量图元
+	// 仍保留原有状态，避免污染同一图片的缓存或后续绘制。
+	if p.state.softMask != nil && p.imageHasOwnSoftMask(stream) {
+		mask := p.state.softMask
+		p.state.softMask = nil
+		defer func() { p.state.softMask = mask }()
+	}
 	if mask := p.state.lumMask; mask != nil && !p.imageHasOwnSoftMask(stream) {
 		if masked, ok := p.applyImageSoftMask(data, mask); ok {
 			data, format = masked, "PNG"

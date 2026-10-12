@@ -14,7 +14,7 @@ import (
 	"github.com/benoitkugler/textlayout/fonts/simpleencodings"
 	pdffont "github.com/pdfcpu/pdfcpu/pkg/font"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 	"github.com/zc310/fontfix"
 )
 
@@ -76,7 +76,12 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	if object, found := dict.Find("ToUnicode"); found {
 		if stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object); err == nil && stream != nil {
 			if err := p.decodeStream(stream, 0); err == nil {
-				font.toUnicode = parsePDFToUnicode(stream.Content, p.control)
+				if font.encodingCMap != nil {
+					font.encodedUnicode = make(map[uint64]string)
+					parsePDFToUnicodeMapping(stream.Content, p.control, font.encodedUnicode)
+				} else {
+					font.toUnicode = parsePDFToUnicode(stream.Content, p.control)
+				}
 			} else {
 				p.report("font.unicode", "字体 ToUnicode 无法解码: "+err.Error())
 			}
@@ -85,7 +90,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	// 部分字体（尤其 Type3 与无 ToUnicode 的子集字体）只提供 /Encoding 的
 	// /Differences 字形名。必须按标准字形表补出 Unicode，否则解码会退化成
 	// 原始字节，正文出现乱码。ToUnicode 优先，仅补齐缺失的编码。
-	if font.codeBytes == 1 {
+	if font.codeBytes == 1 && font.predefined == nil && font.encodingCMap == nil {
 		if mapping := p.applySimpleEncoding(font, dict); len(font.widths) == 0 {
 			applyCoreFontWidths(font, mapping)
 		}
@@ -108,6 +113,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		// 返回 nil，/DW、/W 与 CIDToGIDMap 会连同字体数据一起丢掉。
 		if descendants, err := p.ctx.XRefTable.DereferenceArray(object); err == nil && len(descendants) > 0 {
 			if descendant, descendantErr := p.ctx.XRefTable.DereferenceDict(descendants[0]); descendantErr == nil && descendant != nil {
+				font.defaultW = 1000
 				defaultWidthObject, found := descendant.Find("DW")
 				if value, ok := numberValue(defaultWidthObject); found && ok {
 					font.defaultW = value
@@ -130,13 +136,24 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	}
 	prepareCIDUnicode(font)
 	font.maxUnicodeBytes = 4
+	if font.predefined != nil || font.encodingCMap != nil {
+		font.maxUnicodeBytes = 8 // Adobe CID tables may return a base and variation selector.
+	}
 	for _, value := range font.toUnicode {
+		if int64(len(value)) > font.maxUnicodeBytes {
+			font.maxUnicodeBytes = int64(len(value))
+		}
+	}
+	for _, value := range font.encodedUnicode {
 		if int64(len(value)) > font.maxUnicodeBytes {
 			font.maxUnicodeBytes = int64(len(value))
 		}
 	}
 	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type3" {
 		p.loadType3Font(font, dict)
+	}
+	if font.vertical && font.type3 == nil && len(font.data) == 0 {
+		p.loadVerticalSubstitute(font)
 	}
 }
 
@@ -166,12 +183,15 @@ func (p *pdfInterpreter) loadFontVerticalMetrics(font *pdfFontInfo, descriptor t
 // 个字形。因此改为由 pdfFontInfo.cidUnicode 按正文实际出现的 CID 惰性反查。
 func prepareCIDUnicode(font *pdfFontInfo) {
 	// 有 ToUnicode 时以它为准，不用字符集反查的结果覆盖。
-	if len(font.toUnicode) > 0 || (font.codeBytes != 2 && font.codeToCID == nil) || font.sfnt == nil {
+	if len(font.toUnicode) > 0 || len(font.encodedUnicode) > 0 || (font.codeBytes != 2 && font.encodingCMap == nil) || font.sfnt == nil {
 		return
 	}
 	font.cidFromCmap = true
 	if font.toUnicode == nil {
-		font.toUnicode = map[uint16]string{}
+		font.toUnicode = map[uint32]string{}
+	}
+	if font.encodingCMap != nil && font.encodedUnicode == nil {
+		font.encodedUnicode = map[uint64]string{}
 	}
 }
 
@@ -209,12 +229,12 @@ func isPrivateUseRune(r rune) bool {
 // 保持不变，仅补充缺失项。
 //
 // 返回本次按 /Encoding 得到的 code→Unicode 映射，供基础 14 字体补字宽复用。
-func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict) map[uint16]string {
+func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict) map[uint32]string {
 	encodingObject, found := dict.Find("Encoding")
 	if !found {
 		return nil
 	}
-	mapping := map[uint16]string{}
+	mapping := map[uint32]string{}
 	switch value := encodingObject.(type) {
 	case types.Name:
 		fillPDFBaseEncoding(value.Value(), mapping)
@@ -247,7 +267,7 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 				continue
 			}
 			if r, ok := glyphsnames.GlyphToRune(strings.TrimPrefix(name.Value(), "/")); ok {
-				mapping[uint16(code)] = string(r)
+				mapping[uint32(code)] = string(r)
 			}
 			code++
 		}
@@ -256,7 +276,7 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 		return nil
 	}
 	if font.toUnicode == nil {
-		font.toUnicode = map[uint16]string{}
+		font.toUnicode = map[uint32]string{}
 	}
 	for code, value := range mapping {
 		if _, exists := font.toUnicode[code]; !exists {
@@ -288,14 +308,14 @@ func coreFontName(baseFont string) string {
 //
 // mapping 是 applySimpleEncoding 得到的 code→Unicode；字体没写 /Encoding 时
 // 按规范默认使用标准编码。
-func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint16]string) {
+func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint32]string) {
 	name := coreFontName(font.familyName)
 	if name == "" {
 		return
 	}
 	if len(mapping) == 0 {
 		// 无 /Encoding：基础 14 默认标准编码。
-		mapping = map[uint16]string{}
+		mapping = map[uint32]string{}
 		fillPDFBaseEncoding("StandardEncoding", mapping)
 	}
 	widths := make(map[int]float64, len(mapping))
@@ -318,7 +338,7 @@ func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint16]string) {
 }
 
 // fillPDFBaseEncoding 填充简单字体的基础编码（WinAnsi/MacRoman/标准编码等）。
-func fillPDFBaseEncoding(name string, out map[uint16]string) {
+func fillPDFBaseEncoding(name string, out map[uint32]string) {
 	var table simpleencodings.Encoding
 	switch strings.TrimPrefix(name, "/") {
 	case "WinAnsiEncoding":
@@ -335,7 +355,7 @@ func fillPDFBaseEncoding(name string, out map[uint16]string) {
 		table = simpleencodings.AdobeStandard
 	}
 	for code, r := range table.ByteToRune() {
-		out[uint16(code)] = string(r)
+		out[uint32(code)] = string(r)
 	}
 }
 
@@ -361,8 +381,8 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 	}
 }
 
-func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map[uint16]uint16 {
-	if len(font.data) == 0 || font.codeBytes != 1 || font.codeToCID != nil {
+func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map[uint32]uint16 {
+	if len(font.data) == 0 || font.codeBytes != 1 || font.predefined != nil || font.encodingCMap != nil {
 		return nil
 	}
 	sfnt, err := fontparser.ParseSFNT(font.data, 0)
@@ -392,37 +412,37 @@ func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map
 			}
 		}
 	}
-	result := make(map[uint16]uint16)
+	result := make(map[uint32]uint16)
 	for code, name := range names {
 		if name == "" {
 			continue
 		}
 		if glyph := sfnt.FindGlyphName(name); glyph != 0 {
-			result[uint16(code)] = glyph
+			result[uint32(code)] = glyph
 		}
 	}
 	// 子集字体可能使用非标准字形名（如 ReportLab 的 uF00XX），无法按标准
 	// 字形名解析。此时改用字体自身的 cmap：按字符编码（优先 ToUnicode）
 	// 查询 glyph，使转换器能输出 CGTransform，让阅读器直接使用内嵌字形。
 	for code := 0; code <= 255; code++ {
-		if _, ok := result[uint16(code)]; ok {
+		if _, ok := result[uint32(code)]; ok {
 			continue
 		}
 		value := rune(code)
-		if mapped, ok := font.toUnicode[uint16(code)]; ok {
+		if mapped, ok := font.toUnicode[uint32(code)]; ok {
 			if runes := []rune(mapped); len(runes) == 1 {
 				value = runes[0]
 			}
 		}
 		if glyph := sfnt.GlyphIndex(value); glyph != 0 {
-			result[uint16(code)] = glyph
+			result[uint32(code)] = glyph
 			continue
 		}
 		// 部分子集字体的 cmap 使用平台 1（Mac Roman）字节键，字符编码本身
 		// 就是键；ToUnicode 给出的 Unicode 值反而查不到字形时回退到原始编码。
 		if value != rune(code) {
 			if glyph := sfnt.GlyphIndex(rune(code)); glyph != 0 {
-				result[uint16(code)] = glyph
+				result[uint32(code)] = glyph
 			}
 		}
 	}
@@ -431,7 +451,7 @@ func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map
 
 // pdfFontGlyphWidths 返回字体自身 cmap 给出的逐字符宽度，换算到与 PDF
 // /Widths 相同的千分之一 em 单位，用于检测内嵌字体字宽是否可信。
-func pdfFontGlyphWidths(data []byte, codeToGID map[uint16]uint16) map[uint16]float64 {
+func pdfFontGlyphWidths(data []byte, codeToGID map[uint32]uint16) map[uint16]float64 {
 	if len(data) == 0 || len(codeToGID) == 0 {
 		return nil
 	}
@@ -445,7 +465,7 @@ func pdfFontGlyphWidths(data []byte, codeToGID map[uint16]uint16) map[uint16]flo
 	}
 	widths := make(map[uint16]float64, len(codeToGID))
 	for code, glyph := range codeToGID {
-		widths[code] = float64(sfnt.GlyphAdvance(glyph)) / upem * 1000
+		widths[uint16(code)] = float64(sfnt.GlyphAdvance(glyph)) / upem * 1000
 	}
 	return widths
 }
