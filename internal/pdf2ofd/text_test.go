@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/goregular"
@@ -167,12 +167,12 @@ func TestParsePDFToUnicodeRangeEndingAtMaxTerminates(t *testing.T) {
 		"1 beginbfrange\n<0020> <FFFF> <0041>\nendbfrange\nendcmap\n"
 
 	type outcome struct {
-		mapping map[uint16]string
+		mapping map[uint32]string
 	}
 	done := make(chan outcome, 1)
 	go func() { done <- outcome{parsePDFToUnicode([]byte(cmap))} }()
 
-	var mapping map[uint16]string
+	var mapping map[uint32]string
 	select {
 	case got := <-done:
 		mapping = got.mapping

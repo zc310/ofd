@@ -1994,7 +1994,7 @@ func (seg Segment) Arc() (float64, float64, float64, bool, bool) {
 
 // Segments returns the path segments as a slice of segment structures.
 func (p *Path) Segments() []Segment {
-	log.Println("WARNING: github.com/tdewolff/canvas/Path.Segments is deprecated, please use github.com/tdewolff/canvas/Path.Scanner") // TODO: remove
+	log.Println("WARNING: github.com/zc310/canvas/Path.Segments is deprecated, please use github.com/zc310/canvas/Path.Scanner") // TODO: remove
 
 	segs := []Segment{}
 	var start, end Point

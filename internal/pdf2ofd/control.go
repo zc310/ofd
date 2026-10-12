@@ -200,6 +200,30 @@ func (p *pdfInterpreter) setSource(object types.Object, resource string) Diagnos
 }
 
 func (p *pdfInterpreter) appendItem(item creator.Item) bool {
+	// 恒黑亮度掩码是精确的零透明度，不需要栅格化矢量图元。图片继续使用
+	// 原有的图片掩码合成路径，保留其分辨率与缓存语义。
+	if p.state.constantMaskBlack {
+		switch value := item.(type) {
+		case creator.Path:
+			value.Alpha = ofdAlpha(0)
+			item = value
+		case creator.Text:
+			item = p.invisibleTransparencyText(value)
+		}
+	}
+	if p.transparency != nil || p.state.softMask != nil || !isNormalBlendMode(p.state.blendMode) {
+		if err := p.compositeTransparencyItem(item); err != nil {
+			if p.control != nil {
+				p.control.fail(err)
+			}
+			return false
+		}
+		return true
+	}
+	return p.appendRawItem(item)
+}
+
+func (p *pdfInterpreter) appendRawItem(item creator.Item) bool {
 	for _, clip := range p.state.clips {
 		if clip.empty {
 			if _, text := item.(creator.Text); !text {

@@ -19,6 +19,14 @@
   `ofd-converter` 新增 `--pdf-strict`、`--pdf-max-input-bytes`、
   `--pdf-max-image-pixels` 与 `--pdf-max-total-image-pixels`，PDF 导入诊断写入标准错误。
 
+- 修复 `pkg/creator` 仅通过 `SignedValueSource` 或 `SealSource` 提供签名数据时
+  `Signature.xml` 引用路径错误、印章引用遗漏的问题。XML 文本中的回车现在使用
+  字符引用保留原值；扩展 `DataXML` 可正确接受 `xml-stylesheet` 等合法处理指令。
+
+- `pkg/creator` 自建 XML 元素统一输出 `ofd:` 前缀，根节点声明
+  `xmlns:ofd="http://www.ofdspec.org/2016"`。扩展 `DataXML` 和直接提供的资源 XML
+  保留原有前缀与命名空间；按 XML 字节匹配标签的调用方需同步调整。
+
 - 修复 PDF 转 OFD 丢失平铺图案填充：Ghostscript 导出的建筑图纸把图案单元写成
   「q 裁剪矩形 re W n q 矩阵 cm /图像 Do Q Q」，裁剪矩形此前让整类图案被判为
   「非图像图案」而丢弃；图案的底图与掩码还是一对 DCTDecode(JPEG)，软掩码此前

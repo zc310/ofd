@@ -442,8 +442,8 @@ func newPDFInterpreter(ctx *model.Context, page *creator.Page, document *creator
 }
 
 // applyExtGState 读取 ExtGState 的不透明度 ca/CA、混合模式 BM 与软掩码 SMask。
-// 缺失的键保留当前取值；SMask 显式为 /None 时清除软掩码。混合模式中只有
-// Multiply 有近似实现（见 approximateMultiplyFill），其余模式按原样绘制。
+// 缺失的键保留当前取值；SMask 显式为 /None 时清除软掩码。OFD 无法直接表达
+// 的混合与透明组在局部栅格上合成，近似范围通过诊断报告。
 func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 	if resources == nil || name == "" {
 		return
@@ -463,6 +463,16 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 		return
 	}
 	// ExtGState 与独立绘图操作符使用相同的线宽、线帽、连接和斜接参数语义。
+	if value, found := dict.Find("AIS"); found {
+		if resolved, err := dereferencePDFObject(p.ctx, value); err == nil {
+			if flag, ok := resolved.(types.Boolean); ok {
+				p.state.alphaIsShape = bool(flag)
+				if flag {
+					p.report("graphics.alpha_shape", "AlphaIsShape 按栅格形状覆盖率近似，源阅读器对该标志的支持不同")
+				}
+			}
+		}
+	}
 	for _, setting := range [...]struct{ key, op string }{{"LW", "w"}, {"LC", "J"}, {"LJ", "j"}, {"ML", "M"}} {
 		if value, ok := dereferencedPDFNumber(p.ctx, dict[setting.key]); ok {
 			_ = p.operator(setting.op, []any{value}, nil, 0)
@@ -484,20 +494,40 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 	}
 	if value, found := dict.Find("BM"); found {
 		if number, err := p.ctx.XRefTable.Dereference(value); err == nil {
+			if array, ok := number.(types.Array); ok {
+				number = types.Name("Normal")
+				for _, candidate := range array {
+					if name, ok := dereferenceName(p.ctx, candidate); ok && supportedPDFBlend(name) {
+						number = types.Name(name)
+						break
+					}
+				}
+			}
 			if name, ok := number.(types.Name); ok {
 				p.state.blendMode = name.Value()
 				if !isNormalBlendMode(p.state.blendMode) {
-					p.report("graphics.blend", "混合模式 "+p.state.blendMode+" 只能近似保留")
+					p.report("graphics.blend", "混合模式 "+p.state.blendMode+" 以 300dpi 在 RGB 空间局部合成")
+					if !supportedPDFBlend(p.state.blendMode) {
+						p.report("graphics.blend_unsupported", "未知混合模式按 Normal 绘制")
+						p.state.blendMode = "Normal"
+					}
 				}
 			}
 		}
 	}
 	if _, found := dict.Find("SMask"); found {
+		p.state.softMask = nil
+		p.state.constantMaskBlack = false
 		if p.control != nil {
 			if err := p.preflightGraphicsMask(dict["SMask"]); err != nil {
 				p.report("image.mask_graphics", err.Error())
 				return
 			}
+		}
+		p.state.softMask = p.parseTransparencyMask(dict["SMask"], resources)
+		if p.state.softMask != nil {
+			p.state.lumMask = nil
+			return
 		}
 		p.state.lumMask = pdfExtGStateSoftMask(p.ctx, dict, p.control)
 		if p.state.lumMask == nil {
@@ -509,8 +539,7 @@ func (p *pdfInterpreter) applyExtGState(resources types.Dict, name string) {
 	}
 }
 
-// isNormalBlendMode 判断 BM 是否等价于不混合。OFD 没有混合模式，只有 Normal
-// 才可以用 ca/CA 的纯透明度近似。
+// isNormalBlendMode 判断 BM 是否可直接使用 OFD 的普通透明叠加。
 func isNormalBlendMode(mode string) bool {
 	switch mode {
 	case "", "Normal", "Compatible":
@@ -531,6 +560,9 @@ func clampOpacity(value float64) float64 {
 }
 
 func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *pdfGraphicsState, depth int) error {
+	previousDepth := p.parseDepth
+	p.parseDepth = depth
+	defer func() { p.parseDepth = previousDepth }()
 	maximum := int64(16)
 	if p.control != nil {
 		maximum = p.control.options.Limits.MaxDepth

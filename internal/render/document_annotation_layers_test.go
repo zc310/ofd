@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers/rasterizer"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers/rasterizer"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 )

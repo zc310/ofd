@@ -313,7 +313,7 @@ func TestPDFTextDeltasUsePDFWidthsWhenFontAdvanceMismatch(t *testing.T) {
 		widths:      map[int]float64{65: 602.0508, 66: 602.0508, 67: 602.0508},
 		glyphWidths: map[uint16]float64{65: 293.9, 66: 293.9, 67: 293.9},
 	}
-	deltas := pdfTextDeltas([]uint16{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1, 1)
 	if len(deltas) != 2 {
 		t.Fatalf("deltas = %v, want length 2", deltas)
 	}
@@ -333,7 +333,7 @@ func TestPDFTextDeltasEmittedEvenWhenFontAdvanceMatches(t *testing.T) {
 		widths:      map[int]float64{65: 602, 66: 602},
 		glyphWidths: map[uint16]float64{65: 602, 66: 602},
 	}
-	deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
 	if len(deltas) != 1 {
 		t.Fatalf("deltas = %v, want length 1", deltas)
 	}
@@ -349,7 +349,7 @@ func TestPDFTextDeltasSynthesizedWhenGlyphWidthsUnknown(t *testing.T) {
 	font := pdfFontInfo{
 		widths: map[int]float64{65: 602, 66: 602},
 	}
-	deltas := pdfTextDeltas([]uint16{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
 	if len(deltas) != 1 {
 		t.Fatalf("deltas = %v, want length 1", deltas)
 	}
@@ -894,7 +894,7 @@ func TestPDFDecodeGBKEucText(t *testing.T) {
 		t.Fatalf("codes = %v, want [0xb9fa 0x32 0x30 0x31 0x35 0xc3f6]", codes)
 	}
 	// 半角单字节码按 defaultW 的一半计宽，全角码使用 defaultW。
-	codes = []uint16{0xB9FA, '2', '0', 0xC3F6}
+	codes = []uint64{0xB9FA, '2', '0', 0xC3F6}
 	if got := pdfTextWidth(codes, font, 1000, 0, 0, 100); got != 3000 {
 		t.Fatalf("pdfTextWidth = %g, want 3000", got)
 	}
@@ -972,12 +972,12 @@ func TestPDFTextGlyphTransformsKeepsMappedGlyphsWhenSomeCodesUnmapped(t *testing
 	font := pdfFontInfo{
 		data:      fakeSFNTWithGlyphCount(200),
 		codeBytes: 1,
-		codeToGID: map[uint16]uint16{0x41: 34, 0x42: 35},
-		toUnicode: map[uint16]string{},
+		codeToGID: map[uint32]uint16{0x41: 34, 0x42: 35},
+		toUnicode: map[uint32]string{},
 		cidToGID:  map[uint16]uint16{},
 	}
 	// 第二个字符编码没有任何字形映射，不能因此丢弃整段 CGTransform。
-	codes := []uint16{0x41, 0x99, 0x42}
+	codes := []uint64{0x41, 0x99, 0x42}
 	transforms := pdfTextGlyphTransforms(codes, "ABC", font)
 	if len(transforms) != 2 {
 		t.Fatalf("transforms = %d, want 2", len(transforms))
@@ -1155,7 +1155,7 @@ func TestPDFTextGlyphTransformsCIDFontDirect(t *testing.T) {
 	font := pdfFontInfo{
 		data:      fakeSFNTWithGlyphCount(200),
 		codeBytes: 2,
-		toUnicode: map[uint16]string{},
+		toUnicode: map[uint32]string{},
 		cidToGID:  map[uint16]uint16{},
 		sfnt:      nil,
 	}
@@ -1169,8 +1169,8 @@ func TestPDFTextGlyphTransformsCIDFontDirect(t *testing.T) {
 	}
 	// codeBytes == 1（非 CID 路径）：不进入此函数覆盖逻辑
 	font.codeBytes = 1
-	font.codeToGID = map[uint16]uint16{0x41: 34, 0x42: 35}
-	codes := []uint16{0x41, 0x99, 0x42}
+	font.codeToGID = map[uint32]uint16{0x41: 34, 0x42: 35}
+	codes := []uint64{0x41, 0x99, 0x42}
 	transforms := pdfTextGlyphTransforms(codes, "ABC", font)
 	if len(transforms) != 2 {
 		t.Fatalf("transforms = %d, want 2", len(transforms))
@@ -1730,7 +1730,7 @@ func TestIsPrivateUseRune(t *testing.T) {
 // cmap 反查，PDF 明确给出的映射必须原样保留。单字节简单字体走
 // applySimpleEncoding，也不得混入。
 func TestPrepareCIDUnicodeKeepsToUnicode(t *testing.T) {
-	withToUnicode := pdfFontInfo{codeBytes: 2, toUnicode: map[uint16]string{0x41: "A"}}
+	withToUnicode := pdfFontInfo{codeBytes: 2, toUnicode: map[uint32]string{0x41: "A"}}
 	prepareCIDUnicode(&withToUnicode)
 	if withToUnicode.cidFromCmap {
 		t.Error("已有 ToUnicode 时不应开启 cmap 反查")

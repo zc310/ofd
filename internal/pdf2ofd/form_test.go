@@ -111,7 +111,7 @@ func TestConvertFormGroupAlphaKeepsOuterOpacity(t *testing.T) {
 		"<< /Type /Catalog /Pages 2 0 R >>",
 		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
 		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Fm 4 0 R >> /ExtGState << /GS0 6 0 R >> >> /Contents 5 0 R >>",
-		"<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 7 0 R >> /ExtGState << /GS1 8 0 R >> >> /Length " + itoa(len(form)) + " >>\nstream\n" + form + "\nendstream",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Group << /S /Transparency /CS /DeviceRGB /I true >> /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 7 0 R >> /ExtGState << /GS1 8 0 R >> >> /Length " + itoa(len(form)) + " >>\nstream\n" + form + "\nendstream",
 		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
 		"<< /Type /ExtGState /ca 0.5 /CA 0.5 >>",
 		"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 12 >>\nstream\n\xc8\x64\x32\x28\x50\x78\x0a\x14\x1e\x3c\x46\x50\nendstream",

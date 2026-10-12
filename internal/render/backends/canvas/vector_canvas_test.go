@@ -3,7 +3,7 @@ package canvas
 import (
 	"testing"
 
-	"github.com/tdewolff/canvas/renderers/pdf"
+	"github.com/zc310/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/render/drawing"
 )
 

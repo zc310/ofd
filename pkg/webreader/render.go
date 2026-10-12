@@ -161,20 +161,6 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	return results, nil
 }
 
-func (r *Reader) hasUnsafeFallbackFontSubset() bool {
-	for _, family := range r.fallbackFamilies {
-		data, ok := render.FallbackFontData(family)
-		if !ok || len(data) < 4 {
-			continue
-		}
-		signature := string(data[:4])
-		if signature == "OTTO" || signature == "ttcf" {
-			return true
-		}
-	}
-	return false
-}
-
 // renderPage 将页面渲染为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
 func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if index < 0 || index >= len(r.pages) {

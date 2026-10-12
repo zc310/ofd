@@ -1,7 +1,7 @@
 package pdf2ofd
 
 import (
-	fontparser "github.com/tdewolff/font"
+	fontparser "github.com/zc310/font"
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -20,15 +20,24 @@ func (p *pdfInterpreter) commitTextClip() {
 	p.textClip, p.textClipActive = pdfClipRegion{}, false
 }
 
-func pdfCodeGlyph(code uint16, text string, font pdfFontInfo) uint16 {
-	if g, ok := font.codeToGID[code]; ok {
+func pdfCodeGlyph(code uint64, text string, font pdfFontInfo) uint16 {
+	if font.substitute {
+		return pdfVerticalSubstituteGlyph(text, font)
+	}
+	if g, ok := font.codeToGID[uint32(code)]; ok {
 		return g
 	}
-	if font.codeBytes == 2 || font.codeToCID != nil {
+	if font.codeBytes == 2 || font.predefined != nil || font.encodingCMap != nil {
 		cid := pdfCIDCode(code, font)
 		g := cid
-		if mapped, ok := font.cidToGID[cid]; ok {
-			g = mapped
+		if font.cidToGID != nil {
+			g = font.cidToGID[cid]
+		} else if font.sfnt != nil && font.sfnt.IsCFF {
+			// CID-keyed CFF charsets can have nonidentity CID→GID even when the
+			// CID is numerically within NumGlyphs. Repair preserves that mapping.
+			if mapped := font.sfnt.GlyphIndex(fontfix.GlyphRune(cid)); mapped != 0 {
+				return mapped
+			}
 		}
 		if uint32(g) >= embeddedFontGlyphCount(font.data) {
 			return font.sfnt.GlyphIndex(fontfix.GlyphRune(g))
@@ -42,7 +51,7 @@ func pdfCodeGlyph(code uint16, text string, font pdfFontInfo) uint16 {
 	return font.sfnt.GlyphIndex(runes[0])
 }
 
-func (p *pdfInterpreter) addTextClip(text string, codes []uint16, font pdfFontInfo, item creator.Text) {
+func (p *pdfInterpreter) addTextClip(text string, codes []uint64, font pdfFontInfo, item creator.Text) {
 	parts := pdfCodeTexts(text, codes, font)
 	advance := 0.0
 	for i, code := range codes {
@@ -65,11 +74,11 @@ func (p *pdfInterpreter) addTextClip(text string, codes []uint16, font pdfFontIn
 			matrix := p.state.textMatrix
 			p.state.textMatrix[4] += matrix[0] * advance
 			p.state.textMatrix[5] += matrix[1] * advance
-			clipText := p.makeText(parts[i], []uint16{code}, font)
+			clipText := p.makeText(parts[i], []uint64{code}, font)
 			p.state.textMatrix = matrix
 			p.textClip.texts = append(p.textClip.texts, clipText)
 		}
-		advance += pdfTextWidth([]uint16{code}, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale)
+		advance += pdfTextWidth([]uint64{code}, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale)
 	}
 }
 

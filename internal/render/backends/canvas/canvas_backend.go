@@ -5,8 +5,8 @@ import (
 	"image"
 	"image/color"
 
-	"github.com/tdewolff/canvas"
-	cimage "github.com/tdewolff/canvas/image"
+	"github.com/zc310/canvas"
+	cimage "github.com/zc310/canvas/image"
 
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"

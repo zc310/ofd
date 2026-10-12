@@ -57,10 +57,8 @@ func (r *Reader) RenderPDFTo(output io.Writer, indices []int, options RenderOpti
 	if dpi < 1 || dpi > maxDPI || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
 		return fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
 	}
-	// TrueType 字体应进行子集化，避免将完整中文字体写入每个 PDF。
-	// CFF/TTC 回退字体暂时不能交给 canvas 的 CFF 子集器；对这类字体
-	// 关闭子集化仍会保留 ToUnicode 和原生文字对象，避免 Close 时 panic。
-	pdfDoc, err := render.NewPDFDocument(output, render.PDFOptions{Compress: true, SubsetFonts: !r.hasUnsafeFallbackFontSubset()})
+	// PDF 写出器逐字体选择子集化；多 FD CFF 保留该字体面的完整程序。
+	pdfDoc, err := render.NewPDFDocument(output, render.PDFOptions{Compress: true, SubsetFonts: true})
 	if err != nil {
 		return err
 	}

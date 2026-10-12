@@ -101,7 +101,22 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 		p.fonts = map[string]pdfFontInfo{}
 		p.fontAliases = map[string]string{}
 	}
-	err = p.parse(form.Content, resources, &state, 0)
+	if form.Dict["Group"] != nil {
+		// 外观定位已包含原 Form Matrix；通过普通 XObject 路径处理透明组，
+		// 克隆流字典并移除 Matrix，避免再次应用同一变换。
+		appearance := *form
+		appearance.Dict = types.Dict{}
+		for key, value := range form.Dict {
+			if key != "Matrix" {
+				appearance.Dict[key] = value
+			}
+		}
+		appearance.Dict["Subtype"] = types.Name("Form")
+		p.state = state
+		err = p.xobject("Appearance", types.Dict{"XObject": types.Dict{"Appearance": appearance}}, 0)
+	} else {
+		err = p.parse(form.Content, resources, &state, 0)
+	}
 	p.fonts, p.fontAliases = savedFonts, savedAliases
 	p.stack = savedStack
 	if err != nil {

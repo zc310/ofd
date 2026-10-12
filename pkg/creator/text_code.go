@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/font"
+	"github.com/zc310/canvas"
+	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/utils"
 )
 
