@@ -9,7 +9,7 @@ import (
 
 // 本文件锁定发票抽取结果的 JSON 形态。
 //
-// 本包用 github.com/goccy/go-json，与 internal/jobstore、internal/runner、
+// 本包用 github.com/goccy/go-json，与 internal/server/jobstore、internal/server/runner、
 // cmd/ofd-server 一致。go-json v0.11.2 起（#675）改为信任标准库实现的
 // Marshaler/Unmarshaler，而 Decimal 恰好实现了 json.Marshaler，所以这条路径的
 // 实际输出由那次变更决定，值得单独锁住。

@@ -14,8 +14,8 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // seedFinished 造一个已成功、产物已落盘的任务。

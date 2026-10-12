@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // inlineWaitLimit 是等待同步转换槽位的上限。

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/allowlist"
+	"github.com/zc310/ofd/internal/server/allowlist"
 )
 
 func mustAllow(t *testing.T, entries ...string) *allowlist.List {

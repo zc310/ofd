@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/runner"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/runner"
 	"github.com/zc310/ofd/pkg/converter"
 )
 

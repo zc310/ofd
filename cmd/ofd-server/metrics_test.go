@@ -12,10 +12,10 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/allowlist"
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
+	"github.com/zc310/ofd/internal/server/allowlist"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
 )
 
 // TestMetricsExposesCounters 确认端点真的把累计计数渲染出来。

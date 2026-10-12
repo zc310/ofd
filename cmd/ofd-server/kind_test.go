@@ -6,8 +6,8 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // withoutOutputKind 从一个合法请求体里去掉 output.kind，模拟"调用方只关心输出

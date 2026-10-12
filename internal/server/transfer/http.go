@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zc310/ofd/internal/allowlist"
+	"github.com/zc310/ofd/internal/server/allowlist"
 )
 
 // HTTPSource 按 URL 拉取待转换文档。拉取方向由调用方给出地址，因此必须经过

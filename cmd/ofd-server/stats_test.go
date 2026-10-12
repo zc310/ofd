@@ -10,7 +10,7 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"github.com/zc310/ofd/internal/jobstore"
+	"github.com/zc310/ofd/internal/server/jobstore"
 )
 
 // 走一遍真实的记账路径，让 /v1/stats 的数字有来源。

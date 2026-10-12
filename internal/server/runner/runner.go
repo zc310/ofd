@@ -22,10 +22,10 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/convertersvc"
-	"github.com/zc310/ofd/internal/jobstore"
-	"github.com/zc310/ofd/internal/notify"
-	"github.com/zc310/ofd/internal/transfer"
+	"github.com/zc310/ofd/internal/server/convertersvc"
+	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/transfer"
 )
 
 // DefaultBackoff 是任务失败后的重试退避基数，按 Attempt 指数放大。
