@@ -22,11 +22,11 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	if err := os.WriteFile(output, []byte("existing output"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-max-input-bytes=4096", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", input, output})
+	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-max-input-bytes=4096", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", "--pdf-max-operations", "300", input, output})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.pdfStrict || opts.pdfMaxInputBytes != 4096 || opts.pdfMaxImagePixels != 100 || opts.pdfMaxTotalImagePixels != 200 {
+	if !opts.pdfStrict || opts.pdfMaxInputBytes != 4096 || opts.pdfMaxImagePixels != 100 || opts.pdfMaxTotalImagePixels != 200 || opts.pdfMaxOperations != 300 {
 		t.Fatalf("opts=%+v", opts)
 	}
 	var diagnostics bytes.Buffer
@@ -43,7 +43,7 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	if err := run(opts); !errors.Is(err, converter.ErrPDFImportLimitExceeded) || errors.Is(err, ErrUsage) {
 		t.Fatalf("budget error=%v", err)
 	}
-	for _, args := range [][]string{{"--pdf-max-input-bytes=-1", input, output}, {"--pdf-max-image-pixels=-1", "--input-dir", dir, "--output-dir", filepath.Join(dir, "out"), "--format", "ofd"}} {
+	for _, args := range [][]string{{"--pdf-max-input-bytes=-1", input, output}, {"--pdf-max-image-pixels=-1", "--input-dir", dir, "--output-dir", filepath.Join(dir, "out"), "--format", "ofd"}, {"--pdf-max-operations=-1", input, output}} {
 		opts, err := parseArgs(args)
 		if err != nil {
 			t.Fatal(err)
@@ -243,6 +243,14 @@ func TestCollectBatchInputs(t *testing.T) {
 	}
 }
 
+func TestBatchInputExtensionSupportsXPS(t *testing.T) {
+	for _, name := range []string{"document.xps", "DOCUMENT.XPS"} {
+		if !batchInputExtension(name) {
+			t.Fatalf("batchInputExtension(%q) = false, want true", name)
+		}
+	}
+}
+
 func TestRunBatchRejectsInvalidOptions(t *testing.T) {
 	root := t.TempDir()
 	inputDir := filepath.Join(root, "input")
@@ -401,6 +409,7 @@ func TestParseArgsSupportsHTMLFormat(t *testing.T) {
 func TestParseArgsSupportsExternalToolOptions(t *testing.T) {
 	opts, err := parseArgs([]string{
 		"-temp-dir", "/tmp/custom",
+		"-xpstopdf", "/opt/libgxps/bin/xpstopdf",
 		"-paper", "A3",
 		"-landscape",
 		"-chrome-no-sandbox",
@@ -415,6 +424,9 @@ func TestParseArgsSupportsExternalToolOptions(t *testing.T) {
 	}
 	if opts.tempDir != "/tmp/custom" {
 		t.Fatalf("tempDir = %q", opts.tempDir)
+	}
+	if opts.xpstopdf != "/opt/libgxps/bin/xpstopdf" {
+		t.Fatalf("xpstopdf = %q", opts.xpstopdf)
 	}
 	if opts.paper != "A3" || !opts.landscape || !opts.chromeNoSandbox || !opts.allowRemote || !opts.noPrintBackground {
 		t.Fatalf("外部工具选项解析不正确: %+v", opts)

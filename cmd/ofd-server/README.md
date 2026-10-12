@@ -215,7 +215,7 @@ scrape_configs:
   },
   "output": {
     "kind": "stream",         // "stream" | "dir"
-    "format": "pdf",
+    "format": "pdf",          // 也支持 ofd、text、markdown、docx、html、图片等
     "dir": "/…/out/sub"       // 可选，只能在配置的 output_dir 之下
     "file_name": "INV-2026-0815",  // 可选，产物文件名的基名，不含扩展名
     "remote": {"target": "minio", "path": "incoming/2026/08"}  // 仅远端 kind
@@ -235,6 +235,9 @@ scrape_configs:
 | `url`    | `url`                | 由服务端下载远程文件；需在服务配置中设置 `allow_input_url_hosts`，否则请求返回 `403 url_input_disabled`。 |
 
 两种类型都可以提供可选的 `format` 字段，显式声明输入格式；省略时由服务端识别。
+输入扩展名为 `.xps` 时识别为 XPS，由 `xpstopdf` 转换为 PDF；输出 `format: "ofd"` 时
+继续转换为 OFD。服务镜像已内置该工具，
+自定义部署可通过 `xpstopdf_path` 指定路径。
 `upload` 请求不使用 `url` 字段，`url` 请求不使用 `file_name` 和 `bytes` 字段。
 URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL 输入默认关闭](#url-输入默认关闭)。
 
@@ -397,7 +400,8 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `webdav_targets`               | `{}`                 | 预注册 WebDAV 目标                                       |
 | `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                             |
 | `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                     |
-| `soffice_path` / `chrome_path` | 自动探测             | 外部转换程序路径                                         |
+| `soffice_path` / `chrome_path` / `xpstopdf_path` | 自动探测 | 外部转换程序路径                         |
+| `pdf_max_operations`         | 10,000,000            | PDF→OFD 处理量上限，0 使用默认值                       |
 | `chrome_no_sandbox`            | `false`              | 给 Chrome 加 `--no-sandbox`；容器内非 root 运行时需要    |
 
 环境变量可覆盖 `listen`、`db_path`、`temp_dir`、`output_dir`、`log_level`、
@@ -406,8 +410,8 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 
 ## Docker
 
-`Dockerfile` 提供 Ubuntu 24.04 运行镜像，已装 LibreOffice（Office 文档）与
-Chrome（HTML），heavy 通道开箱可用。
+`Dockerfile` 提供 Ubuntu 24.04 运行镜像，已装 LibreOffice（Office 文档）、
+Chrome（HTML）和 `xpstopdf`（XPS），heavy 通道开箱可用。
 
 ```bash
 docker build -f cmd/ofd-server/Dockerfile -t ofd-server:0.1.2 .
@@ -571,7 +575,7 @@ S3/FTP/SFTP/WebDAV 上，服务端不碰，生命周期由那边的存储策略�
 ### 通道由服务端判定，请求里的 `lane` 会被拒绝
 
 `fast` 是纯 Go 的 OFD 解析与 PDF/文本/Markdown/图像输出；`heavy` 是需要拉起
-外部进程的（Office 走 LibreOffice、HTML/MHTML 走 Chrome）以及 URL 输入
+外部进程的（Office 走 LibreOffice、HTML/MHTML 走 Chrome、XPS 走 `xpstopdf`）以及 URL 输入
 （耗时由对端决定）。两者各有独立的 worker 数。
 
 `heavy_workers` 默认 1，因为每个 heavy 任务都会拉起一个外部进程，几百 MB 内存

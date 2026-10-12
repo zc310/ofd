@@ -37,6 +37,7 @@ type Converter struct {
 	docxImagesOff     bool   // DOCX 输出关闭图片内嵌
 	docxAnnotations   bool   // DOCX 输出保留批注层文字，默认剔除水印与印章
 	sofficePath       string
+	xpstopdfPath      string
 	officeTimeout     time.Duration
 	chromePath        string
 	paper             Paper
@@ -141,6 +142,14 @@ func (c *Converter) SofficePath() string {
 		return ""
 	}
 	return c.sofficePath
+}
+
+// XpstopdfPath 返回配置的 xpstopdf 可执行文件路径；为空表示自动查找。
+func (c *Converter) XpstopdfPath() string {
+	if c == nil {
+		return ""
+	}
+	return c.xpstopdfPath
 }
 
 // OfficeTimeout 返回 Office 文档转换超时时间；为 0 表示使用默认值。

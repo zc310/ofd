@@ -77,7 +77,7 @@ type Config struct {
 	Listen string `json:"listen"`
 	// APIKey 是访问 /v1/* 接口的 Bearer 令牌。必填。
 	//
-	// 服务会把调用方上传的文件交给 LibreOffice 与 Chrome 解析，两者都是解析
+	// 服务会把调用方上传的文件交给 LibreOffice、Chrome 与 xpstopdf 解析，它们都是解析
 	// 不可信输入的经典目标；而 listen 的默认值 ":9705" 监听所有网卡。所以
 	// "内网、前面有网关"只是部署假设，不是访问控制——真的要有网关也该由
 	// 服务自己再校验一次，否则换一种部署方式就没有任何保护。
@@ -150,9 +150,12 @@ type Config struct {
 	WebDAVTargets map[string]WebDAVTargetConfig `json:"webdav_targets"`
 	// SFTPTargets 是预注册的 SFTP 目标。
 	SFTPTargets map[string]SFTPTargetConfig `json:"sftp_targets"`
-	// OfficePath 与 ChromePath 是外部转换程序路径，为空时由转换库自行探测。
-	OfficePath string `json:"soffice_path"`
-	ChromePath string `json:"chrome_path"`
+	// OfficePath、ChromePath 与 XpstopdfPath 是外部转换程序路径，为空时由转换库自行探测。
+	OfficePath   string `json:"soffice_path"`
+	ChromePath   string `json:"chrome_path"`
+	XpstopdfPath string `json:"xpstopdf_path"`
+	// PDFMaxOperations 是 PDF→OFD 阶段的处理量预算，0 使用默认 10,000,000。
+	PDFMaxOperations int64 `json:"pdf_max_operations"`
 	// ChromeNoSandbox 给 Chrome 加 --no-sandbox。
 	//
 	// 容器里通常需要：Chrome 沙箱依赖 user namespace，而容器默认不提供，
@@ -440,8 +443,11 @@ func (c *Config) validate() error {
 	}
 	if strings.TrimSpace(c.APIKey) == "" {
 		return fmt.Errorf("必须配置 api_key（或设置 OFD_SERVER_API_KEY）：" +
-			"服务会把上传文件交给 LibreOffice 与 Chrome 解析，接口不能匿名开放。" +
+			"服务会把上传文件交给 LibreOffice、Chrome 与 xpstopdf 解析，接口不能匿名开放。" +
 			"可用 openssl rand -hex 32 生成")
+	}
+	if c.PDFMaxOperations < 0 {
+		return fmt.Errorf("pdf_max_operations 不能为负数")
 	}
 	for name, target := range c.FTPTargets {
 		if target.Addr == "" {

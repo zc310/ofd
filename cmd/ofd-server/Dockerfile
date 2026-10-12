@@ -85,6 +85,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libreoffice-writer \
         tzdata \
         tesseract-ocr tesseract-ocr-chi-sim  tesseract-ocr-chi-sim-vert tesseract-ocr-chi-tra tesseract-ocr-chi-tra-vert \
+        libgxps-utils \
         && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 

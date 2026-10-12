@@ -128,6 +128,14 @@ func WithSoffice(path string) Option {
 	}
 }
 
+// WithXpstopdf 设置 xpstopdf 可执行文件路径，供 XPS 输入使用；为空时按
+// OFD_XPSTOPDF 和 PATH 自动查找。
+func WithXpstopdf(path string) Option {
+	return func(c *Converter) {
+		c.xpstopdfPath = strings.TrimSpace(path)
+	}
+}
+
 // WithOfficeTimeout 设置 Office 文档转换超时时间；0 表示使用默认值。
 func WithOfficeTimeout(timeout time.Duration) Option {
 	return func(c *Converter) {

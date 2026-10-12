@@ -577,7 +577,7 @@ func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) 
 				return nil, false
 			}
 			out = append(out, models.PageItem{Kind: models.PageItemBlock, Block: &models.PageBlock{
-				Items: sub,
+				CTPageBlock: models.CTPageBlock{Items: sub},
 			}})
 		default:
 			return nil, false

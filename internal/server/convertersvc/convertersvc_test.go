@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -342,6 +343,7 @@ func TestResolveInputFormat(t *testing.T) {
 	}{
 		{Input{FileName: "a.ofd"}, "ofd", ".ofd", true},
 		{Input{FileName: "a.pdf"}, "pdf", ".pdf", true},
+		{Input{FileName: "a.xps"}, "xps", ".xps", true},
 		{Input{FileName: "a.docx"}, "docx", ".docx", true},
 		{Input{FileName: "A.DOCX"}, "docx", ".docx", true},
 		{Input{FileName: "a.docx", Format: "ofd"}, "ofd", ".ofd", true},
@@ -363,6 +365,13 @@ func TestResolveInputFormat(t *testing.T) {
 		} else if err == nil {
 			t.Errorf("%+v 应报错，实际 (%q,%q)", tc.in, format, ext)
 		}
+	}
+}
+
+func TestServiceOutputFormatSupportsOFD(t *testing.T) {
+	format, ok := serviceOutputFormat("OFD")
+	if !ok || format.Name != "ofd" || format.Kind != converter.KindDocument || format.MIME != "application/ofd" {
+		t.Fatalf("OFD 输出格式 = %+v, ok=%v", format, ok)
 	}
 }
 
@@ -393,6 +402,7 @@ func TestLane(t *testing.T) {
 		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "png"}}, LaneFast},
 		{Spec{Input: Input{FileName: "a.ofd"}, Output: Output{Format: "html"}}, LaneHeavy},
 		{Spec{Input: Input{FileName: "a.docx"}, Output: Output{Format: "pdf"}}, LaneHeavy},
+		{Spec{Input: Input{FileName: "a.xps"}, Output: Output{Format: "ofd"}}, LaneHeavy},
 		{Spec{Input: Input{Format: "xlsx"}, Output: Output{Format: "pdf"}}, LaneHeavy},
 		{Spec{Input: Input{Format: "ofd"}, Output: Output{Format: "pptx"}}, LaneHeavy},
 		// URL 输入默认走重路径：网络 I/O 不该占住快速通道。
@@ -402,6 +412,26 @@ func TestLane(t *testing.T) {
 		if got := svc.Lane(tc.spec); got != tc.want {
 			t.Errorf("Lane(%s→%s) = %s，期望 %s", tc.spec.Input.FileName, tc.spec.Output.Format, got, tc.want)
 		}
+	}
+}
+
+func TestRunXPSToOFD(t *testing.T) {
+	if _, err := exec.LookPath("xpstopdf"); err != nil {
+		t.Skip("PATH 中没有 xpstopdf，跳过")
+	}
+	input, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "xps", "example.xps"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := newService(t).Run(context.Background(), Spec{
+		Input:  Input{Kind: InputUpload, FileName: "example.xps", Bytes: input},
+		Output: Output{Kind: OutputStream, Format: "ofd"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.InputFormat != "xps" || res.Format != "ofd" || len(res.Bytes) < 2 || string(res.Bytes[:2]) != "PK" {
+		t.Fatalf("XPS→OFD 结果不对: format=%q output=%q bytes=%d", res.InputFormat, res.Format, len(res.Bytes))
 	}
 }
 

@@ -422,7 +422,7 @@ func (c *Color) parse(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		*c = Color{
-			R: 0, G: 0, B: 0, A: 255,
+			RGBA: color.RGBA{R: 0, G: 0, B: 0, A: 255},
 		}
 		return nil
 	}

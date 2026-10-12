@@ -32,6 +32,8 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/import/html"
 	// 注册 PNG/JPEG/TIFF→OFD 图片导入器。
 	_ "github.com/zc310/ofd/pkg/converter/import/image"
+	// 注册 XPS→PDF/OFD 导入器（依赖外部 xpstopdf）。
+	_ "github.com/zc310/ofd/pkg/converter/import/xps"
 
 	// 注册可选栅格后端，供 --raster-backend 选择（PNG/JPG）。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -94,6 +96,7 @@ type options struct {
 	workers                int
 	externalWorkers        int
 	soffice                string
+	xpstopdf               string
 	officeTimeout          int
 	chrome                 string
 	chromeNoSandbox        bool
@@ -107,6 +110,7 @@ type options struct {
 	pdfMaxInputBytes       int64
 	pdfMaxImagePixels      int64
 	pdfMaxTotalImagePixels int64
+	pdfMaxOperations       int64
 	diagnosticsWriter      io.Writer
 	ocr                    bool
 	ocrLanguage            string
@@ -221,7 +225,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
 	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, docx, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
-	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
+	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: pdf, xps, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.BoolVar(&opts.noHTMLTextLayer, "no-html-text-layer", false, "OFD 转 HTML 时不输出透明文字层（默认输出，文字因此可选中、可查找、可朗读）")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
@@ -230,11 +234,12 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
 	flags.BoolVar(&opts.dir, "dir", opts.dir, "不压缩，将多页图片直接保存到输出目录下的多个文件")
 	flags.IntVar(&opts.workers, "workers", opts.workers, "批量转换并发数，默认 4")
-	flags.IntVar(&opts.externalWorkers, "external-workers", opts.externalWorkers, "外部工具（LibreOffice/Chrome）批量转换并发数，默认 2")
+	flags.IntVar(&opts.externalWorkers, "external-workers", opts.externalWorkers, "外部工具（LibreOffice/Chrome/xpstopdf）批量转换并发数，默认 2")
 	flags.StringVar(&opts.soffice, "soffice", "", "LibreOffice 可执行文件路径；缺省按 OFD_SOFFICE、PATH 和常见安装路径查找")
-	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML 文档转换超时秒数；0 表示默认 120 秒")
+	flags.StringVar(&opts.xpstopdf, "xpstopdf", "", "xpstopdf 可执行文件路径；缺省按 OFD_XPSTOPDF 和 PATH 查找")
+	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML/XPS 文档转换超时秒数；0 表示默认 120 秒")
 	flags.StringVar(&opts.chrome, "chrome", "", "Chrome/Chromium 可执行文件路径；缺省按 OFD_CHROME、PATH 和常见安装路径查找")
-	flags.StringVar(&opts.tempDir, "temp-dir", "", "外部工具（LibreOffice/Chrome）临时文件目录；缺省使用系统临时目录")
+	flags.StringVar(&opts.tempDir, "temp-dir", "", "外部工具（LibreOffice/Chrome/xpstopdf）临时文件目录；缺省使用系统临时目录")
 	flags.StringVar(&opts.paper, "paper", "", "打印纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4（仅 HTML/MHTML 生效）")
 	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印，交换纸张宽高（仅 HTML/MHTML 生效）")
 	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
@@ -244,6 +249,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
 	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
 	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 2.5 亿像素")
+	flags.Int64Var(&opts.pdfMaxOperations, "pdf-max-operations", 0, "PDF 转换处理量上限；0 使用默认 10,000,000")
 	flags.BoolVar(&opts.ocr, "ocr", false, "图片转 OFD 时启用 OCR 文字层，默认关闭")
 	flags.StringVar(&opts.ocrLanguage, "ocr-language", opts.ocrLanguage, "图片 OCR 语言，需与本机 Tesseract 语言包一致")
 	flags.BoolVar(&opts.markdownTables, "md-tables", false, "OFD 转 Markdown 时按位置识别并输出表格（默认关闭，双栏正文可能误判）")
@@ -270,12 +276,12 @@ func normalizeConverterArgs(args []string) []string {
 		"output": true,
 		"dpi":    true, "page": true, "bg": true, "dir": true, "workers": true,
 		"raster-backend":   true,
-		"external-workers": true, "soffice": true, "office-timeout": true,
+		"external-workers": true, "soffice": true, "xpstopdf": true, "office-timeout": true,
 		"chrome": true, "paper": true, "landscape": true, "no-print-background": true, "temp-dir": true,
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password":   true,
-		"pdf-strict": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true,
+		"pdf-strict": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
 		"ocr": true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
@@ -310,7 +316,7 @@ func run(opts *options) error {
 }
 
 func (opts *options) pdfLimits() converter.PDFImportLimits {
-	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels}
+	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels, MaxOperations: opts.pdfMaxOperations}
 }
 
 func runSingle(opts *options) error {
@@ -540,7 +546,7 @@ func acquireExternalSlot(opts *options, semaphore chan struct{}) func() {
 }
 
 // isExternalInput 判断输入是否需要外部工具（Office 经 LibreOffice、HTML 经
-// Chrome）。这些格式都注册了到 PDF 的直接转换器。
+// Chrome、XPS 经 xpstopdf）。这些格式都注册了到 PDF 的直接转换器。
 func isExternalInput(opts *options) bool {
 	from := resolveInputFormat(opts)
 	imp, ok := converter.ImporterByName(from)
@@ -791,6 +797,9 @@ func officeOptions(opts *options) []converter.Option {
 	var option []converter.Option
 	if strings.TrimSpace(opts.soffice) != "" {
 		option = append(option, converter.WithSoffice(opts.soffice))
+	}
+	if strings.TrimSpace(opts.xpstopdf) != "" {
+		option = append(option, converter.WithXpstopdf(opts.xpstopdf))
 	}
 	if opts.officeTimeout > 0 {
 		option = append(option, converter.WithOfficeTimeout(time.Duration(opts.officeTimeout)*time.Second))
