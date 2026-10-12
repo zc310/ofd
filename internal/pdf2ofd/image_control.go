@@ -17,7 +17,7 @@ func (p *pdfInterpreter) imageData(stream *types.StreamDict, maskColor pdfColor)
 			return nil, "", err
 		}
 	}
-	data, format, err := pdfImageDataRaw(p.ctx, stream, maskColor)
+	data, format, err := pdfImageDataRaw(p.ctx, stream, maskColor, p.control)
 	if err == nil {
 		data, format = p.imageMaskData(stream, data, format)
 	}

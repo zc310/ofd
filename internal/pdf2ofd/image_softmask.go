@@ -1,6 +1,7 @@
 package pdf2ofd
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 
@@ -9,7 +10,7 @@ import (
 )
 
 // applyPDFImageSoftMask16 保留底图的非预乘颜色及完整的 16 位透明度。
-// 输出尺寸沿用基础图，掩码按最近邻对齐，与原有 8 位软掩码路径一致。
+// 输出保留两者各轴最大分辨率，底图与掩码分别按最近邻对齐。
 func applyPDFImageSoftMask16(ctx *model.Context, base image.Image, mask *types.StreamDict, maskWidth, maskHeight, bpc int, control *conversionControl) ([]byte, bool) {
 	var samples16 []uint16
 	var samples8 []byte
@@ -20,13 +21,16 @@ func applyPDFImageSoftMask16(ctx *model.Context, base image.Image, mask *types.S
 		if control.consumeOperations(int64(maskWidth)*int64(maskHeight)) != nil {
 			return nil, false
 		}
-		samples8, err = pdfImageMaskSamples(ctx, mask, maskWidth, maskHeight, bpc)
+		samples8, err = pdfImageMaskSamples(ctx, mask, maskWidth, maskHeight, bpc, control)
 	}
 	if err != nil || control.check() != nil {
 		return nil, false
 	}
 	bounds := base.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
+	width, height, err := pdfSoftMaskCompositionSize(bounds, maskWidth, maskHeight, control)
+	if err != nil {
+		return nil, false
+	}
 	if control.consumeOperations(int64(width)*int64(height)) != nil {
 		return nil, false
 	}
@@ -36,8 +40,10 @@ func applyPDFImageSoftMask16(ctx *model.Context, base image.Image, mask *types.S
 			return nil, false
 		}
 		maskRow := pdfSoftMaskRow(y, maskHeight, height) * maskWidth
+		sourceY := bounds.Min.Y + pdfSoftMaskRow(y, bounds.Dy(), height)
 		for x := 0; x < width; x++ {
-			value := pdfImageNRGBA64At(base, bounds.Min.X+x, bounds.Min.Y+y)
+			sourceX := bounds.Min.X + pdfSoftMaskColumn(x, bounds.Dx(), width)
+			value := pdfImageNRGBA64At(base, sourceX, sourceY)
 			index := maskRow + pdfSoftMaskColumn(x, maskWidth, width)
 			if samples16 != nil {
 				value.A = samples16[index]
@@ -49,6 +55,27 @@ func applyPDFImageSoftMask16(ctx *model.Context, base image.Image, mask *types.S
 	}
 	data, _, err := encodePNGImage(output)
 	return data, err == nil && control.check() == nil
+}
+
+// 软掩码可以比底图更清晰；例如单像素纯色配扫描轮廓。合成取两者各轴
+// 最大值，避免下采样把细线、局部透明和相邻 alpha 丢掉。基础 PNG 重新
+// 解码已预留源尺寸，扩展时只追加合成栅格增加的像素；交叉长宽也须预检。
+func pdfSoftMaskCompositionSize(bounds image.Rectangle, maskWidth, maskHeight int, control *conversionControl) (int, int, error) {
+	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
+	if sourceWidth <= 0 || sourceHeight <= 0 || maskWidth <= 0 || maskHeight <= 0 {
+		return 0, 0, fmt.Errorf("软掩码合成尺寸无效")
+	}
+	width, height := max(sourceWidth, maskWidth), max(sourceHeight, maskHeight)
+	if control != nil {
+		pixels, err := control.imagePixels(int64(width), int64(height))
+		if err != nil {
+			return 0, 0, err
+		}
+		if err := control.addImagePixels(pixels - int64(sourceWidth)*int64(sourceHeight)); err != nil {
+			return 0, 0, err
+		}
+	}
+	return width, height, nil
 }
 
 // pdfImageNRGBA64At 避免逐像素通过 image.At 装箱。已是非预乘的底图直接取值，

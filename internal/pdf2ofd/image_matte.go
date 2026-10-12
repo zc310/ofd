@@ -6,20 +6,27 @@ import (
 	"image/color"
 	"image/draw"
 
+	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
 // imageMatteData 在原颜色空间中还原预混合样本：C = (C' - (1-a)M) / a。
 // 尤其不能在 CMYK 已转为 RGB 的 PNG 上还原，因为颜色转换不是线性的。
-// Matte 要求掩码与基础图同尺寸；普通栅格与 JPEG 均先恢复原颜色分量。
+// Matte 要求掩码与基础图同尺寸；压缩图像也必须先恢复原颜色分量。
 func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, error) {
 	if err := p.control.check(); err != nil {
 		return nil, err
 	}
-	if hasJPXFilter(base) || hasJBIG2Filter(base) || hasJPXFilter(mask) || hasJBIG2Filter(mask) {
-		return nil, fmt.Errorf("Matte 的 JPX/JBIG2 采样还原尚未支持")
-	}
 	family, ok := dereferenceName(p.ctx, base.Dict["ColorSpace"])
+	var baseJPX, maskJPX *matteJPXInfo
+	var err error
+	if hasJPXFilter(base) {
+		baseJPX, err = p.matteJPXHeader(base)
+		if err != nil {
+			return nil, err
+		}
+		family, ok = baseJPX.family, true
+	}
 	components := 0
 	switch family {
 	case "DeviceGray":
@@ -58,17 +65,34 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 	if mask.Dict["SMask"] != nil || mask.Dict["Mask"] != nil || pdfImageIsMask(p.ctx, mask) {
 		return nil, fmt.Errorf("Matte 软掩码不能包含嵌套遮罩或 ImageMask")
 	}
-	if family, ok := dereferenceName(p.ctx, mask.Dict["ColorSpace"]); !ok || family != "DeviceGray" {
+	maskFamily, maskCSOK := dereferenceName(p.ctx, mask.Dict["ColorSpace"])
+	if hasJPXFilter(mask) {
+		maskJPX, err = p.matteJPXHeader(mask)
+		if err != nil {
+			return nil, err
+		}
+		maskFamily, maskCSOK = maskJPX.family, true
+	}
+	if !maskCSOK || maskFamily != "DeviceGray" {
 		return nil, fmt.Errorf("Matte 软掩码需要 DeviceGray 颜色空间")
 	}
 	bpc, _ := integerValue(base.Dict["BitsPerComponent"])
 	maskBPC, _ := integerValue(mask.Dict["BitsPerComponent"])
+	if baseJPX != nil {
+		bpc = baseJPX.metadata.BitsPerComponent[0]
+	}
+	if maskJPX != nil {
+		maskBPC = maskJPX.metadata.BitsPerComponent[0]
+	}
 	validBits := func(bits int) bool { return bits == 1 || bits == 2 || bits == 4 || bits == 8 || bits == 16 }
-	if !validBits(bpc) || !validBits(maskBPC) {
+	if (baseJPX == nil && !validBits(bpc)) || (maskJPX == nil && !validBits(maskBPC)) {
 		return nil, fmt.Errorf("Matte 图像或软掩码位深无效")
 	}
 	if (hasDCTFilter(base) && bpc != 8) || (hasDCTFilter(mask) && maskBPC != 8) {
 		return nil, fmt.Errorf("Matte 的 JPEG 解码仅支持 8 位采样")
+	}
+	if (hasJBIG2Filter(base) && (bpc != 1 || components != 1)) || (hasJBIG2Filter(mask) && maskBPC != 1) {
+		return nil, fmt.Errorf("Matte 的 JBIG2 图像需要 1 位 DeviceGray 采样")
 	}
 	if p.control != nil {
 		if err := p.preflightImage(mask, 1); err != nil {
@@ -82,7 +106,7 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 		return nil, fmt.Errorf("Matte 图像尺寸超出当前平台范围")
 	}
 	rowBytes := (width*components*bpc + 7) / 8
-	if !hasDCTFilter(base) && height > len(base.Content)/rowBytes {
+	if baseJPX == nil && !hasDCTFilter(base) && !hasJBIG2Filter(base) && height > len(base.Content)/rowBytes {
 		return nil, fmt.Errorf("Matte 基础图采样数据不完整")
 	}
 	pixels := int64(width) * int64(height)
@@ -95,23 +119,38 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 			return nil, err
 		}
 	}
-	var jpegBase image.Image
+	var compressedBase image.Image
+	var jpxBase *jpeg2000.FloatImage
 	if hasDCTFilter(base) {
-		jpegBase, err = p.matteJPEGImage(base, width, height, components)
+		compressedBase, err = p.rawJPEGImage(base, width, height, components)
+	} else if hasJBIG2Filter(base) {
+		compressedBase, err = p.rawJBIG2Image(base, width, height)
+	} else if baseJPX != nil {
+		jpxBase, err = p.matteJPXImage(base, baseJPX, width, height)
+	}
+	if err != nil {
+		return nil, err
+	}
+	precision16 := bpc > 8 || maskBPC > 8
+	var alpha16 []uint16
+	var alpha8 []byte
+	if maskJPX != nil {
+		alpha16, err = p.matteJPXAlpha(mask, maskJPX, width, height)
+	} else if hasJBIG2Filter(mask) {
+		var gray *image.Gray
+		gray, err = p.rawJBIG2Image(mask, width, height)
 		if err != nil {
 			return nil, err
 		}
-	}
-	var alpha16 []uint16
-	var alpha8 []byte
-	if maskBPC == 16 {
+		alpha16, err = p.matteJBIG2Alpha(mask, gray)
+	} else if maskBPC == 16 {
 		alpha16, err = decodePDFImageSamples16(p.ctx, mask, width, height, 1, p.control)
 	} else {
 		if err = p.control.consumeOperations(pixels); err == nil {
 			if hasDCTFilter(mask) {
 				alpha8, err = p.matteJPEGAlpha(mask, width, height)
 			} else {
-				alpha8, err = pdfImageMaskSamples(p.ctx, mask, width, height, maskBPC)
+				alpha8, err = pdfImageMaskSamples(p.ctx, mask, width, height, maskBPC, p.control)
 			}
 		}
 	}
@@ -123,13 +162,18 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 		return nil, err
 	}
 	var output draw.Image
-	precision16 := bpc == 16 || maskBPC == 16
 	if precision16 {
 		output = image.NewNRGBA64(image.Rect(0, 0, width, height))
 	} else {
 		output = image.NewNRGBA(image.Rect(0, 0, width, height))
 	}
 	decode := pdfImageDecode(p.ctx, base, components)
+	if baseJPX != nil {
+		// PDF JPX 图像的 Decode 被忽略；原颜色分量按码流位深归一化。
+		for c := 0; c < components; c++ {
+			decode[c*2], decode[c*2+1] = 0, 1
+		}
+	}
 	maxSample := float64(uint32(1)<<uint(bpc) - 1)
 	converter := pdfImageCMYKConverter(p.ctx, base)
 	for y := 0; y < height; y++ {
@@ -137,7 +181,7 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 			return nil, err
 		}
 		var row []byte
-		if jpegBase == nil {
+		if compressedBase == nil && jpxBase == nil {
 			row = base.Content[y*rowBytes : (y+1)*rowBytes]
 		}
 		for x := 0; x < width; x++ {
@@ -153,12 +197,14 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 			}
 			alpha := float64(a) / 65535
 			var values [4]float64
-			if jpegBase != nil {
-				values = matteJPEGComponents(jpegBase, x, y)
+			if compressedBase != nil {
+				values = rawJPEGComponents(compressedBase, x, y)
 			}
 			for c := 0; c < components; c++ {
 				sample := values[c]
-				if jpegBase == nil {
+				if jpxBase != nil {
+					sample = float64(jpxBase.Components[c][index]) / maxSample
+				} else if compressedBase == nil {
 					sample = float64(readPDFImageSample(row, x*components+c, bpc)) / maxSample
 				}
 				preblended := clamp01(decode[c*2] + sample*(decode[c*2+1]-decode[c*2]))
@@ -179,7 +225,7 @@ func (p *pdfInterpreter) imageMatteData(base, mask *types.StreamDict) ([]byte, e
 				} else if components == 4 {
 					r, g, b = converter.toRGB(floatToByte(values[0]), floatToByte(values[1]), floatToByte(values[2]), floatToByte(values[3]))
 				}
-				output.(*image.NRGBA).SetNRGBA(x, y, color.NRGBA{R: r, G: g, B: b, A: byte(a / 257)})
+				output.(*image.NRGBA).SetNRGBA(x, y, color.NRGBA{R: r, G: g, B: b, A: floatToByte(alpha)})
 			}
 		}
 	}
