@@ -4,8 +4,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // CommandType 定义路径命令类型。
@@ -90,42 +92,30 @@ func (p *SVGPath) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	return nil
 }
 
-// pathTokens 路径数据的令牌视图。对纯 ASCII 数据使用偏移表按需切片，
-// 避免 strings.Fields 为每个坐标分配字符串头；含非 ASCII 字节时回退到
-// strings.Fields 以保持与拆分语义一致。
-type pathTokens struct {
-	data   string
-	idx    []int32
-	fields []string
+// pathScanner 按需读取 token，不分配偏移表；ASCII 和 Unicode 空白
+// 使用相同的命令分词规则。
+type pathScanner struct {
+	data  string
+	index int
 }
 
-func (t pathTokens) len() int {
-	if t.fields != nil {
-		return len(t.fields)
-	}
-	return len(t.idx) / 2
-}
-
-func (t pathTokens) get(i int) string {
-	if t.fields != nil {
-		return t.fields[i]
-	}
-	return t.data[t.idx[2*i]:t.idx[2*i+1]]
-}
-
-func splitPathTokens(data string) pathTokens {
-	for i := 0; i < len(data); i++ {
-		if data[i] >= 0x80 {
-			return pathTokens{data: data, fields: strings.FieldsFunc(data, func(r rune) bool {
-				return unicode.IsSpace(r) || r == ','
-			})}
-		}
-	}
-	idx := make([]int32, 0, 16)
-	i := 0
+func (s *pathScanner) next() string {
+	data := s.data
+	i := s.index
 	for i < len(data) {
-		for i < len(data) && isPathSeparator(data[i]) {
-			i++
+		for i < len(data) {
+			if data[i] < utf8.RuneSelf {
+				if !isPathSeparator(data[i]) {
+					break
+				}
+				i++
+			} else {
+				r, width := utf8.DecodeRuneInString(data[i:])
+				if !unicode.IsSpace(r) {
+					break
+				}
+				i += width
+			}
 		}
 		if i >= len(data) {
 			break
@@ -134,13 +124,26 @@ func splitPathTokens(data string) pathTokens {
 		if isPathCommand(data[i]) {
 			i++
 		} else {
-			for i < len(data) && !isPathSeparator(data[i]) && !isPathCommand(data[i]) {
-				i++
+			for i < len(data) {
+				if data[i] < utf8.RuneSelf {
+					if isPathSeparator(data[i]) || isPathCommand(data[i]) {
+						break
+					}
+					i++
+				} else {
+					r, width := utf8.DecodeRuneInString(data[i:])
+					if unicode.IsSpace(r) {
+						break
+					}
+					i += width
+				}
 			}
 		}
-		idx = append(idx, int32(start), int32(i))
+		s.index = i
+		return data[start:i]
 	}
-	return pathTokens{data: data, idx: idx}
+	s.index = i
+	return ""
 }
 
 func isPathSeparator(value byte) bool {
@@ -159,90 +162,92 @@ func isPathCommand(value byte) bool {
 // parsePathData 将路径字符串解析为 SVGPath。
 // 除显式命令外，M 和 L 命令支持连续坐标对的隐式形式。
 func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
-	tokens := splitPathTokens(data)
-	if tokens.len() == 0 {
+	scanner := pathScanner{data: data}
+	tokenCount, commandCount, explicitPoints, arcCount := 0, 0, 0, 0
+	for token := scanner.next(); token != ""; token = scanner.next() {
+		tokenCount++
+		switch token {
+		case "M", "S", "L":
+			commandCount++
+			explicitPoints++
+		case "Q":
+			commandCount++
+			explicitPoints += 2
+		case "B":
+			commandCount++
+			explicitPoints += 3
+		case "A":
+			commandCount++
+			arcCount++
+		case "C":
+			commandCount++
+		}
+	}
+	if tokenCount == 0 {
 		return SVGPath{}, nil
 	}
 
-	var commands SVGPath
-	var currentCmd *PathCommand
-	index := 0
-
-	for index < tokens.len() {
-		token := tokens.get(index)
+	scanner.index = 0
+	// 扣除命令和弧参数后，每两个 token 对应一个点；额外的点对应隐式 L。
+	// 非法输入只用于容量估计，具体错误由下面的解析报告。
+	pointCount := max(0, (tokenCount-commandCount-7*arcCount)/2)
+	commandCount += max(0, pointCount-explicitPoints)
+	commands := make(SVGPath, 0, commandCount)
+	// 各命令共享坐标存储，但切片容量限制在自身范围内。
+	points := make([]StPos, 0, pointCount)
+	var currentType CommandType
+	for token := scanner.next(); token != ""; token = scanner.next() {
 
 		switch token {
-		case "M", "S":
-			cmd, nextIdx, err := p.parseMoveCommand(tokens, index)
+		case "M", "S", "L", "Q", "B":
+			commandType := CommandType(token)
+			numPoints := 1
+			switch commandType {
+			case Start:
+				commandType = MoveTo // 保留现有的 S 归一化行为。
+			case QuadTo:
+				numPoints = 2
+			case CubicBezier:
+				numPoints = 3
+			}
+			if commandType != MoveTo && currentType == "" {
+				return nil, fmt.Errorf("%s命令前缺少M命令", token)
+			}
+			start := len(points)
+			parsed, err := parsePathPoints(&scanner, "", numPoints, points)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%s命令解析失败: %w", token, err)
 			}
-			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = nextIdx
-
-		case "L":
-			if currentCmd == nil {
-				return nil, fmt.Errorf("L命令前缺少M命令")
-			}
-			cmd, nextIdx, err := p.parseLineCommand(tokens, index)
-			if err != nil {
-				return nil, err
-			}
-			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = nextIdx
-
-		case "Q":
-			if currentCmd == nil {
-				return nil, fmt.Errorf("Q命令前缺少M命令")
-			}
-			cmd, nextIdx, err := p.parseQuadToCommand(tokens, index)
-			if err != nil {
-				return nil, err
-			}
-			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = nextIdx
-
-		case "B":
-			if currentCmd == nil {
-				return nil, fmt.Errorf("B命令前缺少M命令")
-			}
-			cmd, nextIdx, err := p.parseBezierCommand(tokens, index)
-			if err != nil {
-				return nil, err
-			}
-			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = nextIdx
+			points = parsed
+			commands = append(commands, PathCommand{Type: commandType, Points: points[start:len(points):len(points)]})
+			currentType = commandType
 
 		case "A":
-			if currentCmd == nil {
+			if currentType == "" {
 				return nil, fmt.Errorf("A命令前缺少M命令")
 			}
-			cmd, nextIdx, err := p.parseArcCommand(tokens, index)
+			cmd, err := parseArcCommand(&scanner)
 			if err != nil {
 				return nil, err
 			}
 			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = nextIdx
+			currentType = ArcTo
 
 		case "C":
 			cmd := PathCommand{Type: Close}
 			commands = append(commands, cmd)
-			currentCmd = &commands[len(commands)-1]
-			index = index + 1
+			currentType = Close
 
 		default:
-			if currentCmd != nil && p.isCoordinatePair(token) {
-				cmd, nextIdx, err := p.parseImplicitCommand(tokens, index, *currentCmd)
+			if currentType == MoveTo || currentType == LineTo {
+				start := len(points)
+				parsed, err := parsePathPoints(&scanner, token, 1, points)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("隐式命令解析失败: %w", err)
 				}
-				commands = append(commands, cmd)
-				index = nextIdx
+				points = parsed
+				commands = append(commands, PathCommand{Type: LineTo, Points: points[start:len(points):len(points)]})
+				currentType = LineTo
 			} else {
 				return nil, fmt.Errorf("无法识别的token: %s", token)
 			}
@@ -252,149 +257,64 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 	return commands, nil
 }
 
-// parseMoveCommand 解析 M 或 S 命令及其坐标参数。
-func (p *SVGPath) parseMoveCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
-	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
-	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("M命令解析失败: %w", err)
-	}
-	return PathCommand{Type: MoveTo, Points: points}, nextIdx, nil
-}
-
-// parseLineCommand 解析 L 命令及其坐标参数。
-func (p *SVGPath) parseLineCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
-	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 1)
-	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("L命令解析失败: %w", err)
-	}
-	return PathCommand{Type: LineTo, Points: points}, nextIdx, nil
-}
-
-// parseBezierCommand 解析 B 命令及其三个坐标点参数。
-func (p *SVGPath) parseBezierCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
-	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 3)
-	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("B命令解析失败: %w", err)
-	}
-	return PathCommand{Type: CubicBezier, Points: points}, nextIdx, nil
-}
-
-// parseQuadToCommand 解析 Q 命令及其两个坐标点参数。
-func (p *SVGPath) parseQuadToCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
-	points, nextIdx, err := p.parsePoints(tokens, startIdx+1, 2)
-	if err != nil {
-		return PathCommand{}, startIdx, fmt.Errorf("Q命令解析失败: %w", err)
-	}
-	return PathCommand{Type: QuadTo, Points: points}, nextIdx, nil
-}
-
 // parseArcCommand 解析 A 命令及其椭圆弧参数。
 // A 命令参数依次为 RX、RY、旋转角度、大弧标志、扫过标志和终点坐标。
-func (p *SVGPath) parseArcCommand(tokens pathTokens, startIdx int) (PathCommand, int, error) {
-	if startIdx+7 >= tokens.len() {
-		return PathCommand{}, startIdx, fmt.Errorf("A命令需要7个参数")
-	}
-
-	// 解析椭圆半径
-	rx, err := parseFiniteFloat(tokens.get(startIdx+1), "A命令rx")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	ry, err := parseFiniteFloat(tokens.get(startIdx+2), "A命令ry")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	// 解析x轴旋转角度
-	xAxisRotation, err := parseFiniteFloat(tokens.get(startIdx+3), "A命令x轴旋转角度")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	// 解析大弧标志
-	largeArcFlag, err := parseFiniteFloat(tokens.get(startIdx+4), "A命令大弧标志")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	// 解析扫过标志
-	sweepFlag, err := parseFiniteFloat(tokens.get(startIdx+5), "A命令扫过标志")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	// 解析终点坐标
-	endX, err := parseFiniteFloat(tokens.get(startIdx+6), "A命令终点x坐标")
-	if err != nil {
-		return PathCommand{}, startIdx, err
-	}
-
-	endY, err := parseFiniteFloat(tokens.get(startIdx+7), "A命令终点y坐标")
-	if err != nil {
-		return PathCommand{}, startIdx, err
+func parseArcCommand(scanner *pathScanner) (PathCommand, error) {
+	names := [...]string{"A命令rx", "A命令ry", "A命令x轴旋转角度", "A命令大弧标志", "A命令扫过标志", "A命令终点x坐标", "A命令终点y坐标"}
+	var values [7]float64
+	for i, name := range names {
+		token := scanner.next()
+		if token == "" {
+			return PathCommand{}, fmt.Errorf("A命令需要7个参数")
+		}
+		value, err := parseFiniteFloat(token, name)
+		if err != nil {
+			return PathCommand{}, err
+		}
+		values[i] = value
 	}
 
 	arcData := &ArcData{
-		RX:            math.Abs(rx),
-		RY:            math.Abs(ry),
-		XAxisRotation: xAxisRotation,
-		LargeArcFlag:  largeArcFlag != 0,
-		SweepFlag:     sweepFlag != 0,
-		EndPoint:      StPos{X: endX, Y: endY},
+		RX:            math.Abs(values[0]),
+		RY:            math.Abs(values[1]),
+		XAxisRotation: values[2],
+		LargeArcFlag:  values[3] != 0,
+		SweepFlag:     values[4] != 0,
+		EndPoint:      StPos{X: values[5], Y: values[6]},
 	}
 
 	return PathCommand{
 		Type: ArcTo,
 		Arc:  arcData,
-	}, startIdx + 8, nil
+	}, nil
 }
 
-// parseImplicitCommand 根据上一条命令解析省略命令字母的坐标参数。
-func (p *SVGPath) parseImplicitCommand(tokens pathTokens, startIdx int, lastCmd PathCommand) (PathCommand, int, error) {
-	switch lastCmd.Type {
-	case MoveTo, LineTo:
-		points, nextIdx, err := p.parsePoints(tokens, startIdx, 1)
-		if err != nil {
-			return PathCommand{}, startIdx, fmt.Errorf("隐式命令解析失败: %w", err)
+// parsePathPoints 将指定数量的坐标点追加到整条路径的坐标缓冲区。
+func parsePathPoints(scanner *pathScanner, firstToken string, numPoints int, points []StPos) ([]StPos, error) {
+	for n := 0; n < numPoints; n++ {
+		xToken := firstToken
+		firstToken = ""
+		if xToken == "" {
+			xToken = scanner.next()
 		}
-		return PathCommand{Type: LineTo, Points: points}, nextIdx, nil
-	default:
-		return PathCommand{}, startIdx, fmt.Errorf("不支持%v命令的隐式形式", lastCmd.Type)
-	}
-}
-
-// parsePoints 从令牌列表中解析指定数量的坐标点。
-func (p *SVGPath) parsePoints(tokens pathTokens, startIdx, numPoints int) ([]StPos, int, error) {
-	var points []StPos
-	idx := startIdx
-
-	for len(points) < numPoints {
-		if idx+1 >= tokens.len() {
-			return nil, idx, fmt.Errorf("需要%d个点，但只找到%d个坐标", numPoints, len(points)*2)
+		yToken := scanner.next()
+		if xToken == "" || yToken == "" {
+			return nil, fmt.Errorf("需要%d个点，但只找到%d个坐标", numPoints, n*2)
+		}
+		x, err := parseFiniteFloat(xToken, "x坐标")
+		if err != nil {
+			return nil, err
 		}
 
-		x, err := parseFiniteFloat(tokens.get(idx), "x坐标")
+		y, err := parseFiniteFloat(yToken, "y坐标")
 		if err != nil {
-			return nil, idx, err
-		}
-
-		y, err := parseFiniteFloat(tokens.get(idx+1), "y坐标")
-		if err != nil {
-			return nil, idx, err
+			return nil, err
 		}
 
 		points = append(points, StPos{X: x, Y: y})
-		idx += 2
 	}
 
-	return points, idx, nil
-}
-
-// isCoordinatePair 检查令牌是否为可解析的数值坐标。
-func (p *SVGPath) isCoordinatePair(token string) bool {
-	_, err := parseFiniteFloat(token, "路径坐标")
-	return err == nil
+	return points, nil
 }
 
 // ParsePathData 解析路径字符串并返回 SVGPath。
@@ -412,6 +332,37 @@ func ParsePathData(data string) (SVGPath, error) {
 // 坐标和弧参数统一保留两位小数，命令之间使用单个空格分隔。
 func (p SVGPath) String() string {
 	var builder strings.Builder
+	// 提前计算精确长度，避免长路径输出反复扩容。固定小数格式最多需要
+	// 313 字节（负号、309 位整数、小数点和两位小数）。
+	var scratch [320]byte
+	size := 0
+	measureFloat := func(value float64) {
+		size += 1 + len(strconv.AppendFloat(scratch[:0], value, 'f', 2, 64))
+	}
+	for i, cmd := range p {
+		if i > 0 {
+			size++
+		}
+		size += len(cmd.Type)
+		if cmd.Type == ArcTo {
+			measureFloat(cmd.Arc.RX)
+			measureFloat(cmd.Arc.RY)
+			measureFloat(cmd.Arc.XAxisRotation)
+			size += 4 // 两个标志及其前导空格。
+			measureFloat(cmd.Arc.EndPoint.X)
+			measureFloat(cmd.Arc.EndPoint.Y)
+		} else {
+			for _, point := range cmd.Points {
+				measureFloat(point.X)
+				measureFloat(point.Y)
+			}
+		}
+	}
+	builder.Grow(size)
+	writeFloat := func(value float64) {
+		builder.WriteByte(' ')
+		builder.Write(strconv.AppendFloat(scratch[:0], value, 'f', 2, 64))
+	}
 
 	for i, cmd := range p {
 		if i > 0 {
@@ -421,7 +372,9 @@ func (p SVGPath) String() string {
 		switch cmd.Type {
 		case ArcTo:
 			builder.WriteString(string(cmd.Type))
-			builder.WriteString(fmt.Sprintf(" %.2f %.2f %.2f", cmd.Arc.RX, cmd.Arc.RY, cmd.Arc.XAxisRotation))
+			writeFloat(cmd.Arc.RX)
+			writeFloat(cmd.Arc.RY)
+			writeFloat(cmd.Arc.XAxisRotation)
 
 			// 标志位
 			if cmd.Arc.LargeArcFlag {
@@ -436,12 +389,14 @@ func (p SVGPath) String() string {
 			}
 
 			// 终点坐标
-			builder.WriteString(fmt.Sprintf(" %.2f %.2f", cmd.Arc.EndPoint.X, cmd.Arc.EndPoint.Y))
+			writeFloat(cmd.Arc.EndPoint.X)
+			writeFloat(cmd.Arc.EndPoint.Y)
 
 		default:
 			builder.WriteString(string(cmd.Type))
 			for _, point := range cmd.Points {
-				builder.WriteString(fmt.Sprintf(" %.2f %.2f", point.X, point.Y))
+				writeFloat(point.X)
+				writeFloat(point.Y)
 			}
 		}
 	}
@@ -482,10 +437,11 @@ func (p SVGPath) Format() string {
 
 // CalculateBoundingBox 计算路径中坐标点的轴对齐边界框。
 // 返回值依次为最小 X、最小 Y、最大 X 和最大 Y；空路径返回四个零值。
-func (p SVGPath) CalculateBoundingBox() (minX, minY, maxX, maxY float64) {
+func (p SVGPath) CalculateBoundingBox() (float64, float64, float64, float64) {
 	if len(p) == 0 {
 		return 0, 0, 0, 0
 	}
+	var minX, minY, maxX, maxY float64
 
 	// 找到第一个有效的点作为起始点
 	var firstPoint StPos
@@ -534,7 +490,7 @@ func (p SVGPath) CalculateBoundingBox() (minX, minY, maxX, maxY float64) {
 		}
 	}
 
-	return
+	return minX, minY, maxX, maxY
 }
 
 // CountCommands 统计路径中各类命令的数量。
@@ -546,22 +502,28 @@ func (p SVGPath) CountCommands() map[CommandType]int {
 	return counts
 }
 
-// GetStartPoint 获取指定命令之前最近的有效终点，作为该命令的起始点。
+// GetStartPoint 获取指定命令执行前的当前点；闭合后返回子路径起点。
 // 对于首条命令或找不到有效点的情况返回错误。
 func (p SVGPath) GetStartPoint(cmdIndex int) (StPos, error) {
 	if cmdIndex < 0 || cmdIndex >= len(p) {
 		return StPos{}, fmt.Errorf("命令索引超出范围")
 	}
 
-	// 向前查找上一个非闭合命令的终点
+	// GB/T 33190—2016 表 36、表 37：闭合到分路径起点，并以该点为当前点。
 	for i := cmdIndex - 1; i >= 0; i-- {
 		cmd := p[i]
-		if cmd.Type != Close {
-			if cmd.Type == ArcTo && cmd.Arc != nil {
-				return cmd.Arc.EndPoint, nil
-			} else if len(cmd.Points) > 0 {
-				return cmd.Points[len(cmd.Points)-1], nil
+		if cmd.Type == Close {
+			for j := i - 1; j >= 0; j-- {
+				if (p[j].Type == Start || p[j].Type == MoveTo) && len(p[j].Points) > 0 {
+					return p[j].Points[0], nil
+				}
 			}
+			return StPos{}, fmt.Errorf("未找到有效的子路径起点")
+		}
+		if cmd.Type == ArcTo && cmd.Arc != nil {
+			return cmd.Arc.EndPoint, nil
+		} else if len(cmd.Points) > 0 {
+			return cmd.Points[len(cmd.Points)-1], nil
 		}
 	}
 

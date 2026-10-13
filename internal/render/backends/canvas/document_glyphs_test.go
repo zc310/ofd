@@ -41,7 +41,9 @@ func glyphScanContent(count int) *models.PageContent {
 		text.Visible.Set(true)
 		items[i] = models.PageItem{Kind: models.PageItemText, Text: text}
 	}
-	return &models.PageContent{Content: &models.Content{Layer: []*models.Layer{{Items: items}}}}
+	return &models.PageContent{Content: &models.Content{Layer: []*models.Layer{{
+		CTPageBlock: models.CTPageBlock{Items: items},
+	}}}}
 }
 
 func BenchmarkRegisterPageGlyphsRepeated(b *testing.B) {

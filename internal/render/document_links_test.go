@@ -33,7 +33,9 @@ func textItem(boundary models.StBox, actions *models.Actions) models.PageItem {
 	return models.PageItem{
 		Kind: models.PageItemText,
 		Text: &models.TextObject{
-			CTGraphicUnit: models.CTGraphicUnit{Boundary: boundary, Actions: actions},
+			CtText: models.CtText{
+				CTGraphicUnit: models.CTGraphicUnit{Boundary: boundary, Actions: actions},
+			},
 		},
 	}
 }
@@ -85,9 +87,11 @@ func TestCollectItemLinksRecursesIntoBlocks(t *testing.T) {
 	collectItemLinks([]models.PageItem{{
 		Kind: models.PageItemBlock,
 		Block: &models.PageBlock{
-			Items: []models.PageItem{
-				textItem(box, nil),
-				textItem(box, uriActions("https://nested.example")),
+			CTPageBlock: models.CTPageBlock{
+				Items: []models.PageItem{
+					textItem(box, nil),
+					textItem(box, uriActions("https://nested.example")),
+				},
 			},
 		},
 	}}, nil, &links)
@@ -319,10 +323,12 @@ func TestCollectAnnotationLinksUsesAppearanceBoundary(t *testing.T) {
 					Items: []models.PageItem{{
 						Kind: models.PageItemPath,
 						Path: &models.PathObject{
-							CTGraphicUnit: models.CTGraphicUnit{
-								// 外观图元的 Boundary 相对注解定位，不是页面坐标。
-								Boundary: models.StBox{X: 0, Y: 0, Width: 150, Height: 10},
-								Actions:  uriActions("https://github.com/zc310/ofd"),
+							CtPath: models.CtPath{
+								CTGraphicUnit: models.CTGraphicUnit{
+									// 外观图元的 Boundary 相对注解定位，不是页面坐标。
+									Boundary: models.StBox{X: 0, Y: 0, Width: 150, Height: 10},
+									Actions:  uriActions("https://github.com/zc310/ofd"),
+								},
 							},
 						},
 					}},
@@ -352,7 +358,9 @@ func TestCollectAnnotationLinksSkipsUnusableBoundary(t *testing.T) {
 		return models.PageItem{
 			Kind: models.PageItemPath,
 			Path: &models.PathObject{
-				CTGraphicUnit: models.CTGraphicUnit{Actions: uriActions(uri)},
+				CtPath: models.CtPath{
+					CTGraphicUnit: models.CTGraphicUnit{Actions: uriActions(uri)},
+				},
 			},
 		}
 	}
