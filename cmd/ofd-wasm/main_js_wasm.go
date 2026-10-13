@@ -57,6 +57,7 @@ func main() {
 	api.Set("fontUsageAll", js.FuncOf(app.fontUsageAll))
 	api.Set("attachments", js.FuncOf(app.attachments))
 	api.Set("versions", js.FuncOf(app.versions))
+	api.Set("selectVersion", js.FuncOf(app.selectVersion))
 	api.Set("attachmentData", js.FuncOf(app.attachmentData))
 	api.Set("media", js.FuncOf(app.media))
 	api.Set("mediaData", js.FuncOf(app.mediaData))
@@ -450,9 +451,34 @@ func (a *wasmApp) versions(_ js.Value, _ []js.Value) any {
 			"name":          info.Name,
 			"creation_date": info.CreationDate,
 			"pages":         intSliceValue(info.Pages),
+			"doc_root":      info.DocRoot,
 		}))
 	}
 	return result
+}
+
+func (a *wasmApp) selectVersion(_ js.Value, args []js.Value) any {
+	if len(args) != 2 || args[0].Type() != js.TypeNumber || args[0].IsNaN() ||
+		math.IsInf(args[0].Float(), 0) || args[0].Float() != math.Trunc(args[0].Float()) ||
+		args[0].Float() < 0 || args[0].Float() > 1<<20 || args[1].Type() != js.TypeString {
+		return errorValue(errors.New("ofd.selectVersion 需要文档体索引和版本 ID（空字符串恢复主入口）"))
+	}
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if err := reader.SelectVersion(args[0].Int(), args[1].String()); err != nil {
+		return errorValue(err)
+	}
+	pages, err := reader.Pages()
+	if err != nil {
+		return errorValue(err)
+	}
+	fonts, err := reader.Fonts()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(fonts)})
 }
 
 func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {

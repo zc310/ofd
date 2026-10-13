@@ -244,6 +244,11 @@ func main() {
 
 `webreader.Open` 打开文档后必须调用 `Close` 释放资源。页面图像与文字都按页缓存，长文档建议在 `Open` 时通过 `webreader.OpenOptions` 调整缓存容量；渲染页建议显式指定 `DPI`（1~600），否则使用默认值。
 
+`reader.Versions()` 返回各文档体的版本清单与入口 `DocRoot`。
+调用 `reader.SelectVersion(scope, id)` 按入口加载历史页面和资源，其余文档体恢复主入口；
+`id` 为空时恢复所有主入口文档。成功后重新读取 `Pages()`、`Fonts()` 和导航信息，
+旧页码与缓存不再适用；缺失版本或依赖文件时返回错误并保留当前视图。
+
 <details>
 <summary>创建 OFD</summary>
 

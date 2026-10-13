@@ -141,6 +141,10 @@ class OFDWorkerClient {
     return this.request('versions');
   }
 
+  selectVersion(scope, versionID) {
+    return this.request('selectVersion', { scope, versionID });
+  }
+
   attachments() {
     return this.request('attachments');
   }
@@ -1054,11 +1058,9 @@ function pageSpreadRange(viewTop, viewBottom) {
 }
 
 function thumbnailSlotsForLayout() {
-  const indexes = pageLayoutIsDouble()
+  return pageLayoutIsDouble()
     ? pageSpreads.flatMap(spread => spread.pages)
     : pageInfos.map((_, index) => index);
-  if (!versionPageFilter) return indexes;
-  return indexes.filter(index => index < 0 || versionPageFilter.has(index));
 }
 
 // 缩略图轨道与页面轨道共用同一套「超长内容压缩 + 锚点平移」策略。元素高度和
@@ -3754,40 +3756,8 @@ async function loadFile() {
   return openSelectedFile(selected);
 }
 
-async function openSelectedFile(selected, options = {}) {
-  if (!selected) return false;
-  startupProgressActive = false;
-  startupScreen.hidden = true;
-  // 文档已经在手，启动阶段的提示（包括下载失败）不再有意义。
-  startupNotice = undefined;
-  saveReadingPosition();
-  const generation = ++documentGeneration;
-  const remoteSource = options.remoteSource;
-  // 本地文件（含最近文件、拖放、系统文件）会清掉 ?file=，避免刷新时又去下载
-  // 上一个远程文件；options.keepURL 用于前进后退触发的重复加载。
-  currentRemoteSource = remoteSource;
-  if (!options.keepURL) replaceDocumentURL(remoteSource);
-  opening = true;
-  cancelOpen.hidden = false;
-  // 远程文档可能还在下载，这里要接管打开流程：先中止并清掉记录，否则被取代的
-  // 请求会一直下完（上限 remoteFileMaxBytes），而滞留的 pendingDownload 还会让
-  // popstate 把该地址误判为"已在加载"而跳过重新加载。
-  pendingDownload?.controller.abort();
-  pendingDownload = undefined;
-  openRequest?.cancel();
-  openRequest = undefined;
-  clearInjectedFonts();
-  // 系统字体仅在当前文档有效：切换文档时移除注册并复位开关。注册要撤销，但
-  // 勾选框要恢复成存储里的意向，否则用户上次的选择会在每次打开文档时丢失。
-  void removeLocalFonts();
-  localFontsActive = false;
-  localFontsGestureUsed = false;
-  localFontsIntentApplied = false;
-  if (localFontsSelect) {
-    localFontsSelect.checked = false;
-    localFontsSelect.disabled = true;
-    applyLocalFontsIntent();
-  }
+// 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
+function clearDocumentView() {
   pageCache.clear();
   thumbnailCache.clear();
   cancelRequests(pageRequests);
@@ -3855,6 +3825,44 @@ async function openSelectedFile(selected, options = {}) {
   if (activeSidebarTab === 'media') mediaElement?.replaceChildren();
   if (activeSidebarTab === 'annotations') annotationsElement?.replaceChildren();
   if (activeSidebarTab === 'signatures') signaturesElement?.replaceChildren();
+}
+
+async function openSelectedFile(selected, options = {}) {
+  if (!selected) return false;
+  startupProgressActive = false;
+  startupScreen.hidden = true;
+  // 文档已经在手，启动阶段的提示（包括下载失败）不再有意义。
+  startupNotice = undefined;
+  saveReadingPosition();
+  const generation = ++documentGeneration;
+  versionSwitching = false;
+  const remoteSource = options.remoteSource;
+  // 本地文件（含最近文件、拖放、系统文件）会清掉 ?file=，避免刷新时又去下载
+  // 上一个远程文件；options.keepURL 用于前进后退触发的重复加载。
+  currentRemoteSource = remoteSource;
+  if (!options.keepURL) replaceDocumentURL(remoteSource);
+  opening = true;
+  cancelOpen.hidden = false;
+  // 远程文档可能还在下载，这里要接管打开流程：先中止并清掉记录，否则被取代的
+  // 请求会一直下完（上限 remoteFileMaxBytes），而滞留的 pendingDownload 还会让
+  // popstate 把该地址误判为"已在加载"而跳过重新加载。
+  pendingDownload?.controller.abort();
+  pendingDownload = undefined;
+  openRequest?.cancel();
+  openRequest = undefined;
+  clearInjectedFonts();
+  // 系统字体仅在当前文档有效：切换文档时移除注册并复位开关。注册要撤销，但
+  // 勾选框要恢复成存储里的意向，否则用户上次的选择会在每次打开文档时丢失。
+  void removeLocalFonts();
+  localFontsActive = false;
+  localFontsGestureUsed = false;
+  localFontsIntentApplied = false;
+  if (localFontsSelect) {
+    localFontsSelect.checked = false;
+    localFontsSelect.disabled = true;
+    applyLocalFontsIntent();
+  }
+  clearDocumentView();
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -3898,7 +3906,7 @@ async function openSelectedFile(selected, options = {}) {
         : { index, width: 210, height: 297 };
     });
     selectedVersionID = '';
-    versionPageFilter = null;
+    selectedVersionScope = -1;
     currentDocumentKey = documentKey(selected);
     sidebarScroll = readSidebarScroll();
     current = restoreReadingPosition(selected, pageInfos.length);
@@ -5748,12 +5756,17 @@ function buildAttachmentItem(item) {
 }
 
 let selectedVersionID = '';
-let versionPageFilter = null;
+let selectedVersionScope = -1;
+let versionSwitching = false;
 
 function renderVersions() {
   if (!versionsElement) return;
   const generation = documentGeneration;
   versionsElement.replaceChildren();
+  if (versionSwitching) {
+    versionsElement.append(outlineEmptyMessage('正在切换版本...'));
+    return;
+  }
   if (!pageInfos.length) {
     versionsElement.append(outlineEmptyMessage('未打开文档'));
     return;
@@ -5774,7 +5787,6 @@ function renderVersions() {
       versionsElement.append(outlineEmptyMessage('无匹配结果'));
       return;
     }
-    if (!filtered.some(item => item.id === selectedVersionID)) selectedVersionID = '';
     filtered.forEach(item => versionsElement.append(buildVersionItem(item)));
     restorePanelScroll('versions');
   }).catch(() => {
@@ -5787,40 +5799,78 @@ function buildVersionItem(item) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'outline-label';
-  if (item.id === selectedVersionID) button.classList.add('active');
+  if (item.id === selectedVersionID && item.scope === selectedVersionScope) button.classList.add('active');
   const title = [item.id, item.name, item.version].filter(Boolean).join(' ');
   button.textContent = title || '版本';
   if (item.current) button.textContent += ' · 当前';
-  const pages = Array.isArray(item.pages) ? item.pages.filter(page => Number.isInteger(page) && page >= 0 && page < pageInfos.length) : [];
-  button.disabled = pages.length === 0;
-  button.title = pages.length ? `包含第 ${pages.map(page => page + 1).join('、')} 页` : '此版本的页面暂无法显示';
-  if (button.disabled) button.textContent += ' · 暂无法显示';
+  button.disabled = opening || versionSwitching || !item.doc_root;
+  button.title = item.doc_root ? '点击查看此版本，再次点击恢复主文档' : '此版本没有可用的入口文件';
+  if (!item.doc_root) button.textContent += ' · 暂无法显示';
   button.addEventListener('click', () => {
     if (button.disabled) return;
-    selectedVersionID = selectedVersionID === item.id ? '' : item.id;
-    applyVersionPages(selectedVersionID ? pages : null);
-    renderVersions();
+    void switchDocumentVersion(item);
   });
   return button;
 }
 
-function applyVersionPages(pages) {
-  versionPageFilter = pages ? new Set(pages) : null;
-  pageCards.forEach((card, index) => { card.hidden = versionPageFilter ? !versionPageFilter.has(index) : false; });
-  thumbnailButtons.forEach(button => button?.remove());
-  thumbnailButtons = [];
-  activeThumbnailButton = undefined;
-  mountedThumbnailIndexes = new Set();
-  thumbnailSlots = thumbnailSlotsForLayout();
-  thumbnailSlotByPage = [];
-  thumbnailSlots.forEach((index, slot) => {
-    if (index >= 0) thumbnailSlotByPage[index] = slot;
-  });
-  updateThumbnailMetrics();
-  updateThumbnailVirtualWindow(false);
-  if (!pages) return;
-  const first = pages.find(page => page >= 0 && page < pageInfos.length);
-  if (first !== undefined) goTo(first);
+async function switchDocumentVersion(item) {
+  if (opening || versionSwitching || !pageInfos.length) return false;
+  const restoreMain = selectedVersionID === item.id && selectedVersionScope === item.scope;
+  const id = restoreMain ? '' : item.id;
+  const generation = ++documentGeneration;
+  const previousPage = current;
+  const previousPages = pageInfos;
+  const previousKey = currentDocumentKey;
+  const mainKey = selectedVersionID
+    ? previousKey.slice(0, -`:version:${selectedVersionScope}:${selectedVersionID}`.length)
+    : previousKey;
+  saveReadingPosition();
+  versionSwitching = true;
+  clearDocumentView();
+  pageInfos = [];
+  renderVersions();
+  setStatus(restoreMain ? '正在恢复主文档...' : `正在加载版本 ${item.name || item.id}...`);
+  try {
+    openRequest = engine.selectVersion(item.scope, id);
+    const result = await openRequest;
+    if (generation !== documentGeneration) return false;
+    selectedVersionID = id;
+    selectedVersionScope = id ? item.scope : -1;
+    // 阅读位置、旋转和侧栏状态按版本隔离，历史页不能覆盖主文档的记录。
+    currentDocumentKey = id ? `${mainKey}:version:${item.scope}:${id}` : mainKey;
+    pageInfos = result.pages;
+    const savedPage = readReadingPositions()[currentDocumentKey]?.page;
+    current = Number.isInteger(savedPage) ? Math.max(0, Math.min(pageInfos.length - 1, savedPage)) : 0;
+    sidebarScroll = readSidebarScroll();
+    clearInjectedFonts();
+    await injectFonts(result.fonts, generation);
+    if (generation !== documentGeneration) return false;
+    restorePageRotation();
+    buildPages();
+    setStatus(restoreMain ? '已恢复主文档' : `已切换到版本：${item.name || item.id}`);
+    return true;
+  } catch (error) {
+    if (generation !== documentGeneration || isCancelledError(error)) return false;
+    if (!pageInfos.length) pageInfos = previousPages;
+    current = Math.min(previousPage, pageInfos.length - 1);
+    buildPages();
+    setStatus(`版本切换失败：${error.message}`);
+    return false;
+  } finally {
+    if (generation === documentGeneration) {
+      openRequest = undefined;
+      versionSwitching = false;
+      renderVersions();
+      if (activeSidebarTab === 'fonts') renderFonts();
+      if (activeSidebarTab === 'attachments') renderAttachments();
+      if (activeSidebarTab === 'media') renderMedia();
+      if (activeSidebarTab === 'annotations') renderAnnotations();
+      if (activeSidebarTab === 'signatures') renderSignatures();
+      if (!infoPanel.hidden) updateDocumentInfo();
+      void loadOutline();
+      void fetchPageLinks(generation);
+    }
+  }
 }
 
 function renderAttachments() {

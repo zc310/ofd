@@ -119,6 +119,8 @@ async function execute(message) {
       return unwrap(self.ofd.fontUsageAll(message.maxScan, message.maxPages));
     case 'versions':
       return unwrap(self.ofd.versions());
+    case 'selectVersion':
+      return unwrap(self.ofd.selectVersion(message.scope, message.versionID));
     case 'attachments':
       return unwrap(self.ofd.attachments());
     case 'attachmentData': {

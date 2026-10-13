@@ -24,7 +24,7 @@ const code = [
   sliceFunction('replaceDocumentURL'),
 ].join('\n');
 // openSelectedFile 很长，只取它开头负责"接管下载状态"的那几行。
-const openSelectedPrefix = sliceFunctionUntil('openSelectedFile', 'pageCache.clear();');
+const openSelectedPrefix = sliceFunctionUntil('openSelectedFile', 'clearDocumentView();');
 
 /** 构造一个带远程下载相关桩的 state，并载入被测函数。 */
 function makeState({ openSelectedBody = openSelectedPrefix, supported = true } = {}) {
@@ -37,6 +37,7 @@ function makeState({ openSelectedBody = openSelectedPrefix, supported = true } =
     remoteFileTimeout: 120_000,
     remoteFileMaxBytes: 256 << 20,
     opening: false,
+    versionSwitching: false,
     pendingDownload: undefined,
     currentRemoteSource: undefined,
     documentGeneration: 0,
@@ -47,6 +48,7 @@ function makeState({ openSelectedBody = openSelectedPrefix, supported = true } =
     openRequest: undefined,
     saveReadingPosition() {},
     clearInjectedFonts() {},
+    clearDocumentView() {},
     removeLocalFonts() {},
     localFontsActive: false,
     localFontsGestureUsed: false,
