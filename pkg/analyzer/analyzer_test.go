@@ -2,12 +2,13 @@ package analyzer
 
 import (
 	"bytes"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/klauspost/compress/zip"
 
@@ -317,7 +318,7 @@ func TestAnalyzePackageTree(t *testing.T) {
 	if report.Package.Tree.Children[0].Name != "Doc_0" || report.Package.Tree.Children[0].Kind != "directory" {
 		t.Fatalf("package tree ordering = %+v", report.Package.Tree.Children)
 	}
-	if report.Package.Tree.Children[1].Name != "OFD.xml" || report.Package.Tree.Children[1].MediaType != "xml" || report.Package.Tree.Children[1].Size != 346 {
+	if report.Package.Tree.Children[1].Name != "OFD.xml" || report.Package.Tree.Children[1].MediaType != "xml" || report.Package.Tree.Children[1].Size != 422 {
 		t.Fatalf("package tree file = %+v", report.Package.Tree.Children[1])
 	}
 	if report.Package.Tree.Children[0].Children[0].Name != "Pages" || report.Package.Tree.Children[0].Children[0].Kind != "directory" {
@@ -421,7 +422,7 @@ func TestRenderTextAndMarkdown(t *testing.T) {
 	if !strings.Contains(text.String(), "字体：文件 0，声明 1，被引用 1，嵌入 0") {
 		t.Fatalf("text font summary = %s", text.String())
 	}
-	if !strings.Contains(text.String(), "OFD 包目录结构：") || !strings.Contains(text.String(), "├── Doc_0/") || !strings.Contains(text.String(), "└── OFD.xml [xml，346 B]") {
+	if !strings.Contains(text.String(), "OFD 包目录结构：") || !strings.Contains(text.String(), "├── Doc_0/") || !strings.Contains(text.String(), "└── OFD.xml [xml，422 B]") {
 		t.Fatalf("text package tree = %s", text.String())
 	}
 	if !strings.Contains(text.String(), "OFD 包：条目 5，目录 0，文件 5，XML 文件 5") {
@@ -439,7 +440,7 @@ func TestRenderTextAndMarkdown(t *testing.T) {
 	if !strings.Contains(markdown.String(), "## 字体明细") || !strings.Contains(markdown.String(), "字体名称") {
 		t.Fatalf("markdown font details = %s", markdown.String())
 	}
-	if !strings.Contains(markdown.String(), "## OFD 包目录结构") || !strings.Contains(markdown.String(), "```text") || !strings.Contains(markdown.String(), "└── OFD.xml [xml，346 B]") {
+	if !strings.Contains(markdown.String(), "## OFD 包目录结构") || !strings.Contains(markdown.String(), "```text") || !strings.Contains(markdown.String(), "└── OFD.xml [xml，422 B]") {
 		t.Fatalf("markdown package tree = %s", markdown.String())
 	}
 	if !strings.Contains(markdown.String(), "## OFD 包") || !strings.Contains(markdown.String(), "| 5 | 0 | 5 | 5 |") {

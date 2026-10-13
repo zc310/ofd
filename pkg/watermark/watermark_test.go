@@ -196,7 +196,7 @@ func TestAddWatermarkAutoIDAfterExisting(t *testing.T) {
 	}
 	// MaxUnitID 不应被修改。
 	doc := readEntry(t, result, "Doc_0/Document.xml")
-	if !strings.Contains(string(doc), "<MaxUnitID>37</MaxUnitID>") {
+	if !strings.Contains(string(doc), "<ofd:MaxUnitID>37</ofd:MaxUnitID>") {
 		t.Fatalf("MaxUnitID 被意外修改: %s", doc)
 	}
 }
