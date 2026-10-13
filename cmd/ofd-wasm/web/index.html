@@ -353,7 +353,24 @@
        .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .sidebar-resizer.dragging::after { background: #80b4e5; }
        .outline-page { flex: 0 0 auto; margin-left: 2px; padding: 0 5px; border-radius: 4px; background: #0000000f; color: #7b8798; font-size: 11px; line-height: 1.8; font-variant-numeric: tabular-nums; }
        body.dark-reading .outline-page { background: #ffffff14; color: #9aa7b8; }
-       #outline, #bookmarks { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 6px 10px 12px; scrollbar-width: thin; }
+        #outline, #bookmarks { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 6px 10px 12px; scrollbar-width: thin; }
+        #custom-tags { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 6px 10px 12px; scrollbar-width: thin; }
+        .custom-tag-source { margin: 6px 4px; color: #667188; font-size: 11px; word-break: break-all; }
+         .custom-tag-list { list-style: none; margin: 0; padding: 0; }
+         .custom-tag-list .custom-tag-list { margin-left: 20px; }
+        .custom-tag-row { display: flex; align-items: center; gap: 2px; }
+        .custom-tag-toggle { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: #7b8798; cursor: pointer; }
+        .custom-tag-toggle:hover { background: #ffffff80; }
+         .custom-tag-label { display: block; flex: 1 1 auto; min-width: 0; justify-content: flex-start; padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: #26313f; font-size: 13px; line-height: 1.4; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        .custom-tag-label:hover { background: #ffffffb0; }
+        .custom-tag-label[disabled] { color: #8a94a3; cursor: default; }
+        .custom-tag-value { margin-left: 4px; color: #667188; font-size: 11px; }
+        .custom-tag-target { color: #2476bd; }
+        body.dark-reading .custom-tag-label { color: #d7dee8; }
+        body.dark-reading .custom-tag-label:hover { background: #ffffff1a; }
+        body.dark-reading .custom-tag-label[disabled], body.dark-reading .custom-tag-value { color: #8b97a8; }
+        .custom-tag-highlight { position: absolute; z-index: 3; border: 2px solid #e09b32; background: #e09b3240; pointer-events: none; animation: custom-tag-pulse 1.8s ease-out; }
+        @keyframes custom-tag-pulse { from { opacity: 1; } to { opacity: .25; } }
        .outline-list { list-style: none; margin: 0; padding: 0; }
        .outline-row { display: flex; align-items: center; gap: 2px; }
        .outline-toggle, .outline-toggle-placeholder { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7b8798; cursor: pointer; }
@@ -584,7 +601,7 @@
        #sidebar-tabs { margin: 0; padding: 0; }
        #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #thumbnails[hidden] { display: none; }
-          #outline, #bookmarks, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
+           #outline, #bookmarks, #custom-tags, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
         #search-panel { flex: 1 1 auto; max-height: none; overflow: hidden; }
         .sidebar-search-form button, .sidebar-search-actions button { min-width: 40px; min-height: 40px; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
@@ -857,7 +874,8 @@
           <button id="sidebar-more-attachments" type="button" role="menuitem" aria-controls="attachments"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">attach_file</span><span>附件</span></button>
           <button id="sidebar-more-media" type="button" role="menuitem" aria-controls="media"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">folder</span><span>资源</span></button>
           <button id="sidebar-more-annotations" type="button" role="menuitem" aria-controls="annotations"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">sticky_note_2</span><span>注解</span></button>
-          <button id="sidebar-more-signatures" type="button" role="menuitem" aria-controls="signatures"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">draw</span><span>签名</span></button>
+           <button id="sidebar-more-signatures" type="button" role="menuitem" aria-controls="signatures"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">draw</span><span>签名</span></button>
+           <button id="sidebar-more-custom-tags" type="button" role="menuitem" aria-controls="custom-tags"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">text_snippet</span><span>标签</span></button>
         </div>
       </div>
       <input id="sidebar-filter" class="sidebar-filter" type="search" placeholder="过滤标题" aria-label="过滤标题" hidden>
@@ -889,7 +907,8 @@
       <aside id="attachments" role="tabpanel" aria-label="文档附件" hidden></aside>
       <aside id="media" role="tabpanel" aria-label="文档资源" hidden></aside>
       <aside id="annotations" role="tabpanel" aria-label="文档注解" hidden></aside>
-      <aside id="signatures" role="tabpanel" aria-label="文档签名" hidden></aside>
+       <aside id="signatures" role="tabpanel" aria-label="文档签名" hidden></aside>
+       <aside id="custom-tags" role="tabpanel" aria-label="自定义标签" hidden></aside>
       <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="调整侧栏宽度" tabindex="0"></div>
     </div>
     <main id="pages" tabindex="-1">

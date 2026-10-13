@@ -111,6 +111,8 @@ async function execute(message) {
       return unwrap(self.ofd.info());
     case 'outline':
       return unwrap(self.ofd.outline());
+    case 'customTags':
+      return unwrap(self.ofd.customTags());
     case 'preferences':
       return unwrap(self.ofd.preferences());
     case 'fontUsage':

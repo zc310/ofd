@@ -52,6 +52,7 @@ func main() {
 	api.Set("close", js.FuncOf(app.close))
 	api.Set("info", js.FuncOf(app.info))
 	api.Set("outline", js.FuncOf(app.outline))
+	api.Set("customTags", js.FuncOf(app.customTags))
 	api.Set("preferences", js.FuncOf(app.preferences))
 	api.Set("fontUsage", js.FuncOf(app.fontUsage))
 	api.Set("fontUsageAll", js.FuncOf(app.fontUsageAll))
@@ -369,6 +370,26 @@ func (a *wasmApp) outline(_ js.Value, _ []js.Value) any {
 		"nodes":     outlineNodesValue(tree.Nodes),
 		"bookmarks": bookmarksValue(tree.Bookmarks),
 	})
+}
+
+func (a *wasmApp) customTags(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	tags, err := reader.CustomTags()
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(tags))
+	for index, tag := range tags {
+		result.SetIndex(index, objectValue(map[string]any{
+			"namespace": tag.Namespace,
+			"path":      tag.Path,
+			"root":      customTagNodeValue(tag.Root),
+		}))
+	}
+	return result
 }
 
 func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
@@ -1424,6 +1445,45 @@ func outlineDestValue(dest *webreader.OutlineDest) any {
 		"bottom": optionalFloatValue(dest.Bottom),
 		"zoom":   optionalFloatValue(dest.Zoom),
 	})
+}
+
+func customTagNodeValue(node *webreader.CustomTagNode) any {
+	if node == nil {
+		return nil
+	}
+	children := js.Global().Get("Array").New(len(node.Children))
+	for index, child := range node.Children {
+		children.SetIndex(index, customTagNodeValue(child))
+	}
+	var target any
+	if node.Target != nil {
+		target = objectValue(map[string]any{
+			"page":        node.Target.Page,
+			"page_id":     node.Target.PageID,
+			"object_id":   node.Target.ObjectID,
+			"x":           node.Target.X,
+			"y":           node.Target.Y,
+			"width":       node.Target.Width,
+			"height":      node.Target.Height,
+			"object_text": node.Target.ObjectText,
+		})
+	}
+	return objectValue(map[string]any{
+		"name":       node.Name,
+		"namespace":  node.Namespace,
+		"attributes": stringMapValue(node.Attributes),
+		"text":       node.Text,
+		"children":   children,
+		"target":     target,
+	})
+}
+
+func stringMapValue(values map[string]string) js.Value {
+	result := js.Global().Get("Object").New()
+	for key, value := range values {
+		result.Set(key, value)
+	}
+	return result
 }
 
 func optionalFloatValue(value *float64) any {
