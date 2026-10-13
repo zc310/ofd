@@ -1,71 +1,98 @@
-// 直接驱动版本按钮与页面筛选，确保无法显示的版本不会清空正文。
+// 驱动真实版本切换函数：独立入口、失败恢复与旧文档响应隔离。
 import { sliceFunction, load, createSuite } from './harness.mjs';
 
 const suite = createSuite('文档版本');
-const code = [sliceFunction('buildVersionItem'), sliceFunction('applyVersionPages')].join('\n');
-
-function fakeButton() {
-  const button = { disabled: false, textContent: '', title: '', listeners: new Map(), classes: new Set() };
-  button.classList = { add: name => button.classes.add(name) };
-  button.addEventListener = (name, handler) => button.listeners.set(name, handler);
-  button.click = () => button.listeners.get('click')?.();
-  return button;
-}
+const code = ['buildVersionItem', 'switchDocumentVersion'].map(sliceFunction).join('\n');
 
 function baseState() {
   const state = {
-    selectedVersionID: '',
-    versionPageFilter: null,
-    pageInfos: [{}, {}],
-    pageCards: [{ hidden: false }, { hidden: false }],
-    thumbnailButtons: [],
-    activeThumbnailButton: undefined,
-    mountedThumbnailIndexes: new Set(),
-    thumbnailSlots: [],
-    thumbnailSlotByPage: [],
-    document: { createElement: () => fakeButton() },
-    updateThumbnailMetrics: () => {},
-    updateThumbnailVirtualWindow: () => {},
-    renderVersions: () => {},
-    goTo: page => { state.lastPage = page; },
+    selectedVersionID: '', selectedVersionScope: -1, versionSwitching: false,
+    versionPageFilter: null, opening: false, documentGeneration: 1,
+    pageInfos: [{ index: 0 }, { index: 1 }], current: 1, currentDocumentKey: 'doc',
+    openRequest: undefined, activeSidebarTab: 'versions', infoPanel: { hidden: true },
+    calls: [], builds: 0, clears: 0,
+    engine: { selectVersion: async (scope, id) => {
+      state.calls.push([scope, id]);
+      return { pages: id ? [{ index: 0, width: 99 }] : [{ index: 0 }, { index: 1 }], fonts: [id] };
+    } },
+    clearDocumentView: () => { state.clears++; },
+    clearInjectedFonts: () => { state.fontsCleared = true; },
+    injectFonts: async fonts => { state.fonts = fonts; },
+    saveReadingPosition: () => {}, restorePageRotation: () => {},
+    readReadingPositions: () => ({}), readSidebarScroll: () => ({}), sidebarScroll: {},
+    renderVersions: () => {}, buildPages: () => { state.builds++; },
+    setStatus: text => { state.status = text; },
+    isCancelledError: error => error.name === 'AbortError',
+    loadOutline: () => { state.outlineReloaded = true; },
+    fetchPageLinks: () => { state.linksReloaded = true; },
+    document: { createElement: () => {
+      const button = { disabled: false, textContent: '', classList: { add() {} } };
+      button.addEventListener = (_, fn) => { button.click = fn; };
+      return button;
+    } },
   };
-  state.thumbnailSlotsForLayout = () => state.pageCards.map((card, index) => card.hidden ? -1 : index).filter(index => index >= 0);
-  return load(state, code, { expose: { buildVersionItem: 'buildVersionItem' } });
+  return load(state, code, { expose: { buildVersionItem: 'buildVersionItem', switchVersion: 'switchDocumentVersion' } });
 }
 
-suite.group('初始版本筛选一页，再次点击恢复全部页面');
+suite.group('独立历史页面无需出现在主文档页面清单中');
 {
   const state = baseState();
-  const button = state.buildVersionItem({ id: 'v1', name: '初始版本', version: '1.0', pages: [0] });
-  button.click();
-  suite.check(!button.disabled, '有对应页面的版本可以选择');
-  suite.check(!state.pageCards[0].hidden && state.pageCards[1].hidden, '只显示第一页');
-  suite.check(state.selectedVersionID === 'v1' && state.lastPage === 0, '记录所选版本并定位第一页');
-  button.click();
-  suite.check(state.pageCards.every(card => !card.hidden), '再次点击恢复全部页面');
-  suite.check(state.selectedVersionID === '' && state.versionPageFilter === null, '清除版本筛选');
+  const item = { scope: 0, id: 'v1', doc_root: '/Old/Document.xml', pages: [] };
+  const button = state.buildVersionItem(item);
+  suite.check(!button.disabled, '独立入口可以选择');
+  await state.switchVersion(item);
+  suite.check(state.calls[0][1] === 'v1' && state.pageInfos.length === 1 && state.pageInfos[0].width === 99, '加载历史页面尺寸');
+  suite.check(state.selectedVersionID === 'v1' && state.current === 0, '记录版本并从首页阅读');
+  suite.check(state.fontsCleared && state.fonts[0] === 'v1' && state.clears === 1, '替换字体并清理旧视图');
+  suite.check(state.outlineReloaded && state.linksReloaded, '重新读取导航和动作');
+  suite.check(state.currentDocumentKey === 'doc:version:0:v1', '阅读记录按版本隔离');
+  state.readReadingPositions = () => ({ doc: { page: 1 } });
+  await state.switchVersion(item);
+  suite.check(state.calls[1][1] === '' && state.pageInfos.length === 2, '再次点击加载主文档');
+  suite.check(state.selectedVersionID === '' && state.currentDocumentKey === 'doc', '恢复主文档阅读记录');
+  suite.check(state.current === 1, '恢复主文档原阅读页码');
 }
 
-suite.group('当前版本仍可以选择');
+suite.group('相同版本 ID 以文档体区分');
 {
   const state = baseState();
-  state.pageCards[1].hidden = true;
-  const button = state.buildVersionItem({ id: 'v2', current: true, version: '1.0', pages: [0, 1] });
-  button.click();
-  suite.check(!button.disabled && button.textContent.includes('当前'), '当前标记不禁用按钮');
-  suite.check(state.pageCards.every(card => !card.hidden), '当前版本显示两页');
+  state.selectedVersionID = 'v1'; state.selectedVersionScope = 0;
+  await state.switchVersion({ scope: 1, id: 'v1' });
+  suite.check(state.calls[0][0] === 1 && state.calls[0][1] === 'v1', '选择另一文档体的版本');
 }
 
-suite.group('无法显示的版本不改变当前页面');
-for (const pages of [[], undefined, [-1, 2, 999, '0', 0.5]]) {
+suite.group('失败保留原版本与页面');
+{
   const state = baseState();
-  state.selectedVersionID = 'v1';
-  state.pageCards[1].hidden = true;
-  const button = state.buildVersionItem({ id: 'historical', pages });
+  const pages = state.pageInfos;
+  state.selectedVersionID = 'v1'; state.selectedVersionScope = 0;
+  state.engine.selectVersion = async () => { throw new Error('缺少资源'); };
+  await state.switchVersion({ scope: 0, id: 'bad' });
+  suite.check(state.pageInfos === pages && state.selectedVersionID === 'v1' && state.current === 1, '保留原版本');
+  suite.check(state.builds === 1 && !state.versionSwitching && state.status.includes('缺少资源'), '恢复页面并说明失败原因');
+}
+
+suite.group('切换期间的新文档使旧响应失效');
+{
+  const state = baseState();
+  let resolve;
+  state.engine.selectVersion = () => new Promise(done => { resolve = done; });
+  const pending = state.switchVersion({ scope: 0, id: 'v1' });
+  suite.check(!await state.switchVersion({ scope: 0, id: 'v2' }), '切换期间不重复发起请求');
+  state.documentGeneration++;
+  resolve({ pages: [], fonts: [] });
+  await pending;
+  suite.check(state.selectedVersionID === '' && state.builds === 0 && !state.fontsCleared, '旧响应不覆盖新文档');
+}
+
+suite.group('入口不可用和打开期间禁止操作');
+{
+  const state = baseState();
+  const button = state.buildVersionItem({ scope: 0, id: 'bad', pages: [0] });
   button.click();
-  suite.check(button.disabled, '没有有效页码时禁用按钮', pages);
-  suite.check(button.textContent.includes('暂无法显示'), '说明此版本暂无法显示');
-  suite.check(state.selectedVersionID === 'v1' && !state.pageCards[0].hidden && state.pageCards[1].hidden, '保留当前版本与页面');
+  suite.check(button.disabled && state.calls.length === 0, '缺少入口不能靠同名页面筛选');
+  state.opening = true;
+  suite.check(state.buildVersionItem({ scope: 0, id: 'v1', doc_root: '/Old/Document.xml' }).disabled, '打开期间禁用按钮');
 }
 
 process.exitCode = suite.report() ? 1 : 0;

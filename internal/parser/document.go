@@ -700,6 +700,7 @@ func (p *Document) parse(body models.DocBody) error {
 	p.versions = make(map[string]*models.DocVersion)
 	p.versionLocations = make(map[string]models.StLoc)
 	p.versionLoaded = make(map[string]bool)
+	p.versionErrors = make(map[string]error)
 	if body.Versions != nil {
 		for _, version := range body.Versions.VersionList {
 			p.versionLocations[version.ID] = version.BaseLoc.Resolve("/")

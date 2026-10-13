@@ -24,6 +24,8 @@ type VersionInfo struct {
 	Name string
 	// CreationDate 是版本创建日期。
 	CreationDate string
+	// DocRoot 是版本入口的包内绝对路径；空值表示版本描述未能加载。
+	DocRoot string
 	// Pages 是该版本文件清单里引用的全局页码，从 0 开始。
 	Pages []int
 }
@@ -354,7 +356,8 @@ func outlineNodes(elems []models.CTOutlineElem, resolvePage func(models.CtDest) 
 	return nodes
 }
 
-// Versions 返回所有文档体的版本清单。Pages 只包含文件清单里能对应到当前文档页的页码。
+// Versions 返回所有文档体的版本清单。DocRoot 可用于 SelectVersion 加载独立历史文档。
+// Pages 只包含文件清单里能对应到当前视图页的页码。
 func (r *Reader) Versions() ([]VersionInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -401,6 +404,9 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 		for _, version := range body.Versions.VersionList {
 			info := VersionInfo{Scope: scope, ID: version.ID, Index: version.Index, Current: version.Current}
 			if loaded := document.GetVersion(version.ID); loaded != nil {
+				if loaded.DocRoot != "" {
+					info.DocRoot = loaded.DocRoot.Resolve(version.BaseLoc.Resolve("/").Dir()).String()
+				}
 				if loaded.Version != nil {
 					info.Version = *loaded.Version
 				}

@@ -330,6 +330,21 @@ func (r *Reader) Close() error {
 		return nil
 	}
 	r.closed = true
+	r.closeRenderDocumentsLocked()
+	r.text = nil
+	r.search = nil
+	r.fallbackFamily = ""
+	r.fallbackFamilies = nil
+	ofd := r.ofd
+	r.ofd = nil
+	if ofd == nil {
+		return nil
+	}
+	return ofd.Close()
+}
+
+// closeRenderDocumentsLocked 释放当前视图的渲染资源；调用方持有 Reader 写锁。
+func (r *Reader) closeRenderDocumentsLocked() {
 	// r.pages 里的渲染文档是 Open 时逐个建的，字体正是它们加载的；renderDocs
 	// 是之后按需建的另一个缓存。两批实例不同，只关后者等于没关。
 	pageDocs := make([]*render.Document, 0, len(r.pages))
@@ -341,10 +356,6 @@ func (r *Reader) Close() error {
 		}
 	}
 	r.pages = nil
-	r.text = nil
-	r.search = nil
-	r.fallbackFamily = ""
-	r.fallbackFamilies = nil
 	r.renderDocsMu.Lock()
 	cached := r.renderDocs
 	r.renderDocs = nil
@@ -362,10 +373,4 @@ func (r *Reader) Close() error {
 	for _, doc := range pageDocs {
 		doc.Close()
 	}
-	ofd := r.ofd
-	r.ofd = nil
-	if ofd == nil {
-		return nil
-	}
-	return ofd.Close()
 }

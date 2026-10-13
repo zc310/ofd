@@ -17,8 +17,9 @@ type OFD struct {
 	models.OFD
 	fileCache *core.Package
 
-	Documents []*Document
-	options   Options
+	Documents     []*Document
+	mainDocuments []*Document
+	options       Options
 }
 
 const (
@@ -135,6 +136,7 @@ func (p *OFD) openPackage(fileCache *core.Package) (err error) {
 
 	p.OFD = root
 	p.Documents = documents
+	p.mainDocuments = append([]*Document(nil), documents...)
 	p.fileCache = fileCache
 	return nil
 }
@@ -147,11 +149,17 @@ func (p *OFD) Close() error {
 			document.clearCaches()
 		}
 	}
+	for scope, document := range p.mainDocuments {
+		if document != nil && (scope >= len(p.Documents) || document != p.Documents[scope]) {
+			document.clearCaches()
+		}
+	}
 	if p.fileCache != nil {
 		err = p.fileCache.Close()
 		p.fileCache = nil
 	}
 	p.Documents = nil
+	p.mainDocuments = nil
 	p.OFD = models.OFD{}
 	if err != nil {
 		return fmt.Errorf("关闭OFD文件失败: %w", err)
