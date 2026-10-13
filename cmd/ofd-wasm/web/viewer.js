@@ -125,6 +125,10 @@ class OFDWorkerClient {
     return this.request('outline');
   }
 
+  customTags() {
+    return this.request('customTags');
+  }
+
   preferences() {
     return this.request('preferences');
   }
@@ -442,11 +446,13 @@ const sidebarMoreAttachments = document.querySelector('#sidebar-more-attachments
 const sidebarMoreMedia = document.querySelector('#sidebar-more-media');
 const sidebarMoreAnnotations = document.querySelector('#sidebar-more-annotations');
 const sidebarMoreSignatures = document.querySelector('#sidebar-more-signatures');
+const sidebarMoreCustomTags = document.querySelector('#sidebar-more-custom-tags');
 const versionsElement = document.querySelector('#versions');
 const attachmentsElement = document.querySelector('#attachments');
 const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
 const signaturesElement = document.querySelector('#signatures');
+const customTagsElement = document.querySelector('#custom-tags');
 const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
 const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
 const outlineElement = document.querySelector('#outline');
@@ -590,7 +596,7 @@ const sidebarTabStorageKey = 'ofd-sidebar-tab';
 let activeSidebarTab = (() => {
   try {
     const value = localStorage.getItem(sidebarTabStorageKey);
-    return ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts'].includes(value) ? value : 'thumbnails';
+    return ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'custom-tags'].includes(value) ? value : 'thumbnails';
   } catch (_) {
     return 'thumbnails';
   }
@@ -598,6 +604,7 @@ let activeSidebarTab = (() => {
 let searchReturnSidebarTab = 'thumbnails';
 let outlineNodes = [];
 let bookmarkNodes = [];
+let customTagTrees = [];
 let sidebarFilterValue = '';
 const thumbnailSizeStorageKey = 'ofd-thumbnail-size';
 // 缩略图尺寸以可用宽度的百分比表示，允许 40%–100%。兼容旧版 small/medium/large 档位。
@@ -3923,9 +3930,11 @@ async function openSelectedFile(selected, options = {}) {
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
     if (activeSidebarTab === 'signatures') renderSignatures();
+    if (activeSidebarTab === 'custom-tags') renderCustomTags();
     setStatus(`已打开：${selected.name}${localFontsPendingHint()}`);
     updateRenderProgress();
     void loadOutline();
+    if (typeof loadCustomTags === 'function') void loadCustomTags();
     void fetchPageLinks(generation);
     void saveRecentFile(selected);
     return true;
@@ -3948,6 +3957,7 @@ async function openSelectedFile(selected, options = {}) {
     resetSidebarFilter();
     outlineNodes = [];
     bookmarkNodes = [];
+    customTagTrees = [];
     renderOutline();
     renderBookmarks();
     documentInfo = null;
@@ -3962,6 +3972,7 @@ async function openSelectedFile(selected, options = {}) {
     if (activeSidebarTab === 'media') renderMedia();
     if (activeSidebarTab === 'annotations') renderAnnotations();
     if (activeSidebarTab === 'signatures') renderSignatures();
+    if (activeSidebarTab === 'custom-tags') renderCustomTags();
     pagesElement.replaceChildren();
     thumbnailsElement.replaceChildren();
     pagesElement.append(empty);
@@ -4921,9 +4932,9 @@ function restorePanelScroll(panel) {
   if (element) element.scrollTop = sidebarScroll[panel] || 0;
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
-const sidebarMoreTabs = ['fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures'];
-const sidebarMoreLabels = { fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名' };
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
+const sidebarMoreTabs = ['fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
+const sidebarMoreLabels = { fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名', 'custom-tags': '标签' };
 
 // applySidebarPanels 根据侧栏可见性和当前面板，决定缩略图/大纲/书签/字体/附件面板的显隐。
 function applySidebarPanels() {
@@ -4944,12 +4955,13 @@ function applySidebarPanels() {
   if (mediaElement) mediaElement.hidden = !active('media');
   if (annotationsElement) annotationsElement.hidden = !active('annotations');
   if (signaturesElement) signaturesElement.hidden = !active('signatures');
+  if (customTagsElement) customTagsElement.hidden = !active('custom-tags');
   if (thumbnailToolbar) thumbnailToolbar.hidden = !active('thumbnails');
   if (outlineToolbar) outlineToolbar.hidden = !active('outline');
   if (outlineExpandAll) outlineExpandAll.disabled = Boolean(sidebarFilterValue);
   if (outlineCollapseAll) outlineCollapseAll.disabled = Boolean(sidebarFilterValue);
   if (sidebarFilter) {
-    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('versions') || active('attachments') || active('media') || active('annotations') || active('signatures');
+    const filterable = active('outline') || active('bookmarks') || active('fonts') || active('versions') || active('attachments') || active('media') || active('annotations') || active('signatures') || active('custom-tags');
     sidebarFilter.hidden = !filterable;
     if (active('fonts')) sidebarFilter.placeholder = '过滤字体';
     else if (active('versions')) sidebarFilter.placeholder = '过滤版本';
@@ -4957,6 +4969,7 @@ function applySidebarPanels() {
     else if (active('media')) sidebarFilter.placeholder = '过滤资源';
     else if (active('annotations')) sidebarFilter.placeholder = '过滤注解';
     else if (active('signatures')) sidebarFilter.placeholder = '过滤签名';
+    else if (active('custom-tags')) sidebarFilter.placeholder = '过滤标签';
     else sidebarFilter.placeholder = '过滤标题';
   }
   const tabs = [
@@ -4981,6 +4994,7 @@ function applySidebarPanels() {
   sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
   sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
   sidebarMoreSignatures?.classList.toggle('active', activeSidebarTab === 'signatures');
+  sidebarMoreCustomTags?.classList.toggle('active', activeSidebarTab === 'custom-tags');
   if (sidebarMoreMenu && !visible) setSidebarMoreOpen(false);
   if (thumbnailSizeSlider) thumbnailSizeSlider.value = String(thumbnailSizePercent);
   const sheet = isMobileViewport() && mobileSidebarOpen;
@@ -5044,6 +5058,8 @@ function setSidebarTab(tab) {
     renderAnnotations();
   } else if (tab === 'signatures') {
     renderSignatures();
+  } else if (tab === 'custom-tags') {
+    renderCustomTags();
   } else {
     renderFonts();
   }
@@ -5230,6 +5246,114 @@ async function loadOutline() {
   const mode = String(tree?.page_mode || '');
   if (mode === 'UseOutlines' && outlineNodes.length) setSidebarTab('outline');
   else if (mode === 'UseBookmarks' && bookmarkNodes.length) setSidebarTab('bookmarks');
+}
+
+async function loadCustomTags() {
+  const generation = documentGeneration;
+  try {
+    const tags = await engine.customTags();
+    if (generation !== documentGeneration) return;
+    customTagTrees = Array.isArray(tags) ? tags : [];
+  } catch (_) {
+    customTagTrees = [];
+  }
+  if (generation === documentGeneration) renderCustomTags();
+}
+
+function customTagMatches(node, needle) {
+  if (!needle) return true;
+  return String(node.name || '').toLowerCase().includes(needle) ||
+    String(node.text || '').toLowerCase().includes(needle) ||
+    (node.children || []).some(child => customTagMatches(child, needle));
+}
+
+function scrollToCustomTagTarget(target) {
+  if (!target || !Number.isInteger(Number(target.page))) return;
+  const index = Number(target.page);
+  if (index < 0 || index >= pageInfos.length) return;
+  goTo(index);
+  requestAnimationFrame(() => {
+    const card = pageCards[index];
+    const info = pageInfos[index];
+    if (!card || !info) return;
+    let highlight = card.querySelector('.custom-tag-highlight');
+    if (!highlight) {
+      highlight = document.createElement('div');
+      highlight.className = 'custom-tag-highlight';
+      card.append(highlight);
+    }
+    highlight.style.left = `${(Number(target.x) / info.width) * 100}%`;
+    highlight.style.top = `${(Number(target.y) / info.height) * 100}%`;
+    highlight.style.width = `${(Number(target.width) / info.width) * 100}%`;
+    highlight.style.height = `${(Number(target.height) / info.height) * 100}%`;
+    window.setTimeout(() => highlight.remove(), 2200);
+  });
+}
+
+function buildCustomTagList(nodes, needle, path = '') {
+  const list = document.createElement('ul');
+  list.className = 'custom-tag-list';
+  (nodes || []).forEach((node, index) => {
+    if (!customTagMatches(node, needle)) return;
+    const item = document.createElement('li');
+    const row = document.createElement('div');
+    row.className = 'custom-tag-row';
+    const rawChildren = Array.isArray(node.children) ? node.children : [];
+    const refChild = rawChildren.find(child => child?.name === 'ObjectRef' && child.target);
+    const target = node.target || refChild?.target || null;
+    const children = rawChildren.filter(child => child?.name !== 'ObjectRef');
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'custom-tag-toggle';
+    toggle.textContent = children.length ? '▾' : '';
+    toggle.disabled = !children.length;
+    row.append(toggle);
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'custom-tag-label';
+    const value = target?.object_text || node.text || '';
+    label.textContent = value ? `${node.name}: ${value}` : node.name;
+    label.title = value || node.name;
+    if (target) {
+      label.classList.add('custom-tag-target');
+      label.addEventListener('click', () => {
+        scrollToCustomTagTarget(target);
+        collapseSidebarAfterJump();
+      });
+    } else {
+      label.disabled = true;
+    }
+    row.append(label);
+    item.append(row);
+    if (children.length) {
+      const childList = buildCustomTagList(children, needle, `${path}.${index}`);
+      item.append(childList);
+      toggle.addEventListener('click', () => {
+        const collapsed = childList.hidden;
+        childList.hidden = !collapsed;
+        toggle.textContent = collapsed ? '▾' : '▸';
+      });
+    }
+    list.append(item);
+  });
+  return list;
+}
+
+function renderCustomTags() {
+  if (!customTagsElement) return;
+  customTagsElement.replaceChildren();
+  const needle = sidebarFilterValue;
+  if (!customTagTrees.length) {
+    customTagsElement.append(outlineEmptyMessage('此文档没有自定义标签'));
+    return;
+  }
+  customTagTrees.forEach(tag => {
+    const source = document.createElement('p');
+    source.className = 'custom-tag-source';
+    source.textContent = tag.root?.name || tag.path || '自定义标签';
+    customTagsElement.append(source, buildCustomTagList(tag.root ? [tag.root] : [], needle));
+  });
+  restorePanelScroll('custom-tags');
 }
 
 // attachOutlineKeyboard 让大纲/书签面板支持方向键、Home/End 在条目间移动焦点。
@@ -5868,6 +5992,7 @@ async function switchDocumentVersion(item) {
       if (activeSidebarTab === 'signatures') renderSignatures();
       if (!infoPanel.hidden) updateDocumentInfo();
       void loadOutline();
+      if (typeof loadCustomTags === 'function') void loadCustomTags();
       void fetchPageLinks(generation);
     }
   }
@@ -7227,7 +7352,8 @@ sidebarMoreVersions?.addEventListener('click', () => setSidebarTab('versions'));
 sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachments'));
 sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
 sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
-sidebarMoreSignatures?.addEventListener('click', () => setSidebarTab('signatures'));
+  sidebarMoreSignatures?.addEventListener('click', () => setSidebarTab('signatures'));
+sidebarMoreCustomTags?.addEventListener('click', () => setSidebarTab('custom-tags'));
 sidebarToggle?.addEventListener('click', () => setThumbnailsVisible(!sidebarShown()));
 sidebarBackdrop?.addEventListener('click', () => setThumbnailsVisible(false));
 sidebarHandle?.addEventListener('click', () => setThumbnailsVisible(false));
@@ -7270,6 +7396,7 @@ if (sidebarFilter) {
     else if (activeSidebarTab === 'media') renderMedia();
     else if (activeSidebarTab === 'annotations') renderAnnotations();
     else if (activeSidebarTab === 'signatures') renderSignatures();
+    else if (activeSidebarTab === 'custom-tags') renderCustomTags();
   });
 }
 if (sidebarResizer) {
@@ -7314,6 +7441,7 @@ sidebarScrollPanels.attachments = attachmentsElement;
 sidebarScrollPanels.media = mediaElement;
 sidebarScrollPanels.annotations = annotationsElement;
 sidebarScrollPanels.signatures = signaturesElement;
+sidebarScrollPanels['custom-tags'] = customTagsElement;
 Object.entries(sidebarScrollPanels).forEach(([panel, element]) => {
   element?.addEventListener('scroll', () => {
     sidebarScroll[panel] = element.scrollTop;

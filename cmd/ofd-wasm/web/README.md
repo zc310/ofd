@@ -282,6 +282,7 @@ make test-wasm-web
 - 多个文档体分别使用各自的页面尺寸。
 - 页面实际展示或调用 `ofd.pageInfo(index)` 时，才按需读取指定页面的完整内容。
 - `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
+- `ofd.customTags()` 返回自定义标签 XML 树。每个标签为 `{ namespace, path, root }`，节点为 `{ name, namespace, attributes, text, children, target }`；符合 `ObjectRef PageRef="...">对象 ID</ObjectRef>` 的节点会带有 `{ page, page_id, object_id, x, y, width, height, object_text }` 定位目标，`page` 是从 0 开始的全局页索引。
 - 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
 - `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
 - `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, scope, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据；`scope` 是字体所属文档体索引，与 `id` 一起唯一标识一个字体。
