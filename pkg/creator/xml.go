@@ -56,7 +56,7 @@ func rootXML(state *buildState) ([]byte, error) {
 			if version.value.Current {
 				w.Attr("Current", "true")
 			}
-			w.Attr("BaseLoc", versionPath(version.baseName))
+			w.Attr("BaseLoc", "/"+versionPath(version.baseName))
 			w.End()
 		}
 		w.End()

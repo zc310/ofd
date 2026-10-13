@@ -511,15 +511,17 @@ func versionXML(resource versionResource) ([]byte, error) {
 	for _, file := range resource.value.Files {
 		w.Start("File")
 		w.Attr("ID", file.ID)
-		w.Text(file.Path)
+		// GB/T 33190—2016 §7.3：以 / 开头的 ST_Loc 从包根目录解析。
+		// API 输入从 Doc_0 解析，输出采用包内绝对路径。
+		w.Text("/" + path.Join(docDir, file.Path))
 		w.End()
 	}
 	w.End()
 	rootPath := resource.rootName
 	if rootPath == "" {
-		rootPath = "../Document.xml"
+		rootPath = "/" + docDir + "/Document.xml"
 	} else {
-		rootPath = "Files/" + rootPath
+		rootPath = "/" + versionRootPath(rootPath)
 	}
 	w.Element("DocRoot", rootPath)
 	w.End()

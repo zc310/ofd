@@ -416,17 +416,26 @@ signatures := []creator.Signature{{
 | CheckMethod | MD5、SHA1、SM3 及对应国密 OID；缺省按 Schema 使用 MD5，大小写会规范化。 |
 | SignatureReference.FileRef | 从签名目录解析，允许规范的 `../Document.xml`；目标必须存在。 |
 | Versions | 生成版本清单、版本描述和可选文档根文件；ID 与文件 ID 为合法 XML ID，Index 唯一，最多一个 Current 版本。 |
-| Version.Files | 至少一个文件项，所有路径必须引用最终包中存在的条目。 |
+| Version.Files | 列出该版本所需的全部文件，包括入口、页面和资源。输入路径相对于文档目录 `Doc_0`；输出到版本描述文件时自动转换为 `/Doc_0/...` 包内绝对路径。 |
+| Version.Version | 该版本适用的 OFD 格式版本，如 `1.0`，不是文档修订版本号。 |
 | Version.DocRoot | 根元素为 Document，使用 OFD 命名空间。 |
 
 ```go
 versions := []creator.DocumentVersion{{
 	ID: "version-1", Index: 1, Current: true, Version: "1.0", Name: "初始版本",
-	Files: []creator.VersionFile{{ID: "file-1", Path: "Document.xml"}},
+	Files: []creator.VersionFile{
+		{ID: "file-1", Path: "Versions/Files/version-document.xml"},
+		{ID: "file-2", Path: "Pages/Page_0/Content.xml"},
+	},
 	DocRoot: versionDocumentXML, DocRootName: "version-document.xml",
 }}
 ```
 
+上述示例假设版本只有一个空页面；若页面使用字体、图片等资源，还需在版本入口引用资源文件并将依赖加入 `Files`。
+生成的版本 `BaseLoc`、文件清单和 `DocRoot` 统一使用包内绝对路径。
+直接提供的版本入口 XML 保留原内容；建议也使用 `/Doc_0/Pages/Page_0/Content.xml` 等包内绝对路径。
+若使用相对路径，则从 `Doc_0/Versions/Files` 解析，例如 `../../Pages/Page_0/Content.xml`。
+这些路径规则与版本文件清单要求依据 GB/T 33190—2016 §7.3、§19.2。
 不同签名值/印章文件和不同版本根文件不能使用冲突的文件名。
 
 ## 流式创建超大 OFD

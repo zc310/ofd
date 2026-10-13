@@ -5791,9 +5791,12 @@ function buildVersionItem(item) {
   const title = [item.id, item.name, item.version].filter(Boolean).join(' ');
   button.textContent = title || '版本';
   if (item.current) button.textContent += ' · 当前';
-  const pages = Array.isArray(item.pages) ? item.pages.filter(page => Number.isInteger(page)) : [];
-  button.title = pages.length ? `包含第 ${pages.map(page => page + 1).join('、')} 页` : '没有可显示的页面';
+  const pages = Array.isArray(item.pages) ? item.pages.filter(page => Number.isInteger(page) && page >= 0 && page < pageInfos.length) : [];
+  button.disabled = pages.length === 0;
+  button.title = pages.length ? `包含第 ${pages.map(page => page + 1).join('、')} 页` : '此版本的页面暂无法显示';
+  if (button.disabled) button.textContent += ' · 暂无法显示';
   button.addEventListener('click', () => {
+    if (button.disabled) return;
     selectedVersionID = selectedVersionID === item.id ? '' : item.id;
     applyVersionPages(selectedVersionID ? pages : null);
     renderVersions();

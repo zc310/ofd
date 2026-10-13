@@ -1,12 +1,16 @@
 # 文档版本示例
-# 文档版本示例；v1 只包含第一页，当前版本 v2 增加第二页。
+# v1 只包含第一页，默认版本 v2 增加第二页。
+# GB/T 33190—2016 §19：version 为 OFD 格式版本，files 列出各版本所需的全部文件。
+# files.path 输入相对于 Doc_0，输出为包内绝对路径；版本入口也使用包内绝对路径。
+# Index 使用 1、2；与包内绝对路径组合的表达已通过官方及第三方阅读器复测。
+# 两个版本的 MaxUnitID 分别为 6、9，并共享 DocumentRes.xml 和第一页。
 # 运行：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/versions.yaml --format auto --check
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/versions.yaml -o testdata/versions.ofd --format auto --deterministic --validate --complete-text-code-deltas
 
 version: 1
 document:
-  id: versions
+  id: da830124a1344fc1a619b610d83b7b38
   title: 文档版本示例
   creator: ofd-creator
   creator_version: 0.0.1
@@ -19,22 +23,30 @@ document:
       name: 初始版本
       creation_date: "2026-01-02"
       doc_root_name: version-1.xml
-      doc_root_base64: PERvY3VtZW50IHhtbG5zPSJodHRwOi8vd3d3Lm9mZHNwZWMub3JnLzIwMTYiPjxDb21tb25EYXRhPjxNYXhVbml0SUQ+ODwvTWF4VW5pdElEPjxQYWdlQXJlYT48UGh5c2ljYWxCb3g+MCAwIDIxMCAyOTc8L1BoeXNpY2FsQm94PjwvUGFnZUFyZWE+PC9Db21tb25EYXRhPjxQYWdlcz48UGFnZSBJRD0iMSIgQmFzZUxvYz0iLi4vLi4vUGFnZXMvUGFnZV8wL0NvbnRlbnQueG1sIi8+PC9QYWdlcz48L0RvY3VtZW50Pg==
+      doc_root_base64: PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0ndXRmLTgnPz4KPG9mZDpEb2N1bWVudCB4bWxuczpvZmQ9Imh0dHA6Ly93d3cub2Zkc3BlYy5vcmcvMjAxNiI+PG9mZDpDb21tb25EYXRhPjxvZmQ6TWF4VW5pdElEPjY8L29mZDpNYXhVbml0SUQ+PG9mZDpQYWdlQXJlYT48b2ZkOlBoeXNpY2FsQm94PjAgMCAyMTAgMjk3PC9vZmQ6UGh5c2ljYWxCb3g+PC9vZmQ6UGFnZUFyZWE+PG9mZDpEb2N1bWVudFJlcz4vRG9jXzAvRG9jdW1lbnRSZXMueG1sPC9vZmQ6RG9jdW1lbnRSZXM+PC9vZmQ6Q29tbW9uRGF0YT48b2ZkOlBhZ2VzPjxvZmQ6UGFnZSBJRD0iMSIgQmFzZUxvYz0iL0RvY18wL1BhZ2VzL1BhZ2VfMC9Db250ZW50LnhtbCIgLz48L29mZDpQYWdlcz48L29mZDpEb2N1bWVudD4=
       files:
-        - id: file-1
+        - id: v1-file-1
+          path: Versions/Files/version-1.xml
+        - id: v1-file-2
+          path: DocumentRes.xml
+        - id: v1-file-3
           path: Pages/Page_0/Content.xml
     - id: v2
       index: 2
       current: true
-      version: "1.1"
+      version: "1.0"
       name: 当前版本
       creation_date: "2026-03-15"
       doc_root_name: version-2.xml
-      doc_root_base64: PERvY3VtZW50IHhtbG5zPSJodHRwOi8vd3d3Lm9mZHNwZWMub3JnLzIwMTYiPjxDb21tb25EYXRhPjxNYXhVbml0SUQ+ODwvTWF4VW5pdElEPjxQYWdlQXJlYT48UGh5c2ljYWxCb3g+MCAwIDIxMCAyOTc8L1BoeXNpY2FsQm94PjwvUGFnZUFyZWE+PC9Db21tb25EYXRhPjxQYWdlcz48UGFnZSBJRD0iMSIgQmFzZUxvYz0iLi4vLi4vUGFnZXMvUGFnZV8wL0NvbnRlbnQueG1sIi8+PFBhZ2UgSUQ9IjIiIEJhc2VMb2M9Ii4uLy4uL1BhZ2VzL1BhZ2VfMS9Db250ZW50LnhtbCIvPjwvUGFnZXM+PC9Eb2N1bWVudD4=
+      doc_root_base64: PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0ndXRmLTgnPz4KPG9mZDpEb2N1bWVudCB4bWxuczpvZmQ9Imh0dHA6Ly93d3cub2Zkc3BlYy5vcmcvMjAxNiI+PG9mZDpDb21tb25EYXRhPjxvZmQ6TWF4VW5pdElEPjk8L29mZDpNYXhVbml0SUQ+PG9mZDpQYWdlQXJlYT48b2ZkOlBoeXNpY2FsQm94PjAgMCAyMTAgMjk3PC9vZmQ6UGh5c2ljYWxCb3g+PC9vZmQ6UGFnZUFyZWE+PG9mZDpEb2N1bWVudFJlcz4vRG9jXzAvRG9jdW1lbnRSZXMueG1sPC9vZmQ6RG9jdW1lbnRSZXM+PC9vZmQ6Q29tbW9uRGF0YT48b2ZkOlBhZ2VzPjxvZmQ6UGFnZSBJRD0iMSIgQmFzZUxvYz0iL0RvY18wL1BhZ2VzL1BhZ2VfMC9Db250ZW50LnhtbCIgLz48b2ZkOlBhZ2UgSUQ9IjIiIEJhc2VMb2M9Ii9Eb2NfMC9QYWdlcy9QYWdlXzEvQ29udGVudC54bWwiIC8+PC9vZmQ6UGFnZXM+PC9vZmQ6RG9jdW1lbnQ+
       files:
-        - id: file-2
+        - id: v2-file-1
+          path: Versions/Files/version-2.xml
+        - id: v2-file-2
+          path: DocumentRes.xml
+        - id: v2-file-3
           path: Pages/Page_0/Content.xml
-        - id: file-3
+        - id: v2-file-4
           path: Pages/Page_1/Content.xml
 pages:
   - items:
