@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode"
 )
 
 // CommandType 定义路径命令类型。
@@ -115,25 +116,44 @@ func (t pathTokens) get(i int) string {
 func splitPathTokens(data string) pathTokens {
 	for i := 0; i < len(data); i++ {
 		if data[i] >= 0x80 {
-			return pathTokens{data: data, fields: strings.Fields(data)}
+			return pathTokens{data: data, fields: strings.FieldsFunc(data, func(r rune) bool {
+				return unicode.IsSpace(r) || r == ','
+			})}
 		}
 	}
 	idx := make([]int32, 0, 16)
 	i := 0
 	for i < len(data) {
-		for i < len(data) && (data[i] == ' ' || data[i] == '\t' || data[i] == '\v' || data[i] == '\f' || data[i] == '\r' || data[i] == '\n') {
+		for i < len(data) && isPathSeparator(data[i]) {
 			i++
 		}
 		if i >= len(data) {
 			break
 		}
 		start := i
-		for i < len(data) && !(data[i] == ' ' || data[i] == '\t' || data[i] == '\v' || data[i] == '\f' || data[i] == '\r' || data[i] == '\n') {
+		if isPathCommand(data[i]) {
 			i++
+		} else {
+			for i < len(data) && !isPathSeparator(data[i]) && !isPathCommand(data[i]) {
+				i++
+			}
 		}
 		idx = append(idx, int32(start), int32(i))
 	}
 	return pathTokens{data: data, idx: idx}
+}
+
+func isPathSeparator(value byte) bool {
+	return value == ',' || value == ' ' || value == '\t' || value == '\v' || value == '\f' || value == '\r' || value == '\n'
+}
+
+func isPathCommand(value byte) bool {
+	switch value {
+	case 'M', 'S', 'L', 'Q', 'B', 'A', 'C':
+		return true
+	default:
+		return false
+	}
 }
 
 // parsePathData 将路径字符串解析为 SVGPath。

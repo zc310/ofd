@@ -46,4 +46,10 @@ func TestSplitPathTokensMatchesFields(t *testing.T) {
 	if _, err := ParsePathData("M 10 20 30 40 50 60 C"); err != nil {
 		t.Fatalf("implicit coords parse failed: %v", err)
 	}
+	if got := splitPathTokens("M 0 0,L 1 1,C"); got.len() != 7 || got.get(3) != "L" {
+		t.Fatalf("comma-separated tokens = %q, want command tokens", got.data)
+	}
+	if _, err := ParsePathData("M 3,3 L 57,3 L 57,21 L 3,21 C"); err != nil {
+		t.Fatalf("comma-separated coords parse failed: %v", err)
+	}
 }
