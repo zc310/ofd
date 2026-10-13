@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"io"
 	"math"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -918,10 +920,87 @@ func TestCreateDocumentVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	if ofd.Documents[0].GetVersion("version-1") == nil || ofd.Documents[0].GetVersion("version-1").DocRoot.String() != "Files/version-document.xml" {
+	if ofd.Documents[0].GetVersion("version-1") == nil || ofd.Documents[0].GetVersion("version-1").DocRoot.String() != "/Doc_0/Versions/Files/version-document.xml" {
 		t.Fatalf("文档版本未正确解析")
 	}
 	checkGeneratedPackage(t, data)
+}
+
+// GB/T 33190—2016 §7.3、§19.2：版本引用以 / 开头，从包根目录解析。
+func TestCreateVersionReferencesUsePackageAbsolutePaths(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		customRoot bool
+	}{{name: "main_root"}, {name: "custom_root", customRoot: true}} {
+		t.Run(test.name, func(t *testing.T) {
+			version := DocumentVersion{
+				ID: "v1", Index: 0, Version: "1.0",
+				Files: []VersionFile{
+					{ID: "document", Path: "Document.xml"},
+					{ID: "page", Path: "Pages/Page_0/Content.xml"},
+				},
+			}
+			if test.customRoot {
+				version.DocRootName = "v1.xml"
+				version.DocRoot = []byte(`<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016"><ofd:CommonData><ofd:MaxUnitID>1</ofd:MaxUnitID><ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea></ofd:CommonData><ofd:Pages><ofd:Page ID="1" BaseLoc="../../Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>`)
+				version.Files = append(version.Files, VersionFile{ID: "root", Path: "Versions/Files/v1.xml"})
+			}
+			data, err := Marshal(Document{ID: "version-path-test", Versions: []DocumentVersion{version}, Pages: []Page{{}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries := make(map[string]bool)
+			var description models.DocVersion
+			var ofd models.OFD
+			const descriptionPath = "Doc_0/Versions/DocVersion_v1.xml"
+			for _, file := range archive.File {
+				entries[file.Name] = true
+				if file.Name == descriptionPath || file.Name == "OFD.xml" {
+					reader, err := file.Open()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if file.Name == descriptionPath {
+						err = xml.NewDecoder(reader).Decode(&description)
+					} else {
+						err = xml.NewDecoder(reader).Decode(&ofd)
+					}
+					_ = reader.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if len(ofd.DocBodies) != 1 || ofd.DocBodies[0].Versions == nil || len(ofd.DocBodies[0].Versions.VersionList) != 1 {
+				t.Fatal("OFD.xml omitted the version list")
+			}
+			if location := ofd.DocBodies[0].Versions.VersionList[0].BaseLoc.String(); location != "/"+descriptionPath {
+				t.Errorf("version BaseLoc = %q, want package absolute path", location)
+			}
+			rootTarget := "Doc_0/Document.xml"
+			if test.customRoot {
+				rootTarget = "Doc_0/Versions/Files/v1.xml"
+			}
+			if description.DocRoot.String() != "/"+rootTarget || !entries[rootTarget] {
+				t.Errorf("version DocRoot = %q, want existing entry /%s", description.DocRoot, rootTarget)
+			}
+			if len(description.FileList.Files) != len(version.Files) {
+				t.Fatal("version description omitted file entries")
+			}
+			for index, file := range description.FileList.Files {
+				target := strings.TrimPrefix(file.Path.Resolve(models.StLoc(path.Dir(descriptionPath))).String(), "/")
+				want := "Doc_0/" + version.Files[index].Path
+				if file.Path.String() != "/"+want || target != want || !entries[target] {
+					t.Errorf("File %q resolves to %q, want existing entry %q", file.Path, target, want)
+				}
+			}
+			checkGeneratedPackage(t, data)
+		})
+	}
 }
 
 func TestCreateRejectsVersionRootNameWithoutRootData(t *testing.T) {

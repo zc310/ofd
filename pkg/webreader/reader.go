@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
-	"regexp"
 	"sync"
 
 	"github.com/zc310/ofd/internal/parser"
@@ -142,8 +141,6 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	r.search = newSearchCache(len(r.pages))
 	return r, nil
 }
-
-var versionPagePattern = regexp.MustCompile(`(?i)(?:^|/)page_(\d+)(?:/|$)`)
 
 // PageMediaActions 返回进入页面（PO）和打开文档（DO）时要执行的声音、影片动作。
 // 页面动作挂在对应页；文档级 DO、PO 动作挂在该文档体的第一页，Page 为 -1 表示没有页面。

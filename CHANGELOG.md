@@ -11,6 +11,15 @@
 
 ## 未发布
 
+- 修复 `pkg/creator` 多版本文件清单的路径基准问题，版本 `BaseLoc`、文件清单及
+  `DocRoot` 统一输出 GB/T 33190—2016 §7.3 允许的包内绝对路径。
+  修复校验器漏检 `DocVersion` 的入口和文件引用；多版本示例按 §19.2 补齐入口及
+  资源依赖，使用版本序号 `1、2` 和包内绝对路径，采用官方及第三方阅读器复测可显示的表达。
+
+- Web 阅读器的版本页面映射改为匹配实际文件路径，修复从 `Page_N` 目录名推断页码
+  导致历史页面或资源被误认成当前页面的问题；没有可显示页面的版本禁用筛选操作，
+  避免点击后清空正文。完整的独立历史版本加载仍未实现。
+
 - `cmd/ofd-converter` 新增 XPS 输入支持：通过系统 `xpstopdf` 将 XPS 转为 PDF，支持直接输出 PDF 或继续转换为 OFD；可用 `--xpstopdf` 或 `OFD_XPSTOPDF` 指定工具路径。
 - `cmd/ofd-converter` 新增 `--pdf-max-operations`，可单独调整 PDF 导入的处理量预算；默认仍为 10,000,000。
 - `ofd-server` 接入 XPS 输入并支持 `xps → ofd`：服务端链接 XPS 导入器、将 XPS 任务分配到 heavy 通道，并支持通过 `xpstopdf_path` 与 `pdf_max_operations` 配置外部工具和 PDF 处理量预算。

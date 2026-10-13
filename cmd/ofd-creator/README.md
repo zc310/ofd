@@ -519,6 +519,14 @@ pages:
 
 文档级 `actions`、`bookmarks`、`outlines`、`attachments`、`extensions`、`signatures` 和 `versions` 也可以直接在 `document` 下声明。签名值和 `seal_file_base64` 使用 Base64 字符串，附件、签名文件和版本根文件使用资源相对路径。
 
+多版本示例见 `examples/versions.yaml`。按 GB/T 33190—2016 §19.2，`versions[].version`
+表示适用的 OFD 格式版本（如 `1.0`）；`files` 应列出该版本入口、页面及资源依赖。
+`files[].path` 输入相对于 OFD 文档目录 `Doc_0`，creator 写入版本描述时转换为
+`/Doc_0/...` 包内绝对路径；版本的 `BaseLoc` 和 `DocRoot` 也使用包内绝对路径。
+`doc_root_base64` 中的版本入口 XML 保留原内容，建议使用包内绝对路径；若使用相对路径，
+则从 `Doc_0/Versions/Files` 解析。字体等资源必须由该入口或页面明确引用。
+示例采用版本序号 `1、2` 和包内绝对路径，此组合的复测文件已在官方及第三方阅读器中确认可显示。
+
 文档元数据还支持 `creation_date`、`mod_date`、`keywords`、`custom_data`、`cover`、`area`、`default_cs`、`permissions` 和 `preferences`；页面支持 `area`、`layer_type`、`actions`、页面专属 `resources` 以及裁剪区域 `clips`。
 
 页面的 `items` 与 `layers` 互斥；页面资源的 `images` 与原始 `file`、`data_base64`、`files` 互斥。

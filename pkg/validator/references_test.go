@@ -95,6 +95,65 @@ func TestPackageReferencesKeepsReferencedFontsAndMedia(t *testing.T) {
 	t.Logf("%d 个非 XML 条目计入可达集合", leaves)
 }
 
+// GB/T 33190—2016 §19.2：版本描述根节点是 DocVersion，需跟踪 File 和 DocRoot。
+func TestDocVersionReferencesCoverFileListAndRoot(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		missing string
+	}{
+		{name: "complete"},
+		{name: "missing_file", missing: "Doc_0/Res/history.bin"},
+		{name: "missing_root", missing: "Doc_0/Versions/Files/v1.xml"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			entries := map[string]string{
+				"OFD.xml":                        `<ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><ofd:DocBody><ofd:DocInfo><ofd:DocID>versions</ofd:DocID></ofd:DocInfo><ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot><ofd:Versions><ofd:Version ID="v1" Index="0" Current="true" BaseLoc="Doc_0/Versions/v1.xml"/></ofd:Versions></ofd:DocBody></ofd:OFD>`,
+				"Doc_0/Document.xml":             `<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016"><ofd:CommonData><ofd:MaxUnitID>1</ofd:MaxUnitID><ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea></ofd:CommonData><ofd:Pages><ofd:Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>`,
+				"Doc_0/Versions/v1.xml":          `<ofd:DocVersion xmlns:ofd="http://www.ofdspec.org/2016" ID="v1" Version="1.0"><ofd:FileList><ofd:File ID="root">Files/v1.xml</ofd:File><ofd:File ID="page">/Doc_0/Pages/Page_0/Content.xml</ofd:File><ofd:File ID="history">../Res/history.bin</ofd:File></ofd:FileList><ofd:DocRoot>Files/v1.xml</ofd:DocRoot></ofd:DocVersion>`,
+				"Doc_0/Versions/Files/v1.xml":    `<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016"><ofd:CommonData><ofd:MaxUnitID>1</ofd:MaxUnitID><ofd:PageArea><ofd:PhysicalBox>0 0 210 297</ofd:PhysicalBox></ofd:PageArea></ofd:CommonData><ofd:Pages><ofd:Page ID="1" BaseLoc="../../Pages/Page_0/Content.xml"/></ofd:Pages></ofd:Document>`,
+				"Doc_0/Pages/Page_0/Content.xml": `<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"/>`,
+				"Doc_0/Res/history.bin":          "version data",
+			}
+			if test.missing != "" {
+				delete(entries, test.missing)
+			}
+			data := makeArchive(t, entries)
+			index, err := PackageReferences(t.Context(), data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			instance, err := New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := instance.ValidateReader(t.Context(), bytes.NewReader(data), "versions.ofd")
+			if test.missing == "" {
+				if !index.Complete() || report.HasErrors() {
+					t.Fatalf("valid version references rejected: index=%+v issues=%+v", index, report.Issues)
+				}
+				for name := range entries {
+					if !index.Reachable[name] {
+						t.Errorf("version dependency %s is not reachable", name)
+					}
+				}
+			} else {
+				if index.Complete() {
+					t.Errorf("missing version dependency %s was ignored", test.missing)
+				}
+				found := false
+				for _, issue := range report.Issues {
+					if issue.Code == "reference.missing" && issue.File == "Doc_0/Versions/v1.xml" {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("missing version reference was not reported: %+v", report.Issues)
+				}
+			}
+		})
+	}
+}
+
 // TestUnreachableListsOrphanFiles 确认无人引用的条目会被列出，且不含目录。
 func TestUnreachableListsOrphanFiles(t *testing.T) {
 	// 用一个带多余条目的包：额外放一个不被任何 XML 引用的文件。

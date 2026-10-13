@@ -9,12 +9,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zip"
 
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -40,8 +42,37 @@ func TestVersionsListsPagesFromFileList(t *testing.T) {
 	if versions[0].ID != "v1" || versions[0].Current || versions[0].Version != "1.0" || len(versions[0].Pages) != 1 || versions[0].Pages[0] != 0 {
 		t.Fatalf("v1 = %+v", versions[0])
 	}
-	if versions[1].ID != "v2" || !versions[1].Current || versions[1].Version != "1.1" || len(versions[1].Pages) != 2 || versions[1].Pages[1] != 1 {
+	if versions[1].ID != "v2" || !versions[1].Current || versions[1].Version != "1.0" || len(versions[1].Pages) != 2 || versions[1].Pages[1] != 1 {
 		t.Fatalf("v2 = %+v", versions[1])
+	}
+}
+
+func TestVersionPagesMatchActualPaths(t *testing.T) {
+	pagePaths := map[string][]int{
+		"/Doc_0/Pages/Page_7/Content.xml": {0},
+		"/Doc_0/Pages/Page_1/Content.xml": {1},
+		"/Doc_0/Pages/cover.xml":          {2},
+	}
+	for _, test := range []struct {
+		name  string
+		files []models.VersionFile
+		want  []int
+	}{
+		{name: "absolute_reordered_page", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "relative_path", files: []models.VersionFile{{Path: "../Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "same_directory_different_version", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_1/Content_1.xml"}}},
+		{name: "different_document", files: []models.VersionFile{{Path: "/Doc_1/Pages/Page_1/Content.xml"}}},
+		{name: "case_sensitive", files: []models.VersionFile{{Path: "/Doc_0/Pages/page_1/Content.xml"}}},
+		{name: "arbitrary_page_name", files: []models.VersionFile{{Path: "../Pages/cover.xml"}}, want: []int{2}},
+		{name: "resource_in_page_directory", files: []models.VersionFile{{Path: "../Pages/Page_1/PageRes.xml"}}},
+		{name: "sort_and_deduplicate", files: []models.VersionFile{{Path: "../Pages/Page_1/Content.xml"}, {Path: "../Pages/Page_7/Content.xml"}, {Path: "/Doc_0/Pages/Page_1/Content.xml"}}, want: []int{0, 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := versionPages(pagePaths, "/Doc_0/Versions", test.files)
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("version pages = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
 

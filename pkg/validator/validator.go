@@ -778,7 +778,7 @@ func collectReferences(doc *xmlDocument) []fileReference {
 			case "Reference":
 				addWithBase(node, doc.file.name, node.AttrValue("FileRef"), "", false)
 			}
-		case "Version":
+		case "DocVersion":
 			switch local {
 			case "File":
 				add(node, node.StringValue(), "", false)

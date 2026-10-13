@@ -2,10 +2,7 @@ package webreader
 
 import (
 	"errors"
-	"path"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/zc310/ofd/internal/models"
@@ -21,7 +18,7 @@ type VersionInfo struct {
 	Index int
 	// Current 表示该版本是否为当前版本。
 	Current bool
-	// Version 是版本号。
+	// Version 是该版本适用的 OFD 格式版本。
 	Version string
 	// Name 是版本名称。
 	Name string
@@ -388,6 +385,19 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 		if body.Versions == nil {
 			continue
 		}
+		pageIndexes := make(map[models.StID]int)
+		for index, ref := range r.pages {
+			if ref.fontScope == scope {
+				pageIndexes[ref.page.ID] = index
+			}
+		}
+		pagePaths := make(map[string][]int)
+		for _, page := range document.Document.Pages.Pages {
+			if index, ok := pageIndexes[page.ID]; ok {
+				location := page.BaseLoc.Resolve(document.BaseLoc.Resolve("/")).String()
+				pagePaths[location] = append(pagePaths[location], index)
+			}
+		}
 		for _, version := range body.Versions.VersionList {
 			info := VersionInfo{Scope: scope, ID: version.ID, Index: version.Index, Current: version.Current}
 			if loaded := document.GetVersion(version.ID); loaded != nil {
@@ -400,7 +410,7 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 				if loaded.CreationDate != nil && !loaded.CreationDate.IsZero() {
 					info.CreationDate = loaded.CreationDate.Format("2006-01-02")
 				}
-				info.Pages = versionPages(r.pages, scope, loaded.FileList.Files)
+				info.Pages = versionPages(pagePaths, version.BaseLoc.Resolve("/").Dir(), loaded.FileList.Files)
 			}
 			infos = append(infos, info)
 		}
@@ -408,35 +418,18 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 	return infos, nil
 }
 
-func versionPages(pages []pageRef, scope int, files []models.VersionFile) []int {
-	start := 0
-	count := 0
-	for _, ref := range pages {
-		if ref.fontScope < scope {
-			start++
-			continue
-		}
-		if ref.fontScope == scope {
-			count++
-		}
-	}
+// GB/T 33190—2016 §7.3、§19.2：解析 File 的实际路径，不能用目录名推断页码。
+func versionPages(pagePaths map[string][]int, base models.StLoc, files []models.VersionFile) []int {
 	seen := map[int]bool{}
 	result := make([]int, 0)
 	for _, file := range files {
-		match := versionPagePattern.FindStringSubmatch(strings.ReplaceAll(file.Path.Clean().String(), "\\", "/"))
-		if match == nil {
-			base := path.Base(file.Path.Clean().String())
-			match = versionPagePattern.FindStringSubmatch(base)
+		location := file.Path.Resolve(base).String()
+		for _, index := range pagePaths[location] {
+			if !seen[index] {
+				seen[index] = true
+				result = append(result, index)
+			}
 		}
-		if match == nil {
-			continue
-		}
-		local, err := strconv.Atoi(match[1])
-		if err != nil || local < 0 || local >= count || seen[local] {
-			continue
-		}
-		seen[local] = true
-		result = append(result, start+local)
 	}
 	sort.Ints(result)
 	return result

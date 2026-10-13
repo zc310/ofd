@@ -288,7 +288,7 @@ type DocumentVersion struct {
 	Index int
 	// Current 指定该版本是否为当前版本。
 	Current bool
-	// Version 是版本号或版本名称。
+	// Version 是该版本适用的 OFD 格式版本，如 "1.0"。
 	Version string
 	// Name 是版本显示名称。
 	Name string
@@ -306,7 +306,7 @@ type DocumentVersion struct {
 type VersionFile struct {
 	// ID 是版本文件标识。
 	ID string
-	// Path 是版本文件在包内的路径。
+	// Path 是相对于文档目录（Doc_0）的包内路径。
 	Path string
 }
 
