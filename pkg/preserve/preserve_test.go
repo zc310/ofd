@@ -123,9 +123,9 @@ func TestPreserveRemovesArchiveForbiddenNodes(t *testing.T) {
 		absent string
 		clause string
 	}{
-		{"permissions.ofd", "Permissions", "GB/T 42133 6.2.2 a)"},
-		{"preferences.ofd", "VPreferences", "GB/T 42133 6.2.2 b)"},
-		{"package-extras.ofd", "Extensions", "GB/T 42133 6.2.2 e)"},
+		{"permissions.ofd", "ofd:Permissions", "GB/T 42133 6.2.2 a)"},
+		{"preferences.ofd", "ofd:VPreferences", "GB/T 42133 6.2.2 b)"},
+		{"package-extras.ofd", "ofd:Extensions", "GB/T 42133 6.2.2 e)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -163,17 +163,17 @@ func TestPreserveKeepsNamespaceAndDocument(t *testing.T) {
 	_, after := appliedChanges(t, fixtureOf+"permissions.ofd", Options{DocType: "OFD-A"})
 	got := string(after)
 	for _, want := range []string{
-		`xmlns="` + spec.Namespace + `"`,
-		"<CommonData>",
-		"<Pages>",
+		`xmlns:ofd="` + spec.Namespace + `"`,
+		"<ofd:CommonData>",
+		"<ofd:Pages>",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("转换后丢失 %s:\n%s", want, got)
 		}
 	}
-	if strings.Count(before, "<Page ") != strings.Count(got, "<Page ") {
+	if strings.Count(before, "<ofd:Page ") != strings.Count(got, "<ofd:Page ") {
 		t.Errorf("页面数量变化: %d -> %d",
-			strings.Count(before, "<Page "), strings.Count(got, "<Page "))
+			strings.Count(before, "<ofd:Page "), strings.Count(got, "<ofd:Page "))
 	}
 }
 
