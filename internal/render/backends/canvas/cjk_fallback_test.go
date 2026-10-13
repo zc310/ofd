@@ -12,8 +12,10 @@ import (
 
 func textObjectWith(value string) models.TextObject {
 	return models.TextObject{
-		TextCode: []models.TextCode{{Value: value}},
-		Size:     4,
+		CtText: models.CtText{
+			TextCode: []models.TextCode{{Value: value}},
+			Size:     4,
+		},
 	}
 }
 
