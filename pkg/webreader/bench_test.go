@@ -1,6 +1,7 @@
 package webreader
 
 import (
+	"fmt"
 	"image"
 	"os"
 	"path/filepath"
@@ -63,6 +64,71 @@ func BenchmarkOpen(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkMagazineOpenStages 按阶段测量实际性能样例，便于和浏览器打开体验对照。
+func BenchmarkMagazineOpenStages(b *testing.B) {
+	benchmarkOpenStages(b, "other/magazine.ofd")
+}
+
+func BenchmarkGBT33190OpenStages(b *testing.B) {
+	benchmarkOpenStages(b, "other/GBT_33190-2016.ofd")
+}
+
+func benchmarkOpenStages(b *testing.B, filename string) {
+	data := benchFile(b, filename)
+	b.Run("Open", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r, err := Open(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := r.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("RenderPage0", func(b *testing.B) {
+		for _, level := range []int{7, 1} {
+			b.Run(fmt.Sprintf("PNGLevel%d", level), func(b *testing.B) {
+				r := benchReader(b, filename)
+				b.ReportAllocs()
+				b.ResetTimer()
+				var outputSize int
+				for i := 0; i < b.N; i++ {
+					data, err := r.RenderPage(0, RenderOptions{
+						DPI: 96, Format: RenderPNG, PNGCompressionLevel: level,
+					})
+					if err != nil {
+						b.Fatal(err)
+					}
+					outputSize = len(data)
+				}
+				b.ReportMetric(float64(outputSize), "bytes/png")
+			})
+		}
+	})
+	b.Run("Text0", func(b *testing.B) {
+		r := benchReader(b, filename)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := r.Text(0); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("EmbeddedFonts", func(b *testing.B) {
+		r := benchReader(b, filename)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := r.Fonts(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 // BenchmarkText 取一页文字。浏览器的文字层、页内查找、复制都走这里。

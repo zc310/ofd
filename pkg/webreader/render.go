@@ -16,8 +16,7 @@ import (
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
-	// 注册 canvas 栅格后端与离屏表面工厂，以及系统回退字体工厂。
-	// RenderPage 依赖这些注册，不能因为拆分就丢掉这个空导入。
+	// RenderPage 依赖 canvas 后端注册的矢量表面与栅格后端。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 )
 
@@ -25,11 +24,13 @@ import (
 type RenderFormat string
 
 // RenderOptions 控制页面输出。DPI 控制 PNG、JPG 以及 PDF 中复杂效果的内部栅格化分辨率；
+// PNGCompressionLevel 为 1 到 9 时指定 PNG 压缩级别，0 使用默认级别 7。
 // PDF 页面主体保留文字和矢量内容，SVG 复杂渐变等仍可能包含栅格回退。
 type RenderOptions struct {
-	DPI        float64
-	Background color.Color
-	Format     RenderFormat
+	DPI                 float64
+	Background          color.Color
+	Format              RenderFormat
+	PNGCompressionLevel int
 }
 
 type pageRef struct {
@@ -60,8 +61,8 @@ func (r *Reader) PageCount() int {
 	return len(r.pages)
 }
 
-// Pages 返回所有页面的尺寸快照，尺寸单位为毫米。
-// 优先读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
+// Pages 返回所有页面基于文档默认页面区域的尺寸快照，尺寸单位为毫米。
+// 不读取各页面 XML；页面首次访问时由 Page 按需返回真实尺寸。
 func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -78,10 +79,6 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 			return nil, fmt.Errorf("第 %d 页所属文档为空", index)
 		}
 		box := ref.document.CommonData.PageArea.PhysicalBox
-		pageBox, err := ref.page.PhysicalBoxMetadata()
-		if err == nil && finitePositive(pageBox.Width) && finitePositive(pageBox.Height) {
-			box = pageBox
-		}
 		if !finitePositive(box.Width) || !finitePositive(box.Height) {
 			box.Width = defaultPageWidth
 			box.Height = defaultPageHeight
@@ -92,7 +89,7 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 }
 
 // Page 返回指定页面的真实尺寸信息。
-// 与 Pages 不同，查询单页信息会按需加载该页完整内容。
+// 查询单页信息会按需加载该页完整内容，并返回页面自有尺寸。
 func (r *Reader) Page(index int) (PageInfo, error) {
 	if r == nil {
 		return PageInfo{}, errors.New("文档引擎为空")
@@ -179,6 +176,13 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if format != RenderPNG && format != RenderSVG && format != RenderJPG {
 		return nil, fmt.Errorf("不支持的页面输出格式: %q", format)
 	}
+	pngCompressionLevel := options.PNGCompressionLevel
+	if pngCompressionLevel == 0 {
+		pngCompressionLevel = 7
+	}
+	if format == RenderPNG && (pngCompressionLevel < 1 || pngCompressionLevel > 9) {
+		return nil, fmt.Errorf("PNG 压缩级别必须在 1 到 9 之间")
+	}
 
 	ref := r.pages[index]
 	lease, err := ref.page.AcquireLease()
@@ -232,7 +236,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
-	if err := media.EncodePNGLevel(output, rendered, 7); err != nil {
+	if err := media.EncodePNGLevel(output, rendered, pngCompressionLevel); err != nil {
 		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
 	}
 	return output.Bytes(), nil

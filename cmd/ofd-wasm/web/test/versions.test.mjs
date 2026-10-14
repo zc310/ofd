@@ -13,11 +13,11 @@ function baseState() {
     calls: [], builds: 0, clears: 0,
     engine: { selectVersion: async (scope, id) => {
       state.calls.push([scope, id]);
-      return { pages: id ? [{ index: 0, width: 99 }] : [{ index: 0 }, { index: 1 }], fonts: [id] };
+      return { pages: id ? [{ index: 0, width: 99 }] : [{ index: 0 }, { index: 1 }] };
     } },
     clearDocumentView: () => { state.clears++; },
     clearInjectedFonts: () => { state.fontsCleared = true; },
-    injectFonts: async fonts => { state.fonts = fonts; },
+    loadEmbeddedFonts: generation => { state.fontLoadGeneration = generation; },
     saveReadingPosition: () => {}, restorePageRotation: () => {},
     readReadingPositions: () => ({}), readSidebarScroll: () => ({}), sidebarScroll: {},
     renderVersions: () => {}, buildPages: () => { state.builds++; },
@@ -43,7 +43,7 @@ suite.group('独立历史页面无需出现在主文档页面清单中');
   await state.switchVersion(item);
   suite.check(state.calls[0][1] === 'v1' && state.pageInfos.length === 1 && state.pageInfos[0].width === 99, '加载历史页面尺寸');
   suite.check(state.selectedVersionID === 'v1' && state.current === 0, '记录版本并从首页阅读');
-  suite.check(state.fontsCleared && state.fonts[0] === 'v1' && state.clears === 1, '替换字体并清理旧视图');
+  suite.check(state.fontsCleared && state.fontLoadGeneration === state.documentGeneration && state.clears === 1, '替换字体并清理旧视图');
   suite.check(state.outlineReloaded && state.linksReloaded, '重新读取导航和动作');
   suite.check(state.currentDocumentKey === 'doc:version:0:v1', '阅读记录按版本隔离');
   state.readReadingPositions = () => ({ doc: { page: 1 } });
@@ -80,7 +80,7 @@ suite.group('切换期间的新文档使旧响应失效');
   const pending = state.switchVersion({ scope: 0, id: 'v1' });
   suite.check(!await state.switchVersion({ scope: 0, id: 'v2' }), '切换期间不重复发起请求');
   state.documentGeneration++;
-  resolve({ pages: [], fonts: [] });
+  resolve({ pages: [] });
   await pending;
   suite.check(state.selectedVersionID === '' && state.builds === 0 && !state.fontsCleared, '旧响应不覆盖新文档');
 }

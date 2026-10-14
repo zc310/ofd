@@ -121,6 +121,10 @@ class OFDWorkerClient {
     return this.request('info');
   }
 
+  embeddedFonts() {
+    return this.request('embeddedFonts');
+  }
+
   outline() {
     return this.request('outline');
   }
@@ -171,6 +175,14 @@ class OFDWorkerClient {
 
   pageLinks() {
     return this.request('pageLinks');
+  }
+
+  pageLinksForPage(index) {
+    return this.request('pageLinksForPage', { index });
+  }
+
+  pageMediaActionsForPage(index) {
+    return this.request('pageMediaActionsForPage', { index });
   }
 
   pageMediaActions() {
@@ -406,7 +418,6 @@ const showPagePill = document.querySelector('#show-page-pill');
 const pagePill = document.querySelector('#page-pill');
 const pillHide = document.querySelector('#pill-hide');
 const darkReading = document.querySelector('#dark-reading');
-const clarityPrioritySelect = document.querySelector('#clarity-priority');
 const localFontsSelect = document.querySelector('#local-fonts');
 const renderFormatSelect = document.querySelector('#render-format');
 const documentBackground = document.querySelector('#document-background');
@@ -509,6 +520,9 @@ const remoteFileMaxBytes = 256 << 20;
 const readingPositionStorageKey = 'ofd-reading-positions';
 const pageRequests = new Map();
 const pageCardRequests = new Map();
+const pageMetadataTimers = new Map();
+const pageRenderTimers = new Map();
+const pageTextTimers = new Map();
 const thumbnailRequests = new Map();
 const thumbnailBatchQueue = new Map();
 let thumbnailBatchTimer;
@@ -567,7 +581,6 @@ let zoomGeneration = 0;
 const thumbnailsStorageKey = 'ofd-show-thumbnails';
 const renderFormatStorageKey = 'ofd-render-format';
 const thumbnailRenderFormat = 'png';
-const clarityPriorityStorageKey = 'ofd-clarity-priority';
 let thumbnailsVisible = (() => {
   try {
     return localStorage.getItem(thumbnailsStorageKey) !== 'false';
@@ -657,13 +670,6 @@ let renderFormat = (() => {
     return ['png', 'jpg', 'svg'].includes(value) ? value : 'png';
   } catch (_) {
     return 'png';
-  }
-})();
-let clarityPriority = (() => {
-  try {
-    return localStorage.getItem(clarityPriorityStorageKey) === 'true';
-  } catch (_) {
-    return false;
   }
 })();
 let textLayerVisible = true;
@@ -1262,7 +1268,9 @@ function mountPageSpread(position) {
     pageCards[index] = card;
     if (textCache.has(index)) buildTextLayer(index);
     resizeObserver?.observe(card);
-    loadPage(index);
+    schedulePageRender(index, index === current ? 0 : 300);
+    schedulePageText(index, index === current ? 1000 : 1400);
+    schedulePageMetadata(index);
     applyPageLinks(index);
   });
   applyPageWidthToSpread(spread);
@@ -1288,6 +1296,11 @@ function unmountPageSpread(position) {
   }
   spread.pages.forEach(index => {
     if (index >= 0) {
+      const textTimer = pageTextTimers.get(index);
+      if (textTimer) {
+        clearTimeout(textTimer);
+        pageTextTimers.delete(index);
+      }
       const card = pageCards[index];
       cancelPageRequest(index, card);
       cancelTextRequest(index, card);
@@ -1366,7 +1379,7 @@ function updatePageVirtualWindow(updateCurrent = true) {
         if (image && !card.classList.contains('render-error')) {
           if (!pageImageIsReady(image)) card.classList.add('loading');
           if ((image.hidden || !image.src || imageFailed) && !pageCardRequests.has(card)) {
-            loadPage(index);
+            schedulePageRender(index, index === current ? 0 : 300);
           }
         }
       });
@@ -2123,6 +2136,15 @@ async function injectFonts(fonts, generation) {
   return loaded.size;
 }
 
+async function loadEmbeddedFonts(generation) {
+  try {
+    const fonts = await engine.embeddedFonts();
+    if (generation === documentGeneration) await injectFonts(fonts, generation);
+  } catch (_) {
+    // 内嵌字体注入失败时，页面仍可用文档字体和回退字体显示。
+  }
+}
+
 async function loadCachedFont(url) {
   let cache = null;
   if (typeof caches !== 'undefined') {
@@ -2195,6 +2217,28 @@ async function preloadFallbackFonts() {
   }
   // 打开文档前等待默认字体，确保首屏渲染不依赖浏览器本地字体。
   return loaded;
+}
+
+// registerFallbackFontsInBackground 不让远程回退字体阻塞文档首屏。字体到达后，WASM
+// 会刷新当前 Reader 的文字/渲染缓存，已显示的页面随后按新字体重绘。
+async function registerFallbackFontsInBackground(generation) {
+  if (fallbackFontRegistration) return fallbackFontRegistration;
+  fallbackFontRegistration = (async () => {
+    const fallbackFonts = await preloadFallbackFonts();
+    await Promise.all(fallbackFonts.map(font => engine.addFallbackFont(
+      font.data,
+      font.family,
+      font.weight,
+      false,
+    )));
+  })().catch(error => {
+    if (generation === documentGeneration) {
+      setStatus(`回退字体稍后加载：${error.message}`);
+    }
+  }).finally(() => {
+    fallbackFontRegistration = undefined;
+  });
+  return fallbackFontRegistration;
 }
 
 // 系统字体：仅在用户显式勾选时按需读取，且只读取文档声明但未嵌入的字体族所
@@ -2622,7 +2666,6 @@ function updateNavigation() {
   infoToggle.disabled = pageInfos.length === 0;
   pageLayoutSelect.disabled = documentActionBusy || pageInfos.length === 0;
   renderFormatSelect.disabled = documentActionBusy || pageInfos.length === 0;
-  clarityPrioritySelect.disabled = documentActionBusy || pageInfos.length === 0 || !imageRenderFormat();
   if (localFontsSelect) {
     localFontsSelect.disabled = documentActionBusy || pageInfos.length === 0 || !localFontsSupported();
   }
@@ -3205,7 +3248,7 @@ function loadText(index, pinned = false) {
 }
 
 function pageDPI() {
-  return imageRenderFormat() && clarityPriority
+  return imageRenderFormat()
     ? Math.max(96, Math.min(300, Math.round(96 * zoom)))
     : 96;
 }
@@ -3338,8 +3381,8 @@ function loadPage(index) {
       // WASM 返回 PNG 数据不等于浏览器已经完成图片解码；加载遮罩由
       // 图片的 load 事件移除，避免滚动期间出现短暂空白页。
       void loadActualPageInfo(index);
-      // 页面离开虚拟窗口后不再为已卸载的页面读取文字层。
-      return isCurrentCardRequest() ? loadText(index) : undefined;
+      // 文字层由 schedulePageText 延迟加载，不阻塞后续页面图片渲染。
+      return undefined;
     })
     .catch(error => {
       if (isCurrentCardRequest()) {
@@ -3765,6 +3808,12 @@ async function loadFile() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  pageTextTimers.forEach(timer => clearTimeout(timer));
+  pageTextTimers.clear();
+  pageRenderTimers.forEach(timer => clearTimeout(timer));
+  pageRenderTimers.clear();
+  pageMetadataTimers.forEach(timer => clearTimeout(timer));
+  pageMetadataTimers.clear();
   pageCache.clear();
   thumbnailCache.clear();
   cancelRequests(pageRequests);
@@ -3834,6 +3883,31 @@ function clearDocumentView() {
   if (activeSidebarTab === 'signatures') signaturesElement?.replaceChildren();
 }
 
+function schedulePageRender(index, delay) {
+  if (!Number.isInteger(index) || index < 0 || pageCardRequests.has(pageCards[index])) return;
+  if (delay <= 0) {
+    loadPage(index);
+    return;
+  }
+  if (pageRenderTimers.has(index)) return;
+  const generation = documentGeneration;
+  const timer = setTimeout(() => {
+    pageRenderTimers.delete(index);
+    if (generation === documentGeneration && pageCards[index]) loadPage(index);
+  }, delay);
+  pageRenderTimers.set(index, timer);
+}
+
+function schedulePageText(index, delay) {
+  if (!Number.isInteger(index) || index < 0 || pageTextTimers.has(index)) return;
+  const generation = documentGeneration;
+  const timer = setTimeout(() => {
+    pageTextTimers.delete(index);
+    if (generation === documentGeneration && pageCards[index]) void loadText(index);
+  }, delay);
+  pageTextTimers.set(index, timer);
+}
+
 async function openSelectedFile(selected, options = {}) {
   if (!selected) return false;
   startupProgressActive = false;
@@ -3879,29 +3953,10 @@ async function openSelectedFile(selected, options = {}) {
     if (generation !== documentGeneration) return false;
     const data = await selected.arrayBuffer();
     if (generation !== documentGeneration) return false;
-    try {
-      const fallbackFonts = await preloadFallbackFonts();
-      if (!fallbackFontRegistration) {
-        fallbackFontRegistration = Promise.all(fallbackFonts.map(font => engine.addFallbackFont(
-          font.data,
-          font.family,
-          font.weight,
-          false,
-        ))).catch(error => {
-            fallbackFontRegistration = undefined;
-            throw error;
-          });
-      }
-      await fallbackFontRegistration;
-    } catch (error) {
-      throw new Error(`默认中文字体不可用：${error.message}`);
-    }
-    if (generation !== documentGeneration) return false;
     openRequest = engine.open(data, openDocumentOptions);
     const result = await openRequest;
     if (generation !== documentGeneration) return false;
-    await injectFonts(result.fonts, generation);
-    if (generation !== documentGeneration) return false;
+    void registerFallbackFontsInBackground(generation);
     const pageCount = Number.isInteger(result.pageCount) && result.pageCount >= 0
       ? result.pageCount
       : (result.pages?.length || 0);
@@ -3924,6 +3979,7 @@ async function openSelectedFile(selected, options = {}) {
     if (generation !== documentGeneration) return false;
     restorePageRotation();
     buildPages();
+    void loadEmbeddedFonts(generation);
     if (activeSidebarTab === 'fonts') renderFonts();
     if (activeSidebarTab === 'versions') renderVersions();
     if (activeSidebarTab === 'attachments') renderAttachments();
@@ -5967,10 +6023,9 @@ async function switchDocumentVersion(item) {
     current = Number.isInteger(savedPage) ? Math.max(0, Math.min(pageInfos.length - 1, savedPage)) : 0;
     sidebarScroll = readSidebarScroll();
     clearInjectedFonts();
-    await injectFonts(result.fonts, generation);
-    if (generation !== documentGeneration) return false;
     restorePageRotation();
     buildPages();
+    void loadEmbeddedFonts(generation);
     setStatus(restoreMain ? '已恢复主文档' : `已切换到版本：${item.name || item.id}`);
     return true;
   } catch (error) {
@@ -6703,54 +6758,63 @@ function scrollToDestinationX(index, targetX) {
 function fetchPageLinks(generation) {
   linkRequest?.cancel();
   pageLinks = new Map();
-  const addLink = item => {
-    if (!item || typeof item !== 'object') return;
-    const boundary = item.boundary;
-    if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
-        !(boundary.width > 0) || !(boundary.height > 0)) return;
-    const external = typeof item.uri === 'string' && item.uri !== '';
-    const target = Number(item.target_page);
-    const internal = Number.isInteger(target) && target >= 0;
-    const media = item.media_kind === 'sound' || item.media_kind === 'movie';
-    const attachment = typeof item.attachment_id === 'string' && item.attachment_id !== '';
-    if (!external && !internal && !media && !attachment) return;
-    const bucket = pageLinks.get(item.page);
-    if (bucket) bucket.push(item);
-    else pageLinks.set(item.page, [item]);
-  };
-  const collect = list => {
-    if (Array.isArray(list)) list.forEach(addLink);
-  };
-  const annotationsRequest = engine.annotations();
-  const pageLinksRequest = engine.pageLinks();
-  const mediaActionsRequest = engine.pageMediaActions();
   const mediaRequest = engine.media();
   linkRequest = {
     cancel: () => {
-      annotationsRequest.cancel?.();
-      pageLinksRequest.cancel?.();
-      mediaActionsRequest.cancel?.();
       mediaRequest.cancel?.();
     },
   };
   Promise.all([
-    annotationsRequest.catch(() => []),
-    pageLinksRequest.catch(() => []),
-    mediaActionsRequest.catch(() => []),
     mediaRequest.catch(() => []),
-  ]).then(([annotations, pageGraphicLinks, mediaActions, media]) => {
+  ]).then(([media]) => {
     if (generation !== documentGeneration) return;
-    const annotationList = Array.isArray(annotations) ? annotations : [];
-    annotationList.forEach(item => {
-      if (item && item.type === 'Link') addLink(item);
-    });
-    collect(pageGraphicLinks);
-    pageMediaActions = Array.isArray(mediaActions) ? mediaActions : [];
+    pageMediaActions = [];
     mediaCatalog = Array.isArray(media) ? media : [];
-    applyPageLinks();
   }).catch(() => {
     if (generation !== documentGeneration) return;
     pageLinks = new Map();
+  });
+}
+
+function loadPageMediaActions(index) {
+  const generation = documentGeneration;
+  engine.pageMediaActionsForPage(index).then(actions => {
+    if (generation !== documentGeneration || !Array.isArray(actions)) return;
+    pageMediaActions = pageMediaActions.filter(action => Number(action.page) !== index).concat(actions);
+    if (current === index) playPageEntryMedia(index);
+  }).catch(() => undefined);
+}
+
+function schedulePageMetadata(index) {
+  if (pageMetadataTimers.has(index)) return;
+  const generation = documentGeneration;
+  const timer = setTimeout(() => {
+    pageMetadataTimers.delete(index);
+    if (generation !== documentGeneration) return;
+    void loadPageLinks(index);
+    void loadPageMediaActions(index);
+  }, 800);
+  pageMetadataTimers.set(index, timer);
+}
+
+function loadPageLinks(index) {
+  if (!Number.isInteger(index) || index < 0 || pageLinks.has(index)) return;
+  const generation = documentGeneration;
+  const request = engine.pageLinksForPage(index);
+  pageLinks.set(index, null);
+  request.then(links => {
+    if (generation !== documentGeneration) return;
+    const list = Array.isArray(links) ? links : [];
+    list.forEach(link => {
+      const boundary = link?.boundary;
+      if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
+          !(boundary.width > 0) || !(boundary.height > 0)) return;
+      pageLinks.set(index, (pageLinks.get(index) || []).concat(link));
+    });
+    if (!pageLinks.get(index)?.length) pageLinks.set(index, []);
+    applyPageLinks(index);
+  }).catch(() => {
+    if (generation === documentGeneration) pageLinks.set(index, []);
   });
 }
 
@@ -7091,13 +7155,6 @@ function setRenderFormat(value) {
   const changed = renderFormat !== value;
   renderFormat = value;
   renderFormatSelect.value = value;
-  if (!imageRenderFormat()) {
-    clarityPriority = false;
-    clarityPrioritySelect.checked = false;
-    try {
-      localStorage.setItem(clarityPriorityStorageKey, 'false');
-    } catch (_) {}
-  }
   updateNavigation();
   try {
     localStorage.setItem(renderFormatStorageKey, value);
@@ -7117,18 +7174,6 @@ function setRenderFormat(value) {
     const bounds = card.getBoundingClientRect();
     if (bounds.top < window.innerHeight + 800 && bounds.bottom > -800) loadPage(index);
   });
-  scheduleVirtualUpdate();
-}
-
-function setClarityPriority(enabled) {
-  const previousDPI = pageDPI();
-  clarityPriority = imageRenderFormat() && !!enabled;
-  clarityPrioritySelect.checked = clarityPriority;
-  try {
-    localStorage.setItem(clarityPriorityStorageKey, String(clarityPriority));
-  } catch (_) {}
-  if (!pageInfos.length || previousDPI === pageDPI()) return;
-  reloadPageImages();
   scheduleVirtualUpdate();
 }
 
@@ -7197,9 +7242,6 @@ try {
 }
 try {
   setRenderFormat(renderFormat);
-} catch (_) {}
-try {
-  setClarityPriority(clarityPriority);
 } catch (_) {}
 // 恢复系统字体的勾选意向。读取本身要用户手势，无法在加载时完成，因此这里只把
 // 勾选框恢复成用户上次的意愿，真正的读取等他点这个勾选框。不支持该 API 的
@@ -7459,7 +7501,6 @@ documentBackgroundColorPicker.addEventListener('input', () => {
   if (documentBackgroundMode === 'custom') setDocumentBackground('custom', documentBackgroundColorPicker.value);
 });
 pageLayoutSelect.addEventListener('change', () => setPageLayout(pageLayoutSelect.value));
-clarityPrioritySelect.addEventListener('change', () => setClarityPriority(clarityPrioritySelect.checked));
 // 恢复出来的勾选只是"用户想要系统字体"的意向，字体尚未读取（queryLocalFonts
 // 必须在用户手势内发起）。若按常规语义处理，勾选框显示为已勾选时用户点一下会
 // 变成取消勾选，点一下反而把选项关掉。因此这里以是否已生效为准：已生效才响应

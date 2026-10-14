@@ -109,6 +109,8 @@ async function execute(message) {
       return unwrap(self.ofd.gc());
     case 'info':
       return unwrap(self.ofd.info());
+    case 'embeddedFonts':
+      return unwrap(self.ofd.embeddedFonts());
     case 'outline':
       return unwrap(self.ofd.outline());
     case 'customTags':
@@ -141,8 +143,12 @@ async function execute(message) {
       return unwrap(self.ofd.annotations());
     case 'pageLinks':
       return unwrap(self.ofd.pageLinks());
+    case 'pageLinksForPage':
+      return unwrap(self.ofd.pageLinksForPage(message.index));
     case 'pageMediaActions':
       return unwrap(self.ofd.pageMediaActions());
+    case 'pageMediaActionsForPage':
+      return unwrap(self.ofd.pageMediaActionsForPage(message.index));
     case 'signatures':
       return unwrap(self.ofd.signatures());
     case 'signatureCertificate': {

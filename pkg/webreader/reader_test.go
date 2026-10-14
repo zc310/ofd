@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -199,7 +200,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 }
 
-func TestPagesWithIntroDocument(t *testing.T) {
+func TestPagesUsesDocumentSizeAndPageLoadsIntroRealSize(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -221,13 +222,20 @@ func TestPagesWithIntroDocument(t *testing.T) {
 		if page.Index != index {
 			t.Errorf("Pages()[%d].Index = %d, want %d", index, page.Index, index)
 		}
-		if math.Abs(page.Width-320.0001) > 0.0001 || math.Abs(page.Height-240) > 0.0001 {
-			t.Errorf("Pages()[%d] = %+v, want 320.0001 x 240 mm", index, page)
+		if math.Abs(page.Width-210) > 0.0001 || math.Abs(page.Height-297) > 0.0001 {
+			t.Errorf("Pages()[%d] = %+v, want document size 210 x 297 mm", index, page)
 		}
+	}
+	actual, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(actual.Width-320.0001) > 0.0001 || math.Abs(actual.Height-240) > 0.0001 {
+		t.Fatalf("Page(0) = %+v, want 320.0001 x 240 mm", actual)
 	}
 }
 
-func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {
+func TestPagesUsesDocumentSizeAndPageLoadsRealSize(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "GBT_33190-2016.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("GBT_33190-2016.ofd  is unavailable")
@@ -280,13 +288,17 @@ func TestPagesUsesDocumentSizeWhenPageMetadataIsMissing(t *testing.T) {
 	if len(pages) != 2 {
 		t.Fatalf("page count = %d, want 2", len(pages))
 	}
-	if pages[0].Width != 100 || pages[0].Height != 200 {
-		t.Fatalf("Pages()[0] = %+v, want page size 100 x 200", pages[0])
-	}
 	if pages[1].Width != 210 || pages[1].Height != 297 {
 		t.Fatalf("Pages()[1] = %+v, want document size 210 x 297", pages[1])
 	}
+	if pages[0].Width != 210 || pages[0].Height != 297 {
+		t.Fatalf("Pages()[0] = %+v, want document size 210 x 297", pages[0])
+	}
 
+	actual, err := reader.Page(0)
+	if err != nil || actual.Width != 100 || actual.Height != 200 {
+		t.Fatalf("Page(0) = %+v, %v; want page size 100 x 200", actual, err)
+	}
 	if _, err := reader.Page(1); err == nil {
 		t.Fatal("Page(1) should parse the intentionally invalid full page content")
 	}
@@ -605,6 +617,9 @@ func TestRenderPageValidation(t *testing.T) {
 	if _, err := reader.RenderPage(0, RenderOptions{DPI: 601}); err == nil {
 		t.Fatal("excessive DPI was accepted")
 	}
+	if _, err := reader.RenderPage(0, RenderOptions{PNGCompressionLevel: 10}); err == nil {
+		t.Fatal("invalid PNG compression level was accepted")
+	}
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -613,6 +628,40 @@ func TestRenderPageValidation(t *testing.T) {
 	}
 	if _, err := reader.Search(""); err == nil {
 		t.Fatal("closed reader accepted an empty search")
+	}
+}
+
+func TestRenderPagePNGCompressionLevelsAreLossless(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	images := make([]image.Image, 2)
+	for index, level := range []int{1, 7} {
+		encoded, err := reader.RenderPage(0, RenderOptions{DPI: 25.4, PNGCompressionLevel: level})
+		if err != nil {
+			t.Fatal(err)
+		}
+		images[index], err = png.Decode(bytes.NewReader(encoded))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if images[0].Bounds() != images[1].Bounds() {
+		t.Fatalf("bounds differ: level 1 %v, level 7 %v", images[0].Bounds(), images[1].Bounds())
+	}
+	for y := images[0].Bounds().Min.Y; y < images[0].Bounds().Max.Y; y++ {
+		for x := images[0].Bounds().Min.X; x < images[0].Bounds().Max.X; x++ {
+			if a, b := color.NRGBAModel.Convert(images[0].At(x, y)), color.NRGBAModel.Convert(images[1].At(x, y)); a != b {
+				t.Fatalf("pixel (%d,%d) differs: level 1 %v, level 7 %v", x, y, a, b)
+			}
+		}
 	}
 }
 

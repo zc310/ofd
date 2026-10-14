@@ -30,6 +30,14 @@ type adaptiveRasterizer struct {
 	fastImages bool
 }
 
+func (r *adaptiveRasterizer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
+	r.Rasterizer.RenderPath(path, style, matrix)
+}
+
+func (r *adaptiveRasterizer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
+	r.Rasterizer.RenderText(text, matrix)
+}
+
 func (r *adaptiveRasterizer) RenderImage(img image.Image, m canvas.Matrix) {
 	if r.fastImages {
 		if decoded, err := decodedImageOf(img); err == nil {

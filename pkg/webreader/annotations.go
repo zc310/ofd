@@ -557,6 +557,59 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 	return r.metadata.pageLinksVal, r.metadata.pageLinksErr
 }
 
+// PageLinksForPage 返回指定页面正文、模板和注解中的可点击链接。
+// 与 PageLinks 不同，此方法只读取目标页面，适合阅读器按需加载。
+func (r *Reader) PageLinksForPage(index int) ([]PageLink, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	if index < 0 || index >= len(r.pages) {
+		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	return r.computePageLinksForPage(index), nil
+}
+
+// PageMediaActionsForPage 返回指定页面进入时以及文档打开时的媒体动作。
+// 页面级动作只读取目标页面；文档级 DO/PO 动作只在文档首页返回。
+func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	if index < 0 || index >= len(r.pages) {
+		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	ref := r.pages[index]
+	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
+		return nil, nil
+	}
+	actions := make([]PageLink, 0, 3)
+	if pageActions := ref.page.Actions(); pageActions != nil {
+		if media, ok := mediaAction(pageActions.Action, ""); ok {
+			media.Scope, media.Page = ref.fontScope, index
+			actions = append(actions, media)
+		}
+	}
+	if index == firstPageOfScope(r.pages, ref.fontScope) && ref.document.Document.Actions != nil {
+		for _, event := range []models.ActionEvent{models.ActionEventDO, models.ActionEventPO} {
+			if media, ok := mediaAction(ref.document.Document.Actions.Actions, event); ok {
+				media.Scope, media.Page = ref.fontScope, index
+				actions = append(actions, media)
+			}
+		}
+	}
+	return actions, nil
+}
+
 func (r *Reader) computePageLinks() ([]PageLink, error) {
 	pageIndex := make(map[models.StID]int, len(r.pages))
 	for index, ref := range r.pages {
@@ -565,24 +618,58 @@ func (r *Reader) computePageLinks() ([]PageLink, error) {
 		}
 	}
 	links := make([]PageLink, 0)
-	for index, ref := range r.pages {
-		if ref.page == nil || ref.document == nil || ref.document.Document == nil {
-			continue
-		}
-		appendLayerLinks(contentLayers(ref.page), ref.fontScope, index, pageIndex, &links)
-		if index == firstPageOfScope(r.pages, ref.fontScope) {
-			appendDocumentClickLinks(ref, index, pageIndex, &links)
-		}
-		// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
-		for _, tpl := range ref.page.Template() {
-			template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
-			if template == nil || template.Content == nil {
-				continue
-			}
-			appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, &links)
-		}
+	for index := range r.pages {
+		links = append(links, r.computePageLinksForPageWithIndex(index, pageIndex)...)
 	}
 	return links, nil
+}
+
+func (r *Reader) computePageLinksForPage(index int) []PageLink {
+	pageIndex := make(map[models.StID]int, len(r.pages))
+	for page, ref := range r.pages {
+		if ref.page != nil {
+			pageIndex[ref.page.ID] = page
+		}
+	}
+	return r.computePageLinksForPageWithIndex(index, pageIndex)
+}
+
+func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[models.StID]int) []PageLink {
+	ref := r.pages[index]
+	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
+		return nil
+	}
+	links := make([]PageLink, 0)
+	appendLayerLinks(contentLayers(ref.page), ref.fontScope, index, pageIndex, &links)
+	if index == firstPageOfScope(r.pages, ref.fontScope) {
+		appendDocumentClickLinks(ref, index, pageIndex, &links)
+	}
+	// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
+	for _, tpl := range ref.page.Template() {
+		template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
+		if template == nil || template.Content == nil {
+			continue
+		}
+		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, &links)
+	}
+	if annot := ref.document.GetAnnotation(ref.page.ID); annot != nil {
+		for _, item := range annot.Annots {
+			if item == nil || item.Type != models.AnnotTypeLink || item.Appearance == nil || item.Appearance.Boundary == nil {
+				continue
+			}
+			uri, targetPage, dest := annotLinkAction(item, pageIndex)
+			if uri == "" && targetPage < 0 {
+				continue
+			}
+			boundary := item.Appearance.Boundary
+			links = append(links, PageLink{
+				Scope: ref.fontScope, Page: index, ID: item.ID,
+				Boundary: AnnotationBoundary{X: boundary.X, Y: boundary.Y, Width: boundary.Width, Height: boundary.Height},
+				URI:      uri, TargetPage: targetPage, Dest: dest,
+			})
+		}
+	}
+	return links
 }
 
 func firstPageOfScope(pages []pageRef, scope int) int {

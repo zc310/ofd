@@ -51,6 +51,7 @@ func main() {
 	api.Set("removeFallbackFont", js.FuncOf(app.removeFallbackFont))
 	api.Set("close", js.FuncOf(app.close))
 	api.Set("info", js.FuncOf(app.info))
+	api.Set("embeddedFonts", js.FuncOf(app.embeddedFonts))
 	api.Set("outline", js.FuncOf(app.outline))
 	api.Set("customTags", js.FuncOf(app.customTags))
 	api.Set("preferences", js.FuncOf(app.preferences))
@@ -64,7 +65,9 @@ func main() {
 	api.Set("mediaData", js.FuncOf(app.mediaData))
 	api.Set("annotations", js.FuncOf(app.annotations))
 	api.Set("pageLinks", js.FuncOf(app.pageLinks))
+	api.Set("pageLinksForPage", js.FuncOf(app.pageLinksForPage))
 	api.Set("pageMediaActions", js.FuncOf(app.pageMediaActions))
+	api.Set("pageMediaActionsForPage", js.FuncOf(app.pageMediaActionsForPage))
 	api.Set("signatures", js.FuncOf(app.signatures))
 	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
 	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
@@ -120,19 +123,13 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 		_ = reader.Close()
 		return errorValue(err)
 	}
-	fonts, err := reader.Fonts()
-	if err != nil {
-		_ = reader.Close()
-		return errorValue(err)
-	}
-
 	a.mu.Lock()
 	a.reader = reader
 	a.mu.Unlock()
 	return objectValue(map[string]any{
 		"pageCount": len(pages),
 		"pages":     pagesValue(pages),
-		"fonts":     fontsValue(fonts),
+		"fonts":     fontsValue(nil),
 	})
 }
 
@@ -356,6 +353,18 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 	})
 }
 
+func (a *wasmApp) embeddedFonts(_ js.Value, _ []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	fonts, err := reader.Fonts()
+	if err != nil {
+		return errorValue(err)
+	}
+	return fontsValue(fonts)
+}
+
 func (a *wasmApp) outline(_ js.Value, _ []js.Value) any {
 	reader, err := a.currentReader()
 	if err != nil {
@@ -495,11 +504,7 @@ func (a *wasmApp) selectVersion(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	fonts, err := reader.Fonts()
-	if err != nil {
-		return errorValue(err)
-	}
-	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(fonts)})
+	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(nil)})
 }
 
 func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {
@@ -647,6 +652,52 @@ func (a *wasmApp) pageLinks(_ js.Value, _ []js.Value) any {
 	result := js.Global().Get("Array").New(len(links))
 	for index, link := range links {
 		result.SetIndex(index, objectValue(pageLinkValue(link)))
+	}
+	return result
+}
+
+func (a *wasmApp) pageLinksForPage(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 1 {
+		return errorValue(errors.New("ofd.pageLinksForPage 需要页面索引"))
+	}
+	index, err := jsIndex(args[0])
+	if err != nil {
+		return errorValue(err)
+	}
+	links, err := reader.PageLinksForPage(index)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(links))
+	for index, link := range links {
+		result.SetIndex(index, objectValue(pageLinkValue(link)))
+	}
+	return result
+}
+
+func (a *wasmApp) pageMediaActionsForPage(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 1 {
+		return errorValue(errors.New("ofd.pageMediaActionsForPage 需要页面索引"))
+	}
+	index, err := jsIndex(args[0])
+	if err != nil {
+		return errorValue(err)
+	}
+	actions, err := reader.PageMediaActionsForPage(index)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(actions))
+	for index, action := range actions {
+		result.SetIndex(index, objectValue(pageLinkValue(action)))
 	}
 	return result
 }
@@ -1292,7 +1343,10 @@ func renderStreamOptions(args []js.Value) (webreader.RenderOptions, error) {
 }
 
 func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions, error) {
-	options := webreader.RenderOptions{DPI: 72, Background: color.Transparent, Format: webreader.RenderPNG}
+	options := webreader.RenderOptions{
+		DPI: 72, Background: color.Transparent, Format: webreader.RenderPNG,
+		PNGCompressionLevel: 1,
+	}
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
 		return options, nil
 	}
