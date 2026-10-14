@@ -49,7 +49,7 @@
 - 显示或隐藏左侧栏（缩略图、大纲、书签，以及“更多”菜单下的字体、版本、附件、资源、注解和签名）。
 - 显示或隐藏文字层。
 - 开启深色阅读背景。
-- 可选“清晰度优先”：未选中时正文始终按 72 DPI 渲染，缩放使用 CSS 放大；选中后按缩放比例重新渲染以提高图像清晰度。
+- PNG/JPG 正文始终按缩放比例提高渲染 DPI（96–300），放大时会重新栅格化；SVG 保持矢量渲染。
 - 页面渲染格式可选 PNG 位图、JPG 图片或 SVG 矢量，默认使用 PNG；JPG 不支持透明度，透明区域使用白色。
 - 设置文档背景色，支持白色、透明、自定义颜色以及暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝和晴空浅灰主题。
 - 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应页面）。
@@ -232,6 +232,7 @@ ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false) // WASM 生命周期�
 ofd.removeFallbackFont('Noto Sans SC') // 取消该回退字体族，当前文档恢复内嵌/默认字体
 ofd.open(new Uint8Array(await file.arrayBuffer()))
 ofd.info() // 元数据 + fonts 字体清单（不含嵌入数据）
+ofd.embeddedFonts() // 按需读取嵌入字体二进制数据
 ofd.pageCount()
 ofd.pages()
 ofd.pageInfo(0)
@@ -277,8 +278,8 @@ make test-wasm-web
   `@font-face` 的 `font-weight` 必须等于 `axes.wght`（当前 500）。Google Fonts 按 `icon_names` 返回的是该字重的实例，写成 400 会导致浏览器匹配不到该字重而回退字体，整片图标变成空白——这是替换字体时最容易漏的一步。
 - 本地 Material Symbols 字体来源于 Google Material Symbols，遵循 Apache License 2.0；第三方声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - `ofd.pages()` 返回所有页面的页数和尺寸。
-- 页面尺寸优先从每个页面的 `Content.xml` 轻量读取 `Area/PhysicalBox`，不会加载页面内容、资源或字体。
-- 页面没有有效的独立尺寸时，回退到所属文档的 `CommonData.PageArea`；仍无效时回退为 A4。
+- `ofd.pages()` 只使用所属文档的 `CommonData.PageArea`，打开时不扫描各页面 XML；仍无效时回退为 A4。
+- 页面挂载或调用 `ofd.pageInfo(index)` 时才读取页面内容，并以页面自有 `Area/PhysicalBox` 校正尺寸。
 - 多个文档体分别使用各自的页面尺寸。
 - 页面实际展示或调用 `ofd.pageInfo(index)` 时，才按需读取指定页面的完整内容。
 - `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
@@ -287,7 +288,7 @@ make test-wasm-web
 - `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
 - `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, scope, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据；`scope` 是字体所属文档体索引，与 `id` 一起唯一标识一个字体。
 - `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
-- `ofd.open()` 返回的 `fonts` 包含嵌入字体的二进制数据、浏览器字体族名和样式。
+- `ofd.open()` 不读取嵌入字体二进制数据；`ofd.embeddedFonts()` 按需返回嵌入字体数据、浏览器字体族名和样式。网页阅读器在页面开始构建后后台加载字体，不阻塞文档首屏。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
 - `ofd.removeFallbackFont(family)` 取消先前注册的回退字体族：从当前 WASM 实例的回退字体列表移除（后续文档不再沿用），并让已打开文档立即恢复内嵌/默认字体。全局字体注册表不回滚。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
@@ -311,13 +312,15 @@ make test-wasm-web
 ### 文字与错误
 
 - `ofd.text()` 返回的文字对象包含对应的 `scope`、`fontFamily`、`weight`、`bold` 和 `italic`。
-- `ofd.versions()` 返回版本清单，`doc_root` 为版本入口包内路径，`pages` 仅表示与当前视图重合的页面。`ofd.selectVersion(scope, id)` 按入口切换并返回 `{ pageCount, pages, fonts }`；空 `id` 恢复主文档。切换后重新加载字体、页面、导航与资源清单，独立历史入口不继承主入口签章。Worker 对应命令为 `selectVersion`，参数为 `scope` 和 `versionID`。
+- `ofd.versions()` 返回版本清单，`doc_root` 为版本入口包内路径，`pages` 仅表示与当前视图重合的页面。`ofd.selectVersion(scope, id)` 按入口切换并返回 `{ pageCount, pages, fonts }`（`fonts` 为空，不同步读取字体数据）；空 `id` 恢复主文档。切换后页面立即构建，嵌入字体后台加载，独立历史入口不继承主入口签章。Worker 对应命令为 `selectVersion`，参数为 `scope` 和 `versionID`。
 - `ofd.attachments()` 返回附件清单：`{ scope, id, name, format, size, has_size, actual_size, usage, visible, exists }`；`size` 是声明的字节数（`has_size=false` 时无效），`actual_size` 是包内实际字节数（文件缺失或未知时为 0），`visible` 未声明时为 true。
 - `ofd.attachmentData(scope, id, maxBytes)` 读取附件二进制内容（返回可转移的 `ArrayBuffer`）；`maxBytes` 省略时默认 32 MiB，硬上限 128 MiB，超过上限返回错误。
 - `ofd.media()` 返回多媒体资源清单：`{ scope, id, name, type, format, size, exists }`；`type` 通常为 `Image`/`Audio`/`Video`，`name` 是资源文件名。`ofd.mediaData(scope, id, maxBytes)` 读取资源二进制内容，大小限制同附件。
 - `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, uri, target_page, dest, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。`Link` 注解的 `uri` 是外部链接（无则空串），`target_page` 是跳转目标页全局索引（无页面目标为 `-1`），`dest` 为 `{ type, left, top, right, bottom, zoom }`（无位置信息为 `null`）。
 - `ofd.pageLinks()` 返回页面正文图元上的可点击链接清单：`{ scope, page, id, uri, target_page, dest, boundary, attachment_id, attachment_name, media_id, media_kind, operator, repeat, volume, event }`。链接可能定义在页面的模板页上，会叠加到每个使用该模板的页面；承载链接的图元不可见时仍可点击。`media_kind` 为 `sound` 或 `movie` 时表示点击播放声音或影片，`media_id` 对应 `ofd.media()` 的资源 ID，`operator` 为影片的 `Play`/`Stop`/`Pause`/`Resume`，`volume` 为 0 到 100 或 `null`。`attachment_id` 非空时表示附件动作（`GotoA`），点击后按 `ofd.attachmentData()` 读取：可预览类型在新标签页打开、其它类型下载，`attachment_name` 是附件名称（可能为空）。
+- `ofd.pageLinksForPage(index)` 返回指定页面的可点击链接，字段与 `ofd.pageLinks()` 相同；网页阅读器按页面挂载懒加载此接口，避免打开大文档时扫描全部页面。
 - `ofd.pageMediaActions()` 返回进入页面（`PO`）和打开文档（`DO`）时执行的声音、影片动作，字段与 `pageLinks` 的媒体字段相同，`event` 为 `PO` 或 `DO`。
+- `ofd.pageMediaActionsForPage(index)` 按页返回页面进入动作及文档首页的 DO/PO 动作；网页阅读器按需调用，避免打开大文档时扫描全部页面。
 - `ofd.signatures()` 返回签名清单：`{ scope, id, provider, company, version, method, date, has_digest, digest_valid, digest_method, has_verification, verified, trusted, trust_checked, verification_error, has_data_hash, data_hash_match, references, stamps, certificates }`，其中 `references` 为 `{ file_ref, exists, match, error }`，`stamps` 为 `{ page, id, has_seal, seal_type, boundary }`，`certificates` 为 `{ slot, subject, issuer, common_name, organization, organizational_unit, country, locality, province, serial_number, not_before, not_after, public_key, algorithm, signature_format, signature_valid, certificate_valid, trust_checked, trusted, trust_error, revocation_checked, revocation_status, revocation_error, error }`。`ofd.signatureSeal(scope, id, stampIndex)` 返回签章印章文件内容（可转移 `ArrayBuffer`）。`ofd.signatureCertificate(scope, id, slot)` 按层级（`seal`/`outer`）返回证书 DER；`ofd.signatureValue(scope, id)` 返回签名值（SignedValue.dat）内容。
 - `ofd.stats()` 返回资源数量汇总：`{ fonts, attachments, media, annotation_pages, signatures }`，只读取声明，不加载资源内容。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
