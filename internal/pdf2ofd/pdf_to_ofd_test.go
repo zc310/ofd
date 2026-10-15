@@ -313,7 +313,7 @@ func TestPDFTextDeltasUsePDFWidthsWhenFontAdvanceMismatch(t *testing.T) {
 		widths:      map[int]float64{65: 602.0508, 66: 602.0508, 67: 602.0508},
 		glyphWidths: map[uint16]float64{65: 293.9, 66: 293.9, 67: 293.9},
 	}
-	deltas := pdfTextDeltas([]uint64{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66, 67}, "ABC", font, 10, 0, 0, 100, 1, 1, nil)
 	if len(deltas) != 2 {
 		t.Fatalf("deltas = %v, want length 2", deltas)
 	}
@@ -333,7 +333,7 @@ func TestPDFTextDeltasEmittedEvenWhenFontAdvanceMatches(t *testing.T) {
 		widths:      map[int]float64{65: 602, 66: 602},
 		glyphWidths: map[uint16]float64{65: 602, 66: 602},
 	}
-	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1, nil)
 	if len(deltas) != 1 {
 		t.Fatalf("deltas = %v, want length 1", deltas)
 	}
@@ -349,7 +349,7 @@ func TestPDFTextDeltasSynthesizedWhenGlyphWidthsUnknown(t *testing.T) {
 	font := pdfFontInfo{
 		widths: map[int]float64{65: 602, 66: 602},
 	}
-	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1)
+	deltas := pdfTextDeltas([]uint64{65, 66}, "AB", font, 10, 0, 0, 100, 1, 1, nil)
 	if len(deltas) != 1 {
 		t.Fatalf("deltas = %v, want length 1", deltas)
 	}
@@ -357,6 +357,68 @@ func TestPDFTextDeltasSynthesizedWhenGlyphWidthsUnknown(t *testing.T) {
 	if math.Abs(deltas[0]-want) > 1e-9 {
 		t.Fatalf("deltas[0] = %g, want %g", deltas[0], want)
 	}
+}
+
+func TestPDFTextDeltasAlignExpandedUnicodeWithLigatureGlyphs(t *testing.T) {
+	codes := []uint64{65, 66}
+	font := pdfFontInfo{
+		widths:    map[int]float64{65: 500, 66: 600},
+		toUnicode: map[uint32]string{65: "fi", 66: "A"},
+	}
+	transforms := []creator.CGTransform{
+		{CodePosition: 0, CodeCount: 2, GlyphCount: 1, Glyphs: []int{123}},
+		{CodePosition: 2, CodeCount: 1, GlyphCount: 1, Glyphs: []int{124}},
+	}
+	deltas := pdfTextDeltas(codes, "fiA", font, 10, 0, 0, 100, 1, 1, transforms)
+	if len(deltas) != 2 {
+		t.Fatalf("deltas = %v, want one entry per Unicode boundary", deltas)
+	}
+	wantAdvance := 500.0 / 1000 * 10 * pdfPointToMillimeter
+	if deltas[0] != 0 || math.Abs(deltas[1]-wantAdvance) > 1e-9 {
+		t.Fatalf("deltas = %v, want internal ligature delta 0 and following advance %g", deltas, wantAdvance)
+	}
+}
+
+func TestMicrosoftPage1PreservesLigatureSpacing(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "pdf", "2025-Microsoft-Environmental-Sustainability-Report-PDF.pdf")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("PDF fixture unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	if panicked || err != nil {
+		t.Fatalf("read PDF context: panicked=%v err=%v", panicked, err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatal(err)
+	}
+	page, _, err := convertPDFPage(t.Context(), ctx, 1, &creator.Document{},
+		map[types.Object]pdfFontInfo{}, map[types.IndirectRef]pdfImageDataCache{},
+		pdfPageGeometries(t.Context(), ctx), new(uint64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range page.Items {
+		text, ok := item.(creator.Text)
+		if !ok || !strings.Contains(text.Value, "fiscal y") || len(text.TextCodes) == 0 {
+			continue
+		}
+		for _, transform := range text.CGTransforms {
+			if transform.CodeCount != 2 || transform.GlyphCount != 1 {
+				continue
+			}
+			deltas := text.TextCodes[0].DeltaX
+			position := transform.CodePosition
+			if position+1 >= len(deltas) || deltas[position] != 0 || deltas[position+1] <= 0 {
+				t.Fatalf("ligature deltas = %v at code position %d, want zero internal step and following advance", deltas, position)
+			}
+			return
+		}
+	}
+	t.Fatal("page 1 text 'Reporting on our 2024 fiscal year' has no positioned fi ligature")
 }
 
 func TestPDFMatrixConcatenationKeepsLocalTranslation(t *testing.T) {

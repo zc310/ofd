@@ -56,8 +56,8 @@ ofd-converter --help
 | `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
 | `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
-| `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 250,000,000 |
-| `-pdf-max-operations` | PDF 转换处理量上限，`0` 使用默认 10,000,000 |
+| `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 2,000,000,000 |
+| `-pdf-max-operations` | PDF 转换处理量上限，`0` 使用默认 1,000,000,000 |
 | `-md-tables`           | OFD 转 Markdown 时按文字位置识别无边框表格并输出 GFM 表格；默认关闭，双栏正文或公式排版可能误判                                                       |
 | `-no-html-text-layer`  | OFD 转 HTML 时不输出透明文字层；默认输出，关闭后文字不可选中、不可浏览器内查找、不可朗读                                                              |
 | `-no-docx-tables`      | OFD 转 DOCX 时不按文字位置识别表格，只输出纯文字段落；默认开启识别，双栏正文或公式排版可能误判                                                        |

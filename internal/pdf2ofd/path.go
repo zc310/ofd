@@ -9,6 +9,7 @@ import (
 
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func (p *pdfInterpreter) moveText(x, y float64) {
@@ -124,24 +125,20 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		lineWidth = hairlineLineWidthMM
 	}
 	path := creator.Path{X: minX, Y: minY, Width: width, Height: height, Data: strings.TrimSpace(data.String()), Stroke: stroke, StrokeSet: &stroke, Fill: fill, Rule: rule, LineWidth: lineWidth, StrokeColor: colorToCreator(p.state.stroke), FillColor: colorToCreator(p.state.fill)}
-	path.Cap = [...]string{"Butt", "Round", "Square"}[p.state.lineCap]
-	path.Join = [...]string{"Miter", "Round", "Bevel"}[p.state.lineJoin]
+	path.Cap = [...]string{spec.LineCapButt, spec.LineCapRound, spec.LineCapSquare}[p.state.lineCap]
+	path.Join = [...]string{spec.LineJoinMiter, spec.LineJoinRound, spec.LineJoinBevel}[p.state.lineJoin]
 	// PDF 的 M 是斜接长度与半线宽的倍率，OFD 则保存中心线到斜接顶点的毫米距离。
 	path.MiterLimit = p.state.miterLimit * lineWidth / 2
-	// OFD 的 DashPattern 以线宽为单位（渲染端按线宽缩放），而 PDF 的 d 是绝对
-	// 长度，因此这里除以生效线宽换算成倍数。线宽为 0 时渲染端用默认线宽。
+	// PDF 的 d 和 OFD 的 DashPattern 都是绝对长度；将 PDF 用户空间长度按
+	// CTM、UserUnit 和 pt→mm 换算，不能再除以线宽。
 	if len(p.state.dashPattern) > 0 {
 		scale := p.info.userUnit * pdfPointToMillimeter * pdfMatrixScale(p.state.ctm)
-		strokeWidth := lineWidth
-		if strokeWidth <= 0 {
-			strokeWidth = defaultPathLineWidthMM
-		}
 		dashes := make([]float64, len(p.state.dashPattern))
 		for index, value := range p.state.dashPattern {
-			dashes[index] = value * scale / strokeWidth
+			dashes[index] = value * scale
 		}
 		path.DashPattern = dashes
-		path.DashOffset = p.state.dashOffset * scale / strokeWidth
+		path.DashOffset = p.state.dashOffset * scale
 	}
 	// Pattern 颜色空间下 scn/SCN 选中的图案以路径边界为局部原点，需在路径
 	// 坐标确定后再转换，否则渐变会整体偏移。
@@ -308,9 +305,9 @@ func (p *pdfInterpreter) clipPathFor(region pdfClipRegion, objX, objY float64) (
 		height = 0.001
 	}
 	stroke := false
-	rule := "NonZero"
+	rule := spec.FillRuleNonZero
 	if region.evenOdd {
-		rule = "Even-Odd"
+		rule = spec.FillRuleEvenOdd
 	}
 	return &creator.ClipPath{
 		Boundary: creator.Box{X: minX, Y: minY, Width: width, Height: height},
@@ -366,10 +363,6 @@ func pdfMatrixScale(matrix [6]float64) float64 {
 // maxReasonableCoordinate 是路径坐标的合理上限（PDF 点）。超过该值的坐标通常
 // 是"覆盖整个平面"的技巧（如把矩形画到 ±1 亿），只用于构造补集填充。
 const maxReasonableCoordinate = 1e6
-
-// defaultPathLineWidthMM 是 OFD 未指定 LineWidth 时渲染端采用的线宽（1pt）。
-// OFD 的 DashPattern 以线宽为单位，换算虚线倍数时需要它。
-const defaultPathLineWidthMM = 0.353
 
 // hairlineLineWidthMM 是 PDF 0 线宽的近似值。约 1/4pt，在 150dpi 下约 1 像素，
 // 与大多数阅读器绘制 0 线宽的观感接近。

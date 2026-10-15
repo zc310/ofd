@@ -1,6 +1,7 @@
 package canvas
 
 import (
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/utils"
@@ -130,6 +131,18 @@ func collectObjectGlyphs(object models.TextObject, out map[models.StRefID]map[ru
 			ids := transform.Glyphs
 			if transform.GlyphCount > 0 && transform.GlyphCount < len(ids) {
 				ids = ids[:transform.GlyphCount]
+			}
+			// 为每个 GID 单独登记私有码位，CFF 绘制时绕过 Unicode 整形与字形替换。
+			for _, id := range ids {
+				if id < 0 || id > 0xffff {
+					continue
+				}
+				if pairs == nil {
+					pairs = make(map[rune]uint16)
+					out[object.Font] = pairs
+				}
+				gid := uint16(id)
+				pairs[fontfix.GlyphRune(gid)] = gid
 			}
 			codeCount := transform.CodeCount
 			if codeCount <= 0 {

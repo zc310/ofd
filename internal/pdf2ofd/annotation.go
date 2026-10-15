@@ -49,8 +49,9 @@ func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {
 	}
 	if name, ok := annot["Subtype"].(types.Name); ok {
 		switch name.Value() {
-		// Popup 是文本注解的弹窗、Link/Widget 无独立外观，跳过。
-		case "Popup", "Link", "Widget":
+		// Popup 是文本注解的弹窗；Link 没有需要绘制的页面外观。
+		// Widget 若有 /AP /N 外观，需像其它注解一样绘制到页面。
+		case "Popup", "Link":
 			return
 		}
 	}

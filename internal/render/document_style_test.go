@@ -154,3 +154,32 @@ func TestValidDashPattern(t *testing.T) {
 		}
 	}
 }
+
+func TestRoundCapZeroDashPatternRendersDots(t *testing.T) {
+	pattern := models.StArrayF{0, 3}
+	surface := canvas.New(20, 20)
+	ctx := canvas.NewContext(surface)
+	backend := newCanvasBackend(ctx)
+	object := models.CtPath{CTGraphicUnit: models.CTGraphicUnit{
+		LineWidth:   1,
+		Cap:         "Round",
+		DashPattern: &pattern,
+	}}
+	var document Document
+	document.updateCtPathStyle(backend, &object, nil, 1)
+	backend.DrawPath(0, 0, geom.MustParseSVGPath("M 10 2 L 10 18"))
+
+	img := rasterize(surface, canvas.DPMM(4), canvas.DefaultColorSpace)
+	painted := 0
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		if img.RGBAAt(40, y).A > 0 {
+			painted++
+		}
+	}
+	if painted == 0 || painted >= img.Bounds().Dy()/2 {
+		t.Fatalf("round-capped zero-dash line painted %d pixels; want separated dots", painted)
+	}
+	if pattern[0] != 0 {
+		t.Fatalf("render mutated the source dash pattern: %v", pattern)
+	}
+}

@@ -3433,7 +3433,7 @@ function loadThumbnail(index) {
   const generation = documentGeneration;
   const image = button.querySelector('img');
   const format = thumbnailRenderFormat;
-  const key = cacheKey('thumbnail', index, generation, 15, format);
+  const key = cacheKey('thumbnail', index, generation, 30, format);
   const cached = thumbnailCache.get(key);
   if (cached) {
     showImageWhenReady(image, cached);
@@ -3511,7 +3511,7 @@ function flushThumbnailBatch() {
   const format = thumbnailRenderFormat;
   const renderRequest = engine.renderPages(
     active.map(entry => entry.index),
-    { format, dpi: 15, background: transparentRenderBackground },
+    { format, dpi: 30, background: transparentRenderBackground },
   );
   renderRequest.thumbnailEntries = active;
   for (const entry of active) entry.batchRequest = renderRequest;

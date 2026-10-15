@@ -1,5 +1,33 @@
 package spec
 
+// 路径填充规则（PathObject/@Rule、Clip/Area/Path/@Rule）。
+const (
+	// FillRuleNonZero 使用非零绕数规则。
+	FillRuleNonZero = "NonZero"
+	// FillRuleEvenOdd 使用奇偶规则。
+	FillRuleEvenOdd = "Even-Odd"
+)
+
+// 路径端点样式（CT_GraphicUnit/@Cap）。
+const (
+	// LineCapButt 使用平头端点。
+	LineCapButt = "Butt"
+	// LineCapRound 使用圆头端点。
+	LineCapRound = "Round"
+	// LineCapSquare 使用方头端点。
+	LineCapSquare = "Square"
+)
+
+// 路径连接样式（CT_GraphicUnit/@Join）。
+const (
+	// LineJoinMiter 使用斜接连接。
+	LineJoinMiter = "Miter"
+	// LineJoinRound 使用圆角连接。
+	LineJoinRound = "Round"
+	// LineJoinBevel 使用斜角连接。
+	LineJoinBevel = "Bevel"
+)
+
 // 图层类型（Layer/@Type）。创建、文字提取和渲染都要判断图层是否为背景层，
 // 取值集中在这里避免各包各写一份字面量。
 const (

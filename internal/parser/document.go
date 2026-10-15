@@ -13,6 +13,7 @@ import (
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type Document struct {
@@ -1158,10 +1159,10 @@ func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bo
 		result.LineWidth = 0.353
 	}
 	if result.Join == "" {
-		result.Join = "Miter"
+		result.Join = spec.LineJoinMiter
 	}
 	if result.Cap == "" {
-		result.Cap = "Butt"
+		result.Cap = spec.LineCapButt
 	}
 	if !result.HasMiterLimit() {
 		result.MiterLimit = 3.528

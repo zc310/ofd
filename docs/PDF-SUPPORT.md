@@ -55,7 +55,7 @@ Office/HTML 转 OFD 时的 PDF 中间阶段。
 | PDF 对象结构 | 经典 xref、压缩对象流。 |
 | 常见损坏结构 | 尝试修复 xref/free-list 异常、解析异常和损坏的 Info 日期；修复失败仍返回错误。 |
 | 元数据 | Title、Author、Subject；记录源格式和 Producer，写入当前转换器版本。 |
-| 链接 | `/Subtype /Link` 的 Dest、GoTo、URI；保留点击热区和页面跳转位置。 |
+| 链接 | `/Subtype /Link` 以及带可转换动作的 `/Subtype /Widget`；支持 Dest、GoTo、URI，保留点击热区和页面跳转位置。 |
 | 大纲与书签 | Outlines 层级、展开状态、命名目标、GoTo/URI、PageMode UseOutlines，以及 XYZ/Fit/FitH/FitV/FitR 目标；FitB 系列按对应 Fit 类型近似。 |
 
 ## 部分支持
@@ -97,7 +97,7 @@ Office/HTML 转 OFD 时的 PDF 中间阶段。
 | DCTDecode/JPEG | Gray/RGB、Adobe CMYK/YCCK；8 位原分量 Decode、颜色键和 Matte，支持外层 Flate 包装。 | 缺省/恒等 Gray/RGB Decode 保留 JPEG；其余转 PNG。与码流冲突的 ColorTransform 覆盖暂不支持。 |
 | CCITTFaxDecode | 解码后重编码为 PNG，也可用于 ImageMask。 | 沿用 PDF 解析器的解码能力。 |
 | JBIG2Decode | 灰度图、JBIG2Globals、Decode 反相、ImageMask、灰度软掩码；颜色键和 Matte 使用二值原采样。 | 普通图像的任意 Decode 区间未完整支持；复合过滤器有限制。 |
-| JPXDecode | JP2/裸码流；DeviceGray/RGB/CMYK、同位深 1–16 位无符号样本、cdef 颜色重排和单个整体 opacity。 | 普通图像忽略 PDF Decode 和字典位深；高位深输出 16 位 PNG。复合过滤器、复杂通道、调色板、ICC 等结构暂不支持。 |
+| JPXDecode | JP2/裸码流；DeviceGray/RGB/CMYK、1/3/4 分量 PDF ICCBased 配置文件、同位深 1–16 位无符号样本、cdef 颜色重排和单个整体 opacity。 | 8 位 RGB ICCBased JP2 使用完整质量解码路径；其他图像沿用原分量解码。普通图像忽略 PDF Decode 和字典位深；高位深输出 16 位 PNG。复合过滤器、复杂通道、调色板及 JP2 码流内嵌 ICC 暂不支持。 |
 | JP2 特殊颜色 | 三分量 sYCC/eYCC、YCbCr2/3、PhotoYCC、CMY 转为 RGB。 | 暂不能与 Matte、灰度掩码或内嵌 opacity 组合；部分源阅读器的转换行为不同。 |
 | 内联图像 | `BI/ID/EI`，展开缩写键；未给 ColorSpace 时按 DeviceGray。 | 沿用普通图片的颜色空间、过滤器和预算限制。 |
 | ImageMask | 1 位模板图像，按当前填充色绘制，支持 Decode 反相。 | 多位 ImageMask 不支持。 |
@@ -127,7 +127,7 @@ RGB 栅格合成、CMYK 颜色转换、8 位量化、抗锯齿和图片放大插
 | ShadingType 1、PatternType 1/2 之外的图案 | 未实现对应绘制，可能跳过或保留近似纯色，并报告已识别的缺口。 |
 | 图像的 Lab、Separation、DeviceN | 跳过图像并报告诊断；Strict 失败。 |
 | 完整 CalGray/CalRGB/Lab 校准语义 | 不完整应用校准参数；已有转换使用设备颜色近似或跳过。 |
-| JPX 调色板、cmap、ICC、有符号分量或混合位深 | 不支持相应结构，通常报告图像解码诊断并跳过图片；Strict 失败。 |
+| JPX 调色板、cmap、码流内嵌 ICC、有符号分量或混合位深 | 不支持相应结构，通常报告图像解码诊断并跳过图片；Strict 失败。PDF 图像字典引用的 ICCBased 配置文件不属于此限制。 |
 | JPX 多 opacity、逐颜色 opacity | 不支持；通道关联不完整、重复或与 SMaskInData 冲突会报告诊断。 |
 | 精确的原颜色空间混合及印刷叠印 | RGB 合成不能完整保留 CMYK/ICC 混合和叠印结果。 |
 | 挖空文字 TK 的整体形状、完整 AIS 语义 | 当前采用近似，分别报告 `graphics.knockout_text`、`graphics.alpha_shape`。 |
@@ -154,10 +154,10 @@ RGB 栅格合成、CMYK 颜色转换、8 位量化、抗锯齿和图片放大插
 | MaxDecodedStreamBytes | 256MiB | 单流解压及页面内容流拼接。 |
 | MaxTotalDecodedBytes | 1GiB | 转换中读取的解压流；同一流重复访问不重复计数。 |
 | MaxImagePixels | 100,000,000 | 单图实际尺寸，包括掩码与合成栅格。 |
-| MaxTotalImagePixels | 250,000,000 | 图片解码、掩码和合成的累计处理像素。 |
+| MaxTotalImagePixels | 2,000,000,000 | 图片解码、掩码和合成的累计处理像素。 |
 | MaxFontBytes | 64MiB | 单个内嵌字体程序。 |
 | MaxOutputObjects | 1,000,000 | 合并前生成的文字、路径和图片图元。 |
-| MaxOperations | 10,000,000 | 内容解析、文字/映射、遮罩、网格、函数等处理量。 |
+| MaxOperations | 1,000,000,000 | 内容解析、文字/映射、遮罩、网格、函数等处理量。 |
 | MaxDepth | 64 | 解析、状态栈、Form、软掩码和函数等递归深度。 |
 
 这些预算限制对应的处理量，并不等同于进程峰值内存上限。

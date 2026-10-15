@@ -311,6 +311,32 @@ func textAdvanceDiffers(deltaX, deltaY, naturalX float64) bool {
 	return false
 }
 
+func textAdvanceNeedsRunBreak(object models.TextObject, deltaX, deltaY, naturalX float64) bool {
+	if textAdvanceDiffers(deltaX, deltaY, naturalX) {
+		return true
+	}
+	if !hasCollapsedGlyphTransform(object.CGTransform) || math.Abs(deltaY) > 0.01 {
+		return false
+	}
+	return math.Abs(deltaX-naturalX) > 0.01
+}
+
+func hasCollapsedGlyphTransform(transforms []models.CTCGTransform) bool {
+	for _, transform := range transforms {
+		codeCount, glyphCount := transform.CodeCount, transform.GlyphCount
+		if codeCount <= 0 {
+			codeCount = 1
+		}
+		if glyphCount <= 0 {
+			glyphCount = len(transform.Glyphs)
+		}
+		if codeCount > glyphCount {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeTextDirection 将 OFD 方向归一化为最接近的标准象限方向。
 // OFD 标准使用 0、90、180、270 度；对非标准输入采用邻近象限，避免
 // 产生未定义的斜向排版结果。
@@ -368,9 +394,27 @@ func textAdvance(glyphWidth float64, object models.TextObject, code models.TextC
 	return textReadAdvance(glyphWidth*textHScale(object), object.ReadDirection)
 }
 
+func textGlyphAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, previous, current textGlyph) (float64, float64) {
+	if current.codePosition > previous.codePosition && (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) {
+		var deltaX, deltaY float64
+		for index := previous.codePosition; index < current.codePosition; index++ {
+			if index < len(code.DeltaX) {
+				deltaX += code.DeltaX[index]
+			}
+			if index < len(code.DeltaY) {
+				deltaY += code.DeltaY[index]
+			}
+		}
+		return deltaX, deltaY
+	}
+	return textReadAdvance(glyphWidth*textHScale(object), object.ReadDirection)
+}
+
 // drawTextCode 按字符间距绘制一段文字。
 type textGlyph struct {
-	value string
+	value        string
+	semantic     string
+	codePosition int
 }
 
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
@@ -396,12 +440,21 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 	posX, posY := code.X, code.Y
 	var run []rune
 	runX, runY := posX, posY
+	var semanticRun []rune
+	semanticX, semanticY := posX, posY
 	flushRun := func() {
 		if len(run) == 0 {
 			return
 		}
 		p.drawTextGlyph(ctx, faces, object, string(run), runX, runY, pageHeight, parentCTM)
 		run = run[:0]
+	}
+	flushSemanticRun := func() {
+		if len(semanticRun) == 0 {
+			return
+		}
+		p.drawSemanticText(ctx, faces.base, object, string(semanticRun), semanticX, semanticY, pageHeight, parentCTM)
+		semanticRun = semanticRun[:0]
 	}
 	for i, glyph := range glyphs {
 		if i > 0 {
@@ -410,12 +463,12 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 				glyphWidth = prevWidth
 			}
-			deltaX, deltaY := textAdvance(glyphWidth, object, code, i-1)
+			deltaX, deltaY := textGlyphAdvance(glyphWidth, object, code, glyphs[i-1], glyph)
 			posX += deltaX
 			posY += deltaY
 			if len(run) > 0 {
 				naturalX := prevWidth * textHScale(object)
-				if textAdvanceDiffers(deltaX, deltaY, naturalX) {
+				if textAdvanceNeedsRunBreak(object, deltaX, deltaY, naturalX) {
 					flushRun()
 				}
 			}
@@ -428,13 +481,21 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 		if containsPrivateGlyphRune(glyph.value) {
 			flushRun()
 			p.drawTextGlyph(ctx, faces, object, glyph.value, posX, posY, pageHeight, parentCTM)
+			if glyph.semantic != "" {
+				if len(semanticRun) == 0 {
+					semanticX, semanticY = posX, posY
+				}
+				semanticRun = append(semanticRun, []rune(glyph.semantic)...)
+			}
 			continue
 		}
+		flushSemanticRun()
 		if len(run) == 0 {
 			runX, runY = posX, posY
 		}
 		run = append(run, []rune(glyph.value)...)
 	}
+	flushSemanticRun()
 	flushRun()
 }
 
@@ -460,7 +521,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 	if len(transforms) == 0 {
 		glyphs := make([]textGlyph, len(runes))
 		for i, r := range runes {
-			glyphs[i] = textGlyph{value: string(r)}
+			glyphs[i] = textGlyph{value: string(r), codePosition: i}
 		}
 		return glyphs
 	}
@@ -474,7 +535,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 	for i := 0; i < len(runes); {
 		transform, ok := byPosition[codePosition+i]
 		if !ok {
-			glyphs = append(glyphs, textGlyph{value: string(runes[i])})
+			glyphs = append(glyphs, textGlyph{value: string(runes[i]), codePosition: i})
 			i++
 			continue
 		}
@@ -486,25 +547,35 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 		if codeCount <= 0 {
 			codeCount = 1
 		}
-		// 一对一变换（码位数与字形数相等）：逐码位与字形按序配对。字体能按
-		// 原始 Unicode 成形时优先使用原文本，让 PDF 等输出保留可复制、可搜索
-		// 的文字；否则退回字形私有区引用（仅能按轮廓绘制）。
+		// 一对一变换（码位数与字形数相等）：字体修复可能重排内部 GID，因此只要
+		// Unicode 在修复后的字体中可用就保留原文；ASCII CFF 子集仍直接按 GID 绘制。
 		if codeCount == len(ids) && i+codeCount <= len(runes) {
 			for k := 0; k < codeCount; k++ {
 				id := ids[k]
 				if id < 0 || id > 0xffff {
 					continue
 				}
-				if r := runes[i+k]; renderableTextValue(string(r)) && fontCanRenderRune(face, r) {
-					glyphs = append(glyphs, textGlyph{value: string(r)})
+				r := runes[i+k]
+				directCFFGlyph := face != nil && face.IsCFF() && r >= 0x21 && r <= 0x7e
+				if renderableTextValue(string(r)) && face != nil && !directCFFGlyph && fontCanRenderRune(face, r) {
+					glyphs = append(glyphs, textGlyph{value: string(r), codePosition: i + k})
 					continue
 				}
-				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
+				semantic := ""
+				if renderableTextValue(string(r)) {
+					semantic = string(r)
+				}
+				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id))), semantic: semantic, codePosition: i + k})
 			}
 		} else {
+			semantic := ""
+			if codeCount > 0 && i+codeCount <= len(runes) {
+				semantic = string(runes[i : i+codeCount])
+			}
 			for _, id := range ids {
 				if id >= 0 && id <= 0xffff {
-					glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id)))})
+					glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id))), semantic: semantic, codePosition: i})
+					semantic = ""
 				}
 			}
 		}
@@ -515,6 +586,46 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 		i += codeCount
 	}
 	return glyphs
+}
+
+type invisibleTextShaper interface {
+	InvisibleShapedRun(string) TextRun
+}
+
+func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
+	drawer, ok := ctx.(semanticTextDrawer)
+	if !ok {
+		return
+	}
+	shaper, ok := face.(invisibleTextShaper)
+	if !ok {
+		return
+	}
+	run := shaper.InvisibleShapedRun(value)
+	if run == nil {
+		return
+	}
+	if parentCTM != nil {
+		if object.CTM != nil {
+			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
+		} else {
+			x, y = parentCTM.Transform(x, y)
+		}
+	} else if object.CTM != nil {
+		x, y = object.CTM.Transform(x, y)
+	}
+	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) {
+		return
+	}
+	ctx.Push()
+	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
+	if m := textCTMLinearMatrix(object.CTM); m != nil {
+		ctx.Transform(*m)
+	}
+	ctx.Rotate(-textCharDirectionDegrees(object))
+	ctx.Scale(textHScale(object), 1)
+	drawer.DrawSemanticTextLine(run)
+	ctx.Pop()
 }
 
 func textGlyphWidth(face FontFace, glyph textGlyph) float64 {

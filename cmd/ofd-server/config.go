@@ -154,7 +154,7 @@ type Config struct {
 	OfficePath   string `json:"soffice_path"`
 	ChromePath   string `json:"chrome_path"`
 	XpstopdfPath string `json:"xpstopdf_path"`
-	// PDFMaxOperations 是 PDF→OFD 阶段的处理量预算，0 使用默认 10,000,000。
+	// PDFMaxOperations 是 PDF→OFD 阶段的处理量预算，0 使用默认 1,000,000,000。
 	PDFMaxOperations int64 `json:"pdf_max_operations"`
 	// ChromeNoSandbox 给 Chrome 加 --no-sandbox。
 	//

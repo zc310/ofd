@@ -3,10 +3,15 @@ package pdf2ofd
 import (
 	"bytes"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 // convertLinkPDF 转换一份手工拼装的 PDF，返回解析后的 OFD 文档。
@@ -145,6 +150,59 @@ func TestConvertPageLinksToOFD(t *testing.T) {
 	}
 	if second2 != nil && len(second2.Annots) != 0 {
 		t.Errorf("第 2 页不应有注解，实际 %d 个", len(second2.Annots))
+	}
+}
+
+func TestTencentPage2WidgetNavigationIsClickable(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "pdf", "腾讯官方ESG报告.pdf")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("PDF fixture unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	ctx, err, panicked := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	if panicked || err != nil {
+		t.Fatalf("read PDF context: panicked=%v err=%v", panicked, err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatal(err)
+	}
+	pageDict, _, inherited, err := ctx.PageDict(t.Context(), 2, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := pdfPageInfoFor(ctx, pageDict, inherited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	geometries := pdfPageGeometries(t.Context(), ctx)
+	links := convertPageLinks(t.Context(), ctx, pageDict, info, geometries, new(uint64))
+	if len(links) < 12 {
+		t.Fatalf("page 2 clickable links = %d, want navigation widgets to be preserved", len(links))
+	}
+
+	const mmPerPoint = 25.4 / 72
+	foundUpperLeft, foundLowerRight := false, false
+	for _, link := range links {
+		if link.Boundary == nil || len(link.Items) == 0 {
+			continue
+		}
+		path, ok := link.Items[0].(creator.Path)
+		if !ok || len(path.Actions) == 0 || path.Actions[0].Goto == nil {
+			continue
+		}
+		box := link.Boundary
+		if math.Abs(box.X-80*mmPerPoint) < 0.02 && math.Abs(box.Y-(1080-1061.6)*mmPerPoint) < 0.02 {
+			foundUpperLeft = true
+		}
+		if math.Abs(box.X-1758.76*mmPerPoint) < 0.02 && math.Abs(box.Y-(1080-48.3299)*mmPerPoint) < 0.02 {
+			foundLowerRight = true
+		}
+	}
+	if !foundUpperLeft || !foundLowerRight {
+		t.Fatalf("page 2 clickable navigation areas: upper-left=%t lower-right=%t", foundUpperLeft, foundLowerRight)
 	}
 }
 

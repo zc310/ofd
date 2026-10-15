@@ -24,7 +24,7 @@ func benchmarkRenderPDF(b *testing.B, name string) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		output.Reset()
-		if err := PDF(ctxTODO, "../../testdata/"+name+".ofd", &output); err != nil {
+		if err := PDF(ctxTODO, "../../testdata/ofdrw/"+name+".ofd", &output); err != nil {
 			b.Fatal(err)
 		}
 	}

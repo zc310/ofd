@@ -178,6 +178,12 @@ func (b *canvasBackend) DrawTextLine(run drawing.TextRun) {
 	b.ctx.DrawText(0, 0, line)
 }
 
+func (b *canvasBackend) DrawSemanticTextLine(run drawing.TextRun) {
+	if b.vector {
+		b.DrawTextLine(run)
+	}
+}
+
 // RenderScene 实现 svgSceneRenderer：把 SVG 场景直接复用到底层渲染器，
 // 保持 PDF/SVG 输出的矢量质量。svg 由 canvas SVG 场景传入，此处断言为
 // *canvas.Canvas。

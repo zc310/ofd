@@ -7,6 +7,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // pdfShading 表示已解析的 PDF 渐变着色（ShadingType 2/3）。
@@ -61,7 +62,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 		if path, ok := p.shadingFillPath(); ok {
 			if color, ok := p.meshVectorColor(shading, matrix, path); ok {
 				path.Fill = true
-				path.Rule = "NonZero"
+				path.Rule = spec.FillRuleNonZero
 				path.FillColor = color
 				// 与普通着色一样必须显式关闭描边，避免沿路径边界描黑边。
 				stroke := false
@@ -89,7 +90,7 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 		return
 	}
 	path.Fill = true
-	path.Rule = "NonZero"
+	path.Rule = spec.FillRuleNonZero
 	path.FillColor = fillColor
 	// 必须显式关闭描边：creator 在 StrokeSet 为空时输出 Stroke="true"，
 	// 会把着色边界描成黑色细线。
@@ -282,7 +283,7 @@ func (p *pdfInterpreter) emitMeshFill(shading *pdfShading, path *creator.Path) b
 	bounds, bounded := p.meshBoundsMM(shading, matrix)
 	if color, ok := p.meshVectorColor(shading, matrix, path); ok {
 		path.Fill = true
-		path.Rule = "NonZero"
+		path.Rule = spec.FillRuleNonZero
 		path.FillColor = color
 		stroke := false
 		path.Stroke = false

@@ -1,11 +1,15 @@
 package pdf2ofd
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 
+	fastjpx "github.com/ajroetker/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
@@ -27,6 +31,16 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 	m := info.metadata
 	if stencil && (info.family != "DeviceGray" || m.BitsPerComponent[0] != 1) {
 		return nil, "", fmt.Errorf("JPX ImageMask 需要 1 位灰度码流")
+	}
+	if !stencil && info.icc != nil && info.family == "DeviceRGB" && info.colours == 3 &&
+		info.metadata.NumComponents == 3 && info.metadata.BitsPerComponent[0] == 8 && info.alpha == 0 && !info.converted {
+		data, format, decodeErr := p.encodeICCBasedJPXRGB(source, info)
+		if decodeErr == nil {
+			return data, format, nil
+		}
+		if errors.Is(decodeErr, ErrLimitExceeded) || errors.Is(decodeErr, context.Canceled) || errors.Is(decodeErr, context.DeadlineExceeded) {
+			return nil, "", decodeErr
+		}
 	}
 	decoded, err := p.jpxImagePlanes(source, info, m.Width, m.Height, false)
 	if err != nil {
@@ -79,6 +93,10 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 			if info.converted {
 				values = jpxColourToRGB(values, m.ColorSpace, m.BitsPerComponent[0])
 			}
+			if info.icc != nil {
+				r, g, b := info.icc.ToRGB([]uint8{floatToByte(values[0]), floatToByte(values[1]), floatToByte(values[2]), floatToByte(values[3])})
+				values[0], values[1], values[2] = float64(r)/255, float64(g)/255, float64(b)/255
+			}
 			if stencil {
 				ink := values[0] < .5
 				if invert {
@@ -91,7 +109,7 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 			}
 			if highPrecision {
 				r, g, b := floatToUint16(values[0]), floatToUint16(values[0]), floatToUint16(values[0])
-				if info.family == "DeviceRGB" {
+				if info.family == "DeviceRGB" || info.icc != nil {
 					g, b = floatToUint16(values[1]), floatToUint16(values[2])
 				} else if info.family == "DeviceCMYK" {
 					r, g, b = converter.toRGB16(floatToUint16(values[0]), floatToUint16(values[1]), floatToUint16(values[2]), floatToUint16(values[3]))
@@ -99,7 +117,7 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 				out.(*image.NRGBA64).SetNRGBA64(x, y, color.NRGBA64{R: r, G: g, B: b, A: floatToUint16(alpha)})
 			} else {
 				r, g, b := floatToByte(values[0]), floatToByte(values[0]), floatToByte(values[0])
-				if info.family == "DeviceRGB" {
+				if info.family == "DeviceRGB" || info.icc != nil {
 					g, b = floatToByte(values[1]), floatToByte(values[2])
 				} else if info.family == "DeviceCMYK" {
 					r, g, b = converter.toRGB(floatToByte(values[0]), floatToByte(values[1]), floatToByte(values[2]), floatToByte(values[3]))
@@ -109,6 +127,40 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 		}
 	}
 	data, format, err := encodePNGImage(out)
+	if err == nil {
+		err = p.control.check()
+	}
+	return data, format, err
+}
+
+// encodeICCBasedJPXRGB uses the full-quality RGB decoder for ordinary ICCBased
+// JP2 images. The common decoder remains responsible for masks, Matte, and
+// component-level operations that need the original integer planes.
+func (p *pdfInterpreter) encodeICCBasedJPXRGB(stream *types.StreamDict, info *matteJPXInfo) ([]byte, string, error) {
+	decoded, err := fastjpx.Decode(bytes.NewReader(jpxStreamBytes(stream)))
+	if err != nil {
+		return nil, "", err
+	}
+	width, height := info.metadata.Width, info.metadata.Height
+	if decoded.Bounds().Dx() != width || decoded.Bounds().Dy() != height {
+		return nil, "", fmt.Errorf("JPX 解码尺寸 %v 与头部声明 %dx%d 不一致", decoded.Bounds().Size(), width, height)
+	}
+	pixels := int64(width) * int64(height)
+	if err := p.control.consumeOperations(pixels * int64(info.metadata.NumComponents+1)); err != nil {
+		return nil, "", err
+	}
+	output := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		if err := p.control.check(); err != nil {
+			return nil, "", err
+		}
+		for x := 0; x < width; x++ {
+			pixel := color.NRGBAModel.Convert(decoded.At(decoded.Bounds().Min.X+x, decoded.Bounds().Min.Y+y)).(color.NRGBA)
+			red, green, blue := info.icc.ToRGB([]uint8{pixel.R, pixel.G, pixel.B})
+			output.SetNRGBA(x, y, color.NRGBA{R: red, G: green, B: blue, A: pixel.A})
+		}
+	}
+	data, format, err := encodePNGImage(output)
 	if err == nil {
 		err = p.control.check()
 	}

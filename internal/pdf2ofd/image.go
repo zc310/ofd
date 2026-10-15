@@ -1708,6 +1708,10 @@ func pdfImageCMYKConverter(ctx *model.Context, stream *types.StreamDict) cmykCon
 // pdfImageICCProfile 读取 ICCBased 图像颜色空间内嵌的 4 分量 ICC 配置文件。
 // 返回 nil 表示该图像没有可用的内嵌 CMYK 配置文件。
 func pdfImageICCProfile(ctx *model.Context, stream *types.StreamDict) *coloricc.Transformer {
+	return pdfImageICCProfileChannels(ctx, stream, 4)
+}
+
+func pdfImageICCProfileChannels(ctx *model.Context, stream *types.StreamDict, channels int) *coloricc.Transformer {
 	object, found := stream.Find("ColorSpace")
 	if !found {
 		return nil
@@ -1740,10 +1744,10 @@ func pdfImageICCProfile(ctx *model.Context, stream *types.StreamDict) *coloricc.
 	if profile == nil {
 		return nil
 	}
-	if n, ok := dereferencedPDFNumber(ctx, profile.Dict["N"]); !ok || int(n) != 4 {
+	if n, ok := dereferencedPDFNumber(ctx, profile.Dict["N"]); !ok || int(n) != channels {
 		return nil
 	}
-	transformer, err := coloricc.New(pdfStreamContent(profile), 4)
+	transformer, err := coloricc.New(pdfStreamContent(profile), channels)
 	if err != nil {
 		return nil
 	}
