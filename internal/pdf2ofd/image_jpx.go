@@ -11,6 +11,7 @@ import (
 
 	fastjpx "github.com/ajroetker/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/pdf2ofd/config"
 )
 
 // encodeJPXImage 保留原整数分量，普通 JPX 忽略 PDF Decode/BitsPerComponent。
@@ -32,7 +33,8 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 	if stencil && (info.family != "DeviceGray" || m.BitsPerComponent[0] != 1) {
 		return nil, "", fmt.Errorf("JPX ImageMask 需要 1 位灰度码流")
 	}
-	if !stencil && info.icc != nil && info.family == "DeviceRGB" && info.colours == 3 &&
+	if (p.control == nil || p.control.options.JPXBackend != config.JPXBackendOpenJPEG) &&
+		!stencil && info.icc != nil && info.family == "DeviceRGB" && info.colours == 3 &&
 		info.metadata.NumComponents == 3 && info.metadata.BitsPerComponent[0] == 8 && info.alpha == 0 && !info.converted {
 		data, format, decodeErr := p.encodeICCBasedJPXRGB(source, info)
 		if decodeErr == nil {
@@ -69,6 +71,13 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 	}
 	converter := pdfImageCMYKConverter(p.ctx, stream)
 	colourComponents := info.colours
+	decode := [8]float64{0, 1, 0, 1, 0, 1, 0, 1}
+	applyPDFDecode := !stencil && p.control != nil && p.control.options.JPXBackend == config.JPXBackendOpenJPEG
+	if applyPDFDecode {
+		for i, value := range pdfImageDecode(p.ctx, stream, colourComponents) {
+			decode[i] = value
+		}
+	}
 	for y := 0; y < m.Height; y++ {
 		if err := p.control.check(); err != nil {
 			return nil, "", err
@@ -88,6 +97,9 @@ func (p *pdfInterpreter) encodeJPXImage(stream *types.StreamDict, maskColor pdfC
 					} else {
 						values[c] = clamp01(values[c] / alpha)
 					}
+				}
+				if applyPDFDecode {
+					values[c] = clamp01(decode[c*2] + values[c]*(decode[c*2+1]-decode[c*2]))
 				}
 			}
 			if info.converted {

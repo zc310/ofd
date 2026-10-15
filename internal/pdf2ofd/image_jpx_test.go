@@ -15,6 +15,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/pdf2ofd/config"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
@@ -49,6 +50,10 @@ func jpxTestSource() image.Image {
 
 // convertJPXImage 把 JPX 码流包成 PDF 图像并转换，返回解码后的 PNG。
 func convertJPXImage(t *testing.T, jp2 []byte) image.Image {
+	return convertJPXImageWithOptions(t, jp2, config.Options{})
+}
+
+func convertJPXImageWithOptions(t *testing.T, jp2 []byte, options config.Options) image.Image {
 	t.Helper()
 	content := []byte("q 100 0 0 100 0 0 cm /Im1 Do Q")
 	imageObject := "<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceGray" +
@@ -64,7 +69,7 @@ func convertJPXImage(t *testing.T, jp2 []byte) image.Image {
 	pdf := assemblePDF(objects)
 
 	var output bytes.Buffer
-	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+	if err := ConvertWithOptions(t.Context(), pdf, &output, "", options); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())

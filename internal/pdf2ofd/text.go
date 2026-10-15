@@ -8,6 +8,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/text/encoding"
@@ -390,6 +391,13 @@ func decodePDFText(data []byte, font pdfFontInfo) (string, []uint64) {
 		// 无 ToUnicode 的 CID 字体靠内嵌 cmap 的字符集映射还原，见 cidUnicode。
 		if value, ok := font.cidUnicode(code); ok {
 			builder.WriteString(value)
+			continue
+		}
+		// /G36 等未知自定义字形名没有 Unicode 语义。用私有区码位保留实际
+		// 字形，避免把源字节误当作无关 ASCII 字符；修复后的内嵌字体会将该码位
+		// 直接映射到原始 GID。
+		if glyph := font.codeToGID[uint32(code)]; glyph != 0 {
+			builder.WriteRune(fontfix.GlyphRune(glyph))
 			continue
 		}
 		if decoder != nil {

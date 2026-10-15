@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
@@ -127,6 +128,48 @@ func TestPDFMaskStrictConversionRendersTransparentBackground(t *testing.T) {
 			if got != want {
 				t.Fatalf("explicit=%v block %d=%v want %v", explicit, i, got, want)
 			}
+		}
+	}
+}
+
+func TestPDFMaskSamplePreservesColourKeyAndStencilMasks(t *testing.T) {
+	input, err := os.ReadFile("../../testdata/pdf/pdf-mask-sample.pdf")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("test fixture is not available")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := ConvertWithOptions(t.Context(), input, &output, "", Options{Strict: true}); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ofd.Close() }()
+	document := render.NewDocument(color.White, ofd.Documents[0])
+	defer document.Close()
+	raster, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPI(144))
+	if err != nil {
+		t.Fatal(err)
+	}
+	background := color.RGBA{R: 25, G: 64, B: 204, A: 255}
+	green := color.RGBA{G: 255, A: 255}
+	yellow := color.RGBA{R: 255, G: 220, A: 255}
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{
+		{100, 100, background}, {250, 100, green}, {400, 100, background}, {550, 100, green},
+		{100, 180, green}, {250, 180, background}, {400, 180, green}, {550, 180, background},
+		{100, 310, yellow}, {400, 310, background}, {100, 380, background}, {400, 380, yellow},
+		{100, 510, background}, {400, 510, yellow}, {100, 570, yellow}, {400, 570, background},
+	} {
+		got := raster.RGBAAt(tc.x, tc.y)
+		if colorDistance(got, tc.want) > 2 {
+			t.Errorf("pixel(%d,%d)=%v want %v", tc.x, tc.y, got, tc.want)
 		}
 	}
 }

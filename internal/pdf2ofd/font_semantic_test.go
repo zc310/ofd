@@ -81,16 +81,38 @@ func TestSemanticTextKeepsWordsAndSourceCharacterPositions(t *testing.T) {
 }
 
 func TestType3SemanticWidthsKeepFontMatrixAndCharacterSpacing(t *testing.T) {
-	for _, matrix := range []string{".001 0 0 .001 0 0", ".002 0 0 .001 0 0"} {
-		t.Run(matrix, func(t *testing.T) {
-			input := type3TextPDF("BT /F1 12 Tf 3 Tr .4 Tc 30 100 Td (ABAB) Tj ET", matrix, "600 0 d0", "600 0 d0", "")
+	for _, tc := range []struct {
+		matrix    string
+		wantDelta float64
+	}{
+		{".001 0 0 .001 0 0", 7.6},
+		{".002 0 0 .001 0 0", 14.8},
+	} {
+		t.Run(tc.matrix, func(t *testing.T) {
+			input := type3TextPDF("BT /F1 12 Tf 3 Tr .4 Tc 30 100 Td (ABAB) Tj ET", tc.matrix, "600 0 d0", "600 0 d0", "")
 			ofd, page, _ := textFidelityConvert(t, input)
 			pdf := textFidelityPDFOutput(t, ofd, page)
 			if text := textFidelityExtractPDF(t, pdf); strings.TrimSpace(text) != "ABAB" {
 				t.Fatalf("Type3 semantic word split: %q", text)
 			}
 			source, got := semanticPDFCharacters(t, input), semanticPDFCharacters(t, pdf)
-			if len(source) != 4 || len(got) != len(source) {
+			if len(got) != 4 {
+				t.Fatalf("Type3 characters: source=%+v roundtrip=%+v", source, got)
+			}
+			if len(source) == 0 {
+				// MuPDF omits render-mode-3 Type3 glyphs from structured text. The source
+				// advance is 600*FontMatrix[0]*12 + Tc, starting at (30, 100) PDF points.
+				if text := textFidelityExtractPDF(t, input); strings.TrimSpace(text) != "ABAB" {
+					t.Fatalf("source Type3 text extraction: %q", text)
+				}
+				for i, want := range []rune("ABAB") {
+					if got[i].Value != string(want) || math.Abs(got[i].X-(30+float64(i)*tc.wantDelta)) > .02 || math.Abs(got[i].Y-100) > .02 {
+						t.Fatalf("Type3 character %d: got=%+v, want %c at %g,100", i, got[i], want, 30+float64(i)*tc.wantDelta)
+					}
+				}
+				return
+			}
+			if len(source) != len(got) {
 				t.Fatalf("Type3 characters: source=%+v roundtrip=%+v", source, got)
 			}
 			for i, want := range source {

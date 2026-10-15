@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
@@ -120,6 +121,59 @@ func TestPDFMatteStrictConversionRendersWithoutWhiteFringe(t *testing.T) {
 	if got.R < 126 || got.R > 130 || got.G > 2 || got.B < 125 || got.B > 129 {
 		t.Fatalf("white fringe remains: %v", got)
 	}
+}
+
+func TestPDFMatteSampleKeepsUninterpolatedColourBands(t *testing.T) {
+	input, err := os.ReadFile("../../testdata/pdf/pdf-matte-sample.pdf")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("test fixture is not available")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := ConvertWithOptions(t.Context(), input, &output, "", Options{Strict: true}); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ofd.Close() }()
+	document := render.NewDocument(color.White, ofd.Documents[0])
+	defer document.Close()
+	raster, err := document.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPI(144))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{
+		{150, 280, color.RGBA{B: 255, A: 255}},
+		{300, 280, color.RGBA{R: 64, B: 191, A: 255}},
+		{500, 280, color.RGBA{R: 192, B: 63, A: 255}},
+		{650, 280, color.RGBA{R: 255, A: 255}},
+		{300, 730, color.RGBA{G: 43, B: 251, A: 255}},
+	} {
+		got := raster.RGBAAt(tc.x, tc.y)
+		if colorDistance(got, tc.want) > 3 {
+			t.Errorf("pixel(%d,%d)=%v want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+func colorDistance(a, b color.RGBA) uint8 {
+	max := uint8(0)
+	for _, d := range []int{int(a.R) - int(b.R), int(a.G) - int(b.G), int(a.B) - int(b.B)} {
+		if d < 0 {
+			d = -d
+		}
+		if uint8(d) > max {
+			max = uint8(d)
+		}
+	}
+	return max
 }
 
 func TestPDFInvalidMatteReportsAndKeepsBaseImage(t *testing.T) {

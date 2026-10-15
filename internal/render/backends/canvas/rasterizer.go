@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"image"
+	"math"
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/rasterizer"
@@ -91,6 +92,13 @@ func (r *adaptiveRasterizer) renderImageFast(dst *image.RGBA, img image.Image, m
 	// 渲染 99% 的 CPU 时间（64s -> 11.3s）。在 50 个样例共 16174 页上与
 	// CatmullRom 逐页对比，无任何一页平均差异超过 2 级灰度。
 	interp := draw.ApproxBiLinear
+	size := img.Bounds().Size()
+	sx := math.Hypot(aff3[0], aff3[3])
+	sy := math.Hypot(aff3[1], aff3[4])
+	// OFD 没有图像插值标志；避免极小栅格放大后变成大范围渐变。
+	if size.X*size.Y <= 64 && math.Min(sx, sy) >= 4 {
+		interp = draw.NearestNeighbor
+	}
 	interp.Transform(dst, aff3, img, img.Bounds(), draw.Over, nil)
 }
 

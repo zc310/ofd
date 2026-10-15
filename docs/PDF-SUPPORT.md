@@ -97,7 +97,7 @@ Office/HTML 转 OFD 时的 PDF 中间阶段。
 | DCTDecode/JPEG | Gray/RGB、四分量 CMYK/YCCK（包括 PDF 声明 CMYK 但 JPEG 无 Adobe 标记）；8 位原分量 Decode、颜色键和 Matte，支持外层 Flate 包装。 | 默认兼容模式下 CMYK 转 RGB PNG；`compact` 模式仅将无 Mask/SMask 的 CMYK JPEG 转为指定质量的有损 RGB JPEG。与码流冲突的 ColorTransform 覆盖暂不支持。 |
 | CCITTFaxDecode | 解码后重编码为 PNG，也可用于 ImageMask。 | 沿用 PDF 解析器的解码能力。 |
 | JBIG2Decode | 灰度图、JBIG2Globals、Decode 反相、ImageMask、灰度软掩码；颜色键和 Matte 使用二值原采样。 | 普通图像的任意 Decode 区间未完整支持；复合过滤器有限制。 |
-| JPXDecode | JP2/裸码流；DeviceGray/RGB/CMYK、1/3/4 分量 PDF ICCBased 配置文件、同位深 1–16 位无符号样本、cdef 颜色重排和单个整体 opacity。 | 8 位 RGB ICCBased JP2 使用完整质量解码路径；其他图像沿用原分量解码。普通图像忽略 PDF Decode 和字典位深；高位深输出 16 位 PNG。复合过滤器、复杂通道、调色板及 JP2 码流内嵌 ICC 暂不支持。 |
+| JPXDecode | JP2/裸码流；DeviceGray/RGB/CMYK、1/3/4 分量 PDF ICCBased 配置文件、同位深 1–16 位无符号样本、cdef 颜色重排和单个整体 opacity。 | 默认 Go 后端沿用原分量解码；8 位 RGB ICCBased JP2 使用完整质量解码路径。可选 OpenJPEG 后端应用 PDF Decode 数组，以兼容特定阅读器行为。高位深输出 16 位 PNG；复合过滤器、复杂通道、调色板及 JP2 码流内嵌 ICC 暂不支持。 |
 | JP2 特殊颜色 | 三分量 sYCC/eYCC、YCbCr2/3、PhotoYCC、CMY 转为 RGB。 | 暂不能与 Matte、灰度掩码或内嵌 opacity 组合；部分源阅读器的转换行为不同。 |
 | 内联图像 | `BI/ID/EI`，展开缩写键；未给 ColorSpace 时按 DeviceGray。 | 沿用普通图片的颜色空间、过滤器和预算限制。 |
 | ImageMask | 1 位模板图像，按当前填充色绘制，支持 Decode 反相。 | 多位 ImageMask 不支持。 |
@@ -131,7 +131,7 @@ RGB 栅格合成、CMYK 颜色转换、8 位量化、抗锯齿和图片放大插
 | JPX 多 opacity、逐颜色 opacity | 不支持；通道关联不完整、重复或与 SMaskInData 冲突会报告诊断。 |
 | 精确的原颜色空间混合及印刷叠印 | RGB 合成不能完整保留 CMYK/ICC 混合和叠印结果。 |
 | 挖空文字 TK 的整体形状、完整 AIS 语义 | 当前采用近似，分别报告 `graphics.knockout_text`、`graphics.alpha_shape`。 |
-| 图片 Interpolate 的独立语义 | 不单独保留；遮罩对齐使用最近邻，放大显示由输出阅读器决定。 |
+| 图片 Interpolate 的独立语义 | OFD 无对应标志；PDF 显式设置 Interpolate 且源图不超过 64 像素时，导入阶段先做双线性预放大，避免极小图像在输出阅读器中呈现为明显色块。 |
 | 竖排替代字体的上下文/多字形 GSUB | 未实现这类替换；简单 vert/vrt2 和竖排形式替代仍可用。 |
 | 线条平滑度 `i` | 忽略，不保留该设备相关参数。 |
 | 表单域、弹窗等交互 | 不保留交互语义，仅可能绘制已有外观。 |
@@ -139,6 +139,10 @@ RGB 栅格合成、CMYK 颜色转换、8 位量化、抗锯齿和图片放大插
 | PDF 数字签名、附件、嵌入式 JavaScript/PostScript | 不迁移相关对象或语义。 |
 
 ## 资源预算与诊断
+
+JPX 后端通过 `Options.JPXBackend` 选择，默认 `go`。`openjpeg` 后端仅在 Linux 上以
+`CGO_ENABLED=1` 和 `-tags openjpeg` 构建时可用，并依赖系统 `libopenjp2` 开发文件和
+`pkg-config`。CLI 对应参数为 `--pdf-jpx-backend openjpeg`。
 
 ### 默认预算
 

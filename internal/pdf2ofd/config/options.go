@@ -22,6 +22,15 @@ const (
 	DefaultJPEGQuality = 90
 )
 
+// JPXBackend selects the JPEG 2000 decoder used for PDF JPX images. The
+// OpenJPEG backend requires a Linux build with CGO_ENABLED=1 and -tags openjpeg.
+type JPXBackend string
+
+const (
+	JPXBackendGo       JPXBackend = "go"
+	JPXBackendOpenJPEG JPXBackend = "openjpeg"
+)
+
 // Limits 控制一次转换的资源预算。零值字段使用默认值，负值无效。
 type Limits struct {
 	// 字节预算分别作用于原始输入、单编码流、单解码流和累计解码流。
@@ -69,6 +78,7 @@ type Options struct {
 	Strict       bool
 	ImageMode    ImageMode
 	JPEGQuality  int
+	JPXBackend   JPXBackend
 	OnDiagnostic func(Diagnostic)
 }
 
@@ -87,6 +97,12 @@ func (e *LimitError) Unwrap() error { return ErrLimitExceeded }
 
 // Normalize 校验限制并补齐零值字段，返回独立的配置值。
 func (o Options) Normalize() (Options, error) {
+	if o.JPXBackend == "" {
+		o.JPXBackend = JPXBackendGo
+	}
+	if o.JPXBackend != JPXBackendGo && o.JPXBackend != JPXBackendOpenJPEG {
+		return o, fmt.Errorf("PDF JPX 解码后端必须是 %q 或 %q", JPXBackendGo, JPXBackendOpenJPEG)
+	}
 	if o.ImageMode == "" {
 		o.ImageMode = ImageModeCompatible
 	}

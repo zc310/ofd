@@ -56,6 +56,7 @@ ofd-converter --help
 | `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
 | `-pdf-image-mode`      | PDF 图片模式：`compatible`（默认）或 `compact`；后者对不透明 CMYK JPEG 转为有损 RGB JPEG |
 | `-pdf-jpeg-quality`    | `compact` 模式的 JPEG 质量，范围 `1-100`；`0` 使用默认 `90`。带 Mask/SMask 的图片仍输出 PNG |
+| `-pdf-jpx-backend`     | JPX 解码器：`go`（默认）或 `openjpeg`；OpenJPEG 需要 Linux、CGO 和系统 `libopenjp2` 开发文件 |
 | `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
 | `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 2,000,000,000 |
@@ -93,7 +94,7 @@ ofd-converter --help
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
-| `-pdf-strict`、`-pdf-image-*`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
+| `-pdf-strict`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -146,7 +147,12 @@ ofd-converter input.pdf output.ofd
 ofd-converter -from pdf -format ofd input.pdf output.ofd
 ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
 ofd-converter --pdf-image-mode compact --pdf-jpeg-quality 90 input.pdf compact.ofd
+ofd-converter --pdf-jpx-backend openjpeg input.pdf openjpeg.ofd
 ```
+
+OpenJPEG 是可选后端。启用前需安装 `libopenjp2` 开发包和 `pkg-config`，并在 Linux
+上以 `CGO_ENABLED=1 go build -tags openjpeg ./cmd/ofd-converter` 构建。默认构建不链接
+OpenJPEG；非 Linux、禁用 CGO 或未启用构建标签时选择该后端会在遇到 JPX 图片时报错。
 
 `compatible` 保持默认图像兼容性和无损处理；`compact` 将无软蒙版/颜色键的 CMYK JPEG
 转为 RGB JPEG，以减小照片资源体积，可能产生有损画质变化。带 `Mask` 或 `SMask` 的图像

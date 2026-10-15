@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	_ "image/png"
 	"math"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/pdf2ofd/config"
 	"github.com/zc310/ofd/pkg/creator"
+	"golang.org/x/image/draw"
 )
 
 const cmykRGBAPoolMaxBytes = 32 << 20
@@ -228,7 +230,73 @@ func (p *pdfInterpreter) appendImageWithGraphicsMask(stream *types.StreamDict, d
 			data, format = masked, "PNG"
 		}
 	}
+	if pdfImageInterpolate(p.ctx, stream) {
+		var err error
+		data, format, err = interpolateTinyPDFImage(data, format, p.control)
+		if err != nil {
+			return err
+		}
+	}
 	return p.appendImageData(data, format)
+}
+
+func pdfImageInterpolate(ctx *model.Context, stream *types.StreamDict) bool {
+	value, found := stream.Find("Interpolate")
+	if !found {
+		return false
+	}
+	value, err := dereferencePDFObject(ctx, value)
+	if err != nil {
+		return false
+	}
+	flag, ok := value.(types.Boolean)
+	return ok && flag.Value()
+}
+
+// OFD 没有图像插值标志；对 PDF 显式要求插值的极小图像预放大，避免输出阅读器
+// 将其按最近邻放大，保留源 PDF 要求的平滑采样效果。
+func interpolateTinyPDFImage(data []byte, format string, control *conversionControl) ([]byte, string, error) {
+	configuration, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", fmt.Errorf("读取待插值的 PDF 图像尺寸失败: %w", err)
+	}
+	if configuration.Width <= 0 || configuration.Height <= 0 || int64(configuration.Width)*int64(configuration.Height) > 64 {
+		return data, format, nil
+	}
+	source, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", fmt.Errorf("解码待插值的 PDF 图像失败: %w", err)
+	}
+	bounds := source.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= 0 || height <= 0 || width != configuration.Width || height != configuration.Height {
+		return data, format, nil
+	}
+	factor := int(math.Sqrt(65 / float64(width*height)))
+	for int64(width)*int64(height)*int64(factor)*int64(factor) <= 64 {
+		factor++
+	}
+	width, height = width*factor, height*factor
+	pixels := int64(width) * int64(height)
+	if control != nil {
+		checked, err := control.imagePixels(int64(width), int64(height))
+		if err != nil {
+			return nil, "", err
+		}
+		if err := control.addImagePixels(checked - int64(bounds.Dx())*int64(bounds.Dy())); err != nil {
+			return nil, "", err
+		}
+		if err := control.consumeOperations(pixels); err != nil {
+			return nil, "", err
+		}
+	}
+	output := image.NewNRGBA(image.Rect(0, 0, width, height))
+	draw.ApproxBiLinear.Scale(output, output.Bounds(), source, bounds, draw.Src, nil)
+	encoded, format, err := encodePNGImage(output)
+	if err != nil {
+		return nil, "", err
+	}
+	return encoded, format, nil
 }
 
 // appendImageData 把已经完成解码的图像数据按当前 CTM 放入页面。

@@ -100,6 +100,11 @@ Go 自带字体和内嵌的小型码流。Adobe CMap 是运行映射数据，来
 
 ## 独立验证与阅读器差异
 
+PDF JPX 解码默认使用纯 Go 后端。Linux 可选构建 OpenJPEG 后端：安装 `libopenjp2`
+开发文件与 `pkg-config` 后，使用 `CGO_ENABLED=1 go test -tags openjpeg ./internal/pdf2ofd`
+验证；调用方可通过 `Options.JPXBackend` 选择 `openjpeg`。该后端应用 PDF `/Decode`
+数组，用于需要匹配特定阅读器显示行为的文档。
+
 修改渲染逻辑时，检查源 PDF、直接 OFD 栅格、往返 PDF 栅格和文字提取。
 仅比较 OFD 与往返 PDF，或仅通过格式校验，不能证明与源 PDF 一致。
 
