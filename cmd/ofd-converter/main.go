@@ -107,6 +107,8 @@ type options struct {
 	allowRemote            bool
 	password               string
 	pdfStrict              bool
+	pdfImageMode           string
+	pdfJPEGQuality         int
 	pdfMaxInputBytes       int64
 	pdfMaxImagePixels      int64
 	pdfMaxTotalImagePixels int64
@@ -164,7 +166,7 @@ func main() {
 }
 
 func parseArgs(args []string) (*options, error) {
-	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", ocrLanguage: "chi_sim+eng", workers: defaultWorkers, externalWorkers: defaultOfficeWorkers, recursive: true, overwrite: true}
+	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", ocrLanguage: "chi_sim+eng", workers: defaultWorkers, externalWorkers: defaultOfficeWorkers, recursive: true, overwrite: true, pdfImageMode: string(converter.PDFImageModeCompatible), pdfJPEGQuality: converter.PDFDefaultJPEGQuality}
 	var output, format string
 	args = normalizeConverterArgs(args)
 	root := &cobra.Command{
@@ -246,6 +248,8 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
 	flags.StringVar(&opts.password, "password", "", "加密输入文档的打开口令（目前仅 PDF）")
 	flags.BoolVar(&opts.pdfStrict, "pdf-strict", false, "PDF 导入遇到内容缺失或近似转换诊断时失败")
+	flags.StringVar(&opts.pdfImageMode, "pdf-image-mode", opts.pdfImageMode, "PDF 图片模式: compatible (默认，无损兼容) 或 compact (不透明 CMYK JPEG 转有损 RGB JPEG)")
+	flags.IntVar(&opts.pdfJPEGQuality, "pdf-jpeg-quality", opts.pdfJPEGQuality, "PDF compact 图片模式的 JPEG 质量 (1-100；0 使用默认 90)")
 	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
 	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
 	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 20 亿像素")
@@ -281,7 +285,7 @@ func normalizeConverterArgs(args []string) []string {
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password":   true,
-		"pdf-strict": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
+		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
 		"ocr": true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
@@ -306,7 +310,7 @@ func normalizeConverterArgs(args []string) []string {
 }
 
 func run(opts *options) error {
-	if _, err := (converter.PDFImportOptions{Limits: opts.pdfLimits()}).Normalize(); err != nil {
+	if _, err := opts.pdfImportOptions().Normalize(); err != nil {
 		return usageError(err)
 	}
 	if opts.inputDir != "" || opts.outputDir != "" {
@@ -317,6 +321,14 @@ func run(opts *options) error {
 
 func (opts *options) pdfLimits() converter.PDFImportLimits {
 	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels, MaxOperations: opts.pdfMaxOperations}
+}
+
+func (opts *options) pdfImportOptions() converter.PDFImportOptions {
+	return converter.PDFImportOptions{
+		Limits:      opts.pdfLimits(),
+		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
+		JPEGQuality: opts.pdfJPEGQuality,
+	}
 }
 
 func runSingle(opts *options) error {
@@ -748,8 +760,10 @@ func convertImported(opts *options, from, to string) error {
 		diagnostics = os.Stderr
 	}
 	option = append(option, converter.WithPDFImportOptions(converter.PDFImportOptions{
-		Limits: opts.pdfLimits(),
-		Strict: opts.pdfStrict,
+		Limits:      opts.pdfLimits(),
+		Strict:      opts.pdfStrict,
+		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
+		JPEGQuality: opts.pdfJPEGQuality,
 		OnDiagnostic: func(d converter.PDFImportDiagnostic) {
 			_, _ = fmt.Fprintf(diagnostics, "PDF 导入警告 [%s] %s 第 %d 页，对象 %d/%d，资源 %q：%s\n", d.Code, opts.input, d.Page, d.Object, d.Generation, d.Resource, d.Message)
 		},

@@ -8,7 +8,19 @@ type PDFImportLimits = config.Limits
 // PDFImportDiagnostic 描述转换中无法完整保留的内容及其来源。
 type PDFImportDiagnostic = config.Diagnostic
 
-// PDFImportOptions 设置 PDF 导入的预算、诊断回调和严格模式。
+// PDFImageMode 选择 PDF 图片写入 OFD 的兼容性与压缩策略。
+type PDFImageMode = config.ImageMode
+
+const (
+	// PDFImageModeCompatible 保持默认的无损兼容转换。
+	PDFImageModeCompatible = config.ImageModeCompatible
+	// PDFImageModeCompact 将不透明的 CMYK JPEG 转为有损 RGB JPEG。
+	PDFImageModeCompact = config.ImageModeCompact
+	// PDFDefaultJPEGQuality 是 compact 图片模式的默认 JPEG 质量。
+	PDFDefaultJPEGQuality = config.DefaultJPEGQuality
+)
+
+// PDFImportOptions 设置 PDF 导入的预算、图片编码、诊断回调和严格模式。
 type PDFImportOptions = config.Options
 
 // PDFImportLimitError 包含超限的资源名称、上限和已观察到的用量。

@@ -11,6 +11,8 @@
 
 ## 未发布
 
+- `ofd-converter` 增加 PDF 图片模式 `--pdf-image-mode compatible|compact` 和 `--pdf-jpeg-quality`；默认兼容模式不变，compact 将无蒙版 CMYK JPEG 转为有损 RGB JPEG，带 Mask/SMask 的图片继续保留 PNG 透明度。
+
 - 修复 `pkg/creator` 多版本文件清单的路径基准问题，版本 `BaseLoc`、文件清单及
   `DocRoot` 统一输出 GB/T 33190—2016 §7.3 允许的包内绝对路径。
   修复校验器漏检 `DocVersion` 的入口和文件引用；多版本示例按 §19.2 补齐入口及
