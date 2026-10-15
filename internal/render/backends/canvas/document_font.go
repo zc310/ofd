@@ -3,6 +3,7 @@ package canvas
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image/color"
 	"io/fs"
@@ -761,14 +762,20 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	if ft.Bold {
 		fontStyle |= drawing.FontBold
 	}
+	var embeddedErr error
 	if ft.FontFile != "" {
-		if data, err := p.FileCache.Read(string(ft.FontFile)); err == nil {
+		data, readErr := p.FileCache.Read(string(ft.FontFile))
+		if readErr == nil {
 			p.mu.Lock()
 			mappings := p.glyphMappingList(id)
 			p.mu.Unlock()
 			if family, err := loadCachedEmbeddedFont(p, fontName, data, fontStyle, mappings); err == nil {
 				return family, "", nil
+			} else {
+				embeddedErr = err
 			}
+		} else {
+			embeddedErr = readErr
 		}
 	}
 
@@ -844,7 +851,11 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if !defaultReady {
 			return nil, "", fmt.Errorf("字体 %d 无法加载且没有可用的默认字体", id)
 		}
-		slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName)
+		if embeddedErr != nil {
+			slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName, "error", embeddedErr)
+		} else {
+			slog.Warn("字体不可用，使用默认字体", "id", uint64(id), "name", ft.FontName)
+		}
 		return defaultFamily, "", nil
 	}
 	return nil, "", fmt.Errorf("字体 %d 无法加载", id)
@@ -1164,23 +1175,44 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // mappings 为文档提供的 Unicode→字形映射，用于让缺少 Unicode cmap 的子集字体
 // 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
 func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontfix.GlyphMapping) error {
+	var failures []error
 	if len(mappings) > 0 {
-		if fixed, err := embeddedRepairer(p, data).WithGlyphs(mappings); err == nil {
+		fixed, err := embeddedRepairer(p, data).WithGlyphs(mappings)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("fontfix 字形映射修复: %w", err))
+		} else {
 			slog.Debug("load embedded font with glyph mappings", "family", family.Name(), "style", style, "mappings", len(mappings))
-			if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
+			if err = family.LoadFont(fixed, 0, canvasStyle(style)); err != nil {
+				failures = append(failures, fmt.Errorf("加载映射字体: %w", err))
+			} else if !fontFamilyUsable(family) {
+				failures = append(failures, fmt.Errorf("映射字体缺少必要字形表"))
+			} else {
 				return nil
 			}
 		}
 	}
-	if fixed, err := fontfix.Repair(data); err == nil {
+	if fixed, err := fontfix.Repair(data); err != nil {
+		failures = append(failures, fmt.Errorf("fontfix 修复: %w", err))
+	} else {
 		slog.Debug("load repaired embedded font", "family", family.Name(), "style", style, "bytes", len(fixed))
-		if err = family.LoadFont(fixed, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
+		if err = family.LoadFont(fixed, 0, canvasStyle(style)); err != nil {
+			failures = append(failures, fmt.Errorf("加载修复字体: %w", err))
+		} else if !fontFamilyUsable(family) {
+			failures = append(failures, fmt.Errorf("修复字体缺少必要字形表"))
+		} else {
 			return nil
 		}
 	}
 	slog.Debug("load original embedded font", "family", family.Name(), "style", style, "bytes", len(data))
-	if err := family.LoadFont(data, 0, canvasStyle(style)); err == nil && fontFamilyUsable(family) {
+	if err := family.LoadFont(data, 0, canvasStyle(style)); err != nil {
+		failures = append(failures, fmt.Errorf("加载原始字体: %w", err))
+	} else if !fontFamilyUsable(family) {
+		failures = append(failures, fmt.Errorf("原始字体缺少必要字形表"))
+	} else {
 		return nil
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("嵌入字体结构不可用: %w", errors.Join(failures...))
 	}
 	return fmt.Errorf("嵌入字体结构不可用")
 }

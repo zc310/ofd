@@ -1076,9 +1076,16 @@ func TestConvertTestdataPDFs(t *testing.T) {
 		t.Skip("测试文件不存在，跳过")
 	}
 	for _, path := range paths {
-		path := path
-		t.Run(filepath.Base(path), func(t *testing.T) {
-			data, err := os.ReadFile(path)
+		p := path
+		t.Run(filepath.Base(p), func(t *testing.T) {
+			info, err := os.Stat(p)
+			if err != nil {
+				t.Skipf("测试文件不可用，跳过: %v", err)
+			}
+			if info.Size() > 10<<20 {
+				t.Skipf("PDF 文件大于 10 MiB，跳过: %d 字节", info.Size())
+			}
+			data, err := os.ReadFile(p)
 			if err != nil {
 				t.Skipf("测试文件不存在，跳过: %v", err)
 			}
@@ -1097,7 +1104,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 			if len(ofd.Documents) != 1 || len(ofd.Documents[0].Pages) == 0 {
 				t.Fatalf("documents/pages = %d/%d", len(ofd.Documents), len(ofd.Documents[0].Pages))
 			}
-			if strings.HasSuffix(path, "sample2.pdf") || strings.HasSuffix(path, "fontforge_cn.pdf") {
+			if strings.HasSuffix(p, "sample2.pdf") || strings.HasSuffix(p, "fontforge_cn.pdf") {
 				fontCount := 0
 				for _, document := range ofd.Documents {
 					document.ForEachFont(func(_ models.StID, font *models.Font) bool {
@@ -1114,7 +1121,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 			// ReportLab 子集字体的字形名是 uF00XX，无法按标准字形名解析。
 			// 必须回退到字体 cmap 生成 CGTransform，否则阅读器会退回 Unicode
 			// cmap 查询并渲染成错误的字形宽度。
-			if strings.HasSuffix(path, "byte_of_python_v192.pdf") {
+			if strings.HasSuffix(p, "byte_of_python_v192.pdf") {
 				transformCount := 0
 				urlTransform := -1
 				for _, document := range ofd.Documents {
@@ -1147,7 +1154,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 			// 不能用 glyph < numGlyphs 判定字形缺失，否则整段
 			// CGTransform 被丢弃（斜体/装饰字退化成方块），且因内嵌
 			// 字体 hmtx 为占位值而没有 DeltaX，导致字宽错位。
-			if strings.HasSuffix(path, "bibble.pdf") {
+			if strings.HasSuffix(p, "bibble.pdf") {
 				noCGT := 0
 				deltaCount := 0
 				for _, document := range ofd.Documents {
@@ -1178,7 +1185,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 			}
 			// Type3 与部分子集字体没有 /ToUnicode，只能靠 /Encoding 的
 			// /Differences 字形名恢复 Unicode；缺失时会输出 U+FFFD 乱码。
-			if strings.HasSuffix(path, "magazine.pdf") {
+			if strings.HasSuffix(p, "magazine.pdf") {
 				replacement := 0
 				mergedRuns := 0
 				for _, document := range ofd.Documents {

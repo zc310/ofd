@@ -52,6 +52,20 @@ func TestPDFCFFGlyphTransformsUseGID(t *testing.T) {
 	}
 }
 
+func TestPDFDecodeUnknownCustomGlyphUsesPrivateGIDRune(t *testing.T) {
+	font := pdfFontInfo{
+		codeBytes: 1,
+		codeToGID: map[uint32]uint16{54: 22},
+	}
+	text, codes := decodePDFText([]byte{54}, font)
+	if want := string(fontfix.GlyphRune(22)); text != want {
+		t.Fatalf("decoded custom glyph = %U, want private GID rune %U", []rune(text), []rune(want))
+	}
+	if len(codes) != 1 || codes[0] != 54 {
+		t.Fatalf("codes = %v, want [54]", codes)
+	}
+}
+
 func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
 	data, err := os.ReadFile("../../testdata/pdf/腾讯官方ESG报告.pdf")
 	if err != nil {
@@ -95,5 +109,67 @@ func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
 		if got := repaired.GlyphIndex(mapping.Rune); got != mapping.Glyph {
 			t.Fatalf("repaired cmap[%c] = GID %d, want %d", mapping.Rune, got, mapping.Glyph)
 		}
+	}
+}
+
+func TestGBT38540CIDCFFImportBuildsGlyphTransforms(t *testing.T) {
+	data, err := os.ReadFile("../../docs/standards/GBT_38540-2020.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := (Options{}).Normalize()
+	p := pdfInterpreter{ctx: ctx, control: &conversionControl{ctx: t.Context(), options: options}}
+	font := pdfFontInfo{widths: map[int]float64{}}
+	p.loadFont(&font, *types.NewIndirectRef(56, 0))
+	if font.sfnt == nil || font.sfnt.CFF == nil {
+		t.Fatal("CID CFF font was not parsed")
+	}
+
+	code := uint64(0x004a) // 标准封面左上角“ICS”中的首字符。
+	text := pdfCodeUnicode(code, font)
+	if text == "" {
+		t.Fatal("CID CFF character has no Unicode mapping")
+	}
+	transforms := pdfTextGlyphTransforms([]uint64{code}, text, font)
+	if len(transforms) != 1 || len(transforms[0].Glyphs) != 1 {
+		t.Fatalf("CID CFF transforms = %+v, want one glyph", transforms)
+	}
+	cid, ok := font.sfnt.CFF.GlyphCID(uint16(transforms[0].Glyphs[0]))
+	if !ok || cid != uint16(pdfCIDCode(code, font)) {
+		t.Fatalf("glyph %d maps to CID %d, want CID %d", transforms[0].Glyphs[0], cid, pdfCIDCode(code, font))
+	}
+}
+
+func TestGBTCustomCFFEncodingPreservesPrivateGlyphRune(t *testing.T) {
+	data, err := os.ReadFile("../../docs/standards/GBT_38540-2020.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := (Options{}).Normalize()
+	p := pdfInterpreter{ctx: ctx, control: &conversionControl{ctx: t.Context(), options: options}}
+	font := pdfFontInfo{widths: map[int]float64{}, codeBytes: 1}
+	p.loadFont(&font, *types.NewIndirectRef(59, 0))
+
+	glyph := font.codeToGID[54]
+	if glyph == 0 {
+		t.Fatal("自定义 /G36 编码未解析到字形 ID")
+	}
+	if got := pdfCodeUnicode(54, font); got != "" {
+		t.Fatalf("自定义 /G36 被误解码为 %q", got)
+	}
+	text, codes := decodePDFText([]byte{54}, font)
+	if want := string(fontfix.GlyphRune(glyph)); text != want {
+		t.Fatalf("自定义字形解码为 %U，期望 GID 私有码位 %U", []rune(text), []rune(want))
+	}
+	if len(codes) != 1 || codes[0] != 54 {
+		t.Fatalf("字符编码 = %v，期望 [54]", codes)
 	}
 }

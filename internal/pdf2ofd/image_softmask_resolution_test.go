@@ -284,3 +284,24 @@ func TestPDFExpandedSoftMaskStrictConversionRendersAllTransparencyLevels(t *test
 		}
 	}
 }
+
+func TestPDFInterpolateUpscalesTinyImageWithSoftMask(t *testing.T) {
+	input := bytes.Replace(
+		resolutionMaskPDF("/Im0 Do"),
+		[]byte("/SMask 6 0 R"),
+		[]byte("/SMask 6 0 R /Interpolate true"),
+		1,
+	)
+	var output bytes.Buffer
+	if err := ConvertWithOptions(t.Context(), input, &output, "", Options{Strict: true}); err != nil {
+		t.Fatal(err)
+	}
+	img := decodeFirstPageImage(t, output.Bytes())
+	if bounds := img.Bounds(); bounds.Dx()*bounds.Dy() <= 64 {
+		t.Fatalf("interpolated image stayed tiny: %v", bounds)
+	}
+	alpha := img.NRGBAAt(img.Bounds().Min.X+2, img.Bounds().Min.Y+2).A
+	if alpha == 0 || alpha == 64 || alpha == 128 || alpha == 255 {
+		t.Fatalf("interpolated alpha=%d, want a blended value", alpha)
+	}
+}

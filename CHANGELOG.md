@@ -11,6 +11,10 @@
 
 ## 未发布
 
+- PDF 导入保留显式图像插值行为：对 `Interpolate=true` 且不超过 64 像素的图像预放大，避免极小软掩码图像在 OFD 阅读器中呈现为色块。
+
+- PDF 导入增加可选 OpenJPEG JPX 解码后端；默认 Go 后端不变。OpenJPEG 需在 Linux 上安装 `libopenjp2` 开发文件和 `pkg-config`，并使用 `CGO_ENABLED=1` 与 `-tags openjpeg` 构建；`ofd-converter` 可用 `--pdf-jpx-backend` 选择。
+
 - `ofd-converter` 增加 PDF 图片模式 `--pdf-image-mode compatible|compact` 和 `--pdf-jpeg-quality`；默认兼容模式不变，compact 将无蒙版 CMYK JPEG 转为有损 RGB JPEG，带 Mask/SMask 的图片继续保留 PNG 透明度。
 
 - 修复 `pkg/creator` 多版本文件清单的路径基准问题，版本 `BaseLoc`、文件清单及

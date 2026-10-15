@@ -7,15 +7,20 @@ func TestImageOptionsNormalizeDefaultsAndValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.ImageMode != ImageModeCompatible || options.JPEGQuality != DefaultJPEGQuality {
-		t.Fatalf("defaults: mode=%q quality=%d", options.ImageMode, options.JPEGQuality)
+	if options.ImageMode != ImageModeCompatible || options.JPEGQuality != DefaultJPEGQuality || options.JPXBackend != JPXBackendGo {
+		t.Fatalf("defaults: mode=%q quality=%d jpx=%q", options.ImageMode, options.JPEGQuality, options.JPXBackend)
 	}
 	options, err = (Options{ImageMode: ImageModeCompact, JPEGQuality: 72}).Normalize()
 	if err != nil || options.ImageMode != ImageModeCompact || options.JPEGQuality != 72 {
 		t.Fatalf("compact options=%+v err=%v", options, err)
 	}
+	options, err = (Options{JPXBackend: JPXBackendOpenJPEG}).Normalize()
+	if err != nil || options.JPXBackend != JPXBackendOpenJPEG {
+		t.Fatalf("OpenJPEG options=%+v err=%v", options, err)
+	}
 	for _, invalid := range []Options{
 		{ImageMode: "source"},
+		{JPXBackend: "native"},
 		{JPEGQuality: -1},
 		{JPEGQuality: 101},
 	} {

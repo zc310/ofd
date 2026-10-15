@@ -109,6 +109,7 @@ type options struct {
 	pdfStrict              bool
 	pdfImageMode           string
 	pdfJPEGQuality         int
+	pdfJPXBackend          string
 	pdfMaxInputBytes       int64
 	pdfMaxImagePixels      int64
 	pdfMaxTotalImagePixels int64
@@ -166,7 +167,7 @@ func main() {
 }
 
 func parseArgs(args []string) (*options, error) {
-	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", ocrLanguage: "chi_sim+eng", workers: defaultWorkers, externalWorkers: defaultOfficeWorkers, recursive: true, overwrite: true, pdfImageMode: string(converter.PDFImageModeCompatible), pdfJPEGQuality: converter.PDFDefaultJPEGQuality}
+	opts := &options{dpi: defaultDPI, bg: defaultBgColor, htmlFormat: "png", ocrLanguage: "chi_sim+eng", workers: defaultWorkers, externalWorkers: defaultOfficeWorkers, recursive: true, overwrite: true, pdfImageMode: string(converter.PDFImageModeCompatible), pdfJPEGQuality: converter.PDFDefaultJPEGQuality, pdfJPXBackend: string(converter.PDFJPXBackendGo)}
 	var output, format string
 	args = normalizeConverterArgs(args)
 	root := &cobra.Command{
@@ -250,6 +251,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.pdfStrict, "pdf-strict", false, "PDF 导入遇到内容缺失或近似转换诊断时失败")
 	flags.StringVar(&opts.pdfImageMode, "pdf-image-mode", opts.pdfImageMode, "PDF 图片模式: compatible (默认，无损兼容) 或 compact (不透明 CMYK JPEG 转有损 RGB JPEG)")
 	flags.IntVar(&opts.pdfJPEGQuality, "pdf-jpeg-quality", opts.pdfJPEGQuality, "PDF compact 图片模式的 JPEG 质量 (1-100；0 使用默认 90)")
+	flags.StringVar(&opts.pdfJPXBackend, "pdf-jpx-backend", opts.pdfJPXBackend, "PDF JPX 解码器: go (默认) 或 openjpeg (需以 -tags openjpeg 构建并安装 libopenjp2)")
 	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
 	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
 	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 20 亿像素")
@@ -285,7 +287,7 @@ func normalizeConverterArgs(args []string) []string {
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password":   true,
-		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
+		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-jpx-backend": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
 		"ocr": true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
@@ -328,6 +330,7 @@ func (opts *options) pdfImportOptions() converter.PDFImportOptions {
 		Limits:      opts.pdfLimits(),
 		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
 		JPEGQuality: opts.pdfJPEGQuality,
+		JPXBackend:  converter.PDFJPXBackend(opts.pdfJPXBackend),
 	}
 }
 
@@ -764,6 +767,7 @@ func convertImported(opts *options, from, to string) error {
 		Strict:      opts.pdfStrict,
 		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
 		JPEGQuality: opts.pdfJPEGQuality,
+		JPXBackend:  converter.PDFJPXBackend(opts.pdfJPXBackend),
 		OnDiagnostic: func(d converter.PDFImportDiagnostic) {
 			_, _ = fmt.Fprintf(diagnostics, "PDF 导入警告 [%s] %s 第 %d 页，对象 %d/%d，资源 %q：%s\n", d.Code, opts.input, d.Page, d.Object, d.Generation, d.Resource, d.Message)
 		},

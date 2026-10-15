@@ -20,7 +20,16 @@ const (
 	PDFDefaultJPEGQuality = config.DefaultJPEGQuality
 )
 
-// PDFImportOptions 设置 PDF 导入的预算、图片编码、诊断回调和严格模式。
+// PDFJPXBackend 选择 PDF JPX 图像使用的解码器。Linux 构建需启用 CGO 并添加
+// -tags openjpeg 才能使用 OpenJPEG 后端。
+type PDFJPXBackend = config.JPXBackend
+
+const (
+	PDFJPXBackendGo       = config.JPXBackendGo
+	PDFJPXBackendOpenJPEG = config.JPXBackendOpenJPEG
+)
+
+// PDFImportOptions 设置 PDF 导入的预算、图片编码、JPX 解码后端、诊断回调和严格模式。
 type PDFImportOptions = config.Options
 
 // PDFImportLimitError 包含超限的资源名称、上限和已观察到的用量。

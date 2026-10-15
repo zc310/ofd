@@ -8,6 +8,7 @@ import (
 	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/coloricc"
+	"github.com/zc310/ofd/internal/pdf2ofd/config"
 )
 
 type matteJPXInfo struct {
@@ -294,7 +295,13 @@ func (p *pdfInterpreter) jpxImagePlanes(stream *types.StreamDict, info *matteJPX
 	if err := p.control.consumeOperations(pixels * int64(m.NumComponents)); err != nil {
 		return nil, err
 	}
-	decoded, err := jpeg2000.DecodeFloat(bytes.NewReader(jpxStreamBytes(stream)))
+	var decoded *jpeg2000.FloatImage
+	var err error
+	if p.control != nil && p.control.options.JPXBackend == config.JPXBackendOpenJPEG {
+		decoded, err = decodeJPXOpenJPEG(jpxStreamBytes(stream))
+	} else {
+		decoded, err = jpeg2000.DecodeFloat(bytes.NewReader(jpxStreamBytes(stream)))
+	}
 	if cancelled := p.control.check(); cancelled != nil {
 		return nil, cancelled
 	}

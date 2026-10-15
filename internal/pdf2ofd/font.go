@@ -87,15 +87,6 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 			}
 		}
 	}
-	// 部分字体（尤其 Type3 与无 ToUnicode 的子集字体）只提供 /Encoding 的
-	// /Differences 字形名。必须按标准字形表补出 Unicode，否则解码会退化成
-	// 原始字节，正文出现乱码。ToUnicode 优先，仅补齐缺失的编码。
-	if font.codeBytes == 1 && font.predefined == nil && font.encodingCMap == nil {
-		if mapping := p.applySimpleEncoding(font, dict); len(font.widths) == 0 {
-			applyCoreFontWidths(font, mapping)
-		}
-	}
-	font.codeToGID = p.pdfFontCodeToGID(*font, dict)
 	if len(font.data) > 0 {
 		if sfnt, err := fontparser.ParseSFNT(font.data, 0); err == nil && sfnt != nil {
 			font.sfnt = sfnt
@@ -107,6 +98,15 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 			}
 		}
 	}
+	// 部分字体（尤其 Type3 与无 ToUnicode 的子集字体）只提供 /Encoding 的
+	// /Differences 字形名。必须按标准字形表补出 Unicode，否则解码会退化成
+	// 原始字节，正文出现乱码。ToUnicode 优先，仅补齐缺失的编码。
+	if font.codeBytes == 1 && font.predefined == nil && font.encodingCMap == nil {
+		if mapping := p.applySimpleEncoding(font, dict); len(font.widths) == 0 {
+			applyCoreFontWidths(font, mapping)
+		}
+	}
+	font.codeToGID = p.pdfFontCodeToGID(*font, dict)
 	font.glyphWidths = pdfFontGlyphWidths(font.data, font.codeToGID)
 	if object, hasDescendants := dict.Find("DescendantFonts"); hasDescendants {
 		// 与上面读 FontDescriptor 同一原因：DescendantFonts 是间接引用时 ArrayEntry
@@ -266,8 +266,17 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 			if !ok || code < 0 || code > 255 {
 				continue
 			}
-			if r, ok := glyphsnames.GlyphToRune(strings.TrimPrefix(name.Value(), "/")); ok {
+			glyphName := strings.TrimPrefix(name.Value(), "/")
+			if font.sfnt != nil && font.sfnt.IsCFF && isCustomCFFGlyphName(glyphName) && font.sfnt.FindGlyphName(glyphName) != 0 {
+				// 某些 CFF 子集把 G21、G36 等内部名称用作任意字形名；
+				// 字形名库可能恰好把它们别名到无关 ASCII 字符。
+				delete(mapping, uint32(code))
+			} else if r, ok := glyphsnames.GlyphToRune(glyphName); ok {
 				mapping[uint32(code)] = string(r)
+			} else {
+				// Differences 会覆盖 BaseEncoding。未知自定义字形名不能沿用
+				// 同一码值原有的 ASCII 字符，否则会丢失后续按 GID 渲染的含义。
+				delete(mapping, uint32(code))
 			}
 			code++
 		}
@@ -284,6 +293,18 @@ func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict)
 		}
 	}
 	return mapping
+}
+
+func isCustomCFFGlyphName(name string) bool {
+	if len(name) != 3 || name[0] != 'G' {
+		return false
+	}
+	for _, value := range name[1:] {
+		if !((value >= '0' && value <= '9') || (value >= 'A' && value <= 'F') || (value >= 'a' && value <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 // coreFontName 归一化 /BaseFont 并判断是否属于 PDF 基础 14 字体。子集前缀
