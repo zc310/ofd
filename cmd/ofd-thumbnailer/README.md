@@ -14,8 +14,11 @@ ofd-thumbnailer <输入文件> <输出 PNG 路径> <长边像素>
 
 ## 安装
 
-- 编译 `go build .`
+- 编译 `go build -o ofd-thumbnailer .`
 - 安装 `sudo ./install.sh`
+
+安装后命令为 `zc310-ofd-thumbnailer`，桌面缩略图配置安装到
+`/usr/share/thumbnailers/zc310-ofd.thumbnailer`。
 
 ## 退出码
 
