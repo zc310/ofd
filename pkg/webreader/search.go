@@ -3,6 +3,8 @@ package webreader
 import (
 	"errors"
 	"strings"
+
+	"github.com/zc310/ofd/internal/search"
 )
 
 // SearchResult 描述一个页面文字命中。
@@ -24,11 +26,6 @@ type Rect struct {
 	Angle  float64
 }
 
-type searchPage struct {
-	runs   [][]rune
-	byRune map[rune][]int
-}
-
 // Search 在所有页面的文字对象中查找 query，匹配不区分大小写。
 func (r *Reader) Search(query string) ([]SearchResult, error) {
 	if r == nil {
@@ -47,7 +44,7 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	}
 	needle := strings.ToLower(query)
 	needleRunes := []rune(needle)
-	searchTable := buildRuneSearchTable(needleRunes)
+	searchTable := search.RuneSearchTable(needleRunes)
 	results := make([]SearchResult, 0)
 	type match struct {
 		layoutIndex int
@@ -58,15 +55,15 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 		indexed := r.searchAt(pageIndex)
 		var matches []match
 		var layoutRunIndices []int
-		for _, runIndex := range indexed.byRune[needleRunes[0]] {
-			if runIndex < 0 || runIndex >= len(indexed.runs) {
+		for _, runIndex := range indexed.Candidates(needleRunes[0]) {
+			if runIndex < 0 || runIndex >= indexed.Len() {
 				continue
 			}
-			text := indexed.runs[runIndex]
+			text := indexed.Run(runIndex)
 			start := 0
 			layoutIndex := -1
 			for {
-				found := indexRunesWithTable(text[start:], needleRunes, searchTable)
+				found := search.IndexOfRunes(text[start:], needleRunes, searchTable)
 				if found < 0 {
 					break
 				}
@@ -107,49 +104,6 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	return results, nil
 }
 
-// buildRuneSearchTable 构造 KMP 的最长前缀表。一次 Search 中查询词不变，
-// 因此该表应在搜索开始时构造一次，而不是为每个候选文字对象重复分配。
-func buildRuneSearchTable(needle []rune) []int {
-	lps := make([]int, len(needle))
-	length := 0
-	for i := 1; i < len(needle); {
-		if needle[i] == needle[length] {
-			length++
-			lps[i] = length
-			i++
-		} else if length > 0 {
-			length = lps[length-1]
-		} else {
-			lps[i] = 0
-			i++
-		}
-	}
-	return lps
-}
-
-func indexRunesWithTable(text, needle []rune, lps []int) int {
-	if len(needle) == 0 {
-		return 0
-	}
-	if len(needle) > len(text) {
-		return -1
-	}
-	for i, j := 0, 0; i < len(text); {
-		if text[i] == needle[j] {
-			i++
-			j++
-			if j == len(needle) {
-				return i - j
-			}
-		} else if j > 0 {
-			j = lps[j-1]
-		} else {
-			i++
-		}
-	}
-	return -1
-}
-
 func minInt(left, right int) int {
 	if left < right {
 		return left
@@ -157,90 +111,25 @@ func minInt(left, right int) int {
 	return right
 }
 
-func (r *Reader) searchAt(index int) searchPage {
+func (r *Reader) searchAt(index int) *search.Index {
 	if indexed, ok := r.search.Get(index); ok {
 		return indexed
 	}
-	var indexed searchPage
+	var builder *search.Builder
 	if runs, ok := r.text.Get(index); ok {
-		indexed = buildSearchIndex(runs)
+		builder = search.NewBuilder(len(runs))
+		for _, run := range runs {
+			builder.Add(run.Text)
+		}
 	} else {
 		ref := r.pages[index]
-		indexed = buildSearchIndexFromTexts(ref.document.TextValues(ref.page))
-	}
-	r.search.AddWeighted(index, indexed, searchPageWeight(indexed))
-	return indexed
-}
-
-// searchPageWeight 估算一页搜索索引的内存占用。
-//
-// 两个分量都要算：runs 是每字符一个 rune（4 字节）外加每个 run 一个切片头，
-// byRune 是 map 的桶与每个字符的候选 run 列表。实测密集页约 9.8 KB、稀疏页
-// 约 0.1 KB。
-const (
-	// searchPageRunOverhead 是每个 run 在索引里占的固定字节（切片头等）。
-	searchPageRunOverhead = 24
-	// searchPageEntryOverhead 是 byRune 里每个 key 的估算开销（桶与键本身）。
-	searchPageEntryOverhead = 8
-)
-
-func searchPageWeight(page searchPage) int64 {
-	var total int64
-	for _, run := range page.runs {
-		total += searchPageRunOverhead + int64(len(run))*4
-	}
-	for _, candidates := range page.byRune {
-		total += searchPageEntryOverhead + int64(len(candidates))*4
-	}
-	return total
-}
-
-// buildSearchIndex 建立一页的搜索索引。
-//
-// byRune 把"首字 -> 可能命中的 run 序号"记下来，查询时先按首字筛候选，再逐个
-// 精确匹配，避免对整页做逐位比较。索引按小写建，与 Search 里对 needle 的
-// 处理一致——否则 "Hello" 与 "hello" 会各占一个 key，而查询只走一边。
-func buildSearchIndex(runs []TextRun) searchPage {
-	indexed := searchPage{
-		runs:   make([][]rune, len(runs)),
-		byRune: make(map[rune][]int),
-	}
-	seen := make(map[rune]int, 128)
-	for runIndex, run := range runs {
-		indexed.runs[runIndex] = []rune(strings.ToLower(run.Text))
-		registerSearchRun(&indexed, seen, runIndex)
-	}
-	return indexed
-}
-
-func buildSearchIndexFromTexts(texts []string) searchPage {
-	indexed := searchPage{
-		runs:   make([][]rune, len(texts)),
-		byRune: make(map[rune][]int),
-	}
-	// seen 记的是"这个字符最后出现在哪个 run"，整页只建一次。
-	//
-	// 此前每个 run 新建一个 map[rune]struct{}，一个 500 行的页面就是 500 次
-	// map 分配，而这页各 run 的用字高度重叠——同一页汉字的用字表基本一致，
-	// 分配出来的东西大半是重复的。
-	//
-	// 用 runIndex+1 当代次标记，省掉逐次 clear：值相同才说明本 run 已登记过。
-	// 不用 0 是因为首个 run 的代次就是 1，0 恰好适合表示"没登记过"。
-	seen := make(map[rune]int, 128)
-	for runIndex, text := range texts {
-		indexed.runs[runIndex] = []rune(strings.ToLower(text))
-		registerSearchRun(&indexed, seen, runIndex)
-	}
-	return indexed
-}
-
-func registerSearchRun(indexed *searchPage, seen map[rune]int, runIndex int) {
-	generation := runIndex + 1
-	for _, value := range indexed.runs[runIndex] {
-		if seen[value] == generation {
-			continue
+		texts := ref.document.TextValues(ref.page)
+		builder = search.NewBuilder(len(texts))
+		for _, text := range texts {
+			builder.Add(text)
 		}
-		seen[value] = generation
-		indexed.byRune[value] = append(indexed.byRune[value], runIndex)
 	}
+	indexed := builder.Build()
+	r.search.AddWeighted(index, indexed, indexed.Weight())
+	return indexed
 }

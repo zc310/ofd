@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/internal/search"
 )
 
 func TestSearchAvoidsFullTextCache(t *testing.T) {
@@ -139,7 +141,7 @@ func TestSearchResultsMatchTextSnapshots(t *testing.T) {
 	}
 
 	needle := []rune(strings.ToLower(query))
-	table := buildRuneSearchTable(needle)
+	table := search.RuneSearchTable(needle)
 	want := make([]SearchResult, 0)
 	for pageIndex := range reader.pages {
 		runs, textErr := reader.Text(pageIndex)
@@ -150,7 +152,7 @@ func TestSearchResultsMatchTextSnapshots(t *testing.T) {
 			text := []rune(strings.ToLower(run.Text))
 			start := 0
 			for {
-				found := indexRunesWithTable(text[start:], needle, table)
+				found := search.IndexOfRunes(text[start:], needle, table)
 				if found < 0 {
 					break
 				}
@@ -177,7 +179,7 @@ func TestSearchResultsMatchTextSnapshots(t *testing.T) {
 func TestSearchCacheCapacityTracksPageCount(t *testing.T) {
 	cache := newSearchCache(3)
 	for index := 0; index < 3; index++ {
-		cache.Add(index, searchPage{})
+		cache.Add(index, search.NewBuilder(0).Build())
 	}
 	if got := cache.Len(); got != 3 {
 		t.Fatalf("三页文档的搜索缓存保留 %d 项，期望 3", got)
@@ -185,7 +187,7 @@ func TestSearchCacheCapacityTracksPageCount(t *testing.T) {
 
 	cache = newSearchCache(searchCacheCapacity + 1)
 	for index := 0; index <= searchCacheCapacity; index++ {
-		cache.Add(index, searchPage{})
+		cache.Add(index, search.NewBuilder(0).Build())
 	}
 	if got := cache.Len(); got != searchCacheCapacity {
 		t.Fatalf("超大文档的搜索缓存保留 %d 项，期望上限 %d", got, searchCacheCapacity)

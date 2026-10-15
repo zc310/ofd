@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zc310/ofd/internal/search"
 )
 
 // 本文件的基准覆盖浏览器侧真正会反复调用的路径：打开、取文字、搜索、渲染。
@@ -235,17 +237,17 @@ func BenchmarkSearchTableReuse(b *testing.B) {
 		b.ResetTimer()
 		for iteration := 0; iteration < b.N; iteration++ {
 			for _, candidate := range texts {
-				benchmarkSearchSink += indexRunesWithTable(candidate, needle, buildRuneSearchTable(needle))
+				benchmarkSearchSink += search.IndexOfRunes(candidate, needle, search.RuneSearchTable(needle))
 			}
 		}
 	})
 	b.Run("Reuse", func(b *testing.B) {
-		table := buildRuneSearchTable(needle)
+		table := search.RuneSearchTable(needle)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for iteration := 0; iteration < b.N; iteration++ {
 			for _, candidate := range texts {
-				benchmarkSearchSink += indexRunesWithTable(candidate, needle, table)
+				benchmarkSearchSink += search.IndexOfRunes(candidate, needle, table)
 			}
 		}
 	})
