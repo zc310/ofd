@@ -33,8 +33,8 @@ func DefaultLimits() Limits {
 	return Limits{
 		MaxInputBytes: 512 << 20, MaxPages: 10_000, MaxObjects: 1_000_000,
 		MaxStreamBytes: 256 << 20, MaxDecodedStreamBytes: 256 << 20, MaxTotalDecodedBytes: 1 << 30,
-		MaxImagePixels: 100_000_000, MaxTotalImagePixels: 250_000_000, MaxFontBytes: 64 << 20,
-		MaxOutputObjects: 1_000_000, MaxOperations: 10_000_000,
+		MaxImagePixels: 100_000_000, MaxTotalImagePixels: 2_000_000_000, MaxFontBytes: 64 << 20,
+		MaxOutputObjects: 1_000_000, MaxOperations: 1_000_000_000,
 		MaxDepth: 64,
 	}
 }

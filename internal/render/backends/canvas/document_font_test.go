@@ -335,6 +335,41 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	}
 }
 
+func TestIntroPage5EmbeddedGlyphMapping(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw/intro.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+
+	doc := ofd.Documents[0]
+	page, err := doc.GetPage(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := lease.Content()
+	fonts := NewFonts(doc)
+	fonts.RegisterPageGlyphs(doc, page, content)
+	lease.Release()
+
+	family, err := fonts.LoadFont(128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := family.(*canvas.FontFamily).Face(1, canvas.White)
+	if got := face.Font.GlyphIndex('公'); got == 0 {
+		t.Fatal("font 128 has no Unicode mapping for 公")
+	}
+	path, _ := face.ToPath("公")
+	if path == nil || path.Empty() {
+		t.Fatalf("font 128 has no outline for 公: path=%v", path)
+	}
+}
+
 // TestImageNotFoundLeftTextFontLoads 回归：testImageNotFound.ofd 左侧正文使用的
 // 内嵌子集字体（font_6.ttf / Font69.ttf）hmtx 尾部多出字节，之前会导致整个字体
 // 加载失败并回退到系统字体、正文渲染成乱码；修复后必须按内嵌字体加载并登记好

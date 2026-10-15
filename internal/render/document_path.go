@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const meshGradientDPI = 300.0
@@ -511,7 +512,7 @@ func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, objec
 		// Path.And 固定按 NonZero 规则求交，会把 Even-Odd 的洞当作填充区域。
 		// 先用 Even-Odd 规则整理轮廓方向（外圈 CCW、洞 CW），求交后再按
 		// NonZero 填充即可保留洞。
-		if object.Rule == "Even-Odd" {
+		if object.Rule == spec.FillRuleEvenOdd {
 			fillPath = fillPath.Settle(geom.EvenOdd)
 		}
 		ctx.Push()

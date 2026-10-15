@@ -7,6 +7,7 @@ import (
 
 	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"github.com/zc310/ofd/internal/coloricc"
 )
 
 type matteJPXInfo struct {
@@ -16,6 +17,7 @@ type matteJPXInfo struct {
 	colours   int
 	converted bool   // 普通三分量图像在通道重排后转换为 RGB。
 	channels  [5]int // 逻辑颜色分量及尾部 opacity 对应的原采样平面。
+	icc       *coloricc.Transformer
 }
 
 // matteJPXHeader 只接受可直接作为 PDF DeviceGray/RGB/CMYK 分量的整数采样。
@@ -63,7 +65,7 @@ func (p *pdfInterpreter) jpxHeader(stream *types.StreamDict, allowAlpha bool) (*
 		}
 	}
 	if len(metadata.ICCProfile) != 0 {
-		return nil, fmt.Errorf("JPX 的 ICC 颜色空间尚未支持")
+		return nil, fmt.Errorf("JPX 码流内嵌的 ICC 颜色空间尚未支持")
 	}
 	familyFromCode := ""
 	converted := false
@@ -85,11 +87,55 @@ func (p *pdfInterpreter) jpxHeader(stream *types.StreamDict, allowAlpha bool) (*
 		return nil, fmt.Errorf("JPX 的码流颜色变换尚未支持")
 	}
 	family := familyFromCode
+	var icc *coloricc.Transformer
 	if stream.Dict["ColorSpace"] != nil {
-		var ok bool
-		family, ok = dereferenceName(p.ctx, stream.Dict["ColorSpace"])
-		if !ok {
-			return nil, fmt.Errorf("JPX 当前只支持 DeviceGray/RGB/CMYK")
+		space, err := dereferencePDFObject(p.ctx, stream.Dict["ColorSpace"])
+		if err != nil {
+			return nil, fmt.Errorf("读取 JPX PDF 颜色空间失败: %w", err)
+		}
+		array, isArray := space.(types.Array)
+		isICCBased := false
+		if isArray && len(array) >= 2 {
+			firstName, _ := dereferencePDFObject(p.ctx, array[0])
+			spaceName, isName := firstName.(types.Name)
+			isICCBased = isName && spaceName.Value() == "ICCBased"
+		}
+		if isICCBased {
+			profileObject, err := dereferencePDFObject(p.ctx, array[1])
+			if err != nil {
+				return nil, fmt.Errorf("读取 JPX ICC 配置失败: %w", err)
+			}
+			var profile *types.StreamDict
+			switch value := profileObject.(type) {
+			case types.StreamDict:
+				profile = &value
+			case *types.StreamDict:
+				profile = value
+			}
+			if profile == nil {
+				return nil, fmt.Errorf("JPX ICC 配置不是流")
+			}
+			components, ok := dereferencedPDFNumber(p.ctx, profile.Dict["N"])
+			if !ok {
+				return nil, fmt.Errorf("JPX ICC 配置缺少有效的 N 分量数")
+			}
+			switch int(components) {
+			case 1:
+				family = "DeviceGray"
+			case 3:
+				family = "DeviceRGB"
+			case 4:
+				family = "DeviceCMYK"
+			default:
+				return nil, fmt.Errorf("JPX ICC 配置的 %d 个分量尚未支持", int(components))
+			}
+			icc = pdfImageICCProfileChannels(p.ctx, stream, int(components))
+		} else {
+			var ok bool
+			family, ok = dereferenceName(p.ctx, stream.Dict["ColorSpace"])
+			if !ok {
+				return nil, fmt.Errorf("JPX 当前只支持 DeviceGray/RGB/CMYK 或 ICCBased")
+			}
 		}
 	}
 	expected := map[string]int{"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4}[family]
@@ -114,7 +160,7 @@ func (p *pdfInterpreter) jpxHeader(stream *types.StreamDict, allowAlpha bool) (*
 	if err != nil {
 		return nil, err
 	}
-	return &matteJPXInfo{metadata: metadata, family: family, alpha: alpha, colours: expected, converted: converted, channels: channels}, nil
+	return &matteJPXInfo{metadata: metadata, family: family, alpha: alpha, colours: expected, converted: converted, channels: channels, icc: icc}, nil
 }
 
 // JP2 元数据接口尚未暴露 pclr/cmap/cdef；只扫描盒头，不复制载荷或解析码流。

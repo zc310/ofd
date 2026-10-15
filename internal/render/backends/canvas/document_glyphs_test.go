@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -170,6 +171,9 @@ func TestCollectObjectGlyphsPairsMultiCodeOneToOne(t *testing.T) {
 		if got := out[10][r]; got != glyph {
 			t.Fatalf("%c -> %d, want %d (out=%v)", r, got, glyph, out[10])
 		}
+		if got := out[10][fontfix.GlyphRune(uint16(glyph))]; got != uint16(glyph) {
+			t.Fatalf("GID %d private mapping = %d, want %d", glyph, got, glyph)
+		}
 	}
 }
 
@@ -185,8 +189,8 @@ func TestCollectObjectGlyphsSkipsMultiGlyphAndInvisible(t *testing.T) {
 	multi.Visible.Set(true)
 	out := make(map[models.StRefID]map[rune]uint16)
 	collectObjectGlyphs(multi, out)
-	if len(out) != 0 {
-		t.Fatalf("multi-glyph transform should not be registered: %+v", out)
+	if out[10]['f'] != 0 || out[10]['i'] != 0 || out[10][fontfix.GlyphRune(5)] != 5 {
+		t.Fatalf("multi-glyph transform mappings = %+v, want only private GID 5", out[10])
 	}
 
 	invisible := models.TextObject{CtText: models.CtText{
@@ -196,8 +200,8 @@ func TestCollectObjectGlyphsSkipsMultiGlyphAndInvisible(t *testing.T) {
 	}}
 	invisible.Visible.Set(false)
 	collectObjectGlyphs(invisible, out)
-	if len(out) != 0 {
-		t.Fatalf("invisible object should not be registered: %+v", out)
+	if out[10]['中'] != 0 || out[10][fontfix.GlyphRune(735)] != 0 {
+		t.Fatalf("invisible object changed mappings: %+v", out[10])
 	}
 }
 

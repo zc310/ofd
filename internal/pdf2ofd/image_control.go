@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"math"
 
-	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
+	fastjpx "github.com/ajroetker/go-jpeg2000"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
@@ -73,11 +73,11 @@ func (p *pdfInterpreter) preflightImage(stream *types.StreamDict, depth int) err
 		}
 		actualWidth, actualHeight = int64(configuration.Width), int64(configuration.Height)
 	case hasJPXFilter(stream):
-		metadata, err := jpeg2000.DecodeMetadata(bytes.NewReader(jpxStreamBytes(stream)))
+		configuration, err := fastjpx.DecodeConfig(bytes.NewReader(jpxStreamBytes(stream)))
 		if err != nil {
 			return fmt.Errorf("读取 JPEG 2000 尺寸失败: %w", err)
 		}
-		actualWidth, actualHeight = int64(metadata.Width), int64(metadata.Height)
+		actualWidth, actualHeight = int64(configuration.Width), int64(configuration.Height)
 	case hasJBIG2Filter(stream):
 		if err := p.preflightJBIG2(jbig2StreamBytes(stream), &pixels); err != nil {
 			return err

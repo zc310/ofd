@@ -862,31 +862,31 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 		}
 	case "S":
 		p.commitPendingClip()
-		p.paintPath(true, false, "NonZero")
+		p.paintPath(true, false, spec.FillRuleNonZero)
 	case "s":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
 		p.commitPendingClip()
-		p.paintPath(true, false, "NonZero")
+		p.paintPath(true, false, spec.FillRuleNonZero)
 	case "f", "F":
 		p.commitPendingClip()
-		p.paintPath(false, true, "NonZero")
+		p.paintPath(false, true, spec.FillRuleNonZero)
 	case "f*":
 		p.commitPendingClip()
-		p.paintPath(false, true, "Even-Odd")
+		p.paintPath(false, true, spec.FillRuleEvenOdd)
 	case "B":
 		p.commitPendingClip()
-		p.paintPath(true, true, "NonZero")
+		p.paintPath(true, true, spec.FillRuleNonZero)
 	case "B*":
 		p.commitPendingClip()
-		p.paintPath(true, true, "Even-Odd")
+		p.paintPath(true, true, spec.FillRuleEvenOdd)
 	case "b":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
 		p.commitPendingClip()
-		p.paintPath(true, true, "NonZero")
+		p.paintPath(true, true, spec.FillRuleNonZero)
 	case "b*":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
 		p.commitPendingClip()
-		p.paintPath(true, true, "Even-Odd")
+		p.paintPath(true, true, spec.FillRuleEvenOdd)
 	case "n":
 		// n 结束路径；若前面有 W/W*，裁剪区在这里生效且不绘制。
 		p.commitPendingClip()

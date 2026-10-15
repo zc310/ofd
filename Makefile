@@ -54,6 +54,7 @@ GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG)"
 WASM_GO_BUILD_FLAGS ?= $(GO_BUILD_FLAGS) -tags latex
 VIEWER_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG) $(if $(filter windows,$(GOOS)),-H=windowsgui,)"
 WASM_OPT ?= wasm-opt
+WASM_OPT_ENABLED ?= 1
 WASM_OPT_FLAGS := --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-simd --enable-reference-types --disable-gc --disable-strings --disable-memory64 --disable-compact-imports -Oz --strip-producers
 DIST_DIR := /tmp/ofd/dist
 BUILD_DIR := /tmp/ofd/.build
@@ -132,6 +133,7 @@ help:
 	@printf '%s\n' \
 		'make build                    Build all command programs' \
 		'make build-wasm               Build the browser WASM engine' \
+		'make build-wasm WASM_OPT_ENABLED=0  Skip wasm-opt optimization' \
 		'make test-wasm-web           Run the browser reader script tests' \
 		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-wasm-web         Package the browser WASM web directory' \
@@ -215,7 +217,10 @@ $(WASM): FORCE
 	@tmp="$@.tmp"; opt="$@.opt"; \
 	trap 'rm -f "$$tmp" "$$opt"' EXIT; \
 	CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) build $(WASM_GO_BUILD_FLAGS) -o "$$tmp" ./cmd/ofd-wasm; \
-	if command -v "$(WASM_OPT)" >/dev/null 2>&1; then \
+	if [ "$(WASM_OPT_ENABLED)" = "0" ]; then \
+		printf '%s\n' '跳过 wasm-opt，使用未优化的 WASM。'; \
+		mv "$$tmp" "$@"; \
+	elif command -v "$(WASM_OPT)" >/dev/null 2>&1; then \
 		"$(WASM_OPT)" $(WASM_OPT_FLAGS) "$$tmp" -o "$$opt"; \
 		mv "$$opt" "$@"; \
 	else \

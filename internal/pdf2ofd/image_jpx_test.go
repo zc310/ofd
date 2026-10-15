@@ -5,11 +5,19 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 
 	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 // encodeJPX 用纯 Go 编码器生成一张无损 JPEG 2000，作为转换回归测试的输入。
@@ -107,4 +115,108 @@ func TestConvertJPXJP2Image(t *testing.T) {
 func TestConvertJPXRawCodestreamImage(t *testing.T) {
 	// PDF /JPXDecode 也常见裸 JPEG 2000 码流（SOC 开头，无 JP2 盒子）。
 	assertJPXGrayscale(t, convertJPXImage(t, encodeJPX(t, jpxTestSource(), jpeg2000.FormatJ2K)))
+}
+
+func TestPDFJPXImagesWithICCBasedColorSpaceDecode(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "pdf", "2025-Microsoft-Environmental-Sustainability-Report-PDF.pdf")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := api.LoadConfiguration(api.ConfigurationOptions{Mode: api.ConfigurationModeStateless})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.ValidationMode = model.ValidationRelaxed
+	ctx, err, panicked := readPDFContext(t.Context(), data, configuration)
+	if panicked || err != nil {
+		t.Fatalf("read PDF context: panicked=%v err=%v", panicked, err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatalf("validate PDF context: %v", err)
+	}
+	document := &creator.Document{}
+	page, _, err := convertPDFPage(t.Context(), ctx, 2, document, map[types.Object]pdfFontInfo{}, map[types.IndirectRef]pdfImageDataCache{}, pdfPageGeometries(t.Context(), ctx), new(uint64))
+	if err != nil {
+		t.Fatalf("convert PDF page 2: %v", err)
+	}
+	images := 0
+	for _, item := range page.Items {
+		if image, ok := item.(creator.Image); ok {
+			images++
+			decoded, err := png.Decode(bytes.NewReader(image.Data))
+			if err != nil || decoded.Bounds().Empty() {
+				t.Fatalf("converted page image %d is invalid: bounds=%v err=%v", images, decoded.Bounds(), err)
+			}
+			if images == 1 {
+				if edges := highContrastEdges(decoded, 48); edges < 1000 {
+					t.Fatalf("first ICCBased image has only %d high-contrast edges; likely lost image detail", edges)
+				}
+			}
+		}
+	}
+	if images != 2 {
+		t.Fatalf("page 2 image objects=%d, want both ICCBased images", images)
+	}
+	document.Pages = []creator.Page{page}
+	document.ID = "pdf-jpx-icc"
+	document.PageSize = creator.PageSize{Width: page.Area.PhysicalBox.Width, Height: page.Area.PhysicalBox.Height}
+	var ofdBytes bytes.Buffer
+	if err := creator.CreateWithOptions(*document, &ofdBytes, creator.CreateOptions{PreserveEmbeddedFonts: true}); err != nil {
+		t.Fatalf("write converted page: %v", err)
+	}
+	ofd, err := parser.NewOFD(ofdBytes.Bytes())
+	if err != nil {
+		t.Fatalf("parse converted page: %v", err)
+	}
+	defer ofd.Close()
+	renderedDocument := render.NewDocument(color.White, ofd.Documents[0])
+	defer renderedDocument.Close()
+	raster, err := renderedDocument.RasterizePage(ofd.Documents[0].Pages[0], render.BackendCanvas, geom.DPMM(4))
+	if err != nil {
+		t.Fatalf("rasterize converted page: %v", err)
+	}
+	for _, item := range page.Items {
+		imageObject, ok := item.(creator.Image)
+		if !ok {
+			continue
+		}
+		minX, minY := int(imageObject.X*4), int(imageObject.Y*4)
+		maxX, maxY := int((imageObject.X+imageObject.Width)*4), int((imageObject.Y+imageObject.Height)*4)
+		visible := false
+		for y := max(0, minY); y < min(raster.Bounds().Max.Y, maxY) && !visible; y++ {
+			for x := max(0, minX); x < min(raster.Bounds().Max.X, maxX); x++ {
+				pixel := raster.RGBAAt(x, y)
+				if pixel.R < 248 || pixel.G < 248 || pixel.B < 248 {
+					visible = true
+					break
+				}
+			}
+		}
+		if !visible {
+			t.Fatalf("converted image at (%g,%g) size %gx%g is not visible in the raster", imageObject.X, imageObject.Y, imageObject.Width, imageObject.Height)
+		}
+	}
+}
+
+func highContrastEdges(img image.Image, threshold uint8) int {
+	gray := image.NewGray(img.Bounds())
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			gray.Set(x, y, color.GrayModel.Convert(img.At(x, y)))
+		}
+	}
+	edges := 0
+	for y := gray.Bounds().Min.Y; y < gray.Bounds().Max.Y; y++ {
+		for x := gray.Bounds().Min.X; x < gray.Bounds().Max.X; x++ {
+			value := gray.GrayAt(x, y).Y
+			if x+1 < gray.Bounds().Max.X && absByteDifference(value, gray.GrayAt(x+1, y).Y) >= int(threshold) {
+				edges++
+			}
+			if y+1 < gray.Bounds().Max.Y && absByteDifference(value, gray.GrayAt(x, y+1).Y) >= int(threshold) {
+				edges++
+			}
+		}
+	}
+	return edges
 }

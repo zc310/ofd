@@ -182,6 +182,15 @@ func (f canvasFontFace) ShapedRun(value string) drawing.TextRun {
 	return nil
 }
 
+func (f canvasFontFace) InvisibleShapedRun(value string) drawing.TextRun {
+	if f.face == nil || value == "" {
+		return nil
+	}
+	face := *f.face
+	face.Fill = canvas.Paint{}
+	return canvas.NewTextLine(&face, value, canvas.Left)
+}
+
 // FaceObject 为字体族与文字对象创建一个中性字体面。fill 为文字填充色/渐变。
 //
 // 选中的字体族画不出对象里的某些字符时（例如 sans-serif 被 fontconfig 解析成

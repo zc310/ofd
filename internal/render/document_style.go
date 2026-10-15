@@ -7,6 +7,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -14,6 +15,7 @@ const (
 	defaultMiterLimit = 3.528
 	maxStrokeValue    = 1000000
 	maxDashElements   = 1024
+	roundCapDotDash   = 0.001
 )
 
 func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTColor, *CTColor) {
@@ -27,8 +29,9 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 	lineWidth := dp.LineWidth
 	lineWidth = normalizedLineWidth(lineWidth)
 	ctx.SetStrokeWidth(lineWidth)
-	if validDashPattern(dp.DashOffset, dp.DashPattern) {
-		ctx.SetDashes(dp.DashOffset, *dp.DashPattern...)
+	dashPattern := preserveRoundCapDots(dp.DashPattern, dp.Cap)
+	if validDashPattern(dp.DashOffset, dashPattern) {
+		ctx.SetDashes(dp.DashOffset, *dashPattern...)
 	} else {
 		ctx.SetDashes(0)
 	}
@@ -55,8 +58,8 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	defer p.ctColorMu.Unlock()
 	if p.ctColorCache != nil {
 		if cc, ok := p.ctColorCache.Get(source); ok {
-			copy := *cc
-			return &copy
+			ctColor := *cc
+			return &ctColor
 		}
 	}
 	cc := &CTColor{}
@@ -70,8 +73,8 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 		p.ctColorCache = utils.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
 	}
 	p.ctColorCache.Add(source, cc)
-	copy := *cc
-	return &copy
+	ctColor := *cc
+	return &ctColor
 }
 
 func identityGradientTransform(point models.StPos) geom.Point {
@@ -87,9 +90,9 @@ func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
 
 func getLineCap(capStr string) geom.Capper {
 	switch capStr {
-	case "Round":
+	case spec.LineCapRound:
 		return geom.RoundCap
-	case "Square":
+	case spec.LineCapSquare:
 		return geom.SquareCap
 	default:
 		return geom.ButtCap
@@ -97,9 +100,9 @@ func getLineCap(capStr string) geom.Capper {
 }
 func getLineJoin(joinStr string) geom.Joiner {
 	switch joinStr {
-	case "Round":
+	case spec.LineJoinRound:
 		return geom.RoundJoin
-	case "Bevel":
+	case spec.LineJoinBevel:
 		return geom.BevelJoin
 	default:
 		return geom.MiterJoin
@@ -144,7 +147,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 	}
 	if object.Fill {
 		p.applyFill(ctx, fill, object.Alpha)
-		if object.Rule == "Even-Odd" {
+		if object.Rule == spec.FillRuleEvenOdd {
 			ctx.SetFillRule(geom.EvenOdd)
 		}
 	} else {
@@ -159,7 +162,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		// MiterLimit 与 LineWidth 同属对象坐标系的绝对长度，同比缩放后
 		// applyStroke 里的斜接倍率（MiterLimit / (LineWidth/2)）保持不变。
 		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit * strokeScale)
-		effective.DashPattern = scaledDashPattern(effective.DashPattern, strokeScale)
+		effective.DashPattern = preserveRoundCapDots(scaledDashPattern(effective.DashPattern, strokeScale), effective.Cap)
 		effective.DashOffset *= strokeScale
 		ctx.SetStrokeWidth(effective.LineWidth)
 		p.applyStroke(ctx, stroke, &effective)
@@ -255,6 +258,25 @@ func scaledDashPattern(pattern *models.StArrayF, scale float64) *models.StArrayF
 		scaled[i] = value * scale
 	}
 	return &scaled
+}
+
+func preserveRoundCapDots(pattern *models.StArrayF, cap string) *models.StArrayF {
+	if pattern == nil || cap != spec.LineCapRound {
+		return pattern
+	}
+	var adjusted models.StArrayF
+	for index := 0; index < len(*pattern); index += 2 {
+		if (*pattern)[index] == 0 {
+			if adjusted == nil {
+				adjusted = append(models.StArrayF(nil), *pattern...)
+			}
+			adjusted[index] = roundCapDotDash
+		}
+	}
+	if adjusted == nil {
+		return pattern
+	}
+	return &adjusted
 }
 
 func validDashPattern(offset float64, pattern *models.StArrayF) bool {

@@ -7,8 +7,71 @@ import (
 
 	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
 )
+
+type testGlyphIndexFace struct {
+	glyphs map[rune]uint16
+	cff    bool
+}
+
+func (f testGlyphIndexFace) ToPath(string) *geom.Path     { return nil }
+func (f testGlyphIndexFace) DirectPath(string) *geom.Path { return nil }
+func (f testGlyphIndexFace) TextWidth(string) float64     { return 0 }
+func (f testGlyphIndexFace) GlyphIndex(r rune) uint16     { return f.glyphs[r] }
+func (f testGlyphIndexFace) IsCFF() bool                  { return f.cff }
+func (f testGlyphIndexFace) Fill() geom.Paint             { return geom.Paint{} }
+func (f testGlyphIndexFace) Size() float64                { return 0 }
+func (f testGlyphIndexFace) ShapedRun(string) TextRun     { return nil }
+
+func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
+	glyphs := textCodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 38}}, []rune("E"), []models.CTCGTransform{{
+		CodePosition: 0,
+		CodeCount:    1,
+		GlyphCount:   1,
+		Glyphs:       models.StArrayI{21},
+	}}, 0)
+	if len(glyphs) != 1 || glyphs[0].value != "E" {
+		t.Fatalf("glyphs = %+v, want Unicode E despite repaired GID renumbering", glyphs)
+	}
+
+	glyphs = textCodeGlyphs(testGlyphIndexFace{}, []rune("E"), []models.CTCGTransform{{
+		CodePosition: 0,
+		CodeCount:    1,
+		GlyphCount:   1,
+		Glyphs:       models.StArrayI{21},
+	}}, 0)
+	if len(glyphs) != 1 || glyphs[0].value != string(fontfix.GlyphRune(21)) {
+		t.Fatalf("glyphs = %+v, want private reference when Unicode is unavailable", glyphs)
+	}
+
+	glyphs = textCodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 21}, cff: true}, []rune("E"), []models.CTCGTransform{{
+		CodePosition: 0,
+		CodeCount:    1,
+		GlyphCount:   1,
+		Glyphs:       models.StArrayI{21},
+	}}, 0)
+	if len(glyphs) != 1 || glyphs[0].value != string(fontfix.GlyphRune(21)) {
+		t.Fatalf("CFF glyphs = %+v, want private reference to GID 21", glyphs)
+	}
+	if glyphs[0].semantic != "E" {
+		t.Fatalf("CFF semantic text = %q, want E", glyphs[0].semantic)
+	}
+
+}
+
+func TestTextCodeGlyphsPreservesExpandedLigatureSemantics(t *testing.T) {
+	glyphs := textCodeGlyphs(testGlyphIndexFace{}, []rune("fiA"), []models.CTCGTransform{{
+		CodePosition: 0,
+		CodeCount:    2,
+		GlyphCount:   1,
+		Glyphs:       models.StArrayI{21},
+	}}, 0)
+	if len(glyphs) != 2 || glyphs[0].semantic != "fi" || glyphs[1].codePosition != 2 {
+		t.Fatalf("ligature glyphs = %+v, want semantic fi followed by code position 2", glyphs)
+	}
+}
 
 func TestTextHScaleDefaultsToOne(t *testing.T) {
 	if got := textHScale(models.TextObject{}); got != 1 {
@@ -99,6 +162,16 @@ func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
 	}
 }
 
+func TestTextAdvanceNeedsRunBreakPreservesExpandedGlyphSpacing(t *testing.T) {
+	object := models.TextObject{CtText: models.CtText{CGTransform: []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1}}}}
+	if !textAdvanceNeedsRunBreak(object, 3.1327, 0, 3.175) {
+		t.Fatal("expanded glyph with an explicit small spacing adjustment should keep its position")
+	}
+	if textAdvanceNeedsRunBreak(models.TextObject{}, 3.1327, 0, 3.175) {
+		t.Fatal("ordinary text should continue merging small spacing adjustments")
+	}
+}
+
 func TestTextCharDirectionDegrees(t *testing.T) {
 	for _, test := range []struct {
 		direction int
@@ -130,6 +203,16 @@ func TestTextAdvanceUsesExplicitDeltasBeforeReadDirection(t *testing.T) {
 	gotX, gotY = textAdvance(10, object, code, 0)
 	if gotX != 0 || gotY != 10 {
 		t.Fatalf("textAdvance with ReadDirection=90 = (%v, %v), want (0, 10)", gotX, gotY)
+	}
+}
+
+func TestTextGlyphAdvanceAccumulatesLigatureCodeDeltas(t *testing.T) {
+	code := models.TextCode{DeltaX: models.StArrayF{0, 1.75}, DeltaY: models.StArrayF{0, 0.25}}
+	previous := textGlyph{value: "\uFB01", codePosition: 0}
+	current := textGlyph{value: "A", codePosition: 2}
+	x, y := textGlyphAdvance(9, models.TextObject{}, code, previous, current)
+	if x != 1.75 || y != 0.25 {
+		t.Fatalf("ligature advance = (%v, %v), want (1.75, 0.25)", x, y)
 	}
 }
 

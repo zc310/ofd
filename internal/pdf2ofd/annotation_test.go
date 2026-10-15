@@ -2,9 +2,14 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 func parseConvertedPage(t *testing.T, objects []string) *parser.Page {
@@ -54,6 +59,62 @@ func TestConvertRendersAnnotationAppearance(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("annotation appearance stream was not rendered")
+	}
+}
+
+func TestConvertRendersWidgetAppearance(t *testing.T) {
+	appearance := "2 w 0 0 m 20 20 l S"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>",
+		"<< /Length 3 >>\nstream\nq Q\nendstream",
+		"<< /Type /Annot /Subtype /Widget /FT /Btn /Rect [10 10 30 30] /F 4 /AP << /N 6 0 R >> >>",
+		"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length " + itoa(len(appearance)) + " >>\nstream\n" + appearance + "\nendstream",
+	}
+	page := parseConvertedPage(t, objects)
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 1 || !paths[0].Stroke.Value(false) {
+		t.Fatalf("widget appearance paths = %+v, want one stroked path", paths)
+	}
+}
+
+func TestTencentPage2ImportsFooterWidgetIcons(t *testing.T) {
+	path := "../../testdata/pdf/腾讯官方ESG报告.pdf"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("PDF 测试文件不存在，跳过: %v", err)
+		}
+		t.Fatal(err)
+	}
+	ctx, err, _ := readPDFContext(t.Context(), data, model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := api.ValidateContext(t.Context(), ctx); err != nil {
+		t.Fatal(err)
+	}
+	options, _ := (Options{}).Normalize()
+	page, _, err := convertPDFPage(t.Context(), ctx, 2, &creator.Document{},
+		map[types.Object]pdfFontInfo{}, map[types.IndirectRef]pdfImageDataCache{},
+		pdfPageGeometries(t.Context(), ctx), new(uint64),
+		&conversionControl{ctx: t.Context(), options: options})
+	if err != nil {
+		t.Fatalf("convert PDF page 2: %v", err)
+	}
+	icons := 0
+	for _, item := range page.Items {
+		path, ok := item.(creator.Path)
+		if !ok || !path.Stroke {
+			continue
+		}
+		if path.X > 618 && path.X < 636 && path.Y > 362 && path.Y < 370 {
+			icons++
+		}
+	}
+	if icons < 3 {
+		t.Fatalf("footer widget stroke paths = %d, want at least 3", icons)
 	}
 }
 

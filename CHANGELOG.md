@@ -21,7 +21,7 @@
   历史页面和资源，重建字体、导航及缓存，加载失败时保留当前视图。
 
 - `cmd/ofd-converter` 新增 XPS 输入支持：通过系统 `xpstopdf` 将 XPS 转为 PDF，支持直接输出 PDF 或继续转换为 OFD；可用 `--xpstopdf` 或 `OFD_XPSTOPDF` 指定工具路径。
-- `cmd/ofd-converter` 新增 `--pdf-max-operations`，可单独调整 PDF 导入的处理量预算；默认仍为 10,000,000。
+- `cmd/ofd-converter` 新增 `--pdf-max-operations`，可单独调整 PDF 导入的处理量预算；默认值提高到 1,000,000,000，累计图片处理默认值提高到 2,000,000,000，以覆盖大型 ESG 报告。
 - `ofd-server` 接入 XPS 输入并支持 `xps → ofd`：服务端链接 XPS 导入器、将 XPS 任务分配到 heavy 通道，并支持通过 `xpstopdf_path` 与 `pdf_max_operations` 配置外部工具和 PDF 处理量预算。
 
 - `pkg/creator.TextCode.Value` 支持纯空白定位段，文字及文字裁剪中的空格可独立保存
@@ -30,7 +30,7 @@
 
 - PDF 导入入口现在默认实施资源预算：输入 512MiB、10,000 页、1,000,000 个对象，
   单流解压 256MiB、累计解压 1GiB、单图片 100,000,000 像素、累计图片处理
-  250,000,000 像素、单字体 64MiB、输出图元 1,000,000、处理量 10,000,000、
+  2,000,000,000 像素、单字体 64MiB、输出图元 1,000,000、处理量 1,000,000,000、
   递归深度 64。超过预算的文档现在失败；需要处理更大文档的调用方可通过
   `converter.WithPDFImportOptions` 或 PDF 包的 `ConvertWithOptions` 调整。
   `ofd-converter` 新增 `--pdf-strict`、`--pdf-max-input-bytes`、

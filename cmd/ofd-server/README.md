@@ -401,7 +401,7 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                             |
 | `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                     |
 | `soffice_path` / `chrome_path` / `xpstopdf_path` | 自动探测 | 外部转换程序路径                         |
-| `pdf_max_operations`         | 10,000,000            | PDF→OFD 处理量上限，0 使用默认值                       |
+| `pdf_max_operations`         | 1,000,000,000         | PDF→OFD 处理量上限，0 使用默认值                      |
 | `chrome_no_sandbox`            | `false`              | 给 Chrome 加 `--no-sandbox`；容器内非 root 运行时需要    |
 
 环境变量可覆盖 `listen`、`db_path`、`temp_dir`、`output_dir`、`log_level`、

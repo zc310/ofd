@@ -8,8 +8,8 @@ import (
 )
 
 func TestConvertStrokeDashPattern(t *testing.T) {
-	// PDF 的 d 是绝对长度（pt）；OFD 的 DashPattern 以线宽为单位，转换时按生效
-	// 线宽换算。`[3] 1 d` + `1 w` 应输出 [3 3]，偏移 1。
+	// PDF 的 d 和 OFD 的 DashPattern 都是绝对长度。`[3] 1 d` + `1 w` 应按
+	// pt→mm 换算为 [1.0583 1.0583]，偏移 1.0583mm。
 	content := []byte("q 1 w [3] 1 d 0 10 m 100 10 l S Q")
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",
@@ -40,13 +40,15 @@ func TestConvertStrokeDashPattern(t *testing.T) {
 	if pattern == nil || len(*pattern) != 2 {
 		t.Fatalf("DashPattern = %v, want two elements", pattern)
 	}
+	want := 3 * pdfPointToMillimeter
 	for _, value := range *pattern {
-		if value < 2.9 || value > 3.1 {
-			t.Fatalf("DashPattern element = %g, want ~3", value)
+		if value < want-0.001 || value > want+0.001 {
+			t.Fatalf("DashPattern element = %g, want ~%gmm", value, want)
 		}
 	}
-	if offset := paths[0].DashOffset; offset < 0.9 || offset > 1.1 {
-		t.Fatalf("DashOffset = %g, want ~1", offset)
+	wantOffset := pdfPointToMillimeter
+	if offset := paths[0].DashOffset; offset < wantOffset-0.001 || offset > wantOffset+0.001 {
+		t.Fatalf("DashOffset = %g, want ~%gmm", offset, wantOffset)
 	}
 }
 

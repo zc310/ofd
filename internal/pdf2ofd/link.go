@@ -17,7 +17,8 @@ import (
 // 可用，足够任何一份 PDF 的链接数量。
 const linkAnnotationIDBase = uint64(1) << 31
 
-// convertPageLinks 把页面 /Annots 中的 Link 注解转换为 OFD 链接注解。
+// convertPageLinks 把页面 /Annots 中带有可转换点击动作的 Link/Widget 注解
+// 转换为 OFD 链接注解。
 //
 // PDF 的链接注解只有一个矩形和一个动作，没有外观；OFD 侧把动作挂在注解外观里的
 // 一个不可见路径上——阅读器和 PDF 导出都是从外观图元的动作取热区，位置取注解
@@ -30,7 +31,8 @@ func convertPageLinks(gctx context.Context, ctx *model.Context, pageDict types.D
 	info pdfPageInfo, geometries []pdfPageInfo, id *uint64) []creator.Annotation {
 	var links []creator.Annotation
 	for _, annotation := range pageAnnotationDicts(ctx, pageDict) {
-		if name, ok := annotation["Subtype"].(types.Name); !ok || name.Value() != "Link" {
+		name, ok := annotation["Subtype"].(types.Name)
+		if !ok || (name.Value() != "Link" && name.Value() != "Widget") {
 			continue
 		}
 		if linkHidden(annotation) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/korean"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -125,10 +126,11 @@ func (p *pdfInterpreter) makeText(text string, codes []uint64, font pdfFontInfo)
 			item.FillColor = ofdColorOpacity(color, p.fillOpacity())
 		}
 	}
-	if transforms := pdfTextGlyphTransforms(codes, text, font); len(transforms) > 0 {
+	transforms := pdfTextGlyphTransforms(codes, text, font)
+	if len(transforms) > 0 {
 		item.CGTransforms = transforms
 	}
-	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, textScale); len(deltas) > 0 {
+	if deltas := pdfTextDeltas(codes, text, font, p.state.fontSize, p.state.charSpacing, p.state.wordSpacing, p.state.hScale, p.info.userUnit, textScale, transforms); len(deltas) > 0 {
 		item.TextCodes[0].DeltaX = deltas
 	}
 	return item
@@ -150,8 +152,8 @@ func (p *pdfInterpreter) textStrokeDrawParam() string {
 	}
 	param := creator.DrawParam{
 		LineWidth:  lineWidth,
-		Cap:        [...]string{"Butt", "Round", "Square"}[p.state.lineCap],
-		Join:       [...]string{"Miter", "Round", "Bevel"}[p.state.lineJoin],
+		Cap:        [...]string{spec.LineCapButt, spec.LineCapRound, spec.LineCapSquare}[p.state.lineCap],
+		Join:       [...]string{spec.LineJoinMiter, spec.LineJoinRound, spec.LineJoinBevel}[p.state.lineJoin],
 		MiterLimit: p.state.miterLimit * lineWidth / 2,
 	}
 	for _, existing := range p.document.DrawParams {
@@ -293,21 +295,47 @@ func pdfCJKFullWidth(name string) bool {
 // DeltaX 时这类阅读器拿到 0 步进，整段文字会叠在首字符位置——
 // intro.ofd 经 PDF 回转后第 3 页的 INTRODUCTION 叠在 “I” 上、“关于澎思” 叠在
 // “关” 上就是这个现象。本项目渲染器另有 hmtx 回退，所以自测渲染看不出来。
-func pdfTextDeltas(codes []uint64, text string, font pdfFontInfo, size, charSpacing, wordSpacing, hScale, userUnit, ctmScale float64) []float64 {
-	if len(codes) < 2 || len([]rune(text)) != len(codes) {
+func pdfTextDeltas(codes []uint64, text string, font pdfFontInfo, size, charSpacing, wordSpacing, hScale, userUnit, ctmScale float64, transforms []creator.CGTransform) []float64 {
+	runes := []rune(text)
+	if len(codes) < 2 || len(runes) < 2 {
 		return nil
+	}
+	spans := make([][2]int, len(codes))
+	if len(runes) == len(codes) {
+		for index := range codes {
+			spans[index] = [2]int{index, index + 1}
+		}
+	} else {
+		// ToUnicode 可以把一个 PDF 字符码映射为连字字符串（例如单个 fi 字形）。
+		// 仅在 CGTransform 确认每个 PDF 字符码对应一个输出字形时保留字宽，并将推进量
+		// 放在该字符码对应的 Unicode 区间末尾。
+		if len(transforms) != len(codes) {
+			return nil
+		}
+		position := 0
+		for index, transform := range transforms {
+			count := len([]rune(pdfCodeUnicode(codes[index], font)))
+			if count == 0 || transform.CodePosition != position || transform.CodeCount != count || transform.GlyphCount != 1 {
+				return nil
+			}
+			spans[index] = [2]int{position, position + count}
+			position += count
+		}
+		if position != len(runes) {
+			return nil
+		}
 	}
 	scale := hScale / 100
 	if scale == 0 {
 		scale = 1
 	}
-	deltas := make([]float64, len(codes)-1)
+	deltas := make([]float64, len(runes)-1)
 	for index, code := range codes[:len(codes)-1] {
 		advance := pdfCodeWidth(code, font)/1000*size + charSpacing
 		if pdfCodeWordSpacing(code, font) {
 			advance += wordSpacing
 		}
-		deltas[index] = advance * scale * userUnit * pdfPointToMillimeter * ctmScale
+		deltas[spans[index][1]-1] = advance * scale * userUnit * pdfPointToMillimeter * ctmScale
 	}
 	return deltas
 }

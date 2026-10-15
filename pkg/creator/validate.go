@@ -596,7 +596,7 @@ func validatePath(value Path) error {
 	if strings.TrimSpace(value.Data) == "" {
 		return errors.New("路径数据不能为空")
 	}
-	if value.Rule != "" && value.Rule != "NonZero" && value.Rule != "Even-Odd" {
+	if value.Rule != "" && value.Rule != spec.FillRuleNonZero && value.Rule != spec.FillRuleEvenOdd {
 		return fmt.Errorf("路径填充规则无效: %q", value.Rule)
 	}
 	if err := validateGraphicStyle(value.LineWidth, value.Cap, value.Join, value.MiterLimit, value.DashOffset, value.DashPattern, value.Alpha); err != nil {
@@ -1663,7 +1663,7 @@ func validateCTMAndClips(ctm *CTM, clips *Clips) error {
 				if strings.TrimSpace(areaPath.Data) == "" {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 路径数据不能为空", clipIndex+1, areaIndex+1)
 				}
-				if areaPath.Rule != "" && areaPath.Rule != "NonZero" && areaPath.Rule != "Even-Odd" {
+				if areaPath.Rule != "" && areaPath.Rule != spec.FillRuleNonZero && areaPath.Rule != spec.FillRuleEvenOdd {
 					return fmt.Errorf("裁剪区域 %d 的 Area %d 填充规则无效", clipIndex+1, areaIndex+1)
 				}
 				if err := validateGraphicStyle(areaPath.LineWidth, areaPath.Cap, areaPath.Join, areaPath.MiterLimit, areaPath.DashOffset, areaPath.DashPattern, areaPath.Alpha); err != nil {
@@ -1732,10 +1732,10 @@ func validateGraphicStyle(lineWidth float64, cap, join string, miterLimit, dashO
 	if lineWidth < 0 || !finite(lineWidth) || miterLimit < 0 || !finite(miterLimit) || dashOffset < 0 || !finite(dashOffset) {
 		return errors.New("图元线条参数无效")
 	}
-	if cap != "" && cap != "Butt" && cap != "Round" && cap != "Square" {
+	if cap != "" && cap != spec.LineCapButt && cap != spec.LineCapRound && cap != spec.LineCapSquare {
 		return fmt.Errorf("线端点样式无效: %q", cap)
 	}
-	if join != "" && join != "Miter" && join != "Round" && join != "Bevel" {
+	if join != "" && join != spec.LineJoinMiter && join != spec.LineJoinRound && join != spec.LineJoinBevel {
 		return fmt.Errorf("线连接样式无效: %q", join)
 	}
 	for _, value := range dashPattern {
