@@ -1,0 +1,288 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-amd64:
+    name: Linux amd64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
+            libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
+            libxcursor-dev libvulkan-dev
+
+      - name: Build Linux viewer and command-line tools
+        run: make package-desktop VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-arm64:
+    name: Linux arm64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev \
+            libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
+            libgles2-mesa-dev libegl1-mesa-dev libffi-dev \
+            libxcursor-dev libvulkan-dev
+
+      - name: Build Linux arm64 viewer and command-line tools
+        run: |
+          make package-arm64 VERSION="${GITHUB_REF_NAME#v}"
+          make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  darwin-tools:
+    name: macOS command-line tools
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build macOS command-line tools
+        run: |
+          make package-darwin-arm64 VERSION="${GITHUB_REF_NAME#v}"
+          make package-darwin-amd64 VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-tools
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-amd64:
+    name: Windows amd64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install MinGW-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Build Windows amd64 viewer and command-line tools
+        run: make package-windows-amd64 VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-arm64:
+    name: Windows arm64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install LLVM-MinGW
+        run: |
+          LLVM_MINGW_VERSION=20261006
+          ARCHIVE="llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz"
+          URL="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${ARCHIVE}"
+          curl -fsSLo "/tmp/${ARCHIVE}" "${URL}"
+          echo "5f9c6ed95b2d4bdb2869a488c5fd5857fbdabcf288a0aa3eb1da43f6a08d8ab4  /tmp/${ARCHIVE}" | sha256sum -c -
+          tar -xJf "/tmp/${ARCHIVE}" -C /tmp
+          echo "/tmp/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Build Windows arm64 viewer and command-line tools
+        run: make package-windows-arm64 VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  darwin-viewer:
+    name: macOS ${{ matrix.arch }} viewer
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build macOS viewer
+        run: make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-viewer-${{ matrix.arch }}
+          path: /tmp/ofd/dist/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  android:
+    name: Android viewer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: |
+          ANDROID_NDK_VERSION=30.0.16248370
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;37.0.0" "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Fyne CLI
+        run: |
+          go install fyne.io/tools/cmd/fyne@v1.7.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build Android APK and ZIP
+        run: make package-viewer-android-zip VERSION="${GITHUB_REF_NAME#v}" VIEWER_VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-viewer
+          path: |
+            /tmp/ofd/dist/ofd-viewer-android.apk
+            /tmp/ofd/dist/ofd-viewer-android.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  wasm:
+    name: WebAssembly reader
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Binaryen
+        run: |
+          BINARYEN_VERSION=133
+          ARCHIVE="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          BASE="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}"
+          curl -fsSLo "/tmp/${ARCHIVE}" "${BASE}/${ARCHIVE}"
+          curl -fsSLo "/tmp/${ARCHIVE}.sha256" "${BASE}/${ARCHIVE}.sha256"
+          (cd /tmp && sha256sum -c "${ARCHIVE}.sha256")
+          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          sudo install -m755 "/tmp/binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
+
+      - name: Build and test web reader
+        run: |
+          make test-wasm-web
+          make package-wasm-web VERSION="${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm-web
+          path: /tmp/ofd/dist/ofd-wasm-web.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs:
+      - linux-amd64
+      - linux-arm64
+      - darwin-tools
+      - windows-amd64
+      - windows-arm64
+      - darwin-viewer
+      - android
+      - wasm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release and build assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --verify-tag \
+            --generate-notes
