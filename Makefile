@@ -460,14 +460,14 @@ ifeq ($(GOOS),linux)
 
 package-thumbnailer: $(THUMBNAILER_PACKAGE)
 
-$(THUMBNAILER_PACKAGE): $(THUMBNAILER) cmd/ofd-thumbnailer/README.md cmd/ofd-thumbnailer/install.sh cmd/ofd-thumbnailer/ofd.thumbnailer
+$(THUMBNAILER_PACKAGE): $(THUMBNAILER) cmd/ofd-thumbnailer/README.md cmd/ofd-thumbnailer/install.sh cmd/ofd-thumbnailer/zc310-ofd.thumbnailer
 	@mkdir -p "$(DIST_DIR)"
 	@rm -rf "$(PACKAGE_DIR)/ofd-thumbnailer"
 	@mkdir -p "$(PACKAGE_DIR)/ofd-thumbnailer"
 	@rm -f "$@"
 	@cp "$(THUMBNAILER)" "$(PACKAGE_DIR)/ofd-thumbnailer/ofd-thumbnailer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-thumbnailer/README.md" "$(PACKAGE_DIR)/ofd-thumbnailer/README.md"
-	@cp "cmd/ofd-thumbnailer/ofd.thumbnailer" "$(PACKAGE_DIR)/ofd-thumbnailer/ofd.thumbnailer"
+	@cp "cmd/ofd-thumbnailer/zc310-ofd.thumbnailer" "$(PACKAGE_DIR)/ofd-thumbnailer/zc310-ofd.thumbnailer"
 	@cp "cmd/ofd-thumbnailer/install.sh" "$(PACKAGE_DIR)/ofd-thumbnailer/install.sh"
 	@chmod 755 "$(PACKAGE_DIR)/ofd-thumbnailer/install.sh"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-thumbnailer"
