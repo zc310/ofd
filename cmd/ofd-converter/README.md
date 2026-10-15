@@ -54,6 +54,8 @@ ofd-converter --help
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                                                  |
 | `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                                               |
 | `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
+| `-pdf-image-mode`      | PDF 图片模式：`compatible`（默认）或 `compact`；后者对不透明 CMYK JPEG 转为有损 RGB JPEG |
+| `-pdf-jpeg-quality`    | `compact` 模式的 JPEG 质量，范围 `1-100`；`0` 使用默认 `90`。带 Mask/SMask 的图片仍输出 PNG |
 | `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
 | `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 2,000,000,000 |
@@ -91,7 +93,7 @@ ofd-converter --help
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
-| `-pdf-strict`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
+| `-pdf-strict`、`-pdf-image-*`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -143,7 +145,12 @@ OFD 的包级加密（GB/T 33190）目前不支持：这样的文件会报解析
 ofd-converter input.pdf output.ofd
 ofd-converter -from pdf -format ofd input.pdf output.ofd
 ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
+ofd-converter --pdf-image-mode compact --pdf-jpeg-quality 90 input.pdf compact.ofd
 ```
+
+`compatible` 保持默认图像兼容性和无损处理；`compact` 将无软蒙版/颜色键的 CMYK JPEG
+转为 RGB JPEG，以减小照片资源体积，可能产生有损画质变化。带 `Mask` 或 `SMask` 的图像
+仍采用 PNG，以保留透明边缘；此类页面及非 JPEG 图像不保证明显缩小。
 
 PDF 导入默认限制输入、页数、对象数、解压流、图片像素、字体、输出图元、处理量与
 递归深度。所有预算超限都会终止转换。CLI 可调整输入和图片预算；完整默认值及库 API

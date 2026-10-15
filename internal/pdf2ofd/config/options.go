@@ -10,6 +10,18 @@ import (
 var ErrLimitExceeded = errors.New("PDF 导入超过资源上限")
 var ErrUnsupported = errors.New("PDF 导入遇到无法保留的内容")
 
+// ImageMode 控制 PDF 图片写入 OFD 时的编码策略。
+type ImageMode string
+
+const (
+	// ImageModeCompatible 保持默认的颜色兼容输出路径。
+	ImageModeCompatible ImageMode = "compatible"
+	// ImageModeCompact 对符合条件的不透明 CMYK JPEG 使用有损 RGB JPEG。
+	ImageModeCompact ImageMode = "compact"
+	// DefaultJPEGQuality 是 compact 模式未指定时的 JPEG 质量。
+	DefaultJPEGQuality = 90
+)
+
 // Limits 控制一次转换的资源预算。零值字段使用默认值，负值无效。
 type Limits struct {
 	// 字节预算分别作用于原始输入、单编码流、单解码流和累计解码流。
@@ -55,6 +67,8 @@ type Diagnostic struct {
 type Options struct {
 	Limits       Limits
 	Strict       bool
+	ImageMode    ImageMode
+	JPEGQuality  int
 	OnDiagnostic func(Diagnostic)
 }
 
@@ -73,6 +87,18 @@ func (e *LimitError) Unwrap() error { return ErrLimitExceeded }
 
 // Normalize 校验限制并补齐零值字段，返回独立的配置值。
 func (o Options) Normalize() (Options, error) {
+	if o.ImageMode == "" {
+		o.ImageMode = ImageModeCompatible
+	}
+	if o.ImageMode != ImageModeCompatible && o.ImageMode != ImageModeCompact {
+		return o, fmt.Errorf("PDF 图片模式必须是 %q 或 %q", ImageModeCompatible, ImageModeCompact)
+	}
+	if o.JPEGQuality == 0 {
+		o.JPEGQuality = DefaultJPEGQuality
+	}
+	if o.JPEGQuality < 1 || o.JPEGQuality > 100 {
+		return o, errors.New("PDF JPEG 质量必须在 1 到 100 之间")
+	}
 	d := DefaultLimits()
 	for _, field := range []struct {
 		name     string

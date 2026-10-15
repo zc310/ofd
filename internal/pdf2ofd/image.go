@@ -17,6 +17,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/media"
+	"github.com/zc310/ofd/internal/pdf2ofd/config"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -1096,7 +1097,18 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 		}
 		// DeviceCMYK JPEG 直接嵌入 OFD 时，多数渲染器会按 Adobe 约定解码成
 		// 反相颜色（整幅变黑）。这里转换为 RGB PNG，保证红章等彩色图像正确。
-		if encoded, format, ok, err := encodePDFCMYKJPEG(jpegData, cmyk); err != nil {
+		components, _, _, colorSpaceErr := pdfImageColorSpace(ctx, stream)
+		forceCMYK := colorSpaceErr == nil && components == 4
+		compactJPEG, jpegQuality := false, config.DefaultJPEGQuality
+		if len(controls) > 0 && controls[0] != nil {
+			options := controls[0].options
+			compactJPEG = options.ImageMode == config.ImageModeCompact && stream.Dict["Mask"] == nil && stream.Dict["SMask"] == nil
+			jpegQuality = options.JPEGQuality
+		}
+		if jpegQuality == 0 {
+			jpegQuality = config.DefaultJPEGQuality
+		}
+		if encoded, format, ok, err := encodePDFCMYKJPEG(jpegData, cmyk, forceCMYK, compactJPEG, jpegQuality); err != nil {
 			return nil, "", err
 		} else if ok {
 			return encoded, format, nil
@@ -1608,17 +1620,27 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 	return encoded.Bytes(), "PNG", nil
 }
 
-// encodePDFCMYKJPEG 把 DeviceCMYK 的 JPEG 转换为 RGB PNG。Go 的 jpeg 解码器
+// encodePDFCMYKJPEG 把 PDF 四分量 JPEG 转换为 RGB 图像。Go 的 jpeg 解码器
 // 对 Adobe CMYK JPEG（transform=0 的 CMYK 与 transform=2 的 YCbCrK/YCCK）会
 // 做一次反相，而 PDF 中 DeviceCMYK 样本本身就是油墨值，因此需要再反相还原。
-// 返回 ok=false 表示该 JPEG 不是 CMYK 图像，调用方应按原始字节处理。
-func encodePDFCMYKJPEG(data []byte, converter cmykConverter) ([]byte, string, bool, error) {
+// 没有 APP14 标记时，仅当 PDF 颜色空间确认是四分量，才补充 CMYK 标记供 Go 解码。
+// 返回 ok=false 表示无法确认这是 CMYK 图像，调用方应按原始字节处理。
+func encodePDFCMYKJPEG(data []byte, converter cmykConverter, forceCMYK, compact bool, quality int) ([]byte, string, bool, error) {
 	transform, adobe := jpegAdobeTransform(data)
 	// transform 0 = CMYK，2 = YCbCrK（YCCK），两者都是 4 分量 CMYK JPEG。
-	if !adobe || (transform != 0 && transform != 2) {
+	if adobe && transform != 0 && transform != 2 {
 		return nil, "", false, nil
 	}
-	img, err := jpeg.Decode(bytes.NewReader(data))
+	decodeData := data
+	if !adobe {
+		if !forceCMYK {
+			return nil, "", false, nil
+		}
+		decodeData = append([]byte(nil), data[:2]...)
+		decodeData = append(decodeData, []byte{0xff, 0xee, 0x00, 0x0e, 'A', 'd', 'o', 'b', 'e', 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
+		decodeData = append(decodeData, data[2:]...)
+	}
+	img, err := jpeg.Decode(bytes.NewReader(decodeData))
 	if err != nil {
 		return nil, "", false, nil
 	}
@@ -1626,7 +1648,11 @@ func encodePDFCMYKJPEG(data []byte, converter cmykConverter) ([]byte, string, bo
 	if !ok {
 		return nil, "", false, nil
 	}
-	encoded, format, err := encodePDFCMYKImage(cmyk, true, converter)
+	format := "PNG"
+	if compact {
+		format = "JPEG"
+	}
+	encoded, format, err := encodePDFCMYKImageFormat(cmyk, true, converter, format, quality)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1785,6 +1811,10 @@ func cmykInkToRGB(c, m, y, k uint8) (uint8, uint8, uint8) {
 // encodePDFCMYKImage 将 CMYK 图像转换为 RGB PNG；invert 为 true 时先对四个
 // 分量取反，用于还原 Go 解码 Adobe CMYK JPEG 时引入的反相。
 func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) ([]byte, string, error) {
+	return encodePDFCMYKImageFormat(img, invert, converter, "PNG", config.DefaultJPEGQuality)
+}
+
+func encodePDFCMYKImageFormat(img *image.CMYK, invert bool, converter cmykConverter, format string, quality int) ([]byte, string, error) {
 	bounds := img.Bounds()
 	rgba := acquireCMYKRGBA(bounds)
 	defer releaseCMYKRGBA(rgba)
@@ -1820,6 +1850,12 @@ func encodePDFCMYKImage(img *image.CMYK, invert bool, converter cmykConverter) (
 		}
 	}
 	var encoded bytes.Buffer
+	if format == "JPEG" {
+		if err := jpeg.Encode(&encoded, rgba, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, "", fmt.Errorf("编码 CMYK 转换后的 JPEG 图像失败: %w", err)
+		}
+		return encoded.Bytes(), "JPEG", nil
+	}
 	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return nil, "", fmt.Errorf("编码 CMYK PNG 图像失败: %w", err)
 	}

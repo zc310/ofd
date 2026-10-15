@@ -7,12 +7,15 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/jpeg"
+	"image/png"
 	"math"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/pdf2ofd/config"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -86,6 +89,82 @@ func TestPDFOrdinaryJPEGIdentityDecodeKeepsOriginalBytes(t *testing.T) {
 				t.Fatalf("gray=%v explicit=%v bytes changed: format=%s err=%v", gray, explicit, format, err)
 			}
 		}
+	}
+}
+
+func TestPDFOrdinaryCMYKJPEGWithoutAdobeMarkerRespectsImageMode(t *testing.T) {
+	data := constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0)
+	segmentLength := int(data[4])<<8 | int(data[5])
+	data = append(append([]byte(nil), data[:2]...), data[4+segmentLength:]...)
+	for _, tc := range []struct {
+		mode       config.ImageMode
+		wantFormat string
+	}{
+		{config.ImageModeCompatible, "png"},
+		{config.ImageModeCompact, "jpeg"},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			stream := jpegMatteStream("DeviceCMYK", data, true)
+			options, err := (Options{ImageMode: tc.mode}).Normalize()
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
+			encoded, format, err := p.imageData(stream, pdfColor{})
+			if err != nil || format != map[string]string{"png": "PNG", "jpeg": "JPEG"}[tc.wantFormat] {
+				t.Fatalf("format=%s err=%v", format, err)
+			}
+			var img image.Image
+			if tc.wantFormat == "jpeg" {
+				img, err = jpeg.Decode(bytes.NewReader(encoded))
+			} else {
+				img, err = png.Decode(bytes.NewReader(encoded))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantR, wantG, wantB := pdfImageCMYKConverter(nil, stream).toRGB(0, 255, 255, 255)
+			got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA)
+			tolerance := uint8(0)
+			if tc.mode == config.ImageModeCompact {
+				tolerance = 12
+			}
+			if !nearColor(got.R, wantR, tolerance) || !nearColor(got.G, wantG, tolerance) || !nearColor(got.B, wantB, tolerance) || got.A != 255 {
+				t.Fatalf("pixel=%v want RGB(%d,%d,%d) ±%d", got, wantR, wantG, wantB, tolerance)
+			}
+		})
+	}
+}
+
+func nearColor(got, want, tolerance uint8) bool {
+	delta := int(got) - int(want)
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= int(tolerance)
+}
+
+func TestPDFCompactCMYKJPEGWithSoftMaskKeepsPNGAlpha(t *testing.T) {
+	data := constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0)
+	segmentLength := int(data[4])<<8 | int(data[5])
+	data = append(append([]byte(nil), data[:2]...), data[4+segmentLength:]...)
+	stream := jpegMatteStream("DeviceCMYK", data, true)
+	stream.Dict["SMask"] = resolutionMask(8, 8, 8, bytes.Repeat([]byte{128}, 64))
+	options, err := (Options{ImageMode: config.ImageModeCompact}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
+	encoded, format, err := p.imageData(stream, pdfColor{})
+	if err != nil || format != "PNG" {
+		t.Fatalf("format=%s err=%v", format, err)
+	}
+	img, err := png.Decode(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got.A < 120 || got.A > 136 {
+		t.Fatalf("soft mask alpha=%d", got.A)
 	}
 }
 

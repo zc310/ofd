@@ -94,7 +94,7 @@ Office/HTML 转 OFD 时的 PDF 中间阶段。
 | 格式或能力 | 支持范围 | 限制和处理方式 |
 |------------|----------|----------------|
 | 普通栅格/Flate | DeviceGray/RGB/CMYK 和 Indexed；支持常见 1/2/4/8/16 位样本及 Decode。 | 转为 PNG；16 位颜色尽量保留，CMYK 转为 RGB。 |
-| DCTDecode/JPEG | Gray/RGB、Adobe CMYK/YCCK；8 位原分量 Decode、颜色键和 Matte，支持外层 Flate 包装。 | 缺省/恒等 Gray/RGB Decode 保留 JPEG；其余转 PNG。与码流冲突的 ColorTransform 覆盖暂不支持。 |
+| DCTDecode/JPEG | Gray/RGB、四分量 CMYK/YCCK（包括 PDF 声明 CMYK 但 JPEG 无 Adobe 标记）；8 位原分量 Decode、颜色键和 Matte，支持外层 Flate 包装。 | 默认兼容模式下 CMYK 转 RGB PNG；`compact` 模式仅将无 Mask/SMask 的 CMYK JPEG 转为指定质量的有损 RGB JPEG。与码流冲突的 ColorTransform 覆盖暂不支持。 |
 | CCITTFaxDecode | 解码后重编码为 PNG，也可用于 ImageMask。 | 沿用 PDF 解析器的解码能力。 |
 | JBIG2Decode | 灰度图、JBIG2Globals、Decode 反相、ImageMask、灰度软掩码；颜色键和 Matte 使用二值原采样。 | 普通图像的任意 Decode 区间未完整支持；复合过滤器有限制。 |
 | JPXDecode | JP2/裸码流；DeviceGray/RGB/CMYK、1/3/4 分量 PDF ICCBased 配置文件、同位深 1–16 位无符号样本、cdef 颜色重排和单个整体 opacity。 | 8 位 RGB ICCBased JP2 使用完整质量解码路径；其他图像沿用原分量解码。普通图像忽略 PDF Decode 和字典位深；高位深输出 16 位 PNG。复合过滤器、复杂通道、调色板及 JP2 码流内嵌 ICC 暂不支持。 |
