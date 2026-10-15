@@ -3,6 +3,7 @@ package webreader
 import (
 	"testing"
 
+	"github.com/zc310/ofd/internal/search"
 	"github.com/zc310/ofd/internal/utils"
 )
 
@@ -41,15 +42,21 @@ func TestTextRunsWeightGrowsWithContent(t *testing.T) {
 
 // TestSearchPageWeightCountsBothParts 索引权重要同时算 runs 与 byRune。
 func TestSearchPageWeightCountsBothParts(t *testing.T) {
-	runsOnly := buildSearchIndex([]TextRun{{Text: "abc"}})
-	withDup := buildSearchIndex([]TextRun{{Text: "a"}, {Text: "a"}, {Text: "a"}})
+	runsOnlyBuilder := search.NewBuilder(1)
+	runsOnlyBuilder.Add("abc")
+	runsOnly := runsOnlyBuilder.Build()
+	withDupBuilder := search.NewBuilder(3)
+	withDupBuilder.Add("a")
+	withDupBuilder.Add("a")
+	withDupBuilder.Add("a")
+	withDup := withDupBuilder.Build()
 	// 三个 run 各自含 'a'，byRune['a'] 会有 3 个候选。
-	if got := len(withDup.byRune['a']); got != 3 {
+	if got := len(withDup.Candidates('a')); got != 3 {
 		t.Fatalf("byRune['a'] 候选数 = %d，期望 3", got)
 	}
-	if searchPageWeight(withDup) <= searchPageWeight(runsOnly) {
+	if withDup.Weight() <= runsOnly.Weight() {
 		t.Errorf("候选更多但权重没变: %d -> %d",
-			searchPageWeight(runsOnly), searchPageWeight(withDup))
+			runsOnly.Weight(), withDup.Weight())
 	}
 }
 

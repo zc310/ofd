@@ -889,13 +889,13 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 		t.Fatal(err)
 	}
 	indexed, ok := reader.search.Get(0)
-	if !ok || len(indexed.runs) == 0 {
+	if !ok || indexed.Len() == 0 {
 		t.Fatalf("search index was not populated: %+v", indexed)
 	}
-	if len(indexed.byRune['你']) == 0 {
-		t.Fatalf("rune index was not populated: %+v", indexed.byRune)
+	if len(indexed.Candidates('你')) == 0 {
+		t.Fatal("rune index was not populated")
 	}
-	firstRun := indexed.runs[0]
+	firstRun := indexed.Run(0)
 	if len(firstRun) == 0 {
 		t.Fatal("first indexed run is empty")
 	}
@@ -903,10 +903,10 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 		t.Fatal(err)
 	}
 	reused, ok := reader.search.Get(0)
-	if !ok || len(reused.runs) == 0 || len(reused.runs[0]) == 0 {
+	if !ok || reused.Len() == 0 || len(reused.Run(0)) == 0 {
 		t.Fatal("search index was not reused")
 	}
-	if &reused.runs[0][0] != &firstRun[0] {
+	if &reused.Run(0)[0] != &firstRun[0] {
 		t.Fatal("search index was rebuilt instead of reused")
 	}
 }

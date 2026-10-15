@@ -9,6 +9,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/search"
 
 	"github.com/zc310/ofd/internal/utils"
 )
@@ -196,12 +197,12 @@ func newTextCache() *utils.LRU[int, []TextRun] {
 	return utils.NewWeightedLRU[int, []TextRun](textCacheCapacity, textCacheBytes, nil)
 }
 
-func newSearchCache(pageCount int) *utils.LRU[int, searchPage] {
+func newSearchCache(pageCount int) *utils.LRU[int, *search.Index] {
 	capacity := minInt(pageCount, searchCacheCapacity)
 	if capacity < 1 {
 		capacity = 1
 	}
-	return utils.NewWeightedLRU[int, searchPage](capacity, searchCacheBytes, nil)
+	return utils.NewWeightedLRU[int, *search.Index](capacity, searchCacheBytes, nil)
 }
 
 // textRunsWeight 估算一页文字快照的内存占用，用作缓存的计量权重。
