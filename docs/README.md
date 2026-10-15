@@ -29,12 +29,19 @@
 
 ## 标准资料
 
-[standards/](standards/) 目录存放项目中使用的国家标准原始文本，供格式学习和开发参考：
+以下标准用于 OFD 格式、电子公文和电子签章相关功能的开发参考。链接指向国家标准全文公开系统或行业标准信息服务平台，不代表项目已通过完整标准符合性认证。
 
-- [GBT_33190-2016.pdf](standards/GBT_33190-2016.pdf) 与 [GBT_33190-2016_报批稿.pdf](standards/GBT_33190-2016_报批稿.pdf)：GB/T 33190-2016《电子文件存储与交换格式 版式文档》
-- [GBT_42133-2022.pdf](standards/GBT_42133-2022.pdf)：GB/T 42133-2022《信息技术 OFD 档案应用指南》
-- [GBT_48666-2026_征求意见稿.pdf](standards/GBT_48666-2026_征求意见稿.pdf)：GB/T 48666-2026《电子病历版式文档技术要求》**征求意见稿**，标准尚未正式发布，条款与 `OFD-H` 取值可能变化；项目仅按其声明读取 `OFD-A` 的继承关系，未实现医疗专用条款
-- [GBT_9704-2012.pdf](standards/GBT_9704-2012.pdf)：GB/T 9704-2012《党政机关公文格式》
+| 标准 | 内容 |
+|---|---|
+| [GB/T 33190-2016](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=3AF6682D939116B6F5EED53D01A9DB5D) · [修订计划](https://std.samr.gov.cn/gb/search/gbDetailed?id=529C162AC641CB8FE06397BE0A0A4AB4) | 电子文件存储与交换格式 版式文档；修订计划号 20262656-T-244 |
+| [GM/T 0099-2020](https://std.samr.gov.cn/hb/search/stdHBDetailed?id=C60C676BC220358AE05397BE0A0AFABB) | 开放式版式文档密码应用技术规范（签名、加密与完整性保护） |
+| [GB/T 42133-2022](https://openstd.samr.gov.cn/bzgk//std/newGbInfo?hcno=CF545613ABF25B011116F79DCCD3C45B) | 信息技术 OFD 档案应用指南 |
+| [GB/T 33476.1-2016](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=419233A04D029066CF032CFACBC8713B) | 党政机关电子公文格式规范 第 1 部分：公文结构 |
+| [GB/T 33476.2-2016](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=5B4E730245FF2FAF909435EBE6A659D2) | 党政机关电子公文格式规范 第 2 部分：显现 |
+| [GB/T 39362-2020](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=C6B230010286DC79C84CF8EB72DE3F97) | 党政机关电子公文归档规范 |
+| [GB/T 38540-2020](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=EBF1360C272E40E7A8B9B32ED0724AB1) | 信息安全技术 安全电子签章密码技术规范 |
+| [GB/T 9704-2012](https://openstd.samr.gov.cn/bzgk//std/newGbInfo?hcno=F3CC9BEF482524C895FDA7A08BB4A70E) | 党政机关公文格式 |
+| GB/T 48666-2026（征求意见稿） | 电子病历版式文档技术要求（征求意见稿，尚未正式发布） |
 
 ## 截图
 
