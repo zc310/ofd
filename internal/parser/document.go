@@ -665,16 +665,16 @@ func (p *Document) parse(body models.DocBody) error {
 					colorSpaces: make(map[models.StID]*models.ColorSpace),
 					composites:  make(map[models.StID]*models.CompositeGraphicUnit),
 				}
-				resolvedPageRes := make([]models.StLoc, 0, len(content.PageRes))
+				// 重载时重建路径列表，避免把上次加载的资源再次追加进来。
+				target.pageResPath = make([]models.StLoc, 0, len(content.PageRes))
 				for _, resource := range content.PageRes {
 					resourcePath := p.resolvePageResourcePath(pagePath.Dir(), resource)
-					resolvedPageRes = append(resolvedPageRes, resourcePath)
 					target.pageResPath = append(target.pageResPath, resourcePath)
 					if _, resourceErr := p.parsePageResourceFilePath(resourcePath, true, &target.resources); resourceErr != nil {
 						return resourceErr
 					}
 				}
-				if size := pageArchiveSize(p.FileCache, pagePath, resolvedPageRes); size > 0 {
+				if size := pageArchiveSize(p.FileCache, pagePath, target.pageResPath); size > 0 {
 					target.cacheSize.Store(size)
 				}
 				return nil
@@ -735,8 +735,9 @@ func resolvePagePath(base, location models.StLoc) models.StLoc {
 // 文档体（Doc_N）的路径。两种写法都指向同一个文件时以页面目录为准。两者都不
 // 存在时返回页面目录下的路径，让错误信息继续反映规范基准。
 // 只在渲染与转换链路上回退，校验器与分析器仍按规范基准报错。
+// 绝对路径按 GB/T 33190—2016 §7.3 表 2 的 ST_Loc 约定从包根节点解析。
 func (p *Document) resolvePageResourcePath(pageDir models.StLoc, resource models.StLoc) models.StLoc {
-	resolved := pageDir.Join(resource.String())
+	resolved := resource.Resolve(pageDir)
 	if resource.IsAbsolute() || p.FileCache == nil {
 		return resolved
 	}

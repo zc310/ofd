@@ -13,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 	"go.yaml.in/yaml/v3"
@@ -563,6 +564,48 @@ func TestExportPreservesPageResourceXMLAndFiles(t *testing.T) {
 	}
 	if len(document.Pages[0].Resources) != 1 || string(document.Pages[0].Resources[0].Data) == "" || len(document.Pages[0].Resources[0].Files) != 1 {
 		t.Fatalf("built page resource was not preserved: %+v", document.Pages[0].Resources)
+	}
+}
+
+func TestExportDoesNotDuplicatePageResourcesAfterReload(t *testing.T) {
+	resource := []byte(`<Res xmlns="http://www.ofdspec.org/2016" BaseLoc="."/>`)
+	source, err := creator.Marshal(creator.Document{
+		ID: "page-resource-reload",
+		Pages: []creator.Page{
+			{Resources: []creator.PageResource{{Data: resource}, {Data: resource}}},
+			{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFDWithOptions(source, parser.Options{PageCacheCapacity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	for round := 0; round < 3; round++ {
+		for _, page := range ofd.Documents[0].Pages {
+			if err := page.EnsureLoaded(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		assets := make(map[string][]byte)
+		result, err := BuildManifestFromOFD(ofd, 0, Options{
+			AssetSink: func(name string, data []byte) error {
+				assets[name] = data
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Pages) != 2 || len(result.Pages[0].Resources) != 2 || len(result.Pages[1].Resources) != 0 {
+			t.Fatalf("第 %d 轮导出的页面资源数量发生变化: %+v", round+1, result.Pages)
+		}
+		if len(assets) != 2 {
+			t.Fatalf("第 %d 轮导出了 %d 个资源文件，期望 2 个", round+1, len(assets))
+		}
 	}
 }
 
