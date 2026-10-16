@@ -25,6 +25,7 @@ function baseState() {
     isCancelledError: error => error.name === 'AbortError',
     loadOutline: () => { state.outlineReloaded = true; },
     fetchPageLinks: () => { state.linksReloaded = true; },
+    loadSignatures: () => { state.signaturesReloaded = true; return Promise.resolve([]); },
     document: { createElement: () => {
       const button = { disabled: false, textContent: '', classList: { add() {} } };
       button.addEventListener = (_, fn) => { button.click = fn; };
@@ -44,7 +45,7 @@ suite.group('独立历史页面无需出现在主文档页面清单中');
   suite.check(state.calls[0][1] === 'v1' && state.pageInfos.length === 1 && state.pageInfos[0].width === 99, '加载历史页面尺寸');
   suite.check(state.selectedVersionID === 'v1' && state.current === 0, '记录版本并从首页阅读');
   suite.check(state.fontsCleared && state.fontLoadGeneration === state.documentGeneration && state.clears === 1, '替换字体并清理旧视图');
-  suite.check(state.outlineReloaded && state.linksReloaded, '重新读取导航和动作');
+  suite.check(state.outlineReloaded && state.linksReloaded && state.signaturesReloaded, '重新读取导航、动作和签章');
   suite.check(state.currentDocumentKey === 'doc:version:0:v1', '阅读记录按版本隔离');
   state.readReadingPositions = () => ({ doc: { page: 1 } });
   await state.switchVersion(item);

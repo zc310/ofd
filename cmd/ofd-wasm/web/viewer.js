@@ -463,6 +463,7 @@ const attachmentsElement = document.querySelector('#attachments');
 const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
 const signaturesElement = document.querySelector('#signatures');
+const sealPopoverElement = document.querySelector('#seal-popover');
 const customTagsElement = document.querySelector('#custom-tags');
 const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
 const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
@@ -547,6 +548,10 @@ let localFontsActive = false;
 const localFontFamilies = new Set();
 let resizeObserver;
 let pageLinks = new Map();
+// 签名清单按文档缓存一次；sealStampsByPage 由它派生，供页面上叠加可点击的签章热区。
+let signatureInfos = [];
+let sealStampsByPage = new Map();
+let signaturesPromise;
 let pageMediaActions = [];
 let mediaCatalog = [];
 const activeMedia = new Map();
@@ -1249,6 +1254,8 @@ function mountPageSpread(position) {
     textLayer.className = 'text-layer';
     const linkLayer = document.createElement('div');
     linkLayer.className = 'link-layer';
+    const sealLayer = document.createElement('div');
+    sealLayer.className = 'seal-layer';
     const mediaLayer = document.createElement('div');
     mediaLayer.className = 'media-layer';
     image.addEventListener('load', () => {
@@ -1262,7 +1269,7 @@ function mountPageSpread(position) {
       markPageFailed(index);
       showPageError(index, '页面图片加载失败');
     });
-    surface.append(image, textLayer, linkLayer, mediaLayer);
+    surface.append(image, sealLayer, textLayer, linkLayer, mediaLayer);
     card.append(surface);
     element.append(card);
     pageCards[index] = card;
@@ -1272,6 +1279,7 @@ function mountPageSpread(position) {
     schedulePageText(index, index === current ? 1000 : 1400);
     schedulePageMetadata(index);
     applyPageLinks(index);
+    applySealHotspots(index);
   });
   applyPageWidthToSpread(spread);
   spread.pages.forEach(index => {
@@ -1351,6 +1359,7 @@ function applyPageWidthToSpread(spread) {
       surface.style.height = rotated ? `${info.height / info.width * 100}%` : '100%';
     }
     applyPageLinks(index);
+    applySealHotspots(index);
   });
 }
 
@@ -3838,6 +3847,10 @@ function clearDocumentView() {
   linkRequest?.cancel();
   linkRequest = undefined;
   pageLinks = new Map();
+  signatureInfos = [];
+  sealStampsByPage = new Map();
+  signaturesPromise = undefined;
+  closeSealPopover();
   pageMediaActions = [];
   mediaCatalog = [];
   stopActiveMedia();
@@ -3992,6 +4005,7 @@ async function openSelectedFile(selected, options = {}) {
     void loadOutline();
     if (typeof loadCustomTags === 'function') void loadCustomTags();
     void fetchPageLinks(generation);
+    void loadSignatures(generation).catch(() => {});
     void saveRecentFile(selected);
     return true;
   } catch (error) {
@@ -6049,6 +6063,7 @@ async function switchDocumentVersion(item) {
       void loadOutline();
       if (typeof loadCustomTags === 'function') void loadCustomTags();
       void fetchPageLinks(generation);
+      void loadSignatures(generation).catch(() => {});
     }
   }
 }
@@ -6395,7 +6410,7 @@ function buildSignatureStamp(info, stamp, stampIndex) {
   return button;
 }
 
-function buildSignatureItem(info) {
+function buildSignatureItem(info, options = {}) {
   const item = document.createElement('div');
   item.className = 'signature-item';
   const head = document.createElement('div');
@@ -6473,7 +6488,7 @@ function buildSignatureItem(info) {
     });
     item.append(toggle, box);
   }
-  if (Array.isArray(info.stamps) && info.stamps.length) {
+  if (!options.skipStamps && Array.isArray(info.stamps) && info.stamps.length) {
     const stamps = document.createElement('div');
     stamps.className = 'signature-stamps';
     info.stamps.forEach((stamp, stampIndex) => stamps.append(buildSignatureStamp(info, stamp, stampIndex)));
@@ -6605,7 +6620,7 @@ function renderSignatures() {
     return;
   }
   signaturesElement.append(outlineEmptyMessage('正在读取签名...'));
-  engine.signatures().then(list => {
+  loadSignatures(generation).then(list => {
     if (generation !== documentGeneration) return;
     const signatures = Array.isArray(list) ? list : [];
     signaturesElement.replaceChildren();
@@ -6849,6 +6864,145 @@ function applyPageLinks(index) {
       layer.append(hotspot);
     });
   });
+}
+
+// loadSignatures 读取并缓存签名清单，文档生命周期内只调用一次；结果同时用于
+// 签名侧栏和页面上可点击的签章热区。
+function loadSignatures(generation) {
+  if (signaturesPromise) return signaturesPromise;
+  signaturesPromise = engine.signatures().then(list => {
+    if (generation !== documentGeneration) return [];
+    signatureInfos = Array.isArray(list) ? list : [];
+    indexSealStamps(signatureInfos);
+    applySealHotspots();
+    return signatureInfos;
+  });
+  return signaturesPromise;
+}
+
+// indexSealStamps 按页面归集可点击的签章，每条记录保留签名、签章和取印章图的
+// 索引。缺页面或边界无效的签章不生成热区。
+function indexSealStamps(signatures) {
+  sealStampsByPage = new Map();
+  (Array.isArray(signatures) ? signatures : []).forEach(info => {
+    const stamps = Array.isArray(info?.stamps) ? info.stamps : [];
+    stamps.forEach((stamp, stampIndex) => {
+      if (!Number.isInteger(stamp?.page) || stamp.page < 0) return;
+      const boundary = stamp.boundary;
+      if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
+          !(boundary.width > 0) || !(boundary.height > 0)) return;
+      const entries = sealStampsByPage.get(stamp.page) || [];
+      entries.push({ info, stamp, stampIndex });
+      sealStampsByPage.set(stamp.page, entries);
+    });
+  });
+}
+
+// applySealHotspots 在指定页面上重建签章热区；不传页时重建所有已缓存签章的页面。
+function applySealHotspots(index) {
+  const targets = Number.isInteger(index) ? [index] : Array.from(sealStampsByPage.keys());
+  targets.forEach(pageIndex => {
+    const card = pageCards[pageIndex];
+    const layer = card?.querySelector('.seal-layer');
+    if (!layer) return;
+    layer.replaceChildren();
+    const pageInfo = pageInfos[pageIndex];
+    const entries = sealStampsByPage.get(pageIndex);
+    if (!pageInfo || pageInfo.width <= 0 || pageInfo.height <= 0 || !entries) return;
+    entries.forEach(entry => layer.append(buildSealHotspot(entry, pageInfo)));
+  });
+}
+
+// buildSealHotspot 按签章边界在页面坐标系里生成一个百分比定位的点击热区，和
+// 链接热区用同一套坐标换算；旋转由 page-surface 的 transform 统一处理。
+function buildSealHotspot(entry, pageInfo) {
+  const { info, stamp, stampIndex } = entry;
+  const boundary = stamp.boundary;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'seal-hotspot';
+  button.style.left = `${(boundary.x / pageInfo.width) * 100}%`;
+  button.style.top = `${(boundary.y / pageInfo.height) * 100}%`;
+  button.style.width = `${(boundary.width / pageInfo.width) * 100}%`;
+  button.style.height = `${(boundary.height / pageInfo.height) * 100}%`;
+  const label = info?.provider || info?.company || `签名 ${info?.id ?? ''}`;
+  button.title = `查看签章属性：${label}`;
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => openSealPopover(info, button));
+  return button;
+}
+
+// buildSealPopoverContent 复用签名侧栏的详情组件展示签章属性；签章位置按钮在
+// 弹层里没有意义，跳过。
+function buildSealPopoverContent(info) {
+  const head = document.createElement('div');
+  head.className = 'seal-popover-head';
+  const title = document.createElement('span');
+  title.className = 'seal-popover-title';
+  title.textContent = '签章属性';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'seal-popover-close';
+  close.title = '关闭';
+  close.setAttribute('aria-label', '关闭');
+  const icon = document.createElement('span');
+  icon.className = 'material-symbols-outlined';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = 'close';
+  close.append(icon);
+  close.addEventListener('click', closeSealPopover);
+  head.append(title, close);
+  const body = document.createElement('div');
+  body.className = 'seal-popover-body';
+  body.append(buildSignatureItem(info, { skipStamps: true }));
+  const fragment = document.createDocumentFragment();
+  fragment.append(head, body);
+  return fragment;
+}
+
+function openSealPopover(info, anchor) {
+  if (!sealPopoverElement) return;
+  sealPopoverElement.replaceChildren(buildSealPopoverContent(info));
+  sealPopoverElement.hidden = false;
+  sealPopoverElement.style.visibility = 'hidden';
+  // 移动端走 CSS 底部抽屉定位，不做视口夹取；桌面端贴着热区并夹回视口内。
+  if (isMobileViewport()) {
+    sealPopoverElement.style.left = '';
+    sealPopoverElement.style.top = '';
+  } else if (anchor) {
+    positionSealPopover(anchor.getBoundingClientRect());
+  }
+  sealPopoverElement.style.visibility = '';
+}
+
+function closeSealPopover() {
+  if (!sealPopoverElement || sealPopoverElement.hidden) return;
+  sealPopoverElement.hidden = true;
+  sealPopoverElement.replaceChildren();
+  sealPopoverElement.style.left = '';
+  sealPopoverElement.style.top = '';
+}
+
+function positionSealPopover(anchorRect) {
+  if (!sealPopoverElement) return;
+  const margin = 10;
+  const rect = sealPopoverElement.getBoundingClientRect();
+  let left = anchorRect.right + margin;
+  if (left + rect.width > window.innerWidth - margin) left = anchorRect.left - margin - rect.width;
+  const maxLeft = Math.max(margin, window.innerWidth - margin - rect.width);
+  left = Math.min(Math.max(margin, left), maxLeft);
+  let top = anchorRect.top;
+  const maxTop = Math.max(margin, window.innerHeight - margin - rect.height);
+  top = Math.min(Math.max(margin, top), maxTop);
+  sealPopoverElement.style.left = `${left}px`;
+  sealPopoverElement.style.top = `${top}px`;
+}
+
+// handleSealPopoverScroll 在任何滚动（含页面横向平移）时收起弹层，避免它脱离
+// 签章位置；弹层内部的证书/引用列表滚动不触发收起。
+function handleSealPopoverScroll(event) {
+  if (sealPopoverElement && event.target instanceof Node && sealPopoverElement.contains(event.target)) return;
+  closeSealPopover();
 }
 
 function mediaActionKey(action) {
@@ -7525,6 +7679,8 @@ updateBannerDismiss?.addEventListener('click', dismissUpdateBanner);
 window.addEventListener('scroll', updateBackToTop, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualUpdate, { passive: true });
 window.addEventListener('scroll', schedulePageVirtualTranslate, { passive: true });
+// 捕获阶段监听所有滚动容器；弹层内部滚动由 handler 自行放过。
+window.addEventListener('scroll', handleSealPopoverScroll, { passive: true, capture: true });
 thumbnailsElement.addEventListener('scroll', scheduleThumbnailVirtualUpdate, { passive: true });
 window.addEventListener('resize', () => {
   applySidebarPanels();
@@ -7533,6 +7689,7 @@ window.addEventListener('resize', () => {
   if (zoomMode === 'fit') fitWidthZoom();
   else if (zoomMode === 'page') fitPageZoom();
   scheduleVirtualUpdate();
+  closeSealPopover();
 });
 updateBackToTop();
 // 内存诊断面板：默认隐藏，?debug=1 打开（记忆到 localStorage，?debug=0 关闭）。
@@ -7643,7 +7800,8 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (event.key === 'Escape') {
-    if (activeSidebarTab === 'search') setSearchPanelOpen(false);
+    if (sealPopoverElement && !sealPopoverElement.hidden) closeSealPopover();
+    else if (activeSidebarTab === 'search') setSearchPanelOpen(false);
     else if (!viewPanel.hidden) setViewPanelOpen(false);
     else if (zoomMenu && !zoomMenu.hidden) setZoomMenuOpen(false);
     else if (documentMenu && !documentMenu.hidden) setDocumentMenuOpen(false);
@@ -7711,6 +7869,7 @@ document.addEventListener('click', event => {
   if (documentMenu && !documentMenu.hidden && !event.target.closest('.page-group')) setDocumentMenuOpen(false);
   if (!infoPanel.hidden && !event.target.closest('.info-group')) setInfoPanelOpen(false);
   if (sidebarMoreMenu && !sidebarMoreMenu.hidden && !event.target.closest('#sidebar-tabs') && !event.target.closest('#sidebar-more-menu')) setSidebarMoreOpen(false);
+  if (sealPopoverElement && !sealPopoverElement.hidden && !event.target.closest('.seal-hotspot') && !event.target.closest('#seal-popover')) closeSealPopover();
 });
 document.addEventListener('copy', () => {
   const selection = window.getSelection();
