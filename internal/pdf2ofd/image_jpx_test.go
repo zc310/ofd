@@ -126,6 +126,9 @@ func TestPDFJPXImagesWithICCBasedColorSpaceDecode(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "pdf", "2025-Microsoft-Environmental-Sustainability-Report-PDF.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("PDF fixture unavailable: %v", err)
+		}
 		t.Fatal(err)
 	}
 	configuration, err := api.LoadConfiguration(api.ConfigurationOptions{Mode: api.ConfigurationModeStateless})
