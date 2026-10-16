@@ -16,14 +16,15 @@ type testGlyphIndexFace struct {
 	cff    bool
 }
 
-func (f testGlyphIndexFace) ToPath(string) *geom.Path     { return nil }
-func (f testGlyphIndexFace) DirectPath(string) *geom.Path { return nil }
-func (f testGlyphIndexFace) TextWidth(string) float64     { return 0 }
-func (f testGlyphIndexFace) GlyphIndex(r rune) uint16     { return f.glyphs[r] }
-func (f testGlyphIndexFace) IsCFF() bool                  { return f.cff }
-func (f testGlyphIndexFace) Fill() geom.Paint             { return geom.Paint{} }
-func (f testGlyphIndexFace) Size() float64                { return 0 }
-func (f testGlyphIndexFace) ShapedRun(string) TextRun     { return nil }
+func (f testGlyphIndexFace) ToPath(string) *geom.Path            { return nil }
+func (f testGlyphIndexFace) DirectPath(string) *geom.Path        { return nil }
+func (f testGlyphIndexFace) TextWidth(string) float64            { return 0 }
+func (f testGlyphIndexFace) GlyphIndex(r rune) uint16            { return f.glyphs[r] }
+func (f testGlyphIndexFace) IsCFF() bool                         { return f.cff }
+func (f testGlyphIndexFace) Fill() geom.Paint                    { return geom.Paint{} }
+func (f testGlyphIndexFace) Size() float64                       { return 0 }
+func (f testGlyphIndexFace) VerticalMetrics() (float64, float64) { return 0, 0 }
+func (f testGlyphIndexFace) ShapedRun(string) TextRun            { return nil }
 
 func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 	glyphs := textCodeGlyphs(testGlyphIndexFace{glyphs: map[rune]uint16{'E': 38}}, []rune("E"), []models.CTCGTransform{{

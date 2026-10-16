@@ -19,10 +19,11 @@ type GlyphLayout struct {
 
 // TextLayout 描述一个 TextCode 及其字符级几何信息。
 type TextLayout struct {
-	Text          string
-	X             float64
-	Y             float64
-	Width         float64
+	Text  string
+	X     float64
+	Y     float64
+	Width float64
+	// Height 是字体上伸与下延之和，用于覆盖层行高；无字体度量时按 EM 高度兜底。
 	Height        float64
 	Font          uint64
 	Size          float64
@@ -229,6 +230,9 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 	}
 
 	widthOf := func(string) float64 { return 0 }
+	// 字符框和整段覆盖层使用相同的字体排版高度。它是行框的近似范围，
+	// 不代表每个字符的实际轮廓；不支持度量时保留基线上方的 EM 盒。
+	ascent, descent := height, 0.0
 	if document != nil && document.fonts != nil {
 		if family, err := document.fonts.LoadFont(object.Font); err == nil && family != nil {
 			fontLock := document.fonts.RenderLock(family)
@@ -240,9 +244,14 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 			}
 			if face := document.fonts.FaceObject(family, fontObject, nil); face != nil {
 				widthOf = face.TextWidth
+				a, d := face.VerticalMetrics()
+				if finiteFloat(a) && finiteFloat(d) && finiteFloat(a+d) && a > 0 && d >= 0 {
+					ascent, descent = a, d
+				}
 			}
 		}
 	}
+	layout.Height = ascent + descent
 	runes := []rune(code.Value)
 	fallbackWidth := 0.0
 	if len(runes) > 0 {
@@ -273,9 +282,9 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 		layout.Glyphs = append(layout.Glyphs, GlyphLayout{
 			Text:   string(value),
 			X:      box.X + x,
-			Y:      box.Y + y - height,
+			Y:      box.Y + y - ascent,
 			Width:  glyphWidth,
-			Height: height,
+			Height: layout.Height,
 			Angle:  angle,
 		})
 		if index+1 < len(runes) {

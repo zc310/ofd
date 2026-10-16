@@ -99,6 +99,10 @@ func TestHTMLTextLayerCoordinatesArePercentages(t *testing.T) {
 	if !strings.Contains(first, "1cqw") {
 		t.Errorf("字号换算应使用容器查询单位，实际片段：%s", first)
 	}
+	// 行高独立于字号，且必须以相同方式跟随页面缩放。
+	if !strings.Contains(first, "line-height:") || !strings.Contains(first, "mm;line-height:calc(") {
+		t.Errorf("行高应同时给出 mm 兜底与 cqw 换算，实际片段：%s", first)
+	}
 }
 
 // TestHTMLWithoutTextLayerKeepsImageOnly 确认关掉文字层后回到纯图像输出，

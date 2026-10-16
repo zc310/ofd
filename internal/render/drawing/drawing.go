@@ -227,6 +227,9 @@ type FontFace interface {
 	Fill() geom.Paint
 	// Size 返回字号（点）。
 	Size() float64
+	// VerticalMetrics 返回该字体面的上伸与下延（非负毫米），用于文字覆盖层的
+	// 排版行框，不表示单个字形的轮廓边界；不支持时返回 0, 0，调用方按 EM 框处理。
+	VerticalMetrics() (ascent float64, descent float64)
 	// ShapedRun 返回引擎整形的单行文本；不支持时返回 nil。
 	ShapedRun(value string) TextRun
 }
