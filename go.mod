@@ -1,16 +1,17 @@
 module github.com/zc310/ofd
 
-go 1.27
+go 1.26.4
 
 require (
-	fyne.io/fyne/v2 v2.8.1
+	fyne.io/fyne/v2 v2.8.2
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
+	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.157.9
-	github.com/chromedp/chromedp v0.20.1
+	github.com/chromedp/cdproto v0.158.0
+	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
 	github.com/fogleman/gg v1.3.0
@@ -21,31 +22,31 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
-	github.com/klauspost/compress v1.20.1
-	github.com/knroy/go-xml v1.7.1
+	github.com/klauspost/compress v1.20.3
+	github.com/knroy/go-xml v1.8.1
 	github.com/kovidgoyal/imaging v1.8.24-0.20261007033220-40391a359a37
 	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
-	github.com/minio/minio-go/v7 v7.3.0
+	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 	github.com/ncruces/zenity v0.10.15
-	github.com/pdfcpu/pdfcpu v0.16.1
+	github.com/pdfcpu/pdfcpu v0.16.2
 	github.com/pkg/sftp v1.13.11
 	github.com/rymdport/portal v0.4.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
-	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
-	github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
-	github.com/tdewolff/minify/v2 v2.24.19
-	github.com/tdewolff/parse/v2 v2.8.16
+	github.com/tdewolff/minify/v2 v2.24.21
+	github.com/tdewolff/parse/v2 v2.8.18
 	github.com/valyala/fasthttp v1.75.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/fontfix v0.0.3-0.20261008003548-25f9b65742e4
+	github.com/zc310/canvas v0.0.0-20261016023101-3d1af32f0be3
+	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
+	github.com/zc310/fontfix v0.0.3-0.20261015114432-41511c942370
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
@@ -55,7 +56,6 @@ require (
 )
 
 require (
-	codeberg.org/go-latex/latex v0.3.0 // indirect
 	codeberg.org/go-pdf/fpdf v0.12.0 // indirect
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
 	github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298 // indirect
@@ -63,7 +63,7 @@ require (
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
-	github.com/Kagami/go-avif v0.1.0 // indirect
+	github.com/ajroetker/go-highway v0.0.4 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
@@ -78,7 +78,7 @@ require (
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
-	github.com/fyne-io/oksvg v0.2.0 // indirect
+	github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9 // indirect
 	github.com/go-fonts/latin-modern v0.3.3 // indirect
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
@@ -96,7 +96,6 @@ require (
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
-	github.com/kolesa-team/go-webp v1.0.5 // indirect
 	github.com/kovidgoyal/go-parallel v1.1.1 // indirect
 	github.com/kovidgoyal/go-shm v1.0.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
@@ -118,20 +117,15 @@ require (
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
+	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xuri/efp v0.0.2 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	gonum.org/v1/plot v0.17.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	modernc.org/knuth v0.6.0 // indirect
 	modernc.org/token v1.1.0 // indirect
 	star-tex.org/x/tex v0.7.1 // indirect
 )
-
-replace github.com/tdewolff/font => github.com/zc310/font v0.0.0-20260928001413-b20a21f7a3b5
-
-replace github.com/tdewolff/canvas => github.com/zc310/canvas v0.0.0-20261008125608-9161ca285935
 
 replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac
