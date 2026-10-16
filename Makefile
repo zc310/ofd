@@ -79,6 +79,9 @@ WASM_WORKER := cmd/ofd-wasm/web/worker.js
 WASM_INDEX := cmd/ofd-wasm/web/index.html
 WASM_ICON_FONT := cmd/ofd-wasm/web/material-symbols-outlined-subset.woff2
 WASM_SERVICE_WORKER := cmd/ofd-wasm/web/service-worker.js
+# Service Worker 的源码是模板，构建时把内容哈希代入生成上面的 service-worker.js；
+# 生成文件是产物，不入库。
+WASM_SERVICE_WORKER_TEMPLATE := cmd/ofd-wasm/web/service-worker.tmpl.js
 WASM_WEB_DIR := cmd/ofd-wasm/web
 WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
 # WASM_WEB_EXCLUDES 是打包 Web 目录时排除的子目录。浏览器脚本的测试只在仓库内使用
@@ -86,7 +89,8 @@ WASM_WEB_PACKAGE := $(DIST_DIR)/ofd-wasm-web.zip
 WASM_WEB_EXCLUDES := test
 # 循环变量不能叫 dir：$(dir) 是 Make 内置函数名，$(dir) 会被解析成函数调用而不是
 # 变量，展开出空值。sub 不会与内置函数冲突。
-WASM_WEB_EXCLUDE_FLAGS := $(foreach sub,$(WASM_WEB_EXCLUDES),-x "$(notdir $(WASM_WEB_DIR))/$(sub)/*" -x "$(notdir $(WASM_WEB_DIR))/$(sub)/")
+WASM_WEB_EXCLUDE_FLAGS := $(foreach sub,$(WASM_WEB_EXCLUDES),-x "$(notdir $(WASM_WEB_DIR))/$(sub)/*" -x "$(notdir $(WASM_WEB_DIR))/$(sub)/") \
+	-x "$(notdir $(WASM_WEB_DIR))/$(notdir $(WASM_SERVICE_WORKER_TEMPLATE))"
 
 VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-$(PLATFORM).zip
 CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
@@ -232,9 +236,13 @@ $(WASM_EXEC): FORCE
 	@mkdir -p "$(dir $@)"
 	cp "$$(CGO_ENABLED=0 GOOS=js GOARCH=wasm $(GO) env GOROOT)/lib/wasm/wasm_exec.js" "$@"
 
-$(WASM_SERVICE_WORKER): $(WASM_INDEX) $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) $(WASM_ICON_FONT) FORCE
-	@CACHE_NAME=$$(cat "$(WASM_INDEX)" "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" "$(WASM_ICON_FONT)" | sha256sum | cut -c1-16); \
-	sed -i "s/^const CACHE_NAME = '.*';$$/const CACHE_NAME = 'ofd-reader-shell_$$CACHE_NAME';/" "$(WASM_SERVICE_WORKER)"
+$(WASM_SERVICE_WORKER): $(WASM_SERVICE_WORKER_TEMPLATE) $(WASM_INDEX) $(WASM_VIEWER) $(WASM_WORKER) $(WASM_EXEC) $(WASM) $(WASM_ICON_FONT) FORCE
+	@mkdir -p "$(dir $@)"; \
+	CACHE_HASH=$$(cat "$(WASM_INDEX)" "$(WASM_VIEWER)" "$(WASM_WORKER)" "$(WASM_EXEC)" "$(WASM)" "$(WASM_ICON_FONT)" | sha256sum | cut -c1-16); \
+	tmp="$@.tmp"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	sed "s|^const CACHE_NAME = 'ofd-reader-shell_@CACHE_HASH@';$$|const CACHE_NAME = 'ofd-reader-shell_$$CACHE_HASH';|" "$(WASM_SERVICE_WORKER_TEMPLATE)" > "$$tmp"; \
+	mv "$$tmp" "$@"
 
 build-arm64:
 	$(MAKE) GOOS=$(ARM64_GOOS) GOARCH=arm64 CGO_ENABLED=0 build-tools
@@ -484,6 +492,6 @@ package-thumbnailer:
 endif
 
 clean:
-	@rm -rf "$(BUILD_DIR)" "$(DIST_DIR)" "$(WASM)" "$(WASM_EXEC)"
+	@rm -rf "$(BUILD_DIR)" "$(DIST_DIR)" "$(WASM)" "$(WASM_EXEC)" "$(WASM_SERVICE_WORKER)"
 
 FORCE:
