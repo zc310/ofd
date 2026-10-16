@@ -4,6 +4,7 @@ package ofdxml
 import (
 	"io"
 	"strconv"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/zc310/ofd/pkg/spec"
@@ -25,14 +26,53 @@ type Writer struct {
 	open  bool
 }
 
-// New 创建可复用的 OFD XML 写入器。
+// New 从复用池获取 OFD XML 写入器。用完后应调用 Put 归还缓冲区；
+// 若需要长期持有输出，使用 Done。
 func New() *Writer {
+	w := writerPool.Get().(*Writer)
+	w.Reset()
+	return w
+}
+
+// newWriter 分配一个新的写入器，作为池的构造函数。
+func newWriter() *Writer {
 	w := &Writer{
 		buf:   make([]byte, 0, 4096),
 		stack: make([]string, 0, 8),
 	}
 	w.Reset()
 	return w
+}
+
+// maxPooledCapacity 限制归还池中保留的缓冲区容量，避免个别大文档长期占用内存。
+const maxPooledCapacity = 1 << 20
+
+var writerPool = sync.Pool{New: func() any { return newWriter() }}
+
+// Put 将不再使用的 Writer 归还池中以复用缓冲区。归还后不得再访问 Bytes
+// 返回的切片；Done 的返回值独立于写入器，可安全使用。
+func Put(w *Writer) {
+	if w == nil {
+		return
+	}
+	if cap(w.buf) > maxPooledCapacity {
+		w.buf = nil
+	}
+	writerPool.Put(w)
+}
+
+// Done 关闭剩余元素并把 Writer 归还池中，调用后不得再使用该 Writer。
+// 小缓冲区复制输出后复用，超过池容量上限的缓冲区直接移交给调用方。
+// 返回的切片可安全长期持有；仅需立即写入时，改用 Bytes 避免复制。
+func (w *Writer) Done() []byte {
+	data := w.Bytes()
+	if cap(data) > maxPooledCapacity {
+		w.buf = nil
+	} else {
+		data = append([]byte(nil), data...)
+	}
+	Put(w)
+	return data
 }
 
 // Reset 清空文档并重新写入 XML 声明，复用已分配的缓冲区。
@@ -181,6 +221,100 @@ func (w *Writer) Element(name, value string) {
 	w.EndElement()
 }
 
+// TextUint 写入十进制无符号整数文本，不生成临时字符串。
+func (w *Writer) TextUint(value uint64) {
+	w.closeStart()
+	w.buf = strconv.AppendUint(w.buf, value, 10)
+}
+
+// TextInt 写入十进制有符号整数文本，不生成临时字符串。
+func (w *Writer) TextInt(value int) {
+	w.closeStart()
+	w.buf = strconv.AppendInt(w.buf, int64(value), 10)
+}
+
+// TextFloat 写入最多保留四位小数的 OFD 数值文本。
+func (w *Writer) TextFloat(value float64) {
+	w.closeStart()
+	w.buf = AppendFloat(w.buf, value)
+}
+
+// TextBox 写入由空格分隔的四个 OFD 矩形数值文本。
+func (w *Writer) TextBox(x, y, width, height float64) {
+	w.closeStart()
+	w.buf = AppendFloat(w.buf, x)
+	w.buf = append(w.buf, ' ')
+	w.buf = AppendFloat(w.buf, y)
+	w.buf = append(w.buf, ' ')
+	w.buf = AppendFloat(w.buf, width)
+	w.buf = append(w.buf, ' ')
+	w.buf = AppendFloat(w.buf, height)
+}
+
+// TextFloatList 写入由空格分隔的 OFD 数值列表文本。
+func (w *Writer) TextFloatList(values []float64) {
+	w.closeStart()
+	for index, value := range values {
+		if index > 0 {
+			w.buf = append(w.buf, ' ')
+		}
+		w.buf = AppendFloat(w.buf, value)
+	}
+}
+
+// TextIntList 写入由空格分隔的十进制整数列表文本。
+func (w *Writer) TextIntList(values []int) {
+	w.closeStart()
+	for index, value := range values {
+		if index > 0 {
+			w.buf = append(w.buf, ' ')
+		}
+		w.buf = strconv.AppendInt(w.buf, int64(value), 10)
+	}
+}
+
+// ElementUint 写入只包含无符号整数的 OFD 元素。
+func (w *Writer) ElementUint(name string, value uint64) {
+	w.StartElement(name)
+	w.TextUint(value)
+	w.EndElement()
+}
+
+// ElementInt 写入只包含有符号整数的 OFD 元素。
+func (w *Writer) ElementInt(name string, value int) {
+	w.StartElement(name)
+	w.TextInt(value)
+	w.EndElement()
+}
+
+// ElementFloat 写入只包含 OFD 数值的元素。
+func (w *Writer) ElementFloat(name string, value float64) {
+	w.StartElement(name)
+	w.TextFloat(value)
+	w.EndElement()
+}
+
+// ElementBox 写入只包含矩形数值的元素。
+func (w *Writer) ElementBox(name string, x, y, width, height float64) {
+	w.StartElement(name)
+	w.TextBox(x, y, width, height)
+	w.EndElement()
+}
+
+// ElementFloatList 写入只包含 OFD 数值列表的元素。
+func (w *Writer) ElementFloatList(name string, values []float64) {
+	w.StartElement(name)
+	w.TextFloatList(values)
+	w.EndElement()
+}
+
+// ElementIntList 写入只包含整数列表的元素。
+func (w *Writer) ElementIntList(name string, values []int) {
+	w.StartElement(name)
+	w.TextIntList(values)
+	w.EndElement()
+}
+
 // EndElement 关闭最近打开的元素，无内容的元素输出为自闭合标签。
 func (w *Writer) EndElement() {
 	if len(w.stack) == 0 {
@@ -236,6 +370,36 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 		w.buf = append(w.buf, value[plain:index]...)
 		if index == len(value) {
 			return
+		}
+		if value[index] >= utf8.RuneSelf {
+			// 连续多字节字符整体校验后一次追加，避免逐 rune 解码，
+			// 中文正文等非 ASCII 文本吞吐可提升一倍以上。
+			end := index
+			for end < len(value) && value[end] >= utf8.RuneSelf {
+				end++
+			}
+			run := value[index:end]
+			if utf8.ValidString(run) && !containsNonXMLRune(run) {
+				w.buf = append(w.buf, run...)
+				index = end
+				continue
+			}
+			// 含非法 UTF-8 或非 XML 字符时回退逐 rune，只扫描本段避免退化。
+			for index < end {
+				r, size := utf8.DecodeRuneInString(value[index:])
+				if r == utf8.RuneError && size == 1 {
+					w.buf = append(w.buf, replacement...)
+					index++
+					continue
+				}
+				if isXMLChar(r) {
+					w.buf = append(w.buf, value[index:index+size]...)
+				} else {
+					w.buf = append(w.buf, replacement...)
+				}
+				index += size
+			}
+			continue
 		}
 		r, size := utf8.DecodeRuneInString(value[index:])
 		if r == utf8.RuneError && size == 1 {
@@ -296,6 +460,17 @@ var escapeSeek = func() (table [256]bool) {
 	}
 	return table
 }()
+
+// containsNonXMLRune 报告合法 UTF-8 片段是否含 XML 不允许的 U+FFFE/U+FFFF。
+// 这两个码点是合法编码中仅有的非 ASCII 非法 XML 字符，其余非 ASCII 均已合法。
+func containsNonXMLRune(run string) bool {
+	for index := 0; index+2 < len(run); index++ {
+		if run[index] == 0xEF && run[index+1] == 0xBF && (run[index+2] == 0xBE || run[index+2] == 0xBF) {
+			return true
+		}
+	}
+	return false
+}
 
 func isXMLChar(r rune) bool {
 	return r == 0x09 || r == 0x0A || r == 0x0D ||
