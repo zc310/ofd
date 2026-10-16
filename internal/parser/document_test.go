@@ -386,6 +386,7 @@ func TestPageCacheEvictsPageResources(t *testing.T) {
 		page.pageContent = models.PageContent{Content: &models.Content{}}
 		return nil
 	}}
+	doc.Pages = []*Page{page, other}
 	if err := page.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
@@ -426,33 +427,44 @@ func TestPageCacheRestoresResourcesWithDuplicateIDs(t *testing.T) {
 	doc.fontRes = make(map[models.StID]*models.Font)
 	doc.compositeUnits = make(map[models.StID]*models.CompositeGraphicUnit)
 	doc.drawParams = make(map[models.StID]*models.DrawParam)
+	doc.res = make(map[models.StID]*models.MultiMedia)
+	doc.colorSpaces = make(map[models.StID]*models.ColorSpace)
 	fontOne := &models.Font{ID: 7, FontName: "first"}
 	fontTwo := &models.Font{ID: 7, FontName: "second"}
 	unitOne := &models.CompositeGraphicUnit{ID: 8}
 	unitTwo := &models.CompositeGraphicUnit{ID: 8}
 	paramOne := &models.DrawParam{ID: 9}
 	paramTwo := &models.DrawParam{ID: 9}
-	makePage := func(font *models.Font, unit *models.CompositeGraphicUnit, param *models.DrawParam) *Page {
+	mediaOne := &models.MultiMedia{ID: 10, MediaFile: "first.png"}
+	mediaTwo := &models.MultiMedia{ID: 10, MediaFile: "second.png"}
+	spaceOne := &models.ColorSpace{ID: 11, Type: "RGB"}
+	spaceTwo := &models.ColorSpace{ID: 11, Type: "GRAY"}
+	makePage := func(font *models.Font, unit *models.CompositeGraphicUnit, param *models.DrawParam, media *models.MultiMedia, space *models.ColorSpace) *Page {
 		return &Page{document: doc, load: func(page *Page) error {
 			page.pageContent = models.PageContent{Content: &models.Content{}}
 			page.resources = pageResources{
-				fonts:      map[models.StID]*models.Font{font.ID: font},
-				composites: map[models.StID]*models.CompositeGraphicUnit{unit.ID: unit},
-				drawParams: map[models.StID]*models.DrawParam{param.ID: param},
+				fonts:       map[models.StID]*models.Font{font.ID: font},
+				composites:  map[models.StID]*models.CompositeGraphicUnit{unit.ID: unit},
+				drawParams:  map[models.StID]*models.DrawParam{param.ID: param},
+				media:       map[models.StID]*models.MultiMedia{media.ID: media},
+				colorSpaces: map[models.StID]*models.ColorSpace{space.ID: space},
 			}
 			doc.fontRes[font.ID] = font
 			doc.compositeUnits[unit.ID] = unit
 			doc.drawParams[param.ID] = param
+			doc.res[media.ID] = media
+			doc.colorSpaces[space.ID] = space
 			return nil
 		}}
 	}
-	first := makePage(fontOne, unitOne, paramOne)
-	second := makePage(fontTwo, unitTwo, paramTwo)
+	first := makePage(fontOne, unitOne, paramOne, mediaOne, spaceOne)
+	second := makePage(fontTwo, unitTwo, paramTwo, mediaTwo, spaceTwo)
 	third := &Page{document: doc, load: func(page *Page) error {
 		page.pageContent = models.PageContent{Content: &models.Content{}}
 		return nil
 	}}
-	doc.Pages = []*Page{first, second, third}
+	// 尚未加载的页面必须被跳过，不能把它缺少的资源当作有效替代项。
+	doc.Pages = []*Page{{document: doc}, first, second, third}
 	if err := first.EnsureLoaded(); err != nil {
 		t.Fatal(err)
 	}
@@ -467,6 +479,9 @@ func TestPageCacheRestoresResourcesWithDuplicateIDs(t *testing.T) {
 	}
 	if doc.GetFont(7) != fontOne || doc.GetCompositeUnit(8) != unitOne || doc.drawParams[9] != paramOne {
 		t.Fatal("淘汰重复 ID 资源后未恢复存活页面的资源")
+	}
+	if doc.GetMedia(10) != mediaOne || doc.GetColorSpace(11) != spaceOne {
+		t.Fatal("淘汰重复 ID 资源后未恢复存活页面的图片和颜色空间")
 	}
 }
 

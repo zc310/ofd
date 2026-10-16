@@ -309,12 +309,14 @@ func (p *Document) collectResource(resource *models.Res, filePath models.StLoc, 
 	base := resourceBase(filePath, resource.BaseLoc)
 	if resource.MultiMedias != nil {
 		for _, media := range resource.MultiMedias.MultiMedia {
+			// 同一资源文件会被多个页面及页面重载复用，路径解析不能改写缓存原件。
+			resolved := *media
 			if resolveMedia {
-				media.MediaFile = media.MediaFile.Resolve(base)
+				resolved.MediaFile = media.MediaFile.Resolve(base)
 			}
-			p.res[media.ID] = media
+			p.res[media.ID] = &resolved
 			if collected != nil {
-				collected.media[media.ID] = media
+				collected.media[media.ID] = &resolved
 			}
 		}
 	}
@@ -505,21 +507,28 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 
 func pageResourceReplacement(resources []pageResources, kind string, id models.StID) (any, bool) {
 	for _, resource := range resources {
-		var candidate any
+		// 在转换成接口之前判空，避免接口中的空指针被误认为有效资源。
 		switch kind {
 		case "media":
-			candidate = resource.media[id]
+			if candidate := resource.media[id]; candidate != nil {
+				return candidate, true
+			}
 		case "drawParams":
-			candidate = resource.drawParams[id]
+			if candidate := resource.drawParams[id]; candidate != nil {
+				return candidate, true
+			}
 		case "fonts":
-			candidate = resource.fonts[id]
+			if candidate := resource.fonts[id]; candidate != nil {
+				return candidate, true
+			}
 		case "colorSpaces":
-			candidate = resource.colorSpaces[id]
+			if candidate := resource.colorSpaces[id]; candidate != nil {
+				return candidate, true
+			}
 		case "composites":
-			candidate = resource.composites[id]
-		}
-		if candidate != nil {
-			return candidate, true
+			if candidate := resource.composites[id]; candidate != nil {
+				return candidate, true
+			}
 		}
 	}
 	return nil, false

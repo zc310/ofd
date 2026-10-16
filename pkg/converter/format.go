@@ -342,6 +342,12 @@ func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*rend
 	documents, ofd, err := documentsFromInput(input, conv)
 	if ofd != nil {
 		defer closeOFD(ofd)
+		// 渲染文档由本次转换创建，先释放字体和印章等资源，再关闭底层 OFD。
+		defer func() {
+			for _, document := range documents {
+				document.Close()
+			}
+		}()
 	}
 	if err != nil {
 		return err
@@ -382,12 +388,12 @@ func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *pars
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
 		if err := conv.checkCancelled(); err != nil {
-			return nil, ofd, err
+			return documents, ofd, err
 		}
 		documents = append(documents, render.NewDocumentWithDPI(conv.bgColor, document, conv.dpi))
 	}
 	if len(collectDocumentPages(documents)) == 0 {
-		return nil, ofd, errors.New("文档没有页面")
+		return documents, ofd, errors.New("文档没有页面")
 	}
 	return documents, ofd, nil
 }
