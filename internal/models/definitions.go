@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // StID 标识，无符号整数，应在文档内唯一。0 表示无效
@@ -139,11 +141,11 @@ func (p *StPos) parseFromString(s string) error {
 type DestType string
 
 const (
-	DestTypeXYZ  DestType = "XYZ"
-	DestTypeFit  DestType = "Fit"
-	DestTypeFitH DestType = "FitH"
-	DestTypeFitV DestType = "FitV"
-	DestTypeFitR DestType = "FitR"
+	DestTypeXYZ  DestType = spec.DestTypeXYZ
+	DestTypeFit  DestType = spec.DestTypeFit
+	DestTypeFitH DestType = spec.DestTypeFitH
+	DestTypeFitV DestType = spec.DestTypeFitV
+	DestTypeFitR DestType = spec.DestTypeFitR
 )
 
 // CtDest 目标定义
@@ -185,9 +187,9 @@ func (p *CtPageArea) EnsurePhysicalBox() {
 type ActionEvent string
 
 const (
-	ActionEventDO    ActionEvent = "DO"
-	ActionEventPO    ActionEvent = "PO"
-	ActionEventClick ActionEvent = "CLICK"
+	ActionEventDO    ActionEvent = spec.ActionEventDO
+	ActionEventPO    ActionEvent = spec.ActionEventPO
+	ActionEventClick ActionEvent = spec.ActionEventClick
 )
 
 // CtAction 动作定义

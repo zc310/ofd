@@ -10,6 +10,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/knroy/go-xml/xdm"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestCreateGeneratedXMLUsesOFDPrefix(t *testing.T) {
@@ -40,7 +41,7 @@ func TestCreateGeneratedXMLUsesOFDPrefix(t *testing.T) {
 		CustomTags:  []CustomTag{{NameSpace: "urn:example:tags", DataName: "tags.xml", Data: []byte(`<Tags xmlns="urn:example:tags"/>`)}},
 		Extensions:  []Extension{{AppName: "creator-test", RefID: 70, Data: "text", Properties: []ExtensionProperty{{Name: "key", Value: "value"}}}},
 		Signatures: []Signature{{
-			ID: "sig-1", Type: "Sign", ProviderName: "creator-test",
+			ID: "sig-1", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References:  []SignatureReference{{FileRef: "../Document.xml"}, {FileRef: "../Pages/Page_0/Content.xml"}},
 			SignedValue: []byte("value"),
 		}},

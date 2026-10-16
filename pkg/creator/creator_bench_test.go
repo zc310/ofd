@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func BenchmarkStreamColor(b *testing.B) {
@@ -101,7 +102,7 @@ func benchmarkDocument() Document {
 		ID:       "benchmark-r",
 		PageSize: A4,
 		DrawParams: []DrawParam{{
-			Name: "benchmark-param", LineWidth: 0.5, Cap: "Round", Join: "Miter",
+			Name: "benchmark-param", LineWidth: 0.5, Cap: spec.LineCapRound, Join: spec.LineJoinMiter,
 			StrokeColor: &Color{R: 20, G: 40, B: 80},
 		}},
 		Fonts:       []Font{{Name: "BenchmarkFont", Format: "ttf", Data: []byte("benchmark-font-data")}},

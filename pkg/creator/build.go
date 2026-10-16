@@ -915,7 +915,7 @@ func (s *buildState) buildPage(page Page, pageIndex int) ([]builtLayer, []pageRe
 // finishGeneration 在页面写出后执行依赖全局分配结果的校验，并确定文档最大 ID。
 func (s *buildState) finishGeneration() error {
 	for _, pattern := range s.patterns {
-		if pattern.Thumbnail != 0 && !s.pageImageIDs[pattern.Thumbnail] && !s.pendingPageImageIDs[pattern.Thumbnail] && !s.documentImageID(pattern.Thumbnail) && s.mediaTypes[pattern.Thumbnail] != "Image" {
+		if pattern.Thumbnail != 0 && !s.pageImageIDs[pattern.Thumbnail] && !s.pendingPageImageIDs[pattern.Thumbnail] && !s.documentImageID(pattern.Thumbnail) && s.mediaTypes[pattern.Thumbnail] != spec.MediaTypeImage {
 			return fmt.Errorf("图案缩略图引用了不存在的图片资源 ID %d", pattern.Thumbnail)
 		}
 	}
@@ -1507,7 +1507,7 @@ func registerRawResourceNodes(s *buildState, root *xdm.Node, pageIndex, resource
 				return fmt.Errorf("页面资源 ColorSpace ID 重复: %d", id)
 			}
 			typeName := element.AttrValue("Type")
-			if typeName != "GRAY" && typeName != "RGB" && typeName != "CMYK" {
+			if typeName != spec.ColorSpaceTypeGray && typeName != spec.ColorSpaceTypeRGB && typeName != spec.ColorSpaceTypeCMYK {
 				return fmt.Errorf("页面资源 ColorSpace 类型无效: %q", typeName)
 			}
 			bits := 8
@@ -1566,12 +1566,12 @@ func registerRawResourceNodes(s *buildState, root *xdm.Node, pageIndex, resource
 				return fmt.Errorf("页面资源 MultiMedia ID 重复: %d", id)
 			}
 			mediaType := element.AttrValue("Type")
-			if mediaType != "Image" && mediaType != "Audio" && mediaType != "Video" {
+			if mediaType != spec.MediaTypeImage && mediaType != spec.MediaTypeAudio && mediaType != spec.MediaTypeVideo {
 				return fmt.Errorf("页面资源 MultiMedia 类型无效: %q", mediaType)
 			}
 			s.mediaIDs[id] = true
 			s.mediaTypes[id] = mediaType
-			if mediaType == "Image" {
+			if mediaType == spec.MediaTypeImage {
 				s.pageImageIDs[id] = true
 			}
 			return nil
@@ -1731,7 +1731,7 @@ func (s *buildState) validateRawResourceReferences() error {
 }
 
 func (s *buildState) isImageReference(id uint64) bool {
-	if s.mediaTypes[id] == "Image" || s.pageImageIDs[id] || s.pendingPageImageIDs[id] {
+	if s.mediaTypes[id] == spec.MediaTypeImage || s.pageImageIDs[id] || s.pendingPageImageIDs[id] {
 		return true
 	}
 	_, ok := s.compositeIDs[id]
@@ -1859,7 +1859,7 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				value.Clips = completeClipsTextCodes(value.Clips, s.document.Fonts, s.completeTextCodeDeltas)
 				built.item = value
 				if value.ResourceID != 0 {
-					if !s.pageImageIDs[value.ResourceID] && !s.documentImageID(value.ResourceID) && s.mediaTypes[value.ResourceID] != "Image" {
+					if !s.pageImageIDs[value.ResourceID] && !s.documentImageID(value.ResourceID) && s.mediaTypes[value.ResourceID] != spec.MediaTypeImage {
 						return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的图片资源 ID %d", context, layerIndex+1, itemIndex+1, value.ResourceID)
 					}
 					if len(value.Data) > 0 || value.Format != "" || value.Name != "" {
@@ -1868,10 +1868,10 @@ func (s *buildState) prepareLayers(items []Item, layers []Layer, output *[]built
 				} else if err := validateImage(value); err != nil {
 					return fmt.Errorf("%s 图层 %d 的图片对象 %d 无效: %w", context, layerIndex+1, itemIndex+1, err)
 				}
-				if referenceID := value.Substitution; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != "Image" {
+				if referenceID := value.Substitution; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != spec.MediaTypeImage {
 					return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的 Substitution 资源 ID %d", context, layerIndex+1, itemIndex+1, referenceID)
 				}
-				if referenceID := value.ImageMask; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != "Image" {
+				if referenceID := value.ImageMask; referenceID != 0 && !s.pageImageIDs[referenceID] && !s.documentImageID(referenceID) && s.mediaTypes[referenceID] != spec.MediaTypeImage {
 					return fmt.Errorf("%s 图层 %d 的图片对象 %d 引用了不存在的 ImageMask 资源 ID %d", context, layerIndex+1, itemIndex+1, referenceID)
 				}
 				if err := validateClips(value.Clips); err != nil {
@@ -2077,7 +2077,7 @@ func (s *buildState) prepareComposites() error {
 			{name: "Substitution", id: composite.Substitution},
 		} {
 			referenceName, referenceID := reference.name, reference.id
-			if referenceID != 0 && s.mediaTypes[referenceID] != "Image" {
+			if referenceID != 0 && s.mediaTypes[referenceID] != spec.MediaTypeImage {
 				return fmt.Errorf("复合图元资源 %d 的 %s 引用了不存在的图片资源 ID %d", index+1, referenceName, referenceID)
 			}
 		}
@@ -2255,7 +2255,7 @@ func (s *buildState) documentImageID(id uint64) bool {
 // figureMedia 按资源 ID 回查文档里声明的图片，供 Figure 读取像素尺寸。
 func (s *buildState) figureMedia(id uint64) (Image, bool) {
 	for _, media := range s.document.Media {
-		if media.ID == id && media.Type == "Image" {
+		if media.ID == id && media.Type == spec.MediaTypeImage {
 			return Image{Data: media.Data, Source: media.Source, Format: media.Format, Name: media.Name}, true
 		}
 	}

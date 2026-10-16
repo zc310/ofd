@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // splitTestTable 造一张可跨页的表：每行文字带行号，便于确认既不丢行也不重复。
@@ -186,10 +188,10 @@ func TestSplittingPagesTakesMaxFragmentCount(t *testing.T) {
 func TestExpandTableRejectsOverflowInNestedContext(t *testing.T) {
 	doc := splitTestDoc(Page{})
 	doc.Templates = []TemplatePage{{
-		ID: 1, Name: "tpl", ZOrder: "Background",
+		ID: 1, Name: "tpl", ZOrder: spec.ZOrderBackground,
 		Items: []Item{splitTestTable(120, 5)},
 	}}
-	doc.Pages[0].Templates = []TemplateRef{{ID: 1, ZOrder: "Background"}}
+	doc.Pages[0].Templates = []TemplateRef{{ID: 1, ZOrder: spec.ZOrderBackground}}
 	if _, err := Marshal(doc); err == nil {
 		t.Fatal("模板页内放不下的表格应当报错")
 	} else if !strings.Contains(err.Error(), "不能跨页") {

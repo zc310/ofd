@@ -918,9 +918,9 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 // 与 GB/T 33190 表 27 一致：灰度 1 个通道、RGB 3 个、CMYK 4 个。
 func colorSpaceChannelsByType(value string) int {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
-	case "GRAY":
+	case spec.ColorSpaceTypeGray:
 		return 1
-	case "CMYK":
+	case spec.ColorSpaceTypeCMYK:
 		return 4
 	default:
 		return 3

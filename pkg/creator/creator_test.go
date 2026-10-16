@@ -723,7 +723,7 @@ func TestCreateSignatures(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "signature-test",
 		Signatures: []Signature{{
-			ID: "sig-1", Type: "Sign", ProviderName: "creator-test", Method: "RSA", CheckMethod: "SHA1",
+			ID: "sig-1", Type: spec.SigTypeSign, ProviderName: "creator-test", Method: "RSA", CheckMethod: "SHA1",
 			References:  []SignatureReference{{FileRef: "../Document.xml"}},
 			SignedValue: []byte("signed-value"), SignedValueName: "value.bin",
 		}},
@@ -747,7 +747,7 @@ func TestCreateSignaturesNormalizesCheckMethod(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "signature-check-method-case",
 		Signatures: []Signature{{
-			ID: "sig-case", Type: "Sign", ProviderName: "creator-test", CheckMethod: "sha1",
+			ID: "sig-case", Type: spec.SigTypeSign, ProviderName: "creator-test", CheckMethod: "sha1",
 			References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"),
 		}},
 		Pages: []Page{{}},
@@ -766,7 +766,7 @@ func TestCreateSignaturesDefaultCheckMethodMatchesSchema(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "signature-default-check-method",
 		Signatures: []Signature{{
-			ID: "sig-default", Type: "Sign", ProviderName: "creator-test",
+			ID: "sig-default", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"),
 		}},
 		Pages: []Page{{}},
@@ -787,7 +787,7 @@ func TestCreateSignaturesUseSelectedDigestMethod(t *testing.T) {
 			data, err := Marshal(Document{
 				ID: "signature-digest-method",
 				Signatures: []Signature{{
-					ID: "sig-digest-method", Type: "Sign", ProviderName: "creator-test", CheckMethod: method,
+					ID: "sig-digest-method", Type: spec.SigTypeSign, ProviderName: "creator-test", CheckMethod: method,
 					References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"),
 				}},
 				Pages: []Page{{}},
@@ -805,7 +805,7 @@ func TestCreateSignaturesDigestAdditionalPackageFile(t *testing.T) {
 		ID:          "signature-additional-reference",
 		ColorSpaces: []ColorSpace{{ID: 30, Type: "RGB"}},
 		Signatures: []Signature{{
-			ID: "sig-resource", Type: "Sign", ProviderName: "creator-test", CheckMethod: "MD5",
+			ID: "sig-resource", Type: spec.SigTypeSign, ProviderName: "creator-test", CheckMethod: "MD5",
 			References:  []SignatureReference{{FileRef: "../DocumentRes.xml"}},
 			SignedValue: []byte("value"),
 		}},
@@ -828,7 +828,7 @@ func TestCreateRejectsIncorrectProvidedSignatureDigest(t *testing.T) {
 	_, err := Marshal(Document{
 		ID: "signature-incorrect-provided-digest",
 		Signatures: []Signature{{
-			ID: "sig-incorrect-digest", Type: "Sign", ProviderName: "creator-test",
+			ID: "sig-incorrect-digest", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References:  []SignatureReference{{FileRef: "../Document.xml", CheckValue: []byte("wrong")}},
 			SignedValue: []byte("value"),
 		}},
@@ -843,7 +843,7 @@ func TestCreateSignaturesRejectsMissingAutomaticDigestTarget(t *testing.T) {
 	_, err := Marshal(Document{
 		ID: "signature-missing-digest-target",
 		Signatures: []Signature{{
-			ID: "sig-missing-target", Type: "Sign", ProviderName: "creator-test",
+			ID: "sig-missing-target", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References:  []SignatureReference{{FileRef: "../missing.xml"}},
 			SignedValue: []byte("value"),
 		}},
@@ -858,7 +858,7 @@ func TestCreateSignaturesAvoidsMaxSignIDCollision(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "signature-max-id-collision",
 		Signatures: []Signature{{
-			ID: "MaxSignId-1", Type: "Sign", ProviderName: "creator-test",
+			ID: "MaxSignId-1", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References:  []SignatureReference{{FileRef: "../Document.xml"}},
 			SignedValue: []byte("value"),
 		}},
@@ -878,7 +878,7 @@ func TestMarshalDoesNotPersistSignatureDigest(t *testing.T) {
 	document := Document{
 		ID: "signature-digest-test",
 		Signatures: []Signature{{
-			ID: "sig-digest", Type: "Sign", ProviderName: "creator-test",
+			ID: "sig-digest", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"),
 		}},
 		Pages: []Page{{}},
@@ -1035,7 +1035,7 @@ func TestCreateRejectsDuplicateSignatureStampIDs(t *testing.T) {
 	_, err := Marshal(Document{
 		ID: "duplicate-signature-stamp-id",
 		Signatures: []Signature{{
-			ID: "signature-1", Type: "Sign", ProviderName: "creator-test",
+			ID: "signature-1", Type: spec.SigTypeSign, ProviderName: "creator-test",
 			References:  []SignatureReference{{FileRef: "../Document.xml"}},
 			SignedValue: []byte("value"),
 			StampAnnots: []SignatureStamp{
@@ -1972,11 +1972,11 @@ func TestCreateTemplatePages(t *testing.T) {
 	data, err := Marshal(Document{
 		ID: "template-test",
 		Templates: []TemplatePage{{
-			ID: 10, Name: "页眉模板", ZOrder: "Background",
+			ID: 10, Name: "页眉模板", ZOrder: spec.ZOrderBackground,
 			Items: []Item{Path{X: 1, Y: 1, Width: 20, Height: 5, Data: "M 0 0 L 20 0 L 20 5 C", Fill: true}},
 		}},
 		Pages: []Page{{
-			Templates: []TemplateRef{{ID: 10, ZOrder: "Background"}},
+			Templates: []TemplateRef{{ID: 10, ZOrder: spec.ZOrderBackground}},
 			Items:     []Item{Text{X: 10, Y: 20, Width: 40, Height: 8, Value: "模板页面正文"}},
 		}},
 	})
@@ -1992,13 +1992,13 @@ func TestCreateTemplatePages(t *testing.T) {
 	if document.GetTemplate(10) == nil {
 		t.Fatal("模板页内容加载失败")
 	}
-	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder != "Background" {
+	if len(document.CommonData.TemplatePages) != 1 || uint64(document.CommonData.TemplatePages[0].ID) != 10 || document.CommonData.TemplatePages[0].Name == nil || *document.CommonData.TemplatePages[0].Name != "页眉模板" || document.CommonData.TemplatePages[0].ZOrder != spec.ZOrderBackground {
 		t.Fatalf("模板页定义未正确生成: %+v", document.CommonData.TemplatePages)
 	}
 	if document.GetTemplate(10) == nil || document.GetTemplate(10).Content == nil || len(document.GetTemplate(10).Content.Layer) != 1 || countItemsOfKind(document.GetTemplate(10).Content.Layer[0].Items, models.PageItemPath) != 1 {
 		t.Fatalf("模板页内容未正确生成")
 	}
-	if len(document.Pages[0].Template()) != 1 || uint64(document.Pages[0].Template()[0].TemplateID) != 10 || document.Pages[0].Template()[0].ZOrder != "Background" {
+	if len(document.Pages[0].Template()) != 1 || uint64(document.Pages[0].Template()[0].TemplateID) != 10 || document.Pages[0].Template()[0].ZOrder != spec.ZOrderBackground {
 		t.Fatalf("页面模板引用未正确生成: %+v", document.Pages[0].Template())
 	}
 	checkGeneratedPackage(t, data)
@@ -2504,14 +2504,14 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 			Path{
 				X: 1, Y: 2, Width: 30, Height: 20,
 				Data: "M 0 0 L 10 10 C", StrokeSet: &visible, Fill: true,
-				Rule: "Even-Odd", Name: "outline", Visible: &visible,
-				LineWidth: 0.5, Cap: "Round", Join: "Bevel", MiterLimit: 2,
+				Rule: spec.FillRuleEvenOdd, Name: "outline", Visible: &visible,
+				LineWidth: 0.5, Cap: spec.LineCapRound, Join: spec.LineJoinBevel, MiterLimit: 2,
 				DashOffset: 1, DashPattern: []float64{2, 1}, Alpha: &alpha,
 			},
 			Image{
 				X: 2, Y: 3, Width: 20, Height: 15, Data: png,
 				Name: "photo", Visible: &visible, LineWidth: 0.25,
-				Cap: "Square", Join: "Round", DashPattern: []float64{1, 2},
+				Cap: spec.LineCapSquare, Join: spec.LineJoinRound, DashPattern: []float64{1, 2},
 				Border: &ImageBorder{LineWidth: 0.3, HorizontalRadius: 1, VerticalRadius: 2, DashOffset: 0.5, DashPattern: []float64{3, 1}},
 			},
 		}}},
@@ -2527,15 +2527,15 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	path := firstItemOfKind(layer.Items, models.PageItemPath).Path
-	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke.Value(true) || !path.Fill || path.Rule != "Even-Odd" {
+	if path.Name != "outline" || path.Visible.Value(true) || path.Stroke.Value(true) || !path.Fill || path.Rule != spec.FillRuleEvenOdd {
 		t.Fatalf("路径属性未正确生成: %+v", path)
 	}
-	if path.LineWidth != 0.5 || path.Cap != "Round" || path.Join != "Bevel" || path.MiterLimit != 2 || path.DashOffset != 1 || path.Alpha == nil || *path.Alpha != alpha {
+	if path.LineWidth != 0.5 || path.Cap != spec.LineCapRound || path.Join != spec.LineJoinBevel || path.MiterLimit != 2 || path.DashOffset != 1 || path.Alpha == nil || *path.Alpha != alpha {
 		t.Fatalf("路径线条属性未正确生成: %+v", path.CTGraphicUnit)
 	}
 
 	image := firstItemOfKind(layer.Items, models.PageItemImage).Image
-	if image.Name != "photo" || image.Visible.Value(true) || image.LineWidth != 0.25 || image.Cap != "Square" || image.Join != "Round" {
+	if image.Name != "photo" || image.Visible.Value(true) || image.LineWidth != 0.25 || image.Cap != spec.LineCapSquare || image.Join != spec.LineJoinRound {
 		t.Fatalf("图片属性未正确生成: %+v", image)
 	}
 	if image.Border == nil || image.Border.LineWidth != 0.3 || image.Border.HorizonalCornerRadius != 1 || image.Border.VerticalCornerRadius != 2 || image.Border.DashOffset != 0.5 {
@@ -2773,13 +2773,13 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 			{
 				Name:      "base",
 				LineWidth: 0.5,
-				Cap:       "Round",
+				Cap:       spec.LineCapRound,
 				FillColor: &Color{R: 240, G: 240, B: 240},
 			},
 			{
 				Name:        "accent",
 				Relative:    "base",
-				Join:        "Bevel",
+				Join:        spec.LineJoinBevel,
 				StrokeColor: &Color{R: 20, G: 40, B: 200},
 			},
 		},
@@ -2808,7 +2808,7 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 		t.Fatalf("绘制参数资源未生成: %+v", document.DocumentResourceList())
 	}
 	params := document.DocumentResourceList()[0].DrawParams.DrawParam
-	if params[0].LineWidth != 0.5 || params[0].Cap != "Round" || uint64(params[1].Relative) != uint64(params[0].ID) || params[1].Join != "Bevel" {
+	if params[0].LineWidth != 0.5 || params[0].Cap != spec.LineCapRound || uint64(params[1].Relative) != uint64(params[0].ID) || params[1].Join != spec.LineJoinBevel {
 		t.Fatalf("绘制参数内容未正确生成: %+v", params)
 	}
 	layer := document.Pages[0].Content().Layer[0]
@@ -3283,21 +3283,21 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	}
 	if _, err := Marshal(Document{
 		ID:         "invalid-signature",
-		Signatures: []Signature{{ID: "bad id", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value")}},
+		Signatures: []Signature{{ID: "bad id", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value")}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted an invalid signature ID")
 	}
 	if _, err := Marshal(Document{
 		ID:         "missing-signature-value",
-		Signatures: []Signature{{ID: "sig-2", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}}},
+		Signatures: []Signature{{ID: "sig-2", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted a signature without signed value")
 	}
 	if _, err := Marshal(Document{
 		ID:         "missing-signature-reference-target",
-		Signatures: []Signature{{ID: "sig-missing", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "missing.xml"}}, SignedValue: []byte("value")}},
+		Signatures: []Signature{{ID: "sig-missing", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "missing.xml"}}, SignedValue: []byte("value")}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted a signature reference to a missing file")
@@ -3475,7 +3475,7 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	if _, err := Marshal(Document{
 		ID: "invalid-signature-noncanonical-path",
 		Signatures: []Signature{{
-			ID: "sig-noncanonical", Type: "Sign", ProviderName: "test",
+			ID: "sig-noncanonical", Type: spec.SigTypeSign, ProviderName: "test",
 			References: []SignatureReference{{FileRef: "./../Document.xml"}}, SignedValue: []byte("value"),
 		}},
 		Pages: []Page{{}},
@@ -3566,21 +3566,21 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	}
 	if _, err := Marshal(Document{
 		ID:         "invalid-signature-file-name",
-		Signatures: []Signature{{ID: "sig", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"), SignedValueName: "bad\x00.bin"}},
+		Signatures: []Signature{{ID: "sig", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("value"), SignedValueName: "bad\x00.bin"}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted a signature file name containing NUL")
 	}
 	if _, err := Marshal(Document{
 		ID:         "invalid-signature-reference-path",
-		Signatures: []Signature{{ID: "sig-path", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "/Document.xml"}}, SignedValue: []byte("value")}},
+		Signatures: []Signature{{ID: "sig-path", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "/Document.xml"}}, SignedValue: []byte("value")}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted an absolute signature reference path")
 	}
 	if _, err := Marshal(Document{
 		ID:         "invalid-signature-reference-whitespace",
-		Signatures: []Signature{{ID: "sig-space", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: " ../Document.xml"}}, SignedValue: []byte("value")}},
+		Signatures: []Signature{{ID: "sig-space", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: " ../Document.xml"}}, SignedValue: []byte("value")}},
 		Pages:      []Page{{}},
 	}); err == nil {
 		t.Fatal("Marshal accepted a signature reference with surrounding whitespace")
@@ -3588,8 +3588,8 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	if _, err := Marshal(Document{
 		ID: "duplicate-signature-data-name",
 		Signatures: []Signature{
-			{ID: "sig-a", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("a"), SignedValueName: "same.bin"},
-			{ID: "sig-b", Type: "Sign", ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("b"), SignedValueName: "same.bin"},
+			{ID: "sig-a", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("a"), SignedValueName: "same.bin"},
+			{ID: "sig-b", Type: spec.SigTypeSign, ProviderName: "test", References: []SignatureReference{{FileRef: "../Document.xml"}}, SignedValue: []byte("b"), SignedValueName: "same.bin"},
 		},
 		Pages: []Page{{}},
 	}); err == nil {

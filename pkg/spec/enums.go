@@ -103,3 +103,71 @@ const (
 	// ZoomModeFitRect 适应页面。
 	ZoomModeFitRect = "FitRect"
 )
+
+// 注解类型（Annotation/@Type）。
+const (
+	AnnotationTypeLink      = "Link"
+	AnnotationTypePath      = "Path"
+	AnnotationTypeHighlight = "Highlight"
+	AnnotationTypeStamp     = "Stamp"
+	AnnotationTypeWatermark = "Watermark"
+)
+
+// 多媒体资源类型（MultiMedia/@Type）。
+const (
+	MediaTypeImage = "Image"
+	MediaTypeAudio = "Audio"
+	MediaTypeVideo = "Video"
+)
+
+// 颜色空间类型（ColorSpace/@Type）。
+const (
+	ColorSpaceTypeGray = "GRAY"
+	ColorSpaceTypeRGB  = "RGB"
+	ColorSpaceTypeCMYK = "CMYK"
+)
+
+// 页面跳转目标类型（Dest/@Type）。
+const (
+	DestTypeXYZ  = "XYZ"
+	DestTypeFit  = "Fit"
+	DestTypeFitH = "FitH"
+	DestTypeFitV = "FitV"
+	DestTypeFitR = "FitR"
+)
+
+// 动作触发事件（Action/@Event）。
+const (
+	ActionEventDO    = "DO"
+	ActionEventPO    = "PO"
+	ActionEventClick = "CLICK"
+)
+
+// 影片动作操作符（Movie/@Operator）。
+const (
+	MovieOperatorPlay   = "Play"
+	MovieOperatorStop   = "Stop"
+	MovieOperatorPause  = "Pause"
+	MovieOperatorResume = "Resume"
+)
+
+// 图案单元反射方式（Pattern/@ReflectMethod）。
+const (
+	PatternReflectNormal       = "Normal"
+	PatternReflectRow          = "Row"
+	PatternReflectColumn       = "Column"
+	PatternReflectRowAndColumn = "RowAndColumn"
+)
+
+// 图案坐标参考系（Pattern/@RelativeTo）。
+const (
+	PatternRelativePage   = "Page"
+	PatternRelativeObject = "Object"
+)
+
+// 渐变映射方式（AxialShd/@MapType、RadialShd/@MapType）。
+const (
+	ShadingMapDirect  = "Direct"
+	ShadingMapRepeat  = "Repeat"
+	ShadingMapReflect = "Reflect"
+)

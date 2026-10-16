@@ -17,6 +17,7 @@ import (
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func testdataPath(names ...string) string {
@@ -74,7 +75,7 @@ func findWatermarks(t *testing.T, data []byte) []*etree.Element {
 	}
 	var annots []*etree.Element
 	for _, child := range root.ChildElements() {
-		if child.Tag == "Annot" && attr(child, "Type") == watermarkType {
+		if child.Tag == "Annot" && attr(child, "Type") == spec.AnnotationTypeWatermark {
 			annots = append(annots, child)
 		}
 	}

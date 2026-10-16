@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // numberPrecision 与 pkg/creator 保持一致：0.0001mm 足够、避免浮点噪声。
@@ -48,7 +49,7 @@ func fmtBox(x, y, width, height float64) string {
 func buildAnnotElement(prefix string, wm Watermark, id uint64) (*etree.Element, error) {
 	element := etree.NewElement(prefixTag(prefix, "Annot"))
 	element.CreateAttr("ID", strconv.FormatUint(id, 10))
-	element.CreateAttr("Type", watermarkType)
+	element.CreateAttr("Type", spec.AnnotationTypeWatermark)
 	creatorName := wm.Creator
 	if creatorName == "" {
 		creatorName = defaultCreator()

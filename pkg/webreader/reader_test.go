@@ -110,7 +110,7 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 	if bookmark == nil || bookmark.TargetPage != 1 || bookmark.Page != 0 {
 		t.Fatalf("书签热区不符: %+v", bookmark)
 	}
-	if movie == nil || movie.MediaID != 22 || movie.Operator != "Play" || movie.Page != 0 {
+	if movie == nil || movie.MediaID != 22 || movie.Operator != spec.MovieOperatorPlay || movie.Page != 0 {
 		t.Fatalf("影片热区不符: %+v", movie)
 	}
 	if attachment == nil || attachment.AttachmentID != "demo-note" || attachment.AttachmentName != "说明.txt" || attachment.Page != 0 {
@@ -120,7 +120,7 @@ func TestDocumentClickActionsMatchPageText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(actions) != 1 || actions[0].MediaKind != "sound" || actions[0].MediaID != 21 || actions[0].Event != "PO" || actions[0].Page != 0 {
+	if len(actions) != 1 || actions[0].MediaKind != "sound" || actions[0].MediaID != 21 || actions[0].Event != spec.ActionEventPO || actions[0].Page != 0 {
 		t.Fatalf("进入页面声音不符: %+v", actions)
 	}
 }
@@ -957,7 +957,7 @@ func TestOutlineResolvesPageAndBookmark(t *testing.T) {
 				Title:   "第一章",
 				Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 0}}},
 				Children: []creator.Outline{
-					{Title: "1.1 节", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 1, Type: "XYZ", Top: &top, Zoom: &zoom}}}},
+					{Title: "1.1 节", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 1, Type: spec.DestTypeXYZ, Top: &top, Zoom: &zoom}}}},
 				},
 			},
 			{Title: "书签跳转", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Bookmark: "第三章"}}}},
@@ -1400,7 +1400,7 @@ func TestMediaExposeMetadataAndData(t *testing.T) {
 	}
 	images := 0
 	for _, info := range infos {
-		if info.Type == "Image" {
+		if info.Type == spec.MediaTypeImage {
 			images++
 		}
 		if !info.Exists {
@@ -1450,7 +1450,7 @@ func TestAnnotationsExposeMetadata(t *testing.T) {
 	}
 	var stamp *AnnotationInfo
 	for index := range infos {
-		if infos[index].Type == "Stamp" {
+		if infos[index].Type == spec.AnnotationTypeStamp {
 			stamp = &infos[index]
 			break
 		}
@@ -1491,7 +1491,7 @@ func TestAnnotationsExposeLinkTarget(t *testing.T) {
 
 	// 内部跳转：动作挂在外观页面的图形对象上，目标页解析为全局页索引。
 	internal := byID["201"]
-	if internal.Type != "Link" {
+	if internal.Type != spec.AnnotationTypeLink {
 		t.Fatalf("注解 201 类型 = %q, 期望 Link", internal.Type)
 	}
 	if internal.Boundary == nil || internal.Boundary.X != 30 || internal.Boundary.Y != 160 {
@@ -1500,7 +1500,7 @@ func TestAnnotationsExposeLinkTarget(t *testing.T) {
 	if internal.TargetPage != 1 {
 		t.Fatalf("链接 201 目标页 = %d, 期望 1", internal.TargetPage)
 	}
-	if internal.Dest == nil || internal.Dest.Type != "XYZ" || internal.Dest.Left == nil || *internal.Dest.Left != 0 {
+	if internal.Dest == nil || internal.Dest.Type != spec.DestTypeXYZ || internal.Dest.Left == nil || *internal.Dest.Left != 0 {
 		t.Fatalf("链接 201 跳转目标 = %+v", internal.Dest)
 	}
 	if internal.URI != "" {
@@ -1528,8 +1528,8 @@ func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
 	data, err := creator.Marshal(creator.Document{
 		ID: "media-action-reader",
 		Media: []creator.Media{
-			{ID: 40, Type: "Audio", Format: "mp3", Data: []byte("audio")},
-			{ID: 41, Type: "Video", Format: "mp4", Data: []byte("video")},
+			{ID: 40, Type: spec.MediaTypeAudio, Format: "mp3", Data: []byte("audio")},
+			{ID: 41, Type: spec.MediaTypeVideo, Format: "mp4", Data: []byte("video")},
 		},
 		Actions: []creator.Action{
 			{Event: creator.ActionEventDO, Sound: &creator.SoundAction{ResourceID: 40, Volume: &volume, Repeat: &repeat}},
@@ -1537,7 +1537,7 @@ func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
 		Pages: []creator.Page{{
 			Area: &creator.PageArea{PhysicalBox: &creator.Box{Width: 210, Height: 297}},
 			Actions: []creator.Action{
-				{Event: creator.ActionEventPO, Movie: &creator.MovieAction{ResourceID: 41, Operator: "Play"}},
+				{Event: creator.ActionEventPO, Movie: &creator.MovieAction{ResourceID: 41, Operator: spec.MovieOperatorPlay}},
 			},
 			Items: []creator.Item{
 				creator.Path{
@@ -1569,16 +1569,16 @@ func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
 	var sound, movie *PageLink
 	for index := range actions {
 		switch actions[index].Event {
-		case "DO":
+		case spec.ActionEventDO:
 			sound = &actions[index]
-		case "PO":
+		case spec.ActionEventPO:
 			movie = &actions[index]
 		}
 	}
 	if sound == nil || sound.MediaKind != "sound" || sound.MediaID != 40 || sound.Volume == nil || *sound.Volume != 80 || !sound.Repeat || sound.Page != 0 {
 		t.Fatalf("文档声音动作不符: %+v", sound)
 	}
-	if movie == nil || movie.MediaKind != "movie" || movie.MediaID != 41 || movie.Operator != "Play" || movie.Page != 0 {
+	if movie == nil || movie.MediaKind != "movie" || movie.MediaID != 41 || movie.Operator != spec.MovieOperatorPlay || movie.Page != 0 {
 		t.Fatalf("页面影片动作不符: %+v", movie)
 	}
 
@@ -1586,7 +1586,7 @@ func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0].MediaKind != "sound" || links[0].MediaID != 40 || links[0].Event != "CLICK" {
+	if len(links) != 1 || links[0].MediaKind != "sound" || links[0].MediaID != 40 || links[0].Event != spec.ActionEventClick {
 		t.Fatalf("点击声音热区不符: %+v", links)
 	}
 	if links[0].Boundary.Width != 40 || links[0].Boundary.Height != 30 {

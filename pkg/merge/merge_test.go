@@ -17,6 +17,7 @@ import (
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -681,7 +682,7 @@ func documentWithMedia(t *testing.T, id, mediaName string, mediaData []byte) []b
 	data, err := creator.Marshal(creator.Document{
 		ID:       id,
 		PageSize: creator.PageSize{Width: 100, Height: 100},
-		Media:    []creator.Media{{ID: 100, Type: "Image", Format: "PNG", Name: mediaName, Data: mediaData}},
+		Media:    []creator.Media{{ID: 100, Type: spec.MediaTypeImage, Format: "PNG", Name: mediaName, Data: mediaData}},
 		Pages: []creator.Page{{Items: []creator.Item{
 			creator.Image{X: 1, Y: 1, Width: 10, Height: 10, ResourceID: 100},
 		}}},
@@ -909,7 +910,7 @@ func documentWithAnnotation(t *testing.T, id string) []byte {
 		Pages:    []creator.Page{{Items: []creator.Item{path}}, {Items: []creator.Item{path}}},
 		Annotations: []creator.AnnotationPage{{Page: 1, Items: []creator.Annotation{{
 			ID:          1,
-			Type:        "Highlight",
+			Type:        spec.AnnotationTypeHighlight,
 			Creator:     "tester",
 			LastModDate: time.Now(),
 			Items:       []creator.Item{path},
