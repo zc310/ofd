@@ -10,11 +10,10 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.0
+	github.com/chromedp/cdproto v0.158.1
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
-	github.com/fogleman/gg v1.3.0
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.11.2
 	github.com/gogpu/gg v0.52.5

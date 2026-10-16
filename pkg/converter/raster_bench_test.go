@@ -13,7 +13,6 @@ import (
 	"github.com/zc310/ofd/internal/render"
 
 	_ "github.com/zc310/ofd/internal/render/backends/draw2d"
-	_ "github.com/zc310/ofd/internal/render/backends/fgg"
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	_ "github.com/zc310/ofd/internal/render/backends/gg"
 	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
@@ -55,7 +54,6 @@ func runRasterBench(b *testing.B, backend string) {
 func BenchmarkRasterCanvas(b *testing.B)   { runRasterBench(b, "canvas") }
 func BenchmarkRasterGG(b *testing.B)       { runRasterBench(b, "gg") }
 func BenchmarkRasterFTGG(b *testing.B)     { runRasterBench(b, "ftgg") }
-func BenchmarkRasterFGG(b *testing.B)      { runRasterBench(b, "fgg") }
 func BenchmarkRasterTinySkia(b *testing.B) { runRasterBench(b, "tinyskia") }
 func BenchmarkRasterDraw2D(b *testing.B)   { runRasterBench(b, "draw2d") }
 
