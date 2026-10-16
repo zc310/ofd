@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"image"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -12,6 +13,36 @@ import (
 )
 
 const formatFixture = "../../testdata/helloworld.ofd"
+
+func TestConvertAutoDetectsOFDPaths(t *testing.T) {
+	data, err := os.ReadFile(formatFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected bytes.Buffer
+	if err := Convert(ctxTODO, "ofd", "text", formatFixture, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if expected.Len() == 0 {
+		t.Fatal("样例文档的文本输出为空")
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"input.ofd", "input.OFD", "report.v1.OfD"} {
+		t.Run(name, func(t *testing.T) {
+			input := filepath.Join(dir, name)
+			if err := os.WriteFile(input, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := Convert(ctxTODO, "", "text", input, &output); err != nil {
+				t.Fatalf("自动识别 OFD 文件失败: %v", err)
+			}
+			if !bytes.Equal(output.Bytes(), expected.Bytes()) {
+				t.Fatalf("自动识别后的文本 = %q，期望 %q", output.String(), expected.String())
+			}
+		})
+	}
+}
 
 func TestFormatRegistryCoversAllEncoders(t *testing.T) {
 	kinds := map[string]Kind{
