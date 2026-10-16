@@ -1,6 +1,7 @@
 package webreader
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/search"
+	"github.com/zc310/ofd/pkg/creator"
 )
 
 // 本文件的基准覆盖浏览器侧真正会反复调用的路径：打开、取文字、搜索、渲染。
@@ -264,6 +266,51 @@ func BenchmarkRenderPage(b *testing.B) {
 		if _, err := r.RenderPage(i%20, opts); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkRenderSVG 使用无字体依赖的纯矢量页面，检查 SVG 分配是否随 DPI 膨胀。
+func BenchmarkRenderSVG(b *testing.B) {
+	data, err := creator.Marshal(creator.Document{
+		ID:       "svg-buffer-benchmark",
+		PageSize: creator.A4,
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Path{X: 10, Y: 20, Width: 40, Height: 30, Data: "M 0 0 L 40 0 L 0 30 C", Fill: true, FillColor: &creator.Color{R: 255}},
+		}}},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, dpi := range []float64{96, 300, 600} {
+		b.Run(fmt.Sprintf("DPI%.0f", dpi), func(b *testing.B) {
+			r, err := Open(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer r.Close()
+			options := RenderOptions{Format: RenderSVG, DPI: dpi}
+			warmup, err := r.RenderPage(0, options)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if !bytes.Contains(warmup, []byte("<svg")) || !bytes.Contains(warmup, []byte("<path")) {
+				b.Fatalf("SVG 输出缺少页面或矢量路径: %s", warmup)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			var outputSize int
+			for i := 0; i < b.N; i++ {
+				output, err := r.RenderPage(0, options)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if !bytes.Equal(output, warmup) {
+					b.Fatal("重复渲染的 SVG 内容发生变化")
+				}
+				outputSize = len(output)
+			}
+			b.ReportMetric(float64(outputSize), "bytes/svg")
+		})
 	}
 }
 
