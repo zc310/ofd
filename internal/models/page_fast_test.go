@@ -2,8 +2,63 @@ package models
 
 import (
 	"encoding/xml"
+	"strings"
 	"testing"
 )
+
+func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		body  string
+		value string
+	}{
+		{"plain", "中文正文", "中文正文"},
+		{"entities", "甲&amp;&#x1F600;乙", "甲&😀乙"},
+		{"mixed", "甲&amp;<![CDATA[&lt;]]><!--split-->&#x1F600;", "甲&&lt;😀"},
+		{"comments", "a<!--split-->b&amp;c", "ab&c"},
+		{"empty", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newPageLexer([]byte("<TextCode>" + tc.body + "</TextCode>"))
+			p.Next()
+			var text TextCode
+			if err := p.parseTextCode(&text); err != nil {
+				t.Fatal(err)
+			}
+			if text.Value != tc.value {
+				t.Fatalf("TextCode 值 = %q, want %q", text.Value, tc.value)
+			}
+		})
+	}
+}
+
+var benchTextCodeOutput TextCode
+
+func BenchmarkParseTextCode(b *testing.B) {
+	for _, input := range []struct {
+		name  string
+		value string
+	}{
+		{"ASCII14", "benchmark text"},
+		{"CJK", "中文正文与标点，这是用于基准测试的文本内容。"},
+		{"Plain1KiB", strings.Repeat("a", 1024)},
+		{"Entities", "a&amp;b&lt;c&gt;d&#x1F600;"},
+	} {
+		b.Run(input.name, func(b *testing.B) {
+			data := []byte("<TextCode>" + input.value + "</TextCode>")
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPageLexer(data)
+				p.Next()
+				var text TextCode
+				if err := p.parseTextCode(&text); err != nil {
+					b.Fatal(err)
+				}
+				benchTextCodeOutput = text
+			}
+		})
+	}
+}
 
 // TestParsePageContentXMLStripsCDATA 回归：TextCode 的 CDATA 正文必须取 lexer
 // 的语义文本，不能把含 "<![CDATA[" / "]]>" 包装的原始词素写进值里，否则渲染

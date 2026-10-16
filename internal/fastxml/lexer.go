@@ -12,8 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
-	"strings"
+	"unicode/utf8"
 
 	"github.com/tdewolff/parse/v2"
 	txml "github.com/tdewolff/parse/v2/xml"
@@ -128,13 +129,15 @@ func (l *Lexer) DecodeSpan(start int, dst any) error {
 	return nil
 }
 
-// ReadAttrs 消费开始标签后的属性序列，直到 '>' 或自闭合 '/>'。
-func (l *Lexer) ReadAttrs(h func(name string, value []byte) error) (void bool, err error) {
+// ReadAttrs 消费开始标签后的属性序列，直到 '>' 或自闭合 '/>'。回调拿到的是
+// 指向原始字节的本地名与值切片，不拷贝；需要字符串时用 switch string(name)，
+// 编译器不会为此分配。
+func (l *Lexer) ReadAttrs(h func(name, value []byte) error) (void bool, err error) {
 	for {
 		tt, _, _ := l.Next()
 		switch tt {
 		case txml.AttributeToken:
-			if err := h(string(LocalName(l.Text())), Unquote(l.AttrVal())); err != nil {
+			if err := h(LocalName(l.Text()), Unquote(l.AttrVal())); err != nil {
 				return false, err
 			}
 		case txml.StartTagCloseToken:
@@ -149,7 +152,7 @@ func (l *Lexer) ReadAttrs(h func(name string, value []byte) error) (void bool, e
 
 // SkipAttrs 跳过开始标签后的全部属性。
 func (l *Lexer) SkipAttrs() (bool, error) {
-	return l.ReadAttrs(func(string, []byte) error { return nil })
+	return l.ReadAttrs(func([]byte, []byte) error { return nil })
 }
 
 // LocalName 去掉可能的命名空间前缀。
@@ -191,31 +194,43 @@ func Unquote(b []byte) []byte {
 	return b
 }
 
-// Unescape 反解码 XML 文本实体，无实体时零拷贝返回。
+// Unescape 反解码 XML 文本实体并返回独立的字符串。
 func Unescape(b []byte) string {
 	if bytes.IndexByte(b, '&') < 0 {
 		return string(b)
 	}
-	var sb strings.Builder
-	for i := 0; i < len(b); i++ {
-		if b[i] != '&' {
-			sb.WriteByte(b[i])
-			continue
-		}
-		j := bytes.IndexByte(b[i:], ';')
-		if j < 0 || j > 16 {
-			sb.WriteByte(b[i])
-			continue
-		}
-		ent := b[i+1 : i+j]
-		if r, ok := xmlEntity(ent); ok {
-			sb.WriteRune(r)
-		} else {
-			sb.Write(b[i : i+j+1])
-		}
-		i += j
+	return string(AppendUnescape(make([]byte, 0, len(b)), b))
+}
+
+// AppendUnescape 把 b 中的 XML 实体反解码后追加到 dst，返回扩展后的切片。
+// 实体之外按原字节拷贝，调用方可直接累积文本，省去中间的字符串转换。
+func AppendUnescape(dst, b []byte) []byte {
+	index := bytes.IndexByte(b, '&')
+	if index < 0 {
+		return append(dst, b...)
 	}
-	return sb.String()
+	// 实体解码后的长度不超过原始字节长度，一次预留容量避免逐片段扩容。
+	dst = slices.Grow(dst, len(b))
+	for index >= 0 {
+		dst = append(dst, b[:index]...)
+		b = b[index:]
+		// 只接受分号偏移不超过 16 的实体，限定搜索窗口，避免对未闭合
+		// 的连续 '&' 反复扫描整个剩余输入。
+		end := bytes.IndexByte(b[:min(len(b), 17)], ';')
+		if end < 0 {
+			dst = append(dst, '&')
+			b = b[1:]
+		} else {
+			if r, ok := xmlEntity(b[1:end]); ok {
+				dst = utf8.AppendRune(dst, r)
+			} else {
+				dst = append(dst, b[:end+1]...)
+			}
+			b = b[end+1:]
+		}
+		index = bytes.IndexByte(b, '&')
+	}
+	return append(dst, b...)
 }
 
 // xmlEntity 识别 XML 预定义实体与数字字符引用。

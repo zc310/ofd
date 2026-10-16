@@ -141,8 +141,8 @@ func (p *pageLexer) parseContent(content *Content) error {
 
 // parseLayer 解析 <Layer> 属性与图层内的页面对象。
 func (p *pageLexer) parseLayer(layer *Layer) error {
-	void, err := p.ReadAttrs(func(name string, val []byte) error {
-		switch name {
+	void, err := p.ReadAttrs(func(name, val []byte) error {
+		switch string(name) {
 		case "ID":
 			_ = layer.ID.UnmarshalText(val)
 		case "Type":
@@ -233,8 +233,8 @@ func (p *pageLexer) parsePageItems(endName string) ([]PageItem, error) {
 
 func (p *pageLexer) parsePageBlock() (*PageBlock, error) {
 	o := &PageBlock{}
-	void, err := p.ReadAttrs(func(name string, val []byte) error {
-		if name == "ID" {
+	void, err := p.ReadAttrs(func(name, val []byte) error {
+		if string(name) == "ID" {
 			_ = o.ID.UnmarshalText(val)
 		}
 		return nil
@@ -254,8 +254,8 @@ func (p *pageLexer) parsePageBlock() (*PageBlock, error) {
 }
 
 // applyGraphicAttr 应用图元通用属性，与 CTGraphicUnit 的 xml 标签一致。
-func applyGraphicAttr(g *CTGraphicUnit, name string, val []byte) error {
-	switch name {
+func applyGraphicAttr(g *CTGraphicUnit, name, val []byte) error {
+	switch string(name) {
 	case "Boundary":
 		return g.Boundary.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 	case "Name":
@@ -307,8 +307,8 @@ func applyGraphicAttr(g *CTGraphicUnit, name string, val []byte) error {
 }
 
 // parseGraphicAttrs 解析图元通用属性与对象自身属性（单次属性扫描），返回是否自闭合。
-func (p *pageLexer) parseObjectAttrs(g *CTGraphicUnit, extra func(name string, val []byte) error) (bool, error) {
-	return p.ReadAttrs(func(name string, val []byte) error {
+func (p *pageLexer) parseObjectAttrs(g *CTGraphicUnit, extra func(name, val []byte) error) (bool, error) {
+	return p.ReadAttrs(func(name, val []byte) error {
 		if err := applyGraphicAttr(g, name, val); err != nil {
 			return err
 		}
@@ -321,8 +321,8 @@ func (p *pageLexer) parseObjectAttrs(g *CTGraphicUnit, extra func(name string, v
 
 func (p *pageLexer) parseTextObject() (*TextObject, error) {
 	o := &TextObject{}
-	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name string, val []byte) error {
-		switch name {
+	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
+		switch string(name) {
 		case "ID":
 			_ = o.ID.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 		case "Font":
@@ -444,20 +444,20 @@ func (p *pageLexer) parseTextObject() (*TextObject, error) {
 
 // parseGraphicChildElement 解析以子元素形式编码的图元通用属性。
 func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) error {
-	var sb strings.Builder
+	var raw []byte
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
 		case txml.TextToken:
-			sb.Write(buf)
+			raw = append(raw, buf...)
 		case txml.CDATAToken:
-			sb.Write(p.CData())
+			raw = append(raw, p.CData()...)
 		case txml.StartTagToken:
 			if _, err := p.SpanElement(start); err != nil {
 				return err
 			}
 		case txml.EndTagToken:
-			text := []byte(fastxml.Unescape([]byte(sb.String())))
+			text := fastxml.AppendUnescape(nil, raw)
 			switch name {
 			case "DrawParam":
 				var id StID
@@ -503,8 +503,8 @@ func (p *pageLexer) parseGraphicChildElement(g *CTGraphicUnit, name string) erro
 
 // parseTextCode 解析 <TextCode> 元素。
 func (p *pageLexer) parseTextCode(tc *TextCode) error {
-	void, err := p.ReadAttrs(func(name string, val []byte) error {
-		switch name {
+	void, err := p.ReadAttrs(func(name, val []byte) error {
+		switch string(name) {
 		case "X":
 			v, err := decodeFloatAttr(string(val), "X")
 			if err != nil {
@@ -530,30 +530,30 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 	if void {
 		return nil
 	}
-	var sb strings.Builder
+	var text []byte
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
 		case txml.ErrorToken:
 			return p.Err()
 		case txml.TextToken:
-			sb.WriteString(fastxml.Unescape(buf))
+			text = fastxml.AppendUnescape(text, buf)
 		case txml.CDATAToken:
-			sb.Write(p.CData())
+			text = append(text, p.CData()...)
 		case txml.StartTagToken:
 			if _, err := p.SpanElement(start); err != nil {
 				return err
 			}
 		case txml.EndTagToken:
-			tc.Value = decodeTextEscapes(sb.String())
+			tc.Value = decodeTextEscapes(string(text))
 			return nil
 		}
 	}
 }
 
 func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
-	void, err := p.ReadAttrs(func(name string, val []byte) error {
-		switch name {
+	void, err := p.ReadAttrs(func(name, val []byte) error {
+		switch string(name) {
 		case "CodePosition":
 			v, err := decodeIntAttr(string(val), "CodePosition")
 			if err != nil {
@@ -604,8 +604,8 @@ func (p *pageLexer) parseCGTransform(g *CTCGTransform) error {
 
 func (p *pageLexer) parsePathObject() (*PathObject, error) {
 	o := &PathObject{}
-	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name string, val []byte) error {
-		switch name {
+	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
+		switch string(name) {
 		case "ID":
 			_ = o.ID.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 		case "Stroke":
@@ -687,8 +687,8 @@ func (p *pageLexer) parsePathObject() (*PathObject, error) {
 
 func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 	o := &ImageObject{}
-	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name string, val []byte) error {
-		switch name {
+	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
+		switch string(name) {
 		case "ID":
 			_ = o.ID.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 		case "ResourceID":
@@ -752,8 +752,8 @@ func (p *pageLexer) parseImageObject() (*ImageObject, error) {
 
 func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 	o := &CompositeObject{}
-	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name string, val []byte) error {
-		switch name {
+	void, err := p.parseObjectAttrs(&o.CTGraphicUnit, func(name, val []byte) error {
+		switch string(name) {
 		case "ID":
 			_ = o.ID.UnmarshalXMLAttr(xml.Attr{Value: string(val)})
 		case "ResourceID":
@@ -807,22 +807,22 @@ func (p *pageLexer) parseCompositeObject() (*CompositeObject, error) {
 
 // parseElementText 读取元素文本并返回，消费到匹配的结束标记。
 func (p *pageLexer) parseElementText() ([]byte, error) {
-	var sb strings.Builder
+	var text []byte
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
 		case txml.ErrorToken:
 			return nil, p.Err()
 		case txml.TextToken:
-			sb.Write(buf)
+			text = append(text, buf...)
 		case txml.CDATAToken:
-			sb.Write(p.CData())
+			text = append(text, p.CData()...)
 		case txml.StartTagToken:
 			if _, err := p.SpanElement(start); err != nil {
 				return nil, err
 			}
 		case txml.EndTagToken:
-			return []byte(sb.String()), nil
+			return text, nil
 		}
 	}
 }
