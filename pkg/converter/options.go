@@ -25,6 +25,8 @@ func Thumbnail(s int) Option {
 }
 
 // Writer 设置文件写入器
+// 转换器在每页输出结束后关闭返回的写入器；关闭失败会使转换失败。
+// 写入与关闭同时失败时返回写入错误。
 func Writer(f func(page int) (io.WriteCloser, error)) Option {
 	return func(c *Converter) {
 		c.fileWriter = f

@@ -6,7 +6,6 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"log/slog"
 
 	"github.com/kovidgoyal/imaging"
 	"github.com/zc310/ofd/internal/media"
@@ -29,15 +28,15 @@ func (c *Converter) useRasterBackend() bool {
 }
 
 // renderPage 渲染单个页面（默认路径：canvas 矢量表面光栅化）。
-func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) error {
+func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err error) {
 	if c.fileWriter != nil {
-		w, err := c.fileWriter(pageNumber)
-		if err != nil {
-			return fmt.Errorf("创建文件写入器失败: %w", err)
+		w, createErr := c.fileWriter(pageNumber)
+		if createErr != nil {
+			return fmt.Errorf("创建文件写入器失败: %w", createErr)
 		}
 		defer func() {
-			if err := w.Close(); err != nil {
-				slog.Error("关闭文件写入器失败", "error", err)
+			if closeErr := w.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("关闭第%d页文件写入器失败: %w", pageNumber, closeErr)
 			}
 		}()
 
@@ -72,15 +71,15 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) error 
 }
 
 // renderRasterPage 用已由栅格后端光栅化的页面图像完成写出。
-func (c *Converter) renderRasterPage(pageNumber int, img image.Image) error {
+func (c *Converter) renderRasterPage(pageNumber int, img image.Image) (err error) {
 	if c.fileWriter != nil {
-		w, err := c.fileWriter(pageNumber)
-		if err != nil {
-			return fmt.Errorf("创建文件写入器失败: %w", err)
+		w, createErr := c.fileWriter(pageNumber)
+		if createErr != nil {
+			return fmt.Errorf("创建文件写入器失败: %w", createErr)
 		}
 		defer func() {
-			if err := w.Close(); err != nil {
-				slog.Error("关闭文件写入器失败", "error", err)
+			if closeErr := w.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("关闭第%d页文件写入器失败: %w", pageNumber, closeErr)
 			}
 		}()
 
