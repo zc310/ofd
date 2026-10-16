@@ -15,16 +15,21 @@ import (
 // 往返后的视觉相似度。PDF 重新生成后对象顺序和压缩内容本来就会变化，因此按
 // 同一 DPI 栅格化后比较像素，而不是比较 PDF 二进制或文本结构。
 func TestGBT33190PDFRoundTripSimilarity(t *testing.T) {
+	originalPath := filepath.Join("..", "..", "..", "..", "testdata", "pdf", "standards", "GBT_33190-2016.pdf")
+	original, err := os.ReadFile(originalPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("标准 PDF fixture 不存在，跳过往返测试: %s", originalPath)
+		}
+		t.Fatalf("读取标准 PDF fixture 失败: %v", err)
+	}
+
 	pdftoppm, err := exec.LookPath("pdftoppm")
 	if err != nil {
 		if os.Getenv("CI") != "" {
 			t.Fatalf("CI 环境必须安装 pdftoppm: %v", err)
 		}
 		t.Skipf("未找到 pdftoppm，跳过 PDF 视觉相似度测试: %v", err)
-	}
-	original, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "standards", "GBT_33190-2016.pdf"))
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	var ofd bytes.Buffer
