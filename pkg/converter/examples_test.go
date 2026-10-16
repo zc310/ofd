@@ -208,7 +208,8 @@ func ExampleConvert() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Convert(ctx, "ofd", "pdf", "../../testdata/helloworld.ofd", &output)
+	// from 为空时按文件扩展名自动识别 OFD 输入。
+	err := converter.Convert(ctx, "", "pdf", "../../testdata/helloworld.ofd", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("%PDF-")))
 	// Output: true
 }

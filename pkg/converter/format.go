@@ -269,6 +269,10 @@ func detectInputFormat(input any) (string, error) {
 		return "ofd", nil
 	case string:
 		if ext := filepath.Ext(value); ext != "" {
+			// OFD 是原生输入，不通过导入器或输出编码器注册。
+			if strings.EqualFold(ext, ".ofd") {
+				return "ofd", nil
+			}
 			if imp, ok := ImporterByExtension(ext); ok {
 				return imp.Name(), nil
 			}
