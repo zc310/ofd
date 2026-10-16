@@ -134,9 +134,10 @@ make build-wasm WASM_OPT_ENABLED=0
 ```text
 cmd/ofd-wasm/web/ofd.wasm
 cmd/ofd-wasm/web/wasm_exec.js
+cmd/ofd-wasm/web/service-worker.js
 ```
 
-同时会按 `viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希把 `service-worker.js` 的缓存名写为 `ofd-reader-shell_<hash>`。
+其中 `service-worker.js` 由模板 `service-worker.tmpl.js` 生成（模板入库，产物不入库）：按 `index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm`、图标字体的内容哈希把缓存名写成 `ofd-reader-shell_<hash>`。
 
 ## 运行
 
@@ -188,7 +189,7 @@ http://localhost:8080/?debug=1
 
 阅读器同时受到浏览器 HTTP 缓存、Service Worker 缓存和 Web Worker 脚本缓存影响。`service-worker.js` 使用 `cache-first` 策略：资源已经进入 Cache Storage 后，普通刷新可能仍然使用旧版本；`Ctrl+F5` 也不一定能绕过 Service Worker。
 
-页面入口、页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，把 `service-worker.js` 的 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
+页面入口、页面脚本、Web Worker、`wasm_exec.js` 和 `ofd.wasm` 都使用不带查询参数的固定路径，缓存版本由 Service Worker 缓存名管理。`make build-wasm` / `make package-wasm-web` 会计算 `index.html`、`viewer.js`、`worker.js`、`wasm_exec.js`、`ofd.wasm` 的内容哈希，由 `service-worker.tmpl.js` 生成 `service-worker.js` 并把 `CACHE_NAME` 写成 `ofd-reader-shell_<hash>`：只要任一资源内容变化，缓存名就变化，新 Service Worker 安装后会删除旧缓存并重新缓存全部资源。
 
 `?file=` 下载的远程文档不参与这套缓存：请求带 `cache: 'no-store'`，Service Worker 直接放行，既不写入 shell 缓存也不读取缓存，因此不会占用 shell 缓存空间或命中陈旧文档。
 

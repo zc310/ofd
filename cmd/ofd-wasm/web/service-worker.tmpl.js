@@ -1,7 +1,8 @@
-// CACHE_NAME 由 make build-wasm / make package-wasm-web 根据
-// index.html、viewer.js、worker.js、wasm_exec.js、ofd.wasm 的内容哈希生成
-// ofd-reader-shell_<hash>；资源路径保持固定，发布时重新构建即可。
-const CACHE_NAME = 'ofd-reader-shell_fc4cdca5abba9226';
+// 这是 Service Worker 的模板。make build-wasm / make package-wasm-web 会把下面
+// CACHE_NAME 里的占位哈希替换成 index.html、viewer.js、worker.js、wasm_exec.js、
+// ofd.wasm、图标字体的内容哈希，生成到同目录的 service-worker.js（构建产物，
+// 不入库）；资源路径保持固定，发布时重新构建即可。
+const CACHE_NAME = 'ofd-reader-shell_@CACHE_HASH@';
 const SHELL_FILES = [
   './',
   './index.html',
