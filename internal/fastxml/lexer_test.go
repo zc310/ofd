@@ -1,6 +1,7 @@
 package fastxml
 
 import (
+	"strings"
 	"testing"
 
 	txml "github.com/tdewolff/parse/v2/xml"
@@ -48,21 +49,64 @@ func TestNameHelpers(t *testing.T) {
 	}
 }
 
+var unescapeTests = []struct {
+	name string
+	in   string
+	want string
+}{
+	{"empty", "", ""},
+	{"plain", "plain", "plain"},
+	{"long plain", strings.Repeat("甲a", 256), strings.Repeat("甲a", 256)},
+	{"predefined entities", `&amp;&lt;&gt;&quot;&apos;`, `&<>"'`},
+	{"decimal", "&#65;", "A"},
+	{"hex", "&#x41;", "A"},
+	{"four byte rune", "a&#x1F600;b", "a😀b"},
+	{"highest rune", "&#x10FFFF;", "\U0010FFFF"},
+	{"out of range rune", "&#x110000;", "\uFFFD"},
+	{"unknown", "&unknown;", "&unknown;"},
+	{"incomplete", "&amp", "&amp"},
+	{"ampersand", "&", "&"},
+	{"empty entity", "&;", "&;"},
+	{"semicolons", ";;;", ";;;"},
+	{"invalid number", "&#xZZ;", "&#xZZ;"},
+	{"nested ampersand", "&&amp;", "&&amp;"},
+	{"entity at length limit", "&#00000000000065;", "A"},
+	{"entity above length limit", "&#000000000000065;", "&#000000000000065;"},
+	{"long unknown then valid", "&abcdefghijklmnop;&amp;", "&abcdefghijklmnop;&"},
+	{"unterminated run", strings.Repeat("&", 4096), strings.Repeat("&", 4096)},
+	{"mixed text", "尾&amp;实体&#x1F600;结束", "尾&实体😀结束"},
+	{"raw bytes", "\xff&amp;\xfe", "\xff&\xfe"},
+}
+
 func TestUnescape(t *testing.T) {
-	for _, tc := range []struct {
-		in   string
-		want string
-	}{
-		{"plain", "plain"},
-		{"a&amp;b", "a&b"},
-		{"&lt;x&gt;", "<x>"},
-		{"&#65;", "A"},
-		{"&#x41;", "A"},
-		{"&unknown;", "&unknown;"},
-	} {
-		if got := Unescape([]byte(tc.in)); got != tc.want {
-			t.Errorf("Unescape(%q) = %q, want %q", tc.in, got, tc.want)
-		}
+	for _, tc := range unescapeTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Unescape([]byte(tc.in)); got != tc.want {
+				t.Errorf("Unescape(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAppendUnescape(t *testing.T) {
+	for _, tc := range unescapeTests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := []byte(tc.in)
+			if got := string(AppendUnescape(nil, input)); got != tc.want {
+				t.Errorf("AppendUnescape(nil, %q) = %q, want %q", tc.in, got, tc.want)
+			}
+			const prefix = "pre:"
+			for _, capacity := range []int{len(prefix), len(prefix) + len(input)} {
+				dst := make([]byte, len(prefix), capacity)
+				copy(dst, prefix)
+				if got := string(AppendUnescape(dst, input)); got != prefix+tc.want {
+					t.Errorf("AppendUnescape(prefix, %q), cap=%d: got %q, want %q", tc.in, capacity, got, prefix+tc.want)
+				}
+			}
+			if string(input) != tc.in {
+				t.Fatal("AppendUnescape 修改了输入")
+			}
+		})
 	}
 }
 
@@ -84,8 +128,8 @@ func TestLexerAttrsAndSpan(t *testing.T) {
 		t.Fatalf("第二个 token = %v %q", tt, buf)
 	}
 	attrs := map[string]string{}
-	void, err := l.ReadAttrs(func(name string, value []byte) error {
-		attrs[name] = string(value)
+	void, err := l.ReadAttrs(func(name, value []byte) error {
+		attrs[string(name)] = string(value)
 		return nil
 	})
 	if err != nil || !void {
