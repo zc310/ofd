@@ -172,6 +172,16 @@ func (f canvasFontFace) Fill() geom.Paint { return canvasconv.FromCanvasPaint(f.
 
 func (f canvasFontFace) Size() float64 { return f.face.Size }
 
+// VerticalMetrics 返回字体面的上伸与下延（毫米），用于文字层与搜索高亮的
+// 统一排版行框；这两个字体级度量不等于单个字形的实际轮廓边界。
+func (f canvasFontFace) VerticalMetrics() (float64, float64) {
+	if f.face == nil {
+		return 0, 0
+	}
+	metrics := f.face.Metrics()
+	return metrics.Ascent, metrics.Descent
+}
+
 func (f canvasFontFace) ShapedRun(value string) drawing.TextRun {
 	if f.fonts == nil {
 		return nil

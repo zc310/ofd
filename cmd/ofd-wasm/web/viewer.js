@@ -3103,6 +3103,44 @@ function matchingSearchResults(pageIndex, runIndex) {
     .sort((left, right) => left.start - right.start);
 }
 
+// mergeHighlightRects 合并同一行水平相邻的命中字形。同行位置始终与组内第一个
+// 字形比较，避免逐字偏移累积后跨行；间距与前一个字形双向比较，兼容从右向左
+// 的排列。旋转文字保持逐字矩形。
+function mergeHighlightRects(rects) {
+  const merged = [];
+  let lineAnchor;
+  let previous;
+  (Array.isArray(rects) ? rects : []).forEach(rect => {
+    if (!rect || !Number.isFinite(rect.x) || !Number.isFinite(rect.y) ||
+        !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+        !(rect.width > 0) || !(rect.height > 0)) return;
+    const angle = Number(rect.angle ?? 0);
+    if (!Number.isFinite(angle)) return;
+    const current = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, angle };
+    const last = merged[merged.length - 1];
+    const gap = Math.min(previous?.height || 0, current.height) * 0.5;
+    const lineTolerance = Math.min(lineAnchor?.height || 0, current.height) * 0.25;
+    const sameLine = angle === 0 && last && last.angle === 0 &&
+      Math.abs(current.y + current.height / 2 - lineAnchor.y - lineAnchor.height / 2) <= lineTolerance &&
+      current.x <= previous.x + previous.width + gap &&
+      previous.x <= current.x + current.width + gap;
+    if (sameLine) {
+      const right = Math.max(last.x + last.width, current.x + current.width);
+      const bottom = Math.max(last.y + last.height, current.y + current.height);
+      last.x = Math.min(last.x, current.x);
+      last.y = Math.min(last.y, current.y);
+      last.width = right - last.x;
+      last.height = bottom - last.y;
+      previous = current;
+      return;
+    }
+    merged.push({ ...current });
+    lineAnchor = current;
+    previous = current;
+  });
+  return merged;
+}
+
 // textLayerSegments 把同一行、同字体、相邻的文本片段合并成一个片段。
 // OFD 常把每个字形输出为独立的 TextObject；若逐字形创建绝对定位的 span，
 // 单页就可能产生数千个节点，浏览器布局/绘制的文字结构内存会急剧膨胀。
@@ -3168,6 +3206,9 @@ function buildTextLayer(index) {
     element.style.width = `${Math.max(segment.width / info.width * 100, 0.1)}%`;
     element.style.height = `${Math.max(segment.height / info.height * 100, 0.1)}%`;
     element.style.fontSize = `${Math.max(segment.size * card.clientWidth / info.width, 1)}px`;
+    // 行高来自字体上伸与下延之和，可与字号不同；使用同一比例缩放，避免
+    // line-height:1 产生额外的半行距并移动浏览器文字基线。
+    element.style.lineHeight = `${segment.height * card.clientWidth / info.width}px`;
     if (segment.fontFamily) element.style.fontFamily = `'${segment.fontFamily}', sans-serif`;
     element.style.fontWeight = segment.weight > 0 ? String(segment.weight) : (segment.bold ? '700' : '400');
     element.style.fontStyle = segment.italic ? 'italic' : 'normal';
@@ -3180,10 +3221,10 @@ function buildTextLayer(index) {
     element.textContent = segment.text;
     layer.append(element);
   }
-  // 搜索高亮仍按原始 run 的矩形单独渲染，保持命中位置精确。
+  // 搜索高亮按原始 run 的矩形渲染，命中文字先按行合并成连续区域再叠加。
   runs.forEach((run, runIndex) => {
     for (const match of matchingSearchResults(index, runIndex)) {
-      for (const rect of match.rects || []) {
+      for (const rect of mergeHighlightRects(match.rects)) {
         const highlight = document.createElement('span');
         highlight.className = 'search-highlight';
         if (searchResults[activeSearchResult] === match) highlight.classList.add('active');

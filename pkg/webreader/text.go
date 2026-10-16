@@ -24,10 +24,11 @@ type PageInfo struct {
 // TextRun 描述页面中的一个文字对象。坐标和尺寸单位为毫米。
 // X/Y 是网页覆盖层使用的左上角坐标，不是 TextCode 的基线坐标。
 type TextRun struct {
-	Text   string
-	X      float64
-	Y      float64
-	Width  float64
+	Text  string
+	X     float64
+	Y     float64
+	Width float64
+	// Height 是字体排版行高，可与 Size 不同；与字符框使用相同的纵向度量。
 	Height float64
 	// Scope 是文字所属文档体的索引，与 Font 一起唯一标识使用的字体。
 	Scope         int

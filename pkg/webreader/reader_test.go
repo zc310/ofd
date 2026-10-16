@@ -808,14 +808,18 @@ func TestTextAndSearch(t *testing.T) {
 	if len(text) == 0 {
 		t.Fatal("page text is empty")
 	}
-	if text[0].X != 31.7 || text[0].Y != 25.4 || text[0].Height != 3 {
+	// 覆盖层使用字体上伸/下延的排版行框，不把字号当作固定行高。
+	if text[0].X != 31.7 || math.Abs(text[0].Y-25.821871061197914) > 1e-9 || text[0].Size != 3 {
 		t.Fatalf("invalid text geometry: %+v", text[0])
 	}
 	if len(text[0].Glyphs) != len([]rune(text[0].Text)) || text[0].Glyphs[0].X != text[0].X || text[0].Glyphs[0].Y != text[0].Y {
 		t.Fatalf("invalid glyph geometry: %+v", text[0].Glyphs)
 	}
-	if text[0].Glyphs[1].X != 34.7 || text[0].Glyphs[1].Y != 25.4 {
-		t.Fatalf("second glyph geometry = %+v, want x=34.7 y=25.4", text[0].Glyphs[1])
+	if text[0].Height <= 0 || text[0].Height != text[0].Glyphs[0].Height {
+		t.Fatalf("文字层与字形行高不一致: run=%g glyph=%g", text[0].Height, text[0].Glyphs[0].Height)
+	}
+	if text[0].Glyphs[1].X != 34.7 || math.Abs(text[0].Glyphs[1].Y-25.821871061197914) > 1e-9 {
+		t.Fatalf("second glyph geometry = %+v, want x=34.7 y=25.821871061197914", text[0].Glyphs[1])
 	}
 	query := []rune(text[0].Text)
 	if len(query) == 0 {

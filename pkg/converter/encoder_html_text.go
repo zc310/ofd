@@ -54,13 +54,15 @@ func writeHTMLTextLayer(output io.Writer, layouts []render.TextLayout, pageWidth
 		seg := &segments[index]
 		cqw := seg.size / pageWidthMM * 100
 		if _, err := fmt.Fprintf(output,
-			"<span class=\"text-run\" style=\"left:%s%%;top:%s%%;width:%s%%;height:%s%%;font-size:%smm;font-size:calc(%s * 1cqw)\"",
+			"<span class=\"text-run\" style=\"left:%s%%;top:%s%%;width:%s%%;height:%s%%;font-size:%smm;font-size:calc(%s * 1cqw);line-height:%smm;line-height:calc(%s * 1cqw)\"",
 			htmlNumber(seg.x/pageWidthMM*100),
 			htmlNumber(seg.y/pageHeightMM*100),
 			htmlNumber(seg.width/pageWidthMM*100),
 			htmlNumber(seg.height/pageHeightMM*100),
 			htmlNumber(seg.size),
 			htmlNumber(cqw),
+			htmlNumber(seg.height),
+			htmlNumber(seg.height/pageWidthMM*100),
 		); err != nil {
 			return err
 		}
