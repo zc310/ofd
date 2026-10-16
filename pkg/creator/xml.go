@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func rootXML(state *buildState) ([]byte, error) {
@@ -375,7 +376,7 @@ func resourceXML(state *buildState) ([]byte, error) {
 		for _, image := range state.images {
 			w.Start("MultiMedia")
 			w.AttrUint("ID", image.id)
-			w.Attr("Type", "Image")
+			w.Attr("Type", spec.MediaTypeImage)
 			w.Attr("Format", image.format)
 			w.Element("MediaFile", "Images/"+image.name)
 			w.End()
@@ -429,7 +430,7 @@ func pageResourceXML(resource pageResource) ([]byte, error) {
 	for _, image := range resource.images {
 		w.Start("MultiMedia")
 		w.AttrUint("ID", image.id)
-		w.Attr("Type", "Image")
+		w.Attr("Type", spec.MediaTypeImage)
 		w.Attr("Format", image.format)
 		w.Element("MediaFile", "Images/"+strconv.FormatUint(image.id, 10)+"-"+image.name)
 		w.End()

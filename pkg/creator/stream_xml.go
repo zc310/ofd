@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 页面和模板复用同一个 ofdxml 缓冲区，业务代码只负责元素顺序。
@@ -446,7 +447,7 @@ func streamGoto(w *streamXMLWriter, value GotoAction, pageIDs []uint64) {
 	}
 	destType := value.Type
 	if destType == "" {
-		destType = "Fit"
+		destType = spec.DestTypeFit
 	}
 	w.Start("Dest")
 	w.Attr("Type", destType)

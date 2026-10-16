@@ -130,8 +130,6 @@ func run(input any, target Target, wm Watermark, action actionKind, w io.Writer,
 
 func defaultCreator() string { return "ofd-creator" }
 
-const watermarkType = "Watermark"
-
 func watermarkExistsError() error { return errors.New("未找到匹配的水印") }
 func docBodyOutOfRange(index, count int) error {
 	return fmt.Errorf("文档体下标 %d 超出范围（共 %d 个）", index, count)

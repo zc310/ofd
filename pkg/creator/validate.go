@@ -144,7 +144,7 @@ func validateAnnotationPage(value AnnotationPage, pageCount int) error {
 		}
 		seen[annotation.ID] = true
 		switch annotation.Type {
-		case "Link", "Path", "Highlight", "Stamp", "Watermark":
+		case spec.AnnotationTypeLink, spec.AnnotationTypePath, spec.AnnotationTypeHighlight, spec.AnnotationTypeStamp, spec.AnnotationTypeWatermark:
 		default:
 			return fmt.Errorf("注解 %d 类型无效: %q", index+1, annotation.Type)
 		}
@@ -278,7 +278,7 @@ func validateActions(values []Action, pageCount int, mediaIDs map[uint64]bool, m
 			if mediaIDs == nil || !mediaIDs[value.Sound.ResourceID] {
 				return fmt.Errorf("动作 %d 的声音资源不存在: %d", index+1, value.Sound.ResourceID)
 			}
-			if mediaTypes[value.Sound.ResourceID] != "Audio" {
+			if mediaTypes[value.Sound.ResourceID] != spec.MediaTypeAudio {
 				return fmt.Errorf("动作 %d 引用的资源不是音频: %d", index+1, value.Sound.ResourceID)
 			}
 			if value.Sound.Volume != nil && (*value.Sound.Volume < 0 || *value.Sound.Volume > 100) {
@@ -290,11 +290,11 @@ func validateActions(values []Action, pageCount int, mediaIDs map[uint64]bool, m
 			if mediaIDs == nil || !mediaIDs[value.Movie.ResourceID] {
 				return fmt.Errorf("动作 %d 的影片资源不存在: %d", index+1, value.Movie.ResourceID)
 			}
-			if mediaTypes[value.Movie.ResourceID] != "Video" {
+			if mediaTypes[value.Movie.ResourceID] != spec.MediaTypeVideo {
 				return fmt.Errorf("动作 %d 引用的资源不是视频: %d", index+1, value.Movie.ResourceID)
 			}
 			switch value.Movie.Operator {
-			case "", "Play", "Stop", "Pause", "Resume":
+			case "", spec.MovieOperatorPlay, spec.MovieOperatorStop, spec.MovieOperatorPause, spec.MovieOperatorResume:
 			default:
 				return fmt.Errorf("动作 %d 的影片操作无效: %q", index+1, value.Movie.Operator)
 			}
@@ -375,7 +375,7 @@ func validateGoto(value *GotoAction, pageCount int, context string) error {
 		return fmt.Errorf("%s 的目标页面无效: %d", context, value.Page)
 	}
 	switch value.Type {
-	case "", "XYZ", "Fit", "FitH", "FitV", "FitR":
+	case "", spec.DestTypeXYZ, spec.DestTypeFit, spec.DestTypeFitH, spec.DestTypeFitV, spec.DestTypeFitR:
 	default:
 		return fmt.Errorf("%s 的目标类型无效: %q", context, value.Type)
 	}
@@ -390,23 +390,23 @@ func validateGoto(value *GotoAction, pageCount int, context string) error {
 	hasLeft, hasTop := value.Left != nil, value.Top != nil
 	hasRight, hasBottom := value.Right != nil, value.Bottom != nil
 	switch value.Type {
-	case "", "Fit":
+	case "", spec.DestTypeFit:
 		if hasLeft || hasTop || hasRight || hasBottom || value.Zoom != nil {
 			return fmt.Errorf("%s 的 Fit 目标不能设置位置或缩放参数", context)
 		}
-	case "XYZ":
+	case spec.DestTypeXYZ:
 		if hasRight || hasBottom {
 			return fmt.Errorf("%s 的 XYZ 目标不能设置 Right 或 Bottom", context)
 		}
-	case "FitH":
+	case spec.DestTypeFitH:
 		if hasLeft || hasRight || hasBottom || value.Zoom != nil {
 			return fmt.Errorf("%s 的 FitH 目标只能设置 Top", context)
 		}
-	case "FitV":
+	case spec.DestTypeFitV:
 		if hasTop || hasRight || hasBottom || value.Zoom != nil {
 			return fmt.Errorf("%s 的 FitV 目标只能设置 Left", context)
 		}
-	case "FitR":
+	case spec.DestTypeFitR:
 		if !hasLeft || !hasTop || !hasRight || !hasBottom || value.Zoom != nil {
 			return fmt.Errorf("%s 的 FitR 目标必须设置完整矩形且不能设置 Zoom", context)
 		}
@@ -665,7 +665,7 @@ func validateMedia(value Media) error {
 	if value.ID == 0 {
 		return errors.New("多媒体资源 ID 不能为空")
 	}
-	if value.Type != "Image" && value.Type != "Audio" && value.Type != "Video" {
+	if value.Type != spec.MediaTypeImage && value.Type != spec.MediaTypeAudio && value.Type != spec.MediaTypeVideo {
 		return fmt.Errorf("多媒体类型必须是 Image、Audio 或 Video: %q", value.Type)
 	}
 	if !hasResource(value.Data, value.Source) {
@@ -1011,7 +1011,7 @@ func validateColorSpace(value ColorSpace) error {
 		return fmt.Errorf("颜色空间 ID 超出 OFD 范围: %d", value.ID)
 	}
 	switch value.Type {
-	case "GRAY", "RGB", "CMYK":
+	case spec.ColorSpaceTypeGray, spec.ColorSpaceTypeRGB, spec.ColorSpaceTypeCMYK:
 	default:
 		return fmt.Errorf("颜色空间类型无效: %q", value.Type)
 	}
@@ -1041,9 +1041,9 @@ func validateColorSpace(value ColorSpace) error {
 
 func colorSpaceChannels(value string) int {
 	switch value {
-	case "GRAY":
+	case spec.ColorSpaceTypeGray:
 		return 1
-	case "CMYK":
+	case spec.ColorSpaceTypeCMYK:
 		return 4
 	default:
 		return 3
@@ -1434,12 +1434,12 @@ func validatePattern(value *Pattern) error {
 		return errors.New("图案步长无效")
 	}
 	switch value.ReflectMethod {
-	case "", "Normal", "Row", "Column", "RowAndColumn":
+	case "", spec.PatternReflectNormal, spec.PatternReflectRow, spec.PatternReflectColumn, spec.PatternReflectRowAndColumn:
 	default:
 		return fmt.Errorf("图案反射方式无效: %q", value.ReflectMethod)
 	}
 	switch value.RelativeTo {
-	case "", "Page", "Object":
+	case "", spec.PatternRelativePage, spec.PatternRelativeObject:
 	default:
 		return fmt.Errorf("图案相对坐标系无效: %q", value.RelativeTo)
 	}
@@ -1462,7 +1462,7 @@ func validateAxial(value *AxialShading) error {
 	if err := validatePosition(value.EndPoint); err != nil {
 		return fmt.Errorf("轴向渐变 EndPoint 无效: %w", err)
 	}
-	if value.MapType != "" && value.MapType != "Direct" && value.MapType != "Repeat" && value.MapType != "Reflect" {
+	if value.MapType != "" && value.MapType != spec.ShadingMapDirect && value.MapType != spec.ShadingMapRepeat && value.MapType != spec.ShadingMapReflect {
 		return errors.New("轴向渐变映射方式无效")
 	}
 	if value.Extend < 0 || value.Extend > 3 || value.MapUnit < 0 || !finite(value.MapUnit) {
@@ -1489,7 +1489,7 @@ func validateRadial(value *RadialShading) error {
 	if err := validatePosition(value.EndPoint); err != nil {
 		return fmt.Errorf("径向渐变 EndPoint 无效: %w", err)
 	}
-	if value.MapType != "" && value.MapType != "Direct" && value.MapType != "Repeat" && value.MapType != "Reflect" {
+	if value.MapType != "" && value.MapType != spec.ShadingMapDirect && value.MapType != spec.ShadingMapRepeat && value.MapType != spec.ShadingMapReflect {
 		return errors.New("径向渐变映射方式无效")
 	}
 	if value.Extend < 0 || value.Extend > 3 || value.MapUnit < 0 || !finite(value.MapUnit) || !finite(value.Eccentricity) || !finite(value.Angle) || value.StartRadius < 0 || !finite(value.StartRadius) || !finite(value.EndRadius) {

@@ -1,6 +1,10 @@
 package creator
 
-import "time"
+import (
+	"time"
+
+	"github.com/zc310/ofd/pkg/spec"
+)
 
 // A4 是毫米单位的标准 A4 页面尺寸。
 var A4 = PageSize{Width: 210, Height: 297}
@@ -946,11 +950,11 @@ type ActionEvent string
 
 const (
 	// ActionEventDO 表示文档打开或对象执行事件。
-	ActionEventDO ActionEvent = "DO"
+	ActionEventDO ActionEvent = spec.ActionEventDO
 	// ActionEventPO 表示页面打开事件。
-	ActionEventPO ActionEvent = "PO"
+	ActionEventPO ActionEvent = spec.ActionEventPO
 	// ActionEventClick 表示点击事件，也是默认事件。
-	ActionEventClick ActionEvent = "CLICK"
+	ActionEventClick ActionEvent = spec.ActionEventClick
 )
 
 // Action 描述一个 URI、页面、附件或媒体动作，且只能设置一个动作目标。

@@ -106,9 +106,9 @@ func scanXML(reader io.Reader, summary *FeatureSummary, maxXMLBytes int64) error
 				// audio/video/media 元素。
 				summary.Media++
 				switch strings.TrimSpace(xmlAttrValue(element.Attr, "Type")) {
-				case "Audio":
+				case spec.MediaTypeAudio:
 					summary.Audio++
-				case "Video":
+				case spec.MediaTypeVideo:
 					summary.Video++
 				}
 			case "Extension":

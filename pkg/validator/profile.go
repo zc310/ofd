@@ -337,7 +337,7 @@ func collectMediaFiles(documents map[string]*xmlDocument) map[string]string {
 		walkOFDElements(doc.root, func(node *xdm.Node) {
 			// 只索引声明为图像的多媒体：音视频的处理见 GB/T 42133 6.2.6 g)，
 			// 不属于图像格式规则的范围。
-			if node.Name.Local != "MultiMedia" || !strings.EqualFold(strings.TrimSpace(node.AttrValue("Type")), "Image") {
+			if node.Name.Local != "MultiMedia" || !strings.EqualFold(strings.TrimSpace(node.AttrValue("Type")), spec.MediaTypeImage) {
 				return
 			}
 			id := strings.TrimSpace(node.AttrValue("ID"))

@@ -279,7 +279,7 @@ func (e *engine) mutateWatermarks(root *etree.Element, prefix string, wm Waterma
 	action actionKind, matchIDs []uint64) (bool, error) {
 	var targets []*etree.Element
 	for _, child := range root.ChildElements() {
-		if child.Tag != "Annot" || child.SelectAttrValue("Type", "") != watermarkType {
+		if child.Tag != "Annot" || child.SelectAttrValue("Type", "") != spec.AnnotationTypeWatermark {
 			continue
 		}
 		if matchAnnotID(child, matchIDs) {
@@ -888,7 +888,7 @@ func (a *annotationIndex) patchResImage(resEntry string, imageID uint64, format,
 	}
 	media := multiMedias.CreateElement(prefixTag(prefix, "MultiMedia"))
 	media.CreateAttr("ID", strconv.FormatUint(imageID, 10))
-	media.CreateAttr("Type", "Image")
+	media.CreateAttr("Type", spec.MediaTypeImage)
 	media.CreateAttr("Format", format)
 	media.CreateElement(prefixTag(prefix, "MediaFile")).SetText(mediaFile)
 	output, err := doc.WriteToBytes()

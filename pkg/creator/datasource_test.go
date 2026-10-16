@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type memorySource struct {
@@ -175,7 +176,7 @@ func TestCreateStreamsRemainingResourceSources(t *testing.T) {
 		}},
 		Extensions: []Extension{{AppName: "app", RefID: 70, DataName: "ext.bin", DataFileSource: FileDataSource(extPath)}},
 		Signatures: []Signature{{
-			ID: "sig1", Type: "Seal", ProviderName: "p", Date: time.Unix(0, 0).UTC(),
+			ID: "sig1", Type: spec.SigTypeSeal, ProviderName: "p", Date: time.Unix(0, 0).UTC(),
 			SealSource: FileDataSource(sealPath),
 			References: []SignatureReference{{FileRef: "../Document.xml"}},
 		}},
@@ -233,13 +234,13 @@ func TestCreateStreamsSourceLargerThanHeap(t *testing.T) {
 }
 
 func TestCreateSignatureSourcesReferenceStoredData(t *testing.T) {
-	for _, mode := range []string{"Sign", "Seal"} {
+	for _, mode := range []string{spec.SigTypeSign, spec.SigTypeSeal} {
 		t.Run(mode, func(t *testing.T) {
 			signature := Signature{
 				ID: "source-signature", Type: mode, ProviderName: "test",
 				References: []SignatureReference{{FileRef: "../Document.xml"}},
 			}
-			if mode == "Sign" {
+			if mode == spec.SigTypeSign {
 				signature.SignedValueSource = zeroDataSource{size: 8}
 			} else {
 				signature.SealSource = zeroDataSource{size: 8}
@@ -254,7 +255,7 @@ func TestCreateSignatureSourcesReferenceStoredData(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := "Data/source-signature.bin"
-			if mode == "Seal" {
+			if mode == spec.SigTypeSeal {
 				want = "Data/source-signature.seal"
 				seal := xmlElements(root, "SignedInfo/Seal/BaseLoc")
 				if len(seal) != 1 || seal[0].StringValue() != want {
