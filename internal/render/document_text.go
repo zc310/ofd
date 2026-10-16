@@ -92,7 +92,8 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	nativeShadingText := false
 	if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && nativeShadingGradient(fill) {
-		nativeShadingText = !textNeedsPathDrawing(face, object)
+		nativeShadingText = !textNeedsPathDrawing(face, object) &&
+			nativeTextGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
 	}
 	if isShadingColor(source) && !nativeShadingText {
 		if p.drawMeshText(ctx, face, source, object, pb, budget) {

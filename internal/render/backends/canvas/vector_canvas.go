@@ -31,7 +31,7 @@ func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 	case "svg":
 		writer = func(w io.Writer, c *canvas.Canvas) error {
 			renderer := svg.New(w, c.W, c.H, nil)
-			c.RenderTo(renderer)
+			c.RenderTo(svgTextRenderer{renderer})
 			return renderer.Close()
 		}
 	default:
@@ -42,6 +42,24 @@ func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 		}
 	}
 	return s.c.Write(w, writer)
+}
+
+type svgTextRenderer struct {
+	*svg.SVG
+}
+
+func (r svgTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
+	gradient := false
+	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
+		gradient = gradient || span.IsText() && span.Face.Fill.IsGradient()
+	})
+	if gradient {
+		// SVG 的 userSpaceOnUse 渐变随 <text transform> 再变换一次，而写出器
+		// 已将渐变变换到页面坐标。改为矢量轮廓，使渐变和路径使用同一页面空间。
+		text.RenderTo(r.SVG, matrix, 0)
+		return
+	}
+	r.SVG.RenderText(text, matrix)
 }
 
 func (s canvasVectorSurface) Rasterize(resolution geom.Resolution) *image.RGBA {
