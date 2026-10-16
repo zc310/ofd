@@ -2,6 +2,7 @@ package render
 
 import (
 	"image/color"
+	"math"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -67,8 +68,7 @@ type textFaces struct {
 	base FontFace
 	// hScale 是文字的水平缩放比例。
 	hScale float64
-	// native 为真时直接把 base（Boundary 空间渐变）交给矢量后端，让 canvas
-	// 写出原生 Shading 并保留真实文字；仅栅格后端需要逐 run 重映射渐变。
+	// native 为真时按 run 换算原生渐变的几何坐标，保留 PDF Shading 和真实文字。
 	native bool
 }
 
@@ -91,9 +91,6 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 	if t == nil {
 		return nil
 	}
-	if t.native {
-		return t.base
-	}
 	gradient := t.gradient()
 	if gradient == nil || t.engine == nil || t.family == nil {
 		return t.base
@@ -110,10 +107,72 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 		HasValue: t.fill.HasValue,
 		Gradient: textRunGradient{gradient: gradient, origin: geom.Point{X: runX, Y: runY}, hScale: hScale},
 	}
+	if t.native {
+		runFill.Gradient = nativeTextGradient(gradient, textRunBoundaryMatrix(t.object, runX, runY))
+		if runFill.Gradient == nil {
+			return t.base
+		}
+	}
 	if face := t.engine.FaceObject(t.family, t.object, runFill); face != nil {
 		return face
 	}
 	return t.base
+}
+
+// textRunBoundaryMatrix 把字体空间（基线为原点，y 向上）映射到 Boundary 空间。
+// GB/T 33190—2016 §8.1.5、§8.3.4.2：文字 CTM 变换字形，渐变按图元坐标取样。
+func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
+	matrix := geom.Identity
+	if ctm := object.CTM; ctm != nil {
+		matrix = geom.Matrix{{(*ctm)[0], (*ctm)[2], (*ctm)[4]}, {(*ctm)[1], (*ctm)[3], (*ctm)[5]}}
+	}
+	return matrix.Translate(x, y).Scale(textHScale(object), -1)
+}
+
+// nativeTextGradient 将 Boundary 渐变换算到文字 run 空间，供后端施加文字矩阵。
+// 返回 nil 表示原生几何无法精确表达，应使用现有的采样文字路径。
+func nativeTextGradient(gradient geom.Gradient, matrix geom.Matrix) geom.Gradient {
+	det := matrix.Det()
+	if !finiteMatrix(matrix) || !finiteFloat(det) || geom.Equal(det, 0) {
+		return nil
+	}
+	inverse := matrix.Inv()
+	if !finiteMatrix(inverse) {
+		return nil
+	}
+	switch g := gradient.(type) {
+	case *geom.LinearGradient:
+		start := inverse.Dot(g.Start)
+		d := g.End.Sub(g.Start)
+		// 参数 t=(M·p-start)·d/|d|²；用转置变换等色线法向，避免倾斜及
+		// 非等比缩放时直接变换两个端点造成插值方向错误。
+		normal := geom.Point{X: matrix[0][0]*d.X + matrix[1][0]*d.Y, Y: matrix[0][1]*d.X + matrix[1][1]*d.Y}
+		end := start
+		if n2 := normal.Dot(normal); n2 > 0 {
+			end = start.Add(normal.Mul(d.Dot(d) / n2))
+		}
+		if !finitePoint(start) || !finitePoint(end) {
+			return nil
+		}
+		mapped := geom.NewLinearGradient(start, end)
+		mapped.Grad, mapped.Extend = g.Grad, g.Extend
+		return mapped
+	case *geom.RadialGradient:
+		// 非等比变换把圆变成椭圆，不能再用两个圆的原生 RadialGradient 表达。
+		if !matrix.IsSimilarity() {
+			return nil
+		}
+		scale := math.Sqrt(math.Abs(inverse.Det()))
+		c0, c1 := inverse.Dot(g.C0), inverse.Dot(g.C1)
+		r0, r1 := g.R0*scale, g.R1*scale
+		if !finitePoint(c0) || !finitePoint(c1) || !finiteFloat(r0) || !finiteFloat(r1) {
+			return nil
+		}
+		mapped := geom.NewRadialGradient(c0, r0, c1, r1)
+		mapped.Grad, mapped.Extend = g.Grad, g.Extend
+		return mapped
+	}
+	return nil
 }
 
 // runPaint 返回该 run 在其排版空间中取样的填充画笔，用于走路径绘制的文字。
