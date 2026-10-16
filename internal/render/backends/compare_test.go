@@ -19,7 +19,6 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 
 	_ "github.com/zc310/ofd/internal/render/backends/draw2d"
-	_ "github.com/zc310/ofd/internal/render/backends/fgg"
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
 	_ "github.com/zc310/ofd/internal/render/backends/gg"
 	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
@@ -43,8 +42,8 @@ func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *pa
 }
 
 // TestCompareBackends999Page1 渲染 999.ofd 第 1 页在所有已注册后端下的输出，
-// 以 canvas(A) 为基准与其余后端两两排版为 5 行 × 3 列（B=gg、C=ftgg、
-// D=fgg、E=tinyskia、F=draw2d）：
+// 以 canvas(A) 为基准与其余后端两两排版为 4 行 × 3 列（B=gg、C=ftgg、
+// D=tinyskia、E=draw2d）：
 //
 //	原图A | 原图B | AB差异
 //	原图A | 原图C | AC差异
@@ -58,7 +57,7 @@ func TestCompareBackends999Page1(t *testing.T) {
 	page := doc.Pages[0]
 
 	base := render.BackendCanvas
-	others := []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D}
+	others := []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D}
 	rendered := make(map[string]*image.RGBA)
 	names := append([]string{base}, others...)
 	for _, name := range names {
@@ -159,7 +158,7 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	if isDark(base.RGBAAt(blackProbe.X, blackProbe.Y)) == false || isDark(base.RGBAAt(whiteProbe.X, whiteProbe.Y)) == true {
 		t.Fatalf("测试场景无效：canvas 基准应在 %v 为黑、%v 为白", blackProbe, whiteProbe)
 	}
-	for _, name := range []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+	for _, name := range []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 		got := raster(name)
 		if isDark(got.RGBAAt(blackProbe.X, blackProbe.Y)) == false {
 			t.Errorf("%s: 图片顶部区域应为黑，实际在 %v 为白（图片被上下倒置）", name, blackProbe)
@@ -170,8 +169,8 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	}
 }
 
-// backendTag 返回后端的对比标签（对应 A=canvas、B=gg、C=ftgg、D=fgg、
-// E=tinyskia、F=draw2d）。
+// backendTag 返回后端的对比标签（对应 A=canvas、B=gg、C=ftgg、
+// D=tinyskia、E=draw2d）。
 func backendTag(name string) string {
 	switch name {
 	case render.BackendCanvas:
@@ -180,12 +179,10 @@ func backendTag(name string) string {
 		return "B(gg)"
 	case drawing.BackendFTGG:
 		return "C(ftgg)"
-	case drawing.BackendFGG:
-		return "D(fgg)"
 	case drawing.BackendTinySkia:
-		return "E(tinyskia)"
+		return "D(tinyskia)"
 	case drawing.BackendDraw2D:
-		return "F(draw2d)"
+		return "E(draw2d)"
 	default:
 		return name
 	}
@@ -305,7 +302,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	if base == 0 {
 		t.Fatal("canvas 基准没有填充像素，测试无意义")
 	}
-	for _, name := range []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+	for _, name := range []string{drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 		got := redFillPixels(name)
 		t.Logf("%s 填充像素 %d（canvas 基准 %d）", name, got, base)
 		if got == 0 {
@@ -325,7 +322,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 // TestNewBackendRejectsZeroPixelSize 回归：页面在给定分辨率下取整为 0 像素时
 // 各后端必须返回错误，而不是 panic 或产出空图。
 func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendFGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 		if _, err := render.NewBackend(name, 0.001, 0.001, geom.DPI(1)); err == nil {
 			t.Errorf("%s: 0 像素页面未返回错误", name)
 		}
