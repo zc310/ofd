@@ -67,7 +67,7 @@ func rootXML(state *buildState) ([]byte, error) {
 	}
 	w.End() // DocBody
 	w.End() // OFD
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func streamOptionalText(w *ofdxml.Writer, name, value string) {
@@ -92,7 +92,7 @@ func documentXML(state *buildState) ([]byte, error) {
 	w := ofdxml.New()
 	w.Start("Document")
 	w.Start("CommonData")
-	w.Element("MaxUnitID", strconv.FormatUint(state.maxID, 10))
+	w.ElementUint("MaxUnitID", state.maxID)
 	w.Start("PageArea")
 	streamPageArea(w, state.document.Area, state.pageSize)
 	w.End()
@@ -103,7 +103,7 @@ func documentXML(state *buildState) ([]byte, error) {
 		w.Element("DocumentRes", "DocumentRes.xml")
 	}
 	if state.document.DefaultCS != 0 {
-		w.Element("DefaultCS", strconv.FormatUint(state.document.DefaultCS, 10))
+		w.ElementUint("DefaultCS", state.document.DefaultCS)
 	}
 	for templateIndex, template := range state.document.Templates {
 		w.Start("TemplatePage")
@@ -163,7 +163,7 @@ func documentXML(state *buildState) ([]byte, error) {
 		w.Element("Extensions", "Extensions/Extensions.xml")
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func templateXML(state *buildState, templateIndex int, w *streamXMLWriter) ([]byte, error) {
@@ -180,7 +180,7 @@ func annotationsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func pageAnnotationsXML(state *buildState, page annotationResource) ([]byte, error) {
@@ -232,7 +232,7 @@ func pageAnnotationsXML(state *buildState, page annotationResource) ([]byte, err
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func pointString(value Point) string {
@@ -295,7 +295,7 @@ func streamPreferences(w *ofdxml.Writer, value *ViewPreferences) {
 	if value.ZoomMode != "" {
 		w.Element("ZoomMode", value.ZoomMode)
 	} else if value.Zoom != nil {
-		w.Element("Zoom", number(*value.Zoom))
+		w.ElementFloat("Zoom", *value.Zoom)
 	}
 	w.End()
 }
@@ -401,10 +401,10 @@ func resourceXML(state *buildState) ([]byte, error) {
 			w.AttrFloat("Width", composite.width)
 			w.AttrFloat("Height", composite.height)
 			if composite.thumbnail != 0 {
-				w.Element("Thumbnail", strconv.FormatUint(composite.thumbnail, 10))
+				w.ElementUint("Thumbnail", composite.thumbnail)
 			}
 			if composite.substitution != 0 {
-				w.Element("Substitution", strconv.FormatUint(composite.substitution, 10))
+				w.ElementUint("Substitution", composite.substitution)
 			}
 			w.Start("Content")
 			for _, layer := range composite.layers {
@@ -416,7 +416,7 @@ func resourceXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func pageResourceXML(resource pageResource) ([]byte, error) {
@@ -437,7 +437,7 @@ func pageResourceXML(resource pageResource) ([]byte, error) {
 	}
 	w.End()
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 // pathStrokeValue 显式写出 Stroke，防止只填充的路径继承 schema 的描边缺省值 true。

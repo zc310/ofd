@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"math"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -133,6 +135,43 @@ func TestWriterReplacesInvalidXMLCharacters(t *testing.T) {
 	}
 }
 
+func TestWriterTypedElementsRoundTrip(t *testing.T) {
+	w := New()
+	defer Put(w)
+	w.Start("Root")
+	w.ElementUint("MaxUnitID", math.MaxUint64)
+	w.ElementInt("Index", -17)
+	w.ElementFloat("Zoom", 4.2333333333)
+	w.ElementBox("PhysicalBox", -0.00001, 2.5, 210, 297)
+	w.ElementFloatList("Deltas", []float64{1, 0, 0, 1, 12.34567, -0.00001})
+	w.ElementIntList("Glyphs", []int{0, 23, -1})
+	w.End()
+
+	var parsed struct {
+		MaxUnitID   string `xml:"http://www.ofdspec.org/2016 MaxUnitID"`
+		Index       string `xml:"http://www.ofdspec.org/2016 Index"`
+		Zoom        string `xml:"http://www.ofdspec.org/2016 Zoom"`
+		PhysicalBox string `xml:"http://www.ofdspec.org/2016 PhysicalBox"`
+		Deltas      string `xml:"http://www.ofdspec.org/2016 Deltas"`
+		Glyphs      string `xml:"http://www.ofdspec.org/2016 Glyphs"`
+	}
+	if err := xml.Unmarshal(w.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"MaxUnitID": "18446744073709551615", "Index": "-17", "Zoom": "4.2333",
+		"PhysicalBox": "0 2.5 210 297", "Deltas": "1 0 0 1 12.3457 0", "Glyphs": "0 23 -1",
+	}
+	for name, got := range map[string]string{
+		"MaxUnitID": parsed.MaxUnitID, "Index": parsed.Index, "Zoom": parsed.Zoom,
+		"PhysicalBox": parsed.PhysicalBox, "Deltas": parsed.Deltas, "Glyphs": parsed.Glyphs,
+	} {
+		if got != want[name] {
+			t.Errorf("元素 %s: got %q, want %q", name, got, want[name])
+		}
+	}
+}
+
 func TestWriterCanBeReused(t *testing.T) {
 	w := New()
 	w.StartElement("First")
@@ -145,6 +184,169 @@ func TestWriterCanBeReused(t *testing.T) {
 	}
 }
 
+// useSingleWriterPool 保证池命中与池丢弃对象后都取回同一个 Writer，
+// 避免 GC 或 race 模式使复用测试退化为新对象测试。使用者不能并行运行，
+// 且必须归还当前 Writer 后才能再次 New。
+func useSingleWriterPool(t *testing.T, w *Writer) {
+	t.Helper()
+	writerPool = sync.Pool{New: func() any { return w }}
+	t.Cleanup(func() {
+		writerPool = sync.Pool{New: func() any { return newWriter() }}
+	})
+}
+
+// TestWriterPoolResetsReusedState 验证未闭合元素直接 Put 后再次 New，
+// 同一个 Writer 的缓冲区、元素栈和开始标签状态都已复位。
+func TestWriterPoolResetsReusedState(t *testing.T) {
+	for _, text := range []bool{false, true} {
+		name := "open start tag"
+		if text {
+			name = "text content"
+		}
+		t.Run(name, func(t *testing.T) {
+			original := newWriter()
+			useSingleWriterPool(t, original)
+			w := New()
+			w.Start("First")
+			w.Attr("ID", "1")
+			w.Start("Child")
+			w.Attr("Name", "old")
+			if text {
+				w.Text("value")
+			}
+			oldStack := w.stack
+			Put(w)
+
+			reused := New()
+			defer Put(reused)
+			if reused != original {
+				t.Fatal("未复用指定 Writer")
+			}
+			if reused.open || len(reused.stack) != 0 {
+				t.Fatalf("复用后状态未清空: open=%v stack=%v", reused.open, reused.stack)
+			}
+			for _, name := range oldStack {
+				if name != "" {
+					t.Fatalf("元素栈仍持有旧名称 %q", name)
+				}
+			}
+			reused.Element("Second", "two")
+			want := `<?xml version="1.0" encoding="UTF-8"?><ofd:Second xmlns:ofd="http://www.ofdspec.org/2016">two</ofd:Second>`
+			if got := string(reused.Bytes()); got != want {
+				t.Fatalf("池复用后状态未复位: got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestPutRetainsOnlyBuffersWithinCapacityLimit(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		capacity int
+		retain   bool
+	}{
+		{"at pool limit", maxPooledCapacity, true},
+		{"above pool limit", maxPooledCapacity + 1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			original := &Writer{buf: make([]byte, 0, test.capacity)}
+			useSingleWriterPool(t, original)
+			w := New()
+			w.Start("Unfinished")
+			buffer := &w.buf[0]
+			Put(w)
+
+			reused := New()
+			defer Put(reused)
+			if reused != original {
+				t.Fatal("未复用指定 Writer")
+			}
+			if retained := &reused.buf[0] == buffer; retained != test.retain {
+				t.Fatalf("缓冲区保留 = %v, want %v", retained, test.retain)
+			}
+			if cap(reused.buf) > maxPooledCapacity {
+				t.Fatalf("复用后仍保留超限缓冲区: cap=%d", cap(reused.buf))
+			}
+		})
+	}
+}
+
+// TestDoneReturnsIndependentBytes 强制复用同一个 Writer 后重写文档，
+// 验证复制和移交两条路径的返回值都不会被覆盖。
+func TestDoneReturnsIndependentBytes(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		capacity int
+		value    string
+	}{
+		{"copied buffer", 4096, "value"},
+		{"transferred buffer", maxPooledCapacity + 512, strings.Repeat("x", maxPooledCapacity)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			original := &Writer{buf: make([]byte, 0, test.capacity)}
+			useSingleWriterPool(t, original)
+			w := New()
+			w.Element("First", test.value)
+			buffer := &w.buf[0]
+			data := w.Done()
+
+			reused := New()
+			defer Put(reused)
+			if reused != original {
+				t.Fatal("未复用指定 Writer")
+			}
+			if retained := &reused.buf[0] == buffer; retained != (test.capacity <= maxPooledCapacity) {
+				t.Fatalf("复用 Writer 的缓冲区保留状态错误: retained=%v", retained)
+			}
+			reused.Element("Second", "a much longer payload to force overwrite")
+			_ = reused.Bytes()
+
+			want := `<?xml version="1.0" encoding="UTF-8"?><ofd:First xmlns:ofd="http://www.ofdspec.org/2016">` + test.value + `</ofd:First>`
+			if string(data) != want {
+				t.Fatal("Done 返回值被后续复用污染")
+			}
+		})
+	}
+}
+
+func TestDoneCopiesPooledBuffersAndTransfersOversizedBuffers(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		capacity int
+		value    string
+		transfer bool
+	}{
+		{"small", 4096, "value", false},
+		{"at pool limit", maxPooledCapacity, "value", false},
+		{"above pool limit with short output", maxPooledCapacity + 1, "value", true},
+		{"large output", 2<<20 + 1024, strings.Repeat("x", 2<<20), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			w := &Writer{buf: make([]byte, 0, test.capacity)}
+			w.Reset()
+			w.Start("Root")
+			w.Text(test.value)
+			original := &w.buf[0]
+			data := w.Done()
+			if transferred := &data[0] == original; transferred != test.transfer {
+				t.Fatalf("缓冲区移交 = %v, want %v", transferred, test.transfer)
+			}
+			var parsed struct {
+				Value string `xml:",chardata"`
+			}
+			if err := xml.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("Done 未生成完整 XML: %v", err)
+			}
+			if parsed.Value != test.value {
+				t.Fatal("Done 改变了文本内容")
+			}
+		})
+	}
+}
+
+func TestPutNilIsNoop(t *testing.T) {
+	Put(nil)
+}
 func TestTextPreservesLineEndings(t *testing.T) {
 	for _, value := range []string{"甲\r乙", "甲\r\n乙", "甲\n乙\t丙", "]]>", "&<\"'中文"} {
 		w := New()

@@ -125,6 +125,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	pageWriter := ofdxml.New()
+	defer ofdxml.Put(pageWriter)
 	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
 		page, pageErr := state.pages.PageAt(pageIndex)
 		if pageErr != nil {
@@ -342,7 +343,7 @@ func attachmentsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func customTagsXML(state *buildState) ([]byte, error) {
@@ -358,7 +359,7 @@ func customTagsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func extensionsXML(state *buildState) ([]byte, error) {
@@ -403,7 +404,7 @@ func extensionsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func signaturesXML(state *buildState) ([]byte, error) {
@@ -432,7 +433,7 @@ func signaturesXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) {
@@ -491,7 +492,7 @@ func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) 
 	}
 	w.Element("SignedValue", signedValueName)
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func versionXML(resource versionResource) ([]byte, error) {
@@ -525,7 +526,7 @@ func versionXML(resource versionResource) ([]byte, error) {
 	}
 	w.Element("DocRoot", rootPath)
 	w.End()
-	return w.Bytes(), nil
+	return w.Done(), nil
 }
 
 func prepare(document Document, pages PageProvider, options CreateOptions) (*buildState, error) {

@@ -1858,26 +1858,6 @@ func number(value float64) string {
 	return string(ofdxml.AppendFloat(nil, value))
 }
 
-func boxString(x, y, width, height float64) string {
-	return number(x) + " " + number(y) + " " + number(width) + " " + number(height)
-}
-
-func numberList(values []float64) string {
-	parts := make([]string, len(values))
-	for index, value := range values {
-		parts[index] = number(value)
-	}
-	return strings.Join(parts, " ")
-}
-
-func intList(values []int) string {
-	parts := make([]string, len(values))
-	for index, value := range values {
-		parts[index] = strconv.Itoa(value)
-	}
-	return strings.Join(parts, " ")
-}
-
 func finite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }

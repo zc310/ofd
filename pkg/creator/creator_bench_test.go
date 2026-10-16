@@ -111,3 +111,24 @@ func benchmarkDocument() Document {
 		Pages:       pages,
 	}
 }
+
+// BenchmarkStreamPageArea 测量页面四个区域框的元素写入，用于对比
+// boxString 拼接与 ElementBox 数值直写的分配差异。
+func BenchmarkStreamPageArea(b *testing.B) {
+	w := ofdxml.New()
+	defer ofdxml.Put(w)
+	area := &PageArea{
+		PhysicalBox:    &Box{X: 0, Y: 0, Width: 210, Height: 297},
+		ApplicationBox: &Box{X: 1.5, Y: 2.5, Width: 207, Height: 292},
+		ContentBox:     &Box{X: 3.25, Y: 4.75, Width: 203.5, Height: 287.5},
+		BleedBox:       &Box{X: -0.5, Y: -0.25, Width: 211, Height: 297.5},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		w.Reset()
+		w.Start("Area")
+		streamPageArea(w, area, A4)
+		w.End()
+		_ = w.Bytes()
+	}
+}

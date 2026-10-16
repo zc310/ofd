@@ -70,15 +70,15 @@ func streamPageArea(w *streamXMLWriter, value *PageArea, pageSize PageSize) {
 	if physical == nil {
 		physical = &Box{Width: pageSize.Width, Height: pageSize.Height}
 	}
-	streamElementText(w, "PhysicalBox", boxString(physical.X, physical.Y, physical.Width, physical.Height))
+	w.ElementBox("PhysicalBox", physical.X, physical.Y, physical.Width, physical.Height)
 	if value.ApplicationBox != nil {
-		streamElementText(w, "ApplicationBox", boxString(value.ApplicationBox.X, value.ApplicationBox.Y, value.ApplicationBox.Width, value.ApplicationBox.Height))
+		w.ElementBox("ApplicationBox", value.ApplicationBox.X, value.ApplicationBox.Y, value.ApplicationBox.Width, value.ApplicationBox.Height)
 	}
 	if value.ContentBox != nil {
-		streamElementText(w, "ContentBox", boxString(value.ContentBox.X, value.ContentBox.Y, value.ContentBox.Width, value.ContentBox.Height))
+		w.ElementBox("ContentBox", value.ContentBox.X, value.ContentBox.Y, value.ContentBox.Width, value.ContentBox.Height)
 	}
 	if value.BleedBox != nil {
-		streamElementText(w, "BleedBox", boxString(value.BleedBox.X, value.BleedBox.Y, value.BleedBox.Width, value.BleedBox.Height))
+		w.ElementBox("BleedBox", value.BleedBox.X, value.BleedBox.Y, value.BleedBox.Width, value.BleedBox.Height)
 	}
 }
 
@@ -223,7 +223,7 @@ func streamCGTransform(w *streamXMLWriter, value CGTransform) {
 		w.AttrInt("GlyphCount", value.GlyphCount)
 	}
 	if len(value.Glyphs) > 0 {
-		streamElementText(w, "Glyphs", intList(value.Glyphs))
+		w.ElementIntList("Glyphs", value.Glyphs)
 	}
 	w.End()
 }

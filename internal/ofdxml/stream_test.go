@@ -78,6 +78,9 @@ func TestAppendEscapedMatchesReference(t *testing.T) {
 		"\xf0\x9f\x98\x80 emoji 结尾", // 四字节字符。
 		"invalid utf8: \xe4\xb8\xad\xff\xfe 中文",
 		"开头特殊&，中间<，结尾>",
+		"非字符 \uFFFE\uFFFF 混在中文里",
+		"全角，\uFFFD 与 \uFFFF 相邻",
+		"长中文段落" + strings.Repeat("甲乙丙丁戊己庚辛壬癸", 30),
 		strings.Repeat("平铺的文本", 20),
 	}
 	for _, value := range inputs {
