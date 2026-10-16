@@ -245,7 +245,7 @@
     .page-surface.rotated { transform: translate(-50%, -50%) rotate(90deg); }
     .page-surface.rotated-180 { transform: translate(-50%, -50%) rotate(180deg); }
     .page-surface.rotated-270 { transform: translate(-50%, -50%) rotate(270deg); }
-     .page-surface > .page-image, .page-surface > .text-layer, .page-surface > .link-layer, .page-surface > .media-layer { position: absolute; inset: 0; }
+     .page-surface > .page-image, .page-surface > .text-layer, .page-surface > .link-layer, .page-surface > .seal-layer, .page-surface > .media-layer { position: absolute; inset: 0; }
      body.dark-reading { background: #1b2029; color: #e6ebf2; }
      body.dark-reading .reader { background: #1f252f; }
        body.dark-reading #status { background: #252c38; color: #aeb9ca; }
@@ -492,6 +492,17 @@
        .signature-ref-error { flex: 1 1 100%; color: #9b3e3e; }
        body.dark-reading .signature-ref-path { color: #c6d0dd; }
        body.dark-reading .signature-ref-error { color: #e6a8a8; }
+       .seal-popover { position: fixed; z-index: 40; box-sizing: border-box; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 560px); overflow: auto; padding: 8px 10px 10px; border: 1px solid #c6cedb; border-radius: 8px; background: #fff; color: #172033; box-shadow: 0 8px 28px #17203340; }
+       .seal-popover[hidden] { display: none; }
+       .seal-popover-head { position: sticky; top: -8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px -10px 6px; padding: 8px 10px 6px; background: inherit; }
+       .seal-popover-title { color: #172033; font-size: 13px; font-weight: 600; }
+       .seal-popover-close { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: #5b6675; cursor: pointer; }
+       .seal-popover-close:hover { background: #f1f5f9; }
+       .seal-popover-body .signature-item { margin: 0; }
+       body.dark-reading .seal-popover { border-color: #536074; background: #252c38; color: #e6ebf2; }
+       body.dark-reading .seal-popover-title { color: #e6ebf2; }
+       body.dark-reading .seal-popover-close { color: #c6d0dd; }
+       body.dark-reading .seal-popover-close:hover { background: #ffffff1a; }
        #thumbnails::-webkit-scrollbar { display: none; }
 
      .double-thumbnail-layout #thumbnails { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -534,6 +545,11 @@
      .link-hotspot { position: absolute; box-sizing: border-box; margin: 0; padding: 0; border: none; background: transparent; pointer-events: auto; cursor: pointer; border-radius: 2px; }
      .link-hotspot:hover, .link-hotspot:focus-visible { background: #2476bd33; outline: 1px solid #2476bd99; }
      body.dark-reading .link-hotspot:hover, body.dark-reading .link-hotspot:focus-visible { background: #6fb3f033; outline: 1px solid #6fb3f099; }
+     /* 签章热区放在链接热区之下（z-index 更小），重叠时链接优先。 */
+     .seal-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+     .seal-hotspot { position: absolute; box-sizing: border-box; margin: 0; padding: 0; border: none; background: transparent; pointer-events: auto; cursor: pointer; border-radius: 2px; }
+     .seal-hotspot:hover, .seal-hotspot:focus-visible { background: #c0392b21; outline: 1px dashed #c0392b99; }
+     body.dark-reading .seal-hotspot:hover, body.dark-reading .seal-hotspot:focus-visible { background: #e8808030; outline: 1px dashed #e88080aa; }
      .media-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
      .media-layer > video { position: absolute; box-sizing: border-box; margin: 0; padding: 0; background: #000; pointer-events: auto; object-fit: contain; }
     .text-run { position: absolute; overflow: hidden; color: transparent; font-family: sans-serif; line-height: 1; white-space: pre; }
@@ -607,6 +623,8 @@
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
        #thumbnails .thumbnail img { width: 100%; height: 100%; max-width: none; max-height: none; }
        body.dark-reading .reader { background: #1f252f; }
+       /* 移动端签章属性弹层改为底部抽屉，避免超出视口。 */
+       .seal-popover { left: 10px; right: 10px; top: auto !important; bottom: calc(10px + env(safe-area-inset-bottom)); width: auto; max-height: 62vh; border-radius: 14px; }
         .page-group button, .zoom-group button, .file-button { min-width: 40px; min-height: 40px; }
         .page-group, .zoom-group { min-height: 40px; }
 
@@ -927,6 +945,7 @@
    <button id="back-to-top" type="button" hidden aria-label="返回顶部" title="返回顶部"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
   <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
   <button id="sidebar-toggle" type="button" aria-pressed="true" aria-label="侧栏" title="侧栏">侧栏</button>
+  <div id="seal-popover" class="seal-popover" role="dialog" aria-label="签章属性" hidden></div>
   <script src="viewer.js"></script>
 </body>
 </html>
