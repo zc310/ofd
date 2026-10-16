@@ -1,10 +1,106 @@
 package parser
 
 import (
+	"errors"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
 )
+
+func TestPageResourceLocationsStayStableAcrossEvictions(t *testing.T) {
+	input := buildPageResPackage(t, "First.xml", map[string]string{
+		"Doc_0/Document.xml": `<Document xmlns="http://www.ofdspec.org/2016"><Pages>
+  <Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/>
+  <Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>
+  <Page ID="3" BaseLoc="Pages/Page_2/Content.xml"/>
+</Pages></Document>`,
+		"Doc_0/Pages/Page_0/Content.xml": `<Page xmlns="http://www.ofdspec.org/2016">
+  <PageRes>First.xml</PageRes><PageRes>Second.xml</PageRes><Content/>
+</Page>`,
+		"Doc_0/Pages/Page_1/Content.xml": `<Page xmlns="http://www.ofdspec.org/2016">
+  <PageRes>../Page_0/Second.xml</PageRes><Content/>
+</Page>`,
+		"Doc_0/Pages/Page_2/Content.xml": `<Page xmlns="http://www.ofdspec.org/2016"><Content/></Page>`,
+		"Doc_0/Pages/Page_0/First.xml":   `<Res xmlns="http://www.ofdspec.org/2016"/>`,
+		"Doc_0/Pages/Page_0/Second.xml":  `<Res xmlns="http://www.ofdspec.org/2016"/>`,
+	})
+	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	want := [][]models.StLoc{
+		{"Doc_0/Pages/Page_0/First.xml", "Doc_0/Pages/Page_0/Second.xml"},
+		{"Doc_0/Pages/Page_0/Second.xml"},
+		nil,
+	}
+	doc := ofd.Documents[0]
+	for round := 0; round < 4; round++ {
+		for index, page := range doc.Pages {
+			if err := page.EnsureLoaded(); err != nil {
+				t.Fatal(err)
+			}
+			for read := 0; read < 2; read++ {
+				if got := page.PageResourceLocations(); !slices.Equal(got, want[index]) {
+					t.Fatalf("第 %d 轮页面 %d 的资源路径 = %v，期望 %v", round+1, index, got, want[index])
+				}
+			}
+		}
+	}
+}
+
+// GB/T 33190—2016 §7.3 表 2 规定 ST_Loc 的 / 表示包根节点；
+// §7.7 表 12 规定 PageRes 的类型为 ST_Loc。
+func TestAbsolutePageResourceResolvesFromPackageRoot(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		resource string
+		want     models.StLoc
+	}{
+		{name: "document_directory", resource: "/Doc_0/PageRes.xml", want: "/Doc_0/PageRes.xml"},
+		{name: "shared_directory", resource: "/Shared/PageRes.xml", want: "/Shared/PageRes.xml"},
+		{name: "normalized_path", resource: "/Shared/Res/../PageRes.xml", want: "/Shared/PageRes.xml"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			entryPath := strings.TrimPrefix(test.want.String(), "/")
+			entries := map[string]string{
+				entryPath:                         `<Res xmlns="http://www.ofdspec.org/2016"><DrawParams><DrawParam ID="7" LineWidth="0.5"/></DrawParams></Res>`,
+				"Doc_0/Pages/Page_0/" + entryPath: `<Res xmlns="http://www.ofdspec.org/2016"><DrawParams><DrawParam ID="9" LineWidth="9"/></DrawParams></Res>`,
+			}
+			doc := openPageResDocument(t, buildPageResPackage(t, test.resource, entries))
+			if err := doc.Pages[0].EnsureLoaded(); err != nil {
+				t.Fatal(err)
+			}
+			locations := doc.Pages[0].PageResourceLocations()
+			if len(locations) != 1 || locations[0] != test.want {
+				t.Fatalf("页面资源路径 = %v，期望 [%s]", locations, test.want)
+			}
+			if param := doc.GetDrawParam(7); param == nil || param.LineWidth != 0.5 {
+				t.Fatalf("包根节点下的页面资源未加载: %+v", param)
+			}
+			if doc.GetDrawParam(9) != nil {
+				t.Fatal("绝对路径错误加载了页面目录下的同名资源")
+			}
+		})
+	}
+}
+
+func TestMissingAbsolutePageResourceDoesNotUsePageDirectory(t *testing.T) {
+	entries := map[string]string{
+		"Doc_0/Pages/Page_0/Shared/PageRes.xml": `<Res xmlns="http://www.ofdspec.org/2016"/>`,
+	}
+	doc := openPageResDocument(t, buildPageResPackage(t, "/Shared/PageRes.xml", entries))
+	err := doc.Pages[0].EnsureLoaded()
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("缺失绝对路径资源时的错误 = %v，期望文件不存在", err)
+	}
+	if !strings.Contains(err.Error(), "Shared/PageRes.xml") || strings.Contains(err.Error(), "Pages/Page_0") {
+		t.Fatalf("错误未指向包根节点下的资源: %v", err)
+	}
+}
 
 func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 	input := buildPageResPackage(t, "PageRes.xml", map[string]string{
