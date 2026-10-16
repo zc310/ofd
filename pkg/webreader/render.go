@@ -217,10 +217,11 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}
 
-	estimatedSize := int(pixels * 4)
-	if estimatedSize < 1024 {
-		estimatedSize = 1024
+	estimatedSize := 1024
+	if format != RenderSVG {
+		estimatedSize = max(estimatedSize, int(pixels*4))
 	}
+	// SVG 按实际内容增长，避免为矢量输出预留整页 RGBA 像素缓冲区。
 	output := bytes.NewBuffer(make([]byte, 0, estimatedSize))
 	if format == RenderSVG {
 		if err := page.Write(output, "svg"); err != nil {
