@@ -1,4 +1,4 @@
-// Package sign 通过外部命令为 OFD 文档追加签名。
+// Package sign 提供 OFD 外部命令签署、SM2/SM3 SES 生成和完整签章验证。
 //
 // 签名在包内容最终确定后追加：本包为每个文档体计算被引用文件的摘要并生成
 // Signature.xml（SignedInfo），把该文件字节通过标准输入交给外部命令，命令在

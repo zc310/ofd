@@ -24,7 +24,9 @@ type SignatureDigestResult struct {
 	// DataHash 是 TBS_Sign.DataHash 的校验结果；非 SES 签名时为空。
 	DataHash *DataHashResult
 	// Valid 表示所有可校验项目均通过。
-	Valid bool
+	Valid                bool
+	Unsupported          string
+	SignatureMethodError string
 }
 
 // ReferenceDigestResult 是单个 Reference 的摘要校验结果。
@@ -40,15 +42,17 @@ type ReferenceDigestResult struct {
 
 // DataHashResult 是 SES 签名中 Signature.xml 数据摘要的校验结果。
 type DataHashResult struct {
-	Expected []byte
-	Actual   []byte
-	Match    bool
-	Error    string
+	Expected   []byte
+	Actual     []byte
+	Match      bool
+	Error      string
+	ScopeMatch bool
+	ScopeError string
 }
 
 // VerifySignatureDigest 校验 Signature.xml 的 References 摘要，以及 SES
-// 签名中的 TBS_Sign.DataHash。DataHash 按 References 使用的摘要算法计算，
-// 数据源是签名 XML 文件本身的包内字节。
+// 签名中的 TBS_Sign.DataHash。SM2 签章的 DataHash 使用 SM3（§7.1.5），
+// References 独立使用其声明的算法；数据源是签名 XML 文件本身的包内字节。
 func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signature *models.Signature, signedValue *SignedValue) (*SignatureDigestResult, error) {
 	if fileCache == nil {
 		return nil, fmt.Errorf("签名摘要校验失败: ZIP 包为空")
@@ -63,6 +67,7 @@ func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signat
 	if !supported {
 		result.Valid = false
 		message := fmt.Sprintf("不支持的签名摘要算法 %q", method)
+		result.Unsupported = message
 		for _, reference := range signature.SignedInfo.References.Reference {
 			result.References = append(result.References, ReferenceDigestResult{
 				FileRef: reference.FileRef.String(),
@@ -105,17 +110,34 @@ func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signat
 	}
 
 	if signedValue != nil && signedValue.SES != nil {
+		if declared := signature.SignedInfo.SignatureMethod; declared != "" && declared != signedValue.SES.SignatureAlgorithm.String() {
+			result.SignatureMethodError = "Signature.xml 与 SES 声明的签名算法不一致"
+		}
 		item := &DataHashResult{Expected: cloneBytes(signedValue.SES.TBS.DataHash.Bytes)}
 		signatureData, err := fileCache.Read(signaturePath)
 		if err != nil {
 			item.Error = err.Error()
 			result.Valid = false
 		} else {
-			item.Actual = digestBytes(hashFunc, signatureData)
+			// §7.1.5：使用 SM2 的原文杂凑必须是 SM3，与 References 的算法分开。
+			if signedValue.SES.SignatureAlgorithm.String() == sm2WithSM3OID {
+				item.Actual = digestBytes(sm3.New, signatureData)
+			} else {
+				item.Error = "未支持的 SES 原文杂凑算法"
+				result.Unsupported = item.Error
+				result.Valid = false
+			}
 			item.Match = bytes.Equal(item.Expected, item.Actual)
 			if !item.Match {
 				result.Valid = false
 			}
+		}
+		// OFD 接入约定 PropertyInfo 指向受保护的 Signature.xml；其他厂商的
+		// 元数据编码保留解析，但必须由适配层解释后才能得出完整验证结论。
+		scope := signedValue.SES.TBS.PropertyInfo
+		item.ScopeMatch = scope != "" && models.StLoc(scope).Resolve(baseDir).String() == models.StLoc(signaturePath).Resolve("/").String()
+		if !item.ScopeMatch {
+			item.ScopeError = "未确认 PropertyInfo 与当前 Signature.xml 的保护范围绑定"
 		}
 		result.DataHash = item
 	}

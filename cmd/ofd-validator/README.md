@@ -103,6 +103,7 @@ ofd-validator -o report.xlsx document.ofd
 | `--pretty`                           | 关闭        | 缩进 JSON 输出                                         |
 | `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
 | `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
+| `--check-signatures`                 | 关闭        | 执行 GB/T 38540 完整验签；缺少必需证据时报告未完成并返回失败 |
 | `--no-scan-xml`                      | 关闭        | 只解析由 OFD 引用到的 XML 文件                         |
 | `--doc-type OFD\|OFD-A\|OFD-H`      | 自动        | 额外校验的 OFD profile；留空时按文档声明的 `DocType` 自动判定 |
 | `--fail-on-warning`                  | 关闭        | 有警告时也返回退出码 `1`                               |
@@ -199,6 +200,13 @@ PDF 输出会失败；文本、Markdown 和 JSON 报告不受此限制。
 其他扩展名仍默认使用 `text`。
 
 ## 退出码
+
+`--check-signatures` 增加 `signature` 阶段问题和 `signatures` 检查项，检查状态为
+`passed`、`failed` 或 `incomplete`。CLI 未配置印章状态服务和证书信任证据，通常会
+得到未完成结论；此类问题的代码为 `signature.incomplete.*`，退出码为 `1`。
+应用可用 `validator.WithSignatureVerification` 提供信任根、CRL 和印章状态回调，
+参数与 [`sign.VerificationOptions`](../../pkg/sign/README.md#完整验证) 相同。
+独立启用该选项时，即使使用 `--no-digest`，完整验签仍会核对其必需的原文摘要。
 
 - `0`：校验没有错误；默认情况下存在警告仍返回 `0`。
 - `1`：存在校验错误，或指定 `--fail-on-warning` 且存在警告。

@@ -34,6 +34,8 @@ type SESSignedValue struct {
 	Certificate        []byte
 	SignatureAlgorithm asn1.ObjectIdentifier
 	Signature          BitString
+	// TimeStamp 是 §7.1.1 定义的可选 [0] BIT STRING。
+	TimeStamp *BitString
 }
 
 // TBSSign 是电子印章的待签名结构。
@@ -78,14 +80,15 @@ type SESHeader struct {
 
 // SESProperty 是电子印章的属性信息。
 type SESProperty struct {
-	Type              int64
-	Name              string
-	CertificateType   int64
-	Certificates      [][]byte
-	CertificateValues []ASN1Node
-	CreateTime        time.Time
-	ValidFrom         time.Time
-	ValidTo           time.Time
+	Type               int64
+	Name               string
+	CertificateType    int64
+	Certificates       [][]byte
+	CertificateValues  []ASN1Node
+	CertificateListDER []byte
+	CreateTime         time.Time
+	ValidFrom          time.Time
+	ValidTo            time.Time
 }
 
 // SESPicture 是电子印章的图像信息。
@@ -101,6 +104,8 @@ type ExtensionData struct {
 	OID      asn1.ObjectIdentifier
 	Critical bool
 	Value    []byte
+	// DefaultEncoded 保留第三方显式编码 FALSE 的情况；完整验证必须拒绝。
+	DefaultEncoded bool
 }
 
 // BitString 保存 BIT STRING 的有效字节和未使用位数。
@@ -149,7 +154,7 @@ func ParseSignedValue(data []byte) (*SignedValue, error) {
 
 func isSESSignatureRoot(root asn1.RawValue) bool {
 	children, err := signedValueSequence(root, "SignedValue.dat")
-	if err != nil || len(children) != 4 {
+	if err != nil || len(children) < 4 || len(children) > 5 {
 		return false
 	}
 	return isUniversal(children[0], asn1.TagSequence) &&
@@ -163,8 +168,8 @@ func parseSESSignedValue(root asn1.RawValue) (*SESSignedValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(children) != 4 {
-		return nil, fmt.Errorf("字段数量为 %d，期望 4", len(children))
+	if len(children) < 4 || len(children) > 5 {
+		return nil, fmt.Errorf("字段数量为 %d，期望 4 或 5", len(children))
 	}
 
 	tbs, err := parseTBSSign(children[0])
@@ -183,11 +188,24 @@ func parseSESSignedValue(root asn1.RawValue) (*SESSignedValue, error) {
 	if err != nil {
 		return nil, err
 	}
+	var timestamp *BitString
+	if len(children) == 5 {
+		field, err := explicitSESField(children[4], "SES_Signature.TimeStamp")
+		if err != nil {
+			return nil, err
+		}
+		value, err := signedValueBitString(field, "SES_Signature.TimeStamp")
+		if err != nil {
+			return nil, err
+		}
+		timestamp = &value
+	}
 	return &SESSignedValue{
 		TBS:                *tbs,
 		Certificate:        certificate,
 		SignatureAlgorithm: signatureAlgorithm,
 		Signature:          signature,
+		TimeStamp:          timestamp,
 	}, nil
 }
 
@@ -223,7 +241,11 @@ func parseTBSSign(value asn1.RawValue) (*TBSSign, error) {
 
 	var extensions []ExtensionData
 	if len(children) == 6 {
-		extensions, err = parseExtensions(children[5], "TBS_Sign.Extensions")
+		field, unwrapErr := explicitSESField(children[5], "TBS_Sign.Extensions")
+		if unwrapErr != nil {
+			return nil, unwrapErr
+		}
+		extensions, err = parseExtensions(field, "TBS_Sign.Extensions")
 		if err != nil {
 			return nil, err
 		}
@@ -376,14 +398,15 @@ func parseSESProperty(value asn1.RawValue) (*SESProperty, error) {
 		return nil, err
 	}
 	return &SESProperty{
-		Type:              typ,
-		Name:              name,
-		CertificateType:   certificateType,
-		Certificates:      certificates,
-		CertificateValues: certificateValues,
-		CreateTime:        createTime,
-		ValidFrom:         validFrom,
-		ValidTo:           validTo,
+		Type:               typ,
+		Name:               name,
+		CertificateType:    certificateType,
+		Certificates:       certificates,
+		CertificateValues:  certificateValues,
+		CertificateListDER: cloneBytes(children[3].FullBytes),
+		CreateTime:         createTime,
+		ValidFrom:          validFrom,
+		ValidTo:            validTo,
 	}, nil
 }
 
@@ -449,24 +472,41 @@ func parseExtensions(value asn1.RawValue, field string) ([]ExtensionData, error)
 		if err != nil {
 			return nil, err
 		}
-		if len(fields) != 3 {
-			return nil, fmt.Errorf("%s[%d] 字段数量为 %d，期望 3", field, index, len(fields))
+		if len(fields) < 2 || len(fields) > 3 {
+			return nil, fmt.Errorf("%s[%d] 字段数量为 %d，期望 2 或 3", field, index, len(fields))
 		}
 		oid, err := signedValueOID(fields[0], fmt.Sprintf("%s[%d].OID", field, index))
 		if err != nil {
 			return nil, err
 		}
-		critical, err := signedValueBool(fields[1], fmt.Sprintf("%s[%d].Critical", field, index))
+		critical := false
+		if len(fields) == 3 {
+			critical, err = signedValueBool(fields[1], fmt.Sprintf("%s[%d].Critical", field, index))
+			if err != nil {
+				return nil, err
+			}
+		}
+		data, err := signedValueOctets(fields[len(fields)-1], fmt.Sprintf("%s[%d].Value", field, index))
 		if err != nil {
 			return nil, err
 		}
-		data, err := signedValueOctets(fields[2], fmt.Sprintf("%s[%d].Value", field, index))
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, ExtensionData{OID: oid, Critical: critical, Value: data})
+		result = append(result, ExtensionData{OID: oid, Critical: critical, Value: data, DefaultEncoded: len(fields) == 3 && !critical})
 	}
 	return result, nil
+}
+
+// GB/T 38540—2020 §7.1：默认标签规则为 EXPLICIT，不能把标签内的 SEQUENCE
+// 或 BIT STRING 当作未加标签的字段消费。
+func explicitSESField(value asn1.RawValue, field string) (asn1.RawValue, error) {
+	var inner asn1.RawValue
+	if value.Class != asn1.ClassContextSpecific || value.Tag != 0 || !value.IsCompound {
+		return inner, fmt.Errorf("%s 缺少 [0] EXPLICIT 标签", field)
+	}
+	rest, err := asn1.Unmarshal(value.Bytes, &inner)
+	if err != nil || len(rest) != 0 {
+		return inner, fmt.Errorf("%s 的 [0] 内容无效", field)
+	}
+	return inner, nil
 }
 
 func signedValueSequence(value asn1.RawValue, field string) ([]asn1.RawValue, error) {

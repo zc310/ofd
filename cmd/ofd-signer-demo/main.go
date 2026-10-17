@@ -118,18 +118,14 @@ func sign(signatureXML []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sealWidth, sealHeight, err := pictureSizeOf(picture)
-	if err != nil {
-		return nil, err
-	}
 	seal, err := ses.BuildSeal(ses.SealParams{
 		Provider:    demoProvider + "/" + demoVersion,
 		ESID:        demoProvider + "-" + id + "@" + producer,
 		Name:        demoProvider + " " + demoVersion + " (演示印章, " + producer + ")",
 		PictureType: pictureType,
 		PictureData: picture,
-		Width:       sealWidth,
-		Height:      sealHeight,
+		Width:       40,
+		Height:      40,
 	}, certificateDER, privateKey, now)
 	if err != nil {
 		return nil, err

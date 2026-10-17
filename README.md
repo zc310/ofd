@@ -327,6 +327,8 @@ func main() {
 
 需要重新签名时，`pkg/sign` 提供 `Sign`：为每个文档体计算引用摘要、生成 `Signature.xml`，把该文件交给外部命令并写回其输出的 `SignedValue.dat`；`Options.Deterministic` 固定重新打包的 ZIP 时间（配合固定的 `Options.Date` 可得到字节可复现的结果），命令行对应 `ofd-creator merge --sign-cmd --deterministic`，私钥与算法由外部命令负责。仓库包含最小示例签名器 [`cmd/ofd-signer-demo`](cmd/ofd-signer-demo)，用于演示 `--sign-cmd` 协议和 SES 结构（仅演示/测试，不可用于生产）。
 
+[`pkg/sign`](pkg/sign/README.md) 还提供 GB/T 38540-2020 SES V4 的 SM2/SM3 印章与签章生成，以及 `Verify` 完整验证接口，覆盖授权证书/证书杂凑列表、印章有效期与状态、证书用途/信任/吊销、原文绑定和可选时间戳。完整结论区分通过、失败和证据不足；证书信任根、CRL 及印章状态由应用提供。分析报告和浏览器签名面板展示该结论，校验器可通过 `--check-signatures` 启用对应检查。`ofd-seal` 的显示尺寸使用毫米，支持独立配置获授权签章者。
+
 ```go
 if err := merge.Pages([]merge.Source{{Path: "a.ofd"}, {Path: "b.ofd"}}, output, merge.PageOptions{}); err != nil {
 	log.Fatal(err)

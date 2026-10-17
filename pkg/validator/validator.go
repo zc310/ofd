@@ -69,6 +69,8 @@ type Options struct {
 	ScanXML bool
 	// CheckDigest 指定是否校验签名摘要。
 	CheckDigest bool
+	// SignatureVerification 非空时执行 GB/T 38540 完整验签。
+	SignatureVerification *SignatureVerificationOptions
 	// FailOnWarning 指定是否将警告视为失败。
 	FailOnWarning bool
 	// Schemas 指定使用的 XSD 模式集合。
@@ -424,6 +426,9 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		}
 	} else {
 		report.setCheck("digest", "skipped")
+	}
+	if v.opts.SignatureVerification != nil {
+		v.checkSignatures(ctx, documents, packageReader, report)
 	}
 	if report.hasStageErrors(StageReference) {
 		report.setCheck("references", "failed")

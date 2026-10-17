@@ -153,7 +153,7 @@ func containsSealInkPixel(img image.Image) bool {
 	return false
 }
 
-func TestSignedValuePictureDimensionsMatchPNG(t *testing.T) {
+func TestSignedValuePictureDimensionsUseMillimeters(t *testing.T) {
 	signedValue, err := sign([]byte("<Signature>picture</Signature>"))
 	if err != nil {
 		t.Fatal(err)
@@ -162,13 +162,9 @@ func TestSignedValuePictureDimensionsMatchPNG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	width, height, err := pictureSize()
-	if err != nil {
-		t.Fatal(err)
-	}
 	picture := parsed.SES.TBS.Seal.SealInfo.Picture
-	if picture.Width != int64(width) || picture.Height != int64(height) {
-		t.Fatalf("SES_ESPictrueInfo 尺寸应为 %dx%d，实际 %dx%d", width, height, picture.Width, picture.Height)
+	if picture.Width != 40 || picture.Height != 40 {
+		t.Fatalf("SES_ESPictrueInfo 显示尺寸应为 40x40 mm，实际 %dx%d", picture.Width, picture.Height)
 	}
 	if picture.Type != pictureType {
 		t.Fatalf("SES_ESPictrueInfo.Type 应为 %q，实际 %q", pictureType, picture.Type)

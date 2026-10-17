@@ -14,11 +14,68 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/version"
 )
 
 func fixturePath(name string) string {
 	return filepath.Join("..", "..", "testdata", name)
+}
+
+func TestSignatureValidationSurvivesAllReportFormats(t *testing.T) {
+	report, err := Analyze(fixturePath("ofdrw/999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Signatures) != 1 || report.Signatures[0].Validation == nil || report.Signatures[0].Validation.Status == "valid" {
+		t.Fatal("缺少信任/状态证据的签名不得完整通过")
+	}
+	for _, test := range []struct{ status, label string }{{"valid", "通过"}, {"invalid", "失败"}, {"incomplete", "未完成"}} {
+		t.Run(test.status, func(t *testing.T) {
+			report.Signatures[0].Validation = &parser.SignatureValidation{Status: test.status, Checks: []parser.VerificationCheck{{Code: "seal.status", Status: test.status, Message: "印章状态证据"}}}
+			var data bytes.Buffer
+			if err := RenderJSON(&data, report, false); err != nil {
+				t.Fatal(err)
+			}
+			var decoded Report
+			if err := json.Unmarshal(data.Bytes(), &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.SchemaVersion != "1" || decoded.Signatures[0].Validation.Status != test.status {
+				t.Fatal("JSON 丢失模式版本或完整结论")
+			}
+			data.Reset()
+			if err := RenderText(&data, report); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(data.String(), "完整验证："+test.label) {
+				t.Fatal("文本缺少完整结论")
+			}
+			data.Reset()
+			if err := RenderMarkdown(&data, report); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(data.String(), "| 完整验证 |") || !strings.Contains(data.String(), "| "+test.label+" |") {
+				t.Fatal("Markdown 缺少完整结论")
+			}
+			if !strings.Contains(strings.Join(pdfReportLines(report), "\n"), "完整验证："+test.label) {
+				t.Fatal("PDF 文本缺少完整结论")
+			}
+			data.Reset()
+			if err := RenderXLSX(&data, report); err != nil {
+				t.Fatal(err)
+			}
+			book, err := excelize.OpenReader(bytes.NewReader(data.Bytes()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer book.Close()
+			label, err := book.GetCellValue("签名", "Q5")
+			if err != nil || label != test.label {
+				t.Fatalf("XLSX 完整结论=%s, err=%v", label, err)
+			}
+		})
+	}
 }
 
 func TestAnalyzeHelloWorld(t *testing.T) {

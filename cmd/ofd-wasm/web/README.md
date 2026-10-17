@@ -23,8 +23,12 @@
 - 附件页签列出文档附件（名称、格式/大小、`Usage` 与隐藏/缺失徽标），可按名称过滤；可见附件提供“下载”，图片/PDF/文本/音视频等可预览类型额外提供“预览”（新标签页打开），缺失文件禁用操作。
 - 资源页签以缩略图网格列出文档内多媒体资源（图片/音频/视频），图片进入可视区域时懒加载缩略图并显示格式、尺寸与大小，点击在新标签页预览；音视频显示类型图标。
 - 各内容面板（大纲/书签/字体/附件/资源/注解/签名）的滚动位置按文档保存在浏览器本地，重新切换页签或再次打开文档时会恢复到上次位置。
+
+- SES 签名面板区分“签名值通过”和 GB/T 38540 完整验证结论，并可展开格式、用章授权、有效期、证书信任/吊销、印章状态、文档完整性与时间戳的逐项明细。缺少验证证据时显示“完整验证未完成”。`ofd.signatures()` 的 SES 结果新增 `validation: { status, checks: [{ code, status, message }] }`；整体状态为 `valid`、`invalid` 或 `incomplete`，原有分项字段保留。
+
+- 附带时间戳时，明细中的“时间戳时刻的签章者证书”（`timestamp.signing_time`）检查签章者证书在该时刻的有效期和吊销状态。显式编码扩展默认值 `critical=FALSE` 会导致完整格式检查失败，原始数学签名结果仍单独展示。
 - 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
-- 签名页签列出文档签名（提供者/公司、算法、签名时间、摘要一致/验签通过/可信徽标），并显示每个签章所在页码与印章缩略图，点击跳转到签章位置；点击“签名范围”可展开签名覆盖的文件引用与逐项摘要校验（数据摘要一致/不一致），点击“证书详情”可展开印章/外层证书的主体、签发者、序列号、有效期、公钥、算法与签名/证书/证书链/吊销校验状态，并可导出证书（DER/PEM）；签名项提供“导出签名值”（SignedValue.dat）。
+- 签名页签列出文档签名（提供者/公司、算法、签名时间、摘要一致/签名值通过/可信及完整验证徽标），并显示每个签章所在页码与印章缩略图，点击跳转到签章位置；点击“签名范围”可展开签名覆盖的文件引用与逐项摘要校验（数据摘要一致/不一致），点击“证书详情”可展开印章/外层证书的主体、签发者、序列号、有效期、公钥、算法与签名/证书/证书链/吊销校验状态，并可导出证书（DER/PEM）；签名项提供“导出签名值”（SignedValue.dat）。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 页面上的可点击链接会叠加半透明热区：链接来自注解（`Type="Link"`）与页面正文/模板图元的 `CLICK` 动作；外部链接在新标签页打开，内部跳转按目标页与 `Dest` 定位，附件动作（`GotoA`）对图片/PDF/文本/音视频等可预览类型在新标签页打开、其它类型下载，并随页面旋转/缩放重新布局。
 - 页面上的签章图片可点击：签名清单里每个带有效位置的签章会在对应页面的印章区域叠加热区，点击弹出“签章属性”浮层，内容与签名页签一致（提供者/公司、算法、签名时间、摘要/验签/可信徽标、签名范围、证书详情、导出签名值），并按页面旋转/缩放重新布局；热区位于链接热区之下，重叠时链接优先。移动端浮层为底部抽屉；滚动、缩放、切换页面或文档时自动收起。
@@ -328,7 +332,7 @@ make test-wasm-web
 - `ofd.pageLinksForPage(index)` 返回指定页面的可点击链接，字段与 `ofd.pageLinks()` 相同；网页阅读器按页面挂载懒加载此接口，避免打开大文档时扫描全部页面。
 - `ofd.pageMediaActions()` 返回进入页面（`PO`）和打开文档（`DO`）时执行的声音、影片动作，字段与 `pageLinks` 的媒体字段相同，`event` 为 `PO` 或 `DO`。
 - `ofd.pageMediaActionsForPage(index)` 按页返回页面进入动作及文档首页的 DO/PO 动作；网页阅读器按需调用，避免打开大文档时扫描全部页面。
-- `ofd.signatures()` 返回签名清单：`{ scope, id, provider, company, version, method, date, has_digest, digest_valid, digest_method, has_verification, verified, trusted, trust_checked, verification_error, has_data_hash, data_hash_match, references, stamps, certificates }`，其中 `references` 为 `{ file_ref, exists, match, error }`，`stamps` 为 `{ page, id, has_seal, seal_type, boundary }`，`certificates` 为 `{ slot, subject, issuer, common_name, organization, organizational_unit, country, locality, province, serial_number, not_before, not_after, public_key, algorithm, signature_format, signature_valid, certificate_valid, trust_checked, trusted, trust_error, revocation_checked, revocation_status, revocation_error, error }`。`ofd.signatureSeal(scope, id, stampIndex)` 返回签章印章文件内容（可转移 `ArrayBuffer`）。`ofd.signatureCertificate(scope, id, slot)` 按层级（`seal`/`outer`）返回证书 DER；`ofd.signatureValue(scope, id)` 返回签名值（SignedValue.dat）内容。
+- `ofd.signatures()` 返回签名清单：`{ scope, id, provider, company, version, method, date, has_digest, digest_valid, digest_method, has_verification, verified, trusted, trust_checked, verification_error, has_data_hash, data_hash_match, references, stamps, certificates, validation }`，其中 SES 的 `validation` 为 `{ status, checks: [{ code, status, message }] }`，`references` 为 `{ file_ref, exists, match, error }`，`stamps` 为 `{ page, id, has_seal, seal_type, boundary }`，`certificates` 为 `{ slot, subject, issuer, common_name, organization, organizational_unit, country, locality, province, serial_number, not_before, not_after, public_key, algorithm, signature_format, signature_valid, certificate_valid, trust_checked, trusted, trust_error, revocation_checked, revocation_status, revocation_error, error }`。`ofd.signatureSeal(scope, id, stampIndex)` 返回签章印章文件内容（可转移 `ArrayBuffer`）。`ofd.signatureCertificate(scope, id, slot)` 按层级（`seal`/`outer`）返回证书 DER；`ofd.signatureValue(scope, id)` 返回签名值（SignedValue.dat）内容。
 - `ofd.stats()` 返回资源数量汇总：`{ fonts, attachments, media, annotation_pages, signatures }`，只读取声明，不加载资源内容。
 - 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
 

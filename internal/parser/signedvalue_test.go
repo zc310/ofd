@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gmx509 "github.com/emmansun/gmsm/smx509"
@@ -50,6 +51,22 @@ func TestParseSignedValueSES(t *testing.T) {
 	if len(value.SES.Signature.Bytes) == 0 || len(value.SES.TBS.Seal.Signature.Bytes) == 0 {
 		t.Fatal("signature values were not parsed")
 	}
+	verification, err := VerifySESSignedValue(value)
+	if err != nil || !verification.Valid {
+		t.Fatalf("第三方样例的原始签名字节应继续通过数学验证: %v", err)
+	}
+	found := false
+	for _, check := range verification.Validation.Checks {
+		if check.Code == "ses.format" {
+			found = true
+			if check.Status != "invalid" || !strings.Contains(check.Message, "默认值 FALSE 必须省略") {
+				t.Fatalf("第三方样例的显式默认值应报告格式错误: %+v", check)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("缺少完整格式检查")
+	}
 }
 
 func TestParseSignedValuePreservesGenericASN1(t *testing.T) {
@@ -67,6 +84,104 @@ func TestParseSignedValueRejectsTrailingBytes(t *testing.T) {
 	data := []byte{0x30, 0x03, 0x02, 0x01, 0x01, 0x00}
 	if _, err := ParseSignedValue(data); err == nil {
 		t.Fatal("trailing bytes were accepted")
+	}
+}
+
+func TestFullValidationRejectsExplicitDefaultInSealAndTBSExtensions(t *testing.T) {
+	fixture := readZipEntry(t, filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"), "Doc_0/Signs/Sign_0/SignedValue.dat")
+	decode := func(data []byte) asn1.RawValue {
+		t.Helper()
+		var value asn1.RawValue
+		if rest, err := asn1.Unmarshal(data, &value); err != nil || len(rest) != 0 {
+			t.Fatalf("解码失败: %v", err)
+		}
+		return value
+	}
+	children := func(value asn1.RawValue) []asn1.RawValue {
+		t.Helper()
+		fields, err := signedValueSequence(value, "fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fields
+	}
+	sequence := func(fields []asn1.RawValue) asn1.RawValue {
+		t.Helper()
+		var data []byte
+		for _, field := range fields {
+			data = append(data, field.FullBytes...)
+		}
+		encoded, err := asn1.Marshal(asn1.RawValue{Tag: asn1.TagSequence, IsCompound: true, Bytes: data})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decode(encoded)
+	}
+	for _, location := range []string{"seal", "tbs"} {
+		for _, encoding := range []string{"omitted", "false", "true"} {
+			t.Run(location+"/"+encoding, func(t *testing.T) {
+				// 独立构造 ExtData，显式 FALSE 是 BER 可表达但 DER 禁止的默认值。
+				fields := []asn1.RawValue{decode([]byte{6, 2, 42, 3})}
+				if encoding != "omitted" {
+					value := byte(0)
+					if encoding == "true" {
+						value = 255
+					}
+					fields = append(fields, decode([]byte{1, 1, value}))
+				}
+				fields = append(fields, decode([]byte{4, 0}))
+				extensions := sequence([]asn1.RawValue{sequence(fields)})
+				outer := children(decode(fixture))
+				tbs := children(outer[0])
+				seal := children(tbs[1])
+				info := children(seal[0])
+				seal[0] = sequence(info[:4]) // 去掉 fixture 的非规范扩展，逐个测试两处域。
+				tbs[1] = sequence(seal)
+				if location == "seal" {
+					info = append(info[:4], extensions)
+					seal[0] = sequence(info)
+					tbs[1] = sequence(seal)
+				} else {
+					encoded, err := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: extensions.FullBytes})
+					if err != nil {
+						t.Fatal(err)
+					}
+					tbs = append(tbs[:5], decode(encoded))
+				}
+				outer[0] = sequence(tbs)
+				value, err := ParseSignedValue(sequence(outer).FullBytes)
+				if err != nil || value.SES == nil {
+					t.Fatalf("扩展诊断信息应可解析: %v", err)
+				}
+				extracted := value.SES.TBS.Extensions
+				if location == "seal" {
+					extracted = value.SES.TBS.Seal.SealInfo.Extensions
+				}
+				if len(extracted) != 1 || extracted[0].Critical != (encoding == "true") {
+					t.Fatalf("扩展=%+v", extracted)
+				}
+				verification, err := VerifySESSignedValue(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, check := range verification.Validation.Checks {
+					if check.Code == "ses.format" {
+						found = true
+						if encoding == "false" {
+							if check.Status != "invalid" || !strings.Contains(check.Message, "默认值 FALSE 必须省略") {
+								t.Fatalf("显式默认值应导致格式失败: %+v", check)
+							}
+						} else if check.Status != "valid" {
+							t.Fatalf("合法 DER 扩展格式检查失败: %+v", check)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("缺少格式检查")
+				}
+			})
+		}
 	}
 }
 

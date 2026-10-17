@@ -196,6 +196,7 @@ func configureSignatureVerification(ofd *parser.OFD, options Options) error {
 				document.DeleteVerificationResult(id)
 				return true
 			}
+			parser.BindSignatureDigest(result, document.GetDigestResult(id))
 			document.SetVerificationResult(id, result)
 			document.DeleteVerificationError(id)
 			return true
@@ -1179,6 +1180,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 		if verification := doc.GetVerificationResult(item.ID); verification != nil {
 			info.VerificationChecked = true
 			info.VerificationValid = verification.Valid
+			info.Validation = verification.Validation
 			info.TrustChecked = verification.TrustChecked
 			info.Trusted = verification.Trusted
 			info.RevocationChecked = verification.RevocationChecked

@@ -27,15 +27,19 @@ const (
 )
 
 type options struct {
-	image    string
-	name     string
-	esid     string
-	vid      string
-	out      string
-	key      string
-	cert     string
-	keyOut   string
-	validity int
+	image       string
+	name        string
+	esid        string
+	vid         string
+	out         string
+	key         string
+	cert        string
+	keyOut      string
+	validity    int
+	widthMM     int
+	heightMM    int
+	signerCerts []string
+	certDigests bool
 	// generate 只产出印章图片，不封装成 Seal.esl。
 	generate bool
 	size     int
@@ -88,6 +92,10 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	root.Flags().StringVar(&opts.cert, "cert", "", "复用证书（PEM 或 DER）；默认自签生成")
 	root.Flags().StringVar(&opts.keyOut, "key-out", "", "新生成的私钥以 PKCS#8 PEM 写到该路径")
 	root.Flags().IntVar(&opts.validity, "validity-days", 365*10, "证书与印章的有效天数")
+	root.Flags().IntVar(&opts.widthMM, "width-mm", 40, "印章显示宽度（整数毫米，与像素尺寸无关）")
+	root.Flags().IntVar(&opts.heightMM, "height-mm", 40, "印章显示高度（整数毫米，与像素尺寸无关）")
+	root.Flags().StringSliceVar(&opts.signerCerts, "signer-cert", nil, "获授权签章者证书（PEM 或 DER，可重复）；缺省授权制章者")
+	root.Flags().BoolVar(&opts.certDigests, "cert-digests", false, "用 SM3 证书杂凑保存授权列表（certListType=2）")
 	root.Flags().BoolVar(&opts.generate, "generate", false, "只生成测试用印章图片，不封装成 Seal.esl")
 	root.Flags().IntVar(&opts.size, "size", 512, "--generate 的输出像素（长边）")
 	root.Flags().StringVar(&opts.shape, "shape", "circle", "--generate 的外框形状：circle 或 ellipse")
@@ -118,6 +126,9 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	}
 	if opts.validity <= 0 {
 		return nil, fmt.Errorf("--validity-days 必须为正数，实际 %d", opts.validity)
+	}
+	if opts.widthMM <= 0 || opts.heightMM <= 0 {
+		return nil, errors.New("--width-mm 与 --height-mm 必须为正数")
 	}
 	if opts.esid != "" && !ses.IsIA5(opts.esid) {
 		return nil, fmt.Errorf("--esid 必须是 IA5 字符串，实际 %q", opts.esid)
@@ -251,10 +262,35 @@ func execute(opts *options, stdout io.Writer) error {
 		Name:        name,
 		PictureType: typeName,
 		PictureData: data,
-		Width:       width,
-		Height:      height,
+		Width:       opts.widthMM,
+		Height:      opts.heightMM,
 		ValidFrom:   now,
 		ValidTo:     now.Add(time.Duration(opts.validity) * 24 * time.Hour),
+	}
+	for _, path := range opts.signerCerts {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("读取签章者证书失败: %w", err)
+		}
+		der, err := ses.ParseCertificateDER(data)
+		if err != nil {
+			return err
+		}
+		params.SignerCertificates = append(params.SignerCertificates, der)
+	}
+	if opts.certDigests {
+		certificates := params.SignerCertificates
+		if certificates == nil {
+			certificates = [][]byte{certDER}
+		}
+		for _, certificate := range certificates {
+			digest, err := ses.CertificateHash("SM3", certificate)
+			if err != nil {
+				return err
+			}
+			params.SignerDigests = append(params.SignerDigests, ses.CertificateDigest{Type: "SM3", Value: digest})
+		}
+		params.SignerCertificates = nil
 	}
 	seal, err := ses.BuildSeal(params, certDER, key, now)
 	if err != nil {
@@ -269,6 +305,7 @@ func execute(opts *options, stdout io.Writer) error {
 	}
 	_, _ = fmt.Fprintf(stdout, "印章: %s (%s)\n", name, esid)
 	_, _ = fmt.Fprintf(stdout, "图片: %s %dx%d\n", typeName, width, height)
+	_, _ = fmt.Fprintf(stdout, "显示尺寸: %dx%d mm\n", opts.widthMM, opts.heightMM)
 	_, _ = fmt.Fprintf(stdout, "已写出 %s\n", opts.out)
 	return nil
 }

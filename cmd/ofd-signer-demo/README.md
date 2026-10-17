@@ -71,8 +71,8 @@ SES_Header ::= SEQUENCE {
 - 用 SM2 分别签署 `SES_Seal_Info`（印章内部签名）和 `TBS_Sign`（外层签名）；
 - 现场渲染一张 PNG 印章图（`SES_ESPictrueInfo.Type = "png"`）：由
   `internal/sealimg` 生成的双线圆章，顶部「OFD 测试专用章」、底部「非正式印章」、中心
-  五角星及其下方的「zc310/ofd」小字，尺寸 512×512（`SES_ESPictrueInfo.Width/Height`
-  与图元尺寸一致）。
+  五角星及其下方的「zc310/ofd」小字，图片为 512×512 像素；
+  `SES_ESPictrueInfo.Width/Height` 按 GB/T 38540-2020 §6.1.2.5 写为 40×40 毫米。
 
   这张图自带「非正式印章」声明，因此可以被单独复制传播而不至于被误认为真章；
   早期版本内嵌一张 938×938 的红圈「中」字 PNG，既没有这行声明，也不像章。

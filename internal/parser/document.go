@@ -1245,6 +1245,7 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 				slog.Warn("验证签名失败", "signature", body.ID, "error", verificationErr)
 			}
 		} else if verification != nil {
+			BindSignatureDigest(verification, p.digestResults[body.ID])
 			p.verificationResults[body.ID] = verification
 		}
 		p.loadSeals(body.ID, &sig, seDir)
