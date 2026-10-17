@@ -296,7 +296,7 @@ func cffSelectors(b []byte, pos, count, fdCount int) ([]byte, error) {
 
 func wrapCFF(input []byte) ([]byte, error) {
 	// 所有兼容性修改都在副本上进行，避免改动文档中的原始字体资源。
-	b := slices.Clone(input)
+	b := slices.Clone(repairCFFPrivate(input))
 	if int(b[2]) > len(b) {
 		return nil, fmt.Errorf("CFF: truncated header")
 	}

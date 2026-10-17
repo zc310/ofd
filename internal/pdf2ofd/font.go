@@ -719,6 +719,8 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		p.control.limit("font_bytes", int64(len(data)), maximum)
 		return
 	}
+	// 创建器直接将这份字节写入 OFD 资源。保留修复结果，避免把原始字体
+	// 再写回包内，使浏览器必须等到后续渲染时才能取得可用字体。
 	font.data = data
 }
 

@@ -4,6 +4,7 @@
 package fontrepair
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 	"unicode/utf8"
@@ -38,6 +39,12 @@ func Repair(data []byte) ([]byte, error) {
 		return data, err
 	}
 	changed := false
+	if cff := d.get("CFF "); cff != nil {
+		if fixed := repairCFFPrivate(cff); !bytes.Equal(fixed, cff) {
+			d.put("CFF ", fixed)
+			changed = true
+		}
+	}
 	units := uint16(1000)
 	if head := d.get("head"); len(head) >= 20 && be.Uint16(head[18:]) != 0 {
 		units = be.Uint16(head[18:])
