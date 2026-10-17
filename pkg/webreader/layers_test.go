@@ -10,42 +10,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/canvas"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // 独立 XML 包：两页复用 Layer ID；模板故意与正文层同 ID，验证过滤作用域。
 func layerTestPackage(t *testing.T) []byte {
 	t.Helper()
-	fontSource, err := os.ReadFile("../../testdata/ofdrw/intro.ofd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fonts, err := zip.NewReader(bytes.NewReader(fontSource), int64(len(fontSource)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var font []byte
-	for _, file := range fonts.File {
-		if strings.HasSuffix(file.Name, ".ttf") {
-			f, err := file.Open()
-			if err != nil {
-				t.Fatal(err)
-			}
-			font, err = io.ReadAll(f)
-			f.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
-			break
-		}
-	}
-	if len(font) == 0 {
-		t.Fatal("缺少内嵌字体 fixture")
-	}
 	path := func(id int, box, ink, uri string) string {
 		action := ""
 		if uri != "" {
@@ -61,7 +38,8 @@ func layerTestPackage(t *testing.T) []byte {
 		"OFD.xml":          []byte(`<OFD Version="1.0"><DocBody><DocRoot>Doc/Document.xml</DocRoot></DocBody></OFD>`),
 		"Doc/Document.xml": []byte(`<Document><CommonData><MaxUnitID>999</MaxUnitID><PageArea><PhysicalBox>0 0 20 20</PhysicalBox></PageArea><DocumentRes>Res.xml</DocumentRes><TemplatePage ID="99" BaseLoc="Template.xml"/></CommonData><Pages><Page ID="1" BaseLoc="P1.xml"/><Page ID="2" BaseLoc="P2.xml"/></Pages><Annotations>Annotations.xml</Annotations></Document>`),
 		"Doc/Res.xml":      []byte(`<Res><Fonts><Font ID="1" FontName="LayerTest"><FontFile>font.ttf</FontFile></Font></Fonts></Res>`),
-		"Doc/font.ttf":     font, "Doc/P1.xml": []byte(page), "Doc/P2.xml": []byte(page),
+		// 使用覆盖测试文字的完整字体，避免子集字体缺字后依赖机器的回退字体。
+		"Doc/font.ttf": goregular.TTF, "Doc/P1.xml": []byte(page), "Doc/P2.xml": []byte(page),
 		"Doc/Template.xml":    []byte(`<Page><Content><Layer ID="20">` + path(41, "0 0 4 4", "0 255 0", "") + `</Layer></Content></Page>`),
 		"Doc/Annotations.xml": []byte(`<Annotations><Page PageID="1"><FileLoc>Annot.xml</FileLoc></Page></Annotations>`),
 		"Doc/Annot.xml":       []byte(`<PageAnnot><Annot ID="50" Type="Stamp" Creator="test" LastModDate="2026-01-01"><Appearance Boundary="16 16 4 4">` + path(51, "0 0 4 4", "255 0 255", "") + `</Appearance></Annot></PageAnnot>`),
@@ -341,7 +319,7 @@ func templateLayerTestPackage(t *testing.T) []byte {
 		if value == "foregroundword" {
 			y = 13
 		}
-		return fmt.Sprintf(`<TextObject ID="%d" Boundary="5 %d 15 2" Font="1" Size="2"><TextCode X="0" Y="2">%s</TextCode></TextObject>`, id, y, value)
+		return fmt.Sprintf(`<TextObject ID="%d" Boundary="5 %d 15 2" Font="1" Size="1.5"><TextCode X="0" Y="1.5">%s</TextCode></TextObject>`, id, y, value)
 	}
 	entries["Doc/Template.xml"] = []byte(strings.Replace(string(entries["Doc/Template.xml"]), `</Layer>`, text(45, "backgroundword")+`</Layer>`, 1))
 	entries["Doc/Template.xml"] = []byte(strings.Replace(string(entries["Doc/Template.xml"]), `<FillColor`, `<Actions><Action Event="CLICK"><URI URI="https://example.test/background"/></Action></Actions><FillColor`, 1))
@@ -368,6 +346,32 @@ func templateLayerTestPackage(t *testing.T) []byte {
 }
 
 func TestTemplateVisibilityIsPageScopedAndFiltersAllOutputs(t *testing.T) {
+	checkTemplateVisibilityOutputs(t)
+}
+
+// canvas 的系统字体列表属于进程全局状态；在子进程中清空，避免影响其他字体测试。
+func TestTemplateVisibilityWorksWithoutSystemFonts(t *testing.T) {
+	const isolated = "OFD_TEST_TEMPLATE_WITHOUT_SYSTEM_FONTS"
+	if os.Getenv(isolated) == "1" {
+		dir := t.TempDir()
+		if err := canvas.CacheSystemFonts(filepath.Join(dir, "fonts.cache"), []string{dir}); err != nil {
+			t.Fatal(err)
+		}
+		checkTemplateVisibilityOutputs(t)
+		return
+	}
+	if runtime.GOOS == "js" || runtime.GOOS == "wasip1" {
+		t.Skip("当前平台不支持子进程")
+	}
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestTemplateVisibilityWorksWithoutSystemFonts$", "-test.v")
+	cmd.Env = append(os.Environ(), isolated+"=1")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("无系统字体的模板输出失败: %v\n%s", err, output)
+	}
+}
+
+func checkTemplateVisibilityOutputs(t *testing.T) {
+	t.Helper()
 	r, err := Open(templateLayerTestPackage(t))
 	if err != nil {
 		t.Fatal(err)
