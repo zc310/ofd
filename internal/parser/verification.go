@@ -45,6 +45,8 @@ type SignatureVerificationResult struct {
 	Seal SignatureComponentResult
 	// Outer 是 SignedValue 外层签名结果。
 	Outer SignatureComponentResult
+	// Validation 汇总 GB/T 38540 的完整验证步骤；Valid 保留原有两层签名语义。
+	Validation *SignatureValidation `json:"validation,omitempty"`
 }
 
 // SignatureComponentResult 是一层签名的证书和数学验证结果。
@@ -108,6 +110,13 @@ type SignatureVerificationOptions struct {
 	Trust *CertificateTrustOptions
 	// Revocation 是可选的离线 CRL 吊销校验配置；为空时不执行吊销校验。
 	Revocation *CertificateRevocationOptions
+	// CurrentTime 是验证时钟；零值时使用当前时间。
+	CurrentTime time.Time
+	// SealStatus 返回印章在指定时刻的状态：good、revoked 或 unknown。
+	// 状态证据由调用方提供；解析器不会隐式联网。
+	SealStatus func(id string, at time.Time) (string, error)
+	// TimestampTrust 可为时间戳单独提供信任根；缺省时复用 Trust。
+	TimestampTrust *CertificateTrustOptions
 }
 
 // CertificateRevocationOptions 配置离线 CRL 吊销校验。
@@ -176,6 +185,7 @@ func verifySESSignedValue(value *SignedValue, trustOptions *CertificateTrustOpti
 		result.RevocationChecked = result.Seal.RevocationChecked && result.Outer.RevocationChecked
 		result.RevocationValid = result.Seal.RevocationStatus == "good" && result.Outer.RevocationStatus == "good"
 	}
+	result.Validation = validateSES(value.SES, result, verificationOptions, trustOptions)
 	return result, nil
 }
 
@@ -206,7 +216,14 @@ func verifySignatureComponent(certificateDER, signed, signature []byte, algorith
 		if revocationTime.IsZero() {
 			revocationTime = at
 		}
-		result.RevocationStatus, result.RevocationError = verifyCertificateRevocation(certificate, verificationOptions.Revocation, revocationTime, embeddedIntermediates)
+		evidenceTime := time.Now()
+		if !verificationOptions.CurrentTime.IsZero() {
+			evidenceTime = verificationOptions.CurrentTime
+		}
+		if !verificationOptions.Revocation.CurrentTime.IsZero() {
+			evidenceTime = verificationOptions.Revocation.CurrentTime
+		}
+		result.RevocationStatus, result.RevocationError = verifyCertificateRevocationAt(certificate, verificationOptions.Revocation, revocationTime, evidenceTime, embeddedIntermediates)
 	}
 	if !result.CertificateValid {
 		result.Error = fmt.Sprintf("证书在签名时间 %s 不在有效期内", at.Format(time.RFC3339))
@@ -240,6 +257,12 @@ func verifySignatureComponent(certificateDER, signed, signature []byte, algorith
 }
 
 func verifyCertificateRevocation(certificate *gmx509.Certificate, options *CertificateRevocationOptions, at time.Time, embeddedIssuers [][]byte) (string, string) {
+	return verifyCertificateRevocationAt(certificate, options, at, at, embeddedIssuers)
+}
+
+// at 是签章时刻，evidenceTime 是 CRL 的验证时钟。最新 CRL 可以晚于历史签章，
+// 但是否吊销必须按 RevocationTime 与签章时刻比较（GB/T 38540 §7.3 f）。
+func verifyCertificateRevocationAt(certificate *gmx509.Certificate, options *CertificateRevocationOptions, at, evidenceTime time.Time, embeddedIssuers [][]byte) (string, string) {
 	if len(options.CRLs) == 0 {
 		return "unknown", "未提供 CRL"
 	}
@@ -259,6 +282,7 @@ func verifyCertificateRevocation(certificate *gmx509.Certificate, options *Certi
 	if len(issuers) == 0 {
 		return "unknown", "未提供匹配的 CRL 签发者证书"
 	}
+	var newest *pkix.CertificateList
 	for _, crlDER := range options.CRLs {
 		crl, err := gmx509.ParseCRL(crlDER)
 		if err != nil {
@@ -273,6 +297,9 @@ func verifyCertificateRevocation(certificate *gmx509.Certificate, options *Certi
 			if !bytes.Equal(crlIssuer, issuer.RawSubject) {
 				continue
 			}
+			if certificate.CheckSignatureFrom(issuer) != nil || issuer.KeyUsage&gmx509.KeyUsageCRLSign == 0 {
+				continue
+			}
 			if err := issuer.CheckCRLSignature(crl); err != nil {
 				return "error", fmt.Sprintf("CRL 签名验证失败: %v", err)
 			}
@@ -282,17 +309,42 @@ func verifyCertificateRevocation(certificate *gmx509.Certificate, options *Certi
 		if !matchedIssuer {
 			continue
 		}
-		if at.Before(crl.TBSCertList.ThisUpdate) || (!crl.TBSCertList.NextUpdate.IsZero() && at.After(crl.TBSCertList.NextUpdate)) {
-			return "unknown", "CRL 不在校验时间有效期内"
+		if evidenceTime.Before(crl.TBSCertList.ThisUpdate) || (!crl.TBSCertList.NextUpdate.IsZero() && evidenceTime.After(crl.TBSCertList.NextUpdate)) {
+			continue
+		}
+		if crl.TBSCertList.NextUpdate.IsZero() || !crl.TBSCertList.NextUpdate.After(crl.TBSCertList.ThisUpdate) {
+			return "unknown", "CRL 缺少有效的下次更新时间"
+		}
+		// 本验证器只解释完整、直接签发的 CRL。增量或有范围限制的 CRL
+		// 不能以“序列号未出现”为依据证明证书未吊销（RFC 5280 §5）。
+		for _, extension := range crl.TBSCertList.Extensions {
+			if extension.Critical || extension.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 27}) || extension.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 28}) {
+				return "unknown", fmt.Sprintf("未支持的 CRL 关键扩展或范围扩展 %s", extension.Id)
+			}
 		}
 		for _, revoked := range crl.TBSCertList.RevokedCertificates {
+			for _, extension := range revoked.Extensions {
+				if extension.Critical || extension.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 29}) {
+					return "unknown", "未支持的 CRL 条目关键扩展或间接签发者"
+				}
+			}
+		}
+		if newest != nil && newest.TBSCertList.ThisUpdate.Equal(crl.TBSCertList.ThisUpdate) && !bytes.Equal(newest.TBSCertList.Raw, crl.TBSCertList.Raw) {
+			return "unknown", "相同发布时间存在内容冲突的 CRL"
+		}
+		if newest == nil || newest.TBSCertList.ThisUpdate.Before(crl.TBSCertList.ThisUpdate) {
+			newest = crl
+		}
+	}
+	if newest != nil {
+		for _, revoked := range newest.TBSCertList.RevokedCertificates {
 			if revoked.SerialNumber != nil && certificate.SerialNumber != nil && revoked.SerialNumber.Cmp(certificate.SerialNumber) == 0 && !at.Before(revoked.RevocationTime) {
 				return "revoked", fmt.Sprintf("证书已于 %s 吊销", revoked.RevocationTime.Format(time.RFC3339))
 			}
 		}
 		return "good", ""
 	}
-	return "unknown", "没有找到可验证的匹配 CRL"
+	return "unknown", "没有找到处于有效期内且可验证的匹配 CRL"
 }
 
 func signatureFormat(options *SignatureVerificationOptions) SM2SignatureFormat {
@@ -361,8 +413,16 @@ func parseSM2RawSignature(signature []byte) (*big.Int, *big.Int, SM2SignatureFor
 }
 
 func verifyCertificateChain(certificate *gmx509.Certificate, options *CertificateTrustOptions, at time.Time, embeddedIntermediates [][]byte) (bool, string) {
+	_, err := certificateChains(certificate, options, at, embeddedIntermediates)
+	if err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}
+
+func certificateChains(certificate *gmx509.Certificate, options *CertificateTrustOptions, at time.Time, embeddedIntermediates [][]byte) ([][]*gmx509.Certificate, error) {
 	if options.Roots == nil {
-		return false, "未提供证书信任根"
+		return nil, fmt.Errorf("未提供证书信任根")
 	}
 	intermediates := gmx509.NewCertPool()
 	allIntermediates := make([][]byte, 0, len(embeddedIntermediates)+len(options.Intermediates))
@@ -371,22 +431,18 @@ func verifyCertificateChain(certificate *gmx509.Certificate, options *Certificat
 	for _, certificateDER := range allIntermediates {
 		candidate, err := gmx509.ParseCertificate(certificateDER)
 		if err != nil {
-			return false, fmt.Sprintf("解析中间证书失败: %v", err)
+			return nil, fmt.Errorf("解析中间证书失败: %w", err)
 		}
 		if !bytes.Equal(candidate.Raw, certificate.Raw) {
 			intermediates.AddCert(candidate)
 		}
 	}
-	_, err := certificate.Verify(gmx509.VerifyOptions{
+	return certificate.Verify(gmx509.VerifyOptions{
 		Roots:         options.Roots,
 		Intermediates: intermediates,
 		CurrentTime:   at,
 		KeyUsages:     []gmx509.ExtKeyUsage{gmx509.ExtKeyUsageAny},
 	})
-	if err != nil {
-		return false, err.Error()
-	}
-	return true, ""
 }
 
 func sm2PublicKey(value any) (*ecdsa.PublicKey, error) {

@@ -128,6 +128,14 @@ func pdfReportLines(report Report) []string {
 		lines = append(lines, "## 签名")
 		for _, signature := range report.Signatures {
 			lines = append(lines, fmt.Sprintf("文档体 %d：%s，路径 %s，引用 %d，盖章 %d", signature.DocumentIndex, signature.ID, signature.Path, signature.ReferenceCount, signature.StampCount))
+			lines = append(lines, "完整验证："+signatureValidationLabel(signature))
+			if signature.Validation != nil {
+				for _, check := range signature.Validation.Checks {
+					if check.Status == "invalid" || check.Status == "incomplete" {
+						lines = append(lines, fmt.Sprintf("%s：%s %s", check.Code, check.Status, check.Message))
+					}
+				}
+			}
 		}
 	}
 	if len(report.Warnings) > 0 {

@@ -17,6 +17,7 @@ type SignatureStatus struct {
 	Verified bool
 	// VerificationError 是密码学验证的错误信息。
 	VerificationError string
+	Validation        *parser.SignatureValidation
 }
 
 // VerifySignatures 解析 OFD 并汇总每个签名的摘要与密码学验证状态。
@@ -40,6 +41,7 @@ func VerifySignatures(input any) ([]SignatureStatus, error) {
 			}
 			if verification := document.GetVerificationResult(id); verification != nil {
 				status.Verified = verification.Valid
+				status.Validation = verification.Validation
 			}
 			if verificationErr := document.GetVerificationError(id); verificationErr != nil {
 				status.VerificationError = verificationErr.Error()

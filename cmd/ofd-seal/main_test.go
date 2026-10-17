@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/asn1"
 	"image"
 	"image/color"
 	"image/png"
@@ -9,12 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/ses"
 )
 
 // TestRunProducesExtractableSeal 验证 ofd-seal 生成的文件能被阅读器解析，
-// 印章图片尺寸与原始 PNG 一致。
+// 图片像素保留原值，显示尺寸独立使用毫米。
 func TestRunProducesExtractableSeal(t *testing.T) {
 	dir := t.TempDir()
 	pngPath := filepath.Join(dir, "seal.png")
@@ -36,7 +39,7 @@ func TestRunProducesExtractableSeal(t *testing.T) {
 
 	outPath := filepath.Join(dir, "seal.esl")
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--image", pngPath, "--name", "测试印章", "--esid", "seal@ofd-seal.test", "--out", outPath}, &stdout, &stderr)
+	code := run([]string{"--image", pngPath, "--name", "测试印章", "--esid", "seal@ofd-seal.test", "--out", outPath, "--width-mm", "25", "--height-mm", "15", "--cert-digests"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
 	}
@@ -53,6 +56,77 @@ func TestRunProducesExtractableSeal(t *testing.T) {
 	}
 	if extracted.FileType != "png" {
 		t.Errorf("FileType = %q, 期望 png", extracted.FileType)
+	}
+	var seal ses.Seal
+	if _, err := asn1.Unmarshal(data, &seal); err != nil {
+		t.Fatal(err)
+	}
+	if seal.SealInfo.Picture.Width != 25 || seal.SealInfo.Picture.Height != 15 || seal.SealInfo.Property.CertificateType != 2 {
+		t.Fatal("毫米显示尺寸或授权证书杂凑参数未生效")
+	}
+	if err := ses.CertificateAuthorized(2, seal.SealInfo.Property.CertList.FullBytes, seal.Certificate); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunAuthorizesSeparateSignerCertificates(t *testing.T) {
+	dir := t.TempDir()
+	pngPath := filepath.Join(dir, "seal.png")
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pngPath, imageData.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var certificates [][]byte
+	args := []string{"--image", pngPath, "--out", filepath.Join(dir, "seal.esl")}
+	for _, name := range []string{"signer-a", "signer-b"} {
+		_, _, cert, err := ses.NewSelfSignedCertificate(name, "test", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, name+".der")
+		if err := os.WriteFile(path, cert, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		certificates = append(certificates, cert)
+		args = append(args, "--signer-cert", path)
+	}
+	for _, digestList := range []bool{false, true} {
+		invocation := append([]string(nil), args...)
+		if digestList {
+			invocation = append(invocation, "--cert-digests")
+		}
+		var stdout, stderr bytes.Buffer
+		if code := run(invocation, &stdout, &stderr); code != exitOK {
+			t.Fatalf("退出码=%d: %s", code, stderr.String())
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "seal.esl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var seal ses.Seal
+		if _, err := asn1.Unmarshal(data, &seal); err != nil {
+			t.Fatal(err)
+		}
+		for _, cert := range certificates {
+			if err := ses.CertificateAuthorized(int64(seal.SealInfo.Property.CertificateType), seal.SealInfo.Property.CertList.FullBytes, cert); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := ses.CertificateAuthorized(int64(seal.SealInfo.Property.CertificateType), seal.SealInfo.Property.CertList.FullBytes, seal.Certificate); err == nil {
+			t.Fatal("制章者不应自动加入显式授权列表")
+		}
+	}
+}
+
+func TestSealRejectsInvalidDisplayDimensions(t *testing.T) {
+	for _, args := range [][]string{{"--image", "x.png", "--width-mm", "0"}, {"--image", "x.png", "--height-mm", "-1"}} {
+		var out, diagnostics bytes.Buffer
+		if code := run(args, &out, &diagnostics); code != exitUsage {
+			t.Fatalf("无效毫米尺寸退出码=%d，期望参数错误", code)
+		}
 	}
 }
 

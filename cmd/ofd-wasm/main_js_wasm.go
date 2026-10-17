@@ -785,6 +785,13 @@ func (a *wasmApp) signatures(_ js.Value, _ []js.Value) any {
 			"has_data_hash":      info.HasDataHash,
 			"data_hash_match":    info.DataHashMatch,
 		}
+		if info.Validation != nil {
+			checks := js.Global().Get("Array").New(len(info.Validation.Checks))
+			for i, check := range info.Validation.Checks {
+				checks.SetIndex(i, objectValue(map[string]any{"code": check.Code, "status": check.Status, "message": check.Message}))
+			}
+			value["validation"] = objectValue(map[string]any{"status": info.Validation.Status, "checks": checks})
+		}
 		references := js.Global().Get("Array").New(len(info.References))
 		for refIndex, reference := range info.References {
 			references.SetIndex(refIndex, objectValue(map[string]any{

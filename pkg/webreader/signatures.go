@@ -104,6 +104,8 @@ type SignatureInfo struct {
 	TrustChecked    bool
 	// VerificationError 是验签错误信息，无错误时为空。
 	VerificationError string
+	// Validation 区分完整通过、失败和缺少验证证据。
+	Validation *parser.SignatureValidation
 	// Stamps 是签名关联的签章位置。
 	Stamps []SignatureStamp
 	// Certificates 是印章与外层两层的证书与验证明细。
@@ -245,6 +247,7 @@ func (r *Reader) computeSignatures() ([]SignatureInfo, error) {
 			if verification := document.GetVerificationResult(id); verification != nil {
 				info.HasVerification = true
 				info.Verified = verification.Valid
+				info.Validation = verification.Validation
 				info.Trusted = verification.Trusted
 				info.TrustChecked = verification.TrustChecked
 				info.Certificates = signatureCertificates(verification)

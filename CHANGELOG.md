@@ -11,6 +11,10 @@
 
 ## 未发布
 
+- `ofd-seal` 生成的 SES 印章图片显示尺寸按 GB/T 38540-2020 §6.1.2.5 使用毫米，
+  缺省为 40×40mm，可通过 `--width-mm`、`--height-mm` 设置；不再把图片像素数写入
+  毫米字段。印章图片本身的像素保持原尺寸。
+
 - PDF 导入保留显式图像插值行为：对 `Interpolate=true` 且不超过 64 像素的图像预放大，避免极小软掩码图像在 OFD 阅读器中呈现为色块。
 
 - PDF 导入增加可选 OpenJPEG JPX 解码后端；默认 Go 后端不变。OpenJPEG 需在 Linux 上安装 `libopenjp2` 开发文件和 `pkg-config`，并使用 `CGO_ENABLED=1` 与 `-tags openjpeg` 构建；`ofd-converter` 可用 `--pdf-jpx-backend` 选择。

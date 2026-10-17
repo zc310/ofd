@@ -2,6 +2,9 @@
 
 `ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于分析文档组成、页面对象、文字、资源、附件、注解、签名和引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。默认输出纯文本报告，也可输出 Markdown、JSON、PDF 和 XLSX 报告。
 
+JSON 报告的 `schema_version` 保持为 `1`，签名项增加 `validation` 完整验证结论与检查明细。
+文本、Markdown、PDF 和 XLSX 报告也展示完整结论；两层数学签名通过不代表完整验证通过。
+
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。分析结果不构成法律、合规、审计或安全结论。
 
 ## 构建
@@ -92,6 +95,12 @@ ofd-analyzer --tree --format json --pretty document.ofd
 其他扩展名仍默认使用 `text`。
 
 ## 报告
+
+签名报告新增 `validation`，包含完整验证状态 `valid`、`invalid` 或 `incomplete`，
+以及逐项 `checks`（`code`、`status`、`message`）；文本、Markdown、PDF 和 XLSX
+报告显示完整结论。两层签名的原有数学验证字段保留。缺少证书信任、吊销证据、
+印章状态或无法确认保护范围时，不会报告完整通过；完整配置入口见
+[`pkg/sign.Verify`](../../pkg/sign/README.md#完整验证)。
 
 XLSX 报告为 Excel 工作簿，包含「汇总」页，以及「文档体」「页面」「资源」「附件」「注解」「签名」
 「目录树」「文件引用」「ID 引用」等明细页。各明细页带有自动筛选和冻结表头，适合在 Excel 中进行

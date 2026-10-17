@@ -1,4 +1,4 @@
-package ses
+package ses_test
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/parser"
+	. "github.com/zc310/ofd/internal/ses"
 )
 
 // makeTestSealPNG 生成一枚 4x4 的红色 PNG 印章图。

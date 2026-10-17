@@ -21,28 +21,29 @@ const (
 )
 
 type options struct {
-	input         string
-	output        string
-	format        string
-	formatSet     bool
-	mode          string
-	font          string
-	maxErrors     int
-	maxInputSize  int64
-	maxFileSize   int64
-	maxTotalSize  int64
-	maxEntries    int
-	maxXMLBytes   int64
-	maxXMLNodes   int
-	maxXMLDepth   int
-	pretty        bool
-	skipXSD       bool
-	noDigest      bool
-	docType       string
-	noScanXML     bool
-	failOnWarning bool
-	version       bool
-	help          bool
+	input           string
+	output          string
+	format          string
+	formatSet       bool
+	mode            string
+	font            string
+	maxErrors       int
+	maxInputSize    int64
+	maxFileSize     int64
+	maxTotalSize    int64
+	maxEntries      int
+	maxXMLBytes     int64
+	maxXMLNodes     int
+	maxXMLDepth     int
+	pretty          bool
+	skipXSD         bool
+	noDigest        bool
+	checkSignatures bool
+	docType         string
+	noScanXML       bool
+	failOnWarning   bool
+	version         bool
+	help            bool
 }
 
 func main() {
@@ -82,6 +83,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		validator.WithDocType(opts.docType),
 		validator.WithScanXML(!opts.noScanXML),
 		validator.WithFailOnWarning(opts.failOnWarning),
+	}
+	if opts.checkSignatures {
+		validatorOptions = append(validatorOptions, validator.WithSignatureVerification(&validator.SignatureVerificationOptions{}))
 	}
 	instance, err := validator.New(validatorOptions...)
 	if err != nil {
@@ -158,6 +162,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.BoolVar(&opts.skipXSD, "skip-xsd", false, "跳过 XSD 校验；等价于 structural 模式的 XSD 阶段")
 	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-creator --doc-type 同义")
 	flags.BoolVar(&opts.noDigest, "no-digest", false, "跳过签名摘要校验")
+	flags.BoolVar(&opts.checkSignatures, "check-signatures", false, "执行 GB/T 38540 完整验签；缺少信任或状态证据时报告未完成")
 	flags.BoolVar(&opts.noScanXML, "no-scan-xml", false, "只解析由 OFD 引用到的 XML 文件")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出校验器版本")

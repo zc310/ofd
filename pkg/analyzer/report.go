@@ -8,6 +8,7 @@ import (
 
 	"github.com/goccy/go-json"
 
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/version"
 )
 
@@ -636,6 +637,8 @@ type SignatureInfo struct {
 	SealVerification *SignatureComponentInfo `json:"seal_verification,omitempty"`
 	// OuterVerification 是 SignedValue 外层签名验证结果。
 	OuterVerification *SignatureComponentInfo `json:"outer_verification,omitempty"`
+	// Validation 是完整标准验证的结论与逐项结果，缺少状态证据时为 incomplete。
+	Validation *parser.SignatureValidation `json:"validation,omitempty"`
 }
 
 // SignatureSealInfo 描述 SES SignedValue 中的印章主体信息。

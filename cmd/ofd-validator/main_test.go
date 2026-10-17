@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +34,17 @@ func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 		if opts.format != test.format {
 			t.Fatalf("format for %q = %q, want %s", output, opts.format, test.format)
 		}
+	}
+}
+
+func TestCompleteSignatureCheckReportsMissingEvidence(t *testing.T) {
+	var output, diagnostics bytes.Buffer
+	code := run([]string{"--mode", "structural", "--format", "json", "--check-signatures", "../../testdata/ofdrw/999.ofd"}, &output, &diagnostics)
+	if code != 1 {
+		t.Fatalf("缺少必要证据时退出码=%d：%s %s", code, output.String(), diagnostics.String())
+	}
+	if !strings.Contains(output.String(), "signature.incomplete.") || !strings.Contains(output.String(), `"name":"signatures"`) {
+		t.Fatalf("报告缺少完整验签明细: %s", output.String())
 	}
 }
 

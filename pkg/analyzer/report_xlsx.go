@@ -564,7 +564,7 @@ func writeAnalyzerXLSXAnnotations(file *excelize.File, report Report, styles ana
 }
 
 func writeAnalyzerXLSXSignatures(file *excelize.File, report Report, styles analyzerXLSXStyleSet) error {
-	header := []string{"文档体", "ID", "路径", "提供方", "签名时间", "引用", "盖章", "摘要", "摘要算法", "DataHash", "密码学验证", "内部签名", "外层签名", "证书信任", "吊销校验", "验证错误"}
+	header := []string{"文档体", "ID", "路径", "提供方", "签名时间", "引用", "盖章", "摘要", "摘要算法", "DataHash", "密码学验证", "内部签名", "外层签名", "证书信任", "吊销校验", "验证错误", "完整验证"}
 	rows := [][]string{}
 	for _, signature := range report.Signatures {
 		rows = append(rows, []string{
@@ -584,9 +584,10 @@ func writeAnalyzerXLSXSignatures(file *excelize.File, report Report, styles anal
 			trustVerificationLabel(signature),
 			revocationVerificationLabel(signature),
 			signature.VerificationError,
+			signatureValidationLabel(signature),
 		})
 	}
-	_, err := writeAnalyzerSheet(file, "签名", "OFD 签名", fmt.Sprintf("共 %d 个签名", len(report.Signatures)), header, rows, []float64{8, 14, 28, 20, 18, 8, 8, 10, 18, 10, 12, 12, 12, 12, 12, 36}, styles)
+	_, err := writeAnalyzerSheet(file, "签名", "OFD 签名", fmt.Sprintf("共 %d 个签名", len(report.Signatures)), header, rows, []float64{8, 14, 28, 20, 18, 8, 8, 10, 18, 10, 12, 12, 12, 12, 12, 36, 12}, styles)
 	return err
 }
 

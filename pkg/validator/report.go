@@ -41,6 +41,7 @@ const (
 	StageSemantic  Stage = "semantic"
 	StageProfile   Stage = "profile"
 	StageDigest    Stage = "digest"
+	StageSignature Stage = "signature"
 )
 
 // InputInfo 描述被校验的输入文件。
@@ -291,7 +292,7 @@ func checkStatusRank(status string) int {
 	switch status {
 	case "failed":
 		return 4
-	case "warning":
+	case "warning", "incomplete":
 		return 3
 	case "passed":
 		return 2
@@ -344,6 +345,8 @@ func stageLabel(stage Stage) string {
 		return "语义"
 	case StageDigest:
 		return "摘要"
+	case StageSignature:
+		return "签章验证"
 	default:
 		return string(stage)
 	}
@@ -365,6 +368,8 @@ func checkLabel(name string) string {
 		return "profile"
 	case "digest":
 		return "摘要"
+	case "signatures":
+		return "完整签章验证"
 	default:
 		return name
 	}
@@ -382,6 +387,8 @@ func checkStatusLabel(status string) string {
 		return "已跳过"
 	case "pending":
 		return "未执行"
+	case "incomplete":
+		return "未完成"
 	default:
 		return status
 	}

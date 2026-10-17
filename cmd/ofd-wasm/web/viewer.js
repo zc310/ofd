@@ -6473,11 +6473,28 @@ function buildSignatureItem(info, options = {}) {
   }
   if (info.has_digest) head.append(attachmentBadge(info.digest_valid ? '摘要一致' : '摘要不一致', info.digest_valid ? 'attachment-ok' : 'attachment-warn'));
   if (info.has_verification) {
-    head.append(attachmentBadge(info.verified ? '验签通过' : '验签失败', info.verified ? 'attachment-ok' : 'attachment-warn'));
+    head.append(attachmentBadge(info.verified ? '签名值通过' : '签名值失败', info.verified ? 'attachment-ok' : 'attachment-warn'));
     if (info.trust_checked) head.append(attachmentBadge(info.trusted ? '可信' : '未授信', info.trusted ? 'attachment-ok' : 'attachment-warn'));
     else head.append(attachmentBadge('未校验证书链', ''));
   }
   item.append(head);
+  if (info.validation) {
+    const labels = { valid: '完整验证通过', invalid: '完整验证失败', incomplete: '完整验证未完成' };
+    head.append(attachmentBadge(labels[info.validation.status] || '完整验证未完成', info.validation.status === 'valid' ? 'attachment-ok' : 'attachment-warn'));
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = '完整验证明细';
+    details.append(summary);
+    const checks = { 'ses.format': '签章格式', 'ses.extensions': '签章扩展', 'seal.signature': '印章签名', 'signer.signature': '签章签名', 'signer.authorization': '用章授权', 'seal.validity': '印章有效期', 'signing.time': '签章时间', 'seal.certificate_usage': '制章者证书用途', 'signer.certificate_usage': '签章者证书用途', 'certificates.trust': '证书信任链', 'certificates.revocation': '证书吊销状态', 'seal.status': '印章状态', timestamp: '时间戳', 'timestamp.signing_time': '时间戳时刻的签章者证书', 'document.integrity': '文档完整性' };
+    const states = { valid: '通过', invalid: '失败', incomplete: '未完成', not_applicable: '不适用' };
+    (Array.isArray(info.validation.checks) ? info.validation.checks : []).forEach(check => {
+      const row = document.createElement('p');
+      row.className = 'signature-ref';
+      row.textContent = `${checks[check.code] || '验证项目'}：${states[check.status] || '未完成'}${check.message ? `（${check.message}）` : ''}`;
+      details.append(row);
+    });
+    item.append(details);
+  }
   if (info.verification_error) {
     const error = document.createElement('p');
     error.className = 'outline-empty';

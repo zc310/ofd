@@ -16,12 +16,14 @@ import (
 	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
+	_ "golang.org/x/image/bmp"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"math/big"
 	"time"
+	"unicode/utf8"
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm3"
@@ -50,9 +52,9 @@ type Header struct {
 
 type Property struct {
 	Type            int
-	Name            string
+	Name            string `asn1:"utf8"`
 	CertificateType int
-	CertList        [][]byte
+	CertList        asn1.RawValue
 	CreateTime      time.Time `asn1:"generalized"`
 	ValidFrom       time.Time `asn1:"generalized"`
 	ValidTo         time.Time `asn1:"generalized"`
@@ -66,10 +68,18 @@ type Picture struct {
 }
 
 type SealInfo struct {
-	Header   Header
-	ESID     string `asn1:"ia5"`
-	Property Property
-	Picture  Picture
+	Header     Header
+	ESID       string `asn1:"ia5"`
+	Property   Property
+	Picture    Picture
+	Extensions []Extension `asn1:"optional"`
+}
+
+// Extension 对应 §6.1.2.6 的 ExtData，false 是 DER 中省略的默认值。
+type Extension struct {
+	OID      asn1.ObjectIdentifier
+	Critical bool `asn1:"optional,default:false"`
+	Value    []byte
 }
 
 // Seal 是 GB/T 38540 定义的 SES_Seal。Certificate 与 SignatureAlgorithm 是对
@@ -86,7 +96,8 @@ type TBSSign struct {
 	Seal         Seal
 	SignTime     time.Time `asn1:"generalized"`
 	DataHash     asn1.BitString
-	PropertyInfo string `asn1:"ia5"`
+	PropertyInfo string      `asn1:"ia5"`
+	Extensions   []Extension `asn1:"optional,explicit,tag:0"`
 }
 
 // SignedValue 对应 OFD SignedValue.dat 的外层结构（SES_Signature）。
@@ -95,6 +106,7 @@ type SignedValue struct {
 	Certificate        []byte
 	SignatureAlgorithm asn1.ObjectIdentifier
 	Signature          asn1.BitString
+	TimeStamp          asn1.BitString `asn1:"optional,explicit,tag:0"`
 }
 
 // SealParams 描述一枚待生成的电子印章。
@@ -109,10 +121,15 @@ type SealParams struct {
 	PictureType string
 	// PictureData 是印章图片的原始字节。
 	PictureData []byte
-	// Width、Height 是印章图片的宽高，必须与 PictureData 的实际尺寸一致。
+	// Width、Height 是显示宽高，单位毫米（§6.1.2.5），与像素尺寸无关。
 	Width  int
 	Height int
-	// ValidFrom、ValidTo 是印章的有效期；Max 为零值时使用一年有效期。
+	// SignerCertificates 是获授权的签章者证书；缺省时授权制章者证书。
+	SignerCertificates [][]byte
+	// SignerDigests 与 SignerCertificates 互斥，对应 certListType=2。
+	SignerDigests []CertificateDigest
+	Extensions    []Extension
+	// ValidFrom、ValidTo 是印章的有效期；零值时从 now 开始使用 DefaultValidity。
 	ValidFrom time.Time
 	ValidTo   time.Time
 }
@@ -137,6 +154,12 @@ func BuildSeal(params SealParams, certDER []byte, key *sm2.PrivateKey, now time.
 	if params.PictureType == "" || len(params.PictureData) == 0 {
 		return nil, fmt.Errorf("SealParams 必须携带印章图片")
 	}
+	if params.Name == "" || !utf8.ValidString(params.Name) {
+		return nil, fmt.Errorf("印章名称必须是非空的 UTF-8 字符串")
+	}
+	if params.Width <= 0 || params.Height <= 0 {
+		return nil, fmt.Errorf("印章显示宽高必须为正数（毫米）")
+	}
 	validFrom := params.ValidFrom
 	validTo := params.ValidTo
 	if validFrom.IsZero() {
@@ -146,8 +169,15 @@ func BuildSeal(params SealParams, certDER []byte, key *sm2.PrivateKey, now time.
 		validTo = validFrom.Add(10 * 365 * 24 * time.Hour)
 	}
 	// 提前校验证书可解析，避免一个无效证书在结构组装完之后才失败。
-	if _, err := gmx509.ParseCertificate(certDER); err != nil {
-		return nil, fmt.Errorf("解析证书 DER 失败: %w", err)
+	if err := ValidateSigningKey(certDER, key, now); err != nil {
+		return nil, err
+	}
+	if !validTo.After(validFrom) || now.Before(validFrom) || now.After(validTo) {
+		return nil, fmt.Errorf("印章有效期无效或不包含制作时间")
+	}
+	certType, certList, err := authorizationList(params, certDER)
+	if err != nil {
+		return nil, err
 	}
 	info := SealInfo{
 		Header: Header{ID: HeaderID, Version: SealVersion, VID: params.Provider},
@@ -155,13 +185,14 @@ func BuildSeal(params SealParams, certDER []byte, key *sm2.PrivateKey, now time.
 		Property: Property{
 			Type:            1,
 			Name:            params.Name,
-			CertificateType: 1,
-			CertList:        [][]byte{certDER},
+			CertificateType: certType,
+			CertList:        certList,
 			CreateTime:      now,
 			ValidFrom:       validFrom,
 			ValidTo:         validTo,
 		},
-		Picture: Picture{Type: params.PictureType, Data: params.PictureData, Width: params.Width, Height: params.Height},
+		Picture:    Picture{Type: params.PictureType, Data: params.PictureData, Width: params.Width, Height: params.Height},
+		Extensions: append([]Extension(nil), params.Extensions...),
 	}
 	infoDER, err := asn1.Marshal(info)
 	if err != nil {
@@ -189,8 +220,35 @@ func (s *Seal) MarshalDER() ([]byte, error) {
 // signatureXML 的 SM3 摘要写入 TBS_Sign.DataHash，propertyInfo 是签名 XML 的
 // 包内路径（例如 "/Doc_0/Signatures/Signature_sign-1.xml"）。
 func BuildSignedValue(signatureXML []byte, seal *Seal, certDER []byte, key *sm2.PrivateKey, propertyInfo string, now time.Time) ([]byte, error) {
+	return BuildSignedValueWithOptions(signatureXML, seal, certDER, key, propertyInfo, now, SigningOptions{})
+}
+
+// SigningOptions 为签署前的状态校验及可选时间戳提供调用方接入点。
+type SigningOptions struct {
+	Extensions []Extension
+	// Validate 用于签署前的证书信任、吊销及印章状态校验；返回错误时不签署。
+	Validate func(seal *Seal, signerCertificate []byte, at time.Time) error
+	// Timestamp 接收签名值字节，返回 DER 时间戳令牌（不是整个响应包）。
+	Timestamp func(signature []byte) ([]byte, error)
+}
+
+func BuildSignedValueWithOptions(signatureXML []byte, seal *Seal, certDER []byte, key *sm2.PrivateKey, propertyInfo string, now time.Time, options SigningOptions) ([]byte, error) {
 	if seal == nil {
 		return nil, fmt.Errorf("seal 不能为空")
+	}
+	if len(signatureXML) == 0 || propertyInfo == "" || !IsIA5(propertyInfo) {
+		return nil, fmt.Errorf("待签数据及 IA5 保护范围不能为空")
+	}
+	if err := ValidateSigningKey(certDER, key, now); err != nil {
+		return nil, err
+	}
+	if err := ValidateSealForSigner(seal, certDER, now); err != nil {
+		return nil, err
+	}
+	if options.Validate != nil {
+		if err := options.Validate(seal, append([]byte(nil), certDER...), now); err != nil {
+			return nil, err
+		}
 	}
 	publicKey := &key.PublicKey
 	dataHash := sm3.Sum(signatureXML)
@@ -200,6 +258,7 @@ func BuildSignedValue(signatureXML []byte, seal *Seal, certDER []byte, key *sm2.
 		SignTime:     now,
 		DataHash:     asn1.BitString{Bytes: dataHash[:], BitLength: len(dataHash) * 8},
 		PropertyInfo: propertyInfo,
+		Extensions:   append([]Extension(nil), options.Extensions...),
 	}
 	tbsDER, err := asn1.Marshal(tbs)
 	if err != nil {
@@ -214,6 +273,23 @@ func BuildSignedValue(signatureXML []byte, seal *Seal, certDER []byte, key *sm2.
 		Certificate:        certDER,
 		SignatureAlgorithm: algorithmOID,
 		Signature:          signature,
+	}
+	if options.Timestamp != nil {
+		token, err := options.Timestamp(append([]byte(nil), signature.Bytes...))
+		if err != nil {
+			return nil, fmt.Errorf("获取时间戳失败: %w", err)
+		}
+		if len(token) == 0 {
+			return nil, fmt.Errorf("时间戳服务返回空令牌")
+		}
+		proof, err := CheckTimestamp(token, signature.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		if proof.Time.Before(now) {
+			return nil, fmt.Errorf("时间戳时间早于签章时间")
+		}
+		signedValue.TimeStamp = asn1.BitString{Bytes: append([]byte(nil), token...), BitLength: len(token) * 8}
 	}
 	out, err := asn1.Marshal(signedValue)
 	if err != nil {

@@ -211,6 +211,18 @@ func writeSignaturesText(writer io.Writer, report Report) error {
 			}
 		}
 		if signature.VerificationChecked {
+			if signature.Validation != nil {
+				if _, err := fmt.Fprintf(writer, "    完整验证：%s\n", signatureValidationLabel(signature)); err != nil {
+					return err
+				}
+				for _, check := range signature.Validation.Checks {
+					if check.Status == "invalid" || check.Status == "incomplete" {
+						if _, err := fmt.Fprintf(writer, "      %s [%s]：%s\n", check.Code, check.Status, check.Message); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			if _, err := fmt.Fprintf(writer, "    密码学验证：%s，内部签名 %s，外层签名 %s，证书信任 %s，验证时间 %s\n", yesNoLabel(signature.VerificationValid), componentVerificationLabel(signature.SealVerification), componentVerificationLabel(signature.OuterVerification), trustVerificationLabel(signature), signature.VerificationTime); err != nil {
 				return err
 			}
@@ -545,7 +557,7 @@ func writeMarkdownAnnotations(writer io.Writer, report Report) error {
 }
 
 func writeMarkdownSignatures(writer io.Writer, report Report) error {
-	if _, err := io.WriteString(writer, "## 签名\n\n| 文档体 | ID | 路径 | 印章 ID | 印章名称 | 引用 | 盖章 | 摘要 | 算法 | DataHash | 密码学验证 | 内部签名 | 外层签名 | 证书信任 | 吊销校验 |\n| ---: | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- |\n"); err != nil {
+	if _, err := io.WriteString(writer, "## 签名\n\n| 文档体 | ID | 路径 | 印章 ID | 印章名称 | 引用 | 盖章 | 摘要 | 算法 | DataHash | 密码学验证 | 内部签名 | 外层签名 | 证书信任 | 吊销校验 | 完整验证 |\n| ---: | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"); err != nil {
 		return err
 	}
 	for _, signature := range report.Signatures {
@@ -553,12 +565,26 @@ func writeMarkdownSignatures(writer io.Writer, report Report) error {
 		if signature.SealInfo != nil {
 			sealID, sealName = signature.SealInfo.ID, signature.SealInfo.Name
 		}
-		if _, err := fmt.Fprintf(writer, "| %d | `%s` | `%s` | `%s` | `%s` | %d | %d | %s | `%s` | %s | %s | %s | %s | %s | %s |\n", signature.DocumentIndex, escapeMarkdown(signature.ID), escapeMarkdown(signature.Path), escapeMarkdown(sealID), escapeMarkdown(sealName), signature.ReferenceCount, signature.StampCount, digestCheckedLabel(signature), escapeMarkdown(signature.DigestMethod), dataHashMatchLabel(signature.DataHash), verificationCheckedLabel(signature), componentVerificationLabel(signature.SealVerification), componentVerificationLabel(signature.OuterVerification), trustVerificationLabel(signature), revocationVerificationLabel(signature)); err != nil {
+		if _, err := fmt.Fprintf(writer, "| %d | `%s` | `%s` | `%s` | `%s` | %d | %d | %s | `%s` | %s | %s | %s | %s | %s | %s | %s |\n", signature.DocumentIndex, escapeMarkdown(signature.ID), escapeMarkdown(signature.Path), escapeMarkdown(sealID), escapeMarkdown(sealName), signature.ReferenceCount, signature.StampCount, digestCheckedLabel(signature), escapeMarkdown(signature.DigestMethod), dataHashMatchLabel(signature.DataHash), verificationCheckedLabel(signature), componentVerificationLabel(signature.SealVerification), componentVerificationLabel(signature.OuterVerification), trustVerificationLabel(signature), revocationVerificationLabel(signature), signatureValidationLabel(signature)); err != nil {
 			return err
 		}
 	}
 	_, err := io.WriteString(writer, "\n")
 	return err
+}
+
+func signatureValidationLabel(signature SignatureInfo) string {
+	if signature.Validation == nil {
+		return "未执行"
+	}
+	switch signature.Validation.Status {
+	case "valid":
+		return "通过"
+	case "invalid":
+		return "失败"
+	default:
+		return "未完成"
+	}
 }
 
 func componentVerificationLabel(value *SignatureComponentInfo) string {
