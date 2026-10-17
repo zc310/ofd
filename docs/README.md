@@ -1,6 +1,6 @@
 # 文档目录
 
-本目录集中存放 OFD Go Toolkit 项目的格式支持文档、标准官方链接索引和运行截图。
+本目录提供 OFD Go Toolkit 的格式支持清单、库使用指南、维护文档、标准资料和运行截图索引。首次使用可从[主 README 的快速开始](../README.md#快速开始)进入。
 
 ## 支持清单
 
@@ -17,7 +17,11 @@
 
 | 文档 | 内容 |
 |------|------|
+| [转换 API 与示例](../pkg/converter/examples_test.go) | OFD 输出、格式导入、选页和 PDF 资源预算的可运行 Go 示例。 |
+| [按页阅读 API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader) | 页面渲染、文字、搜索、导航、版本与导出。 |
 | [创建器库指南](../pkg/creator/README.md) | Go 创建 API、文字定位、资源、页面组织、附加结构和流式创建。 |
+| [签署与验证指南](../pkg/sign/README.md) | 外部命令签署、SES 印章与签章生成、完整验证与证据配置。 |
+| [主 README 的 Go API 示例](../README.md#go-api) | 接入转换、按页阅读、创建、合并与签章。 |
 
 ## 开发与维护
 
@@ -26,6 +30,9 @@
 | 文档 | 内容 |
 |------|------|
 | [PDF 转换维护说明](../internal/pdf2ofd/README.md) | 转换链路、不变量、回归入口、外部字体、独立阅读器验证与依赖补丁。 |
+| [内嵌字体修复](../internal/fontrepair/README.md) | OpenType/CFF 格式依据、字形映射、稀疏 CID 兼容和回归入口。 |
+| [Adobe-GB1 映射数据](../internal/cidmap/README.md) | 字体修复与 PDF 提取共用的数据来源、许可及生成方法。 |
+| [WASM 构建与脚本测试](../cmd/ofd-wasm/web/README.md) | 浏览器 API、字体加载、缓存、构建和 Node 测试。 |
 
 ## 标准资料
 
@@ -56,4 +63,5 @@
 ## 相关链接
 
 - 项目主 README：[../README.md](../README.md)
-- 命令行工具说明：[cmd/ofd-converter/README.md](../cmd/ofd-converter/README.md)、[cmd/ofd-validator/README.md](../cmd/ofd-validator/README.md)、[cmd/ofd-analyzer/README.md](../cmd/ofd-analyzer/README.md)、[cmd/ofd-archive/README.md](../cmd/ofd-archive/README.md)、[cmd/ofd-creator/README.md](../cmd/ofd-creator/README.md)、[cmd/ofd-viewer/README.md](../cmd/ofd-viewer/README.md)、[cmd/ofd-wasm/README.md](../cmd/ofd-wasm/README.md)、[cmd/ofd-thumbnailer/README.md](../cmd/ofd-thumbnailer/README.md)
+- 命令行工具与阅读器：[完整文档入口](../README.md#支持清单与工具文档)
+- 已发布 API 的破坏性变更：[CHANGELOG.md](../CHANGELOG.md)，日常历史见 `git log`。
