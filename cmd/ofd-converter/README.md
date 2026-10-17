@@ -34,7 +34,8 @@ ofd-converter --help
 | `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
 | `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
-| `-dpi`                 | 输出分辨率 (1-1200)，默认 96                                                                                                                          |
+| `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
+| `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`gg`、`ftgg`、`tinyskia`、`draw2d` |
 | `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                                      |
 | `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                                               |
 | `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                                                |
@@ -93,6 +94,7 @@ ofd-converter --help
 | `-no-docx-images`                                                        | OFD → DOCX                        | 关闭图片内嵌                                         |
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
+| `-raster-backend`                                                        | OFD → PNG/JPG                     | 选择页面栅格化后端                                  |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
 | `-pdf-strict`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
@@ -235,7 +237,7 @@ ofd-converter input.ofd output.pdf
 
 ### OFD 转纯文本
 
-只提取页面中的文字内容，不保留字体、颜色和页面布局。文字对象按 Y 坐标聚成行、行内按 X 坐标排序，并根据水平位置用空格补位对齐列（CJK 等全角字符按两列宽度计算）；不同页面之间使用空行分隔。
+只提取页面中的文字内容，不保留字体、颜色和页面布局。文字对象按 Y 坐标聚成行、行内按 X 坐标排序，并根据水平位置用空格补位对齐列（CJK 等全角字符按两列宽度计算）；不同页面之间使用分页符 `\f` 分隔。
 
 ```bash
 ofd-converter input.ofd output.txt

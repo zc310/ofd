@@ -6,7 +6,7 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 
 ## 系统要求
 
-最低版本由 Go 工具链（见根目录 `go.mod`，构建使用 Go 1.26 系列）和固定的 Fyne 版本（当前 v2.8.1）共同决定；用更旧的工具链自行编译时下限会随之降低。桌面端还需要可用的图形环境（OpenGL）。
+系统支持范围由 Go 工具链和 Fyne 共同决定，依赖版本以根目录 [go.mod](../../go.mod) 为准。下表按官方 Go 工具链的支持范围列出，桌面端还需要可用的图形环境（OpenGL）。Windows 7 兼容工具链的试编译说明见[主 README](../../README.md#构建与打包)。
 
 | 平台    | 最低版本                                                               |
 |---------|------------------------------------------------------------------------|
@@ -115,7 +115,7 @@ Fyne 桌面程序依赖 CGO 和目标平台的图形开发库。Linux 目标需�
 
 Windows 版本使用 `-H=windowsgui` 编译，不显示命令行窗口。
 
-Android APK 需要安装 Fyne 命令行工具、Android SDK 和 NDK：
+Android APK 需要安装 Fyne 命令行工具、Android SDK 和 NDK。以下 Make 命令在仓库根目录执行：
 
 ```bash
 make package-viewer-android
