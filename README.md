@@ -20,6 +20,7 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 | **文档合并**   | ZIP 级多文档打包、模型级拼页和选页重排，支持签名处理和资源引用重映射                                     |
 | **OFD 校验**   | 基于 `OFD-Schema` 校验 ZIP、XML、引用和 XSD，并生成报告                                                   |
 | **OFD 分析**   | 深入分析文档结构、页面对象、文字、资源、附件、注解、签名和引用关系，支持报告                              |
+| **电子签章**   | 支持 GB/T 38540-2020 SES V4 的 SM2/SM3 印章、签章生成与验证，提供 Go API 和命令行工具                     |
 | **档案预检**   | 提供 OFD 档案预检、技术清单、归档准备目录和 SHA-256 固定性验证                                            |
 | **发票抽取**   | 增值税电子发票和铁路电子客票附件抽取，JSON/CSV/XLSX 汇总、去重、自校验和 PDF 合并打印                    |
 | **桌面阅读**   | 提供基于 Fyne 的 Linux、Windows OFD 桌面阅读器                                                            |
@@ -36,6 +37,7 @@ OFD 适用于电子证照、电子发票、数字档案、公文和其他需要�
 | Office 转 OFD/PDF（依赖 LibreOffice） | [Office 支持清单](docs/OFFICE-SUPPORT.md) |
 | HTML/MHTML 转 OFD/PDF（依赖 Chrome/Chromium） | [HTML 支持清单](docs/HTML-SUPPORT.md) |
 | 使用 Go API 创建 OFD | [创建器库指南](pkg/creator/README.md) |
+| 使用 Go API 生成和验证电子签章 | [签署与验证指南](pkg/sign/README.md) |
 | 标准资料、截图与开发维护说明 | [文档目录](docs/README.md) |
 
 支持清单区分已支持、部分支持和暂不支持，不代表完整的标准符合性认证。
@@ -328,6 +330,15 @@ func main() {
 需要重新签名时，`pkg/sign` 提供 `Sign`：为每个文档体计算引用摘要、生成 `Signature.xml`，把该文件交给外部命令并写回其输出的 `SignedValue.dat`；`Options.Deterministic` 固定重新打包的 ZIP 时间（配合固定的 `Options.Date` 可得到字节可复现的结果），命令行对应 `ofd-creator merge --sign-cmd --deterministic`，私钥与算法由外部命令负责。仓库包含最小示例签名器 [`cmd/ofd-signer-demo`](cmd/ofd-signer-demo)，用于演示 `--sign-cmd` 协议和 SES 结构（仅演示/测试，不可用于生产）。
 
 [`pkg/sign`](pkg/sign/README.md) 还提供 GB/T 38540-2020 SES V4 的 SM2/SM3 印章与签章生成，以及 `Verify` 完整验证接口，覆盖授权证书/证书杂凑列表、印章有效期与状态、证书用途/信任/吊销、原文绑定和可选时间戳。完整结论区分通过、失败和证据不足；证书信任根、CRL 及印章状态由应用提供。分析报告和浏览器签名面板展示该结论，校验器可通过 `--check-signatures` 启用对应检查。`ofd-seal` 的显示尺寸使用毫米，支持独立配置获授权签章者。
+
+欢迎使用自己的测试文档和证书试用，也可在 Go 项目中导入 `github.com/zc310/ofd/pkg/sign` 接入。命令行工具可在仓库根目录编译：
+
+```bash
+go build -o ofd-seal ./cmd/ofd-seal
+go build -o ofd-validator ./cmd/ofd-validator
+```
+
+第三方 TSA 服务的实际互操作尚未验证；试用中发现兼容性问题，欢迎通过 [Issues](https://github.com/zc310/ofd/issues/new) 反馈。
 
 ```go
 if err := merge.Pages([]merge.Source{{Path: "a.ofd"}, {Path: "b.ofd"}}, output, merge.PageOptions{}); err != nil {
