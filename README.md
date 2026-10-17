@@ -80,6 +80,14 @@ make package-viewer-android
 
 Linux 和 Windows 桌面版需要目标平台的图形开发环境；Windows 交叉编译需要 MinGW-w64。Android 版以 APK 形式安装，构建前需要配置 Android SDK、NDK 及 Fyne 命令行工具。
 
+Windows 7 用户可尝试使用 [XTLS/go-win7](https://github.com/XTLS/go-win7) 提供的兼容 Go 工具链自行编译，版本需满足 `go.mod` 的要求。以下为 Linux 下交叉编译 Windows x86_64 命令行工具的示例，将 `GO` 替换为该 SDK 中 `go` 的实际路径：
+
+```bash
+GOTOOLCHAIN=local make GO=/path/to/go-win7/bin/go GOOS=windows GOARCH=amd64 CGO_ENABLED=0 build-tools
+```
+
+`GOTOOLCHAIN=local` 用于固定兼容工具链。若遇到 `bcrypt.dll not found`，请检查系统是否安装了 KB2533623 或包含相应 DLL 加载功能的后续更新；桌面阅读器编译需 MinGW-w64，运行需 Universal CRT 和 OpenGL 驱动。具体功能的兼容性需在目标 Win7 环境中验证。
+
 ## WASM 浏览器阅读器
 
 项目提供无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm`](cmd/ofd-wasm)，支持在浏览器中解析、阅读、搜索、打印和导出文档。
