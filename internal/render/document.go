@@ -547,8 +547,9 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	var budget renderBudget
 	budget.reset()
 	box := *annot.Appearance.Boundary
+	highlight := annot.Type == models.AnnotTypeHighlight
 	for _, item := range annot.Appearance.Items {
-		p.annotItem(ctx, item, box, pb, &budget)
+		p.annotItem(ctx, item, box, pb, highlight, &budget)
 	}
 }
 
@@ -556,23 +557,27 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 // Appearance.Boundary 左上角，这里按 box 平移后再绘制；复合图元（如手写签名
 // 的矢量笔迹）与嵌套块同样要绘制，不能像以前那样被直接跳过。
 // budget 由 annot 创建并在整个外观的图元与嵌套块之间共享。
-func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox, budget *renderBudget) {
+func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox, highlight bool, budget *renderBudget) {
 	switch item.Kind {
 	case models.PageItemImage:
 		object := *item.Image
 		object.Boundary = object.Boundary.CopyAndShift(&box)
+		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
 	case models.PageItemPath:
 		object := *item.Path
 		object.Boundary = object.Boundary.CopyAndShift(&box)
+		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
 	case models.PageItemText:
 		object := *item.Text
 		object.Boundary = object.Boundary.CopyAndShift(&box)
+		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
 	case models.PageItemComposite:
 		object := *item.Composite
 		object.Boundary = object.Boundary.CopyAndShift(&box)
+		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
 		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, 0, budget)
 	case models.PageItemBlock:
 		if item.Block == nil {
@@ -580,7 +585,16 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 		}
 		// 块与子图元共用父级坐标系，因此仍以同一个 box 平移。
 		for _, child := range item.Block.Items {
-			p.annotItem(ctx, child, box, pb, budget)
+			p.annotItem(ctx, child, box, pb, highlight, budget)
 		}
 	}
+}
+
+// Highlight 注解的外观默认要透出正文；显式设置的较低不透明度保持不变。
+func highlightAnnotationAlpha(alpha *uint8, highlight bool) *uint8 {
+	if !highlight || (alpha != nil && *alpha != 255) {
+		return alpha
+	}
+	defaultOpacity := uint8(128)
+	return &defaultOpacity
 }
