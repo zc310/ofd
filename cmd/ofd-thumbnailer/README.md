@@ -37,4 +37,4 @@ ofd-thumbnailer <输入文件> <输出 PNG 路径> <长边像素>
 
 ## 截图
 
-![gnome.Nautilus.png](../../docs/screenshots/gnome.Nautilus.png)
+![gnome.Nautilus.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-thumbnailer-gnome.Nautilus.png)
