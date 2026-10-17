@@ -2,6 +2,7 @@ package render
 
 import (
 	"image"
+	"image/color"
 	"path/filepath"
 	"testing"
 
@@ -54,6 +55,56 @@ func TestSignoutStampCompositeAnnotationRendersInk(t *testing.T) {
 
 	if pixels := countNonWhite(rasterizer.Draw(c, canvas.DPI(200), canvas.DefaultColorSpace)); pixels < 100 {
 		t.Fatalf("手写签章注解只绘制了 %d 个非白像素", pixels)
+	}
+}
+
+func TestHighlightAnnotationDefaultsOpaqueAppearanceToTranslucent(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		typeName    models.AnnotType
+		alpha       *uint8
+		wantRedMin  uint8
+		wantRedMax  uint8
+		wantBlueMin uint8
+		wantBlueMax uint8
+	}{
+		{"highlight missing alpha", models.AnnotTypeHighlight, nil, 115, 140, 115, 140},
+		{"highlight opaque alpha", models.AnnotTypeHighlight, uint8ptr(255), 115, 140, 115, 140},
+		{"highlight explicit opacity", models.AnnotTypeHighlight, uint8ptr(128), 115, 140, 115, 140},
+		{"path remains opaque", models.AnnotTypePath, uint8ptr(255), 0, 10, 245, 255},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pathData, err := models.ParsePathData("M 0 0 L 10 0 L 10 10 L 0 10 C")
+			if err != nil {
+				t.Fatal(err)
+			}
+			annotation := &models.Annot{
+				Type: tc.typeName,
+				Appearance: &models.Appearance{
+					Boundary: &models.StBox{Width: 10, Height: 10},
+					CTPageBlock: models.CTPageBlock{Items: []models.PageItem{{
+						Kind: models.PageItemPath,
+						Path: &models.PathObject{CtPath: models.CtPath{
+							CTGraphicUnit:   models.CTGraphicUnit{Boundary: models.StBox{Width: 10, Height: 10}, Alpha: tc.alpha},
+							Fill:            true,
+							FillColor:       &models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}},
+							AbbreviatedData: pathData,
+						}},
+					}}},
+				},
+			}
+
+			canvasImage := canvas.New(10, 10)
+			ctx := canvas.NewContext(canvasImage)
+			ctx.SetFillColor(color.RGBA{R: 255, A: 255})
+			ctx.DrawPath(0, 0, canvas.Rectangle(10, 10))
+			(&Document{}).Annot(newCanvasBackend(ctx), annotation, models.StBox{Width: 10, Height: 10})
+
+			pixel := color.NRGBAModel.Convert(rasterizer.Draw(canvasImage, canvas.DPI(72), canvas.DefaultColorSpace).At(5, 5)).(color.NRGBA)
+			if pixel.R < tc.wantRedMin || pixel.R > tc.wantRedMax || pixel.B < tc.wantBlueMin || pixel.B > tc.wantBlueMax {
+				t.Fatalf("center pixel=%v, want red %d..%d blue %d..%d", pixel, tc.wantRedMin, tc.wantRedMax, tc.wantBlueMin, tc.wantBlueMax)
+			}
+		})
 	}
 }
 
