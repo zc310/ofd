@@ -16,8 +16,10 @@ import (
 // GlyphIndex/Fill/ShapedRun 等），以及 Fonts.FaceObject、buildTextFace、
 // textFontStyle、directTextPath 与中性/ canvas 字体样式转换。
 
+// shapedTextPath 缓存按字体、字号、样式与文本计算的轮廓；返回路径只读，
+// 跨对象复用时不能原地变换。缓存有界，关闭后不再保存计算结果。
 func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path {
-	if face == nil || face.Font == nil || value == "" {
+	if face == nil || face.Font == nil || value == "" || p.isClosed() {
 		return nil
 	}
 	key := fontPathKey{font: face.Font, size: face.Size, style: drawing.FontStyle(face.Style), variant: face.Variant, value: value}
@@ -32,6 +34,10 @@ func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path
 	if path == nil || path.Empty() {
 		p.pathCacheMu.Unlock()
 		return nil
+	}
+	if p.isClosed() {
+		p.pathCacheMu.Unlock()
+		return path
 	}
 	if len(p.pathCache) >= 2048 {
 		p.pathCache = make(map[fontPathKey]*canvas.Path)
@@ -72,6 +78,10 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 		}
 	}
 	line := canvas.NewTextLine(face, value, canvas.Left)
+	if p.isClosed() {
+		p.textLineMu.Unlock()
+		return line
+	}
 	if len(p.textLineCache) >= 2048 {
 		p.textLineCache = make(map[textLineKey]*canvas.Text)
 	} else if p.textLineCache == nil {
@@ -143,6 +153,10 @@ func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 	p.textWidthMu.Unlock()
 	width := face.TextWidth(value)
 	p.textWidthMu.Lock()
+	if p.isClosed() {
+		p.textWidthMu.Unlock()
+		return width
+	}
 	if p.textWidthCache == nil || len(p.textWidthCache) >= maxTextWidthCacheEntries {
 		p.textWidthCache = make(map[textWidthKey]float64)
 	}

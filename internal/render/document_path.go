@@ -434,7 +434,7 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 		if !finiteMatrix(matrix) {
 			continue
 		}
-		region := outline.Transform(matrix)
+		region := outline.Copy().Transform(matrix)
 		if region == nil || region.Empty() {
 			continue
 		}

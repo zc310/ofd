@@ -150,7 +150,7 @@ func extendBits(extend int) [2]bool {
 // Direct 轴向渐变与非焦点径向渐变转为带 Extend 位的原生 Linear/RadialGradient，
 // 从而让文字保留真实文本 + 原生 /Shading（PDF 中可复制）。Repeat/Reflect、
 // 椭圆、焦点径向等无法原生表达时返回 nil，由调用方走栅格化。
-func (p *Document) textShadingGradient(source *models.CTColor) geom.Gradient {
+func (p *Document) textShadingGradient(source *models.CTColor, objectAlpha *uint8) geom.Gradient {
 	if source == nil {
 		return nil
 	}
@@ -166,7 +166,7 @@ func (p *Document) textShadingGradient(source *models.CTColor) geom.Gradient {
 		gradient := geom.NewLinearGradient(start, end)
 		addOFDGradientStops(&gradient.Grad, shd.Segment, p.colorRGBA)
 		gradient.Extend = extendBits(shd.Extend)
-		return gradient
+		return scaleTextGradientOpacity(gradient, source.Alpha, objectAlpha)
 	}
 	if shd := source.RadialShd; shd != nil {
 		if shd.MapType == "Repeat" || shd.MapType == "Reflect" || shd.Eccentricity > 0 || shd.Angle != 0 {
@@ -185,9 +185,16 @@ func (p *Document) textShadingGradient(source *models.CTColor) geom.Gradient {
 		gradient := geom.NewRadialGradient(c0, shd.StartRadius, c1, shd.EndRadius)
 		addOFDGradientStops(&gradient.Grad, shd.Segment, p.colorRGBA)
 		gradient.Extend = extendBits(shd.Extend)
-		return gradient
+		return scaleTextGradientOpacity(gradient, source.Alpha, objectAlpha)
 	}
 	return nil
+}
+
+func scaleTextGradientOpacity(gradient geom.Gradient, colorAlpha, objectAlpha *uint8) geom.Gradient {
+	if colorAlpha != nil {
+		gradient = scaleGradientOpacity(gradient, *colorAlpha)
+	}
+	return scaleGradientOpacity(gradient, graphicOpacity(objectAlpha))
 }
 
 // isAxialRadialShading 判断颜色是否使用轴向或径向着色渐变。

@@ -76,7 +76,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	// Repeat/Reflect、椭圆、焦点径向、网格等仍走栅格化。
 	if fill != nil {
 		if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && isAxialRadialShading(source) {
-			if gradient := p.textShadingGradient(source); gradient != nil {
+			if gradient := p.textShadingGradient(source, object.Alpha); gradient != nil {
 				fill.Gradient = gradient
 			}
 		}

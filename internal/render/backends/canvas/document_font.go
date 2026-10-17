@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/zc310/canvas"
@@ -146,8 +147,9 @@ type Fonts struct {
 	embeddedRepairers map[[sha256.Size]byte]*fontrepair.Repairer
 	pathCacheMu       sync.Mutex
 	pathCache         map[fontPathKey]*canvas.Path
-	// closed 标记 Close 已调用，重复调用直接返回。
-	closed         bool
+	// closed 在关闭开始时置位。各缓存持有自己的锁时也可检查，
+	// 避免为了拒绝关闭后的发布而反向获取实例锁。
+	closed         atomic.Bool
 	textLineMu     sync.Mutex
 	textLineCache  map[textLineKey]*canvas.Text
 	textWidthMu    sync.Mutex
@@ -282,7 +284,7 @@ func (p *Fonts) RegisterGlyphs(id models.StRefID, pairs map[rune]uint16) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed {
+	if p.isClosed() {
 		return
 	}
 	mapping := p.glyphMappings[id]
@@ -332,10 +334,20 @@ func (p *Fonts) loadLock(id models.StRefID) *sync.Mutex {
 	return lock
 }
 
+func (p *Fonts) isClosed() bool {
+	return p.closed.Load()
+}
+
 func (p *Fonts) RenderLock(handle drawing.FontFamily) *sync.Mutex {
 	family, ok := handle.(*canvas.FontFamily)
 	if !ok || family == nil {
 		return &sync.Mutex{}
+	}
+	p.renderLocksMu.Lock()
+	lock := p.renderLocks[family]
+	p.renderLocksMu.Unlock()
+	if lock != nil {
+		return lock
 	}
 	fontCacheMu.Lock()
 	for _, registration := range fallbackRegistry {
@@ -352,21 +364,19 @@ func (p *Fonts) RenderLock(handle drawing.FontFamily) *sync.Mutex {
 	fontCacheMu.Unlock()
 	p.renderLocksMu.Lock()
 	defer p.renderLocksMu.Unlock()
+	if p.isClosed() {
+		return &sync.Mutex{}
+	}
 	if p.renderLocks == nil {
 		p.renderLocks = make(map[*canvas.FontFamily]*sync.Mutex)
 	}
 	if lock := p.renderLocks[family]; lock != nil {
 		return lock
 	}
-	lock := &sync.Mutex{}
+	lock = &sync.Mutex{}
 	p.renderLocks[family] = lock
 	return lock
 }
-
-// shapedTextPath 返回 (face, value) 拍平后的字形轮廓路径，带正文级缓存。
-// 相同字体数据 + 字号 + 样式 + 文本的轮廓对完全相同，直接复用可避免对
-// 重复字符串反复整形与解析字形轮廓。返回的 canvas.Path 不可变，跨对象
-// 复用安全；缓存有界，超出后整体清空。
 
 // Close 释放本实例持有的全部字体族引用。
 //
@@ -381,11 +391,11 @@ func (p *Fonts) Close() {
 		return
 	}
 	p.mu.Lock()
-	if p.closed {
+	if p.isClosed() {
 		p.mu.Unlock()
 		return
 	}
-	p.closed = true
+	p.closed.Store(true)
 	// 逐族放手，否则注册表的引用计数只增不减，字体字节永远等不到释放。
 	// 调用方没声明删除时 releaseFallbackFamily 只减计数不删表，行为不变。
 	fontCacheMu.Lock()
@@ -397,8 +407,17 @@ func (p *Fonts) Close() {
 	p.fallbacks = map[string]*canvas.FontFamily{}
 	p.fallbackFaces = nil
 	p.glyphCollections = nil
-	p.pathCache = map[fontPathKey]*canvas.Path{}
 	p.mu.Unlock()
+
+	p.pathCacheMu.Lock()
+	p.pathCache = map[fontPathKey]*canvas.Path{}
+	p.pathCacheMu.Unlock()
+	p.textLineMu.Lock()
+	p.textLineCache = map[textLineKey]*canvas.Text{}
+	p.textLineMu.Unlock()
+	p.textWidthMu.Lock()
+	p.textWidthCache = map[textWidthKey]float64{}
+	p.textWidthMu.Unlock()
 
 	// 内嵌字体与修复器只属于本实例，清空即可回收（返回的回退族由全局注册表持有，
 	// 不在此列）。置为空表而非 nil，避免关闭后仍有并发访问时向 nil map 写入 panic。
@@ -406,6 +425,9 @@ func (p *Fonts) Close() {
 	p.embeddedFonts = map[embeddedFontKey]*canvas.FontFamily{}
 	p.embeddedRepairers = make(map[[sha256.Size]byte]*fontrepair.Repairer)
 	p.embeddedMu.Unlock()
+	p.renderLocksMu.Lock()
+	p.renderLocks = make(map[*canvas.FontFamily]*sync.Mutex)
+	p.renderLocksMu.Unlock()
 
 	releaseSystemFonts(p)
 }
@@ -455,6 +477,9 @@ func loadCachedSystemFont(p *Fonts, name string, style drawing.FontStyle) (*canv
 
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
+	if p.isClosed() {
+		return nil, false
+	}
 	if entry := systemFontCache[key]; entry != nil {
 		entry.retain(p)
 		slog.Debug("reuse system font", "family", name, "file", filename, "style", style)
@@ -485,6 +510,9 @@ func loadCachedFontFile(p *Fonts, filename, name string, style drawing.FontStyle
 	}
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
+	if p.isClosed() {
+		return nil, false
+	}
 	if entry := systemFontCache[key]; entry != nil {
 		entry.retain(p)
 		return entry.family, true
@@ -553,6 +581,10 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 		mappingsDigest: hashGlyphMappings(mappings),
 	}
 	p.embeddedMu.Lock()
+	if p.isClosed() {
+		p.embeddedMu.Unlock()
+		return nil, fmt.Errorf("字体上下文已关闭")
+	}
 	if family := p.embeddedFonts[key]; family != nil {
 		p.embeddedMu.Unlock()
 		return family, nil
@@ -572,6 +604,10 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 		return nil, err
 	}
 	p.embeddedMu.Lock()
+	if p.isClosed() {
+		p.embeddedMu.Unlock()
+		return nil, fmt.Errorf("字体上下文已关闭")
+	}
 	if existing := p.embeddedFonts[key]; existing != nil {
 		p.embeddedMu.Unlock()
 		return existing, nil
@@ -594,6 +630,10 @@ func embeddedRepairer(p *Fonts, data []byte) *fontrepair.Repairer {
 
 	repairer := fontrepair.NewRepairer(data)
 	p.embeddedMu.Lock()
+	if p.isClosed() {
+		p.embeddedMu.Unlock()
+		return repairer
+	}
 	if existing := p.embeddedRepairers[digest]; existing != nil {
 		p.embeddedMu.Unlock()
 		return existing
@@ -713,6 +753,10 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 
 	for {
 		p.mu.Lock()
+		if p.isClosed() {
+			p.mu.Unlock()
+			return nil, fmt.Errorf("字体上下文已关闭")
+		}
 		if family := p.Fonts[id]; family != nil {
 			p.mu.Unlock()
 			return family, nil
@@ -728,6 +772,11 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 		family, fallbackName, err := p.loadFontUncached(id, ft, fallbacks)
 
 		p.mu.Lock()
+		if p.isClosed() {
+			p.mu.Unlock()
+			releaseSystemFonts(p)
+			return nil, fmt.Errorf("字体上下文已关闭")
+		}
 		if generation != p.generation {
 			p.mu.Unlock()
 			continue
@@ -941,6 +990,9 @@ func (p *Fonts) RemoveFallbackFont(family string) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.isClosed() {
+		return
+	}
 	if _, ok := p.fallbacks[family]; !ok && !p.hasFallbackFace(family, drawing.FontRegular) {
 		return
 	}
@@ -968,27 +1020,38 @@ func (p *Fonts) UseFallbackFont(family string) error {
 		return fmt.Errorf("回退字体族名为空")
 	}
 
-	fontCacheMu.Lock()
-	reg := fallbackRegistry[family]
-	fontCacheMu.Unlock()
-	if reg == nil {
-		return fmt.Errorf("回退字体族 %q 未注册", family)
-	}
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.fallbacks[family] == reg.family && p.hasAllFallbackFaces(family, reg.sources) {
+	if p.isClosed() {
+		return fmt.Errorf("字体上下文已关闭")
+	}
+	// 与关闭、移除保持实例锁→全局缓存锁的顺序；选取字体和取得引用
+	// 在同一临界区完成，不能把旧快照的引用登记到同名的新注册条目。
+	fontCacheMu.Lock()
+	defer fontCacheMu.Unlock()
+	reg := fallbackRegistry[family]
+	if reg == nil || reg.family == nil || len(reg.sources) == 0 {
+		return fmt.Errorf("回退字体族 %q 未注册", family)
+	}
+	globalFamily, sources := reg.family, reg.sources
+	if p.fallbacks[family] == globalFamily && p.hasAllFallbackFaces(family, sources) {
 		// 该实例已应用全局字体族，无需再次登记。
 		return nil
 	}
-	p.fallbacks[family] = reg.family
-	for _, source := range reg.sources {
-		p.applyFallbackFace(family, source.style, reg.family)
+	alreadyHeld := p.fallbacks[family] != nil
+	p.fallbacks[family] = globalFamily
+	for _, source := range sources {
+		p.applyFallbackFace(family, source.style, globalFamily)
 	}
 	// 登记持有：注册表据此判断字节何时可以真正释放。
-	fontCacheMu.Lock()
-	acquireFallbackFamily(family)
-	fontCacheMu.Unlock()
+	if !alreadyHeld {
+		acquireFallbackFamily(family)
+	}
+	// 新样式可能重建全局字体族，已有页面仍引用旧族；各实例保留原渲染锁，
+	// 让新旧字体面都按同一注册条目的锁串行绘制，关闭时一并清理。
+	p.renderLocksMu.Lock()
+	p.renderLocks[globalFamily] = reg.renderMu
+	p.renderLocksMu.Unlock()
 	// 回退集合变化后需重建按字体 ID 的解析缓存。
 	p.Fonts = make(map[models.StRefID]*canvas.FontFamily)
 	p.fallbackByFont = make(map[models.StRefID]string)
@@ -1087,21 +1150,58 @@ func UnregisterFallbackFont(family string) error {
 // 构建包含全部来源的全局多样式家族，同样只构建一次。
 func registerFallbackFamily(family string, style drawing.FontStyle, data []byte) (*canvas.FontFamily, error) {
 	digest := sha256.Sum256(data)
-	fontCacheMu.Lock()
-	defer fontCacheMu.Unlock()
-
-	reg := fallbackRegistry[family]
-	if reg == nil {
-		reg = &fallbackRegistration{renderMu: &sync.Mutex{}}
-		fallbackRegistry[family] = reg
-	}
-	for _, source := range reg.sources {
-		if source.style == style && source.digest == digest {
-			return reg.family, nil
+	var reg *fallbackRegistration
+	for {
+		fontCacheMu.Lock()
+		reg = fallbackRegistry[family]
+		if reg == nil {
+			// 首次加载没有已发布的渲染对象，无需等待渲染锁；成功后才发布，
+			// 失败时也不会让其他线程看到没有字体面的注册条目。
+			fontFamily := canvas.NewFontFamily(cssFontFamilyName(family))
+			if err := loadFallbackFace(fontFamily, data, style); err != nil {
+				fontCacheMu.Unlock()
+				return nil, err
+			}
+			reg = &fallbackRegistration{
+				family: fontFamily, renderMu: &sync.Mutex{},
+				sources: []fallbackFontSource{{data: data, style: style, digest: digest}},
+			}
+			fallbackRegistry[family] = reg
+			fontCacheMu.Unlock()
+			return fontFamily, nil
 		}
-	}
+		for _, source := range reg.sources {
+			if source.style == style && source.digest == digest {
+				reg.dropped = false
+				fontFamily := reg.family
+				fontCacheMu.Unlock()
+				return fontFamily, nil
+			}
+		}
+		renderMu := reg.renderMu
+		fontCacheMu.Unlock()
 
-	reg.renderMu.Lock()
+		// 渲染持有 renderMu 时可能查询全局缓存；等待渲染锁前必须释放
+		// fontCacheMu，避免与缺字回退的字体查询互相等待。
+		renderMu.Lock()
+		fontCacheMu.Lock()
+		if fallbackRegistry[family] != reg {
+			fontCacheMu.Unlock()
+			renderMu.Unlock()
+			continue
+		}
+		for _, source := range reg.sources {
+			if source.style == style && source.digest == digest {
+				reg.dropped = false
+				fontFamily := reg.family
+				fontCacheMu.Unlock()
+				renderMu.Unlock()
+				return fontFamily, nil
+			}
+		}
+		break
+	}
+	defer fontCacheMu.Unlock()
 	defer reg.renderMu.Unlock()
 	fontFamily := reg.family
 	if len(reg.sources) == 0 || !sameFallbackFontData(reg.sources, digest) {
@@ -1122,6 +1222,7 @@ func registerFallbackFamily(family string, style drawing.FontStyle, data []byte)
 		return nil, err
 	}
 	reg.family = fontFamily
+	reg.dropped = false
 	// 字体数据由调用方（webreader.Reader）持有，注册表只保留引用，整个进程
 	// 只保存一份字体字节。
 	reg.sources = append(reg.sources, fallbackFontSource{data: data, style: style, digest: digest})

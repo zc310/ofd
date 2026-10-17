@@ -54,7 +54,7 @@ func (p *Fonts) contentGlyphs(content *models.Content) glyphCollection {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed {
+	if p.isClosed() {
 		return nil
 	}
 	if p.glyphCollections == nil {

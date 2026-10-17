@@ -107,7 +107,7 @@ func (d *canvasPDFDocument) AddPage(page drawing.VectorSurface, links []drawing.
 	} else {
 		d.doc.NewPage(surface.c.W, surface.c.H)
 	}
-	surface.c.RenderTo(d.doc)
+	surface.c.RenderTo(pdfTextRenderer{PDF: d.doc, width: surface.c.W, height: surface.c.H})
 	// 链接注解必须挂在当前页上：canvas 在 NewPage/Close 时才把页对象写出，所以只能在
 	// RenderTo 之后、开下一页之前添加，本文件的 AddPage 恰好圈定了这个窗口。
 	for _, link := range links {

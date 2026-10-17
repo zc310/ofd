@@ -1,18 +1,20 @@
 package canvas
 
 import (
+	"crypto/sha256"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"unsafe"
 
-	"crypto/sha256"
 	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
-	"strings"
+	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 func TestCJKFontGroupMapsLogicalFamilyToSystemGroup(t *testing.T) {
@@ -561,6 +563,78 @@ func TestFallbackFontKeepsRegularAndBoldFaces(t *testing.T) {
 	}
 }
 
+func TestUseFallbackFontDoesNotAcquireAgainForNewStyle(t *testing.T) {
+	regular, bold := goregular.TTF, gobold.TTF
+	family := "UseFallbackStyleRefCount"
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	defer UnregisterFallbackFont(family)
+	useFallback(t, fonts, regular, family, FontRegular)
+
+	fontCacheMu.Lock()
+	refs := fallbackRegistry[family].refs
+	fontCacheMu.Unlock()
+	if refs != 1 {
+		t.Fatalf("initial fallback refs = %d, want 1", refs)
+	}
+	if err := registerFallbackFont(bold, family, FontBold); err != nil {
+		t.Fatal(err)
+	}
+	if err := fonts.UseFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+
+	fontCacheMu.Lock()
+	refs = fallbackRegistry[family].refs
+	fontCacheMu.Unlock()
+	if refs != 1 {
+		t.Fatalf("adding a style incremented the same instance ref: got %d, want 1", refs)
+	}
+	fonts.Close()
+	if err := fonts.UseFallbackFont(family); err == nil {
+		t.Fatal("Close 后 UseFallbackFont 应返回错误")
+	}
+	fontCacheMu.Lock()
+	reg := fallbackRegistry[family]
+	if reg != nil && reg.refs != 0 {
+		t.Errorf("Close left fallback refs at %d", reg.refs)
+	}
+	fontCacheMu.Unlock()
+}
+
+func TestFallbackRegistrationAndUseFallbackConcurrent(t *testing.T) {
+	regular, bold := goregular.TTF, gobold.TTF
+	family := "ConcurrentUseFallbackRegistration"
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	defer UnregisterFallbackFont(family)
+	useFallback(t, fonts, regular, family, FontRegular)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := registerFallbackFont(bold, family, FontBold); err != nil {
+				t.Errorf("register fallback style: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := fonts.UseFallbackFont(family); err != nil {
+				t.Errorf("apply fallback family: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	fontCacheMu.Lock()
+	reg := fallbackRegistry[family]
+	if reg == nil || len(reg.sources) != 2 || reg.refs != 1 {
+		t.Errorf("unexpected fallback registration state: reg=%v", reg)
+	}
+	fontCacheMu.Unlock()
+}
+
 func TestIsFixedWidthNameRecognizesMonospaceFamilies(t *testing.T) {
 	for _, name := range []string{"monospace", "DejaVu Sans Mono", "Consolas", "Menlo", "Courier New", "Noto Sans Mono CJK SC"} {
 		if !isFixedWidthName(name) {
@@ -967,4 +1041,29 @@ func TestCloseReleasesEmbeddedFonts(t *testing.T) {
 	}
 	// 幂等：重复关闭不应出问题。
 	fonts.Close()
+}
+
+func TestCloseClearsShapingCachesAndRejectsFontLoads(t *testing.T) {
+	fonts := NewFonts(nil)
+	fonts.pathCache[fontPathKey{value: "outline"}] = nil
+	fonts.textLineCache = map[textLineKey]*canvas.Text{{value: "line"}: nil}
+	fonts.textWidthCache = map[textWidthKey]float64{{value: "width"}: 1}
+
+	fonts.Close()
+
+	fonts.pathCacheMu.Lock()
+	pathCount := len(fonts.pathCache)
+	fonts.pathCacheMu.Unlock()
+	fonts.textLineMu.Lock()
+	lineCount := len(fonts.textLineCache)
+	fonts.textLineMu.Unlock()
+	fonts.textWidthMu.Lock()
+	widthCount := len(fonts.textWidthCache)
+	fonts.textWidthMu.Unlock()
+	if pathCount != 0 || lineCount != 0 || widthCount != 0 {
+		t.Fatalf("Close left shaping caches populated: paths=%d lines=%d widths=%d", pathCount, lineCount, widthCount)
+	}
+	if _, err := fonts.LoadFont(1); err == nil {
+		t.Fatal("Close 后 LoadFont 应返回错误")
+	}
 }

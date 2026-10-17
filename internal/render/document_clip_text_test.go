@@ -10,6 +10,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // inkBox 是图元 Boundary 区域内非背景像素的包围盒。
@@ -180,4 +181,69 @@ func TestPathClipAreaWithTextIsNotVerticallyMirrored(t *testing.T) {
 	if math.Abs(float64(box.maxY-box.minY)-0.93*em) > 0.4*em {
 		t.Logf("注意：字形高度 %.1fpx 与预期 0.93em(%.1fpx) 相差较大", float64(box.maxY-box.minY), 0.93*em)
 	}
+}
+
+func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
+	if err := RegisterFallbackFont(goregular.TTF, t.Name(), FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	defer UnregisterFallbackFont(t.Name())
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "clips.ofd"))
+	if err != nil {
+		t.Skipf("样例不可用: %v", err)
+	}
+	defer ofd.Close()
+
+	doc := ofd.Documents[0]
+	page := doc.Pages[0]
+	pageBox, err := page.PhysicalBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := page.Content()
+	if content == nil {
+		t.Fatal("页面内容为空")
+	}
+	renderDoc := NewDocument(canvas.White, doc)
+	defer renderDoc.Close()
+	if err := renderDoc.UseFallbackFont(t.Name()); err != nil {
+		t.Fatal(err)
+	}
+	for _, layer := range content.Layer {
+		for _, item := range layer.Items {
+			object := item.Path
+			if object == nil || object.Clips == nil {
+				continue
+			}
+			for _, clip := range object.Clips.Clip {
+				for _, area := range clip.Area {
+					if area.Text == nil {
+						continue
+					}
+					areaCTM := models.IdentityMatrix
+					if area.CTM != nil {
+						areaCTM = *area.CTM
+					}
+					// 保留样例的定位与变换，在副本中换成测试字体覆盖的字符，
+					// 使缓存只读回归在无系统中文字体的 WASM 环境也能执行。
+					text := *area.Text
+					text.TextCode = append([]models.TextCode(nil), text.TextCode...)
+					for i := range text.TextCode {
+						text.TextCode[i].Value = "H"
+					}
+					first := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary, pageBox.Height)
+					if first == nil {
+						t.Fatal("文字裁剪轮廓为空")
+					}
+					firstBounds := first.Bounds()
+					second := renderDoc.buildTextClipPath(&text, areaCTM, object.Boundary, pageBox.Height)
+					if second == nil || firstBounds != second.Bounds() || firstBounds != first.Bounds() {
+						t.Fatalf("重复构造文字裁剪轮廓产生漂移或修改了先前结果：首次边界=%v", firstBounds)
+					}
+					return
+				}
+			}
+		}
+	}
+	t.Fatal("样例中没有文字裁剪区域")
 }
