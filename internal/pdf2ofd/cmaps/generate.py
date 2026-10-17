@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """打包 Adobe Encoding CMap 与 CID→Unicode 数据，并保留原始许可声明。
 
+Adobe-GB1-UCS2 由 fontfix/cidmap 共用，不在本压缩包中重复存储。
+
 用法：python3 generate.py /usr/share/poppler/cMap
 输入为 poppler-data 分发的 Adobe cmap-resources 与 mapping-resources-pdf。
 只复制映射数据，不包含阅读器实现。
@@ -18,6 +20,8 @@ collections = ("Adobe-GB1", "Adobe-CNS1", "Adobe-Japan1", "Adobe-Korea1")
 resources = {}
 for collection in collections:
     for path in sorted((root / collection).iterdir()):
+        if path.name == "Adobe-GB1-UCS2":
+            continue
         data = path.read_bytes()
         forward = (path.name.endswith(("-H", "-V")) or path.name in ("H", "V")) and re.search(rb"/CMapType\s+1\s+def", data)
         if forward or path.name == collection + "-UCS2":

@@ -260,8 +260,8 @@ github.com/zc310/canvas v0.0.0-20261016023101-3d1af32f0be3 h1:iESfnMwKH1wsgZqM77
 github.com/zc310/canvas v0.0.0-20261016023101-3d1af32f0be3/go.mod h1:EJHwx4zecHYdXSD+o8vUtqHXM22ixLjGQAlZsDaEuwg=
 github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0 h1:mF3YpsxG5uAZM4g3a1kOWMPGPfBq52VFNgHXMF7+Y6g=
 github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0/go.mod h1:7bxHRmY+tjm3k3VZ+HYc4g0Gtqp+Xm/5WZXQGIXtXL4=
-github.com/zc310/fontfix v0.0.3-0.20261015114432-41511c942370 h1:hE5fZ+avnNBzeMHh/sauzoSmvpyBQlu6DxqmXKYhQoY=
-github.com/zc310/fontfix v0.0.3-0.20261015114432-41511c942370/go.mod h1:4qGU+p8a3XK0gCYLaCDR6DrNxic7l4a2TZyYOJwJjJw=
+github.com/zc310/fontfix v0.0.3-0.20261017064440-13a955817cb4 h1:4kzSNyXFunJHTvWREysXQQDuWn+UK1em1zdxo/bYUR4=
+github.com/zc310/fontfix v0.0.3-0.20261017064440-13a955817cb4/go.mod h1:YVqpORIeJj7xUdH/TgHJBAyKMidWzdpXFA7vWwQ7PmQ=
 github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac h1:6yh4viYWFkHPE/iJW9PE9S1IYjrxXAPVbm3OVGUkbyA=
 github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac/go.mod h1:9r29p1zzfqGXzzEBBAOn+RK7bLneT3/t/U6HpmO47as=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=
