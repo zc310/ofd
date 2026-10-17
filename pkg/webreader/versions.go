@@ -34,5 +34,6 @@ func (r *Reader) SelectVersion(scope int, id string) error {
 	r.text = newTextCache()
 	r.search = newSearchCache(len(r.pages))
 	r.metadata = &readerMetadata{}
+	r.hiddenLayers = nil
 	return nil
 }

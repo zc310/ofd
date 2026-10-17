@@ -188,7 +188,7 @@ func (r *Reader) pdfPageLinks(indices []int) [][]drawing.PageLink {
 		if ref.page == nil || ref.document == nil {
 			continue
 		}
-		links[index] = ref.document.PageLinks(ref.page, resolvers[ref.document])
+		links[index] = ref.document.PageLinksWithVisibility(ref.page, resolvers[ref.document], r.hiddenLayers[pageIndex])
 	}
 	return links
 }
@@ -228,5 +228,5 @@ func (r *Reader) pdfPage(index int, background color.Color, dpi geom.Resolution)
 	if err != nil {
 		return nil, err
 	}
-	return document.Page(ref.page)
+	return document.PageWithVisibility(ref.page, r.hiddenLayers[index])
 }

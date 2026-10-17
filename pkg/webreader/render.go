@@ -212,7 +212,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	page, err := document.Page(ref.page)
+	page, err := document.PageWithVisibility(ref.page, r.hiddenLayers[index])
 	if err != nil {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}
@@ -338,6 +338,7 @@ func (r *Reader) Close() error {
 	r.closeRenderDocumentsLocked()
 	r.text = nil
 	r.search = nil
+	r.hiddenLayers = nil
 	r.fallbackFamily = ""
 	r.fallbackFamilies = nil
 	ofd := r.ofd

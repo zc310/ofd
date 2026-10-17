@@ -225,6 +225,14 @@ class OFDWorkerClient {
     return this.request('pageInfo', { index });
   }
 
+  layers(index) {
+    return this.request('layers', { index });
+  }
+
+  setHiddenLayers(index, ids) {
+    return this.request('setHiddenLayers', { index, ids });
+  }
+
   renderPages(indices, options) {
     return this.request('renderPages', { indices, options });
   }
@@ -453,12 +461,22 @@ const sidebarTabMoreLabel = document.querySelector('#sidebar-tab-more-label');
 const sidebarMoreMenu = document.querySelector('#sidebar-more-menu');
 const sidebarMoreFonts = document.querySelector('#sidebar-more-fonts');
 const sidebarMoreVersions = document.querySelector('#sidebar-more-versions');
+const sidebarMoreLayers = document.querySelector('#sidebar-more-layers');
 const sidebarMoreAttachments = document.querySelector('#sidebar-more-attachments');
 const sidebarMoreMedia = document.querySelector('#sidebar-more-media');
 const sidebarMoreAnnotations = document.querySelector('#sidebar-more-annotations');
 const sidebarMoreSignatures = document.querySelector('#sidebar-more-signatures');
 const sidebarMoreCustomTags = document.querySelector('#sidebar-more-custom-tags');
 const versionsElement = document.querySelector('#versions');
+const layersElement = document.querySelector('#layers');
+const layerRevisions = new Map();
+const layerUpdates = new Set();
+let layerListRequest = 0;
+const layerExpandedPages = new Set();
+const layerTreeCache = new Map();
+let layerTreeStart = 0;
+let layerTreeCurrent = -1;
+const layerTreePageLimit = 100;
 const attachmentsElement = document.querySelector('#attachments');
 const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
@@ -614,7 +632,7 @@ const sidebarTabStorageKey = 'ofd-sidebar-tab';
 let activeSidebarTab = (() => {
   try {
     const value = localStorage.getItem(sidebarTabStorageKey);
-    return ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'custom-tags'].includes(value) ? value : 'thumbnails';
+    return ['thumbnails', 'outline', 'bookmarks', 'search', 'layers', 'fonts', 'custom-tags'].includes(value) ? value : 'thumbnails';
   } catch (_) {
     return 'thumbnails';
   }
@@ -2658,14 +2676,14 @@ function updateNavigation() {
   pageNumber.disabled = pageInfos.length === 0;
   previous.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() <= 0 : current <= 0);
   next.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() + 1 >= pageSpreads.length : current + 1 >= pageInfos.length);
-  printPage.disabled = documentActionBusy || pageInfos.length === 0;
-  exportDocument.disabled = documentActionBusy || pageInfos.length === 0;
-  copyPageText.disabled = documentActionBusy || pageInfos.length === 0;
-  copyAllTextButton.disabled = documentActionBusy || pageInfos.length === 0;
+  printPage.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
+  exportDocument.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
+  copyPageText.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
+  copyAllTextButton.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
   searchInput.disabled = pageInfos.length === 0;
   searchToggle.disabled = pageInfos.length === 0;
   searchToggle.setAttribute('aria-pressed', String(activeSidebarTab === 'search'));
-  searchButton.disabled = pageInfos.length === 0 || Boolean(searchRequest);
+  searchButton.disabled = pageInfos.length === 0 || layerUpdates.size > 0 || Boolean(searchRequest);
   searchPrevious.disabled = searchResults.length === 0;
   searchNext.disabled = searchResults.length === 0;
   zoomOut.disabled = pageInfos.length === 0;
@@ -2690,6 +2708,7 @@ function setDocumentActionBusy(busy) {
   documentActionCancelRequested = false;
   cancelAction.hidden = !busy;
   updateNavigation();
+  if (activeSidebarTab === 'layers') void renderLayers();
 }
 
 function cancelDocumentAction() {
@@ -2847,6 +2866,7 @@ function setCurrent(index, syncThumbnail = true) {
   }
   activeThumbnailButton = nextThumbnail;
   if (changed) updateOutlineActive();
+  if (changed && activeSidebarTab === 'layers') void renderLayers();
   if (changed) playPageEntryMedia(index);
   if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
@@ -3265,6 +3285,7 @@ function showImageWhenReady(imageElement, url, card) {
 }
 
 function loadText(index, pinned = false) {
+  if (layerUpdates.has(index)) return Promise.resolve();
   const card = pageCards[index];
   if (textCache.has(index)) {
     if (card) buildTextLayer(index);
@@ -3277,16 +3298,17 @@ function loadText(index, pinned = false) {
     return existing;
   }
   const generation = documentGeneration;
+  const revision = pageLayerRevision(index);
   const engineRequest = engine.text(index);
   const request = engineRequest
     .then(runs => {
-      if (generation !== documentGeneration) return;
+      if (generation !== documentGeneration || revision !== pageLayerRevision(index)) return;
       textCache.set(index, runs);
       trimTextCache();
       if (pageCards[index]) buildTextLayer(index);
     })
     .catch(error => {
-      if (generation === documentGeneration && !isCancelledError(error) && pageCards[index]) {
+      if (generation === documentGeneration && revision === pageLayerRevision(index) && !isCancelledError(error) && pageCards[index]) {
         pageCards[index].title = error.message;
       }
     })
@@ -3311,7 +3333,7 @@ function imageRenderFormat() {
 }
 
 function cacheKey(kind, index, generation, dpi, format = renderFormat) {
-  return `${generation}:${kind}:${index}:${dpi}:${format}`;
+  return `${generation}:${kind}:${index}:${dpi}:${format}:${pageLayerRevision(index)}`;
 }
 
 function renderMimeType(format) {
@@ -3321,11 +3343,13 @@ function renderMimeType(format) {
 }
 
 function loadImage(index, kind, generation, imageElement, card) {
+  if (layerUpdates.has(index)) return Promise.resolve(null);
   const cache = kind === 'page' ? pageCache : thumbnailCache;
   const requests = kind === 'page' ? pageRequests : thumbnailRequests;
   const dpi = kind === 'page' ? pageDPI() : 15;
   const format = renderFormat;
   const requestedZoomGeneration = zoomGeneration;
+  const revision = pageLayerRevision(index);
   const key = cacheKey(kind, index, generation, dpi, format);
   // 同一 DPI 下缩放变化时，旧请求不能被新页面复用，否则旧请求返回
   // null 后，新页面会一直保留 loading 状态而不会重新发起渲染。
@@ -3343,7 +3367,7 @@ function loadImage(index, kind, generation, imageElement, card) {
       else existing.pagePinned = true;
     }
     return existing.then(url => {
-      if (url && format === renderFormat && generation === documentGeneration &&
+      if (url && revision === pageLayerRevision(index) && format === renderFormat && generation === documentGeneration &&
           (kind !== 'page' || requestedZoomGeneration === zoomGeneration)) {
         showImageWhenReady(imageElement, url, card);
       }
@@ -3355,7 +3379,7 @@ function loadImage(index, kind, generation, imageElement, card) {
   const request = engineRequest
     .then(data => {
       const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
-      if (format !== renderFormat || generation !== documentGeneration ||
+      if (revision !== pageLayerRevision(index) || format !== renderFormat || generation !== documentGeneration ||
           (kind === 'page' && requestedZoomGeneration !== zoomGeneration)) {
         URL.revokeObjectURL(url);
         return null;
@@ -3481,6 +3505,7 @@ function loadActualPageInfo(index) {
 }
 
 function loadThumbnail(index) {
+  if (layerUpdates.has(index)) return;
   const button = thumbnailButtons[index];
   if (!button) return;
   const generation = documentGeneration;
@@ -3514,7 +3539,7 @@ function loadThumbnail(index) {
     resolveRequest = resolve;
     rejectRequest = reject;
   });
-  const entry = { index, generation, format, key, image, button, resolveRequest, rejectRequest, request };
+  const entry = { index, generation, revision: pageLayerRevision(index), format, key, image, button, resolveRequest, rejectRequest, request };
   button.classList.add('loading');
   request.cancel = () => {
     entry.cancelled = true;
@@ -3571,7 +3596,10 @@ function flushThumbnailBatch() {
   renderRequest.then(images => {
     images.forEach((data, index) => {
       const entry = active[index];
-      if (entry.cancelled || entry.generation !== documentGeneration) return;
+      if (entry.cancelled || entry.generation !== documentGeneration || entry.revision !== pageLayerRevision(entry.index)) {
+        entry.resolveRequest(null);
+        return;
+      }
       const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
       thumbnailCache.set(entry.key, url, data.byteLength);
       entry.image.src = url;
@@ -3650,6 +3678,7 @@ function buildPages() {
   updateThumbnailVirtualWindow();
   empty.hidden = pageInfos.length > 0;
   setCurrent(current);
+  if (activeSidebarTab === 'layers') void renderLayers();
   updateNavigation();
   // 文档就绪后按记住的意向自动应用：优先直接调用 queryLocalFonts（实测的
   // 实现已不要求手势），确实被拒时才由 setLocalFonts 退回一次性监听。
@@ -3861,6 +3890,14 @@ async function loadFile() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  layerRevisions.clear();
+  layerUpdates.clear();
+  layerListRequest++;
+  layerExpandedPages.clear();
+  layerTreeCache.clear();
+  layerTreeStart = 0;
+  layerTreeCurrent = -1;
+  if (layersElement) layersElement.replaceChildren(outlineEmptyMessage('未打开文档'));
   pageTextTimers.forEach(timer => clearTimeout(timer));
   pageTextTimers.clear();
   pageRenderTimers.forEach(timer => clearTimeout(timer));
@@ -4109,6 +4146,7 @@ async function openSelectedFile(selected, options = {}) {
       openRequest = undefined;
       opening = false;
       cancelOpen.hidden = true;
+      if (activeSidebarTab === 'layers') void renderLayers();
     }
   }
 }
@@ -4116,6 +4154,14 @@ async function openSelectedFile(selected, options = {}) {
 function cancelOpening() {
   if (!opening) return;
   documentGeneration++;
+  layerRevisions.clear();
+  layerUpdates.clear();
+  layerListRequest++;
+  layerExpandedPages.clear();
+  layerTreeCache.clear();
+  layerTreeStart = 0;
+  layerTreeCurrent = -1;
+  if (layersElement) layersElement.replaceChildren(outlineEmptyMessage('未打开文档'));
   // 远程文档可能还在下载，先中止请求：否则 openSelectedFile 尚未接管，
   // 取消后仍会把文件读进来并打开。
   pendingDownload?.controller.abort();
@@ -4205,6 +4251,7 @@ function cancelOpening() {
 }
 
 async function searchDocument() {
+  if (layerUpdates.size) return;
   const generation = ++searchGeneration;
   const query = searchInput.value.trim();
   searchRequest?.cancel();
@@ -4599,6 +4646,7 @@ async function saveRenderStream(render, indexes, options, name, type, saveFile, 
 }
 
 async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
+  if (layerUpdates.size) throw new Error('请等待图层切换完成');
   const generation = documentGeneration;
   const files = [];
   const textParts = [];
@@ -4896,6 +4944,10 @@ function waitForPrintImages(images) {
 async function printSelectedPages(indexes) {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
+  if (layerUpdates.size) {
+    setStatus('请等待图层切换完成');
+    return;
+  }
   const printWindow = window.open('', '_blank', 'popup,width=900,height=1200');
   if (!printWindow) {
     setStatus('打印窗口被浏览器阻止，请允许弹出窗口后重试。');
@@ -5047,9 +5099,9 @@ function restorePanelScroll(panel) {
   if (element) element.scrollTop = sidebarScroll[panel] || 0;
 }
 
-const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'search', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
-const sidebarMoreTabs = ['fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
-const sidebarMoreLabels = { fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名', 'custom-tags': '标签' };
+const sidebarTabs = ['thumbnails', 'outline', 'bookmarks', 'search', 'layers', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
+const sidebarMoreTabs = ['layers', 'fonts', 'versions', 'attachments', 'media', 'annotations', 'signatures', 'custom-tags'];
+const sidebarMoreLabels = { layers: '图层', fonts: '字体', versions: '版本', attachments: '附件', media: '资源', annotations: '注解', signatures: '签名', 'custom-tags': '标签' };
 
 // applySidebarPanels 根据侧栏可见性和当前面板，决定缩略图/大纲/书签/字体/附件面板的显隐。
 function applySidebarPanels() {
@@ -5066,6 +5118,7 @@ function applySidebarPanels() {
   if (searchPanel) searchPanel.hidden = !active('search');
   if (fontsElement) fontsElement.hidden = !active('fonts');
   if (versionsElement) versionsElement.hidden = !active('versions');
+  if (layersElement) layersElement.hidden = !active('layers');
   if (attachmentsElement) attachmentsElement.hidden = !active('attachments');
   if (mediaElement) mediaElement.hidden = !active('media');
   if (annotationsElement) annotationsElement.hidden = !active('annotations');
@@ -5105,6 +5158,7 @@ function applySidebarPanels() {
   }
   sidebarMoreFonts?.classList.toggle('active', activeSidebarTab === 'fonts');
   sidebarMoreVersions?.classList.toggle('active', activeSidebarTab === 'versions');
+  sidebarMoreLayers?.classList.toggle('active', activeSidebarTab === 'layers');
   sidebarMoreAttachments?.classList.toggle('active', activeSidebarTab === 'attachments');
   sidebarMoreMedia?.classList.toggle('active', activeSidebarTab === 'media');
   sidebarMoreAnnotations?.classList.toggle('active', activeSidebarTab === 'annotations');
@@ -5165,6 +5219,8 @@ function setSidebarTab(tab) {
     renderSearchResults();
   } else if (tab === 'versions') {
     renderVersions();
+  } else if (tab === 'layers') {
+    void renderLayers();
   } else if (tab === 'attachments') {
     renderAttachments();
   } else if (tab === 'media') {
@@ -6157,6 +6213,7 @@ async function switchDocumentVersion(item) {
       openRequest = undefined;
       versionSwitching = false;
       renderVersions();
+      if (activeSidebarTab === 'layers') void renderLayers();
       if (activeSidebarTab === 'fonts') renderFonts();
       if (activeSidebarTab === 'attachments') renderAttachments();
       if (activeSidebarTab === 'media') renderMedia();
@@ -6169,6 +6226,260 @@ async function switchDocumentVersion(item) {
       void loadSignatures(generation).catch(() => {});
     }
   }
+}
+
+function pageLayerRevision(index) {
+  return layerRevisions.get(index) || 0;
+}
+
+// 页面作为父节点，只有展开时才读取该页图层；按批显示页节点，限制大型文档 DOM。
+async function renderLayers() {
+  if (!layersElement) return;
+  const requestID = ++layerListRequest;
+  if (!pageInfos.length) {
+    layersElement.replaceChildren(outlineEmptyMessage('未打开文档'));
+    return;
+  }
+  if (layerTreeCurrent !== current) {
+    layerTreeCurrent = current;
+    layerTreeStart = Math.floor(current / layerTreePageLimit) * layerTreePageLimit;
+    layerExpandedPages.add(current);
+  }
+  const end = Math.min(pageInfos.length, layerTreeStart + layerTreePageLimit);
+  layersElement.replaceChildren();
+  const navigation = document.createElement('div');
+  navigation.className = 'layer-tree-navigation';
+  for (const [label, start] of [['上一组', layerTreeStart - layerTreePageLimit], ['下一组', end]]) {
+    if (pageInfos.length <= layerTreePageLimit) break;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.disabled = start < 0 || start >= pageInfos.length;
+    button.addEventListener('click', () => { layerTreeStart = start; void renderLayers(); });
+    navigation.append(button);
+  }
+  const locate = document.createElement('a');
+  locate.href = '#layers';
+  locate.textContent = '当前页';
+  locate.addEventListener('click', event => {
+    event.preventDefault();
+    layerTreeStart = Math.floor(current / layerTreePageLimit) * layerTreePageLimit;
+    layerExpandedPages.add(current);
+    void renderLayers();
+  });
+  const range = document.createElement('small');
+  range.textContent = `第 ${layerTreeStart + 1}–${end} 页 / 共 ${pageInfos.length} 页`;
+  navigation.append(range, locate);
+  layersElement.append(navigation);
+  const tree = document.createElement('ul');
+  tree.className = 'layer-tree';
+  tree.setAttribute('aria-label', '按页分组的图层');
+  const loads = [];
+  for (let index = layerTreeStart; index < end; index++) {
+    const node = document.createElement('li');
+    node.className = index === current ? 'layer-page-node current' : 'layer-page-node';
+    node.dataset.page = String(index);
+    const heading = document.createElement('div');
+    heading.className = 'layer-page-heading';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'layer-page-toggle';
+    const expanded = layerExpandedPages.has(index);
+    toggle.textContent = expanded ? '▾' : '▸';
+    toggle.setAttribute('aria-label', `展开或折叠第 ${index + 1} 页图层`);
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-controls', `layer-page-${index}`);
+    const title = document.createElement('a');
+    title.href = `#page-${index + 1}`;
+    title.className = 'layer-page-title';
+    title.textContent = `第 ${index + 1} 页${index === current ? ' · 当前' : ''}`;
+    title.title = `定位到第 ${index + 1} 页`;
+    title.addEventListener('click', event => {
+      event.preventDefault();
+      const samePage = current === index;
+      layerExpandedPages.add(index);
+      goTo(index);
+      if (samePage) void renderLayers();
+    });
+    heading.append(toggle, title);
+    const children = document.createElement('div');
+    children.id = `layer-page-${index}`;
+    children.className = 'layer-children';
+    children.hidden = !expanded;
+    toggle.addEventListener('click', () => {
+      const open = !layerExpandedPages.has(index);
+      if (open) layerExpandedPages.add(index);
+      else layerExpandedPages.delete(index);
+      children.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? '▾' : '▸';
+      if (open) void loadLayerBranch(index, children, requestID);
+    });
+    node.append(heading, children);
+    tree.append(node);
+    if (expanded) loads.push(loadLayerBranch(index, children, requestID));
+  }
+  layersElement.append(tree);
+  const note = document.createElement('p');
+  note.className = 'layer-note';
+  note.textContent = '点击页名定位，勾选正文层或模板控制显示。导出和打印使用当前显示图层。注解和签章不受此开关影响。';
+  layersElement.append(note);
+  await Promise.all(loads);
+}
+
+async function loadLayerBranch(index, container, requestID) {
+  const generation = documentGeneration;
+  const revision = pageLayerRevision(index);
+  const token = String(Number(container.dataset.request || 0) + 1);
+  container.dataset.request = token;
+  const isCurrent = () => requestID === layerListRequest && generation === documentGeneration &&
+    container.dataset.request === token && !container.hidden;
+  container.replaceChildren(outlineEmptyMessage('正在读取图层...'));
+  try {
+    const cached = layerTreeCache.get(index);
+    const list = cached?.generation === generation && cached.revision === revision
+      ? cached.layers : await engine.layers(index);
+    if (!isCurrent()) return;
+    if (revision !== pageLayerRevision(index)) return loadLayerBranch(index, container, requestID);
+    const layers = Array.isArray(list) ? list : [];
+    layerTreeCache.delete(index);
+    layerTreeCache.set(index, { generation, revision, layers });
+    if (layerTreeCache.size > 64) layerTreeCache.delete(layerTreeCache.keys().next().value);
+    buildLayerItems(index, layers, container);
+  } catch (error) {
+    if (isCurrent()) {
+      if (revision !== pageLayerRevision(index)) return loadLayerBranch(index, container, requestID);
+      container.replaceChildren(outlineEmptyMessage(`读取图层失败：${error.message}`));
+    }
+  }
+}
+
+function buildLayerItems(index, list, container) {
+  container.replaceChildren();
+  if (!list.length) container.append(outlineEmptyMessage('本页没有图层或模板'));
+  const busy = documentActionBusy || opening || versionSwitching || layerUpdates.size > 0;
+  const types = { Background: '背景层', Body: '正文层', Foreground: '前景层', Custom: '自定义层' };
+  for (const layer of list) {
+    const key = layer.key || layer.id;
+    const row = document.createElement('label');
+    row.className = 'layer-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = layer.visible;
+    checkbox.disabled = documentActionBusy || opening || versionSwitching;
+    checkbox.setAttribute('aria-disabled', String(busy));
+    checkbox.dataset.page = String(index);
+    checkbox.dataset.visible = String(layer.visible);
+    const text = document.createElement('span');
+    const label = layer.kind === 'template' ? (layer.type === 'Foreground' ? '前景模板' : '背景模板')
+      : types[layer.type] || layer.type || '正文层';
+    text.textContent = `${label}${layer.name ? ` · ${layer.name}` : ''} · ID ${layer.id}`;
+    row.title = `${label} · ID ${layer.id} · ${layer.objects} 个顶层对象`;
+    checkbox.dataset.key = key;
+    checkbox.addEventListener('change', () => {
+      if (documentActionBusy || opening || versionSwitching || layerUpdates.size) {
+        checkbox.checked = checkbox.dataset.visible === 'true';
+        return;
+      }
+      const hidden = [...container.querySelectorAll('input[type="checkbox"]')].filter(item => !item.checked).map(item => item.dataset.key);
+      void changePageLayers(index, hidden, layerTreeCache.get(index)?.layers || list);
+    });
+    row.append(checkbox, text);
+    container.append(row);
+  }
+}
+
+// 原位更新复选框，保留树节点、滚动位置及当前输入焦点。
+function syncLayerControls(index, list) {
+  if (!layersElement) return;
+  const busy = documentActionBusy || opening || versionSwitching || layerUpdates.size > 0;
+  const visible = new Map((list || []).map(layer => [layer.key || layer.id, layer.visible]));
+  for (const checkbox of layersElement.querySelectorAll('.layer-item input[type="checkbox"]')) {
+    checkbox.setAttribute('aria-disabled', String(busy));
+    if (Number(checkbox.dataset.page) === index && visible.has(checkbox.dataset.key)) {
+      checkbox.checked = visible.get(checkbox.dataset.key);
+      checkbox.dataset.visible = String(checkbox.checked);
+    }
+  }
+}
+
+async function changePageLayers(index, ids, list = layerTreeCache.get(index)?.layers) {
+  if (documentActionBusy || opening || versionSwitching || layerUpdates.size || index < 0 || index >= pageInfos.length) return;
+  const generation = documentGeneration;
+  const hidden = new Set(ids);
+  let updatedList = list?.map(layer => ({ ...layer, visible: !hidden.has(layer.key || layer.id) }));
+  layerUpdates.add(index);
+  syncLayerControls(index, updatedList);
+  layerRevisions.set(index, pageLayerRevision(index) + 1);
+  invalidateLayerPage(index);
+  // 旧搜索的 run 索引已不适用于新图层，取消并清除后让用户重新搜索。
+  searchRequest?.cancel();
+  searchRequest = undefined;
+  searchGeneration++;
+  searchResults = [];
+  activeSearchResult = -1;
+  updateSearchStatus(searchInput.value.trim() ? '按 Enter 搜索' : '');
+  pageCards.forEach((card, page) => { if (card) buildTextLayer(page); });
+  updateNavigation();
+  try {
+    await engine.setHiddenLayers(index, ids);
+    if (generation !== documentGeneration) return;
+    setStatus(`已更新第 ${index + 1} 页图层`);
+  } catch (error) {
+    updatedList = list;
+    if (generation === documentGeneration) {
+      setStatus(`图层切换失败：${error.message}`);
+      try { updatedList = await engine.layers(index); } catch (_) { /* 保留切换前的状态。 */ }
+    }
+  } finally {
+    if (generation === documentGeneration) {
+      layerUpdates.delete(index);
+      // 过滤请求期间可能发起的元数据请求也作废。
+      layerRevisions.set(index, pageLayerRevision(index) + 1);
+      invalidateLayerPage(index);
+      if (updatedList) {
+        layerTreeCache.delete(index);
+        layerTreeCache.set(index, { generation, revision: pageLayerRevision(index), layers: updatedList });
+        if (layerTreeCache.size > 64) layerTreeCache.delete(layerTreeCache.keys().next().value);
+      }
+      syncLayerControls(index, updatedList);
+      if (pageCards[index]) {
+        void loadPage(index);
+        void loadText(index);
+        void loadPageLinks(index);
+      }
+      if (thumbnailButtons[index]) void loadThumbnail(index);
+      updateNavigation();
+    }
+  }
+}
+
+function invalidateLayerPage(index) {
+  layerTreeCache.delete(index);
+  for (const [key, request] of pageRequests) {
+    if (request.pageIndex === index) {
+      request.cancel?.();
+      pageRequests.delete(key);
+    }
+  }
+  const card = pageCards[index];
+  if (card) {
+    pageCardRequests.delete(card);
+    card.dataset.loadToken = String(++pageLoadToken);
+    card.querySelector('.page-image').hidden = true;
+    card.querySelector('.text-layer')?.replaceChildren();
+    card.querySelector('.link-layer')?.replaceChildren();
+  }
+  textRequests.get(index)?.cancel?.();
+  textRequests.delete(index);
+  cancelThumbnailRequest(index);
+  pageCache.clearIndex('page', index);
+  thumbnailCache.clearIndex('thumbnail', index);
+  textCache.delete(index);
+  pageLinks.delete(index);
+  renderedPages.delete(index);
+  failedPages.delete(index);
+  updateRenderProgress();
 }
 
 function renderAttachments() {
@@ -6933,12 +7244,13 @@ function schedulePageMetadata(index) {
 }
 
 function loadPageLinks(index) {
-  if (!Number.isInteger(index) || index < 0 || pageLinks.has(index)) return;
+  if (!Number.isInteger(index) || index < 0 || pageLinks.has(index) || layerUpdates.has(index)) return;
   const generation = documentGeneration;
+  const revision = pageLayerRevision(index);
   const request = engine.pageLinksForPage(index);
   pageLinks.set(index, null);
   request.then(links => {
-    if (generation !== documentGeneration) return;
+    if (generation !== documentGeneration || revision !== pageLayerRevision(index)) return;
     const list = Array.isArray(links) ? links : [];
     list.forEach(link => {
       const boundary = link?.boundary;
@@ -6949,7 +7261,7 @@ function loadPageLinks(index) {
     if (!pageLinks.get(index)?.length) pageLinks.set(index, []);
     applyPageLinks(index);
   }).catch(() => {
-    if (generation === documentGeneration) pageLinks.set(index, []);
+    if (generation === documentGeneration && revision === pageLayerRevision(index)) pageLinks.set(index, []);
   });
 }
 
@@ -7665,6 +7977,7 @@ sidebarTabSearch?.addEventListener('click', () => {
 sidebarTabMore?.addEventListener('click', () => setSidebarMoreOpen(sidebarMoreMenu?.hidden));
 sidebarMoreFonts?.addEventListener('click', () => setSidebarTab('fonts'));
 sidebarMoreVersions?.addEventListener('click', () => setSidebarTab('versions'));
+sidebarMoreLayers?.addEventListener('click', () => setSidebarTab('layers'));
 sidebarMoreAttachments?.addEventListener('click', () => setSidebarTab('attachments'));
 sidebarMoreMedia?.addEventListener('click', () => setSidebarTab('media'));
 sidebarMoreAnnotations?.addEventListener('click', () => setSidebarTab('annotations'));
@@ -7753,6 +8066,7 @@ sidebarScrollPanels.bookmarks = bookmarksElement;
 sidebarScrollPanels.search = searchResultsElement;
 sidebarScrollPanels.fonts = fontsElement;
 sidebarScrollPanels.versions = versionsElement;
+sidebarScrollPanels.layers = layersElement;
 sidebarScrollPanels.attachments = attachmentsElement;
 sidebarScrollPanels.media = mediaElement;
 sidebarScrollPanels.annotations = annotationsElement;

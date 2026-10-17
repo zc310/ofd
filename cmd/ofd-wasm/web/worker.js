@@ -170,6 +170,10 @@ async function execute(message) {
     }
     case 'pageInfo':
       return unwrap(self.ofd.pageInfo(message.index));
+    case 'layers':
+      return unwrap(self.ofd.layers(message.index));
+    case 'setHiddenLayers':
+      return unwrap(self.ofd.setHiddenLayers(message.index, message.ids || []));
     case 'renderPage': {
       const result = unwrap(self.ofd.renderPage(message.index, message.options || {}));
       const data = new Uint8Array(result);

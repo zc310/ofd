@@ -92,6 +92,8 @@ GOTOOLCHAIN=local make GO=/path/to/go-win7/bin/go GOOS=windows GOARCH=amd64 CGO_
 
 项目提供无需前端框架的 OFD 浏览器阅读器示例，位于 [`cmd/ofd-wasm`](cmd/ofd-wasm)，支持在浏览器中解析、阅读、搜索、打印和导出文档。
 
+“更多 → 图层”以页面和子节点组成树形列表，点击页名定位、复选框切换该页正文图层及背景/前景模板的显示，文字选择、搜索、链接、缩略图及导出/打印同步生效；设置仅保留在当前阅读会话中，源 OFD 不改写。
+
 在线预览：<https://zc310.github.io/ofd/wasm/>
 
 ### 构建和运行
