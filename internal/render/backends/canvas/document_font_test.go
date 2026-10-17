@@ -370,6 +370,58 @@ func TestIntroPage5EmbeddedGlyphMapping(t *testing.T) {
 	}
 }
 
+// zsbk.ofd 的最后一页在模板中使用稀疏 CID 子集：CID 18/19 是数字 1/2，
+// 实际 GID 18/19 却是“时/使”。登记模板字形后必须保留正确的 CID 寻址。
+func TestZsbkFooterKeepsSparseCIDDigitsAndChinese(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw", "zsbk.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := ofd.Documents[0]
+	page, err := doc.GetPage(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fonts := NewFonts(doc)
+	defer fonts.Close()
+	fonts.RegisterPageGlyphs(doc, page, lease.Content())
+	lease.Release()
+	family, err := fonts.LoadFont(766)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fonts.HasLoadedEmbeddedFont(766) {
+		t.Fatal("页脚必须使用内嵌字体")
+	}
+	face := family.(*canvas.FontFamily).Face(1, canvas.Black)
+	for code, want := range map[rune]uint16{'1': 1, '2': 2, '时': 18, '使': 19, fontrepair.GlyphRune(18): 1, fontrepair.GlyphRune(19): 2} {
+		if got := face.Font.GlyphIndex(code); got != want {
+			t.Errorf("码位 %U 指向 GID %d，期望 %d", code, got, want)
+		}
+		path, _ := face.ToPath(string(code))
+		if path == nil || path.Empty() {
+			t.Errorf("码位 %U 没有可绘制轮廓", code)
+		}
+	}
+	fonts.mu.Lock()
+	references := fonts.glyphMappingList(766)
+	fonts.mu.Unlock()
+	for _, ref := range references {
+		if ref.Rune >= 0xf0000 {
+			continue
+		}
+		glyph := face.Font.GlyphIndex(ref.Rune)
+		if glyph == 0 || glyph != face.Font.GlyphIndex(fontrepair.GlyphRune(ref.Glyph)) {
+			t.Errorf("页脚字符 %c 的 Unicode 和原 CID %d 指向不同字形", ref.Rune, ref.Glyph)
+		}
+	}
+}
+
 // TestImageNotFoundLeftTextFontLoads 回归：testImageNotFound.ofd 左侧正文使用的
 // 内嵌子集字体（font_6.ttf / Font69.ttf）hmtx 尾部多出字节，之前会导致整个字体
 // 加载失败并回退到系统字体、正文渲染成乱码；修复后必须按内嵌字体加载并登记好
