@@ -34,6 +34,10 @@ OFD 的兼容策略独立于格式要求：
 - 稀疏 CID 子集使用 `U+F0000 + CID` 指向实际 GID；文档字形引用超出实际 GID
   范围时由绘制与校验调用方通过该地址恢复。`WithGlyphs` 仅接受实际 GID 范围内
   的显式引用，防止把保留的 CID 地址误当成 GID 再次改写。
+- OFD 渲染通过 `WithGlyphReferences` 兼容保留原 CID 的字体：若存在超出实际 GID
+  范围且能由原私有 cmap 定位的引用，则该字体的范围内引用也按原 CID 地址解释。
+  例如 `zsbk.ofd` 页脚的 CID18/19 分别是数字1/2，不能误写成子集内 GID18/19
+  对应的“时/使”。自动 GID 地址保留已有 CID 地址，显式码位覆盖仍然优先。
 - Adobe-GB1 的字体 Unicode 映射来自 [internal/cidmap](../cidmap/README.md)，
   与 PDF 文字提取的标点、异体序列语义分开。命名字形通过现有 textlayout 依赖的
   glyphsnames 数据查询 Unicode。

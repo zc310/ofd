@@ -104,6 +104,40 @@ func RepairWithGlyphs(data []byte, mappings []GlyphMapping) ([]byte, error) {
 	return NewRepairer(data).WithGlyphs(mappings)
 }
 
+// WithGlyphReferences 应用 OFD 文档中的字形引用，并兼容保留原 CID 的稀疏 CFF 子集。
+// 只有发现超出实际 GID 范围、却能由原私有 cmap 定位的引用时，才启用 CID 兼容。
+// 此时落在 GID 范围内的引用也按原 CID 地址解释，避免编号碰撞导致错字。
+// 超出范围的引用仍由原私有 cmap 寻址，不作为实际 GID 写入 Unicode 映射。
+func (r *Repairer) WithGlyphReferences(mappings []GlyphMapping) ([]byte, error) {
+	if r == nil || r.err != nil || len(r.font.get("CFF ")) == 0 {
+		return r.WithGlyphs(mappings)
+	}
+	maxp := r.font.get("maxp")
+	if len(maxp) < 6 {
+		return r.WithGlyphs(mappings)
+	}
+	count := be.Uint16(maxp[4:])
+	sparseCID := false
+	for _, m := range mappings {
+		if m.Glyph >= count && r.characters[uint32(GlyphRune(m.Glyph))] != 0 {
+			sparseCID = true
+			break
+		}
+	}
+	if !sparseCID {
+		return r.WithGlyphs(mappings)
+	}
+	resolved := slices.Clone(mappings)
+	for i, m := range resolved {
+		if m.Glyph > 0 && m.Glyph < count {
+			if glyph := r.characters[uint32(GlyphRune(m.Glyph))]; glyph != 0 {
+				resolved[i].Glyph = glyph
+			}
+		}
+	}
+	return r.WithGlyphs(resolved)
+}
+
 func (r *Repairer) WithGlyphs(mappings []GlyphMapping) ([]byte, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil font repairer")
@@ -143,7 +177,11 @@ func (r *Repairer) WithGlyphs(mappings []GlyphMapping) ([]byte, error) {
 		characters[code] = glyph
 	}
 	for glyph := range byGlyph {
-		characters[uint32(GlyphRune(glyph))] = glyph
+		address := uint32(GlyphRune(glyph))
+		// 自动 GID 地址不能覆盖稀疏子集已有的 CID 地址；显式码位覆盖在后面应用。
+		if _, exists := characters[address]; !exists {
+			characters[address] = glyph
+		}
 	}
 	for code, glyph := range requested {
 		characters[code] = glyph

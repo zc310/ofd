@@ -334,6 +334,77 @@ func TestAdobeIdentitySubsetKeepsGB1Compatibility(t *testing.T) {
 	}
 }
 
+func TestSparseCIDReferencesDoNotOverwriteCollidingGIDs(t *testing.T) {
+	input := syntheticCFF(true)
+	_, pos, err := cffIndex(input, int(input[2]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tops, _, err := cffIndex(input, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields, err := parseDict(tops[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 两个字形分别使用 CID 2、580；CID 2 落在实际 GID 范围内，
+	// 却指向 GID 1，正好与 GID 2 的自动私有地址冲突。
+	charset := input[fields.integer(15):]
+	be.PutUint16(charset[1:], 2)
+	be.PutUint16(charset[3:], 580)
+	repairer := NewRepairer(input)
+	mappings := []GlyphMapping{
+		{Rune: '!', Glyph: 2}, {Rune: GlyphRune(2), Glyph: 2},
+		{Rune: '︵', Glyph: 580}, {Rune: GlyphRune(580), Glyph: 580},
+	}
+	saved := slices.Clone(mappings)
+	fixed, err := repairer.WithGlyphReferences(mappings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(mappings, saved) {
+		t.Fatal("文档字形映射被原地修改")
+	}
+	parsed, err := fontparser.ParseSFNT(fixed, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for code, want := range map[rune]uint16{'!': 1, '︵': 2, GlyphRune(2): 1, GlyphRune(580): 2} {
+		if got := parsed.GlyphIndex(code); got != want {
+			t.Errorf("码位 %U 指向 GID %d，期望 %d", code, got, want)
+		}
+	}
+	// 直接指定实际 GID 的入口仍尊重显式覆盖，不能把所有 CFF 映射都当成 CID。
+	actual, err := repairer.WithGlyphs([]GlyphMapping{{Rune: '文', Glyph: 2}, {Rune: GlyphRune(2), Glyph: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err = fontparser.ParseSFNT(actual, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.GlyphIndex('文') != 2 || parsed.GlyphIndex(GlyphRune(2)) != 2 {
+		t.Fatal("显式 GID 映射未生效")
+	}
+	actualReferences, err := repairer.WithGlyphReferences([]GlyphMapping{{Rune: '文', Glyph: 2}, {Rune: GlyphRune(2), Glyph: 2}})
+	if err != nil || !bytes.Equal(actualReferences, actual) {
+		t.Fatalf("未出现超范围 CID 引用时，实际 GID 被错误解释：%v", err)
+	}
+	// 只新增 Unicode 映射时，自动 GID 地址不得覆盖已有的 CID 地址。
+	actual, err = repairer.WithGlyphs([]GlyphMapping{{Rune: '文', Glyph: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err = fontparser.ParseSFNT(actual, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.GlyphIndex('文') != 2 || parsed.GlyphIndex(GlyphRune(2)) != 1 {
+		t.Fatal("自动 GID 地址覆盖了原 CID 地址")
+	}
+}
+
 func TestMalformedFontsAreBoundedAndReadOnly(t *testing.T) {
 	for _, b := range [][]byte{nil, []byte("wOFF"), {0, 1, 0, 0}, {1, 0, 255, 4}, syntheticCFF(true)} {
 		for i := 0; i <= len(b); i++ {

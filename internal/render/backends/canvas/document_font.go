@@ -168,7 +168,7 @@ type fontPathKey struct {
 
 // textLineKey 标识一次 canvas 原生文字整形结果（NewTextLine）。native 文字
 // 绘制是 canvas 后端的渲染热点，相同字体/字号/样式/纯色画笔/文本整形成果
-// 可复用；带渐变/图案画笔的文字不缓存（画笔会随文本对象变化）。
+// 可复用；提示模式影响像素定位，须独立缓存。带渐变/图案画笔的文字不缓存。
 type textLineKey struct {
 	font    *canvas.Font
 	size    float64
@@ -176,6 +176,7 @@ type textLineKey struct {
 	variant canvas.FontVariant
 	fill    color.RGBA
 	value   string
+	hinting font.Hinting
 }
 
 // textWidthKey 标识一次确定的文本排版宽度。宽度只由字体数据、字号、样式、
@@ -558,7 +559,15 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 	}
 	p.embeddedMu.Unlock()
 
-	family := canvas.NewFontFamily(cssFontFamilyName(name))
+	// 同名字体资源可能嵌入不同子集，同一资源也会按页面登记不同的字形映射。
+	// SVG按CSS族名选字体，不能只凭原名称合并，否则同名@font-face会互相覆盖。
+	// 字体数据和映射摘要作为内部族名的一部分；资源列表仍显示文档原始字体名。
+	safeName := cssFontFamilyName(name)
+	if safeName == "" {
+		safeName = "OFD-Embedded"
+	}
+	familyName := fmt.Sprintf("%s-%x-%x", safeName, key.dataDigest[:8], key.mappingsDigest[:8])
+	family := canvas.NewFontFamily(familyName)
 	if err := loadEmbeddedFont(p, family, data, style, mappings); err != nil {
 		return nil, err
 	}
@@ -1177,7 +1186,7 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontrepair.GlyphMapping) error {
 	var failures []error
 	if len(mappings) > 0 {
-		fixed, err := embeddedRepairer(p, data).WithGlyphs(mappings)
+		fixed, err := embeddedRepairer(p, data).WithGlyphReferences(mappings)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("内嵌字体字形映射修复: %w", err))
 		} else {

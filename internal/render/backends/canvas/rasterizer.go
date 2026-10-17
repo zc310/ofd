@@ -6,6 +6,7 @@ import (
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/render/geom"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 )
@@ -32,6 +33,7 @@ type adaptiveRasterizer struct {
 }
 
 func (r *adaptiveRasterizer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
+	style = minimumStrokeStyle(style, matrix, geom.Resolution(r.resolution))
 	r.Rasterizer.RenderPath(path, style, matrix)
 }
 

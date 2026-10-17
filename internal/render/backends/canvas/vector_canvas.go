@@ -48,6 +48,13 @@ type svgTextRenderer struct {
 	*svg.SVG
 }
 
+func (r svgTextRenderer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
+	// SVG没有固定输出DPI，细线按屏幕预览的参考设备换算；
+	// 与图片预览共用规则，避免字形轮廓描边在浏览器里几乎消失。
+	style = minimumStrokeStyle(style, matrix, geom.DefaultResolution)
+	r.SVG.RenderPath(path, style, matrix)
+}
+
 func (r svgTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	gradient := false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {

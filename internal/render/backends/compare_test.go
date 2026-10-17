@@ -1,9 +1,11 @@
 package backends_test
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -325,6 +327,41 @@ func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
 	for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
 		if _, err := render.NewBackend(name, 0.001, 0.001, geom.DPI(1)); err == nil {
 			t.Errorf("%s: 0 像素页面未返回错误", name)
+		}
+	}
+}
+
+// 正线宽的设备下限及低DPI参考分辨率换算应在所有栅格后端一致生效，
+// 并在设备像素坐标中应用，不能在矩阵缩放之前截断。
+func TestMinimumPositiveStrokeAcrossBackends(t *testing.T) {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendGG, drawing.BackendFTGG, drawing.BackendTinySkia, drawing.BackendDraw2D} {
+		for _, scale := range []float64{0.3528, 1, 9} {
+			t.Run(name+"/"+fmt.Sprint(scale), func(t *testing.T) {
+				res := geom.DPMM(10)
+				b, err := render.NewBackend(name, 20, 10, res)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b.ClearFill()
+				b.SetStrokeColor(color.Black)
+				b.SetStrokeWidth(0.002)
+				b.SetStrokeCapper(geom.ButtCap)
+				b.Scale(scale, scale)
+				path := &geom.Path{}
+				path.MoveTo(2/scale, 5/scale)
+				path.LineTo(18/scale, 5/scale)
+				b.DrawPath(0, 0, path)
+				img := b.Raster()
+				var alpha int
+				for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+					alpha += int(img.RGBAAt(100, y).A)
+				}
+				want := 254.0 / 150
+				// 各光栅库的亚像素覆盖量化不同，允许小于1/4像素的误差。
+				if width := float64(alpha) / 255; math.Abs(width-want) > 0.25 {
+					t.Errorf("描边覆盖 %.3f 像素，期望%.3f像素", width, want)
+				}
+			})
 		}
 	}
 }

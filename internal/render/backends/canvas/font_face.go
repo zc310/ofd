@@ -61,6 +61,7 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 		style:   drawing.FontStyle(face.Style),
 		variant: face.Variant,
 		fill:    face.Fill.Color,
+		hinting: face.Hinting,
 		value:   value,
 	}
 	p.textLineMu.Lock()
@@ -308,6 +309,11 @@ func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *dr
 	}
 	style := textFontStyle(object.Weight, object.Italic)
 	args = append(args, canvasStyle(style), canvas.FontNormal)
+	if object.CTM != nil {
+		// 模板常用极小字号配合CTM放大，并叠加独立字形轮廓描边。
+		// 文字单独吸附像素会偏离精确定位的轮廓，低DPI下形成两层错位重影。
+		args = append(args, font.NoHinting)
+	}
 	return family.Face(object.Size*2.83465, args...)
 }
 

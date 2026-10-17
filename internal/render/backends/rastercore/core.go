@@ -368,6 +368,11 @@ func (c *Core) DrawPath(x, y float64, p *geom.Path) {
 		Dashes:     scaleDashes(c.dashes, unit),
 		DashOffset: c.dashOffset * unit,
 	}
+	if stroke {
+		// 低DPI预览按参考分辨率换算极细线宽，避免两像素实心描边挤住字腔。
+		// 虚线长度与相位仍按原始对象坐标换算，不随最小线宽放大。
+		style.Width = math.Max(geom.MinimumRasterStrokeWidth(geom.DPMM(c.dpmm))*c.dpmm, style.Width)
+	}
 	c.hooks.DrawDevicePath(&c.device, m, c.fillActive, stroke, c.fillGradient, c.strokeGrad, style)
 }
 
