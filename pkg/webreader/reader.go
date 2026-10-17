@@ -100,6 +100,7 @@ type Reader struct {
 	search           *utils.LRU[int, *search.Index]
 	options          RenderOptions
 	metadata         *readerMetadata
+	hiddenLayers     map[int]render.PageVisibility
 }
 
 // Open 从内存中的 OFD 数据创建浏览器文档引擎。

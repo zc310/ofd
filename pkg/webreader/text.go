@@ -72,6 +72,10 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 }
 
 func pageTextObjects(page *parser.Page) []*models.TextObject {
+	return pageTextObjectsWithHiddenLayers(page, nil)
+}
+
+func pageTextObjectsWithHiddenLayers(page *parser.Page, hidden map[models.StID]bool) []*models.TextObject {
 	var texts []*models.TextObject
 	var walk func([]models.PageItem)
 	walk = func(items []models.PageItem) {
@@ -86,7 +90,7 @@ func pageTextObjects(page *parser.Page) []*models.TextObject {
 		}
 	}
 	for _, layer := range contentLayers(page) {
-		if layer != nil {
+		if layer != nil && !hidden[layer.ID] {
 			walk(layer.Items)
 		}
 	}
@@ -160,8 +164,8 @@ func fontFormat(file models.StLoc) string {
 	return ""
 }
 
-func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string) []TextRun {
-	layouts := document.TextLayouts(page)
+func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string, visibility render.PageVisibility) []TextRun {
+	layouts := document.TextLayoutsWithVisibility(page, visibility)
 	runs := make([]TextRun, 0, len(layouts))
 	for _, layout := range layouts {
 		run := TextRun{
@@ -185,7 +189,7 @@ func (r *Reader) textAt(index int) []TextRun {
 	if runs, ok := r.text.Get(index); ok {
 		return runs
 	}
-	runs := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily)
+	runs := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily, r.hiddenLayers[index])
 	r.text.AddWeighted(index, runs, textRunsWeight(runs))
 	return runs
 }

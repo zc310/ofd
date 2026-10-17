@@ -28,6 +28,9 @@
 
 - 附带时间戳时，明细中的“时间戳时刻的签章者证书”（`timestamp.signing_time`）检查签章者证书在该时刻的有效期和吊销状态。显式编码扩展默认值 `critical=FALSE` 会导致完整格式检查失败，原始数学签名结果仍单独展示。
 - 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
+
+- “更多 → 图层”以页面为父节点、正文 `Content/Layer` 及背景/前景模板引用为子节点展示树形列表。点击小三角展开/折叠，点击页名定位，勾选子节点控制显示；模板名称和 ID 可用于辨认内容，对象数量放在悬停提示中。默认展开当前页，其他页展开时才加载；超过 100 页时按组展示，可用顶部“上一组”“下一组”和“当前页”导航。每页独立保留当前会话中的设置；关闭某页模板不会影响其他共用该模板的页面。仅有一个正文层的文档会整体显示/隐藏该层。注解和电子签章不属于此列表。
+- 切换正文层或模板会刷新该页及缩略图，其中的文字不再参与选择、复制或搜索，链接/媒体点击热区也会移除；已有搜索结果清除后需重新搜索。PNG/JPG/SVG、PDF、TXT 导出及打印使用各页当前显示设置。源 OFD 不改写；重新打开或成功切换版本后恢复全部显示，版本切换失败时保留原设置。
 - 签名页签列出文档签名（提供者/公司、算法、签名时间、摘要一致/签名值通过/可信及完整验证徽标），并显示每个签章所在页码与印章缩略图，点击跳转到签章位置；点击“签名范围”可展开签名覆盖的文件引用与逐项摘要校验（数据摘要一致/不一致），点击“证书详情”可展开印章/外层证书的主体、签发者、序列号、有效期、公钥、算法与签名/证书/证书链/吊销校验状态，并可导出证书（DER/PEM）；签名项提供“导出签名值”（SignedValue.dat）。
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 页面上的可点击链接会叠加半透明热区：链接来自注解（`Type="Link"`）与页面正文/模板图元的 `CLICK` 动作；外部链接在新标签页打开，内部跳转按目标页与 `Dest` 定位，附件动作（`GotoA`）对图片/PDF/文本/音视频等可预览类型在新标签页打开、其它类型下载，并随页面旋转/缩放重新布局。
@@ -311,6 +314,9 @@ make test-wasm-web
 
 ### 页面渲染
 
+- `ofd.layers(index)` 按需返回指定页的正文图层与模板引用数组 `{ key, id, kind, name, type, objects, visible }`。`kind` 为 `layer` 或 `template`；正文 `type` 缺省为 `Body`，模板 `type` 按页面引用及模板声明确定为 `Background` 或 `Foreground`。`name` 为模板名称（未声明时为空），`objects` 为直接包含的顶层图元/块数量，模板为各图层顶层对象数之和。`id` 是原始标识的字符串表示，`key` 才是开关标识：正文层为 ID，模板为 `template:<ID>`，两者不会因 ID 相同而相互影响。
+- `ofd.setHiddenLayers(index, ids)` 使用 `layers()` 返回的 `key` 字符串数组替换该页的隐藏列表，`[]` 恢复全部显示；未知页码/条目返回错误，失败时不改变设置。显示状态由当前 Reader 持有，影响后续页面渲染、PDF 导出、文字、搜索与链接查询。`open` 和成功的 `selectVersion` 会重置设置，设置不改变 OFD 内的原始数据。例如 `setHiddenLayers(0, ['template:9'])` 可关闭 `999.ofd` 第一页的背景模板，保留正文。
+- 直接调用 API 的网页需自行清除该页图片、缩略图、文字和链接缓存，并重新搜索；示例阅读器已处理异步旧响应及缓存失效。导出多页期间应保持图层设置稳定。
 - `renderPage` 和 `renderPages` 的 `format` 支持 `png`、`jpg` 和 `svg`，省略时默认为 `png`。
 - PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`。
 - `renderPages` 按传入索引顺序返回数组，最多处理 64 页。
@@ -349,6 +355,8 @@ info
 addFallbackFont data: ArrayBuffer, family: string, weight: number, italic: boolean
 removeFallbackFont family: string
 pageInfo   index: number
+layers     index: number
+setHiddenLayers index: number, ids: string[]
 outline
 preferences
 fontUsage  scope: number, fontID: number[, maxScan, maxPages]

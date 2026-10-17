@@ -53,6 +53,7 @@ const (
 )
 
 type renderBudget struct {
+	visibility          PageVisibility
 	compositeExpansions int
 	compositeResources  map[models.StID]int
 	patternTiles        int
@@ -284,6 +285,19 @@ func (p *Document) Draw(ctx DrawContext, page *parser.Page) error {
 }
 
 func (p *Document) Page(page *parser.Page) (VectorSurface, error) {
+	return p.PageWithVisibility(page, PageVisibility{})
+}
+
+// PageVisibility 是一次页面输出的过滤设置；正文层与模板引用分别标识，避免 ID 混淆。
+// 同一模板在其他页面的引用不受影响。
+type PageVisibility struct {
+	HiddenLayers    map[models.StID]bool
+	HiddenTemplates map[models.StID]bool
+}
+
+// PageWithVisibility 过滤目标页正文图层及模板引用，保留注解和签章。
+// 过滤状态属于本次绘制，不修改共享页面或文档渲染上下文。
+func (p *Document) PageWithVisibility(page *parser.Page, visibility PageVisibility) (VectorSurface, error) {
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return nil, err
@@ -291,6 +305,7 @@ func (p *Document) Page(page *parser.Page) (VectorSurface, error) {
 	defer lease.Release()
 	var budget renderBudget
 	budget.reset()
+	budget.visibility = visibility
 	content := lease.Content()
 	if content == nil {
 		return nil, errors.New("页面内容为空")
@@ -350,7 +365,7 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	pb := content.Area.PhysicalBox
 	annots := p.Document.GetAnnotation(page.ID)
 	for _, template := range content.Template {
-		if !p.templateForeground(template) {
+		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && !p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
 	}
@@ -363,10 +378,14 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		}
 	}
 	if content.Content != nil {
-		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
+		layers := content.Content.Layer
+		if len(budget.visibility.HiddenLayers) > 0 {
+			layers = visiblePageLayers(layers, budget.visibility.HiddenLayers)
+		}
+		p.drawLayersWithBudget(ctx, layers, pb, budget)
 	}
 	for _, template := range content.Template {
-		if p.templateForeground(template) {
+		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
 	}
@@ -384,13 +403,24 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	}
 }
 
+func visiblePageLayers(layers []*models.Layer, hidden map[models.StID]bool) []*models.Layer {
+	visible := make([]*models.Layer, 0, len(layers))
+	for _, layer := range layers {
+		if layer != nil && !hidden[layer.ID] {
+			visible = append(visible, layer)
+		}
+	}
+	return visible
+}
+
 func (p *Document) Template(ctx DrawContext, template models.Template, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
 	p.template(ctx, template, pb, &budget)
 }
 
-func (p *Document) templateForeground(template models.Template) bool {
+// TemplateForeground 按页面引用、模板声明、默认 Background 的顺序确定叠放位置。
+func (p *Document) TemplateForeground(template models.Template) bool {
 	order := template.ZOrder
 	if order == "" {
 		for _, definition := range p.Document.CommonData.TemplatePages {

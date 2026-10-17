@@ -38,12 +38,22 @@ type TextLayout struct {
 // TextLayouts 返回页面文字的字符级布局。字符步进使用渲染器的字体度量、
 // DeltaX/DeltaY、ReadDirection 和 CTM 基础计算，避免网页字体度量造成高亮偏移。
 func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
-	return p.textLayouts(page, nil)
+	return p.TextLayoutsWithVisibility(page, PageVisibility{})
+}
+
+// TextLayoutsWithVisibility 返回过滤正文图层和模板后的布局。
+func (p *Document) TextLayoutsWithVisibility(page *parser.Page, visibility PageVisibility) []TextLayout {
+	return p.textLayouts(page, nil, visibility)
 }
 
 // TextLayoutsForRuns 返回指定 run 的字符级布局，结果按页面绘制顺序排列。
 // run 索引与 TextValues 返回的顺序一致。
 func (p *Document) TextLayoutsForRuns(page *parser.Page, runIndices []int) []TextLayout {
+	return p.TextLayoutsForRunsWithVisibility(page, runIndices, PageVisibility{})
+}
+
+// TextLayoutsForRunsWithVisibility 的 run 索引与过滤后的 TextValues 保持一致。
+func (p *Document) TextLayoutsForRunsWithVisibility(page *parser.Page, runIndices []int, visibility PageVisibility) []TextLayout {
 	if len(runIndices) == 0 {
 		return nil
 	}
@@ -56,10 +66,10 @@ func (p *Document) TextLayoutsForRuns(page *parser.Page, runIndices []int) []Tex
 	if len(selected) == 0 {
 		return nil
 	}
-	return p.textLayouts(page, selected)
+	return p.textLayouts(page, selected, visibility)
 }
 
-func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}) []TextLayout {
+func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, visibility PageVisibility) []TextLayout {
 	if p == nil || p.Document == nil || page == nil {
 		return nil
 	}
@@ -75,13 +85,16 @@ func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}) []T
 	}
 	runIndex := 0
 	for _, template := range content.Template {
+		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
+			continue
+		}
 		if content := p.Document.GetTemplate(models.StID(template.TemplateID)); content != nil {
 			collectTextLayouts(content.Content, &layouts, p, selected, &runIndex)
 		}
 	}
 	if content.Content != nil {
 		for _, layer := range content.Content.Layer {
-			if layer != nil {
+			if layer != nil && !visibility.HiddenLayers[layer.ID] {
 				collectTextLayoutBlock(&layer.CTPageBlock, &layouts, p, selected, &runIndex)
 			}
 		}
@@ -92,6 +105,11 @@ func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}) []T
 // TextValues 返回页面中可见的非空 TextCode 文本，顺序与 TextLayouts 一致。
 // 搜索等只需读取文字内容的调用方可避免构建字符级几何信息。
 func (p *Document) TextValues(page *parser.Page) []string {
+	return p.TextValuesWithVisibility(page, PageVisibility{})
+}
+
+// TextValuesWithVisibility 返回过滤正文图层和模板后的文字，供搜索索引使用。
+func (p *Document) TextValuesWithVisibility(page *parser.Page, visibility PageVisibility) []string {
 	if p == nil || p.Document == nil || page == nil {
 		return nil
 	}
@@ -106,13 +124,16 @@ func (p *Document) TextValues(page *parser.Page) []string {
 	}
 	values := make([]string, 0)
 	for _, template := range content.Template {
+		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
+			continue
+		}
 		if templateContent := p.Document.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
 			collectTextValues(templateContent.Content, &values)
 		}
 	}
 	if content.Content != nil {
 		for _, layer := range content.Content.Layer {
-			if layer != nil {
+			if layer != nil && !visibility.HiddenLayers[layer.ID] {
 				collectTextValuesBlock(&layer.CTPageBlock, &values)
 			}
 		}

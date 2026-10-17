@@ -83,7 +83,7 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 		if len(matches) == 0 {
 			continue
 		}
-		layouts := r.pages[pageIndex].document.TextLayoutsForRuns(r.pages[pageIndex].page, layoutRunIndices)
+		layouts := r.pages[pageIndex].document.TextLayoutsForRunsWithVisibility(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex])
 		for _, found := range matches {
 			if found.layoutIndex < 0 || found.layoutIndex >= len(layouts) {
 				continue
@@ -123,7 +123,7 @@ func (r *Reader) searchAt(index int) *search.Index {
 		}
 	} else {
 		ref := r.pages[index]
-		texts := ref.document.TextValues(ref.page)
+		texts := ref.document.TextValuesWithVisibility(ref.page, r.hiddenLayers[index])
 		builder = search.NewBuilder(len(texts))
 		for _, text := range texts {
 			builder.Add(text)

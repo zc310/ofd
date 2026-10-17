@@ -76,6 +76,8 @@ func main() {
 	api.Set("pageCount", js.FuncOf(app.pageCount))
 	api.Set("pages", js.FuncOf(app.pages))
 	api.Set("pageInfo", js.FuncOf(app.pageInfo))
+	api.Set("layers", js.FuncOf(app.layers))
+	api.Set("setHiddenLayers", js.FuncOf(app.setHiddenLayers))
 	api.Set("text", js.FuncOf(app.text))
 	api.Set("search", js.FuncOf(app.search))
 	api.Set("renderPage", js.FuncOf(app.renderPage))
@@ -978,6 +980,54 @@ func (a *wasmApp) text(_ js.Value, args []js.Value) any {
 		return errorValue(err)
 	}
 	return textRunsValue(runs)
+}
+
+func (a *wasmApp) layers(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	index, err := requiredIndex(args, "ofd.layers")
+	if err != nil {
+		return errorValue(err)
+	}
+	layers, err := reader.Layers(index)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := make([]any, 0, len(layers))
+	for _, layer := range layers {
+		result = append(result, map[string]any{"key": layer.Key, "id": layer.ID, "kind": layer.Kind, "name": layer.Name, "type": layer.Type, "objects": layer.Objects, "visible": layer.Visible})
+	}
+	return js.ValueOf(result)
+}
+
+func (a *wasmApp) setHiddenLayers(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) != 2 {
+		return errorValue(errors.New("ofd.setHiddenLayers 需要页面索引和图层 ID 数组"))
+	}
+	index, err := requiredIndex(args[:1], "ofd.setHiddenLayers")
+	if err != nil {
+		return errorValue(err)
+	}
+	if !js.Global().Get("Array").Call("isArray", args[1]).Bool() {
+		return errorValue(errors.New("图层 ID 必须为字符串数组"))
+	}
+	ids := make([]string, args[1].Length())
+	for i := range ids {
+		if args[1].Index(i).Type() != js.TypeString {
+			return errorValue(errors.New("图层 ID 必须为字符串"))
+		}
+		ids[i] = args[1].Index(i).String()
+	}
+	if err := reader.SetHiddenLayers(index, ids); err != nil {
+		return errorValue(err)
+	}
+	return js.ValueOf(true)
 }
 
 func (a *wasmApp) search(_ js.Value, args []js.Value) any {

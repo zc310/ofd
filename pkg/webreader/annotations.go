@@ -640,12 +640,15 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		return nil
 	}
 	links := make([]PageLink, 0)
-	appendLayerLinks(contentLayers(ref.page), ref.fontScope, index, pageIndex, &links)
+	appendLayerLinks(r.visibleLayers(index, contentLayers(ref.page)), ref.fontScope, index, pageIndex, &links)
 	if index == firstPageOfScope(r.pages, ref.fontScope) {
-		appendDocumentClickLinks(ref, index, pageIndex, &links)
+		appendDocumentClickLinksWithHiddenLayers(ref, index, pageIndex, &links, r.hiddenLayers[index].HiddenLayers)
 	}
 	// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
 	for _, tpl := range ref.page.Template() {
+		if r.hiddenLayers[index].HiddenTemplates[models.StID(tpl.TemplateID)] {
+			continue
+		}
 		template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
 		if template == nil || template.Content == nil {
 			continue
@@ -683,10 +686,14 @@ func firstPageOfScope(pages []pageRef, scope int) int {
 
 // appendDocumentClickLinks 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
 func appendDocumentClickLinks(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink) {
+	appendDocumentClickLinksWithHiddenLayers(ref, page, pageIndex, links, nil)
+}
+
+func appendDocumentClickLinksWithHiddenLayers(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink, hidden map[models.StID]bool) {
 	if ref.document == nil || ref.document.Document == nil || ref.document.Document.Actions == nil || ref.page == nil {
 		return
 	}
-	texts := pageTextObjects(ref.page)
+	texts := pageTextObjectsWithHiddenLayers(ref.page, hidden)
 	for _, action := range ref.document.Document.Actions.Actions {
 		if action.Event != models.ActionEventClick {
 			continue

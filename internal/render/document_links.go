@@ -40,6 +40,11 @@ type PageLinkResolver func(pageID models.StID) (LinkTargetRef, bool)
 // page 为 nil，或页面内容读取失败时返回 nil：链接是附加信息，读不到内容就没有
 // 热区可言，不应让整个转换失败。
 func (p *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []drawing.PageLink {
+	return p.PageLinksWithVisibility(page, resolve, PageVisibility{})
+}
+
+// PageLinksWithVisibility 排除隐藏正文图层和模板中的链接，保留注解链接。
+func (p *Document) PageLinksWithVisibility(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) []drawing.PageLink {
 	if p == nil || p.Document == nil || page == nil {
 		return nil
 	}
@@ -49,12 +54,15 @@ func (p *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []draw
 			return nil
 		}
 		if content.Content != nil {
-			collectLinks(content.Content.Layer, resolve, &links)
+			collectLinks(visiblePageLayers(content.Content.Layer, visibility.HiddenLayers), resolve, &links)
 		}
 		return nil
 	})
 	// 模板页上的链接同样可点：模板按 ZOrder 叠加到页面，其图元坐标已是页面坐标。
 	for _, ref := range page.Template() {
+		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
+			continue
+		}
 		template := p.GetTemplate(models.StID(ref.TemplateID))
 		if template == nil || template.Content == nil {
 			continue

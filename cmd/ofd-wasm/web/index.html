@@ -398,7 +398,20 @@
        .thumbnail-toolbar[hidden] { display: none; }
        .thumbnail-toolbar .thumbnail-size-label { flex: 0 0 auto; color: #7b8798; font-size: 12px; }
        .thumbnail-toolbar .thumbnail-size-slider { flex: 1 1 auto; min-width: 0; accent-color: #2476bd; }
-       #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 10px 12px; scrollbar-width: thin; }
+       #fonts, #attachments, #media, #annotations, #signatures, #layers { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 10px 12px; scrollbar-width: thin; }
+       .layer-tree-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; font-size: 12px; }
+       .layer-tree-navigation small { flex: 1; color: #64748b; }
+       .layer-tree { list-style: none; margin: 0; padding: 0; }
+       .layer-page-node { margin-bottom: 6px; }
+       .layer-page-heading { display: flex; align-items: center; gap: 6px; }
+       .layer-page-toggle { flex: 0 0 24px; padding: 4px 0; border: 0; border-radius: 3px; background: transparent; color: inherit; box-shadow: none; }
+       .layer-page-title { flex: 1; min-width: 0; padding: 6px 0; color: inherit; text-decoration: none; }
+       .layer-page-title:hover { text-decoration: underline; }
+       .layer-page-node.current > .layer-page-heading .layer-page-title { color: #2563eb; font-weight: 600; }
+       .layer-children { margin: 4px 0 12px 10px; padding-left: 12px; border-left: 1px solid #cbd5e1; }
+       .layer-item { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.4; cursor: pointer; }
+       .layer-item input[type="checkbox"] { width: 14px; height: 14px; min-height: 0; margin: 0; padding: 0; }
+       .layer-note { color: #64748b; font-size: 12px; line-height: 1.6; }
        .fonts-summary { margin: 2px 0 10px; color: #667188; font-size: 12px; }
        .fonts-list { display: flex; flex-direction: column; }
        .font-item-wrap { display: flex; flex-direction: column; }
@@ -617,7 +630,7 @@
        #sidebar-tabs { margin: 0; padding: 0; }
        #thumbnails { position: static;  display: block; flex: 0 0 auto; width: 100%; max-height: 114px; min-height: 114px; margin: 0 -10px; padding: 6px 10px; overflow-x: auto; overflow-y: hidden; overflow-anchor: none; touch-action: pan-x; background: transparent; scrollbar-width: thin; }
        #thumbnails[hidden] { display: none; }
-           #outline, #bookmarks, #custom-tags, #fonts, #attachments, #media, #annotations, #signatures { flex: 1 1 auto; max-height: none; overflow-y: auto; }
+            #outline, #bookmarks, #custom-tags, #fonts, #attachments, #media, #annotations, #signatures, #layers { flex: 1 1 auto; max-height: none; overflow-y: auto; }
         #search-panel { flex: 1 1 auto; max-height: none; overflow: hidden; }
         .sidebar-search-form button, .sidebar-search-actions button { min-width: 40px; min-height: 40px; }
        #thumbnails .thumbnail, #thumbnails .thumbnail-placeholder { flex: 0 0 72px; width: 72px; }
@@ -798,7 +811,7 @@
         <label class="print-option"><input type="radio" name="print-range" value="custom"><span>自定义范围</span></label>
         <input id="print-range-custom" class="print-range-input" type="text" inputmode="numeric" placeholder="例如：1-3,5,8-10" aria-label="自定义打印范围" disabled>
       </div>
-      <p class="print-hint">可使用逗号分隔页面，页码从 1 开始。</p>
+      <p class="print-hint">可使用逗号分隔页面，页码从 1 开始。打印使用各页当前显示的图层。</p>
       <p id="print-error" class="print-error" role="alert" hidden></p>
       <div class="print-actions">
         <button id="print-cancel" type="button">取消</button>
@@ -809,6 +822,7 @@
   <dialog id="export-dialog" class="export-dialog" aria-labelledby="export-title">
     <form id="export-form" class="export-form">
       <h2 id="export-title">导出文档</h2>
+      <p class="print-hint">导出使用各页当前显示的图层。</p>
       <div class="export-field">
         <label for="export-range">导出范围</label>
         <select id="export-range">
@@ -886,6 +900,7 @@
           <span id="sidebar-tab-more-label" class="sidebar-tab-label">更多</span>
         </button>
         <div id="sidebar-more-menu" class="sidebar-more-menu" role="menu" hidden>
+          <button id="sidebar-more-layers" type="button" role="menuitem" aria-controls="layers"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">grid_view</span><span>图层</span></button>
           <button id="sidebar-more-fonts" type="button" role="menuitem" aria-controls="fonts"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">font_download</span><span>字体</span></button>
           <button id="sidebar-more-versions" type="button" role="menuitem" aria-controls="versions"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">history</span><span>版本</span></button>
           <button id="sidebar-more-attachments" type="button" role="menuitem" aria-controls="attachments"><span class="material-symbols-outlined sidebar-menu-icon" aria-hidden="true">attach_file</span><span>附件</span></button>
@@ -921,6 +936,7 @@
       <aside id="bookmarks" role="tabpanel" aria-label="文档书签" hidden></aside>
       <aside id="fonts" role="tabpanel" aria-label="文档字体" hidden></aside>
       <aside id="versions" role="tabpanel" aria-label="文档版本" hidden></aside>
+      <aside id="layers" role="tabpanel" aria-label="页面图层" hidden></aside>
       <aside id="attachments" role="tabpanel" aria-label="文档附件" hidden></aside>
       <aside id="media" role="tabpanel" aria-label="文档资源" hidden></aside>
       <aside id="annotations" role="tabpanel" aria-label="文档注解" hidden></aside>
