@@ -623,6 +623,8 @@ let searchReturnSidebarTab = 'thumbnails';
 let outlineNodes = [];
 let bookmarkNodes = [];
 let customTagTrees = [];
+let customTagHighlightTargets = [];
+let customTagHighlightTimer;
 let sidebarFilterValue = '';
 const thumbnailSizeStorageKey = 'ofd-thumbnail-size';
 // 缩略图尺寸以可用宽度的百分比表示，允许 40%–100%。兼容旧版 small/medium/large 档位。
@@ -1273,6 +1275,7 @@ function mountPageSpread(position) {
     card.append(surface);
     element.append(card);
     pageCards[index] = card;
+    applyCustomTagHighlights(index);
     if (textCache.has(index)) buildTextLayer(index);
     resizeObserver?.observe(card);
     schedulePageRender(index, index === current ? 0 : 300);
@@ -4069,6 +4072,7 @@ async function openSelectedFile(selected, options = {}) {
     outlineNodes = [];
     bookmarkNodes = [];
     customTagTrees = [];
+    clearCustomTagHighlights();
     renderOutline();
     renderBookmarks();
     documentInfo = null;
@@ -5378,27 +5382,85 @@ function customTagMatches(node, needle) {
     (node.children || []).some(child => customTagMatches(child, needle));
 }
 
-function scrollToCustomTagTarget(target) {
-  if (!target || !Number.isInteger(Number(target.page))) return;
-  const index = Number(target.page);
-  if (index < 0 || index >= pageInfos.length) return;
+function customTagTargets(node) {
+  const targets = [];
+  const seen = new Set();
+  const add = target => {
+    if (!target) return;
+    const objectID = target.object_id ?? target.objectID;
+    const key = objectID == null
+      ? `${target.page}:${target.x}:${target.y}:${target.width}:${target.height}`
+      : `${target.page}:${objectID}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    targets.push(target);
+  };
+  const visit = current => {
+    if (!current) return;
+    add(current.target);
+    if (Array.isArray(current.children)) current.children.forEach(visit);
+  };
+  visit(node);
+  return targets;
+}
+
+function customTagDirectTarget(node) {
+  if (node?.target) return node.target;
+  const children = Array.isArray(node?.children) ? node.children : [];
+  return children.find(child => child?.name === 'ObjectRef' && child.target)?.target || null;
+}
+
+function customTagLabelText(node) {
+  const value = customTagDirectTarget(node)?.object_text || node?.text || '';
+  return value ? `${node.name}: ${value}` : node?.name || '';
+}
+
+function customTagCanNavigate(node) {
+  return customTagTargets(node).length > 0;
+}
+
+function clearCustomTagHighlights() {
+  if (customTagHighlightTimer) window.clearTimeout(customTagHighlightTimer);
+  customTagHighlightTimer = undefined;
+  customTagHighlightTargets = [];
+  document.querySelectorAll('.custom-tag-highlight').forEach(highlight => highlight.remove());
+}
+
+function applyCustomTagHighlights(pageIndex) {
+  const card = pageCards[pageIndex];
+  const info = pageInfos[pageIndex];
+  if (!card || !info) return;
+  card.querySelectorAll('.custom-tag-highlight').forEach(highlight => highlight.remove());
+  customTagHighlightTargets
+    .filter(target => Number(target.page) === pageIndex)
+    .forEach(target => {
+      if (![target.x, target.y, target.width, target.height].every(value => Number.isFinite(Number(value))) ||
+          !(target.width > 0) || !(target.height > 0)) return;
+      const highlight = document.createElement('div');
+      highlight.className = 'custom-tag-highlight';
+      highlight.style.left = `${(Number(target.x) / info.width) * 100}%`;
+      highlight.style.top = `${(Number(target.y) / info.height) * 100}%`;
+      highlight.style.width = `${(Number(target.width) / info.width) * 100}%`;
+      highlight.style.height = `${(Number(target.height) / info.height) * 100}%`;
+      card.append(highlight);
+    });
+}
+
+function scrollToCustomTagTargets(targets) {
+  targets = (Array.isArray(targets) ? targets : [targets])
+    .filter(target => target && Number.isInteger(Number(target.page)) &&
+      Number(target.page) >= 0 && Number(target.page) < pageInfos.length);
+  if (!targets.length) return;
+  const index = Number(targets[0].page);
+  clearCustomTagHighlights();
+  customTagHighlightTargets = targets;
   goTo(index);
   requestAnimationFrame(() => {
-    const card = pageCards[index];
-    const info = pageInfos[index];
-    if (!card || !info) return;
-    let highlight = card.querySelector('.custom-tag-highlight');
-    if (!highlight) {
-      highlight = document.createElement('div');
-      highlight.className = 'custom-tag-highlight';
-      card.append(highlight);
+    for (const pageIndex of new Set(targets.map(target => Number(target.page)))) {
+      if (pageCards[pageIndex]) applyCustomTagHighlights(pageIndex);
     }
-    highlight.style.left = `${(Number(target.x) / info.width) * 100}%`;
-    highlight.style.top = `${(Number(target.y) / info.height) * 100}%`;
-    highlight.style.width = `${(Number(target.width) / info.width) * 100}%`;
-    highlight.style.height = `${(Number(target.height) / info.height) * 100}%`;
-    window.setTimeout(() => highlight.remove(), 2200);
   });
+  customTagHighlightTimer = window.setTimeout(clearCustomTagHighlights, 2200);
 }
 
 function buildCustomTagList(nodes, needle, path = '') {
@@ -5410,9 +5472,10 @@ function buildCustomTagList(nodes, needle, path = '') {
     const row = document.createElement('div');
     row.className = 'custom-tag-row';
     const rawChildren = Array.isArray(node.children) ? node.children : [];
-    const refChild = rawChildren.find(child => child?.name === 'ObjectRef' && child.target);
-    const target = node.target || refChild?.target || null;
+    const targets = customTagTargets(node);
+    const target = customTagDirectTarget(node);
     const children = rawChildren.filter(child => child?.name !== 'ObjectRef');
+    const nodePath = path ? `${path}.${index}` : String(index);
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'custom-tag-toggle';
@@ -5422,13 +5485,12 @@ function buildCustomTagList(nodes, needle, path = '') {
     const label = document.createElement('button');
     label.type = 'button';
     label.className = 'custom-tag-label';
-    const value = target?.object_text || node.text || '';
-    label.textContent = value ? `${node.name}: ${value}` : node.name;
-    label.title = value || node.name;
-    if (target) {
-      label.classList.add('custom-tag-target');
+    label.textContent = customTagLabelText(node);
+    label.title = label.textContent;
+    if (customTagCanNavigate(node)) {
+      label.classList.toggle('custom-tag-target', Boolean(target));
       label.addEventListener('click', () => {
-        scrollToCustomTagTarget(target);
+        scrollToCustomTagTargets(targets);
         collapseSidebarAfterJump();
       });
     } else {
@@ -5437,7 +5499,7 @@ function buildCustomTagList(nodes, needle, path = '') {
     row.append(label);
     item.append(row);
     if (children.length) {
-      const childList = buildCustomTagList(children, needle, `${path}.${index}`);
+      const childList = buildCustomTagList(children, needle, nodePath);
       item.append(childList);
       toggle.addEventListener('click', () => {
         const collapsed = childList.hidden;
@@ -5458,11 +5520,11 @@ function renderCustomTags() {
     customTagsElement.append(outlineEmptyMessage('此文档没有自定义标签'));
     return;
   }
-  customTagTrees.forEach(tag => {
+  customTagTrees.forEach((tag, index) => {
     const source = document.createElement('p');
     source.className = 'custom-tag-source';
     source.textContent = tag.root?.name || tag.path || '自定义标签';
-    customTagsElement.append(source, buildCustomTagList(tag.root ? [tag.root] : [], needle));
+    customTagsElement.append(source, buildCustomTagList(tag.root ? [tag.root] : [], needle, `tree${index}`));
   });
   restorePanelScroll('custom-tags');
 }
