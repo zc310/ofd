@@ -14,11 +14,11 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/zc310/fontfix/cidmap"
+	"github.com/zc310/ofd/internal/cidmap"
 )
 
 // Adobe BSD 映射数据保留原始版权声明，来源与重建方法见 cmaps/README.md。
-// Adobe-GB1 CID→Unicode 由 fontfix/cidmap 共用，不在这里重复嵌入。
+// Adobe-GB1 CID→Unicode 由 internal/cidmap 共用，不在这里重复嵌入。
 //
 //go:embed cmaps/adobe.zip
 var pdfAdobeCMaps []byte

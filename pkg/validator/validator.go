@@ -22,9 +22,9 @@ import (
 	"github.com/knroy/go-xml/xdm"
 	"github.com/knroy/go-xml/xsd"
 	"github.com/zc310/font"
-	"github.com/zc310/fontfix"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -1155,7 +1155,7 @@ func parseValidatorFont(data []byte) (sfnt *font.SFNT, repaired bool, err error)
 			err = fmt.Errorf("字体解析器异常：%v", recovered)
 		}
 	}()
-	fixed, repairErr := fontfix.Repair(data)
+	fixed, repairErr := fontrepair.Repair(data)
 	var fixedSFNT *font.SFNT
 	var fixedErr error
 	if repairErr == nil {
@@ -1319,9 +1319,9 @@ func validateFontGlyph(sfnt *font.SFNT, glyphID uint16) (err error) {
 	if glyphID < sfnt.NumGlyphs() {
 		return nil
 	}
-	// fontfix 会在修复子集字体后，将超出原生字体范围的 OFD glyph ID
+	// fontrepair 会在修复子集字体后，将超出原生字体范围的 OFD glyph ID
 	// 映射到私用区 cmap 条目。
-	mappedGlyphID := sfnt.GlyphIndex(fontfix.GlyphRune(glyphID))
+	mappedGlyphID := sfnt.GlyphIndex(fontrepair.GlyphRune(glyphID))
 	if mappedGlyphID == 0 || mappedGlyphID >= sfnt.NumGlyphs() {
 		return fmt.Errorf("glyph ID 超出字体范围（共 %d 个 glyph）", sfnt.NumGlyphs())
 	}

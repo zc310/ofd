@@ -144,10 +144,6 @@ Source: https://github.com/xuri/excelize
 License: MIT
 Source: https://github.com/yuin/goldmark
 
-### github.com/zc310/fontfix v0.0.3-0.20260927235621-9e5b20635fc8
-License: Apache-2.0
-Source: https://github.com/zc310/fontfix
-
 ### go.etcd.io/bbolt v1.5.0
 License: MIT
 Source: https://github.com/etcd-io/bbolt
@@ -372,10 +368,16 @@ Source: https://star-tex.org/x/tex
 
 ## License Summary
 
+Adobe-GB1 mapping data is embedded in internal/cidmap. Source hashes and
+generation instructions are in internal/cidmap/README.md and SHA256SUMS;
+the full Adobe BSD-3-Clause notice is in internal/cidmap/NOTICE.
+Other embedded Adobe CMaps retain their original notices in
+internal/pdf2ofd/cmaps/adobe.zip.
+
 The project uses the following license types:
 - MIT: 53 packages
 - BSD-3-Clause: 29 packages
-- Apache-2.0: 8 packages
+- Apache-2.0: 7 packages
 - BSD-2-Clause: 2 packages
 - ISC: 1 package
 - GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)

@@ -40,7 +40,7 @@ Office/HTML 转 OFD 时的 PDF 中间阶段。
 | 不可见文字层 | `Tr=3/7`、空裁剪隐藏的文字及透明合成中的文字保留原文和位置；空轮廓字体保留源字宽，不产生可见笔画。 |
 | ToUnicode | `bfchar/bfrange`，包括数组目标、连续区间和多 Unicode 码位映射。 |
 | 简单字体编码 | `/Encoding`、`/Differences`；WinAnsi、MacRoman、MacExpert、Symbol、ZapfDingbats、AdobeStandard。 |
-| 预定义 CJK CMap | 内置 Adobe-GB1/CNS1/Japan1/Korea1 的 150 个横排/竖排 Encoding CMap 和四个字符集的 CID→Unicode 映射；GB1 文字映射通过 `fontfix/cidmap` 共用，保留异体选择符及与字体修复不同的标点映射，其余三份表保存在导入器中。不依赖系统 CMap 或网络。 |
+| 预定义 CJK CMap | 内置 Adobe-GB1/CNS1/Japan1/Korea1 的 150 个横排/竖排 Encoding CMap 和四个字符集的 CID→Unicode 映射；GB1 文字映射通过仓库内 `internal/cidmap` 共用，保留异体选择符及与字体修复不同的标点映射，其余三份表保存在导入器中。不依赖系统 CMap 或网络。 |
 | 嵌入 Encoding CMap | 固定或混合 1–4 字节代码、`cidchar/cidrange`、`notdefchar/notdefrange`、WMode；名称或流形式的 UseCMap 继承及本地覆盖。保留代码长度，区分 `<01>` 与 `<0001>`。 |
 | 横排字宽 | `Widths/FirstChar`、CID 的 `W/DW`；按源字宽保存字符推进，避免子集字体的占位 hmtx 改变字距。 |
 | 竖排度量 | `W2/DW2` 的数组和区间形式，包含字形原点与垂直推进；W/W2 按 CID 查询，ToUnicode 按原始代码查询。 |

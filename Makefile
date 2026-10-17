@@ -350,6 +350,7 @@ $(VIEWER_PACKAGE): $(VIEWER) cmd/ofd-viewer/README.md
 	@rm -f "$@"
 	@cp "$(VIEWER)" "$(PACKAGE_DIR)/ofd-viewer/ofd-viewer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-viewer/README.md" "$(PACKAGE_DIR)/ofd-viewer/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-viewer/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer"
 
 package-viewer-android: $(ANDROID_VIEWER_PACKAGE)
@@ -367,6 +368,7 @@ $(ANDROID_VIEWER_ZIP): $(ANDROID_VIEWER_PACKAGE)
 	@rm -rf "$(PACKAGE_DIR)/ofd-viewer-android" "$@"
 	@mkdir -p "$(PACKAGE_DIR)/ofd-viewer-android"
 	@cp "$(ANDROID_VIEWER_PACKAGE)" "$(PACKAGE_DIR)/ofd-viewer-android/ofd-viewer-android.apk"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-viewer-android/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-viewer-android"
 
 package-converter: $(CONVERTER_PACKAGE)
@@ -392,6 +394,7 @@ $(VALIDATOR_PACKAGE): $(VALIDATOR) cmd/ofd-validator/README.md
 	@rm -f "$@"
 	@cp "$(VALIDATOR)" "$(PACKAGE_DIR)/ofd-validator/ofd-validator$(BIN_SUFFIX)"
 	@cp "cmd/ofd-validator/README.md" "$(PACKAGE_DIR)/ofd-validator/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-validator/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-validator"
 
 $(ANALYZER_PACKAGE): $(ANALYZER) cmd/ofd-analyzer/README.md
@@ -401,6 +404,7 @@ $(ANALYZER_PACKAGE): $(ANALYZER) cmd/ofd-analyzer/README.md
 	@rm -f "$@"
 	@cp "$(ANALYZER)" "$(PACKAGE_DIR)/ofd-analyzer/ofd-analyzer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-analyzer/README.md" "$(PACKAGE_DIR)/ofd-analyzer/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-analyzer/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-analyzer"
 
 $(ARCHIVE_PACKAGE): $(ARCHIVE) cmd/ofd-archive/README.md
@@ -410,6 +414,7 @@ $(ARCHIVE_PACKAGE): $(ARCHIVE) cmd/ofd-archive/README.md
 	@rm -f "$@"
 	@cp "$(ARCHIVE)" "$(PACKAGE_DIR)/ofd-archive/ofd-archive$(BIN_SUFFIX)"
 	@cp "cmd/ofd-archive/README.md" "$(PACKAGE_DIR)/ofd-archive/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-archive/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-archive"
 
 $(CREATOR_PACKAGE): $(CREATOR) cmd/ofd-creator/README.md
@@ -419,6 +424,7 @@ $(CREATOR_PACKAGE): $(CREATOR) cmd/ofd-creator/README.md
 	@rm -f "$@"
 	@cp "$(CREATOR)" "$(PACKAGE_DIR)/ofd-creator/ofd-creator$(BIN_SUFFIX)"
 	@cp "cmd/ofd-creator/README.md" "$(PACKAGE_DIR)/ofd-creator/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-creator/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-creator"
 
 $(SIGNER_DEMO_PACKAGE): $(SIGNER_DEMO) cmd/ofd-signer-demo/README.md
@@ -428,6 +434,7 @@ $(SIGNER_DEMO_PACKAGE): $(SIGNER_DEMO) cmd/ofd-signer-demo/README.md
 	@rm -f "$@"
 	@cp "$(SIGNER_DEMO)" "$(PACKAGE_DIR)/ofd-signer-demo/ofd-signer-demo$(BIN_SUFFIX)"
 	@cp "cmd/ofd-signer-demo/README.md" "$(PACKAGE_DIR)/ofd-signer-demo/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-signer-demo/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-signer-demo"
 
 $(SEAL_PACKAGE): $(SEAL) cmd/ofd-seal/README.md
@@ -437,6 +444,7 @@ $(SEAL_PACKAGE): $(SEAL) cmd/ofd-seal/README.md
 	@rm -f "$@"
 	@cp "$(SEAL)" "$(PACKAGE_DIR)/ofd-seal/ofd-seal$(BIN_SUFFIX)"
 	@cp "cmd/ofd-seal/README.md" "$(PACKAGE_DIR)/ofd-seal/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-seal/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-seal"
 
 $(INVOICE_PACKAGE): $(INVOICE) cmd/ofd-invoice/README.md
@@ -446,6 +454,7 @@ $(INVOICE_PACKAGE): $(INVOICE) cmd/ofd-invoice/README.md
 	@rm -f "$@"
 	@cp "$(INVOICE)" "$(PACKAGE_DIR)/ofd-invoice/ofd-invoice$(BIN_SUFFIX)"
 	@cp "cmd/ofd-invoice/README.md" "$(PACKAGE_DIR)/ofd-invoice/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-invoice/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-invoice"
 
 package-server: $(SERVER_PACKAGE)
@@ -457,6 +466,7 @@ $(SERVER_PACKAGE): $(SERVER) cmd/ofd-server/README.md cmd/ofd-server/example-con
 	@rm -f "$@"
 	@cp "$(SERVER)" "$(PACKAGE_DIR)/ofd-server/ofd-server$(BIN_SUFFIX)"
 	@cp "cmd/ofd-server/README.md" "$(PACKAGE_DIR)/ofd-server/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-server/ADOBE-GB1-NOTICE"
 	@cp "cmd/ofd-server/example-config.json" "$(PACKAGE_DIR)/ofd-server/example-config.json"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-server"
 
@@ -467,6 +477,7 @@ $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 	@rm -f "$@"
 	@cp "$(CONVERTER)" "$(PACKAGE_DIR)/ofd-converter/ofd-converter$(BIN_SUFFIX)"
 	@cp "cmd/ofd-converter/README.md" "$(PACKAGE_DIR)/ofd-converter/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-converter/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-converter"
 
 ifeq ($(GOOS),linux)
@@ -480,6 +491,7 @@ $(THUMBNAILER_PACKAGE): $(THUMBNAILER) cmd/ofd-thumbnailer/README.md cmd/ofd-thu
 	@rm -f "$@"
 	@cp "$(THUMBNAILER)" "$(PACKAGE_DIR)/ofd-thumbnailer/ofd-thumbnailer$(BIN_SUFFIX)"
 	@cp "cmd/ofd-thumbnailer/README.md" "$(PACKAGE_DIR)/ofd-thumbnailer/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-thumbnailer/ADOBE-GB1-NOTICE"
 	@cp "cmd/ofd-thumbnailer/zc310-ofd.thumbnailer" "$(PACKAGE_DIR)/ofd-thumbnailer/zc310-ofd.thumbnailer"
 	@cp "cmd/ofd-thumbnailer/install.sh" "$(PACKAGE_DIR)/ofd-thumbnailer/install.sh"
 	@chmod 755 "$(PACKAGE_DIR)/ofd-thumbnailer/install.sh"

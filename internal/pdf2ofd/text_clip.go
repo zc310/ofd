@@ -2,7 +2,7 @@ package pdf2ofd
 
 import (
 	fontparser "github.com/zc310/font"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -35,12 +35,12 @@ func pdfCodeGlyph(code uint64, text string, font pdfFontInfo) uint16 {
 		} else if font.sfnt != nil && font.sfnt.IsCFF {
 			// CID-keyed CFF charsets can have nonidentity CID→GID even when the
 			// CID is numerically within NumGlyphs. Repair preserves that mapping.
-			if mapped := font.sfnt.GlyphIndex(fontfix.GlyphRune(cid)); mapped != 0 {
+			if mapped := font.sfnt.GlyphIndex(fontrepair.GlyphRune(cid)); mapped != 0 {
 				return mapped
 			}
 		}
 		if uint32(g) >= embeddedFontGlyphCount(font.data) {
-			return font.sfnt.GlyphIndex(fontfix.GlyphRune(g))
+			return font.sfnt.GlyphIndex(fontrepair.GlyphRune(g))
 		}
 		return g
 	}

@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
@@ -43,7 +43,7 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 		GlyphCount:   1,
 		Glyphs:       models.StArrayI{21},
 	}}, 0)
-	if len(glyphs) != 1 || glyphs[0].value != string(fontfix.GlyphRune(21)) {
+	if len(glyphs) != 1 || glyphs[0].value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("glyphs = %+v, want private reference when Unicode is unavailable", glyphs)
 	}
 
@@ -53,7 +53,7 @@ func TestTextCodeGlyphsKeepsUnicodeWhenRepairedGlyphIsAvailable(t *testing.T) {
 		GlyphCount:   1,
 		Glyphs:       models.StArrayI{21},
 	}}, 0)
-	if len(glyphs) != 1 || glyphs[0].value != string(fontfix.GlyphRune(21)) {
+	if len(glyphs) != 1 || glyphs[0].value != string(fontrepair.GlyphRune(21)) {
 		t.Fatalf("CFF glyphs = %+v, want private reference to GID 21", glyphs)
 	}
 	if glyphs[0].semantic != "E" {
@@ -285,10 +285,10 @@ func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
 	widths := []float64{2, 3, 4}
 	runes := []rune("abc")
 	widthOf := func(value string) float64 {
-		if value == string(fontfix.GlyphRune(65)) {
+		if value == string(fontrepair.GlyphRune(65)) {
 			return 9
 		}
-		if value == string(fontfix.GlyphRune(66)) {
+		if value == string(fontrepair.GlyphRune(66)) {
 			return 6
 		}
 		return 0

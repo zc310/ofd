@@ -1,7 +1,7 @@
 package canvas
 
 import (
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/utils"
@@ -142,7 +142,7 @@ func collectObjectGlyphs(object models.TextObject, out map[models.StRefID]map[ru
 					out[object.Font] = pairs
 				}
 				gid := uint16(id)
-				pairs[fontfix.GlyphRune(gid)] = gid
+				pairs[fontrepair.GlyphRune(gid)] = gid
 			}
 			codeCount := transform.CodeCount
 			if codeCount <= 0 {
