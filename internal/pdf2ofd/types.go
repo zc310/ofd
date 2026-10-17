@@ -8,7 +8,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/zc310/font"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -70,7 +70,7 @@ type pdfVerticalMetric struct{ advance, x, y float64 }
 //
 // CID 只是子字体的字形编号，不携带字符语义：/Encoding 为 Identity-H 时也只表示
 // 2 字节码原样传给子字体。PDF 没有 /ToUnicode 时，字符集映射只存在于 CFF 的
-// charset 里；fontfix 包装裸 CFF 时已把 Unicode 连同字形 ID 一并写进 cmap
+// charset 里；fontrepair 包装裸 CFF 时已把 Unicode 连同字形 ID 一并写进 cmap
 // （F0000+CID 与 Unicode 两条映射指向同一 GID），所以用 GlyphRune(CID) 取 GID
 // 再由 GlyphToUnicode 反查即可，不必在本仓库另存一份字符集表。
 //
@@ -87,7 +87,7 @@ func (f pdfFontInfo) cidUnicode(code uint64) (string, bool) {
 		return value, true
 	}
 	cid := pdfCIDCode(code, f)
-	glyph := f.sfnt.GlyphIndex(fontfix.GlyphRune(cid))
+	glyph := f.sfnt.GlyphIndex(fontrepair.GlyphRune(cid))
 	if mapped, ok := f.cidToGID[cid]; ok {
 		glyph = mapped
 	}

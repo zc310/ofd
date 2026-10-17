@@ -15,7 +15,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	fontparser "github.com/zc310/font"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -110,7 +110,7 @@ func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
 			continue
 		}
 		fontData := stream.Content
-		if fixed, err := fontfix.Repair(fontData); err == nil {
+		if fixed, err := fontrepair.Repair(fontData); err == nil {
 			fontData = fixed
 		}
 		sfnt, err := fontparser.ParseSFNT(fontData, 0)

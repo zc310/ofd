@@ -1,7 +1,7 @@
 package render
 
 import (
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 )
@@ -356,7 +356,7 @@ func applyCGTransformWidths(widths []float64, runes []rune, transforms []models.
 			if glyph >= 0 && glyph <= 0xffff {
 				// 渲染器使用转换为私有字符的字形 ID。
 				// 查询宽度时必须使用相同的值，而不是源文本。
-				if advance := widthOf(string(fontfix.GlyphRune(uint16(glyph)))); advance > 0 {
+				if advance := widthOf(string(fontrepair.GlyphRune(uint16(glyph)))); advance > 0 {
 					advances = append(advances, advance)
 				}
 			}

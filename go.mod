@@ -45,7 +45,6 @@ require (
 	github.com/yuin/goldmark v1.8.6
 	github.com/zc310/canvas v0.0.0-20261016023101-3d1af32f0be3
 	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
-	github.com/zc310/fontfix v0.0.3-0.20261017064440-13a955817cb4
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0

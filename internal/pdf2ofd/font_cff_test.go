@@ -7,7 +7,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/zc310/font"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 )
 
 func TestPDFCFFGlyphTransformsUseGID(t *testing.T) {
@@ -58,7 +58,7 @@ func TestPDFDecodeUnknownCustomGlyphUsesPrivateGIDRune(t *testing.T) {
 		codeToGID: map[uint32]uint16{54: 22},
 	}
 	text, codes := decodePDFText([]byte{54}, font)
-	if want := string(fontfix.GlyphRune(22)); text != want {
+	if want := string(fontrepair.GlyphRune(22)); text != want {
 		t.Fatalf("decoded custom glyph = %U, want private GID rune %U", []rune(text), []rune(want))
 	}
 	if len(codes) != 1 || codes[0] != 54 {
@@ -88,16 +88,16 @@ func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
 	if len(transforms) != 3 {
 		t.Fatalf("CFF transforms = %d, want 3", len(transforms))
 	}
-	mappings := make([]fontfix.GlyphMapping, len(transforms))
+	mappings := make([]fontrepair.GlyphMapping, len(transforms))
 	for index, transform := range transforms {
 		gid := uint16(transform.Glyphs[0])
 		cid, _ := font.sfnt.CFF.GlyphCID(gid)
 		if name := font.sfnt.GlyphName(gid); name != string([]rune("ESG")[index]) {
 			t.Fatalf("CID %d GID %d name=%q, want %c", cid, gid, name, []rune("ESG")[index])
 		}
-		mappings[index] = fontfix.GlyphMapping{Rune: []rune("ESG")[index], Glyph: gid}
+		mappings[index] = fontrepair.GlyphMapping{Rune: []rune("ESG")[index], Glyph: gid}
 	}
-	fixed, err := fontfix.RepairWithGlyphs(font.data, mappings)
+	fixed, err := fontrepair.RepairWithGlyphs(font.data, mappings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestGBTCustomCFFEncodingPreservesPrivateGlyphRune(t *testing.T) {
 		t.Fatalf("自定义 /G36 被误解码为 %q", got)
 	}
 	text, codes := decodePDFText([]byte{54}, font)
-	if want := string(fontfix.GlyphRune(glyph)); text != want {
+	if want := string(fontrepair.GlyphRune(glyph)); text != want {
 		t.Fatalf("自定义字形解码为 %U，期望 GID 私有码位 %U", []rune(text), []rune(want))
 	}
 	if len(codes) != 1 || codes[0] != 54 {

@@ -671,6 +671,8 @@ err = converter.HTML(context.Background(), "input.ofd", &svgHTML,
 )
 ```
 
+内嵌字体修复由仓库内的 [internal/fontrepair](internal/fontrepair/README.md) 按 OpenType 和 Adobe CFF/Type 2 公开规范实现，支持缺表补齐、字形 cmap、裸 CFF 的 OTF 封装与度量补齐；字体修复和 PDF 提取共用 [Adobe-GB1 映射数据](internal/cidmap/README.md)，保留 Adobe BSD 许可。
+
 ## 特别感谢
 
 本项目的开发离不开以下项目的启发和帮助，参考其架构、设计或行为实现，本项目自身未复制其代码（第三方依赖的派生情况见各条目和第三方许可清单）：
@@ -678,7 +680,6 @@ err = converter.HTML(context.Background(), "input.ofd", &svgHTML,
 - [国家标准化管理委员会发布的 GB/T 33190-2016 标准](http://std.samr.gov.cn/)
 - [GreenYun/OFD-Schema](https://github.com/GreenYun/OFD-Schema)，校验器内嵌的 OFD XSD 模式来源
 - [itlabers/ofd-go](https://github.com/itlabers/ofd-go)
-- [xiaoqidun/ofdgo](https://github.com/xiaoqidun/ofdgo)，支持异常内嵌字体（缺失 `OS/2` 表、缺失字形 `cmap` 映射，以及裸 CFF 的 SFNT 包装与度量补齐）的修复。本项目通过其独立移植 [github.com/zc310/fontfix](https://github.com/zc310/fontfix) 引入该能力；fontfix 的字体修复实现派生自该项目（Copyright 2025-2026 Xiao Qi Dun），并已大幅简化与修改
 - [tdewolff/canvas](https://github.com/tdewolff/canvas)、[tdewolff/font](https://github.com/tdewolff/font) 与 [lumifloat/tinyskia](https://github.com/lumifloat/tinyskia)，分别是本项目 PDF/SVG 与文字路径渲染、字体解析、可选栅格后端的上游；本项目通过派生移植 [github.com/zc310/canvas](https://github.com/zc310/canvas)、[github.com/zc310/font](https://github.com/zc310/font) 与 [github.com/zc310/tinyskia](https://github.com/zc310/tinyskia) 引入，并针对 OFD 渲染做了修复与性能优化
 
 以下项目的测试与示例 OFD 文档被本项目取用为测试夹具，集中在 [`testdata/ofdrw/`](testdata/ofdrw/)。本项目只使用其文档文件，未使用其代码：

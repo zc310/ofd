@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
 )
@@ -266,7 +266,7 @@ func (r *Reader) computeFonts() ([]FontResource, error) {
 			if err != nil {
 				return true
 			}
-			if fixed, fixErr := fontfix.Repair(data); fixErr == nil {
+			if fixed, fixErr := fontrepair.Repair(data); fixErr == nil {
 				data = fixed
 			}
 			resources = append(resources, FontResource{

@@ -7,14 +7,14 @@ terms. The archive retains those notices verbatim and is embedded in the convert
 conversion needs no system CMap installation or network access.
 
 Adobe-GB1 CID-to-Unicode data is shared through
-[`github.com/zc310/fontfix/cidmap`](https://pkg.go.dev/github.com/zc310/fontfix/cidmap).
+[`internal/cidmap`](../../cidmap/README.md).
 `GB1Text` retains the original `Adobe-GB1-UCS2` text-extraction results, including
 variation sequences; `GB1GlyphUnicode` preserves the separate font-repair mapping.
 The GB1 Encoding CMaps remain here because PDF character-code decoding is separate
 from CID-to-Unicode lookup. `Adobe-GB1-UCS2` is deliberately excluded from the archive
 and its manifest to avoid duplicating the shared data. Its original SHA-256 is
 `368b40ec05568faf323cfbbddf23c60d566bbc88e366981eb6541b026381a3b8`;
-source hashes, generation instructions and Adobe notices are maintained in fontfix.
+source hashes, generation instructions and Adobe notices are maintained in that package.
 
 Upstream data:
 

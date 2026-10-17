@@ -1218,7 +1218,7 @@ func TestConvertTestdataPDFs(t *testing.T) {
 }
 
 // TestPDFTextGlyphTransformsCIDFontDirect 检验 CID 字体的字形覆盖
-// 判断：code(CID) 数值可以大于内嵌字体的 numGlyphs，只要 fontfix
+// 判断：code(CID) 数值可以大于内嵌字体的 numGlyphs，只要 fontrepair
 // 的私有区映射 F0000+code 存在，渲染端就能找到该字形。
 func TestPDFTextGlyphTransformsCIDFontDirect(t *testing.T) {
 	font := pdfFontInfo{
@@ -1778,7 +1778,7 @@ func TestCIDFontIndirectDescendantFontsLoadsFontAndWidths(t *testing.T) {
 	}
 }
 
-// TestIsPrivateUseRune 守住私有区判定。fontfix 用 U+F0000 段承载 CID→字形映射，
+// TestIsPrivateUseRune 守住私有区判定。fontrepair 用 U+F0000 段承载 CID→字形映射，
 // 反查 cmap 时必须排除这些码位，否则正文会写进私有区字符而不是真实 Unicode。
 func TestIsPrivateUseRune(t *testing.T) {
 	for _, r := range []rune{0xE000, 0xE8FF, 0xF0000, 0xF0001, 0xFFFFD, 0x100000, 0x10FFFD} {

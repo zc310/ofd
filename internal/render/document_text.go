@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -566,7 +566,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 				if renderableTextValue(string(r)) {
 					semantic = string(r)
 				}
-				glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id))), semantic: semantic, codePosition: i + k})
+				glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i + k})
 			}
 		} else {
 			semantic := ""
@@ -575,7 +575,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 			}
 			for _, id := range ids {
 				if id >= 0 && id <= 0xffff {
-					glyphs = append(glyphs, textGlyph{value: string(fontfix.GlyphRune(uint16(id))), semantic: semantic, codePosition: i})
+					glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i})
 					semantic = ""
 				}
 			}

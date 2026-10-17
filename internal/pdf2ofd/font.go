@@ -15,7 +15,7 @@ import (
 	pdffont "github.com/pdfcpu/pdfcpu/pkg/font"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	fontparser "github.com/zc310/font"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 )
 
 func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
@@ -209,7 +209,7 @@ func unicodeForGlyph(sfnt *fontparser.SFNT, glyph uint16) (string, bool) {
 	return "", false
 }
 
-// isPrivateUseRune 判断码位是否落在 Unicode 三个私有区。fontfix 用 F0000 段
+// isPrivateUseRune 判断码位是否落在 Unicode 三个私有区。fontrepair 用 F0000 段
 // 承载 CID→字形映射，这里排除的正是它自己写进去的那些码位。
 func isPrivateUseRune(r rune) bool {
 	switch {
@@ -494,7 +494,7 @@ func pdfFontGlyphWidths(data []byte, codeToGID map[uint32]uint16) map[uint16]flo
 // pdfCIDFontGlyphWidths 对 CID 字体按 /W 中出现的 CID 生成"内嵌字体字形宽度"
 // 表，供 pdfTextDeltas 检测 hmtx 与 PDF /W 不一致后按 /W 输出 DeltaX。CFF 包装
 // 的内嵌字体通常没有真实 hmtx（统一为占位字宽），CID 与字形序也不连续，因此按
-// fontfix 私有区映射 F0000+CID 找字形再取字宽。
+// fontrepair 私有区映射 F0000+CID 找字形再取字宽。
 func pdfCIDFontGlyphWidths(pdfWidths map[int]float64, sfnt *fontparser.SFNT) map[uint16]float64 {
 	if sfnt == nil || sfnt.Head == nil {
 		return nil
@@ -508,7 +508,7 @@ func pdfCIDFontGlyphWidths(pdfWidths map[int]float64, sfnt *fontparser.SFNT) map
 		if code < 0 || code > math.MaxUint16 {
 			continue
 		}
-		if glyph := sfnt.GlyphIndex(fontfix.GlyphRune(uint16(code))); glyph != 0 {
+		if glyph := sfnt.GlyphIndex(fontrepair.GlyphRune(uint16(code))); glyph != 0 {
 			widths[uint16(code)] = float64(sfnt.GlyphAdvance(glyph)) / upem * 1000
 		}
 	}
@@ -517,7 +517,7 @@ func pdfCIDFontGlyphWidths(pdfWidths map[int]float64, sfnt *fontparser.SFNT) map
 
 // pdfFontCoversGlyph 判断嵌入字体是否包含指定 glyph id。CID 字体（如 TeX
 // 生产者的子集）可能使用不连续的 CID 编号：code(CID) 的数值大于 numGlyphs，
-// 但字形确实存在于内嵌字体中，由 fontfix 私有区映射 F0000+CID 指向。仅凭
+// 但字形确实存在于内嵌字体中，由 fontrepair 私有区映射 F0000+CID 指向。仅凭
 // code < numGlyphs 会误判字形缺失并丢弃整段 CGTransform，使斜体等文字退回
 // Unicode 排版后布局与字形错乱（出现方块或错字）。
 func pdfFontCoversGlyph(font pdfFontInfo, glyph uint32) bool {
@@ -527,7 +527,7 @@ func pdfFontCoversGlyph(font pdfFontInfo, glyph uint32) bool {
 	if glyph > math.MaxUint16 || font.sfnt == nil {
 		return false
 	}
-	return font.sfnt.GlyphIndex(fontfix.GlyphRune(uint16(glyph))) != 0
+	return font.sfnt.GlyphIndex(fontrepair.GlyphRune(uint16(glyph))) != 0
 }
 
 func pdfStandardGlyphName(value rune) string {
@@ -702,12 +702,12 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		if normalized, normalizeErr := normalizeEmbeddedTrueType(data); normalizeErr == nil {
 			data = normalized
 		}
-		if repaired, repairErr := fontfix.Repair(data); repairErr == nil {
+		if repaired, repairErr := fontrepair.Repair(data); repairErr == nil {
 			data = repaired
 		}
 	}
 	if format == "otf" {
-		if repaired, repairErr := fontfix.Repair(data); repairErr == nil {
+		if repaired, repairErr := fontrepair.Repair(data); repairErr == nil {
 			data = repaired
 		} else if len(data) < 4 || string(data[:4]) != "OTTO" {
 			p.report("font.decode", "内嵌 CFF 字体无法修复或解析")

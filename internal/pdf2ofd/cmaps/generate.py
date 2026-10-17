@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """打包 Adobe Encoding CMap 与 CID→Unicode 数据，并保留原始许可声明。
 
-Adobe-GB1-UCS2 由 fontfix/cidmap 共用，不在本压缩包中重复存储。
+Adobe-GB1-UCS2 由 internal/cidmap 共用，不在本压缩包中重复存储。
 
 用法：python3 generate.py /usr/share/poppler/cMap
 输入为 poppler-data 分发的 Adobe cmap-resources 与 mapping-resources-pdf。

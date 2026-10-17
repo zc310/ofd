@@ -9,7 +9,7 @@ import (
 
 	"crypto/sha256"
 	"github.com/zc310/canvas"
-	"github.com/zc310/fontfix"
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"strings"
@@ -136,7 +136,7 @@ func TestEmbeddedFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 	if fonts.RenderLock(first) != fonts.RenderLock(second) {
 		t.Fatal("同一文档内同一字体族应共享渲染锁")
 	}
-	mapped, err := loadCachedEmbeddedFont(fonts, "EmbeddedCache", data, FontRegular, []fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}})
+	mapped, err := loadCachedEmbeddedFont(fonts, "EmbeddedCache", data, FontRegular, []fontrepair.GlyphMapping{{Rune: 'A', Glyph: 1}})
 	if err != nil {
 		t.Fatalf("加载带映射的嵌入字体失败: %v", err)
 	}
@@ -152,12 +152,12 @@ func TestEmbeddedFontCacheReusesFamilyAndRenderLock(t *testing.T) {
 }
 
 func TestHashGlyphMappingsIsOrderIndependent(t *testing.T) {
-	a := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'A', Glyph: 1}, {Rune: 'B', Glyph: 2}})
-	b := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'B', Glyph: 2}, {Rune: 'A', Glyph: 1}})
+	a := hashGlyphMappings([]fontrepair.GlyphMapping{{Rune: 'A', Glyph: 1}, {Rune: 'B', Glyph: 2}})
+	b := hashGlyphMappings([]fontrepair.GlyphMapping{{Rune: 'B', Glyph: 2}, {Rune: 'A', Glyph: 1}})
 	if a != b {
 		t.Fatal("字形映射摘要应与顺序无关")
 	}
-	c := hashGlyphMappings([]fontfix.GlyphMapping{{Rune: 'A', Glyph: 2}, {Rune: 'B', Glyph: 1}})
+	c := hashGlyphMappings([]fontrepair.GlyphMapping{{Rune: 'A', Glyph: 2}, {Rune: 'B', Glyph: 1}})
 	if a == c {
 		t.Fatal("不同字形映射应产生不同摘要")
 	}
@@ -325,10 +325,10 @@ func TestIntroEmbeddedFontsLoad(t *testing.T) {
 	cf := family.(*canvas.FontFamily)
 	face := cf.Face(1, canvas.Black)
 	for _, glyphID := range []uint16{4947, 3773, 6809} {
-		if got := face.Font.GlyphIndex(fontfix.GlyphRune(glyphID)); got == 0 {
+		if got := face.Font.GlyphIndex(fontrepair.GlyphRune(glyphID)); got == 0 {
 			t.Fatalf("CFF CID %d has no glyph mapping", glyphID)
 		}
-		path, _ := face.ToPath(string(fontfix.GlyphRune(glyphID)))
+		path, _ := face.ToPath(string(fontrepair.GlyphRune(glyphID)))
 		if path == nil || path.Empty() {
 			t.Fatalf("CFF glyph %d has no path", glyphID)
 		}
@@ -471,7 +471,7 @@ func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixed, err := fontfix.Repair(data)
+	fixed, err := fontrepair.Repair(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +483,7 @@ func TestRepairFontDataProducesUsableEmbeddedFont(t *testing.T) {
 		t.Fatal("repaired font is not usable")
 	}
 	face := family.Face(1, canvas.Black)
-	if got := face.Font.GlyphIndex(fontfix.GlyphRune(1)); got != 1 {
+	if got := face.Font.GlyphIndex(fontrepair.GlyphRune(1)); got != 1 {
 		t.Fatalf("repaired cmap maps glyph 1 to %d", got)
 	}
 }
@@ -898,7 +898,7 @@ func TestEmbeddedFontsArePerDocument(t *testing.T) {
 
 // TestCloseReleasesEmbeddedFonts 关闭后内嵌字体与修复器一并释放。
 //
-// 内嵌字体的解析结果（含 fontfix.Repairer 持有的修复后字体与 cmap）只对本实例
+// 内嵌字体的解析结果（含 fontrepair.Repairer 持有的修复后字体与 cmap）只对本实例
 // 有意义，文档关闭即成垃圾；不清掉的话它们会随 Fonts 实例一直活着。
 func TestCloseReleasesEmbeddedFonts(t *testing.T) {
 	fonts := NewFonts(nil)
