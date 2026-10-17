@@ -8,11 +8,11 @@ OFD WASM 将 OFD 文档解析和渲染能力提供给浏览器 JavaScript 使用
 
 ## 截图
 
-![OFD WASM 网页阅读器](../../docs/screenshots/wasm/webreader_1.png)
+![OFD WASM 网页阅读器](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_1.png)
 
-![OFD WASM 网页阅读器双页模式](../../docs/screenshots/wasm/webreader_2.png)
+![OFD WASM 网页阅读器双页模式](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_2.png)
 
-![OFD WASM 网页阅读器资源列表](../../docs/screenshots/wasm/webreader_3.png)
+![OFD WASM 网页阅读器资源列表](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_3.png)
 ## 快速开始
 
 在仓库根目录执行：

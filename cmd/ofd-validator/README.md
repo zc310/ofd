@@ -27,11 +27,11 @@ JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归
 
 ### Markdown 报告
 
-![ofd-validator Markdown 报告](../../docs/screenshots/validator/markdown.png)
+![ofd-validator Markdown 报告](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-markdown.png)
 
 ### PDF 报告
 
-![ofd-validator PDF 报告](../../docs/screenshots/validator/pdf.png)
+![ofd-validator PDF 报告](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-pdf.png)
 
 ## 构建
 

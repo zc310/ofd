@@ -129,6 +129,6 @@ make package-viewer-android-zip
 
 ## 截图
 
-![linux.png](../../docs/screenshots/viewer/linux.png)
-![windows.png](../../docs/screenshots/viewer/windows.png)
-![android.png](../../docs/screenshots/viewer/android.png)
+![linux.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-linux.png)
+![windows.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-windows.png)
+![android.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-android.png)

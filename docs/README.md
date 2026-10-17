@@ -45,11 +45,13 @@
 
 ## 截图
 
-[screenshots/](screenshots/) 目录按工具分类存放运行截图：
+运行截图从 [GitHub Releases](https://github.com/zc310/ofd/releases/tag/v0.1.4) 下载：
 
-- [viewer/](screenshots/viewer/)：桌面版阅读器（[Linux](screenshots/viewer/linux.png)、[Windows](screenshots/viewer/windows.png)）和 [Android 阅读器](screenshots/viewer/android.png)
-- [wasm/](screenshots/wasm/)：浏览器版 WASM 阅读器（[webreader_1.png](screenshots/wasm/webreader_1.png)、[webreader_2.png](screenshots/wasm/webreader_2.png)）
-- [validator/](screenshots/validator/) 与 [analyzer/](screenshots/analyzer/)：校验器和分析器的报告示例（[validator/markdown.png](screenshots/validator/markdown.png)、[validator/pdf.png](screenshots/validator/pdf.png)、[analyzer/markdown.png](screenshots/analyzer/markdown.png)）
+- 桌面版阅读器：[Linux](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-linux.png)、[Windows](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-windows.png)、[Android](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-viewer-android.png)
+- 浏览器版 WASM 阅读器：[webreader_1.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_1.png)、[webreader_2.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_2.png)、[webreader_3.png](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_3.png)
+- 校验器报告：[Markdown](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-markdown.png)、[PDF](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-pdf.png)
+- 分析器报告：[Markdown](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-analyzer-markdown.png)
+- GNOME Nautilus 缩略图：[截图](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-thumbnailer-gnome.Nautilus.png)
 
 ## 相关链接
 

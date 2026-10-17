@@ -118,7 +118,7 @@ XLSX 报告为 Excel 工作簿，包含「汇总」页，以及「文档体」�
 
 ## 截图
 
-![ofd-analyzer Markdown 报告](../../docs/screenshots/analyzer/markdown.png)
+![ofd-analyzer Markdown 报告](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-analyzer-markdown.png)
 
 `resources` 是所有资源类别的总汇总，包含图片、字体、绘制参数、复合图元、颜色空间、模板和 Pattern；
 各资源类别也通过对应的独立字段提供详细统计。字体专用字段为 `embedded`，绘制参数专用字段为
