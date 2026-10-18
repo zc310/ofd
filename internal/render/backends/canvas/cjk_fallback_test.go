@@ -8,6 +8,7 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 func textObjectWith(value string) models.TextObject {
@@ -67,13 +68,47 @@ func TestFamilyCoversTextRejectsMissingGlyphs(t *testing.T) {
 	if !familyCoversText(cjk, textObjectWith("中文与 Latin 混排"), FontRegular) {
 		t.Fatal("CJK 字体应覆盖中英混排")
 	}
-	// 覆盖探测有上限，超过上限就认为覆盖充分，避免长文本逐字符查表。
-	long := make([]rune, textCoverageProbeLimit+10)
-	for i := range long {
-		long[i] = 'A'
+}
+
+func TestFamilyCoversTextChecksBeyondDedupLimit(t *testing.T) {
+	family := canvas.NewFontFamily("Go Regular")
+	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
 	}
-	if !familyCoversText(cjk, textObjectWith(string(long)), FontRegular) {
-		t.Fatalf("超过 %d 个字符后应停止探测并判定为覆盖", textCoverageProbeLimit)
+	face := family.Face(cjkProbeSize, canvas.Black)
+	// 收集真实字体支持的不同字符，确保前缀确实达到边界；重复 ASCII 不会触发它。
+	covered := make([]rune, 0, textCoverageDedupLimit+1)
+	for r := rune(0x20); r <= 0x2fff && len(covered) <= textCoverageDedupLimit; r++ {
+		if face.Font.GlyphIndex(r) != 0 {
+			covered = append(covered, r)
+		}
+	}
+	if len(covered) != textCoverageDedupLimit+1 {
+		t.Fatalf("测试字体仅找到 %d 个不同字符，无法覆盖边界", len(covered))
+	}
+	if face.Font.GlyphIndex('中') != 0 {
+		t.Fatal("测试字体意外包含中文字形，无法构造末尾缺字")
+	}
+	for _, tc := range []struct {
+		name  string
+		codes []models.TextCode
+		want  bool
+	}{
+		{"below limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit-1])}}, true},
+		{"at limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit])}}, true},
+		{"beyond limit", []models.TextCode{{Value: string(covered)}}, true},
+		{"missing at limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit-1]) + "中"}}, false},
+		{"missing after limit", []models.TextCode{{Value: string(covered[:textCoverageDedupLimit]) + "中"}}, false},
+		{"missing beyond limit", []models.TextCode{{Value: string(covered) + "中"}}, false},
+		{"missing in later TextCode", []models.TextCode{{Value: string(covered)}, {Value: "中"}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			object := textObjectWith("")
+			object.TextCode = tc.codes
+			if got := familyCoversText(family, object, FontRegular); got != tc.want {
+				t.Fatalf("覆盖检查 = %v，期望 %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -162,14 +197,13 @@ func TestCJKFallbackListsRejectGenericAliases(t *testing.T) {
 	}
 }
 
-// 覆盖探测有上限时按去重字符集判断：重复字符不应消耗探测额度，否则一段
-// 重复文本会被误判成「只检查了几个字符」。
+// 长文本中的重复字符应复用已确认的覆盖结果。
 func TestFamilyCoversTextCountsDistinctRunes(t *testing.T) {
 	cjk := firstCJKCapableFamily(t, FontRegular, cjkFallbackFamilies)
 	if cjk == nil {
 		t.Skip("系统没有可用的 CJK 字体")
 	}
-	repeated := strings.Repeat("中", textCoverageProbeLimit*2)
+	repeated := strings.Repeat("中", textCoverageDedupLimit*2)
 	if !familyCoversText(cjk, textObjectWith(repeated), FontRegular) {
 		t.Fatal("重复字符不应触发探测上限")
 	}

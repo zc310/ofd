@@ -235,9 +235,8 @@ func familyCoversCJK(family *canvas.FontFamily, style drawing.FontStyle) bool {
 // 线索，但正文全是中文。字形覆盖是唯一可靠的判据——已经画不出来的字符，
 // 换哪个候选都一样 tofu，不如换个真能画的。
 //
-// 探测按去重后的字符集做，并限制上限：OFD 文字对象可能整页一段文字，逐字符
-// 查表在大文档上是热点。超过上限就认为覆盖不足，宁可多换一次字体，也不要
-// 在明显缺字的文档上继续用 Latin-only 字体。
+// 用有界集合记录已确认覆盖的字符，避免重复查表。集合满后仍检查后续字符，
+// 只是不再记录新字符；必须遍历完全部 TextCode 才能判定覆盖。
 func familyCoversText(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
 	if family == nil {
 		return false
@@ -255,19 +254,16 @@ func familyCoversText(family *canvas.FontFamily, object models.TextObject, style
 			if face.Font.GlyphIndex(r) == 0 {
 				return false
 			}
-			seen[r] = true
-			// 超出上限就当作覆盖：宁可多换一次字体，也不要在明显缺字的
-			// 文档上继续用 Latin-only 字体。
-			if len(seen) >= textCoverageProbeLimit {
-				return true
+			if len(seen) < textCoverageDedupLimit {
+				seen[r] = true
 			}
 		}
 	}
 	return true
 }
 
-// textCoverageProbeLimit 是单个文字对象做字形覆盖探测的最大字符数。
-const textCoverageProbeLimit = 512
+// textCoverageDedupLimit 是单个文字对象缓存已覆盖字符的最大条目数。
+const textCoverageDedupLimit = 512
 
 // fixedWidthFontFamilies 是常见等宽字体的系统族名，按优先级排列。
 var fixedWidthFontFamilies = []string{
