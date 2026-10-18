@@ -110,6 +110,8 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textHScale(object))
 	faces.native = nativeShadingText
 	codePosition := 0
+	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
+	object.CGTransform = transforms
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue

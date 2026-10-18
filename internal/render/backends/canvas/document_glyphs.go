@@ -114,8 +114,9 @@ func collectObjectGlyphs(object models.TextObject, out map[models.StRefID]map[ru
 	if len(object.CGTransform) == 0 || !object.VisibleValue() {
 		return
 	}
+	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	byPosition := make(map[int]models.CTCGTransform, len(object.CGTransform))
-	for _, transform := range object.CGTransform {
+	for _, transform := range transforms {
 		byPosition[transform.CodePosition] = transform
 	}
 	pairs := out[object.Font]

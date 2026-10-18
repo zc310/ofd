@@ -285,7 +285,8 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 			widths[index] = fallbackWidth
 		}
 	}
-	applyCGTransformWidths(widths, runes, object.CGTransform, codePosition, widthOf)
+	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
+	applyCGTransformWidths(widths, runes, transforms, codePosition, widthOf)
 	posX, posY := code.X, code.Y
 	angle := textCharDirectionDegrees(object)
 	if object.CTM != nil {

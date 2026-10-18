@@ -384,6 +384,46 @@ type CTCGTransform struct {
 	GlyphCount int `xml:"GlyphCount,attr,omitempty"`
 }
 
+// ExpandCGTransformPositions 将按 TextCode 局部计数的 CGTransform.CodePosition
+// 展开为整个文字对象内的字符位置。规范形式的全局递增位置保持原样；遇到位置重置
+// 时，将后续位置解释为下一段 TextCode 内的偏移，兼容常见的逐字 TextCode 文档。
+func ExpandCGTransformPositions(codes []TextCode, transforms []CTCGTransform) []CTCGTransform {
+	if len(transforms) < 2 || len(codes) < 2 {
+		return transforms
+	}
+	hasReset := false
+	for i := 1; i < len(transforms); i++ {
+		if transforms[i].CodePosition <= transforms[i-1].CodePosition {
+			hasReset = true
+			break
+		}
+	}
+	if !hasReset {
+		return transforms
+	}
+
+	starts := make([]int, len(codes))
+	total := 0
+	for i, code := range codes {
+		starts[i] = total
+		total += len([]rune(code.Value))
+	}
+	result := append([]CTCGTransform(nil), transforms...)
+	scope, previous := 0, -1
+	for i := range result {
+		position := result[i].CodePosition
+		if i > 0 && position <= previous {
+			scope++
+		}
+		previous = position
+		if scope >= len(codes) || position < 0 || position > len([]rune(codes[scope].Value)) {
+			continue
+		}
+		result[i].CodePosition = starts[scope] + position
+	}
+	return result
+}
+
 // TextCode 文字编码及其定位信息。
 type TextCode struct {
 	// Value 文字内容。

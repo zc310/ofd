@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -29,6 +30,59 @@ func TestCollectObjectGlyphsPairsUnicodeWithGlyph(t *testing.T) {
 	}
 	if got := out[10]['华']; got != 1264 {
 		t.Fatalf("华 -> %d, want 1264", got)
+	}
+}
+
+func TestCollectObjectGlyphsHandlesLocalTransformPositions(t *testing.T) {
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "other", "GBT_33190-2016_报批稿(1).ofd"))
+	if err != nil {
+		t.Skipf("样例不可用: %v", err)
+	}
+	defer ofd.Close()
+	page, err := ofd.Documents[0].GetPage(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := page.AcquireLease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	content := lease.Content()
+	wantByID := map[models.StID]string{312: "电子文件", 319: "Electronic"}
+	found := make(map[models.StID]bool, len(wantByID))
+	for _, layer := range content.Content.Layer {
+		for _, item := range layer.Items {
+			if item.Text == nil {
+				continue
+			}
+			want, ok := wantByID[item.Text.ID]
+			if !ok {
+				continue
+			}
+			got := make(map[models.StRefID]map[rune]uint16)
+			collectObjectGlyphs(*item.Text, got)
+			runes := []rune(want)
+			if len(item.Text.TextCode) > len(runes) {
+				t.Fatalf("fixture object %d has %d codes, expected at most %d", item.Text.ID, len(item.Text.TextCode), len(runes))
+			}
+			for index := range item.Text.TextCode {
+				r := runes[index]
+				wantGlyph := uint16(14 + index)
+				if item.Text.ID == 319 {
+					wantGlyph = uint16(29 + index)
+				}
+				if actual := got[item.Text.Font][r]; actual != wantGlyph {
+					t.Errorf("object %d glyph mapping %q = %d, want %d", item.Text.ID, r, actual, wantGlyph)
+				}
+			}
+			found[item.Text.ID] = true
+		}
+	}
+	for id := range wantByID {
+		if !found[id] {
+			t.Errorf("fixture text object %d not found", id)
+		}
 	}
 }
 
