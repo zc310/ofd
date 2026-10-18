@@ -11,6 +11,10 @@
 
 ## 未发布
 
+- `js/wasm` 构建不再链接 Excelize。`invoice.WriteXLSX`、`analyzer.RenderXLSX`、
+  `validator.RenderXLSX` 和 `archive.RenderMatrixXLSX` 在该目标下返回不支持错误；
+  浏览器使用 JSON、Markdown、文本或发票 CSV，本机构建的 XLSX 导出不受影响。
+
 - `ofd-seal` 生成的 SES 印章图片显示尺寸按 GB/T 38540-2020 §6.1.2.5 使用毫米，
   缺省为 40×40mm，可通过 `--width-mm`、`--height-mm` 设置；不再把图片像素数写入
   毫米字段。印章图片本身的像素保持原尺寸。
