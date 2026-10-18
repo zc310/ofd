@@ -375,8 +375,9 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 }
 
 // buildTextClipPath 把文字裁剪区转成字形轮廓区域。字形轮廓以基线左端为原点、
-// y 轴向上，与 OFD 路径数据在同一坐标系，因此可以直接套用与路径分支相同的
-// 设备坐标映射：先加 TextCode 原点，再经区域 CTM，最后按 box 偏移并翻转 y。
+// y 轴向上，OFD 的文字原点和路径数据则使用 y 向下的对象坐标。
+// 基线原点经区域 CTM 后加 box 偏移并翻转 y；轮廓通过 textCTMLinearMatrix
+// 转换 CTM 的线性部分，保持画布中 y 向上的字形方向。
 //
 // 字体缺失、字号非法或无法取得轮廓时返回 nil，由调用方按“该区域不可用”处理。
 func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
@@ -416,11 +417,10 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 		}
 		originX := code.X + text.Boundary.X
 		originY := code.Y + text.Boundary.Y
-		// 字形轮廓的 y 轴已经向下（见 drawTextPath：它只平移基线原点，不翻转 y），
-		// 与 OFD 路径数据 y 向上的约定相反，因此不能套用路径分支的
-		// pageHeight-(y+box.Y) 取反，否则字形会上下颠倒。合成方式与 drawTextPath
-		// 完全一致：基线原点经区域 CTM 后落到设备坐标，CTM 的线性部分作用在
-		// 字形上，最后按 hScale 压扁。
+		// 字形轮廓与画布都是 y 向上，不能对每个轮廓点套用 OFD 路径分支的
+		// pageHeight-(y+box.Y)，否则字形会上下颠倒。与 drawTextPath 一致，
+		// 只将基线原点从 OFD 的 y 向下坐标转换到画布坐标，再应用转换后的
+		// CTM 线性部分和 hScale。
 		ox, oy := areaCTM.TransformPoint(models.StPos{X: originX, Y: originY})
 		matrix := geom.Identity.Translate(ox+box.X, pageHeight-(oy+box.Y))
 		if m := textCTMLinearMatrix(&areaCTM); m != nil {

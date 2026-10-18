@@ -142,7 +142,7 @@ func TestPathClipAreaWithTextUsesGlyphOutlines(t *testing.T) {
 
 // TestPathClipAreaWithTextIsNotVerticallyMirrored 守住文字裁剪区的字形朝向。
 //
-// 字形轮廓的 y 轴向下，而 OFD 路径数据 y 轴向上；buildTextClipPath 必须像
+// 字形轮廓的 y 轴向上，而 OFD 路径数据 y 轴向下；buildTextClipPath 必须像
 // drawTextPath 那样只翻转基线原点、不翻转字形。若误用路径分支的 y 取反，
 // 墨迹占比与正立时几乎相同（3.4% 对 3.3%），只有位置会暴露问题：正立时字形
 // 主体在基线上方、底部贴着基线，颠倒时几乎整体落到基线下方。
