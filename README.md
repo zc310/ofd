@@ -1,4 +1,4 @@
-# OFD Go Toolkit [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd)
+# OFD Go Toolkit [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd) [![Coverage Status](https://coveralls.io/repos/github/zc310/ofd/badge.svg?branch=main)](https://coveralls.io/github/zc310/ofd?branch=main)
 
 用于解析、创建、转换、渲染、校验和分析 OFD 文档的 Go 工具包，提供命令行工具、桌面与 Android 阅读器，以及 WASM 浏览器阅读器。
 
