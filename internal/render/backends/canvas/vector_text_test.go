@@ -55,6 +55,31 @@ func TestSVGTextKeepsSolidTextAndOutlinesGradients(t *testing.T) {
 	}
 }
 
+func TestDirectTextPathHandlesHighestGlyphAddresses(t *testing.T) {
+	base := canvas.NewFontFamily("glyph address source")
+	if err := base.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	glyph := base.Face(12, canvas.Black).Font.GlyphIndex('A')
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	for _, address := range []uint16{0xfffe, 0xffff} {
+		r := fontrepair.GlyphRune(address)
+		family, err := loadCachedEmbeddedFont(fonts, "high glyph address", goregular.TTF, FontRegular,
+			[]fontrepair.GlyphMapping{{Rune: r, Glyph: glyph}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		face := family.Face(12, canvas.Black)
+		if face.Font.GlyphIndex(r) == 0 {
+			t.Fatalf("测试字体缺少内部地址 %U", r)
+		}
+		if path := fonts.directTextPath(face, string(r)); path == nil || path.Empty() {
+			t.Errorf("内部地址 %U 未通过字形路径绘制", r)
+		}
+	}
+}
+
 func svgFontPrograms(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	result := make(map[string][]byte)

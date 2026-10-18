@@ -6,6 +6,7 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/font"
 
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
@@ -385,7 +386,7 @@ func textFontStyle(weight int, italic bool) drawing.FontStyle {
 // 与后续 drawTextInline 重复计算同一字形轮廓。
 func (p *Fonts) directTextPath(face *canvas.FontFace, value string) *canvas.Path {
 	var path *canvas.Path
-	if !containsPrivateGlyphRune(value) {
+	if !fontrepair.ContainsGlyphRune(value) {
 		path := p.shapedTextPath(face, value)
 		if path != nil {
 			return nil

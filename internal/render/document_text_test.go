@@ -312,8 +312,50 @@ func TestTextCodeGlyphsClampsExcessiveCodeCount(t *testing.T) {
 		Glyphs:       []int{65},
 	}}, 0)
 
-	if len(glyphs) != 1 {
-		t.Fatalf("glyphs = %+v, want one mapped glyph", glyphs)
+	if len(glyphs) != 1 || glyphs[0].semantic != "ab" {
+		t.Fatalf("glyphs = %+v, want one mapped glyph preserving semantic ab", glyphs)
+	}
+}
+
+func TestTextCodeGlyphsClampsCodeCountBeforeMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		count    int
+		semantic string
+		glyphs   int
+	}{
+		{"exact remainder", 2, "ab", 2},
+		{"exceeds remainder", 3, "ab", 2},
+		{"overflow after prefix", int(^uint(0) >> 1), "ab", 2},
+		{"zero defaults to one", 0, "a", 3},
+		{"negative defaults to one", -1, "a", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transform := models.CTCGTransform{CodePosition: 1, CodeCount: tc.count, Glyphs: []int{65}}
+			glyphs := textCodeGlyphs(nil, []rune("zab"), []models.CTCGTransform{transform}, 0)
+			if len(glyphs) != tc.glyphs || glyphs[0].value != "z" || glyphs[1].semantic != tc.semantic || glyphs[1].codePosition != 1 {
+				t.Fatalf("glyphs = %+v，期望前缀 z 与语义 %q（共 %d 个字形）", glyphs, tc.semantic, tc.glyphs)
+			}
+			widths := []float64{4, 4, 4}
+			applyCGTransformWidths(widths, []rune("zab"), []models.CTCGTransform{transform}, 0, func(string) float64 { return 10 })
+			mappedWidth := widths[1]
+			if len(tc.semantic) == 2 {
+				mappedWidth += widths[2]
+			}
+			if mappedWidth != 10 {
+				t.Fatalf("文字层映射宽度 %v 与绘制字形步进 10 不一致", widths)
+			}
+		})
+	}
+}
+
+func TestFontCanRenderTextRejectsEntireGlyphAddressRange(t *testing.T) {
+	for _, glyph := range []uint16{0, 0xfffd, 0xfffe, 0xffff} {
+		r := fontrepair.GlyphRune(glyph)
+		face := testGlyphIndexFace{glyphs: map[rune]uint16{r: 1}}
+		if fontCanRenderText(face, string(r)) {
+			t.Errorf("字形地址 %U 被错误当作普通文字整形", r)
+		}
 	}
 }
 

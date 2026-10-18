@@ -20,6 +20,17 @@ type GlyphMapping struct {
 // 该码位仅用于寻址，文档原文另行保留。
 func GlyphRune(glyphID uint16) rune { return 0xf0000 + rune(glyphID) }
 
+// ContainsGlyphRune 判断文本是否包含 GlyphRune 生成的内部字形地址。
+// 地址覆盖完整 uint16 范围，包括 Unicode 私用区终点之后的 U+FFFFE/U+FFFFF。
+func ContainsGlyphRune(value string) bool {
+	for _, r := range value {
+		if r >= GlyphRune(0) && r <= GlyphRune(0xffff) {
+			return true
+		}
+	}
+	return false
+}
+
 // Repair 保留已有字体表，补齐缺失的 OS/2、name、post 和字形寻址 cmap 数据。
 // 未知格式原样返回；已识别格式的结构损坏时，返回原数据和错误。
 // 修复过程不修改输入字节。

@@ -479,7 +479,7 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 		if !renderableTextValue(glyph.value) {
 			continue
 		}
-		if containsPrivateGlyphRune(glyph.value) {
+		if fontrepair.ContainsGlyphRune(glyph.value) {
 			flushRun()
 			p.drawTextGlyph(ctx, faces, object, glyph.value, posX, posY, pageHeight, parentCTM)
 			if glyph.semantic != "" {
@@ -548,9 +548,14 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 		if codeCount <= 0 {
 			codeCount = 1
 		}
+		// GB/T 33190—2016 表 48 定义消耗的字符数量。对超出当前 TextCode
+		// 的错误描述，与文字层一致截到剩余字符；先做减法比较，避免 i+codeCount 溢出。
+		if remaining := len(runes) - i; codeCount > remaining {
+			codeCount = remaining
+		}
 		// 一对一变换（码位数与字形数相等）：字体修复可能重排内部 GID，因此只要
 		// Unicode 在修复后的字体中可用就保留原文；ASCII CFF 子集仍直接按 GID 绘制。
-		if codeCount == len(ids) && i+codeCount <= len(runes) {
+		if codeCount == len(ids) {
 			for k := 0; k < codeCount; k++ {
 				id := ids[k]
 				if id < 0 || id > 0xffff {
@@ -569,20 +574,13 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 				glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i + k})
 			}
 		} else {
-			semantic := ""
-			if codeCount > 0 && i+codeCount <= len(runes) {
-				semantic = string(runes[i : i+codeCount])
-			}
+			semantic := string(runes[i : i+codeCount])
 			for _, id := range ids {
 				if id >= 0 && id <= 0xffff {
 					glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i})
 					semantic = ""
 				}
 			}
-		}
-		remaining := len(runes) - i
-		if codeCount >= remaining {
-			break
 		}
 		i += codeCount
 	}
@@ -741,15 +739,6 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, object mod
 		return
 	}
 	p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
-}
-
-func containsPrivateGlyphRune(value string) bool {
-	for _, r := range value {
-		if r >= 0xF0000 && r <= 0xFFFFD {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {

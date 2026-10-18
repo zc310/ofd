@@ -1,6 +1,7 @@
 package render
 
 import (
+	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -40,7 +41,7 @@ func fontCanRenderRune(face FontFace, r rune) bool {
 // fontCanRenderText 判断字体能否按给定文本成形：文本必须不含私有区字形引用，
 // 且每个可见字符都有对应字形。只有这样才能安全地用正常文字接口绘制。
 func fontCanRenderText(face FontFace, value string) bool {
-	if containsPrivateGlyphRune(value) {
+	if fontrepair.ContainsGlyphRune(value) {
 		return false
 	}
 	rendered := false
