@@ -103,8 +103,9 @@ func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas
 }
 
 // RenderScene 实现 canvas SVG 场景接口，使测试中的矢量嵌入路径可用。
-func (b *testCanvasBackend) RenderScene(svg *canvas.Canvas, m geom.Matrix) {
-	if svg == nil {
+func (b *testCanvasBackend) RenderScene(scene any, m geom.Matrix) {
+	svg, ok := scene.(*canvas.Canvas)
+	if !ok || svg == nil {
 		return
 	}
 	svg.RenderViewTo(b.ctx.Renderer, canvas.Matrix(m))

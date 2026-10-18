@@ -17,6 +17,7 @@ import (
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/utils"
 )
 
 func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
@@ -56,9 +57,7 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 			if finiteMatrix(m) {
 				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
-					p.svgMu.Lock()
 					rendered := svg.RenderVector(ctx, m)
-					p.svgMu.Unlock()
 					if rendered {
 						p.drawImageBorder(ctx, object, pb.Height)
 						return
@@ -312,17 +311,35 @@ func isSVGFormat(format string, file models.StLoc) bool {
 
 func (p *Document) decodeSVGScene(file models.StLoc, format string) (SVGScene, error) {
 	key := file.Clean().String()
-	imageLock := p.imageLock(key)
-	defer p.releaseImageLock(key, imageLock)
+	return p.cachedSVGScene(key, func() ([]byte, error) {
+		if !isSVGFormat(format, file) {
+			return nil, errors.New("not SVG")
+		}
+		return p.Document.FileCache.Read(key)
+	})
+}
+
+// cachedSVGScene 复用已解析场景；加载与绘制都不持有文档范围的绘制锁。
+func (p *Document) cachedSVGScene(key string, load func() ([]byte, error)) (SVGScene, error) {
+	lockKey := "\x00svg-scene:" + key
+	imageLock := p.imageLock(lockKey)
+	defer p.releaseImageLock(lockKey, imageLock)
 	imageLock.mu.Lock()
 	defer imageLock.mu.Unlock()
-	if cached, ok := p.svgCanvases.Get(key); ok {
+	p.imageLocksMu.Lock()
+	if p.closed.Load() {
+		p.imageLocksMu.Unlock()
+		return nil, errors.New("渲染文档已关闭")
+	}
+	if p.svgCanvases == nil {
+		p.svgCanvases = utils.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil)
+	}
+	cached, ok := p.svgCanvases.Get(key)
+	p.imageLocksMu.Unlock()
+	if ok {
 		return cached, nil
 	}
-	if !isSVGFormat(format, file) {
-		return nil, errors.New("not SVG")
-	}
-	data, err := p.Document.FileCache.Read(key)
+	data, err := load()
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +347,11 @@ func (p *Document) decodeSVGScene(file models.StLoc, format string) (SVGScene, e
 	if err != nil {
 		return nil, err
 	}
-	p.svgCanvases.AddWeighted(key, scene, svgCanvasWeight(data))
+	p.imageLocksMu.Lock()
+	if !p.closed.Load() {
+		p.svgCanvases.AddWeighted(key, scene, svgCanvasWeight(data))
+	}
+	p.imageLocksMu.Unlock()
 	return scene, nil
 }
 
@@ -375,35 +396,52 @@ func imageBytesPerPixel(model color.Model) int64 {
 
 func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
 	key := file.Clean().String()
-	imageLock := p.imageLock(key)
-	defer p.releaseImageLock(key, imageLock)
-	imageLock.mu.Lock()
-	defer imageLock.mu.Unlock()
-	if cached, ok := p.images.Get(key); ok {
-		return cached, nil
-	}
-	if strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg") {
+	return p.cachedImage(key, func() (image.Image, error) {
+		if isSVGFormat(format, file) {
+			scene, err := p.decodeSVGScene(file, format)
+			if err != nil {
+				return nil, err
+			}
+			return scene.Rasterize(geom.DPI(96)), nil
+		}
 		data, err := p.Document.FileCache.Read(key)
 		if err != nil {
 			return nil, err
 		}
-		scene, err := parseSVGScene(data)
-		if err != nil {
-			return nil, err
-		}
-		img := scene.Rasterize(geom.DPI(96))
-		p.images.AddWeighted(key, img, imageCacheWeight(img))
-		return img, nil
+		return decodeRasterImage(data)
+	})
+}
+
+// cachedImage 让资源图片与内存印章共用有界 LRU，并按键合并并发加载。
+// 读盘和解码只持对应图片的锁，发布与关闭由 imageLocksMu 协调。
+func (p *Document) cachedImage(key string, load func() (image.Image, error)) (image.Image, error) {
+	imageLock := p.imageLock(key)
+	defer p.releaseImageLock(key, imageLock)
+	imageLock.mu.Lock()
+	defer imageLock.mu.Unlock()
+	p.imageLocksMu.Lock()
+	if p.closed.Load() {
+		p.imageLocksMu.Unlock()
+		return nil, errors.New("渲染文档已关闭")
 	}
-	data, err := p.Document.FileCache.Read(key)
+	if p.images == nil {
+		p.images = utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil)
+	}
+	cached, ok := p.images.Get(key)
+	p.imageLocksMu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	img, err := load()
 	if err != nil {
 		return nil, err
 	}
-	img, err := decodeRasterImage(data)
-	if err != nil {
-		return nil, err
+	weight := imageCacheWeight(img)
+	p.imageLocksMu.Lock()
+	if !p.closed.Load() {
+		p.images.AddWeighted(key, img, weight)
 	}
-	p.images.AddWeighted(key, img, imageCacheWeight(img))
+	p.imageLocksMu.Unlock()
 	return img, nil
 }
 

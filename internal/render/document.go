@@ -28,7 +28,6 @@ type Document struct {
 	fallbackMu    sync.RWMutex
 	imageLocksMu  sync.Mutex
 	imageLocks    map[string]*imageKeyLock
-	svgMu         sync.Mutex
 	images        *utils.LRU[string, image.Image]
 	svgCanvases   *utils.LRU[string, SVGScene]
 	sealMu        sync.Mutex
@@ -148,6 +147,10 @@ func (p *Document) Close() {
 		p.colorSpacesMu.Lock()
 		p.colorSpaces = nil
 		p.colorSpacesMu.Unlock()
+		p.imageLocksMu.Lock()
+		p.images = nil
+		p.svgCanvases = nil
+		p.imageLocksMu.Unlock()
 	})
 }
 

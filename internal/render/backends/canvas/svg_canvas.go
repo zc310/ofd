@@ -43,5 +43,5 @@ func (s canvasSVGScene) RenderVector(ctx any, m geom.Matrix) bool {
 // svgSceneRenderer 是 canvas 后端支持矢量嵌入 SVG 的可选接口（对应 canvas 的
 // RenderViewTo）。canvasBackend 实现它。
 type svgSceneRenderer interface {
-	RenderScene(svg *canvas.Canvas, m geom.Matrix)
+	RenderScene(svg any, m geom.Matrix)
 }

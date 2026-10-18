@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"image"
 	"image/color"
@@ -38,11 +39,25 @@ func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox)
 
 // drawImageSeal 解码并绘制图片格式的印章。
 func (p *Document) drawImageSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
-	img, _, err := image.Decode(bytes.NewReader(info.SealData.Data))
+	img, err := p.decodeSealImage(info.SealData.Data)
 	if err != nil {
 		return err
 	}
-	return p.drawRasterSeal(ctx, info, pb, img)
+	return p.drawPreparedRasterSeal(ctx, info, pb, img)
+}
+
+// decodeSealImage 按内容缓存完整印章，解码与白底透明化只在缓存未命中时执行。
+// NUL 前缀将内存印章键与文档资源路径隔离；不同页面的 Clip 不参与缓存键。
+func (p *Document) decodeSealImage(data []byte) (image.Image, error) {
+	digest := sha256.Sum256(data)
+	key := "\x00seal-image:" + string(digest[:])
+	return p.cachedImage(key, func() (image.Image, error) {
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		return sealTransparentBackground(img), nil
+	})
 }
 
 // sealBackgroundCutoff 是判定印章纸张背景的通道阈值：R/G/B 均不低于该值
@@ -75,8 +90,11 @@ func sealTransparentBackground(img image.Image) image.Image {
 // drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上；存在
 // StampAnnot.Clip 时只绘制印章落在裁剪窗口内的部分。
 func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
-	img = sealTransparentBackground(img)
+	return p.drawPreparedRasterSeal(ctx, info, pb, sealTransparentBackground(img))
+}
 
+// drawPreparedRasterSeal 绘制已完成透明背景处理的印章，只为当前页裁剪和放置。
+func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
 	box := info.StampAnnot.Boundary
 	if dst, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
 		img = cropSealImage(img, box, dst)
@@ -161,10 +179,10 @@ func clampInt(v, lo, hi int) int {
 
 // sealDocEntry 是一个已解析并加载好字体的 OFD 印章文档。印章在同一文档的
 // 多页/多次渲染中通常保持不变，缓存它可避免每次渲染都重新解包印章并重新
-// 解析其内嵌字体（实测占印章页渲染耗时的近一半）。mu 串行化对共享文档的
-// 绘制，保证平行渲染安全。
+// 解析其内嵌字体（实测占印章页渲染耗时的近一半）。mu 的读锁保护在途绘制的
+// 生命周期，各页可并行读取；关闭通过写锁等待所有绘制结束。
 type sealDocEntry struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	ofd    *parser.OFD
 	doc    *Document
 	closed bool
@@ -254,9 +272,9 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	if err != nil || entry == nil {
 		return err
 	}
-	// 缓存文档可能被并行渲染复用，串行化本印章的绘制。
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
+	// 共享读锁只阻止提前关闭，不串行化同一印章的各页绘制。
+	entry.mu.RLock()
+	defer entry.mu.RUnlock()
 	if entry.closed {
 		return errors.New("印章文档已关闭")
 	}
@@ -315,18 +333,39 @@ func rasterSealPage(doc *Document, page *parser.Page, sealBox, box models.StBox)
 // 先栅格化为位图再复用位图印章的坐标映射，保证矢量方向与 PNG/JPG 印章一致；
 // 栅格化分辨率按印章盒尺寸取 96dpi 以上，保持边缘清晰。
 func (p *Document) drawSVGSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
-	scene, err := parseSVGScene(info.SealData.Data)
+	img, err := p.decodeSVGSealImage(info.SealData.Data, info.StampAnnot.Boundary)
 	if err != nil {
 		return err
 	}
-	if scene == nil || scene.Width() <= 0 || scene.Height() <= 0 {
-		return nil
-	}
-	img := scene.Rasterize(sealRasterResolution(info.StampAnnot.Boundary, scene.Width(), scene.Height()))
 	if img == nil || img.Bounds().Empty() {
 		return nil
 	}
-	return p.drawRasterSeal(ctx, info, pb, img)
+	return p.drawPreparedRasterSeal(ctx, info, pb, img)
+}
+
+// decodeSVGSealImage 复用完整印章位图，Clip 和页面位置只在绘制时施加。
+// 实际分辨率参与图片键，场景解析结果另受 SVG 缓存预算限制。
+func (p *Document) decodeSVGSealImage(data []byte, box models.StBox) (image.Image, error) {
+	digest := sha256.Sum256(data)
+	sceneKey := "\x00seal-svg:" + string(digest[:])
+	scene, err := p.cachedSVGScene(sceneKey, func() ([]byte, error) { return data, nil })
+	if err != nil {
+		return nil, err
+	}
+	if scene == nil || scene.Width() <= 0 || scene.Height() <= 0 {
+		return nil, nil
+	}
+	resolution := sealRasterResolution(box, scene.Width(), scene.Height())
+	var bits [8]byte
+	binary.LittleEndian.PutUint64(bits[:], math.Float64bits(float64(resolution)))
+	key := "\x00seal-svg-raster:" + string(digest[:]) + string(bits[:])
+	return p.cachedImage(key, func() (image.Image, error) {
+		img := scene.Rasterize(resolution)
+		if img == nil || img.Bounds().Empty() {
+			return img, nil
+		}
+		return sealTransparentBackground(img), nil
+	})
 }
 
 // sealRasterResolution 选择栅格化分辨率：按印章盒的毫米尺寸换算为像素，
