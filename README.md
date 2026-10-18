@@ -1,4 +1,4 @@
-# OFD Go Toolkit [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd) [![Coverage Status](https://coveralls.io/repos/github/zc310/ofd/badge.svg?branch=main)](https://coveralls.io/github/zc310/ofd?branch=main)
+# OFD Go Toolkit [![GoDoc](https://pkg.go.dev/badge/github.com/zc310/ofd.svg)](https://pkg.go.dev/github.com/zc310/ofd) [![Go Build & Test](https://github.com/zc310/ofd/actions/workflows/go.yml/badge.svg)](https://github.com/zc310/ofd/actions/workflows/go.yml) [![Coverage Status](https://coveralls.io/repos/github/zc310/ofd/badge.svg?branch=main)](https://coveralls.io/github/zc310/ofd?branch=main)
 
 用于解析、创建、转换、渲染、校验和分析 OFD 文档的 Go 工具包，提供命令行工具、桌面与 Android 阅读器，以及 WASM 浏览器阅读器。
 
@@ -26,6 +26,7 @@ OFD（Open Fixed-layout Document）是中国电子文件领域常用的版式文
 | 创建与编辑 | Go API 或 JSON/YAML/TOML manifest 创建 OFD，支持页面、资源、图层、水印和包内条目替换 |
 | 页面与合并 | 多文档体按顺序使用全局页码；支持 ZIP 级打包、模型级拼页、选页重排和资源引用重映射 |
 | 校验与分析 | 内嵌 OFD-Schema，检查 ZIP、XML、引用、XSD 与语义；分析文字、资源、附件、注解和签名，生成多种格式的报告 |
+| 文档对比 | 多份 OFD 按基准比较目录、文件摘要、XML、文字多处修改与画面；支持文件清单搜索筛选及往返导航、XML 左右对照、选页、页配对依据与映射编辑导出、差异区域局部放大与外置图片，输出 HTML、JSON、文本和 Markdown 报告 |
 | 电子签章 | GB/T 38540-2020 SES V4 的 SM2/SM3 印章与签章生成、外部命令签署和完整验证 |
 | 档案预检 | 技术清单、归档准备目录、符合性矩阵和 SHA-256 固定性验证 |
 | 发票处理 | 增值税电子发票、铁路电子客票附件抽取，JSON/CSV/XLSX 汇总、去重、自校验和 PDF 合并打印 |
@@ -51,9 +52,15 @@ ofd-converter input.pdf output.ofd
 # 校验包结构并查看文档信息
 ofd-validator --format text input.ofd
 ofd-analyzer --format json input.ofd
+
+# 多份 OFD 与第一份比较，生成可离线查看的图文差异报告
+ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
+
+# 大报告将图片保存到报告旁的独立目录
+ofd-compare --external-images -o comparison.html original.ofd revised.ofd
 ```
 
-CLI 默认输出分辨率为 150 DPI；`--page` 使用多个文档体合并后的全局页码。批量转换目录使用 `--input-dir`、`--output-dir` 和 `--format`，完整选项与退出码见 [ofd-converter](cmd/ofd-converter/README.md)。
+`ofd-converter` 默认输出分辨率为 150 DPI；`--page` 使用多个文档体合并后的全局页码。批量转换目录使用 `--input-dir`、`--output-dir` 和 `--format`，完整选项与退出码见 [ofd-converter](cmd/ofd-converter/README.md)。
 
 部分输入格式需要额外的运行工具：
 
@@ -86,6 +93,7 @@ OFD 转 PDF、图片及常规 PDF 导入使用 Go 实现。PDF 的 OpenJPEG 解�
 | [ofd-creator](cmd/ofd-creator/README.md) | 按 manifest 创建 OFD，导出、合并、替换和水印编辑。 |
 | [ofd-validator](cmd/ofd-validator/README.md) | 格式、引用、语义和摘要校验。 |
 | [ofd-analyzer](cmd/ofd-analyzer/README.md) | 文档结构分析与报告。 |
+| [ofd-compare](cmd/ofd-compare/README.md) | 多文件、目录、XML、页面文字与视觉差异对比；Go API 见 [pkg/compare](pkg/compare/README.md)。 |
 | [ofd-archive](cmd/ofd-archive/README.md) | 档案预检、归档准备与固定性验证。 |
 | [ofd-invoice](cmd/ofd-invoice/README.md) | 发票与铁路电子客票抽取、汇总和合并打印。 |
 | [ofd-seal](cmd/ofd-seal/README.md) | SES 电子印章封装及演示图片生成。 |

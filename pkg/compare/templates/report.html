@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OFD 对比报告</title>
+  <style>{{style}}</style>
+</head>
+<body>
+<header>
+  <h1>OFD 对比报告</h1>
+  <div>基准 {{.Baseline}} · {{(input .Baseline).Name}}</div>
+  <small>工具 {{.ToolVersion}} · 页面匹配 {{.Options.PageMatch}} · 页范围 {{scope .Options.Pages}} ·
+    {{if .Options.Visual}}视觉对比 {{.Options.DPI}} DPI，通道容差 {{.Options.PixelTolerance}}{{else}}未启用视觉对比{{end}}
+  </small>
+  {{if .Options.PageMap}}<div>手工页映射：{{.Options.PageMap}}</div>{{end}}
+</header>
+<main>
+  <nav aria-label="差异导航">
+    <label>对比文件 <select id="target">{{range .Comparisons}}<option value="target-{{.Target}}">{{(input .Target).Name}}</option>{{end}}</select></label>
+    <label><input id="changed-only" type="checkbox" checked>只看变化页面</label>
+    <button id="previous" type="button">上一处差异</button>
+    <button id="next" type="button">下一处差异</button>
+    <span id="position" aria-live="polite"></span>
+  </nav>
+  <section>
+    <h2>输入概况</h2>
+    <table>
+      <thead><tr><th>文件</th><th>大小</th><th>文档体</th><th>总页数 / 选中</th><th>包内文件</th></tr></thead>
+      <tbody>{{range .Inputs}}<tr><td>{{.Name}}</td><td>{{.Size}} B</td><td>{{.Documents}}</td><td>{{len .Pages}} / {{selectedCount .}}</td><td>{{len .Files}}</td></tr>{{end}}</tbody>
+    </table>
+    <p class="muted">页面范围分别应用于各输入，保留原始全局页码。包内文件和 XML 仍按整包比较。文件相同依据解压内容摘要判断，忽略 ZIP 压缩方式、条目时间和打包顺序。XML 结构比较忽略前缀、属性顺序、注释和元素间缩进，保留文字与子元素顺序。</p>
+  </section>
+  <section>
+    <details><summary>文档元数据</summary>
+      {{range .Inputs}}<h3>{{.Name}}</h3><table>
+        <thead><tr><th>文档体 / ID</th><th>标题</th><th>作者</th><th>主题</th><th>生成软件</th></tr></thead>
+        <tbody>{{range .Metadata}}<tr><td>{{.Number}} / {{.ID}}</td><td>{{.Title}}</td><td>{{.Author}}</td><td>{{.Subject}}</td><td>{{.Creator}}</td></tr>{{end}}</tbody>
+      </table>{{end}}
+    </details>
+  </section>
+  {{$base := input .Baseline}}
+  {{range .Comparisons}}{{$target := input .Target}}{{$targetNumber := .Target}}
+  <div class="comparison" id="target-{{.Target}}">
+    <section>
+      <h2>{{$target.Name}}</h2>
+      <p>{{if .Equal}}包内容和已比较页面相同{{else}}检测到差异{{end}} · 所选页面：{{if .PagesEqual}}相同{{else}}有变化{{end}}</p>
+      <div class="metrics">
+        <div><strong>{{.Summary.FilesModified}}</strong>修改文件</div>
+        <div><strong>{{.Summary.FilesAdded}} / {{.Summary.FilesRemoved}}</strong>新增 / 删除文件</div>
+        <div><strong>{{.Summary.FilesMoved}}</strong>移动文件</div>
+        <div><strong>{{.Summary.PagesModified}}</strong>变化页面</div>
+        <div><strong>{{.Summary.PagesAdded}} / {{.Summary.PagesRemoved}}</strong>新增 / 删除页面</div>
+        <div><strong>{{.Summary.VisualPagesChanged}}</strong>画面变化页面</div>
+      </div>
+    </section>
+    <section>
+      <h3>目录结构</h3>
+      <div class="columns">
+        <div><b>基准目录</b><pre>{{range $base.Directories}}{{.}}/
+{{end}}</pre></div>
+        <div><b>当前目录</b><pre>{{range $target.Directories}}{{.}}/
+{{end}}</pre></div>
+      </div>
+      {{range .DirectoriesAdded}}<div class="badge added">新增 {{.}}/</div>{{end}}
+      {{range .DirectoriesRemoved}}<div class="badge removed">删除 {{.}}/</div>{{end}}
+    </section>
+    <section>
+      <h3>内部文件与资源差异</h3>
+      {{range $i,$file := .Files}}
+      <details class="file" id="file-{{$targetNumber}}-{{$i}}" tabindex="-1" aria-labelledby="file-title-{{$targetNumber}}-{{$i}}">
+        <summary id="file-title-{{$targetNumber}}-{{$i}}"><span class="badge {{.Status}}">{{status .Status}}</span>{{path .}} {{if .After}}<small>{{.After.Kind}}</small>{{else if .Before}}<small>{{.Before.Kind}}</small>{{end}}</summary>
+        <div class="file-actions"><button class="file-back" type="button">返回文件清单</button></div>
+        <div class="columns">
+          <div>{{with .Before}}<b>基准：{{.Path}}</b><div>{{.Size}} B</div><pre>SHA-256 {{.SHA256}}</pre>{{if .XMLNote}}<p>{{.XMLNote}}</p>{{end}}{{end}}
+            {{if .BeforePreview}}<img class="preview" alt="基准资源预览" loading="lazy" src="{{imageURL .BeforePreview}}">{{end}}</div>
+          <div>{{with .After}}<b>当前：{{.Path}}</b><div>{{.Size}} B</div><pre>SHA-256 {{.SHA256}}</pre>{{if .XMLNote}}<p>{{.XMLNote}}</p>{{end}}{{end}}
+            {{if .AfterPreview}}<img class="preview" alt="当前资源预览" loading="lazy" src="{{imageURL .AfterPreview}}">{{end}}</div>
+        </div>
+        {{if not .XMLView}}{{if and .Before .After}}{{if and .Before.XMLSHA256 (eq .Before.XMLSHA256 .After.XMLSHA256)}}<p>XML 结构相同，原始文件字节不同。</p>{{end}}{{end}}{{end}}
+        {{with .XMLView}}
+        <p class="xml-change-kind" data-xml-kind="{{.Kind}}">{{xmlViewKind .Kind}}</p>
+        {{if .Note}}<p class="muted xml-view-note">{{.Note}}</p>{{end}}
+        {{if .Blocks}}
+        <details class="xml-view" open><summary>XML 左右对照</summary>
+          <p class="muted">规范化显示统一命名空间前缀、属性顺序与缩进，忽略注释；文字中的换行、制表符用字符引用表示。行号属于格式化内容。红色为基准侧变化，绿色为目标侧变化。</p>
+          {{if .Coarse}}<p class="muted">XML 行修改较多，已回退为完整变化段落对照。</p>{{end}}
+          <div class="xml-view-actions"><button class="xml-expand" type="button">展开全部相同行</button><button class="xml-collapse" type="button">折叠相同部分</button><span class="xml-fold-status muted" role="status" aria-live="polite"></span></div>
+          <div class="xml-side-heading"><b>基准 XML</b><b>当前 XML</b></div>
+          {{range .Blocks}}
+            {{if .Equal}}<details class="xml-common" data-default-folded="{{.Folded}}" {{if not .Folded}}open{{end}}><summary>相同 {{len .Lines}} 行</summary>{{template "xmlRows" .}}</details>
+            {{else}}{{template "xmlRows" .}}{{end}}
+          {{end}}
+        </details>
+        {{end}}{{end}}
+        {{if .XMLChanges}}<details class="xml-field-changes" open><summary>XML 字段差异</summary><table><thead><tr><th>XML 位置</th><th>基准</th><th>当前</th></tr></thead>
+          <tbody>{{range .XMLChanges}}<tr><td><code>{{.Path}}</code></td><td><pre>{{value .Before}}</pre></td><td><pre>{{value .After}}</pre></td></tr>{{end}}</tbody>
+        </table></details>{{end}}
+        {{if .XMLTruncated}}<p>XML 差异明细达到条数上限，其余明细省略。</p>{{end}}
+        <div class="file-actions"><button class="file-back" type="button">返回文件清单</button></div>
+      </details>
+      {{else}}<p>内部文件内容相同。</p>{{end}}
+      <details class="file-list"><summary>完整文件清单（逐行对比）</summary>
+        <p class="muted">相同路径和已识别为移动的文件放在同一行。内容按解压后的 SHA-256 判断；红色表示内容或路径有变化，— 表示该侧不存在。点击差异行或“查看详情”可展开对应的文件差异。</p>
+        <div class="file-filters" role="group" aria-label="文件清单筛选">
+          <label class="file-search-label">路径搜索 <input class="file-search" type="search" placeholder="输入任一侧路径的一部分" autocomplete="off"></label>
+          <label><input class="files-changed-only" type="checkbox">只看不同</label>
+          <label>状态 <select class="file-status"><option value="">全部状态</option><option value="unchanged">相同</option><option value="modified">修改</option><option value="added">新增</option><option value="removed">删除</option><option value="moved">移动</option></select></label>
+          <label>类型 <select class="file-type"><option value="">全部类型</option><option value="xml">XML</option><option value="image">图片</option><option value="font">字体</option><option value="binary">其他文件</option></select></label>
+          <button class="file-filter-reset" type="button">重置筛选</button>
+          <span class="file-count muted" role="status" aria-live="polite"></span>
+        </div>
+        <table class="file-comparison">
+          <thead><tr><th scope="col">基准文件</th><th scope="col">当前文件</th><th scope="col">比较结果</th></tr></thead>
+          <tbody>{{range fileRows $base $target .}}
+            <tr class="file-row{{if ne .Status "unchanged"}} file-different{{end}}{{if .DetailID}} file-linked{{end}}" data-status="{{.Status}}" data-before-kind="{{fileKind .Before}}" data-after-kind="{{fileKind .After}}">
+              <td>{{with .Before}}<code>{{.Path}}</code><div class="file-size">{{.Size}} B</div>{{else}}<span aria-label="不存在">—</span>{{end}}</td>
+              <td>{{with .After}}<code>{{.Path}}</code><div class="file-size">{{.Size}} B</div>{{else}}<span aria-label="不存在">—</span>{{end}}</td>
+              <td>{{status .Status}}{{if eq .Status "moved"}}（内容相同）{{end}}{{if .DetailID}}<div><a class="file-detail-link" href="#{{.DetailID}}">查看详情</a></div>{{end}}</td>
+            </tr>
+          {{else}}<tr><td colspan="3">没有包内文件。</td></tr>{{end}}</tbody>
+        </table>
+        <p class="file-empty hidden" role="status">没有符合筛选条件的文件，可调整条件或重置筛选。</p>
+      </details>
+    </section>
+    <h2>页面对比</h2>
+    <p class="muted">自动配对优先使用手工映射、相同页面内容和唯一的相同非空文字，再结合相邻匹配页与文字相似度关联修改页，其余页面在定位范围内按顺序配对。删除文字用红色标记，新增文字用绿色标记。点击差异图中的方框或下方区域按钮，可查看局部放大；“上一处 / 下一处差异”依次浏览各区域。</p>
+    <section>
+      <details class="page-map-editor" data-target="{{$targetNumber}}" data-target-pages="{{selectedNumbers $target}}" data-pages="{{$.Options.Pages}}">
+        <summary>调整页配对并导出 --page-map</summary>
+        <p>基准：{{$base.Name}}<br>目标：{{$target.Name}}</p>
+        <p>预填本报告的配对结果。修改目标页码后，可复制或下载参数，重新运行对比。这里保存配对草稿，当前差异结果和预览图仍对应原配对。</p>
+        <p class="muted">只允许本报告选中的原始全局页码，每个目标页只能使用一次。清空一行表示不固定该页，由重新运行时自动匹配；不表示强制将该页标为新增或删除。导出参数仅用于当前这份基准与目标，基准文件应放在第一位。</p>
+        <div class="page-map-rows">
+          <table class="page-map-table"><thead><tr><th scope="col">基准页</th><th scope="col">原目标页</th><th scope="col">调整后的目标页</th><th scope="col">原配对依据</th></tr></thead><tbody>
+            {{range .Pages}}{{if .Before}}
+            <tr class="page-map-row" data-before="{{.Before}}">
+              <td>{{.Before}}</td><td>{{if .After}}{{.After}}{{else}}未匹配{{end}}</td>
+              <td><input class="page-map-after" type="text" inputmode="numeric" maxlength="16" autocomplete="off" value="{{if .After}}{{.After}}{{end}}" aria-label="基准第 {{.Before}} 页对应的目标页" aria-describedby="page-map-errors-{{$targetNumber}}" placeholder="自动匹配"><span class="page-map-row-error"></span></td>
+              <td>{{matchDescription .Match}}</td>
+            </tr>
+            {{end}}{{end}}
+          </tbody></table>
+        </div>
+        <div class="page-map-actions"><button class="page-map-reset" type="button">恢复原配对</button><button class="page-map-clear" type="button">清空映射</button><span class="page-map-count muted" role="status" aria-live="polite"></span></div>
+        <p class="page-map-errors hidden" id="page-map-errors-{{$targetNumber}}" role="alert"></p>
+        <label class="page-map-output-label">导出参数<textarea class="page-map-output" rows="3" readonly spellcheck="false" aria-label="导出的页映射参数" placeholder="展开编辑器后生成参数"></textarea></label>
+        <div class="page-map-actions"><button class="page-map-copy" type="button" disabled>复制参数</button><button class="page-map-download" type="button" disabled>下载参数 .txt</button><span class="page-map-message muted" role="status" aria-live="polite"></span></div>
+        <p class="muted">导出时启用 auto 匹配；本报告有选页范围时一并包含 --pages。可将参数追加到命令中，例如 ofd-compare [导出参数] -o remapped.html 基准.ofd 目标.ofd。草稿仅保留在当前打开的报告中，刷新页面会恢复原配对。</p>
+      </details>
+    </section>
+    {{range .Pages}}
+    <article class="page" data-changed="{{if or (ne .Status "unchanged") .Moved}}true{{else}}false{{end}}">
+      <h3>基准页 {{if .Before}}{{.Before}}{{else}}—{{end}} → 当前页 {{if .After}}{{.After}}{{else}}—{{end}}
+        <span class="badge {{.Status}}">{{status .Status}}</span>{{if .Moved}}<span class="badge moved">页码变化</span>{{end}}
+      </h3>
+      <p>文字变化：{{.TextChanged}} · 尺寸变化：{{.SizeChanged}}</p>
+      {{if .Match.Method}}<p class="page-match" data-match-method="{{.Match.Method}}">配对依据：{{matchDescription .Match}}</p>
+        {{if eq .Match.Method "sequence"}}<p class="match-review">按顺序兜底配对，请核对页面对应关系；必要时使用手工页映射调整。</p>{{end}}
+        {{if eq .Match.Method "text_similarity"}}<p class="muted">文字特征相似度仅用于页面配对，不代表页面内容或画面相同。</p>{{end}}
+      {{end}}
+      {{$before := text $base .Before}}{{$after := text $target .After}}
+      <details class="text-diff" {{if .TextDiff}}open{{end}}>
+        <summary>页面文字</summary>
+        {{if .TextDiffCoarse}}<p class="muted">文字修改较多，已回退为完整变化段落对照。</p>{{end}}
+        <div class="columns">
+          <div><b>基准</b><pre>{{if .TextDiff}}{{range .TextDiff}}{{if eq .Kind "delete"}}<del>{{.Text}}</del>{{else if eq .Kind "equal"}}{{.Text}}{{end}}{{end}}{{else}}{{$before}}{{end}}</pre></div>
+          <div><b>当前</b><pre>{{if .TextDiff}}{{range .TextDiff}}{{if eq .Kind "insert"}}<ins>{{.Text}}</ins>{{else if eq .Kind "equal"}}{{.Text}}{{end}}{{end}}{{else}}{{$after}}{{end}}</pre></div>
+        </div>
+      </details>
+      {{with .Visual}}
+      <p>变化像素 {{.ChangedPixels}} / {{.TotalPixels}}（{{percent .Ratio}}）· 区域 {{.RegionCount}} 处</p>
+      {{if .IgnoredRegionPixels}}<p class="muted">已过滤小区域中的 {{.IgnoredRegionPixels}} 个像素；原始变化统计与相同判定保留。</p>{{end}}
+      {{if .RegionsTruncated}}<p class="muted">区域较多，仅展示变化像素最多的 {{len .Regions}} 处，其余仍计入变化统计。</p>{{end}}
+      {{if .DiffPNG}}
+      <div class="visuals">
+        <div>基准{{if .BeforePNG}}<img data-image="before" loading="lazy" alt="基准页面" src="{{imageURL .BeforePNG}}">{{end}}</div>
+        <div>当前{{if .AfterPNG}}<img data-image="after" loading="lazy" alt="当前页面" src="{{imageURL .AfterPNG}}">{{end}}</div>
+        <div>差异<div class="diff-map">
+          <img data-image="diff" loading="lazy" alt="页面差异" src="{{imageURL .DiffPNG}}">
+          <svg class="region-map" viewBox="0 0 {{.Width}} {{.Height}}" role="group" aria-label="可放大的差异区域">
+            {{range $i,$region := .Regions}}<rect data-region="{{$i}}" tabindex="0" role="button" aria-label="放大区域 {{inc $i}}" x="{{index .Bounds 0}}" y="{{index .Bounds 1}}" width="{{sub (index .Bounds 2) (index .Bounds 0)}}" height="{{sub (index .Bounds 3) (index .Bounds 1)}}"></rect>{{end}}
+          </svg>
+        </div></div>
+      </div>
+      {{if .Regions}}
+      <div class="region-list" aria-label="差异区域列表">
+        {{range $i,$region := .Regions}}<button class="region-button" type="button" data-region="{{$i}}" data-bounds="{{index .Bounds 0}},{{index .Bounds 1}},{{index .Bounds 2}},{{index .Bounds 3}}" aria-pressed="false">区域 {{inc $i}} · {{.ChangedPixels}} 像素</button>{{end}}
+      </div>
+      <details class="region-view">
+        <summary>局部放大 <span class="region-title"></span></summary>
+        <div class="region-controls">
+          <label>放大倍数 <input class="region-zoom" type="range" min="1" max="6" step="0.5" value="2"><output>2×</output></label>
+          <span class="region-position muted" aria-live="polite"></span>
+        </div>
+        <div class="visuals region-canvases">
+          <div>基准<div class="region-scroll"><canvas data-crop="before" aria-label="基准局部放大"></canvas></div></div>
+          <div>当前<div class="region-scroll"><canvas data-crop="after" aria-label="当前局部放大"></canvas></div></div>
+          <div>差异<div class="region-scroll"><canvas data-crop="diff" aria-label="差异局部放大"></canvas></div></div>
+        </div>
+      </details>
+      {{end}}
+      {{if and .BeforePNG .AfterPNG}}
+      <details class="overlay-view"><summary>透明叠加</summary>
+        <label>当前页不透明度 <input class="opacity" type="range" min="0" max="100" value="50"></label>
+        <div class="overlay"><img loading="lazy" alt="叠加基准页" src="{{imageURL .BeforePNG}}"><img loading="lazy" class="after" alt="叠加当前页" src="{{imageURL .AfterPNG}}"></div>
+      </details>
+      {{end}}
+      {{end}}
+      {{end}}
+    </article>
+    {{end}}
+  </div>
+  {{end}}
+  <footer>页面文字包含正文与可用模板文字；图像文字需要 OCR。字体资源按文件内容比较。签章、附件和历史版本文件出现在包内差异中，签名有效性请使用校验或签章验证工具。视觉结果采用本机渲染环境。</footer>
+</main>
+<script>{{script}}</script>
+</body>
+</html>
+{{define "xmlRows"}}
+<table class="xml-lines" aria-label="XML 行对照"><colgroup><col class="xml-number-col"><col><col class="xml-number-col"><col></colgroup><tbody>
+  {{$equal := .Equal}}{{range .Lines}}<tr class="xml-line{{if $equal}} xml-equal{{else}} xml-changed{{end}}">
+    <td class="xml-line-number">{{if .BeforeNumber}}{{.BeforeNumber}}{{else}}—{{end}}</td><td class="xml-code{{if and (not $equal) .BeforeNumber}} xml-delete{{end}}"><code>{{.Before}}</code></td>
+    <td class="xml-line-number">{{if .AfterNumber}}{{.AfterNumber}}{{else}}—{{end}}</td><td class="xml-code{{if and (not $equal) .AfterNumber}} xml-insert{{end}}"><code>{{.After}}</code></td>
+  </tr>{{end}}
+</tbody></table>
+{{end}}

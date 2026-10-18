@@ -66,6 +66,7 @@ CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
 VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
+COMPARE := $(BIN_DIR)/ofd-compare$(BIN_SUFFIX)
 ARCHIVE := $(BIN_DIR)/ofd-archive$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 SIGNER_DEMO := $(BIN_DIR)/ofd-signer-demo$(BIN_SUFFIX)
@@ -97,6 +98,7 @@ CONVERTER_PACKAGE := $(DIST_DIR)/ofd-converter-$(PLATFORM).zip
 THUMBNAILER_PACKAGE := $(DIST_DIR)/ofd-thumbnailer-$(PLATFORM).zip
 VALIDATOR_PACKAGE := $(DIST_DIR)/ofd-validator-$(PLATFORM).zip
 ANALYZER_PACKAGE := $(DIST_DIR)/ofd-analyzer-$(PLATFORM).zip
+COMPARE_PACKAGE := $(DIST_DIR)/ofd-compare-$(PLATFORM).zip
 ARCHIVE_PACKAGE := $(DIST_DIR)/ofd-archive-$(PLATFORM).zip
 CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
 SIGNER_DEMO_PACKAGE := $(DIST_DIR)/ofd-signer-demo-$(PLATFORM).zip
@@ -111,8 +113,8 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= $(VERSION)
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(SEAL) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(SEAL_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(COMPARE) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(SEAL) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-compare package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(SEAL_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -129,7 +131,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm test-wasm-web build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
+.PHONY: all build build-tools build-wasm test-wasm-web build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
 
 all: package
 
@@ -141,6 +143,7 @@ help:
 		'make test-wasm-web           Run the browser reader script tests' \
 		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-wasm-web         Package the browser WASM web directory' \
+		'make package-compare          Package the OFD comparison tool' \
 		'make package-viewer           Build the OFD viewer package' \
 		'make package-viewer-android   Build the OFD viewer Android APK' \
 		'make package-viewer-android-zip Build the OFD viewer Android ZIP package' \
@@ -279,6 +282,10 @@ $(ANALYZER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-analyzer
 
+$(COMPARE): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-compare
+
 $(ARCHIVE): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-archive
@@ -377,6 +384,8 @@ package-validator: $(VALIDATOR_PACKAGE)
 
 package-analyzer: $(ANALYZER_PACKAGE)
 
+package-compare: $(COMPARE_PACKAGE)
+
 package-archive: $(ARCHIVE_PACKAGE)
 
 package-creator: $(CREATOR_PACKAGE)
@@ -416,6 +425,16 @@ $(ARCHIVE_PACKAGE): $(ARCHIVE) cmd/ofd-archive/README.md
 	@cp "cmd/ofd-archive/README.md" "$(PACKAGE_DIR)/ofd-archive/README.md"
 	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-archive/ADOBE-GB1-NOTICE"
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-archive"
+
+$(COMPARE_PACKAGE): $(COMPARE) cmd/ofd-compare/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-compare"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-compare"
+	@rm -f "$@"
+	@cp "$(COMPARE)" "$(PACKAGE_DIR)/ofd-compare/ofd-compare$(BIN_SUFFIX)"
+	@cp "cmd/ofd-compare/README.md" "$(PACKAGE_DIR)/ofd-compare/README.md"
+	@cp "internal/cidmap/NOTICE" "$(PACKAGE_DIR)/ofd-compare/ADOBE-GB1-NOTICE"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-compare"
 
 $(CREATOR_PACKAGE): $(CREATOR) cmd/ofd-creator/README.md
 	@mkdir -p "$(DIST_DIR)"

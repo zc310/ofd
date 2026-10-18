@@ -10,7 +10,7 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.1
+	github.com/chromedp/cdproto v0.158.2
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
@@ -23,7 +23,7 @@ require (
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
 	github.com/knroy/go-xml v1.8.1
-	github.com/kovidgoyal/imaging v1.8.24-0.20261007033220-40391a359a37
+	github.com/kovidgoyal/imaging v1.9.0
 	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/minio/minio-go/v7 v7.4.1
