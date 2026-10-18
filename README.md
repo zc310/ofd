@@ -184,9 +184,6 @@ go get github.com/zc310/ofd@latest
 
 这会引入已发布的 Go 库版本。可运行的应用示例见 [`ofd-viewer`](https://github.com/zc310/ofd-viewer) 和 [`ofd-toolbox`](https://github.com/zc310/ofd-toolbox)：前者是基于本库的独立桌面阅读器，后者是将转换、校验、分析、发票抽取、水印与合并编译为 WebAssembly 的前端工具箱。
 
-`js/wasm` 构建不包含 Excelize：发票、校验、分析和归档的 XLSX 导出接口会返回
-不支持错误。浏览器报表使用 JSON、Markdown、文本或发票 CSV；本机构建支持 XLSX。
-
 ### 转换与渲染
 
 转换入口首参为 `context.Context`，长任务可传入带取消或超时的上下文。OFD 转 PDF 示例：
