@@ -3,13 +3,14 @@ package compare
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/goccy/go-json"
 )
 
 type xmlFrame struct {

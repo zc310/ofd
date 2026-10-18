@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"image/color"
 	"io"
@@ -12,6 +11,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/parser"

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
 	"io"
 	"net/url"
 	"strings"
+
+	"github.com/goccy/go-json"
 )
 
 type byteBudget struct {

@@ -3,11 +3,12 @@ package archive
 import (
 	"bytes"
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/goccy/go-json"
 
 	"go.yaml.in/yaml/v3"
 )

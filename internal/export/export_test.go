@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"

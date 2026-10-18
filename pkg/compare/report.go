@@ -3,7 +3,6 @@ package compare
 import (
 	_ "embed"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/goccy/go-json"
 )
 
 //go:embed templates/report.html

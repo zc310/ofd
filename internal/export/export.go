@@ -6,13 +6,14 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/goccy/go-json"
 
 	"github.com/BurntSushi/toml"
 	"github.com/beevik/etree"
