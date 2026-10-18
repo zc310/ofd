@@ -1,6 +1,7 @@
 package creator
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"path"
@@ -8,12 +9,16 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/ofdxml"
 )
 
 // entrySink 接收生成阶段产出的 OFD 包条目。实现可以是内存收集（构建/基准）
 // 或直接写入 ZIP 的流式写入器，生成阶段无需区分。
 type entrySink interface {
+	// write 同步消费 data，不修改其内容；如需留存，必须在返回前复制。
 	write(name string, data []byte) error
+	// writeXML 同步调用 emit；由 sink 选择缓冲或分块输出，并处理 Writer 的写入错误。
+	writeXML(name string, w *ofdxml.Writer, emit func()) error
 	// writeSource 流式写入惰性来源，避免资源整体驻留内存。
 	writeSource(name string, source DataSource) error
 	// lookup 返回先前写入条目的数据，仅用于签名摘要计算。
@@ -48,6 +53,12 @@ func (s *collectSink) write(name string, data []byte) error {
 	s.index[name] = len(s.state.entries)
 	s.state.entries = append(s.state.entries, zipEntry{name: name, data: append([]byte(nil), data...)})
 	return nil
+}
+
+func (s *collectSink) writeXML(name string, w *ofdxml.Writer, emit func()) error {
+	w.Reset()
+	emit()
+	return s.write(name, w.Bytes())
 }
 
 func (s *collectSink) writeSource(name string, source DataSource) error {
@@ -94,9 +105,9 @@ func newZipSink(archive *zip.Writer, options CreateOptions, targets map[string]b
 	}
 }
 
-func (s *zipSink) write(name string, data []byte) error {
+func (s *zipSink) createEntry(name string) (io.Writer, error) {
 	if err := validateEntryName(name, s.seen); err != nil {
-		return err
+		return nil, err
 	}
 	header := &zip.FileHeader{
 		Name:   name,
@@ -107,7 +118,15 @@ func (s *zipSink) write(name string, data []byte) error {
 	}
 	file, err := s.archive.CreateHeader(header)
 	if err != nil {
-		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
+		return nil, fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
+	}
+	return file, nil
+}
+
+func (s *zipSink) write(name string, data []byte) error {
+	file, err := s.createEntry(name)
+	if err != nil {
+		return err
 	}
 	if _, err := file.Write(data); err != nil {
 		return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
@@ -118,20 +137,36 @@ func (s *zipSink) write(name string, data []byte) error {
 	return nil
 }
 
-func (s *zipSink) writeSource(name string, source DataSource) error {
-	if err := validateEntryName(name, s.seen); err != nil {
+func (s *zipSink) writeXML(name string, w *ofdxml.Writer, emit func()) error {
+	defer w.Reset()
+	file, err := s.createEntry(name)
+	if err != nil {
 		return err
 	}
-	header := &zip.FileHeader{
-		Name:   name,
-		Method: EntryMethod(name, s.options.Compression),
+	if s.targets[name] {
+		var retained bytes.Buffer
+		if err := emitXML(w, io.MultiWriter(file, &retained), emit); err != nil {
+			return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
+		}
+		s.retained[name] = retained.Bytes()
+		return nil
 	}
-	if s.options.Deterministic {
-		header.Modified = time.Unix(0, 0).UTC()
+	if err := emitXML(w, file, emit); err != nil {
+		return fmt.Errorf("写入 ZIP 条目 %q 失败: %w", name, err)
 	}
-	file, err := s.archive.CreateHeader(header)
+	return nil
+}
+
+func emitXML(w *ofdxml.Writer, dst io.Writer, emit func()) error {
+	w.ResetTo(dst)
+	emit()
+	return w.Finish()
+}
+
+func (s *zipSink) writeSource(name string, source DataSource) error {
+	file, err := s.createEntry(name)
 	if err != nil {
-		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
+		return err
 	}
 	if s.targets[name] {
 		data, readErr := readDataSource(source)

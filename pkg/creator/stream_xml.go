@@ -8,11 +8,10 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-// 页面和模板复用同一个 ofdxml 缓冲区，业务代码只负责元素顺序。
+// XML 生成过程复用同一个 ofdxml 缓冲区，业务代码只负责元素顺序。
 type streamXMLWriter = ofdxml.Writer
 
-func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer, w *streamXMLWriter) []byte {
-	w.Reset()
+func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer, w *streamXMLWriter) {
 	w.Start("Page")
 	for _, template := range page.Templates {
 		w.Start("Template")
@@ -37,11 +36,9 @@ func streamPageXML(state *buildState, page Page, pageResources []pageResource, l
 		streamActions(w, page.Actions, state.pageIDs)
 	}
 	w.End()
-	return w.Bytes()
 }
 
-func streamTemplateXML(state *buildState, templateIndex int, w *streamXMLWriter) []byte {
-	w.Reset()
+func streamTemplateXML(state *buildState, templateIndex int, w *streamXMLWriter) {
 	w.Start("Page")
 	template := state.document.Templates[templateIndex]
 	if template.Area != nil {
@@ -53,7 +50,6 @@ func streamTemplateXML(state *buildState, templateIndex int, w *streamXMLWriter)
 	streamBuiltLayers(w, state.templateLayers[templateIndex], state)
 	w.End()
 	w.End()
-	return w.Bytes()
 }
 
 func streamElementText(w *streamXMLWriter, name, value string) {
@@ -97,6 +93,9 @@ func streamBuiltLayers(w *streamXMLWriter, layers []builtLayer, state *buildStat
 
 func streamBuiltItems(w *streamXMLWriter, items []builtItem, state *buildState) {
 	for _, item := range items {
+		if w.Err() != nil {
+			return
+		}
 		switch value := item.item.(type) {
 		case Text:
 			streamText(w, item, value, state.pageIDs, state.drawParamIDs, state.fontIDs)

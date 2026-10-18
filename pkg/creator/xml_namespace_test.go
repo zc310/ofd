@@ -90,6 +90,23 @@ func TestCreateGeneratedXMLUsesOFDPrefix(t *testing.T) {
 	if !bytes.Equal(data, second) {
 		t.Fatal("namespace prefixes made deterministic output unstable")
 	}
+	t.Run("collected entries survive writer reuse", func(t *testing.T) {
+		collected, err := build(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(collected.entries) != len(archive.File) {
+			t.Fatalf("collected %d entries, want %d", len(collected.entries), len(archive.File))
+		}
+		for index, entry := range collected.entries {
+			if entry.name != archive.File[index].Name {
+				t.Errorf("entry %d = %q, want %q", index, entry.name, archive.File[index].Name)
+			}
+			if want := readArchiveEntry(t, data, entry.name); !bytes.Equal(entry.data, want) {
+				t.Errorf("collected entry %s changed after writer reuse", entry.name)
+			}
+		}
+	})
 }
 
 func assertOFDPrefix(t *testing.T, element *xdm.Node) {

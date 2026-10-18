@@ -483,6 +483,11 @@ func (p reportPages) PageAt(index int) (creator.Page, error) {
 PageProvider 减少页面模型的常驻内存，不能保证所有资源、ID 和引用统计都使用
 常量内存；MarshalWithPages 仍把最终 OFD 保存在字节缓冲区。CLI 对应 `--stream`。
 
+页面和模板 XML 在生成过程中分块写入 ZIP，输出缓冲区不随单页 XML 大小增长；
+单次超长文本、路径和数值列表也可分块输出。页面模型、构建后的图元及辅助 XML
+仍占用内存；被签名引用的条目会保留完整原文用于计算摘要。需要降低最终产物的
+内存占用时，使用文件或 io.Writer 创建入口。
+
 ## 校验与输出约定
 
 | 项目 | 约定 |

@@ -17,13 +17,15 @@ const prefix = "ofd"
 
 var replacement = []byte("\uFFFD")
 
-// Writer 将 OFD XML 顺序写入内存缓冲区，自动添加 ofd 前缀和根命名空间声明。
+// Writer 将 OFD XML 顺序写入内存或分块写入目标，自动添加 ofd 前缀和根命名空间声明。
 // 元素名必须是合法的 XML 本地名。属性必须在内容之前写入，内容之后的属性调用
 // 会被忽略。一个 Writer 不能被多个 goroutine 同时使用。
 type Writer struct {
 	buf   []byte
 	stack []string
 	open  bool
+	dst   io.Writer
+	err   error
 }
 
 // New 从复用池获取 OFD XML 写入器。用完后应调用 Put 归还缓冲区；
@@ -47,6 +49,8 @@ func newWriter() *Writer {
 // maxPooledCapacity 限制归还池中保留的缓冲区容量，避免个别大文档长期占用内存。
 const maxPooledCapacity = 1 << 20
 
+const streamBufferSize = 32 << 10
+
 var writerPool = sync.Pool{New: func() any { return newWriter() }}
 
 // Put 将不再使用的 Writer 归还池中以复用缓冲区。归还后不得再访问 Bytes
@@ -58,6 +62,8 @@ func Put(w *Writer) {
 	if cap(w.buf) > maxPooledCapacity {
 		w.buf = nil
 	}
+	w.dst = nil
+	w.err = nil
 	writerPool.Put(w)
 }
 
@@ -77,6 +83,8 @@ func (w *Writer) Done() []byte {
 
 // Reset 清空文档并重新写入 XML 声明，复用已分配的缓冲区。
 func (w *Writer) Reset() {
+	w.dst = nil
+	w.err = nil
 	w.buf = w.buf[:0]
 	clear(w.stack)
 	w.stack = w.stack[:0]
@@ -84,13 +92,69 @@ func (w *Writer) Reset() {
 	w.buf = append(w.buf, `<?xml version="1.0" encoding="UTF-8"?>`...)
 }
 
+// ResetTo 开始分块输出文档；写入过程中自动冲刷缓冲区，以 Finish 收尾并获取错误。
+// dst 为 nil 时等同于 Reset。分块模式不使用 Bytes、Done 或 WriteTo 获取完整文档。
+func (w *Writer) ResetTo(dst io.Writer) {
+	if dst != nil && cap(w.buf) > 2*streamBufferSize {
+		w.buf = nil
+	}
+	w.Reset()
+	w.dst = dst
+}
+
+// Err 返回分块输出遇到的第一个错误。错误后不再调用底层写入器。
+func (w *Writer) Err() error { return w.err }
+
+// Finish 关闭剩余元素并写出最后一块，返回第一次写入错误或 io.ErrShortWrite。
+func (w *Writer) Finish() error {
+	w.closeElements()
+	if w.dst != nil {
+		w.flush()
+		w.dst = nil
+	}
+	return w.err
+}
+
+func (w *Writer) flush() {
+	if w.err == nil && len(w.buf) > 0 {
+		n, err := w.dst.Write(w.buf)
+		if err == nil && n != len(w.buf) {
+			err = io.ErrShortWrite
+		}
+		w.err = err
+	}
+	w.buf = w.buf[:0]
+}
+
+func (w *Writer) maybeFlush() {
+	if w.dst != nil && len(w.buf) >= streamBufferSize {
+		w.flush()
+	}
+}
+
+func (w *Writer) appendString(value string) {
+	if w.dst == nil {
+		w.buf = append(w.buf, value...)
+		return
+	}
+	for len(value) > 0 && w.err == nil {
+		w.maybeFlush()
+		n := min(len(value), streamBufferSize-len(w.buf))
+		w.buf = append(w.buf, value[:n]...)
+		value = value[n:]
+	}
+}
+
 // StartElement 开始一个 OFD 元素，根元素自动声明 OFD 命名空间。
 func (w *Writer) StartElement(name string) {
+	if w.err != nil {
+		return
+	}
 	w.closeStart()
 	w.buf = append(w.buf, '<')
 	w.buf = append(w.buf, prefix...)
 	w.buf = append(w.buf, ':')
-	w.buf = append(w.buf, name...)
+	w.appendString(name)
 	if len(w.stack) == 0 {
 		w.buf = append(w.buf, ` xmlns:ofd="`...)
 		w.buf = append(w.buf, Namespace...)
@@ -102,7 +166,7 @@ func (w *Writer) StartElement(name string) {
 
 // Attribute 在当前尚未闭合的开始标签上写入属性。
 func (w *Writer) Attribute(name, value string) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
@@ -121,7 +185,7 @@ func (w *Writer) End() { w.EndElement() }
 
 // AttrUint 写入十进制无符号整数属性，不生成临时字符串。
 func (w *Writer) AttrUint(name string, value uint64) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
@@ -131,7 +195,7 @@ func (w *Writer) AttrUint(name string, value uint64) {
 
 // AttrInt 写入十进制有符号整数属性，不生成临时字符串。
 func (w *Writer) AttrInt(name string, value int) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
@@ -141,7 +205,7 @@ func (w *Writer) AttrInt(name string, value int) {
 
 // AttrFloat 写入最多保留四位小数的 OFD 数值属性。
 func (w *Writer) AttrFloat(name string, value float64) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
@@ -151,7 +215,7 @@ func (w *Writer) AttrFloat(name string, value float64) {
 
 // AttrBox 写入由空格分隔的四个 OFD 矩形数值。
 func (w *Writer) AttrBox(name string, x, y, width, height float64) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
@@ -167,11 +231,15 @@ func (w *Writer) AttrBox(name string, x, y, width, height float64) {
 
 // AttrFloatList 写入由空格分隔的 OFD 数值列表。
 func (w *Writer) AttrFloatList(name string, values []float64) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
 	for index, value := range values {
+		if w.err != nil {
+			return
+		}
+		w.maybeFlush()
 		if index > 0 {
 			w.buf = append(w.buf, ' ')
 		}
@@ -182,11 +250,15 @@ func (w *Writer) AttrFloatList(name string, values []float64) {
 
 // AttrIntList 写入由空格分隔的十进制整数列表。
 func (w *Writer) AttrIntList(name string, values []int) {
-	if !w.open {
+	if !w.open || w.err != nil {
 		return
 	}
 	w.startAttr(name)
 	for index, value := range values {
+		if w.err != nil {
+			return
+		}
+		w.maybeFlush()
 		if index > 0 {
 			w.buf = append(w.buf, ' ')
 		}
@@ -196,8 +268,9 @@ func (w *Writer) AttrIntList(name string, values []int) {
 }
 
 func (w *Writer) startAttr(name string) {
+	w.maybeFlush()
 	w.buf = append(w.buf, ' ')
-	w.buf = append(w.buf, name...)
+	w.appendString(name)
 	w.buf = append(w.buf, '=', '"')
 }
 
@@ -211,7 +284,16 @@ func (w *Writer) Text(value string) {
 // 调用方必须按当前命名空间上下文校验片段，保证标签配对，且不含 XML 声明和 DOCTYPE。
 func (w *Writer) Raw(data []byte) {
 	w.closeStart()
-	w.buf = append(w.buf, data...)
+	if w.dst == nil {
+		w.buf = append(w.buf, data...)
+		return
+	}
+	for len(data) > 0 && w.err == nil {
+		w.maybeFlush()
+		n := min(len(data), streamBufferSize-len(w.buf))
+		w.buf = append(w.buf, data[:n]...)
+		data = data[n:]
+	}
 }
 
 // Element 写入只包含文本的 OFD 元素。
@@ -223,24 +305,36 @@ func (w *Writer) Element(name, value string) {
 
 // TextUint 写入十进制无符号整数文本，不生成临时字符串。
 func (w *Writer) TextUint(value uint64) {
+	if w.err != nil {
+		return
+	}
 	w.closeStart()
 	w.buf = strconv.AppendUint(w.buf, value, 10)
 }
 
 // TextInt 写入十进制有符号整数文本，不生成临时字符串。
 func (w *Writer) TextInt(value int) {
+	if w.err != nil {
+		return
+	}
 	w.closeStart()
 	w.buf = strconv.AppendInt(w.buf, int64(value), 10)
 }
 
 // TextFloat 写入最多保留四位小数的 OFD 数值文本。
 func (w *Writer) TextFloat(value float64) {
+	if w.err != nil {
+		return
+	}
 	w.closeStart()
 	w.buf = AppendFloat(w.buf, value)
 }
 
 // TextBox 写入由空格分隔的四个 OFD 矩形数值文本。
 func (w *Writer) TextBox(x, y, width, height float64) {
+	if w.err != nil {
+		return
+	}
 	w.closeStart()
 	w.buf = AppendFloat(w.buf, x)
 	w.buf = append(w.buf, ' ')
@@ -255,6 +349,10 @@ func (w *Writer) TextBox(x, y, width, height float64) {
 func (w *Writer) TextFloatList(values []float64) {
 	w.closeStart()
 	for index, value := range values {
+		if w.err != nil {
+			return
+		}
+		w.maybeFlush()
 		if index > 0 {
 			w.buf = append(w.buf, ' ')
 		}
@@ -266,6 +364,10 @@ func (w *Writer) TextFloatList(values []float64) {
 func (w *Writer) TextIntList(values []int) {
 	w.closeStart()
 	for index, value := range values {
+		if w.err != nil {
+			return
+		}
+		w.maybeFlush()
 		if index > 0 {
 			w.buf = append(w.buf, ' ')
 		}
@@ -317,9 +419,10 @@ func (w *Writer) ElementIntList(name string, values []int) {
 
 // EndElement 关闭最近打开的元素，无内容的元素输出为自闭合标签。
 func (w *Writer) EndElement() {
-	if len(w.stack) == 0 {
+	if len(w.stack) == 0 || w.err != nil {
 		return
 	}
+	w.maybeFlush()
 	name := w.stack[len(w.stack)-1]
 	w.stack[len(w.stack)-1] = ""
 	w.stack = w.stack[:len(w.stack)-1]
@@ -331,20 +434,26 @@ func (w *Writer) EndElement() {
 	w.buf = append(w.buf, '<', '/')
 	w.buf = append(w.buf, prefix...)
 	w.buf = append(w.buf, ':')
-	w.buf = append(w.buf, name...)
+	w.appendString(name)
 	w.buf = append(w.buf, '>')
 }
 
 // Bytes 关闭剩余元素并直接返回缓冲区，不复制字节。
 // 返回值只在下一次写入或 Reset 前有效；需要长期保留时应自行复制。
+// 仅适用于内存模式，分块模式使用 Finish。
 func (w *Writer) Bytes() []byte {
-	for len(w.stack) > 0 {
-		w.EndElement()
-	}
+	w.closeElements()
 	return w.buf
 }
 
-// WriteTo 将完整 XML 文档写入 dst，并报告底层写入错误或短写入。
+func (w *Writer) closeElements() {
+	for len(w.stack) > 0 && w.err == nil {
+		w.EndElement()
+	}
+}
+
+// WriteTo 将已缓存在内存中的完整 XML 写入 dst，并报告底层写入错误或短写入。
+// 需要在生成过程中控制缓冲区大小时，使用 ResetTo 和 Finish。
 func (w *Writer) WriteTo(dst io.Writer) (int64, error) {
 	data := w.Bytes()
 	n, err := dst.Write(data)
@@ -355,6 +464,7 @@ func (w *Writer) WriteTo(dst io.Writer) (int64, error) {
 }
 
 func (w *Writer) closeStart() {
+	w.maybeFlush()
 	if w.open {
 		w.buf = append(w.buf, '>')
 		w.open = false
@@ -363,11 +473,15 @@ func (w *Writer) closeStart() {
 
 func (w *Writer) appendEscaped(value string, textMode bool) {
 	for index := 0; index < len(value); {
+		if w.err != nil {
+			return
+		}
+		w.maybeFlush()
 		plain := index
 		for index < len(value) && value[index] < utf8.RuneSelf && !escapeSeek[value[index]] {
 			index++
 		}
-		w.buf = append(w.buf, value[plain:index]...)
+		w.appendString(value[plain:index])
 		if index == len(value) {
 			return
 		}
@@ -380,12 +494,16 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 			}
 			run := value[index:end]
 			if utf8.ValidString(run) && !containsNonXMLRune(run) {
-				w.buf = append(w.buf, run...)
+				w.appendString(run)
 				index = end
 				continue
 			}
 			// 含非法 UTF-8 或非 XML 字符时回退逐 rune，只扫描本段避免退化。
 			for index < end {
+				if w.err != nil {
+					return
+				}
+				w.maybeFlush()
 				r, size := utf8.DecodeRuneInString(value[index:])
 				if r == utf8.RuneError && size == 1 {
 					w.buf = append(w.buf, replacement...)
@@ -393,7 +511,7 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 					continue
 				}
 				if isXMLChar(r) {
-					w.buf = append(w.buf, value[index:index+size]...)
+					w.appendString(value[index : index+size])
 				} else {
 					w.buf = append(w.buf, replacement...)
 				}

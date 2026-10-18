@@ -36,7 +36,10 @@ func build(document Document) (*packageState, error) {
 // generatePackage 按固定顺序把 OFD 包条目写入 sink。顺序必须保持稳定，
 // 既保证确定性输出，也保证签名引用目标先于签名文件写出。
 func generatePackage(state *buildState, sink entrySink) error {
-	root, err := rootXML(state)
+	// sink.write 同步消费 XML，返回后即可重置缓冲区生成下一个条目。
+	w := ofdxml.New()
+	defer ofdxml.Put(w)
+	root, err := rootXML(state, w)
 	if err != nil {
 		return err
 	}
@@ -60,7 +63,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	if len(state.attachments) > 0 {
-		attachmentsData, attachmentsErr := attachmentsXML(state)
+		attachmentsData, attachmentsErr := attachmentsXML(state, w)
 		if attachmentsErr != nil {
 			return attachmentsErr
 		}
@@ -74,7 +77,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	if len(state.customTags) > 0 {
-		customTagsData, customTagsErr := customTagsXML(state)
+		customTagsData, customTagsErr := customTagsXML(state, w)
 		if customTagsErr != nil {
 			return customTagsErr
 		}
@@ -93,7 +96,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	if len(state.extensions) > 0 {
-		extensionsData, extensionsErr := extensionsXML(state)
+		extensionsData, extensionsErr := extensionsXML(state, w)
 		if extensionsErr != nil {
 			return extensionsErr
 		}
@@ -110,7 +113,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 	}
 	if len(state.versions) > 0 {
 		for _, version := range state.versions {
-			versionData, versionErr := versionXML(version)
+			versionData, versionErr := versionXML(version, w)
 			if versionErr != nil {
 				return versionErr
 			}
@@ -124,8 +127,6 @@ func generatePackage(state *buildState, sink entrySink) error {
 			}
 		}
 	}
-	pageWriter := ofdxml.New()
-	defer ofdxml.Put(pageWriter)
 	for pageIndex := 0; pageIndex < state.pageCount; pageIndex++ {
 		page, pageErr := state.pages.PageAt(pageIndex)
 		if pageErr != nil {
@@ -135,12 +136,13 @@ func generatePackage(state *buildState, sink entrySink) error {
 		if buildErr != nil {
 			return buildErr
 		}
-		pageData := streamPageXML(state, page, resources, layers, pageWriter)
-		if err := sink.write(pagePath(pageIndex), pageData); err != nil {
+		if err := sink.writeXML(pagePath(pageIndex), w, func() {
+			streamPageXML(state, page, resources, layers, w)
+		}); err != nil {
 			return err
 		}
 		for resourceIndex, resource := range resources {
-			resourceData, resourceErr := pageResourceXML(resource)
+			resourceData, resourceErr := pageResourceXML(resource, w)
 			if resourceErr != nil {
 				return resourceErr
 			}
@@ -161,16 +163,14 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	for templateIndex := range state.document.Templates {
-		templateData, templateErr := templateXML(state, templateIndex, pageWriter)
-		if templateErr != nil {
-			return templateErr
-		}
-		if err := sink.write(templatePath(templateIndex), templateData); err != nil {
+		if err := sink.writeXML(templatePath(templateIndex), w, func() {
+			streamTemplateXML(state, templateIndex, w)
+		}); err != nil {
 			return err
 		}
 	}
 	if len(state.annotationPages) > 0 {
-		annotationsData, annotationsErr := annotationsXML(state)
+		annotationsData, annotationsErr := annotationsXML(state, w)
 		if annotationsErr != nil {
 			return annotationsErr
 		}
@@ -178,7 +178,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 			return err
 		}
 		for _, annotationPage := range state.annotationPages {
-			pageData, pageErr := pageAnnotationsXML(state, annotationPage)
+			pageData, pageErr := pageAnnotationsXML(state, annotationPage, w)
 			if pageErr != nil {
 				return pageErr
 			}
@@ -188,7 +188,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		}
 	}
 	if len(state.drawParams) > 0 || len(state.fonts) > 0 || len(state.images) > 0 || len(state.media) > 0 || len(state.composites) > 0 || len(state.document.ColorSpaces) > 0 {
-		resourceData, resourceErr := resourceXML(state)
+		resourceData, resourceErr := resourceXML(state, w)
 		if resourceErr != nil {
 			return resourceErr
 		}
@@ -233,7 +233,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 	if err := state.finishGeneration(); err != nil {
 		return err
 	}
-	documentXMLData, documentXMLErr := documentXML(state)
+	documentXMLData, documentXMLErr := documentXML(state, w)
 	if documentXMLErr != nil {
 		return documentXMLErr
 	}
@@ -244,7 +244,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 		if err := populateSignatureDigests(state, sink); err != nil {
 			return err
 		}
-		signaturesData, signaturesErr := signaturesXML(state)
+		signaturesData, signaturesErr := signaturesXML(state, w)
 		if signaturesErr != nil {
 			return signaturesErr
 		}
@@ -252,7 +252,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 			return err
 		}
 		for _, signature := range state.signatures {
-			signatureData, signatureErr := signatureXML(signature, state.pageIDs)
+			signatureData, signatureErr := signatureXML(signature, state.pageIDs, w)
 			if signatureErr != nil {
 				return signatureErr
 			}
@@ -316,8 +316,8 @@ func populateSignatureDigests(state *buildState, sink entrySink) error {
 	return nil
 }
 
-func attachmentsXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func attachmentsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Attachments")
 	for _, attachment := range state.attachments {
 		w.Start("Attachment")
@@ -343,11 +343,11 @@ func attachmentsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func customTagsXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func customTagsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("CustomTags")
 	for _, tag := range state.customTags {
 		w.Start("CustomTag")
@@ -359,11 +359,11 @@ func customTagsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func extensionsXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func extensionsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Extensions")
 	// 无前缀的 DataXML 原先继承 OFD 默认命名空间，保留这项语义。
 	w.Attr("xmlns", ofNamespace)
@@ -404,11 +404,11 @@ func extensionsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func signaturesXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func signaturesXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Signatures")
 	if len(state.signatures) > 0 {
 		maxSignID := "MaxSignId-" + strconv.Itoa(len(state.signatures))
@@ -433,11 +433,11 @@ func signaturesXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) {
-	w := ofdxml.New()
+func signatureXML(resource signatureResource, pageIDs []uint64, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Signature")
 	w.Start("SignedInfo")
 	w.Start("Provider")
@@ -492,11 +492,11 @@ func signatureXML(resource signatureResource, pageIDs []uint64) ([]byte, error) 
 	}
 	w.Element("SignedValue", signedValueName)
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func versionXML(resource versionResource) ([]byte, error) {
-	w := ofdxml.New()
+func versionXML(resource versionResource, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("DocVersion")
 	w.Attr("ID", resource.value.ID)
 	if resource.value.Version != "" {
@@ -526,7 +526,7 @@ func versionXML(resource versionResource) ([]byte, error) {
 	}
 	w.Element("DocRoot", rootPath)
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
 func prepare(document Document, pages PageProvider, options CreateOptions) (*buildState, error) {

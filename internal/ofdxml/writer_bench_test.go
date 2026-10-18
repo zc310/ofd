@@ -7,6 +7,29 @@ import (
 
 var benchWriterDoneOutput []byte
 
+var benchWriterBytesSize int
+
+// BenchmarkWriterBytes 测量同步消费输出后归还 Writer 的路径，与 Done 对比复制成本。
+func BenchmarkWriterBytes(b *testing.B) {
+	for _, size := range []struct {
+		name string
+		n    int
+	}{{"Small", 256}, {"256KiB", 256 << 10}, {"2MiB", 2 << 20}} {
+		b.Run(size.name, func(b *testing.B) {
+			payload := bytes.Repeat([]byte("x"), size.n)
+			b.SetBytes(int64(len(payload)))
+			b.ReportAllocs()
+			for b.Loop() {
+				w := New()
+				w.Start("Root")
+				w.Raw(payload)
+				benchWriterBytesSize = len(w.Bytes())
+				Put(w)
+			}
+		})
+	}
+}
+
 // BenchmarkWriterDone 覆盖缓冲区复用和超限移交两条完整文档输出路径。
 func BenchmarkWriterDone(b *testing.B) {
 	for _, size := range []struct {

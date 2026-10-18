@@ -3,6 +3,7 @@ package creator
 import (
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/zc310/ofd/internal/ofdxml"
@@ -66,6 +67,57 @@ func BenchmarkR(b *testing.B) {
 			}
 		}
 	})
+}
+
+// BenchmarkCreateMetadataXML 覆盖辅助 XML 生成后同步写入 ZIP 的完整路径。
+func BenchmarkCreateMetadataXML(b *testing.B) {
+	for _, size := range []struct {
+		name string
+		n    int
+	}{{"Small", 256}, {"256KiB", 256 << 10}} {
+		b.Run(size.name, func(b *testing.B) {
+			document := Document{
+				ID:       "metadata-benchmark",
+				Abstract: strings.Repeat("x", size.n),
+				Pages:    []Page{{}},
+			}
+			b.SetBytes(int64(size.n))
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := Create(document, io.Discard); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkCreateLargeSinglePage 使用共享的文本输入生成大单页，区分模型内存与 XML 输出内存。
+func BenchmarkCreateLargeSinglePage(b *testing.B) {
+	for _, size := range []struct {
+		name string
+		n    int
+	}{{"2MiB", 2 << 20}, {"16MiB", 16 << 20}} {
+		b.Run(size.name, func(b *testing.B) {
+			payload := strings.Repeat("正文 text & <value> ", 256)
+			items := make([]Item, size.n/len(payload))
+			for index := range items {
+				items[index] = Text{Width: 20, Height: 10, Value: payload}
+			}
+			document := Document{ID: "large-single-page", Pages: []Page{{Items: items}}}
+			for _, mode := range []CompressionMode{CompressionStore, CompressionDeflate} {
+				b.Run(string(mode), func(b *testing.B) {
+					b.SetBytes(int64(len(items) * len(payload)))
+					b.ReportAllocs()
+					for b.Loop() {
+						if err := CreateWithOptions(document, io.Discard, CreateOptions{Compression: mode}); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		})
+	}
 }
 
 func benchmarkDocument() Document {

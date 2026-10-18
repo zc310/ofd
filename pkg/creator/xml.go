@@ -9,8 +9,9 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-func rootXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+// XML 生成函数复用调用方持有的 Writer；返回值仅在下一次 Reset 或 Put 前有效。
+func rootXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("OFD")
 	w.Attr("Version", "1.0")
 	w.Attr("DocType", state.docType)
@@ -67,7 +68,7 @@ func rootXML(state *buildState) ([]byte, error) {
 	}
 	w.End() // DocBody
 	w.End() // OFD
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
 func streamOptionalText(w *ofdxml.Writer, name, value string) {
@@ -88,8 +89,8 @@ func streamOptionalBool(w *ofdxml.Writer, name string, value *bool) {
 	}
 }
 
-func documentXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func documentXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Document")
 	w.Start("CommonData")
 	w.ElementUint("MaxUnitID", state.maxID)
@@ -163,15 +164,11 @@ func documentXML(state *buildState) ([]byte, error) {
 		w.Element("Extensions", "Extensions/Extensions.xml")
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func templateXML(state *buildState, templateIndex int, w *streamXMLWriter) ([]byte, error) {
-	return streamTemplateXML(state, templateIndex, w), nil
-}
-
-func annotationsXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func annotationsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Annotations")
 	for _, page := range state.annotationPages {
 		w.Start("Page")
@@ -180,11 +177,11 @@ func annotationsXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func pageAnnotationsXML(state *buildState, page annotationResource) ([]byte, error) {
-	w := ofdxml.New()
+func pageAnnotationsXML(state *buildState, page annotationResource, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("PageAnnot")
 	for _, annotation := range page.items {
 		w.Start("Annot")
@@ -232,7 +229,7 @@ func pageAnnotationsXML(state *buildState, page annotationResource) ([]byte, err
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
 func pointString(value Point) string {
@@ -300,8 +297,8 @@ func streamPreferences(w *ofdxml.Writer, value *ViewPreferences) {
 	w.End()
 }
 
-func resourceXML(state *buildState) ([]byte, error) {
-	w := ofdxml.New()
+func resourceXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+	w.Reset()
 	w.Start("Res")
 	w.Attr("BaseLoc", "Res")
 	if len(state.document.ColorSpaces) > 0 {
@@ -416,14 +413,14 @@ func resourceXML(state *buildState) ([]byte, error) {
 		w.End()
 	}
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
-func pageResourceXML(resource pageResource) ([]byte, error) {
+func pageResourceXML(resource pageResource, w *ofdxml.Writer) ([]byte, error) {
 	if len(resource.data) > 0 {
-		return append([]byte(nil), resource.data...), nil
+		return resource.data, nil
 	}
-	w := ofdxml.New()
+	w.Reset()
 	w.Start("Res")
 	w.Attr("BaseLoc", ".")
 	w.Start("MultiMedias")
@@ -437,7 +434,7 @@ func pageResourceXML(resource pageResource) ([]byte, error) {
 	}
 	w.End()
 	w.End()
-	return w.Done(), nil
+	return w.Bytes(), nil
 }
 
 // pathStrokeValue 显式写出 Stroke，防止只填充的路径继承 schema 的描边缺省值 true。
