@@ -346,6 +346,40 @@ func TestPaletteEntryReadsProfileBinaryPalette(t *testing.T) {
 	}
 }
 
+func TestProfilePaletteInvalidIndicesFallBackToDefault(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	for _, space := range []*models.ColorSpace{graySpace(8), rgbSpace(8), cmykSpace(8)} {
+		t.Run(space.Type, func(t *testing.T) {
+			channels := colorSpaceChannels(space)
+			// 两个完整条目与一个不完整尾项；越界索引不能回绕到非零颜色。
+			profile := make([]byte, 3*channels-1)
+			for i := range profile {
+				profile[i] = byte(i + 1)
+			}
+			for _, tc := range []struct {
+				name  string
+				index int
+			}{
+				{"negative", -1},
+				{"past complete entries", 2},
+				{"offset end overflow", maxInt / channels},
+				{"max int", maxInt},
+				{"offset wraps to small value", maxInt/2 + 1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					if entry, ok := paletteEntry(tc.index, space, profile, channels); ok || entry != nil {
+						t.Fatalf("Index=%d 得到条目 %v，期望拒绝越界索引", tc.index, entry)
+					}
+					got := resolveColorSpaceColor(space, models.CTColor{Index: tc.index}, profile)
+					if want := (color.RGBA{A: 255}); got != want {
+						t.Fatalf("Index=%d 得到颜色 %v，期望默认色 %v", tc.index, got, want)
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestPaletteEntryPrefersInlinePalette 内联 Palette 优先于 Profile 指向的调色板。
 func TestPaletteEntryPrefersInlinePalette(t *testing.T) {
 	space := &models.ColorSpace{

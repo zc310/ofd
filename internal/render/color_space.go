@@ -263,15 +263,12 @@ func paletteEntry(index int, space *models.ColorSpace, profile []uint8, channels
 		}
 		return result, true
 	}
-	if len(profile) == 0 {
-		return nil, false
-	}
 	// 原始调色板按通道数平铺：Index i 占 [i*channels, (i+1)*channels)。Index 越界
-	// 时该区间超出文件长度，返回 false 而不是回绕取到别的颜色。
-	start := index * channels
-	if start+channels > len(profile) {
+	// 时返回 false。先按完整条目数检查，避免偏移乘法或区间末端加法溢出。
+	if index >= len(profile)/channels {
 		return nil, false
 	}
+	start := index * channels
 	result := make([]uint8, channels)
 	copy(result, profile[start:start+channels])
 	return result, true
