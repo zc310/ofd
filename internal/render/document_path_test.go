@@ -99,7 +99,7 @@ func TestGraphicRenderingSkipsNonFiniteCTM(t *testing.T) {
 }
 
 func TestBuildObjectPathSkipsOverflowedCoordinates(t *testing.T) {
-	path := (&Document{}).buildObjectPath(models.PathObject{
+	path := (&Document{}).buildObjectPathWithTransform(models.PathObject{
 		CtPath: models.CtPath{
 			CTGraphicUnit: models.CTGraphicUnit{
 				Boundary: models.StBox{X: math.MaxFloat64, Y: math.MaxFloat64},
@@ -110,7 +110,7 @@ func TestBuildObjectPathSkipsOverflowedCoordinates(t *testing.T) {
 				Points: []models.StPos{{X: math.MaxFloat64, Y: math.MaxFloat64}},
 			}},
 		},
-	}, math.MaxFloat64)
+	}, math.MaxFloat64, nil)
 
 	if !path.Empty() {
 		t.Fatal("path with overflowed transformed coordinates should be empty")

@@ -185,12 +185,3 @@ func invertCTM(matrix models.CTM) (models.CTM, bool) {
 	}
 	return inverse, true
 }
-
-// 保留 patternMatrix，供测试以及需要将 OFD CTM 表示为 geom.Matrix 的调用方使用。
-func patternMatrix(pattern *models.CtPattern) (geom.Matrix, bool) {
-	ctm, ok := patternCTM(pattern)
-	if !ok {
-		return geom.Identity, false
-	}
-	return geom.Matrix{{ctm[0], ctm[2], ctm[4]}, {ctm[1], ctm[3], ctm[5]}}, true
-}

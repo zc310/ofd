@@ -7,22 +7,22 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-func TestPatternMatrix(t *testing.T) {
+func TestPatternCTMTransformsPoint(t *testing.T) {
 	pattern := &models.CtPattern{CTM: &models.CTM{2, 3, 4, 5, 6, 7}}
-	matrix, ok := patternMatrix(pattern)
+	matrix, ok := patternCTM(pattern)
 	if !ok {
 		t.Fatal("expected valid pattern CTM")
 	}
-	got := matrix.Dot(geom.Point{X: 1, Y: 2})
-	if got.X != 16 || got.Y != 20 {
-		t.Fatalf("unexpected transformed point: %+v", got)
+	x, y := matrix.TransformPoint(models.StPos{X: 1, Y: 2})
+	if x != 16 || y != 20 {
+		t.Fatalf("unexpected transformed point: (%v, %v)", x, y)
 	}
 }
 
-func TestPatternMatrixInvalid(t *testing.T) {
+func TestPatternCTMRejectsSingularMatrix(t *testing.T) {
 	// 奇异矩阵无法用于图案平铺，应判为无效。
 	pattern := &models.CtPattern{CTM: &models.CTM{1, 2, 2, 4, 0, 0}}
-	if _, ok := patternMatrix(pattern); ok {
+	if _, ok := patternCTM(pattern); ok {
 		t.Fatal("expected invalid pattern CTM")
 	}
 }

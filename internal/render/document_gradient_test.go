@@ -437,13 +437,13 @@ func TestOFDRadialGradientDirectExtendBits(t *testing.T) {
 }
 
 func TestOFDGouraudGradientInterpolatesTriangleColors(t *testing.T) {
-	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+	gradient := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Point: []models.GouraudPoint{
 			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
 		},
-	}, identityGradientTransform, nil)
+	}, identityGradientTransform, nil, nil)
 
 	if got := gradient.At(0, 0); got != (color.RGBA{R: 255, A: 255}) {
 		t.Fatalf("vertex color = %v", got)
@@ -455,14 +455,14 @@ func TestOFDGouraudGradientInterpolatesTriangleColors(t *testing.T) {
 }
 
 func TestOFDGouraudGradientUsesEdgeFlags(t *testing.T) {
-	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+	gradient := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Point: []models.GouraudPoint{
 			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
 			{X: 10, Y: 10, EdgeFlag: 1, Color: basicMeshColor(color.RGBA{A: 255})},
 		},
-	}, identityGradientTransform, nil).(*ofdMeshGradient)
+	}, identityGradientTransform, nil, nil).(*ofdMeshGradient)
 	if len(gradient.triangles) != 2 {
 		t.Fatalf("triangle count = %d, want 2", len(gradient.triangles))
 	}
@@ -481,8 +481,8 @@ func TestOFDGouraudGradientEdgeFlagTopology(t *testing.T) {
 	blu := basicMeshColor(color.RGBA{B: 255, A: 255})
 
 	triangles := func(points ...models.GouraudPoint) int {
-		return len(newOFDGouraudGradient(&models.CTGouraudShd{Point: points},
-			identityGradientTransform, nil).(*ofdMeshGradient).triangles)
+		return len(newOFDGouraudGradientArea(&models.CTGouraudShd{Point: points},
+			identityGradientTransform, nil, nil).(*ofdMeshGradient).triangles)
 	}
 
 	// EdgeFlag=0：每三点一个三角形，两个三角形彼此独立。
@@ -511,14 +511,14 @@ func TestOFDGouraudGradientEdgeFlagTopology(t *testing.T) {
 	// 顶点拓扑：共享边决定第二个三角形的位置。
 	// EdgeFlag=1 复用 V1-V2 边（此处为 (0,8)-(10,8) 水平边），新点落在其下方，
 	// 四边形为 V0-V1-新点-V2，菱形内部（含上下两个三角形）都必须被填充。
-	diamond := newOFDGouraudGradient(&models.CTGouraudShd{
+	diamond := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Point: []models.GouraudPoint{
 			{X: 5, Y: 15, Color: red},
 			{X: 0, Y: 8, Color: grn},
 			{X: 10, Y: 8, Color: blu},
 			{X: 5, Y: 1, EdgeFlag: 1, Color: red},
 		},
-	}, identityGradientTransform, nil)
+	}, identityGradientTransform, nil, nil)
 	for _, probe := range []struct {
 		name   string
 		x, y   float64
@@ -536,14 +536,14 @@ func TestOFDGouraudGradientEdgeFlagTopology(t *testing.T) {
 
 	// EdgeFlag=2 复用 V0-V2 边（此处为 (5,15)-(10,8)），新点在右上，
 	// 四边形为 V1-V0-新点-V2，右上区域（仅 EdgeFlag=2 复用边才存在）必须被填充。
-	quad := newOFDGouraudGradient(&models.CTGouraudShd{
+	quad := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Point: []models.GouraudPoint{
 			{X: 5, Y: 15, Color: red},
 			{X: 0, Y: 8, Color: grn},
 			{X: 10, Y: 8, Color: blu},
 			{X: 15, Y: 15, EdgeFlag: 2, Color: red},
 		},
-	}, identityGradientTransform, nil)
+	}, identityGradientTransform, nil, nil)
 	for _, probe := range []struct {
 		name   string
 		x, y   float64
@@ -561,7 +561,7 @@ func TestOFDGouraudGradientEdgeFlagTopology(t *testing.T) {
 }
 
 func TestOFDLaGouraudGradientBuildsLattice(t *testing.T) {
-	gradient := newOFDLaGouraudGradient(&models.CTLaGouraudShd{
+	gradient := newOFDLaGouraudGradientArea(&models.CTLaGouraudShd{
 		VerticesPerRow: 2,
 		Point: []models.LaGouraudPoint{
 			{X: 0, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
@@ -569,7 +569,7 @@ func TestOFDLaGouraudGradientBuildsLattice(t *testing.T) {
 			{X: 0, Y: 10, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
 			{X: 10, Y: 10, Color: basicMeshColor(color.RGBA{A: 255})},
 		},
-	}, identityGradientTransform, nil).(*ofdMeshGradient)
+	}, identityGradientTransform, nil, nil).(*ofdMeshGradient)
 	if len(gradient.triangles) != 2 {
 		t.Fatalf("triangle count = %d, want 2", len(gradient.triangles))
 	}
@@ -579,7 +579,7 @@ func TestOFDLaGouraudGradientBuildsLattice(t *testing.T) {
 }
 
 func TestOFDMeshGradientUsesBackColorOutsideMesh(t *testing.T) {
-	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+	gradient := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Extend:    1,
 		BackColor: &models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}},
 		Point: []models.GouraudPoint{
@@ -587,7 +587,7 @@ func TestOFDMeshGradientUsesBackColorOutsideMesh(t *testing.T) {
 			{X: 1, Y: 0, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 0, Y: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 		},
-	}, identityGradientTransform, nil)
+	}, identityGradientTransform, nil, nil)
 	if got := gradient.At(2, 2); got != (color.RGBA{G: 255, A: 255}) {
 		t.Fatalf("outside color = %v, want back color", got)
 	}
@@ -1067,14 +1067,14 @@ func TestTextAxialGradientUsesBoundaryMillimeterCoordinates(t *testing.T) {
 
 func TestOFDMeshGradientClampsToEdgeOutsideControlPoints(t *testing.T) {
 	// 控制点只是插值锚点，不限制着色范围：落在控制点之外的采样点应延续边缘颜色。
-	gradient := newOFDGouraudGradient(&models.CTGouraudShd{
+	gradient := newOFDGouraudGradientArea(&models.CTGouraudShd{
 		Point: []models.GouraudPoint{
 			{X: 0, Y: 0, EdgeFlag: 1, Color: basicMeshColor(color.RGBA{R: 255, A: 255})},
 			{X: 10, Y: 0, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 			{X: 0, Y: 10, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
 			{X: 10, Y: 10, EdgeFlag: 2, Color: basicMeshColor(color.RGBA{R: 255, B: 255, A: 255})},
 		},
-	}, identityGradientTransform, nil)
+	}, identityGradientTransform, nil, nil)
 	if gradient == nil {
 		t.Fatal("网格渐变 = nil，期望非 nil")
 	}

@@ -10,7 +10,7 @@ import (
 
 // TestOFDGouraudEdgeFlag3ReusesFirstEdge 回归：规范只定义 EdgeFlag 0/1/2，
 // 个别文件沿用 PDF 语义使用 3（复用上一个三角形的 v0-v1 边）。此前
-// newOFDGouraudGradient 直接丢弃该点导致三角形缺失，宽容处理后应正常覆盖。
+// 网格构建曾直接丢弃该点导致三角形缺失，宽容处理后应正常覆盖。
 func TestOFDGouraudEdgeFlag3ReusesFirstEdge(t *testing.T) {
 	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
 	green := models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
@@ -31,9 +31,9 @@ func TestOFDGouraudEdgeFlag3ReusesFirstEdge(t *testing.T) {
 		}
 		return color.RGBA{A: 255}
 	}
-	gradient := newOFDGouraudGradient(shd, identity, resolve)
+	gradient := newOFDGouraudGradientArea(shd, identity, nil, resolve)
 	if gradient == nil {
-		t.Fatal("newOFDGouraudGradient returned nil")
+		t.Fatal("newOFDGouraudGradientArea returned nil")
 	}
 	// (9,8) 位于 flag 3 三角形内部、三角形 1 之外，旧实现会因丢弃该点而透明。
 	got := gradient.At(9, 8)
@@ -52,7 +52,7 @@ func TestOFDGouraudEdgeFlag3ReusesFirstEdge(t *testing.T) {
 }
 
 // TestOFDLaGouraudRejectsPartialTailRow 回归：规则网格的 Point 数量不是
-// VerticesPerRow 的整数倍时，此前 newOFDLaGouraudGradient 用整除静默丢弃
+// VerticesPerRow 的整数倍时，此前网格构建用整除静默丢弃
 // 不完整的尾行（数据损坏时产出看似正常实则缺失的网格）。现在应整体拒绝。
 func TestOFDLaGouraudRejectsPartialTailRow(t *testing.T) {
 	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
@@ -74,7 +74,7 @@ func TestOFDLaGouraudRejectsPartialTailRow(t *testing.T) {
 			lp(0, 10), lp(10, 10), lp(20, 10),
 		},
 	}
-	if gradient := newOFDLaGouraudGradient(valid, identity, resolve); gradient == nil {
+	if gradient := newOFDLaGouraudGradientArea(valid, identity, nil, resolve); gradient == nil {
 		t.Fatal("完整 2×3 网格应生成渐变")
 	} else if got := gradient.At(8, 6); got.A == 0 {
 		t.Fatal("网格内部未被覆盖")
@@ -84,7 +84,7 @@ func TestOFDLaGouraudRejectsPartialTailRow(t *testing.T) {
 		VerticesPerRow: 3,
 		Point:          append(append([]models.LaGouraudPoint{}, valid.Point...), lp(30, 10)),
 	}
-	if gradient := newOFDLaGouraudGradient(broken, identity, resolve); gradient != nil {
+	if gradient := newOFDLaGouraudGradientArea(broken, identity, nil, resolve); gradient != nil {
 		t.Fatal("含尾行的规则网格应整体拒绝，而不是静默丢弃尾行")
 	}
 }

@@ -10,7 +10,7 @@ import (
 )
 
 // 本文件实现网格类渐变：ofdMeshGradient（三角形重心坐标采样 + 均匀网格
-// 空间索引）及 newOFDGouraudGradient/newOFDLaGouraudGradient/newMeshGradient。
+// 空间索引）及不规则、规则网格渐变的构建。
 
 // ofdMeshGradient 实现 Gouraud 着色使用的三角网格渐变。
 // geom 只提供按位置采样的渐变接口，因此这里使用重心坐标直接对网格采样。
@@ -246,12 +246,8 @@ func interpolateMeshColor(c0, c1, c2 color.RGBA, w0, w1, w2 float64) color.RGBA 
 	}
 }
 
-func newOFDGouraudGradient(shd *models.CTGouraudShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
-	return newOFDGouraudGradientArea(shd, transform, nil, resolve)
-}
-
-// newOFDGouraudGradientArea 与 newOFDGouraudGradient 相同，但额外给出着色区域，
-// 使区域内未被控制点覆盖的部分按边缘颜色延续。
+// newOFDGouraudGradientArea 创建不规则三角网格形式的 Gouraud 渐变。
+// area 指定着色区域，使区域内未被控制点覆盖的部分按边缘颜色延续；nil 表示未指定。
 func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if shd == nil {
 		return nil
@@ -305,13 +301,9 @@ func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.S
 	return newMeshGradient(triangles, shd.BackColor, shd.Extend != 0, area, resolve)
 }
 
-// newOFDLaGouraudGradient 创建规则网格形式的 Gouraud 渐变。
+// newOFDLaGouraudGradientArea 创建规则网格形式的 Gouraud 渐变。
 // 每个相邻的四个顶点沿对角线拆分为两个三角形。
-func newOFDLaGouraudGradient(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, resolve colorResolver) geom.Gradient {
-	return newOFDLaGouraudGradientArea(shd, transform, nil, resolve)
-}
-
-// newOFDLaGouraudGradientArea 与 newOFDLaGouraudGradient 相同，但额外给出着色区域。
+// area 指定着色区域，使区域内未被控制点覆盖的部分按边缘颜色延续；nil 表示未指定。
 func newOFDLaGouraudGradientArea(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve colorResolver) geom.Gradient {
 	if shd == nil || shd.VerticesPerRow < 2 || len(shd.Point) < shd.VerticesPerRow*2 {
 		return nil
