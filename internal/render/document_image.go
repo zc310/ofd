@@ -102,10 +102,17 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	// 偏移和 y 轴翻转。imageCTM 在图元未声明 CTM 时会按 Boundary 尺寸合成一个
 	// 缩放矩阵，该矩阵只用于图片放置；若把它当作裁剪的 objectCTM 传下去，裁剪
 	// 路径会再被放大 Boundary 倍，包围盒从 70mm×46mm 膨胀到数千毫米，表现为
-	// 图片被整体裁掉。因此裁剪只使用图元显式声明的 CTM。
+	// 图片被整体裁掉。因此裁剪使用显式对象 CTM，并保留容器的父级变换
+	// （GB/T 33190—2016 8.4、表 34 的对象空间与当前空间约定）。
 	clipCTM := models.IdentityMatrix
-	if object.CTM != nil && ctm.IsFinite() {
-		clipCTM = ctm
+	if object.CTM != nil {
+		clipCTM = *object.CTM
+	}
+	if parentCTM != nil {
+		clipCTM = *parentCTM.Multiply(&clipCTM)
+		if !clipCTM.IsFinite() {
+			return
+		}
 	}
 	if clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM); clip != nil {
 		img = imageWithClip(img, clip, m)
