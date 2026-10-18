@@ -2228,15 +2228,16 @@ func (s *buildState) imageID(image Image) (uint64, error) {
 		return 0, fmt.Errorf("图片资源摘要计算失败: %w", err)
 	}
 	format := imageFormat(image)
+	fileFormat := strings.ToLower(format)
 	for _, resource := range s.images {
-		if resource.name == key+"."+format {
+		if resource.name == key+"."+fileFormat {
 			return resource.id, nil
 		}
 	}
 	id := s.allocate()
 	s.images = append(s.images, imageResource{
 		id:     id,
-		name:   key + "." + format,
+		name:   key + "." + fileFormat,
 		data:   image.Data,
 		source: image.Source,
 		format: format,

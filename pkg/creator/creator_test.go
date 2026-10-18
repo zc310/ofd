@@ -1099,7 +1099,7 @@ func TestCreateImageDocumentWritesImageResource(t *testing.T) {
 	}
 	found := false
 	for _, file := range archive.File {
-		if bytes.HasSuffix([]byte(file.Name), []byte(".PNG")) {
+		if bytes.HasSuffix([]byte(file.Name), []byte(".png")) {
 			found = true
 		}
 	}
