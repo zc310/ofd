@@ -164,7 +164,7 @@ make package-wasm-web
 
 Windows 桌面版使用 `-H=windowsgui` 编译，不显示命令行窗口。`ofd-thumbnailer` 仅用于 Linux，见[缩略图安装说明](cmd/ofd-thumbnailer/README.md)。
 
-Windows 7 用户可尝试使用 [XTLS/go-win7](https://github.com/XTLS/go-win7) 提供的兼容 Go 工具链自行编译，版本需满足 `go.mod` 的要求。Linux 下交叉编译 Windows x86_64 命令行工具的示例：
+Windows 7 用户可尝试使用 [XTLS/go-win7](https://github.com/XTLS/go-win7) 提供的兼容 Go 工具链，或参考 [thongtech/go-legacy-win7](https://github.com/thongtech/go-legacy-win7) 的兼容方案自行编译；所用 Go 版本需满足 `go.mod` 的要求。Linux 下交叉编译 Windows x86_64 命令行工具的示例：
 
 ```bash
 GOTOOLCHAIN=local make GO=/path/to/go-win7/bin/go GOOS=windows GOARCH=amd64 CGO_ENABLED=0 build-tools
