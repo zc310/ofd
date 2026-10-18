@@ -10,6 +10,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -36,8 +37,11 @@ type Document struct {
 	closeOnce     sync.Once
 	ctColorMu     sync.Mutex
 	ctColorCache  *utils.LRU[*models.CTColor, *CTColor]
+	ctColorBuilds map[*models.CTColor]*ctColorBuild
 	colorSpacesMu sync.Mutex
 	colorSpaces   map[*models.ColorSpace]*colorSpaceResources
+	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
+	closed atomic.Bool
 }
 
 type imageKeyLock struct {
@@ -125,6 +129,7 @@ func (p *Document) Close() {
 		return
 	}
 	p.closeOnce.Do(func() {
+		p.closed.Store(true)
 		p.sealMu.Lock()
 		p.sealClosed = true
 		seals := p.sealDocs
@@ -138,6 +143,7 @@ func (p *Document) Close() {
 		}
 		p.ctColorMu.Lock()
 		p.ctColorCache = nil
+		p.ctColorBuilds = nil
 		p.ctColorMu.Unlock()
 		p.colorSpacesMu.Lock()
 		p.colorSpaces = nil

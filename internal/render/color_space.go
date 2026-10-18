@@ -62,6 +62,10 @@ func (p *Document) colorSpaceResources(space *models.ColorSpace) ([]byte, *color
 		return nil, nil
 	}
 	p.colorSpacesMu.Lock()
+	if p.closed.Load() {
+		p.colorSpacesMu.Unlock()
+		return nil, nil
+	}
 	if p.colorSpaces == nil {
 		p.colorSpaces = make(map[*models.ColorSpace]*colorSpaceResources)
 	}

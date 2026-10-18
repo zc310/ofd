@@ -3,6 +3,7 @@ package render
 import (
 	"image/color"
 	"math"
+	"sync"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -50,30 +51,58 @@ func hasColorValue(source *models.CTColor) bool {
 		source.AxialShd != nil || source.RadialShd != nil || source.Pattern != nil)
 }
 
+// ctColorBuild 只合并同一颜色的在途构建；完成后从表中移除，结果由有界 LRU 持有。
+type ctColorBuild struct {
+	once  sync.Once
+	color CTColor
+}
+
 func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 	if source == nil {
 		return nil
 	}
 	p.ctColorMu.Lock()
-	defer p.ctColorMu.Unlock()
+	if p.closed.Load() {
+		p.ctColorMu.Unlock()
+		return nil
+	}
 	if p.ctColorCache != nil {
 		if cc, ok := p.ctColorCache.Get(source); ok {
 			ctColor := *cc
+			p.ctColorMu.Unlock()
 			return &ctColor
 		}
 	}
-	cc := &CTColor{}
-	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
-		cc.Value = p.colorRGBA(*source)
-		cc.HasValue = true
+	build := p.ctColorBuilds[source]
+	if build == nil {
+		build = &ctColorBuild{}
+		if p.ctColorBuilds == nil {
+			p.ctColorBuilds = make(map[*models.CTColor]*ctColorBuild)
+		}
+		p.ctColorBuilds[source] = build
 	}
+	p.ctColorMu.Unlock()
 
-	cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
-	if p.ctColorCache == nil {
-		p.ctColorCache = utils.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
-	}
-	p.ctColorCache.Add(source, cc)
-	ctColor := *cc
+	// ICC 读取、转换及网格构建均在缓存锁外执行；等待相同颜色也不阻塞其他颜色。
+	build.once.Do(func() {
+		cc := &build.color
+		if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
+			cc.Value = p.colorRGBA(*source)
+			cc.HasValue = true
+		}
+		cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
+		p.ctColorMu.Lock()
+		defer p.ctColorMu.Unlock()
+		delete(p.ctColorBuilds, source)
+		if p.closed.Load() {
+			return
+		}
+		if p.ctColorCache == nil {
+			p.ctColorCache = utils.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
+		}
+		p.ctColorCache.Add(source, cc)
+	})
+	ctColor := build.color
 	return &ctColor
 }
 
