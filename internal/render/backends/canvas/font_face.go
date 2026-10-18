@@ -30,14 +30,19 @@ func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path
 			return path
 		}
 	}
+	p.pathCacheMu.Unlock()
 	path, _ := face.ToPath(value)
 	if path == nil || path.Empty() {
-		p.pathCacheMu.Unlock()
 		return nil
 	}
+	p.pathCacheMu.Lock()
 	if p.isClosed() {
 		p.pathCacheMu.Unlock()
 		return path
+	}
+	if existing := p.pathCache[key]; existing != nil {
+		p.pathCacheMu.Unlock()
+		return existing
 	}
 	if len(p.pathCache) >= 2048 {
 		p.pathCache = make(map[fontPathKey]*canvas.Path)
@@ -77,10 +82,16 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 			return line
 		}
 	}
+	p.textLineMu.Unlock()
 	line := canvas.NewTextLine(face, value, canvas.Left)
+	p.textLineMu.Lock()
 	if p.isClosed() {
 		p.textLineMu.Unlock()
 		return line
+	}
+	if existing := p.textLineCache[key]; existing != nil {
+		p.textLineMu.Unlock()
+		return existing
 	}
 	if len(p.textLineCache) >= 2048 {
 		p.textLineCache = make(map[textLineKey]*canvas.Text)
@@ -156,6 +167,10 @@ func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 	if p.isClosed() {
 		p.textWidthMu.Unlock()
 		return width
+	}
+	if existing, ok := p.textWidthCache[key]; ok {
+		p.textWidthMu.Unlock()
+		return existing
 	}
 	if p.textWidthCache == nil || len(p.textWidthCache) >= maxTextWidthCacheEntries {
 		p.textWidthCache = make(map[textWidthKey]float64)
