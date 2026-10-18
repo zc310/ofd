@@ -1,6 +1,8 @@
 package fastxml
 
 import (
+	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -150,5 +152,70 @@ func TestLexerAttrsAndSpan(t *testing.T) {
 	}
 	if want := `<Nested><Leaf>x</Leaf></Nested>`; string(span) != want {
 		t.Fatalf("SpanElement = %q, want %q", span, want)
+	}
+}
+
+func TestSpanElementKeepsAbsoluteOffsetsAcrossSkippedAttributes(t *testing.T) {
+	const span = "<ofd:Nested\n ID = '7'\tName=\"甲\">" +
+		`<Leaf/><!--<Ignored/>--><![CDATA[<Raw/>]]><Leaf>x</Leaf></ofd:Nested>`
+	data := []byte(`<Root ID="1">` + span + `<Tail/></Root>`)
+	l := NewLexer(data)
+	l.Next()
+	if _, err := l.SkipAttrs(); err != nil {
+		t.Fatal(err)
+	}
+	_, _, start := l.Next()
+	if start != bytes.Index(data, []byte("<ofd:Nested")) {
+		t.Fatalf("开始偏移 = %d", start)
+	}
+	got, err := l.SpanElement(start)
+	if err != nil || string(got) != span {
+		t.Fatalf("SpanElement = %q, %v", got, err)
+	}
+	_, token, next := l.Next()
+	if string(TargetName(token)) != "Tail" || next != start+len(span) {
+		t.Fatalf("后续 token = %q，偏移 = %d", token, next)
+	}
+}
+
+func TestSkipAttrsMatchesReadAttrs(t *testing.T) {
+	for _, input := range []string{
+		`<Root>tail</Root>`, `<Root/>`,
+		"<Root\n ID = '7'\tName=\"甲&amp;乙\" ofd:Value = 'x' >tail</Root>",
+		`<Root ID="7" Name='甲' />`, `<Root ID="unfinished`, `<Root `,
+	} {
+		t.Run(input, func(t *testing.T) {
+			data := []byte(input)
+			want := NewLexer(data)
+			got := NewLexer(data)
+			want.Next()
+			got.Next()
+			wantVoid, wantErr := want.ReadAttrs(func(_, _ []byte) error { return nil })
+			gotVoid, gotErr := got.SkipAttrs()
+			if gotVoid != wantVoid || (gotErr == nil) != (wantErr == nil) {
+				t.Fatalf("SkipAttrs = (%v, %v), want (%v, %v)", gotVoid, gotErr, wantVoid, wantErr)
+			}
+			if gotErr != nil {
+				if gotErr.Error() != wantErr.Error() {
+					t.Fatalf("错误不一致: got %v, want %v", gotErr, wantErr)
+				}
+				return
+			}
+			gotType, gotToken, gotStart := got.Next()
+			wantType, wantToken, wantStart := want.Next()
+			if gotType != wantType || !bytes.Equal(gotToken, wantToken) || gotStart != wantStart {
+				t.Fatalf("后续 token 不一致: got (%v, %q, %d), want (%v, %q, %d)", gotType, gotToken, gotStart, wantType, wantToken, wantStart)
+			}
+		})
+	}
+}
+
+func TestReadAttrsPropagatesCallbackError(t *testing.T) {
+	l := NewLexer([]byte(`<Root ID="1" Name="value"/>`))
+	l.Next()
+	sentinel := errors.New("stop reading attributes")
+	_, err := l.ReadAttrs(func(_, _ []byte) error { return sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("回调错误未保留: %v", err)
 	}
 }

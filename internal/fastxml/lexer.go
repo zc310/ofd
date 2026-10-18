@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/tdewolff/parse/v2"
@@ -39,21 +39,19 @@ func StripBOM(data []byte) ([]byte, bool) {
 }
 
 // Lexer 在原始字节上做 XML 词法分析，token 与区间偏移都指向原始切片，不拷贝。
+// 通过 NewLexer 创建；创建后不可按值复制。
 type Lexer struct {
-	lx   *txml.Lexer
-	in   *parse.Input
+	lx   txml.Lexer
+	in   parse.Input
 	data []byte
-	abs  int
 }
 
 // NewLexer 为 data 创建 lexer；data 需在解析期间保持有效。
 func NewLexer(data []byte) *Lexer {
-	in := parse.NewInputBytes(data)
-	return &Lexer{
-		lx:   txml.NewLexer(in),
-		in:   in,
-		data: data,
-	}
+	l := &Lexer{data: data}
+	l.in = *parse.NewInputBytes(data)
+	l.lx = *txml.NewLexer(&l.in)
+	return l
 }
 
 // Next 返回下一个 token，start 是该 token 起始处的绝对字节偏移。绝对偏移直接
@@ -62,7 +60,6 @@ func NewLexer(data []byte) *Lexer {
 func (l *Lexer) Next() (tt txml.TokenType, buf []byte, start int) {
 	start = l.in.Offset()
 	tt, buf = l.lx.Next()
-	l.abs = l.in.Offset()
 	return tt, buf, start
 }
 
@@ -101,12 +98,12 @@ func (l *Lexer) SpanElement(start int) ([]byte, error) {
 		case txml.EndTagToken:
 			depth--
 			if depth == 0 {
-				return l.data[start:l.abs], nil
+				return l.data[start:l.in.Offset()], nil
 			}
 		case txml.StartTagCloseVoidToken:
 			depth--
 			if depth == 0 {
-				return l.data[start:l.abs], nil
+				return l.data[start:l.in.Offset()], nil
 			}
 		}
 	}
@@ -152,7 +149,17 @@ func (l *Lexer) ReadAttrs(h func(name, value []byte) error) (void bool, err erro
 
 // SkipAttrs 跳过开始标签后的全部属性。
 func (l *Lexer) SkipAttrs() (bool, error) {
-	return l.ReadAttrs(func([]byte, []byte) error { return nil })
+	for {
+		tt, _, _ := l.Next()
+		switch tt {
+		case txml.StartTagCloseToken:
+			return false, nil
+		case txml.StartTagCloseVoidToken:
+			return true, nil
+		case txml.ErrorToken:
+			return false, l.Err()
+		}
+	}
 }
 
 // LocalName 去掉可能的命名空间前缀。
@@ -196,10 +203,41 @@ func Unquote(b []byte) []byte {
 
 // Unescape 反解码 XML 文本实体并返回独立的字符串。
 func Unescape(b []byte) string {
-	if bytes.IndexByte(b, '&') < 0 {
+	index := bytes.IndexByte(b, '&')
+	if index < 0 || bytes.IndexByte(b[index:], ';') < 0 {
 		return string(b)
 	}
-	return string(AppendUnescape(make([]byte, 0, len(b)), b))
+	// 短文本在栈上解码，仅为最终字符串分配内存。
+	var buf [64]byte
+	if len(b) <= len(buf) {
+		return string(appendUnescape(buf[:0], b, index))
+	}
+	// Builder 的字符串直接使用解码后的缓冲区，避免 []byte 转 string 再复制一次。
+	var dst strings.Builder
+	dst.Grow(len(b))
+	for index >= 0 {
+		dst.Write(b[:index])
+		b = b[index:]
+		end := bytes.IndexByte(b[:min(len(b), 17)], ';')
+		if end < 0 {
+			dst.WriteByte('&')
+			b = b[1:]
+		} else {
+			if r, ok := xmlEntity(b[1:end]); ok {
+				dst.WriteRune(r)
+			} else {
+				dst.Write(b[:end+1])
+			}
+			b = b[end+1:]
+		}
+		index = bytes.IndexByte(b, '&')
+	}
+	dst.Write(b)
+	// 实体密集时输出可能远小于预留容量，避免长期持有字符串时保留过大的缓冲区。
+	if dst.Len() < dst.Cap()/2 {
+		return strings.Clone(dst.String())
+	}
+	return dst.String()
 }
 
 // AppendUnescape 把 b 中的 XML 实体反解码后追加到 dst，返回扩展后的切片。
@@ -209,8 +247,13 @@ func AppendUnescape(dst, b []byte) []byte {
 	if index < 0 {
 		return append(dst, b...)
 	}
+	return appendUnescape(dst, b, index)
+}
+
+func appendUnescape(dst, b []byte, index int) []byte {
 	// 实体解码后的长度不超过原始字节长度，一次预留容量避免逐片段扩容。
 	dst = slices.Grow(dst, len(b))
+	checkedTerminator := false
 	for index >= 0 {
 		dst = append(dst, b[:index]...)
 		b = b[index:]
@@ -218,6 +261,14 @@ func AppendUnescape(dst, b []byte) []byte {
 		// 的连续 '&' 反复扫描整个剩余输入。
 		end := bytes.IndexByte(b[:min(len(b), 17)], ';')
 		if end < 0 {
+			// 只在首次缺少近距离分号时额外扫描一次，避免正常实体重复搜索，
+			// 同时让完全未闭合的剩余输入整段拷贝，保持总扫描量为线性。
+			if !checkedTerminator {
+				checkedTerminator = true
+				if bytes.IndexByte(b, ';') < 0 {
+					return append(dst, b...)
+				}
+			}
 			dst = append(dst, '&')
 			b = b[1:]
 		} else {
@@ -249,14 +300,31 @@ func xmlEntity(ent []byte) (rune, bool) {
 	}
 	if len(ent) > 1 && ent[0] == '#' {
 		s := ent[1:]
-		base := 10
+		// 保持原先 ParseUint(..., 32) 的范围与溢出处理，直接解析以避免错误对象分配。
+		base, cutoff, cutlim := uint32(10), uint32(429496729), uint32(5)
 		if len(s) > 0 && (s[0] == 'x' || s[0] == 'X') {
 			s = s[1:]
-			base = 16
+			base, cutoff, cutlim = 16, 0xFFFFFFF, 15
 		}
-		if v, err := strconv.ParseUint(string(s), base, 32); err == nil {
-			return rune(v), true
+		if len(s) == 0 {
+			return 0, false
 		}
+		var v uint32
+		for _, c := range s {
+			digit := uint32(c) - '0'
+			if base == 16 && digit > 9 {
+				c |= 0x20
+				if c < 'a' || c > 'f' {
+					return 0, false
+				}
+				digit = uint32(c-'a') + 10
+			}
+			if digit >= base || v > cutoff || v == cutoff && digit > cutlim {
+				return 0, false
+			}
+			v = v*base + digit
+		}
+		return rune(v), true
 	}
 	return 0, false
 }

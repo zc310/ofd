@@ -530,22 +530,51 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 	if void {
 		return nil
 	}
-	var text []byte
+	var first, text []byte
+	firstLiteral := false
+	parts := 0
 	for {
 		tt, buf, start := p.Next()
 		switch tt {
 		case txml.ErrorToken:
 			return p.Err()
-		case txml.TextToken:
-			text = fastxml.AppendUnescape(text, buf)
-		case txml.CDATAToken:
-			text = append(text, p.CData()...)
+		case txml.TextToken, txml.CDATAToken:
+			literal := tt == txml.CDATAToken
+			if literal {
+				buf = p.CData()
+			}
+			// 单段正文直接在收尾时生成字符串；确有第二段时再分配累积缓冲区。
+			if parts == 0 {
+				first, firstLiteral = buf, literal
+			} else {
+				if parts == 1 {
+					if firstLiteral {
+						text = append(text, first...)
+					} else {
+						text = fastxml.AppendUnescape(text, first)
+					}
+				}
+				if literal {
+					text = append(text, buf...)
+				} else {
+					text = fastxml.AppendUnescape(text, buf)
+				}
+			}
+			parts++
 		case txml.StartTagToken:
 			if _, err := p.SpanElement(start); err != nil {
 				return err
 			}
 		case txml.EndTagToken:
-			tc.Value = decodeTextEscapes(string(text))
+			if parts == 1 {
+				if firstLiteral {
+					tc.Value = decodeTextEscapes(string(first))
+				} else {
+					tc.Value = decodeTextEscapes(fastxml.Unescape(first))
+				}
+			} else {
+				tc.Value = decodeTextEscapes(string(text))
+			}
 			return nil
 		}
 	}

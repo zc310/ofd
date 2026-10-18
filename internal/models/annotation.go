@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 )
 
 // PageAnnot 页面注解文件的根容器。
@@ -122,10 +121,9 @@ func (b StBox) IsFinite() bool {
 
 // parseFromString 从字符串解析盒子数据（私有方法）
 func (b *StBox) parseFromString(value string) error {
-	// 移除首尾空格并按空格分割
-	parts := strings.Fields(value)
-	if len(parts) != 4 {
-		return fmt.Errorf("格式错误: 期望4个数值(X Y Width Height)，实际得到%d个", len(parts))
+	var parts [4]string
+	if count := scanFields(value, parts[:]); count != len(parts) {
+		return fmt.Errorf("格式错误: 期望4个数值(X Y Width Height)，实际得到%d个", count)
 	}
 
 	// 批量解析数值

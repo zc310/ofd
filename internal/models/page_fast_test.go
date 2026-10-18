@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/xml"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,13 @@ func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
 		{"mixed", "甲&amp;<![CDATA[&lt;]]><!--split-->&#x1F600;", "甲&&lt;😀"},
 		{"comments", "a<!--split-->b&amp;c", "ab&c"},
 		{"empty", "", ""},
+		{"empty CDATA before text", "<![CDATA[]]>甲&amp;", "甲&"},
+		{"empty CDATA after text", "甲&amp;<![CDATA[]]>", "甲&"},
+		{"CDATA first", "<![CDATA[&amp;]]>甲&amp;", "&amp;甲&"},
+		{"split entity stays literal", "&am<!--split-->p;", "&amp;"},
+		{"split surrogate pair", `\D83D<!--split--><![CDATA[\DE00]]>`, "😀"},
+		{"single after comment", "<!--split-->甲&amp;", "甲&"},
+		{"single before ignored child", "甲&amp;<Unknown>ignored</Unknown>", "甲&"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPageLexer([]byte("<TextCode>" + tc.body + "</TextCode>"))
@@ -32,6 +40,48 @@ func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
 	}
 }
 
+func TestParseTextCodeDoesNotRetainInputBytes(t *testing.T) {
+	for _, body := range []string{"plain text", "甲&amp;乙", "<![CDATA[甲&amp;乙]]>", "甲<!--split-->乙"} {
+		input := "<TextCode>" + body + "</TextCode>"
+		// 预留终止符空间，让底层 lexer 复用输入而不是先复制整个 XML。
+		data := make([]byte, len(input), len(input)+1)
+		copy(data, input)
+		p := newPageLexer(data)
+		p.Next()
+		var text TextCode
+		if err := p.parseTextCode(&text); err != nil {
+			t.Fatal(err)
+		}
+		want := strings.Clone(text.Value)
+		clear(data)
+		if text.Value != want {
+			t.Fatalf("输入修改影响了 TextCode: got %q, want %q", text.Value, want)
+		}
+	}
+}
+
+func TestPageNumericAndTextParsingMatchesEncodingXML(t *testing.T) {
+	data := []byte(`<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Content><ofd:Layer ID="1">
+<ofd:TextObject ID="2" Boundary="1 2 -30 40" CTM="1 0 0 1 2 3" Font="3" Size="4">
+<ofd:FillColor Value="1 2 3 4 5"/>
+<ofd:TextCode X="0" Y="3" DeltaX="1 g 3 2">甲&amp;<![CDATA[&lt;]]><!--split-->\D83D<![CDATA[\DE00]]></ofd:TextCode>
+<ofd:TextCode DeltaY="1 2 3">正文</ofd:TextCode><ofd:TextCode><![CDATA[&amp;]]></ofd:TextCode>
+</ofd:TextObject>
+<ofd:PathObject ID="4" Boundary="1 2 30 40" CTM="1 0 0 1 2 3" DashPattern="g 3 2"><ofd:AbbreviatedData>M 0 0 L 10 20 C</ofd:AbbreviatedData></ofd:PathObject>
+</ofd:Layer></ofd:Content></ofd:Page>`)
+	var want PageContent
+	if err := xml.Unmarshal(data, &want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParsePageContentXML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("页面解析结果不一致\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
 var benchTextCodeOutput TextCode
 
 func BenchmarkParseTextCode(b *testing.B) {
@@ -43,6 +93,10 @@ func BenchmarkParseTextCode(b *testing.B) {
 		{"CJK", "中文正文与标点，这是用于基准测试的文本内容。"},
 		{"Plain1KiB", strings.Repeat("a", 1024)},
 		{"Entities", "a&amp;b&lt;c&gt;d&#x1F600;"},
+		{"Plain16KiB", strings.Repeat("a", 16<<10)},
+		{"Mixed", "甲&amp;<![CDATA[&lt;]]><!--split-->&#x1F600;"},
+		{"CDATA", "<![CDATA[甲&lt;乙]]>"},
+		{"Escapes", `甲\0020乙\D83D\DE00`},
 	} {
 		b.Run(input.name, func(b *testing.B) {
 			data := []byte("<TextCode>" + input.value + "</TextCode>")
@@ -55,6 +109,30 @@ func BenchmarkParseTextCode(b *testing.B) {
 					b.Fatal(err)
 				}
 				benchTextCodeOutput = text
+			}
+		})
+	}
+}
+
+var benchPageContentOutput *PageContent
+
+func BenchmarkParsePageContentXML(b *testing.B) {
+	for _, input := range []struct{ name, object string }{
+		{"Text", `<ofd:TextObject ID="2" Boundary="1 2 30 40" CTM="1 0 0 1 12.5 20.5" Font="3" Size="4"><ofd:TextCode X="0" Y="3">benchmark text 中文</ofd:TextCode></ofd:TextObject>`},
+		{"PositionedText", `<ofd:TextObject ID="2" Boundary="1 2 30 40" CTM="1 0 0 1 12.5 20.5" Font="3" Size="4"><ofd:TextCode X="0" Y="3" DeltaX="1.5 0 0 0 1.5 0 0 0">正文甲乙丙丁戊己</ofd:TextCode></ofd:TextObject>`},
+		{"MixedText", `<ofd:TextObject ID="2" Boundary="1 2 30 40" Font="3" Size="4"><ofd:TextCode X="0" Y="3">甲&amp;<![CDATA[&lt;]]><!--split-->&#x1F600;</ofd:TextCode></ofd:TextObject>`},
+		{"Paths", `<ofd:PathObject ID="2" Boundary="1 2 30 40" CTM="1 0 0 1 12.5 20.5"><ofd:AbbreviatedData>M 0 0 L 10 20 L 30 40 C</ofd:AbbreviatedData></ofd:PathObject>`},
+	} {
+		b.Run(input.name, func(b *testing.B) {
+			data := []byte(`<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Content><ofd:Layer ID="1">` + strings.Repeat(input.object, 256) + `</ofd:Layer></ofd:Content></ofd:Page>`)
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			for b.Loop() {
+				var err error
+				benchPageContentOutput, err = ParsePageContentXML(data)
+				if err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}

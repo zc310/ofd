@@ -429,10 +429,10 @@ func (c *Color) parse(s string) error {
 		return nil
 	}
 
-	parts := strings.Fields(s)
 	parsed := [4]int{}
 	stored := 0
-	for i, part := range parts {
+	count := 0
+	for part := range strings.FieldsSeq(s) {
 		val, err := c.parseInt(part)
 		if err != nil {
 			// 只有无法解释成整数才算解析失败。越界值与负值都不是错误：GB/T 33190
@@ -444,10 +444,11 @@ func (c *Color) parse(s string) error {
 		// 只保留前 4 个分量：任何颜色空间最多用 4 个，多余的按未定义行为忽略。
 		// 循环必须按 parsed 的长度截断，否则 Value="255 0 0 0 0" 这类 5 分量
 		// 输入会越界写 panic。
-		if i < len(parsed) {
-			parsed[i] = val
+		if count < len(parsed) {
+			parsed[count] = val
 			stored++
 		}
+		count++
 	}
 
 	values := [4]uint8{0, 0, 0, 255}
@@ -486,7 +487,7 @@ func (c *Color) parse(s string) error {
 	}
 	// 保留原文，供渲染端按颜色空间的 BitsPerComponent 归一化。
 	c.raw = parsed
-	c.nraw = len(parts)
+	c.nraw = count
 	return nil
 }
 
@@ -505,9 +506,9 @@ type CTM [6]float64
 
 // UnmarshalXMLAttr 实现XML属性解析
 func (c *CTM) UnmarshalXMLAttr(attr xml.Attr) error {
-	parts := strings.Fields(strings.TrimSpace(attr.Value))
-	if len(parts) != 6 {
-		return fmt.Errorf("OFD CTM需要6个值，但得到 %d 个", len(parts))
+	var parts [6]string
+	if count := scanFields(attr.Value, parts[:]); count != len(parts) {
+		return fmt.Errorf("OFD CTM需要6个值，但得到 %d 个", count)
 	}
 
 	for i, part := range parts {
