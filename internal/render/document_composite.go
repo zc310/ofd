@@ -234,7 +234,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if p.renderSimpleCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip) {
 		return
 	}
-	if p.renderCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip, cropToInk, w, h) {
+	if p.renderCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip, cropToInk, w, h, compositeDepth, budget) {
 		return
 	}
 
@@ -271,6 +271,9 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		// 包围盒推断与实际绘制范围不符时，收缩后的画布会整幅空白。回退到
 		// 整幅画布重新栅格化，保证收缩只是优化而不会丢内容。
 		canvasBox, tight = models.StBox{Width: w, Height: h}, false
+		if !budget.allowOffscreenPixels(w, h, dpi) {
+			return
+		}
 		raster = p.rasterizeCompositeUnit(unit, dp, canvasBox, false, w, h, dpi, compositeDepth, budget)
 	}
 	// cropToInk 为真时 tight 必为假：收缩画布只在按内容范围建画布（cropToInk
@@ -503,7 +506,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 // 仍需独立绘制表面，交回栅格化回退。
 func (p *Document) renderCompositeVector(ctx DrawContext, object models.CompositeObject,
 	unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox,
-	parentCTM *models.CTM, parentClip *geom.Path, cropToInk bool, w, h float64) bool {
+	parentCTM *models.CTM, parentClip *geom.Path, cropToInk bool, w, h float64, compositeDepth int, budget *renderBudget) bool {
 	if unit == nil || len(unit.Content.Items) == 0 {
 		return false
 	}
@@ -528,12 +531,10 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	if !finiteMatrix(matrix) {
 		return false
 	}
-	var budget renderBudget
-	budget.reset()
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Transform(matrix)
-	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, nil, 1, &budget)
+	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
 	return true
 }
 
