@@ -14,7 +14,7 @@ func ExampleVerify() {
 	}
 	fmt.Println(len(results))
 	// 省略证书与状态证据时不能据两层签名结果认定完整验证通过。
-	fmt.Println(results[0].Result.Validation.Status == "valid")
+	fmt.Println(results[0].Result.FullyValid())
 	// Output:
 	// 1
 	// false

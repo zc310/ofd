@@ -29,7 +29,7 @@ const (
 
 // SignatureVerificationResult 是 SES 签名的密码学验证结果。
 type SignatureVerificationResult struct {
-	// Valid 表示印章内部签名和外层签名均通过。
+	// Valid 表示印章内部签名和外层签名均通过；完整验签结论使用 FullyValid。
 	Valid bool
 	// TrustChecked 表示是否使用显式信任根执行了证书链校验。
 	TrustChecked bool
@@ -47,6 +47,12 @@ type SignatureVerificationResult struct {
 	Outer SignatureComponentResult
 	// Validation 汇总 GB/T 38540 的完整验证步骤；Valid 保留原有两层签名语义。
 	Validation *SignatureValidation `json:"validation,omitempty"`
+}
+
+// FullyValid 表示完整验签已完成且通过，包括原文摘要、算法一致性、保护范围
+// 以及必需的证书与印章状态证据。结果为空、未完成或失败时均返回 false。
+func (r *SignatureVerificationResult) FullyValid() bool {
+	return r != nil && r.Validation != nil && r.Validation.Status == "valid"
 }
 
 // SignatureComponentResult 是一层签名的证书和数学验证结果。

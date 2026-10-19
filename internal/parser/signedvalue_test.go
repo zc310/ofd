@@ -407,6 +407,41 @@ func TestVerifySignatureDigestDetectsChangedReference(t *testing.T) {
 	}
 }
 
+func TestVerifySignatureDigestRetainsMethodMismatchWithUnsupportedHash(t *testing.T) {
+	pkg, err := core.OpenFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pkg.Close()
+	const signaturePath = "Doc_0/Signs/Sign_0/Signature.xml"
+	var signature models.Signature
+	if err := pkg.ReadXML(signaturePath, &signature); err != nil {
+		t.Fatal(err)
+	}
+	data, err := pkg.Read("Doc_0/Signs/Sign_0/SignedValue.dat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := ParseSignedValue(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature.SignedInfo.SignatureMethod = "1.2.840.113549.1.1.11"
+	signature.SignedInfo.References.CheckMethod = "unsupported"
+	digest, err := VerifySignatureDigest(pkg, signaturePath, &signature, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest.SignatureMethodError == "" || digest.Unsupported == "" {
+		t.Fatalf("算法一致性检查不应被未知摘要算法跳过: %+v", digest)
+	}
+	result := &SignatureVerificationResult{Validation: &SignatureValidation{}}
+	BindSignatureDigest(result, digest)
+	if result.FullyValid() || result.Validation.Status != "invalid" {
+		t.Fatalf("已确认的算法冲突应报告失败: %+v", result.Validation)
+	}
+}
+
 func TestDocumentKeepsNonASN1SignedValue(t *testing.T) {
 	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {

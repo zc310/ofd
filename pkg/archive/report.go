@@ -2,9 +2,10 @@ package archive
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"strings"
+
+	"github.com/goccy/go-json"
 )
 
 func RenderJSON(writer io.Writer, report any, pretty bool) error {

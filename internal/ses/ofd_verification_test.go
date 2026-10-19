@@ -14,9 +14,14 @@ import (
 
 func signedOFD(t *testing.T, f *signingFixture, tamper bool, scope string) []byte {
 	t.Helper()
+	return signedOFDWithMethod(t, f, tamper, scope, "1.2.156.10197.1.501")
+}
+
+func signedOFDWithMethod(t *testing.T, f *signingFixture, tamper bool, scope, method string) []byte {
+	t.Helper()
 	document := []byte(`<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>10</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`)
 	sum := sha1.Sum(document)
-	f.xml = []byte(fmt.Sprintf(`<Signature xmlns="http://www.ofdspec.org/2016"><SignedInfo><Provider ProviderName="SES test"/><SignatureMethod>1.2.156.10197.1.501</SignatureMethod><References CheckMethod="SHA1"><Reference FileRef="/Doc_0/Document.xml"><CheckValue>%s</CheckValue></Reference></References></SignedInfo><SignedValue>SignedValue.dat</SignedValue></Signature>`, base64.StdEncoding.EncodeToString(sum[:])))
+	f.xml = []byte(fmt.Sprintf(`<Signature xmlns="http://www.ofdspec.org/2016"><SignedInfo><Provider ProviderName="SES test"/><SignatureMethod>%s</SignatureMethod><References CheckMethod="SHA1"><Reference FileRef="/Doc_0/Document.xml"><CheckValue>%s</CheckValue></Reference></References></SignedInfo><SignedValue>SignedValue.dat</SignedValue></Signature>`, method, base64.StdEncoding.EncodeToString(sum[:])))
 	value, err := sign.CreateSignedValue(f.xml, f.seal, f.signer.Raw, f.signerKey, scope, f.now, sign.SigningOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -55,13 +60,15 @@ func TestOFDCompleteVerificationSeparatesReferenceSHA1AndSESDataHashSM3(t *testi
 		name        string
 		tamper      bool
 		scope, want string
+		method      string
 	}{
-		{"valid", false, "/Doc_0/Signatures/Signature.xml", "valid"},
-		{"changed_reference", true, "/Doc_0/Signatures/Signature.xml", "invalid"},
-		{"unbound_scope", false, "/Doc_0/OtherSignature.xml", "incomplete"},
+		{"valid", false, "/Doc_0/Signatures/Signature.xml", "valid", "1.2.156.10197.1.501"},
+		{"changed_reference", true, "/Doc_0/Signatures/Signature.xml", "invalid", "1.2.156.10197.1.501"},
+		{"unbound_scope", false, "/Doc_0/OtherSignature.xml", "incomplete", "1.2.156.10197.1.501"},
+		{"algorithm_mismatch", false, "/Doc_0/Signatures/Signature.xml", "invalid", "1.2.840.113549.1.1.11"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			data := signedOFD(t, f, test.tamper, test.scope)
+			data := signedOFDWithMethod(t, f, test.tamper, test.scope, test.method)
 			results, err := sign.Verify(t.Context(), data, *f.options)
 			if err != nil {
 				t.Fatal(err)
@@ -71,6 +78,12 @@ func TestOFDCompleteVerificationSeparatesReferenceSHA1AndSESDataHashSM3(t *testi
 			}
 			if !results[0].Result.Valid || results[0].Result.Validation.Status != test.want {
 				t.Fatalf("完整结果 = %+v", results[0].Result)
+			}
+			if results[0].DigestValid != !test.tamper {
+				t.Fatalf("摘要匹配应独立于算法一致性与范围检查: %+v", results[0])
+			}
+			if results[0].Result.FullyValid() != (test.want == "valid") {
+				t.Fatalf("完整验签判定错误: %+v", results[0].Result)
 			}
 			instance, err := validator.New(validator.WithMode(validator.ModeStructural), validator.WithSignatureVerification(f.options))
 			if err != nil {

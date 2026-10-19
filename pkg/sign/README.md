@@ -64,7 +64,15 @@ results, err := sign.Verify(ctx, "document.ofd", sign.VerificationOptions{
 | `invalid` | 至少一个检查已经确认失败。 |
 | `incomplete` | 没有已确认失败的检查，但缺少必需证据、未支持关键扩展或尚不能解释原文保护范围。 |
 
-`Result.Valid` 保留两层签名检查的原有语义，不能代替完整结论。
+接受签章时使用 `item.Result.FullyValid()`：只有完整状态为 `valid` 才返回 true；
+结果为空、未完成或失败均返回 false。应先处理 `Verify` 返回的错误，并按业务要求
+检查签名数量（空结果表示没有签名）。
+
+`DigestValid` 表示引用摘要与 SES `DataHash` 是否匹配，`Result.Valid` 表示两层签名
+检查是否通过；两者均不能代替完整结论。算法声明不一致会使完整结论为 `invalid`，
+保护范围无法确认会使其为 `incomplete`。已确认的引用或原文摘要错误优先报告
+`invalid`，不会被尚未确认的范围或未支持算法遮蔽。
+
 `PropertyInfo` 目前支持指向受保护 `Signature.xml` 的包内路径；其他厂商元数据
 编码可解析保留，但保护范围会报告未完成。时间戳支持 CMS/TSTInfo 的签名值绑定、
 TSA 专用关键 EKU、ESS 签名者证书摘要绑定、信任及整条证书链吊销检查；

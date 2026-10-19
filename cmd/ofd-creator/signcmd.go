@@ -54,18 +54,45 @@ func reportSignatureVerification(w io.Writer, prefix string, statuses []merge.Si
 		return
 	}
 	for _, status := range statuses {
-		digest := "摘要有效"
+		digest := "摘要匹配"
 		if !status.DigestValid {
-			digest = "摘要无效"
+			digest = "摘要不匹配或未完成"
 		}
 		signature := "密码学签名未验证"
 		switch {
 		case status.Verified:
-			signature = "密码学签名有效"
+			signature = "两层密码学签名通过"
 		case status.VerificationError != "":
 			signature = "密码学签名校验失败"
 		}
-		_, _ = fmt.Fprintf(w, "%s: 签名 %s：%s，%s\n", prefix, status.ID, digest, signature)
+		validation := "完整验签未完成"
+		var reasons []string
+		if status.Validation != nil {
+			switch status.Validation.Status {
+			case "valid":
+				validation = "完整验签通过"
+			case "invalid":
+				validation = "完整验签失败"
+			}
+			for _, check := range status.Validation.Checks {
+				if check.Status == "invalid" || check.Status == "incomplete" {
+					reason := check.Code
+					if check.Message != "" {
+						reason += "：" + check.Message
+					}
+					reasons = append(reasons, reason)
+				}
+			}
+		} else if status.VerificationError == "" {
+			reasons = append(reasons, "缺少完整验签结果")
+		}
+		if status.VerificationError != "" {
+			reasons = append(reasons, status.VerificationError)
+		}
+		if len(reasons) > 0 {
+			validation += "：" + strings.Join(reasons, "；")
+		}
+		_, _ = fmt.Fprintf(w, "%s: 签名 %s：%s，%s；%s\n", prefix, status.ID, digest, signature, validation)
 	}
 }
 

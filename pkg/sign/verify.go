@@ -24,16 +24,18 @@ const (
 
 // Verification 是一个文档体中的一个签名的完整验证结果。
 type Verification struct {
-	DocumentIndex int                          `json:"document_index"`
-	ID            string                       `json:"id"`
-	DigestValid   bool                         `json:"digest_valid"`
-	Result        *SignatureVerificationResult `json:"result,omitempty"`
-	Error         string                       `json:"error,omitempty"`
+	DocumentIndex int    `json:"document_index"`
+	ID            string `json:"id"`
+	// DigestValid 仅表示引用摘要与 SES DataHash 匹配；完整结论使用 Result.FullyValid()。
+	DigestValid bool                         `json:"digest_valid"`
+	Result      *SignatureVerificationResult `json:"result,omitempty"`
+	Error       string                       `json:"error,omitempty"`
 }
 
 // Verify 校验 OFD 的文件摘要及 GB/T 38540—2020 SES 签章。
 // input 接受文件路径、[]byte 或 io.Reader。缺少信任、吊销或印章状态证据时，
 // Result.Validation.Status 为 incomplete；两层数学签名结果仍独立保留。
+// 业务接受签章前应检查 Result.FullyValid()。
 func Verify(ctx context.Context, input any, options VerificationOptions) ([]Verification, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

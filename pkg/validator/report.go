@@ -2,11 +2,12 @@ package validator
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/version"
 )

@@ -23,7 +23,8 @@ type SignatureDigestResult struct {
 	References []ReferenceDigestResult
 	// DataHash 是 TBS_Sign.DataHash 的校验结果；非 SES 签名时为空。
 	DataHash *DataHashResult
-	// Valid 表示所有可校验项目均通过。
+	// Valid 表示所支持的引用摘要与 SES DataHash 均匹配；完整验签结论还须
+	// 通过 BindSignatureDigest 检查算法一致性与保护范围，并使用 FullyValid。
 	Valid                bool
 	Unsupported          string
 	SignatureMethodError string
@@ -63,6 +64,11 @@ func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signat
 
 	method := normalizeDigestMethod(signature.SignedInfo.References.CheckMethod)
 	result := &SignatureDigestResult{Method: method, Valid: true}
+	if signedValue != nil && signedValue.SES != nil {
+		if declared := signature.SignedInfo.SignatureMethod; declared != "" && declared != signedValue.SES.SignatureAlgorithm.String() {
+			result.SignatureMethodError = "Signature.xml 与 SES 声明的签名算法不一致"
+		}
+	}
 	hashFunc, supported := signatureHash(method)
 	if !supported {
 		result.Valid = false
@@ -110,9 +116,6 @@ func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signat
 	}
 
 	if signedValue != nil && signedValue.SES != nil {
-		if declared := signature.SignedInfo.SignatureMethod; declared != "" && declared != signedValue.SES.SignatureAlgorithm.String() {
-			result.SignatureMethodError = "Signature.xml 与 SES 声明的签名算法不一致"
-		}
 		item := &DataHashResult{Expected: cloneBytes(signedValue.SES.TBS.DataHash.Bytes)}
 		signatureData, err := fileCache.Read(signaturePath)
 		if err != nil {

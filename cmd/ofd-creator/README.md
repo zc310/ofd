@@ -178,11 +178,16 @@ ofd-creator merge --signatures rewrite -o merged.ofd input1.ofd input2.ofd
 ofd-creator merge --signatures drop -o merged.ofd input1.ofd input2.ofd
 ```
 
-合并过程会把每个输入签名的处理结果（保留/重写/丢弃）汇总到标准错误。加 `--verify-signatures` 会在写出前解析输出文档，逐签名报告摘要与 SM2/SES 密码学验证状态：
+合并过程会把每个输入签名的处理结果（保留/重写/丢弃）汇总到标准错误。加 `--verify-signatures` 会在写出前解析输出文档，逐签名报告摘要匹配情况、SM2/SES 两层密码学签名结果，以及完整验签通过、失败或未完成的状态与原因：
 
 ```bash
 ofd-creator merge -o merged.ofd --signatures rewrite --verify-signatures input1.ofd input2.ofd
 ```
+
+摘要匹配、两层密码学签名通过仍可能伴随完整验签失败或未完成，例如算法声明
+不一致、保护范围未确认或缺少证书信任及状态证据。此选项只报告结果，完整验签
+失败或未完成本身不改变退出码；需要业务接受判断时，使用
+[`sign.Verify`](../../pkg/sign/README.md#完整验证) 并检查 `Result.FullyValid()`。
 
 注意 `rewrite` 会改写签名文件本身，可能使 SES 的数据摘要（对签名 XML 计算）失效，即使被引用文件摘要仍然匹配；这类签名需要重新签名。
 
@@ -550,7 +555,7 @@ pages:
 | `3`    | 构建失败：manifest 已加载但无法生成 OFD（例如路径图元或资源不合法）                                       |
 | `4`    | 资源错误：输入 manifest、输入 OFD 或图片等资源读不到、解析失败                                            |
 | `5`    | 输出失败：输出目录不可写、写出 OFD 或报告失败                                                             |
-| `6`    | 校验失败：`--validate` 或 `merge --verify-signatures` 发现生成的文档不合法                                |
+| `6`    | 校验失败：`--validate` 发现生成的文档不合法                                                              |
 
 `2` 与其余各档的界线是「命令要不要改」：`2` 是命令行写错了，其余是文档本身或环境
 的问题。`3`～`6` 分离出来是为了让 CI 能区分「manifest 有 bug」「文件没找到」

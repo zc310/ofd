@@ -224,12 +224,8 @@ func BindSignatureDigest(result *SignatureVerificationResult, digest *SignatureD
 		return
 	}
 	v := result.Validation
-	if digest == nil || digest.DataHash == nil {
+	if digest == nil {
 		v.set("document.integrity", "incomplete", "缺少 SES 原文摘要结果")
-		return
-	}
-	if digest.Unsupported != "" {
-		v.set("document.integrity", "incomplete", digest.Unsupported)
 		return
 	}
 	if digest.SignatureMethodError != "" {
@@ -238,6 +234,11 @@ func BindSignatureDigest(result *SignatureVerificationResult, digest *SignatureD
 	}
 	for _, reference := range digest.References {
 		if !reference.Match {
+			// 未支持算法时没有执行摘要比较，不能把零值 Match 当成不匹配。
+			if digest.Unsupported != "" && reference.Actual == nil &&
+				(reference.Error == "" || reference.Error == digest.Unsupported) {
+				continue
+			}
 			v.set("document.integrity", "invalid", "OFD 引用摘要不匹配或不可读取")
 			return
 		}
@@ -246,12 +247,26 @@ func BindSignatureDigest(result *SignatureVerificationResult, digest *SignatureD
 		v.set("document.integrity", "invalid", "OFD 签名保护范围不含任何文件引用")
 		return
 	}
-	if !digest.DataHash.ScopeMatch {
-		v.set("document.integrity", "incomplete", digest.DataHash.ScopeError)
+	// §7.3 g)：已确认的原文错误优先于算法未支持或范围尚未确认。
+	if item := digest.DataHash; item != nil && !item.Match &&
+		(digest.Unsupported == "" || item.Actual != nil || (item.Error != "" && item.Error != digest.Unsupported)) {
+		v.set("document.integrity", "invalid", "SES 原文摘要不匹配或不可读取")
+		return
+	}
+	if digest.Unsupported != "" {
+		v.set("document.integrity", "incomplete", digest.Unsupported)
+		return
+	}
+	if digest.DataHash == nil {
+		v.set("document.integrity", "incomplete", "缺少 SES 原文摘要结果")
 		return
 	}
 	if !digest.Valid || !digest.DataHash.Match {
 		v.set("document.integrity", "invalid", "SES 原文摘要不匹配或不可读取")
+		return
+	}
+	if !digest.DataHash.ScopeMatch {
+		v.set("document.integrity", "incomplete", digest.DataHash.ScopeError)
 		return
 	}
 	v.check("document.integrity", nil)

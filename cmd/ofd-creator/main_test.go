@@ -469,7 +469,8 @@ func TestRunMergeVerifySignatures(t *testing.T) {
 	if code := run([]string{"merge", "-i", signed, "-o", output, "--verify-signatures"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("verify signatures exit code = %d, stderr = %s", code, stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte("签名汇总")) || !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
+	if !bytes.Contains(stderr.Bytes(), []byte("签名汇总")) || !bytes.Contains(stderr.Bytes(), []byte("摘要匹配")) ||
+		!bytes.Contains(stderr.Bytes(), []byte("完整验签失败")) {
 		t.Fatalf("应输出签名汇总与验证结果, stderr = %s", stderr.String())
 	}
 
@@ -495,8 +496,8 @@ func TestRunMergeSignCmd(t *testing.T) {
 	if code := run([]string{"merge", "-i", hello, "-o", output, "--pages", "1", "--sign-cmd", "cat", "--verify-signatures"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run merge --sign-cmd exit code = %d, stderr = %s", code, stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
-		t.Fatalf("验签应报告摘要有效, stderr = %s", stderr.String())
+	if !bytes.Contains(stderr.Bytes(), []byte("摘要匹配")) || !bytes.Contains(stderr.Bytes(), []byte("完整验签未完成")) {
+		t.Fatalf("验签应同时报告摘要匹配与完整验证未完成, stderr = %s", stderr.String())
 	}
 }
 
@@ -619,8 +620,8 @@ func TestRunReplaceSignCmd(t *testing.T) {
 	}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run replace --sign-cmd exit=%d, stderr=%s", code, stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
-		t.Fatalf("验签应报告摘要有效, stderr=%s", stderr.String())
+	if !bytes.Contains(stderr.Bytes(), []byte("摘要匹配")) || !bytes.Contains(stderr.Bytes(), []byte("完整验签未完成")) {
+		t.Fatalf("验签应同时报告摘要匹配与完整验证未完成, stderr=%s", stderr.String())
 	}
 	data, err := os.ReadFile(output)
 	if err != nil {
@@ -893,8 +894,8 @@ func TestRunWatermarkSign(t *testing.T) {
 	}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("run watermark add --sign-cmd exit=%d, stderr=%s", code, stderr.String())
 	}
-	if !bytes.Contains(stderr.Bytes(), []byte("摘要有效")) {
-		t.Fatalf("验签应报告摘要有效, stderr=%s", stderr.String())
+	if !bytes.Contains(stderr.Bytes(), []byte("摘要匹配")) || !bytes.Contains(stderr.Bytes(), []byte("完整验签未完成")) {
+		t.Fatalf("验签应同时报告摘要匹配与完整验证未完成, stderr=%s", stderr.String())
 	}
 	pkg, err := core.OpenFile(output)
 	if err != nil {

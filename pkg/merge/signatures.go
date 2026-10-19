@@ -11,13 +11,14 @@ import (
 type SignatureStatus struct {
 	// ID 是签名标识。
 	ID string
-	// DigestValid 表示签名引用与数据摘要校验通过。
+	// DigestValid 仅表示签名引用与数据摘要匹配，不包含算法一致性与保护范围检查。
 	DigestValid bool
 	// Verified 表示 SM2/SES 密码学签名验证通过。
 	Verified bool
 	// VerificationError 是密码学验证的错误信息。
 	VerificationError string
-	Validation        *parser.SignatureValidation
+	// Validation 是完整验签结论；只有 Status 为 valid 才表示完整通过。
+	Validation *parser.SignatureValidation
 }
 
 // VerifySignatures 解析 OFD 并汇总每个签名的摘要与密码学验证状态。

@@ -16,7 +16,6 @@ import (
 	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
-	_ "golang.org/x/image/bmp"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -24,6 +23,8 @@ import (
 	"math/big"
 	"time"
 	"unicode/utf8"
+
+	_ "golang.org/x/image/bmp"
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm3"

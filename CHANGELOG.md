@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **创建器验签报告文本**：`--verify-signatures` 将「摘要有效」改为「摘要匹配」，
+  将「密码学签名有效」改为「两层密码学签名通过」，并追加完整验签状态及失败或
+  未完成原因。解析标准错误文本的脚本需调整匹配规则；业务接受签章应使用
+  [`sign.Verify`](pkg/sign/README.md#完整验证) 的 `Result.FullyValid()`。
+
 - **创建器移除 TOML**：`ofd-creator` 的输入、`export` 和 `export-all` 仅支持 JSON、
   YAML，`--format toml` 及自动识别的 `.toml` 清单路径会返回参数错误（退出码 `2`）。
   原有 TOML 清单需转换为 YAML 或 JSON；渐变示例已改为
