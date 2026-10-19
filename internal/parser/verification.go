@@ -102,7 +102,8 @@ type CertificateTrustOptions struct {
 	Roots *gmx509.CertPool
 	// Intermediates 是额外的中间证书 DER；SES 内嵌证书会自动加入候选池。
 	Intermediates [][]byte
-	// CurrentTime 是证书链校验时间；为空时使用签名时间。
+	// CurrentTime 覆盖组件级证书链诊断的校验时间；零值时使用签章时间。
+	// 完整验签中的历史证书链仍按签章时间校验，不用它作为验证时钟。
 	CurrentTime time.Time
 }
 
@@ -116,7 +117,9 @@ type SignatureVerificationOptions struct {
 	Trust *CertificateTrustOptions
 	// Revocation 是可选的离线 CRL 吊销校验配置；为空时不执行吊销校验。
 	Revocation *CertificateRevocationOptions
-	// CurrentTime 是验证时钟；零值时使用当前时间。
+	// CurrentTime 是完整验签的验证时钟；零值时在验证入口读取一次当前时间。
+	// 签章时间不得晚于此时刻，CRL 与时间戳证据也使用此时钟。
+	// 历史证书有效期和吊销状态仍按签章时间判断。
 	CurrentTime time.Time
 	// SealStatus 返回印章在指定时刻的状态：good、revoked 或 unknown。
 	// 状态证据由调用方提供；解析器不会隐式联网。
@@ -132,7 +135,9 @@ type CertificateRevocationOptions struct {
 	CRLs [][]byte
 	// Issuers 是用于验证 CRL 签名的签发者证书 DER 列表。
 	Issuers [][]byte
-	// CurrentTime 是 CRL 有效期和吊销时间校验时间；为空时使用签名时间。
+	// CurrentTime 覆盖组件级 CRL 诊断的证据时钟和吊销判定时间。
+	// 零值时分别使用入口验证时钟和签章时间。完整验签始终使用顶层
+	// SignatureVerificationOptions.CurrentTime 与签章时间，不受此覆盖影响。
 	CurrentTime time.Time
 }
 
@@ -160,14 +165,28 @@ func verifySESSignedValue(value *SignedValue, trustOptions *CertificateTrustOpti
 	if value == nil || value.SES == nil {
 		return nil, fmt.Errorf("不是可验证的 SES 签名值")
 	}
-	verificationTime := value.SES.TBS.SignTime
-	result := &SignatureVerificationResult{VerificationTime: verificationTime}
+	verificationNow := time.Now()
+	if verificationOptions != nil && !verificationOptions.CurrentTime.IsZero() {
+		verificationNow = verificationOptions.CurrentTime
+	}
+	signingTime := value.SES.TBS.SignTime
+	result := &SignatureVerificationResult{
+		VerificationTime: signingTime,
+		Validation:       &SignatureValidation{},
+	}
+	// 先以调用方的验证时钟检查时间，不能由文档声明的签章时间决定“现在”。
+	var timeErr error
+	if signingTime.IsZero() || signingTime.After(verificationNow) {
+		timeErr = fmt.Errorf("签章时间为空或晚于验证时刻")
+	}
+	result.Validation.check("signing.time", timeErr)
 	result.Seal = verifySignatureComponent(
 		value.SES.TBS.Seal.Certificate,
 		value.SES.TBS.Seal.SealInfo.Raw,
 		value.SES.TBS.Seal.Signature.Bytes,
 		value.SES.TBS.Seal.SignatureAlgorithm,
-		verificationTime,
+		signingTime,
+		verificationNow,
 		trustOptions,
 		value.SES.TBS.Seal.SealInfo.Property.Certificates,
 		verificationOptions,
@@ -177,7 +196,8 @@ func verifySESSignedValue(value *SignedValue, trustOptions *CertificateTrustOpti
 		value.SES.TBS.Raw,
 		value.SES.Signature.Bytes,
 		value.SES.SignatureAlgorithm,
-		verificationTime,
+		signingTime,
+		verificationNow,
 		trustOptions,
 		value.SES.TBS.Seal.SealInfo.Property.Certificates,
 		verificationOptions,
@@ -191,11 +211,11 @@ func verifySESSignedValue(value *SignedValue, trustOptions *CertificateTrustOpti
 		result.RevocationChecked = result.Seal.RevocationChecked && result.Outer.RevocationChecked
 		result.RevocationValid = result.Seal.RevocationStatus == "good" && result.Outer.RevocationStatus == "good"
 	}
-	result.Validation = validateSES(value.SES, result, verificationOptions, trustOptions)
+	result.Validation = validateSES(value.SES, result, verificationOptions, trustOptions, verificationNow)
 	return result, nil
 }
 
-func verifySignatureComponent(certificateDER, signed, signature []byte, algorithm asn1.ObjectIdentifier, at time.Time, trustOptions *CertificateTrustOptions, embeddedIntermediates [][]byte, verificationOptions *SignatureVerificationOptions) SignatureComponentResult {
+func verifySignatureComponent(certificateDER, signed, signature []byte, algorithm asn1.ObjectIdentifier, at, verificationNow time.Time, trustOptions *CertificateTrustOptions, embeddedIntermediates [][]byte, verificationOptions *SignatureVerificationOptions) SignatureComponentResult {
 	result := SignatureComponentResult{Algorithm: algorithm.String()}
 	if len(certificateDER) == 0 {
 		result.Error = "签名证书为空"
@@ -222,10 +242,7 @@ func verifySignatureComponent(certificateDER, signed, signature []byte, algorith
 		if revocationTime.IsZero() {
 			revocationTime = at
 		}
-		evidenceTime := time.Now()
-		if !verificationOptions.CurrentTime.IsZero() {
-			evidenceTime = verificationOptions.CurrentTime
-		}
+		evidenceTime := verificationNow
 		if !verificationOptions.Revocation.CurrentTime.IsZero() {
 			evidenceTime = verificationOptions.Revocation.CurrentTime
 		}

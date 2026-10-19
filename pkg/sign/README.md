@@ -50,10 +50,18 @@ results, err := sign.Verify(ctx, "document.ofd", sign.VerificationOptions{
 `roots` 为 `smx509.CertPool`，`intermediates`、`crls`、`issuers` 为 DER 字节列表。
 `SealStatus(id, at)` 由应用根据可信的印章状态记录返回指定时刻的 `good`、`revoked`
 或 `unknown`。验证器不会隐式加载系统根证书、下载 CRL 或查询印章服务。
-`CurrentTime` 指定验证时钟，缺省为当前时间；标准结论中的证书信任和吊销判定以
-签章时刻为参考，同时要求 CRL 在验证时钟有效，能使用签章之后发布的最新 CRL
-判定历史吊销时间。当前支持完整、直接签发且带有效 `NextUpdate` 的 CRL；增量 CRL、
-分区/间接 CRL 及未知关键扩展会报告证据未完成。时间戳可通过 `TimestampTrust` 使用独立的信任根。
+`CurrentTime` 指定完整验签的验证时钟，缺省时在入口读取一次当前时间，组件与完整
+策略共用此时刻。入口先检查签章时间非空且不晚于验证时刻；未来签章的完整结论为
+`invalid`，`FullyValid()` 返回 false，即使其证书在声明的签章时间有效且两层签名正确。
+标准结论中的证书信任和吊销判定以签章时刻为参考，同时要求 CRL 在验证时钟有效，
+能使用签章之后发布的最新 CRL 判定历史吊销时间。当前支持完整、直接签发且带
+有效 `NextUpdate` 的 CRL；增量 CRL、分区/间接 CRL 及未知关键扩展会报告证据未完成。
+时间戳可通过 `TimestampTrust` 使用独立的信任根。
+
+`Trust.CurrentTime` 可覆盖组件级证书链诊断的时间；`Revocation.CurrentTime` 可覆盖
+组件级 CRL 诊断的证据时钟及吊销判定时间。这些覆盖影响 `Trusted`、`RevocationStatus`
+等诊断字段，完整策略仍按签章时间判定历史证书状态，并按顶层 `CurrentTime` 检查
+证据与时间顺序。`VerificationTime` 保留证书有效期所使用的签章时间语义。
 
 每项结果包含文档体索引、签名 ID、引用摘要结果、两层签名结果，以及
 `Result.Validation.Status` 和 `Checks`：

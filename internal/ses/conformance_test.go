@@ -27,7 +27,12 @@ type signingFixture struct {
 
 func newSigningFixture(t *testing.T, digests bool) *signingFixture {
 	t.Helper()
-	f := &signingFixture{now: time.Now().UTC().Truncate(time.Second), xml: []byte("<Signature>protected</Signature>")}
+	return newSigningFixtureAt(t, digests, time.Now().UTC().Truncate(time.Second))
+}
+
+func newSigningFixtureAt(t *testing.T, digests bool, at time.Time) *signingFixture {
+	t.Helper()
+	f := &signingFixture{now: at, xml: []byte("<Signature>protected</Signature>")}
 	issue := func(serial int64, parent *smx509.Certificate, parentKey *sm2.PrivateKey) (*smx509.Certificate, *sm2.PrivateKey) {
 		t.Helper()
 		key, err := sm2.GenerateKey(rand.Reader)

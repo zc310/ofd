@@ -56,12 +56,8 @@ func (v *SignatureValidation) check(code string, err error) {
 	}
 }
 
-func validateSES(value *SESSignedValue, result *SignatureVerificationResult, options *SignatureVerificationOptions, trust *CertificateTrustOptions) *SignatureValidation {
-	v := &SignatureValidation{}
-	now := time.Now()
-	if options != nil && !options.CurrentTime.IsZero() {
-		now = options.CurrentTime
-	}
+func validateSES(value *SESSignedValue, result *SignatureVerificationResult, options *SignatureVerificationOptions, trust *CertificateTrustOptions, now time.Time) *SignatureValidation {
+	v := result.Validation
 	seal := value.TBS.Seal
 	info := seal.SealInfo
 	var formatErr error
@@ -107,11 +103,6 @@ func validateSES(value *SESSignedValue, result *SignatureVerificationResult, opt
 		periodErr = fmt.Errorf("印章在签章时刻无效，或制作时间晚于签章时间（§6.3、§7.3 d）")
 	}
 	v.check("seal.validity", periodErr)
-	var timeErr error
-	if value.TBS.SignTime.IsZero() || value.TBS.SignTime.After(now) {
-		timeErr = fmt.Errorf("签章时间为空或晚于验证时刻")
-	}
-	v.check("signing.time", timeErr)
 	for _, component := range []struct {
 		code        string
 		certificate []byte
