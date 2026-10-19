@@ -3,6 +3,9 @@ package docx
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
+	"io"
+	"math"
 	"strings"
 	"testing"
 )
@@ -150,8 +153,12 @@ func TestAddImageRejectsInvalidInput(t *testing.T) {
 		{"宽为零", func(w *Writer) error { return w.AddImage(testPNG, "png", 0, 10) }},
 		{"高为负", func(w *Writer) error { return w.AddImage(testPNG, "png", 10, -1) }},
 		{"尺寸为 NaN", func(w *Writer) error {
-			return w.AddImage(testPNG, "png", mathNaN(), 10)
+			return w.AddImage(testPNG, "png", math.NaN(), 10)
 		}},
+		{"宽为正无穷", func(w *Writer) error { return w.AddImage(testPNG, "png", math.Inf(1), 10) }},
+		{"高为正无穷", func(w *Writer) error { return w.AddImage(testPNG, "png", 10, math.Inf(1)) }},
+		{"尺寸换算溢出", func(w *Writer) error { return w.AddImage(testPNG, "png", math.MaxFloat64, 10) }},
+		{"尺寸换算后为零", func(w *Writer) error { return w.AddImage(testPNG, "png", math.SmallestNonzeroFloat64, 10) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -163,7 +170,19 @@ func TestAddImageRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func mathNaN() float64 {
-	var zero float64
-	return zero / zero
+func TestAddImageEnforcesCumulativeMediaLimit(t *testing.T) {
+	// 共用同一块图片数据，验证累计额度而不分配 256MB 或压缩全部图片。
+	w := &Writer{encoder: xml.NewEncoder(io.Discard)}
+	data := make([]byte, maxMediaBytes)
+	for i := 0; i < maxMediaTotalBytes/maxMediaBytes; i++ {
+		if err := w.AddImage(data, "png", 10, 10); err != nil {
+			t.Fatalf("额度以内的第 %d 张图片被拒绝：%v", i+1, err)
+		}
+	}
+	if err := w.AddImage(testPNG, "png", 10, 10); err == nil || !strings.Contains(err.Error(), "总量") {
+		t.Fatalf("超过累计额度应报错，实际为 %v", err)
+	}
+	if len(w.images) != maxMediaTotalBytes/maxMediaBytes {
+		t.Error("被拒绝的图片不应加入媒体部件")
+	}
 }

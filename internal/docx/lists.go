@@ -166,75 +166,34 @@ func parseChineseNumeral(text string) int {
 // 项目立项报告首页的「一、」「二、」与紧随其后的「1. 2. 3.」就是两个独立列表。
 func FilterCredibleListItems(items []ListItem) []ListItem {
 	filtered := make([]ListItem, len(items))
-	for _, run := range listRuns(items) {
-		if !run.credible() {
+	for start := 0; start < len(items); {
+		if items[start].marker == "" {
+			start++
 			continue
 		}
-		for _, index := range run.indexes {
-			filtered[index] = items[index]
+		// 连续段只记录起止下标，避免为每段复制条目与行号。
+		end, previous, hasBullet := start, 0, false
+		for end < len(items) {
+			item := items[end]
+			// 序号回退或跳号时另起一段，项目符号不参与序号递增校验。
+			if item.marker == "" || (end > start && item.marker != "bullet" && item.order != previous+1) {
+				break
+			}
+			if item.marker == "bullet" {
+				hasBullet = true
+			} else {
+				previous = item.order
+			}
+			end++
 		}
+		// 编号必须从 1 开始且至少两条；项目符号出现即认定。
+		// 跨页延续的编号仍保留为原文，避免被自动编号从 1 重写。
+		if items[start].order == 1 && (hasBullet || end-start >= 2) {
+			copy(filtered[start:end], items[start:end])
+		}
+		start = end
 	}
 	return filtered
-}
-
-// listRun 是一段连续的条目行。
-type listRun struct {
-	// indexes 是段内各行在输入切片中的下标。
-	indexes []int
-	// items 是段内各行的条目，顺序与 indexes 一致。
-	items []ListItem
-	// hasBullet 表示段内含项目符号行。
-	hasBullet bool
-}
-
-// listRuns 把条目行切成连续段。序号回退到 1 也算断段：Word 的自动编号总是
-// 从 1 渲染，「二、」紧接「1.」是两个列表，并成一段会把「二、」重编号成「1.」，
-// 等于改写内容。
-func listRuns(items []ListItem) []listRun {
-	var runs []listRun
-	current := listRun{}
-	previous := 0
-
-	flush := func() {
-		if len(current.indexes) > 0 {
-			runs = append(runs, current)
-		}
-		current = listRun{}
-		previous = 0
-	}
-
-	for i, item := range items {
-		if item.marker == "" {
-			flush()
-			continue
-		}
-		if len(current.indexes) > 0 && item.marker != "bullet" && item.order != previous+1 {
-			flush()
-		}
-		current.indexes = append(current.indexes, i)
-		current.items = append(current.items, item)
-		if item.marker == "bullet" {
-			current.hasBullet = true
-		} else {
-			previous = item.order
-		}
-	}
-	flush()
-	return runs
-}
-
-// credible 判断一段是否构成可信列表。
-//
-// 必须从序号 1 开始：Word 的自动编号总是从 1 渲染，把「3. 4.」交给它会变成
-// 「1. 2.」。跨页延续的列表因此漏判——单条序号的误报率太高（带单位的数值标注、
-// 章节号），宁可漏判也不产出错误的自动编号。
-//
-// 编号行至少两条；项目符号没有序号，出现即认定。
-func (r listRun) credible() bool {
-	if len(r.indexes) == 0 || r.items[0].order != 1 {
-		return false
-	}
-	return r.hasBullet || len(r.indexes) >= 2
 }
 
 // listProperties 返回把条目挂到 numbering.xml 上的段落属性。

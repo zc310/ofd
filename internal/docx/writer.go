@@ -119,8 +119,8 @@ func (o Options) section() *SectionProperties {
 
 // Writer 逐块写出 word/document.xml。
 //
-// .docx 是 ZIP 容器、需要中央目录，所以无法像 PDF 那样边生成边落盘，
-// 由 Write 在内部管理 ZIP 生命周期，调用方通过 build 回调追加内容。
+// 正文流式写入 ZIP，中央目录在结束时统一写出。Write 管理 ZIP 生命周期，
+// 调用方通过 build 回调追加内容。
 type Writer struct {
 	options Options
 	zip     *zip.Writer
@@ -130,7 +130,8 @@ type Writer struct {
 	// images 记录已内嵌的图片。ZIP 是顺序流格式，同一时刻只能有一个条目处于
 	// 打开状态，而 word/document.xml 从 build 开始就一直是打开的，所以图片
 	// 字节必须先攒在内存里，等文档条目关闭后再统一写入。
-	images []mediaPart
+	images     []mediaPart
+	mediaBytes int
 	// pictureID 是 wp:docPr/@id 的递增计数器，要求全文唯一。
 	pictureID int
 }
@@ -333,14 +334,14 @@ const (
 	maxMediaTotalBytes = 256 << 20
 )
 
-// AddImage 内嵌一张图片并返回一个只含该图片的段落。
+// AddImage 内嵌一张图片并追加一个只含该图片的段落。
 //
 // data 是图片的原始编码字节（PNG/JPEG 等），extension 是不含点的扩展名，
 // 决定 MIME 类型与 word/media 里的文件名；widthMM 与 heightMM 是显示尺寸
 // （毫米），由调用方按图片在页面上的 Boundary 给出。
 //
-// 部件在调用时立刻写入 ZIP，条目名与关系 ID 都按顺序确定，因此文档关系表
-// 与 [Content_Types].xml 的图片声明都可以在 build 结束后一次性写完。
+// 图片字节暂存至 build 结束后写入 ZIP；调用方在 Write 返回前应保持 data 不变。
+// 条目名与关系 ID 在调用时按顺序确定，文档关系表在 build 结束后统一写出。
 func (w *Writer) AddImage(data []byte, extension string, widthMM, heightMM float64) error {
 	if w.encoder == nil {
 		return errors.New("DOCX 写入器未打开")
@@ -354,15 +355,11 @@ func (w *Writer) AddImage(data []byte, extension string, widthMM, heightMM float
 	if !isKnownImageExtension(extension) {
 		return fmt.Errorf("不支持的图片格式 %q", extension)
 	}
-	if !textdocPositive(widthMM) || !textdocPositive(heightMM) {
+	if !validImageDimension(widthMM) || !validImageDimension(heightMM) {
 		return fmt.Errorf("图片显示尺寸无效：%g × %g mm", widthMM, heightMM)
 	}
 
-	total := 0
-	for _, media := range w.images {
-		total += len(media.data)
-	}
-	if total+len(data) > maxMediaTotalBytes {
+	if w.mediaBytes+len(data) > maxMediaTotalBytes {
 		return fmt.Errorf("内嵌图片总量超过 %d 字节上限", maxMediaTotalBytes)
 	}
 
@@ -373,6 +370,7 @@ func (w *Writer) AddImage(data []byte, extension string, widthMM, heightMM float
 	// numbering，第一张图片必须拿 rId3。
 	relationID := fmt.Sprintf("rId%d", docxFixedRelations+1+len(w.images))
 	w.images = append(w.images, mediaPart{name: name, relationID: relationID, data: data})
+	w.mediaBytes += len(data)
 
 	drawing := NewInlineImage(relationID, widthMM, heightMM, w.pictureID, drawingName(index))
 	return w.AddParagraph(&Paragraph{Runs: []Run{{Drawing: drawing}}})
@@ -413,10 +411,6 @@ var imageContentTypes = map[string]string{
 	"tiff": "image/tiff",
 	"emf":  "image/x-emf",
 	"wmf":  "image/x-wmf",
-}
-
-func textdocPositive(value float64) bool {
-	return value > 0 && value == value
 }
 
 // docxNumberingLevels 生成多级十进制编号定义。第 n 级的 lvlText 是 "%1.%2." 这种

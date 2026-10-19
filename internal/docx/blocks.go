@@ -83,13 +83,23 @@ func BlockSequence(entries []textdoc.Entry, pageHeight float64, options PageOpti
 // 模板层不剔除：它常放页眉页脚与标题栏，是真内容。pkg/invoice 取票面标题
 // 就依赖模板文字层（选字号最大的一条），在提取层过滤会连带影响它。
 func dropAnnotatedEntries(entries []textdoc.Entry) []textdoc.Entry {
-	kept := make([]textdoc.Entry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.Source != textdoc.EntrySourceAnnotation {
-			kept = append(kept, entry)
+	for i := range entries {
+		if entries[i].Source != textdoc.EntrySourceAnnotation {
+			continue
 		}
+		// 找到首个批注后才复制，通常没有批注的页面直接复用输入。
+		kept := make([]textdoc.Entry, 0, len(entries)-1)
+		kept = append(kept, entries[:i]...)
+		start := i + 1
+		for j := start; j < len(entries); j++ {
+			if entries[j].Source == textdoc.EntrySourceAnnotation {
+				kept = append(kept, entries[start:j]...)
+				start = j + 1
+			}
+		}
+		return append(kept, entries[start:]...)
 	}
-	return kept
+	return entries
 }
 
 // mergeImages 按纵向锚点把图片插入文字块序列，保持各自内部的顺序不变。
@@ -97,20 +107,19 @@ func mergeImages(blocks []Block, images []textdoc.Image) []Block {
 	if len(images) == 0 {
 		return blocks
 	}
-	pending := append([]textdoc.Image(nil), images...)
-	merged := make([]Block, 0, len(blocks)+len(pending))
+	merged := make([]Block, 0, len(blocks)+len(images))
 	inserted := 0
 	for _, block := range blocks {
 		// 先排出锚点在本块之前的图片，保证同一高度上图片在文字之前。
-		for inserted < len(pending) &&
-			BlockAnchor(pending[inserted].Y) <= block.anchor {
-			merged = append(merged, imageBlock(pending[inserted]))
+		for inserted < len(images) &&
+			BlockAnchor(images[inserted].Y) <= block.anchor {
+			merged = append(merged, imageBlock(images[inserted]))
 			inserted++
 		}
 		merged = append(merged, block)
 	}
-	for ; inserted < len(pending); inserted++ {
-		merged = append(merged, imageBlock(pending[inserted]))
+	for ; inserted < len(images); inserted++ {
+		merged = append(merged, imageBlock(images[inserted]))
 	}
 	return merged
 }

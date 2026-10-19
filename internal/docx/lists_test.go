@@ -1,6 +1,7 @@
 package docx
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -81,35 +82,39 @@ func TestFilterCredibleListItems(t *testing.T) {
 	cases := []struct {
 		name  string
 		items []ListItem
-		want  bool
+		want  []int
 	}{
-		{"连续递增", items([2]int{arabic, 1}, [2]int{arabic, 2}, [2]int{arabic, 3}), true},
+		{"连续递增", items([2]int{arabic, 1}, [2]int{arabic, 2}, [2]int{arabic, 3}), []int{0, 1, 2}},
 		// 同一页里的两个独立列表：中间隔着非条目行，各自成段校验。
 		{"两个独立列表", items([2]int{arabic, 1}, [2]int{arabic, 2},
-			gap, [2]int{arabic, 1}, [2]int{arabic, 2}), true},
-		{"跳号", items([2]int{arabic, 1}, [2]int{arabic, 3}), false},
+			gap, [2]int{arabic, 1}, [2]int{arabic, 2}), []int{0, 1, 3, 4}},
+		{"跳号", items([2]int{arabic, 1}, [2]int{arabic, 3}), nil},
 		// 回到 1 按「重新编号」处理：同一页里「一、二、」之后接「1. 2. 3.」
 		// 是常见写法。
-		{"回到 1 视为重新编号", items([2]int{arabic, 2}, [2]int{arabic, 1}, [2]int{arabic, 2}), true},
+		{"回到 1 视为重新编号", items([2]int{arabic, 2}, [2]int{arabic, 1}, [2]int{arabic, 2}), []int{1, 2}},
 		// 倒序的末行自成新段且不可信，被丢掉，前面的 1.2.3. 仍是可信列表。
-		{"真倒序", items([2]int{arabic, 1}, [2]int{arabic, 2}, [2]int{arabic, 3}, [2]int{arabic, 2}), true},
-		{"只有一条编号", items([2]int{arabic, 1}), false},
-		{"孤立的项目符号", items([2]int{bullet, 1}), true},
+		{"真倒序", items([2]int{arabic, 1}, [2]int{arabic, 2}, [2]int{arabic, 3}, [2]int{arabic, 2}), []int{0, 1, 2}},
+		{"只有一条编号", items([2]int{arabic, 1}), nil},
+		{"孤立的项目符号", items([2]int{bullet, 1}), []int{0}},
+		{"项目符号之间不检查递增", items([2]int{bullet, 1}, [2]int{bullet, 1}), []int{0, 1}},
+		{"项目符号不打断编号", items([2]int{arabic, 1}, [2]int{bullet, 1}, [2]int{arabic, 2}), []int{0, 1, 2}},
 		// 跨页延续的列表（每页只有一条）会漏判，这是有意的取舍。
-		{"每段只有一条编号", items([2]int{arabic, 1}, gap, [2]int{arabic, 2}), false},
-		{"空", nil, false},
+		{"每段只有一条编号", items([2]int{arabic, 1}, gap, [2]int{arabic, 2}), nil},
+		{"空", nil, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := FilterCredibleListItems(tc.items)
-			kept := 0
-			for _, item := range got {
-				if item.marker != "" {
-					kept++
-				}
+			original := slices.Clone(tc.items)
+			want := make([]ListItem, len(tc.items))
+			for _, index := range tc.want {
+				want[index] = tc.items[index]
 			}
-			if (kept > 0) != tc.want {
-				t.Errorf("保留条目 = %d，期望可信 = %v（输入 %+v）", kept, tc.want, tc.items)
+			got := FilterCredibleListItems(tc.items)
+			if !slices.Equal(got, want) {
+				t.Errorf("保留条目 = %+v，期望 %+v", got, want)
+			}
+			if !slices.Equal(tc.items, original) {
+				t.Error("列表筛选修改了输入条目")
 			}
 		})
 	}

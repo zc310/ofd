@@ -16,6 +16,13 @@ const emuPerMillimeter = 36000.0
 // EMU 把毫米换算成 EMU。
 func EMU(mm float64) int { return int(mm*emuPerMillimeter + 0.5) }
 
+// validImageDimension 要求尺寸换算后至少为 1 EMU 且不溢出 int。
+// 直接比较换算值也会拒绝 NaN 与无穷值。
+func validImageDimension(mm float64) bool {
+	emu := mm * emuPerMillimeter
+	return emu >= 0.5 && emu < float64(int(^uint(0)>>1))
+}
+
 // 以下结构体描述 w:drawing 里内嵌图片的 XML 形状。字段顺序遵循各自 schema 的
 // sequence 定义：CT_Inline 是 extent、effectExtent、docPr、cNvGraphicFramePr、
 // graphic；pic:pic 是 nvPicPr、blipFill、spPr。顺序错了 Word 会判定文档损坏，
