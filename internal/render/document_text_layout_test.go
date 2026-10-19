@@ -2,9 +2,11 @@ package render
 
 import (
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
@@ -138,5 +140,46 @@ func TestTextGlyphBoxFollowsFontVerticalMetrics(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// run 索引跳过空文本和不可见对象，CGTransform 的位置则按对象内 Unicode 字符计数。
+// 只请求后面的 run 时，也必须保留前面 TextCode 对字符位置的贡献。
+func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {
+	invisible := textItem(models.StBox{Width: 12, Height: 3}, nil)
+	invisible.Text.Visible.Set(false)
+	invisible.Text.TextCode = []models.TextCode{{Value: "hidden"}}
+	object := textItem(models.StBox{X: 10, Y: 20, Width: 12, Height: 3}, nil)
+	object.Text.Size = 3
+	object.Text.TextCode = []models.TextCode{{}, {Value: "中"}, {Value: "fi", X: 4}}
+	object.Text.CGTransform = []models.CTCGTransform{{CodePosition: 1, CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{7}}}
+	block := models.PageItem{
+		Kind:  models.PageItemBlock,
+		Block: &models.PageBlock{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{object}}},
+	}
+	page := parser.NewPage(models.PageContent{Content: &models.Content{Layer: []*models.Layer{
+		{CTPageBlock: models.CTPageBlock{Items: []models.PageItem{invisible, block}}},
+	}}})
+	doc := &Document{Document: &parser.Document{}, fonts: metricsFontEngine{face: metricsFontFace{ascent: 3}}}
+	t.Cleanup(doc.Close)
+	if got := doc.TextValues(page); !reflect.DeepEqual(got, []string{"中", "fi"}) {
+		t.Fatalf("TextValues = %v", got)
+	}
+	all := doc.TextLayouts(page)
+	if len(all) != 2 || len(all[1].Glyphs) != 2 {
+		t.Fatalf("layouts = %+v", all)
+	}
+	for i, glyph := range all[1].Glyphs {
+		if glyph.Width != 1.5 || glyph.X != 14+float64(i)*1.5 {
+			t.Errorf("ligature character %d = %+v, want width 1.5 and x %g", i, glyph, 14+float64(i)*1.5)
+		}
+	}
+	if got := doc.TextLayoutsForRuns(page, []int{1}); !reflect.DeepEqual(got, all[1:]) {
+		t.Fatalf("selected layout lost character position: %+v, want %+v", got, all[1:])
+	}
+	for _, indices := range [][]int{nil, {}, {-1, -2}, {99}} {
+		if got := doc.TextLayoutsForRuns(page, indices); len(got) != 0 {
+			t.Errorf("indices %v returned layouts: %+v", indices, got)
+		}
 	}
 }
