@@ -309,10 +309,12 @@ func TestProcessStartTimeIsSane(t *testing.T) {
 	if !ok {
 		t.Fatal("procStartTime 应可用")
 	}
-	now := float64(time.Now().Unix())
+	// procStartTime 保留时钟 tick 的小数秒，当前时间也需保留小数，
+	// 否则进程刚启动时 Unix() 的整秒截断会让 age 错算为负数。
+	now := float64(time.Now().UnixNano()) / float64(time.Second)
 	age := now - start
 	if age < 0 || age > 86400 {
-		t.Errorf("进程启动时间 = %v，距今 %.0f 秒，不在合理范围", start, age)
+		t.Errorf("进程启动时间 = %v，距今 %.3f 秒，不在合理范围", start, age)
 	}
 }
 

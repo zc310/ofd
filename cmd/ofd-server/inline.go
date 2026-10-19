@@ -19,7 +19,7 @@ import (
 // 让客户端能做出正确反应。
 const inlineWaitLimit = 5 * time.Second
 
-// 同步转换的响应头。名字会被 fasthttp 规范化，见 apiKeyHeader 处的说明。
+// 同步转换的响应头。HTTP 头名称不区分大小写，由 net/http 规范化。
 const (
 	jobIDHeader = "X-OFD-Job-Id"
 	tookHeader  = "X-OFD-Took-Ms"

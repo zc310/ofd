@@ -22,9 +22,6 @@ import (
 	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/server/allowlist"
-
-	"github.com/valyala/fasthttp"
-
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
 	"github.com/zc310/ofd/internal/server/notify"
@@ -280,11 +277,11 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 // buildJob 校验请求并生成任务记录。
 func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 	if request.Input.Kind != "" && request.Input.Kind != convertersvc.InputUpload && request.Input.Kind != convertersvc.InputURL {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 			msg: fmt.Sprintf("未知输入种类 %q", request.Input.Kind)}
 	}
 	if request.Input.Kind == convertersvc.InputURL && request.Input.URL == "" {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "input.url 不能为空"}
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: "input.url 不能为空"}
 	}
 	if request.Input.Kind == convertersvc.InputURL {
 		if err := s.checkInputURL(request.Input.URL); err != nil {
@@ -292,15 +289,15 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		}
 	}
 	if request.Input.Kind == convertersvc.InputUpload && len(request.Input.Bytes) == 0 {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "input.bytes 不能为空"}
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: "input.bytes 不能为空"}
 	}
 	if request.Output.Format == "" {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "output.format 不能为空"}
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: "output.format 不能为空"}
 	}
 	// 文件名在这里就拒掉，而不是等转换跑完才失败：非法文件名是请求本身的问题，
 	// 让它占一个队列位置再报 failed 是白排队。完整规则见 convertersvc。
 	if err := convertersvc.ValidateOutputFileName(request.Output.FileName); err != nil {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: err.Error()}
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: err.Error()}
 	}
 	// 任务 ID 先定下来：输出目录要用它做隔离。
 	id := newJobID()
@@ -324,7 +321,7 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		// 子目录堆在 output_dir 一层里。
 		relative = filepath.Join(jobDirLevels(id)...)
 	} else if err := validateRelativeSubdir(relative); err != nil {
-		return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+		return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 			msg: "output.dir 非法: " + err.Error()}
 	}
 	request.Output.Dir = filepath.Join(s.cfg.OutputDir, relative)
@@ -336,7 +333,7 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		if _, ok := s.registry.Lookup(request.Notify.Target); !ok {
 			// 未注册的目标名直接拒绝，而不是接受后在投递时才失败：
 			// 调用方需要当场知道通知不会送达。
-			return nil, &requestError{kind: "unknown_notify_target", status: fasthttp.StatusBadRequest,
+			return nil, &requestError{kind: "unknown_notify_target", status: http.StatusBadRequest,
 				msg: fmt.Sprintf("未注册的通知目标 %q", request.Notify.Target)}
 		}
 		notifyTarget = request.Notify.Target
@@ -345,7 +342,7 @@ func (s *Server) buildJob(request *submitRequest) (*jobstore.Job, error) {
 		// 一条通知都收不到，而调用方能观察到的只有"没收到"——那是最难查的
 		// 失败形态。事件集合随请求演进，旧的拼法今天合法不代表一直合法。
 		if err := validateNotifyEvents(notifyEvents); err != nil {
-			return nil, &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+			return nil, &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 				msg: "notify.events 非法: " + err.Error()}
 		}
 	}
@@ -446,18 +443,18 @@ const maxSubdirBytes = 400
 func (s *Server) checkInputURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "input.url 不合法: " + err.Error()}
+		return &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: "input.url 不合法: " + err.Error()}
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+		return &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 			msg: "input.url 只支持 http 与 https"}
 	}
 	host := parsed.Hostname()
 	if host == "" {
-		return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest, msg: "input.url 缺少主机名"}
+		return &requestError{kind: "invalid_request", status: http.StatusBadRequest, msg: "input.url 缺少主机名"}
 	}
 	if s.allowlist == nil || s.allowlist.Empty() {
-		return &requestError{kind: "url_input_disabled", status: fasthttp.StatusForbidden,
+		return &requestError{kind: "url_input_disabled", status: http.StatusForbidden,
 			msg: "本服务未启用 URL 输入（allow_input_url_hosts 为空），请改为上传内容"}
 	}
 	// 字面量 IP 走 AllowAddr，白名单条目是 CIDR 时它才认；主机名走 AllowedHost。
@@ -466,13 +463,13 @@ func (s *Server) checkInputURL(raw string) error {
 	// "allow 10.1.0.0/16" 这类受控内网配置在提交阶段就被误拒。
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if err := s.allowlist.AllowAddr(addr); err != nil {
-			return &requestError{kind: "url_not_allowed", status: fasthttp.StatusForbidden,
+			return &requestError{kind: "url_not_allowed", status: http.StatusForbidden,
 				msg: fmt.Sprintf("地址 %s 不可访问: %v", host, err)}
 		}
 		return nil
 	}
 	if !s.allowlist.AllowedHost(host) {
-		return &requestError{kind: "url_not_allowed", status: fasthttp.StatusForbidden,
+		return &requestError{kind: "url_not_allowed", status: http.StatusForbidden,
 			msg: fmt.Sprintf("主机 %q 不在允许列表内", host)}
 	}
 	return nil
@@ -566,7 +563,7 @@ func statusForRequestError(err error) int {
 	if errors.As(err, &reqErr) {
 		return reqErr.status
 	}
-	return fasthttp.StatusBadRequest
+	return http.StatusBadRequest
 }
 
 func codeForRequestError(err error) string {
@@ -716,22 +713,22 @@ func (s *Server) checkRemoteTarget(out *convertersvc.Output) error {
 		// 本地落点不该带 remote：给了也没地方用，静默忽略会让调用方以为自己
 		// 传了远程目标、产物其实落在了本地。
 		if out.Remote.Target != "" || out.Remote.Path != "" {
-			return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+			return &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 				msg: fmt.Sprintf("output.remote 只在 output.kind 为 ftp/s3/webdav/sftp 时有效，当前是 %s", out.Kind)}
 		}
 		return nil
 	}
 	if out.Remote.Target == "" {
-		return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+		return &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 			msg: "output.remote.target 不能为空"}
 	}
 	if !s.remoteTargetRegistered(out.Kind, out.Remote.Target) {
-		return &requestError{kind: "unknown_remote_target", status: fasthttp.StatusBadRequest,
+		return &requestError{kind: "unknown_remote_target", status: http.StatusBadRequest,
 			msg: fmt.Sprintf("未注册的 %s 目标 %q", out.Kind, out.Remote.Target)}
 	}
 	if path := out.Remote.Path; path != "" {
 		if err := validateRemotePath(path); err != nil {
-			return &requestError{kind: "invalid_request", status: fasthttp.StatusBadRequest,
+			return &requestError{kind: "invalid_request", status: http.StatusBadRequest,
 				msg: "output.remote.path 非法: " + err.Error()}
 		}
 	}

@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/valyala/fasthttp"
-
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
 	"github.com/zc310/ofd/pkg/converter"
@@ -50,31 +48,31 @@ var errUnsafeArtifact = errors.New("产物不是安全的普通文件")
 func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathParam(r, "id")
 	if !ok {
-		writeError(w, fasthttp.StatusNotFound, "not_found", "任务 ID 不合法")
+		writeError(w, http.StatusNotFound, "not_found", "任务 ID 不合法")
 		return
 	}
 	job, err := s.store.Get(id)
 	if err != nil {
 		s.log.Error("查询任务失败", "job", id, "err", err)
-		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "查询失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "查询失败")
 		return
 	}
 	if job == nil {
-		writeError(w, fasthttp.StatusNotFound, "job_not_found", "任务不存在")
+		writeError(w, http.StatusNotFound, "job_not_found", "任务不存在")
 		return
 	}
 	if !job.State.Terminal() {
-		writeError(w, fasthttp.StatusConflict, "job_not_finished",
+		writeError(w, http.StatusConflict, "job_not_finished",
 			fmt.Sprintf("任务处于 %s，还没到终态", job.State))
 		return
 	}
 	if job.State != jobstore.StateSucceeded {
-		writeError(w, fasthttp.StatusConflict, "job_not_succeeded",
+		writeError(w, http.StatusConflict, "job_not_succeeded",
 			fmt.Sprintf("任务终态为 %s，没有可取回的产物", job.State))
 		return
 	}
 	if err := checkServableOutput(job.Output); err != nil {
-		writeError(w, fasthttp.StatusConflict, "not_downloadable", err.Error())
+		writeError(w, http.StatusConflict, "not_downloadable", err.Error())
 		return
 	}
 
@@ -84,7 +82,7 @@ func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
 	dir, err := s.resolveOutputDir(job)
 	if err != nil {
 		s.log.Error("产物目录不可用", "job", id, "err", err)
-		writeError(w, fasthttp.StatusConflict, "not_downloadable", err.Error())
+		writeError(w, http.StatusConflict, "not_downloadable", err.Error())
 		return
 	}
 
@@ -202,25 +200,25 @@ func (s *Server) serveOneFile(w http.ResponseWriter, dir *os.Root, job *jobstore
 	defer dir.Close()
 	target, ok := recordedFile(job.Output.Files, name)
 	if !ok {
-		writeError(w, fasthttp.StatusNotFound, "file_not_found",
+		writeError(w, http.StatusNotFound, "file_not_found",
 			fmt.Sprintf("任务 %s 没有名为 %q 的产物", job.ID, name))
 		return
 	}
 	file, err := openRecordedFile(dir, target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errUnsafeArtifact) {
-			writeError(w, fasthttp.StatusNotFound, "file_not_found",
+			writeError(w, http.StatusNotFound, "file_not_found",
 				fmt.Sprintf("产物文件已不存在：%s", target))
 			return
 		}
 		s.log.Error("打开产物失败", "job", job.ID, "file", target, "err", err)
-		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "读取产物失败")
 		return
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		writeError(w, fasthttp.StatusInternalServerError, "internal_error", "读取产物失败")
+		writeError(w, http.StatusInternalServerError, "internal_error", "读取产物失败")
 		return
 	}
 	w.Header().Set("Content-Type", contentTypeFor(target))
@@ -243,13 +241,13 @@ func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore
 	files := job.Output.Files
 	if len(files) == 0 {
 		_ = dir.Close()
-		writeError(w, fasthttp.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
+		writeError(w, http.StatusNotFound, "file_not_found", "任务没有记录任何产物文件")
 		return
 	}
 	for _, name := range files {
 		if !isRecordedFileName(name) {
 			_ = dir.Close()
-			writeError(w, fasthttp.StatusInternalServerError, "internal_error", errInvalidArtifactList.Error())
+			writeError(w, http.StatusInternalServerError, "internal_error", errInvalidArtifactList.Error())
 			return
 		}
 	}
@@ -259,15 +257,15 @@ func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore
 		s.log.Error("生成产物归档失败", "job", job.ID, "err", err)
 		switch {
 		case errors.Is(err, os.ErrNotExist), errors.Is(err, errUnsafeArtifact):
-			writeError(w, fasthttp.StatusNotFound, "file_not_found", "归档中的产物文件不可用")
+			writeError(w, http.StatusNotFound, "file_not_found", "归档中的产物文件不可用")
 		case errors.Is(err, errArtifactTooLarge):
-			writeError(w, fasthttp.StatusRequestEntityTooLarge, "file_too_large", err.Error())
+			writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", err.Error())
 		case errors.Is(err, errArtifactChanged):
-			writeError(w, fasthttp.StatusConflict, "artifact_changed", err.Error())
+			writeError(w, http.StatusConflict, "artifact_changed", err.Error())
 		case errors.Is(err, errInvalidArtifactList):
-			writeError(w, fasthttp.StatusInternalServerError, "internal_error", err.Error())
+			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		default:
-			writeError(w, fasthttp.StatusInternalServerError, "internal_error", "生成产物归档失败")
+			writeError(w, http.StatusInternalServerError, "internal_error", "生成产物归档失败")
 		}
 		return
 	}
@@ -275,7 +273,7 @@ func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore
 	if size > maxInt {
 		_ = archive.Close()
 		_ = os.Remove(archive.Name())
-		writeError(w, fasthttp.StatusRequestEntityTooLarge, "archive_too_large", "ZIP 归档超过当前平台的响应大小上限")
+		writeError(w, http.StatusRequestEntityTooLarge, "archive_too_large", "ZIP 归档超过当前平台的响应大小上限")
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
