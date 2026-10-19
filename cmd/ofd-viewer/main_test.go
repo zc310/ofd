@@ -516,24 +516,39 @@ func TestPageLoadingHintTimeoutIsCancelledOnHide(t *testing.T) {
 }
 
 func TestPageLoadingHintTimeoutHidesStuckHint(t *testing.T) {
-	v := newLoadedTestViewer(t)
 	original := pageLoadingTimeout
 	pageLoadingTimeout = 10 * time.Millisecond
 	t.Cleanup(func() { pageLoadingTimeout = original })
 
-	// 模拟渲染任务丢失：提示只显示，没有任何回调会关闭它。
-	v.showPageLoading(1)
-	sequence := v.pageLoadingSeq.Load()
-	// 超时回调在后台线程执行，只观察原子序号，避免与界面状态竞争。
-	// hidePageLoading 只在真正隐藏弹窗时才会推进序号。
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if v.pageLoadingSeq.Load() != sequence {
-			return
-		}
-		time.Sleep(time.Millisecond)
+	for _, tc := range []struct {
+		name  string
+		delay time.Duration
+	}{
+		{"observe immediately", 0},
+		{"observe after timeout", 4 * pageLoadingTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newLoadedTestViewer(t)
+			// 启动定时器前记录预期的挂起序号：armPageLoadingTimeout 会递增一次，
+			// 关闭提示时再递增。不能在 show 后才取基线，CI 调度可能让回调先执行。
+			sequence := v.pageLoadingSeq.Load() + 1
+			// 模拟渲染任务丢失：没有渲染回调会主动关闭提示。
+			v.showPageLoading(1)
+			if tc.delay > 0 {
+				// 覆盖超时先于测试线程首次观察发生的情况。
+				time.Sleep(tc.delay)
+			}
+			// 只观察原子序号，避免与后台回调操作界面状态发生竞争。
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if v.pageLoadingSeq.Load() > sequence {
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+			t.Fatal("加载提示超时后没有被自动关闭")
+		})
 	}
-	t.Fatal("加载提示超时后没有被自动关闭")
 }
 
 func TestExpandPageWindow(t *testing.T) {
