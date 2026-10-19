@@ -8,8 +8,10 @@
 
 <p align="center">
   <a href="https://pkg.go.dev/github.com/zc310/ofd"><img src="https://pkg.go.dev/badge/github.com/zc310/ofd.svg" alt="GoDoc"></a>
+  <a href="https://github.com/zc310/ofd/releases/latest"><img src="https://img.shields.io/github/v/release/zc310/ofd" alt="GitHub Release"></a>
   <a href="https://github.com/zc310/ofd/actions/workflows/go.yml"><img src="https://github.com/zc310/ofd/actions/workflows/go.yml/badge.svg" alt="Go Build &amp; Test"></a>
   <a href="https://coveralls.io/github/zc310/ofd?branch=main"><img src="https://coveralls.io/repos/github/zc310/ofd/badge.svg?branch=main" alt="Coverage Status"></a>
+  <a href="https://github.com/zc310/ofd/stargazers"><img src="https://img.shields.io/github/stars/zc310/ofd" alt="GitHub Stars"></a>
 </p>
 
 用 Go 解析、创建、转换、渲染、校验和分析 OFD 文档。提供 Go API、命令行工具、
