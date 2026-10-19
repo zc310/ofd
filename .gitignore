@@ -44,3 +44,7 @@ cmd/ofd-wasm/web/ofd.wasm
 cmd/ofd-wasm/web/wasm_exec.js
 cmd/ofd-wasm/web/service-worker.js
 cmd/ofd-viewer/wasm/
+
+# Generated branding previews and raster exports; keep SVG sources
+/docs/branding/*.png
+/docs/branding/*preview*

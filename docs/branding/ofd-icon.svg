@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">OFD Go Toolkit</title>
+  <desc id="desc">A cyan Go-inspired gopher holding a white folded document with geometric OFD lettering, on a deep-blue rounded square.</desc>
+  <defs>
+    <linearGradient id="background" x1="52" y1="36" x2="456" y2="488" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#173F60"/>
+      <stop offset="1" stop-color="#081B33"/>
+    </linearGradient>
+    <radialGradient id="light" cx="256" cy="188" r="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16C9EA" stop-opacity=".15"/>
+      <stop offset="1" stop-color="#16C9EA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fur" x1="256" y1="116" x2="256" y2="346" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4CDAEF"/>
+      <stop offset="1" stop-color="#00A5CE"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="256" y1="282" x2="256" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EFF8FC"/>
+    </linearGradient>
+  </defs>
+
+  <g id="tile">
+    <rect x="24" y="24" width="464" height="464" rx="110" fill="url(#background)"/>
+    <rect x="24" y="24" width="464" height="464" rx="110" fill="url(#light)"/>
+    <rect x="25" y="25" width="462" height="462" rx="109" fill="none" stroke="#FFFFFF" stroke-opacity=".09" stroke-width="2"/>
+  </g>
+
+  <g id="gopher-and-document">
+    <!-- Ears sit behind the head; generous shapes survive small exports. -->
+    <g stroke="#0B5976" stroke-width="6">
+      <circle cx="151" cy="154" r="29" fill="#2BC9E5"/>
+      <circle cx="361" cy="154" r="29" fill="#2BC9E5"/>
+    </g>
+    <circle cx="151" cy="154" r="12" fill="#087E9E"/>
+    <circle cx="361" cy="154" r="12" fill="#087E9E"/>
+
+    <!-- Original vector drawing inspired by the Go Gopher; see README.md. -->
+    <path d="M143 314V210C143 145 183 115 256 115S369 145 369 210V314Z" fill="url(#fur)" stroke="#0B5976" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M165 167C185 141 215 132 249 132" fill="none" stroke="#A5F1F9" stroke-opacity=".38" stroke-width="8" stroke-linecap="round"/>
+
+    <g fill="#FFFFFF" stroke="#0B5976" stroke-width="6">
+      <circle cx="213" cy="194" r="33"/>
+      <circle cx="299" cy="194" r="33"/>
+    </g>
+    <g fill="#102F47">
+      <circle cx="220" cy="203" r="11"/>
+      <circle cx="292" cy="203" r="11"/>
+    </g>
+    <g fill="#FFFFFF">
+      <circle cx="223" cy="199" r="3"/>
+      <circle cx="295" cy="199" r="3"/>
+    </g>
+    <ellipse cx="256" cy="248" rx="27" ry="19" fill="#F9E8CA"/>
+    <g fill="#FFFFFF" stroke="#0B5976" stroke-width="3">
+      <rect x="242" y="247" width="14" height="25" rx="3"/>
+      <rect x="256" y="247" width="14" height="25" rx="3"/>
+    </g>
+    <ellipse cx="256" cy="232" rx="16" ry="10" fill="#102F47"/>
+
+    <!-- Paper, fold, and the two paws that hold the document. -->
+    <path d="M128 292H358L402 336V420Q402 440 382 440H128Q108 440 108 420V312Q108 292 128 292Z" fill="#020C1B" fill-opacity=".28"/>
+    <path d="M128 282H358L402 326V410Q402 430 382 430H128Q108 430 108 410V302Q108 282 128 282Z" fill="url(#paper)"/>
+    <path d="M358 282V308Q358 326 376 326H402Z" fill="#A8E5F1"/>
+    <path d="M358 309Q358 328 377 328H402" fill="none" stroke="#D0EBF2" stroke-width="3"/>
+    <g fill="#29C7E2" stroke="#0B5976" stroke-width="5">
+      <path d="M114 308C102 308 97 318 99 330L101 340C103 352 113 357 123 351L133 344V317Z"/>
+      <path d="M398 308C410 308 415 318 413 330L411 340C409 352 399 357 389 351L379 344V317Z"/>
+    </g>
+
+    <!-- OFD is drawn as paths: there is no font dependency. -->
+    <g id="ofd-lettering" fill="#153A56" fill-rule="evenodd">
+      <path d="M166 332H185Q207 332 207 354V374Q207 396 185 396H166Q144 396 144 374V354Q144 332 166 332ZM169 348Q160 348 160 357V371Q160 380 169 380H182Q191 380 191 371V357Q191 348 182 348Z"/>
+      <path d="M234 332H285V348H251V358H279V374H251V396H234Z"/>
+      <path d="M310 332H332Q370 332 370 364T332 396H310ZM327 348V380H332Q353 380 353 364T332 348Z"/>
+    </g>
+  </g>
+</svg>
