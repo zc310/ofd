@@ -1,6 +1,6 @@
 # 文档目录
 
-本目录提供 OFD Go Toolkit 的格式支持清单、库使用指南、维护文档、标准资料和运行截图索引。首次使用可从[主 README 的快速开始](../README.md#快速开始)进入。
+本目录提供 OFD Go Toolkit 的格式支持清单、库使用指南、构建与维护文档、标准资料和运行截图索引。首次使用可从[主 README 的快速开始](../README.md#快速开始)进入。
 
 ## 支持清单
 
@@ -17,11 +17,12 @@
 
 | 文档 | 内容 |
 |------|------|
+| [Go API 使用指南](GO-API.md) | 输入输出、格式导入、按页阅读、创建、合并、签章与字体说明。 |
 | [转换 API 与示例](../pkg/converter/examples_test.go) | OFD 输出、格式导入、选页和 PDF 资源预算的可运行 Go 示例。 |
 | [按页阅读 API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader) | 页面渲染、文字、搜索、导航、版本与导出。 |
 | [创建器库指南](../pkg/creator/README.md) | Go 创建 API、文字定位、资源、页面组织、附加结构和流式创建。 |
 | [签署与验证指南](../pkg/sign/README.md) | 外部命令签署、SES 印章与签章生成、完整验证与证据配置。 |
-| [主 README 的 Go API 示例](../README.md#go-api) | 接入转换、按页阅读、创建、合并与签章。 |
+| [主 README 的 Go API 示例](../README.md#go-api) | 依赖安装、OFD 转 PDF 入门示例与各包入口。 |
 
 ## 开发与维护
 
@@ -29,6 +30,7 @@
 
 | 文档 | 内容 |
 |------|------|
+| [构建与打包指南](BUILDING.md) | 运行依赖、Make 目标、平台工具链、交叉编译、Android 与 Web 打包。 |
 | [PDF 转换维护说明](../internal/pdf2ofd/README.md) | 转换链路、不变量、回归入口、外部字体、独立阅读器验证与依赖补丁。 |
 | [内嵌字体修复](../internal/fontrepair/README.md) | OpenType/CFF 格式依据、字形映射、稀疏 CID 兼容和回归入口。 |
 | [Adobe-GB1 映射数据](../internal/cidmap/README.md) | 字体修复与 PDF 提取共用的数据来源、许可及生成方法。 |
