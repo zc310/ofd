@@ -47,7 +47,7 @@ func defaultReaderMenuItems(state defaultReaderState, setDefault func()) []*fyne
 	if state == defaultReaderUnavailable {
 		return nil
 	}
-	item := fyne.NewMenuItemWithIcon(defaultReaderMenuLabel, theme.SettingsIcon(), setDefault)
+	item := fyne.NewMenuItemWithIcon(tr(defaultReaderMenuLabel), theme.SettingsIcon(), setDefault)
 	item.Checked = state == defaultReaderIsDefault
 	return []*fyne.MenuItem{item}
 }
@@ -105,13 +105,13 @@ func (v *viewer) showDefaultReaderPrompt() {
 	if v.closed.Load() {
 		return
 	}
-	neverAgain := widget.NewCheck("不再提示", nil)
+	neverAgain := widget.NewCheck(tr("不再提示"), nil)
 	content := container.NewVBox(
-		widget.NewLabel("双击 .ofd 文件时，打开它的可能不是 OFD Viewer。"),
-		widget.NewLabel("是否把 OFD Viewer 设为 .ofd 文件的默认阅读器？"),
+		widget.NewLabel(tr("双击 .ofd 文件时，打开它的可能不是 OFD Viewer。")),
+		widget.NewLabel(tr("是否把 OFD Viewer 设为 .ofd 文件的默认阅读器？")),
 		neverAgain,
 	)
-	dialog.NewCustomConfirm(defaultReaderPromptTitle, defaultReaderSetLabel, "关闭", content,
+	dialog.NewCustomConfirm(tr(defaultReaderPromptTitle), tr(defaultReaderSetLabel), tr("关闭"), content,
 		func(confirmed bool) {
 			outcome := resolveDefaultReaderPrompt(confirmed, neverAgain.Checked)
 			if outcome.remember {
@@ -132,7 +132,7 @@ func (v *viewer) setDefaultReaderFromMenu() {
 		return
 	}
 	if v.defaultReader == defaultReaderIsDefault {
-		dialog.ShowInformation("已经是默认阅读器", "OFD Viewer 已经是 .ofd 文件的默认阅读器。", v.window)
+		dialog.ShowInformation(tr("已经是默认阅读器"), tr("OFD Viewer 已经是 .ofd 文件的默认阅读器。"), v.window)
 		return
 	}
 	v.applyDefaultReader()
@@ -155,12 +155,12 @@ func (v *viewer) applyDefaultReader() {
 			}
 			if err != nil {
 				slog.Error("设置默认阅读器失败", "error", err)
-				dialog.ShowInformation("设置默认阅读器失败", err.Error(), v.window)
+				dialog.ShowInformation(tr("设置默认阅读器失败"), err.Error(), v.window)
 				return
 			}
 			v.defaultReader = defaultReaderIsDefault
 			rememberDefaultReaderPrompt()
-			dialog.ShowInformation("已设为默认阅读器", "双击 .ofd 文件将使用 OFD Viewer 打开。", v.window)
+			dialog.ShowInformation(tr("已设为默认阅读器"), tr("双击 .ofd 文件将使用 OFD Viewer 打开。"), v.window)
 		})
 	}()
 }

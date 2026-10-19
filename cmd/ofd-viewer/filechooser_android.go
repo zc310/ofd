@@ -26,8 +26,8 @@ func chooseOpenFile(title string, parent fyne.Window) (fileSelection, error) {
 		}, parent)
 		fileDialog.SetTitleText(title)
 		fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".ofd"}))
-		fileDialog.SetConfirmText("打开")
-		fileDialog.SetDismissText("取消")
+		fileDialog.SetConfirmText(tr("打开"))
+		fileDialog.SetDismissText(tr("取消"))
 		fileDialog.Show()
 	})
 	resultValue := <-result
@@ -50,8 +50,8 @@ func chooseSaveFile(title, fileName, extension string, parent fyne.Window) (file
 		fileDialog.SetTitleText(title)
 		fileDialog.SetFileName(fileName)
 		fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{"." + extension}))
-		fileDialog.SetConfirmText("保存")
-		fileDialog.SetDismissText("取消")
+		fileDialog.SetConfirmText(tr("保存"))
+		fileDialog.SetDismissText(tr("取消"))
 		fileDialog.Show()
 	})
 	resultValue := <-result

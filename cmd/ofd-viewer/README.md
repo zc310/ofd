@@ -14,8 +14,9 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 | macOS   | macOS 12 Monterey 及以上，按 Go 1.26 工具链要求                        |
 | Linux   | 内核 3.2 及以上，需要 X11 或 Wayland 与 OpenGL；无特定发行版版本要求   |
 | Android | Android 5.0（API 21）及以上                                            |
+| Web     | 支持 WebAssembly、WebGL 和文件选择取消事件的现代浏览器                 |
 
-仅提供桌面端和 Android 版本，不提供 iOS 版本。
+支持桌面端、Android 和 Web，不提供 iOS 版本。
 
 ## 功能
 
@@ -35,10 +36,24 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 - 多页图片/矢量格式导出为 ZIP，单页直接保存对应文件
 - 导出支持 DPI 和透明/白色背景设置；DPI 上限按页面尺寸和单页内存预算收紧
 - 支持 Android 文件选择、文档查看和 APK 打包
+- Web 版本通过浏览器选择本地 OFD，导出完成后下载文件；文档在浏览器内处理
 - Android 返回键连续按两次后确认退出程序
 - 信息按钮查看应用信息和 GitHub 项目地址
+- 支持简体中文和英文，可在语言菜单切换并记住选择
 - Linux 启动时检查自己是不是 `.ofd` 的默认阅读器，不是就询问是否设置，可勾选“不再提示”并被记住
 - 右侧菜单提供“设为默认阅读器”，已是默认阅读器时打勾；不支持的系统不显示该项
+
+## 界面语言
+
+右侧菜单的“语言 / Language”可选择“简体中文”或“English”，切换立即生效，
+当前文档、页码、视图和背景色保持不变。语言偏好以 `viewer-language` 保存，
+桌面、Android 和 Web 版本共用同一套翻译。
+
+首次启动时，中文系统使用中文，其他系统使用英文；之后优先使用保存的选择。
+加载或导出过程中语言菜单暂时禁用，操作完成后可以切换。
+文档原有标题、正文和文件名保持原文，系统文件选择器和 Fyne 内置控件使用各自的系统语言。
+
+翻译表位于 `locales/en.json`，中文源文案作为查找键，译文需保留 `%d`、`%s` 等格式占位符。
 
 ## 阅读背景色
 
@@ -126,6 +141,38 @@ make package-viewer-android
 ```bash
 make package-viewer-android-zip
 ```
+
+## Web 打包
+
+Web/WASM 版本右侧菜单提供“使用默认回退字体（Noto Sans SC）”，默认关闭。
+启用后优先读取浏览器 IndexedDB 中的字体；没有可用缓存时，下载
+[Noto Sans SC Regular TTF](https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf)，
+下载或解析失败再尝试
+[WOFF2 备用字体](https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2)。
+只有解析成功的字体才写入 IndexedDB 数据库 `ofd-viewer-fonts` 的 `fonts` 存储，
+后续启动直接使用缓存，不再请求字体地址；损坏的缓存会重新下载并替换。
+
+选项会被记住。字体加载在后台进行，成功后 Fyne 菜单、对话框等界面文字也使用同一份
+Noto Sans SC 字体，并刷新当前页面和缩略图；后续打开的文档和导出也使用该回退字体，
+OFD 内嵌字体优先。界面使用下载的 Regular 字重，等宽和符号文字沿用原主题字体。
+关闭选项会恢复原主题和文档的默认字体选择，保留
+IndexedDB 副本供下次启用。字体加载失败后可再次启用重试；缓存写入失败会显示提示，
+当前会话仍可使用已加载的字体。桌面和 Android 版本不显示此选项。
+字体来源及许可证见 [Web 阅读器第三方声明](../ofd-wasm/web/THIRD_PARTY_NOTICES.md)。
+
+安装 Fyne 命令行工具后，在 `cmd/ofd-viewer` 目录执行：
+
+```bash
+go install fyne.io/tools/cmd/fyne@latest
+fyne package --target=web
+```
+
+生成的 `wasm/` 目录包含页面、WASM 和运行时资源，使用 HTTP 静态文件服务部署；
+也可在当前目录运行 `fyne serve` 本地预览。浏览器需要启用 WebGL。
+
+点击“打开 OFD”选择本地文件，取消选择会返回阅读器。导出时按原文件名和所选格式
+生成下载，保存位置由浏览器设置决定，多页图片/矢量格式仍下载为 ZIP。
+Web 导出会先在内存中生成完整文件，大文档需要相应的浏览器可用内存。
 
 ## 截图
 

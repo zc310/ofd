@@ -42,7 +42,11 @@ import (
 )
 
 // errDocumentChanged 表示导出期间文档被替换或关闭，导出没有完成。
-var errDocumentChanged = errors.New("文档已更改")
+var errDocumentChanged error = documentChangedError{}
+
+type documentChangedError struct{}
+
+func (documentChangedError) Error() string { return tr("文档已更改") }
 
 const (
 	applicationID = "io.github.zc310.ofd"
@@ -128,6 +132,7 @@ func main() {
 	installDesktopIntegration()
 
 	a := app.NewWithID(applicationID)
+	initializeLanguage(a)
 	w := a.NewWindow(applicationTitle())
 	w.SetMaster()
 
@@ -141,6 +146,7 @@ func main() {
 	// 把窗口放到屏幕一角。Fyne 2.x 没有对外的屏幕尺寸接口，居中只能让驱动按当前显示器
 	// 算，因此必须等窗口真正创建之后再请求。
 	w.CenterOnScreen()
+	viewer.initializeFallbackFont()
 
 	if initialFile != "" {
 		viewer.load(initialFile, filepath.Base(initialFile), initialFile)
@@ -154,7 +160,8 @@ func main() {
 }
 
 type viewer struct {
-	window fyne.Window
+	thumbnailHeading *widget.Label
+	window           fyne.Window
 
 	content         *fyne.Container
 	pageLayout      *continuousLayout
@@ -218,6 +225,7 @@ type viewer struct {
 	// defaultReader 是启动时探测到的 .ofd 默认阅读器状态。右侧菜单和启动提示
 	// 共用同一份结果，不各自重新查询——每次开菜单都 fork 一次子进程没有必要。
 	defaultReader defaultReaderState
+	fallbackFont  fallbackFontState
 }
 
 type pageViewMode int
@@ -701,7 +709,7 @@ func (v *viewer) thumbnailRow(page int) int {
 }
 
 func updateThumbnailCell(cell *thumbnailCell, page int, v *viewer) {
-	cell.label.SetText(fmt.Sprintf("第 %d 页", page+1))
+	cell.label.SetText(fmt.Sprintf(tr("第 %d 页"), page+1))
 	if img, ok := v.thumbnails.Get(page); ok {
 		cell.image.Image = img
 	} else {
@@ -787,10 +795,10 @@ func newViewer(window fyne.Window) *viewer {
 	v.openButton = widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
 		v.chooseFile()
 	})
-	v.documentTitle = widget.NewLabelWithStyle("未加载文档", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	v.pageLabel = widget.NewLabel("/ 未加载文档")
+	v.documentTitle = widget.NewLabelWithStyle(tr("未加载文档"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	v.pageLabel = widget.NewLabel(tr("/ 未加载文档"))
 	v.pageEntry = widget.NewEntry()
-	v.pageEntry.SetPlaceHolder("页码")
+	v.pageEntry.SetPlaceHolder(tr("页码"))
 	v.pageEntry.OnSubmitted = func(string) {
 		v.jumpToPage()
 	}
@@ -813,7 +821,8 @@ func newViewer(window fyne.Window) *viewer {
 	rightToolbar := container.NewHBox(pageToolbar, v.menuButton)
 	toolbar := container.NewBorder(nil, nil, leftToolbar, rightToolbar, container.NewCenter(v.documentTitle))
 	v.toolbar = toolbar
-	thumbnailPanel := container.NewBorder(widget.NewLabel("页面"), nil, nil, nil, v.thumbnailList)
+	v.thumbnailHeading = widget.NewLabel(tr("页面"))
+	thumbnailPanel := container.NewBorder(v.thumbnailHeading, nil, nil, nil, v.thumbnailList)
 	thumbnailPanel.Hide()
 	documentArea := container.NewHSplit(thumbnailPanel, v.pageScroll)
 	documentArea.SetOffset(0.2)
@@ -898,38 +907,39 @@ func (v *viewer) showMenu() {
 // buildMenu 组装右侧菜单。菜单项的启用状态和图标都在这里决定，单独拆出来才能被
 // 测试直接断言，不必真的弹出菜单。
 func (v *viewer) buildMenu() *fyne.Menu {
-	exportItem := fyne.NewMenuItemWithIcon("导出", theme.DocumentSaveIcon(), v.showExportDialog)
+	exportItem := fyne.NewMenuItemWithIcon(tr("导出"), theme.DocumentSaveIcon(), v.showExportDialog)
 	exportItem.Disabled = !v.hasPages() || v.loading || v.exporting
 	viewItems := []*fyne.MenuItem{
-		fyne.NewMenuItemWithIcon(viewFitPageLabel, viewModeIcon(viewFitPage), func() { v.setViewMode(viewFitPageLabel) }),
-		fyne.NewMenuItemWithIcon(viewFitWidthLabel, viewModeIcon(viewFitWidth), func() { v.setViewMode(viewFitWidthLabel) }),
-		fyne.NewMenuItemWithIcon(viewFitHeightLabel, viewModeIcon(viewFitHeight), func() { v.setViewMode(viewFitHeightLabel) }),
-		fyne.NewMenuItemWithIcon(viewDoublePageLabel, viewModeIcon(viewDoublePage), func() { v.setViewMode(viewDoublePageLabel) }),
+		fyne.NewMenuItemWithIcon(tr(viewFitPageLabel), viewModeIcon(viewFitPage), func() { v.setViewMode(viewFitPageLabel) }),
+		fyne.NewMenuItemWithIcon(tr(viewFitWidthLabel), viewModeIcon(viewFitWidth), func() { v.setViewMode(viewFitWidthLabel) }),
+		fyne.NewMenuItemWithIcon(tr(viewFitHeightLabel), viewModeIcon(viewFitHeight), func() { v.setViewMode(viewFitHeightLabel) }),
+		fyne.NewMenuItemWithIcon(tr(viewDoublePageLabel), viewModeIcon(viewDoublePage), func() { v.setViewMode(viewDoublePageLabel) }),
 	}
 	viewModes := []pageViewMode{viewFitPage, viewFitWidth, viewFitHeight, viewDoublePage}
 	for i, item := range viewItems {
 		item.Checked = v.pageLayout.mode == viewModes[i]
 		item.Disabled = v.loading || v.exporting
 	}
-	viewItem := fyne.NewMenuItemWithIcon("视图", theme.ZoomFitIcon(), nil)
-	viewItem.ChildMenu = fyne.NewMenu("视图", viewItems...)
+	viewItem := fyne.NewMenuItemWithIcon(tr("视图"), theme.ZoomFitIcon(), nil)
+	viewItem.ChildMenu = fyne.NewMenu(tr("视图"), viewItems...)
 	// 背景色与文档状态无关：加载和导出期间切换都只是改矩形填充色，因此这一项
 	// 始终可用，切换后立即生效且不需要重新渲染页面。
-	backgroundItem := fyne.NewMenuItemWithIcon("背景色", theme.ColorPaletteIcon(), nil)
-	backgroundItem.ChildMenu = fyne.NewMenu("背景色", v.documentBackgroundMenuItems()...)
+	backgroundItem := fyne.NewMenuItemWithIcon(tr("背景色"), theme.ColorPaletteIcon(), nil)
+	backgroundItem.ChildMenu = fyne.NewMenu(tr("背景色"), v.documentBackgroundMenuItems()...)
 	// 文件关联与文档状态无关，因此这一项不受 loading/exporting 影响；平台不支持
 	// 时整项不出现。
-	menuItems := []*fyne.MenuItem{exportItem, viewItem, backgroundItem}
+	menuItems := []*fyne.MenuItem{exportItem, viewItem, backgroundItem, v.languageMenuItem()}
+	menuItems = append(menuItems, v.fallbackFontMenuItems(webFallbackFontSupported)...)
 	menuItems = append(menuItems, defaultReaderMenuItems(v.defaultReader, v.setDefaultReaderFromMenu)...)
 	closeLabel := "退出程序"
 	if v.hasPages() {
 		closeLabel = "关闭文档"
 	}
-	closeItem := fyne.NewMenuItemWithIcon(closeLabel, theme.CancelIcon(), v.closeDocumentOrExit)
+	closeItem := fyne.NewMenuItemWithIcon(tr(closeLabel), theme.CancelIcon(), v.closeDocumentOrExit)
 	closeItem.Disabled = v.loading || v.exporting
 	menuItems = append(menuItems, closeItem,
-		fyne.NewMenuItemWithIcon("关于", theme.InfoIcon(), v.showAppInfo))
-	return fyne.NewMenu("菜单", menuItems...)
+		fyne.NewMenuItemWithIcon(tr("关于"), theme.InfoIcon(), v.showAppInfo))
+	return fyne.NewMenu(tr("菜单"), menuItems...)
 }
 
 func (v *viewer) showExportDialog() {
@@ -945,27 +955,27 @@ func (v *viewer) showExportDialog() {
 	}
 	dpiEntry := widget.NewEntry()
 	dpiEntry.SetText(strconv.Itoa(defaultDPI))
-	dpiEntry.SetPlaceHolder(fmt.Sprintf("%d-%d（受页面尺寸限制）", exportMinDPI, dpiLimit))
+	dpiEntry.SetPlaceHolder(fmt.Sprintf(tr("%d-%d（受页面尺寸限制）"), exportMinDPI, dpiLimit))
 	formatSelect := widget.NewSelect([]string{
-		exportFormatPDF,
-		exportFormatTXT,
-		exportFormatJPG,
-		exportFormatPNG,
-		exportFormatSVG,
-		exportFormatEPS,
-		exportFormatTeX,
+		tr(exportFormatPDF),
+		tr(exportFormatTXT),
+		tr(exportFormatJPG),
+		tr(exportFormatPNG),
+		tr(exportFormatSVG),
+		tr(exportFormatEPS),
+		tr(exportFormatTeX),
 	}, nil)
-	formatSelect.SetSelected(exportFormatPDF)
+	formatSelect.SetSelected(tr(exportFormatPDF))
 	dpiItem := widget.NewFormItem("DPI", dpiEntry)
-	backgroundSelect := widget.NewSelect([]string{exportBackgroundTransparent, exportBackgroundWhite}, nil)
-	backgroundSelect.SetSelected(exportBackgroundTransparent)
+	backgroundSelect := widget.NewSelect([]string{tr(exportBackgroundTransparent), tr(exportBackgroundWhite)}, nil)
+	backgroundSelect.SetSelected(tr(exportBackgroundTransparent))
 	content := widget.NewForm(
-		widget.NewFormItem("格式", formatSelect),
-		widget.NewFormItem("背景颜色", backgroundSelect),
+		widget.NewFormItem(tr("格式"), formatSelect),
+		widget.NewFormItem(tr("背景颜色"), backgroundSelect),
 	)
 	dpiVisible := false
 	formatSelect.OnChanged = func(selected string) {
-		visible := selected == exportFormatJPG || selected == exportFormatPNG
+		visible := exportFormatCode(selected) == "jpg" || exportFormatCode(selected) == "png"
 		if visible == dpiVisible {
 			return
 		}
@@ -977,22 +987,22 @@ func (v *viewer) showExportDialog() {
 		}
 		content.Refresh()
 	}
-	exportDialog := dialog.NewCustomConfirm("导出文档", "导出", "取消", content, func(confirmed bool) {
+	exportDialog := dialog.NewCustomConfirm(tr("导出文档"), tr("导出"), tr("取消"), content, func(confirmed bool) {
 		if !confirmed {
 			return
 		}
 		dpi := defaultDPI
-		if formatSelect.Selected == exportFormatJPG || formatSelect.Selected == exportFormatPNG {
+		if exportFormatCode(formatSelect.Selected) == "jpg" || exportFormatCode(formatSelect.Selected) == "png" {
 			var err error
 			dpi, err = strconv.Atoi(strings.TrimSpace(dpiEntry.Text))
 			if err != nil || dpi < exportMinDPI || dpi > exportMaxDPI {
-				dialog.ShowInformation("导出失败", fmt.Sprintf("DPI 必须是 %d-%d 之间的整数。", exportMinDPI, exportMaxDPI), v.window)
+				dialog.ShowInformation(tr("导出失败"), fmt.Sprintf(tr("DPI 必须是 %d-%d 之间的整数。"), exportMinDPI, exportMaxDPI), v.window)
 				return
 			}
 			// 1200 DPI 对大页面仍会产生数百 MB 的单页栅格，这里按页面实际
 			// 尺寸再收紧一次，避免导出时被系统 OOM 杀掉。
 			if dpi > dpiLimit {
-				dialog.ShowInformation("导出失败", fmt.Sprintf("当前页面尺寸下 DPI 不能超过 %d，否则单页栅格会超过 %d MB。", dpiLimit, exportPageBudget>>20), v.window)
+				dialog.ShowInformation(tr("导出失败"), fmt.Sprintf(tr("当前页面尺寸下 DPI 不能超过 %d，否则单页栅格会超过 %d MB。"), dpiLimit, exportPageBudget>>20), v.window)
 				return
 			}
 		}
@@ -1002,7 +1012,7 @@ func (v *viewer) showExportDialog() {
 }
 
 func exportBackgroundColor(label string) color.Color {
-	if label == exportBackgroundWhite {
+	if label == exportBackgroundWhite || label == tr(exportBackgroundWhite) {
 		return color.White
 	}
 	return color.Transparent
@@ -1020,6 +1030,12 @@ func sameBackground(a, b color.Color) bool {
 }
 
 func exportFormatCode(label string) string {
+	for _, source := range []string{exportFormatPDF, exportFormatTXT, exportFormatJPG, exportFormatPNG, exportFormatSVG, exportFormatEPS, exportFormatTeX} {
+		if label == tr(source) {
+			label = source
+			break
+		}
+	}
 	switch label {
 	case exportFormatTXT:
 		return "txt"
@@ -1057,7 +1073,7 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 	v.exporting = true
 	v.updateControls()
 	go func() {
-		selection, err := chooseSaveFile("导出 OFD", fileName, extension, v.window)
+		selection, err := chooseSaveFile(tr("导出 OFD"), fileName, extension, v.window)
 		fyne.Do(func() {
 			if v.closed.Load() {
 				if selection.output != nil {
@@ -1067,7 +1083,7 @@ func (v *viewer) export(format string, dpi int, background color.Color) {
 			}
 			if err != nil {
 				v.finishExport()
-				dialog.ShowInformation("导出失败", err.Error(), v.window)
+				dialog.ShowInformation(tr("导出失败"), err.Error(), v.window)
 				return
 			}
 			if selection.path == "" && selection.output == nil {
@@ -1107,6 +1123,7 @@ func (v *viewer) exportToWriter(writer io.WriteCloser, format string, dpi int, b
 // export 的路径都必须复位一次；漏掉会让界面永久保持禁用。
 func (v *viewer) finishExport() {
 	v.exporting = false
+	v.syncDefaultFallbackFont()
 	v.updateControls()
 }
 
@@ -1122,6 +1139,10 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 	exportOperation := v.operation.Load()
 	session := v.session
 	documents := append([]*render.Document(nil), v.documents...)
+	var fallbackFonts []string
+	if v.fallbackFont.applied {
+		fallbackFonts = []string{defaultFallbackFontFamily}
+	}
 	go func() {
 		var err error
 		if exportOperation != v.operation.Load() {
@@ -1130,7 +1151,7 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 				_ = pending.Close()
 			}
 		} else {
-			err = writeExport(session, documents, create, pending, format, dpi, background)
+			err = writeExport(session, documents, create, pending, format, dpi, background, fallbackFonts...)
 		}
 		fyne.Do(func() {
 			if v.closed.Load() {
@@ -1139,10 +1160,10 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 			v.hideExportLoading()
 			v.finishExport()
 			if err != nil {
-				dialog.ShowInformation("导出失败", err.Error(), v.window)
+				dialog.ShowInformation(tr("导出失败"), err.Error(), v.window)
 				return
 			}
-			dialog.ShowInformation("导出完成", "文件已成功导出。", v.window)
+			dialog.ShowInformation(tr("导出完成"), tr("文件已成功导出。"), v.window)
 		})
 	}()
 }
@@ -1152,7 +1173,7 @@ func (v *viewer) exportToOutput(create func() (io.WriteCloser, error), pending i
 //
 // 刻意做成同步函数：导出涉及会话引用、外部写入器的所有权和多种错误收尾，
 // 独立出来才能直接验证，不必经过 exportToOutput 的后台协程。
-func writeExport(session *documentSession, documents []*render.Document, create func() (io.WriteCloser, error), pending io.WriteCloser, format string, dpi int, background color.Color) error {
+func writeExport(session *documentSession, documents []*render.Document, create func() (io.WriteCloser, error), pending io.WriteCloser, format string, dpi int, background color.Color, fallbackFonts ...string) error {
 	if !session.acquire() {
 		if pending != nil {
 			_ = pending.Close()
@@ -1164,7 +1185,7 @@ func writeExport(session *documentSession, documents []*render.Document, create 
 	if err != nil {
 		return err
 	}
-	err = exportDocumentsToWriter(documents, writer, format, dpi, background)
+	err = exportDocumentsToWriter(documents, writer, format, dpi, background, fallbackFonts...)
 	// 写入器的所有权在导出期间属于这里，成功失败都要关闭。
 	if closeErr := writer.Close(); err == nil {
 		err = closeErr
@@ -1177,8 +1198,8 @@ func (v *viewer) showExportLoading() {
 		return
 	}
 	progress := widget.NewProgressBarInfinite()
-	title := widget.NewLabelWithStyle("正在导出", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	message := widget.NewLabel("正在生成文件，请稍候...")
+	title := widget.NewLabelWithStyle(tr("正在导出"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	message := widget.NewLabel(tr("正在生成文件，请稍候..."))
 	content := container.NewPadded(container.NewVBox(title, message, progress))
 	v.exportLoading = widget.NewModalPopUp(content, v.window.Canvas())
 	v.exportLoading.Show()
@@ -1192,12 +1213,12 @@ func (v *viewer) hideExportLoading() {
 	v.exportLoading = nil
 }
 
-func exportDocumentsToWriter(documents []*render.Document, output io.Writer, format string, dpi int, background color.Color) error {
+func exportDocumentsToWriter(documents []*render.Document, output io.Writer, format string, dpi int, background color.Color, fallbackFonts ...string) error {
 	if len(documents) == 0 {
-		return fmt.Errorf("文档没有页面")
+		return errors.New(tr("文档没有页面"))
 	}
 	if output == nil {
-		return fmt.Errorf("未设置导出输出")
+		return errors.New(tr("未设置导出输出"))
 	}
 	exportDocs := make([]*render.Document, 0, len(documents))
 	pageCount := 0
@@ -1206,6 +1227,14 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 			continue
 		}
 		exportDoc := exportDocument(doc, background)
+		if exportDoc != doc {
+			defer exportDoc.Close()
+			for _, family := range fallbackFonts {
+				if err := exportDoc.UseFallbackFont(family); err != nil {
+					return err
+				}
+			}
+		}
 		exportDocs = append(exportDocs, exportDoc)
 		for _, page := range exportDoc.Pages {
 			if page != nil {
@@ -1214,7 +1243,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		}
 	}
 	if pageCount == 0 {
-		return fmt.Errorf("文档没有页面")
+		return errors.New(tr("文档没有页面"))
 	}
 	if strings.EqualFold(format, "txt") {
 		parsedDocs := make([]*parser.Document, 0, len(exportDocs))
@@ -1307,13 +1336,13 @@ func (v *viewer) showAppInfo() {
 	content := container.NewVBox(
 		container.NewCenter(icon),
 		widget.NewLabelWithStyle("OFD Viewer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("版本: "+displayVersion()),
-		widget.NewLabel("OFD 文档查看器"),
-		widget.NewLabel("应用 ID: "+applicationID),
-		widget.NewLabel("项目地址:"),
+		widget.NewLabel(tr("版本: ")+displayVersion()),
+		widget.NewLabel(tr("OFD 文档查看器")),
+		widget.NewLabel(tr("应用 ID: ")+applicationID),
+		widget.NewLabel(tr("项目地址:")),
 		widget.NewHyperlink(projectURL, link),
 	)
-	dialog.NewCustom("关于", "关闭", content, v.window).Show()
+	dialog.NewCustom(tr("关于"), tr("关闭"), content, v.window).Show()
 }
 
 // pageSlotStates 计算每个页面的槽位参数。页面区域无法解析时仍然返回条目，
@@ -1392,7 +1421,7 @@ func (v *viewer) chooseFile() {
 	v.loading = true
 	v.updateControls()
 	go func() {
-		selection, err := chooseOpenFile("选择 OFD 文件", v.window)
+		selection, err := chooseOpenFile(tr("选择 OFD 文件"), v.window)
 		fyne.Do(func() {
 			if v.closed.Load() {
 				if selection.input != nil {
@@ -1403,14 +1432,12 @@ func (v *viewer) chooseFile() {
 				return
 			}
 			if err != nil {
-				v.loading = false
-				v.updateControls()
-				dialog.ShowInformation("打开失败", err.Error(), v.window)
+				v.finishLoad()
+				dialog.ShowInformation(tr("打开失败"), err.Error(), v.window)
 				return
 			}
 			if selection.path == "" && selection.input == nil {
-				v.loading = false
-				v.updateControls()
+				v.finishLoad()
 				return
 			}
 			v.load(selection.path, selection.name, selection.input)
@@ -1457,7 +1484,7 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 				if operation == v.operation.Load() && !v.closed.Load() {
 					v.finishLoad()
 					slog.Error("打开 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
-					dialog.ShowInformation("打开失败", fmt.Sprintf("处理 OFD 文件失败: %v", recovered), v.window)
+					dialog.ShowInformation(tr("打开失败"), fmt.Sprintf(tr("处理 OFD 文件失败: %v"), recovered), v.window)
 				}
 			}
 		}()
@@ -1483,7 +1510,7 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 			}
 			v.finishLoad()
 			slog.Error("打开 OFD 失败", "error", err)
-			dialog.ShowInformation("打开失败", err.Error(), v.window)
+			dialog.ShowInformation(tr("打开失败"), err.Error(), v.window)
 			return
 		}
 		published = true
@@ -1495,6 +1522,7 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 // 离开加载流程的路径都必须复位一次；漏掉会让界面永久保持禁用。
 func (v *viewer) finishLoad() {
 	v.loading = false
+	v.syncDefaultFallbackFont()
 	v.updateControls()
 }
 
@@ -1512,7 +1540,7 @@ type documentModel struct {
 // I/O：万页文档在事件线程上要 100ms 以上，必须留在后台。
 func buildDocumentModel(ofd *parser.OFD, fileName string, background color.Color) (*documentModel, error) {
 	if ofd == nil || len(ofd.Documents) == 0 {
-		return nil, fmt.Errorf("没有文档")
+		return nil, errors.New(tr("没有文档"))
 	}
 	documents := make([]*render.Document, 0, len(ofd.Documents))
 	for _, document := range ofd.Documents {
@@ -1520,11 +1548,11 @@ func buildDocumentModel(ofd *parser.OFD, fileName string, background color.Color
 	}
 	pages := collectViewerPages(documents)
 	if len(pages) == 0 {
-		return nil, fmt.Errorf("文档没有页面")
+		return nil, errors.New(tr("文档没有页面"))
 	}
 	states := pageSlotStates(pages)
 	if len(states) != len(pages) {
-		return nil, fmt.Errorf("文档没有页面")
+		return nil, errors.New(tr("文档没有页面"))
 	}
 	return &documentModel{
 		ofd:       ofd,
@@ -1542,14 +1570,21 @@ func buildDocumentModel(ofd *parser.OFD, fileName string, background color.Color
 // 准备好。独立成同步函数是为了能直接验证，不必经过 load 的后台协程。
 func (v *viewer) publishDocument(model *documentModel, filePath, fileName string) error {
 	if model == nil || model.ofd == nil || len(model.pages) == 0 || len(model.states) != len(model.pages) {
-		return fmt.Errorf("没有文档")
+		return errors.New(tr("没有文档"))
+	}
+	fallbackEnabled := v.fallbackFont.enabled && v.fallbackFont.ready
+	if fallbackEnabled {
+		if err := applyDefaultFallbackFont(model.documents, true); err != nil {
+			return err
+		}
 	}
 
 	// 校验通过后才动旧状态：发布失败时用户仍能看到原文档。
 	v.closeDocument()
 	v.ofd = model.ofd
-	v.session = newDocumentSession(model.ofd)
+	v.session = newDocumentSession(model.ofd, model.documents...)
 	v.documents = model.documents
+	v.fallbackFont.applied = fallbackEnabled
 	v.pages = model.pages
 	v.documentTitle.SetText(model.title)
 	v.filePath = filePath
@@ -1770,7 +1805,7 @@ func openOFD(input any) (ofd *parser.OFD, err error) {
 				ofd = nil
 			}
 			slog.Error("解析 OFD 发生 panic", "error", recovered, "stack", string(debug.Stack()))
-			err = fmt.Errorf("打开 OFD 失败: %v", recovered)
+			err = fmt.Errorf(tr("打开 OFD 失败: %v"), recovered)
 		}
 	}()
 	return parser.NewOFD(input)
@@ -1783,7 +1818,7 @@ func closeInput(input any) (err error) {
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("关闭文件失败: %v", recovered)
+			err = fmt.Errorf(tr("关闭文件失败: %v"), recovered)
 		}
 	}()
 	return closer.Close()
@@ -1794,11 +1829,11 @@ func (v *viewer) renderPageImage(doc *render.Document, page *parser.Page, resolu
 		if recovered := recover(); recovered != nil {
 			raster = nil
 			slog.Error("渲染页面发生 panic", "error", recovered, "stack", string(debug.Stack()))
-			err = fmt.Errorf("渲染页面失败: %v", recovered)
+			err = fmt.Errorf(tr("渲染页面失败: %v"), recovered)
 		}
 	}()
 	if doc == nil || doc.Document == nil || page == nil {
-		return nil, fmt.Errorf("页面数据为空")
+		return nil, errors.New(tr("页面数据为空"))
 	}
 	if !valid() {
 		return nil, nil
@@ -1873,12 +1908,12 @@ func (v *viewer) handleAndroidBack() {
 	now := time.Now()
 	if now.Before(v.backDeadline) {
 		v.backDeadline = time.Time{}
-		dialog.ShowConfirm("退出程序", "确定要退出 OFD Viewer 吗？", func(confirmed bool) {
+		dialog.ShowConfirm(tr("退出程序"), tr("确定要退出 OFD Viewer 吗？"), func(confirmed bool) {
 			if confirmed {
 				v.exitApplication()
 				return
 			}
-			v.documentTitle.SetText("未加载文档")
+			v.documentTitle.SetText(tr("未加载文档"))
 		}, v.window)
 		return
 	}
@@ -1889,7 +1924,7 @@ func (v *viewer) handleAndroidBack() {
 		v.thumbnailGeneration.Add(1)
 		v.closeDocument()
 	}
-	v.documentTitle.SetText("再次按返回键退出")
+	v.documentTitle.SetText(tr("再次按返回键退出"))
 	deadline := v.backDeadline
 	time.AfterFunc(androidBackPressWindow, func() {
 		fyne.Do(func() {
@@ -1897,7 +1932,7 @@ func (v *viewer) handleAndroidBack() {
 				return
 			}
 			v.backDeadline = time.Time{}
-			v.documentTitle.SetText("未加载文档")
+			v.documentTitle.SetText(tr("未加载文档"))
 		})
 	})
 }
@@ -2044,8 +2079,8 @@ func (v *viewer) showPageLoading(operation uint64) {
 		return
 	}
 	progress := widget.NewProgressBarInfinite()
-	title := widget.NewLabelWithStyle("加载中", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	message := widget.NewLabel("正在加载页面，请稍候...")
+	title := widget.NewLabelWithStyle(tr("加载中"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	message := widget.NewLabel(tr("正在加载页面，请稍候..."))
 	content := container.NewVBox(title, message, progress)
 	content = container.NewPadded(content)
 	v.pageLoading = widget.NewModalPopUp(content, v.window.Canvas())
@@ -2172,8 +2207,8 @@ func (v *viewer) updateControls() {
 	v.pageEntry.Enable()
 	if !v.hasPages() || v.totalPages == 0 {
 		v.pageToolbar.Hide()
-		v.documentTitle.SetText("未加载文档")
-		v.pageLabel.SetText("/ 未加载文档")
+		v.documentTitle.SetText(tr("未加载文档"))
+		v.pageLabel.SetText(tr("/ 未加载文档"))
 		v.pageEntry.SetText("")
 		return
 	}
@@ -2197,7 +2232,7 @@ func documentTitle(ofd *parser.OFD, fileName string) string {
 	if title := strings.TrimSpace(fileName); title != "" {
 		return title
 	}
-	return "未加载文档"
+	return tr("未加载文档")
 }
 
 func (v *viewer) updateTitle() {
@@ -2232,6 +2267,9 @@ func platformName() string {
 func (v *viewer) close() {
 	if v.closed.Swap(true) {
 		return
+	}
+	if v.fallbackFont.cancel != nil {
+		v.fallbackFont.cancel()
 	}
 	v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
@@ -2289,7 +2327,7 @@ func (v *viewer) closeDocument() {
 	v.thumbnailSelected = -1
 	v.filePath = ""
 	v.fileName = ""
-	v.documentTitle.SetText("未加载文档")
+	v.documentTitle.SetText(tr("未加载文档"))
 	v.pageContent.Refresh()
 	v.pageScroll.Refresh()
 	v.thumbnailList.Refresh()

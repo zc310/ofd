@@ -19,5 +19,5 @@ func detectDefaultReader() defaultReaderState {
 }
 
 func setDefaultReader() error {
-	return errors.New("当前系统不支持由应用自动修改文件关联，请在系统设置中手动把 OFD Viewer 设为 .ofd 文件的默认应用")
+	return errors.New(tr("当前系统不支持由应用自动修改文件关联，请在系统设置中手动把 OFD Viewer 设为 .ofd 文件的默认应用"))
 }

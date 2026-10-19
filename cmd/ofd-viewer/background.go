@@ -214,7 +214,7 @@ func (v *viewer) documentBackgroundMenuItems() []*fyne.MenuItem {
 	items := make([]*fyne.MenuItem, 0, len(documentBackgroundPresets))
 	for _, preset := range documentBackgroundPresets {
 		current := preset
-		item := fyne.NewMenuItem(current.Label, nil)
+		item := fyne.NewMenuItem(tr(current.Label), nil)
 		item.Checked = v.backgroundMode == current.Key
 		// 自定义项的色卡跟着用户取到的颜色走；还没取过色时不画色卡，避免用一个
 		// 假颜色误导。
@@ -262,7 +262,7 @@ func (v *viewer) showCustomDocumentBackground() *dialog.ColorPickerDialog {
 	if v.closed.Load() {
 		return nil
 	}
-	picker := dialog.NewColorPicker("自定义背景色", "选择页面背景颜色", v.applyCustomDocumentBackground, v.window)
+	picker := dialog.NewColorPicker(tr("自定义背景色"), tr("选择页面背景颜色"), v.applyCustomDocumentBackground, v.window)
 	// Fyne 的简易取色器只有固定调色板和灰阶，选不了任意颜色；Advanced 才有色轮和
 	// RGB/HSL/Alpha 通道，SetColor 也只在 Advanced 下有效。初值取当前生效的颜色，
 	// 重新打开时能接着上次调的位置。

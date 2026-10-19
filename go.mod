@@ -19,6 +19,8 @@ require (
 	github.com/gogpu/gg v0.52.5
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
+	github.com/hack-pad/go-indexeddb v0.3.2
+	github.com/hack-pad/safejs v0.1.1
 	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
@@ -86,8 +88,6 @@ require (
 	github.com/gogpu/gpucontext v0.31.3 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
-	github.com/hack-pad/safejs v0.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect

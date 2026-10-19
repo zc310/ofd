@@ -178,7 +178,7 @@ func parseMimeappsDefault(content, mimeType string) (string, bool) {
 // 会保留用户已有的分组和格式，应用自己写会把用户其它关联冲掉。
 func setDefaultReader() error {
 	if !desktopFileInstalled() {
-		return errors.New("桌面文件尚未安装，无法登记为默认阅读器")
+		return errors.New(tr("桌面文件尚未安装，无法登记为默认阅读器"))
 	}
 	if _, err := defaultReaderLookPath("xdg-mime"); err == nil {
 		return runDefaultReaderSetter("xdg-mime", "default", desktopFileName, ofdMimeType)
@@ -186,7 +186,7 @@ func setDefaultReader() error {
 	if _, err := defaultReaderLookPath("gio"); err == nil {
 		return runDefaultReaderSetter("gio", "mime", ofdMimeType, "--default", desktopFileName)
 	}
-	return errors.New("系统缺少 xdg-mime 和 gio，无法自动设置默认阅读器，请在系统设置中手动修改")
+	return errors.New(tr("系统缺少 xdg-mime 和 gio，无法自动设置默认阅读器，请在系统设置中手动修改"))
 }
 
 // desktopFileInstalled 判断桌面文件是否已落到 XDG 数据目录。缺了它，系统里就没有
@@ -203,13 +203,13 @@ func desktopFileInstalled() bool {
 // queryDefaultReader 用指定命令查询默认阅读器，返回命令的标准输出。
 func queryDefaultReader(name string, args ...string) (string, error) {
 	if _, err := defaultReaderLookPath(name); err != nil {
-		return "", fmt.Errorf("%s 不可用: %w", name, err)
+		return "", fmt.Errorf(tr("%s 不可用: %w"), name, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultReaderTimeout)
 	defer cancel()
 	output, err := defaultReaderOutput(ctx, name, args...)
 	if err != nil {
-		return "", fmt.Errorf("%s 查询失败: %w", name, err)
+		return "", fmt.Errorf(tr("%s 查询失败: %w"), name, err)
 	}
 	return string(output), nil
 }
@@ -224,7 +224,7 @@ func runDefaultReaderSetter(name string, args ...string) error {
 		return nil
 	}
 	if message := strings.TrimSpace(string(output)); message != "" {
-		return fmt.Errorf("%s 设置默认阅读器失败: %w: %s", name, err, message)
+		return fmt.Errorf(tr("%s 设置默认阅读器失败: %w: %s"), name, err, message)
 	}
-	return fmt.Errorf("%s 设置默认阅读器失败: %w", name, err)
+	return fmt.Errorf(tr("%s 设置默认阅读器失败: %w"), name, err)
 }

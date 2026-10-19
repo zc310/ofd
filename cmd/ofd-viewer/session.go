@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render"
 )
 
 // documentSession 持有已解析的 OFD 文档，并跟踪正在使用它的导出任务。
@@ -22,11 +23,25 @@ type documentSession struct {
 	closed  atomic.Bool
 }
 
-func newDocumentSession(ofd *parser.OFD) *documentSession {
+func newDocumentSession(ofd *parser.OFD, documents ...*render.Document) *documentSession {
 	if ofd == nil {
 		return nil
 	}
-	return &documentSession{closer: ofd}
+	return &documentSession{closer: &viewerDocumentCloser{ofd: ofd, documents: documents}}
+}
+
+type viewerDocumentCloser struct {
+	ofd       *parser.OFD
+	documents []*render.Document
+}
+
+func (c *viewerDocumentCloser) Close() error {
+	// OFD.Close waits for page leases before releasing render font references.
+	err := c.ofd.Close()
+	for _, document := range c.documents {
+		document.Close()
+	}
+	return err
 }
 
 // acquire 登记一个使用者；文档已标记关闭时返回 false。

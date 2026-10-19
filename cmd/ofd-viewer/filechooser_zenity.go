@@ -1,4 +1,4 @@
-//go:build !flatpak && !android
+//go:build !flatpak && !android && !js
 
 package main
 
@@ -13,7 +13,7 @@ func chooseOpenFile(title string, _ fyne.Window) (fileSelection, error) {
 	path, err := zenity.SelectFile(
 		zenity.Title(title),
 		zenity.FileFilter{
-			Name:     "OFD 文件",
+			Name:     tr("OFD 文件"),
 			Patterns: []string{"*.ofd"},
 			CaseFold: true,
 		},
@@ -30,7 +30,7 @@ func chooseSaveFile(title, fileName, extension string, _ fyne.Window) (fileSelec
 		zenity.Filename(fileName),
 		zenity.ConfirmOverwrite(),
 		zenity.FileFilter{
-			Name:     "导出文件",
+			Name:     tr("导出文件"),
 			Patterns: []string{"*." + extension},
 			CaseFold: true,
 		},

@@ -1,4 +1,4 @@
-//go:build flatpak && !android
+//go:build flatpak && !android && !js
 
 package main
 
@@ -13,9 +13,9 @@ import (
 
 func chooseOpenFile(title string, _ fyne.Window) (fileSelection, error) {
 	uris, err := filechooser.OpenFile("", title, &filechooser.OpenFileOptions{
-		AcceptLabel: "打开",
+		AcceptLabel: tr("打开"),
 		Filters: []*filechooser.Filter{{
-			Name: "OFD 文件",
+			Name: tr("OFD 文件"),
 			Rules: []filechooser.Rule{
 				{Type: filechooser.GlobPattern, Pattern: "*.ofd"},
 				{Type: filechooser.GlobPattern, Pattern: "*.OFD"},
@@ -34,10 +34,10 @@ func chooseOpenFile(title string, _ fyne.Window) (fileSelection, error) {
 
 func chooseSaveFile(title, fileName, extension string, _ fyne.Window) (fileSelection, error) {
 	uris, err := filechooser.SaveFile("", title, &filechooser.SaveFileOptions{
-		AcceptLabel: "保存",
+		AcceptLabel: tr("保存"),
 		CurrentName: fileName,
 		Filters: []*filechooser.Filter{{
-			Name: "导出文件",
+			Name: tr("导出文件"),
 			Rules: []filechooser.Rule{
 				{Type: filechooser.GlobPattern, Pattern: "*." + extension},
 				{Type: filechooser.GlobPattern, Pattern: "*." + upperASCII(extension)},
@@ -63,7 +63,7 @@ func portalURIPath(uris []string) (string, error) {
 		return "", err
 	}
 	if parsed.Scheme != "file" || parsed.Host != "" || parsed.Path == "" {
-		return "", fmt.Errorf("文件选择器返回了非本地文件 URI: %s", uris[0])
+		return "", fmt.Errorf(tr("文件选择器返回了非本地文件 URI: %s"), uris[0])
 	}
 	return filepath.Clean(parsed.Path), nil
 }
