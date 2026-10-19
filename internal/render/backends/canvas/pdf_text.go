@@ -15,6 +15,12 @@ type pdfTextRenderer struct {
 	width, height float64
 }
 
+func (r pdfTextRenderer) RenderCanvas(scene *canvas.Canvas, matrix canvas.Matrix) {
+	r.PDF.RenderCanvasWith(scene, matrix, func() {
+		scene.RenderTo(pdfTextRenderer{PDF: r.PDF, width: scene.W, height: scene.H})
+	})
+}
+
 func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	translucent := false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {

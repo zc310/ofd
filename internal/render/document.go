@@ -21,24 +21,26 @@ import (
 
 type Document struct {
 	*parser.Document
-	background    color.Color
-	dpi           geom.Resolution
-	fonts         FontEngine
-	fallbacks     []string
-	fallbackMu    sync.RWMutex
-	imageLocksMu  sync.Mutex
-	imageLocks    map[string]*imageKeyLock
-	images        *utils.LRU[string, image.Image]
-	svgCanvases   *utils.LRU[string, SVGScene]
-	sealMu        sync.Mutex
-	sealDocs      map[[32]byte]*sealDocEntry
-	sealClosed    bool
-	closeOnce     sync.Once
-	ctColorMu     sync.Mutex
-	ctColorCache  *utils.LRU[*models.CTColor, *CTColor]
-	ctColorBuilds map[*models.CTColor]*ctColorBuild
-	colorSpacesMu sync.Mutex
-	colorSpaces   map[*models.ColorSpace]*colorSpaceResources
+	background       color.Color
+	dpi              geom.Resolution
+	fonts            FontEngine
+	fallbacks        []string
+	fallbackMu       sync.RWMutex
+	imageLocksMu     sync.Mutex
+	imageLocks       map[string]*imageKeyLock
+	images           *utils.LRU[string, image.Image]
+	svgCanvases      *utils.LRU[string, SVGScene]
+	sealMu           sync.Mutex
+	sealDocs         map[[32]byte]*sealDocEntry
+	sealClosed       bool
+	closeOnce        sync.Once
+	ctColorMu        sync.Mutex
+	ctColorCache     *utils.LRU[*models.CTColor, *CTColor]
+	ctColorBuilds    map[*models.CTColor]*ctColorBuild
+	colorSpacesMu    sync.Mutex
+	colorSpaces      map[*models.ColorSpace]*colorSpaceResources
+	templateScenesMu sync.Mutex
+	templateScenes   *utils.LRU[templateSceneKey, *templateScene]
 	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
 	closed atomic.Bool
 }
@@ -57,6 +59,7 @@ const (
 
 type renderBudget struct {
 	visibility          PageVisibility
+	templateCacheable   bool
 	compositeExpansions int
 	compositeResources  map[models.StID]int
 	patternTiles        int
@@ -64,6 +67,7 @@ type renderBudget struct {
 }
 
 func (b *renderBudget) reset() {
+	b.templateCacheable = true
 	b.compositeExpansions = 0
 
 	if b.compositeResources != nil {
@@ -147,6 +151,9 @@ func (p *Document) Close() {
 		p.colorSpacesMu.Lock()
 		p.colorSpaces = nil
 		p.colorSpacesMu.Unlock()
+		p.templateScenesMu.Lock()
+		p.templateScenes = nil
+		p.templateScenesMu.Unlock()
 		p.imageLocksMu.Lock()
 		p.images = nil
 		p.svgCanvases = nil
@@ -366,6 +373,8 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	if content == nil {
 		return
 	}
+	// 页面专属资源可能改变模板引用的字体、图片或绘制参数，不跨页复用。
+	budget.templateCacheable = len(content.PageRes) == 0
 	// 登记本页（含模板与注释）的 Unicode→字形映射，使缺少 Unicode cmap 的
 	// 内嵌子集字体也能按原始文本渲染，保留 PDF 文字可复制性。
 	if p.fonts != nil {
@@ -449,6 +458,9 @@ func (p *Document) template(ctx DrawContext, template models.Template, pb models
 		return
 	}
 	if content != nil && content.Content != nil {
+		if p.drawCachedTemplate(ctx, content, pb, budget) {
+			return
+		}
 		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
 	}
 }

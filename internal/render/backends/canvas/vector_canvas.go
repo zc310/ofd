@@ -25,6 +25,8 @@ type canvasVectorSurface struct {
 func (s canvasVectorSurface) Width() float64  { return s.c.W }
 func (s canvasVectorSurface) Height() float64 { return s.c.H }
 
+func (s canvasVectorSurface) Weight() int64 { return s.c.MemorySize() }
+
 func (s canvasVectorSurface) Write(w io.Writer, format string) error {
 	var writer canvas.Writer
 	switch format {

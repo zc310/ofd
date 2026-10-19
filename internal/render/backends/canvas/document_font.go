@@ -341,6 +341,13 @@ func (p *Fonts) isClosed() bool {
 	return p.closed.Load()
 }
 
+// CacheGeneration 返回当前字形映射与回退字体集合的版本号。
+func (p *Fonts) CacheGeneration() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.generation
+}
+
 func (p *Fonts) RenderLock(handle drawing.FontFamily) *sync.Mutex {
 	family, ok := handle.(*canvas.FontFamily)
 	if !ok || family == nil {

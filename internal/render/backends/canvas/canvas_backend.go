@@ -39,6 +39,23 @@ func newCanvasBackend(ctx *canvas.Context) drawing.DrawContext {
 // Linear/RadialGradient 作为文字着色图案序列化。
 func (b *canvasBackend) ShadingText() bool { return b.vector }
 
+func (b *canvasBackend) TemplateSurfaces() bool { return b.vector }
+
+func (b *canvasBackend) DrawTemplateSurface(surface drawing.VectorSurface) bool {
+	scene, ok := surface.(canvasVectorSurface)
+	if !ok {
+		return false
+	}
+	if recorder, ok := b.ctx.Renderer.(interface {
+		RenderCanvas(*canvas.Canvas, canvas.Matrix)
+	}); ok {
+		recorder.RenderCanvas(scene.c, canvas.Matrix(b.CurrentMatrix()))
+	} else {
+		scene.c.RenderViewTo(b.ctx.Renderer, canvas.Matrix(b.CurrentMatrix()))
+	}
+	return true
+}
+
 func (b *canvasBackend) Push() { b.ctx.Push() }
 func (b *canvasBackend) Pop()  { b.ctx.Pop() }
 
