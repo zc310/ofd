@@ -18,6 +18,7 @@ import (
 
 type gradientRunEngine struct {
 	fakeFontEngine
+
 	fill *CTColor
 }
 

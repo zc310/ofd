@@ -79,10 +79,11 @@ type Parameter struct {
 
 // Appearance 注解外观定义。
 type Appearance struct {
-	// Boundary 注解外观的边界框。
-	Boundary *StBox `xml:"Boundary,attr,omitempty"`
 	// CTPageBlock 注解外观中的页面对象。
 	CTPageBlock
+
+	// Boundary 注解外观的边界框。
+	Boundary *StBox `xml:"Boundary,attr,omitempty"`
 }
 
 // UnmarshalXML 先解析外观边界，再将其内容交由共享的页面块解析器处理。

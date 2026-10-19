@@ -118,6 +118,7 @@ var deviceCMYK8Normalized [256]float32
 
 var deviceCMYK8Default struct {
 	sync.Once
+
 	converter CMYK8Converter
 }
 
@@ -206,6 +207,7 @@ func initDeviceCMYKPairLUT() {
 // 便于运行时（含测试）切换配置文件。
 var defaultCache struct {
 	sync.Mutex
+
 	path        string
 	transformer *Transformer
 	loaded      bool

@@ -48,6 +48,7 @@ func (p *Path) SimplifyVisvalingamWhyatt(tolerance float64) *Path {
 
 type itemVW struct {
 	Point
+
 	area       float64
 	prev, next int32 // indices into items
 	heapIdx    int32

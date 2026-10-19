@@ -180,8 +180,9 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 }
 
 type contextReader struct {
-	ctx context.Context
 	io.Reader
+
+	ctx context.Context
 }
 
 func (r contextReader) Read(p []byte) (int, error) {
@@ -200,7 +201,7 @@ func inspectEntry(ctx context.Context, pkg *core.Package, entry core.Entry, opti
 	defer r.Close()
 	h := sha256.New()
 	isXML := strings.EqualFold(path.Ext(f.Path), ".xml")
-	if _, err := io.Copy(h, contextReader{ctx, r}); err != nil {
+	if _, err := io.Copy(h, contextReader{Reader: r, ctx: ctx}); err != nil {
 		return f, err
 	}
 	f.SHA256 = hex.EncodeToString(h.Sum(nil))

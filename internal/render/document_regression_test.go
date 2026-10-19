@@ -179,6 +179,7 @@ func TestColorCacheIsBoundedAndReturnsIndependentPaint(t *testing.T) {
 
 type closeTrackingFont struct {
 	fakeFontEngine
+
 	closes atomic.Int32
 	fail   bool
 }

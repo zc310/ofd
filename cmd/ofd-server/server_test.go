@@ -71,6 +71,7 @@ func newTestServerWithList(t *testing.T, entries []string) (*Server, *jobstore.S
 
 type testHTTPClient struct {
 	*http.Client
+
 	baseURL string
 }
 

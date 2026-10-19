@@ -51,14 +51,15 @@ type Content struct {
 
 // Layer 页面图层，包含按文档顺序排列的页面对象。
 type Layer struct {
+	// CTPageBlock 图层中的页面对象。
+	CTPageBlock
+
 	// ID 图层标识，在页面内唯一。
 	ID StID `xml:"ID,attr"`
 	// Type 图层类型，可为 Body、Background、Foreground 或 Custom。
 	Type string `xml:"Type,attr,omitempty"`
 	// DrawParam 图层使用的绘制参数引用。
 	DrawParam StRefID `xml:"DrawParam,attr,omitempty"`
-	// CTPageBlock 图层中的页面对象。
-	CTPageBlock
 }
 
 // UnmarshalXML 解析 Layer，除了图层属性外，还需按文档顺序记录其中的图形对象。
@@ -202,42 +203,47 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 
 // TextObject 页面中的文字对象。
 type TextObject struct {
-	// ID 文字对象标识，在页面内唯一。
-	ID StID `xml:"ID,attr"`
 	// CtText 文字图元的通用属性和文字内容。
 	CtText
+
+	// ID 文字对象标识，在页面内唯一。
+	ID StID `xml:"ID,attr"`
 }
 
 // PathObject 页面中的路径对象。
 type PathObject struct {
-	// ID 路径对象标识，在页面内唯一。
-	ID StID `xml:"ID,attr"`
 	// CtPath 路径图元的通用属性和路径数据。
 	CtPath
+
+	// ID 路径对象标识，在页面内唯一。
+	ID StID `xml:"ID,attr"`
 }
 
 // ImageObject 页面中的图像对象。
 type ImageObject struct {
-	// ID 图像对象标识，在页面内唯一。
-	ID StID `xml:"ID,attr"`
 	// CtImage 图像图元的通用属性和资源引用。
 	CtImage
+
+	// ID 图像对象标识，在页面内唯一。
+	ID StID `xml:"ID,attr"`
 }
 
 // CompositeObject 页面中的复合对象。
 type CompositeObject struct {
-	// ID 复合对象标识，在页面内唯一。
-	ID StID `xml:"ID,attr"`
 	// CtComposite 复合图元的通用属性和资源引用。
 	CtComposite
+
+	// ID 复合对象标识，在页面内唯一。
+	ID StID `xml:"ID,attr"`
 }
 
 // PageBlock 页面对象块，可以包含嵌套的页面对象。
 type PageBlock struct {
-	// ID 页面对象块标识，在页面内唯一。
-	ID StID `xml:"ID,attr"`
 	// CTPageBlock 页面对象块中的子对象。
 	CTPageBlock
+
+	// ID 页面对象块标识，在页面内唯一。
+	ID StID `xml:"ID,attr"`
 }
 
 // UnmarshalXML 解析 PageBlock，读取 ID 属性后按文档顺序解析其内容。
@@ -252,12 +258,13 @@ func (p *PageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 
 // CtLayer 图层内容定义。
 type CtLayer struct {
+	// CTPageBlock 图层中的页面对象。
+	CTPageBlock
+
 	// Type 图层类型，可为 Body、Background、Foreground 或 Custom。
 	Type string `xml:"Type,attr,omitempty"`
 	// DrawParam 图层使用的绘制参数引用。
 	DrawParam StRefID `xml:"DrawParam,attr,omitempty"`
-	// CTPageBlock 图层中的页面对象。
-	CTPageBlock
 }
 
 // CTGraphicUnit 图元通用属性定义。
@@ -342,6 +349,7 @@ type Clips struct {
 type CtText struct {
 	// CTGraphicUnit 文字图元的通用属性。
 	CTGraphicUnit
+
 	// FillColor 文字填充颜色。
 	FillColor *CTColor `xml:"FillColor"`
 	// StrokeColor 文字描边颜色。
@@ -442,6 +450,7 @@ type TextCode struct {
 type CtImage struct {
 	// CTGraphicUnit 图像图元的通用属性。
 	CTGraphicUnit
+
 	// Border 图像边框定义。
 	Border *Border `xml:"Border"`
 	// ResourceID 图像资源标识。
@@ -472,6 +481,7 @@ type Border struct {
 type CtComposite struct {
 	// CTGraphicUnit 复合图元的通用属性。
 	CTGraphicUnit
+
 	// ResourceID 复合图形资源标识。
 	ResourceID StRefID `xml:"ResourceID,attr"`
 }
@@ -480,6 +490,7 @@ type CtComposite struct {
 type CtPath struct {
 	// CTGraphicUnit 路径图元的通用属性。
 	CTGraphicUnit
+
 	// StrokeColor 路径描边颜色。
 	StrokeColor *CTColor `xml:"StrokeColor"`
 	// FillColor 路径填充颜色。
@@ -516,10 +527,11 @@ type CtPattern struct {
 
 // CellContent 图案填充单元的内容。
 type CellContent struct {
-	// Thumbnail 图案单元缩略图资源引用。
-	Thumbnail StRefID `xml:"Thumbnail,attr,omitempty"`
 	// CTPageBlock 图案单元中的页面对象。
 	CTPageBlock
+
+	// Thumbnail 图案单元缩略图资源引用。
+	Thumbnail StRefID `xml:"Thumbnail,attr,omitempty"`
 }
 
 // CTAxialShd 轴向渐变填充定义。

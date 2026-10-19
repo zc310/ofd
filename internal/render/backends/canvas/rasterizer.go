@@ -28,6 +28,7 @@ func rasterize(c *canvas.Canvas, resolution canvas.Resolution, colorSpace canvas
 
 type adaptiveRasterizer struct {
 	*rasterizer.Rasterizer
+
 	resolution canvas.Resolution
 	fastImages bool
 }

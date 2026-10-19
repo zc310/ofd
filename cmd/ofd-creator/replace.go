@@ -17,6 +17,8 @@ import (
 )
 
 type replaceOptions struct {
+	signFlags
+
 	input            string
 	output           string
 	compression      string
@@ -33,7 +35,6 @@ type replaceOptions struct {
 	noValidate       bool
 	verifySignatures bool
 	help             bool
-	signFlags
 }
 
 func parseReplaceArgs(args []string, output io.Writer) (*replaceOptions, error) {

@@ -167,6 +167,7 @@ func (c *gradientColor) RGBA() (uint32, uint32, uint32, uint32) {
 // 共用同一个 painter，SetColor 在每次 Fill/Stroke 前调用以切换模式。
 type gradientPainter struct {
 	*raster.RGBAPainter
+
 	im   *image.RGBA
 	dpmm float64
 	hpix float64

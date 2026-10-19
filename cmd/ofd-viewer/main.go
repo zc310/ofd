@@ -630,6 +630,7 @@ func (l *continuousLayout) notifyViewportChange() {
 // OnSelected 处理，这里不再单独实现 Tapped，否则一次点击会触发两次跳转。
 type thumbnailCell struct {
 	widget.BaseWidget
+
 	content    *fyne.Container
 	image      *fyneCanvas.Image
 	background *fyneCanvas.Rectangle
@@ -1221,6 +1222,13 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		return errors.New(tr("未设置导出输出"))
 	}
 	exportDocs := make([]*render.Document, 0, len(documents))
+	var temporaryDocs []*render.Document
+	// 临时文档要参与整次导出，统一在返回时逆序释放；复用的阅读区文档由会话持有。
+	defer func() {
+		for i := len(temporaryDocs) - 1; i >= 0; i-- {
+			temporaryDocs[i].Close()
+		}
+	}()
 	pageCount := 0
 	for _, doc := range documents {
 		if doc == nil || doc.Document == nil {
@@ -1228,7 +1236,7 @@ func exportDocumentsToWriter(documents []*render.Document, output io.Writer, for
 		}
 		exportDoc := exportDocument(doc, background)
 		if exportDoc != doc {
-			defer exportDoc.Close()
+			temporaryDocs = append(temporaryDocs, exportDoc)
 			for _, family := range fallbackFonts {
 				if err := exportDoc.UseFallbackFont(family); err != nil {
 					return err

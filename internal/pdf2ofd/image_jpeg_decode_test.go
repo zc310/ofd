@@ -263,6 +263,7 @@ func TestPDFOrdinaryJPEGDecodeRejectsInvalidEndpoints(t *testing.T) {
 
 type cancelJPEGDecodeComposition struct {
 	context.Context
+
 	control *conversionControl
 	cancel  context.CancelFunc
 	entered bool

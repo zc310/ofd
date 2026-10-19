@@ -893,6 +893,7 @@ func TestExportDocumentsToWriterProducesValidOutput(t *testing.T) {
 // 记录关闭次数。
 type countingWriteCloser struct {
 	*bytes.Buffer
+
 	closes atomic.Int64
 }
 

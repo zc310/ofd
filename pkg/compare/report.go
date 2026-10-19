@@ -249,6 +249,7 @@ func selectedPageCount(input Input) int {
 
 type fileListRow struct {
 	FileChange
+
 	DetailID string
 }
 

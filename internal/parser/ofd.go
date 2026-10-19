@@ -15,6 +15,7 @@ import (
 // OFD 表示一个OFD文档解析器
 type OFD struct {
 	models.OFD
+
 	fileCache *core.Package
 
 	Documents     []*Document

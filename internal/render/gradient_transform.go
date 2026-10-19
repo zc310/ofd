@@ -10,6 +10,7 @@ import (
 // 同时保持渐变的视觉起点不变。
 type translatedGradient struct {
 	geom.Gradient
+
 	dx, dy float64
 }
 

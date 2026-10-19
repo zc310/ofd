@@ -93,6 +93,7 @@ func (g Grad) ToRadial(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 // LinearGradient 是 start→end 的线性渐变。
 type LinearGradient struct {
 	Grad
+
 	Start, End Point
 	// Extend[0] 控制起点之前是否着色、Extend[1] 控制终点之后是否着色；
 	// 为 false 时该区域不着色（透明）。
@@ -141,6 +142,7 @@ func (g *LinearGradient) At(x, y float64) color.RGBA {
 // RadialGradient 是两个圆之间的径向渐变。
 type RadialGradient struct {
 	Grad
+
 	C0, C1 Point
 	R0, R1 float64
 	// Extend[0] 控制起始圆之前是否着色、Extend[1] 控制终止圆之后是否着色；

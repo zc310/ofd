@@ -335,6 +335,7 @@ func TestPDFJBIG2MatteReturnsCancellationWithoutWrapping(t *testing.T) {
 // 若只在解码前后检查，两次 Err 调用不足以触发此取消。
 type cancelJBIG2DuringDecode struct {
 	context.Context
+
 	cancel context.CancelFunc
 	checks int
 }

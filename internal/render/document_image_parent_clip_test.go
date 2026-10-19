@@ -14,6 +14,7 @@ import (
 
 type clippedImageCapture struct {
 	DrawContext
+
 	image image.Image
 }
 

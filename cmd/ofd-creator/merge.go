@@ -195,6 +195,8 @@ func validateMerged(reader io.Reader, name string, stderr io.Writer) error {
 }
 
 type mergeOptions struct {
+	signFlags
+
 	inputs           []string
 	output           string
 	compression      string
@@ -213,7 +215,6 @@ type mergeOptions struct {
 	verifySignatures bool
 	validate         bool
 	help             bool
-	signFlags
 }
 
 func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {

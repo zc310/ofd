@@ -110,9 +110,10 @@ func (h *fontHolders) release(f *Fonts) bool {
 }
 
 type systemFontCacheEntry struct {
+	fontHolders
+
 	family   *canvas.FontFamily
 	renderMu *sync.Mutex
-	fontHolders
 }
 
 // embeddedFontKey 标识一次内嵌字体解析结果。相同字体数据、样式、族名和字形
@@ -129,6 +130,7 @@ type embeddedFontKey struct {
 // 缓存长期钉住重资源，因此不放在包级缓存里。
 type Fonts struct {
 	*parser.Document
+
 	Fonts            map[models.StRefID]*canvas.FontFamily
 	fallbacks        map[string]*canvas.FontFamily
 	fallbackFaces    []fallbackFace

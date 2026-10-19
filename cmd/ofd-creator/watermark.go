@@ -24,6 +24,8 @@ import (
 )
 
 type watermarkOptions struct {
+	signFlags
+
 	action string
 
 	input  string
@@ -38,7 +40,6 @@ type watermarkOptions struct {
 	deterministic    bool
 	validate         bool
 	verifySignatures bool
-	signFlags
 
 	document             int
 	pages                []int

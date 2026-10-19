@@ -179,6 +179,7 @@ func TestPDF16BitGraySoftMaskPreservesColourAndDecodeRange(t *testing.T) {
 
 type cancelSoftMaskImage struct {
 	image.Image
+
 	cancel context.CancelFunc
 	reads  int
 }

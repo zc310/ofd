@@ -147,6 +147,7 @@ func gradientColor(stops geom.Grad, position float64, extend int) color.RGBA {
 
 type ofdOpacityGradient struct {
 	geom.Gradient
+
 	opacity uint8
 }
 

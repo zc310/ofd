@@ -21,6 +21,7 @@ import (
 
 type Document struct {
 	*parser.Document
+
 	background       color.Color
 	dpi              geom.Resolution
 	fonts            FontEngine

@@ -149,6 +149,7 @@ func TestPDFJPXColorKeyReadsIndirectArrayAndEndpoints(t *testing.T) {
 
 type cancelJPXColorKeyDuringComposition struct {
 	context.Context
+
 	control *conversionControl
 	cancel  context.CancelFunc
 	started bool

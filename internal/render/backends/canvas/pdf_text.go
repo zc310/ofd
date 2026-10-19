@@ -12,6 +12,7 @@ import (
 // 不透明渐变文字仍交给原生写入器，SVG 不经过此适配层。
 type pdfTextRenderer struct {
 	*pdf.PDF
+
 	width, height float64
 }
 

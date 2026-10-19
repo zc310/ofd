@@ -590,7 +590,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 }
 
 type invisibleTextShaper interface {
-	InvisibleShapedRun(string) TextRun
+	InvisibleShapedRun(value string) TextRun
 }
 
 func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {

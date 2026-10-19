@@ -89,6 +89,7 @@ type Image struct {
 // Options 控制水印编辑行为。
 type Options struct {
 	replace.Options
+
 	// SkipPermissionsCheck 跳过文档级水印权限检查（Permissions/Watermark=false 时默认拒绝）。
 	SkipPermissionsCheck bool
 	// SkipReadOnlyCheck 跳过只读检查（ReadOnly 缺省或为 true 的水印默认拒绝 Replace/Remove）。

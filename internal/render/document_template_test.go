@@ -13,11 +13,13 @@ import (
 
 type templateTestFonts struct {
 	fakeFontEngine
+
 	generation atomic.Uint64
 }
 
 type templateClosingFonts struct {
 	templateTestFonts
+
 	closing chan struct{}
 }
 
@@ -35,6 +37,7 @@ func (s *templateTestSurface) Weight() int64                       { return s.we
 
 type templateTestDrawer struct {
 	DrawContext
+
 	surface VectorSurface
 }
 

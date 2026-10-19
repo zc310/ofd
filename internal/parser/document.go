@@ -17,9 +17,10 @@ import (
 )
 
 type Document struct {
-	BaseLoc   models.StLoc
-	FileCache *core.Package
 	models.Document
+
+	BaseLoc         models.StLoc
+	FileCache       *core.Package
 	Pages           []*Page
 	pageCacheMu     sync.Mutex
 	pageLeaseCond   *sync.Cond

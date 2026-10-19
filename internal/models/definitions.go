@@ -365,6 +365,7 @@ func (t *DateTime) parseTime(v string) error {
 
 type Color struct {
 	color.RGBA
+
 	// raw 与 nraw 保存按 ST_Array 原文解析出的通道整数取值与通道数。
 	//
 	// 必须保留原文：通道的取值范围由颜色空间的 BitsPerComponent 决定（GB/T 33190

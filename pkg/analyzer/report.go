@@ -447,6 +447,7 @@ type ResourceSummary struct {
 type FontResourceSummary struct {
 	// ResourceSummary 是通用资源统计字段。
 	ResourceSummary
+
 	// Embedded 是嵌入字体数。
 	Embedded int `json:"embedded"`
 }
@@ -455,6 +456,7 @@ type FontResourceSummary struct {
 type DrawParamResourceSummary struct {
 	// ResourceSummary 是通用资源统计字段。
 	ResourceSummary
+
 	// InheritanceCycles 是绘制参数继承环数量。
 	InheritanceCycles int `json:"inheritance_cycles"`
 }

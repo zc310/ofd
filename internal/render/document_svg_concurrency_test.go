@@ -16,6 +16,7 @@ import (
 
 type checkedSVGScene struct {
 	fakeSVGScene
+
 	vector func()
 	raster func(geom.Resolution) image.Image
 }

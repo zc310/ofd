@@ -14,6 +14,7 @@ import (
 // 复合图元等离屏栅格化逻辑共用同一实现。
 type canvasRasterBackend struct {
 	canvasBackend
+
 	c          *tcanvas.Canvas
 	resolution geom.Resolution
 }

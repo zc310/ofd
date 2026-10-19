@@ -10,6 +10,7 @@ import (
 
 type chunkRecorder struct {
 	bytes.Buffer
+
 	calls    int
 	maxChunk int
 }

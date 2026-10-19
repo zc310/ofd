@@ -87,6 +87,7 @@ func (metricsFontFace) ShapedRun(string) TextRun { return nil }
 // metricsFontEngine 在空引擎基础上返回固定字体与字体面。
 type metricsFontEngine struct {
 	fakeFontEngine
+
 	face FontFace
 }
 

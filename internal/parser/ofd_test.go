@@ -76,6 +76,7 @@ func TestOFDOpenFailurePreservesCurrentDocument(t *testing.T) {
 
 type trackingReader struct {
 	*bytes.Reader
+
 	closed bool
 }
 

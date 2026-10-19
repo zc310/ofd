@@ -24,6 +24,7 @@ func prepareFallbackUIFont(data []byte) (fyne.Resource, error) {
 
 type fallbackFontTheme struct {
 	fyne.Theme
+
 	font fyne.Resource
 }
 

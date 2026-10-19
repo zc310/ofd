@@ -506,6 +506,7 @@ func newTestZip(t *testing.T, files map[string][]byte) []byte {
 
 type trackingReader struct {
 	*bytes.Reader
+
 	closed bool
 }
 

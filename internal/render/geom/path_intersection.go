@@ -266,7 +266,8 @@ func (p *Path) Contains(q *Path) bool {
 // SweepPoint is of size 88 bytes on 64-bit architectures
 type SweepPoint struct {
 	// initial data
-	Point               // position of this endpoint
+	Point // position of this endpoint
+
 	other   *SweepPoint // pointer to the other endpoint of the segment
 	segment int         // segment index to distinguish self-overlapping segments
 
@@ -534,10 +535,10 @@ func (q SweepEvents) String() string {
 }
 
 type SweepNode struct {
+	*SweepPoint
+
 	parent, left, right *SweepNode
 	height              int
-
-	*SweepPoint
 }
 
 func (n *SweepNode) Prev() *SweepNode {

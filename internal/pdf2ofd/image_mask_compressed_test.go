@@ -322,6 +322,7 @@ func TestPDFCompressedColorKeyInvalidDataReportsAndPreservesBase(t *testing.T) {
 
 type cancelCompressedKeySampling struct {
 	context.Context
+
 	control *conversionControl
 	cancel  context.CancelFunc
 	entered bool

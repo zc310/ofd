@@ -16,6 +16,7 @@ import (
 
 type lifecycleFontEngine struct {
 	render.FontEngine
+
 	document           *parser.Document
 	closes             int
 	packageClosedEarly bool

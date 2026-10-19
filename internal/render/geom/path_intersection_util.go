@@ -89,7 +89,8 @@ func intersectionSegment(zs Intersections, a0 Point, a []float64, b0 Point, b []
 // for this segment but may or may not cross the path depending on the adjacent segment.
 // Notabene: for quad/cube/ellipse aligned angles at the endpoint for non-overlapping curves are deviated slightly to correctly calculate the value for Into, and will thus not be aligned
 type Intersection struct {
-	Point              // coordinate of intersection
+	Point // coordinate of intersection
+
 	T       [2]float64 // position along segment [0,1]
 	Dir     [2]float64 // direction at intersection [0,2*pi)
 	Tangent bool       // intersection is tangent (touches) instead of secant (crosses)

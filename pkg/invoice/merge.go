@@ -35,6 +35,7 @@ type MergeOptions struct {
 	// BatchOptions 决定抽取失败与重复发票的处理方式，与汇总共用同一套口径：
 	// 合并 PDF 只会包含 ActiveItems 返回的那些票。
 	BatchOptions
+
 	// Sort 是页序排序方式，取 SortItems 的同名常量，默认按输入顺序。
 	Sort string
 	// Cover 为 true 时在首页插入一张汇总对账页。

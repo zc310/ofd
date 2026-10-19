@@ -16,6 +16,7 @@ type SVGScene = drawing.SVGScene
 // 矢量嵌入和栅格化共用此锁，不同场景互不等待。
 type synchronizedSVGScene struct {
 	SVGScene
+
 	mu sync.Mutex
 }
 

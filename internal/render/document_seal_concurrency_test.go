@@ -34,6 +34,7 @@ func awaitSealOperation(t *testing.T, done <-chan struct{}) {
 
 type pausedSealContext struct {
 	DrawContext
+
 	once    sync.Once
 	entered chan<- struct{}
 	resume  <-chan struct{}
