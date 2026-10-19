@@ -271,7 +271,11 @@ func verifySignatureComponent(certificateDER, signed, signature []byte, algorith
 	}
 	result.SignatureFormat = string(format)
 	digest, err := sm2.CalculateSM2Hash(publicKey, signed, signatureUID(verificationOptions))
-	if err != nil || !sm2.Verify(publicKey, digest, r, s) {
+	if err != nil {
+		result.Error = fmt.Sprintf("计算 SM2 签名摘要失败: %v", err)
+		return result
+	}
+	if !sm2.Verify(publicKey, digest, r, s) {
 		result.Error = "SM2 签名验证失败"
 		return result
 	}

@@ -81,6 +81,10 @@ results, err := sign.Verify(ctx, "document.ofd", sign.VerificationOptions{
 保护范围无法确认会使其为 `incomplete`。已确认的引用或原文摘要错误优先报告
 `invalid`，不会被尚未确认的范围或未支持算法遮蔽。
 
+两层签名的错误保存在 `Result.Seal.Error`、`Result.Outer.Error` 及对应的
+`Validation.Checks` 中。SM2 摘要计算失败会保留具体原因（如 UID 过长），
+摘要计算成功但签名不匹配时报告「SM2 签名验证失败」。
+
 `PropertyInfo` 目前支持指向受保护 `Signature.xml` 的包内路径；其他厂商元数据
 编码可解析保留，但保护范围会报告未完成。时间戳支持 CMS/TSTInfo 的签名值绑定、
 TSA 专用关键 EKU、ESS 签名者证书摘要绑定、信任及整条证书链吊销检查；

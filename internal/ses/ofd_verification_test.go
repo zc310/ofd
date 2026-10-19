@@ -112,3 +112,50 @@ func TestOFDCompleteVerificationSeparatesReferenceSHA1AndSESDataHashSM3(t *testi
 		})
 	}
 }
+
+func TestOFDVerificationDistinguishesSM2HashErrorFromSignatureMismatch(t *testing.T) {
+	f := newSigningFixture(t, false)
+	data := signedOFD(t, f, false, "/Doc_0/Signatures/Signature.xml")
+	for _, test := range []struct {
+		name, message string
+		uid           []byte
+	}{
+		{"default_uid", "", nil},
+		{"wrong_uid", "SM2 签名验证失败", []byte("wrong-user-id")},
+		{"oversized_uid", "计算 SM2 签名摘要失败: sm2: the uid is too long", make([]byte, 8192)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := *f.options
+			options.UID = test.uid
+			results, err := sign.Verify(t.Context(), data, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != 1 || results[0].Error != "" || results[0].Result == nil || !results[0].DigestValid {
+				t.Fatalf("应取得文档摘要匹配的验签结果: %+v", results)
+			}
+			result := results[0].Result
+			wantValid := test.message == ""
+			if result.Valid != wantValid || result.FullyValid() != wantValid ||
+				result.Seal.Valid != wantValid || result.Outer.Valid != wantValid ||
+				result.Seal.Error != test.message || result.Outer.Error != test.message {
+				t.Fatalf("应区分摘要计算错误与签名不匹配: seal=%+v outer=%+v validation=%+v", result.Seal, result.Outer, result.Validation)
+			}
+			signatureChecks := 0
+			for _, check := range result.Validation.Checks {
+				if check.Code == "seal.signature" || check.Code == "signer.signature" {
+					signatureChecks++
+					if check.Message != test.message || (check.Status == "valid") != wantValid {
+						t.Fatalf("完整结论丢失组件错误: %+v", check)
+					}
+				}
+			}
+			if signatureChecks != 2 {
+				t.Fatalf("缺少两层签名检查: %+v", result.Validation)
+			}
+			if !wantValid && result.Validation.Status != "invalid" {
+				t.Fatalf("失败不能成为完整通过或未完成: %+v", result.Validation)
+			}
+		})
+	}
+}
