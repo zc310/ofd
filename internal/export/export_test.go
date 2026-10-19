@@ -12,7 +12,6 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
@@ -43,9 +42,37 @@ func TestExportWritesCreatorManifest(t *testing.T) {
 	}
 }
 
-func TestExportWritesJSONAndTOMLManifests(t *testing.T) {
+func TestExportRejectsTOMLBeforeWritingAssets(t *testing.T) {
+	for _, format := range []string{"toml", "TOML"} {
+		t.Run(format, func(t *testing.T) {
+			root := t.TempDir()
+			var output bytes.Buffer
+			options := Options{AssetRoot: filepath.Join(root, "assets"), Format: format}
+			err := WriteManifest("missing.ofd", &output, options)
+			if err == nil || !strings.Contains(err.Error(), "不支持的 manifest 格式") {
+				t.Fatalf("WriteManifest error = %v", err)
+			}
+			if _, err := marshalManifest(manifest.Manifest{}, format, false); err == nil {
+				t.Fatal("manifest 编码仍接受 TOML")
+			}
+			if _, err := marshalBundleIndex(BundleIndex{}, format, false); err == nil {
+				t.Fatal("索引编码仍接受 TOML")
+			}
+			err = WriteBundle("missing.ofd", filepath.Join(root, "bundle"), options)
+			if err == nil || !strings.Contains(err.Error(), "不支持的 manifest 格式") {
+				t.Fatalf("WriteBundle error = %v", err)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 0 || output.Len() != 0 {
+				t.Fatalf("格式错误仍产生了输出: entries=%v output=%q err=%v", entries, output.String(), err)
+			}
+		})
+	}
+}
+
+func TestExportWritesJSONAndYAMLManifests(t *testing.T) {
 	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
-	for _, format := range []string{"json", "toml"} {
+	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			var output bytes.Buffer
 			directory := t.TempDir()
@@ -88,9 +115,9 @@ func TestExportJSONIndentOption(t *testing.T) {
 	}
 }
 
-func TestExportAllWritesJSONAndTOMLIndexes(t *testing.T) {
+func TestExportAllWritesJSONAndYAMLIndexes(t *testing.T) {
 	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
-	for _, format := range []string{"json", "toml"} {
+	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundle")
 			if err := WriteBundle(input, root, Options{Format: format}); err != nil {
@@ -105,11 +132,21 @@ func TestExportAllWritesJSONAndTOMLIndexes(t *testing.T) {
 				if err := json.Unmarshal(indexData, &index); err != nil {
 					t.Fatal(err)
 				}
-			} else if _, err := toml.Decode(string(indexData), &index); err != nil {
+			} else if err := yaml.Unmarshal(indexData, &index); err != nil {
 				t.Fatal(err)
 			}
 			if index.Version != 1 || len(index.Documents) < 2 || index.Documents[0].AssetRoot == "" {
 				t.Fatalf("bundle index = %+v", index)
+			}
+			for _, document := range index.Documents {
+				inputPath := filepath.Join(root, filepath.FromSlash(document.Manifest))
+				loaded, baseDir, err := manifest.Load(inputPath, "auto")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := loaded.Build(baseDir, ""); err != nil {
+					t.Fatalf("build exported %s manifest %s: %v", format, document.Manifest, err)
+				}
 			}
 		})
 	}

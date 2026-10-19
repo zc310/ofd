@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"go.yaml.in/yaml/v3"
@@ -39,27 +38,19 @@ func TestManifestOmitEmptyFieldsAcrossFormats(t *testing.T) {
 		}
 	}
 
-	tomlData, err := toml.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tomlText := string(tomlData)
-	for _, field := range []string{"title =", "templates =", "actions =", "data_base64 ="} {
-		if strings.Contains(tomlText, field) {
-			t.Fatalf("TOML contains omitted field %q: %s", field, tomlText)
-		}
-	}
 	directory := t.TempDir()
-	input := filepath.Join(directory, "compact.toml")
-	if err := os.WriteFile(input, tomlData, 0600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, _, err := Load(input, "toml")
-	if err != nil {
-		t.Fatalf("compact TOML did not load: %v\n%s", err, tomlText)
-	}
-	if loaded.Version != 1 || loaded.Document.ID != "compact" || len(loaded.Pages) != 1 {
-		t.Fatalf("compact TOML round trip = %+v", loaded)
+	for format, data := range map[string][]byte{"json": jsonData, "yaml": yamlData} {
+		input := filepath.Join(directory, "compact."+format)
+		if err := os.WriteFile(input, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, _, err := Load(input, format)
+		if err != nil {
+			t.Fatalf("compact %s did not load: %v\n%s", format, err, data)
+		}
+		if loaded.Version != 1 || loaded.Document.ID != "compact" || len(loaded.Pages) != 1 {
+			t.Fatalf("compact %s round trip = %+v", format, loaded)
+		}
 	}
 }
 
@@ -165,46 +156,16 @@ func TestBuildWithStreamAssetsUsesLazySources(t *testing.T) {
 	}
 }
 
-func TestLoadTOMLAndBuild(t *testing.T) {
+func TestLoadRejectsTOML(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "document.toml")
-	toml := `version = 1
-
-[document]
-id = "toml-test"
-title = "TOML document"
-
-[[pages]]
-
-[[pages.items]]
-type = "text"
-value = "hello"
-width = 20
-height = 5
-`
-	if err := os.WriteFile(input, []byte(toml), 0600); err != nil {
+	if err := os.WriteFile(input, []byte("version = 1\n[document]\nid = \"toml-test\"\n[[pages]]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	value, baseDir, err := Load(input, "auto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if value.Version != 1 || value.Document.ID != "toml-test" || len(value.Pages) != 1 || len(value.Pages[0].Items) != 1 {
-		t.Fatalf("TOML manifest was not decoded: %+v", value)
-	}
-	if _, err := value.Build(baseDir, ""); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestLoadTOMLRejectsUnknownField(t *testing.T) {
-	directory := t.TempDir()
-	input := filepath.Join(directory, "document.toml")
-	if err := os.WriteFile(input, []byte("version = 1\nunknown = true\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := Load(input, "auto"); err == nil {
-		t.Fatal("TOML parser accepted an unknown field")
+	for _, format := range []string{"auto", "toml", "TOML"} {
+		if _, _, err := Load(input, format); err == nil || !strings.Contains(err.Error(), "不支持的 manifest 格式") {
+			t.Fatalf("Load(%q) error = %v, want unsupported format", format, err)
+		}
 	}
 }
 

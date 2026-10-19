@@ -15,7 +15,6 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/BurntSushi/toml"
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
@@ -29,7 +28,7 @@ type Options struct {
 	AssetRoot string
 	// AssetPrefix 是 manifest 中相对于 manifest 文件的资源目录前缀。
 	AssetPrefix string
-	// Format 是 manifest 输出格式，可选 yaml、json 或 toml。
+	// Format 是 manifest 输出格式，可选 yaml 或 json。
 	Format string
 	// JSONIndent 控制 JSON 输出是否使用 2 空格缩进。
 	JSONIndent bool
@@ -75,6 +74,10 @@ func WriteBundle(input any, outputDir string, options Options) error {
 	if strings.TrimSpace(outputDir) == "" {
 		return errors.New("未设置批量导出目录")
 	}
+	format, err := normalizeFormat(options.Format)
+	if err != nil {
+		return err
+	}
 	root, err := filepath.Abs(outputDir)
 	if err != nil {
 		return fmt.Errorf("批量导出目录无效: %w", err)
@@ -101,10 +104,6 @@ func WriteBundle(input any, outputDir string, options Options) error {
 	defer func() { _ = ofd.Close() }()
 	if len(ofd.Documents) == 0 {
 		return errors.New("没有文档体")
-	}
-	format, err := normalizeFormat(options.Format)
-	if err != nil {
-		return err
 	}
 	index := BundleIndex{Version: 1, Documents: make([]BundleDocument, 0, len(ofd.Documents))}
 	extension := format
@@ -154,6 +153,11 @@ func export(input any, output io.Writer, options Options, documentIndex *int) er
 	if strings.TrimSpace(options.AssetRoot) == "" {
 		return errors.New("未设置资源输出目录")
 	}
+	format, err := normalizeFormat(options.Format)
+	if err != nil {
+		return err
+	}
+	options.Format = format
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		return fmt.Errorf("解析 OFD 失败: %w", err)
@@ -281,7 +285,7 @@ func normalizeFormat(format string) (string, error) {
 	if format == "" || format == "yml" {
 		format = "yaml"
 	}
-	if format != "yaml" && format != "json" && format != "toml" {
+	if format != "yaml" && format != "json" {
 		return "", fmt.Errorf("不支持的 manifest 格式 %q", format)
 	}
 	return format, nil
@@ -304,12 +308,6 @@ func marshalManifest(value manifest.Manifest, format string, jsonIndent bool) ([
 			return nil, fmt.Errorf("编码 JSON manifest 失败: %w", err)
 		}
 		return append(data, '\n'), nil
-	case "toml":
-		data, err := toml.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("编码 TOML manifest 失败: %w", err)
-		}
-		return data, nil
 	default:
 		var output bytes.Buffer
 		encoder := yaml.NewEncoder(&output)
@@ -342,12 +340,6 @@ func marshalBundleIndex(value BundleIndex, format string, jsonIndent bool) ([]by
 			return nil, fmt.Errorf("编码 JSON 批量导出索引失败: %w", err)
 		}
 		return append(data, '\n'), nil
-	case "toml":
-		data, err := toml.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("编码 TOML 批量导出索引失败: %w", err)
-		}
-		return data, nil
 	default:
 		data, err := yaml.Marshal(value)
 		if err != nil {

@@ -14,7 +14,6 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/BurntSushi/toml"
 	"github.com/zc310/ofd/pkg/creator"
 	"go.yaml.in/yaml/v3"
 )
@@ -1271,7 +1270,7 @@ type ImageBorder struct {
 	Color *Color `json:"color,omitempty" yaml:"color,omitempty" toml:"color,omitempty"`
 }
 
-// Load 读取并解析 JSON、YAML 或 TOML manifest。
+// Load 读取并解析 JSON 或 YAML manifest。
 func Load(path, format string) (Manifest, string, error) {
 	var data []byte
 	var err error
@@ -1309,20 +1308,6 @@ func Load(path, format string) (Manifest, string, error) {
 		decoder.KnownFields(true)
 		if err := decoder.Decode(&result); err != nil {
 			return Manifest{}, "", fmt.Errorf("解析 YAML manifest 失败: %w", err)
-		}
-	case "toml":
-		var values map[string]any
-		if _, err := toml.Decode(string(data), &values); err != nil {
-			return Manifest{}, "", fmt.Errorf("解析 TOML manifest 失败: %w", err)
-		}
-		encoded, err := json.Marshal(values)
-		if err != nil {
-			return Manifest{}, "", fmt.Errorf("转换 TOML manifest 失败: %w", err)
-		}
-		decoder := json.NewDecoder(bytes.NewReader(encoded))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&result); err != nil {
-			return Manifest{}, "", fmt.Errorf("解析 TOML manifest 失败: %w", err)
 		}
 	default:
 		return Manifest{}, "", fmt.Errorf("不支持的 manifest 格式: %q", format)

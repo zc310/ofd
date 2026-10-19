@@ -23,7 +23,7 @@ OFD（Open Fixed-layout Document）是中国电子文件领域常用的版式文
 | 类别 | 功能 |
 |---|---|
 | 文档转换 | OFD 转 PDF、DOCX、单文件 HTML、纯文本、Markdown、PNG/JPG、多页 TIFF、SVG、EPS 和 TeX；PDF/XPS/Markdown/Office/HTML/图片转 OFD |
-| 创建与编辑 | Go API 或 JSON/YAML/TOML manifest 创建 OFD，支持页面、资源、图层、水印和包内条目替换 |
+| 创建与编辑 | Go API 或 JSON/YAML manifest 创建 OFD，支持页面、资源、图层、水印和包内条目替换 |
 | 页面与合并 | 多文档体按顺序使用全局页码；支持 ZIP 级打包、模型级拼页、选页重排和资源引用重映射 |
 | 校验与分析 | 内嵌 OFD-Schema，检查 ZIP、XML、引用、XSD 与语义；分析文字、资源、附件、注解和签名，生成多种格式的报告 |
 | 文档对比 | 多份 OFD 按基准比较目录、文件摘要、XML、文字多处修改与画面；支持文件清单搜索筛选及往返导航、XML 左右对照、选页、页配对依据与映射编辑导出、差异区域局部放大与外置图片，输出 HTML、JSON、文本和 Markdown 报告 |

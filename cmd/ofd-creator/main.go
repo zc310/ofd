@@ -1,4 +1,4 @@
-// Command ofd-creator 根据 JSON、YAML 或 TOML manifest 创建 OFD 文件。
+// Command ofd-creator 根据 JSON 或 YAML manifest 创建 OFD 文件。
 package main
 
 import (
@@ -248,7 +248,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVarP(&opts.input, "input", "i", "", "manifest 文件路径；使用 - 从标准输入读取")
 	flags.StringVarP(&opts.output, "output", "o", "", "OFD 输出路径；使用 - 写入标准输出")
 	flags.StringVar(&opts.assetRoot, "asset-root", "", "资源根目录，默认使用 manifest 所在目录")
-	flags.StringVar(&opts.format, "format", "auto", "manifest 格式：auto、json、yaml 或 toml")
+	flags.StringVar(&opts.format, "format", "auto", "manifest 格式：auto、json 或 yaml")
 	flags.StringVar(&opts.compression, "compression", opts.compression, "ZIP 压缩策略：auto、deflate 或 store")
 	flags.IntVar(&opts.compressionLevel, "compression-level", 0, "DEFLATE 压缩级别：0 使用默认级别 5，1（最快）到 9（最紧凑）")
 	flags.BoolVar(&opts.validate, "validate", false, "生成后执行严格 OFD 校验")
@@ -287,12 +287,17 @@ func validateOptions(opts *options) error {
 	if docType := strings.TrimSpace(opts.docType); docType != "" && !spec.IsDocType(docType) {
 		return fmt.Errorf("不支持的 OFD profile %q，可用取值: %s", opts.docType, strings.Join(spec.DocTypes, "、"))
 	}
-	if opts.format != "auto" {
-		format := strings.ToLower(strings.TrimSpace(opts.format))
-		if format != "json" && format != "yaml" && format != "yml" && format != "toml" {
-			return fmt.Errorf("不支持的 manifest 格式 %q", opts.format)
+	format := strings.ToLower(strings.TrimSpace(opts.format))
+	if format == "auto" {
+		format = strings.TrimPrefix(strings.ToLower(filepath.Ext(opts.input)), ".")
+		if opts.input == "-" || format == "" {
+			format = "yaml"
 		}
 	}
+	if format != "json" && format != "yaml" && format != "yml" {
+		return fmt.Errorf("不支持的 manifest 格式 %q", format)
+	}
+	opts.format = format
 	return nil
 }
 

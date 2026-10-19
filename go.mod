@@ -4,7 +4,6 @@ go 1.26.4
 
 require (
 	fyne.io/fyne/v2 v2.8.2
-	github.com/BurntSushi/toml v1.6.0
 	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
@@ -60,6 +59,7 @@ require (
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
 	github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298 // indirect
 	github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect

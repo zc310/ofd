@@ -7,6 +7,12 @@
 
 ## 未发布
 
+- **创建器移除 TOML**：`ofd-creator` 的输入、`export` 和 `export-all` 仅支持 JSON、
+  YAML，`--format toml` 及自动识别的 `.toml` 清单路径会返回参数错误（退出码 `2`）。
+  原有 TOML 清单需转换为 YAML 或 JSON；渐变示例已改为
+  [`gradients.yaml`](cmd/ofd-creator/examples/gradients.yaml)。导出时未指定格式且输出文件
+  使用其他扩展名也会报错；请使用 `.json`、`.yaml`、`.yml` 或显式指定格式。
+
 - **转换命令退出码**：`ofd-converter` 的参数、输入路径、输出格式及取值范围错误
   从退出码 `1` 改为 `2`。依赖退出码的脚本需区分参数错误与转换失败；单个文件
   转换失败仍为 `1`，用户取消为 `130`。详见

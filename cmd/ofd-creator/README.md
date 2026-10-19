@@ -1,6 +1,6 @@
 # ofd-creator
 
-`ofd-creator` 根据 JSON、YAML 或 TOML manifest 创建 OFD 文件包。
+`ofd-creator` 根据 JSON 或 YAML manifest 创建 OFD 文件包。
 
 在 Go 程序中直接使用文档模型和创建 API，见 [创建器库指南](../../pkg/creator/README.md)。
 
@@ -72,7 +72,7 @@ ofd-creator schema --format json
 
 ## 导出 OFD 配置
 
-支持将单文档体 OFD 导出为可再次用于 `ofd-creator` 的 YAML、JSON 或 TOML manifest，并将字体、图片和其他多媒体资源复制到资源目录。默认格式为 YAML：
+支持将单文档体 OFD 导出为可再次用于 `ofd-creator` 的 YAML 或 JSON manifest，并将字体、图片和其他多媒体资源复制到资源目录。默认格式为 YAML：
 
 ```bash
 ofd-creator export \
@@ -81,7 +81,7 @@ ofd-creator export \
   --asset-root assets
 ```
 
-未指定 `--format` 时，会根据输出文件扩展名自动选择格式：`.json` 使用 JSON，`.toml` 使用 TOML，`.yaml`/`.yml` 使用 YAML；标准输出或没有扩展名时默认使用 YAML。也可以显式使用 `--format json` 或 `--format toml`：
+未指定 `--format` 时，会根据输出文件扩展名自动选择格式：`.json` 使用 JSON，`.yaml`/`.yml` 使用 YAML；标准输出或没有扩展名时默认使用 YAML，其他扩展名会被拒绝。也可以显式使用 `--format json` 或 `--format yaml`：
 
 ```bash
 ofd-creator export \
@@ -91,8 +91,8 @@ ofd-creator export \
 
 ofd-creator export \
   --input input.ofd \
-  --output exported/document.toml \
-  --format toml
+  --output exported/document.yaml \
+  --format yaml
 ```
 
 JSON 默认使用紧凑格式；需要便于阅读时增加 `--json-indent`，使用 2 个空格缩进：
@@ -134,7 +134,7 @@ exported/
     001-assets/
 ```
 
-`index.yaml`（或指定格式的 `index.json`、`index.toml`）列出每个文档体的索引、ID、标题、manifest 路径、资源目录和页数。每个子 manifest 都可以独立执行普通创建命令；批量导出要求目标目录不存在，以避免覆盖已有文件。
+`index.yaml`（或指定格式的 `index.json`）列出每个文档体的索引、ID、标题、manifest 路径、资源目录和页数。每个子 manifest 都可以独立执行普通创建命令；批量导出要求目标目录不存在，以避免覆盖已有文件。
 
 ## 合并多个 OFD
 
@@ -481,7 +481,7 @@ pages:
 
 还支持 `draw_params`、`color_spaces`、`templates`、`layers`、`ctm`、`fill_color`、`stroke_color`、`text_codes`、`cg_transforms`、渐变和 Pattern 填充。
 
-完整的 TOML 渐变实例见 `cmd/ofd-creator/examples/gradients.toml`，包含轴向、径向、Gouraud、LaGouraud 和 Pattern 填充。
+完整的 YAML 渐变实例见 `cmd/ofd-creator/examples/gradients.yaml`，包含轴向、径向、Gouraud、LaGouraud 和 Pattern 填充。
 
 楷体文字样式实例见 `cmd/ofd-creator/examples/kaiti-styles.yaml`，包含多种字号、字重、斜体、描边和字宽设置。
 
@@ -539,7 +539,7 @@ pages:
 
 `profile_name` 必须是单层文件名，不能包含目录分隔符或路径穿越片段。
 
-输入格式支持 JSON、YAML 和 TOML；使用 `--format auto` 时根据文件扩展名自动判断，标准输入默认按 YAML 解析。输入字段未知、资源路径越出资源根目录或资源文件不存在时，命令会失败并报告 manifest 字段位置。
+输入格式支持 JSON 和 YAML；使用 `--format auto` 时根据 `.json`、`.yaml`、`.yml` 扩展名自动判断，标准输入或没有扩展名时默认按 YAML 解析。格式不支持时返回参数错误（退出码 `2`）。输入字段未知、资源路径越出资源根目录或资源文件不存在时，命令会失败并报告 manifest 字段位置。
 
 ## 退出码
 

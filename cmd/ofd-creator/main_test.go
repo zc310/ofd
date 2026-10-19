@@ -112,7 +112,7 @@ func TestRunRejectsUnknownManifestField(t *testing.T) {
 	}
 }
 
-func TestRunCreatesTOMLDocument(t *testing.T) {
+func TestRunRejectsTOMLBeforeCreatingOutput(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "document.toml")
 	output := filepath.Join(directory, "result.ofd")
@@ -120,9 +120,17 @@ func TestRunCreatesTOMLDocument(t *testing.T) {
 	if err := os.WriteFile(input, manifest, 0600); err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
-	if code := run([]string{"-i", input, "-o", output, "--check"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("run exit code = %d, stderr = %s", code, stderr.String())
+	for _, format := range []string{"auto", "toml", "TOML"} {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"-i", input, "-o", output, "--format", format}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "不支持的 manifest 格式") {
+			t.Fatalf("run %s exit code = %d, stderr = %s", format, code, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Fatal("格式错误污染了标准输出")
+		}
+		if _, err := os.Stat(output); !os.IsNotExist(err) {
+			t.Fatalf("格式错误创建了输出文件: %v", err)
+		}
 	}
 }
 
@@ -186,9 +194,9 @@ func TestRunExportWritesManifest(t *testing.T) {
 	}
 }
 
-func TestRunExportWritesJSONAndTOMLManifests(t *testing.T) {
+func TestRunExportWritesJSONAndYAMLManifests(t *testing.T) {
 	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
-	for _, format := range []string{"json", "toml"} {
+	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			directory := t.TempDir()
 			output := filepath.Join(directory, "document."+format)

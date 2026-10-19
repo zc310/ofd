@@ -132,7 +132,7 @@ func parseExportAllArgs(args []string, output io.Writer) (*exportAllOptions, err
 	flags := root.Flags()
 	flags.StringVarP(&opts.input, "input", "i", "", "OFD 输入文件；使用 - 从标准输入读取")
 	flags.StringVarP(&opts.output, "output", "o", "", "批量导出目录")
-	flags.StringVar(&opts.format, "format", opts.format, "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml、json 或 toml")
+	flags.StringVar(&opts.format, "format", opts.format, "导出格式：yaml 或 json，默认 yaml")
 	flags.BoolVar(&opts.jsonIndent, "json-indent", false, "JSON 输出使用 2 空格缩进")
 	if err := root.Execute(); err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func parseExportAllArgs(args []string, output io.Writer) (*exportAllOptions, err
 	if format == "yml" {
 		format = "yaml"
 	}
-	if format != "yaml" && format != "json" && format != "toml" {
+	if format != "yaml" && format != "json" {
 		return nil, fmt.Errorf("不支持的导出格式 %q", opts.format)
 	}
 	opts.format = format
@@ -201,7 +201,7 @@ func parseExportArgs(args []string, output io.Writer) (*exportOptions, error) {
 	flags.StringVarP(&opts.input, "input", "i", "", "OFD 输入文件；使用 - 从标准输入读取")
 	flags.StringVarP(&opts.output, "output", "o", "", "manifest 输出文件；使用 - 写入标准输出")
 	flags.StringVar(&opts.assetRoot, "asset-root", opts.assetRoot, "资源输出目录")
-	flags.StringVar(&opts.format, "format", "", "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml、json 或 toml")
+	flags.StringVar(&opts.format, "format", "", "导出格式：留空时根据输出文件扩展名推断，也可指定 yaml 或 json")
 	flags.BoolVar(&opts.jsonIndent, "json-indent", false, "JSON 输出使用 2 空格缩进")
 	flags.IntVar(&opts.document, "document", -1, "要导出的文档体索引，从 0 开始；默认拒绝多文档输入")
 	if err := root.Execute(); err != nil {
@@ -227,8 +227,8 @@ func validateExportOptions(opts *exportOptions) error {
 	if format == "yml" {
 		format = "yaml"
 	}
-	if format != "yaml" && format != "json" && format != "toml" {
-		return fmt.Errorf("不支持的导出格式 %q", opts.format)
+	if format != "yaml" && format != "json" {
+		return fmt.Errorf("不支持的导出格式 %q", format)
 	}
 	opts.format = format
 	if opts.output != "-" && opts.input != "-" && utils.SamePath(opts.input, opts.output) {
@@ -247,12 +247,12 @@ func exportFormatFromPath(output string) string {
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".json":
 		return "json"
-	case ".toml":
-		return "toml"
 	case ".yaml", ".yml":
 		return "yaml"
-	default:
+	case "":
 		return "yaml"
+	default:
+		return strings.TrimPrefix(strings.ToLower(filepath.Ext(output)), ".")
 	}
 }
 
