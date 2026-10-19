@@ -200,7 +200,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 	}
 }
 
-func TestPagesUsesDocumentSizeAndPageLoadsIntroRealSize(t *testing.T) {
+func TestPagesUsesIntroPageMetadata(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -222,8 +222,8 @@ func TestPagesUsesDocumentSizeAndPageLoadsIntroRealSize(t *testing.T) {
 		if page.Index != index {
 			t.Errorf("Pages()[%d].Index = %d, want %d", index, page.Index, index)
 		}
-		if math.Abs(page.Width-210) > 0.0001 || math.Abs(page.Height-297) > 0.0001 {
-			t.Errorf("Pages()[%d] = %+v, want document size 210 x 297 mm", index, page)
+		if math.Abs(page.Width-320.0001) > 0.0001 || math.Abs(page.Height-240) > 0.0001 {
+			t.Errorf("Pages()[%d] = %+v, want page size 320.0001 x 240 mm", index, page)
 		}
 	}
 	actual, err := reader.Page(0)
@@ -235,7 +235,7 @@ func TestPagesUsesDocumentSizeAndPageLoadsIntroRealSize(t *testing.T) {
 	}
 }
 
-func TestPagesUsesDocumentSizeAndPageLoadsRealSize(t *testing.T) {
+func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "other", "GBT_33190-2016.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("GBT_33190-2016.ofd  is unavailable")
@@ -257,11 +257,11 @@ func TestPagesUsesDocumentSizeAndPageLoadsRealSize(t *testing.T) {
 		t.Fatalf("page count = %d, want %d", len(pages), reader.PageCount())
 	}
 	if pages[0].Width != 210 || pages[0].Height != 297 {
-		t.Fatalf("Pages()[0] = %+v, want document page size 209.9733 x 296.9260", pages[0])
+		t.Fatalf("Pages()[0] = %+v, want page size 210 x 297", pages[0])
 	}
 	for index, page := range pages {
 		if page.Width != pages[0].Width || page.Height != pages[0].Height {
-			t.Fatalf("Pages()[%d] = %+v, want document page size", index, page)
+			t.Fatalf("Pages()[%d] = %+v, want same page size", index, page)
 		}
 	}
 	actual, err := reader.Page(0)
@@ -269,7 +269,7 @@ func TestPagesUsesDocumentSizeAndPageLoadsRealSize(t *testing.T) {
 		t.Fatal(err)
 	}
 	if actual.Width != 210 || actual.Height != 297 {
-		t.Fatalf("Page(0) = %+v, want physical size 209.9733 x 296.9260", actual)
+		t.Fatalf("Page(0) = %+v, want physical size 210 x 297", actual)
 	}
 }
 
@@ -291,8 +291,8 @@ func TestPagesUsesDocumentSizeWhenPageMetadataIsMissing(t *testing.T) {
 	if pages[1].Width != 210 || pages[1].Height != 297 {
 		t.Fatalf("Pages()[1] = %+v, want document size 210 x 297", pages[1])
 	}
-	if pages[0].Width != 210 || pages[0].Height != 297 {
-		t.Fatalf("Pages()[0] = %+v, want document size 210 x 297", pages[0])
+	if pages[0].Width != 100 || pages[0].Height != 200 {
+		t.Fatalf("Pages()[0] = %+v, want page size 100 x 200", pages[0])
 	}
 
 	actual, err := reader.Page(0)

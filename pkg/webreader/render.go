@@ -61,8 +61,8 @@ func (r *Reader) PageCount() int {
 	return len(r.pages)
 }
 
-// Pages 返回所有页面基于文档默认页面区域的尺寸快照，尺寸单位为毫米。
-// 不读取各页面 XML；页面首次访问时由 Page 按需返回真实尺寸。
+// Pages 返回所有页面的尺寸快照，尺寸单位为毫米。
+// 优先读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
 func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -79,6 +79,10 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 			return nil, fmt.Errorf("第 %d 页所属文档为空", index)
 		}
 		box := ref.document.CommonData.PageArea.PhysicalBox
+		pageBox, err := ref.page.PhysicalBoxMetadata()
+		if err == nil && finitePositive(pageBox.Width) && finitePositive(pageBox.Height) {
+			box = pageBox
+		}
 		if !finitePositive(box.Width) || !finitePositive(box.Height) {
 			box.Width = defaultPageWidth
 			box.Height = defaultPageHeight
@@ -89,7 +93,7 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 }
 
 // Page 返回指定页面的真实尺寸信息。
-// 查询单页信息会按需加载该页完整内容，并返回页面自有尺寸。
+// 与 Pages 不同，查询单页信息会按需加载该页完整内容。
 func (r *Reader) Page(index int) (PageInfo, error) {
 	if r == nil {
 		return PageInfo{}, errors.New("文档引擎为空")

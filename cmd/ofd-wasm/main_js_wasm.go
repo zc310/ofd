@@ -822,6 +822,14 @@ func (a *wasmApp) signatures(_ js.Value, _ []js.Value) any {
 			} else {
 				stampValue["boundary"] = nil
 			}
+			if stamp.VisibleBoundary != nil {
+				stampValue["visible_boundary"] = objectValue(map[string]any{
+					"x": stamp.VisibleBoundary.X, "y": stamp.VisibleBoundary.Y,
+					"width": stamp.VisibleBoundary.Width, "height": stamp.VisibleBoundary.Height,
+				})
+			} else {
+				stampValue["visible_boundary"] = nil
+			}
 			stamps.SetIndex(stampIndex, objectValue(stampValue))
 		}
 		value["stamps"] = stamps

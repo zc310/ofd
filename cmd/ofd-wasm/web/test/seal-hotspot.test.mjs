@@ -8,6 +8,7 @@ import { sliceFunction, viewerSource, load, createSuite } from './harness.mjs';
 const suite = createSuite('签章热区');
 
 const code = [
+  sliceFunction('buildSignatureStamp'),
   sliceFunction('indexSealStamps'),
   sliceFunction('applySealHotspots'),
   sliceFunction('buildSealHotspot'),
@@ -66,6 +67,7 @@ function loaded(state) {
       indexSealStamps: 'indexSealStamps',
       applySealHotspots: 'applySealHotspots',
       buildSealHotspot: 'buildSealHotspot',
+      buildSignatureStamp: 'buildSignatureStamp',
       positionSealPopover: 'positionSealPopover',
       handleSealPopoverScroll: 'handleSealPopoverScroll',
     },
@@ -124,6 +126,45 @@ suite.group('buildSealHotspot 缺少提供者时回退到签名 ID');
   const entry = { info: { scope: 0, id: 'S9' }, stamp: { page: 0, boundary: boundary(0, 0, 10, 10) }, stampIndex: 0 };
   const button = state.buildSealHotspot(entry, { width: 100, height: 100 });
   suite.check(String(button.title).includes('S9'), '回退到签名 ID', button.title);
+}
+
+suite.group('骑缝章只高亮当前页可见切片');
+{
+  const state = loaded(baseState());
+  const info = { scope: 0, id: 'seam' };
+  const visible = boundary(202, 128.5, 8, 40);
+  const stamp = { page: 0, boundary: boundary(186, 128.5, 40, 40), visible_boundary: visible };
+  state.indexSealStamps([{ ...info, stamps: [stamp] }]);
+  const button = state.buildSealHotspot(state.sealStampsByPage.get(0)[0], { width: 210, height: 297 });
+  suite.check(Math.abs(parseFloat(button.style.left) - 202 / 210 * 100) < 1e-9,
+    '热区横坐标包含 Clip 偏移', button.style.left);
+  suite.check(Math.abs(parseFloat(button.style.width) - 8 / 210 * 100) < 1e-9,
+    '热区宽度只覆盖 8mm 切片', button.style.width);
+  suite.check(Math.abs(parseFloat(button.style.height) - 40 / 297 * 100) < 1e-9,
+    '纵向尺寸沿用当前切片高度', button.style.height);
+  button.listeners.click();
+  suite.check(state.opened.length === 1, '切片仍可点击打开签章属性');
+}
+
+suite.group('侧栏跳转高亮同一骑缝章切片');
+{
+  const state = loaded(baseState({
+    sealMime: () => '',
+    signatureSealIcon: () => fakeElement('span'),
+    jumps: [],
+    collapsed: false,
+  }));
+  state.goToAnnotation = target => state.jumps.push(target);
+  state.collapseSidebarAfterJump = () => { state.collapsed = true; };
+  const visible = boundary(202, 128.5, 8, 40);
+  const stamp = { page: 0, boundary: boundary(186, 128.5, 40, 40), visible_boundary: visible };
+  const button = state.buildSignatureStamp({ scope: 0, id: 'seam' }, stamp, 0);
+  button.listeners.click();
+  suite.check(state.jumps[0]?.boundary === visible, '跳转使用裁剪后边界');
+  suite.check(state.collapsed, '跳转后仍按原逻辑收起侧栏');
+  delete stamp.visible_boundary;
+  state.buildSignatureStamp({ scope: 0, id: 'whole' }, stamp, 0).listeners.click();
+  suite.check(state.jumps[1]?.boundary === stamp.boundary, '无裁剪信息时使用原始边界');
 }
 
 // ------------------------------------------------------ 按页重建热区

@@ -3,6 +3,7 @@ package webreader
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,9 @@ type SignatureStamp struct {
 	ID string
 	// Boundary 是签章边界（毫米），未声明时为 nil。
 	Boundary *AnnotationBoundary
+	// VisibleBoundary 是应用 Clip 后的页面可见边界（毫米），供点击与定位使用。
+	// 未裁剪时与 Boundary 相同。
+	VisibleBoundary *AnnotationBoundary
 	// HasSeal 表示是否提取到印章数据。
 	HasSeal bool
 	// SealType 是印章文件类型（如 png、jpg、ofd），无印章时为空。
@@ -259,7 +263,10 @@ func (r *Reader) computeSignatures() ([]SignatureInfo, error) {
 				if annot == nil {
 					continue
 				}
-				stamp := SignatureStamp{ID: annot.ID, Page: -1, Boundary: boxValue(annot.Boundary)}
+				stamp := SignatureStamp{
+					ID: annot.ID, Page: -1, Boundary: boxValue(annot.Boundary),
+					VisibleBoundary: stampVisibleBoundary(annot),
+				}
 				pageID := models.StID(annot.PageRef)
 				if index, ok := pageIndex[pageID]; ok {
 					stamp.Page = index
@@ -501,6 +508,21 @@ func joinName(values []string) string {
 		}
 	}
 	return strings.Join(kept, ", ")
+}
+
+// stampVisibleBoundary 与渲染器的 sealClipBox 一致：Clip 相对印章盒左上角，
+// 先夹回盒内，再转为页面坐标；缺省或无效 Clip 按整枚印章处理。
+func stampVisibleBoundary(annot *models.StampAnnot) *AnnotationBoundary {
+	box, clip := annot.Boundary, annot.Clip
+	if box.Width > 0 && box.Height > 0 && clip.Width > 0 && clip.Height > 0 {
+		x0, y0 := math.Max(clip.X, 0), math.Max(clip.Y, 0)
+		x1 := math.Min(clip.X+clip.Width, box.Width)
+		y1 := math.Min(clip.Y+clip.Height, box.Height)
+		if x1 > x0 && y1 > y0 {
+			return boxValue(models.StBox{X: box.X + x0, Y: box.Y + y0, Width: x1 - x0, Height: y1 - y0})
+		}
+	}
+	return boxValue(box)
 }
 
 func boxValue(box models.StBox) *AnnotationBoundary {

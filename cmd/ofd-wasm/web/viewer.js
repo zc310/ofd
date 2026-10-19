@@ -6799,7 +6799,7 @@ function buildSignatureStamp(info, stamp, stampIndex) {
   button.className = 'signature-stamp';
   const hasPage = Number.isInteger(stamp?.page) && stamp.page >= 0;
   if (hasPage) {
-    button.addEventListener('click', () => { goToAnnotation({ page: stamp.page, boundary: stamp.boundary }); collapseSidebarAfterJump(); });
+    button.addEventListener('click', () => { goToAnnotation({ page: stamp.page, boundary: stamp.visible_boundary || stamp.boundary }); collapseSidebarAfterJump(); });
     button.title = `跳转到第 ${stamp.page + 1} 页`;
   } else {
     button.disabled = true;
@@ -7320,7 +7320,7 @@ function indexSealStamps(signatures) {
     const stamps = Array.isArray(info?.stamps) ? info.stamps : [];
     stamps.forEach((stamp, stampIndex) => {
       if (!Number.isInteger(stamp?.page) || stamp.page < 0) return;
-      const boundary = stamp.boundary;
+      const boundary = stamp.visible_boundary || stamp.boundary;
       if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
           !(boundary.width > 0) || !(boundary.height > 0)) return;
       const entries = sealStampsByPage.get(stamp.page) || [];
@@ -7345,11 +7345,11 @@ function applySealHotspots(index) {
   });
 }
 
-// buildSealHotspot 按签章边界在页面坐标系里生成一个百分比定位的点击热区，和
+// buildSealHotspot 按签章可见边界在页面坐标系里生成一个百分比定位的点击热区，和
 // 链接热区用同一套坐标换算；旋转由 page-surface 的 transform 统一处理。
 function buildSealHotspot(entry, pageInfo) {
   const { info, stamp, stampIndex } = entry;
-  const boundary = stamp.boundary;
+  const boundary = stamp.visible_boundary || stamp.boundary;
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'seal-hotspot';
