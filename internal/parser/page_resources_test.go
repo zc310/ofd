@@ -154,3 +154,29 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 		}
 	}
 }
+
+func TestPagesWithoutPageResourcesKeepDocumentResourcesAcrossEvictions(t *testing.T) {
+	input := buildPageResPackage(t, "", map[string]string{
+		"Doc_0/Document.xml": `<Document><CommonData><DocumentRes>Res.xml</DocumentRes></CommonData><Pages>
+  <Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/>
+  <Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>
+</Pages></Document>`,
+		"Doc_0/Res.xml":                  `<Res><DrawParams><DrawParam ID="7" LineWidth="0.5"/></DrawParams></Res>`,
+		"Doc_0/Pages/Page_0/Content.xml": `<Page><Content/></Page>`,
+		"Doc_0/Pages/Page_1/Content.xml": `<Page><Content/></Page>`,
+	})
+	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := ofd.Documents[0]
+	for _, index := range []int{0, 1, 0} {
+		if err := doc.Pages[index].EnsureLoaded(); err != nil {
+			t.Fatal(err)
+		}
+		if got := doc.GetDrawParam(7); got == nil || got.LineWidth != 0.5 {
+			t.Fatalf("加载页面 %d 后文档资源丢失：%+v", index, got)
+		}
+	}
+}

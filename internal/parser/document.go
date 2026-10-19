@@ -591,7 +591,8 @@ func (p *Document) addPageToCacheLocked(page *Page) {
 			return victim.pinCount.Load() == 0
 		})
 	}
-	p.pageCache.AddWeighted(page, pageSize(page), pageSize(page))
+	size := pageSize(page)
+	p.pageCache.AddWeighted(page, size, size)
 }
 
 func (p *Document) ensurePageLoaded(page *Page) error {
@@ -659,12 +660,16 @@ func (p *Document) parse(body models.DocBody) error {
 					content.Area = &p.CommonData.PageArea
 				}
 				target.pageContent = *content
-				target.resources = pageResources{
-					media:       make(map[models.StID]*models.MultiMedia),
-					drawParams:  make(map[models.StID]*models.DrawParam),
-					fonts:       make(map[models.StID]*models.Font),
-					colorSpaces: make(map[models.StID]*models.ColorSpace),
-					composites:  make(map[models.StID]*models.CompositeGraphicUnit),
+				target.resources = pageResources{}
+				// 只使用文档资源的页面无需创建页面级资源索引。
+				if len(content.PageRes) > 0 {
+					target.resources = pageResources{
+						media:       make(map[models.StID]*models.MultiMedia),
+						drawParams:  make(map[models.StID]*models.DrawParam),
+						fonts:       make(map[models.StID]*models.Font),
+						colorSpaces: make(map[models.StID]*models.ColorSpace),
+						composites:  make(map[models.StID]*models.CompositeGraphicUnit),
+					}
 				}
 				// 重载时重建路径列表，避免把上次加载的资源再次追加进来。
 				target.pageResPath = make([]models.StLoc, 0, len(content.PageRes))
@@ -897,6 +902,9 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 	p.templateMu.Lock()
 	defer p.templateMu.Unlock()
 	if content, ok := p.templates[id]; ok && content != nil {
+		if p.templateCache != nil {
+			_, _ = p.templateCache.Get(id)
+		}
 		return content, nil
 	}
 	if err, ok := p.templateErrors[id]; ok {
@@ -922,7 +930,12 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 		})
 	}
 	p.templates[id] = content
-	p.templateCache.AddWeighted(id, content, pageContentSize(content))
+	// 与普通页面一致，优先用 ZIP 解压大小记账，避免为估算权重序列化整页 JSON。
+	weight := int64(min(entrySize, 1<<63-1))
+	if weight == 0 {
+		weight = pageContentSize(content)
+	}
+	p.templateCache.AddWeighted(id, content, weight)
 	return content, nil
 }
 

@@ -3,7 +3,10 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/zc310/ofd/internal/models"
 )
 
 func parserBenchFile(b *testing.B, name string) []byte {
@@ -84,5 +87,20 @@ func BenchmarkPageLoad(b *testing.B) {
 			b.Fatal(err)
 		}
 		lease.Release()
+	}
+}
+
+// BenchmarkTemplateLoad 循环访问超过缓存容量的模板，测量解析和缓存记账的成本。
+func BenchmarkTemplateLoad(b *testing.B) {
+	content := `<Page><Content><Layer ID="1">` + strings.Repeat(
+		`<TextObject ID="2" Font="3" Size="3.5" Boundary="0 0 100 10"><TextCode X="0" Y="5">模板文字</TextCode></TextObject>`, 1000,
+	) + `</Layer></Content></Page>`
+	doc := templateTestDocument(b, 33, content)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := doc.LoadTemplate(models.StID(i%33 + 1)); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

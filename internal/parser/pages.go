@@ -87,6 +87,9 @@ func readPagePhysicalBox(fileCache *core.Package, pagePath models.StLoc) (models
 		token, err = decoder.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if limited.N == 0 {
+					return models.StBox{}, errors.New("页面尺寸元数据超过大小限制")
+				}
 				return models.StBox{}, nil
 			}
 			return models.StBox{}, err

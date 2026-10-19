@@ -67,7 +67,8 @@ func (p *OFD) Open(input any) error {
 		return p.openFromBytes(v)
 	case io.Reader:
 		var source io.Reader = v
-		if p.options.MaxInputBytes > 0 {
+		// 最大 int64 不能再加 1；此时 Reader 的可表示长度本身已受 int64 限制。
+		if p.options.MaxInputBytes > 0 && p.options.MaxInputBytes < 1<<63-1 {
 			source = io.LimitReader(v, p.options.MaxInputBytes+1)
 		}
 		data, err := io.ReadAll(source)
