@@ -9,7 +9,7 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.2
+	github.com/chromedp/cdproto v0.158.3
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
@@ -38,13 +38,13 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
-	github.com/tdewolff/minify/v2 v2.24.21
-	github.com/tdewolff/parse/v2 v2.8.18
-	github.com/valyala/fasthttp v1.75.0
+	github.com/tdewolff/minify/v2 v2.24.22
+	github.com/tdewolff/parse/v2 v2.8.19
+	github.com/valyala/fasthttp v1.76.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/yuin/goldmark v1.8.6
-	github.com/zc310/canvas v0.0.0-20261016023101-3d1af32f0be3
+	github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262
 	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
@@ -84,7 +84,7 @@ require (
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/render v0.2.1 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/godbus/dbus/v5 v5.2.4 // indirect
 	github.com/gogpu/gpucontext v0.31.3 // indirect
 	github.com/gogpu/gputypes v0.8.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -92,7 +92,7 @@ require (
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/kovidgoyal/go-parallel v1.1.1 // indirect
 	github.com/kovidgoyal/go-shm v1.0.0 // indirect
@@ -100,10 +100,10 @@ require (
 	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/molecule-man/go-brrr v1.2.0 // indirect
+	github.com/molecule-man/go-brrr v1.3.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
-	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7 // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
