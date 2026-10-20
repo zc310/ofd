@@ -1083,6 +1083,7 @@ func registerFallbackFont(data []byte, family string, style drawing.FontStyle) e
 
 // FallbackFontData 返回已全局注册回退字体族的首个来源数据（用于字体签名等
 // 只读检查）；未注册时 ok 为 false。
+// 返回的源数据由注册表共享，调用方不得修改。
 func fallbackFontData(family string) ([]byte, bool) {
 	fontCacheMu.Lock()
 	defer fontCacheMu.Unlock()
@@ -1209,13 +1210,13 @@ func (p *Fonts) applyFallbackFace(family string, style drawing.FontStyle, global
 }
 
 // acquireFallbackFamily 记一次持有。必须在 fontCacheMu 已持有时调用。
+// 后续持有不能撤销注销意图；只有显式注册才能重置 dropped。
 func acquireFallbackFamily(family string) {
 	if family == "" {
 		return
 	}
 	if reg := fallbackRegistry[family]; reg != nil {
 		reg.refs++
-		reg.dropped = false
 	}
 }
 

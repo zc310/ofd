@@ -141,6 +141,7 @@ func RegisteredFallbackFamilies() []string {
 }
 
 // FallbackFontData 返回已全局注册回退字体族的首个来源数据。
+// 返回注册表共享的只读字节，调用方不得修改。
 func FallbackFontData(family string) ([]byte, bool) {
 	if fallbackFontDataFn == nil {
 		return nil, false

@@ -13,6 +13,43 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
+func TestOnlyExplicitFallbackRegistrationCancelsUnregister(t *testing.T) {
+	for _, registerAgain := range []bool{false, true} {
+		name := t.Name() + "-held"
+		if registerAgain {
+			name = t.Name() + "-registered-again"
+		}
+		func() {
+			defer UnregisterFallbackFont(name)
+			if err := registerFallbackFont(goregular.TTF, name, FontRegular); err != nil {
+				t.Fatal(err)
+			}
+			first, second := NewFonts(nil), NewFonts(nil)
+			defer first.Close()
+			defer second.Close()
+			if err := first.UseFallbackFont(name); err != nil {
+				t.Fatal(err)
+			}
+			if err := UnregisterFallbackFont(name); err != nil {
+				t.Fatal(err)
+			}
+			if err := second.UseFallbackFont(name); err != nil {
+				t.Fatal(err)
+			}
+			if registerAgain {
+				if err := registerFallbackFont(goregular.TTF, name, FontRegular); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first.Close()
+			second.Close()
+			if _, exists := fallbackFontData(name); exists != registerAgain {
+				t.Errorf("显式重新注册=%v，关闭全部文档后来源仍存在=%v", registerAgain, exists)
+			}
+		}()
+	}
+}
+
 func TestFallbackStyleReplacementKeepsOnlyCurrentSources(t *testing.T) {
 	name := t.Name()
 	defer UnregisterFallbackFont(name)
