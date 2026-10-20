@@ -3,8 +3,13 @@
 package xps
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os/exec"
+	"strconv"
 	"syscall"
+	"time"
 )
 
 func processGroupAttr() *syscall.SysProcAttr {
@@ -15,5 +20,15 @@ func killProcessGroup(command *exec.Cmd) error {
 	if command == nil || command.Process == nil {
 		return nil
 	}
-	return command.Process.Kill()
+	// CREATE_NEW_PROCESS_GROUP 本身不提供终止整个进程树的能力。
+	// taskkill /T 会同时终止 xpstopdf 派生的子进程；清理命令也必须有时限。
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	kill := exec.CommandContext(ctx, "taskkill.exe", "/T", "/F", "/PID", strconv.Itoa(command.Process.Pid))
+	kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	kill.WaitDelay = processWaitDelay
+	if err := kill.Run(); err != nil {
+		return errors.Join(fmt.Errorf("终止 xpstopdf 进程树失败: %w", err), command.Process.Kill())
+	}
+	return nil
 }

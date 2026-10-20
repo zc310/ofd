@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,8 @@ const (
 	EnvXpstopdf = "OFD_XPSTOPDF"
 	// DefaultTimeout 是单次 XPS 转换的默认超时时间。
 	DefaultTimeout = 2 * time.Minute
+	// processWaitDelay 限制进程退出后等待继承输出管道的子进程关闭管道的时间。
+	processWaitDelay = time.Second
 )
 
 // Options 控制 XPS 转换行为。
@@ -54,12 +57,25 @@ func FindXpstopdf(explicit string) (string, error) {
 }
 
 // ConvertToPDF 把 XPS 文件转换为 PDF 并返回 PDF 字节。输入必须是可读的本地文件。
-func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byte, error) {
+func ConvertToPDF(ctx context.Context, inputPath string, options Options) (data []byte, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(inputPath) == "" {
 		return nil, errors.New("XPS 转换输入文件为空")
 	}
-	if info, err := os.Stat(inputPath); err != nil || info.IsDir() {
-		return nil, fmt.Errorf("XPS 转换输入文件不可读: %s", inputPath)
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return nil, fmt.Errorf("XPS 转换输入文件不可读: %w", err)
+	}
+	defer input.Close()
+	if info, err := input.Stat(); err != nil {
+		return nil, fmt.Errorf("检查 XPS 转换输入失败: %w", err)
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("XPS 转换输入必须是普通文件: %s", inputPath)
 	}
 	xpstopdf, err := FindXpstopdf(options.Xpstopdf)
 	if err != nil {
@@ -69,9 +85,16 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	// 取消错误按转换链约定原样返回；同一超时也覆盖 PDF 校验。
+	defer func() {
+		if ctx.Err() != nil {
+			data, err = nil, ctx.Err()
+		} else if runCtx.Err() == context.DeadlineExceeded {
+			data, err = nil, fmt.Errorf("xpstopdf 转换超时（%s）: %w", timeout, context.DeadlineExceeded)
+		}
+	}()
 
 	workDir, err := os.MkdirTemp(options.TempDir, "ofd-xps-")
 	if err != nil {
@@ -79,43 +102,39 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	}
 	defer os.RemoveAll(workDir)
 	localInput := filepath.Join(workDir, "input.xps")
-	if err := copyFile(inputPath, localInput); err != nil {
+	if err := copyFile(input, localInput); err != nil {
 		return nil, fmt.Errorf("准备 XPS 输入失败: %w", err)
 	}
 	outputPath := filepath.Join(workDir, "output.pdf")
 
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	command := exec.CommandContext(runCtx, xpstopdf, localInput, outputPath)
 	command.Dir = workDir
 	command.SysProcAttr = processGroupAttr()
 	command.Cancel = func() error { return killProcessGroup(command) }
+	command.WaitDelay = processWaitDelay
 	commandOutput, runErr := command.CombinedOutput()
 
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if runCtx.Err() == context.DeadlineExceeded {
-		return nil, fmt.Errorf("xpstopdf 转换超时（%s）", timeout)
+	message := strings.TrimSpace(string(commandOutput))
+	if runErr != nil {
+		if message != "" {
+			runErr = fmt.Errorf("%w: %s", runErr, message)
+		}
+		return nil, fmt.Errorf("xpstopdf 转换失败: %w", runErr)
 	}
 	data, readErr := os.ReadFile(outputPath)
 	if readErr != nil || len(data) == 0 {
-		message := strings.TrimSpace(string(commandOutput))
-		if runErr != nil {
-			return nil, fmt.Errorf("xpstopdf 转换失败: %w: %s", runErr, message)
-		}
 		if readErr != nil {
-			return nil, fmt.Errorf("xpstopdf 未生成 PDF: %s", message)
+			if message != "" {
+				return nil, fmt.Errorf("xpstopdf 未生成 PDF: %w: %s", readErr, message)
+			}
+			return nil, fmt.Errorf("xpstopdf 未生成 PDF: %w", readErr)
 		}
 		return nil, fmt.Errorf("xpstopdf 生成的 PDF 为空")
-	}
-	if runErr != nil {
-		return nil, fmt.Errorf("xpstopdf 转换失败: %w: %s", runErr, strings.TrimSpace(string(commandOutput)))
 	}
 	if !bytes.HasPrefix(data, []byte("%PDF-")) {
 		return nil, errors.New("xpstopdf 生成的 PDF 无效")
 	}
-	if err := validatePDF(ctx, data); err != nil {
+	if err := validatePDF(runCtx, data); err != nil {
 		return nil, fmt.Errorf("xpstopdf 生成的 PDF 无效: %w", err)
 	}
 	return data, nil
@@ -129,10 +148,7 @@ func validatePDF(ctx context.Context, data []byte) error {
 		return fmt.Errorf("读取 PDF 失败: %w", err)
 	}
 	if err := api.ValidateContext(ctx, pdfContext); err != nil {
-		pdfContext.Info = nil
-		if retryErr := api.ValidateContext(ctx, pdfContext); retryErr != nil {
-			return fmt.Errorf("校验 PDF 结构失败: %w", retryErr)
-		}
+		return fmt.Errorf("校验 PDF 结构失败: %w", err)
 	}
 	if pdfContext.PageCount == 0 {
 		return errors.New("PDF 没有页面")
@@ -140,10 +156,12 @@ func validatePDF(ctx context.Context, data []byte) error {
 	return nil
 }
 
-func copyFile(source, target string) error {
-	data, err := os.ReadFile(source)
+// source 是已经打开并检查过的输入，避免检查后按路径重新打开另一文件。
+func copyFile(source io.Reader, target string) error {
+	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(target, data, 0600)
+	_, copyErr := io.Copy(output, source)
+	return errors.Join(copyErr, output.Close())
 }
