@@ -19,7 +19,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
 | 想做什么 | 入口 |
 |---|---|
-| 在线打开 OFD | [浏览器阅读器](https://zc310.github.io/ofd/wasm/) |
+| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)（在线阅读 OFD） |
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases) |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 接入自己的 Go 项目 | [Go API](#go-api)、[库使用指南](docs/GO-API.md) |
