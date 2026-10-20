@@ -391,12 +391,7 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 
 func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 	infos := make([]AnnotationInfo, 0)
-	pageIndex := make(map[models.StID]int, len(r.pages))
-	for index, ref := range r.pages {
-		if ref.page != nil {
-			pageIndex[ref.page.ID] = index
-		}
-	}
+	pageIndexes := r.pageIndexesByScope()
 	for index, ref := range r.pages {
 		if ref.page == nil || ref.document == nil {
 			continue
@@ -434,7 +429,7 @@ func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 					Height: boundary.Height,
 				}
 			}
-			info.URI, info.TargetPage, info.Dest = annotLinkAction(item, pageIndex)
+			info.URI, info.TargetPage, info.Dest = annotLinkAction(item, pageIndexes[ref.fontScope])
 			infos = append(infos, info)
 		}
 	}
@@ -611,23 +606,19 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 }
 
 func (r *Reader) computePageLinks() ([]PageLink, error) {
-	pageIndex := make(map[models.StID]int, len(r.pages))
-	for index, ref := range r.pages {
-		if ref.page != nil {
-			pageIndex[ref.page.ID] = index
-		}
-	}
+	pageIndexes := r.pageIndexesByScope()
 	links := make([]PageLink, 0)
-	for index := range r.pages {
-		links = append(links, r.computePageLinksForPageWithIndex(index, pageIndex)...)
+	for index, ref := range r.pages {
+		links = append(links, r.computePageLinksForPageWithIndex(index, pageIndexes[ref.fontScope])...)
 	}
 	return links, nil
 }
 
 func (r *Reader) computePageLinksForPage(index int) []PageLink {
-	pageIndex := make(map[models.StID]int, len(r.pages))
+	scope := r.pages[index].fontScope
+	pageIndex := make(map[models.StID]int)
 	for page, ref := range r.pages {
-		if ref.page != nil {
+		if ref.fontScope == scope && ref.page != nil {
 			pageIndex[ref.page.ID] = page
 		}
 	}

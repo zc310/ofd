@@ -220,6 +220,24 @@ func (r *Reader) Outline() (OutlineTree, error) {
 	return r.metadata.outlineVal, r.metadata.outlineErr
 }
 
+// pageIndexesByScope 按文档体把页 ID 映射为阅读器的全局页索引。
+// GB/T 33190—2016 表 2 规定 ST_ID 在文档内唯一，不同文档体可复用同一 ID。
+func (r *Reader) pageIndexesByScope() map[int]map[models.StID]int {
+	indexes := make(map[int]map[models.StID]int)
+	for index, ref := range r.pages {
+		if ref.page == nil {
+			continue
+		}
+		byPage := indexes[ref.fontScope]
+		if byPage == nil {
+			byPage = make(map[models.StID]int)
+			indexes[ref.fontScope] = byPage
+		}
+		byPage[ref.page.ID] = index
+	}
+	return indexes
+}
+
 func (r *Reader) computeOutline() OutlineTree {
 	var result OutlineTree
 	base := 0

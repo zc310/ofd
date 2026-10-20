@@ -207,17 +207,13 @@ func (r *Reader) Signatures() ([]SignatureInfo, error) {
 }
 
 func (r *Reader) computeSignatures() ([]SignatureInfo, error) {
-	pageIndex := make(map[models.StID]int, len(r.pages))
-	for index, ref := range r.pages {
-		if ref.page != nil {
-			pageIndex[ref.page.ID] = index
-		}
-	}
+	pageIndexes := r.pageIndexesByScope()
 	infos := make([]SignatureInfo, 0)
 	for scope, document := range r.ofd.Documents {
 		if document == nil {
 			continue
 		}
+		pageIndex := pageIndexes[scope]
 		document.ForEachSignature(func(id string, signature *models.Signature) bool {
 			if signature == nil {
 				return true
