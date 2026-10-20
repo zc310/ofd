@@ -935,10 +935,10 @@ func TestRunWatermarkImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 DocumentRes 失败: %v", err)
 	}
-	if !bytes.Contains(res, []byte(`Type="Image" Format="PNG"`)) || !bytes.Contains(res, []byte("<ofd:MediaFile>Images/Image_")) {
+	if !bytes.Contains(res, []byte(`Type="Image" Format="PNG"`)) || !bytes.Contains(res, []byte("<ofd:MediaFile>Images/Watermark_Image_")) {
 		t.Fatalf("DocumentRes 未注册图片媒体:\n%s", res)
 	}
-	match := regexp.MustCompile(`Images/(Image_\d+\.png)`).FindSubmatch(res)
+	match := regexp.MustCompile(`Images/(Watermark_Image_\d+\.png)`).FindSubmatch(res)
 	if match == nil {
 		t.Fatalf("DocumentRes 缺少 MediaFile:\n%s", res)
 	}

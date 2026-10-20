@@ -1,12 +1,13 @@
 package watermark
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"strconv"
 	"unicode"
 
-	"github.com/beevik/etree"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -122,41 +123,39 @@ func TextAppearance(options TextOptions) ([]byte, error) {
 		ctm = [6]float64{cosR, sinR, -sinR, cosR, 0, 0}
 	}
 
-	element := etree.NewElement("TextObject")
-	element.CreateAttr("ID", strconv.FormatUint(id, 10))
-	element.CreateAttr("Boundary", fmtBox(0, 0, boundary.Width, boundary.Height))
+	xml := ofdxml.New()
+	xml.StartElement("TextObject")
+	xml.AttrUint("ID", id)
+	xml.AttrBox("Boundary", 0, 0, boundary.Width, boundary.Height)
 	if ctm != [6]float64{} {
-		element.CreateAttr("CTM",
-			fmtNumber(ctm[0])+" "+fmtNumber(ctm[1])+" "+
-				fmtNumber(ctm[2])+" "+fmtNumber(ctm[3])+" "+
-				fmtNumber(ctm[4])+" "+fmtNumber(ctm[5]))
+		xml.AttrFloatList("CTM", ctm[:])
 	}
-	element.CreateAttr("Font", font)
-	element.CreateAttr("Size", fmtNumber(size))
+	xml.Attribute("Font", font)
+	xml.AttrFloat("Size", size)
 	if options.Fill != nil {
-		element.CreateAttr("Fill", strconv.FormatBool(*options.Fill))
+		xml.Attribute("Fill", strconv.FormatBool(*options.Fill))
 	}
 	if options.Opacity != nil {
-		element.CreateAttr("Alpha", strconv.Itoa(int(*options.Opacity)))
+		xml.Attribute("Alpha", strconv.Itoa(int(*options.Opacity)))
 	}
 	if options.Color != nil {
-		fillColor := element.CreateElement("FillColor")
-		fillColor.CreateAttr("Value", buildFillColorValue(options.Color))
+		xml.StartElement("FillColor")
+		xml.Attribute("Value", buildFillColorValue(options.Color))
 		if options.Color.ColorSpace != 0 {
-			fillColor.CreateAttr("ColorSpace", strconv.FormatUint(options.Color.ColorSpace, 10))
+			xml.AttrUint("ColorSpace", options.Color.ColorSpace)
 		}
+		xml.EndElement()
 	}
 
 	for _, position := range positions {
-		code := element.CreateElement("TextCode")
-		code.CreateAttr("X", fmtNumber(position.x))
-		code.CreateAttr("Y", fmtNumber(position.y))
-		code.SetText(options.Text)
+		xml.StartElement("TextCode")
+		xml.AttrFloat("X", position.x)
+		xml.AttrFloat("Y", position.y)
+		xml.Text(options.Text)
+		xml.EndElement()
 	}
-
-	doc := etree.NewDocument()
-	doc.AddChild(element)
-	return doc.WriteToBytes()
+	xml.EndElement()
+	return appearanceFragment(xml), nil
 }
 
 // ImageAppearance 生成水印外观中的图片对象 XML 片段，结果可直接用作
@@ -190,15 +189,20 @@ func ImageAppearance(options ImageOptions) ([]byte, error) {
 	}
 	positions := boxPositions(width, height, boundary, options.Layout, options.X, options.Y, gap)
 
-	doc := etree.NewDocument()
+	xml := ofdxml.New()
 	for index, position := range positions {
-		element := etree.NewElement("ImageObject")
-		element.CreateAttr("ID", strconv.FormatUint(id+uint64(index), 10))
-		element.CreateAttr("Boundary", fmtBox(position.x, position.y, position.w, position.h))
-		element.CreateAttr("ResourceID", strconv.FormatUint(options.ImageID, 10))
-		doc.AddChild(element)
+		xml.StartElement("ImageObject")
+		xml.AttrUint("ID", id+uint64(index))
+		xml.AttrBox("Boundary", position.x, position.y, position.w, position.h)
+		xml.AttrUint("ResourceID", options.ImageID)
+		xml.EndElement()
 	}
-	return doc.WriteToBytes()
+	return appearanceFragment(xml), nil
+}
+
+func appearanceFragment(xml *ofdxml.Writer) []byte {
+	data := xml.Done()
+	return bytes.TrimPrefix(data, []byte(`<?xml version="1.0" encoding="UTF-8"?>`))
 }
 
 // layoutPosition 是平铺/居中计算出的单个放置位置。

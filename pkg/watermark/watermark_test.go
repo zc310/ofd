@@ -1,6 +1,7 @@
 package watermark
 
 import (
+	"archive/zip"
 	"bytes"
 	"image"
 	"image/color"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/spec"
@@ -119,6 +121,9 @@ func TestAddWatermarkToCleanDocument(t *testing.T) {
 
 	page := readEntry(t, result, "Doc_0/Annotations/Page_1.xml")
 	annots := findWatermarks(t, page)
+	if !bytes.Contains(page, []byte("<ofd:PageAnnot")) || !bytes.Contains(page, []byte("<ofd:Annot")) {
+		t.Fatalf("新建页面注解 XML 应使用 ofd: 前缀:\n%s", page)
+	}
 	if len(annots) != 1 {
 		t.Fatalf("期望 1 条水印, 得到 %d", len(annots))
 	}
@@ -154,6 +159,9 @@ func TestAddWatermarkToCleanDocument(t *testing.T) {
 	if indexRoot.Tag != "Annotations" {
 		t.Fatalf("索引根标签不符: %s", indexRoot.Tag)
 	}
+	if indexRoot.Space != ofdPrefix {
+		t.Fatalf("新建注解索引应使用 ofd: 前缀, space=%q", indexRoot.Space)
+	}
 	pages := indexRoot.ChildElements()
 	if len(pages) != 1 || attr(pages[0], "PageID") != "1" {
 		t.Fatalf("索引页不符")
@@ -169,6 +177,9 @@ func TestAddWatermarkToCleanDocument(t *testing.T) {
 	}
 	if got := strings.TrimSpace(annotEl.Text()); got != "Annotations.xml" {
 		t.Fatalf("Annotations 文本不符: %s", got)
+	}
+	if annotEl.Space != ofdPrefix {
+		t.Fatalf("Document.xml 中新增的 Annotations 应使用 ofd: 前缀, space=%q", annotEl.Space)
 	}
 }
 
@@ -459,6 +470,9 @@ func TestTextAppearanceTileLayout(t *testing.T) {
 	if root.Tag != "TextObject" {
 		t.Fatalf("根标签不符: %s", root.Tag)
 	}
+	if root.Space != ofdPrefix {
+		t.Fatalf("文本外观应使用 ofd: 前缀, space=%q", root.Space)
+	}
 	codes := root.FindElements("TextCode")
 	if len(codes) < 4 {
 		t.Fatalf("平铺应生成多个 TextCode, 得到 %d:\n%s", len(codes), data)
@@ -710,7 +724,13 @@ func TestImageAppearance(t *testing.T) {
 	if len(tileBoxes) < 4 {
 		t.Fatalf("图片平铺应生成多个 ImageObject, 得到 %d", len(tileBoxes))
 	}
+	if bytes.Contains(tile, []byte("<?xml")) {
+		t.Fatal("图片外观片段不能包含 XML 声明")
+	}
 	for i, box := range tileBoxes {
+		if box.Space != ofdPrefix {
+			t.Fatalf("图片外观 %d 应使用 ofd: 前缀, space=%q", i, box.Space)
+		}
 		if got := attr(box, "ResourceID"); got != "7" {
 			t.Fatalf("ImageObject %d ResourceID 不符: %s", i, got)
 		}
@@ -758,6 +778,9 @@ func TestAddImageWatermark(t *testing.T) {
 
 	// DocumentRes 中注册了图片媒体并引用了存在的图片条目。
 	resData := readEntry(t, result, "Doc_0/DocumentRes.xml")
+	if !bytes.Contains(resData, []byte("<ofd:MultiMedias")) || !bytes.Contains(resData, []byte("<ofd:MultiMedia")) {
+		t.Fatalf("新增资源节点应使用 ofd: 前缀:\n%s", resData)
+	}
 	res := parseXML(t, resData).Root()
 	mediaContainer := findElement(res, "MultiMedias")
 	if mediaContainer == nil {
@@ -869,7 +892,7 @@ func TestRemoveImageWatermarkReclaimsMedia(t *testing.T) {
 		t.Fatalf("Add 图片水印失败: %v", err)
 	}
 	withImage := openPackage(t, added.Bytes())
-	if !withImage.Has("Doc_0/Res/Images/Image_6.png") {
+	if !withImage.Has("Doc_0/Res/Images/Watermark_Image_6.png") {
 		t.Fatal("图片水印应写入图片条目")
 	}
 	_ = withImage.Close()
@@ -879,15 +902,66 @@ func TestRemoveImageWatermarkReclaimsMedia(t *testing.T) {
 		t.Fatalf("Remove 失败: %v", err)
 	}
 	result := openPackage(t, removed.Bytes())
-	if result.Has("Doc_0/Res/Images/Image_6.png") {
+	if result.Has("Doc_0/Res/Images/Watermark_Image_6.png") {
 		t.Fatal("删除水印后应回收图片条目")
 	}
 	resData := readEntry(t, result, "Doc_0/DocumentRes.xml")
-	if bytes.Contains(resData, []byte("Image_6.png")) {
+	if bytes.Contains(resData, []byte("Watermark_Image_6.png")) {
 		t.Fatalf("DocumentRes 应移除媒体引用:\n%s", resData)
 	}
 	if bytes.Contains(resData, []byte("MultiMedias")) {
 		t.Fatalf("空 MultiMedias 容器应被移除:\n%s", resData)
+	}
+}
+
+func TestTargetPageIDsDeduplicates(t *testing.T) {
+	doc := models.Document{}
+	doc.Pages.Pages = []models.Page{{ID: 12}}
+	ids, err := targetPageIDs(Target{Pages: []int{0, 0}}, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != 12 {
+		t.Fatalf("重复页面应只处理一次，得到 %v", ids)
+	}
+}
+
+func TestAddExplicitIDConflictsAcrossPages(t *testing.T) {
+	id := uint64(77)
+	engine := &engine{newIDs: make(map[uint64]bool)}
+	index := &annotationIndex{
+		annotIDs: make(map[uint64]bool),
+		mediaIDs: make(map[uint64]bool),
+	}
+	for page := uint64(1); page <= 2; page++ {
+		doc := etree.NewDocument()
+		root := doc.CreateElement("PageAnnot")
+		tree := &pageTree{doc: doc, root: root}
+		_, err := engine.applyPage(index, tree, Watermark{ID: id}, actionAdd, nil)
+		if page == 1 && err != nil {
+			t.Fatalf("首个页面添加失败: %v", err)
+		}
+		if page == 2 && err == nil {
+			t.Fatal("跨页面重复显式 ID 应报冲突")
+		}
+	}
+}
+
+func TestIsWatermarkMediaEntry(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want bool
+	}{
+		{"Images/Watermark_Image_123.png", true},
+		{"Images/Watermark_Image_123.jpg", true},
+		{"Images/Image_123.png", false},
+		{"Images/Watermark_Image_logo.png", false},
+		{"Other/Watermark_Image_123.png", false},
+		{"Images/Watermark_Image_123.gif", false},
+	} {
+		if got := isWatermarkMediaEntry(test.name); got != test.want {
+			t.Errorf("isWatermarkMediaEntry(%q) = %v, want %v", test.name, got, test.want)
+		}
 	}
 }
 
@@ -1031,6 +1105,63 @@ func TestErrors(t *testing.T) {
 	if err := Add(hello, Target{Pages: []int{9}}, sampleWatermark(), &pageErr, Options{}); err == nil ||
 		!strings.Contains(err.Error(), "超出范围") {
 		t.Fatalf("页面越界应报错, got %v", err)
+	}
+}
+
+func TestDocumentAnnotationEditsRejectMissingRoot(t *testing.T) {
+	base := readTestdata(t, "ofd-creator/hello.ofd")
+	var malformed bytes.Buffer
+	input, err := core.OpenBytes(base)
+	if err != nil {
+		t.Fatalf("打开 fixture 失败: %v", err)
+	}
+	zipWriter := zip.NewWriter(&malformed)
+	for _, entry := range input.Entries() {
+		data, readErr := input.Read(entry.Name)
+		if readErr != nil {
+			t.Fatalf("读取 %s 失败: %v", entry.Name, readErr)
+		}
+		if entry.Name == "Doc_0/Document.xml" {
+			data = []byte("<!-- no document root -->")
+		}
+		file, createErr := zipWriter.Create(entry.Name)
+		if createErr != nil {
+			t.Fatalf("创建 ZIP 条目 %s 失败: %v", entry.Name, createErr)
+		}
+		if _, writeErr := file.Write(data); writeErr != nil {
+			t.Fatalf("写入 ZIP 条目 %s 失败: %v", entry.Name, writeErr)
+		}
+	}
+	if err := input.Close(); err != nil {
+		t.Fatalf("关闭 fixture 失败: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("完成 ZIP 失败: %v", err)
+	}
+
+	for _, test := range []struct {
+		name string
+		edit func(*engine, *annotationIndex) error
+	}{
+		{"add annotation reference", (*engine).setDocumentAnnotations},
+		{"drop annotation reference", (*engine).dropDocumentAnnotations},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pkg, err := core.OpenBytes(malformed.Bytes())
+			if err != nil {
+				t.Fatalf("打开 OFD 失败: %v", err)
+			}
+			defer func() { _ = pkg.Close() }()
+			e := &engine{pkg: pkg, changes: make(map[string][]byte)}
+			a := &annotationIndex{
+				docEntry:   "Doc_0/Document.xml",
+				indexEntry: "Doc_0/Annotations.xml",
+				indexDir:   "Doc_0",
+			}
+			if err := test.edit(e, a); err == nil || !strings.Contains(err.Error(), "缺少根元素") {
+				t.Fatalf("无根 XML 应返回缺少根元素错误，got %v", err)
+			}
+		})
 	}
 }
 

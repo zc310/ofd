@@ -11,12 +11,15 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 type actionKind int
+
+const ofdPrefix = "ofd"
 
 const (
 	actionAdd actionKind = iota
@@ -112,10 +115,7 @@ func (e *engine) runDocBody(body models.DocBody, target Target, wm Watermark, ac
 
 	// 文档体前缀：无既有注解索引时，从 Document.xml 根元素推断命名空间风格，
 	// 使新建的索引与页面注解文件与文档体保持一致。
-	bodyPrefix := ""
-	if _, root, err := indexDocRootOf(e.pkg, docEntry); err == nil && root != nil {
-		bodyPrefix = root.Space
-	}
+	bodyPrefix := ofdPrefix
 
 	// 文档级水印权限检查。
 	if document.Permissions != nil && document.Permissions.Watermark != nil &&
@@ -215,11 +215,16 @@ func targetPageIDs(target Target, document models.Document) ([]uint64, error) {
 		return ids, nil
 	}
 	ids := make([]uint64, 0, len(target.Pages))
+	seen := make(map[uint64]bool, len(target.Pages))
 	for _, index := range target.Pages {
 		if index < 0 || index >= total {
 			return nil, fmt.Errorf("页面下标 %d 超出范围（共 %d 页）", index, total)
 		}
-		ids = append(ids, uint64(document.Pages.Pages[index].ID))
+		id := uint64(document.Pages.Pages[index].ID)
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
 	}
 	return ids, nil
 }
@@ -232,10 +237,16 @@ func (e *engine) applyPage(index *annotationIndex, tree *pageTree,
 		setNamespace(root, tree.prefix)
 		tree.root = root
 	}
+	if action != actionRemove {
+		ensureNamespace(root, ofdPrefix)
+	}
 
 	switch action {
 	case actionAdd:
 		used := existingAnnotIDs(root)
+		for id := range index.annotIDs {
+			used[id] = true
+		}
 		for id := range e.newIDs {
 			used[id] = true
 		}
@@ -247,9 +258,8 @@ func (e *engine) applyPage(index *annotationIndex, tree *pageTree,
 		if err != nil {
 			return false, err
 		}
-		if wm.ID == 0 {
-			e.newIDs[id] = true
-		}
+		e.newIDs[id] = true
+		index.annotIDs[id] = true
 		if err := appendAnnotElement(root, tree.prefix, wm, id); err != nil {
 			return false, err
 		}
@@ -461,6 +471,7 @@ type annotationIndex struct {
 	prefix    string
 	// mediaIDs 是文档级已注册的媒体资源 ID，与注解共享 ID 空间。
 	mediaIDs map[uint64]bool
+	annotIDs map[uint64]bool
 
 	pages map[uint64]string // pageID -> 页面注解文件条目名
 }
@@ -471,6 +482,7 @@ func (a *annotationIndex) load(document models.Document) error {
 	a.indexExist = false
 	a.maxUnitID = uint64(document.CommonData.MaxUnitID)
 	a.mediaIDs = a.loadMediaIDs(document)
+	a.annotIDs = make(map[uint64]bool)
 	// 尚未声明索引时使用默认布局，首次添加水印时再创建。
 	a.indexEntry = a.baseLoc + "/Annotations.xml"
 	a.indexDir = a.baseLoc
@@ -490,9 +502,7 @@ func (a *annotationIndex) load(document models.Document) error {
 	if err := a.pkg.ReadXML(a.indexEntry, &index); err != nil {
 		return fmt.Errorf("解析 %s 失败: %w", a.indexEntry, err)
 	}
-	if root, err := a.indexDocRoot(); err == nil && root != nil {
-		a.prefix = root.Space
-	}
+	a.prefix = ofdPrefix
 	for _, page := range index.Pages {
 		if page.FileLoc == "" {
 			continue
@@ -502,6 +512,21 @@ func (a *annotationIndex) load(document models.Document) error {
 			location = location.Resolve(models.StLoc(a.indexDir))
 		}
 		a.pages[uint64(page.PageID)] = strings.TrimLeft(location.String(), "/")
+	}
+	for _, entry := range a.pages {
+		data, err := a.pkg.Read(entry)
+		if err != nil {
+			continue
+		}
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(data); err != nil {
+			return fmt.Errorf("解析 %s 失败: %w", entry, err)
+		}
+		if root := doc.Root(); root != nil {
+			for id := range existingAnnotIDs(root) {
+				a.annotIDs[id] = true
+			}
+		}
 	}
 	return nil
 }
@@ -574,7 +599,7 @@ func (a *annotationIndex) loadPage(pageID uint64) (*pageTree, error) {
 			tree.doc = doc
 			tree.root = doc.Root()
 			if tree.root != nil {
-				tree.prefix = tree.root.Space
+				tree.prefix = ofdPrefix
 			}
 			return tree, nil
 		}
@@ -632,11 +657,8 @@ func (a *annotationIndex) flush() error {
 }
 
 func (a *annotationIndex) buildIndex() ([]byte, error) {
-	prefix := a.prefix
-	tree := etree.NewDocument()
-	tree.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
-	root := tree.CreateElement(prefixTag(prefix, "Annotations"))
-	setNamespace(root, prefix)
+	xml := ofdxml.New()
+	xml.StartElement("Annotations")
 	ids := make([]uint64, 0, len(a.pages))
 	for pageID := range a.pages {
 		ids = append(ids, pageID)
@@ -644,12 +666,13 @@ func (a *annotationIndex) buildIndex() ([]byte, error) {
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, pageID := range ids {
 		entry := a.pages[pageID]
-		pageEl := root.CreateElement(prefixTag(prefix, "Page"))
-		pageEl.CreateAttr("PageID", strconv.FormatUint(pageID, 10))
-		locEl := pageEl.CreateElement(prefixTag(prefix, "FileLoc"))
-		locEl.SetText(a.fileLocValue(entry))
+		xml.StartElement("Page")
+		xml.AttrUint("PageID", pageID)
+		xml.Element("FileLoc", a.fileLocValue(entry))
+		xml.EndElement()
 	}
-	return tree.WriteToBytes()
+	xml.EndElement()
+	return xml.Done(), nil
 }
 
 // fileLocValue 计算 FileLoc 在索引中的相对路径（相对索引目录）。
@@ -678,7 +701,11 @@ func (e *engine) setDocumentAnnotations(a *annotationIndex) error {
 		return fmt.Errorf("解析 %s 失败: %w", a.docEntry, err)
 	}
 	root := doc.Root()
-	prefix := root.Space
+	if root == nil {
+		return fmt.Errorf("解析 %s 失败: 缺少根元素", a.docEntry)
+	}
+	prefix := ofdPrefix
+	ensureNamespace(root, prefix)
 	for _, child := range root.ChildElements() {
 		if child.Tag == "Annotations" {
 			return nil // 已存在
@@ -707,6 +734,9 @@ func (e *engine) dropDocumentAnnotations(a *annotationIndex) error {
 		return fmt.Errorf("解析 %s 失败: %w", a.docEntry, err)
 	}
 	root := doc.Root()
+	if root == nil {
+		return fmt.Errorf("解析 %s 失败: 缺少根元素", a.docEntry)
+	}
 	var target *etree.Element
 	for _, child := range root.ChildElements() {
 		if child.Tag == "Annotations" {
@@ -750,11 +780,23 @@ func findElementByTag(root *etree.Element, tag string) *etree.Element {
 }
 
 func setNamespace(el *etree.Element, prefix string) {
-	if prefix == "" {
-		el.CreateAttr("xmlns", spec.Namespace)
-	} else {
-		el.CreateAttr("xmlns:"+prefix, spec.Namespace)
+	ensureNamespace(el, prefix)
+}
+
+func ensureNamespace(el *etree.Element, prefix string) {
+	key := "xmlns"
+	if prefix != "" {
+		key += ":" + prefix
 	}
+	for _, attr := range el.Attr {
+		if (prefix == "" && attr.Space == "" && attr.Key == "xmlns") ||
+			(prefix != "" && attr.Space == "xmlns" && attr.Key == prefix) ||
+			(prefix != "" && attr.Space == "" && attr.Key == key) {
+			attr.Value = spec.Namespace
+			return
+		}
+	}
+	el.CreateAttr(key, spec.Namespace)
 }
 
 func prefixTag(prefix, tag string) string {
@@ -843,7 +885,7 @@ func (a *annotationIndex) addImageResource(document models.Document, img *Image,
 		a.mediaIDs[imageID] = true
 	}
 
-	name := fmt.Sprintf("Image_%d.%s", imageID, formatExt(format))
+	name := fmt.Sprintf("Watermark_Image_%d.%s", imageID, formatExt(format))
 	mediaFile := "Images/" + name
 	entry := mediaFile
 	if mediaBase != "" {
@@ -880,7 +922,8 @@ func (a *annotationIndex) patchResImage(resEntry string, imageID uint64, format,
 	if err != nil {
 		return fmt.Errorf("读取 %s 失败: %w", resEntry, err)
 	}
-	prefix := root.Space
+	prefix := ofdPrefix
+	ensureNamespace(root, prefix)
 	multiMedias := findElementByTag(root, "MultiMedias")
 	if multiMedias == nil {
 		multiMedias = etree.NewElement(prefixTag(prefix, "MultiMedias"))
@@ -1025,7 +1068,20 @@ func isWatermarkMediaEntry(mediaFile string) bool {
 	if path.Clean(dir) != "Images" && path.Clean(dir) != "Images/" {
 		return false
 	}
-	return strings.HasPrefix(name, "Image_")
+	if !strings.HasPrefix(name, "Watermark_Image_") {
+		return false
+	}
+	base := strings.TrimSuffix(strings.TrimPrefix(name, "Watermark_Image_"), path.Ext(name))
+	if base == "" {
+		return false
+	}
+	for _, r := range base {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	ext := strings.ToLower(path.Ext(name))
+	return ext == ".png" || ext == ".jpg"
 }
 
 // referencedMediaIDs 汇总所有页面注解文件（含尚未写回的本次修改）引用的图片资源 ID。
