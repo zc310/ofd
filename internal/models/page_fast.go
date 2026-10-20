@@ -160,7 +160,7 @@ func (p *pageLexer) parseLayer(layer *Layer) error {
 	if void {
 		return nil
 	}
-	items, err := p.parsePageItems("Layer")
+	items, err := p.parsePageItems("Layer", 0)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (p *pageLexer) parseLayer(layer *Layer) error {
 }
 
 // parsePageItems 解析页面对象序列，直到遇到 endName 的结束标记。
-func (p *pageLexer) parsePageItems(endName string) ([]PageItem, error) {
+func (p *pageLexer) parsePageItems(endName string, depth int) ([]PageItem, error) {
 	var items []PageItem
 	for {
 		tt, buf, start := p.Next()
@@ -214,7 +214,7 @@ func (p *pageLexer) parsePageItems(endName string) ([]PageItem, error) {
 				item.Kind = PageItemComposite
 				item.Composite = o
 			case "PageBlock":
-				o, err := p.parsePageBlock()
+				o, err := p.parsePageBlock(depth + 1)
 				if err != nil {
 					return nil, err
 				}
@@ -231,7 +231,10 @@ func (p *pageLexer) parsePageItems(endName string) ([]PageItem, error) {
 	}
 }
 
-func (p *pageLexer) parsePageBlock() (*PageBlock, error) {
+func (p *pageLexer) parsePageBlock(depth int) (*PageBlock, error) {
+	if depth > maxPageBlockDepth {
+		return nil, errPageBlockDepth
+	}
 	o := &PageBlock{}
 	void, err := p.ReadAttrs(func(name, val []byte) error {
 		if string(name) == "ID" {
@@ -245,7 +248,7 @@ func (p *pageLexer) parsePageBlock() (*PageBlock, error) {
 	if void {
 		return o, nil
 	}
-	items, err := p.parsePageItems("PageBlock")
+	items, err := p.parsePageItems("PageBlock", depth)
 	if err != nil {
 		return nil, err
 	}

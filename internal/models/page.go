@@ -1,6 +1,14 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"errors"
+)
+
+// PageBlock 的解析资源上限，不是 OFD 格式对嵌套层数的要求。
+const maxPageBlockDepth = 256
+
+var errPageBlockDepth = errors.New("页面对象块嵌套层级过深")
 
 // Page OFD 页面定义。
 type Page struct {
@@ -147,6 +155,10 @@ type CTPageBlock struct {
 
 // UnmarshalXML 按文档顺序解析页面块中的图形对象，保证绘制时各对象保持原始先后顺序。
 func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	return p.unmarshalXML(d, start, 0)
+}
+
+func (p *CTPageBlock) unmarshalXML(d *xml.Decoder, start xml.StartElement, depth int) error {
 	for {
 		token, err := d.Token()
 		if err != nil {
@@ -183,7 +195,7 @@ func (p *CTPageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 			case "PageBlock":
 				item.Kind = PageItemBlock
 				item.Block = &PageBlock{}
-				if err := item.Block.UnmarshalXML(d, elem); err != nil {
+				if err := item.Block.unmarshalXML(d, elem, depth+1); err != nil {
 					return err
 				}
 			default:
@@ -248,12 +260,19 @@ type PageBlock struct {
 
 // UnmarshalXML 解析 PageBlock，读取 ID 属性后按文档顺序解析其内容。
 func (p *PageBlock) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	return p.unmarshalXML(d, start, 1)
+}
+
+func (p *PageBlock) unmarshalXML(d *xml.Decoder, start xml.StartElement, depth int) error {
+	if depth > maxPageBlockDepth {
+		return errPageBlockDepth
+	}
 	for _, attr := range start.Attr {
 		if attr.Name.Local == "ID" {
 			_ = p.ID.UnmarshalText([]byte(attr.Value))
 		}
 	}
-	return p.CTPageBlock.UnmarshalXML(d, start)
+	return p.CTPageBlock.unmarshalXML(d, start, depth)
 }
 
 // CtLayer 图层内容定义。
