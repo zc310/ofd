@@ -1,4 +1,4 @@
-// Command ofd-thumbnailer 从 OFD 或图像文件生成缩略图。
+// Command ofd-thumbnailer 从 OFD 首页或 ZIP 包中的图片生成 PNG 缩略图。
 package main
 
 import (
@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/gif"
 	_ "image/jpeg"
+	"image/png"
+	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,13 +21,18 @@ import (
 
 	"github.com/kovidgoyal/imaging"
 	"github.com/zc310/ofd/internal/media"
+	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/converter"
 )
 
 const (
-	timeoutDuration = 60 * time.Second
-	dpi             = 72
+	timeoutDuration  = 60 * time.Second
+	maxThumbnailSize = 4096
+	maxRasterPixels  = maxThumbnailSize * maxThumbnailSize
 )
 
 var (
@@ -57,24 +66,34 @@ func runWithTimeout() error {
 }
 
 func realMain(ctx context.Context) error {
-	if len(os.Args) != 4 {
+	return run(ctx, os.Args[1:])
+}
+
+func run(ctx context.Context, args []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(args) != 3 {
 		return fmt.Errorf("%w: usage: %s <input> <output> <size>",
 			ErrInvalidArgs, filepath.Base(os.Args[0]))
 	}
 
-	inputFile := os.Args[1]
-	outputFile := os.Args[2]
+	inputFile := args[0]
+	outputFile := args[1]
 
-	size, err := parseSize(os.Args[3])
+	size, err := parseSize(args[2])
 	if err != nil {
-		return fmt.Errorf("invalid size: %w", err)
+		return fmt.Errorf("%w: invalid size: %w", ErrInvalidArgs, err)
+	}
+	if utils.SamePath(inputFile, outputFile) {
+		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
 	}
 
 	if isOFDFile(inputFile) {
 		return generateOFDThumbnail(ctx, inputFile, outputFile, size)
 	}
 
-	return generateImageThumbnail(inputFile, outputFile, size)
+	return generateZIPThumbnail(ctx, inputFile, outputFile, size)
 }
 
 func parseSize(sizeStr string) (int, error) {
@@ -82,8 +101,8 @@ func parseSize(sizeStr string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if size <= 0 {
-		return 0, errors.New("size must be a positive integer")
+	if size <= 0 || size > maxThumbnailSize {
+		return 0, fmt.Errorf("size must be between 1 and %d pixels", maxThumbnailSize)
 	}
 	return size, nil
 }
@@ -93,14 +112,20 @@ func isOFDFile(filename string) bool {
 	return ext == ".ofd"
 }
 
-func generateImageThumbnail(inputFile, outputFile string, size int) error {
+func generateZIPThumbnail(ctx context.Context, inputFile, outputFile string, size int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	firstImage, err := media.ExtractFirstImage(inputFile)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrNoSupportedImg, err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	resizedImg := resizeImage(firstImage, size)
-	return imaging.Save(resizedImg, outputFile)
+	return saveThumbnail(ctx, inputFile, outputFile, resizedImg)
 }
 
 func resizeImage(img image.Image, size int) image.Image {
@@ -114,11 +139,105 @@ func resizeImage(img image.Image, size int) image.Image {
 }
 
 func generateOFDThumbnail(ctx context.Context, input, output string, size int) error {
-	return converter.Image(ctx, input,
-		converter.Thumbnail(size),
-		converter.ImageWriter(func(page int, img image.Image) error {
-			return imaging.Save(img, output)
-		}),
-		converter.Page(1),
-		converter.DPI(dpi))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ofd, err := parser.NewOFD(input)
+	if ofd != nil {
+		defer ofd.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("open OFD: %w", err)
+	}
+	for _, document := range ofd.Documents {
+		if len(document.Pages) == 0 {
+			continue
+		}
+		box, err := document.Pages[0].PhysicalBox()
+		if err != nil {
+			return fmt.Errorf("read first page dimensions: %w", err)
+		}
+		resolution, err := thumbnailResolution(box.Width, box.Height, size)
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		view := render.NewDocumentWithDPI(color.Transparent, document, resolution)
+		defer view.Close()
+		return converter.ImageDocument(ctx, view,
+			converter.Thumbnail(size),
+			converter.ImageWriter(func(page int, img image.Image) error {
+				return saveThumbnail(ctx, input, output, img)
+			}),
+			converter.Page(1),
+			converter.DPI(resolution.DPI()))
+	}
+	return errors.New("OFD has no pages")
+}
+
+// thumbnailResolution 在栅格化之前限定长边和总像素，避免先分配整页大图。
+func thumbnailResolution(width, height float64, size int) (geom.Resolution, error) {
+	if size <= 0 || size > maxThumbnailSize {
+		return 0, fmt.Errorf("size must be between 1 and %d pixels", maxThumbnailSize)
+	}
+	if width <= 0 || height <= 0 || math.IsNaN(width) || math.IsNaN(height) || math.IsInf(width, 0) || math.IsInf(height, 0) {
+		return 0, errors.New("invalid OFD page dimensions")
+	}
+	dpmm := float64(size) / math.Max(width, height)
+	if dpmm <= 0 || math.IsInf(dpmm, 0) {
+		return 0, errors.New("OFD page dimensions cannot be rasterized safely")
+	}
+	pixelWidth := math.Floor(width*dpmm + 0.5)
+	pixelHeight := math.Floor(height*dpmm + 0.5)
+	if pixelWidth < 1 || pixelHeight < 1 || pixelWidth > float64(size) || pixelHeight > float64(size) || pixelWidth*pixelHeight > maxRasterPixels {
+		return 0, errors.New("OFD page dimensions cannot be rasterized within the thumbnail pixel budget")
+	}
+	return geom.DPMM(dpmm), nil
+}
+
+// saveThumbnail 不依赖输出扩展名，并在编码成功且未取消时发布完整 PNG。
+func saveThumbnail(ctx context.Context, input, output string, img image.Image) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if utils.SamePath(input, output) {
+		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
+	}
+	file, err := os.CreateTemp(filepath.Dir(output), ".ofd-thumbnail-*.png")
+	if err != nil {
+		return fmt.Errorf("create thumbnail: %w", err)
+	}
+	defer os.Remove(file.Name())
+	encodeErr := png.Encode(contextWriter{ctx: ctx, writer: file}, img)
+	closeErr := file.Close()
+	if encodeErr != nil {
+		return fmt.Errorf("encode PNG: %w", encodeErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close thumbnail: %w", closeErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if utils.SamePath(input, output) {
+		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
+	}
+	if err := os.Rename(file.Name(), output); err != nil {
+		return fmt.Errorf("publish thumbnail: %w", err)
+	}
+	return nil
+}
+
+type contextWriter struct {
+	ctx    context.Context
+	writer io.Writer
+}
+
+func (w contextWriter) Write(data []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return w.writer.Write(data)
 }
