@@ -104,10 +104,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: Install Go toolchain with Windows 7 support
+        env:
+          LEGACY_GO_VERSION: 1.27.2-1
+        run: |
+          ARCHIVE="go-legacy-win7-${LEGACY_GO_VERSION}.linux_amd64.tar.gz"
+          URL="https://github.com/thongtech/go-legacy-win7/releases/download/v${LEGACY_GO_VERSION}/${ARCHIVE}"
+          curl -fLsS --retry 3 -o "$RUNNER_TEMP/$ARCHIVE" "$URL"
+          echo "55e030fa608b782d6f19ad121c696f115fb3fb1833baab57d611c1f78ebf5a88  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$ARCHIVE" -C "$RUNNER_TEMP"
+          echo "GOROOT=$RUNNER_TEMP/go-legacy-win7" >> "$GITHUB_ENV"
+          echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/go-legacy-win7/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/go-legacy-win7/bin/go" version
 
       - name: Install MinGW-w64
         run: |
