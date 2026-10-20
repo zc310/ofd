@@ -14,6 +14,27 @@ var errNoFontEngine = errors.New("未注册字体引擎（请空白导入 intern
 // （internal/render/backends/canvas）或调用 RegisterFontEngineFactory 注入。
 var newFontEngine func(doc *parser.Document) FontEngine
 
+// 同一解析文档的多个 DPI 视图共用字体；引用计数让视图按任意顺序关闭。
+type sharedFontEngine struct {
+	mu     sync.Mutex
+	engine FontEngine
+	refs   int
+}
+
+func (f *sharedFontEngine) release() {
+	f.mu.Lock()
+	if f.refs <= 0 {
+		f.mu.Unlock()
+		return
+	}
+	f.refs--
+	last := f.refs == 0
+	f.mu.Unlock()
+	if last && f.engine != nil {
+		f.engine.Close()
+	}
+}
+
 // RegisterFontEngineFactory 注册字体引擎工厂，供 canvas 后端注册或测试注入。
 func RegisterFontEngineFactory(fn func(doc *parser.Document) FontEngine) {
 	if fn != nil {
@@ -51,12 +72,46 @@ func RegisterFallbackFontFactory(register func(data []byte, family string, style
 // 这里是核心侧记账而不是问 canvas 的注册表：RegisterFallbackFont 本就是
 // 全局注册的唯一入口，在这一层记下族名，枚举就不必依赖具体字体引擎实现。
 var (
-	registeredFallbackMu sync.Mutex
-	registeredFallbacks  []string
+	registeredFallbackMu  sync.Mutex
+	registeredFallbacks   []string
+	registeredFallbackOps map[string]*fallbackOperation
 )
+
+type fallbackOperation struct {
+	mu    sync.Mutex
+	users int // 正在执行或等待同族操作的调用数，由 registeredFallbackMu 保护。
+}
+
+// 同族操作包含后端调用和列表更新，避免注册/注销交错后列表落后于后端。
+// 等待同族操作及解析字体时不持全局列表锁；最后一个调用完成后删除锁条目。
+func lockFallbackOperation(family string) func() {
+	registeredFallbackMu.Lock()
+	operation := registeredFallbackOps[family]
+	if operation == nil {
+		operation = &fallbackOperation{}
+		if registeredFallbackOps == nil {
+			registeredFallbackOps = make(map[string]*fallbackOperation)
+		}
+		registeredFallbackOps[family] = operation
+	}
+	operation.users++
+	registeredFallbackMu.Unlock()
+	operation.mu.Lock()
+	return func() {
+		operation.mu.Unlock()
+		registeredFallbackMu.Lock()
+		operation.users--
+		if operation.users == 0 {
+			delete(registeredFallbackOps, family)
+		}
+		registeredFallbackMu.Unlock()
+	}
+}
 
 // RegisterFallbackFont 在进程内全局注册回退字体；需已导入字体引擎实现。
 func RegisterFallbackFont(data []byte, family string, style FontStyle) error {
+	unlock := lockFallbackOperation(family)
+	defer unlock()
 	if registerFallbackFontFn == nil {
 		return errNoFontEngine
 	}
@@ -107,8 +162,16 @@ func RegisterFallbackFontUnregisterer(unregisterer func(family string) error) {
 // 还要用它渲染，提前释放会出问题。因此界面上的"删除"对已打开的文档是延迟
 // 生效的，这是有意的。
 func UnregisterFallbackFont(family string) error {
+	unlock := lockFallbackOperation(family)
+	defer unlock()
 	if unregisterFallbackFontFn == nil {
 		return errors.New("未导入字体引擎实现")
 	}
-	return unregisterFallbackFontFn(family)
+	if err := unregisterFallbackFontFn(family); err != nil {
+		return err
+	}
+	registeredFallbackMu.Lock()
+	defer registeredFallbackMu.Unlock()
+	registeredFallbacks = slices.DeleteFunc(registeredFallbacks, func(name string) bool { return name == family })
+	return nil
 }

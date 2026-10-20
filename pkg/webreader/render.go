@@ -223,7 +223,8 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 
 	estimatedSize := 1024
 	if format != RenderSVG {
-		estimatedSize = max(estimatedSize, int(pixels*4))
+		// 编码数据通常远小于 RGBA 像素，不同时预留第二份整页像素大小的缓冲。
+		estimatedSize = 64 << 10
 	}
 	// SVG 按实际内容增长，避免为矢量输出预留整页 RGBA 像素缓冲区。
 	output := bytes.NewBuffer(make([]byte, 0, estimatedSize))
@@ -309,23 +310,33 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Reso
 			return cached, nil
 		}
 	}
-	document = render.NewDocumentWithDPI(background, ref.document.Document, dpi)
-	for _, family := range r.fallbackFamilies {
-		// 字体已在打开/注册时全局登记，这里只把已锁定字体族应用到该文档。
-		_ = document.UseFallbackFont(family)
+	var err error
+	document, err = ref.document.NewView(background, dpi)
+	if err != nil {
+		return nil, err
 	}
 	if r.renderDocs == nil {
-		// 淘汰时必须释放文档：它持有的字体族是全局缓存里最重的部分（一个 CJK
-		// 字体约 50 MB），不释放的话浏览多个文档时缓存只增不减。
-		//
-		// 同步调用是安全的：淘汰回调在 LRU 锁内执行，Close 走的是 fontCacheMu，
-		// 两者之间没有回路。
+		// 淘汰时释放视图缓存和共享字体引用；字体解析结果仍由基础文档持有。
 		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, func(_ renderDocumentKey, evicted *render.Document) {
 			evicted.Close()
 		})
 	}
 	r.renderDocs.Add(key, document)
 	return document, nil
+}
+
+// clearRenderViewsLocked 释放各 DPI/背景视图，保留基础文档和共享字体。
+// 调用方持有 Reader 写锁，此时没有正在使用这些视图的渲染任务。
+func (r *Reader) clearRenderViewsLocked() {
+	r.renderDocsMu.Lock()
+	cached := r.renderDocs
+	r.renderDocs = nil
+	r.renderDocsMu.Unlock()
+	if cached != nil {
+		for _, document := range cached.Values() {
+			document.Close()
+		}
+	}
 }
 
 // Close 释放文档资源。Close 可以安全地重复调用。
@@ -355,8 +366,7 @@ func (r *Reader) Close() error {
 
 // closeRenderDocumentsLocked 释放当前视图的渲染资源；调用方持有 Reader 写锁。
 func (r *Reader) closeRenderDocumentsLocked() {
-	// r.pages 里的渲染文档是 Open 时逐个建的，字体正是它们加载的；renderDocs
-	// 是之后按需建的另一个缓存。两批实例不同，只关后者等于没关。
+	// 基础文档与 DPI/背景视图共同持有共享字体，全部关闭后释放最后一个引用。
 	pageDocs := make([]*render.Document, 0, len(r.pages))
 	seen := make(map[*render.Document]bool, len(r.pages))
 	for _, ref := range r.pages {
@@ -370,8 +380,7 @@ func (r *Reader) closeRenderDocumentsLocked() {
 	cached := r.renderDocs
 	r.renderDocs = nil
 	r.renderDocsMu.Unlock()
-	// 释放每个渲染文档持有的字体。r.pages 里的 document 与缓存里的是同一批，
-	// 这里统一按缓存里的逐个释放即可——Close 幂等，重复调用不会误删别人的字体。
+	// 先关闭视图，再关闭各文档体的基础上下文。
 	if cached != nil {
 		for _, doc := range cached.Values() {
 			if !seen[doc] {
@@ -379,7 +388,6 @@ func (r *Reader) closeRenderDocumentsLocked() {
 			}
 		}
 	}
-	// Close 幂等，重复调用不会误删他人仍在用的字体。
 	for _, doc := range pageDocs {
 		doc.Close()
 	}

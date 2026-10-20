@@ -187,6 +187,10 @@ http://localhost:8080/?debug=1
 
 - 面板同时显示 **WASM 线性内存（保留）**、Go 运行时的存活堆/已用堆/系统堆/已归还 OS、GC 次数，以及浏览器侧的页面缓存、缩略图缓存、文字缓存、挂载页数和回退字体字节；Chromium 下还会显示 JS 堆。
 - **WASM 线性内存只增不减**：`WebAssembly.Memory` 只支持增长，GC 只把空闲页标记为可复用，不会把地址空间还给浏览器。因此「线性内存（保留）」大于「Go 存活堆」是正常的，面板底部有同样的说明。
+- 内嵌字体逐页补充字形映射时，只缓存同一字体的最新映射版本，并清理旧字体的整形和模板缓存；正在绘制的页面仍持有原字体，直到绘制结束后释放。
+- 同一文档的正文、缩略图和文字测量共享字体解析与整形缓存，改变 DPI 或背景不会重复创建字体引擎；最后一个视图关闭时释放共享字体。
+- 替换同一回退字体族、同一样式的数据时，只保留当前来源；移除回退字体会清理对应的整形缓存，注销且最后一个持有者释放后可回收解析结果。
+- 全局回退字体最多注册 64 个字体族，各样式当前源数据合计最多 256 MiB；超过额度时返回错误并保留已有字体。此限制只针对显式注册的回退字体，与 OFD 内嵌字体和 Go GC 内存设置无关。
 - 面板每 1.5 秒自动刷新，也可手动点「刷新」；点「GC」会触发 `ofd.gc()`（Go `runtime.GC()` + `debug.FreeOSMemory()`），可观察 `heapReleased` 上升但线性内存不变。
 - 拖动标题即可移动面板，位置会记忆到 `localStorage`（`ofd-debug-pos`），窗口尺寸变化时自动夹回视口内。
 - 开关会记忆到 `localStorage`（`ofd-debug`）：`?debug=1` 打开并记住，`?debug=0` 关闭并记住；关闭按钮与控制台的 `window.__debug(true/false)` 也会记住选择。控制台仍可用 `window.__readMemory()` 打印一次完整快照。
@@ -304,7 +308,7 @@ make test-wasm-web
 - `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
 - `ofd.open()` 不读取嵌入字体二进制数据；`ofd.embeddedFonts()` 按需返回嵌入字体数据、浏览器字体族名和样式。网页阅读器在页面开始构建后后台加载字体，不阻塞文档首屏。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。
-- `ofd.removeFallbackFont(family)` 取消先前注册的回退字体族：从当前 WASM 实例的回退字体列表移除（后续文档不再沿用），并让已打开文档立即恢复内嵌/默认字体。全局字体注册表不回滚。
+- `ofd.removeFallbackFont(family)` 取消先前注册的回退字体族：从当前 WASM 实例的回退字体列表移除（后续文档不再沿用），并让已打开文档立即恢复内嵌/默认字体；同步注销全局来源，最后一个持有者释放后归还注册额度。重新使用时需再次 `addFallbackFont`。
 - 示例阅读器在页面加载时预加载配置的回退字体，并使用 Cache Storage 持久缓存。每个字体应配置独立的 `family`，例如 `楷体`、`黑体` 或 `宋体`。
 - 后续文档会复用缓存，不受字符数量限制；未找到可用内嵌字体的文字会优先按 OFD 字体名选择匹配的回退字体，匹配不到时使用第一个适配样式的回退字体。
 - 自托管字体需要允许当前页面跨域访问；HTTPS 页面不能加载 HTTP 字体 URL。

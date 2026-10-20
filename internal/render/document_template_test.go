@@ -92,6 +92,9 @@ func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
 	if !doc.drawCachedTemplate(ctx, content, box, &budget) || ctx.surface == surfaces[0] {
 		t.Fatal("font generation did not invalidate template")
 	}
+	if doc.templateScenes.Len() != 1 {
+		t.Fatal("font generation change retained superseded template surfaces")
+	}
 	box.Height = 30
 	if !doc.drawCachedTemplate(ctx, content, box, &budget) || builds.Load() != 3 {
 		t.Fatal("page dimensions were omitted from template key")

@@ -7,6 +7,13 @@
 
 ## 未发布
 
+- **回退字体注册额度**：canvas 后端的全局回退字体注册最多保留 64 个字体族，
+  各样式当前源数据合计最多 256 MiB。`webreader.RegisterFallbackFont`、WASM
+  `ofd.addFallbackFont` 等入口超限时返回错误，已有注册继续可用；长会话按需调用
+  `webreader.UnregisterFallbackFont` 注销不再使用的字体，仍被文档持有时等最后一个
+  引用释放后归还额度。OFD 内嵌字体不受此注册额度限制。
+  WASM `ofd.removeFallbackFont` 现在也注销全局来源以归还额度，重新启用需再次提供字体数据。
+
 - **创建器验签报告文本**：`--verify-signatures` 将「摘要有效」改为「摘要匹配」，
   将「密码学签名有效」改为「两层密码学签名通过」，并追加完整验签状态及失败或
   未完成原因。解析标准错误文本的脚本需调整匹配规则；业务接受签章应使用

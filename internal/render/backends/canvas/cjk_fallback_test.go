@@ -20,6 +20,11 @@ func textObjectWith(value string) models.TextObject {
 	}
 }
 
+// familyCoversCJK 仅供测试筛选样例字体，复用生产代码的实际文字覆盖判断。
+func familyCoversCJK(family *canvas.FontFamily, style drawing.FontStyle) bool {
+	return familyCoversText(family, textObjectWith("中"), style)
+}
+
 // firstCJKCapableFamily 返回候选表里第一个既能载入又覆盖中文的系统字体族。
 // 找不到时返回 nil——无 CJK 字体的环境本来就该画成豆腐块，不算回归。
 func firstCJKCapableFamily(t *testing.T, style drawing.FontStyle, families []string) *canvas.FontFamily {

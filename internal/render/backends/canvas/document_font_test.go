@@ -1045,20 +1045,20 @@ func TestCloseReleasesEmbeddedFonts(t *testing.T) {
 
 func TestCloseClearsShapingCachesAndRejectsFontLoads(t *testing.T) {
 	fonts := NewFonts(nil)
-	fonts.pathCache[fontPathKey{value: "outline"}] = nil
-	fonts.textLineCache = map[textLineKey]*canvas.Text{{value: "line"}: nil}
-	fonts.textWidthCache = map[textWidthKey]float64{{value: "width"}: 1}
+	fonts.pathCache.Add(fontPathKey{value: "outline"}, nil, 2048)
+	fonts.textLineCache.Add(textLineKey{value: "line"}, nil, 2048)
+	fonts.textWidthCache.Add(textWidthKey{value: "width"}, 1, maxTextWidthCacheEntries)
 
 	fonts.Close()
 
 	fonts.pathCacheMu.Lock()
-	pathCount := len(fonts.pathCache)
+	pathCount := fonts.pathCache.Len()
 	fonts.pathCacheMu.Unlock()
 	fonts.textLineMu.Lock()
-	lineCount := len(fonts.textLineCache)
+	lineCount := fonts.textLineCache.Len()
 	fonts.textLineMu.Unlock()
 	fonts.textWidthMu.Lock()
-	widthCount := len(fonts.textWidthCache)
+	widthCount := fonts.textWidthCache.Len()
 	fonts.textWidthMu.Unlock()
 	if pathCount != 0 || lineCount != 0 || widthCount != 0 {
 		t.Fatalf("Close left shaping caches populated: paths=%d lines=%d widths=%d", pathCount, lineCount, widthCount)

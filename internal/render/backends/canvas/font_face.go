@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"log/slog"
+	"weak"
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/font"
@@ -17,19 +18,70 @@ import (
 // GlyphIndex/Fill/ShapedRun 等），以及 Fonts.FaceObject、buildTextFace、
 // textFontStyle、directTextPath 与中性/ canvas 字体样式转换。
 
+// probeFamilyFace 用于覆盖探测和缓存清理，不接受无法构造字体面的族。
+// canvas 没有公开的字体数量查询，空族的 Face 会 panic；仅在这里保护该调用，
+// 不吞掉后续字形计算或缓存操作中的错误。正常渲染仍要求已验证的字体族。
+func probeFamilyFace(family *canvas.FontFamily, size float64, style drawing.FontStyle) (face *canvas.FontFace) {
+	if family == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			face = nil
+		}
+	}()
+	return family.Face(size, canvas.Black, canvasStyle(style), canvas.FontNormal)
+}
+
+// forgetShapingCache 解除已被新字形映射替换的字体的轮廓、整形与宽度缓存引用。
+// 只删除缓存项，不改写旧字体或返回过的路径，正在绘制的页面仍可安全使用它们。
+func (p *Fonts) forgetShapingCache(family *canvas.FontFamily, style drawing.FontStyle) {
+	face := probeFamilyFace(family, 1, style)
+	if face == nil || face.Font == nil {
+		return
+	}
+	f := face.Font
+	p.retiredFonts.Store(weak.Make(f), struct{}{})
+	if p.retirements.Add(1)%64 == 0 {
+		p.retiredFonts.Range(func(key, _ any) bool {
+			if key.(weak.Pointer[canvas.Font]).Value() == nil {
+				p.retiredFonts.Delete(key)
+			}
+			return true
+		})
+	}
+	p.pathCacheMu.Lock()
+	p.pathCache.RemoveIf(func(key fontPathKey) bool { return key.font == f })
+	p.pathCacheMu.Unlock()
+	p.textLineMu.Lock()
+	p.textLineCache.RemoveIf(func(key textLineKey) bool { return key.font == f })
+	p.textLineMu.Unlock()
+	p.textWidthMu.Lock()
+	p.textWidthCache.RemoveIf(func(key textWidthKey) bool { return key.font == f })
+	p.textWidthMu.Unlock()
+}
+
+func (p *Fonts) fontRetired(font *canvas.Font) bool {
+	_, retired := p.retiredFonts.Load(weak.Make(font))
+	return retired
+}
+
 // shapedTextPath 缓存按字体、字号、样式与文本计算的轮廓；返回路径只读，
 // 跨对象复用时不能原地变换。缓存有界，关闭后不再保存计算结果。
 func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path {
 	if face == nil || face.Font == nil || value == "" || p.isClosed() {
 		return nil
 	}
-	key := fontPathKey{font: face.Font, size: face.Size, style: drawing.FontStyle(face.Style), variant: face.Variant, value: value}
+	key := fontPathKey{
+		font: face.Font, size: face.Size, style: drawing.FontStyle(face.Style), variant: face.Variant,
+		direction: face.Direction, script: face.Script, language: face.Language, value: value,
+		fauxBold: face.FauxBold, fauxItalic: face.FauxItalic,
+		xOffset: face.XOffset, yOffset: face.YOffset, mmPerEm: face.MmPerEm,
+	}
 	p.pathCacheMu.Lock()
-	if p.pathCache != nil {
-		if path := p.pathCache[key]; path != nil {
-			p.pathCacheMu.Unlock()
-			return path
-		}
+	if path, ok := p.pathCache.Get(key); ok {
+		p.pathCacheMu.Unlock()
+		return path
 	}
 	p.pathCacheMu.Unlock()
 	path, _ := face.ToPath(value)
@@ -37,20 +89,15 @@ func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path
 		return nil
 	}
 	p.pathCacheMu.Lock()
-	if p.isClosed() {
+	if p.isClosed() || p.fontRetired(face.Font) {
 		p.pathCacheMu.Unlock()
 		return path
 	}
-	if existing := p.pathCache[key]; existing != nil {
+	if existing, ok := p.pathCache.Get(key); ok {
 		p.pathCacheMu.Unlock()
 		return existing
 	}
-	if len(p.pathCache) >= 2048 {
-		p.pathCache = make(map[fontPathKey]*canvas.Path)
-	} else if p.pathCache == nil {
-		p.pathCache = make(map[fontPathKey]*canvas.Path)
-	}
-	p.pathCache[key] = path
+	p.pathCache.Add(key, path, 2048)
 	p.pathCacheMu.Unlock()
 	return path
 }
@@ -59,47 +106,45 @@ func (p *Fonts) shapedTextPath(face *canvas.FontFace, value string) *canvas.Path
 // canvas 后端的 DrawText 每次 NewTextLine 都会重新整形/分项，是明显热点；
 // 相同字体数据 + 字号 + 样式 + 纯色画笔 + 文本的整形成果完全一致，直接复用。
 // 渐变/图案画笔的文字不缓存，避免不同文本对象互相污染。返回的 canvas.Text
-// 只被读取渲染，跨对象复用安全；缓存有界，超出后整体清空。
+// 只被读取渲染，跨对象复用安全；超限时淘汰最久未用的条目。
 func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text {
 	if face == nil || face.Font == nil || value == "" {
 		return nil
 	}
-	if !face.Fill.IsColor() {
+	if !face.Fill.IsColor() || len(face.Deco) != 0 {
 		return canvas.NewTextLine(face, value, canvas.Left)
 	}
 	key := textLineKey{
-		font:    face.Font,
-		size:    face.Size,
-		style:   drawing.FontStyle(face.Style),
-		variant: face.Variant,
-		fill:    face.Fill.Color,
-		hinting: face.Hinting,
-		value:   value,
+		font:      face.Font,
+		size:      face.Size,
+		style:     drawing.FontStyle(face.Style),
+		variant:   face.Variant,
+		direction: face.Direction,
+		script:    face.Script,
+		language:  face.Language,
+		fill:      face.Fill.Color,
+		hinting:   face.Hinting,
+		value:     value,
+		fauxBold:  face.FauxBold, fauxItalic: face.FauxItalic,
+		xOffset: face.XOffset, yOffset: face.YOffset, mmPerEm: face.MmPerEm,
 	}
 	p.textLineMu.Lock()
-	if p.textLineCache != nil {
-		if line := p.textLineCache[key]; line != nil {
-			p.textLineMu.Unlock()
-			return line
-		}
+	if line, ok := p.textLineCache.Get(key); ok {
+		p.textLineMu.Unlock()
+		return line
 	}
 	p.textLineMu.Unlock()
 	line := canvas.NewTextLine(face, value, canvas.Left)
 	p.textLineMu.Lock()
-	if p.isClosed() {
+	if p.isClosed() || p.fontRetired(face.Font) {
 		p.textLineMu.Unlock()
 		return line
 	}
-	if existing := p.textLineCache[key]; existing != nil {
+	if existing, ok := p.textLineCache.Get(key); ok {
 		p.textLineMu.Unlock()
 		return existing
 	}
-	if len(p.textLineCache) >= 2048 {
-		p.textLineCache = make(map[textLineKey]*canvas.Text)
-	} else if p.textLineCache == nil {
-		p.textLineCache = make(map[textLineKey]*canvas.Text)
-	}
-	p.textLineCache[key] = line
+	p.textLineCache.Add(key, line, 2048)
 	p.textLineMu.Unlock()
 	return line
 }
@@ -131,7 +176,7 @@ func (f canvasFontFace) DirectPath(value string) *geom.Path {
 	return canvasconv.FromCanvasPath(path)
 }
 
-// maxTextWidthCacheEntries 限制文字宽度缓存条目数，超出后整体清空。
+// maxTextWidthCacheEntries 限制文字宽度缓存条目数，超限时淘汰最久未用的条目。
 const maxTextWidthCacheEntries = 4096
 
 // cachedTextWidth 返回文本的排版宽度，带缓存。
@@ -139,7 +184,7 @@ const maxTextWidthCacheEntries = 4096
 // canvas 的 TextWidth 每次调用都会重新做一次 harfbuzz 整形，而 OFD 排版需要
 // 逐字测量步进宽度：y.ofd 的 588 个文字图元每次排版都要为每个字形整形一次，
 // 重复整形一度占渲染 CPU 的四分之一。相同字体数据 + 字号 + 样式 + 书写方向
-// + 文本的宽度完全一致，直接复用。缓存有界，超出后整体清空。
+// + 文本的宽度完全一致，直接复用。缓存有界，保留最近访问的条目。
 func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 	if face == nil {
 		return 0
@@ -156,27 +201,25 @@ func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 		script:    face.Script,
 		language:  face.Language,
 		value:     value,
+		mmPerEm:   face.MmPerEm,
 	}
 	p.textWidthMu.Lock()
-	if width, ok := p.textWidthCache[key]; ok {
+	if width, ok := p.textWidthCache.Get(key); ok {
 		p.textWidthMu.Unlock()
 		return width
 	}
 	p.textWidthMu.Unlock()
 	width := face.TextWidth(value)
 	p.textWidthMu.Lock()
-	if p.isClosed() {
+	if p.isClosed() || p.fontRetired(face.Font) {
 		p.textWidthMu.Unlock()
 		return width
 	}
-	if existing, ok := p.textWidthCache[key]; ok {
+	if existing, ok := p.textWidthCache.Get(key); ok {
 		p.textWidthMu.Unlock()
 		return existing
 	}
-	if p.textWidthCache == nil || len(p.textWidthCache) >= maxTextWidthCacheEntries {
-		p.textWidthCache = make(map[textWidthKey]float64)
-	}
-	p.textWidthCache[key] = width
+	p.textWidthCache.Add(key, width, maxTextWidthCacheEntries)
 	p.textWidthMu.Unlock()
 	return width
 }
@@ -270,11 +313,10 @@ func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextO
 		// 只能变成一片空白——而空白在产物上看不出原因，也没有报错。
 		return p.registeredFallbackCovering(family, object, style)
 	}
-	// 族名就是当初选中的候选名：系统字体取候选族名，等宽回退统一叫
-	// "fixed-width"，内嵌字体取 OFD 里的字体名。因此按族名判断等宽够用，
-	// 也避免在 OFD 没有等宽标志的情况下靠 HScale 之类的间接特征去猜。
+	// 系统字体按文件共享，family.Name() 是首次加载时的别名，不能用于分类。
+	// 按当前资源声明和实际字体数据选取回退，避免分类随其他文档的加载顺序改变。
 	order := cjkFallbackFamilies
-	if isFixedWidthName(family.Name()) {
+	if p.prefersFixedWidthFallback(family, object, style) {
 		order = cjkFixedWidthFamilies
 	}
 	for _, name := range order {
@@ -288,6 +330,32 @@ func (p *Fonts) cjkFallbackFamily(family *canvas.FontFamily, object models.TextO
 		}
 	}
 	return nil
+}
+
+func (p *Fonts) prefersFixedWidthFallback(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
+	if p != nil && p.Document != nil {
+		if resource := p.Document.GetFont(models.StID(object.Font)); resource != nil && isFixedWidthFont(resource) {
+			return true
+		}
+	}
+	face := probeFamilyFace(family, cjkProbeSize, style)
+	if face == nil || face.Font == nil || face.Font.SFNT == nil {
+		return false
+	}
+	if face.Font.Post != nil && face.Font.Post.IsFixedPitch != 0 {
+		return true
+	}
+	// canvas.Font.Name() 也被 FontFamily.LoadFont 改写成族别名，直接读 SFNT 名称表。
+	if face.Font.SFNT.Name != nil {
+		for _, id := range []font.NameID{font.NameFontFamily, font.NamePreferredFamily, font.NamePostScript} {
+			for _, record := range face.Font.SFNT.Name.Get(id) {
+				if isFixedWidthName(record.String()) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // registeredFallbackCovering 在已注册的回退字体里找一个能画出对象文字的族。
@@ -385,17 +453,15 @@ func textFontStyle(weight int, italic bool) drawing.FontStyle {
 // 情形返回 nil（示意“无需按字形映射构建”），并利用缓存后的轮廓判断，避免
 // 与后续 drawTextInline 重复计算同一字形轮廓。
 func (p *Fonts) directTextPath(face *canvas.FontFace, value string) *canvas.Path {
-	var path *canvas.Path
 	if !fontrepair.ContainsGlyphRune(value) {
-		path := p.shapedTextPath(face, value)
-		if path != nil {
+		if shaped := p.shapedTextPath(face, value); shaped != nil {
 			return nil
 		}
 	}
 	if face.Font == nil || face.Font.SFNT == nil {
 		return nil
 	}
-	path = &canvas.Path{}
+	path := &canvas.Path{}
 	advance := 0.0
 	for _, r := range []rune(value) {
 		glyphID := face.Font.GlyphIndex(r)

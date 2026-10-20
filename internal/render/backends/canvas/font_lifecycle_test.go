@@ -163,7 +163,7 @@ func TestClosedFontsDoNotRefillCaches(t *testing.T) {
 	fonts.shapedTextLine(face, "B")
 	fonts.cachedTextWidth(face, "B")
 	if len(fonts.embeddedFonts) != 0 || len(fonts.embeddedRepairers) != 0 || len(fonts.renderLocks) != 0 ||
-		len(fonts.pathCache) != 0 || len(fonts.textLineCache) != 0 || len(fonts.textWidthCache) != 0 {
+		fonts.pathCache.Len() != 0 || fonts.textLineCache.Len() != 0 || fonts.textWidthCache.Len() != 0 {
 		t.Fatal("关闭后的调用重新填充了字体、渲染锁或整形缓存")
 	}
 }
@@ -237,7 +237,7 @@ func TestCloseRacesShapingWithoutRefillingCaches(t *testing.T) {
 	<-started
 	fonts.Close()
 	<-done
-	if len(fonts.pathCache) != 0 || len(fonts.textLineCache) != 0 || len(fonts.textWidthCache) != 0 {
+	if fonts.pathCache.Len() != 0 || fonts.textLineCache.Len() != 0 || fonts.textWidthCache.Len() != 0 {
 		t.Fatal("关闭与整形并发后缓存仍有残留")
 	}
 }

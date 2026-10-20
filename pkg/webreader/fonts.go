@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 
 	"github.com/zc310/ofd/internal/fontrepair"
@@ -106,6 +107,8 @@ type FontSource struct {
 // RegisterFallbackFont 在进程内全局注册回退字体，与具体 Reader 无关。
 // 同一字体族只注册一次（幂等）且不复制字体数据；之后可通过
 // Reader.UseFallbackFont 应用到某个文档。
+// canvas 后端最多注册 64 个字体族，各样式的当前源数据合计不超过 256 MiB；
+// 超限时保留现有注册并返回错误，可先用 UnregisterFallbackFont 释放不再使用的字体。
 func RegisterFallbackFont(source FontSource) error {
 	if len(source.Data) == 0 || source.Family == "" {
 		return errors.New("回退字体数据或字体族名为空")
@@ -164,10 +167,11 @@ func (r *Reader) UseFallbackFont(family string) error {
 		}
 	}
 	r.fallbackFamily = family
-	r.fallbackFamilies = append(r.fallbackFamilies, family)
-	r.renderDocsMu.Lock()
-	r.renderDocs = nil
-	r.renderDocsMu.Unlock()
+	// 同族再次应用仍需更新文档（可能新增样式或替换了数据），列表只登记一次。
+	if !slices.Contains(r.fallbackFamilies, family) {
+		r.fallbackFamilies = append(r.fallbackFamilies, family)
+	}
+	r.clearRenderViewsLocked()
 	r.text = newTextCache()
 	r.search = newSearchCache(len(r.pages))
 	return nil
@@ -196,24 +200,14 @@ func (r *Reader) RemoveFallbackFont(family string) error {
 		seenDocuments[ref.document] = struct{}{}
 		ref.document.RemoveFallbackFont(family)
 	}
-	if len(r.fallbackFamilies) > 0 {
-		kept := r.fallbackFamilies[:0]
-		for _, value := range r.fallbackFamilies {
-			if value != family {
-				kept = append(kept, value)
-			}
-		}
-		r.fallbackFamilies = kept
-	}
+	r.fallbackFamilies = slices.DeleteFunc(r.fallbackFamilies, func(value string) bool { return value == family })
 	if r.fallbackFamily == family {
 		r.fallbackFamily = ""
 		if len(r.fallbackFamilies) > 0 {
 			r.fallbackFamily = r.fallbackFamilies[len(r.fallbackFamilies)-1]
 		}
 	}
-	r.renderDocsMu.Lock()
-	r.renderDocs = nil
-	r.renderDocsMu.Unlock()
+	r.clearRenderViewsLocked()
 	r.text = newTextCache()
 	r.search = newSearchCache(len(r.pages))
 	return nil

@@ -22,26 +22,28 @@ import (
 type Document struct {
 	*parser.Document
 
-	background       color.Color
-	dpi              geom.Resolution
-	fonts            FontEngine
-	fallbacks        []string
-	fallbackMu       sync.RWMutex
-	imageLocksMu     sync.Mutex
-	imageLocks       map[string]*imageKeyLock
-	images           *utils.LRU[string, image.Image]
-	svgCanvases      *utils.LRU[string, SVGScene]
-	sealMu           sync.Mutex
-	sealDocs         map[[32]byte]*sealDocEntry
-	sealClosed       bool
-	closeOnce        sync.Once
-	ctColorMu        sync.Mutex
-	ctColorCache     *utils.LRU[*models.CTColor, *CTColor]
-	ctColorBuilds    map[*models.CTColor]*ctColorBuild
-	colorSpacesMu    sync.Mutex
-	colorSpaces      map[*models.ColorSpace]*colorSpaceResources
-	templateScenesMu sync.Mutex
-	templateScenes   *utils.LRU[templateSceneKey, *templateScene]
+	background         color.Color
+	dpi                geom.Resolution
+	fonts              FontEngine
+	fontOwner          *sharedFontEngine
+	fallbacks          []string
+	fallbackMu         sync.RWMutex
+	imageLocksMu       sync.Mutex
+	imageLocks         map[string]*imageKeyLock
+	images             *utils.LRU[string, image.Image]
+	svgCanvases        *utils.LRU[string, SVGScene]
+	sealMu             sync.Mutex
+	sealDocs           map[[32]byte]*sealDocEntry
+	sealClosed         bool
+	closeOnce          sync.Once
+	ctColorMu          sync.Mutex
+	ctColorCache       *utils.LRU[*models.CTColor, *CTColor]
+	ctColorBuilds      map[*models.CTColor]*ctColorBuild
+	colorSpacesMu      sync.Mutex
+	colorSpaces        map[*models.ColorSpace]*colorSpaceResources
+	templateScenesMu   sync.Mutex
+	templateScenes     *utils.LRU[templateSceneKey, *templateScene]
+	templateGeneration uint64
 	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
 	closed atomic.Bool
 }
@@ -142,7 +144,9 @@ func (p *Document) Close() {
 		for _, entry := range seals {
 			entry.close()
 		}
-		if p.fonts != nil {
+		if p.fontOwner != nil {
+			p.fontOwner.release()
+		} else if p.fonts != nil {
 			p.fonts.Close()
 		}
 		p.ctColorMu.Lock()
@@ -169,13 +173,41 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 // NewDocumentWithDPI 创建带有输出分辨率的渲染文档。
 // dpi 用于复合图元等内部离屏栅格化，不改变页面的物理尺寸。
 func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi geom.Resolution) *Document {
+	fonts := NewFontEngine(doc)
+	return newDocumentView(background, doc, dpi, &sharedFontEngine{engine: fonts, refs: 1})
+}
+
+// NewView 创建独立的 DPI/背景视图，复用同一文档的字体解析、映射和整形缓存。
+// 每个视图都需 Close；最后一个视图关闭时才释放共享字体。
+// 任一视图调用 UseFallbackFont/RemoveFallbackFont 都会更新共享字体引擎，影响所有
+// 视图；各 Document 的 fallbacks 列表从创建时复制，之后仅由本视图的方法更新，
+// 不随其他视图同步，不能将其当作共享字体引擎的实时快照。
+func (p *Document) NewView(background color.Color, dpi geom.Resolution) (*Document, error) {
+	if p == nil || p.fontOwner == nil {
+		return nil, errors.New("文档没有可共享的字体上下文")
+	}
+	owner := p.fontOwner
+	owner.mu.Lock()
+	if p.closed.Load() || owner.refs == 0 {
+		owner.mu.Unlock()
+		return nil, errors.New("渲染文档已关闭")
+	}
+	owner.refs++
+	owner.mu.Unlock()
+	view := newDocumentView(background, p.Document, dpi, owner)
+	view.fallbacks = p.fallbackFontFamilies()
+	return view, nil
+}
+
+func newDocumentView(background color.Color, doc *parser.Document, dpi geom.Resolution, fonts *sharedFontEngine) *Document {
 	if dpi <= 0 {
 		dpi = geom.DPI(defaultRenderDPI)
 	}
 	return &Document{
 		background:  background,
 		dpi:         dpi,
-		fonts:       NewFontEngine(doc),
+		fonts:       fonts.engine,
+		fontOwner:   fonts,
 		Document:    doc,
 		images:      utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
 		svgCanvases: utils.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil),

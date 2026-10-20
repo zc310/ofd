@@ -208,25 +208,8 @@ var cjkFixedWidthFamilies = []string{
 	"Noto Sans Mono CJK TC",
 }
 
-// cjkProbeRune 是判断字体是否覆盖中文的探测字符（"中"）。
-const cjkProbeRune = '中'
-
 // cjkProbeSize 是覆盖探测用的字号。只需能构造出字体面，字号不影响字形查找。
 const cjkProbeSize = 12.0
-
-// familyCoversCJK 判断字体族在给定样式下是否真的有中文字形。
-// FontFamily 按 style 存放字体，同一 style 再次载入会覆盖前一个，因此这里
-// 只能检查该 style 当前实际生效的那份字体，不能指望同族多字体逐字形回退。
-func familyCoversCJK(family *canvas.FontFamily, style drawing.FontStyle) bool {
-	if family == nil {
-		return false
-	}
-	face := family.Face(cjkProbeSize, canvas.Black, canvasStyle(style), canvas.FontNormal)
-	if face == nil || face.Font == nil {
-		return false
-	}
-	return face.Font.GlyphIndex(cjkProbeRune) != 0
-}
 
 // familyCoversText 判断字体族能否画出对象里的全部字符。
 //
@@ -238,10 +221,7 @@ func familyCoversCJK(family *canvas.FontFamily, style drawing.FontStyle) bool {
 // 用有界集合记录已确认覆盖的字符，避免重复查表。集合满后仍检查后续字符，
 // 只是不再记录新字符；必须遍历完全部 TextCode 才能判定覆盖。
 func familyCoversText(family *canvas.FontFamily, object models.TextObject, style drawing.FontStyle) bool {
-	if family == nil {
-		return false
-	}
-	face := family.Face(cjkProbeSize, canvas.Black, canvasStyle(style), canvas.FontNormal)
+	face := probeFamilyFace(family, cjkProbeSize, style)
 	if face == nil || face.Font == nil {
 		return false
 	}
@@ -301,26 +281,30 @@ var fixedWidthFontFiles = []string{
 // loadFixedWidthFont 为逻辑等宽字体选择系统等宽字体。OFD 的 FontName 通常是
 // 资源名，无法直接匹配系统字体，因此这里依据 FixedWidth 标志和族名中的
 // monospace 线索，按族名或常见字体文件加载等宽字体。
-func loadFixedWidthFont(ft *models.Font, style drawing.FontStyle) (*canvas.FontFamily, bool) {
-	if ft == nil || !isFixedWidthFont(ft) {
+func (p *Fonts) loadFixedWidthFont(ft *models.Font, style drawing.FontStyle) (*canvas.FontFamily, bool) {
+	if ft == nil || !isFixedWidthFont(ft) || !systemFontLookupUsable() {
 		return nil, false
 	}
-	family := canvas.NewFontFamily("fixed-width")
+	load := func(name string) (*canvas.FontFamily, bool) {
+		filename, ok := canvas.FindSystemFont(name, canvasStyle(style))
+		if !ok {
+			return nil, false
+		}
+		return loadCachedFontFile(p, filename, "fixed-width", style)
+	}
 	if name := strings.TrimSpace(ft.FamilyName); !isGenericFontFamily(name) {
-		if err := family.LoadSystemFont(name, canvasStyle(style)); err == nil {
+		if family, ok := load(name); ok {
 			return family, true
 		}
 	}
 	for _, name := range fixedWidthFontFamilies {
-		if err := family.LoadSystemFont(name, canvasStyle(style)); err == nil {
+		if family, ok := load(name); ok {
 			return family, true
 		}
 	}
 	if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), fixedWidthFontFiles...); err == nil {
 		slog.Debug("load fallback fixed-width font file", "path", path, "style", style)
-		if loadFontFileSafely(family, path) {
-			return family, true
-		}
+		return loadCachedFontFile(p, path, "fixed-width", style)
 	}
 	return nil, false
 }
