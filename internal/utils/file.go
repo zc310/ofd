@@ -28,15 +28,16 @@ func FindFirstFileInDirs(dirs []string, targetFiles ...string) (string, error) {
 
 	// 启动所有搜索goroutine
 	for _, dir := range dirs {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			continue
-		}
-
 		wg.Add(1)
 		go func(searchDir string) {
 			defer wg.Done()
 
-			_ = filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
+			// WalkDir 不跟随根目录本身的符号链接，先解析根目录。
+			root, err := filepath.EvalSymlinks(searchDir)
+			if err != nil {
+				return
+			}
+			_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 				// 检查是否已被取消
 				select {
 				case <-ctx.Done():
@@ -56,10 +57,19 @@ func FindFirstFileInDirs(dirs []string, targetFiles ...string) (string, error) {
 					if _, ok := targetNames[strings.ToLower(filepath.Base(path))]; !ok {
 						return nil
 					}
+					// 跟随文件链接验证目标，排除断链、目录链接和 FIFO 等特殊文件。
+					info, statErr := os.Stat(path)
+					if statErr != nil || !info.Mode().IsRegular() {
+						return nil
+					}
+					relative, relErr := filepath.Rel(root, path)
+					if relErr != nil {
+						return nil
+					}
 
 					if atomic.CompareAndSwapInt32(&found, 0, 1) {
 						select {
-						case resultChan <- path:
+						case resultChan <- filepath.Join(searchDir, relative):
 							cancel() // 取消其他goroutine
 						default:
 						}
@@ -91,8 +101,8 @@ func FindFirstFileInDirs(dirs []string, targetFiles ...string) (string, error) {
 	}
 }
 
-// SamePath 判断两个文件路径是否指向同一文件。先按绝对路径与路径清理结果比较，
-// 不相等时再尝试解析符号链接；任一环节出错返回 false。
+// SamePath 先比较规范化的绝对路径，再按已存在文件的身份识别符号链接和硬链接。
+// 路径相同但尚不存在时也返回 true；不同路径无法取得文件信息时返回 false。
 func SamePath(left, right string) bool {
 	leftAbs, leftErr := filepath.Abs(left)
 	rightAbs, rightErr := filepath.Abs(right)
@@ -102,7 +112,7 @@ func SamePath(left, right string) bool {
 	if filepath.Clean(leftAbs) == filepath.Clean(rightAbs) {
 		return true
 	}
-	leftReal, leftErr := filepath.EvalSymlinks(leftAbs)
-	rightReal, rightErr := filepath.EvalSymlinks(rightAbs)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftReal) == filepath.Clean(rightReal)
+	leftInfo, leftErr := os.Stat(leftAbs)
+	rightInfo, rightErr := os.Stat(rightAbs)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

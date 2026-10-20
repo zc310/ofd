@@ -2,6 +2,8 @@ package utils
 
 import (
 	"container/list"
+	"math"
+	"math/bits"
 	"sync"
 )
 
@@ -17,12 +19,14 @@ type lruEntry[K comparable, V any] struct {
 type LRU[K comparable, V any] struct {
 	capacity  int
 	maxWeight int64
-	weight    int64
-	items     map[K]*list.Element
-	order     *list.List
-	onEvict   func(K, V)
-	canEvict  func(K, V) bool
-	mu        sync.Mutex
+	// 用两个字保存精确总权重，允许受保护条目的总权重暂时超过 int64。
+	weight   uint64
+	weightHi uint64
+	items    map[K]*list.Element
+	order    *list.List
+	onEvict  func(K, V)
+	canEvict func(K, V) bool
+	mu       sync.Mutex
 }
 
 type lruCandidate[K comparable, V any] struct {
@@ -83,14 +87,15 @@ func (c *LRU[K, V]) AddWeighted(key K, value V, weight int64) {
 	}
 	if element, ok := c.items[key]; ok {
 		entry := element.Value.(lruEntry[K, V])
-		c.weight -= entry.weight
+		c.subtractWeightLocked(entry.weight)
 		element.Value = lruEntry[K, V]{key: key, value: value, weight: weight, generation: entry.generation + 1}
-		c.weight += weight
 		c.order.MoveToFront(element)
 	} else {
 		c.items[key] = c.order.PushFront(lruEntry[K, V]{key: key, value: value, weight: weight, generation: 1})
-		c.weight += weight
 	}
+	var carry uint64
+	c.weight, carry = bits.Add64(c.weight, uint64(weight), 0)
+	c.weightHi += carry
 	c.mu.Unlock()
 	evicted := c.trim()
 	if c.onEvict != nil {
@@ -115,7 +120,7 @@ func (c *LRU[K, V]) trim() []lruEntry[K, V] {
 	var evicted []lruEntry[K, V]
 	for {
 		c.mu.Lock()
-		if c.order.Len() <= c.capacity && (c.maxWeight <= 0 || c.weight <= c.maxWeight) {
+		if !c.overLimitLocked() {
 			c.mu.Unlock()
 			return evicted
 		}
@@ -138,6 +143,11 @@ func (c *LRU[K, V]) trim() []lruEntry[K, V] {
 		}
 
 		c.mu.Lock()
+		// 锁外检查候选期间，其他 Trim 或权重更新可能已使缓存满足限制。
+		if !c.overLimitLocked() {
+			c.mu.Unlock()
+			return evicted
+		}
 		current, ok := c.items[selected.entry.key]
 		if !ok || current != selected.element || current.Value.(lruEntry[K, V]).generation != selected.entry.generation {
 			c.mu.Unlock()
@@ -146,10 +156,21 @@ func (c *LRU[K, V]) trim() []lruEntry[K, V] {
 		entry := current.Value.(lruEntry[K, V])
 		delete(c.items, entry.key)
 		c.order.Remove(current)
-		c.weight -= entry.weight
+		c.subtractWeightLocked(entry.weight)
 		c.mu.Unlock()
 		evicted = append(evicted, entry)
 	}
+}
+
+func (c *LRU[K, V]) overLimitLocked() bool {
+	return c.order.Len() > c.capacity ||
+		(c.maxWeight > 0 && (c.weightHi > 0 || c.weight > uint64(c.maxWeight)))
+}
+
+func (c *LRU[K, V]) subtractWeightLocked(weight int64) {
+	var borrow uint64
+	c.weight, borrow = bits.Sub64(c.weight, uint64(weight), 0)
+	c.weightHi -= borrow
 }
 
 // Len 返回当前缓存中的条目数量。
@@ -159,7 +180,6 @@ func (c *LRU[K, V]) Len() int {
 	return c.order.Len()
 }
 
-// Weight 返回当前缓存条目的总权重。
 // Values 返回当前缓存的全部值，按最近使用顺序。
 //
 // 调用方据此做收尾（如释放条目持有的重资源）时要注意：拿到的只是快照，之后
@@ -176,8 +196,13 @@ func (c *LRU[K, V]) Values() []V {
 	return values
 }
 
+// Weight 返回当前缓存条目的总权重，超过 int64 范围时返回 math.MaxInt64。
+// 内部仍精确记账，淘汰或替换条目后会恢复实际可表示的权重。
 func (c *LRU[K, V]) Weight() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.weight
+	if c.weightHi > 0 || c.weight > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(c.weight)
 }

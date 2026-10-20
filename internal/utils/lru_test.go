@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -134,5 +136,120 @@ func TestWeightedLRUCanEvictCallbackCanReenterCache(t *testing.T) {
 	case <-checked:
 	case <-time.After(time.Second):
 		t.Fatal("canEvict 回调重入缓存时发生死锁")
+	}
+}
+
+func TestWeightedLRUConcurrentTrimStopsWhenWithinLimits(t *testing.T) {
+	for _, limit := range []struct {
+		name      string
+		capacity  int
+		maxWeight int64
+	}{
+		{"capacity", 1, 0},
+		{"weight", 2, 1},
+	} {
+		t.Run(limit.name, func(t *testing.T) {
+			var enabled atomic.Bool
+			var checks atomic.Int32
+			entered, release := make(chan struct{}), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			defer unblock()
+			evicted := make(chan string, 2)
+			cache := NewWeightedLRU[string, int](limit.capacity, limit.maxWeight, func(key string, _ int) {
+				evicted <- key
+			}, func(key string, _ int) bool {
+				if !enabled.Load() {
+					return false
+				}
+				if checks.Add(1) == 1 {
+					close(entered)
+					<-release
+					return true
+				}
+				return key == "b"
+			})
+			cache.Add("a", 1)
+			cache.Add("b", 2)
+			enabled.Store(true)
+			done := make(chan struct{})
+			go func() {
+				cache.Trim()
+				close(done)
+			}()
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("第一次 Trim 未进入候选检查")
+			}
+			cache.Trim()
+			unblock()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("第一次 Trim 未结束")
+			}
+			if cache.Len() != 1 || cache.Weight() != 1 {
+				t.Fatalf("并发 Trim 后条目数/权重 = %d/%d; want 1/1", cache.Len(), cache.Weight())
+			}
+			if _, ok := cache.Get("a"); !ok {
+				t.Fatal("已满足限制后仍淘汰了剩余条目")
+			}
+			if len(evicted) != 1 || <-evicted != "b" {
+				t.Fatal("应仅通知 b 被淘汰")
+			}
+		})
+	}
+}
+
+func TestWeightedLRUWeightOverflowDoesNotBypassLimit(t *testing.T) {
+	for _, operation := range []string{"insert", "replace"} {
+		t.Run(operation, func(t *testing.T) {
+			cache := NewWeightedLRU[string, int](2, math.MaxInt64, nil)
+			cache.AddWeighted("a", 1, math.MaxInt64-1)
+			if operation == "replace" {
+				cache.AddWeighted("b", 2, 1)
+			}
+			cache.AddWeighted("b", 2, 2)
+			if cache.Len() != 1 || cache.Weight() != 2 {
+				t.Fatalf("溢出后条目数/权重 = %d/%d; want 1/2", cache.Len(), cache.Weight())
+			}
+			if _, ok := cache.Get("b"); !ok {
+				t.Fatal("应保留新条目 b")
+			}
+		})
+	}
+}
+
+func TestWeightedLRUTracksProtectedWeightBeyondUint64(t *testing.T) {
+	protected := true
+	cache := NewWeightedLRU[string, int](3, math.MaxInt64, nil, func(string, int) bool {
+		return !protected
+	})
+	cache.AddWeighted("a", 1, math.MaxInt64)
+	cache.AddWeighted("b", 2, math.MaxInt64)
+	cache.AddWeighted("c", 3, 2)
+	if cache.Len() != 3 || cache.Weight() != math.MaxInt64 {
+		t.Fatalf("受保护的总权重应以 MaxInt64 返回: %d/%d", cache.Len(), cache.Weight())
+	}
+	protected = false
+	cache.Trim()
+	if cache.Len() != 1 || cache.Weight() != 2 {
+		t.Fatalf("移除保护后条目数/权重 = %d/%d; want 1/2", cache.Len(), cache.Weight())
+	}
+	if _, ok := cache.Get("c"); !ok {
+		t.Fatal("应保留 c")
+	}
+}
+
+func TestWeightedLRURecoversExactWeightAfterOverflowAndReplacement(t *testing.T) {
+	cache := NewWeightedLRU[string, int](2, math.MaxInt64, nil, func(string, int) bool { return false })
+	cache.AddWeighted("a", 1, math.MaxInt64)
+	cache.AddWeighted("b", 2, 1)
+	if cache.Weight() != math.MaxInt64 {
+		t.Fatalf("超范围权重 = %d; want MaxInt64", cache.Weight())
+	}
+	cache.AddWeighted("a", 1, 1)
+	if cache.Len() != 2 || cache.Weight() != 2 {
+		t.Fatalf("替换后条目数/权重 = %d/%d; want 2/2", cache.Len(), cache.Weight())
 	}
 }
