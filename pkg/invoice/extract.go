@@ -35,25 +35,38 @@ var preferredAttachment = "Doc_0/Attachs/original_invoice.xml"
 // 文件数据（[]byte）或 io.Reader。
 //
 // 抽取以 OFD 包内嵌的结构化附件为主：先尝试 Doc_0/Attachs/original_invoice.xml，
-// 不存在时扫描所有包含 attach 的 XML 条目，取第一个带发票代码或价税合计的文件。
+// 不存在时扫描所有包含 attach 的 XML 条目，取第一个带发票代码、铁路电子客票号
+// 或价税合计的文件。没有有效附件时，尝试按文档自定义标引中的 ObjectRef 读取发票字段。
 // 之后读取页面文字层补齐票面标题与价税合计大写金额，并按标题推断发票类型。
 //
-// 附件存在但没有发票代码也没有价税合计时返回 ErrNotInvoice，不返回空壳：这种附件
-// 多半是版式说明或签章属性，兜一个几乎全空的 Invoice 会让调用方看不出出错。
+// 附件或自定义标引存在但没有有效发票数据时返回 ErrNotInvoice，不返回空壳。
 func Extract(input any) (*Invoice, error) {
 	data, err := readInput(input)
 	if err != nil {
 		return nil, err
 	}
 	attachment, raw, err := loadAttachment(data)
-	if err != nil {
+	var invoice *Invoice
+	if err == nil {
+		invoice, err = parseAttachment(raw)
+		if err != nil {
+			err = fmt.Errorf("解析发票附件 %s 失败: %w", attachment, err)
+		} else {
+			invoice.Attachment = attachment
+		}
+	}
+	if errors.Is(err, ErrNoAttachment) || errors.Is(err, ErrNotInvoice) {
+		var tagErr error
+		invoice, tagErr = extractCustomTags(data)
+		if errors.Is(tagErr, ErrNoAttachment) {
+			return nil, err
+		}
+		if tagErr != nil {
+			return nil, tagErr
+		}
+	} else if err != nil {
 		return nil, err
 	}
-	invoice, err := parseAttachment(raw)
-	if err != nil {
-		return nil, fmt.Errorf("解析发票附件 %s 失败: %w", attachment, err)
-	}
-	invoice.Attachment = attachment
 	supplementFromText(invoice, data)
 	return invoice, nil
 }

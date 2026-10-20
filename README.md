@@ -78,7 +78,7 @@ go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.p
 | 校验与分析 | [ofd-validator](cmd/ofd-validator/README.md) 检查 ZIP、XML、XSD、引用和语义；[ofd-analyzer](cmd/ofd-analyzer/README.md) 分析结构、页面、资源、附件与签名。 |
 | 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
 | 档案预检 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证。 |
-| 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，JSON/CSV/XLSX 汇总、去重、自校验与 PDF 合并打印。 |
+| 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，支持结构化附件与自定义标引，JSON/CSV/XLSX 汇总、去重、自校验与 PDF 合并打印。 |
 | 电子签章 | [ofd-seal](cmd/ofd-seal/README.md)：SES V4 SM2/SM3 电子印章；[签署与验证 API](pkg/sign/README.md) 支持签章生成、外部签署与完整验证，接受签章使用 `Result.FullyValid()`。[creator 验签报告](cmd/ofd-creator/README.md#签名处理) 展示完整状态及原因。外部协议示例见 [ofd-signer-demo](cmd/ofd-signer-demo/README.md)。 |
 | 阅读器 | [ofd-viewer](cmd/ofd-viewer/README.md)：桌面、Android 与 Fyne Web 阅读器；[ofd-wasm](cmd/ofd-wasm/README.md)：浏览器阅读器、WASM API 与 Worker 协议。 |
 | HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务与远程产物传输。 |

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,6 +102,32 @@ func TestRunExtractsInvoiceToStdout(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("stderr = %q, want 空", stderr.String())
+	}
+}
+
+func TestRunExtractsCustomTagInvoice(t *testing.T) {
+	const input = "../../testdata/ofdrw/20240531141733.ofd"
+	if _, err := os.Stat(input); errors.Is(err, os.ErrNotExist) {
+		t.Skip("缺少 OFD 测试文件：20240531141733.ofd")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{input}, &stdout, &stderr)
+	if code != exitOK || stderr.Len() != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	text := stdout.String()
+	for _, want := range []string{
+		`"number":"24112000000048542163"`, `"type":"专用发票"`,
+		`"total_amount":"4449"`, `"attachment":"Doc_0/Tags/CustomTag.xml"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("stdout 缺少 %s\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `"items"`) || strings.Contains(text, `"summary"`) {
+		t.Errorf("单张输入应输出 Invoice：%s", text)
 	}
 }
 

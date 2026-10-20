@@ -31,6 +31,55 @@ func ExampleExtract() {
 	// 办公用品*中性笔 0.13
 }
 
+// ExampleExtract_customTags 演示没有发票附件、通过自定义标引引用页面字段的 OFD。
+func ExampleExtract_customTags() {
+	files := map[string]string{
+		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">
+<DocBody><DocInfo><DocID>invoice</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml": `<Document xmlns="http://www.ofdspec.org/2016">
+<CommonData><MaxUnitID>10</MaxUnitID><PageArea><PhysicalBox>0 0 210 140</PhysicalBox></PageArea></CommonData>
+<Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages><CustomTags>Tags/list.xml</CustomTags></Document>`,
+		"Doc_0/Tags/list.xml": `<CustomTags xmlns="http://www.ofdspec.org/2016">
+<CustomTag TypeID="invoice"><FileLoc>invoice.xml</FileLoc></CustomTag></CustomTags>`,
+		"Doc_0/Tags/invoice.xml": `<root>
+<InvoiceNo><ObjectRef PageRef="1">2</ObjectRef></InvoiceNo>
+<TaxInclusiveTotalAmount><ObjectRef PageRef="1">3</ObjectRef></TaxInclusiveTotalAmount></root>`,
+		"Doc_0/Pages/Page_0/Content.xml": `<Page xmlns="http://www.ofdspec.org/2016"><Content><Layer ID="4">
+<TextObject ID="1" Boundary="50 10 80 8" Font="1" Size="4"><TextCode>电子发票（普通发票）</TextCode></TextObject>
+<TextObject ID="2" Boundary="150 20 40 5" Font="1" Size="3"><TextCode>12345678</TextCode></TextObject>
+<TextObject ID="3" Boundary="150 100 40 5" Font="1" Size="3"><TextCode>113.00</TextCode></TextObject>
+</Layer></Content></Page>`,
+	}
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	for name, content := range files {
+		writer, err := archive.Create(name)
+		if err != nil {
+			panic(err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			panic(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		panic(err)
+	}
+	got, err := invoice.Extract(data.Bytes())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(got.Type)
+	fmt.Println(got.Number)
+	fmt.Println(got.TotalAmount.Fixed(invoice.MoneyScale))
+	fmt.Println(got.Attachment)
+	// Output:
+	// 普通发票
+	// 12345678
+	// 113.00
+	// Doc_0/Tags/invoice.xml
+}
+
 // ExampleExtractBatch 演示汇总多张发票的金额，并按销售方分组。
 func ExampleExtractBatch() {
 	batch, err := invoice.ExtractBatch([]invoice.Source{

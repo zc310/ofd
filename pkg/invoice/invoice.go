@@ -2,7 +2,8 @@
 // 报表与合并打印。
 //
 // 抽取以 OFD 包内嵌的发票结构化附件（通常为 Doc_0/Attachs/original_invoice.xml）
-// 为主，附件缺失不可用时返回错误；页面文字层只用于补齐票面视觉字段（发票标题、
+// 为主；没有有效附件时，按文档自定义标引的 ObjectRef 引用读取页面中的发票字段。
+// 两种结构化数据来源均不可用时返回错误。页面文字层另用于补齐票面视觉字段（发票标题、
 // 价税合计大写金额），并据此推断发票类型。不涉及 PDF 等非 OFD 输入。
 //
 // 单张发票用 Extract；多张发票用 ExtractBatch 批量抽取并汇总金额（按销售方、
@@ -10,7 +11,7 @@
 // 合并成一个便于打印的 PDF。金额基于任意精度有理数，求和后按最小货币单位舍入，
 // 红字（红冲）发票的负金额照常参与合计。
 //
-// 批量处理默认严格：任一输入抽不出发票结构化附件即整批报错，避免金额在无人
+// 批量处理默认严格：任一输入抽不出发票结构化数据即整批报错，避免金额在无人
 // 察觉时少算；BatchOptions.SkipBroken 与 BatchOptions.Dedup 分别放宽失败输入
 // 和排除重复发票，两者都会改变参与合计的口径。
 package invoice
@@ -19,7 +20,7 @@ package invoice
 type Invoice struct {
 	// Title 是票面标题，例如「增值税电子普通发票」。
 	Title string `json:"title,omitempty"`
-	// Type 是由标题推断的发票类型：普通发票、专用发票或通行费。
+	// Type 是由标题推断的发票类型：普通发票、专用发票、通行费或铁路电子客票。
 	Type string `json:"type,omitempty"`
 	// MachineNumber 是机器编号。
 	MachineNumber string `json:"machine_number,omitempty"`
@@ -53,7 +54,7 @@ type Invoice struct {
 	Seller Party `json:"seller"`
 	// Details 是商品或劳务明细行。
 	Details []Detail `json:"details"`
-	// Attachment 是实际使用到的附件包内路径。
+	// Attachment 是实际使用到的结构化附件或自定义标引数据文件的包内路径。
 	Attachment string `json:"attachment"`
 	// Warnings 是抽取过程中的非致命提示。
 	Warnings []string `json:"warnings,omitempty"`
