@@ -365,13 +365,34 @@ var inlineImageFilterNames = map[string]string{
 	"JPX": "JPXDecode",
 }
 
-func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer) error {
+func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer, resources types.Dict) error {
 	previousSource := p.setSource(nil, "inline image")
 	defer func() { p.source = previousSource }()
-	dict, data, err := tokens.inlineImage()
+	var stream *types.StreamDict
+	_, data, err := tokens.inlineImage(func(dict map[string]any) (int64, error) {
+		stream = inlineImageStream(dict)
+		// 内联图像可引用当前资源中的颜色空间；先解析再计算原始行长度。
+		if name, ok := stream.Dict["ColorSpace"].(types.Name); ok {
+			if spaces, found := dereferencedSubDict(p.ctx, resources, "ColorSpace"); found {
+				if object, found := spaces.Find(name.Value()); found {
+					stream.Dict["ColorSpace"] = object
+				}
+			}
+		}
+		return p.inlineImageRawLength(stream)
+	})
 	if err != nil {
 		return err
 	}
+	stream.Raw = data
+	// 与图像 XObject 一致：解码失败只跳过该图像。
+	if err := p.appendImage(stream); err != nil {
+		p.report("image.decode", err.Error())
+	}
+	return nil
+}
+
+func inlineImageStream(dict map[string]any) *types.StreamDict {
 	stream := &types.StreamDict{Dict: types.Dict{}}
 	for key, value := range dict {
 		name := key
@@ -387,15 +408,51 @@ func (p *pdfInterpreter) inlineImage(tokens *pdfContentTokenizer) error {
 		// 内联图像未给出颜色空间时默认 DeviceGray（PDF 32000-1 表 93）。
 		stream.Insert("ColorSpace", types.Name("DeviceGray"))
 	}
-	stream.Raw = data
 	if pipeline := inlineImageFilterPipeline(stream); len(pipeline) > 0 {
 		stream.FilterPipeline = pipeline
 	}
-	// 与图像 XObject 一致：解码失败只跳过该图像。
-	if err := p.appendImage(stream); err != nil {
-		p.report("image.decode", err.Error())
+	return stream
+}
+
+// inlineImageRawLength 按 ISO 32000-1 8.9.7 计算无过滤器图像的数据长度。
+// 每行补齐到字节边界；像素中的空白或 EI 字节序列不能作为终止标记。
+// -1 表示过滤器编码或未知颜色空间，仍需扫描结束标记。
+func (p *pdfInterpreter) inlineImageRawLength(stream *types.StreamDict) (int64, error) {
+	if len(stream.FilterPipeline) > 0 {
+		return -1, nil
 	}
-	return nil
+	w, wok := dereferencedPDFNumber(p.ctx, stream.Dict["Width"])
+	h, hok := dereferencedPDFNumber(p.ctx, stream.Dict["Height"])
+	b, bok := dereferencedPDFNumber(p.ctx, stream.Dict["BitsPerComponent"])
+	components := 1
+	if pdfImageIsMask(p.ctx, stream) {
+		b, bok = 1, true
+	} else {
+		var err error
+		components, _, _, err = pdfImageColorSpace(p.ctx, stream)
+		if err != nil {
+			return -1, nil
+		}
+	}
+	if !wok || !hok || !bok || w <= 0 || h <= 0 || w != math.Trunc(w) || h != math.Trunc(h) ||
+		math.IsInf(w, 0) || math.IsInf(h, 0) || math.IsNaN(w) || math.IsNaN(h) || w >= math.MaxInt64 || h >= math.MaxInt64 ||
+		(b != 1 && b != 2 && b != 4 && b != 8 && b != 16) || components <= 0 {
+		return 0, errors.New("PDF 内联图像尺寸或位深无效")
+	}
+	width, height, bits := int64(w), int64(h), int64(b)*int64(components)
+	if p.control != nil {
+		if _, err := p.control.imagePixels(width, height); err != nil {
+			return 0, err
+		}
+	}
+	if width > (math.MaxInt64-7)/bits {
+		return 0, errors.New("PDF 内联图像行长度溢出")
+	}
+	row := (width*bits + 7) / 8
+	if height > math.MaxInt64/row {
+		return 0, errors.New("PDF 内联图像数据长度溢出")
+	}
+	return row * height, nil
 }
 
 func inlineImageColorSpace(value any) any {
@@ -1144,7 +1201,9 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 		// 过滤层（例如 FlateDecode），把未解码的 JPEG 数据留在 Content，
 		// 而 Raw 仍是外层过滤后的字节，因此优先使用 Content。
 		var jpegData []byte
-		if index > 0 && stream.Decode() == nil && isJPEGData(stream.Content) {
+		if isJPEGData(stream.Content) {
+			jpegData = append([]byte(nil), stream.Content...)
+		} else if index > 0 && stream.Decode() == nil && isJPEGData(stream.Content) {
 			jpegData = append([]byte(nil), stream.Content...)
 		} else if isJPEGData(stream.Raw) {
 			jpegData = append([]byte(nil), stream.Raw...)

@@ -70,6 +70,39 @@ func TestPDFInputBudgetAppliesToAllInputForms(t *testing.T) {
 	}
 }
 
+func TestPDFByteInputRemainsUnchangedAcrossConversions(t *testing.T) {
+	pdf := embeddedTextPDF("BT /F1 12 Tf 30 100 Td (Repeated input) Tj ET")
+	original := bytes.Clone(pdf)
+	for i := 0; i < 2; i++ {
+		var out bytes.Buffer
+		if err := Convert(t.Context(), pdf, &out, ""); err != nil {
+			t.Fatal(err)
+		}
+		if out.Len() == 0 || !bytes.Equal(pdf, original) {
+			t.Fatalf("conversion %d: output=%d input was modified=%v", i+1, out.Len(), !bytes.Equal(pdf, original))
+		}
+	}
+}
+
+func TestPDFByteInputCanBeSharedByConcurrentConversions(t *testing.T) {
+	pdf := embeddedTextPDF("BT /F1 12 Tf 30 100 Td (Shared input) Tj ET")
+	original := bytes.Clone(pdf)
+	t.Cleanup(func() {
+		if !bytes.Equal(pdf, original) {
+			t.Error("concurrent conversions modified shared input")
+		}
+	})
+	for i := 0; i < 2; i++ {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			if err := Convert(t.Context(), pdf, &out, ""); err != nil || out.Len() == 0 {
+				t.Fatalf("err=%v output=%d", err, out.Len())
+			}
+		})
+	}
+}
+
 func TestPDFImageBudgetRejectsHugeDimensionsBeforeAllocation(t *testing.T) {
 	pdf := budgetImagePDF("/Im0 Do", budgetImage(1_000_000_000, 1_000_000_000, "", []byte{0}))
 	requireBudgetError(t, pdf, Limits{}, "image_pixels")

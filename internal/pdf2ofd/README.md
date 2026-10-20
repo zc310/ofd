@@ -22,15 +22,15 @@
 
 | 主题 | 入口 | 维护时需要保留的规则 |
 |------|------|----------------------|
-| 转换流程 | [convert.go](convert.go)、[pdf_content.go](pdf_content.go) | 解析页面、绘制注解、合并单字图元后再固定语义层定位；预算或 Strict 失败先于输出。 |
+| 转换流程 | [convert.go](convert.go)、[pdf_content.go](pdf_content.go) | 输入字节在调用期间只读借用；解析页面、绘制注解、合并单字图元后再固定语义层定位；预算或 Strict 失败先于输出。 |
 | 预算与取消 | [control.go](control.go)、[config/options.go](config/options.go)、[image_control.go](image_control.go) | 分配/展开前预留预算；缓存命中不重复计算基础解码；取消原样返回 context 错误。预算不是峰值内存保证。 |
 | 页面和路径坐标 | [path.go](path.go)、[image.go](image.go) | PDF 使用点和左下原点，OFD 使用毫米和左上原点；同时处理 CTM、页面 Rotate、Box 原点及 UserUnit。Clips 的 TransFlag 不应重复施加图元 CTM。 |
-| 字体代码、CID 和 GID | [font.go](font.go)、[font_cmap.go](font_cmap.go)、[font_cmap_predefined.go](font_cmap_predefined.go) | ToUnicode 查询源代码；嵌入 Encoding CMap 的代码还包含字节长度；W/W2、CIDToGIDMap 查询 CID，字体程序使用实际 GID。internal/fontrepair 私有区映射用于找字形，不能作为原文；CFF 包装的 unitsPerEm 必须与 FontMatrix 一致。 |
+| 字体代码、CID 和 GID | [font.go](font.go)、[font_cmap.go](font_cmap.go)、[font_cmap_predefined.go](font_cmap_predefined.go) | 修复后的字体只解析一次，字形映射和字宽复用 font.sfnt。ToUnicode 查询源代码；嵌入 Encoding CMap 的代码还包含字节长度；W/W2、CIDToGIDMap 查询 CID，字体程序使用实际 GID。internal/fontrepair 私有区映射用于找字形，不能作为原文；CFF 包装的 unitsPerEm 必须与 FontMatrix 一致。 |
 | CMap 区间 | [font_cmap.go](font_cmap.go) | 保留继承、本地最后覆盖、notdef 和字典优先级；区间排序后查询，不展开巨大 CID 范围；损坏代码需保留后续有效代码。 |
 | 普通文字与裁剪 | [text.go](text.go)、[text_clip.go](text_clip.go) | 字形与推进共同处理 Tm/CTM/Tz/Ts；BT 内累积字形并集，ET 时与已有裁剪求交。Form 的文本、路径和资源状态与外层隔离。 |
 | 竖排 | [text_vertical.go](text_vertical.go)、[font_vertical_glyph.go](font_vertical_glyph.go) | 竖排 TJ 和 W2 原点偏移不额外乘 Tz；嵌入字体保留指定字形，替代字体优先 vrt2 再 vert，文字层保留源标点。 |
 | Type3 与语义字体 | [font_type3.go](font_type3.go)、[font_semantic.go](font_semantic.go) | CharProc 绘制可见内容，空轮廓字体承载 Unicode；每个码位使用独立 GID，保留参考字宽，显式增量在图元合并后固定为逐字定位。 |
-| 原图像分量 | [image.go](image.go)、[image_jpx.go](image_jpx.go)、[image_jpeg_decode.go](image_jpeg_decode.go) | JPEG 的 Adobe 反相、PDF Decode 和颜色转换有固定顺序；普通 JPX 忽略 PDF Decode/字典位深，先解释码流颜色与 cdef。高位深不能提前降到 8 位。 |
+| 原图像分量 | [image.go](image.go)、[image_jpx.go](image_jpx.go)、[image_jpeg_decode.go](image_jpeg_decode.go) | JPEG 优先读取有效 Content，Raw 用于尚未解码的流；Adobe 反相、PDF Decode 和颜色转换有固定顺序。普通 JPX 忽略 PDF Decode/字典位深，先解释码流颜色与 cdef。高位深不能提前降到 8 位。 |
 | 图像 Mask/SMask/Matte | [image_mask.go](image_mask.go)、[image_softmask.go](image_softmask.go)、[image_matte.go](image_matte.go) 及相应压缩格式文件 | 颜色键在 Decode/颜色转换前匹配；Matte 在原颜色空间还原；SMask 覆盖 Mask，图像关联软掩码覆盖图形状态软掩码。不同尺寸按各轴最大分辨率合成，Matte 仍要求同尺寸。 |
 | 图像通道与颜色 | [image_jpx_colour.go](image_jpx_colour.go)、[image_mask_coordinates.go](image_mask_coordinates.go) | cdef 按 Association 解释，条目顺序不改变映射；最近邻坐标乘法使用 64 位整数。 |
 | 透明合成 | [transparency.go](transparency.go)、[transparency_blend.go](transparency_blend.go) | 非隔离组分别保留初始背景和组自身 alpha，结束时撤销背景贡献；挖空按形状覆盖率处理，不能把旧内容衰减两次。嵌套组复用同一像素网格。 |
@@ -44,8 +44,8 @@
 
 | 主题 | 测试入口 |
 |------|----------|
-| 页面几何、内容流、基础图像和文字合并 | [pdf_to_ofd_test.go](pdf_to_ofd_test.go)、[graphics_state_test.go](graphics_state_test.go)、[dash_test.go](dash_test.go)、[form_test.go](form_test.go)。 |
-| 字体样式、字形裁剪、仿射基线、竖排和 Type3 | [text_test.go](text_test.go)、[text_fidelity_test.go](text_fidelity_test.go)、[text_vertical_test.go](text_vertical_test.go)、[font_type3_test.go](font_type3_test.go)。 |
+| 页面几何、内容流、基础图像和文字合并 | [pdf_to_ofd_test.go](pdf_to_ofd_test.go)、[pdf_content_test.go](pdf_content_test.go)、[inline_image_test.go](inline_image_test.go)、[content_fidelity_test.go](content_fidelity_test.go)、[path_fidelity_test.go](path_fidelity_test.go)、[graphics_state_test.go](graphics_state_test.go)、[dash_test.go](dash_test.go)、[form_test.go](form_test.go)。 |
+| 字体样式、字形裁剪、仿射基线、竖排和 Type3 | [text_test.go](text_test.go)、[font_loading_test.go](font_loading_test.go)、[text_fidelity_test.go](text_fidelity_test.go)、[text_vertical_test.go](text_vertical_test.go)、[font_type3_test.go](font_type3_test.go)。 |
 | 预定义/嵌入 CMap、竖排替代和缺字体处理 | [font_cmap_predefined_test.go](font_cmap_predefined_test.go)、[font_cmap_embedded_test.go](font_cmap_embedded_test.go)、[font_vertical_glyph_test.go](font_vertical_glyph_test.go)、[font_vertical_missing_test.go](font_vertical_missing_test.go)。 |
 | 语义字体字宽、完整单词和逐字符位置 | [font_semantic_test.go](font_semantic_test.go)；创建器的独立空格定位见 [creator_test.go](../../pkg/creator/creator_test.go)。 |
 | 着色、图案、颜色空间和函数 | [shading_test.go](shading_test.go)、[mesh_test.go](mesh_test.go)、[pattern_test.go](pattern_test.go)、[colorspace_test.go](colorspace_test.go)、[function_type4_test.go](function_type4_test.go)。 |
@@ -121,6 +121,7 @@ PDF JPX 解码默认使用纯 Go 后端。Linux 可选构建 OpenJPEG 后端：�
 | 场景 | 已观察到的差异与验证选择 |
 |------|--------------------------|
 | 挖空组、软掩码 TR、AIS | MuPDF 1.21 与 Poppler 22.12 的 K/TR 支持不同；挖空以 MuPDF 对照，TR 以 Poppler 对照，AIS 另验证覆盖率公式并保留近似诊断。 |
+| 开放路径 B/B* 的半透明填充与描边 | MuPDF 1.21 将描边形状从填充中挖空；Poppler 22.12 在重叠区保留填充贡献。按 PDF 的单个透明对象语义对照 MuPDF，转换以局部栅格合并并报告诊断。 |
 | Type3 d1 的 Tr=1/2/5/6 | 现有 MuPDF 与 Poppler 对描边/非描边颜色的选择不同；回归保留 CharProc 及调用方非描边颜色语义。 |
 | sYCC（JP2 colr=18） | 现有 Poppler 对独立样例直接显示 Y/Cb/Cr；颜色转换以 BT.601 原分量参考和 MuPDF 对照。 |
 | eYCC（JP2 colr=24） | 现有 MuPDF/Poppler 对独立样例未应用 eYCC 矩阵；使用 OpenJPEG 固定参考和等价 RGB PDF 验证，保留原阅读器结果。 |

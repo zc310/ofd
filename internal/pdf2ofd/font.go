@@ -103,11 +103,18 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	// 原始字节，正文出现乱码。ToUnicode 优先，仅补齐缺失的编码。
 	if font.codeBytes == 1 && font.predefined == nil && font.encodingCMap == nil {
 		if mapping := p.applySimpleEncoding(font, dict); len(font.widths) == 0 {
-			applyCoreFontWidths(font, mapping)
+			ctx := context.Background()
+			if p.control != nil {
+				ctx = p.control.ctx
+			}
+			if err := applyCoreFontWidths(ctx, font, mapping); err != nil {
+				p.control.fail(err)
+				return
+			}
 		}
 	}
 	font.codeToGID = p.pdfFontCodeToGID(*font, dict)
-	font.glyphWidths = pdfFontGlyphWidths(font.data, font.codeToGID)
+	font.glyphWidths = pdfFontGlyphWidths(font.sfnt, font.codeToGID)
 	if object, hasDescendants := dict.Find("DescendantFonts"); hasDescendants {
 		// 与上面读 FontDescriptor 同一原因：DescendantFonts 是间接引用时 ArrayEntry
 		// 返回 nil，/DW、/W 与 CIDToGIDMap 会连同字体数据一起丢掉。
@@ -329,10 +336,13 @@ func coreFontName(baseFont string) string {
 //
 // mapping 是 applySimpleEncoding 得到的 code→Unicode；字体没写 /Encoding 时
 // 按规范默认使用标准编码。
-func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint32]string) {
+func applyCoreFontWidths(ctx context.Context, font *pdfFontInfo, mapping map[uint32]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	name := coreFontName(font.familyName)
 	if name == "" {
-		return
+		return nil
 	}
 	if len(mapping) == 0 {
 		// 无 /Encoding：基础 14 默认标准编码。
@@ -347,15 +357,22 @@ func applyCoreFontWidths(font *pdfFontInfo, mapping map[uint32]string) {
 		}
 		// 只用首码位查字宽：/Differences 指向的合成字形（uniXXXX、字母加
 		// 变音符）没有独立宽度，查不到时交给 defaultW。
-		width, err := pdffont.CharWidth(context.Background(), name, r)
+		width, err := pdffont.CharWidth(ctx, name, r)
+		if err != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil || width <= 0 {
 			continue
 		}
 		widths[int(code)] = float64(width)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if len(widths) > 0 {
 		font.widths = widths
 	}
+	return nil
 }
 
 // fillPDFBaseEncoding 填充简单字体的基础编码（WinAnsi/MacRoman/标准编码等）。
@@ -403,13 +420,11 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 }
 
 func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map[uint32]uint16 {
-	if len(font.data) == 0 || font.codeBytes != 1 || font.predefined != nil || font.encodingCMap != nil {
+	if font.sfnt == nil || font.codeBytes != 1 || font.predefined != nil || font.encodingCMap != nil {
 		return nil
 	}
-	sfnt, err := fontparser.ParseSFNT(font.data, 0)
-	if err != nil || sfnt == nil {
-		return nil
-	}
+	// loadFont 已解析修复后的字体；映射和字宽共享同一份只读 SFNT。
+	sfnt := font.sfnt
 	names := make(map[int]string, 256)
 	for code := 32; code <= 126; code++ {
 		names[code] = pdfStandardGlyphName(rune(code))
@@ -472,12 +487,8 @@ func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map
 
 // pdfFontGlyphWidths 返回字体自身 cmap 给出的逐字符宽度，换算到与 PDF
 // /Widths 相同的千分之一 em 单位，用于检测内嵌字体字宽是否可信。
-func pdfFontGlyphWidths(data []byte, codeToGID map[uint32]uint16) map[uint16]float64 {
-	if len(data) == 0 || len(codeToGID) == 0 {
-		return nil
-	}
-	sfnt, err := fontparser.ParseSFNT(data, 0)
-	if err != nil || sfnt == nil || sfnt.Head == nil {
+func pdfFontGlyphWidths(sfnt *fontparser.SFNT, codeToGID map[uint32]uint16) map[uint16]float64 {
+	if len(codeToGID) == 0 || sfnt == nil || sfnt.Head == nil {
 		return nil
 	}
 	upem := float64(sfnt.Head.UnitsPerEm)

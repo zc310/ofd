@@ -92,6 +92,51 @@ func TestPDFOrdinaryJPEGIdentityDecodeKeepsOriginalBytes(t *testing.T) {
 	}
 }
 
+func TestPDFJPEGUsesCachedContentWithOrWithoutRaw(t *testing.T) {
+	for _, tc := range []struct {
+		space string
+		data  []byte
+	}{
+		{"DeviceGray", matteJPEG(t, true, color.NRGBA{64, 64, 64, 255})},
+		{"DeviceRGB", matteJPEG(t, false, color.NRGBA{64, 128, 192, 255})},
+		{"DeviceCMYK", constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0)},
+	} {
+		t.Run(tc.space, func(t *testing.T) {
+			want, wantFormat, err := pdfImageData(nil, jpegMatteStream(tc.space, tc.data, true), pdfColor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, storage := range []string{"content_only", "content_with_stale_raw", "wrapped_cached_content"} {
+				t.Run(storage, func(t *testing.T) {
+					stream := jpegMatteStream(tc.space, tc.data, true)
+					stream.Raw = nil
+					if storage == "content_with_stale_raw" {
+						stream.Raw = []byte("unusable raw data")
+					}
+					if storage == "wrapped_cached_content" {
+						var compressed bytes.Buffer
+						zw := zlib.NewWriter(&compressed)
+						if _, err := zw.Write(tc.data); err != nil {
+							t.Fatal(err)
+						}
+						if err := zw.Close(); err != nil {
+							t.Fatal(err)
+						}
+						stream.Raw = compressed.Bytes()
+						stream.FilterPipeline = []types.PDFFilter{{Name: "FlateDecode"}, {Name: "DCTDecode"}}
+					}
+					options, _ := (Options{Strict: true}).Normalize()
+					p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
+					got, format, err := p.imageData(stream, pdfColor{})
+					if err != nil || format != wantFormat || !bytes.Equal(got, want) || !bytes.Equal(stream.Content, tc.data) {
+						t.Fatalf("format=%s err=%v output matches=%v cached content matches=%v", format, err, bytes.Equal(got, want), bytes.Equal(stream.Content, tc.data))
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestPDFOrdinaryCMYKJPEGWithoutAdobeMarkerRespectsImageMode(t *testing.T) {
 	data := constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0)
 	segmentLength := int(data[4])<<8 | int(data[5])

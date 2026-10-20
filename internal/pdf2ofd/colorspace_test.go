@@ -68,6 +68,58 @@ func TestDeviceNColorSpaceUsesTintComponents(t *testing.T) {
 	}
 }
 
+func TestColorSpaceSelectionResetsColorAndPattern(t *testing.T) {
+	ctx := testPDFContext(t)
+	resources := testSeparationResources(t)
+	spaces := resources["ColorSpace"].(types.Dict)
+	spaces["Palette"] = types.Array{types.Name("Indexed"), types.Name("DeviceRGB"), types.Integer(1), types.HexLiteral("00ff000000ff")}
+	spaces["Inks"] = types.Array{types.Name("DeviceN"), types.Array{types.Name("Ink")}, types.Name("DeviceRGB"), types.Dict{
+		"FunctionType": types.Integer(2), "Domain": types.Array{types.Integer(0), types.Integer(1)},
+		"C0": types.Array{types.Integer(1), types.Integer(0), types.Integer(0)},
+		"C1": types.Array{types.Integer(0), types.Integer(0), types.Integer(1)}, "N": types.Integer(1),
+	}}
+	for _, tc := range []struct {
+		space string
+		want  pdfColor
+	}{
+		{"DeviceGray", pdfColor{}}, {"DeviceRGB", pdfColor{}},
+		{"DeviceCMYK", cmykColor(0, 0, 0, 1)}, {"Palette", pdfColor{g: 255}},
+		{"Cs8", pdfColor{}}, {"Inks", pdfColor{b: 255}}, {"Pattern", pdfColor{}},
+	} {
+		for _, op := range []string{"cs", "CS"} {
+			t.Run(tc.space+"_"+op, func(t *testing.T) {
+				old := pdfColor{r: 255}
+				pattern := &pdfPatternPaint{}
+				p := &pdfInterpreter{ctx: ctx, state: pdfGraphicsState{fill: old, stroke: old, fillPaint: pattern, strokePaint: pattern}}
+				if err := p.operator(op, []any{pdfName(tc.space)}, resources, 0); err != nil {
+					t.Fatal(err)
+				}
+				color, paint, otherColor, otherPaint := p.state.fill, p.state.fillPaint, p.state.stroke, p.state.strokePaint
+				if op == "CS" {
+					color, paint, otherColor, otherPaint = otherColor, otherPaint, color, paint
+				}
+				if color != tc.want || paint != nil || otherColor != old || otherPaint != pattern {
+					t.Fatalf("selected color=%+v pattern=%p other=%+v/%p, want %+v and unchanged other", color, paint, otherColor, otherPaint, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestColorSpaceSelectionInitialColorMatchesSource(t *testing.T) {
+	for _, tc := range []struct{ name, content string }{
+		{"fill_gray", "1 0 0 rg /DeviceGray cs 30 30 100 100 re f"},
+		{"stroke_rgb", "20 w 1 0 0 RG /DeviceRGB CS 30 30 100 100 re S"},
+		{"explicit_rgb_components", "/DeviceRGB cs 0 0 1 sc 30 30 100 100 re f"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pdf := embeddedTextPDF(tc.content)
+			doc, page, _ := textFidelityConvert(t, pdf)
+			assertPDFImportMatchesSource(t, pdf, doc, page)
+		})
+	}
+}
+
 func TestSampledFunctionInterpolates(t *testing.T) {
 	// 一维采样函数，2 个采样点：0 -> (0,0,0)，1 -> (1,1,1)。
 	fn := &pdfFunction{

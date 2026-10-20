@@ -582,6 +582,10 @@ func (p *pdfInterpreter) beginTransparencyGroup(stream *types.StreamDict, resour
 }
 
 func (p *pdfInterpreter) finishTransparencyGroup(f *pdfTransparencyGroup) error {
+	return p.finishTransparencyGroupOpacity(f, p.fillOpacity())
+}
+
+func (p *pdfInterpreter) finishTransparencyGroupOpacity(f *pdfTransparencyGroup, opacity float64) error {
 	if f.rect.Empty() {
 		return nil
 	}
@@ -614,7 +618,7 @@ func (p *pdfInterpreter) finishTransparencyGroup(f *pdfTransparencyGroup) error 
 	if err != nil {
 		return err
 	}
-	item.Alpha = ofdAlpha(p.fillOpacity())
+	item.Alpha = ofdAlpha(opacity)
 	if item.Alpha != nil {
 		for y := output.Rect.Min.Y; y < output.Rect.Max.Y; y++ {
 			if err := p.control.check(); err != nil {
@@ -642,4 +646,50 @@ func (p *pdfInterpreter) finishTransparencyGroup(f *pdfTransparencyGroup) error 
 		}
 	}
 	return p.control.check()
+}
+
+// 开放轮廓的填充和描边需分别表示，但仍属于一个透明对象（ISO 32000-1
+// 8.5.3.3、11.7.4.2）。先在隔离挖空组内合并，再一次应用外层混合/软掩码。
+func (p *pdfInterpreter) paintOpenFillAndStroke(closed, original []pdfPathCommand, rule string) error {
+	p.report("graphics.path_fill_stroke", "开放路径的透明填充与描边以 300dpi 局部合成，避免重叠区域重复叠色")
+	if err := p.control.check(); err != nil {
+		return err
+	}
+	child := *p
+	child.page = &creator.Page{Area: p.page.Area}
+	child.transparency, child.transparencyRaster, child.transparencyShape = nil, nil, nil
+	child.state.blendMode, child.state.softMask, child.state.lumMask = "Normal", nil, nil
+	child.path = closed
+	child.paintPath(false, true, rule)
+	child.path = original
+	child.paintPath(true, false, rule)
+	if err := p.control.check(); err != nil {
+		return err
+	}
+	bounds := [4]float64{math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)}
+	for _, item := range child.page.Items {
+		b := transparencyItemBounds(item)
+		bounds[0], bounds[1] = math.Min(bounds[0], b[0]), math.Min(bounds[1], b[1])
+		bounds[2], bounds[3] = math.Max(bounds[2], b[2]), math.Max(bounds[3], b[3])
+	}
+	if len(child.page.Items) == 0 {
+		return nil
+	}
+	r, err := p.transparencyRect(bounds)
+	if err != nil || r.Empty() {
+		return err
+	}
+	if err := p.reserveTransparency(r, 4); err != nil {
+		return err
+	}
+	f := &pdfTransparencyGroup{rect: r, initial: image.NewNRGBA(r), result: image.NewNRGBA(r),
+		alpha: make([]float32, r.Dx()*r.Dy()), shape: make([]float32, r.Dx()*r.Dy()), knockout: true}
+	child.transparency = f
+	for _, item := range child.page.Items {
+		if err := child.compositeTransparencyItem(item); err != nil {
+			return err
+		}
+	}
+	// ca/CA 和外层直接展开组的透明度已写入子图元，不能再乘一次 ca。
+	return p.finishTransparencyGroupOpacity(f, 1)
 }

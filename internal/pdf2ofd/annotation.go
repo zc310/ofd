@@ -161,10 +161,16 @@ func (p *pdfInterpreter) annotationAppearance(annot types.Dict) types.Object {
 			return stream
 		}
 	}
-	for _, stream := range dict {
-		return stream
+	// 缺少有效 AS 和常见状态名的文档采用兼容兜底；固定按名称字节序选择，
+	// 避免 Go map 的迭代顺序使同一注解在重复转换时显示不同外观。
+	var selected string
+	first := true
+	for name := range dict {
+		if first || name < selected {
+			selected, first = name, false
+		}
 	}
-	return nil
+	return dict[selected]
 }
 
 // appearanceMatrix 计算把外观流 BBox（先经 Matrix 变换）映射到注解 Rect 的矩阵。

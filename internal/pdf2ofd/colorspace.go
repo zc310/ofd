@@ -58,9 +58,10 @@ func (p *pdfInterpreter) resolveColorSpace(resources types.Dict, name string) *p
 	if name == "" {
 		return nil
 	}
-	// Pattern 是设备相关的颜色空间名称，不要求出现在 ColorSpace 资源中。
-	if name == "Pattern" {
-		return patternSpace
+	// 设备颜色空间和 Pattern 可直接使用，不要求出现在资源字典中。
+	switch name {
+	case "DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern":
+		return namedColorSpace(name)
 	}
 	if resources != nil {
 		if spaces, ok := dereferencedSubDict(p.ctx, resources, "ColorSpace"); ok {
@@ -72,6 +73,26 @@ func (p *pdfInterpreter) resolveColorSpace(resources types.Dict, name string) *p
 		}
 	}
 	return nil
+}
+
+// initialColor 实现 ISO 32000-1 表 74 中 cs/CS 的初始颜色：通常为零分量，
+// CMYK 为 [0 0 0 1]，Separation/DeviceN 为全 1，Indexed 为索引 0。
+// 同时调用方必须清除之前的 Pattern 选择。
+func (cs *pdfColorSpace) initialColor() pdfColor {
+	if cs == nil || cs == patternSpace || cs.components <= 0 {
+		return pdfColor{}
+	}
+	values := make([]float64, cs.components)
+	switch cs.family {
+	case "DeviceCMYK":
+		values[3] = 1
+	case "Separation", "DeviceN":
+		for i := range values {
+			values[i] = 1
+		}
+	}
+	color, _ := cs.colorFromComponents(values)
+	return color
 }
 
 // parseColorSpace 解析颜色空间对象，支持名称、数组和间接引用。

@@ -37,7 +37,11 @@ func textFidelityPDF(content, font, extra string) []byte {
 }
 
 func embeddedTextPDF(content string) []byte {
-	font := "<< /Type /Font /Subtype /TrueType /BaseFont /GoRegular /Encoding /WinAnsiEncoding /FirstChar 0 /LastChar 255 /Widths [" + strings.Repeat("1000 ", 256) + "] /FontDescriptor 6 0 R >>"
+	return embeddedTextPDFWithEncoding(content, "/WinAnsiEncoding")
+}
+
+func embeddedTextPDFWithEncoding(content, encoding string) []byte {
+	font := "<< /Type /Font /Subtype /TrueType /BaseFont /GoRegular /Encoding " + encoding + " /FirstChar 0 /LastChar 255 /Widths [" + strings.Repeat("1000 ", 256) + "] /FontDescriptor 6 0 R >>"
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
 		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",

@@ -74,6 +74,26 @@ func (p *pdfInterpreter) paintPath(stroke, fill bool, rule string) {
 		// PDF 填充会隐式闭合所有子路径；OFD 阅读器只填充显式闭合的路径。
 		// 不闭合时，用 m/l.../f* 绘制的细长矩形不会渲染出来。
 		commands = closeSubpathsForFill(commands)
+		if stroke && len(commands) != len(p.path) {
+			// ISO 32000-1 表 60：B/B* 的填充隐式闭合，描边仍使用开放路径。
+			// OFD 的填充和勾边共用轮廓数据（GB/T 33190—2016 9.1 表 35/36），
+			// 因此先输出闭合的填充，再按原始路径描边。b/b* 已显式闭合末尾。
+			original := p.path
+			if p.strokeOpacity() < 1 || !isNormalBlendMode(p.state.blendMode) || p.state.softMask != nil {
+				// PDF 把填充+描边视为单个透明对象；描边形状会挖空填充，
+				// 不能把两个半透明图元直接叠加，也不能分别应用混合/软掩码。
+				if err := p.paintOpenFillAndStroke(commands, original, rule); err != nil {
+					p.control.fail(err)
+				}
+				p.path = nil
+				return
+			}
+			p.path = commands
+			p.paintPath(false, true, rule)
+			p.path = original
+			p.paintPath(true, false, rule)
+			return
+		}
 	}
 	commands = p.clampExtremePath(commands)
 	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)

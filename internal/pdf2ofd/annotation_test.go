@@ -3,6 +3,7 @@ package pdf2ofd
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -60,6 +61,61 @@ func TestConvertRendersAnnotationAppearance(t *testing.T) {
 	if !found {
 		t.Fatal("annotation appearance stream was not rendered")
 	}
+}
+
+func TestAnnotationAppearanceFallbackHasStableStatePriority(t *testing.T) {
+	p := pdfInterpreter{ctx: testPDFContext(t)}
+	for _, tc := range []struct {
+		name, state, want string
+		states            []string
+	}{
+		{"selected_state", "Zulu", "Zulu", []string{"Zulu", "Alpha", "On", "Yes", "Off"}},
+		{"on", "Missing", "On", []string{"Zulu", "Alpha", "On", "Yes", "Off"}},
+		{"yes", "", "Yes", []string{"Zulu", "Alpha", "Yes", "Off"}},
+		{"off", "", "Off", []string{"Zulu", "Alpha", "Off"}},
+		{"named_fallback", "Missing", "Alpha", []string{"Zulu", "Alpha", "Middle"}},
+		{"empty_name", "", "", []string{"Zulu", "", "Alpha"}},
+		{"no_states", "", "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < 100; i++ {
+				states := types.Dict{}
+				for j, name := range tc.states {
+					states[name] = *types.NewIndirectRef(j+10, 0)
+				}
+				annot := types.Dict{"AP": types.Dict{"N": states}}
+				if tc.state != "" {
+					annot["AS"] = types.Name(tc.state)
+				}
+				if got := p.annotationAppearance(annot); !reflect.DeepEqual(got, states[tc.want]) {
+					t.Fatalf("iteration %d: selected=%v, want %v", i, got, states[tc.want])
+				}
+			}
+		})
+	}
+}
+
+func TestConvertAnnotationUnknownStateFallbackMatchesExplicitSelection(t *testing.T) {
+	// 兼容缺少 AS 的外观字典：Zulu 为蓝色，Alpha 为红色；输出应稳定选择 Alpha。
+	// 源显示参考显式指定 AS，避免把非规范输入交给参考阅读器任意兜底。
+	pdfForState := func(state string) []byte {
+		red, blue := "1 0 0 rg 0 0 40 40 re f", "0 0 1 rg 0 0 40 40 re f"
+		return assemblePDF([]string{
+			"<< /Type /Catalog /Pages 2 0 R >>",
+			"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+			"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>",
+			"<< /Length 3 >>\nstream\nq Q\nendstream",
+			"<< /Type /Annot /Subtype /Square /Rect [10 10 50 50] /F 4 " + state + " /AP << /N << /Zulu 6 0 R /Alpha 7 0 R >> >> >>",
+			"<< /Type /XObject /Subtype /Form /BBox [0 0 40 40] /Length " + itoa(len(blue)) + " >>\nstream\n" + blue + "\nendstream",
+			"<< /Type /XObject /Subtype /Form /BBox [0 0 40 40] /Length " + itoa(len(red)) + " >>\nstream\n" + red + "\nendstream",
+		})
+	}
+	doc, page, _ := textFidelityConvert(t, pdfForState(""))
+	paths := layerPaths(page.Content().Layer[0])
+	if len(paths) != 1 || paths[0].FillColor == nil || paths[0].FillColor.Value == nil || paths[0].FillColor.Value.R != 255 || paths[0].FillColor.Value.B != 0 {
+		t.Fatalf("expected red Alpha appearance: %+v", paths)
+	}
+	assertPDFImportMatchesSource(t, pdfForState("/AS /Alpha"), doc, page)
 }
 
 func TestConvertRendersWidgetAppearance(t *testing.T) {

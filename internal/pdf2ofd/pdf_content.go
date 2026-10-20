@@ -87,7 +87,7 @@ func (t *pdfContentTokenizer) word() string {
 	start := t.pos
 	for t.pos < len(t.data) {
 		c := t.data[t.pos]
-		if c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '[' || c == ']' || c == '(' || c == ')' || c == '<' || c == '>' || c == '/' {
+		if isPDFWhitespace(c) || isPDFDelimiter(c) {
 			break
 		}
 		t.pos++
@@ -100,7 +100,7 @@ func (t *pdfContentTokenizer) name() (pdfName, error) {
 	var result bytes.Buffer
 	for t.pos < len(t.data) {
 		c := t.data[t.pos]
-		if c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '[' || c == ']' || c == '(' || c == ')' || c == '<' || c == '>' || c == '/' {
+		if isPDFWhitespace(c) || isPDFDelimiter(c) {
 			break
 		}
 		if c == '#' && t.pos+2 < len(t.data) {
@@ -131,6 +131,12 @@ func (t *pdfContentTokenizer) literal() ([]byte, error) {
 			escaped := t.data[t.pos]
 			t.pos++
 			switch escaped {
+			case '\n':
+				// ISO 32000-1 7.3.4.2：反斜杠后的行结束符仅用于续行。
+			case '\r':
+				if t.pos < len(t.data) && t.data[t.pos] == '\n' {
+					t.pos++
+				}
 			case 'n':
 				result.WriteByte('\n')
 			case 'r':
@@ -156,6 +162,13 @@ func (t *pdfContentTokenizer) literal() ([]byte, error) {
 				}
 			}
 			continue
+		}
+		// 未转义的 CR 和 CRLF 在字面字符串中都归一化为一个 LF。
+		if c == '\r' {
+			if t.pos < len(t.data) && t.data[t.pos] == '\n' {
+				t.pos++
+			}
+			c = '\n'
 		}
 		if c == '(' {
 			depth++
@@ -184,7 +197,7 @@ func (t *pdfContentTokenizer) hex() ([]byte, error) {
 		return nil, fmt.Errorf("未闭合的 PDF 十六进制字符串")
 	}
 	raw := bytes.Map(func(c rune) rune {
-		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+		if c <= 255 && isPDFWhitespace(byte(c)) {
 			return -1
 		}
 		return c
@@ -199,7 +212,7 @@ func (t *pdfContentTokenizer) hex() ([]byte, error) {
 
 // inlineImage 解析 BI 之后的内联图像字典与数据，直到 EI。
 // 调用前 "BI" 已被消费；返回后位置停在 "EI" 之后。
-func (t *pdfContentTokenizer) inlineImage() (map[string]any, []byte, error) {
+func (t *pdfContentTokenizer) inlineImage(dataLength func(map[string]any) (int64, error)) (map[string]any, []byte, error) {
 	dict := map[string]any{}
 	for {
 		t.skipSpace()
@@ -239,6 +252,28 @@ func (t *pdfContentTokenizer) inlineImage() (map[string]any, []byte, error) {
 		}
 	}
 	start := t.pos
+	length, err := dataLength(dict)
+	if err != nil {
+		return nil, nil, err
+	}
+	if length >= 0 {
+		if t.control != nil && length > t.control.options.Limits.MaxStreamBytes {
+			return nil, nil, t.control.limit("stream_bytes", length, t.control.options.Limits.MaxStreamBytes)
+		}
+		if length > int64(len(t.data)-start) {
+			return nil, nil, fmt.Errorf("PDF 内联图像数据不足")
+		}
+		t.pos += int(length)
+		end := t.pos
+		for t.pos < len(t.data) && isPDFWhitespace(t.data[t.pos]) {
+			t.pos++
+		}
+		if t.pos == end || !t.inlineImageEnd() {
+			return nil, nil, fmt.Errorf("PDF 内联图像数据后缺少 EI")
+		}
+		t.pos += 2
+		return dict, append([]byte(nil), t.data[start:end]...), nil
+	}
 	for t.pos < len(t.data) {
 		if t.control != nil && (t.pos-start)%4096 == 0 {
 			if err := t.control.check(); err != nil {
@@ -248,20 +283,22 @@ func (t *pdfContentTokenizer) inlineImage() (map[string]any, []byte, error) {
 				return nil, nil, t.control.limit("stream_bytes", int64(t.pos-start), t.control.options.Limits.MaxStreamBytes)
 			}
 		}
-		if t.data[t.pos] == 'E' && t.pos+1 < len(t.data) && t.data[t.pos+1] == 'I' && t.pos > start && isPDFWhitespace(t.data[t.pos-1]) {
-			after := t.pos + 2
-			if after >= len(t.data) || isPDFWhitespace(t.data[after]) || isPDFDelimiter(t.data[after]) {
-				if t.control != nil && int64(t.pos-start-1) > t.control.options.Limits.MaxStreamBytes {
-					return nil, nil, t.control.limit("stream_bytes", int64(t.pos-start-1), t.control.options.Limits.MaxStreamBytes)
-				}
-				data := append([]byte(nil), t.data[start:t.pos-1]...)
-				t.pos = after
-				return dict, data, nil
+		if t.inlineImageEnd() && t.pos > start && isPDFWhitespace(t.data[t.pos-1]) {
+			if t.control != nil && int64(t.pos-start-1) > t.control.options.Limits.MaxStreamBytes {
+				return nil, nil, t.control.limit("stream_bytes", int64(t.pos-start-1), t.control.options.Limits.MaxStreamBytes)
 			}
+			data := append([]byte(nil), t.data[start:t.pos-1]...)
+			t.pos += 2
+			return dict, data, nil
 		}
 		t.pos++
 	}
 	return nil, nil, fmt.Errorf("未结束的 PDF 内联图像数据")
+}
+
+func (t *pdfContentTokenizer) inlineImageEnd() bool {
+	return t.pos+1 < len(t.data) && t.data[t.pos] == 'E' && t.data[t.pos+1] == 'I' &&
+		(t.pos+2 == len(t.data) || isPDFWhitespace(t.data[t.pos+2]) || isPDFDelimiter(t.data[t.pos+2]))
 }
 
 func isPDFWhitespace(c byte) bool {

@@ -30,6 +30,7 @@ func Convert(gctx context.Context, input any, output io.Writer, password string)
 }
 
 // ConvertWithOptions 在资源预算内转换 PDF，并按选项报告无法完整保留的内容。
+// []byte 输入在调用期间只读借用，调用方应保持其内容不变，直到转换返回。
 func ConvertWithOptions(gctx context.Context, input any, output io.Writer, password string, options Options) (err error) {
 	if gctx == nil {
 		gctx = context.Background()
@@ -311,7 +312,7 @@ func readPDFInputLimited(ctx context.Context, input any, limit int64) ([]byte, e
 		if int64(len(value)) > limit {
 			return nil, &LimitError{Resource: "input_bytes", Limit: limit, Actual: int64(len(value))}
 		}
-		return append([]byte(nil), value...), nil
+		return value, nil
 	case io.Reader:
 		return read(value)
 	default:
@@ -601,7 +602,7 @@ func (p *pdfInterpreter) parse(content []byte, resources types.Dict, inherited *
 		if operator, isOperator := value.(string); isOperator && !strings.HasPrefix(operator, "/") {
 			if operator == "BI" {
 				operands = operands[:0]
-				if err := p.inlineImage(tokens); err != nil {
+				if err := p.inlineImage(tokens, resources); err != nil {
 					return err
 				}
 				continue
@@ -726,10 +727,15 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 			p.state.stroke, p.state.strokePaint = cmykColor(floatArg(0), floatArg(1), floatArg(2), floatArg(3)), nil
 		}
 	case "cs":
-		// 选择颜色空间本身不改变当前颜色，实际颜色由随后的 scn/SCN 提供。
-		p.state.fillSpace = p.resolveColorSpace(resources, anyName(args[0]))
+		if len(args) > 0 {
+			p.state.fillSpace = p.resolveColorSpace(resources, anyName(args[0]))
+			p.state.fill, p.state.fillPaint = p.state.fillSpace.initialColor(), nil
+		}
 	case "CS":
-		p.state.strokeSpace = p.resolveColorSpace(resources, anyName(args[0]))
+		if len(args) > 0 {
+			p.state.strokeSpace = p.resolveColorSpace(resources, anyName(args[0]))
+			p.state.stroke, p.state.strokePaint = p.state.strokeSpace.initialColor(), nil
+		}
 	case "sc", "scn":
 		if p.state.fillSpace == patternSpace {
 			p.state.fillPaint = p.resolvePattern(resources, anyName(args[0]))
@@ -861,38 +867,37 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 			p.pendingClipEvenOdd = op == "W*"
 		}
 	case "S":
-		p.commitPendingClip()
 		p.paintPath(true, false, spec.FillRuleNonZero)
+		p.commitPendingClip()
 	case "s":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
-		p.commitPendingClip()
 		p.paintPath(true, false, spec.FillRuleNonZero)
+		p.commitPendingClip()
 	case "f", "F":
-		p.commitPendingClip()
 		p.paintPath(false, true, spec.FillRuleNonZero)
+		p.commitPendingClip()
 	case "f*":
-		p.commitPendingClip()
 		p.paintPath(false, true, spec.FillRuleEvenOdd)
+		p.commitPendingClip()
 	case "B":
-		p.commitPendingClip()
 		p.paintPath(true, true, spec.FillRuleNonZero)
-	case "B*":
 		p.commitPendingClip()
+	case "B*":
 		p.paintPath(true, true, spec.FillRuleEvenOdd)
+		p.commitPendingClip()
 	case "b":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
-		p.commitPendingClip()
 		p.paintPath(true, true, spec.FillRuleNonZero)
+		p.commitPendingClip()
 	case "b*":
 		p.path = append(p.path, pdfPathCommand{op: "Z"})
-		p.commitPendingClip()
 		p.paintPath(true, true, spec.FillRuleEvenOdd)
+		p.commitPendingClip()
 	case "n":
 		// n 结束路径；若前面有 W/W*，裁剪区在这里生效且不绘制。
 		p.commitPendingClip()
 		p.path = nil
 	case "Do":
-		p.commitPendingClip()
 		if len(args) > 0 {
 			return p.xobject(anyName(args[0]), resources, depth)
 		}
@@ -906,6 +911,8 @@ func (p *pdfInterpreter) operator(op string, args []any, resources types.Dict, d
 }
 
 // commitPendingClip 把 W/W* 暂存的裁剪路径并入当前图形状态。
+// ISO 32000-1 8.5.4：先用旧裁剪绘制当前路径，再更新裁剪；OFD 的 Clips
+// 修饰单个图元（GB/T 33190—2016 8.4、表 34），因此只附加到后续图元。
 // 切片追加时复制底层数组，避免 q/Q 恢复状态后被后续裁剪污染。
 func (p *pdfInterpreter) commitPendingClip() {
 	if !p.hasPendingClip {
