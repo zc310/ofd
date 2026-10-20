@@ -35,7 +35,6 @@ gp.sum
 dist/
 build-dir/
 .flatpak-builder/
-*-demo/
 vendor/
 *.iml
 
@@ -48,3 +47,19 @@ cmd/ofd-viewer/wasm/
 # Generated branding previews and raster exports; keep SVG sources
 /docs/branding/*.png
 /docs/branding/*preview*
+
+testdata/ofdrw
+testdata/other
+testdata/pdf
+testdata/xps
+testdata/apple
+testdata/google
+testdata/libofd
+testdata/microsoft
+testdata/pdf2ofd
+testdata/pdfcpu
+testdata/standards
+testdata/suwell
+testdata/tencent
+AGENTS.md
+.golangci.yml
