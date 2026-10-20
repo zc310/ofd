@@ -18,14 +18,20 @@ const prefix = "ofd"
 var replacement = []byte("\uFFFD")
 
 // Writer 将 OFD XML 顺序写入内存或分块写入目标，自动添加 ofd 前缀和根命名空间声明。
-// 元素名必须是合法的 XML 本地名。属性必须在内容之前写入，内容之后的属性调用
-// 会被忽略。一个 Writer 不能被多个 goroutine 同时使用。
+// OFD 元素名必须是合法的 XML 本地名，扩展元素可通过 StartQualified 写入。
+// 属性必须在内容之前写入，内容之后的属性调用会被忽略。
+// 一个 Writer 不能被多个 goroutine 同时使用。
 type Writer struct {
 	buf   []byte
-	stack []string
+	stack []elementName
 	open  bool
 	dst   io.Writer
 	err   error
+}
+
+type elementName struct {
+	name string
+	ofd  bool
 }
 
 // New 从复用池获取 OFD XML 写入器。用完后应调用 Put 归还缓冲区；
@@ -40,7 +46,7 @@ func New() *Writer {
 func newWriter() *Writer {
 	w := &Writer{
 		buf:   make([]byte, 0, 4096),
-		stack: make([]string, 0, 8),
+		stack: make([]elementName, 0, 8),
 	}
 	w.Reset()
 	return w
@@ -147,20 +153,33 @@ func (w *Writer) appendString(value string) {
 
 // StartElement 开始一个 OFD 元素，根元素自动声明 OFD 命名空间。
 func (w *Writer) StartElement(name string) {
+	w.startElement(name, true)
+}
+
+// StartQualified 开始一个使用指定 XML 名称的扩展元素，不自动添加前缀。
+// name 必须是合法的 XML 名称，例如 ext:Value 或 Value；调用方负责用 Attr
+// 声明所需的命名空间。嵌套的 OFD 元素仍可通过 Start 写入。
+func (w *Writer) StartQualified(name string) {
+	w.startElement(name, false)
+}
+
+func (w *Writer) startElement(name string, ofd bool) {
 	if w.err != nil {
 		return
 	}
 	w.closeStart()
 	w.buf = append(w.buf, '<')
-	w.buf = append(w.buf, prefix...)
-	w.buf = append(w.buf, ':')
+	if ofd {
+		w.buf = append(w.buf, prefix...)
+		w.buf = append(w.buf, ':')
+	}
 	w.appendString(name)
-	if len(w.stack) == 0 {
+	if len(w.stack) == 0 && ofd {
 		w.buf = append(w.buf, ` xmlns:ofd="`...)
 		w.buf = append(w.buf, Namespace...)
 		w.buf = append(w.buf, '"')
 	}
-	w.stack = append(w.stack, name)
+	w.stack = append(w.stack, elementName{name: name, ofd: ofd})
 	w.open = true
 }
 
@@ -296,6 +315,15 @@ func (w *Writer) Raw(data []byte) {
 	}
 }
 
+// Directive 写入已校验的 XML 指令内容，例如 DOCTYPE 定义。
+// value 不含外围的 <! 和 >；调用方负责保证内容符合 XML 语法。
+func (w *Writer) Directive(value string) {
+	w.closeStart()
+	w.appendString("<!")
+	w.appendString(value)
+	w.appendString(">")
+}
+
 // Element 写入只包含文本的 OFD 元素。
 func (w *Writer) Element(name, value string) {
 	w.StartElement(name)
@@ -424,7 +452,7 @@ func (w *Writer) EndElement() {
 	}
 	w.maybeFlush()
 	name := w.stack[len(w.stack)-1]
-	w.stack[len(w.stack)-1] = ""
+	w.stack[len(w.stack)-1] = elementName{}
 	w.stack = w.stack[:len(w.stack)-1]
 	if w.open {
 		w.buf = append(w.buf, '/', '>')
@@ -432,9 +460,11 @@ func (w *Writer) EndElement() {
 		return
 	}
 	w.buf = append(w.buf, '<', '/')
-	w.buf = append(w.buf, prefix...)
-	w.buf = append(w.buf, ':')
-	w.appendString(name)
+	if name.ofd {
+		w.buf = append(w.buf, prefix...)
+		w.buf = append(w.buf, ':')
+	}
+	w.appendString(name.name)
 	w.buf = append(w.buf, '>')
 }
 

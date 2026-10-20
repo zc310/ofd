@@ -226,8 +226,8 @@ func TestWriterPoolResetsReusedState(t *testing.T) {
 				t.Fatalf("复用后状态未清空: open=%v stack=%v", reused.open, reused.stack)
 			}
 			for _, name := range oldStack {
-				if name != "" {
-					t.Fatalf("元素栈仍持有旧名称 %q", name)
+				if name != (elementName{}) {
+					t.Fatalf("元素栈仍持有旧名称 %+v", name)
 				}
 			}
 			reused.Element("Second", "two")
