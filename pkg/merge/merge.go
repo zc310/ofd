@@ -23,6 +23,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/entrywriter"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -75,7 +76,8 @@ type Options struct {
 	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的合并结果。
 	Deterministic bool
-	// Signatures 是签名处理方式，空值时使用 archive.SignaturePreserve。
+	// Signatures 是签名处理方式，空值时使用 creator.SignaturePreserve。
+	// preserve 无法保持签名路径或受保护文件字节不变时返回错误。
 	Signatures creator.SignatureMode
 	// Orphans 是文档目录之外条目的处理方式，空值时使用 OrphanError。
 	Orphans OrphanMode
@@ -91,8 +93,8 @@ type Options struct {
 type bodyPlan struct {
 	oldDir string
 	newDir string
-	// signatureDir 是旧的签名目录（包内相对路径），archive.SignatureDrop 时整目录跳过。
-	signatureDir string
+	// signatureFiles 只记录签名清单及其声明的签名文件、签名值和印章。
+	signatureFiles map[string]signatureEntryKind
 	// documentIndex 是文档体索引，用于签名事件。
 	documentIndex int
 }
@@ -249,6 +251,12 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 		_ = archive.Close()
 		return err
 	}
+	for _, signature := range state.protectedRoots {
+		if !bytes.Equal(rootData, signature.original) {
+			_ = archive.Close()
+			return fmt.Errorf("%s 的签名 %s 保护了 OFD.xml，合并将修改该文件；preserve 模式无法保留原始签名，请改用 rewrite 或 drop", signature.input, signature.name)
+		}
+	}
 	if err := state.writer.Write(spec.RootDocument, rootData); err != nil {
 		_ = archive.Close()
 		return err
@@ -261,12 +269,13 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 
 // mergeState 汇总一次合并过程中的输出写入器与累计状态。
 type mergeState struct {
-	writer     *entrywriter.Writer
-	options    Options
-	bodies     []*etree.Element
-	attrs      rootAttrs
-	nextDir    int
-	seenDocIDs map[string]bool
+	writer         *entrywriter.Writer
+	options        Options
+	bodies         []*etree.Element
+	attrs          rootAttrs
+	nextDir        int
+	seenDocIDs     map[string]bool
+	protectedRoots []protectedRoot
 }
 
 // emit 通过 Options.OnSignature 上报签名处理结果。
@@ -328,6 +337,7 @@ func mergeSource(state *mergeState, src source) error {
 		return fmt.Errorf("读取 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
 	rootDoc := etree.NewDocument()
+	rootDoc.ReadSettings.PreserveCData = true
 	if err := rootDoc.ReadFromBytes(rootData); err != nil {
 		return fmt.Errorf("解析 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
@@ -355,13 +365,19 @@ func mergeSource(state *mergeState, src source) error {
 		if oldDirs[oldDir] {
 			return fmt.Errorf("%s 中多个 DocBody 共用文档目录 %s，无法合并", src.name, oldDir)
 		}
+		for _, previous := range plans {
+			if strings.HasPrefix(oldDir, previous.oldDir+"/") || strings.HasPrefix(previous.oldDir, oldDir+"/") {
+				return fmt.Errorf("%s 的文档目录 %s 与 %s 重叠，无法合并", src.name, previous.oldDir, oldDir)
+			}
+		}
 		oldDirs[oldDir] = true
 
 		newDir := fmt.Sprintf("Doc_%d", state.nextDir)
 		state.nextDir++
 		plan := bodyPlan{oldDir: oldDir, newDir: newDir, documentIndex: documentIndex}
-		if state.options.Signatures == creator.SignatureDrop {
-			plan.signatureDir = signatureDirOf(body)
+		plan.signatureFiles, err = readSignatureEntries(pkg, body, state.writer.MaxEntryBytes())
+		if err != nil {
+			return fmt.Errorf("读取 %s 的签名失败: %w", src.name, err)
 		}
 		plans = append(plans, plan)
 
@@ -374,19 +390,15 @@ func mergeSource(state *mergeState, src source) error {
 		state.bodies = append(state.bodies, cloned)
 	}
 
+	if state.options.Signatures == creator.SignaturePreserve {
+		if err := validatePreservedSignatures(state, pkg, src.name, plans, rootData); err != nil {
+			return err
+		}
+	}
 	if err := copyPackageEntries(state, pkg, src.name, plans); err != nil {
 		return err
 	}
 	return nil
-}
-
-// signatureDirOf 返回 DocBody 签名文件的所在目录（包内相对路径）。
-func signatureDirOf(body *etree.Element) string {
-	value := strings.TrimSpace(directChildText(body, "Signatures"))
-	if value == "" {
-		return ""
-	}
-	return path.Dir(path.Clean(strings.TrimPrefix(value, "/")))
 }
 
 // removeBodySignatures 从文档体克隆中删除 Signatures 路径元素。
@@ -408,30 +420,34 @@ func copyPackageEntries(state *mergeState, pkg *core.Package, input string, plan
 		if strings.EqualFold(name, spec.RootDocument) {
 			continue
 		}
+		signaturePlan, kind := signaturePlanFor(name, plans)
+		if signatures == creator.SignatureDrop {
+			if kind != 0 {
+				if kind == signatureDocument {
+					state.emit(SignatureEvent{Input: input, DocumentIndex: signaturePlan.documentIndex, ID: name, Action: SignatureDropped})
+				}
+				continue
+			}
+		}
 
 		plan, ok := matchPlan(name, plans)
+		newName := name
 		if !ok {
 			switch state.options.Orphans {
 			case OrphanIgnore:
-				continue
-			case OrphanPreserve:
-				if err := writer.WriteSource(pkg, entry, name); err != nil {
-					return fmt.Errorf("写入 %s 的 %s 失败: %w", input, name, err)
+				if kind != 0 {
+					return fmt.Errorf("%s 的签名条目 %s 位于文档目录外，ignore 会使签名引用失效；请改用 OrphanPreserve 或丢弃签名", input, name)
 				}
 				continue
+			case OrphanPreserve:
 			default:
 				return fmt.Errorf("%s 的条目 %s 不在任何文档目录内；可用 OrphanIgnore 跳过或 OrphanPreserve 保留", input, name)
 			}
+		} else {
+			newName = plan.newDir + strings.TrimPrefix(name, plan.oldDir)
 		}
-		if signatures == creator.SignatureDrop && creator.InSignatureDir(name, plan.signatureDir) {
-			if isSignatureDocument(name) {
-				state.emit(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: SignatureDropped})
-			}
-			continue
-		}
-		newName := plan.newDir + strings.TrimPrefix(name, plan.oldDir)
 
-		if isSignatureXML(name) {
+		if kind == signatureList || kind == signatureDocument {
 			if entry.UncompressedSize > uint64(writer.MaxEntryBytes()) {
 				return fmt.Errorf("签名文件 %s 声明解压后 %d 字节，超过单条上限 %d 字节", name, entry.UncompressedSize, writer.MaxEntryBytes())
 			}
@@ -439,7 +455,10 @@ func copyPackageEntries(state *mergeState, pkg *core.Package, input string, plan
 			if err != nil {
 				return fmt.Errorf("读取 %s 的 %s 失败: %w", input, name, err)
 			}
-			rewritten, changed := rewriteSignatureXML(data, plan.oldDir, plan.newDir)
+			rewritten, changed, err := rewriteSignatureXML(data, signaturePlan.oldDir, signaturePlan.newDir)
+			if err != nil {
+				return fmt.Errorf("重写 %s 的签名文件 %s 失败: %w", input, name, err)
+			}
 			action := SignaturePreserved
 			if changed {
 				if signatures == creator.SignaturePreserve {
@@ -449,8 +468,8 @@ func copyPackageEntries(state *mergeState, pkg *core.Package, input string, plan
 				data = rewritten
 				action = SignatureRewritten
 			}
-			if isSignatureDocument(name) {
-				state.emit(SignatureEvent{Input: input, DocumentIndex: plan.documentIndex, ID: name, Action: action})
+			if kind == signatureDocument {
+				state.emit(SignatureEvent{Input: input, DocumentIndex: signaturePlan.documentIndex, ID: name, Action: action})
 			}
 			if err := writer.Write(newName, data); err != nil {
 				return err
@@ -538,14 +557,15 @@ func ensureUniqueDocID(body *etree.Element, seen map[string]bool) {
 
 // rewriteSignatureXML 重写签名文件中指向旧文档目录的包内绝对路径。
 // 未发生改动时返回原始字节，保证签名文件保持逐字节不变。
-func rewriteSignatureXML(data []byte, oldDir, newDir string) ([]byte, bool) {
+func rewriteSignatureXML(data []byte, oldDir, newDir string) ([]byte, bool, error) {
 	doc := etree.NewDocument()
+	doc.ReadSettings.PreserveCData = true
 	if err := doc.ReadFromBytes(data); err != nil {
-		return data, false
+		return nil, false, err
 	}
 	root := doc.Root()
 	if root == nil {
-		return data, false
+		return nil, false, fmt.Errorf("签名 XML 缺少根元素")
 	}
 	changed := false
 	switch localName(root) {
@@ -587,13 +607,13 @@ func rewriteSignatureXML(data []byte, oldDir, newDir string) ([]byte, bool) {
 		})
 	}
 	if !changed {
-		return data, false
+		return data, false, nil
 	}
-	out, err := doc.WriteToBytes()
+	out, err := marshalOFDXML(doc)
 	if err != nil {
-		return data, false
+		return nil, false, err
 	}
-	return out, true
+	return out, true, nil
 }
 
 // rewriteRef 把包内路径中的旧文档目录替换为新目录，保留前导斜杠与相对形式。
@@ -618,34 +638,37 @@ func rewriteRef(value, oldDir, newDir string) string {
 	return clean
 }
 
-// cloneElement 递归复制元素，去掉命名空间前缀，使其落入输出的默认命名空间。
+// cloneElement 保留扩展命名空间和混合内容，并为 OFD 元素使用统一前缀。
 func cloneElement(src *etree.Element) *etree.Element {
-	dst := etree.NewElement(src.Tag)
-	copyAttrs(src, dst)
-	if len(src.ChildElements()) == 0 {
-		dst.SetText(src.Text())
-		return dst
+	dst := src.Copy()
+	for parent := src.Parent(); parent != nil; parent = parent.Parent() {
+		for _, attr := range parent.Attr {
+			if (attr.Space == "xmlns" || attr.Key == "xmlns") && dst.SelectAttr(attr.FullKey()) == nil {
+				dst.CreateAttr(attr.FullKey(), attr.Value)
+			}
+		}
 	}
-	for _, child := range src.ChildElements() {
-		dst.AddChild(cloneElement(child))
-	}
+	prefixOFDXML(dst)
 	return dst
 }
 
-func copyAttrs(src, dst *etree.Element) {
-	for _, attr := range src.Attr {
-		if attr.Space == "xmlns" || attr.Key == "xmlns" {
-			continue
+func prefixOFDXML(root *etree.Element) {
+	var elements []*etree.Element
+	walkElements(root, func(element *etree.Element) {
+		if uri := element.NamespaceURI(); uri == spec.Namespace || uri == "" && element.Space == "" {
+			elements = append(elements, element)
 		}
-		dst.CreateAttr(attr.FullKey(), attr.Value)
+	})
+	root.CreateAttr("xmlns:ofd", spec.Namespace)
+	for _, element := range elements {
+		element.Space = "ofd"
 	}
 }
 
 func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
-	doc := etree.NewDocument()
-	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
-	root := doc.CreateElement("OFD")
-	root.CreateAttr("xmlns", spec.Namespace)
+	w := ofdxml.New()
+	defer ofdxml.Put(w)
+	w.Start("OFD")
 	version := attrs.version
 	if version == "" {
 		version = "1.0"
@@ -654,16 +677,14 @@ func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
 	if docType == "" {
 		docType = "OFD"
 	}
-	root.CreateAttr("Version", version)
-	root.CreateAttr("DocType", docType)
+	w.Attr("Version", version)
+	w.Attr("DocType", docType)
 	for _, body := range bodies {
-		root.AddChild(body)
+		if err := writeXMLElement(w, body, false); err != nil {
+			return nil, fmt.Errorf("生成 DocBody XML 失败: %w", err)
+		}
 	}
-	out, err := doc.WriteToBytes()
-	if err != nil {
-		return nil, fmt.Errorf("生成 OFD.xml 失败: %w", err)
-	}
-	return out, nil
+	return bytes.Clone(w.Bytes()), nil
 }
 
 func readRootAttrs(root *etree.Element) rootAttrs {
@@ -672,20 +693,6 @@ func readRootAttrs(root *etree.Element) rootAttrs {
 		docType: root.SelectAttrValue("DocType", ""),
 		set:     true,
 	}
-}
-
-func isSignatureXML(name string) bool {
-	switch path.Base(name) {
-	case "Signatures.xml", "Signature.xml":
-		return true
-	default:
-		return false
-	}
-}
-
-// isSignatureDocument 判断条目是否为单个签名描述文件（Signatures.xml 是清单）。
-func isSignatureDocument(name string) bool {
-	return path.Base(name) == "Signature.xml"
 }
 
 func localName(element *etree.Element) string {

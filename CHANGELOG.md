@@ -46,7 +46,8 @@
   `converter.WithPDFImportOptions`、PDF 包的 `ConvertWithOptions` 或 CLI 对应选项
   调整；当前默认值与配置方式见 [PDF 支持说明](docs/PDF-SUPPORT.md)。
 
-- **创建器 XML 前缀**：`pkg/creator` 自建元素统一输出 `ofd:` 前缀，并声明
+- **创建器与合并库 XML 前缀**：`pkg/creator` 自建元素，以及 `pkg/merge` 生成的主入口和
+  重写的签名、资源 XML 的 OFD 元素统一输出 `ofd:` 前缀，并声明
   `xmlns:ofd="http://www.ofdspec.org/2016"`。按 XML 字节或标签前缀匹配的调用方
   需调整，建议按命名空间 URI 与本地名匹配。扩展 `DataXML` 和直接提供的资源 XML
   保留原有前缀与命名空间。

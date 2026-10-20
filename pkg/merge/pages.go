@@ -243,13 +243,16 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 		}
 	}
 	pageMap := make(map[int]int, len(selectedGlobal))
-	pages := make([]creator.Page, len(selectedGlobal))
 	for outputIndex, globalIndex := range selectedGlobal {
 		pageMap[globalIndex] = outputIndex
+	}
+	// 先改写原始页面，再复制选页；重复页共享的对象只会被映射一次。
+	remapDocumentGotos(&merged, pageMap)
+	pages := make([]creator.Page, len(selectedGlobal))
+	for outputIndex, globalIndex := range selectedGlobal {
 		pages[outputIndex] = merged.Pages[globalIndex]
 	}
 	merged.Pages = pages
-	remapDocumentGotos(&merged, pageMap)
 	if len(merged.Pages) > limits.MaxPages {
 		return fmt.Errorf("输出页数 %d 超过上限 %d", len(merged.Pages), limits.MaxPages)
 	}
@@ -335,7 +338,7 @@ type builtSource struct {
 	err       error
 }
 
-// preparePageInputs 校验输入来源、大小限制，并物化 Reader 输入。
+// preparePageInputs 在读取任何 Reader 前校验全部输入的声明大小及总预算。
 func preparePageInputs(inputs []Source, limits PageLimits) ([]pageInput, error) {
 	result := make([]pageInput, 0, len(inputs))
 	total := int64(0)
@@ -347,10 +350,10 @@ func preparePageInputs(inputs []Source, limits PageLimits) ([]pageInput, error) 
 		if size > limits.MaxInputBytes {
 			return nil, fmt.Errorf("输入 %s 为 %d 字节，超过单输入上限 %d 字节", name, size, limits.MaxInputBytes)
 		}
-		total += size
-		if total > limits.MaxTotalBytes {
+		if size > limits.MaxTotalBytes-total {
 			return nil, fmt.Errorf("输入总大小超过上限 %d 字节", limits.MaxTotalBytes)
 		}
+		total += size
 		result = append(result, pageInput{name: name, input: input})
 	}
 	return result, nil
@@ -501,10 +504,13 @@ func mergePageDocument(target *creator.Document, source creator.Document, first 
 		target.Preferences = source.Preferences
 	}
 	base := len(target.Pages)
-	offsetActions(source.Actions, base)
-	offsetBookmarks(source.Bookmarks, base)
-	offsetOutlines(source.Outlines, base)
-	offsetAnnotations(source.Annotations, base)
+	if base != 0 {
+		pageMap := make(map[int]int, len(source.Pages))
+		for index := range source.Pages {
+			pageMap[index] = base + index
+		}
+		remapDocumentGotos(&source, pageMap)
+	}
 	target.Actions = append(target.Actions, source.Actions...)
 	target.Bookmarks = append(target.Bookmarks, source.Bookmarks...)
 	target.Outlines = append(target.Outlines, source.Outlines...)
@@ -520,46 +526,6 @@ func mergePageDocument(target *creator.Document, source creator.Document, first 
 	target.Attachments = append(target.Attachments, source.Attachments...)
 	target.Extensions = append(target.Extensions, source.Extensions...)
 	target.CustomTags = append(target.CustomTags, source.CustomTags...)
-}
-
-// offsetActions 把跳转动作的页索引按来源在合并文档中的起始页偏移。
-func offsetActions(actions []creator.Action, base int) {
-	if base == 0 {
-		return
-	}
-	for index := range actions {
-		if actions[index].Goto != nil {
-			actions[index].Goto.Page += base
-		}
-	}
-}
-
-func offsetBookmarks(bookmarks []creator.Bookmark, base int) {
-	if base == 0 {
-		return
-	}
-	for index := range bookmarks {
-		bookmarks[index].Goto.Page += base
-	}
-}
-
-func offsetOutlines(outlines []creator.Outline, base int) {
-	if base == 0 {
-		return
-	}
-	for index := range outlines {
-		offsetActions(outlines[index].Actions, base)
-		offsetOutlines(outlines[index].Children, base)
-	}
-}
-
-func offsetAnnotations(pages []creator.AnnotationPage, base int) {
-	if base == 0 {
-		return
-	}
-	for index := range pages {
-		pages[index].Page += base
-	}
 }
 
 // remapDocumentGotos 按最终页序重写所有跳转动作与书签的页索引，目标页未保留的
@@ -632,12 +598,14 @@ func filterGotoActions(actions []creator.Action, pageMap map[int]int) []creator.
 	}
 	result := make([]creator.Action, 0, len(actions))
 	for _, action := range actions {
-		if action.Goto != nil {
+		if action.Goto != nil && action.Goto.Bookmark == "" {
 			mapped, ok := pageMap[action.Goto.Page]
 			if !ok {
 				continue
 			}
-			action.Goto.Page = mapped
+			gotoValue := *action.Goto
+			gotoValue.Page = mapped
+			action.Goto = &gotoValue
 		}
 		result = append(result, action)
 	}
@@ -915,6 +883,7 @@ func remapPageResources(page *creator.Page, prefix string, remap *resourceRemap,
 // remapResXML 重写页面资源 Res XML 中的 ID、FontName、DrawParam 名称及其引用。
 func remapResXML(data []byte, prefix string, remap *resourceRemap, ids *idRemap) ([]byte, error) {
 	doc := etree.NewDocument()
+	doc.ReadSettings.PreserveCData = true
 	if err := doc.ReadFromBytes(data); err != nil {
 		return nil, err
 	}
@@ -975,11 +944,7 @@ func remapResXML(data []byte, prefix string, remap *resourceRemap, ids *idRemap)
 			}
 		}
 	})
-	out, err := doc.WriteToBytes()
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+	return marshalOFDXML(doc)
 }
 
 func remapLayers(layers []creator.Layer, remap *resourceRemap) {
@@ -1186,10 +1151,6 @@ func pageSourceInput(index int, src Source) (string, any, int64, error) {
 		if src.Size <= 0 {
 			return "", nil, 0, fmt.Errorf("输入 %s 的 Reader 必须同时设置正数 Size", name)
 		}
-		data, err := io.ReadAll(io.NewSectionReader(src.Reader, 0, src.Size))
-		if err != nil {
-			return "", nil, 0, fmt.Errorf("读取输入 %s 失败: %w", name, err)
-		}
-		return name, data, int64(len(data)), nil
+		return name, io.NewSectionReader(src.Reader, 0, src.Size), src.Size, nil
 	}
 }

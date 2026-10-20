@@ -191,6 +191,11 @@ ofd-creator merge -o merged.ofd --signatures rewrite --verify-signatures input1.
 
 注意 `rewrite` 会改写签名文件本身，可能使 SES 的数据摘要（对签名 XML 计算）失效，即使被引用文件摘要仍然匹配；这类签名需要重新签名。
 
+签名清单和签名描述文件按主入口及清单中的路径定位，支持自定义文件名。
+`drop` 只移除清单、签名描述、签名值和印章文件，共用目录中的普通文件会保留。
+`preserve` 会核对搬运后的引用；签名保护了 `OFD.xml` 且合并将改变其字节时，返回错误，需选择 `rewrite` 后重签或 `drop`。
+合并生成的主入口以及重写的签名、资源 XML 的 OFD 元素统一使用 `ofd:` 前缀。
+
 ### 外部命令重签名
 
 合并会重写资源名和路径，旧签名无法沿用。`--sign-cmd` 在合并完成后调用外部命令，为每个文档体追加一个新签名：
@@ -278,6 +283,8 @@ ofd-creator merge -o merged.ofd --compression auto --deterministic --validate in
 `--output -` 可以把合并结果写入标准输出；`merge` 不支持从标准输入读取。
 
 `--orphans` 控制文档目录之外的条目的处理方式：`error`（默认，直接失败）、`ignore`（跳过）或 `preserve`（按原路径保留到包根）。`--signatures rewrite` 重写签名路径时会向标准错误输出警告，说明哪些签名值已失效。
+
+输入中的各文档体目录必须互不重叠；相同目录或父子嵌套目录会返回错误。
 
 为防止恶意或异常文档造成解压放大，合并默认限制条目数 10000、单条解压 64MB、解压总计 512MB，可分别用 `--max-entries`、`--max-entry-mb`、`--max-total-mb` 调整。
 

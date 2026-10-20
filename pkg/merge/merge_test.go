@@ -3,15 +3,15 @@ package merge
 import (
 	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"image"
-	"image/png"
-
+	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 
 	"github.com/zc310/ofd/internal/core"
@@ -62,10 +62,10 @@ func TestMergeRenamesDocumentDirectories(t *testing.T) {
 
 	pkg := openMerged(t, data)
 	root := readEntry(t, pkg, "OFD.xml")
-	if count := strings.Count(root, "<DocRoot>Doc_0/Document.xml</DocRoot>"); count != 1 {
+	if count := strings.Count(root, "<ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot>"); count != 1 {
 		t.Fatalf("期望一个 Doc_0 文档体，实际 OFD.xml:\n%s", root)
 	}
-	if count := strings.Count(root, "<DocRoot>Doc_1/Document.xml</DocRoot>"); count != 1 {
+	if count := strings.Count(root, "<ofd:DocRoot>Doc_1/Document.xml</ofd:DocRoot>"); count != 1 {
 		t.Fatalf("期望一个 Doc_1 文档体，实际 OFD.xml:\n%s", root)
 	}
 	if !pkg.Has("Doc_0/Document.xml") || !pkg.Has("Doc_1/Document.xml") {
@@ -142,7 +142,10 @@ func TestSignatureDropRemovesSignatureFiles(t *testing.T) {
 
 func TestMergeKeepsRelativeSignaturePaths(t *testing.T) {
 	relative := []byte(`<?xml version="1.0" encoding="UTF-8"?><Signature xmlns="http://www.ofdspec.org/2016"><SignedInfo><References><Reference FileRef="Document.xml"/></References></SignedInfo><SignedValue>Signs/Sign_0/SignedValue.dat</SignedValue></Signature>`)
-	got, changed := rewriteSignatureXML(relative, "Doc_0", "Doc_1")
+	got, changed, err := rewriteSignatureXML(relative, "Doc_0", "Doc_1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if changed {
 		t.Fatalf("相对路径不应被重写: %s", got)
 	}
@@ -275,20 +278,15 @@ func TestMergeRejectsEntryOutsideDocumentDirectory(t *testing.T) {
 
 func findDocIDs(root string) []string {
 	var ids []string
-	rest := root
-	for {
-		start := strings.Index(rest, "<DocID>")
-		if start < 0 {
-			break
-		}
-		start += len("<DocID>")
-		end := strings.Index(rest[start:], "</DocID>")
-		if end < 0 {
-			break
-		}
-		ids = append(ids, strings.TrimSpace(rest[start:start+end]))
-		rest = rest[start+end:]
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(root); err != nil || doc.Root() == nil {
+		return nil
 	}
+	walkElements(doc.Root(), func(element *etree.Element) {
+		if localName(element) == "DocID" {
+			ids = append(ids, strings.TrimSpace(element.Text()))
+		}
+	})
 	return ids
 }
 
