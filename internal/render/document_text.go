@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
@@ -415,9 +416,35 @@ func textGlyphAdvance(glyphWidth float64, object models.TextObject, code models.
 
 // drawTextCode 按字符间距绘制一段文字。
 type textGlyph struct {
-	value        string
-	semantic     string
-	codePosition int
+	value         string
+	semantic      string
+	codePosition  int
+	glyphPosition int
+	glyphCount    int
+}
+
+// 表 46 按绘制字形给出定位。部分文档则保留变换前的字符增量；当队列长度
+// 明确对应变换后的字形数量时按字形索引，否则兼容既有的字符增量表示。
+func textCodeUsesGlyphDeltas(code models.TextCode, glyphs []textGlyph) bool {
+	if len(glyphs) == 0 {
+		return false
+	}
+	last := glyphs[len(glyphs)-1]
+	count := last.glyphPosition + last.glyphCount
+	if count == len([]rune(code.Value)) {
+		return false
+	}
+	return (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) &&
+		(len(code.DeltaX) == 0 || len(code.DeltaX) == count-1) &&
+		(len(code.DeltaY) == 0 || len(code.DeltaY) == count-1)
+}
+
+func textPositionedGlyphAdvance(width float64, object models.TextObject, code models.TextCode, previous, current textGlyph, glyphDeltas bool) (float64, float64) {
+	if glyphDeltas {
+		previous.codePosition = previous.glyphPosition
+		current.codePosition = current.glyphPosition
+	}
+	return textGlyphAdvance(width, object, code, previous, current)
 }
 
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
@@ -435,6 +462,7 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 	if len(glyphs) == 0 {
 		return
 	}
+	glyphDeltas := textCodeUsesGlyphDeltas(code, glyphs)
 
 	// 将可正常整形的连续字形合并为一个文本串一次性绘制。逐字调用 DrawText 会让
 	// PDF 中每个字成为独立定位的文本块，提取器会把这些文本块之间的间隙当成空格，
@@ -466,7 +494,7 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 				glyphWidth = prevWidth
 			}
-			deltaX, deltaY := textGlyphAdvance(glyphWidth, object, code, glyphs[i-1], glyph)
+			deltaX, deltaY := textPositionedGlyphAdvance(glyphWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
 			posX += deltaX
 			posY += deltaY
 			if len(run) > 0 {
@@ -524,7 +552,7 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 	if len(transforms) == 0 {
 		glyphs := make([]textGlyph, len(runes))
 		for i, r := range runes {
-			glyphs[i] = textGlyph{value: string(r), codePosition: i}
+			glyphs[i] = textGlyph{value: string(r), codePosition: i, glyphPosition: i, glyphCount: 1}
 		}
 		return glyphs
 	}
@@ -565,7 +593,10 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 				}
 				r := runes[i+k]
 				directCFFGlyph := face != nil && face.IsCFF() && r >= 0x21 && r <= 0x7e
-				if renderableTextValue(string(r)) && face != nil && !directCFFGlyph && fontCanRenderRune(face, r) {
+				// 组合符号的独立 Unicode 整形会插入 dotted circle。存在原始 GID
+				// 时直接绘制该字形，保留源字符供 PDF 语义层使用。
+				directMark := face != nil && unicode.IsMark(r) && face.GlyphIndex(fontrepair.GlyphRune(uint16(id))) != 0
+				if renderableTextValue(string(r)) && face != nil && !directCFFGlyph && !directMark && fontCanRenderRune(face, r) {
 					glyphs = append(glyphs, textGlyph{value: string(r), codePosition: i + k})
 					continue
 				}
@@ -585,6 +616,35 @@ func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransfo
 			}
 		}
 		i += codeCount
+	}
+	for i := range glyphs {
+		glyphs[i].glyphPosition = i
+		glyphs[i].glyphCount = 1
+	}
+	// GID 只在原字体中有意义（11.4.1）。系统/浏览器替代字体没有修复字体的
+	// 私有码位时，多字符变换按源文本整形，避免画出 .notdef 或套用其他字体的 GID。
+	// 保留原字形位置与数量，后续步进仍消费原来的定位队列。
+	if face != nil {
+		out := glyphs[:0]
+		for i := 0; i < len(glyphs); {
+			glyph := glyphs[i]
+			end := i + 1
+			for end < len(glyphs) && glyphs[end].codePosition == glyph.codePosition {
+				end++
+			}
+			if fontrepair.ContainsGlyphRune(glyph.value) && glyph.semantic != "" &&
+				(len([]rune(glyph.semantic)) > 1 || end > i+1) &&
+				face.GlyphIndex([]rune(glyph.value)[0]) == 0 && fontCanRenderText(face, glyph.semantic) {
+				glyph.value, glyph.semantic = glyph.semantic, ""
+				glyph.glyphCount = end - i
+				out = append(out, glyph)
+				i = end
+			} else {
+				out = append(out, glyph)
+				i++
+			}
+		}
+		glyphs = out
 	}
 	return glyphs
 }

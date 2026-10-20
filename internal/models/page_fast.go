@@ -571,12 +571,12 @@ func (p *pageLexer) parseTextCode(tc *TextCode) error {
 		case txml.EndTagToken:
 			if parts == 1 {
 				if firstLiteral {
-					tc.Value = decodeTextEscapes(string(first))
+					tc.Value = decodeTextCodeValue(string(first))
 				} else {
-					tc.Value = decodeTextEscapes(fastxml.Unescape(first))
+					tc.Value = decodeTextCodeValue(fastxml.Unescape(first))
 				}
 			} else {
-				tc.Value = decodeTextEscapes(string(text))
+				tc.Value = decodeTextCodeValue(string(text))
 			}
 			return nil
 		}

@@ -83,6 +83,11 @@ func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, vis
 	if content == nil {
 		return nil
 	}
+	// 文字层可能先于页面绘制请求；同样登记当前页的字形映射，保证外部原字体
+	// 的 GID 验证和内嵌字体修复不依赖调用顺序。
+	if p.fonts != nil {
+		p.fonts.RegisterPageGlyphs(p.Document, page, content)
+	}
 	runIndex := 0
 	for _, template := range content.Template {
 		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
@@ -265,6 +270,14 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 			}
 			if face := document.fonts.FaceObject(family, fontObject, nil); face != nil {
 				widthOf = face.TextWidth
+				if len(object.CGTransform) > 0 && fontCanRenderText(face, code.Value) {
+					widthOf = func(value string) float64 {
+						if fontrepair.ContainsGlyphRune(value) && face.GlyphIndex([]rune(value)[0]) == 0 {
+							return 0
+						}
+						return face.TextWidth(value)
+					}
+				}
 				a, d := face.VerticalMetrics()
 				if finiteFloat(a) && finiteFloat(d) && finiteFloat(a+d) && a > 0 && d >= 0 {
 					ascent, descent = a, d
@@ -287,6 +300,7 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 	}
 	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	applyCGTransformWidths(widths, runes, transforms, codePosition, widthOf)
+	code = textCodeCharacterDeltas(object, code, transforms, codePosition, widths)
 	posX, posY := code.X, code.Y
 	angle := textCharDirectionDegrees(object)
 	if object.CTM != nil {
@@ -320,6 +334,55 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 		layout.Y = layout.Glyphs[0].Y
 	}
 	return layout
+}
+
+// textCodeCharacterDeltas 将字形定位分配给搜索层的源字符。连字中的字符共享
+// 同一个字形，按相邻字形的距离等分；一字符的多个字形在此合并为一个字符位置。
+// 绘制仍使用原字形队列，不能把这份字符级近似定位写回只读页面内容。
+func textCodeCharacterDeltas(object models.TextObject, code models.TextCode, transforms []models.CTCGTransform, codePosition int, widths []float64) models.TextCode {
+	if len(transforms) == 0 {
+		return code
+	}
+	glyphs := textCodeGlyphs(nil, []rune(code.Value), transforms, codePosition)
+	if !textCodeUsesGlyphDeltas(code, glyphs) {
+		return code
+	}
+	xs, ys := make([]float64, len(widths)), make([]float64, len(widths))
+	x, y := 0.0, 0.0
+	for i := 0; i < len(glyphs); {
+		start := glyphs[i].codePosition
+		end := i + 1
+		for end < len(glyphs) && glyphs[end].codePosition == start {
+			end++
+		}
+		nextCode := len(widths)
+		if end < len(glyphs) {
+			nextCode = glyphs[end].codePosition
+		}
+		nextX, nextY := x, y
+		if end < len(glyphs) {
+			for j := i; j < end; j++ {
+				nextX += valueAt(code.DeltaX, glyphs[j].glyphPosition)
+				nextY += valueAt(code.DeltaY, glyphs[j].glyphPosition)
+			}
+		}
+		for j := start; j < nextCode; j++ {
+			if end < len(glyphs) {
+				fraction := float64(j-start) / float64(nextCode-start)
+				xs[j], ys[j] = x+(nextX-x)*fraction, y+(nextY-y)*fraction
+			} else {
+				xs[j], ys[j] = nextX, nextY
+				dx, dy := textReadAdvance(widths[j]*textHScale(object), object.ReadDirection)
+				nextX, nextY = nextX+dx, nextY+dy
+			}
+		}
+		x, y, i = nextX, nextY, end
+	}
+	code.DeltaX, code.DeltaY = make(models.StArrayF, len(widths)-1), make(models.StArrayF, len(widths)-1)
+	for i := range code.DeltaX {
+		code.DeltaX[i], code.DeltaY[i] = xs[i+1]-xs[i], ys[i+1]-ys[i]
+	}
+	return code
 }
 
 // applyCGTransformWidths 在度量每个源字符时使用渲染器实际绘制的字形，
@@ -367,10 +430,13 @@ func applyCGTransformWidths(widths []float64, runes []rune, transforms []models.
 			for offset, advance := range advances {
 				widths[index+offset] = advance
 			}
-		case len(advances) == 1:
-			// 一个字形可能表示多个源字符。此时无法得到每个字符的精确边界，
-			// 因此将字形步进宽度平均分配。
-			advance := advances[0] / float64(count)
+		case len(advances) > 0:
+			// 非一对一变换无法给出逐字符边界，将所有字形的总步进平均分配。
+			advance := 0.0
+			for _, width := range advances {
+				advance += width
+			}
+			advance /= float64(count)
 			for offset := 0; offset < count; offset++ {
 				widths[index+offset] = advance
 			}

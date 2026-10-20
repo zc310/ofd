@@ -236,7 +236,7 @@ func (o *TextObject) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 				if err := d.DecodeElement(&tc, &elem); err != nil {
 					return err
 				}
-				tc.Value = decodeTextEscapes(tc.Value)
+				tc.Value = decodeTextCodeValue(tc.Value)
 				o.TextCode = append(o.TextCode, tc)
 			case "CGTransform":
 				var g CTCGTransform

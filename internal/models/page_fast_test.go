@@ -25,6 +25,11 @@ func TestParseTextCodePreservesMixedTextAndCDATA(t *testing.T) {
 		{"split surrogate pair", `\D83D<!--split--><![CDATA[\DE00]]>`, "😀"},
 		{"single after comment", "<!--split-->甲&amp;", "甲&"},
 		{"single before ignored child", "甲&amp;<Unknown>ignored</Unknown>", "甲&"},
+		{"XML formatting newline", "\r\n\tHeaffixedhisfinesign.\n", "Heaffixedhisfinesign."},
+		{"formatting split over CDATA", "\n<![CDATA[Heaffixed]]>hisfinesign.\n", "Heaffixedhisfinesign."},
+		{"escaped whitespace preserved", `\000A\0009A\0020\000D`, "\n\tA \r"},
+		{"literal spaces preserved", " A B ", " A B "},
+		{"internal newline preserved", "A\nB", "A\nB"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newPageLexer([]byte("<TextCode>" + tc.body + "</TextCode>"))
@@ -66,6 +71,9 @@ func TestPageNumericAndTextParsingMatchesEncodingXML(t *testing.T) {
 <ofd:FillColor Value="1 2 3 4 5"/>
 <ofd:TextCode X="0" Y="3" DeltaX="1 g 3 2">甲&amp;<![CDATA[&lt;]]><!--split-->\D83D<![CDATA[\DE00]]></ofd:TextCode>
 <ofd:TextCode DeltaY="1 2 3">正文</ofd:TextCode><ofd:TextCode><![CDATA[&amp;]]></ofd:TextCode>
+<ofd:TextCode X="0" Y="4">
+Heaffixedhisfinesign.
+</ofd:TextCode>
 </ofd:TextObject>
 <ofd:PathObject ID="4" Boundary="1 2 30 40" CTM="1 0 0 1 2 3" DashPattern="g 3 2"><ofd:AbbreviatedData>M 0 0 L 10 20 C</ofd:AbbreviatedData></ofd:PathObject>
 </ofd:Layer></ofd:Content></ofd:Page>`)

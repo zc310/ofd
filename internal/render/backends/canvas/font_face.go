@@ -152,9 +152,14 @@ func (p *Fonts) shapedTextLine(face *canvas.FontFace, value string) *canvas.Text
 type canvasFontFace struct {
 	fonts *Fonts
 	face  *canvas.FontFace
+	// 仅限名称与 Unicode→GID 锚点均匹配的外部原字体；不修改共享字体 cmap。
+	nativeGlyphs map[rune]uint16
 }
 
 func (f canvasFontFace) ToPath(value string) *geom.Path {
+	if fontrepair.ContainsGlyphRune(value) && len(f.nativeGlyphs) > 0 {
+		return f.DirectPath(value)
+	}
 	if f.fonts != nil {
 		if path := f.fonts.shapedTextPath(f.face, value); path != nil {
 			return canvasconv.FromCanvasPath(path)
@@ -169,6 +174,11 @@ func (f canvasFontFace) ToPath(value string) *geom.Path {
 }
 
 func (f canvasFontFace) DirectPath(value string) *geom.Path {
+	if fontrepair.ContainsGlyphRune(value) && len(f.nativeGlyphs) > 0 {
+		if path := f.nativeGlyphPath(value); path != nil {
+			return canvasconv.FromCanvasPath(path)
+		}
+	}
 	path := f.fonts.directTextPath(f.face, value)
 	if path == nil {
 		return nil
@@ -225,6 +235,17 @@ func (p *Fonts) cachedTextWidth(face *canvas.FontFace, value string) float64 {
 }
 
 func (f canvasFontFace) TextWidth(value string) float64 {
+	if fontrepair.ContainsGlyphRune(value) && len(f.nativeGlyphs) > 0 {
+		advance := 0.0
+		for _, r := range value {
+			gid := f.GlyphIndex(r)
+			if gid == 0 {
+				return 0
+			}
+			advance += float64(f.face.Font.GlyphAdvance(gid)) * f.face.MmPerEm
+		}
+		return advance
+	}
 	if f.fonts != nil {
 		return f.fonts.cachedTextWidth(f.face, value)
 	}
@@ -234,6 +255,9 @@ func (f canvasFontFace) TextWidth(value string) float64 {
 func (f canvasFontFace) GlyphIndex(r rune) uint16 {
 	if f.face == nil || f.face.Font == nil {
 		return 0
+	}
+	if gid := f.nativeGlyphs[r]; gid != 0 {
+		return gid
 	}
 	return f.face.Font.GlyphIndex(r)
 }
@@ -294,7 +318,7 @@ func (p *Fonts) FaceObject(family drawing.FontFamily, object models.TextObject, 
 	if face == nil {
 		return nil
 	}
-	return canvasFontFace{fonts: p, face: face}
+	return canvasFontFace{fonts: p, face: face, nativeGlyphs: p.nativeGlyphMappings(face, object)}
 }
 
 // cjkFallbackFamily 在当前字体族画不出对象文字时，另找一个能画出来的系统字体；

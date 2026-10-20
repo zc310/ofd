@@ -30,7 +30,7 @@ func bufferedTextCodeValue(data []byte) (string, error) {
 				return "", err
 			}
 		case txml.EndTagToken:
-			return decodeTextEscapes(string(text)), nil
+			return decodeTextCodeValue(string(text)), nil
 		}
 	}
 }

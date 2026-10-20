@@ -7,6 +7,13 @@ import (
 	"unicode/utf8"
 )
 
+// decodeTextCodeValue 兼容 z.ofd 等生产方在 TextCode 首尾插入 XML 排版换行。
+// 这些换行不参与表 46 的定位与表 48 的 CodePosition。表 45 要求空格转义，
+// 这里仍保留历史文档的直接空格和内部换行；显式转义也保持原值。
+func decodeTextCodeValue(text string) string {
+	return decodeTextEscapes(strings.Trim(text, "\r\n\t"))
+}
+
 // decodeTextEscapes 解码 TextCode 文本里的 OFD 转义序列。OFD 允许用反斜杠加四位
 // 十六进制数表示一个 UTF-16 码元，最典型的是空格写作 "\0020"——XML 内容里直接写
 // 空格容易被生产方裁剪或解析链路规整掉，因此转义书写。连续的高低代理码元合并成
