@@ -124,6 +124,7 @@ type AnnotationInfo struct {
 }
 
 // Attachments 返回所有文档体的附件清单（只读元数据，不读取附件内容）。
+// 返回缓存切片只读。
 func (r *Reader) Attachments() ([]AttachmentInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -269,6 +270,7 @@ func resolveAttachmentAsset(document *parser.Document, attachmentsPath string, v
 }
 
 // Media 返回所有文档体登记的多媒体资源（只读元数据，不读取资源内容）。
+// 返回缓存切片只读。
 func (r *Reader) Media() ([]MediaInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -372,6 +374,7 @@ func (r *Reader) MediaData(scope int, mediaID uint64, maxBytes int64) ([]byte, e
 }
 
 // Annotations 返回所有页面中的注解，按页面顺序排列。
+// 返回缓存切片及嵌套指针只读。
 func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -429,7 +432,7 @@ func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 					Height: boundary.Height,
 				}
 			}
-			info.URI, info.TargetPage, info.Dest = annotLinkAction(item, pageIndexes[ref.fontScope])
+			info.URI, info.TargetPage, info.Dest = annotLinkAction(item, pageIndexes[ref.fontScope], r.navigationIndexes().bookmarks[ref.fontScope])
 			infos = append(infos, info)
 		}
 	}
@@ -438,43 +441,34 @@ func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 
 // annotLinkAction 在注解外观的页面对象中查找 CLICK 动作。链接目标既可能在注解
 // 外观的图形对象上（Link 注解的常见形态），也可能通过嵌套 PageBlock 组织，因此
-// 这里递归遍历；命中外部链接或页面跳转后立即停止。
-func annotLinkAction(annot *models.Annot, pageIndex map[models.StID]int) (string, int, *OutlineDest) {
+// 这里展开嵌套块；命中外部链接或页面跳转后立即停止。
+func annotLinkAction(annot *models.Annot, pageIndex map[models.StID]int, bookmarks map[string]models.CtDest) (string, int, *OutlineDest) {
 	if annot == nil || annot.Appearance == nil {
 		return "", -1, nil
 	}
-	uri, page, dest, found := pageBlockLinkAction(annot.Appearance.Items, pageIndex)
+	uri, page, dest, found := pageBlockLinkAction(annot.Appearance.Items, pageIndex, bookmarks)
 	if !found {
 		return "", -1, nil
 	}
 	return uri, page, dest
 }
 
-// pageBlockLinkAction 递归遍历页面对象，返回首个 CLICK 动作的外部链接或页面跳转。
-func pageBlockLinkAction(items []models.PageItem, pageIndex map[models.StID]int) (string, int, *OutlineDest, bool) {
-	for _, item := range items {
-		if item.Kind == models.PageItemBlock {
-			if item.Block != nil {
-				if uri, page, dest, found := pageBlockLinkAction(item.Block.Items, pageIndex); found {
-					return uri, page, dest, true
-				}
-			}
-			continue
-		}
+// pageBlockLinkAction 按文档顺序遍历页面对象，返回首个 CLICK 动作的链接。
+func pageBlockLinkAction(items []models.PageItem, pageIndex map[models.StID]int, bookmarks map[string]models.CtDest) (uri string, page int, dest *OutlineDest, found bool) {
+	page = -1
+	walkPageItems(items, func(item models.PageItem) bool {
 		unit := pageItemGraphicUnit(item)
 		if unit == nil || unit.Actions == nil {
-			continue
+			return true
 		}
-		uri, page, dest, found := actionLink(*unit.Actions, pageIndex)
-		if found {
-			return uri, page, dest, true
-		}
-	}
-	return "", -1, nil, false
+		uri, page, dest, found = actionLink(*unit.Actions, pageIndex, bookmarks)
+		return !found
+	})
+	return
 }
 
 // actionLink 返回动作集合中首个 CLICK 链接动作；found 为 false 表示没有链接动作。
-func actionLink(actions models.Actions, pageIndex map[models.StID]int) (string, int, *OutlineDest, bool) {
+func actionLink(actions models.Actions, pageIndex map[models.StID]int, bookmarks map[string]models.CtDest) (string, int, *OutlineDest, bool) {
 	for _, action := range actions.Action {
 		if action.Event != models.ActionEventClick {
 			continue
@@ -482,10 +476,22 @@ func actionLink(actions models.Actions, pageIndex map[models.StID]int) (string, 
 		if action.URI != nil && action.URI.URI != "" {
 			return action.URI.URI, -1, nil, true
 		}
-		if action.Goto != nil && action.Goto.Dest != nil {
-			dest := convertOutlineDest(*action.Goto.Dest)
+		if action.Goto != nil {
+			var target models.CtDest
+			if action.Goto.Dest != nil {
+				target = *action.Goto.Dest
+			} else if action.Goto.Bookmark != nil {
+				var ok bool
+				target, ok = bookmarks[action.Goto.Bookmark.Name]
+				if !ok {
+					continue
+				}
+			} else {
+				continue
+			}
+			dest := convertOutlineDest(target)
 			page := -1
-			if resolved, ok := pageIndex[models.StID(action.Goto.Dest.PageID)]; ok {
+			if resolved, ok := pageIndex[models.StID(target.PageID)]; ok {
 				page = resolved
 			}
 			return "", page, dest, true
@@ -535,6 +541,7 @@ func mediaAction(actions []models.CtAction, event models.ActionEvent) (PageLink,
 
 // PageLinks 返回页面正文图元（图层）上的可点击链接，按页面顺序排列。
 // 文档级 CLICK 没有区域时，按第一页文字内容匹配 URI 或书签名称，挂到对应文字边界。
+// 返回缓存切片及嵌套指针只读。
 func (r *Reader) PageLinks() ([]PageLink, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -554,6 +561,7 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 
 // PageLinksForPage 返回指定页面正文、模板和注解中的可点击链接。
 // 与 PageLinks 不同，此方法只读取目标页面，适合阅读器按需加载。
+// 返回链接中的跳转目标指针只读。
 func (r *Reader) PageLinksForPage(index int) ([]PageLink, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -589,12 +597,13 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 	}
 	actions := make([]PageLink, 0, 3)
 	if pageActions := ref.page.Actions(); pageActions != nil {
-		if media, ok := mediaAction(pageActions.Action, ""); ok {
+		// GB/T 33190—2016 表 12：页面动作的事件类型应为 PO。
+		if media, ok := mediaAction(pageActions.Action, models.ActionEventPO); ok {
 			media.Scope, media.Page = ref.fontScope, index
 			actions = append(actions, media)
 		}
 	}
-	if index == firstPageOfScope(r.pages, ref.fontScope) && ref.document.Document.Actions != nil {
+	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Document.Actions != nil {
 		for _, event := range []models.ActionEvent{models.ActionEventDO, models.ActionEventPO} {
 			if media, ok := mediaAction(ref.document.Document.Actions.Actions, event); ok {
 				media.Scope, media.Page = ref.fontScope, index
@@ -616,12 +625,7 @@ func (r *Reader) computePageLinks() ([]PageLink, error) {
 
 func (r *Reader) computePageLinksForPage(index int) []PageLink {
 	scope := r.pages[index].fontScope
-	pageIndex := make(map[models.StID]int)
-	for page, ref := range r.pages {
-		if ref.fontScope == scope && ref.page != nil {
-			pageIndex[ref.page.ID] = page
-		}
-	}
+	pageIndex := r.pageIndexesByScope()[scope]
 	return r.computePageLinksForPageWithIndex(index, pageIndex)
 }
 
@@ -631,8 +635,9 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		return nil
 	}
 	links := make([]PageLink, 0)
-	appendLayerLinks(r.visibleLayers(index, contentLayers(ref.page)), ref.fontScope, index, pageIndex, &links)
-	if index == firstPageOfScope(r.pages, ref.fontScope) {
+	bookmarks := r.navigationIndexes().bookmarks[ref.fontScope]
+	appendLayerLinks(r.visibleLayers(index, contentLayers(ref.page)), ref.fontScope, index, pageIndex, bookmarks, &links)
+	if index == r.firstPageOfScope(ref.fontScope) {
 		appendDocumentClickLinksWithHiddenLayers(ref, index, pageIndex, &links, r.hiddenLayers[index].HiddenLayers)
 	}
 	// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
@@ -644,14 +649,14 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		if template == nil || template.Content == nil {
 			continue
 		}
-		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, &links)
+		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, bookmarks, &links)
 	}
 	if annot := ref.document.GetAnnotation(ref.page.ID); annot != nil {
 		for _, item := range annot.Annots {
 			if item == nil || item.Type != models.AnnotTypeLink || item.Appearance == nil || item.Appearance.Boundary == nil {
 				continue
 			}
-			uri, targetPage, dest := annotLinkAction(item, pageIndex)
+			uri, targetPage, dest := annotLinkAction(item, pageIndex, bookmarks)
 			if uri == "" && targetPage < 0 {
 				continue
 			}
@@ -664,15 +669,6 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		}
 	}
 	return links
-}
-
-func firstPageOfScope(pages []pageRef, scope int) int {
-	for index, ref := range pages {
-		if ref.fontScope == scope {
-			return index
-		}
-	}
-	return -1
 }
 
 // appendDocumentClickLinks 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
@@ -774,12 +770,12 @@ func attachmentName(document *render.Document, id string) string {
 }
 
 // appendLayerLinks 把一组图层中的链接图元回调到 links，并补齐作用域与页码。
-func appendLayerLinks(layers []*models.Layer, scope, page int, pageIndex map[models.StID]int, links *[]PageLink) {
+func appendLayerLinks(layers []*models.Layer, scope, page int, pageIndex map[models.StID]int, bookmarks map[string]models.CtDest, links *[]PageLink) {
 	for _, layer := range layers {
 		if layer == nil {
 			continue
 		}
-		collectPageBlockLinks(layer.Items, pageIndex, func(link PageLink) {
+		collectPageBlockLinks(layer.Items, pageIndex, bookmarks, func(link PageLink) {
 			link.Scope = scope
 			link.Page = page
 			*links = append(*links, link)
@@ -788,24 +784,18 @@ func appendLayerLinks(layers []*models.Layer, scope, page int, pageIndex map[mod
 }
 
 // collectPageBlockLinks 遍历页面对象，把带边界的链接动作回调给 emit。
-func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]int, emit func(PageLink)) {
-	for _, item := range items {
-		if item.Kind == models.PageItemBlock {
-			if item.Block != nil {
-				collectPageBlockLinks(item.Block.Items, pageIndex, emit)
-			}
-			continue
-		}
+func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]int, bookmarks map[string]models.CtDest, emit func(PageLink)) {
+	walkPageItems(items, func(item models.PageItem) bool {
 		unit := pageItemGraphicUnit(item)
 		if unit == nil || unit.Actions == nil || !unit.Boundary.IsFinite() {
-			continue
+			return true
 		}
 		if unit.Boundary.Width <= 0 || unit.Boundary.Height <= 0 {
-			continue
+			return true
 		}
 		id := itemID(item)
 		boundary := AnnotationBoundary{X: unit.Boundary.X, Y: unit.Boundary.Y, Width: unit.Boundary.Width, Height: unit.Boundary.Height}
-		uri, target, dest, found := actionLink(*unit.Actions, pageIndex)
+		uri, target, dest, found := actionLink(*unit.Actions, pageIndex, bookmarks)
 		if found {
 			emit(PageLink{
 				ID:         id,
@@ -815,7 +805,7 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 				Dest:       dest,
 				Event:      string(models.ActionEventClick),
 			})
-			continue
+			return true
 		}
 		if attachID, ok := attachmentAction(unit.Actions.Action, models.ActionEventClick); ok {
 			emit(PageLink{
@@ -824,16 +814,17 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 				AttachmentID: attachID,
 				Event:        string(models.ActionEventClick),
 			})
-			continue
+			return true
 		}
 		media, ok := mediaAction(unit.Actions.Action, models.ActionEventClick)
 		if !ok {
-			continue
+			return true
 		}
 		media.ID = id
 		media.Boundary = boundary
 		emit(media)
-	}
+		return true
+	})
 }
 
 func (r *Reader) computePageMediaActions() ([]PageLink, error) {
@@ -844,7 +835,7 @@ func (r *Reader) computePageMediaActions() ([]PageLink, error) {
 			continue
 		}
 		if pageActions := ref.page.Actions(); pageActions != nil {
-			if media, ok := mediaAction(pageActions.Action, ""); ok {
+			if media, ok := mediaAction(pageActions.Action, models.ActionEventPO); ok {
 				media.Scope = ref.fontScope
 				media.Page = index
 				actions = append(actions, media)

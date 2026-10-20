@@ -386,10 +386,15 @@ func TestTextAndSearchConcurrent(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			var operationErr error
-			if index%2 == 0 {
+			switch index % 4 {
+			case 0:
 				_, operationErr = reader.Text(0)
-			} else {
+			case 1:
 				_, operationErr = reader.Search("你")
+			case 2:
+				_, operationErr = reader.FontUsage(FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
+			case 3:
+				_, operationErr = reader.FontUsageAll(FontUsageOptions{})
 			}
 			if operationErr != nil {
 				errs <- operationErr
@@ -418,10 +423,12 @@ func TestPageDocumentReusesBackgroundCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer reader.releasePageDocument(first)
 	second, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer reader.releasePageDocument(second)
 	if first != second {
 		t.Fatal("相同背景未复用页面渲染文档")
 	}
@@ -446,9 +453,11 @@ func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
 		color.RGBA{R: 128, A: 255},
 	}
 	for _, background := range backgrounds {
-		if _, err := reader.pageDocument(reader.pages[0], background, geom.DPI(96)); err != nil {
+		document, err := reader.pageDocument(reader.pages[0], background, geom.DPI(96))
+		if err != nil {
 			t.Fatal(err)
 		}
+		reader.releasePageDocument(document)
 	}
 	if reader.renderDocs == nil {
 		t.Fatal("临时渲染文档缓存未初始化")
@@ -473,6 +482,7 @@ func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reader.releasePageDocument(first)
 	if err := reader.UseFallbackFont("CacheInvalidationFallback"); err == nil {
 		t.Fatal("未注册回退字体应返回错误")
 	}
@@ -480,6 +490,7 @@ func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reader.releasePageDocument(second)
 	if first != second {
 		t.Fatal("添加失败的回退字体不应清空有效缓存")
 	}

@@ -23,6 +23,9 @@ func (r *Reader) SelectVersion(scope int, id string) error {
 	}
 	r.closeRenderDocumentsLocked()
 	for documentIndex, document := range r.ofd.Documents {
+		if len(document.Pages) == 0 {
+			continue
+		}
 		renderDocument := render.NewDocument(r.options.Background, document)
 		for _, family := range r.fallbackFamilies {
 			_ = renderDocument.UseFallbackFont(family)

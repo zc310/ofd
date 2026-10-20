@@ -60,8 +60,6 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.RLock()
-	defer r.cacheMu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
@@ -77,21 +75,14 @@ func pageTextObjects(page *parser.Page) []*models.TextObject {
 
 func pageTextObjectsWithHiddenLayers(page *parser.Page, hidden map[models.StID]bool) []*models.TextObject {
 	var texts []*models.TextObject
-	var walk func([]models.PageItem)
-	walk = func(items []models.PageItem) {
-		for _, item := range items {
-			if item.Kind == models.PageItemBlock && item.Block != nil {
-				walk(item.Block.Items)
-				continue
-			}
-			if item.Kind == models.PageItemText && item.Text != nil {
-				texts = append(texts, item.Text)
-			}
-		}
-	}
 	for _, layer := range contentLayers(page) {
 		if layer != nil && !hidden[layer.ID] {
-			walk(layer.Items)
+			walkPageItems(layer.Items, func(item models.PageItem) bool {
+				if item.Kind == models.PageItemText && item.Text != nil {
+					texts = append(texts, item.Text)
+				}
+				return true
+			})
 		}
 	}
 	return texts

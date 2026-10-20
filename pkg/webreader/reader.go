@@ -1,4 +1,7 @@
 // Package webreader 包提供适合浏览器调用的 OFD 文档访问接口。
+//
+// 缓存的元数据及其嵌套切片、映射、指针和字体字节均为只读共享值，调用方如需
+// 修改应先复制；各方法的注释说明返回值是否共享。Text 返回可独立修改的副本。
 package webreader
 
 import (
@@ -87,20 +90,23 @@ type OpenOptions struct {
 // Reader 负责持有文档资源，使用完毕后必须调用 Close。
 type Reader struct {
 	mu               sync.RWMutex
-	cacheMu          sync.RWMutex
 	renderDocsMu     sync.Mutex
 	metadataMu       sync.Mutex
 	closed           bool
 	ofd              *parser.OFD
 	pages            []pageRef
 	renderDocs       *utils.LRU[renderDocumentKey, *render.Document]
+	renderDocUsers   map[*render.Document]int // 由 renderDocsMu 保护，仅登记正在使用的视图。
 	fallbackFamily   string
 	fallbackFamilies []string
-	text             *utils.LRU[int, []TextRun]
-	search           *utils.LRU[int, *search.Index]
-	options          RenderOptions
-	metadata         *readerMetadata
-	hiddenLayers     map[int]render.PageVisibility
+	// 缓存指针由 mu 保护；LRU 的 Get/Add 自带锁，读操作可并发填充。
+	text           *utils.LRU[int, []TextRun]
+	search         *utils.LRU[int, *search.Index]
+	options        RenderOptions
+	metadata       *readerMetadata
+	navigationOnce sync.Once
+	navigation     *pageNavigation
+	hiddenLayers   map[int]render.PageVisibility
 }
 
 // Open 从内存中的 OFD 数据创建浏览器文档引擎。
@@ -130,6 +136,10 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 		metadata: &readerMetadata{},
 	}
 	for documentIndex, document := range ofd.Documents {
+		// 无页文档体不会进入 r.pages，也就无法由 Reader.Close 追踪和关闭。
+		if len(document.Pages) == 0 {
+			continue
+		}
 		renderDocument := render.NewDocument(r.options.Background, document)
 		for _, page := range renderDocument.Pages {
 			r.pages = append(r.pages, pageRef{document: renderDocument, page: page, fontScope: documentIndex})
@@ -146,6 +156,7 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 
 // PageMediaActions 返回进入页面（PO）和打开文档（DO）时要执行的声音、影片动作。
 // 页面动作挂在对应页；文档级 DO、PO 动作挂在该文档体的第一页，Page 为 -1 表示没有页面。
+// 返回缓存切片及嵌套指针只读。
 func (r *Reader) PageMediaActions() ([]PageLink, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")

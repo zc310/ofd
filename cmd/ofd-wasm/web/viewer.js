@@ -526,10 +526,8 @@ const remoteFileQueryKey = 'file';
 const remoteFileNameQueryKey = 'name';
 // remoteFileTimeout 限制下载耗时：远端无响应时不能让启动页一直停在「正在下载」。
 const remoteFileTimeout = 120_000;
-// pdfExportDPI 是导出 PDF 时固定使用的 DPI。PDF 走矢量输出，文字与路径都保留，
-// 这个值不决定图像质量，只参与毫米到 PDF 点的换算：72 让页面保持物理尺寸
-// （210mm → 595.3pt，即标准 A4）。沿用图片模式的 DPI 会把页面等比放大，
-// A4 在 150 下会变成 1240pt。
+// pdfExportDPI 固定为 72，用于 PDF 中复杂效果的内部离屏栅格化。
+// 文字与路径保留矢量，页面按物理尺寸输出，不随此 DPI 改变。
 const pdfExportDPI = 72;
 // exportDPIMax 必须与 webreader 的 maxDPI 一致，否则界面上填得进去、渲染时才报错。
 const exportDPIMax = 600;

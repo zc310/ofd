@@ -46,6 +46,7 @@ func TestPageViewsReuseEmbeddedFontsAcrossDPIAndCacheEviction(t *testing.T) {
 				t.Fatalf("DPI 视图创建/淘汰后字体 %d 未被复用", id)
 			}
 		}
+		reader.releasePageDocument(view)
 	}
 	if _, err := reader.Text(page); err != nil {
 		t.Fatalf("视图淘汰后文字测量失败：%v", err)

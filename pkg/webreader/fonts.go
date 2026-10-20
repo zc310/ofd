@@ -69,7 +69,7 @@ type FontUsage struct {
 	Pages []int
 	// Scanned 是实际扫描的页数。
 	Scanned int
-	// Truncated 表示因达到扫描页数或结果数量上限而提前结束，结果可能不完整。
+	// Truncated 表示仍有未扫描页面，或因结果数量上限省略了匹配页面。
 	Truncated bool
 }
 
@@ -89,7 +89,7 @@ type FontUsageReport struct {
 	Fonts []FontUsageSummary
 	// Scanned 是实际扫描的页数。
 	Scanned int
-	// Truncated 表示因扫描页数或单个字体结果数量上限而可能不完整。
+	// Truncated 表示仍有未扫描页面，或因单个字体结果数量上限省略了匹配页面。
 	Truncated bool
 }
 
@@ -107,6 +107,7 @@ type FontSource struct {
 // RegisterFallbackFont 在进程内全局注册回退字体，与具体 Reader 无关。
 // 同一字体族只注册一次（幂等）且不复制字体数据；之后可通过
 // Reader.UseFallbackFont 应用到某个文档。
+// source.Data 注册后由后端共享，调用方不得修改。
 // canvas 后端最多注册 64 个字体族，各样式的当前源数据合计不超过 256 MiB；
 // 超限时保留现有注册并返回错误，可先用 UnregisterFallbackFont 释放不再使用的字体。
 func RegisterFallbackFont(source FontSource) error {
@@ -121,6 +122,7 @@ func RegisterFallbackFont(source FontSource) error {
 }
 
 // FallbackFontData 返回已全局注册的回退字体族的首个来源数据。
+// 返回字节由全局注册表共享，只读；需要修改时调用方应先复制。
 //
 // 注册表由字体引擎持有，调用方拿不到 FontData 本体（app 侧一般只记族名与
 // 体积，字节留在引擎里）。这个口子给那些要用已注册字形的调用方——例如把
@@ -226,6 +228,7 @@ func fallbackFontStyle(source FontSource) render.FontStyle {
 
 // Fonts 返回文档中声明的字体资源。只有包含 FontFile 的字体会带有 Data，
 // 调用方可以将这些数据交给浏览器 FontFace 构造器进行注入。
+// 返回缓存切片及 Data 字节均为只读共享值。
 func (r *Reader) Fonts() ([]FontResource, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -265,7 +268,7 @@ func (r *Reader) computeFonts() ([]FontResource, error) {
 			}
 			resources = append(resources, FontResource{
 				ID: uint64(id), Family: browserFontFamily(documentIndex, uint64(id)), Name: font.FontName,
-				Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: append([]byte(nil), data...),
+				Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: data,
 			})
 			return true
 		})
@@ -274,6 +277,7 @@ func (r *Reader) computeFonts() ([]FontResource, error) {
 }
 
 // FontList 返回文档声明的全部字体（含没有嵌入文件的逻辑字体），不读取字体数据。
+// 返回缓存切片只读。
 func (r *Reader) FontList() ([]FontInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -338,8 +342,6 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
 	if r.closed {
 		return FontUsage{}, errors.New("文档引擎已经关闭")
 	}
@@ -355,11 +357,11 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 			if run.Scope != ref.Scope || run.Font != ref.ID {
 				continue
 			}
+			if len(usage.Pages) >= options.MaxPages {
+				usage.Truncated = true
+				return usage, nil
+			}
 			usage.Pages = append(usage.Pages, index)
-			break
-		}
-		if len(usage.Pages) >= options.MaxPages {
-			usage.Truncated = true
 			break
 		}
 	}
@@ -377,8 +379,6 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
 	if r.closed {
 		return FontUsageReport{}, errors.New("文档引擎已经关闭")
 	}
@@ -394,10 +394,11 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 		for _, run := range r.textAt(index) {
 			ref := FontRef{Scope: run.Scope, ID: run.Font}
 			pages := byFont[ref]
-			if len(pages) >= options.MaxPages {
+			if len(pages) > 0 && pages[len(pages)-1] == index {
 				continue
 			}
-			if len(pages) > 0 && pages[len(pages)-1] == index {
+			if len(pages) >= options.MaxPages {
+				report.Truncated = true
 				continue
 			}
 			byFont[ref] = append(pages, index)
@@ -418,9 +419,6 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 	})
 	for _, ref := range refs {
 		pages := byFont[ref]
-		if len(pages) >= options.MaxPages {
-			report.Truncated = true
-		}
 		report.Fonts = append(report.Fonts, FontUsageSummary{Scope: ref.Scope, ID: ref.ID, Pages: pages})
 	}
 	return report, nil

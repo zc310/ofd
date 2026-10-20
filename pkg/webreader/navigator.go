@@ -152,6 +152,10 @@ type readerMetadata struct {
 	mediaOnce sync.Once
 	mediaVal  []MediaInfo
 	mediaErr  error
+
+	customTagsOnce sync.Once
+	customTagsVal  []CustomTagTree
+	customTagsErr  error
 }
 
 // Info 返回 OFD 文档的元数据信息。
@@ -200,6 +204,7 @@ func (r *Reader) Info() (DocumentInfo, error) {
 // Outline 返回文档大纲树、书签列表以及文档声明的显示模式。
 // 跳转目标按全局页索引解析（跨文档体累加），无法解析的目标为 -1。
 // 没有大纲或书签时返回空切片。
+// 返回缓存树及所有嵌套切片和指针只读。
 func (r *Reader) Outline() (OutlineTree, error) {
 	if r == nil {
 		return OutlineTree{}, errors.New("文档引擎为空")
@@ -223,34 +228,68 @@ func (r *Reader) Outline() (OutlineTree, error) {
 // pageIndexesByScope 按文档体把页 ID 映射为阅读器的全局页索引。
 // GB/T 33190—2016 表 2 规定 ST_ID 在文档内唯一，不同文档体可复用同一 ID。
 func (r *Reader) pageIndexesByScope() map[int]map[models.StID]int {
-	indexes := make(map[int]map[models.StID]int)
-	for index, ref := range r.pages {
-		if ref.page == nil {
-			continue
+	return r.navigationIndexes().pages
+}
+
+type pageNavigation struct {
+	pages     map[int]map[models.StID]int
+	first     map[int]int
+	bookmarks map[int]map[string]models.CtDest
+}
+
+// 调用方持有 Reader 锁；仅版本重建时重置，隐藏图层不改变页面与书签索引。
+func (r *Reader) navigationIndexes() *pageNavigation {
+	r.navigationOnce.Do(func() {
+		nav := &pageNavigation{
+			pages: make(map[int]map[models.StID]int), first: make(map[int]int),
+			bookmarks: make(map[int]map[string]models.CtDest),
 		}
-		byPage := indexes[ref.fontScope]
-		if byPage == nil {
-			byPage = make(map[models.StID]int)
-			indexes[ref.fontScope] = byPage
+		for index, ref := range r.pages {
+			if _, ok := nav.first[ref.fontScope]; !ok {
+				nav.first[ref.fontScope] = index
+				if ref.document != nil && ref.document.Bookmarks != nil {
+					byName := make(map[string]models.CtDest, len(ref.document.Bookmarks.Bookmarks))
+					for _, bookmark := range ref.document.Bookmarks.Bookmarks {
+						byName[bookmark.Name] = bookmark.Dest
+					}
+					nav.bookmarks[ref.fontScope] = byName
+				}
+			}
+			if ref.page == nil {
+				continue
+			}
+			byPage := nav.pages[ref.fontScope]
+			if byPage == nil {
+				byPage = make(map[models.StID]int)
+				nav.pages[ref.fontScope] = byPage
+			}
+			byPage[ref.page.ID] = index
 		}
-		byPage[ref.page.ID] = index
+		r.navigation = nav
+	})
+	return r.navigation
+}
+
+func (r *Reader) firstPageOfScope(scope int) int {
+	if index, ok := r.navigationIndexes().first[scope]; ok {
+		return index
 	}
-	return indexes
+	return -1
+}
+
+func (r *Reader) resetPageNavigationLocked() {
+	r.navigation = nil
+	r.navigationOnce = sync.Once{}
 }
 
 func (r *Reader) computeOutline() OutlineTree {
 	var result OutlineTree
-	base := 0
-	for _, document := range r.ofd.Documents {
+	indexes := r.pageIndexesByScope()
+	for scope, document := range r.ofd.Documents {
 		if document == nil {
 			continue
 		}
-		pageIndexes := make(map[models.StID]int, len(document.Pages))
-		for index, page := range document.Pages {
-			if page != nil {
-				pageIndexes[page.ID] = base + index
-			}
-		}
+		pageIndexes := indexes[scope]
 		resolvePage := func(dest models.CtDest) int {
 			if page, ok := pageIndexes[models.StID(dest.PageID)]; ok {
 				return page
@@ -274,13 +313,13 @@ func (r *Reader) computeOutline() OutlineTree {
 		if result.PageMode == "" && document.VPreferences != nil && document.VPreferences.PageMode != nil {
 			result.PageMode = string(*document.VPreferences.PageMode)
 		}
-		base += len(document.Pages)
 	}
 	return result
 }
 
 // Preferences 返回文档声明的阅读器显示偏好（取第一个声明了偏好的文档体）。
 // 没有声明时返回零值。
+// 返回值中的指针只读。
 func (r *Reader) Preferences() (ViewPreferences, error) {
 	if r == nil {
 		return ViewPreferences{}, errors.New("文档引擎为空")
@@ -334,48 +373,61 @@ func convertOutlineDest(dest models.CtDest) *OutlineDest {
 	}
 }
 
-// outlineNodes 递归转换大纲项；目标优先取 Goto.Dest，其次按书签名称解析，
+// outlineNodes 迭代转换大纲项；目标优先取 Goto.Dest，其次按书签名称解析，
 // 没有页面目标时回退到 URI 链接。
 func outlineNodes(elems []models.CTOutlineElem, resolvePage func(models.CtDest) int, bookmarks map[string]models.CtDest) []OutlineNode {
 	if len(elems) == 0 {
 		return nil
 	}
-	nodes := make([]OutlineNode, 0, len(elems))
-	for _, elem := range elems {
-		node := OutlineNode{Title: elem.Title, Page: -1}
-		if elem.Actions != nil {
-			for _, action := range elem.Actions.Actions {
-				if action.URI != nil && action.URI.URI != "" && node.URI == "" {
-					node.URI = action.URI.URI
-				}
-				if action.Goto == nil {
-					continue
-				}
-				if action.Goto.Dest != nil {
-					node.Page = resolvePage(*action.Goto.Dest)
-					node.Dest = convertOutlineDest(*action.Goto.Dest)
-					node.URI = ""
-					break
-				}
-				if action.Goto.Bookmark != nil {
-					if dest, ok := bookmarks[action.Goto.Bookmark.Name]; ok {
-						node.Page = resolvePage(dest)
-						node.Dest = convertOutlineDest(dest)
+	nodes := make([]OutlineNode, len(elems))
+	type frame struct {
+		elems []models.CTOutlineElem
+		nodes []OutlineNode
+	}
+	stack := []frame{{elems, nodes}}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for index, elem := range current.elems {
+			node := &current.nodes[index]
+			node.Title, node.Page = elem.Title, -1
+			if elem.Actions != nil {
+				for _, action := range elem.Actions.Actions {
+					if action.URI != nil && action.URI.URI != "" && node.URI == "" {
+						node.URI = action.URI.URI
+					}
+					if action.Goto == nil {
+						continue
+					}
+					if action.Goto.Dest != nil {
+						node.Page = resolvePage(*action.Goto.Dest)
+						node.Dest = convertOutlineDest(*action.Goto.Dest)
 						node.URI = ""
 						break
 					}
+					if action.Goto.Bookmark != nil {
+						if dest, ok := bookmarks[action.Goto.Bookmark.Name]; ok {
+							node.Page = resolvePage(dest)
+							node.Dest = convertOutlineDest(dest)
+							node.URI = ""
+							break
+						}
+					}
 				}
 			}
+			node.Expanded = elem.Expanded
+			if len(elem.OutlineElem) != 0 {
+				node.Children = make([]OutlineNode, len(elem.OutlineElem))
+				stack = append(stack, frame{elem.OutlineElem, node.Children})
+			}
 		}
-		node.Expanded = elem.Expanded
-		node.Children = outlineNodes(elem.OutlineElem, resolvePage, bookmarks)
-		nodes = append(nodes, node)
 	}
 	return nodes
 }
 
 // Versions 返回所有文档体的版本清单。DocRoot 可用于 SelectVersion 加载独立历史文档。
 // Pages 只包含文件清单里能对应到当前视图页的页码。
+// 返回缓存切片及嵌套 Pages 切片只读。
 func (r *Reader) Versions() ([]VersionInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -406,12 +458,7 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 		if body.Versions == nil {
 			continue
 		}
-		pageIndexes := make(map[models.StID]int)
-		for index, ref := range r.pages {
-			if ref.fontScope == scope {
-				pageIndexes[ref.page.ID] = index
-			}
-		}
+		pageIndexes := r.pageIndexesByScope()[scope]
 		pagePaths := make(map[string][]int)
 		for _, page := range document.Document.Pages.Pages {
 			if index, ok := pageIndexes[page.ID]; ok {

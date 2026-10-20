@@ -1,6 +1,7 @@
 package webreader
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -48,6 +49,7 @@ type CustomTagTarget struct {
 }
 
 // CustomTags 返回文档中的自定义标签树及其可定位的页面对象。
+// 返回缓存树及嵌套切片、映射和指针只读。
 func (r *Reader) CustomTags() ([]CustomTagTree, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -60,6 +62,15 @@ func (r *Reader) CustomTags() ([]CustomTagTree, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	r.metadataMu.Lock()
+	defer r.metadataMu.Unlock()
+	r.metadata.customTagsOnce.Do(func() {
+		r.metadata.customTagsVal, r.metadata.customTagsErr = r.computeCustomTags()
+	})
+	return r.metadata.customTagsVal, r.metadata.customTagsErr
+}
+
+func (r *Reader) computeCustomTags() ([]CustomTagTree, error) {
 	result := make([]CustomTagTree, 0)
 	for scope, document := range r.ofd.Documents {
 		if document == nil {
@@ -83,7 +94,7 @@ func (r *Reader) CustomTags() ([]CustomTagTree, error) {
 			if err != nil {
 				return nil, fmt.Errorf("解析自定义标签数据 %s 失败: %w", path, err)
 			}
-			resolveCustomTagTargets(root, r.pages, scope)
+			resolveCustomTagTargets(root, r.pages, r.pageIndexesByScope()[scope])
 			result = append(result, CustomTagTree{Namespace: tag.NameSpace, Path: path.String(), Root: root})
 		}
 	}
@@ -91,7 +102,7 @@ func (r *Reader) CustomTags() ([]CustomTagTree, error) {
 }
 
 func parseCustomTag(data []byte) (*CustomTagNode, error) {
-	decoder := xml.NewDecoder(strings.NewReader(string(data)))
+	decoder := xml.NewDecoder(bytes.NewReader(data))
 	var nodes int
 	var parse func(xml.StartElement, int) (*CustomTagNode, error)
 	parse = func(start xml.StartElement, depth int) (*CustomTagNode, error) {
@@ -103,6 +114,7 @@ func parseCustomTag(data []byte) (*CustomTagNode, error) {
 			return nil, errors.New("自定义标签元素数量过多")
 		}
 		node := &CustomTagNode{Name: start.Name.Local, Namespace: start.Name.Space, Attributes: map[string]string{}}
+		var text strings.Builder
 		for _, attr := range start.Attr {
 			name := attr.Name.Local
 			if attr.Name.Space != "" {
@@ -123,10 +135,10 @@ func parseCustomTag(data []byte) (*CustomTagNode, error) {
 				}
 				node.Children = append(node.Children, child)
 			case xml.CharData:
-				node.Text += string(value)
+				text.Write(value)
 			case xml.EndElement:
 				if value.Name == start.Name {
-					node.Text = strings.TrimSpace(node.Text)
+					node.Text = strings.TrimSpace(text.String())
 					return node, nil
 				}
 			}
@@ -146,7 +158,7 @@ func parseCustomTag(data []byte) (*CustomTagNode, error) {
 	}
 }
 
-func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, scope int) {
+func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, pageIndex map[models.StID]int) {
 	if root == nil {
 		return
 	}
@@ -156,15 +168,12 @@ func resolveCustomTagTargets(root *CustomTagNode, pages []pageRef, scope int) {
 			pageID, pageOK := parseUint(node.Attributes["PageRef"])
 			objectID, objectOK := parseUint(node.Text)
 			if pageOK && objectOK {
-				for index, ref := range pages {
-					if ref.fontScope != scope || uint64(ref.page.ID) != pageID {
-						continue
-					}
+				if index, ok := pageIndex[models.StID(pageID)]; ok {
+					ref := pages[index]
 					if target := pageObjectTarget(ref.page, objectID); target != nil {
 						target.Page, target.PageID, target.ObjectID = index, pageID, objectID
 						node.Target = target
 					}
-					break
 				}
 			}
 		}
@@ -182,51 +191,42 @@ func parseUint(value string) (uint64, bool) {
 
 func pageObjectTarget(page *parser.Page, objectID uint64) *CustomTagTarget {
 	var result *CustomTagTarget
-	var walk func([]models.PageItem)
-	walk = func(items []models.PageItem) {
-		for _, item := range items {
-			if result != nil {
-				return
+	visit := func(item models.PageItem) bool {
+		var id uint64
+		var box models.StBox
+		var text string
+		switch item.Kind {
+		case models.PageItemText:
+			if item.Text == nil {
+				return true
 			}
-			if item.Kind == models.PageItemBlock && item.Block != nil {
-				walk(item.Block.Items)
-				continue
+			id, box, text = uint64(item.Text.ID), item.Text.Boundary, textValue(item.Text)
+		case models.PageItemPath:
+			if item.Path == nil {
+				return true
 			}
-			var id uint64
-			var box models.StBox
-			var text string
-			switch item.Kind {
-			case models.PageItemText:
-				if item.Text == nil {
-					continue
-				}
-				id, box, text = uint64(item.Text.ID), item.Text.Boundary, textValue(item.Text)
-			case models.PageItemPath:
-				if item.Path == nil {
-					continue
-				}
-				id, box = uint64(item.Path.ID), item.Path.Boundary
-			case models.PageItemImage:
-				if item.Image == nil {
-					continue
-				}
-				id, box = uint64(item.Image.ID), item.Image.Boundary
-			case models.PageItemComposite:
-				if item.Composite == nil {
-					continue
-				}
-				id, box = uint64(item.Composite.ID), item.Composite.Boundary
+			id, box = uint64(item.Path.ID), item.Path.Boundary
+		case models.PageItemImage:
+			if item.Image == nil {
+				return true
 			}
-			if id == objectID {
-				result = &CustomTagTarget{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height, ObjectText: text}
+			id, box = uint64(item.Image.ID), item.Image.Boundary
+		case models.PageItemComposite:
+			if item.Composite == nil {
+				return true
 			}
+			id, box = uint64(item.Composite.ID), item.Composite.Boundary
 		}
+		if id == objectID {
+			result = &CustomTagTarget{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height, ObjectText: text}
+		}
+		return result == nil
 	}
 	_ = page.WithPageContent(func(content *models.PageContent) error {
 		if content != nil && content.Content != nil {
 			for _, layer := range content.Content.Layer {
-				if layer != nil {
-					walk(layer.Items)
+				if layer != nil && result == nil {
+					walkPageItems(layer.Items, visit)
 				}
 			}
 		}

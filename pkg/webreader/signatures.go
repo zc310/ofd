@@ -186,6 +186,7 @@ func pageItemGraphicUnit(item models.PageItem) *models.CTGraphicUnit {
 }
 
 // Signatures 返回所有文档体的签名及其摘要/验签结果。
+// 返回缓存切片及所有嵌套切片和指针只读。
 func (r *Reader) Signatures() ([]SignatureInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")

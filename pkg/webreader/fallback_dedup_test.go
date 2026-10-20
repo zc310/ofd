@@ -40,9 +40,11 @@ func TestUseFallbackFontDeduplicatesFamiliesAndStillAppliesUpdates(t *testing.T)
 		t.Fatal("未注册字体应报错且保留已有列表")
 	}
 	// 同一族新增样式后，再次应用仍必须刷新各文档和快照，不能因已在列表中而早退。
-	if _, err := reader.pageDocument(reader.pages[0], color.Transparent, geom.DPI(96)); err != nil {
+	view, err := reader.pageDocument(reader.pages[0], color.Transparent, geom.DPI(96))
+	if err != nil {
 		t.Fatal(err)
 	}
+	reader.releasePageDocument(view)
 	previousText, previousSearch := reader.text, reader.search
 	if err := RegisterFallbackFont(FontSource{Family: first, Data: gobold.TTF, Weight: 700}); err != nil {
 		t.Fatal(err)

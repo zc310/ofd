@@ -216,6 +216,7 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer r.releasePageDocument(document)
 	page, err := document.PageWithVisibility(ref.page, r.hiddenLayers[index])
 	if err != nil {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
@@ -295,7 +296,8 @@ func addClamped(a, b int) uint8 {
 	}
 }
 
-// pageDocument 获取页面对应的渲染文档；调用方必须持有 Reader 读锁。
+// pageDocument 获取并持有页面对应的渲染视图；调用方必须持有 Reader 读锁，
+// 并在绘制和输出完成后调用 releasePageDocument。
 func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Resolution) (*render.Document, error) {
 	document := ref.document
 	if document == nil || document.Document == nil {
@@ -305,8 +307,12 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Reso
 	key := renderDocumentKey{base: document, dpi: dpi.DPI(), red: red, green: green, blue: blue, alpha: alpha}
 	r.renderDocsMu.Lock()
 	defer r.renderDocsMu.Unlock()
+	if r.renderDocUsers == nil {
+		r.renderDocUsers = make(map[*render.Document]int)
+	}
 	if r.renderDocs != nil {
 		if cached, ok := r.renderDocs.Get(key); ok && cached != nil {
+			r.renderDocUsers[cached]++
 			return cached, nil
 		}
 	}
@@ -316,13 +322,38 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Reso
 		return nil, err
 	}
 	if r.renderDocs == nil {
-		// 淘汰时释放视图缓存和共享字体引用；字体解析结果仍由基础文档持有。
-		r.renderDocs = utils.NewLRU[renderDocumentKey, *render.Document](maxRenderDocs, func(_ renderDocumentKey, evicted *render.Document) {
-			evicted.Close()
-		})
+		// 所有 Get/Add/Trim 均持 renderDocsMu，检查使用计数与获取视图不会交错。
+		// 并发使用的视图暂时允许超容量，最后一次使用完成后重新执行淘汰。
+		r.renderDocs = utils.NewWeightedLRU[renderDocumentKey, *render.Document](maxRenderDocs, 0,
+			func(_ renderDocumentKey, evicted *render.Document) { evicted.Close() },
+			func(_ renderDocumentKey, candidate *render.Document) bool { return r.renderDocUsers[candidate] == 0 },
+		)
 	}
+	r.renderDocUsers[document]++
 	r.renderDocs.Add(key, document)
 	return document, nil
+}
+
+// releasePageDocument 结束一次视图使用；调用方仍须持有 Reader 读锁。
+func (r *Reader) releasePageDocument(document *render.Document) {
+	if r == nil || document == nil {
+		return
+	}
+	r.renderDocsMu.Lock()
+	defer r.renderDocsMu.Unlock()
+	users := r.renderDocUsers[document]
+	if users <= 0 {
+		delete(r.renderDocUsers, document)
+		return
+	}
+	if users == 1 {
+		delete(r.renderDocUsers, document)
+	} else {
+		r.renderDocUsers[document] = users - 1
+	}
+	if r.renderDocs != nil {
+		r.renderDocs.Trim()
+	}
 }
 
 // clearRenderViewsLocked 释放各 DPI/背景视图，保留基础文档和共享字体。
@@ -353,6 +384,7 @@ func (r *Reader) Close() error {
 	r.closeRenderDocumentsLocked()
 	r.text = nil
 	r.search = nil
+	r.metadata = nil
 	r.hiddenLayers = nil
 	r.fallbackFamily = ""
 	r.fallbackFamilies = nil
@@ -376,6 +408,7 @@ func (r *Reader) closeRenderDocumentsLocked() {
 		}
 	}
 	r.pages = nil
+	r.resetPageNavigationLocked()
 	r.renderDocsMu.Lock()
 	cached := r.renderDocs
 	r.renderDocs = nil

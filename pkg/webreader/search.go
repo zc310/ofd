@@ -34,8 +34,6 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 	query = strings.TrimSpace(query)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	r.cacheMu.RLock()
-	defer r.cacheMu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
