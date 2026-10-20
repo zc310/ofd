@@ -136,7 +136,7 @@ func TestConvertRendersWidgetAppearance(t *testing.T) {
 }
 
 func TestTencentPage2ImportsFooterWidgetIcons(t *testing.T) {
-	path := "../../testdata/pdf/腾讯官方ESG报告.pdf"
+	path := "../../testdata/tencent/腾讯官方ESG报告.pdf"
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

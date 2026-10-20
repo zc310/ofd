@@ -252,7 +252,7 @@ go run ./cmd/ofd-creator merge -o /tmp/seam-group20.ofd \
   --sign-stamp-seam-pages 5- \
   --sign-stamp-seam-group-pages 20 \
   --sign-stamp-seam-size 40 \
-  --verify-signatures testdata/other/GBT_33190-2016.ofd
+  --verify-signatures testdata/pdf2ofd/GBT_33190-2016.ofd
 ```
 
 四边同时添加条带：

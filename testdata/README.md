@@ -1,10 +1,24 @@
 # OFD 测试文档索引
 
-本目录保存解析、校验、文字提取、渲染和格式转换使用的 OFD fixture。下表登记本目录下全部 43 个 `.ofd` 文件；文档体、页面、对象、文字、图片、字体等数量来自 `cmd/ofd-analyzer` 的当前分析结果。`来源` 列标注生成 manifest、合并来源或外部收集的分类。文件大小使用 K/M 表示（1K = 1000 bytes，1M = 1000000 bytes）。数量会随着 fixture 内容变化而变化，特性说明则以便于选取测试样例为目标。
+本目录保存解析、校验、文字提取、渲染和格式转换使用的 OFD fixture。下表登记常用的 43 个 `.ofd` 样例；文档体、页面、对象、文字、图片、字体等数量来自 `cmd/ofd-analyzer` 的当前分析结果。`来源` 列标注生成 manifest、合并来源或外部收集的分类。文件大小使用 K/M 表示（1K = 1000 bytes，1M = 1000000 bytes）。数量会随着 fixture 内容变化而变化，特性说明则以便于选取测试样例为目标。
 
 来源分三类：`OFD.xml` 中带 `Creator=ofd-creator` 的文件由本仓库的创建器生成，表中给出对应的生成来源 manifest；`ofdrw/` 目录下的文件取自 [ofdrw/ofdrw](https://github.com/ofdrw/ofdrw)（Apache-2.0），版权归该项目作者所有，仅用作测试夹具；其余文件（`huawei.ofd`、`multi_demo.ofd` 等）为手工构造或外部收集的样本，原始发布者、授权许可和来源链接尚未逐一核实；如需再分发或用于生产，请自行确认相应权利。
 
 `markdown/` 和 `pdf/` 子目录保存的是 Markdown、PDF 等非 OFD 格式的导入测试输入，不在本表登记。
+
+## 外置样例
+
+较大的 PDF/OFD 和第三方测试文档由独立仓库
+[`zc310/ofd-fixtures`](https://github.com/zc310/ofd-fixtures) 管理，不随 `ofd` 主仓库检出。
+首次运行依赖这些样例的测试前，在仓库根目录执行：
+
+```sh
+make fixtures
+```
+
+该命令从 `ofd-fixtures` 的 GitHub `main` 分支下载压缩包，并将其中整个 `testdata/` 目录
+同步到本地；下载内容已由 `.gitignore` 排除，不会进入 `ofd` 提交。需要使用其他分支或版本时，
+可通过 `FIXTURES_URL` 指定对应的 GitHub archive 地址。运行需要安装 `curl` 和 `unzip`。
 
 想先看某个 fixture 的实际渲染效果，可用项目部署的 WASM 阅读器：<https://zc310.github.io/ofd/wasm/>。打开页面后点击「打开文件」选择本目录下的 `.ofd`，或直接把文件拖入页面；OFD 在浏览器本地解析和渲染，文件不会上传。页面还提供缩略图、搜索、双页阅读和「使用系统字体」等选项，便于横向比对不同样例。
 

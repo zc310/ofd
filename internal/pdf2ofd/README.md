@@ -61,7 +61,7 @@
 | 多 FD CFF 的 OFD→PDF 输出 | [pdf_cff_test.go](../../pkg/converter/pdf_cff_test.go) 及 font/canvas fork 中的字体与 PDF 回归。 |
 | 公开转换入口和真实文档往返 | [PDF 导入器测试目录](../../pkg/converter/import/pdf/)、[converter 测试目录](../../pkg/converter/)。 |
 
-`TestConvertTestdataPDFs` 使用 `testdata/pdf/` 中的样本。样本、外部字体或独立阅读器
+`TestConvertTestdataPDFs` 使用 `testdata` 下各来源目录中的 PDF 样本。样本、外部字体或独立阅读器
 不可用时，应查看测试的 skip/省略日志；一次 `go test` 成功不表示全部外部验证已执行。
 
 ### 常用命令

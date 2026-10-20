@@ -154,7 +154,7 @@ func TestConvertPageLinksToOFD(t *testing.T) {
 }
 
 func TestTencentPage2WidgetNavigationIsClickable(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "pdf", "腾讯官方ESG报告.pdf")
+	path := filepath.Join("..", "..", "testdata", "tencent", "腾讯官方ESG报告.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

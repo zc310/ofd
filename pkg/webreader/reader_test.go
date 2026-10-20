@@ -236,7 +236,7 @@ func TestPagesUsesIntroPageMetadata(t *testing.T) {
 }
 
 func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "other", "GBT_33190-2016.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf2ofd", "GBT_33190-2016.ofd"))
 	if os.IsNotExist(err) {
 		t.Skip("GBT_33190-2016.ofd  is unavailable")
 	}

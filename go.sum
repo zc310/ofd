@@ -182,6 +182,8 @@ github.com/nicksnyder/go-i18n/v2 v2.6.1 h1:JDEJraFsQE17Dut9HFDHzCoAWGEQJom5s0TRd
 github.com/nicksnyder/go-i18n/v2 v2.6.1/go.mod h1:Vee0/9RD3Quc/NmwEjzzD7VTZ+Ir7QbXocrkhOzmUKA=
 github.com/pdfcpu/pdfcpu v0.16.2 h1:x6Y+jOn4Ieu3TZ+B3eNgjS9aLsybm3azz6pEMiZfE2Q=
 github.com/pdfcpu/pdfcpu v0.16.2/go.mod h1:QcoG3vO7d8MllF6JHsXvMUTYKlLTxAmuc12GFABoqPA=
+github.com/pdfcpu/pdfcpu v0.16.3 h1:hOY/BelGn+/VnZtlLXOx7XeTqsF8atbaxzVkZsKBR1s=
+github.com/pdfcpu/pdfcpu v0.16.3/go.mod h1:zMjQF5nYZ6A0yaG2d4GAj1QrzM5U8BZYDFHpuRwPuxQ=
 github.com/philhofer/fwd v1.2.1 h1:UtpS73q8bFgy/yH3gCq8LSNvj5gv/FowNOiWZa7uKwQ=
 github.com/philhofer/fwd v1.2.1/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pkg/sftp v1.13.11 h1:0N92SLTB8JqASJB14ZLHHzFnBV8mG9zw4K7jghEFWuE=

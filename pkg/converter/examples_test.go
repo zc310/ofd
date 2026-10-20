@@ -220,7 +220,7 @@ func ExampleConvert_pdfToOFD() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Convert(ctx, "pdf", "ofd", "../../testdata/pdf/sample0.pdf", &output)
+	err := converter.Convert(ctx, "pdf", "ofd", "../../testdata/libofd/sample0.pdf", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
 }
@@ -228,7 +228,7 @@ func ExampleConvert_pdfToOFD() {
 func ExampleWithPDFImportOptions() {
 	var output bytes.Buffer
 	var diagnostics []converter.PDFImportDiagnostic
-	err := converter.Convert(context.Background(), "pdf", "ofd", "../../testdata/pdf/sample0.pdf", &output,
+	err := converter.Convert(context.Background(), "pdf", "ofd", "../../testdata/libofd/sample0.pdf", &output,
 		converter.WithPDFImportOptions(converter.PDFImportOptions{
 			Limits:       converter.PDFImportLimits{MaxInputBytes: 32 << 20, MaxImagePixels: 20_000_000},
 			ImageMode:    converter.PDFImageModeCompact,
@@ -245,13 +245,13 @@ func ExampleConvert_pdfImportEntrypoints() {
 	ctx := context.Background()
 	options := pdfimport.Options{Limits: pdfimport.Limits{MaxInputBytes: 32 << 20}}
 	var output bytes.Buffer
-	err := pdfimport.ConvertWithOptions(ctx, "../../testdata/pdf/sample0.pdf", &output, "", options)
+	err := pdfimport.ConvertWithOptions(ctx, "../../testdata/libofd/sample0.pdf", &output, "", options)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 
 	dir, err := os.MkdirTemp("", "pdf-import-example-*")
 	if err == nil {
 		defer os.RemoveAll(dir)
-		err = pdfimport.ConvertFileWithOptions(ctx, "../../testdata/pdf/sample0.pdf", filepath.Join(dir, "output.ofd"), "", options)
+		err = pdfimport.ConvertFileWithOptions(ctx, "../../testdata/libofd/sample0.pdf", filepath.Join(dir, "output.ofd"), "", options)
 	}
 	fmt.Println(err == nil)
 	// Output:

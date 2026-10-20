@@ -15,7 +15,7 @@ import (
 // 往返后的视觉相似度。PDF 重新生成后对象顺序和压缩内容本来就会变化，因此按
 // 同一 DPI 栅格化后比较像素，而不是比较 PDF 二进制或文本结构。
 func TestGBT33190PDFRoundTripSimilarity(t *testing.T) {
-	originalPath := filepath.Join("..", "..", "..", "..", "testdata", "pdf", "standards", "GBT_33190-2016.pdf")
+	originalPath := filepath.Join("..", "..", "..", "..", "testdata", "standards", "GBT_33190-2016.pdf")
 	original, err := os.ReadFile(originalPath)
 	if err != nil {
 		if os.IsNotExist(err) {

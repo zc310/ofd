@@ -47,6 +47,9 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: Download test fixtures
+        run: make fixtures
+
       - name: Test
         run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
 

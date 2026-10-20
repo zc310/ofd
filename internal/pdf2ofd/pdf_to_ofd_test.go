@@ -380,7 +380,7 @@ func TestPDFTextDeltasAlignExpandedUnicodeWithLigatureGlyphs(t *testing.T) {
 }
 
 func TestMicrosoftPage1PreservesLigatureSpacing(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "pdf", "2025-Microsoft-Environmental-Sustainability-Report-PDF.pdf")
+	path := filepath.Join("..", "..", "testdata", "microsoft", "2025-Microsoft-Environmental-Sustainability-Report-PDF.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -648,7 +648,7 @@ func TestPDFImageDataDecodesFiltersBeforeDCTDecode(t *testing.T) {
 }
 
 func TestConvertAdobeCMYKJPEGToRGB(t *testing.T) {
-	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf", "sample0.pdf"))
+	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "libofd", "sample0.pdf"))
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
@@ -725,7 +725,7 @@ func TestConvertYCCKJPEGToRGB(t *testing.T) {
 	// RA_CI.pdf 第 4 页的 GitHub 图标是 Adobe YCCK（APP14 transform=2）CMYK
 	// JPEG。只处理 transform=0 时会把 CMYK JPEG 原样嵌入 OFD，阅读器按 RGB
 	// 解码后整幅反相（白底变黑底）。转换后应为白底 PNG。
-	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf", "RA_CI.pdf"))
+	pdf, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdfcpu", "RA_CI.pdf"))
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
@@ -1068,7 +1068,7 @@ func fakeSFNTWithGlyphCount(numGlyphs uint16) []byte {
 }
 
 func TestConvertTestdataPDFs(t *testing.T) {
-	paths, err := filepath.Glob("../../testdata/pdf/*.pdf")
+	paths, err := filepath.Glob("../../testdata/*/*.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1494,7 +1494,7 @@ func TestConvertWritesConverterMetadata(t *testing.T) {
 // TestConvertPreservesSourceProducer 验证源 PDF 的生产者保留在自定义元数据中，
 // 不会被转换工具标识覆盖而丢失。
 func TestConvertPreservesSourceProducer(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/pdf/sample0.pdf")
+	data, err := os.ReadFile("../../testdata/libofd/sample0.pdf")
 	if err != nil {
 		t.Skipf("测试文件不存在，跳过: %v", err)
 	}
@@ -1737,11 +1737,11 @@ func TestPDFImageDataPreserves16BitPNG(t *testing.T) {
 // 页面上文字不可见；补上字体数据后又因宽度全缺而所有字叠在同一位置。
 // /Widths 早已用 DereferenceArray，这两处必须同样解引用。
 //
-// 样例为 testdata/pdf 下的公众号物料 PDF，其中 4 个字体全是 Identity-H 的
+// 样例为 testdata/tencent 下的公众号物料 PDF，其中 4 个字体全是 Identity-H 的
 // Type0 CID 字体，DescendantFonts 均为间接引用，且正文全部中文。该目录未纳入
 // 版本库，缺失时跳过。
 func TestCIDFontIndirectDescendantFontsLoadsFontAndWidths(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "pdf", "搜一搜公众号推广物料及示例.pdf")
+	path := filepath.Join("..", "..", "testdata", "tencent", "搜一搜公众号推广物料及示例.pdf")
 	pdfData, err := os.ReadFile(path)
 	if err != nil {
 		t.Skipf("样例不可用，跳过: %v", err)

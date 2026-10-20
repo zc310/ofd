@@ -72,11 +72,11 @@ func BenchmarkOpen(b *testing.B) {
 
 // BenchmarkMagazineOpenStages 按阶段测量实际性能样例，便于和浏览器打开体验对照。
 func BenchmarkMagazineOpenStages(b *testing.B) {
-	benchmarkOpenStages(b, "other/magazine.ofd")
+	benchmarkOpenStages(b, "pdf2ofd/magazine.ofd")
 }
 
 func BenchmarkGBT33190OpenStages(b *testing.B) {
-	benchmarkOpenStages(b, "other/GBT_33190-2016.ofd")
+	benchmarkOpenStages(b, "pdf2ofd/GBT_33190-2016.ofd")
 }
 
 func benchmarkOpenStages(b *testing.B, filename string) {

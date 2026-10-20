@@ -11,7 +11,7 @@ import (
 )
 
 func TestPDFCFFGlyphTransformsUseGID(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/pdf/腾讯官方ESG报告.pdf")
+	data, err := os.ReadFile("../../testdata/tencent/腾讯官方ESG报告.pdf")
 	if err != nil {
 		if os.IsNotExist(err) {
 			t.Skipf("PDF 测试文件不存在，跳过: %v", err)
@@ -67,7 +67,7 @@ func TestPDFDecodeUnknownCustomGlyphUsesPrivateGIDRune(t *testing.T) {
 }
 
 func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/pdf/腾讯官方ESG报告.pdf")
+	data, err := os.ReadFile("../../testdata/tencent/腾讯官方ESG报告.pdf")
 	if err != nil {
 		if os.IsNotExist(err) {
 			t.Skipf("PDF 测试文件不存在，跳过: %v", err)
@@ -113,7 +113,7 @@ func TestPDFPage2CFFGlyphMappingsUseUnicodeGIDs(t *testing.T) {
 }
 
 func TestGBT38540CIDCFFImportBuildsGlyphTransforms(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/pdf/standards/GBT_38540-2020.pdf")
+	data, err := os.ReadFile("../../testdata/standards/GBT_38540-2020.pdf")
 	if err != nil {
 		if os.IsNotExist(err) {
 			t.Skipf("测试标准 PDF 不存在，跳过: %v", err)
@@ -148,7 +148,7 @@ func TestGBT38540CIDCFFImportBuildsGlyphTransforms(t *testing.T) {
 }
 
 func TestGBTCustomCFFEncodingPreservesPrivateGlyphRune(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/pdf/standards/GBT_38540-2020.pdf")
+	data, err := os.ReadFile("../../testdata/standards/GBT_38540-2020.pdf")
 	if err != nil {
 		if os.IsNotExist(err) {
 			t.Skipf("测试标准 PDF 不存在，跳过: %v", err)

@@ -90,7 +90,7 @@ func TestMultiplyShadingGroupStillReportsApproximationAndUsesBudgets(t *testing.
 }
 
 func TestVectorAppleLabelKeepsGreenBackgroundAndBlueLettering(t *testing.T) {
-	input, err := os.ReadFile("../../testdata/pdf/VectorApple.pdf")
+	input, err := os.ReadFile("../../testdata/pdfcpu/VectorApple.pdf")
 	if errors.Is(err, os.ErrNotExist) {
 		t.Skip("VectorApple.pdf 文件不存在，跳过样例视觉回归")
 	}

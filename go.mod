@@ -31,7 +31,7 @@ require (
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 	github.com/ncruces/zenity v0.10.15
-	github.com/pdfcpu/pdfcpu v0.16.2
+	github.com/pdfcpu/pdfcpu v0.16.3
 	github.com/pkg/sftp v1.13.11
 	github.com/rymdport/portal v0.4.2
 	github.com/spf13/cobra v1.10.2

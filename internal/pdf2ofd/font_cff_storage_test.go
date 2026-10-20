@@ -128,7 +128,7 @@ func TestPDFImportStoresRepairedCFFInOFD(t *testing.T) {
 }
 
 func TestGB38540PDFImportStoresRepairedOpenTypeAndCIDCFF(t *testing.T) {
-	z, err := zip.OpenReader("../../testdata/other/GBT_38540-2020.ofd")
+	z, err := zip.OpenReader("../../testdata/pdf2ofd/GBT_38540-2020.ofd")
 	if err != nil {
 		t.Skipf("可选真实字体样例不可用：%v", err)
 	}

@@ -1,6 +1,9 @@
 GO ?= go
 ZIP ?= zip
 FYNE ?= fyne
+CURL ?= curl
+UNZIP ?= unzip
+FIXTURES_URL ?= https://github.com/zc310/ofd-fixtures/archive/refs/heads/main.zip
 
 GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
@@ -131,7 +134,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm test-wasm-web build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
+.PHONY: all build build-tools build-wasm test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
 
 all: package
 
@@ -141,6 +144,7 @@ help:
 		'make build-wasm               Build the browser WASM engine' \
 		'make build-wasm WASM_OPT_ENABLED=0  Skip wasm-opt optimization' \
 		'make test-wasm-web           Run the browser reader script tests' \
+		'make fixtures                 Download large test fixtures from GitHub' \
 		'make package                  Build desktop packages and Android APK ZIP' \
 		'make package-wasm-web         Package the browser WASM web directory' \
 		'make package-compare          Package the OFD comparison tool' \
@@ -218,6 +222,19 @@ wasm-icon-font:
 # 导出和注解入口时必须一并运行。
 test-wasm-web:
 	@node cmd/ofd-wasm/web/test/run.mjs
+
+# Large fixtures live in a separate repository to keep this repository small.
+fixtures:
+	@set -eu; \
+	tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	$(CURL) -fLsS --retry 3 "$(FIXTURES_URL)" -o "$$tmp/fixtures.zip"; \
+	$(UNZIP) -q "$$tmp/fixtures.zip" -d "$$tmp/extracted"; \
+	set -- "$$tmp"/extracted/ofd-fixtures-*/testdata; \
+	if [ "$$#" -ne 1 ] || [ ! -d "$$1" ]; then echo "错误: 下载包中缺少 testdata 目录。" >&2; exit 1; fi; \
+	src="$$1"; \
+	mkdir -p testdata; \
+	cp -a "$$src/." testdata/
 
 $(WASM): FORCE
 	@mkdir -p "$(dir $@)"
