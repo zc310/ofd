@@ -438,14 +438,12 @@ func TestGoToPageDoesNotShowHintWithoutRenderTask(t *testing.T) {
 func TestRequestPageRenderReportsWhetherTaskStarted(t *testing.T) {
 	v := newLoadedTestViewer(t)
 	v.pageSlots[1].renderable = true
-	// currentPage 保持 0：渲染协程的隐藏条件不成立，不会改动界面状态。
-	if started := v.requestPageRender(1, 1); !started {
-		t.Fatal("未缓存的可渲染页面应当启动渲染任务")
-	}
-	// 重复请求被 rendering 标志挡住。
+	// 显式模拟进行中的任务，避免无文档渲染快速失败后与重复请求竞争。
+	v.pageSlots[1].rendering.Store(true)
 	if started := v.requestPageRender(1, 1); started {
 		t.Fatal("已有渲染任务时不应重复启动")
 	}
+	v.pageSlots[1].rendering.Store(false)
 	// 不可渲染与越界都不会启动任务。
 	if started := v.requestPageRender(1, 2); started {
 		t.Fatal("不可渲染的页面不应启动渲染任务")
@@ -455,6 +453,10 @@ func TestRequestPageRenderReportsWhetherTaskStarted(t *testing.T) {
 	}
 	if started := v.requestPageRender(0, 1); started {
 		t.Fatal("无效 operation 不应启动渲染任务")
+	}
+	// currentPage 保持 0：失败渲染协程不会改动界面状态。
+	if started := v.requestPageRender(1, 1); !started {
+		t.Fatal("未缓存的可渲染页面应当启动渲染任务")
 	}
 }
 
