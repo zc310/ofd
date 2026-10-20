@@ -927,7 +927,7 @@ func TestReplaceImageWatermarkReclaimsOldMedia(t *testing.T) {
 
 func TestRemoveImageWatermarkKeepsSharedMedia(t *testing.T) {
 	// 同一图片资源被多页引用时，只删除其中一页不应回收资源。
-	data := readTestdata(t, "1000-pages.ofd")
+	data := readTestdata(t, "ofd-creator/1000-pages.ofd")
 	var added bytes.Buffer
 	if err := Add(data, Target{}, Watermark{
 		Creator:     "watermark-test",

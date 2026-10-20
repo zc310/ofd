@@ -52,7 +52,7 @@ func TestParseDocumentXMLMatchesEncodingXML(t *testing.T) {
 		"preferences.ofd",
 		"annotations.ofd",
 		"multi_doc.ofd",
-		"1000-pages.ofd",
+		"ofd-creator/1000-pages.ofd",
 	} {
 		t.Run(name, func(t *testing.T) {
 			raw := documentXMLFromOFD(t, name)
@@ -79,7 +79,7 @@ func TestParseDocumentXMLMatchesEncodingXML(t *testing.T) {
 }
 
 func BenchmarkParseDocumentXML(b *testing.B) {
-	raw := documentXMLFromOFD(b, "1000-pages.ofd")
+	raw := documentXMLFromOFD(b, "ofd-creator/1000-pages.ofd")
 	b.SetBytes(int64(len(raw)))
 	b.Run("encoding/xml", func(b *testing.B) {
 		b.ReportAllocs()

@@ -54,7 +54,7 @@ func benchReader(b *testing.B, name string) *Reader {
 
 // BenchmarkOpen 打开文档的成本。这是整条链路的固定开销，WASM 侧每次换文档都要付。
 func BenchmarkOpen(b *testing.B) {
-	for _, doc := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "1000-pages.ofd"} {
+	for _, doc := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "ofd-creator/1000-pages.ofd"} {
 		b.Run(doc, func(b *testing.B) {
 			data := benchFile(b, doc)
 			b.ReportAllocs()
@@ -140,7 +140,7 @@ func benchmarkOpenStages(b *testing.B, filename string) {
 // 首次调用建立布局并入缓存，后续命中缓存；两者都计入，因为真实使用里两者都有。
 // 要分开看就把 b.ResetTimer() 挪到预热之后。
 func BenchmarkText(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Text(i % 100); err != nil {
@@ -151,7 +151,7 @@ func BenchmarkText(b *testing.B) {
 
 // BenchmarkTextCold 每页都是首次：建文字布局的成本。改排版代码时看这项。
 func BenchmarkTextCold(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -164,7 +164,7 @@ func BenchmarkTextCold(b *testing.B) {
 
 // BenchmarkSearch 重复全文搜索：首轮建立索引，后续复用缓存索引。
 func BenchmarkSearch(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Search("文"); err != nil {
@@ -175,7 +175,7 @@ func BenchmarkSearch(b *testing.B) {
 
 // BenchmarkSearchNoMatch 重复执行无命中搜索，首轮建立索引、后续命中索引缓存。
 func BenchmarkSearchNoMatch(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Search("不存在的查询内容"); err != nil {
@@ -186,7 +186,7 @@ func BenchmarkSearchNoMatch(b *testing.B) {
 
 // BenchmarkSearchNoMatchCold 每次清空搜索索引缓存，测量完整无命中扫描的成本。
 func BenchmarkSearchNoMatchCold(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		r.search = newSearchCache(len(r.pages))
@@ -198,7 +198,7 @@ func BenchmarkSearchNoMatchCold(b *testing.B) {
 
 // BenchmarkSearchCold 每次清空搜索索引缓存，测量全页搜索与命中布局的冷路径。
 func BenchmarkSearchCold(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		r.search = newSearchCache(len(r.pages))
@@ -210,7 +210,7 @@ func BenchmarkSearchCold(b *testing.B) {
 
 // BenchmarkSearchCached 先预热搜索索引，再测连续搜索复用索引与命中 run 布局的成本。
 func BenchmarkSearchCached(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	if _, err := r.Search("文"); err != nil {
 		b.Fatal(err)
 	}
@@ -259,7 +259,7 @@ var benchmarkSearchSink int
 
 // BenchmarkRenderPage 渲染单页为 PNG。WASM 侧翻页的主成本。
 func BenchmarkRenderPage(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Format: RenderPNG, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -319,7 +319,7 @@ func BenchmarkRenderSVG(b *testing.B) {
 // PDF 不在 RenderFormat 里：它走 RenderPDF/RenderPDFTo，页面主体保留文字与
 // 矢量内容，与位图路径的成本结构完全不同，因此单列一项。
 func BenchmarkRenderPDF(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -331,7 +331,7 @@ func BenchmarkRenderPDF(b *testing.B) {
 
 // BenchmarkRenderPagesPDF 一次渲染多页，走与逐页不同的批量路径。
 func BenchmarkRenderPagesPDF(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -343,7 +343,7 @@ func BenchmarkRenderPagesPDF(b *testing.B) {
 
 // BenchmarkPages 列举全部页面元信息。WASM 初始化时走一次。
 func BenchmarkPages(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Pages(); err != nil {
@@ -367,7 +367,7 @@ func BenchmarkFonts(b *testing.B) {
 
 // BenchmarkOutline 读取大纲树。
 func BenchmarkOutline(b *testing.B) {
-	r := benchReader(b, "1000-pages.ofd")
+	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := r.Outline(); err != nil {

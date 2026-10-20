@@ -927,7 +927,7 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 }
 
 func TestTextAndSearchCachesStayBounded(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "1000-pages.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator", "1000-pages.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1261,7 +1261,7 @@ func TestFontUsageAllAggregatesFonts(t *testing.T) {
 }
 
 func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "1000-pages.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator", "1000-pages.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

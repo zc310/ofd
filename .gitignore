@@ -52,6 +52,7 @@ testdata/ofdrw
 testdata/other
 testdata/pdf
 testdata/xps
+testdata/ofd-creator
 testdata/apple
 testdata/google
 testdata/libofd
