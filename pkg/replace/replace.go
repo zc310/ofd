@@ -77,6 +77,8 @@ type Options struct {
 }
 
 // Files 读取 input（文件路径、字节数据或 io.Reader），执行操作后写入 w。
+// 同一条目可组合 OpDelete 与 OpAdd 以替换条目；该组合按删除后新增执行，
+// 不受 operations 中两项的排列顺序影响。
 func Files(input any, operations []Operation, w io.Writer, options Options) error {
 	if w == nil {
 		return errors.New("OFD 输出写入器为空")
@@ -157,6 +159,13 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 	result.signDirs = signDirs
 
 	seen := make(map[string]OperationKind)
+	deleteAddPairs := make(map[string]bool)
+	deleteRequested := make(map[string]bool)
+	for _, operation := range operations {
+		if operation.Kind == OpDelete {
+			deleteRequested[strings.TrimSpace(operation.Name)] = true
+		}
+	}
 	for _, operation := range operations {
 		name := strings.TrimSpace(operation.Name)
 		if err := core.ValidateEntryName(name); err != nil {
@@ -166,7 +175,14 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 			return nil, fmt.Errorf("不能直接修改签名条目 %s，请通过 Signatures 选项处理", name)
 		}
 		if previous, ok := seen[name]; ok {
-			return nil, fmt.Errorf("条目 %s 同时出现在 %s 和 %s 操作中", name, previous, operation.Kind)
+			deleteAddPair := (previous == OpDelete && operation.Kind == OpAdd) ||
+				(previous == OpAdd && operation.Kind == OpDelete)
+			if !deleteAddPair || deleteAddPairs[name] {
+				return nil, fmt.Errorf("条目 %s 同时出现在 %s 和 %s 操作中", name, previous, operation.Kind)
+			}
+			deleteAddPairs[name] = true
+		} else {
+			seen[name] = operation.Kind
 		}
 		switch operation.Kind {
 		case OpSet:
@@ -178,13 +194,14 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 			}
 			result.sets[name] = operation.Data
 		case OpAdd:
-			if existing[name] {
+			if existing[name] && !deleteRequested[name] {
 				return nil, fmt.Errorf("add 目标条目已存在: %s", name)
 			}
 			if err := options.checkXMLWellFormed(name, operation.Data); err != nil {
 				return nil, err
 			}
 			result.adds[name] = operation.Data
+			result.order = append(result.order, name)
 		case OpDelete:
 			if !existing[name] {
 				return nil, fmt.Errorf("delete 目标条目不存在: %s", name)
@@ -196,8 +213,6 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 		default:
 			return nil, fmt.Errorf("不支持的操作类型: %q", operation.Kind)
 		}
-		seen[name] = operation.Kind
-		result.order = append(result.order, name)
 	}
 	if len(result.deletes)+len(result.sets)+len(result.adds) == 0 {
 		return nil, errors.New("没有需要执行的条目操作")

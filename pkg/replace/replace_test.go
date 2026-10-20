@@ -105,14 +105,29 @@ func TestDeleteMissingEntryFails(t *testing.T) {
 }
 
 func TestDeleteThenAddSameName(t *testing.T) {
-	var buffer bytes.Buffer
-	err := Files(helloBytes(t), []Operation{
-		{Kind: OpDelete, Name: "Doc_0/Res/old.txt"},
-		{Kind: OpAdd, Name: "Doc_0/Res/old.txt", Data: []byte("new")},
-	}, &buffer, Options{})
-	if err != nil {
-		// 原文档没有该条目时 delete 会报错，此处直接用已存在条目验证冲突规则。
-		t.Skipf("fixture 不含目标条目: %v", err)
+	replacement := []byte(`<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016"><ofd:Replaced/></ofd:Document>`)
+	for _, operations := range [][]Operation{
+		{
+			{Kind: OpDelete, Name: "Doc_0/Document.xml"},
+			{Kind: OpAdd, Name: "Doc_0/Document.xml", Data: replacement},
+		},
+		{
+			{Kind: OpAdd, Name: "Doc_0/Document.xml", Data: replacement},
+			{Kind: OpDelete, Name: "Doc_0/Document.xml"},
+		},
+	} {
+		var buffer bytes.Buffer
+		if err := Files(helloBytes(t), operations, &buffer, Options{}); err != nil {
+			t.Fatalf("delete + add 同名条目失败: %v", err)
+		}
+		pkg := openPackage(t, buffer.Bytes())
+		data, err := pkg.Read("Doc_0/Document.xml")
+		if err != nil {
+			t.Fatalf("读取重建条目失败: %v", err)
+		}
+		if !bytes.Equal(data, replacement) {
+			t.Fatalf("delete + add 后内容不符: %s", data)
+		}
 	}
 }
 
