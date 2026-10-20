@@ -12,7 +12,7 @@ import (
 )
 
 func TestUseFallbackFontDeduplicatesFamiliesAndStillAppliesUpdates(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/helloworld.ofd")
+	data, err := os.ReadFile("../../testdata/ofd-creator/helloworld.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@ import (
 // 阅读器则按调用方传入的 indices 建映射——indices 可以乱序、也可以只包含部分页，
 // 因此必须单独覆盖，否则会出现「转换器导出有目录、阅读器导出没有」的不一致。
 func TestRenderPDFToWritesOutline(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/outlines.ofd")
+	data, err := os.ReadFile("../../testdata/ofd-creator/outlines.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestRenderPDFToWritesOutline(t *testing.T) {
 // TestRenderPDFToDropsOutlineEntriesOutsideSelection 守住只导出部分页时，指向
 // 未导出页的大纲条目被丢弃。
 func TestRenderPDFToDropsOutlineEntriesOutsideSelection(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/outlines.ofd")
+	data, err := os.ReadFile("../../testdata/ofd-creator/outlines.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestRenderPDFToDropsOutlineEntriesOutsideSelection(t *testing.T) {
 // TestRenderPDFToOutlineFollowsSelectionOrder 守住页序按导出序列而非文档顺序计算：
 // indices 乱序时目标页仍要落在正确的输出页上。
 func TestRenderPDFToOutlineFollowsSelectionOrder(t *testing.T) {
-	data, err := os.ReadFile("../../testdata/outlines.ofd")
+	data, err := os.ReadFile("../../testdata/ofd-creator/outlines.ofd")
 	if err != nil {
 		t.Fatal(err)
 	}

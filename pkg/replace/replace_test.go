@@ -18,7 +18,7 @@ func testdataPath(names ...string) string {
 
 func helloBytes(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile(testdataPath("hello.ofd"))
+	data, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

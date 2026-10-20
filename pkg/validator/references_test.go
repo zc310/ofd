@@ -18,13 +18,13 @@ import (
 func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 	fixtures := []string{
 		"../../testdata/ofdrw/999.ofd",
-		"../../testdata/actions.ofd",
-		"../../testdata/annotations.ofd",
-		"../../testdata/permissions.ofd",
-		"../../testdata/preferences.ofd",
-		"../../testdata/package-extras.ofd",
-		"../../testdata/clips.ofd",
-		"../../testdata/media-actions.ofd",
+		"../../testdata/ofd-creator/actions.ofd",
+		"../../testdata/ofd-creator/annotations.ofd",
+		"../../testdata/ofd-creator/permissions.ofd",
+		"../../testdata/ofd-creator/preferences.ofd",
+		"../../testdata/ofd-creator/package-extras.ofd",
+		"../../testdata/ofd-creator/clips.ofd",
+		"../../testdata/ofd-creator/media-actions.ofd",
 		"../../testdata/ofdrw/zsbk.ofd",
 	}
 	for _, fixture := range fixtures {
@@ -70,7 +70,7 @@ func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 // 也计入可达集合。它们不再往下解析，但必须被认作「有人引用」，否则会被
 // 6.2.1 c) 当作无人引用的条目删掉。
 func TestPackageReferencesKeepsReferencedFontsAndMedia(t *testing.T) {
-	const fixture = "../../testdata/image-effects.ofd"
+	const fixture = "../../testdata/ofd-creator/image-effects.ofd"
 	index, err := PackageReferences(context.Background(), fixture)
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
@@ -126,7 +126,7 @@ func TestDocVersionReferencesCoverFileListAndRoot(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := instance.ValidateReader(t.Context(), bytes.NewReader(data), "versions.ofd")
+			report := instance.ValidateReader(t.Context(), bytes.NewReader(data), "ofd-creator/versions.ofd")
 			if test.missing == "" {
 				if !index.Complete() || report.HasErrors() {
 					t.Fatalf("valid version references rejected: index=%+v issues=%+v", index, report.Issues)
@@ -267,7 +267,7 @@ func TestPackageReferencesRefusesToJudgeInvalidNamespace(t *testing.T) {
 // TestPackageReferencesCompleteForValidNamespace 确认命名空间正确的样例闭包完整，
 // 否则上一条的保护会过于宽松、让 6.2.1 c) 永远无法执行。
 func TestPackageReferencesCompleteForValidNamespace(t *testing.T) {
-	index, err := PackageReferences(context.Background(), "../../testdata/cover-thumbnail.ofd")
+	index, err := PackageReferences(context.Background(), "../../testdata/ofd-creator/cover-thumbnail.ofd")
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
 	}

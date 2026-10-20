@@ -8,7 +8,7 @@ import (
 )
 
 func TestMultiDocumentConvertersUseGlobalPages(t *testing.T) {
-	input := "../../testdata/multi_demo.ofd"
+	input := "../../testdata/ofd-creator/multi_demo.ofd"
 
 	var text bytes.Buffer
 	if err := Text(ctxTODO, input, &text); err != nil {

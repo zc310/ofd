@@ -819,7 +819,7 @@ func (p *Document) applyTextPathFill(ctx DrawContext, paint geom.Paint, object m
 	if !object.Stroke {
 		// 只有不描边的文字才清除描边。textWithBudget 已按 StrokeColor
 		// 设置好描边画笔与线宽，若在此清除，"填充+描边" 文字的描边会被
-		// 静默丢弃（text-directions.ofd 第 3 页 ID=51 即是此情况）。
+		// 静默丢弃（ofd-creator/text-directions.ofd 第 3 页 ID=51 即是此情况）。
 		ctx.ClearStroke()
 	}
 }

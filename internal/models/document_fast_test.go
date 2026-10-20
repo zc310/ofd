@@ -47,10 +47,10 @@ func documentXMLFromOFD(tb testing.TB, name string) []byte {
 // 命名空间填充，快速路径只填 Local，比较时单独排除。
 func TestParseDocumentXMLMatchesEncodingXML(t *testing.T) {
 	for _, name := range []string{
-		"helloworld.ofd",
+		"ofd-creator/helloworld.ofd",
 		"ofdrw/intro.ofd",
-		"preferences.ofd",
-		"annotations.ofd",
+		"ofd-creator/preferences.ofd",
+		"ofd-creator/annotations.ofd",
 		"multi_doc.ofd",
 		"ofd-creator/1000-pages.ofd",
 	} {

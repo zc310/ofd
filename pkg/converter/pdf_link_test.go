@@ -196,10 +196,10 @@ func stringValue(object types.Object) string {
 // TestPDFExportEmitsExternalLinksFromAnnotation 验证 OFD 页面注解上的外部链接会
 // 变成 PDF 里可点击的链接注解。
 //
-// 用例样本 testdata/links.ofd 的第 1 页有一个指向 GitHub 的 Link 注解。
+// 用例样本 testdata/ofd-creator/links.ofd 的第 1 页有一个指向 GitHub 的 Link 注解。
 func TestPDFExportEmitsExternalLinksFromAnnotation(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/links.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	annots := readPDFLinkAnnotations(t, output.Bytes())
@@ -222,13 +222,13 @@ func TestPDFExportEmitsExternalLinksFromAnnotation(t *testing.T) {
 
 // TestPDFExportLinkRectMatchesAnnotationBoundary 验证热区落在注解声明的位置上。
 //
-// 样本 testdata/links.ofd 第 1 页指向 GitHub 的 Link 注解其 Appearance Boundary
+// 样本 testdata/ofd-creator/links.ofd 第 1 页指向 GitHub 的 Link 注解其 Appearance Boundary
 // 是 "30 180 150 10"（距页顶，mm），A4 页面高 297mm。PDF 坐标原点在左下角且
 // y 向上，换算后应为 X=30、宽 150、上边 297-190、下边 297-180，最后按 72/25.4
 // 转成点。
 func TestPDFExportLinkRectMatchesAnnotationBoundary(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/links.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	readAllAnnots := readPDFLinkAnnotations(t, output.Bytes())
@@ -259,7 +259,7 @@ func TestPDFExportLinkRectMatchesAnnotationBoundary(t *testing.T) {
 // 也不该因为链接导出而让 PDF 结构变化。
 func TestPDFExportWithoutLinksHasNoAnnotations(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/helloworld.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	if annots := readPDFLinkAnnotations(t, output.Bytes()); len(annots) != 0 {
@@ -270,12 +270,12 @@ func TestPDFExportWithoutLinksHasNoAnnotations(t *testing.T) {
 // TestPDFExportEmitsInternalJumpsFromAnnotations 验证页面跳转变成 PDF 命名目标，
 // 且前后两个方向都成立。
 //
-// 样本 testdata/links.ofd 有两个跳转：第 1 页跳到第 2 页（向前），第 2 页跳回第 1
+// 样本 testdata/ofd-creator/links.ofd 有两个跳转：第 1 页跳到第 2 页（向前），第 2 页跳回第 1
 // 页（向后）。向后跳是必须覆盖的方向——canvas 的 AddAnchor 只能把锚点绑到当前
 // 页，实现改用 AddAnchorToPage 才能表达。
 func TestPDFExportEmitsInternalJumpsFromAnnotations(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/links.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/links.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	data := output.Bytes()
@@ -324,7 +324,7 @@ func TestPDFExportEmitsInternalJumpsFromAnnotations(t *testing.T) {
 func TestPDFExportDropsJumpsToPagesOutsidePageRange(t *testing.T) {
 	// 只导出第 2 页：第 2 页那条跳回第 1 页的链接目标已不在输出里。
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/links.ofd", &output,
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/links.ofd", &output,
 		Page(2)); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestPDFExportDropsJumpsToPagesOutsidePageRange(t *testing.T) {
 func TestPDFExportInternalJumpsMatchInParallelPath(t *testing.T) {
 	export := func(opts ...Option) (int, int) {
 		var output bytes.Buffer
-		if err := PDF(context.Background(), "../../testdata/links.ofd", &output, opts...); err != nil {
+		if err := PDF(context.Background(), "../../testdata/ofd-creator/links.ofd", &output, opts...); err != nil {
 			t.Fatalf("导出 PDF 失败: %v", err)
 		}
 		return len(readPDFLinkAnnotations(t, output.Bytes())), len(readPDFDestinations(t, output.Bytes()))
@@ -366,12 +366,12 @@ func TestPDFExportInternalJumpsMatchInParallelPath(t *testing.T) {
 // TestPDFExportWritesEveryDestinationType 验证五种跳转目标类型与缩放比例都精确写入
 // PDF 命名目标。
 //
-// 用例样本 testdata/link-destinations.ofd 的六个热区分别使用 Fit、FitH、FitV、
+// 用例样本 testdata/ofd-creator/link-destinations.ofd 的六个热区分别使用 Fit、FitH、FitV、
 // XYZ、XYZ 带缩放、FitR，坐标均不为零——坐标为零时相邻类型无法区分（坐标为零的
 // XYZ 会被判成 FitH），所以这里刻意用非零坐标。
 func TestPDFExportWritesEveryDestinationType(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/link-destinations.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/link-destinations.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	data := output.Bytes()
@@ -589,11 +589,11 @@ func decodePDFTextString(object types.Object) string {
 
 // TestPDFExportEmitsOutlineTree 验证文档大纲变成 PDF 大纲树。
 //
-// 用例样本 testdata/outlines.ofd 的五个条目覆盖顶层与两级嵌套、五种跳转目标类型、
+// 用例样本 testdata/ofd-creator/outlines.ofd 的五个条目覆盖顶层与两级嵌套、五种跳转目标类型、
 // 按书签名跳转，以及一个只有 URI 没有页面目标、应被丢弃的条目。
 func TestPDFExportEmitsOutlineTree(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/outlines.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	entries, ok := readPDFOutlines(t, output.Bytes())
@@ -634,7 +634,7 @@ func TestPDFExportEmitsOutlineTree(t *testing.T) {
 // TestPDFExportOutlineDestinations 验证每个大纲条目的目标页与目的地类型。
 func TestPDFExportOutlineDestinations(t *testing.T) {
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/outlines.ofd", &output); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	entries, ok := readPDFOutlines(t, output.Bytes())
@@ -683,7 +683,7 @@ func TestPDFExportOutlineDestinations(t *testing.T) {
 func TestPDFExportOutlineDropsEntriesWhosePageIsCropped(t *testing.T) {
 	// 只导出第 1 页：所有指向第 2、3 页的条目都应消失，只剩第 1 页的三个。
 	var output bytes.Buffer
-	if err := PDF(context.Background(), "../../testdata/outlines.ofd", &output, Page(1)); err != nil {
+	if err := PDF(context.Background(), "../../testdata/ofd-creator/outlines.ofd", &output, Page(1)); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	entries, ok := readPDFOutlines(t, output.Bytes())

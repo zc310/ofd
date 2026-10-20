@@ -472,7 +472,7 @@ func TestStartedRenderAlwaysClosesLoadingHint(t *testing.T) {
 	}
 
 	// 渲染成功路径：同样必须关闭提示。
-	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -822,7 +822,7 @@ func openTestDocuments(t *testing.T, name string, background color.Color) []*ren
 }
 
 func TestExportDocumentReusesMatchingBackground(t *testing.T) {
-	documents := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	documents := openTestDocuments(t, "ofd-creator/helloworld.ofd", color.Transparent)
 	doc := documents[0]
 	// 背景一致时必须原样复用，否则导出会多复制一套字体和图片缓存。
 	if got := exportDocument(doc, color.Transparent); got != doc {
@@ -843,7 +843,7 @@ func TestExportDocumentReusesMatchingBackground(t *testing.T) {
 
 func TestExportDocumentsToWriterProducesValidOutput(t *testing.T) {
 	// 整文档格式：PDF/TXT 无论多少页都是单个文件。
-	multi := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	multi := openTestDocuments(t, "ofd-creator/helloworld.ofd", color.Transparent)
 	for _, test := range []struct{ format, magic string }{
 		{"txt", ""},
 		{"pdf", "%PDF"},
@@ -863,7 +863,7 @@ func TestExportDocumentsToWriterProducesValidOutput(t *testing.T) {
 
 	// 单页图片：直接写文件，不打包。这条路径用 noCloseWriter 包住外部输出，
 	// 如果写入器被转换器关闭，输出会被截断。
-	single := openTestDocuments(t, "hello.ofd", color.Transparent)
+	single := openTestDocuments(t, "ofd-creator/hello.ofd", color.Transparent)
 	for _, test := range []struct{ format, magic string }{
 		{"png", "\x89PNG"},
 		{"jpg", "\xff\xd8\xff"},
@@ -905,7 +905,7 @@ func (c *countingWriteCloser) Close() error {
 func TestExportDocumentsToWriterDoesNotCloseCallerOutput(t *testing.T) {
 	// 外部输出的所有权属于调用方：exportToOutput 负责关闭，导出过程只能写入。
 	// 这条契约正是 noCloseWriter 存在的理由，回归时必须被挡住。
-	single := openTestDocuments(t, "hello.ofd", color.Transparent)
+	single := openTestDocuments(t, "ofd-creator/hello.ofd", color.Transparent)
 	for _, format := range []string{"png", "pdf", "txt"} {
 		output := &countingWriteCloser{Buffer: &bytes.Buffer{}}
 		if err := exportDocumentsToWriter(single, output, format, 72, color.Transparent); err != nil {
@@ -973,7 +973,7 @@ func TestExportDocumentsToWriterRejectsBadInput(t *testing.T) {
 		nil, "pdf", 72, color.White); err == nil {
 		t.Fatal("空输出应报错")
 	}
-	documents := openTestDocuments(t, "helloworld.ofd", color.Transparent)
+	documents := openTestDocuments(t, "ofd-creator/helloworld.ofd", color.Transparent)
 	if err := exportDocumentsToWriter(documents, &bytes.Buffer{}, "pdf", 72, color.White); err != nil {
 		t.Fatalf("白色背景导出失败: %v", err)
 	}
@@ -1024,7 +1024,7 @@ func newThumbnailTestViewer(t *testing.T, name string) *viewer {
 }
 
 func TestRequestThumbnailRenderCachesRealRender(t *testing.T) {
-	v := newThumbnailTestViewer(t, "helloworld.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/helloworld.ofd")
 	if v.totalPages < 2 {
 		t.Skipf("测试文档页数不足: %d", v.totalPages)
 	}
@@ -1064,7 +1064,7 @@ func TestRequestThumbnailRenderCachesRealRender(t *testing.T) {
 }
 
 func TestUpdateThumbnailCellUsesCacheAndRequestsOnMiss(t *testing.T) {
-	v := newThumbnailTestViewer(t, "helloworld.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/helloworld.ofd")
 	cell := newThumbnailCell(color.White)
 
 	// 缓存命中：直接用缓存图像，标签显示页码。
@@ -1174,18 +1174,18 @@ func TestExportFormatCodeAndBackground(t *testing.T) {
 func TestPublishDocumentReplacesStateAndSession(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.operation.Store(1)
-	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
 
-	model, err := buildDocumentModel(ofd, "helloworld.ofd", color.Transparent)
+	model, err := buildDocumentModel(ofd, "ofd-creator/helloworld.ofd", color.Transparent)
 	if err != nil {
 		t.Fatalf("构造文档模型失败: %v", err)
 	}
-	if err := v.publishDocument(model, path, "helloworld.ofd"); err != nil {
+	if err := v.publishDocument(model, path, "ofd-creator/helloworld.ofd"); err != nil {
 		t.Fatalf("发布文档失败: %v", err)
 	}
 	if v.ofd != ofd || v.session == nil {
@@ -1207,7 +1207,7 @@ func TestPublishDocumentReplacesStateAndSession(t *testing.T) {
 	if len(v.pageContent.Objects) != len(v.pageLayout.frames) {
 		t.Fatalf("容器对象数 = %d, want %d", len(v.pageContent.Objects), len(v.pageLayout.frames))
 	}
-	if v.currentPage != 0 || v.pageEntry.Text != "1" || v.fileName != "helloworld.ofd" {
+	if v.currentPage != 0 || v.pageEntry.Text != "1" || v.fileName != "ofd-creator/helloworld.ofd" {
 		t.Fatalf("发布后页码/文件名 = %d/%q/%q", v.currentPage, v.pageEntry.Text, v.fileName)
 	}
 	// 至少要绑定可见页面的显示帧。
@@ -1267,7 +1267,7 @@ func TestRunLoadClearsLoadingOnSuccess(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.loading = true
 	v.updateControls()
-	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
@@ -1275,7 +1275,7 @@ func TestRunLoadClearsLoadingOnSuccess(t *testing.T) {
 	t.Cleanup(func() { _ = ofd.Close() })
 
 	// runLoad 内部会重新打开文件，所以这里直接给路径而不是已解析的 OFD。
-	v.runLoad(v.operation.Load(), path, "helloworld.ofd", path)
+	v.runLoad(v.operation.Load(), path, "ofd-creator/helloworld.ofd", path)
 	// 加载状态必须复位：漏掉会让翻页、导出、关闭文档全部永久失效。
 	if v.loading {
 		t.Fatal("加载成功后 loading 必须复位，否则界面永久禁用")
@@ -1357,17 +1357,17 @@ func TestPublishDocumentRejectsEmptyInput(t *testing.T) {
 func TestPublishDocumentKeepsPreviousOnFailure(t *testing.T) {
 	v := newWindowOnlyViewer(t)
 	v.operation.Store(1)
-	path := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	path := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	ofd, err := parser.NewOFD(path)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
-	model, err := buildDocumentModel(ofd, "helloworld.ofd", color.Transparent)
+	model, err := buildDocumentModel(ofd, "ofd-creator/helloworld.ofd", color.Transparent)
 	if err != nil {
 		t.Fatalf("构造文档模型失败: %v", err)
 	}
-	if err := v.publishDocument(model, path, "helloworld.ofd"); err != nil {
+	if err := v.publishDocument(model, path, "ofd-creator/helloworld.ofd"); err != nil {
 		t.Fatalf("首次发布失败: %v", err)
 	}
 	firstSession := v.session
@@ -1516,7 +1516,7 @@ func waitFor(t *testing.T, what string, condition func() bool) {
 }
 
 func TestWriteExportWritesClosesAndReleasesSession(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	session := v.session
 	documents := append([]*render.Document(nil), v.documents...)
 
@@ -1542,7 +1542,7 @@ func TestWriteExportWritesClosesAndReleasesSession(t *testing.T) {
 }
 
 func TestWriteExportRejectsRetiredSession(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	// 文档已被替换或关闭：会话退休，必须拒绝导出而不是读到半关闭的文档。
 	v.session.retire()
 
@@ -1564,7 +1564,7 @@ func TestWriteExportRejectsRetiredSession(t *testing.T) {
 }
 
 func TestWriteExportPropagatesCreateFailure(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	failure := errors.New("无法创建输出")
 	err := writeExport(v.session, v.documents, func() (io.WriteCloser, error) {
 		return nil, failure
@@ -1579,7 +1579,7 @@ func TestWriteExportPropagatesCreateFailure(t *testing.T) {
 }
 
 func TestExportToPathReportsCreateFailure(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	// 目标目录不存在时创建失败，错误必须反馈而不是静默，也不能留下半个文件。
 	unwritable := filepath.Join(t.TempDir(), "missing-dir", "out.pdf")
 	if err := writeExport(v.session, v.documents, func() (io.WriteCloser, error) {
@@ -1593,7 +1593,7 @@ func TestExportToPathReportsCreateFailure(t *testing.T) {
 }
 
 func TestOpenOFDAcceptsSupportedInputs(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "hello.ofd")
+	path := filepath.Join("..", "..", "testdata", "ofd-creator/hello.ofd")
 	// 路径、字节、io.Reader 三种输入都应能打开。
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -1702,7 +1702,7 @@ func TestShowAppInfoUsesEmbeddedIcon(t *testing.T) {
 }
 
 func TestCloseRetiresSessionAndIsIdempotent(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	session := v.session
 
 	v.close()
@@ -1736,7 +1736,7 @@ func TestExitApplicationClosesWindowAndSession(t *testing.T) {
 }
 
 func TestCloseDocumentOrExitClosesBeforeExiting(t *testing.T) {
-	v := newThumbnailTestViewer(t, "hello.ofd")
+	v := newThumbnailTestViewer(t, "ofd-creator/hello.ofd")
 	prefillRenderCaches(v)
 	session := v.session
 
@@ -1865,7 +1865,7 @@ func TestPageSlotStatesKeepsEntryForEveryPage(t *testing.T) {
 }
 
 func TestRenderPageImageAllowsConcurrentPages(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		t.Skipf("测试文档不可用: %v", err)

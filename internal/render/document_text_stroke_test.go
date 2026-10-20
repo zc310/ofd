@@ -65,7 +65,7 @@ func renderCreatorPage(t *testing.T, txt creator.Text) image.Image {
 
 // 描边文字必须走路径绘制：Canvas 的原生文字接口在 canvas/text.go 的
 // renderLineTo 中用 DefaultStyle 只复制 Fill，而 canvas.FontFace 没有描边字段，
-// 因此 DrawText 会静默丢弃描边。text-directions.ofd 第 3 页 ID=51
+// 因此 DrawText 会静默丢弃描边。ofd-creator/text-directions.ofd 第 3 页 ID=51
 // （Fill=true + Stroke=true）曾只渲染出浅黄填充，红色描边完全丢失。
 func TestStrokedTextWithFillRendersStrokeColor(t *testing.T) {
 	fill := float64Ptr(0)

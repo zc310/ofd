@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewOFDAcceptsReader(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestNewOFDAcceptsReader(t *testing.T) {
 }
 
 func TestOFDOpenReaderDoesNotCloseReader(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestOFDOpenReaderReturnsReadError(t *testing.T) {
 }
 
 func TestOFDOpenFailurePreservesCurrentDocument(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestOFDOpenFailurePreservesCurrentDocument(t *testing.T) {
 }
 
 func TestOFDInputSizeLimitAppliesToAllInputKinds(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestOFDReaderStopsAfterInputLimitProbe(t *testing.T) {
 }
 
 func TestOFDReaderAcceptsMaxInt64InputLimit(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestOFDReaderAcceptsMaxInt64InputLimit(t *testing.T) {
 }
 
 func TestOFDMalformedPackagePreservesUsableCurrentDocument(t *testing.T) {
-	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	ofd, err := NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

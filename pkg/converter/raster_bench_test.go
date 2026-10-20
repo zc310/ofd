@@ -37,7 +37,7 @@ const dpiBench = 150.0
 
 func runRasterBench(b *testing.B, backend string) {
 	b.Helper()
-	doc := benchDoc(b, "helloworld.ofd")
+	doc := benchDoc(b, "ofd-creator/helloworld.ofd")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -59,7 +59,7 @@ func BenchmarkRasterDraw2D(b *testing.B)   { runRasterBench(b, "draw2d") }
 
 // TestRasterBackendTimingSummary 输出人类可读的平均耗时与输出体积。
 func TestRasterBackendTimingSummary(t *testing.T) {
-	files := []string{"helloworld.ofd", "ofdrw/intro.ofd"}
+	files := []string{"ofd-creator/helloworld.ofd", "ofdrw/intro.ofd"}
 	backends := []string{"canvas", "gg", "ftgg", "tinyskia", "draw2d"}
 	const dpi = 150.0
 	rounds := 8

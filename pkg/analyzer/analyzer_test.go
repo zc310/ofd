@@ -79,7 +79,7 @@ func TestSignatureValidationSurvivesAllReportFormats(t *testing.T) {
 }
 
 func TestAnalyzeHelloWorld(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestAnalyzeResolvesRelativeSignedValuePath(t *testing.T) {
 }
 
 func TestAnalyzeResourceFixtures(t *testing.T) {
-	drawParamReport, err := Analyze(fixturePath("drawparam.ofd"))
+	drawParamReport, err := Analyze(fixturePath("ofd-creator/drawparam.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestAnalyzeResourceFixtures(t *testing.T) {
 }
 
 func TestAnalyzeMultiDocumentAttachmentAndScope(t *testing.T) {
-	report, err := Analyze(fixturePath("multi_demo.ofd"))
+	report, err := Analyze(fixturePath("ofd-creator/multi_demo.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestAnalyzeMultiDocumentAttachmentAndScope(t *testing.T) {
 }
 
 func TestAnalyzeInputFormsAlwaysIncludesPackageSummary(t *testing.T) {
-	data, err := os.ReadFile(fixturePath("helloworld.ofd"))
+	data, err := os.ReadFile(fixturePath("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestAnalyzeInputFormsAlwaysIncludesPackageSummary(t *testing.T) {
 }
 
 func TestAnalyzePackageTree(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"), WithTree(true))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"), WithTree(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestAnalyzePackageTree(t *testing.T) {
 }
 
 func TestPackageTreeIsNotIncludedByDefault(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestPackageTreeIsNotIncludedByDefault(t *testing.T) {
 }
 
 func TestRenderJSONIsStableAndDoesNotEscapeUnicode(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestRenderJSONIsStableAndDoesNotEscapeUnicode(t *testing.T) {
 }
 
 func TestRenderJSONOmitsResourceSpecificFieldsForOtherKinds(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestRenderJSONOmitsResourceSpecificFieldsForOtherKinds(t *testing.T) {
 }
 
 func TestRenderTextAndMarkdown(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"), WithTree(true))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"), WithTree(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +518,7 @@ func TestRenderTextAndMarkdown(t *testing.T) {
 }
 
 func TestRenderPDF(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"), WithTree(true))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"), WithTree(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +539,7 @@ func TestRenderPDF(t *testing.T) {
 }
 
 func TestRenderXLSXCreatesValidWorkbook(t *testing.T) {
-	report, err := Analyze(fixturePath("helloworld.ofd"), WithTree(true))
+	report, err := Analyze(fixturePath("ofd-creator/helloworld.ofd"), WithTree(true))
 	if err != nil {
 		t.Fatal(err)
 	}

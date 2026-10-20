@@ -8,8 +8,8 @@
 命令行工具位于 `cmd/`，可用 `go run` 直接运行，例如：
 
 ```bash
-go run ./cmd/ofd-converter testdata/helloworld.ofd /tmp/helloworld.pdf
-go run ./cmd/ofd-validator --format text testdata/helloworld.ofd
+go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.pdf
+go run ./cmd/ofd-validator --format text testdata/ofd-creator/helloworld.ofd
 ```
 
 ## 构建与发布包

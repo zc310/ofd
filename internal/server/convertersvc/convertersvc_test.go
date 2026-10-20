@@ -24,7 +24,7 @@ import (
 // 解析失败这一步就断掉，根本走不到本包要测的逻辑。
 func ofdSample(t *testing.T) []byte {
 	t.Helper()
-	for _, name := range []string{"sample.ofd", "basic.ofd", "actions.ofd", "link.ofd"} {
+	for _, name := range []string{"sample.ofd", "basic.ofd", "ofd-creator/actions.ofd", "link.ofd"} {
 		path := filepath.Join("..", "..", "testdata", name)
 		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
 			return data

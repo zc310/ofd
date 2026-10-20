@@ -83,7 +83,7 @@ go run ./cmd/ofd-creator merge \
   --sign-seal seal.esl \
   -o /tmp/signed.ofd \
   --pages 1 \
-  testdata/hello.ofd
+  testdata/ofd-creator/hello.ofd
 ```
 
 `ofd-creator` 把 `seal.esl` 复制进 `Doc_0/Signatures/`，在 `Signature.xml` 中写入

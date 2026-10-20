@@ -380,7 +380,7 @@ func TestRenderableTextValueSkipsControlCharacters(t *testing.T) {
 	}
 }
 
-// 文字图元的 CTM 线性部分必须整体作用到字形轮廓上。text-directions.ofd 第 5 页
+// 文字图元的 CTM 线性部分必须整体作用到字形轮廓上。ofd-creator/text-directions.ofd 第 5 页
 // ID=96 使用 CTM="1 0 0.3 1 0 0"（水平倾斜）。OFD 对象空间 Y 轴向下，x'=x+0.3y
 // 表示越靠下越右移，即上端偏左、下端偏右；此前渲染器只用 CTM 变换文字原点再调用
 // 一次 Rotate，倾斜分量被静默丢弃，字形仍是直立的。之后改为套用线性部分时没有对
@@ -539,7 +539,7 @@ func glyphInkCentersMM(t *testing.T, img image.Image, fromXMM, widthMM float64, 
 
 // 波浪形文字依赖逐字 DeltaX/DeltaY 增量：OFD 语义下第 i 项增量是第 i+1 字
 // 相对第 i 字的位移，所以第 1 字落在 X/Y 上，之后每字累加一次增量。
-// text-directions.ofd 第 2 页 ID=40「波浪形文字效果演示」的说明写着
+// ofd-creator/text-directions.ofd 第 2 页 ID=40「波浪形文字效果演示」的说明写着
 // “通过 delta_y 正负交替，实现波浪形排列效果”，但示例 manifest 原本既没有
 // delta_x 也没有 delta_y，渲染结果是一行平直文字，看上去完全没有波浪。
 func TestTextDeltaYProducesWaveArrangement(t *testing.T) {

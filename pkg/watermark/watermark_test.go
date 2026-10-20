@@ -111,7 +111,7 @@ func sampleWatermark() Watermark {
 
 func TestAddWatermarkToCleanDocument(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Add(readTestdata(t, "hello.ofd"), Target{}, sampleWatermark(), &buffer, Options{})
+	err := Add(readTestdata(t, "ofd-creator/hello.ofd"), Target{}, sampleWatermark(), &buffer, Options{})
 	if err != nil {
 		t.Fatalf("Add 失败: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestAddWatermarkToCleanDocument(t *testing.T) {
 
 func TestAddWatermarkAutoIDAfterExisting(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Add(readTestdata(t, "annotations.ofd"), Target{}, Watermark{
+	err := Add(readTestdata(t, "ofd-creator/annotations.ofd"), Target{}, Watermark{
 		Creator:     "watermark-test",
 		LastModDate: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
 	}, &buffer, Options{})
@@ -203,7 +203,7 @@ func TestAddWatermarkAutoIDAfterExisting(t *testing.T) {
 }
 
 func TestAddExplicitIDAndConflict(t *testing.T) {
-	data := readTestdata(t, "annotations.ofd")
+	data := readTestdata(t, "ofd-creator/annotations.ofd")
 	var buffer bytes.Buffer
 	err := Add(data, Target{}, Watermark{ID: 200, Creator: "t"}, &buffer, Options{})
 	if err != nil {
@@ -230,7 +230,7 @@ func TestAddExplicitIDAndConflict(t *testing.T) {
 
 func TestReplaceWatermarkPreservesIDAndOtherAnnots(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Replace(readTestdata(t, "annotations.ofd"), Target{}, sampleWatermark(), &buffer, Options{SkipReadOnlyCheck: true})
+	err := Replace(readTestdata(t, "ofd-creator/annotations.ofd"), Target{}, sampleWatermark(), &buffer, Options{SkipReadOnlyCheck: true})
 	if err != nil {
 		t.Fatalf("Replace 失败: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestReplaceWatermarkPreservesIDAndOtherAnnots(t *testing.T) {
 
 func TestReplaceByMatchIDs(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Replace(readTestdata(t, "annotations.ofd"), Target{MatchIDs: []uint64{101}}, sampleWatermark(), &buffer, Options{SkipReadOnlyCheck: true})
+	err := Replace(readTestdata(t, "ofd-creator/annotations.ofd"), Target{MatchIDs: []uint64{101}}, sampleWatermark(), &buffer, Options{SkipReadOnlyCheck: true})
 	if err != nil {
 		t.Fatalf("按 ID 替换失败: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestReplaceByMatchIDs(t *testing.T) {
 	}
 
 	var miss bytes.Buffer
-	err = Replace(readTestdata(t, "annotations.ofd"), Target{MatchIDs: []uint64{999}}, sampleWatermark(), &miss, Options{})
+	err = Replace(readTestdata(t, "ofd-creator/annotations.ofd"), Target{MatchIDs: []uint64{999}}, sampleWatermark(), &miss, Options{})
 	if err == nil || !strings.Contains(err.Error(), "未找到匹配的水印") {
 		t.Fatalf("无匹配应报错, got %v", err)
 	}
@@ -280,7 +280,7 @@ func TestReplaceByMatchIDs(t *testing.T) {
 
 func TestRemoveWatermarkKeepsOtherAnnots(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Remove(readTestdata(t, "annotations.ofd"), Target{}, &buffer, Options{SkipReadOnlyCheck: true})
+	err := Remove(readTestdata(t, "ofd-creator/annotations.ofd"), Target{}, &buffer, Options{SkipReadOnlyCheck: true})
 	if err != nil {
 		t.Fatalf("Remove 失败: %v", err)
 	}
@@ -310,18 +310,18 @@ func TestRemoveWatermarkKeepsOtherAnnots(t *testing.T) {
 
 func TestRemoveReadOnlyBlocked(t *testing.T) {
 	var buffer bytes.Buffer
-	err := Remove(readTestdata(t, "annotations.ofd"), Target{}, &buffer, Options{})
+	err := Remove(readTestdata(t, "ofd-creator/annotations.ofd"), Target{}, &buffer, Options{})
 	if err == nil || !strings.Contains(err.Error(), "只读") {
 		t.Fatalf("只读水印应拒绝删除, got %v", err)
 	}
 	var skipped bytes.Buffer
-	if err := Remove(readTestdata(t, "annotations.ofd"), Target{}, &skipped, Options{SkipReadOnlyCheck: true}); err != nil {
+	if err := Remove(readTestdata(t, "ofd-creator/annotations.ofd"), Target{}, &skipped, Options{SkipReadOnlyCheck: true}); err != nil {
 		t.Fatalf("SkipReadOnlyCheck 应跳过只读检查: %v", err)
 	}
 }
 
 func TestAddRemoveRoundTripCleansUp(t *testing.T) {
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	var added bytes.Buffer
 	if err := Add(hello, Target{}, sampleWatermark(), &added, Options{}); err != nil {
 		t.Fatalf("Add 失败: %v", err)
@@ -347,7 +347,7 @@ func TestAddRemoveRoundTripCleansUp(t *testing.T) {
 }
 
 func TestPermissionsWatermarkFalseBlocks(t *testing.T) {
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	docData := documentWithWatermarkPermission(t, hello, false)
 
 	var blocked bytes.Buffer
@@ -411,7 +411,7 @@ func TestOfdPrefixPreserved(t *testing.T) {
 
 func TestBadAppearanceReturnsError(t *testing.T) {
 	// 外观片段无法解析时必须报错，而不是静默写成空 <Appearance/>。
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	var buffer bytes.Buffer
 	err := Add(hello, Target{}, Watermark{
 		Creator:    "watermark-test",
@@ -423,7 +423,7 @@ func TestBadAppearanceReturnsError(t *testing.T) {
 }
 
 func TestInputTypes(t *testing.T) {
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 
 	var fromBytes bytes.Buffer
 	if err := Add(hello, Target{}, sampleWatermark(), &fromBytes, Options{}); err != nil {
@@ -745,7 +745,7 @@ func TestAddImageWatermark(t *testing.T) {
 		Opacity: &opacity,
 	}
 	var buffer bytes.Buffer
-	err := Add(readTestdata(t, "hello.ofd"), Target{}, Watermark{
+	err := Add(readTestdata(t, "ofd-creator/hello.ofd"), Target{}, Watermark{
 		Creator:     "watermark-test",
 		LastModDate: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
 		Boundary:    &creator.Box{Width: 210, Height: 297},
@@ -860,7 +860,7 @@ func TestPrefixDerivedFromDocumentWhenNoIndex(t *testing.T) {
 }
 
 func TestRemoveImageWatermarkReclaimsMedia(t *testing.T) {
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	var added bytes.Buffer
 	if err := Add(hello, Target{}, Watermark{
 		Creator: "watermark-test",
@@ -893,7 +893,7 @@ func TestRemoveImageWatermarkReclaimsMedia(t *testing.T) {
 
 func TestReplaceImageWatermarkReclaimsOldMedia(t *testing.T) {
 	// 用新图片替换图片水印时，旧图片资源应被回收，只保留新图片。
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	var added bytes.Buffer
 	if err := Add(hello, Target{}, Watermark{
 		Creator: "watermark-test",
@@ -970,7 +970,7 @@ func TestRemoveImageWatermarkKeepsSharedMedia(t *testing.T) {
 func TestAnnotIDAvoidsMediaID(t *testing.T) {
 	// 图片资源 ID 与注解共享空间：先加水印图片再在同一文档追加文本水印时，
 	// 新注解 ID 不得与既有媒体资源 ID 冲突。
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 	var withImage bytes.Buffer
 	if err := Add(hello, Target{}, Watermark{
 		Creator: "watermark-test",
@@ -1017,7 +1017,7 @@ func testPNG(t *testing.T, width, height int) []byte {
 }
 
 func TestErrors(t *testing.T) {
-	hello := readTestdata(t, "hello.ofd")
+	hello := readTestdata(t, "ofd-creator/hello.ofd")
 
 	if err := Add(hello, Target{}, sampleWatermark(), nil, Options{}); err == nil {
 		t.Fatal("nil 写入器应报错")

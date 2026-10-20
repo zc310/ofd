@@ -51,7 +51,7 @@ func TestPDFExportFinalizesDocumentWhenCancelledMidway(t *testing.T) {
 			if parallel {
 				opts = append(opts, PDFParallel(true))
 			}
-			err := PDF(ctx, "../../testdata/links.ofd", writer, opts...)
+			err := PDF(ctx, "../../testdata/ofd-creator/links.ofd", writer, opts...)
 			if err == nil {
 				t.Fatal("被取消的转换应当报错")
 			}

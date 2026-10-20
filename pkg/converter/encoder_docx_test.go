@@ -65,7 +65,7 @@ func docxParagraphTexts(t *testing.T, document string) []string {
 
 func TestDOCXProducesValidPackage(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/ofd-creator/helloworld.ofd", &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	parts := docxParts(t, output.Bytes())
@@ -91,7 +91,7 @@ func TestDOCXProducesValidPackage(t *testing.T) {
 
 func TestDOCXPreservesFontNameAndSize(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/ofd-creator/helloworld.ofd", &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	document := docxParts(t, output.Bytes())["word/document.xml"]
@@ -153,8 +153,8 @@ func TestDOCXTablesToggle(t *testing.T) {
 // TestDOCXEmbedsImages 校验栅格图片被内嵌成 word/media 部件并与关系表对上，
 // 以及 WithDOCXImages(false) 能整体关掉内嵌。
 func TestDOCXEmbedsImages(t *testing.T) {
-	// image-effects.ofd 第 1 页有 3 张 PNG 图片。
-	const source = "../../testdata/image-effects.ofd"
+	// ofd-creator/image-effects.ofd 第 1 页有 3 张 PNG 图片。
+	const source = "../../testdata/ofd-creator/image-effects.ofd"
 	var output bytes.Buffer
 	if err := converter.DOCX(context.Background(), source, &output); err != nil {
 		t.Fatalf("转换失败: %v", err)
@@ -262,7 +262,7 @@ func TestDOCXDropsAnnotationWatermarkByDefault(t *testing.T) {
 
 func TestDOCXPageSelection(t *testing.T) {
 	var output bytes.Buffer
-	if err := converter.DOCX(context.Background(), "../../testdata/helloworld.ofd", &output, converter.Page(1)); err != nil {
+	if err := converter.DOCX(context.Background(), "../../testdata/ofd-creator/helloworld.ofd", &output, converter.Page(1)); err != nil {
 		t.Fatalf("转换失败: %v", err)
 	}
 	// 只选一页时不应输出分页符，否则末尾会多出一个空段落。

@@ -217,7 +217,7 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 ```bash
 go build -o /tmp/ofd-signer-demo ./cmd/ofd-signer-demo
 go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
-  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/hello.ofd
+  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/ofd-creator/hello.ofd
 ```
 
 多页文档可以按 OFDRW 样例使用 `Clip` 将同一枚印章切成条带，贴到每页右边缘：

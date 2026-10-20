@@ -22,7 +22,7 @@ import (
 func TestExportWritesCreatorManifest(t *testing.T) {
 	assetRoot := t.TempDir()
 	var output bytes.Buffer
-	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	if err := WriteManifest(input, &output, Options{AssetRoot: assetRoot, AssetPrefix: "assets"}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestExportRejectsTOMLBeforeWritingAssets(t *testing.T) {
 }
 
 func TestExportWritesJSONAndYAMLManifests(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			var output bytes.Buffer
@@ -98,7 +98,7 @@ func TestExportWritesJSONAndYAMLManifests(t *testing.T) {
 }
 
 func TestExportJSONIndentOption(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "helloworld.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	for _, indent := range []bool{false, true} {
 		t.Run(fmt.Sprintf("indent-%t", indent), func(t *testing.T) {
 			var output bytes.Buffer
@@ -116,7 +116,7 @@ func TestExportJSONIndentOption(t *testing.T) {
 }
 
 func TestExportAllWritesJSONAndYAMLIndexes(t *testing.T) {
-	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd")
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "bundle")
@@ -154,7 +154,7 @@ func TestExportAllWritesJSONAndYAMLIndexes(t *testing.T) {
 
 func TestExportRejectsMultipleDocumentBodies(t *testing.T) {
 	var output bytes.Buffer
-	err := WriteManifest(filepath.Join("..", "..", "testdata", "multi_demo.ofd"), &output, Options{AssetRoot: t.TempDir()})
+	err := WriteManifest(filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd"), &output, Options{AssetRoot: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "多个文档体") {
 		t.Fatalf("Export error = %v, want multiple-document error", err)
 	}
@@ -162,7 +162,7 @@ func TestExportRejectsMultipleDocumentBodies(t *testing.T) {
 
 func TestExportDocumentSelectsDocumentBody(t *testing.T) {
 	var output bytes.Buffer
-	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd")
 	if err := WriteDocumentManifest(input, 1, &output, Options{AssetRoot: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestExportDocumentSelectsDocumentBody(t *testing.T) {
 
 func TestExportDocumentRejectsInvalidIndex(t *testing.T) {
 	var output bytes.Buffer
-	err := WriteDocumentManifest(filepath.Join("..", "..", "testdata", "multi_demo.ofd"), 99, &output, Options{AssetRoot: t.TempDir()})
+	err := WriteDocumentManifest(filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd"), 99, &output, Options{AssetRoot: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "索引超出范围") {
 		t.Fatalf("ExportDocument error = %v, want index error", err)
 	}
@@ -192,7 +192,7 @@ func TestExportDocumentRejectsInvalidIndex(t *testing.T) {
 
 func TestExportAllWritesIndependentManifests(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "bundle")
-	input := filepath.Join("..", "..", "testdata", "multi_demo.ofd")
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd")
 	if err := WriteBundle(input, root, Options{Format: "yaml"}); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestExportAllWritesIndependentManifests(t *testing.T) {
 
 func TestExportAllRejectsExistingOutputDirectory(t *testing.T) {
 	root := t.TempDir()
-	err := WriteBundle(filepath.Join("..", "..", "testdata", "multi_demo.ofd"), root, Options{Format: "yaml"})
+	err := WriteBundle(filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd"), root, Options{Format: "yaml"})
 	if err == nil || !strings.Contains(err.Error(), "已存在") {
 		t.Fatalf("WriteBundle error = %v, want existing-directory error", err)
 	}
@@ -371,7 +371,7 @@ func TestExportPreservesGradientColors(t *testing.T) {
 }
 
 func TestExportPreservesGouraudLaGouraudAndPatternColors(t *testing.T) {
-	// Pattern 图案填充示例已从 shading.ofd 移到 pattern-reflect.ofd 第 2 页，
+	// Pattern 图案填充示例已从 ofd-creator/shading.ofd 移到 ofd-creator/pattern-reflect.ofd 第 2 页，
 	// 两个 fixture 分别断言各自的着色数量。
 	cases := []struct {
 		file      string
@@ -379,8 +379,8 @@ func TestExportPreservesGouraudLaGouraudAndPatternColors(t *testing.T) {
 		laGouraud int
 		pattern   int
 	}{
-		{file: "shading.ofd", gouraud: 3, laGouraud: 3},
-		{file: "pattern-reflect.ofd", pattern: 8},
+		{file: "ofd-creator/shading.ofd", gouraud: 3, laGouraud: 3},
+		{file: "ofd-creator/pattern-reflect.ofd", pattern: 8},
 	}
 	for _, tc := range cases {
 		input := filepath.Join("..", "..", "testdata", tc.file)

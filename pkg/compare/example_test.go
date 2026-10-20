@@ -8,7 +8,7 @@ import (
 )
 
 func ExampleCompareFiles() {
-	file := "../../testdata/helloworld.ofd"
+	file := "../../testdata/ofd-creator/helloworld.ofd"
 	report, err := compare.CompareFiles(context.Background(), []string{file, file}, compare.Options{})
 	if err != nil {
 		panic(err)
@@ -31,7 +31,7 @@ func ExampleParsePageMap() {
 }
 
 func ExamplePageMatchInfo() {
-	file := "../../testdata/helloworld.ofd"
+	file := "../../testdata/ofd-creator/helloworld.ofd"
 	report, err := compare.CompareFiles(context.Background(), []string{file, file}, compare.Options{})
 	if err != nil {
 		panic(err)

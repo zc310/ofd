@@ -19,7 +19,7 @@ import (
 
 func testOFDPath(t *testing.T) string {
 	t.Helper()
-	for _, name := range []string{"helloworld.ofd", "sample.ofd", "ofdrw/intro.ofd"} {
+	for _, name := range []string{"ofd-creator/helloworld.ofd", "sample.ofd", "ofdrw/intro.ofd"} {
 		path := filepath.Join("..", "..", "testdata", name)
 		if _, err := os.Stat(path); err == nil {
 			return path
@@ -35,7 +35,7 @@ func testOFDPath(t *testing.T) string {
 // 一个能被渲染的页。用真实样本顺带覆盖了"解析 + 遍历"这条真实路径。
 func testMultiPageDocument(t *testing.T, minPages int) ([]*render.Document, int) {
 	t.Helper()
-	candidates := []string{"multi_demo.ofd", "actions.ofd", "link.ofd", "helloworld.ofd"}
+	candidates := []string{"ofd-creator/multi_demo.ofd", "ofd-creator/actions.ofd", "link.ofd", "ofd-creator/helloworld.ofd"}
 	for _, name := range candidates {
 		path := filepath.Join("..", "..", "testdata", name)
 		if _, err := os.Stat(path); err != nil {

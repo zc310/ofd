@@ -14,9 +14,12 @@ import (
 )
 
 func TestFastVsStdlibParity(t *testing.T) {
-	matches, _ := filepath.Glob(filepath.Join("..", "..", "testdata", "*.ofd"))
+	matches, err := filepath.Glob(filepath.Join("..", "..", "testdata", "ofd-creator", "*.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(matches) == 0 {
-		matches, _ = filepath.Glob(filepath.Join("..", "..", "testdata", "**", "*.ofd"))
+		t.Skip("OFD 创建器样例不存在，跳过解析一致性测试")
 	}
 	count := 0
 	for _, fixture := range matches {

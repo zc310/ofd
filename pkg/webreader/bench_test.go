@@ -23,7 +23,7 @@ import (
 //	go test ./pkg/webreader -bench 'Open|Text' -benchmem
 //
 // 不要用 -benchtime 1x 读数字：首轮包含字体栈与渲染子系统的初始化，实测
-// Open/helloworld.ofd 在 1x 下是 50ms / 70MB 分配，5x 下降到 0.1ms / 79KB
+// Open/ofd-creator/helloworld.ofd 在 1x 下是 50ms / 70MB 分配，5x 下降到 0.1ms / 79KB
 // 分配——两个数量级的差是初始化成本，不是这一项慢。1x 只适合确认"能跑"。
 //
 // 文档规模刻意选了三个量级：小文档（helloworld，约一页）、中（ano，真实排版
@@ -54,7 +54,7 @@ func benchReader(b *testing.B, name string) *Reader {
 
 // BenchmarkOpen 打开文档的成本。这是整条链路的固定开销，WASM 侧每次换文档都要付。
 func BenchmarkOpen(b *testing.B) {
-	for _, doc := range []string{"helloworld.ofd", "ofdrw/ano.ofd", "ofd-creator/1000-pages.ofd"} {
+	for _, doc := range []string{"ofd-creator/helloworld.ofd", "ofdrw/ano.ofd", "ofd-creator/1000-pages.ofd"} {
 		b.Run(doc, func(b *testing.B) {
 			data := benchFile(b, doc)
 			b.ReportAllocs()

@@ -44,7 +44,7 @@ func ExampleMarkdown() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Markdown(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1))
+	err := converter.Markdown(ctx, "../../testdata/ofd-creator/helloworld.ofd", &output, converter.Page(1))
 	// 标题使用 OFD 文档的 DocInfo.Title，没有标题时回退为 “OFD 文档”。
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("# Hello World")))
 	// Output: true
@@ -98,7 +98,7 @@ func ExampleSVG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/ofd-creator/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -115,7 +115,7 @@ func ExampleHTML() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
+	err := converter.HTML(ctx, "../../testdata/ofd-creator/helloworld.ofd", &output, converter.Page(1), converter.DPI(72))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/png;base64,")))
 	// Output: true
 }
@@ -126,7 +126,7 @@ func ExampleDOCX() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.DOCX(ctx, "../../testdata/helloworld.ofd", &output, converter.Page(1))
+	err := converter.DOCX(ctx, "../../testdata/ofd-creator/helloworld.ofd", &output, converter.Page(1))
 	fmt.Println(err == nil && docxHasPart(output.Bytes(), "word/document.xml"))
 	// Output: true
 }
@@ -152,7 +152,7 @@ func ExampleHTMLSVG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.HTMLSVG(), converter.Page(1))
+	err := converter.HTML(ctx, "../../testdata/ofd-creator/helloworld.ofd", &output, converter.HTMLSVG(), converter.Page(1))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("<svg")))
 	// Output: true
 }
@@ -163,7 +163,7 @@ func ExampleHTMLJPG() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.HTML(ctx, "../../testdata/helloworld.ofd", &output, converter.HTMLJPG(), converter.Page(1))
+	err := converter.HTML(ctx, "../../testdata/ofd-creator/helloworld.ofd", &output, converter.HTMLJPG(), converter.Page(1))
 	fmt.Println(err == nil && bytes.Contains(output.Bytes(), []byte("data:image/jpeg;base64,")))
 	// Output: true
 }
@@ -174,7 +174,7 @@ func ExampleEPS() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/ofd-creator/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -191,7 +191,7 @@ func ExampleTeX() {
 	ctx := context.Background()
 
 	var output bytes.Buffer
-	err := converter.Image(ctx, "../../testdata/helloworld.ofd",
+	err := converter.Image(ctx, "../../testdata/ofd-creator/helloworld.ofd",
 		converter.Writer(func(int) (io.WriteCloser, error) {
 			return exampleBufferWriteCloser{Buffer: &output}, nil
 		}),
@@ -209,7 +209,7 @@ func ExampleConvert() {
 
 	var output bytes.Buffer
 	// from 为空时按文件扩展名自动识别 OFD 输入。
-	err := converter.Convert(ctx, "", "pdf", "../../testdata/helloworld.ofd", &output)
+	err := converter.Convert(ctx, "", "pdf", "../../testdata/ofd-creator/helloworld.ofd", &output)
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("%PDF-")))
 	// Output: true
 }

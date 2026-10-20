@@ -10,7 +10,7 @@ import (
 
 func benchmarkInputs(b *testing.B) []string {
 	b.Helper()
-	return []string{testdataPath("multi_demo.ofd"), testdataPath("helloworld.ofd")}
+	return []string{testdataPath("ofd-creator/multi_demo.ofd"), testdataPath("ofd-creator/helloworld.ofd")}
 }
 
 func benchmarkOptions() Options {
@@ -73,7 +73,7 @@ func BenchmarkSourcesReaderAt(b *testing.B) {
 }
 
 func BenchmarkPages(b *testing.B) {
-	paths := []string{testdataPath("project-showcase.ofd"), testdataPath("pattern-fill.ofd")}
+	paths := []string{testdataPath("ofd-creator/project-showcase.ofd"), testdataPath("ofd-creator/pattern-fill.ofd")}
 	sources := make([]Source, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -93,7 +93,7 @@ func BenchmarkPages(b *testing.B) {
 }
 
 func BenchmarkPagesConcurrent(b *testing.B) {
-	paths := []string{testdataPath("project-showcase.ofd"), testdataPath("pattern-fill.ofd")}
+	paths := []string{testdataPath("ofd-creator/project-showcase.ofd"), testdataPath("ofd-creator/pattern-fill.ofd")}
 	sources := make([]Source, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)

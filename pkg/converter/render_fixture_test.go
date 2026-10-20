@@ -32,14 +32,14 @@ func TestRender_PDF_helloworld(t *testing.T) {
 	f, err := os.Create(filepath.Join(tmpDir, "helloworld.pdf"))
 	assert.Nil(t, err)
 	defer f.Close()
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/helloworld.ofd", f))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/helloworld.ofd", f))
 }
 
 // 文字渐变必须先栅格化：否则 PDF 后端会把自定义 Gradient 写成只有
 // /ColorSpace 的空着色图案，MuPDF/PyMuPDF 会报 "cannot load shading function"。
 func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/shading.ofd", &output))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/shading.ofd", &output))
 	re := regexp.MustCompile(`(?s)/PatternType\s*2\s*/Shading\s*<<(.*?)>>`)
 	for _, match := range re.FindAllStringSubmatch(output.String(), -1) {
 		shading := match[1]
@@ -47,7 +47,7 @@ func TestRender_PDF_gradientTextHasNoEmptyShading(t *testing.T) {
 			t.Fatalf("空的着色图案 /Shading: %q", shading)
 		}
 	}
-	// 文字渐变的 Extend 位要写成 PDF 的 /Extend 数组（shading.ofd 的渐变文字为 Extend=0）。
+	// 文字渐变的 Extend 位要写成 PDF 的 /Extend 数组（ofd-creator/shading.ofd 的渐变文字为 Extend=0）。
 	if !strings.Contains(output.String(), "/Extend[false false]") {
 		t.Fatal("文字渐变缺少 /Extend[false false]")
 	}
@@ -118,7 +118,7 @@ func TestRender_PDF_ano(t *testing.T) {
 }
 func TestRender_PDF_huawei(t *testing.T) {
 	var output bytes.Buffer
-	assert.Nil(t, PDF(ctxTODO, "../../testdata/huawei.ofd", &output))
+	assert.Nil(t, PDF(ctxTODO, "../../testdata/ofd-creator/huawei.ofd", &output))
 	assert.Contains(t, output.String(), "/ShadingType 2")
 }
 func TestRender_PDF_intro_page7(t *testing.T) {

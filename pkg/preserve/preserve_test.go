@@ -123,9 +123,9 @@ func TestPreserveRemovesArchiveForbiddenNodes(t *testing.T) {
 		absent string
 		clause string
 	}{
-		{"permissions.ofd", "ofd:Permissions", "GB/T 42133 6.2.2 a)"},
-		{"preferences.ofd", "ofd:VPreferences", "GB/T 42133 6.2.2 b)"},
-		{"package-extras.ofd", "ofd:Extensions", "GB/T 42133 6.2.2 e)"},
+		{"ofd-creator/permissions.ofd", "ofd:Permissions", "GB/T 42133 6.2.2 a)"},
+		{"ofd-creator/preferences.ofd", "ofd:VPreferences", "GB/T 42133 6.2.2 b)"},
+		{"ofd-creator/package-extras.ofd", "ofd:Extensions", "GB/T 42133 6.2.2 e)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.file, func(t *testing.T) {
@@ -159,8 +159,8 @@ func TestPreserveRemovesArchiveForbiddenNodes(t *testing.T) {
 // TestPreserveKeepsNamespaceAndDocument 确认转换只动目标节点，不损伤命名空间、
 // 页面列表与公共数据——丢命名空间会让输出直接不是合法 OFD。
 func TestPreserveKeepsNamespaceAndDocument(t *testing.T) {
-	before := string(docXML(t, fixtureOf+"permissions.ofd"))
-	_, after := appliedChanges(t, fixtureOf+"permissions.ofd", Options{DocType: "OFD-A"})
+	before := string(docXML(t, fixtureOf+"ofd-creator/permissions.ofd"))
+	_, after := appliedChanges(t, fixtureOf+"ofd-creator/permissions.ofd", Options{DocType: "OFD-A"})
 	got := string(after)
 	for _, want := range []string{
 		`xmlns:ofd="` + spec.Namespace + `"`,
@@ -180,7 +180,7 @@ func TestPreserveKeepsNamespaceAndDocument(t *testing.T) {
 // TestPreserveSkipsBaseDocType 确认基础 profile 不施加档案转换。未声明
 // DocType 的文件若被擅自改写，就是无依据地损坏用户数据。
 func TestPreserveSkipsBaseDocType(t *testing.T) {
-	result, err := Plan(fixtureOf+"permissions.ofd", Options{DocType: "OFD"})
+	result, err := Plan(fixtureOf+"ofd-creator/permissions.ofd", Options{DocType: "OFD"})
 	if err != nil {
 		t.Fatalf("Plan 失败: %v", err)
 	}
@@ -195,12 +195,12 @@ func TestPreserveSkipsBaseDocType(t *testing.T) {
 // TestPreservePlanMatchesApply 确认 Plan 与 Apply 给出同一份改动清单。
 // --dry-run 展示的计划若与实际执行的不一致，用户就无法据此判断影响。
 func TestPreservePlanMatchesApply(t *testing.T) {
-	planned, err := Plan(fixtureOf+"permissions.ofd", Options{DocType: "OFD-A"})
+	planned, err := Plan(fixtureOf+"ofd-creator/permissions.ofd", Options{DocType: "OFD-A"})
 	if err != nil {
 		t.Fatalf("Plan 失败: %v", err)
 	}
 	var out bytes.Buffer
-	applied, err := Apply(fixtureOf+"permissions.ofd", &out, Options{DocType: "OFD-A"})
+	applied, err := Apply(fixtureOf+"ofd-creator/permissions.ofd", &out, Options{DocType: "OFD-A"})
 	if err != nil {
 		t.Fatalf("Apply 失败: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestPreservePlanMatchesApply(t *testing.T) {
 
 // TestPreserveDetectsDocType 确认未显式指定时按文件声明判定。
 func TestPreserveDetectsDocType(t *testing.T) {
-	result, err := Plan(fixtureOf+"permissions.ofd", Options{})
+	result, err := Plan(fixtureOf+"ofd-creator/permissions.ofd", Options{})
 	if err != nil {
 		t.Fatalf("Plan 失败: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestPreserveDetectsDocType(t *testing.T) {
 // 这是整套转换的地基：写出的文件若过不了严格校验，归档毫无意义。
 func TestPreserveOutputPassesStrictValidation(t *testing.T) {
 	var out bytes.Buffer
-	if _, err := Apply(fixtureOf+"permissions.ofd", &out, Options{
+	if _, err := Apply(fixtureOf+"ofd-creator/permissions.ofd", &out, Options{
 		DocType:  "OFD-A",
 		Validate: true,
 	}); err != nil {
@@ -260,7 +260,7 @@ func TestPreserveOutputPassesStrictValidation(t *testing.T) {
 
 // TestPreserveRejectsUnknownDocType 确认未知取值被拒绝，而不是静默按基础处理。
 func TestPreserveRejectsUnknownDocType(t *testing.T) {
-	if _, err := Plan(fixtureOf+"permissions.ofd", Options{DocType: "OFD-X"}); err == nil {
+	if _, err := Plan(fixtureOf+"ofd-creator/permissions.ofd", Options{DocType: "OFD-X"}); err == nil {
 		t.Error("未知 DocType 应报错")
 	}
 }

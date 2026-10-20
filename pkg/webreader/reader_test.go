@@ -24,7 +24,7 @@ import (
 )
 
 func TestVersionsListsPagesFromFileList(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "versions.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/versions.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestVersionPagesMatchActualPaths(t *testing.T) {
 }
 
 func TestDocumentClickActionsMatchPageText(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "actions.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/actions.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestRenderPageConcurrent(t *testing.T) {
 }
 
 func TestTextAndSearchConcurrent(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestTextAndSearchConcurrent(t *testing.T) {
 }
 
 func TestPageDocumentReusesBackgroundCache(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestPageDocumentReusesBackgroundCache(t *testing.T) {
 }
 
 func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +468,7 @@ func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
 }
 
 func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestRenderPages(t *testing.T) {
 }
 
 func TestRenderPDF(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +567,7 @@ func TestRenderPDF(t *testing.T) {
 }
 
 func TestRenderPDFToPreservesSelectableText(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestRenderPDFToPreservesSelectableText(t *testing.T) {
 }
 
 func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
 }
 
 func TestRenderPageValidation(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestRenderPageValidation(t *testing.T) {
 }
 
 func TestRenderPagePNGCompressionLevelsAreLossless(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +677,7 @@ func TestRenderPagePNGCompressionLevelsAreLossless(t *testing.T) {
 }
 
 func TestFontsClosedReaderReturnsError(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +760,7 @@ func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
 		t.Fatalf("embedded fonts = %d, err = %v", len(fonts), err)
 	}
 
-	reader, err := Open(readData("helloworld.ofd"))
+	reader, err := Open(readData("ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +802,7 @@ func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
 }
 
 func TestTextAndSearch(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -862,7 +862,7 @@ func TestTextAndSearch(t *testing.T) {
 }
 
 func TestTextReturnsIndependentSnapshots(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -890,7 +890,7 @@ func TestTextReturnsIndependentSnapshots(t *testing.T) {
 }
 
 func TestSearchCachesNormalizedPageText(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,7 +1098,7 @@ func TestFontListIncludesDeclaredFonts(t *testing.T) {
 }
 
 func TestFontUsageReportsPagesUsingFont(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1151,7 +1151,7 @@ func TestFontUsageReportsPagesUsingFont(t *testing.T) {
 }
 
 func TestFontUsageIsScopedPerDocument(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "multi_demo.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1212,7 +1212,7 @@ func TestFontUsageIsScopedPerDocument(t *testing.T) {
 }
 
 func TestFontUsageAllAggregatesFonts(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "helloworld.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1311,7 +1311,7 @@ func TestAttachmentsExposeMetadataAndData(t *testing.T) {
 		file string
 		name string
 	}{
-		{"multi_demo.ofd", "original_invoice.xml"},
+		{"ofd-creator/multi_demo.ofd", "original_invoice.xml"},
 		{"ofdrw/999.ofd", "original_invoice"},
 	}
 	for _, tc := range cases {
@@ -1485,7 +1485,7 @@ func TestAnnotationsExposeMetadata(t *testing.T) {
 }
 
 func TestAnnotationsExposeLinkTarget(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "links.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/links.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1610,7 +1610,7 @@ func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
 }
 
 func TestPageLinksExposeGraphicUnitActions(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "project-showcase.ofd"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/project-showcase.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

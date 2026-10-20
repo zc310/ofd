@@ -64,3 +64,5 @@ testdata/suwell
 testdata/tencent
 AGENTS.md
 .golangci.yml
+*.ofd
+*.pdf

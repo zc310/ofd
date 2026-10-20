@@ -57,7 +57,7 @@ ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
 从源码运行时，在仓库根目录将程序名替换为 `go run ./cmd/工具名`，例如：
 
 ```bash
-go run ./cmd/ofd-converter testdata/helloworld.ofd /tmp/helloworld.pdf
+go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.pdf
 ```
 
 `ofd-converter` 默认使用 150 DPI 和白色背景，`--page` 使用多文档体合并后的全局页码。

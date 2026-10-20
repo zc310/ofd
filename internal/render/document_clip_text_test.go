@@ -60,11 +60,11 @@ func clipsInkBox(t *testing.T, img *image.RGBA, po *models.PathObject, dpi float
 	return box, count
 }
 
-// clipsTextClipObject 打开 clips.ofd 并渲染第 1 页，返回指定 ID 的裁剪图元、
+// clipsTextClipObject 打开 ofd-creator/clips.ofd 并渲染第 1 页，返回指定 ID 的裁剪图元、
 // 其文字裁剪区、位图与页面高度。
 func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *models.CtText, *image.RGBA, float64) {
 	t.Helper()
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "clips.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/clips.ofd"))
 	if err != nil {
 		t.Skipf("样例不可用: %v", err)
 	}
@@ -111,7 +111,7 @@ func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *mod
 // TestPathClipAreaWithTextUsesGlyphOutlines 回归：Clip/Clip/Area 允许用 Path 或
 // Text 定义裁剪区域，此前 buildClipRegion 只处理 Path，文字区域被静默跳过；
 // 区域全部落空时 buildPathClip 返回 nil，裁剪整体失效，被裁图元被完整不裁剪地
-// 画出（clips.ofd 第 1 页红色矩形的墨迹占比为 100%）。修复后矩形按字形轮廓填充。
+// 画出（ofd-creator/clips.ofd 第 1 页红色矩形的墨迹占比为 100%）。修复后矩形按字形轮廓填充。
 func TestPathClipAreaWithTextUsesGlyphOutlines(t *testing.T) {
 	po, text, img, _ := clipsTextClipObject(t, 8)
 	if text == nil {
@@ -188,7 +188,7 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer UnregisterFallbackFont(t.Name())
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "clips.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/clips.ofd"))
 	if err != nil {
 		t.Skipf("样例不可用: %v", err)
 	}

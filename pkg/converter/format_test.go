@@ -12,7 +12,7 @@ import (
 	"github.com/hhrutter/tiff"
 )
 
-const formatFixture = "../../testdata/helloworld.ofd"
+const formatFixture = "../../testdata/ofd-creator/helloworld.ofd"
 
 func TestConvertAutoDetectsOFDPaths(t *testing.T) {
 	data, err := os.ReadFile(formatFixture)
@@ -160,7 +160,7 @@ func TestEncodeDispatchesByFormatName(t *testing.T) {
 
 func TestEncodeTIFFWritesMultipageDocument(t *testing.T) {
 	var output bytes.Buffer
-	if err := Encode(ctxTODO, "tiff", "../../testdata/multi_demo.ofd", &output, DPI(72)); err != nil {
+	if err := Encode(ctxTODO, "tiff", "../../testdata/ofd-creator/multi_demo.ofd", &output, DPI(72)); err != nil {
 		t.Fatal(err)
 	}
 	config, err := tiff.DecodeConfig(bytes.NewReader(output.Bytes()))

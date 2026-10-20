@@ -67,7 +67,7 @@ func TestFixedWidthFallbackClassificationIgnoresFirstCachedAlias(t *testing.T) {
 }
 
 func TestFixedWidthFallbackHonorsCurrentResourceDeclaration(t *testing.T) {
-	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "helloworld.ofd"))
+	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

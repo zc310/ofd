@@ -56,8 +56,8 @@ func readEntry(t *testing.T, pkg *core.Package, name string) string {
 
 func TestMergeRenamesDocumentDirectories(t *testing.T) {
 	data := mergeToBytes(t, []string{
-		testdataPath("hello.ofd"),
-		testdataPath("helloworld.ofd"),
+		testdataPath("ofd-creator/hello.ofd"),
+		testdataPath("ofd-creator/helloworld.ofd"),
 	}, Options{})
 
 	pkg := openMerged(t, data)
@@ -74,10 +74,10 @@ func TestMergeRenamesDocumentDirectories(t *testing.T) {
 }
 
 func TestMergeRegeneratesDuplicateDocID(t *testing.T) {
-	// hello.ofd 与 helloworld.ofd 的 DocID 都是 helloworld。
+	// ofd-creator/hello.ofd 与 ofd-creator/helloworld.ofd 的 DocID 都是 helloworld。
 	data := mergeToBytes(t, []string{
-		testdataPath("hello.ofd"),
-		testdataPath("helloworld.ofd"),
+		testdataPath("ofd-creator/hello.ofd"),
+		testdataPath("ofd-creator/helloworld.ofd"),
 	}, Options{})
 
 	root := readEntry(t, openMerged(t, data), "OFD.xml")
@@ -153,8 +153,8 @@ func TestMergeKeepsRelativeSignaturePaths(t *testing.T) {
 
 func TestMergedDocumentsPassStrictValidation(t *testing.T) {
 	data := mergeToBytes(t, []string{
-		testdataPath("hello.ofd"),
-		testdataPath("helloworld.ofd"),
+		testdataPath("ofd-creator/hello.ofd"),
+		testdataPath("ofd-creator/helloworld.ofd"),
 	}, Options{})
 
 	instance, err := validator.New()
@@ -170,7 +170,7 @@ func TestMergedDocumentsPassStrictValidation(t *testing.T) {
 }
 
 func TestMergeDeterministic(t *testing.T) {
-	inputs := []string{testdataPath("hello.ofd"), testdataPath("helloworld.ofd")}
+	inputs := []string{testdataPath("ofd-creator/hello.ofd"), testdataPath("ofd-creator/helloworld.ofd")}
 	first := mergeToBytes(t, inputs, Options{Deterministic: true})
 	second := mergeToBytes(t, inputs, Options{Deterministic: true})
 	if !bytes.Equal(first, second) {
@@ -179,7 +179,7 @@ func TestMergeDeterministic(t *testing.T) {
 }
 
 func TestBytesMatchesFiles(t *testing.T) {
-	paths := []string{testdataPath("hello.ofd"), testdataPath("helloworld.ofd")}
+	paths := []string{testdataPath("ofd-creator/hello.ofd"), testdataPath("ofd-creator/helloworld.ofd")}
 	documents := make([][]byte, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -206,7 +206,7 @@ func TestBytesRejectsEmptyDocument(t *testing.T) {
 }
 
 func TestSourcesWithReaderAt(t *testing.T) {
-	paths := []string{testdataPath("hello.ofd"), testdataPath("helloworld.ofd")}
+	paths := []string{testdataPath("ofd-creator/hello.ofd"), testdataPath("ofd-creator/helloworld.ofd")}
 	documents := make([][]byte, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -231,7 +231,7 @@ func TestSourcesWithReaderAt(t *testing.T) {
 }
 
 func TestSourcesValidatesInputs(t *testing.T) {
-	hello, err := os.ReadFile(testdataPath("hello.ofd"))
+	hello, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestSourcesValidatesInputs(t *testing.T) {
 }
 
 func TestMarshal(t *testing.T) {
-	data, err := Marshal([]string{testdataPath("hello.ofd"), testdataPath("helloworld.ofd")}, Options{})
+	data, err := Marshal([]string{testdataPath("ofd-creator/hello.ofd"), testdataPath("ofd-creator/helloworld.ofd")}, Options{})
 	if err != nil {
 		t.Fatalf("Marshal 失败: %v", err)
 	}
@@ -444,11 +444,11 @@ func TestOrphanModes(t *testing.T) {
 }
 
 func TestMergeSmokeOverTestdata(t *testing.T) {
-	paths, err := filepath.Glob(filepath.Join("..", "..", "testdata", "*.ofd"))
+	paths, err := filepath.Glob(filepath.Join("..", "..", "testdata", "ofd-creator", "*.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	hello := testdataPath("hello.ofd")
+	hello := testdataPath("ofd-creator/hello.ofd")
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -474,7 +474,7 @@ func TestMergeSmokeOverTestdata(t *testing.T) {
 }
 
 func TestMergeEnforcesLimits(t *testing.T) {
-	input := []string{testdataPath("hello.ofd")}
+	input := []string{testdataPath("ofd-creator/hello.ofd")}
 	cases := []struct {
 		name   string
 		limits Limits
@@ -495,13 +495,13 @@ func TestMergeEnforcesLimits(t *testing.T) {
 
 func TestMergeRejectsNegativeLimits(t *testing.T) {
 	var buffer bytes.Buffer
-	if err := Files([]string{testdataPath("hello.ofd")}, &buffer, Options{Limits: Limits{MaxEntryBytes: -1}}); err == nil {
+	if err := Files([]string{testdataPath("ofd-creator/hello.ofd")}, &buffer, Options{Limits: Limits{MaxEntryBytes: -1}}); err == nil {
 		t.Fatalf("负数限制应返回错误")
 	}
 }
 
 func TestPagesMergesDocuments(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}, {Path: testdataPath("helloworld.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}, {Path: testdataPath("ofd-creator/helloworld.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -520,7 +520,7 @@ func TestPagesMergesDocuments(t *testing.T) {
 }
 
 func TestPagesMergesSameFontName(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}, {Path: testdataPath("hello.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}, {Path: testdataPath("ofd-creator/hello.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -537,7 +537,7 @@ func TestPagesMergesSameFontName(t *testing.T) {
 }
 
 func TestPagesMergesComplexDocuments(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("project-showcase.ofd")}, {Path: testdataPath("pattern-fill.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/project-showcase.ofd")}, {Path: testdataPath("ofd-creator/pattern-fill.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -554,7 +554,7 @@ func TestPagesMergesComplexDocuments(t *testing.T) {
 }
 
 func TestPagesFlattensMultiDocumentBody(t *testing.T) {
-	multi := mergeToBytes(t, []string{testdataPath("hello.ofd"), testdataPath("helloworld.ofd")}, Options{})
+	multi := mergeToBytes(t, []string{testdataPath("ofd-creator/hello.ofd"), testdataPath("ofd-creator/helloworld.ofd")}, Options{})
 	var buffer bytes.Buffer
 	if err := Pages([]Source{{Name: "multi", Data: multi}}, &buffer, PageOptions{}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -592,7 +592,7 @@ func TestParsePages(t *testing.T) {
 }
 
 func TestPagesSelectsAndReorders(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}, {Path: testdataPath("helloworld.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}, {Path: testdataPath("ofd-creator/helloworld.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{Pages: []int{2, 1}}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -617,7 +617,7 @@ func TestPagesSelectsAndReorders(t *testing.T) {
 }
 
 func TestPagesRejectsOutOfRange(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{Pages: []int{2}}); err == nil {
 		t.Fatalf("越界页码应返回错误")
@@ -787,7 +787,7 @@ func equalInts(got, want []int) bool {
 
 func TestPagesSelectsBySource(t *testing.T) {
 	// 只取第 2 个源的第 1 页。
-	inputs := []Source{{Path: testdataPath("hello.ofd")}, {Path: testdataPath("helloworld.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}, {Path: testdataPath("ofd-creator/helloworld.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{Selectors: []PageSelector{{Source: 2, Pages: []int{1}}}}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -803,7 +803,7 @@ func TestPagesSelectsBySource(t *testing.T) {
 }
 
 func TestPagesRejectsInvalidSource(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{Selectors: []PageSelector{{Source: 2}}}); err == nil {
 		t.Fatalf("来源越界应返回错误")
@@ -811,7 +811,7 @@ func TestPagesRejectsInvalidSource(t *testing.T) {
 }
 
 func TestPagesOverridesMetadata(t *testing.T) {
-	inputs := []Source{{Path: testdataPath("hello.ofd")}}
+	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}}
 	var buffer bytes.Buffer
 	if err := Pages(inputs, &buffer, PageOptions{ID: "custom-id", Title: "自定义标题", Author: "作者"}); err != nil {
 		t.Fatalf("Pages 失败: %v", err)
@@ -962,7 +962,7 @@ func TestPagesDoesNotDuplicateAnnotations(t *testing.T) {
 }
 
 func TestPagesConcurrentMatchesSerial(t *testing.T) {
-	paths := []string{testdataPath("project-showcase.ofd"), testdataPath("pattern-fill.ofd"), testdataPath("hello.ofd")}
+	paths := []string{testdataPath("ofd-creator/project-showcase.ofd"), testdataPath("ofd-creator/pattern-fill.ofd"), testdataPath("ofd-creator/hello.ofd")}
 	sources := make([]Source, 0, len(paths))
 	for _, path := range paths {
 		sources = append(sources, Source{Path: path})
@@ -981,7 +981,7 @@ func TestPagesConcurrentMatchesSerial(t *testing.T) {
 
 func TestPagesRejectsNegativeConcurrency(t *testing.T) {
 	var buffer bytes.Buffer
-	if err := Pages([]Source{{Path: testdataPath("hello.ofd")}}, &buffer, PageOptions{Concurrency: -1}); err == nil {
+	if err := Pages([]Source{{Path: testdataPath("ofd-creator/hello.ofd")}}, &buffer, PageOptions{Concurrency: -1}); err == nil {
 		t.Fatalf("负数并发数应返回错误")
 	}
 }

@@ -33,7 +33,7 @@ func TestSignAddsSignature(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSignSHA1CheckMethodVerifiesDigest(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSignDeterministic(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestSignWritesStampAnnot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestSignWritesSealBaseLoc(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestSignStampNilWhenNotRequested(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestSignReferenceSelection(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("helper 进程命令依赖类 Unix 路径")
 	}
-	input, err := os.ReadFile(testdataPath("hello.ofd"))
+	input, err := os.ReadFile(testdataPath("ofd-creator/hello.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}

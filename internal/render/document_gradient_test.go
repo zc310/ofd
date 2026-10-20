@@ -305,7 +305,7 @@ func TestOFDLinearGradientExtend(t *testing.T) {
 // Direct 轴向渐变的 Extend 必须按位生效（GB/T 33190 表 29）：
 // 0 两侧都不延伸（轴外透明）、1 只向起点延长、2 只向终点延长、3 两侧都延长。
 // 之前 Direct 一律走原生 *geom.LinearGradient，轴外全部夹取端点色，
-// 等价于 Extend=3，导致 axial-extend.ofd 的四个矩形看起来完全一样。
+// 等价于 Extend=3，导致 ofd-creator/axial-extend.ofd 的四个矩形看起来完全一样。
 func TestOFDLinearGradientDirectExtendBits(t *testing.T) {
 	startColor := color.RGBA{R: 255, A: 255}
 	endColor := color.RGBA{B: 255, A: 255}
@@ -953,7 +953,7 @@ func TestEccentricRadialFocusBacksideStaysTransparent(t *testing.T) {
 
 // 实色填充 + 需要栅格化的渐变描边：描边必须画在填充之上。此前先画描边图片、
 // 后画实色填充，填充会盖住描边内侧；再叠加 Extend=0 的轴外透明，左右描边会
-// 整条消失（shading.ofd 第 5 页“纯色+渐变描边”）。
+// 整条消失（ofd-creator/shading.ofd 第 5 页“纯色+渐变描边”）。
 func TestSolidFillWithRasterStrokeDrawsStrokeOnTop(t *testing.T) {
 	object := models.PathObject{CtPath: models.CtPath{
 		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 0, Y: 0, Width: 30, Height: 20}, LineWidth: 2},
@@ -1022,7 +1022,7 @@ func basicMeshColor(value color.RGBA) models.CTColor {
 }
 
 // 文字填充的轴向渐变坐标与路径图元一致：位于图元 Boundary 内的毫米坐标系，
-// 由绘制流程按 TextCode 定位平移。text-directions.ofd 第 3 页的"轴向渐变 A→B"
+// 由绘制流程按 TextCode 定位平移。ofd-creator/text-directions.ofd 第 3 页的"轴向渐变 A→B"
 // 曾把 StartPoint/EndPoint 写成 0..1 单位坐标，导致渐变只有 1mm 长，文字只采样到
 // 末端色，看起来完全没有渐变。
 func TestTextAxialGradientUsesBoundaryMillimeterCoordinates(t *testing.T) {

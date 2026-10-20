@@ -88,7 +88,7 @@ SES_Header ::= SEQUENCE {
 
 ```bash
 go run ./cmd/ofd-creator merge -o /tmp/signed.ofd --pages 1 \
-  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/hello.ofd
+  --sign-cmd /tmp/ofd-signer-demo --sign-stamp --verify-signatures testdata/ofd-creator/hello.ofd
 ```
 
 ## 用法
@@ -102,7 +102,7 @@ go run ./cmd/ofd-creator merge \
   --sign-provider-version 0.1.0 \
   --sign-company "OFD Signer Demo" \
   --verify-signatures \
-  testdata/hello.ofd
+  testdata/ofd-creator/hello.ofd
 ```
 
 预期输出：
