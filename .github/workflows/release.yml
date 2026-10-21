@@ -47,7 +47,7 @@ jobs:
       - name: Build Linux viewer and command-line tools
         run: make package-desktop VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-amd64
           path: /tmp/ofd/dist/*.zip
@@ -81,7 +81,7 @@ jobs:
           make package-arm64 VERSION="${RELEASE_TAG#v}"
           make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-arm64
           path: /tmp/ofd/dist/*.zip
@@ -106,7 +106,7 @@ jobs:
           make package-darwin-arm64 VERSION="${RELEASE_TAG#v}"
           make package-darwin-amd64 VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: darwin-tools
           path: /tmp/ofd/dist/*.zip
@@ -143,7 +143,7 @@ jobs:
       - name: Build Windows amd64 viewer and command-line tools
         run: make package-windows-amd64 VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-amd64
           path: /tmp/ofd/dist/*.zip
@@ -176,7 +176,7 @@ jobs:
       - name: Build Windows arm64 viewer and command-line tools
         run: make package-windows-arm64 VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-arm64
           path: /tmp/ofd/dist/*.zip
@@ -207,7 +207,7 @@ jobs:
       - name: Build macOS viewer
         run: make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: darwin-viewer-${{ matrix.arch }}
           path: /tmp/ofd/dist/*.zip
@@ -227,7 +227,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -251,7 +251,7 @@ jobs:
       - name: Build Android APK and ZIP
         run: make package-viewer-android-zip VERSION="${RELEASE_TAG#v}" VIEWER_VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-viewer
           path: |
@@ -289,7 +289,7 @@ jobs:
           make test-wasm-web
           make package-wasm-web VERSION="${RELEASE_TAG#v}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wasm-web
           path: /tmp/ofd/dist/ofd-wasm-web.zip
@@ -315,7 +315,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.release_tag || github.ref }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
