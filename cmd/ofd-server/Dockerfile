@@ -146,9 +146,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 # 覆盖即可。用 docker-config.json 而不是 example-config.json：后者带着
 # REPLACE_WITH_... 的假凭据、示例域名和 /var、/tmp 绝对路径，装进镜像
 # 容易被当成"改个密码就能上线"。
-RUN mkdir -p /etc/ofd-server \
-    && cp /src/cmd/ofd-server/docker-config.json /etc/ofd-server/config.json \
-    && chown -R ofd:ofd /etc/ofd-server
+# /src exists only in the builder stage; copy this runtime config from the build context.
+COPY --chown=ofd:ofd cmd/ofd-server/docker-config.json /etc/ofd-server/config.json
 
 ENTRYPOINT ["/usr/local/bin/ofd-server"]
 CMD ["-c", "/etc/ofd-server/config.json"]
