@@ -195,6 +195,7 @@ ofd-creator merge -o merged.ofd --signatures rewrite --verify-signatures input1.
 `drop` 只移除清单、签名描述、签名值和印章文件，共用目录中的普通文件会保留。
 `preserve` 会核对搬运后的引用；签名保护了 `OFD.xml` 且合并将改变其字节时，返回错误，需选择 `rewrite` 后重签或 `drop`。
 合并生成的主入口以及重写的签名、资源 XML 的 OFD 元素统一使用 `ofd:` 前缀。
+ZIP 级合并读取的主入口和签名 XML，以及模型级合并重映射的资源 XML，使用 UTF-8 XML 1.0；DOCTYPE、自定义实体及非 UTF-8 编码会返回读取错误。
 
 ### 外部命令重签名
 

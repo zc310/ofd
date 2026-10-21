@@ -1,7 +1,8 @@
-// Package ofdxml 提供轻量的 OFD XML 顺序写入器。
+// Package ofdxml 提供 OFD XML 顺序写入及读取、修改、写回支持。
 package ofdxml
 
 import (
+	"errors"
 	"io"
 	"strconv"
 	"sync"
@@ -17,21 +18,24 @@ const prefix = "ofd"
 
 var replacement = []byte("\uFFFD")
 
+var errXMLCharacter = errors.New("XML 包含非法 UTF-8 或 XML 字符")
+
 // Writer 将 OFD XML 顺序写入内存或分块写入目标，自动添加 ofd 前缀和根命名空间声明。
 // OFD 元素名必须是合法的 XML 本地名，扩展元素可通过 StartQualified 写入。
 // 属性必须在内容之前写入，内容之后的属性调用会被忽略。
 // 一个 Writer 不能被多个 goroutine 同时使用。
 type Writer struct {
-	buf   []byte
-	stack []elementName
-	open  bool
-	dst   io.Writer
-	err   error
+	buf       []byte
+	stack     []elementName
+	open      bool
+	dst       io.Writer
+	err       error
+	strictXML bool
 }
 
 type elementName struct {
-	name string
-	ofd  bool
+	name  string
+	space string
 }
 
 // New 从复用池获取 OFD XML 写入器。用完后应调用 Put 归还缓冲区；
@@ -70,6 +74,7 @@ func Put(w *Writer) {
 	}
 	w.dst = nil
 	w.err = nil
+	w.strictXML = false
 	writerPool.Put(w)
 }
 
@@ -91,6 +96,7 @@ func (w *Writer) Done() []byte {
 func (w *Writer) Reset() {
 	w.dst = nil
 	w.err = nil
+	w.strictXML = false
 	w.buf = w.buf[:0]
 	clear(w.stack)
 	w.stack = w.stack[:0]
@@ -164,22 +170,31 @@ func (w *Writer) StartQualified(name string) {
 }
 
 func (w *Writer) startElement(name string, ofd bool) {
+	space := ""
+	if ofd {
+		space = prefix
+	}
+	w.startElementName(space, name, ofd)
+}
+
+// startElementName 直接写入分开的前缀与本地名，避免树写回时拼接临时字符串。
+func (w *Writer) startElementName(space, name string, declareOFD bool) {
 	if w.err != nil {
 		return
 	}
 	w.closeStart()
 	w.buf = append(w.buf, '<')
-	if ofd {
-		w.buf = append(w.buf, prefix...)
+	if space != "" {
+		w.appendString(space)
 		w.buf = append(w.buf, ':')
 	}
 	w.appendString(name)
-	if len(w.stack) == 0 && ofd {
+	if len(w.stack) == 0 && declareOFD {
 		w.buf = append(w.buf, ` xmlns:ofd="`...)
 		w.buf = append(w.buf, Namespace...)
 		w.buf = append(w.buf, '"')
 	}
-	w.stack = append(w.stack, elementName{name: name, ofd: ofd})
+	w.stack = append(w.stack, elementName{name: name, space: space})
 	w.open = true
 }
 
@@ -287,8 +302,16 @@ func (w *Writer) AttrIntList(name string, values []int) {
 }
 
 func (w *Writer) startAttr(name string) {
+	w.startAttrName("", name)
+}
+
+func (w *Writer) startAttrName(space, name string) {
 	w.maybeFlush()
 	w.buf = append(w.buf, ' ')
+	if space != "" {
+		w.appendString(space)
+		w.buf = append(w.buf, ':')
+	}
 	w.appendString(name)
 	w.buf = append(w.buf, '=', '"')
 }
@@ -460,8 +483,8 @@ func (w *Writer) EndElement() {
 		return
 	}
 	w.buf = append(w.buf, '<', '/')
-	if name.ofd {
-		w.buf = append(w.buf, prefix...)
+	if name.space != "" {
+		w.appendString(name.space)
 		w.buf = append(w.buf, ':')
 	}
 	w.appendString(name.name)
@@ -536,14 +559,14 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 				w.maybeFlush()
 				r, size := utf8.DecodeRuneInString(value[index:])
 				if r == utf8.RuneError && size == 1 {
-					w.buf = append(w.buf, replacement...)
+					w.invalidXMLCharacter()
 					index++
 					continue
 				}
 				if isXMLChar(r) {
 					w.appendString(value[index : index+size])
 				} else {
-					w.buf = append(w.buf, replacement...)
+					w.invalidXMLCharacter()
 				}
 				index += size
 			}
@@ -551,7 +574,7 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 		}
 		r, size := utf8.DecodeRuneInString(value[index:])
 		if r == utf8.RuneError && size == 1 {
-			w.buf = append(w.buf, replacement...)
+			w.invalidXMLCharacter()
 			index++
 			continue
 		}
@@ -592,10 +615,18 @@ func (w *Writer) appendEscaped(value string, textMode bool) {
 			if isXMLChar(r) {
 				w.buf = append(w.buf, value[index:index+size]...)
 			} else {
-				w.buf = append(w.buf, replacement...)
+				w.invalidXMLCharacter()
 			}
 		}
 		index += size
+	}
+}
+
+func (w *Writer) invalidXMLCharacter() {
+	if w.strictXML {
+		w.err = errXMLCharacter
+	} else {
+		w.buf = append(w.buf, replacement...)
 	}
 }
 

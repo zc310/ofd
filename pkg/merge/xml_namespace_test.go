@@ -77,3 +77,70 @@ func TestClonedBodyPreservesExtensionNamespaces(t *testing.T) {
 		t.Fatalf("混合文本丢失: %s", xml)
 	}
 }
+
+func TestMergeXMLSerializationPreservesForeignOFDBindings(t *testing.T) {
+	const input = `<q:OFD xmlns:q="http://www.ofdspec.org/2016" xmlns:ofd="urn:foreign" ofd:flag="root"><q:DocBody ofd:flag="body"><q:DocRoot>Doc_0/Document.xml</q:DocRoot><ofd:Metadata ofd:flag="extension"/></q:DocBody></q:OFD>`
+	for _, operation := range []string{"marshal", "clone"} {
+		t.Run(operation, func(t *testing.T) {
+			doc := etree.NewDocument()
+			if err := doc.ReadFromString(input); err != nil {
+				t.Fatal(err)
+			}
+			var data []byte
+			var err error
+			if operation == "marshal" {
+				data, err = marshalOFDXML(doc)
+			} else {
+				body := cloneElement(doc.Root().FindElement("./DocBody"))
+				data, err = buildRootXML([]*etree.Element{body}, rootAttrs{})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed := etree.NewDocument()
+			if err := parsed.ReadFromBytes(data); err != nil {
+				t.Fatal(err)
+			}
+			body := parsed.Root().FindElement("./DocBody")
+			if body == nil || body.NamespaceURI() != spec.Namespace {
+				t.Fatalf("OFD 文档体命名空间改变: %s", data)
+			}
+			flag := body.SelectAttr("ofd:flag")
+			metadata := body.FindElement("./Metadata")
+			if flag == nil || flag.NamespaceURI() != "urn:foreign" || metadata == nil || metadata.NamespaceURI() != "urn:foreign" {
+				t.Fatalf("外部 ofd 绑定被预处理覆盖: %s", data)
+			}
+			if operation == "marshal" {
+				flag := parsed.Root().SelectAttr("ofd:flag")
+				if flag == nil || flag.NamespaceURI() != "urn:foreign" {
+					t.Fatalf("根元素属性的命名空间改变: %s", data)
+				}
+			}
+		})
+	}
+}
+
+func TestMergeXMLSerializationPreservesExplicitEmptyNamespace(t *testing.T) {
+	const input = `<ofd:Res xmlns:ofd="http://www.ofdspec.org/2016" xmlns:ext="urn:extension"><ofd:Fonts/><ext:Data xmlns=""><Value><Child/></Value></ext:Data></ofd:Res>`
+	for _, clone := range []bool{false, true} {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(input); err != nil {
+			t.Fatal(err)
+		}
+		if clone {
+			doc.SetRoot(cloneElement(doc.Root()))
+		}
+		data, err := marshalOFDXML(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed := etree.NewDocument()
+		if err := parsed.ReadFromBytes(data); err != nil {
+			t.Fatal(err)
+		}
+		value := parsed.Root().FindElement("./Data/Value")
+		if value == nil || value.NamespaceURI() != "" || value.FindElement("./Child").NamespaceURI() != "" {
+			t.Fatalf("无命名空间的扩展元素被改为 OFD 元素: clone=%v, output=%s", clone, data)
+		}
+	}
+}

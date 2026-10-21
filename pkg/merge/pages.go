@@ -14,6 +14,7 @@ import (
 	"github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -207,7 +208,9 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 				}
 			}
 			document := built.document
-			remapDocument(&document, built.prefix, ids)
+			if err := remapDocument(&document, built.prefix, ids); err != nil {
+				return fmt.Errorf("重映射输入 %s 的文档体 %d 失败: %w", prepared[index].name, built.documentIndex, err)
+			}
 			mergePageDocument(&merged, document, first)
 			first = false
 		}
@@ -734,7 +737,7 @@ func (r *resourceRemap) id(value uint64) uint64 {
 
 // remapDocument 重命名/重编号文档级资源，并同步改写页面、模板、复合图元和绘制
 // 参数中的引用。
-func remapDocument(document *creator.Document, prefix string, ids *idRemap) {
+func remapDocument(document *creator.Document, prefix string, ids *idRemap) error {
 	remap := &resourceRemap{
 		fonts:       make(map[string]string),
 		drawParams:  make(map[string]string),
@@ -747,9 +750,11 @@ func remapDocument(document *creator.Document, prefix string, ids *idRemap) {
 			resource.Name = prefix + resource.Name
 		}
 		if len(resource.Data) > 0 {
-			if data, err := remapResXML(resource.Data, prefix, remap, ids); err == nil {
-				resource.Data = data
+			data, err := remapResXML(resource.Data, prefix, remap, ids)
+			if err != nil {
+				return fmt.Errorf("公共资源 %s XML 无效: %w", resource.Name, err)
 			}
+			resource.Data = data
 		}
 	}
 	for index := range document.Fonts {
@@ -843,29 +848,37 @@ func remapDocument(document *creator.Document, prefix string, ids *idRemap) {
 		}
 	}
 	for index := range document.Pages {
-		remapPage(&document.Pages[index], prefix, remap, ids)
+		if err := remapPage(&document.Pages[index], prefix, remap, ids); err != nil {
+			return fmt.Errorf("第 %d 页资源 XML 无效: %w", index+1, err)
+		}
 	}
+	return nil
 }
 
-func remapPage(page *creator.Page, prefix string, remap *resourceRemap, ids *idRemap) {
-	remapPageResources(page, prefix, remap, ids)
+func remapPage(page *creator.Page, prefix string, remap *resourceRemap, ids *idRemap) error {
+	if err := remapPageResources(page, prefix, remap, ids); err != nil {
+		return err
+	}
 	for index := range page.Templates {
 		page.Templates[index].ID = remap.id(page.Templates[index].ID)
 	}
 	remapLayers(page.Layers, remap)
 	remapItems(page.Items, remap)
 	remapActions(page.Actions, remap)
+	return nil
 }
 
 // remapPageResources 重编号页面资源中的 ID、重命名其中的字体与绘制参数，并同步
 // 改写页面资源 XML 内的引用。
-func remapPageResources(page *creator.Page, prefix string, remap *resourceRemap, ids *idRemap) {
+func remapPageResources(page *creator.Page, prefix string, remap *resourceRemap, ids *idRemap) error {
 	for index := range page.Resources {
 		resource := &page.Resources[index]
 		if len(resource.Data) > 0 {
-			if data, err := remapResXML(resource.Data, prefix, remap, ids); err == nil {
-				resource.Data = data
+			data, err := remapResXML(resource.Data, prefix, remap, ids)
+			if err != nil {
+				return fmt.Errorf("资源 %d: %w", index+1, err)
 			}
+			resource.Data = data
 		}
 		for imageIndex := range resource.Images {
 			old := resource.Images[imageIndex].ID
@@ -878,13 +891,13 @@ func remapPageResources(page *creator.Page, prefix string, remap *resourceRemap,
 			resource.Images[imageIndex].ID = remap.ids[old]
 		}
 	}
+	return nil
 }
 
 // remapResXML 重写页面资源 Res XML 中的 ID、FontName、DrawParam 名称及其引用。
 func remapResXML(data []byte, prefix string, remap *resourceRemap, ids *idRemap) ([]byte, error) {
-	doc := etree.NewDocument()
-	doc.ReadSettings.PreserveCData = true
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return nil, err
 	}
 	root := doc.Root()

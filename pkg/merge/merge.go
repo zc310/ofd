@@ -336,9 +336,8 @@ func mergeSource(state *mergeState, src source) error {
 	if err != nil {
 		return fmt.Errorf("读取 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
-	rootDoc := etree.NewDocument()
-	rootDoc.ReadSettings.PreserveCData = true
-	if err := rootDoc.ReadFromBytes(rootData); err != nil {
+	rootDoc, err := ofdxml.Parse(rootData)
+	if err != nil {
 		return fmt.Errorf("解析 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
 	root := rootDoc.Root()
@@ -558,9 +557,8 @@ func ensureUniqueDocID(body *etree.Element, seen map[string]bool) {
 // rewriteSignatureXML 重写签名文件中指向旧文档目录的包内绝对路径。
 // 未发生改动时返回原始字节，保证签名文件保持逐字节不变。
 func rewriteSignatureXML(data []byte, oldDir, newDir string) ([]byte, bool, error) {
-	doc := etree.NewDocument()
-	doc.ReadSettings.PreserveCData = true
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return nil, false, err
 	}
 	root := doc.Root()
@@ -654,15 +652,39 @@ func cloneElement(src *etree.Element) *etree.Element {
 
 func prefixOFDXML(root *etree.Element) {
 	var elements []*etree.Element
+	conflict := false
+	legacy := root.Space == "" && root.NamespaceURI() == ""
 	walkElements(root, func(element *etree.Element) {
-		if uri := element.NamespaceURI(); uri == spec.Namespace || uri == "" && element.Space == "" {
+		for _, attr := range element.Attr {
+			if attr.Space == "xmlns" && attr.Key == "ofd" && attr.Value != spec.Namespace {
+				conflict = true
+			}
+		}
+		if uri := element.NamespaceURI(); uri == spec.Namespace || legacy && uri == "" && element.Space == "" && !hasDefaultNamespaceDeclaration(element) {
 			elements = append(elements, element)
 		}
 	})
+	if conflict {
+		// 非规范输入的外部 ofd 绑定不能覆盖；由 ofdxml 按作用域安全归一化。
+		return
+	}
 	root.CreateAttr("xmlns:ofd", spec.Namespace)
 	for _, element := range elements {
 		element.Space = "ofd"
 	}
+}
+
+// 仅将完全省略命名空间的旧式 OFD 输入补为 OFD 元素；显式 xmlns="" 是
+// 有意义的命名空间重置，不能把其中的扩展元素改为 OFD 元素。
+func hasDefaultNamespaceDeclaration(element *etree.Element) bool {
+	for parent := element; parent != nil; parent = parent.Parent() {
+		for _, attr := range parent.Attr {
+			if attr.Space == "" && attr.Key == "xmlns" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
@@ -680,7 +702,7 @@ func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
 	w.Attr("Version", version)
 	w.Attr("DocType", docType)
 	for _, body := range bodies {
-		if err := writeXMLElement(w, body, false); err != nil {
+		if err := ofdxml.WriteElement(w, body); err != nil {
 			return nil, fmt.Errorf("生成 DocBody XML 失败: %w", err)
 		}
 	}

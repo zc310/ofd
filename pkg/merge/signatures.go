@@ -8,6 +8,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -93,8 +94,8 @@ func readSignatureRoot(pkg *core.Package, name, tag string, maxBytes int64) (*et
 	if err != nil {
 		return nil, fmt.Errorf("读取签名文件 %s 失败: %w", name, err)
 	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return nil, fmt.Errorf("解析签名文件 %s 失败: %w", name, err)
 	}
 	if root := doc.Root(); root != nil && localName(root) == tag {
