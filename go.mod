@@ -9,19 +9,19 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.3
+	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.0
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.11.2
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
 	github.com/hack-pad/go-indexeddb v0.3.2
 	github.com/hack-pad/safejs v0.1.1
 	github.com/hhrutter/tiff v1.0.7
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
+	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/knroy/go-xml v1.8.1
 	github.com/kovidgoyal/imaging v1.9.0
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
@@ -29,6 +29,7 @@ require (
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 	github.com/ncruces/zenity v0.10.15
+	github.com/nicksnyder/go-i18n/v2 v2.6.1
 	github.com/pdfcpu/pdfcpu v0.16.3
 	github.com/pkg/sftp v1.13.11
 	github.com/rymdport/portal v0.4.2
@@ -83,9 +84,11 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
+	github.com/jolestar/go-commons-pool/v2 v2.1.2 // indirect
 	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
@@ -98,7 +101,6 @@ require (
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/molecule-man/go-brrr v1.3.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
-	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7 // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
@@ -108,6 +110,7 @@ require (
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
+	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

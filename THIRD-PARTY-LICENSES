@@ -1,6 +1,6 @@
 ## Direct Dependencies
 
-### fyne.io/fyne/v2 v2.8.1
+### fyne.io/fyne/v2 v2.8.2
 License: BSD-3-Clause
 Source: https://github.com/fyne-io/fyne
 
@@ -20,11 +20,11 @@ Source: https://github.com/beevik/etree
 License: BSD-3-Clause
 Source: https://github.com/benoitkugler/textlayout
 
-### github.com/chromedp/cdproto v0.157.5
+### github.com/chromedp/cdproto v0.158.4
 License: MIT
 Source: https://github.com/chromedp/cdproto
 
-### github.com/chromedp/chromedp v0.19.1
+### github.com/chromedp/chromedp v0.21.0
 License: MIT
 Source: https://github.com/chromedp/chromedp
 
@@ -44,6 +44,12 @@ Source: https://github.com/go-text/typesetting
 License: MIT
 Source: https://github.com/goccy/go-json
 
+### github.com/klippa-app/go-pdfium v1.21.4
+License: MIT
+Source: https://github.com/klippa-app/go-pdfium
+Embedded PDFium WebAssembly module: Apache-2.0
+Source: https://pdfium.googlesource.com/pdfium/
+
 ### github.com/h2non/filetype v1.1.3
 License: MIT
 Source: https://github.com/h2non/filetype
@@ -52,15 +58,15 @@ Source: https://github.com/h2non/filetype
 License: ISC
 Source: https://github.com/jlaffaye/ftp
 
-### github.com/klauspost/compress v1.20.1
+### github.com/klauspost/compress v1.20.3
 License: Apache-2.0
 Source: https://github.com/klauspost/compress
 
-### github.com/knroy/go-xml v1.4.0
+### github.com/knroy/go-xml v1.8.1
 License: MIT
 Source: https://github.com/knroy/go-xml
 
-### github.com/kovidgoyal/imaging v1.8.23
+### github.com/kovidgoyal/imaging v1.9.0
 License: MIT
 Source: https://github.com/kovidgoyal/imaging
 
@@ -68,7 +74,7 @@ Source: https://github.com/kovidgoyal/imaging
 License: BSD-3-Clause
 Source: https://github.com/lumifloat/tinyskia
 
-### github.com/minio/minio-go/v7 v7.3.0
+### github.com/minio/minio-go/v7 v7.4.1
 License: Apache-2.0
 Source: https://github.com/minio/minio-go/v7
 
@@ -84,7 +90,11 @@ Source: https://github.com/natefinch/lumberjack/v3
 License: MIT
 Source: https://github.com/ncruces/zenity
 
-### github.com/pdfcpu/pdfcpu v0.16.0
+### github.com/nicksnyder/go-i18n/v2 v2.6.1
+License: MIT
+Source: https://github.com/nicksnyder/go-i18n
+
+### github.com/pdfcpu/pdfcpu v0.16.3
 License: Apache-2.0
 Source: https://github.com/pdfcpu/pdfcpu
 
@@ -108,19 +118,23 @@ Source: https://github.com/stretchr/testify
 License: BSD-3-Clause
 Source: https://github.com/studio-b12/gowebdav
 
-### github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
+### github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262
 License: MIT
-Source: https://github.com/tdewolff/canvas
+Source: https://github.com/zc310/canvas
 
-### github.com/tdewolff/font v0.0.0-20260913163313-54f98bb59ee6
+### github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
 License: MIT
-Source: https://github.com/tdewolff/font
+Source: https://github.com/zc310/font
 
-### github.com/tdewolff/minify/v2 v2.24.19
+### github.com/tdewolff/minify/v2 v2.24.22
 License: MIT
 Source: https://github.com/tdewolff/minify
 
-### github.com/valyala/fasthttp v1.74.0
+### github.com/tetratelabs/wazero v1.12.0
+License: Apache-2.0
+Source: https://github.com/tetratelabs/wazero
+
+### github.com/valyala/fasthttp v1.76.0
 License: MIT
 Source: https://github.com/valyala/fasthttp
 
@@ -128,7 +142,7 @@ Source: https://github.com/valyala/fasthttp
 License: BSD-3-Clause
 Source: https://github.com/woozymasta/png
 
-### github.com/xuri/excelize/v2 v2.11.0
+### github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 License: BSD-3-Clause
 Source: https://github.com/xuri/excelize
 
@@ -144,11 +158,11 @@ Source: https://github.com/etcd-io/bbolt
 License: Apache-2.0
 Source: https://github.com/go-yaml/yaml
 
-### golang.org/x/image v0.46.0
+### golang.org/x/image v0.47.0
 License: BSD-3-Clause
 Source: https://github.com/golang/image
 
-### golang.org/x/text v0.42.0
+### golang.org/x/text v0.43.0
 License: BSD-3-Clause
 Source: https://github.com/golang/text
 
@@ -194,7 +208,7 @@ Source: https://github.com/Kagami/go-avif
 License: BSD-3-Clause
 Source: https://github.com/akavel/rsrc
 
-### github.com/andybalholm/brotli v1.2.4
+### github.com/andybalholm/brotli v1.2.6
 License: MIT
 Source: https://github.com/andybalholm/brotli
 
@@ -230,7 +244,7 @@ Source: https://github.com/fyne-io/glfw-js
 License: BSD-3-Clause
 Source: https://github.com/fyne-io/image
 
-### github.com/fyne-io/oksvg v0.2.0
+### github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9
 License: BSD-3-Clause
 Source: https://github.com/fyne-io/oksvg
 
@@ -250,7 +264,7 @@ Source: https://github.com/go-gl/glfw
 License: BSD-3-Clause
 Source: https://github.com/go-text/render
 
-### github.com/godbus/dbus/v5 v5.2.2
+### github.com/godbus/dbus/v5 v5.2.4
 License: BSD-3-Clause
 Source: https://github.com/godbus/dbus
 
@@ -270,6 +284,10 @@ Source: https://github.com/inconshreveable/mousetrap
 License: MIT
 Source: https://github.com/jeandeaual/go-locale
 
+### github.com/jolestar/go-commons-pool/v2 v2.1.2
+License: Apache-2.0
+Source: https://github.com/jolestar/go-commons-pool
+
 ### github.com/josephspurrier/goversioninfo v1.7.0
 License: BSD-3-Clause
 Source: https://github.com/josephspurrier/goversioninfo
@@ -282,7 +300,7 @@ Source: https://github.com/jsummers/gobmp
 License: MIT
 Source: https://github.com/kolesa-team/go-webp
 
-### github.com/mattn/go-runewidth v0.0.30
+### github.com/mattn/go-runewidth v0.0.31
 License: MIT
 Source: https://github.com/mattn/go-runewidth
 
@@ -290,15 +308,11 @@ Source: https://github.com/mattn/go-runewidth
 License: MIT
 Source: https://github.com/nfnt/resize
 
-### github.com/nicksnyder/go-i18n/v2 v2.6.1
-License: MIT
-Source: https://github.com/nicksnyder/go-i18n
-
 ### github.com/randall77/makefat v0.0.0-20260406194835-1b91746796b7
 License: MIT
 Source: https://github.com/randall77/makefat
 
-### github.com/richardlehane/mscfb v1.0.7
+### github.com/richardlehane/mscfb v1.0.9
 License: BSD-3-Clause
 Source: https://github.com/richardlehane/mscfb
 
@@ -326,7 +340,7 @@ Source: https://github.com/tiendc/go-deepcopy
 License: MIT
 Source: https://github.com/wcharczuk/go-chart
 
-### github.com/xuri/efp v0.0.1
+### github.com/xuri/efp v0.0.2
 License: BSD-3-Clause
 Source: https://github.com/xuri/efp
 
@@ -338,7 +352,7 @@ Source: https://github.com/xuri/nfp
 License: BSD-3-Clause
 Source: https://github.com/golang/sync
 
-### golang.org/x/sys v0.48.0
+### golang.org/x/sys v0.49.0
 License: BSD-3-Clause
 Source: https://github.com/golang/sys
 
@@ -367,9 +381,9 @@ Other embedded Adobe CMaps retain their original notices in
 internal/pdf2ofd/cmaps/adobe.zip.
 
 The project uses the following license types:
-- MIT: 53 packages
+- MIT: 54 packages
 - BSD-3-Clause: 29 packages
-- Apache-2.0: 7 packages
+- Apache-2.0: 9 packages
 - BSD-2-Clause: 2 packages
 - ISC: 1 package
 - GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)
