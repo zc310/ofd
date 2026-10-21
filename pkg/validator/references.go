@@ -88,15 +88,22 @@ func (r *ReferenceIndex) Unreachable(archive *core.Package) []string {
 // 遍历只解析引用，不做 XSD、语义与摘要校验，因此比 ValidateReader 便宜得多；
 // 但引用识别与路径解析与校验完全一致。
 func PackageReferences(ctx context.Context, input any, options ...Option) (*ReferenceIndex, error) {
+	return PackageReferencesWithOverrides(ctx, input, nil, options...)
+}
+
+// PackageReferencesWithOverrides 在引用分析中用 overrides 替换既有条目的内容，
+// 不修改输入包。键必须是包内规范路径且已存在；替换内容同样受文件和总大小限制。
+// 用于转换后、实际写回前计算引用闭包，沿用校验器的引用识别和完整性检查。
+func PackageReferencesWithOverrides(ctx context.Context, input any, overrides map[string][]byte, options ...Option) (*ReferenceIndex, error) {
 	v, err := New(options...)
 	if err != nil {
 		return nil, err
 	}
-	return v.packageReferences(ctx, input)
+	return v.packageReferences(ctx, input, overrides)
 }
 
 // packageReferences 执行引用闭包遍历。
-func (v *Validator) packageReferences(ctx context.Context, input any) (*ReferenceIndex, error) {
+func (v *Validator) packageReferences(ctx context.Context, input any, overrides map[string][]byte) (*ReferenceIndex, error) {
 	pkg, owned, err := v.openInput(input)
 	if err != nil {
 		return nil, err
@@ -110,6 +117,29 @@ func (v *Validator) packageReferences(ctx context.Context, input any) (*Referenc
 	archive, err := v.indexArchive(pkg, discard)
 	if err != nil {
 		return nil, err
+	}
+	for name, data := range overrides {
+		if err := core.ValidateEntryName(name); err != nil {
+			return nil, err
+		}
+		file, exists := archive.files[name]
+		if !exists || file.isDir {
+			return nil, fmt.Errorf("引用分析替换的条目不存在或为目录: %s", name)
+		}
+		if v.opts.MaxFileSize > 0 && int64(len(data)) > v.opts.MaxFileSize {
+			return nil, fmt.Errorf("引用分析替换的条目 %s 超过单条大小上限", name)
+		}
+		file.data = data
+		archive.files[name] = file
+	}
+	if v.opts.MaxTotalSize > 0 {
+		remaining := uint64(v.opts.MaxTotalSize)
+		for _, file := range archive.files {
+			if uint64(len(file.data)) > remaining {
+				return nil, fmt.Errorf("引用分析替换后的解压总大小超过上限")
+			}
+			remaining -= uint64(len(file.data))
+		}
 	}
 	if _, ok := archive.get(spec.RootDocument); !ok {
 		return nil, fmt.Errorf("缺少必需的 %s 文件", spec.RootDocument)
