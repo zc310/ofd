@@ -14,12 +14,19 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"github.com/zc310/ofd/internal/localization"
 )
 
 func preserveLanguage(t *testing.T) {
 	t.Helper()
-	previous := useEnglish.Load()
-	t.Cleanup(func() { useEnglish.Store(previous) })
+	previous := viewerUsesEnglish()
+	t.Cleanup(func() {
+		if previous {
+			setViewerLanguage("en")
+		} else {
+			setViewerLanguage("zh")
+		}
+	})
 }
 
 func TestLanguageUsesSavedChoiceBeforeSystemLocale(t *testing.T) {
@@ -38,7 +45,7 @@ func TestLanguageUsesSavedChoiceBeforeSystemLocale(t *testing.T) {
 
 func TestLanguageSwitchRefreshesUIAndPreservesDocumentState(t *testing.T) {
 	preserveLanguage(t)
-	useEnglish.Store(false)
+	setViewerLanguage("zh")
 	v := newLoadedTestViewer(t)
 	v.currentPage = 1
 	v.pageLayout.mode = viewDoublePage
@@ -80,7 +87,7 @@ func TestLanguageSwitchRefreshesUIAndPreservesDocumentState(t *testing.T) {
 
 func TestLanguageSwitchDisabledDuringFileOperations(t *testing.T) {
 	preserveLanguage(t)
-	useEnglish.Store(false)
+	setViewerLanguage("zh")
 	v := newLoadedTestViewer(t)
 	for _, state := range []string{"loading", "exporting"} {
 		v.loading, v.exporting = state == "loading", state == "exporting"
@@ -88,13 +95,13 @@ func TestLanguageSwitchDisabledDuringFileOperations(t *testing.T) {
 			t.Fatalf("language menu enabled while %s", state)
 		}
 		v.setLanguage("en")
-		if useEnglish.Load() {
+		if viewerUsesEnglish() {
 			t.Fatalf("language changed while %s", state)
 		}
 	}
 	v.loading, v.exporting = false, false
 	v.setLanguage("invalid")
-	if useEnglish.Load() {
+	if viewerUsesEnglish() {
 		t.Fatal("invalid language changed the current language")
 	}
 }
@@ -102,7 +109,11 @@ func TestLanguageSwitchDisabledDuringFileOperations(t *testing.T) {
 func TestTranslatedExportOptionsKeepFormatAndBackground(t *testing.T) {
 	preserveLanguage(t)
 	for _, english := range []bool{false, true} {
-		useEnglish.Store(english)
+		if english {
+			setViewerLanguage("en")
+		} else {
+			setViewerLanguage("zh")
+		}
 		for _, format := range []struct{ label, code string }{
 			{exportFormatPDF, "pdf"}, {exportFormatTXT, "txt"}, {exportFormatJPG, "jpg"},
 			{exportFormatPNG, "png"}, {exportFormatSVG, "svg"}, {exportFormatEPS, "eps"}, {exportFormatTeX, "tex"},
@@ -120,13 +131,9 @@ func TestTranslatedExportOptionsKeepFormatAndBackground(t *testing.T) {
 
 func TestTranslationCatalogCoversMessagesAndPreservesFormatArguments(t *testing.T) {
 	verbs := regexp.MustCompile(`%[dswv]`)
-	for source, translation := range englishCatalog {
-		if strings.TrimSpace(translation) == "" {
-			t.Errorf("empty translation for %q", source)
-		}
-		if !reflect.DeepEqual(verbs.FindAllString(source, -1), verbs.FindAllString(translation, -1)) {
-			t.Errorf("format arguments differ: %q -> %q", source, translation)
-		}
+	localizer, err := localization.New("en")
+	if err != nil {
+		t.Fatal(err)
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -152,8 +159,11 @@ func TestTranslationCatalogCoversMessagesAndPreservesFormatArguments(t *testing.
 			literal, ok := call.Args[0].(*ast.BasicLit)
 			if ok && literal.Kind == token.STRING {
 				source, _ := strconv.Unquote(literal.Value)
-				if _, exists := englishCatalog[source]; !exists {
+				translation := localizer.Message("viewer."+source, nil)
+				if translation == "viewer."+source || strings.TrimSpace(translation) == "" {
 					t.Errorf("%s: missing translation for %q", name, source)
+				} else if !reflect.DeepEqual(verbs.FindAllString(source, -1), verbs.FindAllString(translation, -1)) {
+					t.Errorf("format arguments differ: %q -> %q", source, translation)
 				}
 			}
 			return true

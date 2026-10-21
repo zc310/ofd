@@ -27,7 +27,7 @@ func loadLanguage(preferences fyne.Preferences, systemLocale string) string {
 }
 
 func initializeLanguage(a fyne.App) {
-	useEnglish.Store(loadLanguage(a.Preferences(), string(lang.SystemLocale())) == "en")
+	setViewerLanguage(loadLanguage(a.Preferences(), string(lang.SystemLocale())))
 }
 
 func (v *viewer) languageMenuItem() *fyne.MenuItem {
@@ -35,7 +35,7 @@ func (v *viewer) languageMenuItem() *fyne.MenuItem {
 	choices := make([]*fyne.MenuItem, 0, 2)
 	for _, language := range []struct{ code, label string }{{"zh", "简体中文"}, {"en", "English"}} {
 		choice := fyne.NewMenuItem(language.label, func() { v.setLanguage(language.code) })
-		choice.Checked = useEnglish.Load() == (language.code == "en")
+		choice.Checked = viewerUsesEnglish() == (language.code == "en")
 		choices = append(choices, choice)
 	}
 	item.ChildMenu = fyne.NewMenu(item.Label, choices...)
@@ -48,7 +48,7 @@ func (v *viewer) setLanguage(language string) {
 	if v.closed.Load() || v.loading || v.exporting || (language != "zh" && language != "en") {
 		return
 	}
-	useEnglish.Store(language == "en")
+	setViewerLanguage(language)
 	if a := fyne.CurrentApp(); a != nil {
 		a.Preferences().SetString(languagePreferenceKey, language)
 	}
