@@ -286,19 +286,11 @@ func (state *mergeState) emit(event SignatureEvent) {
 }
 
 func normalizeOptions(options Options) (Options, error) {
-	if err := creator.ValidateLimits(options.Limits); err != nil {
-		return Options{}, err
-	}
-	mode, err := creator.NormalizeCompression(options.Compression)
+	compression, level, err := entrywriter.NormalizeOptions(options.Compression, options.CompressionLevel, options.Limits)
 	if err != nil {
 		return Options{}, err
 	}
-	options.Compression = mode
-	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
-	if err != nil {
-		return Options{}, err
-	}
-	options.CompressionLevel = level
+	options.Compression, options.CompressionLevel = compression, level
 	switch options.Signatures {
 	case "":
 		options.Signatures = creator.SignaturePreserve

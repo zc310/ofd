@@ -146,13 +146,7 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 		sets:    make(map[string][]byte),
 		adds:    make(map[string][]byte),
 	}
-	existing := make(map[string]bool)
-	for _, entry := range pkg.Entries() {
-		if !entry.IsDir {
-			existing[entry.Path] = true
-		}
-	}
-	signDirs, err := signatureDirs(pkg)
+	existing, signDirs, err := packageEntryIndexes(pkg)
 	if err != nil {
 		return nil, err
 	}
@@ -259,19 +253,11 @@ func (options Options) checkXMLWellFormed(name string, data []byte) error {
 }
 
 func normalizeOptions(options Options) (Options, error) {
-	if err := creator.ValidateLimits(options.Limits); err != nil {
-		return Options{}, err
-	}
-	mode, err := creator.NormalizeCompression(options.Compression)
+	compression, level, err := entrywriter.NormalizeOptions(options.Compression, options.CompressionLevel, options.Limits)
 	if err != nil {
 		return Options{}, err
 	}
-	options.Compression = mode
-	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
-	if err != nil {
-		return Options{}, err
-	}
-	options.CompressionLevel = level
+	options.Compression, options.CompressionLevel = compression, level
 	switch options.Signatures {
 	case "":
 		options.Signatures = creator.SignatureDrop
@@ -353,30 +339,38 @@ func stripSignaturesRef(data []byte) ([]byte, bool, error) {
 	return out, true, nil
 }
 
-// signatureDirs 收集包内所有签名目录（含历史 Signs 布局）。
-func signatureDirs(pkg *core.Package) ([]string, error) {
+// packageEntryIndexes 在一次条目遍历中收集文件名索引与签名目录（含历史 Signs 布局）。
+func packageEntryIndexes(pkg *core.Package) (map[string]bool, []string, error) {
+	existing := make(map[string]bool)
 	dirs := make(map[string]bool)
-	for _, entry := range pkg.Entries() {
+	err := pkg.WalkEntries(func(entry core.Entry) bool {
 		name := entry.Path
+		if !entry.IsDir {
+			existing[name] = true
+		}
 		switch path.Base(name) {
 		case "Signatures.xml", "Signs.xml":
 			dirs[path.Dir(name)] = true
 		case "Signature.xml":
 			dirs[path.Dir(path.Dir(name))] = true
 		}
-		if index := strings.Index(name, "/Signatures/"); index >= 0 {
-			dirs[name[:index]+"/Signatures"] = true
+		if before, _, ok := strings.Cut(name, "/Signatures/"); ok {
+			dirs[before+"/Signatures"] = true
 		}
-		if index := strings.Index(name, "/Signs/"); index >= 0 {
-			dirs[name[:index]+"/Signs"] = true
+		if before, _, ok := strings.Cut(name, "/Signs/"); ok {
+			dirs[before+"/Signs"] = true
 		}
+		return true
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	result := make([]string, 0, len(dirs))
 	for dir := range dirs {
 		result = append(result, dir)
 	}
 	sort.Strings(result)
-	return result, nil
+	return existing, result, nil
 }
 
 // rebuild 重建 ZIP 包：先按原顺序搬运（命中 set 写新内容、跳过 delete、

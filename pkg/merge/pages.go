@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/beevik/etree"
+	"github.com/zc310/ofd/internal/entrywriter"
 	"github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
@@ -453,16 +454,7 @@ func resolvePageLimits(limits PageLimits) (PageLimits, error) {
 }
 
 func pageCreateOptions(options PageOptions) (creator.CreateOptions, error) {
-	compression := options.Compression
-	if compression == "" {
-		compression = creator.CompressionAuto
-	}
-	switch compression {
-	case creator.CompressionAuto, creator.CompressionDeflate, creator.CompressionStore:
-	default:
-		return creator.CreateOptions{}, fmt.Errorf("不支持的 ZIP 压缩策略: %q", compression)
-	}
-	level, err := creator.NormalizeCompressionLevel(options.CompressionLevel)
+	compression, level, err := entrywriter.NormalizeOptions(options.Compression, options.CompressionLevel, creator.Limits{})
 	if err != nil {
 		return creator.CreateOptions{}, err
 	}

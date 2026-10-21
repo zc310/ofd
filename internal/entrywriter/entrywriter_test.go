@@ -20,6 +20,34 @@ func writeAll(t *testing.T, writer *Writer, writerZip *zip.Writer, entries map[s
 	}
 }
 
+func TestNormalizeOptions(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		compression creator.CompressionMode
+		level       int
+		limits      creator.Limits
+		wantMode    creator.CompressionMode
+		wantLevel   int
+		wantErr     bool
+	}{
+		{name: "defaults", wantMode: creator.CompressionAuto, wantLevel: creator.DefaultCompressionLevel},
+		{name: "configured", compression: creator.CompressionStore, level: 9, wantMode: creator.CompressionStore, wantLevel: 9},
+		{name: "invalid compression", compression: "invalid", wantErr: true},
+		{name: "invalid level", level: 10, wantErr: true},
+		{name: "invalid limits", limits: creator.Limits{MaxEntryBytes: -1}, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mode, level, err := NormalizeOptions(test.compression, test.level, test.limits)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("NormalizeOptions error = %v, wantErr %v", err, test.wantErr)
+			}
+			if err == nil && (mode != test.wantMode || level != test.wantLevel) {
+				t.Fatalf("NormalizeOptions = (%q, %d), want (%q, %d)", mode, level, test.wantMode, test.wantLevel)
+			}
+		})
+	}
+}
+
 func readPackage(t *testing.T, data []byte) map[string]string {
 	t.Helper()
 	pkg, err := core.OpenBytes(data)

@@ -27,6 +27,22 @@ type Config struct {
 	OnWarning func(string)
 }
 
+// NormalizeOptions validates ZIP limits and returns normalized compression settings.
+func NormalizeOptions(compression creator.CompressionMode, level int, limits creator.Limits) (creator.CompressionMode, int, error) {
+	if err := creator.ValidateLimits(limits); err != nil {
+		return "", 0, err
+	}
+	compression, err := creator.NormalizeCompression(compression)
+	if err != nil {
+		return "", 0, err
+	}
+	level, err = creator.NormalizeCompressionLevel(level)
+	if err != nil {
+		return "", 0, err
+	}
+	return compression, level, nil
+}
+
 // Writer 向归档写入受限的 ZIP 条目，拒绝非法或重复路径，并遵守压缩与
 // 确定性设置。
 type Writer struct {
