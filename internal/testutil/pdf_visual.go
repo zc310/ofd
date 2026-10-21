@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/png"
 	"os"
 	"os/exec"
@@ -34,6 +35,9 @@ func RasterizePDFPages(ctx context.Context, pdftoppm string, pdf []byte, dpi int
 	if dpi <= 0 {
 		return nil, fmt.Errorf("PDF 栅格化 DPI 必须大于 0: %d", dpi)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	dir, err := os.MkdirTemp("", "ofd-pdf-visual-*")
 	if err != nil {
 		return nil, fmt.Errorf("创建 PDF 栅格化临时目录失败: %w", err)
@@ -47,6 +51,9 @@ func RasterizePDFPages(ctx context.Context, pdftoppm string, pdf []byte, dpi int
 	prefix := filepath.Join(dir, "page")
 	command := exec.CommandContext(ctx, pdftoppm, "-png", "-r", strconv.Itoa(dpi), input, prefix)
 	if output, err := command.CombinedOutput(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, fmt.Errorf("pdftoppm 栅格化失败: %w: %s", err, output)
 	}
 	paths, err := filepath.Glob(prefix + "-*.png")
@@ -71,11 +78,7 @@ func RasterizePDFPages(ctx context.Context, pdftoppm string, pdf []byte, dpi int
 		}
 		bounds := decoded.Bounds()
 		converted := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
-		for y := 0; y < bounds.Dy(); y++ {
-			for x := 0; x < bounds.Dx(); x++ {
-				converted.Set(x, y, decoded.At(bounds.Min.X+x, bounds.Min.Y+y))
-			}
-		}
+		draw.Draw(converted, converted.Bounds(), decoded, bounds.Min, draw.Src)
 		images = append(images, converted)
 	}
 	return images, nil
@@ -114,7 +117,9 @@ func ComparePageImages(reference, actual []*image.RGBA, pixelTolerance uint8) (V
 				red := absByteDifference(firstPixel.R, secondPixel.R)
 				green := absByteDifference(firstPixel.G, secondPixel.G)
 				blue := absByteDifference(firstPixel.B, secondPixel.B)
-				pageAbsSum += uint64(red + green + blue)
+				// 通道差要先转成整数再相加：uint8 相加会溢出，
+				// 让大差异像素的误差被低估。
+				pageAbsSum += uint64(red) + uint64(green) + uint64(blue)
 				if red <= pixelTolerance && green <= pixelTolerance && blue <= pixelTolerance {
 					pageMatching++
 				}
