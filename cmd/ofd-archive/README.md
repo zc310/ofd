@@ -74,14 +74,14 @@ ofd-archive check --doc-type OFD-A document.ofd
 | `--format text\|json\|markdown\|xlsx` | `text`    | check、manifest、matrix、prepare、preserve | 输出格式。`manifest` 只支持 `json`，`matrix` 支持全部四种，其余子命令不支持 `xlsx`。输出路径以 `.xlsx` 结尾时 `matrix` 可省略本项                  |
 | `--pretty`                            | 关闭      | 全部                                       | 缩进 JSON 输出                                                                                                                                     |
 | `--dry-run`                           | 关闭      | preserve                                   | 只列出计划改动，不写出文件。与 `--output` 互斥，同时给出会报错                                                                                     |
-| `--drop-unreferenced`                 | 关闭      | preserve                                   | 删除无人引用的条目（GB/T 42133 6.2.1 c)）。不加本项时只报告不删除；引用闭包不完整时拒绝删除                                                        |
+| `--drop-unreferenced`                 | 关闭      | preserve                                   | 删除无人引用的条目（GB/T 42133 6.2.1 e)）。不加本项时只报告不删除；引用闭包不完整时拒绝删除                                                        |
 | `-h`, `--help`                        | —         | 全部                                       | 显示命令帮助                                                                                                                                       |
 | `--version`                           | 关闭      | 全部                                       | 输出工具版本                                                                                                                                       |
 
 几点需要注意：
 
 - **`verify` 只核对固定性清单，校验类选项对它不生效。** 它不校验 OFD 内容，只比对归档目录里记录的 SHA-256，因此 `--mode`、`--max-*`、`--skip-xsd`、`--doc-type` 等都不会起作用。注意区分「不生效」与「不检查」：这些选项的**取值仍会被校验**，写错值照样报用法错误，例如 `verify --mode garbage` 会以退出码 `2` 失败。
-- **`preserve` 的内部校验使用默认规模限制**，不使用上表的 `--max-*`；它只受 `--doc-type` 影响。
+- **`preserve` 默认限制输入和输出条目数 10000、单条解压大小 64 MiB、解压总大小 512 MiB**，在读取 XML 前检查输入，并将相同限制用于引用分析和转换前后的校验。上表的 `--max-*` 不传入 `preserve`；Go API 可通过 `preserve.Options.Limits` 调整。
 - **规模限制是安全边界，不是性能调优。** 调大它们会放大解压放大攻击的风险。
 
 ## 退出码
@@ -120,23 +120,26 @@ ofd-archive preserve --doc-type OFD-A --dry-run --format json --pretty document.
 | GB/T 42133 6.2.3 a) | `Document.xml` | 将使用最多的页面设置确定为文档默认设置，写入 `CommonData/PageArea` |
 | GB/T 42133 6.2.3 b) | 页面 `Content.xml` | 省略与文档默认设置相同的页面 `Area` 节点 |
 | GB/T 42133 6.2.3 c) | 页面 `Content.xml` | 去除非文档内跳转的页面动作       |
-| GB/T 42133 6.3.3 b) | 页面 `Content.xml` | 去除图元对象中非文档内跳转的动作 |
+| GB/T 42133 6.3.3 b) | 页面、模板及其公共/文档/页面资源 XML | 去除图元对象中非文档内跳转的动作，包括资源内的复合图元及底纹内容 |
 
 这些动作只在 `DocType` 为 `OFD-A` 或 `OFD-H` 时施加。基础 profile 不承诺满足 GB/T 42133，`preserve` 不会改动它，文件无改动可做时返回非零退出码。
 
 关于「文档内跳转」的判定：OFD 的动作是「多种选择项之一」，`CT_Action` 并无 `Type` 属性，因此以是否含 `Goto` 子元素为准，与 `ofd-validator` 的 profile 规则同一口径。宿主划分也刻意与校验器一致——文档级与页面级只取文件根节点的**直接子** `Actions`，大纲级则逐层下探 `OutlineElem`，否则大纲内的动作会被误记到文档动作上。
 
-动作删光后 `Actions` 容器会一并删除：XSD 里 `Action` 没有 `minOccurs`（默认 1），留下空容器会让输出通不过校验。
+动作删光后，只有格式空白和命名空间声明的 `Actions` 容器会一并删除：XSD 里 `Action` 没有 `minOccurs`（默认 1），留下空容器会让输出通不过校验。容器内的注释和处理指令移到宿主中保留；若仍有外来节点、扩展属性或文本，则保留容器，不额外丢弃这些信息。
 
 页面设置归并（6.2.3 a) b)）有几处需要说明：
 
 - **页面设置按数值比较，不比文本。** `"210"` 与 `"210.0"` 是同一设置；若按文本比对，本该省略的 `Area` 会留在原地，b) 静默失效。
+- 区域坐标必须是有限数值，宽高必须大于 0（GB/T 33190 §7.3 表 2）。遇到 NaN、Inf、非法宽高，或 `Area`/`PageArea` 中存在无法安全比较的扩展属性、外来节点等内容时，保留原设置并提示跳过归并。
+- **按页面的有效设置统计频次**，缺省 `Area` 的页面按其继承的原 `CommonData/PageArea` 计数，同一页面描述文件被页树多次引用时分别计数。若默认设置改变，会为原本依赖旧默认值的页面补写显式 `Area`，保持尺寸和其他区域设置。
 - **b) 依赖 a) 成功。** 页面省略 `Area` 后会回退到 `CommonData/PageArea`（`internal/parser` 与 `pkg/analyzer` 都做这个回退）。若默认设置没能写入 `CommonData`——例如 `Document.xml` 自身不在 OFD 命名空间下——b) 会一并跳过，否则页面尺寸会静默改变。`../../testdata/ofdrw/intro.ofd` 正是这种文件：同一个包里 28 页用 `http://www.ofdspec.org/2016`、42 页用遗留的 `http://www.ofdspec.org`，而它的 `Document.xml` 属后者。
 - **只处理 OFD 命名空间下的元素**，遗留命名空间的页面原样保留。
 - **默认设置并列时**按页面顺序取靠前者，保证同一输入结果稳定。
 - `PageArea` 在 `CT_CommonData` 中紧随 `MaxUnitID`；序列类型要求顺序固定，插到末尾会让输出通不过 XSD。
+- 模板不参与正文页树的页面设置归并，但其中图元对象的非 Goto 动作会按 6.3.3 b) 清理。
 
-6.2.1 c)（删除无人引用的条目）单独处理，因为删除不可逆：
+6.2.1 e)（删除无人引用的条目）单独处理，因为删除不可逆：
 
 ```bash
 # 默认只报告有哪些条目无人引用，不删除
@@ -146,7 +149,7 @@ ofd-archive preserve --doc-type OFD-A --output out.ofd document.ofd
 ofd-archive preserve --doc-type OFD-A --drop-unreferenced --output out.ofd document.ofd
 ```
 
-判定「无人引用」用的是 `ofd-validator` 的同一套引用识别与路径解析逻辑（见 `validator.PackageReferences`），因此「校验通过」与「闭包完整」两个结论不会互相矛盾。引用闭包从 `OFD.xml` 出发按嵌套引用遍历，字体、图像等叶子资源也计入可达集合。
+判定「无人引用」用的是 `ofd-validator` 的同一套引用识别与路径解析逻辑（见 `validator.PackageReferencesWithOverrides`）。引用分析应用本次转换后的 XML，原包保持不变；因此删除 `Extensions` 等引用后新产生的孤立文件也会列为候选。闭包从 `OFD.xml` 出发按嵌套引用遍历，字体、图像等叶子资源也计入可达集合，仍被其他路径引用的文件会保留。
 
 闭包不完整时**一律拒绝删除**，并在警告中说明原因。三种情况会让闭包不可信：引用指向不存在的文件、引用路径越过包根、被引用的 XML 无法解析（命名空间或根元素不符时引用收集不到）。这不是过度保守——`../../testdata/ofdrw/intro.ofd` 的命名空间缺 `/2016` 后缀，解析失败后它引用的字体会全部落进「无人引用」列表（该文件共 123 个条目），照单删除就是毁掉一份真实文件。完整清单用 `--format json` 查看。
 
@@ -155,7 +158,12 @@ ofd-archive preserve --doc-type OFD-A --drop-unreferenced --output out.ofd docum
 行为约定：
 
 - `--output` 必须显式给出，且不能与输入同一路径。这是本工具唯一会写文件的子命令，不设默认值以免覆盖原始文件；`--dry-run` 则相反，不接受 `--output`。
-- 转换只改写文档主体 XML（路径取自 `OFD.xml` 的 `DocBody/DocRoot`，不假定 `Doc_0`），包内其余条目逐字节复制。
+- 当前转换入口只处理单个 `DocBody`，多个文档体会明确报错。GB/T 42133 6.2.1 c) 要求归档前拆分成多个 OFD 或展平为单文档；本入口不自动拆分或展平。
+- 转换按引用定位文档主体、页面、模板及其资源，支持包内绝对路径，不假定 `Doc_0`。只重写发生改动的条目，其余条目逐字节复制。
+- 重写的 OFD 元素统一使用 `ofd:` 前缀，保留扩展命名空间及 CDATA 表示的文本和混合内容；跨文件移动页面设置时补齐继承的命名空间声明。
+- 转换使用 `internal/ofdxml` 的读取器，支持 UTF-8 XML 1.0、BOM、预定义实体和数字字符引用；DOCTYPE、自定义实体及非 UTF-8 编码会明确报错。
+- JSON 结果的 `Entries` 按字典序列出实际修改或删除的路径，每个路径只出现一次；`Entry` 是其中首个路径，无改动时为空。`Plan` 的删除候选见 `Unreferenced`，不记作已删除。
+- `UnreferencedDropped` 仅在完整输出成功后确认，`Plan` 和转换、重建、校验或写入失败时均为 0。输出发生短写时返回错误，不能把截断的 OFD 当作成功结果。
 - 只删除 OFD 命名空间下的目标元素，外来命名空间里的同名标签不受影响。
 - 写出会校验转换是否引入**新的**错误。判据不是「输出零错误」——真实 OFD 常带既有 XSD 偏差，以零错误为门槛会让本命令在多数文件上直接拒绝输出；实际做法是与转换前的问题码集合比对，只在出现新问题码时放弃写出。
 - 签名条目原样保留并逐条提示摘要可能失效；但**回归检查会拦住「新增 `digest.mismatch`」**，因此摘要原本有效的签名文件会被拒绝转换。原因是按 GB/T 42133 修改内容必然使摘要失效，而标准给出的解法（6.13 签名去技术化：把签名人、时间、摘要值固化后移除签名记录）尚未实现，已在 `999.ofd` 与 `zsbk.ofd` 上实测确认。需要留证的用户应保留原始签名文件，另行归档转换结果。

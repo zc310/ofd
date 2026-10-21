@@ -3,14 +3,9 @@
 // 该标准把条款分成两类：可机器判定的合规条件由 ofd-validator 按 profile 规则
 // 上报；本质是转换动作的条款由本包执行。本包只产出新的字节流，不修改输入。
 //
-// 转换以 XML 树操作为主，改用 beevik/etree 对既有文档做定点编辑，实测在真实
-// 样例上字节往返一致。
-//
-// 不用 internal/models 的原因是它的读路径无法安全回写：OFD.xml 的 xmlns 属性
-// 在解码后不会落到模型的 XMLNS 字段（字段 tag 是 xmlns:ofd，与 Go 解码出的
-// 属性名不匹配），因此「解析 → 序列化」会写出 <Document xmlns:ofd="">，命名
-// 空间 URI 丢失，产出的不再是合法 OFD。该模型的 MarshalXML 系列方法已随之移除，
-// 写回路径统一走 etree。
+// 转换使用 internal/ofdxml 读取和写出，使用 etree API 对既有 XML 做定点编辑。
+// 重写的 OFD 元素统一使用 ofd: 前缀，并保留扩展命名空间与混合内容；
+// 未发生改动的条目继续逐字节复制。
 package preserve
 
 import (
@@ -18,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,6 +21,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/spec"
@@ -52,17 +49,18 @@ func (c Change) String() string {
 type Result struct {
 	// DocType 是本次转换实际应用的 profile 取值。
 	DocType string
-	// Entry 是被改动的包内路径，无改动时为空。
+	// Entry 是按字典序排列的首个实际改动路径，无改动时为空。
 	Entry string
 	// Changes 是已做出的改动；Plan 给出的是计划中的改动。
 	Changes []Change
-	// Entries 是被改动的包内路径集合，无改动时为空。
+	// Entries 是被修改或删除的包内路径，按字典序去重，无改动时为空。
+	// Plan 的删除候选另见 Unreferenced，不计为已删除条目。
 	Entries []string
 	// BeforeErrors 是转换前的错误数，Validate 为真时有效。
 	BeforeErrors int
-	// Unreferenced 是包内无人引用的条目，即 6.2.1 c) 的删除候选。
+	// Unreferenced 是包内无人引用的条目，即 6.2.1 e) 的删除候选。
 	Unreferenced []string
-	// UnreferencedDropped 是实际被删除的条目数。
+	// UnreferencedDropped 是输出成功后确认删除的条目数；Plan 或 Apply 失败时为 0。
 	UnreferencedDropped int
 	// ClosureIncomplete 为真时闭包不可信，删除候选不得据此删除。
 	ClosureIncomplete bool
@@ -84,7 +82,7 @@ type Options struct {
 	Validate bool
 	// OnWarning 接收非致命提示，例如输入本就不合规、签名摘要已失效。
 	OnWarning func(string)
-	// DropUnreferenced 允许真的删除无人引用的条目（GB/T 42133 6.2.1 c)）。
+	// DropUnreferenced 允许真的删除无人引用的条目（GB/T 42133 6.2.1 e)）。
 	//
 	// 默认关闭，只报告不删除。删除不可逆，而闭包的正确性依赖引用识别：漏识别
 	// 一种引用形式就会删掉在用文件。开启时若闭包不完整仍会拒绝删除。
@@ -102,9 +100,13 @@ type fileKind int
 
 const (
 	// kindDocument 是文档主体 XML（Document.xml）。
-	kindDocument fileKind = iota
+	kindDocument fileKind = 1 << iota
 	// kindPageContent 是页面描述 XML（各页面的 Content.xml）。
 	kindPageContent
+	// kindTemplateContent 只执行图元动作清理，不参与正文页树的默认设置归并。
+	kindTemplateContent
+	// kindResource 包括公共、文档、页面和模板资源中的复合图元及底纹内容。
+	kindResource
 )
 
 // actionScope 标识动作所在宿主。划分方式与 pkg/validator 的规则保持一致：
@@ -152,7 +154,7 @@ func steps(docType string) []step {
 			{"GB/T 42133 6.2.2 e)", "去除扩展信息 Extensions", kindDocument, removeChild("Extensions")},
 			{"GB/T 42133 6.2.5 a)", "去除大纲节点中非文档内跳转的动作", kindDocument, removeNonGotoActions(scopeOutline)},
 			{"GB/T 42133 6.2.3 c)", "去除非文档内跳转的页面动作", kindPageContent, removeNonGotoActions(scopePage)},
-			{"GB/T 42133 6.3.3 b)", "去除图元对象中非文档内跳转的动作", kindPageContent, removeNonGotoActions(scopeGraphicUnit)},
+			{"GB/T 42133 6.3.3 b)", "去除图元对象中非文档内跳转的动作", kindPageContent | kindTemplateContent | kindResource, removeNonGotoActions(scopeGraphicUnit)},
 		}
 	default:
 		// 基础 profile 不承诺满足 GB/T 42133，不施加档案转换。
@@ -244,8 +246,8 @@ func isGraphicUnit(el *etree.Element) bool {
 	return el.NamespaceURI() == spec.Namespace && graphicUnitTags[el.Tag]
 }
 
-// pruneActions 删除 container 的 Actions 里所有非 Goto 动作，并在动作删光时
-// 一并删除 Actions 容器，返回删除的动作数。
+// pruneActions 删除非 Goto 动作。空容器的注释和处理指令移到宿主中保留；
+// 容器仍有扩展属性、元素或文本时保留原容器，返回删除的动作数。
 func pruneActions(container *etree.Element) int {
 	var target *etree.Element
 	for _, el := range container.ChildElements() {
@@ -258,13 +260,11 @@ func pruneActions(container *etree.Element) int {
 		return 0
 	}
 	var doomed []*etree.Element
-	kept := 0
 	for _, action := range target.ChildElements() {
 		if action.Tag != "Action" || action.NamespaceURI() != spec.Namespace {
 			continue
 		}
 		if hasGotoChild(action) {
-			kept++
 			continue
 		}
 		doomed = append(doomed, action)
@@ -272,19 +272,49 @@ func pruneActions(container *etree.Element) int {
 	for _, action := range doomed {
 		target.RemoveChild(action)
 	}
-	if kept == 0 {
+	if len(doomed) > 0 && !hasAdditionalAttributes(target) && onlyFormatting(target) {
+		for _, token := range slices.Clone(target.Child) {
+			switch token.(type) {
+			case *etree.Comment, *etree.ProcInst:
+				container.InsertChild(target, token)
+			}
+		}
 		container.RemoveChild(target)
 	}
 	return len(doomed)
 }
 
+// 命名空间声明和格式空白不携带业务内容；其他属性、节点均须保留。
+func hasAdditionalAttributes(element *etree.Element) bool {
+	for _, attr := range element.Attr {
+		if attr.Space != "xmlns" && !(attr.Space == "" && attr.Key == "xmlns") {
+			return true
+		}
+	}
+	return false
+}
+
+func onlyFormatting(element *etree.Element) bool {
+	for _, token := range element.Child {
+		switch token.(type) {
+		case *etree.Comment, *etree.ProcInst:
+			continue
+		}
+		if text, ok := token.(*etree.CharData); !ok || strings.TrimSpace(text.Data) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // Plan 计算将要做出的改动，不写任何文件。--dry-run 走这条路径。
 func Plan(input any, options Options) (Result, error) {
-	src, err := open(input)
+	src, err := open(input, options.Limits)
 	if err != nil {
 		return Result{}, err
 	}
 	defer func() { _ = src.pkg.Close() }()
+	options.Limits = src.pkg.limits
 
 	// 预检不删除任何东西，因此不写 deletes、也不填 UnreferencedDropped。
 	// 让 convert 区分这一点：否则 Result 会把"计划删 N 个"报成"已删除 N 个"，
@@ -295,16 +325,17 @@ func Plan(input any, options Options) (Result, error) {
 
 // Apply 执行转换并把结果写入 w。输出始终是新的字节流，输入不受影响。
 //
-// 全部校验与写出都成功后才真正写给 w，因此失败时 w 不会拿到半成品。
+// 转换、重建和校验全部成功后才写给 w；底层写入错误或短写会返回错误。
 func Apply(input any, w io.Writer, options Options) (Result, error) {
 	if w == nil {
 		return Result{}, fmt.Errorf("OFD 输出写入器为空")
 	}
-	src, err := open(input)
+	src, err := open(input, options.Limits)
 	if err != nil {
 		return Result{}, err
 	}
 	defer func() { _ = src.pkg.Close() }()
+	options.Limits = src.pkg.limits
 
 	result, operations, err := convert(src.pkg, options, false)
 	if err != nil {
@@ -328,7 +359,7 @@ func Apply(input any, w io.Writer, options Options) (Result, error) {
 	var buffer bytes.Buffer
 	// 不让 replace 自己做严格校验：它要求输出零错误，会把「输入本来就不合规」
 	// 误判成转换失败。改为写出后与基线比对，见 verifyNoRegression。
-	if err := replace.Files(src.pkg, operations, &buffer, replace.Options{
+	if err := replace.Files(src.pkg.Package, operations, &buffer, replace.Options{
 		Limits: options.Limits,
 		// 必须显式指定：replace 的零值会归一化成 SignatureDrop，即删除全部
 		// 签名条目。归档件应当保留签名作为证据，只提示摘要可能失效。
@@ -338,12 +369,21 @@ func Apply(input any, w io.Writer, options Options) (Result, error) {
 		return result, err
 	}
 	if baseline != nil {
-		if err := verifyNoRegression(baseline, buffer.Bytes(), options.DocType); err != nil {
+		if err := verifyNoRegression(baseline, buffer.Bytes(), options); err != nil {
 			return result, err
 		}
 	}
-	if _, err := w.Write(buffer.Bytes()); err != nil {
+	n, err := w.Write(buffer.Bytes())
+	if err != nil {
 		return result, fmt.Errorf("写入输出失败: %w", err)
+	}
+	if n != buffer.Len() {
+		return result, fmt.Errorf("写入输出失败: %w", io.ErrShortWrite)
+	}
+	for _, operation := range operations {
+		if operation.Kind == replace.OpDelete {
+			result.UnreferencedDropped++
+		}
 	}
 	return result, nil
 }
@@ -353,12 +393,12 @@ func Apply(input any, w io.Writer, options Options) (Result, error) {
 type source struct {
 	path string
 	data []byte
-	pkg  *core.Package
+	pkg  *inputPackage
 }
 
 // validate 对原始输入做校验，取得转换前的问题基线。
 func (s source) validate(options Options) validator.Report {
-	report, err := validator.New(validator.WithDocType(options.DocType))
+	report, err := validator.New(validatorOptions(options)...)
 	if err != nil {
 		options.warn("无法创建校验器，转换前基线缺失：%v", err)
 		return validator.Report{}
@@ -370,23 +410,32 @@ func (s source) validate(options Options) validator.Report {
 }
 
 // open 把各种输入形态统一成可读可校验的源。
-func open(input any) (source, error) {
+func open(input any, requested replace.Limits) (source, error) {
+	limits, err := inputLimits(requested)
+	if err != nil {
+		return source{}, err
+	}
+	var src source
+	var pkg *core.Package
 	switch v := input.(type) {
 	case string:
-		pkg, err := core.OpenFile(v)
-		if err != nil {
-			return source{}, err
-		}
-		return source{path: v, pkg: pkg}, nil
+		pkg, err = core.OpenFile(v)
+		src.path = v
 	case []byte:
-		pkg, err := core.OpenBytes(v)
-		if err != nil {
-			return source{}, err
-		}
-		return source{data: v, pkg: pkg}, nil
+		pkg, err = core.OpenBytes(v)
+		src.data = v
 	default:
 		return source{}, fmt.Errorf("不支持的输入类型 %T", input)
 	}
+	if err != nil {
+		return source{}, err
+	}
+	src.pkg, err = checkInput(pkg, limits)
+	if err != nil {
+		_ = pkg.Close()
+		return source{}, err
+	}
+	return src, nil
 }
 
 // errorCodes 收集报告里的错误问题码，作为回归比对的基线集合。
@@ -405,8 +454,8 @@ func errorCodes(report validator.Report) map[string]bool {
 // 按问题码而非位置比对：重写 XML 会让行列号整体偏移，按位置比对必然误判。
 // 代价是基线里已有的错误无法区分「同一条」与「另一条」——输入本就 XSD 不合规
 // 时，转换引入的新的 XSD 错误不会被发现。这是当前实现的已知边界。
-func verifyNoRegression(baseline map[string]bool, output []byte, docType string) error {
-	report, err := validator.New(validator.WithDocType(docType))
+func verifyNoRegression(baseline map[string]bool, output []byte, options Options) error {
+	report, err := validator.New(validatorOptions(options)...)
 	if err != nil {
 		return fmt.Errorf("创建校验器失败: %w", err)
 	}
@@ -429,7 +478,7 @@ func verifyNoRegression(baseline map[string]bool, output []byte, docType string)
 
 // convert 在内存中执行全部转换，返回改动清单与待写入的条目操作。
 // dryRun 为真时只计算计划：不产生删除操作，也不虚报删除数量。
-func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace.Operation, error) {
+func convert(pkg *inputPackage, options Options, dryRun bool) (Result, []replace.Operation, error) {
 	docType, err := resolveDocType(pkg, options.DocType)
 	if err != nil {
 		return Result{}, nil, err
@@ -444,17 +493,11 @@ func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace
 	if err != nil {
 		return result, nil, err
 	}
-	result.Entry = docEntry
-
 	operations := map[string][]byte{}
 	applyTo := func(path string, kind fileKind) error {
-		data, err := pkg.Read(path)
+		doc, err := loadCurrentXML(pkg, path, operations)
 		if err != nil {
-			return fmt.Errorf("读取 %s 失败: %w", path, err)
-		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(data); err != nil {
-			return fmt.Errorf("解析 %s 失败: %w", path, err)
+			return err
 		}
 		root := doc.Root()
 		if root == nil {
@@ -462,7 +505,7 @@ func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace
 		}
 		var total int
 		for _, s := range plan {
-			if s.kind != kind {
+			if s.kind&kind == 0 {
 				continue
 			}
 			count := s.apply(root)
@@ -477,12 +520,11 @@ func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace
 		if total == 0 {
 			return nil
 		}
-		out, err := doc.WriteToBytes()
+		out, err := ofdxml.MarshalDocument(doc)
 		if err != nil {
 			return fmt.Errorf("序列化 %s 失败: %w", path, err)
 		}
 		operations[path] = out
-		result.Entries = append(result.Entries, path)
 		return nil
 	}
 
@@ -498,13 +540,31 @@ func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace
 			return result, nil, err
 		}
 	}
+	templates, err := contentEntries(pkg, docEntry, "./CommonData/TemplatePage")
+	if err != nil {
+		return result, nil, err
+	}
+	for _, template := range templates {
+		if err := applyTo(template, kindTemplateContent); err != nil {
+			return result, nil, err
+		}
+	}
+	resources, err := resourceEntries(pkg, docEntry, append(slices.Clone(pages), templates...), operations)
+	if err != nil {
+		return result, nil, err
+	}
+	for _, resource := range resources {
+		if err := applyTo(resource, kindResource); err != nil {
+			return result, nil, err
+		}
+	}
 
 	if err := normalizePageArea(pkg, docType, docEntry, pages, &result, operations, options); err != nil {
 		return result, nil, err
 	}
 
 	var deletes []string
-	if err := applyUnreferenced(pkg, options, &result, &deletes, dryRun); err != nil {
+	if err := applyUnreferenced(pkg, operations, options, &result, &deletes, dryRun); err != nil {
 		return result, nil, err
 	}
 
@@ -525,35 +585,42 @@ func convert(pkg *core.Package, options Options, dryRun bool) (Result, []replace
 	for _, path := range deletes {
 		list = append(list, replace.Operation{Kind: replace.OpDelete, Name: path})
 	}
+	result.Entries = append(paths, deletes...)
+	slices.Sort(result.Entries)
+	result.Entries = slices.Compact(result.Entries)
+	if len(result.Entries) > 0 {
+		result.Entry = result.Entries[0]
+	}
 	return result, list, nil
 }
 
-// applyUnreferenced 实现 GB/T 42133 6.2.1 c)：去除与主入口及其嵌套引出文件
+// applyUnreferenced 实现 GB/T 42133 6.2.1 e)：去除与主入口及其嵌套引出文件
 // 无关的文件。
 //
 // 只在显式开启 DropUnreferenced 时才删除，且闭包不完整时一律拒绝。删除不可逆，
 // 而闭包的正确性完全依赖引用识别是否穷尽——漏掉一种引用形式就等于删掉在用文件。
 // testdata/ofdrw/intro.ofd 的命名空间缺 "/2016" 后缀，解析失败后其引用的字体
 // 全部落进候选，正是这个保护要拦住的情形。
-func applyUnreferenced(pkg *core.Package, options Options, result *Result, deletes *[]string, dryRun bool) error {
-	index, err := validator.PackageReferences(context.Background(), pkg, validatorOptions(options)...)
+func applyUnreferenced(pkg *inputPackage, operations map[string][]byte, options Options, result *Result, deletes *[]string, dryRun bool) error {
+	index, err := validator.PackageReferencesWithOverrides(context.Background(), pkg.Package, operations, validatorOptions(options)...)
 	if err != nil {
 		return fmt.Errorf("解析引用闭包失败: %w", err)
 	}
-	orphans := index.Unreachable(pkg)
+	orphans := index.Unreachable(pkg.Package)
+	slices.Sort(orphans)
+	result.ClosureIncomplete = !index.Complete()
+	result.ClosureReason = index.IncompleteReason()
 	if len(orphans) == 0 {
 		return nil
 	}
 	result.Unreferenced = orphans
-	result.ClosureIncomplete = !index.Complete()
 	if result.ClosureIncomplete {
-		result.ClosureReason = index.IncompleteReason()
-		options.warn("引用闭包不完整，6.2.1 c) 的 %d 个删除候选未予删除：%s",
+		options.warn("引用闭包不完整，6.2.1 e) 的 %d 个删除候选未予删除：%s",
 			len(orphans), result.ClosureReason)
 		return nil
 	}
 	if !options.DropUnreferenced {
-		options.warn("有 %d 个条目无人引用（GB/T 42133 6.2.1 c)），本次只报告不删除；加 --drop-unreferenced 执行删除",
+		options.warn("有 %d 个条目无人引用（GB/T 42133 6.2.1 e)），本次只报告不删除；加 --drop-unreferenced 执行删除",
 			len(orphans))
 		return nil
 	}
@@ -563,13 +630,20 @@ func applyUnreferenced(pkg *core.Package, options Options, result *Result, delet
 		return nil
 	}
 	*deletes = append(*deletes, orphans...)
-	result.UnreferencedDropped = len(orphans)
+	for _, name := range orphans {
+		delete(operations, name)
+	}
 	return nil
 }
 
 // validatorOptions 把转换选项里与校验相关的部分转成校验器选项。
 func validatorOptions(options Options) []validator.Option {
-	var out []validator.Option
+	out := []validator.Option{
+		validator.WithMaxEntries(options.Limits.MaxEntries),
+		validator.WithMaxFileSize(options.Limits.MaxEntryBytes),
+		validator.WithMaxXMLBytes(options.Limits.MaxEntryBytes),
+		validator.WithMaxTotalSize(options.Limits.MaxTotalBytes),
+	}
 	if options.DocType != "" && spec.IsDocType(options.DocType) {
 		out = append(out, validator.WithDocType(options.DocType))
 	}
@@ -580,66 +654,94 @@ func validatorOptions(options Options) []validator.Option {
 //
 // 路径取自 Document.xml 的 Pages/Page/@BaseLoc，按文档所在目录解析，不假定
 // Doc_0 或固定的页目录名。模板页（TemplatePage）不在页树内，不参与 6.2.3。
-func pageEntries(pkg *core.Package, docEntry string) ([]string, error) {
-	data, err := pkg.Read(docEntry)
+func pageEntries(pkg *inputPackage, docEntry string) ([]string, error) {
+	return contentEntries(pkg, docEntry, "./Pages/Page")
+}
+
+func contentEntries(pkg *inputPackage, docEntry, selector string) ([]string, error) {
+	doc, err := loadXML(pkg, docEntry)
 	if err != nil {
-		return nil, fmt.Errorf("读取 %s 失败: %w", docEntry, err)
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return nil, fmt.Errorf("解析 %s 失败: %w", docEntry, err)
+		return nil, err
 	}
 	base := models.StLoc(docEntry).Dir()
 	var out []string
-	seen := map[string]bool{}
-	for _, el := range doc.Root().FindElements("./Pages/Page") {
+	for _, el := range doc.Root().FindElements(selector) {
+		if el.NamespaceURI() != doc.Root().NamespaceURI() {
+			continue
+		}
 		loc := strings.TrimSpace(el.SelectAttrValue("BaseLoc", ""))
 		if loc == "" {
 			continue
 		}
-		resolved := string(models.StLoc(loc).Resolve(base))
-		if resolved == "" || seen[resolved] {
-			continue
+		resolved, err := resolveEntryLocation(base, loc)
+		if err != nil {
+			return nil, fmt.Errorf("%s 的页面路径 %q 无效: %w", docEntry, loc, err)
 		}
-		if !pkg.Has(resolved) {
+		entry, exists := pkg.Lookup(resolved)
+		if !exists {
 			// 页面描述缺失时不在此处报错：validator 会报引用缺失，转换不应
 			// 因此中断，跳过即可。
 			continue
 		}
-		seen[resolved] = true
+		resolved = entry.Path
 		out = append(out, resolved)
 	}
 	return out, nil
 }
 
+// resolveEntryLocation 把 ST_Loc 引用规范化为安全的 ZIP 条目名。
+func resolveEntryLocation(base models.StLoc, location string) (string, error) {
+	name := strings.TrimPrefix(string(models.StLoc(strings.TrimSpace(location)).Resolve(base)), "/")
+	if err := core.ValidateEntryName(name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 // documentEntry 从 OFD.xml 的 DocRoot 解析出文档主体 XML 的包内路径，而不是
 // 假定 Doc_0/Document.xml——目录名由生成方决定，写死会在非默认布局上找不到文件。
-func documentEntry(pkg *core.Package) (string, error) {
+func documentEntry(pkg *inputPackage) (string, error) {
 	root, err := readRoot(pkg)
 	if err != nil {
 		return "", err
 	}
-	for _, el := range root.FindElements("./DocBody/DocRoot") {
-		if path := strings.TrimSpace(el.Text()); path != "" {
-			return strings.TrimPrefix(path, "/"), nil
+	var bodies []*etree.Element
+	for _, el := range root.ChildElements() {
+		if el.Tag == "DocBody" && el.NamespaceURI() == root.NamespaceURI() {
+			bodies = append(bodies, el)
+		}
+	}
+	if len(bodies) > 1 {
+		return "", fmt.Errorf("%s 包含 %d 个 DocBody；GB/T 42133 6.2.1 c) 要求先拆分或展平，当前转换不支持多文档输入", spec.RootDocument, len(bodies))
+	}
+	if len(bodies) == 1 {
+		for _, el := range bodies[0].ChildElements() {
+			if el.Tag == "DocRoot" && el.NamespaceURI() == bodies[0].NamespaceURI() {
+				if path := strings.TrimSpace(el.Text()); path != "" {
+					name, err := resolveEntryLocation("", path)
+					if err != nil {
+						return "", fmt.Errorf("DocRoot %q 无效: %w", path, err)
+					}
+					if entry, exists := pkg.Lookup(name); exists {
+						name = entry.Path
+					}
+					return name, nil
+				}
+			}
 		}
 	}
 	return "", fmt.Errorf("%s 未声明 DocBody/DocRoot，无法定位文档主体 XML", spec.RootDocument)
 }
 
 // readRoot 解析并返回 OFD.xml 的根元素。
-func readRoot(pkg *core.Package) (*etree.Element, error) {
+func readRoot(pkg *inputPackage) (*etree.Element, error) {
 	entry, ok := pkg.Lookup(spec.RootDocument)
 	if !ok {
 		return nil, fmt.Errorf("包内找不到 %s", spec.RootDocument)
 	}
-	data, err := pkg.Read(entry.Path)
+	doc, err := loadXML(pkg, entry.Path)
 	if err != nil {
-		return nil, fmt.Errorf("读取 %s 失败: %w", spec.RootDocument, err)
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return nil, fmt.Errorf("解析 %s 失败: %w", spec.RootDocument, err)
+		return nil, err
 	}
 	root := doc.Root()
 	if root == nil || root.Tag != "OFD" {
@@ -649,7 +751,7 @@ func readRoot(pkg *core.Package) (*etree.Element, error) {
 }
 
 // resolveDocType 判定本次转换使用的 profile：显式指定优先，否则按文件声明。
-func resolveDocType(pkg *core.Package, requested string) (string, error) {
+func resolveDocType(pkg *inputPackage, requested string) (string, error) {
 	if requested != "" {
 		if !spec.IsDocType(requested) {
 			return "", fmt.Errorf("未知的 DocType %q，取值只能是 %s",
@@ -676,7 +778,7 @@ type pageArea struct {
 	physical             models.StBox
 	application, content *models.StBox
 	bleed                *models.StBox
-	// source 是该设置在页面里对应的 Area 元素，写入 CommonData 时克隆它。
+	// source 是原始 Area 或 PageArea 元素，跨文件补写设置时克隆它。
 	//
 	// 克隆而非新建节点：OFD 的命名空间由源文件声明形式决定（默认 xmlns 或
 	// xmlns:ofd 前缀），手工给 etree 的 Space 赋 URI 会写出未声明的前缀，
@@ -702,15 +804,31 @@ func writeBox(b *strings.Builder, box *models.StBox) {
 	fmt.Fprintf(b, "%g %g %g %g|", box.X, box.Y, box.Width, box.Height)
 }
 
-// parsePageArea 解析页面的 Area 元素。未带 OFD 命名空间或不是 Area 时返回 false。
+// parsePageArea 解析同属 CT_PageArea 的 Area 或 PageArea。
 func parsePageArea(el *etree.Element) (pageArea, bool) {
-	if el.Tag != "Area" || el.NamespaceURI() != spec.Namespace {
+	if el == nil || (el.Tag != "Area" && el.Tag != "PageArea") || el.NamespaceURI() != spec.Namespace {
+		return pageArea{}, false
+	}
+	// 数值比较不足以判断扩展属性、子节点或混合内容是否等价，保留原容器。
+	if hasAdditionalAttributes(el) {
 		return pageArea{}, false
 	}
 	area := pageArea{}
-	for _, child := range el.ChildElements() {
-		if child.NamespaceURI() != spec.Namespace {
+	physical := false
+	seen := map[string]bool{}
+	for _, token := range el.Child {
+		if text, ok := token.(*etree.CharData); ok && strings.TrimSpace(text.Data) == "" {
 			continue
+		}
+		child, ok := token.(*etree.Element)
+		if !ok || child.NamespaceURI() != spec.Namespace || hasAdditionalAttributes(child) || seen[child.Tag] {
+			return pageArea{}, false
+		}
+		seen[child.Tag] = true
+		for _, token := range child.Child {
+			if _, ok := token.(*etree.CharData); !ok {
+				return pageArea{}, false
+			}
 		}
 		box, ok := parseBox(child)
 		if !ok {
@@ -719,13 +837,19 @@ func parsePageArea(el *etree.Element) (pageArea, bool) {
 		switch child.Tag {
 		case "PhysicalBox":
 			area.physical = box
+			physical = true
 		case "ApplicationBox":
 			area.application = &box
 		case "ContentBox":
 			area.content = &box
 		case "BleedBox":
 			area.bleed = &box
+		default:
+			return pageArea{}, false
 		}
+	}
+	if !physical {
+		return pageArea{}, false
 	}
 	area.source = el
 	return area, true
@@ -741,10 +865,14 @@ func parseBox(el *etree.Element) (models.StBox, bool) {
 	targets := []*float64{&box.X, &box.Y, &box.Width, &box.Height}
 	for i, field := range fields {
 		value, err := strconv.ParseFloat(field, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			return box, false
 		}
 		*targets[i] = value
+	}
+	// GB/T 33190—2016 §7.3 表 2：ST_Box 的宽和高应大于 0。
+	if box.Width <= 0 || box.Height <= 0 {
+		return box, false
 	}
 	return box, true
 }
@@ -759,7 +887,7 @@ func parseBox(el *etree.Element) (models.StBox, bool) {
 // 页面缺 Area 时都会回退到 CommonData/PageArea。CommonData/PageArea 在 XSD 中
 // 没有 minOccurs（即必填），因此 a) 不可省略，即使所有页面都没写 Area 也必须
 // 保留原有的默认值。
-func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []string,
+func normalizePageArea(pkg *inputPackage, docType, docEntry string, pages []string,
 	result *Result, operations map[string][]byte, options Options) error {
 
 	if docType != spec.DocTypeOFDA && docType != spec.DocTypeOFDH {
@@ -769,30 +897,53 @@ func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []stri
 		return nil
 	}
 
-	// 收集各页面的 Area，并记录首次出现顺序用于并列时定序。
+	// §6.2.3 a) 统计页面实际使用的设置，包含继承 CommonData/PageArea 的页面。
+	document, err := loadCurrentXML(pkg, docEntry, operations)
+	if err != nil {
+		return err
+	}
+	var original pageArea
+	hasDefault := false
+	if common := findChild(document.Root(), "CommonData"); common != nil {
+		if existing := findChild(common, "PageArea"); existing != nil {
+			original, hasDefault = parsePageArea(existing)
+			if !hasDefault {
+				options.warn("文档默认页面设置包含无法安全归并的内容或数值，页面设置归并已跳过")
+				return nil
+			}
+		}
+	}
 	var order []string
 	counts := map[string]int{}
 	byKey := map[string]pageArea{}
+	inherited := map[string]bool{}
 	for _, page := range pages {
-		doc, err := loadXML(pkg, page)
+		doc, err := loadCurrentXML(pkg, page, operations)
 		if err != nil {
 			return err
 		}
-		for _, el := range doc.Root().ChildElements() {
-			area, ok := parsePageArea(el)
-			if !ok {
-				continue
-			}
-			key := area.key()
-			if _, seen := byKey[key]; !seen {
-				order = append(order, key)
-				byKey[key] = area
-			}
-			counts[key]++
+		if doc.Root().NamespaceURI() != spec.Namespace {
+			options.warn("%s 不在 OFD 命名空间下，无法确定全部页面的有效设置，页面设置归并已跳过", page)
+			return nil
 		}
+		el := findChild(doc.Root(), "Area")
+		area, ok := parsePageArea(el)
+		if el == nil {
+			area, ok = original, hasDefault
+			inherited[page] = true
+		}
+		if !ok {
+			options.warn("%s 的有效页面设置无法确定，页面设置归并已跳过", page)
+			return nil
+		}
+		key := area.key()
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+			byKey[key] = area
+		}
+		counts[key]++
 	}
 	if len(order) == 0 {
-		// 没有页面显式声明 Area，默认设置无从确定，保持原样。
 		return nil
 	}
 
@@ -816,53 +967,53 @@ func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []stri
 	if err != nil {
 		return err
 	}
-	if established {
+	if !established {
+		options.warn("未能把页面默认设置写入 CommonData/PageArea（文档根节点不在 OFD 命名空间下或缺少 CommonData），" +
+			"GB/T 42133 6.2.3 b) 的页面 Area 省略已跳过")
+		return nil
+	}
+	if !hasDefault || original.key() != winner {
 		result.Changes = append(result.Changes, Change{
 			Entry:  docEntry,
 			Clause: "GB/T 42133 6.2.3 a)",
 			Action: fmt.Sprintf("将使用最多的页面设置（%d/%d 页）确定为文档默认设置", counts[winner], len(pages)),
 			Count:  1,
 		})
-	} else {
-		options.warn("未能把页面默认设置写入 CommonData/PageArea（文档根节点不在 OFD 命名空间下或缺少 CommonData），" +
-			"GB/T 42133 6.2.3 b) 的页面 Area 省略已跳过")
-		return nil
 	}
 
 	// b) 省略与默认设置相同的页面 Area
 	omitted := 0
+	processed := map[string]bool{}
 	for _, page := range pages {
-		data, ok := operations[page]
-		if !ok {
-			// 页面未因其他条款被改写，需要单独载入
-			raw, err := pkg.Read(page)
-			if err != nil {
-				return fmt.Errorf("读取 %s 失败: %w", page, err)
+		if processed[page] {
+			continue
+		}
+		processed[page] = true
+		doc, err := loadCurrentXML(pkg, page, operations)
+		if err != nil {
+			return err
+		}
+		if inherited[page] {
+			if original.key() == winner {
+				continue
 			}
-			data = raw
-		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(data); err != nil {
-			return fmt.Errorf("解析 %s 失败: %w", page, err)
-		}
-		dropped := false
-		for _, el := range doc.Root().ChildElements() {
+			// 默认值变化时，把旧默认值显式落到原本依赖它的页面，保持显示尺寸。
+			insertPageSetting(doc.Root(), original.element("Area"))
+			result.Changes = append(result.Changes, Change{Entry: page, Clause: "GB/T 42133 6.2.3 a)", Action: "显式保留页面原先继承的默认设置", Count: 1})
+		} else {
+			el := findChild(doc.Root(), "Area")
 			area, ok := parsePageArea(el)
 			if !ok || area.key() != winner {
 				continue
 			}
 			doc.Root().RemoveChild(el)
-			dropped = true
+			omitted++
 		}
-		if !dropped {
-			continue
-		}
-		out, err := doc.WriteToBytes()
+		out, err := ofdxml.MarshalDocument(doc)
 		if err != nil {
 			return fmt.Errorf("序列化 %s 失败: %w", page, err)
 		}
 		operations[page] = out
-		omitted++
 	}
 	if omitted > 0 {
 		result.Changes = append(result.Changes, Change{
@@ -871,19 +1022,40 @@ func normalizePageArea(pkg *core.Package, docType, docEntry string, pages []stri
 			Action: "省略与文档默认设置相同的页面 Area 节点",
 			Count:  omitted,
 		})
-		result.Entries = append(result.Entries, pages...)
 	}
 	return nil
 }
 
+// insertPageSetting 保持 Page 的 xs:sequence：Area 位于 Template/PageRes 之后、Content/Actions 之前。
+func insertPageSetting(page, area *etree.Element) {
+	for _, child := range page.ChildElements() {
+		if child.NamespaceURI() == spec.Namespace && (child.Tag == "Content" || child.Tag == "Actions") {
+			page.InsertChild(child, area)
+			return
+		}
+	}
+	page.AddChild(area)
+}
+
+func loadCurrentXML(pkg *inputPackage, name string, operations map[string][]byte) (*etree.Document, error) {
+	if data, ok := operations[name]; ok {
+		doc, err := ofdxml.Parse(data)
+		if err != nil {
+			return nil, fmt.Errorf("解析 %s 失败: %w", name, err)
+		}
+		return doc, nil
+	}
+	return loadXML(pkg, name)
+}
+
 // loadXML 读取并解析包内一个 XML 条目。
-func loadXML(pkg *core.Package, path string) (*etree.Document, error) {
+func loadXML(pkg *inputPackage, path string) (*etree.Document, error) {
 	data, err := pkg.Read(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取 %s 失败: %w", path, err)
 	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return nil, fmt.Errorf("解析 %s 失败: %w", path, err)
 	}
 	return doc, nil
@@ -893,20 +1065,12 @@ func loadXML(pkg *core.Package, path string) (*etree.Document, error) {
 //
 // 返回值表示「文档默认设置是否已确立为 area」，而非「本次是否改动了字节」：
 // 既有默认值已经等于 area 时同样算确立，此时不重复改写文件。
-func writeDefaultPageArea(pkg *core.Package, docEntry string, area pageArea,
+func writeDefaultPageArea(pkg *inputPackage, docEntry string, area pageArea,
 	operations map[string][]byte) (bool, error) {
 
-	data, ok := operations[docEntry]
-	if !ok {
-		raw, err := pkg.Read(docEntry)
-		if err != nil {
-			return false, fmt.Errorf("读取 %s 失败: %w", docEntry, err)
-		}
-		data = raw
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return false, fmt.Errorf("解析 %s 失败: %w", docEntry, err)
+	doc, err := loadCurrentXML(pkg, docEntry, operations)
+	if err != nil {
+		return false, err
 	}
 	root := doc.Root()
 	common := findChild(root, "CommonData")
@@ -926,7 +1090,7 @@ func writeDefaultPageArea(pkg *core.Package, docEntry string, area pageArea,
 		return false, nil
 	}
 	insertPageArea(common, replacement)
-	out, err := doc.WriteToBytes()
+	out, err := ofdxml.MarshalDocument(doc)
 	if err != nil {
 		return false, fmt.Errorf("序列化 %s 失败: %w", docEntry, err)
 	}
@@ -964,7 +1128,7 @@ func findChild(parent *etree.Element, tag string) *etree.Element {
 	return nil
 }
 
-// element 返回该页面设置的副本，改成指定标签名。命名空间随克隆一并保留。
+// element 返回该页面设置的副本，改成指定标签名，并补齐从源文件继承的命名空间。
 func (a pageArea) element(tag string) *etree.Element {
 	if a.source == nil {
 		// 理论上不会发生：pageArea 只由 parsePageArea 产生。
@@ -972,5 +1136,12 @@ func (a pageArea) element(tag string) *etree.Element {
 	}
 	clone := a.source.Copy()
 	clone.Tag = tag
+	for parent := a.source.Parent(); parent != nil; parent = parent.Parent() {
+		for _, attr := range parent.Attr {
+			if (attr.Space == "xmlns" || attr.Key == "xmlns") && clone.SelectAttr(attr.FullKey()) == nil {
+				clone.CreateAttr(attr.FullKey(), attr.Value)
+			}
+		}
+	}
 	return clone
 }

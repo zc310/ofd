@@ -77,7 +77,7 @@ go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.p
 | 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单创建、配置导出、水印与条目替换；支持多文档打包、模型级拼页、选页和重排。 |
 | 校验与分析 | [ofd-validator](cmd/ofd-validator/README.md) 检查 ZIP、XML、XSD、引用和语义；[ofd-analyzer](cmd/ofd-analyzer/README.md) 分析结构、页面、资源、附件与签名。 |
 | 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
-| 档案预检 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证。 |
+| 档案预检与处理 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证；[preserve](cmd/ofd-archive/README.md#长期保存处理preserve) 对单文档执行长期保存转换，保留页面实际尺寸，清理页面、模板及资源内的图元动作，并按转换后引用分析孤立文件。 |
 | 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，支持结构化附件与自定义标引，JSON/CSV/XLSX 汇总、去重、自校验与 PDF 合并打印。 |
 | 电子签章 | [ofd-seal](cmd/ofd-seal/README.md)：SES V4 SM2/SM3 电子印章；[签署与验证 API](pkg/sign/README.md) 支持签章生成、外部签署与完整验证，接受签章使用 `Result.FullyValid()`。[creator 验签报告](cmd/ofd-creator/README.md#签名处理) 展示完整状态及原因。外部协议示例见 [ofd-signer-demo](cmd/ofd-signer-demo/README.md)。 |
 | 阅读器 | [ofd-viewer](cmd/ofd-viewer/README.md)：桌面、Android 与 Fyne Web 阅读器；[ofd-wasm](cmd/ofd-wasm/README.md)：浏览器阅读器、WASM API 与 Worker 协议。 |
@@ -132,6 +132,7 @@ func main() {
 | 多文档合并、拼页和重排 | [`pkg/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 文档对比 | [`pkg/compare` 库指南](pkg/compare/README.md) |
+| 长期保存转换与改动计划 | [`pkg/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
 
 输入类型、页码、DPI、格式导入、缓存与字体等细节见 [Go API 使用指南](docs/GO-API.md)。
 基于本库的独立应用示例有 [ofd-viewer](https://github.com/zc310/ofd-viewer) 与

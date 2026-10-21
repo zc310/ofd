@@ -6,12 +6,33 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // fixtureOf 是测试样例在 testdata 里的路径。
 const fixtureOf = "../../testdata/"
+
+func countOFDElements(t *testing.T, input, local string) int {
+	t.Helper()
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(input); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	var walk func(*etree.Element)
+	walk = func(element *etree.Element) {
+		if element.Tag == local && element.NamespaceURI() == spec.Namespace {
+			count++
+		}
+		for _, child := range element.ChildElements() {
+			walk(child)
+		}
+	}
+	walk(doc.Root())
+	return count
+}
 
 // docXML 取出包内 Document.xml 的内容。
 func docXML(t *testing.T, file string) []byte {
@@ -336,7 +357,7 @@ func TestPreserveRemovesPageActions(t *testing.T) {
 	if strings.Contains(after["Doc_0/Pages/Page_0/Content.xml"], "URI") {
 		t.Error("非 Goto 动作仍残留")
 	}
-	if n := strings.Count(after["Doc_0/Pages/Page_0/Content.xml"], "<Goto"); n != 2 {
+	if n := countOFDElements(t, after["Doc_0/Pages/Page_0/Content.xml"], "Goto"); n != 2 {
 		t.Errorf("Goto 动作应保留 2 个，实际 %d 个", n)
 	}
 }
@@ -370,7 +391,7 @@ func TestPreserveRemovesOutlineActions(t *testing.T) {
 	if strings.Contains(got, "URI") {
 		t.Error("大纲内的非 Goto 动作仍残留")
 	}
-	if n := strings.Count(got, "<Goto"); n != 1 {
+	if n := countOFDElements(t, got, "Goto"); n != 1 {
 		t.Errorf("大纲内 Goto 动作应保留 1 个，实际 %d 个", n)
 	}
 }
@@ -454,7 +475,7 @@ func buildWithOrphan(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// TestUnreferencedReportedButNotDeletedByDefault 覆盖 6.2.1 c) 的默认行为：
+// TestUnreferencedReportedButNotDeletedByDefault 覆盖 6.2.1 e) 的默认行为：
 // 无人引用的条目只报告不删除。删除不可逆，而闭包正确性依赖引用识别是否穷尽。
 func TestUnreferencedReportedButNotDeletedByDefault(t *testing.T) {
 	result, err := Plan(buildWithOrphan(t), Options{DocType: "OFD-A"})
@@ -472,7 +493,7 @@ func TestUnreferencedReportedButNotDeletedByDefault(t *testing.T) {
 	}
 }
 
-// TestUnreferencedDeletedWhenOptedIn 确认显式开启后 6.2.1 c) 真正执行删除。
+// TestUnreferencedDeletedWhenOptedIn 确认显式开启后 6.2.1 e) 真正执行删除。
 func TestUnreferencedDeletedWhenOptedIn(t *testing.T) {
 	var out bytes.Buffer
 	result, err := Apply(buildWithOrphan(t), &out, Options{
@@ -584,7 +605,7 @@ func TestPageAreaPromotesMostUsedAsDefault(t *testing.T) {
 	// PageArea 必须紧随 MaxUnitID：CT_CommonData 是 xs:sequence，顺序错则 XSD 不过。
 	maxIdx := strings.Index(doc, "MaxUnitID")
 	areaIdx := strings.Index(doc, "PageArea")
-	pagesIdx := strings.Index(doc, "<Pages")
+	pagesIdx := strings.Index(doc, "<ofd:Pages")
 	if !(maxIdx < areaIdx && areaIdx < pagesIdx) {
 		t.Errorf("PageArea 位置不对，应在 MaxUnitID 之后、Pages 之前：\n%s", doc)
 	}
@@ -617,10 +638,10 @@ func TestPageAreaOmitsMatchingPages(t *testing.T) {
 	}
 	result, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
 	for _, name := range []string{"Doc_0/Pages/Page_0/Content.xml", "Doc_0/Pages/Page_1/Content.xml"} {
-		if strings.Contains(after[name], "<Area>") {
+		if countOFDElements(t, after[name], "Area") != 0 {
 			t.Errorf("%s 的 Area 应被省略：\n%s", name, after[name])
 		}
-		if !strings.Contains(after[name], "<Content>") {
+		if countOFDElements(t, after[name], "Content") == 0 {
 			t.Errorf("%s 的页面内容被误删：\n%s", name, after[name])
 		}
 	}
@@ -656,10 +677,10 @@ func TestPageAreaKeepsNonMatchingPage(t *testing.T) {
 	}
 	_, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
 	// 两页设置不同，各出现一次，按页面顺序取前者为默认，故第一页被省略、第二页保留。
-	if strings.Contains(after["Doc_0/Pages/Page_0/Content.xml"], "<Area>") {
+	if countOFDElements(t, after["Doc_0/Pages/Page_0/Content.xml"], "Area") != 0 {
 		t.Errorf("成为默认设置的那页应省略 Area：\n%s", after["Doc_0/Pages/Page_0/Content.xml"])
 	}
-	if !strings.Contains(after["Doc_0/Pages/Page_1/Content.xml"], "<Area>") {
+	if countOFDElements(t, after["Doc_0/Pages/Page_1/Content.xml"], "Area") == 0 {
 		t.Errorf("非默认设置的页面应保留 Area：\n%s", after["Doc_0/Pages/Page_1/Content.xml"])
 	}
 }
@@ -682,7 +703,7 @@ func TestPageAreaComparesNumerically(t *testing.T) {
 		`<PageArea><PhysicalBox>0 0 10 10</PhysicalBox></PageArea>`, "", 1)
 	_, after := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A"})
 	// 写法不同但数值相同，应被判定为与默认一致而省略。
-	if strings.Contains(after["Doc_0/Pages/Page_0/Content.xml"], "<Area>") {
+	if countOFDElements(t, after["Doc_0/Pages/Page_0/Content.xml"], "Area") != 0 {
 		t.Errorf("数值相同的页面设置应被识别为一致并省略 Area：\n%s",
 			after["Doc_0/Pages/Page_0/Content.xml"])
 	}

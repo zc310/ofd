@@ -177,7 +177,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.profile, "profile", "", "档案字段 profile JSON/YAML 文件；与 --doc-type 无关")
 	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-validator --doc-type 同义")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "preserve 只列出计划改动，不写出文件")
-	flags.BoolVar(&opts.dropUnreferenced, "drop-unreferenced", false, "preserve 删除无人引用的条目（GB/T 42133 6.2.1 c)）；默认只报告不删除，引用闭包不完整时拒绝删除")
+	flags.BoolVar(&opts.dropUnreferenced, "drop-unreferenced", false, "preserve 删除无人引用的条目（GB/T 42133 6.2.1 e)）；默认只报告不删除，引用闭包不完整时拒绝删除")
 	flags.StringVar(&opts.format, "format", opts.format, "输出格式：text、json、markdown 或 xlsx")
 	flags.BoolVar(&opts.pretty, "pretty", false, "缩进 JSON 输出")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")

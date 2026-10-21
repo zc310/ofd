@@ -87,7 +87,7 @@ func writePreserveResult(opts *options, result preserve.Result, stdout io.Writer
 	return nil
 }
 
-// writeUnreferenced 展示 6.2.1 c) 的删除候选与实际删除结果。候选清单可能很长，
+// writeUnreferenced 展示 6.2.1 e) 的删除候选与实际删除结果。候选清单可能很长，
 // 因此完整清单只在 JSON 输出里给出，文本输出只报数量与结论。
 func writeUnreferenced(opts *options, result preserve.Result, stdout io.Writer) {
 	if len(result.Unreferenced) == 0 {
@@ -103,7 +103,7 @@ func writeUnreferenced(opts *options, result preserve.Result, stdout io.Writer) 
 		// 用户已经加过了。
 		_, _ = fmt.Fprintf(stdout, "无人引用条目\t将删除 %d 个（--dry-run，未实际删除）\n", len(result.Unreferenced))
 	case result.UnreferencedDropped > 0:
-		_, _ = fmt.Fprintf(stdout, "无人引用条目\t已删除 %d 个（GB/T 42133 6.2.1 c)）\n", result.UnreferencedDropped)
+		_, _ = fmt.Fprintf(stdout, "无人引用条目\t已删除 %d 个（GB/T 42133 6.2.1 e)）\n", result.UnreferencedDropped)
 	default:
 		_, _ = fmt.Fprintf(stdout, "无人引用条目\t%d 个（未删除，加 --drop-unreferenced 执行）\n", len(result.Unreferenced))
 	}
