@@ -518,8 +518,8 @@ func (a *annotationIndex) load(document models.Document) error {
 		if err != nil {
 			continue
 		}
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(data); err != nil {
+		doc, err := ofdxml.Parse(data)
+		if err != nil {
 			return fmt.Errorf("解析 %s 失败: %w", entry, err)
 		}
 		if root := doc.Root(); root != nil {
@@ -547,8 +547,8 @@ func indexDocRootOf(pkg *core.Package, entry string) (*etree.Document, *etree.El
 	if err != nil {
 		return nil, nil, err
 	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return nil, nil, err
 	}
 	if root := doc.Root(); root != nil {
@@ -560,8 +560,8 @@ func indexDocRootOf(pkg *core.Package, entry string) (*etree.Document, *etree.El
 // pendingDocRoot 解析条目为 etree 文档，优先使用本引擎尚未写回的最新内容。
 func (a *annotationIndex) pendingDocRoot(entry string) (*etree.Document, *etree.Element, error) {
 	if data, ok := a.engine.changes[entry]; ok {
-		doc := etree.NewDocument()
-		if err := doc.ReadFromBytes(data); err != nil {
+		doc, err := ofdxml.Parse(data)
+		if err != nil {
 			return nil, nil, err
 		}
 		if root := doc.Root(); root != nil {
@@ -592,8 +592,8 @@ func (a *annotationIndex) loadPage(pageID uint64) (*pageTree, error) {
 	if existed {
 		data, err := a.pkg.Read(entry)
 		if err == nil {
-			doc := etree.NewDocument()
-			if err := doc.ReadFromBytes(data); err != nil {
+			doc, err := ofdxml.Parse(data)
+			if err != nil {
 				return nil, fmt.Errorf("解析 %s 失败: %w", entry, err)
 			}
 			tree.doc = doc
@@ -624,7 +624,7 @@ func (a *annotationIndex) flushPage(tree *pageTree) error {
 	if a.pages[tree.pageID] == "" {
 		a.pages[tree.pageID] = tree.entry
 	}
-	data, err := tree.doc.WriteToBytes()
+	data, err := ofdxml.Marshal(tree.doc)
 	if err != nil {
 		return fmt.Errorf("序列化页面注解失败: %w", err)
 	}
@@ -692,17 +692,9 @@ func (a *annotationIndex) indexEntryValue() string {
 }
 
 func (e *engine) setDocumentAnnotations(a *annotationIndex) error {
-	data, err := e.pkg.Read(a.docEntry)
+	doc, root, err := e.readDocumentXML(a.docEntry)
 	if err != nil {
-		return fmt.Errorf("读取 %s 失败: %w", a.docEntry, err)
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return fmt.Errorf("解析 %s 失败: %w", a.docEntry, err)
-	}
-	root := doc.Root()
-	if root == nil {
-		return fmt.Errorf("解析 %s 失败: 缺少根元素", a.docEntry)
+		return err
 	}
 	prefix := ofdPrefix
 	ensureNamespace(root, prefix)
@@ -716,26 +708,13 @@ func (e *engine) setDocumentAnnotations(a *annotationIndex) error {
 	if err := insertAnnotationsInOrder(root, el); err != nil {
 		return err
 	}
-	data, err = doc.WriteToBytes()
-	if err != nil {
-		return fmt.Errorf("序列化 %s 失败: %w", a.docEntry, err)
-	}
-	e.changes[a.docEntry] = data
-	return nil
+	return e.writeDocumentXML(a.docEntry, doc)
 }
 
 func (e *engine) dropDocumentAnnotations(a *annotationIndex) error {
-	data, err := e.pkg.Read(a.docEntry)
+	doc, root, err := e.readDocumentXML(a.docEntry)
 	if err != nil {
-		return fmt.Errorf("读取 %s 失败: %w", a.docEntry, err)
-	}
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
-		return fmt.Errorf("解析 %s 失败: %w", a.docEntry, err)
-	}
-	root := doc.Root()
-	if root == nil {
-		return fmt.Errorf("解析 %s 失败: 缺少根元素", a.docEntry)
+		return err
 	}
 	var target *etree.Element
 	for _, child := range root.ChildElements() {
@@ -748,11 +727,31 @@ func (e *engine) dropDocumentAnnotations(a *annotationIndex) error {
 		return nil
 	}
 	root.RemoveChild(target)
-	data, err = doc.WriteToBytes()
+	return e.writeDocumentXML(a.docEntry, doc)
+}
+
+func (e *engine) readDocumentXML(entry string) (*etree.Document, *etree.Element, error) {
+	data, err := e.pkg.Read(entry)
 	if err != nil {
-		return fmt.Errorf("序列化 %s 失败: %w", a.docEntry, err)
+		return nil, nil, fmt.Errorf("读取 %s 失败: %w", entry, err)
 	}
-	e.changes[a.docEntry] = data
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("解析 %s 失败: %w", entry, err)
+	}
+	root := doc.Root()
+	if root == nil {
+		return nil, nil, fmt.Errorf("解析 %s 失败: 缺少根元素", entry)
+	}
+	return doc, root, nil
+}
+
+func (e *engine) writeDocumentXML(entry string, doc *etree.Document) error {
+	data, err := ofdxml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("序列化 %s 失败: %w", entry, err)
+	}
+	e.changes[entry] = data
 	return nil
 }
 
@@ -934,7 +933,7 @@ func (a *annotationIndex) patchResImage(resEntry string, imageID uint64, format,
 	media.CreateAttr("Type", spec.MediaTypeImage)
 	media.CreateAttr("Format", format)
 	media.CreateElement(prefixTag(prefix, "MediaFile")).SetText(mediaFile)
-	output, err := doc.WriteToBytes()
+	output, err := ofdxml.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("序列化 %s 失败: %w", resEntry, err)
 	}
@@ -1052,7 +1051,7 @@ func (a *annotationIndex) reclaimMedia(document models.Document) error {
 			parent.RemoveChild(container)
 		}
 	}
-	output, err := doc.WriteToBytes()
+	output, err := ofdxml.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("序列化 %s 失败: %w", resEntry, err)
 	}
@@ -1112,8 +1111,8 @@ func (a *annotationIndex) referencedMediaIDs() (map[uint64]bool, error) {
 
 // collectMediaFromXML 解析 XML 数据并收集所有 ImageObject 的 ResourceID。
 func collectMediaFromXML(data []byte, into map[uint64]bool) error {
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(data); err != nil {
+	doc, err := ofdxml.Parse(data)
+	if err != nil {
 		return err
 	}
 	if root := doc.Root(); root != nil {

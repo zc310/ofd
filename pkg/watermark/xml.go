@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -107,13 +108,13 @@ func appendRawXML(parent *etree.Element, data []byte, prefix string) error {
 	if strings.HasPrefix(strings.TrimSpace(string(data)), "<?xml") {
 		return fmt.Errorf("XML 片段不能包含 XML 声明")
 	}
-	document := etree.NewDocument()
 	wrapped := append([]byte("<RawXML>"), data...)
 	wrapped = append(wrapped, []byte("</RawXML>")...)
-	if err := document.ReadFromBytes(wrapped); err != nil {
+	parsed, err := ofdxml.Parse(wrapped)
+	if err != nil {
 		return err
 	}
-	root := document.Root()
+	root := parsed.Root()
 	for _, child := range root.Child {
 		switch value := child.(type) {
 		case *etree.Element:
