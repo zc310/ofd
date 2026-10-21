@@ -15,7 +15,6 @@ require (
 	github.com/emmansun/gmsm v0.45.0
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.11.2
-	github.com/gogpu/gg v0.52.5
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/h2non/filetype v1.1.3
 	github.com/hack-pad/go-indexeddb v0.3.2
@@ -25,7 +24,6 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/knroy/go-xml v1.8.1
 	github.com/kovidgoyal/imaging v1.9.0
-	github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
@@ -85,8 +83,6 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.4 // indirect
-	github.com/gogpu/gpucontext v0.31.3 // indirect
-	github.com/gogpu/gputypes v0.8.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect

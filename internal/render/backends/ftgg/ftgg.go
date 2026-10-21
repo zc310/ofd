@@ -32,7 +32,7 @@ func init() {
 	})
 }
 
-// New 创建 FloatTech/gg 光栅后端。输出分辨率和像素尺寸规则与 gogpu/gg
+// New 创建 FloatTech/gg 光栅后端。输出分辨率和像素尺寸规则与 canvas
 // 后端一致。
 func New(width, height float64, resolution geom.Resolution) (drawing.Backend, error) {
 	core, err := rastercore.New(width, height, resolution, func(wpx, hpx int, dpmm, hpix float64) rastercore.Hooks {

@@ -10,7 +10,7 @@ import (
 )
 
 // Backend 是后端契约的别名：契约定义在与绘制库无关的 drawing 包，插件后端
-// （gg/ftgg/tinyskia/draw2d）直接依赖 drawing，不必依赖 render/canvas。
+// （ftgg/tinyskia）直接依赖 drawing，不必依赖 render/canvas。
 type Backend = drawing.Backend
 
 // BackendCanvas 是内置的 tdewolff/canvas 光栅后端名。canvas 实现位于

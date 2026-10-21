@@ -2,7 +2,7 @@
 // 核心与各实现包共享的公共契约类型（字体、矢量输出、SVG 场景等）。
 //
 // render 的页面绘制代码面向 DrawContext；canvas 内置后端与各插件后端
-// （gg/ftgg/tinyskia/draw2d）都实现它。后端插件通过 RegisterBackend 注册后，
+// （ftgg/tinyskia）都实现它。后端插件通过 RegisterBackend 注册后，
 // 由 render.NewBackend 按名创建。把契约放在本包，使插件包只需依赖 geom 与
 // 本包，不必依赖 render（从而不连带引入 tdewolff/canvas）。
 package drawing
@@ -27,16 +27,10 @@ import (
 const (
 	// BackendCanvas 使用 tdewolff/canvas 光栅器（render 内置默认路径）。
 	BackendCanvas = "canvas"
-	// BackendGG 使用 gogpu/gg 光栅后端。需要空白导入
-	// github.com/zc310/ofd/internal/render/backends/gg 才能注册使用。
-	BackendGG = "gg"
 	// BackendFTGG 使用 FloatTech/gg 光栅后端（测速对照）。
 	BackendFTGG = "ftgg"
 	// BackendTinySkia 使用 tinyskia 光栅后端（测速对照）。
 	BackendTinySkia = "tinyskia"
-	// BackendDraw2D 使用 llgcode/draw2d 光栅后端（测速对照）。需要空白导入
-	// github.com/zc310/ofd/internal/render/backends/draw2d 才能注册使用。
-	BackendDraw2D = "draw2d"
 )
 
 // DrawContext 是 OFD 页面绘制所依赖的最小操作面，全部使用与绘制库无关的
@@ -145,7 +139,7 @@ func RegisterBackend(name string, factory BackendFactory) error {
 }
 
 // RegisterOrReplaceBackend 注册后端；若同名已注册则替换。供“用另一实现提供
-// 同名后端”的插件使用（例如用另一实现覆盖已有的 "gg"）。
+// 同名后端”的插件使用。
 func RegisterOrReplaceBackend(name string, factory BackendFactory) error {
 	if name == "" {
 		return errors.New("渲染后端名称不能为空")

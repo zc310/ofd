@@ -35,7 +35,7 @@ ofd-converter --help
 | `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
-| `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`gg`、`ftgg`、`tinyskia`、`draw2d` |
+| `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`ftgg`、`tinyskia` |
 | `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                                      |
 | `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                                               |
 | `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                                                |

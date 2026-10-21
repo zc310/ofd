@@ -37,8 +37,6 @@ func TestImageDocumentsPropagateWriterErrors(t *testing.T) {
 		{name: "canvas_png", format: PNG()},
 		{name: "canvas_jpg", format: JPG()},
 		{name: "canvas_svg", format: SVG()},
-		{name: "gg_png", format: PNG(), backend: "gg"},
-		{name: "gg_jpg", format: JPG(), backend: "gg"},
 	} {
 		t.Run(output.name, func(t *testing.T) {
 			for _, failure := range []struct {

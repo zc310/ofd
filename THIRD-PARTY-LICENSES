@@ -44,10 +44,6 @@ Source: https://github.com/go-text/typesetting
 License: MIT
 Source: https://github.com/goccy/go-json
 
-### github.com/gogpu/gg v0.52.5
-License: MIT
-Source: https://github.com/gogpu/gg
-
 ### github.com/h2non/filetype v1.1.3
 License: MIT
 Source: https://github.com/h2non/filetype
@@ -67,10 +63,6 @@ Source: https://github.com/knroy/go-xml
 ### github.com/kovidgoyal/imaging v1.8.23
 License: MIT
 Source: https://github.com/kovidgoyal/imaging
-
-### github.com/llgcode/draw2d v0.0.0-20260422081035-c4331ac66734
-License: BSD-2-Clause
-Source: https://github.com/llgcode/draw2d
 
 ### github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 License: BSD-3-Clause

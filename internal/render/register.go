@@ -16,7 +16,6 @@ type BackendFactory = drawing.BackendFactory
 // 自己的 init() 里注册，例：
 //
 //	import _ "github.com/zc310/ofd/internal/render/backends/canvas"  // 内置 canvas
-//	import _ "github.com/zc310/ofd/internal/render/backends/gg"      // gogpu/gg
 //
 // 只有显式导入后端的二进制才会包含对应实现。
 var (
