@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Install desktop build dependencies
@@ -64,7 +64,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Install desktop build dependencies
@@ -98,7 +98,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Build macOS command-line tools
@@ -160,7 +160,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Install LLVM-MinGW
@@ -201,7 +201,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Build macOS viewer
@@ -224,7 +224,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - uses: actions/setup-java@v6
@@ -270,7 +270,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
       - name: Install Binaryen
