@@ -60,14 +60,14 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 		return nil, err
 	}
 	s := &snapshot{ofd: ofd, files: map[string]*File{}, renderers: map[int]*render.Document{}, input: Input{Name: filename, Size: info.Size(), Documents: len(ofd.Documents), Files: []File{}, Directories: []string{}, Pages: []Page{}}}
-	if err := reserveData(options, filename); err != nil {
-		return nil, err
-	}
 	defer func() {
 		if err != nil {
 			s.close()
 		}
 	}()
+	if err := reserveData(options, filename); err != nil {
+		return nil, err
+	}
 	if len(ofd.Documents) == 0 {
 		return nil, fmt.Errorf("OFD 没有文档体")
 	}
@@ -181,12 +181,11 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 
 type contextReader struct {
 	io.Reader
-
-	ctx context.Context
+	err func() error
 }
 
 func (r contextReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
+	if err := r.err(); err != nil {
 		return 0, err
 	}
 	return r.Reader.Read(p)
@@ -201,7 +200,7 @@ func inspectEntry(ctx context.Context, pkg *core.Package, entry core.Entry, opti
 	defer r.Close()
 	h := sha256.New()
 	isXML := strings.EqualFold(path.Ext(f.Path), ".xml")
-	if _, err := io.Copy(h, contextReader{Reader: r, ctx: ctx}); err != nil {
+	if _, err := io.Copy(h, contextReader{Reader: r, err: ctx.Err}); err != nil {
 		return f, err
 	}
 	f.SHA256 = hex.EncodeToString(h.Sum(nil))

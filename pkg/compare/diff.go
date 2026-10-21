@@ -13,7 +13,8 @@ func compareSnapshots(ctx context.Context, base, target *snapshot, options Optio
 	}
 	c.DirectoriesAdded = difference(target.input.Directories, base.input.Directories)
 	c.DirectoriesRemoved = difference(base.input.Directories, target.input.Directories)
-	removed, added := []*File{}, []*File{}
+	var removed []*File
+	var added []*File
 	for i := range base.input.Files {
 		before := &base.input.Files[i]
 		after := target.files[before.Path]
@@ -188,7 +189,7 @@ func difference(a, b []string) []string {
 	for _, s := range b {
 		set[s] = true
 	}
-	out := []string{}
+	var out []string
 	for _, s := range a {
 		if !set[s] {
 			out = append(out, s)

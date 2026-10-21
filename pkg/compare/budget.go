@@ -61,7 +61,7 @@ type imageStore struct {
 func (s *imageStore) encode(ctx context.Context, img image.Image) (string, error) {
 	var buf bytes.Buffer
 	budget := &byteBudget{remaining: s.remaining, label: "预览图"}
-	if err := png.Encode(budgetWriter{contextWriter{ctx, &buf}, budget}, img); err != nil {
+	if err := png.Encode(budgetWriter{contextWriter{ctx.Err, &buf}, budget}, img); err != nil {
 		return "", err
 	}
 	s.remaining = budget.remaining
@@ -91,12 +91,12 @@ func encodePreview(ctx context.Context, img image.Image, options Options) (strin
 }
 
 type contextWriter struct {
-	ctx context.Context
+	err func() error
 	w   io.Writer
 }
 
 func (w contextWriter) Write(p []byte) (int, error) {
-	if err := w.ctx.Err(); err != nil {
+	if err := w.err(); err != nil {
 		return 0, err
 	}
 	return w.w.Write(p)
