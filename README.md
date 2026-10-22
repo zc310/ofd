@@ -19,7 +19,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
 | 想做什么 | 入口 |
 |---|---|
-| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)（在线阅读 OFD） |
+| 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/) |
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases) |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 接入自己的 Go 项目 | [Go API](#go-api)、[库使用指南](docs/GO-API.md) |
@@ -148,6 +148,10 @@ func main() {
 搜索、页面导航、图层与模板显隐、附件和签名检查，以及 PNG/JPG/PDF/TXT 导出。
 本地启动方式见 [WASM 构建与运行](docs/BUILDING.md#浏览器阅读器)；API 与 Worker 协议见
 [ofd-wasm](cmd/ofd-wasm/README.md)。
+
+**Fyne Web**：[在线体验](https://zc310.github.io/ofd/fyne/)与桌面、Android 版本共用阅读界面，
+支持选择本地 OFD 和导出下载，文档在浏览器内处理，需要 WebAssembly 和 WebGL。
+构建与运行方式见 [Web 打包](cmd/ofd-viewer/README.md#web-打包)。
 
 ## 构建与打包
 

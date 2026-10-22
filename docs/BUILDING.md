@@ -49,6 +49,7 @@ make package-wasm-web
 | `package-windows-arm64` | Windows ARM64 需要 LLVM MinGW，可设 `WINDOWS_ARM64_CC`、`WINDOWS_ARM64_CXX`，或 `CC`、`CXX`。 |
 | `package-viewer-android` / `package-viewer-android-zip` | Android APK / APK ZIP，需要 Fyne、Android SDK 与 NDK。 |
 | `package-wasm-web` | WASM 浏览器阅读器及 Web 资源包。 |
+| `build-viewer-web` | Fyne Web 阅读器，需要 Fyne CLI；输出到 `cmd/ofd-viewer/wasm/`。 |
 
 Windows 桌面版使用 `-H=windowsgui`，运行时不显示命令行窗口。`ofd-thumbnailer`
 仅构建 Linux 版本，安装方式见[缩略图工具说明](../cmd/ofd-thumbnailer/README.md)。
@@ -81,7 +82,8 @@ python3 -m http.server 8080 --directory cmd/ofd-wasm/web
 API、Worker 协议与缓存说明见 [ofd-wasm](../cmd/ofd-wasm/README.md)，脚本开发和测试见
 [Web 维护说明](../cmd/ofd-wasm/web/README.md)。
 
-Fyne 阅读器的 Web 版本打包与本地运行方式见
+Fyne 阅读器的 Web 版本部署在 <https://zc310.github.io/ofd/fyne/>，构建命令为
+`make build-viewer-web`，Fyne CLI 安装和本地运行方式见
 [ofd-viewer](../cmd/ofd-viewer/README.md#web-打包)。
 
 ## 运行依赖

@@ -1,41 +1,50 @@
-# 构建 WASM 阅读器并发布到 GitHub Pages。
+# 构建浏览器阅读器和 Fyne Web 阅读器并发布到 GitHub Pages。
 #
-# 页面放在站点根下的 wasm/ 子目录，访问地址：
-#   https://zc310.github.io/ofd/wasm/
+# 页面分别放在站点根下的 wasm/ 和 fyne/ 子目录，访问地址：
+#   https://zc310.github.io/ofd/wasm/  （cmd/ofd-wasm）
+#   https://zc310.github.io/ofd/fyne/  （cmd/ofd-viewer）
 #
-# 页面里所有资源都是相对路径（./viewer.js、fetch('ofd.wasm')、
-# importScripts('wasm_exec.js')），Service Worker 也是用相对路径注册且没写死
-# scope，作用域自动等于所在目录，所以整体搬到子目录下不用改任何代码。
+# 两套页面的资源都使用相对路径，可直接放到子目录。浏览器阅读器的 Service Worker
+# 也用相对路径注册且没写死 scope，作用域自动等于所在目录，不影响 fyne/。
 name: Pages
 
 on:
   push:
     branches: ["main"]
-    # 只在这些路径变化时重建：ofd.wasm 有二十多兆，每次提交都重编太浪费。
+    # 只在两个阅读器及其依赖变化时重建，避免无关提交重新编译 WASM。
     #
-    # 下面是 ofd.wasm 的依赖闭包，可用下面这条命令核对（务必用 wasm 目标，
+    # 下面是两个入口的依赖闭包并集，可用下面这条命令核对（务必用 wasm 目标，
     # 宿主机下 cmd/ofd-wasm 没有可构建文件，go list 会只列出它自己）：
     #
-    #   GOOS=js GOARCH=wasm go list -deps ./cmd/ofd-wasm \
+    #   CGO_ENABLED=0 GOOS=js GOARCH=wasm go list -tags latex,release -deps ./cmd/ofd-wasm ./cmd/ofd-viewer \
     #     | grep '^github.com/zc310/ofd/' | sed 's|github.com/zc310/ofd/||' \
     #     | cut -d/ -f1-2 | sort -u
     #
     # 新增依赖包后要同步补进来，漏掉的包改动不会触发部署，用户会一直用旧版页面。
-    # internal/spec 迁到 pkg/spec、fastxml 与 coloricc/core 都是后来补进闭包的。
     paths:
       - "cmd/ofd-wasm/**"
+      - "cmd/ofd-viewer/**"
+      - "pkg/converter/**"
       - "pkg/spec/**"
       - "pkg/webreader/**"
       - "internal/coloricc/**"
       - "internal/cidmap/**"
       - "internal/core/**"
+      - "internal/docx/**"
       - "internal/fastxml/**"
       - "internal/fontrepair/**"
+      - "internal/localization/**"
+      - "internal/markdown/**"
       - "internal/parser/**"
+      - "internal/pdf2ofd/config/**"
       - "internal/render/**"
       - "internal/models/**"
       - "internal/media/**"
+      - "internal/search/**"
+      - "internal/ses/**"
+      - "internal/textdoc/**"
       - "internal/utils/**"
+      - "internal/version/**"
       - "go.mod"
       - "go.sum"
       - "Makefile"
@@ -89,20 +98,31 @@ jobs:
       - name: Build WASM
         run: make build-wasm
 
+      - name: Install Fyne CLI
+        run: |
+          go install fyne.io/tools/cmd/fyne@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build Fyne Web
+        run: make build-viewer-web
+
       # viewer.js 的改动要在 Node 里跑一遍：这些测试从源码按括号配平切出待测
       # 函数，改了断行或导出就会失效。
       - name: Test web scripts
         run: make test-wasm-web
 
       # upload-pages-artifact 不支持排除项，先把要发布的文件挑到 _site。
-      # 只放 wasm/ 子目录，仓库其余内容不进 Pages。
+      # 只放 wasm/ 和 fyne/ 子目录，仓库其余内容不进 Pages。
       #
       # 剔掉 test/：那是本地跑 make test-wasm-web 用的测试脚本，页面上没有入口。
       # README.md 和 THIRD_PARTY_NOTICES.md 保留——后者是第三方许可声明。
       - name: Stage site
         run: |
-          mkdir -p _site/wasm
+          mkdir -p _site/wasm _site/fyne
           cp -a cmd/ofd-wasm/web/. _site/wasm/
+          cp -a cmd/ofd-viewer/wasm/. _site/fyne/
+          cp cmd/ofd-wasm/web/THIRD_PARTY_NOTICES.md _site/fyne/
+          cp internal/cidmap/NOTICE _site/fyne/ADOBE-GB1-NOTICE
           rm -rf _site/wasm/test
           echo "发布内容："
           find _site -type f | sort

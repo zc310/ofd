@@ -134,7 +134,7 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
+.PHONY: all build build-tools build-wasm build-viewer-web test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
 
 all: package
 
@@ -143,6 +143,7 @@ help:
 		'make build                    Build all command programs' \
 		'make build-wasm               Build the browser WASM engine' \
 		'make build-wasm WASM_OPT_ENABLED=0  Skip wasm-opt optimization' \
+		'make build-viewer-web         Build the Fyne Web reader (requires fyne)' \
 		'make test-wasm-web           Run the browser reader script tests' \
 		'make fixtures                 Download large test fixtures from GitHub' \
 		'make package                  Build desktop packages and Android APK ZIP' \
@@ -191,6 +192,11 @@ build-tools: $(TOOL_BUILD_TARGETS)
 # 缓存版本由 CACHE_NAME 的哈希管理：任一资源内容变化，缓存名变化，新 Service
 # Worker 安装时删除旧缓存并重新缓存全部资源。
 build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
+
+# Fyne 从 GOFLAGS 提取链接选项，-X= 写法让整项不含空格。
+# --release 负责 -trimpath、-s -w；页面元数据和 Go 版本信息都读取 VERSION。
+build-viewer-web:
+	@cd cmd/ofd-viewer && GOFLAGS="$(GOFLAGS) -ldflags=-X=github.com/zc310/ofd/internal/version.Version=$(VERSION)" "$(FYNE)" package --target=web --release --name ofd-viewer --app-version "$(VERSION)"
 
 # 图标子集字体按 cmd/ofd-wasm/web/icons.json 重新生成。该文件是图标清单的唯一
 # 来源：字体由它生成，web/test/icons.test.mjs 也会检查代码里用到的图标都在清单内。

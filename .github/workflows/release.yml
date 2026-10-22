@@ -245,7 +245,7 @@ jobs:
 
       - name: Install Fyne CLI
         run: |
-          go install fyne.io/tools/cmd/fyne@v1.7.3
+          go install fyne.io/tools/cmd/fyne@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build Android APK and ZIP

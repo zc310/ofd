@@ -144,6 +144,9 @@ make package-viewer-android-zip
 
 ## Web 打包
 
+[在线体验 Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/)。该版本由 GitHub Pages
+工作流构建并部署在 `/ofd/fyne/`，浏览器阅读器位于 [/ofd/wasm/](https://zc310.github.io/ofd/wasm/)。
+
 Web/WASM 版本右侧菜单提供“使用默认回退字体（Noto Sans SC）”，默认关闭。
 启用后优先读取浏览器 IndexedDB 中的字体；没有可用缓存时，下载
 [Noto Sans SC Regular TTF](https://cdn.jsdelivr.net/npm/@reogrid/font-sc@2.0.0/NotoSansSC-Regular.ttf)，
@@ -160,15 +163,23 @@ IndexedDB 副本供下次启用。字体加载失败后可再次启用重试；�
 当前会话仍可使用已加载的字体。桌面和 Android 版本不显示此选项。
 字体来源及许可证见 [Web 阅读器第三方声明](../ofd-wasm/web/THIRD_PARTY_NOTICES.md)。
 
-安装 Fyne 命令行工具后，在 `cmd/ofd-viewer` 目录执行：
+在仓库根目录安装 Fyne 命令行工具并构建（工具版本与 Pages 工作流一致）：
 
 ```bash
 go install fyne.io/tools/cmd/fyne@latest
-fyne package --target=web
+make build-viewer-web
 ```
 
-生成的 `wasm/` 目录包含页面、WASM 和运行时资源，使用 HTTP 静态文件服务部署；
-也可在当前目录运行 `fyne serve` 本地预览。浏览器需要启用 WebGL。
+生成的 `cmd/ofd-viewer/wasm/` 目录包含页面、WASM 和运行时资源，应用版本从根目录
+Makefile 的 `VERSION` 注入。资源使用相对路径，可整体部署到静态站点的子目录。
+本地预览可在仓库根目录执行：
+
+```bash
+python3 -m http.server 8080 --directory cmd/ofd-viewer/wasm
+```
+
+打开 <http://localhost:8080>，浏览器需要启用 WebGL。也可在 `cmd/ofd-viewer` 目录运行
+`fyne serve` 本地预览。
 
 点击“打开 OFD”选择本地文件，取消选择会返回阅读器。导出时按原文件名和所选格式
 生成下载，保存位置由浏览器设置决定，多页图片/矢量格式仍下载为 ZIP。
