@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/zc310/ofd/internal/localization"
 	"github.com/zc310/ofd/internal/version"
 )
 
@@ -15,6 +16,8 @@ const SchemaVersion = "1"
 
 // Options 控制对比范围。零值启用文件、结构和文字对比。
 type Options struct {
+	// Language selects report language (zh-CN or en); unsupported tags fall back to zh-CN.
+	Language string `json:"language,omitempty"`
 	// Baseline 是从 0 开始的输入索引，其他文件分别与该基准比较。
 	Baseline int `json:"baseline_index"`
 	// PageMatch 为 auto（默认）或 number。自动匹配优先关联相同页面内容或
@@ -245,6 +248,7 @@ func CompareFiles(ctx context.Context, paths []string, options Options) (*Report
 	if len(paths) < 2 {
 		return nil, errors.New("至少需要两份 OFD 文件")
 	}
+	options.Language = localization.CanonicalLanguage(options.Language)
 	if options.Baseline < 0 || options.Baseline >= len(paths) {
 		return nil, errors.New("基准文件序号超出范围")
 	}

@@ -121,8 +121,8 @@ func Files(paths []string, w io.Writer, options Options) error {
 		return errors.New("至少需要一个 OFD 输入文件")
 	}
 	sources := make([]source, 0, len(paths))
-	for _, path := range paths {
-		sources = append(sources, fileSource(path))
+	for _, p := range paths {
+		sources = append(sources, fileSource(p))
 	}
 	return mergeSources(sources, w, options)
 }

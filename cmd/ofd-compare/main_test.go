@@ -91,6 +91,17 @@ func TestCLIPageSelectionAndRegionOptions(t *testing.T) {
 	}
 }
 
+func TestCLILanguageSelectsLocalizedReportText(t *testing.T) {
+	a := inputFile(t, 30)
+	var out, errout bytes.Buffer
+	if code := run([]string{"--visual=false", "--lang", "en", "--format", "text", a, a}, &out, &errout); code != 0 {
+		t.Fatalf("%d %s", code, &errout)
+	}
+	if !strings.Contains(out.String(), "Page content is identical") {
+		t.Fatal("--lang did not localize page matching explanation")
+	}
+}
+
 func TestOutputFormatInferenceAndInputProtection(t *testing.T) {
 	a := inputFile(t, 30)
 	for _, ext := range []string{".html", ".json", ".md", ".txt"} {

@@ -56,6 +56,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags := cmd.Flags()
 	flags.StringVarP(&output, "output", "o", "", "报告路径；- 或省略写标准输出")
 	flags.StringVar(&format, "format", "", "报告格式：text、markdown、json、html；默认按输出扩展名推断")
+	flags.StringVar(&options.Language, "lang", "zh-CN", "Report language: zh-CN or en")
 	flags.IntVar(&baseline, "baseline", 1, "基准文件在位置参数中的序号，从 1 开始")
 	flags.StringVar(&options.PageMatch, "page-match", "auto", "页面匹配：auto 或 number")
 	flags.StringVar(&options.PageMap, "page-map", "", "手工页映射，例如 2:3,4:5；基准页码:各目标页码，仅适用于 auto")

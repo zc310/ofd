@@ -15,6 +15,9 @@ return compare.WriteReport(writer, report, "html")
 
 导入路径：`github.com/zc310/ofd/pkg/compare`。包已注册 canvas 渲染后端，调用方无需额外注册。
 
+`Options.Language` 选择报告语言，支持 `zh-CN`（默认）和 `en`；未知语言回退到 `zh-CN`。当前本地化覆盖所有报告格式中的页面配对依据说明，JSON 的 `match.method` 等机器值保持不变。翻译资源位于 `internal/localization/compare/locales`，消息 ID 使用模块前缀，例如 `compare.page_match.manual`。
+
+
 `Options` 的零值启用文件、XML、页面文字比较，`Visual` 为 false；CLI 默认启用视觉比较。`Options.Baseline` 是从 0 开始的输入索引，报告顶层 `baseline`、`target`、页面序号均从 1 开始。配置快照 `options.baseline_index` 保留 API 的零起点语义。JSON 格式版本为 `schema_version: "1"`。
 
 `Report.Inputs` 包含完整目录／文件清单、SHA-256、页面记录和元数据。`Options.Pages` 使用 `1-3,5` 格式，在各输入中独立选择从 1 开始的全局页码，先选页再匹配。`ParsePageRanges` 可在打开输入前校验并合并区间，不将大范围展开为逐页列表。未选中的 `Page.Selected` 为 false，只保留原始页码和文档体序号，不加载该页内容，文字、尺寸和内容摘要留空。某份输入没有选中任何页面时返回错误。

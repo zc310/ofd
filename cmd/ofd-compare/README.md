@@ -12,6 +12,7 @@ ofd-compare --pages "1-3,5" -o selected.html a.ofd b.ofd
 ofd-compare --min-region-pixels 4 -o focused.html a.ofd b.ofd
 ofd-compare --page-map "2:3,4:5" -o mapped.html a.ofd b.ofd
 ofd-compare --external-images -o comparison.html original.ofd revised.ofd final.ofd
+ofd-compare --lang en -o comparison.html original.ofd revised.ofd
 ```
 
 源码运行：在仓库根目录使用 `go run ./cmd/ofd-compare` 替换程序名。构建随 `make build-tools`，单独打包使用 `make package-compare`。
@@ -64,6 +65,7 @@ XML 对照统一命名空间前缀、属性顺序和缩进，忽略注释及 XML
 |---|---|---|
 | `-o, --output` | 标准输出 | 报告路径；`-` 写 stdout，禁止覆盖任一输入或它的链接 |
 | `--format` | 按扩展名推断 | `text`、`markdown`、`json`、`html`；stdout／无扩展名为 text |
+| `--lang` | `zh-CN` | 报告语言；目前页面配对依据支持 `zh-CN`、`en`，未知语言回退到 `zh-CN` |
 | `--baseline` | `1` | 基准在位置参数中的序号 |
 | `--page-match` | `auto` | `auto` 或 `number` |
 | `--page-map` | 无 | 手工页映射，例如 `2:3,4:5`；先于自动配对，仅适用于 `auto` |
