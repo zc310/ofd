@@ -269,7 +269,7 @@ func TestBindPageWindowAssignsFramesAndSwapsImages(t *testing.T) {
 	bound := map[int]int{}
 	for _, frame := range v.pageLayout.frames {
 		if frame.page >= 0 {
-			if frame.image.Image == nil {
+			if frame.image.image.Image == nil {
 				t.Fatalf("第 %d 页绑定的帧没有图像", frame.page)
 			}
 			bound[frame.page] = frame.page
@@ -281,7 +281,7 @@ func TestBindPageWindowAssignsFramesAndSwapsImages(t *testing.T) {
 	if v.frameForPage(3) == nil || v.frameForPage(4) == nil {
 		t.Fatal("第 3、4 页没有对应的显示帧")
 	}
-	if v.frameForPage(3).image.Image != toRGBA(first) {
+	if v.frameForPage(3).image.image.Image != toRGBA(first) {
 		t.Fatal("第 3 页的帧没有显示自己的位图")
 	}
 	// 被帧引用的页面不能被淘汰，否则画面留白且内存释放不掉。
@@ -297,7 +297,7 @@ func TestBindPageWindowAssignsFramesAndSwapsImages(t *testing.T) {
 	if v.frameForPage(3) != nil {
 		t.Fatal("移出窗口的页面仍占用显示帧")
 	}
-	if frame := v.frameForPage(5); frame == nil || frame.image.Image != nil {
+	if frame := v.frameForPage(5); frame == nil || frame.image.image.Image != nil {
 		t.Fatal("新窗口中的页面没有绑定到空白帧")
 	}
 }
@@ -465,7 +465,7 @@ func TestStartedRenderAlwaysClosesLoadingHint(t *testing.T) {
 
 	// 渲染失败路径：直接同步执行渲染任务，提示必须被关闭。
 	v.showPageLoading(1)
-	v.renderPage(1, nil, 0, &parser.Page{}, v.pageSlots[0])
+	v.renderPage(1, nil, 0, &parser.Page{}, v.pageSlots[0], viewerDPI, v.renderGeneration.Load(), nil)
 	if v.pageLoading != nil {
 		t.Fatal("渲染失败后加载提示未关闭")
 	}
@@ -483,12 +483,53 @@ func TestStartedRenderAlwaysClosesLoadingHint(t *testing.T) {
 	doc := render.NewDocument(color.Transparent, ofd.Documents[0])
 	page := ofd.Documents[0].Pages[0]
 	v.showPageLoading(1)
-	v.renderPage(1, doc, 0, page, v.pageSlots[0])
+	v.renderPage(1, doc, 0, page, v.pageSlots[0], viewerDPI, v.renderGeneration.Load(), nil)
 	if v.pageLoading != nil {
 		t.Fatal("渲染成功后加载提示未关闭")
 	}
 	if v.pageLoadingStop != nil {
 		t.Fatal("渲染成功后兜底定时器未取消")
+	}
+	raster, ok := v.pageImages.Get(0)
+	if !ok || raster.Bounds().Empty() {
+		t.Fatal("阅读区页面应缓存位图")
+	}
+}
+
+func TestPageDPIChangePersistsAndInvalidatesRasterCache(t *testing.T) {
+	v := newLoadedTestViewer(t)
+	v.pageSlots[0].renderable = false
+	raster := image.NewRGBA(image.Rect(0, 0, 20, 20))
+	v.pageImages.AddWeighted(0, raster, rasterWeight(raster))
+	v.setPageDPI(300)
+	if v.pageDPI != 300 {
+		t.Fatalf("页面 DPI = %d, want 300", v.pageDPI)
+	}
+	if v.pageImages.Len() != 0 {
+		t.Fatal("更改 DPI 后旧分辨率位图缓存未清空")
+	}
+	if got := fyne.CurrentApp().Preferences().Int(pageDpiPreferenceKey); got != 300 {
+		t.Fatalf("保存的页面 DPI = %d, want 300", got)
+	}
+	if got := loadPageDPI(); got != 300 {
+		t.Fatalf("读取的页面 DPI = %d, want 300", got)
+	}
+	items := v.pageDPIMenuItems()
+	if len(items) != len(pageDPIOptions) || !items[len(items)-1].Checked {
+		t.Fatalf("图像 DPI 菜单没有选中 300 DPI: %#v", items)
+	}
+}
+
+func TestPageImageDisplaysAndClearsRaster(t *testing.T) {
+	page := newPageImage()
+	raster := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	page.SetImage(raster)
+	if page.image.Image != raster {
+		t.Fatal("SetImage 未设置位图")
+	}
+	page.Clear()
+	if page.image.Image != nil {
+		t.Fatal("Clear 未清空页面图像")
 	}
 }
 
@@ -1939,7 +1980,7 @@ func TestPageImageCacheEvictsOnlyPagesWithoutFrame(t *testing.T) {
 	bound := toRGBA(image.NewRGBA(image.Rect(0, 0, 1, 1)))
 	// 模拟第 1 页正在显示：位图既在缓存里，也被显示帧引用。
 	cache.AddWeighted(1, bound, rasterWeight(bound))
-	v.frameForPage(1).image.Image = bound
+	v.frameForPage(1).image.image.Image = bound
 
 	// 再加两条各占四分之三预算的条目，必然触发淘汰。
 	const weight = 3 * pageImageBudget / 4
@@ -1952,7 +1993,7 @@ func TestPageImageCacheEvictsOnlyPagesWithoutFrame(t *testing.T) {
 	if _, ok := cache.Get(1); !ok {
 		t.Fatal("被显示帧引用的页面不应被淘汰，否则画面留白")
 	}
-	if v.frameForPage(1).image.Image != bound {
+	if v.frameForPage(1).image.image.Image != bound {
 		t.Fatal("被显示帧引用的页面的图像被清空")
 	}
 	// 最早的可淘汰条目是第 0 页（无帧）。

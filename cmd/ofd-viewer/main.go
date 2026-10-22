@@ -56,9 +56,13 @@ const (
 	// 高度算出来（见 a4PageHeight）。
 	windowWidth  = 700
 	pageMargin   = 12
-	viewerDPI    = 96
+	viewerDPI    = 200
 	thumbnailDPI = 36
 )
+
+const defaultViewerDPI = viewerDPI
+
+var pageDPIOptions = []int{96, 150, 200, 300}
 
 // a4PageHeight 返回 A4 竖版页面在给定宽度下的高度。首屏要正好放下一整页 A4，窗口高度
 // 就得由页面高度反推，而不是让整个窗口去凑 A4 比例——那样工具栏会把页面挤到屏幕外，
@@ -97,8 +101,7 @@ const (
 	// exportPageBudget 限制导出单页栅格图像的内存占用。A4 页面在该预算下
 	// 约可导出 590 DPI，足够放大阅读，又不会让单页 RGBA 达到数百 MB。
 	exportPageBudget = 128 << 20
-	// pageImageBudget 限制阅读区页面图像的常驻内存。96 DPI 的 A4 页面约
-	// 3.5 MB，因此该预算大约保留 36 页，超出后淘汰视口外的页面。
+	// pageImageBudget 限制阅读区页面图像的常驻内存；实际可缓存页数随所选 DPI 变化。
 	pageImageBudget  = 128 << 20
 	pageImageEntries = 256
 	// thumbnailBudget 限制缩略图的常驻内存。36 DPI 的 A4 页面约 0.5 MB，
@@ -189,7 +192,7 @@ type viewer struct {
 	// 已解析的文档和页面指针，不读取这些字段。栅格化与导出都不在事件线程上
 	// 执行，也不持有任何跨调用锁，因此打开和关闭文档不会阻塞界面。
 	//
-	// pageImages 和 thumbnails 都由 LRU 按字节预算限流，访问同样只在 Fyne
+	// 页面位图和缩略图都由 LRU 按字节预算限流；访问只在 Fyne
 	// 事件线程发生，因此淘汰回调可以直接更新槽位而不需要 fyne.Do。
 	filePath            string
 	fileName            string
@@ -199,12 +202,15 @@ type viewer struct {
 	pages               []viewerPage
 	maxPageArea         float64
 	pageImages          *utils.LRU[int, *image.RGBA]
+	pageDPI             int
 	thumbnails          *utils.LRU[int, *image.RGBA]
 	currentPage         int
+	currentPageSnapshot atomic.Int64
 	totalPages          int
 	loading             bool
 	exporting           bool
 	operation           atomic.Uint64
+	renderGeneration    atomic.Uint64
 	thumbnailGeneration atomic.Uint64
 	// syncingThumbnail 标记选中高亮由程序设置，避免 OnSelected 与选中同步
 	// 互相触发形成回环。
@@ -257,7 +263,7 @@ type pageMeta struct {
 // 与文档页数无关，因此上万页的文档也只常驻十几个帧。
 type pageFrame struct {
 	frame *fyne.Container
-	image *fyneCanvas.Image
+	image *pageImage
 	// background 是纸张底色。页面按透明背景渲染，未上色区域由它透出。
 	background *fyneCanvas.Rectangle
 	// page 是当前绑定的全局页码，-1 表示空闲。
@@ -375,9 +381,7 @@ func (l *continuousLayout) growFrames(count int) {
 		fill = color.White
 	}
 	for len(l.frames) < count {
-		image := fyneCanvas.NewImageFromImage(nil)
-		image.FillMode = fyneCanvas.ImageFillContain
-		image.ScaleMode = fyneCanvas.ImageScaleSmooth
+		image := newPageImage()
 		background := fyneCanvas.NewRectangle(fill)
 		l.frames = append(l.frames, &pageFrame{
 			frame:      container.NewStack(background, image),
@@ -735,6 +739,7 @@ func newViewer(window fyne.Window) *viewer {
 		thumbnailSelected: -1,
 		backgroundMode:    mode,
 		backgroundCustom:  custom,
+		pageDPI:           loadPageDPI(),
 	}
 	v.pageImages = v.newPageImageCache()
 	v.thumbnails = newThumbnailCache()
@@ -845,7 +850,7 @@ func (v *viewer) defaultWindowSize() fyne.Size {
 	return fyne.NewSize(windowWidth, pageHeight+2*pageMargin+v.toolbar.MinSize().Height)
 }
 
-// newPageImageCache 创建阅读区页面图像缓存。页面图像在 96 DPI 下体积可观，
+// newPageImageCache 创建阅读区页面图像缓存。高 DPI 页面体积可观，
 // 必须按字节预算限流，否则滚动过的大文档会累积数 GB 内存。
 func (v *viewer) newPageImageCache() *utils.LRU[int, *image.RGBA] {
 	return utils.NewWeightedLRU[int, *image.RGBA](pageImageEntries, pageImageBudget,
@@ -853,11 +858,10 @@ func (v *viewer) newPageImageCache() *utils.LRU[int, *image.RGBA] {
 			// 只有仍在显示窗口内的页面会占用帧，而 canEvict 已经把它们排除，
 			// 因此这里通常找不到帧；保留判断以防窗口状态在回调前变化。
 			frame := v.frameForPage(page)
-			if frame == nil {
+			if frame == nil || frame.image.image.Image == nil {
 				return
 			}
-			frame.image.Image = nil
-			frame.image.Refresh()
+			frame.image.Clear()
 		},
 		// 被显示帧引用的页面不淘汰，否则刚滚动到就会显示空白。
 		func(page int, _ *image.RGBA) bool {
@@ -923,13 +927,15 @@ func (v *viewer) buildMenu() *fyne.Menu {
 	}
 	viewItem := fyne.NewMenuItemWithIcon(tr("视图"), theme.ZoomFitIcon(), nil)
 	viewItem.ChildMenu = fyne.NewMenu(tr("视图"), viewItems...)
+	dpiItem := fyne.NewMenuItemWithIcon("DPI", theme.FileImageIcon(), nil)
+	dpiItem.ChildMenu = fyne.NewMenu("DPI", v.pageDPIMenuItems()...)
 	// 背景色与文档状态无关：加载和导出期间切换都只是改矩形填充色，因此这一项
 	// 始终可用，切换后立即生效且不需要重新渲染页面。
 	backgroundItem := fyne.NewMenuItemWithIcon(tr("背景色"), theme.ColorPaletteIcon(), nil)
 	backgroundItem.ChildMenu = fyne.NewMenu(tr("背景色"), v.documentBackgroundMenuItems()...)
 	// 文件关联与文档状态无关，因此这一项不受 loading/exporting 影响；平台不支持
 	// 时整项不出现。
-	menuItems := []*fyne.MenuItem{exportItem, viewItem, backgroundItem, v.languageMenuItem()}
+	menuItems := []*fyne.MenuItem{exportItem, viewItem, dpiItem, backgroundItem, v.languageMenuItem()}
 	menuItems = append(menuItems, v.fallbackFontMenuItems(webFallbackFontSupported)...)
 	menuItems = append(menuItems, defaultReaderMenuItems(v.defaultReader, v.setDefaultReaderFromMenu)...)
 	closeLabel := "退出程序"
@@ -1598,6 +1604,7 @@ func (v *viewer) publishDocument(model *documentModel, filePath, fileName string
 	v.filePath = filePath
 	v.fileName = fileName
 	v.currentPage = 0
+	v.currentPageSnapshot.Store(0)
 	v.totalPages = len(model.pages)
 	v.pageEntry.SetText("1")
 	v.thumbnails = newThumbnailCache()
@@ -1687,13 +1694,12 @@ func (v *viewer) bindPageWindow(start, end int) {
 		}
 		frame.page = page
 		changed = true
-		frame.image.Image = nil
+		frame.image.Clear()
 		if page >= 0 {
 			if raster, ok := v.pageImages.Get(page); ok {
-				frame.image.Image = raster
+				frame.image.SetImage(raster)
 			}
 		}
-		frame.image.Refresh()
 	}
 	if changed {
 		// 重新排布显示帧。Container.Refresh 会同步再跑一次 Layout，
@@ -1724,27 +1730,48 @@ func (v *viewer) requestPageRender(operation uint64, pageIndex int) bool {
 		slot.rendering.Store(false)
 		return false
 	}
-	go v.renderPage(operation, pageRef.document, pageIndex, pageRef.page, slot)
+	session := v.session
+	if session != nil && !session.acquire() {
+		slot.rendering.Store(false)
+		return false
+	}
+	dpi := normalizePageDPI(v.pageDPI)
+	if limit := maxExportDPI(slot.area); dpi > limit {
+		dpi = limit
+	}
+	go v.renderPage(operation, pageRef.document, pageIndex, pageRef.page, slot, dpi, v.renderGeneration.Load(), session)
 	return true
 }
 
-func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex int, page *parser.Page, slot *pageMeta) {
-	img, err := v.renderPageImage(doc, page, geom.DPI(viewerDPI), func() bool {
-		return operation == v.operation.Load()
-	})
+func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex int, page *parser.Page, slot *pageMeta, dpi int, generation uint64, session *documentSession) {
+	if session != nil {
+		defer session.release()
+	}
+	valid := func() bool {
+		return operation == v.operation.Load() && generation == v.renderGeneration.Load()
+	}
+	img, err := v.renderPageImage(doc, page, geom.DPI(float64(dpi)), valid)
+	if !valid() {
+		slot.rendering.Store(false)
+		return
+	}
 	if err != nil || img == nil {
 		slot.rendering.Store(false)
 		if err != nil {
 			slog.Error("渲染页面失败", "page", pageIndex, "error", err)
 		}
 		fyne.Do(func() {
-			if operation == v.operation.Load() && pageIndex == v.currentPage {
+			if operation == v.operation.Load() && generation == v.renderGeneration.Load() && int64(pageIndex) == v.currentPageSnapshot.Load() {
 				v.hidePageLoading(operation)
 			}
 		})
 		return
 	}
 	fyne.Do(func() {
+		if generation != v.renderGeneration.Load() || v.pageSlotAt(pageIndex) != slot {
+			slot.rendering.Store(false)
+			return
+		}
 		slot.rendering.Store(false)
 		if operation != v.operation.Load() {
 			return
@@ -1752,8 +1779,7 @@ func (v *viewer) renderPage(operation uint64, doc *render.Document, pageIndex in
 		// 先入缓存再更新帧：淘汰回调可能清掉其它页面的帧。
 		v.pageImages.AddWeighted(pageIndex, img, rasterWeight(img))
 		if frame := v.frameForPage(pageIndex); frame != nil {
-			frame.image.Image = img
-			frame.image.Refresh()
+			frame.image.SetImage(img)
 		}
 		if pageIndex == v.currentPage {
 			v.hidePageLoading(operation)
@@ -1953,6 +1979,7 @@ func (v *viewer) goToPage(page int, showLoading bool) {
 		return
 	}
 	v.currentPage = page
+	v.currentPageSnapshot.Store(int64(page))
 	v.pageEntry.SetText(strconv.Itoa(page + 1))
 	v.scrollToPage(page)
 	// ScrollToOffset 不会触发 OnScrolled，虚拟化的显示窗口必须在这里重建，
@@ -2049,6 +2076,7 @@ func (v *viewer) syncCurrentPage() {
 		return
 	}
 	v.currentPage = page
+	v.currentPageSnapshot.Store(int64(page))
 	v.pageEntry.SetText(strconv.Itoa(page + 1))
 	v.updateTitle()
 	v.updateControls()
@@ -2176,6 +2204,50 @@ func (v *viewer) setThumbnailVisible(visible bool) {
 	v.documentArea.Refresh()
 	// 面板隐藏期间不会同步高亮，重新显示时要补上。
 	v.syncThumbnailSelection(v.currentPage)
+}
+
+func (v *viewer) pageDPIMenuItems() []*fyne.MenuItem {
+	items := make([]*fyne.MenuItem, 0, len(pageDPIOptions))
+	for _, option := range pageDPIOptions {
+		dpi := option
+		item := fyne.NewMenuItem(fmt.Sprintf("%d DPI", dpi), func() { v.setPageDPI(dpi) })
+		item.Checked = v.pageDPI == dpi
+		items = append(items, item)
+	}
+	for _, item := range items {
+		item.Disabled = v.loading || v.exporting
+	}
+	return items
+}
+
+func (v *viewer) setPageDPI(dpi int) {
+	dpi = normalizePageDPI(dpi)
+	if v.closed.Load() || v.loading || v.exporting || dpi == v.pageDPI {
+		return
+	}
+	v.hidePageLoading(0)
+	v.pageDPI = dpi
+	savePageDPI(dpi)
+	v.renderGeneration.Add(1)
+	v.pageImages = v.newPageImageCache()
+	if !v.hasPages() {
+		return
+	}
+	metas := make([]*pageMeta, len(v.pageSlots))
+	for i, slot := range v.pageSlots {
+		metas[i] = &pageMeta{aspect: slot.aspect, area: slot.area, renderable: slot.renderable}
+	}
+	v.pageSlots = metas
+	v.pageLayout.pages = metas
+	for _, frame := range v.pageLayout.frames {
+		frame.page = -1
+		frame.image.Clear()
+	}
+	v.pageContent.Refresh()
+	v.updatePageWindow(v.operation.Load())
+	if slot := v.pageSlotAt(v.currentPage); slot != nil && slot.rendering.Load() {
+		v.showPageLoading(v.operation.Load())
+	}
 }
 
 func (v *viewer) setViewMode(selected string) {
@@ -2327,6 +2399,7 @@ func (v *viewer) closeDocument() {
 	v.pageLayout.setPages(nil)
 	v.totalPages = 0
 	v.currentPage = 0
+	v.currentPageSnapshot.Store(0)
 	v.maxPageArea = 0
 	// 槽位已经清空，缓存条目无法再回填，顺带释放已渲染图像占用的内存。
 	v.pageImages = v.newPageImageCache()

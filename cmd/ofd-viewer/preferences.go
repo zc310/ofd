@@ -5,6 +5,32 @@ import "fyne.io/fyne/v2"
 // defaultReaderPromptKey 是"启动时不再提示设置默认阅读器"的偏好键。
 const defaultReaderPromptKey = "default-reader-prompt-dismissed"
 
+const pageDpiPreferenceKey = "viewer-page-dpi"
+
+func normalizePageDPI(dpi int) int {
+	for _, option := range pageDPIOptions {
+		if dpi == option {
+			return dpi
+		}
+	}
+	return defaultViewerDPI
+}
+
+func loadPageDPI() int {
+	current := fyne.CurrentApp()
+	if current == nil {
+		return defaultViewerDPI
+	}
+	return normalizePageDPI(current.Preferences().IntWithFallback(pageDpiPreferenceKey, defaultViewerDPI))
+}
+
+func savePageDPI(dpi int) {
+	current := fyne.CurrentApp()
+	if current != nil {
+		current.Preferences().SetInt(pageDpiPreferenceKey, normalizePageDPI(dpi))
+	}
+}
+
 // defaultReaderPromptDismissed 报告用户是否已经选择不再提示。
 //
 // 偏好存储不可用时按未记住处理：多提示一次只是多一个可关掉的对话框，少提示一次

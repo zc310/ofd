@@ -205,7 +205,7 @@ func TestMenuEntriesCarryIcons(t *testing.T) {
 	for _, item := range menu.Items {
 		entries[item.Label] = item
 	}
-	for _, label := range []string{"视图", "背景色"} {
+	for _, label := range []string{"视图", "DPI", "背景色"} {
 		item, ok := entries[label]
 		if !ok {
 			t.Fatalf("菜单里缺少 %s 项", label)
@@ -217,6 +217,10 @@ func TestMenuEntriesCarryIcons(t *testing.T) {
 	view := entries["视图"]
 	if view.ChildMenu == nil || len(view.ChildMenu.Items) != 4 {
 		t.Fatalf("视图子菜单项 = %v，期望 4 项", view.ChildMenu)
+	}
+	display := entries["DPI"]
+	if display.ChildMenu == nil || len(display.ChildMenu.Items) != len(pageDPIOptions) {
+		t.Fatalf("图像 DPI 子菜单项 = %v，期望 %d 项", display.ChildMenu, len(pageDPIOptions))
 	}
 	// 四种视图模式靠图标区分"适应宽度"和"适应高度"，缺一个图标这一项就退回纯文字。
 	for _, item := range view.ChildMenu.Items {
