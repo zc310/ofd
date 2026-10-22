@@ -9,8 +9,8 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-// Backend 是后端契约的别名：契约定义在与绘制库无关的 drawing 包，插件后端
-// （ftgg/tinyskia）直接依赖 drawing，不必依赖 render/canvas。
+// Backend 是后端契约的别名：插件后端通过 drawing 共享契约，
+// 通过 geom 共享几何类型。
 type Backend = drawing.Backend
 
 // BackendCanvas 是内置的 tdewolff/canvas 光栅后端名。canvas 实现位于

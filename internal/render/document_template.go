@@ -1,6 +1,8 @@
 package render
 
 import (
+	"sync"
+
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/utils"
 )
@@ -23,6 +25,11 @@ type templateScene struct {
 	usage   renderBudget
 }
 
+type templateSceneBuild struct {
+	once  sync.Once
+	scene *templateScene
+}
+
 // 模板仍在原来的背景/前景位置引用，依据 GB/T 33190—2016 §7.7 表12、13。
 // 缓存只省去重复绘制，不改变模板顺序或页面独有的链接、正文和注解。
 func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageContent, pb models.StBox, budget *renderBudget) bool {
@@ -37,8 +44,8 @@ func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageConte
 		return false
 	}
 	p.templateScenesMu.Lock()
-	defer p.templateScenesMu.Unlock()
 	if p.closed.Load() {
+		p.templateScenesMu.Unlock()
 		return false
 	}
 	key := templateSceneKey{content: content, box: pb, generation: fonts.CacheGeneration()}
@@ -53,22 +60,45 @@ func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageConte
 		// 使用完整预算构建独立模板；前序内容已消耗预算时沿用直接绘制，
 		// 避免先构建完整模板、再因剩余预算不足而重复绘制。
 		if budget.compositeExpansions != 0 || budget.patternTiles != 0 || budget.offscreenPixels != 0 {
+			p.templateScenesMu.Unlock()
 			return false
 		}
-		scene = &templateScene{}
-		scene.usage.reset()
-		scene.surface = newVectorSurface(pb.Width, pb.Height, func(ctx DrawContext) {
-			p.drawLayersWithBudget(ctx, content.Content.Layer, pb, &scene.usage)
+		build := p.templateBuilds[key]
+		if build == nil {
+			build = &templateSceneBuild{}
+			if p.templateBuilds == nil {
+				p.templateBuilds = make(map[templateSceneKey]*templateSceneBuild)
+			}
+			p.templateBuilds[key] = build
+		}
+		p.templateScenesMu.Unlock()
+		// 同键构建合并；字体加载、几何计算及等待均不占用文档缓存锁。
+		build.once.Do(func() {
+			built := &templateScene{}
+			built.usage.reset()
+			built.surface = newVectorSurface(pb.Width, pb.Height, func(ctx DrawContext) {
+				p.drawLayersWithBudget(ctx, content.Content.Layer, pb, &built.usage)
+			})
+			p.templateScenesMu.Lock()
+			defer p.templateScenesMu.Unlock()
+			delete(p.templateBuilds, key)
+			if p.closed.Load() || fonts.CacheGeneration() != key.generation || built.surface == nil {
+				return
+			}
+			build.scene = built
+			// 无法估量的自定义表面仅用于本次共享构建，不加入长期缓存。
+			if weighted, ok := built.surface.(interface{ Weight() int64 }); ok {
+				p.templateScenes.AddWeighted(key, built, weighted.Weight())
+			}
 		})
-		if p.closed.Load() || fonts.CacheGeneration() != key.generation {
+		scene = build.scene
+		if scene == nil {
 			return false
 		}
-		// 无法估量的自定义表面不加入缓存，仍可用于本次绘制。
-		if weighted, ok := scene.surface.(interface{ Weight() int64 }); ok {
-			p.templateScenes.AddWeighted(key, scene, weighted.Weight())
-		}
+	} else {
+		p.templateScenesMu.Unlock()
 	}
-	if !budget.canReuseTemplate(&scene.usage) || !drawer.DrawTemplateSurface(scene.surface) {
+	if p.closed.Load() || fonts.CacheGeneration() != key.generation || !budget.canReuseTemplate(&scene.usage) || !drawer.DrawTemplateSurface(scene.surface) {
 		return false
 	}
 	budget.compositeExpansions += scene.usage.compositeExpansions

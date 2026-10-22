@@ -4,7 +4,6 @@ go 1.26.4
 
 require (
 	fyne.io/fyne/v2 v2.8.2
-	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f
 	github.com/FloatTech/gg v1.1.3
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
@@ -37,7 +36,6 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
-	github.com/tdewolff/minify/v2 v2.24.22
 	github.com/tdewolff/parse/v2 v2.8.19
 	github.com/valyala/fasthttp v1.76.0
 	github.com/woozymasta/png v1.2.0
@@ -61,6 +59,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046 // indirect
+	github.com/ByteArena/poly2tri-go v0.0.0-20170716161910-d102ad91854f // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/ajroetker/go-highway v0.0.4 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
@@ -110,6 +109,7 @@ require (
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
+	github.com/tdewolff/minify/v2 v2.24.22 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect

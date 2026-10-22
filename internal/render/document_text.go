@@ -28,6 +28,11 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	ctx.Push()
 	defer ctx.Pop()
+	// 文字裁剪区可能引用同一字体，必须在持有字体绘制锁之前构建。
+	clip := p.graphicClip(object.CTGraphicUnit, pb.Height, parentCTM, parentClip)
+	if clip != nil && clip.Empty() {
+		return
+	}
 
 	fontFamily, err := p.fonts.LoadFont(object.Font)
 	if err != nil || fontFamily == nil {
@@ -97,7 +102,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			nativeTextGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
 	}
 	if isShadingColor(source) && !nativeShadingText {
-		if p.drawMeshText(ctx, face, source, object, pb, budget) {
+		if p.drawMeshText(ctx, face, source, object, pb, clip, budget) {
 			return
 		}
 	}
@@ -110,6 +115,9 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textHScale(object))
 	faces.native = nativeShadingText
+	if clip != nil {
+		faces.clip = clip.Copy().Transform(ctx.CurrentMatrix())
+	}
 	codePosition := 0
 	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	object.CGTransform = transforms
@@ -169,7 +177,7 @@ func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
 }
 
 // drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
-func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, budget *renderBudget) bool {
+func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, clip *geom.Path, budget *renderBudget) bool {
 	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
 		return false
 	}
@@ -199,10 +207,14 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 	if !finiteFloat(x0) || !finiteFloat(y0) || !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return false
 	}
-	if !budget.allowOffscreenPixels(width, height, meshGradientDPI) {
+	resolution := p.paintResolution(ctx)
+	if !budget.allowOffscreenPixels(width, height, resolution.DPI()) {
 		return false
 	}
-	surface := newOffscreenSurface(width, height, geom.DPI(meshGradientDPI))
+	surface := newOffscreenSurface(width, height, resolution)
+	if surface == nil {
+		return false
+	}
 	surface.SetFillGradient(translateGradient(gradient, x0, y0))
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
@@ -214,11 +226,9 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 	if textImage == nil || textImage.Bounds().Empty() {
 		return false
 	}
-	if object.Alpha != nil {
-		textImage = applyImageAlpha(textImage, graphicOpacity(object.Alpha))
-	}
 	box := models.StBox{X: x0, Y: pb.Height - y1, Width: width, Height: height}
 	matrix := imageMatrix(box, textImage, models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
+	textImage = imageWithClipAlpha(textImage, clip, matrix, graphicOpacity(object.Alpha))
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
 		return false
@@ -695,6 +705,12 @@ func textGlyphWidth(face FontFace, glyph textGlyph) float64 {
 
 func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
 	face := faces.run(x, y)
+	if _, semanticOnly := ctx.(semanticOnlyContext); semanticOnly {
+		if !fontrepair.ContainsGlyphRune(value) {
+			p.drawSemanticText(ctx, face, object, value, x, y, pageHeight, parentCTM)
+		}
+		return
+	}
 	hScale := textHScale(object)
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
@@ -746,7 +762,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 		}
 		ctx.Rotate(-textCharDirectionDegrees(object))
 		ctx.Scale(hScale, 1)
-		p.drawTextInline(ctx, face, value)
+		p.drawTextInline(ctx, face, value, faces.clip)
 		ctx.Pop()
 		return
 	}
@@ -765,13 +781,33 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	}
 	ctx.Rotate(-textCharDirectionDegrees(object))
 	ctx.Scale(hScale, 1)
-	p.drawTextInline(ctx, face, value)
+	p.drawTextInline(ctx, face, value, faces.clip)
 	ctx.Pop()
 }
 
 // drawTextInline 优先使用后端原生文字绘制（语义与后端 DrawText 一致，
 // 保留文字整形和 PDF 文字可复制性）。后端不支持时回退到字形轮廓路径。
-func (p *Document) drawTextInline(ctx DrawContext, face FontFace, value string) {
+func (p *Document) drawTextInline(ctx DrawContext, face FontFace, value string, clip *geom.Path) {
+	if clip != nil {
+		path := face.ToPath(value)
+		local := localTextClip(ctx, clip)
+		if path == nil || path.Empty() || local.Empty() {
+			p.drawInvisibleSemanticText(ctx, face, value)
+			return
+		}
+		if !clipContainsRect(local, path.Bounds()) {
+			visible := path.Copy()
+			visible.Close()
+			visible = visible.And(local)
+			if !visible.Empty() {
+				ctx.ClearStroke()
+				ctx.SetFillPaint(face.Fill())
+				ctx.DrawPath(0, 0, visible)
+			}
+			p.drawInvisibleSemanticText(ctx, face, value)
+			return
+		}
+	}
 	if td, ok := ctx.(textDrawer); ok {
 		if run := face.ShapedRun(value); run != nil {
 			td.DrawTextLine(run)
@@ -786,6 +822,17 @@ func (p *Document) drawTextInline(ctx DrawContext, face FontFace, value string) 
 		ctx.ClearStroke()
 		ctx.SetFillPaint(face.Fill())
 		ctx.DrawPath(0, 0, path)
+	}
+}
+
+func (p *Document) drawInvisibleSemanticText(ctx DrawContext, face FontFace, value string) {
+	shaper, ok := face.(invisibleTextShaper)
+	if !ok {
+		return
+	}
+	drawer, ok := ctx.(semanticTextDrawer)
+	if ok {
+		drawer.DrawSemanticTextLine(shaper.InvisibleShapedRun(value))
 	}
 }
 
@@ -830,7 +877,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 			ctx.Transform(*m)
 		}
 		ctx.Scale(hScale, 1)
-		ctx.DrawPath(0, 0, path)
+		p.drawTextOutline(ctx, path, faces.clip, object)
 		ctx.Pop()
 		return
 	}
@@ -863,7 +910,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 	// path 可能来自字体轮廓缓存（同一字形/字体跨对象、跨页面复用），而
 	// Path.Transform 是原地修改。必须先复制，否则平移会累积到缓存对象上，
 	// 后续渲染同一字形时坐标持续偏移，最终移出页面。
-	ctx.DrawPath(0, 0, path.Copy().Transform(matrix))
+	p.drawTextOutline(ctx, path.Copy().Transform(matrix), faces.clip, object)
 }
 
 // applyTextPathFill 设置走路径文字的填充与描边状态。

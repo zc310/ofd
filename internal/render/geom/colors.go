@@ -12,7 +12,7 @@ var (
 	White       = color.RGBA{0xff, 0xff, 0xff, 0xff}
 )
 
-// Gradient 是与具体绘制库无关的渐变采样接口：返回 (x,y) 处的颜色。
+// Gradient 是OFD渐变采样接口：返回 (x,y) 处的颜色。
 // canvas 后端把它包装成 canvas.Gradient；gg 等后端直接用采样画笔消费。
 type Gradient interface {
 	At(x, y float64) color.RGBA
@@ -127,7 +127,7 @@ func (g *LinearGradient) At(x, y float64) color.RGBA {
 	if len(g.Grad) == 0 {
 		return Transparent
 	}
-	p := Point{x, y}.Sub(g.Start)
+	p := Point{X: x, Y: y}.Sub(g.Start)
 	if Equal(g.d.Y, 0.0) && !Equal(g.d.X, 0.0) {
 		return g.at(p.X / g.d.X)
 	} else if !Equal(g.d.Y, 0.0) && Equal(g.d.X, 0.0) {
@@ -174,7 +174,7 @@ func NewRadialGradient(c0 Point, r0 float64, c1 Point, r1 float64) *RadialGradie
 // 不同 Extend 组合的差异只出现在扫描覆盖不到的点：例如点只落在 t=1.8 上（轴内无根）时，
 // Extend 含终点位取 1.8（终点色），否则透明。
 func (g *RadialGradient) RadialParameter(x, y float64, extend int) (float64, bool) {
-	pd := Point{x, y}.Sub(g.C0)
+	pd := Point{X: x, Y: y}.Sub(g.C0)
 	b := pd.Dot(g.cd) + g.R0*g.dr
 	c := pd.Dot(pd) - g.R0*g.R0
 	a := g.a
@@ -255,7 +255,7 @@ func (g *RadialGradient) At(x, y float64) color.RGBA {
 		return g.Grad.At(t)
 	}
 	// 见 https://github.com/servo/pixman/blob/master/pixman/pixman-radial-gradient.c
-	pd := Point{x, y}.Sub(g.C0)
+	pd := Point{X: x, Y: y}.Sub(g.C0)
 	b := pd.Dot(g.cd) + g.R0*g.dr
 	c := pd.Dot(pd) - g.R0*g.R0
 
@@ -267,7 +267,7 @@ func (g *RadialGradient) At(x, y float64) color.RGBA {
 	if discr < 0 {
 		return Transparent
 	}
-	t0, t1 := solveQuadraticFormula(g.a, -2.0*b, c)
+	t0, t1 := SolveQuadraticFormula(g.a, -2.0*b, c)
 
 	valid := func(t float64) bool {
 		return !math.IsNaN(t) && t >= 0 && t <= 1 && g.R0+g.dr*t >= 0

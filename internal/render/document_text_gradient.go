@@ -70,6 +70,8 @@ type textFaces struct {
 	hScale float64
 	// native 为真时按 run 换算原生渐变的几何坐标，保留 PDF Shading 和真实文字。
 	native bool
+	// clip 位于设备空间，不随 run 内部的 Translate/Transform 改变。
+	clip *geom.Path
 }
 
 // newTextFaces 建立按 run 提供字体面的辅助对象。fill 为 Boundary 空间的填充色。

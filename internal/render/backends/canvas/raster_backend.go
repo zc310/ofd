@@ -33,4 +33,6 @@ func (b *canvasRasterBackend) Raster() *image.RGBA {
 	return rasterize(b.c, tcanvas.Resolution(b.resolution), tcanvas.DefaultColorSpace)
 }
 
+func (b *canvasRasterBackend) RasterResolution() geom.Resolution { return b.resolution }
+
 var _ drawing.Backend = (*canvasRasterBackend)(nil)

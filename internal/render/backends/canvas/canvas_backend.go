@@ -14,8 +14,8 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-// canvasBackend 是 DrawContext 的 tdewolff/canvas 实现：把与绘制库无关的
-// geom 绘制指令转换成 canvas 类型并转发到 canvas.Context，输出与直接用
+// canvasBackend 是 DrawContext 的 canvas 实现：将共享几何路径及适配后的
+// OFD 画笔转发到 canvas.Context，输出与直接用
 // canvas 绘制一致（本包矢量输出 Page()/PDF/SVG 都走这条路径）。
 //
 // 语义选择：

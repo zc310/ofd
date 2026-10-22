@@ -30,7 +30,7 @@ func writeCompositeOFD(t *testing.T, unitW, unitH float64, rect string) string {
 	res := `<?xml version="1.0" encoding="UTF-8"?><ofd:Res xmlns:ofd="http://www.ofdspec.org/2016">` +
 		fmt.Sprintf(`<ofd:CompositeGraphicUnits><ofd:CompositeGraphicUnit ID="5" Width="%g" Height="%g">`, unitW, unitH) +
 		`<ofd:Content ID="6">` +
-		`<ofd:PathObject ID="7" Boundary="0 0 10 10" Fill="true" Stroke="false">` +
+		`<ofd:PathObject ID="7" Boundary="0 0 200 200" Fill="true" Stroke="false">` +
 		`<ofd:FillColor Value="0 0 0"/>` +
 		// Clips 使单路径复合图元不走矢量快路径，与 y.ofd 的复合单元一致。
 		`<ofd:Clips><ofd:Clip><ofd:Area>` +

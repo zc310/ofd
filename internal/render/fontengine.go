@@ -51,7 +51,7 @@ func NewFontEngine(doc *parser.Document) FontEngine {
 }
 
 // 回退字体注册转发：具体实现由 canvas 字体引擎通过 RegisterFallbackFontFactory
-// 注册。核心不依赖 canvas。
+// 注册，核心经字体引擎接口调用。
 var (
 	registerFallbackFontFn func(data []byte, family string, style FontStyle) error
 	fallbackFontDataFn     func(family string) ([]byte, bool)

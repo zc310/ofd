@@ -7,8 +7,8 @@
 // 之后即可用 drawing.BackendFTGG="ftgg" 作为栅格后端名，或经
 // converter.RasterBackend("ftgg") 使用。
 // 只用于渲染速度对照实验，不承诺与 canvas/gogpu 的逐像素输出一致。
-// 渲染上下文状态机由 internal/render/backends/rastercore 共享，本包只依赖
-// geom 类型，不依赖 tdewolff/canvas。
+// 渲染上下文状态机由 internal/render/backends/rastercore 共享，
+// geom 几何类型复用 canvas，光栅绘制由 FloatTech/gg 完成。
 package ftgg
 
 import (

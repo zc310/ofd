@@ -1,9 +1,6 @@
-// Package canvasconv 提供 internal/render/geom 的中性几何类型与
-// tdewolff/canvas 类型之间的转换，供 canvas 后端（把 geom 绘制指令转成
-// canvas.Canvas 用于 Page()/PDF/SVG 矢量输出）以及迁移期的适配层使用。
-//
-// 它把对 canvas 的依赖集中在这一个小包里：geom 本身保持零绘制库依赖，
-// 其余后端（gg/ftgg/tinyskia）只依赖 geom，不依赖本包。
+// Package canvasconv 适配OFD画笔、渐变与canvas输出。
+// geom的几何类型已与canvas共享；路径、矩阵和描边类型直接透传，
+// 只有OFD专用颜色与渐变语义需要转换。
 package canvasconv
 
 import (
@@ -12,100 +9,52 @@ import (
 	"github.com/zc310/canvas"
 
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 )
 
-var toCanvasPathCache = utils.NewLRU[*geom.Path, *canvas.Path](128, nil)
-var fromCanvasPathCache = utils.NewLRU[*canvas.Path, *geom.Path](128, nil)
-
-// FromCanvasMatrix 把 canvas.Matrix 转为 geom.Matrix（两者布局一致）。
-func FromCanvasMatrix(m canvas.Matrix) geom.Matrix { return geom.Matrix(m) }
+// FromCanvasMatrix 返回共享矩阵类型。
+func FromCanvasMatrix(m canvas.Matrix) geom.Matrix { return m }
 
 // ToCanvasMatrix 把 geom.Matrix 转为 canvas.Matrix。
-func ToCanvasMatrix(m geom.Matrix) canvas.Matrix { return canvas.Matrix(m) }
+func ToCanvasMatrix(m geom.Matrix) canvas.Matrix { return m }
 
-// FromCanvasPath 把 canvas.Path 转为 geom.Path。椭圆弧保留为弧段，由 geom
-// 在需要时展开。
+// FromCanvasPath 直接返回共享路径；nil沿用空路径约定。
 func FromCanvasPath(p *canvas.Path) *geom.Path {
-	if cached, ok := fromCanvasPathCache.Get(p); ok {
-		return cached
-	}
-	out := &geom.Path{}
-	if p == nil || p.Empty() {
-		return out
-	}
-	sc := p.Scanner()
-	for sc.Scan() {
-		switch sc.Cmd() {
-		case canvas.MoveToCmd:
-			e := sc.End()
-			out.MoveTo(e.X, e.Y)
-		case canvas.LineToCmd:
-			e := sc.End()
-			out.LineTo(e.X, e.Y)
-		case canvas.QuadToCmd:
-			cp, e := sc.CP1(), sc.End()
-			out.QuadTo(cp.X, cp.Y, e.X, e.Y)
-		case canvas.CubeToCmd:
-			c1, c2, e := sc.CP1(), sc.CP2(), sc.End()
-			out.CubeTo(c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y)
-		case canvas.ArcToCmd:
-			rx, ry, rot, large, sweep := sc.Arc()
-			e := sc.End()
-			out.ArcTo(rx, ry, rot, large, sweep, e.X, e.Y)
-		case canvas.CloseCmd:
-			out.Close()
-		}
-	}
-	fromCanvasPathCache.Add(p, out)
-	return out
-}
-
-// ToCanvasPath 把 geom.Path 转为 canvas.Path。
-//
-// 结果按 *geom.Path 指针缓存，因此**同一个 Path 对象画过一次之后不要再改内容**：
-// Reset 后重新填充再画会拿到首次的缓存，所有图元都落在第一次的位置上（表现为
-// 多个图元叠在一起，只看得出第一个）。要重复绘制同一形状就每次新建 Path，或先把
-// 数据拷走再改。
-func ToCanvasPath(p *geom.Path) *canvas.Path {
-	if cached, ok := toCanvasPathCache.Get(p); ok {
-		return cached
-	}
-	out := &canvas.Path{}
 	if p == nil {
-		return out
+		return &geom.Path{}
 	}
-	sc := p.Scanner()
-	for sc.Scan() {
-		switch sc.Cmd() {
-		case geom.MoveToCmd:
-			e := sc.End()
-			out.MoveTo(e.X, e.Y)
-		case geom.LineToCmd:
-			e := sc.End()
-			out.LineTo(e.X, e.Y)
-		case geom.QuadToCmd:
-			cp, e := sc.CP1(), sc.End()
-			out.QuadTo(cp.X, cp.Y, e.X, e.Y)
-		case geom.CubeToCmd:
-			c1, c2, e := sc.CP1(), sc.CP2(), sc.End()
-			out.CubeTo(c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y)
-		case geom.ArcToCmd:
-			rx, ry, rot, large, sweep := sc.Arc()
-			e := sc.End()
-			out.ArcTo(rx, ry, rot, large, sweep, e.X, e.Y)
-		case geom.CloseCmd:
-			out.Close()
-		}
-	}
-	toCanvasPathCache.Add(p, out)
-	return out
+	return p
 }
 
-// FromCanvasGradient 把 canvas.Gradient 包装为 geom.Gradient。
+// ToCanvasPath 直接返回共享路径，不重建轮廓或缓存路径快照。
+func ToCanvasPath(p *geom.Path) *canvas.Path {
+	if p == nil {
+		return &canvas.Path{}
+	}
+	return p
+}
+
+// FromCanvasGradient 保留原生轴向/径向渐变的几何类型，使文字轮廓裁剪后
+// 仍可序列化为PDF/SVG渐变；其他采样器使用接口包装。
 func FromCanvasGradient(g canvas.Gradient) geom.Gradient {
 	if g == nil {
 		return nil
+	}
+	copyStops := func(stops canvas.Grad) geom.Grad {
+		out := make(geom.Grad, len(stops))
+		for i, stop := range stops {
+			out[i] = geom.Stop{Offset: stop.Offset, Color: stop.Color}
+		}
+		return out
+	}
+	switch gradient := g.(type) {
+	case *canvas.LinearGradient:
+		out := geom.NewLinearGradient(gradient.Start, gradient.End)
+		out.Grad, out.Extend = copyStops(gradient.Grad), gradient.Extend
+		return out
+	case *canvas.RadialGradient:
+		out := geom.NewRadialGradient(gradient.C0, gradient.R0, gradient.C1, gradient.R1)
+		out.Grad, out.Extend = copyStops(gradient.Grad), gradient.Extend
+		return out
 	}
 	return canvasGradientSource{g}
 }
@@ -125,12 +74,12 @@ func ToCanvasGradient(g geom.Gradient) canvas.Gradient {
 	}
 	switch value := g.(type) {
 	case *geom.LinearGradient:
-		cg := canvas.NewLinearGradient(canvas.Point(value.Start), canvas.Point(value.End))
+		cg := canvas.NewLinearGradient(value.Start, value.End)
 		cg.Grad = toCanvasGrad(value.Grad)
 		cg.Extend = value.Extend
 		return cg
 	case *geom.RadialGradient:
-		cg := canvas.NewRadialGradient(canvas.Point(value.C0), value.R0, canvas.Point(value.C1), value.R1)
+		cg := canvas.NewRadialGradient(value.C0, value.R0, value.C1, value.R1)
 		cg.Grad = toCanvasGrad(value.Grad)
 		cg.Extend = value.Extend
 		return cg
@@ -157,70 +106,48 @@ func (s geomGradientSource) At(x, y float64) color.RGBA { return s.g.At(x, y) }
 
 func (s geomGradientSource) SetColorSpace(canvas.ColorSpace) canvas.Gradient { return s }
 
-// ToCanvasFillRule 把 geom.FillRule 转为 canvas.FillRule。
-// 两者的常量顺序一致（NonZero/EvenOdd/Positive/Negative），直接按底层值转换。
-func ToCanvasFillRule(rule geom.FillRule) canvas.FillRule { return canvas.FillRule(rule) }
+// ToCanvasFillRule 返回共享填充规则类型。
+func ToCanvasFillRule(rule geom.FillRule) canvas.FillRule { return rule }
 
 // FromCanvasFillRule 把 canvas.FillRule 转为 geom.FillRule。
-func FromCanvasFillRule(rule canvas.FillRule) geom.FillRule { return geom.FillRule(rule) }
+func FromCanvasFillRule(rule canvas.FillRule) geom.FillRule { return rule }
 
-// FromCanvasResolution 把 canvas.Resolution 转为 geom.Resolution（两者底层
-// 均以点/毫米存储）。
-func FromCanvasResolution(r canvas.Resolution) geom.Resolution { return geom.Resolution(r) }
+// FromCanvasResolution 返回共享分辨率类型。
+func FromCanvasResolution(r canvas.Resolution) geom.Resolution { return r }
 
-// ToCanvasResolution 把 geom.Resolution 转为 canvas.Resolution。
-func ToCanvasResolution(r geom.Resolution) canvas.Resolution { return canvas.Resolution(r) }
+// ToCanvasResolution 返回共享分辨率类型。
+func ToCanvasResolution(r geom.Resolution) canvas.Resolution { return r }
 
-// FromCanvasCapper 把 canvas 线帽转为 geom 线帽。
+// FromCanvasCapper 保留线帽实现，nil沿用平头默认值。
 func FromCanvasCapper(c canvas.Capper) geom.Capper {
-	switch c.(type) {
-	case canvas.RoundCapper:
-		return geom.RoundCapper{}
-	case canvas.SquareCapper:
-		return geom.SquareCapper{}
-	default:
+	if c == nil {
 		return geom.ButtCapper{}
 	}
+	return c
 }
 
-// ToCanvasCapper 把 geom 线帽转为 canvas 线帽。
+// ToCanvasCapper 保留线帽实现，nil沿用平头默认值。
 func ToCanvasCapper(c geom.Capper) canvas.Capper {
-	switch c.(type) {
-	case geom.RoundCapper:
-		return canvas.RoundCapper{}
-	case geom.SquareCapper:
-		return canvas.SquareCapper{}
-	default:
+	if c == nil {
 		return canvas.ButtCapper{}
 	}
+	return c
 }
 
-// FromCanvasJoiner 把 canvas 连接器转为 geom 连接器。
+// FromCanvasJoiner 保留连接器实现，nil沿用斜接默认值。
 func FromCanvasJoiner(j canvas.Joiner) geom.Joiner {
-	switch v := j.(type) {
-	case canvas.RoundJoiner:
-		return geom.RoundJoiner{}
-	case canvas.BevelJoiner:
-		return geom.BevelJoiner{}
-	case canvas.MiterJoiner:
-		return geom.MiterJoiner{GapJoiner: FromCanvasJoiner(v.GapJoiner), Limit: v.Limit}
-	default:
+	if j == nil {
 		return geom.MiterJoiner{GapJoiner: geom.BevelJoiner{}, Limit: 4.0}
 	}
+	return j
 }
 
-// ToCanvasJoiner 把 geom 连接器转为 canvas 连接器。
+// ToCanvasJoiner 保留连接器实现，nil沿用斜接默认值。
 func ToCanvasJoiner(j geom.Joiner) canvas.Joiner {
-	switch v := j.(type) {
-	case geom.RoundJoiner:
-		return canvas.RoundJoiner{}
-	case geom.BevelJoiner:
-		return canvas.BevelJoiner{}
-	case geom.MiterJoiner:
-		return canvas.MiterJoiner{GapJoiner: ToCanvasJoiner(v.GapJoiner), Limit: v.Limit}
-	default:
+	if j == nil {
 		return canvas.MiterJoiner{GapJoiner: canvas.BevelJoiner{}, Limit: 4.0}
 	}
+	return j
 }
 
 // FromCanvasPaint 把 canvas.Paint 转为 geom.Paint。

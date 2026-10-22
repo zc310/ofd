@@ -237,9 +237,18 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	if p.renderCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip, cropToInk, w, h, compositeDepth, budget) {
 		return
 	}
+	// 半透明纯矢量组改走独立合成后，仍保留原先可复制的文字层。
+	semanticGroup := !cropToInk && parentCTM == nil && parentClip == nil && object.Clips == nil &&
+		graphicOpacity(object.Alpha) > 0 && graphicOpacity(object.Alpha) < 255
 
 	// 在创建离屏画布前扣除预算，避免异常尺寸先完成分配再被限制。
-	dpi := p.dpi.DPI() * box.Width / w
+	outputDPI := p.dpi.DPI()
+	if semanticGroup {
+		// 此分支原本输出矢量；新引入的透明度合成按目标密度采样，
+		// PDF/SVG至少保留300DPI，避免以默认96DPI烘焙文字。
+		outputDPI = p.paintResolution(ctx).DPI()
+	}
+	dpi := outputDPI * box.Width / w
 	if dpi <= 0 {
 		dpi = defaultRenderDPI
 	}
@@ -280,7 +289,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	// 为假）时发生，上面的回退分支也已把 tight 复位。这里等价于判断 cropToInk。
 	if cropToInk {
 		if resampled, ok := p.resampleCompositeUnit(unit, dp, raster, w, h, dpi,
-			object.Boundary, p.dpi.DPI(), compositeDepth, budget); ok {
+			object.Boundary, outputDPI, compositeDepth, budget); ok {
 			// 重画的结果已经裁到可见范围，不能再走 tight 分支：那个分支把画布
 			// 映射到 Boundary 的子矩形，而这里要的正是「裁掉透明边后铺满整个
 			// Boundary」。裁剪在这里做，映射留给整块 Boundary。
@@ -294,7 +303,11 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		return
 	}
 
-	p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip)
+	if p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip) && semanticGroup {
+		if items, ok := copyCompositeVectorItems(unit.Content.Items, nil, 0); ok {
+			p.drawCompositeSemanticText(ctx, object, items, dp, pb, w, h, budget)
+		}
+	}
 }
 
 // resampleCompositeUnit 按首遍量到的可见范围重画一遍复合单元，返回裁到可见
@@ -434,16 +447,10 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 			return false
 		}
 	}
-	if clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM); clip != nil {
-		img = imageWithClip(img, clip, m)
-	}
-	if parentClip != nil {
-		img = imageWithClip(img, parentClip, m)
-	}
-
-	if object.Alpha != nil {
-		img = applyImageAlpha(img, graphicOpacity(object.Alpha))
-	}
+	clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM)
+	clip = intersectClips(clip, parentClip)
+	clip = intersectClips(clip, graphicBoundaryClip(box, pb.Height, parentCTM))
+	img = imageWithClipAlpha(img, clip, m, graphicOpacity(object.Alpha))
 	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return false
@@ -489,7 +496,12 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	defer ctx.Pop()
 	// 该分支只处理纯填充路径（simpleCompositePath 要求未勾边），描边缩放不适用。
 	p.updateCtPathStyle(ctx, &pathObject.CtPath, dp, 1)
-	ctx.DrawPath(0, 0, path)
+	clip := p.graphicClip(object.CTGraphicUnit, pb.Height, nil, nil)
+	if clipContainsRect(clip, path.Bounds()) {
+		ctx.DrawPath(0, 0, path)
+	} else {
+		p.drawClippedPath(ctx, path, clip, pathObject)
+	}
 	return true
 }
 
@@ -515,13 +527,18 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	if parentCTM != nil || parentClip != nil || object.Clips != nil {
 		return false
 	}
+	// 表34的Alpha作用于复合对象整体；逐子对象乘Alpha会让重叠区域变深。
+	// 后端没有透明度组时，交给离屏分支合成后只应用一次Alpha。
+	if graphicOpacity(object.Alpha) < 255 {
+		return false
+	}
 	// cropToInk 为真表示声明尺寸可信、内容铺满单元坐标系，栅格化分支会裁掉
 	// 透明边后把可见面板拉伸铺满 Boundary（intro.ofd 依赖该行为）。矢量分支
 	// 不做裁边缩放，直接按单元坐标系映射，这里交回栅格化保持原语义。
 	if cropToInk {
 		return false
 	}
-	items, ok := copyCompositeVectorItems(unit.Content.Items, object.Alpha, 0)
+	items, ok := copyCompositeVectorItems(unit.Content.Items, nil, 0)
 	if !ok {
 		return false
 	}
@@ -534,14 +551,15 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	ctx.Push()
 	defer ctx.Pop()
 	ctx.Transform(matrix)
-	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, nil, compositeDepth+1, budget)
+	// 与离屏画布一致，矢量组的内容也不能溢出单元范围（表50）。
+	p.drawItemsWithTransform(ctx, items, dp, models.StBox{Width: w, Height: h}, nil, geom.Rectangle(w, h), compositeDepth+1, budget)
 	return true
 }
 
 // copyCompositeVectorItems 复制复合单元里可矢量绘制的内容，供矢量分支直接
 // 绘制，避免就地修改文档模型。图像、嵌套复合图元以及非法/不可见图元无法可靠
-// 地并入父级绘制表面，返回 ok=false 交回栅格化。Composite Alpha 表示整体
-// 透明度，矢量分支没有独立透明度分组，合并到子图元 Alpha 后由绘制函数处理。
+// 地并入父级绘制表面，返回 ok=false 交回栅格化。多图元透明度组不能逐图元
+// 分摊Alpha；直接绘制与语义层调用均传nil，保留子图元自身透明度。
 func copyCompositeVectorItems(items []models.PageItem, alpha *uint8, depth int) ([]models.PageItem, bool) {
 	if depth > maxCompositeDepth {
 		return nil, false
@@ -696,6 +714,9 @@ func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
 
 // applyImageAlpha 将整张图片的透明度统一乘以 alpha。
 func applyImageAlpha(img image.Image, alpha uint8) image.Image {
+	if img == nil || alpha == 255 {
+		return img
+	}
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	img = decodedImage(img)

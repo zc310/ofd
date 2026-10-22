@@ -30,16 +30,16 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		return
 	}
 
-	p.updateCtPathStyle(ctx, &object.CtPath, dp, pathStrokeScale(object, parentCTM))
+	strokeStyle := p.updateCtPathStyle(ctx, &object.CtPath, dp, pathStrokeScale(object, parentCTM))
 	fillGradient, strokeGradient := p.updatePathGradients(ctx, &object, dp, pb.Height)
 
-	clipPath := p.buildPathClip(object.Clips, object.Boundary, pb.Height, object.CTM, parentCTM)
-	if parentClip != nil {
-		if clipPath == nil {
-			clipPath = parentClip
-		} else {
-			clipPath = clipPath.And(parentClip)
-		}
+	clipPath := p.pathGraphicClip(object, pb.Height, parentCTM, parentClip, ctx)
+	bounds := pa.Bounds()
+	if object.Stroke.Value(true) {
+		bounds = strokeBounds(ctx, bounds)
+	}
+	if clipContainsRect(clipPath, bounds) {
+		clipPath = nil
 	}
 	var dpFillColor, dpStrokeColor *models.CTColor
 	if dp != nil {
@@ -56,6 +56,9 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	if object.Fill && fillIsMesh {
 		fillPath := pa.Copy()
 		fillPath.Close()
+		if object.Rule == spec.FillRuleEvenOdd {
+			fillPath = fillPath.Settle(geom.EvenOdd)
+		}
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
@@ -67,6 +70,9 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	if object.Fill && pattern != nil {
 		fillPath := pa.Copy()
 		fillPath.Close()
+		if object.Rule == spec.FillRuleEvenOdd {
+			fillPath = fillPath.Settle(geom.EvenOdd)
+		}
 		if clipPath != nil {
 			fillPath = fillPath.And(clipPath)
 		}
@@ -94,7 +100,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		ctx.ClearFill()
 	}
 	if strokeRaster {
-		strokePath := pa.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
+		strokePath := dashedStrokePath(ctx, pa, strokeStyle)
 		if clipPath != nil {
 			strokePath = strokePath.And(clipPath)
 		}
@@ -107,7 +113,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		ctx.DrawPath(0, 0, pa)
 		return
 	}
-	p.drawClippedPath(ctx, pa, clipPath, object)
+	p.drawClippedPathStyle(ctx, pa, clipPath, object, strokeStyle)
 }
 
 // resolvePathColor 返回路径实际使用的颜色：对象颜色优先，缺省时回退到 DrawParam。
@@ -199,7 +205,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	if bounds.Empty() || bounds.W() <= 0 || bounds.H() <= 0 {
 		return false
 	}
-	resolution := geom.DPI(meshGradientDPI)
+	resolution := p.paintResolution(ctx)
 	padding := 1.0 / resolution.DPMM()
 	bounds.X0 -= padding
 	bounds.Y0 -= padding
@@ -210,7 +216,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 		!finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return false
 	}
-	if !budget.allowOffscreenPixels(width, height, meshGradientDPI) {
+	if !budget.allowOffscreenPixels(width, height, resolution.DPI()) {
 		return false
 	}
 	surface := newOffscreenSurface(width, height, resolution)
@@ -363,7 +369,7 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 	for _, clip := range clips.Clip {
 		region := p.buildClipRegion(clip, clips.TransFlag, objectMatrix, box, pageHeight)
 		if region == nil {
-			continue
+			region = &geom.Path{}
 		}
 		if result == nil {
 			result = region
@@ -501,6 +507,17 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 }
 
 func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, object models.PathObject) {
+	p.drawClippedPathStyle(ctx, path, clip, object, object.CTGraphicUnit)
+}
+
+func dashedStrokePath(ctx DrawContext, path *geom.Path, style models.CTGraphicUnit) *geom.Path {
+	if validDashPattern(style.DashOffset, style.DashPattern) {
+		path = path.Dash(style.DashOffset, (*style.DashPattern)...)
+	}
+	return path.Stroke(strokeOutlineWidth(ctx), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
+}
+
+func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, object models.PathObject, style models.CTGraphicUnit) {
 	if object.Fill {
 		// OFD 允许填充路径省略末尾闭合命令，布尔运算前需要补齐。
 		fillPath := path.Copy()
@@ -512,14 +529,16 @@ func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, objec
 			fillPath = fillPath.Settle(geom.EvenOdd)
 		}
 		ctx.Push()
+		ctx.SetFillRule(geom.NonZero)
 		ctx.SetStrokeColor(geom.Transparent)
 		ctx.DrawPath(0, 0, fillPath.And(clip))
 		ctx.Pop()
 	}
 	if object.Stroke.Value(true) {
 		// 描边路径可能是开放路径，先转换为描边区域再执行裁剪。
-		strokePath := path.Stroke(ctx.StrokeWidth(), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
+		strokePath := dashedStrokePath(ctx, path, style)
 		ctx.Push()
+		ctx.SetFillRule(geom.NonZero)
 		ctx.CopyStrokeToFill()
 		ctx.SetStrokeColor(geom.Transparent)
 		ctx.DrawPath(0, 0, strokePath.And(clip))
@@ -589,6 +608,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 	if cp == nil || transform == nil {
 		return pa
 	}
+	var current, start models.StPos
 	for _, cmd := range cp.AbbreviatedData {
 		switch cmd.Type {
 		case models.MoveTo, models.Start:
@@ -600,6 +620,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			pa.MoveTo(x, y)
+			current, start = cmd.Points[0], cmd.Points[0]
 
 		case models.LineTo:
 			if len(cmd.Points) < 1 {
@@ -610,6 +631,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			pa.LineTo(x, y)
+			current = cmd.Points[0]
 
 		case models.QuadTo:
 			if len(cmd.Points) < 2 {
@@ -621,6 +643,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			pa.QuadTo(cpx, cpy, x, y)
+			current = cmd.Points[1]
 
 		case models.CubicBezier:
 			if len(cmd.Points) < 3 {
@@ -633,6 +656,7 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 				continue
 			}
 			pa.CubeTo(x1, y1, x2, y2, x3, y3)
+			current = cmd.Points[2]
 
 		case models.ArcTo:
 			if cmd.Arc == nil {
@@ -642,18 +666,43 @@ func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (f
 			if !finiteFloat(cmd.Arc.RX) || !finiteFloat(cmd.Arc.RY) || !finiteFloat(cmd.Arc.XAxisRotation) || !finiteFloat(endX) || !finiteFloat(endY) {
 				continue
 			}
-			pa.ArcTo(
-				cmd.Arc.RX,
-				cmd.Arc.RY,
-				cmd.Arc.XAxisRotation,
-				cmd.Arc.LargeArcFlag,
-				!cmd.Arc.SweepFlag,
-				endX,
-				endY,
-			)
+			// GB/T 33190—2016 §8.1.5、§9.5：CTM作用于整条椭圆弧，
+			// 不仅是终点。先在局部空间构弧，再变换半径、轴向与扫掠方向。
+			arc := &geom.Path{}
+			arc.MoveTo(current.X, current.Y)
+			arc.ArcTo(cmd.Arc.RX, cmd.Arc.RY, cmd.Arc.XAxisRotation,
+				cmd.Arc.LargeArcFlag, cmd.Arc.SweepFlag, cmd.Arc.EndPoint.X, cmd.Arc.EndPoint.Y)
+			ox, oy := transform(models.StPos{})
+			xx, xy := transform(models.StPos{X: 1})
+			yx, yy := transform(models.StPos{Y: 1})
+			matrix := geom.Matrix{{xx - ox, yx - ox, ox}, {xy - oy, yy - oy, oy}}
+			if !finiteMatrix(matrix) {
+				continue
+			}
+			if geom.Equal(matrix.Det(), 0) {
+				arc = arc.ReplaceArcs()
+			}
+			arc.Transform(matrix)
+			scanner := arc.Scanner()
+			for scanner.Scan() {
+				switch scanner.Cmd() {
+				case geom.ArcToCmd:
+					rx, ry, angle, large, sweep := scanner.Arc()
+					if finiteFloat(rx) && finiteFloat(ry) && finiteFloat(angle) {
+						pa.ArcTo(rx, ry, angle, large, sweep, endX, endY)
+					}
+				case geom.CubeToCmd:
+					c1, c2, end := scanner.CP1(), scanner.CP2(), scanner.End()
+					pa.CubeTo(c1.X, c1.Y, c2.X, c2.Y, end.X, end.Y)
+				case geom.LineToCmd:
+					pa.LineTo(endX, endY)
+				}
+			}
+			current = cmd.Arc.EndPoint
 
 		case models.Close:
 			pa.Close()
+			current = start
 		}
 	}
 	return pa

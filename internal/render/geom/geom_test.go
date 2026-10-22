@@ -22,7 +22,7 @@ func TestPathTranslateBounds(t *testing.T) {
 	}
 }
 
-// TestPathAndOr 验证布尔交/并运算的包围盒，确认移植的路径引擎可用。
+// TestPathAndOr 验证共享路径引擎的布尔交/并运算包围盒。
 func TestPathAndOr(t *testing.T) {
 	a := Rectangle(10, 10)
 	b := Rectangle(10, 10).Translate(5, 5)
@@ -101,12 +101,22 @@ func TestGradAtTransparentStopKeepsColor(t *testing.T) {
 	}
 }
 
+func TestPaintDistinguishesTransparentFromUnset(t *testing.T) {
+	paint := SolidPaint(color.RGBA{})
+	if !paint.Has() || !paint.IsColor() || paint.IsGradient() {
+		t.Fatal("显式透明色应保留纯色画笔语义")
+	}
+	if (Paint{}).Has() || SolidPaint(nil).Has() {
+		t.Fatal("未指定颜色应为空画笔")
+	}
+}
+
 // TestLinearGradientAt 验证线性渐变采样。
 func TestLinearGradientAt(t *testing.T) {
 	g := Grad{}
 	g.Add(0, color.RGBA{0, 0, 0, 255})
 	g.Add(1, color.RGBA{255, 0, 0, 255})
-	lg := g.ToLinear(Point{0, 0}, Point{10, 0})
+	lg := g.ToLinear(Point{}, Point{X: 10})
 	if c := lg.At(0, 0); c.R != 0 {
 		t.Fatalf("起点颜色 = %v", c)
 	}

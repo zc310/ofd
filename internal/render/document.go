@@ -43,6 +43,7 @@ type Document struct {
 	colorSpaces        map[*models.ColorSpace]*colorSpaceResources
 	templateScenesMu   sync.Mutex
 	templateScenes     *utils.LRU[templateSceneKey, *templateScene]
+	templateBuilds     map[templateSceneKey]*templateSceneBuild
 	templateGeneration uint64
 	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
 	closed atomic.Bool
@@ -158,6 +159,7 @@ func (p *Document) Close() {
 		p.colorSpacesMu.Unlock()
 		p.templateScenesMu.Lock()
 		p.templateScenes = nil
+		p.templateBuilds = nil
 		p.templateScenesMu.Unlock()
 		p.imageLocksMu.Lock()
 		p.images = nil

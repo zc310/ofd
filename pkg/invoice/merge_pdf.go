@@ -252,9 +252,7 @@ func drawCellBorders(ctx render.DrawContext, layout sheetLayout, sheet mergeShee
 		}
 		x, y, width, height := sheetCell(layout, sheet, entry)
 		bottom := canvasOrigin(sheet.height, y, height)
-		// 每个格子必须新建 Path：转换层按 *geom.Path 指针缓存转换结果
-		// （canvasconv.ToCanvasPath），复用一个对象再 Reset 会拿到首次的缓存，
-		// 于是所有格子都画在第一格的位置——看上去就是只有第一张票有框。
+		// 每个格子使用独立路径，提交给后端后视为只读。
 		rectangle := &geom.Path{}
 		rectangle.MoveTo(x, bottom)
 		rectangle.LineTo(x+width, bottom)

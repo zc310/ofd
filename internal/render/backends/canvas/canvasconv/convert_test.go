@@ -11,7 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-// 仅用于验证未知类型兜底的占位实现。
+// 验证共享几何类型后，自定义线帽与连接器也能原样传递。
 type unknownGeomCapper struct{}
 
 func (unknownGeomCapper) Cap(*geom.Path, float64, geom.Point, geom.Point) {}
@@ -31,6 +31,51 @@ func (unknownCanvasJoiner) Join(*canvas.Path, *canvas.Path, float64, canvas.Poin
 }
 
 const boundsTol = 1e-6
+
+func TestPathAdaptersSharePathAndObserveEdits(t *testing.T) {
+	path := geom.Rectangle(10, 5)
+	if ToCanvasPath(path) != path || FromCanvasPath(path) != path {
+		t.Fatal("几何适配器复制了路径")
+	}
+	// 适配层不能按指针返回过期快照；源路径的后续编辑应立即可见。
+	path.Reset()
+	path.MoveTo(20, 30)
+	path.LineTo(25, 35)
+	want := geom.Rect{X0: 20, Y0: 30, X1: 25, Y1: 35}
+	if got := ToCanvasPath(path).Bounds(); got != want {
+		t.Fatalf("ToCanvasPath 返回过期轮廓：%v，期望 %v", got, want)
+	}
+	if got := FromCanvasPath(path).Bounds(); got != want {
+		t.Fatalf("FromCanvasPath 返回过期轮廓：%v，期望 %v", got, want)
+	}
+}
+
+func TestNilPathAdaptersReturnEmptyPath(t *testing.T) {
+	for _, path := range []*geom.Path{ToCanvasPath(nil), FromCanvasPath(nil)} {
+		if path == nil || !path.Empty() {
+			t.Fatal("nil路径应适配为空路径")
+		}
+	}
+}
+
+func TestNativeGradientRoundTripRetainsSerializableTypeAndStops(t *testing.T) {
+	linear := canvas.NewLinearGradient(canvas.Point{X: 1}, canvas.Point{X: 12, Y: 3})
+	radial := canvas.NewRadialGradient(canvas.Point{X: 2}, 1, canvas.Point{X: 3, Y: 4}, 8)
+	stops := canvas.Grad{{Offset: 0, Color: color.RGBA{R: 128, A: 128}}, {Offset: 1, Color: color.RGBA{B: 255, A: 255}}}
+	linear.Grad, radial.Grad = stops, stops
+	linear.Extend, radial.Extend = [2]bool{false, true}, [2]bool{true, false}
+	for _, source := range []canvas.Gradient{linear, radial} {
+		got := ToCanvasGradient(FromCanvasGradient(source))
+		if !reflect.DeepEqual(source, got) {
+			t.Fatalf("原生渐变往返丢失类型或参数：%#v => %#v", source, got)
+		}
+	}
+	converted := FromCanvasGradient(linear).(*geom.LinearGradient)
+	converted.Grad[0].Color = color.RGBA{}
+	if linear.Grad[0].Color.A != 128 {
+		t.Fatal("转换后的渐变共享并修改了源色标")
+	}
+}
 
 func assertBounds(t *testing.T, label string, got geom.Rect, want canvas.Rect) {
 	t.Helper()
@@ -133,12 +178,14 @@ func TestCapperRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCapperDefaultFallback(t *testing.T) {
-	if got := FromCanvasCapper(unknownCanvasCapper{}); reflect.TypeOf(got) != reflect.TypeOf(geom.ButtCapper{}) {
-		t.Errorf("未知 canvas 线帽 → %T, want ButtCapper", got)
+func TestCapperPreservesCustomImplementationAndNilDefault(t *testing.T) {
+	for _, capper := range []geom.Capper{&unknownCanvasCapper{}, &unknownGeomCapper{}} {
+		if ToCanvasCapper(capper) != capper || FromCanvasCapper(capper) != capper {
+			t.Errorf("自定义线帽 %T 未原样传递", capper)
+		}
 	}
-	if got := ToCanvasCapper(unknownGeomCapper{}); reflect.TypeOf(got) != reflect.TypeOf(canvas.ButtCapper{}) {
-		t.Errorf("未知 geom 线帽 → %T, want canvas.ButtCapper", got)
+	if ToCanvasCapper(nil) != (canvas.ButtCapper{}) || FromCanvasCapper(nil) != (geom.ButtCapper{}) {
+		t.Fatal("nil线帽未使用平头默认值")
 	}
 }
 
@@ -201,17 +248,19 @@ func TestMiterJoinerPreservesGapAndLimit(t *testing.T) {
 	}
 }
 
-func TestJoinerDefaultFallback(t *testing.T) {
+func TestJoinerPreservesCustomImplementationAndNilDefault(t *testing.T) {
+	for _, joiner := range []geom.Joiner{&unknownCanvasJoiner{}, &unknownGeomJoiner{}} {
+		if ToCanvasJoiner(joiner) != joiner || FromCanvasJoiner(joiner) != joiner {
+			t.Errorf("自定义连接器 %T 未原样传递", joiner)
+		}
+		miter := geom.MiterJoiner{GapJoiner: joiner, Limit: 7.5}
+		if ToCanvasJoiner(miter) != miter || FromCanvasJoiner(miter) != miter {
+			t.Error("斜接连接器的自定义GapJoiner或Limit丢失")
+		}
+	}
 	want := geom.MiterJoiner{GapJoiner: geom.BevelJoiner{}, Limit: 4.0}
-	got, ok := FromCanvasJoiner(unknownCanvasJoiner{}).(geom.MiterJoiner)
-	if !ok {
-		t.Fatalf("未知 canvas 连接器 → %T, want geom.MiterJoiner", FromCanvasJoiner(unknownCanvasJoiner{}))
-	}
-	if got.Limit != want.Limit || reflect.TypeOf(got.GapJoiner) != reflect.TypeOf(want.GapJoiner) {
-		t.Errorf("未知 canvas 连接器 → %+v, want %+v", got, want)
-	}
-	if got := ToCanvasJoiner(unknownGeomJoiner{}); reflect.TypeOf(got) != reflect.TypeOf(canvas.MiterJoiner{}) {
-		t.Errorf("未知 geom 连接器 → %T, want canvas.MiterJoiner", got)
+	if ToCanvasJoiner(nil) != want || FromCanvasJoiner(nil) != want {
+		t.Fatal("nil连接器未使用斜接默认值")
 	}
 }
 
@@ -267,8 +316,7 @@ func TestPaintEmptyRoundTrip(t *testing.T) {
 }
 
 func TestFillRuleRoundTrip(t *testing.T) {
-	// 转换依赖“两者常量顺序一致”的底层值直接映射，这里逐值对比，任何一端
-	// 调整枚举顺序都会使断言失败。
+	// 适配层保留共享填充规则。
 	tests := []struct {
 		name string
 		g    geom.FillRule

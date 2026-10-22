@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -210,5 +211,51 @@ func TestTemplateCacheCloseDoesNotPublishInFlightBuild(t *testing.T) {
 	<-closed
 	if doc.templateScenes != nil {
 		t.Fatal("in-flight build republished cache after Close")
+	}
+}
+
+func TestTemplateColdBuildDoesNotBlockOtherKeysOrCachedDraws(t *testing.T) {
+	previous := newVectorSurface
+	t.Cleanup(func() { newVectorSurface = previous })
+	fonts := &templateTestFonts{}
+	doc := &Document{fonts: fonts}
+	t.Cleanup(doc.Close)
+	content := &models.PageContent{Content: &models.Content{}}
+	building, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	newVectorSurface = func(w, _ float64, _ func(DrawContext)) VectorSurface {
+		if w == 30 {
+			close(building)
+			<-release
+		}
+		return &templateTestSurface{weight: 1024}
+	}
+	draw := func(w float64) bool {
+		var budget renderBudget
+		budget.reset()
+		return doc.drawCachedTemplate(&templateTestDrawer{}, content, models.StBox{Width: w, Height: 20}, &budget)
+	}
+	if !draw(20) {
+		t.Fatal("预热失败")
+	}
+	slow := make(chan bool, 1)
+	go func() { slow <- draw(30) }()
+	<-building
+	for _, width := range []float64{20, 40} {
+		done := make(chan bool, 1)
+		go func() { done <- draw(width) }()
+		select {
+		case ok := <-done:
+			if !ok {
+				t.Fatal("其他模板绘制失败")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("一个模板的冷构建阻塞了其他键")
+		}
+	}
+	releaseOnce.Do(func() { close(release) })
+	if !<-slow {
+		t.Fatal("冷构建失败")
 	}
 }

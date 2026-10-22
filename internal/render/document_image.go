@@ -54,7 +54,8 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 			// y 向下（图像像素）坐标系，需先翻转 y 轴再应用放置矩阵。
 			flip := geom.Matrix{{1, 0, 0}, {0, -1, svg.Height()}}
 			m := imageMatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm, pb.Height).Mul(flip)
-			if finiteMatrix(m) {
+			bounds := geom.RectFromSize(0, 0, svg.Width(), svg.Height()).Transform(m)
+			if finiteMatrix(m) && clipContainsRect(graphicBoundaryClip(object.Boundary, pb.Height, parentCTM), bounds) {
 				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
 					rendered := svg.RenderVector(ctx, m)
@@ -98,7 +99,7 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 		return
 	}
 
-	// 裁剪区域坐标是图元自身的毫米局部坐标，buildImageClipRegion 只需 Boundary
+	// 裁剪区域坐标是图元自身的毫米局部坐标，buildImageClip 只需 Boundary
 	// 偏移和 y 轴翻转。imageCTM 在图元未声明 CTM 时会按 Boundary 尺寸合成一个
 	// 缩放矩阵，该矩阵只用于图片放置；若把它当作裁剪的 objectCTM 传下去，裁剪
 	// 路径会再被放大 Boundary 倍，包围盒从 70mm×46mm 膨胀到数千毫米，表现为
@@ -114,20 +115,13 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 			return
 		}
 	}
-	if clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM); clip != nil {
-		img = imageWithClip(img, clip, m)
-	}
-	if parentClip != nil {
-		img = imageWithClip(img, parentClip, m)
-	}
+	clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
+	clip = intersectClips(clip, graphicBoundaryClip(object.Boundary, pb.Height, parentCTM))
+	clip = intersectClips(clip, parentClip)
+	img = imageWithClipAlpha(img, clip, m, graphicOpacity(object.Alpha))
 	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return
-	}
-	// 图元 Alpha 在图片合成时施加；完全不透明时跳过，避免物化 NRGBA 破坏
-	// canvas 后端按源字节直传 PDF 的快路径。
-	if opacity := graphicOpacity(object.Alpha); opacity < 255 {
-		img = applyImageAlpha(img, opacity)
 	}
 	ctx.RenderImage(img, m)
 	p.drawImageBorder(ctx, object, pb.Height)
@@ -490,74 +484,21 @@ func palettedToRGBA(img image.Image) image.Image {
 }
 
 func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
-	if clips == nil || len(clips.Clip) == 0 {
-		return nil
-	}
-	var result *geom.Path
-	for _, clip := range clips.Clip {
-		current := p.buildImageClipRegion(clip, clips.TransFlag, pageH, bx, by, objectCTM)
-		if current != nil {
-			if result == nil {
-				result = current
-			} else {
-				result = result.And(current)
-			}
-		}
-	}
-	return result
-}
-
-// buildImageClipRegion 合并同一个 Clip 中的所有 Area。
-func (p *Document) buildImageClipRegion(clip models.CtClip, transFlag *bool, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
-	var result *geom.Path
-	for _, area := range clip.Area {
-		if area.Path == nil {
-			continue
-		}
-
-		areaCTM := models.IdentityMatrix
-		if area.CTM != nil {
-			if !area.CTM.IsFinite() {
-				continue
-			}
-			areaCTM = *area.CTM
-		}
-		if transFlag == nil || *transFlag {
-			areaCTM = *objectCTM.Multiply(&areaCTM)
-		}
-		pathCTM := areaCTM
-		if area.Path.CTM != nil {
-			if !area.Path.CTM.IsFinite() {
-				continue
-			}
-			pathCTM = *areaCTM.Multiply(area.Path.CTM)
-		}
-		if !pathCTM.IsFinite() {
-			continue
-		}
-
-		clipPath := p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
-			// Path 的 AbbreviatedData 使用 Path 自身的局部坐标，必须先加上
-			// Boundary 偏移，再应用 Area/Path CTM。忽略 Boundary 会让裁剪区
-			// 在复合图元等场景中整体偏移，通常表现为右侧或左侧露出一条边。
-			pt.X += area.Path.Boundary.X
-			pt.Y += area.Path.Boundary.Y
-			x, y := pathCTM.TransformPoint(pt)
-			return x + bx, pageH - (y + by)
-		})
-		clipPath.Close()
-		if result == nil {
-			result = clipPath
-		} else {
-			result = result.Or(clipPath)
-		}
-	}
-	return result
+	return p.buildPathClip(clips, models.StBox{X: bx, Y: by}, pageH, &objectCTM, nil)
 }
 
 func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image {
-	if img == nil || clip == nil || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
-		return img
+	return imageWithClipAlpha(img, clip, m, 255)
+}
+
+// imageWithClipAlpha 只创建一份掩码和一份输出，在同一次像素循环中合成
+// 源Alpha、裁剪覆盖率和对象Alpha。未裁剪的不透明图片继续保留原始编码。
+func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha uint8) image.Image {
+	if img == nil {
+		return nil
+	}
+	if clip == nil || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
+		return applyImageAlpha(img, alpha)
 	}
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
@@ -565,14 +506,14 @@ func imageWithClip(img image.Image, clip *geom.Path, m geom.Matrix) image.Image 
 		return img
 	}
 	if clipCoversImage(clip, m, w, h) {
-		return img
+		return applyImageAlpha(img, alpha)
 	}
 	mask := imageClipMask(clip, m, w, h)
 	if mask == nil {
 		// 无法实现裁剪时跳过图片内容，避免显示原本应被裁掉的区域。
 		return image.NewNRGBA(bounds)
 	}
-	return applyImageMask(img, mask)
+	return applyImageMaskAlpha(img, mask, alpha)
 }
 
 // clipBleedMM 是允许忽略的裁剪内缩量，按毫米计。排版软件给出的出血边通常是
@@ -666,6 +607,10 @@ func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.RGB
 // applyImageMask 将掩码透明度合成到原图片。
 // 对常见像素格式使用类型化快速路径，避免逐像素的 color.Model 接口分发。
 func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
+	return applyImageMaskAlpha(img, mask, 255)
+}
+
+func applyImageMaskAlpha(img image.Image, mask *image.RGBA, alpha uint8) image.Image {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	src := img
@@ -676,17 +621,17 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 	}
 	switch source := src.(type) {
 	case *image.YCbCr:
-		applyMaskYCbCr(source, mask, out, bounds.Min, mask.Rect.Min)
+		applyMaskYCbCr(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
 	case *image.NRGBA:
-		applyMaskNRGBA(source, mask, out, bounds.Min, mask.Rect.Min)
+		applyMaskNRGBA(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
 	case *image.RGBA:
-		applyMaskRGBA(source, mask, out, bounds.Min, mask.Rect.Min)
+		applyMaskRGBA(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
 	default:
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
-				ma := mask.RGBAAt(x-bounds.Min.X, y-bounds.Min.Y).A
-				c.A = uint8(int(c.A) * int(ma) / 255)
+				ma := mask.RGBAAt(x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y).A
+				c.A = alphaMul(alphaMul(c.A, ma), alpha)
 				out.SetNRGBA(x, y, c)
 			}
 		}
@@ -696,19 +641,19 @@ func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
 
 // applyMaskYCbCr 用掩码 alpha 合成 YCbCr 图像。行首偏移只计算一次，
 // 之后按行内列号递推，省掉每个像素的 PixOffset 调用。
-func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
+func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
-			maskYCbCrRows(src, mask, out, imgMin, maskMin, lo, hi)
+			maskYCbCrRows(src, mask, out, imgMin, maskMin, lo, hi, alpha)
 		})
 		return
 	}
-	maskYCbCrRows(src, mask, out, imgMin, maskMin, 0, height)
+	maskYCbCrRows(src, mask, out, imgMin, maskMin, 0, height, alpha)
 }
 
 // maskYCbCrRows 合成 [lo,hi) 行区间的掩码 alpha。
-func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -726,7 +671,7 @@ func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin,
 			out.Pix[oi+0] = r
 			out.Pix[oi+1] = g
 			out.Pix[oi+2] = b
-			out.Pix[oi+3] = mask.Pix[mi+3]
+			out.Pix[oi+3] = alphaMul(mask.Pix[mi+3], alpha)
 			oi += 4
 			mi += 4
 		}
@@ -783,20 +728,24 @@ func runMaskRows(workers, height int, fn func(lo, hi int)) {
 // 图案单元等大尺寸图片会逐像素经过这里，是图片路径的主要开销，因此按行切片
 // 遍历：行首偏移只计算一次，之后每像素递增 4 字节，省掉每个像素三次
 // PixOffset 调用与重复的边界判断。
-func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
+func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
-			maskNGBGARows(src, mask, out, imgMin, maskMin, lo, hi)
+			maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, lo, hi, alpha)
 		})
 		return
 	}
-	maskNGBGARows(src, mask, out, imgMin, maskMin, 0, height)
+	maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, 0, height, alpha)
 }
 
 // maskNGBGARows 合成 [lo,hi) 行区间的掩码 alpha。行首偏移只计算一次，之后
 // 每像素递增 4 字节，省掉每个像素三次 PixOffset 调用与重复的边界判断。
 func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+	maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, lo, hi, 255)
+}
+
+func maskNRGBARowsAlpha(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -808,7 +757,7 @@ func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin,
 			out.Pix[oi+0] = src.Pix[si+0]
 			out.Pix[oi+1] = src.Pix[si+1]
 			out.Pix[oi+2] = src.Pix[si+2]
-			out.Pix[oi+3] = alphaMul(src.Pix[si+3], mask.Pix[mi+3])
+			out.Pix[oi+3] = alphaMul(alphaMul(src.Pix[si+3], mask.Pix[mi+3]), alpha)
 			si += 4
 			oi += 4
 			mi += 4
@@ -818,20 +767,20 @@ func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin,
 
 // applyMaskRGBA 用掩码 alpha 合成预乘 RGBA 图像。行首偏移只计算一次，之后
 // 每像素递增 4 字节；分支不用 continue，保证下标推进不会被跳过。
-func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point) {
+func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
-			maskRGBARows(src, mask, out, imgMin, maskMin, lo, hi)
+			maskRGBARows(src, mask, out, imgMin, maskMin, lo, hi, alpha)
 		})
 		return
 	}
-	maskRGBARows(src, mask, out, imgMin, maskMin, 0, height)
+	maskRGBARows(src, mask, out, imgMin, maskMin, 0, height, alpha)
 }
 
 // maskRGBARows 合成 [lo,hi) 行区间的掩码 alpha。分支不用 continue，保证
 // 下标推进不会被跳过。
-func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -848,14 +797,14 @@ func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, m
 				out.Pix[oi+0] = r
 				out.Pix[oi+1] = g
 				out.Pix[oi+2] = b
-				out.Pix[oi+3] = ma
+				out.Pix[oi+3] = alphaMul(ma, alpha)
 			case a == 0:
 				// 全透明像素没有颜色可还原。
 				out.Pix[oi+0], out.Pix[oi+1], out.Pix[oi+2] = 0, 0, 0
-				out.Pix[oi+3] = alphaMul(a, ma)
+				out.Pix[oi+3] = 0
 			default:
 				// 与 color.NRGBAModel.Convert(color.RGBA) 一致：先去除预乘再叠加掩码。
-				out.Pix[oi+3] = alphaMul(a, ma)
+				out.Pix[oi+3] = alphaMul(alphaMul(a, ma), alpha)
 				r16 := uint32(r) * 0xffff / uint32(a)
 				g16 := uint32(g) * 0xffff / uint32(a)
 				b16 := uint32(b) * 0xffff / uint32(a)

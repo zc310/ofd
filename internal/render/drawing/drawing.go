@@ -1,10 +1,10 @@
-// Package drawing 定义与具体绘制库无关的绘制后端契约、注册表，以及 render
+// Package drawing 定义绘制后端契约、注册表，以及 render
 // 核心与各实现包共享的公共契约类型（字体、矢量输出、SVG 场景等）。
 //
 // render 的页面绘制代码面向 DrawContext；canvas 内置后端与各插件后端
 // （ftgg/tinyskia）都实现它。后端插件通过 RegisterBackend 注册后，
 // 由 render.NewBackend 按名创建。把契约放在本包，使插件包只需依赖 geom 与
-// 本包，不必依赖 render（从而不连带引入 tdewolff/canvas）。
+// 本包，不必依赖 render。geom 几何类型复用 canvas，各后端自行实现绘制。
 package drawing
 
 import (
@@ -33,9 +33,8 @@ const (
 	BackendTinySkia = "tinyskia"
 )
 
-// DrawContext 是 OFD 页面绘制所依赖的最小操作面，全部使用与绘制库无关的
-// geom 类型：canvas 后端负责把 geom 转成 canvas 类型，gg/ftgg/tinyskia
-// 后端直接消费 geom 的段数据与采样渐变。
+// DrawContext 是 OFD 页面绘制所依赖的最小操作面，使用 geom 的共享几何类型
+// 和 OFD 画笔。canvas 后端直接消费路径，其余后端扫描路径段并采样渐变。
 type DrawContext interface {
 	// Push/Pop 保存并恢复当前样式与变换。
 	Push()
@@ -204,8 +203,10 @@ type FontFamily interface {
 // FontFace 是一次字号与样式确定的字体面，供文字度量与字形轮廓绘制使用。
 type FontFace interface {
 	// ToPath 返回按字体整形后的单行文本轮廓路径（y 向上字号坐标系）。
+	// 返回值可能来自字体缓存，调用方须先 Copy 再修改。
 	ToPath(value string) *geom.Path
 	// DirectPath 返回按字形 ID 直接映射的轮廓路径；无法映射时返回 nil。
+	// 返回值与 ToPath 一样视为只读。
 	DirectPath(value string) *geom.Path
 	// TextWidth 返回文本的排版宽度（毫米）。
 	TextWidth(value string) float64

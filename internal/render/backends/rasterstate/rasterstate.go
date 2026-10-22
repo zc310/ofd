@@ -3,7 +3,7 @@
 // 造型、虚线、渐变与填充规则需要随栈一起保存，因此包装成一个独立的纯数据
 // 载体，供 internal/render/backends 下的各后端共用。
 //
-// 状态只使用与绘制库无关的 geom 类型，后端无需依赖 tdewolff/canvas。
+// 状态使用 geom 的共享几何类型和 OFD 画笔。
 package rasterstate
 
 import (

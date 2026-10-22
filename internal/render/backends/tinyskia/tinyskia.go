@@ -6,8 +6,8 @@
 // 之后即可用 drawing.BackendTinySkia="tinyskia" 作为栅格后端名，或经
 // converter.RasterBackend("tinyskia")
 // 的后端名。只用于渲染速度对照实验，不承诺与 canvas/gogpu 的逐像素输出
-// 一致。渲染上下文状态机由 internal/render/backends/rastercore 共享，本包
-// 只依赖 geom 类型，不依赖 tdewolff/canvas。
+// 一致。渲染上下文状态机由 internal/render/backends/rastercore 共享，
+// geom 几何类型复用 canvas，光栅绘制由 tinyskia 完成。
 package tinyskia
 
 import (

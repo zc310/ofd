@@ -5,8 +5,8 @@
 // 描边造型缩放、路径扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等。
 // 这些共享逻辑集中在本包，各后端只需实现 Hooks。
 //
-// Core 直接满足 render.DrawContext（并带 Raster），且全部使用与绘制库无关
-// 的 geom 类型，因此本包与各后端都不依赖 tdewolff/canvas。
+// Core 直接满足 render.DrawContext（并带 Raster），通过 geom 使用共享的
+// canvas 几何类型，各后端的 Hooks 负责实际光栅绘制。
 package rastercore
 
 import (
@@ -151,6 +151,8 @@ type Core struct {
 
 	stack []rasterstate.State
 }
+
+func (c *Core) RasterResolution() geom.Resolution { return geom.DPMM(c.dpmm) }
 
 // New 计算像素尺寸并调用 factory 构造光栅库的 Hooks。factory 收到已经过
 // 取整校验的 wpx/hpx（像素）与 dpmm/hpix，返回库相关的 Hooks 实现。

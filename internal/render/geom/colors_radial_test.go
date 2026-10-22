@@ -13,11 +13,11 @@ func TestRadialParameterExtendCoversNoExtend(t *testing.T) {
 		name string
 		g    *RadialGradient
 	}{
-		{"两圆外离", NewRadialGradient(Point{18, 35}, 8, Point{52, 35}, 18)},
-		{"两圆内含", NewRadialGradient(Point{18, 35}, 6, Point{25, 35}, 14)},
-		{"两圆相交", NewRadialGradient(Point{12, 35}, 6, Point{24, 35}, 12)},
-		{"同心增长", NewRadialGradient(Point{0, 0}, 10, Point{0, 0}, 20)},
-		{"焦点族", NewRadialGradient(Point{0, 0}, 0, Point{30, 0}, 10)},
+		{"两圆外离", NewRadialGradient(Point{X: 18, Y: 35}, 8, Point{X: 52, Y: 35}, 18)},
+		{"两圆内含", NewRadialGradient(Point{X: 18, Y: 35}, 6, Point{X: 25, Y: 35}, 14)},
+		{"两圆相交", NewRadialGradient(Point{X: 12, Y: 35}, 6, Point{X: 24, Y: 35}, 12)},
+		{"同心增长", NewRadialGradient(Point{}, 10, Point{}, 20)},
+		{"焦点族", NewRadialGradient(Point{}, 0, Point{X: 30}, 10)},
 	}
 	for _, tc := range grads {
 		t.Run(tc.name, func(t *testing.T) {

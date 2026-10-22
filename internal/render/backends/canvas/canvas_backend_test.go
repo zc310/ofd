@@ -1,14 +1,72 @@
 package canvas
 
 import (
+	"bytes"
 	"image"
 	"math"
 	"testing"
 
 	"github.com/zc310/canvas"
+	"golang.org/x/image/font/gofont/goregular"
 
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/testscene"
 )
+
+func TestCanvasBackendDrawPreservesSharedFontOutline(t *testing.T) {
+	family := canvas.NewFontFamily(t.Name())
+	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	fonts := NewFonts(nil)
+	defer fonts.Close()
+	base := family.Face(24, canvas.Black)
+	face := canvasFontFace{fonts: fonts, face: base}
+	path := face.ToPath("HT")
+	if path == nil || path.Empty() || path != fonts.shapedTextPath(base, "HT") {
+		t.Fatal("字体面未返回共享的整形轮廓")
+	}
+	wantPath := path.String()
+	draw := func(copyPath bool) *image.RGBA {
+		backend := newCanvasRasterBackend(60, 30, geom.DPI(96))
+		backend.SetFillColor(canvas.Black)
+		backend.SetStrokeColor(canvas.Blue)
+		backend.SetStrokeWidth(0.3)
+		backend.SetDashes(0.2, 1, 0.5)
+		for i := range 3 {
+			backend.Push()
+			backend.Translate(5+float64(i)*17, 10)
+			backend.Rotate(float64(i) * 10)
+			backend.Scale(1+float64(i)*0.1, 1)
+			outline := path
+			if copyPath {
+				outline = path.Copy()
+			}
+			backend.DrawPath(0, 0, outline)
+			backend.Pop()
+		}
+		return backend.Raster()
+	}
+	want := draw(true)
+	for range 2 {
+		got := draw(false)
+		if !bytes.Equal(got.Pix, want.Pix) {
+			t.Fatal("重复绘制共享字形与独立副本的输出不同")
+		}
+		if path.String() != wantPath || face.ToPath("HT") != path {
+			t.Fatal("变换、虚线描边或栅格化修改了共享字体轮廓")
+		}
+	}
+	ink := 0
+	for i := 3; i < len(want.Pix); i += 4 {
+		if want.Pix[i] != 0 {
+			ink++
+		}
+	}
+	if ink == 0 {
+		t.Fatal("字体轮廓没有产生可见像素")
+	}
+}
 
 // TestCanvasBackendParity 验证 canvasBackend 对 canvas.Context 的逐方法
 // 转发与直接绘制输出逐像素一致：同一场景分别用 *canvas.Context（现有

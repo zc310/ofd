@@ -41,6 +41,14 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	})
 	if !translucent {
 		r.PDF.RenderText(text, matrix)
+		// 裁剪文字也会附带不可见语义层，避免其Alpha=0污染后续渐变。
+		visible := false
+		text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
+			visible = visible || span.IsText() && span.Face.Fill.Has()
+		})
+		if !visible {
+			r.restoreOpacity()
+		}
 		return
 	}
 
@@ -80,6 +88,10 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	})
 	// 不可见文字把写入器的共享 Alpha 设为0，而后续渐变不会自行恢复它。
 	// 写出没有几何内容的填充以恢复不透明状态，不留下可见图元。
+	r.restoreOpacity()
+}
+
+func (r pdfTextRenderer) restoreOpacity() {
 	style := canvas.DefaultStyle
 	style.Fill = canvas.Paint{Color: canvas.Black}
 	style.Stroke = canvas.Paint{}

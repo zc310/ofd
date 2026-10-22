@@ -5,7 +5,7 @@ import (
 )
 
 // DrawContext 是 drawing.DrawContext 的别名，保持本包既有调用点可用。契约
-// 定义在 drawing 包，使后端插件只依赖 drawing/geom，不依赖 render/canvas。
+// 定义在 drawing 包，后端插件通过 drawing/geom 共享契约与几何类型。
 type DrawContext = drawing.DrawContext
 
 // textDrawer 是支持原生文字绘制的后端的可选项接口。canvas 后端实现此接口

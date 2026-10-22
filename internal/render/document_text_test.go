@@ -500,7 +500,8 @@ func waveArrangedText(deltaY []float64) creator.Text {
 		code.DeltaY = deltaY
 	}
 	return creator.Text{
-		X: 20, Y: 230, Width: 170, Height: 20, Font: "楷体", Size: 8,
+		// 基线为20mm，DeltaY可把下一字下移6mm，Boundary必须覆盖该范围。
+		X: 20, Y: 230, Width: 170, Height: 30, Font: "楷体", Size: 8,
 		Fill: boolPtrT(), FillColor: &creator.Color{R: 30, G: 100, B: 180},
 		TextCodes: []creator.TextCode{code},
 	}

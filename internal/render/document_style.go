@@ -141,9 +141,9 @@ func getLineJoin(joinStr string) geom.Joiner {
 // updateCtPathStyle 应用路径图元的绘制样式。strokeScale 是对象 CTM 对描边
 // 属性（线宽、虚线、斜接限制）的缩放系数：这些属性定义在对象坐标系中，而
 // 路径已被展平到页面坐标，因此需要显式换算，否则带缩放 CTM 的描边会过粗/过细。
-func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam, strokeScale float64) {
+func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam, strokeScale float64) models.CTGraphicUnit {
 	if object == nil {
-		return
+		return models.CTGraphicUnit{}
 	}
 	if !finiteFloat(strokeScale) || strokeScale <= 0 {
 		strokeScale = 1
@@ -206,6 +206,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 			ctx.SetDashes(0)
 		}
 	}
+	return effective.CTGraphicUnit
 }
 
 func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
