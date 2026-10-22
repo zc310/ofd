@@ -43,8 +43,8 @@ func (r *recordingRenderer) RenderImage(_ image.Image, _ canvas.Matrix) {
 }
 
 func TestApplyImageMaskFastPathsMatchReference(t *testing.T) {
-	mask := image.NewRGBA(image.Rect(0, 0, 8, 6))
-	for i := 0; i < len(mask.Pix); i++ {
+	mask := image.NewAlpha(image.Rect(0, 0, 8, 6))
+	for i := range mask.Pix {
 		mask.Pix[i] = uint8(i*37 + 11)
 	}
 	cases := map[string]image.Image{
@@ -104,8 +104,8 @@ func TestApplyImageMaskFastPathsMatchReference(t *testing.T) {
 // 这里用非零原点、非对齐尺寸和不同步幅的子采样覆盖该偏移换算。
 func TestApplyImageMaskFastPathsWithOffsetOrigins(t *testing.T) {
 	const w, h = 9, 5
-	newMask := func(min image.Point) *image.RGBA {
-		m := image.NewRGBA(image.Rect(min.X, min.Y, min.X+w, min.Y+h))
+	newMask := func(min image.Point) *image.Alpha {
+		m := image.NewAlpha(image.Rect(min.X, min.Y, min.X+w, min.Y+h))
 		for i := range m.Pix {
 			m.Pix[i] = uint8(i*37 + 11)
 		}
@@ -168,14 +168,14 @@ func TestApplyImageMaskFastPathsWithOffsetOrigins(t *testing.T) {
 // applyImageMaskReference 是 applyImageMask 的朴素实现，用作快路径的对照。
 // 掩码像素按各自原点换算：图像第 (x,y) 点对应掩码的
 // (x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y)。
-func applyImageMaskReference(img image.Image, mask *image.RGBA) image.Image {
+func applyImageMaskReference(img image.Image, mask *image.Alpha) image.Image {
 	bounds := img.Bounds()
 	maskMin := mask.Rect.Min
 	out := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			ma := mask.RGBAAt(x-bounds.Min.X+maskMin.X, y-bounds.Min.Y+maskMin.Y).A
+			ma := mask.AlphaAt(x-bounds.Min.X+maskMin.X, y-bounds.Min.Y+maskMin.Y).A
 			c.A = uint8(int(c.A) * int(ma) / 255)
 			out.SetNRGBA(x, y, c)
 		}
@@ -189,6 +189,37 @@ func TestClipCoversImageSkipsFullRectangleClip(t *testing.T) {
 	out := imageWithClip(img, clip, geom.Identity)
 	if out != image.Image(img) {
 		t.Fatal("expected a clip covering the full image to be skipped")
+	}
+}
+
+func TestImageClipMaskUsesSingleChannelCoverage(t *testing.T) {
+	path := geom.Rectangle(10, 8).Translate(2.25, 3.5)
+	mask := imageClipMask(path, geom.Identity, 20, 20)
+	if mask == nil {
+		t.Fatal("裁剪掩码未生成")
+	}
+	if len(mask.Pix) != 20*20 || mask.Stride != 20 {
+		t.Fatalf("掩码应为每像素1字节，Pix=%d Stride=%d", len(mask.Pix), mask.Stride)
+	}
+	maxAlpha := uint8(0)
+	for _, value := range mask.Pix {
+		if value > maxAlpha {
+			maxAlpha = value
+		}
+	}
+	if maxAlpha != 255 || mask.AlphaAt(0, 0).A != 0 {
+		t.Fatalf("单通道掩码覆盖值错误: outside=%d max=%d", mask.AlphaAt(0, 0).A, maxAlpha)
+	}
+	legacy := newOffscreenSurface(20, 20, geom.DPMM(1))
+	legacy.SetFillColor(color.White)
+	legacy.DrawPath(0, 0, path)
+	legacyRGBA := legacy.Raster()
+	for y := 0; y < 20; y++ {
+		for x := 0; x < 20; x++ {
+			if got, want := mask.AlphaAt(x, y).A, legacyRGBA.RGBAAt(x, y).A; got != want {
+				t.Fatalf("alpha(%d,%d)=%d want legacy coverage %d", x, y, got, want)
+			}
+		}
 	}
 }
 
@@ -1188,7 +1219,7 @@ func TestApplyImageMaskParallelMatchesReference(t *testing.T) {
 	for i := range src.Pix {
 		src.Pix[i] = uint8(i*31 + 7)
 	}
-	mask := image.NewRGBA(maskRect)
+	mask := image.NewAlpha(maskRect)
 	for i := range mask.Pix {
 		mask.Pix[i] = uint8(i*17 + 3)
 	}

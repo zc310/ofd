@@ -12,8 +12,8 @@ func TestImageMaskAlphaMatchesSeparatePasses(t *testing.T) {
 	for name, img := range alphaTestImages(t) {
 		t.Run(name, func(t *testing.T) {
 			bounds := img.Bounds()
-			mask := image.NewRGBA(image.Rect(7, 9, 7+bounds.Dx(), 9+bounds.Dy()))
-			for i := 3; i < len(mask.Pix); i += 4 {
+			mask := image.NewAlpha(image.Rect(7, 9, 7+bounds.Dx(), 9+bounds.Dy()))
+			for i := range mask.Pix {
 				mask.Pix[i] = uint8(i * 37)
 			}
 			before := referenceImageAlpha(img, 255)

@@ -57,11 +57,14 @@ func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {
 
 func TestOffscreenUnavailableSkipsGradientAndClippedImage(t *testing.T) {
 	previous := newOffscreenSurfaceFactory
+	previousAlphaMask := newAlphaMaskSurfaceFactory
 	t.Cleanup(func() { newOffscreenSurfaceFactory = previous })
+	t.Cleanup(func() { newAlphaMaskSurfaceFactory = previousAlphaMask })
 	for _, factory := range []func(float64, float64, geom.Resolution) OffscreenSurface{
 		nil, func(float64, float64, geom.Resolution) OffscreenSurface { return nil },
 	} {
 		newOffscreenSurfaceFactory = factory
+		newAlphaMaskSurfaceFactory = nil
 		var doc Document
 		var budget renderBudget
 		budget.reset()

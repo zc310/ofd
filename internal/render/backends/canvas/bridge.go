@@ -24,6 +24,9 @@ func init() {
 	render.RegisterOffscreenSurfaceFactory(func(width, height float64, resolution geom.Resolution) render.OffscreenSurface {
 		return newCanvasRasterBackend(width, height, resolution)
 	})
+	render.RegisterAlphaMaskSurfaceFactory(func(width, height float64, resolution geom.Resolution) render.AlphaMaskSurface {
+		return newAlphaMaskSurface(width, height, resolution)
+	})
 	// 字体引擎。
 	render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
 		return NewFonts(doc)

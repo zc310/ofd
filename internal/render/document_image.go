@@ -589,28 +589,28 @@ func polygonArea(points []geom.Point) float64 {
 }
 
 // imageClipMask 将页面裁剪路径转换为图片像素掩码。
-func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.RGBA {
+func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.Alpha {
 	inverse := m.Inv()
 	if !finiteMatrix(inverse) {
-		return image.NewRGBA(image.Rect(0, 0, width, height))
+		return image.NewAlpha(image.Rect(0, 0, width, height))
 	}
 	maskPath := clip.Copy().Transform(inverse)
-	surface := newOffscreenSurface(float64(width), float64(height), geom.DPMM(1))
+	surface := newAlphaMaskSurface(float64(width), float64(height), geom.DPMM(1))
 	if surface == nil {
 		return nil
 	}
 	surface.SetFillColor(color.White)
 	surface.DrawPath(0, 0, maskPath)
-	return surface.Raster()
+	return surface.RasterAlpha()
 }
 
 // applyImageMask 将掩码透明度合成到原图片。
 // 对常见像素格式使用类型化快速路径，避免逐像素的 color.Model 接口分发。
-func applyImageMask(img image.Image, mask *image.RGBA) image.Image {
+func applyImageMask(img image.Image, mask *image.Alpha) image.Image {
 	return applyImageMaskAlpha(img, mask, 255)
 }
 
-func applyImageMaskAlpha(img image.Image, mask *image.RGBA, alpha uint8) image.Image {
+func applyImageMaskAlpha(img image.Image, mask *image.Alpha, alpha uint8) image.Image {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	src := img
@@ -630,7 +630,7 @@ func applyImageMaskAlpha(img image.Image, mask *image.RGBA, alpha uint8) image.I
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
-				ma := mask.RGBAAt(x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y).A
+				ma := mask.AlphaAt(x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y).A
 				c.A = alphaMul(alphaMul(c.A, ma), alpha)
 				out.SetNRGBA(x, y, c)
 			}
@@ -641,7 +641,7 @@ func applyImageMaskAlpha(img image.Image, mask *image.RGBA, alpha uint8) image.I
 
 // applyMaskYCbCr 用掩码 alpha 合成 YCbCr 图像。行首偏移只计算一次，
 // 之后按行内列号递推，省掉每个像素的 PixOffset 调用。
-func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
+func applyMaskYCbCr(src *image.YCbCr, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
@@ -653,7 +653,7 @@ func applyMaskYCbCr(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin
 }
 
 // maskYCbCrRows 合成 [lo,hi) 行区间的掩码 alpha。
-func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
+func maskYCbCrRows(src *image.YCbCr, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -671,9 +671,9 @@ func maskYCbCrRows(src *image.YCbCr, mask *image.RGBA, out *image.NRGBA, imgMin,
 			out.Pix[oi+0] = r
 			out.Pix[oi+1] = g
 			out.Pix[oi+2] = b
-			out.Pix[oi+3] = alphaMul(mask.Pix[mi+3], alpha)
+			out.Pix[oi+3] = alphaMul(mask.Pix[mi], alpha)
 			oi += 4
-			mi += 4
+			mi++
 		}
 	}
 }
@@ -728,7 +728,7 @@ func runMaskRows(workers, height int, fn func(lo, hi int)) {
 // 图案单元等大尺寸图片会逐像素经过这里，是图片路径的主要开销，因此按行切片
 // 遍历：行首偏移只计算一次，之后每像素递增 4 字节，省掉每个像素三次
 // PixOffset 调用与重复的边界判断。
-func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
+func applyMaskNRGBA(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
@@ -741,11 +741,11 @@ func applyMaskNRGBA(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin
 
 // maskNGBGARows 合成 [lo,hi) 行区间的掩码 alpha。行首偏移只计算一次，之后
 // 每像素递增 4 字节，省掉每个像素三次 PixOffset 调用与重复的边界判断。
-func maskNGBGARows(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
+func maskNGBGARows(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
 	maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, lo, hi, 255)
 }
 
-func maskNRGBARowsAlpha(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
+func maskNRGBARowsAlpha(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -757,17 +757,17 @@ func maskNRGBARowsAlpha(src *image.NRGBA, mask *image.RGBA, out *image.NRGBA, im
 			out.Pix[oi+0] = src.Pix[si+0]
 			out.Pix[oi+1] = src.Pix[si+1]
 			out.Pix[oi+2] = src.Pix[si+2]
-			out.Pix[oi+3] = alphaMul(alphaMul(src.Pix[si+3], mask.Pix[mi+3]), alpha)
+			out.Pix[oi+3] = alphaMul(alphaMul(src.Pix[si+3], mask.Pix[mi]), alpha)
 			si += 4
 			oi += 4
-			mi += 4
+			mi++
 		}
 	}
 }
 
 // applyMaskRGBA 用掩码 alpha 合成预乘 RGBA 图像。行首偏移只计算一次，之后
 // 每像素递增 4 字节；分支不用 continue，保证下标推进不会被跳过。
-func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
+func applyMaskRGBA(src *image.RGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
 	width, height := src.Rect.Dx(), src.Rect.Dy()
 	if workers := maskRowWorkers(width, height); workers > 1 {
 		runMaskRows(workers, height, func(lo, hi int) {
@@ -780,7 +780,7 @@ func applyMaskRGBA(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, 
 
 // maskRGBARows 合成 [lo,hi) 行区间的掩码 alpha。分支不用 continue，保证
 // 下标推进不会被跳过。
-func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
+func maskRGBARows(src *image.RGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
 	width := src.Rect.Dx()
 	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
 	for row := lo; row < hi; row++ {
@@ -789,7 +789,7 @@ func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, m
 		oi := out.PixOffset(src.Rect.Min.X, y)
 		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
 		for range width {
-			ma := mask.Pix[mi+3]
+			ma := mask.Pix[mi]
 			r, g, b, a := src.Pix[si+0], src.Pix[si+1], src.Pix[si+2], src.Pix[si+3]
 			switch {
 			case a == 0xff:
@@ -814,7 +814,7 @@ func maskRGBARows(src *image.RGBA, mask *image.RGBA, out *image.NRGBA, imgMin, m
 			}
 			si += 4
 			oi += 4
-			mi += 4
+			mi++
 		}
 	}
 }
