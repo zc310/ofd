@@ -194,9 +194,10 @@ build-tools: $(TOOL_BUILD_TARGETS)
 build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 
 # Fyne 从 GOFLAGS 提取链接选项，-X= 写法让整项不含空格。
-# --release 负责 -trimpath、-s -w；页面元数据和 Go 版本信息都读取 VERSION。
+# --release 负责 -trimpath、-s -w；WASM URL 附加内容哈希，防止浏览器复用旧缓存。
 build-viewer-web:
 	@cd cmd/ofd-viewer && GOFLAGS="$(GOFLAGS) -ldflags=-X=github.com/zc310/ofd/internal/version.Version=$(VERSION)" "$(FYNE)" package --target=web --release --name ofd-viewer --app-version "$(VERSION)"
+	@$(GO) run ./cmd/fyne-wasm-cache cmd/ofd-viewer/wasm/index.html cmd/ofd-viewer/wasm/ofd-viewer.wasm
 
 # 图标子集字体按 cmd/ofd-wasm/web/icons.json 重新生成。该文件是图标清单的唯一
 # 来源：字体由它生成，web/test/icons.test.mjs 也会检查代码里用到的图标都在清单内。

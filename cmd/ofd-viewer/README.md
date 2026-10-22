@@ -172,7 +172,8 @@ make build-viewer-web
 ```
 
 生成的 `cmd/ofd-viewer/wasm/` 目录包含页面、WASM 和运行时资源，应用版本从根目录
-Makefile 的 `VERSION` 注入。资源使用相对路径，可整体部署到静态站点的子目录。
+Makefile 的 `VERSION` 注入。构建会将 WASM 内容哈希附加到下载 URL，避免浏览器或 CDN
+继续使用旧缓存。资源使用相对路径，可整体部署到静态站点的子目录。
 本地预览可在仓库根目录执行：
 
 ```bash

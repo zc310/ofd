@@ -56,7 +56,7 @@ const (
 	// 高度算出来（见 a4PageHeight）。
 	windowWidth  = 700
 	pageMargin   = 12
-	viewerDPI    = 200
+	viewerDPI    = 96
 	thumbnailDPI = 36
 )
 
