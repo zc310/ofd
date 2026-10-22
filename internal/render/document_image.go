@@ -118,11 +118,27 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
 	clip = intersectClips(clip, graphicBoundaryClip(object.Boundary, pb.Height, parentCTM))
 	clip = intersectClips(clip, parentClip)
-	img = imageWithClipAlpha(img, clip, m, graphicOpacity(object.Alpha))
-	m = ctx.CurrentMatrix().Mul(m)
+	imageMatrix := m
+	m = ctx.CurrentMatrix().Mul(imageMatrix)
 	if !finiteMatrix(m) {
 		return
 	}
+	// 矢量后端原生裁剪需要把裁剪路径从页面坐标变换回图片局部坐标。行列式为 0
+	// 的退化 CTM 无法求逆（canvas 的 Matrix.Inv 会 panic），这类图元必须回退到
+	// 烘焙掩码路径。
+	if clip != nil && !clip.Empty() && !geom.Equal(imageMatrix.Det(), 0) &&
+		!clipCoversImage(clip, imageMatrix, img.Bounds().Dx(), img.Bounds().Dy()) {
+		if clipped, ok := ctx.(interface {
+			RenderClippedImage(image.Image, geom.Matrix, *geom.Path) bool
+		}); ok {
+			clipInImage := clip.Copy().Transform(imageMatrix.Inv())
+			if clipped.RenderClippedImage(applyImageAlpha(img, graphicOpacity(object.Alpha)), m, clipInImage) {
+				p.drawImageBorder(ctx, object, pb.Height)
+				return
+			}
+		}
+	}
+	img = imageWithClipAlpha(img, clip, imageMatrix, graphicOpacity(object.Alpha))
 	ctx.RenderImage(img, m)
 	p.drawImageBorder(ctx, object, pb.Height)
 }

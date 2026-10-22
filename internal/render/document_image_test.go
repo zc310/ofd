@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -1195,6 +1197,115 @@ func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
 		if got := alphaAt(c.x, c.y); got < 250 {
 			t.Fatalf("%s 圆角内侧不透明度 = %d，期望 255", c.name, got)
 		}
+	}
+
+	page, err := doc.Page(doc.Pages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var svgBytes bytes.Buffer
+	if err := page.Write(&svgBytes, "svg"); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(svgBytes.Bytes(), []byte("<clipPath")) {
+		t.Fatal("SVG 未保留图片的原生 clipPath")
+	}
+	var pdfBytes bytes.Buffer
+	pdf, err := NewPDFDocument(&pdfBytes, PDFOptions{Compress: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pdf.AddPage(page, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := pdf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(pdfBytes.Bytes(), []byte("W n")) {
+		t.Fatal("PDF 未保留图片的原生路径裁剪")
+	}
+	if bytes.Contains(pdfBytes.Bytes(), []byte("/SMask")) {
+		t.Fatal("仅由裁剪产生的透明掩码不应写入 PDF")
+	}
+	pdftoppm, err := exec.LookPath("pdftoppm")
+	if err != nil {
+		t.Skip("pdftoppm unavailable: PDF pixel check omitted")
+	}
+	pdfPages, err := testutil.RasterizePDFPages(t.Context(), pdftoppm, pdfBytes.Bytes(), 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdfRaster := pdfPages[0]
+	pixelAt := func(xmm, ymm float64) color.RGBA {
+		x := int(xmm / 25.4 * 300)
+		y := int(ymm / 25.4 * 300)
+		return pdfRaster.RGBAAt(x, y)
+	}
+	corner := pixelAt(imgX+inset, imgY+inset)
+	if corner.R < 245 || corner.G < 245 || corner.B < 245 {
+		t.Fatalf("PDF 裁剪外角出现灰边或漏绘: %v", corner)
+	}
+	center := pixelAt(imgX+imgW/2, imgY+imgH/2)
+	if center.B < 150 || center.R > 100 {
+		t.Fatalf("PDF 裁剪区域内图片丢失: %v", center)
+	}
+}
+
+// 行列式为 0 的退化 CTM 无法求逆。矢量后端的原生裁剪需要把裁剪路径变换回
+// 图片局部坐标，遇到这种图元必须回退到烘焙掩码路径，而不是在 Matrix.Inv 上
+// panic。
+func TestImageClipWithDegenerateCTMDoesNotPanic(t *testing.T) {
+	const (
+		imgW, imgH = 70.0, 46.0
+	)
+	transFlag := false
+	photo := solidPNG(t, 80, 52, color.NRGBA{R: 40, G: 110, B: 200, A: 255})
+	data, err := creator.Marshal(creator.Document{
+		ID:    "image-degenerate-ctm",
+		Media: []creator.Media{{ID: 1, Type: "Image", Format: "PNG", Data: photo}},
+		Pages: []creator.Page{{Items: []creator.Item{
+			creator.Image{
+				X: 15, Y: 22, Width: imgW, Height: imgH, ResourceID: 1,
+				CTM: &creator.CTM{0, 0, 0, 0, 0, 0},
+				Clips: &creator.Clips{TransFlag: &transFlag, Items: []creator.Clip{{Areas: []creator.ClipArea{{
+					Path: &creator.ClipPath{
+						Boundary: creator.Box{Width: imgW, Height: imgH},
+						Data:     "M 0 46 L 70 46 L 70 0 L 0 0 C",
+					},
+				}}}}},
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := NewDocumentWithDPI(canvas.Transparent, ofd.Documents[0], geom.DPI(96))
+	page, err := doc.Page(doc.Pages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var svgBytes bytes.Buffer
+	if err := page.Write(&svgBytes, "svg"); err != nil {
+		t.Fatal(err)
+	}
+	var pdfBytes bytes.Buffer
+	pdf, err := NewPDFDocument(&pdfBytes, PDFOptions{Compress: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pdf.AddPage(page, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := pdf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96)); err != nil {
+		t.Fatal(err)
 	}
 }
 

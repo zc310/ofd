@@ -34,6 +34,7 @@ require (
 	github.com/rymdport/portal v0.4.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
 	github.com/tdewolff/parse/v2 v2.8.19
@@ -41,8 +42,8 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/yuin/goldmark/v2 v2.1.8
-	github.com/zc310/canvas v0.0.0-20261022020949-10c89b6dc7bf
-	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
+	github.com/zc310/canvas v0.0.0-20261022140802-618b1709d1ca
+	github.com/zc310/font v0.0.0-20261022133848-ff1c0ce12ec1
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
@@ -108,7 +109,6 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
-	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
 	github.com/tdewolff/minify/v2 v2.24.22 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect

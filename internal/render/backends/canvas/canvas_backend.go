@@ -49,9 +49,9 @@ func (b *canvasBackend) DrawTemplateSurface(surface drawing.VectorSurface) bool 
 	if recorder, ok := b.ctx.Renderer.(interface {
 		RenderCanvas(*canvas.Canvas, canvas.Matrix)
 	}); ok {
-		recorder.RenderCanvas(scene.c, canvas.Matrix(b.CurrentMatrix()))
+		recorder.RenderCanvas(scene.c, b.CurrentMatrix())
 	} else {
-		scene.c.RenderViewTo(b.ctx.Renderer, canvas.Matrix(b.CurrentMatrix()))
+		scene.c.RenderViewTo(b.ctx.Renderer, b.CurrentMatrix())
 	}
 	return true
 }
@@ -146,6 +146,16 @@ func (b *canvasBackend) RenderImage(img image.Image, m geom.Matrix) {
 	b.ctx.RenderImage(canvasImage(img), canvas.Matrix(m))
 }
 
+// RenderClippedImage 在矢量表面记录图片与图片局部裁剪路径。非矢量后端返回
+// false，由 render 核心烘焙 alpha 掩码。
+func (b *canvasBackend) RenderClippedImage(img image.Image, m geom.Matrix, clip *geom.Path) bool {
+	if !b.vector {
+		return false
+	}
+	b.ctx.RenderClippedImage(canvasImage(img), m, canvasconv.ToCanvasPath(clip))
+	return true
+}
+
 // canvasImage 把保留原始编码字节的懒解码图片转换为 canvas/image.Image，使
 // canvas PDF 写入器能按原字节内嵌（DCTDecode 等）；其它图片原样返回。
 //
@@ -209,5 +219,5 @@ func (b *canvasBackend) RenderScene(svg any, m geom.Matrix) {
 	if !ok || c == nil {
 		return
 	}
-	c.RenderViewTo(b.ctx.Renderer, canvas.Matrix(m))
+	c.RenderViewTo(b.ctx.Renderer, m)
 }
