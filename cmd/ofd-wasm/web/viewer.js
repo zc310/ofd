@@ -185,6 +185,10 @@ class OFDWorkerClient {
     return this.request('pageMediaActionsForPage', { index });
   }
 
+  pageEntryActionsForPage(index) {
+    return this.request('pageEntryActionsForPage', { index });
+  }
+
   pageMediaActions() {
     return this.request('pageMediaActions');
   }
@@ -435,6 +439,10 @@ const aboutLink = document.querySelector('#about-link');
 const aboutDialog = document.querySelector('#about-dialog');
 const aboutClose = document.querySelector('#about-close');
 const aboutTitle = document.querySelector('#about-title');
+const pageURIDialog = document.querySelector('#page-uri-dialog');
+const pageURITarget = document.querySelector('#page-uri-target');
+const pageURIOpen = document.querySelector('#page-uri-open');
+const pageURICancel = document.querySelector('#page-uri-cancel');
 const infoToggle = document.querySelector('#info-toggle');
 const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
@@ -568,7 +576,9 @@ let pageLinks = new Map();
 let signatureInfos = [];
 let sealStampsByPage = new Map();
 let signaturesPromise;
-let pageMediaActions = [];
+let pageEntryActions = [];
+let pendingPageEntryURIs = [];
+let activePageEntryURI = '';
 let mediaCatalog = [];
 const activeMedia = new Map();
 let linkRequest;
@@ -2885,18 +2895,45 @@ function setCurrent(index, syncThumbnail = true) {
   activeThumbnailButton = nextThumbnail;
   if (changed) updateOutlineActive();
   if (changed && activeSidebarTab === 'layers') void renderLayers();
-  if (changed) playPageEntryMedia(index);
+  if (changed) runPageEntryActions(index);
   updateNavigation();
 }
 
-function playPageEntryMedia(index) {
-  pageMediaActions.forEach(action => {
-    if (!action || action.media_kind !== 'sound') return;
+function runPageEntryActions(index) {
+  pageEntryActions.forEach(action => {
+    if (!action) return;
     if (action.event !== 'PO' && action.event !== 'DO') return;
     if (action.event === 'PO' && Number(action.page) !== index) return;
     if (action.event === 'DO' && index !== 0) return;
-    playMediaAction(action);
+    if (typeof action.uri === 'string' && action.uri !== '') {
+      queuePageEntryURI(action.uri);
+    } else if (action.media_kind === 'sound' || action.media_kind === 'movie') {
+      playMediaAction(action);
+    }
   });
+}
+
+function queuePageEntryURI(uri) {
+  pendingPageEntryURIs.push(uri);
+  showNextPageEntryURI();
+}
+
+function showNextPageEntryURI() {
+  if (activePageEntryURI || !pendingPageEntryURIs.length) return;
+  activePageEntryURI = pendingPageEntryURIs.shift();
+  pageURITarget.textContent = activePageEntryURI;
+  if (typeof pageURIDialog.showModal === 'function') pageURIDialog.showModal();
+  else pageURIDialog.setAttribute('open', '');
+  pageURIOpen.focus();
+}
+
+function finishPageEntryURI(open) {
+  const uri = activePageEntryURI;
+  activePageEntryURI = '';
+  if (open && uri) window.open(uri, '_blank', 'noopener');
+  if (typeof pageURIDialog.close === 'function') pageURIDialog.close();
+  else pageURIDialog.removeAttribute('open');
+  showNextPageEntryURI();
 }
 
 function goTo(index) {
@@ -3952,7 +3989,10 @@ function clearDocumentView() {
   sealStampsByPage = new Map();
   signaturesPromise = undefined;
   closeSealPopover();
-  pageMediaActions = [];
+  pageEntryActions = [];
+  pendingPageEntryURIs = [];
+  activePageEntryURI = '';
+  if (pageURIDialog?.open) pageURIDialog.close();
   mediaCatalog = [];
   stopActiveMedia();
   updateSearchStatus('');
@@ -7234,7 +7274,7 @@ function fetchPageLinks(generation) {
     mediaRequest.catch(() => []),
   ]).then(([media]) => {
     if (generation !== documentGeneration) return;
-    pageMediaActions = [];
+    pageEntryActions = [];
     mediaCatalog = Array.isArray(media) ? media : [];
   }).catch(() => {
     if (generation !== documentGeneration) return;
@@ -7242,12 +7282,12 @@ function fetchPageLinks(generation) {
   });
 }
 
-function loadPageMediaActions(index) {
+function loadPageEntryActions(index) {
   const generation = documentGeneration;
-  engine.pageMediaActionsForPage(index).then(actions => {
+  engine.pageEntryActionsForPage(index).then(actions => {
     if (generation !== documentGeneration || !Array.isArray(actions)) return;
-    pageMediaActions = pageMediaActions.filter(action => Number(action.page) !== index).concat(actions);
-    if (current === index) playPageEntryMedia(index);
+    pageEntryActions = pageEntryActions.filter(action => Number(action.page) !== index).concat(actions);
+    if (current === index) runPageEntryActions(index);
   }).catch(() => undefined);
 }
 
@@ -7258,7 +7298,7 @@ function schedulePageMetadata(index) {
     pageMetadataTimers.delete(index);
     if (generation !== documentGeneration) return;
     void loadPageLinks(index);
-    void loadPageMediaActions(index);
+    void loadPageEntryActions(index);
   }, 800);
   pageMetadataTimers.set(index, timer);
 }
@@ -7932,6 +7972,12 @@ exportForm.addEventListener('submit', event => {
 exportCancel.addEventListener('click', closeExportDialog);
 aboutLink.addEventListener('click', openAboutDialog);
 aboutClose.addEventListener('click', closeAboutDialog);
+pageURIOpen.addEventListener('click', () => finishPageEntryURI(true));
+pageURICancel.addEventListener('click', () => finishPageEntryURI(false));
+pageURIDialog.addEventListener('cancel', event => {
+  event.preventDefault();
+  finishPageEntryURI(false);
+});
 infoToggle.addEventListener('click', () => setInfoPanelOpen(infoPanel.hidden));
 infoClose.addEventListener('click', () => setInfoPanelOpen(false));
  copyPageText.addEventListener('click', copyCurrentPageText);

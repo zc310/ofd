@@ -116,6 +116,40 @@ func TestPageMediaActionsOnlyReturnPageOpenEvents(t *testing.T) {
 	}
 }
 
+func TestPageEntryActionsIncludePageOpenURI(t *testing.T) {
+	pages := make([]creator.Page, 27)
+	pages[26].Actions = []creator.Action{{
+		Event: creator.ActionEventPO,
+		URI:   &creator.URIAction{URI: "https://www.ofdspec.org/"},
+	}}
+	data, err := creator.Marshal(creator.Document{ID: "page-entry-uri", Pages: pages})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if r.PageCount() != 27 {
+		t.Fatalf("creator 生成页数=%d，期望 27", r.PageCount())
+	}
+	actions, err := r.PageEntryActionsForPage(26)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Event != "PO" || actions[0].URI != "https://www.ofdspec.org/" || actions[0].Page != 26 {
+		t.Fatalf("第 27 页页面打开 URI 动作=%+v", actions)
+	}
+	previous, err := r.PageEntryActionsForPage(25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(previous) != 0 {
+		t.Fatalf("第 26 页不应返回第 27 页动作：%+v", previous)
+	}
+}
+
 func TestPageNavigationIndexesFollowVersionSwitch(t *testing.T) {
 	r, err := Open(historicalVersionPackage(t, false))
 	if err != nil {

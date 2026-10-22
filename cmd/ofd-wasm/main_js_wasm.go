@@ -68,6 +68,7 @@ func main() {
 	api.Set("pageLinksForPage", js.FuncOf(app.pageLinksForPage))
 	api.Set("pageMediaActions", js.FuncOf(app.pageMediaActions))
 	api.Set("pageMediaActionsForPage", js.FuncOf(app.pageMediaActionsForPage))
+	api.Set("pageEntryActionsForPage", js.FuncOf(app.pageEntryActionsForPage))
 	api.Set("signatures", js.FuncOf(app.signatures))
 	api.Set("signatureSeal", js.FuncOf(app.signatureSeal))
 	api.Set("signatureCertificate", js.FuncOf(app.signatureCertificate))
@@ -704,6 +705,29 @@ func (a *wasmApp) pageMediaActionsForPage(_ js.Value, args []js.Value) any {
 		return errorValue(err)
 	}
 	actions, err := reader.PageMediaActionsForPage(index)
+	if err != nil {
+		return errorValue(err)
+	}
+	result := js.Global().Get("Array").New(len(actions))
+	for index, action := range actions {
+		result.SetIndex(index, objectValue(pageLinkValue(action)))
+	}
+	return result
+}
+
+func (a *wasmApp) pageEntryActionsForPage(_ js.Value, args []js.Value) any {
+	reader, err := a.currentReader()
+	if err != nil {
+		return errorValue(err)
+	}
+	if len(args) < 1 {
+		return errorValue(errors.New("ofd.pageEntryActionsForPage 需要页面索引"))
+	}
+	index, err := jsIndex(args[0])
+	if err != nil {
+		return errorValue(err)
+	}
+	actions, err := reader.PageEntryActionsForPage(index)
 	if err != nil {
 		return errorValue(err)
 	}

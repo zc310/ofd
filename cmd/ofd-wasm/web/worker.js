@@ -149,6 +149,8 @@ async function execute(message) {
       return unwrap(self.ofd.pageMediaActions());
     case 'pageMediaActionsForPage':
       return unwrap(self.ofd.pageMediaActionsForPage(message.index));
+    case 'pageEntryActionsForPage':
+      return unwrap(self.ofd.pageEntryActionsForPage(message.index));
     case 'signatures':
       return unwrap(self.ofd.signatures());
     case 'signatureCertificate': {

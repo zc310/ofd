@@ -614,6 +614,52 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 	return actions, nil
 }
 
+// PageEntryActionsForPage 返回指定页面进入时以及文档打开时的 URI 和媒体动作。
+// 页面级动作只读取目标页面；文档级 DO/PO 动作只在文档首页返回。
+func (r *Reader) PageEntryActionsForPage(index int) ([]PageLink, error) {
+	if r == nil {
+		return nil, errors.New("文档引擎为空")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errors.New("文档引擎已经关闭")
+	}
+	if index < 0 || index >= len(r.pages) {
+		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	ref := r.pages[index]
+	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
+		return nil, nil
+	}
+	var actions []PageLink
+	appendEvents := func(source []models.CtAction, events ...models.ActionEvent) {
+		for _, action := range source {
+			for _, event := range events {
+				if action.Event != event {
+					continue
+				}
+				if action.URI != nil && action.URI.URI != "" {
+					actions = append(actions, PageLink{Scope: ref.fontScope, Page: index, URI: action.URI.URI, Event: string(action.Event), TargetPage: -1})
+					break
+				}
+				if media, ok := mediaAction([]models.CtAction{action}, event); ok {
+					media.Scope, media.Page = ref.fontScope, index
+					actions = append(actions, media)
+					break
+				}
+			}
+		}
+	}
+	if pageActions := ref.page.Actions(); pageActions != nil {
+		appendEvents(pageActions.Action, models.ActionEventPO)
+	}
+	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Document.Actions != nil {
+		appendEvents(ref.document.Document.Actions.Actions, models.ActionEventDO, models.ActionEventPO)
+	}
+	return actions, nil
+}
+
 func (r *Reader) computePageLinks() ([]PageLink, error) {
 	pageIndexes := r.pageIndexesByScope()
 	links := make([]PageLink, 0)

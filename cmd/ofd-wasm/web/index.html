@@ -159,6 +159,17 @@
       body.dark-reading .about-dialog { background: #252c38; color: #e6ebf2; }
       body.dark-reading .about-dialog::backdrop { background: #17203366; }
       body.dark-reading #version-link { color: #80b4e5; }
+       .page-uri-dialog { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 8px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
+       .page-uri-dialog::backdrop { background: #17203366; }
+       .page-uri-content { display: grid; gap: 14px; padding: 20px; }
+       .page-uri-content h2 { margin: 0; font-size: 18px; }
+       .page-uri-content p { margin: 0; color: #667188; font-size: 14px; }
+       .page-uri-target { overflow-wrap: anywhere; color: #172033 !important; }
+       .page-uri-actions { display: flex; justify-content: flex-end; gap: 8px; }
+       .page-uri-actions #page-uri-open { border-color: #2476bd; background: #2476bd; color: #fff; }
+       body.dark-reading .page-uri-dialog { background: #252c38; color: #e6ebf2; }
+       body.dark-reading .page-uri-dialog::backdrop { background: #17203366; }
+       body.dark-reading .page-uri-target { color: #e6ebf2 !important; }
       .debug-panel { position: fixed; top: calc(var(--header-height, 0px) + 10px); left: 10px; z-index: 40; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 640px); overflow: auto; padding: 10px 12px; border: 1px solid #c6cedb; border-radius: 8px; background: #fffffff2; color: #172033; box-shadow: 0 8px 28px #17203340; font-size: 12px; }
       .debug-panel[hidden] { display: none; }
       .debug-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #d7dce5; color: #49556a; font-weight: 600; }
@@ -884,6 +895,17 @@
       </div>
       <div class="about-actions">
         <button id="about-close" type="button">关闭</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="page-uri-dialog" class="page-uri-dialog" aria-labelledby="page-uri-title">
+    <div class="page-uri-content">
+      <h2 id="page-uri-title">打开外部链接？</h2>
+      <p>此页面包含一个外部链接动作。确认后将在新标签页打开：</p>
+      <p id="page-uri-target" class="page-uri-target"></p>
+      <div class="page-uri-actions">
+        <button id="page-uri-cancel" type="button">取消</button>
+        <button id="page-uri-open" type="button">打开链接</button>
       </div>
     </div>
   </dialog>
