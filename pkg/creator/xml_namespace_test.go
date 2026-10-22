@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -69,7 +69,7 @@ func TestCreateGeneratedXMLUsesOFDPrefix(t *testing.T) {
 			if root == nil {
 				t.Fatal("XML has no root element")
 			}
-			roots[root.Name.Local]++
+			roots[root.Name().Local]++
 			assertOFDPrefix(t, root)
 		})
 	}
@@ -111,12 +111,13 @@ func TestCreateGeneratedXMLUsesOFDPrefix(t *testing.T) {
 
 func assertOFDPrefix(t *testing.T, element *xdm.Node) {
 	t.Helper()
-	if element.Name.Prefix != "ofd" || element.Name.URI != ofNamespace {
-		t.Errorf("element %s has namespace %q, want ofd prefix and %q", element.Name.Lexical(), element.Name.URI, ofNamespace)
+	name := element.Name()
+	if name.Prefix != "ofd" || name.URI != ofNamespace {
+		t.Errorf("element %s has namespace %q, want ofd prefix and %q", name.Lexical(), name.URI, ofNamespace)
 	}
-	for _, attr := range element.Attrs {
-		if attr.Name.Prefix != "" {
-			t.Errorf("attribute %s unexpectedly has a prefix", attr.Name.Lexical())
+	for attr := range element.Attrs() {
+		if attr.Name().Prefix != "" {
+			t.Errorf("attribute %s unexpectedly has a prefix", attr.Name().Lexical())
 		}
 	}
 	for _, child := range element.ChildElements() {
@@ -158,14 +159,16 @@ func TestCreateRawExtensionXMLPreservesNamespaces(t *testing.T) {
 			extension := root.ChildElements()[0]
 			container := extension.ChildElements()[0]
 			for _, element := range []*xdm.Node{root, extension, container} {
-				if element.Name.Prefix != "ofd" || element.Name.URI != ofNamespace {
-					t.Fatalf("generated %s has incorrect namespace", element.Name.Local)
+				name := element.Name()
+				if name.Prefix != "ofd" || name.URI != ofNamespace {
+					t.Fatalf("generated %s has incorrect namespace", name.Local)
 				}
 			}
 			config := container.ChildElements()[0]
 			for _, element := range []*xdm.Node{config, config.ChildElements()[0]} {
-				if element.Name.Prefix != test.prefix || element.Name.URI != test.namespace {
-					t.Errorf("raw %s has prefix %q and namespace %q, want %q and %q", element.Name.Local, element.Name.Prefix, element.Name.URI, test.prefix, test.namespace)
+				name := element.Name()
+				if name.Prefix != test.prefix || name.URI != test.namespace {
+					t.Errorf("raw %s has prefix %q and namespace %q, want %q and %q", name.Local, name.Prefix, name.URI, test.prefix, test.namespace)
 				}
 			}
 			checkGeneratedPackage(t, data)

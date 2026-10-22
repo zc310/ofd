@@ -4,11 +4,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	extast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/parser"
 )
 
 // styledRun 是单元格内一段统一样式的文本。Markdown 行内样式在此拍平，
@@ -44,14 +43,14 @@ func linkHref(destination string) string {
 
 // cellMarkdown 是表格单元格行内 Markdown 的解析器。creator 逐页串行构建，
 // 复用同一实例避免每个单元格重复构造解析器。
-var cellMarkdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
+var cellMarkdown = parser.New(parser.WithExtensions(extension.GFMParser))
 
 // parseMarkdownRuns 把单元格文本解析为带样式的行内片段。仅处理行内语法
 // （粗体、斜体、行内代码、删除线）；块级结构在单元格内无意义，按行内内容
 // 摊平处理，但块与块之间仍按换行分隔。
 func parseMarkdownRuns(value string) []styledRun {
 	source := []byte(value)
-	root := cellMarkdown.Parser().Parse(text.NewReader(source))
+	root := cellMarkdown.Parse(source)
 	return blockRuns(root, source, styleState{})
 }
 
@@ -110,6 +109,13 @@ func listRuns(list *ast.List, source []byte, st styleState) []styledRun {
 			runs = append(runs, styledRun{text: indent})
 		}
 		runs = append(runs, styledRun{text: listMarker(list, index)})
+		if status, ok := extension.TaskStatusOf(child); ok {
+			mark := "[ ] "
+			if status == extension.TaskStatusCompleted {
+				mark = "[x] "
+			}
+			runs = append(runs, styledRun{text: mark})
+		}
 		nested := st
 		nested.listDepth++
 		runs = append(runs, blockRuns(child, source, nested)...)
@@ -121,7 +127,7 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 	switch value := node.(type) {
 	case *ast.Text:
 		var runs []styledRun
-		if content := string(value.Segment.Value(source)); content != "" {
+		if content := value.Value.Value(source); content != "" {
 			runs = append(runs, styledRun{text: content, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike, href: st.href, link: st.link})
 		}
 		// 硬换行（行尾两空格）与软换行（源码里的单个换行）都按强制换行处理。
@@ -132,17 +138,15 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 			runs = append(runs, styledRun{text: "\n"})
 		}
 		return runs
-	case *ast.String:
-		return []styledRun{{text: string(value.Value), bold: st.bold, italic: st.italic, code: st.code, strike: st.strike, href: st.href}}
 	case *ast.CodeSpan:
-		return []styledRun{{text: plainTextOf(value, source), code: true, strike: st.strike}}
+		return []styledRun{{text: value.Value.Value(source), code: true, strike: st.strike}}
 	case *ast.Emphasis:
 		next := st
-		if value.Level >= 2 {
-			next.bold = true
-		} else {
-			next.italic = true
-		}
+		next.italic = true
+		return childrenRuns(value, source, next)
+	case *ast.Strong:
+		next := st
+		next.bold = true
 		return childrenRuns(value, source, next)
 	case *extast.Strikethrough:
 		next := st
@@ -150,25 +154,14 @@ func inlineRuns(node ast.Node, source []byte, st styleState) []styledRun {
 		return childrenRuns(value, source, next)
 	case *ast.Link:
 		next := st
-		next.href = linkHref(string(value.Destination))
+		next.href = linkHref(value.Destination.Value(source))
 		next.link = true
 		return childrenRuns(value, source, next)
 	case *ast.AutoLink:
 		// 自动链接没有子节点，显示文字就是网址本身。
-		url := string(value.URL(source))
+		url := value.Label.Value(source)
 		return []styledRun{{text: url, bold: st.bold, italic: st.italic, code: st.code, strike: st.strike,
 			href: linkHref(url), link: true}}
-	case *extast.TaskCheckBox:
-		// 任务列表的勾选状态是内容的一部分，不能丢：默认分支只展开子节点，
-		// 而 TaskCheckBox 是叶子，丢掉后"- [x] 完成"与"- [ ] 待办"长得一样。
-		//
-		// 用 ASCII 方括号而不是 ☑/☐：实测思源黑体与 SmileySans 都没有这两个
-		// 字形，会渲染成豆腐块，而方括号任何字体都有。
-		mark := "[ ] "
-		if value.IsChecked {
-			mark = "[x] "
-		}
-		return []styledRun{{text: mark, strike: st.strike}}
 	case *ast.ThematicBreak:
 		// 分隔线不是文字，但也不是可以丢掉的东西：丢掉后 "上\n---\n下" 里的
 		// 分界就消失了。用一个空文字的 rule 片段占一行，由 createCellTexts 画线。
@@ -202,9 +195,7 @@ func appendPlainText(builder *strings.Builder, node ast.Node, source []byte) {
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch value := child.(type) {
 		case *ast.Text:
-			builder.Write(value.Segment.Value(source))
-		case *ast.String:
-			builder.Write(value.Value)
+			builder.WriteString(value.Value.Value(source))
 		default:
 			appendPlainText(builder, child, source)
 		}

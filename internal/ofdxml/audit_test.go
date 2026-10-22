@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/beevik/etree"
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 )
 
 func TestWriteElementPreservesInheritedForeignOFDBinding(t *testing.T) {
@@ -40,7 +40,7 @@ func TestParseWhitespaceMatchesIndependentXMLReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := reference.Root.ChildElements()[0]
-	if got, want := doc.Root().SelectAttrValue("FontName", ""), root.Attrs[0].Value; got != want {
+	if got, want := doc.Root().SelectAttrValue("FontName", ""), root.AttrAt(0).Value(); got != want {
 		t.Fatalf("XML 属性空白归一化不同: got %q, want %q", got, want)
 	}
 	if got, want := doc.Root().Text(), root.StringValue(); got != want {

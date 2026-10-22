@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -305,7 +305,7 @@ func (c *profileContext) imageResources() []imageResource {
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "ImageObject" {
+			if node.Name().Local != "ImageObject" {
 				return
 			}
 			if id := strings.TrimSpace(node.AttrValue("ResourceID")); id != "" {
@@ -337,7 +337,7 @@ func collectMediaFiles(documents map[string]*xmlDocument) map[string]string {
 		walkOFDElements(doc.root, func(node *xdm.Node) {
 			// 只索引声明为图像的多媒体：音视频的处理见 GB/T 42133 6.2.6 g)，
 			// 不属于图像格式规则的范围。
-			if node.Name.Local != "MultiMedia" || !strings.EqualFold(strings.TrimSpace(node.AttrValue("Type")), spec.MediaTypeImage) {
+			if node.Name().Local != "MultiMedia" || !strings.EqualFold(strings.TrimSpace(node.AttrValue("Type")), spec.MediaTypeImage) {
 				return
 			}
 			id := strings.TrimSpace(node.AttrValue("ID"))
@@ -357,8 +357,8 @@ func childText(node *xdm.Node, name string) string {
 	if value := strings.TrimSpace(node.AttrValue(name)); value != "" {
 		return value
 	}
-	for _, child := range node.Children {
-		if child.Kind == xdm.KindElement && child.Name.Local == name {
+	for child := range node.Children() {
+		if child.Kind() == xdm.KindElement && child.Name().Local == name {
 			return strings.TrimSpace(child.StringValue())
 		}
 	}

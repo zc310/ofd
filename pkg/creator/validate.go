@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knroy/go-xml/xdm"
-	"github.com/knroy/go-xml/xsd"
+	"github.com/knroy/go-xml/v2/xdm"
+	"github.com/knroy/go-xml/v2/xsd"
 	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
@@ -27,7 +27,8 @@ func validateOFDSchema(data []byte, rootName string) error {
 
 // validateOFDNodeSchema 复用已解析的资源树，避免索引与文件检查再次解析 XML。
 func validateOFDNodeSchema(root *xdm.Node, rootName string) error {
-	if root.Name.Local != rootName || root.Name.URI != ofNamespace {
+	name := root.Name()
+	if name.Local != rootName || name.URI != ofNamespace {
 		return fmt.Errorf("根元素必须是 OFD 命名空间中的 %s", rootName)
 	}
 	set, err := schema.Default()

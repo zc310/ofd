@@ -146,8 +146,8 @@ github.com/klauspost/crc32 v1.3.0 h1:sSmTt3gUt81RP655XGZPElI0PelVTZ6YwCRnPSupoFM
 github.com/klauspost/crc32 v1.3.0/go.mod h1:D7kQaZhnkX/Y0tstFGf8VUzv2UofNGqCjnC3zdHB0Hw=
 github.com/klippa-app/go-pdfium v1.21.4 h1:CalrAbIUyPIBkGU9qJX2z7yGitDrcuJT62FQT5m5CPU=
 github.com/klippa-app/go-pdfium v1.21.4/go.mod h1:d55Qev3QNMBTjv/VKA7pAV9hSyN47WZqiHI7bGc8fbc=
-github.com/knroy/go-xml v1.8.1 h1:b/zG39As8iW4kda001nxw6SCbBVRvUDzVyNuFA0x3hA=
-github.com/knroy/go-xml v1.8.1/go.mod h1:DSZ2zzxgCpuGYYZOOqxKDXvrerJorKupyekJes6VcY4=
+github.com/knroy/go-xml/v2 v2.0.1 h1:ftnXgPQhazVajf7NzspvVtJnEwpjm3mbGSCfoAxfAys=
+github.com/knroy/go-xml/v2 v2.0.1/go.mod h1:q3hL666HVFOGRuv+qwUQCyql/QteEB1qCk6EUdNk7pw=
 github.com/kovidgoyal/go-parallel v1.1.1 h1:1OzpNjtrUkBPq3UaqrnvOoB2F9RttSt811uiUXyI7ok=
 github.com/kovidgoyal/go-parallel v1.1.1/go.mod h1:BJNIbe6+hxyFWv7n6oEDPj3PA5qSw5OCtf0hcVxWJiw=
 github.com/kovidgoyal/go-shm v1.0.0 h1:HJEel9D1F9YhULvClEHJLawoRSj/1u/EDV7MJbBPgQo=
@@ -258,6 +258,8 @@ github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3i
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
+github.com/yuin/goldmark/v2 v2.1.8 h1:gDvS0JFb8YcCRXFzjorsFq10FAgpVDXRZ/ze+hD4sk4=
+github.com/yuin/goldmark/v2 v2.1.8/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
 github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262 h1:IvVLDZ/Rm8CJIsltMq5bquiNvwlp2tYPdXBj8rt1pMQ=
 github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262/go.mod h1:EJHwx4zecHYdXSD+o8vUtqHXM22ixLjGQAlZsDaEuwg=
 github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0 h1:mF3YpsxG5uAZM4g3a1kOWMPGPfBq52VFNgHXMF7+Y6g=

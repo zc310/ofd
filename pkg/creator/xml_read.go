@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 )
 
 // 原始资源继续使用与 XSD 校验相同的解析器。生成路径只使用 ofdxml。
@@ -30,8 +30,8 @@ func xmlElements(root *xdm.Node, path string) []*xdm.Node {
 	for _, local := range strings.Split(path, "/") {
 		var next []*xdm.Node
 		for _, node := range nodes {
-			for _, child := range node.Children {
-				if child.Kind == xdm.KindElement && child.Name.Local == local {
+			for child := range node.Children() {
+				if child.Kind() == xdm.KindElement && child.Name().Local == local {
 					next = append(next, child)
 				}
 			}
@@ -42,8 +42,8 @@ func xmlElements(root *xdm.Node, path string) []*xdm.Node {
 }
 
 func xmlChild(node *xdm.Node, local string) *xdm.Node {
-	for _, child := range node.Children {
-		if child.Kind == xdm.KindElement && child.Name.Local == local {
+	for child := range node.Children() {
+		if child.Kind() == xdm.KindElement && child.Name().Local == local {
 			return child
 		}
 	}

@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 )
 
 // maxPageBlockDepth 是 GB/T 42133 6.2.3 e) 规定的页面块嵌套层数上限。
@@ -35,8 +35,8 @@ var allowedColorSpaceTypes = map[string]bool{
 func checkSingleDocument(ctx *profileContext) {
 	for _, doc := range ctx.ofdRoots() {
 		count := 0
-		for _, child := range doc.root.Children {
-			if child.Kind == xdm.KindElement && child.Name.Local == "DocBody" {
+		for child := range doc.root.Children() {
+			if child.Kind() == xdm.KindElement && child.Name().Local == "DocBody" {
 				count++
 			}
 		}
@@ -68,8 +68,8 @@ func checkNoEncryption(ctx *profileContext) {
 func checkDocumentNodeAbsent(element, label string) func(*profileContext) {
 	return func(ctx *profileContext) {
 		for _, doc := range ctx.documentRoots() {
-			for _, child := range doc.root.Children {
-				if child.Kind == xdm.KindElement && child.Name.Local == element {
+			for child := range doc.root.Children() {
+				if child.Kind() == xdm.KindElement && child.Name().Local == element {
 					ctx.addIssue(child, doc.file.name, ctx.ruleCode,
 						"文档根节点不应包含%s（%s）", label, element)
 				}
@@ -148,12 +148,12 @@ func (c *profileContext) actionNodes() []actionEntry {
 
 // collectContainerActions 收集根节点直接子元素 Actions 下的动作。
 func collectContainerActions(root *xdm.Node, scope, file string, entries *[]actionEntry) {
-	for _, child := range root.Children {
-		if child.Kind != xdm.KindElement || child.Name.Local != "Actions" {
+	for child := range root.Children() {
+		if child.Kind() != xdm.KindElement || child.Name().Local != "Actions" {
 			continue
 		}
-		for _, action := range child.Children {
-			if action.Kind == xdm.KindElement && action.Name.Local == "Action" {
+		for action := range child.Children() {
+			if action.Kind() == xdm.KindElement && action.Name().Local == "Action" {
 				*entries = append(*entries, actionEntry{node: action, scope: scope, file: file})
 			}
 		}
@@ -162,11 +162,11 @@ func collectContainerActions(root *xdm.Node, scope, file string, entries *[]acti
 
 // collectOutlineActions 收集大纲节点内的动作。大纲可多层嵌套，逐层下探。
 func collectOutlineActions(node *xdm.Node, file string, entries *[]actionEntry) {
-	for _, child := range node.Children {
-		if child.Kind != xdm.KindElement {
+	for child := range node.Children() {
+		if child.Kind() != xdm.KindElement {
 			continue
 		}
-		if child.Name.Local == "OutlineElem" {
+		if child.Name().Local == "OutlineElem" {
 			collectContainerActions(child, actionScopeOutline, file, entries)
 		}
 		collectOutlineActions(child, file, entries)
@@ -176,8 +176,8 @@ func collectOutlineActions(node *xdm.Node, file string, entries *[]actionEntry) 
 // hasGotoChild 判断动作是否包含 Goto 子元素。OFD 的动作是“多种选择项之一”，
 // Goto 存在即视为文档内跳转。
 func hasGotoChild(node *xdm.Node) bool {
-	for _, child := range node.Children {
-		if child.Kind == xdm.KindElement && child.Name.Local == "Goto" {
+	for child := range node.Children() {
+		if child.Kind() == xdm.KindElement && child.Name().Local == "Goto" {
 			return true
 		}
 	}
@@ -215,7 +215,7 @@ func checkColorSpaceTypes(ctx *profileContext) {
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "ColorSpace" {
+			if node.Name().Local != "ColorSpace" {
 				return
 			}
 			value := strings.TrimSpace(node.AttrValue("Type"))
@@ -237,7 +237,7 @@ func checkPageBlockDepth(ctx *profileContext) {
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "PageBlock" {
+			if node.Name().Local != "PageBlock" {
 				return
 			}
 			if depth := pageBlockDepth(node, 1); depth > maxPageBlockDepth {
@@ -251,12 +251,12 @@ func checkPageBlockDepth(ctx *profileContext) {
 // pageBlockDepth 计算以 node 为起点的页面块嵌套层数。
 func pageBlockDepth(node *xdm.Node, current int) int {
 	deepest := current
-	for _, child := range node.Children {
-		if child.Kind != xdm.KindElement {
+	for child := range node.Children() {
+		if child.Kind() != xdm.KindElement {
 			continue
 		}
 		next := current
-		if child.Name.Local == "PageBlock" {
+		if child.Name().Local == "PageBlock" {
 			next++
 		}
 		if nested := pageBlockDepth(child, next); nested > deepest {

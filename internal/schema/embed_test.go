@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/knroy/go-xml/xsd"
+	"github.com/knroy/go-xml/v2/xsd"
 
 	"github.com/zc310/ofd/pkg/spec"
 )

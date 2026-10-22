@@ -19,8 +19,8 @@ import (
 	"unicode"
 
 	"github.com/emmansun/gmsm/sm3"
-	"github.com/knroy/go-xml/xdm"
-	"github.com/knroy/go-xml/xsd"
+	"github.com/knroy/go-xml/v2/xdm"
+	"github.com/knroy/go-xml/v2/xsd"
 	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/core"
@@ -547,21 +547,22 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, 
 		return nil, nil, false
 	}
 	root := rootElements[0]
-	rootIsOFD := root.Name.URI == ofdNamespace
+	rootName := root.Name()
+	rootIsOFD := rootName.URI == ofdNamespace
 	if !rootIsOFD && expected != "" {
 		report.addIssue(issueAt(root, SeverityError, StageXML, "namespace.invalid", fmt.Sprintf("OFD XML 的根命名空间必须为 %s", ofdNamespace), file.name), v.opts.MaxErrors)
 		report.setCheck("xml", "failed")
 		return nil, nil, false
 	}
-	if expected != "" && root.Name.Local != expected {
-		report.addIssue(issueAt(root, SeverityError, StageReference, "reference.root_mismatch", fmt.Sprintf("期望根元素 %s，实际为 %s", expected, root.Name.Local), file.name), v.opts.MaxErrors)
+	if expected != "" && rootName.Local != expected {
+		report.addIssue(issueAt(root, SeverityError, StageReference, "reference.root_mismatch", fmt.Sprintf("期望根元素 %s，实际为 %s", expected, rootName.Local), file.name), v.opts.MaxErrors)
 		report.setCheck("xml", "failed")
 		return nil, nil, false
 	}
 	if scope == "" {
 		scope = documentScope(file.name)
 	}
-	doc := &xmlDocument{file: file, tree: tree, root: root, rootName: root.Name.Local, ofd: rootIsOFD, baseDir: baseDir, scope: scope}
+	doc := &xmlDocument{file: file, tree: tree, root: root, rootName: rootName.Local, ofd: rootIsOFD, baseDir: baseDir, scope: scope}
 	var refs []fileReference
 	if rootIsOFD {
 		refs = collectReferences(doc)
@@ -569,7 +570,7 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, 
 	if v.opts.CheckXSD && rootIsOFD {
 		// DocType 声明了非基础 profile 时改用 overlay，否则 GB/T 42133 的
 		// "OFD-A" 会被官方模式的单值枚举判为错误。
-		schema, ok := v.opts.Schemas.SchemaFor(root.Name.Local, root.AttrValue("DocType"))
+		schema, ok := v.opts.Schemas.SchemaFor(rootName.Local, root.AttrValue("DocType"))
 		if !ok {
 			report.addIssue(issueAt(root, v.xsdSeverity(), StageXSD, "xsd.schema_missing", "没有为此根元素注册内置 XSD 模式", file.name), v.opts.MaxErrors)
 			if v.opts.Mode == ModeCompat {
@@ -680,10 +681,10 @@ func collectReferences(doc *xmlDocument) []fileReference {
 		addWithBase(node, doc.file.name, value, expected, checkXML)
 	}
 	walkOFDElements(doc.root, func(node *xdm.Node) {
-		local := node.Name.Local
+		local := node.Name().Local
 		parent := ""
-		if node.Parent != nil && node.Parent.Kind == xdm.KindElement {
-			parent = node.Parent.Name.Local
+		if node.Parent() != nil && node.Parent().Kind() == xdm.KindElement {
+			parent = node.Parent().Name().Local
 		}
 		switch doc.rootName {
 		case "OFD":
@@ -882,7 +883,7 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 					}
 				}
 			}
-			if node.Name.Local == "DocID" && doc.rootName == "OFD" {
+			if node.Name().Local == "DocID" && doc.rootName == "OFD" {
 				value := strings.TrimSpace(node.StringValue())
 				if previous, exists := docIDs[value]; exists && value != "" {
 					report.addIssue(issueAt(node, SeverityError, StageSemantic, "semantic.duplicate_doc_id", fmt.Sprintf("DocID 与 %s 重复", previous), name), v.opts.MaxErrors)
@@ -973,7 +974,7 @@ func (v *Validator) colorSpaceChecks(documents map[string]*xmlDocument, archive 
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "ColorSpace" {
+			if node.Name().Local != "ColorSpace" {
 				return
 			}
 			value := strings.TrimSpace(node.AttrValue("Profile"))
@@ -1049,7 +1050,7 @@ func (v *Validator) fontChecks(documents map[string]*xmlDocument, archive *packa
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "Font" {
+			if node.Name().Local != "Font" {
 				return
 			}
 			id := strings.TrimSpace(node.AttrValue("ID"))
@@ -1121,7 +1122,7 @@ func (v *Validator) fontChecks(documents map[string]*xmlDocument, archive *packa
 			continue
 		}
 		walkOFDElements(doc.root, func(node *xdm.Node) {
-			if node.Name.Local != "TextObject" && node.Name.Local != "Text" {
+			if node.Name().Local != "TextObject" && node.Name().Local != "Text" {
 				return
 			}
 			fontID := strings.TrimSpace(node.AttrValue("Font"))
@@ -1284,7 +1285,8 @@ func (v *Validator) checkTextFont(node *xdm.Node, resource *fontResourceInfo, fi
 func childElements(node *xdm.Node, local string) []*xdm.Node {
 	var result []*xdm.Node
 	for _, child := range node.ChildElements() {
-		if child.Name.URI == ofdNamespace && child.Name.Local == local {
+		name := child.Name()
+		if name.URI == ofdNamespace && name.Local == local {
 			result = append(result, child)
 		}
 	}
@@ -1376,14 +1378,14 @@ func semanticIDReferences(node *xdm.Node) []semanticIDReference {
 			references = append(references, semanticIDReference{name: name, value: value, scopes: scopes})
 		}
 	}
-	switch node.Name.Local {
+	switch node.Name().Local {
 	case "DefaultCS":
 		if value := strings.TrimSpace(node.StringValue()); value != "" {
 			references = append(references, semanticIDReference{name: "DefaultCS", value: value, scopes: []string{"color-space"}})
 		}
 	case "Thumbnail", "Substitution":
 		if value := strings.TrimSpace(node.StringValue()); value != "" {
-			references = append(references, semanticIDReference{name: node.Name.Local, value: value, scopes: []string{"media", "composite"}})
+			references = append(references, semanticIDReference{name: node.Name().Local, value: value, scopes: []string{"media", "composite"}})
 		}
 	}
 	return references
@@ -1420,7 +1422,7 @@ func semanticIDScopesForNode(node *xdm.Node, name string) []string {
 	if node == nil {
 		return []string{"media", "composite"}
 	}
-	switch node.Name.Local {
+	switch node.Name().Local {
 	case "CompositeObject":
 		return []string{"composite"}
 	case "ImageObject":
@@ -1437,23 +1439,23 @@ func declaredIDScope(doc *xmlDocument, node *xdm.Node) (string, bool) {
 	parent := elementParentName(node)
 	switch doc.rootName {
 	case "OFD":
-		if node.Name.Local == "Version" && parent == "Versions" {
+		if node.Name().Local == "Version" && parent == "Versions" {
 			return "version", true
 		}
 	case "Document":
 		switch {
-		case node.Name.Local == "Page" && parent == "Pages":
+		case node.Name().Local == "Page" && parent == "Pages":
 			return "page", true
-		case node.Name.Local == "TemplatePage" && parent == "CommonData":
+		case node.Name().Local == "TemplatePage" && parent == "CommonData":
 			return "template", true
 		}
 	case "Page":
-		switch node.Name.Local {
+		switch node.Name().Local {
 		case "Layer", "TextObject", "PathObject", "ImageObject", "CompositeObject", "PageBlock":
 			return "page-unit", true
 		}
 	case "Res":
-		switch node.Name.Local {
+		switch node.Name().Local {
 		case "ColorSpace":
 			return "color-space", true
 		case "DrawParam":
@@ -1466,23 +1468,23 @@ func declaredIDScope(doc *xmlDocument, node *xdm.Node) (string, bool) {
 			return "composite", true
 		}
 	case "Signatures":
-		if node.Name.Local == "Signature" {
+		if node.Name().Local == "Signature" {
 			return "signature", true
 		}
 	case "Signature":
-		if node.Name.Local == "StampAnnot" {
+		if node.Name().Local == "StampAnnot" {
 			return "stamp", true
 		}
 	case "PageAnnot":
-		if node.Name.Local == "Annot" {
+		if node.Name().Local == "Annot" {
 			return "annotation", true
 		}
 	case "Attachments":
-		if node.Name.Local == "Attachment" {
+		if node.Name().Local == "Attachment" {
 			return "attachment", true
 		}
 	case "DocVersion":
-		if node.Name.Local == "DocVersion" || node.Name.Local == "File" {
+		if node.Name().Local == "DocVersion" || node.Name().Local == "File" {
 			return "version", true
 		}
 	}
@@ -1490,8 +1492,8 @@ func declaredIDScope(doc *xmlDocument, node *xdm.Node) (string, bool) {
 }
 
 func elementParentName(node *xdm.Node) string {
-	if node != nil && node.Parent != nil && node.Parent.Kind == xdm.KindElement {
-		return node.Parent.Name.Local
+	if node != nil && node.Parent() != nil && node.Parent().Kind() == xdm.KindElement {
+		return node.Parent().Name().Local
 	}
 	return ""
 }
@@ -1678,10 +1680,10 @@ func walkElements(node *xdm.Node, visit func(*xdm.Node)) {
 	if node == nil {
 		return
 	}
-	if node.Kind == xdm.KindElement {
+	if node.Kind() == xdm.KindElement {
 		visit(node)
 	}
-	for _, child := range node.Children {
+	for child := range node.Children() {
 		walkElements(child, visit)
 	}
 }
@@ -1690,13 +1692,13 @@ func walkOFDElements(node *xdm.Node, visit func(*xdm.Node)) {
 	if node == nil {
 		return
 	}
-	if node.Kind == xdm.KindElement {
-		if node.Name.URI != ofdNamespace {
+	if node.Kind() == xdm.KindElement {
+		if node.Name().URI != ofdNamespace {
 			return
 		}
 		visit(node)
 	}
-	for _, child := range node.Children {
+	for child := range node.Children() {
 		walkOFDElements(child, visit)
 	}
 }
@@ -1704,7 +1706,7 @@ func walkOFDElements(node *xdm.Node, visit func(*xdm.Node)) {
 func descendants(node *xdm.Node, local string) []*xdm.Node {
 	var nodes []*xdm.Node
 	walkOFDElements(node, func(candidate *xdm.Node) {
-		if candidate.Name.Local == local {
+		if candidate.Name().Local == local {
 			nodes = append(nodes, candidate)
 		}
 	})
@@ -1713,7 +1715,8 @@ func descendants(node *xdm.Node, local string) []*xdm.Node {
 
 func firstChild(node *xdm.Node, local string) *xdm.Node {
 	for _, child := range node.ChildElements() {
-		if child.Name.URI == ofdNamespace && child.Name.Local == local {
+		name := child.Name()
+		if name.URI == ofdNamespace && name.Local == local {
 			return child
 		}
 	}
@@ -1724,23 +1727,23 @@ func nodePath(node *xdm.Node) string {
 	if node == nil {
 		return ""
 	}
-	if node.Kind == xdm.KindAttribute {
-		return nodePath(node.Parent) + "/@" + node.Name.Local
+	if node.Kind() == xdm.KindAttribute {
+		return nodePath(node.Parent()) + "/@" + node.Name().Local
 	}
 	var parts []string
-	for current := node; current != nil && current.Kind != xdm.KindDocument; current = current.Parent {
+	for current := node; current != nil && current.Kind() != xdm.KindDocument; current = current.Parent() {
 		index := 1
-		if current.Parent != nil {
-			for _, sibling := range current.Parent.ChildElements() {
+		if current.Parent() != nil {
+			for _, sibling := range current.Parent().ChildElements() {
 				if sibling == current {
 					break
 				}
-				if sibling.Name.Local == current.Name.Local {
+				if sibling.Name().Local == current.Name().Local {
 					index++
 				}
 			}
 		}
-		parts = append(parts, fmt.Sprintf("%s[%d]", current.Name.Local, index))
+		parts = append(parts, fmt.Sprintf("%s[%d]", current.Name().Local, index))
 	}
 	var builder strings.Builder
 	for i := len(parts) - 1; i >= 0; i-- {

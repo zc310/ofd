@@ -5,11 +5,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	extast "github.com/yuin/goldmark/extension/ast"
-	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	extast "github.com/yuin/goldmark/v2/extension/ast"
+	"github.com/yuin/goldmark/v2/parser"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/zc310/ofd/internal/layout"
@@ -121,8 +120,8 @@ func splitFrontMatter(source []byte) ([]byte, *layout.Letterhead, *layout.Signat
 
 func parseMarkdown(source []byte, baseDir string) (*layout.Document, error) {
 	body, letterhead, sign, footer, colophon := splitFrontMatter(source)
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
-	root := md.Parser().Parse(text.NewReader(body))
+	md := parser.New(parser.WithExtensions(extension.GFMParser))
+	root := md.Parse(body)
 	if root == nil {
 		return &layout.Document{Letterhead: letterhead, Sign: sign, Footer: footer, Colophon: colophon}, nil
 	}
@@ -162,7 +161,7 @@ func (p *mdParser) block(node ast.Node, indent int) []layout.Block {
 			Level:   value.Level,
 			Inlines: p.inlines(node, false, false, false),
 		}}
-	case *ast.Paragraph, *ast.TextBlock:
+	case *ast.Paragraph:
 		if image, ok := p.standaloneImage(node); ok {
 			return []layout.Block{{Kind: layout.KindImage, Image: image}}
 		}
@@ -174,7 +173,7 @@ func (p *mdParser) block(node ast.Node, indent int) []layout.Block {
 		return p.list(value, indent)
 	case *ast.Blockquote:
 		return p.blockquote(value, indent)
-	case *ast.FencedCodeBlock, *ast.CodeBlock:
+	case *ast.CodeBlock:
 		return []layout.Block{p.codeBlock(node)}
 	case *ast.ThematicBreak:
 		return []layout.Block{{Kind: layout.KindThematicBreak}}
@@ -204,6 +203,13 @@ func (p *mdParser) list(list *ast.List, indent int) []layout.Block {
 			number++
 		}
 		itemBlocks := p.blocks(item, indent+1)
+		if status, ok := extension.TaskStatusOf(item); ok {
+			if status == extension.TaskStatusCompleted {
+				marker += " [x]"
+			} else {
+				marker += " [ ]"
+			}
+		}
 		attached := false
 		for index := range itemBlocks {
 			if !attached && (itemBlocks[index].Kind == layout.KindParagraph || itemBlocks[index].Kind == layout.KindHeading) {
@@ -244,16 +250,22 @@ func (p *mdParser) table(table *extast.Table) *layout.Table {
 				result.Header = append(result.Header, layout.Cell(p.inlines(tableCell, true, false, false)))
 				result.Align = append(result.Align, alignmentOf(tableCell.Alignment))
 			}
-		case *extast.TableRow:
-			var cells []layout.Cell
-			for cell := value.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				tableCell, ok := cell.(*extast.TableCell)
+		case *extast.TableBody:
+			for row := value.FirstChild(); row != nil; row = row.NextSibling() {
+				tableRow, ok := row.(*extast.TableRow)
 				if !ok {
 					continue
 				}
-				cells = append(cells, layout.Cell(p.inlines(tableCell, false, false, false)))
+				var cells []layout.Cell
+				for cell := tableRow.FirstChild(); cell != nil; cell = cell.NextSibling() {
+					tableCell, ok := cell.(*extast.TableCell)
+					if !ok {
+						continue
+					}
+					cells = append(cells, layout.Cell(p.inlines(tableCell, false, false, false)))
+				}
+				result.Rows = append(result.Rows, cells)
 			}
-			result.Rows = append(result.Rows, cells)
 		}
 	}
 	return result
@@ -273,29 +285,21 @@ func alignmentOf(alignment extast.Alignment) layout.Align {
 func (p *mdParser) codeBlock(node ast.Node) layout.Block {
 	block := layout.Block{Kind: layout.KindCode, Code: p.codeText(node)}
 	// 缩进代码块没有语言标记，只有围栏代码块才带 ``` 后的标识符。
-	if fenced, ok := node.(*ast.FencedCodeBlock); ok {
-		block.CodeLang = strings.TrimSpace(string(fenced.Language(p.source)))
+	if code, ok := node.(*ast.CodeBlock); ok && code.CodeBlockKind == ast.CodeBlockKindFenced {
+		language, _ := code.Language(p.source)
+		block.CodeLang = strings.TrimSpace(language)
 	}
 	return block
 }
 
 func (p *mdParser) codeText(block ast.Node) string {
-	type lineBlock interface {
-		Lines() *text.Segments
-	}
-	value, ok := block.(lineBlock)
+	value, ok := block.(*ast.CodeBlock)
 	if !ok {
 		return ""
 	}
-	lines := value.Lines()
 	// goldmark 的行段 Value 自带该行的换行符（代码块内的软换行也包含在内），
 	// 直接拼接即可；再补一个 '\n' 会让每行之间多出空行，代码块高度翻倍。
-	var builder strings.Builder
-	for index := 0; index < lines.Len(); index++ {
-		segment := lines.At(index)
-		builder.Write(segment.Value(p.source))
-	}
-	return strings.TrimRight(builder.String(), "\n")
+	return strings.TrimRight(value.Value.Str(p.source), "\n")
 }
 
 func (p *mdParser) standaloneImage(node ast.Node) (*layout.Image, bool) {
@@ -307,7 +311,7 @@ func (p *mdParser) standaloneImage(node ast.Node) (*layout.Image, bool) {
 			count++
 			image = value
 		case *ast.Text:
-			if strings.TrimSpace(string(value.Segment.Value(p.source))) != "" {
+			if strings.TrimSpace(value.Value.Value(p.source)) != "" {
 				return nil, false
 			}
 		default:
@@ -322,7 +326,7 @@ func (p *mdParser) standaloneImage(node ast.Node) (*layout.Image, bool) {
 
 // loadImage 读取本地或内联图片。远程图片按设计不下载，只记录警告并跳过。
 func (p *mdParser) loadImage(node *ast.Image) (*layout.Image, bool) {
-	source := string(node.Destination)
+	source := node.Destination.Value(p.source)
 	if source == "" {
 		return nil, false
 	}
@@ -357,7 +361,7 @@ func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []layout.Inl
 	switch value := node.(type) {
 	case *ast.Text:
 		var result []layout.Inline
-		if content := string(value.Segment.Value(p.source)); content != "" {
+		if content := value.Value.Value(p.source); content != "" {
 			result = append(result, layout.Inline{Text: content, Bold: bold, Italic: italic, Strike: strike})
 		}
 		if value.HardLineBreak() {
@@ -366,42 +370,34 @@ func (p *mdParser) inline(node ast.Node, bold, italic, strike bool) []layout.Inl
 			result = append(result, layout.Inline{Text: " "})
 		}
 		return result
-	case *ast.String:
-		return []layout.Inline{{Text: string(value.Value), Bold: bold, Italic: italic, Strike: strike}}
 	case *ast.CodeSpan:
-		return []layout.Inline{{Text: p.plainText(value), Code: true, Strike: strike}}
+		return []layout.Inline{{Text: value.Value.Value(p.source), Code: true, Strike: strike}}
 	case *ast.Emphasis:
-		if value.Level >= 2 {
-			return p.inlines(value, true, italic, strike)
-		}
 		return p.inlines(value, bold, true, strike)
+	case *ast.Strong:
+		return p.inlines(value, true, italic, strike)
 	case *extast.Strikethrough:
 		return p.inlines(value, bold, italic, true)
 	case *ast.Link:
 		children := p.inlines(value, bold, italic, strike)
-		href := linkHref(string(value.Destination))
+		href := linkHref(value.Destination.Value(p.source))
 		for index := range children {
 			children[index].Link = true
 			children[index].Href = href
 		}
 		if len(children) == 0 {
-			children = []layout.Inline{{Text: string(value.Destination), Link: true, Href: href}}
+			children = []layout.Inline{{Text: value.Destination.Value(p.source), Link: true, Href: href}}
 		}
 		return children
 	case *ast.AutoLink:
-		url := string(value.URL(p.source))
+		url := value.Label.Value(p.source)
 		return []layout.Inline{{Text: url, Bold: bold, Italic: italic, Strike: strike, Link: true, Href: linkHref(url)}}
 	case *ast.Image:
 		alt := p.plainText(value)
 		if alt == "" {
-			alt = string(value.Destination)
+			alt = value.Destination.Value(p.source)
 		}
 		return []layout.Inline{{Text: alt, Bold: bold, Italic: italic, Strike: strike}}
-	case *extast.TaskCheckBox:
-		if value.IsChecked {
-			return []layout.Inline{{Text: "[x] "}}
-		}
-		return []layout.Inline{{Text: "[ ] "}}
 	case *ast.RawHTML:
 		return nil
 	default:
@@ -419,13 +415,9 @@ func (p *mdParser) appendText(builder *strings.Builder, node ast.Node) {
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch value := child.(type) {
 		case *ast.Text:
-			builder.Write(value.Segment.Value(p.source))
-		case *ast.String:
-			builder.Write(value.Value)
+			builder.WriteString(value.Value.Value(p.source))
 		case *ast.AutoLink:
-			builder.Write(value.URL(p.source))
-		case *extast.TaskCheckBox:
-			// 任务框不参与纯文本。
+			builder.WriteString(value.Label.Value(p.source))
 		default:
 			p.appendText(builder, child)
 		}

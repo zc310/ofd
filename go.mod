@@ -22,7 +22,7 @@ require (
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
 	github.com/klippa-app/go-pdfium v1.21.4
-	github.com/knroy/go-xml v1.8.1
+	github.com/knroy/go-xml/v2 v2.0.1
 	github.com/kovidgoyal/imaging v1.9.0
 	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/minio/minio-go/v7 v7.4.1
@@ -42,7 +42,7 @@ require (
 	github.com/valyala/fasthttp v1.76.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
-	github.com/yuin/goldmark v1.8.6
+	github.com/yuin/goldmark/v2 v2.1.8
 	github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262
 	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
 	go.etcd.io/bbolt v1.5.0
@@ -117,6 +117,7 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xuri/efp v0.0.2 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+	github.com/yuin/goldmark v1.8.6 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect

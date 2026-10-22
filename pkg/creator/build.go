@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knroy/go-xml/xdm"
+	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -1616,7 +1616,7 @@ func (s *buildState) collectRawResourceReferences(element *xdm.Node, kind string
 		}
 	}
 	walk = func(node *xdm.Node) {
-		if node.Name.Local == "DrawParam" {
+		if node.Name().Local == "DrawParam" {
 			if relative := strings.TrimSpace(node.AttrValue("Relative")); relative != "" {
 				if childID, err := strconv.ParseUint(strings.TrimSpace(node.AttrValue("ID")), 10, 64); err == nil {
 					if parentID, err := strconv.ParseUint(relative, 10, 64); err == nil {
@@ -1640,9 +1640,9 @@ func (s *buildState) collectRawResourceReferences(element *xdm.Node, kind string
 		}
 		if raw := node.AttrValue("ResourceID"); raw != "" {
 			kind := "media-or-composite"
-			if node.Name.Local == "CompositeObject" {
+			if node.Name().Local == "CompositeObject" {
 				kind = "composite"
-			} else if node.Name.Local == "ImageObject" {
+			} else if node.Name().Local == "ImageObject" {
 				kind = "image"
 			}
 			add(kind, raw, " ResourceID")
