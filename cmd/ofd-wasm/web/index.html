@@ -587,6 +587,9 @@
     #empty.drag-over { border-color: #2476bd; background: #dcecfb; color: #2476bd; }
     #empty.drag-over strong { color: #2476bd; }
     #drop-hint { display: none; }
+    #file-drop-overlay { position: fixed; inset: 12px; z-index: 100; display: grid; place-items: center; border: 3px dashed #2476bd; border-radius: 10px; background: #f2f8ffed; color: #172033; font-size: 20px; font-weight: 600; pointer-events: none; }
+    #file-drop-overlay[hidden] { display: none; }
+    body.dark-reading #file-drop-overlay { background: #202a38ed; color: #e6ebf2; }
     @keyframes loading-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     /* 页面被放大到超过阅读区宽度时，横向拖动用于平移。放在媒体查询之外，
        两种视口宽度下行为一致。 */
@@ -909,6 +912,7 @@
       </div>
     </div>
   </dialog>
+  <div id="file-drop-overlay" hidden aria-hidden="true">松开鼠标即可打开 OFD 文件</div>
   <div class="reader">
     <div id="sidebar">
       <div id="sidebar-handle" class="sidebar-handle" role="button" tabindex="0" aria-label="收起侧栏"></div>

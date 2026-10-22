@@ -378,6 +378,7 @@ const thumbnailsElement = document.querySelector('#thumbnails');
 const readerElement = document.querySelector('.reader');
 const empty = document.querySelector('#empty');
 const dropHint = document.querySelector('#drop-hint');
+const fileDropOverlay = document.querySelector('#file-drop-overlay');
 const pageNumber = document.querySelector('#page-number');
 const pageCount = document.querySelector('#page-count');
 const previous = document.querySelector('#pill-previous');
@@ -3943,6 +3944,26 @@ function replaceDocumentURL(source) {
 async function loadFile() {
   const selected = file.files[0];
   return openSelectedFile(selected);
+}
+
+function isOFDFileDrag(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+
+function handleOFDFileDrop(event) {
+  const dropped = Array.from(event.dataTransfer?.files || [])
+    .find(candidate => /\.ofd$/i.test(candidate.name) || candidate.type === 'application/ofd');
+  if (!dropped) {
+    setStatus('请拖入 OFD 文件。');
+    return;
+  }
+  void openSelectedFile(dropped);
+}
+
+function clearFileDropState() {
+  fileDropOverlay.hidden = true;
+  empty.classList.remove('drag-over');
+  dropHint.style.display = 'none';
 }
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
@@ -7911,31 +7932,29 @@ file.addEventListener('change', loadFile);
 cancelOpen.addEventListener('click', cancelOpening);
 recentToggle.addEventListener('click', () => setRecentPanelOpen(recentPanel.hidden));
 recentClear.addEventListener('click', clearRecentFiles);
-for (const eventName of ['dragenter', 'dragover']) {
-  pagesElement.addEventListener(eventName, event => {
-    event.preventDefault();
-    if (!pageInfos.length) {
-      empty.classList.add('drag-over');
-      dropHint.style.display = 'block';
-    }
-  });
-}
-for (const eventName of ['dragleave', 'drop']) {
-  pagesElement.addEventListener(eventName, event => {
-    event.preventDefault();
-    empty.classList.remove('drag-over');
-    dropHint.style.display = 'none';
-  });
-}
-pagesElement.addEventListener('drop', event => {
-  if (pageInfos.length) return;
-  const dropped = Array.from(event.dataTransfer?.files || [])
-    .find(candidate => /\.ofd$/i.test(candidate.name) || candidate.type === 'application/ofd');
-  if (!dropped) {
-    setStatus('请拖入 OFD 文件。');
-    return;
+document.addEventListener('dragenter', event => {
+  if (!isOFDFileDrag(event)) return;
+  event.preventDefault();
+  fileDropOverlay.hidden = false;
+  if (!pageInfos.length) {
+    empty.classList.add('drag-over');
+    dropHint.style.display = 'block';
   }
-  openSelectedFile(dropped);
+});
+document.addEventListener('dragover', event => {
+  if (!isOFDFileDrag(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+});
+document.addEventListener('dragleave', event => {
+  if (event.relatedTarget !== null) return;
+  clearFileDropState();
+});
+document.addEventListener('drop', event => {
+  if (!isOFDFileDrag(event)) return;
+  event.preventDefault();
+  clearFileDropState();
+  handleOFDFileDrop(event);
 });
 previous.addEventListener('click', () => navigatePage(-1));
 next.addEventListener('click', () => navigatePage(1));
