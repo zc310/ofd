@@ -763,6 +763,7 @@ let statusBeforeCopy;
 let recentFiles = [];
 let currentDocumentKey = '';
 let pageSpreads = [];
+let widestSpreadBaseWidth = 0;
 let mountedPageSpreads = new Set();
 let pageSpreadsGeneration = -1;
 let pageVirtualTrack;
@@ -892,21 +893,35 @@ function moveToSpread(delta) {
 }
 
 function layoutBaseWidth() {
-  return pageLayoutIsDouble() ? 2 * 820 + 18 : 820;
+  return widestSpreadBaseWidth || (pageLayoutIsDouble() ? 2 * 820 + 18 : 820);
+}
+
+const basePagePixels = 820;
+const referencePageWidthMM = 210;
+const minFitZoom = 0.05;
+
+function pageBaseDimensions(info) {
+  if (!info || !(info.width > 0) || !(info.height > 0)) {
+    return { width: basePagePixels, height: basePagePixels * 297 / 210 };
+  }
+  const scale = basePagePixels / referencePageWidthMM;
+  const rotated = pageRotation % 180 !== 0;
+  return {
+    width: (rotated ? info.height : info.width) * scale,
+    height: (rotated ? info.width : info.height) * scale,
+  };
 }
 
 function spreadDimensions(position) {
   const pages = pageSpreads[position]?.pages || [];
-  const heights = pages
-    .filter(index => index >= 0 && pageInfos[index])
-    .map(index => {
-      const info = pageInfos[index];
-      const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
-      return 820 / ratio;
-    });
+  const referencePage = pages.find(index => index >= 0 && pageInfos[index]);
+  const dimensions = pages.map(index => pageBaseDimensions(
+    index >= 0 ? pageInfos[index] : pageInfos[referencePage],
+  ));
+  const gap = Math.max(0, dimensions.length - 1) * 18;
   return {
-    width: pageLayoutIsDouble() ? layoutBaseWidth() : 820,
-    height: Math.max(...heights, 180),
+    width: dimensions.reduce((sum, page) => sum + page.width, 0) + gap,
+    height: Math.max(...dimensions.map(page => page.height)),
   };
 }
 
@@ -1023,12 +1038,14 @@ function updatePageVirtualMetrics() {
   const gap = 18 * zoom;
   let contentOffset = 0;
   let maxSpreadWidth = 0;
+  widestSpreadBaseWidth = 0;
   pageSpreads.forEach((spread, position) => {
     const dimensions = spreadDimensions(position);
     spread.offset = contentOffset;
     spread.height = dimensions.height * zoom;
     spread.width = dimensions.width * zoom;
     if (spread.width > maxSpreadWidth) maxSpreadWidth = spread.width;
+    widestSpreadBaseWidth = Math.max(widestSpreadBaseWidth, dimensions.width);
     if (spread.element) {
       spread.element.style.top = `${contentOffset - pageAnchor}px`;
       spread.element.style.width = `${spread.width}px`;
@@ -1244,10 +1261,10 @@ function mountPageSpread(position) {
       placeholder.className = 'page-placeholder';
       placeholder.dataset.index = '-1';
       const info = pageInfos[spread.pages.find(page => page >= 0)];
-      if (info) {
-        const ratio = pageRotation % 180 === 0 ? info.width / info.height : info.height / info.width;
-        placeholder.style.aspectRatio = String(ratio);
-      }
+      const dimensions = pageBaseDimensions(info);
+      placeholder.style.width = `${dimensions.width * zoom}px`;
+      placeholder.style.minHeight = `${dimensions.height * zoom}px`;
+      placeholder.style.aspectRatio = `${dimensions.width} / ${dimensions.height}`;
       element.append(placeholder);
       return;
     }
@@ -1356,17 +1373,20 @@ function applyPageWidthToSpread(spread) {
   spread.element.style.minHeight = `${spread.height}px`;
   spread.element.style.gap = `${18 * zoom}px`;
   spread.element.querySelectorAll('.page-placeholder').forEach(placeholder => {
-    placeholder.style.width = `${820 * zoom}px`;
-    placeholder.style.minHeight = `${180 * zoom}px`;
+    const neighbor = spread.pages.find(index => index >= 0 && pageInfos[index]);
+    const dimensions = pageBaseDimensions(pageInfos[neighbor]);
+    placeholder.style.width = `${dimensions.width * zoom}px`;
+    placeholder.style.minHeight = `${dimensions.height * zoom}px`;
   });
   spread.pages.forEach(index => {
     if (index < 0) return;
     const card = pageCards[index];
     const info = pageInfos[index];
     if (!card || !info) return;
+    const dimensions = pageBaseDimensions(info);
     const rotated = pageRotation % 180 !== 0;
-    card.style.width = `${820 * zoom}px`;
-    card.style.minHeight = `${180 * zoom}px`;
+    card.style.width = `${dimensions.width * zoom}px`;
+    card.style.minHeight = `${dimensions.height * zoom}px`;
     card.style.aspectRatio = rotated ? `${info.height} / ${info.width}` : `${info.width} / ${info.height}`;
     const surface = card.querySelector('.page-surface');
     if (surface) {
@@ -2866,7 +2886,6 @@ function setCurrent(index, syncThumbnail = true) {
   if (changed) updateOutlineActive();
   if (changed && activeSidebarTab === 'layers') void renderLayers();
   if (changed) playPageEntryMedia(index);
-  if (zoomMode === 'page') fitPageZoom();
   updateNavigation();
 }
 
@@ -2928,7 +2947,7 @@ function applyPageWidth() {
 
 function setZoom(value, mode = 'manual') {
 	if (!pageInfos.length) return;
-	const target = Math.max(0.5, Math.min(3, value));
+	const target = Math.max(mode === 'fit' || mode === 'page' ? minFitZoom : 0.5, Math.min(3, value));
 	if (mode === 'fit' || mode === 'page') {
 		try {
 			localStorage.setItem(zoomModeStorageKey, mode);
@@ -2965,7 +2984,8 @@ function reloadPageImages() {
 
 function fitWidthZoom() {
   if (!pageInfos.length || !pagesElement.clientWidth) return;
-  setZoom(Math.max(0.5, Math.min(3, pagesElement.clientWidth / layoutBaseWidth())), 'fit');
+  const width = layoutBaseWidth();
+  setZoom(Math.max(minFitZoom, Math.min(3, pagesElement.clientWidth / width)), 'fit');
 }
 
 function fitPageZoom() {
@@ -2977,7 +2997,7 @@ function fitPageZoom() {
   const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
   const spreadRatio = dimensions.width / dimensions.height;
   const spreadWidth = Math.min(availableWidth, availableHeight * spreadRatio);
-  setZoom(Math.max(0.5, Math.min(3, spreadWidth / dimensions.width)), 'page');
+  setZoom(Math.max(minFitZoom, Math.min(3, spreadWidth / dimensions.width)), 'page');
 }
 
 function rotationStorageKey() {
@@ -3491,6 +3511,8 @@ function loadActualPageInfo(index) {
       pageInfos[index] = info;
       updatePageVirtualMetrics();
       applyPageWidth();
+      if (zoomMode === 'fit') fitWidthZoom();
+      else if (zoomMode === 'page' && pageSpreadPositionForPage(index) === currentSpreadPosition()) fitPageZoom();
       if (pageCards[index]) buildTextLayer(index);
     })
     .catch(() => undefined)
@@ -3669,7 +3691,7 @@ function buildPages() {
   });
   if (zoomMode === 'fit') {
     const available = pagesElement.clientWidth;
-    if (available > 0) zoom = Math.max(0.5, Math.min(3, available / layoutBaseWidth()));
+    if (available > 0) zoom = Math.max(minFitZoom, Math.min(3, available / layoutBaseWidth()));
   }
   applyPageWidth();
   updatePageVirtualWindow(false);
@@ -7153,7 +7175,7 @@ function destPagePoint(info, dest) {
   const rawTop = Number(dest.top);
   const x = Number.isFinite(rawLeft) ? rawLeft : 0;
   const y = Number.isFinite(rawTop) ? rawTop : 0;
-  const base = rotation % 180 === 0 ? 820 / info.width : 820 / info.height;
+  const base = basePagePixels / referencePageWidthMM;
   switch (rotation) {
     case 90:
       return { x: (info.height - y) * base, y: x * base };
@@ -7175,7 +7197,7 @@ function fitRectZoom(info, dest) {
   const rectWidth = Math.abs((Number.isFinite(rawRight) ? rawRight : info.width) - (Number.isFinite(rawLeft) ? rawLeft : 0));
   const rectHeight = Math.abs((Number.isFinite(rawBottom) ? rawBottom : info.height) - (Number.isFinite(rawTop) ? rawTop : 0));
   if (rectWidth <= 0 || rectHeight <= 0) return 0;
-  const base = 820 / info.width; // 毫米到基准像素在横纵方向等比
+  const base = basePagePixels / referencePageWidthMM; // 毫米到基准像素在横纵方向等比
   const rotation = ((pageRotation % 360) + 360) % 360;
   const displayWidth = (rotation % 180 === 0 ? rectWidth : rectHeight) * base;
   const displayHeight = (rotation % 180 === 0 ? rectHeight : rectWidth) * base;
@@ -7183,7 +7205,7 @@ function fitRectZoom(info, dest) {
   const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
   const availableWidth = Math.max(1, pagesElement.clientWidth);
   const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
-  return Math.max(0.5, Math.min(3, Math.min(availableWidth / displayWidth, availableHeight / displayHeight)));
+  return Math.max(minFitZoom, Math.min(3, Math.min(availableWidth / displayWidth, availableHeight / displayHeight)));
 }
 
 // scrollToDestinationX 让目标横向位置对齐到阅读区左边缘（存在横向溢出时才生效）。
