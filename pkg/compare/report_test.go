@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	comparelocalization "github.com/zc310/ofd/internal/localization/compare"
 )
 
 func TestReportShowsMultipleTextEditsAndRegionNavigation(t *testing.T) {
@@ -69,6 +71,44 @@ func TestAllReportFormatsExplainPageMatchingIncludingUnchangedPages(t *testing.T
 				t.Errorf("%s 未显示 %s", format, label)
 			}
 		}
+	}
+}
+
+func TestPageMatchDescriptionsUseSelectedLocale(t *testing.T) {
+	r := &Report{
+		Baseline: 1,
+		Options:  Options{Language: "en"},
+		Inputs:   []Input{{Name: "base.ofd"}, {Name: "target.ofd"}},
+		Comparisons: []Comparison{{Target: 2, Pages: []PageChange{{
+			Before: 1, After: 1, Status: "modified",
+			Match: PageMatchInfo{Method: "text_similarity", TextSimilarity: 0.825, SearchLimited: true},
+		}}}},
+	}
+	for _, format := range []string{"html", "text", "markdown"} {
+		var out bytes.Buffer
+		err := WriteReport(&out, r, format)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, phrase := range []string{"Text similarity match (feature similarity 82.5%)", "similarity search reached its limit"} {
+			if !strings.Contains(out.String(), phrase) {
+				t.Errorf("%s report missing localized phrase %q", format, phrase)
+			}
+		}
+	}
+	r.Options.Language = "fr"
+	var out bytes.Buffer
+	err := WriteReport(&out, r, "text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chineseLocalizer, err := comparelocalization.New("zh-CN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chinese := chineseLocalizer.Message("compare.page_match.text_similarity", map[string]string{"Similarity": "82.5"})
+	if !strings.Contains(out.String(), chinese) {
+		t.Fatal("unsupported language did not fall back to Chinese")
 	}
 }
 

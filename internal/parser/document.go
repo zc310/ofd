@@ -199,7 +199,7 @@ func (p *Document) PageCount() int {
 // GetPage 返回指定索引的页面。
 func (p *Document) GetPage(index int) (*Page, error) {
 	if p == nil || index < 0 || index >= len(p.Pages) {
-		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+		return nil, categorized(ErrPageIndexOutOfRange, fmt.Sprintf("页面索引超出范围: %d", index))
 	}
 	return p.Pages[index], nil
 }
@@ -539,7 +539,7 @@ func (p *Document) acquirePage(page *Page) error {
 	p.pageCacheMu.Lock()
 	defer p.pageCacheMu.Unlock()
 	if p.closing {
-		return fmt.Errorf("文档已关闭")
+		return categorized(ErrDocumentClosed, "文档已关闭")
 	}
 	page.mu.Lock()
 	if page.loaded {
@@ -599,7 +599,7 @@ func (p *Document) ensurePageLoaded(page *Page) error {
 	p.pageCacheMu.Lock()
 	defer p.pageCacheMu.Unlock()
 	if p.closing {
-		return fmt.Errorf("文档已关闭")
+		return categorized(ErrDocumentClosed, "文档已关闭")
 	}
 	page.mu.Lock()
 	if page.loaded {

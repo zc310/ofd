@@ -2,23 +2,18 @@ package localization
 
 import "testing"
 
-func TestLocalizersKeepLanguagePreferencesIndependent(t *testing.T) {
-	english, err := New("en-US")
-	if err != nil {
-		t.Fatal(err)
-	}
-	chinese, err := New("zh-CN")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if english.Language() != "en" || chinese.Language() != "zh-CN" {
-		t.Fatalf("canonical languages: %q, %q", english.Language(), chinese.Language())
-	}
-	unsupported, err := New("fr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := unsupported.Language(); got != "zh-CN" {
-		t.Fatalf("unsupported language fallback: %q", got)
+func TestCanonicalLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		input, want string
+	}{
+		{"en-US", "en"},
+		{"zh-CN", "zh-CN"},
+		{"zh_TW", "zh-CN"},
+		{"fr", "zh-CN"},
+		{"", "zh-CN"},
+	} {
+		if got := CanonicalLanguage(tc.input); got != tc.want {
+			t.Errorf("CanonicalLanguage(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }

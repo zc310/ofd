@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-json"
+	comparelocalization "github.com/zc310/ofd/internal/localization/compare"
 )
 
 //go:embed templates/report.html
@@ -51,24 +52,43 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 	}
 	w = budgetWriter{w, &byteBudget{remaining: limit, label: "报告输出"}}
 	format = strings.ToLower(strings.TrimSpace(format))
+	view := reportView{report: report}
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	case "html":
-		return writeHTML(w, report)
+		localizer, err := comparelocalization.New(report.Options.Language)
+		if err != nil {
+			return err
+		}
+		view.localizer = localizer
+		return view.writeHTML(w)
 	case "text", "markdown":
-		return writeText(w, report, format == "markdown")
+		view.markdown = format == "markdown"
+		localizer, err := comparelocalization.New(report.Options.Language)
+		if err != nil {
+			return err
+		}
+		view.localizer = localizer
+		return view.writeText(w)
 	default:
 		return fmt.Errorf("不支持的报告格式 %q", format)
 	}
 }
 
-func writeText(w io.Writer, r *Report, markdown bool) error {
+type reportView struct {
+	report    *Report
+	markdown  bool
+	localizer *comparelocalization.Localizer
+}
+
+func (v reportView) writeText(w io.Writer) error {
+	r := v.report
 	output := &reportTextWriter{w: w}
 	b := reportTextWriter{w: output}
-	if markdown {
+	if v.markdown {
 		output.WriteString("# OFD 对比报告\n\n<pre>")
 		b.w = escapedReportWriter{output}
 	} else {
@@ -142,7 +162,7 @@ func writeText(w io.Writer, r *Report, markdown bool) error {
 				return output.err
 			}
 			if p.Match.Method != "" {
-				fmt.Fprintf(&b, "  页面配对 %d → %d：%s\n", p.Before, p.After, pageMatchDescription(p.Match))
+				fmt.Fprintf(&b, "  %s %d → %d：%s\n", v.localizer.Message("compare.page_match.heading", nil), p.Before, p.After, v.pageMatchDescription(p.Match))
 				if p.Match.Method == "sequence" {
 					b.WriteString("    按顺序兜底配对，请核对页面对应关系；必要时使用手工页映射。\n")
 				}
@@ -180,7 +200,7 @@ func writeText(w io.Writer, r *Report, markdown bool) error {
 			}
 		}
 	}
-	if markdown {
+	if v.markdown {
 		// 明细按原文展示，避免文件名、XML 或文字被解释为 Markdown 标记。
 		output.WriteString("</pre>\n")
 	}
@@ -306,7 +326,8 @@ func fileListRows(base, target Input, comparison Comparison) []fileListRow {
 	return rows
 }
 
-func writeHTML(w io.Writer, r *Report) error {
+func (v reportView) writeHTML(w io.Writer) error {
+	r := v.report
 	t, err := template.New("compare").Funcs(template.FuncMap{
 		"input": func(n int) Input {
 			if n <= 0 || n > len(r.Inputs) {
@@ -319,7 +340,7 @@ func writeHTML(w io.Writer, r *Report) error {
 		"selectedCount":    selectedPageCount,
 		"fileRows":         fileListRows,
 		"xmlViewKind":      xmlViewKind,
-		"matchDescription": pageMatchDescription,
+		"matchDescription": v.pageMatchDescription,
 		"selectedNumbers": func(input Input) string {
 			numbers := make([]string, 0, len(input.Pages))
 			for _, p := range input.Pages {
@@ -379,28 +400,27 @@ func writeHTML(w io.Writer, r *Report) error {
 	return t.Execute(w, r)
 }
 
-func pageMatchDescription(info PageMatchInfo) string {
-	var label string
+func (v reportView) pageMatchDescription(info PageMatchInfo) string {
+	id := "compare.page_match.unknown"
 	switch info.Method {
 	case "manual":
-		label = "手工页映射"
+		id = "compare.page_match.manual"
 	case "content":
-		label = "页面内容摘要相同"
+		id = "compare.page_match.content"
 	case "text":
-		label = "唯一相同文字"
+		id = "compare.page_match.text"
 	case "text_similarity":
-		label = fmt.Sprintf("文字相似度配对（文字特征相似度 %.1f%%）", info.TextSimilarity*100)
+		id = "compare.page_match.text_similarity"
 	case "sequence":
-		label = "按顺序兜底配对"
+		id = "compare.page_match.sequence"
 	case "number":
-		label = "按所选页面顺序配对"
+		id = "compare.page_match.number"
 	case "unmatched":
-		label = "未匹配（单侧页面）"
-	default:
-		label = "未记录"
+		id = "compare.page_match.unmatched"
 	}
+	label := v.localizer.Message(id, map[string]string{"Similarity": fmt.Sprintf("%.1f", info.TextSimilarity*100)})
 	if info.SearchLimited {
-		label += "；相似度搜索达到上限，已回退"
+		label += v.localizer.Message("compare.page_match.limited", nil)
 	}
 	return label
 }

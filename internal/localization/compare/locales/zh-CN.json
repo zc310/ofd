@@ -1,0 +1,12 @@
+{
+  "compare.page_match.heading": {"other": "页面配对"},
+  "compare.page_match.manual": {"other": "手工页映射"},
+  "compare.page_match.content": {"other": "页面内容摘要相同"},
+  "compare.page_match.text": {"other": "唯一相同文字"},
+  "compare.page_match.text_similarity": {"other": "文字相似度配对（文字特征相似度 {{.Similarity}}%）"},
+  "compare.page_match.sequence": {"other": "按顺序兜底配对"},
+  "compare.page_match.number": {"other": "按所选页面顺序配对"},
+  "compare.page_match.unmatched": {"other": "未匹配（单侧页面）"},
+  "compare.page_match.unknown": {"other": "未记录"},
+  "compare.page_match.limited": {"other": "；相似度搜索达到上限，已回退"}
+}

@@ -106,7 +106,7 @@ func TestOFDInputSizeLimitAppliesToAllInputKinds(t *testing.T) {
 					if err != nil {
 						t.Fatalf("恰好达到大小上限时应能打开：%v", err)
 					}
-				} else if err == nil || !strings.Contains(err.Error(), "大小限制") {
+				} else if err == nil || !errors.Is(err, ErrInputTooLarge) || !strings.Contains(err.Error(), "大小限制") {
 					t.Fatalf("超过上限应报大小限制错误，实际为 %v", err)
 				}
 			})
@@ -120,11 +120,36 @@ func TestOFDReaderStopsAfterInputLimitProbe(t *testing.T) {
 	if ofd != nil {
 		defer ofd.Close()
 	}
-	if err == nil || !strings.Contains(err.Error(), "大小限制") {
+	if err == nil || !errors.Is(err, ErrInputTooLarge) || !strings.Contains(err.Error(), "大小限制") {
 		t.Fatalf("超过上限应报大小限制错误，实际为 %v", err)
 	}
 	if got := reader.Len(); got != 1024-65 {
 		t.Fatalf("剩余输入 = %d 字节，期望只读取上限加 1 字节", got)
+	}
+}
+
+func TestParserCategorizedErrors(t *testing.T) {
+	var ofd OFD
+	if err := ofd.SelectVersion(0, "v1"); !errors.Is(err, ErrDocumentClosed) {
+		t.Fatalf("closed document error = %v, want ErrDocumentClosed", err)
+	}
+	closedDocument := &Document{closing: true}
+	if err := (&Page{document: closedDocument}).EnsureLoaded(); !errors.Is(err, ErrDocumentClosed) {
+		t.Fatalf("closed page document error = %v, want ErrDocumentClosed", err)
+	}
+	if _, err := (&Document{}).GetPage(0); !errors.Is(err, ErrPageIndexOutOfRange) {
+		t.Fatalf("page index error = %v, want ErrPageIndexOutOfRange", err)
+	}
+	parsed, err := NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parsed.Close()
+	if err := parsed.SelectVersion(-1, ""); !errors.Is(err, ErrDocumentScopeOutOfRange) {
+		t.Fatalf("document scope error = %v, want ErrDocumentScopeOutOfRange", err)
+	}
+	if err := parsed.SelectVersion(0, "missing-version"); !errors.Is(err, ErrVersionNotFound) {
+		t.Fatalf("version error = %v, want ErrVersionNotFound", err)
 	}
 }
 

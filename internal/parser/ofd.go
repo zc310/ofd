@@ -76,7 +76,7 @@ func (p *OFD) Open(input any) error {
 			return fmt.Errorf("读取OFD内容失败: %w", err)
 		}
 		if p.options.MaxInputBytes > 0 && int64(len(data)) > p.options.MaxInputBytes {
-			return fmt.Errorf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20)
+			return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 		}
 		fileCache, err := core.OpenBytes(data)
 		if err != nil {
@@ -96,7 +96,7 @@ func (p *OFD) openFromFile(filePath string) error {
 		return fmt.Errorf("文件路径验证失败: %w", err)
 	}
 	if p.options.MaxInputBytes > 0 && info.Size() > p.options.MaxInputBytes {
-		return fmt.Errorf("OFD 文件超过大小限制 %d MB", p.options.MaxInputBytes>>20)
+		return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 文件超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 	}
 
 	fileCache, err := core.OpenFile(cleanPath)
@@ -110,7 +110,7 @@ func (p *OFD) openFromFile(filePath string) error {
 // openFromBytes 从字节数据打开OFD文件
 func (p *OFD) openFromBytes(data []byte) error {
 	if p.options.MaxInputBytes > 0 && int64(len(data)) > p.options.MaxInputBytes {
-		return fmt.Errorf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20)
+		return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 	}
 	fileCache, err := core.OpenBytes(data)
 	if err != nil {

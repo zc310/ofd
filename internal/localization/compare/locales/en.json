@@ -1,0 +1,12 @@
+{
+  "compare.page_match.heading": {"other": "Page match"},
+  "compare.page_match.manual": {"other": "Manual page map"},
+  "compare.page_match.content": {"other": "Page content is identical"},
+  "compare.page_match.text": {"other": "Unique identical text"},
+  "compare.page_match.text_similarity": {"other": "Text similarity match (feature similarity {{.Similarity}}%)"},
+  "compare.page_match.sequence": {"other": "Sequence fallback"},
+  "compare.page_match.number": {"other": "Selected-page order"},
+  "compare.page_match.unmatched": {"other": "Unmatched (page exists on one side only)"},
+  "compare.page_match.unknown": {"other": "Not recorded"},
+  "compare.page_match.limited": {"other": "; similarity search reached its limit and fell back"}
+}

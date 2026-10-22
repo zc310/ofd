@@ -14,7 +14,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"github.com/zc310/ofd/internal/localization"
+	viewerlocalization "github.com/zc310/ofd/internal/localization/viewer"
 )
 
 func preserveLanguage(t *testing.T) {
@@ -131,7 +131,7 @@ func TestTranslatedExportOptionsKeepFormatAndBackground(t *testing.T) {
 
 func TestTranslationCatalogCoversMessagesAndPreservesFormatArguments(t *testing.T) {
 	verbs := regexp.MustCompile(`%[dswv]`)
-	localizer, err := localization.New("en")
+	localizer, err := viewerlocalization.New("en")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,8 +159,8 @@ func TestTranslationCatalogCoversMessagesAndPreservesFormatArguments(t *testing.
 			literal, ok := call.Args[0].(*ast.BasicLit)
 			if ok && literal.Kind == token.STRING {
 				source, _ := strconv.Unquote(literal.Value)
-				translation := localizer.Message("viewer."+source, nil)
-				if translation == "viewer."+source || strings.TrimSpace(translation) == "" {
+				translation := localizer.Message(source, nil)
+				if translation == source || strings.TrimSpace(translation) == "" {
 					t.Errorf("%s: missing translation for %q", name, source)
 				} else if !reflect.DeepEqual(verbs.FindAllString(source, -1), verbs.FindAllString(translation, -1)) {
 					t.Errorf("format arguments differ: %q -> %q", source, translation)
