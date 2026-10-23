@@ -90,8 +90,8 @@ func minimalOriginals() map[string]string {
 	}
 }
 
-// The test packager is independent of the production decryption path. FEK
-// wrapping is taken directly from OpenSSL vectors, not locally round-tripped.
+// 此测试包的生成方式独立于生产解密流程。FEK 封装数据直接取自 OpenSSL 测试向量，
+// 不通过本地加密后再解密生成。
 func encryptedFiles(t *testing.T, originals map[string]string, passwordIndex int, encryptMap, certificate bool) map[string]string {
 	t.Helper()
 	v := readVectors(t)
@@ -193,7 +193,7 @@ func TestPasswordDecryptRestoresExactBytesForAllInputFormsAndMapModes(t *testing
 			originals := minimalOriginals()
 			originals["Doc_0/chunks.bin"] = strings.Repeat("chunk\x00", 15000)
 			files := encryptedFiles(t, originals, index, encryptedMap, false)
-			// A visible placeholder is overridden, without parsing or rewriting it.
+			// 可见占位入口会被覆盖，不对其解析或重写。
 			files["OFD.xml"] = "redacted placeholder"
 			data := archive(t, files)
 			filename := filepath.Join(t.TempDir(), "encrypted.ofd")
@@ -407,8 +407,7 @@ func TestDecryptPreservesExistingSESAndEveryOriginalEntry(t *testing.T) {
 func TestDecryptRejectsExistingIntegrityManifestAndChangedSignatureTargets(t *testing.T) {
 	for _, target := range []string{"Security/map.dat", "Cipher/entry_0.dat", "OFD.xml"} {
 		files := encryptedFiles(t, minimalOriginals(), 1, false, false)
-		// A signature over visible encryption metadata/ciphertext/placeholders
-		// must not survive as if it protected restored originals.
+		// 对可见加密元数据、密文或占位内容签署的签名不能继续保留，伪装成对恢复后原文的保护。
 		files["OFD.xml"] = "placeholder"
 		digest := sha1.Sum([]byte(files[target]))
 		files["Signatures/sig.data"] = fmt.Sprintf(`<ofd:Signature xmlns:ofd="http://www.ofdspec.org/2016"><ofd:SignedInfo><ofd:References CheckMethod="SHA1"><ofd:Reference FileRef="../%s"><ofd:CheckValue>%s</ofd:CheckValue></ofd:Reference></ofd:References></ofd:SignedInfo></ofd:Signature>`, target, base64.StdEncoding.EncodeToString(digest[:]))
@@ -569,7 +568,7 @@ func TestOutputBudgetCountsMultipleRestoredCopiesOfOneCipher(t *testing.T) {
 	files := encryptedFiles(t, minimalOriginals(), 1, false, false)
 	v := readVectors(t)
 	files["Cipher/shared.dat"] = string(testEncrypt(t, bytes.Repeat([]byte{1}, 512), hexBytes(t, v.FEK), hexBytes(t, v.IV)))
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		files["Security/map.dat"] = strings.Replace(files["Security/map.dat"], `</ofd:EncryptedEntries>`, fmt.Sprintf(`<ofd:EncryptEntry Path="/copies/%d.bin" EPath="/Cipher/shared.dat"/></ofd:EncryptedEntries>`, i), 1)
 	}
 	var inputBytes int64

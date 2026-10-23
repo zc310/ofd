@@ -68,9 +68,10 @@ func (s *inspector) prepareEncryption(opt EncryptOptions) (id, relative string, 
 // 新节点显式声明命名空间，不依赖旧入口选择的前缀。
 func appendEncryptionInfo(root []byte, info outputInfo) ([]byte, error) {
 	node := struct {
+		outputInfo
+
 		XMLName xml.Name `xml:"ofd:EncryptInfo"`
 		NS      string   `xml:"xmlns:ofd,attr"`
-		outputInfo
 	}{NS: Namespace, outputInfo: info}
 	data, err := xml.Marshal(node)
 	if err != nil {

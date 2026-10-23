@@ -37,10 +37,24 @@ func (publicOnlyDecrypter) Decrypt(io.Reader, []byte, crypto.DecrypterOpts) ([]b
 func TestSM2PublicRejectsOtherCurvesIncludingNISTP256(t *testing.T) {
 	for _, curve := range []elliptic.Curve{elliptic.P256(), elliptic.P384(), sm2.P256()} {
 		t.Run(curve.Params().Name, func(t *testing.T) {
-			public := &ecdsa.PublicKey{Curve: curve, X: curve.Params().Gx, Y: curve.Params().Gy}
+			coordinateSize := (curve.Params().BitSize + 7) / 8
+			point := make([]byte, 1+2*coordinateSize)
+			point[0] = 4
+			curve.Params().Gx.FillBytes(point[1 : 1+coordinateSize])
+			curve.Params().Gy.FillBytes(point[1+coordinateSize:])
+			var public *ecdsa.PublicKey
+			var err error
+			if curve == sm2.P256() {
+				public, err = sm2.NewPublicKey(point)
+			} else {
+				public, err = ecdsa.ParseUncompressedPublicKey(curve, point)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
 			got, err := sm2Public(publicOnlyDecrypter{public})
 			if curve == sm2.P256() {
-				if err != nil || got != public {
+				if err != nil || got == nil || !got.Equal(public) {
 					t.Fatalf("有效 SM2 公钥被拒绝: %v", err)
 				}
 			} else if err == nil || got != nil {
@@ -99,7 +113,7 @@ func TestOpenSSLPasswordAndCBCVectors(t *testing.T) {
 func TestCBCRejectsEveryInvalidPaddingLengthAndMismatchedPadding(t *testing.T) {
 	key, iv := make([]byte, 16), make([]byte, 16)
 	block, _ := sm4.NewCipher(key)
-	for padding := 0; padding < 256; padding++ {
+	for padding := range 256 {
 		plain := bytes.Repeat([]byte{byte(padding)}, 16)
 		if padding >= 1 && padding <= 16 {
 			if padding == 1 {
@@ -131,6 +145,7 @@ func TestCBCRejectsEveryInvalidPaddingLengthAndMismatchedPadding(t *testing.T) {
 // cbcObservedContext 在 Err 检查前观察原地解密进度，避免依赖定时器或调度触发取消。
 type cbcObservedContext struct {
 	context.Context
+
 	beforeErr func()
 }
 

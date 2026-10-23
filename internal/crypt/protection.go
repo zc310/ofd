@@ -199,7 +199,7 @@ func signaturePath(from, value string) (string, error) {
 			parts = strings.Split(from[:i], "/")
 		}
 	}
-	for _, segment := range strings.Split(value, "/") {
+	for segment := range strings.SplitSeq(value, "/") {
 		switch segment {
 		case "", ".":
 		case "..":

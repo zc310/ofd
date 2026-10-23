@@ -17,8 +17,8 @@ import (
 	"github.com/zc310/ofd/pkg/sign"
 )
 
-// Opt in with a classpath prepared from testdata/crypt/ofdrw/pom.xml. No Java
-// dependencies are downloaded by ordinary Go tests.
+// 设置由 testdata/crypt/ofdrw/pom.xml 准备的 Java 类路径（classpath）后才运行此互操作测试。
+// 普通 Go 测试不会下载 Java 依赖。
 func TestOFDRW240Interoperability(t *testing.T) {
 	classpath := os.Getenv("OFD_CRYPTO_OFDRW_CLASSPATH")
 	if classpath == "" {

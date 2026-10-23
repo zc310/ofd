@@ -146,6 +146,7 @@ type CredentialResolver func(context.Context, CredentialRequest) (Credentials, e
 
 type OpenOptions struct {
 	DecryptOptions
+
 	// AllowPartial 仅允许因缺少凭据而保留部分解锁的视图。
 	// 元数据无效、凭据错误或密文损坏仍会使打开失败。
 	AllowPartial bool

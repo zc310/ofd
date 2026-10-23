@@ -178,8 +178,7 @@ func TestEncryptRejectsInvalidInputsWithoutSuccessReport(t *testing.T) {
 }
 
 func TestEncryptDoesNotRewriteExistingSignedXML(t *testing.T) {
-	// A declared unsupported digest over an encrypted target cannot be claimed
-	// preserved. An unknown format outside the target scope is retained verbatim.
+	// 对加密目标声明不支持的摘要算法时，不能声称签名得到保留；目标范围之外的未知格式则原样保留。
 	files := minimalOriginals()
 	files["sig.xml"] = `<Signature xmlns="http://www.ofdspec.org/2016"><SignedInfo><References CheckMethod="unknown"><Reference FileRef="/OFD.xml"><CheckValue>AA==</CheckValue></Reference></References></SignedInfo></Signature>`
 	var out bytes.Buffer

@@ -1,4 +1,4 @@
-// Package crypt provides GM/T 0099-2020 OFD inspection, encryption and views.
+// Package crypt 提供 GM/T 0099-2020 OFD 检查、加密和视图功能。
 package crypt
 
 import (
@@ -57,12 +57,10 @@ var (
 	ErrProtectedContent    = protocol.ErrProtectedContent
 )
 
-// Inspect reads visible encryption metadata without credentials. Input accepts
-// a filename, []byte, or io.Reader; caller-owned readers are never closed.
-// The default mode is strict. Zero limits use bounded defaults, never unlimited.
-// On error a non-nil Info is partial and must not authorize content processing.
-// State=none means no root encryption marker was found, not that the input is a
-// valid OFD. Encrypted maps are opaque: protected paths remain unknown.
+// Inspect 在不提供凭据时读取可见的加密元数据。输入可以是文件名、[]byte 或 io.Reader；
+// 不会关闭调用方传入的读取器。默认模式为 strict；限制为零值时使用有界默认值，不会无限制。
+// 出错时，非 nil 的 Info 只是部分结果，不得据此处理文档内容。State=none 表示未发现根加密标记，
+// 并不表示输入是有效 OFD。加密映射表是不透明的，因此受保护路径仍然未知。
 func Inspect(ctx context.Context, input any, opt InspectOptions) (*Info, error) {
 	opt, err := protocol.NormalizeOptions(opt)
 	if err != nil {
@@ -111,7 +109,7 @@ func openInput(ctx context.Context, input any, maximum int64) (*core.Package, fu
 		}
 		pkg, err = core.OpenBytes(value)
 	case io.Reader:
-		// Saturate the one-byte probe at MaxInt64.
+		// 将额外探测的 1 字节长度限制在 MaxInt64 以内，避免整数溢出。
 		probe := maximum
 		if probe < 1<<63-1 {
 			probe++

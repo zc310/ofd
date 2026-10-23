@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/zc310/ofd/internal/core"
@@ -159,10 +160,5 @@ func (s *inspector) decodeXML(data []byte, file string, roots []string, target a
 }
 
 func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }

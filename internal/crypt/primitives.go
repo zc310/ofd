@@ -121,7 +121,15 @@ func sm2WrappedKey(data []byte, mode Mode) ([]byte, bool, error) {
 	if err != nil || len(rest) != 0 || value.X == nil || value.Y == nil || len(value.Hash) != 32 || len(value.Ciphertext) != 16 {
 		return nil, false, ErrDecryptFailed
 	}
-	if value.X.Sign() < 0 || value.Y.Sign() < 0 || !sm2.P256().IsOnCurve(value.X, value.Y) {
+	coordinateSize := (sm2.P256().Params().BitSize + 7) / 8
+	if value.X.Sign() < 0 || value.Y.Sign() < 0 || value.X.BitLen() > coordinateSize*8 || value.Y.BitLen() > coordinateSize*8 {
+		return nil, false, ErrDecryptFailed
+	}
+	point := make([]byte, 1+2*coordinateSize)
+	point[0] = 4
+	value.X.FillBytes(point[1 : 1+coordinateSize])
+	value.Y.FillBytes(point[1+coordinateSize:])
+	if _, err := sm2.NewPublicKey(point); err != nil {
 		return nil, false, ErrDecryptFailed
 	}
 	canonical, err := asn1.Marshal(value)
@@ -136,10 +144,22 @@ func sm2Public(key crypto.Decrypter) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("SM2 私钥为空")
 	}
 	pub, ok := key.Public().(*ecdsa.PublicKey)
-	if !ok || pub == nil || pub.Curve != sm2.P256() || pub.X == nil || pub.Y == nil || !sm2.P256().IsOnCurve(pub.X, pub.Y) {
+	if !ok || pub == nil || !sm2.IsSM2PublicKey(pub) {
 		return nil, fmt.Errorf("解密器应提供有效的 SM2 公钥")
 	}
-	return pub, nil
+	der, err := smx509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, fmt.Errorf("解密器应提供有效的 SM2 公钥")
+	}
+	parsed, err := smx509.ParsePKIXPublicKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("解密器应提供有效的 SM2 公钥")
+	}
+	validated, ok := parsed.(*ecdsa.PublicKey)
+	if !ok || !sm2.IsSM2PublicKey(validated) {
+		return nil, fmt.Errorf("解密器应提供有效的 SM2 公钥")
+	}
+	return validated, nil
 }
 
 func unwrapCertificate(ctx context.Context, user userXML, key crypto.Decrypter, pub *ecdsa.PublicKey, mode Mode) ([]byte, []byte, bool, error) {

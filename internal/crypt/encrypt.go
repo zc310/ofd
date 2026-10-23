@@ -403,7 +403,7 @@ func (s *inspector) encryptionSeed(opt EncryptOptions, id, seedPath string, fek,
 				return nil, "", nil, fmt.Errorf("接收者 SM2 证书无法解析")
 			}
 			pub, ok := cert.PublicKey.(*ecdsa.PublicKey)
-			if !ok || pub.Curve != sm2.P256() || pub.X == nil || pub.Y == nil || !sm2.P256().IsOnCurve(pub.X, pub.Y) {
+			if !ok || !sm2.IsSM2PublicKey(pub) {
 				return nil, "", nil, fmt.Errorf("接收者证书必须包含有效 SM2 公钥")
 			}
 			if cert.KeyUsage != 0 && cert.KeyUsage&(smx509.KeyUsageKeyEncipherment|smx509.KeyUsageDataEncipherment) == 0 {

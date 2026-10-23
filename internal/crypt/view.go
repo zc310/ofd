@@ -82,7 +82,6 @@ func OpenView(ctx context.Context, pkg *core.Package, opt OpenOptions, closeInpu
 		if entry.IsDir {
 			continue
 		}
-		entry := entry
 		v.nodes[name] = &viewNode{meta: entry, read: func(ctx context.Context) ([]byte, error) {
 			r, err := pkg.OpenEntry(entry)
 			if err != nil {
@@ -526,6 +525,7 @@ func (v *View) virtual(ctx context.Context, nodes map[string]*viewNode, closer i
 
 type clearingReader struct {
 	*bytes.Reader
+
 	data   []byte
 	closed bool
 }

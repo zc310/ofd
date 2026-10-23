@@ -465,9 +465,13 @@ func decodeBase64(value string) ([]byte, error) {
 }
 func validID(value string) bool {
 	for i, r := range value {
-		if !(r == '_' || unicode.IsLetter(r) || (i > 0 && (unicode.IsDigit(r) || r == '-' || r == '.'))) {
-			return false
+		if r == '_' || unicode.IsLetter(r) {
+			continue
 		}
+		if i > 0 && (unicode.IsDigit(r) || r == '-' || r == '.') {
+			continue
+		}
+		return false
 	}
 	return value != ""
 }

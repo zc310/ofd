@@ -11,18 +11,17 @@ import (
 	"github.com/zc310/ofd/pkg/creator"
 )
 
-// Decrypt restores a single encryption operation to a plaintext OFD ZIP. It
-// supports password and certificate recipients and plaintext/encrypted maps.
-// Input kinds and ownership match Inspect; w is never closed. No plaintext
-// temporary files are created. Output may be partial on any error and must be
-// discarded; file callers should write a temporary file and rename on success.
-// The report is non-nil only after the complete output has been written.
+// Decrypt 将单个加密操作恢复为明文 OFD ZIP，支持口令和证书接收者以及明文和加密映射表。
+// 输入类型及资源所有权与 Inspect 一致；不会关闭 w，也不会创建明文临时文件。发生错误时，
+// 输出可能不完整，必须丢弃；写文件的调用方应先写入临时文件，成功后再重命名。
+// 只有完整写出结果后才会返回非 nil 的报告。
 func Decrypt(ctx context.Context, input any, w io.Writer, opt DecryptOptions) (*DecryptReport, error) {
 	opt, err := protocol.NormalizeDecryptOptions(opt)
 	if err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
+	err = ctx.Err()
+	if err != nil {
 		return nil, err
 	}
 	if w == nil {
@@ -67,10 +66,12 @@ func writeZIP(ctx context.Context, w io.Writer, limits Limits, produce func(func
 	}
 	completed := archive
 	archive = nil
-	if err := completed.Close(); err != nil {
+	err = completed.Close()
+	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
+	err = ctx.Err()
+	if err != nil {
 		return err
 	}
 	return nil
