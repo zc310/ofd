@@ -64,6 +64,9 @@ ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
 go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.pdf
 ```
 
+GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内容未被篡改、证书可信或签名有效。
+重要场景请独立验证签名和完整性证据，详见[密码功能与实现约定](docs/OFD-CRYPTO.md)及[免责声明](DISCLAIMER.md)。
+
 `ofd-converter` 默认使用 150 DPI 和白色背景，`--page` 使用多文档体合并后的全局页码。
 批量转换、完整选项和退出码见 [转换工具说明](cmd/ofd-converter/README.md)；
 创建清单见 [creator 示例](cmd/ofd-creator/examples)，大对比报告可使用
