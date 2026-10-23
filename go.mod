@@ -11,7 +11,7 @@ require (
 	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
-	github.com/emmansun/gmsm v0.45.0
+	github.com/emmansun/gmsm v0.45.1
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.11.2
 	github.com/h2non/filetype v1.1.3
@@ -37,7 +37,7 @@ require (
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
-	github.com/tdewolff/parse/v2 v2.8.19
+	github.com/tdewolff/parse/v2 v2.8.20
 	github.com/valyala/fasthttp v1.76.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2

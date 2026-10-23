@@ -52,7 +52,7 @@ func TestUnreferencedUsesConvertedDocumentReferences(t *testing.T) {
 
 func TestConvertedReferencesDoNotDeleteStillReferencedPayload(t *testing.T) {
 	files := extensionFiles()
-	files["OFD.xml"] = strings.Replace(files["OFD.xml"], "<DocBody>", "<DocBody><DocInfo><DocID>shared</DocID><Cover>Doc_0/extension.bin</Cover></DocInfo>", 1)
+	files["OFD.xml"] = strings.Replace(files["OFD.xml"], "<DocInfo><DocID>preserve-tests</DocID></DocInfo>", "<DocInfo><DocID>shared</DocID><Cover>Doc_0/extension.bin</Cover></DocInfo>", 1)
 	result, _ := appliedChangesBytes(t, buildOFD(t, files), Options{DocType: "OFD-A", DropUnreferenced: true})
 	if !reflect.DeepEqual(result.Unreferenced, []string{"Doc_0/Extensions.xml"}) {
 		t.Fatalf("仍被主入口引用的文件不能删除: %+v", result)

@@ -7,6 +7,18 @@
 
 ## 未发布
 
+- **签署 API 增加上下文参数**：`sign.Sign` 改为
+  `Sign(ctx context.Context, input any, output io.Writer, options Options) error`。
+  调用方需在首个参数传入上下文；不需要取消控制时可用 `context.Background()`。
+  外部签名进程现在随上下文取消，调用方可用 `errors.Is` 判断取消或超时错误。
+
+- **加密输入的错误与报告**：具有根目录解密入口的 OFD 在解析/转换/验签或引用闭包分析时
+  返回可用 `errors.Is(err, crypt.ErrLocked)` 判断的错误，不再将占位明文当成原文处理。
+  analyzer 对可见加密元数据返回 `partial` 报告及该错误；validator 对未解锁内容报告
+  `incomplete`，没有其他错误时总状态为 `partial`，CLI 退出 `1`。依赖旧解析错误文本、
+  `invalid/failed` 状态或成功处理占位内容的调用方需改用锁定诊断，详见
+  [`pkg/crypt`](pkg/crypt/README.md)。
+
 ## 已发布
 
 ### v0.1.5

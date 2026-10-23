@@ -47,10 +47,29 @@ jobs:
       - name: Build Linux viewer and command-line tools
         run: make package-desktop VERSION="${RELEASE_TAG#v}"
 
+      - name: Install nFPM and RPM inspection tools
+        run: |
+          make install-nfpm
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y rpm
+
+      - name: Test and build Linux amd64 thumbnailer DEB and RPM
+        run: |
+          go test ./cmd/ofd-thumbnailer -run '^TestThumbnailerNativePackages$' -count=1
+          make package-thumbnailer-linux GOOS=linux GOARCH=amd64 VERSION="${RELEASE_TAG#v}"
+
+      - name: Test and build Linux amd64 viewer DEB and RPM
+        run: |
+          go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
+          make package-viewer-linux GOOS=linux GOARCH=amd64 VERSION="${RELEASE_TAG#v}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: linux-amd64
-          path: /tmp/ofd/dist/*.zip
+          path: |
+            /tmp/ofd/dist/*.zip
+            /tmp/ofd/dist/*.deb
+            /tmp/ofd/dist/*.rpm
           if-no-files-found: error
           retention-days: 1
 
@@ -81,10 +100,29 @@ jobs:
           make package-arm64 VERSION="${RELEASE_TAG#v}"
           make package-viewer GOOS=linux GOARCH=arm64 CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
 
+      - name: Install nFPM and RPM inspection tools
+        run: |
+          make install-nfpm
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y rpm
+
+      - name: Test and build Linux arm64 thumbnailer DEB and RPM
+        run: |
+          go test ./cmd/ofd-thumbnailer -run '^TestThumbnailerNativePackages$' -count=1
+          make package-thumbnailer-linux GOOS=linux GOARCH=arm64 VERSION="${RELEASE_TAG#v}"
+
+      - name: Test and build Linux arm64 viewer DEB and RPM
+        run: |
+          go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
+          make package-viewer-linux GOOS=linux GOARCH=arm64 VERSION="${RELEASE_TAG#v}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: linux-arm64
-          path: /tmp/ofd/dist/*.zip
+          path: |
+            /tmp/ofd/dist/*.zip
+            /tmp/ofd/dist/*.deb
+            /tmp/ofd/dist/*.rpm
           if-no-files-found: error
           retention-days: 1
 

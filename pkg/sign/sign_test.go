@@ -38,7 +38,7 @@ func TestSignAddsSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
+	if err := Sign(t.Context(), input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestSignSHA1CheckMethodVerifiesDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{
+	if err := Sign(t.Context(), input, &buffer, Options{
 		Command:     os.Args[0],
 		CheckMethod: "SHA1",
 		Environment: []string{"OFD_SIGN_HELPER=1"},
@@ -133,7 +133,7 @@ func TestSignRemovesLegacySignsDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
+	if err := Sign(t.Context(), input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func TestSignRemovesLegacySignsDirectory(t *testing.T) {
 }
 
 func TestSignRejectsEmptyCommand(t *testing.T) {
-	if err := Sign([]byte("x"), &bytes.Buffer{}, Options{}); err == nil {
+	if err := Sign(t.Context(), []byte("x"), &bytes.Buffer{}, Options{}); err == nil {
 		t.Fatal("空命令应返回错误")
 	}
 }
@@ -176,10 +176,10 @@ func TestSignDeterministic(t *testing.T) {
 		Date:          time.Unix(0, 0).UTC(),
 	}
 	var first, second bytes.Buffer
-	if err := Sign(input, &first, options); err != nil {
+	if err := Sign(t.Context(), input, &first, options); err != nil {
 		t.Fatalf("首次 Sign 失败: %v", err)
 	}
-	if err := Sign(input, &second, options); err != nil {
+	if err := Sign(t.Context(), input, &second, options); err != nil {
 		t.Fatalf("再次 Sign 失败: %v", err)
 	}
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
@@ -196,7 +196,7 @@ func TestSignWritesStampAnnot(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{
+	if err := Sign(t.Context(), input, &buffer, Options{
 		Command:     os.Args[0],
 		Environment: []string{"OFD_SIGN_HELPER=1"},
 		Stamp:       &StampOptions{},
@@ -238,7 +238,7 @@ func TestSignWritesSeamStampAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{
+	if err := Sign(t.Context(), input, &buffer, Options{
 		Command:     os.Args[0],
 		Environment: []string{"OFD_SIGN_HELPER=1"},
 		StampSeam: &StampSeamOptions{
@@ -288,7 +288,7 @@ func TestSignWritesLeftSeamStampAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{
+	if err := Sign(t.Context(), input, &buffer, Options{
 		Command:     os.Args[0],
 		Environment: []string{"OFD_SIGN_HELPER=1"},
 		StampSeam: &StampSeamOptions{
@@ -368,7 +368,7 @@ func TestSignWritesSealBaseLoc(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{
+	if err := Sign(t.Context(), input, &buffer, Options{
 		Command:     os.Args[0],
 		Environment: []string{"OFD_SIGN_HELPER=1"},
 		Seal:        sealPath,
@@ -415,7 +415,7 @@ func TestSignStampNilWhenNotRequested(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buffer bytes.Buffer
-	if err := Sign(input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
+	if err := Sign(t.Context(), input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
 		t.Fatal(err)
 	}
 	pkg, err := core.OpenBytes(buffer.Bytes())
@@ -473,7 +473,7 @@ func TestSignReferenceSelection(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var buffer bytes.Buffer
-			if err := Sign(input, &buffer, Options{
+			if err := Sign(t.Context(), input, &buffer, Options{
 				Command:     os.Args[0],
 				Environment: []string{"OFD_SIGN_HELPER=1"},
 				References:  test.options,

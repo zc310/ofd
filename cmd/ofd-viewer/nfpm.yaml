@@ -1,0 +1,107 @@
+# 从仓库根目录调用；版本、架构及启用 CGO 的程序路径由 Makefile 传入。
+name: zc310-ofd-viewer
+arch: ${VIEWER_ARCH}
+platform: linux
+version: ${VIEWER_VERSION}
+release: "1"
+section: graphics
+priority: optional
+maintainer: zc310 <93672020@qq.com>
+homepage: https://github.com/zc310/ofd
+license: Apache-2.0
+description: |
+  Desktop viewer for OFD documents.
+  Supports continuous reading, thumbnails and document export.
+
+contents:
+  - src: ${VIEWER_BINARY}
+    dst: /usr/bin/ofd-viewer
+    expand: true
+    file_info:
+      mode: 0755
+  - src: cmd/ofd-viewer/share/io.github.zc310.ofd.desktop
+    dst: /usr/share/applications/io.github.zc310.ofd.desktop
+    file_info:
+      mode: 0644
+  - src: cmd/ofd-viewer/share/io.github.zc310.ofd.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.zc310.ofd.svg
+    file_info:
+      mode: 0644
+  - src: cmd/ofd-viewer/share/io.github.zc310.ofd.xml
+    dst: /usr/share/mime/packages/io.github.zc310.ofd.xml
+    file_info:
+      mode: 0644
+  - src: cmd/ofd-viewer/README.md
+    dst: /usr/share/doc/zc310-ofd-viewer/README.md
+    file_info:
+      mode: 0644
+  - src: LICENSE
+    dst: /usr/share/doc/zc310-ofd-viewer/LICENSE
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/doc/zc310-ofd-viewer/NOTICE
+    file_info:
+      mode: 0644
+  - src: THIRD-PARTY-LICENSES
+    dst: /usr/share/doc/zc310-ofd-viewer/THIRD-PARTY-LICENSES
+    file_info:
+      mode: 0644
+  - src: internal/cidmap/NOTICE
+    dst: /usr/share/doc/zc310-ofd-viewer/ADOBE-GB1-NOTICE
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= ${VIEWER_GLIBC_VERSION})
+      - libgl1
+      - libx11-6
+      - libxcursor1
+      - libxrandr2
+      - libxinerama1
+      - libxi6
+      - libxxf86vm1
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libxkbcommon0
+      - libegl1
+      - zenity
+      - xdg-utils
+      - shared-mime-info
+      - desktop-file-utils
+      - hicolor-icon-theme
+    scripts:
+      postinstall: cmd/ofd-viewer/update-caches.sh
+      postremove: cmd/ofd-viewer/update-caches.sh
+  rpm:
+    depends:
+      - /bin/sh
+      - glibc >= ${VIEWER_GLIBC_VERSION}
+      - libc.so.6()(64bit)
+      - libm.so.6()(64bit)
+      - libGL.so.1()(64bit)
+      - libX11.so.6()(64bit)
+      - libXcursor.so.1()(64bit)
+      - libXrandr.so.2()(64bit)
+      - libXinerama.so.1()(64bit)
+      - libXi.so.6()(64bit)
+      - libXxf86vm.so.1()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libwayland-cursor.so.0()(64bit)
+      - libwayland-egl.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libEGL.so.1()(64bit)
+      - zenity
+      - xdg-utils
+      - shared-mime-info
+      - desktop-file-utils
+      - hicolor-icon-theme
+    scripts:
+      postremove: cmd/ofd-viewer/update-caches.sh
+rpm:
+  scripts:
+    # 事务结束后刷新，安装和升级均生效。
+    posttrans: cmd/ofd-viewer/update-caches.sh

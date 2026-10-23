@@ -81,7 +81,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		}
 		reportSignatureEvents(stderr, collector.snapshot())
 		var signed bytes.Buffer
-		if err := sign.Sign(raw.Bytes(), &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
+		if err := sign.Sign(context.Background(), raw.Bytes(), &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator merge:", err)
 			return exitResource
 		}

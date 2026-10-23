@@ -1265,13 +1265,14 @@ func TestRunRejectsUnknownManifestDocTypeField(t *testing.T) {
 
 // TestVersionFlagWorksForEverySubcommand 记录 --version 的集中处理。
 //
-// creator 的六个子命令各自构建 cobra 树，逐个注册 --version 会出现"某个子命令
+// creator 的子命令各自构建 cobra 树，逐个注册 --version 会出现"某个子命令
 // 忘了"的漂移；这里锁定根命令与子命令都返回同一个版本号，且不进入业务处理。
 func TestVersionFlagWorksForEverySubcommand(t *testing.T) {
 	for _, args := range [][]string{
 		{"--version"},
 		{"-v"},
 		{"merge", "--version"},
+		{"sign", "--version"},
 		{"replace", "-v"},
 		{"export", "--version", "-i", "missing.ofd", "-o", "-"},
 		{"export-all", "--version"},

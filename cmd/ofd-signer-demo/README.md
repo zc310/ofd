@@ -126,6 +126,13 @@ ofd-creator merge: 签名 sign-1：摘要有效，密码学签名有效
 
 ## 限制
 
+新增 `--digital`，或环境变量 `OFD_SIGN_TYPE=Sign`，可输出 GB/T 35275 的普通 SM2/SM3
+SignedData。`ofd-creator --sign-type Sign` 会传递该环境变量；此时不创建 SES 印章。
+普通签名模式仍使用现场生成的自签名证书，不提供生产信任证据或时间戳服务。
+可配合 `ofd-creator sign --append --sign-cmd ./ofd-signer-demo` 演示连续签署；
+最后一次使用 `--lock-signatures` 固定列表，用法见 [签署命令](../ofd-creator/README.md#独立签署与普通签名追加)。
+完整性清单要求带时间戳，该演示器不能直接充当其生产签名器。
+
 这是演示程序，**不能用于生产**：
 
 - 证书是每次运行随机生成的自签名证书，没有信任链，重新运行会得到不同的证书和签名；

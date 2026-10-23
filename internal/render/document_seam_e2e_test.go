@@ -160,7 +160,7 @@ func TestSeamStampEndToEndRendersOnCorrectEdge(t *testing.T) {
 	for _, edge := range []string{"top", "bottom", "all"} {
 		t.Run(edge, func(t *testing.T) {
 			var signed bytes.Buffer
-			if err := sign.Sign(input, &signed, sign.Options{
+			if err := sign.Sign(t.Context(), input, &signed, sign.Options{
 				Command: "cat",
 				Seal:    sealPath,
 				StampSeam: &sign.StampSeamOptions{

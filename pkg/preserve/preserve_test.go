@@ -311,8 +311,8 @@ const ns = ` xmlns="http://www.ofdspec.org/2016"`
 // ofdXML 拼一个只含入口的 OFD.xml。
 func ofdXML() string {
 	return `<?xml version="1.0" encoding="UTF-8"?>` +
-		`<OFD` + ns + ` Version="1.0">` +
-		`<DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`
+		`<OFD` + ns + ` Version="1.0" DocType="OFD">` +
+		`<DocBody><DocInfo><DocID>preserve-tests</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`
 }
 
 // actionXML 拼一个动作元素。withGoto 为真时带 Goto 子元素，即文档内跳转。
@@ -447,15 +447,13 @@ func TestPreserveDoesNotTouchPageActionsAsDocumentScope(t *testing.T) {
 func buildWithOrphan(t *testing.T) []byte {
 	t.Helper()
 	entries := [][2]string{
-		{"OFD.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<OFD` + ns + ` Version="1.0">` +
-			`<DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`},
+		{"OFD.xml", ofdXML()},
 		{"Doc_0/Document.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
 			`<Document` + ns + `><CommonData><MaxUnitID>9</MaxUnitID>` +
 			`<PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData>` +
 			`<Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`},
 		{"Doc_0/Pages/Page_0/Content.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<Page` + ns + ` ID="1"><Area><PhysicalBox>0 0 210 297</PhysicalBox></Area><Content/></Page>`},
+			`<Page` + ns + `><Area><PhysicalBox>0 0 210 297</PhysicalBox></Area><Content><Layer ID="2"/></Content></Page>`},
 		{"Doc_0/Res/orphan.bin", "无人引用的多余文件"},
 	}
 	var buf bytes.Buffer
@@ -561,8 +559,8 @@ func TestUnreferencedRefusedWhenClosureIncomplete(t *testing.T) {
 // pageXML 拼一个带指定 Area 的页面描述。
 func pageXML(id, area string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>` +
-		`<Page` + ns + ` ID="` + id + `">` + area +
-		`<Content><TextObject ID="9" Boundary="0 0 10 10"><TextCode X="0" Y="5">A</TextCode></TextObject></Content></Page>`
+		`<Page` + ns + `>` + area +
+		`<Content><Layer ID="` + id + `"><TextObject ID="9" Font="1" Size="3" Boundary="0 0 10 10"><TextCode X="0" Y="5">A</TextCode></TextObject></Layer></Content></Page>`
 }
 
 const (

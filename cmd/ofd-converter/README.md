@@ -132,7 +132,14 @@ ofd-converter -password 'secret' -format ofd enc.pdf out.ofd
 口令会出现在进程命令行里，同主机其他用户可从 `ps` 读到。批量处理加密文档时应
 确认执行环境可信。
 
-OFD 的包级加密（GB/T 33190）目前不支持：这样的文件会报解析失败。
+OFD 的条目加密（GM/T 0099-2020）目前支持识别：存在解密入口的输入会明确报告
+“已加密且未解锁”，`-password` 尚不能用于解锁 OFD。可通过
+[`pkg/crypt.Inspect`](../../pkg/crypt/README.md) 检查加密元数据；库调用方也可先用
+`pkg/crypt.Decrypt` 将单次加密操作恢复为明文 OFD，再交给转换 API。
+命令行可先执行 `ofd-crypt decrypt --password-file password.txt -o plain.ofd encrypted.ofd`，
+随后转换 `plain.ofd`，详见 [ofd-crypt](../ofd-crypt/README.md)。
+Go 转换 API 可直接接收完整解锁的 `crypt.Open` 只读视图，无需先生成明文 ZIP；
+部分视图仍返回 `crypt.ErrLocked`。
 
 ### 中断
 

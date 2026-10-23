@@ -35,7 +35,68 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace`、`watermark` 和 `schema` 子命令，分别用于导出 manifest、批量导出、合并 OFD、替换/新增/删除包内条目、添加/替换/删除水印以及输出 manifest 字段参考文档。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace`、`watermark`、`sign` 和 `schema` 子命令，分别用于导出 manifest、批量导出、合并 OFD、编辑条目、处理水印、独立签署以及输出字段参考。详见下文各节。
+
+## 独立签署与普通签名追加
+
+`sign` 对现有 OFD 签署，复用下文的 `--sign-*` 外部签名协议；缺省类型为 `Sign`。
+`--append` 保留已有普通签名并增加新记录，首次签署也应设置该选项。
+
+### 连续签署示例
+
+以下示例对 `input.ofd` 连续签署两次。假设 `ofd-creator` 已加入 PATH，
+演示签名器 `ofd-signer-demo` 位于当前目录；可从仓库根目录构建：
+
+```bash
+go build -o ./ofd-signer-demo ./cmd/ofd-signer-demo
+
+# 首次签署，允许后续追加。
+ofd-creator sign --append --sign-id approval-1 \
+  --sign-cmd ./ofd-signer-demo --validate -o first.ofd input.ofd
+
+# 第二次签署，依赖首次签名，并锁定最终列表。
+ofd-creator sign --append --sign-id approval-2 --relative approval-1 \
+  --lock-signatures --sign-cmd ./ofd-signer-demo --validate -o final.ofd first.ofd
+```
+
+`first.ofd` 包含首次签名，`final.ofd` 同时保留两次签名。
+若还需要第三次或更多次签署，中间步骤省略 `--lock-signatures`，仅在最后一次设置；
+每一步以此前签署的输出文件作为输入，并使用新的 `--sign-id`。
+
+上述 demo 现场生成自签名证书，用于验证结构和数学签名；完整信任验证需要生产签名器及证据。
+`--sign-id` 省略时自动分配未使用的 `sign-N`。`--relative` 指定依赖的已有签名；
+不设置时为独立联签。`--lock-signatures` 把最终签名列表纳入摘要并结束追加，
+最后再通过 `ofd-crypt integrity protect` 为整个包生成带时间戳的清单保护。
+追加过程中尚未锁定的列表仍可修改，其完整性覆盖结论保持未完成。
+
+追加前检查已有签名和引用摘要，并保留原文、签名值及图片的原始字节。
+旧签名已经保护当前列表或需修改的 OFD.xml 时拒绝追加；原始加密包、已有完整性清单、
+SES 混合签名及无效旧签名也会拒绝。未设置 `--append` 时重新签署并替换既有签名。
+`--relative`、`--lock-signatures` 均要求 `--append`；追加仅支持 `--sign-type Sign`。
+`--validate` 使用 GM/T 0099 扩展执行严格结构和摘要校验，完整信任验证见
+[签名库指南](../../pkg/sign/README.md#完整验证)。
+
+输入可用 `-i` 或位置参数，`-o -` 将 OFD 写标准输出，诊断写标准错误。
+文件输出成功后原子替换目标，不能覆盖输入路径；失败保留已有输出。
+退出码：`0` 成功，`2` 参数错误，`4` 输入或签署失败，`5` 输出失败，`6` 严格校验失败。
+
+### 加密后签署物理包
+
+`--physical` 为密文、映射表、密钥描述文件及保留的明文计算摘要，并签署最终入口和列表。
+例如对未签署的 `input.ofd` 先加密，再用演示签名器验证物理签署流程：
+
+```bash
+ofd-crypt encrypt --keep-root --password-file password.txt -o encrypted.ofd input.ofd
+ofd-creator sign --physical --sign-cmd ./ofd-signer-demo --validate \
+  -o signed-encrypted.ofd encrypted.ofd
+```
+
+`--keep-root` 保留明文 OFD.xml，输入不能已有签名入口或完整性清单。
+`--physical` 不组合 `--append`、`--relative`、`--lock-signatures`、引用筛选或印模选项。
+本模式的 `--validate` 验证物理签名结构、数学签名和文件摘要；解密后的文档结构、引用闭包
+及完整信任结论由 `ofd-crypt integrity verify` 配合解密凭据和证据检查。
+完整流程在物理签署之后调用 `ofd-crypt integrity protect`，清单签名器必须提供时间戳；
+演示签名器只用于本段物理签署示例。原始加密包的物化解密会破坏外签，需使用只读视图检查。
 
 ## manifest 字段参考
 
@@ -213,6 +274,8 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 - 元数据通过环境变量传入：`OFD_SIGN_DOCUMENT`、`OFD_SIGN_ID`、`OFD_SIGN_PROVIDER`、`OFD_SIGN_PROVIDER_VERSION`、`OFD_SIGN_COMPANY`、`OFD_SIGN_SIGNATURE_METHOD`、`OFD_SIGN_CHECK_METHOD`、`OFD_SIGN_TIME`；
 - 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）；
 - `--sign-provider`、`--sign-provider-version`、`--sign-company`、`--sign-method`、`--sign-check-method` 分别设置 `SignedInfo` 的 `Provider` 名称/版本/公司、`SignatureMethod`（默认 `1.2.156.10197.1.501`）和 `References@CheckMethod`（默认 `SM3`）；这些值同时通过上面的环境变量传给命令。
+- `--sign-type Seal|Sign` 缺省为 `Seal`；`Sign` 要求外部命令返回 GM/T 0099 / GB/T 35275 的普通 SM2/SM3 SignedData，环境变量 `OFD_SIGN_TYPE` 同步传递。普通签名缺省保护最终 OFD.xml 和当前签名列表，文档目录范围仍可通过引用选项控制。
+- `--sign-image PATH` 写入 GM/T 0099 附录 B 的 `Seal/ImageLoc`，并将图片纳入摘要；配合 `--sign-stamp` 或骑缝章选项指定显示位置。校验这些扩展时使用 `ofd-validator --gmt0099`。
 - 重签会删除文档体已有的签名文件，包括当前布局的 `Signatures/` 和历史生产者使用的 `Signs/`（`Signatures.xml`/`Signs.xml` 及其目录），避免旧签名残留。
 - `--sign-stamp` 会在 `Signature.xml` 写入 `StampAnnot`，让阅读器把 `SignedValue.dat` 里的印章图片绘制到页面上；默认放在文档体首页右下角（40mm），可用 `--sign-stamp-page` 指定页面 ID、`--sign-stamp-boundary "x y width height"`（毫米）指定位置。真实印章图片来自签名值（外部命令输出的 `SES_ESPictrueInfo`），演示签名器 `ofd-signer-demo` 会运行时渲染带「非正式印章」声明的测试章 PNG。
 - `--sign-stamp-seams` 会把同一枚印章按参与页面数量切成条带，在同一文档体每页边缘写入一个 `StampAnnot`；`--sign-stamp-seam-edge left|right|top|bottom|all` 选择边缘，默认 `right`，`all` 会在每页同时覆盖四个边缘；左右边缘使用竖向条带，顶部和底部使用横向条带；`--sign-stamp-seam-pages all|odd|even|1,3,5-7|11-|-10` 选择参与页面，默认 `all`，页码从 1 开始，`11-` 表示第 11 页到末页，`-10` 表示第 1 页到第 10 页；`--sign-stamp-seam-group-pages 20` 可将参与页面按每 20 页分组，每组独立拼成一枚章；分组模式不能同时指定 `--sign-stamp-seam-pieces`。总页数不整除分组页数时，末尾不足两页的组按完整印章处理（单页无法自成一枚骑缝章，例如 5 页按 2 页分组得到 2+2+1，最后一页画整章）。未分组时，`--sign-stamp-seam-pieces` 可显式指定拆分份数，必须与参与页面数一致，省略时自动使用参与页面数。每个标注通过 `Clip` 显示不同条带，所有页面拼回完整骑缝章。定位按每页自身 `Area/PhysicalBox` 计算，缺失时回退文档公共 `PageArea`；印章默认沿对应边缘居中；`--sign-stamp-seam-x` 控制上下边缘的水平位置，`--sign-stamp-seam-y` 控制左右边缘的垂直位置，负值表示居中。`--sign-stamp-seam-size` 设置边长（默认 40mm），`--sign-stamp-seam-min-strip` 设置每页裁片最小宽度（默认 2mm，建议 4 或 8mm）；不足时直接报错。该模式与 `--sign-stamp` 互斥，并要求阅读器支持 `StampAnnot.Clip`。

@@ -43,6 +43,29 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 - 支持简体中文和英文，可在语言菜单切换并记住选择
 - Linux 启动时检查自己是不是 `.ofd` 的默认阅读器，不是就询问是否设置，可勾选“不再提示”并被记住
 - 右侧菜单提供“设为默认阅读器”，已是默认阅读器时打勾；不支持的系统不显示该项
+- 支持 GM/T 0099-2020 加密文档，通过口令、UTF-8 口令文件或 SM2 私钥解锁后阅读和导出
+
+## 加密文档
+
+打开加密 OFD 时会显示解锁对话框，支持以下方式：
+
+- **口令**：输入文档口令，保留空格及 Unicode，允许空口令。
+- **口令文件**：选择 UTF-8 文件，保留 BOM、空格和换行；空文件表示空口令，最大 64 KiB。
+  口令末尾有换行时应使用此方式。
+- **SM2 私钥**：选择与接收者证书对应的未加密 PKCS#8 PEM（`PRIVATE KEY`）或 DER 文件，
+  最大 4 MiB。暂不支持带口令保护的私钥文件。
+
+接收者名称可选，留空时按解密库的尝试预算匹配。错误凭据可重试；取消解锁时保留当前已打开
+的文档，切换文档或关闭窗口会取消旧加载并清理尚未提交的凭据。口令和私钥不写入应用偏好。
+
+读取默认使用兼容模式，支持 ofdrw 的数字操作 ID 等已知格式差异；缺少 `EncryptCaseId` 时，
+按用户选择的口令或私钥确定方案，不覆盖源文件中已声明的方案。
+整包、局部条目、明文/密文映射及独立条目密钥均通过只读解密视图读取；多层加密须能用本次
+提供的凭据全部解锁。解锁成功后使用原有页面、缩略图及 PDF/TXT/图片等导出功能。
+
+阅读器不生成明文 OFD ZIP，关闭文档并等待在途渲染或导出完成后释放解密资源。
+输入 OFD 限 512 MiB，其余解密资源限制沿用 `pkg/crypt` 默认预算。解锁成功不等于签名或完整性
+验证通过，具体能力与限制见 [密码功能说明](../../docs/OFD-CRYPTO.md)。
 
 ## 界面语言
 
@@ -54,7 +77,8 @@ OFD 桌面查看器，支持连续阅读和按需渲染。版本号由根目录 
 加载或导出过程中语言菜单暂时禁用，操作完成后可以切换。
 文档原有标题、正文和文件名保持原文，系统文件选择器和 Fyne 内置控件使用各自的系统语言。
 
-翻译资源集中在 `internal/localization/locales`，viewer 消息使用 `viewer.` 模块前缀，中文源文案作为消息键；译文需保留 `%d`、`%s` 等格式占位符。
+英文翻译集中在 `internal/localization/viewer/locales/en.json`，以中文源文案作为消息键；
+译文需保留 `%d`、`%s` 等格式占位符。
 
 ## 阅读背景色
 
@@ -97,7 +121,50 @@ Android 版本可通过系统文件选择器打开 OFD 文件。右侧菜单中�
 go build .
 ```
 
-Linux 构建需要 OpenGL 和 X11 开发库。
+Linux 构建需要 OpenGL、X11 和 Wayland 开发库。
+
+## 制作 DEB / RPM
+
+在仓库根目录执行，打包配置和缓存更新脚本位于本目录的 `nfpm.yaml`、`update-caches.sh`：
+
+```bash
+make install-nfpm
+export PATH="$(go env GOPATH)/bin:$PATH"
+
+make package-viewer-deb      # 仅 DEB
+make package-viewer-rpm      # 仅 RPM
+make package-viewer-linux    # 同时生成 DEB 和 RPM
+```
+
+支持 `GOOS=linux GOARCH=amd64` 和 `GOOS=linux GOARCH=arm64`，版本来自根目录
+`Makefile` 的 `VERSION`，可通过 `make package-viewer-linux VERSION=...` 覆盖。
+默认产物目录为 `/tmp/ofd/dist`，可用 `DIST_DIR` 覆盖，nFPM 路径可用 `NFPM` 指定。
+系统包始终使用 `CGO_ENABLED=1` 编译，需准备目标架构的 C/C++ 编译器、OpenGL/X11/Wayland
+开发库和 binutils（`readelf`，可通过 `READELF` 指定）；ARM64 建议在 ARM64 Linux 上原生打包。
+Release 工作流在两个架构的原生 Ubuntu 24.04 runner 上构建并发布，
+打包时从 ELF 自动提取最低 glibc 版本并写入依赖；
+较旧发行版可在本机从源码构建。
+
+安装包名为 `zc310-ofd-viewer`，包含 `/usr/bin/ofd-viewer`、桌面菜单入口、
+`application/ofd` 文件类型、hicolor SVG 图标及许可证。依赖包含 OpenGL/X11/Wayland 运行库、
+Zenity 文件选择器和桌面集成工具；安装、升级和卸载时刷新桌面、MIME 和图标缓存。
+默认阅读器仍通过应用内的“设为默认阅读器”选择。
+
+```bash
+# 安装：选择与系统架构对应的包
+sudo apt install ./zc310-ofd-viewer_版本-1_amd64.deb
+sudo dnf install ./zc310-ofd-viewer-版本-1.x86_64.rpm
+
+# 卸载
+sudo apt remove zc310-ofd-viewer
+sudo dnf remove zc310-ofd-viewer
+```
+
+具备 nFPM、`dpkg-deb` 和 `rpm` 时，可运行真实包内容检查（只构建和读取安装包）：
+
+```bash
+go test ./cmd/ofd-viewer -run '^TestViewer(NativePackages|PackageCacheUpdates)$' -count=1
+```
 
 ## 多平台编译
 
@@ -172,8 +239,9 @@ make build-viewer-web
 ```
 
 生成的 `cmd/ofd-viewer/wasm/` 目录包含页面、WASM 和运行时资源，应用版本从根目录
-Makefile 的 `VERSION` 注入。构建会将 WASM 内容哈希附加到下载 URL，避免浏览器或 CDN
-继续使用旧缓存。资源使用相对路径，可整体部署到静态站点的子目录。
+Makefile 的 `VERSION` 注入。构建需要 Python 3，Makefile 内嵌的 Python 命令将 WASM 的
+SHA-256 前 16 位十六进制哈希附加到下载 URL，避免浏览器或 CDN 继续使用旧缓存。
+资源使用相对路径，可整体部署到静态站点的子目录。
 本地预览可在仓库根目录执行：
 
 ```bash

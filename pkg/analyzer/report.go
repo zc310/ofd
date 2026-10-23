@@ -8,6 +8,7 @@ import (
 
 	"github.com/goccy/go-json"
 
+	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/version"
 )
@@ -115,6 +116,8 @@ type Report struct {
 	Input InputInfo `json:"input"`
 	// Status 是分析结果的完整性状态。
 	Status Status `json:"status"`
+	// Encryption 在输入包根目录存在加密入口时记录加密信息。
+	Encryption *crypt.Info `json:"encryption,omitempty"`
 	// Warnings 是分析过程中产生的警告信息。
 	Warnings []string `json:"warnings,omitempty"`
 	// Errors 是分析过程中产生的错误信息。

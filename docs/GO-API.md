@@ -12,16 +12,62 @@
 `converter.Page(n)` 从 1 开始选择多文档体合并后的全局页码，`converter.DPI(dpi)`
 设置栅格输出分辨率。库默认使用 96 DPI 和透明背景；CLI 默认使用 150 DPI 和白色背景。
 
-| 输出 | Go 入口 | 输出特点 |
-|---|---|---|
-| PDF | `converter.PDF` | 保留页面尺寸，文字和矢量内容按支持范围写入 PDF 对象。 |
-| PNG/JPG/TIFF/SVG/EPS/TeX | `converter.Image` 配合格式选项和 `converter.Writer` | 通过回调提供输出流；TIFF 写成单个多页文件。 |
-| 纯文本 | `converter.Text` | 按页面位置聚行、用空格近似对齐列，页面间使用分页符 `\f`。 |
-| Markdown | `converter.Markdown` | 识别段落与标题，转义特殊字符，有文字的页面间使用 `---`；可选表格识别。 |
-| DOCX | `converter.DOCX` | 输出可编辑段落、表格和图片，版面由 Word 重新排版。 |
-| 单文件 HTML | `converter.HTML` | 内嵌 PNG/JPG/SVG 与默认透明文字层，支持选择文字、查找和打印分页。 |
+| 输出                     | Go 入口                                             | 输出特点                                                               |
+|--------------------------|-----------------------------------------------------|------------------------------------------------------------------------|
+| PDF                      | `converter.PDF`                                     | 保留页面尺寸，文字和矢量内容按支持范围写入 PDF 对象。                  |
+| PNG/JPG/TIFF/SVG/EPS/TeX | `converter.Image` 配合格式选项和 `converter.Writer` | 通过回调提供输出流；TIFF 写成单个多页文件。                            |
+| 纯文本                   | `converter.Text`                                    | 按页面位置聚行、用空格近似对齐列，页面间使用分页符 `\f`。              |
+| Markdown                 | `converter.Markdown`                                | 识别段落与标题，转义特殊字符，有文字的页面间使用 `---`；可选表格识别。 |
+| DOCX                     | `converter.DOCX`                                    | 输出可编辑段落、表格和图片，版面由 Word 重新排版。                     |
+| 单文件 HTML              | `converter.HTML`                                    | 内嵌 PNG/JPG/SVG 与默认透明文字层，支持选择文字、查找和打印分页。      |
 
 完整接口见 [converter API](https://pkg.go.dev/github.com/zc310/ofd/pkg/converter)。
+
+## OFD 加解密
+
+`pkg/crypt.Inspect/Encrypt/Decrypt/Open` 实现 GM/T 0099-2020 元数据检查、
+口令/SM2 证书、多接收者、独立条目密钥读写和多层解密；写端支持整包/条目/页面范围，
+以及用旧凭据预检后追加加密层。页面选择整体纳入共用资源，可能影响其他页面。
+输入支持路径、字节和 `io.Reader`，
+加解密输出写调用方的 `io.Writer`；任何错误都要求丢弃部分输出。
+解密结果是普通明文 OFD，可直接交给 converter、validator 或 sign 的既有接口。
+构造包和签名元数据时可复用 `pkg/spec` 的 `Namespace`、`RootDocument`、
+`EncryptionEntryPoint`、`IntegrityEntryPoint` 及 `SigTypeSeal/SigTypeSign` 常量。
+
+可运行示例见 [pkg/crypt/examples_test.go](../pkg/crypt/examples_test.go)，预算、错误和
+签名保护边界见 [库指南](../pkg/crypt/README.md)。文件流程可使用
+[ofd-crypt](../cmd/ofd-crypt/README.md) 的口令文件/标准输入、私钥输入及原子输出。
+其他工具不会自动解锁加密原包；Go 调用方可直接传入完整解锁的只读视图：
+
+```go
+view, err := crypt.Open(ctx, input, crypt.OpenOptions{
+    DecryptOptions: crypt.DecryptOptions{Password: password},
+})
+if err != nil {
+    return err
+}
+defer view.Close()
+err = converter.PDF(ctx, view, output)
+```
+
+`webreader.OpenInput(view, webreader.OpenOptions{})` 创建自己的读取租约，关闭阅读器不关闭
+原视图。`validator.Validate(ctx, view, name)` 先检查原始物理条目，再检查逻辑文档，
+保留原始加密状态；`sign.Verify` 和 `analyzer.Analyze` 也直接接受完整视图。
+存在外层物理签名时，validator 在原包检查其引用和摘要，解密视图用于普通文档校验。
+`AllowPartial` 只用于明确检查已解锁条目，不能把部分视图交给普通渲染/验签链。
+
+`pkg/sign` 的 `Options.Type="Sign"` 接入 GM/T 0099 普通 SM2/SM3 SignedData 数字签名，
+`Verify` 按 Type 验证普通签名或 SES，并检查 Relative 基础签名。`FullyValid()` 是完整结论。
+`sign.Sign(ctx, input, output, Options{Type: "Sign", Append: true})` 保留旧普通签名并增加记录，
+`Relative` 指定基础签名，最后用 `LockSignatures: true` 固定列表；已被摘要保护的列表拒绝追加。
+用法和范围见 [签名指南](../pkg/sign/README.md#普通签名追加)。
+`Options{Type: "Sign", Physical: true}` 为主入口明文、没有已有签名入口的加密物理包签署；
+`VerifyPhysical` 直接检查密文和控制文件，`Verify` 在解锁视图上也保留该物理读取域。
+未完整解锁的视图传给 `Verify` 返回 `crypt.ErrLocked`；无凭据验外签使用 `VerifyPhysical`。
+`pkg/integrity.Inspect/Protect/Verify` 提供附录 D 清单、带时间戳签名、文件集合、引用闭包及
+内容覆盖检查。清单签名通过不等于所有文件内容完整；具体结果和证据要求见
+[完整性保护指南](../pkg/integrity/README.md)。
+验证中止时须处理返回错误，已有部分报告保持 incomplete 或已确认的 invalid。
 
 ## 导入其他格式
 
@@ -59,14 +105,14 @@ func main() {
 
 `from` 为空时按输入文件扩展名或内容识别格式。导入器按需注册：
 
-| 输入 | 空白导入路径 |
-|---|---|
-| PDF | `github.com/zc310/ofd/pkg/converter/import/pdf` |
-| Markdown | `github.com/zc310/ofd/pkg/converter/import/markdown` |
-| Office | `github.com/zc310/ofd/pkg/converter/import/office` |
-| HTML/MHTML | `github.com/zc310/ofd/pkg/converter/import/html` |
-| XPS | `github.com/zc310/ofd/pkg/converter/import/xps` |
-| 图片 | `github.com/zc310/ofd/pkg/converter/import/image` |
+| 输入       | 空白导入路径                                         |
+|------------|------------------------------------------------------|
+| PDF        | `github.com/zc310/ofd/pkg/converter/import/pdf`      |
+| Markdown   | `github.com/zc310/ofd/pkg/converter/import/markdown` |
+| Office     | `github.com/zc310/ofd/pkg/converter/import/office`   |
+| HTML/MHTML | `github.com/zc310/ofd/pkg/converter/import/html`     |
+| XPS        | `github.com/zc310/ofd/pkg/converter/import/xps`      |
+| 图片       | `github.com/zc310/ofd/pkg/converter/import/image`    |
 
 Markdown 会重新排版为 A4，远程图片会跳过并记录警告。Office/HTML/XPS 转 OFD 时先由
 外部工具生成 PDF，再执行 PDF 导入；直接转 PDF 时使用外部工具产物。外部工具要求见
@@ -129,13 +175,13 @@ func main() {
 
 ## 创建、合并与签章
 
-| 需求 | Go 入口与说明 |
-|---|---|
-| 创建 OFD | `pkg/creator` 的 `CreateFile`、`Create`、`Marshal` 及流式页面接口；坐标、边界和字号以毫米计，见[创建器库指南](../pkg/creator/README.md)。 |
-| 打包多个文档体 | `pkg/merge.Files`、`Bytes`、`Sources` 保留文档体目录，签名处理由 `Options.Signatures` 控制。 |
-| 拼页、选页和重排 | `pkg/merge.Pages` 解析并生成单文档 OFD，重映射资源与跳转引用；原签名和版本丢弃，见[合并命令与选页说明](../cmd/ofd-creator/README.md#合并多个-ofd)。 |
-| 外部命令签署 | `pkg/sign.Sign` 计算引用摘要，将 `Signature.xml` 交给外部命令，写回其输出的 `SignedValue.dat`。 |
-| 生成印章与签章、完整验证 | `pkg/sign.CreateSeal`、`CreateSignedValue`、`Verify`，见[签署与验证指南](../pkg/sign/README.md)。 |
+| 需求                     | Go 入口与说明                                                                                                                                       |
+|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| 创建 OFD                 | `pkg/creator` 的 `CreateFile`、`Create`、`Marshal` 及流式页面接口；坐标、边界和字号以毫米计，见[创建器库指南](../pkg/creator/README.md)。           |
+| 打包多个文档体           | `pkg/merge.Files`、`Bytes`、`Sources` 保留文档体目录，签名处理由 `Options.Signatures` 控制。                                                        |
+| 拼页、选页和重排         | `pkg/merge.Pages` 解析并生成单文档 OFD，重映射资源与跳转引用；原签名和版本丢弃，见[合并命令与选页说明](../cmd/ofd-creator/README.md#合并多个-ofd)。 |
+| 外部命令签署             | `pkg/sign.Sign` 计算引用摘要，将 `Signature.xml` 交给外部命令，写回其输出的 `SignedValue.dat`。                                                     |
+| 生成印章与签章、完整验证 | `pkg/sign.CreateSeal`、`CreateSignedValue`、`Verify`，见[签署与验证指南](../pkg/sign/README.md)。                                                   |
 
 SES 完整验证区分通过、失败和证据不足，证书信任根、CRL 与印章状态由应用提供。
 分析报告和浏览器签名面板展示该结论，校验器通过 `--check-signatures` 启用对应检查。

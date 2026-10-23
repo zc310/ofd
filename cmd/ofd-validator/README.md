@@ -1,5 +1,17 @@
 # ofd-validator
 
+`--gmt0099` 显式启用 GM/T 0099-2020 附录 B/D 的签名与完整性清单扩展 XSD。
+默认基础 GB/T 33190 模式保持独立；XSD 通过不代表清单可信或没有夹带。
+`--check-signatures` 按签名列表 Type 验证 SES 或普通 SM2/SM3 SignedData，并检查 Relative
+基础签名；缺少信任/状态证据仍为未完成。带证据的完整性协议验证使用
+[`ofd-crypt integrity verify`](../ofd-crypt/README.md)。
+
+Go API 的 `Validate(ctx, view, name)` 接收完整解锁视图时，物理签名的引用和摘要在原始密文包
+上检查，页面、资源和文档引用在解密视图上检查。设置 `WithSignatureVerification` 后，
+外签也执行完整验签；`signature.physical.*` 表示已确认失败，
+`signature.incomplete.physical.*` 表示缺少证据。物理范围失败不会被逻辑文档校验覆盖。
+`--gmt0099` 的 Provider 扩展按图 B.2 接受 `ExtendData` 子元素，不接受同名属性。
+
 `ofd-validator` 是用于校验 OFD 文件包完整性和规范性的命令行工具，并将校验结果生成文本、Markdown、
 JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
 
@@ -91,6 +103,24 @@ ofd-validator -o report.xlsx document.ofd
   `partial`（部分通过），因为 XSD 阶段被跳过。
 
 `--skip-xsd` 会跳过 XSD 阶段；在默认的 `strict` 模式下等价于使用 `structural` 模式。
+
+## 加密文档
+
+GM/T 0099-2020 加密包在读取 `OFD.xml` 前识别。报告的可选 `encryption` JSON 字段
+描述可见加密操作、接收者和明文映射；没有明文主入口也能输出报告。
+当前不接受解锁凭据：`encryption.locked` 表示已加密且未解锁，文档引用、语义、摘要和
+按需启用的签章检查标为 `incomplete`。没有其他错误时状态为 `partial`，退出码仍为 `1`。
+
+物理 ZIP 错误和能够确认是明文的 XML 错误仍会报告；OFD-A/OFD-H 的禁止加密规则仍生效。
+元数据损坏产生 `encryption.metadata_invalid`，检查超出预算产生 `encryption.limit_exceeded`。
+`strict` 检查格式约定，`compat/structural`
+允许已确认的兼容形式并报告诊断。该检查尚不代表完整验证加密协议，详见
+[格式约定及限制](../../docs/OFD-CRYPTO.md)。
+
+Go 调用方可将 `crypt.Open` 的视图传给新增 `Validator.Validate(ctx, view, name)`，无需
+写出明文 ZIP。该入口先审计原始物理条目，再检查完全解锁的逻辑文档；报告保留
+`encryption.encrypted=true, state=unlocked`。部分视图仍报告未完成，OFD-A/OFD-H 的
+禁止原始包加密规则始终生效。CLI 本身仍通过 `ofd-crypt decrypt` 取得独立明文输入。
 
 ## 命令选项
 

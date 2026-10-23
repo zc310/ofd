@@ -10,6 +10,14 @@ const Namespace = "http://www.ofdspec.org/2016"
 // RootDocument 是 OFD 包根文档的文件名。
 const RootDocument = "OFD.xml"
 
+// GM/T 0099—2020 定义的密码应用入口，均位于 OFD 包根目录。
+const (
+	// EncryptionEntryPoint 是附录 C.3 的解密入口文件名。
+	EncryptionEntryPoint = "Encryptions.xml"
+	// IntegrityEntryPoint 是附录 D.2 的完整性保护描述文件名。
+	IntegrityEntryPoint = "OFDEntries.xml"
+)
+
 // DocType 是 OFD.xml 根节点 DocType 属性的取值，用于声明文档遵循的
 // profile。标准正文本身不校验该属性的具体取值，而是由各领域应用规范
 // 收紧，因此取值随 profile 变化。

@@ -61,6 +61,15 @@ func NewOFDWithOptions(input any, options Options) (*OFD, error) {
 // 对于 io.Reader，Open 会读取全部内容，但不会关闭传入的 reader。
 func (p *OFD) Open(input any) error {
 	switch v := input.(type) {
+	case core.PackageSource:
+		if source, ok := input.(interface{ InputSize() int64 }); ok && p.options.MaxInputBytes > 0 && source.InputSize() > p.options.MaxInputBytes {
+			return categorized(ErrInputTooLarge, "OFD 输入视图的原始 ZIP 超过大小限制")
+		}
+		pkg, err := v.OFDPackage()
+		if err != nil {
+			return err
+		}
+		return p.openPackage(pkg)
 	case string:
 		return p.openFromFile(v)
 	case []byte:
@@ -170,6 +179,9 @@ func (p *OFD) Close() error {
 }
 
 func parsePackage(fileCache *core.Package, options Options) (models.OFD, []*Document, error) {
+	if err := checkEncryption(fileCache); err != nil {
+		return models.OFD{}, nil, err
+	}
 	var root models.OFD
 	if err := fileCache.ReadXML(rootDocument, &root); err != nil {
 		return models.OFD{}, nil, err

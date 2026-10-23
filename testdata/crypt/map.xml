@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ofd:EncryptedEntries xmlns:ofd="http://www.ofdspec.org/2016" ID="enc1">
+  <ofd:EncryptEntry Path="/OFD.xml" EPath="/Cipher/root.dat"/>
+</ofd:EncryptedEntries>

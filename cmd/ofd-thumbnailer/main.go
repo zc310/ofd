@@ -1,4 +1,5 @@
-// Command ofd-thumbnailer 从 OFD 首页或 ZIP 包中的图片生成 PNG 缩略图。
+// Command ofd-thumbnailer 从 OFD 首页或 ZIP 包中的图片生成 PNG 缩略图，
+// 加密 OFD 使用固定的挂锁图案。
 package main
 
 import (
@@ -27,6 +28,7 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/converter"
+	"github.com/zc310/ofd/pkg/crypt"
 )
 
 const (
@@ -145,6 +147,9 @@ func generateOFDThumbnail(ctx context.Context, input, output string, size int) e
 	ofd, err := parser.NewOFD(input)
 	if ofd != nil {
 		defer ofd.Close()
+	}
+	if errors.Is(err, crypt.ErrLocked) {
+		return generateEncryptedThumbnail(ctx, input, output, size)
 	}
 	if err != nil {
 		return fmt.Errorf("open OFD: %w", err)

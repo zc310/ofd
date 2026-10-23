@@ -180,6 +180,8 @@ func relocatedEntry(name string, plans []bodyPlan, orphans OrphanMode) (string, 
 
 // SignatureStatus 描述输出文档中一个签名的校验状态。
 type SignatureStatus struct {
+	// Type 为 Seal 或 Sign，用于区分两层 SES 与普通单层 SignedData。
+	Type string
 	// ID 是签名标识。
 	ID string
 	// DigestValid 仅表示签名引用与数据摘要匹配，不包含算法一致性与保护范围检查。
@@ -206,8 +208,8 @@ func VerifySignatures(input any) ([]SignatureStatus, error) {
 		if document == nil {
 			continue
 		}
-		document.ForEachSignature(func(id string, _ *models.Signature) bool {
-			status := SignatureStatus{ID: id}
+		document.ForEachSignature(func(id string, signature *models.Signature) bool {
+			status := SignatureStatus{ID: id, Type: signature.Type}
 			if digest := document.GetDigestResult(id); digest != nil {
 				status.DigestValid = digest.Valid
 			}

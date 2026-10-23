@@ -52,3 +52,11 @@ func TestSignatureReportIncludesVerificationError(t *testing.T) {
 		}
 	}
 }
+
+func TestOrdinaryDigitalSignatureReportUsesSingleSignatureMeaning(t *testing.T) {
+	var report bytes.Buffer
+	reportSignatureVerification(&report, "ofd-creator merge", []merge.SignatureStatus{{ID: "sign-1", Type: "Sign", DigestValid: true, Verified: true}})
+	if !strings.Contains(report.String(), "数字签名通过") || strings.Contains(report.String(), "两层") {
+		t.Fatalf("普通签名报告错误: %s", report.String())
+	}
+}

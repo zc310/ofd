@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -233,7 +234,7 @@ func runReplace(args []string, stdout, stderr io.Writer) int {
 	data := buffer.Bytes()
 	if strings.TrimSpace(opts.signCmd) != "" {
 		var signed bytes.Buffer
-		if err := sign.Sign(data, &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
+		if err := sign.Sign(context.Background(), data, &signed, buildSignOptions(&opts.signFlags, opts.deterministic)); err != nil {
 			_, _ = fmt.Fprintln(stderr, "ofd-creator replace:", err)
 			return exitResource
 		}

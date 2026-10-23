@@ -54,14 +54,16 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	// --version 对所有子命令一致生效，因此集中在这里处理：creator 有六个各自
-	// 构建 cobra 树的子命令，逐个注册会得到六份行为，而其中一份迟早漏掉。
+	// --version 对所有子命令一致生效，因此在子命令分发前统一处理。
 	rest, ok := stripVersionFlag(args)
 	if ok {
 		_, _ = fmt.Fprintln(stdout, version.Version)
 		return exitOK
 	}
 	args = rest
+	if len(args) > 0 && strings.EqualFold(args[0], "sign") {
+		return runSign(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && strings.EqualFold(args[0], "export-all") {
 		return runExportAll(args[1:], stdout, stderr)
 	}
@@ -234,6 +236,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "子命令：")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  merge                           合并多个 OFD 为多文档 OFD")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  replace                         替换、新增或删除 OFD 包内条目")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  sign                            签署 OFD 或追加普通数字签名")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  watermark <add|replace|remove>   添加、替换或删除文档水印")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export                          从 OFD 导出 creator manifest")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export-all                      导出 OFD 的全部文档体")

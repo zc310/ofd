@@ -147,6 +147,10 @@
      .export-error[hidden] { display: none; }
      .export-actions { display: flex; justify-content: flex-end; gap: 8px; }
       .export-actions button[type="submit"] { border-color: #2476bd; background: #2476bd; color: #fff; }
+      .unlock-dialog { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
+      .unlock-dialog::backdrop { background: #17203366; }
+      .unlock-document { margin: 0; overflow-wrap: anywhere; font-size: 14px; }
+      body.dark-reading .unlock-dialog { background: #252c38; color: #e6ebf2; }
       .about-dialog { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 10px; background: #fff; color: #172033; box-shadow: 0 12px 40px #17203355; }
       .about-dialog::backdrop { background: #17203366; }
       .about-content { display: grid; gap: 14px; padding: 20px; }
@@ -816,6 +820,38 @@
     </div>
     <div id="debug-body" class="debug-body"></div>
   </aside>
+  <dialog id="unlock-dialog" class="unlock-dialog" aria-labelledby="unlock-title" aria-describedby="unlock-document unlock-hint">
+    <form id="unlock-form" class="export-form" autocomplete="off">
+      <h2 id="unlock-title">解锁加密文档</h2>
+      <p id="unlock-document" class="unlock-document"></p>
+      <div class="export-field">
+        <label for="unlock-method">解锁方式</label>
+        <select id="unlock-method"><option value="password">口令</option><option value="passwordFile">口令文件</option><option value="privateKey">SM2 私钥</option></select>
+      </div>
+      <div class="export-field">
+        <label for="unlock-user">接收者</label>
+        <input id="unlock-user" type="text" placeholder="可选，留空自动匹配" autocomplete="off">
+      </div>
+      <div id="unlock-password-field" class="export-field">
+        <label for="unlock-password">文档口令</label>
+        <input id="unlock-password" type="password" autocomplete="off" autofocus>
+      </div>
+      <div id="unlock-key-field" class="export-field" hidden>
+        <label for="unlock-key">私钥文件</label>
+        <input id="unlock-key" type="file" accept=".pem,.der,.key,.p8">
+      </div>
+      <div id="unlock-password-file-field" class="export-field" hidden>
+        <label for="unlock-password-file">UTF-8 口令文件</label>
+        <input id="unlock-password-file" type="file" accept=".txt,text/plain">
+      </div>
+      <p id="unlock-hint" class="export-hint">输入口令、选择 UTF-8 口令文件，或选择未加密的 SM2 PKCS#8 私钥。口令文件保留空格和换行，凭据仅用于本次解锁。</p>
+      <p id="unlock-error" class="export-error" role="alert" hidden></p>
+      <div class="export-actions">
+        <button id="unlock-cancel" type="button">取消</button>
+        <button type="submit">解锁并打开</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="print-dialog" class="print-dialog" aria-labelledby="print-title">
     <form id="print-form" class="print-form">
       <h2 id="print-title">打印范围</h2>
@@ -882,7 +918,7 @@
     <div class="about-content">
       <h2 id="about-title" tabindex="-1">关于 OFD WASM 阅读器</h2>
       <div class="about-info">
-        <p><strong>版本：</strong><a id="version-link" href="https://github.com/zc310/ofd" target="_blank" rel="noopener noreferrer" style="color: #2476bd; text-decoration: none;">0.1.4</a></p>
+        <p><strong>版本：</strong><a id="version-link" href="https://github.com/zc310/ofd" target="_blank" rel="noopener noreferrer" style="color: #2476bd; text-decoration: none;">0.1.5</a></p>
         <p><strong>说明：</strong>基于 WebAssembly 的 OFD 文档阅读器，支持在浏览器中直接查看 OFD 格式文件。</p>
         <p><strong>字体：</strong>OFD 内未嵌入字体时，使用 <a href="https://github.com/notofonts/noto-cjk" target="_blank" rel="noopener noreferrer">Noto Sans SC</a>（思源黑体）作为回退字体。</p>
         <p><strong>功能特性：</strong></p>

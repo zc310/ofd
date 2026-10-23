@@ -3,6 +3,9 @@ ZIP ?= zip
 FYNE ?= fyne
 CURL ?= curl
 UNZIP ?= unzip
+NFPM ?= nfpm
+NFPM_VERSION ?= 2.48.0
+READELF ?= readelf
 FIXTURES_URL ?= https://github.com/zc310/ofd-fixtures/archive/refs/heads/main.zip
 
 GOOS ?= $(shell $(GO) env GOOS)
@@ -65,8 +68,11 @@ BIN_DIR := $(BUILD_DIR)/bin/$(PLATFORM)
 PACKAGE_DIR := $(BUILD_DIR)/packages/$(PLATFORM)
 
 VIEWER := $(BIN_DIR)/ofd-viewer$(BIN_SUFFIX)
+VIEWER_NATIVE := $(BIN_DIR)/native/ofd-viewer
 CONVERTER := $(BIN_DIR)/ofd-converter$(BIN_SUFFIX)
 THUMBNAILER := $(BIN_DIR)/ofd-thumbnailer$(BIN_SUFFIX)
+# 系统安装包使用独立的静态程序，避免与启用 CGO 的 ZIP 构建共用产物。
+THUMBNAILER_NATIVE := $(BIN_DIR)/static/ofd-thumbnailer
 VALIDATOR := $(BIN_DIR)/ofd-validator$(BIN_SUFFIX)
 ANALYZER := $(BIN_DIR)/ofd-analyzer$(BIN_SUFFIX)
 COMPARE := $(BIN_DIR)/ofd-compare$(BIN_SUFFIX)
@@ -74,6 +80,7 @@ ARCHIVE := $(BIN_DIR)/ofd-archive$(BIN_SUFFIX)
 CREATOR := $(BIN_DIR)/ofd-creator$(BIN_SUFFIX)
 SIGNER_DEMO := $(BIN_DIR)/ofd-signer-demo$(BIN_SUFFIX)
 SEAL := $(BIN_DIR)/ofd-seal$(BIN_SUFFIX)
+CRYPT := $(BIN_DIR)/ofd-crypt$(BIN_SUFFIX)
 INVOICE := $(BIN_DIR)/ofd-invoice$(BIN_SUFFIX)
 SERVER := $(BIN_DIR)/ofd-server$(BIN_SUFFIX)
 WASM := cmd/ofd-wasm/web/ofd.wasm
@@ -106,6 +113,7 @@ ARCHIVE_PACKAGE := $(DIST_DIR)/ofd-archive-$(PLATFORM).zip
 CREATOR_PACKAGE := $(DIST_DIR)/ofd-creator-$(PLATFORM).zip
 SIGNER_DEMO_PACKAGE := $(DIST_DIR)/ofd-signer-demo-$(PLATFORM).zip
 SEAL_PACKAGE := $(DIST_DIR)/ofd-seal-$(PLATFORM).zip
+CRYPT_PACKAGE := $(DIST_DIR)/ofd-crypt-$(PLATFORM).zip
 INVOICE_PACKAGE := $(DIST_DIR)/ofd-invoice-$(PLATFORM).zip
 SERVER_PACKAGE := $(DIST_DIR)/ofd-server-$(PLATFORM).zip
 ANDROID_VIEWER_PACKAGE := $(DIST_DIR)/ofd-viewer-android.apk
@@ -116,8 +124,10 @@ ANDROID_VIEWER_OUTPUT := OFD_Viewer.apk
 VIEWER_VERSION ?= $(VERSION)
 ANDROID_VIEWER_SOURCES := $(filter-out %_test.go,$(wildcard cmd/ofd-viewer/*.go))
 
-TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(COMPARE) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(SEAL) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
-TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-compare package-archive package-creator $(SIGNER_DEMO_PACKAGE) $(SEAL_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
+TOOL_BUILD_TARGETS := $(CONVERTER) $(VALIDATOR) $(ANALYZER) $(COMPARE) $(ARCHIVE) $(CREATOR) $(SIGNER_DEMO) $(SEAL) $(CRYPT) $(INVOICE) $(SERVER) $(if $(filter linux,$(GOOS)),$(THUMBNAILER))
+TOOL_PACKAGE_TARGETS := package-converter package-validator package-analyzer package-compare package-archive package-creator package-crypt $(SIGNER_DEMO_PACKAGE) $(SEAL_PACKAGE) $(INVOICE_PACKAGE) $(SERVER_PACKAGE) $(if $(filter linux,$(GOOS)),package-thumbnailer)
+# 仅默认入口增加缩略图 DEB/RPM，各显式打包目标保持原有范围。
+DEFAULT_THUMBNAILER_PACKAGE_TARGETS := $(if $(and $(filter linux,$(GOOS)),$(filter amd64 arm64,$(GOARCH))),package-thumbnailer-linux)
 VIEWER_BUILD_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,$(VIEWER))
 VIEWER_PACKAGE_TARGETS := $(if $(or $(and $(filter linux,$(GOOS)),$(filter arm64,$(GOARCH))),$(and $(filter darwin,$(GOOS)),$(filter linux,$(GOHOSTOS)))),,package-viewer)
 WINDOWS_BUILD_TARGETS := $(if $(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS))),build-windows-amd64,)
@@ -134,9 +144,15 @@ DARWIN_CGO_ENABLED := $(if $(filter linux,$(GOHOSTOS)),0,$(CGO_ENABLED))
 DARWIN_BUILD_TARGET := $(if $(filter linux,$(GOHOSTOS)),build-tools,build)
 DARWIN_PACKAGE_TARGET := $(if $(filter linux,$(GOHOSTOS)),package-tools,package)
 
-.PHONY: all build build-tools build-wasm build-viewer-web test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-invoice package-server clean help FORCE
+.PHONY: all build build-tools build-wasm build-viewer-web test-wasm-web fixtures build-arm64 build-darwin-arm64 build-darwin-amd64 build-windows-amd64 build-windows-arm64 package package-desktop package-tools package-arm64 package-darwin-arm64 package-darwin-amd64 package-windows-amd64 package-windows-arm64 package-wasm-web package-viewer package-viewer-android package-viewer-android-zip package-converter package-thumbnailer package-thumbnailer-deb package-thumbnailer-rpm package-thumbnailer-linux check-thumbnailer-packaging install-nfpm package-validator package-analyzer package-compare package-archive package-creator package-signer-demo package-crypt package-invoice package-server clean help FORCE
+.PHONY: package-viewer-deb package-viewer-rpm package-viewer-linux check-viewer-packaging
 
-all: package
+all: package $(DEFAULT_THUMBNAILER_PACKAGE_TARGETS)
+ifneq ($(and $(filter linux,$(GOHOSTOS)),$(filter linux,$(GOOS)),$(filter linux,$(ARM64_GOOS))),)
+ifneq ($(GOARCH),arm64)
+	$(MAKE) GOOS=linux GOARCH=arm64 package-thumbnailer-linux
+endif
+endif
 
 help:
 	@printf '%s\n' \
@@ -150,6 +166,9 @@ help:
 		'make package-wasm-web         Package the browser WASM web directory' \
 		'make package-compare          Package the OFD comparison tool' \
 		'make package-viewer           Build the OFD viewer package' \
+		'make package-viewer-deb       Build the Linux viewer DEB package (requires nfpm)' \
+		'make package-viewer-rpm       Build the Linux viewer RPM package (requires nfpm)' \
+		'make package-viewer-linux     Build both viewer DEB and RPM packages' \
 		'make package-viewer-android   Build the OFD viewer Android APK' \
 		'make package-viewer-android-zip Build the OFD viewer Android ZIP package' \
 		'make package-converter       Build the OFD converter package' \
@@ -157,9 +176,14 @@ help:
 		'make package-analyzer        Build the OFD analyzer' \
 		'make package-archive         Build the OFD archive tool' \
 		'make package-creator         Build the OFD creator' \
+		'make package-crypt           Build the OFD encryption tool' \
 		'make package-signer-demo     Build the OFD demo signer' \
 		'make package-invoice         Build the OFD invoice extractor' \
 		'make package-thumbnailer     Build the OFD thumbnailer package' \
+		'make install-nfpm            Install the pinned DEB/RPM packaging tool' \
+		'make package-thumbnailer-deb Build the thumbnailer DEB package (requires nfpm)' \
+		'make package-thumbnailer-rpm Build the thumbnailer RPM package (requires nfpm)' \
+		'make package-thumbnailer-linux Build both thumbnailer DEB and RPM packages' \
 		'make build-arm64             Build Linux ARM64 command programs' \
 		'make package-arm64           Build Linux ARM64 packages' \
 		'make build-darwin-arm64      Build macOS ARM64 command programs' \
@@ -182,11 +206,15 @@ help:
 		'  CC=aarch64-w64-mingw32-clang CXX=aarch64-w64-mingw32-clang++ make package-windows-arm64' \
 		'  Override Windows ARM64 defaults with WINDOWS_ARM64_CC/CXX=...' \
 		'  Android is included in the default package target' \
-		'  ofd-thumbnailer is built only when GOOS=linux'
+		'  ofd-thumbnailer is built only when GOOS=linux' \
+		'  Default make includes Linux thumbnailer DEB and RPM (requires nfpm)'
 
 build: $(VIEWER_BUILD_TARGETS) $(TOOL_BUILD_TARGETS) $(WINDOWS_BUILD_TARGETS) $(DARWIN_CROSS_BUILD_TARGETS) $(WINDOWS_ARM64_BUILD_TARGETS) $(LINUX_ARM64_BUILD_TARGETS)
 
 build-tools: $(TOOL_BUILD_TARGETS)
+
+install-nfpm:
+	$(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 # 页面入口、页面脚本、Web Worker、wasm_exec.js 和 ofd.wasm 都使用不带查询参数的固定路径，
 # 缓存版本由 CACHE_NAME 的哈希管理：任一资源内容变化，缓存名变化，新 Service
@@ -197,7 +225,12 @@ build-wasm: $(WASM) $(WASM_EXEC) $(WASM_SERVICE_WORKER)
 # --release 负责 -trimpath、-s -w；WASM URL 附加内容哈希，防止浏览器复用旧缓存。
 build-viewer-web:
 	@cd cmd/ofd-viewer && GOFLAGS="$(GOFLAGS) -ldflags=-X=github.com/zc310/ofd/internal/version.Version=$(VERSION)" "$(FYNE)" package --target=web --release --name ofd-viewer --app-version "$(VERSION)"
-	@$(GO) run ./cmd/fyne-wasm-cache cmd/ofd-viewer/wasm/index.html cmd/ofd-viewer/wasm/ofd-viewer.wasm
+	@python3 -c 'import hashlib, pathlib, sys; \
+		index = pathlib.Path("cmd/ofd-viewer/wasm/index.html"); \
+		data = index.read_bytes(); reference = b"fetch(\"ofd-viewer.wasm\")"; \
+		data.count(reference) == 1 or sys.exit("错误: Fyne Web 页面必须恰好包含一个 WASM 下载引用"); \
+		digest = hashlib.sha256(pathlib.Path("cmd/ofd-viewer/wasm/ofd-viewer.wasm").read_bytes()).hexdigest()[:16]; \
+		index.write_bytes(data.replace(reference, ("fetch(\"ofd-viewer.wasm?v=" + digest + "\")").encode("ascii"), 1))'
 
 # 图标子集字体按 cmd/ofd-wasm/web/icons.json 重新生成。该文件是图标清单的唯一
 # 来源：字体由它生成，web/test/icons.test.mjs 也会检查代码里用到的图标都在清单内。
@@ -334,6 +367,10 @@ $(SERVER): FORCE
 	@mkdir -p "$(BIN_DIR)"
 	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-server
 
+$(CRYPT): FORCE
+	@mkdir -p "$(BIN_DIR)"
+	CC=$(CC) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-crypt
+
 ifeq ($(GOOS),linux)
 $(THUMBNAILER): FORCE
 	@mkdir -p "$(BIN_DIR)"
@@ -417,6 +454,17 @@ package-creator: $(CREATOR_PACKAGE)
 package-signer-demo: $(SIGNER_DEMO_PACKAGE)
 
 package-seal: $(SEAL_PACKAGE)
+
+package-crypt: $(CRYPT_PACKAGE)
+
+$(CRYPT_PACKAGE): $(CRYPT) cmd/ofd-crypt/README.md
+	@mkdir -p "$(DIST_DIR)"
+	@rm -rf "$(PACKAGE_DIR)/ofd-crypt"
+	@mkdir -p "$(PACKAGE_DIR)/ofd-crypt"
+	@rm -f "$@"
+	@cp "$(CRYPT)" "$(PACKAGE_DIR)/ofd-crypt/ofd-crypt$(BIN_SUFFIX)"
+	@cp "cmd/ofd-crypt/README.md" "$(PACKAGE_DIR)/ofd-crypt/README.md"
+	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-crypt"
 
 package-invoice: $(INVOICE_PACKAGE)
 
@@ -525,7 +573,41 @@ $(CONVERTER_PACKAGE): $(CONVERTER) cmd/ofd-converter/README.md
 
 ifeq ($(GOOS),linux)
 
+check-viewer-packaging:
+	@case "$(GOARCH)" in amd64|arm64) ;; *) echo "错误: viewer DEB/RPM 仅支持 amd64 和 arm64。" >&2; exit 1 ;; esac
+	@if ! command -v "$(NFPM)" >/dev/null 2>&1; then echo "错误: 找不到 nFPM，请执行 make install-nfpm 并将 Go bin 目录加入 PATH，或设置 NFPM。" >&2; exit 1; fi
+	@if ! command -v "$(READELF)" >/dev/null 2>&1; then echo "错误: 找不到 readelf，请安装 binutils 或设置 READELF。" >&2; exit 1; fi
+
+# 系统包始终启用 CGO；交叉构建还需要目标平台的 C 编译器和 OpenGL/X11/Wayland 开发库。
+$(VIEWER_NATIVE): FORCE | check-viewer-packaging
+	@mkdir -p "$(dir $@)"
+	CC=$(CC) CXX=$(CXX) CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH) $(GO) build $(VIEWER_BUILD_FLAGS) -o "$@" ./cmd/ofd-viewer
+
+package-viewer-linux: package-viewer-deb package-viewer-rpm
+
+package-viewer-deb package-viewer-rpm: $(VIEWER_NATIVE) cmd/ofd-viewer/nfpm.yaml
+	@mkdir -p "$(DIST_DIR)"
+	@glibc_version=$$(LC_ALL=C "$(READELF)" --version-info "$(VIEWER_NATIVE)" | sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' | sort -V | tail -n 1); \
+	if [ -z "$$glibc_version" ]; then echo "错误: 无法确定 viewer 所需的 glibc 版本。" >&2; exit 1; fi; \
+	VIEWER_GLIBC_VERSION="$$glibc_version" VIEWER_VERSION="$(VERSION)" VIEWER_ARCH="$(GOARCH)" VIEWER_BINARY="$(abspath $(VIEWER_NATIVE))" \
+		"$(NFPM)" package --config cmd/ofd-viewer/nfpm.yaml --packager $(patsubst package-viewer-%,%,$@) --target "$(abspath $(DIST_DIR))/"
+
 package-thumbnailer: $(THUMBNAILER_PACKAGE)
+
+check-thumbnailer-packaging:
+	@case "$(GOARCH)" in amd64|arm64) ;; *) echo "错误: thumbnailer DEB/RPM 仅支持 amd64 和 arm64。" >&2; exit 1 ;; esac
+	@if ! command -v "$(NFPM)" >/dev/null 2>&1; then echo "错误: 找不到 nFPM，请执行 make install-nfpm 并将 Go bin 目录加入 PATH，或设置 NFPM。" >&2; exit 1; fi
+
+$(THUMBNAILER_NATIVE): FORCE | check-thumbnailer-packaging
+	@mkdir -p "$(dir $@)"
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) $(GO) build $(GO_BUILD_FLAGS) -o "$@" ./cmd/ofd-thumbnailer
+
+package-thumbnailer-linux: package-thumbnailer-deb package-thumbnailer-rpm
+
+package-thumbnailer-deb package-thumbnailer-rpm: $(THUMBNAILER_NATIVE) cmd/ofd-thumbnailer/nfpm.yaml
+	@mkdir -p "$(DIST_DIR)"
+	THUMBNAILER_VERSION="$(VERSION)" THUMBNAILER_ARCH="$(GOARCH)" THUMBNAILER_BINARY="$(abspath $(THUMBNAILER_NATIVE))" \
+		"$(NFPM)" package --config cmd/ofd-thumbnailer/nfpm.yaml --packager $(patsubst package-thumbnailer-%,%,$@) --target "$(abspath $(DIST_DIR))/"
 
 $(THUMBNAILER_PACKAGE): $(THUMBNAILER) cmd/ofd-thumbnailer/README.md cmd/ofd-thumbnailer/install.sh cmd/ofd-thumbnailer/zc310-ofd.thumbnailer
 	@mkdir -p "$(DIST_DIR)"
@@ -541,7 +623,11 @@ $(THUMBNAILER_PACKAGE): $(THUMBNAILER) cmd/ofd-thumbnailer/README.md cmd/ofd-thu
 	@cd "$(PACKAGE_DIR)" && "$(ZIP)" -qr "$(abspath $@)" "ofd-thumbnailer"
 else
 
-package-thumbnailer:
+package-viewer-deb package-viewer-rpm package-viewer-linux check-viewer-packaging:
+	@echo "错误: viewer DEB/RPM 仅支持 GOOS=linux。" >&2
+	@exit 1
+
+package-thumbnailer package-thumbnailer-deb package-thumbnailer-rpm package-thumbnailer-linux check-thumbnailer-packaging:
 	@echo "错误: ofd-thumbnailer 仅支持编译 Linux 版本。" >&2
 	@exit 1
 endif

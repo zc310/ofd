@@ -8,6 +8,7 @@ package sign
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/base64"
@@ -26,6 +27,10 @@ import (
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/core"
+	protocol "github.com/zc310/ofd/internal/crypt"
+	"github.com/zc310/ofd/internal/physicalsig"
+	"github.com/zc310/ofd/internal/securexml"
+	"github.com/zc310/ofd/internal/signeddata"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -39,10 +44,29 @@ const (
 
 // Options 控制外部命令签名。
 type Options struct {
+	// Physical 对加密后的物理条目签署，要求明文 OFD.xml 且没有已有签名入口。
+	// 仅支持普通签名，覆盖全部输入文件及最终入口/列表，不使用解密视图。
+	Physical bool
+	// Append 保留已有普通签名及原文，只更新签名列表并增加新签名。
+	// 首次签署也可设置；追加模式缺省不摘要仍需更新的签名列表。
+	Append bool
+	// Relative 指定本次签名依赖的已有签名 ID，仅用于 Append。
+	Relative string
+	// LockSignatures 在追加模式下摘要最终签名列表，结束该列表的追加流程。
+	LockSignatures bool
+	// Sign 与 Command 二选一，适配进程或硬件服务；参数为完整 Signature.xml 字节。
+	Sign func(context.Context, []byte) ([]byte, error)
+	// Type 为 Seal（缺省，SES 电子签章）或 Sign（GB/T 35275 普通数字签名）。
+	Type string
+	// UID 用于普通数字签名返回值的 SM2 原文校验，空值使用标准缺省标识。
+	UID             []byte
+	ProtocolVersion string
+	ExtendData      []byte
+	Parameters      []Parameter
 	// Command 是外部签名命令，按空白拆分参数，不支持引号或 shell 语法。
 	// 命令从标准输入读取 Signature.xml 字节，向标准输出写 SignedValue.dat 字节。
 	Command string
-	// ID 是签名标识，空值时使用 "sign-1"。
+	// ID 是签名标识，空值时使用 "sign-1"；追加时自动分配未使用的 sign-N。
 	ID string
 	// ProviderName、ProviderVersion、Company 写入 SignedInfo 的 Provider。
 	ProviderName    string
@@ -68,10 +92,18 @@ type Options struct {
 	// 阅读器优先从独立印章文件提取印章图。SignedValue.dat 仍内嵌印章，
 	// 作为阅读器未识别 Seal 元素时的回退路径。
 	Seal string
-	// References 控制 SignedInfo/References 覆盖的文件集合；为 nil 时签名文档体目录下的全部文件（不含 OFD.xml）。
+	// SealImage 写入附录 B 的 Seal/ImageLoc，并将图片原字节纳入引用摘要。
+	SealImage string
+	// References 控制文档文件范围；nil 时包含文档目录，普通签名还包含 OFD.xml。
+	// 普通签名的替换模式或 LockSignatures 还保护最终列表；追加时始终保护旧签名文件和签名值。
 	References *ReferenceOptions
 	// Environment 是传递给外部命令的额外环境变量，格式为 KEY=VALUE。
 	Environment []string
+}
+
+// Parameter 是 GM/T 0099 表 B.2 的扩展键值，不由库执行其中的内容。
+type Parameter struct {
+	Name, Type, Value string
 }
 
 // ReferenceOptions 选择 SignedInfo/References 覆盖的文件。
@@ -124,21 +156,77 @@ type entry struct {
 	method uint16
 }
 
-// Sign 读取 input（文件路径、字节数据或 io.Reader），为每个文档体追加签名后写入 w。
-func Sign(input any, w io.Writer, options Options) error {
-	if strings.TrimSpace(options.Command) == "" {
-		return errors.New("外部签名命令为空")
+// Sign 读取文件路径、[]byte 或 io.Reader，为每个文档体签署后写入 w。
+// Append 保留已有普通签名，否则替换已有签名；取消传递给外部签名命令。
+// 错误时应丢弃 Writer 的部分输出；旧签名保护了需修改的入口时返回 crypt.ErrProtectedContent。
+func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if options.Type == "" {
+		options.Type = spec.SigTypeSeal
+	}
+	if options.Type != spec.SigTypeSeal && options.Type != spec.SigTypeSign {
+		return fmt.Errorf("签名类型必须为 Seal 或 Sign")
+	}
+	if err := validateAppendOptions(options); err != nil {
+		return err
+	}
+	seenParameters := map[string]bool{}
+	for _, parameter := range options.Parameters {
+		if parameter.Name == "" || seenParameters[parameter.Name] {
+			return fmt.Errorf("扩展参数名称为空或重复")
+		}
+		seenParameters[parameter.Name] = true
+	}
+	if (strings.TrimSpace(options.Command) == "") == (options.Sign == nil) {
+		return errors.New("需要且只能指定外部签名命令或 Sign 回调")
 	}
 	if w == nil {
 		return errors.New("签名输出写入器为空")
 	}
-	pkg, err := openPackage(input)
+	open := openPackage
+	if options.Append || options.Physical {
+		open = openAppendPackage
+	}
+	pkg, err := open(input)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = pkg.Close() }()
+	if protocol.Present(pkg) && !options.Physical {
+		info, err := protocol.InspectPackage(ctx, pkg, protocol.InspectOptions{Mode: protocol.ModeCompat})
+		return &protocol.LockedError{Info: info, Cause: err}
+	}
+	if options.Physical {
+		if err := physicalsig.CheckContainer(ctx, pkg, protocol.Limits{}); err != nil {
+			return err
+		}
+		info, err := protocol.InspectPackage(ctx, pkg, protocol.InspectOptions{})
+		if err != nil {
+			return err
+		}
+		if !info.Encrypted {
+			return protocol.ErrNotEncrypted
+		}
+		for _, operation := range info.Operations {
+			for _, mapping := range operation.Entries {
+				if mapping.Path == spec.RootDocument {
+					return fmt.Errorf("%w: 物理签署要求主入口不被加密映射覆盖", protocol.ErrProtectedContent)
+				}
+			}
+		}
+	}
+	if pkg.Has(spec.IntegrityEntryPoint) {
+		return fmt.Errorf("%w: 重签前需单独处理完整性清单", protocol.ErrProtectedContent)
+	}
 
-	entries, err := readEntries(pkg)
+	var entries []entry
+	if options.Append || options.Physical {
+		entries, err = readAppendEntries(ctx, pkg)
+	} else {
+		entries, err = readEntries(pkg)
+	}
 	if err != nil {
 		return err
 	}
@@ -149,6 +237,9 @@ func Sign(input any, w io.Writer, options Options) error {
 	rootData, ok := index[spec.RootDocument]
 	if !ok {
 		return fmt.Errorf("缺少 %s", spec.RootDocument)
+	}
+	if (options.Append || options.Physical) && len(rootData) > 4<<20 {
+		return fmt.Errorf("签名入口 XML 超过 4 MiB")
 	}
 	document := etree.NewDocument()
 	if err := document.ReadFromBytes(rootData); err != nil {
@@ -162,10 +253,28 @@ func Sign(input any, w io.Writer, options Options) error {
 	if len(bodies) == 0 {
 		return errors.New("OFD.xml 中没有 DocBody")
 	}
+	var appendState *appendPlan
+	if options.Append {
+		appendState, err = prepareAppend(ctx, pkg, entries, index, document, options)
+		if err != nil {
+			return err
+		}
+		options.ID = appendState.id
+	}
+	if options.Physical {
+		appendState, err = preparePhysical(ctx, pkg, entries, index, document, options)
+		if err != nil {
+			return err
+		}
+		options.ID = appendState.id
+	}
 
 	id := strings.TrimSpace(options.ID)
 	if id == "" {
 		id = "sign-1"
+	}
+	if !securexml.ValidID(id) {
+		return fmt.Errorf("签名 ID 必须为合法 xs:ID")
 	}
 	stampID := normalizeStampID(id)
 	signatureMethod := strings.TrimSpace(options.SignatureMethod)
@@ -176,19 +285,59 @@ func Sign(input any, w io.Writer, options Options) error {
 	if checkMethod == "" {
 		checkMethod = DefaultCheckMethod
 	}
+	if options.Type == spec.SigTypeSign && (signatureMethod != DefaultSignatureMethod || (checkMethod != "SM3" && checkMethod != "1.2.156.10197.1.401")) {
+		return fmt.Errorf("普通数字签名仅支持 SM2-with-SM3 和 SM3 引用摘要")
+	}
+	if options.Type == spec.SigTypeSign && options.References == nil {
+		options.References = &ReferenceOptions{RootDocument: true}
+	}
 	date := options.Date
 	if date.IsZero() {
 		date = time.Now()
 	}
 
+	// 先确定最终入口，RootDocument 引用必须摘要更新后的真实字节。
+	if !options.Append && !options.Physical {
+		for _, body := range bodies {
+			docDir, err := docDirOf(body)
+			if err != nil {
+				return err
+			}
+			setBodySignatures(body, docDir+"/Signatures.xml")
+		}
+	}
+	updatedRoot, err := document.WriteToBytes()
+	if err != nil {
+		return err
+	}
+	if options.Append || options.Physical {
+		updatedRoot = appendState.root
+	}
+	index[spec.RootDocument] = updatedRoot
 	var added []entry
-	for _, body := range bodies {
+	for bodyIndex, body := range bodies {
+		addedStart := len(added)
 		docDir, err := docDirOf(body)
 		if err != nil {
 			return err
 		}
 		signatureDir := path.Join(docDir, "Signatures")
+		listName := path.Join(docDir, "Signatures.xml")
+		listData := buildSignaturesXML(id, "Signature_"+id+".xml", options.Type)
 		references := collectReferences(docDir, entries, options.References)
+		if options.Append || options.Physical {
+			plan := appendState.bodies[bodyIndex]
+			signatureDir, listName, listData = plan.signatureDir, plan.listName, plan.listData
+			references = appendReferences(docDir, entries, options.References, appendState.priorFiles, appendState.catalogs)
+		}
+		if options.Physical {
+			references = physicalReferences(index)
+		}
+		index[listName] = listData
+		if options.Type == spec.SigTypeSign && !options.Physical && (!options.Append || options.LockSignatures) {
+			// 列表不包含摘要，不会形成自引用循环；签署它以固定 Type/Relative/路径。
+			references = append(references, "/"+listName)
+		}
 		if len(references) == 0 {
 			return fmt.Errorf("%s 没有可签名的文件", docDir)
 		}
@@ -211,9 +360,13 @@ func Sign(input any, w io.Writer, options Options) error {
 				return err
 			}
 		}
-		var sealBaseLoc string
+		var sealBaseLoc, sealImageLoc string
 		if options.Seal != "" {
-			sealData, err := os.ReadFile(options.Seal)
+			read := os.ReadFile
+			if options.Append {
+				read = func(name string) ([]byte, error) { return readAppendAsset(name, 64<<20) }
+			}
+			sealData, err := read(options.Seal)
 			if err != nil {
 				return fmt.Errorf("读取电子印章文件失败: %w", err)
 			}
@@ -230,6 +383,18 @@ func Sign(input any, w io.Writer, options Options) error {
 			// 否则 SignedInfo/References 算摘要时在 files 里找不到它。
 			index[sealEntryName] = sealData
 		}
+		if options.SealImage != "" {
+			sealImageLoc = "SealImage" + strings.ToLower(path.Ext(options.SealImage))
+			imageData, err := readAppendAsset(options.SealImage, 4<<20)
+			if err != nil {
+				return err
+			}
+			name := path.Join(signatureDir, sealImageLoc)
+			index[name] = imageData
+			added = append(added, entry{name: name, data: imageData, method: zip.Store})
+			references = append(references, sealImageLoc)
+			sort.Strings(references)
+		}
 		signatureXML, err := buildSignatureXML(signatureXMLInput{
 			id:              id,
 			providerName:    options.ProviderName,
@@ -245,40 +410,81 @@ func Sign(input any, w io.Writer, options Options) error {
 			stamps:          stamps,
 			stampID:         stampID,
 			sealBaseLoc:     sealBaseLoc,
+			sealImageLoc:    sealImageLoc,
+			protocolVersion: options.ProtocolVersion,
+			extendData:      options.ExtendData,
+			parameters:      options.Parameters,
 		})
 		if err != nil {
 			return err
 		}
+		if len(signatureXML) > 4<<20 {
+			return fmt.Errorf("签名 XML 超过 4 MiB")
+		}
+		if options.Append || options.Physical {
+			var checked struct{}
+			if err := physicalsig.ValidateXML(ctx, signatureXML, "Signature", "", &checked); err != nil {
+				return err
+			}
+		}
 
-		signedValue, err := runCommand(options.Command, signatureXML, map[string]string{
-			"OFD_SIGN_DOCUMENT":         docDir,
-			"OFD_SIGN_ID":               id,
-			"OFD_SIGN_PROVIDER":         options.ProviderName,
-			"OFD_SIGN_PROVIDER_VERSION": options.ProviderVersion,
-			"OFD_SIGN_COMPANY":          options.Company,
-			"OFD_SIGN_SIGNATURE_METHOD": signatureMethod,
-			"OFD_SIGN_CHECK_METHOD":     checkMethod,
-			"OFD_SIGN_TIME":             date.Format(time.RFC3339),
-		}, options.Environment)
+		var signedValue []byte
+		if options.Sign != nil {
+			signedValue, err = options.Sign(ctx, bytes.Clone(signatureXML))
+		} else {
+			signedValue, err = runCommand(ctx, options.Command, signatureXML, map[string]string{
+				"OFD_SIGN_TYPE":             options.Type,
+				"OFD_SIGN_SCOPE":            signatureScope(options.Physical),
+				"OFD_SIGN_DOCUMENT":         docDir,
+				"OFD_SIGN_ID":               id,
+				"OFD_SIGN_PROVIDER":         options.ProviderName,
+				"OFD_SIGN_PROVIDER_VERSION": options.ProviderVersion,
+				"OFD_SIGN_COMPANY":          options.Company,
+				"OFD_SIGN_SIGNATURE_METHOD": signatureMethod,
+				"OFD_SIGN_CHECK_METHOD":     checkMethod,
+				"OFD_SIGN_TIME":             date.Format(time.RFC3339),
+			}, options.Environment)
+		}
 		if err != nil {
 			return err
 		}
+		if len(signedValue) == 0 || len(signedValue) > 4<<20 {
+			return fmt.Errorf("签名值为空或超过 4 MiB")
+		}
+		if options.Type == spec.SigTypeSign {
+			proof, err := signeddata.Verify(signedValue, signatureXML, options.UID)
+			if err != nil {
+				return fmt.Errorf("外部数字签名未绑定当前 Signature.xml: %w", err)
+			}
+			if proof.TimestampError != nil {
+				return proof.TimestampError
+			}
+			if proof.Timestamp != nil && proof.Timestamp.Time.Before(proof.SigningTime) {
+				return fmt.Errorf("时间戳早于签名时间")
+			}
+		}
 		added = append(added,
 			entry{name: path.Join(signatureDir, baseName), data: signatureXML, method: zip.Deflate},
-			entry{name: path.Join(docDir, "Signatures.xml"), data: buildSignaturesXML(id, baseName), method: zip.Deflate},
+			entry{name: listName, data: listData, method: zip.Deflate},
 			entry{name: path.Join(signatureDir, "Data", id+".dat"), data: signedValue, method: zip.Store},
 		)
-		setBodySignatures(body, docDir+"/Signatures.xml")
+		if options.Append || options.Physical {
+			if err := appendState.consume(added[addedStart:]); err != nil {
+				return err
+			}
+		}
 	}
 
-	updatedRoot, err := document.WriteToBytes()
-	if err != nil {
-		return fmt.Errorf("生成 %s 失败: %w", spec.RootDocument, err)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return writePackage(w, entries, added, updatedRoot, options.Deterministic)
+	return writePackage(w, entries, added, updatedRoot, options.Deterministic, options.Append || options.Physical)
 }
 
 type signatureXMLInput struct {
+	protocolVersion string
+	extendData      []byte
+	parameters      []Parameter
 	id              string
 	providerName    string
 	providerVersion string
@@ -293,6 +499,7 @@ type signatureXMLInput struct {
 	stamps          []*stampAnnot
 	stampID         string
 	sealBaseLoc     string
+	sealImageLoc    string
 }
 
 // stampAnnot 是写入 Signature.xml 的 StampAnnot 属性值。
@@ -307,6 +514,7 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
 	root := doc.CreateElement("Signature")
 	root.CreateAttr("xmlns", spec.Namespace)
+	root.CreateAttr("ID", input.id)
 	info := root.CreateElement("SignedInfo")
 	provider := info.CreateElement("Provider")
 	provider.CreateAttr("ProviderName", input.providerName)
@@ -316,12 +524,32 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 	if input.company != "" {
 		provider.CreateAttr("Company", input.company)
 	}
+	if input.protocolVersion != "" {
+		provider.CreateAttr("ProtocolVer", input.protocolVersion)
+	}
+	if input.extendData != nil {
+		provider.CreateElement("ExtendData").SetText(base64.StdEncoding.EncodeToString(input.extendData))
+	}
 	info.CreateElement("SignatureMethod").SetText(input.signatureMethod)
 	info.CreateElement("SignatureDateTime").SetText(input.date.Format(time.RFC3339))
+	if len(input.parameters) > 0 {
+		parameters := info.CreateElement("Parameters")
+		for _, value := range input.parameters {
+			node := parameters.CreateElement("Parameter")
+			node.CreateAttr("Name", value.Name)
+			if value.Type != "" {
+				node.CreateAttr("Type", value.Type)
+			}
+			node.SetText(value.Value)
+		}
+	}
 	references := info.CreateElement("References")
 	references.CreateAttr("CheckMethod", input.checkMethod)
 	for _, reference := range input.references {
-		target := path.Clean(path.Join(input.signatureBase, reference))
+		target, err := securexml.Resolve(path.Join(input.signatureBase, "Signature.xml"), reference)
+		if err != nil {
+			return nil, err
+		}
 		data, ok := input.files[target]
 		if !ok {
 			return nil, fmt.Errorf("签名引用目标不存在: %s", target)
@@ -347,13 +575,18 @@ func buildSignatureXML(input signatureXMLInput) ([]byte, error) {
 			stamp.CreateAttr("Clip", item.clip)
 		}
 	}
-	if input.sealBaseLoc != "" {
+	if input.sealBaseLoc != "" || input.sealImageLoc != "" {
 		// Seal 的 BaseLoc 是子元素而不是属性：真实产物（如 ofdrw 的样例）写的是
 		// <Seal><BaseLoc>/Doc_0/Signs/Sign_0/Seal.esl</BaseLoc></Seal>。
 		// 写成属性时 models.Seal.BaseLoc 为空，parser 会把空路径解析成签名目录
 		// 本身并报"打开文件失败: Doc_0/Signatures"。
 		seal := info.CreateElement("Seal")
-		seal.CreateElement("BaseLoc").SetText(input.sealBaseLoc)
+		if input.sealBaseLoc != "" {
+			seal.CreateElement("BaseLoc").SetText(input.sealBaseLoc)
+		}
+		if input.sealImageLoc != "" {
+			seal.CreateElement("ImageLoc").SetText(input.sealImageLoc)
+		}
 	}
 	root.CreateElement("SignedValue").SetText(input.signedValue)
 	out, err := doc.WriteToBytes()
@@ -380,7 +613,7 @@ func signatureDigest(method string, data []byte) ([]byte, error) {
 	return digest.Sum(nil), nil
 }
 
-func buildSignaturesXML(id, baseName string) []byte {
+func buildSignaturesXML(id, baseName, kind string) []byte {
 	doc := etree.NewDocument()
 	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
 	root := doc.CreateElement("Signatures")
@@ -388,28 +621,32 @@ func buildSignaturesXML(id, baseName string) []byte {
 	root.CreateElement("MaxSignId").SetText("MaxSignId-1")
 	element := root.CreateElement("Signature")
 	element.CreateAttr("ID", id)
-	element.CreateAttr("Type", spec.SigTypeSeal)
+	element.CreateAttr("Type", kind)
 	element.CreateAttr("BaseLoc", "Signatures/"+baseName)
 	out, _ := doc.WriteToBytes()
 	return out
 }
 
-func runCommand(command string, stdin []byte, environment map[string]string, extra []string) ([]byte, error) {
+func runCommand(ctx context.Context, command string, stdin []byte, environment map[string]string, extra []string) ([]byte, error) {
 	fields := strings.Fields(command)
 	if len(fields) == 0 {
 		return nil, errors.New("外部签名命令为空")
 	}
-	cmd := exec.Command(fields[0], fields[1:]...)
+	cmd := exec.CommandContext(ctx, fields[0], fields[1:]...)
+	cmd.WaitDelay = 2 * time.Second
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Env = os.Environ()
 	for key, value := range environment {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
 	cmd.Env = append(cmd.Env, extra...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout, stderr := &boundedOutput{limit: 4 << 20}, &boundedOutput{limit: 64 << 10}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		message := strings.TrimSpace(stderr.String())
 		if message != "" {
 			return nil, fmt.Errorf("外部签名命令失败: %w: %s", err, message)
@@ -422,6 +659,21 @@ func runCommand(command string, stdin []byte, environment map[string]string, ext
 	return stdout.Bytes(), nil
 }
 
+type boundedOutput struct {
+	buffer bytes.Buffer
+	limit  int
+}
+
+func (b *boundedOutput) Write(data []byte) (int, error) {
+	if len(data) > b.limit-b.buffer.Len() {
+		return 0, fmt.Errorf("外部签名输出超过上限")
+	}
+	return b.buffer.Write(data)
+}
+func (b *boundedOutput) Len() int       { return b.buffer.Len() }
+func (b *boundedOutput) Bytes() []byte  { return b.buffer.Bytes() }
+func (b *boundedOutput) String() string { return b.buffer.String() }
+
 // isSignatureEntry 判断条目是否属于文档体的签名文件。
 // 除当前 layout 的 Signatures 目录外，同时识别历史生产者使用的 Signs 目录，
 // 避免重签后旧签名残留。
@@ -429,9 +681,13 @@ func isSignatureEntry(name string) bool {
 	return creator.IsSignatureEntry(name)
 }
 
-func writePackage(w io.Writer, entries, added []entry, rootData []byte, deterministic bool) error {
+func writePackage(w io.Writer, entries, added []entry, rootData []byte, deterministic, preserveSignatures bool) error {
 	archive := zip.NewWriter(w)
 	seen := make(map[string]bool)
+	replaced := make(map[string]bool, len(added))
+	for _, item := range added {
+		replaced[item.name] = true
+	}
 	write := func(name string, data []byte, method uint16) error {
 		if err := core.ValidateEntryName(name); err != nil {
 			return err
@@ -457,7 +713,7 @@ func writePackage(w io.Writer, entries, added []entry, rootData []byte, determin
 		if item.name == spec.RootDocument {
 			continue
 		}
-		if isSignatureEntry(item.name) {
+		if preserveSignatures && replaced[item.name] || !preserveSignatures && isSignatureEntry(item.name) {
 			continue
 		}
 		if err := write(item.name, item.data, item.method); err != nil {

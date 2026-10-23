@@ -6,6 +6,17 @@
 
 ## 功能
 
+### 加密文档
+
+- 支持 GM/T 0099-2020 口令方案 `1.1.1` 和 SM2 证书方案 `1.1.2`；整包加密、部分条目加密、独立条目密钥及明文/密文映射表均通过现有只读解密视图读取。
+- 本地文件、拖放、最近文件和远程 `?file=` 都会在需要凭据时显示解锁对话框。输入口令，或切换至“SM2 私钥”选择未加密的 PKCS#8 PEM/DER 私钥文件；可填写接收者名称，留空时按库的尝试预算自动匹配。
+- 保留口令的空格和 Unicode，允许空口令。错误凭据可重新输入；取消或切换文件会结束旧的解锁流程。元数据损坏、不支持的方案或预算超限直接报告错误。
+- 口令包含换行等无法在单行输入框输入的字符时，选择“口令文件”，读取最多 64 KiB 的 UTF-8 文件，保留 BOM、空格及换行；空文件表示空口令，非法 UTF-8 被拒绝。
+- 只有完整解锁后才进入页面浏览；多层加密须能使用本次提供的凭据全部解锁。解锁后支持页面、文字、搜索、打印和导出，源文件保持原始加密内容。
+- 口令和私钥只用于本次解锁，不写入地址栏、最近文档或阅读设置；最近文件缓存的是原始加密 OFD，再次打开需重新解锁。WASM 不生成明文 ZIP，关闭 Reader 后释放解密视图。解锁本身不代表签名或完整性验证通过。
+- WASM 默认使用 `pkg/crypt` 兼容模式，支持 ofdrw 的数字操作 ID 等已知格式差异。缺少 `EncryptCaseId` 时，按用户提供的口令选择 `1.1.1`，或按 SM2 私钥选择 `1.1.2`；首次未提供凭据时显示解锁框。已声明的加密方案保持原值，未知方案仍报错。
+- 输入 OFD 仍限 256 MiB；口令最多 64 KiB UTF-8，私钥文件最多 4 MiB，其余解密预算沿用 `pkg/crypt` 默认值。
+
 ### 打印与导出
 
 - **打印**：支持打印当前页、全部页面或自定义范围，例如 `1-3,5`。
@@ -288,6 +299,37 @@ ofd.renderStream([0, 1], { format: 'pdf', background: '#ffffff' }, (chunk, seque
 ofd.close()
 ```
 
+`ofd.open(data, options)` 的 `options` 除 `pageCacheCapacity` 和 `pageCacheBytes` 外，
+还可指定 `password`、`userName`、`privateKey`：
+
+```javascript
+const result = ofd.open(new Uint8Array(await file.arrayBuffer()), {
+  password: '123456', // 省略表示未提供；空字符串表示空口令
+  userName: 'User',  // 可选，按接收者名称匹配
+})
+if (result.error) console.error(result.code, result.error)
+
+// SM2 证书加密文档：提供对应的未加密 PKCS#8 PEM/DER 私钥内容。
+ofd.open(await file.arrayBuffer(), {
+  privateKey: new Uint8Array(await privateKeyFile.arrayBuffer()),
+})
+```
+
+`privateKey` 接受 `Uint8Array` 或 `ArrayBuffer`。底层 API 不弹出对话框，调用方处理
+`{ error, code }`，可重新提供文件数据与凭据调用 `open`。加密相关代码为：
+
+| code | 含义 |
+|---|---|
+| `credentials_required` | 尚未提供所需口令或私钥 |
+| `decrypt_failed` | 凭据不匹配或密文损坏 |
+| `invalid_credentials` | 口令、接收者或私钥参数无效 |
+| `invalid_encryption` | 加密元数据不合法 |
+| `unsupported_encryption` | 加密功能或方案不支持 |
+| `limit_exceeded` | 解密资源预算超限 |
+
+解锁后 Reader 持有解密视图的独立租约；调用 `ofd.close()` 或打开其他文档时释放。
+调用方自行管理传入的凭据数据；示例阅读器在请求完成后清理临时凭据引用和私钥缓冲。
+
 ### 页面与字体
 
 - 工具栏图标使用本地 `material-symbols-outlined-subset.woff2`，只包含当前页面使用的 Material Symbols 图标连字，不依赖 Google Fonts 远程加载。
@@ -361,14 +403,14 @@ make test-wasm-web
 `ofd.signatures()` 的每个 `stamp` 还包含 `visible_boundary`（`{ x, y, width, height }`，
 页面坐标、毫米），表示应用 `Clip` 后的可见区域，供点击热区和跳转定位使用。
 `boundary` 保留整枚印章的原始边界；没有有效裁剪时两个边界相同。
-- 发生错误时，API 返回 `{ error: string }`，网页调用方应检查该字段。
+- 发生错误时，API 返回 `{ error: string, code?: string }`，网页调用方应检查该字段。加密错误带有上表中的 `code`。
 
 ## Worker 协议
 
 网页 Worker 接收以下命令：
 
 ```text
-open       data: ArrayBuffer
+open       data: ArrayBuffer, options?: { pageCacheCapacity, pageCacheBytes, password, userName, privateKey }
 close
 cancel     target: request id
 memStats
@@ -403,6 +445,7 @@ search     query: string
 
 ### 数据传输与缓存
 
+- Worker 的错误回复为 `{ id, ok: false, error, code? }`，页面客户端在拒绝请求的 Error 上保留 `code`。`open` 的凭据参数与直接 API 相同；每次重试须提供新的文件缓冲，因为传输后原 ArrayBuffer 已被转移。
 - 页面和缩略图渲染结果以可转移的 `ArrayBuffer` 返回，避免在主线程和 Worker 之间复制 PNG/SVG 数据。
 - PDF 和多页图片均通过流式接口使用 `stream-chunk` 消息按顺序转发分块。
 - 正文页缓存上限为 256 MiB，缩略图缓存上限为 64 MiB，均由浏览器端使用 LRU 策略管理。

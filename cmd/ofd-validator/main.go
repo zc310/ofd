@@ -39,6 +39,7 @@ type options struct {
 	skipXSD         bool
 	noDigest        bool
 	checkSignatures bool
+	gmt0099         bool
 	docType         string
 	noScanXML       bool
 	failOnWarning   bool
@@ -70,6 +71,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	validatorOptions := []validator.Option{
 		validator.WithMode(validator.Mode(opts.mode)),
+		validator.WithGMT0099(opts.gmt0099),
 		validator.WithMaxErrors(opts.maxErrors),
 		validator.WithMaxInputSize(opts.maxInputSize),
 		validator.WithMaxFileSize(opts.maxFileSize),
@@ -163,6 +165,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	flags.StringVar(&opts.docType, "doc-type", "", "额外校验的 OFD profile：OFD、OFD-A 或 OFD-H；留空时按文档声明的 DocType 自动判定。与 ofd-creator --doc-type 同义")
 	flags.BoolVar(&opts.noDigest, "no-digest", false, "跳过签名摘要校验")
 	flags.BoolVar(&opts.checkSignatures, "check-signatures", false, "执行 GB/T 38540 完整验签；缺少信任或状态证据时报告未完成")
+	flags.BoolVar(&opts.gmt0099, "gmt0099", false, "使用 GM/T 0099 附录 B/D 扩展 XSD；完整性协议另用 ofd-crypt integrity verify")
 	flags.BoolVar(&opts.noScanXML, "no-scan-xml", false, "只解析由 OFD 引用到的 XML 文件")
 	flags.BoolVar(&opts.failOnWarning, "fail-on-warning", false, "发现警告时返回退出码 1")
 	flags.BoolVar(&opts.version, "version", false, "输出校验器版本")

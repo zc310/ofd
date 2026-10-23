@@ -46,6 +46,7 @@ function makeState({ openSelectedBody = openSelectedPrefix, supported = true } =
     cancelOpen: { hidden: true },
     startupScreen: { hidden: false },
     openRequest: undefined,
+    finishUnlockPrompt() {},
     saveReadingPosition() {},
     clearInjectedFonts() {},
     clearDocumentView() {},

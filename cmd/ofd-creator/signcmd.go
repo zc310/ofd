@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/sign"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type signatureCollector struct {
@@ -62,6 +63,9 @@ func reportSignatureVerification(w io.Writer, prefix string, statuses []merge.Si
 		switch {
 		case status.Verified:
 			signature = "两层密码学签名通过"
+			if status.Type == spec.SigTypeSign {
+				signature = "数字签名通过"
+			}
 		case status.VerificationError != "":
 			signature = "密码学签名校验失败"
 		}
@@ -128,6 +132,7 @@ func signReferences(opts *signFlags) *sign.ReferenceOptions {
 
 func buildSignOptions(opts *signFlags, deterministic bool) sign.Options {
 	return sign.Options{
+		Type:            opts.signType,
 		Command:         opts.signCmd,
 		ID:              opts.signID,
 		ProviderName:    opts.signProvider,
@@ -139,6 +144,7 @@ func buildSignOptions(opts *signFlags, deterministic bool) sign.Options {
 		Stamp:           signStamp(opts),
 		StampSeam:       signStampSeam(opts),
 		Seal:            opts.signSeal,
+		SealImage:       opts.signImage,
 		References:      signReferences(opts),
 	}
 }
@@ -146,6 +152,7 @@ func buildSignOptions(opts *signFlags, deterministic bool) sign.Options {
 func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
 	flags.StringVar(&opts.signCmd, "sign-cmd", "", "调用外部命令为输出追加签名；命令从 stdin 读 Signature.xml，向 stdout 写 SignedValue.dat")
 	flags.StringVar(&opts.signID, "sign-id", "sign-1", "外部签名的签名标识，需为合法 xs:ID")
+	flags.StringVar(&opts.signType, "sign-type", spec.SigTypeSeal, "签名类型：Seal（SES 电子签章）或 Sign（GB/T 35275 数字签名）")
 	flags.StringVar(&opts.signProvider, "sign-provider", "", "外部签名写入 SignedInfo 的提供者名称")
 	flags.StringVar(&opts.signProviderVersion, "sign-provider-version", "", "外部签名写入 SignedInfo 的提供者版本")
 	flags.StringVar(&opts.signCompany, "sign-company", "", "外部签名写入 SignedInfo 的提供者公司")
@@ -164,6 +171,7 @@ func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
 	flags.Float64Var(&opts.signStampSeamX, "sign-stamp-seam-x", -1, "上下边缘骑缝章左边 X 坐标（毫米），负值表示水平居中")
 	flags.Float64Var(&opts.signStampSeamY, "sign-stamp-seam-y", -1, "骑缝章底边 Y 坐标（毫米），负值表示垂直居中")
 	flags.StringVar(&opts.signSeal, "sign-seal", "", "独立电子印章文件（DER 编码的 .esl），打入签名目录并在 Signature.xml 中引用")
+	flags.StringVar(&opts.signImage, "sign-image", "", "GM/T 0099 附录 B 的独立印模图片，写入 Seal/ImageLoc 并纳入摘要")
 	flags.StringArrayVar(&opts.signInclude, "sign-include", nil, "签名引用白名单 glob（相对文档体目录，可重复）")
 	flags.StringArrayVar(&opts.signExclude, "sign-exclude", nil, "签名引用排除 glob（相对文档体目录，可重复）")
 	flags.BoolVar(&opts.signRoot, "sign-root", false, "把 OFD.xml 纳入签名引用")
@@ -173,6 +181,7 @@ func registerSignFlags(flags *pflag.FlagSet, opts *signFlags) {
 type signFlags struct {
 	signCmd                 string
 	signID                  string
+	signType                string
 	signProvider            string
 	signProviderVersion     string
 	signCompany             string
@@ -191,13 +200,17 @@ type signFlags struct {
 	signStampSeamX          float64
 	signStampSeamY          float64
 	signSeal                string
+	signImage               string
 	signInclude             []string
 	signExclude             []string
 	signRoot                bool
 }
 
 func validateSignFlags(opts *signFlags) error {
-	requested := opts.signStamp || opts.signStampSeams || strings.TrimSpace(opts.signSeal) != ""
+	if opts.signType != "" && opts.signType != spec.SigTypeSeal && opts.signType != spec.SigTypeSign {
+		return fmt.Errorf("--sign-type 必须为 Seal 或 Sign")
+	}
+	requested := opts.signStamp || opts.signStampSeams || strings.TrimSpace(opts.signSeal) != "" || strings.TrimSpace(opts.signImage) != ""
 	if requested && strings.TrimSpace(opts.signCmd) == "" {
 		return fmt.Errorf("指定签章参数时必须同时提供 --sign-cmd")
 	}

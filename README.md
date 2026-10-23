@@ -50,6 +50,10 @@ ofd-creator -i document.yaml -o result.ofd --validate
 ofd-validator --format text input.ofd
 ofd-analyzer --format json input.ofd
 
+# 加密与解密；口令文件按原始 UTF-8 字节读取
+ofd-crypt encrypt --password-file password.txt -o encrypted.ofd input.ofd
+ofd-crypt decrypt --password-file password.txt -o plain.ofd encrypted.ofd
+
 # 多份文档与第一份比较，生成可离线查看的图文差异报告
 ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
 ```
@@ -80,9 +84,11 @@ go run ./cmd/ofd-converter testdata/ofd-creator/helloworld.ofd /tmp/helloworld.p
 | 档案预检与处理 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证；[preserve](cmd/ofd-archive/README.md#长期保存处理preserve) 对单文档执行长期保存转换，保留页面实际尺寸，清理页面、模板及资源内的图元动作，并按转换后引用分析孤立文件。 |
 | 发票处理 | [ofd-invoice](cmd/ofd-invoice/README.md)：增值税电子发票、铁路电子客票抽取，支持结构化附件与自定义标引，JSON/CSV/XLSX 汇总、去重、自校验与 PDF 合并打印。 |
 | 电子签章 | [ofd-seal](cmd/ofd-seal/README.md)：SES V4 SM2/SM3 电子印章；[签署与验证 API](pkg/sign/README.md) 支持签章生成、外部签署与完整验证，接受签章使用 `Result.FullyValid()`。[creator 验签报告](cmd/ofd-creator/README.md#签名处理) 展示完整状态及原因。外部协议示例见 [ofd-signer-demo](cmd/ofd-signer-demo/README.md)。 |
-| 阅读器 | [ofd-viewer](cmd/ofd-viewer/README.md)：桌面、Android 与 Fyne Web 阅读器；[ofd-wasm](cmd/ofd-wasm/README.md)：浏览器阅读器、WASM API 与 Worker 协议。 |
+| OFD 加解密 | [ofd-crypt](cmd/ofd-crypt/README.md) 与 [`pkg/crypt`](pkg/crypt/README.md)：口令/证书、多接收者、独立条目密钥、多层解密和只读解密视图；写端支持整包/条目/页面范围及追加加密层。 |
+| 普通数字签名与完整性保护 | [`pkg/sign`](pkg/sign/README.md) 支持 GM/T 0099 普通 SM2/SM3 SignedData、附录 B 扩展及普通多签追加；`ofd-creator sign --append` 保留旧签名，末次可锁定列表；`sign --physical` 支持主入口明文、没有已有签名入口的加密物理包。校验器分别检查物理签名和解密后的文档引用。[`pkg/integrity`](pkg/integrity/README.md) 和 `ofd-crypt integrity` 分别检查带时间戳清单、物理集合、内容覆盖及引用闭包。 |
+| 阅读器 | [ofd-viewer](cmd/ofd-viewer/README.md)：桌面、Android 与 Fyne Web 阅读器，Linux 提供 amd64/arm64 DEB、RPM 安装包及桌面集成；[ofd-wasm](cmd/ofd-wasm/README.md)：浏览器阅读器、WASM API 与 Worker 协议。 |
 | HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务与远程产物传输。 |
-| Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：文件管理器 OFD 首页及 ZIP 包内图片缩略图。 |
+| Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：文件管理器 OFD 首页及 ZIP 包内图片缩略图，加密 OFD 显示固定挂锁图案；提供 amd64/arm64 的 ZIP、DEB 和 RPM 安装包。 |
 
 ## Go API
 
@@ -131,6 +137,7 @@ func main() {
 | 创建 OFD 与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md) |
 | 多文档合并、拼页和重排 | [`pkg/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
+| 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |
 | 文档对比 | [`pkg/compare` 库指南](pkg/compare/README.md) |
 | 长期保存转换与改动计划 | [`pkg/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
 
@@ -146,6 +153,7 @@ func main() {
 
 **浏览器**：[在线阅读器](https://zc310.github.io/ofd/wasm/)在本地处理 OFD，支持文字选择、
 搜索、页面导航、图层与模板显隐、附件和签名检查，以及 PNG/JPG/PDF/TXT 导出。
+WASM 阅读器支持使用口令或 SM2 私钥解锁 GM/T 0099-2020 加密文档后浏览。
 本地启动方式见 [WASM 构建与运行](docs/BUILDING.md#浏览器阅读器)；API 与 Worker 协议见
 [ofd-wasm](cmd/ofd-wasm/README.md)。
 
@@ -169,7 +177,9 @@ make package-desktop
 ```
 
 构建输出默认位于 `/tmp/ofd/.build`，发布包位于 `/tmp/ofd/dist`，可通过
-`BUILD_DIR`、`DIST_DIR` 覆盖。Android、WASM、交叉编译、系统依赖与 Windows 7
+`BUILD_DIR`、`DIST_DIR` 覆盖。默认 `make` 还会生成 Linux 缩略图 DEB 和 RPM，需先安装
+nFPM（`make install-nfpm` 并将 Go bin 目录加入 PATH，或设置 `NFPM`）。
+Android、WASM、交叉编译、系统依赖与 Windows 7
 兼容工具链的试编译说明见 [构建指南](docs/BUILDING.md)。
 
 ## 支持清单与工具文档

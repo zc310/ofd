@@ -6,6 +6,8 @@ import (
 	"io"
 
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/crypt"
+	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -38,8 +40,8 @@ type ReferenceIndex struct {
 	Missing []MissingReference
 	// Escaped 是越过包根目录的非法路径引用。
 	Escaped []string
-	// Unparsed 是被引用到但无法解析的 XML。命名空间或根元素不符时引用识别
-	// 不可信，该文件里的引用全部收集不到。
+	// Unparsed 是无法完整确认引用结构的 XML，包含解析、命名空间、根元素或模式失败。
+	// 已识别的引用仍可列入 Reachable，但不能据此删除其他条目。
 	//
 	// 这一项直接决定能否删除条目：testdata/ofdrw/intro.ofd 的命名空间缺
 	// "/2016" 后缀，解析失败后它引用的 74 个字体会全部落进「无人引用」，
@@ -85,8 +87,8 @@ func (r *ReferenceIndex) Unreachable(archive *core.Package) []string {
 
 // PackageReferences 解析 input 的引用闭包。
 //
-// 遍历只解析引用，不做 XSD、语义与摘要校验，因此比 ValidateReader 便宜得多；
-// 但引用识别与路径解析与校验完全一致。
+// 遍历检查已解释 XML 的模式和引用，不执行内容语义与摘要校验。
+// 未能通过模式确认的 XML 记入 Unparsed，不能据此得出完整闭包。
 func PackageReferences(ctx context.Context, input any, options ...Option) (*ReferenceIndex, error) {
 	return PackageReferencesWithOverrides(ctx, input, nil, options...)
 }
@@ -104,12 +106,24 @@ func PackageReferencesWithOverrides(ctx context.Context, input any, overrides ma
 
 // packageReferences 执行引用闭包遍历。
 func (v *Validator) packageReferences(ctx context.Context, input any, overrides map[string][]byte) (*ReferenceIndex, error) {
+	v.opts.CheckXSD = true
+	if v.opts.Schemas == nil {
+		var err error
+		v.opts.Schemas, err = schema.Default()
+		if err != nil {
+			return nil, err
+		}
+	}
 	pkg, owned, err := v.openInput(input)
 	if err != nil {
 		return nil, err
 	}
 	if owned {
 		defer func() { _ = pkg.Close() }()
+	}
+	if crypt.Present(pkg) {
+		info, err := crypt.InspectPackage(ctx, pkg, crypt.InspectOptions{Mode: crypt.ModeCompat})
+		return nil, &crypt.LockedError{Info: info, Cause: err}
 	}
 
 	// 引用解析不产生报告，丢弃即可；此处只用它来满足 indexArchive 的签名。
@@ -178,6 +192,10 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 			index.Unparsed = append(index.Unparsed, current.path)
 			continue
 		}
+		if !doc.validated {
+			// 仍保留已识别引用以减少误导性候选，但不能给出完整闭包。
+			index.Unparsed = append(index.Unparsed, current.path)
+		}
 		for _, ref := range refs {
 			resolved, resolveErr := resolvePackagePath(ref.base, ref.value)
 			if resolveErr != nil {
@@ -220,6 +238,9 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 // 本函数不会关闭它。
 func (v *Validator) openInput(input any) (*core.Package, bool, error) {
 	switch value := input.(type) {
+	case core.PackageSource:
+		pkg, err := value.OFDPackage()
+		return pkg, true, err
 	case string:
 		pkg, err := core.OpenFile(value)
 		return pkg, true, err

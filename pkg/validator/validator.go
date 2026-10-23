@@ -45,6 +45,8 @@ const (
 
 // Options 定义校验器的资源限制和检查开关。
 type Options struct {
+	// GMT0099 显式启用附录 B/D 的扩展 XSD，不改变基础模式。
+	GMT0099 bool
 	// Mode 指定校验严格程度。
 	Mode Mode
 	// MaxErrors 指定最多记录的错误数量，0 表示不限制。
@@ -87,6 +89,9 @@ type Options struct {
 
 // Option 修改校验器配置。
 type Option func(*Options)
+
+// WithGMT0099 显式启用 GM/T 0099 附录 B/D 的扩展 XSD。
+func WithGMT0099(value bool) Option { return func(o *Options) { o.GMT0099 = value } }
 
 // WithMaxErrors 设置最多记录的错误数量；传入 0 表示不限制。
 func WithMaxErrors(value int) Option { return func(o *Options) { o.MaxErrors = value } }
@@ -302,14 +307,21 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		return
 	}
 	defer packageReader.Close()
+	report.Input.Size = int64(len(data))
+	v.validatePackage(ctx, packageReader, report)
+}
+
+func (v *Validator) validatePackage(ctx context.Context, packageReader *core.Package, report *Report) {
 	archive, err := v.indexArchive(packageReader, report)
 	if err != nil {
 		report.setCheck("zip", "failed")
 		return
 	}
-	report.Input.Size = int64(len(data))
 	report.Summary.Files = len(archive.files)
 	report.setCheck("zip", "passed")
+	if v.validateEncryption(ctx, packageReader, archive, report) {
+		return
+	}
 
 	_, ok := archive.get(rootDocument)
 	if !ok {
@@ -571,6 +583,11 @@ func (v *Validator) parseXML(file packageFile, expected, baseDir, scope string, 
 		// DocType 声明了非基础 profile 时改用 overlay，否则 GB/T 42133 的
 		// "OFD-A" 会被官方模式的单值枚举判为错误。
 		schema, ok := v.opts.Schemas.SchemaFor(rootName.Local, root.AttrValue("DocType"))
+		if v.opts.GMT0099 {
+			if security, found := v.opts.Schemas.SecuritySchema(rootName.Local); found {
+				schema, ok = security, true
+			}
+		}
 		if !ok {
 			report.addIssue(issueAt(root, v.xsdSeverity(), StageXSD, "xsd.schema_missing", "没有为此根元素注册内置 XSD 模式", file.name), v.opts.MaxErrors)
 			if v.opts.Mode == ModeCompat {
@@ -759,13 +776,23 @@ func collectReferences(doc *xmlDocument) []fileReference {
 				if rootBase := strings.TrimSpace(doc.root.AttrValue("BaseLoc")); rootBase != "" {
 					// resolvePackagePath 将 base 视为文件路径，因此使用一个
 					// 占位文件，使路径能够相对于资源目录解析。
-					base = path.Join(path.Dir(doc.file.name), rootBase, "_resource")
+					resolved, err := resolvePackagePath(doc.file.name, strings.TrimRight(rootBase, "/")+"/_resource")
+					if err != nil {
+						addWithBase(node, doc.file.name, strings.TrimRight(rootBase, "/")+"/_resource", "", false)
+						return
+					}
+					base = resolved
 				}
 				addWithBase(node, base, node.StringValue(), "", false)
 			case "ColorSpace":
 				base := doc.file.name
 				if rootBase := strings.TrimSpace(doc.root.AttrValue("BaseLoc")); rootBase != "" {
-					base = path.Join(path.Dir(doc.file.name), rootBase, "_resource")
+					resolved, err := resolvePackagePath(doc.file.name, strings.TrimRight(rootBase, "/")+"/_resource")
+					if err != nil {
+						addWithBase(node, doc.file.name, strings.TrimRight(rootBase, "/")+"/_resource", "", false)
+						return
+					}
+					base = resolved
 				}
 				addWithBase(node, base, node.AttrValue("Profile"), "", false)
 			}
@@ -777,7 +804,7 @@ func collectReferences(doc *xmlDocument) []fileReference {
 			}
 		case "Signature":
 			switch local {
-			case "SignedValue", "BaseLoc":
+			case "SignedValue", "BaseLoc", "ImageLoc":
 				if local == "SignedValue" || parent == "Seal" {
 					add(node, node.StringValue(), "", false)
 				}
@@ -1416,6 +1443,10 @@ func semanticIDScopes(name string) []string {
 }
 
 func semanticIDScopesForNode(node *xdm.Node, name string) []string {
+	if name == "Relative" && node != nil && node.Name().Local == "Signature" && elementParentName(node) == "Signatures" {
+		// GM/T 0099 表 B.1 的 Relative 指向基础签名，不是绘制参数。
+		return []string{"signature"}
+	}
 	if name != "ResourceID" {
 		return semanticIDScopes(name)
 	}

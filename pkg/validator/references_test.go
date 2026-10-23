@@ -191,16 +191,16 @@ func buildOFDWithOrphan(t *testing.T) []byte {
 	t.Helper()
 	entries := [][2]string{
 		{"OFD.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0">` +
-			`<DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`},
+			`<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD">` +
+			`<DocBody><DocInfo><DocID>closure-test</DocID></DocInfo><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`},
 		{"Doc_0/Document.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
 			`<Document xmlns="http://www.ofdspec.org/2016">` +
 			`<CommonData><MaxUnitID>9</MaxUnitID>` +
 			`<PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData>` +
 			`<Pages><Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></Pages></Document>`},
 		{"Doc_0/Pages/Page_0/Content.xml", `<?xml version="1.0" encoding="UTF-8"?>` +
-			`<Page xmlns="http://www.ofdspec.org/2016" ID="1">` +
-			`<Area><PhysicalBox>0 0 210 297</PhysicalBox></Area><Content/></Page>`},
+			`<Page xmlns="http://www.ofdspec.org/2016">` +
+			`<Area><PhysicalBox>0 0 210 297</PhysicalBox></Area><Content><Layer ID="2"/></Content></Page>`},
 		{"Doc_0/Res/orphan.bin", "无人引用的多余文件"},
 		{"Doc_0/Res/", ""},
 	}

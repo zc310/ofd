@@ -28,6 +28,11 @@ const maxInt64 = int64(1<<63 - 1)
 
 // Entry 描述 OFD ZIP 包中的一个条目。
 type Entry struct {
+	// Virtual 表示元数据描述的是逻辑条目，不对应实际 ZIP 文件头。
+	Virtual bool
+	// SizeUnknown 和 Locked 仅用于部分解锁的逻辑视图。
+	SizeUnknown bool
+	Locked      bool
 	// Name 是 ZIP 条目的原始名称。
 	Name string
 	// Path 是去除开头斜杠后的包内查找路径。
@@ -57,9 +62,11 @@ type packageToken struct {
 
 // Package 提供 OFD ZIP 包的条目索引和内容读取能力。
 type Package struct {
-	reader *zip.Reader
-	closer io.Closer
-	token  *packageToken
+	rawSize int64
+	virtual *virtualSource
+	reader  *zip.Reader
+	closer  io.Closer
+	token   *packageToken
 
 	fileMap map[string]int
 	// lowerMap 是条目名的小写索引，值为 -1 表示该小写名对应多个条目。
@@ -93,7 +100,11 @@ func OpenFile(filename string) (*Package, error) {
 		return nil, errors.New("打开 ZIP 包失败: ZIP reader 为空")
 	}
 	// github.com/klauspost/compress/zip 在路径不安全时仍会返回可用 reader；路径策略由上层校验器处理。
-	return newPackage(&reader.Reader, reader), nil
+	p := newPackage(&reader.Reader, reader)
+	if stat, err := os.Stat(filename); err == nil {
+		p.rawSize = stat.Size()
+	}
+	return p, nil
 }
 
 // OpenBytes 从字节数据打开 OFD ZIP 包。
@@ -105,7 +116,9 @@ func OpenBytes(data []byte) (*Package, error) {
 	if reader == nil {
 		return nil, errors.New("从字节数据创建 ZIP 包失败: ZIP reader 为空")
 	}
-	return newPackage(reader, nil), nil
+	p := newPackage(reader, nil)
+	p.rawSize = int64(len(data))
+	return p, nil
 }
 
 // OpenReaderAt 从随机访问读取器打开 OFD ZIP 包，无需把数据整体复制到内存。
@@ -125,7 +138,17 @@ func OpenReaderAt(reader io.ReaderAt, size int64) (*Package, error) {
 		return nil, errors.New("从随机访问读取器创建 ZIP 包失败: ZIP reader 为空")
 	}
 	// github.com/klauspost/compress/zip 在路径不安全时仍会返回可用 reader；路径策略由上层校验器处理。
-	return newPackage(zipReader, nil), nil
+	p := newPackage(zipReader, nil)
+	p.rawSize = size
+	return p, nil
+}
+
+// InputSize 返回原始 ZIP 的字节数；通用虚拟数据源返回 0。
+func (p *Package) InputSize() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.rawSize
 }
 
 // OpenReader 从读取器中读取全部数据并打开 OFD ZIP 包。
@@ -164,6 +187,17 @@ func (p *Package) ensureIndex() {
 		return
 	}
 	p.once.Do(func() {
+		if p.virtual != nil {
+			p.entries = make([]Entry, len(p.virtual.entries))
+			p.fileMap = make(map[string]int, len(p.virtual.entries))
+			for i, entry := range p.virtual.entries {
+				entry.token = p.token
+				entry.index = i
+				p.entries[i] = entry
+				p.fileMap[entry.Path] = i
+			}
+			return
+		}
 		if p.reader == nil {
 			p.fileMap = map[string]int{}
 			p.lowerMap = map[string]int{}
@@ -187,13 +221,10 @@ func (p *Package) ensureLowerIndex() {
 		return
 	}
 	p.lowerOnce.Do(func() {
-		if p.reader == nil {
-			p.lowerMap = map[string]int{}
-			return
-		}
-		lowerMap := make(map[string]int, len(p.reader.File))
-		for index, file := range p.reader.File {
-			key := strings.ToLower(lookupName(file.Name))
+		p.ensureIndex()
+		lowerMap := make(map[string]int, len(p.entries))
+		for index, entry := range p.entries {
+			key := strings.ToLower(entry.Path)
 			// 同一个精确名字重复出现时也按歧义处理：包内条目重名本身已有风险，
 			// 不在此处替调用方挑一个。
 			if _, seen := lowerMap[key]; seen {
@@ -232,7 +263,24 @@ func (p *Package) WalkEntries(fn func(Entry) bool) error {
 		return ErrPackageClosed
 	}
 	reader, token := p.reader, p.token
+	virtual := p.virtual
 	p.mu.RUnlock()
+	if virtual != nil {
+		for i, entry := range virtual.entries {
+			entry.token = token
+			entry.index = i
+			if !fn(entry) {
+				return nil
+			}
+			p.mu.RLock()
+			closed := p.closed
+			p.mu.RUnlock()
+			if closed {
+				return ErrPackageClosed
+			}
+		}
+		return nil
+	}
 	if reader == nil {
 		return nil
 	}
@@ -288,6 +336,9 @@ func (p *Package) Open(fileName string) (io.ReadCloser, error) {
 	if !ok {
 		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, lookupName(fileName))
 	}
+	if p.virtual != nil {
+		return p.virtual.open(p.entries[index].Path)
+	}
 	file := p.reader.File[index]
 	if file.FileInfo().IsDir() {
 		return nil, fmt.Errorf("打开文件失败: %s 是目录", lookupName(fileName))
@@ -310,8 +361,11 @@ func (p *Package) OpenEntry(entry Entry) (io.ReadCloser, error) {
 	if p.closed {
 		return nil, ErrPackageClosed
 	}
-	if entry.token != p.token || p.reader == nil || entry.index < 0 || entry.index >= len(p.reader.File) {
+	if entry.token != p.token || entry.index < 0 || (p.virtual != nil && entry.index >= len(p.virtual.entries)) || (p.virtual == nil && (p.reader == nil || entry.index >= len(p.reader.File))) {
 		return nil, fmt.Errorf("打开文件失败: %w: %s", os.ErrNotExist, entry.Path)
+	}
+	if p.virtual != nil {
+		return p.virtual.open(p.virtual.entries[entry.index].Path)
 	}
 	file := p.reader.File[entry.index]
 	if file.FileInfo().IsDir() {

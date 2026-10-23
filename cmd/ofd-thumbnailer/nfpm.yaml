@@ -1,0 +1,46 @@
+# 版本、架构及静态程序路径由 Makefile 传入。
+# 从仓库根目录调用 nFPM，src 路径相对于仓库根目录。
+name: zc310-ofd-thumbnailer
+arch: ${THUMBNAILER_ARCH}
+platform: linux
+version: ${THUMBNAILER_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: zc310 <93672020@qq.com>
+homepage: https://github.com/zc310/ofd
+license: Apache-2.0
+description: |
+  OFD and ZIP thumbnails for Linux file managers.
+  Renders the first OFD page or a ZIP image; encrypted OFD files use a lock icon.
+
+contents:
+  - src: ${THUMBNAILER_BINARY}
+    dst: /usr/bin/zc310-ofd-thumbnailer
+    expand: true
+    file_info:
+      mode: 0755
+  - src: cmd/ofd-thumbnailer/zc310-ofd.thumbnailer
+    dst: /usr/share/thumbnailers/zc310-ofd.thumbnailer
+    file_info:
+      mode: 0644
+  - src: cmd/ofd-thumbnailer/README.md
+    dst: /usr/share/doc/zc310-ofd-thumbnailer/README.md
+    file_info:
+      mode: 0644
+  - src: LICENSE
+    dst: /usr/share/doc/zc310-ofd-thumbnailer/LICENSE
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/doc/zc310-ofd-thumbnailer/NOTICE
+    file_info:
+      mode: 0644
+  - src: THIRD-PARTY-LICENSES
+    dst: /usr/share/doc/zc310-ofd-thumbnailer/THIRD-PARTY-LICENSES
+    file_info:
+      mode: 0644
+  - src: internal/cidmap/NOTICE
+    dst: /usr/share/doc/zc310-ofd-thumbnailer/ADOBE-GB1-NOTICE
+    file_info:
+      mode: 0644

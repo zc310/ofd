@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/knroy/go-xml/v2/xdm"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // maxPageBlockDepth 是 GB/T 42133 6.2.3 e) 规定的页面块嵌套层数上限。
@@ -50,8 +51,12 @@ func checkSingleDocument(ctx *profileContext) {
 // checkNoEncryption 对应 GB/T 42133 6.16：用于长期保存的 OFD 文件不使用任何
 // 加密选项。加密的标志是包内出现 Encryptions.xml。
 func checkNoEncryption(ctx *profileContext) {
+	if info := ctx.report.Encryption; info != nil && info.Encrypted && info.State == "unlocked" {
+		ctx.report.addIssue(Issue{Severity: SeverityError, Stage: StageProfile, Code: ctx.issueCode("encrypted"), Message: "原始输入为加密包，解密视图不改变长期保存禁止加密的结论（GB/T 42133 6.16）", File: info.EntryPoint, Clause: []string{"GB/T 42133 6.16"}}, ctx.maxErrors)
+		return
+	}
 	for _, name := range ctx.archive.sortedNames() {
-		if strings.EqualFold(path.Base(name), "Encryptions.xml") {
+		if strings.EqualFold(path.Base(name), spec.EncryptionEntryPoint) {
 			ctx.report.addIssue(Issue{
 				Severity: SeverityError,
 				Stage:    StageProfile,

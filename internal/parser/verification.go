@@ -29,7 +29,10 @@ const (
 
 // SignatureVerificationResult 是 SES 签名的密码学验证结果。
 type SignatureVerificationResult struct {
-	// Valid 表示印章内部签名和外层签名均通过；完整验签结论使用 FullyValid。
+	// Kind 为 Seal 或 Sign。Sign 的 Valid/Outer 描述单层 SignedData，Seal 保留两层语义。
+	Kind string `json:"kind,omitempty"`
+	// Valid 在 Seal 时表示两层数学签名均通过，在 Sign 时表示单层 SignedData 通过。
+	// 完整验签结论使用 FullyValid。
 	Valid bool
 	// TrustChecked 表示是否使用显式信任根执行了证书链校验。
 	TrustChecked bool
@@ -325,6 +328,26 @@ func verifyCertificateRevocationAt(certificate *gmx509.Certificate, options *Cer
 				continue
 			}
 			if certificate.CheckSignatureFrom(issuer) != nil || issuer.KeyUsage&gmx509.KeyUsageCRLSign == 0 {
+				continue
+			}
+			// RFC 5280 §5.2.1：同名 CA 可有不同密钥，先用 AKI 选择对应 CRL，
+			// 不能将另一个同名受信 CA 的 CRL 错报为当前 CA 签名损坏。
+			matches := true
+			for _, extension := range crl.TBSCertList.Extensions {
+				if extension.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 35}) {
+					var authority struct {
+						KeyID []byte `asn1:"optional,tag:0"`
+					}
+					rest, err := asn1.Unmarshal(extension.Value, &authority)
+					if err != nil || len(rest) != 0 {
+						return "error", "CRL AuthorityKeyIdentifier 无效"
+					}
+					if len(authority.KeyID) > 0 && len(issuer.SubjectKeyId) > 0 && !bytes.Equal(authority.KeyID, issuer.SubjectKeyId) {
+						matches = false
+					}
+				}
+			}
+			if !matches {
 				continue
 			}
 			if err := issuer.CheckCRLSignature(crl); err != nil {

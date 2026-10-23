@@ -36,20 +36,40 @@ make package-wasm-web
 
 `make package` 会构建桌面、命令行、Android 和 WASM 包，并在 Linux 主机上生成配置启用
 的交叉平台包。只构建单个工具可使用 `make package-converter`、`make package-validator`、
-`make package-invoice` 等目标；完整列表见 `make help`。
+`make package-invoice`、`make package-crypt` 等目标；完整列表见 `make help`。
+
+默认 `make`（`all`）在 `package` 的产物之外，生成当前 Linux amd64/arm64 架构的缩略图
+DEB 和 RPM；Linux 主机启用 ARM64 交叉打包时，也生成 ARM64 的两种格式，同一架构只打包一次。
+执行默认 `make` 前先运行 `make install-nfpm` 并将 `$(go env GOPATH)/bin` 加入 PATH，
+或设 `NFPM=/path/to/nfpm`。`make package`、`make package-desktop`、`make package-tools`
+和 `make package-arm64` 保持原有范围，不附加缩略图 DEB/RPM；工具包仍为 ZIP。
+
+Linux 缩略图工具另提供 `make package-thumbnailer-deb`、`make package-thumbnailer-rpm`
+和同时生成两者的 `make package-thumbnailer-linux`。先执行 `make install-nfpm` 并将
+`$(go env GOPATH)/bin` 加入 PATH；可设 `NFPM=/path/to/nfpm`。版本仍由 `VERSION` 提供，
+支持 `GOOS=linux GOARCH=amd64` 和 `GOOS=linux GOARCH=arm64`，均单独静态编译。
+DEB/RPM 默认写入 `/tmp/ofd/dist`，发布工作流会在两个 Linux 任务中构建并上传这些安装包。
+安装、卸载和包内容检查见 [缩略图工具说明](../cmd/ofd-thumbnailer/README.md#制作-deb--rpm)。
+
+桌面阅读器使用 `make package-viewer-deb`、`make package-viewer-rpm`，或
+`make package-viewer-linux` 同时生成两种安装包，配置位于 `cmd/ofd-viewer/nfpm.yaml`。
+支持 Linux amd64/arm64，始终启用 CGO，需要目标架构的 OpenGL/X11/Wayland 开发库和 binutils。
+两个 Linux Release 任务会在原生 runner 上验证并上传 viewer 的 DEB/RPM；
+安装包包含桌面入口、图标、OFD MIME 定义和运行依赖。
+完整用法见 [阅读器打包说明](../cmd/ofd-viewer/README.md#制作-deb--rpm)。
 
 ## 平台依赖与交叉编译
 
-| 目标 | 要求与范围 |
-|---|---|
-| `package-viewer` | 当前平台桌面阅读器；Fyne 需要 CGO 和图形开发库，Linux 需要 OpenGL/X11 开发库。 |
-| `package-arm64` | Linux ARM64 命令行工具，`CGO_ENABLED=0`，跳过 viewer。 |
-| `package-darwin-arm64` / `package-darwin-amd64` | Linux 主机交叉编译 macOS 命令行工具，跳过 viewer。 |
-| `package-windows-amd64` | Windows x86_64 桌面与命令行工具；需要 MinGW-w64，可设 `WINDOWS_CC`。 |
-| `package-windows-arm64` | Windows ARM64 需要 LLVM MinGW，可设 `WINDOWS_ARM64_CC`、`WINDOWS_ARM64_CXX`，或 `CC`、`CXX`。 |
-| `package-viewer-android` / `package-viewer-android-zip` | Android APK / APK ZIP，需要 Fyne、Android SDK 与 NDK。 |
-| `package-wasm-web` | WASM 浏览器阅读器及 Web 资源包。 |
-| `build-viewer-web` | Fyne Web 阅读器，需要 Fyne CLI；输出到 `cmd/ofd-viewer/wasm/`。 |
+| 目标                                                    | 要求与范围                                                                                    |
+|---------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| `package-viewer`                                        | 当前平台桌面阅读器；Fyne 需要 CGO 和图形开发库，Linux 需要 OpenGL/X11 开发库。                |
+| `package-arm64`                                         | Linux ARM64 命令行工具，`CGO_ENABLED=0`，跳过 viewer。                                        |
+| `package-darwin-arm64` / `package-darwin-amd64`         | Linux 主机交叉编译 macOS 命令行工具，跳过 viewer。                                            |
+| `package-windows-amd64`                                 | Windows x86_64 桌面与命令行工具；需要 MinGW-w64，可设 `WINDOWS_CC`。                          |
+| `package-windows-arm64`                                 | Windows ARM64 需要 LLVM MinGW，可设 `WINDOWS_ARM64_CC`、`WINDOWS_ARM64_CXX`，或 `CC`、`CXX`。 |
+| `package-viewer-android` / `package-viewer-android-zip` | Android APK / APK ZIP，需要 Fyne、Android SDK 与 NDK。                                        |
+| `package-wasm-web`                                      | WASM 浏览器阅读器及 Web 资源包。                                                              |
+| `build-viewer-web`                                      | Fyne Web 阅读器，需要 Fyne CLI；输出到 `cmd/ofd-viewer/wasm/`。                               |
 
 Windows 桌面版使用 `-H=windowsgui`，运行时不显示命令行窗口。`ofd-thumbnailer`
 仅构建 Linux 版本，安装方式见[缩略图工具说明](../cmd/ofd-thumbnailer/README.md)。
@@ -90,11 +110,11 @@ Fyne 阅读器的 Web 版本部署在 <https://zc310.github.io/ofd/fyne/>，构�
 
 常规 OFD 转 PDF、图片及 PDF 导入使用 Go 实现。以下可选转换方向需要额外工具：
 
-| 转换方向 | 运行依赖 |
-|---|---|
-| Office → OFD/PDF | LibreOffice。 |
-| HTML/MHTML → OFD/PDF | Chrome/Chromium。 |
-| XPS → OFD/PDF | libgxps 的 `xpstopdf`。 |
+| 转换方向                   | 运行依赖                                          |
+|----------------------------|---------------------------------------------------|
+| Office → OFD/PDF           | LibreOffice。                                     |
+| HTML/MHTML → OFD/PDF       | Chrome/Chromium。                                 |
+| XPS → OFD/PDF              | libgxps 的 `xpstopdf`。                           |
 | 图片 → 带 OCR 文字层的 OFD | Tesseract 及对应语言包；未启用 `--ocr` 时不需要。 |
 
 PDF 的 OpenJPEG 解码后端为可选构建项，所需开发库、构建标签和启用方式见

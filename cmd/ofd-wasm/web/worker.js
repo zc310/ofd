@@ -41,7 +41,11 @@ self.addEventListener('unhandledrejection', event => {
 });
 
 function unwrap(value) {
-  if (value && value.error) throw new Error(value.error);
+  if (value && value.error) {
+    const error = new Error(value.error);
+    if (value.code) error.code = value.code;
+    throw error;
+  }
   return value;
 }
 
@@ -86,8 +90,18 @@ async function execute(message) {
   await ready;
   switch (message.command) {
     case 'open': {
-      const result = unwrap(self.ofd.open(message.data, message.options || {}));
-      return { pageCount: result.pageCount, pages: result.pages, fonts: result.fonts || [] };
+      try {
+        const result = unwrap(self.ofd.open(message.data, message.options || {}));
+        return { pageCount: result.pageCount, pages: result.pages, fonts: result.fonts || [] };
+      } finally {
+        if (message.options) {
+          const key = message.options.privateKey;
+          if (key instanceof ArrayBuffer) new Uint8Array(key).fill(0);
+          else if (ArrayBuffer.isView(key)) new Uint8Array(key.buffer, key.byteOffset, key.byteLength).fill(0);
+          delete message.options.password;
+          delete message.options.privateKey;
+        }
+      }
     }
     case 'addFallbackFont':
       return unwrap(self.ofd.addFallbackFont(
@@ -235,7 +249,7 @@ async function drain() {
     } catch (error) {
       activeRequests.delete(message.id);
       if (isCancelled(message.id)) reply(message.id, false, null, '请求已取消');
-      else reply(message.id, false, null, errorText(error));
+      else reply(message.id, false, null, errorText(error), error.code);
     }
     // 让取消消息有机会在继续执行下一个同步 WASM 任务前被处理。
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -243,7 +257,7 @@ async function drain() {
   running = false;
 }
 
-function reply(id, ok, value, error) {
+function reply(id, ok, value, error, code) {
   if (ok && value instanceof ArrayBuffer) {
     self.postMessage({ id, ok: true, value }, [value]);
     return;
@@ -253,7 +267,7 @@ function reply(id, ok, value, error) {
     self.postMessage({ id, ok: true, value }, transfer);
     return;
   }
-  self.postMessage(ok ? { id, ok: true, value } : { id, ok: false, error });
+  self.postMessage(ok ? { id, ok: true, value } : { id, ok: false, error, ...(code ? { code } : {}) });
 }
 
 self.onmessage = event => {

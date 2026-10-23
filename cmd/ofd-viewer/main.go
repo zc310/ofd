@@ -39,6 +39,7 @@ import (
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/internal/version"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
+	"github.com/zc310/ofd/pkg/crypt"
 )
 
 // errDocumentChanged 表示导出期间文档被替换或关闭，导出没有完成。
@@ -208,6 +209,8 @@ type viewer struct {
 	currentPageSnapshot atomic.Int64
 	totalPages          int
 	loading             bool
+	loadCancel          context.CancelFunc
+	unlock              *viewerUnlockPrompt
 	exporting           bool
 	operation           atomic.Uint64
 	renderGeneration    atomic.Uint64
@@ -1467,12 +1470,18 @@ func (v *viewer) load(filePath, fileName string, input any) {
 	if input == nil && filePath == "" {
 		return
 	}
+	if input == nil {
+		input = filePath
+	}
+	v.cancelDocumentLoad()
+	ctx, cancel := context.WithCancel(context.Background())
+	v.loadCancel = cancel
 	v.hidePageLoading(0)
 	operation := v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
 	v.loading = true
 	v.updateControls()
-	go v.runLoad(operation, filePath, fileName, input)
+	go v.runLoadContext(ctx, operation, filePath, fileName, input, crypt.DecryptOptions{})
 }
 
 // runLoad 解析输入并在 Fyne 事件线程上发布文档。解析在调用方线程完成，
@@ -1481,11 +1490,12 @@ func (v *viewer) load(filePath, fileName string, input any) {
 // 独立于 load 是为了让这条关键路径可以被同步验证：测试可以直接调用它，
 // 不必与后台协程和测试驱动内联执行的 fyne.Do 纠缠。
 func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any) {
+	v.runLoadContext(context.Background(), operation, filePath, fileName, input, crypt.DecryptOptions{})
+}
+
+func (v *viewer) runLoadContext(ctx context.Context, operation uint64, filePath, fileName string, input any, credentials crypt.DecryptOptions) {
 	slog.Debug("正在打开文件", "path", filePath)
-	ofd, err := openOFD(input)
-	if closeErr := closeInput(input); closeErr != nil && err == nil {
-		err = closeErr
-	}
+	reusable, ofd, model, err := prepareViewerLoad(ctx, fileName, input, credentials)
 
 	fyne.Do(func() {
 		published := false
@@ -1508,12 +1518,12 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 			}
 			return
 		}
-		// parser.NewOFD 失败时同样返回非 nil 的 OFD（只是没有资源），所以
-		// 必须先看 err：只判断 ofd != nil 会把真实原因换成“没有文档”。
-		var model *documentModel
-		if err == nil {
-			// 构造模型要按页读 XML，必须留在后台线程，不能占用事件线程。
-			model, err = buildDocumentModel(ofd, fileName, color.Transparent)
+		if viewerNeedsCredentials(err) && ctx.Err() == nil {
+			if ofd != nil {
+				_ = ofd.Close()
+			}
+			v.showUnlock(ctx, operation, filePath, fileName, reusable, err)
+			return
 		}
 		if err == nil {
 			err = v.publishDocument(model, filePath, fileName)
@@ -1523,6 +1533,9 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 				_ = ofd.Close()
 			}
 			v.finishLoad()
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			slog.Error("打开 OFD 失败", "error", err)
 			dialog.ShowInformation(tr("打开失败"), err.Error(), v.window)
 			return
@@ -1532,9 +1545,42 @@ func (v *viewer) runLoad(operation uint64, filePath, fileName string, input any)
 	})
 }
 
+// prepareViewerLoad 在后台准备可重试输入和文档模型，所有退出路径都清理凭据及输入读取器。
+func prepareViewerLoad(ctx context.Context, fileName string, input any, credentials crypt.DecryptOptions) (reusable any, ofd *parser.OFD, model *documentModel, err error) {
+	defer func() {
+		clear(credentials.Password)
+		if closeErr := closeInput(input); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf(tr("处理 OFD 文件失败: %v"), recovered)
+		}
+	}()
+	if err = ctx.Err(); err != nil {
+		return
+	}
+	reusable, err = reusableViewerInput(input)
+	if err != nil {
+		return
+	}
+	ofd, err = openViewerOFD(ctx, reusable, credentials)
+	if err != nil {
+		return
+	}
+	model, err = buildDocumentModel(ofd, fileName, color.Transparent)
+	if err == nil {
+		err = ctx.Err()
+	}
+	return
+}
+
 // finishLoad 结束加载状态并刷新控件。v.loading 只在 load 里置位，因此每一条
 // 离开加载流程的路径都必须复位一次；漏掉会让界面永久保持禁用。
 func (v *viewer) finishLoad() {
+	if v.loadCancel != nil {
+		v.loadCancel()
+		v.loadCancel = nil
+	}
 	v.loading = false
 	v.syncDefaultFallbackFont()
 	v.updateControls()
@@ -2351,6 +2397,7 @@ func (v *viewer) close() {
 	if v.fallbackFont.cancel != nil {
 		v.fallbackFont.cancel()
 	}
+	v.cancelDocumentLoad()
 	v.operation.Add(1)
 	v.thumbnailGeneration.Add(1)
 	v.closeDocument()

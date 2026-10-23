@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GM/T 0099-2020 附录 B 扩展；独立于 GB/T 33190 官方模式。 -->
+<xs:schema xmlns="http://www.ofdspec.org/2016" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.ofdspec.org/2016" elementFormDefault="qualified" attributeFormDefault="unqualified">
+    <xs:include schemaLocation="Definitions.xsd" />
+    <xs:element name="Signature">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="SignedInfo">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="Provider">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ExtendData" type="xs:base64Binary" minOccurs="0" />
+                                    </xs:sequence>
+                                    <xs:attribute name="ProviderName" type="xs:string" use="required" />
+                                    <xs:attribute name="Version" type="xs:string" />
+                                    <xs:attribute name="Company" type="xs:string" />
+                                    <xs:attribute name="ProtocolVer" type="xs:string" />
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="SignatureMethod" type="xs:string" />
+                            <xs:element name="SignatureDateTime" type="xs:string" />
+                            <xs:element name="Parameters" minOccurs="0">
+                                <xs:complexType><xs:sequence>
+                                    <xs:element name="Parameter" maxOccurs="unbounded">
+                                        <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+                                            <xs:attribute name="Name" type="xs:string" use="required" />
+                                            <xs:attribute name="Type" type="xs:string" />
+                                        </xs:extension></xs:simpleContent></xs:complexType>
+                                    </xs:element>
+                                </xs:sequence></xs:complexType>
+                            </xs:element>
+                            <xs:element name="References">
+                                <xs:complexType><xs:sequence>
+                                    <xs:element name="Reference" maxOccurs="unbounded">
+                                        <xs:complexType><xs:sequence>
+                                            <xs:element name="CheckValue" type="xs:base64Binary" />
+                                        </xs:sequence><xs:attribute name="FileRef" type="ST_Loc" use="required" /></xs:complexType>
+                                    </xs:element>
+                                </xs:sequence><xs:attribute name="CheckMethod" type="xs:string" use="required" /></xs:complexType>
+                            </xs:element>
+                            <xs:element name="StampAnnot" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:attribute name="ID" type="xs:ID" use="required" />
+                                    <xs:attribute name="PageRef" type="ST_RefID" use="required" />
+                                    <xs:attribute name="Boundary" type="ST_Box" use="required" />
+                                    <xs:attribute name="Clip" type="ST_Box" />
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="Seal" minOccurs="0">
+                                <xs:complexType><xs:sequence>
+                                    <xs:element name="BaseLoc" type="ST_Loc" minOccurs="0" />
+                                    <xs:element name="ImageLoc" type="ST_Loc" minOccurs="0" />
+                                </xs:sequence></xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="SignedValue" type="ST_Loc" />
+            </xs:sequence>
+            <xs:attribute name="ID" type="xs:ID" />
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.zc310.ofd.test</groupId>
+  <artifactId>crypt-interop</artifactId>
+  <version>1</version>
+  <properties><interop.build>${java.io.tmpdir}/ofd-ofdrw-build</interop.build></properties>
+  <build><directory>${interop.build}</directory></build>
+  <dependencies>
+    <dependency><groupId>org.ofdrw</groupId><artifactId>ofdrw-crypto</artifactId><version>2.4.0</version></dependency>
+  </dependencies>
+</project>

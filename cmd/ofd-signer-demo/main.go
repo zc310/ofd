@@ -19,6 +19,8 @@ import (
 
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/zc310/ofd/internal/ses"
+	ofDSign "github.com/zc310/ofd/pkg/sign"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 以下标识写入 SES_Seal_Info 和外部命令环境变量，用于说明签名由本演示程序制作。
@@ -54,6 +56,11 @@ func run() error {
 		case "-v", "--version":
 			_, _ = fmt.Fprintf(os.Stdout, "%s %s (%s)\n", demoProvider, demoVersion, producer)
 			return nil
+		case "--digital":
+			if err := os.Setenv("OFD_SIGN_TYPE", spec.SigTypeSign); err != nil {
+				return err
+			}
+			return writeSignedValue(os.Stdout, os.Stdin)
 		case "-h", "--help":
 			printUsage()
 			return nil
@@ -75,6 +82,7 @@ func printUsage() {
 选项：
   -v, --version  输出版本与项目来源
   -h, --help     输出本帮助
+  --digital     输出 GB/T 35275 SM2/SM3 SignedData 普通签名
 
 环境变量：OFD_SIGN_ID、OFD_SIGN_TIME 可覆盖签名标识与签名时间。
 `, demoProvider, demoVersion, producer)
@@ -113,6 +121,9 @@ func sign(signatureXML []byte) ([]byte, error) {
 		return nil, err
 	}
 	_ = publicKey
+	if os.Getenv("OFD_SIGN_TYPE") == spec.SigTypeSign {
+		return ofDSign.CreateDigitalSignedValue(signatureXML, certificateDER, privateKey, ofDSign.DigitalSigningOptions{Time: now})
+	}
 
 	picture, err := placeholderSeal()
 	if err != nil {

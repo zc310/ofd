@@ -9,6 +9,7 @@ import (
 
 	"github.com/goccy/go-json"
 
+	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/version"
 )
 
@@ -120,6 +121,8 @@ type Report struct {
 	Input InputInfo `json:"input"`
 	// Status 是整个 OFD 包的校验结论。
 	Status Status `json:"status"`
+	// Encryption 描述可见的 GM/T 0099 加密元数据；未解锁的内容尚未校验。
+	Encryption *crypt.Info `json:"encryption,omitempty"`
 	// StatusZh 是校验结论的中文名称。
 	StatusZh string `json:"status_zh,omitempty"`
 	// Summary 是报告中的问题和文件数量汇总。
@@ -185,7 +188,7 @@ func (r *Report) finish(start time.Time, partial bool, failOnWarning bool) {
 	}
 	if r.Summary.Errors > 0 || (failOnWarning && r.Summary.Warnings > 0) {
 		r.Status = StatusInvalid
-	} else if partial {
+	} else if partial || r.locked() {
 		r.Status = StatusPartial
 	} else {
 		r.Status = StatusValid
@@ -234,10 +237,14 @@ func (r Report) hasStageErrors(stage Stage) bool {
 
 // ExitCode 返回适合命令行使用的退出码。
 func (r Report) ExitCode(failOnWarning bool) int {
-	if r.hasErrors() || (failOnWarning && r.HasWarnings()) {
+	if r.hasErrors() || r.locked() || (failOnWarning && r.HasWarnings()) {
 		return 1
 	}
 	return 0
+}
+
+func (r Report) locked() bool {
+	return r.Encryption != nil && r.Encryption.Encrypted && r.Encryption.State != "unlocked"
 }
 
 func (r *Report) addIssue(issue Issue, maxErrors int) {
@@ -371,6 +378,8 @@ func checkLabel(name string) string {
 		return "摘要"
 	case "signatures":
 		return "完整签章验证"
+	case "encryption":
+		return "加密文档解锁"
 	default:
 		return name
 	}

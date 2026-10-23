@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	gmx509 "github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
@@ -91,9 +93,21 @@ func Analyze(input any, options ...Option) (Report, error) {
 	}
 	inputPath, inputSize := inputInfo(input)
 	report.Input = InputInfo{Path: inputPath, Size: inputSize}
+	if source, ok := input.(interface{ EncryptionInfo() *crypt.Info }); ok {
+		report.Encryption = source.EncryptionInfo()
+	}
 
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
+		var locked *crypt.LockedError
+		if errors.As(err, &locked) {
+			report.Encryption = locked.Info
+			if locked.Cause == nil {
+				report.Status = StatusPartial
+				report.Warnings = []string{locked.Error() + "；页面、资源、引用及签名尚未分析，统计值不代表完整内容"}
+				return report, err
+			}
+		}
 		report.Errors = []string{fmt.Sprintf("解析OFD失败: %v", err)}
 		return report, err
 	}
@@ -187,16 +201,15 @@ func configureSignatureVerification(ofd *parser.OFD, options Options) error {
 			continue
 		}
 		document.ForEachSignedValue(func(id string, signedValue *parser.SignedValue) bool {
-			if signedValue == nil || signedValue.SES == nil {
+			if signedValue == nil {
 				return true
 			}
-			result, err := parser.VerifySESSignedValueWithOptions(signedValue, verificationOptions)
+			result, err := document.VerifySignature(context.Background(), id, verificationOptions)
 			if err != nil {
 				document.SetVerificationError(id, err)
 				document.DeleteVerificationResult(id)
 				return true
 			}
-			parser.BindSignatureDigest(result, document.GetDigestResult(id))
 			document.SetVerificationResult(id, result)
 			document.DeleteVerificationError(id)
 			return true
@@ -1189,6 +1202,10 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 				info.VerificationTime = verification.VerificationTime.Format(time.RFC3339)
 			}
 			info.SealVerification = signatureComponentInfo(verification.Seal)
+			if verification.Kind == spec.SigTypeSign {
+				info.SealVerification = nil
+				info.SignedValueParsed = verification.Valid
+			}
 			info.OuterVerification = signatureComponentInfo(verification.Outer)
 		}
 		if verificationErr := doc.GetVerificationError(item.ID); verificationErr != nil {

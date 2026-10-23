@@ -32,7 +32,7 @@ func TestReferenceOverridesEnforcePathsAndBudgets(t *testing.T) {
 
 func TestMalformedReferenceOverrideMakesClosureIncomplete(t *testing.T) {
 	source := makeArchive(t, map[string]string{
-		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016"><DocBody><DocRoot>Doc.xml</DocRoot></DocBody></OFD>`,
+		"OFD.xml": `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>closure-test</DocID></DocInfo><DocRoot>Doc.xml</DocRoot></DocBody></OFD>`,
 		"Doc.xml": `<Document xmlns="http://www.ofdspec.org/2016"/>`,
 	})
 	index, err := PackageReferencesWithOverrides(context.Background(), source, map[string][]byte{"Doc.xml": []byte("<broken")})
@@ -41,5 +41,16 @@ func TestMalformedReferenceOverrideMakesClosureIncomplete(t *testing.T) {
 	}
 	if index.Complete() || len(index.Unparsed) != 1 || index.Unparsed[0] != "Doc.xml" {
 		t.Fatalf("替换 XML 无法解析时不能报告可信闭包: %+v", index)
+	}
+}
+
+func TestReferenceClosureRequiresKnownStructureEvenWhenXSDOptionIsSkipped(t *testing.T) {
+	page := []byte(`<Page xmlns="http://www.ofdspec.org/2016"><Unknown><FileLoc>uninterpreted.bin</FileLoc></Unknown></Page>`)
+	index, err := PackageReferencesWithOverrides(t.Context(), buildOFDWithOrphan(t), map[string][]byte{"Doc_0/Pages/Page_0/Content.xml": page}, WithSkipXSD(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.Complete() || len(index.Unparsed) != 1 || index.Unparsed[0] != "Doc_0/Pages/Page_0/Content.xml" || !index.Reachable["Doc_0/Pages/Page_0/Content.xml"] {
+		t.Fatalf("未知结构不能作完整闭包: %+v", index)
 	}
 }

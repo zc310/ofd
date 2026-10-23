@@ -122,9 +122,16 @@ func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
 	if len(data) > maxInputBytes {
 		return nil, fmt.Errorf("OFD 数据超过大小限制 %d MB", maxInputBytes>>20)
 	}
-	ofd, err := parser.NewOFDWithOptions(data, parser.Options{
+	return OpenInput(data, options)
+}
+
+// OpenInput 接受普通 OFD 输入或已完全解锁的 crypt.View，无需先序列化为明文 ZIP。
+// Reader.Close 仅释放 Reader 自身持有的租约。
+func OpenInput(input any, options OpenOptions) (*Reader, error) {
+	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
 		PageCacheCapacity: options.PageCacheCapacity,
 		PageCacheBytes:    options.PageCacheBytes,
+		MaxInputBytes:     maxInputBytes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("解析 OFD 失败: %w", err)

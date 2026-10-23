@@ -40,6 +40,7 @@ class OFDWorkerClient {
     if (message.ok) request.resolve(message.value);
     else {
       const error = new Error(message.error);
+      if (message.code) error.code = message.code;
       if (message.error === '请求已取消') error.name = 'AbortError';
       request.reject(error);
     }
@@ -388,6 +389,16 @@ const documentMenu = document.querySelector('#document-menu');
 const printPage = document.querySelector('#print-page');
 const exportDocument = document.querySelector('#export-document');
 const exportDialog = document.querySelector('#export-dialog');
+const unlockDialog = document.querySelector('#unlock-dialog');
+const unlockForm = document.querySelector('#unlock-form');
+const unlockMethod = document.querySelector('#unlock-method');
+const unlockUser = document.querySelector('#unlock-user');
+const unlockPassword = document.querySelector('#unlock-password');
+const unlockPasswordFile = document.querySelector('#unlock-password-file');
+const unlockKey = document.querySelector('#unlock-key');
+const unlockError = document.querySelector('#unlock-error');
+const unlockDocument = document.querySelector('#unlock-document');
+let unlockPrompt;
 const exportForm = document.querySelector('#export-form');
 const exportCancel = document.querySelector('#export-cancel');
 const exportRange = document.querySelector('#export-range');
@@ -4083,6 +4094,122 @@ function schedulePageText(index, delay) {
   pageTextTimers.set(index, timer);
 }
 
+function updateUnlockMethod() {
+  const useKey = unlockMethod.value === 'privateKey';
+  const usePasswordFile = unlockMethod.value === 'passwordFile';
+  document.querySelector('#unlock-password-field').hidden = useKey || usePasswordFile;
+  document.querySelector('#unlock-key-field').hidden = !useKey;
+  document.querySelector('#unlock-password-file-field').hidden = !usePasswordFile;
+  unlockPassword.disabled = useKey || usePasswordFile;
+  unlockKey.disabled = !useKey;
+  unlockPasswordFile.disabled = !usePasswordFile;
+}
+
+function finishUnlockPrompt(credentials) {
+  const pending = unlockPrompt;
+  unlockPrompt = undefined;
+  unlockPassword.value = '';
+  unlockPasswordFile.value = '';
+  unlockKey.value = '';
+  unlockUser.value = '';
+  if (unlockDialog.open) unlockDialog.close();
+  pending?.resolve(credentials);
+}
+
+function requestUnlockCredentials(name, error) {
+  finishUnlockPrompt(null);
+  unlockDocument.textContent = name;
+  unlockMethod.value = 'password';
+  updateUnlockMethod();
+  unlockError.textContent = error?.code === 'decrypt_failed'
+    ? '凭据不匹配，或加密内容已损坏。请检查接收者、口令或私钥后重试。'
+    : (error?.code === 'invalid_credentials' ? error.message : '');
+  unlockError.hidden = !unlockError.textContent;
+  const promise = new Promise(resolve => { unlockPrompt = { resolve }; });
+  unlockDialog.showModal();
+  unlockPassword.focus();
+  return promise;
+}
+
+async function submitUnlockCredentials(event) {
+  event.preventDefault();
+  const pending = unlockPrompt;
+  if (!pending) return;
+  const credentials = { userName: unlockUser.value };
+  try {
+    if (unlockMethod.value === 'privateKey') {
+      const key = unlockKey.files?.[0];
+      if (!key) throw new Error('请选择 SM2 PKCS#8 私钥文件。');
+      if (key.size > (4 << 20)) throw new Error('私钥文件不能超过 4 MiB。');
+      credentials.privateKey = await key.arrayBuffer();
+    } else if (unlockMethod.value === 'passwordFile') {
+      const file = unlockPasswordFile.files?.[0];
+      if (!file) throw new Error('请选择 UTF-8 口令文件。');
+      if (file.size > (64 << 10)) throw new Error('口令文件不能超过 64 KiB。');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      try {
+        if (bytes.byteLength > (64 << 10)) throw new Error('口令文件不能超过 64 KiB。');
+        credentials.password = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      } finally {
+        bytes.fill(0);
+      }
+    } else {
+      credentials.password = unlockPassword.value;
+    }
+    if (unlockPrompt !== pending) {
+      if (credentials.privateKey) new Uint8Array(credentials.privateKey).fill(0);
+      return;
+    }
+    finishUnlockPrompt(credentials);
+  } catch (error) {
+    if (unlockPrompt !== pending) return;
+    unlockError.textContent = error.message;
+    unlockError.hidden = false;
+  }
+}
+
+async function openFileWithCredentials(selected, generation) {
+  let credentials = {};
+  try {
+    while (generation === documentGeneration) {
+      try {
+        // 每次从原文件读取独立缓冲，避免重用已转移给 Worker 的 ArrayBuffer。
+        const data = await selected.arrayBuffer();
+        if (generation !== documentGeneration) return undefined;
+        const options = { ...openDocumentOptions, ...credentials };
+        openRequest = engine.open(data, options);
+        try {
+          return await openRequest;
+        } finally {
+          delete options.password;
+          delete options.privateKey;
+        }
+      } catch (error) {
+        if (generation !== documentGeneration || isCancelledError(error)) return undefined;
+        if (!['credentials_required', 'decrypt_failed', 'invalid_credentials'].includes(error.code)) throw error;
+        if (credentials.privateKey) new Uint8Array(credentials.privateKey).fill(0);
+        credentials = {};
+        openRequest = undefined;
+        setStatus(`等待解锁：${selected.name}`);
+        const supplied = await requestUnlockCredentials(selected.name, error);
+        if (generation !== documentGeneration) {
+          if (supplied?.privateKey) new Uint8Array(supplied.privateKey).fill(0);
+          return undefined;
+        }
+        if (!supplied) {
+          cancelOpening();
+          return undefined;
+        }
+        credentials = supplied;
+        setStatus(`正在解锁 ${selected.name}...`);
+      }
+    }
+  } finally {
+    if (credentials.privateKey) new Uint8Array(credentials.privateKey).fill(0);
+    credentials = {};
+  }
+}
+
 async function openSelectedFile(selected, options = {}) {
   if (!selected) return false;
   startupProgressActive = false;
@@ -4091,6 +4218,7 @@ async function openSelectedFile(selected, options = {}) {
   startupNotice = undefined;
   saveReadingPosition();
   const generation = ++documentGeneration;
+  finishUnlockPrompt(null);
   versionSwitching = false;
   const remoteSource = options.remoteSource;
   // 本地文件（含最近文件、拖放、系统文件）会清掉 ?file=，避免刷新时又去下载
@@ -4126,11 +4254,8 @@ async function openSelectedFile(selected, options = {}) {
     // 在读取和解析新文件前释放旧 Reader，避免切换大文档时新旧文档同时驻留。
     await engine.close();
     if (generation !== documentGeneration) return false;
-    const data = await selected.arrayBuffer();
-    if (generation !== documentGeneration) return false;
-    openRequest = engine.open(data, openDocumentOptions);
-    const result = await openRequest;
-    if (generation !== documentGeneration) return false;
+    const result = await openFileWithCredentials(selected, generation);
+    if (generation !== documentGeneration || !result) return false;
     void registerFallbackFontsInBackground(generation);
     const pageCount = Number.isInteger(result.pageCount) && result.pageCount >= 0
       ? result.pageCount
@@ -4235,6 +4360,7 @@ async function openSelectedFile(selected, options = {}) {
 function cancelOpening() {
   if (!opening) return;
   documentGeneration++;
+  finishUnlockPrompt(null);
   layerRevisions.clear();
   layerUpdates.clear();
   layerListRequest++;
@@ -7930,6 +8056,13 @@ try {
 
 file.addEventListener('change', loadFile);
 cancelOpen.addEventListener('click', cancelOpening);
+unlockMethod.addEventListener('change', updateUnlockMethod);
+unlockForm.addEventListener('submit', submitUnlockCredentials);
+document.querySelector('#unlock-cancel').addEventListener('click', () => finishUnlockPrompt(null));
+unlockDialog.addEventListener('cancel', event => {
+  event.preventDefault();
+  finishUnlockPrompt(null);
+});
 recentToggle.addEventListener('click', () => setRecentPanelOpen(recentPanel.hidden));
 recentClear.addEventListener('click', clearRecentFiles);
 document.addEventListener('dragenter', event => {

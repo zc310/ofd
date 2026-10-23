@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image/color"
@@ -105,10 +106,15 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	if err != nil {
 		return errorValue(err)
 	}
+	credentials, err := decryptOptions(args[1:])
+	if err != nil {
+		return errorValue(err)
+	}
+	defer clear(credentials.Password)
 	if err := a.closeCurrentReader(); err != nil {
 		return errorValue(err)
 	}
-	reader, err := webreader.OpenWithOptions(data, options)
+	reader, err := openWASMDocument(context.Background(), data, options, credentials)
 	if err != nil {
 		return errorValue(err)
 	}
@@ -1789,5 +1795,8 @@ func objectValue(values map[string]any) js.Value {
 func errorValue(err error) js.Value {
 	result := js.Global().Get("Object").New()
 	result.Set("error", err.Error())
+	if code := wasmErrorCode(err); code != "" {
+		result.Set("code", code)
+	}
 	return result
 }

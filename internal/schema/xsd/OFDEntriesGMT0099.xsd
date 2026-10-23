@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 图 D.1 与表 D.1 的根拼写均可检查，语义校验由 integrity 执行。 -->
+<xs:schema xmlns="http://www.ofdspec.org/2016" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.ofdspec.org/2016" elementFormDefault="qualified" attributeFormDefault="unqualified">
+    <xs:include schemaLocation="Definitions.xsd" />
+    <xs:complexType name="CT_GMT0099Entries">
+        <xs:sequence>
+            <xs:element name="FileList"><xs:complexType><xs:sequence>
+                <xs:element name="File" maxOccurs="unbounded"><xs:complexType>
+                    <xs:attribute name="ID" type="xs:ID" use="required" />
+                    <xs:attribute name="FileLoc" type="ST_Loc" use="required" />
+                </xs:complexType></xs:element>
+            </xs:sequence></xs:complexType></xs:element>
+            <xs:element name="SignedValueLoc" type="ST_Loc" minOccurs="0" />
+        </xs:sequence>
+        <xs:attribute name="ID" type="xs:ID" use="required" />
+        <xs:attribute name="CreatorName" type="xs:string" />
+        <xs:attribute name="Version" type="xs:string" />
+        <xs:attribute name="CreationDate" type="xs:date" />
+    </xs:complexType>
+    <xs:element name="OFDEntries" type="CT_GMT0099Entries" />
+    <xs:element name="DocEntries" type="CT_GMT0099Entries" />
+</xs:schema>

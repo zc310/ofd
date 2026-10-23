@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/securexml"
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -1218,22 +1220,66 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		return err
 	}
 
+	ids := map[string]string{}
+	for _, body := range signatures.Signatures {
+		if body.ID == "" {
+			return fmt.Errorf("签名标识为空")
+		}
+		if _, exists := ids[body.ID]; exists {
+			return fmt.Errorf("签名标识重复: %s", body.ID)
+		}
+		ids[body.ID] = body.Relative
+		if body.Type == spec.SigTypeSign && !securexml.ValidID(body.ID) {
+			return fmt.Errorf("普通签名标识不是合法 xs:ID")
+		}
+	}
+	for id := range ids {
+		seen := map[string]bool{}
+		for current := id; current != ""; current = ids[current] {
+			if _, ok := ids[current]; !ok || seen[current] || len(seen) >= 32 {
+				return fmt.Errorf("签名 Relative 悬空、循环或超过 32 层")
+			}
+			seen[current] = true
+		}
+	}
 	for _, body := range signatures.Signatures {
 		var sig models.Signature
-		if err = p.FileCache.ReadXML(body.BaseLoc.Resolve(dir).String(), &sig); err != nil {
-			return err
+		if body.Type == spec.SigTypeSign {
+			data, readErr := readDigitalEntry(p.FileCache, body.BaseLoc.Resolve(dir).String())
+			if readErr != nil {
+				return readErr
+			}
+			if err := securexml.Decode(context.Background(), data, "Signature", &sig); err != nil {
+				return err
+			}
+		} else {
+			if err = p.FileCache.ReadXML(body.BaseLoc.Resolve(dir).String(), &sig); err != nil {
+				return err
+			}
 		}
 		seDir := body.BaseLoc.Resolve(dir).Dir()
+		if sig.ID != "" && sig.ID != body.ID {
+			return fmt.Errorf("签名 XML 的 ID 与列表不一致")
+		}
+		sig.Type, sig.Relative, sig.FilePath = body.Type, body.Relative, strings.TrimPrefix(body.BaseLoc.Resolve(dir).String(), "/")
 		p.signs[body.ID] = &sig
 		var signedValue *SignedValue
 		if sig.SignedValue != "" {
 			signedValuePath := sig.SignedValue.Resolve(seDir).String()
 			var signedValueBytes []byte
-			if signedValueBytes, err = p.FileCache.Read(signedValuePath); err != nil {
+			if body.Type == spec.SigTypeSign {
+				signedValueBytes, err = readDigitalEntry(p.FileCache, signedValuePath)
+			} else {
+				signedValueBytes, err = p.FileCache.Read(signedValuePath)
+			}
+			if err != nil {
 				// 签名值属于签名扩展数据。文件缺失只影响当前签名，不能中止普通文档解析。
 				signedValueErr := fmt.Errorf("%s: 读取签名值失败: %w", signedValuePath, err)
 				p.signedValueErrors[body.ID] = signedValueErr
 				slog.Warn("读取签名值失败", "signature", body.ID, "file", signedValuePath, "error", err)
+			} else if body.Type == spec.SigTypeSign {
+				signedValue = &SignedValue{Raw: signedValueBytes, Format: "GB/T 35275 SignedData"}
+				p.signedValues[body.ID] = signedValue
 			} else if signedValue, err = ParseSignedValue(signedValueBytes); err != nil {
 				// SignedValue 是二进制扩展点。非 ASN.1 生产者数据继续保持历史兼容，
 				// 同时将解析错误保存下来供调用方查看。
@@ -1253,16 +1299,25 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		} else {
 			p.digestResults[body.ID] = digestResult
 		}
-		if verification, verificationErr := VerifySESSignedValue(signedValue); verificationErr != nil {
-			if signedValue != nil && signedValue.SES != nil {
+		if verification, verificationErr := VerifyDocumentSignature(context.Background(), p.FileCache, &sig, signedValue, nil); verificationErr != nil {
+			if signedValue != nil && (signedValue.SES != nil || body.Type == spec.SigTypeSign) {
 				p.verificationErrors[body.ID] = verificationErr
 				slog.Warn("验证签名失败", "signature", body.ID, "error", verificationErr)
 			}
 		} else if verification != nil {
-			BindSignatureDigest(verification, p.digestResults[body.ID])
 			p.verificationResults[body.ID] = verification
 		}
 		p.loadSeals(body.ID, &sig, seDir)
+	}
+	for id, signature := range p.signs {
+		if signature.Relative != "" {
+			result, err := p.VerifySignature(context.Background(), id, nil)
+			if err != nil {
+				p.verificationErrors[id] = err
+			} else {
+				p.verificationResults[id] = result
+			}
+		}
 	}
 	return nil
 }
@@ -1282,6 +1337,15 @@ func (p *Document) loadSeals(signatureID string, sig *models.Signature, seDir mo
 		return
 	}
 	if sig.SignedInfo.Seal != nil {
+		if image := sig.SignedInfo.Seal.ImageLoc; image != "" {
+			fileType := strings.TrimPrefix(strings.ToLower(path.Ext(image.String())), ".")
+			if supportedTypes[fileType] {
+				if data, err := p.FileCache.Read(image.Resolve(seDir).String()); err == nil {
+					p.registerSeal(sig, &SealData{FileType: fileType, Data: data})
+					return
+				}
+			}
+		}
 		sealFile := sig.SignedInfo.Seal.BaseLoc.Resolve(seDir).String()
 		data, err := p.FileCache.Read(sealFile)
 		if err == nil {
@@ -1403,9 +1467,44 @@ type Signatures struct {
 	Signatures []Signature `xml:"Signature,omitempty"`
 }
 type Signature struct {
-	ID      string       `xml:"ID,attr"`
-	BaseLoc models.StLoc `xml:"BaseLoc,attr"`
+	ID       string       `xml:"ID,attr"`
+	BaseLoc  models.StLoc `xml:"BaseLoc,attr"`
+	Type     string       `xml:"Type,attr"`
+	Relative string       `xml:"Relative,attr"`
 }
+
+// VerifySignature 连同 Relative 指定的基础签名验证，最多递归 32 层。
+func (p *Document) VerifySignature(ctx context.Context, id string, options *SignatureVerificationOptions) (*SignatureVerificationResult, error) {
+	return p.verifySignature(ctx, id, options, map[string]bool{})
+}
+
+func (p *Document) verifySignature(ctx context.Context, id string, options *SignatureVerificationOptions, seen map[string]bool) (*SignatureVerificationResult, error) {
+	if seen[id] || len(seen) >= 32 {
+		return nil, fmt.Errorf("签名 Relative 存在循环或超过深度上限")
+	}
+	seen[id] = true
+	defer delete(seen, id)
+	signature := p.GetSignature(id)
+	if signature == nil {
+		return nil, fmt.Errorf("基础签名不存在: %s", id)
+	}
+	result, err := VerifyDocumentSignature(ctx, p.FileCache, signature, p.GetSignedValue(id), options)
+	if err != nil {
+		return nil, err
+	}
+	if signature.Relative != "" {
+		base, err := p.verifySignature(ctx, signature.Relative, options, seen)
+		if err != nil {
+			result.Validation.set("signature.relative", "invalid", err.Error())
+		} else if !base.FullyValid() {
+			result.Validation.set("signature.relative", base.Validation.Status, "基础签名未完整通过验证: "+signature.Relative)
+		} else {
+			result.Validation.check("signature.relative", nil)
+		}
+	}
+	return result, nil
+}
+
 type SealInfo struct {
 	StampAnnot *models.StampAnnot
 	SealData   *SealData

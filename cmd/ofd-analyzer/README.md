@@ -5,6 +5,21 @@
 JSON 报告的 `schema_version` 保持为 `1`，签名项增加 `validation` 完整验证结论与检查明细。
 文本、Markdown、PDF 和 XLSX 报告也展示完整结论；两层数学签名通过不代表完整验证通过。
 
+普通 `Type=Sign` 按 GM/T 0099 的 SM2/SM3 SignedData 验证，`verification_valid` 表示单层
+数学签名，`outer_verification` 记录其证书与签名结果，不生成 SES 印章内部签名结果。
+SES 继续保留两层语义。两种类型都需要检查 `validation` 的完整结论。
+
+GM/T 0099-2020 加密包会报告“已加密且未解锁”。可见元数据检查成功时报告状态为
+`partial`，JSON 可选 `encryption` 字段提供加密操作、接收者和可读映射；分析 API 同时
+返回可由 `errors.Is(err, crypt.ErrLocked)` 判断的错误，CLI 退出 `1`，诊断写入 stderr。
+页面、资源、目录树和签名统计尚未执行，不能将统计零值解释为原文没有这些内容。
+元数据也无法检查时状态为 `failed`。当前阶段和格式约定见
+[OFD-CRYPTO.md](../../docs/OFD-CRYPTO.md)。
+
+Go API `Analyze` 还接受完整解锁的 `crypt.View`，通过独立租约读取逻辑内容，并在报告的
+`encryption.state=unlocked` 中保留来源状态。部分视图仍返回 `ErrLocked` 和 `partial`，
+不会把未解锁内容算作零页/无签名。视图的压缩统计为逻辑视角，不能代替原始 ZIP 的压缩大小。
+
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。分析结果不构成法律、合规、审计或安全结论。
 
 ## 构建

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ofd:DecyptSeed xmlns:ofd="http://www.ofdspec.org/2016" ID="enc1" EncryptCaseId="1.1.1">
+  <ofd:UserInfo UserName="测试用户">
+    <ofd:EncryptedWK>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</ofd:EncryptedWK>
+  </ofd:UserInfo>
+  <ofd:ExtendParams/>
+</ofd:DecyptSeed>

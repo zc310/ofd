@@ -13,10 +13,32 @@ import (
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	pdfimport "github.com/zc310/ofd/pkg/converter/import/pdf"
+	"github.com/zc310/ofd/pkg/crypt"
 )
 
 type exampleBufferWriteCloser struct {
 	*bytes.Buffer
+}
+
+func ExampleConvert_decryptedView() {
+	ctx := context.Background()
+	var encrypted, output bytes.Buffer
+	_, err := crypt.Encrypt(ctx, "../../testdata/ofd-creator/helloworld.ofd", &encrypted, crypt.EncryptOptions{Recipients: []crypt.EncryptRecipient{{UserName: "reader", Password: []byte("示例口令")}}})
+	if err != nil {
+		panic(err)
+	}
+	view, err := crypt.Open(ctx, encrypted.Bytes(), crypt.OpenOptions{DecryptOptions: crypt.DecryptOptions{Password: []byte("示例口令")}})
+	if err != nil {
+		panic(err)
+	}
+	defer view.Close()
+	// The converter borrows the view directly; no plaintext ZIP is created.
+	err = converter.Convert(ctx, "", "text", view, &output)
+	fmt.Println(err == nil && output.Len() > 0)
+	fmt.Println(view.EncryptionInfo().State)
+	// Output:
+	// true
+	// unlocked
 }
 
 func (exampleBufferWriteCloser) Close() error { return nil }

@@ -48,8 +48,18 @@ var roots = map[string]string{
 // profile overlay，只在文档声明了非基础 DocType 时使用。两者按需选择，
 // 因此基础 profile 的一致性检查不受 overlay 影响。
 type Set struct {
-	byRoot        map[string]*xsd.Schema
-	profileByRoot map[string]*xsd.Schema
+	byRoot         map[string]*xsd.Schema
+	profileByRoot  map[string]*xsd.Schema
+	securityByRoot map[string]*xsd.Schema
+}
+
+// SecuritySchema 返回显式启用的 GM/T 0099 扩展模式，不改变基础标准模式。
+func (s *Set) SecuritySchema(root string) (*xsd.Schema, bool) {
+	if s == nil {
+		return nil, false
+	}
+	value, ok := s.securityByRoot[root]
+	return value, ok
 }
 
 var defaultSet struct {
@@ -103,6 +113,10 @@ func load() (*Set, error) {
 	for _, filename := range roots {
 		filenames[filename] = struct{}{}
 	}
+	securityRoots := map[string]string{"Signature": "SignatureGMT0099.xsd", "Signatures": "SignaturesGMT0099.xsd", "OFDEntries": "OFDEntriesGMT0099.xsd", "DocEntries": "OFDEntriesGMT0099.xsd"}
+	for _, filename := range securityRoots {
+		filenames[filename] = struct{}{}
+	}
 	for filename := range filenames {
 		source, err := fs.ReadFile(Files, path.Join("xsd", filename))
 		if err != nil {
@@ -115,8 +129,9 @@ func load() (*Set, error) {
 	}
 
 	set := &Set{
-		byRoot:        make(map[string]*xsd.Schema, len(roots)),
-		profileByRoot: make(map[string]*xsd.Schema, len(roots)),
+		byRoot:         make(map[string]*xsd.Schema, len(roots)),
+		profileByRoot:  make(map[string]*xsd.Schema, len(roots)),
+		securityByRoot: make(map[string]*xsd.Schema, len(securityRoots)),
 	}
 	for root, filename := range roots {
 		schema, err := xsd.LoadFile(filename, xsd.Options{
@@ -141,6 +156,13 @@ func load() (*Set, error) {
 		if filename != ofdRoot {
 			set.profileByRoot[root] = set.byRoot[root]
 		}
+	}
+	for root, filename := range securityRoots {
+		compiled, err := xsd.LoadFile(filename, xsd.Options{Resolver: resolver})
+		if err != nil {
+			return nil, fmt.Errorf("编译 GM/T 0099 模式失败: %w", err)
+		}
+		set.securityByRoot[root] = compiled
 	}
 	return set, nil
 }

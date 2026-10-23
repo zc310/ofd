@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -265,6 +266,8 @@ func normalizeFormatName(format string) string {
 // 返回错误，要求调用方显式指定 from。
 func detectInputFormat(input any) (string, error) {
 	switch value := input.(type) {
+	case core.PackageSource:
+		return "ofd", nil
 	case []*render.Document:
 		return "ofd", nil
 	case string:
