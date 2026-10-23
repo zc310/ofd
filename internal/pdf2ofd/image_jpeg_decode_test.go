@@ -27,11 +27,11 @@ func TestPDFOrdinaryJPEGDecodeTransformsOriginalComponents(t *testing.T) {
 		decode      types.Array
 		want        color.NRGBA
 	}{
-		{"gray inversion", "DeviceGray", matteJPEG(t, true, color.NRGBA{R: 0, A: 255}), types.Array{types.Integer(1), types.Integer(0)}, color.NRGBA{255, 255, 255, 255}},
-		{"gray range", "DeviceGray", matteJPEG(t, true, color.NRGBA{R: 255, A: 255}), types.Array{types.Float(.25), types.Float(.75)}, color.NRGBA{191, 191, 191, 255}},
-		{"RGB separate ranges", "DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 255, 255, 255}), types.Array{types.Integer(1), types.Integer(0), types.Integer(0), types.Integer(1), types.Integer(0), types.Float(.5)}, color.NRGBA{0, 255, 128, 255}},
-		{"Adobe CMYK inversion", "DeviceCMYK", constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0), types.Array{types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0)}, color.NRGBA{0, 173, 239, 255}},
-		{"Adobe YCCK fixed zero ink", "DeviceCMYK", constantMatteCMYKJPEG([4]byte{127, 128, 128, 128}, 2), types.Array{types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0)}, color.NRGBA{255, 255, 255, 255}},
+		{"gray inversion", "DeviceGray", matteJPEG(t, true, color.NRGBA{R: 0, A: 255}), types.Array{types.Integer(1), types.Integer(0)}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}},
+		{"gray range", "DeviceGray", matteJPEG(t, true, color.NRGBA{R: 255, A: 255}), types.Array{types.Float(.25), types.Float(.75)}, color.NRGBA{R: 191, G: 191, B: 191, A: 255}},
+		{"RGB separate ranges", "DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), types.Array{types.Integer(1), types.Integer(0), types.Integer(0), types.Integer(1), types.Integer(0), types.Float(.5)}, color.NRGBA{G: 255, B: 128, A: 255}},
+		{"Adobe CMYK inversion", "DeviceCMYK", constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0), types.Array{types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0)}, color.NRGBA{G: 173, B: 239, A: 255}},
+		{"Adobe YCCK fixed zero ink", "DeviceCMYK", constantMatteCMYKJPEG([4]byte{127, 128, 128, 128}, 2), types.Array{types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0)}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stream := jpegMatteStream(tc.space, tc.data, true)
@@ -60,7 +60,7 @@ func TestPDFOrdinaryJPEGDecodeClampsAfterRangeMapping(t *testing.T) {
 		if x >= 8 {
 			v = 255
 		}
-		if got := color.NRGBAModel.Convert(img.At(x, 4)).(color.NRGBA); got != (color.NRGBA{v, v, v, 255}) {
+		if got := color.NRGBAModel.Convert(img.At(x, 4)).(color.NRGBA); got != (color.NRGBA{R: v, G: v, B: v, A: 255}) {
 			t.Fatalf("clamped pixel %d=%v", x, got)
 		}
 	}
@@ -73,7 +73,7 @@ func TestPDFOrdinaryJPEGIdentityDecodeKeepsOriginalBytes(t *testing.T) {
 			if gray {
 				space, components = "DeviceGray", 1
 			}
-			data := matteJPEG(t, gray, color.NRGBA{64, 128, 192, 255})
+			data := matteJPEG(t, gray, color.NRGBA{R: 64, G: 128, B: 192, A: 255})
 			stream := jpegMatteStream(space, data, true)
 			if explicit {
 				decode := types.Array{}
@@ -97,8 +97,8 @@ func TestPDFJPEGUsesCachedContentWithOrWithoutRaw(t *testing.T) {
 		space string
 		data  []byte
 	}{
-		{"DeviceGray", matteJPEG(t, true, color.NRGBA{64, 64, 64, 255})},
-		{"DeviceRGB", matteJPEG(t, false, color.NRGBA{64, 128, 192, 255})},
+		{"DeviceGray", matteJPEG(t, true, color.NRGBA{R: 64, G: 64, B: 64, A: 255})},
+		{"DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 64, G: 128, B: 192, A: 255})},
 		{"DeviceCMYK", constantMatteCMYKJPEG([4]byte{0, 255, 255, 255}, 0)},
 	} {
 		t.Run(tc.space, func(t *testing.T) {
@@ -224,7 +224,7 @@ func TestPDFOrdinaryJPEGDecodeBudgetsAndCache(t *testing.T) {
 	if err := ConvertWithOptions(t.Context(), budgetImagePDF("/Im0 Do /Im0 Do", object), &output, "", Options{Strict: true, Limits: Limits{MaxTotalImagePixels: 128, MaxOperations: 200}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{255, 255, 255, 255}) {
+	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{R: 255, G: 255, B: 255, A: 255}) {
 		t.Fatal(got)
 	}
 }
@@ -251,7 +251,7 @@ func TestPDFOrdinaryJPEGDecodeReadsFlateWrapperAndIndirectEndpoints(t *testing.T
 	}}
 	options, _ := (Options{Strict: true}).Normalize()
 	p := pdfInterpreter{ctx: &model.Context{XRefTable: xref}, control: &conversionControl{ctx: t.Context(), options: options}}
-	if got := color.NRGBAModel.Convert(jpxDecodedImage(t, &p, stream).At(4, 4)).(color.NRGBA); got != (color.NRGBA{255, 255, 255, 255}) {
+	if got := color.NRGBAModel.Convert(jpxDecodedImage(t, &p, stream).At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 255, B: 255, A: 255}) {
 		t.Fatal(got)
 	}
 	if reference, ok := stream.Dict["Decode"].(types.IndirectRef); !ok || reference.ObjectNumber != 7 {
@@ -278,12 +278,12 @@ func TestPDFOrdinaryJPEGDecodeCombinesWithMasks(t *testing.T) {
 			img := jpxDecodedImage(t, &pdfInterpreter{}, stream)
 			if source, ok := img.(*image.NRGBA64); ok {
 				got := source.NRGBA64At(4, 4)
-				if got != (color.NRGBA64{65535, 65535, 65535, want}) {
+				if got != (color.NRGBA64{R: 65535, G: 65535, B: 65535, A: want}) {
 					t.Fatal(got)
 				}
 			} else {
 				got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA)
-				if got != (color.NRGBA{255, 255, 255, byte(want / 257)}) {
+				if got != (color.NRGBA{R: 255, G: 255, B: 255, A: byte(want / 257)}) {
 					t.Fatal(got)
 				}
 			}
@@ -365,7 +365,7 @@ func TestPDFOrdinaryJPEGDecodeStrictConversionRendersInvertedImage(t *testing.T)
 
 func TestPDFOrdinaryJPEGDecodeChecksDimensionsAndColorTransform(t *testing.T) {
 	for _, failure := range []string{"dimensions", "ColorTransform"} {
-		stream := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 255, 255, 255}), true)
+		stream := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 255, B: 255, A: 255}), true)
 		stream.Dict["Decode"] = types.Array{types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0)}
 		if failure == "dimensions" {
 			stream.Dict["Width"] = types.Integer(16)
@@ -379,7 +379,7 @@ func TestPDFOrdinaryJPEGDecodeChecksDimensionsAndColorTransform(t *testing.T) {
 }
 
 func TestPDFOrdinaryJPEGDecodeReportsUnsupportedTransformAndStrictFailure(t *testing.T) {
-	data := matteJPEG(t, false, color.NRGBA{255, 255, 255, 255})
+	data := matteJPEG(t, false, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	object := compressedColorKeyObject(data, "DCTDecode", "DeviceRGB", "/Decode [1 0 1 0 1 0] /DecodeParms << /ColorTransform 0 >>", 8, 8, 8)
 	input := budgetImagePDF("/Im0 Do", object)
 	for _, strict := range []bool{false, true} {

@@ -50,9 +50,9 @@ func colorKeyJPEGHalves(t *testing.T, gray bool) []byte {
 		rgb := image.NewNRGBA(image.Rect(0, 0, 16, 8))
 		for y := 0; y < 8; y++ {
 			for x := 0; x < 16; x++ {
-				v := color.NRGBA{255, 255, 255, 255}
+				v := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 				if x >= 8 {
-					v = color.NRGBA{255, 0, 0, 255}
+					v = color.NRGBA{R: 255, A: 255}
 				}
 				rgb.SetNRGBA(x, y, v)
 			}
@@ -163,7 +163,7 @@ func TestPDFJBIG2ColorKeyUsesBinarySamplesBeforeDecode(t *testing.T) {
 					if raw == key {
 						alpha = 0
 					}
-					want := color.NRGBA{v, v, v, alpha}
+					want := color.NRGBA{R: v, G: v, B: v, A: alpha}
 					if got := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA); got != want {
 						t.Fatalf("invert=%v key=%d pixel %d,%d=%v want %v", invert, key, x, y, got, want)
 					}
@@ -277,7 +277,7 @@ func TestPDFCompressedColorKeyInvalidDataReportsAndPreservesBase(t *testing.T) {
 					base.Dict["Width"] = types.Integer(16)
 					base.Dict["Mask"] = types.Array{types.Integer(0), types.Integer(0)}
 				case "ColorTransform":
-					base = jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 0, 0, 255}), true)
+					base = jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, A: 255}), true)
 					base.Dict["Mask"] = types.Array{types.Integer(255), types.Integer(255), types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0)}
 					base.FilterPipeline[0].DecodeParms = types.Dict{"ColorTransform": types.Integer(0)}
 				}

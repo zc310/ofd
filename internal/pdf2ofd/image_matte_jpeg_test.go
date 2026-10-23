@@ -59,10 +59,10 @@ func TestPDFJPEGMatteRestoresColourWithRawOrJPEGMask(t *testing.T) {
 					continue
 				}
 				t.Run(fmt.Sprintf("gray%v_base%v_mask%v", gray, jpegBase, jpegMask), func(t *testing.T) {
-					cs, pixel, matte := "DeviceRGB", color.NRGBA{255, 127, 127, 255}, types.Array{types.Integer(1), types.Integer(1), types.Integer(1)}
+					cs, pixel, matte := "DeviceRGB", color.NRGBA{R: 255, G: 127, B: 127, A: 255}, types.Array{types.Integer(1), types.Integer(1), types.Integer(1)}
 					baseData := bytes.Repeat([]byte{255, 127, 127}, 64)
 					if gray {
-						cs, pixel, matte = "DeviceGray", color.NRGBA{128, 128, 128, 255}, types.Array{types.Integer(0)}
+						cs, pixel, matte = "DeviceGray", color.NRGBA{R: 128, G: 128, B: 128, A: 255}, types.Array{types.Integer(0)}
 						baseData = bytes.Repeat([]byte{128}, 64)
 					}
 					if jpegBase {
@@ -104,7 +104,7 @@ func TestPDFJPEGMatteAppliesBaseAndMaskDecode(t *testing.T) {
 	mask := jpegMatteStream("DeviceGray", matteJPEG(t, true, color.NRGBA{R: 127, A: 255}), true)
 	mask.Dict["Matte"] = types.Array{types.Integer(1), types.Integer(1), types.Integer(1)}
 	mask.Dict["Decode"] = types.Array{types.Integer(1), types.Integer(0)}
-	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{0, 128, 128, 255}), true)
+	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{G: 128, B: 128, A: 255}), true)
 	base.Dict["SMask"] = mask
 	base.Dict["Decode"] = types.Array{types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0), types.Integer(1), types.Integer(0)}
 	opts, _ := (Options{Strict: true}).Normalize()
@@ -226,7 +226,7 @@ func TestPDFJPEGMatteUnblendsAdobeCMYKAndYCCKBeforeRGB(t *testing.T) {
 
 func jpegMattePDF(t *testing.T, content string, outerFlate bool) []byte {
 	t.Helper()
-	base := matteJPEG(t, false, color.NRGBA{255, 127, 127, 255})
+	base := matteJPEG(t, false, color.NRGBA{R: 255, G: 127, B: 127, A: 255})
 	mask := matteJPEG(t, true, color.NRGBA{R: 128, A: 255})
 	filter := "/DCTDecode"
 	if outerFlate {
@@ -283,7 +283,7 @@ func TestPDFJPEGMatteBudgetsIncludeExtraDecodesAndCache(t *testing.T) {
 	if err := ConvertWithOptions(t.Context(), jpegMattePDF(t, "/Im0 Do /Im0 Do", false), &output, "", Options{Strict: true, Limits: Limits{MaxTotalImagePixels: 320, MaxOperations: 580}}); err != nil {
 		t.Fatal(err)
 	}
-	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 127, 127, 255}), true)
+	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 127, B: 127, A: 255}), true)
 	base.Dict["Width"], base.Dict["Height"] = types.Integer(1), types.Integer(1)
 	options, _ := (Options{Limits: Limits{MaxImagePixels: 4}}).Normalize()
 	p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
@@ -296,7 +296,7 @@ func TestPDFJPEGMatteKeeps16BitMaskAlpha(t *testing.T) {
 	mask := jpegMatteStream("DeviceGray", bytes.Repeat(softMaskSamples16(32768), 64), false)
 	mask.Dict["BitsPerComponent"] = types.Integer(16)
 	mask.Dict["Matte"] = types.Array{types.Integer(1), types.Integer(1), types.Integer(1)}
-	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 127, 127, 255}), true)
+	base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 127, B: 127, A: 255}), true)
 	base.Dict["SMask"] = mask
 	options, _ := (Options{Strict: true}).Normalize()
 	p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
@@ -321,7 +321,7 @@ func TestPDFJPEGMatteReportsMismatchedSamplesAndTransform(t *testing.T) {
 		var diagnostics []Diagnostic
 		options, _ := (Options{Strict: true, OnDiagnostic: func(d Diagnostic) { diagnostics = append(diagnostics, d) }}).Normalize()
 		p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}, source: Diagnostic{Page: 1, Object: 5, Resource: "Im0"}}
-		base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 127, 127, 255}), true)
+		base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 127, B: 127, A: 255}), true)
 		mask := jpegMatteStream("DeviceGray", matteJPEG(t, true, color.NRGBA{R: 128, A: 255}), true)
 		mask.Dict["Matte"] = types.Array{types.Integer(1), types.Integer(1), types.Integer(1)}
 		base.Dict["SMask"] = mask

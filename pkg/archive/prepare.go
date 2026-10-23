@@ -3,12 +3,13 @@ package archive
 import (
 	"context"
 	"fmt"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/analyzer"

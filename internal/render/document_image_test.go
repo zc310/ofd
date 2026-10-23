@@ -799,7 +799,7 @@ func TestImageEffectsRenderBorderMaskAndSubstitution(t *testing.T) {
 		px := int(x / 25.4 * 72)
 		py := int(y / 25.4 * 72)
 		r, g, b, a := raster.At(px, py).RGBA()
-		return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)}
+		return color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
 	}
 	left := at(14, 15)
 	right := at(26, 15)

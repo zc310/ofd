@@ -18,7 +18,7 @@ func TestTinySkiaNonPlainGradientNotTransparent(t *testing.T) {
 	}
 	grad := geom.GradientFunc(func(x, y float64) color.RGBA {
 		t := x / 100.0
-		return color.RGBA{uint8(0xff - 0xdf*t), 0x20, uint8(0x20 + 0xdf*t), 0xff}
+		return color.RGBA{R: uint8(0xff - 0xdf*t), G: 0x20, B: uint8(0x20 + 0xdf*t), A: 0xff}
 	})
 	b.SetFillGradient(grad)
 	b.DrawPath(0, 0, geom.Rectangle(100, 100))

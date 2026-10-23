@@ -30,9 +30,9 @@ func TestTransparencyMaskPreservesInheritedXObjectNamedMask(t *testing.T) {
 					input := transparencyPDF(".2 .6 .8 rg 0 0 100 100 re f q /Apply gs .8 .2 .4 rg 10 10 40 80 re f 50 10 40 80 re f 0 g BT /F1 9 Tf 24 50 Td (MaskText) Tj ET Q q 8 0 0 8 90 2 cm /Mask Do Q", "/ExtGState << /Apply 6 0 R /Half 9 0 R >> /XObject "+xobjects, objects...)
 					ofd, page, _ := transparencyConvert(t, input)
 					img := textFidelityRaster(t, ofd, page)
-					want := color.NRGBA{128, 102, 153, 255}
+					want := color.NRGBA{R: 128, G: 102, B: 153, A: 255}
 					if kind == "Luminosity" {
-						want = color.NRGBA{89, 128, 178, 255}
+						want = color.NRGBA{R: 89, G: 128, B: 178, A: 255}
 					}
 					for _, x := range []int{70, 130} {
 						got := color.NRGBAModel.Convert(img.At(x, 70)).(color.NRGBA)

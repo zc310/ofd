@@ -114,7 +114,7 @@ func TestPDFJPXIndependentOpenJPEGColourAssociation(t *testing.T) {
 	}
 	stream := jpxMatteStream("DeviceRGB", reorderedJPX(t, data, 3, 0, 3, 1, 2))
 	img := jpxDecodedImage(t, &pdfInterpreter{}, stream)
-	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{127, 127, 255, 255}) {
+	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 127, G: 127, B: 255, A: 255}) {
 		t.Fatalf("independent colour association=%v", got)
 	}
 }
@@ -126,7 +126,7 @@ func TestPDFJPXChannelDefinitionEntryOrderDoesNotChangeMapping(t *testing.T) {
 	copy(stream.Raw[pos:pos+6], stream.Raw[pos+12:pos+18])
 	copy(stream.Raw[pos+12:pos+18], first)
 	img := jpxDecodedImage(t, &pdfInterpreter{}, stream)
-	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{52, 86, 18, 255}) {
+	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 52, G: 86, B: 18, A: 255}) {
 		t.Fatalf("definition entry order changed mapping: %v", got)
 	}
 }
@@ -141,7 +141,7 @@ func TestPDFJPXReorderedChannelsUseBudgetCacheAndStrictDiagnostics(t *testing.T)
 	if err := ConvertWithOptions(t.Context(), budgetImagePDF("/Im0 Do /Im0 Do", object), &output, "", Options{Strict: true, Limits: Limits{MaxOperations: 270, MaxTotalImagePixels: 64}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{52, 86, 18, 255}) {
+	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{R: 52, G: 86, B: 18, A: 255}) {
 		t.Fatalf("cached reordered pixel=%v", got)
 	}
 	// 将两个颜色角色指向同一个关联，必须报告而不能按平面次序继续。

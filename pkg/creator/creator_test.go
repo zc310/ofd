@@ -84,9 +84,6 @@ func TestCreateTextDocumentCanBeParsed(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if len(ofd.Documents) != 1 || len(ofd.Documents[0].Pages) != 1 {
 		t.Fatalf("documents/pages = %d/%d, want 1/1", len(ofd.Documents), len(ofd.Documents[0].Pages))
@@ -183,9 +180,6 @@ func TestCreateDocumentMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	info := ofd.DocBodies[0].DocInfo
 	if info.Abstract == nil || *info.Abstract != "摘要" || info.DocUsage == nil || *info.DocUsage != "Report" || info.Keywords == nil || len(info.Keywords.Keyword) != 2 || info.CustomDatas == nil || len(info.CustomDatas.CustomData) != 1 || info.Cover == nil {
@@ -207,9 +201,6 @@ func TestCreatePageResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[0]
 	if len(page.PageRes()) != 1 || firstItemOfKind(page.Content().Layer[0].Items, models.PageItemImage).Image.ResourceID != 70 {
@@ -235,9 +226,6 @@ func TestCreateAllowsExplicitResourceIDsOutOfOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if len(ofd.Documents[0].Pages) != 1 || uint64(ofd.Documents[0].Pages[0].ID) == 100 || uint64(ofd.Documents[0].Pages[0].ID) == 200 {
 		t.Fatalf("automatic page ID collided with an explicit resource ID: %+v", ofd.Documents[0].Pages[0].ID)
@@ -363,9 +351,6 @@ func TestCreateAttachments(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if document.GetAttachments() == nil || len(document.GetAttachments().Attachments) != 1 {
@@ -392,9 +377,6 @@ func TestCreateCustomTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].GetCustomTags() == nil || len(ofd.Documents[0].GetCustomTags().CustomTags) != 1 {
 		t.Fatalf("自定义标签清单未生成: %+v", ofd.Documents[0].GetCustomTags())
@@ -420,9 +402,6 @@ func TestCreateExtensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].GetExtensions() == nil || len(ofd.Documents[0].GetExtensions().Extensions) != 1 {
 		t.Fatalf("扩展清单未生成: %+v", ofd.Documents[0].GetExtensions())
@@ -446,9 +425,6 @@ func TestCreateExternalExtensionData(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].GetExtensions() == nil || len(ofd.Documents[0].GetExtensions().Extensions) != 1 || ofd.Documents[0].GetExtensions().Extensions[0].ExtendData == nil || ofd.Documents[0].GetExtensions().Extensions[0].ExtendData.String() != "Data/extension.bin" {
 		t.Fatalf("外部扩展数据未生成: %+v", ofd.Documents[0].GetExtensions())
@@ -733,9 +709,6 @@ func TestCreateSignatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].GetSignature("sig-1") == nil {
 		t.Fatalf("签名未正确解析")
@@ -916,9 +889,6 @@ func TestCreateDocumentVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].GetVersion("version-1") == nil || ofd.Documents[0].GetVersion("version-1").DocRoot.String() != "/Doc_0/Versions/Files/version-document.xml" {
 		t.Fatalf("文档版本未正确解析")
@@ -1155,9 +1125,6 @@ func TestCreateEmbeddedFontWritesFontResource(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	ft := ofd.Documents[0].GetFont(1)
 	if ft == nil {
@@ -1228,9 +1195,6 @@ func TestCreateEmbeddedTTCFontResource(t *testing.T) {
 		t.Fatal("extracted OTF cannot be used by Canvas")
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	fontFile := ofd.Documents[0].GetFont(1).FontFile
 	if !strings.HasSuffix(string(fontFile), ".otf") {
@@ -1265,9 +1229,6 @@ func TestCreateTextWritesStyleAttributes(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
 	if text.HScale != 0.8 || text.ReadDirection != 1 || text.CharDirection != 2 || text.Weight != 700 || !text.Italic || !text.Stroke || text.Fill.Value(true) {
@@ -1297,9 +1258,6 @@ func TestCreateTextCodesAndCTM(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
 	if text.CTM == nil || text.CTM[4] != 3 || text.CTM[5] != 4 {
@@ -1363,9 +1321,6 @@ func TestCreateCompletesMissingTextCodeDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	code := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.TextCode[0]
 	if code.Value != "abc" || len(code.DeltaX) != 0 || len(code.DeltaY) != 0 {
@@ -1576,9 +1531,6 @@ func TestCreateTextCGTransforms(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
 	if len(text.CGTransform) != 1 {
@@ -1650,9 +1602,6 @@ func TestCreateSubsetsEmbeddedFontAndRemapsCGTransforms(t *testing.T) {
 		t.Fatalf("subset cmap lost used characters: 试=%d 测=%d", subset.GlyphIndex('试'), subset.GlyphIndex('测'))
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	transform := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text.CGTransform[0]
 	if len(transform.Glyphs) != 1 || transform.Glyphs[0] != int(subset.GlyphIndex('测')) {
@@ -1688,9 +1637,6 @@ func TestCreateActionsAndPageGoto(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if document.Actions == nil || len(document.Actions.Actions) != 1 || document.Actions.Actions[0].Event != "DO" || document.Actions.Actions[0].URI == nil || document.Actions.Actions[0].URI.URI != "https://example.com/document" || document.Actions.Actions[0].URI.Target == nil || *document.Actions.Actions[0].URI.Target != "_blank" {
@@ -1727,9 +1673,6 @@ func TestCreateBookmarkGotoAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	action := ofd.Documents[0].Document.Actions.Actions[0]
 	if action.Goto == nil || action.Goto.Bookmark == nil || action.Goto.Bookmark.Name != "chapter-1" {
@@ -1756,9 +1699,6 @@ func TestCreateMediaActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].MultiMedias == nil || len(document.DocumentResourceList()[0].MultiMedias.MultiMedia) != 2 {
@@ -1789,9 +1729,6 @@ func TestCreateAttachmentAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	action := ofd.Documents[0].Document.Actions.Actions[0]
 	if action.GotoA == nil || action.GotoA.AttachID != "att-1" || action.GotoA.NewWindow {
@@ -1823,9 +1760,6 @@ func TestCreateActionRegion(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	region := ofd.Documents[0].Document.Actions.Actions[0].Region
 	if region == nil || len(region.Areas) != 1 || len(region.Areas[0].Paths) != 6 || region.Areas[0].Paths[4].EndPoint == nil {
@@ -1849,9 +1783,6 @@ func TestCreateImageMediaAndCompositeReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	resource := ofd.Documents[0].DocumentResourceList()[0]
 	if resource.MultiMedias == nil || len(resource.MultiMedias.MultiMedia) != 1 || resource.MultiMedias.MultiMedia[0].Type != "Image" {
@@ -1883,9 +1814,6 @@ func TestCreateOutlinesAndBookmarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	if ofd.Documents[0].Outlines == nil || len(ofd.Documents[0].Outlines.OutlineElems) != 1 {
 		t.Fatalf("文档大纲未生成: %+v", ofd.Documents[0].Outlines)
@@ -1929,9 +1857,6 @@ func TestCreatePermissionsAndViewPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if document.Permissions == nil || document.Permissions.Edit == nil || *document.Permissions.Edit || document.Permissions.Annot == nil || !*document.Permissions.Annot {
@@ -1984,9 +1909,6 @@ func TestCreateTemplatePages(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if document.GetTemplate(10) == nil {
@@ -2019,9 +1941,6 @@ func TestCreateCompositeGraphicUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].CompositeGraphicUnits == nil || len(document.DocumentResourceList()[0].CompositeGraphicUnits.CompositeGraphicUnit) != 1 {
@@ -2051,17 +1970,14 @@ func TestCreateAdvancedColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	res := ofd.Documents[0].DocumentResourceList()[0]
 	if res.ColorSpaces == nil || len(res.ColorSpaces.ColorSpace) != 1 || uint64(res.ColorSpaces.ColorSpace[0].ID) != 30 {
 		t.Fatalf("颜色空间未正确生成: %+v", res.ColorSpaces)
 	}
-	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
-	if path.FillColor == nil || uint64(path.FillColor.ColorSpace) != 30 || path.FillColor.Value == nil || path.FillColor.Value.R != 51 {
-		t.Fatalf("高级颜色值未正确生成: %+v", path.FillColor)
+	object := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
+	if object.FillColor == nil || uint64(object.FillColor.ColorSpace) != 30 || object.FillColor.Value == nil || object.FillColor.Value.R != 51 {
+		t.Fatalf("高级颜色值未正确生成: %+v", object.FillColor)
 	}
 	checkGeneratedPackage(t, data)
 }
@@ -2077,9 +1993,6 @@ func TestCreateDefaultColorSpace(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	defaultCS := ofd.Documents[0].Document.CommonData.DefaultCS
 	if defaultCS == nil || uint64(*defaultCS) != 30 {
@@ -2101,9 +2014,6 @@ func TestCreatePublicResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	publicRes := ofd.Documents[0].Document.CommonData.PublicRes
 	if len(publicRes) != 1 || publicRes[0].String() != "Public/SharedRes.xml" {
@@ -2122,9 +2032,6 @@ func TestCreateColorSpaceProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	space := ofd.Documents[0].DocumentResourceList()[0].ColorSpaces.ColorSpace[0]
 	if space.Profile == "" || !strings.HasPrefix(space.Profile.String(), "Profiles/") {
@@ -2203,9 +2110,6 @@ func TestCreatePatternColor(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
 	if color == nil || color.Pattern == nil || color.Pattern.Width != 10 || color.Pattern.ReflectMethod != "RowAndColumn" || len(color.Pattern.CellContent.Items) != 1 {
@@ -2262,9 +2166,6 @@ func TestCreateRadialColor(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
 	if color == nil || color.RadialShd == nil || len(color.RadialShd.Segment) != 2 || color.RadialShd.EndRadius != 10 {
@@ -2285,9 +2186,6 @@ func TestCreateMeshColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	color := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path.FillColor
 	if color == nil || color.GouraudShd == nil || len(color.GouraudShd.Point) != 3 {
@@ -2312,9 +2210,6 @@ func TestCreateAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	pageID := ofd.Documents[0].Pages[0].ID
 	pageAnnot := ofd.Documents[0].GetAnnotation(pageID)
@@ -2379,9 +2274,6 @@ func TestCreateGraphicCTMAndPathClips(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	path := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemPath).Path
 	if path.CTM == nil || path.CTM[4] != 5 || path.CTM[5] != 6 {
@@ -2453,9 +2345,6 @@ func TestCreateTextClip(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	text := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemText).Text
 	area := text.Clips.Clip[0].Area[0]
@@ -2483,9 +2372,6 @@ func TestCreateImageCTMAndClips(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemImage).Image
 	if image.CTM == nil || image.CTM[4] != 7 || image.CTM[5] != 8 || image.Clips == nil || image.Clips.Clip[0].Area[0].Path == nil {
@@ -2521,9 +2407,6 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	path := firstItemOfKind(layer.Items, models.PageItemPath).Path
@@ -2557,9 +2440,6 @@ func TestCreateImageResourceReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	image := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemImage).Image
 	if image.Substitution != 70 || image.ImageMask != 70 {
@@ -2584,9 +2464,6 @@ func TestCreateNestedPageBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	pageBlock := firstItemOfKind(ofd.Documents[0].Pages[0].Content().Layer[0].Items, models.PageItemBlock).Block
 	innerBlock := firstItemOfKind(pageBlock.Items, models.PageItemBlock).Block
@@ -2625,9 +2502,6 @@ func TestCreateWritesColors(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	layer := ofd.Documents[0].Pages[0].Content().Layer[0]
 	text := firstItemOfKind(layer.Items, models.PageItemText).Text
@@ -2671,9 +2545,6 @@ func TestCreateWritesPageAreaAndLayerType(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	page := ofd.Documents[0].Pages[0]
 	if page.Area() == nil {
@@ -2704,9 +2575,6 @@ func TestCreateDocumentPageArea(t *testing.T) {
 		t.Fatal(err)
 	}
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	area := ofd.Documents[0].Document.CommonData.PageArea
 	if area.ApplicationBox == nil || area.ApplicationBox.X != 5 || area.ContentBox == nil || area.ContentBox.Width != 190 || area.BleedBox == nil || area.BleedBox.X != -3 {
@@ -2741,9 +2609,6 @@ func TestCreateMultipleLayersPreservesOrderAndIDs(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if document.CommonData.MaxUnitID != 6 {
@@ -2799,9 +2664,6 @@ func TestCreateDrawParamsAndReferences(t *testing.T) {
 	}
 
 	ofd := newTestOFD(t, data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer ofd.Close()
 	document := ofd.Documents[0]
 	if len(document.DocumentResourceList()) != 1 || document.DocumentResourceList()[0].DrawParams == nil || len(document.DocumentResourceList()[0].DrawParams.DrawParam) != 2 {

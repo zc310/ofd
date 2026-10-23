@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/goccy/go-json"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	bolt "go.etcd.io/bbolt"
 )

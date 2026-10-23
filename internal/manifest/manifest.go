@@ -1318,7 +1318,6 @@ func Load(path, format string) (Manifest, string, error) {
 	return result, baseDir, nil
 }
 
-// Build 将 manifest 转换为 creator 文档模型，并加载资源文件。
 // BuildOptions 控制 manifest 到 creator 文档的转换行为。
 type BuildOptions struct {
 	// StreamAssets 对通过 file 引用的封面、图片、多媒体、附件和页面图片使用
@@ -1329,6 +1328,7 @@ type BuildOptions struct {
 	LoadAsset func(name string) ([]byte, error)
 }
 
+// Build 将 manifest 转换为 creator 文档模型，并加载资源文件。
 func (m Manifest) Build(baseDir, assetRoot string) (creator.Document, error) {
 	return m.BuildWithOptions(baseDir, assetRoot, BuildOptions{})
 }

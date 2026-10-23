@@ -25,7 +25,7 @@ type matteJPXRGB struct{ *image.NRGBA }
 func (matteJPXRGB) ColorModel() color.Model {
 	return color.ModelFunc(func(c color.Color) color.Color {
 		r, g, b, _ := c.RGBA()
-		return color.RGBA{byte(r >> 8), byte(g >> 8), byte(b >> 8), 255}
+		return color.RGBA{R: byte(r >> 8), G: byte(g >> 8), B: byte(b >> 8), A: 255}
 	})
 }
 
@@ -57,7 +57,7 @@ func matteJPX(t *testing.T, cs string, bits int, samples []uint16, format jpeg20
 		rgb := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 		for y := 0; y < 8; y++ {
 			for x := 0; x < 8; x++ {
-				rgb.SetNRGBA(x, y, color.NRGBA{byte(samples[0]), byte(samples[1]), byte(samples[2]), 255})
+				rgb.SetNRGBA(x, y, color.NRGBA{R: byte(samples[0]), G: byte(samples[1]), B: byte(samples[2]), A: 255})
 			}
 		}
 		src = matteJPXRGB{rgb}
@@ -68,7 +68,7 @@ func matteJPX(t *testing.T, cs string, bits int, samples []uint16, format jpeg20
 			cmyk := image.NewNRGBA64(image.Rect(0, 0, 8, 8))
 			for y := 0; y < 8; y++ {
 				for x := 0; x < 8; x++ {
-					cmyk.SetNRGBA64(x, y, color.NRGBA64{samples[0], samples[1], samples[2], samples[3]})
+					cmyk.SetNRGBA64(x, y, color.NRGBA64{R: samples[0], G: samples[1], B: samples[2], A: samples[3]})
 				}
 			}
 			src = cmyk
@@ -76,7 +76,7 @@ func matteJPX(t *testing.T, cs string, bits int, samples []uint16, format jpeg20
 			cmyk := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 			for y := 0; y < 8; y++ {
 				for x := 0; x < 8; x++ {
-					cmyk.SetNRGBA(x, y, color.NRGBA{byte(samples[0]), byte(samples[1]), byte(samples[2]), byte(samples[3])})
+					cmyk.SetNRGBA(x, y, color.NRGBA{R: byte(samples[0]), G: byte(samples[1]), B: byte(samples[2]), A: byte(samples[3])})
 				}
 			}
 			src = cmyk
@@ -250,7 +250,7 @@ func TestPDFJPXMattePreserves16BitCMYKComponentsAndAlpha(t *testing.T) {
 	}
 	converter := pdfImageCMYKConverter(nil, base)
 	r, g, b := converter.toRGB16(0x1234, 0x3456, 0x5678, 0x789a)
-	if got := color.NRGBA64Model.Convert(img.At(4, 4)).(color.NRGBA64); got != (color.NRGBA64{r, g, b, 65535}) {
+	if got := color.NRGBA64Model.Convert(img.At(4, 4)).(color.NRGBA64); got != (color.NRGBA64{R: r, G: g, B: b, A: 65535}) {
 		t.Fatalf("CMYK components lost: %#v", got)
 	}
 	mask.Raw = matteJPX(t, "DeviceGray", 16, []uint16{32769}, jpeg2000.FormatJP2)
@@ -264,7 +264,7 @@ func TestPDFJPXMattePreserves16BitCMYKComponentsAndAlpha(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, g, b = converter.toRGB16(65535, 0, 0, 0)
-	if got := color.NRGBA64Model.Convert(img.At(4, 4)).(color.NRGBA64); got != (color.NRGBA64{r, g, b, 32769}) {
+	if got := color.NRGBA64Model.Convert(img.At(4, 4)).(color.NRGBA64); got != (color.NRGBA64{R: r, G: g, B: b, A: 32769}) {
 		t.Fatalf("CMYK unblending or alpha lost: %#v", got)
 	}
 }
@@ -276,7 +276,7 @@ func TestPDFJPXMatteSupportsJPEGAndJBIG2Inputs(t *testing.T) {
 			mask := jpxMatteStream("DeviceGray", matteJPX(t, "DeviceGray", 16, []uint16{32768}, jpeg2000.FormatJP2))
 			switch kind {
 			case "JPEG base":
-				base = jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{255, 127, 127, 255}), true)
+				base = jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 255, G: 127, B: 127, A: 255}), true)
 			case "JPEG mask":
 				mask = jpegMatteStream("DeviceGray", matteJPEG(t, true, color.NRGBA{R: 128, A: 255}), true)
 			case "JBIG2 mask":
@@ -423,7 +423,7 @@ func TestPDFJPXMatteReportsMismatchedAndUnsupportedMask(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got := color.NRGBAModel.Convert(img.At(0, 0)).(color.NRGBA); got != (color.NRGBA{255, 127, 127, 255}) {
+				if got := color.NRGBAModel.Convert(img.At(0, 0)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 127, B: 127, A: 255}) {
 					t.Fatalf("base changed: %v", got)
 				}
 			})

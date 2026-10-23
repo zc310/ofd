@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/pem"
-	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/klauspost/compress/zip"
 

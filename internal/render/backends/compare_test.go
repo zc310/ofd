@@ -145,8 +145,8 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	left := int(dpmm * boxX)
 	topRow := int(float64(hpx) - dpmm*(m[1][2]+imgH))
 	botRow := int(float64(hpx) - dpmm*(m[1][2]))
-	blackProbe := image.Point{left + 10, topRow + 5}
-	whiteProbe := image.Point{left + 10, botRow - 5}
+	blackProbe := image.Point{X: left + 10, Y: topRow + 5}
+	whiteProbe := image.Point{X: left + 10, Y: botRow - 5}
 
 	isDark := func(c color.Color) bool {
 		r, g, b, _ := c.RGBA()

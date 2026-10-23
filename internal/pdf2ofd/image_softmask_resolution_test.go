@@ -39,7 +39,7 @@ func TestPDFSoftMaskKeepsHigherResolutionAnd16BitAdjacentAlpha(t *testing.T) {
 					alphas = []uint16{0, 32768, 32769, 65535, 65535, 32769, 32768, 0}
 					mask = resolutionMask(4, 2, 16, softMaskSamples16(alphas...))
 				}
-				pixel := color.NRGBA64{0x1212, 0x3434, 0x5656, 65535}
+				pixel := color.NRGBA64{R: 0x1212, G: 0x3434, B: 0x5656, A: 65535}
 				base := resolutionBase(1, 1, 8, []byte{0x12, 0x34, 0x56}, mask)
 				if baseBits == 16 {
 					pixel.R, pixel.G, pixel.B = 0x1234, 0x3456, 0x5678
@@ -56,7 +56,7 @@ func TestPDFSoftMaskKeepsHigherResolutionAnd16BitAdjacentAlpha(t *testing.T) {
 					got := color.NRGBA64Model.Convert(img.At(i%4, i/4)).(color.NRGBA64)
 					if source, ok := img.(*image.NRGBA); ok {
 						v := source.NRGBAAt(i%4, i/4)
-						got = color.NRGBA64{uint16(v.R) * 257, uint16(v.G) * 257, uint16(v.B) * 257, uint16(v.A) * 257}
+						got = color.NRGBA64{R: uint16(v.R) * 257, G: uint16(v.G) * 257, B: uint16(v.B) * 257, A: uint16(v.A) * 257}
 					}
 					if got != pixel {
 						t.Fatalf("pixel %d=%#v want %#v", i, got, pixel)
@@ -85,7 +85,7 @@ func TestPDFSoftMaskKeepsBothAxesWhenResolutionsCross(t *testing.T) {
 				if vertical {
 					c, a = y, x
 				}
-				want := color.NRGBA{colors[c*3], colors[c*3+1], colors[c*3+2], []byte{0, 64, 128, 255}[a]}
+				want := color.NRGBA{R: colors[c*3], G: colors[c*3+1], B: colors[c*3+2], A: []byte{0, 64, 128, 255}[a]}
 				if got := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA); got != want {
 					t.Fatalf("vertical=%v pixel %d,%d=%v want %v", vertical, x, y, got, want)
 				}
@@ -96,8 +96,8 @@ func TestPDFSoftMaskKeepsBothAxesWhenResolutionsCross(t *testing.T) {
 
 func TestPDFSoftMaskExpanded16BitBaseUsesNonzeroSourceOrigin(t *testing.T) {
 	base := image.NewNRGBA64(image.Rect(-2, 3, 0, 4))
-	base.SetNRGBA64(-2, 3, color.NRGBA64{0x1234, 0x3456, 0x5678, 1})
-	base.SetNRGBA64(-1, 3, color.NRGBA64{0x789a, 0x9abc, 0xbcde, 2})
+	base.SetNRGBA64(-2, 3, color.NRGBA64{R: 0x1234, G: 0x3456, B: 0x5678, A: 1})
+	base.SetNRGBA64(-1, 3, color.NRGBA64{R: 0x789a, G: 0x9abc, B: 0xbcde, A: 2})
 	mask := resolutionMask(4, 2, 16, softMaskSamples16(0, 32768, 32769, 65535, 65535, 32769, 32768, 0))
 	data, ok := applyPDFImageSoftMask16(nil, base, mask, 4, 2, 16, nil)
 	if !ok {
@@ -173,7 +173,7 @@ func TestPDFSoftMaskKeepsCompressedMaskResolution(t *testing.T) {
 				options, _ := (Options{Strict: true, Limits: Limits{MaxTotalImagePixels: 17}}).Normalize()
 				p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
 				base := resolutionBase(1, 1, 16, softMaskSamples16(0x1234, 0x3456, 0x5678), mask)
-				pixel := color.NRGBA64{0x1234, 0x3456, 0x5678, 65535}
+				pixel := color.NRGBA64{R: 0x1234, G: 0x3456, B: 0x5678, A: 65535}
 				if baseBits == 8 {
 					base = resolutionBase(1, 1, 8, []byte{0x12, 0x34, 0x56}, mask)
 					pixel.R, pixel.G, pixel.B = 0x1212, 0x3434, 0x5656
@@ -187,7 +187,7 @@ func TestPDFSoftMaskKeepsCompressedMaskResolution(t *testing.T) {
 					got := color.NRGBA64Model.Convert(img.At(i%4, i/4)).(color.NRGBA64)
 					if source, ok := img.(*image.NRGBA); ok {
 						v := source.NRGBAAt(i%4, i/4)
-						got = color.NRGBA64{uint16(v.R) * 257, uint16(v.G) * 257, uint16(v.B) * 257, uint16(v.A) * 257}
+						got = color.NRGBA64{R: uint16(v.R) * 257, G: uint16(v.G) * 257, B: uint16(v.B) * 257, A: uint16(v.A) * 257}
 					}
 					if got != pixel {
 						t.Fatalf("pixel %d=%#v want %#v", i, got, pixel)
@@ -274,7 +274,7 @@ func TestPDFExpandedSoftMaskStrictConversionRendersAllTransparencyLevels(t *test
 			a := []int{0, 64, 128, 255, 255, 128, 64, 0}[y*4+x]
 			px, py := float64(40+x*40)*pdfPointToMillimeter*4, float64(80+y*40)*pdfPointToMillimeter*4
 			got := img.RGBAAt(int(px), int(py))
-			want := color.RGBA{byte(a), 0, byte(255 - a), 255}
+			want := color.RGBA{R: byte(a), B: byte(255 - a), A: 255}
 			for c, v := range []byte{got.R, got.G, got.B} {
 				w := []byte{want.R, want.G, want.B}[c]
 				if d := int(v) - int(w); d < -2 || d > 2 {

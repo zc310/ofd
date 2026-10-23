@@ -66,8 +66,8 @@ func TestPathSettle(t *testing.T) {
 // TestGradAt 验证渐变色标插值与端点钳制。
 func TestGradAt(t *testing.T) {
 	g := Grad{}
-	g.Add(0, color.RGBA{0, 0, 0, 255})
-	g.Add(1, color.RGBA{255, 255, 255, 255})
+	g.Add(0, color.RGBA{A: 255})
+	g.Add(1, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 	mid := g.At(0.5)
 	if mid.R == 0 || mid.R == 255 {
 		t.Fatalf("中点颜色 = %v", mid)
@@ -114,8 +114,8 @@ func TestPaintDistinguishesTransparentFromUnset(t *testing.T) {
 // TestLinearGradientAt 验证线性渐变采样。
 func TestLinearGradientAt(t *testing.T) {
 	g := Grad{}
-	g.Add(0, color.RGBA{0, 0, 0, 255})
-	g.Add(1, color.RGBA{255, 0, 0, 255})
+	g.Add(0, color.RGBA{A: 255})
+	g.Add(1, color.RGBA{R: 255, A: 255})
 	lg := g.ToLinear(Point{}, Point{X: 10})
 	if c := lg.At(0, 0); c.R != 0 {
 		t.Fatalf("起点颜色 = %v", c)

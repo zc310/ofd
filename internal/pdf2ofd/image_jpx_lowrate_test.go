@@ -81,7 +81,7 @@ func TestPDFJPXLowRateMatchesIndependentOpenJPEGEverySample(t *testing.T) {
 							want[c] = binary.BigEndian.Uint16(golden[idx*2:])
 						}
 					}
-					if pixel != (color.NRGBA64{want[0], want[1], want[2], 65535}) {
+					if pixel != (color.NRGBA64{R: want[0], G: want[1], B: want[2], A: 65535}) {
 						t.Fatalf("pixel %d=%#v want %x", i, pixel, want)
 					}
 				}
@@ -98,7 +98,7 @@ func TestPDFJPXLowRateColorKeyMatchesReconstructedSamples(t *testing.T) {
 	stream.Dict["Mask"] = types.Array{types.Integer(80), types.Integer(80)}
 	img := jpxDecodedImage(t, &pdfInterpreter{}, stream)
 	for i, v := range golden {
-		want := color.NRGBA{v, v, v, 255}
+		want := color.NRGBA{R: v, G: v, B: v, A: 255}
 		if v == 80 {
 			want.A = 0
 		}
@@ -126,7 +126,7 @@ func TestPDFJPXLowRateSoftMaskAndMatteUseReconstructedAlpha(t *testing.T) {
 		p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
 		img := jpxDecodedImage(t, &p, base)
 		for i, a := range golden {
-			want := color.NRGBA{255, 0, 0, a}
+			want := color.NRGBA{R: 255, A: a}
 			if got := color.NRGBAModel.Convert(img.At(i%8, i/8)).(color.NRGBA); got != want {
 				t.Fatalf("matte=%v pixel %d=%v want %v", matte, i, got, want)
 			}

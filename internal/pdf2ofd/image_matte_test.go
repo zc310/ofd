@@ -206,7 +206,7 @@ func TestPDFInvalidMatteReportsAndKeepsBaseImage(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got := color.NRGBAModel.Convert(img.At(0, 0)).(color.NRGBA); got != (color.NRGBA{255, 127, 127, 255}) {
+				if got := color.NRGBAModel.Convert(img.At(0, 0)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 127, B: 127, A: 255}) {
 					t.Fatalf("base changed: %v", got)
 				}
 			}

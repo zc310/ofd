@@ -69,7 +69,7 @@ func TestPDFJPXEYCCStrictConversionUsesBudgetAndCache(t *testing.T) {
 	if err := ConvertWithOptions(t.Context(), budgetImagePDF("/Im0 Do /Im0 Do", object), &output, "", Options{Strict: true, Limits: Limits{MaxOperations: 462, MaxTotalImagePixels: 64}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{215, 27, 174, 255}) {
+	if got := decodeFirstPageImage(t, output.Bytes()).NRGBAAt(4, 4); got != (color.NRGBA{R: 215, G: 27, B: 174, A: 255}) {
 		t.Fatalf("cached eYCC=%v", got)
 	}
 }
@@ -82,7 +82,7 @@ func TestPDFJPXEYCCIndependentOpenJPEGReorderedCodestream(t *testing.T) {
 		t.Fatal(err)
 	}
 	img := jpxDecodedImage(t, &pdfInterpreter{}, jpxMatteStream("DeviceRGB", data))
-	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{215, 27, 174, 255}) {
+	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 215, G: 27, B: 174, A: 255}) {
 		t.Fatalf("independent eYCC pixel=%v", got)
 	}
 }

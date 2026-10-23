@@ -81,7 +81,7 @@ func TestPDFJBIG2MatteAppliesBaseAndMaskDecodeBeforeUnblending(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := color.NRGBA{255, 255, 255, tc.alpha}
+			want := color.NRGBA{R: 255, G: 255, B: 255, A: tc.alpha}
 			if tc.baseJBIG2 && !tc.maskJBIG2 {
 				// 基础 Decode 得到精确 .5，普通 8 位掩码则为 128/255。
 				want.R, want.G, want.B = 254, 254, 254
@@ -89,7 +89,7 @@ func TestPDFJBIG2MatteAppliesBaseAndMaskDecodeBeforeUnblending(t *testing.T) {
 			if tc.alpha == 0 {
 				want = color.NRGBA{}
 			} else if tc.alpha == 255 {
-				want = color.NRGBA{128, 128, 128, 255}
+				want = color.NRGBA{R: 128, G: 128, B: 128, A: 255}
 			}
 			for y := 0; y < 8; y++ {
 				for x := 0; x < 8; x++ {
@@ -130,7 +130,7 @@ func TestPDFJBIG2MatteSupportsJPEGAndCMYKInputs(t *testing.T) {
 			mask := jbig2MatteStream(false)
 			mask.Dict["Decode"] = types.Array{types.Integer(0), types.Float(.5)}
 			mask.Dict["Matte"] = types.Array{types.Integer(0), types.Integer(0), types.Integer(0)}
-			base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{128, 0, 0, 255}), true)
+			base := jpegMatteStream("DeviceRGB", matteJPEG(t, false, color.NRGBA{R: 128, A: 255}), true)
 			want := color.NRGBA{R: 255, A: 128}
 			switch kind {
 			case "CMYK base":
@@ -205,7 +205,7 @@ func TestPDFJBIG2MatteReadsBoundedCompressedGlobalsAndIndirectDecode(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{255, 255, 255, 128}) {
+	if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 255, B: 255, A: 128}) {
 		t.Fatalf("globals pixel=%v", got)
 	}
 	if p.control.decoded != 105 {
@@ -304,7 +304,7 @@ func TestPDFJBIG2MatteReportsInvalidMaskAndKeepsBase(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{255, 127, 127, 255}) {
+				if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 127, B: 127, A: 255}) {
 					t.Fatalf("base changed: %v", got)
 				}
 			})

@@ -139,8 +139,8 @@ func TestMatrixConversion(t *testing.T) {
 
 func TestGradientConversionSampling(t *testing.T) {
 	g := canvas.Grad{}
-	g.Add(0, color.RGBA{0, 0, 0, 255})
-	g.Add(1, color.RGBA{255, 0, 0, 255})
+	g.Add(0, color.RGBA{A: 255})
+	g.Add(1, color.RGBA{R: 255, A: 255})
 	cg := g.ToLinear(canvas.Point{X: 0, Y: 0}, canvas.Point{X: 10, Y: 0})
 
 	gg := FromCanvasGradient(cg)

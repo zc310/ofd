@@ -2,7 +2,6 @@ package jobstore
 
 import (
 	"fmt"
-	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	bolt "go.etcd.io/bbolt"
 )

@@ -21,12 +21,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	bolt "go.etcd.io/bbolt"
 )

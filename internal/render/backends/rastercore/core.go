@@ -39,11 +39,15 @@ type StrokeStyle struct {
 type DeviceOp byte
 
 const (
-	// MoveOp/LineOp/QuadOp/CubeOp/CloseOp 对应路径段类型。
+	// MoveOp 表示移动到点的路径段。
 	MoveOp DeviceOp = iota
+	// LineOp 表示直线路径段。
 	LineOp
+	// QuadOp 表示二次贝塞尔路径段。
 	QuadOp
+	// CubeOp 表示三次贝塞尔路径段。
 	CubeOp
+	// CloseOp 表示闭合路径段。
 	CloseOp
 )
 

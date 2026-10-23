@@ -2,11 +2,12 @@ package archive
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-json"
 
 	"github.com/klauspost/compress/zip"
 

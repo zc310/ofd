@@ -110,14 +110,14 @@ func TestResolveColorSpaceColorCMYKChannelOrder(t *testing.T) {
 		want  color.RGBA
 		note  string
 	}{
-		{"255 0 0 0", color.RGBA{0, 173, 239, 255}, "通道 1 满值应为青"},
-		{"0 255 0 0", color.RGBA{255, 242, 0, 255}, "通道 2 满值应为黄"},
-		{"0 0 255 0", color.RGBA{236, 0, 140, 255}, "通道 3 满值应为品红"},
-		{"0 0 0 255", color.RGBA{35, 31, 32, 255}, "通道 4 满值应为黑"},
-		{"255 255 0 0", color.RGBA{0, 166, 80, 255}, "青+黄 叠印为绿"},
-		{"255 0 255 0", color.RGBA{46, 49, 146, 255}, "青+品红 叠印为蓝"},
-		{"0 255 255 0", color.RGBA{237, 28, 36, 255}, "黄+品红 叠印为红"},
-		{"0 0 0 0", color.RGBA{255, 255, 255, 255}, "全 0 无油墨为纯白"},
+		{"255 0 0 0", color.RGBA{G: 173, B: 239, A: 255}, "通道 1 满值应为青"},
+		{"0 255 0 0", color.RGBA{R: 255, G: 242, A: 255}, "通道 2 满值应为黄"},
+		{"0 0 255 0", color.RGBA{R: 236, B: 140, A: 255}, "通道 3 满值应为品红"},
+		{"0 0 0 255", color.RGBA{R: 35, G: 31, B: 32, A: 255}, "通道 4 满值应为黑"},
+		{"255 255 0 0", color.RGBA{G: 166, B: 80, A: 255}, "青+黄 叠印为绿"},
+		{"255 0 255 0", color.RGBA{R: 46, G: 49, B: 146, A: 255}, "青+品红 叠印为蓝"},
+		{"0 255 255 0", color.RGBA{R: 237, G: 28, B: 36, A: 255}, "黄+品红 叠印为红"},
+		{"0 0 0 0", color.RGBA{R: 255, G: 255, B: 255, A: 255}, "全 0 无油墨为纯白"},
 	}
 	for _, tc := range cases {
 		got := resolveColorSpaceColor(space, models.CTColor{Value: colorValue(t, tc.value)}, nil)

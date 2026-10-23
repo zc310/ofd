@@ -118,7 +118,7 @@ func (p *pdfInterpreter) encodeCompressedImage(stream *types.StreamDict, width, 
 			if masked {
 				alpha = 0
 			}
-			out.SetNRGBA(x, y, color.NRGBA{r, g, b, alpha})
+			out.SetNRGBA(x, y, color.NRGBA{R: r, G: g, B: b, A: alpha})
 		}
 	}
 	data, _, err := encodePNGImage(out)

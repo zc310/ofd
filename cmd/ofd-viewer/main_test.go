@@ -1364,13 +1364,13 @@ func TestRunLoadReportsRealParseError(t *testing.T) {
 	}
 	// 把这个"有对象但带错误"的组合交给 publishDocument，它必须以"没有文档"
 	// 失败而不是假定成功；调用方 load 负责先检查 err。
-	if err := v_publishDocumentError(ofd); err == nil {
+	if err := vPublishdocumenterror(ofd); err == nil {
 		t.Fatal("空文档体应发布失败")
 	}
 }
 
-// v_publishDocumentError 是 publishDocument 的极简包装，便于断言空文档体。
-func v_publishDocumentError(ofd *parser.OFD) error {
+// vPublishdocumenterror 是 publishDocument 的极简包装，便于断言空文档体。
+func vPublishdocumenterror(ofd *parser.OFD) error {
 	v := &viewer{}
 	model, err := buildDocumentModel(ofd, "x.ofd", color.Transparent)
 	if err != nil {

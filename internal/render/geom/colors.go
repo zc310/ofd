@@ -7,9 +7,9 @@ import (
 
 // 常用颜色（与 canvas 的 Transparent/Black/White 一致）。
 var (
-	Transparent = color.RGBA{0x00, 0x00, 0x00, 0x00}
-	Black       = color.RGBA{0x00, 0x00, 0x00, 0xff}
-	White       = color.RGBA{0xff, 0xff, 0xff, 0xff}
+	Transparent = color.RGBA{}
+	Black       = color.RGBA{A: 0xff}
+	White       = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 )
 
 // Gradient 是OFD渐变采样接口：返回 (x,y) 处的颜色。

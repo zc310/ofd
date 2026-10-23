@@ -2,9 +2,10 @@ package render
 
 import (
 	"bytes"
-	"github.com/zc310/ofd/internal/render/geom"
 	"os"
 	"testing"
+
+	"github.com/zc310/ofd/internal/render/geom"
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/parser"

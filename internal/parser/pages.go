@@ -3,10 +3,11 @@ package parser
 import (
 	"encoding/xml"
 	"errors"
-	"github.com/goccy/go-json"
 	"io"
 	"sync"
 	"sync/atomic"
+
+	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/models"

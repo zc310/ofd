@@ -145,7 +145,7 @@ func jpxAlphaStream(t *testing.T, bits, mode int, pixel color.NRGBA64) *types.St
 		rgba := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 		for y := 0; y < 8; y++ {
 			for x := 0; x < 8; x++ {
-				rgba.SetNRGBA(x, y, color.NRGBA{byte(pixel.R / 257), byte(pixel.G / 257), byte(pixel.B / 257), byte(pixel.A / 257)})
+				rgba.SetNRGBA(x, y, color.NRGBA{R: byte(pixel.R / 257), G: byte(pixel.G / 257), B: byte(pixel.B / 257), A: byte(pixel.A / 257)})
 			}
 		}
 		src = rgba

@@ -2,13 +2,14 @@ package ocr
 
 import (
 	"context"
-	"github.com/goccy/go-json"
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-json"
 )
 
 func TestHTTPClientRecognize(t *testing.T) {

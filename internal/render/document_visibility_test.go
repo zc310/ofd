@@ -126,7 +126,7 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 			for i, visible := range tc.visible {
 				want := colors[i]
 				if !visible {
-					want = color.RGBA{255, 255, 255, 255}
+					want = color.RGBA{R: 255, G: 255, B: 255, A: 255}
 				}
 				if got := img.RGBAAt(i*10+5, 7); got != want {
 					t.Errorf("region %d pixel = %v, want %v", i, got, want)

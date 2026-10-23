@@ -79,10 +79,10 @@ func TestStrokedTextWithFillRendersStrokeColor(t *testing.T) {
 		TextCodes:   []creator.TextCode{{X: fill, Y: codeY, Value: "描边+填充双重效果"}},
 	})
 
-	if n := countColorNear(img, color.RGBA{255, 220, 100, 255}, 8); n < 500 {
+	if n := countColorNear(img, color.RGBA{R: 255, G: 220, B: 100, A: 255}, 8); n < 500 {
 		t.Fatalf("浅黄填充像素 = %d，期望 >= 500（填充应可见）", n)
 	}
-	strokePx := countColorNear(img, color.RGBA{200, 50, 50, 255}, 8)
+	strokePx := countColorNear(img, color.RGBA{R: 200, G: 50, B: 50, A: 255}, 8)
 	if strokePx < 500 {
 		t.Fatalf("红色描边像素 = %d，期望 >= 500；描边被静默丢弃", strokePx)
 	}
@@ -100,10 +100,10 @@ func TestHollowTextRendersOnlyStroke(t *testing.T) {
 		TextCodes:   []creator.TextCode{{X: codeX, Y: codeY, Value: "描边空心字"}},
 	})
 
-	if n := countColorNear(img, color.RGBA{30, 100, 180, 255}, 8); n < 500 {
+	if n := countColorNear(img, color.RGBA{R: 30, G: 100, B: 180, A: 255}, 8); n < 500 {
 		t.Fatalf("蓝色描边像素 = %d，期望 >= 500", n)
 	}
-	if n := countColorNear(img, color.RGBA{0, 0, 0, 255}, 8); n > 200 {
+	if n := countColorNear(img, color.RGBA{A: 255}, 8); n > 200 {
 		t.Fatalf("黑色填充像素 = %d，空心字不应填充黑色", n)
 	}
 }

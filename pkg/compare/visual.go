@@ -137,10 +137,10 @@ func abs(v int) int {
 
 func whitePixel(img *image.RGBA, x, y int) (color.RGBA, bool) {
 	if img == nil || x >= img.Bounds().Dx() || y >= img.Bounds().Dy() {
-		return color.RGBA{255, 255, 255, 255}, false
+		return color.RGBA{R: 255, G: 255, B: 255, A: 255}, false
 	}
 	c := img.RGBAAt(x+img.Bounds().Min.X, y+img.Bounds().Min.Y)
-	return color.RGBA{c.R + 255 - c.A, c.G + 255 - c.A, c.B + 255 - c.A, 255}, true
+	return color.RGBA{R: c.R + 255 - c.A, G: c.G + 255 - c.A, B: c.B + 255 - c.A, A: 255}, true
 }
 
 func resourcePreview(ctx context.Context, s *snapshot, f *File, options Options) (string, error) {

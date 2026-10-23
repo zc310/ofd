@@ -23,9 +23,9 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-// 后端标识，供 render.NewBackend / Document.RasterizePage 使用。
+// BackendCanvas 使用 tdewolff/canvas 光栅器，是供 render.NewBackend /
+// Document.RasterizePage 使用的默认后端标识。
 const (
-	// BackendCanvas 使用 tdewolff/canvas 光栅器（render 内置默认路径）。
 	BackendCanvas = "canvas"
 	// BackendFTGG 使用 FloatTech/gg 光栅后端（测速对照）。
 	BackendFTGG = "ftgg"
@@ -368,7 +368,7 @@ type SVGScene interface {
 // 保持一致，便于无损转换。各引擎实现把它映射到自己的样式表示。
 type FontStyle int
 
-// 字重常量（与 canvas 一致）与斜体位。
+// FontRegular 是常规字重；同组常量表示与 canvas 一致的字重和斜体位。
 const (
 	FontRegular FontStyle = iota
 	FontThin

@@ -227,14 +227,10 @@ func SanitizeName(name string) string {
 	}
 	var builder strings.Builder
 	for _, r := range name {
-		switch {
-		case r < 0x20 || r == 0x7f:
-			// 控制字符直接丢弃
-		case r == '/' || r == '\\' || r == 0:
-			builder.WriteRune('_')
-		default:
-			builder.WriteRune(r)
+		if r < 0x20 || r == 0x7f {
+			continue
 		}
+		builder.WriteRune(r)
 	}
 	cleaned := strings.TrimSpace(builder.String())
 	cleaned = strings.TrimLeft(cleaned, ".")

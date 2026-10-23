@@ -226,7 +226,7 @@ func TestPDFJPXColorKeyYieldsToImageSoftMasks(t *testing.T) {
 	stream.Dict["SMask"] = jpegMatteStream("DeviceGray", bytes.Repeat([]byte{128}, 64), false)
 	options, _ := (Options{Strict: true, Limits: Limits{MaxTotalImagePixels: 192}}).Normalize()
 	p := pdfInterpreter{control: &conversionControl{ctx: t.Context(), options: options}}
-	if got := color.NRGBAModel.Convert(jpxDecodedImage(t, &p, stream).At(4, 4)).(color.NRGBA); got != (color.NRGBA{255, 0, 0, 128}) {
+	if got := color.NRGBAModel.Convert(jpxDecodedImage(t, &p, stream).At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 255, A: 128}) {
 		t.Fatalf("SMask priority=%v", got)
 	}
 }
@@ -262,7 +262,7 @@ func TestPDFJPXInvalidColorKeyReportsAndPreservesBase(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{255, 127, 127, 255}) {
+			if got := color.NRGBAModel.Convert(img.At(4, 4)).(color.NRGBA); got != (color.NRGBA{R: 255, G: 127, B: 127, A: 255}) {
 				t.Fatalf("base lost: %v", got)
 			}
 		}
@@ -282,9 +282,9 @@ func TestPDFJPXColorKeyStrictConversionRendersUnderlyingBackground(t *testing.T)
 	src := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 	for y := 0; y < 8; y++ {
 		for x := 0; x < 8; x++ {
-			pixel := color.NRGBA{255, 255, 255, 255}
+			pixel := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			if x >= 4 {
-				pixel = color.NRGBA{255, 0, 0, 255}
+				pixel = color.NRGBA{R: 255, A: 255}
 			}
 			src.SetNRGBA(x, y, pixel)
 		}

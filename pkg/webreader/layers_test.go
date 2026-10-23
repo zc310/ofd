@@ -225,7 +225,7 @@ func checkLayerPixels(t *testing.T, img image.Image, scale int) {
 	for _, test := range []struct {
 		x, y int
 		want color.NRGBA
-	}{{6, 6, color.NRGBA{255, 255, 255, 255}}, {12, 6, color.NRGBA{0, 0, 255, 255}}, {2, 2, color.NRGBA{0, 255, 0, 255}}, {18, 18, color.NRGBA{255, 0, 255, 255}}} {
+	}{{6, 6, color.NRGBA{R: 255, G: 255, B: 255, A: 255}}, {12, 6, color.NRGBA{B: 255, A: 255}}, {2, 2, color.NRGBA{G: 255, A: 255}}, {18, 18, color.NRGBA{R: 255, B: 255, A: 255}}} {
 		got := color.NRGBAModel.Convert(img.At(test.x*scale, test.y*scale)).(color.NRGBA)
 		if got != test.want {
 			t.Fatalf("像素 (%d,%d)=%v，期望 %v", test.x, test.y, got, test.want)
@@ -420,18 +420,18 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 			}
 			check := func(img image.Image) {
 				t.Helper()
-				wantBackground := color.NRGBA{255, 255, 255, 255}
+				wantBackground := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 				if test.background {
-					wantBackground = color.NRGBA{0, 255, 0, 255}
+					wantBackground = color.NRGBA{G: 255, A: 255}
 				}
-				wantForeground := color.NRGBA{255, 255, 255, 255}
+				wantForeground := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 				if test.foreground {
-					wantForeground = color.NRGBA{255, 128, 0, 255}
+					wantForeground = color.NRGBA{R: 255, G: 128, A: 255}
 				}
 				for _, pixel := range []struct {
 					x, y int
 					want color.NRGBA
-				}{{2, 2, wantBackground}, {12, 18, wantForeground}, {6, 6, color.NRGBA{255, 0, 0, 255}}, {18, 18, color.NRGBA{255, 0, 255, 255}}} {
+				}{{2, 2, wantBackground}, {12, 18, wantForeground}, {6, 6, color.NRGBA{R: 255, A: 255}}, {18, 18, color.NRGBA{R: 255, B: 255, A: 255}}} {
 					if got := color.NRGBAModel.Convert(img.At(pixel.x*5, pixel.y*5)).(color.NRGBA); got != pixel.want {
 						t.Fatalf("%s 像素(%d,%d)=%v，期望 %v", test.name, pixel.x, pixel.y, got, pixel.want)
 					}
