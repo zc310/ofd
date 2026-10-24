@@ -1,34 +1,25 @@
 package creator
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"path"
 	"strings"
 
-	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/container"
 )
 
 const (
 	// DefaultMaxEntries 是默认的最大条目数。
-	DefaultMaxEntries = 10000
+	DefaultMaxEntries = container.DefaultMaxEntries
 	// DefaultMaxEntryBytes 是默认的单条解压上限（64MB）。
-	DefaultMaxEntryBytes = int64(64 << 20)
+	DefaultMaxEntryBytes = container.DefaultMaxEntryBytes
 	// DefaultMaxTotalBytes 是默认的解压总字节上限（512MB）。
-	DefaultMaxTotalBytes = int64(512 << 20)
+	DefaultMaxTotalBytes = container.DefaultMaxTotalBytes
 )
 
 // Limits 限制 OFD 包读写的规模，避免恶意或异常文档造成的解压放大。
-type Limits struct {
-	// MaxEntries 是允许搬运的最大条目数，0 表示默认 10000。
-	MaxEntries int
-	// MaxEntryBytes 是单个条目解压后的最大字节数，0 表示默认 64MB。
-	MaxEntryBytes int64
-	// MaxTotalBytes 是所有条目解压后的总字节上限，0 表示默认 512MB。
-	MaxTotalBytes int64
-}
+type Limits = container.Limits
 
 // SignatureMode 控制处理 OFD 包时签名文件的去向。
 type SignatureMode string
@@ -43,135 +34,59 @@ const (
 )
 
 // CompressionMode 表示 OFD ZIP 条目的压缩策略。
-type CompressionMode string
+type CompressionMode = container.CompressionMode
 
 const (
 	// CompressionAuto 对已压缩格式使用 Store，其他文件使用 Deflate。
-	CompressionAuto CompressionMode = "auto"
+	CompressionAuto = container.CompressionAuto
 	// CompressionDeflate 对所有条目使用 Deflate。
-	CompressionDeflate CompressionMode = "deflate"
+	CompressionDeflate = container.CompressionDeflate
 	// CompressionStore 对所有条目使用 Store。
-	CompressionStore CompressionMode = "store"
+	CompressionStore = container.CompressionStore
 )
 
 // EntryMethod 返回 ZIP 条目的压缩方式。mode 为 "store" 或 "deflate" 时
-// 强制指定；其他值按扩展名自动选择：本身已压缩的格式使用 Store，其余使用
-// Deflate。
+// 强制指定；其他值按扩展名自动选择：本身已压缩的格式使用 Store，其余使用 Deflate。
 func EntryMethod(name string, mode CompressionMode) uint16 {
-	switch mode {
-	case CompressionStore:
-		return zip.Store
-	case CompressionDeflate:
-		return zip.Deflate
-	}
-	switch strings.ToLower(path.Ext(name)) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".jxl",
-		".mp3", ".mp4", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav",
-		".flac", ".mpg", ".mpeg", ".avi", ".mkv", ".mov", ".webm",
-		".m4v", ".wma", ".pdf", ".zip", ".gz", ".bz2", ".xz", ".7z", ".rar",
-		".docx", ".xlsx", ".pptx", ".ofd":
-		return zip.Store
-	default:
-		return zip.Deflate
-	}
+	return container.EntryMethod(name, mode)
 }
 
 // NormalizeCompression 返回合法化的压缩策略：空值使用 CompressionAuto，
 // 不支持的值返回错误。
 func NormalizeCompression(mode CompressionMode) (CompressionMode, error) {
-	if mode == "" {
-		return CompressionAuto, nil
-	}
-	switch mode {
-	case CompressionAuto, CompressionDeflate, CompressionStore:
-		return mode, nil
-	default:
-		return "", fmt.Errorf("不支持的 ZIP 压缩策略: %q", mode)
-	}
+	return container.NormalizeCompression(mode)
 }
 
-// DefaultCompressionLevel 是 DEFLATE 的默认压缩级别，与 klauspost zip 的
-// 默认一致。级别越高压缩率越高、写入越慢。
-const DefaultCompressionLevel = 5
+// DefaultCompressionLevel 是 DEFLATE 的默认压缩级别，与 klauspost zip 的默认一致。
+const DefaultCompressionLevel = container.DefaultCompressionLevel
 
-// NormalizeCompressionLevel 校验 DEFLATE 压缩级别：0 表示使用默认级别
-// DefaultCompressionLevel，显式范围 1（最快）到 9（最紧凑）。返回实际
-// 应使用的压缩级别。
+// NormalizeCompressionLevel 校验 DEFLATE 压缩级别：0 使用默认级别，显式范围为 1–9。
 func NormalizeCompressionLevel(level int) (int, error) {
-	if level < 0 || level > 9 {
-		return 0, fmt.Errorf("不支持的 DEFLATE 压缩级别 %d（允许 0-9）", level)
-	}
-	if level == 0 {
-		return DefaultCompressionLevel, nil
-	}
-	return level, nil
+	return container.NormalizeCompressionLevel(level)
 }
 
-// ApplyCompressionLevel 在 zip.Writer 上按级别注册 DEFLATE 压缩器，必须
-// 在第一次创建 Deflate 条目之前调用。level 为 0 或默认级别时保持 klauspost
-// 的默认实现，不注册。调用方应先通过 NormalizeCompressionLevel 校验级别。
+// ApplyCompressionLevel 在首次创建 Deflate 条目前注册压缩器。
+// level 为 0 或默认级别时使用 ZIP 库的默认实现；调用方应先校验级别。
 func ApplyCompressionLevel(w *zip.Writer, level int) {
-	if level == 0 || level == DefaultCompressionLevel {
-		return
-	}
-	w.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
-		return flate.NewWriter(out, level)
-	})
+	container.ApplyCompressionLevel(w, level)
 }
 
 // ValidateLimits 校验解压规模限制不能为负数。
 func ValidateLimits(limits Limits) error {
-	if limits.MaxEntries < 0 || limits.MaxEntryBytes < 0 || limits.MaxTotalBytes < 0 {
-		return errors.New("规模限制不能为负数")
-	}
-	return nil
+	return container.ValidateLimits(limits)
 }
 
-// LimitWriter 在复制过程中同时限制单条与总解压字节数，防止声明的解压
-// 大小与实际不符（如 zip bomb）。
-type LimitWriter struct {
-	writer         io.Writer
-	entryRemaining int64
-	totalRemaining *int64
-	name           string
-	maxTotal       int64
-}
+// LimitWriter 在复制过程中同时限制单条与总解压字节数。
+type LimitWriter = container.LimitWriter
 
-// NewLimitWriter 返回带限制的 writer；totalRemaining 指向调用方的总预算，
-// 每次写入后同步扣减。
+// NewLimitWriter 返回带限制的写入器；每次写入后同步扣减 totalRemaining 指向的总预算。
 func NewLimitWriter(writer io.Writer, name string, entryRemaining, maxTotal int64, totalRemaining *int64) *LimitWriter {
-	return &LimitWriter{
-		writer:         writer,
-		entryRemaining: entryRemaining,
-		totalRemaining: totalRemaining,
-		name:           name,
-		maxTotal:       maxTotal,
-	}
+	return container.NewLimitWriter(writer, name, entryRemaining, maxTotal, totalRemaining)
 }
 
-func (l *LimitWriter) Write(p []byte) (int, error) {
-	if int64(len(p)) > l.entryRemaining {
-		return 0, fmt.Errorf("条目 %s 解压后超过单条大小上限", l.name)
-	}
-	if int64(len(p)) > *l.totalRemaining {
-		return 0, fmt.Errorf("解压总大小超过上限 %d 字节", l.maxTotal)
-	}
-	n, err := l.writer.Write(p)
-	l.entryRemaining -= int64(n)
-	*l.totalRemaining -= int64(n)
-	return n, err
-}
-
-// CheckSize 校验内存条目 size 是否在单条与总预算内，并在通过后扣减总预算。
+// CheckSize 校验内存条目大小，并在通过后扣减总预算。
 func CheckSize(name string, size, maxEntryBytes, maxTotalBytes int64, remaining *int64) error {
-	if size > maxEntryBytes {
-		return fmt.Errorf("条目 %s 解压后 %d 字节，超过单条上限 %d 字节", name, size, maxEntryBytes)
-	}
-	if size > *remaining {
-		return fmt.Errorf("解压总大小超过上限 %d 字节", maxTotalBytes)
-	}
-	*remaining -= size
-	return nil
+	return container.CheckSize(name, size, maxEntryBytes, maxTotalBytes, remaining)
 }
 
 // IsSignatureEntry 判断条目是否为签名清单、签名文件或签名目录内的条目，

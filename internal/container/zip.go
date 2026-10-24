@@ -1,4 +1,4 @@
-// Package container 提供 OFD 文档容器的索引、安全读取和逻辑包视图。
+// Package container 提供 OFD 文档容器的索引、安全读取、逻辑包视图及 ZIP 压缩和规模预算。
 package container
 
 import (

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 )
 
@@ -16,17 +15,17 @@ type inputPackage struct {
 }
 
 func inputLimits(limits replace.Limits) (replace.Limits, error) {
-	if err := creator.ValidateLimits(limits); err != nil {
+	if err := container.ValidateLimits(limits); err != nil {
 		return replace.Limits{}, err
 	}
 	if limits.MaxEntries == 0 {
-		limits.MaxEntries = creator.DefaultMaxEntries
+		limits.MaxEntries = container.DefaultMaxEntries
 	}
 	if limits.MaxEntryBytes == 0 {
-		limits.MaxEntryBytes = creator.DefaultMaxEntryBytes
+		limits.MaxEntryBytes = container.DefaultMaxEntryBytes
 	}
 	if limits.MaxTotalBytes == 0 {
-		limits.MaxTotalBytes = creator.DefaultMaxTotalBytes
+		limits.MaxTotalBytes = container.DefaultMaxTotalBytes
 	}
 	return limits, nil
 }

@@ -13,7 +13,7 @@
 | 外部转换工具             | `convert/browser`、`convert/office`、`convert/xps`                  |
 | PDF 导入与文字识别       | `pdf2ofd`、`ocr`                                                    |
 | 加解密、签名与印章       | `crypt`、`ses`、`signeddata`、`physicalsig`、`securexml`、`sealimg` |
-| 包写出                   | `entrywriter`                                                       |
+| ZIP 配置与受限包写出     | `container`（压缩策略与规模预算）、`container/entrywriter`          |
 | 应用支持                 | `server`、`localization`、`version`                                 |
 | 共享基础能力与测试辅助   | `cache`、`fileutil`、`reportfmt`、`contextio`、`testutil`           |
 
@@ -27,6 +27,10 @@
 
 `manifest/export` 依赖 `manifest` 的清单模型，供 creator CLI 和模型级合并共同使用。
 清单解析和资源加载保留在 `manifest` 包中。
+
+`container` 统一维护 ZIP 压缩策略、规模限制和流式写入预算；`container/entrywriter`
+在其上实现包内路径与重复条目检查、受限写入和确定性时间，供合并、替换及解密共用。
+两者均不依赖 `pkg`。`pkg/creator` 的公开 ZIP 类型和辅助函数通过别名及转调复用这些实现。
 
 `textdoc` 负责文字及图片提取和版面结构分析，`textdoc/docx`、`textdoc/markdown`
 消费这些结果并编排输出。格式注册和转换流程位于 `pkg/converter`。

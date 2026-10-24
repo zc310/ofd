@@ -6,9 +6,9 @@ import (
 	"io"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/internal/container/entrywriter"
 	protocol "github.com/zc310/ofd/internal/crypt"
-	"github.com/zc310/ofd/internal/entrywriter"
-	"github.com/zc310/ofd/pkg/creator"
 )
 
 // Decrypt 将单个加密操作恢复为明文 OFD ZIP，支持口令和证书接收者以及明文和加密映射表。
@@ -54,7 +54,7 @@ func writeZIP(ctx context.Context, w io.Writer, limits Limits, produce func(func
 	err := produce(func(name string, data []byte) error {
 		if entries == nil {
 			archive = zip.NewWriter(contextWriter{ctx, w})
-			entries = entrywriter.New(archive, entrywriter.Config{Limits: creator.Limits{MaxEntries: limits.MaxEntries, MaxEntryBytes: limits.MaxEntryBytes, MaxTotalBytes: limits.MaxTotalBytes}})
+			entries = entrywriter.New(archive, entrywriter.Config{Limits: container.Limits{MaxEntries: limits.MaxEntries, MaxEntryBytes: limits.MaxEntryBytes, MaxTotalBytes: limits.MaxTotalBytes}})
 		}
 		return entries.Write(name, data)
 	})

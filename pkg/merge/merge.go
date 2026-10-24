@@ -22,7 +22,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/entrywriter"
+	"github.com/zc310/ofd/internal/container/entrywriter"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"

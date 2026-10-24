@@ -9,34 +9,33 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/pkg/creator"
 )
 
 // Config 控制条目写入的压缩策略与规模限制。
 type Config struct {
-	// Compression 是输出 ZIP 的压缩策略，空值使用 creator.CompressionAuto。
-	Compression creator.CompressionMode
+	// Compression 是输出 ZIP 的压缩策略，空值使用 container.CompressionAuto。
+	Compression container.CompressionMode
 	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
 	// 1（最快）到 9（最紧凑）。仅对实际使用 Deflate 的条目生效。
 	CompressionLevel int
 	// Deterministic 使用固定 ZIP 时间，生成可复现的结果。
 	Deterministic bool
-	// Limits 限制输出规模，零值使用 creator 的默认限制。
-	Limits creator.Limits
+	// Limits 限制输出规模，零值使用 container 的默认限制。
+	Limits container.Limits
 	// OnWarning 可选，接收非致命提示。
 	OnWarning func(string)
 }
 
-// NormalizeOptions validates ZIP limits and returns normalized compression settings.
-func NormalizeOptions(compression creator.CompressionMode, level int, limits creator.Limits) (creator.CompressionMode, int, error) {
-	if err := creator.ValidateLimits(limits); err != nil {
+// NormalizeOptions 校验 ZIP 规模限制并返回规范化后的压缩策略与级别。
+func NormalizeOptions(compression container.CompressionMode, level int, limits container.Limits) (container.CompressionMode, int, error) {
+	if err := container.ValidateLimits(limits); err != nil {
 		return "", 0, err
 	}
-	compression, err := creator.NormalizeCompression(compression)
+	compression, err := container.NormalizeCompression(compression)
 	if err != nil {
 		return "", 0, err
 	}
-	level, err = creator.NormalizeCompressionLevel(level)
+	level, err = container.NormalizeCompressionLevel(level)
 	if err != nil {
 		return "", 0, err
 	}
@@ -58,23 +57,23 @@ type Writer struct {
 // 若 CompressionLevel 无效，回退默认级别并通过 OnWarning 上报。
 func New(archive *zip.Writer, config Config) *Writer {
 	if config.Compression == "" {
-		config.Compression = creator.CompressionAuto
+		config.Compression = container.CompressionAuto
 	}
 	if config.Limits.MaxEntries == 0 {
-		config.Limits.MaxEntries = creator.DefaultMaxEntries
+		config.Limits.MaxEntries = container.DefaultMaxEntries
 	}
 	if config.Limits.MaxEntryBytes == 0 {
-		config.Limits.MaxEntryBytes = creator.DefaultMaxEntryBytes
+		config.Limits.MaxEntryBytes = container.DefaultMaxEntryBytes
 	}
 	if config.Limits.MaxTotalBytes == 0 {
-		config.Limits.MaxTotalBytes = creator.DefaultMaxTotalBytes
+		config.Limits.MaxTotalBytes = container.DefaultMaxTotalBytes
 	}
 	var levelErr error
-	config.CompressionLevel, levelErr = creator.NormalizeCompressionLevel(config.CompressionLevel)
+	config.CompressionLevel, levelErr = container.NormalizeCompressionLevel(config.CompressionLevel)
 	if levelErr != nil {
 		config.CompressionLevel = 0
 	}
-	creator.ApplyCompressionLevel(archive, config.CompressionLevel)
+	container.ApplyCompressionLevel(archive, config.CompressionLevel)
 	w := &Writer{
 		archive:   archive,
 		config:    config,
@@ -138,7 +137,7 @@ func (w *Writer) WriteSource(pkg *container.Package, entry container.Entry, name
 	if err != nil {
 		return fmt.Errorf("创建 ZIP 条目 %q 失败: %w", name, err)
 	}
-	counter := creator.NewLimitWriter(file, name, w.config.Limits.MaxEntryBytes, w.config.Limits.MaxTotalBytes, &w.remaining)
+	counter := container.NewLimitWriter(file, name, w.config.Limits.MaxEntryBytes, w.config.Limits.MaxTotalBytes, &w.remaining)
 	if _, err := io.CopyBuffer(counter, reader, w.copyBuffer()); err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func (w *Writer) copyBuffer() []byte {
 }
 
 func (w *Writer) header(name string) *zip.FileHeader {
-	header := &zip.FileHeader{Name: name, Method: creator.EntryMethod(name, w.config.Compression)}
+	header := &zip.FileHeader{Name: name, Method: container.EntryMethod(name, w.config.Compression)}
 	if w.config.Deterministic {
 		header.Modified = time.Unix(0, 0).UTC()
 	}
@@ -178,5 +177,5 @@ func (w *Writer) reserve(name string) error {
 }
 
 func (w *Writer) checkSize(name string, size int64) error {
-	return creator.CheckSize(name, size, w.config.Limits.MaxEntryBytes, w.config.Limits.MaxTotalBytes, &w.remaining)
+	return container.CheckSize(name, size, w.config.Limits.MaxEntryBytes, w.config.Limits.MaxTotalBytes, &w.remaining)
 }

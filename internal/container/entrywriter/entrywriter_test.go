@@ -8,7 +8,6 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/pkg/creator"
 )
 
 func writeAll(t *testing.T, writer *Writer, writerZip *zip.Writer, entries map[string][]byte) {
@@ -23,18 +22,18 @@ func writeAll(t *testing.T, writer *Writer, writerZip *zip.Writer, entries map[s
 func TestNormalizeOptions(t *testing.T) {
 	for _, test := range []struct {
 		name        string
-		compression creator.CompressionMode
+		compression container.CompressionMode
 		level       int
-		limits      creator.Limits
-		wantMode    creator.CompressionMode
+		limits      container.Limits
+		wantMode    container.CompressionMode
 		wantLevel   int
 		wantErr     bool
 	}{
-		{name: "defaults", wantMode: creator.CompressionAuto, wantLevel: creator.DefaultCompressionLevel},
-		{name: "configured", compression: creator.CompressionStore, level: 9, wantMode: creator.CompressionStore, wantLevel: 9},
+		{name: "defaults", wantMode: container.CompressionAuto, wantLevel: container.DefaultCompressionLevel},
+		{name: "configured", compression: container.CompressionStore, level: 9, wantMode: container.CompressionStore, wantLevel: 9},
 		{name: "invalid compression", compression: "invalid", wantErr: true},
 		{name: "invalid level", level: 10, wantErr: true},
-		{name: "invalid limits", limits: creator.Limits{MaxEntryBytes: -1}, wantErr: true},
+		{name: "invalid limits", limits: container.Limits{MaxEntryBytes: -1}, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			mode, level, err := NormalizeOptions(test.compression, test.level, test.limits)
@@ -134,7 +133,7 @@ func TestWriteSourceSizeLimit(t *testing.T) {
 
 	var target bytes.Buffer
 	archive := zip.NewWriter(&target)
-	writer := New(archive, Config{Limits: creator.Limits{MaxEntryBytes: 1024, MaxTotalBytes: 4096}})
+	writer := New(archive, Config{Limits: container.Limits{MaxEntryBytes: 1024, MaxTotalBytes: 4096}})
 	entry, _ := pkg.Lookup("Doc_0/big.dat")
 	if err := writer.WriteSource(pkg, entry, entry.Path); err == nil || !strings.Contains(err.Error(), "超过单条上限") {
 		t.Fatalf("超限条目应报错, got %v", err)
@@ -197,7 +196,7 @@ func TestInvalidCompressionLevelFallsBackWithWarning(t *testing.T) {
 func TestDeflateCompressionLevelWrites(t *testing.T) {
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
-	writer := New(archive, Config{Compression: creator.CompressionDeflate, CompressionLevel: 1})
+	writer := New(archive, Config{Compression: container.CompressionDeflate, CompressionLevel: 1})
 	if err := writer.Write("Doc_0/Document.xml", []byte(`<Document/>`)); err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/entrywriter"
+	"github.com/zc310/ofd/internal/container/entrywriter"
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/manifest/export"
 	"github.com/zc310/ofd/internal/models"
