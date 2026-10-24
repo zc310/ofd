@@ -1,6 +1,6 @@
 module github.com/zc310/ofd
 
-go 1.26.4
+go 1.26.0
 
 require (
 	fyne.io/fyne/v2 v2.8.2
@@ -29,7 +29,7 @@ require (
 	github.com/ncruces/zenity v0.10.15
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
 	github.com/pdfcpu/pdfcpu v0.16.3
-	github.com/pkg/sftp v1.13.11
+	github.com/pkg/sftp v1.13.12
 	github.com/rymdport/portal v0.4.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -41,8 +41,8 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/yuin/goldmark/v2 v2.1.8
-	github.com/zc310/canvas v0.0.0-20261022140802-618b1709d1ca
-	github.com/zc310/font v0.0.0-20261022133848-ff1c0ce12ec1
+	github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9
+	github.com/zc310/font v0.0.0-20261024044947-d97d25f13651
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
@@ -63,7 +63,7 @@ require (
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/ajroetker/go-highway v0.0.4 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -107,7 +107,7 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
-	github.com/tdewolff/minify/v2 v2.24.22 // indirect
+	github.com/tdewolff/minify/v2 v2.24.23 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
