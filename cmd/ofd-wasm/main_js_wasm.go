@@ -367,8 +367,9 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 		return errorValue(err)
 	}
 	fonts, err := reader.FontList()
+	fontError := ""
 	if err != nil {
-		return errorValue(err)
+		fontError = err.Error()
 	}
 	return objectValue(map[string]any{
 		"docID":        info.DocID,
@@ -381,6 +382,7 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 		"creator":      info.Creator,
 		"version":      info.Version,
 		"fonts":        fontListValue(fonts),
+		"fonts_error":  fontError,
 	})
 }
 

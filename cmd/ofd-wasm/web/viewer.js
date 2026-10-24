@@ -4624,7 +4624,9 @@ function updateDocumentInfo() {
       `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(value)}</span></div>`
     ).join('');
     html += '<div class="info-section-title">字体</div>';
-    if (!fonts.length) {
+    if (info.fonts_error) {
+      html += `<p class="info-empty">字体列表读取失败：${escapeHTML(info.fonts_error)}</p>`;
+    } else if (!fonts.length) {
       html += '<p class="info-empty">文档未声明字体</p>';
     } else {
       html += fonts.map(font => {
