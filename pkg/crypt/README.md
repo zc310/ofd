@@ -47,6 +47,8 @@ KeyUsage 非零时必须含 KeyEncipherment 或 DataEncipherment。加密不验�
 `Entries=nil` 默认加密全部文件，包括 `OFD.xml`；`KeepRoot=true` 将主入口保留为明文。
 非 nil 的 `Entries` 选择精确、唯一的 ZIP 相对路径，例如 `Doc_0/Pages/Page_0/Content.xml`，
 空列表、目录、缺失条目和不规范路径被拒绝。`Entries` 按精确列表执行。
+输入条目路径必须为有效 UTF-8，且能无损写入 XML 1.0；非法控制字符等会在输出前被拒绝，
+生成映射表后还会核对路径是否保持原样。合法的 XML 转义字符及 Unicode 文件名按原名恢复。
 已选明文从输出中删除，不生成占位内容；未选条目按原始字节保留。
 
 每次操作使用 `crypto/rand` 生成新的 16 字节 FEK 和 IV，所有接收者分别包装同一 FEK。
@@ -97,6 +99,8 @@ report, err := crypt.Encrypt(ctx, "plain.ofd", output, crypt.EncryptOptions{
 
 `Pages` 与 `Entries/Append` 互斥，页面用文档内 ID 选择。依据 C.1 计算页面内容、所用模板、
 页面注释及其资源文件；匹配页面印章时同时包含签名 XML、签名值和外部印章数据。
+`Pages.IDs` 使用规范正整数；包内页面、模板及其引用按 `xs:unsignedInt` 的数值比较，
+例如 `01`、`+1` 和 `1` 指向同一 ID。页面和模板的重复 ID 也按数值检查，非法引用直接失败。
 资源索引按完整文件加密，其列出的字体、媒体和色彩配置全部纳入；文档的 PublicRes/DocumentRes
 也整体纳入，覆盖复合对象等间接资源依赖。不会拆分资源索引或改写原文档。
 共享资源可能使其他页面同时无法使用；报告用 `SharedResources=true` 标明此策略，
@@ -149,7 +153,8 @@ crypt.DecryptOptions{
 
 `MissingScheme` 不能覆盖显式声明的未知或不同方案；缺少 `EPath` 的映射返回 `ErrUnsupported`。
 多次操作按 `Relative` 依赖从后层向前层恢复，XML 顺序不决定解密顺序。
-没有依赖关系却重叠的恢复范围或跨操作密文依赖被拒绝。每项映射可用独立 `DecryptSeedLoc`，
+没有依赖关系却重叠的恢复范围或跨操作文件依赖被拒绝；通用 seed、映射表、独立 seed 和数据密文
+均检查来源操作与 `Relative`，避免通过控制文件形成未声明的加密层。每项映射可用独立 `DecryptSeedLoc`，
 独立 seed 可以使用不同于通用 seed 的口令/证书方案。操作可覆盖全部或部分条目，也可使
 `Path==EPath`；解密后占位内容被恢复内容替换，仅清理该操作明确引用的控制文件和密文。
 `Path/EPath` 仅大小写不同也可按精确映射恢复（ofdrw 签章样本使用这种命名）；

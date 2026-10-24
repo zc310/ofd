@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zc310/ofd/internal/container"
 )
@@ -59,6 +60,9 @@ func packagePath(from, value string, absolute bool) (string, error) {
 	if value == "" || strings.ContainsAny(value, "\\\x00:") || strings.HasPrefix(value, "//") {
 		return "", fmt.Errorf("非法包内路径 %q", value)
 	}
+	if !validXMLText(value) {
+		return "", fmt.Errorf("包内路径不能无损写入 XML 1.0: %q", value)
+	}
 	if absolute && !strings.HasPrefix(value, "/") {
 		return "", fmt.Errorf("映射路径应为包内绝对路径: %q", value)
 	}
@@ -72,6 +76,19 @@ func packagePath(from, value string, absolute bool) (string, error) {
 		}
 	}
 	return name, nil
+}
+
+// XML 1.0 §2.2：encoding/xml 会替换非法字符，路径必须在序列化前拒绝这些字符。
+func validXMLText(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if r != '\t' && r != '\n' && r != '\r' && !(r >= 0x20 && r <= 0xd7ff || r >= 0xe000 && r <= 0xfffd || r >= 0x10000 && r <= 0x10ffff) {
+			return false
+		}
+	}
+	return true
 }
 
 // decodeXML 在反序列化前检查整份文档，防止被忽略的子树绕过深度、节点数、

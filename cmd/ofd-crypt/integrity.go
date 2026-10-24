@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,14 @@ import (
 )
 
 func integrityCommand(ctx context.Context, stdin io.Reader, stdout io.Writer, showVersion *bool, selectAction func(string)) *cobra.Command {
-	root := &cobra.Command{Use: "integrity", Short: "GM/T 0099 完整性清单、时间戳与防夹带"}
+	root := &cobra.Command{Use: "integrity", Short: "GM/T 0099 完整性清单、时间戳与防夹带", Args: cobra.NoArgs}
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		if *showVersion {
+			_, err := fmt.Fprintln(stdout, version.Version)
+			return err
+		}
+		return cmd.Help()
+	}
 	for _, action := range []string{"inspect", "protect", "verify"} {
 		o := &options{}
 		var command, id string
@@ -84,17 +92,17 @@ func integrityCommand(ctx context.Context, stdin io.Reader, stdout io.Writer, sh
 					return err
 				})
 			}
-			if err != nil {
+			if err != nil && (report == nil || action == "protect") {
 				return err
 			}
+			var reportErr error
 			if action == "protect" || o.output == "" || o.output == "-" {
-				if err := renderIntegrity(stdout, report, o.format); err != nil {
-					return err
-				}
+				reportErr = renderIntegrity(stdout, report, o.format)
 			} else {
-				if err := atomicOutput(ctx, o, func(w io.Writer) error { return renderIntegrity(w, report, o.format) }); err != nil {
-					return err
-				}
+				reportErr = atomicOutput(ctx, o, func(w io.Writer) error { return renderIntegrity(w, report, o.format) })
+			}
+			if err != nil || reportErr != nil {
+				return errors.Join(err, reportErr)
 			}
 			if action == "verify" && report.Status != "valid" {
 				return fmt.Errorf("完整性验证结果: %s", report.Status)
@@ -106,12 +114,7 @@ func integrityCommand(ctx context.Context, stdin io.Reader, stdout io.Writer, sh
 		flags.StringVar(&o.format, "format", "text", "报告格式：text、markdown 或 json")
 		flags.BoolVar(&o.force, "force", false, "替换已有输出文件")
 		flags.StringVar(&o.mode, "mode", "strict", "加密元数据读取模式：strict 或 compat")
-		flags.Int64Var(&o.limits.MaxInputBytes, "max-input-bytes", 0, "输入大小上限；0 使用默认值")
-		flags.Int64Var(&o.limits.MaxEntryBytes, "max-entry-bytes", 0, "条目解压/输出大小上限")
-		flags.Int64Var(&o.limits.MaxTotalBytes, "max-total-bytes", 0, "解压/输出总大小上限")
-		flags.Int64Var(&o.limits.MaxMetadataBytes, "max-metadata-bytes", 0, "单份密码元数据大小上限，硬上限 4 MiB")
-		flags.IntVar(&o.limits.MaxEntries, "max-entries", 0, "条目数量上限")
-		flags.IntVar(&o.limits.MaxCredentialAttempts, "max-credential-attempts", 0, "解包凭据累计尝试上限")
+		registerLimitFlags(flags, &o.limits)
 		flags.StringArrayVar(&roots, "trust-root", nil, "签名信任根 PEM 文件，可重复")
 		flags.StringArrayVar(&tsaRoots, "tsa-root", nil, "TSA 信任根 PEM 文件；缺省复用 trust-root")
 		flags.StringArrayVar(&crls, "crl", nil, "离线 CRL PEM/DER 文件，可重复")

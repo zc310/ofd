@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/zc310/ofd/pkg/spec"
@@ -24,6 +25,16 @@ func (n *scopeNode) attr(name string) string {
 		}
 	}
 	return ""
+}
+
+// GB/T 33190 §7.3 表 2、附录 A 的 ST_ID/ST_RefID 为无符号整数，0 为无效标识。
+// 按数值比较，避免前导零或正号使页面、模板及其引用指向不同的保护范围。
+func (n *scopeNode) id(name, file string) (uint64, error) {
+	id, err := strconv.ParseUint(strings.TrimPrefix(n.attr(name), "+"), 10, 32)
+	if err != nil || id == 0 {
+		return 0, invalid(file, "%s 必须为非零的无符号 32 位整数", name)
+	}
+	return id, nil
 }
 
 func (n *scopeNode) children(name string) []*scopeNode {
@@ -119,12 +130,15 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	templates := map[string]string{}
+	templates := map[uint64]string{}
 	var resources []string
 	for _, common := range doc.children("CommonData") {
 		for _, node := range common.children("TemplatePage") {
-			id := node.attr("ID")
-			if id == "" || templates[id] != "" {
+			id, err := node.id("ID", selection.Document)
+			if err != nil {
+				return nil, err
+			}
+			if templates[id] != "" {
 				return nil, invalid(selection.Document, "模板 ID 缺失或重复")
 			}
 			name, err := resolve(selection.Document, node.attr("BaseLoc"))
@@ -222,7 +236,11 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 			}
 		}
 		for _, node := range page.children("Template") {
-			target := templates[node.attr("TemplateID")]
+			id, err := node.id("TemplateID", name)
+			if err != nil {
+				return err
+			}
+			target := templates[id]
 			if target == "" {
 				return invalid(name, "页面引用未知模板")
 			}
@@ -233,11 +251,14 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 		pagesDone[name] = true
 		return nil
 	}
-	pages := map[string]string{}
+	pages := map[uint64]string{}
 	for _, list := range doc.children("Pages") {
 		for _, page := range list.children("Page") {
-			id := page.attr("ID")
-			if id == "" || pages[id] != "" {
+			id, err := page.id("ID", selection.Document)
+			if err != nil {
+				return nil, err
+			}
+			if pages[id] != "" {
 				return nil, invalid(selection.Document, "页面 ID 缺失或重复")
 			}
 			name, err := resolve(selection.Document, page.attr("BaseLoc"))
@@ -247,10 +268,14 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 			pages[id] = name
 		}
 	}
-	ids := map[string]bool{}
-	for _, id := range selection.IDs {
+	ids := map[uint64]bool{}
+	for _, value := range selection.IDs {
+		id, err := strconv.ParseUint(value, 10, 32)
+		if err != nil || id == 0 {
+			return nil, invalid(selection.Document, "所选页面 ID 无效: %s", value)
+		}
 		if pages[id] == "" {
-			return nil, invalid(selection.Document, "所选页面 ID 不存在: %s", id)
+			return nil, invalid(selection.Document, "所选页面 ID 不存在: %s", value)
 		}
 		ids[id] = true
 		if err := addPage(pages[id], "Page"); err != nil {
@@ -267,7 +292,11 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 			return nil, err
 		}
 		for _, page := range annotations.children("Page") {
-			if !ids[page.attr("PageID")] {
+			id, err := page.id("PageID", name)
+			if err != nil {
+				return nil, err
+			}
+			if !ids[id] {
 				continue
 			}
 			for _, loc := range page.children("FileLoc") {
@@ -301,9 +330,21 @@ func (s *inspector) pageEntries(selection PageSelection) ([]string, error) {
 				return nil, err
 			}
 			matches := false
+			var referenceErr error
 			sig.walk(func(node *scopeNode) {
-				matches = matches || node.XMLName.Local == "StampAnnot" && ids[node.attr("PageRef")]
+				if referenceErr != nil || node.XMLName.Local != "StampAnnot" {
+					return
+				}
+				id, err := node.id("PageRef", target)
+				if err != nil {
+					referenceErr = err
+					return
+				}
+				matches = matches || ids[id]
 			})
+			if referenceErr != nil {
+				return nil, referenceErr
+			}
 			if !matches {
 				continue
 			}

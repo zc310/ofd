@@ -56,9 +56,8 @@ func readCredential(ctx context.Context, path string, stdin io.Reader, max int64
 		return nil, err
 	}
 	if path == "-" {
-		// An arbitrary caller-owned Reader cannot be interrupted or closed here.
-		// Keep at most one pending stdin read. The CLI exits on cancellation;
-		// a library test/embedding caller remains responsible for its reader.
+		// 调用方持有的 Reader 无法在此中断或关闭。取消后 CLI 会退出；
+		// 测试或嵌入调用方仍负责关闭自己的读取器，释放尚未结束的读取。
 		type result struct {
 			data []byte
 			err  error
@@ -83,16 +82,27 @@ func readCredential(ctx context.Context, path string, stdin io.Reader, max int64
 			return value.data, value.err
 		}
 	}
-	var reader io.Reader = stdin
-	if path != "-" {
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
-		reader = file
+	// FIFO 的打开本身就可能阻塞，必须在 os.Open 前检查实际目标类型。
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
 	}
-	data, err := readBounded(reader, max)
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("凭据路径必须为普通文件: %s", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err = file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("凭据路径必须为普通文件: %s", path)
+	}
+	data, err := readBounded(file, max)
 	if ctx.Err() != nil {
 		clear(data)
 		return nil, ctx.Err()

@@ -1,15 +1,47 @@
 package crypt
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/emmansun/gmsm/sm3"
 )
+
+func TestProtectionPreservesCancellationAndDeadlineErrors(t *testing.T) {
+	for _, timeout := range []bool{false, true} {
+		for _, name := range []string{"OFD.xml", "Signature.xml", "data.bin"} {
+			t.Run(fmt.Sprintf("timeout=%t/%s", timeout, name), func(t *testing.T) {
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if timeout {
+					ctx, cancel = context.WithDeadline(t.Context(), time.Unix(1, 0))
+				} else {
+					ctx, cancel = context.WithCancel(t.Context())
+					cancel()
+				}
+				defer cancel()
+				options, err := NormalizeOptions(InspectOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				guard := newProtection(&inspector{ctx: ctx, opt: options}, nil, nil)
+				for _, data := range [][]byte{testPlainFiles()["OFD.xml"], {}} {
+					err := guard.observe(name, data)
+					if err != ctx.Err() || !errors.Is(err, ctx.Err()) || errors.Is(err, ErrDecryptFailed) {
+						t.Fatalf("取消或超时必须原样传播: got=%v want=%v", err, ctx.Err())
+					}
+				}
+			})
+		}
+	}
+}
 
 func protectedSignature(path, method string, digest []byte) []byte {
 	return []byte(`<Signature xmlns="` + Namespace + `"><SignedInfo><References CheckMethod="` + method + `"><Reference FileRef="` + path + `"><CheckValue>` + base64.StdEncoding.EncodeToString(digest) + `</CheckValue></Reference></References></SignedInfo></Signature>`)

@@ -65,6 +65,8 @@ ofd-converter plain.ofd output.pdf
 CLI 不提供明文口令参数。口令文件和标准输入的所有字节都参与派生；例如 `secret` 与
 `secret` 后跟换行是不同口令。空文件表示空口令。为避免意外读取，证书和私钥必须使用
 文件路径，只有口令支持 `-`；同次调用至多一个口令接收者读取标准输入。
+口令、证书、私钥及完整性证据的文件路径必须指向普通文件；FIFO、设备文件和指向管道的
+`/dev/fd/...` 会在打开前被拒绝。流式口令使用 `--password-file -`，读取期间可取消。
 
 证书支持单个 PEM `CERTIFICATE` 或 DER；私钥支持未加密 PKCS#8 `PRIVATE KEY` PEM 或 DER。
 不会自动下载证书、验证信任链或调用外部密钥程序；硬件密钥通过 Go API 的
@@ -93,6 +95,7 @@ KeyUsage 是否允许加密，证书信任/有效期由调用方另行判断。
 | `-h, --help` | 帮助 |
 
 预算取字节数或整数，不支持单位后缀；`0` 使用库的有限默认值，负数为用法错误。
+输入条目路径须为有效 UTF-8 且能无损写入 XML 1.0，含非法 XML 字符的路径会在加密输出前被拒绝。
 
 加解密共用 `--password-file PATH` 和 `--user NAME`。加密时默认用户名称为 `User`，
 解密省略用户名称时在预算内自动匹配；显式指定时按原始名称匹配。
@@ -122,6 +125,8 @@ KeyUsage 是否允许加密，证书信任/有效期由调用方另行判断。
 整体加密，共享资源可能同时锁定其他页面；报告列出实际范围。文档结构、附件、自定义标签和
 历史版本不自动加入页面范围。ofdrw 2.4.0 对非分组对齐长度的明文映射表存在异常，
 跨工具交换时使用默认加密映射表。
+包内页面、模板及注释/印章引用的 ID 按无符号整数值匹配，`01` 与 `1` 指向同一页面；
+数值相同的重复页面/模板 ID 和非法引用均失败。
 
 独立 seed 的解包次数和接收者数量跨 seed 累计；默认 32 次尝试只适用于有限规模输入，
 需要处理更多条目时显式设置上述预算。独立 seed 和追加层尚未通过第三方互通验证。
@@ -143,7 +148,10 @@ ofd-crypt integrity verify --trust-root roots.pem --crl issuer.crl --issuer issu
   --password-file password.txt protected-encrypted.ofd
 ```
 
-三个子命令接受 `--output/--format/--force` 和输入、单条、总量、条目、元数据预算。
+三个子命令接受 `--output/--format/--force`，并与普通加解密命令共用上述全部预算选项，
+包括 `--max-recipients`、`--max-layers`、`--max-processed-bytes` 和 `--max-credential-attempts`。
+大量独立 seed 的文档可能需要同时提高累计接收者和凭据尝试预算。
+`integrity` 父命令和三个子命令均支持 `--version` / `-v`。
 `protect` 必须指定输出及 `--sign-cmd`，可用 `--id` 设置清单标识；命令按空白拆参数，
 不解释 shell 引号或管道。外部签名命令 stdout 上限 4 MiB、stderr 上限 64 KiB。
 演示签名器不提供 TSA，不能用不带时间戳的演示输出代替完整性保护签名。
@@ -156,6 +164,8 @@ ofd-crypt integrity verify --trust-root roots.pem --crl issuer.crl --issuer issu
 `inspect` 只检查可见清单与物理集合；`protect` 成功返回 `signed`，不表示全部内容已验证。
 `verify` 报告清单签名/时间戳、文件集合、引用闭包和内容签名覆盖，只有 `status=valid`
 退出 `0`；`absent/incomplete/invalid` 都退出 `1`，报告仍正常输出。
+中途因错误口令、预算超限等失败时，已生成的部分报告仍输出到 stdout 或 `--output` 指定的文件，
+原错误写入 stderr，并保留失败退出码；部分报告仅包含已执行的检查，不能作为验证成功的依据。
 缺少信任/吊销证据、解密凭据或文件内容签名保护时保持未完成。
 文件列入可信清单仍须独立满足引用闭包；清单自身没有逐文件摘要，不把清单签名当作内容完整性。
 加密包的逻辑签名不自动覆盖物理密文/控制文件，内容检查可能继续未完成。

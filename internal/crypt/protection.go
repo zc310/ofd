@@ -2,9 +2,11 @@ package crypt
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -50,12 +52,18 @@ func newProtection(s *inspector, removed map[string]bool, restored map[string]st
 // 针对恢复后原始内容的签名可能保留有效性；针对密文、占位文件或被移除的
 // 加密元数据的签名需要单独处理。
 func (p *protection) observe(name string, data []byte) error {
+	if err := p.s.ctx.Err(); err != nil {
+		return err
+	}
 	if _, ok := p.restored[name]; ok {
 		md5sum, sha1sum, sm3sum := md5.Sum(data), sha1.Sum(data), sm3.Sum(data)
 		p.digests[name] = map[string][]byte{"MD5": md5sum[:], "SHA1": sha1sum[:], "SM3": sm3sum[:], "1.2.156.10197.1.401": sm3sum[:]}
 	}
 	trimmed := bytes.TrimSpace(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf}))
 	root, err := p.firstRoot(trimmed)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
 	if name == spec.RootDocument {
 		if err != nil || root.Local != "OFD" {
 			return fmt.Errorf("%w: 恢复后的 OFD.xml 不是有效主入口", ErrDecryptFailed)

@@ -496,6 +496,15 @@ func (s *inspector) encryptionMetadata(opt EncryptOptions, selected map[string]s
 	if err := s.decodeXML(mapData, mapPath, []string{"EncryptedEntries"}, &mapCheck); err != nil {
 		return nil, nil, err
 	}
+	if len(mapCheck.Entries) != len(mappings) {
+		return nil, nil, invalid(mapPath, "生成的映射条目数量发生变化")
+	}
+	for i, mapping := range mappings {
+		check := mapCheck.Entries[i]
+		if check.Path != mapping.Path || check.EPath != mapping.EPath || check.Seed != mapping.Seed {
+			return nil, nil, invalid(mapPath, "生成的映射未保留原始路径: %q", mapping.Path)
+		}
+	}
 	if !opt.PlaintextMap {
 		encrypted, err := encryptCBC(s.ctx, mapData, fek, iv)
 		clear(mapData)

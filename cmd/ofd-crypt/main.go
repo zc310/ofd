@@ -1,4 +1,4 @@
-// Command ofd-crypt inspects, encrypts, and decrypts GM/T 0099-2020 OFD packages.
+// Command ofd-crypt 用于检查、加密和解密 GM/T 0099-2020 OFD 包，并提供完整性保护与验证。
 package main
 
 import (
@@ -86,15 +86,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		flags.StringVarP(&o.output, "output", "o", "", "输出路径；inspect 默认标准输出，加解密必须指定文件")
 		flags.StringVar(&o.format, "format", "text", "报告格式：text、markdown 或 json")
 		flags.BoolVar(&o.force, "force", false, "替换已存在的输出文件")
-		flags.Int64Var(&o.limits.MaxInputBytes, "max-input-bytes", 0, "输入 ZIP 大小上限；0 使用库默认值")
-		flags.Int64Var(&o.limits.MaxEntryBytes, "max-entry-bytes", 0, "单条解压/输出大小上限；0 使用默认值")
-		flags.Int64Var(&o.limits.MaxTotalBytes, "max-total-bytes", 0, "输入解压及输出总大小分别限制；0 使用默认值")
-		flags.IntVar(&o.limits.MaxEntries, "max-entries", 0, "ZIP 条目数量上限；0 使用默认值")
-		flags.Int64Var(&o.limits.MaxMetadataBytes, "max-metadata-bytes", 0, "单份加密元数据大小上限；0 使用默认值")
-		flags.IntVar(&o.limits.MaxCredentialAttempts, "max-credential-attempts", 0, "所有 seed 累计凭据尝试上限；0 使用默认 32")
-		flags.IntVar(&o.limits.MaxRecipients, "max-recipients", 0, "所有 seed 累计接收者上限；0 使用默认 1024")
-		flags.Int64Var(&o.limits.MaxProcessedBytes, "max-processed-bytes", 0, "视图累计处理字节上限；0 使用默认值")
-		flags.IntVar(&o.limits.MaxLayers, "max-layers", 0, "加密依赖深度上限；0 使用默认值")
+		registerLimitFlags(flags, &o.limits)
 		flags.StringVar(&o.mode, "mode", "strict", "读取模式（加密时用于旧层预检）：strict 或 compat")
 		flags.StringVar(&o.passwordFile, "password-file", "", "原样读取 UTF-8 口令文件；- 表示标准输入")
 		flags.StringVar(&o.user, "user", "User", "单接收者名称；解密时省略则自动匹配")

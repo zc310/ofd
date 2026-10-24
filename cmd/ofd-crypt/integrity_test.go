@@ -12,6 +12,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/integrity"
 	"github.com/zc310/ofd/pkg/sign"
 )
@@ -19,6 +20,12 @@ import (
 func integrityCLIFixture(t *testing.T) string {
 	t.Helper()
 	input, _ := cliFixture(t)
+	addIntegrityCLIManifest(t, input)
+	return input
+}
+
+func addIntegrityCLIManifest(t *testing.T, input string) {
+	t.Helper()
 	p, err := container.OpenFile(input)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +63,6 @@ func integrityCLIFixture(t *testing.T) string {
 	if err := os.WriteFile(input, data.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return input
 }
 
 func TestCLIIntegrityReportsAndVerificationExitCode(t *testing.T) {
@@ -77,16 +83,27 @@ func TestCLIIntegrityReportsAndVerificationExitCode(t *testing.T) {
 			t.Fatal("验证诊断污染 JSON")
 		}
 	}
-	for _, action := range []string{"inspect", "verify", "protect"} {
-		out, _ := call(t, []string{"integrity", action, "--version"}, "", 0)
-		if strings.TrimSpace(out) == "" {
-			t.Fatal("缺少子命令版本输出")
+	for _, action := range []string{"", "inspect", "verify", "protect"} {
+		for _, flag := range []string{"--version", "-v"} {
+			args := []string{"integrity"}
+			if action != "" {
+				args = append(args, action)
+			}
+			out, diag := call(t, append(args, flag), "", 0)
+			if strings.TrimSpace(out) != version.Version || diag != "" {
+				t.Fatalf("版本输出错误: stdout=%q stderr=%q", out, diag)
+			}
 		}
 	}
 }
 
 func TestCLIIntegrityProtectRequiresSignerAndProtectsEvidencePaths(t *testing.T) {
 	input, evidence := cliFixture(t)
+	call(t, []string{"integrity", "unknown"}, "", 2)
+	help, diag := call(t, []string{"integrity"}, "", 0)
+	if !strings.Contains(help, "Usage:") || diag != "" {
+		t.Fatalf("完整性父命令帮助错误: stdout=%q stderr=%q", help, diag)
+	}
 	out := filepath.Join(filepath.Dir(input), "protected.ofd")
 	call(t, []string{"integrity", "protect", "-o", out, input}, "", 2)
 	call(t, []string{"integrity", "protect", "--sign-cmd", "unused", "--trust-root", evidence, "--force", "-o", evidence, input}, "", 2)

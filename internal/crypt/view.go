@@ -261,8 +261,21 @@ func (v *View) related(a, b string) bool {
 	return false
 }
 
+func (v *View) checkDependency(name, operation string) error {
+	if source := v.nodes[name]; source != nil && !v.related(source.operation, operation) {
+		return invalid(name, "文件依赖未通过 Relative 声明")
+	}
+	return nil
+}
+
 func (v *View) unlockOperation(ctx context.Context, op *Operation) (result OperationResult, err error) {
 	result = OperationResult{ID: op.ID, State: "locked"}
+	// GM/T 0099 C.3 表 C.2：控制文件与数据密文均须遵守已声明的操作依赖。
+	for _, name := range []string{op.DecryptSeedLoc, op.EntriesMapLoc} {
+		if err := v.checkDependency(name, op.ID); err != nil {
+			return result, err
+		}
+	}
 	pkg, err := v.virtual(ctx, v.nodes, nil)
 	if err != nil {
 		return result, err
@@ -347,6 +360,9 @@ func (v *View) unlockOperation(ctx context.Context, op *Operation) (result Opera
 		}
 		target := op
 		if seedLoc != op.DecryptSeedLoc {
+			if err := v.checkDependency(seedLoc, op.ID); err != nil {
+				return result, err
+			}
 			seed, err := s.seed(seedLoc, op.ID)
 			if err != nil {
 				return result, err
@@ -382,8 +398,8 @@ func (v *View) unlockOperation(ctx context.Context, op *Operation) (result Opera
 		if !ok {
 			return result, invalid(entry.EPath, "映射引用的密文缺失")
 		}
-		if !v.related(source.operation, op.ID) {
-			return result, invalid(entry.EPath, "密文依赖未通过 Relative 声明")
+		if err := v.checkDependency(entry.EPath, op.ID); err != nil {
+			return result, err
 		}
 		if existing := v.nodes[entry.Path]; existing != nil && !v.related(existing.operation, op.ID) {
 			return result, invalid(entry.Path, "独立操作的恢复范围冲突")

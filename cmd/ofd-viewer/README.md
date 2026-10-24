@@ -141,7 +141,9 @@ make package-viewer-linux    # 同时生成 DEB 和 RPM
 默认产物目录为 `/tmp/ofd/dist`，可用 `DIST_DIR` 覆盖，nFPM 路径可用 `NFPM` 指定。
 系统包始终使用 `CGO_ENABLED=1` 编译，需准备目标架构的 C/C++ 编译器、OpenGL/X11/Wayland
 开发库和 binutils（`readelf`，可通过 `READELF` 指定）；ARM64 建议在 ARM64 Linux 上原生打包。
-Release 工作流在两个架构的原生 Ubuntu 24.04 runner 上构建并发布，
+[Release 工作流](../../.github/workflows/release.yml) 分别在 `ubuntu-24.04`（amd64）和
+`ubuntu-24.04-arm`（arm64）原生 runner 上构建并验证 DEB/RPM，将两个架构的安装包
+上传为 GitHub Release 附件。
 打包时从 ELF 自动提取最低 glibc 版本并写入依赖；
 较旧发行版可在本机从源码构建。
 
