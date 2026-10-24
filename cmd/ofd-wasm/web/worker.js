@@ -88,6 +88,7 @@ async function start() {
 
 async function execute(message) {
   await ready;
+  if (cancelledRequests.has(message.id)) throw new Error('请求已取消');
   switch (message.command) {
     case 'open': {
       try {
@@ -191,19 +192,19 @@ async function execute(message) {
     case 'setHiddenLayers':
       return unwrap(self.ofd.setHiddenLayers(message.index, message.ids || []));
     case 'renderPage': {
-      const result = unwrap(self.ofd.renderPage(message.index, message.options || {}));
+      const result = unwrap(await self.ofd.renderPage(message.index, message.options || {}, message.id));
       const data = new Uint8Array(result);
       return data.slice().buffer;
     }
     case 'renderPages': {
-      const result = unwrap(self.ofd.renderPages(message.indices || [], message.options || {}));
+      const result = unwrap(await self.ofd.renderPages(message.indices || [], message.options || {}, message.id));
       return Array.from(result, page => new Uint8Array(page).slice().buffer);
     }
     case 'renderStream': {
       if ((message.indices || []).length === 1) {
         const format = String(message.options?.format || 'png').toLowerCase();
         if (format !== 'pdf') {
-          const result = unwrap(self.ofd.renderStream(message.indices, message.options || {}));
+          const result = unwrap(await self.ofd.renderStream(message.indices, message.options || {}, null, message.id));
           const data = new Uint8Array(result);
           return data.slice().buffer;
         }
@@ -213,7 +214,7 @@ async function execute(message) {
         const buffer = data.slice().buffer;
         self.postMessage({ type: 'stream-chunk', id: message.id, sequence, value: buffer }, [buffer]);
       };
-      return unwrap(self.ofd.renderStream(message.indices || [], message.options || {}, emit, message.id));
+      return unwrap(await self.ofd.renderStream(message.indices || [], message.options || {}, emit, message.id));
     }
     case 'text':
       return unwrap(self.ofd.text(message.index));
@@ -275,8 +276,8 @@ self.onmessage = event => {
   if (message.command === 'cancel') {
     if (queuedRequests.has(message.target) || activeRequests.has(message.target)) {
       cancelledRequests.add(message.target);
-      if (activeRequests.has(message.target) && self.ofd?.cancelStream) {
-        self.ofd.cancelStream(message.target);
+      if (activeRequests.has(message.target) && self.ofd?.cancelRender) {
+        self.ofd.cancelRender(message.target);
       }
     }
     return;

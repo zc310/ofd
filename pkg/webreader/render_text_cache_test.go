@@ -34,7 +34,7 @@ func renderSequence(t *testing.T, reader *Reader, pages []int) []byte {
 	t.Helper()
 	var last []byte
 	for _, page := range pages {
-		data, err := reader.RenderPage(page, RenderOptions{Format: RenderPNG, DPI: 96})
+		data, err := reader.RenderPage(t.Context(), page, RenderOptions{Format: RenderPNG, DPI: 96})
 		if err != nil {
 			t.Fatalf("渲染第 %d 页失败: %v", page, err)
 		}

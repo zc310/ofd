@@ -284,15 +284,15 @@ ofd.text(0)
 ofd.search('关键词')
 ofd.pageLinks() // 页面正文图元上的可点击链接
 ofd.annotations() // 注解清单（含 Link 注解的 uri/target_page/dest）
-ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
-ofd.renderPage(0, { format: 'jpg', dpi: 72 })
-ofd.renderPage(0, { format: 'svg' })
-ofd.renderPages([0, 1, 2], { format: 'png', dpi: 36, background: '#00000000' })
-ofd.renderStream([0], { format: 'png', dpi: 36 }) // 单页直接返回图片
-ofd.renderStream([0, 1, 2], { format: 'png', dpi: 36 }, (chunk, sequence) => {
+await ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
+await ofd.renderPage(0, { format: 'jpg', dpi: 72 })
+await ofd.renderPage(0, { format: 'svg' })
+await ofd.renderPages([0, 1, 2], { format: 'png', dpi: 36, background: '#00000000' })
+await ofd.renderStream([0], { format: 'png', dpi: 36 }) // Promise 完成后取得单页图片
+await ofd.renderStream([0, 1, 2], { format: 'png', dpi: 36 }, (chunk, sequence) => {
   // 多页图片 ZIP 按顺序返回分块。
 })
-ofd.renderStream([0, 1], { format: 'pdf', background: '#ffffff' }, (chunk, sequence) => {
+await ofd.renderStream([0, 1], { format: 'pdf', background: '#ffffff' }, (chunk, sequence) => {
   // PDF 按文件顺序返回分块。
 })
 
@@ -377,9 +377,10 @@ make test-wasm-web
 - `ofd.setHiddenLayers(index, ids)` 使用 `layers()` 返回的 `key` 字符串数组替换该页的隐藏列表，`[]` 恢复全部显示；未知页码/条目返回错误，失败时不改变设置。显示状态由当前 Reader 持有，影响后续页面渲染、PDF 导出、文字、搜索与链接查询。`open` 和成功的 `selectVersion` 会重置设置，设置不改变 OFD 内的原始数据。例如 `setHiddenLayers(0, ['template:9'])` 可关闭 `999.ofd` 第一页的背景模板，保留正文。
 - 直接调用 API 的网页需自行清除该页图片、缩略图、文字和链接缓存，并重新搜索；示例阅读器已处理异步旧响应及缓存失效。导出多页期间应保持图层设置稳定。
 - `renderPage` 和 `renderPages` 的 `format` 支持 `png`、`jpg` 和 `svg`，省略时默认为 `png`。
-- PNG 返回 PNG `Uint8Array`，JPG 返回 JPEG `Uint8Array`，SVG 返回 SVG XML 的 UTF-8 `Uint8Array`。
+- `renderPage`、`renderPages`、`renderStream` 的有效渲染请求均返回 Promise，使用 `await` 等待结果；渲染期间失败或取消时 Promise 拒绝。
+- 单页结果中，PNG 为 PNG `Uint8Array`，JPG 为 JPEG `Uint8Array`，SVG 为 SVG XML 的 UTF-8 `Uint8Array`。
 - `renderPages` 按传入索引顺序返回数组，最多处理 64 页。
-- `renderStream` 单页 PNG/JPG 时直接返回 `Uint8Array`，不需要回调；多页 PNG/JPG 在 WASM 内生成 ZIP 并通过回调返回分块，PDF 始终通过回调返回分块。
+- `renderStream` 单页 PNG/JPG 时 Promise 完成值为 `Uint8Array`，不需要回调；多页 PNG/JPG 在 WASM 内生成 ZIP 并通过回调返回分块，PDF 始终通过回调返回分块。
 - `renderStream` 使用流式输出，不限制页数；生成过程按块回调，WASM 不会同时保留所有页面图像或完整 PDF。
 - `dpi` 对 PNG 和 JPG 有效；JPG 不支持透明度，透明区域使用白色。
 - SVG 主要保留页面中的矢量内容，但复杂渐变、裁剪或其他不适合直接序列化的效果仍可能包含栅格图像。
@@ -403,7 +404,7 @@ make test-wasm-web
 `ofd.signatures()` 的每个 `stamp` 还包含 `visible_boundary`（`{ x, y, width, height }`，
 页面坐标、毫米），表示应用 `Clip` 后的可见区域，供点击热区和跳转定位使用。
 `boundary` 保留整枚印章的原始边界；没有有效裁剪时两个边界相同。
-- 发生错误时，API 返回 `{ error: string, code?: string }`，网页调用方应检查该字段。加密错误带有上表中的 `code`。
+- 同步 API 或渲染参数检查失败时，API 返回 `{ error: string, code?: string }`，网页调用方应检查该字段；异步渲染期间失败则拒绝 Promise。加密错误带有上表中的 `code`。
 
 ## Worker 协议
 
@@ -450,11 +451,19 @@ search     query: string
 - PDF 和多页图片均通过流式接口使用 `stream-chunk` 消息按顺序转发分块。
 - 正文页缓存上限为 256 MiB，缩略图缓存上限为 64 MiB，均由浏览器端使用 LRU 策略管理。
 - 切换页面渲染格式时会取消未完成的渲染请求并清理两类图片缓存，然后按新格式重新加载可视区域。
-- 页面滚动或缩放时会取消尚未开始的旧渲染任务，Worker 同一时间只执行一个任务。
-- 已经进入同步 WASM 调用的任务无法被底层中断，但其结果不会再更新页面。
+- 页面滚动或缩放时会取消旧渲染任务，Worker 同一时间只执行一个任务。
+- 已运行的渲染也会在阶段边界响应取消；单次底层绘制或编码需执行到阶段边界，取消后的结果不会再更新页面。
 
 `renderStream` 多页或 PDF 的回调参数为 `(chunk, sequence)`；网页 Worker 内部会在目标文件流完成当前块写入后发送 ACK，WASM 才继续生成下一块。多页图片的 ZIP 条目和 Central Directory 均在 WASM 内生成。写入失败或取消会发送错误 ACK，并终止生成。
 
-`streamAck` 和 `cancelStream` 是 Worker 使用的内部控制接口，普通网页调用方不需要直接调用。
+`streamAck` 和 `cancelRender` 是 Worker 使用的内部控制接口，普通网页调用方不需要直接调用。
+Worker 给 `renderPage(index, options, requestID)`、`renderPages(indices, options, requestID)`
+和 `renderStream(indices, options, callback, requestID)` 传入唯一的正整数请求 ID，
+再用 `cancelRender(requestID)` 取消对应渲染；单页 `renderStream` 的回调位置传 `null`。
+未指定 ID 的直接调用也会在关闭文档时一起取消。
+
+流式导出取消会解除 ACK 等待，并在页面加载、绘制、栅格化、编码及页间的阶段边界
+停止生成；即使尚未产生输出块，Worker 也有机会处理取消消息。已进入的单次底层绘制
+或编码需执行到阶段边界。取消后不再发送新的输出块，已写入的部分文件应丢弃。
 
 `text` 返回页面文字对象，`x/y` 是页面左上角原点的覆盖层坐标，`glyphs` 提供字符级区域；`search` 返回 `{ page, run, text, start, end, rects }` 命中列表。`glyphs`/`rects` 的 `angle` 可直接用于浏览器 CSS 的 `rotate()`。示例页面会将搜索结果所在页面滚动到视口，并使用引擎返回的字符矩形显示高亮。

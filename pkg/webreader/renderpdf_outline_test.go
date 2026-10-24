@@ -24,7 +24,7 @@ func TestRenderPDFToWritesOutline(t *testing.T) {
 	defer func() { _ = reader.Close() }()
 
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(&output, []int{0, 1, 2}, RenderOptions{}); err != nil {
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1, 2}, RenderOptions{}); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	body := output.String()
@@ -56,7 +56,7 @@ func TestRenderPDFToDropsOutlineEntriesOutsideSelection(t *testing.T) {
 
 	// 只导出第 1 页：指向第 2、3 页的条目都应消失，只剩第 1 页的三个。
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(&output, []int{0}, RenderOptions{}); err != nil {
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{0}, RenderOptions{}); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	body := output.String()
@@ -83,7 +83,7 @@ func TestRenderPDFToOutlineFollowsSelectionOrder(t *testing.T) {
 
 	// 倒序导出。「概述」指向文档第 1 页，输出里应是最后一页。
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(&output, []int{2, 1, 0}, RenderOptions{}); err != nil {
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{2, 1, 0}, RenderOptions{}); err != nil {
 		t.Fatalf("导出 PDF 失败: %v", err)
 	}
 	body := output.String()

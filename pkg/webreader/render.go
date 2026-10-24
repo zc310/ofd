@@ -2,6 +2,7 @@ package webreader
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -125,23 +126,32 @@ func (r *Reader) pageInfoLocked(index int) (PageInfo, error) {
 }
 
 // RenderPage 将指定页面渲染为 PNG、JPG 或 SVG 数据。
-func (r *Reader) RenderPage(index int, options RenderOptions) ([]byte, error) {
+// 在页面加载、绘制、栅格化及编码的阶段边界响应取消。
+// 单次底层绘制或编码不会被强行中断；取消时返回 ctx.Err()。
+func (r *Reader) RenderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
-	return r.renderPage(index, options)
+	return r.renderPage(ctx, index, options)
 }
 
 // RenderPages 将多个页面按传入顺序渲染为 PNG、JPG 或 SVG 数据。
 // 所有页面共享一次 Reader 锁和同一份文档状态；渲染本身仍按顺序执行。
-func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, error) {
+// 取消时返回 ctx.Err()，不返回已完成的部分页面。
+func (r *Reader) RenderPages(ctx context.Context, indices []int, options RenderOptions) ([][]byte, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if len(indices) > maxRenderPages {
 		return nil, fmt.Errorf("批量渲染页面数量超过限制 %d", maxRenderPages)
@@ -153,7 +163,7 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 	}
 	results := make([][]byte, 0, len(indices))
 	for _, index := range indices {
-		data, err := r.renderPage(index, options)
+		data, err := r.renderPage(ctx, index, options)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +173,10 @@ func (r *Reader) RenderPages(indices []int, options RenderOptions) ([][]byte, er
 }
 
 // renderPage 将页面渲染为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
-func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
+func (r *Reader) renderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error) {
+	if err := renderCheckpoint(ctx); err != nil {
+		return nil, err
+	}
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
@@ -194,6 +207,9 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 		return nil, err
 	}
 	defer lease.Release()
+	if err := renderCheckpoint(ctx); err != nil {
+		return nil, err
+	}
 	content := lease.Content()
 	if content == nil {
 		return nil, fmt.Errorf("页面内容为空")
@@ -221,6 +237,9 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}
+	if err := renderCheckpoint(ctx); err != nil {
+		return nil, err
+	}
 
 	estimatedSize := 1024
 	if format != RenderSVG {
@@ -229,22 +248,44 @@ func (r *Reader) renderPage(index int, options RenderOptions) ([]byte, error) {
 	}
 	// SVG 按实际内容增长，避免为矢量输出预留整页 RGBA 像素缓冲区。
 	output := bytes.NewBuffer(make([]byte, 0, estimatedSize))
+	writer := &renderWriter{ctx: ctx, out: output}
 	if format == RenderSVG {
-		if err := page.Write(output, "svg"); err != nil {
+		if err := page.Write(writer, "svg"); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
+		}
+		if err := renderCheckpoint(ctx); err != nil {
+			return nil, err
 		}
 		return output.Bytes(), nil
 	}
 	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI))
+	if err := renderCheckpoint(ctx); err != nil {
+		return nil, err
+	}
 	if format == RenderJPG {
 		rendered = opaqueImage(rendered, color.White)
-		if err := jpeg.Encode(output, rendered, &jpeg.Options{Quality: 90}); err != nil {
+		if err := jpeg.Encode(writer, rendered, &jpeg.Options{Quality: 90}); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("编码第 %d 页 JPG 失败: %w", index, err)
+		}
+		if err := renderCheckpoint(ctx); err != nil {
+			return nil, err
 		}
 		return output.Bytes(), nil
 	}
-	if err := media.EncodePNGLevel(output, rendered, pngCompressionLevel); err != nil {
+	if err := media.EncodePNGLevel(writer, rendered, pngCompressionLevel); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
+	}
+	if err := renderCheckpoint(ctx); err != nil {
+		return nil, err
 	}
 	return output.Bytes(), nil
 }

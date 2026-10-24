@@ -130,6 +130,7 @@ PDF 阶段。默认值、错误判断和示例见 [PDF 资源预算与诊断](PD
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"log"
@@ -151,7 +152,7 @@ func main() {
 
 	fmt.Println("总页数：", reader.PageCount())
 	// webreader 的页索引从 0 开始。
-	png, err := reader.RenderPage(0, webreader.RenderOptions{
+	png, err := reader.RenderPage(context.Background(), 0, webreader.RenderOptions{
 		DPI: 144, Background: color.White, Format: webreader.RenderPNG,
 	})
 	if err != nil {
@@ -172,6 +173,15 @@ func main() {
 范围为 1–600，默认 96，单页还受像素预算限制。版本清单和切换由 `Versions`、
 `SelectVersion` 提供，切换成功后需重新读取页面、字体和导航信息。
 完整接口见 [webreader API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)。
+
+`RenderPage(ctx, index, options)`、`RenderPages(ctx, indices, options)`、
+`RenderPDF(ctx, indices, options)` 和 `RenderPDFTo(ctx, output, indices, options)`
+均显式接收上下文。取消在页面加载、绘制、
+栅格化、编码及页间的阶段边界生效，返回原始 `ctx.Err()`；单次底层绘制或编码仍需
+执行到阶段边界。PDF 输出可能不完整，失败后应丢弃。WASM 下可取消的调用会在
+阶段边界让出浏览器事件循环，使取消消息不必等待输出分块才被处理。
+不需要取消或超时时，首参可传 `context.Background()`。`RenderPages` 和 `RenderPDF`
+失败时不返回部分结果；需要流式输出时使用 `RenderPDFTo`。
 
 ## 创建、合并与签章
 

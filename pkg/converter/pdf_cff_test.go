@@ -316,7 +316,7 @@ func TestPDFMultiFDCFFWebFallbackKeepsOtherFontSubset(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(&output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
 		t.Fatal(err)
 	}
 	checkCFFPDFPrograms(t, output.Bytes(), sfnt.Tables["CFF "])
@@ -373,7 +373,7 @@ func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value str
 					t.Fatal(err)
 				}
 				defer reader.Close()
-				if err := reader.RenderPDFTo(&output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
+				if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -149,7 +149,7 @@ func TestSelectVersionLoadsIndependentPagesAndResources(t *testing.T) {
 				if err != nil || string(data) != text {
 					t.Fatalf("attachment=%q err=%v", data, err)
 				}
-				data, err = r.RenderPage(0, RenderOptions{DPI: 25.4})
+				data, err = r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -161,7 +161,7 @@ func TestSelectVersionLoadsIndependentPagesAndResources(t *testing.T) {
 				if alpha == 0 || (blue && b <= red) || (!blue && red <= b) {
 					t.Fatalf("wrong version image: %v", img.At(15, 12))
 				}
-				pdf, err := r.RenderPDF([]int{0}, RenderOptions{DPI: 25.4})
+				pdf, err := r.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 25.4})
 				if err != nil || !bytes.HasPrefix(pdf, []byte("%PDF-")) {
 					t.Fatalf("version PDF export failed: %v", err)
 				}

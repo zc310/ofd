@@ -7,6 +7,22 @@
 
 ## 未发布
 
+- **阅读器渲染接口增加上下文参数**：`webreader.Reader.RenderPage` 改为
+  `RenderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error)`；
+  `RenderPages` 改为
+  `RenderPages(ctx context.Context, indices []int, options RenderOptions) ([][]byte, error)`；
+  `RenderPDF` 改为
+  `RenderPDF(ctx context.Context, indices []int, options RenderOptions) ([]byte, error)`；
+  `RenderPDFTo` 改为
+  `RenderPDFTo(ctx context.Context, output io.Writer, indices []int, options RenderOptions) error`。
+  调用方需在首个参数传入上下文；不需要取消控制时可用 `context.Background()`。
+  取消或超时返回原始 `ctx.Err()`，失败后应丢弃部分 PDF 输出。
+
+- **WASM 页面渲染改为异步**：直接调用 `ofd.renderPage`、`ofd.renderPages` 和单页
+  `ofd.renderStream` 时，调用方需使用 `await` 获取结果，并处理渲染失败时的 Promise
+  拒绝。Worker 协议保持原有结果格式，已运行的页面请求也会在渲染阶段边界响应取消。
+  内部取消控制接口统一为 `ofd.cancelRender(requestID)`，替代 `cancelStream`。
+
 - **签署 API 增加上下文参数**：`sign.Sign` 改为
   `Sign(ctx context.Context, input any, output io.Writer, options Options) error`。
   调用方需在首个参数传入上下文；不需要取消控制时可用 `context.Background()`。

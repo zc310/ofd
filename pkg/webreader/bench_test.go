@@ -101,7 +101,7 @@ func benchmarkOpenStages(b *testing.B, filename string) {
 				b.ResetTimer()
 				var outputSize int
 				for i := 0; i < b.N; i++ {
-					data, err := r.RenderPage(0, RenderOptions{
+					data, err := r.RenderPage(b.Context(), 0, RenderOptions{
 						DPI: 96, Format: RenderPNG, PNGCompressionLevel: level,
 					})
 					if err != nil {
@@ -263,7 +263,7 @@ func BenchmarkRenderPage(b *testing.B) {
 	opts := RenderOptions{DPI: 96, Format: RenderPNG, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPage(i%20, opts); err != nil {
+		if _, err := r.RenderPage(b.Context(), i%20, opts); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -289,7 +289,7 @@ func BenchmarkRenderSVG(b *testing.B) {
 			}
 			defer r.Close()
 			options := RenderOptions{Format: RenderSVG, DPI: dpi}
-			warmup, err := r.RenderPage(0, options)
+			warmup, err := r.RenderPage(b.Context(), 0, options)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -300,7 +300,7 @@ func BenchmarkRenderSVG(b *testing.B) {
 			b.ResetTimer()
 			var outputSize int
 			for i := 0; i < b.N; i++ {
-				output, err := r.RenderPage(0, options)
+				output, err := r.RenderPage(b.Context(), 0, options)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -323,7 +323,7 @@ func BenchmarkRenderPDF(b *testing.B) {
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPDF([]int{i % 20}, opts); err != nil {
+		if _, err := r.RenderPDF(b.Context(), []int{i % 20}, opts); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -335,7 +335,7 @@ func BenchmarkRenderPagesPDF(b *testing.B) {
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPDF([]int{0, 1, 2, 3, 4}, opts); err != nil {
+		if _, err := r.RenderPDF(b.Context(), []int{0, 1, 2, 3, 4}, opts); err != nil {
 			b.Fatal(err)
 		}
 	}
