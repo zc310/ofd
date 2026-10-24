@@ -20,8 +20,7 @@ import (
 )
 
 // Renderer 是本包场景所需的绘制操作面，方法签名与 render.DrawContext 中
-// 对应方法完全一致。canvas 后端与各栅格插件后端（FloatTech/gg、
-// tinyskia）都满足该接口。
+// 对应方法完全一致。canvas 后端与 FloatTech/gg 栅格插件后端都满足该接口。
 type Renderer interface {
 	SetFillColor(c color.Color)
 	SetFillGradient(g geom.Gradient)

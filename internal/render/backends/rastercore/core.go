@@ -1,9 +1,8 @@
 // Package rastercore 提供可切换栅格后端共用的渲染上下文状态机。
 //
-// gg、ftgg、tinyskia 三个后端只有「画笔/路径提交/图像合成」随光栅库不同，
-// 其余语义完全一致：Push/Pop 样式镜像、逻辑矩阵累计、毫米→设备像素换算、
-// 描边造型缩放、路径扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等。
-// 这些共享逻辑集中在本包，各后端只需实现 Hooks。
+// 本包统一处理 Push/Pop 样式镜像、逻辑矩阵累计、毫米→设备像素换算、
+// 描边造型缩放、路径扫描、DrawImage 矩阵拼装、CopyStrokeToFill 等语义。
+// ftgg 通过 Hooks 实现画笔设置、路径提交和图像合成。
 //
 // Core 直接满足 render.DrawContext（并带 Raster），通过 geom 使用共享的
 // canvas 几何类型，各后端的 Hooks 负责实际光栅绘制。

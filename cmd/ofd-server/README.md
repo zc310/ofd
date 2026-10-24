@@ -859,7 +859,7 @@ SQLite 或外部队列。
 - 服务不返回 `Server` 头。
 - 处理函数里的 panic 会被兜住并返回 500，不会拖垮进程。
 - 不支持 32 位构建（`knroy/go-xml` 的限制，与本服务无关）。
-- 图像输出用 Canvas/TinySkia 后端时不需要外部程序；`soffice`/`chromium` 只有在
+- 图像输出用 Canvas 后端时不需要外部程序；`soffice`/`chromium` 只有在
   实际处理 Office 或 HTML 时才需要存在。
 
 ## 目录

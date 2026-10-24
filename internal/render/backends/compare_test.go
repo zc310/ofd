@@ -21,7 +21,6 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
-	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 )
 
 const stress999Path = "../../../testdata/ofdrw/999.ofd"
@@ -42,11 +41,9 @@ func stress999Document(t testing.TB, dpi geom.Resolution) (*render.Document, *pa
 }
 
 // TestCompareBackends999Page1 渲染 999.ofd 第 1 页在所有已注册后端下的输出，
-// 以 canvas(A) 为基准与其余后端两两排版为 2 行 × 3 列（B=ftgg、C=tinyskia）：
+// 以 canvas(A) 为基准与 ftgg(B) 排版为 1 行 × 3 列：
 //
 //	原图A | 原图B | AB差异
-//	原图A | 原图C | AC差异
-//	原图A | 原图D | AD差异
 //
 // 差异图为白底红点（逐像素不一致处涂红）。结果写入 STRESS_PNG_DIR（默认
 // /tmp/ofd_test/compare.png）。
@@ -56,7 +53,7 @@ func TestCompareBackends999Page1(t *testing.T) {
 	page := doc.Pages[0]
 
 	base := render.BackendCanvas
-	others := []string{drawing.BackendFTGG, drawing.BackendTinySkia}
+	others := []string{drawing.BackendFTGG}
 	rendered := make(map[string]*image.RGBA)
 	names := append([]string{base}, others...)
 	for _, name := range names {
@@ -98,9 +95,8 @@ func TestCompareBackends999Page1(t *testing.T) {
 }
 
 // TestRenderImageOrientationAcrossBackends 回归：RenderImage 必须按页面矩阵把
-// 源图原样（不翻转）落到设备坐标。历史上 tinyskia 的 RenderImage 把
-// y 轴符号写反，轴对齐图片被上下镜像（999.ofd 左上角二维码整体倒置），
-// 图片甚至把下探内容画到页面外。这里用上半黑下半白的不对称图片验证：
+// 源图原样（不翻转）落到设备坐标，避免 y 轴符号错误造成上下镜像或越出页面。
+// 这里用上半黑下半白的不对称图片验证：
 // 设备上方应为黑、下方应为白，且各后端与 canvas 基准在两处探针一致。
 func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	const (
@@ -157,7 +153,7 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	if isDark(base.RGBAAt(blackProbe.X, blackProbe.Y)) == false || isDark(base.RGBAAt(whiteProbe.X, whiteProbe.Y)) == true {
 		t.Fatalf("测试场景无效：canvas 基准应在 %v 为黑、%v 为白", blackProbe, whiteProbe)
 	}
-	for _, name := range []string{drawing.BackendFTGG, drawing.BackendTinySkia} {
+	for _, name := range []string{drawing.BackendFTGG} {
 		got := raster(name)
 		if isDark(got.RGBAAt(blackProbe.X, blackProbe.Y)) == false {
 			t.Errorf("%s: 图片顶部区域应为黑，实际在 %v 为白（图片被上下倒置）", name, blackProbe)
@@ -168,16 +164,13 @@ func TestRenderImageOrientationAcrossBackends(t *testing.T) {
 	}
 }
 
-// backendTag 返回后端的对比标签（对应 A=canvas、B=gg、C=ftgg、
-// C=tinyskia）。
+// backendTag 返回后端的对比标签（对应 A=canvas、B=ftgg）。
 func backendTag(name string) string {
 	switch name {
 	case render.BackendCanvas:
 		return "A(canvas)"
 	case drawing.BackendFTGG:
 		return "B(ftgg)"
-	case drawing.BackendTinySkia:
-		return "C(tinyskia)"
 	default:
 		return name
 	}
@@ -259,8 +252,8 @@ func drawLabel(img *image.RGBA, x int, text string) {
 
 // TestCopyStrokeToFillAcrossBackends 回归 drawClippedPath 依赖的
 // CopyStrokeToFill：它必须把当前描边画笔（尤其是纯色）真正复制成填充画笔。
-// 历史上 gg/ftgg/tinyskia 只复制了开关与渐变，纯色裁剪描边被填充成透明而
-// 整体丢失。这里对每个后端做相同的“复制描边→禁用描边→填充描边几何”操作，
+// 避免只复制开关与渐变，导致纯色裁剪描边被填充成透明而整体丢失。
+// 这里对每个后端做相同的“复制描边→禁用描边→填充描边几何”操作，
 // 要求红色覆盖像素数与 canvas 基准接近。
 func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	ww, hh := 40.0, 40.0
@@ -297,7 +290,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 	if base == 0 {
 		t.Fatal("canvas 基准没有填充像素，测试无意义")
 	}
-	for _, name := range []string{drawing.BackendFTGG, drawing.BackendTinySkia} {
+	for _, name := range []string{drawing.BackendFTGG} {
 		got := redFillPixels(name)
 		t.Logf("%s 填充像素 %d（canvas 基准 %d）", name, got, base)
 		if got == 0 {
@@ -317,7 +310,7 @@ func TestCopyStrokeToFillAcrossBackends(t *testing.T) {
 // TestNewBackendRejectsZeroPixelSize 回归：页面在给定分辨率下取整为 0 像素时
 // 各后端必须返回错误，而不是 panic 或产出空图。
 func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG, drawing.BackendTinySkia} {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
 		if _, err := render.NewBackend(name, 0.001, 0.001, geom.DPI(1)); err == nil {
 			t.Errorf("%s: 0 像素页面未返回错误", name)
 		}
@@ -327,7 +320,7 @@ func TestNewBackendRejectsZeroPixelSize(t *testing.T) {
 // 正线宽的设备下限及低DPI参考分辨率换算应在所有栅格后端一致生效，
 // 并在设备像素坐标中应用，不能在矩阵缩放之前截断。
 func TestMinimumPositiveStrokeAcrossBackends(t *testing.T) {
-	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG, drawing.BackendTinySkia} {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
 		for _, scale := range []float64{0.3528, 1, 9} {
 			t.Run(name+"/"+fmt.Sprint(scale), func(t *testing.T) {
 				res := geom.DPMM(10)

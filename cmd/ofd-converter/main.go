@@ -38,7 +38,6 @@ import (
 	// 注册可选栅格后端，供 --raster-backend 选择（PNG/JPG）。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
-	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 )
 
 const (
@@ -230,7 +229,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.BoolVar(&opts.noHTMLTextLayer, "no-html-text-layer", false, "OFD 转 HTML 时不输出透明文字层（默认输出，文字因此可选中、可查找、可朗读）")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
-	flags.StringVar(&opts.rasterBackend, "raster-backend", "", "PNG/JPG 栅格后端: canvas, ftgg, tinyskia；缺省 canvas(矢量表面光栅化)")
+	flags.StringVar(&opts.rasterBackend, "raster-backend", "", "PNG/JPG 栅格后端: canvas, ftgg；缺省 canvas(矢量表面光栅化)")
 	flags.IntVar(&opts.page, "page", opts.page, "指定全局页码 (从 1 开始)，0 表示全部文档体页面")
 	flags.StringVar(&opts.bg, "bg", opts.bg, "背景颜色: transparent, white, black")
 	flags.BoolVar(&opts.dir, "dir", opts.dir, "不压缩，将多页图片直接保存到输出目录下的多个文件")

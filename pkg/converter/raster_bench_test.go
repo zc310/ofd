@@ -13,7 +13,6 @@ import (
 	"github.com/zc310/ofd/internal/render"
 
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
-	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 )
 
 // benchDoc 只解析一次文档，跨基准复用，避免把解析耗时算进栅格化对比。
@@ -49,14 +48,13 @@ func runRasterBench(b *testing.B, backend string) {
 	}
 }
 
-func BenchmarkRasterCanvas(b *testing.B)   { runRasterBench(b, "canvas") }
-func BenchmarkRasterFTGG(b *testing.B)     { runRasterBench(b, "ftgg") }
-func BenchmarkRasterTinySkia(b *testing.B) { runRasterBench(b, "tinyskia") }
+func BenchmarkRasterCanvas(b *testing.B) { runRasterBench(b, "canvas") }
+func BenchmarkRasterFTGG(b *testing.B)   { runRasterBench(b, "ftgg") }
 
 // TestRasterBackendTimingSummary 输出人类可读的平均耗时与输出体积。
 func TestRasterBackendTimingSummary(t *testing.T) {
 	files := []string{"ofd-creator/helloworld.ofd", "ofdrw/intro.ofd"}
-	backends := []string{"canvas", "ftgg", "tinyskia"}
+	backends := []string{"canvas", "ftgg"}
 	const dpi = 150.0
 	rounds := 8
 

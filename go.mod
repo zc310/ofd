@@ -23,7 +23,6 @@ require (
 	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/knroy/go-xml/v2 v2.0.1
 	github.com/kovidgoyal/imaging v1.9.0
-	github.com/lumifloat/tinyskia v0.0.0-20260720161801-ad5bfef6e841
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
@@ -68,7 +67,6 @@ require (
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chewxy/math32 v1.11.2 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dchest/jsmin v1.0.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
@@ -125,5 +123,3 @@ require (
 	modernc.org/token v1.1.0 // indirect
 	star-tex.org/x/tex v0.7.1 // indirect
 )
-
-replace github.com/lumifloat/tinyskia => github.com/zc310/tinyskia v0.0.0-20260923132319-d6ae6947b9ac

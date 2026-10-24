@@ -12,7 +12,6 @@ import (
 	"github.com/zc310/ofd/internal/render/drawing"
 
 	_ "github.com/zc310/ofd/internal/render/backends/ftgg"
-	_ "github.com/zc310/ofd/internal/render/backends/tinyskia"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
@@ -38,16 +37,12 @@ func TestStress999Page1PNG(t *testing.T) {
 
 		canvasDur := measure(render.BackendCanvas)
 		ftggDur := measure(drawing.BackendFTGG)
-		tskDur := measure(drawing.BackendTinySkia)
 		if err := ofd.Close(); err != nil {
 			t.Errorf("关闭 OFD 失败: %v", err)
 		}
-		t.Logf("dpi=%.0f  canvas %v   ftgg %v   tinyskia %v"+
-			"   加速比 ftgg/canvas=%.2fx tinyskia/canvas=%.2fx",
+		t.Logf("dpi=%.0f  canvas %v   ftgg %v   ftgg 加速比 %.2fx",
 			dpiVal, canvasDur.Round(time.Microsecond),
-			ftggDur.Round(time.Microsecond), tskDur.Round(time.Microsecond),
-			float64(canvasDur)/float64(ftggDur),
-			float64(canvasDur)/float64(tskDur))
+			ftggDur.Round(time.Microsecond), float64(canvasDur)/float64(ftggDur))
 	}
 
 	// 150dpi 输出各后端 PNG 到临时目录供目视对比。
@@ -59,9 +54,8 @@ func TestStress999Page1PNG(t *testing.T) {
 	doc, ofd := stress999Document(t, geom.DPI(150))
 	page := doc.Pages[0]
 	for name, out := range map[string]string{
-		render.BackendCanvas:    filepath.Join(dir, "999_p1_canvas.png"),
-		drawing.BackendFTGG:     filepath.Join(dir, "999_p1_ftgg.png"),
-		drawing.BackendTinySkia: filepath.Join(dir, "999_p1_tinyskia.png"),
+		render.BackendCanvas: filepath.Join(dir, "999_p1_canvas.png"),
+		drawing.BackendFTGG:  filepath.Join(dir, "999_p1_ftgg.png"),
 	} {
 		img, err := doc.RasterizePage(page, name, geom.DPI(150))
 		if err != nil {
@@ -87,7 +81,7 @@ func TestStress999Page1PNG(t *testing.T) {
 func BenchmarkRasterize999Page1(b *testing.B) {
 	for _, dpiVal := range []float64{96, 150, 300} {
 		dpi := geom.DPI(dpiVal)
-		for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG, drawing.BackendTinySkia} {
+		for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
 			b.Run(fmt.Sprintf("%s_%.0fdpi", name, dpiVal), func(b *testing.B) {
 				doc, ofd := stress999Document(b, dpi)
 				defer ofd.Close()

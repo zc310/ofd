@@ -7,6 +7,10 @@
 
 ## 未发布
 
+- **移除 TinySkia 栅格后端**：`ofd-converter --raster-backend tinyskia` 和
+  `converter.RasterBackend("tinyskia")` 不再可用。请改用 `canvas`（默认）或 `ftgg`；
+  删除该参数可恢复默认 Canvas 渲染。
+
 - **Markdown 独立转换入口增加上下文参数**：`pkg/converter/import/markdown` 的
   `Convert` 改为 `Convert(ctx context.Context, input any, output io.Writer) error`，
   `ConvertFile` 改为 `ConvertFile(ctx context.Context, mdPath, ofdPath string) error`。
