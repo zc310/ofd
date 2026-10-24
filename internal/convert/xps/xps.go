@@ -15,6 +15,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/zc310/ofd/internal/convert/process"
 )
 
 const (
@@ -22,8 +23,6 @@ const (
 	EnvXpstopdf = "OFD_XPSTOPDF"
 	// DefaultTimeout 是单次 XPS 转换的默认超时时间。
 	DefaultTimeout = 2 * time.Minute
-	// processWaitDelay 限制进程退出后等待继承输出管道的子进程关闭管道的时间。
-	processWaitDelay = time.Second
 )
 
 // Options 控制 XPS 转换行为。
@@ -109,9 +108,7 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) (data 
 
 	command := exec.CommandContext(runCtx, xpstopdf, localInput, outputPath)
 	command.Dir = workDir
-	command.SysProcAttr = processGroupAttr()
-	command.Cancel = func() error { return killProcessGroup(command) }
-	command.WaitDelay = processWaitDelay
+	process.Configure(command)
 	commandOutput, runErr := command.CombinedOutput()
 
 	message := strings.TrimSpace(string(commandOutput))

@@ -13,6 +13,11 @@
 这些导入器调用相应工具取得 PDF，再按目标格式返回 PDF 或交给 `internal/pdf2ofd`
 生成 OFD。CLI 的外部任务并发限制由 `cmd/ofd-converter` 统一管理。
 
+`process` 为 Office 和 XPS 配置进程树取消及输出管道等待上限。Unix 结束整个进程组，
+Windows 通过 `taskkill /T` 结束进程树，清理命令最多运行五秒。主进程退出或取消清理
+完成后，输出管道最多再等待一秒，仍未关闭则报告错误。Windows 的进程清理回归
+在 CI 中单独运行。
+
 验证入口：
 
 ```sh

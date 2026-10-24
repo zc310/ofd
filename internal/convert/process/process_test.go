@@ -1,4 +1,4 @@
-package xps
+package process
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 )
 
 // 使用测试二进制模拟父子进程，以便 Windows 也能验证进程树终止行为。
-func TestXPSProcessHelper(t *testing.T) {
-	mode := os.Getenv("OFD_XPS_PROCESS_TEST")
+func TestProcessHelper(t *testing.T) {
+	mode := os.Getenv("OFD_CONVERT_PROCESS_TEST")
 	if mode == "" {
 		return
 	}
-	marker := os.Getenv("OFD_XPS_PROCESS_MARKER")
+	marker := os.Getenv("OFD_CONVERT_PROCESS_MARKER")
 	if mode == "child" {
 		if err := os.WriteFile(marker+".ready", nil, 0600); err != nil {
 			os.Exit(2)
@@ -26,8 +26,8 @@ func TestXPSProcessHelper(t *testing.T) {
 		}
 		os.Exit(0)
 	}
-	child := exec.Command(os.Args[0], "-test.run=^TestXPSProcessHelper$")
-	child.Env = append(os.Environ(), "OFD_XPS_PROCESS_TEST=child")
+	child := exec.Command(os.Args[0], "-test.run=^TestProcessHelper$")
+	child.Env = append(os.Environ(), "OFD_CONVERT_PROCESS_TEST=child")
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
 	if err := child.Run(); err != nil {
 		os.Exit(2)
@@ -35,20 +35,21 @@ func TestXPSProcessHelper(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestKillProcessGroupTerminatesDescendants(t *testing.T) {
+func TestCancellationTerminatesDescendants(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "child-finished")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestXPSProcessHelper$")
-	command.Env = append(os.Environ(), "OFD_XPS_PROCESS_TEST=parent", "OFD_XPS_PROCESS_MARKER="+marker)
-	command.SysProcAttr = processGroupAttr()
-	command.Cancel = func() error { return killProcessGroup(command) }
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestProcessHelper$")
+	command.Env = append(os.Environ(), "OFD_CONVERT_PROCESS_TEST=parent", "OFD_CONVERT_PROCESS_MARKER="+marker)
+	Configure(command)
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		cancel()
-		_ = command.Wait()
+		if command.ProcessState == nil {
+			_ = command.Wait()
+		}
 	})
 	readyDeadline := time.Now().Add(5 * time.Second)
 	for {
@@ -62,8 +63,9 @@ func TestKillProcessGroupTerminatesDescendants(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := killProcessGroup(command); err != nil {
-		t.Fatal(err)
+	cancel()
+	if err := command.Wait(); err == nil {
+		t.Fatal("取消后命令不应成功退出")
 	}
 	time.Sleep(1700 * time.Millisecond)
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {

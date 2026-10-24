@@ -17,6 +17,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/zc310/ofd/internal/convert/process"
 )
 
 // EnvSoffice 是覆盖 LibreOffice 可执行文件路径的环境变量名。
@@ -139,14 +140,13 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	defer cancel()
 	command := exec.CommandContext(runCtx, soffice, args...)
 	command.Dir = workDir
-	// 独立进程组，超时或取消时可以连同 soffice 派生的子进程一起结束。
-	command.SysProcAttr = processGroupAttr()
-	command.Cancel = func() error {
-		return killProcessGroup(command)
-	}
+	process.Configure(command)
 	output, runErr := command.CombinedOutput()
 	if err := runCtx.Err(); err != nil {
 		return nil, err
+	}
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("LibreOffice 转换失败: %w", runErr)
 	}
 
 	// LibreOffice 有时在失败时仍返回 0，必须校验输出文件本身。
