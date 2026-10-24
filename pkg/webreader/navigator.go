@@ -105,6 +105,10 @@ type ViewPreferences struct {
 
 // readerMetadata 缓存文档生命周期内不变的元数据，避免重复计算。
 type readerMetadata struct {
+	resourcesOnce sync.Once
+	resourcesVal  resourceCatalog
+	resourcesErr  error
+
 	outlineOnce sync.Once
 	outlineVal  OutlineTree
 	outlineErr  error

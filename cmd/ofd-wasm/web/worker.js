@@ -219,7 +219,7 @@ async function execute(message) {
     case 'text':
       return unwrap(self.ofd.text(message.index));
     case 'search':
-      return unwrap(self.ofd.search(message.query || ''));
+      return unwrap(await self.ofd.search(message.query || '', message.id));
     default:
       throw new Error(`未知 Worker 操作: ${message.command}`);
   }

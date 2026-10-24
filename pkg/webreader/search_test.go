@@ -1,6 +1,8 @@
 package webreader
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +11,35 @@ import (
 
 	"github.com/zc310/ofd/internal/search"
 )
+
+func TestSearchLimitsAndCancellation(t *testing.T) {
+	reader, err := Open(duplicatePageIDsPackage(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	report, err := reader.Search(t.Context(), "local", SearchOptions{MaxResults: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 || !report.Truncated || report.Scanned != 1 {
+		t.Fatalf("结果上限报告 = %+v，期望扫描 1 页并截断为 1 条", report)
+	}
+	report, err = reader.Search(t.Context(), "不存在", SearchOptions{MaxPages: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 0 || !report.Truncated || report.Scanned != 1 {
+		t.Fatalf("页数上限报告 = %+v，期望扫描 1 页并截断", report)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := reader.Search(ctx, "local", SearchOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("取消错误 = %v，期望 context.Canceled", err)
+	}
+}
 
 func TestSearchAvoidsFullTextCache(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
@@ -27,21 +58,22 @@ func TestSearchAvoidsFullTextCache(t *testing.T) {
 		t.Fatal("页面没有可搜索文字")
 	}
 
-	results, err := reader.Search("不存在的查询内容")
+	report, err := reader.Search(t.Context(), "不存在的查询内容", SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 0 {
-		t.Fatalf("无匹配查询返回了 %d 个结果", len(results))
+	if len(report.Results) != 0 {
+		t.Fatalf("无匹配查询返回了 %d 个结果", len(report.Results))
 	}
 	if got := reader.text.Len(); got != 0 {
 		t.Fatalf("无命中搜索仍缓存了 %d 页完整字形布局", got)
 	}
 	query := string([]rune(values[0])[:1])
-	results, err = reader.Search(query)
+	report, err = reader.Search(t.Context(), query, SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	results := report.Results
 	if len(results) == 0 {
 		t.Fatalf("搜索页面文字首字符 %q 未命中", query)
 	}
@@ -132,10 +164,11 @@ func TestSearchResultsMatchTextSnapshots(t *testing.T) {
 		t.Fatal("首页首个文字 run 只有空白")
 	}
 	query := string([]rune(trimmed)[:1])
-	got, err := reader.Search(query)
+	report, err := reader.Search(t.Context(), query, SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := report.Results
 	if reader.text.Len() != 0 {
 		t.Fatalf("未预热搜索在建立索引时缓存了 %d 页完整文字布局", reader.text.Len())
 	}

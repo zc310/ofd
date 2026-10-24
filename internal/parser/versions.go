@@ -5,6 +5,12 @@ import "fmt"
 // SelectVersion 打开指定文档体的版本，其余文档体恢复主入口。
 // id 为空时恢复所有主入口文档。失败时保留当前文档；调用方应排除并发读取。
 func (p *OFD) SelectVersion(scope int, id string) error {
+	return p.SelectVersionPrepared(scope, id, nil)
+}
+
+// SelectVersionPrepared 在提交版本前把候选文档交给 prepare。prepare 返回错误时
+// 释放候选文档并保留当前版本；调用方可在其中完成依赖候选文档的资源准备。
+func (p *OFD) SelectVersionPrepared(scope int, id string, prepare func([]*Document) error) error {
 	if p == nil || p.fileCache == nil {
 		return categorized(ErrDocumentClosed, "OFD 文档已关闭")
 	}
@@ -12,6 +18,7 @@ func (p *OFD) SelectVersion(scope int, id string) error {
 		return categorized(ErrDocumentScopeOutOfRange, fmt.Sprintf("文档体索引超出范围: %d", scope))
 	}
 	documents := append([]*Document(nil), p.mainDocuments...)
+	var created []*Document
 	if id != "" {
 		main := p.mainDocuments[scope]
 		version, err := main.LoadVersion(id)
@@ -49,6 +56,15 @@ func (p *OFD) SelectVersion(scope int, id string) error {
 			documents[scope] = main
 		} else {
 			documents[scope] = document
+			created = append(created, document)
+		}
+	}
+	if prepare != nil {
+		if err := prepare(documents); err != nil {
+			for _, document := range created {
+				document.clearCaches()
+			}
+			return err
 		}
 	}
 	for scope, document := range p.Documents {

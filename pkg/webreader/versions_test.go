@@ -2,6 +2,7 @@ package webreader
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,7 +15,23 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render"
+	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
+	"golang.org/x/image/font/gofont/goregular"
 )
+
+type versionFallbackEngine struct {
+	render.FontEngine
+	reject *bool
+}
+
+func (f *versionFallbackEngine) UseFallbackFont(family string) error {
+	if *f.reject {
+		return errors.New("拒绝回退字体")
+	}
+	return f.FontEngine.UseFallbackFont(family)
+}
 
 // 独立历史文档复用主文档的页面、字体和图片 ID，内容与相对路径各自独立。
 func historicalVersionPackage(t *testing.T, absolute bool) []byte {
@@ -108,6 +125,83 @@ func historicalVersionPackage(t *testing.T, absolute bool) []byte {
 	return result.Bytes()
 }
 
+func TestSelectVersionHandsOffDroppedFallbackFont(t *testing.T) {
+	family := t.Name()
+	if err := RegisterFallbackFont(FontSource{Family: family, Data: goregular.TTF}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, ok := FallbackFontData(family); ok {
+			_ = UnregisterFallbackFont(family)
+		}
+	})
+	r, err := Open(duplicatePageIDsPackage(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UseFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	if err := UnregisterFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := FallbackFontData(family); !ok {
+		t.Fatal("打开的文档未延迟注销回退字体")
+	}
+	if err := r.SelectVersion(0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := FallbackFontData(family); !ok {
+		t.Fatal("版本切换时旧文档先释放，回退字体未交接给新文档")
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := FallbackFontData(family); ok {
+		t.Fatal("关闭切换后的文档后，已注销回退字体仍被持有")
+	}
+}
+
+func TestSelectVersionFallbackFailureKeepsCurrentView(t *testing.T) {
+	reject := false
+	render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
+		return &versionFallbackEngine{FontEngine: canvasbackend.NewFonts(doc), reject: &reject}
+	})
+	t.Cleanup(func() {
+		render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
+			return canvasbackend.NewFonts(doc)
+		})
+	})
+	family := t.Name()
+	if err := RegisterFallbackFont(FontSource{Family: family, Data: goregular.TTF}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, ok := FallbackFontData(family); ok {
+			_ = UnregisterFallbackFont(family)
+		}
+	})
+	r, err := Open(historicalVersionPackage(t, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if err := r.UseFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SelectVersion(0, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	reject = true
+	if err := r.SelectVersion(0, ""); err == nil {
+		t.Fatal("新视图拒绝回退字体时仍报告切换成功")
+	}
+	runs, err := r.Text(0)
+	if err != nil || len(runs) == 0 || runs[0].Text != "history" {
+		t.Fatalf("失败后未保留历史版本视图: runs=%+v err=%v", runs, err)
+	}
+}
+
 func TestSelectVersionLoadsIndependentPagesAndResources(t *testing.T) {
 	for _, absolute := range []bool{false, true} {
 		t.Run(fmt.Sprint("absolute=", absolute), func(t *testing.T) {
@@ -125,9 +219,9 @@ func TestSelectVersionLoadsIndependentPagesAndResources(t *testing.T) {
 				if err != nil || len(runs) == 0 || runs[0].Text != text {
 					t.Fatalf("text=%+v err=%v", runs, err)
 				}
-				matches, err := r.Search(text)
-				if err != nil || len(matches) == 0 {
-					t.Fatalf("search=%+v err=%v", matches, err)
+				report, err := r.Search(t.Context(), text, SearchOptions{})
+				if err != nil || len(report.Results) == 0 {
+					t.Fatalf("search=%+v err=%v", report.Results, err)
 				}
 				fonts, err := r.FontList()
 				if err != nil || len(fonts) < 1 || fonts[0].Name != font {

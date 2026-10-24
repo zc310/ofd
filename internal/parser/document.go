@@ -42,6 +42,11 @@ type Document struct {
 	drawParams          map[models.StID]*models.DrawParam
 	res                 map[models.StID]*models.MultiMedia
 	fontRes             map[models.StID]*models.Font
+	baseRes             map[models.StID]*models.MultiMedia
+	baseFontRes         map[models.StID]*models.Font
+	baseDrawParams      map[models.StID]*models.DrawParam
+	baseColorSpaces     map[models.StID]*models.ColorSpace
+	baseCompositeUnits  map[models.StID]*models.CompositeGraphicUnit
 	colorSpaces         map[models.StID]*models.ColorSpace
 	compositeUnits      map[models.StID]*models.CompositeGraphicUnit
 	publicRes           []*models.Res
@@ -131,6 +136,11 @@ func (p *Document) clearCaches() {
 	p.drawParams = nil
 	p.res = nil
 	p.fontRes = nil
+	p.baseRes = nil
+	p.baseFontRes = nil
+	p.baseDrawParams = nil
+	p.baseColorSpaces = nil
+	p.baseCompositeUnits = nil
 	p.colorSpaces = nil
 	p.compositeUnits = nil
 	p.publicRes = nil
@@ -465,6 +475,8 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 		if p.res[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "media", id); ok {
 				p.res[id] = replacement.(*models.MultiMedia)
+			} else if replacement := p.baseRes[id]; replacement != nil {
+				p.res[id] = replacement
 			} else {
 				delete(p.res, id)
 			}
@@ -474,6 +486,8 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 		if p.drawParams[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "drawParams", id); ok {
 				p.drawParams[id] = replacement.(*models.DrawParam)
+			} else if replacement := p.baseDrawParams[id]; replacement != nil {
+				p.drawParams[id] = replacement
 			} else {
 				delete(p.drawParams, id)
 			}
@@ -483,6 +497,8 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 		if p.fontRes[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "fonts", id); ok {
 				p.fontRes[id] = replacement.(*models.Font)
+			} else if replacement := p.baseFontRes[id]; replacement != nil {
+				p.fontRes[id] = replacement
 			} else {
 				delete(p.fontRes, id)
 			}
@@ -492,6 +508,8 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 		if p.colorSpaces[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "colorSpaces", id); ok {
 				p.colorSpaces[id] = replacement.(*models.ColorSpace)
+			} else if replacement := p.baseColorSpaces[id]; replacement != nil {
+				p.colorSpaces[id] = replacement
 			} else {
 				delete(p.colorSpaces, id)
 			}
@@ -501,6 +519,8 @@ func (p *Document) forgetResourceOwnership(resources pageResources, excluded *Pa
 		if p.compositeUnits[id] == value {
 			if replacement, ok := pageResourceReplacement(used, "composites", id); ok {
 				p.compositeUnits[id] = replacement.(*models.CompositeGraphicUnit)
+			} else if replacement := p.baseCompositeUnits[id]; replacement != nil {
+				p.compositeUnits[id] = replacement
 			} else {
 				delete(p.compositeUnits, id)
 			}
@@ -703,6 +723,13 @@ func (p *Document) parse(body models.DocBody) error {
 	if err = p.parseDocumentRes(); err != nil {
 		return err
 	}
+	// 页面资源会临时覆盖动态索引中的同 ID 条目；保留文档级基线，供稳定枚举和
+	// 页面淘汰后恢复使用。
+	p.baseRes = cloneResourceMap(p.res)
+	p.baseFontRes = cloneResourceMap(p.fontRes)
+	p.baseDrawParams = cloneResourceMap(p.drawParams)
+	p.baseColorSpaces = cloneResourceMap(p.colorSpaces)
+	p.baseCompositeUnits = cloneResourceMap(p.compositeUnits)
 	if err = p.parseAnnotations(); err != nil {
 		return err
 	}
@@ -960,6 +987,56 @@ func snapshotEntries[K comparable, V any](source map[K]V) []resourceEntry[K, V] 
 		entries = append(entries, resourceEntry[K, V]{id: id, value: value})
 	}
 	return entries
+}
+
+func cloneResourceMap[K comparable, V any](source map[K]V) map[K]V {
+	result := make(map[K]V, len(source))
+	for id, value := range source {
+		result[id] = value
+	}
+	return result
+}
+
+// DeclaredResources 返回文档级和全部页面级字体、媒体声明的稳定快照。
+// 返回的映射可修改，其中的模型指针只读；读取页面失败时返回对应错误。
+func (p *Document) DeclaredResources() (map[models.StID]*models.Font, map[models.StID]*models.MultiMedia, error) {
+	fonts := make(map[models.StID]*models.Font)
+	media := make(map[models.StID]*models.MultiMedia)
+	if p == nil {
+		return fonts, media, errors.New("文档为空")
+	}
+	p.resourcesMu.RLock()
+	for id, font := range p.baseFontRes {
+		fonts[id] = font
+	}
+	for id, item := range p.baseRes {
+		media[id] = item
+	}
+	p.resourcesMu.RUnlock()
+
+	for index, page := range p.Pages {
+		if page == nil {
+			continue
+		}
+		lease, err := page.AcquireLease()
+		if err != nil {
+			return nil, nil, fmt.Errorf("加载第 %d 页资源失败: %w", index, err)
+		}
+		page.mu.Lock()
+		for id, font := range page.resources.fonts {
+			if _, exists := fonts[id]; !exists {
+				fonts[id] = font
+			}
+		}
+		for id, item := range page.resources.media {
+			if _, exists := media[id]; !exists {
+				media[id] = item
+			}
+		}
+		page.mu.Unlock()
+		lease.Release()
+	}
+	return fonts, media, nil
 }
 
 // ForEachSignedValue 遍历已解析的签名值。

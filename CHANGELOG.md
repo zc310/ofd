@@ -7,6 +7,23 @@
 
 ## 未发布
 
+- **阅读器搜索 API 改用上下文、选项和报告**：`webreader.Reader.Search` 从
+  `Search(query string) ([]SearchResult, error)` 改为
+  `Search(ctx context.Context, query string, options SearchOptions) (SearchReport, error)`。
+  调用方需传入上下文及 `webreader.SearchOptions{}`，并从 `report.Results` 取得命中列表。
+  `MaxPages`、`MaxResults` 为 `0` 时不限制；设置上限后需检查 `report.Truncated` 和
+  `report.Scanned`，不能将截断结果当作完整搜索结果。取消或超时返回原始 `ctx.Err()`。
+
+- **WASM 搜索改为异步报告**：`ofd.search(query, requestID?)` 现在返回 Promise，解析值从
+  命中数组改为 `{results, scanned, truncated}`；Worker 的 `search` 响应也采用该报告结构。
+  直接调用方需使用 `await`，从 `report.results` 读取命中并处理 Promise 拒绝。
+  单次搜索最多扫描 `2000` 页、返回 `5000` 个命中，需通过 `truncated` 判断结果是否完整；
+  提供请求 ID 时可通过 `ofd.cancelRender(requestID)` 取消搜索。
+
+- **阅读器读取失败不再作为空结果返回**：文字、搜索、链接和页面动作、字体及媒体资源查询、
+  统计和 PDF 链接导出会传播页面、模板、注释或资源读取错误。调用方需处理返回错误，
+  不再依赖空列表或缺项来判断读取失败；PDF 导出失败后应丢弃部分输出。
+
 - **移除 TinySkia 栅格后端**：`ofd-converter --raster-backend tinyskia` 和
   `converter.RasterBackend("tinyskia")` 不再可用。请改用 `canvas`（默认）或 `ftgg`；
   删除该参数可恢复默认 Canvas 渲染。

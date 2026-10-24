@@ -352,19 +352,16 @@ func (r *Reader) computeStats() (DocumentStats, error) {
 	if r.ofd == nil {
 		return stats, nil
 	}
-	fonts := make(map[string]struct{})
-	for documentIndex, document := range r.ofd.Documents {
+	catalog, err := r.resourceCatalogLocked()
+	if err != nil {
+		return stats, err
+	}
+	stats.Fonts = len(catalog.fonts)
+	stats.Media = len(catalog.media)
+	for _, document := range r.ofd.Documents {
 		if document == nil {
 			continue
 		}
-		document.ForEachFont(func(id models.StID, font *models.Font) bool {
-			fonts[fmt.Sprintf("%d:%d", documentIndex, id)] = struct{}{}
-			return true
-		})
-		document.ForEachMedia(func(id models.StID, media *models.MultiMedia) bool {
-			stats.Media++
-			return true
-		})
 		document.ForEachSignature(func(id string, signature *models.Signature) bool {
 			stats.Signatures++
 			return true
@@ -374,7 +371,6 @@ func (r *Reader) computeStats() (DocumentStats, error) {
 		}
 		stats.AnnotationPages += document.AnnotationPageCount()
 	}
-	stats.Fonts = len(fonts)
 	return stats, nil
 }
 

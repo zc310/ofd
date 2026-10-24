@@ -22,6 +22,7 @@ function workerState(startup = Promise.resolve()) {
     return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
   };
   const ofd = {
+    search: (_query, id) => begin('search', id),
     renderPage: (_index, _options, id) => begin('renderPage', id),
     renderPages: (_indices, _options, id) => begin('renderPages', id),
     renderStream: (_indices, _options, callback, id) => begin('renderStream', id, callback),
@@ -84,6 +85,28 @@ for (const request of [
   } else {
     suite.check(success.value instanceof ArrayBuffer && success.value.byteLength === 3, `${label} 等待 Promise 后复制图像数据`);
   }
+}
+
+{
+  const state = workerState();
+  state.send({ command: 'search', id: 12, query: '文字' });
+  await waitFor(() => state.pending.has(12));
+  suite.check(state.calls[0].id === 12, 'search 将请求 ID 传给 WASM');
+  suite.check(!state.replies.some(reply => reply.id === 12), 'search 等待异步搜索结果');
+
+  state.send({ command: 'search', id: 13, query: '下一次' });
+  state.send({ command: 'cancel', target: 12 });
+  await waitFor(() => state.replies.some(reply => reply.id === 12));
+  const canceled = state.replies.find(reply => reply.id === 12);
+  suite.check(state.canceled.includes(12) && !canceled.ok && canceled.error === '请求已取消', 'search 取消正在运行的搜索');
+
+  await waitFor(() => state.pending.has(13));
+  const report = { results: [], scanned: 1, truncated: false };
+  state.pending.get(13).resolve(report);
+  state.pending.delete(13);
+  await waitFor(() => state.replies.some(reply => reply.id === 13 && 'ok' in reply));
+  const success = state.replies.find(reply => reply.id === 13 && 'ok' in reply);
+  suite.check(success.ok && success.value.scanned === 1, 'search 取消后继续处理下一个请求');
 }
 
 {

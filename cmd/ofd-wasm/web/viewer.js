@@ -4475,16 +4475,21 @@ async function searchDocument() {
   updateSearchStatus('搜索中...');
   try {
     searchRequest = engine.search(query);
-    const results = await searchRequest;
+    const report = await searchRequest;
     if (generation !== searchGeneration) return;
+    const results = Array.isArray(report?.results) ? report.results : [];
     searchResults = results;
     activeSearchResult = results.length ? 0 : -1;
     if (!results.length) {
-      updateSearchStatus('无匹配');
+      updateSearchStatus(report.truncated
+        ? `已扫描 ${report.scanned} 页，暂未匹配（结果已截断）`
+        : '无匹配');
       pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
       return;
     }
-    updateSearchStatus(`找到 ${results.length} 处`);
+    updateSearchStatus(report.truncated
+      ? `找到前 ${results.length} 处（已扫描 ${report.scanned} 页，结果已截断）`
+      : `找到 ${results.length} 处`);
     pageCards.forEach((card, index) => { if (card) buildTextLayer(index); });
     if (activeSearchResult >= 0) goTo(results[activeSearchResult].page);
   } catch (error) {

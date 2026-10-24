@@ -78,8 +78,8 @@ func TestLayerVisibilityIsPageScopedAndFiltersTextSearchAndLinks(t *testing.T) {
 	if _, err := r.Text(0); err != nil {
 		t.Fatal(err)
 	}
-	if results, err := r.Search("hidden"); err != nil || len(results) != 2 {
-		t.Fatalf("初始搜索=%+v %v", results, err)
+	if report, err := r.Search(t.Context(), "hidden", SearchOptions{}); err != nil || len(report.Results) != 2 {
+		t.Fatalf("初始搜索=%+v %v", report.Results, err)
 	}
 	if links, err := r.PageLinks(); err != nil || len(links) != 2 {
 		t.Fatalf("初始链接=%+v %v", links, err)
@@ -87,12 +87,12 @@ func TestLayerVisibilityIsPageScopedAndFiltersTextSearchAndLinks(t *testing.T) {
 	if err := r.SetHiddenLayers(0, []string{"20"}); err != nil {
 		t.Fatal(err)
 	}
-	if results, err := r.Search("hidden"); err != nil || len(results) != 1 || results[0].Page != 1 {
-		t.Fatalf("隐藏文字仍参与搜索: %+v %v", results, err)
+	if report, err := r.Search(t.Context(), "hidden", SearchOptions{}); err != nil || len(report.Results) != 1 || report.Results[0].Page != 1 {
+		t.Fatalf("隐藏文字仍参与搜索: %+v %v", report.Results, err)
 	}
 	// 在搜索先构建轻量索引后，run 索引必须与过滤后的 Text 保持一致。
-	if results, err := r.Search("visible"); err != nil || len(results) != 2 || results[0].Run != 0 || results[0].Text != "visible" {
-		t.Fatalf("过滤后的搜索布局=%+v %v", results, err)
+	if report, err := r.Search(t.Context(), "visible", SearchOptions{}); err != nil || len(report.Results) != 2 || report.Results[0].Run != 0 || report.Results[0].Text != "visible" {
+		t.Fatalf("过滤后的搜索布局=%+v %v", report.Results, err)
 	}
 	runs, err := r.Text(0)
 	if err != nil || len(runs) != 1 || runs[0].Text != "visible" {
@@ -114,7 +114,7 @@ func TestLayerVisibilityIsPageScopedAndFiltersTextSearchAndLinks(t *testing.T) {
 	if err := r.SetHiddenLayers(0, nil); err != nil {
 		t.Fatal(err)
 	}
-	if results, _ := r.Search("hidden"); len(results) != 2 {
+	if report, _ := r.Search(t.Context(), "hidden", SearchOptions{}); len(report.Results) != 2 {
 		t.Fatal("恢复后文字未恢复")
 	}
 	if _, err := r.Layers(-1); err == nil {
@@ -249,7 +249,7 @@ func TestLayerVisibilityConcurrentReaders(t *testing.T) {
 				if _, err := r.Text(0); err != nil {
 					t.Error(err)
 				}
-				if _, err := r.Search("visible"); err != nil {
+				if _, err := r.Search(t.Context(), "visible", SearchOptions{}); err != nil {
 					t.Error(err)
 				}
 				if _, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4}); err != nil {
@@ -391,7 +391,7 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 	if _, err := r.Text(0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Search("backgroundword"); err != nil {
+	if _, err := r.Search(t.Context(), "backgroundword", SearchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.PageLinks(); err != nil {
@@ -450,13 +450,13 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 				t.Fatalf("模板文字过滤错误: %s", text.String())
 			}
 			for word, visible := range map[string]bool{"backgroundword": test.background, "foregroundword": test.foreground} {
-				results, err := r.Search(word)
+				report, err := r.Search(t.Context(), word, SearchOptions{})
 				want := 1
 				if visible {
 					want = 2
 				}
-				if err != nil || len(results) != want {
-					t.Fatalf("模板搜索 %s=%+v %v", word, results, err)
+				if err != nil || len(report.Results) != want {
+					t.Fatalf("模板搜索 %s=%+v %v", word, report.Results, err)
 				}
 			}
 			links, err := r.PageLinksForPage(0)

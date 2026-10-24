@@ -217,7 +217,11 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 		if ref.page == nil || ref.document == nil {
 			continue
 		}
-		links[index] = ref.document.PageLinksWithVisibility(ref.page, resolvers[ref.document], r.hiddenLayers[pageIndex])
+		pageLinks, err := ref.document.PageLinksWithVisibilityE(ref.page, resolvers[ref.document], r.hiddenLayers[pageIndex])
+		if err != nil {
+			return nil, fmt.Errorf("读取第 %d 页链接失败: %w", pageIndex, err)
+		}
+		links[index] = pageLinks
 	}
 	return links, ctx.Err()
 }
@@ -263,7 +267,7 @@ func (r *Reader) addPDFPage(ctx context.Context, pdfDoc render.PDFDocument, inde
 	box := content.Area.PhysicalBox
 	pointsPerMM := geom.DPI(72).DPMM()
 	width, height := box.Width*pointsPerMM, box.Height*pointsPerMM
-	if !finitePositive(width) || !finitePositive(height) || width*height > maxPDFPageAreaPoints {
+	if !validPDFDimensions(width, height) {
 		return errors.New("PDF 渲染尺寸过大")
 	}
 	document, err := r.pageDocument(ref, background, dpi)
@@ -279,4 +283,10 @@ func (r *Reader) addPDFPage(ctx context.Context, pdfDoc render.PDFDocument, inde
 		return err
 	}
 	return pdfDoc.AddPage(page, links)
+}
+
+func validPDFDimensions(width, height float64) bool {
+	return finitePositive(width) && finitePositive(height) &&
+		width <= maxPDFPageAreaPoints && height <= maxPDFPageAreaPoints &&
+		width <= maxPDFPageAreaPoints/height
 }

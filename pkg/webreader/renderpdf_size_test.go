@@ -78,3 +78,25 @@ func TestRenderPDFPageAreaLimitDoesNotDependOnDPI(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderPageRejectsExtremeAspectRatioBeforeRasterization(t *testing.T) {
+	for _, size := range []struct {
+		name          string
+		width, height float64
+	}{
+		{name: "极宽页面", width: 1e100, height: 1e-100},
+		{name: "不足一个像素", width: 1e-10, height: 100},
+	} {
+		t.Run(size.name, func(t *testing.T) {
+			if validRasterDimensions(size.width, size.height, 96) {
+				t.Fatal("接受了无法安全栅格化的页面")
+			}
+		})
+	}
+}
+
+func TestRenderPDFRejectsExtremeSingleDimension(t *testing.T) {
+	if validPDFDimensions(1e100, 1e-100) {
+		t.Fatal("PDF 接受了单边尺寸超出限制的页面")
+	}
+}

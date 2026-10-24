@@ -218,8 +218,7 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 	if !finitePositive(box.Width) || !finitePositive(box.Height) {
 		return nil, fmt.Errorf("第 %d 页尺寸无效", index)
 	}
-	pixels := box.Width * options.DPI / 25.4 * box.Height * options.DPI / 25.4
-	if math.IsNaN(pixels) || math.IsInf(pixels, 0) || pixels > maxRenderPixels {
+	if !validRasterDimensions(box.Width, box.Height, options.DPI) {
 		return nil, fmt.Errorf("第 %d 页渲染尺寸过大", index)
 	}
 
@@ -288,6 +287,24 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 		return nil, err
 	}
 	return output.Bytes(), nil
+}
+
+// validRasterDimensions 按 canvas 栅格后端的取整规则验证像素宽高。
+// 不能只检查宽高乘积：极大宽度与极小高度的乘积可能正常，但单边转为 int 时会溢出。
+func validRasterDimensions(width, height, dpi float64) bool {
+	scale := dpi / 25.4
+	pixelWidth, pixelHeight := width*scale, height*scale
+	if !finitePositive(pixelWidth) || !finitePositive(pixelHeight) ||
+		pixelWidth > maxRenderPixels || pixelHeight > maxRenderPixels {
+		return false
+	}
+	// canvas 使用 int(value+0.5)，低于半个像素会得到空图。
+	roundedWidth := int(pixelWidth + 0.5)
+	roundedHeight := int(pixelHeight + 0.5)
+	if roundedWidth < 1 || roundedHeight < 1 {
+		return false
+	}
+	return roundedWidth <= maxRenderPixels/roundedHeight
 }
 
 // opaqueImage 把可能带透明通道的页面渲染结果合到不透明背景上。

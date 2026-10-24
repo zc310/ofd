@@ -37,6 +37,9 @@ const (
 	wasmMaxRenderPages = 64
 	// wasmMaxStreamPages 仅用于防止异常调用分配过大的索引数组；流式导出本身不限页数。
 	wasmMaxStreamPages = 1 << 16
+	// 搜索在 Worker 内同步执行，必须限制单次扫描量和返回量，避免大文档长期占住 Worker。
+	wasmMaxSearchPages   = 2000
+	wasmMaxSearchResults = 5000
 )
 
 func main() {
@@ -1092,14 +1095,27 @@ func (a *wasmApp) search(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	if len(args) != 1 || args[0].Type() != js.TypeString {
-		return errorValue(errors.New("ofd.search 需要一个字符串参数"))
+	if len(args) < 1 || len(args) > 2 || args[0].Type() != js.TypeString {
+		return errorValue(errors.New("ofd.search 需要查询字符串和可选请求 ID"))
 	}
-	results, err := reader.Search(args[0].String())
+	id, err := renderRequestID(args[1:])
 	if err != nil {
 		return errorValue(err)
 	}
-	return searchResultsValue(results)
+	query := args[0].String()
+	return a.renderAsync(id, func(ctx context.Context) (js.Value, error) {
+		report, searchErr := reader.Search(ctx, query, webreader.SearchOptions{
+			MaxPages: wasmMaxSearchPages, MaxResults: wasmMaxSearchResults,
+		})
+		if searchErr != nil {
+			return js.Undefined(), searchErr
+		}
+		return objectValue(map[string]any{
+			"results":   searchResultsValue(report.Results),
+			"scanned":   report.Scanned,
+			"truncated": report.Truncated,
+		}), nil
+	})
 }
 
 func (a *wasmApp) renderPage(_ js.Value, args []js.Value) any {

@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/zc310/ofd/internal/fontrepair"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -247,30 +246,33 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 }
 
 func (r *Reader) computeFonts() ([]FontResource, error) {
+	catalog, err := r.resourceCatalogLocked()
+	if err != nil {
+		return nil, err
+	}
 	resources := make([]FontResource, 0)
 	seen := make(map[string]struct{})
-	for documentIndex, document := range r.ofd.Documents {
-		document.ForEachFont(func(id models.StID, font *models.Font) bool {
-			if font == nil || font.FontFile == "" {
-				return true
-			}
-			key := fmt.Sprintf("%d:%d:%s", documentIndex, id, font.FontFile)
-			if _, ok := seen[key]; ok {
-				return true
-			}
-			seen[key] = struct{}{}
-			data, err := document.FileCache.ReadLimit(string(font.FontFile), maxFontBytes)
-			if err != nil {
-				return true
-			}
-			if fixed, fixErr := fontrepair.Repair(data); fixErr == nil {
-				data = fixed
-			}
-			resources = append(resources, FontResource{
-				ID: uint64(id), Family: browserFontFamily(documentIndex, uint64(id)), Name: font.FontName,
-				Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: data,
-			})
-			return true
+	for _, item := range catalog.fonts {
+		font := item.font
+		if font == nil || font.FontFile == "" {
+			continue
+		}
+		key := fmt.Sprintf("%d:%d:%s", item.scope, item.id, font.FontFile)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		document := r.ofd.Documents[item.scope]
+		data, readErr := document.FileCache.ReadLimit(string(font.FontFile), maxFontBytes)
+		if readErr != nil {
+			return nil, fmt.Errorf("读取字体 %d/%d 失败: %w", item.scope, item.id, readErr)
+		}
+		if fixed, fixErr := fontrepair.Repair(data); fixErr == nil {
+			data = fixed
+		}
+		resources = append(resources, FontResource{
+			ID: uint64(item.id), Family: browserFontFamily(item.scope, uint64(item.id)), Name: font.FontName,
+			Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: data,
 		})
 	}
 	return resources, nil
@@ -299,36 +301,29 @@ func (r *Reader) FontList() ([]FontInfo, error) {
 }
 
 func (r *Reader) computeFontList() ([]FontInfo, error) {
+	catalog, err := r.resourceCatalogLocked()
+	if err != nil {
+		return nil, err
+	}
 	fonts := make([]FontInfo, 0)
-	seen := make(map[string]struct{})
-	for documentIndex, document := range r.ofd.Documents {
-		document.ForEachFont(func(id models.StID, font *models.Font) bool {
-			if font == nil {
-				return true
-			}
-			key := fmt.Sprintf("%d:%d", documentIndex, id)
-			if _, ok := seen[key]; ok {
-				return true
-			}
-			seen[key] = struct{}{}
-			embedded := font.FontFile != ""
-			format := ""
-			if embedded {
-				format = fontFormat(font.FontFile)
-			}
-			fonts = append(fonts, FontInfo{
-				ID:         uint64(id),
-				Scope:      documentIndex,
-				Name:       font.FontName,
-				Family:     font.FamilyName,
-				Bold:       font.Bold,
-				Italic:     font.Italic,
-				Serif:      font.Serif,
-				FixedWidth: font.FixedWidth,
-				Format:     format,
-				Embedded:   embedded,
-			})
-			return true
+	for _, item := range catalog.fonts {
+		font := item.font
+		embedded := font.FontFile != ""
+		format := ""
+		if embedded {
+			format = fontFormat(font.FontFile)
+		}
+		fonts = append(fonts, FontInfo{
+			ID:         uint64(item.id),
+			Scope:      item.scope,
+			Name:       font.FontName,
+			Family:     font.FamilyName,
+			Bold:       font.Bold,
+			Italic:     font.Italic,
+			Serif:      font.Serif,
+			FixedWidth: font.FixedWidth,
+			Format:     format,
+			Embedded:   embedded,
 		})
 	}
 	return fonts, nil
@@ -353,7 +348,11 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 	}
 	for index := 0; index < limit; index++ {
 		usage.Scanned = index + 1
-		for _, run := range r.textAt(index) {
+		runs, err := r.textAt(index)
+		if err != nil {
+			return FontUsage{}, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
+		}
+		for _, run := range runs {
 			if run.Scope != ref.Scope || run.Font != ref.ID {
 				continue
 			}
@@ -391,7 +390,11 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 	}
 	for index := 0; index < limit; index++ {
 		report.Scanned = index + 1
-		for _, run := range r.textAt(index) {
+		runs, err := r.textAt(index)
+		if err != nil {
+			return FontUsageReport{}, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
+		}
+		for _, run := range runs {
 			ref := FontRef{Scope: run.Scope, ID: run.Font}
 			pages := byFont[ref]
 			if len(pages) > 0 && pages[len(pages)-1] == index {

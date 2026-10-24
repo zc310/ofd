@@ -45,35 +45,53 @@ func (p *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []draw
 
 // PageLinksWithVisibility 排除隐藏正文图层和模板中的链接，保留注解链接。
 func (p *Document) PageLinksWithVisibility(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) []drawing.PageLink {
+	links, _ := p.PageLinksWithVisibilityE(page, resolve, visibility)
+	return links
+}
+
+// PageLinksWithVisibilityE 排除隐藏项并保留页面、模板和注解加载错误。
+func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) ([]drawing.PageLink, error) {
 	if p == nil || p.Document == nil || page == nil {
-		return nil
+		return nil, fmt.Errorf("链接文档或页面为空")
 	}
 	links := make([]drawing.PageLink, 0, 4)
-	_ = page.WithPageContent(func(content *models.PageContent) error {
+	var templates []models.Template
+	err := page.WithPageContent(func(content *models.PageContent) error {
 		if content == nil {
 			return nil
 		}
+		templates = append(templates, content.Template...)
 		if content.Content != nil {
 			collectLinks(visiblePageLayers(content.Content.Layer, visibility.HiddenLayers), resolve, &links)
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	// 模板页上的链接同样可点：模板按 ZOrder 叠加到页面，其图元坐标已是页面坐标。
-	for _, ref := range page.Template() {
+	for _, ref := range templates {
 		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
 			continue
 		}
-		template := p.GetTemplate(models.StID(ref.TemplateID))
+		template, loadErr := p.LoadTemplate(models.StID(ref.TemplateID))
+		if loadErr != nil {
+			return nil, fmt.Errorf("加载模板 %d 失败: %w", ref.TemplateID, loadErr)
+		}
 		if template == nil || template.Content == nil {
 			continue
 		}
 		collectLinks(template.Content.Layer, resolve, &links)
 	}
-	collectAnnotationLinks(p.GetAnnotation(page.ID), resolve, &links)
-	if len(links) == 0 {
-		return nil
+	annotation, err := p.LoadAnnotation(page.ID)
+	if err != nil {
+		return nil, fmt.Errorf("加载页面 %d 注解失败: %w", page.ID, err)
 	}
-	return links
+	collectAnnotationLinks(annotation, resolve, &links)
+	if len(links) == 0 {
+		return nil, nil
+	}
+	return links, nil
 }
 
 // PageExternalLinks 只返回外部链接热区，供不处理内部跳转的调用方使用。

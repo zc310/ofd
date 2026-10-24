@@ -177,6 +177,15 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("首页文字段数：", len(runs))
+
+	// 长文档搜索可限制工作量，并用同一个 context 取消。
+	report, err := reader.Search(context.Background(), "关键词", webreader.SearchOptions{
+		MaxPages: 2000, MaxResults: 5000,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("命中 %d 处（扫描 %d 页，截断=%v）\n", len(report.Results), report.Scanned, report.Truncated)
 }
 ```
 

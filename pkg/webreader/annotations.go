@@ -292,29 +292,25 @@ func (r *Reader) Media() ([]MediaInfo, error) {
 }
 
 func (r *Reader) computeMedia() ([]MediaInfo, error) {
+	catalog, err := r.resourceCatalogLocked()
+	if err != nil {
+		return nil, err
+	}
 	infos := make([]MediaInfo, 0)
-	for scope, document := range r.ofd.Documents {
-		if document == nil {
-			continue
+	for _, item := range catalog.media {
+		media := item.media
+		info := MediaInfo{Scope: item.scope, ID: uint64(item.id), Type: media.Type, Format: media.Format}
+		path := media.MediaFile.String()
+		if path != "" {
+			info.Name = models.StLoc(path).Base()
 		}
-		document.ForEachMedia(func(id models.StID, media *models.MultiMedia) bool {
-			if media == nil {
-				return true
+		if path != "" && item.document.FileCache != nil {
+			if entry, ok := item.document.FileCache.Lookup(path); ok && !entry.IsDir {
+				info.Exists = true
+				info.Size = int64(entry.UncompressedSize)
 			}
-			info := MediaInfo{Scope: scope, ID: uint64(id), Type: media.Type, Format: media.Format}
-			path := media.MediaFile.String()
-			if path != "" {
-				info.Name = models.StLoc(path).Base()
-			}
-			if path != "" && document.FileCache != nil {
-				if entry, ok := document.FileCache.Lookup(path); ok && !entry.IsDir {
-					info.Exists = true
-					info.Size = int64(entry.UncompressedSize)
-				}
-			}
-			infos = append(infos, info)
-			return true
-		})
+		}
+		infos = append(infos, info)
 	}
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].Scope != infos[j].Scope {
@@ -351,7 +347,19 @@ func (r *Reader) MediaData(scope int, mediaID uint64, maxBytes int64) ([]byte, e
 	if document == nil {
 		return nil, errors.New("多媒体所属文档为空")
 	}
-	media := document.GetMedia(models.StID(mediaID))
+	r.metadataMu.Lock()
+	catalog, catalogErr := r.resourceCatalogLocked()
+	r.metadataMu.Unlock()
+	if catalogErr != nil {
+		return nil, catalogErr
+	}
+	var media *models.MultiMedia
+	for _, item := range catalog.media {
+		if item.scope == scope && uint64(item.id) == mediaID {
+			media = item.media
+			break
+		}
+	}
 	if media == nil {
 		return nil, fmt.Errorf("多媒体资源不存在: %d/%d", scope, mediaID)
 	}
@@ -574,7 +582,7 @@ func (r *Reader) PageLinksForPage(index int) ([]PageLink, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
-	return r.computePageLinksForPage(index), nil
+	return r.computePageLinksForPage(index)
 }
 
 // PageMediaActionsForPage 返回指定页面进入时以及文档打开时的媒体动作。
@@ -596,7 +604,11 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 		return nil, nil
 	}
 	actions := make([]PageLink, 0, 3)
-	if pageActions := ref.page.Actions(); pageActions != nil {
+	snapshot, err := loadPageContentSnapshot(ref.page)
+	if err != nil {
+		return nil, fmt.Errorf("读取第 %d 页动作失败: %w", index, err)
+	}
+	if pageActions := snapshot.actions; pageActions != nil {
 		// GB/T 33190—2016 表 12：页面动作的事件类型应为 PO。
 		if media, ok := mediaAction(pageActions.Action, models.ActionEventPO); ok {
 			media.Scope, media.Page = ref.fontScope, index
@@ -651,7 +663,11 @@ func (r *Reader) PageEntryActionsForPage(index int) ([]PageLink, error) {
 			}
 		}
 	}
-	if pageActions := ref.page.Actions(); pageActions != nil {
+	snapshot, err := loadPageContentSnapshot(ref.page)
+	if err != nil {
+		return nil, fmt.Errorf("读取第 %d 页动作失败: %w", index, err)
+	}
+	if pageActions := snapshot.actions; pageActions != nil {
 		appendEvents(pageActions.Action, models.ActionEventPO)
 	}
 	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Document.Actions != nil {
@@ -664,40 +680,56 @@ func (r *Reader) computePageLinks() ([]PageLink, error) {
 	pageIndexes := r.pageIndexesByScope()
 	links := make([]PageLink, 0)
 	for index, ref := range r.pages {
-		links = append(links, r.computePageLinksForPageWithIndex(index, pageIndexes[ref.fontScope])...)
+		pageLinks, err := r.computePageLinksForPageWithIndex(index, pageIndexes[ref.fontScope])
+		if err != nil {
+			return nil, err
+		}
+		links = append(links, pageLinks...)
 	}
 	return links, nil
 }
 
-func (r *Reader) computePageLinksForPage(index int) []PageLink {
+func (r *Reader) computePageLinksForPage(index int) ([]PageLink, error) {
 	scope := r.pages[index].fontScope
 	pageIndex := r.pageIndexesByScope()[scope]
 	return r.computePageLinksForPageWithIndex(index, pageIndex)
 }
 
-func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[models.StID]int) []PageLink {
+func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[models.StID]int) ([]PageLink, error) {
 	ref := r.pages[index]
 	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
-		return nil
+		return nil, nil
+	}
+	snapshot, err := loadPageContentSnapshot(ref.page)
+	if err != nil {
+		return nil, fmt.Errorf("读取第 %d 页链接失败: %w", index, err)
 	}
 	links := make([]PageLink, 0)
 	bookmarks := r.navigationIndexes().bookmarks[ref.fontScope]
-	appendLayerLinks(r.visibleLayers(index, contentLayers(ref.page)), ref.fontScope, index, pageIndex, bookmarks, &links)
+	visibleLayers := r.visibleLayers(index, snapshot.layers)
+	appendLayerLinks(visibleLayers, ref.fontScope, index, pageIndex, bookmarks, &links)
 	if index == r.firstPageOfScope(ref.fontScope) {
-		appendDocumentClickLinksWithHiddenLayers(ref, index, pageIndex, &links, r.hiddenLayers[index].HiddenLayers)
+		appendDocumentClickLinksForTexts(ref, index, pageIndex, &links, pageTextObjectsFromLayers(visibleLayers))
 	}
 	// 链接也可能定义在页面使用的模板页上，模板按 ZOrder 叠加到页面坐标。
-	for _, tpl := range ref.page.Template() {
+	for _, tpl := range snapshot.templates {
 		if r.hiddenLayers[index].HiddenTemplates[models.StID(tpl.TemplateID)] {
 			continue
 		}
-		template := ref.document.Document.GetTemplate(models.StID(tpl.TemplateID))
+		template, loadErr := ref.document.Document.LoadTemplate(models.StID(tpl.TemplateID))
+		if loadErr != nil {
+			return nil, fmt.Errorf("读取第 %d 页模板 %d 失败: %w", index, tpl.TemplateID, loadErr)
+		}
 		if template == nil || template.Content == nil {
 			continue
 		}
 		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, bookmarks, &links)
 	}
-	if annot := ref.document.GetAnnotation(ref.page.ID); annot != nil {
+	annot, err := ref.document.LoadAnnotation(ref.page.ID)
+	if err != nil {
+		return nil, fmt.Errorf("读取第 %d 页注解失败: %w", index, err)
+	}
+	if annot != nil {
 		for _, item := range annot.Annots {
 			if item == nil || item.Type != models.AnnotTypeLink || item.Appearance == nil || item.Appearance.Boundary == nil {
 				continue
@@ -714,19 +746,14 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 			})
 		}
 	}
-	return links
+	return links, nil
 }
 
-// appendDocumentClickLinks 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
-func appendDocumentClickLinks(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink) {
-	appendDocumentClickLinksWithHiddenLayers(ref, page, pageIndex, links, nil)
-}
-
-func appendDocumentClickLinksWithHiddenLayers(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink, hidden map[models.StID]bool) {
+// appendDocumentClickLinksForTexts 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
+func appendDocumentClickLinksForTexts(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink, texts []*models.TextObject) {
 	if ref.document == nil || ref.document.Document == nil || ref.document.Document.Actions == nil || ref.page == nil {
 		return
 	}
-	texts := pageTextObjectsWithHiddenLayers(ref.page, hidden)
 	for _, action := range ref.document.Document.Actions.Actions {
 		if action.Event != models.ActionEventClick {
 			continue
@@ -880,7 +907,11 @@ func (r *Reader) computePageMediaActions() ([]PageLink, error) {
 		if ref.page == nil || ref.document == nil {
 			continue
 		}
-		if pageActions := ref.page.Actions(); pageActions != nil {
+		snapshot, err := loadPageContentSnapshot(ref.page)
+		if err != nil {
+			return nil, fmt.Errorf("读取第 %d 页动作失败: %w", index, err)
+		}
+		if pageActions := snapshot.actions; pageActions != nil {
 			if media, ok := mediaAction(pageActions.Action, models.ActionEventPO); ok {
 				media.Scope = ref.fontScope
 				media.Page = index

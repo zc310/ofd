@@ -390,7 +390,7 @@ func TestTextAndSearchConcurrent(t *testing.T) {
 			case 0:
 				_, operationErr = reader.Text(0)
 			case 1:
-				_, operationErr = reader.Search("你")
+				_, operationErr = reader.Search(t.Context(), "你", SearchOptions{})
 			case 2:
 				_, operationErr = reader.FontUsage(FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
 			case 3:
@@ -637,7 +637,7 @@ func TestRenderPageValidation(t *testing.T) {
 	if _, err := reader.Pages(); err == nil {
 		t.Fatal("closed reader returned pages")
 	}
-	if _, err := reader.Search(""); err == nil {
+	if _, err := reader.Search(t.Context(), "", SearchOptions{}); err == nil {
 		t.Fatal("closed reader accepted an empty search")
 	}
 }
@@ -836,10 +836,11 @@ func TestTextAndSearch(t *testing.T) {
 	if len(query) == 0 {
 		t.Fatal("first text run is empty")
 	}
-	results, err := reader.Search(string(query[0]))
+	report, err := reader.Search(t.Context(), string(query[0]), SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	results := report.Results
 	if len(results) == 0 || results[0].Page != 0 {
 		t.Fatalf("search results = %+v, want a hit on page 0", results)
 	}
@@ -849,10 +850,11 @@ func TestTextAndSearch(t *testing.T) {
 	if len(results[0].Rects) != results[0].End-results[0].Start {
 		t.Fatalf("search rects = %+v, want one rect per matched glyph", results[0].Rects)
 	}
-	wholeRun, err := reader.Search(text[0].Text)
+	wholeReport, err := reader.Search(t.Context(), text[0].Text, SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	wholeRun := wholeReport.Results
 	if len(wholeRun) == 0 || wholeRun[0].Start != 0 || wholeRun[0].End != len([]rune(text[0].Text)) {
 		t.Fatalf("whole-run search = %+v, want a match spanning the run", wholeRun)
 	}
@@ -900,7 +902,7 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 	}
 	defer reader.Close()
 
-	if _, err := reader.Search("你"); err != nil {
+	if _, err := reader.Search(t.Context(), "你", SearchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	indexed, ok := reader.search.Get(0)
@@ -914,7 +916,7 @@ func TestSearchCachesNormalizedPageText(t *testing.T) {
 	if len(firstRun) == 0 {
 		t.Fatal("first indexed run is empty")
 	}
-	if _, err := reader.Search("好"); err != nil {
+	if _, err := reader.Search(t.Context(), "好", SearchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	reused, ok := reader.search.Get(0)
@@ -949,7 +951,7 @@ func TestTextAndSearchCachesStayBounded(t *testing.T) {
 	if length := reader.text.Len(); length > textCacheCapacity {
 		t.Fatalf("文字缓存条目 = %d, 期望 <= %d", length, textCacheCapacity)
 	}
-	if _, err := reader.Search("the"); err != nil {
+	if _, err := reader.Search(t.Context(), "the", SearchOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if length := reader.search.Len(); length > searchCacheCapacity {

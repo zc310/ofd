@@ -2,7 +2,9 @@ package webreader
 
 import (
 	"errors"
+	"fmt"
 
+	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -18,22 +20,38 @@ func (r *Reader) SelectVersion(scope int, id string) error {
 	if r.closed {
 		return errors.New("文档引擎已经关闭")
 	}
-	if err := r.ofd.SelectVersion(scope, id); err != nil {
+	newPages := make([]pageRef, 0, len(r.pages))
+	newDocuments := make([]*render.Document, 0, len(r.ofd.Documents))
+	closeNewDocuments := func() {
+		for _, document := range newDocuments {
+			document.Close()
+		}
+	}
+	err := r.ofd.SelectVersionPrepared(scope, id, func(documents []*parser.Document) error {
+		for documentIndex, document := range documents {
+			if len(document.Pages) == 0 {
+				continue
+			}
+			renderDocument := render.NewDocument(r.options.Background, document)
+			newDocuments = append(newDocuments, renderDocument)
+			for _, family := range r.fallbackFamilies {
+				if err := renderDocument.UseFallbackFont(family); err != nil {
+					return fmt.Errorf("切换版本后应用回退字体 %q 失败: %w", family, err)
+				}
+			}
+			for _, page := range renderDocument.Pages {
+				newPages = append(newPages, pageRef{document: renderDocument, page: page, fontScope: documentIndex})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		closeNewDocuments()
 		return err
 	}
+	// 新文档先取得回退字体引用，再释放旧文档；延迟注销的字体不会在两者之间被删除。
 	r.closeRenderDocumentsLocked()
-	for documentIndex, document := range r.ofd.Documents {
-		if len(document.Pages) == 0 {
-			continue
-		}
-		renderDocument := render.NewDocument(r.options.Background, document)
-		for _, family := range r.fallbackFamilies {
-			_ = renderDocument.UseFallbackFont(family)
-		}
-		for _, page := range renderDocument.Pages {
-			r.pages = append(r.pages, pageRef{document: renderDocument, page: page, fontScope: documentIndex})
-		}
-	}
+	r.pages = newPages
 	r.text = newTextCache()
 	r.search = newSearchCache(len(r.pages))
 	r.metadata = &readerMetadata{}

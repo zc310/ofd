@@ -180,3 +180,54 @@ func TestPagesWithoutPageResourcesKeepDocumentResourcesAcrossEvictions(t *testin
 		}
 	}
 }
+
+func TestPageCacheRestoresShadowedDocumentResources(t *testing.T) {
+	input := buildPageResPackage(t, "PageRes.xml", map[string]string{
+		"Doc_0/Document.xml": `<Document><CommonData><DocumentRes>Res.xml</DocumentRes></CommonData><Pages>
+  <Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/><Page ID="2" BaseLoc="Pages/Page_1/Content.xml"/>
+</Pages></Document>`,
+		"Doc_0/Res.xml": `<Res><DrawParams><DrawParam ID="1" LineWidth="1"/></DrawParams>
+  <Fonts><Font ID="2" FontName="document"/></Fonts>
+  <ColorSpaces><ColorSpace ID="3" Type="RGB"/></ColorSpaces>
+  <MultiMedias><MultiMedia ID="4" Type="Image"><MediaFile>document.bin</MediaFile></MultiMedia></MultiMedias>
+  <CompositeGraphicUnits><CompositeGraphicUnit ID="5" Width="5" Height="5"><Content/></CompositeGraphicUnit></CompositeGraphicUnits>
+</Res>`,
+		"Doc_0/Pages/Page_0/PageRes.xml": `<Res><DrawParams><DrawParam ID="1" LineWidth="9"/></DrawParams>
+  <Fonts><Font ID="2" FontName="page"/></Fonts>
+  <ColorSpaces><ColorSpace ID="3" Type="GRAY"/></ColorSpaces>
+  <MultiMedias><MultiMedia ID="4" Type="Image"><MediaFile>page.bin</MediaFile></MultiMedia></MultiMedias>
+  <CompositeGraphicUnits><CompositeGraphicUnit ID="5" Width="9" Height="9"><Content/></CompositeGraphicUnit></CompositeGraphicUnits>
+</Res>`,
+		"Doc_0/Pages/Page_1/Content.xml": `<Page><Content/></Page>`,
+	})
+	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	doc := ofd.Documents[0]
+	if err := doc.Pages[0].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.GetFont(2); got == nil || got.FontName != "page" {
+		t.Fatalf("页面资源未覆盖文档字体: %+v", got)
+	}
+	if err := doc.Pages[1].EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.GetDrawParam(1); got == nil || got.LineWidth != 1 {
+		t.Errorf("文档绘制参数未恢复: %+v", got)
+	}
+	if got := doc.GetFont(2); got == nil || got.FontName != "document" {
+		t.Errorf("文档字体未恢复: %+v", got)
+	}
+	if got := doc.GetColorSpace(3); got == nil || got.Type != "RGB" {
+		t.Errorf("文档颜色空间未恢复: %+v", got)
+	}
+	if got := doc.GetMedia(4); got == nil || got.MediaFile != "Doc_0/document.bin" {
+		t.Errorf("文档媒体未恢复: %+v", got)
+	}
+	if got := doc.GetCompositeUnit(5); got == nil || got.Width != 5 {
+		t.Errorf("文档复合图元未恢复: %+v", got)
+	}
+}

@@ -66,7 +66,11 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
-	return cloneTextRuns(r.textAt(index)), nil
+	runs, err := r.textAt(index)
+	if err != nil {
+		return nil, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
+	}
+	return cloneTextRuns(runs), nil
 }
 
 func pageTextObjects(page *parser.Page) []*models.TextObject {
@@ -84,6 +88,22 @@ func pageTextObjectsWithHiddenLayers(page *parser.Page, hidden map[models.StID]b
 				return true
 			})
 		}
+	}
+	return texts
+}
+
+func pageTextObjectsFromLayers(layers []*models.Layer) []*models.TextObject {
+	var texts []*models.TextObject
+	for _, layer := range layers {
+		if layer == nil {
+			continue
+		}
+		walkPageItems(layer.Items, func(item models.PageItem) bool {
+			if item.Kind == models.PageItemText && item.Text != nil {
+				texts = append(texts, item.Text)
+			}
+			return true
+		})
 	}
 	return texts
 }
@@ -127,16 +147,32 @@ func textValue(text *models.TextObject) string {
 	return value.String()
 }
 
-// contentLayers 返回页面正文的图层列表；读取失败时返回 nil。
-func contentLayers(page *parser.Page) []*models.Layer {
-	var layers []*models.Layer
-	_ = page.WithPageContent(func(content *models.PageContent) error {
-		if content != nil && content.Content != nil {
-			layers = content.Content.Layer
+type pageContentSnapshot struct {
+	layers    []*models.Layer
+	templates []models.Template
+	actions   *models.Actions
+}
+
+func loadPageContentSnapshot(page *parser.Page) (pageContentSnapshot, error) {
+	var snapshot pageContentSnapshot
+	err := page.WithPageContent(func(content *models.PageContent) error {
+		if content == nil {
+			return nil
 		}
+		if content.Content != nil {
+			snapshot.layers = append(snapshot.layers, content.Content.Layer...)
+		}
+		snapshot.templates = append(snapshot.templates, content.Template...)
+		snapshot.actions = content.Actions
 		return nil
 	})
-	return layers
+	return snapshot, err
+}
+
+// contentLayers 返回页面正文的图层列表；兼容调用在读取失败时返回 nil。
+func contentLayers(page *parser.Page) []*models.Layer {
+	snapshot, _ := loadPageContentSnapshot(page)
+	return snapshot.layers
 }
 
 func finitePositive(value float64) bool {
@@ -155,8 +191,11 @@ func fontFormat(file models.StLoc) string {
 	return ""
 }
 
-func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string, visibility render.PageVisibility) []TextRun {
-	layouts := document.TextLayoutsWithVisibility(page, visibility)
+func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string, visibility render.PageVisibility) ([]TextRun, error) {
+	layouts, err := document.TextLayoutsWithVisibilityE(page, visibility)
+	if err != nil {
+		return nil, err
+	}
 	runs := make([]TextRun, 0, len(layouts))
 	for _, layout := range layouts {
 		run := TextRun{
@@ -171,18 +210,21 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 		}
 		runs = append(runs, run)
 	}
-	return runs
+	return runs, nil
 }
 
 // textAt 在持有 Reader 锁时缓存不可变的文档布局。
 // 向外部返回结果的调用方必须先复制结果。
-func (r *Reader) textAt(index int) []TextRun {
+func (r *Reader) textAt(index int) ([]TextRun, error) {
 	if runs, ok := r.text.Get(index); ok {
-		return runs
+		return runs, nil
 	}
-	runs := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily, r.hiddenLayers[index])
+	runs, err := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily, r.hiddenLayers[index])
+	if err != nil {
+		return nil, err
+	}
 	r.text.AddWeighted(index, runs, textRunsWeight(runs))
-	return runs
+	return runs, nil
 }
 
 // newTextCache 与 newSearchCache 构造按条目数与字节预算双重限制的缓存。

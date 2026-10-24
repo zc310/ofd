@@ -167,7 +167,7 @@ func BenchmarkSearch(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.Search("文"); err != nil {
+		if _, err := r.Search(b.Context(), "文", SearchOptions{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -178,7 +178,7 @@ func BenchmarkSearchNoMatch(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.Search("不存在的查询内容"); err != nil {
+		if _, err := r.Search(b.Context(), "不存在的查询内容", SearchOptions{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -190,7 +190,7 @@ func BenchmarkSearchNoMatchCold(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		r.search = newSearchCache(len(r.pages))
-		if _, err := r.Search("不存在的查询内容"); err != nil {
+		if _, err := r.Search(b.Context(), "不存在的查询内容", SearchOptions{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -202,7 +202,7 @@ func BenchmarkSearchCold(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		r.search = newSearchCache(len(r.pages))
-		if _, err := r.Search("文"); err != nil {
+		if _, err := r.Search(b.Context(), "文", SearchOptions{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -211,13 +211,13 @@ func BenchmarkSearchCold(b *testing.B) {
 // BenchmarkSearchCached 先预热搜索索引，再测连续搜索复用索引与命中 run 布局的成本。
 func BenchmarkSearchCached(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
-	if _, err := r.Search("文"); err != nil {
+	if _, err := r.Search(b.Context(), "文", SearchOptions{}); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.Search("文"); err != nil {
+		if _, err := r.Search(b.Context(), "文", SearchOptions{}); err != nil {
 			b.Fatal(err)
 		}
 	}

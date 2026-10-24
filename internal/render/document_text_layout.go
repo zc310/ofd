@@ -1,6 +1,9 @@
 package render
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -43,6 +46,12 @@ func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
 
 // TextLayoutsWithVisibility 返回过滤正文图层和模板后的布局。
 func (p *Document) TextLayoutsWithVisibility(page *parser.Page, visibility PageVisibility) []TextLayout {
+	layouts, _ := p.TextLayoutsWithVisibilityE(page, visibility)
+	return layouts
+}
+
+// TextLayoutsWithVisibilityE 返回过滤后的文字布局，并保留页面或模板加载错误。
+func (p *Document) TextLayoutsWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]TextLayout, error) {
 	return p.textLayouts(page, nil, visibility)
 }
 
@@ -54,8 +63,14 @@ func (p *Document) TextLayoutsForRuns(page *parser.Page, runIndices []int) []Tex
 
 // TextLayoutsForRunsWithVisibility 的 run 索引与过滤后的 TextValues 保持一致。
 func (p *Document) TextLayoutsForRunsWithVisibility(page *parser.Page, runIndices []int, visibility PageVisibility) []TextLayout {
+	layouts, _ := p.TextLayoutsForRunsWithVisibilityE(page, runIndices, visibility)
+	return layouts
+}
+
+// TextLayoutsForRunsWithVisibilityE 返回指定 run 的过滤后布局，并保留加载错误。
+func (p *Document) TextLayoutsForRunsWithVisibilityE(page *parser.Page, runIndices []int, visibility PageVisibility) ([]TextLayout, error) {
 	if len(runIndices) == 0 {
-		return nil
+		return nil, nil
 	}
 	selected := make(map[int]struct{}, len(runIndices))
 	for _, index := range runIndices {
@@ -64,24 +79,24 @@ func (p *Document) TextLayoutsForRunsWithVisibility(page *parser.Page, runIndice
 		}
 	}
 	if len(selected) == 0 {
-		return nil
+		return nil, nil
 	}
 	return p.textLayouts(page, selected, visibility)
 }
 
-func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, visibility PageVisibility) []TextLayout {
+func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, visibility PageVisibility) ([]TextLayout, error) {
 	if p == nil || p.Document == nil || page == nil {
-		return nil
+		return nil, errors.New("文字布局文档或页面为空")
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer lease.Release()
 	layouts := make([]TextLayout, 0)
 	content := lease.Content()
 	if content == nil {
-		return nil
+		return nil, errors.New("页面内容为空")
 	}
 	// 文字层可能先于页面绘制请求；同样登记当前页的字形映射，保证外部原字体
 	// 的 GID 验证和内嵌字体修复不依赖调用顺序。
@@ -93,8 +108,12 @@ func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, vis
 		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
 			continue
 		}
-		if content := p.Document.GetTemplate(models.StID(template.TemplateID)); content != nil {
-			collectTextLayouts(content.Content, &layouts, p, selected, &runIndex)
+		templateContent, loadErr := p.Document.LoadTemplate(models.StID(template.TemplateID))
+		if loadErr != nil {
+			return nil, fmt.Errorf("加载模板 %d 失败: %w", template.TemplateID, loadErr)
+		}
+		if templateContent != nil {
+			collectTextLayouts(templateContent.Content, &layouts, p, selected, &runIndex)
 		}
 	}
 	if content.Content != nil {
@@ -104,7 +123,7 @@ func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, vis
 			}
 		}
 	}
-	return layouts
+	return layouts, nil
 }
 
 // TextValues 返回页面中可见的非空 TextCode 文本，顺序与 TextLayouts 一致。
@@ -115,24 +134,34 @@ func (p *Document) TextValues(page *parser.Page) []string {
 
 // TextValuesWithVisibility 返回过滤正文图层和模板后的文字，供搜索索引使用。
 func (p *Document) TextValuesWithVisibility(page *parser.Page, visibility PageVisibility) []string {
+	values, _ := p.TextValuesWithVisibilityE(page, visibility)
+	return values
+}
+
+// TextValuesWithVisibilityE 返回过滤后的文字值，并保留页面或模板加载错误。
+func (p *Document) TextValuesWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]string, error) {
 	if p == nil || p.Document == nil || page == nil {
-		return nil
+		return nil, errors.New("文字文档或页面为空")
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer lease.Release()
 	content := lease.Content()
 	if content == nil {
-		return nil
+		return nil, errors.New("页面内容为空")
 	}
 	values := make([]string, 0)
 	for _, template := range content.Template {
 		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
 			continue
 		}
-		if templateContent := p.Document.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
+		templateContent, loadErr := p.Document.LoadTemplate(models.StID(template.TemplateID))
+		if loadErr != nil {
+			return nil, fmt.Errorf("加载模板 %d 失败: %w", template.TemplateID, loadErr)
+		}
+		if templateContent != nil {
 			collectTextValues(templateContent.Content, &values)
 		}
 	}
@@ -143,7 +172,7 @@ func (p *Document) TextValuesWithVisibility(page *parser.Page, visibility PageVi
 			}
 		}
 	}
-	return values
+	return values, nil
 }
 
 func collectTextValues(content *models.Content, values *[]string) {

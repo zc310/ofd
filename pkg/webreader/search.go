@@ -1,7 +1,9 @@
 package webreader
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/zc310/ofd/internal/search"
@@ -26,34 +28,81 @@ type Rect struct {
 	Angle  float64
 }
 
-// Search 在所有页面的文字对象中查找 query，匹配不区分大小写。
-func (r *Reader) Search(query string) ([]SearchResult, error) {
+// SearchOptions 控制单次搜索的工作量。MaxPages、MaxResults 为 0 时不限制。
+type SearchOptions struct {
+	// MaxPages 是最多扫描的页面数。
+	MaxPages int
+	// MaxResults 是最多返回的命中数。
+	MaxResults int
+}
+
+// SearchReport 描述一次有界搜索的结果。
+type SearchReport struct {
+	// Results 是按页面和文字绘制顺序排列的命中。
+	Results []SearchResult
+	// Scanned 是实际扫描的页面数。
+	Scanned int
+	// Truncated 表示仍有页面或命中未返回。
+	Truncated bool
+}
+
+// Search 在所有页面的文字对象中查找 query，匹配不区分大小写，并支持取消与工作量上限。
+// Truncated 表示仍有页面未扫描，或达到结果上限后提前停止。
+func (r *Reader) Search(ctx context.Context, query string, options SearchOptions) (SearchReport, error) {
 	if r == nil {
-		return nil, errors.New("文档引擎为空")
+		return SearchReport{}, errors.New("文档引擎为空")
+	}
+	if ctx == nil {
+		return SearchReport{}, errors.New("搜索上下文为空")
+	}
+	if options.MaxPages < 0 || options.MaxResults < 0 {
+		return SearchReport{}, errors.New("搜索页数和结果上限不能为负数")
 	}
 	query = strings.TrimSpace(query)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
-		return nil, errors.New("文档引擎已经关闭")
+		return SearchReport{}, errors.New("文档引擎已经关闭")
+	}
+	if err := ctx.Err(); err != nil {
+		return SearchReport{}, err
 	}
 	if query == "" {
-		return []SearchResult{}, nil
+		return SearchReport{Results: []SearchResult{}}, nil
 	}
 	needle := strings.ToLower(query)
 	needleRunes := []rune(needle)
 	searchTable := search.RuneSearchTable(needleRunes)
-	results := make([]SearchResult, 0)
+	report := SearchReport{Results: make([]SearchResult, 0)}
 	type match struct {
 		layoutIndex int
 		start       int
 		end         int
 	}
-	for pageIndex := range r.pages {
-		indexed := r.searchAt(pageIndex)
+	pageLimit := len(r.pages)
+	if options.MaxPages > 0 && pageLimit > options.MaxPages {
+		pageLimit = options.MaxPages
+		report.Truncated = true
+	}
+	for pageIndex := 0; pageIndex < pageLimit; pageIndex++ {
+		if err := ctx.Err(); err != nil {
+			return SearchReport{}, err
+		}
+		indexed, err := r.searchAt(pageIndex)
+		if err != nil {
+			return SearchReport{}, fmt.Errorf("读取第 %d 页搜索索引失败: %w", pageIndex, err)
+		}
+		report.Scanned = pageIndex + 1
 		var matches []match
 		var layoutRunIndices []int
-		for _, runIndex := range indexed.Candidates(needleRunes[0]) {
+		resultLimitReached := false
+	searchPage:
+		for candidateIndex, runIndex := range indexed.Candidates(needleRunes[0]) {
+			if candidateIndex%256 == 0 {
+				if err := ctx.Err(); err != nil {
+					return SearchReport{}, err
+				}
+			}
 			if runIndex < 0 || runIndex >= indexed.Len() {
 				continue
 			}
@@ -72,6 +121,11 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 					layoutRunIndices = append(layoutRunIndices, runIndex)
 				}
 				matches = append(matches, match{layoutIndex: layoutIndex, start: found, end: end})
+				if options.MaxResults > 0 && len(report.Results)+len(matches) >= options.MaxResults {
+					report.Truncated = true
+					resultLimitReached = true
+					break searchPage
+				}
 				start = end
 				if start >= len(text) {
 					break
@@ -81,7 +135,10 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 		if len(matches) == 0 {
 			continue
 		}
-		layouts := r.pages[pageIndex].document.TextLayoutsForRunsWithVisibility(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex])
+		layouts, err := r.pages[pageIndex].document.TextLayoutsForRunsWithVisibilityE(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex])
+		if err != nil {
+			return SearchReport{}, fmt.Errorf("读取第 %d 页搜索布局失败: %w", pageIndex, err)
+		}
 		for _, found := range matches {
 			if found.layoutIndex < 0 || found.layoutIndex >= len(layouts) {
 				continue
@@ -96,10 +153,13 @@ func (r *Reader) Search(query string) ([]SearchResult, error) {
 			for _, glyph := range layout.Glyphs[glyphStart:glyphEnd] {
 				result.Rects = append(result.Rects, Rect{X: glyph.X, Y: glyph.Y, Width: glyph.Width, Height: glyph.Height, Angle: glyph.Angle})
 			}
-			results = append(results, result)
+			report.Results = append(report.Results, result)
+		}
+		if resultLimitReached {
+			return report, nil
 		}
 	}
-	return results, nil
+	return report, nil
 }
 
 func minInt(left, right int) int {
@@ -109,9 +169,9 @@ func minInt(left, right int) int {
 	return right
 }
 
-func (r *Reader) searchAt(index int) *search.Index {
+func (r *Reader) searchAt(index int) (*search.Index, error) {
 	if indexed, ok := r.search.Get(index); ok {
-		return indexed
+		return indexed, nil
 	}
 	var builder *search.Builder
 	if runs, ok := r.text.Get(index); ok {
@@ -121,7 +181,10 @@ func (r *Reader) searchAt(index int) *search.Index {
 		}
 	} else {
 		ref := r.pages[index]
-		texts := ref.document.TextValuesWithVisibility(ref.page, r.hiddenLayers[index])
+		texts, err := ref.document.TextValuesWithVisibilityE(ref.page, r.hiddenLayers[index])
+		if err != nil {
+			return nil, err
+		}
 		builder = search.NewBuilder(len(texts))
 		for _, text := range texts {
 			builder.Add(text)
@@ -129,5 +192,5 @@ func (r *Reader) searchAt(index int) *search.Index {
 	}
 	indexed := builder.Build()
 	r.search.AddWeighted(index, indexed, indexed.Weight())
-	return indexed
+	return indexed, nil
 }

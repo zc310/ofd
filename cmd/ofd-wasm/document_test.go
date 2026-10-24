@@ -65,8 +65,8 @@ func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, e
 	if err != nil || wantErr != nil || len(text) == 0 || !reflect.DeepEqual(text, wantText) {
 		t.Fatalf("解锁后文字不一致: %v / %v", err, wantErr)
 	}
-	matches, err := reader.Search("Secret")
-	if err != nil || len(matches) == 0 {
+	report, err := reader.Search(t.Context(), "Secret", webreader.SearchOptions{})
+	if err != nil || len(report.Results) == 0 {
 		t.Fatalf("解锁后无法搜索: %v", err)
 	}
 	image, err := reader.RenderPage(t.Context(), 0, webreader.RenderOptions{DPI: 24})
