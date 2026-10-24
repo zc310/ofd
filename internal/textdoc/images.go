@@ -120,6 +120,9 @@ func appendImageItemsFrom(doc *parser.Document, items []models.PageItem, images 
 		case models.PageItemBlock:
 			appendImageItemsFrom(doc, item.Block.Items, images, depth)
 		case models.PageItemComposite:
+			if !item.Composite.VisibleValue() {
+				continue
+			}
 			if unit := doc.GetCompositeUnit(models.StID(item.Composite.ResourceID)); unit != nil {
 				appendImageItemsFrom(doc, unit.Content.Items, images, depth+1)
 			}

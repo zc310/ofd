@@ -14,6 +14,7 @@ import (
 )
 
 func TestSignProducesVerifiableSignedValue(t *testing.T) {
+	clearSigningEnvironment(t)
 	signatureXML := []byte("<Signature>demo Signature.xml</Signature>")
 	signedValue, err := sign(signatureXML)
 	if err != nil {
@@ -38,6 +39,7 @@ func TestSignProducesVerifiableSignedValue(t *testing.T) {
 }
 
 func TestSignedValueIdentifiesProducer(t *testing.T) {
+	clearSigningEnvironment(t)
 	signedValue, err := sign([]byte("<Signature>producer</Signature>"))
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +64,7 @@ func TestSignedValueIdentifiesProducer(t *testing.T) {
 }
 
 func TestSignedValueUsesStandardSESHeader(t *testing.T) {
+	clearSigningEnvironment(t)
 	signedValue, err := sign([]byte("<Signature>header</Signature>"))
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +87,7 @@ func TestSignedValueUsesStandardSESHeader(t *testing.T) {
 }
 
 func TestSignHonoursSignedXMLDataHash(t *testing.T) {
+	clearSigningEnvironment(t)
 	signedValue, err := sign([]byte("payload"))
 	if err != nil {
 		t.Fatal(err)
@@ -112,8 +116,12 @@ func TestPlaceholderSealDeclaresItselfAsTestOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("印章应为可解码的 PNG: %v", err)
 	}
-	if _, _, err := pictureSize(); err != nil {
+	width, height, err := pictureSize()
+	if err != nil {
 		t.Fatalf("pictureSize 失败: %v", err)
+	}
+	if width != 512 || height != 512 || img.Bounds().Dx() != width || img.Bounds().Dy() != height {
+		t.Fatalf("演示印章像素尺寸应为 512x512，实际解码尺寸 %v，pictureSize=%dx%d", img.Bounds(), width, height)
 	}
 	if !containsSealInkPixel(img) {
 		t.Fatal("印章应包含朱红墨色")
@@ -154,6 +162,7 @@ func containsSealInkPixel(img image.Image) bool {
 }
 
 func TestSignedValuePictureDimensionsUseMillimeters(t *testing.T) {
+	clearSigningEnvironment(t)
 	signedValue, err := sign([]byte("<Signature>picture</Signature>"))
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +198,7 @@ func TestCertificateIsSelfSignedSM2(t *testing.T) {
 }
 
 func TestBuildSignedValueFromReader(t *testing.T) {
+	clearSigningEnvironment(t)
 	var output bytes.Buffer
 	if err := writeSignedValue(&output, bytes.NewReader([]byte("<Signature>reader</Signature>"))); err != nil {
 		t.Fatalf("writeSignedValue 失败: %v", err)
