@@ -152,7 +152,7 @@ func isPathSeparator(value byte) bool {
 
 func isPathCommand(value byte) bool {
 	switch value {
-	case 'M', 'S', 'L', 'Q', 'B', 'A', 'C':
+	case 'M', 'S', 'L', 'Q', 'B', 'A', 'C', 'Z', 'z':
 		return true
 	default:
 		return false
@@ -179,7 +179,7 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 		case "A":
 			commandCount++
 			arcCount++
-		case "C":
+		case "C", "Z", "z":
 			commandCount++
 		}
 	}
@@ -233,7 +233,7 @@ func (p *SVGPath) parsePathData(data string) (SVGPath, error) {
 			commands = append(commands, cmd)
 			currentType = ArcTo
 
-		case "C":
+		case "C", "Z", "z":
 			cmd := PathCommand{Type: Close}
 			commands = append(commands, cmd)
 			currentType = Close

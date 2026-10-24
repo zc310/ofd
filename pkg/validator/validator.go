@@ -25,6 +25,7 @@ import (
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/fontrepair"
+	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -944,7 +945,40 @@ func (v *Validator) semanticChecks(documents map[string]*xmlDocument, archive *p
 		})
 	}
 	v.fontChecks(documents, archive, report)
+	v.pathChecks(documents, report)
 	v.colorSpaceChecks(documents, archive, report)
+}
+
+func (v *Validator) pathChecks(documents map[string]*xmlDocument, report *Report) {
+	for _, name := range sortedDocumentNames(documents) {
+		doc := documents[name]
+		if !doc.ofd {
+			continue
+		}
+		walkOFDElements(doc.root, func(node *xdm.Node) {
+			if node.Name().Local != "PathObject" {
+				return
+			}
+			for _, data := range childElements(node, "AbbreviatedData") {
+				if err := validateOFDPathData(data.StringValue()); err != nil {
+					id := strings.TrimSpace(node.AttrValue("ID"))
+					object := "PathObject"
+					if id != "" {
+						object += " ID " + id
+					}
+					report.addIssue(issueAt(data, SeverityError, StageSemantic, "semantic.path_data_invalid", fmt.Sprintf("%s 的 AbbreviatedData 路径数据无效：%v", object, err), name), v.opts.MaxErrors)
+				}
+			}
+		})
+	}
+}
+
+func validateOFDPathData(data string) error {
+	if index := strings.IndexAny(data, "Zz"); index >= 0 {
+		return fmt.Errorf("OFD 路径数据不能使用 SVG 闭合标记 %q；应使用 C", data[index])
+	}
+	_, err := models.ParsePathData(data)
+	return err
 }
 
 // colorSpaceChannelsByType 返回颜色空间类型的通道数，供 Profile 调色板判读使用。

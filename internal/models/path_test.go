@@ -122,6 +122,18 @@ func TestParsePathDataRejectsIncompleteAndInvalidCommands(t *testing.T) {
 	}
 }
 
+func TestParsePathDataAcceptsSVGZCloseCommand(t *testing.T) {
+	for _, data := range []string{"M 0 0 L 10 0 Z", "M0 0L10 0z"} {
+		commands, err := ParsePathData(data)
+		if err != nil {
+			t.Fatalf("SVG 闭合命令 %q 应能解析: %v", data, err)
+		}
+		if len(commands) != 3 || commands[2].Type != Close {
+			t.Fatalf("闭合命令未解析为 Close: %#v", commands)
+		}
+	}
+}
+
 func TestParsedCommandAppendDoesNotOverwriteOtherCommands(t *testing.T) {
 	p, err := ParsePathData("M 1 2 L 3 4 L 5 6")
 	if err != nil {

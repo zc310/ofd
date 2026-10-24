@@ -359,6 +359,49 @@ func TestSemanticChecksUnresolvedResourceID(t *testing.T) {
 	t.Fatalf("missing unresolved resource ID issue: %+v", report.Issues)
 }
 
+func TestSemanticChecksPathObjectAbbreviatedData(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		data    string
+		invalid bool
+	}{
+		{name: "closed path", data: "M 0 0 L 10 0 L 10 10 C"},
+		{name: "unsupported close command", data: "M 0 0 L 10 0 L 10 10 Z", invalid: true},
+		{name: "unsupported lowercase close command", data: "M 0 0 L 10 0 L 10 10 z", invalid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			archiveData := makeArchive(t, map[string]string{
+				"OFD.xml":      `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>path</DocID></DocInfo><DocRoot>Document.xml</DocRoot></DocBody></OFD>`,
+				"Document.xml": `<Document xmlns="http://www.ofdspec.org/2016"><CommonData><MaxUnitID>2</MaxUnitID><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData><Pages><Page ID="1" BaseLoc="Page.xml"/></Pages></Document>`,
+				"Page.xml":     `<Page xmlns="http://www.ofdspec.org/2016"><Content><Layer ID="1"><PathObject ID="2" Boundary="0 0 10 10"><AbbreviatedData>` + test.data + `</AbbreviatedData></PathObject></Layer></Content></Page>`,
+			})
+			validator, err := New(WithMode(ModeStructural))
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := validator.ValidateReader(context.Background(), bytes.NewReader(archiveData), "path.ofd")
+			for _, issue := range report.Issues {
+				if issue.Code != "semantic.path_data_invalid" {
+					continue
+				}
+				if !test.invalid {
+					t.Fatalf("valid path data was rejected: %+v", issue)
+				}
+				if issue.File != "Page.xml" || !strings.Contains(issue.Path, "/PathObject[1]/AbbreviatedData[1]") || !strings.Contains(issue.Message, "ID 2") {
+					t.Fatalf("path issue lacks object location: %+v", issue)
+				}
+				if !strings.Contains(issue.Message, "不能使用 SVG 闭合标记") || !strings.Contains(issue.Message, "应使用 C") {
+					t.Fatalf("path issue does not explain the invalid close marker: %+v", issue)
+				}
+				return
+			}
+			if test.invalid {
+				t.Fatalf("invalid path data was not reported: %+v", report.Issues)
+			}
+		})
+	}
+}
+
 func TestScanXMLChecksReferencesFromUnreferencedOFDDocument(t *testing.T) {
 	archiveData := makeArchive(t, map[string]string{
 		"OFD.xml":      `<OFD xmlns="http://www.ofdspec.org/2016" Version="1.0" DocType="OFD"><DocBody><DocInfo><DocID>x</DocID></DocInfo><DocRoot>Document.xml</DocRoot></DocBody></OFD>`,
