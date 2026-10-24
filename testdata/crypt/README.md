@@ -32,6 +32,51 @@
 SM2 随机加密每次生成的密文不同，提交固定值用于回归；测试正常运行不依赖 OpenSSL 命令。
 裸 C1C3C2 用例从该 ASN.1 向量转换生成。
 
+## 生成证书加密测试文件
+
+需要 Go 和支持 SM2 的 OpenSSL 3.x。在仓库根目录运行以下脚本；可选参数指定输出目录，
+默认写入 `/tmp/ofd`。所有密钥和证书只用于本地测试：
+
+```sh
+set -eu
+
+out_dir=${1:-/tmp/ofd}
+input=testdata/ofd-creator/hello.ofd
+test -f "$input"
+umask 077
+mkdir -p "$out_dir"
+
+# OpenSSL 的 password file 按行读取；网页私钥密码输入框填写 test-key-password，不含换行。
+printf '%s\n' 'test-key-password' > "$out_dir/key-password.txt"
+
+# 直接生成 AES-256-CBC 加密的 PKCS#8 SM2 私钥和自签名接收者证书。
+openssl genpkey -algorithm SM2 -aes-256-cbc \
+  -pass "file:$out_dir/key-password.txt" \
+  -out "$out_dir/recipient-key-encrypted.pem"
+openssl req -new -x509 -sm3 \
+  -key "$out_dir/recipient-key-encrypted.pem" \
+  -passin "file:$out_dir/key-password.txt" \
+  -out "$out_dir/recipient-cert.pem" \
+  -days 3650 -subj '/CN=OFD Crypt Test Only' \
+  -addext 'keyUsage=keyEncipherment'
+
+# 检查私钥口令及证书，再用证书加密真实 OFD 样本。
+openssl pkey -in "$out_dir/recipient-key-encrypted.pem" \
+  -passin "file:$out_dir/key-password.txt" -check -noout
+openssl x509 -in "$out_dir/recipient-cert.pem" -noout -subject
+cp "$input" "$out_dir/test-input.ofd"
+go run ./cmd/ofd-crypt encrypt \
+  --cert "$out_dir/recipient-cert.pem" \
+  --user 'OFD 测试接收者' \
+  -o "$out_dir/test-encrypted.ofd" \
+  "$out_dir/test-input.ofd"
+```
+
+生成的 `test-encrypted.ofd` 可在 WASM 网页阅读器打开：解锁方式选“SM2 私钥”，选择
+`recipient-key-encrypted.pem`，在“私钥密码”中输入 `test-key-password`。证书是自签名的，
+仅用于加解密流程测试，不代表身份可信。CLI 可用 `ofd-crypt inspect` 查看加密接收者；
+私钥密码输入和解锁由 WASM 阅读器提供。
+
 ## 完整包与第三方互通
 
 `pkg/crypt` 的完整包测试按这些密钥参数构造内存 ZIP，分别覆盖明文/密文映射、零 IV、
