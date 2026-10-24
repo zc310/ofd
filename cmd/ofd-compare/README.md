@@ -2,6 +2,19 @@
 
 比较两份或多份 OFD，以一份为基准，为每个其他文件生成独立的差异结果。源文件只读。
 
+## 安装
+
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-compare@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-compare
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 ```bash
 ofd-compare -o comparison.html original.ofd revised.ofd final.ofd
 ofd-compare --baseline 2 -o comparison.json version1.ofd version2.ofd version3.ofd

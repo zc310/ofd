@@ -4,6 +4,17 @@
 文件（DER 编码的 ASN.1，通常命名 `Seal.esl`）。该文件可被 `ofd-creator` 的
 `--sign-seal` 打入 OFD 包的签名目录，让阅读器从独立印章文件提取印章图片。
 
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-seal@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-seal
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 ## 用法
 
 ```bash

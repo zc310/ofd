@@ -53,6 +53,17 @@ JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归
 go build -o ofd-validator ./cmd/ofd-validator
 ```
 
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-validator@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-validator
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 也可以使用 Makefile 构建 Linux 当前平台的校验器安装包：
 
 ```bash

@@ -51,6 +51,17 @@
 go build -o ofd-invoice ./cmd/ofd-invoice
 ```
 
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-invoice@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-invoice
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 ## 快速开始
 
 命令格式：

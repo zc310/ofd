@@ -4,6 +4,19 @@
 
 本工具不修改输入 OFD。`check`、`manifest`、`matrix` 只做判定与上报，不对文档做任何处置；唯一的例外是 `preserve`，它按 GB/T 42133 长期保存处理改造文件，但只写入 `--output` 指定的新文件，输入始终不变。本工具不自动删除动作、视频、注释或附件，不嵌入字体，不重签名，不自动解密，也不替代档案管理系统、密码学验证或人工合规判断。原始签名文件原样保存在准备目录中。
 
+## 安装
+
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-archive@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-archive
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 ## 用法
 
 无子命令时默认执行 `check`：

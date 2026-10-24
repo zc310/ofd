@@ -5,6 +5,19 @@
 本目录同时含 `Dockerfile`（Ubuntu 运行镜像）与 `docker-config.json`
 （镜像内置的容器默认配置）。
 
+## 安装
+
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-server@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-server
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。生产部署也可使用下方的构建或容器方式。
+
 ## 快速开始
 
 ```bash

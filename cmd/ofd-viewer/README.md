@@ -121,6 +121,17 @@ Android 版本可通过系统文件选择器打开 OFD 文件。右侧菜单中�
 go build .
 ```
 
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-viewer@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-viewer
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。此方式只安装可执行文件，不包含 DEB/RPM 中的桌面集成配置。
+
 Linux 构建需要 OpenGL、X11 和 Wayland 开发库。
 
 ## 制作 DEB / RPM

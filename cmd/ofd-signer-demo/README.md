@@ -4,6 +4,17 @@
 提供的**最小演示签名器**，用于说明 `ofd-creator merge --sign-cmd` 协议需要
 实现什么，以及 `SignedValue.dat` 的 SES 结构。
 
+需要 Go 1.26 或更高版本。提交推送到 GitHub 后，可在仓库外安装 `main` 分支版本；也可在仓库根目录安装当前检出的源码：
+
+```bash
+# 远程 main 分支
+go install github.com/zc310/ofd/cmd/ofd-signer-demo@main
+# 当前本地检出：在仓库根目录执行
+go install ./cmd/ofd-signer-demo
+```
+
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。
+
 ## SES 结构（V4）
 
 输出遵循 GM/T 0031 的 V4 电子印章结构，与 `../../testdata/ofdrw/999.ofd` 等真实样例一致：
