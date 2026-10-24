@@ -35,20 +35,25 @@ func (e *docxEncoder) encodeDocuments(documents []*render.Document, output io.Wr
 	if output == nil {
 		return errors.New("未设置 DOCX 输出参数")
 	}
-	pages, err := collectTextPages(documents, conv.page)
+	pages, err := collectTextPages(conv.Context(), documents, conv.page)
 	if err != nil {
 		return err
 	}
 	images := map[int][]textdoc.Image{}
 	if conv.DOCXImages() {
 		for index, page := range pages {
-			images[index] = textdoc.ExtractImages(page.Owner, page.Source, docx.MaxImagesPerPage)
+			images[index], err = textdoc.ExtractImages(conv.Context(), page.Owner, page.Source, docx.MaxImagesPerPage)
+			if err != nil {
+				if conv.Context().Err() != nil {
+					return conv.Context().Err()
+				}
+				return fmt.Errorf("提取第%d页图片失败: %w", index+1, err)
+			}
 		}
 	}
 	return docx.Write(output, docxPagesOptions(pages, conv.docTitle), func(w *docx.Writer) error {
 		for index, page := range pages {
-			// 页循环内必须查取消。textdoc.Collect 一次性提取了整个页码区间、
-			// 没有逐页钩子，所以取消只能补在这一层。
+			// 图片提取和正文写出各自逐页检查取消。
 			if err := conv.checkCancelled(); err != nil {
 				return err
 			}

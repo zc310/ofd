@@ -5,17 +5,19 @@
 //
 //	import _ "github.com/zc310/ofd/pkg/converter/import/markdown"
 //
-// 之后即可使用 converter.Convert("md", "ofd", ...)。出于安全和确定性考虑，
+// 之后即可使用 converter.Convert(ctx, "md", "ofd", ...)。出于安全和确定性考虑，
 // 远程图片不会被下载，只在日志中给出警告。
 package markdown
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/layout"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/converter"
@@ -37,12 +39,36 @@ func (m *markdownImporter) Name() string         { return "markdown" }
 func (m *markdownImporter) Extensions() []string { return []string{".md", ".markdown", ".mdown"} }
 func (m *markdownImporter) MIME() string         { return "text/markdown" }
 
-func (m *markdownImporter) Import(input any, output io.Writer, _ *converter.Converter) error {
+func (m *markdownImporter) Import(input any, output io.Writer, conv *converter.Converter) error {
+	return Convert(conv.Context(), input, output)
+}
+
+// Convert 将 Markdown 输入转换为 OFD，input 支持文件路径、[]byte 或 io.Reader。
+// 传入文件路径时会以该文件所在目录解析相对图片路径；在主要处理阶段之间响应取消。
+func Convert(ctx context.Context, input any, output io.Writer) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if output == nil {
+		return fmt.Errorf("未设置 OFD 输出参数")
+	}
+	if reader, ok := input.(io.Reader); ok {
+		input = contextio.Reader(ctx, reader)
+	}
 	source, baseDir, name, err := readInput(input)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil {
 		return err
 	}
 	document, err := parseMarkdown(source, baseDir)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil {
 		return err
 	}
@@ -55,29 +81,43 @@ func (m *markdownImporter) Import(input any, output io.Writer, _ *converter.Conv
 		options = layout.GBTOptions()
 	}
 	ofd, err := layout.Build(document, options)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil {
 		return err
 	}
 	ofd.Creator = converterName
 	ofd.CreatorVersion = converterVersion
 	ofd.CustomDatas = []creator.CustomData{{Name: "SourceFormat", Value: "Markdown"}}
-	return creator.CreateWithOptions(*ofd, output, creator.CreateOptions{Deterministic: true})
-}
-
-// Convert 将 Markdown 输入转换为 OFD，input 支持文件路径、[]byte 或 io.Reader。
-// 传入文件路径时会以该文件所在目录解析相对图片路径。
-func Convert(input any, output io.Writer) error {
-	return (&markdownImporter{}).Import(input, output, nil)
+	err = creator.CreateWithOptions(*ofd, contextio.Writer(ctx, output), creator.CreateOptions{Deterministic: true})
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // ConvertFile 是 Convert 的按路径便捷形式。
-func ConvertFile(mdPath, ofdPath string) error {
+func ConvertFile(ctx context.Context, mdPath, ofdPath string) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	file, err := os.Create(ofdPath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return Convert(mdPath, file)
+	defer func() {
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}()
+	return Convert(ctx, mdPath, file)
 }
 
 func readInput(input any) ([]byte, string, string, error) {

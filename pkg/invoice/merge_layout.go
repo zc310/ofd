@@ -1,6 +1,7 @@
 package invoice
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -338,7 +339,11 @@ func selectPages(doc *parser.Document, spec string) ([]*parser.Page, error) {
 	case PagesFirst:
 		return all[:1], nil
 	case PagesFace:
-		if faces := facePages(doc); len(faces) > 0 {
+		faces, err := facePages(doc)
+		if err != nil {
+			return nil, err
+		}
+		if len(faces) > 0 {
 			return faces, nil
 		}
 		// 认不出票面页时退回首页：猜不出来就什么都不输出是最糟的结果。
@@ -366,11 +371,14 @@ var faceKeywords = []string{"发票代码", "发票号码", "价税合计", "开
 //
 // OFD 没有「哪一页是票面」的标记，只能看文字层。返回全部命中的页（正常票只有
 // 一页）；认不出时返回空切片，由调用方决定回退。
-func facePages(doc *parser.Document) []*parser.Page {
+func facePages(doc *parser.Document) ([]*parser.Page, error) {
 	if doc == nil || len(doc.Pages) == 0 {
-		return nil
+		return nil, nil
 	}
-	collected := textdoc.Collect([]*parser.Document{doc}, 0, len(doc.Pages))
+	collected, err := textdoc.Collect(context.Background(), []*parser.Document{doc}, 0, len(doc.Pages))
+	if err != nil {
+		return nil, err
+	}
 	var faces []*parser.Page
 	for _, page := range collected {
 		if page.Source == nil {
@@ -383,7 +391,7 @@ func facePages(doc *parser.Document) []*parser.Page {
 			}
 		}
 	}
-	return faces
+	return faces, nil
 }
 
 // containsAnyKeyword 判断文字是否含票面特征词。

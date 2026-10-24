@@ -3,6 +3,9 @@
 package textdoc
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -125,7 +128,10 @@ func Count(documents []*parser.Document) int {
 
 // Collect 提取全局页索引范围 [start, end) 内的页面。调用方需保证 start/end
 // 合法（通常先经页码校验）；end 超出总页数时按总页数截断。
-func Collect(documents []*parser.Document, start, end int) []Page {
+func Collect(ctx context.Context, documents []*parser.Document, start, end int) ([]Page, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	pages := make([]Page, 0, max(end-start, 0))
 	index := 0
 	for _, doc := range documents {
@@ -133,38 +139,53 @@ func Collect(documents []*parser.Document, start, end int) []Page {
 			continue
 		}
 		for _, p := range doc.Pages {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if p == nil {
 				continue
 			}
 			if index >= start && index < end {
-				extracted := ExtractPage(doc, p)
+				extracted, err := ExtractPage(ctx, doc, p)
+				if err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					return nil, fmt.Errorf("提取第%d页文字失败: %w", index+1, err)
+				}
 				extracted.Source = p
 				extracted.Owner = doc
 				pages = append(pages, extracted)
 			}
 			index++
 			if index >= end {
-				return pages
+				return pages, ctx.Err()
 			}
 		}
 	}
-	return pages
+	return pages, ctx.Err()
 }
 
 // ExtractPage 提取单个页面的文字条目和物理尺寸。
-func ExtractPage(doc *parser.Document, page *parser.Page) Page {
+func ExtractPage(ctx context.Context, doc *parser.Document, page *parser.Page) (Page, error) {
 	result := Page{Width: defaultPageWidth, Height: defaultPageHeight}
+	if err := ctx.Err(); err != nil {
+		return Page{}, err
+	}
 	if page == nil {
-		return result
+		return result, nil
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
-		return result
+		return Page{}, err
 	}
 	defer lease.Release()
+	if err := ctx.Err(); err != nil {
+		return Page{}, err
+	}
 	content := lease.Content()
 	if content == nil {
-		return result
+		return Page{}, errors.New("页面内容为空")
 	}
 	content.EnsurePhysicalBox()
 	if area := content.Area; area != nil {
@@ -178,6 +199,9 @@ func ExtractPage(doc *parser.Document, page *parser.Page) Page {
 
 	entries := make([]Entry, 0)
 	for _, template := range content.Template {
+		if err := ctx.Err(); err != nil {
+			return Page{}, err
+		}
 		if templateContent := doc.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
 			appendPageContentText(doc, templateContent.Content, &entries, 0, EntrySourceTemplate)
 		}
@@ -192,7 +216,10 @@ func ExtractPage(doc *parser.Document, page *parser.Page) Page {
 		}
 	}
 	result.Entries = entries
-	return result
+	if err := ctx.Err(); err != nil {
+		return Page{}, err
+	}
+	return result, nil
 }
 
 func appendPageContentText(doc *parser.Document, content *models.Content, entries *[]Entry, depth int, source EntrySource) {

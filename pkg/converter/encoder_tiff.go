@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/hhrutter/tiff"
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/render"
 )
 
@@ -20,21 +21,25 @@ func (e *tiffEncoder) Extensions() []string { return []string{".tif", ".tiff"} }
 func (e *tiffEncoder) MIME() string         { return "image/tiff" }
 
 func (e *tiffEncoder) Encode(input any, output io.Writer, conv *Converter) (err error) {
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	if output == nil {
 		if conv.fileWriter == nil {
 			return fmt.Errorf("未设置 TIFF 输出参数")
 		}
-		writer, err := conv.fileWriter(1)
-		if err != nil {
-			return fmt.Errorf("创建 TIFF 输出失败: %w", err)
+		writer, createErr := conv.fileWriter(1)
+		if createErr != nil {
+			return fmt.Errorf("创建 TIFF 输出失败: %w", createErr)
 		}
 		defer func() {
-			if closeErr := writer.Close(); err == nil {
-				err = closeErr
+			if closeErr := writer.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("关闭 TIFF 输出失败: %w", closeErr)
 			}
 		}()
 		output = writer
 	}
+	output = contextio.Writer(conv.Context(), output)
 	conv.format = "tiff"
 	return encodeOFD(input, output, conv, encodeTIFFDocuments)
 }

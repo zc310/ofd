@@ -78,6 +78,12 @@ func FindChrome(explicit string) (string, error) {
 
 // ConvertFileToPDF 把本地 HTML/MHTML 文件渲染为 PDF 字节。
 func ConvertFileToPDF(ctx context.Context, path string, options Options) ([]byte, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("HTML 渲染输入文件为空")
 	}
@@ -91,9 +97,6 @@ func ConvertFileToPDF(ctx context.Context, path string, options Options) ([]byte
 	timeout := options.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	workDir, err := os.MkdirTemp(options.TempDir, "ofd-browser-")
 	if err != nil {
@@ -176,12 +179,15 @@ func ConvertFileToPDF(ctx context.Context, path string, options Options) ([]byte
 	)
 	if err := chromedp.Do(browserCtx, actions...); err != nil {
 		if runCtx.Err() != nil {
-			return nil, fmt.Errorf("Chrome 渲染超时（%s）", timeout)
+			return nil, runCtx.Err()
 		}
 		if chrome == "" {
 			return nil, fmt.Errorf("未找到 Chrome/Chromium，请安装后重试，或通过 --chrome 或 %s 指定可执行文件: %w", EnvChrome, err)
 		}
 		return nil, fmt.Errorf("Chrome 渲染失败: %w", err)
+	}
+	if err := runCtx.Err(); err != nil {
+		return nil, err
 	}
 	if len(pdfData) == 0 {
 		return nil, errors.New("Chrome 生成的 PDF 为空")

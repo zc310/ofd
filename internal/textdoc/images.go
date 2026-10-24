@@ -1,6 +1,8 @@
 package textdoc
 
 import (
+	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -40,22 +42,31 @@ var rasterExtensions = map[string]bool{
 
 // ExtractImages 提取一页里可内嵌的图片，按阅读顺序（Y 升序，Y 相同按 X 升序）
 // 排列，与 Rows 对文字的排序约定一致。
-func ExtractImages(doc *parser.Document, page *parser.Page, limit int) []Image {
+func ExtractImages(ctx context.Context, doc *parser.Document, page *parser.Page, limit int) ([]Image, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if doc == nil || page == nil {
-		return nil
+		return nil, nil
 	}
 	lease, err := page.AcquireLease()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer lease.Release()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	content := lease.Content()
 	if content == nil {
-		return nil
+		return nil, errors.New("页面内容为空")
 	}
 
 	images := make([]Image, 0, 8)
 	for _, template := range content.Template {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if templateContent := doc.GetTemplate(models.StID(template.TemplateID)); templateContent != nil {
 			appendImageItems(doc, templateContent.Content, &images, 0)
 		}
@@ -73,7 +84,10 @@ func ExtractImages(doc *parser.Document, page *parser.Page, limit int) []Image {
 	if limit > 0 && len(images) > limit {
 		images = images[:limit]
 	}
-	return images
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return images, nil
 }
 
 func appendImageItems(doc *parser.Document, content *models.Content, images *[]Image, depth int) {

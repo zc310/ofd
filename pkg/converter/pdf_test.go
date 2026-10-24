@@ -102,7 +102,7 @@ func benchmarkPDFDocumentsWorkers(b *testing.B, workers int) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		output.Reset()
-		if err := pdfDocumentsWithWorkers(ctxTODO, documents, &output, workers); err != nil {
+		if err := pdfDocumentsWithWorkersConv(documents, &output, workers, newConverter(b.Context())); err != nil {
 			b.Fatal(err)
 		}
 	}

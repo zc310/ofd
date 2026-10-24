@@ -80,6 +80,12 @@ func FindSoffice(explicit string) (string, error) {
 // ConvertToPDF 把 inputPath 转换为 PDF 并返回 PDF 字节。inputPath 必须是
 // 可读的本地文件；转换在独立临时目录和独立用户配置目录中进行，互不干扰。
 func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byte, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(inputPath) == "" {
 		return nil, errors.New("Office 转换输入文件为空")
 	}
@@ -93,9 +99,6 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 	timeout := options.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	workDir, err := os.MkdirTemp(options.TempDir, "ofd-office-")
@@ -142,13 +145,13 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 		return killProcessGroup(command)
 	}
 	output, runErr := command.CombinedOutput()
+	if err := runCtx.Err(); err != nil {
+		return nil, err
+	}
 
 	// LibreOffice 有时在失败时仍返回 0，必须校验输出文件本身。
 	pdfPath, pdfErr := findPDF(outDir)
 	if pdfErr != nil {
-		if runCtx.Err() != nil {
-			return nil, fmt.Errorf("LibreOffice 转换超时（%s）", timeout)
-		}
 		message := strings.TrimSpace(string(output))
 		if runErr != nil {
 			return nil, fmt.Errorf("LibreOffice 转换失败: %w: %s", runErr, message)
@@ -166,6 +169,9 @@ func ConvertToPDF(ctx context.Context, inputPath string, options Options) ([]byt
 		return nil, errors.New("LibreOffice 生成的 PDF 无效")
 	}
 	if err := validatePDF(ctx, data); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("LibreOffice 生成的 PDF 无效: %w", err)
 	}
 	return data, nil

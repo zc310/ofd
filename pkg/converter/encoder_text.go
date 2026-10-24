@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/textdoc"
@@ -33,15 +34,18 @@ func (e *textEncoder) textFromDocuments(documents []*render.Document, output io.
 	if err != nil {
 		return err
 	}
-	return textDocuments(pages, output)
+	return textDocuments(pages, output, conv)
 }
 
-func textDocuments(pages []string, output io.Writer) error {
+func textDocuments(pages []string, output io.Writer, conv *Converter) error {
 	if output == nil {
 		return errors.New("未设置文本输出参数")
 	}
 	var builder strings.Builder
 	for i, page := range pages {
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		if i > 0 {
 			previous := pages[i-1]
 			if previous != "" && !strings.HasSuffix(previous, "\n") {
@@ -55,8 +59,8 @@ func textDocuments(pages []string, output io.Writer) error {
 	if text != "" {
 		text += "\n"
 	}
-	_, err := io.WriteString(output, text)
-	return err
+	_, err := io.WriteString(contextio.Writer(conv.Context(), output), text)
+	return conv.resultError(err)
 }
 
 // Text 提取 input 中 OFD 文档的文字并写入 output。
@@ -90,12 +94,12 @@ func textFromRenderDocuments(documents []*render.Document, output io.Writer, con
 	if err != nil {
 		return err
 	}
-	return textDocuments(pages, output)
+	return textDocuments(pages, output, conv)
 }
 
 // extractPageTexts 提取每个页面的纯文本表示。
 func extractPageTexts(documents []*render.Document, page int, conv *Converter) ([]string, error) {
-	pages, err := collectTextPages(documents, page)
+	pages, err := collectTextPages(conv.Context(), documents, page)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +114,10 @@ func extractPageTexts(documents []*render.Document, page int, conv *Converter) (
 }
 
 // collectTextPages 按全局页码校验并提取页面。
-func collectTextPages(documents []*render.Document, page int) ([]textdoc.Page, error) {
+func collectTextPages(ctx context.Context, documents []*render.Document, page int) ([]textdoc.Page, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	docs := parserDocuments(documents)
 	total := textdoc.Count(docs)
 	if total == 0 {
@@ -120,7 +127,7 @@ func collectTextPages(documents []*render.Document, page int) ([]textdoc.Page, e
 	if err != nil {
 		return nil, err
 	}
-	return textdoc.Collect(docs, start, end), nil
+	return textdoc.Collect(ctx, docs, start, end)
 }
 
 // parserDocuments 从 render.Document 中提取底层 parser.Document。

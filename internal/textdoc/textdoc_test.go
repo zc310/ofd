@@ -1,6 +1,7 @@
 package textdoc
 
 import (
+	"context"
 	"testing"
 	"unicode/utf8"
 )
@@ -89,7 +90,7 @@ func TestCountAndCollect(t *testing.T) {
 	if got := Count(nil); got != 0 {
 		t.Fatalf("Count(nil) = %d, want 0", got)
 	}
-	if pages := Collect(nil, 0, 0); len(pages) != 0 {
-		t.Fatalf("Collect(nil) = %d pages, want 0", len(pages))
+	if pages, err := Collect(context.Background(), nil, 0, 0); err != nil || len(pages) != 0 {
+		t.Fatalf("Collect(nil) = %d pages, %v, want 0, nil", len(pages), err)
 	}
 }

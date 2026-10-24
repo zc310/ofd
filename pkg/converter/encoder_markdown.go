@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/zc310/ofd/internal/contextio"
 	markdownpkg "github.com/zc310/ofd/internal/markdown"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
@@ -55,12 +56,10 @@ func markdownDocuments(documents []*render.Document, output io.Writer, conv *Con
 	if err := conv.checkCancelled(); err != nil {
 		return err
 	}
-	pages, err := collectTextPages(documents, conv.page)
+	pages, err := collectTextPages(conv.Context(), documents, conv.page)
 	if err != nil {
 		return err
 	}
-	// textdoc.Collect 一次性提取区间内所有页，没有逐页钩子，因此只能在
-	// 前后各查一次。文字提取比栅格化轻得多，这个粒度够用。
 	if err := conv.checkCancelled(); err != nil {
 		return err
 	}
@@ -76,6 +75,9 @@ func markdownDocuments(documents []*render.Document, output io.Writer, conv *Con
 
 	firstPage := true
 	for _, page := range pages {
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		if len(page.Entries) == 0 {
 			continue
 		}
@@ -86,6 +88,6 @@ func markdownDocuments(documents []*render.Document, output io.Writer, conv *Con
 		markdownpkg.RenderPage(&markdown, page.Entries, page.Height, conv.MarkdownTables())
 	}
 
-	_, err = io.WriteString(output, markdown.String())
-	return err
+	_, err = io.WriteString(contextio.Writer(conv.Context(), output), markdown.String())
+	return conv.resultError(err)
 }

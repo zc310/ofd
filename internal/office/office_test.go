@@ -135,8 +135,8 @@ func TestConvertToPDFWithFakeSofficeHonorsTimeout(t *testing.T) {
 	soffice := writeFakeSoffice(t, "(sleep 0.5; touch '"+marker+"') &\nwait")
 	started := time.Now()
 	_, err := ConvertToPDF(context.Background(), input, Options{Soffice: soffice, Timeout: 50 * time.Millisecond})
-	if err == nil || !strings.Contains(err.Error(), "转换超时") {
-		t.Fatalf("超时错误 = %v，期望转换超时", err)
+	if err != context.DeadlineExceeded {
+		t.Fatalf("超时错误 = %v，期望原始 context.DeadlineExceeded", err)
 	}
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("超时后返回过慢: %s", elapsed)

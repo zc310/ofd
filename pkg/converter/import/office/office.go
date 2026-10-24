@@ -8,18 +8,18 @@
 //
 //	import _ "github.com/zc310/ofd/pkg/converter/import/office"
 //
-// 之后即可使用 converter.Convert("docx", "ofd", ...) 或
-// converter.Convert("docx", "pdf", ...)。运行环境必须安装 LibreOffice，
+// 之后即可使用 converter.Convert(ctx, "docx", "ofd", ...) 或
+// converter.Convert(ctx, "docx", "pdf", ...)。运行环境必须安装 LibreOffice，
 // 否则返回明确错误。
 package office
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/office"
 	"github.com/zc310/ofd/internal/pdf2ofd"
 	"github.com/zc310/ofd/pkg/converter"
@@ -81,13 +81,20 @@ func (o *officeTransformer) Transform(input any, output io.Writer, conv *convert
 	if err != nil {
 		return err
 	}
-	_, err = output.Write(pdf)
+	_, err = contextio.Writer(conv.Context(), output).Write(pdf)
 	return err
 }
 
 // convertToPDF 把 Office 输入（路径、[]byte 或 io.Reader）交给 LibreOffice
 // 转换为 PDF 字节。非路径输入会先写入临时文件。
 func convertToPDF(input any, conv *converter.Converter) ([]byte, error) {
+	ctx := conv.Context()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if reader, ok := input.(io.Reader); ok {
+		input = contextio.Reader(ctx, reader)
+	}
 	tempDir := ""
 	if conv != nil {
 		tempDir = conv.TempDir()
@@ -102,7 +109,10 @@ func convertToPDF(input any, conv *converter.Converter) ([]byte, error) {
 		options.Soffice = conv.SofficePath()
 		options.Timeout = conv.OfficeTimeout()
 	}
-	return office.ConvertToPDF(context.Background(), path, options)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return office.ConvertToPDF(ctx, path, options)
 }
 
 // officeInputPath 把输入统一为本地文件路径。非路径输入写入临时文件，返回的

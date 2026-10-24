@@ -9,6 +9,13 @@
 上下文。`input` 支持文件路径、`*os.File` 或字节切片；写入调用方提供的文件后，
 调用方应处理关闭错误。
 
+取消或超时会原样返回 `context.Canceled` 或 `context.DeadlineExceeded`，包括发生在
+最后一页写入、输出回调或写入器关闭期间的取消。取消在页间和主要阶段的读写边界
+生效，不能强行中断已经阻塞的底层 I/O。失败后应丢弃部分输出；PDF 仍会尝试完成
+结构收尾，但包含 `%%EOF` 不代表转换成功，必须检查返回错误。
+Text、Markdown、DOCX 转换遇到无法读取的页面时返回包含全局页码的错误，不把损坏页
+当作空白页。逐页文字收集和 DOCX 图片提取都会响应取消。
+
 `converter.Page(n)` 从 1 开始选择多文档体合并后的全局页码，`converter.DPI(dpi)`
 设置栅格输出分辨率。库默认使用 96 DPI 和透明背景；CLI 默认使用 150 DPI 和白色背景。
 
@@ -117,6 +124,11 @@ func main() {
 Markdown 会重新排版为 A4，远程图片会跳过并记录警告。Office/HTML/XPS 转 OFD 时先由
 外部工具生成 PDF，再执行 PDF 导入；直接转 PDF 时使用外部工具产物。外部工具要求见
 [运行依赖](BUILDING.md#运行依赖)。
+
+Office、HTML 转换会把调用方上下文传给外部进程，取消后结束处理并清理临时目录。
+也可直接调用 Markdown 包的 `Convert(ctx, input, output)` 或
+`ConvertFile(ctx, inputPath, outputPath)`；不需要取消时传 `context.Background()`。
+`ConvertFile` 在入口已取消时不会创建或截断目标文件。
 
 PDF 导入默认实施资源预算。可通过 `converter.WithPDFImportOptions` 设置预算、同步
 `OnDiagnostic` 回调和 `Strict` 模式；这些设置也作用于 Office/HTML/XPS 转 OFD 的

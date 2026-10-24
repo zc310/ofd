@@ -1,6 +1,7 @@
 package invoice
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -365,7 +366,11 @@ func supplementFromText(invoice *Invoice, data []byte) {
 		return
 	}
 	defer ofd.Close()
-	pages := textdoc.Collect(ofd.Documents, 0, textdoc.Count(ofd.Documents))
+	pages, err := textdoc.Collect(context.Background(), ofd.Documents, 0, textdoc.Count(ofd.Documents))
+	if err != nil {
+		invoice.Warnings = append(invoice.Warnings, "页面文字层读取失败: "+err.Error())
+		return
+	}
 	title := pageTitle(pages)
 	invoice.Title = title
 	if upper := upperAmount(pages); upper != "" {

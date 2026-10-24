@@ -68,11 +68,15 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 	}
 	pages = pages[pageStart:pageEnd]
 
-	pdfDoc, err := render.NewPDFDocument(output, pdfRenderOptions())
+	writer := &outputErrorRecorder{output: output}
+	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions())
 	if err != nil {
 		return err
 	}
 	defer closePDFDocument(pdfDoc, &err)
+	if writer.err != nil {
+		return writer.err
+	}
 	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
 	resolvers := newPageLinkResolvers(pages)
 	for _, page := range pages {
@@ -84,9 +88,18 @@ func pdfDocumentsSerial(documents []*render.Document, output io.Writer, conv *Co
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
 		links := page.document.PageLinks(page.page, resolvers[page.document])
+		if err := conv.checkCancelled(); err != nil {
+			return err
+		}
 		if err := pdfDoc.AddPage(surface, links); err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
+		if writer.err != nil {
+			return writer.err
+		}
+	}
+	if err := conv.checkCancelled(); err != nil {
+		return err
 	}
 	return addDocumentOutlines(pdfDoc, documents, resolvers)
 }
@@ -136,11 +149,15 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 		return err
 	}
 
-	pdfDoc, err := render.NewPDFDocument(output, pdfRenderOptions())
+	writer := &outputErrorRecorder{output: output}
+	pdfDoc, err := render.NewPDFDocument(writer, pdfRenderOptions())
 	if err != nil {
 		return err
 	}
 	defer closePDFDocument(pdfDoc, &err)
+	if writer.err != nil {
+		return writer.err
+	}
 	// 跳转目标必须换算成输出页序，因此映射在写页之前建好。
 	resolvers := newPageLinkResolvers(collectSelectedPages(documents, pageStart, pageEnd))
 	workers = max(1, min(workers, pageEnd-pageStart))
@@ -206,8 +223,14 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 				return fmt.Errorf("处理第%d页失败: 页面画布为空", page.pageNumber)
 			}
 			links := page.document.PageLinks(page.page, resolvers[page.document])
+			if err := conv.checkCancelled(); err != nil {
+				return err
+			}
 			if err := pdfDoc.AddPage(job.surface, links); err != nil {
 				return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
+			}
+			if writer.err != nil {
+				return writer.err
 			}
 		}
 		batch = batch[:0]
@@ -227,10 +250,8 @@ func pdfDocumentsWithWorkersConv(documents []*render.Document, output io.Writer,
 			return err
 		}
 	}
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	return addDocumentOutlines(pdfDoc, documents, resolvers)
-}
-
-// pdfDocumentsWithWorkers 是测试用的向后兼容包装。
-func pdfDocumentsWithWorkers(ctx context.Context, documents []*render.Document, output io.Writer, workers int) error {
-	return pdfDocumentsWithWorkersConv(documents, output, workers, newConverter(ctx))
 }

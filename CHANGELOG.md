@@ -7,6 +7,16 @@
 
 ## 未发布
 
+- **Markdown 独立转换入口增加上下文参数**：`pkg/converter/import/markdown` 的
+  `Convert` 改为 `Convert(ctx context.Context, input any, output io.Writer) error`，
+  `ConvertFile` 改为 `ConvertFile(ctx context.Context, mdPath, ofdPath string) error`。
+  调用方需在首参传入上下文；不需要取消控制时可用 `context.Background()`。
+
+- **转换失败与取消错误**：Text、Markdown、DOCX 遇到损坏或缺失的页面时返回包含页码
+  的错误，原先依赖空结果判定读取失败的调用方应处理返回错误。Office、HTML 的取消与
+  超时返回标准上下文错误，依赖错误文案的调用方应改用 `errors.Is` 判断
+  `context.Canceled` 或 `context.DeadlineExceeded`。
+
 - **阅读器渲染接口增加上下文参数**：`webreader.Reader.RenderPage` 改为
   `RenderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error)`；
   `RenderPages` 改为

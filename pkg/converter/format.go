@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/core"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
@@ -203,8 +204,9 @@ func ImportFormats() []string {
 // Convert 在输入格式 from 与输出格式 to 之间转换。from 为空时按文件扩展名或
 // 内容识别。to 为 "ofd" 时使用导入器（X→OFD）；from 为 "ofd" 时使用导出器
 // （OFD→X）；两者都不是时先导入为 OFD 再导出。
-func Convert(ctx context.Context, from, to string, input any, output io.Writer, opts ...Option) error {
+func Convert(ctx context.Context, from, to string, input any, output io.Writer, opts ...Option) (err error) {
 	conv := newConverter(ctx, opts...)
+	defer func() { err = conv.resultError(err) }()
 	// 入口先查一次：取消后再走一遍格式解析只是白花时间。
 	if err := conv.checkCancelled(); err != nil {
 		return err
@@ -228,6 +230,9 @@ func Convert(ctx context.Context, from, to string, input any, output io.Writer, 
 		// 优先使用直接转换器（如 docx→pdf 交给 LibreOffice），避免经过 OFD
 		// 中间格式造成的二次版式损失。
 		if transformer, ok := TransformerFor(from, to); ok {
+			if output != nil {
+				output = contextio.Writer(conv.Context(), output)
+			}
 			return transformer.Transform(input, output, conv)
 		}
 		imp, ok := ImporterByName(from)
@@ -235,7 +240,7 @@ func Convert(ctx context.Context, from, to string, input any, output io.Writer, 
 			return fmt.Errorf("不支持导入格式: %s", from)
 		}
 		var intermediate bytes.Buffer
-		if err := imp.Import(input, &intermediate, conv); err != nil {
+		if err := imp.Import(input, contextio.Writer(conv.Context(), &intermediate), conv); err != nil {
 			return err
 		}
 		return encodeWithConverterFormat(to, intermediate.Bytes(), output, conv)
@@ -247,7 +252,7 @@ func Convert(ctx context.Context, from, to string, input any, output io.Writer, 
 		if output == nil {
 			return errors.New("未设置 OFD 输出参数")
 		}
-		return imp.Import(input, output, conv)
+		return imp.Import(input, contextio.Writer(conv.Context(), output), conv)
 	default:
 		return encodeWithConverterFormat(to, input, output, conv)
 	}
@@ -318,7 +323,7 @@ func Encode(ctx context.Context, format string, input any, output io.Writer, opt
 	if f.Kind == KindImage && output == nil && conv.fileWriter == nil && conv.imageWriter == nil {
 		return errors.New("未设置图像输出参数")
 	}
-	return f.encoder.Encode(input, output, conv)
+	return encodeFormat(f, input, output, conv)
 }
 
 func encodeWithConverterFormat(format string, input any, output io.Writer, conv *Converter) error {
@@ -326,7 +331,19 @@ func encodeWithConverterFormat(format string, input any, output io.Writer, conv 
 	if err != nil {
 		return err
 	}
-	return f.encoder.Encode(input, output, conv)
+	return encodeFormat(f, input, output, conv)
+}
+
+// encodeFormat 为所有注册编码器统一最终取消错误及输出检查。
+// PDF 按既有约定在取消后完成 Close 收尾，由自己的写出器记录 I/O 错误。
+func encodeFormat(format *Format, input any, output io.Writer, conv *Converter) error {
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
+	if output != nil && format.Name != "pdf" {
+		output = contextio.Writer(conv.Context(), output)
+	}
+	return conv.resultError(format.encoder.Encode(input, output, conv))
 }
 
 // EncodeDocuments 按 format 选择注册的编码器，直接写入已解析的文档。
@@ -340,7 +357,7 @@ func EncodeDocuments(ctx context.Context, format string, documents []*render.Doc
 	if err != nil {
 		return err
 	}
-	return f.encoder.Encode(documents, output, conv)
+	return encodeFormat(f, documents, output, conv)
 }
 
 // encodeOFD 为处理 OFD 输入的编码器复用统一的解析流程：input 已是文档切片时直接使用，
@@ -381,6 +398,9 @@ func documentsFromInput(input any, conv *Converter) ([]*render.Document, *parser
 func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *parser.OFD, error) {
 	if err := conv.checkCancelled(); err != nil {
 		return nil, nil, err
+	}
+	if reader, ok := input.(io.Reader); ok {
+		input = contextio.Reader(conv.Context(), reader)
 	}
 	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
 		PageCacheCapacity: conv.pageCacheCapacity,

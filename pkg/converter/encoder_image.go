@@ -93,6 +93,9 @@ func (nopWriteCloser) Close() error { return nil }
 // 默认 PNG；输出目标由 Writer 或 ImageWriter 选项提供。
 func Image(ctx context.Context, input interface{}, opts ...Option) error {
 	conv := newConverter(ctx, opts...)
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	if err := conv.validateConfig(); err != nil {
 		return err
 	}
@@ -107,6 +110,9 @@ func ImageDocument(ctx context.Context, doc *render.Document, opts ...Option) er
 // ImageDocuments 将多个已解析的 OFD 文档体按全局页码渲染为图像或矢量格式。
 func ImageDocuments(ctx context.Context, documents []*render.Document, opts ...Option) error {
 	conv := newConverter(ctx, opts...)
+	if err := conv.checkCancelled(); err != nil {
+		return err
+	}
 	if len(collectDocumentPages(documents)) == 0 {
 		return errors.New("文档没有页面")
 	}
@@ -114,7 +120,7 @@ func ImageDocuments(ctx context.Context, documents []*render.Document, opts ...O
 	if err != nil {
 		return err
 	}
-	return f.encoder.Encode(documents, nil, conv)
+	return encodeFormat(f, documents, nil, conv)
 }
 
 // imageFormatName 返回 Converter 中配置的图像格式名，未配置时回退到 PNG。

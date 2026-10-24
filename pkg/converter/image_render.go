@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 
 	"github.com/kovidgoyal/imaging"
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/render"
 )
@@ -29,6 +30,9 @@ func (c *Converter) useRasterBackend() bool {
 
 // renderPage 渲染单个页面（默认路径：canvas 矢量表面光栅化）。
 func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err error) {
+	if err := c.checkCancelled(); err != nil {
+		return err
+	}
 	if c.fileWriter != nil {
 		w, createErr := c.fileWriter(pageNumber)
 		if createErr != nil {
@@ -39,39 +43,59 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err e
 				err = fmt.Errorf("关闭第%d页文件写入器失败: %w", pageNumber, closeErr)
 			}
 		}()
+		if err := c.checkCancelled(); err != nil {
+			return err
+		}
+		output := contextio.Writer(c.Context(), w)
 
 		switch c.format {
 		case "png":
-			if err := media.EncodePNGLevel(w, page.Rasterize(c.dpi), 7); err != nil {
+			img := page.Rasterize(c.dpi)
+			if err := c.checkCancelled(); err != nil {
+				return err
+			}
+			if err := media.EncodePNGLevel(output, img, 7); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		case "jpeg", "jpg":
 			img := opaqueImage(page.Rasterize(c.dpi), color.White)
-			if err := jpeg.Encode(w, img, &jpeg.Options{Quality: 90}); err != nil {
+			if err := c.checkCancelled(); err != nil {
+				return err
+			}
+			if err := jpeg.Encode(output, img, &jpeg.Options{Quality: 90}); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		default:
-			if err := page.Write(w, c.format); err != nil {
+			if err := page.Write(output, c.format); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		}
 	}
 
 	if c.imageWriter != nil {
+		if err := c.checkCancelled(); err != nil {
+			return err
+		}
 		var img image.Image = page.Rasterize(c.dpi)
 		if c.thumbnail > 0 {
 			img = c.resizeThumbnail(img)
+		}
+		if err := c.checkCancelled(); err != nil {
+			return err
 		}
 		if err := c.imageWriter(pageNumber, img); err != nil {
 			return fmt.Errorf("写入第%d页图像失败: %w", pageNumber, err)
 		}
 	}
 
-	return nil
+	return c.checkCancelled()
 }
 
 // renderRasterPage 用已由栅格后端光栅化的页面图像完成写出。
 func (c *Converter) renderRasterPage(pageNumber int, img image.Image) (err error) {
+	if err := c.checkCancelled(); err != nil {
+		return err
+	}
 	if c.fileWriter != nil {
 		w, createErr := c.fileWriter(pageNumber)
 		if createErr != nil {
@@ -82,31 +106,41 @@ func (c *Converter) renderRasterPage(pageNumber int, img image.Image) (err error
 				err = fmt.Errorf("关闭第%d页文件写入器失败: %w", pageNumber, closeErr)
 			}
 		}()
+		if err := c.checkCancelled(); err != nil {
+			return err
+		}
+		output := contextio.Writer(c.Context(), w)
 
 		switch c.format {
 		case "png":
-			if err := media.EncodePNGLevel(w, img, 7); err != nil {
+			if err := media.EncodePNGLevel(output, img, 7); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		default: // jpeg / jpg
 			opaque := opaqueImage(img, color.White)
-			if err := jpeg.Encode(w, opaque, &jpeg.Options{Quality: 90}); err != nil {
+			if err := jpeg.Encode(output, opaque, &jpeg.Options{Quality: 90}); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		}
 	}
 
 	if c.imageWriter != nil {
+		if err := c.checkCancelled(); err != nil {
+			return err
+		}
 		out := img
 		if c.thumbnail > 0 {
 			out = c.resizeThumbnail(out)
+		}
+		if err := c.checkCancelled(); err != nil {
+			return err
 		}
 		if err := c.imageWriter(pageNumber, out); err != nil {
 			return fmt.Errorf("写入第%d页图像失败: %w", pageNumber, err)
 		}
 	}
 
-	return nil
+	return c.checkCancelled()
 }
 
 // resizeThumbnail 生成缩略图

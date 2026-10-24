@@ -7,19 +7,19 @@
 //
 //	import _ "github.com/zc310/ofd/pkg/converter/import/html"
 //
-// 之后即可使用 converter.Convert("mhtml", "pdf", ...) 或
-// converter.Convert("html", "ofd", ...)。运行环境必须安装 Chrome/Chromium，
+// 之后即可使用 converter.Convert(ctx, "mhtml", "pdf", ...) 或
+// converter.Convert(ctx, "html", "ofd", ...)。运行环境必须安装 Chrome/Chromium，
 // 否则返回明确错误。
 package html
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/zc310/ofd/internal/browser"
+	"github.com/zc310/ofd/internal/contextio"
 	"github.com/zc310/ofd/internal/pdf2ofd"
 	"github.com/zc310/ofd/pkg/converter"
 )
@@ -70,13 +70,20 @@ func (h *htmlTransformer) Transform(input any, output io.Writer, conv *converter
 	if err != nil {
 		return err
 	}
-	_, err = output.Write(pdf)
+	_, err = contextio.Writer(conv.Context(), output).Write(pdf)
 	return err
 }
 
 // convertToPDF 把 HTML 输入（路径、[]byte 或 io.Reader）交给 Chrome 渲染为
 // PDF 字节。非路径输入会先写入临时文件。
 func convertToPDF(input any, conv *converter.Converter) ([]byte, error) {
+	ctx := conv.Context()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if reader, ok := input.(io.Reader); ok {
+		input = contextio.Reader(ctx, reader)
+	}
 	tempDir := ""
 	if conv != nil {
 		tempDir = conv.TempDir()
@@ -99,7 +106,10 @@ func convertToPDF(input any, conv *converter.Converter) ([]byte, error) {
 		options.AllowRemoteResources = conv.AllowRemoteResources()
 		options.NoSandbox = conv.NoSandbox()
 	}
-	return browser.ConvertFileToPDF(context.Background(), path, options)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return browser.ConvertFileToPDF(ctx, path, options)
 }
 
 // htmlInputPath 把输入统一为本地文件路径。非路径输入写入临时文件，返回的

@@ -136,6 +136,14 @@ func (c *Converter) checkCancelled() error {
 	return c.Context().Err()
 }
 
+// resultError 覆盖阶段内包装过的取消错误，也检查最后一次输出或关闭期间的取消。
+func (c *Converter) resultError(err error) error {
+	if canceled := c.checkCancelled(); canceled != nil {
+		return canceled
+	}
+	return err
+}
+
 // SofficePath 返回配置的 LibreOffice 可执行文件路径；为空表示自动查找。
 func (c *Converter) SofficePath() string {
 	if c == nil {
