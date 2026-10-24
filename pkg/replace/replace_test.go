@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 func testdataPath(names ...string) string {
@@ -25,9 +25,9 @@ func helloBytes(t *testing.T) []byte {
 	return data
 }
 
-func openPackage(t *testing.T, data []byte) *core.Package {
+func openPackage(t *testing.T, data []byte) *container.Package {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatalf("打开结果失败: %v", err)
 	}

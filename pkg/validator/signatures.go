@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
@@ -19,7 +19,7 @@ func WithSignatureVerification(options *SignatureVerificationOptions) Option {
 	return func(o *Options) { o.SignatureVerification = options }
 }
 
-func (v *Validator) checkSignatures(ctx context.Context, documents map[string]*xmlDocument, pkg *core.Package, report *Report) {
+func (v *Validator) checkSignatures(ctx context.Context, documents map[string]*xmlDocument, pkg *container.Package, report *Report) {
 	invalid, incomplete := false, false
 	types := map[string]parser.Signature{}
 	listFor := map[string]string{}

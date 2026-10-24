@@ -17,7 +17,7 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/analyzer"
 	"github.com/zc310/ofd/pkg/validator"
@@ -353,7 +353,7 @@ func uniquePath(name string, used map[string]bool) string {
 	return candidate
 }
 
-func openPackage(filename string) (*core.Package, error) { return core.OpenFile(filename) }
+func openPackage(filename string) (*container.Package, error) { return container.OpenFile(filename) }
 
 func sortFiles(files []FileInfo) {
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })

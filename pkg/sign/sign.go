@@ -26,7 +26,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/physicalsig"
 	"github.com/zc310/ofd/internal/securexml"
@@ -689,7 +689,7 @@ func writePackage(w io.Writer, entries, added []entry, rootData []byte, determin
 		replaced[item.name] = true
 	}
 	write := func(name string, data []byte, method uint16) error {
-		if err := core.ValidateEntryName(name); err != nil {
+		if err := container.ValidateEntryName(name); err != nil {
 			return err
 		}
 		if seen[name] {
@@ -734,20 +734,20 @@ func writePackage(w io.Writer, entries, added []entry, rootData []byte, determin
 	return nil
 }
 
-func openPackage(input any) (*core.Package, error) {
+func openPackage(input any) (*container.Package, error) {
 	switch value := input.(type) {
 	case string:
-		return core.OpenFile(value)
+		return container.OpenFile(value)
 	case []byte:
-		return core.OpenBytes(value)
+		return container.OpenBytes(value)
 	case io.Reader:
-		return core.OpenReader(value)
+		return container.OpenReader(value)
 	default:
 		return nil, fmt.Errorf("不支持的输入类型: %T", input)
 	}
 }
 
-func readEntries(pkg *core.Package) ([]entry, error) {
+func readEntries(pkg *container.Package) ([]entry, error) {
 	result := make([]entry, 0)
 	for _, info := range pkg.Entries() {
 		if info.IsDir {

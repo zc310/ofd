@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/physicalsig"
 	"github.com/zc310/ofd/pkg/spec"
@@ -15,7 +15,7 @@ import (
 
 // validatePhysicalView 在原包检查外签，在投影中检查逻辑文档，避免把密文引用
 // 当成解密后的文件引用；任一范围的失败均保留在同一报告中。
-func (v *Validator) validatePhysicalView(ctx context.Context, physical *core.Package, archive *packageIndex, logical *core.Package, report *Report) bool {
+func (v *Validator) validatePhysicalView(ctx context.Context, physical *container.Package, archive *packageIndex, logical *container.Package, report *Report) bool {
 	limits := crypt.Limits{MaxInputBytes: v.opts.MaxInputSize, MaxEntryBytes: v.opts.MaxFileSize, MaxTotalBytes: v.opts.MaxTotalSize, MaxEntries: v.opts.MaxEntries}
 	if v.opts.MaxXMLBytes > 0 {
 		limits.MaxMetadataBytes = min(v.opts.MaxXMLBytes, 4<<20)
@@ -28,7 +28,7 @@ func (v *Validator) validatePhysicalView(ctx context.Context, physical *core.Pac
 		if errors.Is(err, crypt.ErrUnsupported) {
 			code, status = "signature.physical_unsupported", "incomplete"
 		}
-		if errors.Is(err, crypt.ErrLimitExceeded) || errors.Is(err, core.ErrReadLimitExceeded) {
+		if errors.Is(err, crypt.ErrLimitExceeded) || errors.Is(err, container.ErrReadLimitExceeded) {
 			code, status = "signature.physical_limit_exceeded", "incomplete"
 		}
 		if ctx.Err() != nil {

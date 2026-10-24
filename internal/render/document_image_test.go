@@ -15,11 +15,11 @@ import (
 	"testing"
 
 	"github.com/zc310/canvas"
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -493,7 +493,7 @@ func BenchmarkDocumentDecodeImageCold(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		b.StopTimer()
-		doc.images = utils.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		doc.images = cache.NewLRU[string, image.Image](imageCacheCapacity, nil)
 		b.StartTimer()
 		if _, err := doc.decodeImage(media.file, media.format); err != nil {
 			b.Fatal(err)
@@ -561,7 +561,7 @@ func benchmarkColdImageDecodeParallel(b *testing.B, doc *Document, medias []benc
 	b.ResetTimer()
 	for round := 0; round < b.N; round++ {
 		b.StopTimer()
-		doc.images = utils.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		doc.images = cache.NewLRU[string, image.Image](imageCacheCapacity, nil)
 		start := make(chan struct{})
 		errs := make(chan error, workers)
 		var wg sync.WaitGroup
@@ -642,7 +642,7 @@ func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		b.StopTimer()
-		doc.svgCanvases = utils.NewLRU[string, SVGScene](svgCacheCapacity, nil)
+		doc.svgCanvases = cache.NewLRU[string, SVGScene](svgCacheCapacity, nil)
 		b.StartTimer()
 		if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 			b.Fatal(err)
@@ -722,7 +722,7 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 	b.ResetTimer()
 	for round := 0; round < b.N; round++ {
 		b.StopTimer()
-		doc.svgCanvases = utils.NewLRU[string, SVGScene](svgCacheCapacity, nil)
+		doc.svgCanvases = cache.NewLRU[string, SVGScene](svgCacheCapacity, nil)
 		start := make(chan struct{})
 		errs := make(chan error, workers)
 		var wg sync.WaitGroup
@@ -982,7 +982,7 @@ func TestImageCacheWeightCountsLazyImageBytesAndPixels(t *testing.T) {
 
 func TestImageCacheEvictsByByteWeight(t *testing.T) {
 	const maxWeight = int64(1 << 20)
-	doc := &Document{images: utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, maxWeight, nil)}
+	doc := &Document{images: cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, maxWeight, nil)}
 	for index := 0; index < 4; index++ {
 		// 每张 512x512 RGBA 约 1MiB，超过缓存上限后必须按字节淘汰。
 		img := image.NewRGBA(image.Rect(0, 0, 512, 512))

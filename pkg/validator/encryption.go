@@ -7,14 +7,14 @@ import (
 	"path"
 	"strings"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // validateEncryption 检查可见元数据和明文 XML，并将文档检查标记为未完成。
 // 即使所有物理路径均存在，也不能将占位文件作为原始内容校验文档（GM/T 0099 C.1）。
-func (v *Validator) validateEncryption(ctx context.Context, pkg *core.Package, archive *packageIndex, report *Report) bool {
+func (v *Validator) validateEncryption(ctx context.Context, pkg *container.Package, archive *packageIndex, report *Report) bool {
 	if !crypt.Present(pkg) {
 		return false
 	}

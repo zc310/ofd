@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/integrity"
 	"github.com/zc310/ofd/pkg/sign"
 )
@@ -19,7 +19,7 @@ import (
 func integrityCLIFixture(t *testing.T) string {
 	t.Helper()
 	input, _ := cliFixture(t)
-	p, err := core.OpenFile(input)
+	p, err := container.OpenFile(input)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,11 +21,12 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/text"
 	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/cache"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // 本文件实现 canvas 字体引擎 Fonts：字体资源解析、内嵌字体加载、字形映射
@@ -137,7 +138,7 @@ type Fonts struct {
 	fallbackFaces    []fallbackFace
 	fallbackByFont   map[models.StRefID]string
 	glyphMappings    map[models.StRefID]map[rune]uint16
-	glyphCollections *utils.LRU[*models.Content, glyphCollection]
+	glyphCollections *cache.LRU[*models.Content, glyphCollection]
 	mu               sync.Mutex
 	loadLocksMu      sync.Mutex
 	loadLocks        map[models.StRefID]*sync.Mutex
@@ -256,7 +257,7 @@ func NewFonts(doc *parser.Document) *Fonts {
 		}
 		var fontPath string
 		var err error
-		if fontPath, err = utils.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
+		if fontPath, err = fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), "simhei.ttf", "simfang.ttf", "simsun.ttc", "simkai.ttf"); err == nil {
 			slog.Debug("load default font file", "path", fontPath)
 			if err = defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
 				defaultRegistration.ready = true
@@ -283,7 +284,7 @@ func NewFonts(doc *parser.Document) *Fonts {
 			// 族名都匹配不到时按常见字体文件名兜底：部分精简系统没有可用的
 			// fontconfig 别名，但字体文件仍在标准目录中。
 			for _, file := range []string{"DejaVuSans.ttf", "LiberationSans-Regular.ttf", "NotoSans-Regular.ttf", "Arial.ttf", "arial.ttf"} {
-				if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), file); err == nil {
+				if fontPath, err := fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), file); err == nil {
 					slog.Debug("load default font file", "path", fontPath)
 					if err := defaultRegistration.family.LoadFontFile(fontPath, canvasStyle(drawing.FontRegular)); err == nil {
 						defaultRegistration.ready = true
@@ -1007,7 +1008,7 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	group := cjkFontGroup(ft)
 	if group != "" {
 		if files, ok := cjkFontFiles[group]; ok && len(files) > 0 {
-			if fontPath, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
+			if fontPath, err := fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
 				// 走缓存：这条路此前直接 LoadFontFile，同一个字体系在文档里出现多次就会
 				// 重复读入同一份十几 MB 的字体。实测渲染一个 5 页中文文档时 simkai.ttf
 				// 被读了两遍。

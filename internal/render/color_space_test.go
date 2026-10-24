@@ -6,8 +6,8 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // colorValue 构造一个已按 ST_Array 原文解析出通道取值的颜色。
@@ -289,7 +289,7 @@ func TestColorSpaceResourcesCachedPerDocument(t *testing.T) {
 
 func TestProfilePaletteCacheIsBounded(t *testing.T) {
 	previous := profilePaletteCache
-	profilePaletteCache = utils.NewWeightedLRU[[sha256.Size]byte, []byte](
+	profilePaletteCache = cache.NewWeightedLRU[[sha256.Size]byte, []byte](
 		colorProfileCacheEntries, colorProfileCacheBytes, nil,
 	)
 	t.Cleanup(func() { profilePaletteCache = previous })

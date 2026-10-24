@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 type encryptionXML struct {
@@ -63,7 +63,7 @@ func packagePath(from, value string, absolute bool) (string, error) {
 		return "", fmt.Errorf("映射路径应为包内绝对路径: %q", value)
 	}
 	name := strings.TrimPrefix(value, "/")
-	if err := core.ValidateEntryName(name); err != nil {
+	if err := container.ValidateEntryName(name); err != nil {
 		return "", err
 	}
 	if !strings.HasPrefix(value, "/") {

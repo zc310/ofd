@@ -13,7 +13,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -38,7 +38,7 @@ type appendPlan struct {
 	remaining  int64
 }
 
-func openAppendPackage(input any) (*core.Package, error) {
+func openAppendPackage(input any) (*container.Package, error) {
 	if reader, ok := input.(io.Reader); ok {
 		data, err := io.ReadAll(io.LimitReader(reader, (512<<20)+1))
 		if err != nil {
@@ -69,18 +69,18 @@ func validateAppendOptions(options Options) error {
 }
 
 // readAppendEntries 在摘要和路径预检之前拒绝歧义容器，限制输入、条目数及解压总量。
-func readAppendEntries(ctx context.Context, pkg *core.Package) ([]entry, error) {
+func readAppendEntries(ctx context.Context, pkg *container.Package) ([]entry, error) {
 	if pkg.InputSize() > 512<<20 {
 		return nil, protocol.ErrLimitExceeded
 	}
 	seen, files := map[string]bool{}, map[string]bool{}
-	var infos []core.Entry
+	var infos []container.Entry
 	var total uint64
 	var invalid error
-	err := pkg.WalkEntries(func(info core.Entry) bool {
+	err := pkg.WalkEntries(func(info container.Entry) bool {
 		name := strings.TrimSuffix(info.Name, "/")
 		key := strings.ToLower(name)
-		if core.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[key] {
+		if container.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[key] {
 			invalid = fmt.Errorf("签名容器路径重复或无效: %s", info.Name)
 			return false
 		}
@@ -134,7 +134,7 @@ func readAppendEntries(ctx context.Context, pkg *core.Package) ([]entry, error) 
 
 // prepareAppend 按 GB/T 33190 §18.1 和 GM/T 0099 §7.2、表 B.1 增加列表记录。
 // 所有旧引用和将被修改的路径均在调用签名器之前检查，不迁移旧签名的原文路径。
-func prepareAppend(ctx context.Context, pkg *core.Package, entries []entry, index map[string][]byte, document *etree.Document, options Options) (*appendPlan, error) {
+func prepareAppend(ctx context.Context, pkg *container.Package, entries []entry, index map[string][]byte, document *etree.Document, options Options) (*appendPlan, error) {
 	root := document.Root()
 	if err := validateAppendXML(ctx, index[spec.RootDocument], "OFD", root.SelectAttrValue("DocType", "")); err != nil {
 		return nil, err
@@ -409,7 +409,7 @@ func checkAppendRelative(id string, parents map[string]string, maximum int) erro
 	return nil
 }
 
-func unusedAppendPath(pkg *core.Package, name string) error {
+func unusedAppendPath(pkg *container.Package, name string) error {
 	key := strings.ToLower(name)
 	for _, info := range pkg.Entries() {
 		existing := strings.ToLower(strings.TrimSuffix(info.Name, "/"))

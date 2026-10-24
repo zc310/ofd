@@ -21,9 +21,9 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/entrywriter"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -172,15 +172,15 @@ func Marshal(paths []string, options Options) ([]byte, error) {
 // source 描述一个 OFD 输入，open 返回可读取的内部包，由调用方负责关闭。
 type source struct {
 	name string
-	open func() (*core.Package, error)
+	open func() (*container.Package, error)
 }
 
 func fileSource(path string) source {
-	return source{name: path, open: func() (*core.Package, error) { return core.OpenFile(path) }}
+	return source{name: path, open: func() (*container.Package, error) { return container.OpenFile(path) }}
 }
 
 func bytesSource(index int, data []byte) source {
-	return source{name: fmt.Sprintf("第 %d 个输入文档", index), open: func() (*core.Package, error) { return core.OpenBytes(data) }}
+	return source{name: fmt.Sprintf("第 %d 个输入文档", index), open: func() (*container.Package, error) { return container.OpenBytes(data) }}
 }
 
 // convertSource 校验并规范化一个公开的 Source。
@@ -210,13 +210,13 @@ func convertSource(index int, input Source) (source, error) {
 	case strings.TrimSpace(input.Path) != "":
 		return fileSource(input.Path), nil
 	case len(input.Data) > 0:
-		return source{name: name, open: func() (*core.Package, error) { return core.OpenBytes(input.Data) }}, nil
+		return source{name: name, open: func() (*container.Package, error) { return container.OpenBytes(input.Data) }}, nil
 	default:
 		if input.Size <= 0 {
 			return source{}, fmt.Errorf("输入 %s 的 Reader 必须同时设置正数 Size", name)
 		}
 		reader, size := input.Reader, input.Size
-		return source{name: name, open: func() (*core.Package, error) { return core.OpenReaderAt(reader, size) }}, nil
+		return source{name: name, open: func() (*container.Package, error) { return container.OpenReaderAt(reader, size) }}, nil
 	}
 }
 
@@ -328,7 +328,7 @@ func mergeSource(state *mergeState, src source) error {
 	if err != nil {
 		return fmt.Errorf("读取 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
-	rootDoc, err := ofdxml.Parse(rootData)
+	rootDoc, err := xmlcodec.Parse(rootData)
 	if err != nil {
 		return fmt.Errorf("解析 %s 的 OFD.xml 失败: %w", src.name, err)
 	}
@@ -400,7 +400,7 @@ func removeBodySignatures(body *etree.Element) {
 }
 
 // copyPackageEntries 把输入包中除 OFD.xml 外的条目按目录计划搬运到输出包。
-func copyPackageEntries(state *mergeState, pkg *core.Package, input string, plans []bodyPlan) error {
+func copyPackageEntries(state *mergeState, pkg *container.Package, input string, plans []bodyPlan) error {
 	writer := state.writer
 	signatures := state.options.Signatures
 	for _, entry := range pkg.Entries() {
@@ -494,7 +494,7 @@ func normalizeDir(docRoot string) (string, error) {
 	}
 	dir := path.Dir(path.Clean(strings.TrimPrefix(trimmed, "/")))
 	dir = strings.Trim(dir, "/")
-	if err := core.ValidateEntryName(dir); err != nil {
+	if err := container.ValidateEntryName(dir); err != nil {
 		return "", fmt.Errorf("DocRoot 没有安全且独立的文档目录: %w", err)
 	}
 	return dir, nil
@@ -549,7 +549,7 @@ func ensureUniqueDocID(body *etree.Element, seen map[string]bool) {
 // rewriteSignatureXML 重写签名文件中指向旧文档目录的包内绝对路径。
 // 未发生改动时返回原始字节，保证签名文件保持逐字节不变。
 func rewriteSignatureXML(data []byte, oldDir, newDir string) ([]byte, bool, error) {
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, false, err
 	}
@@ -657,7 +657,7 @@ func prefixOFDXML(root *etree.Element) {
 		}
 	})
 	if conflict {
-		// 非规范输入的外部 ofd 绑定不能覆盖；由 ofdxml 按作用域安全归一化。
+		// 非规范输入的外部 ofd 绑定不能覆盖；由 xmlcodec 按作用域安全归一化。
 		return
 	}
 	root.CreateAttr("xmlns:ofd", spec.Namespace)
@@ -680,8 +680,8 @@ func hasDefaultNamespaceDeclaration(element *etree.Element) bool {
 }
 
 func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
-	w := ofdxml.New()
-	defer ofdxml.Put(w)
+	w := xmlcodec.New()
+	defer xmlcodec.Put(w)
 	w.Start("OFD")
 	version := attrs.version
 	if version == "" {
@@ -694,7 +694,7 @@ func buildRootXML(bodies []*etree.Element, attrs rootAttrs) ([]byte, error) {
 	w.Attr("Version", version)
 	w.Attr("DocType", docType)
 	for _, body := range bodies {
-		if err := ofdxml.WriteElement(w, body); err != nil {
+		if err := xmlcodec.WriteElement(w, body); err != nil {
 			return nil, fmt.Errorf("生成 DocBody XML 失败: %w", err)
 		}
 	}

@@ -20,7 +20,7 @@ import (
 	"github.com/emmansun/gmsm/pkcs7"
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/crypt"
@@ -58,7 +58,7 @@ func gmtArchive(t *testing.T, files map[string][]byte) []byte {
 
 func gmtUnpack(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
-	p, err := core.OpenBytes(data)
+	p, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}

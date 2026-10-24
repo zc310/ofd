@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/physicalsig"
 	"github.com/zc310/ofd/internal/securexml"
@@ -23,7 +23,7 @@ func signatureScope(physical bool) string {
 	return "logical"
 }
 
-func preparePhysical(ctx context.Context, pkg *core.Package, entries []entry, index map[string][]byte, document *etree.Document, options Options) (*appendPlan, error) {
+func preparePhysical(ctx context.Context, pkg *container.Package, entries []entry, index map[string][]byte, document *etree.Document, options Options) (*appendPlan, error) {
 	var checked struct{}
 	if err := physicalsig.ValidateXML(ctx, index[spec.RootDocument], "OFD", document.Root().SelectAttrValue("DocType", ""), &checked); err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func VerifyPhysical(ctx context.Context, input any, options VerificationOptions)
 	return verifyPhysicalPackage(ctx, pkg, options)
 }
 
-func verifyPhysicalPackage(ctx context.Context, pkg *core.Package, options VerificationOptions) ([]Verification, error) {
+func verifyPhysicalPackage(ctx context.Context, pkg *container.Package, options VerificationOptions) ([]Verification, error) {
 	if options.CurrentTime.IsZero() {
 		options.CurrentTime = time.Now()
 	}

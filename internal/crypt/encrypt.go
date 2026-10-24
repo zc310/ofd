@@ -19,7 +19,7 @@ import (
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm4"
 	"github.com/emmansun/gmsm/smx509"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -117,7 +117,7 @@ func NormalizeEncryptOptions(opt EncryptOptions) (EncryptOptions, error) {
 }
 
 // EncryptPackage 按附录 A、C 写入一次新加密操作，文档条目保持原始字节。
-func EncryptPackage(ctx context.Context, pkg *core.Package, opt EncryptOptions, emit func(string, []byte) error) (*EncryptReport, error) {
+func EncryptPackage(ctx context.Context, pkg *container.Package, opt EncryptOptions, emit func(string, []byte) error) (*EncryptReport, error) {
 	opt, err := NormalizeEncryptOptions(opt)
 	if err != nil {
 		return nil, err
@@ -128,9 +128,9 @@ func EncryptPackage(ctx context.Context, pkg *core.Package, opt EncryptOptions, 
 	if Present(pkg) && opt.Append == nil {
 		return nil, ErrAlreadyEncrypted
 	}
-	s := &inspector{ctx: ctx, pkg: pkg, info: &Info{}, opt: InspectOptions{Mode: ModeStrict, Limits: opt.Limits}, files: map[string]core.Entry{}, remaining: opt.Limits.MaxTotalMetadataBytes, inputRemaining: opt.Limits.MaxTotalBytes, inputSeen: map[string]bool{}, decrypting: true}
-	var physical []core.Entry
-	err = pkg.WalkEntries(func(entry core.Entry) bool {
+	s := &inspector{ctx: ctx, pkg: pkg, info: &Info{}, opt: InspectOptions{Mode: ModeStrict, Limits: opt.Limits}, files: map[string]container.Entry{}, remaining: opt.Limits.MaxTotalMetadataBytes, inputRemaining: opt.Limits.MaxTotalBytes, inputSeen: map[string]bool{}, decrypting: true}
+	var physical []container.Entry
+	err = pkg.WalkEntries(func(entry container.Entry) bool {
 		physical = append(physical, entry)
 		return len(physical) <= opt.Limits.MaxEntries && ctx.Err() == nil
 	})

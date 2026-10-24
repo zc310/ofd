@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
@@ -36,9 +36,9 @@ func readTestdata(t *testing.T, names ...string) []byte {
 	return data
 }
 
-func openPackage(t *testing.T, data []byte) *core.Package {
+func openPackage(t *testing.T, data []byte) *container.Package {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatalf("打开结果失败: %v", err)
 	}
@@ -46,7 +46,7 @@ func openPackage(t *testing.T, data []byte) *core.Package {
 	return pkg
 }
 
-func readEntry(t *testing.T, pkg *core.Package, name string) []byte {
+func readEntry(t *testing.T, pkg *container.Package, name string) []byte {
 	t.Helper()
 	data, err := pkg.Read(name)
 	if err != nil {
@@ -446,13 +446,13 @@ func TestInputTypes(t *testing.T) {
 		t.Fatalf("io.Reader 输入失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(hello)
+	pkg, err := container.OpenBytes(hello)
 	if err != nil {
 		t.Fatalf("打开输入失败: %v", err)
 	}
 	var fromPkg bytes.Buffer
 	if err := Add(pkg, Target{}, sampleWatermark(), &fromPkg, Options{}); err != nil {
-		t.Fatalf("*core.Package 输入失败: %v", err)
+		t.Fatalf("*container.Package 输入失败: %v", err)
 	}
 }
 
@@ -1111,7 +1111,7 @@ func TestErrors(t *testing.T) {
 func TestDocumentAnnotationEditsRejectMissingRoot(t *testing.T) {
 	base := readTestdata(t, "ofd-creator/hello.ofd")
 	var malformed bytes.Buffer
-	input, err := core.OpenBytes(base)
+	input, err := container.OpenBytes(base)
 	if err != nil {
 		t.Fatalf("打开 fixture 失败: %v", err)
 	}
@@ -1147,7 +1147,7 @@ func TestDocumentAnnotationEditsRejectMissingRoot(t *testing.T) {
 		{"drop annotation reference", (*engine).dropDocumentAnnotations},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			pkg, err := core.OpenBytes(malformed.Bytes())
+			pkg, err := container.OpenBytes(malformed.Bytes())
 			if err != nil {
 				t.Fatalf("打开 OFD 失败: %v", err)
 			}
@@ -1167,7 +1167,7 @@ func TestDocumentAnnotationEditsRejectMissingRoot(t *testing.T) {
 
 func documentWithWatermarkPermission(t *testing.T, data []byte, allowed bool) []byte {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}

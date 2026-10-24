@@ -3,14 +3,14 @@ package preserve
 import (
 	"fmt"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 )
 
 // inputPackage 在任何 XML 解压前检查整个输入的预算，并限制后续每次条目读取。
 type inputPackage struct {
-	*core.Package
+	*container.Package
 
 	limits replace.Limits
 }
@@ -31,16 +31,16 @@ func inputLimits(limits replace.Limits) (replace.Limits, error) {
 	return limits, nil
 }
 
-func checkInput(pkg *core.Package, limits replace.Limits) (*inputPackage, error) {
+func checkInput(pkg *container.Package, limits replace.Limits) (*inputPackage, error) {
 	count := 0
 	remaining := uint64(limits.MaxTotalBytes)
 	seen := map[string]bool{}
 	var checkErr error
-	err := pkg.WalkEntries(func(entry core.Entry) bool {
+	err := pkg.WalkEntries(func(entry container.Entry) bool {
 		if entry.IsDir {
 			return true
 		}
-		if err := core.ValidateEntryName(entry.Path); err != nil {
+		if err := container.ValidateEntryName(entry.Path); err != nil {
 			checkErr = err
 			return false
 		}

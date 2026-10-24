@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/browser"
+	"github.com/zc310/ofd/internal/convert/browser"
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/html"
 	"github.com/zc310/ofd/pkg/validator"

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/emmansun/gmsm/smx509"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/securexml"
 	"github.com/zc310/ofd/internal/ses"
@@ -128,7 +128,7 @@ func VerifyDigitalSignedValue(original, value []byte, options *SignatureVerifica
 }
 
 // VerifyDocumentSignature 按签名列表 Type 分派，禁止把普通 SignedData 当 SES 验证。
-func VerifyDocumentSignature(ctx context.Context, pkg *core.Package, signature *models.Signature, value *SignedValue, options *SignatureVerificationOptions) (*SignatureVerificationResult, error) {
+func VerifyDocumentSignature(ctx context.Context, pkg *container.Package, signature *models.Signature, value *SignedValue, options *SignatureVerificationOptions) (*SignatureVerificationResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -148,10 +148,10 @@ func VerifyDocumentSignature(ctx context.Context, pkg *core.Package, signature *
 		return nil, fmt.Errorf("未支持的签名类型 %s", signature.Type)
 	}
 	seenEntries := map[string]bool{}
-	if err := pkg.WalkEntries(func(entry core.Entry) bool {
+	if err := pkg.WalkEntries(func(entry container.Entry) bool {
 		name := strings.TrimSuffix(entry.Name, "/")
 		key := strings.ToLower(name)
-		if core.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seenEntries[key] {
+		if container.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seenEntries[key] {
 			seenEntries[""] = true
 		}
 		seenEntries[key] = true
@@ -206,7 +206,7 @@ func VerifyDocumentSignature(ctx context.Context, pkg *core.Package, signature *
 	return result, ctx.Err()
 }
 
-func readDigitalEntry(pkg *core.Package, name string) ([]byte, error) {
+func readDigitalEntry(pkg *container.Package, name string) ([]byte, error) {
 	entry, ok := pkg.Lookup(name)
 	if !ok {
 		return nil, fmt.Errorf("签名条目不存在: %s", name)

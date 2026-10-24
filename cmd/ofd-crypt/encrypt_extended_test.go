@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/crypt"
 )
 
@@ -27,12 +27,12 @@ func TestCLIIndependentKeysAndAppendUseSeparateOldCredentials(t *testing.T) {
 		}
 	}
 	call(t, []string{"decrypt", "--password-for", "enc1=" + password, "--password-for", "enc2=-", "-o", plain, outer}, "new-password", 0)
-	before, err := core.OpenFile(input)
+	before, err := container.OpenFile(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer before.Close()
-	after, err := core.OpenFile(plain)
+	after, err := container.OpenFile(plain)
 	if err != nil {
 		t.Fatal(err)
 	}

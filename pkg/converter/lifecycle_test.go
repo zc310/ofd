@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -138,7 +138,7 @@ func TestEncodeOFDClosesOwnedDocumentsOnEveryExit(t *testing.T) {
 				if engine.packageClosedEarly {
 					t.Errorf("字体引擎 %d 关闭前 ZIP 包已被关闭", index)
 				}
-				if reader, err := engine.document.FileCache.Open("OFD.xml"); !errors.Is(err, core.ErrPackageClosed) {
+				if reader, err := engine.document.FileCache.Open("OFD.xml"); !errors.Is(err, container.ErrPackageClosed) {
 					if reader != nil {
 						_ = reader.Close()
 					}

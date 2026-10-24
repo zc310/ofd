@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -118,7 +118,7 @@ func (w *Writer) Write(name string, data []byte) error {
 }
 
 // WriteSource 流式写入输入包中的条目，避免资源整体驻留内存。
-func (w *Writer) WriteSource(pkg *core.Package, entry core.Entry, name string) error {
+func (w *Writer) WriteSource(pkg *container.Package, entry container.Entry, name string) error {
 	if err := w.reserve(name); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (w *Writer) header(name string) *zip.FileHeader {
 }
 
 func (w *Writer) reserve(name string) error {
-	if err := core.ValidateEntryName(name); err != nil {
+	if err := container.ValidateEntryName(name); err != nil {
 		return err
 	}
 	if w.seen[name] {

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	_ "github.com/dkrisman/gobig2"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
@@ -49,13 +49,13 @@ func Decode(reader ContentReader, filename string) (image.Image, error) {
 
 // ExtractFirstImage 从基于 ZIP 的文件中提取第一张可以解码的图片。
 func ExtractFirstImage(filename string) (image.Image, error) {
-	archive, err := core.OpenFile(filename)
+	archive, err := container.OpenFile(filename)
 	if err != nil {
 		return nil, err
 	}
 	var first image.Image
 	found := false
-	err = archive.WalkEntries(func(entry core.Entry) bool {
+	err = archive.WalkEntries(func(entry container.Entry) bool {
 		if !IsImageExtension(filepath.Ext(entry.Name)) {
 			return true
 		}

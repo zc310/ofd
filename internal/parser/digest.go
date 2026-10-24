@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/emmansun/gmsm/sm3"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -54,7 +54,7 @@ type DataHashResult struct {
 // VerifySignatureDigest 校验 Signature.xml 的 References 摘要，以及 SES
 // 签名中的 TBS_Sign.DataHash。SM2 签章的 DataHash 使用 SM3（§7.1.5），
 // References 独立使用其声明的算法；数据源是签名 XML 文件本身的包内字节。
-func VerifySignatureDigest(fileCache *core.Package, signaturePath string, signature *models.Signature, signedValue *SignedValue) (*SignatureDigestResult, error) {
+func VerifySignatureDigest(fileCache *container.Package, signaturePath string, signature *models.Signature, signedValue *SignedValue) (*SignatureDigestResult, error) {
 	if fileCache == nil {
 		return nil, fmt.Errorf("签名摘要校验失败: ZIP 包为空")
 	}

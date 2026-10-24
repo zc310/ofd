@@ -1,6 +1,6 @@
 # HTML/MHTML 转 OFD/PDF 支持清单
 
-本文档描述 `pkg/converter/import/html` 与 `internal/browser` 对 HTML/MHTML
+本文档描述 `pkg/converter/import/html` 与 `internal/convert/browser` 对 HTML/MHTML
 （`.html`、`.htm`、`.xhtml`、`.mhtml`、`.mht`）转换为 PDF 和 OFD 的支持范围。
 
 实现方式：通过 `github.com/chromedp/chromedp` 驱动 **Chrome/Chromium** 的原生
@@ -105,7 +105,7 @@ ofd-converter --chrome-no-sandbox page.html page.pdf
 
 ```bash
 go test ./pkg/converter/import/html -count=1
-go test ./internal/browser -count=1
+go test ./internal/convert/browser -count=1
 go run ./cmd/ofd-validator --format text --mode strict output.ofd
 ```
 

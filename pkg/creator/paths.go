@@ -3,7 +3,7 @@ package creator
 import (
 	"fmt"
 
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 )
 
 func pagePath(index int) string {
@@ -66,7 +66,7 @@ func validateRawXML(data []byte) error {
 	return err
 }
 
-func appendRawXML(w *ofdxml.Writer, data []byte) error {
+func appendRawXML(w *xmlcodec.Writer, data []byte) error {
 	if err := validateRawXML(data); err != nil {
 		return err
 	}

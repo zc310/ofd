@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -31,7 +31,7 @@ func NormalizeDecryptOptions(opt DecryptOptions) (DecryptOptions, error) {
 
 // DecryptPackage 输出条目的原始字节，不重新序列化文档 XML。
 // 输出回调的错误原样返回；发生任何错误时都必须丢弃输出。
-func DecryptPackage(ctx context.Context, pkg *core.Package, opt DecryptOptions, emit func(string, []byte) error) (*DecryptReport, error) {
+func DecryptPackage(ctx context.Context, pkg *container.Package, opt DecryptOptions, emit func(string, []byte) error) (*DecryptReport, error) {
 	var err error
 	opt, err = NormalizeDecryptOptions(opt)
 	if err != nil {

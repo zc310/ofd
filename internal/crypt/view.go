@@ -12,12 +12,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 type viewNode struct {
-	meta      core.Entry
+	meta      container.Entry
 	checked   bool
 	operation string
 	read      func(context.Context) ([]byte, error)
@@ -35,7 +35,7 @@ type View struct {
 	mu                             sync.RWMutex
 	ownerClosed, released          bool
 	refs                           int
-	physical                       *core.Package
+	physical                       *container.Package
 	inputSize                      int64
 	closeInput                     func() error
 	opt                            OpenOptions
@@ -53,7 +53,7 @@ type View struct {
 
 // OpenView 借用 pkg，直至最后一个租约关闭。若提供 closeInput，
 // 仅在成功时接管输入资源；失败时仍由调用方关闭 pkg。
-func OpenView(ctx context.Context, pkg *core.Package, opt OpenOptions, closeInput func() error) (view *View, err error) {
+func OpenView(ctx context.Context, pkg *container.Package, opt OpenOptions, closeInput func() error) (view *View, err error) {
 	opt.DecryptOptions, err = NormalizeDecryptOptions(opt.DecryptOptions)
 	if err != nil {
 		return nil, err
@@ -268,7 +268,7 @@ func (v *View) unlockOperation(ctx context.Context, op *Operation) (result Opera
 		return result, err
 	}
 	defer pkg.Close()
-	s := &inspector{ctx: ctx, pkg: pkg, opt: InspectOptions{Mode: v.opt.Mode, Limits: v.opt.Limits}, info: v.info, files: map[string]core.Entry{}, remaining: v.metadataRemaining, seeds: map[string]SeedInfo{}, rawSeeds: map[string]seedXML{}, mapData: map[string][]byte{}, inputSeen: map[string]bool{}, inputRemaining: v.opt.Limits.MaxTotalBytes, decrypting: true, allowLayers: true, recipients: v.recipients, mappings: v.mappings, attempts: &v.attempts}
+	s := &inspector{ctx: ctx, pkg: pkg, opt: InspectOptions{Mode: v.opt.Mode, Limits: v.opt.Limits}, info: v.info, files: map[string]container.Entry{}, remaining: v.metadataRemaining, seeds: map[string]SeedInfo{}, rawSeeds: map[string]seedXML{}, mapData: map[string][]byte{}, inputSeen: map[string]bool{}, inputRemaining: v.opt.Limits.MaxTotalBytes, decrypting: true, allowLayers: true, recipients: v.recipients, mappings: v.mappings, attempts: &v.attempts}
 	defer func() { v.metadataRemaining = s.remaining; v.recipients = s.recipients; v.mappings = s.mappings }()
 	if err := s.indexEntries(pkg.Entries()); err != nil {
 		return result, err
@@ -399,7 +399,7 @@ func (v *View) unlockOperation(ctx context.Context, op *Operation) (result Opera
 			}
 		}
 		key := entryKeys[entry.Path]
-		meta := core.Entry{Name: entry.Path, Path: entry.Path, Virtual: true}
+		meta := container.Entry{Name: entry.Path, Path: entry.Path, Virtual: true}
 		node := &viewNode{meta: meta, operation: op.ID}
 		if key == nil {
 			node.meta.Locked = true
@@ -491,13 +491,13 @@ func (v *View) load(ctx context.Context, n *viewNode) ([]byte, error) {
 	return data, nil
 }
 
-func (v *View) virtual(ctx context.Context, nodes map[string]*viewNode, closer io.Closer) (*core.Package, error) {
+func (v *View) virtual(ctx context.Context, nodes map[string]*viewNode, closer io.Closer) (*container.Package, error) {
 	names := make([]string, 0, len(nodes))
 	for name := range nodes {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	entries := make([]core.Entry, 0, len(names))
+	entries := make([]container.Entry, 0, len(names))
 	for _, name := range names {
 		entry := nodes[name].meta
 		entry.Virtual = true
@@ -505,11 +505,11 @@ func (v *View) virtual(ctx context.Context, nodes map[string]*viewNode, closer i
 		entry.Method = 0
 		entries = append(entries, entry)
 	}
-	return core.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
+	return container.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
 		v.mu.RLock()
 		defer v.mu.RUnlock()
 		if v.released {
-			return nil, core.ErrPackageClosed
+			return nil, container.ErrPackageClosed
 		}
 		n := nodes[name]
 		if n == nil {
@@ -532,7 +532,7 @@ type clearingReader struct {
 
 func (r *clearingReader) Read(p []byte) (int, error) {
 	if r.closed {
-		return 0, core.ErrPackageClosed
+		return 0, container.ErrPackageClosed
 	}
 	return r.Reader.Read(p)
 }
@@ -551,11 +551,11 @@ func (f closeFunc) Close() error { return f() }
 
 // OFDPackage 返回供使用方持有的独立租约。部分解锁的视图不能传给文档处理器，
 // 可通过 Read/Entries 检查其中可用的条目。
-func (v *View) OFDPackage() (*core.Package, error) {
+func (v *View) OFDPackage() (*container.Package, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.ownerClosed || v.released {
-		return nil, core.ErrPackageClosed
+		return nil, container.ErrPackageClosed
 	}
 	if v.info.State != "unlocked" && v.info.State != "none" {
 		return nil, &LockedError{Info: cloneInfo(v.info)}
@@ -570,19 +570,19 @@ func (v *View) OFDPackage() (*core.Package, error) {
 
 // OpenPhysicalPackage 提供原始 ZIP 的租约，供审计使用。
 // 返回物理条目的元数据，不以解密后的虚拟条目替代。
-func (v *View) OpenPhysicalPackage() (*core.Package, error) {
+func (v *View) OpenPhysicalPackage() (*container.Package, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.ownerClosed || v.released {
-		return nil, core.ErrPackageClosed
+		return nil, container.ErrPackageClosed
 	}
 	v.refs++
 	entries := v.physical.Entries()
-	pkg, err := core.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
+	pkg, err := container.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
 		v.mu.RLock()
 		defer v.mu.RUnlock()
 		if v.released {
-			return nil, core.ErrPackageClosed
+			return nil, container.ErrPackageClosed
 		}
 		return v.physical.Open(name)
 	}, closeFunc(v.release))
@@ -594,7 +594,7 @@ func (v *View) OpenPhysicalPackage() (*core.Package, error) {
 
 func (v *View) EncryptionInfo() *Info { v.mu.RLock(); defer v.mu.RUnlock(); return cloneInfo(v.info) }
 func (v *View) InputSize() int64      { v.mu.RLock(); defer v.mu.RUnlock(); return v.inputSize }
-func (v *View) Entries() []core.Entry {
+func (v *View) Entries() []container.Entry {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	if v.ownerClosed || v.info.Opaque {
@@ -605,7 +605,7 @@ func (v *View) Entries() []core.Entry {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	out := make([]core.Entry, 0, len(names))
+	out := make([]container.Entry, 0, len(names))
 	for _, n := range names {
 		e := v.nodes[n].meta
 		e.Virtual = true
@@ -623,7 +623,7 @@ func (v *View) ReadContext(ctx context.Context, name string) ([]byte, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	if v.ownerClosed || v.released {
-		return nil, core.ErrPackageClosed
+		return nil, container.ErrPackageClosed
 	}
 	if v.info.Opaque {
 		return nil, ErrLocked
@@ -637,14 +637,14 @@ func (v *View) ReadContext(ctx context.Context, name string) ([]byte, error) {
 }
 
 func missingCredentials(err error) bool {
-	return errors.Is(err, ErrCredentialsRequired) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrDecryptFailed) && !errors.Is(err, ErrLimitExceeded) && !errors.Is(err, ErrUnsupported) && !errors.Is(err, ErrInvalidMetadata) && !errors.Is(err, ErrProtectedContent) && !errors.Is(err, core.ErrPackageClosed)
+	return errors.Is(err, ErrCredentialsRequired) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrDecryptFailed) && !errors.Is(err, ErrLimitExceeded) && !errors.Is(err, ErrUnsupported) && !errors.Is(err, ErrInvalidMetadata) && !errors.Is(err, ErrProtectedContent) && !errors.Is(err, container.ErrPackageClosed)
 }
 
 func (v *View) Export(ctx context.Context, emit func(string, []byte) error) (*DecryptReport, error) {
 	v.mu.Lock()
 	if v.ownerClosed || v.released {
 		v.mu.Unlock()
-		return nil, core.ErrPackageClosed
+		return nil, container.ErrPackageClosed
 	}
 	if v.info.State != "unlocked" && v.info.State != "none" {
 		info := cloneInfo(v.info)

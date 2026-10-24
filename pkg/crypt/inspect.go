@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 )
 
@@ -35,7 +35,7 @@ type CredentialRequest = protocol.CredentialRequest
 type CredentialResolver = protocol.CredentialResolver
 type OperationResult = protocol.OperationResult
 type SeedResult = protocol.SeedResult
-type Entry = core.Entry
+type Entry = container.Entry
 
 const (
 	ModeStrict        = protocol.ModeStrict
@@ -45,7 +45,7 @@ const (
 )
 
 var (
-	ErrClosed              = core.ErrPackageClosed
+	ErrClosed              = container.ErrPackageClosed
 	ErrLocked              = protocol.ErrLocked
 	ErrInvalidMetadata     = protocol.ErrInvalidMetadata
 	ErrLimitExceeded       = protocol.ErrLimitExceeded
@@ -74,15 +74,15 @@ func Inspect(ctx context.Context, input any, opt InspectOptions) (*Info, error) 
 	return protocol.InspectPackage(ctx, pkg, opt)
 }
 
-func openInput(ctx context.Context, input any, maximum int64) (*core.Package, func(), error) {
+func openInput(ctx context.Context, input any, maximum int64) (*container.Package, func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	var pkg *core.Package
+	var pkg *container.Package
 	var err error
 	closeFile := func() {}
 	switch value := input.(type) {
-	case core.PackageSource:
+	case container.PackageSource:
 		if source, ok := input.(interface{ InputSize() int64 }); ok && source.InputSize() > maximum {
 			return nil, nil, fmt.Errorf("%w: 原始输入超过大小上限", ErrLimitExceeded)
 		}
@@ -102,12 +102,12 @@ func openInput(ctx context.Context, input any, maximum int64) (*core.Package, fu
 			closeFile()
 			return nil, nil, fmt.Errorf("%w: 输入超过大小上限", ErrLimitExceeded)
 		}
-		pkg, err = core.OpenReaderAt(file, stat.Size())
+		pkg, err = container.OpenReaderAt(file, stat.Size())
 	case []byte:
 		if int64(len(value)) > maximum {
 			return nil, nil, fmt.Errorf("%w: 输入超过大小上限", ErrLimitExceeded)
 		}
-		pkg, err = core.OpenBytes(value)
+		pkg, err = container.OpenBytes(value)
 	case io.Reader:
 		// 将额外探测的 1 字节长度限制在 MaxInt64 以内，避免整数溢出。
 		probe := maximum
@@ -121,7 +121,7 @@ func openInput(ctx context.Context, input any, maximum int64) (*core.Package, fu
 		if int64(len(data)) > maximum {
 			return nil, nil, fmt.Errorf("%w: 输入超过大小上限", ErrLimitExceeded)
 		}
-		pkg, err = core.OpenBytes(data)
+		pkg, err = container.OpenBytes(data)
 	default:
 		return nil, nil, fmt.Errorf("不支持的 OFD 输入类型 %T", input)
 	}

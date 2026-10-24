@@ -82,7 +82,7 @@ func (p *protection) observe(name string, data []byte) error {
 		if err != nil {
 			return fmt.Errorf("%w: %s: %v", ErrProtectedContent, name, err)
 		}
-		// core.Lookup 也支持唯一的大小写不敏感匹配，保护检查必须覆盖现有验签器
+		// container.Package.Lookup 也支持唯一的大小写不敏感匹配，保护检查必须覆盖现有验签器
 		// 通过这种方式解析的引用；恢复计划已拒绝有歧义的物理名称和逻辑名称。
 		if affected, ok := p.affected[strings.ToLower(resolved)]; ok {
 			p.references = append(p.references, protectedReference{name, affected, method, item.Digest})

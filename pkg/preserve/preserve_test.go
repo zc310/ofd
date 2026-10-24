@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -266,7 +266,7 @@ func TestPreserveOutputPassesStrictValidation(t *testing.T) {
 	if out.Len() == 0 {
 		t.Fatal("输出为空")
 	}
-	pkg, err := core.OpenBytes(out.Bytes())
+	pkg, err := container.OpenBytes(out.Bytes())
 	if err != nil {
 		t.Fatalf("输出不是合法 ZIP: %v", err)
 	}

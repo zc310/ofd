@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -23,7 +23,7 @@ const (
 
 // readSignatureEntries 按 GB/T 33190—2016 §18.1、§18.2 表 66、67 发现
 // 签名的实际文件。清单可与正文共用目录，不能把它的父目录视为签名专属目录。
-func readSignatureEntries(pkg *core.Package, body *etree.Element, maxBytes int64) (map[string]signatureEntryKind, error) {
+func readSignatureEntries(pkg *container.Package, body *etree.Element, maxBytes int64) (map[string]signatureEntryKind, error) {
 	location := strings.TrimSpace(directChildText(body, "Signatures"))
 	if location == "" {
 		return nil, nil
@@ -83,18 +83,18 @@ func resolveSignaturePath(base, value string) (string, error) {
 		name = path.Join(base, value)
 	}
 	name = strings.TrimPrefix(name, "/")
-	if err := core.ValidateEntryName(name); err != nil {
+	if err := container.ValidateEntryName(name); err != nil {
 		return "", err
 	}
 	return name, nil
 }
 
-func readSignatureRoot(pkg *core.Package, name, tag string, maxBytes int64) (*etree.Element, error) {
+func readSignatureRoot(pkg *container.Package, name, tag string, maxBytes int64) (*etree.Element, error) {
 	data, err := pkg.ReadLimit(name, maxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("读取签名文件 %s 失败: %w", name, err)
 	}
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf("解析签名文件 %s 失败: %w", name, err)
 	}
@@ -121,7 +121,7 @@ type protectedRoot struct {
 
 // validatePreservedSignatures 核对签名引用在搬运后仍指向原文件。
 // §18.2.1、§18.2.2 要求受保护文件字节不变；OFD.xml 的检查需等最终主入口生成。
-func validatePreservedSignatures(state *mergeState, pkg *core.Package, input string, plans []bodyPlan, rootData []byte) error {
+func validatePreservedSignatures(state *mergeState, pkg *container.Package, input string, plans []bodyPlan, rootData []byte) error {
 	rootProtected := false
 	for _, entry := range pkg.Entries() {
 		_, kind := signaturePlanFor(entry.Path, plans)

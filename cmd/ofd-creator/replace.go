@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/replace"
@@ -104,7 +104,7 @@ func validateReplaceOptions(opts *replaceOptions) error {
 	if opts.input == "-" {
 		return errors.New("replace 不支持从标准输入读取 OFD")
 	}
-	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖输入 OFD 文件")
 	}
 	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {

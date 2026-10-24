@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -31,7 +31,7 @@ func TestReadPagePhysicalBoxMetadataBoundaries(t *testing.T) {
 		{"limit_before_area", `<Page>` + strings.Repeat(" ", maxPageMetadataXMLBytes+2) + `<Area/></Page>`, models.StBox{}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fc, err := core.OpenBytes(parserTestArchive(t, map[string]string{"Page.xml": tc.xml}))
+			fc, err := container.OpenBytes(parserTestArchive(t, map[string]string{"Page.xml": tc.xml}))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -48,7 +48,7 @@ func TestReadPagePhysicalBoxReportsUnavailablePackage(t *testing.T) {
 	if _, err := readPagePhysicalBox(nil, "Page.xml"); err == nil {
 		t.Fatal("包为空时应报错")
 	}
-	fc, err := core.OpenBytes(parserTestArchive(t, map[string]string{"other.xml": `<Other/>`}))
+	fc, err := container.OpenBytes(parserTestArchive(t, map[string]string{"other.xml": `<Other/>`}))
 	if err != nil {
 		t.Fatal(err)
 	}

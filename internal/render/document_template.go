@@ -3,8 +3,8 @@ package render
 import (
 	"sync"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // templateSurfaceDrawer 是可选接口：栅格后端直接绘制，
@@ -52,7 +52,7 @@ func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageConte
 	if p.templateScenes == nil || p.templateGeneration != key.generation {
 		// 旧版本模板不会再次命中，却会通过文字对象保留整份旧字体。
 		// 仅保留当前字体版本；已返回给绘制方的表面仍由绘制方持有。
-		p.templateScenes = utils.NewWeightedLRU[templateSceneKey, *templateScene](32, 32<<20, nil)
+		p.templateScenes = cache.NewWeightedLRU[templateSceneKey, *templateScene](32, 32<<20, nil)
 		p.templateGeneration = key.generation
 	}
 	scene, ok := p.templateScenes.Get(key)

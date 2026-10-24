@@ -1,6 +1,6 @@
 # Office 文档转 OFD/PDF 支持清单
 
-本文档描述 `pkg/converter/import/office` 与 `internal/office` 对 Office 文档
+本文档描述 `pkg/converter/import/office` 与 `internal/convert/office` 对 Office 文档
 （doc/docx/odt/rtf/wps/pptx/xlsx 等）转换为 PDF 和 OFD 的支持范围。
 
 实现方式：通过命令行调用 **LibreOffice**（`soffice --headless`）完成格式转换，
@@ -98,7 +98,7 @@ ofd-converter --soffice /opt/libreoffice/program/soffice --office-timeout 300 re
 
 ```bash
 go test ./pkg/converter/import/office -count=1
-go test ./internal/office -count=1
+go test ./internal/convert/office -count=1
 go run ./cmd/ofd-validator --format text --mode strict output.ofd
 ```
 

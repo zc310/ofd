@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/securexml"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
@@ -78,7 +78,7 @@ func validateSignOptions(opts *signOptions) error {
 	if opts.input == "-" {
 		return fmt.Errorf("sign 需要输入 OFD 文件路径")
 	}
-	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return fmt.Errorf("输出文件不能覆盖输入 OFD 文件")
 	}
 	if !opts.append && (opts.relative != "" || opts.lock) {

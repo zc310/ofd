@@ -12,11 +12,11 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/entrywriter"
-	"github.com/zc310/ofd/internal/export"
 	"github.com/zc310/ofd/internal/manifest"
+	"github.com/zc310/ofd/internal/manifest/export"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -888,7 +888,7 @@ func remapPageResources(page *creator.Page, prefix string, remap *resourceRemap,
 
 // remapResXML 重写页面资源 Res XML 中的 ID、FontName、DrawParam 名称及其引用。
 func remapResXML(data []byte, prefix string, remap *resourceRemap, ids *idRemap) ([]byte, error) {
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, err
 	}

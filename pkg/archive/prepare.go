@@ -11,7 +11,7 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/analyzer"
 )
 
@@ -22,7 +22,7 @@ func Prepare(ctx context.Context, input, output string, metadata Metadata, profi
 	if err != nil {
 		return report, err
 	}
-	if utils.SamePath(input, output) {
+	if fileutil.SamePath(input, output) {
 		return report, fmt.Errorf("归档输出目录不能是输入文件")
 	}
 	if info, statErr := os.Stat(output); statErr == nil && !info.IsDir() {

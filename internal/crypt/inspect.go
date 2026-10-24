@@ -11,15 +11,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 type inspector struct {
 	ctx            context.Context
 	opt            InspectOptions
-	pkg            *core.Package
+	pkg            *container.Package
 	info           *Info
-	files          map[string]core.Entry
+	files          map[string]container.Entry
 	remaining      int64
 	seeds          map[string]SeedInfo
 	mappings       int
@@ -34,11 +34,11 @@ type inspector struct {
 	attempts       *int
 }
 
-// Present 识别包根目录的加密标记，即使大小写歧义导致 core.Lookup 无法选择条目。
+// Present 识别包根目录的加密标记，即使大小写歧义导致 container.Package.Lookup 无法选择条目。
 // 后续检查会报告该歧义。
-func Present(pkg *core.Package) bool {
+func Present(pkg *container.Package) bool {
 	present := false
-	_ = pkg.WalkEntries(func(entry core.Entry) bool {
+	_ = pkg.WalkEntries(func(entry container.Entry) bool {
 		present = strings.EqualFold(entry.Path, EntryPoint)
 		return !present
 	})
@@ -92,11 +92,11 @@ func NormalizeOptions(opt InspectOptions) (InspectOptions, error) {
 
 // InspectPackage 借用 pkg。发生错误时，非 nil 的 Info 仅包含失败前已成功检查的元数据，
 // 不得据此允许后续处理。
-func InspectPackage(ctx context.Context, pkg *core.Package, opt InspectOptions) (*Info, error) {
+func InspectPackage(ctx context.Context, pkg *container.Package, opt InspectOptions) (*Info, error) {
 	return inspectWith(ctx, pkg, opt, &inspector{})
 }
 
-func inspectWith(ctx context.Context, pkg *core.Package, opt InspectOptions, s *inspector) (*Info, error) {
+func inspectWith(ctx context.Context, pkg *container.Package, opt InspectOptions, s *inspector) (*Info, error) {
 	opt, err := NormalizeOptions(opt)
 	if err != nil {
 		return nil, err
@@ -105,10 +105,10 @@ func inspectWith(ctx context.Context, pkg *core.Package, opt InspectOptions, s *
 		return nil, err
 	}
 	info := &Info{State: "none"}
-	*s = inspector{ctx: ctx, opt: opt, pkg: pkg, info: info, files: map[string]core.Entry{}, remaining: opt.Limits.MaxTotalMetadataBytes, seeds: map[string]SeedInfo{}, decrypting: s.decrypting, descriptorOnly: s.descriptorOnly, allowLayers: s.allowLayers, rawSeeds: map[string]seedXML{}, mapData: map[string][]byte{}, inputRemaining: opt.Limits.MaxTotalBytes, inputSeen: map[string]bool{}}
+	*s = inspector{ctx: ctx, opt: opt, pkg: pkg, info: info, files: map[string]container.Entry{}, remaining: opt.Limits.MaxTotalMetadataBytes, seeds: map[string]SeedInfo{}, decrypting: s.decrypting, descriptorOnly: s.descriptorOnly, allowLayers: s.allowLayers, rawSeeds: map[string]seedXML{}, mapData: map[string][]byte{}, inputRemaining: opt.Limits.MaxTotalBytes, inputSeen: map[string]bool{}}
 	// 仅检查包根目录的加密标记，同名附件不作为加密入口。
-	var entries []core.Entry
-	err = pkg.WalkEntries(func(entry core.Entry) bool {
+	var entries []container.Entry
+	err = pkg.WalkEntries(func(entry container.Entry) bool {
 		entries = append(entries, entry)
 		if strings.EqualFold(entry.Path, EntryPoint) {
 			info.Encrypted, info.State, info.EntryPoint = true, "locked", entry.Path
@@ -220,7 +220,7 @@ func inspectWith(ctx context.Context, pkg *core.Package, opt InspectOptions, s *
 	return info, ctx.Err()
 }
 
-func (s *inspector) indexEntries(entries []core.Entry) error {
+func (s *inspector) indexEntries(entries []container.Entry) error {
 	seenLower := map[string]bool{}
 	for _, entry := range entries {
 		name := strings.TrimSuffix(entry.Name, "/")

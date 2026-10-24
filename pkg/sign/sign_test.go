@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/emmansun/gmsm/sm3"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/merge"
 )
 
@@ -42,7 +42,7 @@ func TestSignAddsSignature(t *testing.T) {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestSignRemovesLegacySignsDirectory(t *testing.T) {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestSignWritesStampAnnot(t *testing.T) {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestSignWritesSeamStampAnnotations(t *testing.T) {
 		t.Fatalf("Sign 骑缝章失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestSignWritesLeftSeamStampAnnotations(t *testing.T) {
 		t.Fatalf("Sign 左边缘骑缝章失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestSignWritesSealBaseLoc(t *testing.T) {
 		t.Fatalf("Sign 失败: %v", err)
 	}
 
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestSignStampNilWhenNotRequested(t *testing.T) {
 	if err := Sign(t.Context(), input, &buffer, Options{Command: os.Args[0], Environment: []string{"OFD_SIGN_HELPER=1"}}); err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(buffer.Bytes())
+	pkg, err := container.OpenBytes(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestSignReferenceSelection(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("Sign 失败: %v", err)
 			}
-			pkg, err := core.OpenBytes(buffer.Bytes())
+			pkg, err := container.OpenBytes(buffer.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}

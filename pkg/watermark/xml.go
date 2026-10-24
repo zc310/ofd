@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -110,7 +110,7 @@ func appendRawXML(parent *etree.Element, data []byte, prefix string) error {
 	}
 	wrapped := append([]byte("<RawXML>"), data...)
 	wrapped = append(wrapped, []byte("</RawXML>")...)
-	parsed, err := ofdxml.Parse(wrapped)
+	parsed, err := xmlcodec.Parse(wrapped)
 	if err != nil {
 		return err
 	}

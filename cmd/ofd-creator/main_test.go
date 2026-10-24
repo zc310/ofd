@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
@@ -523,7 +523,7 @@ func TestRunReplaceSetAddDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +627,7 @@ func TestRunReplaceSignCmd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +668,7 @@ func TestRunMergeSignMetadataFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,7 +699,7 @@ func TestRunWatermarkAdd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -752,7 +752,7 @@ func TestRunWatermarkReplaceRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +777,7 @@ func TestRunWatermarkReplaceRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err = core.OpenBytes(data)
+	pkg, err = container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -829,7 +829,7 @@ func TestRunWatermarkLayoutCenter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +863,7 @@ func TestRunWatermarkRotate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -897,7 +897,7 @@ func TestRunWatermarkSign(t *testing.T) {
 	if !bytes.Contains(stderr.Bytes(), []byte("摘要匹配")) || !bytes.Contains(stderr.Bytes(), []byte("完整验签未完成")) {
 		t.Fatalf("验签应同时报告摘要匹配与完整验证未完成, stderr=%s", stderr.String())
 	}
-	pkg, err := core.OpenFile(output)
+	pkg, err := container.OpenFile(output)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -926,7 +926,7 @@ func TestRunWatermarkImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1033,7 +1033,7 @@ func TestRunWatermarkImageRemoveReclaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1055,7 +1055,7 @@ func readPackageBytesEntry(t *testing.T, path, entry string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1089,7 +1089,7 @@ func readPackageEntry(t *testing.T, path, entry string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}

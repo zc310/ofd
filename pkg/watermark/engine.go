@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/spec"
@@ -30,10 +30,10 @@ const (
 // engine 收集水印编辑产生的包条目变更（新增/修改/删除），最后转换为 replace.Operation。
 type engine struct {
 	options Options
-	pkg     *core.Package
-	// filesInput 是传给 replace.Files 的原始输入（路径/字节/*core.Package）。
+	pkg     *container.Package
+	// filesInput 是传给 replace.Files 的原始输入（路径/字节/*container.Package）。
 	filesInput any
-	// closePkg 表示本包是否负责关闭 pkg；*core.Package 输入由 replace.Files 负责关闭。
+	// closePkg 表示本包是否负责关闭 pkg；*container.Package 输入由 replace.Files 负责关闭。
 	closePkg bool
 
 	changes map[string][]byte
@@ -421,23 +421,23 @@ func (e *engine) operations() ([]replace.Operation, error) {
 }
 
 // openAny 打开输入并同时保留传给 replace.Files 的原始输入。io.Reader 会被读到内存。
-// 返回 closePkg 表示调用方是否应关闭 pkg；输入为 *core.Package 时由 replace.Files 关闭。
-func openAny(input any) (*core.Package, any, bool, error) {
+// 返回 closePkg 表示调用方是否应关闭 pkg；输入为 *container.Package 时由 replace.Files 关闭。
+func openAny(input any) (*container.Package, any, bool, error) {
 	switch value := input.(type) {
 	case string:
-		pkg, err := core.OpenFile(value)
+		pkg, err := container.OpenFile(value)
 		return pkg, value, true, err
 	case []byte:
-		pkg, err := core.OpenBytes(value)
+		pkg, err := container.OpenBytes(value)
 		return pkg, value, true, err
 	case io.Reader:
 		data, err := io.ReadAll(value)
 		if err != nil {
 			return nil, nil, false, err
 		}
-		pkg, err := core.OpenBytes(data)
+		pkg, err := container.OpenBytes(data)
 		return pkg, data, true, err
-	case *core.Package:
+	case *container.Package:
 		return value, value, false, nil
 	default:
 		return nil, nil, false, fmt.Errorf("不支持的输入类型: %T", input)
@@ -460,7 +460,7 @@ type annotationIndex struct {
 	baseLoc    string
 	docEntry   string
 	bodyPrefix string
-	pkg        *core.Package
+	pkg        *container.Package
 	engine     *engine
 
 	indexEntry string // Annotations.xml 条目名，空表示文档没有注解索引
@@ -518,7 +518,7 @@ func (a *annotationIndex) load(document models.Document) error {
 		if err != nil {
 			continue
 		}
-		doc, err := ofdxml.Parse(data)
+		doc, err := xmlcodec.Parse(data)
 		if err != nil {
 			return fmt.Errorf("解析 %s 失败: %w", entry, err)
 		}
@@ -542,12 +542,12 @@ func (a *annotationIndex) docRoot(entry string) (*etree.Document, *etree.Element
 }
 
 // indexDocRootOf 解析包内条目为 etree 文档，返回文档与其根元素。
-func indexDocRootOf(pkg *core.Package, entry string) (*etree.Document, *etree.Element, error) {
+func indexDocRootOf(pkg *container.Package, entry string) (*etree.Document, *etree.Element, error) {
 	data, err := pkg.Read(entry)
 	if err != nil {
 		return nil, nil, err
 	}
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -560,7 +560,7 @@ func indexDocRootOf(pkg *core.Package, entry string) (*etree.Document, *etree.El
 // pendingDocRoot 解析条目为 etree 文档，优先使用本引擎尚未写回的最新内容。
 func (a *annotationIndex) pendingDocRoot(entry string) (*etree.Document, *etree.Element, error) {
 	if data, ok := a.engine.changes[entry]; ok {
-		doc, err := ofdxml.Parse(data)
+		doc, err := xmlcodec.Parse(data)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -592,7 +592,7 @@ func (a *annotationIndex) loadPage(pageID uint64) (*pageTree, error) {
 	if existed {
 		data, err := a.pkg.Read(entry)
 		if err == nil {
-			doc, err := ofdxml.Parse(data)
+			doc, err := xmlcodec.Parse(data)
 			if err != nil {
 				return nil, fmt.Errorf("解析 %s 失败: %w", entry, err)
 			}
@@ -624,7 +624,7 @@ func (a *annotationIndex) flushPage(tree *pageTree) error {
 	if a.pages[tree.pageID] == "" {
 		a.pages[tree.pageID] = tree.entry
 	}
-	data, err := ofdxml.Marshal(tree.doc)
+	data, err := xmlcodec.Marshal(tree.doc)
 	if err != nil {
 		return fmt.Errorf("序列化页面注解失败: %w", err)
 	}
@@ -657,7 +657,7 @@ func (a *annotationIndex) flush() error {
 }
 
 func (a *annotationIndex) buildIndex() ([]byte, error) {
-	xml := ofdxml.New()
+	xml := xmlcodec.New()
 	xml.StartElement("Annotations")
 	ids := make([]uint64, 0, len(a.pages))
 	for pageID := range a.pages {
@@ -735,7 +735,7 @@ func (e *engine) readDocumentXML(entry string) (*etree.Document, *etree.Element,
 	if err != nil {
 		return nil, nil, fmt.Errorf("读取 %s 失败: %w", entry, err)
 	}
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("解析 %s 失败: %w", entry, err)
 	}
@@ -747,7 +747,7 @@ func (e *engine) readDocumentXML(entry string) (*etree.Document, *etree.Element,
 }
 
 func (e *engine) writeDocumentXML(entry string, doc *etree.Document) error {
-	data, err := ofdxml.Marshal(doc)
+	data, err := xmlcodec.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("序列化 %s 失败: %w", entry, err)
 	}
@@ -933,7 +933,7 @@ func (a *annotationIndex) patchResImage(resEntry string, imageID uint64, format,
 	media.CreateAttr("Type", spec.MediaTypeImage)
 	media.CreateAttr("Format", format)
 	media.CreateElement(prefixTag(prefix, "MediaFile")).SetText(mediaFile)
-	output, err := ofdxml.Marshal(doc)
+	output, err := xmlcodec.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("序列化 %s 失败: %w", resEntry, err)
 	}
@@ -1051,7 +1051,7 @@ func (a *annotationIndex) reclaimMedia(document models.Document) error {
 			parent.RemoveChild(container)
 		}
 	}
-	output, err := ofdxml.Marshal(doc)
+	output, err := xmlcodec.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("序列化 %s 失败: %w", resEntry, err)
 	}
@@ -1111,7 +1111,7 @@ func (a *annotationIndex) referencedMediaIDs() (map[uint64]bool, error) {
 
 // collectMediaFromXML 解析 XML 数据并收集所有 ImageObject 的 ResourceID。
 func collectMediaFromXML(data []byte, into map[uint64]bool) error {
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return err
 	}
@@ -1145,7 +1145,7 @@ func (a *annotationIndex) collectNonAnnotMedia(into map[uint64]bool) error {
 	if prefix != "" {
 		prefix += "/"
 	}
-	return a.pkg.WalkEntries(func(entry core.Entry) bool {
+	return a.pkg.WalkEntries(func(entry container.Entry) bool {
 		name := entry.Name
 		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".xml") {
 			return true

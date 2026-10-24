@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -50,7 +50,7 @@ func TestNormalizeOptions(t *testing.T) {
 
 func readPackage(t *testing.T, data []byte) map[string]string {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestWriteRejectsDuplicatePath(t *testing.T) {
 
 func TestWriteSourceStreamsPreserved(t *testing.T) {
 	source := buildSourceZip(t, map[string][]byte{"Doc_0/Document.xml": []byte(`<Document/>`)})
-	pkg, err := core.OpenBytes(source)
+	pkg, err := container.OpenBytes(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestWriteSourceStreamsPreserved(t *testing.T) {
 
 func TestWriteSourceSizeLimit(t *testing.T) {
 	source := buildSourceZip(t, map[string][]byte{"Doc_0/big.dat": bytes.Repeat([]byte("x"), 4096)})
-	pkg, err := core.OpenBytes(source)
+	pkg, err := container.OpenBytes(source)
 	if err != nil {
 		t.Fatal(err)
 	}

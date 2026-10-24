@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/zc310/ofd/internal/convert/xps"
 	"github.com/zc310/ofd/internal/pdf2ofd"
-	"github.com/zc310/ofd/internal/xps"
 	"github.com/zc310/ofd/pkg/converter"
 )
 

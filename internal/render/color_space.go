@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/coloricc"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // colorResolver 把 OFD 颜色按其颜色空间解析为 RGBA。
@@ -21,7 +21,7 @@ const (
 )
 
 // Profile 调色板按内容摘要去重，并限制长期进程处理不同文档时的保留量。
-var profilePaletteCache = utils.NewWeightedLRU[[sha256.Size]byte, []byte](
+var profilePaletteCache = cache.NewWeightedLRU[[sha256.Size]byte, []byte](
 	colorProfileCacheEntries, colorProfileCacheBytes, nil,
 )
 

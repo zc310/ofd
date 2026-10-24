@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/knroy/go-xml/v2/xdm"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -37,8 +37,8 @@ func build(document Document) (*packageState, error) {
 // 既保证确定性输出，也保证签名引用目标先于签名文件写出。
 func generatePackage(state *buildState, sink entrySink) error {
 	// sink.write 同步消费 XML，返回后即可重置缓冲区生成下一个条目。
-	w := ofdxml.New()
-	defer ofdxml.Put(w)
+	w := xmlcodec.New()
+	defer xmlcodec.Put(w)
 	root, err := rootXML(state, w)
 	if err != nil {
 		return err
@@ -316,7 +316,7 @@ func populateSignatureDigests(state *buildState, sink entrySink) error {
 	return nil
 }
 
-func attachmentsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func attachmentsXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Attachments")
 	for _, attachment := range state.attachments {
@@ -346,7 +346,7 @@ func attachmentsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func customTagsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func customTagsXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("CustomTags")
 	for _, tag := range state.customTags {
@@ -362,7 +362,7 @@ func customTagsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func extensionsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func extensionsXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Extensions")
 	// 无前缀的 DataXML 原先继承 OFD 默认命名空间，保留这项语义。
@@ -407,7 +407,7 @@ func extensionsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func signaturesXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func signaturesXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Signatures")
 	if len(state.signatures) > 0 {
@@ -436,7 +436,7 @@ func signaturesXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func signatureXML(resource signatureResource, pageIDs []uint64, w *ofdxml.Writer) ([]byte, error) {
+func signatureXML(resource signatureResource, pageIDs []uint64, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Signature")
 	w.Start("SignedInfo")
@@ -495,7 +495,7 @@ func signatureXML(resource signatureResource, pageIDs []uint64, w *ofdxml.Writer
 	return w.Bytes(), nil
 }
 
-func versionXML(resource versionResource, w *ofdxml.Writer) ([]byte, error) {
+func versionXML(resource versionResource, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("DocVersion")
 	w.Attr("ID", resource.value.ID)

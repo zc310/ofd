@@ -3,8 +3,8 @@ package webreader
 import (
 	"testing"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/search"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // TestTextRunsWeightCountsGlyphText 权重必须把字形里的 Text 算进去。
@@ -86,7 +86,7 @@ func TestCachesAreByteWeighted(t *testing.T) {
 // 这是加字节计量的全部意义：ano.ofd 每页 154 KB，64 页约 9.8 MB；预算调小后
 // 应当只缓存到预算允许的页数。
 func TestDenseDocumentRespectsByteBudget(t *testing.T) {
-	cache := utils.NewWeightedLRU[int, []TextRun](1000, 1000, nil)
+	cache := cache.NewWeightedLRU[int, []TextRun](1000, 1000, nil)
 	// 每页权重 100，预算 1000 → 只能留 10 页
 	for page := 1; page <= 20; page++ {
 		cache.AddWeighted(page, []TextRun{{Text: "x"}}, 100)

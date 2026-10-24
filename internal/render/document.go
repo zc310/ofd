@@ -12,10 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -30,19 +30,19 @@ type Document struct {
 	fallbackMu         sync.RWMutex
 	imageLocksMu       sync.Mutex
 	imageLocks         map[string]*imageKeyLock
-	images             *utils.LRU[string, image.Image]
-	svgCanvases        *utils.LRU[string, SVGScene]
+	images             *cache.LRU[string, image.Image]
+	svgCanvases        *cache.LRU[string, SVGScene]
 	sealMu             sync.Mutex
 	sealDocs           map[[32]byte]*sealDocEntry
 	sealClosed         bool
 	closeOnce          sync.Once
 	ctColorMu          sync.Mutex
-	ctColorCache       *utils.LRU[*models.CTColor, *CTColor]
+	ctColorCache       *cache.LRU[*models.CTColor, *CTColor]
 	ctColorBuilds      map[*models.CTColor]*ctColorBuild
 	colorSpacesMu      sync.Mutex
 	colorSpaces        map[*models.ColorSpace]*colorSpaceResources
 	templateScenesMu   sync.Mutex
-	templateScenes     *utils.LRU[templateSceneKey, *templateScene]
+	templateScenes     *cache.LRU[templateSceneKey, *templateScene]
 	templateBuilds     map[templateSceneKey]*templateSceneBuild
 	templateGeneration uint64
 	// closed 在关闭开始时置位，各资源缓存持有自己的锁时检查，防止在途构建重新发布。
@@ -211,8 +211,8 @@ func newDocumentView(background color.Color, doc *parser.Document, dpi geom.Reso
 		fonts:       fonts.engine,
 		fontOwner:   fonts,
 		Document:    doc,
-		images:      utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
-		svgCanvases: utils.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil),
+		images:      cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
+		svgCanvases: cache.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil),
 		imageLocks:  make(map[string]*imageKeyLock),
 	}
 }

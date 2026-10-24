@@ -11,10 +11,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/cache"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/securexml"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -22,21 +22,21 @@ type Document struct {
 	models.Document
 
 	BaseLoc         models.StLoc
-	FileCache       *core.Package
+	FileCache       *container.Package
 	Pages           []*Page
 	pageCacheMu     sync.Mutex
 	pageLeaseCond   *sync.Cond
-	pageCache       *utils.LRU[*Page, int64]
+	pageCache       *cache.LRU[*Page, int64]
 	pageCacheSize   int
 	pageCacheBytes  int64
 	closing         bool
 	resourceCacheMu sync.Mutex
-	resourceCache   *utils.LRU[string, *models.Res]
-	resourceErrors  *utils.LRU[string, error]
+	resourceCache   *cache.LRU[string, *models.Res]
+	resourceErrors  *cache.LRU[string, error]
 
 	templateMu          sync.Mutex
 	templateLocations   map[models.StID]models.StLoc
-	templateCache       *utils.LRU[models.StID, *models.PageContent]
+	templateCache       *cache.LRU[models.StID, *models.PageContent]
 	templates           map[models.StID]*models.PageContent
 	templateErrors      map[models.StID]error
 	drawParams          map[models.StID]*models.DrawParam
@@ -82,7 +82,7 @@ type Document struct {
 
 const maxPageXMLBytes = 64 << 20
 
-func (p *Document) Init(fileCache *core.Package, dir models.StLoc) {
+func (p *Document) Init(fileCache *container.Package, dir models.StLoc) {
 	p.FileCache = fileCache
 	p.BaseLoc = models.StLoc(path.Dir(dir.String()))
 }
@@ -270,10 +270,10 @@ func (p *Document) parsePageResourceFilePath(filePath models.StLoc, resolveMedia
 	p.resourceCacheMu.Lock()
 	defer p.resourceCacheMu.Unlock()
 	if p.resourceCache == nil {
-		p.resourceCache = utils.NewWeightedLRU[string, *models.Res](64, 32<<20, nil)
+		p.resourceCache = cache.NewWeightedLRU[string, *models.Res](64, 32<<20, nil)
 	}
 	if p.resourceErrors == nil {
-		p.resourceErrors = utils.NewLRU[string, error](64, nil)
+		p.resourceErrors = cache.NewLRU[string, error](64, nil)
 	}
 	if cached, ok := p.resourceCache.Get(filePath.String()); ok {
 		p.registerPageResource(cached, filePath, resolveMedia, resources)
@@ -399,7 +399,7 @@ func resourceSize(resource *models.Res) int64 {
 
 // pageArchiveSize 汇总页面内容文件与已解析的页面资源文件在包内占用的字节数。
 // pageResources 必须是包内路径，由 resolvePageResourcePath 解析后传入。
-func pageArchiveSize(fileCache *core.Package, pagePath models.StLoc, pageResources []models.StLoc) int64 {
+func pageArchiveSize(fileCache *container.Package, pagePath models.StLoc, pageResources []models.StLoc) int64 {
 	if fileCache == nil {
 		return 0
 	}
@@ -582,7 +582,7 @@ func (p *Document) addPageToCacheLocked(page *Page) {
 		capacity = defaultPageCacheSize
 	}
 	if p.pageCache == nil {
-		p.pageCache = utils.NewWeightedLRU[*Page, int64](capacity, maxWeight, func(victim *Page, _ int64) {
+		p.pageCache = cache.NewWeightedLRU[*Page, int64](capacity, maxWeight, func(victim *Page, _ int64) {
 			p.forgetPageResources(victim)
 			victim.mu.Lock()
 			victim.pageContent = models.PageContent{}
@@ -927,7 +927,7 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 		return nil, err
 	}
 	if p.templateCache == nil {
-		p.templateCache = utils.NewWeightedLRU[models.StID, *models.PageContent](32, 32<<20, func(id models.StID, _ *models.PageContent) {
+		p.templateCache = cache.NewWeightedLRU[models.StID, *models.PageContent](32, 32<<20, func(id models.StID, _ *models.PageContent) {
 			delete(p.templates, id)
 		})
 	}

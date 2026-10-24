@@ -4,12 +4,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-// XML 生成过程复用同一个 ofdxml 缓冲区，业务代码只负责元素顺序。
-type streamXMLWriter = ofdxml.Writer
+// XML 生成过程复用同一个 xmlcodec 缓冲区，业务代码只负责元素顺序。
+type streamXMLWriter = xmlcodec.Writer
 
 func streamPageXML(state *buildState, page Page, pageResources []pageResource, layers []builtLayer, w *streamXMLWriter) {
 	w.Start("Page")

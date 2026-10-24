@@ -14,7 +14,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -35,9 +35,9 @@ func mergeToBytes(t *testing.T, inputs []string, options Options) []byte {
 	return buffer.Bytes()
 }
 
-func openMerged(t *testing.T, data []byte) *core.Package {
+func openMerged(t *testing.T, data []byte) *container.Package {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatalf("打开合并结果失败: %v", err)
 	}
@@ -45,7 +45,7 @@ func openMerged(t *testing.T, data []byte) *core.Package {
 	return pkg
 }
 
-func readEntry(t *testing.T, pkg *core.Package, name string) string {
+func readEntry(t *testing.T, pkg *container.Package, name string) string {
 	t.Helper()
 	data, err := pkg.Read(name)
 	if err != nil {
@@ -261,7 +261,7 @@ func TestMarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal 失败: %v", err)
 	}
-	if _, err := core.OpenBytes(data); err != nil {
+	if _, err := container.OpenBytes(data); err != nil {
 		t.Fatalf("Marshal 结果不是有效 ZIP: %v", err)
 	}
 }
@@ -403,7 +403,7 @@ func TestSignatureRewriteEmitsWarning(t *testing.T) {
 	if !strings.Contains(strings.Join(warnings, "\n"), "Doc_1") {
 		t.Fatalf("警告应指明被重写的签名文件，实际: %v", warnings)
 	}
-	if _, err := core.OpenBytes(data); err != nil {
+	if _, err := container.OpenBytes(data); err != nil {
 		t.Fatalf("结果不是有效 ZIP: %v", err)
 	}
 }

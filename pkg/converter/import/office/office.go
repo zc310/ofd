@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/contextio"
-	"github.com/zc310/ofd/internal/office"
+	"github.com/zc310/ofd/internal/convert/office"
 	"github.com/zc310/ofd/internal/pdf2ofd"
 	"github.com/zc310/ofd/pkg/converter"
 )

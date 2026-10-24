@@ -11,7 +11,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
+	"github.com/zc310/ofd/internal/reportfmt"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -183,7 +184,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 
 func validateOptions(opts *options) error {
 	if !opts.formatSet {
-		if format, ok := utils.ReportFormatFromOutput(opts.output); ok {
+		if format, ok := reportfmt.FromOutput(opts.output); ok {
 			opts.format = format
 		}
 	}
@@ -211,7 +212,7 @@ func validateOptions(opts *options) error {
 	if _, err := os.Stat(opts.input); err != nil {
 		return fmt.Errorf("输入文件：%w", err)
 	}
-	if opts.output != "" && opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "" && opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
 	}
 	return nil

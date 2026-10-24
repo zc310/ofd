@@ -8,7 +8,7 @@ import (
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/font"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 )
 
 const defaultTextSize = 4.2333333333
@@ -307,7 +307,7 @@ func loadSystemFontFamily(name string, style canvas.FontStyle) (family *canvas.F
 				}
 			}
 		}
-		if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
+		if path, err := fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), files...); err == nil {
 			family := canvas.NewFontFamily(name)
 			if family.LoadFontFile(path, style) == nil {
 				return family

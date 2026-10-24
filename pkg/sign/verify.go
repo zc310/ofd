@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -49,7 +49,7 @@ func Verify(ctx context.Context, input any, options VerificationOptions) ([]Veri
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if source, ok := input.(core.PackageSource); ok {
+	if source, ok := input.(container.PackageSource); ok {
 		// 先取得逻辑读取租约，保留视图对未完整解锁与关闭状态的拒绝语义。
 		lease, err := source.OFDPackage()
 		if err != nil {
@@ -57,7 +57,9 @@ func Verify(ctx context.Context, input any, options VerificationOptions) ([]Veri
 		}
 		defer lease.Close()
 	}
-	if origin, ok := input.(interface{ OpenPhysicalPackage() (*core.Package, error) }); ok {
+	if origin, ok := input.(interface {
+		OpenPhysicalPackage() (*container.Package, error)
+	}); ok {
 		pkg, err := origin.OpenPhysicalPackage()
 		if err != nil {
 			return nil, err

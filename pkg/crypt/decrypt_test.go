@@ -25,7 +25,7 @@ import (
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/sm4"
 	"github.com/emmansun/gmsm/smx509"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/crypt"
 	"github.com/zc310/ofd/pkg/sign"
 )
@@ -149,7 +149,7 @@ func privateKey(t *testing.T) *sm2.PrivateKey {
 
 func unpack(t *testing.T, data []byte) map[string]string {
 	t.Helper()
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}

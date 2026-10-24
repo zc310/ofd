@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/analyzer"
 	"github.com/zc310/ofd/pkg/crypt"
@@ -298,16 +298,16 @@ func TestViewLeasesAreIndependentAndReturnedDataIsOwnedByCaller(t *testing.T) {
 	if !ok || entry.UncompressedSize != uint64(len(data)) || entry.CRC32 != crc32.ChecksumIEEE(data) || !entry.Virtual {
 		t.Fatalf("logical entry=%+v", entry)
 	}
-	if _, err := first.OpenEntry(entry); !errors.Is(err, core.ErrPackageClosed) {
+	if _, err := first.OpenEntry(entry); !errors.Is(err, container.ErrPackageClosed) {
 		t.Fatalf("closed lease read=%v", err)
 	}
 	if err := view.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := view.Read("OFD.xml"); !errors.Is(err, core.ErrPackageClosed) {
+	if _, err := view.Read("OFD.xml"); !errors.Is(err, container.ErrPackageClosed) {
 		t.Fatalf("owner still readable: %v", err)
 	}
-	if _, err := view.OFDPackage(); !errors.Is(err, core.ErrPackageClosed) {
+	if _, err := view.OFDPackage(); !errors.Is(err, container.ErrPackageClosed) {
 		t.Fatalf("closed owner can lend: %v", err)
 	}
 	if _, err := second.Read("OFD.xml"); err != nil {
@@ -521,7 +521,7 @@ func TestViewInfoIsDetachedAndCancelledOpenPreservesError(t *testing.T) {
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.Read(make([]byte, 1)); !errors.Is(err, core.ErrPackageClosed) {
+	if _, err := reader.Read(make([]byte, 1)); !errors.Is(err, container.ErrPackageClosed) {
 		t.Fatalf("closed logical reader=%v", err)
 	}
 }

@@ -31,12 +31,12 @@ import (
 	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/internal/version"
 	canvasConverter "github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/crypt"
@@ -202,9 +202,9 @@ type viewer struct {
 	documents           []*render.Document
 	pages               []viewerPage
 	maxPageArea         float64
-	pageImages          *utils.LRU[int, *image.RGBA]
+	pageImages          *cache.LRU[int, *image.RGBA]
 	pageDPI             int
-	thumbnails          *utils.LRU[int, *image.RGBA]
+	thumbnails          *cache.LRU[int, *image.RGBA]
 	currentPage         int
 	currentPageSnapshot atomic.Int64
 	totalPages          int
@@ -855,8 +855,8 @@ func (v *viewer) defaultWindowSize() fyne.Size {
 
 // newPageImageCache 创建阅读区页面图像缓存。高 DPI 页面体积可观，
 // 必须按字节预算限流，否则滚动过的大文档会累积数 GB 内存。
-func (v *viewer) newPageImageCache() *utils.LRU[int, *image.RGBA] {
-	return utils.NewWeightedLRU[int, *image.RGBA](pageImageEntries, pageImageBudget,
+func (v *viewer) newPageImageCache() *cache.LRU[int, *image.RGBA] {
+	return cache.NewWeightedLRU[int, *image.RGBA](pageImageEntries, pageImageBudget,
 		func(page int, _ *image.RGBA) {
 			// 只有仍在显示窗口内的页面会占用帧，而 canEvict 已经把它们排除，
 			// 因此这里通常找不到帧；保留判断以防窗口状态在回调前变化。
@@ -876,8 +876,8 @@ func (v *viewer) newPageImageCache() *utils.LRU[int, *image.RGBA] {
 // newThumbnailCache 创建缩略图缓存。淘汰回调不触碰列表：列表复用可见单元，
 // 缓存条目移除后单元格仍可显示已上传的纹理，等下次滚动回来再重新渲染，
 // 因此不会因为淘汰回调触发新的渲染而形成抖动。
-func newThumbnailCache() *utils.LRU[int, *image.RGBA] {
-	return utils.NewWeightedLRU[int, *image.RGBA](thumbnailEntries, thumbnailBudget, nil)
+func newThumbnailCache() *cache.LRU[int, *image.RGBA] {
+	return cache.NewWeightedLRU[int, *image.RGBA](thumbnailEntries, thumbnailBudget, nil)
 }
 
 func (v *viewer) pageSlotAt(page int) *pageMeta {

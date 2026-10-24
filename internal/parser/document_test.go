@@ -12,7 +12,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -229,7 +229,7 @@ func TestPageArchiveSizeIncludesUniqueResourceXML(t *testing.T) {
 	if err := archive.Close(); err != nil {
 		t.Fatal(err)
 	}
-	fileCache, err := core.OpenBytes(data.Bytes())
+	fileCache, err := container.OpenBytes(data.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestReadPagePhysicalBoxOnlyReadsArea(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fileCache, err := core.OpenBytes(data.Bytes())
+	fileCache, err := container.OpenBytes(data.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

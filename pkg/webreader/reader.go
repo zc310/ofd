@@ -10,10 +10,10 @@ import (
 	"image/color"
 	"sync"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 const (
@@ -95,13 +95,13 @@ type Reader struct {
 	closed           bool
 	ofd              *parser.OFD
 	pages            []pageRef
-	renderDocs       *utils.LRU[renderDocumentKey, *render.Document]
+	renderDocs       *cache.LRU[renderDocumentKey, *render.Document]
 	renderDocUsers   map[*render.Document]int // 由 renderDocsMu 保护，仅登记正在使用的视图。
 	fallbackFamily   string
 	fallbackFamilies []string
 	// 缓存指针由 mu 保护；LRU 的 Get/Add 自带锁，读操作可并发填充。
-	text           *utils.LRU[int, []TextRun]
-	search         *utils.LRU[int, *search.Index]
+	text           *cache.LRU[int, []TextRun]
+	search         *cache.LRU[int, *search.Index]
 	options        RenderOptions
 	metadata       *readerMetadata
 	navigationOnce sync.Once

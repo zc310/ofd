@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -16,7 +16,7 @@ import (
 type OFD struct {
 	models.OFD
 
-	fileCache *core.Package
+	fileCache *container.Package
 
 	Documents     []*Document
 	mainDocuments []*Document
@@ -61,7 +61,7 @@ func NewOFDWithOptions(input any, options Options) (*OFD, error) {
 // 对于 io.Reader，Open 会读取全部内容，但不会关闭传入的 reader。
 func (p *OFD) Open(input any) error {
 	switch v := input.(type) {
-	case core.PackageSource:
+	case container.PackageSource:
 		if source, ok := input.(interface{ InputSize() int64 }); ok && p.options.MaxInputBytes > 0 && source.InputSize() > p.options.MaxInputBytes {
 			return categorized(ErrInputTooLarge, "OFD 输入视图的原始 ZIP 超过大小限制")
 		}
@@ -87,7 +87,7 @@ func (p *OFD) Open(input any) error {
 		if p.options.MaxInputBytes > 0 && int64(len(data)) > p.options.MaxInputBytes {
 			return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 		}
-		fileCache, err := core.OpenBytes(data)
+		fileCache, err := container.OpenBytes(data)
 		if err != nil {
 			return fmt.Errorf("读取OFD内容失败: %w", err)
 		}
@@ -108,7 +108,7 @@ func (p *OFD) openFromFile(filePath string) error {
 		return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 文件超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 	}
 
-	fileCache, err := core.OpenFile(cleanPath)
+	fileCache, err := container.OpenFile(cleanPath)
 	if err != nil {
 		return fmt.Errorf("打开OFD文件失败: %w", err)
 	}
@@ -121,7 +121,7 @@ func (p *OFD) openFromBytes(data []byte) error {
 	if p.options.MaxInputBytes > 0 && int64(len(data)) > p.options.MaxInputBytes {
 		return categorized(ErrInputTooLarge, fmt.Sprintf("OFD 数据超过大小限制 %d MB", p.options.MaxInputBytes>>20))
 	}
-	fileCache, err := core.OpenBytes(data)
+	fileCache, err := container.OpenBytes(data)
 	if err != nil {
 		return fmt.Errorf("从字节数据创建 ZIP 包失败: %w", err)
 	}
@@ -131,7 +131,7 @@ func (p *OFD) openFromBytes(data []byte) error {
 
 // openPackage 解析候选 ZIP，并在成功后一次性替换当前文档状态。
 // 这样重复调用 Open 时，解析失败不会破坏当前已打开的文档。
-func (p *OFD) openPackage(fileCache *core.Package) (err error) {
+func (p *OFD) openPackage(fileCache *container.Package) (err error) {
 	if fileCache == nil {
 		return fmt.Errorf("打开OFD文件失败: 包访问对象为空")
 	}
@@ -178,7 +178,7 @@ func (p *OFD) Close() error {
 	return nil
 }
 
-func parsePackage(fileCache *core.Package, options Options) (models.OFD, []*Document, error) {
+func parsePackage(fileCache *container.Package, options Options) (models.OFD, []*Document, error) {
 	if err := checkEncryption(fileCache); err != nil {
 		return models.OFD{}, nil, err
 	}

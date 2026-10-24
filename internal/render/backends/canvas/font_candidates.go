@@ -6,9 +6,9 @@ import (
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // 本文件实现系统字体候选匹配：PostScript 名别名、通用字体族分类、CJK 字体组
@@ -302,7 +302,7 @@ func (p *Fonts) loadFixedWidthFont(ft *models.Font, style drawing.FontStyle) (*c
 			return family, true
 		}
 	}
-	if path, err := utils.FindFirstFileInDirs(font.DefaultFontDirs(), fixedWidthFontFiles...); err == nil {
+	if path, err := fileutil.FindFirstFileInDirs(font.DefaultFontDirs(), fixedWidthFontFiles...); err == nil {
 		slog.Debug("load fallback fixed-width font file", "path", path, "style", style)
 		return loadCachedFontFile(p, path, "fixed-width", style)
 	}

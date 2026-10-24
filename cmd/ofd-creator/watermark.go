@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/replace"
@@ -202,7 +202,7 @@ func validateWatermarkOptions(opts *watermarkOptions) error {
 	if opts.input == "-" {
 		return errors.New("watermark 不支持从标准输入读取 OFD")
 	}
-	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖输入 OFD 文件")
 	}
 	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {
@@ -509,7 +509,7 @@ func parseMatchIDs(specs []string) ([]uint64, error) {
 // 返回可直接写入外观的数值字体 ID。同一文档体的 PublicRes 与 DocumentRes 均参与匹配。
 func resolveWatermarkFont(input string, docIndex int, want string) (string, error) {
 	want = strings.TrimSpace(want)
-	pkg, err := core.OpenFile(input)
+	pkg, err := container.OpenFile(input)
 	if err != nil {
 		return "", fmt.Errorf("打开 %s 校验字体失败: %w", input, err)
 	}

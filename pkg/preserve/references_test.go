@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -38,7 +38,7 @@ func TestUnreferencedUsesConvertedDocumentReferences(t *testing.T) {
 	if result.UnreferencedDropped != 2 || !reflect.DeepEqual(result.Unreferenced, want) {
 		t.Fatalf("实际删除与计划不符: %+v", result)
 	}
-	pkg, err := core.OpenBytes(out.Bytes())
+	pkg, err := container.OpenBytes(out.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

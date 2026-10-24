@@ -5,9 +5,9 @@ import (
 	"math"
 	"sync"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -98,7 +98,7 @@ func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
 			return
 		}
 		if p.ctColorCache == nil {
-			p.ctColorCache = utils.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
+			p.ctColorCache = cache.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
 		}
 		p.ctColorCache.Add(source, cc)
 	})

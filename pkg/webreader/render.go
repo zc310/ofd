@@ -12,11 +12,11 @@ import (
 	"math"
 	"strings"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 	// RenderPage 依赖 canvas 后端注册的矢量表面与栅格后端。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 )
@@ -365,7 +365,7 @@ func (r *Reader) pageDocument(ref pageRef, background color.Color, dpi geom.Reso
 	if r.renderDocs == nil {
 		// 所有 Get/Add/Trim 均持 renderDocsMu，检查使用计数与获取视图不会交错。
 		// 并发使用的视图暂时允许超容量，最后一次使用完成后重新执行淘汰。
-		r.renderDocs = utils.NewWeightedLRU[renderDocumentKey, *render.Document](maxRenderDocs, 0,
+		r.renderDocs = cache.NewWeightedLRU[renderDocumentKey, *render.Document](maxRenderDocs, 0,
 			func(_ renderDocumentKey, evicted *render.Document) { evicted.Close() },
 			func(_ renderDocumentKey, candidate *render.Document) bool { return r.renderDocUsers[candidate] == 0 },
 		)

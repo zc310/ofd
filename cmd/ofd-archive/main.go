@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/archive"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
@@ -295,7 +295,7 @@ func validateOptions(opts *options) error {
 			return fmt.Errorf("profile 文件：%w", err)
 		}
 	}
-	if opts.command != "prepare" && opts.output != "" && opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.command != "prepare" && opts.output != "" && opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("报告输出不能覆盖输入 OFD 文件")
 	}
 	if opts.command == "preserve" {

@@ -11,7 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
 
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/cache"
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -189,16 +189,16 @@ func (r *Reader) textAt(index int) []TextRun {
 //
 // 四处需要同样的构造（打开文档，以及换用/移除回退字体时重建），写成内联
 // 迟早有一处漏改——漏改的那处预算会静默失效，调用方看不出区别。
-func newTextCache() *utils.LRU[int, []TextRun] {
-	return utils.NewWeightedLRU[int, []TextRun](textCacheCapacity, textCacheBytes, nil)
+func newTextCache() *cache.LRU[int, []TextRun] {
+	return cache.NewWeightedLRU[int, []TextRun](textCacheCapacity, textCacheBytes, nil)
 }
 
-func newSearchCache(pageCount int) *utils.LRU[int, *search.Index] {
+func newSearchCache(pageCount int) *cache.LRU[int, *search.Index] {
 	capacity := minInt(pageCount, searchCacheCapacity)
 	if capacity < 1 {
 		capacity = 1
 	}
-	return utils.NewWeightedLRU[int, *search.Index](capacity, searchCacheBytes, nil)
+	return cache.NewWeightedLRU[int, *search.Index](capacity, searchCacheBytes, nil)
 }
 
 // textRunsWeight 估算一页文字快照的内存占用，用作缓存的计量权重。

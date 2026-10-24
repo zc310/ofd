@@ -161,7 +161,7 @@ ofd-archive preserve --doc-type OFD-A --drop-unreferenced --output out.ofd docum
 - 当前转换入口只处理单个 `DocBody`，多个文档体会明确报错。GB/T 42133 6.2.1 c) 要求归档前拆分成多个 OFD 或展平为单文档；本入口不自动拆分或展平。
 - 转换按引用定位文档主体、页面、模板及其资源，支持包内绝对路径，不假定 `Doc_0`。只重写发生改动的条目，其余条目逐字节复制。
 - 重写的 OFD 元素统一使用 `ofd:` 前缀，保留扩展命名空间及 CDATA 表示的文本和混合内容；跨文件移动页面设置时补齐继承的命名空间声明。
-- 转换使用 `internal/ofdxml` 的读取器，支持 UTF-8 XML 1.0、BOM、预定义实体和数字字符引用；DOCTYPE、自定义实体及非 UTF-8 编码会明确报错。
+- 转换使用 `internal/xmlcodec` 的读取器，支持 UTF-8 XML 1.0、BOM、预定义实体和数字字符引用；DOCTYPE、自定义实体及非 UTF-8 编码会明确报错。
 - JSON 结果的 `Entries` 按字典序列出实际修改或删除的路径，每个路径只出现一次；`Entry` 是其中首个路径，无改动时为空。`Plan` 的删除候选见 `Unreferenced`，不记作已删除。
 - `UnreferencedDropped` 仅在完整输出成功后确认，`Plan` 和转换、重建、校验或写入失败时均为 0。输出发生短写时返回错误，不能把截断的 OFD 当作成功结果。
 - 只删除 OFD 命名空间下的目标元素，外来命名空间里的同名标签不受影响。

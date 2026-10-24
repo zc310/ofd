@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/contextio"
-	markdownpkg "github.com/zc310/ofd/internal/markdown"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	markdownpkg "github.com/zc310/ofd/internal/textdoc/markdown"
 )
 
 type markdownEncoder struct{}

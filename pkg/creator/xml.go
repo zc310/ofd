@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // XML 生成函数复用调用方持有的 Writer；返回值仅在下一次 Reset 或 Put 前有效。
-func rootXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func rootXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("OFD")
 	w.Attr("Version", "1.0")
@@ -71,25 +71,25 @@ func rootXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func streamOptionalText(w *ofdxml.Writer, name, value string) {
+func streamOptionalText(w *xmlcodec.Writer, name, value string) {
 	if strings.TrimSpace(value) != "" {
 		w.Element(name, value)
 	}
 }
 
-func streamOptionalDate(w *ofdxml.Writer, name string, value time.Time) {
+func streamOptionalDate(w *xmlcodec.Writer, name string, value time.Time) {
 	if !value.IsZero() {
 		w.Element(name, value.Format("2006-01-02"))
 	}
 }
 
-func streamOptionalBool(w *ofdxml.Writer, name string, value *bool) {
+func streamOptionalBool(w *xmlcodec.Writer, name string, value *bool) {
 	if value != nil {
 		w.Element(name, strconv.FormatBool(*value))
 	}
 }
 
-func documentXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func documentXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Document")
 	w.Start("CommonData")
@@ -167,7 +167,7 @@ func documentXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func annotationsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func annotationsXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Annotations")
 	for _, page := range state.annotationPages {
@@ -180,7 +180,7 @@ func annotationsXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func pageAnnotationsXML(state *buildState, page annotationResource, w *ofdxml.Writer) ([]byte, error) {
+func pageAnnotationsXML(state *buildState, page annotationResource, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("PageAnnot")
 	for _, annotation := range page.items {
@@ -236,7 +236,7 @@ func pointString(value Point) string {
 	return number(value.X) + " " + number(value.Y)
 }
 
-func streamOutline(w *ofdxml.Writer, value Outline, pageIDs []uint64) {
+func streamOutline(w *xmlcodec.Writer, value Outline, pageIDs []uint64) {
 	w.Start("OutlineElem")
 	w.Attr("Title", value.Title)
 	if value.Count != nil {
@@ -252,7 +252,7 @@ func streamOutline(w *ofdxml.Writer, value Outline, pageIDs []uint64) {
 	w.End()
 }
 
-func streamPermissions(w *ofdxml.Writer, value *Permissions) {
+func streamPermissions(w *xmlcodec.Writer, value *Permissions) {
 	w.Start("Permissions")
 	streamOptionalBool(w, "Edit", value.Edit)
 	streamOptionalBool(w, "Annot", value.Annot)
@@ -281,7 +281,7 @@ func streamPermissions(w *ofdxml.Writer, value *Permissions) {
 	w.End()
 }
 
-func streamPreferences(w *ofdxml.Writer, value *ViewPreferences) {
+func streamPreferences(w *xmlcodec.Writer, value *ViewPreferences) {
 	w.Start("VPreferences")
 	streamOptionalText(w, "PageMode", value.PageMode)
 	streamOptionalText(w, "PageLayout", value.PageLayout)
@@ -297,7 +297,7 @@ func streamPreferences(w *ofdxml.Writer, value *ViewPreferences) {
 	w.End()
 }
 
-func resourceXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
+func resourceXML(state *buildState, w *xmlcodec.Writer) ([]byte, error) {
 	w.Reset()
 	w.Start("Res")
 	w.Attr("BaseLoc", "Res")
@@ -416,7 +416,7 @@ func resourceXML(state *buildState, w *ofdxml.Writer) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func pageResourceXML(resource pageResource, w *ofdxml.Writer) ([]byte, error) {
+func pageResourceXML(resource pageResource, w *xmlcodec.Writer) ([]byte, error) {
 	if len(resource.data) > 0 {
 		return resource.data, nil
 	}

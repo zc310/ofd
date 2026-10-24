@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	ofdexport "github.com/zc310/ofd/internal/export"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
+	ofdexport "github.com/zc310/ofd/internal/manifest/export"
 )
 
 func runExport(args []string, stdout, stderr io.Writer) int {
@@ -72,7 +72,7 @@ func runExportAll(args []string, _, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all: 批量导出必须写入目录，不能使用标准输出")
 		return exitUsage
 	}
-	if opts.output != "-" && opts.input != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && opts.input != "-" && fileutil.SamePath(opts.input, opts.output) {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator export-all: 输出目录不能覆盖 OFD 输入文件")
 		return exitUsage
 	}
@@ -231,7 +231,7 @@ func validateExportOptions(opts *exportOptions) error {
 		return fmt.Errorf("不支持的导出格式 %q", format)
 	}
 	opts.format = format
-	if opts.output != "-" && opts.input != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && opts.input != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖 OFD 输入文件")
 	}
 	if opts.document < -1 {

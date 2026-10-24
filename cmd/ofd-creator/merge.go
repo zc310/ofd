@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/sign"
@@ -288,7 +288,7 @@ func validateMergeOptions(opts *mergeOptions) error {
 	}
 	if opts.output != "-" {
 		for _, input := range opts.inputs {
-			if utils.SamePath(input, opts.output) {
+			if fileutil.SamePath(input, opts.output) {
 				return errors.New("输出文件不能覆盖输入 OFD 文件")
 			}
 		}

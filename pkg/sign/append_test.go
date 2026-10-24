@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 )
 
@@ -20,12 +20,12 @@ func TestAppendBudgetsRejectContainerBeforeReadingPayload(t *testing.T) {
 			if mode == "count" {
 				count, size = 10001, 0
 			}
-			infos := make([]core.Entry, count)
+			infos := make([]container.Entry, count)
 			for n := range infos {
-				infos[n] = core.Entry{Path: fmt.Sprintf("entry-%d", n), UncompressedSize: size}
+				infos[n] = container.Entry{Path: fmt.Sprintf("entry-%d", n), UncompressedSize: size}
 			}
 			opened := false
-			pkg, err := core.NewVirtual(infos, func(string) (io.ReadCloser, error) {
+			pkg, err := container.NewVirtual(infos, func(string) (io.ReadCloser, error) {
 				opened = true
 				return nil, errors.New("不得读取负载")
 			}, nil)

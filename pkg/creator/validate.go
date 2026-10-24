@@ -12,8 +12,8 @@ import (
 
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
-	"github.com/zc310/ofd/internal/ofdxml"
 	"github.com/zc310/ofd/internal/schema"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -1856,7 +1856,7 @@ func imageFormatFromPrefix(format string, data []byte, source DataSource) string
 }
 
 func number(value float64) string {
-	return string(ofdxml.AppendFloat(nil, value))
+	return string(xmlcodec.AppendFloat(nil, value))
 }
 
 func finite(value float64) bool {

@@ -21,12 +21,12 @@ import (
 	"time"
 
 	"github.com/kovidgoyal/imaging"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/crypt"
 )
@@ -87,7 +87,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%w: invalid size: %w", ErrInvalidArgs, err)
 	}
-	if utils.SamePath(inputFile, outputFile) {
+	if fileutil.SamePath(inputFile, outputFile) {
 		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
 	}
 
@@ -207,7 +207,7 @@ func saveThumbnail(ctx context.Context, input, output string, img image.Image) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if utils.SamePath(input, output) {
+	if fileutil.SamePath(input, output) {
 		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
 	}
 	file, err := os.CreateTemp(filepath.Dir(output), ".ofd-thumbnail-*.png")
@@ -226,7 +226,7 @@ func saveThumbnail(ctx context.Context, input, output string, img image.Image) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if utils.SamePath(input, output) {
+	if fileutil.SamePath(input, output) {
 		return fmt.Errorf("%w: output must not overwrite input", ErrInvalidArgs)
 	}
 	if err := os.Rename(file.Name(), output); err != nil {

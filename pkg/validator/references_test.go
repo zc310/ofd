@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 // TestPackageReferencesCoversRealFixtures 在真实样例上验证闭包：凡校验器认为
@@ -33,7 +33,7 @@ func TestPackageReferencesCoversRealFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("解析引用失败: %v", err)
 			}
-			pkg, err := core.OpenFile(fixture)
+			pkg, err := container.OpenFile(fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +75,7 @@ func TestPackageReferencesKeepsReferencedFontsAndMedia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
 	}
-	pkg, err := core.OpenFile(fixture)
+	pkg, err := container.OpenFile(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestUnreachableListsOrphanFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析引用失败: %v", err)
 	}
-	pkg, err := core.OpenBytes(src)
+	pkg, err := container.OpenBytes(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestPackageReferencesRefusesToJudgeInvalidNamespace(t *testing.T) {
 	}
 
 	// 关键断言：绝不能出现「可以删掉一堆字体」的结论。
-	pkg, err := core.OpenFile(legacy)
+	pkg, err := container.OpenFile(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}

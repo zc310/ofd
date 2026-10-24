@@ -3,11 +3,11 @@ package parser
 import (
 	"context"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 )
 
-func checkEncryption(pkg *core.Package) error {
+func checkEncryption(pkg *container.Package) error {
 	if !crypt.Present(pkg) {
 		return nil
 	}

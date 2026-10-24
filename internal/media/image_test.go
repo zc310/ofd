@@ -12,7 +12,7 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 func TestDecodePackageImage(t *testing.T) {
@@ -24,7 +24,7 @@ func TestDecodePackageImage(t *testing.T) {
 	}
 	filename := writeTestZip(t, map[string][]byte{"image.png": encoded.Bytes()})
 
-	archive, err := core.OpenFile(filename)
+	archive, err := container.OpenFile(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDecodeRejectsClosedPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	filename := writeTestZip(t, map[string][]byte{"image.png": encoded.Bytes()})
-	archive, err := core.OpenFile(filename)
+	archive, err := container.OpenFile(filename)
 	if err != nil {
 		t.Fatal(err)
 	}

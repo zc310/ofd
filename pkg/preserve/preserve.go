@@ -3,7 +3,7 @@
 // 该标准把条款分成两类：可机器判定的合规条件由 ofd-validator 按 profile 规则
 // 上报；本质是转换动作的条款由本包执行。本包只产出新的字节流，不修改输入。
 //
-// 转换使用 internal/ofdxml 读取和写出，使用 etree API 对既有 XML 做定点编辑。
+// 转换使用 internal/xmlcodec 读取和写出，使用 etree API 对既有 XML 做定点编辑。
 // 重写的 OFD 元素统一使用 ofd: 前缀，并保留扩展命名空间与混合内容；
 // 未发生改动的条目继续逐字节复制。
 package preserve
@@ -19,9 +19,9 @@ import (
 	"strings"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/replace"
 	"github.com/zc310/ofd/pkg/spec"
@@ -416,13 +416,13 @@ func open(input any, requested replace.Limits) (source, error) {
 		return source{}, err
 	}
 	var src source
-	var pkg *core.Package
+	var pkg *container.Package
 	switch v := input.(type) {
 	case string:
-		pkg, err = core.OpenFile(v)
+		pkg, err = container.OpenFile(v)
 		src.path = v
 	case []byte:
-		pkg, err = core.OpenBytes(v)
+		pkg, err = container.OpenBytes(v)
 		src.data = v
 	default:
 		return source{}, fmt.Errorf("不支持的输入类型 %T", input)
@@ -520,7 +520,7 @@ func convert(pkg *inputPackage, options Options, dryRun bool) (Result, []replace
 		if total == 0 {
 			return nil
 		}
-		out, err := ofdxml.MarshalDocument(doc)
+		out, err := xmlcodec.MarshalDocument(doc)
 		if err != nil {
 			return fmt.Errorf("序列化 %s 失败: %w", path, err)
 		}
@@ -692,7 +692,7 @@ func contentEntries(pkg *inputPackage, docEntry, selector string) ([]string, err
 // resolveEntryLocation 把 ST_Loc 引用规范化为安全的 ZIP 条目名。
 func resolveEntryLocation(base models.StLoc, location string) (string, error) {
 	name := strings.TrimPrefix(string(models.StLoc(strings.TrimSpace(location)).Resolve(base)), "/")
-	if err := core.ValidateEntryName(name); err != nil {
+	if err := container.ValidateEntryName(name); err != nil {
 		return "", err
 	}
 	return name, nil
@@ -1009,7 +1009,7 @@ func normalizePageArea(pkg *inputPackage, docType, docEntry string, pages []stri
 			doc.Root().RemoveChild(el)
 			omitted++
 		}
-		out, err := ofdxml.MarshalDocument(doc)
+		out, err := xmlcodec.MarshalDocument(doc)
 		if err != nil {
 			return fmt.Errorf("序列化 %s 失败: %w", page, err)
 		}
@@ -1039,7 +1039,7 @@ func insertPageSetting(page, area *etree.Element) {
 
 func loadCurrentXML(pkg *inputPackage, name string, operations map[string][]byte) (*etree.Document, error) {
 	if data, ok := operations[name]; ok {
-		doc, err := ofdxml.Parse(data)
+		doc, err := xmlcodec.Parse(data)
 		if err != nil {
 			return nil, fmt.Errorf("解析 %s 失败: %w", name, err)
 		}
@@ -1054,7 +1054,7 @@ func loadXML(pkg *inputPackage, path string) (*etree.Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取 %s 失败: %w", path, err)
 	}
-	doc, err := ofdxml.Parse(data)
+	doc, err := xmlcodec.Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf("解析 %s 失败: %w", path, err)
 	}
@@ -1090,7 +1090,7 @@ func writeDefaultPageArea(pkg *inputPackage, docEntry string, area pageArea,
 		return false, nil
 	}
 	insertPageArea(common, replacement)
-	out, err := ofdxml.MarshalDocument(doc)
+	out, err := xmlcodec.MarshalDocument(doc)
 	if err != nil {
 		return false, fmt.Errorf("序列化 %s 失败: %w", docEntry, err)
 	}

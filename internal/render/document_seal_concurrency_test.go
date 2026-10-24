@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/testutil"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -254,7 +254,7 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 
 func TestSealImageSharesPreparedRasterAndImageCacheBudget(t *testing.T) {
 	// 4x4 图片恰好占 64 字节，缓存只容纳一张；白底与墨迹便于核对预处理结果。
-	doc := &Document{images: utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, 64, nil)}
+	doc := &Document{images: cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, 64, nil)}
 	defer doc.Close()
 	src := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	for y := range 4 {

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/compare"
 )
@@ -111,7 +111,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		}
 		if output != "" && output != "-" {
 			for _, input := range paths {
-				if utils.SamePath(input, output) {
+				if fileutil.SamePath(input, output) {
 					return errors.New("报告输出不能覆盖输入 OFD")
 				}
 				a, ae := os.Stat(input)

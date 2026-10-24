@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/crypt"
 )
@@ -80,12 +80,12 @@ func TestCLIEncryptInspectDecryptPreservesBytesAndSeparatesReports(t *testing.T)
 		}
 	}
 	call(t, []string{"decrypt", "--password-file", "-", "--user", "用户", "-o", plain, encrypted}, "secret\n", 0)
-	before, err := core.OpenFile(input)
+	before, err := container.OpenFile(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer before.Close()
-	after, err := core.OpenFile(plain)
+	after, err := container.OpenFile(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func combinedOperations(t *testing.T, input string, firstPassword, secondPasswor
 	t.Helper()
 	unpack := func(data []byte) map[string]string {
 		t.Helper()
-		p, err := core.OpenBytes(data)
+		p, err := container.OpenBytes(data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -389,7 +389,7 @@ func TestCLIPerOperationAndSeedCredentialsAndPartialInspection(t *testing.T) {
 	}
 	plain := filepath.Join(dir, "multi-plain.ofd")
 	call(t, []string{"decrypt", "--password-for", "enc1=" + firstFile, "--password-for-seed", "Second/decryptseed.dat=" + secondFile, "-o", plain, enc}, "", 0)
-	p, err := core.OpenFile(plain)
+	p, err := container.OpenFile(plain)
 	if err != nil {
 		t.Fatal(err)
 	}

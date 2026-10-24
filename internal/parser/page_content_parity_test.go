@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -23,7 +23,7 @@ func TestFastVsStdlibParity(t *testing.T) {
 	}
 	count := 0
 	for _, fixture := range matches {
-		pkg, err := core.OpenFile(fixture)
+		pkg, err := container.OpenFile(fixture)
 		if err != nil {
 			t.Fatalf("%s: %v", fixture, err)
 		}

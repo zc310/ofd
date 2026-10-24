@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/textdoc"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -95,7 +95,7 @@ func readInput(input any) ([]byte, error) {
 
 // loadAttachment 在 OFD 包内定位并读取发票结构化附件。
 func loadAttachment(data []byte) (string, []byte, error) {
-	pkg, err := core.OpenBytes(data)
+	pkg, err := container.OpenBytes(data)
 	if err != nil {
 		return "", nil, fmt.Errorf("打开 OFD 包失败: %w", err)
 	}
@@ -112,7 +112,7 @@ func loadAttachment(data []byte) (string, []byte, error) {
 }
 
 // findAttachment 返回实际使用的发票附件包内路径。
-func findAttachment(pkg *core.Package) (string, error) {
+func findAttachment(pkg *container.Package) (string, error) {
 	if pkg.Has(preferredAttachment) {
 		return preferredAttachment, nil
 	}

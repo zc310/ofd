@@ -14,10 +14,10 @@ import (
 	"sync"
 
 	_ "github.com/dkrisman/gobig2"
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
@@ -349,7 +349,7 @@ func (p *Document) cachedSVGScene(key string, load func() ([]byte, error)) (SVGS
 		return nil, errors.New("渲染文档已关闭")
 	}
 	if p.svgCanvases == nil {
-		p.svgCanvases = utils.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil)
+		p.svgCanvases = cache.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil)
 	}
 	cached, ok := p.svgCanvases.Get(key)
 	p.imageLocksMu.Unlock()
@@ -442,7 +442,7 @@ func (p *Document) cachedImage(key string, load func() (image.Image, error)) (im
 		return nil, errors.New("渲染文档已关闭")
 	}
 	if p.images == nil {
-		p.images = utils.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil)
+		p.images = cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil)
 	}
 	cached, ok := p.images.Get(key)
 	p.imageLocksMu.Unlock()

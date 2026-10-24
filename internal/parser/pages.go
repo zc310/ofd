@@ -9,7 +9,7 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -70,7 +70,7 @@ func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
 	return p.metadataBox, p.metadataErr
 }
 
-func readPagePhysicalBox(fileCache *core.Package, pagePath models.StLoc) (models.StBox, error) {
+func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (models.StBox, error) {
 	if fileCache == nil {
 		return models.StBox{}, errors.New("页面文件包为空")
 	}

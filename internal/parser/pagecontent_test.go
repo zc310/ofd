@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 func TestReadPageContentXMLPreservesReadErrors(t *testing.T) {
 	content := `<Page><Content><Layer ID="1"/></Content></Page>`
-	fc, err := core.OpenBytes(parserTestArchive(t, map[string]string{"Page.xml": content}))
+	fc, err := container.OpenBytes(parserTestArchive(t, map[string]string{"Page.xml": content}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestReadPageContentXMLPreservesReadErrors(t *testing.T) {
 		want  error
 	}{
 		{"missing_file", "missing.xml", 0, os.ErrNotExist},
-		{"over_limit", "Page.xml", int64(len(content) - 1), core.ErrReadLimitExceeded},
+		{"over_limit", "Page.xml", int64(len(content) - 1), container.ErrReadLimitExceeded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if page, err := readPageContentXML(fc, tc.path, tc.limit); page != nil || !errors.Is(err, tc.want) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -38,17 +38,17 @@ func (v *Validator) Validate(ctx context.Context, input any, name string) Report
 			return report
 		}
 	}
-	source, ok := input.(core.PackageSource)
+	source, ok := input.(container.PackageSource)
 	if !ok {
 		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "input.unsupported", Message: fmt.Sprintf("不支持的输入类型 %T", input)}, v.opts.MaxErrors)
 		report.finish(start, false, v.opts.FailOnWarning)
 		return report
 	}
 	var physicalIndex *packageIndex
-	var physical *core.Package
+	var physical *container.Package
 	if origin, ok := input.(interface {
 		EncryptionInfo() *crypt.Info
-		OpenPhysicalPackage() (*core.Package, error)
+		OpenPhysicalPackage() (*container.Package, error)
 	}); ok {
 		report.Encryption = origin.EncryptionInfo()
 		var err error

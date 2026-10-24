@@ -1,10 +1,10 @@
 package canvas
 
 import (
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
-	"github.com/zc310/ofd/internal/utils"
 )
 
 // 本文件负责从 OFD 文本对象中收集“Unicode 码位 → 字形 ID”映射，并登记到字体
@@ -58,7 +58,7 @@ func (p *Fonts) contentGlyphs(content *models.Content) glyphCollection {
 		return nil
 	}
 	if p.glyphCollections == nil {
-		p.glyphCollections = utils.NewLRU[*models.Content, glyphCollection](glyphCollectionCapacity, nil)
+		p.glyphCollections = cache.NewLRU[*models.Content, glyphCollection](glyphCollectionCapacity, nil)
 	}
 	if collected, ok := p.glyphCollections.Get(content); ok {
 		return collected

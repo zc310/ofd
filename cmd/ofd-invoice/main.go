@@ -16,7 +16,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/invoice"
 )
@@ -300,7 +300,7 @@ func validate(opts *options) error {
 		if samePathAny(opts.output, opts.inputs) {
 			return errors.New("输出不能覆盖输入 OFD 文件")
 		}
-		if opts.mergePDF != "" && utils.SamePath(opts.output, opts.mergePDF) {
+		if opts.mergePDF != "" && fileutil.SamePath(opts.output, opts.mergePDF) {
 			return errors.New("输出不能覆盖合并 PDF 文件")
 		}
 		if opts.mergePDF != "" && samePathAny(opts.mergePDF, opts.inputs) {
@@ -402,7 +402,7 @@ func collectSources(inputs []string) ([]invoice.Source, error) {
 
 func samePathAny(target string, inputs []string) bool {
 	for _, path := range inputs {
-		if utils.SamePath(target, path) {
+		if fileutil.SamePath(target, path) {
 			return true
 		}
 	}

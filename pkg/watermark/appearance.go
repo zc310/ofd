@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"unicode"
 
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -123,7 +123,7 @@ func TextAppearance(options TextOptions) ([]byte, error) {
 		ctm = [6]float64{cosR, sinR, -sinR, cosR, 0, 0}
 	}
 
-	xml := ofdxml.New()
+	xml := xmlcodec.New()
 	xml.StartElement("TextObject")
 	xml.AttrUint("ID", id)
 	xml.AttrBox("Boundary", 0, 0, boundary.Width, boundary.Height)
@@ -189,7 +189,7 @@ func ImageAppearance(options ImageOptions) ([]byte, error) {
 	}
 	positions := boxPositions(width, height, boundary, options.Layout, options.X, options.Y, gap)
 
-	xml := ofdxml.New()
+	xml := xmlcodec.New()
 	for index, position := range positions {
 		xml.StartElement("ImageObject")
 		xml.AttrUint("ID", id+uint64(index))
@@ -200,7 +200,7 @@ func ImageAppearance(options ImageOptions) ([]byte, error) {
 	return appearanceFragment(xml), nil
 }
 
-func appearanceFragment(xml *ofdxml.Writer) []byte {
+func appearanceFragment(xml *xmlcodec.Writer) []byte {
 	data := xml.Done()
 	return bytes.TrimPrefix(data, []byte(`<?xml version="1.0" encoding="UTF-8"?>`))
 }

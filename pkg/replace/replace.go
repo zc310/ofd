@@ -20,7 +20,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/entrywriter"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -140,7 +140,7 @@ type plan struct {
 }
 
 // buildPlan 校验操作集合：路径安全、跨操作不冲突、set/add/delete 语义严格。
-func buildPlan(pkg *core.Package, operations []Operation, options Options) (*plan, error) {
+func buildPlan(pkg *container.Package, operations []Operation, options Options) (*plan, error) {
 	result := &plan{
 		deletes: make(map[string]bool),
 		sets:    make(map[string][]byte),
@@ -162,7 +162,7 @@ func buildPlan(pkg *core.Package, operations []Operation, options Options) (*pla
 	}
 	for _, operation := range operations {
 		name := strings.TrimSpace(operation.Name)
-		if err := core.ValidateEntryName(name); err != nil {
+		if err := container.ValidateEntryName(name); err != nil {
 			return nil, err
 		}
 		if creator.IsSignatureEntry(name) {
@@ -268,15 +268,15 @@ func normalizeOptions(options Options) (Options, error) {
 	return options, nil
 }
 
-func openAny(input any) (*core.Package, error) {
+func openAny(input any) (*container.Package, error) {
 	switch value := input.(type) {
 	case string:
-		return core.OpenFile(value)
+		return container.OpenFile(value)
 	case []byte:
-		return core.OpenBytes(value)
+		return container.OpenBytes(value)
 	case io.Reader:
-		return core.OpenReader(value)
-	case *core.Package:
+		return container.OpenReader(value)
+	case *container.Package:
 		return value, nil
 	default:
 		return nil, fmt.Errorf("不支持的输入类型: %T", input)
@@ -290,7 +290,7 @@ func openAny(input any) (*core.Package, error) {
 //
 // 另外 SignatureDrop 只删签名条目、不改 OFD.xml，会留下指向已删除条目的
 // DocBody/Signatures 引用，产出不再是合法 OFD。这里同步摘掉该引用。
-func rootDocumentBytes(pkg *core.Package, plan *plan, options Options) ([]byte, error) {
+func rootDocumentBytes(pkg *container.Package, plan *plan, options Options) ([]byte, error) {
 	data, err := pkg.Read(spec.RootDocument)
 	if err != nil {
 		return nil, fmt.Errorf("读取 OFD.xml 失败: %w", err)
@@ -340,10 +340,10 @@ func stripSignaturesRef(data []byte) ([]byte, bool, error) {
 }
 
 // packageEntryIndexes 在一次条目遍历中收集文件名索引与签名目录（含历史 Signs 布局）。
-func packageEntryIndexes(pkg *core.Package) (map[string]bool, []string, error) {
+func packageEntryIndexes(pkg *container.Package) (map[string]bool, []string, error) {
 	existing := make(map[string]bool)
 	dirs := make(map[string]bool)
-	err := pkg.WalkEntries(func(entry core.Entry) bool {
+	err := pkg.WalkEntries(func(entry container.Entry) bool {
 		name := entry.Path
 		if !entry.IsDir {
 			existing[name] = true
@@ -375,7 +375,7 @@ func packageEntryIndexes(pkg *core.Package) (map[string]bool, []string, error) {
 
 // rebuild 重建 ZIP 包：先按原顺序搬运（命中 set 写新内容、跳过 delete、
 // 按签名模式处理签名目录），再追加 add 条目与 OFD.xml。
-func rebuild(pkg *core.Package, plan *plan, options Options, w io.Writer) error {
+func rebuild(pkg *container.Package, plan *plan, options Options, w io.Writer) error {
 	writer := zip.NewWriter(w)
 	state := entrywriter.New(writer, entrywriter.Config{Compression: options.Compression, CompressionLevel: options.CompressionLevel, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning})
 	rootData, err := rootDocumentBytes(pkg, plan, options)

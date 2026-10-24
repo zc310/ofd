@@ -18,8 +18,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/zc310/ofd/internal/browser"
 	"github.com/zc310/ofd/internal/contextio"
+	"github.com/zc310/ofd/internal/convert/browser"
 	"github.com/zc310/ofd/internal/pdf2ofd"
 	"github.com/zc310/ofd/pkg/converter"
 )

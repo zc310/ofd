@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
@@ -74,7 +74,7 @@ func (r *ReferenceIndex) IncompleteReason() string {
 
 // Unreachable 列出包内不在可达集合中的条目，按字典序返回。
 // 目录条目被排除，删除它们没有意义。
-func (r *ReferenceIndex) Unreachable(archive *core.Package) []string {
+func (r *ReferenceIndex) Unreachable(archive *container.Package) []string {
 	var out []string
 	for _, entry := range archive.Entries() {
 		if entry.IsDir || r.Reachable[entry.Path] {
@@ -133,7 +133,7 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 		return nil, err
 	}
 	for name, data := range overrides {
-		if err := core.ValidateEntryName(name); err != nil {
+		if err := container.ValidateEntryName(name); err != nil {
 			return nil, err
 		}
 		file, exists := archive.files[name]
@@ -236,18 +236,18 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 // openInput 把各种输入形态统一成包，第二个返回值表示包是否由本函数创建。
 // 遍历需要随机访问条目，故不接受 io.Reader。传入已打开的包时所有权仍归调用方，
 // 本函数不会关闭它。
-func (v *Validator) openInput(input any) (*core.Package, bool, error) {
+func (v *Validator) openInput(input any) (*container.Package, bool, error) {
 	switch value := input.(type) {
-	case core.PackageSource:
+	case container.PackageSource:
 		pkg, err := value.OFDPackage()
 		return pkg, true, err
 	case string:
-		pkg, err := core.OpenFile(value)
+		pkg, err := container.OpenFile(value)
 		return pkg, true, err
 	case []byte:
-		pkg, err := core.OpenBytes(value)
+		pkg, err := container.OpenBytes(value)
 		return pkg, true, err
-	case *core.Package:
+	case *container.Package:
 		return value, false, nil
 	case io.ReaderAt:
 		return nil, false, fmt.Errorf("引用闭包需要可随机访问的输入，请传入路径或字节")

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/zc310/ofd/internal/docx"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/textdoc"
+	"github.com/zc310/ofd/internal/textdoc/docx"
 )
 
-// 本文件只负责把 DOCX 编码器接进转换注册表，并把文档流交给 internal/docx。
-// 版面结构推断（标题层级、段落边界、表格、列表）在 internal/docx 的 blocks.go
+// 本文件只负责把 DOCX 编码器接进转换注册表，并把文档流交给 internal/textdoc/docx。
+// 版面结构推断（标题层级、段落边界、表格、列表）在 internal/textdoc/docx 的 blocks.go
 // 与 lists.go 里，它们复用 internal/textdoc 的 Entry/Rows/DetectTables，
 // 不依赖本包，因此 DOCX 的实现细节不散落在各个编码器之间。
 

@@ -14,7 +14,7 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -191,7 +191,7 @@ func (r contextReader) Read(p []byte) (int, error) {
 	return r.Reader.Read(p)
 }
 
-func inspectEntry(ctx context.Context, pkg *core.Package, entry core.Entry, options Options) (File, error) {
+func inspectEntry(ctx context.Context, pkg *container.Package, entry container.Entry, options Options) (File, error) {
 	f := File{Path: entry.Path, Size: entry.UncompressedSize, Kind: fileKind(entry.Path)}
 	r, err := pkg.OpenEntry(entry)
 	if err != nil {

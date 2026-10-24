@@ -9,14 +9,14 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // bufferedStreamSink 用完整缓冲区写入同一 ZIP sink，作为分块输出的字节参考。
 type bufferedStreamSink struct{ entrySink }
 
-func (s bufferedStreamSink) writeXML(name string, w *ofdxml.Writer, emit func()) error {
+func (s bufferedStreamSink) writeXML(name string, w *xmlcodec.Writer, emit func()) error {
 	w.Reset()
 	emit()
 	return s.write(name, w.Bytes())

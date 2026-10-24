@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/ofdxml"
+	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 func BenchmarkStreamColor(b *testing.B) {
-	w := ofdxml.New()
+	w := xmlcodec.New()
 	color := &Color{R: 128, G: 190, B: 220}
 	b.ReportAllocs()
 	for b.Loop() {
@@ -167,8 +167,8 @@ func benchmarkDocument() Document {
 // BenchmarkStreamPageArea 测量页面四个区域框的元素写入，用于对比
 // boxString 拼接与 ElementBox 数值直写的分配差异。
 func BenchmarkStreamPageArea(b *testing.B) {
-	w := ofdxml.New()
-	defer ofdxml.Put(w)
+	w := xmlcodec.New()
+	defer xmlcodec.Put(w)
 	area := &PageArea{
 		PhysicalBox:    &Box{X: 0, Y: 0, Width: 210, Height: 297},
 		ApplicationBox: &Box{X: 1.5, Y: 2.5, Width: 207, Height: 292},

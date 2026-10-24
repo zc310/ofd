@@ -218,7 +218,7 @@ CBC 原语失败时清零整个输入缓冲并返回空明文，成功缓冲由�
 
 ```text
 go test ./internal/crypt ./pkg/crypt ./internal/parser ./pkg/validator ./pkg/analyzer -count=1
-go test ./internal/core ./cmd/ofd-crypt ./cmd/ofd-validator ./cmd/ofd-analyzer -count=1
+go test ./internal/container ./cmd/ofd-crypt ./cmd/ofd-validator ./cmd/ofd-analyzer -count=1
 go test ./internal/signeddata ./internal/ses ./pkg/sign ./pkg/integrity ./cmd/ofd-creator ./cmd/ofd-wasm -count=1
 go vet ./internal/crypt ./pkg/crypt ./internal/parser ./pkg/validator ./pkg/analyzer ./cmd/ofd-crypt ./cmd/ofd-validator ./cmd/ofd-analyzer
 git diff --check

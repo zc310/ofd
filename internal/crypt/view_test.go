@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 )
 
 func memoryZIP(t *testing.T, files map[string][]byte) []byte {
@@ -28,7 +28,7 @@ func memoryZIP(t *testing.T, files map[string][]byte) []byte {
 }
 
 func TestViewErasesOwnedKeysAfterLastConsumerLease(t *testing.T) {
-	input, err := core.OpenBytes(memoryZIP(t, map[string][]byte{"OFD.xml": []byte(`<OFD xmlns="http://www.ofdspec.org/2016"/>`)}))
+	input, err := container.OpenBytes(memoryZIP(t, map[string][]byte{"OFD.xml": []byte(`<OFD xmlns="http://www.ofdspec.org/2016"/>`)}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestViewErasesOwnedKeysAfterLastConsumerLease(t *testing.T) {
 	if _, err := EncryptPackage(t.Context(), input, EncryptOptions{Recipients: []EncryptRecipient{{UserName: "reader", Password: []byte("secret")}}}, func(name string, data []byte) error { encrypted[name] = bytes.Clone(data); return nil }); err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := core.OpenBytes(memoryZIP(t, encrypted))
+	pkg, err := container.OpenBytes(memoryZIP(t, encrypted))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/kovidgoyal/imaging/prism/meta/icc"
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/cache"
 )
 
 // Transformer 把某个设备颜色空间（1/3/4 通道）的颜色转换为 sRGB。
@@ -36,8 +36,8 @@ const (
 
 var buildCache = newTransformerCache()
 
-func newTransformerCache() *utils.LRU[cacheKey, *Transformer] {
-	return utils.NewWeightedLRU[cacheKey, *Transformer](transformerCacheEntries, transformerCacheBytes, nil)
+func newTransformerCache() *cache.LRU[cacheKey, *Transformer] {
+	return cache.NewWeightedLRU[cacheKey, *Transformer](transformerCacheEntries, transformerCacheBytes, nil)
 }
 
 // New 解析 ICC 配置文件并按输入通道数创建到 sRGB 的转换管线。

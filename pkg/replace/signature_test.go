@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -57,7 +57,7 @@ const signedFixture = "../../testdata/ofdrw/zsbk.ofd"
 // runOnSigned 对签名样例执行一次条目替换。
 func runOnSigned(t *testing.T, ops []Operation, options Options) ([]byte, []string) {
 	t.Helper()
-	pkg, err := core.OpenFile(signedFixture)
+	pkg, err := container.OpenFile(signedFixture)
 	if err != nil {
 		t.Fatalf("打开样例失败: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestDropRemovesSignaturesWithoutDanglingReference(t *testing.T) {
 
 // TestDropWarnsAboutRemovedSignatures 确认移除签名条目时会提示，不再静默。
 func TestDropWarnsAboutRemovedSignatures(t *testing.T) {
-	pkg, err := core.OpenFile(signedFixture)
+	pkg, err := container.OpenFile(signedFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestSetOnRootDocumentIsStrippedUnderDrop(t *testing.T) {
 // TestDeleteRootDocumentRejected 确认拒绝删除 OFD.xml。它是包的入口，删除后
 // 输出不是合法 OFD，而此前删除会被静默忽略、OFD.xml 照旧写出。
 func TestDeleteRootDocumentRejected(t *testing.T) {
-	pkg, err := core.OpenFile(signedFixture)
+	pkg, err := container.OpenFile(signedFixture)
 	if err != nil {
 		t.Fatal(err)
 	}

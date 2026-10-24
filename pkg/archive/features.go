@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -23,7 +23,7 @@ func scanFeatures(filename string, maxXMLBytes int64) (FeatureSummary, error) {
 	defer packageReader.Close()
 	var summary FeatureSummary
 	var scanErr error
-	err = packageReader.WalkEntries(func(entry core.Entry) bool {
+	err = packageReader.WalkEntries(func(entry container.Entry) bool {
 		// 加密在 OFD 里由包内 Encryptions.xml 表达，文档 XML 中没有对应元素。
 		// 早先的实现匹配 encrypt/encryption/encrypteddoc 三种元素名，而三者
 		// 都不在 OFD 模式中，该计数对合规文件恒为 0。

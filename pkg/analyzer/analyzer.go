@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 
 	gmx509 "github.com/emmansun/gmsm/smx509"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -26,7 +26,7 @@ import (
 type analyzer struct {
 	options             Options
 	report              Report
-	files               map[string]core.Entry
+	files               map[string]container.Entry
 	fileEdges           map[string]ReferenceEdge
 	idEdges             map[string]ReferenceEdge
 	resourceFiles       map[string]bool
@@ -124,7 +124,7 @@ func Analyze(input any, options ...Option) (Report, error) {
 	a := &analyzer{
 		options:             configured,
 		report:              report,
-		files:               make(map[string]core.Entry),
+		files:               make(map[string]container.Entry),
 		fileEdges:           make(map[string]ReferenceEdge),
 		idEdges:             make(map[string]ReferenceEdge),
 		resourceFiles:       make(map[string]bool),
@@ -260,7 +260,7 @@ func inputInfo(input any) (string, int64) {
 	}
 }
 
-func (a *analyzer) indexPackage(packageReader *core.Package) {
+func (a *analyzer) indexPackage(packageReader *container.Package) {
 	entries := packageReader.Entries()
 	if a.options.IncludeTree {
 		a.report.Package.Tree = buildPackageTree(entries)
@@ -292,7 +292,7 @@ type packageTreeNode struct {
 	entry    bool
 }
 
-func buildPackageTree(entries []core.Entry) *PackageTree {
+func buildPackageTree(entries []container.Entry) *PackageTree {
 	root := &packageTreeNode{
 		tree:     PackageTree{Name: ".", Kind: "directory"},
 		children: make(map[string]*packageTreeNode),
@@ -338,7 +338,7 @@ func buildPackageTree(entries []core.Entry) *PackageTree {
 	return &result
 }
 
-func setPackageTreeEntry(tree *PackageTree, entry core.Entry) {
+func setPackageTreeEntry(tree *PackageTree, entry container.Entry) {
 	tree.Kind = "file"
 	if entry.IsDir {
 		tree.Kind = "directory"

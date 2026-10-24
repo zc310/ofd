@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/office"
+	"github.com/zc310/ofd/internal/convert/office"
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/office"
 	"github.com/zc310/ofd/pkg/validator"

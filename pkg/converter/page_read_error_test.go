@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/textdoc"
 )
@@ -64,22 +64,22 @@ func TestTextConversionsRejectUnreadablePagesWithoutProducingEmptyDocuments(t *t
 	}
 }
 
-type textTestPackageSource struct{ pkg *core.Package }
+type textTestPackageSource struct{ pkg *container.Package }
 
-func (s textTestPackageSource) OFDPackage() (*core.Package, error) { return s.pkg, nil }
+func (s textTestPackageSource) OFDPackage() (*container.Package, error) { return s.pkg, nil }
 
 func TestTextConversionsStopCollectingPagesAfterCancellation(t *testing.T) {
 	for _, format := range []string{"text", "markdown", "docx"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			source, err := core.OpenBytes(lifecycleOFD(t, true))
+			source, err := container.OpenBytes(lifecycleOFD(t, true))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer source.Close()
 			var reads []string
-			pkg, err := core.NewVirtual(source.Entries(), func(name string) (io.ReadCloser, error) {
+			pkg, err := container.NewVirtual(source.Entries(), func(name string) (io.ReadCloser, error) {
 				if strings.HasSuffix(name, "/Page.xml") {
 					reads = append(reads, name)
 					cancel()

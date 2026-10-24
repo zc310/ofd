@@ -23,7 +23,7 @@ import (
 	"github.com/knroy/go-xml/v2/xsd"
 	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/coloricc"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
@@ -300,7 +300,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 		report.setCheck("zip", "failed")
 		return
 	}
-	packageReader, err := core.OpenBytes(data)
+	packageReader, err := container.OpenBytes(data)
 	if err != nil {
 		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "zip.invalid", Message: fmt.Sprintf("ZIP 容器无效：%v", err)}, v.opts.MaxErrors)
 		report.setCheck("zip", "failed")
@@ -311,7 +311,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 	v.validatePackage(ctx, packageReader, report)
 }
 
-func (v *Validator) validatePackage(ctx context.Context, packageReader *core.Package, report *Report) {
+func (v *Validator) validatePackage(ctx context.Context, packageReader *container.Package, report *Report) {
 	archive, err := v.indexArchive(packageReader, report)
 	if err != nil {
 		report.setCheck("zip", "failed")
@@ -455,7 +455,7 @@ func (v *Validator) validatePackage(ctx context.Context, packageReader *core.Pac
 }
 
 // indexArchive 使用 core 读取 ZIP 条目；条目限制、路径判断和问题报告由 validator 负责。
-func (v *Validator) indexArchive(packageReader *core.Package, report *Report) (*packageIndex, error) {
+func (v *Validator) indexArchive(packageReader *container.Package, report *Report) (*packageIndex, error) {
 	entries := packageReader.Entries()
 	if v.opts.MaxEntries > 0 && len(entries) > v.opts.MaxEntries {
 		err := fmt.Errorf("ZIP 包含 %d 个条目，不能超过 %d 个", len(entries), v.opts.MaxEntries)

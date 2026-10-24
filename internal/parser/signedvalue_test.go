@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	gmx509 "github.com/emmansun/gmsm/smx509"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 )
 
@@ -383,7 +383,7 @@ func TestVerifySignatureDigestDetectsChangedReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packageReader, err := core.OpenBytes(packageData)
+	packageReader, err := container.OpenBytes(packageData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestVerifySignatureDigestDetectsChangedReference(t *testing.T) {
 }
 
 func TestVerifySignatureDigestRetainsMethodMismatchWithUnsupportedHash(t *testing.T) {
-	pkg, err := core.OpenFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	pkg, err := container.OpenFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func readZipEntry(t *testing.T, filename, entryName string) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packageReader, err := core.OpenBytes(data)
+	packageReader, err := container.OpenBytes(data)
 	if err != nil {
 		t.Fatal(err)
 	}

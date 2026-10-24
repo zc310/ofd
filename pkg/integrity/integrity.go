@@ -16,7 +16,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -89,7 +89,7 @@ func (r *Report) check(code, status, message string) {
 }
 
 type packageData struct {
-	pkg    *core.Package
+	pkg    *container.Package
 	files  map[string][]byte
 	names  []string
 	limits crypt.Limits
@@ -104,7 +104,7 @@ func open(ctx context.Context, input any, limits crypt.Limits) (*packageData, er
 		return nil, err
 	}
 	limits = normalized.Limits
-	var pkg *core.Package
+	var pkg *container.Package
 	switch input := input.(type) {
 	case string:
 		stat, err := os.Stat(input)
@@ -114,12 +114,12 @@ func open(ctx context.Context, input any, limits crypt.Limits) (*packageData, er
 		if stat.Size() > limits.MaxInputBytes {
 			return nil, crypt.ErrLimitExceeded
 		}
-		pkg, err = core.OpenFile(input)
+		pkg, err = container.OpenFile(input)
 	case []byte:
 		if int64(len(input)) > limits.MaxInputBytes {
 			return nil, crypt.ErrLimitExceeded
 		}
-		pkg, err = core.OpenBytes(input)
+		pkg, err = container.OpenBytes(input)
 	case io.Reader:
 		probe := limits.MaxInputBytes
 		if probe < 1<<63-1 {
@@ -132,7 +132,7 @@ func open(ctx context.Context, input any, limits crypt.Limits) (*packageData, er
 		if int64(len(data)) > limits.MaxInputBytes {
 			return nil, crypt.ErrLimitExceeded
 		}
-		pkg, err = core.OpenBytes(data)
+		pkg, err = container.OpenBytes(data)
 	default:
 		return nil, fmt.Errorf("完整性保护需要原始物理 ZIP 路径、字节或 Reader")
 	}
@@ -157,7 +157,7 @@ func open(ctx context.Context, input any, limits crypt.Limits) (*packageData, er
 			return nil, err
 		}
 		name := strings.TrimSuffix(entry.Name, "/")
-		if core.ValidateEntryName(name) != nil || strings.Contains(name, ":") || lower[strings.ToLower(name)] {
+		if container.ValidateEntryName(name) != nil || strings.Contains(name, ":") || lower[strings.ToLower(name)] {
 			return nil, fmt.Errorf("%w: ZIP 路径重复或无效", ErrInvalid)
 		}
 		lower[strings.ToLower(name)] = true
@@ -392,7 +392,7 @@ func Verify(ctx context.Context, input any, options Options) (report *Report, er
 		if ctx.Err() != nil {
 			return r, ctx.Err()
 		}
-		if errors.Is(physicalErr, crypt.ErrLimitExceeded) || errors.Is(physicalErr, core.ErrReadLimitExceeded) || errors.Is(physicalErr, securexml.ErrLimitExceeded) {
+		if errors.Is(physicalErr, crypt.ErrLimitExceeded) || errors.Is(physicalErr, container.ErrReadLimitExceeded) || errors.Is(physicalErr, securexml.ErrLimitExceeded) {
 			return r, fmt.Errorf("%w: %w", crypt.ErrLimitExceeded, physicalErr)
 		}
 		status := "invalid"
@@ -408,7 +408,7 @@ func Verify(ctx context.Context, input any, options Options) (report *Report, er
 			if ctx.Err() != nil {
 				return r, ctx.Err()
 			}
-			if errors.Is(err, crypt.ErrLimitExceeded) || errors.Is(err, core.ErrReadLimitExceeded) {
+			if errors.Is(err, crypt.ErrLimitExceeded) || errors.Is(err, container.ErrReadLimitExceeded) {
 				return r, fmt.Errorf("%w: %w", crypt.ErrLimitExceeded, err)
 			}
 			r.check("physical.signature", "invalid", err.Error())
@@ -520,11 +520,11 @@ func Verify(ctx context.Context, input any, options Options) (report *Report, er
 }
 
 // packageSource 只借用物理包，不转移所有权。
-type packageSource struct{ pkg *core.Package }
+type packageSource struct{ pkg *container.Package }
 
 func (s packageSource) InputSize() int64 { return s.pkg.InputSize() }
-func (s packageSource) OFDPackage() (*core.Package, error) {
-	return core.NewVirtual(s.pkg.Entries(), s.pkg.Open, nil)
+func (s packageSource) OFDPackage() (*container.Package, error) {
+	return container.NewVirtual(s.pkg.Entries(), s.pkg.Open, nil)
 }
 
 func encryptionReachable(logical map[string]bool, info *crypt.Info) map[string]bool {

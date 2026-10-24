@@ -8,7 +8,7 @@ import (
 	"github.com/knroy/go-xml/v2/xdm"
 )
 
-// 原始资源继续使用与 XSD 校验相同的解析器。生成路径只使用 ofdxml。
+// 原始资源继续使用与 XSD 校验相同的解析器。生成路径只使用 xmlcodec。
 func parseXMLRoot(data []byte) (*xdm.Node, error) {
 	tree, err := xdm.Parse(bytes.NewReader(data), xdm.ParseOptions{MaxBytes: -1, MaxNodes: -1, MaxDepth: -1})
 	if err != nil {

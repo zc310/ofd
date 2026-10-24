@@ -14,7 +14,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -73,7 +73,7 @@ func ValidateXML(ctx context.Context, data []byte, root, docType string, target 
 // Discover 只从 OFD.xml 的签名列表发现签名。References 指向 Encryptions.xml
 // 的普通签名按物理域解释，并必须同时保护 OFD.xml 和所属列表。
 // 暂不支持同一包混合逻辑签名、Relative 或加密的签名入口；无物理签名返回 nil。
-func Discover(ctx context.Context, pkg *core.Package, limits crypt.Limits) (*Graph, error) {
+func Discover(ctx context.Context, pkg *container.Package, limits crypt.Limits) (*Graph, error) {
 	if !crypt.Present(pkg) {
 		return nil, nil
 	}
@@ -212,7 +212,7 @@ func Discover(ctx context.Context, pkg *core.Package, limits crypt.Limits) (*Gra
 }
 
 // Verify 明确使用原始物理包，不回退到解密后的同名路径。
-func Verify(ctx context.Context, pkg *core.Package, graph *Graph, options *parser.SignatureVerificationOptions, limits crypt.Limits) ([]Verification, error) {
+func Verify(ctx context.Context, pkg *container.Package, graph *Graph, options *parser.SignatureVerificationOptions, limits crypt.Limits) ([]Verification, error) {
 	opt, err := crypt.NormalizeOptions(crypt.InspectOptions{Limits: limits})
 	if err != nil {
 		return nil, err
@@ -222,7 +222,7 @@ func Verify(ctx context.Context, pkg *core.Package, graph *Graph, options *parse
 	}
 	processed := opt.Limits.MaxProcessedBytes - graph.MetadataBytes
 	budgetExceeded := false
-	bounded, err := core.NewVirtual(pkg.Entries(), func(name string) (io.ReadCloser, error) {
+	bounded, err := container.NewVirtual(pkg.Entries(), func(name string) (io.ReadCloser, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -235,7 +235,7 @@ func Verify(ctx context.Context, pkg *core.Package, graph *Graph, options *parse
 			return nil, crypt.ErrLimitExceeded
 		}
 		data, err := pkg.ReadLimit(name, maximum)
-		if errors.Is(err, core.ErrReadLimitExceeded) {
+		if errors.Is(err, container.ErrReadLimitExceeded) {
 			budgetExceeded = true
 		}
 		processed -= int64(len(data))
@@ -291,7 +291,7 @@ func Verify(ctx context.Context, pkg *core.Package, graph *Graph, options *parse
 // LogicalPackage 从普通文档遍历中移除外层物理签名入口及其元数据。
 // 原始字节仍在物理包上验证；外签 References 不能作为文档可达性的依据。
 // 返回包借用 logical，不取得其所有权。
-func LogicalPackage(ctx context.Context, logical *core.Package, graph *Graph) (*core.Package, error) {
+func LogicalPackage(ctx context.Context, logical *container.Package, graph *Graph) (*container.Package, error) {
 	data, err := logical.ReadLimit(spec.RootDocument, 4<<20)
 	if err != nil {
 		return nil, err
@@ -326,7 +326,7 @@ func LogicalPackage(ctx context.Context, logical *core.Package, graph *Graph) (*
 	if err != nil {
 		return nil, err
 	}
-	var entries []core.Entry
+	var entries []container.Entry
 	for _, entry := range logical.Entries() {
 		if graph.Metadata[entry.Path] {
 			continue
@@ -337,7 +337,7 @@ func LogicalPackage(ctx context.Context, logical *core.Package, graph *Graph) (*
 		}
 		entries = append(entries, entry)
 	}
-	return core.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
+	return container.NewVirtual(entries, func(name string) (io.ReadCloser, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -349,7 +349,7 @@ func LogicalPackage(ctx context.Context, logical *core.Package, graph *Graph) (*
 }
 
 // CheckContainer 在摘要读取前限制条目大小和总量，并拒绝歧义路径。
-func CheckContainer(ctx context.Context, pkg *core.Package, limits crypt.Limits) error {
+func CheckContainer(ctx context.Context, pkg *container.Package, limits crypt.Limits) error {
 	opt, err := crypt.NormalizeOptions(crypt.InspectOptions{Limits: limits})
 	if err != nil {
 		return err
@@ -365,7 +365,7 @@ func CheckContainer(ctx context.Context, pkg *core.Package, limits crypt.Limits)
 		}
 		name := strings.TrimSuffix(entry.Name, "/")
 		key := strings.ToLower(name)
-		if core.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[key] {
+		if container.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[key] {
 			return fmt.Errorf("物理签名容器路径重复或无效")
 		}
 		seen[key] = true

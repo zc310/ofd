@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/crypt"
 	"github.com/zc310/ofd/pkg/spec"
@@ -194,7 +194,7 @@ func validate(o *options) error {
 					return usage("同一操作或 seed 不能重复指定凭据")
 				}
 				seen[id] = true
-				if spec.kind == "seed:" && (core.ValidateEntryName(selector) != nil || strings.Contains(selector, ":")) {
+				if spec.kind == "seed:" && (container.ValidateEntryName(selector) != nil || strings.Contains(selector, ":")) {
 					return usage("seed 选择必须使用规范 ZIP 相对路径")
 				}
 				if file == "-" {
@@ -217,7 +217,7 @@ func validate(o *options) error {
 			return usage("页面范围需要 --page-document 和 --page-id，且不能与 --entry、--append 同用")
 		}
 		if len(o.pageIDs) > 0 {
-			if core.ValidateEntryName(o.pageDocument) != nil || strings.Contains(o.pageDocument, ":") {
+			if container.ValidateEntryName(o.pageDocument) != nil || strings.Contains(o.pageDocument, ":") {
 				return usage("--page-document 需要规范 ZIP 相对路径")
 			}
 			seen := map[string]bool{}
@@ -282,7 +282,7 @@ func validate(o *options) error {
 			if o.appendLayer && name == spec.EncryptionEntryPoint {
 				return usage("追加层必须保留明文 Encryptions.xml")
 			}
-			if core.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[name] {
+			if container.ValidateEntryName(name) != nil || strings.Contains(name, ":") || seen[name] {
 				return usage("--entry 必须为唯一的规范 ZIP 相对路径")
 			}
 			seen[name] = true

@@ -27,7 +27,7 @@ import (
 	// 注册 Office（doc/docx/odt/rtf/wps/pptx/xlsx 等）导入器与→PDF 转换器。
 	_ "github.com/zc310/ofd/pkg/converter/import/office"
 	// 注册 HTML/MHTML 导入器与→PDF 转换器（chromedp + Chrome/Chromium）。
-	"github.com/zc310/ofd/internal/utils"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/version"
 	_ "github.com/zc310/ofd/pkg/converter/import/html"
 	// 注册 PNG/JPEG/TIFF→OFD 图片导入器。
@@ -447,7 +447,7 @@ func runBatch(opts *options) error {
 	} else if statErr != nil && !os.IsNotExist(statErr) {
 		return usageErrorf("输出目录: %w", statErr)
 	}
-	if utils.SamePath(inputRoot, outputRoot) {
+	if fileutil.SamePath(inputRoot, outputRoot) {
 		return usageError(errors.New("批量输入目录和输出目录不能相同"))
 	}
 

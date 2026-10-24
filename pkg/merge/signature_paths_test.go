@@ -8,7 +8,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/core"
+	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -64,7 +64,7 @@ func TestSignaturePreserveRejectsProtectedRootChanges(t *testing.T) {
 
 func TestSignaturePreserveAllowsUnchangedProtectedRoot(t *testing.T) {
 	input := writeSignatureLayout(t, "Doc_0/Signatures.xml", "Signatures/custom.xml", "/OFD.xml")
-	pkg, err := core.OpenFile(input)
+	pkg, err := container.OpenFile(input)
 	if err != nil {
 		t.Fatal(err)
 	}

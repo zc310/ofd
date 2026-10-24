@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/manifest"
-	"github.com/zc310/ofd/internal/utils"
 	"github.com/zc310/ofd/internal/version"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -276,7 +276,7 @@ func validateOptions(opts *options) error {
 	if strings.TrimSpace(opts.output) == "" && !opts.check {
 		return errors.New("缺少 OFD 输出文件")
 	}
-	if opts.output != "-" && utils.SamePath(opts.input, opts.output) {
+	if opts.output != "-" && fileutil.SamePath(opts.input, opts.output) {
 		return errors.New("输出文件不能覆盖 manifest 输入文件")
 	}
 	switch creator.CompressionMode(strings.ToLower(strings.TrimSpace(opts.compression))) {
