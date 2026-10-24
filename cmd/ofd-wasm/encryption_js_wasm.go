@@ -50,7 +50,25 @@ func decryptOptions(args []js.Value) (options crypt.DecryptOptions, err error) {
 			return options, fmt.Errorf("%w: 无法读取私钥数据", errInvalidCredentials)
 		}
 		defer clear(data)
-		options.PrivateKey, err = parseWASMPrivateKey(data)
+		var keyPassword []byte
+		if password := value.Get("privateKeyPassword"); !password.IsUndefined() && !password.IsNull() {
+			if password.Type() != js.TypeString {
+				return options, fmt.Errorf("%w: privateKeyPassword 必须是字符串", errInvalidCredentials)
+			}
+			encoded := js.Global().Get("TextEncoder").New().Call("encode", password)
+			defer encoded.Call("fill", 0)
+			length := encoded.Get("byteLength").Int()
+			if length > 64<<10 {
+				return options, fmt.Errorf("%w: 私钥密码超过 64 KiB", errInvalidCredentials)
+			}
+			keyPassword = make([]byte, length)
+			if js.CopyBytesToGo(keyPassword, encoded) != length {
+				clear(keyPassword)
+				return options, fmt.Errorf("%w: 无法读取私钥密码", errInvalidCredentials)
+			}
+			defer clear(keyPassword)
+		}
+		options.PrivateKey, err = parseWASMPrivateKey(data, keyPassword)
 		if err != nil {
 			return options, err
 		}

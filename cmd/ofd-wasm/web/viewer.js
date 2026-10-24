@@ -396,6 +396,7 @@ const unlockUser = document.querySelector('#unlock-user');
 const unlockPassword = document.querySelector('#unlock-password');
 const unlockPasswordFile = document.querySelector('#unlock-password-file');
 const unlockKey = document.querySelector('#unlock-key');
+const unlockKeyPassword = document.querySelector('#unlock-key-password');
 const unlockError = document.querySelector('#unlock-error');
 const unlockDocument = document.querySelector('#unlock-document');
 let unlockPrompt;
@@ -4100,6 +4101,7 @@ function updateUnlockMethod() {
   document.querySelector('#unlock-password-field').hidden = useKey || usePasswordFile;
   document.querySelector('#unlock-key-field').hidden = !useKey;
   document.querySelector('#unlock-password-file-field').hidden = !usePasswordFile;
+  unlockKeyPassword.disabled = !useKey;
   unlockPassword.disabled = useKey || usePasswordFile;
   unlockKey.disabled = !useKey;
   unlockPasswordFile.disabled = !usePasswordFile;
@@ -4111,6 +4113,7 @@ function finishUnlockPrompt(credentials) {
   unlockPassword.value = '';
   unlockPasswordFile.value = '';
   unlockKey.value = '';
+  unlockKeyPassword.value = '';
   unlockUser.value = '';
   if (unlockDialog.open) unlockDialog.close();
   pending?.resolve(credentials);
@@ -4142,6 +4145,7 @@ async function submitUnlockCredentials(event) {
       if (!key) throw new Error('请选择 SM2 PKCS#8 私钥文件。');
       if (key.size > (4 << 20)) throw new Error('私钥文件不能超过 4 MiB。');
       credentials.privateKey = await key.arrayBuffer();
+      credentials.privateKeyPassword = unlockKeyPassword.value;
     } else if (unlockMethod.value === 'passwordFile') {
       const file = unlockPasswordFile.files?.[0];
       if (!file) throw new Error('请选择 UTF-8 口令文件。');
@@ -4183,6 +4187,7 @@ async function openFileWithCredentials(selected, generation) {
         } finally {
           delete options.password;
           delete options.privateKey;
+          delete options.privateKeyPassword;
         }
       } catch (error) {
         if (generation !== documentGeneration || isCancelledError(error)) return undefined;

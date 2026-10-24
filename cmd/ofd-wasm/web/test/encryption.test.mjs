@@ -104,6 +104,7 @@ function dialogState() {
   const state = {
     unlockPrompt: undefined,
     unlockUser: { value: '' }, unlockPassword: { value: '', disabled: false, focus() {} },
+    unlockKeyPassword: { value: '', disabled: true },
     unlockKey: { value: '', disabled: true, files: [] },
     unlockPasswordFile: { value: '', disabled: true, files: [] },
     unlockMethod: { value: 'password' }, unlockError: { textContent: '', hidden: true },
@@ -129,14 +130,31 @@ suite.group('实际对话框逻辑');
 }
 {
   const state = dialogState();
+  const promise = state.prompt('encrypted-key.ofd', credentialError('credentials_required'));
+  state.unlockMethod.value = 'privateKey';
+  state.update();
+  state.unlockKey.files = [{ size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }];
+  state.unlockKeyPassword.value = 'key-password';
+  await state.submit({ preventDefault() {} });
+  assert.deepEqual(await promise, {
+    userName: '',
+    privateKey: new Uint8Array([1, 2, 3]).buffer,
+    privateKeyPassword: 'key-password',
+  });
+  suite.check(state.unlockKeyPassword.value === '', '提交后清空私钥密码字段');
+}
+{
+  const state = dialogState();
   const promise = state.prompt('key.ofd', credentialError('credentials_required'));
   state.unlockMethod.value = 'privateKey';
   state.update();
   suite.check(state.unlockPassword.disabled && !state.unlockKey.disabled, '选择私钥后切换输入方式');
+  suite.check(!state.unlockKeyPassword.disabled, '私钥方式启用私钥密码输入');
   await state.submit({ preventDefault() {} });
   suite.check(!state.unlockError.hidden && state.unlockDialog.open, '未选择私钥时保留对话框并提示');
   let resolveKey;
   state.unlockKey.files = [{ size: 3, arrayBuffer: () => new Promise(resolve => { resolveKey = resolve; }) }];
+  state.unlockKeyPassword.value = 'key-password';
   const submission = state.submit({ preventDefault() {} });
   state.finish(null);
   const key = new Uint8Array([1, 2, 3]);
@@ -206,9 +224,9 @@ suite.group('Worker 和页面之间保留错误代码');
   });
   vm.runInContext(`${source}\nreadyResolve(); self.testAPI = { execute, drain };`, context);
   const key = new Uint8Array([1, 2, 3]);
-  const options = { password: 'secret', privateKey: key.buffer };
+  const options = { password: 'secret', privateKey: key.buffer, privateKeyPassword: 'key-password' };
   await assert.rejects(context.self.testAPI.execute({ command: 'open', data: new ArrayBuffer(1), options }), error => error.code === 'decrypt_failed');
-  suite.check(!Object.hasOwn(options, 'password') && !Object.hasOwn(options, 'privateKey') && key.every(value => value === 0), 'Worker 在失败后清理凭据');
+  suite.check(!Object.hasOwn(options, 'password') && !Object.hasOwn(options, 'privateKey') && !Object.hasOwn(options, 'privateKeyPassword') && key.every(value => value === 0), 'Worker 在失败后清理凭据');
   context.self.onmessage({ data: { id: 9, command: 'open', data: new ArrayBuffer(1) } });
   await tick();
   suite.check(replies[0]?.code === 'decrypt_failed' && replies[0]?.id === 9, 'Worker 回复附带稳定错误代码');

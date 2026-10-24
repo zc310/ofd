@@ -839,12 +839,14 @@
       <div id="unlock-key-field" class="export-field" hidden>
         <label for="unlock-key">私钥文件</label>
         <input id="unlock-key" type="file" accept=".pem,.der,.key,.p8">
+        <label for="unlock-key-password">私钥密码</label>
+        <input id="unlock-key-password" type="password" autocomplete="off" disabled>
       </div>
       <div id="unlock-password-file-field" class="export-field" hidden>
         <label for="unlock-password-file">UTF-8 口令文件</label>
         <input id="unlock-password-file" type="file" accept=".txt,text/plain">
       </div>
-      <p id="unlock-hint" class="export-hint">输入口令、选择 UTF-8 口令文件，或选择未加密的 SM2 PKCS#8 私钥。口令文件保留空格和换行，凭据仅用于本次解锁。</p>
+      <p id="unlock-hint" class="export-hint">输入文档口令，或选择 SM2 PKCS#8 私钥；加密私钥可填写私钥密码。凭据仅用于本次解锁。</p>
       <p id="unlock-error" class="export-error" role="alert" hidden></p>
       <div class="export-actions">
         <button id="unlock-cancel" type="button">取消</button>

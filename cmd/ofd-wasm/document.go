@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/emmansun/gmsm/pkcs8"
 	"github.com/emmansun/gmsm/sm2"
-	"github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/pkg/crypt"
 	"github.com/zc310/ofd/pkg/webreader"
 )
@@ -49,25 +49,21 @@ func openWASMDocument(ctx context.Context, data []byte, options webreader.OpenOp
 	return webreader.OpenInput(view, options)
 }
 
-func parseWASMPrivateKey(data []byte) (*sm2.PrivateKey, error) {
+func parseWASMPrivateKey(data, password []byte) (*sm2.PrivateKey, error) {
 	der := data
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN")) {
 		block, rest := pem.Decode(data)
-		if block == nil || block.Type != "PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
-			return nil, fmt.Errorf("%w: 需要单个未加密的 PRIVATE KEY PEM 块或 PKCS#8 DER", errInvalidCredentials)
+		if block == nil || (block.Type != "PRIVATE KEY" && block.Type != "ENCRYPTED PRIVATE KEY") || len(bytes.TrimSpace(rest)) != 0 {
+			return nil, fmt.Errorf("%w: 需要单个 PRIVATE KEY 或 ENCRYPTED PRIVATE KEY PEM 块，或 PKCS#8 DER", errInvalidCredentials)
 		}
 		der = block.Bytes
 		defer clear(der)
 	}
-	key, err := smx509.ParsePKCS8PrivateKey(der)
+	key, err := pkcs8.ParsePKCS8PrivateKeySM2(der, password)
 	if err != nil {
 		return nil, fmt.Errorf("%w: 无法解析 SM2 PKCS#8 私钥", errInvalidCredentials)
 	}
-	sm2Key, ok := key.(*sm2.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("%w: 私钥不是 SM2 类型", errInvalidCredentials)
-	}
-	return sm2Key, nil
+	return key, nil
 }
 
 // wasmErrorCode 将错误类型传递到 Worker 和页面，不依赖错误文案判断是否允许重试。

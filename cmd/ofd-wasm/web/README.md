@@ -9,13 +9,13 @@
 ### 加密文档
 
 - 支持 GM/T 0099-2020 口令方案 `1.1.1` 和 SM2 证书方案 `1.1.2`；整包加密、部分条目加密、独立条目密钥及明文/密文映射表均通过现有只读解密视图读取。
-- 本地文件、拖放、最近文件和远程 `?file=` 都会在需要凭据时显示解锁对话框。输入口令，或切换至“SM2 私钥”选择未加密的 PKCS#8 PEM/DER 私钥文件；可填写接收者名称，留空时按库的尝试预算自动匹配。
+- 本地文件、拖放、最近文件和远程 `?file=` 都会在需要凭据时显示解锁对话框。输入口令，或切换至“SM2 私钥”选择 PKCS#8 PEM/DER 私钥文件；加密私钥可填写私钥密码。可填写接收者名称，留空时按库的尝试预算自动匹配。
 - 保留口令的空格和 Unicode，允许空口令。错误凭据可重新输入；取消或切换文件会结束旧的解锁流程。元数据损坏、不支持的方案或预算超限直接报告错误。
 - 口令包含换行等无法在单行输入框输入的字符时，选择“口令文件”，读取最多 64 KiB 的 UTF-8 文件，保留 BOM、空格及换行；空文件表示空口令，非法 UTF-8 被拒绝。
 - 只有完整解锁后才进入页面浏览；多层加密须能使用本次提供的凭据全部解锁。解锁后支持页面、文字、搜索、打印和导出，源文件保持原始加密内容。
-- 口令和私钥只用于本次解锁，不写入地址栏、最近文档或阅读设置；最近文件缓存的是原始加密 OFD，再次打开需重新解锁。WASM 不生成明文 ZIP，关闭 Reader 后释放解密视图。解锁本身不代表签名或完整性验证通过。
+- 文档口令、私钥和私钥密码只用于本次解锁，不写入地址栏、最近文档或阅读设置；最近文件缓存的是原始加密 OFD，再次打开需重新解锁。WASM 不生成明文 ZIP，关闭 Reader 后释放解密视图。解锁本身不代表签名或完整性验证通过。
 - WASM 默认使用 `pkg/crypt` 兼容模式，支持 ofdrw 的数字操作 ID 等已知格式差异。缺少 `EncryptCaseId` 时，按用户提供的口令选择 `1.1.1`，或按 SM2 私钥选择 `1.1.2`；首次未提供凭据时显示解锁框。已声明的加密方案保持原值，未知方案仍报错。
-- 输入 OFD 仍限 256 MiB；口令最多 64 KiB UTF-8，私钥文件最多 4 MiB，其余解密预算沿用 `pkg/crypt` 默认值。
+- 输入 OFD 仍限 256 MiB；文档口令和私钥密码最多 64 KiB UTF-8，私钥文件最多 4 MiB，其余解密预算沿用 `pkg/crypt` 默认值。
 
 ### 打印与导出
 
@@ -300,7 +300,7 @@ ofd.close()
 ```
 
 `ofd.open(data, options)` 的 `options` 除 `pageCacheCapacity` 和 `pageCacheBytes` 外，
-还可指定 `password`、`userName`、`privateKey`：
+还可指定 `password`、`userName`、`privateKey` 和 `privateKeyPassword`：
 
 ```javascript
 const result = ofd.open(new Uint8Array(await file.arrayBuffer()), {
@@ -309,9 +309,10 @@ const result = ofd.open(new Uint8Array(await file.arrayBuffer()), {
 })
 if (result.error) console.error(result.code, result.error)
 
-// SM2 证书加密文档：提供对应的未加密 PKCS#8 PEM/DER 私钥内容。
+// SM2 证书加密文档：支持未加密或密码保护的 PKCS#8 PEM/DER 私钥。
 ofd.open(await file.arrayBuffer(), {
   privateKey: new Uint8Array(await privateKeyFile.arrayBuffer()),
+  privateKeyPassword: 'key-password', // 加密私钥的密码；未加密私钥省略
 })
 ```
 
@@ -411,7 +412,7 @@ make test-wasm-web
 网页 Worker 接收以下命令：
 
 ```text
-open       data: ArrayBuffer, options?: { pageCacheCapacity, pageCacheBytes, password, userName, privateKey }
+open       data: ArrayBuffer, options?: { pageCacheCapacity, pageCacheBytes, password, userName, privateKey, privateKeyPassword }
 close
 cancel     target: request id
 memStats

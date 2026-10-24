@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmansun/gmsm/pkcs8"
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/smx509"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
@@ -150,11 +151,25 @@ func TestWASMDocumentUnlocksSM2RecipientsWithPKCS8Keys(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, data := range [][]byte{keyDER, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})} {
-		parsed, err := parseWASMPrivateKey(data)
+		parsed, err := parseWASMPrivateKey(data, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		checkWASMReader(t, encrypted.Bytes(), crypt.DecryptOptions{PrivateKey: parsed}, expected)
+	}
+	keyPassword := []byte("wasm-test-key-password")
+	encryptedKeyDER, err := pkcs8.MarshalPrivateKey(key, keyPassword, pkcs8.DefaultOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptedKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: encryptedKeyDER})
+	parsed, err := parseWASMPrivateKey(encryptedKeyPEM, keyPassword)
+	if err != nil || parsed.D.Cmp(key.D) != 0 {
+		t.Fatalf("无法解析带密码的 SM2 PKCS#8 私钥: %v", err)
+	}
+	checkWASMReader(t, encrypted.Bytes(), crypt.DecryptOptions{PrivateKey: parsed}, expected)
+	if _, err := parseWASMPrivateKey(encryptedKeyPEM, []byte("wrong")); !errors.Is(err, errInvalidCredentials) {
+		t.Fatalf("错误私钥密码未拒绝: %v", err)
 	}
 	compatible := wasmOFDRWMetadata(t, encrypted.Bytes(), "")
 	if reader, err := openWASMDocument(t.Context(), compatible, webreader.OpenOptions{}, crypt.DecryptOptions{}); reader != nil || wasmErrorCode(err) != "credentials_required" {
@@ -177,8 +192,8 @@ func TestWASMDocumentUnlocksSM2RecipientsWithPKCS8Keys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, data := range [][]byte{ecdsaDER, []byte("bad"), pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: keyDER}), append(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), []byte("extra")...)} {
-		if _, err := parseWASMPrivateKey(data); !errors.Is(err, errInvalidCredentials) {
+	for _, data := range [][]byte{ecdsaDER, []byte("bad"), append(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), []byte("extra")...)} {
+		if _, err := parseWASMPrivateKey(data, nil); !errors.Is(err, errInvalidCredentials) {
 			t.Fatalf("非法私钥未拒绝: %v", err)
 		}
 	}

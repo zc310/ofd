@@ -11,6 +11,7 @@ import (
 	"syscall/js"
 	"testing"
 
+	"github.com/emmansun/gmsm/pkcs8"
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/pkg/crypt"
@@ -85,6 +86,8 @@ func TestWASMDecryptOptionsPreserveEmptyPasswordsAndRejectInvalidCredentials(t *
 	for _, options := range []map[string]any{
 		{"password": 123456}, {"password": strings.Repeat("x", 65537)}, {"userName": true},
 		{"privateKey": "not binary"}, {"privateKey": map[string]any{"byteLength": wasmMaxCredentialBytes + 1}},
+		{"privateKey": js.Global().Get("Uint8Array").New(1), "privateKeyPassword": true},
+		{"privateKey": js.Global().Get("Uint8Array").New(1), "privateKeyPassword": strings.Repeat("x", 65537)},
 	} {
 		if _, err := decryptOptions([]js.Value{js.ValueOf(options)}); !errors.Is(err, errInvalidCredentials) || wasmErrorCode(err) != "invalid_credentials" {
 			t.Fatalf("非法凭据未拒绝: %v", err)
@@ -114,5 +117,24 @@ func TestWASMDecryptOptionsAcceptSM2PrivateKeyArrayBuffers(t *testing.T) {
 				t.Fatal("JS 私钥内容未正确传递到解密选项")
 			}
 		}
+	}
+	password := []byte("js-test-key-password")
+	encryptedDER, err := pkcs8.MarshalPrivateKey(key, password, pkcs8.DefaultOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptedPEM := pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: encryptedDER})
+	input := js.Global().Get("Uint8Array").New(len(encryptedPEM))
+	js.CopyBytesToJS(input, encryptedPEM)
+	options, err := decryptOptions([]js.Value{js.ValueOf(map[string]any{
+		"privateKey":         input,
+		"privateKeyPassword": string(password),
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, ok := options.PrivateKey.(*sm2.PrivateKey)
+	if !ok || parsed.D.Cmp(key.D) != 0 {
+		t.Fatal("JS 加密私钥或私钥密码未正确传递")
 	}
 }

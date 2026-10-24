@@ -101,6 +101,7 @@ async function execute(message) {
           else if (ArrayBuffer.isView(key)) new Uint8Array(key.buffer, key.byteOffset, key.byteLength).fill(0);
           delete message.options.password;
           delete message.options.privateKey;
+          delete message.options.privateKeyPassword;
         }
       }
     }
