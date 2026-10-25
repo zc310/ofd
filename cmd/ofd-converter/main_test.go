@@ -22,12 +22,15 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	if err := os.WriteFile(output, []byte("existing output"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-image-mode=compact", "--pdf-jpeg-quality", "76", "--pdf-jpx-backend=openjpeg", "-pdf-max-input-bytes=4096", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", "--pdf-max-operations", "300", input, output})
+	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-image-mode=compact", "--pdf-jpeg-quality", "76", "--pdf-jpx-backend=openjpeg", "-pdf-max-input-bytes=4096", "--pdf-max-total-decoded-bytes", "4294967296", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", "--pdf-max-operations", "300", input, output})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.pdfStrict || opts.pdfImageMode != "compact" || opts.pdfJPEGQuality != 76 || opts.pdfJPXBackend != "openjpeg" || opts.pdfMaxInputBytes != 4096 || opts.pdfMaxImagePixels != 100 || opts.pdfMaxTotalImagePixels != 200 || opts.pdfMaxOperations != 300 {
+	if !opts.pdfStrict || opts.pdfImageMode != "compact" || opts.pdfJPEGQuality != 76 || opts.pdfJPXBackend != "openjpeg" || opts.pdfMaxInputBytes != 4096 || opts.pdfMaxTotalDecodedBytes != 4294967296 || opts.pdfMaxImagePixels != 100 || opts.pdfMaxTotalImagePixels != 200 || opts.pdfMaxOperations != 300 {
 		t.Fatalf("opts=%+v", opts)
+	}
+	if got := opts.pdfLimits().MaxTotalDecodedBytes; got != 4294967296 {
+		t.Fatalf("MaxTotalDecodedBytes = %d, want 4294967296", got)
 	}
 	var diagnostics bytes.Buffer
 	opts.diagnosticsWriter = &diagnostics
@@ -43,7 +46,7 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	if err := run(opts); !errors.Is(err, converter.ErrPDFImportLimitExceeded) || errors.Is(err, ErrUsage) {
 		t.Fatalf("budget error=%v", err)
 	}
-	for _, args := range [][]string{{"--pdf-image-mode=source", input, output}, {"--pdf-jpeg-quality=101", input, output}, {"--pdf-jpx-backend=invalid", input, output}, {"--pdf-max-input-bytes=-1", input, output}, {"--pdf-max-image-pixels=-1", "--input-dir", dir, "--output-dir", filepath.Join(dir, "out"), "--format", "ofd"}, {"--pdf-max-operations=-1", input, output}} {
+	for _, args := range [][]string{{"--pdf-image-mode=source", input, output}, {"--pdf-jpeg-quality=101", input, output}, {"--pdf-jpx-backend=invalid", input, output}, {"--pdf-max-input-bytes=-1", input, output}, {"--pdf-max-total-decoded-bytes=-1", input, output}, {"--pdf-max-image-pixels=-1", "--input-dir", dir, "--output-dir", filepath.Join(dir, "out"), "--format", "ofd"}, {"--pdf-max-operations=-1", input, output}} {
 		opts, err := parseArgs(args)
 		if err != nil {
 			t.Fatal(err)

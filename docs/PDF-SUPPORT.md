@@ -168,6 +168,9 @@ JPX 后端通过 `Options.JPXBackend` 选择，默认 `go`。`openjpeg` 后端�
 | MaxOperations | 1,000,000,000 | 内容解析、文字/映射、遮罩、网格、函数等处理量。 |
 | MaxDepth | 64 | 解析、状态栈、Form、软掩码和函数等递归深度。 |
 
+CLI 可通过 `--pdf-max-total-decoded-bytes` 调整累计解码字节预算，单位为字节，`0`
+使用默认值。例如，4GiB 预算可写为 `--pdf-max-total-decoded-bytes 4294967296`。
+
 这些预算限制对应的处理量，并不等同于进程峰值内存上限。
 
 ### 转换模式与失败处理

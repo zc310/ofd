@@ -76,53 +76,54 @@ type options struct {
 	// 放在 options 里而不是给下面十几个函数逐个加参数：这个结构体已经承载了
 	// format、dpi、timeout 等全部运行参数，转换调用链上的函数一律只收
 	// *options，再单开一个 ctx 参数只会让签名重复而信息量不增。
-	ctx                    context.Context
-	input                  string
-	output                 string
-	inputDir               string
-	outputDir              string
-	format                 string
-	from                   string
-	htmlFormat             string
-	noHTMLTextLayer        bool
-	dpi                    int
-	rasterBackend          string
-	page                   int
-	bg                     string
-	dir                    bool
-	workers                int
-	externalWorkers        int
-	soffice                string
-	xpstopdf               string
-	officeTimeout          int
-	chrome                 string
-	chromeNoSandbox        bool
-	tempDir                string
-	paper                  string
-	landscape              bool
-	noPrintBackground      bool
-	allowRemote            bool
-	password               string
-	pdfStrict              bool
-	pdfImageMode           string
-	pdfJPEGQuality         int
-	pdfJPXBackend          string
-	pdfMaxInputBytes       int64
-	pdfMaxImagePixels      int64
-	pdfMaxTotalImagePixels int64
-	pdfMaxOperations       int64
-	diagnosticsWriter      io.Writer
-	ocr                    bool
-	ocrLanguage            string
-	markdownTables         bool
-	noDocxTables           bool
-	noDocxImages           bool
-	docxAnnotations        bool
-	recursive              bool
-	overwrite              bool
-	skipExisting           bool
-	help                   bool
-	version                bool
+	ctx                     context.Context
+	input                   string
+	output                  string
+	inputDir                string
+	outputDir               string
+	format                  string
+	from                    string
+	htmlFormat              string
+	noHTMLTextLayer         bool
+	dpi                     int
+	rasterBackend           string
+	page                    int
+	bg                      string
+	dir                     bool
+	workers                 int
+	externalWorkers         int
+	soffice                 string
+	xpstopdf                string
+	officeTimeout           int
+	chrome                  string
+	chromeNoSandbox         bool
+	tempDir                 string
+	paper                   string
+	landscape               bool
+	noPrintBackground       bool
+	allowRemote             bool
+	password                string
+	pdfStrict               bool
+	pdfImageMode            string
+	pdfJPEGQuality          int
+	pdfJPXBackend           string
+	pdfMaxInputBytes        int64
+	pdfMaxTotalDecodedBytes int64
+	pdfMaxImagePixels       int64
+	pdfMaxTotalImagePixels  int64
+	pdfMaxOperations        int64
+	diagnosticsWriter       io.Writer
+	ocr                     bool
+	ocrLanguage             string
+	markdownTables          bool
+	noDocxTables            bool
+	noDocxImages            bool
+	docxAnnotations         bool
+	recursive               bool
+	overwrite               bool
+	skipExisting            bool
+	help                    bool
+	version                 bool
 }
 
 func main() {
@@ -250,6 +251,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.IntVar(&opts.pdfJPEGQuality, "pdf-jpeg-quality", opts.pdfJPEGQuality, "PDF compact 图片模式的 JPEG 质量 (1-100；0 使用默认 90)")
 	flags.StringVar(&opts.pdfJPXBackend, "pdf-jpx-backend", opts.pdfJPXBackend, "PDF JPX 解码器: go (默认) 或 openjpeg (需以 -tags openjpeg 构建并安装 libopenjp2)")
 	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
+	flags.Int64Var(&opts.pdfMaxTotalDecodedBytes, "pdf-max-total-decoded-bytes", 0, "PDF 累计解码字节上限；0 使用默认 1GiB")
 	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
 	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 20 亿像素")
 	flags.Int64Var(&opts.pdfMaxOperations, "pdf-max-operations", 0, "PDF 转换处理量上限；0 使用默认 1,000,000,000")
@@ -284,7 +286,7 @@ func normalizeConverterArgs(args []string) []string {
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password":   true,
-		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-jpx-backend": true, "pdf-max-input-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
+		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-jpx-backend": true, "pdf-max-input-bytes": true, "pdf-max-total-decoded-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
 		"ocr": true, "ocr-language": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
 	}
@@ -319,7 +321,7 @@ func run(opts *options) error {
 }
 
 func (opts *options) pdfLimits() converter.PDFImportLimits {
-	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels, MaxOperations: opts.pdfMaxOperations}
+	return converter.PDFImportLimits{MaxInputBytes: opts.pdfMaxInputBytes, MaxTotalDecodedBytes: opts.pdfMaxTotalDecodedBytes, MaxImagePixels: opts.pdfMaxImagePixels, MaxTotalImagePixels: opts.pdfMaxTotalImagePixels, MaxOperations: opts.pdfMaxOperations}
 }
 
 func (opts *options) pdfImportOptions() converter.PDFImportOptions {

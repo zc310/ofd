@@ -70,6 +70,7 @@ ofd-converter --help
 | `-pdf-jpeg-quality`    | `compact` 模式的 JPEG 质量，范围 `1-100`；`0` 使用默认 `90`。带 Mask/SMask 的图片仍输出 PNG |
 | `-pdf-jpx-backend`     | JPX 解码器：`go`（默认）或 `openjpeg`；OpenJPEG 需要 Linux、CGO 和系统 `libopenjp2` 开发文件 |
 | `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
+| `-pdf-max-total-decoded-bytes` | PDF 累计解码字节上限，`0` 使用默认 1GiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
 | `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 2,000,000,000 |
 | `-pdf-max-operations` | PDF 转换处理量上限，`0` 使用默认 1,000,000,000 |
@@ -170,6 +171,7 @@ Office、HTML 转换期间的取消也会传给外部进程，并清理临时目
 ofd-converter input.pdf output.ofd
 ofd-converter -from pdf -format ofd input.pdf output.ofd
 ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
+ofd-converter --pdf-max-total-decoded-bytes 4294967296 input.pdf output.ofd
 ofd-converter --pdf-image-mode compact --pdf-jpeg-quality 90 input.pdf compact.ofd
 ofd-converter --pdf-jpx-backend openjpeg input.pdf openjpeg.ofd
 ```
@@ -183,7 +185,7 @@ OpenJPEG；非 Linux、禁用 CGO 或未启用构建标签时选择该后端会�
 仍采用 PNG，以保留透明边缘；此类页面及非 JPEG 图像不保证明显缩小。
 
 PDF 导入默认限制输入、页数、对象数、解压流、图片像素、字体、输出图元、处理量与
-递归深度。所有预算超限都会终止转换。CLI 可调整输入和图片预算；完整默认值及库 API
+递归深度。所有预算超限都会终止转换。CLI 可调整输入、累计解码字节和图片预算；完整默认值及库 API
 见 [PDF 支持清单](../../docs/PDF-SUPPORT.md#资源预算与诊断)。
 
 普通模式遇到已识别的内容缺失或近似转换，会继续生成 OFD，并向标准错误报告诊断码、
