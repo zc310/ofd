@@ -342,8 +342,10 @@ type DrawParam struct {
 // Font 描述文档字体资源，Name 必须与 Text.Font 的值一致。
 // Data 非空时，字体数据会嵌入 OFD 文件包。
 type Font struct {
-	// Name 是字体资源名称，必须与文字对象的 Font 值一致。
+	// Name 是文档内唯一的字体资源引用名，必须与文字对象的 Font 值一致。
 	Name string
+	// FontName 是写入 OFD 的实际字型名；为空时使用 Name。flow 会从嵌入字体自动补全。
+	FontName string
 	// FamilyName 是字体族名称。
 	FamilyName string
 	// Charset 是字体字符集标识。

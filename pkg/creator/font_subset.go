@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/zc310/font"
+	"github.com/zc310/ofd/internal/fontrepair"
+	imagesfnt "golang.org/x/image/font/sfnt"
 )
 
 // subsetEmbeddedFonts 只保留文字对象实际引用的字形。由于子集化会重新分配字形编号，
@@ -14,37 +16,12 @@ func subsetEmbeddedFonts(document *Document) error {
 		return nil
 	}
 	cloneDocumentFontSubsetInputs(document)
-	used := make(map[string]*fontUsage, len(document.Fonts))
-	for _, resource := range document.Fonts {
-		if hasResource(resource.Data, resource.Source) {
-			used[strings.TrimSpace(resource.Name)] = &fontUsage{}
-		}
-	}
-	collector := fontUsageCollector{used: used, patterns: make(map[*Pattern]bool)}
-	for _, drawParam := range document.DrawParams {
-		collector.collectColor(drawParam.FillColor)
-		collector.collectColor(drawParam.StrokeColor)
-	}
-	for _, template := range document.Templates {
-		collector.collectItems(template.Items)
-		collector.collectLayers(template.Layers)
-	}
-	for _, page := range document.Pages {
-		collector.collectItems(page.Items)
-		collector.collectLayers(page.Layers)
-	}
-	for _, page := range document.Annotations {
-		for _, annotation := range page.Items {
-			collector.collectItems(annotation.Items)
-		}
-	}
-	for _, composite := range document.Composites {
-		collector.collectItems(composite.Items)
-	}
+	collector := collectDocumentFontUsage(document)
+	used := collector.used
 	for index := range document.Fonts {
 		resource := &document.Fonts[index]
 		usage := used[strings.TrimSpace(resource.Name)]
-		if usage == nil || (len(usage.glyphs) == 0 && len(usage.runes) == 0) {
+		if !hasResource(resource.Data, resource.Source) || usage == nil || (len(usage.glyphs) == 0 && len(usage.runes) == 0) {
 			continue
 		}
 		if resource.Source != nil && len(resource.Data) == 0 {
@@ -127,6 +104,7 @@ func cloneLayersForFontSubset(layers []Layer) []Layer {
 }
 
 type fontUsage struct {
+	referenced bool
 	// 按首次使用顺序保存字形，确保子集字体输出结果稳定。
 	glyphs []uint16
 	runes  []rune
@@ -180,20 +158,61 @@ func (c fontUsageCollector) collectItem(item Item) {
 		c.collectItems(value.Items)
 	case Table:
 		collectTableFontUsage(value, c.used)
+		for _, color := range []*Color{value.Style.StrokeColor, value.Style.OuterStrokeColor, value.Style.HeaderStrokeColor, value.Style.HeaderFillColor, value.Style.StrikeColor, value.Style.LinkColor, value.Style.RuleColor} {
+			c.collectColor(color)
+		}
+		for _, row := range value.Rows {
+			for _, cell := range row.Cells {
+				c.collectColor(cell.FillColor)
+			}
+		}
+		if value.CaptionStyle != nil {
+			c.collectColor(value.CaptionStyle.Color)
+		}
+		if value.ContinuationCaptionStyle != nil {
+			c.collectColor(value.ContinuationCaptionStyle.Color)
+		}
+	case Figure:
+		c.collectClips(value.Image.Clips)
+		if caption := figureCaption(value, figureGeometry{}); caption != nil {
+			c.collectItem(*caption)
+			if value.CaptionStyle != nil {
+				c.collectColor(value.CaptionStyle.Color)
+			}
+		}
 	}
 }
 
 func collectTableFontUsage(table Table, used map[string]*fontUsage) {
-	if table.Caption != "" && table.CaptionStyle != nil && table.CaptionStyle.Font != "" {
-		collectTextFontUsage(table.CaptionStyle.Font, table.Caption, nil, nil, used)
+	for _, caption := range []struct {
+		text  string
+		style *CaptionStyle
+	}{{table.Caption, table.CaptionStyle}, {strings.ReplaceAll(table.ContinuationCaption, "{caption}", table.Caption), table.ContinuationCaptionStyle}} {
+		if caption.text != "" {
+			name := "SimHei"
+			if caption.style != nil && caption.style.Font != "" {
+				name = caption.style.Font
+			}
+			collectTextFontUsage(name, caption.text, nil, nil, used)
+		}
 	}
-	if table.ContinuationCaption != "" && table.ContinuationCaptionStyle != nil && table.ContinuationCaptionStyle.Font != "" {
-		continuation := strings.ReplaceAll(table.ContinuationCaption, "{caption}", table.Caption)
-		collectTextFontUsage(table.ContinuationCaptionStyle.Font, continuation, nil, nil, used)
-	}
-	for _, row := range table.Rows {
+	for r, row := range table.Rows {
 		for _, cell := range row.Cells {
-			collectTextFontUsage(cell.Font, cell.Value, nil, nil, used)
+			name, text := cell.Font, cell.Value
+			if r < table.HeaderRows && table.Style.HeaderFont != "" {
+				name = table.Style.HeaderFont
+			}
+			if len(cell.Runs) > 0 {
+				text = ""
+				for _, run := range cell.Runs {
+					text += run.Text
+				}
+			}
+			collectTextFontUsage(name, text, nil, nil, used)
+			// Markdown 与 Runs 中的代码片段可能使用独立等宽字体；保守收集整格文字。
+			if table.Style.CodeFont != "" && (cell.Format == "markdown" || len(cell.Runs) > 0) {
+				collectTextFontUsage(table.Style.CodeFont, text, nil, nil, used)
+			}
 		}
 	}
 }
@@ -207,6 +226,7 @@ func collectTextFontUsage(name, value string, codes []TextCode, transforms []CGT
 	if usage == nil {
 		return
 	}
+	usage.referenced = true
 	text := value
 	if len(codes) > 0 {
 		text = ""
@@ -282,22 +302,40 @@ func subsetFont(resource *Font, usage *fontUsage) error {
 		return nil
 	}
 	if isFontCollection(resource.Data) {
-		// 多字体 CFF 的子程序表无法被当前子集化器安全重排，先提取第一个
-		// 字体面，去掉 TTC 中其他字体，避免原始集合被完整嵌入。
+		// 先提取第一个字体面，避免把 TTC 中未使用的其他字体一并嵌入。
 		resource.Data = sfnt.Write()
 		if sfnt.IsTrueType {
 			resource.Format = "ttf"
 		} else if sfnt.IsCFF {
 			resource.Format = "otf"
-			return nil
 		}
 	}
-	if sfnt.IsCFF && sfnt.CFF != nil && sfnt.CFF.NumFontDicts() > 1 {
-		// 子程序重排尚不能安全处理多 Font DICT，保留所选字体面的完整程序
-		// 与原始字形编号。
-		resource.Data = sfnt.Write()
-		resource.Format = "otf"
-		return nil
+	// OpenType cmap 的 Macintosh 编码不是 Unicode。部分旧字体把它放在首位，
+	// 子集依赖会先命中该表；与排版使用的 Unicode 映射核对，必要时规范化已用字符。
+	// 依据 OpenType 1.9.1 cmap 的 Encoding records and encodings：按平台编码选择单一子表。
+	if unicodeFace, parseErr := imagesfnt.Parse(resource.Data); parseErr == nil {
+		var buffer imagesfnt.Buffer
+		mappings := make([]fontrepair.GlyphMapping, 0, len(usage.runes))
+		mismatch := false
+		for _, r := range usage.runes {
+			glyph, glyphErr := unicodeFace.GlyphIndex(&buffer, r)
+			if glyphErr != nil {
+				return glyphErr
+			}
+			mappings = append(mappings, fontrepair.GlyphMapping{Rune: r, Glyph: uint16(glyph)})
+			mismatch = mismatch || sfnt.GlyphIndex(r) != uint16(glyph)
+		}
+		if mismatch {
+			normalized, repairErr := fontrepair.RepairWithGlyphs(resource.Data, mappings)
+			if repairErr != nil {
+				return fmt.Errorf("规范化字体 Unicode 映射: %w", repairErr)
+			}
+			parsed, parseErr := font.ParseSFNT(normalized, 0)
+			if parseErr != nil {
+				return fmt.Errorf("解析规范化字体: %w", parseErr)
+			}
+			sfnt = parsed
+		}
 	}
 	// 字体源数据已解析，重新根据 cmap 获取字符对应的字形编号。
 	glyphs := make([]uint16, 0, len(usage.glyphs))

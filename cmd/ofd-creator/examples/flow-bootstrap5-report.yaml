@@ -1,0 +1,57 @@
+version: 1
+document:
+  id: flow-bootstrap5-report
+  title: Bootstrap 5 report
+  page_size: {width: 150, height: 190}
+flow:
+  theme: bootstrap5
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records were reviewed before delivery and are archived with this report.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Bootstrap 5 report}
+    - text: This report uses the Bootstrap 5 print preset. A 16px root maps to 12pt, H1-H6 use the default heading ratios, paragraphs keep a 1rem bottom margin, and figure captions use 87.5 percent of the body size.
+    - {id: typography, type: heading, level: 2, text: Typography roles}
+    - type: table
+      table:
+        header: [Role, Print size and line height]
+        rows: [[H1, 30pt / 36pt], [H2, 24pt / 28.8pt], [H6, 12pt / 14.4pt], [Body and table, 12pt / 18pt], [Figure caption, 10.5pt / 15.75pt]]
+    - {type: heading, level: 3, text: Font selection}
+    - text: The preset uses the available bold face in place of the Medium heading weight. Register the required font resources and override heading Font fields for an exact match.
+    - {type: toc, toc: {title: Contents, max_level: 2}}
+    - {id: results, type: heading, level: 1, text: Delivery results, page_break_before: true}
+    - runs:
+        - {text: The delivery results use the archived source}
+        - {footnote: source}
+        - {text: '. Each item was checked for completeness and can be traced to the original review record.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 90
+        height: 24
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 24, data: 'M 0 0 L 90 0 L 90 24 L 0 24 C', fill: true, stroke_set: false, fill_color: {r: 248, g: 249, b: 250}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.3, value: Delivery status, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 60, height: 6, data: 'M 0 0 L 60 0 L 60 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 13, g: 110, b: 253}}
+    - {type: heading, level: 4, text: Source review}
+    - type: table
+      table:
+        header: [Item, Status]
+        rows: [[Source records, Reviewed], [Delivery totals, Confirmed], [Document fonts, Embedded]]
+    - {type: heading, level: 5, text: Quality checks}
+    - text: Review the source records and preserve the final document.
+    - {type: heading, level: 6, text: Archive checklist}
+    - text: Confirm the record identifier, reviewer and delivery date.
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+    - runs:
+        - {text: 'Return to '}
+        - {title_ref: results}
+        - {text: ' or review '}
+        - {caption_ref: chart}
+        - {text: '. The exported manifest retains fixed character positions, colors and navigation.'}
+    - text: The preset maps Bootstrap 5.3 default sizes at 96px = 72pt. It uses fixed print sizes without responsive resizing. Light-gray table headers are a print choice, and font resources remain explicit rather than selected from the system font stack.

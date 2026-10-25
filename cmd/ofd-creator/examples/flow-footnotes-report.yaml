@@ -1,0 +1,82 @@
+version: 1
+document:
+  id: flow-footnotes-report
+  title: Report with footnotes
+  page_size: {width: 150, height: 190}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Footnotes report
+  styles:
+    - {name: note, style: {size: 9, line_height: 1.35, space_after: 1}}
+  footnote_style: {based_on: note}
+  footnotes:
+    - id: estimate
+      runs:
+        - {text: 'ESTIMATE-NOTE Values are estimates. See the appendix on page '}
+        - {page_ref: appendix}
+        - {text: ' for the final delivery assumptions.'}
+    - id: source
+      runs:
+        - {text: 'SOURCE-NOTE ', bold: true}
+        - {text: 'The source dataset is retained with the report. '}
+        - {text: Source website, href: 'https://example.com/source'}
+    - id: term
+      text: TERM-NOTE A delivery unit is one reviewed item accepted by the project team.
+  blocks:
+    - {id: introduction, type: heading, level: 1, text: Results and sources}
+    - runs:
+        - {text: 'The results use the archived source dataset'}
+        - {footnote: source}
+        - {text: '. The project measures completed delivery units'}
+        - {footnote: term}
+        - {text: '.'}
+    - runs:
+        - {text: 'A second reference to the same source'}
+        - {footnote: source}
+        - {text: ' shares one note at the bottom of this page.'}
+    - type: list_item
+      marker: '1.'
+      runs:
+        - {text: 'Review the delivery-unit definition'}
+        - {footnote: term}
+        - {text: ' before comparing the values.'}
+    - text: The layout reserves space for both the reference lines and their notes. Click a numbered marker to read the note; click the note number to return to the first reference on that page.
+    - {type: page_break}
+    - {id: schedule, type: heading, level: 1, text: Delivery schedule}
+    - id: results
+      type: table
+      table:
+        caption: Results with repeated source notes
+        numbered: true
+        repeat_caption: true
+        columns: [{width: 22}, {}]
+        stripe_fill: {r: 242, g: 247, b: 253}
+        header_rows: 1
+        grid:
+          - - {text: Item}
+            - runs: [{text: Result}, {footnote: source}]
+          - [{text: A01}, {text: Prepare the source documents and confirm the delivery requirements.}]
+          - [{text: A02}, {text: Review the first draft and resolve outstanding comments.}]
+          - [{text: A03}, {text: Register the fonts and confirm complete character coverage.}]
+          - - {text: A04, row_span: 2}
+            - runs: [{text: 'Estimate the review effort'}, {footnote: estimate}, {text: ' and record the expected delivery date.'}]
+          - [{text: Keep the paired approval step with its merged group.}]
+          - [{text: A05}, {text: Prepare the illustrations and confirm their captions.}]
+          - [{text: A06}, {text: Compare the reported values against the archived source data.}]
+          - [{text: A07}, {text: Confirm that the complete header and its note repeat on continuation pages.}]
+          - [{text: A08}, {text: Inspect the final references after automatic pagination.}]
+          - [{text: A09}, {text: Export a searchable PDF copy and inspect the actual rendered pages.}]
+          - [{text: A10}, {text: Validate the standard OFD and archive the editable source manifest.}]
+    - text: This paragraph follows all table fragments. Each continuation page includes the source note referenced by its repeated header.
+    - {type: page_break}
+    - {id: appendix, type: heading, level: 1, text: Delivery assumptions}
+    - runs:
+        - {text: 'The comparison table is '}
+        - {caption_ref: results}
+        - {text: ' on page '}
+        - {page_ref: results}
+        - {text: '. The source remains available'}
+        - {footnote: source}
+        - {text: '.'}
+    - text: Footnotes keep the same number throughout the report. A note repeated on another page is displayed again on that page, while repeated references on one page share a single note.

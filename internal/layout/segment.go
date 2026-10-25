@@ -14,10 +14,12 @@ import (
 type styledRune struct {
 	key    metricKey
 	size   float64
+	rise   float64
 	color  *creator.Color
 	glue   int
 	strike bool
 	href   string
+	target string
 }
 
 // segments 按 Unicode UAX #14 断行规则把行内内容切成不可断开的段。
@@ -37,12 +39,13 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			continue
 		}
 		glue := 0
-		if inline.Code {
+		if inline.Code || inline.Footnote != "" {
 			glueID++
 			glue = glueID
 		}
 		style := styledRune{
 			key: metricKey{
+				font:   base.font,
 				bold:   inline.Bold || base.bold,
 				italic: inline.Italic || base.italic,
 				mono:   inline.Code || base.mono,
@@ -53,6 +56,11 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			glue:   glue,
 			strike: inline.Strike,
 			href:   inline.Href,
+			target: inline.Target,
+		}
+		if e.author != nil && inline.Footnote != "" {
+			style.size = size * authorFootnoteScale
+			style.rise = size * authorFootnoteRise
 		}
 		switch {
 		case inline.Code:
@@ -61,6 +69,13 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 			style.color = colorLink
 		}
 		for _, r := range inline.Text {
+			if e.author != nil {
+				if err := e.author.ctx.Err(); err != nil {
+					e.author.err = err
+					return nil
+				}
+				style.key.font = e.author.resolveFont(inline, base.font, r)
+			}
 			runes = append(runes, r)
 			styles = append(styles, style)
 		}
@@ -73,8 +88,14 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 	var result [][]atom
 	iterator := breaker.LineIterator()
 	for iterator.Next() {
+		if e.author != nil {
+			if err := e.author.ctx.Err(); err != nil {
+				e.author.err = err
+				return nil
+			}
+		}
 		line := iterator.Line()
-		if segment := buildSegment(line.Text, line.Offset, styles); len(segment) > 0 {
+		if segment := e.buildSegment(line.Text, line.Offset, styles); len(segment) > 0 {
 			result = append(result, segment)
 		}
 		if line.IsMandatoryBreak {
@@ -85,7 +106,7 @@ func (e *engine) segments(inlines []Inline, sizePT float64, base metricKey) [][]
 }
 
 // buildSegment 把一段文本按样式拆成可绘制的 atom，换行符不参与绘制。
-func buildSegment(text []rune, offset int, styles []styledRune) []atom {
+func (e *engine) buildSegment(text []rune, offset int, styles []styledRune) []atom {
 	var atoms []atom
 	for index := 0; index < len(text); {
 		if text[index] == '\n' {
@@ -98,16 +119,24 @@ func buildSegment(text []rune, offset int, styles []styledRune) []atom {
 			end++
 		}
 		chunk := string(text[index:end])
+		var width float64
+		if e.author != nil {
+			width = e.author.width(chunk, style.size, style.key.font)
+		} else {
+			width = measureWidth(chunk, style.size, style.key)
+		}
 		atoms = append(atoms, atom{
 			text:   chunk,
 			key:    style.key,
 			size:   style.size,
+			rise:   style.rise,
 			color:  style.color,
-			width:  measureWidth(chunk, style.size, style.key),
+			width:  width,
 			space:  isWhitespace(chunk),
 			glue:   style.glue,
 			strike: style.strike,
 			href:   style.href,
+			target: style.target,
 		})
 		index = end
 	}

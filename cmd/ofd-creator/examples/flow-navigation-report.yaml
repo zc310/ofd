@@ -1,0 +1,74 @@
+version: 1
+document:
+  id: flow-navigation-report
+  title: Report with contents and references
+  page_size: {width: 140, height: 180}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Navigation report
+  blocks:
+    - {id: cover, type: heading, level: 1, text: Navigation report}
+    - text: A complete report with a cover, automatic contents, a table spanning pages and an appendix. All navigation uses standard OFD actions.
+    - {type: page_break}
+    - {id: contents, type: toc, toc: {title: Contents, max_level: 2}}
+    - {type: page_break}
+    - {id: overview, type: heading, level: 1, text: Overview}
+    - runs:
+        - {text: "See "}
+        - {text: regional statistics, target: statistics}
+        - {text: " on page "}
+        - {page_ref: statistics}
+        - {text: ", and the appendix on page "}
+        - {page_ref: appendix}
+        - {text: "."}
+    - {id: results, type: heading, level: 2, text: Regional results}
+    - id: statistics
+      type: table
+      table:
+        header_rows: 2
+        column_widths: [25, 37.5, 37.5]
+        grid:
+          - [{text: Region, row_span: 2}, {text: Performance, col_span: 2}]
+          - [{text: Actual}, {text: Plan}]
+          - [{text: North, row_span: 2}, {text: "Q1: 120"}, {text: "Q1: 150"}]
+          - [{text: "Q2: 135"}, {text: "Q2: 155"}]
+          - [{text: South, row_span: 2}, {text: "Q1: 110"}, {text: "Q1: 140"}]
+          - [{text: "Q2: 130"}, {text: "Q2: 150"}]
+          - [{text: East, row_span: 2}, {text: "Q1: 150"}, {text: "Q1: 160"}]
+          - [{text: "Q2: 165"}, {text: "Q2: 170"}]
+          - [{text: West, row_span: 2}, {text: "Q1: 100"}, {text: "Q1: 130"}]
+          - [{text: "Q2: 120"}, {text: "Q2: 140"}]
+          - [{text: Central, row_span: 2}, {text: "Q1: 130"}, {text: "Q1: 150"}]
+          - [{text: "Q2: 145"}, {text: "Q2: 160"}]
+          - [{text: Coastal, row_span: 2}, {text: "Q1: 170"}, {text: "Q1: 180"}]
+          - [{text: "Q2: 185"}, {text: "Q2: 190"}]
+          - [{text: Highland, row_span: 2}, {text: "Q1: 105"}, {text: "Q1: 125"}]
+          - [{text: "Q2: 115"}, {text: "Q2: 135"}]
+          - [{text: Lakeside, row_span: 2}, {text: "Q1: 140"}, {text: "Q1: 155"}]
+          - [{text: "Q2: 150"}, {text: "Q2: 165"}]
+    - {id: notes, type: heading, level: 2, text: Notes}
+    - runs:
+        - {text: "The original table starts on page "}
+        - {page_ref: statistics}
+        - {text: ". Return to "}
+        - {text: contents, target: contents}
+        - {text: "."}
+    - {type: page_break}
+    - {id: appendix, type: heading, level: 1, text: Appendix}
+    - type: table
+      table:
+        column_widths: [50, 50]
+        grid:
+          - - {text: Destination}
+            - {text: Page}
+          - - {runs: [{text: Overview, target: overview}]}
+            - {runs: [{page_ref: overview}]}
+          - - {runs: [{text: Statistics, target: statistics}]}
+            - {runs: [{page_ref: statistics}]}
+    - runs:
+        - {text: "Return to "}
+        - {text: cover, target: cover}
+        - {text: " or "}
+        - {text: contents, target: contents}
+        - {text: "."}

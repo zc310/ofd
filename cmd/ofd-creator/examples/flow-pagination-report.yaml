@@ -1,0 +1,103 @@
+version: 1
+document:
+  id: flow-pagination-report
+  title: Split rows and balanced columns
+  page_size: {width: 100, height: 90}
+flow:
+  columns: {count: 2, gap: 8, balance: true}
+  margins: {top: 10, right: 10, bottom: 10, left: 10}
+  body_size: 10
+  line_height: 1.2
+  page_numbers: true
+  footnotes:
+    - {id: source, text: SOURCE-NOTE}
+  blocks:
+    - text: |
+        L01
+        L02
+        L03
+        L04
+        L05
+        L06
+        L07
+        L08
+        L09
+        L10
+        L11
+        L12
+        L13
+        L14
+        L15
+        L16
+        L17
+        L18
+        L19
+        L20
+        L21
+        L22
+        L23
+        L24
+        L25
+        L26
+        L27
+        L28
+        L29
+        L30
+        L31
+        L32
+        L33
+        L34
+        L35
+        L36
+        L37
+        L38
+        L39
+        L40
+    - {type: section, section: {columns: {count: 2, gap: 8, balance: true}}}
+    - id: table
+      type: table
+      table:
+        split_rows: true
+        numbered: true
+        caption: Detail
+        repeat_caption: true
+        header_rows: 1
+        grid:
+          - [{text: Item}, {text: Detail, col_span: 2}]
+          - - {text: A}
+            - col_span: 2
+              runs:
+                - text: |
+                    T01
+                    T02
+                    T03
+                    T04
+                    T05
+                    T06
+                    T07
+                    T08
+                    T09
+                    T10
+                    T11
+                    T12
+                    T13
+                    T14
+                    T15
+                    T16
+                    T17
+                    T18
+                    T19
+                    T20
+                    T21
+                    T22
+                    T23
+                    T24
+                - {text: Source}
+                - {footnote: source}
+          - [{text: B}, {text: End, col_span: 2}]
+    - runs:
+        - {text: 'See '}
+        - {caption_ref: table}
+        - {text: ' on page '}
+        - {page_ref: table}
+        - {text: '.'}

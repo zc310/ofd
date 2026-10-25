@@ -196,3 +196,16 @@ func TestExtractRejectsUnparsableSource(t *testing.T) {
 		t.Fatal("非法源码应返回错误")
 	}
 }
+
+// 流式合并网格是二维切片，字段参考必须包含单元格及其子字段。
+func TestExtractExpandsNestedGridCells(t *testing.T) {
+	source := "package manifest\ntype Manifest struct { Grid [][]*Cell `json:\"grid,omitempty\"` }\ntype Cell struct { Text string `json:\"text\"` }\n"
+	schema, err := Extract(writeSource(t, source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell, ok := schema.Lookup("Cell")
+	if !ok || cell.Path != "grid[][]" || len(cell.Fields) != 1 || cell.Fields[0].Name != "text" {
+		t.Fatalf("二维网格说明未展开: %+v", schema)
+	}
+}

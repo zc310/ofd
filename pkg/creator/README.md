@@ -14,6 +14,17 @@
 | 裁剪、模板和复合图元 | [裁剪](#裁剪)、[模板与复合图元](#模板与复合图元) |
 | 资源复用 | [图片与资源](#图片与资源) |
 | 元数据及附加结构 | [元数据与阅读偏好](#元数据与阅读偏好)、[注解与动作](#注解与动作)、[附件与扩展](#附件与扩展)、[签名与版本](#签名与版本) |
+| 自动断行与分页 | [`pkg/creator/flow` 流式创作](flow/README.md)：图文与合并表格自动分页，可选普通单元格跨页续排与多栏节末页平衡，支持目录、大纲、内部引用、分节编号和横纵页面混排。 |
+| 印刷主题 | [`flow` 主题选择](flow/README.md#主题选择)：默认 Material 风格、Material 2、Material 3、Fluent 2、IBM Carbon 和 Bootstrap 5 的字号层级、行距、图注和表格预设，可显式替换字体。 |
+| 常规公文基础版式 | [`flow` 公文配置](flow/README.md#gbt-9704-2012-公文基础版式)：GB/T 9704—2012 版心、五类字体、正文行列、版头、长主送机关自动移至版记、不盖章落款、版记和奇偶页码。 |
+| 创作字体控制 | [`flow` 字体说明](flow/README.md#中文与字体)：TTC/OTC 字体面选择、同族字重/斜体匹配与等宽缺字回退。 |
+| 报告表格与图表编号 | [`flow` 表格说明](flow/README.md#自动列宽与单元格外观)：自动列宽、单元格外观、题注与续表题、可点击的编号引用。 |
+| 固定图元自动分页 | [`flow` 固定区域](flow/README.md#固定图元区域)：将矢量图表、二维码图片、签字栏等原始图元作为整体插入，自动预留空间。 |
+| 复用排版样式 | [`flow` 样式继承](flow/README.md#命名样式与显式零值)：命名文字样式、多层继承与显式零间距/缩进覆盖。 |
+| 两端对齐 | [`flow` 文字对齐](flow/README.md#两端对齐)：按中英文断行边界伸展自动行，保留段末、手动换行及词内字体和链接。 |
+| 页底脚注 | [`flow` 脚注说明](flow/README.md#页底脚注)：引用行与脚注共同分页、同页去重、表头重复脚注及双向跳转。 |
+| 双栏与多栏 | [`flow` 分栏说明](flow/README.md#等宽分栏与换栏)：等宽栏自动流动、显式换栏、分节栏数切换与栏底脚注。 |
+| 图表目录与标题引用 | [`flow` 图表目录](flow/README.md#图目录表目录与标题引用)：独立图目录、表目录、完整题注和章节标题自动引用。 |
 | 大文档 | [流式创建超大 OFD](#流式创建超大-ofd) |
 | 引用、路径和输出校验 | [校验与输出约定](#校验与输出约定) |
 
@@ -124,22 +135,36 @@ text := creator.Text{
 }
 ```
 
-使用 `Document.Fonts` 声明字体，Font.Name 与 Text.Font 一致。设置 Data 或 Source
-后嵌入字体；仅使用逻辑字体名时，显示依赖阅读器的字体替代。
+使用 `Document.Fonts` 声明字体，`Font.Name` 是文档内唯一的资源引用名，与 `Text.Font` 一致。
+`Font.FontName` 是输出到 OFD 的实际字型名，省略时使用 `Name`；`FamilyName` 是字体族名。
+这些名称依据 GB/T 33190—2016 §11.1 表 44 写出，多个独立资源可以使用相同的实际字型名。
+设置 Data 或 Source 后嵌入字体；仅使用逻辑字体时，显示依赖阅读器的字体替代。
 
 ```go
 document := creator.Document{
 	ID: "embedded-font",
-	Fonts: []creator.Font{{Name: "Noto Sans CJK SC", Data: fontBytes}},
+	Fonts: []creator.Font{{Name: "BodyCJK", FontName: "Noto Sans CJK SC", FamilyName: "Noto Sans CJK SC", Data: fontBytes}},
 	Pages: []creator.Page{{Items: []creator.Item{
 		creator.Text{X: 20, Y: 20, Width: 100, Height: 10,
-			Font: "Noto Sans CJK SC", Value: "嵌入字体"},
+			Font: "BodyCJK", Value: "嵌入字体"},
 	}}},
 }
 ```
 
+流式创作会在读取嵌入字体时自动补全未指定的 `FontName` 和 `FamilyName`，
+内部 `Flow-Regular` 等资源别名保留。普通创建 API 使用上述显式字段；
+清单对应 `resources.fonts[].name`、`font_name` 和 `family_name`。
+
+流式创作还会在合并元数据后清理未引用的字体声明，避免把未使用的整份字体嵌入结果。
+普通模型可在页面已物化后调用 `document.PruneUnusedFonts()`；它同时检查模板、注解、
+复合图元、裁剪和底纹的文字引用，不读取字体来源。使用外部 `PageProvider` 或原始资源 XML 时保留声明。
+
 字体数据支持 TTF、OTF、TTC；字体子集化或字体面提取可能改变实际写出的数据。
-多 FD CFF 保留完整字体面；具体限制见 [PDF 支持清单](../../docs/PDF-SUPPORT.md)。
+子集化会与 Unicode 字符映射核对，避免旧字体把首个 Macintosh 编码误当作 Unicode，
+导致仿宋_GB2312 等字体的数字变成其他字形；显式字形引用仍保留原始 GID 的重映射关系。
+TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同步重映射显式 GID。
+TTC 只嵌入所选字体面。非法显式字形编号及子集化错误直接返回，
+具体限制见 [PDF 支持清单](../../docs/PDF-SUPPORT.md)。
 
 ## 绘制样式与颜色
 

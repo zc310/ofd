@@ -172,7 +172,7 @@ func expand(schema *Schema, declarations map[string]*ast.StructType, docs map[st
 }
 
 // nestedStruct 返回字段类型中需要继续展开的结构体名，以及追加到路径的后缀。
-// 数组的后缀是 "[]"，标量和外部类型返回 ok=false。
+// 每层切片追加 "[]"，标量和外部类型返回 ok=false。
 func nestedStruct(expr ast.Expr, declarations map[string]*ast.StructType) (string, string, bool) {
 	switch typed := expr.(type) {
 	case *ast.ArrayType:
@@ -180,14 +180,12 @@ func nestedStruct(expr ast.Expr, declarations map[string]*ast.StructType) (strin
 		if typed.Len != nil {
 			return "", "", false
 		}
-		if name, ok := structName(typed.Elt, declarations); ok {
-			return name, "[]", true
+		if name, suffix, ok := nestedStruct(typed.Elt, declarations); ok {
+			return name, "[]" + suffix, true
 		}
 	case *ast.StarExpr:
 		// *Preferences 这类指针同样要展开；路径不额外标记。
-		if name, ok := structName(typed.X, declarations); ok {
-			return name, "", true
-		}
+		return nestedStruct(typed.X, declarations)
 	case *ast.Ident:
 		if _, ok := declarations[typed.Name]; ok {
 			return typed.Name, "", true
@@ -196,18 +194,6 @@ func nestedStruct(expr ast.Expr, declarations map[string]*ast.StructType) (strin
 		// creator.Document 等外部类型不在 manifest schema 内，不再展开。
 	}
 	return "", "", false
-}
-
-// structName 返回类型表达式指向的本包结构体名。
-func structName(expr ast.Expr, declarations map[string]*ast.StructType) (string, bool) {
-	ident, ok := expr.(*ast.Ident)
-	if !ok {
-		return "", false
-	}
-	if _, ok := declarations[ident.Name]; !ok {
-		return "", false
-	}
-	return ident.Name, true
 }
 
 // jsonName 读取字段的 json tag 名；没有可用名字时返回 false。

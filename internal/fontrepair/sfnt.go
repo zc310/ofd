@@ -41,17 +41,24 @@ func sfntSignature(b []byte) bool {
 }
 
 func readDirectory(b []byte) (directory, error) {
-	if len(b) < 12 {
+	return readDirectoryAt(b, 0)
+}
+
+// TTC 字体面的目录位于 offset，表偏移仍相对于整个集合文件。
+func readDirectoryAt(b []byte, offset uint32) (directory, error) {
+	header, ok := sliceAt(b, offset, 12)
+	if !ok {
 		return directory{}, fmt.Errorf("font directory: truncated header")
 	}
-	n := int(be.Uint16(b[4:]))
-	if n > (len(b)-12)/16 {
+	n := int(be.Uint16(header[4:]))
+	records, ok := sliceAt(b, offset+12, uint32(n)*16)
+	if offset > ^uint32(0)-12 || !ok {
 		return directory{}, fmt.Errorf("font directory: truncated records")
 	}
-	d := directory{signature: be.Uint32(b), tables: make([]table, 0, n)}
+	d := directory{signature: be.Uint32(header), tables: make([]table, 0, n)}
 	seen := make(map[string]bool, n)
-	for record := 12; record < 12+n*16; record += 16 {
-		r := b[record : record+16]
+	for record := 0; record < n*16; record += 16 {
+		r := records[record : record+16]
 		tag := string(r[:4])
 		if seen[tag] {
 			return directory{}, fmt.Errorf("font directory: duplicate table %q", tag)

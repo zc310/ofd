@@ -1,0 +1,57 @@
+version: 1
+document:
+  id: flow-carbon-report
+  title: Carbon report
+  page_size: {width: 150, height: 190}
+flow:
+  theme: carbon
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records were reviewed before delivery and are archived with this report.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Carbon report}
+    - text: This report uses the Carbon print preset. Static heading-06 through heading-01, body-02, body-compact-01 and label-01 roles become document headings, paragraphs, tables and captions.
+    - {id: typography, type: heading, level: 2, text: Typography roles}
+    - type: table
+      table:
+        header: [Role, Print size and line height]
+        rows: [[heading-06, 31.5pt / 37.7685pt], [heading-03, 15pt / 21pt], [body-02, 12pt / 18pt], [body-compact-01, 10.5pt / 13.5pt], [label-01, 9pt / 12pt]]
+    - {type: heading, level: 3, text: Font selection}
+    - text: The first heading uses the regular face in place of Light. The last two heading levels use the bold face in place of Semibold. Supply actual font resources and override the theme when matching exact weights.
+    - {type: toc, toc: {title: Contents, max_level: 2}}
+    - {id: results, type: heading, level: 1, text: Delivery results, page_break_before: true}
+    - runs:
+        - {text: The delivery results use the archived source}
+        - {footnote: source}
+        - {text: '. Each item was checked for completeness and can be traced to the original review record.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 90
+        height: 24
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 24, data: 'M 0 0 L 90 0 L 90 24 L 0 24 C', fill: true, stroke_set: false, fill_color: {r: 224, g: 224, b: 224}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.3, value: Delivery status, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 60, height: 6, data: 'M 0 0 L 60 0 L 60 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 15, g: 98, b: 254}}
+    - {type: heading, level: 4, text: Source review}
+    - type: table
+      table:
+        header: [Item, Status]
+        rows: [[Source records, Reviewed], [Delivery totals, Confirmed], [Document fonts, Embedded]]
+    - {type: heading, level: 5, text: Quality checks}
+    - text: Review the source records and preserve the final document.
+    - {type: heading, level: 6, text: Archive checklist}
+    - text: Confirm the record identifier, reviewer and delivery date.
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+    - runs:
+        - {text: 'Return to '}
+        - {title_ref: results}
+        - {text: ' or review '}
+        - {caption_ref: chart}
+        - {text: '. The exported manifest retains fixed character positions, colors and navigation.'}
+    - text: Carbon font roles are mapped at 96px = 72pt with neutral print colors. Paragraph spacing is a print choice; fluid typography and Web tracking are not applied. The preset embeds Go fonts and does not load IBM Plex Sans automatically.

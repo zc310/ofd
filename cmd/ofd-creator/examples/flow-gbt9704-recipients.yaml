@@ -1,0 +1,35 @@
+version: 1
+document:
+  id: flow-gbt9704-recipients
+  title: 长主送机关移至版记
+# 用 --asset-root 指定包含以下实际字体的目录；字体不随仓库分发。
+resources:
+  fonts:
+    - {name: FangSong, file: FangSong_GB2312.ttf}
+    - {name: SmallTitleSong, file: FZXiaoBiaoSong-B05S.ttf}
+    - {name: Hei, file: windows/simhei.ttf}
+    - {name: Kai, file: KaiTi_GB2312.ttf}
+    - {name: Song, file: windows/simsun.ttc}
+flow:
+  profile: gbt9704
+  generate_outlines: true
+  official:
+    fonts: {body: FangSong, title: SmallTitleSong, hei: Hei, kai: Kai, song: Song}
+    letterhead: {org: 某某管理局文件, doc_no: 某管发〔2026〕1号, org_size: 32}
+    signature: {org: 某某管理局, date: 2026年10月25日}
+    colophon: {cc: 综合协调处，档案管理部门。, issued_by: 某某管理局办公室, issued_date: 2026年10月25日}
+  blocks:
+    - {id: notice, type: heading, level: 1, text: 关于开展资料复核工作的通知}
+    - id: recipients
+      type: recipient
+      text: "第一业务处\n第二业务处\n第三业务处\n第四业务处\n第五业务处\n第六业务处\n第七业务处\n第八业务处\n第九业务处\n第十业务处\n第十一业务处\n第十二业务处\n第一直属单位\n第二直属单位\n第三直属单位\n第四直属单位\n第五直属单位\n第六直属单位\n第七直属单位\n第八直属单位\n第九直属单位\n第十直属单位\n第十一直属单位\n第十二直属单位："
+    - id: body
+      text: 为规范资料管理，确保信息准确完整，现就开展资料复核工作有关事项通知如下。各单位应当明确责任分工，逐项核对原始资料，保留审核记录，并按时完成归档工作。
+    - type: heading
+      level: 2
+      text: 一、工作要求
+    - text: 对发现的问题，应当核实原因后及时处理。复核完成后，将原始资料、审核记录和最终文档一并归档，确保后续查阅与追溯。
+    - runs:
+        - {text: 本通知主送机关较多，完整名单见第}
+        - {page_ref: recipients}
+        - {text: 页版记。}

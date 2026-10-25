@@ -1,0 +1,60 @@
+version: 1
+document:
+  id: flow-fluent2-report
+  title: Fluent 2 report
+  page_size: {width: 150, height: 190}
+flow:
+  theme: fluent2
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  styles:
+    - {name: note, style: {size: 9, line_height: 1.4, space_after: 1}}
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records were reviewed before delivery and are archived with this report.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Fluent 2 report}
+    - text: This report uses the Fluent 2 print preset. The theme supplies a compact type hierarchy, restrained neutral colors and left-aligned captions. Font resources remain explicit and can be replaced for other languages.
+    - {id: typography, type: heading, level: 2, text: Typography}
+    - text: Body text uses 10.5pt type and the 14-to-20 size and line-height ratio. The largest heading uses 24pt, and captions use 9pt. Local styles can override these defaults.
+    - type: table
+      table:
+        header: [Role, Print size]
+        rows: [[Body 1, 10.5pt], [Title 1, 24pt], [Title 2, 21pt], [Caption 1, 9pt]]
+    - {type: toc, toc: {title: Contents, max_level: 2}}
+    - {id: results, type: heading, level: 1, text: Delivery results, page_break_before: true}
+    - runs:
+        - {text: 'The delivery results use the '}
+        - {text: archived source, bold: true}
+        - {footnote: source}
+        - {text: '. Each item was checked for completeness and can be traced to the original review record.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 90
+        height: 24
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 24, data: 'M 0 0 L 90 0 L 90 24 L 0 24 C', fill: true, stroke_set: false, fill_color: {r: 245, g: 245, b: 245}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.3, value: Delivery status, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 60, height: 6, data: 'M 0 0 L 60 0 L 60 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 15, g: 108, b: 189}}
+    - type: table
+      table:
+        header: [Item, Status]
+        rows:
+          - [Source records, Reviewed]
+          - [Delivery totals, Confirmed]
+          - [Captions and references, Checked]
+          - [Document fonts, Embedded]
+          - [Final output, Validated]
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+    - runs:
+        - {text: 'Return to '}
+        - {title_ref: results}
+        - {text: ' or review '}
+        - {caption_ref: chart}
+        - {text: '. The exported manifest retains fixed character positions, colors and navigation.'}
+    - style: {based_on: note}
+      text: The preset follows Fluent 2 Web type roles for print. It embeds the Go fonts by default. Supply your own regular and heading fonts when matching a specific font family.

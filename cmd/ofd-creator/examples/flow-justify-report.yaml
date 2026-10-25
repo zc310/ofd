@@ -1,0 +1,70 @@
+version: 1
+document:
+  id: flow-justify-report
+  title: Justified report
+  page_size: {width: 160, height: 210}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Justified report
+  styles:
+    - name: report
+      style: {align: justify, size: 11, line_height: 1.5, first_line_indent: 6}
+    - name: compact
+      style: {based_on: report, first_line_indent: 0, space_after: 2}
+  footnote_style: {align: justify}
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records are archived with this report. Each observation was checked against the dated source before approval.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Justified report}
+    - style: {based_on: report}
+      text: This paragraph uses justified alignment and a first-line indent. Automatic lines stretch at legal word boundaries, while the final line retains its natural spacing. The same editable source produces fixed character positions in the resulting document.
+    - style: {based_on: compact}
+      # CRLF 跨文字分片或空片段时仍只换行一次。
+      runs:
+        - {text: "Manual line break stays natural.\r"}
+        - {text: "\nThis longer passage wraps automatically and fills the available line width. Words retain their original glyph advances, and the final line stays short.\r"}
+        - {text: ""}
+        - {text: "\nFinal short line."}
+    - style: {based_on: report}
+      runs:
+        - {text: 'Rich text retains '}
+        - {text: bold emphasis, bold: true}
+        - {text: ', a '}
+        - {text: source link, href: 'https://example.com'}
+        - {text: ' and an internal reference to '}
+        - {title_ref: appendix}
+        - {text: '. Each fragment keeps its font and its click action after the line has been justified.'}
+    - type: list_item
+      marker: '1.'
+      style: {based_on: compact}
+      text: Review the source records and retain enough context to explain the result. Wrapped lines use the space after the list marker, and the marker itself keeps its natural width.
+    - type: section
+      section: {columns: {count: 2, gap: 8}}
+    - {id: observations, type: heading, level: 2, text: Observations}
+    - style: {based_on: compact}
+      runs:
+        - {text: 'The observations use archived records'}
+        - {footnote: source}
+        - {text: '. Each automatic line fills the current column. The source note uses its own available width and keeps the last line natural.'}
+    - type: table
+      table:
+        columns: [{width: 14, no_wrap: true, align: right}, {align: justify}]
+        header_rows: 1
+        grid:
+          - [{text: ID}, {text: Review notes}]
+          - [{text: A01}, {text: Check the source records and confirm every reported date before approval.}]
+          - [{text: A02}, {text: Compare the measured result with the archived observations and explain each difference.}]
+          - [{text: A03}, {text: Retain the original fonts and the final document for later review.}]
+    - {type: column_break}
+    - {id: review, type: heading, level: 2, text: Review}
+    - style: {based_on: report}
+      text: This topic begins in the next column. First-line indentation applies within that column, and line alignment uses its right edge. The last line remains at its original width even when a paragraph continues across a page or column boundary.
+    - style: {based_on: compact}
+      text: "A manual break stays short.\nA second line is also natural."
+    - type: section
+      section: {columns: {count: 1}}
+    - {id: appendix, type: heading, level: 1, text: Appendix}
+    - style: {based_on: report}
+      text: This section restores a single full-width column. The text uses the same named style and expands only at the legal boundaries of automatically wrapped lines. Exporting the document preserves these fixed positions for later rendering and recreation.

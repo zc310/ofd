@@ -30,6 +30,443 @@ type Manifest struct {
 	Templates []Template `json:"templates,omitempty" yaml:"templates,omitempty" toml:"templates,omitempty"`
 	// Pages 定义文档页面。
 	Pages []Page `json:"pages,omitempty" yaml:"pages,omitempty" toml:"pages,omitempty"`
+	// Flow 按顺序排版内容，自动生成标准 OFD 页面；与 pages 互斥。
+	Flow *Flow `json:"flow,omitempty" yaml:"flow,omitempty"`
+}
+
+// Flow 定义流式创作设置；页面尺寸取 document.page_size，字体取 resources.fonts。
+type Flow struct {
+	// Profile 选择专用版式，支持 gbt9704；与 theme 互斥，需同时提供 official.fonts。
+	Profile string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	// Official 是 GB/T 9704—2012 常规公文的字体、版头、落款与版记配置。
+	Official *FlowOfficial `json:"official,omitempty" yaml:"official,omitempty"`
+	// Theme 选择 material（默认）、material2、material3、fluent2、carbon 或 bootstrap5 印刷主题；字体资源仍由 font、heading_font 等字段配置。
+	Theme string `json:"theme,omitempty" yaml:"theme,omitempty"`
+	// Columns 配置等宽分栏，省略时单栏。
+	Columns *FlowColumns `json:"columns,omitempty" yaml:"columns,omitempty"`
+	// Styles 注册命名文字样式，可由块或单元格 style.based_on 引用。
+	Styles []FlowNamedStyle `json:"styles,omitempty" yaml:"styles,omitempty"`
+	// Footnotes 注册页底注释，按正文、列表或表格中的首次引用顺序编号。
+	Footnotes []FlowFootnote `json:"footnotes,omitempty" yaml:"footnotes,omitempty"`
+	// FootnoteStyle 覆盖默认脚注样式（9pt、1.3 倍行高），支持 based_on。
+	FootnoteStyle *FlowStyle `json:"footnote_style,omitempty" yaml:"footnote_style,omitempty"`
+	// Font 指定正文、图注与表格的字体资源名，缺省使用内置 Go 字体。
+	Font string `json:"font,omitempty" yaml:"font,omitempty"`
+	// HeadingFont 指定标题字体，缺省继承显式 font，否则使用内置 Go 粗体。
+	HeadingFont string `json:"heading_font,omitempty" yaml:"heading_font,omitempty"`
+	// BoldFont 是正文字体族粗体的简写，font_families 中的显式族关系优先。
+	BoldFont string `json:"bold_font,omitempty" yaml:"bold_font,omitempty"`
+	// ItalicFont 是正文字体族斜体的简写。
+	ItalicFont string `json:"italic_font,omitempty" yaml:"italic_font,omitempty"`
+	// BoldItalicFont 是正文字体族粗斜体的简写。
+	BoldItalicFont string `json:"bold_italic_font,omitempty" yaml:"bold_italic_font,omitempty"`
+	// FallbackFonts 是按字符覆盖依次尝试的回退字体资源名。
+	FallbackFonts []string `json:"fallback_fonts,omitempty" yaml:"fallback_fonts,omitempty"`
+	// FontFaces 按字体资源名选择 TTC/OTC 中从 0 开始的字体面，缺省为 0，单字体文件只接受 0。
+	FontFaces map[string]int `json:"font_faces,omitempty" yaml:"font_faces,omitempty"`
+	// FontFamilies 显式关联同一字体族的实际字体资源，字重与斜体在各自字体族内匹配。
+	FontFamilies []FlowFontFamily `json:"font_families,omitempty" yaml:"font_families,omitempty"`
+	// Margins 定义毫米单位的页边距，省略时四边均为 20mm。
+	Margins *FlowMargins `json:"margins,omitempty" yaml:"margins,omitempty"`
+	// BodySize 是正文字号，单位磅，省略时沿用主题（fluent2 为 10.5，其余普通主题为 12）。
+	BodySize float64 `json:"body_size,omitempty" yaml:"body_size,omitempty"`
+	// LineHeight 是正文行高倍率，省略时沿用主题（material 为 1.6，fluent2 为 20/14，其余普通主题为 1.5）。
+	LineHeight float64 `json:"line_height,omitempty" yaml:"line_height,omitempty"`
+	// PageNumbers 控制页码显示；省略或 null 时普通主题默认关闭，gbt9704 默认开启，显式 false 可关闭。
+	PageNumbers *bool `json:"page_numbers,omitempty" yaml:"page_numbers,omitempty"`
+	// Header 是页眉文字，支持 {page} 与 {pages} 占位符，上页边距须至少 8mm。
+	Header string `json:"header,omitempty" yaml:"header,omitempty"`
+	// Footer 是页脚文字，支持页码占位符；page_numbers 为真时在其后追加页码。
+	Footer string `json:"footer,omitempty" yaml:"footer,omitempty"`
+	// GenerateOutlines 按标题层级生成标准大纲，追加在 document.outlines 后，跳转位置由最终分页确定。
+	GenerateOutlines bool `json:"generate_outlines,omitempty" yaml:"generate_outlines,omitempty"`
+	// ReferencePageNumbers 选择目录与 page_ref 使用 physical（默认物理页码）或 section（节内显示页码）。
+	ReferencePageNumbers string `json:"reference_page_numbers,omitempty" yaml:"reference_page_numbers,omitempty"`
+	// Blocks 是按顺序排列的逻辑内容。
+	Blocks []FlowBlock `json:"blocks,omitempty" yaml:"blocks,omitempty"`
+}
+
+// FlowOfficial 定义常规公文专用要素；启用时使用 A4 和 156×225mm 版心。
+type FlowOfficial struct {
+	// Fonts 指定五类专用字体资源；调用方负责提供对应字形。
+	Fonts FlowOfficialFonts `json:"fonts" yaml:"fonts"`
+	// Letterhead 定义仅在首页出现的版头。
+	Letterhead *FlowOfficialLetterhead `json:"letterhead,omitempty" yaml:"letterhead,omitempty"`
+	// Signature 定义不加盖印章的单一机关落款。
+	Signature *FlowOfficialSignature `json:"signature,omitempty" yaml:"signature,omitempty"`
+	// Colophon 定义锚定末页版心下边缘的版记。
+	Colophon *FlowOfficialColophon `json:"colophon,omitempty" yaml:"colophon,omitempty"`
+}
+
+// FlowOfficialFonts 引用 resources.fonts 中已注册的字体，不按资源名猜测实际字形。
+type FlowOfficialFonts struct {
+	// Body 是三号正文及版记使用的仿宋字体资源。
+	Body string `json:"body" yaml:"body"`
+	// Title 是标题和发文机关标志使用的小标宋字体资源。
+	Title string `json:"title" yaml:"title"`
+	// Hei 是第一层结构序数、密级及紧急程度使用的黑体字体资源。
+	Hei string `json:"hei" yaml:"hei"`
+	// Kai 是第二层结构序数和签发人姓名使用的楷体字体资源。
+	Kai string `json:"kai" yaml:"kai"`
+	// Song 是四号半角页码使用的宋体字体资源。
+	Song string `json:"song" yaml:"song"`
+}
+
+// FlowOfficialLetterhead 是首页常规版头；不含联合行文、信函或命令专用格式。
+type FlowOfficialLetterhead struct {
+	// Org 是发文机关标志，不自动追加“文件”。
+	Org string `json:"org" yaml:"org"`
+	// DocNo 是完整发文字号，由调用方提供规范文字。
+	DocNo string `json:"doc_no,omitempty" yaml:"doc_no,omitempty"`
+	// Signatory 是单个签发人姓名，非空时采用上行文并排布局。
+	Signatory string `json:"signatory,omitempty" yaml:"signatory,omitempty"`
+	// SerialNo 是份号。
+	SerialNo string `json:"serial_no,omitempty" yaml:"serial_no,omitempty"`
+	// Security 是密级和保密期限。
+	Security string `json:"security,omitempty" yaml:"security,omitempty"`
+	// Urgency 是紧急程度。
+	Urgency string `json:"urgency,omitempty" yaml:"urgency,omitempty"`
+	// OrgSize 是机关标志字号，单位磅，缺省 32；过宽时报错。
+	OrgSize float64 `json:"org_size,omitempty" yaml:"org_size,omitempty"`
+}
+
+// FlowOfficialSignature 是不加盖印章的单一机关落款。
+type FlowOfficialSignature struct {
+	// Org 是发文机关署名。
+	Org string `json:"org,omitempty" yaml:"org,omitempty"`
+	// Date 是完整成文日期，由调用方使用规范日期文字。
+	Date string `json:"date,omitempty" yaml:"date,omitempty"`
+}
+
+// FlowOfficialColophon 是末页版记，行宽不足时报错或按悬挂缩进换行。
+type FlowOfficialColophon struct {
+	// Cc 是抄送机关，不含自动添加的“抄送：”。
+	Cc string `json:"cc,omitempty" yaml:"cc,omitempty"`
+	// IssuedBy 是印发机关。
+	IssuedBy string `json:"issued_by,omitempty" yaml:"issued_by,omitempty"`
+	// IssuedDate 是印发日期，不含自动添加的“印发”。
+	IssuedDate string `json:"issued_date,omitempty" yaml:"issued_date,omitempty"`
+}
+
+// FlowFontFamily 关联同一字体族的四种实际字体面。
+type FlowFontFamily struct {
+	// Regular 是必填的常规字体资源名。
+	Regular string `json:"regular" yaml:"regular"`
+	// Bold 是粗体字体资源名，省略时保留原字体。
+	Bold string `json:"bold,omitempty" yaml:"bold,omitempty"`
+	// Italic 是斜体字体资源名，省略时保留原字体。
+	Italic string `json:"italic,omitempty" yaml:"italic,omitempty"`
+	// BoldItalic 是粗斜体字体资源名，缺少时按粗体、斜体、原字体顺序选择。
+	BoldItalic string `json:"bold_italic,omitempty" yaml:"bold_italic,omitempty"`
+}
+
+// FlowMargins 是毫米单位的页边距。
+type FlowMargins struct {
+	// Top 是上页边距。
+	Top float64 `json:"top,omitempty" yaml:"top,omitempty"`
+	// Right 是右页边距。
+	Right float64 `json:"right,omitempty" yaml:"right,omitempty"`
+	// Bottom 是下页边距。
+	Bottom float64 `json:"bottom,omitempty" yaml:"bottom,omitempty"`
+	// Left 是左页边距。
+	Left float64 `json:"left,omitempty" yaml:"left,omitempty"`
+}
+
+// FlowNamedStyle 是可复用的文字样式，名称在文档内唯一且不含空白。
+type FlowNamedStyle struct {
+	// Name 是引用此样式的名称。
+	Name string `json:"name" yaml:"name"`
+	// Style 定义样式字段，可通过 based_on 继承其他命名样式，最多 64 层。
+	Style FlowStyle `json:"style" yaml:"style"`
+}
+
+// FlowFootnote 定义与引用行或表格行组同栏的脚注，同栏重复引用只排一次。
+type FlowFootnote struct {
+	// ID 是脚注定义内唯一的名称，不含空白或控制字符。
+	ID string `json:"id" yaml:"id"`
+	// Text 是注释纯文本，与 runs 互斥。
+	Text string `json:"text,omitempty" yaml:"text,omitempty"`
+	// Runs 是带样式和链接的注释片段，不能嵌套脚注。
+	Runs []FlowRun `json:"runs,omitempty" yaml:"runs,omitempty"`
+	// Style 覆盖全局脚注样式，支持 based_on 和显式零间距。
+	Style *FlowStyle `json:"style,omitempty" yaml:"style,omitempty"`
+}
+
+// FlowStyle 覆盖文字样式，省略或 null 字段继承；显式零间距和零缩进会清除上层值。
+// 字号为磅，行高为倍率，其余长度为毫米；字号、行高不能显式设为零。
+type FlowStyle struct {
+	// BasedOn 是在当前字段之前应用的命名样式。
+	BasedOn string `json:"based_on,omitempty" yaml:"based_on,omitempty"`
+	// Font 是字体资源名。
+	Font string `json:"font,omitempty" yaml:"font,omitempty"`
+	// Size 是字号，单位磅。
+	Size *float64 `json:"size,omitempty" yaml:"size,omitempty"`
+	// LineHeight 是行高倍率。
+	LineHeight *float64 `json:"line_height,omitempty" yaml:"line_height,omitempty"`
+	// SpaceBefore 是段前间距。
+	SpaceBefore *float64 `json:"space_before,omitempty" yaml:"space_before,omitempty"`
+	// SpaceAfter 是段后间距。
+	SpaceAfter *float64 `json:"space_after,omitempty" yaml:"space_after,omitempty"`
+	// FirstLineIndent 是首行缩进。
+	FirstLineIndent *float64 `json:"first_line_indent,omitempty" yaml:"first_line_indent,omitempty"`
+	// Align 是 left、center、right 或 justify；justify 仅伸展自动换行的行，段末和显式换行保持自然宽度。
+	Align string `json:"align,omitempty" yaml:"align,omitempty"`
+	// Color 是文字颜色。
+	Color *Color `json:"color,omitempty" yaml:"color,omitempty"`
+}
+
+// FlowRun 是段落内的同样式文字片段。
+type FlowRun struct {
+	// Text 是文字内容。
+	Text string `json:"text" yaml:"text"`
+	// Font 显式指定字体资源名，空值继承块级字体。
+	Font string `json:"font,omitempty" yaml:"font,omitempty"`
+	// Bold 选择 flow.bold_font 配置的字体面。
+	Bold bool `json:"bold,omitempty" yaml:"bold,omitempty"`
+	// Italic 选择 flow.italic_font 配置的字体面。
+	Italic bool `json:"italic,omitempty" yaml:"italic,omitempty"`
+	// Strike 绘制删除线。
+	Strike bool `json:"strike,omitempty" yaml:"strike,omitempty"`
+	// Href 定义此片段的点击链接。
+	Href string `json:"href,omitempty" yaml:"href,omitempty"`
+	// Target 指向内容块的 id，与 href 互斥。
+	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	// PageRef 按 reference_page_numbers 显示目标最终页码并提供跳转，与 text、href、target 及其他引用字段互斥。
+	PageRef string `json:"page_ref,omitempty" yaml:"page_ref,omitempty"`
+	// CaptionRef 显示带编号图表的标签并跳转，与 text、href、target 及其他引用字段互斥。
+	CaptionRef string `json:"caption_ref,omitempty" yaml:"caption_ref,omitempty"`
+	// TitleRef 显示章节标题或完整图表题注并跳转，与 text、href、target、page_ref、caption_ref、footnote 互斥。
+	TitleRef string `json:"title_ref,omitempty" yaml:"title_ref,omitempty"`
+	// Footnote 显示脚注编号上标（所在文字 75% 字号、上移 0.3em），与 text、href、target 及其他引用字段互斥。
+	Footnote string `json:"footnote,omitempty" yaml:"footnote,omitempty"`
+}
+
+// FlowBlock 是无需坐标的内容块。
+type FlowBlock struct {
+	// ID 是文档内唯一内容标识，不含空白，不能以 __flow_ 开头；换页、换栏和分节块不能设置。
+	ID string `json:"id,omitempty" yaml:"id,omitempty"`
+	// Type 是 paragraph、heading、recipient、list_item、image、table、fixed、toc、section、page_break 或 column_break，缺省 paragraph；recipient 为公文主送机关。
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
+	// Text 是纯文本内容，与 runs 互斥。
+	Text string `json:"text,omitempty" yaml:"text,omitempty"`
+	// Runs 是带局部样式的文字片段，与 text 互斥。
+	Runs []FlowRun `json:"runs,omitempty" yaml:"runs,omitempty"`
+	// Level 是标题级别，heading 必须为 1 到 6。
+	Level int `json:"level,omitempty" yaml:"level,omitempty"`
+	// Marker 是列表标记，list_item 缺省使用圆点。
+	Marker string `json:"marker,omitempty" yaml:"marker,omitempty"`
+	// Style 覆盖主题样式。
+	Style *FlowStyle `json:"style,omitempty" yaml:"style,omitempty"`
+	// KeepWithNext 尽量与后续内容的开头保持同页；连续设置会组成跟随链，标题和公文主送机关默认启用。
+	KeepWithNext bool `json:"keep_with_next,omitempty" yaml:"keep_with_next,omitempty"`
+	// KeepTogether 能放入完整一页时尽量整块同页。
+	KeepTogether bool `json:"keep_together,omitempty" yaml:"keep_together,omitempty"`
+	// PageBreakBefore 在此块之前换页。
+	PageBreakBefore bool `json:"page_break_before,omitempty" yaml:"page_break_before,omitempty"`
+	// PageBreakAfter 在此块之后换页。
+	PageBreakAfter bool `json:"page_break_after,omitempty" yaml:"page_break_after,omitempty"`
+	// Orphans 是段落跨页时前页至少保留的行数，缺省 2。
+	Orphans int `json:"orphans,omitempty" yaml:"orphans,omitempty"`
+	// Widows 是段落跨页时后页至少保留的行数，缺省 2。
+	Widows int `json:"widows,omitempty" yaml:"widows,omitempty"`
+	// Image 是图片与图注，type 为 image 时使用。
+	Image *FlowImage `json:"image,omitempty" yaml:"image,omitempty"`
+	// Table 是简单网格表格，type 为 table 时使用。
+	Table *FlowTable `json:"table,omitempty" yaml:"table,omitempty"`
+	// Fixed 是整块分页的固定图元区域。
+	Fixed *FlowFixed `json:"fixed,omitempty" yaml:"fixed,omitempty"`
+	// TOC 配置 type 为 toc 的自动目录，支持多页条目和最终物理页码。
+	TOC *FlowTOC `json:"toc,omitempty" yaml:"toc,omitempty"`
+	// Section 配置 type 为 section 的分节块，后续内容从新页开始。
+	Section *FlowSection `json:"section,omitempty" yaml:"section,omitempty"`
+}
+
+// FlowFixed 将原始图元作为固定区域插入流式文档，长度与图元字号均为毫米。
+type FlowFixed struct {
+	// Width 是预留宽度，省略时使用当前栏宽，单栏时为版心宽度；超宽时报错。
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty"`
+	// Height 是必须给出的正数高度，不含图注。
+	Height float64 `json:"height" yaml:"height"`
+	// Align 为 left（默认）、center 或 right。
+	Align string `json:"align,omitempty" yaml:"align,omitempty"`
+	// Items 是相对块左上角的图元，支持 text、path、image、composite、page-block。
+	Items []Item `json:"items" yaml:"items"`
+	// Caption 是区域下方的图注。
+	Caption string `json:"caption,omitempty" yaml:"caption,omitempty"`
+	// Numbered 与 image 共用连续图编号。
+	Numbered bool `json:"numbered,omitempty" yaml:"numbered,omitempty"`
+	// CaptionPrefix 是编号前缀，缺省 Figure；需要 numbered。
+	CaptionPrefix string `json:"caption_prefix,omitempty" yaml:"caption_prefix,omitempty"`
+}
+
+// FlowSection 按需覆盖后续页面设置；省略字段继承前节，空字符串和 false 可显式清除。
+type FlowSection struct {
+	// PageSize 覆盖纸张尺寸，单位毫米，须同时给出正数 width 和 height。
+	PageSize *FlowSectionSize `json:"page_size,omitempty" yaml:"page_size,omitempty"`
+	// Margins 覆盖四边页边距，单位毫米，零值表示零边距。
+	Margins *FlowMargins `json:"margins,omitempty" yaml:"margins,omitempty"`
+	// Columns 覆盖后续页面的分栏设置，省略时继承前节；count: 1 恢复单栏。
+	Columns *FlowColumns `json:"columns,omitempty" yaml:"columns,omitempty"`
+	// Header 覆盖页眉，空字符串清除前节页眉。
+	Header *string `json:"header,omitempty" yaml:"header,omitempty"`
+	// Footer 覆盖页脚，空字符串清除前节页脚。
+	Footer *string `json:"footer,omitempty" yaml:"footer,omitempty"`
+	// PageNumbers 控制自动页码显示，false 可隐藏封面页码。
+	PageNumbers *bool `json:"page_numbers,omitempty" yaml:"page_numbers,omitempty"`
+	// StartPageNumber 从正数开始重新编号，省略时接续前节。
+	StartPageNumber *int `json:"start_page_number,omitempty" yaml:"start_page_number,omitempty"`
+	// PageNumberStyle 是 decimal、roman 或 ROMAN，省略继承前节；罗马编号支持 1 到 3999。
+	PageNumberStyle string `json:"page_number_style,omitempty" yaml:"page_number_style,omitempty"`
+	// PageNumberPrefix 是编号前缀，如 A-，空字符串清除前缀。
+	PageNumberPrefix *string `json:"page_number_prefix,omitempty" yaml:"page_number_prefix,omitempty"`
+	// FirstPageHeader 只覆盖本节首页页眉，不继承到下一节。
+	FirstPageHeader *string `json:"first_page_header,omitempty" yaml:"first_page_header,omitempty"`
+	// FirstPageFooter 只覆盖本节首页页脚，不继承到下一节。
+	FirstPageFooter *string `json:"first_page_footer,omitempty" yaml:"first_page_footer,omitempty"`
+	// HideFirstPageNumber 隐藏本节首页自动追加的页码，首页仍占用编号。
+	HideFirstPageNumber bool `json:"hide_first_page_number,omitempty" yaml:"hide_first_page_number,omitempty"`
+}
+
+// FlowColumns 定义从左到右顺序流动的等宽栏，可选择平衡节末页。
+type FlowColumns struct {
+	// Count 是栏数，0 或 1 表示单栏，支持 2 到 8 栏。
+	Count int `json:"count,omitempty" yaml:"count,omitempty"`
+	// Gap 是毫米单位的栏间距，须为有限非负数，零表示无栏间距。
+	Gap float64 `json:"gap,omitempty" yaml:"gap,omitempty"`
+	// Balance 在多栏节末页按合法断点重排栏高；含显式换栏的末页保持原布局。
+	Balance bool `json:"balance,omitempty" yaml:"balance,omitempty"`
+}
+
+// FlowSectionSize 是毫米单位的分节纸张尺寸。
+type FlowSectionSize struct {
+	// Width 是纸张宽度。
+	Width float64 `json:"width" yaml:"width"`
+	// Height 是纸张高度。
+	Height float64 `json:"height" yaml:"height"`
+}
+
+// FlowTOC 配置标题、图或表目录，默认标题目录的最大标题级别为 3。
+type FlowTOC struct {
+	// Title 是目录标题，显式空值表示省略标题。
+	Title string `json:"title,omitempty" yaml:"title,omitempty"`
+	// MaxLevel 是标题目录的最大标题级别，0 表示 3，可取 1 到 6；图表目录必须省略或为 0。
+	MaxLevel int `json:"max_level,omitempty" yaml:"max_level,omitempty"`
+	// Source 选择 headings（默认）、figures 或 tables；图表目录仅收集带编号内容，max_level 仅用于标题目录。
+	Source string `json:"source,omitempty" yaml:"source,omitempty"`
+}
+
+// FlowImage 定义图片资源及排版尺寸。
+type FlowImage struct {
+	// File 是资源根目录内的图片路径，与 data_base64 互斥。
+	File string `json:"file,omitempty" yaml:"file,omitempty"`
+	// DataBase64 是 Base64 图片数据，与 file 互斥。
+	DataBase64 string `json:"data_base64,omitempty" yaml:"data_base64,omitempty"`
+	// Width 是图片宽度，单位毫米，缺省按原图比例推算。
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty"`
+	// Height 是图片高度，单位毫米，缺省按原图比例推算。
+	Height float64 `json:"height,omitempty" yaml:"height,omitempty"`
+	// Caption 是图片下方的说明文字。
+	Caption string `json:"caption,omitempty" yaml:"caption,omitempty"`
+	// Numbered 为图注添加连续编号，图片与表格分别计数。
+	Numbered bool `json:"numbered,omitempty" yaml:"numbered,omitempty"`
+	// CaptionPrefix 是编号前缀，缺省 Figure；需要 numbered。
+	CaptionPrefix string `json:"caption_prefix,omitempty" yaml:"caption_prefix,omitempty"`
+}
+
+// FlowTable 定义表格，按完整行组分页，续页重复表头。
+type FlowTable struct {
+	// SplitRows 按完整文字行跨页或跨栏拆分普通及 ColSpan 单元格；正文 RowSpan 不支持。
+	SplitRows bool `json:"split_rows,omitempty" yaml:"split_rows,omitempty"`
+	// Header 是可选表头。
+	Header []string `json:"header,omitempty" yaml:"header,omitempty"`
+	// Rows 是等列数的数据行。
+	Rows [][]string `json:"rows,omitempty" yaml:"rows,omitempty"`
+	// ColumnWidths 是毫米单位的列宽，省略时均分版心。
+	ColumnWidths []float64 `json:"column_widths,omitempty" yaml:"column_widths,omitempty"`
+	// Grid 是支持合并、样式与链接的单元格网格，与 header/rows 互斥；被合并占据的位置无需占位。
+	Grid [][]FlowTableCell `json:"grid,omitempty" yaml:"grid,omitempty"`
+	// HeaderRows 是 grid 开头在续页重复的行数，合并不能跨越表头与正文边界。
+	HeaderRows int `json:"header_rows,omitempty" yaml:"header_rows,omitempty"`
+	// Columns 配置按内容测量的自动列宽，与 column_widths 互斥；每项对应一列。
+	Columns []FlowTableColumn `json:"columns,omitempty" yaml:"columns,omitempty"`
+	// CellStyle 设置全表单元格默认外观，单元格 appearance 可以覆盖。
+	CellStyle *FlowCellStyle `json:"cell_style,omitempty" yaml:"cell_style,omitempty"`
+	// StripeFill 设置正文从第二行开始的隔行底色，跨页保持行序。
+	StripeFill *Color `json:"stripe_fill,omitempty" yaml:"stripe_fill,omitempty"`
+	// Caption 是表格上方的题注。
+	Caption string `json:"caption,omitempty" yaml:"caption,omitempty"`
+	// Numbered 为表题添加连续编号，图片与表格分别计数。
+	Numbered bool `json:"numbered,omitempty" yaml:"numbered,omitempty"`
+	// CaptionPrefix 是编号前缀，缺省 Table；需要 numbered。
+	CaptionPrefix string `json:"caption_prefix,omitempty" yaml:"caption_prefix,omitempty"`
+	// RepeatCaption 在续页表头上方重复题注，题注与首个行组同页。
+	RepeatCaption bool `json:"repeat_caption,omitempty" yaml:"repeat_caption,omitempty"`
+	// ContinuationSuffix 是续表题后缀，缺省 (continued)。
+	ContinuationSuffix string `json:"continuation_suffix,omitempty" yaml:"continuation_suffix,omitempty"`
+}
+
+// FlowTableColumn 定义毫米单位的列宽约束和内容换行行为。
+type FlowTableColumn struct {
+	// Width 为固定列宽，零表示按内容分配。
+	Width float64 `json:"width,omitempty" yaml:"width,omitempty"`
+	// MinWidth 是包含内边距的最小列宽。
+	MinWidth float64 `json:"min_width,omitempty" yaml:"min_width,omitempty"`
+	// MaxWidth 是包含内边距的最大列宽，零表示不限制。
+	MaxWidth float64 `json:"max_width,omitempty" yaml:"max_width,omitempty"`
+	// Weight 是自动列剩余宽度的比例，零表示 1。
+	Weight float64 `json:"weight,omitempty" yaml:"weight,omitempty"`
+	// NoWrap 禁止自动换行，保留显式换行；不够宽时返回错误。
+	NoWrap bool `json:"no_wrap,omitempty" yaml:"no_wrap,omitempty"`
+	// Align 是 left、center、right 或 justify，可由单元格 style 覆盖。
+	Align string `json:"align,omitempty" yaml:"align,omitempty"`
+}
+
+// FlowCellStyle 定义单元格外观，空字段继承默认设置。
+type FlowCellStyle struct {
+	// Fill 是背景色，覆盖表头或隔行底色。
+	Fill *Color `json:"fill,omitempty" yaml:"fill,omitempty"`
+	// Padding 是四边内边距，显式空对象表示零内边距，缺省四边 1.5mm。
+	Padding *FlowMargins `json:"padding,omitempty" yaml:"padding,omitempty"`
+	// VerticalAlign 为 top、middle 或 bottom，缺省 top。
+	VerticalAlign string `json:"vertical_align,omitempty" yaml:"vertical_align,omitempty"`
+	// Borders 按侧覆盖默认边框，相邻单元格的边框各自在内部绘制。
+	Borders *FlowCellBorders `json:"borders,omitempty" yaml:"borders,omitempty"`
+}
+
+// FlowCellBorders 的空边继承默认边框，显式 width: 0 隐藏该侧边框。
+type FlowCellBorders struct {
+	// Top 是上边框。
+	Top *FlowTableBorder `json:"top,omitempty" yaml:"top,omitempty"`
+	// Right 是右边框。
+	Right *FlowTableBorder `json:"right,omitempty" yaml:"right,omitempty"`
+	// Bottom 是下边框。
+	Bottom *FlowTableBorder `json:"bottom,omitempty" yaml:"bottom,omitempty"`
+	// Left 是左边框。
+	Left *FlowTableBorder `json:"left,omitempty" yaml:"left,omitempty"`
+}
+
+// FlowTableBorder 定义毫米单位的实色边框。
+type FlowTableBorder struct {
+	// Width 是边框宽度，零表示隐藏。
+	Width float64 `json:"width" yaml:"width"`
+	// Color 是边框颜色，缺省继承主题边框颜色。
+	Color *Color `json:"color,omitempty" yaml:"color,omitempty"`
+}
+
+// FlowTableCell 定义按空闲列依次放置的合并单元格。
+type FlowTableCell struct {
+	// Text 是纯文本，与 runs 互斥。
+	Text string `json:"text,omitempty" yaml:"text,omitempty"`
+	// Runs 是带字体、字重和链接的文字片段，与 text 互斥。
+	Runs []FlowRun `json:"runs,omitempty" yaml:"runs,omitempty"`
+	// ColSpan 是跨列数量，零值表示 1。
+	ColSpan int `json:"col_span,omitempty" yaml:"col_span,omitempty"`
+	// RowSpan 是跨行数量，零值表示 1。
+	RowSpan int `json:"row_span,omitempty" yaml:"row_span,omitempty"`
+	// Style 覆盖单元格文字样式，段间距位于文字上下方。
+	Style *FlowStyle `json:"style,omitempty" yaml:"style,omitempty"`
+	// Appearance 覆盖表格默认单元格外观。
+	Appearance *FlowCellStyle `json:"appearance,omitempty" yaml:"appearance,omitempty"`
 }
 
 // Document 描述 OFD 文档及其元数据、资源和页面内容。
@@ -130,8 +567,10 @@ type Resources struct {
 
 // Font 描述文档使用的字体资源。
 type Font struct {
-	// Name 指定字体资源名称。
+	// Name 指定文档内唯一的字体资源引用名，与文字的 font 字段对应。
 	Name string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
+	// FontName 指定 OFD 中的实际字型名；省略时普通创建使用 name，flow 从嵌入字体自动补全。
+	FontName string `json:"font_name,omitempty" yaml:"font_name,omitempty"`
 	// FamilyName 指定字体族名称。
 	FamilyName string `json:"family_name,omitempty" yaml:"family_name,omitempty" toml:"family_name,omitempty"`
 	// Charset 指定字体字符集。
@@ -1337,6 +1776,9 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 	if m.Version != 1 {
 		return creator.Document{}, fmt.Errorf("不支持的 manifest 版本: %d", m.Version)
 	}
+	if m.Flow != nil && len(m.Pages) > 0 {
+		return creator.Document{}, errors.New("flow 与 pages 不能同时设置")
+	}
 	if assetRoot == "" {
 		assetRoot = baseDir
 	} else if !filepath.IsAbs(assetRoot) {
@@ -1520,7 +1962,7 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 		if err != nil {
 			return creator.Document{}, fmt.Errorf("resources.fonts[%d].file: %w", index, err)
 		}
-		document.Fonts = append(document.Fonts, creator.Font{Name: font.Name, FamilyName: font.FamilyName, Charset: font.Charset, Format: font.Format, Italic: font.Italic, Bold: font.Bold, Serif: font.Serif, FixedWidth: font.FixedWidth, Data: data, Source: source})
+		document.Fonts = append(document.Fonts, creator.Font{Name: font.Name, FontName: font.FontName, FamilyName: font.FamilyName, Charset: font.Charset, Format: font.Format, Italic: font.Italic, Bold: font.Bold, Serif: font.Serif, FixedWidth: font.FixedWidth, Data: data, Source: source})
 	}
 	for index, image := range m.Resources.Images {
 		data, source, err := loadResource(image.File, image.DataBase64)
@@ -1649,6 +2091,14 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 			items = append(items, converted)
 		}
 		document.Annotations = append(document.Annotations, creator.AnnotationPage{Page: annotationPage.Page, Items: items})
+	}
+	// flow 构建会清理未引用字体，注解必须先加入模型以保留其专用嵌入字体。
+	if m.Flow != nil {
+		composed, err := m.Flow.build(document, store)
+		if err != nil {
+			return creator.Document{}, fmt.Errorf("flow: %w", err)
+		}
+		document = composed
 	}
 	return document, nil
 }

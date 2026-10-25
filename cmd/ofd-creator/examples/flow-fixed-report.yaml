@@ -1,0 +1,98 @@
+version: 1
+document:
+  id: flow-fixed-report
+  title: Fixed content in flow
+  page_size: {width: 140, height: 180}
+resources:
+  images:
+    - id: 600
+      name: identity.png
+      format: PNG
+      data_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgDr8AAAGjATO977V+AAAAAElFTkSuQmCC
+  composites:
+    - id: 700
+      width: 10
+      height: 10
+      items:
+        - {type: path, width: 10, height: 10, data: 'M 0 0 L 10 0 L 10 10 L 0 10 C', fill: true, stroke_set: false, fill_color: {r: 11, g: 87, b: 208}}
+        - {type: path, x: 2, 'y': 3, width: 6, height: 4, data: 'M 0 2 L 2 4 L 6 0', stroke: true, line_width: 0.6, stroke_color: {r: 255, g: 255, b: 255}}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Fixed content report
+  blocks:
+    - {type: heading, level: 1, text: Project results}
+    - runs:
+        - {text: 'The vector chart is '}
+        - {caption_ref: chart}
+        - {text: '. The approval area is on page '}
+        - {page_ref: signature}
+        - {text: '.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 96
+        height: 55
+        align: center
+        caption: Quarterly delivery results
+        numbered: true
+        items:
+          - {type: path, width: 96, height: 55, data: 'M 0 0 L 96 0 L 96 55 L 0 55 C', fill: true, stroke_set: false, fill_color: {r: 242, g: 247, b: 253}}
+          - type: page-block
+            items:
+              - {type: text, x: 6, 'y': 3, width: 85, height: 6, size: 4, value: Delivery performance, fill: true}
+              - {type: text, x: 6, 'y': 16, width: 10, height: 5, size: 3.2, value: Q1, fill: true}
+              - {type: path, x: 20, 'y': 15, width: 36, height: 7, data: 'M 0 0 L 36 0 L 36 7 L 0 7 C', fill: true, stroke_set: false, fill_color: {r: 100, g: 155, b: 225}}
+              - {type: text, x: 60, 'y': 16, width: 20, height: 5, size: 3.2, value: '60', fill: true}
+              - {type: text, x: 6, 'y': 28, width: 10, height: 5, size: 3.2, value: Q2, fill: true}
+              - {type: path, x: 20, 'y': 27, width: 48, height: 7, data: 'M 0 0 L 48 0 L 48 7 L 0 7 C', fill: true, stroke_set: false, fill_color: {r: 55, g: 120, b: 210}}
+              - {type: text, x: 72, 'y': 28, width: 20, height: 5, size: 3.2, value: '80', fill: true}
+              - {type: text, x: 6, 'y': 40, width: 10, height: 5, size: 3.2, value: Q3, fill: true}
+              - {type: path, x: 20, 'y': 39, width: 60, height: 7, data: 'M 0 0 L 60 0 L 60 7 L 0 7 C', fill: true, stroke_set: false, fill_color: {r: 11, g: 87, b: 208}}
+              - {type: text, x: 83, 'y': 40, width: 12, height: 5, size: 3.2, value: '100', fill: true}
+    - text: The chart remains vector artwork. Its local coordinates are translated to the final page position, and the following paragraph starts after the complete chart and caption.
+    - {type: page_break}
+    - {type: heading, level: 1, text: Approval}
+    - text: Images, reusable composite marks and text can share one fixed content area.
+    - id: identity
+      type: fixed
+      fixed:
+        height: 25
+        caption: Project identity card
+        numbered: true
+        items:
+          - {type: image, x: 2, 'y': 2, width: 18, height: 18, resource_id: 600}
+          - {type: composite, x: 25, 'y': 3, width: 10, height: 10, resource_id: 700}
+          - {type: text, x: 40, 'y': 3, width: 57, height: 6, size: 4, value: Approved project, fill: true}
+          - {type: text, x: 25, 'y': 16, width: 70, height: 6, size: 3.2, value: 'Reference: PROJECT-2026', fill: true}
+    - text: The signature area reserves its full height and stays together during pagination.
+    - id: signature
+      type: fixed
+      fixed:
+        height: 32
+        items:
+          - {type: text, x: 2, 'y': 2, width: 45, height: 6, size: 3.5, value: Prepared by, fill: true}
+          - {type: text, x: 54, 'y': 2, width: 43, height: 6, size: 3.5, value: Approved by, fill: true}
+          - {type: path, x: 2, 'y': 17, width: 43, height: 1, data: 'M 0 0.5 L 43 0.5', stroke: true, line_width: 0.3, stroke_color: {r: 80, g: 80, b: 80}}
+          - {type: path, x: 54, 'y': 17, width: 43, height: 1, data: 'M 0 0.5 L 43 0.5', stroke: true, line_width: 0.3, stroke_color: {r: 80, g: 80, b: 80}}
+          - {type: text, x: 2, 'y': 22, width: 90, height: 6, size: 3, value: 'Date: ____________________', fill: true}
+    - {type: page_break}
+    - {type: heading, level: 1, text: Resource reuse}
+    - id: reuse
+      type: fixed
+      fixed:
+        width: 65
+        height: 25
+        align: right
+        items:
+          - {type: image, x: 2, 'y': 2, width: 18, height: 18, resource_id: 600}
+          - {type: composite, x: 25, 'y': 3, width: 10, height: 10, resource_id: 700}
+          - {type: text, x: 25, 'y': 16, width: 38, height: 6, size: 3.2, value: Same resources, fill: true}
+    - runs:
+        - {text: 'Review '}
+        - {caption_ref: chart}
+        - {text: ' and '}
+        - {caption_ref: identity}
+        - {text: ', then return to the signature area on page '}
+        - {page_ref: signature}
+        - {text: '.'}

@@ -1,0 +1,33 @@
+version: 1
+document:
+  id: flow-gbt9704-notice
+  title: Administrative notice
+flow:
+  profile: gbt9704
+  generate_outlines: true
+  official:
+    # 此可运行样例用 Go 字体核对几何；正式公文请替换为对应五类实际字体资源。
+    fonts: {body: Flow-Regular, title: Flow-Regular, hei: Flow-Bold, kai: Flow-Italic, song: Flow-Regular}
+    letterhead: {org: EXAMPLE OFFICE, doc_no: 'OF [2026] 1', serial_no: '000001', org_size: 32}
+    signature: {org: Example Office, date: '2026-10-25'}
+    colophon: {issued_by: Example Office Secretariat}
+  blocks:
+    # 开头分节先应用页码设置，再生成首页版头。
+    - {type: section, section: {page_numbers: true}}
+    - {id: notice, type: heading, level: 1, text: Administrative notice}
+    - {type: recipient, text: 'All departments:'}
+    - text: This runnable sample uses embedded Go fonts to verify the page geometry and the official-document authoring path. A formal Chinese document must register FangSong, a small-title Song face, Hei, Kai and Song resources.
+    - text: The page uses A4 paper and a 156 by 225 millimetre content area. Paragraphs reserve two character cells at the start, and page numbers are placed outside the content area.
+    - {type: page_break}
+    - {id: requirements, type: heading, level: 2, text: '1. Review requirements'}
+    - text: Check each original record before confirming the delivery totals. Retain the source material and record the responsible reviewer for each item.
+    - {type: heading, level: 3, text: '(1) Source records'}
+    - text: Confirm that every reported item has an identifiable source and an archived review result. Maintain the complete date and reference information.
+    - {type: page_break}
+    - {id: archive, type: heading, level: 2, text: '2. Filing requirements'}
+    - text: Preserve the authoring manifest, font resources and final OFD together. The signature follows the text, while the final colophon is anchored to the bottom of the last content area.
+    - type: table
+      table:
+        column_widths: [50, 106]
+        header: [Record, Action]
+        rows: [[Original data, Archive], [Review result, Confirm], [Final document, Validate]]

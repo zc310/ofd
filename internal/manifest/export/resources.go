@@ -263,8 +263,13 @@ func (e *documentExporter) exportFonts(result *manifest.Manifest) error {
 		name = e.uniqueFontName(name, id)
 		e.fontNames[name] = true
 		e.fonts[id] = name
+		fontName := ""
+		if font.FontName != name {
+			// 别名因重名追加后缀时，仍保留原始字型名。
+			fontName = font.FontName
+		}
 		result.Resources.Fonts = append(result.Resources.Fonts, manifest.Font{
-			Name: name, FamilyName: font.FamilyName, Charset: font.Charset,
+			Name: name, FontName: fontName, FamilyName: font.FamilyName, Charset: font.Charset,
 			Format: format, File: e.assetPath(file),
 			Italic: font.Italic, Bold: font.Bold, Serif: font.Serif, FixedWidth: font.FixedWidth,
 		})

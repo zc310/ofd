@@ -1,0 +1,50 @@
+version: 1
+document:
+  id: flow-merged-report
+  title: Merged table report
+  page_size: {width: 140, height: 180}
+flow:
+  theme: material
+  generate_outlines: true
+  header: Merged table report
+  footer: Internal
+  page_numbers: true
+  blocks:
+    - {type: heading, level: 1, text: Merged report}
+    - text: This report demonstrates merged table cells, repeated multirow headers and navigation to the final positions of headings.
+    - {type: heading, level: 2, text: Regional performance}
+    - type: table
+      table:
+        header_rows: 2
+        column_widths: [25, 37.5, 37.5]
+        grid:
+          - - {text: Region, row_span: 2}
+            - {text: Performance, col_span: 2, style: {align: center}}
+          - [{text: Actual}, {text: Plan}]
+          - - {text: North, row_span: 2, style: {color: {r: 11, g: 87, b: 208}}}
+            - {text: "Q1: 120"}
+            - runs:
+                - {text: "Target ", bold: true}
+                - {text: "150", href: "https://example.com/north"}
+          - [{text: "Q2: 135"}, {text: "Q2: 155"}]
+          - [{text: South, row_span: 2}, {text: "Q1: 110"}, {text: "Q1: 140"}]
+          - [{text: "Q2: 130"}, {text: "Q2: 150"}]
+          - [{text: East, row_span: 2}, {text: "Q1: 150"}, {text: "Q1: 160"}]
+          - [{text: "Q2: 165"}, {text: "Q2: 170"}]
+          - [{text: West, row_span: 2}, {text: "Q1: 100"}, {text: "Q1: 130"}]
+          - [{text: "Q2: 120"}, {text: "Q2: 140"}]
+          - [{text: Central, row_span: 2}, {text: "Q1: 130"}, {text: "Q1: 150"}]
+          - [{text: "Q2: 145"}, {text: "Q2: 160"}]
+          - [{text: Coastal, row_span: 2}, {text: "Q1: 170"}, {text: "Q1: 180"}]
+          - [{text: "Q2: 185"}, {text: "Q2: 190"}]
+          - [{text: Highland, row_span: 2}, {text: "Q1: 105"}, {text: "Q1: 125"}]
+          - [{text: "Q2: 115"}, {text: "Q2: 135"}]
+          - [{text: Lakeside, row_span: 2}, {text: "Q1: 140"}, {text: "Q1: 155"}]
+          - [{text: "Q2: 150"}, {text: "Q2: 165"}]
+          - [{text: Riverside, row_span: 2}, {text: "Q1: 125"}, {text: "Q1: 145"}]
+          - [{text: "Q2: 140"}, {text: "Q2: 155"}]
+    - {type: heading, level: 2, text: Notes}
+    - text: Each region remains on one page. The complete two-row header repeats on continuation pages. Subsequent content follows the final table fragment.
+    - {type: page_break}
+    - {type: heading, level: 1, text: Appendix}
+    - text: The document outline uses standard OFD actions and points to the page and position determined after all table pagination is complete.

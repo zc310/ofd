@@ -30,7 +30,9 @@ const (
 // Inline 是行内文本的一段，具有相同的字符样式。
 // Text 为 "\n" 时表示硬换行。
 type Inline struct {
-	Text   string
+	Text string
+	// Font 是流式创作时显式选择的字体资源名，空值继承段落样式。
+	Font   string
 	Bold   bool
 	Italic bool
 	Code   bool
@@ -40,6 +42,15 @@ type Inline struct {
 	// Href 是点击目标，落到图元的 CLICK 动作上。为空时只是着色、不可点击——
 	// Markdown 的空目标链接（如 `[文字]()`）属于这种，着色仍要保留。
 	Href string
+	// Target 是文内内容 ID；PageRef 按配置填入最终物理页码或节内页码。
+	Target  string
+	PageRef string
+	// CaptionRef 显示编号图表的标签并跳转至内容起点。
+	CaptionRef string
+	// TitleRef 显示目标章节标题或完整图表题注。
+	TitleRef string
+	// Footnote 指向页底注释定义，显示独立编号标记。
+	Footnote string
 }
 
 // Cell 是一个表格单元格的行内内容。

@@ -2197,10 +2197,14 @@ func (s *buildState) addFont(font Font) (uint64, error) {
 	if id, ok := s.fontIDs[name]; ok {
 		return id, nil
 	}
+	fontName := strings.TrimSpace(font.FontName)
+	if fontName == "" {
+		fontName = name
+	}
 	id := s.allocate()
 	resource := fontResource{
 		id:         id,
-		name:       name,
+		name:       fontName,
 		familyName: strings.TrimSpace(font.FamilyName),
 		charset:    fontCharset(font.Charset),
 		italic:     font.Italic,

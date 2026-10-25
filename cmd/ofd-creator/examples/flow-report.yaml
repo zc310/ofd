@@ -1,0 +1,69 @@
+version: 1
+document:
+  id: flow-report
+  title: Flow authoring report
+  author: OFD Go Toolkit
+  page_size: {name: A4}
+flow:
+  theme: material
+  page_numbers: true
+  blocks:
+    - type: heading
+      level: 1
+      text: Flow authoring report
+    - text: This report is laid out automatically and saved as a standard fixed-layout OFD document. Text, images and table borders remain native OFD objects.
+    - runs:
+        - {text: "The creator supports "}
+        - {text: embedded fonts, bold: true}
+        - {text: " and "}
+        - {text: clickable links, href: "https://github.com/zc310/ofd"}
+        - {text: "."}
+    - type: list_item
+      marker: "1."
+      text: Add content in reading order. The layout engine handles wrapping and page breaks without requiring x and y coordinates.
+    - type: list_item
+      marker: "2."
+      text: Use the same embedded font for measurement and output. Missing characters produce a diagnostic that identifies the content block.
+    - type: heading
+      level: 2
+      text: Delivery checklist
+    - type: table
+      table:
+        header: [Item, Description]
+        column_widths: [30, 140]
+        rows:
+          - ["01", "Register and embed the fonts used for the report."]
+          - ["02", "Choose page size, margins and a print theme."]
+          - ["03", "Add document headings in reading order."]
+          - ["04", "Add paragraphs with automatic line wrapping."]
+          - ["05", "Keep headings with the beginning of the following text."]
+          - ["06", "Control the minimum number of lines on either side of a page break."]
+          - ["07", "Use ordered lists with hanging indents."]
+          - ["08", "Preserve links on the matching text fragments."]
+          - ["09", "Measure table cells with the same font as body text."]
+          - ["10", "Repeat the header when a table continues on another page."]
+          - ["11", "Keep each table row together during pagination."]
+          - ["12", "Place subsequent paragraphs after the end of the table."]
+          - ["13", "Scale images to fit the available content width."]
+          - ["14", "Keep each image together with its caption."]
+          - ["15", "Resolve current page and total page count after pagination."]
+          - ["16", "Write explicit character positions into standard TextCode elements."]
+          - ["17", "Reuse the creator resource registry and OFD writer."]
+          - ["18", "Validate the generated file in strict mode."]
+          - ["19", "Check that output text can be searched and extracted."]
+          - ["20", "Preview the fixed page model used for final output."]
+          - ["21", "Retain the YAML or JSON source for future edits."]
+          - ["22", "Use deterministic output for repeatable builds."]
+          - ["23", "Inspect visual output in a separate reader."]
+          - ["24", "Deliver the resulting standard OFD document."]
+    - text: This paragraph follows the complete table, including all continuation pages.
+    - type: page_break
+    - type: heading
+      level: 2
+      text: Image and caption
+    - type: image
+      image:
+        data_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=
+        width: 20
+        caption: Figure 1. An embedded sample image, kept together with this caption.
+    - text: The document is ready for standard OFD readers. This example uses embedded Latin fonts; provide an embedded CJK font when writing Chinese content.

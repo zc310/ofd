@@ -1,0 +1,99 @@
+version: 1
+document:
+  id: flow-columns-report
+  title: Report in columns
+  page_size: {width: 180, height: 210}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Column report
+  body_size: 10.5
+  line_height: 1.5
+  styles:
+    - {name: table, style: {size: 9.5, line_height: 1.4, space_before: 2, space_after: 2}}
+  footnotes:
+    - id: source
+      runs:
+        - {text: 'FIELD-NOTE The source dataset is archived with this report. Appendix page '}
+        - {page_ref: appendix}
+        - {text: ' records the delivery assumptions.'}
+  blocks:
+    - {id: cover, type: heading, level: 1, text: Column report}
+    - text: This report combines a full-width overview, two columns of field notes and a full-width appendix. Column order is top to bottom, then left to right.
+    - {id: contents, type: toc, toc: {title: Contents, max_level: 2}}
+    - type: section
+      section:
+        columns: {count: 2, gap: 10}
+    - {id: field, type: heading, level: 1, text: Field notes}
+    - runs:
+        - {text: 'The observations use the archived dataset'}
+        - {footnote: source}
+        - {text: '. Each column reserves space for its own notes.'}
+    - text: Review the original records, confirm their dates and retain enough context to explain each result. The text wraps within the current column and continues in the next column when the available height is exhausted.
+    - type: list_item
+      marker: '1.'
+      text: Compare the reported values against the source records and record any differences before approval.
+    - text: A column break can start the next topic at the top of the following column. Page breaks always start a new physical page, and section settings can restore a single full-width column.
+    - {type: column_break}
+    - {id: review, type: heading, level: 2, text: Next steps}
+    - runs:
+        - {text: 'The same source is referenced in this column'}
+        - {footnote: source}
+        - {text: ', so its note is displayed at this column bottom as well.'}
+    - text: Headings, paragraph spacing, lists and fixed artwork use the column width. Navigation records both the horizontal column position and the final physical page.
+    - id: chart
+      type: fixed
+      fixed:
+        width: 60
+        height: 28
+        align: center
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 60, height: 28, data: 'M 0 0 L 60 0 L 60 28 L 0 28 C', fill: true, stroke_set: false, fill_color: {r: 242, g: 247, b: 253}}
+          - {type: text, x: 3, 'y': 2, width: 54, height: 6, size: 3.2, value: Reviewed items, fill: true}
+          - {type: path, x: 3, 'y': 12, width: 36, height: 5, data: 'M 0 0 L 36 0 L 36 5 L 0 5 C', fill: true, stroke_set: false, fill_color: {r: 11, g: 87, b: 208}}
+          - {type: path, x: 3, 'y': 20, width: 48, height: 5, data: 'M 0 0 L 48 0 L 48 5 L 0 5 C', fill: true, stroke_set: false, fill_color: {r: 55, g: 120, b: 210}}
+    - {type: page_break}
+    - {id: data-heading, type: heading, level: 2, text: Results}
+    - id: results
+      type: table
+      style: {based_on: table}
+      table:
+        caption: Delivery checks
+        numbered: true
+        repeat_caption: true
+        columns: [{width: 18}, {}]
+        stripe_fill: {r: 242, g: 247, b: 253}
+        header_rows: 1
+        grid:
+          - [{text: ID}, {runs: [{text: Check}, {footnote: source}]}]
+          - [{text: A01}, {text: Confirm the original records and their dates.}]
+          - [{text: A02}, {text: Review the first draft and collect comments.}]
+          - [{text: A03}, {text: Register the fonts used by the report.}]
+          - [{text: A04}, {text: Compare totals against the archived data.}]
+          - [{text: A05}, {text: Verify each source reference and link.}]
+          - [{text: A06}, {text: Check captions and illustration numbers.}]
+          - [{text: A07}, {text: Confirm all required approval steps.}]
+          - [{text: A08}, {text: Recheck the expected delivery dates.}]
+          - [{text: A09}, {text: Inspect every repeated table header.}]
+          - [{text: A10}, {text: Review notes at the column bottoms.}]
+          - [{text: A11}, {text: Confirm the final page references.}]
+          - [{text: A12}, {text: Check the report outline destinations.}]
+          - [{text: A13}, {text: Render the document as OFD and PDF.}]
+          - [{text: A14}, {text: Validate the final document in strict mode.}]
+          - [{text: A15}, {text: Export and reload the fixed-page manifest.}]
+          - [{text: A16}, {text: Archive the editable source and deliver.}]
+    - type: section
+      section:
+        columns: {count: 1}
+    - {id: appendix, type: heading, level: 1, text: Appendix}
+    - runs:
+        - {text: 'Return to '}
+        - {text: the right-column topic, target: review}
+        - {text: ', or see '}
+        - {caption_ref: chart}
+        - {text: ' and '}
+        - {caption_ref: results}
+        - {text: '.'}
+    - text: This section restores the full page width. Column settings belong to authoring; the generated OFD contains standard fixed positions and standard destinations.

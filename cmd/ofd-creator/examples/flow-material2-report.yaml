@@ -1,0 +1,57 @@
+version: 1
+document:
+  id: flow-material2-report
+  title: Material 2 report
+  page_size: {name: A4}
+flow:
+  theme: material2
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records were reviewed before delivery and are archived with this report.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Material 2}
+    - text: This report uses the Material 2 print preset. It maps Headline 1-6, Body 1, Body 2 and Caption roles to document headings, paragraphs, tables and captions.
+    - {id: typography, type: heading, level: 2, text: Type roles}
+    - type: table
+      table:
+        header: [Role, Size and line height]
+        rows: [[Headline 1, 72pt / 72pt], [Headline 2, 45pt / 45pt], [Headline 3, 36pt / 37.5pt], [Headline 4, 25.5pt / 30pt], [Headline 5, 18pt / 24pt], [Headline 6, 15pt / 24pt], [Body 1, 12pt / 18pt], [Body 2, 10.5pt / 15pt], [Caption, 9pt / 15pt]]
+    - {type: heading, level: 3, text: Font faces}
+    - text: Headline 1 and 2 use the available regular face in place of Light. Headline 6 uses the bold face in place of Medium. Register the required fonts and override heading Font fields when matching exact weights.
+    - {type: toc, toc: {title: Contents, max_level: 2}}
+    - {id: results, type: heading, level: 1, text: Results, page_break_before: true}
+    - runs:
+        - {text: The delivery results use the archived source}
+        - {footnote: source}
+        - {text: '. Each item was checked for completeness and can be traced to the original review record.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 90
+        height: 24
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 24, data: 'M 0 0 L 90 0 L 90 24 L 0 24 C', fill: true, stroke_set: false, fill_color: {r: 245, g: 245, b: 245}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.3, value: Delivery status, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 60, height: 6, data: 'M 0 0 L 60 0 L 60 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 98, g: 0, b: 238}}
+    - {type: heading, level: 4, text: Source review}
+    - type: table
+      table:
+        header: [Item, Status]
+        rows: [[Source records, Reviewed], [Delivery totals, Confirmed], [Document fonts, Embedded]]
+    - {type: heading, level: 5, text: Quality checks}
+    - text: Review the source records and preserve the final document.
+    - {type: heading, level: 6, text: Archive checklist}
+    - text: Confirm the record identifier, reviewer and delivery date.
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+    - runs:
+        - {text: 'Return to '}
+        - {title_ref: results}
+        - {text: ' or review '}
+        - {caption_ref: chart}
+        - {text: '. The exported manifest retains fixed character positions, colors and navigation.'}
+    - text: The preset maps selected Material 2 Web roles at 96px = 72pt and keeps font advance widths without additional Web tracking. Spacing and neutral table colors are print choices. Supply actual fonts for other languages.

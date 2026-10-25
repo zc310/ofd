@@ -15,7 +15,10 @@
 `Repair` 保留已有 SFNT 表，补齐缺失的 `OS/2`、`name`、`post` 和字形寻址 cmap。
 原 cmap 子表保留，在 Windows Unicode 全字符集子表中补入 `U+F0000 + GID` 地址。
 未知格式原样返回，已识别但结构损坏的输入返回原数据和错误。输入字节只读。
-TTC 字体面提取由调用方完成。
+`Repair` 不直接解析集合。调用方先用 `ExtractCollectionFace(data, index)` 提取 TTC/OTC
+中的字体面（索引从 0 开始），再修复和测量。提取按 OpenType Font Collections / TTC Header
+规则处理绝对表偏移和共享表，输出独立 TTF/OTF，重算偏移与校验和；字形编号、
+轮廓、度量和 CFF 子程序保持不变。负索引、越界、截断、表越界和重复表会报错。
 
 `RepairWithGlyphs` 和 `NewRepairer(...).WithGlyphs` 接受文档的显式 Unicode/GID
 对应关系。显式映射优先于自动私有地址，同一 GID 的旧 Unicode 别名被移除；保留

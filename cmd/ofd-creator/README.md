@@ -48,6 +48,439 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace`、`watermark`、`sign` 和 `schema` 子命令，分别用于导出 manifest、批量导出、合并 OFD、编辑条目、处理水印、独立签署以及输出字段参考。详见下文各节。
 
+## 流式创作
+
+清单使用 `flow` 按顺序添加内容，自动断行、分页并生成标准 OFD 页面。
+`flow` 与 `pages` 互斥，schema 版本仍为 `version: 1`，无需额外命令行开关。
+
+```yaml
+version: 1
+document:
+  id: report
+  title: Quarterly report
+  page_size: {name: A4}
+flow:
+  theme: material
+  page_numbers: true
+  blocks:
+    - {type: heading, level: 1, text: Quarterly report}
+    - text: Paragraphs wrap automatically inside the page margins.
+    - {type: list_item, marker: "1.", text: Prepare content.}
+    - type: table
+      table:
+        header: [Item, Status]
+        rows: [[Report, Ready]]
+```
+
+完整示例：[flow-report.yaml](examples/flow-report.yaml)，
+包含跨页表格、图注、局部粗体、链接和页码。
+仓库保留 YAML 示例；JSON 输入使用相同字段与层级，测试时由 YAML 临时转换并验证两种格式。
+合并单元格、多行表头和自动大纲示例见
+[flow-merged-report.yaml](examples/flow-merged-report.yaml)。
+封面、自动目录、内部引用、跨页表格和附录组成的完整报告见
+[flow-navigation-report.yaml](examples/flow-navigation-report.yaml)。
+封面隐藏页码、分节重新编号、横向表格和附录示例见
+[flow-sections-report.yaml](examples/flow-sections-report.yaml)。
+字体族与局部样式示例见 [flow-fonts.yaml](examples/flow-fonts.yaml)。
+自动列宽、单元格外观和图表编号示例见
+[flow-tables-report.yaml](examples/flow-tables-report.yaml)。
+矢量图表、图片卡片与签字栏接入流式排版的示例见
+[flow-fixed-report.yaml](examples/flow-fixed-report.yaml)。
+命名样式、多层继承和显式零间距示例见
+[flow-styles-report.yaml](examples/flow-styles-report.yaml)。
+页底脚注、双向跳转和跨页表格脚注示例见
+[flow-footnotes-report.yaml](examples/flow-footnotes-report.yaml)。
+分节单栏/双栏切换、栏底脚注和跨栏表格示例见
+[flow-columns-report.yaml](examples/flow-columns-report.yaml)。
+单元格跨页／跨栏拆分、续表题、片段脚注和末页栏高平衡组合示例见
+[flow-pagination-report.yaml](examples/flow-pagination-report.yaml)。
+标题目录、图目录、表目录和完整标题引用示例见
+[flow-catalogs-report.yaml](examples/flow-catalogs-report.yaml)。
+两端对齐、首行缩进、手动换行、分栏与表格脚注示例见
+[flow-justify-report.yaml](examples/flow-justify-report.yaml)。
+Fluent 2 印刷主题、左对齐图注与紧凑字号示例见
+[flow-fluent2-report.yaml](examples/flow-fluent2-report.yaml)。
+Material 2 的 Headline 1–6 大标题、Body/Caption 角色和中性灰表格示例见
+[flow-material2-report.yaml](examples/flow-material2-report.yaml)。
+Material 3 的 Headline/Title/Body 角色、常规字重大标题和浅色表格示例见
+[flow-material3-report.yaml](examples/flow-material3-report.yaml)。
+IBM Carbon 的静态标题角色、紧凑表格和灰色表头示例见
+[flow-carbon-report.yaml](examples/flow-carbon-report.yaml)；Bootstrap 5 的标题比例、段间距与图注示例见
+[flow-bootstrap5-report.yaml](examples/flow-bootstrap5-report.yaml)。
+GB/T 9704—2012 常规公文基础版式示例见
+[flow-gbt9704-notice.yaml](examples/flow-gbt9704-notice.yaml)。该可运行样例用内嵌 Go 字体验证几何；正式公文需配置对应中文字体。
+使用本机五类公文字体的长主送迁移示例见 [flow-gbt9704-recipients.yaml](examples/flow-gbt9704-recipients.yaml)，
+运行时指定 `--asset-root "$HOME/.local/share/fonts"`。
+
+```bash
+ofd-creator -i examples/flow-report.yaml --check
+ofd-creator -i examples/flow-report.yaml -o report.ofd --validate --deterministic
+```
+
+上述路径以本工具目录为起点。从仓库根目录运行时使用
+`go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-report.yaml ...`。
+
+`flow.theme` 支持 `material`（原有默认）、`material2`、`material3`、`fluent2`、`carbon` 和 `bootstrap5`。
+Material 2 预设按官方 Web 的 Headline 1–6、Body 1/2、Caption 角色映射字号，正文为 12pt、1.5 倍行高，
+六级标题为 72/45/36/25.5/18/15pt，图注为 9pt、15pt 行高，表格为 10.5pt。
+前两级 Light 标题使用 Go Regular 近似，第六级 Medium 使用 Go Bold 近似；准确字重可注册字体并覆盖标题 `Font`。
+一级、二级字号适合封面与章节页，紧凑报告可覆盖标题样式；`material` 是独立的原有报告预设，不代表 Material 2。
+Material 3 预设按官方 Web 的 Headline/Title/Body 角色映射字号，正文为 12pt、1.5 倍行高，
+六级标题为 24/21/18/16.5/12/10.5pt，前四级使用常规字体面，后两级的 Medium 角色采用内置 Go Bold。
+图注为 9pt 左对齐，表格为 10.5pt，配合浅色中性色与淡紫灰表头；字距沿用实际字体推进量。
+Fluent 2 预设参考官方 Web 字体层级，按 `96px = 72pt` 映射字号，采用 10.5pt 正文、20/14 倍行高、
+24/21/18/15/12/10.5pt 六级标题与 9pt 左对齐图注。段间距为印刷调整。
+Carbon 预设采用静态 `heading-06` 至 `heading-01`，标题为 31.5/24/21/15/12/10.5pt，
+正文为 12pt／18pt 行高，表格为 10.5pt／13.5pt 行高，图注为 9pt／12pt 行高。
+Bootstrap 5 按默认 16px 根字号与 H1–H6 比例映射，标题为 30/24/21/18/15/12pt、1.2 倍行高，
+正文及表格为 12pt／18pt 行高、正文段后 12pt，图注为 10.5pt／15.75pt 行高。
+这两个预设保留固定印刷字号；Carbon 的段间距及两者的表格配色按纸面排版调整。
+六种主题默认均嵌入 Go 字体，可用 `font`、`heading_font` 指定字体资源；Fluent/Carbon 的 Semibold、
+Bootstrap 的 Medium 标题采用 Go Bold，Carbon 的 Light 采用 Go Regular 近似。
+主题不会自动加载 Segoe UI、Roboto、IBM Plex Sans、Bootstrap 系统字体栈或系统中文字体。详细映射见
+[流式主题指南](../../pkg/creator/flow/README.md#主题选择)。
+`body_size`、`line_height` 与局部 `style` 可继续覆盖所选主题。输出长度统一为毫米；
+`flow.body_size`、块级 `style.size` 使用磅，`line_height` 为倍率。
+
+公文使用 `flow.profile: gbt9704` 配合 `flow.official`，与 `theme` 互斥。
+配置 `official.fonts: {body: FangSong, title: SmallTitleSong, hei: Hei, kai: Kai, song: Song}`，
+引用 `resources.fonts` 中实际的仿宋、小标宋、黑体、楷体和宋体资源；资源名不会替代字形检查。
+该配置自动使用 A4、37/26/35/28mm 页边距、156×225mm 版心、16pt 正文、22 行与 28 全角字网格及奇右偶左的 14pt 页码。
+用 `official.letterhead` 配置首页版头，`type: recipient` 添加顶格主送机关；一级标题为文件标题，二至五级对应结构层次。
+`official.signature` 提供不盖章的单一机关落款，`official.colophon` 提供末页版记。日期、发文字号和层次序号由调用方提供规范文字。
+基础版式不接受多栏、纸张/页边距变化、普通页眉页脚及分节页码重置；存在版头时首页必须显示正文。
+正文前的长 `recipient` 挤掉首页正文时，自动移至版记并重排；短主送保持标题后原位。
+版记主送使用四号仿宋，标签为“主送：”，续行与冒号后首字对齐，排在抄送上方且两者之间不加分隔线。
+迁移保留 ID、链接及最终页码引用，未配置 `colophon` 时也可生成主送版记；不会覆盖显式分页边界。
+迁移后首页仍无正文、版记超高或迁移主送包含脚注时会报错，需调整创作内容。
+开头分节先应用设置再生成版头，连续开头分节采用最后生效的设置；正文后的分节仍另起一页。
+公文默认显示页码，`flow.page_numbers: false` 可显式关闭；省略或 `null` 沿用版式默认值，
+普通主题默认关闭。`section.page_numbers` 可按节覆盖，隐藏页仍占用连续编号。
+发文字号、“签发人：”与楷体姓名保持同一基线，红线按整行最低可见字形留出 4mm。
+版记空间不足或末页含脚注时会另起一页。联合行文、信函、命令、纪要、印章和横排表格奇偶旋转需另行编排。
+完整字段、标准条款及使用范围见 [公文基础版式说明](../../pkg/creator/flow/README.md#gbt-9704-2012-公文基础版式)。
+`--validate` 只验证标准 OFD 结构，不代替公文字体、文义分行及印制装订验收。
+
+普通主题模式还可设置 `margins: {top: 20, right: 20, bottom: 20, left: 20}`，
+以及 `header`、`footer`（支持 `{page}`、`{pages}` 占位符）。
+`generate_outlines: true` 按标题层级自动生成大纲，跳转到最终分页后的标题位置；
+自动大纲追加到 `document.outlines` 后面。
+块级 `style` 支持字体、字号、段前后间距、首行缩进、对齐和颜色。
+正文、列表、单元格和脚注中的 `\n`、`\r\n`、`\r` 表示手动换行。
+`\r\n` 跨越相邻的 `runs` 项或空项时仍只换行一次，连续的独立换行会保留空行。
+`style.align` 可取 `left`、`center`、`right`、`justify`。`justify` 仅将自动换行的行铺满可用宽度，
+段末、显式换行和只有一个不可分单词的行保持自然宽度。英文在词间、中文在 UAX #14 允许的字符边界平均加间距，
+词内字体或链接边界不增加间距。首行缩进、列表标记、单元格内边距与脚注编号先占位，多栏时按当前栏宽对齐。
+文字最终固化为标准 `TextCode.DeltaX` 及对象位置，导出可保留；完整说明见
+[`flow` 两端对齐](../../pkg/creator/flow/README.md#两端对齐)。
+`flow.styles` 注册命名样式，块和单元格的 `style.based_on` 引用名称；本层字段覆盖父样式：
+
+```yaml
+flow:
+  styles:
+    - {name: body, style: {size: 11, line_height: 1.5, space_after: 3, first_line_indent: 6}}
+    - {name: compact, style: {based_on: body, space_before: 0, space_after: 0, first_line_indent: 0}}
+  blocks:
+    - {text: Inherited paragraph., style: {based_on: body}}
+    - {text: Compact paragraph., style: {based_on: compact}}
+    - {text: Local override., style: {based_on: body, first_line_indent: 0, align: right}}
+```
+
+该片段需与 `version`、`document` 合并。数值字段省略或 `null` 时继承，显式 `0` 可以清除段前/后间距和缩进。
+`size`、`line_height` 必须为正数，显式零值报错。父样式的显式零值会传递给子样式。
+名称区分大小写、文档内唯一且不含空白；支持前向引用和最多 64 层继承。
+未定义、重复名称、循环继承与无效尺寸均在分页前报错，未使用的定义也会检查。
+样式依次按内容类型主题、命名样式的父至子、当前局部字段应用；
+目录的 `style` 控制目录条目，单元格的命名样式可以覆盖列对齐。
+样式最终固化为 OFD 文字属性和位置，`export` 返回固定页清单；后续编辑应保留原始清单。
+
+`keep_with_next`、`keep_together`、`orphans`、`widows` 与显式换页属性控制分页。
+连续 `keep_with_next`、标题和公文主送机关组成跟随链，连同末块正文开头、脚注、表题与首个表格行组一起试算，
+空间不足时整体换页或换栏。末块 `keep_together: true` 时按完整高度预留；显式分页、换栏和分节优先，
+超出整栏容量的长链会适当放宽。默认孤行约束下，三行短段落按整段预留。
+
+`flow.columns` 配置等宽分栏，分节可通过 `section.columns` 覆盖：
+
+```yaml
+flow:
+  columns: {count: 2, gap: 8}
+  blocks:
+    - text: Content in the first column.
+    - {type: column_break}
+    - text: Start the next column here.
+    - {type: section, section: {columns: {count: 1}}}
+    - {type: heading, level: 1, text: Full-width appendix}
+```
+
+该片段需与 `version`、`document` 合并。`count` 为 0 或 1 时单栏，支持 2 至 8 栏；
+`gap` 为毫米单位的有限非负栏间距，零表示无间距。
+栏宽为 `(版心总宽-(count-1)*gap)/count`，宽度不大于零时报错。
+省略分节的 `columns` 继承前节，显式 `count: 1` 恢复单栏。分节始终从新物理页开始。
+内容按从上到下、从左到右的栏序流动；`column_break` 换栏，最后一栏后换页，单栏时等同换页。
+开头、连续和结尾的换栏不产生空白尾页；`page_break` 和块级换页属性始终进入新物理页第一栏。
+图片、固定区域、目录和表格使用当前栏宽；换栏表格重复表头与续表题，合并行组保持同栏。
+脚注放在所属栏底部并按栏去重，页眉页脚和页码仍按整页输出。
+目录、大纲与文内链接保留目标栏的标准 XYZ 目的地，显示页码仍按物理页或节内编号。
+`columns.balance: true` 可启用每节末页栏高平衡，默认关闭，支持 2～8 栏。
+按文字、表格片段及脚注高度重排，保留孤行、整体块、跟随链、显式分页和分节边界；
+含显式换栏的末页保留原布局。平衡不改变其他页面的内容分配与物理页数，受约束时允许栏高不同。
+分节省略 `columns` 时继承，显式配置时按新值设置；通栏标题或宽表格仍通过分节切换单栏。
+
+脚注在 `flow.footnotes` 定义，用独立的 `runs[].footnote` 引用：
+
+```yaml
+flow:
+  footnote_style: {size: 9, line_height: 1.35, space_after: 1}
+  footnotes:
+    - {id: source, text: The source dataset is retained with this report.}
+  blocks:
+    - runs: [{text: The results use the archived dataset}, {footnote: source}, {text: '.'}]
+```
+
+该片段需与 `version`、`document` 合并。脚注定义的 `id` 必须唯一且不含空白，`text` 与 `runs` 互斥。
+编号按首次引用顺序连续生成，分节不重置。正文显示同字号的 `[1]` 标记，页底显示分隔线和注释。
+单栏同页重复引用只排一次；多栏按栏分别去重和显示。点击正文编号跳到脚注，点击脚注编号返回该栏首次引用。
+正文、列表和单元格中的编号使用引用处 75% 的字号，基线上移 0.3em，断行与点击区域随实际上标尺寸计算。
+正常行距下保留正文基线与行距；紧凑行距只补足容纳上标所需的高度。页底编号与注释正文保持同字号、同基线。
+正文、列表和 `table.grid` 单元格均支持引用，重复表头中的脚注也随表头在续页显示。
+`footnote` 与 `text`、`href`、`target`、`page_ref`、`caption_ref` 互斥；标题中不能引用脚注。
+注释正文支持富文本、链接及页码/图表引用，不能嵌套脚注。
+`footnote_style` 和每条脚注的 `style` 支持命名样式与显式零间距；缺省使用正文字体、9pt、1.3 倍行高。
+脚注占用正文版心内的页底空间，与引用行或表格行组保持同页，超长、不可断或无法同页容纳时报错。
+
+默认嵌入的 Go 字体用于拉丁文字。中文内容在 `resources.fonts` 注册字体，
+再通过 `flow.font` 指定；标题可通过 `heading_font` 单独配置：
+
+```yaml
+resources:
+  fonts:
+    - name: BodyCJK
+      file: fonts/NotoSansCJKsc-Regular.otf
+flow:
+  font: BodyCJK
+  blocks:
+    - {type: heading, level: 1, text: 工作报告}
+    - text: 正文自动换行和分页，最终生成标准 OFD。
+```
+
+该片段需要与 `version`、`document` 合并，并在资源根目录准备真实字体。
+字体和图片的 `file`/`data_base64` 互斥，路径沿用现有资源根限制。
+`bold_font`、`italic_font`、`bold_italic_font` 选择已注册的实际字体面；
+`fallback_fonts` 按字符覆盖依次回退。指定 `font` 后未配置的字重沿用该字体。
+`font_faces` 按资源名选择 TTC/OTC 字体面的索引（从 0 开始），默认 0；单字体文件只接受 0。
+`font_families` 关联同族实际字体面，例如：
+
+```yaml
+resources:
+  fonts:
+    - {name: BodySC, file: fonts/NotoSansCJK-Regular.ttc}
+    - {name: BodySCBold, file: fonts/NotoSansCJK-Bold.ttc}
+flow:
+  font: BodySC
+  heading_font: BodySCBold
+  font_faces: {BodySC: 2, BodySCBold: 2}
+  font_families:
+    - {regular: BodySC, bold: BodySCBold}
+  blocks:
+    - runs:
+        - {text: "正文与"}
+        - {text: "同族粗体", bold: true}
+```
+
+该片段需与 `version`、`document` 合并，并准备对应字体；索引按实际集合顺序确认。
+还可配置 `italic`、`bold_italic`。每个角色需要独立资源名，重复归属、缺少 regular、
+未注册资源或无效索引都会报错。显式字体族优先于正文的 `bold_font` 等简写。
+局部 `font` 选择某一资源后，字重和斜体仍在它所属的字体族内匹配；
+缺字回退会尝试回退字体族的对应样式，等宽内容只使用等宽回退。
+集合在排版前提取为独立字体，测量与嵌入使用相同数据。
+缺字、超高图片、超高表格行和不可断文本越界会报告 `flow.blocks[n]`。
+
+生成的 OFD 已固化分页与坐标；`export` 输出固定页清单。保留原始 YAML/JSON 以继续流式编辑。
+`--stream` 仍表示资源/文件的流式写出，流式排版会先在内存中完成。
+表格支持纯文本 `header`/`rows` 简写，也支持 `grid` 合并网格，二者互斥：
+
+```yaml
+flow:
+  generate_outlines: true
+  blocks:
+    - {type: heading, level: 1, text: Regional report}
+    - type: table
+      table:
+        header_rows: 2
+        column_widths: [40, 65, 65]
+        grid:
+          - [{text: Region, row_span: 2}, {text: Performance, col_span: 2}]
+          - [{text: Actual}, {text: Plan}]
+          - [{text: North, row_span: 2}, {text: "120"}, {text: "150"}]
+          - [{text: "135"}, {text: "155"}]
+```
+
+该片段需要与 `version`、`document` 合并。`grid` 每行从左到右填充空闲位置，
+被合并占据的位置无需占位。跨行单元格关联的行组整体分页，续页重复所有
+`header_rows` 行；合并不能跨越表头和正文边界。单元格可以使用 `runs` 和 `style`，
+支持字体、字重、链接、对齐与文字颜色。超高行组、重叠和未覆盖的网格位置会报错。
+
+`table.split_rows: true` 可让普通及 ColSpan 单元格在完整文字行之间跨页或跨栏续排，默认关闭。
+各列按可用空间输出自己的文字片段，短列文字只输出一次；片段各自绘制四边边框、内边距及上下段间距，
+垂直对齐作用于片段内部。每栏重复表头及配置的续表题，脚注按实际片段预留，不提前占用后段脚注空间。
+启用时正文 `row_span > 1` 返回带网格位置的错误；表头内部的跨行合并仍支持。
+若表题、表头、文字行与脚注连一个合法片段都无法装入整栏，仍返回明确错误。
+可以与 `columns.balance: true` 组合；JSON 使用相同字段与层级，完整示例见
+[flow-pagination-report.yaml](examples/flow-pagination-report.yaml)。
+
+`table.columns` 启用按内容测量的列宽分配，与 `column_widths` 互斥。每项配置固定 `width`，
+或自动列的 `min_width`、`max_width`、`weight`（剩余宽度比例，默认 1）。宽度包含内边距，单位毫米。
+`no_wrap: true` 适用于金额、日期和编号，保留显式换行，宽度不足时报错；`align` 可取 left/center/right/justify。
+`justify` 按扣除单元格内边距后的宽度伸展自动行，段末和显式换行不伸展；`no_wrap: true` 时保持自然字宽。
+单元格的 `style.align` 可覆盖列对齐；跨列合并区域参与宽度测量。
+
+```yaml
+flow:
+  blocks:
+    - runs: [{text: "See "}, {caption_ref: schedule}, {text: " on page "}, {page_ref: schedule}]
+    - id: schedule
+      type: table
+      table:
+        caption: Delivery schedule
+        numbered: true
+        repeat_caption: true
+        columns: [{width: 20}, {min_width: 45, weight: 3}, {min_width: 25, max_width: 35, no_wrap: true, align: right}]
+        stripe_fill: {r: 242, g: 247, b: 253}
+        cell_style:
+          vertical_align: middle
+          padding: {top: 2, right: 2, bottom: 2, left: 2}
+          borders: {left: {width: 0}, right: {width: 0}}
+        header: [ID, Description, Amount]
+        rows: [[A01, A description that can wrap., '12,345.67']]
+```
+
+该片段需与 `version`、`document` 合并。`cell_style` 设置全表默认外观，`grid` 单元格的 `appearance`
+按字段覆盖，支持 `fill`、四边 `padding`、`vertical_align: top|middle|bottom` 和四边 `borders`。
+显式 `padding: {}` 设置零内边距；边框 `width: 0` 隐藏该侧，`color` 缺省沿用主题颜色。
+相邻单元格分别在内部绘制边框，隐藏共享边时需同时关闭对应两侧。
+`stripe_fill` 从正文第二行开始，跨页保持行序；显式 `fill` 优先于表头底色和隔行底色。
+
+图片和表格均支持 `caption`、`numbered`、`caption_prefix`，分别从 1 连续编号，分节不重置。
+前缀缺省分别为 Figure/Table，中文可设置为 图/表。`runs[].caption_ref` 显示目标编号标签并跳转，
+与 `text`、`href`、`target`、`page_ref` 互斥，目标必须是带编号的图表；正文和单元格均可引用。
+表格 `repeat_caption` 在续页表头前重复题注并添加 `continuation_suffix`（缺省 `(continued)`），
+题注与表头、首个完整行组保持同页；`split_rows: true` 时与首个行片段保持同栏。
+编号与页码引用均落到最终物理位置，表格 ID 指向首次表题起点。
+
+自动目录使用 `type: toc`，通过 `toc.title` 和 `toc.max_level` 配置。
+`toc.source` 选择 headings（默认标题目录）、figures（图目录）或 tables（表目录）。
+图目录包含带编号的图片与固定图元，表目录包含带编号的表格；匿名图表自动获得内部书签。
+图表目录显示完整编号题注和最终页码，续表或跨栏片段只收录一次，支持多页、分栏和节内编号。
+`max_level` 只用于标题目录，图表目录中应省略或设为 0；空范围和未知来源会报错。
+
+```yaml
+flow:
+  blocks:
+    - {type: toc, toc: {title: Figures, source: figures}}
+    - {type: toc, toc: {title: Tables, source: tables}}
+    - runs: [{text: "See "}, {title_ref: analysis}, {text: " and "}, {title_ref: results}]
+```
+
+该片段需与 `version`、`document` 及对应的标题、编号图表合并。
+`runs[].title_ref` 显示章节标题或完整图表题注，并提供跳转；
+例如 `caption_ref` 显示 Table 1，`title_ref` 显示 Table 1 Delivery results。
+`title_ref` 可用于正文、列表、单元格和脚注，与 `text`、`href`、`target`、`page_ref`、`caption_ref`、`footnote` 互斥。
+目标必须是带 ID 的非空章节标题或题注，未编号图表的非空题注也可引用。
+标题中的富文本转为纯文字，空白折叠，样式由引用处决定；标题中不能嵌入标题引用。
+目录标题不会进入自动大纲，修改源标题或题注后，下次生成会更新目录与引用。
+
+固定内容使用 `type: fixed`：
+
+```yaml
+flow:
+  blocks:
+    - id: signature
+      type: fixed
+      fixed:
+        width: 80
+        height: 30
+        align: center
+        caption: Approval area
+        numbered: true
+        items:
+          - {type: text, x: 2, 'y': 2, width: 76, height: 7, size: 3.5, value: Prepared by}
+          - {type: path, x: 2, 'y': 20, width: 76, height: 1, data: 'M 0 0.5 L 76 0.5', stroke: true, line_width: 0.3}
+```
+
+该片段需与 `version`、`document` 合并。`fixed.width` 缺省为当前节版心宽度，`height` 必须为正数，
+不含下方图注；区域与图注整块分页，超宽或整块超高时报错。
+`align` 为 left（默认）、center 或 right。`items` 使用相对区域左上角的坐标，
+支持 text、path、image、composite、page-block，叶图元的正数边界须落在区域内。
+`page-block` 可嵌套至 64 层，子图元使用同一区域坐标。
+固定图元的长度及 `size` 均为毫米；空字体继承块级字体。
+水平文字的 `value` 简写按字体度量在声明高度内垂直居中，显式 `text_codes` 保留原始定位。
+图片、复合图元等引用现有 `resources`，变换、裁剪和动作沿用原始图元语义。
+固定区域与图片共用图编号，`caption_ref` 和 `page_ref` 均支持指向固定块的 ID。
+
+内容块的 `id` 定义稳定目标，`runs[].target` 创建内部链接，
+`runs[].page_ref` 默认显示目标的最终物理页码（包含封面和目录），并提供跳转：
+
+```yaml
+flow:
+  blocks:
+    - {type: toc, toc: {title: Contents, max_level: 3}, page_break_after: true}
+    - runs:
+        - {text: "See "}
+        - {text: appendix, target: appendix}
+        - {text: " on page "}
+        - {page_ref: appendix}
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+```
+
+该片段需与 `version`、`document` 合并。ID 在文档内唯一，不含空白或控制字符，
+不能以 `__flow_` 开头，且不能与 `document.bookmarks` 重名。`target` 与 `href` 互斥；
+`page_ref` 与 `text`、`href`、`target` 互斥。段落和网格单元格都支持这些引用。
+目录默认收录三级以内的全部非空标题，可跨页、自动回填页码并创建跳转。
+没有 `toc` 配置时标题为 Contents，显式 `toc: {title: ""}` 省略目录标题。
+目录标题不进入目录或自动大纲。目录与页码引用最多迭代 12 轮以确定分页，
+无法稳定则报错。导出清单会保留最终页面、书签与标准跳转动作。
+
+分节使用 `type: section`，设置会持续作用于后续页面：
+
+```yaml
+flow:
+  reference_page_numbers: section
+  blocks:
+    - {type: section, section: {page_numbers: false, header: ""}}
+    - {text: Cover}
+    - type: section
+      section:
+        page_numbers: true
+        start_page_number: 1
+        page_number_style: roman
+    - {type: toc, toc: {title: Contents}}
+    - type: section
+      section:
+        start_page_number: 1
+        page_number_style: decimal
+        header: Body
+        first_page_header: Opening
+        hide_first_page_number: true
+    - {id: body, type: heading, level: 1, text: Body}
+```
+
+该片段需与 `version`、`document` 合并。新节从新页开始，空节不会额外生成尾页。
+`section.page_size` 用毫米宽高设置横向或纵向纸张；`margins` 同时设置四边边距。
+省略字段继承前节，`header: ""`、`footer: ""`、`page_numbers: false` 可以明确清除对应显示。
+`start_page_number` 为正数，省略接续前节；`page_number_style` 支持 decimal、roman、ROMAN，
+`page_number_prefix` 支持 `A-` 等前缀。罗马数字范围为 1–3999。
+`first_page_header`、`first_page_footer` 和 `hide_first_page_number` 只影响本节，
+不会继承到下一节；隐藏首页自动页码仍占用一个编号。
+
+`reference_page_numbers` 缺省为 physical；section 模式让目录与 `page_ref` 使用节内显示编号。
+两种模式的跳转均使用真实物理页面。页眉页脚支持 `{page}`（显示编号）、`{pages}`（物理总页数）、
+`{physical_page}`、`{section_page}`（节内页序）、`{section_pages}`（本节页数）。
+自动页码沿用 `{page} / {pages}`；自定义节内总页数时可关闭自动页码并配置
+`footer: "{page} / {section_pages}"`。
+
+复杂文字塑形、跨页拆分单个单元格和浮动环绕暂不支持。
+Go API 与完整说明见 [流式创作库指南](../../pkg/creator/flow/README.md)。
+
 ## 独立签署与普通签名追加
 
 `sign` 对现有 OFD 签署，复用下文的 `--sign-*` 外部签名协议；缺省类型为 `Sign`。
@@ -527,7 +960,9 @@ document:
 
 resources:
   fonts:
-    - name: SimSun
+    - name: Body
+      font_name: SimSun
+      family_name: SimSun
       file: fonts/simsun.ttf
       format: ttf
   images:
@@ -543,7 +978,7 @@ pages:
         width: 100
         height: 10
         value: 你好，OFD
-        font: SimSun
+        font: Body
         size: 4.23
       - type: image
         x: 20
@@ -553,7 +988,24 @@ pages:
         resource_id: 100
 ```
 
-字体资源支持 `ttf`、`otf` 和 `ttc`。对于包含多字体 CFF 的 TTC，创建器会提取第一个字体面并保留其完整字形数据，不进行不安全的 CFF 子集化，以保证阅读器能够正常加载。
+字体的 `name` 是清单内的资源引用名，文字的 `font` 引用它；`font_name` 是写入 OFD 的实际字型名，
+`family_name` 是字体族名。上面的字体声明也可写为 JSON：
+
+```json
+{"name":"Body","font_name":"SimSun","family_name":"SimSun","file":"fonts/simsun.ttf","format":"ttf"}
+```
+
+该 JSON 对象放在 `resources.fonts` 数组中。普通创建省略 `font_name` 时使用 `name`；
+`flow` 会从所选嵌入字体自动补全未指定的实际字型名和族名，读取不到字型名时使用资源引用名。
+因此默认 `Flow-Regular` 等别名继续用于清单引用，输出的 `FontName` 表达实际 Go 字体面。
+流式排版会在合并元数据后清理未引用的字体声明，实际使用的字体再生成子集；
+例如公文没有三级标题或签发人时，只为这些要素配置的楷体不会被完整带入输出。
+原始资源 XML 使用数字引用时保守保留字体声明。
+导出时若多个字体同名，清单只对资源引用名追加后缀，实际字型名通过 `font_name` 保留。
+
+字体资源支持 `ttf`、`otf` 和 `ttc`。TTC 默认提取第一个字体面，流式创作可通过 `font_faces` 选择字体面。
+TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同步重映射显式字形编号。
+子集化错误直接返回。
 
 支持以下页面图元：
 

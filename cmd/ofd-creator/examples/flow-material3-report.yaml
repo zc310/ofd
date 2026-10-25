@@ -1,0 +1,57 @@
+version: 1
+document:
+  id: flow-material3-report
+  title: Material 3 report
+  page_size: {width: 150, height: 190}
+flow:
+  theme: material3
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  footnotes:
+    - id: source
+      text: SOURCE-NOTE The original records were reviewed before delivery and are archived with this report.
+  blocks:
+    - {id: overview, type: heading, level: 1, text: Material 3 report}
+    - text: This report uses the Material 3 print preset. It maps Headline, Title and Body roles to document headings, paragraphs, tables and captions. Font resources can be supplied explicitly for other languages.
+    - {id: typography, type: heading, level: 2, text: Typography roles}
+    - type: table
+      table:
+        header: [Role, Size and line height]
+        rows: [[Body Large, 12pt / 18pt], [Headline Large, 24pt / 30pt], [Title Large, 16.5pt / 21pt], [Body Small, 9pt / 12pt]]
+    - type: heading
+      level: 3
+      text: Reading order
+    - text: Large headings use the regular font face. Smaller heading roles use the available bold face to distinguish their emphasis. The final document preserves all character positions and navigation.
+    - {type: toc, toc: {title: Contents, max_level: 2}}
+    - {id: results, type: heading, level: 1, text: Delivery results, page_break_before: true}
+    - runs:
+        - {text: The delivery results use the archived source}
+        - {footnote: source}
+        - {text: '. Each item was checked for completeness and can be traced to the original review record.'}
+    - id: chart
+      type: fixed
+      fixed:
+        width: 90
+        height: 24
+        caption: Reviewed items
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 24, data: 'M 0 0 L 90 0 L 90 24 L 0 24 C', fill: true, stroke_set: false, fill_color: {r: 243, g: 237, b: 247}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.3, value: Delivery status, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 60, height: 6, data: 'M 0 0 L 60 0 L 60 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 103, g: 80, b: 164}}
+    - type: heading
+      level: 4
+      text: Source review
+    - type: table
+      table:
+        header: [Item, Status]
+        rows: [[Source records, Reviewed], [Delivery totals, Confirmed], [Document fonts, Embedded]]
+    - {id: appendix, type: heading, level: 1, text: Appendix, page_break_before: true}
+    - runs:
+        - {text: 'Return to '}
+        - {title_ref: results}
+        - {text: ' or review '}
+        - {caption_ref: chart}
+        - {text: '. The exported manifest retains fixed character positions, colors and navigation.'}
+    - text: The preset follows selected Material 3 Web type roles for print. It embeds the Go fonts by default; supply a font family and the required weight faces when matching a specific design.

@@ -35,6 +35,7 @@ const (
 
 // metricKey 唯一标识用于度量的一段字符样式。
 type metricKey struct {
+	font   string
 	bold   bool
 	italic bool
 	mono   bool

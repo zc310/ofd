@@ -34,12 +34,15 @@ var (
 
 // atom 是断行的最小单位：一个单词、一段空白或一个全角字符。
 type atom struct {
-	text  string
-	key   metricKey
-	size  float64 // 毫米
-	color *creator.Color
-	width float64
-	space bool
+	text string
+	key  metricKey
+	size float64 // 毫米
+	// rise 是流式创作相对于正文基线向上的偏移，单位毫米。
+	rise   float64
+	hscale float64
+	color  *creator.Color
+	width  float64
+	space  bool
 	// glue 大于 0 时，相同值的相邻段不允许断开，用于行内代码。
 	glue int
 	// strike 为真时在该字符段中部绘制删除线。
@@ -47,12 +50,15 @@ type atom struct {
 	// strikeWidth 是删除线应覆盖的宽度（不含合并进来的尾随空白）；为 0 时用 width。
 	strikeWidth float64
 	// href 是该字符段的点击目标，写入图元的 CLICK 动作；为空表示不可点击。
-	href string
+	href   string
+	target string
 }
 
 // engine 在排版过程中维护当前页面、纵向游标和字体资源。
 type engine struct {
 	opts Options
+	// author 是公开流式创作入口使用的字体与排版状态；Markdown 路径保持原有默认行为。
+	author *authorState
 
 	pages     []creator.Page
 	pageIndex int
@@ -151,12 +157,23 @@ func (e *engine) computeArea() {
 }
 
 func (e *engine) newPage() {
+	if e.author != nil {
+		e.recordAuthorColumnHeight()
+		e.computeArea()
+	}
 	e.pages = append(e.pages, creator.Page{
 		Area: &creator.PageArea{
 			PhysicalBox: &creator.Box{Width: e.opts.PageWidth, Height: e.opts.PageHeight},
 		},
 	})
 	e.pageIndex = len(e.pages) - 1
+	if e.author != nil {
+		e.pages[e.pageIndex].Area.ContentBox = &creator.Box{X: e.contentLeft, Y: e.opts.MarginTop, Width: e.contentWidth, Height: e.contentHeight}
+		e.recordAuthorPage()
+		e.author.columnIndex = 0
+		e.author.columnBase = 0
+		e.setAuthorSectionArea(e.author.section, 0)
+	}
 	e.y = e.contentTop
 	if e.footer != nil && e.footer.PageNumber {
 		e.emitPageNumber()
@@ -226,6 +243,15 @@ func (e *engine) add(item creator.Item) {
 func (e *engine) ensureHeight(height float64) {
 	if e.pageIndex < 0 {
 		e.newPage()
+		return
+	}
+	if e.author != nil {
+		if e.y-height < e.contentBottom-0.01 && e.authorHasContent() {
+			e.nextAuthorColumn()
+		}
+		if e.authorFlowBottom() > e.opts.MarginBottom && e.y-height < e.contentBottom-0.01 && e.author.err == nil {
+			e.author.err = fmt.Errorf("整体块超过当前栏的可用高度")
+		}
 		return
 	}
 	if e.y-height < e.contentBottom-0.01 && len(e.cur().Items) > e.pageBase {
@@ -1187,12 +1213,15 @@ type textRun struct {
 	text        string
 	key         metricKey
 	size        float64
+	rise        float64
+	hscale      float64
 	color       *creator.Color
 	x           float64
 	width       float64
 	strike      bool
 	strikeWidth float64
 	href        string
+	target      string
 }
 
 // mergeRuns 合并相邻的同样式文本，并把空白并入前一个片段，避免生成
@@ -1213,8 +1242,8 @@ func mergeRuns(line []atom, left float64) []textRun {
 			last := &runs[len(runs)-1]
 			// href 必须一并比较：相邻的两个不同链接如果并成一个文字对象，只会
 			// 挂上前一个的 URL，后一个链接就点不动了。
-			if last.key == item.key && last.size == item.size && last.color == item.color &&
-				last.strike == item.strike && last.href == item.href {
+			if last.key == item.key && last.size == item.size && last.rise == item.rise && last.hscale == item.hscale && last.color == item.color &&
+				last.strike == item.strike && last.href == item.href && last.target == item.target {
 				last.text += item.text
 				last.width += item.width
 				last.strikeWidth += item.width
@@ -1222,7 +1251,7 @@ func mergeRuns(line []atom, left float64) []textRun {
 				continue
 			}
 		}
-		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width, href: item.href})
+		runs = append(runs, textRun{text: item.text, key: item.key, size: item.size, rise: item.rise, hscale: item.hscale, color: item.color, x: x, width: item.width, strike: item.strike, strikeWidth: item.width, href: item.href, target: item.target})
 		x += item.width
 	}
 	return runs

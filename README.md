@@ -81,7 +81,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 | 场景 | 能力与工具 |
 |---|---|
 | 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 转 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG、EPS、TeX；PDF/XPS/Markdown/Office/HTML/图片转 OFD。 |
-| 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单创建、配置导出、水印与条目替换；支持多文档打包、模型级拼页、选页和重排。 |
+| 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单创建、流式自动排版、Material/Material 2/Material 3/Fluent 2/Carbon/Bootstrap 5 主题与命名样式、GB/T 9704—2012 常规公文基础版式、两端对齐、等宽分栏、页底脚注、固定图元区域、合并表格与自动列宽、图表编号与续表题、标题/图/表目录及大纲、标题与页码引用、分节编号与横纵页面混排、配置导出、水印与条目替换；支持多文档打包、模型级拼页、选页和重排。 |
 | 校验与分析 | [ofd-validator](cmd/ofd-validator/README.md) 检查 ZIP、XML、XSD、引用和语义；[ofd-analyzer](cmd/ofd-analyzer/README.md) 分析结构、页面、资源、附件与签名。 |
 | 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
 | 档案预检与处理 | [ofd-archive](cmd/ofd-archive/README.md)：技术清单、归档准备目录、符合性矩阵与 SHA-256 固定性验证；[preserve](cmd/ofd-archive/README.md#长期保存处理preserve) 对单文档执行长期保存转换，保留页面实际尺寸，清理页面、模板及资源内的图元动作，并按转换后引用分析孤立文件。 |
@@ -137,7 +137,7 @@ func main() {
 | 转换与渲染 | [`pkg/converter`](https://pkg.go.dev/github.com/zc310/ofd/pkg/converter)、[可运行示例](pkg/converter/examples_test.go) |
 | 导入 PDF、Markdown 等格式 | [按需注册导入器](docs/GO-API.md#导入其他格式) |
 | 按页渲染、文字、搜索与导航 | [`pkg/webreader`](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)、[接入示例](docs/GO-API.md#接入按页阅读接口) |
-| 创建 OFD 与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md) |
+| 创建 OFD、自动排版与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md)、[`pkg/creator/flow` 流式创作](pkg/creator/flow/README.md) |
 | 多文档合并、拼页和重排 | [`pkg/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |

@@ -3,15 +3,18 @@ package converter_test
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/klauspost/compress/zip"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	fontparser "github.com/zc310/font"
@@ -29,7 +32,8 @@ import (
 func externalCFFTestFont(t *testing.T, variable string) ([]byte, *fontparser.SFNT) {
 	t.Helper()
 	paths := []string{os.Getenv(variable)}
-	if variable == "OFD_CFF_TEST_FONT" {
+	switch variable {
+	case "OFD_CFF_TEST_FONT":
 		paths = append(paths, "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf", "/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf")
 	}
 	for _, path := range paths {
@@ -37,8 +41,11 @@ func externalCFFTestFont(t *testing.T, variable string) ([]byte, *fontparser.SFN
 			continue
 		}
 		data, err := os.ReadFile(path)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			continue
+		}
+		if err != nil {
+			t.Fatalf("读取 CFF 测试字体 %q: %v", path, err)
 		}
 		sfnt, err := fontparser.ParseSFNT(data, 0)
 		if err != nil || sfnt.CFF == nil || (variable != "OFD_CFF_SINGLE_TEST_FONT" && sfnt.CFF.NumFontDicts() < 2) {
@@ -47,8 +54,22 @@ func externalCFFTestFont(t *testing.T, variable string) ([]byte, *fontparser.SFN
 		t.Logf("external CFF (%d Font DICTs): %s", sfnt.CFF.NumFontDicts(), path)
 		return sfnt.Write(), sfnt // TTC: embed only the selected first face as OTF.
 	}
-	t.Skipf("no suitable CFF font; set %s to an external OTF/TTC", variable)
+	t.Skipf("未找到适用的 CFF 测试字体（候选路径 %q）；可设置 %s 指向外部 OTF/TTC", paths, variable)
 	return nil, nil
+}
+
+func TestExternalCFFTestFontSkipsMissingFile(t *testing.T) {
+	const variable = "OFD_CFF_MISSING_TEST_FONT"
+	t.Setenv(variable, filepath.Join(t.TempDir(), "missing.otf"))
+	var skipped bool
+	t.Run("missing", func(t *testing.T) {
+		defer func() { skipped = t.Skipped() }()
+		externalCFFTestFont(t, variable)
+		t.Fatal("缺失字体没有跳过测试")
+	})
+	if !skipped {
+		t.Fatal("缺失字体应调用 t.Skip")
+	}
 }
 
 func cffOFDTestDocument(t *testing.T, data []byte, value string, glyphs []int) []byte {
@@ -141,6 +162,40 @@ func checkCFFPDFPrograms(t *testing.T, pdf, originalCFF []byte) {
 			}
 		}
 	}
+}
+
+func embeddedCFFProgram(t *testing.T, ofd []byte) []byte {
+	t.Helper()
+	archive, err := zip.NewReader(bytes.NewReader(ofd), int64(len(ofd)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range archive.File {
+		if !strings.HasPrefix(entry.Name, "Doc_0/Res/Fonts/") {
+			continue
+		}
+		reader, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		font, err := fontparser.ParseSFNT(data, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if font.CFF != nil {
+			return font.Tables["CFF "]
+		}
+	}
+	t.Fatal("OFD has no embedded CFF font")
+	return nil
 }
 
 func compareCFFPDFToOFD(t *testing.T, input, pdf []byte, expectedText string) {
@@ -360,6 +415,7 @@ func TestPDFSingleFDCFFRetainsSubsettingAndOriginalText(t *testing.T) {
 func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value string, glyphs []int) {
 	t.Helper()
 	input := cffOFDTestDocument(t, data, value, glyphs)
+	wantCFF := embeddedCFFProgram(t, input)
 	for _, entrypoint := range []string{"converter", "webreader"} {
 		t.Run(entrypoint, func(t *testing.T) {
 			var output bytes.Buffer
@@ -388,7 +444,7 @@ func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value str
 					}
 				}
 			}
-			checkCFFPDFPrograms(t, output.Bytes(), sfnt.Tables["CFF "])
+			checkCFFPDFPrograms(t, output.Bytes(), wantCFF)
 			compareCFFPDFToOFD(t, input, output.Bytes(), value)
 		})
 	}

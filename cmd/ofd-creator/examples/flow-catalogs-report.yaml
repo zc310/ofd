@@ -1,0 +1,103 @@
+version: 1
+document:
+  id: flow-catalogs-report
+  title: Catalogs and title references
+  page_size: {width: 150, height: 190}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Catalog report
+  styles:
+    - {name: catalog, style: {size: 11, space_after: 1}}
+  footnotes:
+    - id: details
+      runs:
+        - {text: 'The illustration is '}
+        - {title_ref: trend}
+        - {text: '. Further notes appear in '}
+        - {title_ref: appendix}
+        - {text: '.'}
+  blocks:
+    - {id: cover, type: heading, level: 1, text: Catalog report}
+    - text: This report generates separate contents, figures and tables lists. Text references read the final chapter titles and complete figure or table captions from their targets.
+    - {id: contents, type: toc, toc: {title: Contents, max_level: 2}, style: {based_on: catalog}}
+    - id: figures
+      type: toc
+      page_break_before: true
+      toc: {title: Figures, source: figures}
+      style: {based_on: catalog}
+    - id: tables
+      type: toc
+      toc: {title: Tables, source: tables}
+      style: {based_on: catalog}
+    - {id: analysis, type: heading, level: 1, text: Delivery analysis, page_break_before: true}
+    - runs:
+        - {text: 'This chapter is '}
+        - {title_ref: analysis}
+        - {text: '. The full figure title is '}
+        - {title_ref: trend}
+        - {text: ', and the table title is '}
+        - {title_ref: results}
+        - {footnote: details}
+        - {text: '.'}
+    - id: trend
+      type: fixed
+      fixed:
+        width: 90
+        height: 32
+        align: center
+        caption: Delivery trend
+        numbered: true
+        items:
+          - {type: path, width: 90, height: 32, data: 'M 0 0 L 90 0 L 90 32 L 0 32 C', fill: true, stroke_set: false, fill_color: {r: 242, g: 247, b: 253}}
+          - {type: text, x: 4, 'y': 2, width: 80, height: 6, size: 3.5, value: Reviewed delivery items, fill: true}
+          - {type: path, x: 4, 'y': 12, width: 50, height: 6, data: 'M 0 0 L 50 0 L 50 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 55, g: 120, b: 210}}
+          - {type: path, x: 4, 'y': 22, width: 75, height: 6, data: 'M 0 0 L 75 0 L 75 6 L 0 6 C', fill: true, stroke_set: false, fill_color: {r: 11, g: 87, b: 208}}
+    - type: image
+      image:
+        data_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgDr8AAAGjATO977V+AAAAAElFTkSuQmCC
+        width: 12
+        caption: Identity sample
+        numbered: true
+    - {id: data, type: heading, level: 2, text: Results, page_break_before: true}
+    - id: results
+      type: table
+      table:
+        caption: Delivery results
+        numbered: true
+        repeat_caption: true
+        columns: [{width: 25}, {}]
+        header: [ID, Result]
+        rows:
+          - [A01, Confirm the source records and their dates.]
+          - [A02, Review the draft and collect comments.]
+          - [A03, Register all fonts used in the report.]
+          - [A04, Compare the totals against the source data.]
+          - [A05, Check all numbered illustrations and their captions.]
+          - [A06, Inspect the figure and table catalog destinations.]
+          - [A07, Verify title references in the body and footnotes.]
+          - [A08, Confirm the final page labels after pagination.]
+          - [A09, Render the document as OFD and searchable PDF.]
+          - [A10, Validate and archive the final document.]
+    - type: table
+      table:
+        caption: Summary
+        numbered: true
+        header: [Item, Status]
+        rows: [[Report, Ready]]
+    - {id: appendix, type: heading, level: 1, text: Delivery assumptions, page_break_before: true}
+    - runs:
+        - {text: 'The chapter '}
+        - {title_ref: analysis}
+        - {text: ' contains '}
+        - {caption_ref: trend}
+        - {text: ', whose complete title is '}
+        - {title_ref: trend}
+        - {text: '.'}
+    - type: table
+      table:
+        columns: [{width: 35}, {}]
+        grid:
+          - [{text: Chapter}, {runs: [{title_ref: analysis}]}]
+          - [{text: Figure}, {runs: [{title_ref: trend}]}]
+          - [{text: Table}, {runs: [{title_ref: results}]}]

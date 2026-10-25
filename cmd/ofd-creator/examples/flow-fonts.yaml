@@ -1,0 +1,34 @@
+version: 1
+document:
+  id: flow-fonts
+  title: Embedded font styles
+flow:
+  font_faces:
+    Flow-Regular: 0
+  font_families:
+    - regular: Flow-Regular
+      bold: Flow-Bold
+      italic: Flow-Italic
+      bold_italic: Flow-BoldItalic
+  blocks:
+    - {type: heading, level: 1, text: Embedded font styles}
+    - runs:
+        - {text: "Regular text. "}
+        - {text: "Bold text. ", bold: true}
+        - {text: "Italic text. ", italic: true}
+        - {text: "Bold italic text.", bold: true, italic: true}
+    - runs:
+        - {text: "Explicit italic face with added bold: "}
+        - {text: "same family combination", font: Flow-Italic, bold: true}
+    - type: table
+      table:
+        header: [Feature, Behavior]
+        rows:
+          - [Measurement, Uses the actual selected embedded face.]
+          - [Font selection, Matches styles within the configured family.]
+    - {type: page_break}
+    - {type: heading, level: 2, text: Collection faces}
+    - text: For a TTC or OTC file, register its bytes as a font resource and set font_faces to the desired zero-based index. The creator embeds a standalone copy of the chosen face.
+    - {type: page_break}
+    - {type: heading, level: 2, text: Fallback rules}
+    - text: Missing characters first use the requested style of a configured fallback family. Fixed-width content only falls back to fixed-width fonts. The final font face supplies both measurements and output glyphs.

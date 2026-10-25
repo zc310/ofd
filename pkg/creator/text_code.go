@@ -245,6 +245,8 @@ func findTextFace(name string, fonts []Font, size float64, weight int, italic bo
 			// 只声明名称的系统字体：用它的族名（如 楷体）解析系统字体。
 			if familyName := strings.TrimSpace(value.FamilyName); familyName != "" {
 				name = familyName
+			} else if fontName := strings.TrimSpace(value.FontName); fontName != "" {
+				name = fontName
 			}
 			break
 		}

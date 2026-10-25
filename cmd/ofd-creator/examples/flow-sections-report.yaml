@@ -1,0 +1,77 @@
+version: 1
+document:
+  id: flow-sections-report
+  title: Sectioned report
+  page_size: {width: 140, height: 180}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  reference_page_numbers: section
+  blocks:
+    - type: section
+      section: {header: "", footer: "", page_numbers: false}
+    - {id: cover, text: Sectioned report, style: {size: 28}}
+    - text: This cover has no page number. Contents, body and appendix use their own numbering and page settings.
+    - type: section
+      section:
+        header: Contents
+        page_numbers: true
+        start_page_number: 1
+        page_number_style: roman
+    - {id: contents, type: toc, toc: {title: Contents, max_level: 2}}
+    - type: section
+      section:
+        header: Body section
+        first_page_header: Opening page
+        first_page_footer: ""
+        hide_first_page_number: true
+        start_page_number: 1
+        page_number_style: decimal
+    - {id: overview, type: heading, level: 1, text: Overview}
+    - runs:
+        - {text: "The wide table is on page "}
+        - {page_ref: wide}
+        - {text: ", and the appendix is on page "}
+        - {page_ref: appendix}
+        - {text: ". Return to "}
+        - {text: contents, target: contents}
+        - {text: "."}
+    - text: The opening page has a special header and hides its automatic page number while still occupying number 1. The next page continues with number 2 and uses the regular body header.
+    - {type: page_break}
+    - {id: notes, type: heading, level: 2, text: Numbering notes}
+    - text: Physical page positions remain unique. Displayed page numbers can restart in each section. Contents and page references in this report use the section labels, while all links point to actual physical pages.
+    - type: section
+      section:
+        page_size: {width: 220, height: 140}
+        margins: {top: 20, right: 20, bottom: 20, left: 20}
+        header: Wide table section
+    - {id: wide, type: heading, level: 1, text: Wide table}
+    - type: table
+      table:
+        header: [Region, Q1, Q2, Q3, Q4]
+        column_widths: [36, 36, 36, 36, 36]
+        rows:
+          - [North, "120", "135", "140", "155"]
+          - [South, "110", "130", "145", "150"]
+          - [East, "150", "165", "170", "180"]
+          - [West, "100", "120", "130", "140"]
+    - type: section
+      section:
+        page_size: {width: 140, height: 180}
+        header: Appendix
+        start_page_number: 1
+        page_number_prefix: A-
+    - {id: appendix, type: heading, level: 1, text: Appendix}
+    - type: table
+      table:
+        grid:
+          - [{text: Destination}, {text: Displayed page}]
+          - [{runs: [{text: Contents, target: contents}]}, {runs: [{page_ref: contents}]}]
+          - [{runs: [{text: Overview, target: overview}]}, {runs: [{page_ref: overview}]}]
+          - [{runs: [{text: Wide table, target: wide}]}, {runs: [{page_ref: wide}]}]
+    - runs:
+        - {text: "Return to "}
+        - {text: cover, target: cover}
+        - {text: " or "}
+        - {text: contents, target: contents}
+        - {text: "."}

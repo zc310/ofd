@@ -1,0 +1,93 @@
+version: 1
+document:
+  id: flow-tables-report
+  title: Tables and captions
+  page_size: {width: 160, height: 190}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Delivery report
+  blocks:
+    - {type: heading, level: 1, text: Delivery report}
+    - runs:
+        - {text: "The schedule appears in "}
+        - {caption_ref: schedule}
+        - {text: " on page "}
+        - {page_ref: schedule}
+        - {text: ". The reference image is "}
+        - {caption_ref: sample}
+        - {text: "."}
+    - id: sample
+      type: image
+      image:
+        data_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGPgDr8AAAGjATO977V+AAAAAElFTkSuQmCC
+        width: 18
+        numbered: true
+        caption: Project identity sample
+    - id: schedule
+      type: table
+      table:
+        caption: Delivery schedule
+        numbered: true
+        repeat_caption: true
+        continuation_suffix: (continued)
+        columns:
+          - {width: 12}
+          - {min_width: 30, max_width: 72, weight: 3}
+          - {width: 24, no_wrap: true, align: center}
+          - {min_width: 22, max_width: 26, no_wrap: true, align: right}
+        stripe_fill: {r: 242, g: 247, b: 253}
+        cell_style:
+          vertical_align: middle
+          padding: {top: 2, right: 2, bottom: 2, left: 2}
+          borders:
+            left: {width: 0}
+            right: {width: 0}
+            top: {width: 0.15}
+            bottom: {width: 0.15}
+        header_rows: 2
+        grid:
+          - - {text: ID, row_span: 2}
+            - {text: Delivery information, col_span: 2, style: {align: center}}
+            - {text: Amount, row_span: 2}
+          - [{text: Description}, {text: Date}]
+          - - text: A01
+              row_span: 2
+              appearance: {fill: {r: 220, g: 235, b: 255}, vertical_align: middle}
+            - {text: Prepare the source documents and confirm all delivery requirements.}
+            - {text: '2026-10-01'}
+            - {text: '12,345.67'}
+          - [{text: Review the first draft and resolve the outstanding comments.}, {text: '2026-10-02'}, {text: '2,400.00'}]
+          - [{text: A02}, {text: Register the fonts and confirm coverage for the complete document.}, {text: '2026-10-03'}, {text: '1,250.00'}]
+          - [{text: A03}, {text: Prepare the illustrations and keep each image with its caption.}, {text: '2026-10-04'}, {text: '850.00'}]
+          - [{text: A04}, {text: Review the schedule and verify that dates and amounts stay whole.}, {text: '2026-10-05'}, {text: '1,120.00'}]
+          - [{text: A05}, {text: Confirm the report structure and the order of all numbered tables.}, {text: '2026-10-06'}, {text: '760.00'}]
+          - [{text: A06}, {text: Measure long descriptions with the fonts embedded in the document.}, {text: '2026-10-07'}, {text: '920.00'}]
+          - [{text: A07}, {text: Check that merged cells remain together during automatic pagination.}, {text: '2026-10-08'}, {text: '480.00'}]
+          - [{text: A08}, {text: Repeat both header rows and the continuation caption on later pages.}, {text: '2026-10-09'}, {text: '630.00'}]
+          - [{text: A09}, {text: Keep alternating row backgrounds consistent across page boundaries.}, {text: '2026-10-10'}, {text: '540.00'}]
+          - [{text: A10}, {text: Inspect the internal links and references after the final pagination.}, {text: '2026-10-11'}, {text: '790.00'}]
+          - [{text: A11}, {text: Export a searchable PDF copy and inspect the actual rendered pages.}, {text: '2026-10-12'}, {text: '1,350.00'}]
+          - [{text: A12}, {text: Extract the text and confirm that the reading order remains correct.}, {text: '2026-10-13'}, {text: '680.00'}]
+          - [{text: A13}, {text: Validate the generated OFD against the standard schema and semantics.}, {text: '2026-10-14'}, {text: '970.00'}]
+          - [{text: A14}, {text: Export the fixed pages as a manifest and create the document again.}, {text: '2026-10-15'}, {text: '1,080.00'}]
+          - [{text: A15}, {text: Archive the editable source and deliver the completed report package.}, {text: '2026-10-16'}, {text: '560.00'}]
+    - text: This paragraph follows the complete schedule, including all continuation pages.
+    - {type: page_break}
+    - {type: heading, level: 1, text: Delivery summary}
+    - id: summary
+      type: table
+      table:
+        caption: Reference summary
+        numbered: true
+        columns: [{width: 40}, {}]
+        header: [Item, Reference]
+        rows:
+          - [Schedule, See the preceding delivery schedule.]
+          - [Output, Standard fixed-layout OFD document.]
+    - runs:
+        - {text: "The first table remains "}
+        - {caption_ref: schedule}
+        - {text: "; this summary is "}
+        - {caption_ref: summary}
+        - {text: "."}

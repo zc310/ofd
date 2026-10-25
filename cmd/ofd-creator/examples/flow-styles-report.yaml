@@ -1,0 +1,69 @@
+version: 1
+document:
+  id: flow-styles-report
+  title: Reusable styles
+  page_size: {width: 150, height: 190}
+flow:
+  generate_outlines: true
+  page_numbers: true
+  header: Reusable styles report
+  styles:
+    - name: body
+      style: {size: 11, line_height: 1.5, space_before: 2, space_after: 3, first_line_indent: 6}
+    - name: compact
+      style: {based_on: body, size: 10, line_height: 1.25, space_before: 0, space_after: 0, first_line_indent: 0}
+    - name: note
+      style: {based_on: compact, color: {r: 160, g: 80, b: 10}}
+    - name: title
+      style: {size: 20, space_before: 0, space_after: 4, first_line_indent: 0}
+    - name: table-text
+      style: {based_on: compact, size: 9, line_height: 1.4}
+  blocks:
+    - {id: cover, type: heading, level: 1, text: Reusable styles, style: {based_on: title}}
+    - text: Named styles make the report consistent while local fields can override selected properties.
+      style: {based_on: body}
+    - text: A compact note clears the inherited indent and paragraph spacing.
+      style: {based_on: note}
+    - id: contents
+      type: toc
+      toc: {title: Contents, max_level: 1}
+      style: {based_on: compact}
+    - {type: page_break}
+    - {id: details, type: heading, level: 1, text: Style precedence, style: {based_on: title}}
+    - text: This body paragraph inherits its size, line height, spacing and first line indent from the body style.
+      style: {based_on: body}
+    - text: This paragraph keeps the body style but explicitly clears its indent and following gap.
+      style: {based_on: body, first_line_indent: 0, space_after: 0}
+    - {text: Compact row one, style: {based_on: compact}}
+    - {text: Compact row two, style: {based_on: compact}}
+    - text: This local override changes the note color to blue.
+      style: {based_on: note, color: {r: 11, g: 87, b: 208}, space_before: 3, space_after: 3}
+    - id: comparison
+      type: table
+      style: {based_on: table-text}
+      table:
+        caption: Reused styles in cells
+        numbered: true
+        columns: [{width: 30}, {align: right}]
+        header_rows: 1
+        grid:
+          - [{text: Style}, {text: Result, style: {based_on: table-text, align: left}}]
+          - - {text: Body}
+            - {text: Shared typography and paragraph settings., style: {based_on: table-text, align: left}}
+          - - {text: Compact}
+            - {text: Zero indent and spacing override the inherited values., style: {based_on: table-text, align: left}}
+          - - {text: Note}
+            - {text: Reused note color inside a table cell., style: {based_on: note, size: 9, align: left}}
+    - {type: page_break}
+    - {id: appendix, type: heading, level: 1, text: References and output, style: {based_on: title}}
+    - runs:
+        - {text: 'The comparison is '}
+        - {caption_ref: comparison}
+        - {text: ' on page '}
+        - {page_ref: comparison}
+        - {text: '.'}
+      style: {based_on: body, first_line_indent: 0}
+    - text: Named style definitions stay in the editable source. The generated OFD contains final font sizes, colors and positions.
+      style: {based_on: body}
+    - text: Undefined names, duplicate names, circular inheritance and invalid dimensions produce a diagnostic before pagination.
+      style: {based_on: note, space_before: 3}

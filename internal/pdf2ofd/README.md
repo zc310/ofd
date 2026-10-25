@@ -85,7 +85,7 @@ OFD 严格校验预期为 0 错误、0 警告。它检验包结构和语义，�
 |----------|------|
 | OFD_CJK_TEST_FONT | 覆盖中文与竖排标点的 TrueType 字体；TTC 使用首个字体面。未指定时按测试规则尝试系统字体。 |
 | OFD_CFF_TEST_FONT | 覆盖中文的多 FD OTF/TTC，用于转换器和 Web 阅读器 PDF 字体回退。 |
-| OFD_CFF_CID_TEST_FONT | CID≠GID 的 CFF 子集字体。 |
+| OFD_CFF_CID_TEST_FONT | CID≠GID 的 CFF 子集字体，仅通过该环境变量指定；未设置或文件不存在时跳过，其他读取错误使测试失败。 |
 | OFD_CFF_SINGLE_TEST_FONT | 普通单 FD CFF，验证子集化回归。 |
 | OFD_TRANSPARENCY_EVIDENCE_DIR | 导出透明专项的源/往返 PDF、OFD 栅格和独立阅读器栅格；目录需事先创建。 |
 | OFD_TEXT_EVIDENCE_DIR | 导出文字保真专项证据；按测试约定准备目录。 |
@@ -136,8 +136,10 @@ PDF JPX 解码默认使用纯 Go 后端。Linux 可选构建 OpenJPEG 后端：�
 
 ## OFD→PDF 字体输出与依赖维护
 
-多 FD CFF 子集化尚未实现。创建器保留完整字体面，转换器和 Web 阅读器的 PDF 输出
-按字体使用完整嵌入回退；其他字体继续子集化。TTC 只提取所选字体面。
+创建器对 TrueType 和 CFF（含多 FD）按实际使用字形生成子集，并同步重映射显式 GID；
+子集化失败直接返回错误。
+转换器和 Web 阅读器的 PDF 输出按字体保留 OFD 中实际嵌入的 CFF 程序；其他字体继续子集化。
+TTC 只提取所选字体面。
 
 CID-keyed CFF 写为 `FontFile3 /CIDFontType0C`。PDF Encoding 将紧凑字符代码映射到
 原 CFF charset 中的 CID，W 按 CID 写出；CIDFontType0 不使用 TrueType 专属的
