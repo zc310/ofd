@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -250,8 +252,8 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.pdfImageMode, "pdf-image-mode", opts.pdfImageMode, "PDF 图片模式: compatible (默认，无损兼容) 或 compact (不透明 CMYK JPEG 转有损 RGB JPEG)")
 	flags.IntVar(&opts.pdfJPEGQuality, "pdf-jpeg-quality", opts.pdfJPEGQuality, "PDF compact 图片模式的 JPEG 质量 (1-100；0 使用默认 90)")
 	flags.StringVar(&opts.pdfJPXBackend, "pdf-jpx-backend", opts.pdfJPXBackend, "PDF JPX 解码器: go (默认) 或 openjpeg (需以 -tags openjpeg 构建并安装 libopenjp2)")
-	flags.Int64Var(&opts.pdfMaxInputBytes, "pdf-max-input-bytes", 0, "PDF 输入字节上限；0 使用默认 512MiB")
-	flags.Int64Var(&opts.pdfMaxTotalDecodedBytes, "pdf-max-total-decoded-bytes", 0, "PDF 累计解码字节上限；0 使用默认 1GiB")
+	flags.Var(byteSizeValue{value: &opts.pdfMaxInputBytes}, "pdf-max-input-bytes", "PDF 输入字节上限；支持 B、KiB、MiB、GiB、TiB；0 使用默认 512MiB")
+	flags.Var(byteSizeValue{value: &opts.pdfMaxTotalDecodedBytes}, "pdf-max-total-decoded-bytes", "PDF 累计解码字节上限；支持 B、KiB、MiB、GiB、TiB；0 使用默认 1GiB")
 	flags.Int64Var(&opts.pdfMaxImagePixels, "pdf-max-image-pixels", 0, "PDF 单图片像素上限；0 使用默认 1 亿像素")
 	flags.Int64Var(&opts.pdfMaxTotalImagePixels, "pdf-max-total-image-pixels", 0, "PDF 累计图片解码像素上限；0 使用默认 20 亿像素")
 	flags.Int64Var(&opts.pdfMaxOperations, "pdf-max-operations", 0, "PDF 转换处理量上限；0 使用默认 1,000,000,000")
@@ -274,6 +276,59 @@ func parseArgs(args []string) (*options, error) {
 	}
 	return opts, nil
 }
+
+type byteSizeValue struct {
+	value *int64
+}
+
+func (v byteSizeValue) Set(input string) error {
+	input = strings.TrimSpace(input)
+	unitStart := 0
+	for unitStart < len(input) && (input[unitStart] == '+' || input[unitStart] == '-' || input[unitStart] >= '0' && input[unitStart] <= '9') {
+		unitStart++
+	}
+	number, err := strconv.ParseInt(input[:unitStart], 10, 64)
+	if err != nil || unitStart == 0 {
+		return fmt.Errorf("无效的字节数 %q", input)
+	}
+	unit := strings.ToUpper(strings.TrimSpace(input[unitStart:]))
+	multiplier := int64(1)
+	switch unit {
+	case "", "B":
+	case "KIB":
+		multiplier = 1 << 10
+	case "MIB":
+		multiplier = 1 << 20
+	case "GIB":
+		multiplier = 1 << 30
+	case "TIB":
+		multiplier = 1 << 40
+	case "KB":
+		multiplier = 1_000
+	case "MB":
+		multiplier = 1_000_000
+	case "GB":
+		multiplier = 1_000_000_000
+	case "TB":
+		multiplier = 1_000_000_000_000
+	default:
+		return fmt.Errorf("不支持的字节单位 %q（可用 B、KB、MB、GB、TB、KiB、MiB、GiB、TiB）", unit)
+	}
+	if number > 0 && number > math.MaxInt64/multiplier || number < 0 && number < math.MinInt64/multiplier {
+		return fmt.Errorf("字节数 %q 超出 int64 范围", input)
+	}
+	*v.value = number * multiplier
+	return nil
+}
+
+func (v byteSizeValue) String() string {
+	if v.value == nil {
+		return "0"
+	}
+	return strconv.FormatInt(*v.value, 10)
+}
+
+func (byteSizeValue) Type() string { return "bytes" }
 
 func normalizeConverterArgs(args []string) []string {
 	longFlags := map[string]bool{

@@ -22,7 +22,7 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 	if err := os.WriteFile(output, []byte("existing output"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-image-mode=compact", "--pdf-jpeg-quality", "76", "--pdf-jpx-backend=openjpeg", "-pdf-max-input-bytes=4096", "--pdf-max-total-decoded-bytes", "4294967296", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", "--pdf-max-operations", "300", input, output})
+	opts, err := parseArgs([]string{"-pdf-strict", "-pdf-image-mode=compact", "--pdf-jpeg-quality", "76", "--pdf-jpx-backend=openjpeg", "-pdf-max-input-bytes=4KiB", "--pdf-max-total-decoded-bytes", "4GiB", "--pdf-max-image-pixels", "100", "--pdf-max-total-image-pixels=200", "--pdf-max-operations", "300", input, output})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,36 @@ func TestPDFImportFlagsAndFailurePolicies(t *testing.T) {
 		}
 		if err := run(opts); !errors.Is(err, ErrUsage) {
 			t.Fatalf("args=%v error=%v", args, err)
+		}
+	}
+}
+
+func TestByteSizeValue(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int64
+	}{
+		{"4096", 4096},
+		{"4KiB", 4 << 10},
+		{"2MiB", 2 << 20},
+		{"100GiB", 100 << 30},
+		{"1TB", 1_000_000_000_000},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			var got int64
+			if err := (byteSizeValue{value: &got}).Set(test.input); err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("Set(%q) = %d, want %d", test.input, got, test.want)
+			}
+		})
+	}
+	for _, input := range []string{"1.5GiB", "1PB", "9223372036854775807GiB"} {
+		var got int64
+		if err := (byteSizeValue{value: &got}).Set(input); err == nil {
+			t.Errorf("Set(%q) unexpectedly succeeded", input)
 		}
 	}
 }

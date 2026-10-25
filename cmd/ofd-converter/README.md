@@ -69,8 +69,8 @@ ofd-converter --help
 | `-pdf-image-mode`      | PDF 图片模式：`compatible`（默认）或 `compact`；后者对不透明 CMYK JPEG 转为有损 RGB JPEG |
 | `-pdf-jpeg-quality`    | `compact` 模式的 JPEG 质量，范围 `1-100`；`0` 使用默认 `90`。带 Mask/SMask 的图片仍输出 PNG |
 | `-pdf-jpx-backend`     | JPX 解码器：`go`（默认）或 `openjpeg`；OpenJPEG 需要 Linux、CGO 和系统 `libopenjp2` 开发文件 |
-| `-pdf-max-input-bytes` | PDF 输入字节上限，`0` 使用默认 512MiB |
-| `-pdf-max-total-decoded-bytes` | PDF 累计解码字节上限，`0` 使用默认 1GiB |
+| `-pdf-max-input-bytes` | PDF 输入字节上限，支持 `B`、`KB`/`KiB`、`MB`/`MiB`、`GB`/`GiB`、`TB`/`TiB`；`0` 使用默认 512MiB |
+| `-pdf-max-total-decoded-bytes` | PDF 累计解码字节上限，支持 `B`、`KB`/`KiB`、`MB`/`MiB`、`GB`/`GiB`、`TB`/`TiB`；`0` 使用默认 1GiB |
 | `-pdf-max-image-pixels` | PDF 单图片像素上限，`0` 使用默认 100,000,000 |
 | `-pdf-max-total-image-pixels` | PDF 累计图片解码与合成像素上限，`0` 使用默认 2,000,000,000 |
 | `-pdf-max-operations` | PDF 转换处理量上限，`0` 使用默认 1,000,000,000 |
@@ -171,7 +171,7 @@ Office、HTML 转换期间的取消也会传给外部进程，并清理临时目
 ofd-converter input.pdf output.ofd
 ofd-converter -from pdf -format ofd input.pdf output.ofd
 ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
-ofd-converter --pdf-max-total-decoded-bytes 4294967296 input.pdf output.ofd
+ofd-converter --pdf-max-total-decoded-bytes 4GiB input.pdf output.ofd
 ofd-converter --pdf-image-mode compact --pdf-jpeg-quality 90 input.pdf compact.ofd
 ofd-converter --pdf-jpx-backend openjpeg input.pdf openjpeg.ofd
 ```
