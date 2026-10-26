@@ -623,6 +623,12 @@ type Media struct {
 
 // Page 描述文档页面及其图层、图元和页面资源。
 type Page struct {
+	// Repeat 是模板渲染时从根数据读取的数组路径；每条记录生成一页，空数组不生成本页。
+	Repeat string `json:"repeat,omitempty" yaml:"repeat,omitempty"`
+	// Paginate 将当前记录中的明细数组按固定区域容量分页，可与 repeat 组合。
+	Paginate *DetailPagination `json:"paginate,omitempty" yaml:"paginate,omitempty"`
+	// Variants 为明细分页选择首页、续页、末页或单页附加版式；仅与 paginate 配合使用。
+	Variants *PageVariants `json:"variants,omitempty" yaml:"variants,omitempty"`
 	// Templates 指定页面引用的模板页。
 	Templates []TemplateRef `json:"templates,omitempty" yaml:"templates,omitempty" toml:"templates,omitempty"`
 	// Layers 定义页面图层。
@@ -637,6 +643,66 @@ type Page struct {
 	Actions []Action `json:"actions,omitempty" yaml:"actions,omitempty" toml:"actions,omitempty"`
 	// Resources 定义页面级资源。
 	Resources []PageResource `json:"resources,omitempty" yaml:"resources,omitempty" toml:"resources,omitempty"`
+}
+
+// DetailPagination 描述固定区域明细表；列宽之和必须等于 area.width，所有尺寸均为毫米。
+type DetailPagination struct {
+	// Path 是当前记录中的明细数组路径；$. 前缀从根数据读取。
+	Path string `json:"path" yaml:"path"`
+	// Area 是含表头的明细区域，放不下的完整行转入下一页。
+	Area Box `json:"area" yaml:"area"`
+	// Columns 定义表头、列宽和逐行文字绑定。
+	Columns []DetailColumn `json:"columns" yaml:"columns"`
+	// Font 指定完整字体资源，省略时嵌入 Go Regular。
+	Font string `json:"font,omitempty" yaml:"font,omitempty"`
+	// Size 是明细字号，默认 3.5mm。
+	Size float64 `json:"size,omitempty" yaml:"size,omitempty"`
+	// HeaderHeight 是重复表头高度，0 表示按文字实际高度计算且至少 8mm。
+	HeaderHeight float64 `json:"header_height,omitempty" yaml:"header_height,omitempty"`
+	// RowHeight 是最小行高，默认 8mm；换行会增高整行，不拆分单行。
+	RowHeight float64 `json:"row_height,omitempty" yaml:"row_height,omitempty"`
+	// Padding 是单元格四边内边距，默认 1.5mm，可显式设为 0。
+	Padding *float64 `json:"padding,omitempty" yaml:"padding,omitempty"`
+	// LineWidth 是网格线宽，默认 0.2mm。
+	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty"`
+	// BorderColor 是网格颜色，默认中性灰。
+	BorderColor *Color `json:"border_color,omitempty" yaml:"border_color,omitempty"`
+	// HeaderFill 是表头背景色，省略时使用浅灰。
+	HeaderFill *Color `json:"header_fill,omitempty" yaml:"header_fill,omitempty"`
+}
+
+// DetailColumn 定义明细列；bind.path 相对于当前明细行，默认 overflow 为 wrap。
+type DetailColumn struct {
+	// Title 是每页重复的表头文字。
+	Title string `json:"title,omitempty" yaml:"title,omitempty"`
+	// Width 是列宽，必须大于两倍 padding。
+	Width float64 `json:"width" yaml:"width"`
+	// Bind 读取明细字段，可使用 @index/@number 表示整张单据内的行序号。
+	Bind Binding `json:"bind" yaml:"bind"`
+}
+
+// PageVariants 定义明细分页的附加内容和明细区域。
+type PageVariants struct {
+	// First 用于多页单据的首页。
+	First *PageVariant `json:"first,omitempty" yaml:"first,omitempty"`
+	// Continuation 用于中间页，也作为未配置 last 时的末页版式。
+	Continuation *PageVariant `json:"continuation,omitempty" yaml:"continuation,omitempty"`
+	// Last 用于多页单据的末页。
+	Last *PageVariant `json:"last,omitempty" yaml:"last,omitempty"`
+	// Single 用于单页单据；省略时按 last、first 的顺序回退。
+	Single *PageVariant `json:"single,omitempty" yaml:"single,omitempty"`
+}
+
+// PageVariant 追加到公共页面；不替换公共图元或模板引用。
+type PageVariant struct {
+	// Templates 是该版式附加的 OFD 模板页引用。
+	Templates []TemplateRef `json:"templates,omitempty" yaml:"templates,omitempty"`
+	// Items 是该版式附加的固定图元，与 layers 互斥。
+	Items []Item `json:"items,omitempty" yaml:"items,omitempty"`
+	// Layers 是该版式附加的图层，与 items 互斥。
+	Layers []Layer `json:"layers,omitempty" yaml:"layers,omitempty"`
+	// DetailArea 覆盖明细区域的位置和高度；宽度必须等于公共明细区域宽度。
+	DetailArea *Box `json:"detail_area,omitempty" yaml:"detail_area,omitempty"`
 }
 
 // PublicResource 描述文档中的公共资源。
@@ -1403,6 +1469,8 @@ type CGTransform struct {
 
 // Item 描述页面、模板或复合图形中的图元。
 type Item struct {
+	// Bind 定义 text/image 图元的数据绑定，仅在模板渲染时展开。
+	Bind *Binding `json:"bind,omitempty" yaml:"bind,omitempty"`
 	// Type 指定图元类型。
 	Type string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty"`
 	// X 指定图元左上角横坐标。
@@ -1513,6 +1581,30 @@ type Item struct {
 	ImageHeight float64 `json:"image_height,omitempty" yaml:"image_height,omitempty" toml:"image_height,omitempty"`
 	// Fit 指定图片在给定尺寸内的适配方式：contain 保持比例，stretch 拉伸（仅当 type 为 "figure" 时有效）。
 	Fit string `json:"fit,omitempty" yaml:"fit,omitempty" toml:"fit,omitempty"`
+}
+
+// Binding 定义模板字段；长度和字号均为毫米，数据路径使用点分隔对象键。
+type Binding struct {
+	// Path 从当前记录读取字段；$. 前缀读取根数据；内置序号 @index/@number、页码 @page/@pages、单据页码 @detail_page/@detail_pages。
+	Path string `json:"path" yaml:"path"`
+	// Aggregate 是 page_sum 或 record_sum，对当前页或整张单据的明细字段精确求和，仅用于 paginate 页面。
+	Aggregate string `json:"aggregate,omitempty" yaml:"aggregate,omitempty"`
+	// DecimalPlaces 是求和结果的小数位数（0—18），默认 2，精确求和后四舍五入。
+	DecimalPlaces *int `json:"decimal_places,omitempty" yaml:"decimal_places,omitempty"`
+	// Required 默认 true；false 时缺失或 null 字段移除该图元，空字符串也移除图元。
+	Required *bool `json:"required,omitempty" yaml:"required,omitempty"`
+	// Default 是缺失或 null 字段的默认字符串，优先于 required。
+	Default *string `json:"default,omitempty" yaml:"default,omitempty"`
+	// Overflow 是 error（默认）、wrap、shrink 或 ellipsis，仅用于文字。
+	Overflow string `json:"overflow,omitempty" yaml:"overflow,omitempty"`
+	// Align 是 left（默认）、center 或 right，仅用于文字。
+	Align string `json:"align,omitempty" yaml:"align,omitempty"`
+	// MinSize 是 shrink 的最小字号，单位毫米；shrink 时必须显式指定。
+	MinSize float64 `json:"min_size,omitempty" yaml:"min_size,omitempty"`
+	// MaxLines 是 wrap 的最大行数，0 表示仅按区域高度限制。
+	MaxLines int `json:"max_lines,omitempty" yaml:"max_lines,omitempty"`
+	// LineHeight 是 wrap 的行高倍率，默认 1.2。
+	LineHeight float64 `json:"line_height,omitempty" yaml:"line_height,omitempty"`
 }
 
 // TableRow 定义表格行。
@@ -1734,27 +1826,44 @@ func Load(path, format string) (Manifest, string, error) {
 			format = "yaml"
 		}
 	}
+	result, err := Parse(data, format)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	if baseDir == "" {
+		return Manifest{}, "", errors.New("无法确定 manifest 所在目录")
+	}
+	return result, baseDir, nil
+}
+
+// Parse 从内存解析 JSON/YAML 清单；拒绝未知字段和多个顶层文档。
+func Parse(data []byte, format string) (Manifest, error) {
 	var result Manifest
 	switch strings.ToLower(format) {
 	case "json":
 		decoder := json.NewDecoder(bytes.NewReader(data))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&result); err != nil {
-			return Manifest{}, "", fmt.Errorf("解析 JSON manifest 失败: %w", err)
+			return Manifest{}, fmt.Errorf("解析 JSON manifest 失败: %w", err)
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			return Manifest{}, errors.New("JSON manifest 必须只有一个顶层文档")
 		}
 	case "yaml", "yml":
 		decoder := yaml.NewDecoder(bytes.NewReader(data))
 		decoder.KnownFields(true)
 		if err := decoder.Decode(&result); err != nil {
-			return Manifest{}, "", fmt.Errorf("解析 YAML manifest 失败: %w", err)
+			return Manifest{}, fmt.Errorf("解析 YAML manifest 失败: %w", err)
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err != io.EOF {
+			return Manifest{}, errors.New("YAML manifest 必须只有一个顶层文档")
 		}
 	default:
-		return Manifest{}, "", fmt.Errorf("不支持的 manifest 格式: %q", format)
+		return Manifest{}, fmt.Errorf("不支持的 manifest 格式: %q", format)
 	}
-	if baseDir == "" {
-		return Manifest{}, "", errors.New("无法确定 manifest 所在目录")
-	}
-	return result, baseDir, nil
+	return result, nil
 }
 
 // BuildOptions 控制 manifest 到 creator 文档的转换行为。
@@ -2035,6 +2144,9 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 		document.Templates = append(document.Templates, creator.TemplatePage{ID: template.ID, Name: template.Name, ZOrder: template.ZOrder, Area: buildPageArea(template.Area), Layers: layers, Items: items})
 	}
 	for index, page := range m.Pages {
+		if page.Repeat != "" || page.Paginate != nil || page.Variants != nil {
+			return creator.Document{}, fmt.Errorf("pages[%d]: 模板 repeat/paginate/variants 尚未展开，请使用 template render 或提供 --data", index)
+		}
 		if len(page.Layers) > 0 && len(page.Items) > 0 {
 			return creator.Document{}, fmt.Errorf("pages[%d]: layers 不能与 items 同时设置", index)
 		}
@@ -2104,6 +2216,9 @@ func (m Manifest) BuildWithOptions(baseDir, assetRoot string, options BuildOptio
 }
 
 func (i Item) build() (creator.Item, error) {
+	if i.Bind != nil {
+		return nil, fmt.Errorf("bind %q 尚未展开，请使用 template render 或提供 --data", i.Bind.Path)
+	}
 	var ctm *creator.CTM
 	if len(i.CTM) > 0 {
 		if len(i.CTM) != 6 {

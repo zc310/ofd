@@ -1,0 +1,76 @@
+version: 1
+document:
+  id: invoice-template-demo
+  title: Invoice template demo
+  page_size: {width: 210, height: 148}
+templates:
+  - id: 100
+    name: Invoice stationery
+    z_order: Background
+    items:
+      - type: path
+        x: 10
+        y: 10
+        width: 190
+        height: 128
+        data: M 0 0 L 190 0 L 190 128 L 0 128 C
+        stroke: true
+        line_width: 0.3
+        stroke_color: {r: 70, g: 90, b: 120}
+      - {type: text, x: 20, y: 18, width: 110, height: 10, size: 6, text_codes: [{value: INVOICE, x: 0, y: 6}]}
+      - {type: text, x: 20, y: 45, width: 35, height: 8, size: 3.5, text_codes: [{value: Buyer, x: 0, y: 3.8}]}
+      - {type: text, x: 20, y: 62, width: 35, height: 8, size: 3.5, text_codes: [{value: Date, x: 0, y: 3.8}]}
+      - {type: text, x: 20, y: 79, width: 35, height: 8, size: 3.5, text_codes: [{value: Total, x: 0, y: 4.7}]}
+      - {type: text, x: 20, y: 98, width: 35, height: 8, size: 3.5, text_codes: [{value: Notes, x: 0, y: 3.3}]}
+pages:
+  - repeat: invoices
+    templates: [{id: 100, z_order: Background}]
+    items:
+      - type: text
+        x: 20
+        y: 30
+        width: 140
+        height: 8
+        size: 3.5
+        bind: {path: $.seller, overflow: shrink, min_size: 2.8}
+      - type: text
+        x: 58
+        y: 45
+        width: 130
+        height: 8
+        size: 4
+        bind: {path: buyer_name, overflow: shrink, min_size: 2.5}
+      - type: text
+        x: 58
+        y: 62
+        width: 130
+        height: 8
+        size: 4
+        bind: {path: date}
+      - type: text
+        x: 58
+        y: 79
+        width: 130
+        height: 8
+        size: 5
+        bind: {path: total, align: right}
+      - type: text
+        x: 58
+        y: 98
+        width: 130
+        height: 20
+        size: 3.5
+        bind: {path: notes, required: false, overflow: wrap, max_lines: 3}
+      - type: image
+        x: 170
+        y: 18
+        width: 16
+        height: 16
+        bind: {path: $.logo, required: false}
+      - type: text
+        x: 175
+        y: 123
+        width: 12
+        height: 6
+        size: 3
+        bind: {path: '@page', align: right}

@@ -32,6 +32,8 @@ const (
 )
 
 type options struct {
+	data                   string
+	maxPages               int
 	input                  string
 	output                 string
 	assetRoot              string
@@ -61,6 +63,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	args = rest
+	if len(args) > 0 && strings.EqualFold(args[0], "template") {
+		return runTemplate(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && strings.EqualFold(args[0], "sign") {
 		return runSign(args[1:], stdout, stderr)
 	}
@@ -82,13 +87,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && strings.EqualFold(args[0], "schema") {
 		return runSchema(args[1:], stdout, stderr)
 	}
-	opts, err := parseArgs(args, stderr)
+	return runCreate(args, stdout, stderr, false)
+}
+
+func runCreate(args []string, stdout, stderr io.Writer, templateMode bool) int {
+	opts, err := parseArgs(args, stdout)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitUsage
 	}
 	if opts.help {
 		return exitOK
+	}
+	if templateMode && opts.data == "" {
+		_, _ = fmt.Fprintln(stderr, "ofd-creator template render: 缺少 --data JSON 数据文件")
+		return exitUsage
 	}
 	if err := validateOptions(opts); err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
@@ -99,7 +112,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
 	}
-	document, err := m.BuildWithOptions(baseDir, opts.assetRoot, manifest.BuildOptions{StreamAssets: opts.stream})
+	var document creator.Document
+	if opts.data != "" {
+		var input io.Reader = os.Stdin
+		if opts.data != "-" {
+			file, openErr := os.Open(opts.data)
+			if openErr != nil {
+				_, _ = fmt.Fprintln(stderr, "ofd-creator:", openErr)
+				return exitResource
+			}
+			defer func() { _ = file.Close() }()
+			input = file
+		}
+		document, err = m.RenderTemplate(input, baseDir, opts.assetRoot, manifest.TemplateOptions{BuildOptions: manifest.BuildOptions{StreamAssets: opts.stream}, MaxPages: opts.maxPages})
+	} else {
+		document, err = m.BuildWithOptions(baseDir, opts.assetRoot, manifest.BuildOptions{StreamAssets: opts.stream})
+	}
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "ofd-creator:", err)
 		return exitResource
@@ -240,6 +268,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  watermark <add|replace|remove>   添加、替换或删除文档水印")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export                          从 OFD 导出 creator manifest")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export-all                      导出 OFD 的全部文档体")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  template render                 使用 JSON 数据填充模板、重复页面与明细分页")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  schema                          输出 manifest 字段参考文档")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "运行 ofd-creator <子命令> -h 查看对应细节。")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())
@@ -249,6 +278,8 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	})
 	flags := root.Flags()
 	flags.StringVarP(&opts.input, "input", "i", "", "manifest 文件路径；使用 - 从标准输入读取")
+	flags.StringVar(&opts.data, "data", "", "模板 JSON 数据文件；使用 - 从标准输入读取")
+	flags.IntVar(&opts.maxPages, "max-pages", 10000, "模板展开后的最大页数（配合 --data）")
 	flags.StringVarP(&opts.output, "output", "o", "", "OFD 输出路径；使用 - 写入标准输出")
 	flags.StringVar(&opts.assetRoot, "asset-root", "", "资源根目录，默认使用 manifest 所在目录")
 	flags.StringVar(&opts.format, "format", "auto", "manifest 格式：auto、json 或 yaml")
@@ -270,6 +301,15 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 }
 
 func validateOptions(opts *options) error {
+	if opts.data == "-" && opts.input == "-" {
+		return errors.New("manifest 与模板数据不能同时从标准输入读取")
+	}
+	if opts.maxPages < 0 {
+		return errors.New("--max-pages 不能为负数")
+	}
+	if opts.data != "" && opts.output != "-" && fileutil.SamePath(opts.data, opts.output) {
+		return errors.New("输出文件不能覆盖模板数据文件")
+	}
 	if strings.TrimSpace(opts.input) == "" {
 		return errors.New("缺少 manifest 输入文件")
 	}

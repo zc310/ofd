@@ -1,0 +1,65 @@
+version: 1
+document:
+  id: invoice-details-template-demo
+  title: Invoice details and page variants
+  page_size: {width: 210, height: 148}
+templates:
+  - id: 100
+    name: Shared invoice stationery
+    z_order: Background
+    items:
+      - type: path
+        x: 10
+        y: 10
+        width: 190
+        height: 128
+        data: M 0 0 L 190 0 L 190 128 L 0 128 C
+        stroke: true
+        line_width: 0.3
+        stroke_color: {r: 70, g: 90, b: 120}
+      - {type: text, x: 15, y: 18, width: 120, height: 8, size: 5, text_codes: [{value: INVOICE DETAILS, x: 0, y: 5}]}
+      - {type: text, x: 15, y: 40, width: 25, height: 7, size: 3.5, text_codes: [{value: Buyer, x: 0, y: 3.5}]}
+      - {type: text, x: 15, y: 120, width: 60, height: 7, size: 3.5, text_codes: [{value: Page subtotal, x: 0, y: 3.5}]}
+      - {type: text, x: 145, y: 130, width: 20, height: 6, size: 3, text_codes: [{value: Page, x: 0, y: 3}]}
+      - {type: text, x: 172, y: 130, width: 8, height: 6, size: 3, text_codes: [{value: /, x: 0, y: 3}]}
+pages:
+  - repeat: invoices
+    templates: [{id: 100, z_order: Background}]
+    paginate:
+      path: lines
+      area: {x: 15, y: 52, width: 180, height: 65}
+      size: 3.5
+      header_height: 9
+      row_height: 9
+      padding: 1.5
+      columns:
+        - {title: '#', width: 12, bind: {path: '@number'}}
+        - {title: Description, width: 125, bind: {path: description}}
+        - {title: Amount, width: 43, bind: {path: amount, align: right}}
+    variants:
+      first:
+        detail_area: {x: 15, y: 52, width: 180, height: 47}
+        items:
+          - {type: text, x: 145, y: 18, width: 45, height: 8, size: 3.5, value: FIRST PAGE}
+      continuation:
+        items:
+          - {type: text, x: 145, y: 18, width: 45, height: 8, size: 3.5, value: CONTINUED}
+      last:
+        detail_area: {x: 15, y: 52, width: 180, height: 38}
+        items:
+          - {type: text, x: 145, y: 18, width: 45, height: 8, size: 3.5, value: LAST PAGE}
+          - {type: text, x: 15, y: 102, width: 70, height: 8, size: 4, text_codes: [{value: Grand total, x: 0, y: 4.7}]}
+          - {type: text, x: 100, y: 102, width: 95, height: 8, size: 5, bind: {path: amount, aggregate: record_sum, align: right}}
+      single:
+        detail_area: {x: 15, y: 52, width: 180, height: 38}
+        items:
+          - {type: text, x: 145, y: 18, width: 45, height: 8, size: 3.5, value: SINGLE PAGE}
+          - {type: text, x: 15, y: 102, width: 70, height: 8, size: 4, text_codes: [{value: Grand total, x: 0, y: 4.7}]}
+          - {type: text, x: 100, y: 102, width: 95, height: 8, size: 5, bind: {path: amount, aggregate: record_sum, align: right}}
+    items:
+      - {type: text, x: 15, y: 30, width: 120, height: 7, size: 3.2, bind: {path: $.seller}}
+      - {type: text, x: 145, y: 30, width: 50, height: 7, size: 3.2, bind: {path: number, align: right}}
+      - {type: text, x: 40, y: 40, width: 155, height: 7, size: 3.5, bind: {path: buyer_name, overflow: shrink, min_size: 2.5}}
+      - {type: text, x: 100, y: 120, width: 95, height: 7, size: 3.5, bind: {path: amount, aggregate: page_sum, align: right}}
+      - {type: text, x: 160, y: 130, width: 10, height: 6, size: 3, bind: {path: '@detail_page', align: right}}
+      - {type: text, x: 178, y: 130, width: 12, height: 6, size: 3, bind: {path: '@detail_pages', align: right}}

@@ -46,7 +46,7 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`merge`、`replace`、`watermark`、`sign` 和 `schema` 子命令，分别用于导出 manifest、批量导出、合并 OFD、编辑条目、处理水印、独立签署以及输出字段参考。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`replace`、`watermark`、`sign` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、编辑条目、处理水印、独立签署以及输出字段参考。详见下文各节。
 
 ## 流式创作
 
@@ -641,6 +641,138 @@ exported/
 
 `index.yaml`（或指定格式的 `index.json`）列出每个文档体的索引、ID、标题、manifest 路径、资源目录和页数。每个子 manifest 都可以独立执行普通创建命令；批量导出要求目标目录不存在，以避免覆盖已有文件。
 
+## 数据模板与重复页面
+
+基于现有导出能力制作数据模板：
+
+```bash
+ofd-creator export -i original.ofd -o invoice-template/template.yaml --asset-root assets
+```
+
+编辑导出的 JSON/YAML 清单，在需要变化的 `text`、`image` 图元上增加 `bind`，
+在需要重复的页面上增加 `repeat`。固定内容继续使用原有布局和资源：
+
+```yaml
+pages:
+  - repeat: invoices
+    items:
+      - type: text
+        x: 30
+        y: 40
+        width: 130
+        height: 10
+        size: 4
+        bind: {path: buyer_name, overflow: shrink, min_size: 2.8}
+```
+
+导出的图元也可能位于 `pages[].layers[].items` 或嵌套页面块中，绑定方式相同。
+绑定文字会清除原有 `value`、`text_codes` 和 `cg_transforms`，重新计算字符位置。
+一个字段被拆成多个原图元时，需在制作模板时删除多余旧图元。
+
+业务数据为单个 JSON 对象，例如：
+
+```json
+{"invoices":[{"buyer_name":"Alpha & Beta"},{"buyer_name":"Other Company"}]}
+```
+
+生成与检查：
+
+```bash
+ofd-creator template render -i invoice-template/template.yaml --data data.json --check
+ofd-creator template render -i invoice-template/template.yaml --data data.json -o invoices.ofd --validate --deterministic
+
+# 简写：普通创建命令增加 --data，行为相同
+ofd-creator -i invoice-template/template.yaml --data data.json -o invoices.ofd --validate
+```
+
+`--check` 展开数据并检查绑定、文字容量和资源，不写出文件；`--validate` 对生成的 OFD
+执行严格校验。默认最多生成 10000 页，可通过 `--max-pages` 修改。
+`--data -` 可从标准输入读取 JSON，不能同时使用 `-i -`。
+输出文件不能覆盖模板或数据文件，失败保留已有输出。
+
+字段与重复规则：
+
+| 字段 | 说明 |
+|---|---|
+| `repeat` | 根对象中的数组路径；每条记录生成一页，空数组跳过本页；固定封面/尾页省略此字段 |
+| `bind.path` | 点分隔路径，如 `buyer.name`；`$.seller` 读取公共根数据；不支持表达式和数组索引 |
+| `bind.required` | 默认 true；缺失或 null 报错，false 时移除图元 |
+| `bind.default` | 缺失或 null 的默认字符串，优先于 required |
+| `bind.overflow` | `error`（默认）、`wrap`、`shrink`、`ellipsis` |
+| `bind.align` | `left`（默认）、`center`、`right` |
+| `bind.min_size` | shrink 必填的最小字号，单位毫米 |
+| `bind.max_lines` | wrap 的最大行数，0 表示按高度限制 |
+| `bind.line_height` | wrap 的行高倍率，默认 1.2 |
+
+`@index`、`@number` 分别为 0 起/1 起的当前记录序号，`@page` 为最终物理页码，
+`@pages` 为最终总页数；YAML 中需加引号，如 `path: '@page'`。
+空字符串移除图元，0 和 false 正常显示。数字不经过 float64，金额可使用十进制字符串。
+图片数据可为相对路径字符串，或 `{file, format}` / `{data_base64, format}` 对象，
+`file` 与 `data_base64` 互斥；沿用模板资源根目录和路径检查。
+
+坐标、字号、最小字号均为毫米。未指定字体的绑定文字使用内嵌 Go Regular；中文需要在
+`resources.fonts` 中提供完整 TTF/OTF 字体，并设置绑定图元的 `font`。
+原导出字体可能只含旧文字的字形，新增字符缺字会报错。
+
+模板支持固定 `pages`，可按记录重复整页，也可按明细区域容量分页；不支持 `flow`。共享模板页的字段使用根数据，
+逐页变化的字段放在页面自身。原签名和版本不能直接带入模板，生成后可重新签署。
+页面资源共享、跳转重写和 Go API 详见 [数据模板库指南](../../pkg/creator/template/README.md)。
+
+完整票据示例：
+[template-invoice.yaml](examples/template-invoice.yaml) 与
+[template-invoice-data.json](examples/template-invoice-data.json)。从仓库根目录运行：
+
+```bash
+go run ./cmd/ofd-creator template render -i cmd/ofd-creator/examples/template-invoice.yaml --data cmd/ofd-creator/examples/template-invoice-data.json --check
+go run ./cmd/ofd-creator template render -i cmd/ofd-creator/examples/template-invoice.yaml --data cmd/ofd-creator/examples/template-invoice-data.json -o /tmp/template-invoices.ofd --validate --deterministic
+```
+
+该示例生成两页，展示共享底版、公共数据、每页字段、可选图片、备注换行和最终页码。
+
+需要明细表自动续页时，设置 `pages[].paginate`：
+
+```yaml
+paginate:
+  path: lines
+  area: {x: 15, y: 52, width: 180, height: 65}
+  size: 3.5
+  row_height: 9
+  columns:
+    - {title: '#', width: 12, bind: {path: '@number'}}
+    - {title: Description, width: 125, bind: {path: description}}
+    - {title: Amount, width: 43, bind: {path: amount, align: right}}
+```
+
+`path` 从当前记录读取明细数组。每行按实际字宽换行，整行放不下时转入下一页；
+重复表头，行序号跨单据页连续。列内默认 wrap，不能使用页码字段或 aggregate。
+空明细保留一页，缺失明细报错；最终页数受 `--max-pages` 限制。
+
+`pages[].variants` 可分别配置 `first`、`continuation`、`last`、`single` 的附加模板引用、
+图元或图层，并通过 `detail_area` 调整明细区高度，为末页合计和签字栏预留空间。
+`@detail_page` / `@detail_pages` 表示当前单据的页码和页数。
+
+本页小计和整单合计使用文字绑定：
+
+```yaml
+bind: {path: amount, aggregate: page_sum, decimal_places: 2, align: right}
+# 放在 last/single 版式中的整单合计
+bind: {path: amount, aggregate: record_sum, decimal_places: 2, align: right}
+```
+
+金额精确求和后统一四舍五入，支持十进制字符串和 JSON 数字。`decimal_places` 为 0—18，默认 2；
+缺失金额默认报错，`required: false` 可跳过，`default` 可提供默认值。
+版式回退、容量规则和汇总细节见 [模板库指南](../../pkg/creator/template/README.md#明细表分页)。
+
+完整四页明细示例：
+[template-invoice-details.yaml](examples/template-invoice-details.yaml) 与
+[template-invoice-details-data.json](examples/template-invoice-details-data.json)。
+第一张单据生成首页、续页、末页，第二张单据使用单页版式：
+
+```bash
+go run ./cmd/ofd-creator template render -i cmd/ofd-creator/examples/template-invoice-details.yaml --data cmd/ofd-creator/examples/template-invoice-details-data.json --check
+go run ./cmd/ofd-creator template render -i cmd/ofd-creator/examples/template-invoice-details.yaml --data cmd/ofd-creator/examples/template-invoice-details-data.json -o /tmp/template-invoice-details.ofd --validate --deterministic
+```
+
 ## 合并多个 OFD
 
 `merge` 子命令把多个 OFD 的文档体（DocBody）打包成一个多文档 OFD：
@@ -1087,7 +1219,7 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 | `0`    | 创建、导出、合并、替换或校验成功；`--version` 输出版本号也算成功                                          |
 | `2`    | 参数错误：未知选项、缺少必填项、`-i`/`-o` 组合非法、`--format` 取值不支持、`--shape` 非法、输出会覆盖输入 |
 | `3`    | 构建失败：manifest 已加载但无法生成 OFD（例如路径图元或资源不合法）                                       |
-| `4`    | 资源错误：输入 manifest、输入 OFD 或图片等资源读不到、解析失败                                            |
+| `4`    | 资源错误：输入 manifest、模板数据、输入 OFD 或图片等资源读不到、解析失败，或模板绑定/文字容量检查失败      |
 | `5`    | 输出失败：输出目录不可写、写出 OFD 或报告失败                                                             |
 | `6`    | 校验失败：`--validate` 发现生成的文档不合法                                                              |
 

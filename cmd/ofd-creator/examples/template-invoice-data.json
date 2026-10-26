@@ -1,0 +1,20 @@
+{
+  "seller": "Example Trading Co., Ltd.",
+  "logo": {
+    "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1cAAAAASUVORK5CYII=",
+    "format": "PNG"
+  },
+  "invoices": [
+    {
+      "buyer_name": "Alpha & Beta Company",
+      "date": "2026-10-26",
+      "total": "1234.50",
+      "notes": "This page keeps the shared stationery and fills only the variable fields."
+    },
+    {
+      "buyer_name": "Another Customer with a Longer Company Name",
+      "date": "2026-10-27",
+      "total": "5678.00"
+    }
+  ]
+}

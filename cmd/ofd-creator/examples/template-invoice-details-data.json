@@ -1,0 +1,31 @@
+{
+  "seller": "Example Trading Co., Ltd.",
+  "invoices": [
+    {
+      "number": "DEMO-001",
+      "buyer_name": "Alpha & Beta Company",
+      "lines": [
+        {"description": "Design service", "amount": "0.10"},
+        {"description": "Project planning", "amount": "0.20"},
+        {"description": "Requirements review", "amount": "0.30"},
+        {"description": "Prototype development", "amount": "0.40"},
+        {"description": "Consulting service with a longer description that wraps within the same cell. The whole detail row stays together and moves to the next page when necessary.", "amount": "0.50"},
+        {"description": "Integration service", "amount": "0.60"},
+        {"description": "Quality review", "amount": "0.70"},
+        {"description": "Documentation", "amount": "0.80"},
+        {"description": "Delivery preparation", "amount": "0.90"},
+        {"description": "Training service", "amount": "1.00"},
+        {"description": "Acceptance support", "amount": "1.10"},
+        {"description": "Follow-up service", "amount": "1.20"}
+      ]
+    },
+    {
+      "number": "DEMO-002",
+      "buyer_name": "Other Company",
+      "lines": [
+        {"description": "Basic service", "amount": "0.10"},
+        {"description": "Additional service", "amount": "0.20"}
+      ]
+    }
+  ]
+}
