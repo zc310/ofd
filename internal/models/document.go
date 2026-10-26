@@ -108,6 +108,17 @@ type PrintSettings struct {
 	Copies int `xml:"Copies,attr"`
 }
 
+// UnmarshalXML 按 GB/T 33190—2016 表 8 保留缺省的允许打印、份数不限语义。
+func (p *PrintSettings) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type settings PrintSettings
+	value := settings{Printable: true, Copies: -1}
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+	*p = PrintSettings(value)
+	return nil
+}
+
 // ValidPeriod 权限有效期定义。
 type ValidPeriod struct {
 	// StartDate 权限生效时间。

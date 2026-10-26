@@ -204,6 +204,9 @@ func (r *Reader) AttachmentData(scope int, id string, maxBytes int64) ([]byte, e
 	if !ok || path == "" {
 		return nil, fmt.Errorf("附件不存在: %d/%s", scope, id)
 	}
+	if err := r.checkDocumentPermissionLocked(PermissionExport, scope); err != nil {
+		return nil, err
+	}
 	entry, exists := document.FileCache.Lookup(path)
 	if !exists || entry.IsDir {
 		return nil, fmt.Errorf("附件文件不存在: %s", path)

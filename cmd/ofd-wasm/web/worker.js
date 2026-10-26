@@ -93,7 +93,7 @@ async function execute(message) {
     case 'open': {
       try {
         const result = unwrap(self.ofd.open(message.data, message.options || {}));
-        return { pageCount: result.pageCount, pages: result.pages, fonts: result.fonts || [] };
+        return { pageCount: result.pageCount, pages: result.pages, fonts: result.fonts || [], permissions: result.permissions };
       } finally {
         if (message.options) {
           const key = message.options.privateKey;
@@ -125,6 +125,10 @@ async function execute(message) {
       return unwrap(self.ofd.gc());
     case 'info':
       return unwrap(self.ofd.info());
+    case 'permissions':
+      return unwrap(self.ofd.permissions());
+    case 'checkPermission':
+      return unwrap(self.ofd.checkPermission(message.action, message.indices || []));
     case 'embeddedFonts':
       return unwrap(self.ofd.embeddedFonts());
     case 'outline':
@@ -151,7 +155,9 @@ async function execute(message) {
     case 'media':
       return unwrap(self.ofd.media());
     case 'mediaData': {
-      const result = unwrap(self.ofd.mediaData(message.scope, message.mediaID, message.maxBytes));
+      const args = [message.scope, message.mediaID, message.maxBytes];
+      if (message.purpose !== undefined) args.push(message.purpose);
+      const result = unwrap(self.ofd.mediaData(...args));
       const data = new Uint8Array(result);
       return data.slice().buffer;
     }

@@ -681,6 +681,11 @@
        #page-number { width: 50px; }
        #back-to-top { min-width: 40px; min-height: 40px; }
      }
+    /* 浏览器菜单打印也必须经阅读器的选页与权限检查；正式打印使用独立窗口。 */
+    @media print {
+      body > * { display: none !important; }
+      body::after { content: "请使用阅读器中的打印功能；文档打印受权限限制。"; }
+    }
   </style>
 </head>
 <body>
@@ -865,6 +870,7 @@
       </div>
       <p class="print-hint">可使用逗号分隔页面，页码从 1 开始。打印使用各页当前显示的图层。</p>
       <p id="print-error" class="print-error" role="alert" hidden></p>
+      <p id="print-permission-note" role="status"></p>
       <div class="print-actions">
         <button id="print-cancel" type="button">取消</button>
         <button type="submit">开始打印</button>

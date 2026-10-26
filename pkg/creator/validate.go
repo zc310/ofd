@@ -440,8 +440,9 @@ func validatePermissions(value *Permissions) error {
 	if value == nil {
 		return nil
 	}
-	if value.Print != nil && value.Print.Copies != nil && *value.Print.Copies < -1 {
-		return errors.New("打印份数不能小于 -1")
+	// GB/T 33190—2016 表 8：所有负份数均表示不限，属性类型为 xs:int。
+	if value.Print != nil && value.Print.Copies != nil && (*value.Print.Copies < -2147483648 || *value.Print.Copies > 2147483647) {
+		return errors.New("打印份数超出标准的 32 位整数范围")
 	}
 	if value.ValidPeriod != nil && !value.ValidPeriod.Start.IsZero() && !value.ValidPeriod.End.IsZero() && value.ValidPeriod.End.Before(value.ValidPeriod.Start) {
 		return errors.New("权限有效期结束时间不能早于开始时间")

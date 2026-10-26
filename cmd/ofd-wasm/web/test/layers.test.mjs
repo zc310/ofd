@@ -214,6 +214,7 @@ function makeState() {
     layerUpdates: new Set(), layerRevisions: revisions, textCache: new Map(), textRequests: new Map(),
     pageCards: [], documentGeneration: 1, engine: { text: () => pending.promise },
     trimTextCache() {}, buildTextLayer() {}, isCancelledError: () => false,
+    pagePermissionAllowed: () => true,
   };
   load(state, ['pageLayerRevision', 'loadText'].map(sliceFunction).join('\n'), { expose: { loadText: 'loadText' } });
   const request = state.loadText(0); revisions.set(0, 1); pending.resolve([{ text: 'hidden' }]); await request;

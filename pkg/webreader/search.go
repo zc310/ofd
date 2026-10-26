@@ -148,6 +148,11 @@ func (r *Reader) Search(ctx context.Context, query string, options SearchOptions
 				Page: pageIndex, Run: layoutRunIndices[found.layoutIndex], Text: layout.Text,
 				Start: found.start, End: found.end,
 			}
+			// 禁止导出的页面仍可定位命中，但不借搜索结果返回整个文字对象。
+			if !documentPermissions(r.pages[pageIndex].fontScope, r.pages[pageIndex].document.Permissions).Export {
+				result.Text = query
+				result.Start, result.End = 0, len([]rune(query))
+			}
 			glyphStart := minInt(found.start, len(layout.Glyphs))
 			glyphEnd := minInt(found.end, len(layout.Glyphs))
 			for _, glyph := range layout.Glyphs[glyphStart:glyphEnd] {

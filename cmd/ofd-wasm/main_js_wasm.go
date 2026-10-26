@@ -57,6 +57,8 @@ func main() {
 	api.Set("removeFallbackFont", js.FuncOf(app.removeFallbackFont))
 	api.Set("close", js.FuncOf(app.close))
 	api.Set("info", js.FuncOf(app.info))
+	api.Set("permissions", js.FuncOf(app.permissions))
+	api.Set("checkPermission", js.FuncOf(app.checkPermission))
 	api.Set("embeddedFonts", js.FuncOf(app.embeddedFonts))
 	api.Set("outline", js.FuncOf(app.outline))
 	api.Set("customTags", js.FuncOf(app.customTags))
@@ -137,13 +139,19 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 		_ = reader.Close()
 		return errorValue(err)
 	}
+	permissions, err := reader.Permissions()
+	if err != nil {
+		_ = reader.Close()
+		return errorValue(err)
+	}
 	a.mu.Lock()
 	a.reader = reader
 	a.mu.Unlock()
 	return objectValue(map[string]any{
-		"pageCount": len(pages),
-		"pages":     pagesValue(pages),
-		"fonts":     fontsValue(nil),
+		"pageCount":   len(pages),
+		"pages":       pagesValue(pages),
+		"fonts":       fontsValue(nil),
+		"permissions": permissionsValue(permissions),
 	})
 }
 
@@ -537,7 +545,11 @@ func (a *wasmApp) selectVersion(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(nil)})
+	permissions, err := reader.Permissions()
+	if err != nil {
+		return errorValue(err)
+	}
+	return objectValue(map[string]any{"pageCount": len(pages), "pages": pagesValue(pages), "fonts": fontsValue(nil), "permissions": permissionsValue(permissions)})
 }
 
 func (a *wasmApp) attachments(_ js.Value, _ []js.Value) any {
@@ -623,6 +635,16 @@ func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
 	maxBytes := int64(0)
 	if len(args) > 2 && args[2].Type() == js.TypeNumber {
 		maxBytes = int64(args[2].Float())
+	}
+	// 原始资源下载默认检查 Export；文档内预览/播放显式标记用途。
+	preview := len(args) == 4 && args[3].Type() == js.TypeString && args[3].String() == "preview"
+	if len(args) > 4 || (len(args) == 4 && !preview) {
+		return errorValue(errors.New("媒体用途仅支持 preview；下载时省略"))
+	}
+	if !preview {
+		if err := reader.CheckDocumentPermission(webreader.PermissionExport, int(args[0].Float())); err != nil {
+			return errorValue(err)
+		}
 	}
 	data, err := reader.MediaData(int(args[0].Float()), uint64(args[1].Float()), maxBytes)
 	if err != nil {
@@ -1202,6 +1224,11 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
+	// renderStream 始终为导出；单页和多页在写入任何结果之前统一检查。
+	options.Purpose = webreader.PermissionExport
+	if err := reader.CheckPermission(webreader.PermissionExport, indices); err != nil {
+		return errorValue(err)
+	}
 	streamID, err := renderRequestID(args[min(len(args), 3):])
 	if err != nil {
 		return errorValue(err)
@@ -1481,6 +1508,12 @@ func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions
 		return options, errors.New("renderPage 配置必须是对象")
 	}
 	value := args[0]
+	if purpose := value.Get("purpose"); !purpose.IsUndefined() && !purpose.IsNull() {
+		if purpose.Type() != js.TypeString || (purpose.String() != "export" && purpose.String() != "print") {
+			return options, errors.New("purpose 必须为 export 或 print；预览时省略")
+		}
+		options.Purpose = webreader.PermissionAction(purpose.String())
+	}
 	if format := value.Get("format"); !format.IsUndefined() && !format.IsNull() {
 		if format.Type() != js.TypeString {
 			return options, errors.New("format 必须是 pdf、png、jpg 或 svg")

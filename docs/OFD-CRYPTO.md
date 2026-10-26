@@ -17,7 +17,7 @@
 | 加密范围     | `IndependentKeys`、`Append`、`Pages`                    | 独立条目密钥、线性链追加层、页面及关联资源范围                                      |
 | 只读解密视图 | `crypt.Open`                                            | 多层依赖、按操作/seed 提供凭据、部分解锁状态、租约与密钥释放                        |
 | 文档处理     | parser、converter、sign、analyzer、webreader、validator | 完全解锁视图直接接入；校验器分别检查物理容器与逻辑文档                              |
-| 图形阅读器 | `ofd-viewer`、WASM 阅读器及 `ofd.open` | 口令、UTF-8 口令文件或 SM2 私钥解锁，默认兼容读取，解锁后使用各阅读器现有阅读与导出功能 |
+| 图形阅读器 | `ofd-viewer`、WASM 阅读器及 `ofd.open` | 口令、UTF-8 口令文件或 SM2 私钥解锁，默认兼容读取；WASM 解锁后按文档体和当前版本执行打印、复制、导出权限检查，范围见 [文档权限](../cmd/ofd-wasm/web/README.md#文档权限) |
 | 普通数字签名 | `pkg/sign`、`ofd-creator sign`                          | SM2/SM3 SignedData、附录 B 扩展、普通签名追加及受限物理包签署                       |
 | 完整性保护   | `pkg/integrity`、`ofd-crypt integrity`                  | 带时间戳清单签名、物理文件集合、引用闭包和内容签名覆盖检查                          |
 

@@ -56,6 +56,10 @@ func (r *Reader) RenderPDFTo(ctx context.Context, output io.Writer, indices []in
 	if r.closed {
 		return errors.New("文档引擎已经关闭")
 	}
+	// 导出前检查全部页面，避免混合权限文档已经写出部分内容才发现禁止导出。
+	if err := r.checkPermissionLocked(PermissionExport, indices); err != nil {
+		return err
+	}
 	background := options.Background
 	if background == nil {
 		background = color.Transparent

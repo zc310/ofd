@@ -7,6 +7,16 @@
 
 ## 未发布
 
+- **阅读器内容操作开始执行文档权限**：`webreader.Reader.Text()`、`RenderPDF/RenderPDFTo()`、
+  `AttachmentData()` 在 `Permissions/Export=false` 时返回可用 `errors.Is` 判断的
+  `webreader.ErrPermissionDenied`；混合选页导出在输出前整体检查。WASM 的文字、附件、
+  资源下载及流式导出对应返回 `permission_denied`，调用方需处理同步错误或 Promise 拒绝。
+  保存图片、准备打印时应分别设置 `RenderOptions.Purpose`（JS 为 `purpose`）为
+  `export` / `print`；文档内媒体播放需向 `ofd.mediaData` 传第四个参数 `'preview'`。
+  默认图片渲染仍用于页面预览，详见 [文档权限](cmd/ofd-wasm/web/README.md#文档权限)。
+  受限页面的搜索结果 `Text` 仅包含查询词，`Start/End` 相对该词，命中坐标仍保留；
+  调用方应使用坐标定位，不再依赖受限页面的完整上下文。
+
 - **校验器 PDF 报告 API 移至报告子包**：`validator.RenderPDF` 和 `validator.PDFOptions`
   移至 `pkg/validator/report`，改用
   `report.RenderPDF(ctx, writer, result, report.Options{Font: fontPath})`。

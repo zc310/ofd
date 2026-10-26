@@ -103,6 +103,8 @@ suite.group('文字层按字体排版高度设置行高');
     pageInfos: [{ width: 100, height: 100 }],
     textCache: new Map([[0, [{ text: 'Hg', x: 10, y: 15, width: 10, height: 6, size: 5 }]]]),
     textLayerVisible: true,
+    pagePermissionAllowed: () => true,
+    searchResults: [],
     matchingSearchResults: () => [],
     document: { createElement: () => ({ style: {} }) },
   }, [sliceFunction('textLayerSegments'), sliceFunction('buildTextLayer')].join('\n'), {

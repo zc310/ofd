@@ -2932,10 +2932,10 @@ func TestCreateRejectsInvalidDocument(t *testing.T) {
 	}
 	if _, err := Marshal(Document{
 		ID:          "invalid-permissions",
-		Permissions: &Permissions{Print: &PrintSettings{Copies: func() *int { value := -2; return &value }()}},
+		Permissions: &Permissions{ValidPeriod: &ValidPeriod{Start: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}},
 		Pages:       []Page{{}},
 	}); err == nil {
-		t.Fatal("Marshal accepted an invalid print copy count")
+		t.Fatal("Marshal accepted an invalid permissions period")
 	}
 	if _, err := Marshal(Document{
 		ID:    "resource-id-overflow",

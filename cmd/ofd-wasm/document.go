@@ -69,6 +69,8 @@ func parseWASMPrivateKey(data, password []byte) (*sm2.PrivateKey, error) {
 // wasmErrorCode 将错误类型传递到 Worker 和页面，不依赖错误文案判断是否允许重试。
 func wasmErrorCode(err error) string {
 	switch {
+	case errors.Is(err, webreader.ErrPermissionDenied):
+		return "permission_denied"
 	case errors.Is(err, errInvalidCredentials):
 		return "invalid_credentials"
 	case errors.Is(err, crypt.ErrLimitExceeded):

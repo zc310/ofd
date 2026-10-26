@@ -54,6 +54,7 @@ type Glyph struct {
 }
 
 // Text 返回指定页面的文字对象快照。文字顺序与 OFD 页面绘制顺序一致。
+// Export=false 时返回 ErrPermissionDenied；搜索与页面预览仍可使用。
 func (r *Reader) Text(index int) ([]TextRun, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -65,6 +66,9 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 	}
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	if err := r.checkPermissionLocked(PermissionCopy, []int{index}); err != nil {
+		return nil, err
 	}
 	runs, err := r.textAt(index)
 	if err != nil {

@@ -28,6 +28,8 @@ type RenderFormat string
 // PNGCompressionLevel 为 1 到 9 时指定 PNG 压缩级别，0 使用默认级别 7。
 // PDF 页面主体保留文字和矢量内容，SVG 复杂渐变等仍可能包含栅格回退。
 type RenderOptions struct {
+	// Purpose 为空时为页面预览；保存图片时设为 PermissionExport，打印时设为 PermissionPrint。
+	Purpose             PermissionAction
 	DPI                 float64
 	Background          color.Color
 	Format              RenderFormat
@@ -140,6 +142,9 @@ func (r *Reader) RenderPage(ctx context.Context, index int, options RenderOption
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkRenderPermissionLocked([]int{index}, options.Purpose); err != nil {
+		return nil, err
+	}
 	return r.renderPage(ctx, index, options)
 }
 
@@ -162,6 +167,9 @@ func (r *Reader) RenderPages(ctx context.Context, indices []int, options RenderO
 		return nil, errors.New("文档引擎已经关闭")
 	}
 	results := make([][]byte, 0, len(indices))
+	if err := r.checkRenderPermissionLocked(indices, options.Purpose); err != nil {
+		return nil, err
+	}
 	for _, index := range indices {
 		data, err := r.renderPage(ctx, index, options)
 		if err != nil {

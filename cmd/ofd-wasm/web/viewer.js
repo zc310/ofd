@@ -122,6 +122,14 @@ class OFDWorkerClient {
     return this.request('info');
   }
 
+  permissions() {
+    return this.request('permissions');
+  }
+
+  checkPermission(action, indices) {
+    return this.request('checkPermission', { action, indices });
+  }
+
   embeddedFonts() {
     return this.request('embeddedFonts');
   }
@@ -166,8 +174,8 @@ class OFDWorkerClient {
     return this.request('media');
   }
 
-  mediaData(scope, mediaID, maxBytes) {
-    return this.request('mediaData', { scope, mediaID, maxBytes });
+  mediaData(scope, mediaID, maxBytes, purpose) {
+    return this.request('mediaData', { scope, mediaID, maxBytes, purpose });
   }
 
   annotations() {
@@ -416,6 +424,7 @@ const printCancel = document.querySelector('#print-cancel');
 const printCurrentLabel = document.querySelector('#print-current-label');
 const printCustomRange = document.querySelector('#print-range-custom');
 const printError = document.querySelector('#print-error');
+const printPermissionNote = document.querySelector('#print-permission-note');
 const copyPageText = document.querySelector('#copy-page-text');
 const copyAllTextButton = document.querySelector('#copy-all-text');
 const zoomOut = document.querySelector('#zoom-out');
@@ -719,6 +728,8 @@ let renderFormat = (() => {
   }
 })();
 let textLayerVisible = true;
+let pagePermissions = new Map();
+let documentPermissionSummary = { print: false, export: false, copy: false };
 const pagePillStorageKey = 'ofd-show-page-pill';
 // localFontsStorageKey 记住用户是否想用系统字体。文档就绪后据此自动读取（见
 // applyLocalFontsIntentOnOpen），因此这里保存的是"用户想要系统字体"这一事实，
@@ -2710,6 +2721,58 @@ void preloadFallbackFonts().then(() => {
   updateStartupProgress();
 });
 
+// 打开、切换版本时整体替换快照；权限尚未取得的页面不开放内容操作。
+function setDocumentPermissions(permissions) {
+  pagePermissions = new Map();
+  for (const permission of permissions || []) {
+    for (const index of permission.pages || []) pagePermissions.set(index, permission);
+  }
+  documentPermissionSummary = {
+    print: [...pagePermissions.values()].some(permission => permission.printable),
+    export: [...pagePermissions.values()].some(permission => permission.export),
+    copy: pageInfos.length > 0 && pageInfos.every((_, index) => pagePermissions.get(index)?.export === true),
+  };
+}
+
+function pagePermissionAllowed(action, indices) {
+  return indices.length > 0 && indices.every(index => {
+    const permission = pagePermissions.get(index);
+    return action === 'print' ? permission?.printable === true : permission?.export === true;
+  });
+}
+
+function requirePagePermission(action, indices) {
+  if (pagePermissionAllowed(action, indices)) return;
+  const label = action === 'print' ? '打印' : action === 'copy' ? '复制' : '导出';
+  const error = new Error(`所选页面的文档权限禁止${label}`);
+  error.code = 'permission_denied';
+  throw error;
+}
+
+function blockRestrictedCopy(event) {
+  const target = event.target;
+  if (target?.matches?.('input, textarea') || target?.isContentEditable) return false;
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return false;
+  for (let rangeIndex = 0; rangeIndex < selection.rangeCount; rangeIndex++) {
+    const range = selection.getRangeAt(rangeIndex);
+    for (const card of pageCards) {
+      if (!card || pagePermissionAllowed('copy', [Number(card.dataset.index)])) continue;
+      if (range.intersectsNode(card)) {
+        event.preventDefault();
+        showCopyFeedback('所选内容包含禁止复制的页面');
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function blockRestrictedPageSave(event) {
+  const card = event.target?.closest?.('.page-card');
+  if (card && !pagePermissionAllowed('export', [Number(card.dataset.index)])) event.preventDefault();
+}
+
 function updateNavigation() {
   pageNumber.value = pageInfos.length ? current + 1 : 1;
   pageNumber.max = pageInfos.length || 1;
@@ -2717,10 +2780,14 @@ function updateNavigation() {
   pageNumber.disabled = pageInfos.length === 0;
   previous.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() <= 0 : current <= 0);
   next.disabled = pageInfos.length === 0 || (pageLayoutIsDouble() ? currentSpreadPosition() + 1 >= pageSpreads.length : current + 1 >= pageInfos.length);
-  printPage.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
-  exportDocument.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
-  copyPageText.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
-  copyAllTextButton.disabled = documentActionBusy || layerUpdates.size > 0 || pageInfos.length === 0;
+  printPage.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.print;
+  exportDocument.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.export;
+  copyPageText.disabled = documentActionBusy || layerUpdates.size > 0 || !pagePermissionAllowed('copy', [current]);
+  copyAllTextButton.disabled = documentActionBusy || layerUpdates.size > 0 || !documentPermissionSummary.copy;
+  printPage.title = documentPermissionSummary.print ? '打印（按所选页面权限检查）' : '文档权限禁止打印';
+  exportDocument.title = documentPermissionSummary.export ? '导出（按所选页面权限检查）' : '文档权限禁止导出';
+  copyPageText.title = pagePermissionAllowed('copy', [current]) ? '复制当前页文字' : '当前页权限禁止复制';
+  copyAllTextButton.title = documentPermissionSummary.copy ? '复制全文' : '文档包含禁止复制的页面';
   searchInput.disabled = pageInfos.length === 0;
   searchToggle.disabled = pageInfos.length === 0;
   searchToggle.setAttribute('aria-pressed', String(activeSidebarTab === 'search'));
@@ -3277,9 +3344,9 @@ function textLayerSegments(runs) {
 
 function buildTextLayer(index) {
   const card = pageCards[index];
-  const runs = textCache.get(index);
+  const runs = textCache.get(index) || [];
   const info = pageInfos[index];
-  if (!card || !runs || !info) return;
+  if (!card || !info) return;
 
   const layer = card.querySelector('.text-layer') || document.createElement('div');
   layer.className = 'text-layer';
@@ -3287,7 +3354,7 @@ function buildTextLayer(index) {
   if (!layer.parentElement) card.append(layer);
   if (!textLayerVisible) return;
 
-  for (const segment of textLayerSegments(runs)) {
+  for (const segment of pagePermissionAllowed('copy', [index]) ? textLayerSegments(runs) : []) {
     const element = document.createElement('span');
     element.className = 'text-run';
     element.style.left = `${segment.x / info.width * 100}%`;
@@ -3313,25 +3380,23 @@ function buildTextLayer(index) {
     layer.append(element);
   }
   // 搜索高亮按原始 run 的矩形渲染，命中文字先按行合并成连续区域再叠加。
-  runs.forEach((run, runIndex) => {
-    for (const match of matchingSearchResults(index, runIndex)) {
-      for (const rect of mergeHighlightRects(match.rects)) {
-        const highlight = document.createElement('span');
-        highlight.className = 'search-highlight';
-        if (searchResults[activeSearchResult] === match) highlight.classList.add('active');
-        highlight.style.left = `${rect.x / info.width * 100}%`;
-        highlight.style.top = `${rect.y / info.height * 100}%`;
-        highlight.style.width = `${Math.max(rect.width / info.width * 100, 0.1)}%`;
-        highlight.style.height = `${Math.max(rect.height / info.height * 100, 0.1)}%`;
-        if (rect.angle) {
-          highlight.style.transformOrigin = 'top left';
-          highlight.style.transform = `rotate(${rect.angle}deg)`;
-        }
-        highlight.setAttribute('aria-hidden', 'true');
-        layer.append(highlight);
+  for (const match of searchResults.filter(result => result.page === index)) {
+    for (const rect of mergeHighlightRects(match.rects)) {
+      const highlight = document.createElement('span');
+      highlight.className = 'search-highlight';
+      if (searchResults[activeSearchResult] === match) highlight.classList.add('active');
+      highlight.style.left = `${rect.x / info.width * 100}%`;
+      highlight.style.top = `${rect.y / info.height * 100}%`;
+      highlight.style.width = `${Math.max(rect.width / info.width * 100, 0.1)}%`;
+      highlight.style.height = `${Math.max(rect.height / info.height * 100, 0.1)}%`;
+      if (rect.angle) {
+        highlight.style.transformOrigin = 'top left';
+        highlight.style.transform = `rotate(${rect.angle}deg)`;
       }
+      highlight.setAttribute('aria-hidden', 'true');
+      layer.append(highlight);
     }
-  });
+  }
 }
 
 function pageImageIsReady(image) {
@@ -3353,6 +3418,10 @@ function showImageWhenReady(imageElement, url, card) {
 }
 
 function loadText(index, pinned = false) {
+  if (!pagePermissionAllowed('copy', [index])) {
+    if (pageCards[index]) buildTextLayer(index);
+    return Promise.resolve();
+  }
   if (layerUpdates.has(index)) return Promise.resolve();
   const card = pageCards[index];
   if (textCache.has(index)) {
@@ -3980,6 +4049,9 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  setDocumentPermissions([]);
+  closePrintDialog();
+  closeExportDialog();
   layerRevisions.clear();
   layerUpdates.clear();
   layerListRequest++;
@@ -4272,6 +4344,7 @@ async function openSelectedFile(selected, options = {}) {
         ? info
         : { index, width: 210, height: 297 };
     });
+    setDocumentPermissions(result.permissions);
     selectedVersionID = '';
     selectedVersionScope = -1;
     currentDocumentKey = documentKey(selected);
@@ -4565,6 +4638,7 @@ function updateExportFormatControl() {
 
 function openExportDialog() {
   if (!pageInfos.length || documentActionBusy) return;
+  if (!documentPermissionSummary.export) { setStatus('文档权限禁止导出'); return; }
   exportRange.value = 'current';
   exportCustomRange.value = '';
   exportDPI.value = '150';
@@ -4865,6 +4939,7 @@ async function saveRenderStream(render, indexes, options, name, type, saveFile, 
 }
 
 async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
+  requirePagePermission('export', indexes);
   if (layerUpdates.size) throw new Error('请等待图层切换完成');
   const generation = documentGeneration;
   const files = [];
@@ -4875,6 +4950,8 @@ async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
   exportRequest = requestState;
   const baseName = safeDownloadName(documentName.textContent);
   try {
+    await engine.checkPermission('export', indexes);
+    throwIfDocumentActionCancelled(generation);
     if (format === 'pdf') {
       await saveRenderStream(
          (pages, options, onChunk) => engine.renderStream(pages, { ...options, format: 'pdf' }, onChunk),
@@ -4914,7 +4991,7 @@ async function exportDocumentPages(indexes, dpi, format, background, saveFile) {
         const text = pageText(index);
         if (text) textParts.push(text);
       } else {
-        activeRequest = engine.renderPage(index, { dpi, background });
+        activeRequest = engine.renderPage(index, { dpi, background, purpose: 'export' });
         const data = await activeRequest;
         const blob = await convertImageFormat(new Uint8Array(data), format, background);
         const file = { name: `page-${String(index + 1).padStart(4, '0')}.${format}`, data: new Uint8Array(await blob.arrayBuffer()) };
@@ -4945,6 +5022,7 @@ async function startExport() {
   let dpi;
   try {
     indexes = exportIndexes();
+    requirePagePermission('export', indexes);
   } catch (error) {
     exportError.textContent = error.message;
     exportError.hidden = false;
@@ -4966,6 +5044,7 @@ async function startExport() {
   let saveFile;
   try {
     saveFile = await chooseSaveFile(exportFileName(baseName, indexes, exportFormat.value), exportMimeType(exportFormat.value));
+    if (generation !== documentGeneration) return;
     if (saveFile === null) {
       setStatus('已取消保存。');
       return;
@@ -5039,10 +5118,13 @@ async function copyTextToClipboard(text) {
 async function copyCurrentPageText() {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
+  if (!pagePermissionAllowed('copy', [current])) { showCopyFeedback('当前页权限禁止复制'); return; }
   setDocumentActionBusy(true);
   const generation = documentGeneration;
   const index = current;
   try {
+    await engine.checkPermission('copy', [index]);
+    throwIfDocumentActionCancelled(generation);
     setStatus(`正在读取第 ${index + 1} 页文字...`);
     await loadText(index, true);
     throwIfDocumentActionCancelled(generation);
@@ -5052,17 +5134,17 @@ async function copyCurrentPageText() {
       return;
     }
     await copyTextToClipboard(text);
-  } catch (_) {
+  } catch (error) {
     if (documentActionCancelRequested) {
       setStatus('已取消复制当前页文字。');
       return;
     }
-    showCopyFeedback('复制失败，请检查浏览器剪贴板权限。');
+    if (generation === documentGeneration) showCopyFeedback(error.code === 'permission_denied' ? error.message : '复制失败，请检查浏览器剪贴板权限。');
     return;
   } finally {
-    setDocumentActionBusy(false);
+    if (generation === documentGeneration) setDocumentActionBusy(false);
   }
-  showCopyFeedback(`已复制第 ${index + 1} 页文字。`);
+  if (generation === documentGeneration) showCopyFeedback(`已复制第 ${index + 1} 页文字。`);
 }
 
 async function collectDocumentText(generation) {
@@ -5084,19 +5166,24 @@ async function collectDocumentText(generation) {
 async function copyDocumentText() {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
+  if (!documentPermissionSummary.copy) { showCopyFeedback('文档包含禁止复制的页面'); return; }
   setDocumentActionBusy(true);
+  const generation = documentGeneration;
   try {
-    const { text, failed } = await collectDocumentText(documentGeneration);
+    await engine.checkPermission('copy', pageInfos.map((_, index) => index));
+    throwIfDocumentActionCancelled(generation);
+    const { text, failed } = await collectDocumentText(generation);
+    throwIfDocumentActionCancelled(generation);
     if (!text) {
       showCopyFeedback(failed ? `全文读取失败：${failed} 页无法读取。` : '文档没有可复制的文字。');
       return;
     }
     await copyTextToClipboard(text);
     showCopyFeedback(failed ? `已复制全文，另有 ${failed} 页读取失败。` : `已复制全文 ${text.length} 个字符。`);
-  } catch (_) {
-    showCopyFeedback(documentActionCancelRequested ? '已取消复制全文。' : '复制失败，请检查浏览器剪贴板权限。');
+  } catch (error) {
+    if (generation === documentGeneration) showCopyFeedback(documentActionCancelRequested ? '已取消复制全文。' : error.code === 'permission_denied' ? error.message : '复制失败，请检查浏览器剪贴板权限。');
   } finally {
-    setDocumentActionBusy(false);
+    if (generation === documentGeneration) setDocumentActionBusy(false);
   }
 }
 
@@ -5131,10 +5218,19 @@ function updatePrintRangeControl() {
   const custom = printForm.elements.namedItem('print-range').value === 'custom';
   printCustomRange.disabled = !custom;
   if (!custom) printError.hidden = true;
+  try {
+    const limits = selectedPrintIndexes().map(index => pagePermissions.get(index)?.print_copies).filter(value => value > 0);
+    printPermissionNote.textContent = limits.length
+      ? `所选文档最多打印 ${limits.reduce((left, right) => Math.min(left, right))} 份，请在系统打印对话框中设置。`
+      : '';
+  } catch (_) {
+    printPermissionNote.textContent = '';
+  }
 }
 
 function openPrintDialog() {
   if (!pageInfos.length || documentActionBusy) return;
+  if (!documentPermissionSummary.print) { setStatus('文档权限禁止打印'); return; }
   printCurrentLabel.textContent = `当前页（第 ${current + 1} 页）`;
   printError.hidden = true;
   if (typeof printDialog.showModal === 'function') {
@@ -5163,6 +5259,7 @@ function waitForPrintImages(images) {
 async function printSelectedPages(indexes) {
   if (!pageInfos.length) return;
   if (documentActionBusy) return;
+  try { requirePagePermission('print', indexes); } catch (error) { setStatus(error.message); return; }
   if (layerUpdates.size) {
     setStatus('请等待图层切换完成');
     return;
@@ -5178,6 +5275,8 @@ async function printSelectedPages(indexes) {
   const generation = documentGeneration;
   setStatus(`正在准备 ${indexes.length} 页打印内容...`);
   try {
+    await engine.checkPermission('print', indexes);
+    throwIfDocumentActionCancelled(generation);
     const images = await Promise.all(indexes.map(async index => {
       const image = document.createElement('img');
       const src = await loadImage(index, 'page', generation, image);
@@ -5195,8 +5294,12 @@ async function printSelectedPages(indexes) {
     printWindow.onload = async () => {
       try {
         await waitForPrintImages([...printWindow.document.images]);
+        throwIfDocumentActionCancelled(generation);
+        await engine.checkPermission('print', indexes);
+        throwIfDocumentActionCancelled(generation);
       } catch (error) {
-        setStatus(`打印图片准备失败：${error.message}`);
+        printWindow.close();
+        if (generation === documentGeneration) setStatus(`打印图片准备失败：${error.message}`);
         return;
       }
       printWindow.focus();
@@ -5205,9 +5308,9 @@ async function printSelectedPages(indexes) {
     setStatus(`已准备 ${indexes.length} 页打印。`);
   } catch (error) {
     printWindow.close();
-    setStatus(documentActionCancelRequested ? '已取消打印。' : `打印准备失败：${error.message}`);
+    if (generation === documentGeneration) setStatus(documentActionCancelRequested ? '已取消打印。' : `打印准备失败：${error.message}`);
   } finally {
-    setDocumentActionBusy(false);
+    if (generation === documentGeneration) setDocumentActionBusy(false);
   }
 }
 
@@ -6392,6 +6495,7 @@ async function switchDocumentVersion(item) {
   const generation = ++documentGeneration;
   const previousPage = current;
   const previousPages = pageInfos;
+  const previousPermissions = [...new Set(pagePermissions.values())];
   const previousKey = currentDocumentKey;
   const mainKey = selectedVersionID
     ? previousKey.slice(0, -`:version:${selectedVersionScope}:${selectedVersionID}`.length)
@@ -6411,6 +6515,7 @@ async function switchDocumentVersion(item) {
     // 阅读位置、旋转和侧栏状态按版本隔离，历史页不能覆盖主文档的记录。
     currentDocumentKey = id ? `${mainKey}:version:${item.scope}:${id}` : mainKey;
     pageInfos = result.pages;
+    setDocumentPermissions(result.permissions);
     const savedPage = readReadingPositions()[currentDocumentKey]?.page;
     current = Number.isInteger(savedPage) ? Math.max(0, Math.min(pageInfos.length - 1, savedPage)) : 0;
     sidebarScroll = readSidebarScroll();
@@ -6423,6 +6528,7 @@ async function switchDocumentVersion(item) {
   } catch (error) {
     if (generation !== documentGeneration || isCancelledError(error)) return false;
     if (!pageInfos.length) pageInfos = previousPages;
+    setDocumentPermissions(previousPermissions);
     current = Math.min(previousPage, pageInfos.length - 1);
     buildPages();
     setStatus(`版本切换失败：${error.message}`);
@@ -6784,12 +6890,12 @@ function mediaIcon(kind) {
   return kind === 'audio' ? 'music_note' : kind === 'video' ? 'movie' : 'image';
 }
 
-async function fetchMediaData(item) {
-  return engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0);
+async function fetchMediaData(item, purpose = 'preview') {
+  return engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0, purpose);
 }
 
 async function previewMedia(item) {
-  const data = await fetchMediaData(item);
+  const data = await engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0);
   const mime = mediaMime(item) || 'application/octet-stream';
   const url = URL.createObjectURL(new Blob([data], { type: mime }));
   window.open(url, '_blank', 'noopener');
@@ -6797,7 +6903,7 @@ async function previewMedia(item) {
 }
 
 async function downloadMedia(item) {
-  const data = await fetchMediaData(item);
+  const data = await engine.mediaData(Number(item?.scope) || 0, Number(item?.id), 0);
   downloadBytes(data, safeResourceName(item, 'resource'), mediaMime(item) || 'application/octet-stream');
 }
 
@@ -7737,7 +7843,7 @@ async function ensureMediaElement(action) {
     placeMediaElement(existing, action);
     return existing;
   }
-  const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0);
+  const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0, 'preview');
   if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
     throw new Error('媒体资源为空');
   }
@@ -8118,6 +8224,7 @@ printForm.addEventListener('submit', event => {
       printError.hidden = false;
       return;
     }
+    requirePagePermission('print', indexes);
     closePrintDialog();
     void printSelectedPages(indexes);
   } catch (error) {
@@ -8422,6 +8529,8 @@ if ('launchQueue' in window && typeof window.launchQueue.setConsumer === 'functi
   });
 }
 pagesElement.addEventListener('pointerdown', handlePanPointerDown);
+pagesElement.addEventListener('contextmenu', blockRestrictedPageSave);
+pagesElement.addEventListener('dragstart', blockRestrictedPageSave);
 pagesElement.addEventListener('touchstart', handleTouchStart, { passive: true });
 pagesElement.addEventListener('touchmove', handleTouchMove, { passive: false });
 pagesElement.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -8433,12 +8542,17 @@ document.addEventListener('fullscreenchange', () => {
     readingMode.setAttribute('aria-label', '阅读模式');
   }
 });
-window.addEventListener('keydown', event => {
+function handleDocumentKeyDown(event) {
   const target = event.target;
   const editing = target instanceof HTMLElement &&
     (target.matches('input, textarea, select') || target.isContentEditable);
   const modifier = event.ctrlKey || event.metaKey;
   const key = event.key.toLowerCase();
+  if (modifier && key === 'p' && pageInfos.length) {
+    event.preventDefault();
+    openPrintDialog();
+    return;
+  }
   if (modifier && event.shiftKey && key === 'c') {
     if (!editing && pageInfos.length) {
       event.preventDefault();
@@ -8525,7 +8639,8 @@ window.addEventListener('keydown', event => {
       fitPageZoom();
       break;
   }
-});
+}
+window.addEventListener('keydown', handleDocumentKeyDown);
 document.addEventListener('click', event => {
   if (!recentPanel.hidden && !event.target.closest('.recent-group')) setRecentPanelOpen(false);
   if (!viewPanel.hidden && !event.target.closest('.view-group')) setViewPanelOpen(false);
@@ -8535,7 +8650,8 @@ document.addEventListener('click', event => {
   if (sidebarMoreMenu && !sidebarMoreMenu.hidden && !event.target.closest('#sidebar-tabs') && !event.target.closest('#sidebar-more-menu')) setSidebarMoreOpen(false);
   if (sealPopoverElement && !sealPopoverElement.hidden && !event.target.closest('.seal-hotspot') && !event.target.closest('#seal-popover')) closeSealPopover();
 });
-document.addEventListener('copy', () => {
+document.addEventListener('copy', event => {
+  if (blockRestrictedCopy(event)) return;
   const selection = window.getSelection();
   if (!selection?.toString().trim() || !selection.anchorNode?.parentElement?.closest('.text-layer')) return;
   showCopyFeedback(`已复制 ${selection.toString().length} 个字符`);

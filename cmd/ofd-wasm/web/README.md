@@ -12,10 +12,45 @@
 - 本地文件、拖放、最近文件和远程 `?file=` 都会在需要凭据时显示解锁对话框。输入口令，或切换至“SM2 私钥”选择 PKCS#8 PEM/DER 私钥文件；加密私钥可填写私钥密码。可填写接收者名称，留空时按库的尝试预算自动匹配。
 - 保留口令的空格和 Unicode，允许空口令。错误凭据可重新输入；取消或切换文件会结束旧的解锁流程。元数据损坏、不支持的方案或预算超限直接报告错误。
 - 口令包含换行等无法在单行输入框输入的字符时，选择“口令文件”，读取最多 64 KiB 的 UTF-8 文件，保留 BOM、空格及换行；空文件表示空口令，非法 UTF-8 被拒绝。
-- 只有完整解锁后才进入页面浏览；多层加密须能使用本次提供的凭据全部解锁。解锁后支持页面、文字、搜索、打印和导出，源文件保持原始加密内容。
+- 只有完整解锁后才进入页面浏览；多层加密须能使用本次提供的凭据全部解锁。解锁后可阅读和搜索，文字提取、打印和导出仍检查文档权限，源文件保持原始加密内容。
 - 文档口令、私钥和私钥密码只用于本次解锁，不写入地址栏、最近文档或阅读设置；最近文件缓存的是原始加密 OFD，再次打开需重新解锁。WASM 不生成明文 ZIP，关闭 Reader 后释放解密视图。解锁本身不代表签名或完整性验证通过。
 - WASM 默认使用 `pkg/crypt` 兼容模式，支持 ofdrw 的数字操作 ID 等已知格式差异。缺少 `EncryptCaseId` 时，按用户提供的口令选择 `1.1.1`，或按 SM2 私钥选择 `1.1.2`；首次未提供凭据时显示解锁框。已声明的加密方案保持原值，未知方案仍报错。
 - 输入 OFD 仍限 256 MiB；文档口令和私钥密码最多 64 KiB UTF-8，私钥文件最多 4 MiB，其余解密预算沿用 `pkg/crypt` 默认值。
+
+### 文档权限
+
+权限声明依据 GB/T 33190—2016 表 8，明文及 GM/T 0099-2020 解锁文档使用同一规则：
+
+- 未声明的布尔权限默认允许。`Export=false` 禁止文字提取、当前页/全文复制、PDF/图片/TXT/ZIP 内容导出、附件读取和资源外部预览/下载；受限页面不创建可选择文字层。搜索仍可定位命中，只返回查询词和坐标，不返回完整文字上下文。
+- `Print Printable=false` 或 `Copies=0` 禁止打印；缺少 `Print`、缺少 `Copies` 或份数为负数时不限。正数份额在打印窗口提示，浏览器无法可靠控制系统打印份数、判断是否完成或累计消耗份额。
+- 多文档体按所选页面分别检查；包含受限页面的操作整体拒绝，在写出内容前检查全部页面。只选允许的文档体仍可操作，全文复制要求所有页面允许导出。
+- 打开文件和切换版本会整体更新权限；失败保留原版本权限。按钮、快捷键、复制事件及 WASM 导出接口均执行检查；浏览器菜单直接打印阅读器外壳时只显示提示，正式打印通过阅读器提供的入口执行。
+- 普通页面渲染、缩略图、文档内音视频播放不受 `Export` 限制。浏览器客户端无法阻止系统截图或修改客户端后保存预览数据；`PrintScreen`、编辑、批注、签名、水印及有效期声明会返回给调用方，本阅读器没有为这些字段新增统一执行策略。
+
+`ofd.permissions()` 返回当前版本各文档体的权限快照：
+
+```js
+// 缺省值已归一化；pages 为从零开始的全局页面索引。
+// print_copies < 0 表示不限，0 表示禁止打印。
+const permissions = ofd.permissions();
+// [{scope, pages, declared, edit, annot, export, signature, watermark,
+//   print_screen, printable, print_copies, start_date, end_date}]
+ofd.checkPermission('print', [0, 1]); // copy / export / print；成功 true，失败 {error, code}
+```
+
+`ofd.open()` 和 `ofd.selectVersion()` 的结果新增 `permissions`；Worker 保留同名字段，
+并提供 `permissions`、`checkPermission` 命令。权限拒绝使用稳定的 `permission_denied` 错误代码；
+同步 API 返回 `{error, code}`，异步渲染拒绝的 `Error.code` 同样可检查。
+
+`ofd.text(index)` 检查复制权限；`ofd.renderStream()` 始终检查导出权限，单页同样适用。
+`ofd.renderPage()` / `ofd.renderPages()` 的默认用途为预览，保存图片时应传 `{purpose: 'export'}`，
+准备打印时应传 `{purpose: 'print'}`。`ofd.mediaData(scope, id, maxBytes)` 默认检查导出权限；
+文档内播放或缩略图可传第四个参数 `'preview'`，该用途不提供独立文件下载入口。
+
+Go `webreader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermission()` 提供相同的快照和检查，
+可用 `errors.Is(err, webreader.ErrPermissionDenied)` 判断拒绝。`Reader.Text()`、`RenderPDF/RenderPDFTo()`、
+`AttachmentData()` 自动检查内容导出权限；保存图片或准备打印时为 `RenderOptions.Purpose` 设置
+`PermissionExport` / `PermissionPrint`。`Reader.MediaData()` 是供文档内播放的原始读取接口，下载资源前应检查文档体的导出权限。
 
 ### 打印与导出
 
@@ -60,6 +95,7 @@
 - `+` / `=`：放大；`-`：缩小；`0`：恢复 100%。
 - `f`：适应宽度；`Shift+F`：适应页面。
 - `Ctrl/Cmd+F`：打开搜索；`Ctrl/Cmd+Shift+C`：复制当前页文字。
+- `Ctrl/Cmd+P`：打开阅读器打印选页窗口，并按文档权限检查。
 - `Ctrl/Cmd+B`：显示/隐藏侧栏；`[` / `]`：切换上一个/下一个侧栏面板（缩略图/大纲/书签/字体/附件/资源/注解/签名）。
 - 在输入框内输入或存在 `Ctrl/Cmd` 等修饰键时不会触发上述翻页/缩放快捷键。
 

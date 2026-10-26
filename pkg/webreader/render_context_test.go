@@ -159,8 +159,8 @@ func TestRenderPDFToStopsBeforeNextPageWhenBackendDefersWriteError(t *testing.T)
 			}
 			return 0, want
 		})
-		// 下一页故意无效；若忽略后端缓存的输出错误，会错误地返回页索引错误。
-		err := r.RenderPDFTo(t.Context(), output, []int{0, -1}, RenderOptions{})
+		// 权限预检会先验证全部页码；重复有效页仍应在首次输出失败后停止写入。
+		err := r.RenderPDFTo(t.Context(), output, []int{0, 0}, RenderOptions{})
 		if !errors.Is(err, want) || writes != 1 {
 			t.Fatalf("输出错误未及时终止: err=%v writes=%d，期望 %v", err, writes, want)
 		}

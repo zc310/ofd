@@ -44,7 +44,11 @@ func (a *wasmApp) renderAsync(id uint64, render func(context.Context) (js.Value,
 				delete(a.requests, request)
 				a.requestsMu.Unlock()
 				if err != nil {
-					_ = invokeJSCallback(reject, js.Global().Get("Error").New(err.Error()))
+					failure := js.Global().Get("Error").New(err.Error())
+					if code := wasmErrorCode(err); code != "" {
+						failure.Set("code", code)
+					}
+					_ = invokeJSCallback(reject, failure)
 					return
 				}
 				_ = invokeJSCallback(resolve, result)
