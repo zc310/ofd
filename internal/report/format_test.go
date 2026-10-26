@@ -1,4 +1,4 @@
-package reportfmt
+package report
 
 import "testing"
 
@@ -12,10 +12,14 @@ func TestFromOutput(t *testing.T) {
 		{output: "report.MD", format: "markdown", ok: true},
 		{output: "report.markdown", format: "markdown", ok: true},
 		{output: "report.json", format: "json", ok: true},
+		{output: "report.ofd", format: "ofd", ok: true},
+		{output: "report.OFD", format: "ofd", ok: true},
 		{output: "report.PDF", format: "pdf", ok: true},
 		{output: "report.xlsx", format: "xlsx", ok: true},
 		{output: "report.csv", ok: false},
 		{output: "-", ok: false},
+		{output: "", ok: false},
+		{output: "report", ok: false},
 	} {
 		t.Run(test.output, func(t *testing.T) {
 			format, ok := FromOutput(test.output)

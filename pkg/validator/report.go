@@ -326,6 +326,21 @@ func statusLabel(status Status) string {
 	}
 }
 
+// Label 返回校验结论的中文名称；未知值原样返回。
+func (s Status) Label() string { return statusLabel(s) }
+
+// Label 返回问题严重程度的中文名称；未知值原样返回。
+func (s Severity) Label() string { return severityLabel(s) }
+
+// Label 返回校验阶段的中文名称；未知值原样返回。
+func (s Stage) Label() string { return stageLabel(s) }
+
+// Label 返回检查项的中文名称；未知值原样返回。
+func (c CheckResult) Label() string { return checkLabel(c.Name) }
+
+// StatusLabel 返回检查状态的中文名称；未知值原样返回。
+func (c CheckResult) StatusLabel() string { return checkStatusLabel(c.Status) }
+
 func severityLabel(severity Severity) string {
 	switch severity {
 	case SeverityError:

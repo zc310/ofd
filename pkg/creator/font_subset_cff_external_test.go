@@ -61,6 +61,10 @@ func TestExternalMultiFDCFFSubsetPreservesGlyphOutlinesAndMetrics(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	originalCFF, err := fontfile.ParseSFNT(data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	usage := &fontUsage{runes: []rune("中文⽂（），。ABC123")}
 	var buffer sfnt.Buffer
 	for _, r := range usage.runes {
@@ -102,6 +106,11 @@ func TestExternalMultiFDCFFSubsetPreservesGlyphOutlinesAndMetrics(t *testing.T) 
 	for before, after := range usage.remap {
 		if before == 0 {
 			continue // 子集化允许清空 .notdef。
+		}
+		oldCID, oldOK := originalCFF.CFF.GlyphCID(before)
+		newCID, newOK := resultCFF.CFF.GlyphCID(uint16(after))
+		if !oldOK || !newOK || oldCID != newCID {
+			t.Fatalf("字形 %d 的 CID 改变: before=%d after=%d", before, oldCID, newCID)
 		}
 		oldAdvance, err := original.GlyphAdvance(&buffer, sfnt.GlyphIndex(before), 64000, font.HintingNone)
 		if err != nil {

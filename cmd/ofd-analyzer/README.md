@@ -1,9 +1,9 @@
 # ofd-analyzer
 
-`ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于分析文档组成、页面对象、文字、资源、附件、注解、签名和引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。默认输出纯文本报告，也可输出 Markdown、JSON、PDF 和 XLSX 报告。
+`ofd-analyzer` 是面向 OFD 文件的结构分析工具，用于分析文档组成、页面对象、文字、资源、附件、注解、签名和引用关系，适合文档排查、资源审计、转换问题定位以及生成结构化分析报告。默认输出纯文本报告，也可输出 Markdown、JSON、OFD、PDF 和 XLSX 报告。
 
 JSON 报告的 `schema_version` 保持为 `1`，签名项增加 `validation` 完整验证结论与检查明细。
-文本、Markdown、PDF 和 XLSX 报告也展示完整结论；两层数学签名通过不代表完整验证通过。
+文本、Markdown、OFD、PDF 和 XLSX 报告也展示完整结论；两层数学签名通过不代表完整验证通过。
 
 普通 `Type=Sign` 按 GM/T 0099 的 SM2/SM3 SignedData 验证，`verification_valid` 表示单层
 数学签名，`outer_verification` 记录其证书与签名结果，不生成 SES 印章内部签名结果。
@@ -71,9 +71,10 @@ ofd-analyzer --format json document.ofd
 # 输出缩进后的 JSON 报告文件
 ofd-analyzer --pretty -  document.ofd
 
-# 输出纯文本、Markdown、PDF 或 XLSX 报告
+# 输出纯文本、Markdown、OFD、PDF 或 XLSX 报告
 ofd-analyzer --format text -o report.txt document.ofd
 ofd-analyzer --format markdown -o report.md document.ofd
+ofd-analyzer --format ofd --font /path/to/cjk-font.ttf -o report.ofd document.ofd
 ofd-analyzer --format pdf --font /path/to/font.ttf -o report.pdf document.ofd
 ofd-analyzer --format xlsx -o report.xlsx document.ofd
 
@@ -81,6 +82,7 @@ ofd-analyzer --format xlsx -o report.xlsx document.ofd
 ofd-analyzer -o report.txt document.ofd
 ofd-analyzer -o report.md document.ofd
 ofd-analyzer -o report.json document.ofd
+ofd-analyzer -o report.ofd --font /path/to/cjk-font.ttf document.ofd
 ofd-analyzer -o report.pdf --font /path/to/font.ttf document.ofd
 ofd-analyzer -o report.xlsx document.ofd
 
@@ -100,8 +102,8 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | 选项                             | 默认值   | 说明                                                    |
 |----------------------------------|----------|---------------------------------------------------------|
 | `-o`, `--output PATH`            | 标准输出 | 报告输出路径，使用 `-` 输出到标准输出                   |
-| `--format FORMAT`                | `text`   | 报告格式：`text`、`markdown`、`json`、`pdf` 或 `xlsx`；未显式指定时可根据输出扩展名自动推断 |
-| `--font PATH`                    | 自动     | PDF 报告使用的字体文件；仅适用于 PDF                    |
+| `--format FORMAT`                | `text`   | 报告格式：`text`、`markdown`、`json`、`ofd`、`pdf` 或 `xlsx`；未显式指定时可根据输出扩展名自动推断 |
+| `--font PATH`                    | 自动     | OFD/PDF 报告使用的中文 TTF、OTF 或 TTC 字体文件 |
 | `--signature-uid ID`             | 空       | SM2 签名用户标识；为空时使用默认 UID                    |
 | `--signature-format`             | 自动     | SM2 签名值格式：`auto`、`der` 或 `raw`                  |
 | `--signature-roots`              | 空       | PEM 信任根文件；指定后执行证书链校验                    |
@@ -116,14 +118,29 @@ ofd-analyzer --tree --format json --pretty document.ofd
 | `--version`                      | 关闭     | 输出 analyzer 版本                                      |
 | `-h`, `--help`                   | 关闭     | 显示命令帮助                                            |
 
-未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
-分别对应 `text`、`markdown`、`json`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.ofd`、`.pdf` 和 `.xlsx`
+分别对应 `text`、`markdown`、`json`、`ofd`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
 其他扩展名仍默认使用 `text`。
 
 ## 报告
 
+OFD/PDF 使用与校验报告共用的 flow 默认 Material 主题，包含 A4 分页、重复表头、章节大纲和
+「第 N 页 / 共 M 页」页脚。PDF 从内存中的 OFD 转换，保留可搜索文字与矢量内容。
+报告展示统计汇总、资源与引用计数、文档体、页面、字体、附件、注解、签名完整验证、
+按需启用的目录树，以及警告和错误。原始完整引用关系可通过 JSON 或 XLSX 报告取得。
+
+分析完成和签名验证通过使用绿色，部分完成、缺少证据或警告使用橙色，失败和错误使用红色，
+未执行或不适用使用灰色。字体须支持中文；省略 `--font` 时自动查找中文系统字体，TTC 自动选择
+含中文的字体面。TrueType 和 CFF 均按实际使用字形子集化。长路径自动换行，控制字符、非法 XML
+字符和缺字用可见 Unicode 转义展示。缺少中文字体时，OFD/PDF 输出会报错。
+标题和表头自动选择同族的实际粗体字体面；同族粗体不可用时沿用常规字体。
+
+Go 调用可使用 `analyzer.RenderOFD(writer, result, analyzer.DocumentOptions{Font: fontPath})`、
+`analyzer.RenderPDF(writer, result, analyzer.PDFOptions{Font: fontPath})`，或用
+`analyzer.BuildReport(ctx, result, options)` 获取已分页的 `creator.Document` 模型。
+
 签名报告新增 `validation`，包含完整验证状态 `valid`、`invalid` 或 `incomplete`，
-以及逐项 `checks`（`code`、`status`、`message`）；文本、Markdown、PDF 和 XLSX
+以及逐项 `checks`（`code`、`status`、`message`）；文本、Markdown、OFD、PDF 和 XLSX
 报告显示完整结论。两层签名的原有数学验证字段保留。缺少证书信任、吊销证据、
 印章状态或无法确认保护范围时，不会报告完整通过；完整配置入口见
 [`pkg/sign.Verify`](../../pkg/sign/README.md#完整验证)。
@@ -139,7 +156,7 @@ XLSX 报告为 Excel 工作簿，包含「汇总」页，以及「文档体」�
 默认不加载系统根证书，因此证书信任显示为“未校验”，也不代表证书链信任或吊销状态。底层解析器可由调用方显式提供信任根执行证书链验证；使用 `--signature-crls` 和 `--signature-revocation-issuers` 可执行不联网的离线 CRL 吊销校验。工具不会访问证书中的 CRL 地址；未提供匹配 CRL 时状态为“未知”。SM2 验证支持默认 UID、调用方指定 UID，以及 DER `SEQUENCE {r,s}` 和 64 字节 `r||s` 签名值格式，三类配置可以组合使用。报告中的资源引用使用文档体作用域，例如
 `doc[0]/font:3`，避免多个文档体使用相同 ID 时发生混淆。
 
-报告始终包含 OFD ZIP 包统计；使用 `--tree` 时，报告会在文本和 Markdown 中附加 ZIP 包目录树，在 JSON 的 `package.tree` 中提供嵌套目录节点。
+报告始终包含 OFD ZIP 包统计；使用 `--tree` 时，报告会在文本、Markdown、OFD 和 PDF 中附加 ZIP 包目录树，在 JSON 的 `package.tree` 中提供嵌套目录节点。
 目录树只表示包内实际路径，不展开 XML 节点；文件引用关系仍单独输出。目录按目录优先、名称排序，文件节点包含类型和解压后大小。
 
 ## 截图

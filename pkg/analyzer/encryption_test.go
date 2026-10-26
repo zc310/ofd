@@ -40,7 +40,13 @@ func TestAnalyzeLockedPackagePreservesMetadataAndIncompleteState(t *testing.T) {
 			t.Fatalf("encryption diagnostic lost: %s", &out)
 		}
 	}
-	if !strings.Contains(strings.Join(pdfReportLines(report), "\n"), "未解锁") {
-		t.Fatal("PDF lost encryption diagnostic")
-	}
+	t.Run("flow", func(t *testing.T) {
+		doc, err := BuildReport(t.Context(), report, DocumentOptions{Font: testReportFont(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(analysisModelText(doc), "未解锁") {
+			t.Fatal("报告缺少未解锁说明")
+		}
+	})
 }

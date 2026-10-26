@@ -12,8 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/fileutil"
-	"github.com/zc310/ofd/internal/reportfmt"
+	reporting "github.com/zc310/ofd/internal/report"
 	"github.com/zc310/ofd/pkg/validator"
+	validatorreport "github.com/zc310/ofd/pkg/validator/report"
 )
 
 const (
@@ -150,9 +151,9 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	})
 	flags := root.Flags()
 	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；使用 - 输出到标准输出")
-	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json、pdf 或 xlsx")
+	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json、ofd、pdf 或 xlsx")
 	flags.StringVar(&opts.mode, "mode", opts.mode, "校验模式：strict、compat 或 structural")
-	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的中文字体文件")
+	flags.StringVar(&opts.font, "font", "", "OFD/PDF 报告使用的中文字体文件（TTF、OTF 或 TTC）")
 	flags.IntVar(&opts.maxErrors, "max-errors", opts.maxErrors, "最多记录的校验错误数")
 	flags.Int64Var(&opts.maxInputSize, "max-input-size", opts.maxInputSize, "ZIP 原始输入数据的最大字节数")
 	flags.Int64Var(&opts.maxFileSize, "max-file-size", opts.maxFileSize, "ZIP 条目解压后的最大字节数")
@@ -184,12 +185,12 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 
 func validateOptions(opts *options) error {
 	if !opts.formatSet {
-		if format, ok := reportfmt.FromOutput(opts.output); ok {
+		if format, ok := reporting.FromOutput(opts.output); ok {
 			opts.format = format
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(opts.format)) {
-	case "text", "markdown", "json", "pdf", "xlsx":
+	case "text", "markdown", "json", "ofd", "pdf", "xlsx":
 	default:
 		return fmt.Errorf("不支持的报告格式 %q", opts.format)
 	}
@@ -206,8 +207,8 @@ func validateOptions(opts *options) error {
 	if opts.maxErrors < 0 || opts.maxInputSize < 0 || opts.maxFileSize < 0 || opts.maxTotalSize < 0 || opts.maxEntries < 0 || opts.maxXMLBytes < 0 || opts.maxXMLNodes < 0 || opts.maxXMLDepth < 0 {
 		return errors.New("大小和错误数量限制不能为负数")
 	}
-	if opts.font != "" && opts.format != "pdf" {
-		return errors.New("--font 只能与 --format pdf 一起使用")
+	if opts.font != "" && opts.format != "pdf" && opts.format != "ofd" {
+		return errors.New("--font 只能与 --format ofd 或 pdf 一起使用")
 	}
 	if _, err := os.Stat(opts.input); err != nil {
 		return fmt.Errorf("输入文件：%w", err)
@@ -219,7 +220,7 @@ func validateOptions(opts *options) error {
 }
 
 func writeReport(opts *options, report validator.Report, stdout io.Writer) error {
-	// 先在内存中完成渲染，避免 PDF 字体加载失败时留下空报告文件。
+	// 先在内存中完成渲染，避免字体加载或格式转换失败时留下空报告文件。
 	var buffer bytes.Buffer
 	var output io.Writer = &buffer
 
@@ -232,7 +233,9 @@ func writeReport(opts *options, report validator.Report, stdout io.Writer) error
 	case "json":
 		err = validator.RenderJSON(output, report, opts.pretty)
 	case "pdf":
-		err = validator.RenderPDF(output, report, validator.PDFOptions{Font: opts.font})
+		err = validatorreport.RenderPDF(context.Background(), output, report, validatorreport.Options{Font: opts.font})
+	case "ofd":
+		err = validatorreport.RenderOFD(context.Background(), output, report, validatorreport.Options{Font: opts.font})
 	case "xlsx":
 		err = validator.RenderXLSX(output, report)
 	}

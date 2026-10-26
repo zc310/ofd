@@ -1,5 +1,4 @@
-// Package reportfmt 提供报告输出格式的推断。
-package reportfmt
+package report
 
 import (
 	"path/filepath"
@@ -15,6 +14,8 @@ func FromOutput(output string) (string, bool) {
 		return "markdown", true
 	case ".json":
 		return "json", true
+	case ".ofd":
+		return "ofd", true
 	case ".pdf":
 		return "pdf", true
 	case ".xlsx":

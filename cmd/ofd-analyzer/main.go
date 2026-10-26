@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/fileutil"
-	"github.com/zc310/ofd/internal/reportfmt"
+	reporting "github.com/zc310/ofd/internal/report"
 	"github.com/zc310/ofd/pkg/analyzer"
 )
 
@@ -151,8 +151,8 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 	})
 	flags := root.Flags()
 	flags.StringVarP(&opts.output, "output", "o", "", "报告输出路径；使用 - 输出到标准输出")
-	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json、pdf 或 xlsx；默认为 text")
-	flags.StringVar(&opts.font, "font", "", "PDF 报告使用的字体文件")
+	flags.StringVar(&opts.format, "format", opts.format, "报告格式：text、markdown、json、ofd、pdf 或 xlsx；默认为 text")
+	flags.StringVar(&opts.font, "font", "", "OFD/PDF 报告使用的中文字体文件（TTF、OTF 或 TTC）")
 	flags.StringVar(&opts.signatureUID, "signature-uid", "", "SM2 签名用户标识")
 	flags.StringVar(&opts.signatureFormat, "signature-format", "", "SM2 签名值格式：auto、der 或 raw")
 	flags.StringVar(&opts.signatureRoots, "signature-roots", "", "签名证书链校验使用的 PEM 信任根文件")
@@ -179,18 +179,18 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 
 func validateOptions(opts *options) error {
 	if !opts.formatSet {
-		if format, ok := reportfmt.FromOutput(opts.output); ok {
+		if format, ok := reporting.FromOutput(opts.output); ok {
 			opts.format = format
 		}
 	}
 	opts.format = strings.ToLower(strings.TrimSpace(opts.format))
 	switch opts.format {
-	case "text", "markdown", "json", "pdf", "xlsx":
+	case "text", "markdown", "json", "ofd", "pdf", "xlsx":
 	default:
 		return fmt.Errorf("不支持的报告格式 %q", opts.format)
 	}
-	if opts.font != "" && opts.format != "pdf" {
-		return errors.New("--font 只能与 --format pdf 一起使用")
+	if opts.font != "" && opts.format != "pdf" && opts.format != "ofd" {
+		return errors.New("--font 只能与 --format ofd 或 pdf 一起使用")
 	}
 	if opts.signatureFormat != "" {
 		switch strings.ToLower(strings.TrimSpace(opts.signatureFormat)) {
@@ -243,6 +243,8 @@ func writeReport(opts *options, report analyzer.Report, stdout io.Writer) error 
 		err = analyzer.RenderMarkdown(&buffer, report)
 	case "pdf":
 		err = analyzer.RenderPDF(&buffer, report, analyzer.PDFOptions{Font: opts.font})
+	case "ofd":
+		err = analyzer.RenderOFD(&buffer, report, analyzer.DocumentOptions{Font: opts.font})
 	case "xlsx":
 		err = analyzer.RenderXLSX(&buffer, report)
 	default:

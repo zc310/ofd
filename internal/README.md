@@ -15,13 +15,14 @@
 | 加解密、签名与印章       | `crypt`、`ses`、`signeddata`、`physicalsig`、`securexml`、`sealimg` |
 | ZIP 配置与受限包写出     | `container`（压缩策略与规模预算）、`container/entrywriter`          |
 | 应用支持                 | `server`、`localization`、`version`                                 |
-| 共享基础能力与测试辅助   | `cache`、`fileutil`、`reportfmt`、`contextio`、`testutil`           |
+| 报告排版与输出           | `report`（格式推断、默认主题、字体及 OFD/PDF 输出）                |
+| 共享基础能力与测试辅助   | `cache`、`fileutil`、`contextio`、`testutil`                        |
 
 共享基础包的边界：
 
 - `cache`：并发安全的有界 LRU，支持权重限制、淘汰回调和条目保护。
 - `fileutil`：文件查找和路径身份判断。
-- `reportfmt`：按输出路径扩展名推断报告格式。
+- `report`：统一报告格式推断、flow 默认 Material 主题、中文字体和粗体选择、长文本处理及 OFD/PDF 输出。
 - `contextio`：在读写边界检查上下文取消。
 - `testutil`：跨包测试共用的辅助函数。
 

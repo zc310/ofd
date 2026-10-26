@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **校验器 PDF 报告 API 移至报告子包**：`validator.RenderPDF` 和 `validator.PDFOptions`
+  移至 `pkg/validator/report`，改用
+  `report.RenderPDF(ctx, writer, result, report.Options{Font: fontPath})`。
+  OFD/PDF 统一使用 flow 排版，PDF 由 OFD 转换；调用方需要更新导入路径并传入上下文。
+
 - **阅读器搜索 API 改用上下文、选项和报告**：`webreader.Reader.Search` 从
   `Search(query string) ([]SearchResult, error)` 改为
   `Search(ctx context.Context, query string, options SearchOptions) (SearchReport, error)`。

@@ -13,7 +13,7 @@ Go API 的 `Validate(ctx, view, name)` 接收完整解锁视图时，物理签�
 `--gmt0099` 的 Provider 扩展按图 B.2 接受 `ExtendData` 子元素，不接受同名属性。
 
 `ofd-validator` 是用于校验 OFD 文件包完整性和规范性的命令行工具，并将校验结果生成文本、Markdown、
-JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
+JSON、OFD、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归档以及 CI 自动化校验。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。校验通过不代表文件内容真实、完整、可信或具有法律效力。
 
@@ -28,22 +28,19 @@ JSON、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问题归
 - 校验签名摘要，支持 MD5、SHA1、SM3 和 SM3 OID `1.2.156.10197.1.401`。
 - 可扫描未被主引用链直接引用的 OFD 命名空间 XML；外部命名空间 XML 内容不会参与 OFD
   引用和语义检查。
-- 输出中文文本、Markdown、JSON、PDF 和 XLSX 报告。
-- PDF 报告每页底部显示页码，例如 `第 1 页 / 共 3 页`。
+- 输出中文文本、Markdown、JSON、OFD、PDF 和 XLSX 报告。
+- OFD/PDF 共用 flow 默认 Material 主题，嵌入中文字体，支持章节大纲和跨页表格，每页底部显示页码，例如 `第 1 页 / 共 3 页`。
+- OFD/PDF 的问题明细以四列表格展示序号、级别／阶段、文件／XML 路径及问题说明，前两列水平居中；长明细可跨页续排并重复表头，说明包含代码、依据和提示。
 
 报告包含输入文件、检测时间、校验状态、错误和警告汇总、各校验阶段状态，以及每条问题的严重级别、
 校验阶段、错误代码、文件位置和 XML 路径等详细信息。JSON 报告保留机器可读字段，并提供对应的中文
-标签，适合 CI 和脚本处理；Markdown 和 PDF 报告适合归档和阅读。
+标签，适合 CI 和脚本处理；Markdown、OFD 和 PDF 报告适合归档和阅读。
 
 ## 截图
 
 ### Markdown 报告
 
 ![ofd-validator Markdown 报告](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-markdown.png)
-
-### PDF 报告
-
-![ofd-validator PDF 报告](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-validator-pdf.png)
 
 ## 构建
 
@@ -98,6 +95,9 @@ ofd-validator -o report.txt document.ofd
 # 输出 PDF 报告；字体必须支持中文
 ofd-validator --format pdf --font /path/to/cjk-font.ttf -o report.pdf document.ofd
 
+# 输出 OFD 报告，也可根据 .ofd 扩展名自动选择格式
+ofd-validator --font /path/to/cjk-font.ttf -o report.ofd document.ofd
+
 # 输出 XLSX 报告
 ofd-validator --format xlsx -o report.xlsx document.ofd
 ofd-validator -o report.xlsx document.ofd
@@ -137,10 +137,10 @@ Go 调用方可将 `crypt.Open` 的视图传给新增 `Validator.Validate(ctx, v
 
 | 选项                                 | 默认值      | 说明                                                   |
 |--------------------------------------|-------------|--------------------------------------------------------|
-| `--format text\|markdown\|json\|pdf\|xlsx` | `text` | 报告格式；未显式指定时可根据输出扩展名自动推断         |
+| `--format text\|markdown\|json\|ofd\|pdf\|xlsx` | `text` | 报告格式；未显式指定时可根据输出扩展名自动推断         |
 | `--mode strict\|compat\|structural`  | `strict`    | 校验模式                                               |
 | `-o`, `--output PATH`                | 标准输出    | 报告输出路径，使用 `-` 输出到标准输出                  |
-| `--font PATH`                        | 自动查找    | PDF 使用的中文字体文件；只能与 `--format pdf` 一起使用 |
+| `--font PATH`                        | 自动查找    | OFD/PDF 使用的中文 TTF、OTF 或 TTC 字体文件 |
 | `--pretty`                           | 关闭        | 缩进 JSON 输出                                         |
 | `--skip-xsd`                         | 关闭        | 跳过 XSD 校验                                          |
 | `--no-digest`                        | 关闭        | 跳过签名摘要校验                                       |
@@ -218,8 +218,8 @@ GB/T 42133 中「去除×××」一类条款本质是转换动作而非合规条
 - `markdown`：包含检查结果和逐条问题详情的 Markdown 报告。
 - `json`：保留英文机器字段和枚举值，同时提供 `status_zh`、`severity_zh`、`stage_zh` 等中文字段；
   适合 CI、脚本和其他程序处理。
-- `pdf`：A4 可搜索文本报告。需要能够显示中文的字体；可使用 `--font` 显式指定字体。每一页底部
-  会显示当前页码和总页数。
+- `ofd`：由 flow 排版的 A4 标准 OFD，包含嵌入字体、摘要、检查结果表格、问题明细、大纲和页码。
+- `pdf`：将同一 OFD 报告在内存中转换为可搜索的矢量 PDF，共用 OFD 的分页、字体与版式。
 - `xlsx`：Excel 工作簿报告，包含「汇总」页和「问题」页。汇总页展示校验状态、错误/警告/提示统计和
   各检查阶段结果；问题页逐条列出问题详情，并带有自动筛选和冻结表头，适合在 Excel 中筛选、归档和
   二次处理。
@@ -233,11 +233,15 @@ ofd-validator --format pdf \
   document.ofd
 ```
 
-未指定 `--font` 时，工具会先查找常见中文系统字体，再扫描系统字体目录。如果环境中没有可用中文字体，
-PDF 输出会失败；文本、Markdown 和 JSON 报告不受此限制。
+未指定 `--font` 时，工具会自动查找常见中文系统字体。如果环境中没有可用中文字体，
+OFD/PDF 输出会失败；文本、Markdown 和 JSON 报告不受此限制。TTC 自动选择含中文的字体面。
+TrueType 和 CFF 字体均按实际使用字形子集化，避免嵌入完整字体。
+标题和表头自动选择同族的实际粗体字体面；同族粗体不可用时沿用常规字体。
+诊断中的控制字符、非法 XML 字符和缺字用可见 Unicode 转义表示，过长路径和连续字符串自动换行。
+原始诊断字段可从 JSON 报告取得。Go 接口见 [报告排版包](../../pkg/validator/report/README.md)。
 
-未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.pdf` 和 `.xlsx`
-分别对应 `text`、`markdown`、`json`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
+未显式指定 `--format` 时，输出文件扩展名 `.txt`、`.md`/`.markdown`、`.json`、`.ofd`、`.pdf` 和 `.xlsx`
+分别对应 `text`、`markdown`、`json`、`ofd`、`pdf` 和 `xlsx`；显式指定的格式优先。标准输出、无扩展名或
 其他扩展名仍默认使用 `text`。
 
 ## 退出码

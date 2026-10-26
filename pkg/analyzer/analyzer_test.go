@@ -58,9 +58,15 @@ func TestSignatureValidationSurvivesAllReportFormats(t *testing.T) {
 			if !strings.Contains(data.String(), "| 完整验证 |") || !strings.Contains(data.String(), "| "+test.label+" |") {
 				t.Fatal("Markdown 缺少完整结论")
 			}
-			if !strings.Contains(strings.Join(pdfReportLines(report), "\n"), "完整验证："+test.label) {
-				t.Fatal("PDF 文本缺少完整结论")
-			}
+			t.Run("flow", func(t *testing.T) {
+				doc, err := BuildReport(t.Context(), report, DocumentOptions{Font: testReportFont(t)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(analysisModelText(doc), "完整验证："+test.label) {
+					t.Fatal("报告缺少完整结论")
+				}
+			})
 			data.Reset()
 			if err := RenderXLSX(&data, report); err != nil {
 				t.Fatal(err)
@@ -522,10 +528,7 @@ func TestRenderPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	font := "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-	if _, err := os.Stat(font); err != nil {
-		t.Skipf("test font unavailable: %v", err)
-	}
+	font := testReportFont(t)
 	var pdf bytes.Buffer
 	if err := RenderPDF(&pdf, report, PDFOptions{Font: font}); err != nil {
 		t.Fatal(err)
@@ -533,8 +536,12 @@ func TestRenderPDF(t *testing.T) {
 	if !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) || pdf.Len() < 1000 {
 		t.Fatalf("invalid PDF output: %d bytes", pdf.Len())
 	}
-	if !strings.Contains(strings.Join(pdfReportLines(report), "\n"), "## OFD 包目录结构") {
-		t.Fatal("PDF report lines omit package tree")
+	doc, err := BuildReport(t.Context(), report, DocumentOptions{Font: font})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(analysisModelText(doc), "OFD 包目录结构") {
+		t.Fatal("PDF 报告缺少包目录树")
 	}
 }
 
@@ -673,10 +680,15 @@ func TestAnalyzeDrawParamReferencesAndInheritanceCycles(t *testing.T) {
 	if !strings.Contains(text.String(), "绘制参数：文件 0，定义数 3，引用次数 4，唯一引用 2，无法解析引用 1，继承循环 1") {
 		t.Fatalf("draw param text summary = %s", text.String())
 	}
-	pdfLines := strings.Join(pdfReportLines(report), "\n")
-	if !strings.Contains(pdfLines, "绘制参数：定义数 3    引用次数 4    无法解析引用 1    继承循环 1") {
-		t.Fatalf("draw param PDF summary = %s", pdfLines)
-	}
+	t.Run("flow", func(t *testing.T) {
+		doc, err := BuildReport(t.Context(), report, DocumentOptions{Font: testReportFont(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(analysisModelText(doc), "绘制参数继承循环\n1") {
+			t.Fatal("报告缺少绘制参数继承循环统计")
+		}
+	})
 }
 
 func TestAnalyzePatternDefinitionsAreNotDuplicatedByDrawParamUsage(t *testing.T) {

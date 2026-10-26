@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/pem"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -59,6 +60,8 @@ func TestValidateOptionsInfersFormatFromOutput(t *testing.T) {
 		{extension: ".markdown", format: "markdown"},
 		{extension: ".json", format: "json"},
 		{extension: ".pdf", format: "pdf"},
+		{extension: ".ofd", format: "ofd"},
+		{extension: ".OFD", format: "ofd"},
 		{extension: ".xlsx", format: "xlsx"},
 	} {
 		t.Run(test.extension, func(t *testing.T) {
@@ -162,7 +165,7 @@ func TestValidateOptionsRejectsUnsupportedFormat(t *testing.T) {
 	}
 }
 
-func TestValidateOptionsRejectsFontForNonPDF(t *testing.T) {
+func TestValidateOptionsRejectsFontForText(t *testing.T) {
 	opts := &options{input: filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"), format: "text", font: "font.ttf"}
 	if err := validateOptions(opts); err == nil {
 		t.Fatal("expected --font validation error")
@@ -259,15 +262,82 @@ func TestRunWritesTextAndMarkdownReports(t *testing.T) {
 }
 
 func TestRunWritesPDFReport(t *testing.T) {
-	font := "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-	if _, err := os.Stat(font); err != nil {
-		t.Skipf("test font unavailable: %v", err)
-	}
+	font := localReportFont(t)
 	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--format", "pdf", "--font", font, input}, &stdout, &stderr)
 	if code != exitOK || stderr.Len() != 0 || !bytes.HasPrefix(stdout.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("exit code = %d, PDF prefix = %q, stderr = %s", code, stdout.Bytes()[:min(len(stdout.Bytes()), 5)], stderr.String())
+	}
+}
+
+func localReportFont(t *testing.T) string {
+	t.Helper()
+	path := os.Getenv("OFD_REPORT_TEST_FONT")
+	if path == "" {
+		path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		t.Skipf("本地中文测试字体不存在: %s", path)
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRunWritesOFDReportAndKeepsBinaryStdoutClean(t *testing.T) {
+	font := localReportFont(t)
+	input := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
+	for _, stdout := range []bool{false, true} {
+		var output, diagnostics bytes.Buffer
+		path := filepath.Join(t.TempDir(), "report.ofd")
+		args := []string{"--font", font, "-o", path, input}
+		if stdout {
+			args = []string{"--format", "ofd", "--font", font, "-o", "-", input}
+		}
+		if code := run(args, &output, &diagnostics); code != exitOK || diagnostics.Len() != 0 {
+			t.Fatalf("stdout=%v code=%d stderr=%s", stdout, code, &diagnostics)
+		}
+		data := output.Bytes()
+		if !stdout {
+			if output.Len() != 0 {
+				t.Fatalf("文件输出污染 stdout: %q", &output)
+			}
+			var err error
+			data, err = os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		ofd, err := parser.NewOFD(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ofd.Documents) != 1 || ofd.Documents[0].PageCount() == 0 {
+			t.Fatal("报告没有页面")
+		}
+		_ = ofd.Close()
+	}
+}
+
+func TestReportFontFailurePreservesExistingOutput(t *testing.T) {
+	root := t.TempDir()
+	input, output := filepath.Join(root, "broken.ofd"), filepath.Join(root, "report.ofd")
+	for path, value := range map[string]string{input: "broken input", output: "existing report"} {
+		if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--font", filepath.Join(root, "missing.ttf"), "-o", output, input}, &stdout, &stderr); code != exitUsage || stderr.Len() == 0 || stdout.Len() != 0 {
+		t.Fatalf("错误退出码或输出: code=%d stdout=%s stderr=%s", code, &stdout, &stderr)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "existing report" {
+		t.Fatal("生成失败时覆盖了报告")
 	}
 }
 
