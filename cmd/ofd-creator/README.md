@@ -107,6 +107,17 @@ Material 3 的 Headline/Title/Body 角色、常规字重大标题和浅色表格
 IBM Carbon 的静态标题角色、紧凑表格和灰色表头示例见
 [flow-carbon-report.yaml](examples/flow-carbon-report.yaml)；Bootstrap 5 的标题比例、段间距与图注示例见
 [flow-bootstrap5-report.yaml](examples/flow-bootstrap5-report.yaml)。
+中文综合报告见 [flow-chinese-report.json](examples/flow-chinese-report.json)，包含六级标题、真实粗体、编号表格、
+矢量进度图、脚注、大纲与内部引用。字体资源使用 `google/NotoSansSC-Regular.ttf` 和
+`google/NotoSansSC-Bold.ttf`；将其放在资源根下，或修改 `resources.fonts[].file` 后指定对应的 `--asset-root`。
+
+```bash
+go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-chinese-report.json --asset-root "$HOME/.local/share/fonts" --check
+go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-chinese-report.json --asset-root "$HOME/.local/share/fonts" -o /tmp/flow-chinese-report.ofd --validate --deterministic
+```
+
+以上中文示例命令从仓库根目录运行。清单的流式字号单位为磅，固定图元中的原始文字 `size` 单位为毫米。
+
 GB/T 9704—2012 常规公文基础版式示例见
 [flow-gbt9704-notice.yaml](examples/flow-gbt9704-notice.yaml)。该可运行样例用内嵌 Go 字体验证几何；正式公文需配置对应中文字体。
 使用本机五类公文字体的长主送迁移示例见 [flow-gbt9704-recipients.yaml](examples/flow-gbt9704-recipients.yaml)，

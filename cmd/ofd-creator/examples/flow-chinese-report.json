@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "document": {
+    "id": "flow-chinese-report",
+    "title": "年度项目交付报告",
+    "author": "项目管理办公室",
+    "page_size": {"name": "A4"}
+  },
+  "resources": {
+    "fonts": [
+      {"name": "Report-Regular", "file": "google/NotoSansSC-Regular.ttf"},
+      {"name": "Report-Bold", "file": "google/NotoSansSC-Bold.ttf", "bold": true}
+    ]
+  },
+  "flow": {
+    "theme": "material",
+    "font": "Report-Regular",
+    "heading_font": "Report-Bold",
+    "font_families": [{"regular": "Report-Regular", "bold": "Report-Bold"}],
+    "margins": {"top": 20, "right": 20, "bottom": 20, "left": 20},
+    "generate_outlines": true,
+    "page_numbers": true,
+    "header": "年度项目交付报告",
+    "footer": "项目管理办公室",
+    "footnotes": [
+      {
+        "id": "source",
+        "text": "数据口径：按本年度项目台账及复核记录统计；本例数据仅用于展示报告版式。"
+      }
+    ],
+    "blocks": [
+      {"type": "heading", "level": 1, "text": "年度项目交付报告"},
+      {"text": "2026 年度 · 项目管理与质量复核\nAnnual Delivery Review"},
+      {"id": "overview", "type": "heading", "level": 2, "text": "一、执行概况"},
+      {"text": "本年度围绕资料收集、质量复核和归档管理三个环节推进项目交付。各团队按照统一的检查清单核对任务、记录问题并闭环处理，确保成果完整、数据准确、责任清晰。"},
+      {
+        "runs": [
+          {"text": "本期重点："},
+          {"text": "提高交付质量，保留复核依据。", "bold": true},
+          {"text": "统计结果来自项目台账"},
+          {"footnote": "source"},
+          {"text": "，详见"},
+          {"text": "归档说明", "target": "archive"},
+          {"text": "。"}
+        ]
+      },
+      {"type": "heading", "level": 3, "text": "交付结果与质量"},
+      {
+        "id": "results",
+        "type": "table",
+        "table": {
+          "caption": "项目交付情况",
+          "numbered": true,
+          "caption_prefix": "表",
+          "header": ["工作项", "完成情况", "复核结论"],
+          "rows": [
+            ["资料收集", "120 / 120 项", "资料齐全"],
+            ["质量复核", "110 / 120 项", "符合验收要求"],
+            ["归档入库", "102 / 120 项", "检索信息完整"]
+          ]
+        }
+      },
+      {"text": "交付成果采用统一编号，业务材料与复核记录一一对应。对于尚在补充的事项，明确责任人和完成期限，并在下次复核时跟踪确认。"},
+      {"type": "list_item", "marker": "1.", "text": "对照清单逐项检查，发现问题及时记录。"},
+      {"type": "list_item", "marker": "2.", "text": "完成复核后统一归档，确保后续查询有据可循。"},
+      {"type": "page_break"},
+      {"id": "review", "type": "heading", "level": 1, "text": "二、复核与改进"},
+      {"text": "复核工作关注材料完整性、数据一致性和过程可追溯性。对高频问题及时归纳，形成可复用的检查项，减少后续交付中的重复沟通。"},
+      {"type": "heading", "level": 4, "text": "2.1 过程复核"},
+      {"text": "在资料进入下一环节前完成责任人确认，保留审核意见与处理结果。重要数据应与原始台账进行交叉核对。"},
+      {"type": "heading", "level": 5, "text": "2.1.1 数据口径"},
+      {"text": "完成率按已验收事项占计划事项的比例计算；需补充材料的事项仍列入跟踪清单。"},
+      {"type": "heading", "level": 6, "text": "执行检查清单"},
+      {"text": "检查材料版本、项目编号、责任人和审核时间，确认附件齐全，并保持台账与归档目录一致。"},
+      {
+        "id": "progress",
+        "type": "fixed",
+        "fixed": {
+          "width": 170,
+          "height": 36,
+          "caption": "工作进度概览",
+          "numbered": true,
+          "caption_prefix": "图",
+          "items": [
+            {"type": "path", "width": 170, "height": 36, "data": "M 0 0 L 170 0 L 170 36 L 0 36 C", "fill": true, "stroke_set": false, "fill_color": {"r": 235, "g": 240, "b": 245}},
+            {"type": "text", "x": 4, "y": 3, "width": 28, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "资料收集", "fill": true},
+            {"type": "path", "x": 36, "y": 4, "width": 110, "height": 4, "data": "M 0 0 L 110 0 L 110 4 L 0 4 C", "fill": true, "stroke_set": false, "fill_color": {"r": 32, "g": 113, "b": 181}},
+            {"type": "text", "x": 150, "y": 3, "width": 16, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "100%", "fill": true},
+            {"type": "text", "x": 4, "y": 13, "width": 28, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "质量复核", "fill": true},
+            {"type": "path", "x": 36, "y": 14, "width": 110, "height": 4, "data": "M 0 0 L 110 0 L 110 4 L 0 4 C", "fill": true, "stroke_set": false, "fill_color": {"r": 200, "g": 210, "b": 220}},
+            {"type": "path", "x": 36, "y": 14, "width": 101.2, "height": 4, "data": "M 0 0 L 101.2 0 L 101.2 4 L 0 4 C", "fill": true, "stroke_set": false, "fill_color": {"r": 32, "g": 113, "b": 181}},
+            {"type": "text", "x": 150, "y": 13, "width": 16, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "92%", "fill": true},
+            {"type": "text", "x": 4, "y": 23, "width": 28, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "归档入库", "fill": true},
+            {"type": "path", "x": 36, "y": 24, "width": 110, "height": 4, "data": "M 0 0 L 110 0 L 110 4 L 0 4 C", "fill": true, "stroke_set": false, "fill_color": {"r": 200, "g": 210, "b": 220}},
+            {"type": "path", "x": 36, "y": 24, "width": 93.5, "height": 4, "data": "M 0 0 L 93.5 0 L 93.5 4 L 0 4 C", "fill": true, "stroke_set": false, "fill_color": {"r": 32, "g": 113, "b": 181}},
+            {"type": "text", "x": 150, "y": 23, "width": 16, "height": 6, "size": 3.1, "font": "Report-Regular", "value": "85%", "fill": true}
+          ]
+        }
+      },
+      {"id": "archive", "type": "heading", "level": 2, "text": "三、归档说明"},
+      {"text": "归档包应包含最终成果、原始资料、复核记录和问题闭环清单。项目负责人确认内容完整后，提交统一的档案管理目录。"},
+      {
+        "runs": [
+          {"text": "详细结果见"},
+          {"caption_ref": "results"},
+          {"text": "；各环节进度见"},
+          {"caption_ref": "progress"},
+          {"text": "。归档说明位于第 "},
+          {"page_ref": "archive"},
+          {"text": " 页。业务团队与档案管理人员共同确认最终交付状态。"}
+        ]
+      }
+    ]
+  }
+}
