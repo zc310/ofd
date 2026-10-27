@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 CSV/TSV、PDF、XPS、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 EML 邮件、SVG、CSV/TSV、PDF、XPS、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -19,7 +19,7 @@ go install github.com/zc310/ofd/cmd/ofd-converter@main
 go install ./cmd/ofd-converter
 ```
 
-程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。Office、HTML、XPS 和 OCR 转换仍需按对应格式安装外部工具，见下文。
+程序安装到 `GOBIN`，未设置时为 `$(go env GOPATH)/bin`；请确保该目录位于 `PATH` 中。Office、HTML、EML、SVG、XPS 和 OCR 转换仍需按对应格式安装外部工具，见下文。
 
 ## 用法
 
@@ -43,7 +43,7 @@ ofd-converter --help
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
 | `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
-| `-from`                | 输入格式（可选）: `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
+| `-from`                | 输入格式（可选）: `eml`, `svg`, `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
 | `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`ftgg` |
@@ -60,14 +60,14 @@ ofd-converter --help
 | `-external-workers`    | 外部工具（LibreOffice/Chrome/xpstopdf）批量转换并发数，默认 `2`                                                                                      |
 | `-soffice`             | LibreOffice 可执行文件路径；缺省按 `OFD_SOFFICE`、`PATH` 和常见安装路径查找；仅 Office 文档输入使用                                                   |
 | `-xpstopdf`            | `xpstopdf` 可执行文件路径；缺省按 `OFD_XPSTOPDF`、`PATH` 查找；仅 XPS 输入使用                                                                       |
-| `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；仅 HTML/MHTML 输入使用                            |
+| `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；HTML/MHTML/EML/SVG 输入使用 |
 | `-temp-dir`            | 外部工具（LibreOffice/Chrome/xpstopdf）临时文件目录；缺省使用系统临时目录                                                                            |
-| `-office-timeout`      | Office/HTML/XPS 文档转换超时秒数；`0` 表示默认 120 秒                                                                                                |
-| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；HTML/MHTML、CSV/TSV 输入生效，默认 `A4` |
-| `-landscape`           | 横向打印，交换纸张宽高；HTML/MHTML、CSV/TSV 输入生效，可与 `-paper` 配合使用 |
-| `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                                          |
-| `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                                                    |
-| `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                                                  |
+| `-office-timeout`      | Office/HTML/EML/SVG/XPS 转换超时秒数；`0` 表示默认 120 秒 |
+| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；HTML/MHTML/EML/SVG、CSV/TSV 输入生效，默认 `A4` |
+| `-landscape`           | 横向打印，交换纸张宽高；HTML/MHTML/EML/SVG、CSV/TSV 输入生效，可与 `-paper` 配合使用 |
+| `-no-print-background` | 不打印背景颜色和图片；HTML/MHTML/EML 输入生效，不改变 SVG 图形本身的填充 |
+| `-allow-remote`        | 允许 HTML/MHTML 加载外部资源，或 EML 正文加载 HTTP(S) 图片；默认禁止。SVG 使用自包含资源 |
+| `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；HTML/MHTML/EML/SVG 输入生效 |
 | `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                                               |
 | `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
 | `-pdf-image-mode`      | PDF 图片模式：`compatible`（默认）或 `compact`；后者对不透明 CMYK JPEG 转为有损 RGB JPEG |
@@ -97,13 +97,14 @@ ofd-converter --help
 
 | 选项                                                                     | 生效的转换方向                    | 说明                                                 |
 |--------------------------------------------------------------------------|-----------------------------------|------------------------------------------------------|
-| `-paper`、`-landscape`                                                   | HTML/MHTML、CSV/TSV → PDF/OFD      | 控制输出纸张尺寸和方向；HTML/MHTML 由 Chrome 排版，CSV/TSV 由 Go 排版 |
+| `-paper`、`-landscape`                                                   | HTML/MHTML/EML/SVG、CSV/TSV → PDF/OFD | 控制输出纸张尺寸和方向；CSV/TSV 由 Go 排版，其余由 Chrome 排版 |
 | `-csv-no-header`、`-csv-encoding`、`-csv-title`、`-csv-font`                | CSV/TSV 导入                      | 控制表头、文本编码、标题和嵌入字体 |
-| `-no-print-background`、`-allow-remote`、`-chrome-no-sandbox`、`-chrome` | HTML/MHTML → PDF/OFD              | 仅影响 Chrome 渲染行为                               |
+| `-chrome-no-sandbox`、`-chrome`                                          | HTML/MHTML/EML/SVG → PDF/OFD      | 控制 Chrome 可执行文件和运行方式 |
+| `-no-print-background`、`-allow-remote`                                  | HTML/MHTML/EML → PDF/OFD          | 控制背景和外部资源；EML 仅放行正文 HTTP(S) 图片 |
 | `-soffice`                                                               | Office 文档 → PDF/OFD             | 仅影响 LibreOffice 调用                              |
 | `-xpstopdf`                                                              | XPS → PDF/OFD                     | 仅影响 xpstopdf 调用                                |
-| `-office-timeout`                                                        | Office 文档、HTML/MHTML、XPS → PDF/OFD | 单次转换超时秒数，默认 120                       |
-| `-temp-dir`                                                              | Office/HTML/MHTML/XPS 输入        | 外部工具临时目录                                     |
+| `-office-timeout`                                                        | Office、HTML/MHTML/EML/SVG、XPS → PDF/OFD | 单次转换超时秒数，默认 120 |
+| `-temp-dir`                                                              | Office/HTML/MHTML/EML/SVG/XPS 输入 | 外部工具临时目录 |
 | `-page`                                                                  | OFD → PDF/txt/md/图片             | 选择要转换的页面；对导入类输入不生效                 |
 | `-md-tables`                                                             | OFD → Markdown                    | 识别无边框表格并输出 GFM 表格，默认关闭              |
 | `-no-html-text-layer`                                                    | OFD → HTML                        | 关闭透明文字层                                       |
@@ -113,7 +114,7 @@ ofd-converter --help
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-raster-backend`                                                        | OFD → PNG/JPG                     | 选择页面栅格化后端                                  |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
-| `-pdf-strict`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；Office/HTML/XPS 直接输出 PDF 时不生效 |
+| `-pdf-strict`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/EML/SVG/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；这些格式直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -196,6 +197,26 @@ PDF 导入默认限制输入、页数、对象数、解压流、图片像素、�
 普通模式遇到已识别的内容缺失或近似转换，会继续生成 OFD，并向标准错误报告诊断码、
 输入文件、页号、对象编号与资源名。`--pdf-strict` 在首条诊断后失败，已有输出文件保留。
 严格模式针对已报告的转换缺口，不代表完整实现 PDF 规范。
+
+### EML 邮件与 SVG 转 OFD
+
+两种输入都需要本机 Chrome/Chromium，可通过 `-chrome` 或 `OFD_CHROME` 指定路径。
+
+```bash
+ofd-converter testdata/eml/project-update.eml /tmp/project-update.ofd
+ofd-converter message.eml /tmp/message.pdf
+ofd-converter --landscape testdata/svg/workflow.svg /tmp/workflow.ofd
+ofd-converter --paper A3 --landscape drawing.svg /tmp/drawing.pdf
+```
+
+EML 解析邮件头、MIME 正文和 CID 内嵌图片，输出附件文件名、类型和大小清单；
+HTML/纯文本备选正文只选一份。EML→OFD 同时把原附件写入 OFD 附件区，可由阅读器下载，
+不把附件自动转换为页面；直接 EML→PDF 仅输出画面和附件清单。
+SVG 使用自包含资源，按所选纸张等比放置，保留浏览器及 PDF 导入支持的矢量与文字。
+直接输出 PDF 时使用浏览器产物；OFD 目标执行 PDF 导入，沿用 `-pdf-*` 预算和诊断。
+未安装浏览器、损坏输入或不支持的内容返回转换失败（退出码 `1`），无效纸张名返回 `2`。
+
+范围和限制见 [EML 支持清单](../../docs/EML-SUPPORT.md)、[SVG 支持清单](../../docs/SVG-SUPPORT.md)。
 
 ### CSV / TSV 转 OFD
 

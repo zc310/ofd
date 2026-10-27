@@ -498,6 +498,12 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 HTTP 请求使用默认 CSV/TSV 导入设置；编码、字体等高级配置目前通过 Go API 设置。
 支持范围见 [CSV/TSV 支持清单](../../docs/CSV-SUPPORT.md)。
 
+`eml` / `svg` 输入通过服务机器的 Chrome/Chromium 转为 PDF 或 OFD，进入 `heavy` 通道；
+纸张、方向、浏览器路径和超时沿用已有选项。EML 展示邮件头、正文、CID 图片和附件清单，
+OFD 输出还嵌入原附件，供阅读器下载；
+SVG 使用自包含资源并等比放入纸张。OFD→SVG 输出仍使用 Go 的 `fast` 通道。
+范围见 [EML](../../docs/EML-SUPPORT.md)、[SVG](../../docs/SVG-SUPPORT.md) 支持清单。
+
 ### 产物文件名
 
 `output.file_name` 指定产物文件名的**基名**，扩展名由 `output.format` 决定：

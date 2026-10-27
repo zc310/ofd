@@ -12,8 +12,10 @@ import (
 
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/csv"
+	_ "github.com/zc310/ofd/pkg/converter/import/eml"
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	pdfimport "github.com/zc310/ofd/pkg/converter/import/pdf"
+	_ "github.com/zc310/ofd/pkg/converter/import/svg"
 	"github.com/zc310/ofd/pkg/crypt"
 )
 
@@ -29,6 +31,19 @@ func ExampleConvert_csv() {
 		converter.WithLandscape(true))
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
 	// Output: true
+}
+
+func ExampleImporterByName_eml() {
+	// EML 与 SVG 按需空白导入；实际转换时需要本机 Chrome/Chromium。
+	for _, name := range []string{"eml", "svg"} {
+		importer, ok := converter.ImporterByName(name)
+		if ok {
+			fmt.Println(importer.Name(), importer.MIME())
+		}
+	}
+	// Output:
+	// eml message/rfc822
+	// svg image/svg+xml
 }
 
 func ExampleConvert_decryptedView() {

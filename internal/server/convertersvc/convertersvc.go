@@ -29,11 +29,13 @@ import (
 	// 服务需要支持全部已注册格式，导入器靠 init() 注册，必须显式链接：
 	// 否则 ImporterByName 查不到 docx/pdf/html，请求会以"无法识别输入格式"被拒。
 	_ "github.com/zc310/ofd/pkg/converter/import/csv"      // CSV/TSV→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/eml"      // EML→OFD/PDF
 	_ "github.com/zc310/ofd/pkg/converter/import/html"     // HTML/MHTML→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/image"    // PNG/JPEG/TIFF→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown" // Markdown→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/office"   // Office→OFD 与 →PDF
 	_ "github.com/zc310/ofd/pkg/converter/import/pdf"      // PDF→OFD
+	_ "github.com/zc310/ofd/pkg/converter/import/svg"      // SVG→OFD/PDF
 	_ "github.com/zc310/ofd/pkg/converter/import/xps"      // XPS→OFD 与 →PDF
 )
 
@@ -426,9 +428,15 @@ func IsHeavy(in Input, outputFormat string) bool {
 		return true
 	}
 	if in.Format != "" {
-		return isHeavyFormat(in.Format)
+		return isHeavyInputFormat(in.Format)
 	}
-	return isHeavyFormat(filepath.Ext(in.FileName))
+	return isHeavyInputFormat(filepath.Ext(in.FileName))
+}
+
+// SVG 输入需要 Chrome，OFD→SVG 输出由 Go 直接完成，不能共用输入输出判据。
+func isHeavyInputFormat(name string) bool {
+	key := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "."))
+	return key == "eml" || key == "svg" || isHeavyFormat(key)
 }
 
 // heavyFormats 是走 LibreOffice、Chrome 或 xpstopdf 的格式。

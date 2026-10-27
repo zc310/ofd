@@ -138,7 +138,7 @@ func WithXpstopdf(path string) Option {
 	}
 }
 
-// WithOfficeTimeout 设置 Office 文档转换超时时间；0 表示使用默认值。
+// WithOfficeTimeout 设置外部工具（Office/HTML/EML/SVG/XPS）转换超时；0 使用默认值。
 func WithOfficeTimeout(timeout time.Duration) Option {
 	return func(c *Converter) {
 		c.officeTimeout = timeout
@@ -182,14 +182,14 @@ func WithPrintBackground(enabled bool) Option {
 }
 
 // WithAllowRemoteResources 设置是否允许加载外部资源（默认禁止，仅允许本地与
-// data: 资源）。仅在 HTML/MHTML 转 PDF 时生效。
+// data: 资源）。HTML/MHTML 与 EML 转换使用；EML 正文仅允许 data 图片及可选 HTTP(S) 图片。
 func WithAllowRemoteResources(enabled bool) Option {
 	return func(c *Converter) {
 		c.allowRemote = enabled
 	}
 }
 
-// WithChrome 设置 Chrome/Chromium 可执行文件路径，供 HTML/MHTML 导入使用；
+// WithChrome 设置 Chrome/Chromium 可执行文件路径，供 HTML/MHTML/EML/SVG 导入使用；
 // 为空时按 OFD_CHROME、PATH 和常见安装路径自动查找。
 func WithChrome(path string) Option {
 	return func(c *Converter) {

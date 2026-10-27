@@ -10,6 +10,9 @@
 - HTML/MHTML → OFD：Chrome 先转 PDF，再复用 `internal/pdf2ofd`（见
   [`PDF-SUPPORT.md`](PDF-SUPPORT.md)）生成 OFD，**保留文字层**。
 
+EML 和 SVG 也复用这条浏览器链路，但输入预处理和资源规则独立；参见
+[EML 支持清单](EML-SUPPORT.md)、[SVG 支持清单](SVG-SUPPORT.md)。
+
 ## 支持级别
 
 | 图标 | 级别     | 含义                                                          |

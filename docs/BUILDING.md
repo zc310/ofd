@@ -114,6 +114,7 @@ Fyne 阅读器的 Web 版本部署在 <https://zc310.github.io/ofd/fyne/>，构�
 |----------------------------|---------------------------------------------------|
 | Office → OFD/PDF           | LibreOffice。                                     |
 | HTML/MHTML → OFD/PDF       | Chrome/Chromium。                                 |
+| EML/SVG → OFD/PDF          | Chrome/Chromium；中文渲染需要可用的本机中文字体。 |
 | XPS → OFD/PDF              | libgxps 的 `xpstopdf`。                           |
 | 图片 → 带 OCR 文字层的 OFD | Tesseract 及对应语言包；未启用 `--ocr` 时不需要。 |
 

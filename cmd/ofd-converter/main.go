@@ -24,6 +24,9 @@ import (
 	"github.com/zc310/ofd/pkg/converter"
 	// 注册 CSV/TSV→OFD 表格导入器。
 	_ "github.com/zc310/ofd/pkg/converter/import/csv"
+	// 注册 EML 邮件与自包含 SVG（经 Chrome）导入器和到 PDF 的直接转换器。
+	_ "github.com/zc310/ofd/pkg/converter/import/eml"
+	_ "github.com/zc310/ofd/pkg/converter/import/svg"
 	// 注册 "ofd" 输出格式（PDF→OFD）；按需引入，避免默认链接 pdfcpu。
 	_ "github.com/zc310/ofd/pkg/converter/import/pdf"
 	// 注册 Markdown→OFD 导入器（输入格式 "md"）。
@@ -231,7 +234,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.StringVar(&opts.inputDir, "input-dir", "", "批量转换的输入目录")
 	flags.StringVar(&opts.outputDir, "output-dir", "", "批量转换的输出目录")
 	flags.StringVar(&format, "format", "", "输出格式: ofd, pdf, docx, txt, md, markdown, html, png, jpg, tiff, svg, eps, tex")
-	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: csv, tsv, pdf, xps, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
+	flags.StringVar(&opts.from, "from", "", "输入格式（可选）: eml, svg, csv, tsv, pdf, xps, md, docx, doc, odt, rtf, wps, pptx, xlsx, mhtml, html 等；缺省按输入文件扩展名推断")
 	flags.StringVar(&opts.htmlFormat, "html-format", opts.htmlFormat, "HTML 页面格式: png, jpg, svg")
 	flags.BoolVar(&opts.noHTMLTextLayer, "no-html-text-layer", false, "OFD 转 HTML 时不输出透明文字层（默认输出，文字因此可选中、可查找、可朗读）")
 	flags.IntVar(&opts.dpi, "dpi", opts.dpi, "输出分辨率 (1-1200)")
@@ -243,13 +246,13 @@ func parseArgs(args []string) (*options, error) {
 	flags.IntVar(&opts.externalWorkers, "external-workers", opts.externalWorkers, "外部工具（LibreOffice/Chrome/xpstopdf）批量转换并发数，默认 2")
 	flags.StringVar(&opts.soffice, "soffice", "", "LibreOffice 可执行文件路径；缺省按 OFD_SOFFICE、PATH 和常见安装路径查找")
 	flags.StringVar(&opts.xpstopdf, "xpstopdf", "", "xpstopdf 可执行文件路径；缺省按 OFD_XPSTOPDF 和 PATH 查找")
-	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML/XPS 文档转换超时秒数；0 表示默认 120 秒")
-	flags.StringVar(&opts.chrome, "chrome", "", "Chrome/Chromium 可执行文件路径；缺省按 OFD_CHROME、PATH 和常见安装路径查找")
+	flags.IntVar(&opts.officeTimeout, "office-timeout", 0, "Office/HTML/EML/SVG/XPS 转换超时秒数；0 表示默认 120 秒")
+	flags.StringVar(&opts.chrome, "chrome", "", "HTML/MHTML/EML/SVG 使用的 Chrome/Chromium 路径；缺省按 OFD_CHROME、PATH 和常见安装路径查找")
 	flags.StringVar(&opts.tempDir, "temp-dir", "", "外部工具（LibreOffice/Chrome/xpstopdf）临时文件目录；缺省使用系统临时目录")
-	flags.StringVar(&opts.paper, "paper", "", "打印纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4（HTML/MHTML/CSV/TSV）")
-	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印，交换纸张宽高（HTML/MHTML/CSV/TSV）")
-	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML）")
-	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML，默认禁止）")
+	flags.StringVar(&opts.paper, "paper", "", "打印纸张尺寸: A4, A3, A5, Letter, Legal, B5, 16开；默认 A4（HTML/MHTML/EML/SVG/CSV/TSV）")
+	flags.BoolVar(&opts.landscape, "landscape", false, "横向打印，交换纸张宽高（HTML/MHTML/EML/SVG/CSV/TSV）")
+	flags.BoolVar(&opts.noPrintBackground, "no-print-background", false, "不打印背景颜色和图片（HTML/MHTML/EML）")
+	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML/EML，默认禁止；SVG 使用自包含资源）")
 	flags.StringVar(&opts.password, "password", "", "加密输入文档的打开口令（目前仅 PDF）")
 	flags.BoolVar(&opts.pdfStrict, "pdf-strict", false, "PDF 导入遇到内容缺失或近似转换诊断时失败")
 	flags.StringVar(&opts.pdfImageMode, "pdf-image-mode", opts.pdfImageMode, "PDF 图片模式: compatible (默认，无损兼容) 或 compact (不透明 CMYK JPEG 转有损 RGB JPEG)")
@@ -377,7 +380,8 @@ func run(opts *options) error {
 	if _, err := opts.csvOptions.Normalize(); err != nil {
 		return usageError(err)
 	}
-	if opts.paper != "" && (opts.inputDir != "" || resolveInputFormat(opts) == "csv" || resolveInputFormat(opts) == "tsv") {
+	from := resolveInputFormat(opts)
+	if opts.paper != "" && (opts.inputDir != "" || from == "csv" || from == "tsv" || from == "eml" || from == "svg") {
 		if _, err := converter.PaperByName(opts.paper); err != nil {
 			return usageError(err)
 		}
@@ -804,7 +808,7 @@ func resolveOutputFormat(opts *options) (string, error) {
 
 // convertImported 处理非 OFD 输入：通过 converter.Convert 导入并按需导出。
 func convertImported(opts *options, from, to string) error {
-	if from == "csv" || from == "tsv" {
+	if from == "csv" || from == "tsv" || from == "eml" || from == "svg" {
 		if _, err := opts.csvOptions.Normalize(); err != nil {
 			return usageError(err)
 		}

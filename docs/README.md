@@ -14,6 +14,8 @@
 | [OFFICE-SUPPORT.md](OFFICE-SUPPORT.md) | Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）转 OFD/PDF 支持范围  |
 | [HTML-SUPPORT.md](HTML-SUPPORT.md)     | HTML/MHTML 转 OFD/PDF 的支持范围与打印选项                           |
 | [CSV-SUPPORT.md](CSV-SUPPORT.md)       | CSV/TSV 表格转 OFD/PDF、自动分页、输入编码和字体                     |
+| [EML-SUPPORT.md](EML-SUPPORT.md)       | EML 邮件头、MIME 正文、CID 图片及原附件导入                          |
+| [SVG-SUPPORT.md](SVG-SUPPORT.md)       | 自包含 SVG 矢量图转 OFD/PDF 与页面设置                              |
 
 ## 库使用指南
 

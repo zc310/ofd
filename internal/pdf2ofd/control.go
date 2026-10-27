@@ -41,6 +41,7 @@ func keyForStream(s *types.StreamDict) streamKey {
 type conversionControl struct {
 	ctx                                 context.Context
 	options                             Options
+	attachments                         []creator.Attachment
 	err                                 error
 	decoded, pixels, output, operations int64
 	streams                             map[streamKey]bool

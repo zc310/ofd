@@ -62,6 +62,8 @@ testdata/pdfcpu
 testdata/standards
 testdata/suwell
 testdata/tencent
+testdata/svg
+testdata/eml
 testdata/csv
 AGENTS.md
 .golangci.yml

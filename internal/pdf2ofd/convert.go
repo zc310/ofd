@@ -32,6 +32,13 @@ func Convert(gctx context.Context, input any, output io.Writer, password string)
 // ConvertWithOptions 在资源预算内转换 PDF，并按选项报告无法完整保留的内容。
 // []byte 输入在调用期间只读借用，调用方应保持其内容不变，直到转换返回。
 func ConvertWithOptions(gctx context.Context, input any, output io.Writer, password string, options Options) (err error) {
+	return ConvertWithAttachments(gctx, input, output, password, options, nil)
+}
+
+// ConvertWithAttachments 将上游格式的原始附件与 PDF 页面一同写出为 OFD。
+// 附件按 GB/T 33190—2016 §20.1/20.2 交给 creator 生成清单和 FileLoc，
+// 不经过渲染或重新编码；调用方负责限制上游附件的数量和总字节数。
+func ConvertWithAttachments(gctx context.Context, input any, output io.Writer, password string, options Options, attachments []creator.Attachment) (err error) {
 	if gctx == nil {
 		gctx = context.Background()
 	}
@@ -50,7 +57,7 @@ func ConvertWithOptions(gctx context.Context, input any, output io.Writer, passw
 	if err != nil {
 		return err
 	}
-	control := &conversionControl{ctx: gctx, options: options}
+	control := &conversionControl{ctx: gctx, options: options, attachments: attachments}
 	data, err := readPDFInputLimited(gctx, input, options.Limits.MaxInputBytes)
 	if err != nil {
 		return err
@@ -162,6 +169,7 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 		CustomDatas:    customDatas,
 		PageSize:       creator.A4,
 		Pages:          make([]creator.Page, 0, ctx.PageCount),
+		Attachments:    append([]creator.Attachment(nil), control.attachments...),
 	}
 	fontCache := make(map[types.Object]pdfFontInfo, 8)
 	imageCache := make(map[types.IndirectRef]pdfImageDataCache, 8)

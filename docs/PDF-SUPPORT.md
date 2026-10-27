@@ -2,7 +2,10 @@
 
 本文档说明 PDF（ISO 32000-1/-2）转 OFD 的能力范围、限制和失败处理，适用于
 `converter.Convert(ctx, "pdf", "ofd", ...)`、`ofd-converter` 的 PDF 输入，以及
-Office/HTML 转 OFD 时的 PDF 中间阶段。
+Office/HTML/EML/SVG 转 OFD 时的 PDF 中间阶段。
+
+EML 导入器在页面写出时另行提供原附件，由创建器写入 OFD 附件区；这是上游 EML 数据，
+并非迁移 PDF 自身的附件。详见 [EML 支持清单](EML-SUPPORT.md)。
 
 | 级别 | 含义 |
 |------|------|

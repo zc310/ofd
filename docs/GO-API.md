@@ -117,6 +117,8 @@ func main() {
 | PDF        | `github.com/zc310/ofd/pkg/converter/import/pdf`      |
 | Markdown   | `github.com/zc310/ofd/pkg/converter/import/markdown` |
 | CSV/TSV    | `github.com/zc310/ofd/pkg/converter/import/csv`      |
+| EML 邮件   | `github.com/zc310/ofd/pkg/converter/import/eml`      |
+| SVG        | `github.com/zc310/ofd/pkg/converter/import/svg`      |
 | Office     | `github.com/zc310/ofd/pkg/converter/import/office`   |
 | HTML/MHTML | `github.com/zc310/ofd/pkg/converter/import/html`     |
 | XPS        | `github.com/zc310/ofd/pkg/converter/import/xps`      |
@@ -133,6 +135,14 @@ Encoding: "gb18030", Title: "设备台账", FontFile: "fonts/cjk.ttf"})` 配置�
 `WithPaperSize`、`WithPaperDimensions`、`WithLandscape`。字段保持文本，编号前导零和金额
 小数位不会被自动转换；纯拉丁文本可使用内置字体，中文自动查找系统字体并嵌入。
 范围和限制见 [CSV/TSV 支持清单](CSV-SUPPORT.md)，可运行用法见 `ExampleConvert_csv`。
+
+EML 与 SVG 先预处理为 HTML，再通过本机 Chrome/Chromium 转换；直接输出 PDF 时使用
+浏览器产物，输出 OFD 时执行 PDF 导入并沿用 PDF 资源预算。调用
+`converter.Convert(ctx, "eml", "ofd", input, output)` 或将 `from` 改为 `"svg"`，
+纸张、方向和浏览器选项沿用 `WithPaperSize`、`WithLandscape`、`WithChrome` 等公共配置。
+EML 输出邮件头、选中的正文、CID 图片和附件清单，OFD 中同时嵌入原附件，支持通过
+`webreader.Attachments` / `AttachmentData` 列出和读取；SVG 按纸张等比放置。
+详见 [EML 支持清单](EML-SUPPORT.md)、[SVG 支持清单](SVG-SUPPORT.md)。
 
 Office、HTML 转换会把调用方上下文传给外部进程，取消后结束处理并清理临时目录。
 也可直接调用 Markdown 包的 `Convert(ctx, input, output)` 或

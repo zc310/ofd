@@ -12,6 +12,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/zc310/ofd/internal/convert/browser"
 	"github.com/zc310/ofd/internal/server/allowlist"
 	"github.com/zc310/ofd/internal/server/transfer"
 	"github.com/zc310/ofd/pkg/converter"
@@ -67,6 +68,45 @@ func TestRunCSVAndTSVToOFD(t *testing.T) {
 		}
 		if res.InputFormat != format || res.Format != "ofd" || len(res.Bytes) < 2 || string(res.Bytes[:2]) != "PK" {
 			t.Fatalf("CSV/TSV 服务转换结果不正确: %+v", res)
+		}
+	}
+}
+
+func TestBrowserDocumentInputResolutionAndLanes(t *testing.T) {
+	for _, format := range []string{"eml", "svg"} {
+		name, ext, err := resolveInputFormat(Input{FileName: "document." + strings.ToUpper(format)})
+		if err != nil || name != format || ext != "."+format {
+			t.Fatalf("输入格式解析失败: %s %s %v", name, ext, err)
+		}
+		if !IsHeavy(Input{FileName: "document." + format}, "ofd") || !IsHeavy(Input{Format: format}, "pdf") {
+			t.Fatalf("%s 输入没有进入浏览器重通道", format)
+		}
+	}
+	if IsHeavy(Input{Format: "ofd"}, "svg") {
+		t.Fatal("OFD→SVG 不应因新增 SVG 导入而进入重通道")
+	}
+}
+
+func TestRunEMLAndSVGWithBrowser(t *testing.T) {
+	chrome, err := browser.FindChrome("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chrome == "" {
+		t.Skip("未安装 Chrome/Chromium")
+	}
+	for _, tc := range []struct{ format, content string }{
+		{"eml", "Subject: Service import\n\nMessage body"},
+		{"svg", `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><text x="5" y="30">Service</text></svg>`},
+	} {
+		service := newService(t)
+		service.DefaultOptions = []converter.Option{converter.WithChrome(chrome), converter.WithChromeNoSandbox(true)}
+		result, err := service.Run(t.Context(), Spec{
+			Input:  Input{Kind: InputUpload, FileName: "document." + tc.format, Bytes: []byte(tc.content)},
+			Output: Output{Kind: OutputStream, Format: "ofd"},
+		})
+		if err != nil || result.InputFormat != tc.format || len(result.Bytes) < 2 || string(result.Bytes[:2]) != "PK" {
+			t.Fatalf("%s 服务转换失败: %v", tc.format, err)
 		}
 	}
 }
