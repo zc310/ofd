@@ -42,6 +42,10 @@ func TestWASMPermissionsForPlainAndEncryptedDocuments(t *testing.T) {
 			if app.permissions(js.Undefined(), nil).(js.Value).Index(0).Get("export").Bool() {
 				t.Fatal("独立权限接口不一致")
 			}
+			info := app.info(js.Undefined(), nil).(js.Value)
+			if info.Get("permissions").Index(0).Get("export").Bool() || info.Get("security").Get("encrypted").Bool() != (test.name == "encrypted") {
+				t.Fatalf("文档信息未返回正确安全状态: %v", info)
+			}
 			for _, action := range []string{"copy", "export", "print"} {
 				value := app.checkPermission(js.Undefined(), []js.Value{js.ValueOf(action), js.ValueOf([]any{0, 1})}).(js.Value)
 				if value.Get("code").String() != "permission_denied" {

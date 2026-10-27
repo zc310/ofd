@@ -468,7 +468,18 @@ const pageURICancel = document.querySelector('#page-uri-cancel');
 const infoToggle = document.querySelector('#info-toggle');
 const infoPanel = document.querySelector('#info-panel');
 const infoClose = document.querySelector('#info-close');
-const infoBody = document.querySelector('#info-body');
+const infoTabs = document.querySelector('#info-tabs');
+const infoTabButtons = [...infoTabs.querySelectorAll('[role="tab"]')];
+const infoTabPanels = {
+  basic: document.querySelector('#info-basic'),
+  security: document.querySelector('#info-security'),
+  fonts: document.querySelector('#info-fonts'),
+};
+const infoBasicContent = document.querySelector('#info-basic-content');
+const infoStats = document.querySelector('#info-stats');
+let activeInfoTab = 'basic';
+let infoRenderRequest = 0;
+let infoRenderedGeneration = -1;
 const debugPanel = document.querySelector('#debug-panel');
 const debugBody = document.querySelector('#debug-body');
 const debugRefresh = document.querySelector('#debug-refresh');
@@ -4049,6 +4060,7 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  resetDocumentInfo('正在读取文档信息…');
   setDocumentPermissions([]);
   closePrintDialog();
   closeExportDialog();
@@ -4324,6 +4336,7 @@ async function openSelectedFile(selected, options = {}) {
     applyLocalFontsIntent();
   }
   clearDocumentView();
+  setInfoTab('basic');
   documentName.textContent = selected.name;
   documentName.title = selected.name;
   setStatus(`正在打开 ${selected.name}...`);
@@ -4430,6 +4443,7 @@ async function openSelectedFile(selected, options = {}) {
       openRequest = undefined;
       opening = false;
       cancelOpen.hidden = true;
+      if (!infoPanel.hidden) updateDocumentInfo();
       if (activeSidebarTab === 'layers') void renderLayers();
     }
   }
@@ -4671,17 +4685,91 @@ function setInfoPanelOpen(open) {
   const show = !!open;
   infoPanel.hidden = !show;
   infoToggle.setAttribute('aria-expanded', String(show));
-  if (show) updateDocumentInfo();
+  if (show && infoRenderedGeneration !== documentGeneration) updateDocumentInfo();
+}
+
+function setInfoTab(tab, focus = false) {
+  if (!Object.hasOwn(infoTabPanels, tab)) return;
+  activeInfoTab = tab;
+  for (const button of infoTabButtons) {
+    const selected = button.dataset.infoTab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    if (selected && focus) button.focus();
+  }
+  for (const [name, panel] of Object.entries(infoTabPanels)) panel.hidden = name !== tab;
+}
+
+function handleInfoTabKeyDown(event) {
+  const index = infoTabButtons.indexOf(event.target);
+  if (index < 0) return;
+  let next = index;
+  if (event.key === 'ArrowRight') next = (index + 1) % infoTabButtons.length;
+  else if (event.key === 'ArrowLeft') next = (index + infoTabButtons.length - 1) % infoTabButtons.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = infoTabButtons.length - 1;
+  else return;
+  event.preventDefault();
+  event.stopPropagation();
+  setInfoTab(infoTabButtons[next].dataset.infoTab, true);
+}
+
+function resetDocumentInfo(message) {
+  infoRenderRequest++;
+  infoRenderedGeneration = -1;
+  const html = `<p class="info-empty">${escapeHTML(message)}</p>`;
+  infoBasicContent.innerHTML = html;
+  infoTabPanels.security.innerHTML = html;
+  infoTabPanels.fonts.innerHTML = html;
+  infoStats.innerHTML = '';
+  for (const panel of Object.values(infoTabPanels)) panel.scrollTop = 0;
+}
+
+function documentSecurityHTML(info) {
+  const row = (label, value) => `<div class="info-row"><span class="info-label">${escapeHTML(label)}</span><span class="info-value">${escapeHTML(String(value))}</span></div>`;
+  const allowed = value => value === true ? '允许' : value === false ? '禁止' : '未知';
+  let html = '';
+  const security = info.security;
+  html += row('文件加密', security?.encrypted === true ? '已加密（GM/T 0099-2020）' : security?.encrypted === false ? '未加密' : '未知');
+  if (security?.encrypted) html += row('解锁状态', security.state === 'unlocked' ? '已解锁' : '未知');
+  const permissions = Array.isArray(info.permissions) ? info.permissions : [];
+  if (!permissions.length) return html + '<p class="info-empty">权限信息暂不可用</p>';
+  for (const permission of permissions) {
+    const pages = permission.pages || [];
+    const range = pages.length ? (pages.length === 1 ? `第 ${pages[0] + 1} 页` : `第 ${pages[0] + 1}–${pages[pages.length - 1] + 1} 页`) : '无页面';
+    if (permissions.length > 1) {
+      const expanded = pages.includes(current);
+      html += `<details class="info-security-document"${expanded ? ' open' : ''}><summary>${escapeHTML(`文档体 ${permission.scope + 1} · ${range}`)}</summary><div class="info-security-document-content">`;
+    }
+    html += row('权限设置', permission.declared ? '已声明' : '未声明，默认允许');
+    html += row('打印', allowed(permission.printable));
+    if (permission.printable) {
+      const copies = permission.print_copies;
+      html += row('打印份数', Number.isInteger(copies) ? copies < 0 ? '不限' : `${copies} 份（声明上限）` : '未知');
+    }
+    html += row('复制文字', allowed(permission.export));
+    html += row('导出内容', allowed(permission.export));
+    html += row('编辑 / 批注', `${allowed(permission.edit)} / ${allowed(permission.annot)}（声明）`);
+    html += row('签名 / 水印', `${allowed(permission.signature)} / ${allowed(permission.watermark)}（声明）`);
+    html += row('截屏', `${allowed(permission.print_screen)}（声明）`);
+    if (permission.start_date || permission.end_date) {
+      html += row('访问有效期', `${permission.start_date || '不限开始时间'} 至 ${permission.end_date || '不限结束时间'}（声明）`);
+    }
+    if (permissions.length > 1) html += '</div></details>';
+  }
+  html += '<p class="info-empty">复制与导出按同一权限执行；打印份数为文档声明。编辑、批注、签名、水印、截屏和有效期未在此阅读器中强制执行。</p>';
+  return html;
 }
 
 function updateDocumentInfo() {
   if (!pageInfos.length) {
-    infoBody.innerHTML = '<p class="info-empty">未打开文档</p>';
+    resetDocumentInfo('未打开文档');
     return;
   }
   const generation = documentGeneration;
+  const request = ++infoRenderRequest;
   loadDocumentInfo().then(info => {
-    if (generation !== documentGeneration || !info) return;
+    if (generation !== documentGeneration || request !== infoRenderRequest || !info) return;
     const rows = [];
     if (info.docID) rows.push(['文档标识', info.docID]);
     if (info.title) rows.push(['标题', info.title]);
@@ -4694,10 +4782,11 @@ function updateDocumentInfo() {
     if (info.version) rows.push(['OFD 版本', info.version]);
     rows.push(['页数', String(pageInfos.length)]);
     const fonts = Array.isArray(info.fonts) ? info.fonts : [];
-    let html = rows.map(([label, value]) =>
+    infoBasicContent.innerHTML = rows.map(([label, value]) =>
       `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(value)}</span></div>`
     ).join('');
-    html += '<div class="info-section-title">字体</div>';
+    infoTabPanels.security.innerHTML = documentSecurityHTML(info);
+    let html = '';
     if (info.fonts_error) {
       html += `<p class="info-empty">字体列表读取失败：${escapeHTML(info.fonts_error)}</p>`;
     } else if (!fonts.length) {
@@ -4717,31 +4806,20 @@ function updateDocumentInfo() {
           `<span class="font-badges">${badges.map(badge => `<span class="font-badge">${escapeHTML(badge)}</span>`).join('')}</span></div>`;
       }).join('');
     }
-    infoBody.innerHTML = html;
+    infoTabPanels.fonts.innerHTML = html;
+    infoStats.innerHTML = '<p class="info-empty">正在读取资源统计…</p>';
+    infoRenderedGeneration = generation;
     engine.stats().then(stats => {
-      if (generation !== documentGeneration || !stats) return;
-      const title = document.createElement('div');
-      title.className = 'info-section-title';
-      title.textContent = '资源统计';
-      const box = document.createElement('div');
-      [['字体', stats.fonts], ['附件', stats.attachments], ['多媒体', stats.media], ['注解页', stats.annotation_pages], ['签名', stats.signatures]]
-        .forEach(([label, value]) => {
-          const row = document.createElement('div');
-          row.className = 'info-row';
-          const name = document.createElement('span');
-          name.className = 'info-label';
-          name.textContent = label;
-          const count = document.createElement('span');
-          count.className = 'info-value';
-          count.textContent = String(value ?? 0);
-          row.append(name, count);
-          box.append(row);
-        });
-      infoBody.append(title, box);
-    }).catch(() => {});
+      if (generation !== documentGeneration || request !== infoRenderRequest || !stats) return;
+      infoStats.innerHTML = '<div class="info-section-title">资源统计</div>' +
+        [['字体', stats.fonts], ['附件', stats.attachments], ['多媒体', stats.media], ['注解页', stats.annotation_pages], ['签名', stats.signatures]]
+          .map(([label, value]) => `<div class="info-row"><span class="info-label">${label}</span><span class="info-value">${escapeHTML(String(value ?? 0))}</span></div>`).join('');
+    }).catch(() => {
+      if (generation === documentGeneration && request === infoRenderRequest) infoStats.innerHTML = '<p class="info-empty">资源统计读取失败</p>';
+    });
   }).catch(() => {
-    if (generation !== documentGeneration) return;
-    infoBody.innerHTML = '<p class="info-empty">获取信息失败</p>';
+    if (generation !== documentGeneration || request !== infoRenderRequest) return;
+    resetDocumentInfo('获取信息失败');
   });
 }
 
@@ -8251,6 +8329,11 @@ pageURIDialog.addEventListener('cancel', event => {
 });
 infoToggle.addEventListener('click', () => setInfoPanelOpen(infoPanel.hidden));
 infoClose.addEventListener('click', () => setInfoPanelOpen(false));
+infoTabs.addEventListener('click', event => {
+  const button = event.target.closest('[data-info-tab]');
+  if (button) setInfoTab(button.dataset.infoTab);
+});
+infoTabs.addEventListener('keydown', handleInfoTabKeyDown);
  copyPageText.addEventListener('click', copyCurrentPageText);
  copyAllTextButton.addEventListener('click', copyDocumentText);
 pageNumber.addEventListener('change', () => {
@@ -8579,6 +8662,7 @@ function handleDocumentKeyDown(event) {
   }
   if (event.key === 'Escape') {
     if (sealPopoverElement && !sealPopoverElement.hidden) closeSealPopover();
+    else if (!infoPanel.hidden) { setInfoPanelOpen(false); infoToggle.focus(); }
     else if (activeSidebarTab === 'search') setSearchPanelOpen(false);
     else if (!viewPanel.hidden) setViewPanelOpen(false);
     else if (zoomMenu && !zoomMenu.hidden) setZoomMenuOpen(false);

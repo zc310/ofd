@@ -20,9 +20,15 @@ var errInvalidCredentials = errors.New("凭据参数无效")
 
 // openWASMDocument 复用只读解密视图；Reader 持有独立租约，关闭时释放解密资源。
 func openWASMDocument(ctx context.Context, data []byte, options webreader.OpenOptions, credentials crypt.DecryptOptions) (*webreader.Reader, error) {
+	reader, _, err := openWASMDocumentSecurity(ctx, data, options, credentials)
+	return reader, err
+}
+
+// openWASMDocumentSecurity 同时返回原文件的加密事实；只有完整解锁并成功创建 Reader 才返回 true。
+func openWASMDocumentSecurity(ctx context.Context, data []byte, options webreader.OpenOptions, credentials crypt.DecryptOptions) (*webreader.Reader, bool, error) {
 	reader, err := webreader.OpenWithOptions(data, options)
 	if !errors.Is(err, crypt.ErrLocked) {
-		return reader, err
+		return reader, false, err
 	}
 	credentials.Limits.MaxInputBytes = wasmMaxInputBytes
 	credentials.Mode = crypt.ModeCompat
@@ -43,10 +49,11 @@ func openWASMDocument(ctx context.Context, data []byte, options webreader.OpenOp
 	}
 	view, err := crypt.Open(ctx, data, crypt.OpenOptions{DecryptOptions: credentials})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer view.Close()
-	return webreader.OpenInput(view, options)
+	reader, err = webreader.OpenInput(view, options)
+	return reader, err == nil, err
 }
 
 func parseWASMPrivateKey(data, password []byte) (*sm2.PrivateKey, error) {

@@ -25,6 +25,7 @@ import (
 type wasmApp struct {
 	mu            sync.Mutex
 	reader        *webreader.Reader
+	encrypted     bool // 原文件是否加密；仅在 Reader 成功打开后设置。
 	fallbackFonts []webreader.FontSource
 	streamsMu     sync.Mutex
 	streams       map[uint64]*jsChunkWriter
@@ -121,7 +122,7 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	if err := a.closeCurrentReader(); err != nil {
 		return errorValue(err)
 	}
-	reader, err := openWASMDocument(context.Background(), data, options, credentials)
+	reader, encrypted, err := openWASMDocumentSecurity(context.Background(), data, options, credentials)
 	if err != nil {
 		return errorValue(err)
 	}
@@ -146,6 +147,7 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	}
 	a.mu.Lock()
 	a.reader = reader
+	a.encrypted = encrypted
 	a.mu.Unlock()
 	return objectValue(map[string]any{
 		"pageCount":   len(pages),
@@ -319,6 +321,7 @@ func (a *wasmApp) closeCurrentReader() error {
 	a.mu.Lock()
 	reader := a.reader
 	a.reader = nil
+	a.encrypted = false
 	a.mu.Unlock()
 	if reader == nil {
 		runtime.GC()
@@ -379,6 +382,17 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 	if err != nil {
 		fontError = err.Error()
 	}
+	permissions, err := reader.Permissions()
+	if err != nil {
+		return errorValue(err)
+	}
+	a.mu.Lock()
+	encrypted := a.encrypted
+	a.mu.Unlock()
+	state := "none"
+	if encrypted {
+		state = "unlocked"
+	}
 	return objectValue(map[string]any{
 		"docID":        info.DocID,
 		"title":        info.Title,
@@ -391,6 +405,10 @@ func (a *wasmApp) info(_ js.Value, _ []js.Value) any {
 		"version":      info.Version,
 		"fonts":        fontListValue(fonts),
 		"fonts_error":  fontError,
+		"security": objectValue(map[string]any{
+			"encrypted": encrypted, "state": state,
+		}),
+		"permissions": permissionsValue(permissions),
 	})
 }
 

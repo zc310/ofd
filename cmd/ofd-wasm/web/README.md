@@ -111,7 +111,8 @@ Go `webreader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermis
 - 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应页面）。
 - 底部页码胶囊包含上一页、页码输入/总页数、下一页，可直接输入页码跳转；可在“显示设置”中隐藏，或点击胶囊上的关闭按钮隐藏。
 - 打印、导出、复制当前页文字、复制全文收在工具栏最右侧的“文档操作”菜单（`more_vert` 图标）中；移动端该按钮固定在最右侧一行。
-- 文档信息面板列出文档声明的字体（名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式），并汇总资源统计（字体/附件/多媒体/注解页/签名数量）；页面资源读取失败时仍显示文档元数据，并单独提示字体列表错误。
+- 文档信息面板分为“基本信息 / 安全信息 / 字体”三个 Tab，资源统计放在基本信息底部。面板高度受视口限制，只有内容区滚动，标题与 Tab 栏始终可见；支持方向键和 Home/End 切换 Tab。同一文档重开面板保留页签与滚动位置，打开新文件回到基本信息，切换历史版本保留 Tab 并更新内容。
+- 安全信息展示原文件是否加密、已解锁状态，以及当前版本各文档体的打印、复制、导出权限和声明的打印份数；其他权限与访问有效期标记为文档声明。多文档体采用折叠块，默认展开当前页所属文档体。字体 Tab 列出名称、字体族、粗体/斜体、衬线/等宽、嵌入或逻辑、格式；字体列表读取失败时只在该 Tab 提示，基本信息和安全信息继续展示。
 - 选择单页、双页或“双页，奇数页在左”布局。
 - 可选“使用系统字体”：仅在勾选且已打开文档时，于用户手势内请求浏览器授权读取系统字体（`queryLocalFonts`），只取文档声明但未嵌入的字体族并注册为回退字体后重新渲染；取消勾选或关闭/切换文档时移除注册并恢复内嵌/默认字体，注册的字体仅在当前文档内有效。不支持该 API 的浏览器会禁用此选项。
 - “使用系统字体”的**勾选状态**会跨会话保留（`ofd-local-fonts`），打开新文档时勾选框已是你上次的意愿，**文档就绪后自动读取**，不需要再点一次选项。早期实现要求 `queryLocalFonts` 必须在用户手势的同步任务内发起（否则以 `SecurityError` 拒绝且不弹授权框），实测的浏览器已放开该限制；代码不假定任一种行为，而是先直接调用，仅当失败被判定为手势问题时才挂一次性的 `pointerdown`/`keydown` 监听退到首次交互。每次切换/关闭文档重置该退路的使用记录，避免“点一次失败一次”。恢复出来的勾选在生效前被手动点击时按激活处理，而不是取消勾选。不支持该 API 的浏览器不恢复勾选状态。
@@ -309,7 +310,7 @@ WASM 启动后会注册 `window.ofd`：
 ofd.addFallbackFont(fontData, 'Noto Sans SC', 400, false) // WASM 生命周期内注册一次
 ofd.removeFallbackFont('Noto Sans SC') // 取消该回退字体族，当前文档恢复内嵌/默认字体
 ofd.open(new Uint8Array(await file.arrayBuffer()))
-ofd.info() // 元数据 + fonts 字体清单（不含嵌入数据）
+ofd.info() // 元数据 + security 加密状态 + permissions 当前权限 + fonts 字体清单（不含嵌入数据）
 ofd.embeddedFonts() // 按需读取嵌入字体二进制数据
 ofd.pageCount()
 ofd.pages()
@@ -397,6 +398,7 @@ make test-wasm-web
 - 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
 - `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
 - `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, scope, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据；`scope` 是字体所属文档体索引，与 `id` 一起唯一标识一个字体。
+- `ofd.info()` 同时返回 `security: {encrypted, state}` 和 `permissions`（结构见[文档权限](#文档权限)）。`encrypted` 描述原文件，`state` 为普通文件的 `none` 或成功解锁后的 `unlocked`；版本切换保留原文件的加密事实，权限从当前版本重新读取。关闭文档或打开失败后不保留旧安全状态。返回值不包含口令或私钥，解锁状态不表示签名或完整性验证已通过。
 - `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
 - `ofd.open()` 不读取嵌入字体二进制数据；`ofd.embeddedFonts()` 按需返回嵌入字体数据、浏览器字体族名和样式。网页阅读器在页面开始构建后后台加载字体，不阻塞文档首屏。
 - `ofd.addFallbackFont(data, family, weight, italic)` 可注册外部 TTF、OTF、WOFF 或 WOFF2 字体，并同时用于 WASM 渲染和文字层。

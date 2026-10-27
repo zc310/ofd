@@ -33,14 +33,14 @@
   }
   </script>
   <style>
-    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    :root { color-scheme: light; font-family: system-ui, sans-serif; --header-bg: #243247; --header-text: #f1f5f9; --header-hover: #35465f; --header-accent: #93c5fd; --header-border: #44546b; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #cfd5de; color: #172033; }
-     header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 18px; background: #172033; color: #fff; box-shadow: none; }
+     header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 18px; background: var(--header-bg); color: var(--header-text); box-shadow: none; }
 
     .brand { display: flex; min-width: 180px; flex: 1 1 220px; align-items: center; gap: 10px; }
     .brand strong { white-space: nowrap; }
-    #document-name { overflow: hidden; max-width: 260px; color: #b9c4d6; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    #document-name { overflow: hidden; max-width: 260px; color: #c6d0df; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
     /* 刷新按钮紧跟文件名，只在检测到新版本时出现，因此它不是常驻的"手动刷新"
        入口，平时 hidden 不占位。hidden 必须显式声明成 display: none：下面自己
        设了 display: inline-flex，会盖掉 hidden 属性带来的默认 display: none。 */
@@ -66,7 +66,7 @@
     #update-banner button:hover { background: #ffffff33; }
     #update-banner button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     #update-banner-dismiss { margin-left: auto; padding: 3px 10px; border-color: transparent; background: transparent; }
-     .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid #ffffff2e; }
+     .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid var(--header-border); }
     .toolbar-group.search-group { position: relative; min-width: 0; }
     .toolbar-group.view-group { position: relative; }
     .view-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: grid; min-width: 190px; gap: 8px; padding: 10px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
@@ -100,17 +100,29 @@
     .recent-item:hover { background: #e8f1fb; }
     .recent-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-item small { grid-column: 1 / -1; color: #667188; font-size: 12px; }
-      .info-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; min-width: 280px; border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
+      .info-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; width: min(360px, calc(100vw - 24px)); border: 1px solid #c6cedb; border-radius: 6px; background: #fff; box-shadow: 0 5px 18px #17203340; color: #172033; }
      .info-panel[hidden] { display: none; }
-     .info-content { padding: 8px; }
-     .info-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px; border-bottom: 1px solid #d7dce5; color: #667188; font-size: 12px; }
-     .info-header button { min-height: 20px; padding: 0 4px; border: 0; background: transparent; color: #667188; font-size: 14px; cursor: pointer; }
-     .info-header button:hover { color: #172033; }
-     .info-body { padding: 8px 4px; font-size: 13px; line-height: 1.6; }
+     .info-content { display: flex; flex-direction: column; max-height: min(560px, calc(100dvh - var(--header-height, 64px) - 24px)); padding: 8px; }
+     .info-header { display: flex; align-items: center; justify-content: space-between; margin: -8px -8px 0; padding: 8px 12px; border-bottom: 1px solid var(--header-border); border-radius: 5px 5px 0 0; background: var(--header-bg); color: var(--header-text); font-size: 13px; }
+     .info-header button { min-height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--header-text); font-size: 14px; cursor: pointer; }
+     .info-header button:hover { background: var(--header-hover); color: var(--header-accent); }
+     .info-header button:focus-visible { outline-color: var(--header-accent); }
+     .info-header, .info-tabs { flex-shrink: 0; }
+     .info-tabs { display: flex; gap: 4px; padding-top: 8px; border-bottom: 1px solid #d7dce5; }
+     .info-tabs button { flex: 1; min-width: 0; min-height: 36px; padding: 6px 4px; border: 0; border-bottom: 2px solid transparent; border-radius: 4px 4px 0 0; background: transparent; color: #667188; font-size: 13px; }
+     .info-tabs button:hover { background: #e8f1fb; }
+     .info-tabs button[aria-selected="true"] { border-bottom-color: #2476bd; color: #2476bd; font-weight: 600; }
+     .info-tabs button:focus-visible, .info-tab-panel:focus-visible, .info-security-document summary:focus-visible { outline: 2px solid #2476bd; outline-offset: -2px; }
+     .info-body { display: grid; min-height: 0; font-size: 13px; line-height: 1.6; }
+     .info-tab-panel { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 10px 4px 4px; }
+     .info-tab-panel[hidden] { display: none; }
+     .info-security-document { margin: 8px 0; border: 1px solid #d7dce5; border-radius: 4px; }
+     .info-security-document summary { padding: 6px; cursor: pointer; color: #4b5668; font-weight: 600; }
+     .info-security-document-content { padding: 4px 8px; }
      .info-empty { margin: 0; color: #667188; }
      .info-row { display: flex; gap: 8px; margin: 0 0 4px; }
-     .info-label { min-width: 70px; color: #667188; }
-     .info-value { color: #172033; word-break: break-all; }
+     .info-label { flex: 0 0 84px; color: #667188; }
+     .info-value { min-width: 0; color: #172033; overflow-wrap: anywhere; }
      .info-section-title { margin: 10px 0 6px; padding-top: 8px; border-top: 1px solid #00000014; color: #667188; font-weight: 600; }
      .font-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 6px; }
      .font-name { color: #172033; }
@@ -191,8 +203,8 @@
       body.dark-reading .debug-header { border-color: #475365; color: #c6d0dd; }
       body.dark-reading .debug-section-title, body.dark-reading .debug-label, body.dark-reading .debug-note { color: #aeb9ca; }
       body.dark-reading .debug-value { color: #e6ebf2; }
-     .file-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid #ffffff38; border-radius: 5px; background: #3b82c4; color: #fff; cursor: pointer; }
-    .file-button:hover { background: #4b95dc; }
+     .file-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--header-accent); border-radius: 5px; background: var(--header-accent); color: var(--header-bg); cursor: pointer; }
+    .file-button:hover { background: #bfdbfe; }
     #cancel-open[hidden] { display: none; }
     #cancel-action[hidden] { display: none; }
     #file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -201,16 +213,18 @@
       @font-face { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: 500; font-display: block; src: url('material-symbols-outlined-subset.woff2') format('woff2'); }
       .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-size: 19px; line-height: 1; font-feature-settings: 'rlig'; font-variation-settings: 'wght' 500, 'FILL' 0, 'GRAD' 0, 'opsz' 20; }
      .mobile-toolbar-toggle { display: none; }
-    header button { border-color: #ffffff38; background: #263552; color: #fff; }
-    header button:hover:not(:disabled) { background: #34476c; }
+    header > .toolbar-group > button { border-color: var(--header-border); background: transparent; color: var(--header-text); }
+    header > .toolbar-group > button:hover:not(:disabled) { background: var(--header-hover); }
+    header > .toolbar-group > button[aria-pressed="true"], header > .toolbar-group > button[aria-expanded="true"] { background: var(--header-hover); color: var(--header-accent); }
+    header > .toolbar-group > button:focus-visible, .file-button:focus-visible { outline-color: var(--header-accent); }
     input { min-height: 34px; padding: 5px 8px; border: 1px solid #c6cedb; border-radius: 5px; background: #fff; color: #172033; }
-    header input { border-color: #ffffff38; }
+    header input { border-color: var(--header-border); }
     button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
     button:focus-visible, input:focus-visible, .file-button:focus-visible { outline: 3px solid #80b4e5; outline-offset: 2px; }
     .skip-link { position: fixed; top: 8px; left: 8px; z-index: 20; padding: 8px 12px; border-radius: 5px; background: #fff; color: #172033; transform: translateY(-150%); }
     .skip-link:focus { transform: translateY(0); }
     #page-number { width: 58px; }
-    #zoom-label { min-width: 48px; color: #d5dceb; text-align: center; }
+    #zoom-label { min-width: 48px; color: inherit; text-align: center; }
      #search { min-width: 0; width: 100%; }
      #search-status { flex: 1 1 auto; min-width: 0; overflow: hidden; color: #49556a; font-size: 12px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
     #status { display: flex; min-height: 1.5em; align-items: center; gap: 10px; padding: 8px 18px; background: #eef1f5; color: #49556a; font-size: 13px; }
@@ -285,9 +299,10 @@
     body.dark-reading .recent-item:hover { background: #303f55; }
     body.dark-reading .recent-item small { color: #aeb9ca; }
     body.dark-reading .recent-header { border-color: #475365; color: #aeb9ca; }
-    body.dark-reading .info-header { border-color: #475365; color: #aeb9ca; }
-    body.dark-reading .info-header button { color: #aeb9ca; }
-    body.dark-reading .info-header button:hover { color: #e6ebf2; }
+      body.dark-reading .info-tabs, body.dark-reading .info-security-document { border-color: #475365; }
+      body.dark-reading .info-tabs button, body.dark-reading .info-security-document summary { color: #aeb9ca; }
+      body.dark-reading .info-tabs button:hover { background: #303f55; }
+      body.dark-reading .info-tabs button[aria-selected="true"] { border-bottom-color: #80b4e5; color: #80b4e5; }
     body.dark-reading .info-label { color: #aeb9ca; }
     body.dark-reading .info-value { color: #e6ebf2; }
      body:fullscreen { background: #cfd5de; }
@@ -771,8 +786,15 @@
       <div id="info-panel" class="info-panel" hidden>
         <div class="info-content">
           <div class="info-header"><span>文档信息</span><button id="info-close" type="button" title="关闭">✕</button></div>
+          <div id="info-tabs" class="info-tabs" role="tablist" aria-label="文档信息分类">
+            <button id="info-tab-basic" type="button" role="tab" data-info-tab="basic" aria-controls="info-basic" aria-selected="true" tabindex="0">基本信息</button>
+            <button id="info-tab-security" type="button" role="tab" data-info-tab="security" aria-controls="info-security" aria-selected="false" tabindex="-1">安全信息</button>
+            <button id="info-tab-fonts" type="button" role="tab" data-info-tab="fonts" aria-controls="info-fonts" aria-selected="false" tabindex="-1">字体</button>
+          </div>
           <div id="info-body" class="info-body">
-            <p class="info-empty">未打开文档</p>
+            <section id="info-basic" class="info-tab-panel" role="tabpanel" aria-labelledby="info-tab-basic" tabindex="0"><div id="info-basic-content"><p class="info-empty">未打开文档</p></div><div id="info-stats"></div></section>
+            <section id="info-security" class="info-tab-panel" role="tabpanel" aria-labelledby="info-tab-security" tabindex="0" hidden><p class="info-empty">未打开文档</p></section>
+            <section id="info-fonts" class="info-tab-panel" role="tabpanel" aria-labelledby="info-tab-fonts" tabindex="0" hidden><p class="info-empty">未打开文档</p></section>
           </div>
         </div>
       </div>
