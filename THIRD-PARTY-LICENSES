@@ -20,7 +20,7 @@ Source: https://github.com/beevik/etree
 License: BSD-3-Clause
 Source: https://github.com/benoitkugler/textlayout
 
-### github.com/chromedp/cdproto v0.158.4
+### github.com/chromedp/cdproto v0.158.5
 License: MIT
 Source: https://github.com/chromedp/cdproto
 
@@ -33,7 +33,7 @@ License: MIT
 Source: https://github.com/dkrisman/gobig2
 
 ### github.com/emmansun/gmsm v0.45.1
-License: Apache-2.0
+License: MIT
 Source: https://github.com/emmansun/gmsm
 
 ### github.com/go-text/typesetting v0.3.5
@@ -59,10 +59,10 @@ License: ISC
 Source: https://github.com/jlaffaye/ftp
 
 ### github.com/klauspost/compress v1.20.3
-License: Apache-2.0
+License: BSD-3-Clause (gzhttp subpackage: Apache-2.0)
 Source: https://github.com/klauspost/compress
 
-### github.com/knroy/go-xml v1.8.1
+### github.com/knroy/go-xml/v2 v2.0.1
 License: MIT
 Source: https://github.com/knroy/go-xml
 
@@ -94,7 +94,7 @@ Source: https://github.com/nicksnyder/go-i18n
 License: Apache-2.0
 Source: https://github.com/pdfcpu/pdfcpu
 
-### github.com/pkg/sftp v1.13.11
+### github.com/pkg/sftp v1.13.12
 License: BSD-2-Clause
 Source: https://github.com/pkg/sftp
 
@@ -114,15 +114,15 @@ Source: https://github.com/stretchr/testify
 License: BSD-3-Clause
 Source: https://github.com/studio-b12/gowebdav
 
-### github.com/zc310/canvas v0.0.0-20261019082420-928b491d9262
+### github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9
 License: MIT
 Source: https://github.com/zc310/canvas
 
-### github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
+### github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 License: MIT
 Source: https://github.com/zc310/font
 
-### github.com/tdewolff/minify/v2 v2.24.22
+### github.com/tdewolff/minify/v2 v2.24.23
 License: MIT
 Source: https://github.com/tdewolff/minify
 
@@ -130,7 +130,7 @@ Source: https://github.com/tdewolff/minify
 License: Apache-2.0
 Source: https://github.com/tetratelabs/wazero
 
-### github.com/valyala/fasthttp v1.76.0
+### github.com/valyala/fasthttp v1.77.0
 License: MIT
 Source: https://github.com/valyala/fasthttp
 
@@ -146,12 +146,16 @@ Source: https://github.com/xuri/excelize
 License: MIT
 Source: https://github.com/yuin/goldmark
 
+### github.com/yuin/goldmark/v2 v2.1.9
+License: MIT
+Source: https://github.com/yuin/goldmark
+
 ### go.etcd.io/bbolt v1.5.0
 License: MIT
 Source: https://github.com/etcd-io/bbolt
 
 ### go.yaml.in/yaml/v3 v3.0.5
-License: Apache-2.0
+License: Mixed MIT and Apache-2.0 (libyaml-derived files are MIT; remaining files are Apache-2.0)
 Source: https://github.com/go-yaml/yaml
 
 ### golang.org/x/image v0.47.0
@@ -204,7 +208,7 @@ Source: https://github.com/Kagami/go-avif
 License: BSD-3-Clause
 Source: https://github.com/akavel/rsrc
 
-### github.com/andybalholm/brotli v1.2.6
+### github.com/andybalholm/brotli v1.2.7
 License: MIT
 Source: https://github.com/andybalholm/brotli
 
@@ -344,7 +348,7 @@ Source: https://github.com/xuri/efp
 License: BSD-3-Clause
 Source: https://github.com/xuri/nfp
 
-### golang.org/x/sync v0.23.0
+### golang.org/x/sync v0.24.0
 License: BSD-3-Clause
 Source: https://github.com/golang/sync
 
@@ -377,9 +381,10 @@ Other embedded Adobe CMaps retain their original notices in
 internal/pdf2ofd/cmaps/adobe.zip.
 
 The project uses the following license types:
-- MIT: 54 packages
-- BSD-3-Clause: 29 packages
-- Apache-2.0: 9 packages
+- MIT: 56 packages
+- BSD-3-Clause: 30 packages
+- Apache-2.0: 7 packages
+- Mixed MIT and Apache-2.0: 1 package
 - BSD-2-Clause: 2 packages
 - ISC: 1 package
 - GPL-2.0-with-font-exception: 1 package (go-fonts/latin-modern - font package, not linked into binary)

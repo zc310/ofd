@@ -7,6 +7,10 @@
 
 ## 未发布
 
+## 已发布
+
+### v0.1.6
+
 - **阅读器内容操作开始执行文档权限**：`webreader.Reader.Text()`、`RenderPDF/RenderPDFTo()`、
   `AttachmentData()` 在 `Permissions/Export=false` 时返回可用 `errors.Is` 判断的
   `webreader.ErrPermissionDenied`；混合选页导出在输出前整体检查。WASM 的文字、附件、
@@ -80,8 +84,6 @@
   `incomplete`，没有其他错误时总状态为 `partial`，CLI 退出 `1`。依赖旧解析错误文本、
   `invalid/failed` 状态或成功处理占位内容的调用方需改用锁定诊断，详见
   [`pkg/crypt`](pkg/crypt/README.md)。
-
-## 已发布
 
 ### v0.1.5
 
