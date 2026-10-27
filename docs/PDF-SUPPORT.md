@@ -101,6 +101,7 @@ EML 导入器在页面写出时另行提供原附件，由创建器写入 OFD �
 | 格式或能力 | 支持范围 | 限制和处理方式 |
 |------------|----------|----------------|
 | 普通栅格/Flate | DeviceGray/RGB/CMYK 和 Indexed；支持常见 1/2/4/8/16 位样本及 Decode。 | 转为 PNG；16 位颜色尽量保留，CMYK 转为 RGB。 |
+| Separation 专色图片 | 普通栅格/Flate 的 1/2/4/8/16 位单通道采样，先应用 Decode，再经 tint 函数和替代颜色空间转换；包括亮度软掩码 Form 中的图片。 | 输出 8 位 RGB PNG；支持原始采样颜色键和图像 Mask/SMask。JPEG/JPX/JBIG2 专色图片暂不支持。 |
 | DCTDecode/JPEG | Gray/RGB、四分量 CMYK/YCCK（包括 PDF 声明 CMYK 但 JPEG 无 Adobe 标记）；8 位原分量 Decode、颜色键和 Matte，支持外层 Flate 包装。 | 默认兼容模式下 CMYK 转 RGB PNG；`compact` 模式仅将无 Mask/SMask 的 CMYK JPEG 转为指定质量的有损 RGB JPEG。与码流冲突的 ColorTransform 覆盖暂不支持。 |
 | CCITTFaxDecode | 解码后重编码为 PNG，也可用于 ImageMask。 | 沿用 PDF 解析器的解码能力。 |
 | JBIG2Decode | 灰度图、JBIG2Globals、Decode 反相、ImageMask、灰度软掩码；颜色键和 Matte 使用二值原采样。 | 普通图像的任意 Decode 区间未完整支持；复合过滤器有限制。 |
@@ -132,7 +133,7 @@ RGB 栅格合成、CMYK 颜色转换、8 位量化、抗锯齿和图片放大插
 | 能力 | 当前处理 |
 |------|----------|
 | ShadingType 1、PatternType 1/2 之外的图案 | 未实现对应绘制，可能跳过或保留近似纯色，并报告已识别的缺口。 |
-| 图像的 Lab、Separation、DeviceN | 跳过图像并报告诊断；Strict 失败。 |
+| 图像的 Lab、DeviceN，以及 JPEG/JPX/JBIG2 编码的 Separation | 跳过图像并报告诊断；Strict 失败。 |
 | 完整 CalGray/CalRGB/Lab 校准语义 | 不完整应用校准参数；已有转换使用设备颜色近似或跳过。 |
 | JPX 调色板、cmap、码流内嵌 ICC、有符号分量或混合位深 | 不支持相应结构，通常报告图像解码诊断并跳过图片；Strict 失败。PDF 图像字典引用的 ICCBased 配置文件不属于此限制。 |
 | JPX 多 opacity、逐颜色 opacity | 不支持；通道关联不完整、重复或与 SMaskInData 冲突会报告诊断。 |

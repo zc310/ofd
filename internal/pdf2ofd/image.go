@@ -1175,6 +1175,16 @@ func resampleGrayMask(gray *image.Gray, width, height int) []byte {
 }
 
 func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor, controls ...*conversionControl) ([]byte, string, error) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
+	p := pdfInterpreter{ctx: ctx, control: control}
+	if space, err := p.separationImageSpace(stream); err != nil {
+		return nil, "", err
+	} else if space != nil {
+		return p.encodeSeparationImage(stream, space)
+	}
 	// JBIG2Decode（T.88）由 gobig2 解码为灰度位图，再按 ImageMask 或 1 位图像
 	// 输出。pdfcpu 不处理该过滤器，必须在此之前拦截。
 	if hasJBIG2Filter(stream) {
@@ -1579,6 +1589,8 @@ func pdfImageColorSpace(ctx *model.Context, stream *types.StreamDict) (component
 		return 0, false, nil, errors.New("图像颜色空间名称无效")
 	}
 	switch name.Value() {
+	case "Separation":
+		return 1, false, nil, nil
 	case "Indexed":
 		if len(array) < 4 {
 			return 0, false, nil, errors.New("Indexed 图像颜色空间参数不足")

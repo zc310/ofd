@@ -57,6 +57,18 @@ func (r svgTextRenderer) RenderPath(path *canvas.Path, style canvas.Style, matri
 	r.SVG.RenderPath(path, style, matrix)
 }
 
+func (r svgTextRenderer) RenderClippedImage(img image.Image, matrix canvas.Matrix, clip *canvas.Path) {
+	if img == nil || clip == nil || clip.Empty() {
+		return
+	}
+	// canvas 裁剪路径使用图片局部的左下原点、Y 向上坐标；SVG 写入器把
+	// 图片放入左上原点、Y 向下的 <g>，必须同步翻转裁剪路径。否则上下不对称
+	// 的图形会被镜像后的裁剪区切掉（如 VectorApple 的苹果边缘）。
+	// OFD 裁剪仍遵循 GB/T 33190—2016 8.4；这里只适配 SVG 的局部坐标。
+	flip := canvas.Identity.Translate(0, float64(img.Bounds().Dy())).ReflectY()
+	r.SVG.RenderClippedImage(img, matrix, clip.Copy().Transform(flip))
+}
+
 func (r svgTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	gradient := false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {

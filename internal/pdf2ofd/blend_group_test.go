@@ -89,7 +89,7 @@ func TestMultiplyShadingGroupStillReportsApproximationAndUsesBudgets(t *testing.
 	}
 }
 
-func TestVectorAppleLabelKeepsGreenBackgroundAndBlueLettering(t *testing.T) {
+func TestVectorAppleKeepsLabelAndFreckleLuminosityMask(t *testing.T) {
 	input, err := os.ReadFile("../../testdata/pdfcpu/VectorApple.pdf")
 	if errors.Is(err, os.ErrNotExist) {
 		t.Skip("VectorApple.pdf 文件不存在，跳过样例视觉回归")
@@ -98,7 +98,11 @@ func TestVectorAppleLabelKeepsGreenBackgroundAndBlueLettering(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := Convert(t.Context(), input, &output, ""); err != nil {
+	if err := ConvertWithOptions(t.Context(), input, &output, "", Options{OnDiagnostic: func(d Diagnostic) {
+		if d.Code == "image.decode" {
+			t.Errorf("样例图片不应丢失：%+v", d)
+		}
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	ofd, err := parser.NewOFD(output.Bytes())
@@ -133,5 +137,21 @@ func TestVectorAppleLabelKeepsGreenBackgroundAndBlueLettering(t *testing.T) {
 	}
 	if blue < 40 || green < 40 {
 		t.Fatalf("label lettering contrast lost: blue=%d green=%d", blue, green)
+	}
+	// Poppler 26.01.0 在 144dpi 的源 PDF 参考像素；允许插值与像素对齐误差。
+	// 丢失 Separation/Black 亮度蒙版时，这些斑点会比参考值亮约 20–50 级。
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{
+		{224, 251, color.RGBA{245, 106, 112, 255}},
+		{265, 202, color.RGBA{243, 103, 104, 255}},
+		{351, 169, color.RGBA{197, 46, 67, 255}},
+		{308, 331, color.RGBA{204, 65, 78, 255}},
+	} {
+		got := img.RGBAAt(tc.x, tc.y)
+		if math.Abs(float64(got.R)-float64(tc.want.R)) > 10 || math.Abs(float64(got.G)-float64(tc.want.G)) > 10 || math.Abs(float64(got.B)-float64(tc.want.B)) > 10 {
+			t.Fatalf("斑点(%d,%d)=%v，期望接近 %v", tc.x, tc.y, got, tc.want)
+		}
 	}
 }
