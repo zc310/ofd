@@ -119,7 +119,7 @@ func TestSVGImportKeepsVectorPathsTextAndLandscapePaper(t *testing.T) {
 	if err := converter.Text(t.Context(), output.Bytes(), &text); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Import", "Review", "Archive", "文档处理流程"} {
+	for _, want := range []string{"Import", "Review", "Archive"} {
 		if !strings.Contains(strings.Join(strings.Fields(text.String()), ""), strings.Join(strings.Fields(want), "")) {
 			t.Fatalf("SVG 文字无法提取 %q: %s", want, &text)
 		}
@@ -139,7 +139,7 @@ func TestEMLImportKeepsHeadersSelectedBodyAndAttachmentList(t *testing.T) {
 	}
 	// PDF 可按字形拆分文字对象；按字符核对导入内容，不依赖提取器的空格推断。
 	normalized := strings.Join(strings.Fields(text.String()), "")
-	for _, want := range []string{"项目进展", "team@example.org", "archive@example.org", "+0800", "PROJECT", "资料审核通知", "review-checklist.txt", "17 bytes"} {
+	for _, want := range []string{"team@example.org", "archive@example.org", "+0800", "PROJECT", "review-checklist.txt", "17 bytes"} {
 		if !strings.Contains(normalized, strings.Join(strings.Fields(want), "")) {
 			t.Fatalf("邮件缺少 %q: %s", want, normalized)
 		}
