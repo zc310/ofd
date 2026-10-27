@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/zc310/ofd/pkg/converter"
+	_ "github.com/zc310/ofd/pkg/converter/import/csv"
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	pdfimport "github.com/zc310/ofd/pkg/converter/import/pdf"
 	"github.com/zc310/ofd/pkg/crypt"
@@ -18,6 +19,16 @@ import (
 
 type exampleBufferWriteCloser struct {
 	*bytes.Buffer
+}
+
+func ExampleConvert_csv() {
+	var output bytes.Buffer
+	err := converter.Convert(context.Background(), "csv", "ofd",
+		[]byte("Code,Description,Amount\n0001,Paper,12.30\n"), &output,
+		converter.WithCSVImportOptions(converter.CSVImportOptions{Title: "Inventory"}),
+		converter.WithLandscape(true))
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))
+	// Output: true
 }
 
 func ExampleConvert_decryptedView() {

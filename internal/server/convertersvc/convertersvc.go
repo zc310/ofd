@@ -28,6 +28,7 @@ import (
 	"github.com/zc310/ofd/pkg/converter"
 	// 服务需要支持全部已注册格式，导入器靠 init() 注册，必须显式链接：
 	// 否则 ImporterByName 查不到 docx/pdf/html，请求会以"无法识别输入格式"被拒。
+	_ "github.com/zc310/ofd/pkg/converter/import/csv"      // CSV/TSV→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/html"     // HTML/MHTML→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/image"    // PNG/JPEG/TIFF→OFD
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown" // Markdown→OFD

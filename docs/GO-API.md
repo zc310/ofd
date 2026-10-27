@@ -116,6 +116,7 @@ func main() {
 |------------|------------------------------------------------------|
 | PDF        | `github.com/zc310/ofd/pkg/converter/import/pdf`      |
 | Markdown   | `github.com/zc310/ofd/pkg/converter/import/markdown` |
+| CSV/TSV    | `github.com/zc310/ofd/pkg/converter/import/csv`      |
 | Office     | `github.com/zc310/ofd/pkg/converter/import/office`   |
 | HTML/MHTML | `github.com/zc310/ofd/pkg/converter/import/html`     |
 | XPS        | `github.com/zc310/ofd/pkg/converter/import/xps`      |
@@ -124,6 +125,14 @@ func main() {
 Markdown 会重新排版为 A4，远程图片会跳过并记录警告。Office/HTML/XPS 转 OFD 时先由
 外部工具生成 PDF，再执行 PDF 导入；直接转 PDF 时使用外部工具产物。外部工具要求见
 [运行依赖](BUILDING.md#运行依赖)。
+
+CSV/TSV 以 Go 直接排版，默认 UTF-8（接受 BOM）、首行表头、自动列宽和跨页重复表头。
+通过 `converter.WithCSVImportOptions(converter.CSVImportOptions{NoHeader: true,
+Encoding: "gb18030", Title: "设备台账", FontFile: "fonts/cjk.ttf"})` 配置输入；
+`FontData` 可替代 `FontFile` 提供字体字节，两者互斥。纸张和方向沿用
+`WithPaperSize`、`WithPaperDimensions`、`WithLandscape`。字段保持文本，编号前导零和金额
+小数位不会被自动转换；纯拉丁文本可使用内置字体，中文自动查找系统字体并嵌入。
+范围和限制见 [CSV/TSV 支持清单](CSV-SUPPORT.md)，可运行用法见 `ExampleConvert_csv`。
 
 Office、HTML 转换会把调用方上下文传给外部进程，取消后结束处理并清理临时目录。
 也可直接调用 Markdown 包的 `Convert(ctx, input, output)` 或

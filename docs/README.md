@@ -13,6 +13,7 @@
 | [PDF-SUPPORT.md](PDF-SUPPORT.md)       | PDF（ISO 32000-1/-2）转 OFD 的支持范围（内容流、文字、图像、容错等） |
 | [OFFICE-SUPPORT.md](OFFICE-SUPPORT.md) | Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）转 OFD/PDF 支持范围  |
 | [HTML-SUPPORT.md](HTML-SUPPORT.md)     | HTML/MHTML 转 OFD/PDF 的支持范围与打印选项                           |
+| [CSV-SUPPORT.md](CSV-SUPPORT.md)       | CSV/TSV 表格转 OFD/PDF、自动分页、输入编码和字体                     |
 
 ## 库使用指南
 

@@ -56,6 +56,21 @@ func newService(t *testing.T) *Service {
 	return New(t.TempDir(), nil)
 }
 
+func TestRunCSVAndTSVToOFD(t *testing.T) {
+	for _, format := range []string{"csv", "tsv"} {
+		res, err := newService(t).Run(t.Context(), Spec{
+			Input:  Input{Kind: InputUpload, FileName: "table." + format, Bytes: []byte("Code\n0001\n")},
+			Output: Output{Kind: OutputStream, Format: "ofd"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.InputFormat != format || res.Format != "ofd" || len(res.Bytes) < 2 || string(res.Bytes[:2]) != "PK" {
+			t.Fatalf("CSV/TSV 服务转换结果不正确: %+v", res)
+		}
+	}
+}
+
 func TestRunOFDToPDFStream(t *testing.T) {
 	svc := newService(t)
 	res, err := svc.Run(context.Background(), Spec{

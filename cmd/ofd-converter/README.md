@@ -1,6 +1,6 @@
 # ofd-converter
 
-OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 PDF、XPS、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
+OFD 文档转换命令行工具，支持将 OFD 文件转换为 PDF、DOCX（Word）、纯文本、Markdown、单文件 HTML 和图像格式（包括多页 TIFF），也支持将 CSV/TSV、PDF、XPS、Markdown、Office 文档（doc/docx/odt/rtf/wps/pptx/xlsx 等）和 HTML/MHTML 转换为 OFD 或 PDF。
 
 使用本工具处理文档前，请阅读项目根目录的 [免责声明](../../DISCLAIMER.md)。转换结果不保证适用于特定业务、法律或合规场景。
 
@@ -43,7 +43,7 @@ ofd-converter --help
 | `-input-dir`           | 批量转换的输入目录；需要同时指定 `-output-dir`                                                                                                        |
 | `-output-dir`          | 批量转换的输出目录；保留输入目录的相对路径结构                                                                                                        |
 | `-format`              | 输出格式: `ofd`, `pdf`, `docx`, `txt`, `md`, `markdown`, `html`, `png`, `jpg`, `tiff`, `svg`, `eps`, `tex`                                            |
-| `-from`                | 输入格式（可选）: `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
+| `-from`                | 输入格式（可选）: `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
 | `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`ftgg` |
@@ -51,6 +51,10 @@ ofd-converter --help
 | `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                                               |
 | `-ocr`                 | 图片转 OFD 时启用 OCR 并生成不可见文字层；默认关闭，需要安装 Tesseract                                                                                |
 | `-ocr-language`        | Tesseract OCR 语言，默认 `chi_sim+eng`；可指定单个语言或组合，需安装对应语言包                                                                        |
+| `-csv-no-header`       | CSV/TSV 首行也是数据，不作为续页重复表头；默认关闭 |
+| `-csv-encoding`        | CSV/TSV 输入编码：`utf-8`（默认，接受 BOM）、`gb18030`、`gbk` |
+| `-csv-title`           | CSV/TSV 文档标题；默认输入文件名（不含扩展名） |
+| `-csv-font`            | CSV/TSV 嵌入字体文件（TTF/OTF/TTC）；默认使用内置或系统中文字体 |
 | `-dir`                 | 不压缩，将多页图片直接保存到输出目录下的多个文件                                                                                                      |
 | `-workers`             | 批量转换并发数，默认 `4`                                                                                                                              |
 | `-external-workers`    | 外部工具（LibreOffice/Chrome/xpstopdf）批量转换并发数，默认 `2`                                                                                      |
@@ -59,8 +63,8 @@ ofd-converter --help
 | `-chrome`              | Chrome/Chromium 可执行文件路径；缺省按 `OFD_CHROME`、`PATH` 查找，其余常见安装目录由 chromedp 处理；仅 HTML/MHTML 输入使用                            |
 | `-temp-dir`            | 外部工具（LibreOffice/Chrome/xpstopdf）临时文件目录；缺省使用系统临时目录                                                                            |
 | `-office-timeout`      | Office/HTML/XPS 文档转换超时秒数；`0` 表示默认 120 秒                                                                                                |
-| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；**仅 HTML/MHTML 经 Chrome 打印时生效**，默认 `A4`                                    |
-| `-landscape`           | 横向打印，交换纸张宽高；**仅 HTML/MHTML 经 Chrome 打印时生效**，需与 `-paper` 配合使用                                                                |
+| `-paper`               | 打印纸张尺寸: `A4`, `A3`, `A5`, `Letter`, `Legal`, `B5`, `16开`；HTML/MHTML、CSV/TSV 输入生效，默认 `A4` |
+| `-landscape`           | 横向打印，交换纸张宽高；HTML/MHTML、CSV/TSV 输入生效，可与 `-paper` 配合使用 |
 | `-no-print-background` | 不打印背景颜色和图片；仅 HTML/MHTML 输入生效                                                                                                          |
 | `-allow-remote`        | 允许加载外部资源；仅 HTML/MHTML 输入生效，默认禁止                                                                                                    |
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；仅 HTML/MHTML 输入生效                                                                                  |
@@ -93,7 +97,8 @@ ofd-converter --help
 
 | 选项                                                                     | 生效的转换方向                    | 说明                                                 |
 |--------------------------------------------------------------------------|-----------------------------------|------------------------------------------------------|
-| `-paper`、`-landscape`                                                   | HTML/MHTML → PDF/OFD              | 作为打印参数交给 Chrome，控制纸张尺寸和方向          |
+| `-paper`、`-landscape`                                                   | HTML/MHTML、CSV/TSV → PDF/OFD      | 控制输出纸张尺寸和方向；HTML/MHTML 由 Chrome 排版，CSV/TSV 由 Go 排版 |
+| `-csv-no-header`、`-csv-encoding`、`-csv-title`、`-csv-font`                | CSV/TSV 导入                      | 控制表头、文本编码、标题和嵌入字体 |
 | `-no-print-background`、`-allow-remote`、`-chrome-no-sandbox`、`-chrome` | HTML/MHTML → PDF/OFD              | 仅影响 Chrome 渲染行为                               |
 | `-soffice`                                                               | Office 文档 → PDF/OFD             | 仅影响 LibreOffice 调用                              |
 | `-xpstopdf`                                                              | XPS → PDF/OFD                     | 仅影响 xpstopdf 调用                                |
@@ -191,6 +196,24 @@ PDF 导入默认限制输入、页数、对象数、解压流、图片像素、�
 普通模式遇到已识别的内容缺失或近似转换，会继续生成 OFD，并向标准错误报告诊断码、
 输入文件、页号、对象编号与资源名。`--pdf-strict` 在首条诊断后失败，已有输出文件保留。
 严格模式针对已报告的转换缺口，不代表完整实现 PDF 规范。
+
+### CSV / TSV 转 OFD
+
+首行默认作为表头，在续页重复；按内容分配列宽，单元格自动换行，长表自动分页。
+所有字段按文本保留，编号 `0001` 和金额 `12.30` 不会被自动转换；支持带引号的分隔符和换行。
+默认读取 UTF-8（可带 BOM），其他编码通过 `-csv-encoding` 明确选择。
+
+```bash
+ofd-converter data.csv /tmp/table.ofd
+ofd-converter --paper A3 --landscape data.tsv /tmp/table.ofd
+ofd-converter --csv-no-header --csv-title "设备台账" data.csv /tmp/table.ofd
+ofd-converter --csv-encoding gb18030 --csv-font fonts/cjk.ttf data.csv /tmp/table.pdf
+```
+
+中文自动查找系统字体并嵌入输出；找不到时用 `-csv-font` 指定字体。纯拉丁文本使用内置字体。
+输入列数不一致、损坏的引号或排版失败会报错，CLI 文件输出失败保留已有目标。
+无有效记录时返回转换失败（退出码 `1`）；无效编码名或纸张名返回参数错误（退出码 `2`）。
+输入范围、资源限制和 Go API 见 [CSV/TSV 支持清单](../../docs/CSV-SUPPORT.md)。
 
 ### Markdown 转 OFD
 

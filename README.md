@@ -43,6 +43,10 @@ ofd-converter --format png input.ofd pages.zip
 # PDF 转 OFD
 ofd-converter input.pdf output.ofd
 
+# CSV / TSV 表格转 OFD，长表自动分页并重复表头
+ofd-converter inventory.csv /tmp/inventory.ofd
+ofd-converter --landscape inventory.tsv /tmp/inventory.ofd
+
 # 从 YAML 或 JSON 清单创建 OFD
 ofd-creator -i document.yaml -o result.ofd --validate
 
@@ -72,7 +76,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 创建清单见 [creator 示例](cmd/ofd-creator/examples)，大对比报告可使用
 [`--external-images`](cmd/ofd-compare/README.md) 将图片保存到报告旁。
 
-常规 OFD 转 PDF、图片及 PDF 导入使用 Go 实现。Office、HTML、XPS 和 OCR 的
+常规 OFD 转 PDF、图片及 PDF、CSV/TSV 导入使用 Go 实现。Office、HTML、XPS 和 OCR 的
 外部工具要求见 [运行依赖](docs/BUILDING.md#运行依赖)，PDF 的可选 OpenJPEG 后端见
 [PDF 支持清单](docs/PDF-SUPPORT.md)。
 
@@ -80,7 +84,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 
 | 场景 | 能力与工具 |
 |---|---|
-| 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 转 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG、EPS、TeX；PDF/XPS/Markdown/Office/HTML/图片转 OFD。 |
+| 文档转换 | [ofd-converter](cmd/ofd-converter/README.md)：OFD 转 PDF、DOCX、HTML、文本、Markdown、PNG/JPG、TIFF、SVG、EPS、TeX；CSV/TSV/PDF/XPS/Markdown/Office/HTML/图片转 OFD。 |
 | 创建与编辑 | [ofd-creator](cmd/ofd-creator/README.md)：JSON/YAML 清单创建、流式自动排版、Material/Material 2/Material 3/Fluent 2/Carbon/Bootstrap 5 主题与命名样式、GB/T 9704—2012 常规公文基础版式、两端对齐、等宽分栏、页底脚注、固定图元区域、合并表格与自动列宽、图表编号与续表题、标题/图/表目录及大纲、标题与页码引用、分节编号与横纵页面混排、配置导出、数据模板填充、明细分页与重复页面、水印与条目替换；支持多文档打包、模型级拼页、选页和重排。 |
 | 校验与分析 | [ofd-validator](cmd/ofd-validator/README.md) 检查 ZIP、XML、XSD、引用和语义，OFD/PDF 报告以跨页表格展示问题明细；[ofd-analyzer](cmd/ofd-analyzer/README.md) 分析结构、页面、资源、附件与签名。两者均支持文本、Markdown、JSON、OFD、PDF 和 XLSX 报告，OFD/PDF 共用 flow 默认 Material 主题。 |
 | 文档对比 | [ofd-compare](cmd/ofd-compare/README.md)：比较目录、摘要、XML、文字和画面，支持页配对、局部放大与外置图片；输出 HTML、JSON、文本和 Markdown。 |
@@ -195,6 +199,7 @@ Android、WASM、交叉编译、系统依赖与 Windows 7
 | PDF | [PDF 转 OFD、资源预算与诊断](docs/PDF-SUPPORT.md) |
 | Office | [Office 转 OFD/PDF](docs/OFFICE-SUPPORT.md) |
 | HTML/MHTML | [浏览器打印与格式转换](docs/HTML-SUPPORT.md) |
+| CSV/TSV | [表格导入、编码与字体](docs/CSV-SUPPORT.md) |
 
 工具的参数与退出码见[功能表中的文档](#功能特性)。标准资料、截图与维护入口汇总在
 [文档目录](docs/README.md)；已发布接口的破坏性变更见 [CHANGELOG](CHANGELOG.md)。
