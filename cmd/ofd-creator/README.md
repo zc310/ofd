@@ -1029,7 +1029,7 @@ ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
 ```text
 OFD     基础版式文档（GB/T 33190—2016），默认值
 OFD-A   档案长期保存（GB/T 42133—2022《信息技术 OFD档案应用指南》）
-OFD-H   电子病历版式文档（GB/T 48666-2026《电子病历版式文档技术要求》，征求意见稿）
+OFD-H   电子病历版式文档（GB/T 48666-2026《电子病历版式文档技术要求》）
 ```
 
 GB/T 33190 把该属性固定为 `OFD`，后两份标准在它之上把取值收紧为 `OFD-A` 与 `OFD-H`，因此生成这两类文件必须显式声明。`OFD-A` 与 `OFD-H` 是标准之间的叠加关系：`OFD-H` 在 `OFD-A` 的基础上追加医疗领域要求。

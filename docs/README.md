@@ -53,7 +53,7 @@
 | [GB/T 39362-2020](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=C6B230010286DC79C84CF8EB72DE3F97)                                                                                                | 党政机关电子公文归档规范                                   |
 | [GB/T 38540-2020](https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=EBF1360C272E40E7A8B9B32ED0724AB1)                                                                                                | 信息安全技术 安全电子签章密码技术规范                      |
 | [GB/T 9704-2012](https://openstd.samr.gov.cn/bzgk//std/newGbInfo?hcno=F3CC9BEF482524C895FDA7A08BB4A70E)                                                                                               | 党政机关公文格式                                           |
-| GB/T 48666-2026（征求意见稿）                                                                                                                                                                         | 电子病历版式文档技术要求（征求意见稿，尚未正式发布）       |
+| [GB/T 48666-2026](https://openstd.samr.gov.cn/bzgk//std/newGbInfo?hcno=CDD0F56BBBDDF7B69D01AC4DCFAB0C76)                                                                                              | 电子病历版式文档技术要求       |
 
 ## 截图
 

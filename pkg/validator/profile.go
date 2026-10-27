@@ -145,22 +145,18 @@ func (c *profileContext) profileName() string {
 	return c.docType
 }
 
-// ofdMedicalRules 是 GB/T 48666-2026《电子病历版式文档技术要求》在本阶段
-// 可机器判定的规则。该标准目前为征求意见稿，条款可能变化，因此暂不加入需要
-// 阈值或启发式判断的条款。
+// ofdMedicalRules 是 GB/T 48666-2026《电子病历版式文档技术要求》可机器判定的规则。
 var ofdMedicalRules = []profileRule{
 	{
-		// 该标准比 GB/T 42133 少 JBIG2 与 JPEG2000，因此覆盖父 profile 的同名
-		// 规则；直接继承会让判定比标准宽松。
 		Code:   "image_format",
 		Title:  "栅格图像格式在允许清单内",
 		Clause: []string{"GB/T 48666 7.2 d)"},
-		Check:  checkImageFormats(allowedImageFormatsMedical),
+		Check:  checkImageFormats(allowedImageFormatsArchive),
 	},
 	{
 		Code:   "signature_coverage",
 		Title:  "签名保护范围覆盖全部内容",
-		Clause: []string{"GB/T 48666 8 c)"},
+		Clause: []string{"GB/T 48666 6.3 e)"},
 		Check:  checkSignatureCoverage,
 	},
 }

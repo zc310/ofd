@@ -514,7 +514,7 @@ type Document struct {
 	// DocType 指定 OFD.xml 根节点的 DocType 取值，决定文档遵循的 profile。
 	// 留空或 "OFD" 为 GB/T 33190—2016 的基础 profile；"OFD-A" 是
 	// GB/T 42133—2022《信息技术 OFD档案应用指南》规定的档案长期保存 profile，
-	// "OFD-H" 是 GB/T 48666-2026《电子病历版式文档技术要求》（征求意见稿）
+	// "OFD-H" 是 GB/T 48666-2026《电子病历版式文档技术要求》
 	// 规定的电子病历 profile。取值区分大小写，未知取值在生成阶段报错。
 	DocType string `json:"doc_type,omitempty" yaml:"doc_type,omitempty" toml:"doc_type,omitempty"`
 	// CreationDate 记录文档创建时间。

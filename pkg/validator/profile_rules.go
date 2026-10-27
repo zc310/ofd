@@ -19,12 +19,8 @@ var allowedImageFormatsArchive = map[string]bool{
 	"jbig2": true, "jp2": true, "jpeg2000": true, "tif": true, "tiff": true,
 }
 
-// allowedImageFormatsMedical 是 GB/T 48666 7.2 d) 允许的四种栅格图像格式。
-// 比 GB/T 42133 少了 JBIG2 与 JPEG2000，因此 OFD-H 必须覆盖父 profile 的同名规则，
-// 否则只含这两种格式的文件会被判为合规。
-var allowedImageFormatsMedical = map[string]bool{
-	"bmp": true, "jpeg": true, "jpg": true, "png": true, "tif": true, "tiff": true,
-}
+// allowedImageFormatsMedical 保留以兼容历史代码，实际使用 allowedImageFormatsArchive。
+var allowedImageFormatsMedical = allowedImageFormatsArchive
 
 // allowedColorSpaceTypes 是 GB/T 42133 6.3.1 b) 允许的颜色空间类型，比较不区分大小写。
 var allowedColorSpaceTypes = map[string]bool{
@@ -271,7 +267,7 @@ func pageBlockDepth(node *xdm.Node, current int) int {
 	return deepest
 }
 
-// checkSignatureCoverage 对应 GB/T 48666 8 c)：签名的保护范围应涵盖不包含注释
+// checkSignatureCoverage 对应 GB/T 48666 6.3 e)：签名的保护范围应涵盖不包含注释
 // 列表、签名列表等文件的电子病历全部内容。
 //
 // 判定方式：收集包内全部条目（签名值数据与本 Signatures.xml 自身除外，它们不是
@@ -292,7 +288,7 @@ func checkSignatureCoverage(ctx *profileContext) {
 			Severity: SeverityWarning,
 			Stage:    StageProfile,
 			Code:     ctx.issueCode("signature_coverage"),
-			Message: fmt.Sprintf("文件 %s 未纳入签名保护范围，GB/T 48666 8 c) 要求签名保护"+
+			Message: fmt.Sprintf("文件 %s 未纳入签名保护范围，GB/T 48666 6.3 e) 要求签名保护"+
 				"除注释列表与签名列表外的全部内容", name),
 			File: name,
 		}, ctx.maxErrors)

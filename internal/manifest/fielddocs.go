@@ -60,7 +60,7 @@ var SchemaDocs = []TypeDoc{
 		{Name: "cover", Type: "string", Doc: "指定封面文件路径。", Optional: true},
 		{Name: "cover_base64", Type: "string", Doc: "提供 Base64 编码的封面数据。", Optional: true},
 		{Name: "cover_name", Type: "string", Doc: "指定封面在文档中的名称。", Optional: true},
-		{Name: "doc_type", Type: "string", Doc: "指定 OFD.xml 根节点的 DocType 取值，决定文档遵循的 profile。\n留空或 \"OFD\" 为 GB/T 33190—2016 的基础 profile；\"OFD-A\" 是\nGB/T 42133—2022《信息技术 OFD档案应用指南》规定的档案长期保存 profile，\n\"OFD-H\" 是 GB/T 48666-2026《电子病历版式文档技术要求》（征求意见稿）\n规定的电子病历 profile。取值区分大小写，未知取值在生成阶段报错。", Optional: true},
+		{Name: "doc_type", Type: "string", Doc: "指定 OFD.xml 根节点的 DocType 取值，决定文档遵循的 profile。\n留空或 \"OFD\" 为 GB/T 33190—2016 的基础 profile；\"OFD-A\" 是\nGB/T 42133—2022《信息技术 OFD档案应用指南》规定的档案长期保存 profile，\n\"OFD-H\" 是 GB/T 48666-2026《电子病历版式文档技术要求》\n规定的电子病历 profile。取值区分大小写，未知取值在生成阶段报错。", Optional: true},
 		{Name: "creation_date", Type: "string", Doc: "记录文档创建时间。", Optional: true},
 		{Name: "mod_date", Type: "string", Doc: "记录文档最后修改时间。", Optional: true},
 		{Name: "area", Type: "*PageArea", Doc: "定义文档页面区域。", Optional: true},

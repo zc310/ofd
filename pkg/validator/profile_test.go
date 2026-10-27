@@ -502,9 +502,7 @@ func containsCode(codes []string, want string) bool {
 }
 
 // TestProfileImageFormatDiffersByDocType 锁定 GB/T 42133 与 GB/T 48666 的图像
-// 格式清单差异：42133 6.2.6 e) 允许六种（含 JBIG2、JPEG2000），48666 7.2 d)
-// 只允许四种。OFD-H 若直接继承父 profile 的清单，判定就会比 48666 宽松，
-// 只含 JBIG2 的电子病历文件会被误判为合规。
+// 格式清单：两者现均允许 BMP、JPEG、JPEG2000、TIFF、PNG、JBIG2。
 func TestProfileImageFormatDiffersByDocType(t *testing.T) {
 	for _, testCase := range []struct {
 		extension string
@@ -515,9 +513,9 @@ func TestProfileImageFormatDiffersByDocType(t *testing.T) {
 		{"jpg", true, true},
 		{"tiff", true, true},
 		{"bmp", true, true},
-		{"jbig2", true, false}, // 42133 允许，48666 不允许
-		{"jp2", true, false},   // JPEG2000 同上
-		{"gif", false, false},  // 两者都不允许
+		{"jbig2", true, true}, // 两者均允许
+		{"jp2", true, true},   // JPEG2000
+		{"gif", false, false}, // 两者都不允许
 	} {
 		t.Run(testCase.extension, func(t *testing.T) {
 			archiveCodes := profileIssues(t, injectImageResourceFor(t, spec.DocTypeOFDA, testCase.extension))
@@ -533,8 +531,7 @@ func TestProfileImageFormatDiffersByDocType(t *testing.T) {
 }
 
 // TestProfileRuleOverrideReplacesInherited 保护同名规则由子 profile 覆盖而非
-// 叠加：OFD-H 重新声明 image_format 后，OFD-A 的六种清单不应再出现在 OFD-H 的
-// 规则集中，否则同一个码会被执行两次。
+// 叠加：OFD-H 覆盖 image_format 后，不应重复执行同名规则。
 func TestProfileRuleOverrideReplacesInherited(t *testing.T) {
 	seen := map[string]int{}
 	for _, profile := range []*profile{profileFor(spec.DocTypeOFDA), profileFor(spec.DocTypeOFDH)} {
@@ -578,7 +575,7 @@ func TestProfileInheritsArchiveRuleCount(t *testing.T) {
 	}
 }
 
-// TestProfileSignatureCoverage 对应 GB/T 48666 8 c)：签名保护范围应涵盖除
+// TestProfileSignatureCoverage 对应 GB/T 48666 6.3 e)：签名保护范围应涵盖除
 // 注释列表与签名列表外的全部内容。用仓库内带签名的样例验证规则既能报出未覆盖
 // 的文件，也不会把签名自身的产物误判为未保护。
 func TestProfileSignatureCoverage(t *testing.T) {
