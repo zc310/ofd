@@ -21,7 +21,15 @@ const code = {
   needsGesture: sliceFunction('needsUserGesture'),
   fallback: sliceFunction('handleLocalFontsGestureFallback'),
   fetch: sliceFunction('fetchLocalFontsForDocument'),
+  missing: sliceFunction('missingFontFamilies'),
+  normalize: sliceFunction('normalizeFontFamily'),
+  group: sliceFunction('fontFamilyGroup'),
+  match: sliceFunction('localFontMatchesFamily'),
+  set: sliceFunction('setLocalFonts'),
 };
+const fontGroups = viewerSource().slice(viewerSource().indexOf('const FONT_FAMILY_GROUPS ='),
+  viewerSource().indexOf('// fontFamilyGroup'));
+const matchCode = [fontGroups, code.normalize, code.group, code.match].join('\n');
 // 勾选框的 change 回调是内联箭头函数，单独切出，避免在测试里重抄一份语义。
 const changeBody = sliceListenerHandler("localFontsSelect?.addEventListener", 'change');
 
@@ -56,11 +64,13 @@ function baseState(overrides = {}) {
     _reads: 0,
     _armed: 0,
     _disarms: 0,
+    _warnings: [],
   };
   state.setStatus = message => { state._status.push(message); };
   state.setLocalFonts = async enabled => { if (enabled) state._reads++; };
   state.disarmLocalFontsOnGesture = () => { state._disarms++; };
   state.armLocalFontsOnGesture = () => { state._armed++; return true; };
+  state.console = { warn: (...args) => { state._warnings.push(args); } };
   return Object.assign(state, overrides);
 }
 
@@ -292,6 +302,119 @@ suite.group('失败归因（区分"无需补齐"与"无匹配字体"）');
               `armed=${already._armed}`);
   suite.check(already._status.some(m => m.includes('读取系统字体失败')), '直接报失败',
               JSON.stringify(already._status));
+}
+
+suite.group('系统字体的实际名称匹配');
+{
+  const state = {};
+  load(state, matchCode, { expose: { match: 'localFontMatchesFamily' } });
+  const wanted = new Map([['楷体', '楷体']]);
+  for (const [label, font] of [
+    ['英文族名 KaiTi 对应文档楷体', { family: 'KaiTi' }],
+    ['中文族名对应文档楷体', { family: '楷体' }],
+    ['完整名补齐未命中的族名', { family: '本地化字型', fullName: 'KaiTi Regular' }],
+    ['PostScript 名补齐未命中的族名', { family: '本地化字型', postscriptName: 'KaiTi' }],
+    ['缺少族名时仍可按 PostScript 名匹配', { postscriptName: 'KaiTi' }],
+  ]) {
+    suite.check(state.match(font, wanted) === '楷体', label);
+  }
+  suite.check(state.match({ family: 'Arial' }, wanted) === '', '不把无关字体当作楷体');
+  suite.check(state.match({ family: 'KaiTi' }, new Map([['楷体', '楷体'], ['kaiti', 'KaiTi']])) === 'KaiTi',
+    '精确族名优先于排在前面的等价别名');
+}
+
+suite.group('系统字体读取、注册与失败反馈');
+{
+  const make = (fonts = [{ name: '楷体', family: '', embedded: false }]) => {
+    const state = baseState({ pageInfos: [{}] });
+    state.loadDocumentInfo = async () => ({ fonts });
+    state.registrations = [];
+    state.engine = { addFallbackFont: async (...args) => { state.registrations.push(args); } };
+    load(state, [matchCode, code.missing, code.fetch].join('\n'),
+      { expose: { fetch: 'fetchLocalFontsForDocument' } });
+    return state;
+  };
+  const font = (overrides = {}) => ({
+    family: 'KaiTi', style: 'Regular', blob: async () => new Blob([new Uint8Array([1, 2, 3])]),
+    ...overrides,
+  });
+  const direct = make();
+  let boldReads = 0;
+  const matched = await direct.fetch(Promise.resolve([
+    font({ style: 'Bold', blob: async () => { boldReads++; return new Blob([]); } }), font(),
+  ]), 0);
+  suite.check(matched.registered === 1 && direct.registrations[0]?.[1] === '楷体',
+    'hello.ofd 的 FontName=楷体、空 FamilyName 按原声明族名注册');
+  suite.check(boldReads === 0 && direct.registrations[0]?.[2] === 400,
+    '浏览器先返回粗体时仍优先读取常规体');
+  suite.check(direct.localFontFamilies.has('楷体'), '记录原声明族名供关闭文档时移除');
+
+  const metadata = make();
+  const metadataResult = await metadata.fetch(Promise.resolve([
+    font({ family: '本地化字型', postscriptName: 'KaiTi' }),
+  ]), 0);
+  suite.check(metadataResult.registered === 1, '读取流程将完整 FontData 交给名称匹配');
+
+  const retryRead = make();
+  const readResult = await retryRead.fetch(Promise.resolve([
+    font({ blob: async () => { throw new Error('无法读取字型数据'); } }), font({ style: 'Bold Italic' }),
+  ]), 0);
+  suite.check(readResult.registered === 1 && readResult.failures.length === 0,
+    '常规体读取失败时继续尝试同族候选');
+  suite.check(retryRead.registrations[0]?.[2] === 700 && retryRead.registrations[0]?.[3] === true,
+    '备用粗斜体同时保留粗体和斜体标记');
+
+  const retryRegister = make();
+  retryRegister.engine.addFallbackFont = async (...args) => {
+    retryRegister.registrations.push(args);
+    if (args[2] === 400) throw new Error('字体格式不支持');
+  };
+  const registerResult = await retryRegister.fetch(Promise.resolve([font(), font({ style: 'Bold' })]), 0);
+  suite.check(registerResult.registered === 1 && retryRegister.registrations.length === 2,
+    '常规体注册失败时继续尝试同族候选');
+
+  const readFail = make();
+  const failedRead = await readFail.fetch(Promise.resolve([
+    font({ blob: async () => { throw new Error('无法读取字型数据'); } }),
+  ]), 0);
+  suite.check(failedRead.registered === 0 && failedRead.unmatched.length === 0 &&
+    failedRead.failures[0]?.stage === '读取', '已匹配但读取失败不误报为没有匹配字体');
+  suite.check(readFail._warnings[0]?.[0] === '读取系统字体失败' &&
+    readFail._warnings[0]?.[2]?.message === '无法读取字型数据', '控制台保留字体读取的具体错误');
+
+  const registerFail = make();
+  registerFail.engine.addFallbackFont = async () => { throw new Error('字体格式不支持'); };
+  const failedRegister = await registerFail.fetch(Promise.resolve([font()]), 0);
+  suite.check(failedRegister.failures[0]?.stage === '注册' &&
+    failedRegister.failures[0]?.message === '字体格式不支持', '保留 WASM 注册失败原因');
+  suite.check(registerFail._warnings[0]?.[0] === '注册系统字体失败' &&
+    registerFail._warnings[0]?.[2]?.message === '字体格式不支持', '控制台保留 WASM 注册的具体错误');
+
+  const mixed = make([{ name: '楷体' }, { name: '黑体' }]);
+  const partial = await mixed.fetch(Promise.resolve([font()]), 0);
+  suite.check(partial.registered === 1 && partial.unmatched.join() === '黑体',
+    '部分匹配时仍列出未补齐字体');
+
+  const stale = make();
+  const cancelled = await stale.fetch(Promise.resolve([font({ blob: async () => {
+    stale.documentGeneration++;
+    return new Blob([]);
+  } })]), 0);
+  suite.check(cancelled.registered === 0 && stale.registrations.length === 0,
+    '读取字体期间切换文档，不注册到新文档');
+
+  for (const [result, expected] of [
+    [failedRead, '系统字体读取失败：楷体（无法读取字型数据）'],
+    [failedRegister, '系统字体注册失败：楷体（字体格式不支持）'],
+    [partial, '已启用系统字体（1 款）；未补齐：黑体'],
+  ]) {
+    const state = baseState({ pageInfos: [{}], localFontsSelect: { checked: true } });
+    state.fetchLocalFontsForDocument = async () => result;
+    state.invalidatePageFonts = () => {};
+    load(state, [code.supported, code.set].join('\n'), { expose: { set: 'setLocalFonts' } });
+    await state.set(true);
+    suite.check(state._status.includes(expected), expected);
+  }
 }
 
 suite.group('fetchLocalFontsForDocument 的返回值');

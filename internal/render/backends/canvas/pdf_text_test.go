@@ -232,3 +232,68 @@ func TestPDFTextRendererClipsAndLimitsRasterFallback(t *testing.T) {
 		})
 	}
 }
+
+// PDF 合成粗体应与页面渲染的字形粗细一致，尤其不能因字号变大而相对变细。
+func TestPDFSyntheticBoldMatchesRasterWeightAndKeepsText(t *testing.T) {
+	tool, err := exec.LookPath("pdftoppm")
+	if err != nil {
+		t.Skip("缺少 pdftoppm，跳过 PDF 字重检查")
+	}
+	family := pdfTextTestFamily(t)
+	for _, tc := range []struct {
+		name  string
+		size  float64
+		scale float64
+	}{
+		{"small", 12, 1},
+		{"large", 48, 1},
+		{"scaled", 24, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			face := family.Face(tc.size, canvas.Black, canvas.FontBold)
+			text := canvas.NewTextLine(face, "Bold", canvas.Left)
+			matrix := canvas.Identity.Translate(5, 10).Scale(tc.scale, tc.scale)
+			page := canvas.New(60, 30)
+			page.RenderText(text, matrix)
+			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace)
+			data := renderPDFText(t, 60, 30, func(r pdfTextRenderer) { r.RenderText(text, matrix) })
+			if len(pdfTextImages(t, data)) != 0 {
+				t.Fatal("合成粗体不应被栅格化")
+			}
+			pages, err := testutil.RasterizePDFPages(t.Context(), tool, data, 144)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pages) != 1 {
+				t.Fatalf("PDF 页数 = %d，期望 1", len(pages))
+			}
+			var rasterInk, pdfInk uint64
+			for y := before.Bounds().Min.Y; y < before.Bounds().Max.Y; y++ {
+				for x := before.Bounds().Min.X; x < before.Bounds().Max.X; x++ {
+					rasterInk += uint64(before.RGBAAt(x, y).A)
+				}
+			}
+			for y := pages[0].Bounds().Min.Y; y < pages[0].Bounds().Max.Y; y++ {
+				for x := pages[0].Bounds().Min.X; x < pages[0].Bounds().Max.X; x++ {
+					pdfInk += uint64(255 - pages[0].RGBAAt(x, y).R)
+				}
+			}
+			// 用墨量允许不同栅格器的抗锯齿差异，但不能丢失合成粗体。
+			ratio := float64(pdfInk) / float64(rasterInk)
+			if rasterInk == 0 || ratio < 0.85 || ratio > 1.15 {
+				t.Fatalf("PDF 与页面的字重不一致：用墨量比 %g", ratio)
+			}
+			if after := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace); !bytes.Equal(before.Pix, after.Pix) {
+				t.Fatal("PDF 输出修改了共享文字或字体面")
+			}
+			if extract, err := exec.LookPath("pdftotext"); err == nil {
+				cmd := exec.CommandContext(t.Context(), extract, "-", "-")
+				cmd.Stdin = bytes.NewReader(data)
+				output, err := cmd.CombinedOutput()
+				if err != nil || strings.TrimSpace(string(output)) != "Bold" {
+					t.Fatalf("PDF 文字提取失败: %v: %s", err, output)
+				}
+			}
+		})
+	}
+}

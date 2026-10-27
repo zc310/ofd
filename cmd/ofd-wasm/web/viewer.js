@@ -2399,71 +2399,78 @@ function fontFamilyGroup(name) {
 }
 
 // localFontMatchesFamily 判断系统字体是否可用于补齐文档声明的某个字体族：优先精确
-// 归一化匹配，其次按等价组匹配。
+// 归一化匹配，其次按等价组匹配。浏览器可能给出本地化的族名，同时在完整名或
+// PostScript 名中保留 KaiTi 等名称，因此三个名称都需要参与匹配。
 function localFontMatchesFamily(localFont, missing) {
-  const localNorm = normalizeFontFamily(localFont.family);
-  const localGroup = fontFamilyGroup(localFont.family);
+  const names = [localFont.family, localFont.fullName, localFont.postscriptName].filter(Boolean);
+  const normalized = new Set(names.map(normalizeFontFamily));
+  const groups = new Set(names.map(fontFamilyGroup).filter(Boolean));
+  // 所有精确匹配优先于等价组，避免被排在前面的别名抢走候选。
   for (const [key, original] of missing) {
-    if (key === localNorm) return original;
-    if (localGroup) {
-      const group = fontFamilyGroup(original);
-      if (group && group === localGroup) return original;
-    }
+    if (normalized.has(key)) return original;
+  }
+  for (const original of missing.values()) {
+    if (groups.has(fontFamilyGroup(original))) return original;
   }
   return '';
 }
 
 // fetchLocalFontsForDocument 在已获得本地字体列表后，匹配文档缺失字体、读取字形
 // 数据并注册为 WASM 回退字体。queryLocalFontsPromise 由 setLocalFonts 发起。
-// 返回 { registered, wanted, unmatched }：registered 是实际注册的字体数量，wanted
-// 是文档缺失的字体族数，unmatched 只在 registered 为 0 时给出缺失的族名。三者
-// 用来区分"没有可补齐的目标"和"有目标但本机没有匹配字体"，否则界面上只能给出
-// 一句笼统的失败提示。
+// 返回实际注册数、目标族数、未匹配族名和读取/注册失败原因；已匹配但无法加载
+// 字体时不能误报为本机没有匹配字体。同一族优先常规字重，加载失败再尝试其他候选。
 async function fetchLocalFontsForDocument(queryLocalFontsPromise, generation) {
   const wanted = await missingFontFamilies();
   wanted.delete('');
   // 文档字体已全部内嵌时没有任何可补齐的目标，这不是失败。
-  if (wanted.size === 0) return { registered: 0, wanted: 0, unmatched: [] };
+  if (wanted.size === 0) return { registered: 0, wanted: 0, unmatched: [], failures: [] };
 
   const available = await queryLocalFontsPromise;
   const selected = new Map();
   for (const font of available || []) {
-    const family = String(font.family || '').trim();
-    if (!family) continue;
-    const wantedName = localFontMatchesFamily({ family }, wanted);
+    const wantedName = localFontMatchesFamily(font, wanted);
     if (!wantedName) continue;
-    // 同一目标族只取一份；优先常规字重。
-    if (selected.has(wantedName) && font.style !== 'Regular') continue;
-    if (!selected.has(wantedName) || font.style === 'Regular') {
-      selected.set(wantedName, font);
-    }
+    if (!selected.has(wantedName)) selected.set(wantedName, []);
+    const candidates = selected.get(wantedName);
+    if (/^(regular|normal)$/i.test(font.style || '')) candidates.unshift(font);
+    else candidates.push(font);
   }
-  if (selected.size === 0) {
-    return { registered: 0, wanted: wanted.size, unmatched: [...wanted.values()] };
-  }
+  const unmatched = [...wanted.values()].filter(name => !selected.has(name));
+  const failures = [];
 
   let registered = 0;
-  for (const [wantedName, font] of selected) {
-    if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [] };
-    let data;
-    try {
-      const blob = await font.blob();
-      data = await blob.arrayBuffer();
-    } catch (_) {
-      continue;
+  for (const [wantedName, candidates] of selected) {
+    let failure;
+    for (const font of candidates) {
+      if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [], failures: [] };
+      let data;
+      try {
+        const blob = await font.blob();
+        data = await blob.arrayBuffer();
+      } catch (error) {
+        failure = { family: wantedName, stage: '读取', message: String(error?.message || error) };
+        console.warn('读取系统字体失败', wantedName, error);
+        continue;
+      }
+      if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [], failures: [] };
+      const style = String(font.style || '').toLowerCase();
+      const weight = style.includes('bold') ? 700 : 400;
+      const italic = style.includes('italic') || style.includes('oblique');
+      try {
+        await engine.addFallbackFont(data, wantedName, weight, italic);
+        localFontFamilies.add(wantedName);
+        registered++;
+        failure = undefined;
+        break;
+      } catch (error) {
+        failure = { family: wantedName, stage: '注册', message: String(error?.message || error) };
+        console.warn('注册系统字体失败', wantedName, error);
+        // 无法注册的本地字体不应阻止其他字体生效。
+      }
     }
-    if (generation !== documentGeneration) return { registered, wanted: wanted.size, unmatched: [] };
-    const weight = font.style === 'Bold' ? 700 : 400;
-    const italic = font.style === 'Italic' || font.style === 'Bold Italic';
-    try {
-      await engine.addFallbackFont(data, wantedName, weight, italic);
-      localFontFamilies.add(wantedName);
-      registered++;
-    } catch (_) {
-      // 无法注册的本地字体不应阻止其他字体生效。
-    }
+    if (failure) failures.push(failure);
   }
-  return { registered, wanted: wanted.size, unmatched: [] };
+  return { registered, wanted: wanted.size, unmatched, failures };
 }
 
 // removeLocalFonts 移除本窗口曾注册的系统字体，使后续打开的文档不再沿用。
@@ -2649,6 +2656,9 @@ async function setLocalFonts(enabled) {
     // 缺字体但本机没有匹配项（字体族名对不上，可据此排查）。
     if (result.wanted === 0) {
       setStatus('该文档的字体已全部内嵌，无需补齐系统字体');
+    } else if (result.failures?.length) {
+      const failure = result.failures[0];
+      setStatus(`系统字体${failure.stage}失败：${failure.family}（${failure.message}）`);
     } else {
       const names = result.unmatched.slice(0, 3).join('、');
       const more = result.unmatched.length > 3 ? ` 等 ${result.unmatched.length} 款` : '';
@@ -2658,7 +2668,9 @@ async function setLocalFonts(enabled) {
   }
   localFontsActive = true;
   invalidatePageFonts();
-  setStatus(`已启用系统字体（${registered} 款）`);
+  const pending = [...result.unmatched, ...(result.failures || []).map(failure => failure.family)];
+  const detail = pending.length ? `；未补齐：${pending.slice(0, 3).join('、')}` : '';
+  setStatus(`已启用系统字体（${registered} 款）${detail}`);
 }
 
 // invalidatePageFonts 丢弃页面与缩略图缓存并重渲染可见页面，使字体变更生效。

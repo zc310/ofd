@@ -116,8 +116,11 @@ func RegisterFallbackFont(source FontSource) error {
 	if len(source.Data) > maxFontBytes {
 		return fmt.Errorf("回退字体超过大小限制 %d MB", maxFontBytes>>20)
 	}
-	slog.Info("register fallback font", "name", source.Name, "family", source.Family, "weight", source.Weight, "italic", source.Italic, "bytes", len(source.Data))
-	return render.RegisterFallbackFont(source.Data, source.Family, fallbackFontStyle(source))
+	if err := render.RegisterFallbackFont(source.Data, source.Family, fallbackFontStyle(source)); err != nil {
+		return err
+	}
+	slog.Info("registered fallback font", "name", source.Name, "family", source.Family, "weight", source.Weight, "italic", source.Italic, "bytes", len(source.Data))
+	return nil
 }
 
 // FallbackFontData 返回已全局注册的回退字体族的首个来源数据。

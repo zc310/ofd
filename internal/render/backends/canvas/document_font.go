@@ -1428,6 +1428,7 @@ func loadFallbackFace(family *canvas.FontFamily, data []byte, style drawing.Font
 	if err := family.LoadFont(data, 0, canvasStyle(style)); err != nil {
 		return err
 	}
+	selectUnicodeCmap(family.Face(1, canvasStyle(style)).Font)
 	if !fontFamilyUsable(family) {
 		return fmt.Errorf("回退字体结构不可用")
 	}

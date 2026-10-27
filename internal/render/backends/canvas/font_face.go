@@ -30,7 +30,22 @@ func probeFamilyFace(family *canvas.FontFamily, size float64, style drawing.Font
 			face = nil
 		}
 	}()
-	return family.Face(size, canvas.Black, canvasStyle(style), canvas.FontNormal)
+	return normalizeItalicFace(family.Face(size, canvas.Black, canvasStyle(style), canvas.FontNormal))
+}
+
+// normalizeItalicFace 保留已选字体的原生倾斜，仅为正体合成请求的斜体样式。
+// GB/T 33190—2016 11.1 表 44 的 Font.Italic 用于匹配替代字型，11.2 表 45
+// 的 TextObject.Italic 缺省为 false；缺省不应反向剪切内嵌字体的原始轮廓。
+// OpenType post.italicAngle 非零的字体已经倾斜，也不应再次叠加合成斜体。
+// 只修改新建的字体面，不改变共享字体或原始字形。
+func normalizeItalicFace(face *canvas.FontFace) *canvas.FontFace {
+	if face == nil {
+		return face
+	}
+	if !face.Style.Italic() || (face.Font != nil && face.Font.Post != nil && face.Font.Post.ItalicAngle != 0) {
+		face.FauxItalic = 0
+	}
+	return face
 }
 
 // forgetShapingCache 解除已被新字形映射替换的字体的轮廓、整形与宽度缓存引用。
@@ -436,7 +451,7 @@ func buildTextFace(family *canvas.FontFamily, object models.TextObject, fill *dr
 		// 文字单独吸附像素会偏离精确定位的轮廓，低DPI下形成两层错位重影。
 		args = append(args, font.NoHinting)
 	}
-	return family.Face(object.Size*2.83465, args...)
+	return normalizeItalicFace(family.Face(object.Size*2.83465, args...))
 }
 
 // textFontStyle 将 OFD 字重映射为 canvas 支持的标准字重。

@@ -9,7 +9,8 @@ import (
 
 // PDF 写入器不支持渐变色标的 Alpha。仅将透明渐变文字的可见部分
 // 绘制为带透明通道的局部图片，并保留不可见文字供复制、搜索和提取。
-// 不透明渐变文字仍交给原生写入器，SVG 不经过此适配层。
+// 写入器的合成粗体描边也未按字号缩放；改用与光栅输出一致的矢量轮廓。
+// 其他文字仍交给原生写入器，SVG 不经过此适配层。
 type pdfTextRenderer struct {
 	*pdf.PDF
 
@@ -23,11 +24,12 @@ func (r pdfTextRenderer) RenderCanvas(scene *canvas.Canvas, matrix canvas.Matrix
 }
 
 func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
-	translucent := false
+	translucent, fauxBold := false, false
 	text.WalkSpans(func(_, _ float64, span canvas.TextSpan) {
 		if !span.IsText() {
 			return
 		}
+		fauxBold = fauxBold || span.Face.FauxBold != 0
 		var stops canvas.Grad
 		switch gradient := span.Face.Fill.Gradient.(type) {
 		case *canvas.LinearGradient:
@@ -39,7 +41,7 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 			translucent = translucent || stop.Color.A != 255
 		}
 	})
-	if !translucent {
+	if !translucent && !fauxBold {
 		r.PDF.RenderText(text, matrix)
 		// 裁剪文字也会附带不可见语义层，避免其Alpha=0污染后续渐变。
 		visible := false
@@ -52,19 +54,24 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 		return
 	}
 
-	bounds := text.OutlineBounds().Transform(matrix).Expand(0.1)
-	// PDF 页面之外不显示；裁到页面范围，并限制局部栅格化的内存与单边尺寸。
-	bounds.X0, bounds.Y0 = max(0, bounds.X0), max(0, bounds.Y0)
-	bounds.X1, bounds.Y1 = min(r.width, bounds.X1), min(r.height, bounds.Y1)
-	width, height := bounds.W(), bounds.H()
-	if width > 0 && height > 0 && !math.IsInf(width, 0) && !math.IsInf(height, 0) {
-		dpmm := min(300.0/25.4, math.Sqrt(4_000_000/width/height), 32768/width, 32768/height)
-		local := canvas.New(width, height)
-		local.RenderText(text, canvas.Identity.Translate(-bounds.X0, -bounds.Y0).Mul(matrix))
-		img := rasterize(local, canvas.DPMM(dpmm), canvas.DefaultColorSpace)
-		if img.Bounds().Dx() > 0 && img.Bounds().Dy() > 0 {
-			r.PDF.RenderImage(img, canvas.Identity.Translate(bounds.X0, bounds.Y0).
-				Scale(width/float64(img.Bounds().Dx()), height/float64(img.Bounds().Dy())))
+	if !translucent {
+		// 分辨率为 0，保持矢量文字的精确定位，不吸附到特定像素网格。
+		text.RenderTo(r.PDF, matrix, 0)
+	} else {
+		bounds := text.OutlineBounds().Transform(matrix).Expand(0.1)
+		// PDF 页面之外不显示；裁到页面范围，并限制局部栅格化的内存与单边尺寸。
+		bounds.X0, bounds.Y0 = max(0, bounds.X0), max(0, bounds.Y0)
+		bounds.X1, bounds.Y1 = min(r.width, bounds.X1), min(r.height, bounds.Y1)
+		width, height := bounds.W(), bounds.H()
+		if width > 0 && height > 0 && !math.IsInf(width, 0) && !math.IsInf(height, 0) {
+			dpmm := min(300.0/25.4, math.Sqrt(4_000_000/width/height), 32768/width, 32768/height)
+			local := canvas.New(width, height)
+			local.RenderText(text, canvas.Identity.Translate(-bounds.X0, -bounds.Y0).Mul(matrix))
+			img := rasterize(local, canvas.DPMM(dpmm), canvas.DefaultColorSpace)
+			if img.Bounds().Dx() > 0 && img.Bounds().Dy() > 0 {
+				r.PDF.RenderImage(img, canvas.Identity.Translate(bounds.X0, bounds.Y0).
+					Scale(width/float64(img.Bounds().Dx()), height/float64(img.Bounds().Dy())))
+			}
 		}
 	}
 	text.WalkSpans(func(x, y float64, span canvas.TextSpan) {
@@ -72,7 +79,7 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 			return
 		}
 		face := *span.Face
-		face.Fill, face.Deco = canvas.Paint{}, nil
+		face.Fill, face.Deco, face.FauxBold = canvas.Paint{}, nil, 0
 		line := canvas.NewTextLine(&face, span.Text, canvas.Left)
 		line.WritingMode = text.WritingMode
 		line.TextOrientation = text.TextOrientation
