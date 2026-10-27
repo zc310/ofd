@@ -589,7 +589,8 @@ package-viewer-deb package-viewer-rpm: $(VIEWER_NATIVE) cmd/ofd-viewer/nfpm.yaml
 	@mkdir -p "$(DIST_DIR)"
 	@glibc_version=$$(LC_ALL=C "$(READELF)" --version-info "$(VIEWER_NATIVE)" | sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' | sort -V | tail -n 1); \
 	if [ -z "$$glibc_version" ]; then echo "错误: 无法确定 viewer 所需的 glibc 版本。" >&2; exit 1; fi; \
-	VIEWER_GLIBC_VERSION="$$glibc_version" VIEWER_VERSION="$(VERSION)" VIEWER_ARCH="$(GOARCH)" VIEWER_BINARY="$(abspath $(VIEWER_NATIVE))" \
+	case "$(GOARCH)" in amd64) dynamic_loader=ld-linux-x86-64.so.2 ;; arm64) dynamic_loader=ld-linux-aarch64.so.1 ;; esac; \
+	VIEWER_DYNAMIC_LOADER="$$dynamic_loader" VIEWER_GLIBC_VERSION="$$glibc_version" VIEWER_VERSION="$(VERSION)" VIEWER_ARCH="$(GOARCH)" VIEWER_BINARY="$(abspath $(VIEWER_NATIVE))" \
 		"$(NFPM)" package --config cmd/ofd-viewer/nfpm.yaml --packager $(patsubst package-viewer-%,%,$@) --target "$(abspath $(DIST_DIR))/"
 
 package-thumbnailer: $(THUMBNAILER_PACKAGE)

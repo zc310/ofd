@@ -80,6 +80,7 @@ overrides:
     depends:
       - /bin/sh
       - glibc >= ${VIEWER_GLIBC_VERSION}
+      - ${VIEWER_DYNAMIC_LOADER}()(64bit)
       - libc.so.6()(64bit)
       - libm.so.6()(64bit)
       - libGL.so.1()(64bit)

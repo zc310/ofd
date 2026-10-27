@@ -156,6 +156,7 @@ make package-viewer-linux    # 同时生成 DEB 和 RPM
 `ubuntu-24.04-arm`（arm64）原生 runner 上构建并验证 DEB/RPM，将两个架构的安装包
 上传为 GitHub Release 附件。
 打包时从 ELF 自动提取最低 glibc 版本并写入依赖；
+动态加载器由 DEB 的 `libc6` 提供，RPM 按架构声明 `ld-linux-x86-64.so.2` 或 `ld-linux-aarch64.so.1`。
 较旧发行版可在本机从源码构建。
 
 安装包名为 `zc310-ofd-viewer`，包含 `/usr/bin/ofd-viewer`、桌面菜单入口、

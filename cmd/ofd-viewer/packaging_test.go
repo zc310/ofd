@@ -112,6 +112,8 @@ func TestViewerNativePackages(t *testing.T) {
 	}
 	glibcDependency := "libc6 (>= " + glibcVersion + ")"
 	debLibraries := map[string]string{
+		// 两种架构的动态加载器均由 libc6 提供，ARM64 还可能在 DT_NEEDED 中显式引用。
+		"ld-linux-x86-64.so.2": glibcDependency, "ld-linux-aarch64.so.1": glibcDependency,
 		"libc.so.6": glibcDependency, "libm.so.6": glibcDependency, "libpthread.so.0": glibcDependency, "libdl.so.2": glibcDependency, "librt.so.1": glibcDependency,
 		"libGL.so.1": "libgl1", "libX11.so.6": "libx11-6", "libXcursor.so.1": "libxcursor1", "libXrandr.so.2": "libxrandr2",
 		"libXinerama.so.1": "libxinerama1", "libXi.so.6": "libxi6", "libXxf86vm.so.1": "libxxf86vm1",
@@ -193,6 +195,11 @@ func TestViewerNativePackages(t *testing.T) {
 		}
 		runViewerPackageCommand(t, "rpm", "-K", "--nosignature", path)
 		deps := strings.Split(strings.TrimSpace(string(runViewerPackageCommand(t, "rpm", "-qp", "--requires", path))), "\n")
+		loader := "ld-linux-x86-64.so.2"
+		if runtime.GOARCH == "arm64" {
+			loader = "ld-linux-aarch64.so.1"
+		}
+		checkViewerPackageDependencies(t, deps, []string{loader + "()(64bit)"})
 		checkViewerPackageDependencies(t, deps, []string{"zenity", "xdg-utils", "shared-mime-info", "desktop-file-utils", "hicolor-icon-theme"})
 		checkViewerPackageDependencies(t, deps, []string{"/bin/sh", "glibc >= " + glibcVersion, "libwayland-cursor.so.0()(64bit)", "libwayland-egl.so.1()(64bit)", "libxkbcommon.so.0()(64bit)", "libEGL.so.1()(64bit)"})
 		for _, lib := range libraries {
