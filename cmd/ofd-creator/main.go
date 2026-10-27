@@ -63,6 +63,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	args = rest
+	if len(args) > 0 && strings.EqualFold(args[0], "remove-signatures") {
+		return runRemoveSignatures(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && strings.EqualFold(args[0], "template") {
 		return runTemplate(args[1:], stdout, stderr)
 	}
@@ -265,6 +268,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  merge                           合并多个 OFD 为多文档 OFD")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  replace                         替换、新增或删除 OFD 包内条目")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  sign                            签署 OFD 或追加普通数字签名")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  remove-signatures               移除全部或指定签名，清理签名残留")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  watermark <add|replace|remove>   添加、替换或删除文档水印")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export                          从 OFD 导出 creator manifest")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  export-all                      导出 OFD 的全部文档体")

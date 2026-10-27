@@ -4,6 +4,44 @@
 并将命令输出的 `SignedValue.dat` 写回包中。外部命令协议见
 [ofd-creator](../../cmd/ofd-creator/README.md#外部命令重签名)。
 
+## 移除与清理已有签名
+
+`Remove` 无需签名器，接受文件路径、`[]byte` 或 `io.Reader`，向指定 Writer 写出新 OFD：
+
+```go
+// 移除所有文档体的全部签名。
+err := sign.Remove(ctx, input, output, sign.RemoveOptions{})
+
+// 仅移除指定 ID；同一 ID 在不同文档体中出现时均移除。
+err = sign.Remove(ctx, input, output, sign.RemoveOptions{IDs: []string{"approval-2"}})
+
+// 全部移除，并清理惯用签名路径中的历史残留。
+err = sign.Remove(ctx, input, output, sign.RemoveOptions{Cleanup: true})
+```
+
+默认按 GB/T 33190—2016 §7.4、§18.1、§18.2，从 `OFD.xml` 的签名入口及列表定位
+签名描述、签名值、独立印章和 `Seal/ImageLoc` 图片。清除最后一个签名时删除列表及主入口引用；
+保留签名共用的负载、签名目录内的其他文件、正文原字节及包内路径不变。ZIP 会重新打包。
+未签名文档可重复清理。全部移除允许旧样例中的纯数字 ID；按 ID 选择要求合法 xs:ID，
+每个指定 ID 至少在一个文档体中存在，否则报错。
+
+按 ID 移除时，若保留签名的 `Relative` 依赖悬空，或 `References` 保护的文件将被删除、
+改写，返回可用 `errors.Is(err, crypt.ErrProtectedContent)` 判断的错误。此检查不证明保留签名
+原先有效或受信；业务接受判断仍调用 `Verify`。未受影响的签名描述与签名值保持原字节。
+
+`Cleanup` 不能与 `IDs` 组合。它允许签名列表、描述缺失或 XML 损坏，并额外删除
+`Signatures/`、`Signs/` 内所有文件，以及惯用文件名 `Signatures.xml`、`Signs.xml`、`Signature.xml`。
+这些路径内的普通文件也会删除；默认模式则只删除由签名引用发现的文件。
+无法从损坏元数据发现的自定义路径残留会保留；包外路径仍报错。此功能不删除正文图片或普通印章注解，
+也不实现归档标准中的签名去技术化。
+
+原始加密包或含完整性清单的输入返回 `crypt.ErrProtectedContent`，需先单独处理。
+限制为输入与解压/输出各 512 MiB、单条目 64 MiB、10000 个条目，入口和签名 XML 各 4 MiB。
+上下文可取消，错误时必须丢弃 Writer 的部分输出；`Deterministic` 可固定 ZIP 时间。
+命令行见 [`ofd-creator remove-signatures`](../../cmd/ofd-creator/README.md#移除与清理已有签名)。
+
+## 生成电子印章与签章
+
 `CreateSeal`、`CreateSignedValue` 提供 GB/T 38540-2020 SES V4 的 SM2/SM3 编码与签署。
 证书与私钥由调用方提供；`CreateSeal` 的 `Width`、`Height` 是整数毫米，不是图片像素。
 `SignerCertificates` 设置获授权签章者的完整 DER 证书；也可用 `SignerDigests` 设置

@@ -46,7 +46,7 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`replace`、`watermark`、`sign` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、编辑条目、处理水印、独立签署以及输出字段参考。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`replace`、`watermark`、`sign`、`remove-signatures` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、编辑条目、处理水印、独立签署、清理已有签名以及输出字段参考。详见下文各节。
 
 ## 流式创作
 
@@ -492,6 +492,39 @@ flow:
 复杂文字塑形、跨页拆分单个单元格和浮动环绕暂不支持。
 Go API 与完整说明见 [流式创作库指南](../../pkg/creator/flow/README.md)。
 
+## 移除与清理已有签名
+
+`remove-signatures` 直接处理已有 OFD，无需签名器，不调整文档目录或资源路径。
+
+```bash
+# 清除所有文档体的全部签名，输出前严格校验。
+ofd-creator remove-signatures -o /tmp/unsigned.ofd --validate signed.ofd
+
+# 只移除指定签名；--id 可重复，同名 ID 在各文档体中均移除。
+ofd-creator remove-signatures --id approval-2 -o /tmp/removed.ofd signed.ofd
+
+# 清除全部签名，并清理惯用路径中的残留，允许签名列表或描述损坏。
+ofd-creator remove-signatures --cleanup -o /tmp/cleaned.ofd signed.ofd
+```
+
+默认按主入口和签名列表定位并删除签名描述、签名值、独立印章及印模图片。
+最后一个签名移除后，同步删除列表和 `OFD.xml` 的引用。正文与资源原字节保持不变，
+保留签名共用的印章/图片及同目录的普通文件；输出 ZIP 重新打包。
+按 ID 删除时，保留签名的依赖或摘要保护范围受影响会报错，需要一并移除相关签名或清除全部。
+ID 不存在也报错。此检查不代替验签；无签名文档可重复清理。
+
+`--cleanup` 只能用于全部清除，不能与 `--id` 组合。它还会删除 `Signatures/`、`Signs/`
+目录内的所有文件和惯用签名文件名 `Signatures.xml`、`Signs.xml`、`Signature.xml`，
+包括这些路径中的普通文件。损坏元数据导致无法定位的自定义路径残留会保留；
+包外路径仍拒绝。正文里嵌入的印章图片、普通 `Stamp` 注解不在清理范围内。
+加密输入及含完整性清单的输入需先单独处理。
+
+输入使用位置参数或 `-i`，输出使用 `-o`，`-o -` 写标准输出。
+禁止覆盖输入文件；处理或校验失败保留已有输出。`--deterministic` 固定 ZIP 时间，
+`--validate` 启用 GM/T 0099 扩展执行严格校验。
+退出码：`0` 成功，`2` 参数错误，`4` 输入、移除或保护范围检查失败，`5` 输出失败，`6` 严格校验失败。
+Go API 见 [`sign.Remove`](../../pkg/sign/README.md#移除与清理已有签名)。
+
 ## 独立签署与普通签名追加
 
 `sign` 对现有 OFD 签署，复用下文的 `--sign-*` 外部签名协议；缺省类型为 `Sign`。
@@ -703,17 +736,17 @@ ofd-creator -i invoice-template/template.yaml --data data.json -o invoices.ofd -
 
 字段与重复规则：
 
-| 字段 | 说明 |
-|---|---|
-| `repeat` | 根对象中的数组路径；每条记录生成一页，空数组跳过本页；固定封面/尾页省略此字段 |
-| `bind.path` | 点分隔路径，如 `buyer.name`；`$.seller` 读取公共根数据；不支持表达式和数组索引 |
-| `bind.required` | 默认 true；缺失或 null 报错，false 时移除图元 |
-| `bind.default` | 缺失或 null 的默认字符串，优先于 required |
-| `bind.overflow` | `error`（默认）、`wrap`、`shrink`、`ellipsis` |
-| `bind.align` | `left`（默认）、`center`、`right` |
-| `bind.min_size` | shrink 必填的最小字号，单位毫米 |
-| `bind.max_lines` | wrap 的最大行数，0 表示按高度限制 |
-| `bind.line_height` | wrap 的行高倍率，默认 1.2 |
+| 字段               | 说明                                                                           |
+|--------------------|--------------------------------------------------------------------------------|
+| `repeat`           | 根对象中的数组路径；每条记录生成一页，空数组跳过本页；固定封面/尾页省略此字段  |
+| `bind.path`        | 点分隔路径，如 `buyer.name`；`$.seller` 读取公共根数据；不支持表达式和数组索引 |
+| `bind.required`    | 默认 true；缺失或 null 报错，false 时移除图元                                  |
+| `bind.default`     | 缺失或 null 的默认字符串，优先于 required                                      |
+| `bind.overflow`    | `error`（默认）、`wrap`、`shrink`、`ellipsis`                                  |
+| `bind.align`       | `left`（默认）、`center`、`right`                                              |
+| `bind.min_size`    | shrink 必填的最小字号，单位毫米                                                |
+| `bind.max_lines`   | wrap 的最大行数，0 表示按高度限制                                              |
+| `bind.line_height` | wrap 的行高倍率，默认 1.2                                                      |
 
 `@index`、`@number` 分别为 0 起/1 起的当前记录序号，`@page` 为最终物理页码，
 `@pages` 为最终总页数；YAML 中需加引号，如 `path: '@page'`。
@@ -1227,12 +1260,12 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 
 | 退出码 | 含义                                                                                                      |
 |--------|-----------------------------------------------------------------------------------------------------------|
-| `0`    | 创建、导出、合并、替换或校验成功；`--version` 输出版本号也算成功                                          |
+| `0`    | 创建、导出、合并、替换、签名清理或校验成功；`--version` 输出版本号也算成功                                |
 | `2`    | 参数错误：未知选项、缺少必填项、`-i`/`-o` 组合非法、`--format` 取值不支持、`--shape` 非法、输出会覆盖输入 |
 | `3`    | 构建失败：manifest 已加载但无法生成 OFD（例如路径图元或资源不合法）                                       |
-| `4`    | 资源错误：输入 manifest、模板数据、输入 OFD 或图片等资源读不到、解析失败，或模板绑定/文字容量检查失败      |
+| `4`    | 资源错误：输入资源读取、解析失败，模板绑定/文字容量检查失败，或签名移除的依赖与保护范围检查失败           |
 | `5`    | 输出失败：输出目录不可写、写出 OFD 或报告失败                                                             |
-| `6`    | 校验失败：`--validate` 发现生成的文档不合法                                                              |
+| `6`    | 校验失败：`--validate` 发现生成的文档不合法                                                               |
 
 `2` 与其余各档的界线是「命令要不要改」：`2` 是命令行写错了，其余是文档本身或环境
 的问题。`3`～`6` 分离出来是为了让 CI 能区分「manifest 有 bug」「文件没找到」

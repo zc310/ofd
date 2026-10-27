@@ -49,6 +49,15 @@ func TestSignCLIAppendsWithExternalSignerAndKeepsFailedOutputUntouched(t *testin
 			t.Fatalf("演示签名应保持数学有效、信任未完成: %+v", result)
 		}
 	}
+	// 移除最后一次签署后，前次签名的原文和数学签名仍有效。
+	removed := filepath.Join(dir, "removed.ofd")
+	if code := run([]string{"remove-signatures", "--id", "sign-2", "--validate", "-o", removed, final}, &stdout, &stderr); code != exitOK || stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("按 ID 移除失败: %d %s", code, &stderr)
+	}
+	results, err = sign.Verify(t.Context(), removed, sign.VerificationOptions{})
+	if err != nil || len(results) != 1 || !results[0].DigestValid || results[0].Result == nil || !results[0].Result.Valid {
+		t.Fatalf("清理破坏了保留签名: %+v %v", results, err)
+	}
 	destination := filepath.Join(dir, "existing.ofd")
 	if err := os.WriteFile(destination, []byte("keep this output"), 0600); err != nil {
 		t.Fatal(err)
@@ -59,6 +68,23 @@ func TestSignCLIAppendsWithExternalSignerAndKeepsFailedOutputUntouched(t *testin
 	data, err := os.ReadFile(destination)
 	if err != nil || string(data) != "keep this output" {
 		t.Fatalf("失败改写了输出: %q %v", data, err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"remove-signatures", "--id", "sign-1", "-o", destination, final}, &stdout, &stderr); code != exitResource || stdout.Len() != 0 {
+		t.Fatalf("未拒绝删除被依赖签名: %d %s", code, &stderr)
+	}
+	data, err = os.ReadFile(destination)
+	if err != nil || string(data) != "keep this output" {
+		t.Fatalf("清理失败改写了输出: %q %v", data, err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"remove-signatures", "--validate", "-o", "-", final}, &stdout, &stderr); code != exitOK || stderr.Len() != 0 {
+		t.Fatalf("全部移除失败: %d %s", code, &stderr)
+	}
+	if results, err := sign.Verify(t.Context(), stdout.Bytes(), sign.VerificationOptions{}); err != nil || len(results) != 0 {
+		t.Fatalf("清理二进制输出被污染或仍有签名: %+v %v", results, err)
 	}
 	stdout.Reset()
 	stderr.Reset()
