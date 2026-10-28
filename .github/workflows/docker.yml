@@ -9,9 +9,8 @@
 # 部署出错时很难回溯是哪份代码。需要追踪 main 的开发镜像时用 ghcr.io 的 digest
 # 引用。
 #
-# 只做 linux/amd64：Dockerfile 里 arm64 分支改用 apt 装 Chromium，在 CI 上要靠
-# QEMU 模拟构建，一个镜像多花二十多分钟。需要 arm64 镜像时在自托管 arm runner
-# 上构建，不要靠 QEMU。
+# amd64 与 arm64 分别在原生 runner 上构建，避免用 QEMU 模拟 arm64 时的慢构建。
+# 发布时先推架构专属 tag，再合并成同一组多架构版本 tag。
 #
 # 不跑容器做冒烟测试：镜像内置的 docker-config.json 把 api_key 留空，不给令牌
 # 容器会直接拒绝启动（这是有意的，放占位符等于随镜像发布一把公开的钥匙），
@@ -40,12 +39,21 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
 
-      # buildx 负责缓存、并发导出与正确的 TARGETARCH 传递。Dockerfile 里按
-      # TARGETARCH 选 Chrome deb 或 Chromium，只做 amd64 时不会走到后者。
+      # 每个 runner 原生构建自己的架构；buildx 将 TARGETARCH 传给 Dockerfile，
+      # 由它选择 Google Chrome 或 Chromium。
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -65,23 +73,21 @@ jobs:
       # 镜像 tag 在 shell 里算好再用。GitHub 表达式没有 ${var#pattern} 这类参数
       # 展开，写成 ${{ github.ref_name#v }} 会在解析阶段报 "Unexpected symbol"。
       #
-      # tag 路径推两个：去 v 前缀的版本号（0.1.4）与原 tag 名（v0.1.4），两种写法
-      # 都拉得到，不用记住哪个才是"官方"的。PR 路径 github.ref_name 形如
-      # 123/merge，不是合法镜像 tag，改用 PR 号占位——只 load 到 runner 本地，
-      # 不会推上去。
+      # 每个架构先使用独立 tag；发布 job 再将它们合并为不带架构后缀的多架构 tag。
+      # PR 路径只 load 到 runner 本地，不会推上去。
       - name: Resolve image tags
         id: tags
         run: |
           image="ghcr.io/${{ github.repository }}/ofd-server"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$image:pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            echo "$image:pr-${{ github.event.number }}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           else
             ref="${GITHUB_REF_NAME#v}"
             echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$image:$ref" >> "$GITHUB_OUTPUT"
-            echo "$image:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "$image:$ref-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "$image:${GITHUB_REF_NAME}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
@@ -91,13 +97,50 @@ jobs:
         with:
           context: .
           file: cmd/ofd-server/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           tags: ${{ steps.tags.outputs.tags }}
           push: ${{ github.event_name != 'pull_request' }}
-          # PR 上把镜像载入 runner 本地：只构建的话 buildx 不产出任何可用结果，
-          # 载入后才能确认这一步真的构建出了可运行的镜像，而不只是没报错。
+          # PR 上把当前 runner 架构的镜像载入本地，确认构建产物可用但不推送。
           load: ${{ github.event_name == 'pull_request' }}
           # 镜像有 apt 安装、Chrome 下载和 Go 编译三层，缓存命中能省掉大部分时间。
           # mode=max 连中间层一起缓存，否则每层都要重新跑。
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  publish-manifest:
+    name: Publish multi-architecture tags
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tags
+        id: tags
+        run: |
+          image="ghcr.io/${{ github.repository }}/ofd-server"
+          ref="${GITHUB_REF_NAME#v}"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$image:$ref" >> "$GITHUB_OUTPUT"
+          echo "$image:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create multi-architecture manifests
+        env:
+          IMAGE_TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "$tag-amd64" \
+              "$tag-arm64"
+          done <<< "$IMAGE_TAGS"
