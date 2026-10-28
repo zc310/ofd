@@ -757,8 +757,8 @@ type Image struct {
 
 // ImageBorder 描述图片边框的线宽、圆角和虚线样式。
 type ImageBorder struct {
-	// LineWidth 是边框线宽，单位为毫米。
-	LineWidth float64
+	// LineWidth 是边框线宽，单位为毫米；nil 使用 0.353，指向 0 时不绘制边框。
+	LineWidth *float64
 	// HorizontalRadius 是水平圆角半径，单位为毫米。
 	HorizontalRadius float64
 	// VerticalRadius 是垂直圆角半径，单位为毫米。

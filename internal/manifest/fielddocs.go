@@ -596,7 +596,7 @@ var SchemaDocs = []TypeDoc{
 		{Name: "areas", Type: "[]ClipArea", Doc: "定义裁剪区域。", Optional: true},
 	}},
 	{Name: "ImageBorder", Path: "templates[].items[].border", Doc: "描述图像边框的绘制样式。", Fields: []FieldDoc{
-		{Name: "line_width", Type: "float64", Doc: "指定图像边框线宽。", Optional: true},
+		{Name: "line_width", Type: "*float64", Doc: "指定图像边框线宽；省略使用 0.353mm，显式 0 关闭边框。", Optional: true},
 		{Name: "horizontal_radius", Type: "float64", Doc: "指定边框水平圆角半径。", Optional: true},
 		{Name: "vertical_radius", Type: "float64", Doc: "指定边框垂直圆角半径。", Optional: true},
 		{Name: "dash_offset", Type: "float64", Doc: "指定边框虚线起始偏移量。", Optional: true},

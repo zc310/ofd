@@ -2398,7 +2398,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 				X: 2, Y: 3, Width: 20, Height: 15, Data: png,
 				Name: "photo", Visible: &visible, LineWidth: 0.25,
 				Cap: spec.LineCapSquare, Join: spec.LineJoinRound, DashPattern: []float64{1, 2},
-				Border: &ImageBorder{LineWidth: 0.3, HorizontalRadius: 1, VerticalRadius: 2, DashOffset: 0.5, DashPattern: []float64{3, 1}},
+				Border: &ImageBorder{LineWidth: new(0.3), HorizontalRadius: 1, VerticalRadius: 2, DashOffset: 0.5, DashPattern: []float64{3, 1}},
 			},
 		}}},
 	})
@@ -2421,7 +2421,7 @@ func TestCreatePathAndImageWritesGraphicAttributes(t *testing.T) {
 	if image.Name != "photo" || image.Visible.Value(true) || image.LineWidth != 0.25 || image.Cap != spec.LineCapSquare || image.Join != spec.LineJoinRound {
 		t.Fatalf("图片属性未正确生成: %+v", image)
 	}
-	if image.Border == nil || image.Border.LineWidth != 0.3 || image.Border.HorizonalCornerRadius != 1 || image.Border.VerticalCornerRadius != 2 || image.Border.DashOffset != 0.5 {
+	if image.Border == nil || image.Border.LineWidth == nil || *image.Border.LineWidth != 0.3 || image.Border.HorizonalCornerRadius != 1 || image.Border.VerticalCornerRadius != 2 || image.Border.DashOffset != 0.5 {
 		t.Fatalf("图片边框属性未正确生成: %+v", image.Border)
 	}
 	checkGeneratedPackage(t, data)

@@ -91,13 +91,14 @@ func TestImageBorderDoesNotInheritPreviousDashes(t *testing.T) {
 	t.Run("PDF", func(t *testing.T) { assertBorderPixel(t, clipPDFImage(t, surface, 254), 15, 10, true) })
 }
 
-func TestImageBorderUsesDefaultAndExplicitLineWidth(t *testing.T) {
+func TestImageBorderDistinguishesDefaultAndZeroLineWidth(t *testing.T) {
 	doc := imageBorderTestDocument(t)
 	for _, tc := range []struct {
 		name, attrs string
 		visible     bool
 	}{
 		{"缺省线宽", "", true},
+		{"零线宽", `LineWidth="0"`, false},
 		{"正线宽", `LineWidth="1"`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

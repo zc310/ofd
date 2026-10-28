@@ -1753,7 +1753,7 @@ func validateBorder(border *ImageBorder) error {
 	if border == nil {
 		return nil
 	}
-	if border.LineWidth < 0 || !finite(border.LineWidth) || border.HorizontalRadius < 0 || !finite(border.HorizontalRadius) || border.VerticalRadius < 0 || !finite(border.VerticalRadius) || border.DashOffset < 0 || !finite(border.DashOffset) {
+	if (border.LineWidth != nil && (*border.LineWidth < 0 || !finite(*border.LineWidth))) || border.HorizontalRadius < 0 || !finite(border.HorizontalRadius) || border.VerticalRadius < 0 || !finite(border.VerticalRadius) || border.DashOffset < 0 || !finite(border.DashOffset) {
 		return errors.New("图片边框参数无效")
 	}
 	for _, value := range border.DashPattern {

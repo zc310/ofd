@@ -141,11 +141,12 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 	if border == nil || !object.Boundary.IsFinite() {
 		return
 	}
-	lineWidth := border.LineWidth
-	if lineWidth <= 0 {
-		lineWidth = paint.DefaultLineWidth
+	// GB/T 33190—2016 §10 表43：缺省 0.353mm，显式 0 不绘制。
+	lineWidth := paint.DefaultLineWidth
+	if border.LineWidth != nil {
+		lineWidth = *border.LineWidth
 	}
-	if !finiteFloat(lineWidth) {
+	if lineWidth <= 0 || !finiteFloat(lineWidth) {
 		return
 	}
 	scale := paint.StrokeScale(nil, parent)

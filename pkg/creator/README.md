@@ -173,6 +173,10 @@ TTC 只嵌入所选字体面。非法显式字形编号及子集化错误直接�
 DashOffset 和 Alpha。`Stroke: false` 会显式关闭描边；StrokeSet 可覆盖 Stroke。
 图片可设置名称、可见性及 `ImageBorder`。
 
+`ImageBorder.LineWidth` 为可选的毫米线宽：`nil` 使用标准默认值 0.353mm，
+指向 `0` 时不绘制边框。例如 `width := 0.5` 后设置 `LineWidth: &width`。
+JSON/YAML 清单对应 `border.line_width`，省略与显式 `0` 保持同样的区别。
+
 路径语法：M 移动、L 直线、Q 二次曲线、B 三次曲线、A 椭圆弧、C 闭合。
 Fill 的 Rule 使用 NonZero 或 Even-Odd；C 不是三次贝塞尔曲线。
 

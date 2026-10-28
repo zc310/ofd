@@ -484,8 +484,8 @@ type CtImage struct {
 type Border struct {
 	// BorderColor 边框颜色。
 	BorderColor *CTColor `xml:"BorderColor"`
-	// LineWidth 边框线宽，单位为毫米。
-	LineWidth float64 `xml:"LineWidth,attr,omitempty"`
+	// LineWidth 边框线宽，单位为毫米；缺省为 0.353，显式 0 表示不绘制边框。
+	LineWidth *float64 `xml:"LineWidth,attr,omitempty"`
 	// HorizonalCornerRadius 水平方向圆角半径，单位为毫米。
 	HorizonalCornerRadius float64 `xml:"HorizonalCornerRadius,attr,omitempty"`
 	// VerticalCornerRadius 垂直方向圆角半径，单位为毫米。

@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **图片边框线宽改为可选值**：`creator.ImageBorder.LineWidth` 从 `float64` 改为
+  `*float64`。调用方将 `LineWidth: 0.5` 改为先声明 `width := 0.5`，再设置
+  `LineWidth: &width`；`nil` 沿用标准默认值 0.353mm，指向 `0` 明确关闭边框。
+  JSON/YAML 的 `border.line_width: 0` 也会写出零线宽，不再被当作省略。
+
 ## 已发布
 
 ### v0.1.6

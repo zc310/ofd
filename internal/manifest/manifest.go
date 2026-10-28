@@ -1787,8 +1787,8 @@ type ClipText struct {
 
 // ImageBorder 描述图像边框的绘制样式。
 type ImageBorder struct {
-	// LineWidth 指定图像边框线宽。
-	LineWidth float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
+	// LineWidth 指定图像边框线宽；省略使用 0.353mm，显式 0 关闭边框。
+	LineWidth *float64 `json:"line_width,omitempty" yaml:"line_width,omitempty" toml:"line_width,omitempty"`
 	// HorizontalRadius 指定边框水平圆角半径。
 	HorizontalRadius float64 `json:"horizontal_radius,omitempty" yaml:"horizontal_radius,omitempty" toml:"horizontal_radius,omitempty"`
 	// VerticalRadius 指定边框垂直圆角半径。

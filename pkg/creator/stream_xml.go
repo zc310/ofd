@@ -289,8 +289,8 @@ func streamImage(w *streamXMLWriter, item builtItem, value Image, pageIDs []uint
 	streamClips(w, value.Clips, drawParamIDs, fontIDs)
 	if value.Border != nil {
 		w.Start("Border")
-		if value.Border.LineWidth != 0 {
-			w.AttrFloat("LineWidth", value.Border.LineWidth)
+		if value.Border.LineWidth != nil {
+			w.AttrFloat("LineWidth", *value.Border.LineWidth)
 		}
 		if value.Border.HorizontalRadius != 0 {
 			w.AttrFloat("HorizonalCornerRadius", value.Border.HorizontalRadius)

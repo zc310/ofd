@@ -131,6 +131,10 @@ ofd-creator -i examples/flow-report.yaml -o report.ofd --validate --deterministi
 上述路径以本工具目录为起点。从仓库根目录运行时使用
 `go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/flow-report.yaml ...`。
 
+固定版式图片的 `border.line_width` 在 YAML 和 JSON 中均区分省略与显式零：
+省略时使用标准默认线宽 0.353mm，`border: {line_width: 0}`（JSON 为
+`"border": {"line_width": 0}`）关闭边框。导出再导入时会保留这一区别。
+
 `flow.theme` 支持 `material`（原有默认）、`material2`、`material3`、`fluent2`、`carbon` 和 `bootstrap5`。
 Material 2 预设按官方 Web 的 Headline 1–6、Body 1/2、Caption 角色映射字号，正文为 12pt、1.5 倍行高，
 六级标题为 72/45/36/25.5/18/15pt，图注为 9pt、15pt 行高，表格为 10.5pt。

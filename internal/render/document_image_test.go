@@ -783,7 +783,7 @@ func TestImageEffectsRenderBorderMaskAndSubstitution(t *testing.T) {
 		Pages: []creator.Page{{Items: []creator.Item{
 			creator.Image{X: 10, Y: 10, Width: 20, Height: 10, ResourceID: 31, ImageMask: 32},
 			creator.Image{X: 40, Y: 10, Width: 20, Height: 10, ResourceID: 34, Substitution: 33},
-			creator.Image{X: 10, Y: 30, Width: 20, Height: 10, ResourceID: 31, Border: &creator.ImageBorder{LineWidth: 1, HorizontalRadius: 2, VerticalRadius: 2, Color: &creator.Color{R: 0, G: 0, B: 0}}},
+			creator.Image{X: 10, Y: 30, Width: 20, Height: 10, ResourceID: 31, Border: &creator.ImageBorder{LineWidth: new(1.0), HorizontalRadius: 2, VerticalRadius: 2, Color: &creator.Color{R: 0, G: 0, B: 0}}},
 		}}},
 	})
 	if err != nil {
@@ -941,7 +941,7 @@ func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
 			creator.Image{
 				X: imgX, Y: imgY, Width: imgW, Height: imgH, ResourceID: 1,
 				Border: &creator.ImageBorder{
-					LineWidth: 1, HorizontalRadius: radius, VerticalRadius: radius,
+					LineWidth: new(1.0), HorizontalRadius: radius, VerticalRadius: radius,
 					Color: &creator.Color{R: 0, G: 0, B: 0},
 				},
 			},

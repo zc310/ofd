@@ -115,7 +115,7 @@ func TestSVGImageRespectsAlphaMaskAndBorder(t *testing.T) {
 				media = append(media, creator.Media{ID: 91, Type: "Image", Format: "PNG", Data: solidPNG(t, 2, 2, color.NRGBA{A: 255})})
 			}
 			if tc.border {
-				object.Border = &creator.ImageBorder{LineWidth: 2, Color: &creator.Color{B: 255}}
+				object.Border = &creator.ImageBorder{LineWidth: new(2.0), Color: &creator.Color{B: 255}}
 			}
 			img := renderRegressionDocument(t, creator.Document{ID: "svg-properties", PageSize: creator.PageSize{Width: 20, Height: 20}, Media: media, Pages: []creator.Page{{Items: []creator.Item{object}}}})
 			_, _, _, a := img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2).RGBA()
