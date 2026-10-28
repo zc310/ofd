@@ -458,6 +458,7 @@ type pdfOutlineEntry struct {
 	kind    string
 	nums    []float64
 	hasDest bool
+	uri     string
 	// count 是该条目的后代数量，只有非叶子才有。
 	count int
 	// hasChildren 依据 /First 判断是否为父节点。
@@ -515,6 +516,11 @@ func readPDFOutlines(t *testing.T, data []byte) ([]pdfOutlineEntry, bool) {
 		}
 		if _, ok := entry.Find("First"); ok {
 			record.hasChildren = true
+		}
+		if action, ok := entry.Find("A"); ok {
+			if action, ok := action.(types.Dict); ok && stringValue(action["S"]) == "URI" {
+				record.uri = stringValue(action["URI"])
+			}
 		}
 		if dest, ok := entry.Find("Dest"); ok {
 			record.hasDest = true
@@ -590,7 +596,7 @@ func decodePDFTextString(object types.Object) string {
 // TestPDFExportEmitsOutlineTree 验证文档大纲变成 PDF 大纲树。
 //
 // 用例样本 testdata/ofd-creator/outlines.ofd 的五个条目覆盖顶层与两级嵌套、五种跳转目标类型、
-// 按书签名跳转，以及一个只有 URI 没有页面目标、应被丢弃的条目。
+// 按书签名跳转，以及一个外部URI条目。
 func TestPDFExportEmitsOutlineTree(t *testing.T) {
 	var output bytes.Buffer
 	if err := PDF(context.Background(), "../../testdata/ofd-creator/outlines.ofd", &output); err != nil {
@@ -600,23 +606,23 @@ func TestPDFExportEmitsOutlineTree(t *testing.T) {
 	if !ok {
 		t.Fatal("PDF 没有大纲")
 	}
-	wantTitles := []string{"概述", "适用范围", "术语", "版面", "附注", "引用附录"}
+	wantTitles := []string{"概述", "适用范围", "术语", "版面", "附注", "引用附录", "仅外部链接"}
 	if len(entries) != len(wantTitles) {
-		t.Fatalf("大纲条目 %d 条，期望 %d 条（无页面目标的条目应被丢弃）: %+v",
+		t.Fatalf("大纲条目 %d 条，期望 %d 条: %+v",
 			len(entries), len(wantTitles), titles(entries))
 	}
 	for i, title := range wantTitles {
 		if entries[i].title != title {
 			t.Errorf("第 %d 条标题 = %q，期望 %q", i, entries[i].title, title)
 		}
-		if !entries[i].hasDest {
+		if !entries[i].hasDest && entries[i].uri == "" {
 			t.Errorf("%s 缺少目的地", title)
 		}
 	}
-	// 只有 URI 动作的条目没有页面目标，不应出现在目录里。
+	// 外部URI写为动作，与页面目的地二选一。
 	for _, entry := range entries {
-		if strings.Contains(entry.title, "仅外部链接") {
-			t.Error("只有 URI 的条目不应导出")
+		if strings.Contains(entry.title, "仅外部链接") && (entry.uri == "" || entry.hasDest) {
+			t.Error("URI大纲未正确写出外部动作")
 		}
 	}
 	// 概述是唯一有子项的节点。
@@ -641,6 +647,13 @@ func TestPDFExportOutlineDestinations(t *testing.T) {
 	if !ok {
 		t.Fatal("PDF 没有大纲")
 	}
+	internal := entries[:0]
+	for _, entry := range entries {
+		if entry.hasDest {
+			internal = append(internal, entry)
+		}
+	}
+	entries = internal
 	mm := func(v float64) float64 { return v * 72.0 / 25.4 }
 	want := []struct {
 		title string
@@ -698,8 +711,8 @@ func TestPDFExportOutlineDropsEntriesWhosePageIsCropped(t *testing.T) {
 			t.Errorf("%s 指向第 %d 页，超出导出范围", entry.title, entry.page)
 		}
 	}
-	if len(entries) != 3 {
-		t.Errorf("应剩第 1 页的 3 条，实际 %d 条: %v", len(entries), titles(entries))
+	if len(entries) != 4 {
+		t.Errorf("应剩第 1 页的3条与外部URI，实际 %d 条: %v", len(entries), titles(entries))
 	}
 }
 

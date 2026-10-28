@@ -1,12 +1,32 @@
 package render
 
 import (
+	"encoding/xml"
+	"fmt"
 	"image/color"
+	"strconv"
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 )
+
+func TestOFDLaGouraudRejectsOverflowingRowWidthFromXML(t *testing.T) {
+	for _, columns := range []int{int(1) << (strconv.IntSize - 2), int(^uint(0) >> 1)} {
+		t.Run(strconv.Itoa(columns), func(t *testing.T) {
+			var source models.CTColor
+			data := fmt.Sprintf(`<FillColor><LaGourandShd VerticesPerRow="%d"/></FillColor>`, columns)
+			if err := xml.Unmarshal([]byte(data), &source); err != nil {
+				t.Fatal(err)
+			}
+			doc := &Document{}
+			defer doc.Close()
+			if got := doc.updateCtColor(&source); got == nil || got.Gradient != nil {
+				t.Fatal("空顶点列表与溢出的行宽应被拒绝，不能生成网格或触发分配")
+			}
+		})
+	}
+}
 
 // TestOFDGouraudEdgeFlag3ReusesFirstEdge 回归：规范只定义 EdgeFlag 0/1/2，
 // 个别文件沿用 PDF 语义使用 3（复用上一个三角形的 v0-v1 边）。此前

@@ -107,6 +107,7 @@ type Reader struct {
 	navigationOnce sync.Once
 	navigation     *pageNavigation
 	hiddenLayers   map[int]render.PageVisibility
+	textOptions    TextOptions
 }
 
 // Open 从内存中的 OFD 数据创建浏览器文档引擎。

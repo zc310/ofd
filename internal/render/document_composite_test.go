@@ -16,7 +16,7 @@ import (
 
 // writeCompositeOFD 生成只含一个复合图元的最小 OFD。unitW/unitH 是复合单元
 // 声明的尺寸，rect 是单元坐标系内的一个实心方块，用于量出它在页面上的落点。
-func writeCompositeOFD(t *testing.T, unitW, unitH float64, rect string) string {
+func writeCompositeOFD(t *testing.T, unitW, unitH float64, rect string, clipped ...bool) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "composite.ofd")
@@ -27,16 +27,19 @@ func writeCompositeOFD(t *testing.T, unitW, unitH float64, rect string) string {
 		`<ofd:CompositeObject ID="4" Boundary="0 0 100 100" ResourceID="5" CTM="0.5 0 0 0.5 0 0"/>` +
 		`</ofd:Layer></ofd:Content></ofd:Page>`
 
+	clip := `<ofd:Clips><ofd:Clip><ofd:Area>` +
+		`<ofd:Path Boundary="0 0 4000 4000" Stroke="false" Fill="true">` +
+		`<ofd:AbbreviatedData>M 0 0 L 4000 0 L 4000 4000 L 0 4000 C</ofd:AbbreviatedData>` +
+		`</ofd:Path></ofd:Area></ofd:Clip></ofd:Clips>`
+	if len(clipped) > 0 && !clipped[0] {
+		clip = ""
+	}
 	res := `<?xml version="1.0" encoding="UTF-8"?><ofd:Res xmlns:ofd="http://www.ofdspec.org/2016">` +
 		fmt.Sprintf(`<ofd:CompositeGraphicUnits><ofd:CompositeGraphicUnit ID="5" Width="%g" Height="%g">`, unitW, unitH) +
 		`<ofd:Content ID="6">` +
 		`<ofd:PathObject ID="7" Boundary="0 0 200 200" Fill="true" Stroke="false">` +
 		`<ofd:FillColor Value="0 0 0"/>` +
-		// Clips 使单路径复合图元不走矢量快路径，与 y.ofd 的复合单元一致。
-		`<ofd:Clips><ofd:Clip><ofd:Area>` +
-		`<ofd:Path Boundary="0 0 4000 4000" Stroke="false" Fill="true">` +
-		`<ofd:AbbreviatedData>M 0 0 L 4000 0 L 4000 4000 L 0 4000 C</ofd:AbbreviatedData>` +
-		`</ofd:Path></ofd:Area></ofd:Clip></ofd:Clips>` + rect +
+		clip + rect +
 		`</ofd:PathObject></ofd:Content></ofd:CompositeGraphicUnit></ofd:CompositeGraphicUnits></ofd:Res>`
 
 	document := `<?xml version="1.0" encoding="UTF-8"?><ofd:Document xmlns:ofd="http://www.ofdspec.org/2016">` +

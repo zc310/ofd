@@ -77,6 +77,18 @@ func TestNativeGradientRoundTripRetainsSerializableTypeAndStops(t *testing.T) {
 	}
 }
 
+func TestNativeGradientPreservesTransparentCarrierInterpolation(t *testing.T) {
+	gradient := geom.NewLinearGradient(geom.Point{}, geom.Point{X: 10})
+	gradient.Grad = geom.Grad{{Offset: 0, Color: color.RGBA{R: 255}}, {Offset: 1, Color: color.RGBA{B: 255, A: 255}}}
+	converted := ToCanvasGradient(gradient)
+	for _, x := range []float64{-1, 0, 2.5, 5, 7.5, 10, 11} {
+		got, want := converted.At(x, 0), gradient.At(x, 0)
+		if got != want || got.R > got.A || got.G > got.A || got.B > got.A {
+			t.Fatalf("x=%g canvas=%v OFD=%v，透明载体进入了像素", x, got, want)
+		}
+	}
+}
+
 func assertBounds(t *testing.T, label string, got geom.Rect, want canvas.Rect) {
 	t.Helper()
 	if math.Abs(got.X0-want.X0) > boundsTol || math.Abs(got.Y0-want.Y0) > boundsTol ||

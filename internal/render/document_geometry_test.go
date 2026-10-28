@@ -88,6 +88,32 @@ func TestClippedDashKeepsInheritedPatternAndPhase(t *testing.T) {
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
+func TestTinyPositiveStrokeKeepsDashGapsInRasterAndPDF(t *testing.T) {
+	doc := &Document{}
+	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4" LineWidth="1e-310" Join="Round" DashPattern="6 3" DashOffset="2"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)
+	surface := clipTestSurface(t, func(ctx DrawContext) {
+		doc.Path(ctx, object, nil, models.StBox{Width: 40, Height: 40})
+	})
+	check := func(t *testing.T, img image.Image) {
+		t.Helper()
+		for _, sample := range []struct {
+			x   int
+			ink bool
+		}{{30, true}, {60, false}, {100, true}, {150, false}, {190, true}, {240, false}} {
+			ink := false
+			for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+				pixel := color.NRGBAModel.Convert(img.At(sample.x, y)).(color.NRGBA)
+				ink = ink || pixel.A > 0 && pixel.R < 150
+			}
+			if ink != sample.ink {
+				t.Errorf("极细虚线 x=%d 墨迹=%v，期望%v", sample.x, ink, sample.ink)
+			}
+		}
+	}
+	t.Run("Raster", func(t *testing.T) { check(t, surface.Rasterize(geom.DPMM(10))) })
+	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
+}
+
 func TestRasterGradientStrokeKeepsDashGaps(t *testing.T) {
 	doc := &Document{}
 	object := clipTestPath(t, `<PathObject Boundary="1 1 30 4" LineWidth="1" DashPattern="2 2"><AbbreviatedData>M 0 2 L 28 2</AbbreviatedData></PathObject>`)

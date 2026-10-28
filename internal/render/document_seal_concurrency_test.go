@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -350,5 +351,85 @@ func TestSlowImageLoadDoesNotBlockOtherImagesOrRefillAfterClose(t *testing.T) {
 	awaitSealOperation(t, done)
 	if doc.images != nil || len(doc.imageLocks) != 0 {
 		t.Fatal("关闭后在途图片解码重新填回缓存或保留加载锁")
+	}
+}
+
+func TestSealDocumentCacheEvictsLeastRecentlyUsedAndWaitsForDrawing(t *testing.T) {
+	previous := newFontEngine
+	newFontEngine = func(*parser.Document) FontEngine { return &closeTrackingFont{} }
+	t.Cleanup(func() { newFontEngine = previous })
+	doc := &Document{}
+	defer doc.Close()
+	data := make([][]byte, sealDocCacheCapacity+2)
+	entries := make([]*sealDocEntry, sealDocCacheCapacity)
+	for i := range data {
+		var err error
+		data[i], err = creator.Marshal(creator.Document{ID: fmt.Sprintf("seal-cache-%d", i), Pages: []creator.Page{{}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i < len(entries) {
+			entries[i], err = doc.sealDocument(data[i])
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if doc.sealDocs.Len() != sealDocCacheCapacity {
+		t.Fatal("印章未进入有界缓存")
+	}
+	if hot, err := doc.sealDocument(data[0]); err != nil || hot != entries[0] {
+		t.Fatal("缓存命中未复用印章")
+	}
+	if _, err := doc.sealDocument(data[sealDocCacheCapacity]); err != nil {
+		t.Fatal(err)
+	}
+	if entries[0].closed || !entries[1].closed || entries[1].doc.fonts.(*closeTrackingFont).closes.Load() != 1 {
+		t.Fatal("未按最近使用顺序释放旧印章及其字体")
+	}
+	// 将一个条目固定为正在绘制，再把它变为最久未使用的缓存条目。
+	pinned, err := doc.loadSealDocument(data[2], true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock := sync.OnceFunc(pinned.mu.RUnlock)
+	defer unlock()
+	for i := range sealDocCacheCapacity + 1 {
+		if i == 1 || i == 2 {
+			continue
+		}
+		if _, err := doc.sealDocument(data[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := doc.sealDocument(data[sealDocCacheCapacity+1]); err != nil {
+			t.Error(err)
+		}
+	}()
+	defer func() { unlock(); <-done }()
+	deadline := time.Now().Add(5 * time.Second)
+	for pinned.mu.TryRLock() {
+		pinned.mu.RUnlock()
+		if time.Now().After(deadline) {
+			t.Fatal("淘汰未等待在途印章绘制")
+		}
+		runtime.Gosched()
+	}
+	if pinned.doc.closed.Load() {
+		t.Fatal("正在绘制的印章被提前关闭")
+	}
+	unlock()
+	awaitSealOperation(t, done)
+	if !pinned.closed || doc.sealDocs.Len() != sealDocCacheCapacity {
+		t.Fatal("绘制结束后未释放被淘汰条目或缓存超过上限")
+	}
+	doc.Close()
+	for _, entry := range entries {
+		if entry.doc.fonts.(*closeTrackingFont).closes.Load() != 1 {
+			t.Fatal("印章字体没有恰好释放一次")
+		}
 	}
 }

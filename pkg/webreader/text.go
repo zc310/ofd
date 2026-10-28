@@ -24,10 +24,12 @@ type PageInfo struct {
 // TextRun 描述页面中的一个文字对象。坐标和尺寸单位为毫米。
 // X/Y 是网页覆盖层使用的左上角坐标，不是 TextCode 的基线坐标。
 type TextRun struct {
-	Text  string
-	X     float64
-	Y     float64
-	Width float64
+	// Source 为 page、template、annotation、watermark 或 seal。
+	Source string
+	Text   string
+	X      float64
+	Y      float64
+	Width  float64
 	// Height 是字体排版行高，可与 Size 不同；与字符框使用相同的纵向度量。
 	Height float64
 	// Scope 是文字所属文档体的索引，与 Font 一起唯一标识使用的字体。
@@ -41,6 +43,29 @@ type TextRun struct {
 	Bold          bool
 	Italic        bool
 	Glyphs        []Glyph
+}
+
+// TextOptions 控制文字覆盖层与搜索索引的附加来源；位图印章不执行 OCR。
+type TextOptions = render.TextOptions
+
+// SetTextOptions 同时更新复制、覆盖层和搜索的来源策略，并使相关缓存失效。
+func (r *Reader) SetTextOptions(options TextOptions) error {
+	if r == nil {
+		return errors.New("文档引擎为空")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return errors.New("文档引擎已经关闭")
+	}
+	if r.textOptions == options {
+		return nil
+	}
+	r.textOptions = options
+	r.text = newTextCache()
+	r.search = newSearchCache(len(r.pages))
+	r.metadata = &readerMetadata{}
+	return nil
 }
 
 // Glyph 描述一个字符的页面区域，坐标单位为毫米。
@@ -195,15 +220,20 @@ func fontFormat(file models.StLoc) string {
 	return ""
 }
 
-func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string, visibility render.PageVisibility) ([]TextRun, error) {
-	layouts, err := document.TextLayoutsWithVisibilityE(page, visibility)
+func textRunsWithFallback(document *render.Document, page *parser.Page, fontScope int, fallbackFamily string, visibility render.PageVisibility, options ...TextOptions) ([]TextRun, error) {
+	var policy TextOptions
+	if len(options) > 0 {
+		policy = options[0]
+	}
+	layouts, err := document.TextLayoutsWithOptionsE(page, visibility, policy)
 	if err != nil {
 		return nil, err
 	}
 	runs := make([]TextRun, 0, len(layouts))
 	for _, layout := range layouts {
 		run := TextRun{
-			Text: layout.Text, X: layout.X, Y: layout.Y, Width: layout.Width, Height: layout.Height,
+			Source: string(layout.Source),
+			Text:   layout.Text, X: layout.X, Y: layout.Y, Width: layout.Width, Height: layout.Height,
 			Scope: fontScope, Font: layout.Font, Size: layout.Size, ReadDirection: layout.ReadDirection,
 			Weight:        layout.Weight,
 			CharDirection: layout.CharDirection, FontFamily: textFontFamily(document, fontScope, layout.Font, fallbackFamily),
@@ -223,7 +253,7 @@ func (r *Reader) textAt(index int) ([]TextRun, error) {
 	if runs, ok := r.text.Get(index); ok {
 		return runs, nil
 	}
-	runs, err := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily, r.hiddenLayers[index])
+	runs, err := textRunsWithFallback(r.pages[index].document, r.pages[index].page, r.pages[index].fontScope, r.fallbackFamily, r.hiddenLayers[index], r.textOptions)
 	if err != nil {
 		return nil, err
 	}

@@ -36,6 +36,33 @@ type RenderOptions struct {
 	PNGCompressionLevel int
 }
 
+// RenderReport 是单次绘制的用量与诊断快照，最多保存128种问题。
+type RenderReport = render.Report
+
+// RenderPageWithReport 与 RenderPage 使用相同权限和取消规则，另返回绘制诊断。
+func (r *Reader) RenderPageWithReport(ctx context.Context, index int, options RenderOptions) ([]byte, RenderReport, error) {
+	var report RenderReport
+	if r == nil {
+		return nil, report, errors.New("文档引擎为空")
+	}
+	if ctx == nil {
+		return nil, report, errors.New("渲染上下文为空")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, report, err
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, report, errors.New("文档引擎已经关闭")
+	}
+	if err := r.checkRenderPermissionLocked([]int{index}, options.Purpose); err != nil {
+		return nil, report, err
+	}
+	data, err := r.renderPage(ctx, index, options, &report)
+	return data, report, err
+}
+
 type pageRef struct {
 	document  *render.Document
 	page      *parser.Page
@@ -181,7 +208,7 @@ func (r *Reader) RenderPages(ctx context.Context, indices []int, options RenderO
 }
 
 // renderPage 将页面渲染为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
-func (r *Reader) renderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error) {
+func (r *Reader) renderPage(ctx context.Context, index int, options RenderOptions, reports ...*RenderReport) ([]byte, error) {
 	if err := renderCheckpoint(ctx); err != nil {
 		return nil, err
 	}
@@ -240,7 +267,12 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 		return nil, err
 	}
 	defer r.releasePageDocument(document)
-	page, err := document.PageWithVisibility(ref.page, r.hiddenLayers[index])
+	var page render.VectorSurface
+	if len(reports) > 0 && reports[0] != nil {
+		page, *reports[0], err = document.PageWithReport(ref.page, r.hiddenLayers[index])
+	} else {
+		page, err = document.PageWithVisibility(ref.page, r.hiddenLayers[index])
+	}
 	if err != nil {
 		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}

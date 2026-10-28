@@ -161,6 +161,9 @@ func (g *ofdMeshGradient) At(x, y float64) color.RGBA {
 		}
 	}
 	if g.extend {
+		if g.backColor.A == 0 {
+			return color.RGBA{}
+		}
 		return g.backColor
 	}
 	return color.RGBA{}
@@ -234,7 +237,21 @@ func triangleWeights(point, p0, p1, p2 geom.Point) (float64, float64, float64, b
 
 // interpolateMeshColor 按 geom.Grad 的预乘 RGBA 方式插值，确保半透明网格顶点
 // 与普通渐变使用相同的颜色表示。
+// 完全透明色的 straight RGB 载体先独立插值再预乘，不能直接作为像素分量累加。
 func interpolateMeshColor(c0, c1, c2 color.RGBA, w0, w1, w2 float64) color.RGBA {
+	carrier := func(c color.RGBA) bool { return c.A == 0 && (c.R != 0 || c.G != 0 || c.B != 0) }
+	if carrier(c0) || carrier(c1) || carrier(c2) {
+		straight := func(c color.RGBA) color.NRGBA {
+			if c.A == 0 {
+				return color.NRGBA{R: c.R, G: c.G, B: c.B}
+			}
+			return color.NRGBAModel.Convert(c).(color.NRGBA)
+		}
+		a, b, c := straight(c0), straight(c1), straight(c2)
+		interpolate := func(a, b, c uint8) uint8 { return uint8(min(255, max(0, w0*float64(a)+w1*float64(b)+w2*float64(c)))) }
+		n := color.NRGBA{R: interpolate(a.R, b.R, c.R), G: interpolate(a.G, b.G, c.G), B: interpolate(a.B, b.B, c.B), A: interpolate(a.A, b.A, c.A)}
+		return color.RGBAModel.Convert(n).(color.RGBA)
+	}
 	r0, g0, b0, a0 := c0.RGBA()
 	r1, g1, b1, a1 := c1.RGBA()
 	r2, g2, b2, a2 := c2.RGBA()
@@ -305,7 +322,7 @@ func newOFDGouraudGradientArea(shd *models.CTGouraudShd, transform func(models.S
 // 每个相邻的四个顶点沿对角线拆分为两个三角形。
 // area 指定着色区域，使区域内未被控制点覆盖的部分按边缘颜色延续；nil 表示未指定。
 func newOFDLaGouraudGradientArea(shd *models.CTLaGouraudShd, transform func(models.StPos) geom.Point, area *geom.Rect, resolve colorResolver) geom.Gradient {
-	if shd == nil || shd.VerticesPerRow < 2 || len(shd.Point) < shd.VerticesPerRow*2 {
+	if shd == nil || shd.VerticesPerRow < 2 || shd.VerticesPerRow > len(shd.Point)/2 {
 		return nil
 	}
 	// 规则网格要求 Point 数量是 VerticesPerRow 的整数倍（逐行完整）。末尾
@@ -314,6 +331,10 @@ func newOFDLaGouraudGradientArea(shd *models.CTLaGouraudShd, transform func(mode
 		return nil
 	}
 	rows := len(shd.Point) / shd.VerticesPerRow
+	// 先用除法检查容量，避免损坏的行宽在分配前发生整数溢出。
+	if rows-1 > int(^uint(0)>>1)/2/(shd.VerticesPerRow-1) {
+		return nil
+	}
 	triangles := make([]ofdMeshTriangle, 0, (rows-1)*(shd.VerticesPerRow-1)*2)
 	for row := 0; row < rows-1; row++ {
 		for column := 0; column < shd.VerticesPerRow-1; column++ {

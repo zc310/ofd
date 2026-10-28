@@ -217,8 +217,7 @@ func TestCollectItemLinksTakesFirstResolvableClickAction(t *testing.T) {
 	}
 }
 
-// TestLinkDestTypeMapsEveryOFDType 守住 OFD 的 Dest@Type 全部有对应，未知类型退化为
-// Fit 而不是被丢弃（目标页仍应能打开）。
+// TestLinkDestTypeMapsEveryOFDType 守住 OFD 的 Dest@Type 全部有对应，未知类型被拒绝。
 func TestLinkDestTypeMapsEveryOFDType(t *testing.T) {
 	cases := map[models.DestType]drawing.DestType{
 		models.DestTypeFit:  drawing.DestFit,
@@ -234,7 +233,7 @@ func TestLinkDestTypeMapsEveryOFDType(t *testing.T) {
 		}
 	}
 	if got, ok := linkDestType(models.DestType("Bogus")); ok || got != drawing.DestFit {
-		t.Fatalf("未知类型应退化为 Fit，实际 %v(ok=%v)", got, ok)
+		t.Fatalf("未知类型应被拒绝，实际 %v(ok=%v)", got, ok)
 	}
 }
 

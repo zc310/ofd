@@ -10,6 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
 )
 
@@ -171,6 +172,28 @@ func TestConcurrentColorBuildSharesGradientAndReturnsIndependentPaint(t *testing
 	}
 	if len(doc.ctColorBuilds) != 0 || doc.ctColorCache.Len() != 1 {
 		t.Fatal("构建完成后仍保留在途条目或重复结果")
+	}
+}
+
+func TestPathStyleDefersMeshConstructionUntilGradientPlacement(t *testing.T) {
+	doc := colorCacheDocument(t)
+	release := pauseColorProfile(t, doc, 30)
+	defer release()
+	object := models.PathObject{CtPath: models.CtPath{
+		Fill: true, Stroke: models.NewOptionalBool(false), FillColor: cacheMeshColor(30),
+	}}
+	ctx := newOffscreenSurface(10, 10, geom.DPI(96))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		doc.updateCtPathStyle(ctx, &object.CtPath, nil, 1)
+	}()
+	// 样式准备不应提前构建一份没有 Boundary 变换的网格并等待 ICC。
+	awaitColorOperation(t, done)
+	release()
+	gradient, _ := doc.updatePathGradients(ctx, &object, nil, 10)
+	if gradient == nil {
+		t.Fatal("实际放置路径时未构建渐变")
 	}
 }
 

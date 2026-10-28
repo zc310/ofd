@@ -54,12 +54,12 @@ func (g *Grad) Add(t float64, c color.RGBA) {
 
 // At 返回位置 t ∈ [0,1] 处的颜色（线性插值，端点外取端点色）。
 func (g Grad) At(t float64) color.RGBA {
-	if len(g) == 0 {
+	if len(g) == 0 || math.IsNaN(t) {
 		return Transparent
 	} else if len(g) == 1 || t <= g[0].Offset {
-		return g[0].Color
+		return sampledStopColor(g[0].Color)
 	} else if g[len(g)-1].Offset <= t {
-		return g[len(g)-1].Color
+		return sampledStopColor(g[len(g)-1].Color)
 	}
 	lo, hi := 0, len(g)-1
 	for lo < hi {
@@ -74,6 +74,14 @@ func (g Grad) At(t float64) color.RGBA {
 	after := g[lo]
 	u := (t - before.Offset) / (after.Offset - before.Offset)
 	return colorLerp(before.Color, after.Color, u)
+}
+
+// 透明色标中的RGB只用于插值，不能作为预乘像素传给合成器。
+func sampledStopColor(c color.RGBA) color.RGBA {
+	if c.A == 0 {
+		return Transparent
+	}
+	return c
 }
 
 // ToLinear 把色标集合绑定到线性渐变。

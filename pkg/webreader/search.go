@@ -135,7 +135,7 @@ func (r *Reader) Search(ctx context.Context, query string, options SearchOptions
 		if len(matches) == 0 {
 			continue
 		}
-		layouts, err := r.pages[pageIndex].document.TextLayoutsForRunsWithVisibilityE(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex])
+		layouts, err := r.pages[pageIndex].document.TextLayoutsForRunsWithOptionsE(r.pages[pageIndex].page, layoutRunIndices, r.hiddenLayers[pageIndex], r.textOptions)
 		if err != nil {
 			return SearchReport{}, fmt.Errorf("读取第 %d 页搜索布局失败: %w", pageIndex, err)
 		}
@@ -156,7 +156,13 @@ func (r *Reader) Search(ctx context.Context, query string, options SearchOptions
 			glyphStart := minInt(found.start, len(layout.Glyphs))
 			glyphEnd := minInt(found.end, len(layout.Glyphs))
 			for _, glyph := range layout.Glyphs[glyphStart:glyphEnd] {
+				if glyph.Width <= 0 || glyph.Height <= 0 {
+					continue
+				}
 				result.Rects = append(result.Rects, Rect{X: glyph.X, Y: glyph.Y, Width: glyph.Width, Height: glyph.Height, Angle: glyph.Angle})
+			}
+			if len(result.Rects) == 0 {
+				continue
 			}
 			report.Results = append(report.Results, result)
 		}
@@ -186,7 +192,7 @@ func (r *Reader) searchAt(index int) (*search.Index, error) {
 		}
 	} else {
 		ref := r.pages[index]
-		texts, err := ref.document.TextValuesWithVisibilityE(ref.page, r.hiddenLayers[index])
+		texts, err := ref.document.TextValuesWithOptionsE(ref.page, r.hiddenLayers[index], r.textOptions)
 		if err != nil {
 			return nil, err
 		}

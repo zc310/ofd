@@ -99,9 +99,13 @@ func collectItemGlyphs(items []models.PageItem, out map[models.StRefID]map[rune]
 	for _, item := range items {
 		switch item.Kind {
 		case models.PageItemText:
-			collectObjectGlyphs(*item.Text, out)
+			if item.Text != nil {
+				collectObjectGlyphs(*item.Text, out)
+			}
 		case models.PageItemBlock:
-			collectItemGlyphs(item.Block.Items, out)
+			if item.Block != nil {
+				collectItemGlyphs(item.Block.Items, out)
+			}
 		case models.PageItemComposite:
 			// 复合图元内容在渲染时展开，这里不深入以避免重复加载。
 		}

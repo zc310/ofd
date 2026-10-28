@@ -3,7 +3,6 @@ package render
 import (
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/render/drawing"
-	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // 字体相关契约定义在 drawing 包，render 通过别名保持既有调用点可用。
@@ -56,5 +55,3 @@ func fontCanRenderText(face FontFace, value string) bool {
 	}
 	return rendered
 }
-
-var _ = geom.Path{}

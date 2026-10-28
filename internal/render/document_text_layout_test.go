@@ -144,6 +144,54 @@ func TestTextGlyphBoxFollowsFontVerticalMetrics(t *testing.T) {
 	}
 }
 
+type countingLayoutFontEngine struct {
+	metricsFontEngine
+
+	loads, faces int
+}
+
+func (e *countingLayoutFontEngine) LoadFont(id models.StRefID) (FontFamily, error) {
+	e.loads++
+	return e.metricsFontEngine.LoadFont(id)
+}
+
+func (e *countingLayoutFontEngine) FaceObject(family FontFamily, object models.TextObject, fill *CTColor) FontFace {
+	e.faces++
+	return e.metricsFontEngine.FaceObject(family, object, fill)
+}
+
+func TestTextLayoutReusesFaceWithinObjectAndKeepsSelectedRunGeometry(t *testing.T) {
+	engine := &countingLayoutFontEngine{metricsFontEngine: metricsFontEngine{face: metricsFontFace{ascent: 3, descent: 1}}}
+	doc := &Document{fonts: engine}
+	object := models.TextObject{CtText: models.CtText{
+		CTGraphicUnit: models.CTGraphicUnit{Boundary: models.StBox{X: 3, Y: 4, Width: 30, Height: 20}, CTM: &models.CTM{2, 0, 0, 2, 0, 0}},
+		Size:          2, TextCode: []models.TextCode{{Value: "AB", Y: 4}, {Value: "CD", X: 8, Y: 8}, {Value: "EF", X: 16, Y: 12}},
+	}}
+	want := make([]TextLayout, len(object.TextCode))
+	for i, code := range object.TextCode {
+		want[i] = buildTextLayout(doc, object, code, i*2)
+	}
+	engine.loads, engine.faces = 0, 0
+	var got []TextLayout
+	index := 0
+	collectObjectTextLayouts(object, &got, doc, nil, &index)
+	if !reflect.DeepEqual(got, want) || engine.loads != 1 || engine.faces != 1 {
+		t.Fatalf("复用字体面改变布局，或重复选字体：loads=%d faces=%d got=%+v", engine.loads, engine.faces, got)
+	}
+	engine.loads, engine.faces = 0, 0
+	got, index = nil, 0
+	collectObjectTextLayouts(object, &got, doc, map[int]struct{}{1: {}}, &index)
+	if !reflect.DeepEqual(got, want[1:2]) || index != 3 || engine.faces != 1 {
+		t.Fatal("只选中间 run 时改变了字符位置或 run 索引")
+	}
+	engine.loads, engine.faces = 0, 0
+	got, index = nil, 0
+	collectObjectTextLayouts(object, &got, doc, map[int]struct{}{99: {}}, &index)
+	if len(got) != 0 || engine.loads != 0 || engine.faces != 0 {
+		t.Fatal("未选中任何 run 仍加载了字体")
+	}
+}
+
 // run 索引跳过空文本和不可见对象，CGTransform 的位置则按对象内 Unicode 字符计数。
 // 只请求后面的 run 时，也必须保留前面 TextCode 对字符位置的贡献。
 func TestTextLayoutsForRunsPreservesCharacterPositions(t *testing.T) {

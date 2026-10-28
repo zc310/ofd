@@ -728,6 +728,29 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		}
 		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, bookmarks, &links)
 	}
+	// 复合单元中的坐标含裁边和单元映射，由渲染层统一计算，避免浏览器热区偏移。
+	nested, err := ref.document.PageLinksWithVisibilityE(ref.page, func(id models.StID) (render.LinkTargetRef, bool) {
+		page, ok := pageIndex[id]
+		return render.LinkTargetRef{Index: page}, ok
+	}, r.hiddenLayers[index])
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range nested {
+		if !link.InComposite {
+			continue
+		}
+		item := PageLink{Scope: ref.fontScope, Page: index, ID: formatStID(models.StID(link.ObjectID)), URI: link.URI, TargetPage: -1, Event: string(models.ActionEventClick),
+			Boundary: AnnotationBoundary{X: link.X, Y: link.Y, Width: link.Width, Height: link.Height}}
+		if target := link.Target; target != nil {
+			item.TargetPage = target.Page
+			kinds := []models.DestType{models.DestTypeFit, models.DestTypeFitH, models.DestTypeFitV, models.DestTypeXYZ, models.DestTypeFitR}
+			if int(target.Type) >= 0 && int(target.Type) < len(kinds) {
+				item.Dest = &OutlineDest{Type: string(kinds[target.Type]), Left: &target.Left, Top: &target.Top, Right: &target.Right, Bottom: &target.Bottom, Zoom: &target.Zoom}
+			}
+		}
+		links = append(links, item)
+	}
 	annot, err := ref.document.LoadAnnotation(ref.page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("读取第 %d 页注解失败: %w", index, err)

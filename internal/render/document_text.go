@@ -33,10 +33,35 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if clip != nil && clip.Empty() {
 		return
 	}
+	// GB/T 33190—2016 §8.3：底纹也可用于文字填充。先单独绘制底纹，
+	// 再由原路径绘制描边；底纹单元可能包含同一字体的文字，不能持字体锁展开。
+	if source := textFillColor(object, dp); source != nil && source.Pattern != nil && !textFillDisabled(object) {
+		if _, semanticOnly := ctx.(semanticOnlyContext); !semanticOnly {
+			p.drawPatternText(ctx, source, object, pb, parentCTM, clip, budget)
+			if !object.Stroke {
+				return
+			}
+			object.Fill.Set(false)
+		}
+	}
 
+	if p.fonts == nil {
+		budget.diagnose("font_unavailable", "未注册字体引擎", models.StID(object.Font))
+		return
+	}
 	fontFamily, err := p.fonts.LoadFont(object.Font)
 	if err != nil || fontFamily == nil {
+		message := "字体不可用"
+		if err != nil {
+			message = err.Error()
+		}
+		budget.diagnose("font_unavailable", message, models.StID(object.Font))
 		return
+	}
+	if budget.report != nil {
+		if fallback := p.fonts.FallbackFontFamily(object.Font); fallback != "" {
+			budget.diagnose("font_fallback", fallback, models.StID(object.Font))
+		}
 	}
 	fontLock := p.fonts.RenderLock(fontFamily)
 	fontLock.Lock()
@@ -106,7 +131,9 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			return
 		}
 	}
-	if stroke != nil && stroke.Gradient != nil {
+	if !object.Stroke {
+		ctx.ClearStroke()
+	} else if stroke != nil && stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else if stroke != nil && stroke.HasValue {
 		ctx.SetStrokeColor(stroke.Value)
@@ -239,7 +266,9 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 
 func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight, originX, originY float64) {
 	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		p.drawMeshTextGlyph(ctx, face, object, code.Value, code.X, code.Y, pageHeight, originX, originY)
+		if value := visibleText(code.Value); value != "" {
+			p.drawMeshTextGlyph(ctx, face, object, value, code.X, code.Y, pageHeight, originX, originY)
+		}
 		return
 	}
 
@@ -251,7 +280,9 @@ func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object model
 			posX += deltaX
 			posY += deltaY
 		}
-		p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, originX, originY)
+		if renderableTextRune(r) {
+			p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, originX, originY)
+		}
 	}
 }
 
@@ -459,8 +490,8 @@ func textPositionedGlyphAdvance(width float64, object models.TextObject, code mo
 
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
 	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		if renderableTextValue(code.Value) {
-			p.drawTextGlyph(ctx, faces, object, code.Value, code.X, code.Y, pageHeight, parentCTM)
+		if value := visibleText(code.Value); value != "" {
+			p.drawTextGlyph(ctx, faces, object, value, code.X, code.Y, pageHeight, parentCTM)
 		}
 		return
 	}
@@ -544,12 +575,28 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 // U+FFFD 替换符没有可见字形，交给字体绘制会显示成 .notdef 方块。
 func renderableTextValue(value string) bool {
 	for _, r := range value {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\uFFFD' {
-			continue
+		if renderableTextRune(r) {
+			return true
 		}
-		return true
 	}
 	return false
+}
+
+func renderableTextRune(r rune) bool {
+	return r >= 0x20 && r != 0x7f && !(r >= 0x80 && r <= 0x9f) && r != '\uFFFD'
+}
+
+// visibleText 只过滤交给整串整形的文字，不改动源 TextCode 及其定位队列。
+func visibleText(value string) string {
+	if strings.IndexFunc(value, func(r rune) bool { return !renderableTextRune(r) }) < 0 {
+		return value
+	}
+	return strings.Map(func(r rune) rune {
+		if renderableTextRune(r) {
+			return r
+		}
+		return -1
+	}, value)
 }
 
 var transformMapPool = sync.Pool{

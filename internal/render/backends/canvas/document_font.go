@@ -1,6 +1,7 @@
 package canvas
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -11,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -151,6 +152,8 @@ type Fonts struct {
 	renderLocks     map[weak.Pointer[canvas.FontFamily]]*sync.Mutex
 	embeddedMu      sync.Mutex
 	embeddedFonts   map[embeddedFontKey]*canvas.FontFamily
+	embeddedSources *cache.LRU[string, *embeddedFontSource]
+	glyphSnapshots  *cache.LRU[models.StRefID, *fontGlyphSnapshot] // 由 mu 保护
 	// embeddedRepairers 按字体字节摘要缓存 fontrepair.Repairer。同一份内嵌字体在
 	// 文档逐页登记字形映射时会被反复修复，而修复结果只取决于字体字节；Repairer
 	// 缓存修复后的基础字体与已解析 cmap，使每次修补只需重新合并与输出 cmap 表。
@@ -487,6 +490,7 @@ func (p *Fonts) Close() {
 	p.glyphMappings = nil
 	p.glyphVersions = nil
 	p.glyphCollections = nil
+	p.glyphSnapshots = nil
 	p.mu.Unlock()
 	p.loadLocksMu.Lock()
 	p.loadLocks = nil
@@ -507,6 +511,7 @@ func (p *Fonts) Close() {
 	p.embeddedMu.Lock()
 	p.embeddedFonts = map[embeddedFontKey]*canvas.FontFamily{}
 	p.embeddedRepairers = make(map[[sha256.Size]byte]*fontrepair.Repairer)
+	p.embeddedSources = nil
 	p.embeddedMu.Unlock()
 	p.renderLocksMu.Lock()
 	p.renderLocks = make(map[weak.Pointer[canvas.FontFamily]]*sync.Mutex)
@@ -677,11 +682,16 @@ func cssFontFamilyName(name string) string {
 // 同一字体仅保留最新映射版本，避免逐页修补 cmap 时累计保留全部旧字体。
 // 缓存在 Fonts 实例上，随文档关闭释放。
 func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.FontStyle, mappings []fontrepair.GlyphMapping) (*canvas.FontFamily, error) {
+	return loadCachedEmbeddedFontSnapshot(p, name, &embeddedFontSource{data: data, digest: sha256.Sum256(data)}, style,
+		&fontGlyphSnapshot{mappings: mappings})
+}
+
+func loadCachedEmbeddedFontSnapshot(p *Fonts, name string, source *embeddedFontSource, style drawing.FontStyle, snapshot *fontGlyphSnapshot) (*canvas.FontFamily, error) {
 	key := embeddedFontKey{
 		name:           name,
 		style:          style,
-		dataDigest:     sha256.Sum256(data),
-		mappingsDigest: hashGlyphMappings(mappings),
+		dataDigest:     source.digest,
+		mappingsDigest: snapshot.hash(),
 	}
 	p.embeddedMu.Lock()
 	if p.isClosed() {
@@ -703,7 +713,11 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 	}
 	familyName := fmt.Sprintf("%s-%x-%x", safeName, key.dataDigest[:8], key.mappingsDigest[:8])
 	family := canvas.NewFontFamily(familyName)
-	if err := loadEmbeddedFont(p, family, data, style, mappings); err != nil {
+	var mappings []fontrepair.GlyphMapping
+	if snapshot != nil {
+		mappings = snapshot.mappings
+	}
+	if err := loadEmbeddedFont(p, family, source, style, mappings); err != nil {
 		return nil, err
 	}
 	p.embeddedMu.Lock()
@@ -731,7 +745,10 @@ func loadCachedEmbeddedFont(p *Fonts, name string, data []byte, style drawing.Fo
 // embeddedRepairer 返回该字体字节对应的 fontrepair.Repairer，必要时创建。修复器与
 // 内嵌字体族一样按 Fonts 实例缓存，随文档关闭释放。
 func embeddedRepairer(p *Fonts, data []byte) *fontrepair.Repairer {
-	digest := sha256.Sum256(data)
+	return embeddedRepairerWithDigest(p, data, sha256.Sum256(data))
+}
+
+func embeddedRepairerWithDigest(p *Fonts, data []byte, digest [sha256.Size]byte) *fontrepair.Repairer {
 	p.embeddedMu.Lock()
 	if repairer := p.embeddedRepairers[digest]; repairer != nil {
 		p.embeddedMu.Unlock()
@@ -760,22 +777,21 @@ func hashGlyphMappings(mappings []fontrepair.GlyphMapping) [sha256.Size]byte {
 		return [sha256.Size]byte{}
 	}
 	sorted := append([]fontrepair.GlyphMapping(nil), mappings...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Rune != sorted[j].Rune {
-			return sorted[i].Rune < sorted[j].Rune
+	slices.SortFunc(sorted, func(a, b fontrepair.GlyphMapping) int {
+		if order := cmp.Compare(a.Rune, b.Rune); order != 0 {
+			return order
 		}
-		return sorted[i].Glyph < sorted[j].Glyph
+		return cmp.Compare(a.Glyph, b.Glyph)
 	})
 	h := sha256.New()
-	var buf [4]byte
+	var buf [8]byte
 	for _, mapping := range sorted {
-		binary.LittleEndian.PutUint32(buf[:], uint32(mapping.Rune))
-		h.Write(buf[:])
-		binary.LittleEndian.PutUint32(buf[:], uint32(mapping.Glyph))
+		binary.LittleEndian.PutUint32(buf[:4], uint32(mapping.Rune))
+		binary.LittleEndian.PutUint32(buf[4:], uint32(mapping.Glyph))
 		h.Write(buf[:])
 	}
 	var digest [sha256.Size]byte
-	copy(digest[:], h.Sum(nil))
+	h.Sum(digest[:0])
 	return digest
 }
 
@@ -882,7 +898,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 		}
 		fallbacks := append([]fallbackFace(nil), p.fallbackFaces...)
 		glyphVersion, fallbackVersion := p.glyphVersions[id], p.fallbackVersion
-		mappings := p.glyphMappingList(id)
+		mappings := p.glyphSnapshot(id)
 		p.mu.Unlock()
 
 		family, fallbackName, err := p.loadFontUncached(id, ft, fallbacks, mappings)
@@ -917,7 +933,7 @@ func (p *Fonts) LoadFont(id models.StRefID) (drawing.FontFamily, error) {
 	return nil, errFontChangedDuringLoad
 }
 
-func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks []fallbackFace, mappings []fontrepair.GlyphMapping) (*canvas.FontFamily, string, error) {
+func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks []fallbackFace, mappings *fontGlyphSnapshot) (*canvas.FontFamily, string, error) {
 	defaultFamily, defaultReady := defaultFallbackFont()
 	if ft == nil {
 		if fallback, ok := selectFallback(fallbacks, drawing.FontRegular); ok {
@@ -939,9 +955,9 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 	}
 	var embeddedErr error
 	if ft.FontFile != "" {
-		data, readErr := p.FileCache.Read(string(ft.FontFile))
+		source, readErr := p.readEmbeddedFont(string(ft.FontFile))
 		if readErr == nil {
-			if family, err := loadCachedEmbeddedFont(p, fontName, data, fontStyle, mappings); err == nil {
+			if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, mappings); err == nil {
 				return family, "", nil
 			} else {
 				embeddedErr = err
@@ -957,16 +973,16 @@ func (p *Fonts) loadFontUncached(id models.StRefID, ft *models.Font, fallbacks [
 		if ft.FontFile == "" || candidateID == models.StID(id) || candidate.FontFile == "" || !sameFontName(*ft, *candidate) {
 			return true
 		}
-		data, err := p.FileCache.Read(string(candidate.FontFile))
+		source, err := p.readEmbeddedFont(string(candidate.FontFile))
 		if err != nil {
 			return true
 		}
-		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(data))
+		slog.Debug("load embedded font candidate", "family", fontName, "style", fontStyle, "bytes", len(source.data))
 		// mappings 来自请求资源的 CGTransform，只能解释其声明字体的字形编号。
 		// 同名候选可能是另一份子集，编号不同，不能将请求资源的映射注入候选。
 		// 该兼容回退仅使用候选自身可恢复的 Unicode cmap；缺字仍可能无法按原文
 		// 成形，交由后续缺字回退处理，不能凭同名猜测字形对应关系。
-		if family, err := loadCachedEmbeddedFont(p, fontName, data, fontStyle, nil); err == nil {
+		if family, err := loadCachedEmbeddedFontSnapshot(p, fontName, source, fontStyle, nil); err == nil {
 			matched = family
 			return false
 		}
@@ -1470,10 +1486,11 @@ func (p *Fonts) HasLoadedEmbeddedFont(id models.StRefID) bool {
 // 原始字体数据。只有两者都无法加载时，调用方才会继续使用外部字体回退。
 // mappings 为文档提供的 Unicode→字形映射，用于让缺少 Unicode cmap 的子集字体
 // 也能按原始文本成形，从而在 PDF 等输出中保留可复制文字。
-func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, data []byte, style drawing.FontStyle, mappings []fontrepair.GlyphMapping) error {
+func loadEmbeddedFont(p *Fonts, family *canvas.FontFamily, source *embeddedFontSource, style drawing.FontStyle, mappings []fontrepair.GlyphMapping) error {
+	data := source.data
 	var failures []error
 	if len(mappings) > 0 {
-		fixed, err := embeddedRepairer(p, data).WithGlyphReferences(mappings)
+		fixed, err := embeddedRepairerWithDigest(p, data, source.digest).WithGlyphReferences(mappings)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("内嵌字体字形映射修复: %w", err))
 		} else {

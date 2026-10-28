@@ -101,6 +101,18 @@ func TestGradAtTransparentStopKeepsColor(t *testing.T) {
 	}
 }
 
+func TestGradAtTransparentEndpointsReturnValidPremultipliedPixels(t *testing.T) {
+	g := Grad{{Offset: 0, Color: color.RGBA{R: 255}}, {Offset: 1, Color: color.RGBA{B: 255}}}
+	for _, position := range []float64{-1, 0, .5, 1, 2, math.NaN()} {
+		if got := g.At(position); got != (color.RGBA{}) {
+			t.Fatalf("位置%g泄露透明色标载体：%v", position, got)
+		}
+	}
+	if g[0].Color.R != 255 || g[1].Color.B != 255 {
+		t.Fatal("采样改写了插值所需的原始RGB载体")
+	}
+}
+
 func TestPaintDistinguishesTransparentFromUnset(t *testing.T) {
 	paint := SolidPaint(color.RGBA{})
 	if !paint.Has() || !paint.IsColor() || paint.IsGradient() {

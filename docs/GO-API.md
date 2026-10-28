@@ -223,6 +223,36 @@ func main() {
 不需要取消或超时时，首参可传 `context.Background()`。`RenderPages` 和 `RenderPDF`
 失败时不返回部分结果；需要流式输出时使用 `RenderPDFTo`。
 
+`Text` 和 `Search` 默认包含正文、模板及其复合对象内的文字；复合单元的缩放、偏移
+和裁边映射也用于字符高亮与链接热区。调用 `SetTextOptions` 可将水印、批注和 OFD
+印章子文档里的文字加入覆盖层与搜索，设置会同时清理两种缓存。图片和字形轮廓
+不执行 OCR。`TextRun.Source` 为 `page`、`template`、`watermark`、`annotation` 或
+`seal`；印章字体在子文档中解析，返回的印章 run 不借用父文档的字体 ID。
+
+```go
+err := reader.SetTextOptions(webreader.TextOptions{
+    IncludeAnnotations: true,
+    IncludeWatermarks:  false,
+    IncludeSeals:       true,
+})
+if err != nil { return err }
+
+png, diagnostics, err := reader.RenderPageWithReport(ctx, 0, webreader.RenderOptions{DPI: 144})
+if err != nil { return err }
+_ = png
+for _, issue := range diagnostics.Diagnostics {
+    fmt.Println(issue.Code, issue.ObjectID, issue.ResourceID, issue.Count)
+}
+```
+
+诊断报告属于单次调用，包含页 ID、实际绘制操作的资源用量和可恢复问题。相同原因、
+对象与资源会合并计数，最多保留 128 种问题，超过部分记入 `Dropped`。记录内容包括
+字体不可用或回退、图片/复合资源缺失、模板与印章加载失败，以及资源预算拒绝；
+没有诊断不代表完成了 OFD 合法性校验。请求报告时模板重新绘制，以捕获本次诊断。
+
+PDF 导出同时保留内部跳转大纲与外部 URI 大纲。选页导出会移除指向未导出页的
+内部条目，外部 URI 不受选页范围影响，两种条目可在同一大纲树中混排。
+
 ## 创建、合并与签章
 
 | 需求                     | Go 入口与说明                                                                                                                                       |

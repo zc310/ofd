@@ -74,11 +74,11 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 		links      []string
 		visible    [4]bool
 	}{
-		{"all", PageVisibility{}, []string{"background", "foreground", "body", "last"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
-		{"hide body layer", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true}}, []string{"background", "foreground", "last"}, []string{"last", "background", "foreground", "annotation"}, [4]bool{true, true, false, true}},
-		{"hide background", PageVisibility{HiddenTemplates: map[models.StID]bool{backgroundID: true}}, []string{"foreground", "body", "last"}, []string{"body", "last", "foreground", "annotation"}, [4]bool{false, true, true, true}},
+		{"all", PageVisibility{}, []string{"background", "body", "last", "foreground"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
+		{"hide body layer", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true}}, []string{"background", "last", "foreground"}, []string{"last", "background", "foreground", "annotation"}, [4]bool{true, true, false, true}},
+		{"hide background", PageVisibility{HiddenTemplates: map[models.StID]bool{backgroundID: true}}, []string{"body", "last", "foreground"}, []string{"body", "last", "foreground", "annotation"}, [4]bool{false, true, true, true}},
 		{"hide foreground", PageVisibility{HiddenTemplates: map[models.StID]bool{foregroundID: true}}, []string{"background", "body", "last"}, []string{"body", "last", "background", "annotation"}, [4]bool{true, false, true, true}},
-		{"false and unrelated IDs", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: false, backgroundID: true}, HiddenTemplates: map[models.StID]bool{foregroundID: false, lastID: true}}, []string{"background", "foreground", "body", "last"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
+		{"false and unrelated IDs", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: false, backgroundID: true}, HiddenTemplates: map[models.StID]bool{foregroundID: false, lastID: true}}, []string{"background", "body", "last", "foreground"}, []string{"body", "last", "background", "foreground", "annotation"}, [4]bool{true, true, true, true}},
 		{"hide all content", PageVisibility{HiddenLayers: map[models.StID]bool{bodyID: true, lastID: true}, HiddenTemplates: map[models.StID]bool{backgroundID: true, foregroundID: true}}, []string{}, []string{"annotation"}, [4]bool{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 			}
 		})
 	}
-	wantValues := []string{"background", "foreground", "body", "last"}
+	wantValues := []string{"background", "body", "last", "foreground"}
 	for _, page := range doc.Pages {
 		if got := doc.TextValues(page); !reflect.DeepEqual(got, wantValues) {
 			t.Errorf("filter changed shared content: TextValues = %v", got)

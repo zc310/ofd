@@ -82,8 +82,7 @@ func TestOutlinesFlattensTreeLevels(t *testing.T) {
 	}
 }
 
-// TestOutlinesSkipsUntargetableWithoutLeavingHoles 守住没有页面目标的条目被丢弃，
-// 且其子项上移到父项原有的层级，树不会因此散开。
+// URI 大纲保留为父节点，其内部跳转子项仍保留原有层级。
 func TestOutlinesSkipsUntargetableWithoutLeavingHoles(t *testing.T) {
 	doc := stubDocument()
 	doc.Document.Outlines = &models.OutlineList{OutlineElems: []models.CTOutlineElem{
@@ -102,14 +101,17 @@ func TestOutlinesSkipsUntargetableWithoutLeavingHoles(t *testing.T) {
 	}}
 
 	got := doc.Outlines(staticResolver(0, LinkTargetRef{Index: 0, Height: 297}))
-	if len(got) != 2 {
-		t.Fatalf("条目数 = %d，期望 2（丢弃无目标的「仅链接」）: %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("条目数 = %d，期望保留3条: %+v", len(got), got)
 	}
-	if got[0].Title != "孙" || got[0].Level != 0 {
-		t.Errorf("孙应上移为顶层: %+v", got[0])
+	if got[0].URI != "https://example.com" || got[0].Target != nil {
+		t.Errorf("外部链接丢失：%+v", got[0])
 	}
-	if got[1].Title != "顶层" || got[1].Level != 0 {
-		t.Errorf("顶层条目应保持层级 0: %+v", got[1])
+	if got[1].Title != "孙" || got[1].Level != 1 {
+		t.Errorf("孙应保留在URI父项下: %+v", got[1])
+	}
+	if got[2].Title != "顶层" || got[2].Level != 0 {
+		t.Errorf("顶层条目应保持层级 0: %+v", got[2])
 	}
 }
 

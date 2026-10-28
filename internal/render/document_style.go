@@ -23,6 +23,14 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 	if dp == nil {
 		return nil, nil
 	}
+	p.updateDrawParamStyle(ctx, dp)
+	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
+}
+
+func (p *Document) updateDrawParamStyle(ctx DrawContext, dp *models.DrawParam) {
+	if dp == nil {
+		return
+	}
 
 	if dp.StrokeColor != nil {
 		p.setColor(ctx.SetStrokeColor, dp.StrokeColor)
@@ -39,8 +47,6 @@ func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTC
 
 	ctx.SetStrokeCapper(getLineCap(dp.Cap))
 	ctx.SetStrokeJoiner(getLineJoin(dp.Join))
-
-	return p.updateCtColor(dp.FillColor), p.updateCtColor(dp.StrokeColor)
 }
 
 // hasColorValue 判断颜色元素是否携带实际颜色信息。空元素（如 <StrokeColor/>）
@@ -148,7 +154,11 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 	if !finiteFloat(strokeScale) || strokeScale <= 0 {
 		strokeScale = 1
 	}
-	fill, stroke := p.updateDrawParams(ctx, dp)
+	p.updateDrawParamStyle(ctx, dp)
+	var fillSource, strokeSource *models.CTColor
+	if dp != nil {
+		fillSource, strokeSource = dp.FillColor, dp.StrokeColor
+	}
 	effective := *object
 	if effective.LineWidth == 0 {
 		if dp != nil && dp.LineWidth != 0 {
@@ -172,10 +182,10 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 	}
 
 	if hasColorValue(object.FillColor) {
-		fill = p.updateCtColor(object.FillColor)
+		fillSource = object.FillColor
 	}
 	if object.Fill {
-		p.applyFill(ctx, fill, object.Alpha)
+		p.applyFill(ctx, p.pathSolidColor(fillSource), object.Alpha)
 		if object.Rule == spec.FillRuleEvenOdd {
 			ctx.SetFillRule(geom.EvenOdd)
 		}
@@ -184,7 +194,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 	}
 
 	if hasColorValue(object.StrokeColor) {
-		stroke = p.updateCtColor(object.StrokeColor)
+		strokeSource = object.StrokeColor
 	}
 	if object.Stroke.Value(true) {
 		effective.LineWidth = normalizedLineWidth(effective.LineWidth * strokeScale)
@@ -194,9 +204,9 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		effective.DashPattern = preserveRoundCapDots(scaledDashPattern(effective.DashPattern, strokeScale), effective.Cap)
 		effective.DashOffset *= strokeScale
 		ctx.SetStrokeWidth(effective.LineWidth)
-		p.applyStroke(ctx, stroke, &effective)
+		p.applyStroke(ctx, p.pathSolidColor(strokeSource), &effective)
 	} else {
-		ctx.SetStrokeWidth(-1)
+		ctx.ClearStroke()
 	}
 
 	if effective.DashPattern != nil {
@@ -207,6 +217,18 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 		}
 	}
 	return effective.CTGraphicUnit
+}
+
+// 路径渐变由 updatePathGradients 按 Boundary 坐标构建，这里仅解析普通颜色。
+// 避免先构建一份无边界的网格/渐变，随后又被真正用于绘制的渐变覆盖。
+func (p *Document) pathSolidColor(source *models.CTColor) *CTColor {
+	if source == nil || !isShadingColor(source) {
+		return p.updateCtColor(source)
+	}
+	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
+		return &CTColor{Value: p.colorRGBA(*source), HasValue: true}
+	}
+	return nil
 }
 
 func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {

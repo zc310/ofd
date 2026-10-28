@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/zc310/canvas"
@@ -138,6 +139,29 @@ func TestCanvasBackendSetDashesCompensatesStrokeWidth(t *testing.T) {
 	if got := ctx.Style.Dashes; len(got) != len(want) ||
 		!canvas.Equal(got[0], want[0]) || !canvas.Equal(got[1], want[1]) {
 		t.Errorf("虚线数组未按线宽折算: got %v, want %v", got, want)
+	}
+}
+
+func TestCanvasBackendTinyStrokeKeepsFiniteAbsoluteDashes(t *testing.T) {
+	for _, width := range []float64{0.002, 1e-310, math.SmallestNonzeroFloat64} {
+		t.Run(strconv.FormatFloat(width, 'g', -1, 64), func(t *testing.T) {
+			ctx := canvas.NewContext(canvas.New(20, 10))
+			backend := newCanvasBackend(ctx)
+			backend.SetStrokeWidth(width)
+			backend.SetDashes(2, 6, 3)
+			offset, dashes := canvas.ScaleDash(ctx.Style.StrokeWidth, ctx.Style.DashOffset, ctx.Style.Dashes)
+			if math.IsInf(offset, 0) || math.IsNaN(offset) || math.Abs(offset-2) > 1e-12 || len(dashes) != 2 {
+				t.Fatalf("极细描边改变了虚线相位或数量：offset=%g dashes=%v", offset, dashes)
+			}
+			for i, want := range []float64{6, 3} {
+				if math.IsInf(dashes[i], 0) || math.IsNaN(dashes[i]) || math.Abs(dashes[i]-want) > 1e-12 {
+					t.Fatalf("虚线长度未保持毫米值：got=%v want=[6 3]", dashes)
+				}
+			}
+			if sum := ctx.Style.DashOffset + ctx.Style.Dashes[0] + ctx.Style.Dashes[1]; math.IsInf(sum, 0) || math.IsNaN(sum) {
+				t.Fatal("虚线比例的累计值溢出")
+			}
+		})
 	}
 }
 

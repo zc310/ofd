@@ -79,27 +79,28 @@ func (p *Document) drawPatternPath(ctx DrawContext, path *geom.Path, pattern *mo
 		minY = math.Min(minY, y)
 		maxY = math.Max(maxY, y)
 	}
-	startX := int(math.Floor(minX/xStep)) - 1
-	endX := int(math.Ceil(maxX/xStep)) + 1
-	startY := int(math.Floor(minY/yStep)) - 1
-	endY := int(math.Ceil(maxY/yStep)) + 1
-	countX, countY := endX-startX+1, endY-startY+1
-	if countX <= 0 || countY <= 0 || countX > maxPatternTiles || countY > maxPatternTiles || countX > maxPatternTiles/countY {
+	startX, countX, okX := patternTileRange(minX, maxX, xStep)
+	startY, countY, okY := patternTileRange(minY, maxY, yStep)
+	if !okX || !okY || countX > maxPatternTiles/countY {
+		budget.reportLimit(limitPatternTiles, "pattern_tiles", "columns", countX, "rows", countY, "limit", maxPatternTiles)
 		return false
 	}
 	if !budget.allowPatternTiles(countX * countY) {
 		return false
 	}
 
-	for ix := startX; ix <= endX; ix++ {
-		for iy := startY; iy <= endY; iy++ {
-			tile := *base.Multiply(&models.CTM{
-				1, 0, 0, 1,
-				float64(ix) * xStep,
-				float64(iy) * yStep,
-			})
-			reflection := patternReflection(pattern.ReflectMethod, pattern.Width, pattern.Height, ix, iy)
-			tile = *tile.Multiply(&reflection)
+	// 翻转只由行列的奇偶决定，四个矩阵预先构造，避免逐图块转小写和求乘积。
+	var reflections [2][2]models.CTM
+	for ix := range 2 {
+		for iy := range 2 {
+			reflections[ix][iy] = patternReflection(pattern.ReflectMethod, pattern.Width, pattern.Height, ix, iy)
+		}
+	}
+	for xIndex := 0; xIndex < countX; xIndex++ {
+		ix := startX + xIndex
+		for yIndex := 0; yIndex < countY; yIndex++ {
+			iy := startY + yIndex
+			tile := patternTileTransform(base, reflections[ix&1][iy&1], float64(ix)*xStep, float64(iy)*yStep)
 			if !tile.IsFinite() {
 				return false
 			}
@@ -107,6 +108,37 @@ func (p *Document) drawPatternPath(ctx DrawContext, path *geom.Path, pattern *mo
 		}
 	}
 	return true
+}
+
+// 在浮点转 int 前校验商、索引及数量。只检查 countX*countY 太晚：Inf 转换
+// 及索引加减可能已溢出；32位平台还必须避免末索引递增绕回负数。
+func patternTileRange(minimum, maximum, step float64) (start, count int, ok bool) {
+	if !finiteFloat(minimum) || !finiteFloat(maximum) || !finiteFloat(step) || step <= 0 || minimum > maximum {
+		return 0, 0, false
+	}
+	first, last := math.Floor(minimum/step), math.Ceil(maximum/step)
+	limit := math.Min(float64(int(^uint(0)>>1)-2), float64(1<<53-2))
+	if !finiteFloat(first) || !finiteFloat(last) || first < -limit || last > limit {
+		return 0, 0, false
+	}
+	tiles := last - first + 3
+	if tiles <= 0 || tiles > maxPatternTiles {
+		return 0, 0, false
+	}
+	return int(first) - 1, int(tiles), true
+}
+
+func patternTileTransform(base, reflection models.CTM, x, y float64) models.CTM {
+	// 平铺位移仍从索引直接计算，不累加步长，避免大量图块产生浮点漂移。
+	tx := base[0]*x + base[2]*y + base[4]
+	ty := base[1]*x + base[3]*y + base[5]
+	// patternReflection 只有轴向翻转和平移，按值组合，避免 Multiply 返回指针分配。
+	return models.CTM{
+		base[0] * reflection[0], base[1] * reflection[0],
+		base[2] * reflection[3], base[3] * reflection[3],
+		base[0]*reflection[4] + base[2]*reflection[5] + tx,
+		base[1]*reflection[4] + base[3]*reflection[5] + ty,
+	}
 }
 
 func patternSteps(pattern *models.CtPattern) (float64, float64) {

@@ -31,13 +31,12 @@ func TestRenderPDFToWritesOutline(t *testing.T) {
 	if !strings.Contains(body, "/Outlines") {
 		t.Fatal("导出的 PDF 没有大纲")
 	}
-	// 五个可跳转条目，外加被丢弃的仅 URI 条目不应出现。
-	// 样本有六个可跳转条目；只有 URI 动作的那条没有页面目标，不应出现。
+	// 六个内部跳转与一个外部URI条目都应保留。
 	if got := strings.Count(body, "/Dest["); got != 6 {
 		t.Errorf("大纲条目数 = %d，期望 6", got)
 	}
-	if strings.Contains(body, "(仅外部链接)") {
-		t.Error("只有 URI 的条目不应导出")
+	if !strings.Contains(body, "/S/URI") {
+		t.Error("外部URI大纲未导出")
 	}
 }
 

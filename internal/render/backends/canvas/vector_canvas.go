@@ -169,9 +169,16 @@ func (d *canvasPDFDocument) AddOutlines(outlines []drawing.PageOutline) error {
 		return errors.New("尚未写入任何页面，无法添加大纲")
 	}
 	for _, outline := range outlines {
+		if outline.URI != "" && outline.Target == nil {
+			writer, ok := any(d.doc).(interface{ AddOutlineURI(string, int, string) })
+			if !ok {
+				return errors.New("PDF 写入器不支持 URI 大纲，需要包含 AddOutlineURI 的 canvas 版本")
+			}
+			writer.AddOutlineURI(outline.Title, outline.Level, outline.URI)
+			continue
+		}
 		if outline.Target == nil {
-			// PDF 的每个大纲条目都必须有目标；没有目标的条目在提取阶段就已被
-			// 丢弃，这里再挡一次以防自定义调用方直接构造。
+			// 没有页面目标也没有URI的条目无法执行跳转。
 			continue
 		}
 		d.doc.AddOutlineToPage(outline.Target.Page, outline.Target.PageHeight,

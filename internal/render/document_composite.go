@@ -199,12 +199,15 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		return
 	}
 	if compositeDepth >= maxCompositeDepth {
+		budget.diagnose("composite_depth", "复合图元嵌套超过上限", models.StID(object.ResourceID))
 		return
 	}
 	unit := p.Document.GetCompositeUnit(models.StID(object.ResourceID))
 	if unit == nil {
+		budget.diagnose("missing_composite", "找不到复合图元资源", models.StID(object.ResourceID))
 		return
 	}
+	budget.resourceID = models.StID(object.ResourceID)
 	if !budget.allowComposite(models.StID(object.ResourceID)) {
 		return
 	}
@@ -330,9 +333,17 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
 	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
 	compositeDepth int, budget *renderBudget) (image.Image, bool) {
+	img, _, ok := p.resampleCompositeUnitSource(unit, dp, raster, w, h, dpi, box, outDPI, compositeDepth, budget)
+	return img, ok
+}
+
+// 同时返回裁后图片覆盖的单元区域（OFD 左上原点），用于文字与链接的同坐标映射。
+func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit, dp *models.DrawParam,
+	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
+	compositeDepth int, budget *renderBudget) (image.Image, models.StBox, bool) {
 	cx0, cy0, cx1, cy1 := contentImageBounds(raster)
 	if cx1 <= cx0 || cy1 <= cy0 {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	mmPerPx := 25.4 / dpi
 	inkWidth := (cx1 - cx0) * mmPerPx
@@ -342,17 +353,17 @@ func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *
 	inkY := h - cy1*mmPerPx
 	// 可见范围本就占满画布时没有可省的：重画只会白费一遍。
 	if inkWidth*inkHeight > compositeInkMaxAreaRatio*w*h {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	// DPI 取「可见内容按 Boundary 宽铺开后仍等于输出分辨率」的值。
 	next := box.Width * outDPI / inkWidth
 	if !finiteFloat(next) || next <= 0 {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	next = math.Min(next, 1200)
 	// 提升不足两成就不值得多画一遍。
 	if next < dpi*1.2 {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	// 画布收缩到可见范围并留边距：字形轮廓可能略微溢出 Boundary，而首遍是低
 	// DPI 栅格，细笔画本身就可能被量化掉。
@@ -363,24 +374,26 @@ func (p *Document) resampleCompositeUnit(unit *models.CompositeGraphicUnit, dp *
 	y1 := math.Min(inkY+inkHeight+pad, h)
 	iw, ih := x1-x0, y1-y0
 	if iw <= 0 || ih <= 0 || !finiteFloat(iw) || !finiteFloat(ih) {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	// 预算按两遍合计计费：首遍已经扣过一次，这里再扣收缩后这一遍。
 	if !budget.allowOffscreenPixels(iw, ih, next) {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	out := p.rasterizeCompositeUnit(unit, dp,
 		models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true, w, h, next, compositeDepth, budget)
 	if compositeRasterBlank(out) {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
 	// 裁到重画后的实际可见范围：调用方按整块 Boundary 贴图，多余的透明边会让
 	// 内容整体缩小。
 	nx0, ny0, nx1, ny1 := contentImageBounds(out)
 	if nx1 <= nx0 || ny1 <= ny0 {
-		return nil, false
+		return nil, models.StBox{}, false
 	}
-	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), true
+	step := 25.4 / next
+	source := models.StBox{X: x0 + nx0*step, Y: h - y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
+	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), source, true
 }
 
 // placeCompositeImage 把已栅格化的复合单元内容按 CompositeObject 的 Boundary
@@ -463,19 +476,29 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 // 裁剪、图像、渐变、嵌套复合图元以及其他需要独立绘制表面的情况，
 // 仍然交由下面的栅格化回退逻辑处理。
 func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) bool {
-	if len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath {
+	if unit == nil || len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath || unit.Content.Items[0].Path == nil {
 		return false
+	}
+	w, h, cropToInk := unit.Width, unit.Height, true
+	// 与 compositeWithBudget 的兼容处理一致：声明尺寸不可信时保留完整内容
+	// 坐标系，不能把单个小路径的墨迹包围盒拉伸铺满 Boundary。
+	if extentW, extentH, ok := compositeContentExtent(object); ok &&
+		(compositeExtentMismatch(w, extentW) || compositeExtentMismatch(h, extentH)) {
+		w, h, cropToInk = extentW, extentH, false
 	}
 	pathObject := *unit.Content.Items[0].Path
 	if parentCTM != nil || parentClip != nil || !simpleCompositePath(pathObject) {
 		return false
 	}
 
-	path := p.buildObjectPathWithTransform(pathObject, unit.Height, nil)
+	path := p.buildObjectPathWithTransform(pathObject, h, nil)
 	pathBounds := path.Bounds()
 	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 ||
 		!finiteFloat(pathBounds.X0) || !finiteFloat(pathBounds.Y0) || !finiteFloat(pathBounds.X1) || !finiteFloat(pathBounds.Y1) {
 		return false
+	}
+	if !cropToInk {
+		pathBounds = geom.RectFromSize(0, 0, w, h)
 	}
 
 	widthScale := object.Boundary.Width / pathBounds.W()

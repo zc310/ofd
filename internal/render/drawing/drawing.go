@@ -307,6 +307,9 @@ type LinkTarget struct {
 //
 // URI 与 Target 二选一：URI 非空表示外部链接，否则由 Target 表达内部跳转。
 type PageLink struct {
+	// ObjectID 与 InComposite 供交互层保留复合单元内热区的来源。
+	ObjectID    uint64
+	InComposite bool
 	// URI 是外部链接地址。
 	URI string
 	// Target 是内部跳转目标，为 nil 时本条是外部链接。
@@ -336,6 +339,8 @@ type PageOutline struct {
 	Level int
 	// Target 是条目指向的位置，为 nil 表示该条目没有可用的页面目标。
 	Target *LinkTarget
+	// URI 非空表示外部链接，与 Target 二选一。
+	URI string
 }
 
 // PDFDocument 是中性的 PDF 多页文档写入器：按页序逐页加入矢量表面。

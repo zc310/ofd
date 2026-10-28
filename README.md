@@ -153,6 +153,10 @@ func main() {
 | 长期保存转换与改动计划 | [`pkg/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
 
 输入类型、页码、DPI、格式导入、缓存与字体等细节见 [Go API 使用指南](docs/GO-API.md)。
+
+按页阅读接口支持复合对象内文字的搜索、选取和链接定位；`SetTextOptions` 可选择
+加入批注、水印与 OFD 印章文字，`RenderPageWithReport` 返回有界的单次渲染诊断。
+PDF 导出保留内部跳转和外部 URI 大纲，示例见[按页阅读接口](docs/GO-API.md#接入按页阅读接口)。
 基于本库的独立应用示例有 [ofd-viewer](https://github.com/zc310/ofd-viewer) 与
 [ofd-toolbox](https://github.com/zc310/ofd-toolbox)。
 

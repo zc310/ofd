@@ -34,7 +34,7 @@ type templateSceneBuild struct {
 // 缓存只省去重复绘制，不改变模板顺序或页面独有的链接、正文和注解。
 func (p *Document) drawCachedTemplate(ctx DrawContext, content *models.PageContent, pb models.StBox, budget *renderBudget) bool {
 	drawer, ok := ctx.(templateSurfaceDrawer)
-	if !ok || !drawer.TemplateSurfaces() || !budget.templateCacheable || len(content.PageRes) != 0 || newVectorSurface == nil {
+	if !ok || !drawer.TemplateSurfaces() || !budget.templateCacheable || budget.report != nil || len(content.PageRes) != 0 || newVectorSurface == nil {
 		return false
 	}
 	// 字形映射与回退字体更新后必须重建画布。自定义字体引擎未提供版本时

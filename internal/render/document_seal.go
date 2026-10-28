@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/h2non/filetype"
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -22,6 +23,10 @@ func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox)
 }
 
 func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
+	return p.sealWithBudget(ctx, info, pb, nil)
+}
+
+func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
 		return nil
 	}
@@ -32,7 +37,7 @@ func (p *Document) seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox)
 		return p.drawImageSeal(ctx, info, pb)
 	}
 	if info.SealData.FileType == "ofd" {
-		return p.drawOFDSeal(ctx, info, pb)
+		return p.drawOFDSealBudget(ctx, info, pb, parent)
 	}
 	return nil
 }
@@ -202,6 +207,14 @@ func (entry *sealDocEntry) close() {
 // sealDocument 返回印章对应的缓存文档，不存在时解析并缓存。key 由印章
 // 数据与父文档回退字体列表共同决定，确保回退字体变化时不会复用旧文档。
 func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
+	return p.loadSealDocument(data, false)
+}
+
+const sealDocCacheCapacity = 16
+
+// pin 为真时在缓存锁内取得条目的读锁，调用方绘制后必须 RUnlock。
+// 这保证条目从查找到开始绘制之间不会被 LRU 淘汰并提前关闭。
+func (p *Document) loadSealDocument(data []byte, pin bool) (*sealDocEntry, error) {
 	fallbacks := p.fallbackFontFamilies()
 	key := sealCacheKey(data, fallbacks)
 
@@ -210,11 +223,16 @@ func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
 		p.sealMu.Unlock()
 		return nil, errors.New("渲染文档已关闭")
 	}
-	entry := p.sealDocs[key]
-	p.sealMu.Unlock()
-	if entry != nil {
-		return entry, nil
+	if p.sealDocs != nil {
+		if entry, ok := p.sealDocs.Get(key); ok {
+			if pin {
+				entry.mu.RLock()
+			}
+			p.sealMu.Unlock()
+			return entry, nil
+		}
 	}
+	p.sealMu.Unlock()
 
 	var ofd parser.OFD
 	if err := ofd.Open(data); err != nil {
@@ -233,22 +251,31 @@ func (p *Document) sealDocument(data []byte) (*sealDocEntry, error) {
 		}
 	}
 
-	entry = &sealDocEntry{ofd: &ofd, doc: doc}
+	entry := &sealDocEntry{ofd: &ofd, doc: doc}
 	p.sealMu.Lock()
 	if p.sealClosed {
 		p.sealMu.Unlock()
 		entry.close()
 		return nil, errors.New("渲染文档已关闭")
 	}
-	if existing := p.sealDocs[key]; existing != nil {
+	if p.sealDocs == nil {
+		p.sealDocs = cache.NewLRU[[32]byte, *sealDocEntry](sealDocCacheCapacity, func(_ [32]byte, entry *sealDocEntry) {
+			// close 等待正在绘制该印章的读锁，字体和解析资源一并释放。
+			entry.close()
+		})
+	}
+	if existing, ok := p.sealDocs.Get(key); ok {
+		if pin {
+			existing.mu.RLock()
+		}
 		p.sealMu.Unlock()
 		entry.close()
 		return existing, nil
 	}
-	if p.sealDocs == nil {
-		p.sealDocs = make(map[[32]byte]*sealDocEntry)
+	p.sealDocs.Add(key, entry)
+	if pin {
+		entry.mu.RLock()
 	}
-	p.sealDocs[key] = entry
 	p.sealMu.Unlock()
 	return entry, nil
 }
@@ -262,18 +289,21 @@ func sealCacheKey(data []byte, fallbacks []string) [32]byte {
 		_, _ = h.Write([]byte(family))
 	}
 	var key [32]byte
-	copy(key[:], h.Sum(nil))
+	h.Sum(key[:0])
 	return key
 }
 
 // drawOFDSeal 解码并绘制 OFD 格式的印章。
 func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
-	entry, err := p.sealDocument(info.SealData.Data)
+	return p.drawOFDSealBudget(ctx, info, pb, nil)
+}
+
+func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb models.StBox, parent *renderBudget) error {
+	entry, err := p.loadSealDocument(info.SealData.Data, true)
 	if err != nil || entry == nil {
 		return err
 	}
 	// 共享读锁只阻止提前关闭，不串行化同一印章的各页绘制。
-	entry.mu.RLock()
 	defer entry.mu.RUnlock()
 	if entry.closed {
 		return errors.New("印章文档已关闭")
@@ -300,7 +330,7 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	if _, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
 		// 矢量印章页没有可用的裁剪接口，带 Clip 时先把印章页栅格化再交给位图
 		// 路径，与 SVG 印章共用同一套 Clip 坐标映射。
-		img := rasterSealPage(entry.doc, page, sealBox, box)
+		img := rasterSealPageBudget(entry.doc, page, sealBox, box, parent)
 		if img == nil {
 			return nil
 		}
@@ -312,6 +342,9 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 	ctx.Scale(box.Width/sealBox.Width, box.Height/sealBox.Height)
 	var budget renderBudget
 	budget.reset()
+	if parent != nil {
+		budget.report = parent.report
+	}
 	entry.doc.pageContent(ctx, page, false, &budget)
 	return nil
 }
@@ -319,12 +352,19 @@ func (p *Document) drawOFDSeal(ctx DrawContext, info *parser.SealInfo, pb models
 // rasterSealPage 按印章页自身尺寸把矢量印章栅格化为透明位图，分辨率由
 // sealRasterResolution 选取。离屏表面未注册时返回 nil，调用方跳过绘制。
 func rasterSealPage(doc *Document, page *parser.Page, sealBox, box models.StBox) image.Image {
+	return rasterSealPageBudget(doc, page, sealBox, box, nil)
+}
+
+func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.StBox, parent *renderBudget) image.Image {
 	surface := newOffscreenSurface(sealBox.Width, sealBox.Height, sealRasterResolution(box, sealBox.Width, sealBox.Height))
 	if surface == nil {
 		return nil
 	}
 	var budget renderBudget
 	budget.reset()
+	if parent != nil {
+		budget.report = parent.report
+	}
 	doc.pageContent(surface, page, false, &budget)
 	return surface.Raster()
 }

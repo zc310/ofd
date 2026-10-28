@@ -33,7 +33,7 @@ type Document struct {
 	images             *cache.LRU[string, image.Image]
 	svgCanvases        *cache.LRU[string, SVGScene]
 	sealMu             sync.Mutex
-	sealDocs           map[[32]byte]*sealDocEntry
+	sealDocs           *cache.LRU[[32]byte, *sealDocEntry]
 	sealClosed         bool
 	closeOnce          sync.Once
 	ctColorMu          sync.Mutex
@@ -61,6 +61,14 @@ const (
 	maxOffscreenPixels             = 200000000
 )
 
+const (
+	limitCompositeExpansions uint8 = 1 << iota
+	limitCompositeResource
+	limitPatternTiles
+	limitInvalidOffscreen
+	limitOffscreenPixels
+)
+
 type renderBudget struct {
 	visibility          PageVisibility
 	templateCacheable   bool
@@ -68,6 +76,10 @@ type renderBudget struct {
 	compositeResources  map[models.StID]int
 	patternTiles        int
 	offscreenPixels     float64
+	reportedLimits      uint8
+	report              *renderReportBuilder
+	objectID            models.StID
+	resourceID          models.StID
 }
 
 func (b *renderBudget) reset() {
@@ -81,39 +93,70 @@ func (b *renderBudget) reset() {
 	}
 	b.patternTiles = 0
 	b.offscreenPixels = 0
+	b.reportedLimits = 0
+	b.report = nil
+	b.objectID, b.resourceID = 0, 0
 }
 
 func (b *renderBudget) allowComposite(resourceID models.StID) bool {
 	if b.compositeResources == nil {
 		b.compositeResources = make(map[models.StID]int)
 	}
-	if b.compositeExpansions >= maxCompositeExpansions || b.compositeResources[resourceID] >= maxCompositeResourceExpansions {
+	if b.compositeExpansions >= maxCompositeExpansions {
+		b.reportLimit(limitCompositeExpansions, "composite_expansions", "resource_id", resourceID, "used", b.compositeExpansions, "limit", maxCompositeExpansions)
+		return false
+	}
+	if b.compositeResources[resourceID] >= maxCompositeResourceExpansions {
+		b.reportLimit(limitCompositeResource, "composite_resource_expansions", "resource_id", resourceID, "used", b.compositeResources[resourceID], "limit", maxCompositeResourceExpansions)
 		return false
 	}
 	b.compositeExpansions++
 	b.compositeResources[resourceID]++
+	if b.report != nil {
+		b.report.Stats.CompositeExpansions++
+	}
 	return true
 }
 
 func (b *renderBudget) allowPatternTiles(count int) bool {
 	if count < 0 || b.patternTiles > maxPatternTilesPerRender-count {
+		b.reportLimit(limitPatternTiles, "pattern_tiles", "used", b.patternTiles, "requested", count, "limit", maxPatternTilesPerRender)
 		return false
 	}
 	b.patternTiles += count
+	if b.report != nil {
+		b.report.Stats.PatternTiles += count
+	}
 	return true
 }
 
 func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
 	if width <= 0 || height <= 0 || dpi <= 0 || math.IsNaN(width) || math.IsInf(width, 0) ||
 		math.IsNaN(height) || math.IsInf(height, 0) || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
+		b.reportLimit(limitInvalidOffscreen, "invalid_offscreen_size", "width", width, "height", height, "dpi", dpi)
 		return false
 	}
 	pixels := width * height * geom.DPI(dpi).DPMM() * geom.DPI(dpi).DPMM()
 	if math.IsNaN(pixels) || math.IsInf(pixels, 0) || b.offscreenPixels > maxOffscreenPixels-pixels {
+		b.reportLimit(limitOffscreenPixels, "offscreen_pixels", "used", b.offscreenPixels, "requested", pixels, "limit", maxOffscreenPixels)
 		return false
 	}
 	b.offscreenPixels += pixels
+	if b.report != nil {
+		b.report.Stats.OffscreenPixels += pixels
+	}
 	return true
+}
+
+// 每份绘制预算对每种拒绝原因只记录一次，避免异常文档逐图元刷屏。
+// 使用 Debug 级别，正常输出不增加日志；启用调试时可定位被跳过的内容。
+func (b *renderBudget) reportLimit(flag uint8, reason string, attrs ...any) {
+	b.diagnose("budget_"+reason, "绘制超出资源预算", b.resourceID)
+	if b.reportedLimits&flag != 0 {
+		return
+	}
+	b.reportedLimits |= flag
+	slog.Debug("渲染资源预算拒绝图元", append([]any{"budget", reason}, attrs...)...)
 }
 
 const (
@@ -139,7 +182,10 @@ func (p *Document) Close() {
 		p.closed.Store(true)
 		p.sealMu.Lock()
 		p.sealClosed = true
-		seals := p.sealDocs
+		var seals []*sealDocEntry
+		if p.sealDocs != nil {
+			seals = p.sealDocs.Values()
+		}
 		p.sealDocs = nil
 		p.sealMu.Unlock()
 		for _, entry := range seals {
@@ -319,7 +365,22 @@ func annotationVisible(annot *models.Annot) bool {
 	return annot != nil && annot.Visible.Value(true)
 }
 
+// Draw 将页面绘制到上下文；渲染文档已关闭时返回错误。
 func (p *Document) Draw(ctx DrawContext, page *parser.Page) error {
+	return p.drawWithReport(ctx, page, nil)
+}
+
+// DrawWithReport 绘制并返回有界诊断报告；报告只属于本次调用。
+func (p *Document) DrawWithReport(ctx DrawContext, page *parser.Page) (Report, error) {
+	report := &renderReportBuilder{}
+	err := p.drawWithReport(ctx, page, report)
+	return report.snapshot(), err
+}
+
+func (p *Document) drawWithReport(ctx DrawContext, page *parser.Page, report *renderReportBuilder) error {
+	if err := p.checkOpen(); err != nil {
+		return err
+	}
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return err
@@ -327,6 +388,10 @@ func (p *Document) Draw(ctx DrawContext, page *parser.Page) error {
 	defer lease.Release()
 	var budget renderBudget
 	budget.reset()
+	budget.report = report
+	if report != nil {
+		report.PageID = page.ID
+	}
 	content := lease.Content()
 	if content == nil {
 		return errors.New("页面内容为空")
@@ -348,7 +413,22 @@ type PageVisibility struct {
 
 // PageWithVisibility 过滤目标页正文图层及模板引用，保留注解和签章。
 // 过滤状态属于本次绘制，不修改共享页面或文档渲染上下文。
+// 渲染文档已关闭时返回错误。
 func (p *Document) PageWithVisibility(page *parser.Page, visibility PageVisibility) (VectorSurface, error) {
+	return p.pageWithReport(page, visibility, nil)
+}
+
+// PageWithReport 创建矢量页面并返回绘制诊断，不调用用户回调或持有共享报告。
+func (p *Document) PageWithReport(page *parser.Page, visibility PageVisibility) (VectorSurface, Report, error) {
+	report := &renderReportBuilder{}
+	surface, err := p.pageWithReport(page, visibility, report)
+	return surface, report.snapshot(), err
+}
+
+func (p *Document) pageWithReport(page *parser.Page, visibility PageVisibility, report *renderReportBuilder) (VectorSurface, error) {
+	if err := p.checkOpen(); err != nil {
+		return nil, err
+	}
 	lease, err := page.AcquireLease()
 	if err != nil {
 		return nil, err
@@ -357,6 +437,10 @@ func (p *Document) PageWithVisibility(page *parser.Page, visibility PageVisibili
 	var budget renderBudget
 	budget.reset()
 	budget.visibility = visibility
+	budget.report = report
+	if report != nil {
+		report.PageID = page.ID
+	}
 	content := lease.Content()
 	if content == nil {
 		return nil, errors.New("页面内容为空")
@@ -396,7 +480,7 @@ func (p *Document) PageContent(ctx DrawContext, page *parser.Page, seal bool) {
 }
 
 func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, budget *renderBudget) {
-	if page == nil {
+	if page == nil || p.checkOpen() != nil {
 		return
 	}
 	lease, err := page.AcquireLease()
@@ -426,7 +510,7 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 	if annots != nil {
 		for _, item := range annots.Annots {
 			if item != nil && item.Type == models.AnnotTypeWatermark {
-				p.annot(ctx, item, pb)
+				p.annotWithBudget(ctx, item, pb, budget)
 			}
 		}
 	}
@@ -443,14 +527,14 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		}
 	}
 	if seal {
-		p.drawSeals(ctx, page.ID, pb)
+		p.drawSealsWithBudget(ctx, page.ID, pb, budget)
 	}
 
 	// 其余类型注解（印章、链接、路径、高亮等）绘制在最上层。
 	if annots != nil {
 		for _, item := range annots.Annots {
 			if item != nil && item.Type != models.AnnotTypeWatermark {
-				p.annot(ctx, item, pb)
+				p.annotWithBudget(ctx, item, pb, budget)
 			}
 		}
 	}
@@ -490,6 +574,7 @@ func (p *Document) template(ctx DrawContext, template models.Template, pb models
 	content, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
 	if err != nil {
 		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
+		budget.diagnose("template_load_failed", err.Error(), models.StID(template.TemplateID))
 		return
 	}
 	if content != nil && content.Content != nil {
@@ -525,9 +610,14 @@ func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer,
 
 // drawSeals 绘制当前页面上的电子印章。
 func (p *Document) drawSeals(ctx DrawContext, pageID models.StID, pb models.StBox) {
+	p.drawSealsWithBudget(ctx, pageID, pb, nil)
+}
+
+func (p *Document) drawSealsWithBudget(ctx DrawContext, pageID models.StID, pb models.StBox, budget *renderBudget) {
 	for _, info := range p.Document.GetSeals(pageID) {
-		if err := p.seal(ctx, info, pb); err != nil {
+		if err := p.sealWithBudget(ctx, info, pb, budget); err != nil {
 			slog.Error(err.Error())
+			budget.diagnose("seal_failed", err.Error(), 0)
 		}
 	}
 }
@@ -559,11 +649,21 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 		return
 	}
 	for _, item := range items {
+		if !pageItemPresent(item) {
+			budget.diagnose("missing_object", "图元种类缺少对应载荷", 0)
+			continue
+		}
+		oldObject, oldResource := budget.objectID, budget.resourceID
+		budget.objectID = pageItemID(item)
+		budget.resourceID = 0
+		if budget.report != nil {
+			budget.report.Stats.ObjectsVisited++
+		}
 		switch item.Kind {
 		case models.PageItemPath:
 			p.pathWithBudget(ctx, *item.Path, p.objectDrawParam(item.Path.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemImage:
-			p.image(ctx, *item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip)
+			p.imageWithBudget(ctx, *item.Image, p.objectDrawParam(item.Image.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemText:
 			p.textWithBudget(ctx, *item.Text, p.objectDrawParam(item.Text.DrawParam, dp), pb, parentCTM, parentClip, budget)
 		case models.PageItemBlock:
@@ -571,6 +671,7 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 		case models.PageItemComposite:
 			p.compositeWithBudget(ctx, *item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
 		}
+		budget.objectID, budget.resourceID = oldObject, oldResource
 	}
 }
 
@@ -595,6 +696,10 @@ func (p *Document) Annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 }
 
 func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) {
+	p.annotWithBudget(ctx, annot, pb, nil)
+}
+
+func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb models.StBox, parent *renderBudget) {
 	if !annotationVisible(annot) || annot.Appearance == nil || annot.Appearance.Boundary == nil {
 		return
 	}
@@ -602,6 +707,9 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 	// 预算，逐图元新建会让图元数量多的注解成倍放大离屏与图案上限。
 	var budget renderBudget
 	budget.reset()
+	if parent != nil {
+		budget.report = parent.report
+	}
 	box := *annot.Appearance.Boundary
 	highlight := annot.Type == models.AnnotTypeHighlight
 	for _, item := range annot.Appearance.Items {
@@ -614,12 +722,22 @@ func (p *Document) annot(ctx DrawContext, annot *models.Annot, pb models.StBox) 
 // 的矢量笔迹）与嵌套块同样要绘制，不能像以前那样被直接跳过。
 // budget 由 annot 创建并在整个外观的图元与嵌套块之间共享。
 func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.StBox, pb models.StBox, highlight bool, budget *renderBudget) {
+	if !pageItemPresent(item) {
+		return
+	}
+	oldObject, oldResource := budget.objectID, budget.resourceID
+	budget.objectID = pageItemID(item)
+	budget.resourceID = 0
+	defer func() { budget.objectID, budget.resourceID = oldObject, oldResource }()
+	if budget.report != nil {
+		budget.report.Stats.ObjectsVisited++
+	}
 	switch item.Kind {
 	case models.PageItemImage:
 		object := *item.Image
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
-		p.image(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil)
+		p.imageWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
 	case models.PageItemPath:
 		object := *item.Path
 		object.Boundary = object.Boundary.CopyAndShift(&box)
@@ -644,6 +762,47 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 			p.annotItem(ctx, child, box, pb, highlight, budget)
 		}
 	}
+}
+
+// pageItemPresent 检查图元种类与载荷一致，缺失对象不参与绘制或文字收集。
+func pageItemPresent(item models.PageItem) bool {
+	switch item.Kind {
+	case models.PageItemPath:
+		return item.Path != nil
+	case models.PageItemImage:
+		return item.Image != nil
+	case models.PageItemText:
+		return item.Text != nil
+	case models.PageItemBlock:
+		return item.Block != nil
+	case models.PageItemComposite:
+		return item.Composite != nil
+	}
+	return false
+}
+
+func pageItemID(item models.PageItem) models.StID {
+	if !pageItemPresent(item) {
+		return 0
+	}
+	switch item.Kind {
+	case models.PageItemText:
+		return item.Text.ID
+	case models.PageItemPath:
+		return item.Path.ID
+	case models.PageItemImage:
+		return item.Image.ID
+	case models.PageItemComposite:
+		return item.Composite.ID
+	}
+	return 0
+}
+
+func (p *Document) checkOpen() error {
+	if p == nil || p.closed.Load() {
+		return errors.New("渲染文档已关闭")
+	}
+	return nil
 }
 
 // Highlight 注解的外观默认要透出正文；显式设置的较低不透明度保持不变。

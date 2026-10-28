@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"math"
 
 	"github.com/zc310/canvas"
 	cimage "github.com/zc310/canvas/image"
@@ -109,6 +110,17 @@ func (b *canvasBackend) SetDashes(offset float64, dashes ...float64) {
 	if !(lineWidth > 0) {
 		b.ctx.SetDashes(offset, dashes...)
 		return
+	}
+	// 极小正线宽会把有限的毫米长度除成 Inf。仅在这种数值边界下提高
+	// 线宽下限，并为虚线周期累加及奇数数组的重复留出余量；绝对长度和相位不变。
+	largest := math.Abs(offset)
+	for _, dash := range dashes {
+		largest = math.Max(largest, math.Abs(dash))
+	}
+	minimum := largest / (math.MaxFloat64 / (2 * float64(len(dashes)+1)))
+	if lineWidth < minimum {
+		lineWidth = math.Nextafter(minimum, math.Inf(1))
+		b.ctx.SetStrokeWidth(lineWidth)
 	}
 	scaled := make([]float64, len(dashes))
 	for i, d := range dashes {

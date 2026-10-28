@@ -1,9 +1,6 @@
 package render
 
 import (
-	"errors"
-	"fmt"
-
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -22,10 +19,11 @@ type GlyphLayout struct {
 
 // TextLayout 描述一个 TextCode 及其字符级几何信息。
 type TextLayout struct {
-	Text  string
-	X     float64
-	Y     float64
-	Width float64
+	Source TextSource
+	Text   string
+	X      float64
+	Y      float64
+	Width  float64
 	// Height 是字体上伸与下延之和，用于覆盖层行高；无字体度量时按 EM 高度兜底。
 	Height        float64
 	Font          uint64
@@ -40,6 +38,7 @@ type TextLayout struct {
 
 // TextLayouts 返回页面文字的字符级布局。字符步进使用渲染器的字体度量、
 // DeltaX/DeltaY、ReadDirection 和 CTM 基础计算，避免网页字体度量造成高亮偏移。
+// 按背景模板、正文、前景模板的绘制顺序返回，与 TextValues 的 run 索引一致。
 func (p *Document) TextLayouts(page *parser.Page) []TextLayout {
 	return p.TextLayoutsWithVisibility(page, PageVisibility{})
 }
@@ -53,6 +52,11 @@ func (p *Document) TextLayoutsWithVisibility(page *parser.Page, visibility PageV
 // TextLayoutsWithVisibilityE 返回过滤后的文字布局，并保留页面或模板加载错误。
 func (p *Document) TextLayoutsWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]TextLayout, error) {
 	return p.textLayouts(page, nil, visibility)
+}
+
+// TextLayoutsWithOptionsE 按同一来源策略返回文字布局，保留资源加载错误。
+func (p *Document) TextLayoutsWithOptionsE(page *parser.Page, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
+	return p.textLayoutsOptions(page, nil, visibility, options)
 }
 
 // TextLayoutsForRuns 返回指定 run 的字符级布局，结果按页面绘制顺序排列。
@@ -69,6 +73,11 @@ func (p *Document) TextLayoutsForRunsWithVisibility(page *parser.Page, runIndice
 
 // TextLayoutsForRunsWithVisibilityE 返回指定 run 的过滤后布局，并保留加载错误。
 func (p *Document) TextLayoutsForRunsWithVisibilityE(page *parser.Page, runIndices []int, visibility PageVisibility) ([]TextLayout, error) {
+	return p.TextLayoutsForRunsWithOptionsE(page, runIndices, visibility, TextOptions{})
+}
+
+// TextLayoutsForRunsWithOptionsE 的 run 索引与相同选项的 TextValuesWithOptionsE 一致。
+func (p *Document) TextLayoutsForRunsWithOptionsE(page *parser.Page, runIndices []int, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
 	if len(runIndices) == 0 {
 		return nil, nil
 	}
@@ -81,47 +90,28 @@ func (p *Document) TextLayoutsForRunsWithVisibilityE(page *parser.Page, runIndic
 	if len(selected) == 0 {
 		return nil, nil
 	}
-	return p.textLayouts(page, selected, visibility)
+	return p.textLayoutsOptions(page, selected, visibility, options)
 }
 
 func (p *Document) textLayouts(page *parser.Page, selected map[int]struct{}, visibility PageVisibility) ([]TextLayout, error) {
-	if p == nil || p.Document == nil || page == nil {
-		return nil, errors.New("文字布局文档或页面为空")
-	}
-	lease, err := page.AcquireLease()
+	return p.textLayoutsOptions(page, selected, visibility, TextOptions{})
+}
+
+func (p *Document) textLayoutsOptions(page *parser.Page, selected map[int]struct{}, visibility PageVisibility, options TextOptions) ([]TextLayout, error) {
+	layouts := make([]TextLayout, 0)
+	runIndex := 0
+	err := p.walkPageText(page, visibility, options, func(frame contentFrame, item models.PageItem) {
+		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
+			return
+		}
+		var local []TextLayout
+		collectObjectTextLayouts(*item.Text, &local, frame.document, selected, &runIndex)
+		for _, layout := range local {
+			layouts = append(layouts, transformTextLayout(layout, frame))
+		}
+	})
 	if err != nil {
 		return nil, err
-	}
-	defer lease.Release()
-	layouts := make([]TextLayout, 0)
-	content := lease.Content()
-	if content == nil {
-		return nil, errors.New("页面内容为空")
-	}
-	// 文字层可能先于页面绘制请求；同样登记当前页的字形映射，保证外部原字体
-	// 的 GID 验证和内嵌字体修复不依赖调用顺序。
-	if p.fonts != nil {
-		p.fonts.RegisterPageGlyphs(p.Document, page, content)
-	}
-	runIndex := 0
-	for _, template := range content.Template {
-		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
-			continue
-		}
-		templateContent, loadErr := p.Document.LoadTemplate(models.StID(template.TemplateID))
-		if loadErr != nil {
-			return nil, fmt.Errorf("加载模板 %d 失败: %w", template.TemplateID, loadErr)
-		}
-		if templateContent != nil {
-			collectTextLayouts(templateContent.Content, &layouts, p, selected, &runIndex)
-		}
-	}
-	if content.Content != nil {
-		for _, layer := range content.Content.Layer {
-			if layer != nil && !visibility.HiddenLayers[layer.ID] {
-				collectTextLayoutBlock(&layer.CTPageBlock, &layouts, p, selected, &runIndex)
-			}
-		}
 	}
 	return layouts, nil
 }
@@ -140,50 +130,26 @@ func (p *Document) TextValuesWithVisibility(page *parser.Page, visibility PageVi
 
 // TextValuesWithVisibilityE 返回过滤后的文字值，并保留页面或模板加载错误。
 func (p *Document) TextValuesWithVisibilityE(page *parser.Page, visibility PageVisibility) ([]string, error) {
-	if p == nil || p.Document == nil || page == nil {
-		return nil, errors.New("文字文档或页面为空")
-	}
-	lease, err := page.AcquireLease()
+	return p.TextValuesWithOptionsE(page, visibility, TextOptions{})
+}
+
+// TextValuesWithOptionsE 与布局共用来源、遍历顺序和复合对象展开规则。
+func (p *Document) TextValuesWithOptionsE(page *parser.Page, visibility PageVisibility, options TextOptions) ([]string, error) {
+	values := make([]string, 0)
+	err := p.walkPageText(page, visibility, options, func(_ contentFrame, item models.PageItem) {
+		if item.Kind != models.PageItemText || !item.Text.VisibleValue() {
+			return
+		}
+		for _, code := range item.Text.TextCode {
+			if code.Value != "" {
+				values = append(values, code.Value)
+			}
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer lease.Release()
-	content := lease.Content()
-	if content == nil {
-		return nil, errors.New("页面内容为空")
-	}
-	values := make([]string, 0)
-	for _, template := range content.Template {
-		if visibility.HiddenTemplates[models.StID(template.TemplateID)] {
-			continue
-		}
-		templateContent, loadErr := p.Document.LoadTemplate(models.StID(template.TemplateID))
-		if loadErr != nil {
-			return nil, fmt.Errorf("加载模板 %d 失败: %w", template.TemplateID, loadErr)
-		}
-		if templateContent != nil {
-			collectTextValues(templateContent.Content, &values)
-		}
-	}
-	if content.Content != nil {
-		for _, layer := range content.Content.Layer {
-			if layer != nil && !visibility.HiddenLayers[layer.ID] {
-				collectTextValuesBlock(&layer.CTPageBlock, &values)
-			}
-		}
-	}
 	return values, nil
-}
-
-func collectTextValues(content *models.Content, values *[]string) {
-	if content == nil {
-		return
-	}
-	for _, layer := range content.Layer {
-		if layer != nil {
-			collectTextValuesBlock(&layer.CTPageBlock, values)
-		}
-	}
 }
 
 func collectTextValuesBlock(block *models.CTPageBlock, values *[]string) {
@@ -191,6 +157,9 @@ func collectTextValuesBlock(block *models.CTPageBlock, values *[]string) {
 		return
 	}
 	for _, item := range block.Items {
+		if !pageItemPresent(item) {
+			continue
+		}
 		switch item.Kind {
 		case models.PageItemText:
 			if !item.Text.VisibleValue() {
@@ -207,46 +176,77 @@ func collectTextValuesBlock(block *models.CTPageBlock, values *[]string) {
 	}
 }
 
-func collectTextLayouts(content *models.Content, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
-	if content == nil {
-		return
-	}
-	for _, layer := range content.Layer {
-		if layer != nil {
-			collectTextLayoutBlock(&layer.CTPageBlock, layouts, document, selected, runIndex)
-		}
-	}
-}
-
 func collectTextLayoutBlock(block *models.CTPageBlock, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
 	if block == nil {
 		return
 	}
 	for _, item := range block.Items {
+		if !pageItemPresent(item) {
+			continue
+		}
 		switch item.Kind {
 		case models.PageItemText:
 			if !item.Text.VisibleValue() {
 				continue
 			}
-			codePosition := 0
-			for _, code := range item.Text.TextCode {
-				if code.Value != "" {
-					if selected == nil {
-						*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
-					} else if _, ok := selected[*runIndex]; ok {
-						*layouts = append(*layouts, buildTextLayout(document, *item.Text, code, codePosition))
-					}
-					*runIndex = *runIndex + 1
-				}
-				codePosition += len([]rune(code.Value))
-			}
+			collectObjectTextLayouts(*item.Text, layouts, document, selected, runIndex)
 		case models.PageItemBlock:
 			collectTextLayoutBlock(&item.Block.CTPageBlock, layouts, document, selected, runIndex)
 		}
 	}
 }
 
+// 同一文字对象的全部 TextCode 使用相同字体选择，只在确实请求布局时创建一次
+// 字体面并持锁度量；不跨对象复用，以保留按实际文字覆盖选择回退字体的语义。
+func collectObjectTextLayouts(object models.TextObject, layouts *[]TextLayout, document *Document, selected map[int]struct{}, runIndex *int) {
+	var face FontFace
+	var release func()
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+	position := 0
+	for _, code := range object.TextCode {
+		if code.Value != "" {
+			_, wanted := selected[*runIndex]
+			if selected == nil || wanted {
+				if release == nil {
+					face, release = loadTextLayoutFace(document, object)
+				}
+				*layouts = append(*layouts, buildTextLayoutWithFace(face, object, code, position))
+			}
+			*runIndex = *runIndex + 1
+		}
+		position += len([]rune(code.Value))
+	}
+}
+
+func loadTextLayoutFace(document *Document, object models.TextObject) (FontFace, func()) {
+	if document == nil || document.fonts == nil {
+		return nil, func() {}
+	}
+	family, err := document.fonts.LoadFont(object.Font)
+	if err != nil || family == nil {
+		return nil, func() {}
+	}
+	lock := document.fonts.RenderLock(family)
+	lock.Lock()
+	if object.CTM != nil {
+		if scale := object.CTM.YScale(); scale > 0 {
+			object.Size *= scale
+		}
+	}
+	return document.fonts.FaceObject(family, object, nil), lock.Unlock
+}
+
 func buildTextLayout(document *Document, object models.TextObject, code models.TextCode, codePosition int) TextLayout {
+	face, release := loadTextLayoutFace(document, object)
+	defer release()
+	return buildTextLayoutWithFace(face, object, code, codePosition)
+}
+
+func buildTextLayoutWithFace(face FontFace, object models.TextObject, code models.TextCode, codePosition int) TextLayout {
 	box := object.Boundary
 	height := object.Size
 	if height <= 0 {
@@ -288,30 +288,19 @@ func buildTextLayout(document *Document, object models.TextObject, code models.T
 	// 字符框和整段覆盖层使用相同的字体排版高度。它是行框的近似范围，
 	// 不代表每个字符的实际轮廓；不支持度量时保留基线上方的 EM 盒。
 	ascent, descent := height, 0.0
-	if document != nil && document.fonts != nil {
-		if family, err := document.fonts.LoadFont(object.Font); err == nil && family != nil {
-			fontLock := document.fonts.RenderLock(family)
-			fontLock.Lock()
-			defer fontLock.Unlock()
-			fontObject := object
-			if ctmYScale > 0 {
-				fontObject.Size *= ctmYScale
-			}
-			if face := document.fonts.FaceObject(family, fontObject, nil); face != nil {
-				widthOf = face.TextWidth
-				if len(object.CGTransform) > 0 && fontCanRenderText(face, code.Value) {
-					widthOf = func(value string) float64 {
-						if fontrepair.ContainsGlyphRune(value) && face.GlyphIndex([]rune(value)[0]) == 0 {
-							return 0
-						}
-						return face.TextWidth(value)
-					}
+	if face != nil {
+		widthOf = face.TextWidth
+		if len(object.CGTransform) > 0 && fontCanRenderText(face, code.Value) {
+			widthOf = func(value string) float64 {
+				if fontrepair.ContainsGlyphRune(value) && face.GlyphIndex([]rune(value)[0]) == 0 {
+					return 0
 				}
-				a, d := face.VerticalMetrics()
-				if finiteFloat(a) && finiteFloat(d) && finiteFloat(a+d) && a > 0 && d >= 0 {
-					ascent, descent = a, d
-				}
+				return face.TextWidth(value)
 			}
+		}
+		a, d := face.VerticalMetrics()
+		if finiteFloat(a) && finiteFloat(d) && finiteFloat(a+d) && a > 0 && d >= 0 {
+			ascent, descent = a, d
 		}
 	}
 	layout.Height = ascent + descent

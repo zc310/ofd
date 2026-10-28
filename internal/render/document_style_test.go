@@ -48,6 +48,19 @@ func TestApplyFillDefaultsToTransparent(t *testing.T) {
 	}
 }
 
+func TestFillOnlyPathClearsInheritedStroke(t *testing.T) {
+	ctx := canvas.NewContext(canvas.New(10, 10))
+	ctx.SetStrokeColor(color.Black)
+	ctx.SetStrokeWidth(2)
+	var document Document
+	document.updateCtPathStyle(newCanvasBackend(ctx), &models.CtPath{
+		Fill: true, Stroke: models.NewOptionalBool(false),
+	}, &models.DrawParam{LineWidth: 2}, 1)
+	if ctx.Style.HasStroke() || ctx.Style.Stroke.Has() || ctx.Style.StrokeWidth < 0 {
+		t.Fatal("仅填充的路径应清除描边画笔，而不是依赖负线宽禁用描边")
+	}
+}
+
 func TestApplyFillKeepsExplicitColor(t *testing.T) {
 	ctx := canvas.NewContext(canvas.New(10, 10))
 	var document Document

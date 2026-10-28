@@ -27,8 +27,8 @@ func scaleAlpha(c color.RGBA, opacity uint8) color.RGBA {
 // a == 0 时真正的预乘值只能是 (0,0,0,0)，会把完全透明色（如透明红 255,0,0,0）
 // 的原始 RGB 抹掉，后续渐变色标插值只剩黑色分量、整段渐变丢色。因此 a == 0 时
 // 保留原始分量作为 straight 载体：规范预乘值在 a == 0 时必为全 0，非 0 字段只能
-// 来自这里；混合端经 RGBA()/NRGBA 模型读取时 a == 0 仍表现为全透明（不可见），
-// 只有色标插值按 straight 直读字段，让透明色仍参与 RGB 插值。
+// 来自这里。只有色标插值可以按 straight 直读字段；渐变返回采样像素时必须将
+// A == 0 的颜色归零，不能把载体直接交给预乘合成器（RGBA() 不会自动归零）。
 func premultiplied(r, g, b, a uint8) color.RGBA {
 	if a == 0 {
 		return color.RGBA{R: r, G: g, B: b, A: 0}

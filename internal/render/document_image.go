@@ -25,6 +25,10 @@ func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.
 }
 
 func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) {
+	p.imageWithBudget(ctx, object, nil, pb, parentCTM, parentClip, nil)
+}
+
+func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
@@ -33,6 +37,7 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 		resMedia = p.Document.GetMedia(models.StID(object.Substitution))
 	}
 	if resMedia == nil {
+		budget.diagnose("missing_image", "找不到图像资源", models.StID(object.ResourceID))
 		return
 	}
 
@@ -81,6 +86,7 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 	}
 	if err != nil {
 		slog.Error("decode image failed", "file", resMedia.MediaFile, "error", err)
+		budget.diagnose("image_decode_failed", err.Error(), models.StID(object.ResourceID))
 		return
 	}
 	if img == nil || img.Bounds().Empty() {

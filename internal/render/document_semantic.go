@@ -30,6 +30,9 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.Comp
 	var visit func([]models.PageItem)
 	visit = func(items []models.PageItem) {
 		for _, item := range items {
+			if !pageItemPresent(item) {
+				continue
+			}
 			switch item.Kind {
 			case models.PageItemText:
 				text := *item.Text

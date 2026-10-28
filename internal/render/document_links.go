@@ -9,6 +9,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // document_links.go 从 OFD 页面提取链接热区，供 PDF 等不支持交互的输出格式生成
@@ -55,19 +56,25 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		return nil, fmt.Errorf("链接文档或页面为空")
 	}
 	links := make([]drawing.PageLink, 0, 4)
-	var templates []models.Template
-	err := page.WithPageContent(func(content *models.PageContent) error {
-		if content == nil {
-			return nil
-		}
-		templates = append(templates, content.Template...)
-		if content.Content != nil {
-			collectLinks(visiblePageLayers(content.Content.Layer, visibility.HiddenLayers), resolve, &links)
-		}
-		return nil
-	})
+	var budget renderBudget
+	budget.reset()
+	frame := contentFrame{document: p, matrix: geom.Identity, budget: &budget}
+	visit := func(frame contentFrame, item models.PageItem) {
+		collectTransformedItemLink(frame, item, resolve, &links)
+	}
+	lease, err := page.AcquireLease()
 	if err != nil {
 		return nil, err
+	}
+	defer lease.Release()
+	content := lease.Content()
+	if content == nil {
+		return nil, fmt.Errorf("页面内容为空")
+	}
+	templates := content.Template
+	frame.box = content.Area.PhysicalBox
+	if content.Content != nil {
+		p.walkContentLayers(frame, visiblePageLayers(content.Content.Layer, visibility.HiddenLayers), visit)
 	}
 	// 模板页上的链接同样可点：模板按 ZOrder 叠加到页面，其图元坐标已是页面坐标。
 	for _, ref := range templates {
@@ -81,7 +88,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		if template == nil || template.Content == nil {
 			continue
 		}
-		collectLinks(template.Content.Layer, resolve, &links)
+		p.walkContentLayers(frame, template.Content.Layer, visit)
 	}
 	annotation, err := p.LoadAnnotation(page.ID)
 	if err != nil {
@@ -92,6 +99,31 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		return nil, nil
 	}
 	return links, nil
+}
+
+func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolve PageLinkResolver, links *[]drawing.PageLink) {
+	unit := linkGraphicUnit(item)
+	if unit == nil || unit.Actions == nil || !linkBoundaryUsable(unit.Boundary) {
+		return
+	}
+	link, ok := actionLink(*unit.Actions, resolve)
+	if !ok {
+		return
+	}
+	link.ObjectID, link.InComposite = uint64(pageItemID(item)), frame.inComposite
+	box := unit.Boundary
+	x0, x1 := math.Min(box.X, box.X+box.Width), math.Max(box.X, box.X+box.Width)
+	y0, y1 := math.Min(box.Y, box.Y+box.Height), math.Max(box.Y, box.Y+box.Height)
+	path := geom.Rectangle(x1-x0, y1-y0).Translate(x0, y0).Transform(frame.matrix)
+	if frame.clip != nil {
+		path = path.And(frame.clip)
+	}
+	if path.Empty() {
+		return
+	}
+	bounds := path.Bounds()
+	link.X, link.Y, link.Width, link.Height = bounds.X0, bounds.Y0, bounds.W(), bounds.H()
+	*links = append(*links, link)
 }
 
 // PageExternalLinks 只返回外部链接热区，供不处理内部跳转的调用方使用。
@@ -242,8 +274,8 @@ func optionalValue(value *float64) float64 {
 	return *value
 }
 
-// linkDestType 把 OFD 的 Dest@Type 映射为 drawing.DestType。未知类型按 Fit 处理：
-// 目标页一定能打开，只是位置退化为整页适配。
+// linkDestType 把 OFD 的 Dest@Type 映射为 drawing.DestType。
+// 未知类型返回 false，调用方丢弃无法解释的目标，避免生成语义不明的跳转。
 func linkDestType(kind models.DestType) (drawing.DestType, bool) {
 	switch kind {
 	case models.DestTypeFit:

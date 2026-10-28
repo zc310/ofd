@@ -11,9 +11,7 @@ import (
 // 这里做一次深度优先展平。目标解析优先级与 pkg/webreader 的阅读器侧一致：
 // 先取 Goto.Dest，其次按书签名在 Document.Bookmarks 中查找，最后才看 URI 动作。
 //
-// PDF 的每个大纲条目都必须有目标页，无法落到页面的条目会被丢弃——目录里列出标题
-// 却点了跳到别处，比没有这条目录更糟。被丢弃的条目不留下层级空洞：其子项上移到
-// 父项原有的层级上，树不会因为中间缺一层而散开。
+// 有有效页面目标或 URI 的条目均保留。无法解释的条目不留下层级空洞，子项上移。
 
 // Outlines 返回文档大纲的扁平条目序列，按文档顺序排列。
 //
@@ -54,9 +52,23 @@ func collectOutlines(elems []models.CTOutlineElem, resolve PageLinkResolver,
 				Target: &target,
 			})
 			childLevel = level + 1
+		} else if uri := outlineURI(*elem); uri != "" {
+			*outlines = append(*outlines, drawing.PageOutline{Title: elem.Title, Level: level, URI: uri})
+			childLevel = level + 1
 		}
 		collectOutlines(elem.OutlineElem, resolve, bookmarks, childLevel, outlines)
 	}
+}
+
+func outlineURI(elem models.CTOutlineElem) string {
+	if elem.Actions != nil {
+		for _, action := range elem.Actions.Actions {
+			if action.URI != nil && action.URI.URI != "" {
+				return action.URI.URI
+			}
+		}
+	}
+	return ""
 }
 
 // outlineTarget 解析大纲项的页面目标。
@@ -70,11 +82,15 @@ func outlineTarget(elem models.CTOutlineElem, resolve PageLinkResolver,
 			continue
 		}
 		if action.Goto.Dest != nil {
-			return linkTarget(*action.Goto.Dest, resolve)
+			if target, ok := linkTarget(*action.Goto.Dest, resolve); ok {
+				return target, true
+			}
 		}
 		if action.Goto.Bookmark != nil {
 			if dest, ok := bookmarks[action.Goto.Bookmark.Name]; ok {
-				return linkTarget(dest, resolve)
+				if target, ok := linkTarget(dest, resolve); ok {
+					return target, true
+				}
 			}
 		}
 	}

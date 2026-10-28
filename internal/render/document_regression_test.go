@@ -213,7 +213,7 @@ func TestCloseReleasesSealDocumentsOnce(t *testing.T) {
 	font := entry.doc.fonts.(*closeTrackingFont)
 	doc.Close()
 	doc.Close()
-	if font.closes.Load() != 1 || len(doc.sealDocs) != 0 || !entry.closed {
+	if font.closes.Load() != 1 || doc.sealDocs != nil || !entry.closed {
 		t.Fatal("seal resources not released once")
 	}
 	if len(entry.ofd.Documents) != 0 {
@@ -304,7 +304,7 @@ func TestSealCreationDuringCloseReleasesNewFont(t *testing.T) {
 	if err := <-result; err == nil {
 		t.Fatal("seal inserted after Close")
 	}
-	if font.closes.Load() != 1 || len(doc.sealDocs) != 0 {
+	if font.closes.Load() != 1 || doc.sealDocs != nil {
 		t.Fatal("seal created during Close retained resources")
 	}
 }

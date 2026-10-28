@@ -109,7 +109,10 @@ func TestOFDSealDocumentCached(t *testing.T) {
 		}
 	}
 	doc.sealMu.Lock()
-	n := len(doc.sealDocs)
+	n := 0
+	if doc.sealDocs != nil {
+		n = doc.sealDocs.Len()
+	}
 	doc.sealMu.Unlock()
 	if n == 0 {
 		t.Skip("该样例无 OFD 印章，缓存用例不适用")
