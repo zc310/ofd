@@ -2,6 +2,7 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"math"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // maxTilingPatternTiles 限制一次图案填充展开的图块数量，避免异常步长导致
@@ -119,8 +121,18 @@ func (p *pdfInterpreter) resolvePattern(resources types.Dict, name string) *pdfP
 
 // imagePlacement 是平铺图案单元中单个图像 XObject 的放置。
 type imagePlacement struct {
-	name string
-	ctm  [6]float64
+	name                 string
+	ctm                  [6]float64
+	fillColor            pdfColor
+	hasFillColor         bool
+	unsupportedFillColor bool
+}
+
+type patternGraphicsState struct {
+	ctm                  [6]float64
+	fillColor            pdfColor
+	hasFillColor         bool
+	unsupportedFillColor bool
 }
 
 // singlePatternImage 提取平铺图案内容中唯一的图像 XObject 及其放置矩阵。内容里
@@ -134,7 +146,10 @@ func singlePatternImage(content []byte, controls ...*conversionControl) (imagePl
 	var placement imagePlacement
 	found := false
 	ctm := identityPDFMatrix()
-	var stack [][6]float64
+	var fillColor pdfColor
+	hasFillColor := false
+	unsupportedFillColor := false
+	var stack []patternGraphicsState
 	operands := []any{}
 	for {
 		value, ok, err := tokens.next()
@@ -152,10 +167,15 @@ func singlePatternImage(content []byte, controls ...*conversionControl) (imagePl
 				tokens.control.limit("graphics_state_depth", int64(len(stack))+1, tokens.control.options.Limits.MaxDepth)
 				return imagePlacement{}, false
 			}
-			stack = append(stack, ctm)
+			stack = append(stack, patternGraphicsState{
+				ctm: ctm, fillColor: fillColor, hasFillColor: hasFillColor,
+				unsupportedFillColor: unsupportedFillColor,
+			})
 		case "Q":
 			if len(stack) > 0 {
-				ctm = stack[len(stack)-1]
+				state := stack[len(stack)-1]
+				ctm, fillColor = state.ctm, state.fillColor
+				hasFillColor, unsupportedFillColor = state.hasFillColor, state.unsupportedFillColor
 				stack = stack[:len(stack)-1]
 			}
 		case "cm":
@@ -171,8 +191,19 @@ func singlePatternImage(content []byte, controls ...*conversionControl) (imagePl
 			if len(operands) > 0 {
 				name = anyName(operands[len(operands)-1])
 			}
-			placement = imagePlacement{name: name, ctm: ctm}
+			placement = imagePlacement{
+				name: name, ctm: ctm, fillColor: fillColor, hasFillColor: hasFillColor,
+				unsupportedFillColor: unsupportedFillColor,
+			}
 			found = true
+		case "g", "rg", "k":
+			if color, ok := pdfPatternDeviceColor(operator, operands); ok {
+				fillColor, hasFillColor, unsupportedFillColor = color, true, false
+			} else {
+				unsupportedFillColor = true
+			}
+		case "cs", "sc", "scn":
+			unsupportedFillColor = true
 		case "re":
 			// 裁剪用的矩形：`<rect> re W n` 只定义裁剪区，不绘制内容。图案单元
 			// 常把图像包在这种裁剪里（Ghostscript 导出的建筑图纸即如此），必须放过，
@@ -188,6 +219,44 @@ func singlePatternImage(content []byte, controls ...*conversionControl) (imagePl
 		return imagePlacement{}, false
 	}
 	return placement, true
+}
+
+func pdfPatternDeviceColor(operator string, operands []any) (pdfColor, bool) {
+	components := 0
+	switch operator {
+	case "g":
+		components = 1
+	case "rg":
+		components = 3
+	case "k":
+		components = 4
+	default:
+		return pdfColor{}, false
+	}
+	if len(operands) < components {
+		return pdfColor{}, false
+	}
+	values := make([]float64, components)
+	for index := range values {
+		switch value := operands[index].(type) {
+		case float64:
+			values[index] = value
+		case types.Integer:
+			values[index] = float64(value)
+		case types.Float:
+			values[index] = float64(value)
+		default:
+			return pdfColor{}, false
+		}
+	}
+	switch components {
+	case 1:
+		return rgbColor(values[0], values[0], values[0]), true
+	case 3:
+		return rgbColor(values[0], values[1], values[2]), true
+	default:
+		return cmykColor(values[0], values[1], values[2], values[3]), true
+	}
 }
 
 // emitTilingFill 把平铺图案填充展开为若干图片对象，实现 PDF PatternType 1
@@ -221,7 +290,17 @@ func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands 
 	if err != nil || stream == nil || stream.NameEntry("Subtype") == nil || *stream.NameEntry("Subtype") != "Image" {
 		return false
 	}
-	data, format, err := p.imageData(stream, pdfColor{})
+	maskColor := p.state.fill
+	if pdfImageIsMask(p.ctx, stream) {
+		if placement.unsupportedFillColor {
+			p.report("pattern.image", "ImageMask 图案单元使用了当前不支持的颜色空间操作")
+			return false
+		}
+		if placement.hasFillColor {
+			maskColor = placement.fillColor
+		}
+	}
+	data, format, err := p.imageData(stream, maskColor)
 	if err != nil {
 		p.report("pattern.image", err.Error())
 		return false
@@ -305,8 +384,10 @@ func (p *pdfInterpreter) emitTilingFill(pattern *pdfTilingPattern, fillCommands 
 			if width <= 0 || height <= 0 {
 				continue
 			}
-			image := creator.Image{X: minXmm, Y: minYmm, Width: width, Height: height, Data: data, Format: format}
-			if clips := p.buildPathClip(fillCommands, minXmm, minYmm); clips != nil {
+			image := creator.Image{X: minXmm, Y: minYmm, Width: width, Height: height, Data: data, Format: format, Alpha: ofdAlpha(p.fillOpacity())}
+			clips := p.buildPathClip(fillCommands, minXmm, minYmm)
+			clips = mergePDFClips(clips, p.tilingBBoxClip(pattern, toPage, float64(ix)*xstep, float64(iy)*ystep, minXmm, minYmm))
+			if clips != nil {
 				image.Clips = clips
 			}
 			if !p.appendItem(image) {
@@ -406,6 +487,9 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 		for ox := 0; ox < outWidth; ox++ {
 			mmX := fillBounds[0] + (float64(ox)+0.5)*stepX
 			px, py := transformPDFPoint(mmX, mmY, inverse)
+			if !tilingBBoxContains(pattern, px, py, xstep, ystep) {
+				continue
+			}
 			// 图案单元内的局部坐标；超出单元图像范围（存在间隙）时保持透明。
 			lx := math.Mod(px-tileOriginX, xstep)
 			if lx < 0 {
@@ -432,8 +516,9 @@ func (p *pdfInterpreter) emitComposedTilingImage(pattern *pdfTilingPattern, plac
 	if err := media.EncodePNG(&encoded, rgba); err != nil {
 		return false
 	}
-	img := creator.Image{X: fillBounds[0], Y: fillBounds[1], Width: widthMM, Height: heightMM, Data: encoded.Bytes(), Format: "PNG"}
-	if clips := p.buildPathClip(fillCommands, fillBounds[0], fillBounds[1]); clips != nil {
+	img := creator.Image{X: fillBounds[0], Y: fillBounds[1], Width: widthMM, Height: heightMM, Data: encoded.Bytes(), Format: "PNG", Alpha: ofdAlpha(p.fillOpacity())}
+	clips := p.buildPathClip(fillCommands, fillBounds[0], fillBounds[1])
+	if clips != nil {
 		img.Clips = clips
 	}
 	p.appendItem(img)
@@ -448,6 +533,69 @@ func clampInt(value, low, high int) int {
 		return high
 	}
 	return value
+}
+
+// tilingBBoxClip 把平铺图案的 BBox 转为页面毫米坐标的矩形裁剪，避免图案单元
+// 中超出 BBox 的图像内容绘制到相邻单元或填充范围之外。
+func (p *pdfInterpreter) tilingBBoxClip(pattern *pdfTilingPattern, toPage [6]float64, tileOffsetX, tileOffsetY, objX, objY float64) *creator.Clips {
+	if pattern == nil || pattern.bbox[2] <= pattern.bbox[0] || pattern.bbox[3] <= pattern.bbox[1] {
+		return nil
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	var points [4][2]float64
+	for index, corner := range [][2]float64{
+		{pattern.bbox[0] + tileOffsetX, pattern.bbox[1] + tileOffsetY},
+		{pattern.bbox[2] + tileOffsetX, pattern.bbox[1] + tileOffsetY},
+		{pattern.bbox[0] + tileOffsetX, pattern.bbox[3] + tileOffsetY},
+		{pattern.bbox[2] + tileOffsetX, pattern.bbox[3] + tileOffsetY},
+	} {
+		x, y := transformPDFPoint(corner[0], corner[1], toPage)
+		points[index] = [2]float64{x, y}
+		minX, minY = math.Min(minX, x), math.Min(minY, y)
+		maxX, maxY = math.Max(maxX, x), math.Max(maxY, y)
+	}
+	width, height := maxX-minX, maxY-minY
+	if !(width > 0) || !(height > 0) || math.IsInf(width, 0) || math.IsInf(height, 0) {
+		return nil
+	}
+	local := [4][2]float64{}
+	for index, point := range points {
+		local[index] = [2]float64{point[0] - minX, point[1] - minY}
+	}
+	stroke := false
+	clipPath := &creator.ClipPath{
+		Boundary: creator.Box{X: minX - objX, Y: minY - objY, Width: width, Height: height},
+		Data: fmt.Sprintf("M %.4f %.4f L %.4f %.4f L %.4f %.4f L %.4f %.4f C",
+			local[0][0], local[0][1], local[1][0], local[1][1],
+			local[3][0], local[3][1], local[2][0], local[2][1]),
+		Fill:      true,
+		Stroke:    stroke,
+		StrokeSet: &stroke,
+		Rule:      spec.FillRuleNonZero,
+	}
+	return &creator.Clips{Items: []creator.Clip{{Areas: []creator.ClipArea{{Path: clipPath}}}}, TransFlag: &clipTransFlag}
+}
+
+func tilingBBoxContains(pattern *pdfTilingPattern, x, y, xstep, ystep float64) bool {
+	if pattern == nil || pattern.bbox[2] <= pattern.bbox[0] || pattern.bbox[3] <= pattern.bbox[1] || xstep <= 0 || ystep <= 0 {
+		return true
+	}
+	cellX := math.Floor(x/xstep) * xstep
+	cellY := math.Floor(y/ystep) * ystep
+	return x >= pattern.bbox[0]+cellX && x < pattern.bbox[2]+cellX &&
+		y >= pattern.bbox[1]+cellY && y < pattern.bbox[3]+cellY
+}
+
+func mergePDFClips(base, extra *creator.Clips) *creator.Clips {
+	if extra == nil {
+		return base
+	}
+	if base == nil {
+		return extra
+	}
+	base.Items = append(base.Items, extra.Items...)
+	return base
 }
 
 // buildPathClip 把一条设备坐标路径转换为单个 OFD 裁剪区域。

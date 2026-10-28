@@ -83,6 +83,20 @@ func (c *conversionControl) consumeOperations(count int64) error {
 	return nil
 }
 
+func (c *conversionControl) consumeOutputObject() error {
+	if c == nil {
+		return nil
+	}
+	if err := c.check(); err != nil {
+		return err
+	}
+	if c.output >= c.options.Limits.MaxOutputObjects {
+		return c.limit("output_objects", c.output+1, c.options.Limits.MaxOutputObjects)
+	}
+	c.output++
+	return nil
+}
+
 var parserObjectLimit = regexp.MustCompile(`(?:trailer Size|"Size"|object stream object count|object stream N|xref entry count) (\d+) exceeds limit (\d+)`)
 var parserXRefLimit = regexp.MustCompile(`xref (?:entry count|subsection object range) exceeds limit (\d+)`)
 var parserStreamLimit = regexp.MustCompile(`stream length (\d+) exceeds maximum supported length (\d+)`)
@@ -210,6 +224,9 @@ func (p *pdfInterpreter) appendItem(item creator.Item) bool {
 			item = value
 		case creator.Text:
 			item = p.invisibleTransparencyText(value)
+		case creator.Image:
+			value.Alpha = ofdAlpha(0)
+			item = value
 		}
 	}
 	if p.transparency != nil || p.state.softMask != nil || !isNormalBlendMode(p.state.blendMode) {
@@ -233,14 +250,9 @@ func (p *pdfInterpreter) appendRawItem(item creator.Item) bool {
 		}
 	}
 	if p.control != nil {
-		if p.control.check() != nil {
+		if p.control.consumeOutputObject() != nil {
 			return false
 		}
-		if p.control.output >= p.control.options.Limits.MaxOutputObjects {
-			p.control.limit("output_objects", p.control.output+1, p.control.options.Limits.MaxOutputObjects)
-			return false
-		}
-		p.control.output++
 	}
 	p.page.Items = append(p.page.Items, item)
 	return true

@@ -407,3 +407,66 @@ func (w *meshBitWriter) align() {
 		w.pos += 8 - remainder
 	}
 }
+
+func TestDecodeLatticeRejectsExcessiveVerticesPerRow(t *testing.T) {
+	huge := int(^uint(0) >> 1)
+	for _, perRow := range []int{maxLatticeVerticesPerRow + 1, huge} {
+		mesh := &pdfMeshData{
+			kind:              5,
+			verticesPerRow:    perRow,
+			bitsPerCoordinate: 8,
+			bitsPerComponent:  8,
+			data:              []byte{0, 0, 0, 0},
+		}
+		shading := &pdfShading{colorSpace: deviceRGBSpace}
+		if got := decodeLatticeMesh(mesh, &meshBitReader{data: mesh.data}, shading); got != nil {
+			t.Fatalf("perRow=%d: triangles=%d, want nil", perRow, len(got))
+		}
+		if points, gotPerRow, ok := decodeLatticePoints(mesh, &meshBitReader{data: mesh.data}, shading); ok || gotPerRow != 0 || points != nil {
+			t.Fatalf("perRow=%d: points=%d perRow=%d ok=%v, want rejection", perRow, len(points), gotPerRow, ok)
+		}
+	}
+}
+
+func TestConvertShMeshClipsFillToMeshBounds(t *testing.T) {
+	mesh := buildLatticeMeshStream(2, [][3]uint8{{200, 10, 10}, {10, 200, 10}, {10, 10, 200}, {200, 200, 10}})
+	dict := "/ShadingType 5 /ColorSpace /DeviceRGB /BitsPerCoordinate 32 /BitsPerComponent 8" +
+		" /VerticesPerRow 2 /Decode [0 100 0 100 0 1 0 1 0 1] /Length " + itoa(len(mesh))
+	shading := "<< " + dict + " >>\nstream\n" + string(mesh) + "\nendstream"
+	content := []byte("q /Sh0 sh Q")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Shading << /Sh0 5 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		shading,
+	}
+	pdf := assemblePDF(objects)
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	var boundary models.StBox
+	for index := range layerPaths(page.Content().Layer[0]) {
+		color := layerPaths(page.Content().Layer[0])[index].FillColor
+		if color != nil && (color.LaGouraudShd != nil || color.LaGourandShd != nil) {
+			boundary = layerPaths(page.Content().Layer[0])[index].Boundary
+			break
+		}
+	}
+	if boundary.Width < 30 || boundary.Width > 40 {
+		t.Fatalf("sh mesh boundary width=%g, want ~35.28mm, not the 200pt page", boundary.Width)
+	}
+	if boundary.Height < 30 || boundary.Height > 40 {
+		t.Fatalf("sh mesh boundary height=%g, want ~35.28mm", boundary.Height)
+	}
+}

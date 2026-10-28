@@ -2,6 +2,7 @@ package pdf2ofd
 
 import (
 	"bytes"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
@@ -178,7 +180,10 @@ func TestTencentPage2WidgetNavigationIsClickable(t *testing.T) {
 		t.Fatal(err)
 	}
 	geometries := pdfPageGeometries(t.Context(), ctx)
-	links := convertPageLinks(t.Context(), ctx, pageDict, info, geometries, new(uint64))
+	links, err := convertPageLinks(t.Context(), ctx, pageDict, info, geometries, new(uint64))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(links) < 12 {
 		t.Fatalf("page 2 clickable links = %d, want navigation widgets to be preserved", len(links))
 	}
@@ -302,5 +307,55 @@ func TestConvertPageLinksNormalizesReversedRect(t *testing.T) {
 	boundary := links[0].Appearance.Boundary
 	if boundary == nil || boundary.Width <= 0 || boundary.Height <= 0 {
 		t.Fatalf("颠倒的 /Rect 应归一化为正宽高: %+v", boundary)
+	}
+}
+
+func TestConvertPageLinksHonorsOperationBudget(t *testing.T) {
+	annotation := func(uri string) types.Dict {
+		return types.Dict{
+			"Subtype": types.Name("Link"),
+			"Rect":    types.Array{types.Float(20), types.Float(70), types.Float(120), types.Float(85)},
+			"A":       types.Dict{"S": types.Name("URI"), "URI": types.StringLiteral(uri)},
+		}
+	}
+	pageDict := types.Dict{"Annots": types.Array{
+		annotation("https://example.com/a"),
+		annotation("https://example.com/b"),
+		annotation("https://example.com/c"),
+	}}
+	info := pdfPageInfo{maxX: 200, maxY: 100, userUnit: 1}
+	control := &conversionControl{ctx: t.Context(), options: Options{Limits: Limits{MaxOperations: 2, MaxOutputObjects: 10}}}
+	_, err := convertPageLinks(t.Context(), testPDFContext(t), pageDict, info, nil, new(uint64), control)
+	var limitErr *LimitError
+	if !errors.As(err, &limitErr) || limitErr.Resource != "operations" {
+		t.Fatalf("err=%v, want operations LimitError", err)
+	}
+}
+
+func TestConvertPageLinksHonorsOutputObjectBudget(t *testing.T) {
+	annotation := func(uri string) types.Dict {
+		return types.Dict{
+			"Subtype": types.Name("Link"),
+			"Rect":    types.Array{types.Float(20), types.Float(70), types.Float(120), types.Float(85)},
+			"A":       types.Dict{"S": types.Name("URI"), "URI": types.StringLiteral(uri)},
+		}
+	}
+	pageDict := types.Dict{"Annots": types.Array{
+		annotation("https://example.com/a"),
+		annotation("https://example.com/b"),
+	}}
+	info := pdfPageInfo{maxX: 200, maxY: 100, userUnit: 1}
+	options, err := (Options{Limits: Limits{MaxOperations: 10, MaxOutputObjects: 1}}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &conversionControl{ctx: t.Context(), options: options}
+	links, err := convertPageLinks(t.Context(), testPDFContext(t), pageDict, info, nil, new(uint64), control)
+	var limitErr *LimitError
+	if !errors.As(err, &limitErr) || limitErr.Resource != "output_objects" {
+		t.Fatalf("err=%v, want output_objects LimitError", err)
+	}
+	if len(links) != 1 {
+		t.Fatalf("links=%d, want one link before the budget error", len(links))
 	}
 }

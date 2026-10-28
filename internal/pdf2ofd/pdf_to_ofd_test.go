@@ -1496,6 +1496,24 @@ func TestConvertWritesConverterMetadata(t *testing.T) {
 	}
 }
 
+func TestPDFSourceProducerFallsBackToCreator(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		producer, creator string
+		want              string
+	}{
+		{"producer", "Acme Producer", "Acme Creator", "Acme Producer"},
+		{"creator fallback", "  ", "Acme Creator", "Acme Creator"},
+		{"both empty", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pdfSourceProducer(&model.Context{XRefTable: &model.XRefTable{Producer: tc.producer, Creator: tc.creator}}); got != tc.want {
+				t.Fatalf("producer=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestConvertPreservesSourceProducer 验证源 PDF 的生产者保留在自定义元数据中，
 // 不会被转换工具标识覆盖而丢失。
 func TestConvertPreservesSourceProducer(t *testing.T) {
@@ -1670,7 +1688,8 @@ func TestEncodePDFIndexedImageSupportsCMYKPalette(t *testing.T) {
 	// Indexed 的基础颜色空间可以是 DeviceCMYK（4 分量）。调色板索引 0 为白
 	// （油墨 0,0,0,0），索引 1 为黑（0,0,0,255）；1bpp 两像素数据 0b01。
 	palette := []byte{0, 0, 0, 0, 0, 0, 0, 255}
-	encoded, format, err := encodePDFIndexedImage([]byte{0x40}, 2, 1, 1, 4, palette, cmykConverter{})
+	stream := &types.StreamDict{Content: []byte{0x40}}
+	encoded, format, err := encodePDFIndexedImage(nil, stream, 2, 1, 1, 4, palette, cmykConverter{})
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -1821,5 +1840,78 @@ func TestPrepareCIDUnicodeKeepsToUnicode(t *testing.T) {
 	prepareCIDUnicode(&noSFNT)
 	if noSFNT.cidFromCmap {
 		t.Error("cmap 未解析时不应开启反查")
+	}
+}
+
+func TestPDFPageBoxesAreDereferencedAndIntersected(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		pageAttrs string
+		box       string
+		wantW     float64
+		wantH     float64
+	}{
+		{"direct_crop_clipped_to_media", "/MediaBox [0 0 200 100] /CropBox [50 20 250 120]", "[0 0 1 1]", 150 * 25.4 / 72, 80 * 25.4 / 72},
+		{"indirect_crop", "/MediaBox [0 0 200 100] /CropBox 5 0 R", "[50 20 250 120]", 150 * 25.4 / 72, 80 * 25.4 / 72},
+		{"indirect_media", "/MediaBox 5 0 R", "[0 0 200 100]", 200 * 25.4 / 72, 100 * 25.4 / 72},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "q Q"
+			page := parseConvertedPage(t, []string{
+				"<< /Type /Catalog /Pages 2 0 R >>",
+				"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+				"<< /Type /Page /Parent 2 0 R " + tc.pageAttrs + " /Resources << >> /Contents 4 0 R >>",
+				"<< /Length " + itoa(len(content)) + " >>\nstream\n" + content + "\nendstream",
+				tc.box,
+			})
+			box, err := page.PhysicalBox()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.Abs(box.Width-tc.wantW) > 0.01 || math.Abs(box.Height-tc.wantH) > 0.01 {
+				t.Fatalf("physical box=%gx%g, want %gx%g", box.Width, box.Height, tc.wantW, tc.wantH)
+			}
+		})
+	}
+}
+
+func TestEncodePDFIndexedImageHonorsDecodeAndPaletteBounds(t *testing.T) {
+	palette := []byte{
+		255, 0, 0,
+		0, 255, 0,
+		0, 0, 255,
+		255, 255, 255,
+	}
+	tests := []struct {
+		name   string
+		decode types.Object
+		want   [][3]uint8
+	}{
+		{"default", nil, [][3]uint8{{255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 255, 255}}},
+		{"inverted", types.Array{types.Integer(3), types.Integer(0)}, [][3]uint8{{255, 255, 255}, {0, 0, 255}, {0, 255, 0}, {255, 0, 0}}},
+		{"clamped", types.Array{types.Integer(10), types.Integer(10)}, [][3]uint8{{255, 255, 255}, {255, 255, 255}, {255, 255, 255}, {255, 255, 255}}},
+		{"clamped negative", types.Array{types.Integer(-2), types.Integer(-2)}, [][3]uint8{{255, 0, 0}, {255, 0, 0}, {255, 0, 0}, {255, 0, 0}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stream := &types.StreamDict{Dict: types.Dict{}, Content: []byte{0x1b}}
+			if test.decode != nil {
+				stream.Dict["Decode"] = test.decode
+			}
+			encoded, _, err := encodePDFIndexedImage(nil, stream, 4, 1, 2, 3, palette, cmykConverter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			img, err := png.Decode(bytes.NewReader(encoded))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for index, want := range test.want {
+				r, g, b, _ := img.At(index, 0).RGBA()
+				if r>>8 != uint32(want[0]) || g>>8 != uint32(want[1]) || b>>8 != uint32(want[2]) {
+					t.Fatalf("pixel %d=(%d,%d,%d) want %v", index, r>>8, g>>8, b>>8, want)
+				}
+			}
+		})
 	}
 }

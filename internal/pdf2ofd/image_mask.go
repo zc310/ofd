@@ -254,8 +254,8 @@ func (p *pdfInterpreter) applyImageExplicitMask(data []byte, mask *types.StreamD
 	if err != nil {
 		return nil, err
 	}
-	// JBIG2/JPX 样本解码器尚未应用 Decode；裸采样路径已经应用过反相。
-	invert := (hasJBIG2Filter(mask) || hasJPXFilter(mask) || hasDCTFilter(mask)) && decode[0] > decode[1]
+	// JPX 样本解码器尚未应用 Decode；DCT/JBIG2 与裸采样路径已经应用。
+	invert := hasJPXFilter(mask) && decode[0] > decode[1]
 	return p.encodeImageWithMask(data, width, height, 1, func(x, y int) bool {
 		ink := samples[y*width+x] < 128
 		return ink != invert

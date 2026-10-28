@@ -267,3 +267,46 @@ func TestCoreFontNameStripsSubsetPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenizePDFCMapStopsAtTokenLimit(t *testing.T) {
+	tokens, complete := tokenizePDFCMapLimit("1 2 3 4 5", 3)
+	if complete || len(tokens) != 3 {
+		t.Fatalf("tokens=%v complete=%v, want three tokens and incomplete", tokens, complete)
+	}
+	tokens, complete = tokenizePDFCMapLimit("1 2 3 4 5", 5)
+	if !complete || len(tokens) != 5 {
+		t.Fatalf("tokens=%v complete=%v, want all five tokens", tokens, complete)
+	}
+}
+
+func TestPDFHexHelpersIgnoreWhitespaceAndPadOddNibbles(t *testing.T) {
+	if got, ok := pdfHexUint("<00 41>"); !ok || got != 0x41 {
+		t.Fatalf("pdfHexUint whitespace = %#x ok=%v", got, ok)
+	}
+	if got, ok := pdfHexUint("<1>"); !ok || got != 0x10 {
+		t.Fatalf("pdfHexUint odd = %#x ok=%v", got, ok)
+	}
+	if got, ok := pdfHexString("<00 41>"); !ok || got != "A" {
+		t.Fatalf("pdfHexString whitespace = %q ok=%v", got, ok)
+	}
+	if got, ok := pdfHexString("<4>"); !ok || got != "@" {
+		t.Fatalf("pdfHexString odd = %q ok=%v", got, ok)
+	}
+	if got, length, ok := pdfEncodingHex("<0 041>"); !ok || got != 0x41 || length != 2 {
+		t.Fatalf("pdfEncodingHex whitespace = %#x length=%d ok=%v", got, length, ok)
+	}
+	if got, length, ok := pdfEncodingHex("<1>"); !ok || got != 0x10 || length != 1 {
+		t.Fatalf("pdfEncodingHex odd = %#x length=%d ok=%v", got, length, ok)
+	}
+}
+
+func TestTextMergeRunTracksLeftmostOrigin(t *testing.T) {
+	first := creator.Text{X: 10, Y: 20, Width: 2, Height: 10, Size: 8, Font: "F", Value: "a"}
+	run := newTextMergeRun(first, textGlyphUnit{value: "a", codeLen: 1})
+	second := creator.Text{X: 1, Y: 20, Width: 1, Height: 10, Size: 8, Font: "F", Value: "b"}
+	run.append(second, textGlyphUnit{value: "b", codeLen: 1})
+	merged := run.build()
+	if merged.X != 1 || merged.Width != 11 {
+		t.Fatalf("merged X=%g width=%g, want X=1 width=11", merged.X, merged.Width)
+	}
+}

@@ -368,3 +368,118 @@ func TestPDFConversionFailurePreservesExistingFile(t *testing.T) {
 		t.Fatalf("error=%v read=%v data=%q entries=%d dir=%v", err, readErr, data, len(entries), dirErr)
 	}
 }
+
+func TestConvertFilePreservesExistingOutputPermissions(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.pdf")
+	if err := os.WriteFile(input, testutil.MinimalPDF([]byte("0 0 1 1 re f"), 200, 200), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		exists bool
+		mode   os.FileMode
+		want   os.FileMode
+	}{
+		{"existing", true, 0640, 0640},
+		{"new", false, 0, 0600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output := filepath.Join(dir, tc.name+".ofd")
+			if tc.exists {
+				if err := os.WriteFile(output, []byte("old"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(output, tc.mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := ConvertFileWithOptions(t.Context(), input, output, "", Options{}); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tc.want {
+				t.Fatalf("mode=%o, want %o", got, tc.want)
+			}
+		})
+	}
+}
+
+type nilPDFReader struct{}
+
+func (*nilPDFReader) Read([]byte) (int, error) { return 0, nil }
+
+func TestReadPDFInputRejectsTypedNilReader(t *testing.T) {
+	var reader *nilPDFReader
+	if _, err := readPDFInputLimited(t.Context(), reader, 1<<20); err == nil {
+		t.Fatal("typed nil reader accepted")
+	}
+	var value any = reader
+	if _, err := readPDFInputLimited(t.Context(), value, 1<<20); err == nil {
+		t.Fatal("typed nil reader in interface accepted")
+	}
+}
+
+func TestRepairPDFXRefRejectsObjectNumberThatOverflowsXRefSize(t *testing.T) {
+	data := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n461168601842738790 0 obj\n<< >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n")
+	limits := Limits{MaxInputBytes: 1 << 20, MaxObjects: 500_000_000_000_000_000}
+	_, err := repairPDFXRefWithLimits(data, limits)
+	var limitErr *LimitError
+	if !errors.As(err, &limitErr) || limitErr.Resource != "repaired_input_bytes" {
+		t.Fatalf("err=%v, want repaired_input_bytes LimitError", err)
+	}
+}
+
+func TestPDFRepairSkipsObjectWithOutOfRangeGeneration(t *testing.T) {
+	data := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 65536 obj\n<< /Type /Page >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n")
+	opts, _ := (Options{}).Normalize()
+	repaired, err := repairPDFXRefWithLimits(data, opts.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(repaired, []byte("65536 n")) || bytes.Contains(repaired, []byte("/Size 3")) {
+		t.Fatalf("invalid generation leaked into repaired xref:\n%s", repaired)
+	}
+}
+
+func TestPDFRepairRejectsOutOfRangeRootGeneration(t *testing.T) {
+	data := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 65536 R >>\n")
+	opts, _ := (Options{}).Normalize()
+	if _, err := repairPDFXRefWithLimits(data, opts.Limits); err == nil {
+		t.Fatal("out-of-range root generation accepted")
+	}
+}
+
+func TestPDFObjectStreamSkipsNegativeObjectNumbers(t *testing.T) {
+	header := "-1 0 2 10 "
+	decoded := header + "<< /A 1 >>" + "<< /B 2 >>"
+	var compressed bytes.Buffer
+	writer := zlib.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(decoded)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(fmt.Sprintf("1 0 obj\n<< /Type /ObjStm /N 2 /First %d /Filter /FlateDecode >>\nstream\n%s\nendstream\nendobj", len(header), compressed.Bytes()))
+	opts, _ := (Options{}).Normalize()
+	objects, ok, err := extractPDFObjectStreamLimited(pdfIndirectObject{number: 1, data: data}, opts.Limits)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if len(objects) != 1 || objects[0].number != 2 {
+		t.Fatalf("objects=%+v", objects)
+	}
+}
+
+func TestPageAnnotationLimitReturnsLimitError(t *testing.T) {
+	annotations := make(types.Array, maxPageAnnotations+1)
+	_, err := pageAnnotationDicts(testPDFContext(t), types.Dict{"Annots": annotations})
+	var limitErr *LimitError
+	if !errors.As(err, &limitErr) || limitErr.Resource != "page_annotations" {
+		t.Fatalf("err=%v, want page_annotations LimitError", err)
+	}
+}

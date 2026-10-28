@@ -150,6 +150,9 @@ func (r *textMergeRun) append(text creator.Text, unit textGlyphUnit) {
 	r.items = append(r.items, text)
 	r.units = append(r.units, unit)
 	r.endX = text.X + text.Width
+	if text.X < r.minX {
+		r.minX = text.X
+	}
 	if end := text.X + text.Width; end > r.maxEndX {
 		r.maxEndX = end
 	}

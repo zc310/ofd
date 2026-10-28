@@ -2,6 +2,7 @@ package pdf2ofd
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -148,22 +149,20 @@ func (p *pdfInterpreter) parseICCBasedSpace(array types.Array) *pdfColorSpace {
 	if err != nil {
 		return nil
 	}
-	components := 3
+	components, err := pdfICCProfileComponents(p.ctx, profile)
+	if err != nil {
+		p.report("color.icc", err.Error())
+		return nil
+	}
 	var profileData []byte
 	switch value := profile.(type) {
 	case types.StreamDict:
-		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
-			components = int(n)
-		}
 		if err := p.decodeStream(&value, 0); err == nil {
 			profileData = value.Content
 		} else {
 			p.report("color.icc", err.Error())
 		}
 	case *types.StreamDict:
-		if n, ok := dereferencedPDFNumber(p.ctx, value.Dict["N"]); ok {
-			components = int(n)
-		}
 		if err := p.decodeStream(value, 0); err == nil {
 			profileData = value.Content
 		} else {
@@ -187,6 +186,39 @@ func (p *pdfInterpreter) parseICCBasedSpace(array types.Array) *pdfColorSpace {
 		}
 	}
 	return space
+}
+
+// pdfICCProfileComponents 读取 ICCBased 配置流的分量数。配置文件通常以
+// StreamDict 或 *StreamDict 形式解引用，不能只接受 types.Dict。
+func pdfICCProfileComponents(ctx *model.Context, object types.Object) (int, error) {
+	var dict types.Dict
+	switch value := object.(type) {
+	case types.StreamDict:
+		dict = value.Dict
+	case *types.StreamDict:
+		if value == nil {
+			return 0, fmt.Errorf("ICCBased 配置文件为空")
+		}
+		dict = value.Dict
+	case types.Dict:
+		dict = value
+	default:
+		return 0, fmt.Errorf("ICCBased 配置文件不是字典或流")
+	}
+	nObject, found := dict.Find("N")
+	if !found || nObject == nil {
+		return 3, nil
+	}
+	n, ok := dereferencedPDFNumber(ctx, nObject)
+	if !ok {
+		return 0, fmt.Errorf("ICCBased 分量数无效")
+	}
+	switch n {
+	case 1, 3, 4:
+		return int(n), nil
+	default:
+		return 0, fmt.Errorf("ICCBased 分量数无效: %g", n)
+	}
 }
 
 func (p *pdfInterpreter) parseIndexedSpace(array types.Array, depth int) *pdfColorSpace {
@@ -523,11 +555,15 @@ func (f *pdfFunction) evalStitching(inputs []float64) ([]float64, bool) {
 	if index >= len(f.funcs) {
 		return nil, false
 	}
-	low := 0.0
+	// 首段/末段未由 Bounds 限定时，用 Domain 的边界作为归一化区间；
+	// 固定按 [0,1] 会把 Domain [10,20] 之类的函数映射到错误子区间。
+	low, high := 0.0, 1.0
+	if len(f.domain) >= 2 {
+		low, high = f.domain[0], f.domain[1]
+	}
 	if index > 0 {
 		low = f.bounds[index-1]
 	}
-	high := 1.0
 	if index < len(f.bounds) {
 		high = f.bounds[index]
 	}

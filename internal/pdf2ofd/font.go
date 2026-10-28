@@ -24,26 +24,24 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 		p.report("font.resource", fmt.Sprintf("无法读取字体资源: %v", err))
 		return
 	}
-	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type0" {
+	if subtype, ok := dereferenceName(p.ctx, dict["Subtype"]); ok && subtype == "Type0" {
 		font.codeBytes = 2
 	}
-	if encoding, found := dict.Find("Encoding"); found {
-		if name, ok := encoding.(types.Name); ok {
-			font.encoding = name.Value()
-		}
+	if encoding, ok := dereferenceName(p.ctx, dict["Encoding"]); ok {
+		font.encoding = encoding
 	}
 	font.vertical = strings.HasSuffix(font.encoding, "-V")
 	p.loadFontWritingMode(font, dict)
-	if baseFont := dict.NameEntry("BaseFont"); baseFont != nil {
-		font.familyName = decodePDFName(strings.TrimPrefix(*baseFont, "/"))
+	if baseFont, ok := dereferenceName(p.ctx, dict["BaseFont"]); ok {
+		font.familyName = decodePDFName(strings.TrimPrefix(baseFont, "/"))
 	}
 	firstCharObject, found := dict.Find("FirstChar")
-	if value, ok := numberValue(firstCharObject); found && ok {
+	if value, ok := p.dereferencedNumber(firstCharObject); found && ok {
 		widthsObject, found := dict.Find("Widths")
 		if found {
 			if widths, err := p.ctx.XRefTable.DereferenceArray(widthsObject); err == nil {
 				for i, object := range widths {
-					if width, ok := numberValue(object); ok {
+					if width, ok := p.dereferencedNumber(object); ok {
 						font.widths[int(value)+i] = width
 					}
 				}
@@ -67,7 +65,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 	}
 	if descriptor, err := p.ctx.XRefTable.DereferenceDict(descriptorObject); found && err == nil && descriptor != nil {
 		missingWidthObject, found := descriptor.Find("MissingWidth")
-		if value, ok := numberValue(missingWidthObject); found && ok {
+		if value, ok := p.dereferencedNumber(missingWidthObject); found && ok {
 			font.defaultW = value
 		}
 		p.loadFontVerticalMetrics(font, descriptor)
@@ -122,7 +120,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 			if descendant, descendantErr := p.ctx.XRefTable.DereferenceDict(descendants[0]); descendantErr == nil && descendant != nil {
 				font.defaultW = 1000
 				defaultWidthObject, found := descendant.Find("DW")
-				if value, ok := numberValue(defaultWidthObject); found && ok {
+				if value, ok := p.dereferencedNumber(defaultWidthObject); found && ok {
 					font.defaultW = value
 				}
 				if object, found := descendant.Find("W"); found {
@@ -156,7 +154,7 @@ func (p *pdfInterpreter) loadFont(font *pdfFontInfo, object types.Object) {
 			font.maxUnicodeBytes = int64(len(value))
 		}
 	}
-	if subtype := dict.NameEntry("Subtype"); subtype != nil && *subtype == "Type3" {
+	if subtype, ok := dereferenceName(p.ctx, dict["Subtype"]); ok && subtype == "Type3" {
 		p.loadType3Font(font, dict)
 	}
 	if font.vertical && font.type3 == nil && len(font.data) == 0 {
@@ -239,13 +237,35 @@ func isPrivateUseRune(r rune) bool {
 func (p *pdfInterpreter) applySimpleEncoding(font *pdfFontInfo, dict types.Dict) map[uint32]string {
 	encodingObject, found := dict.Find("Encoding")
 	if !found {
-		return nil
+		switch coreFontName(font.familyName) {
+		case "Symbol":
+			font.encoding = "SymbolEncoding"
+		case "ZapfDingbats":
+			font.encoding = "ZapfDingbatsEncoding"
+		default:
+			return nil
+		}
+		mapping := map[uint32]string{}
+		fillPDFBaseEncoding(font.encoding, mapping)
+		if font.toUnicode == nil {
+			font.toUnicode = map[uint32]string{}
+		}
+		for code, value := range mapping {
+			if _, exists := font.toUnicode[code]; !exists {
+				font.toUnicode[code] = value
+			}
+		}
+		return mapping
 	}
 	mapping := map[uint32]string{}
 	switch value := encodingObject.(type) {
 	case types.Name:
 		fillPDFBaseEncoding(value.Value(), mapping)
 	default:
+		if name, ok := dereferenceName(p.ctx, encodingObject); ok {
+			fillPDFBaseEncoding(name, mapping)
+			break
+		}
 		encodingDict, err := p.ctx.XRefTable.DereferenceDict(encodingObject)
 		if err != nil || encodingDict == nil {
 			return nil
@@ -402,7 +422,7 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 	if !found {
 		return
 	}
-	if name, ok := object.(types.Name); ok && name.Value() == "Identity" {
+	if name, ok := dereferenceName(p.ctx, object); ok && name == "Identity" {
 		return
 	}
 	stream, _, err := p.ctx.XRefTable.DereferenceStreamDict(object)
@@ -413,10 +433,21 @@ func (p *pdfInterpreter) loadCIDToGID(font *pdfFontInfo, descendant types.Dict) 
 		p.report("font.glyphmap", err.Error())
 		return
 	}
-	font.cidToGID = make(map[uint16]uint16, len(stream.Content)/2)
-	for index := 0; index+1 < len(stream.Content); index += 2 {
-		font.cidToGID[uint16(index/2)] = uint16(stream.Content[index])<<8 | uint16(stream.Content[index+1])
+	font.cidToGID = pdfCIDToGIDMap(stream.Content)
+}
+
+const maxCIDToGIDEntries = 1 << 16
+
+func pdfCIDToGIDMap(data []byte) map[uint16]uint16 {
+	entries := len(data) / 2
+	if entries > maxCIDToGIDEntries {
+		entries = maxCIDToGIDEntries
 	}
+	mapping := make(map[uint16]uint16, entries)
+	for index := 0; index < entries*2; index += 2 {
+		mapping[uint16(index/2)] = uint16(data[index])<<8 | uint16(data[index+1])
+	}
+	return mapping
 }
 
 func (p *pdfInterpreter) pdfFontCodeToGID(font pdfFontInfo, dict types.Dict) map[uint32]uint16 {

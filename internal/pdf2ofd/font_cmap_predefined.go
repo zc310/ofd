@@ -91,7 +91,10 @@ func loadPDFPredefinedCMapDepth(name string, depth int) (*pdfPredefinedCMap, err
 	if match := pdfCMapOrdering.FindSubmatch(data); len(match) == 2 {
 		cmap.collection = "Adobe-" + string(match[1])
 	}
-	tokens := tokenizePDFCMap(string(data))
+	tokens, complete := tokenizePDFCMapLimit(string(data), maxCMapTokens)
+	if !complete {
+		return nil, fmt.Errorf("预定义 CMap token 数量超过上限: %s", name)
+	}
 	mode := ""
 	for i := 0; i < len(tokens); i++ {
 		switch tokens[i] {

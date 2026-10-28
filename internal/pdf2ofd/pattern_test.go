@@ -504,3 +504,173 @@ func TestConvertSoftMaskKeepsBaseColorAtLowAlpha(t *testing.T) {
 		t.Fatalf("low-alpha pixel color = (%d,%d,%d), want (40,80,120)", r, g, b)
 	}
 }
+
+func TestPDFImageMaskSamplesAppliesDCTDecode(t *testing.T) {
+	stream := jpegMaskStream(jpegGrayMask(t))
+	stream.Dict["Decode"] = types.Array{types.Integer(1), types.Integer(0)}
+	samples, err := pdfImageMaskSamples(nil, stream, 16, 16, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left, right int
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			if x < 8 {
+				left += int(samples[y*16+x])
+			} else {
+				right += int(samples[y*16+x])
+			}
+		}
+	}
+	if left/128 > 32 || right/128 < 223 {
+		t.Fatalf("DCT Decode inversion left=%d right=%d", left/128, right/128)
+	}
+}
+
+func TestConvertTilingPatternClipsImageToBBox(t *testing.T) {
+	patternContent := "q 100 0 0 100 0 0 cm /Im1 Do Q"
+	content := []byte("/Pattern cs /P1 scn 0 10 90 80 re f")
+	red := bytes.Repeat([]byte{255, 0, 0}, 64*64)
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Pattern << /P1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 64 /Height 64 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length " + itoa(len(red)) + " >>\nstream\n" + string(red) + "\nendstream",
+		"<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 50 100] /XStep 100 /YStep 100 /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 5 0 R >> >> /Length " + itoa(len(patternContent)) + " >>\nstream\n" + patternContent + "\nendstream",
+	}
+	pdf := assemblePDF(objects)
+	var output bytes.Buffer
+	if err := Convert(t.Context(), pdf, &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	img := textFidelityRaster(t, ofd, page)
+	// 100pt 页面在 144dpi 下为 200px；BBox 只覆盖左半页。
+	if left := img.RGBAAt(50, 100); left.R < 200 || left.G > 60 || left.B > 60 {
+		t.Fatalf("inside BBox pixel=%v, want red", left)
+	}
+	if right := img.RGBAAt(150, 100); right.R < 240 || right.G < 240 || right.B < 240 {
+		t.Fatalf("outside BBox pixel=%v, want white background", right)
+	}
+}
+
+func TestConvertTilingPatternClipsEveryTileToBBox(t *testing.T) {
+	patternContent := "q 100 0 0 100 0 0 cm /Im1 Do Q"
+	content := []byte("/Pattern cs /P1 scn 0 10 190 80 re f")
+	red := bytes.Repeat([]byte{255, 0, 0}, 64*64)
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /Pattern << /P1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 64 /Height 64 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length " + itoa(len(red)) + " >>\nstream\n" + string(red) + "\nendstream",
+		"<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 50 100] /XStep 100 /YStep 100 /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 5 0 R >> >> /Length " + itoa(len(patternContent)) + " >>\nstream\n" + patternContent + "\nendstream",
+	}
+	var output bytes.Buffer
+	if err := Convert(t.Context(), assemblePDF(objects), &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	img := textFidelityRaster(t, ofd, ofd.Documents[0].Pages[0])
+	for _, tc := range []struct {
+		x   int
+		red bool
+	}{
+		{x: 50, red: true},   // first tile, inside BBox
+		{x: 150, red: false}, // first tile, outside BBox
+		{x: 250, red: true},  // second tile, inside its translated BBox
+		{x: 350, red: false}, // second tile, outside its translated BBox
+	} {
+		pixel := img.RGBAAt(tc.x, 100)
+		gotRed := pixel.R > 200 && pixel.G < 60 && pixel.B < 60
+		if gotRed != tc.red {
+			t.Fatalf("pixel at (%d,100)=%v red=%v, want red=%v", tc.x, pixel, gotRed, tc.red)
+		}
+	}
+}
+
+func TestTilingBBoxContainsUsesTranslatedCellBounds(t *testing.T) {
+	pattern := &pdfTilingPattern{bbox: [4]float64{0, 0, 50, 100}}
+	for _, tc := range []struct {
+		x    float64
+		want bool
+	}{
+		{25, true}, {75, false}, {125, true}, {175, false}, {-75, true}, {-25, false},
+	} {
+		if got := tilingBBoxContains(pattern, tc.x, 50, 100, 100); got != tc.want {
+			t.Errorf("x=%g inside=%v, want %v", tc.x, got, tc.want)
+		}
+	}
+}
+
+func TestTilingImageMaskUsesPatternFillColor(t *testing.T) {
+	patternContent := "1 0 0 rg q 100 0 0 100 0 0 cm /Im1 Do Q"
+	content := []byte("/Pattern cs /P1 scn 0 0 100 100 re f")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Pattern << /P1 6 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1 /Length 1 >>\nstream\n\x00\nendstream",
+		"<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 100 100] /XStep 100 /YStep 100 /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 5 0 R >> >> /Length " + itoa(len(patternContent)) + " >>\nstream\n" + patternContent + "\nendstream",
+	}
+	var output bytes.Buffer
+	if err := Convert(t.Context(), assemblePDF(objects), &output, ""); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	img := textFidelityRaster(t, ofd, ofd.Documents[0].Pages[0])
+	pixel := img.RGBAAt(img.Bounds().Dx()/2, img.Bounds().Dy()/2)
+	if pixel.R < 200 || pixel.G > 60 || pixel.B > 60 {
+		t.Fatalf("ImageMask tile pixel=%v, want red", pixel)
+	}
+}
+
+func TestConvertTilingPatternCarriesFillOpacity(t *testing.T) {
+	patternContent := "q 100 0 0 100 0 0 cm /Im1 Do Q"
+	content := []byte("q /GS1 gs /Pattern cs /P1 scn 0 10 90 80 re f Q")
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Pattern << /P1 6 0 R >> /ExtGState << /GS1 7 0 R >> >> /Contents 4 0 R >>",
+		"<< /Length " + itoa(len(content)) + " >>\nstream\n" + string(content) + "\nendstream",
+		"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 3 >>\nstream\n\xff\x00\x00\nendstream",
+		"<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 100 100] /XStep 100 /YStep 100 /Matrix [1 0 0 1 0 0] /Resources << /XObject << /Im1 5 0 R >> >> /Length " + itoa(len(patternContent)) + " >>\nstream\n" + patternContent + "\nendstream",
+		"<< /ca .5 >>",
+	}
+	pdf := assemblePDF(objects)
+	var output bytes.Buffer
+	if err := ConvertWithOptions(t.Context(), pdf, &output, "", Options{Strict: true}); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(output.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	images := layerImages(page.Content().Layer[0])
+	if len(images) != 1 || images[0].Alpha == nil {
+		t.Fatalf("pattern images=%d alpha=%v", len(images), images[0].Alpha)
+	}
+	if alpha := *images[0].Alpha; alpha < 127 || alpha > 128 {
+		t.Fatalf("pattern image alpha=%d, want ~128", alpha)
+	}
+}

@@ -402,3 +402,44 @@ func TestPDFInvalidColorKeyReportsInStrictMode(t *testing.T) {
 		}
 	}
 }
+
+func TestPDFImageMaskSamplesAppliesJBIG2Decode(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		decode types.Object
+		want   byte
+	}{
+		{"default", nil, 0},
+		{"inverted", types.Array{types.Integer(1), types.Integer(0)}, 255},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stream := &types.StreamDict{
+				Dict:           types.Dict{"Width": types.Integer(3562), "Height": types.Integer(851), "BitsPerComponent": types.Integer(1)},
+				FilterPipeline: []types.PDFFilter{{Name: "JBIG2Decode"}},
+				Raw:            []byte(jbig2SampleMask),
+			}
+			if test.decode != nil {
+				stream.Dict["Decode"] = test.decode
+			}
+			samples, err := pdfImageMaskSamples(nil, stream, 8, 8, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for index, sample := range samples {
+				if sample != test.want {
+					t.Fatalf("sample[%d]=%d want %d", index, sample, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestResampleHelpersRejectPixelCountOverflow(t *testing.T) {
+	huge := int(^uint(0)>>1)/2 + 1
+	if got := resampleImageGray(image.NewGray(image.Rect(0, 0, 1, 1)), huge, huge); got != nil {
+		t.Fatalf("resampleImageGray allocated %d bytes", len(got))
+	}
+	if got := resampleGrayMask(image.NewGray(image.Rect(0, 0, 1, 1)), huge, huge); got != nil {
+		t.Fatalf("resampleGrayMask allocated %d bytes", len(got))
+	}
+}

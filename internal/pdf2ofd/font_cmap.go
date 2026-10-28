@@ -137,7 +137,10 @@ func (p *pdfInterpreter) readEncodingCMap(stream *types.StreamDict, depth int, p
 	if err := p.control.consumeOperations(int64(len(stream.Content))); err != nil {
 		return nil, err
 	}
-	tokens := tokenizePDFCMap(string(stream.Content))
+	tokens, complete := tokenizePDFCMapLimit(string(stream.Content), maxCMapTokens)
+	if !complete {
+		return nil, fmt.Errorf("Encoding CMap token 数量超过上限 %d", maxCMapTokens)
+	}
 	cmap := &pdfEncodingCMap{}
 	baseObject := stream.Dict["UseCMap"]
 	var writingMode *bool
@@ -312,8 +315,8 @@ func pdfEncodingHex(token string) (uint32, int, bool) {
 	if !strings.HasPrefix(token, "<") || !strings.HasSuffix(token, ">") {
 		return 0, 0, false
 	}
-	value := strings.Join(strings.Fields(token[1:len(token)-1]), "")
-	if len(value) == 0 || len(value) > 8 || len(value)%2 != 0 {
+	value := normalizePDFHex(token)
+	if len(value) == 0 || len(value) > 8 {
 		return 0, 0, false
 	}
 	code, ok := pdfHexUint(value)

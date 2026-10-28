@@ -7,19 +7,25 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
+// maxPageAnnotations 限制单页 /Annots 的条数，超限时终止转换，避免静默丢失尾部注解。
+const maxPageAnnotations = 1 << 16
+
 // pageAnnotationDicts 返回页面 /Annots 中的注解字典，保持 PDF 中的顺序。
-func pageAnnotationDicts(ctx *model.Context, pageDict types.Dict) []types.Dict {
+func pageAnnotationDicts(ctx *model.Context, pageDict types.Dict) ([]types.Dict, error) {
 	object, found := pageDict.Find("Annots")
 	if !found {
-		return nil
+		return nil, nil
 	}
 	resolved, err := ctx.XRefTable.Dereference(object)
 	if err != nil || resolved == nil {
-		return nil
+		return nil, nil
 	}
 	array, ok := resolved.(types.Array)
 	if !ok {
-		return nil
+		return nil, nil
+	}
+	if len(array) > maxPageAnnotations {
+		return nil, &LimitError{Resource: "page_annotations", Actual: int64(len(array)), Limit: maxPageAnnotations}
 	}
 	annotations := make([]types.Dict, 0, len(array))
 	for _, entry := range array {
@@ -29,15 +35,23 @@ func pageAnnotationDicts(ctx *model.Context, pageDict types.Dict) []types.Dict {
 		}
 		annotations = append(annotations, annotation)
 	}
-	return annotations
+	return annotations, nil
 }
 
 // renderAnnotations 把页面注解的外观流（/AP /N）绘制到页面上。没有外观流的
 // 注解（例如部分仅有弹窗内容的文本注解）跳过。
-func (p *pdfInterpreter) renderAnnotations(pageDict types.Dict) {
-	for _, annotation := range pageAnnotationDicts(p.ctx, pageDict) {
+func (p *pdfInterpreter) renderAnnotations(pageDict types.Dict) error {
+	annotations, err := pageAnnotationDicts(p.ctx, pageDict)
+	if err != nil {
+		return err
+	}
+	for _, annotation := range annotations {
+		if err := p.control.consumeOperations(1); err != nil {
+			return err
+		}
 		p.renderAnnotation(annotation)
 	}
+	return nil
 }
 
 func (p *pdfInterpreter) renderAnnotation(annot types.Dict) {

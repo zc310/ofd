@@ -524,7 +524,10 @@ func parsePDFToUnicodeMapping(data []byte, control *conversionControl, encoded m
 			result[code] = value
 		}
 	}
-	tokens := tokenizePDFCMap(string(data))
+	tokens, complete := tokenizePDFCMapLimit(string(data), maxCMapTokens)
+	if !complete {
+		return result
+	}
 	mode := ""
 	for index := 0; index < len(tokens); index++ {
 		if control.check() != nil {
@@ -620,11 +623,30 @@ func parsePDFToUnicodeMapping(data []byte, control *conversionControl, encoded m
 	return result
 }
 
+// maxCMapTokens 限制单个 CMap 分词后的 token 数，防止短小分隔符或注释把
+// 输入流放大成巨量切片项。
+const maxCMapTokens = 1 << 20
+
 // tokenizePDFCMap 把 ToUnicode CMap 文本切分为 token。CMap 允许相邻的
 // "<...>" 之间没有空白（例如 <0336><0336><4e0a>），因此不能直接用
 // strings.Fields，需要按分隔符切分并把十六进制串整体保留。
 func tokenizePDFCMap(data string) []string {
+	tokens, _ := tokenizePDFCMapLimit(data, maxCMapTokens)
+	return tokens
+}
+
+func tokenizePDFCMapLimit(data string, maxTokens int) ([]string, bool) {
+	if maxTokens < 0 {
+		maxTokens = 0
+	}
 	tokens := make([]string, 0, 256)
+	appendToken := func(token string) bool {
+		if len(tokens) >= maxTokens {
+			return false
+		}
+		tokens = append(tokens, token)
+		return true
+	}
 	for index := 0; index < len(data); {
 		current := data[index]
 		switch {
@@ -655,14 +677,18 @@ func tokenizePDFCMap(data string) []string {
 			}
 			end := strings.IndexByte(data[index:], '>')
 			if end < 0 {
-				return tokens
+				return tokens, false
 			}
-			tokens = append(tokens, data[index:index+end+1])
+			if !appendToken(data[index : index+end+1]) {
+				return tokens, false
+			}
 			index += end + 1
 		case current == '>' || current == ')' || current == '{' || current == '}':
 			index++
 		case current == '[' || current == ']':
-			tokens = append(tokens, string(current))
+			if !appendToken(string(current)) {
+				return tokens, false
+			}
 			index++
 		case isPDFCMapSpace(current):
 			index++
@@ -675,11 +701,13 @@ func tokenizePDFCMap(data string) []string {
 				index++
 				continue
 			}
-			tokens = append(tokens, data[index:end])
+			if !appendToken(data[index:end]) {
+				return tokens, false
+			}
 			index = end
 		}
 	}
-	return tokens
+	return tokens, true
 }
 
 func isPDFCMapSpace(value byte) bool {
@@ -698,8 +726,27 @@ func isPDFCMapDelimiter(value byte) bool {
 	return isPDFCMapSpace(value)
 }
 
-func pdfHexUint(value string) (uint32, bool) {
+// normalizePDFHex 按 PDF 十六进制字符串语法去掉空白，并把奇数个半字节的
+// 末位补 0。CMap 的 bfchar/bfrange 与普通字符串共用该规则。
+func normalizePDFHex(value string) string {
 	value = strings.Trim(value, "<>")
+	var normalized strings.Builder
+	normalized.Grow(len(value))
+	for index := 0; index < len(value); index++ {
+		if isPDFCMapSpace(value[index]) {
+			continue
+		}
+		normalized.WriteByte(value[index])
+	}
+	result := normalized.String()
+	if len(result)%2 != 0 {
+		result += "0"
+	}
+	return result
+}
+
+func pdfHexUint(value string) (uint32, bool) {
+	value = normalizePDFHex(value)
 	if len(value) == 0 || len(value) > 8 {
 		return 0, false
 	}
@@ -721,10 +768,7 @@ func pdfHexUint(value string) (uint32, bool) {
 }
 
 func pdfHexString(value string) (string, bool) {
-	value = strings.Trim(value, "<>")
-	if len(value)%2 != 0 {
-		return "", false
-	}
+	value = normalizePDFHex(value)
 	raw, err := hex.DecodeString(value)
 	if err != nil {
 		return "", false

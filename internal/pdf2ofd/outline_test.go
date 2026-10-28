@@ -5,6 +5,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/spec"
@@ -154,4 +156,29 @@ func outlineGoto(t *testing.T, item models.CTOutlineElem) *models.CtDest {
 		t.Fatalf("大纲项 %q 缺少跳转目标", item.Title)
 	}
 	return action.Goto.Dest
+}
+
+func TestConvertOutlinesVisitsSharedSubtreeOnce(t *testing.T) {
+	table := &model.XRefTable{Table: map[int]*model.XRefTableEntry{}}
+	add := func(number int, dict types.Dict) {
+		table.Table[number] = model.NewXRefTableEntryGen0(dict)
+	}
+	add(7, types.Dict{"Title": types.StringLiteral("A"), "First": *types.NewIndirectRef(9, 0), "Next": *types.NewIndirectRef(8, 0)})
+	add(8, types.Dict{"Title": types.StringLiteral("B"), "First": *types.NewIndirectRef(9, 0)})
+	add(9, types.Dict{"Title": types.StringLiteral("C"), "First": *types.NewIndirectRef(10, 0)})
+	add(10, types.Dict{"Title": types.StringLiteral("D")})
+	table.Outlines = types.Dict{"First": *types.NewIndirectRef(7, 0)}
+	items := convertOutlines(t.Context(), &model.Context{XRefTable: table})
+	if len(items) != 2 {
+		t.Fatalf("top-level outlines = %d, want 2", len(items))
+	}
+	if len(items[0].Children) != 1 || items[0].Children[0].Title != "C" {
+		t.Fatalf("first branch children = %+v, want C", items[0].Children)
+	}
+	if len(items[0].Children[0].Children) != 1 || items[0].Children[0].Children[0].Title != "D" {
+		t.Fatalf("C children = %+v, want D", items[0].Children[0].Children)
+	}
+	if len(items[1].Children) != 0 {
+		t.Fatalf("shared subtree was duplicated: %+v", items[1].Children)
+	}
 }

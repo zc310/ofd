@@ -3,6 +3,7 @@ package pdf2ofd
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -53,6 +54,53 @@ func TestIndexedColorSpaceLooksUpPalette(t *testing.T) {
 	}
 	if _, ok := space.colorFromComponents([]float64{3}); ok {
 		t.Fatal("index above High should fail")
+	}
+}
+
+func TestPDFImageColorSpaceReadsICCBasedStreamComponents(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		n          types.Object
+		want       int
+		wantErr    bool
+		usePointer bool
+	}{
+		{name: "gray", n: types.Integer(1), want: 1},
+		{name: "rgb", n: types.Integer(3), want: 3},
+		{name: "cmyk_pointer", n: types.Integer(4), want: 4, usePointer: true},
+		{name: "missing_defaults_rgb", want: 3},
+		{name: "two_components", n: types.Integer(2), wantErr: true},
+		{name: "huge", n: types.Integer(1 << 30), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dict := types.Dict{"N": tc.n}
+			if tc.n == nil {
+				delete(dict, "N")
+			}
+			profile := types.StreamDict{Dict: dict}
+			var colorSpaceObject types.Object = profile
+			if tc.usePointer {
+				colorSpaceObject = &profile
+			}
+			stream := &types.StreamDict{Dict: types.Dict{
+				"ColorSpace": types.Array{types.Name("ICCBased"), colorSpaceObject},
+			}}
+			got, indexed, palette, err := pdfImageColorSpace(nil, stream)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("err=nil, components=%d", got)
+				}
+				return
+			}
+			if err != nil || got != tc.want || indexed || palette != nil {
+				t.Fatalf("components=%d indexed=%v palette=%v err=%v, want %d", got, indexed, palette, err, tc.want)
+			}
+			array := types.Array{types.Name("ICCBased"), colorSpaceObject}
+			got, indexed, palette, err = pdfArrayColorSpace(nil, array)
+			if err != nil || got != tc.want || indexed || palette != nil {
+				t.Fatalf("array components=%d indexed=%v palette=%v err=%v, want %d", got, indexed, palette, err, tc.want)
+			}
+		})
 	}
 }
 
@@ -151,6 +199,18 @@ func TestStitchingFunctionSelectsSubFunction(t *testing.T) {
 	}
 	if got, ok := fn.eval([]float64{0.75}); !ok || got[0] != 1 {
 		t.Fatalf("upper segment = %v (ok=%v), want 1", got, ok)
+	}
+}
+
+func TestStitchingFunctionUsesDomainForOuterSegments(t *testing.T) {
+	lower := &pdfFunction{fnType: 2, c0: []float64{0}, c1: []float64{1}, exp: 1}
+	upper := &pdfFunction{fnType: 2, c0: []float64{0}, c1: []float64{1}, exp: 1}
+	fn := &pdfFunction{fnType: 3, domain: []float64{10, 20}, rng: []float64{0, 1}, bounds: []float64{15}, funcs: []*pdfFunction{lower, upper}}
+	if got, ok := fn.eval([]float64{12.5}); !ok || math.Abs(got[0]-0.5) > 1e-9 {
+		t.Fatalf("lower segment = %v (ok=%v), want 0.5", got, ok)
+	}
+	if got, ok := fn.eval([]float64{17.5}); !ok || math.Abs(got[0]-0.5) > 1e-9 {
+		t.Fatalf("upper segment = %v (ok=%v), want 0.5", got, ok)
 	}
 }
 

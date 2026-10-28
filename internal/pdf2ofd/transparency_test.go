@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -324,6 +326,27 @@ func TestTransparencyAnnotationGroupUsesAppearancePlacement(t *testing.T) {
 	transparencyCompareSource(t, textFidelityPDFOutput(t, ofd, page), img, "roundtrip")
 }
 
+func TestTransparencyConstantBlackMaskMakesImagesTransparent(t *testing.T) {
+	data, format, err := encodePNGImage(image.NewNRGBA(image.Rect(0, 0, 1, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pdfInterpreter{
+		page:  &creator.Page{},
+		state: pdfGraphicsState{ctm: identityPDFMatrix(), fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1, constantMaskBlack: true},
+	}
+	if err := p.appendImageData(data, format); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.page.Items) != 1 {
+		t.Fatalf("items=%d", len(p.page.Items))
+	}
+	img, ok := p.page.Items[0].(creator.Image)
+	if !ok || img.Alpha == nil || *img.Alpha != 0 {
+		t.Fatalf("image alpha=%v", img.Alpha)
+	}
+}
+
 func TestTransparencyConstantBlackMaskKeepsVectorPaintTransparent(t *testing.T) {
 	input := imageGraphicsPriorityPDF(t, "no image mask", "q /GS1 gs 1 0 0 rg 20 20 60 60 re f Q")
 	var output bytes.Buffer
@@ -338,4 +361,39 @@ func TestTransparencyConstantBlackMaskKeepsVectorPaintTransparent(t *testing.T) 
 	page := ofd.Documents[0].Pages[0]
 	img := textFidelityRaster(t, ofd, page)
 	transparencyCompareSource(t, input, img, "source")
+}
+
+func TestTransparencyConstantBlackMaskFastPathAcceptsExplicitBlackBackgroundAndIdentityTransfer(t *testing.T) {
+	base := imageGraphicsPriorityPDF(t, "no image mask", "")
+	original := []byte("<< /ca .5 /SMask << /S /Luminosity /G 8 0 R >> >>")
+	for _, tc := range []struct {
+		name  string
+		extra string
+		want  bool
+	}{
+		{"bc_black", "/BC [0]", true},
+		{"tr_identity", "/TR /Identity", true},
+		{"bc_black_tr_identity", "/BC [0] /TR /Identity", true},
+		{"bc_white", "/BC [1]", false},
+		{"tr_nonzero", "/TR << /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			replacement := []byte("<< /ca .5 /SMask << /S /Luminosity /G 8 0 R " + tc.extra + " >> >>")
+			input := bytes.Replace(base, original, replacement, 1)
+			ctx, err, panicked := readPDFContext(t.Context(), input, model.NewDefaultConfiguration())
+			if panicked || err != nil {
+				t.Fatalf("read context: panicked=%v err=%v", panicked, err)
+			}
+			gs, err := ctx.XRefTable.DereferenceDict(ctx.XRefTable.Table[7].Object)
+			if err != nil {
+				t.Fatal(err)
+			}
+			options, _ := (Options{}).Normalize()
+			p := pdfInterpreter{ctx: ctx, control: &conversionControl{ctx: t.Context(), options: options}, state: pdfGraphicsState{ctm: identityPDFMatrix(), fillAlpha: 1, strokeAlpha: 1, groupAlpha: 1}}
+			p.parseTransparencyMask(gs["SMask"], nil)
+			if p.state.constantMaskBlack != tc.want {
+				t.Fatalf("constantMaskBlack=%v, want %v", p.state.constantMaskBlack, tc.want)
+			}
+		})
+	}
 }

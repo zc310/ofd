@@ -327,13 +327,9 @@ func (p *pdfInterpreter) compositeTransparencyItem(item creator.Item) error {
 		return err
 	}
 	if p.transparency != nil && p.control != nil {
-		if err := p.control.check(); err != nil {
+		if err := p.control.consumeOutputObject(); err != nil {
 			return err
 		}
-		if p.control.output >= p.control.options.Limits.MaxOutputObjects {
-			return p.control.limit("output_objects", p.control.output+1, p.control.options.Limits.MaxOutputObjects)
-		}
-		p.control.output++
 	}
 	r, err := p.transparencyRect(transparencyItemBounds(item))
 	if err != nil {

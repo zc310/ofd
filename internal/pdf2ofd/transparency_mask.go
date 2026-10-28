@@ -43,20 +43,21 @@ func (p *pdfInterpreter) parseTransparencyMask(object types.Object, resources ty
 		p.report("graphics.mask", err.Error())
 		return nil
 	}
-	if dict["BC"] == nil && dict["TR"] == nil && p.singleImageMaskForm(stream.Content) {
-		if name, ok := dereferenceName(p.ctx, dict["S"]); ok && name == "Luminosity" {
-			if candidate := pdfExtGStateSoftMask(p.ctx, types.Dict{"SMask": object}, p.control); candidate != nil && candidate.IntEntry("Width") != nil && *candidate.IntEntry("Width") == 1 && candidate.IntEntry("Height") != nil && *candidate.IntEntry("Height") == 1 && candidate.NameEntry("ColorSpace") != nil && *candidate.NameEntry("ColorSpace") == "DeviceGray" {
-				if err := p.decodeStream(candidate, 0); err == nil && len(candidate.Content) == 1 && candidate.Content[0] == 0 && candidate.Dict["Decode"] == nil {
-					p.state.constantMaskBlack = true
-					return nil
-				}
-			}
-		}
-	}
 	kind, ok := dereferenceName(p.ctx, dict["S"])
 	if !ok || (kind != "Alpha" && kind != "Luminosity") {
 		p.report("graphics.mask", "软掩码 S 无效")
 		return nil
+	}
+	space := p.parseColorSpace(group["CS"], 0)
+	// 恒黑图片掩码在 BC 显式为黑、TR 为恒等时仍是精确的零透明度；此前只要
+	// BC/TR 出现（哪怕语义完全等价）就退回全分辨率栅格化。
+	if kind == "Luminosity" && p.softMaskIdentityTransfer(dict["TR"]) && p.softMaskBlackBackdrop(dict, space) && p.singleImageMaskForm(stream.Content) {
+		if candidate := pdfExtGStateSoftMask(p.ctx, types.Dict{"SMask": object}, p.control); candidate != nil && candidate.IntEntry("Width") != nil && *candidate.IntEntry("Width") == 1 && candidate.IntEntry("Height") != nil && *candidate.IntEntry("Height") == 1 && candidate.NameEntry("ColorSpace") != nil && *candidate.NameEntry("ColorSpace") == "DeviceGray" {
+			if err := p.decodeStream(candidate, 0); err == nil && len(candidate.Content) == 1 && candidate.Content[0] == 0 && candidate.Dict["Decode"] == nil {
+				p.state.constantMaskBlack = true
+				return nil
+			}
+		}
 	}
 	mask := &pdfTransparencyMask{group: dict["G"], resources: resources, state: p.state, depth: p.parseDepth + 1, luminosity: kind == "Luminosity"}
 	for i := range mask.transfer {
@@ -76,7 +77,6 @@ func (p *pdfInterpreter) parseTransparencyMask(object types.Object, resources ty
 	mask.state.softMask, mask.state.lumMask = nil, nil
 	mask.state.fillAlpha, mask.state.strokeAlpha, mask.state.groupAlpha = 1, 1, 1
 	mask.state.blendMode, mask.state.clips = "Normal", nil
-	space := p.parseColorSpace(group["CS"], 0)
 	bc := pdfNumberArray(p.ctx, dict["BC"])
 	if len(bc) == 0 && space != nil {
 		bc = make([]float64, space.components)
@@ -120,6 +120,28 @@ func (p *pdfInterpreter) parseTransparencyMask(object types.Object, resources ty
 		mask.transfer[i] = transparencyByte(v)
 	}
 	return mask
+}
+
+func (p *pdfInterpreter) softMaskIdentityTransfer(object types.Object) bool {
+	if object == nil {
+		return true
+	}
+	name, ok := dereferenceName(p.ctx, object)
+	return ok && name == "Identity"
+}
+
+func (p *pdfInterpreter) softMaskBlackBackdrop(dict types.Dict, space *pdfColorSpace) bool {
+	object, found := dict.Find("BC")
+	if !found || object == nil {
+		// 未声明 BC 时按实现约定使用全零（黑）背景。
+		return true
+	}
+	values := pdfNumberArray(p.ctx, object)
+	if space == nil || len(values) != space.components {
+		return false
+	}
+	color, ok := space.colorFromComponents(values)
+	return ok && color.r == 0 && color.g == 0 && color.b == 0
 }
 
 func (p *pdfInterpreter) applyTransparencyMask(img *image.NRGBA, mask *pdfTransparencyMask) error {

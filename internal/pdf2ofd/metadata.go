@@ -36,6 +36,18 @@ func pdfDocumentMetadata(sourceProducer string) (name, toolVersion string, custo
 	return converterName, converterVersion, customDatas
 }
 
+// pdfSourceProducer 选择写入 SourceProducer 的源生产者。/Info 的 Producer
+// 更贴近实际生成工具；缺失时退回 Creator，避免有 Creator 的文档丢掉溯源信息。
+func pdfSourceProducer(ctx *model.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if producer := strings.TrimSpace(ctx.Producer); producer != "" {
+		return producer
+	}
+	return ctx.Creator
+}
+
 // pdfDocumentDates 读取 PDF /Info 的创建与修改时间。
 //
 // 日期字符串形如 D:YYYYMMDDHHmmSSOHH'mm'，缺项或格式异常时返回零值，由创建器

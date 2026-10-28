@@ -13,6 +13,22 @@ import (
 // maxOutlineDepth 限制 PDF 大纲树的递归深度，避免损坏文件导致无限递归。
 const maxOutlineDepth = 64
 
+// maxOutlineItems 限制整棵大纲树实际访问的节点数，避免共享子树重复展开。
+const maxOutlineItems = 100000
+
+type pdfOutlineObject struct {
+	number     int
+	generation int
+}
+
+type pdfOutlineWalker struct {
+	gctx       context.Context
+	ctx        *model.Context
+	geometries []pdfPageInfo
+	seen       map[pdfOutlineObject]bool
+	items      int
+}
+
 // convertOutlines 把 PDF 目录的 /Outlines 大纲树转换为 OFD 大纲。没有大纲或
 // 大纲不可解析时返回 nil。
 func convertOutlines(gctx context.Context, ctx *model.Context) []creator.Outline {
@@ -27,28 +43,40 @@ func convertOutlines(gctx context.Context, ctx *model.Context) []creator.Outline
 	if first == nil {
 		return nil
 	}
-	return convertOutlineSiblings(gctx, ctx, *first, pdfPageGeometries(gctx, ctx), 0)
+	walker := pdfOutlineWalker{
+		gctx:       gctx,
+		ctx:        ctx,
+		geometries: pdfPageGeometries(gctx, ctx),
+		seen:       map[pdfOutlineObject]bool{},
+	}
+	return walker.siblings(*first, 0)
 }
 
-// convertOutlineSiblings 转换同一层的大纲项链表（First/Next）。seen 用于截断
-// 损坏文件中的循环引用。
-func convertOutlineSiblings(gctx context.Context, ctx *model.Context, first types.IndirectRef, geometries []pdfPageInfo, depth int) []creator.Outline {
-	if depth > maxOutlineDepth {
+// siblings 转换同一层的大纲项链表（First/Next）。seen 跨整棵树共享，既截断
+// 循环引用，也防止共享子树被指数级重复展开。
+func (w *pdfOutlineWalker) siblings(first types.IndirectRef, depth int) []creator.Outline {
+	if depth > maxOutlineDepth || w.items >= maxOutlineItems {
 		return nil
 	}
 	var outlines []creator.Outline
-	seen := map[int]bool{}
 	for current := &first; current != nil; {
-		objectNumber := current.ObjectNumber.Value()
-		if seen[objectNumber] {
+		if w.gctx.Err() != nil || w.items >= maxOutlineItems {
 			break
 		}
-		seen[objectNumber] = true
-		dict, err := ctx.XRefTable.DereferenceDict(*current)
+		key := pdfOutlineObject{
+			number:     current.ObjectNumber.Value(),
+			generation: current.GenerationNumber.Value(),
+		}
+		if w.seen[key] {
+			break
+		}
+		w.seen[key] = true
+		w.items++
+		dict, err := w.ctx.XRefTable.DereferenceDict(*current)
 		if err != nil || dict == nil {
 			break
 		}
-		if outline, ok := convertOutlineItem(gctx, ctx, dict, geometries, depth); ok {
+		if outline, ok := w.item(dict, depth); ok {
 			outlines = append(outlines, outline)
 		}
 		current = dict.IndirectRefEntry("Next")
@@ -56,9 +84,9 @@ func convertOutlineSiblings(gctx context.Context, ctx *model.Context, first type
 	return outlines
 }
 
-func convertOutlineItem(gctx context.Context, ctx *model.Context, dict types.Dict, geometries []pdfPageInfo, depth int) (creator.Outline, bool) {
+func (w *pdfOutlineWalker) item(dict types.Dict, depth int) (creator.Outline, bool) {
 	// OFD 要求大纲标题非空，缺少标题的 PDF 大纲项直接跳过。
-	title := pdfOutlineTitle(ctx, dict)
+	title := pdfOutlineTitle(w.ctx, dict)
 	if title == "" {
 		return creator.Outline{}, false
 	}
@@ -74,11 +102,11 @@ func convertOutlineItem(gctx context.Context, ctx *model.Context, dict types.Dic
 		outline.Count = &value
 		outline.Expanded = &expanded
 	}
-	if action, ok := pdfClickAction(gctx, ctx, dict, geometries); ok {
+	if action, ok := pdfClickAction(w.gctx, w.ctx, dict, w.geometries); ok {
 		outline.Actions = []creator.Action{action}
 	}
 	if first := dict.IndirectRefEntry("First"); first != nil {
-		outline.Children = convertOutlineSiblings(gctx, ctx, *first, geometries, depth+1)
+		outline.Children = w.siblings(*first, depth+1)
 	}
 	return outline, true
 }

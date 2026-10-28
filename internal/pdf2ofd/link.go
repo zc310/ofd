@@ -28,9 +28,20 @@ const linkAnnotationIDBase = uint64(1) << 31
 // （Launch、GoToR、Named、Movie、Sound）没有等价物，连同不可见的注解一起丢掉——
 // 留一个点下去没反应的热区比没有热区更糟。id 在整个文档范围内递增。
 func convertPageLinks(gctx context.Context, ctx *model.Context, pageDict types.Dict,
-	info pdfPageInfo, geometries []pdfPageInfo, id *uint64) []creator.Annotation {
+	info pdfPageInfo, geometries []pdfPageInfo, id *uint64, controls ...*conversionControl) ([]creator.Annotation, error) {
+	var control *conversionControl
+	if len(controls) > 0 {
+		control = controls[0]
+	}
 	var links []creator.Annotation
-	for _, annotation := range pageAnnotationDicts(ctx, pageDict) {
+	annotations, err := pageAnnotationDicts(ctx, pageDict)
+	if err != nil {
+		return nil, err
+	}
+	for _, annotation := range annotations {
+		if err := control.consumeOperations(1); err != nil {
+			return links, err
+		}
 		name, ok := annotation["Subtype"].(types.Name)
 		if !ok || (name.Value() != "Link" && name.Value() != "Widget") {
 			continue
@@ -46,6 +57,9 @@ func convertPageLinks(gctx context.Context, ctx *model.Context, pageDict types.D
 		action, ok := pdfClickAction(gctx, ctx, annotation, geometries)
 		if !ok {
 			continue
+		}
+		if err := control.consumeOutputObject(); err != nil {
+			return links, err
 		}
 		visible := false
 		links = append(links, creator.Annotation{
@@ -66,7 +80,7 @@ func convertPageLinks(gctx context.Context, ctx *model.Context, pageDict types.D
 		})
 		*id++
 	}
-	return links
+	return links, nil
 }
 
 // linkHidden 判断注解是否被标记为不可交互。位 1 Invisible、位 2 Hidden、

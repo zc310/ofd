@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -158,7 +160,7 @@ func pdfToOFDBytes(gctx context.Context, data []byte, output io.Writer, password
 		return err
 	}
 
-	creatorName, creatorVersion, customDatas := pdfDocumentMetadata(ctx.Creator)
+	creatorName, creatorVersion, customDatas := pdfDocumentMetadata(pdfSourceProducer(ctx))
 	document := creator.Document{
 		ID:             "pdf-converted",
 		Title:          ctx.Title,
@@ -248,8 +250,13 @@ func ConvertFileWithOptions(gctx context.Context, pdfPath, ofdPath string, passw
 	if inputErr != nil {
 		return fmt.Errorf("读取 PDF 文件失败: %w", inputErr)
 	}
-	if outputInfo, outputErr := os.Stat(ofdPath); outputErr == nil && os.SameFile(inputInfo, outputInfo) {
-		return errors.New("PDF 输入文件和 OFD 输出文件不能相同")
+	var targetMode os.FileMode
+	hasTargetMode := false
+	if outputInfo, outputErr := os.Stat(ofdPath); outputErr == nil {
+		if os.SameFile(inputInfo, outputInfo) {
+			return errors.New("PDF 输入文件和 OFD 输出文件不能相同")
+		}
+		targetMode, hasTargetMode = outputInfo.Mode().Perm(), true
 	}
 	outputDir := filepath.Dir(ofdPath)
 	file, err := os.CreateTemp(outputDir, "."+filepath.Base(ofdPath)+".tmp-")
@@ -266,6 +273,13 @@ func ConvertFileWithOptions(gctx context.Context, pdfPath, ofdPath string, passw
 	}()
 	if err := ConvertWithOptions(gctx, pdfPath, file, password, options); err != nil {
 		return err
+	}
+	// os.CreateTemp 固定创建 0600 文件；替换已有目标时保留其权限，避免转换
+	// 把共享输出文件悄悄收紧成只有属主可读。新文件维持 0600 的安全默认值。
+	if hasTargetMode {
+		if err := file.Chmod(targetMode); err != nil {
+			return fmt.Errorf("设置临时 OFD 文件权限失败: %w", err)
+		}
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("关闭临时 OFD 文件失败: %w", err)
@@ -322,9 +336,25 @@ func readPDFInputLimited(ctx context.Context, input any, limit int64) ([]byte, e
 		}
 		return value, nil
 	case io.Reader:
+		if isNilReader(value) {
+			return nil, errors.New("PDF 输入读取器为空")
+		}
 		return read(value)
 	default:
 		return nil, fmt.Errorf("不支持的 PDF 输入类型 %T", input)
+	}
+}
+
+func isNilReader(reader io.Reader) bool {
+	if reader == nil {
+		return true
+	}
+	value := reflect.ValueOf(reader)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
 	}
 }
 
@@ -376,7 +406,9 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 		return creator.Page{}, nil, err
 	}
 	// 注解（外观流）绘制在页面内容之上。
-	interpreter.renderAnnotations(pageDict)
+	if err := interpreter.renderAnnotations(pageDict); err != nil {
+		return creator.Page{}, nil, err
+	}
 	if err := control.check(); err != nil {
 		return creator.Page{}, nil, err
 	}
@@ -385,37 +417,39 @@ func convertPDFPage(gctx context.Context, ctx *model.Context, pageNumber int, do
 	if err := positionPDFSemanticTexts(page.Items, document.Fonts, control); err != nil {
 		return creator.Page{}, nil, err
 	}
-	return page, convertPageLinks(gctx, ctx, pageDict, info, geometries, linkID), nil
+	links, err := convertPageLinks(gctx, ctx, pageDict, info, geometries, linkID, control)
+	if err != nil {
+		return creator.Page{}, nil, err
+	}
+	return page, links, nil
 }
 
 func pdfPageInfoFor(ctx *model.Context, page types.Dict, inherited *model.InheritedPageAttrs) (pdfPageInfo, error) {
-	var rect *types.Rectangle
-	if box := page.ArrayEntry("CropBox"); box != nil {
-		rect = types.RectForArray(box)
+	var mediaBox *types.Rectangle
+	if inherited != nil {
+		mediaBox = inherited.MediaBox
 	}
-	if rect == nil && inherited != nil {
-		rect = inherited.CropBox
+	if box := pdfPageBox(ctx, page, "MediaBox"); box != nil {
+		mediaBox = box
 	}
-	if rect == nil && inherited != nil {
-		rect = inherited.MediaBox
-	}
-	if rect == nil {
-		if box := page.ArrayEntry("MediaBox"); box != nil {
-			rect = types.RectForArray(box)
-		}
-	}
-	if rect == nil {
+	if mediaBox == nil {
 		return pdfPageInfo{}, errors.New("PDF 页面缺少 MediaBox")
 	}
-	minX, maxX := rect.LL.X, rect.UR.X
-	minY, maxY := rect.LL.Y, rect.UR.Y
-	if minX > maxX {
-		minX, maxX = maxX, minX
+	var cropBox *types.Rectangle
+	if inherited != nil {
+		cropBox = inherited.CropBox
 	}
-	if minY > maxY {
-		minY, maxY = maxY, minY
+	if box := pdfPageBox(ctx, page, "CropBox"); box != nil {
+		cropBox = box
 	}
-	info := pdfPageInfo{minX: minX, minY: minY, maxX: maxX, maxY: maxY, userUnit: 1}
+	if cropBox == nil {
+		cropBox = mediaBox
+	}
+	rect := intersectPDFRects(cropBox, mediaBox)
+	if rect == nil {
+		return pdfPageInfo{}, errors.New("PDF 页面 CropBox 与 MediaBox 没有有效交集")
+	}
+	info := pdfPageInfo{minX: rect.LL.X, minY: rect.LL.Y, maxX: rect.UR.X, maxY: rect.UR.Y, userUnit: 1}
 	userUnitObject, found := page.Find("UserUnit")
 	if value, ok := numberValue(userUnitObject); found && ok && value > 0 {
 		info.userUnit = value
@@ -429,6 +463,47 @@ func pdfPageInfoFor(ctx *model.Context, page types.Dict, inherited *model.Inheri
 	}
 	info.rotate = ((info.rotate % 360) + 360) % 360
 	return info, nil
+}
+
+func pdfPageBox(ctx *model.Context, page types.Dict, key string) *types.Rectangle {
+	object, found := page.Find(key)
+	if !found {
+		return nil
+	}
+	values := pdfNumberArray(ctx, object)
+	if len(values) != 4 {
+		return nil
+	}
+	return types.NewRectangle(values[0], values[1], values[2], values[3])
+}
+
+func intersectPDFRects(a, b *types.Rectangle) *types.Rectangle {
+	a = normalizePDFRect(a)
+	b = normalizePDFRect(b)
+	if a == nil || b == nil {
+		return nil
+	}
+	minX, minY := math.Max(a.LL.X, b.LL.X), math.Max(a.LL.Y, b.LL.Y)
+	maxX, maxY := math.Min(a.UR.X, b.UR.X), math.Min(a.UR.Y, b.UR.Y)
+	if minX >= maxX || minY >= maxY {
+		return nil
+	}
+	return types.NewRectangle(minX, minY, maxX, maxY)
+}
+
+func normalizePDFRect(rect *types.Rectangle) *types.Rectangle {
+	if rect == nil {
+		return nil
+	}
+	minX, maxX := rect.LL.X, rect.UR.X
+	minY, maxY := rect.LL.Y, rect.UR.Y
+	if minX > maxX {
+		minX, maxX = maxX, minX
+	}
+	if minY > maxY {
+		minY, maxY = maxY, minY
+	}
+	return types.NewRectangle(minX, minY, maxX, maxY)
 }
 
 func dereferenceDict(ctx *model.Context, object types.Object, found bool) (types.Dict, error) {
@@ -951,13 +1026,21 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 	if resources != nil {
 		if fonts, ok := dereferencedSubDict(p.ctx, resources, "Font"); ok {
 			if object, found := fonts.Find(name); found {
-				if cached, hit := p.fontCache[object]; hit {
+				reference, cacheable := object.(types.IndirectRef)
+				var cached pdfFontInfo
+				hit := false
+				if cacheable {
+					cached, hit = p.fontCache[reference]
+				}
+				if hit {
 					font = cached
 				} else {
 					previousSource := p.setSource(object, name)
 					p.loadFont(&font, object)
 					p.source = previousSource
-					p.fontCache[object] = font
+					if cacheable && p.fontCache != nil {
+						p.fontCache[reference] = font
+					}
 				}
 			}
 		} else {

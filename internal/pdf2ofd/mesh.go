@@ -33,6 +33,10 @@ type pdfMeshData struct {
 // 难以处理的 OFD 文件。
 const maxMeshTriangles = 300000
 
+// maxLatticeVerticesPerRow 限制 Type 5 网格每行声明的顶点数。解码时在读取
+// 位流前按该值预分配行切片，必须与总三角形预算一起限制。
+const maxLatticeVerticesPerRow = maxVectorMeshPoints
+
 // patchTessellationSteps 是每个 Type 6/7 补丁在 u、v 方向的细分数。补丁是
 // 双三次/Coons 曲面，细分越细越贴近原曲面；6 段在常规补丁尺寸下已看不出刻面，
 // 单个补丁 72 个三角形，配合 maxMeshTriangles 仍受上限保护。
@@ -244,7 +248,7 @@ func decodeFreeFormPoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdf
 func decodeLatticePoints(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShading) ([]ofdMeshPoint, int, bool) {
 	components := shading.colorSpace.components
 	perRow := mesh.verticesPerRow
-	if perRow < 2 {
+	if perRow < 2 || perRow > maxLatticeVerticesPerRow {
 		return nil, 0, false
 	}
 	var points []ofdMeshPoint
@@ -507,7 +511,7 @@ func decodeFreeFormMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfSh
 func decodeLatticeMesh(mesh *pdfMeshData, reader *meshBitReader, shading *pdfShading) [][3]meshVertex {
 	components := shading.colorSpace.components
 	perRow := mesh.verticesPerRow
-	if perRow < 2 {
+	if perRow < 2 || perRow > maxLatticeVerticesPerRow {
 		return nil
 	}
 	var rows [][]meshVertex

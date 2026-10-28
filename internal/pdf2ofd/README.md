@@ -22,7 +22,7 @@
 
 | 主题 | 入口 | 维护时需要保留的规则 |
 |------|------|----------------------|
-| 转换流程 | [convert.go](convert.go)、[pdf_content.go](pdf_content.go) | 输入字节在调用期间只读借用；解析页面、绘制注解、合并单字图元后再固定语义层定位；预算或 Strict 失败先于输出。 |
+| 转换流程 | [convert.go](convert.go)、[pdf_content.go](pdf_content.go) | 输入字节在调用期间只读借用；解析页面、绘制注解、合并单字图元后再固定语义层定位；预算或 Strict 失败先于输出；文件输出保留已有目标权限，typed-nil reader 直接报错。 |
 | 预算与取消 | [control.go](control.go)、[config/options.go](config/options.go)、[image_control.go](image_control.go) | 分配/展开前预留预算；缓存命中不重复计算基础解码；取消原样返回 context 错误。预算不是峰值内存保证。 |
 | 页面和路径坐标 | [path.go](path.go)、[image.go](image.go) | PDF 使用点和左下原点，OFD 使用毫米和左上原点；同时处理 CTM、页面 Rotate、Box 原点及 UserUnit。Clips 的 TransFlag 不应重复施加图元 CTM。 |
 | 字体代码、CID 和 GID | [font.go](font.go)、[font_cmap.go](font_cmap.go)、[font_cmap_predefined.go](font_cmap_predefined.go) | 修复后的字体只解析一次，字形映射和字宽复用 font.sfnt。ToUnicode 查询源代码；嵌入 Encoding CMap 的代码还包含字节长度；W/W2、CIDToGIDMap 查询 CID，字体程序使用实际 GID。internal/fontrepair 私有区映射用于找字形，不能作为原文；CFF 包装的 unitsPerEm 必须与 FontMatrix 一致。 |
@@ -34,9 +34,9 @@
 | 图像 Mask/SMask/Matte | [image_mask.go](image_mask.go)、[image_softmask.go](image_softmask.go)、[image_matte.go](image_matte.go) 及相应压缩格式文件 | 颜色键在 Decode/颜色转换前匹配；Matte 在原颜色空间还原；SMask 覆盖 Mask，图像关联软掩码覆盖图形状态软掩码。不同尺寸按各轴最大分辨率合成，Matte 仍要求同尺寸。 |
 | 图像通道与颜色 | [image_jpx_colour.go](image_jpx_colour.go)、[image_mask_coordinates.go](image_mask_coordinates.go) | cdef 按 Association 解释，条目顺序不改变映射；最近邻坐标乘法使用 64 位整数。 |
 | 透明合成 | [transparency.go](transparency.go)、[transparency_blend.go](transparency_blend.go) | 非隔离组分别保留初始背景和组自身 alpha，结束时撤销背景贡献；挖空按形状覆盖率处理，不能把旧内容衰减两次。嵌套组复用同一像素网格。 |
-| 图形状态软掩码 | [transparency_mask.go](transparency_mask.go) | 捕获 gs 时的 CTM；G 的资源优先、缺省继承；直接执行 G，不能插入覆盖源资源的临时 XObject 名。BC 决定组边界外的初始值，TR 作用于组内。 |
+| 图形状态软掩码 | [transparency_mask.go](transparency_mask.go) | 捕获 gs 时的 CTM；G 的资源优先、缺省继承；直接执行 G，不能插入覆盖源资源的临时 XObject 名。BC 决定组边界外的初始值，TR 作用于组内；恒黑图片掩码仅在 BC 黑且 TR 恒等时走零透明度快速路径，图片自带 SMask 时不得清零。 |
 | 着色与图案 | [shading.go](shading.go)、[mesh.go](mesh.go)、[pattern.go](pattern.go)、[function_type4.go](function_type4.go) | 网格流可能存函数输入而非颜色；矢量/栅格回退、函数求值和图块展开都要遵守预算。 |
-| 注解和跳转 | [annotation.go](annotation.go)、[link.go](link.go)、[outline.go](outline.go) | 外观按 BBox/Matrix 映射至 Rect；透明外观复用 XObject 路径，避免重复应用 Matrix；目标位置使用目标页的几何。 |
+| 注解和跳转 | [annotation.go](annotation.go)、[link.go](link.go)、[outline.go](outline.go) | 外观按 BBox/Matrix 映射至 Rect；透明外观复用 XObject 路径，避免重复应用 Matrix；目标位置使用目标页的几何；单页注解上限为 65,536，超限返回错误；注解/链接处理计入 MaxOperations，链接计入 MaxOutputObjects。 |
 
 ## 回归入口
 
@@ -118,18 +118,18 @@ PDF JPX 解码默认使用纯 Go 后端。Linux 可选构建 OpenJPEG 后端：�
 以下是回归中已观察到的阅读器差异，版本和参考值应保留在对应测试注释中，
 不能据此宣称与所有阅读器一致：
 
-| 场景 | 已观察到的差异与验证选择 |
-|------|--------------------------|
-| 挖空组、软掩码 TR、AIS | MuPDF 1.21 与 Poppler 22.12 的 K/TR 支持不同；挖空以 MuPDF 对照，TR 以 Poppler 对照，AIS 另验证覆盖率公式并保留近似诊断。 |
+| 场景                             | 已观察到的差异与验证选择                                                                                                                   |
+|----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| 挖空组、软掩码 TR、AIS           | MuPDF 1.21 与 Poppler 22.12 的 K/TR 支持不同；挖空以 MuPDF 对照，TR 以 Poppler 对照，AIS 另验证覆盖率公式并保留近似诊断。                  |
 | 开放路径 B/B* 的半透明填充与描边 | MuPDF 1.21 将描边形状从填充中挖空；Poppler 22.12 在重叠区保留填充贡献。按 PDF 的单个透明对象语义对照 MuPDF，转换以局部栅格合并并报告诊断。 |
-| Type3 d1 的 Tr=1/2/5/6 | 现有 MuPDF 与 Poppler 对描边/非描边颜色的选择不同；回归保留 CharProc 及调用方非描边颜色语义。 |
-| sYCC（JP2 colr=18） | 现有 Poppler 对独立样例直接显示 Y/Cb/Cr；颜色转换以 BT.601 原分量参考和 MuPDF 对照。 |
-| eYCC（JP2 colr=24） | 现有 MuPDF/Poppler 对独立样例未应用 eYCC 矩阵；使用 OpenJPEG 固定参考和等价 RGB PDF 验证，保留原阅读器结果。 |
-| JPX 颜色键 | MuPDF 与 Poppler 对部分源颜色键处理不同，二者也未区分某些相邻 16 位样本；同时验证原整数匹配与显式 RGB 参考 PDF。 |
-| 高位深 JPX SMask | 现有 Poppler 对部分样例有布局差异；保留其结果，并与 MuPDF 和原 alpha 参考对照。 |
-| CMYK/YCCK | 黑色端点和色彩转换因阅读器而异；不能把 CMYK→RGB 近似等同于原空间保真。 |
-| 图片放大与透明边缘 | 最近邻和平滑插值会产生边缘差异；原尺寸原分量测试与放大显示对照分别验收。 |
-| 变长 ToUnicode | 源阅读器的提取行为存在差异；代码映射及往返提取需直接断言，不能只以源提取为参考。 |
+| Type3 d1 的 Tr=1/2/5/6           | 现有 MuPDF 与 Poppler 对描边/非描边颜色的选择不同；回归保留 CharProc 及调用方非描边颜色语义。                                              |
+| sYCC（JP2 colr=18）              | 现有 Poppler 对独立样例直接显示 Y/Cb/Cr；颜色转换以 BT.601 原分量参考和 MuPDF 对照。                                                       |
+| eYCC（JP2 colr=24）              | 现有 MuPDF/Poppler 对独立样例未应用 eYCC 矩阵；使用 OpenJPEG 固定参考和等价 RGB PDF 验证，保留原阅读器结果。                               |
+| JPX 颜色键                       | MuPDF 与 Poppler 对部分源颜色键处理不同，二者也未区分某些相邻 16 位样本；同时验证原整数匹配与显式 RGB 参考 PDF。                           |
+| 高位深 JPX SMask                 | 现有 Poppler 对部分样例有布局差异；保留其结果，并与 MuPDF 和原 alpha 参考对照。                                                            |
+| CMYK/YCCK                        | 黑色端点和色彩转换因阅读器而异；不能把 CMYK→RGB 近似等同于原空间保真。                                                                     |
+| 图片放大与透明边缘               | 最近邻和平滑插值会产生边缘差异；原尺寸原分量测试与放大显示对照分别验收。                                                                   |
+| 变长 ToUnicode                   | 源阅读器的提取行为存在差异；代码映射及往返提取需直接断言，不能只以源提取为参考。                                                           |
 
 32 位最近邻坐标计算另有独立回归；整包 386 验证曾被 `go-xml/xdm` 的既有年份
 常量溢出阻塞，不能把单个坐标回归通过写成整项目已通过 32 位编译。
@@ -146,14 +146,9 @@ CID-keyed CFF 写为 `FontFile3 /CIDFontType0C`。PDF Encoding 将紧凑字符�
 CIDToGIDMap。ToUnicode 来自实际源文本，保留共享字形的不同 Unicode、连字和
 补充平面字符。完整嵌入会增大 PDF，但应避免不安全地重排 FDSelect 和局部子程序。
 
-| 依赖 | 维护内容 |
-|------|----------|
-| [zc310/font](https://github.com/zc310/font) | CID/charset 与 Font DICT 元数据、字体面提取和模块路径；工作区源码在 `../third_party/font`。 |
-| [zc310/canvas](https://github.com/zc310/canvas) | 多 FD CFF 嵌入、源文本 ToUnicode、逐字体回退、填充/描边共享透明度恢复；工作区源码在 `../third_party/canvas`。 |
-| go-jpeg2000 | 工作区 `../third_party/go-jpeg2000` 中基于 v1.5.12 的截断 MQ 补丁；按实际编码轮数停止，并在剩余区间中点还原幅值。维护方式和许可见该仓库的 `OFD-PATCH.md`。 |
-
-本地 replace 会使用工作区依赖补丁。发布时需同步依赖版本，并确认脱离本地 replace
-仍可构建；测试源码通过本地补丁不等于补丁已进入发布依赖。
-
-font/canvas fork 单独运行默认 go vet 曾有 CFF2 不可达代码和 Point/Rect 未指定字段名
-的既有提示。维护记录应区分项目相关包检查和依赖自身检查，不能合并描述为全部通过。
+| 依赖                                                              | 维护内容                                                           |
+|-------------------------------------------------------------------|--------------------------------------------------------------------|
+| [zc310/font](https://github.com/zc310/font)                       | CID/charset 与 Font DICT 元数据、字体面提取、TrueType/CFF 子集化。 |
+| [zc310/canvas](https://github.com/zc310/canvas)                   | CFF 嵌入、源文本 ToUnicode、逐字体处理、填充/描边共享透明度恢复。  |
+| [ajroetker/go-jpeg2000](https://github.com/ajroetker/go-jpeg2000) | PDF JPX 的默认纯 Go 解码后端。                                     |
+| [mrjoshuak/go-jpeg2000](https://github.com/mrjoshuak/go-jpeg2000) | JPX 图像与颜色空间类型，以及测试样本编码。                         |

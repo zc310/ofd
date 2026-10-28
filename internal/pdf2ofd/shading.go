@@ -60,20 +60,27 @@ func (p *pdfInterpreter) paintShading(name string, resources types.Dict) {
 	if shading.mesh != nil {
 		matrix := multiplyPDFMatrix(p.state.ctm, shading.matrix)
 		if path, ok := p.shadingFillPath(); ok {
-			if color, ok := p.meshVectorColor(shading, matrix, path); ok {
-				path.Fill = true
-				path.Rule = spec.FillRuleNonZero
-				path.FillColor = color
-				// 与普通着色一样必须显式关闭描边，避免沿路径边界描黑边。
-				stroke := false
-				path.Stroke = false
-				path.StrokeSet = &stroke
-				if clips := p.buildClips(path.X, path.Y); clips != nil {
-					path.Clips = clips
+			// sh 的填充范围是当前裁剪区。Gouraud 网格只在控制点范围内有效，
+			// 必须先把路径收缩到网格包围盒，再按新的路径原点评定颜色。
+			if bounds, bounded := p.meshBoundsMM(shading, matrix); bounded {
+				restrictPathToBounds(path, bounds)
+			}
+			if path.Width > 0 && path.Height > 0 {
+				if color, ok := p.meshVectorColor(shading, matrix, path); ok {
+					path.Fill = true
+					path.Rule = spec.FillRuleNonZero
+					path.FillColor = color
+					// 与普通着色一样必须显式关闭描边，避免沿路径边界描黑边。
+					stroke := false
+					path.Stroke = false
+					path.StrokeSet = &stroke
+					if clips := p.buildClips(path.X, path.Y); clips != nil {
+						path.Clips = clips
+					}
+					path.Alpha = ofdAlpha(p.fillOpacity())
+					p.appendItem(*path)
+					return
 				}
-				path.Alpha = ofdAlpha(p.fillOpacity())
-				p.appendItem(*path)
-				return
 			}
 		}
 		if image := p.meshImage(shading, matrix); image != nil {
@@ -236,6 +243,9 @@ func (p *pdfInterpreter) parseMeshData(object types.Object, dict types.Dict) *pd
 	}
 	if mesh.kind == 5 {
 		if value, ok := integerValue(dict["VerticesPerRow"]); ok {
+			if value < 2 || value > maxLatticeVerticesPerRow {
+				return nil
+			}
 			mesh.verticesPerRow = value
 		}
 	}

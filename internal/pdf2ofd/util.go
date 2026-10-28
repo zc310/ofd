@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -50,7 +51,7 @@ func repairPDFXRefWithLimits(data []byte, limits Limits, controls ...*conversion
 		}
 		number, numberErr := strconv.Atoi(string(header[1]))
 		generation, generationErr := strconv.Atoi(string(header[2]))
-		if numberErr != nil || generationErr != nil || number <= 0 || generation < 0 {
+		if numberErr != nil || generationErr != nil || number <= 0 || generation < 0 || generation > 65535 {
 			continue
 		}
 		if int64(number) >= limits.MaxObjects {
@@ -99,13 +100,18 @@ func repairPDFXRefWithLimits(data []byte, limits Limits, controls ...*conversion
 	}
 	rootNumber, rootErr := strconv.Atoi(root[1])
 	rootGeneration, generationErr := strconv.Atoi(root[2])
-	if rootErr != nil || generationErr != nil {
+	if rootErr != nil || generationErr != nil || rootNumber <= 0 || rootGeneration < 0 || rootGeneration > 65535 {
 		return nil, errors.New("PDF 根对象无效")
 	}
 	if _, ok := byNumber[rootNumber]; !ok {
 		return nil, errors.New("PDF 根对象不存在")
 	}
 	maxNumber := numbers[len(numbers)-1]
+	// xref 每条固定 20 字节；maxNumber 来自输入且仅受 MaxObjects 限制，
+	// 直接乘 20 可能在 int64 上回绕成负数，跳过后面的容量检查并展开巨量循环。
+	if int64(maxNumber) > (math.MaxInt64-256)/20-1 {
+		return nil, &LimitError{Resource: "repaired_input_bytes", Actual: limits.MaxInputBytes + 1, Limit: limits.MaxInputBytes}
+	}
 	var repaired bytes.Buffer
 	repaired.WriteString("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n")
 	offsets := make(map[int]int, len(numbers))
@@ -203,7 +209,7 @@ func extractPDFObjectStreamLimited(object pdfIndirectObject, limits Limits, cont
 	for index := 0; index < number; index++ {
 		objectNumber, numberErr := strconv.Atoi(fields[index*2])
 		offset, offsetErr := strconv.Atoi(fields[index*2+1])
-		if numberErr != nil || offsetErr != nil || offset < 0 {
+		if numberErr != nil || offsetErr != nil || objectNumber <= 0 || offset < 0 {
 			continue
 		}
 		if offset > len(decoded)-first {

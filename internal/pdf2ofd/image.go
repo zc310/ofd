@@ -220,10 +220,18 @@ func (p *pdfInterpreter) appendImage(stream *types.StreamDict) error {
 func (p *pdfInterpreter) appendImageWithGraphicsMask(stream *types.StreamDict, data []byte, format string) error {
 	// 图片关联的软掩码只在本次绘制覆盖图形状态软掩码；q/Q 与后续矢量图元
 	// 仍保留原有状态，避免污染同一图片的缓存或后续绘制。
-	if p.state.softMask != nil && p.imageHasOwnSoftMask(stream) {
-		mask := p.state.softMask
-		p.state.softMask = nil
-		defer func() { p.state.softMask = mask }()
+	if p.imageHasOwnSoftMask(stream) {
+		if p.state.softMask != nil {
+			mask := p.state.softMask
+			p.state.softMask = nil
+			defer func() { p.state.softMask = mask }()
+		}
+		// 图片自带软掩码时同样覆盖图形状态的恒黑掩码；否则恒黑快速路径会把
+		// 本来有透明度的图片整体清零。
+		if p.state.constantMaskBlack {
+			p.state.constantMaskBlack = false
+			defer func() { p.state.constantMaskBlack = true }()
+		}
 	}
 	if mask := p.state.lumMask; mask != nil && !p.imageHasOwnSoftMask(stream) {
 		if masked, ok := p.applyImageSoftMask(data, mask); ok {
@@ -1062,7 +1070,7 @@ func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, he
 		if err != nil {
 			return nil, err
 		}
-		return resampleGrayMask(gray, width, height), nil
+		return applyPDFGrayDecode(ctx, stream, resampleGrayMask(gray, width, height)), nil
 	}
 	if hasJPXFilter(stream) {
 		var control *conversionControl
@@ -1116,9 +1124,23 @@ func pdfImageMaskSamples(ctx *model.Context, stream *types.StreamDict, width, he
 		if err != nil {
 			return nil, fmt.Errorf("JPEG 掩码解码失败: %w", err)
 		}
-		return resampleImageGray(decoded, width, height), nil
+		return applyPDFGrayDecode(ctx, stream, resampleImageGray(decoded, width, height)), nil
 	}
 	return decodePDFImageSamples(ctx, stream, width, height, 1, bpc)
+}
+
+// applyPDFGrayDecode 对已经解码为灰度的 DCT/JBIG2 样本应用 /Decode。
+// 未压缩与 JPX 路径各自处理 Decode，避免在调用方重复映射。
+func applyPDFGrayDecode(ctx *model.Context, stream *types.StreamDict, samples []byte) []byte {
+	decode := pdfImageDecode(ctx, stream, 1)
+	if decode[0] == 0 && decode[1] == 1 {
+		return samples
+	}
+	for index, sample := range samples {
+		value := float64(sample) / 255
+		samples[index] = floatToByte(decode[0] + value*(decode[1]-decode[0]))
+	}
+	return samples
 }
 
 // hasDCTFilter 判断流的过滤管线里是否含 DCTDecode（JPEG）。
@@ -1133,18 +1155,21 @@ func hasDCTFilter(stream *types.StreamDict) bool {
 
 // resampleImageGray 把任意图像按最近邻缩放为 width×height 的灰度样本，用于软掩码。
 func resampleImageGray(img image.Image, width, height int) []byte {
+	samples, ok := resampleBuffer(width, height)
+	if !ok {
+		return nil
+	}
 	bounds := img.Bounds()
 	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
-	samples := make([]byte, width*height)
 	for y := 0; y < height; y++ {
 		sourceY := bounds.Min.Y
 		if sourceHeight > 0 {
-			sourceY += y * sourceHeight / height
+			sourceY += int(int64(y) * int64(sourceHeight) / int64(height))
 		}
 		for x := 0; x < width; x++ {
 			sourceX := bounds.Min.X
 			if sourceWidth > 0 {
-				sourceX += x * sourceWidth / width
+				sourceX += int(int64(x) * int64(sourceWidth) / int64(width))
 			}
 			samples[y*width+x] = color.GrayModel.Convert(img.At(sourceX, sourceY)).(color.Gray).Y
 		}
@@ -1154,24 +1179,39 @@ func resampleImageGray(img image.Image, width, height int) []byte {
 
 // resampleGrayMask 把灰度位图按最近邻缩放到 width×height，作为软掩码的 alpha。
 func resampleGrayMask(gray *image.Gray, width, height int) []byte {
+	samples, ok := resampleBuffer(width, height)
+	if !ok {
+		return nil
+	}
 	bounds := gray.Bounds()
 	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
-	samples := make([]byte, width*height)
 	for y := 0; y < height; y++ {
 		sourceY := 0
 		if sourceHeight > 0 {
-			sourceY = y * sourceHeight / height
+			sourceY = int(int64(y) * int64(sourceHeight) / int64(height))
 		}
 		sourceY += bounds.Min.Y
 		for x := 0; x < width; x++ {
 			sourceX := 0
 			if sourceWidth > 0 {
-				sourceX = x * sourceWidth / width
+				sourceX = int(int64(x) * int64(sourceWidth) / int64(width))
 			}
 			samples[y*width+x] = gray.GrayAt(bounds.Min.X+sourceX, sourceY).Y
 		}
 	}
 	return samples
+}
+
+// resampleBuffer 在分配前按当前平台 int 宽度检查 width*height，避免 32 位
+// 平台上的乘法回绕得到小块内存，随后按回绕后的索引越界写入。
+func resampleBuffer(width, height int) ([]byte, bool) {
+	if width <= 0 || height <= 0 {
+		return nil, false
+	}
+	if int64(width) > int64(^uint(0)>>1)/int64(height) {
+		return nil, false
+	}
+	return make([]byte, width*height), true
 }
 
 func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdfColor, controls ...*conversionControl) ([]byte, string, error) {
@@ -1278,7 +1318,7 @@ func pdfImageDataRaw(ctx *model.Context, stream *types.StreamDict, maskColor pdf
 		return nil, "", err
 	}
 	if indexed {
-		return encodePDFIndexedImage(stream.Content, width, height, bpc, components, palette, cmyk)
+		return encodePDFIndexedImage(ctx, stream, width, height, bpc, components, palette, cmyk)
 	}
 	if bpc == maxPDFImageBitsPerComponent {
 		return encodePDFImage16(ctx, stream, width, height, components, cmyk)
@@ -1626,12 +1666,11 @@ func pdfImageColorSpace(ctx *model.Context, stream *types.StreamDict) (component
 		if err != nil {
 			return 0, false, nil, err
 		}
-		if dict, ok := profile.(types.Dict); ok {
-			if value, ok := dereferencedPDFNumber(ctx, dict["N"]); ok {
-				return int(value), false, nil, nil
-			}
+		components, err := pdfICCProfileComponents(ctx, profile)
+		if err != nil {
+			return 0, false, nil, err
 		}
-		return 3, false, nil, nil
+		return components, false, nil, nil
 	default:
 		return pdfNamedColorSpace(name.Value())
 	}
@@ -1659,12 +1698,11 @@ func pdfArrayColorSpace(ctx *model.Context, object types.Object) (int, bool, []b
 		if err != nil {
 			return 0, false, nil, err
 		}
-		if dict, ok := profile.(types.Dict); ok {
-			if value, ok := dereferencedPDFNumber(ctx, dict["N"]); ok {
-				return int(value), false, nil, nil
-			}
+		components, err := pdfICCProfileComponents(ctx, profile)
+		if err != nil {
+			return 0, false, nil, err
 		}
-		return 3, false, nil, nil
+		return components, false, nil, nil
 	}
 	return pdfNamedColorSpace(name.Value())
 }
@@ -1719,7 +1757,7 @@ func pdfBytesObject(object types.Object) ([]byte, bool) {
 	}
 }
 
-func encodePDFIndexedImage(data []byte, width, height, bpc, components int, palette []byte, converter cmykConverter) ([]byte, string, error) {
+func encodePDFIndexedImage(ctx *model.Context, stream *types.StreamDict, width, height, bpc, components int, palette []byte, converter cmykConverter) ([]byte, string, error) {
 	if bpc <= 0 || bpc > 8 {
 		return nil, "", errors.New("Indexed 图像位深无效")
 	}
@@ -1727,20 +1765,31 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 	if components != 1 && components != 3 && components != 4 {
 		return nil, "", errors.New("Indexed 基础颜色空间不支持")
 	}
+	if len(palette) < components || len(palette)%components != 0 {
+		return nil, "", errors.New("Indexed 调色板长度无效")
+	}
+	data := stream.Content
 	rowBytes := (width*bpc + 7) / 8
-	if len(data) < rowBytes*height {
+	if width <= 0 || height <= 0 || rowBytes <= 0 || height > len(data)/rowBytes {
 		return nil, "", errors.New("Indexed 图像数据长度无效")
 	}
+	maximum := uint32(1)<<uint(bpc) - 1
+	decode := pdfIndexedDecode(ctx, stream, maximum)
 	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
-	mask := byte((1 << bpc) - 1)
+	mask := uint32(maximum)
+	paletteEntries := len(palette) / components
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			bit := x * bpc
-			value := (data[y*rowBytes+bit/8] >> uint(8-bpc-bit%8)) & mask
-			paletteIndex := int(value) * components
-			if paletteIndex+components-1 >= len(palette) {
-				return nil, "", errors.New("Indexed 图像索引超出调色板")
+			value := (uint32(data[y*rowBytes+bit/8]) >> uint(8-bpc-bit%8)) & mask
+			mapped := decode[0] + float64(value)/float64(maximum)*(decode[1]-decode[0])
+			index := int(math.Round(mapped))
+			if index < 0 {
+				index = 0
+			} else if index >= paletteEntries {
+				index = paletteEntries - 1
 			}
+			paletteIndex := index * components
 			switch components {
 			case 1:
 				rgba.SetRGBA(x, y, color.RGBA{R: palette[paletteIndex], G: palette[paletteIndex], B: palette[paletteIndex], A: 255})
@@ -1757,6 +1806,29 @@ func encodePDFIndexedImage(data []byte, width, height, bpc, components int, pale
 		return nil, "", fmt.Errorf("编码 Indexed PNG 图像失败: %w", err)
 	}
 	return encoded.Bytes(), "PNG", nil
+}
+
+// pdfIndexedDecode 读取 Indexed 图像的 /Decode；缺省上限是 2^bpc-1。
+func pdfIndexedDecode(ctx *model.Context, stream *types.StreamDict, maximum uint32) [2]float64 {
+	decode := [2]float64{0, float64(maximum)}
+	object, found := stream.Find("Decode")
+	if !found {
+		return decode
+	}
+	resolved, err := dereferencePDFObject(ctx, object)
+	if err != nil {
+		return decode
+	}
+	array, ok := resolved.(types.Array)
+	if !ok || len(array) < 2 {
+		return decode
+	}
+	for i := 0; i < 2; i++ {
+		if value, ok := dereferencedPDFNumber(ctx, array[i]); ok {
+			decode[i] = value
+		}
+	}
+	return decode
 }
 
 // encodePDFCMYKJPEG 把 PDF 四分量 JPEG 转换为 RGB 图像。Go 的 jpeg 解码器
@@ -1909,7 +1981,7 @@ func pdfImageICCProfileChannels(ctx *model.Context, stream *types.StreamDict, ch
 	if profile == nil {
 		return nil
 	}
-	if n, ok := dereferencedPDFNumber(ctx, profile.Dict["N"]); !ok || int(n) != channels {
+	if n, err := pdfICCProfileComponents(ctx, *profile); err != nil || n != channels {
 		return nil
 	}
 	transformer, err := coloricc.New(pdfStreamContent(profile), channels)
