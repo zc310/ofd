@@ -9,7 +9,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
-	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 )
 
 type openTrackingFontEngine struct {
@@ -53,17 +53,17 @@ func emptyDocBodiesPackage(t *testing.T, hasPage bool) []byte {
 }
 
 func TestEmptyDocBodiesDoNotLeaveUnclosedRenderDocuments(t *testing.T) {
-	// 本包不并行运行测试；结束时恢复由 canvas 后端注册的默认工厂。
+	// 本包不并行运行测试；结束时恢复由 canvasfont 注册的默认工厂。
 	t.Cleanup(func() {
 		render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-			return canvasbackend.NewFonts(doc)
+			return canvasfont.NewFonts(doc)
 		})
 	})
 	for _, hasPage := range []bool{false, true} {
 		t.Run(fmt.Sprintf("hasPage=%v", hasPage), func(t *testing.T) {
 			var engines []*openTrackingFontEngine
 			render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-				engine := &openTrackingFontEngine{FontEngine: canvasbackend.NewFonts(doc)}
+				engine := &openTrackingFontEngine{FontEngine: canvasfont.NewFonts(doc)}
 				engines = append(engines, engine)
 				return engine
 			})

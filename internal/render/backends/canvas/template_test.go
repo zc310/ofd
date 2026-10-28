@@ -33,8 +33,8 @@ func (c directTemplateContext) DrawSemanticTextLine(run drawing.TextRun) {
 }
 
 func TestTemplateFormsPreservePixelsTextLinksAndPageSizes(t *testing.T) {
-	box := func(x float64, color creator.Color) creator.Path {
-		return creator.Path{X: x, Width: 10, Height: 10, Fill: true, FillColor: &color, Data: "M 0 0 L 10 0 L 10 10 L 0 10 C"}
+	box := func(x float64, fillColor creator.Color) creator.Path {
+		return creator.Path{X: x, Width: 10, Height: 10, Fill: true, FillColor: &fillColor, Data: "M 0 0 L 10 0 L 10 10 L 0 10 C"}
 	}
 	text := creator.Text{X: 1, Y: 11, Width: 25, Height: 5, Size: 3, Font: "Go", Value: "Template", Actions: []creator.Action{{
 		Event: creator.ActionEventClick, URI: &creator.URIAction{URI: "https://example.com/template"},

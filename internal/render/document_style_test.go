@@ -8,6 +8,7 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/paint"
 )
 
 // TestPathStrokeScalesWithObjectCTM 回归：线宽、虚线、斜接限制定义在对象坐标系，
@@ -19,9 +20,9 @@ func TestPathStrokeScalesWithObjectCTM(t *testing.T) {
 			CTM:       &models.CTM{0.3528, 0, 0, 0.3528, 0, 0},
 		},
 	}}
-	scale := pathStrokeScale(object, nil)
+	scale := paint.StrokeScale(object.CTM, nil)
 	if math.Abs(scale-0.3528) > 1e-9 {
-		t.Fatalf("pathStrokeScale = %g, want 0.3528", scale)
+		t.Fatalf("StrokeScale = %g, want 0.3528", scale)
 	}
 
 	ctx := canvas.NewContext(canvas.New(10, 10))
@@ -33,8 +34,8 @@ func TestPathStrokeScalesWithObjectCTM(t *testing.T) {
 	}
 
 	// 无 CTM 时缩放系数为 1，保持原有线宽。
-	if scale := pathStrokeScale(models.PathObject{}, nil); scale != 1 {
-		t.Fatalf("pathStrokeScale without CTM = %g, want 1", scale)
+	if scale := paint.StrokeScale(nil, nil); scale != 1 {
+		t.Fatalf("StrokeScale without CTM = %g, want 1", scale)
 	}
 }
 
@@ -148,23 +149,11 @@ func TestStrokeParametersRejectInvalidValues(t *testing.T) {
 		},
 	}, nil, 1)
 
-	if ctx.Style.StrokeWidth != defaultLineWidth {
-		t.Fatalf("stroke width = %g, want default %g", ctx.Style.StrokeWidth, defaultLineWidth)
+	if ctx.Style.StrokeWidth != paint.DefaultLineWidth {
+		t.Fatalf("stroke width = %g, want default %g", ctx.Style.StrokeWidth, paint.DefaultLineWidth)
 	}
 	if len(ctx.Style.Dashes) != 0 || ctx.Style.DashOffset != 0 {
 		t.Fatalf("invalid dash pattern was retained: offset=%g dashes=%v", ctx.Style.DashOffset, ctx.Style.Dashes)
-	}
-}
-
-func TestValidDashPattern(t *testing.T) {
-	pattern := models.StArrayF{2, 1}
-	if !validDashPattern(0, &pattern) {
-		t.Fatal("valid dash pattern was rejected")
-	}
-	for _, invalid := range []models.StArrayF{{-1, 1}, {0, 0}} {
-		if validDashPattern(0, &invalid) {
-			t.Fatalf("invalid dash pattern was accepted: %v", invalid)
-		}
 	}
 }
 

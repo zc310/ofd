@@ -15,7 +15,6 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/rasterizer"
 
-	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
@@ -80,14 +79,14 @@ func SceneDirect(t testing.TB, ctx *canvas.Context, fontPath string) {
 	ctx.SetStrokeWidth(1.4)
 	ctx.SetStrokeJoiner(canvas.MiterJoin)
 	ctx.SetStrokeCapper(canvas.ButtCap)
-	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(WavePath()))
+	ctx.DrawPath(0, 0, WavePath())
 
 	ctx.SetStroke(nil)
 	ctx.SetFillRule(canvas.EvenOdd)
 	ctx.SetFillColor(cRed)
 	p := CirclePathGeom(50, 105, 16)
 	p = AppendCircleGeom(p, 68, 105, 16)
-	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(p))
+	ctx.DrawPath(0, 0, p)
 	ctx.SetFillRule(canvas.NonZero)
 
 	g := canvas.Grad{}
@@ -117,7 +116,7 @@ func SceneDirect(t testing.TB, ctx *canvas.Context, fontPath string) {
 	ctx.SetDashes(0, 2.5, 1)
 	ctx.SetStrokeCapper(canvas.RoundCap)
 	ctx.SetStrokeJoiner(canvas.RoundJoin)
-	ctx.DrawPath(0, 0, canvasconv.ToCanvasPath(RoundedRectPath(8, 8, 192, 132, 12)))
+	ctx.DrawPath(0, 0, RoundedRectPath(8, 8, 192, 132, 12))
 
 	m := ctx.CoordSystemView().Mul(ctx.View()).Mul(canvas.Identity.Translate(120, 55))
 	ctx.RenderImage(OffscreenGradient(), m)
@@ -173,7 +172,7 @@ func SceneBackend(t testing.TB, b Renderer, fontPath string) {
 	tp = tp.Transform(canvas.Identity.ReflectY()).Translate(42, 20)
 	b.SetFillColor(cDark)
 	b.SetStrokeColor(color.Transparent)
-	b.TextPath(canvasconv.FromCanvasPath(tp), 0, 0)
+	b.TextPath(tp, 0, 0)
 
 	b.ClearFill()
 	b.SetStrokeColor(cNavy)

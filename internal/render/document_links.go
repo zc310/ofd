@@ -1,56 +1,36 @@
 package render
 
 import (
-	"encoding/binary"
 	"fmt"
-	"hash/fnv"
 	"math"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/navigation"
 )
 
-// document_links.go 从 OFD 页面提取链接热区，供 PDF 等不支持交互的输出格式生成
-// 可点击区域。链接可以出现在三处，都要扫：
-//
-//  1. 页面正文图层图元自身的 CT_GraphicUnit/Actions；
-//  2. 页面所用模板页的图层（模板按 ZOrder 叠加到页面坐标）；
-//  3. 页面注解文件中 Link 注解的 Appearance 图元。
-//
-// 附件跳转、声音与影片动作没有 PDF 对应物，不在此处理。
+// LinkTargetRef 是内部跳转目标在输出文档中的位置。
+type LinkTargetRef = navigation.PageRef
 
-// LinkTargetRef 是内部跳转目标的定位信息。
-type LinkTargetRef struct {
-	// Index 是目标页在输出中的页序号（从 0 起）。
-	Index int
-	// Height 是目标页高度（mm）。
-	Height float64
-}
+// PageLinkResolver 将 OFD 页面 ID 映射为输出页序和页面高度。
+type PageLinkResolver = navigation.PageResolver
 
-// PageLinkResolver 把 OFD 页面的 StID 解析为目标页在输出中的位置。ok 为 false
-// 表示目标页不会出现在输出里（例如被页码范围裁掉），此时对应链接必须丢弃。
-type PageLinkResolver func(pageID models.StID) (LinkTargetRef, bool)
-
-// PageLinks 返回页面上所有链接热区，按出现顺序排列。
-//
-// resolve 为 nil 时只导出外部链接，内部跳转一律丢弃——调用方不知道最终会输出
-// 哪些页时，宁可不导出也不能写出指向不存在页面的链接。
-//
-// page 为 nil，或页面内容读取失败时返回 nil：链接是附加信息，读不到内容就没有
-// 热区可言，不应让整个转换失败。
+// PageLinks 返回页面链接热区，resolve 为 nil 时仅导出外部链接。
+// 页面为空或加载失败时返回 nil；需要保留错误时使用 PageLinksWithVisibilityE。
 func (p *Document) PageLinks(page *parser.Page, resolve PageLinkResolver) []drawing.PageLink {
 	return p.PageLinksWithVisibility(page, resolve, PageVisibility{})
 }
 
-// PageLinksWithVisibility 排除隐藏正文图层和模板中的链接，保留注解链接。
+// PageLinksWithVisibility 排除隐藏正文图层和模板中的链接，保留批注链接。
 func (p *Document) PageLinksWithVisibility(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) []drawing.PageLink {
 	links, _ := p.PageLinksWithVisibilityE(page, resolve, visibility)
 	return links
 }
 
-// PageLinksWithVisibilityE 排除隐藏项并保留页面、模板和注解加载错误。
+// PageLinksWithVisibilityE 排除隐藏项并保留页面、模板和批注加载错误。
 func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkResolver, visibility PageVisibility) ([]drawing.PageLink, error) {
 	if p == nil || p.Document == nil || page == nil {
 		return nil, fmt.Errorf("链接文档或页面为空")
@@ -58,7 +38,7 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 	links := make([]drawing.PageLink, 0, 4)
 	var budget renderBudget
 	budget.reset()
-	frame := contentFrame{document: p, matrix: geom.Identity, budget: &budget}
+	frame := contentFrame{Scope: &contentSource{Document: p, budget: &budget}, Matrix: geom.Identity}
 	visit := func(frame contentFrame, item models.PageItem) {
 		collectTransformedItemLink(frame, item, resolve, &links)
 	}
@@ -67,17 +47,15 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		return nil, err
 	}
 	defer lease.Release()
-	content := lease.Content()
-	if content == nil {
+	pageContent := lease.Content()
+	if pageContent == nil {
 		return nil, fmt.Errorf("页面内容为空")
 	}
-	templates := content.Template
-	frame.box = content.Area.PhysicalBox
-	if content.Content != nil {
-		p.walkContentLayers(frame, visiblePageLayers(content.Content.Layer, visibility.HiddenLayers), visit)
+	frame.Box = pageContent.Area.PhysicalBox
+	if pageContent.Content != nil {
+		content.WalkLayers(frame, visiblePageLayers(pageContent.Content.Layer, visibility.HiddenLayers), visit)
 	}
-	// 模板页上的链接同样可点：模板按 ZOrder 叠加到页面，其图元坐标已是页面坐标。
-	for _, ref := range templates {
+	for _, ref := range pageContent.Template {
 		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
 			continue
 		}
@@ -88,13 +66,13 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		if template == nil || template.Content == nil {
 			continue
 		}
-		p.walkContentLayers(frame, template.Content.Layer, visit)
+		content.WalkLayers(frame, template.Content.Layer, visit)
 	}
 	annotation, err := p.LoadAnnotation(page.ID)
 	if err != nil {
 		return nil, fmt.Errorf("加载页面 %d 注解失败: %w", page.ID, err)
 	}
-	collectAnnotationLinks(annotation, resolve, &links)
+	links = append(links, navigation.AnnotationLinks(annotation, resolve)...)
 	if len(links) == 0 {
 		return nil, nil
 	}
@@ -102,21 +80,21 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 }
 
 func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolve PageLinkResolver, links *[]drawing.PageLink) {
-	unit := linkGraphicUnit(item)
-	if unit == nil || unit.Actions == nil || !linkBoundaryUsable(unit.Boundary) {
+	unit := navigation.GraphicUnit(item)
+	if unit == nil || unit.Actions == nil || !navigation.BoundaryUsable(unit.Boundary) {
 		return
 	}
-	link, ok := actionLink(*unit.Actions, resolve)
+	link, ok := navigation.ActionLink(*unit.Actions, resolve)
 	if !ok {
 		return
 	}
-	link.ObjectID, link.InComposite = uint64(pageItemID(item)), frame.inComposite
+	link.ObjectID, link.InComposite = uint64(pageItemID(item)), frame.InComposite
 	box := unit.Boundary
 	x0, x1 := math.Min(box.X, box.X+box.Width), math.Max(box.X, box.X+box.Width)
 	y0, y1 := math.Min(box.Y, box.Y+box.Height), math.Max(box.Y, box.Y+box.Height)
-	path := geom.Rectangle(x1-x0, y1-y0).Translate(x0, y0).Transform(frame.matrix)
-	if frame.clip != nil {
-		path = path.And(frame.clip)
+	path := geom.Rectangle(x1-x0, y1-y0).Translate(x0, y0).Transform(frame.Matrix)
+	if frame.Clip != nil {
+		path = path.And(frame.Clip)
 	}
 	if path.Empty() {
 		return
@@ -126,221 +104,7 @@ func collectTransformedItemLink(frame contentFrame, item models.PageItem, resolv
 	*links = append(*links, link)
 }
 
-// PageExternalLinks 只返回外部链接热区，供不处理内部跳转的调用方使用。
+// PageExternalLinks 只返回外部链接热区。
 func (p *Document) PageExternalLinks(page *parser.Page) []drawing.PageLink {
 	return p.PageLinks(page, nil)
-}
-
-// collectLinks 遍历图层，把图元上带边界的 CLICK 链接追加到 links。
-func collectLinks(layers []*models.Layer, resolve PageLinkResolver, links *[]drawing.PageLink) {
-	for _, layer := range layers {
-		if layer == nil {
-			continue
-		}
-		collectItemLinks(layer.Items, resolve, links)
-	}
-}
-
-func collectItemLinks(items []models.PageItem, resolve PageLinkResolver, links *[]drawing.PageLink) {
-	for _, item := range items {
-		if item.Kind == models.PageItemBlock {
-			if item.Block != nil {
-				collectItemLinks(item.Block.Items, resolve, links)
-			}
-			continue
-		}
-		unit := linkGraphicUnit(item)
-		if unit == nil || unit.Actions == nil {
-			continue
-		}
-		boundary := unit.Boundary
-		if !linkBoundaryUsable(boundary) {
-			continue
-		}
-		link, ok := actionLink(*unit.Actions, resolve)
-		if !ok {
-			continue
-		}
-		link.X, link.Y, link.Width, link.Height = boundary.X, boundary.Y, boundary.Width, boundary.Height
-		*links = append(*links, link)
-	}
-}
-
-// collectAnnotationLinks 收集 Link 注解外观图元上的链接。
-//
-// 热区取注解 Appearance 自身的 Boundary：它是页面上的绝对位置，而外观图元的
-// Boundary 相对注解定位。注解可能只有部分图元带链接，所以即便某图元无边界也
-// 不能因此放弃整个注解。
-func collectAnnotationLinks(annot *models.PageAnnot, resolve PageLinkResolver, links *[]drawing.PageLink) {
-	if annot == nil {
-		return
-	}
-	for _, item := range annot.Annots {
-		if item == nil || item.Appearance == nil {
-			continue
-		}
-		boundary := item.Appearance.Boundary
-		if boundary == nil || !linkBoundaryUsable(*boundary) {
-			continue
-		}
-		link, ok := appearanceLink(item.Appearance.Items, resolve)
-		if !ok {
-			continue
-		}
-		link.X, link.Y, link.Width, link.Height = boundary.X, boundary.Y, boundary.Width, boundary.Height
-		*links = append(*links, link)
-	}
-}
-
-// appearanceLink 递归查找注解外观中的首个 CLICK 链接。
-func appearanceLink(items []models.PageItem, resolve PageLinkResolver) (drawing.PageLink, bool) {
-	for _, item := range items {
-		if item.Kind == models.PageItemBlock {
-			if item.Block != nil {
-				if link, ok := appearanceLink(item.Block.Items, resolve); ok {
-					return link, true
-				}
-			}
-			continue
-		}
-		unit := linkGraphicUnit(item)
-		if unit == nil || unit.Actions == nil {
-			continue
-		}
-		if link, ok := actionLink(*unit.Actions, resolve); ok {
-			return link, true
-		}
-	}
-	return drawing.PageLink{}, false
-}
-
-// actionLink 返回动作列表中首个 CLICK 链接：外部链接优先，其次是能解析出目标页
-// 的内部跳转。目标页无法解析时跳过该动作，继续看同一图元上的其它动作。
-func actionLink(actions models.Actions, resolve PageLinkResolver) (drawing.PageLink, bool) {
-	for _, action := range actions.Action {
-		if action.Event != models.ActionEventClick {
-			continue
-		}
-		if action.URI != nil && action.URI.URI != "" {
-			return drawing.PageLink{URI: action.URI.URI}, true
-		}
-		if action.Goto == nil || action.Goto.Dest == nil {
-			continue
-		}
-		if target, ok := linkTarget(*action.Goto.Dest, resolve); ok {
-			return drawing.PageLink{Target: &target}, true
-		}
-	}
-	return drawing.PageLink{}, false
-}
-
-// linkTarget 把 OFD 跳转目标换算为输出坐标下的锚点。resolve 为 nil 表示调用方不
-// 处理内部跳转。
-func linkTarget(dest models.CtDest, resolve PageLinkResolver) (drawing.LinkTarget, bool) {
-	if resolve == nil {
-		return drawing.LinkTarget{}, false
-	}
-	ref, ok := resolve(models.StID(dest.PageID))
-	if !ok {
-		return drawing.LinkTarget{}, false
-	}
-	kind, ok := linkDestType(dest.Type)
-	if !ok {
-		return drawing.LinkTarget{}, false
-	}
-	target := drawing.LinkTarget{
-		Page:       ref.Index,
-		Type:       kind,
-		Left:       optionalValue(dest.Left),
-		Top:        optionalValue(dest.Top),
-		Right:      optionalValue(dest.Right),
-		Bottom:     optionalValue(dest.Bottom),
-		Zoom:       optionalValue(dest.Zoom),
-		PageHeight: ref.Height,
-	}
-	target.Name = linkAnchorName(target)
-	return target, true
-}
-
-// optionalValue 读取可选坐标，缺省按 0 处理。
-//
-// 缺省 0 与显式 0 在各 DestType 下语义一致（规范未定义坐标即按 0），因此无需
-// 区分。Dest@Zoom 同样可选，缺省 0 表示保持阅读器当前缩放，与 PDF 的 XYZ 目的地
-// 对缩放为 0 的解释一致。
-func optionalValue(value *float64) float64 {
-	if value == nil {
-		return 0
-	}
-	return *value
-}
-
-// linkDestType 把 OFD 的 Dest@Type 映射为 drawing.DestType。
-// 未知类型返回 false，调用方丢弃无法解释的目标，避免生成语义不明的跳转。
-func linkDestType(kind models.DestType) (drawing.DestType, bool) {
-	switch kind {
-	case models.DestTypeFit:
-		return drawing.DestFit, true
-	case models.DestTypeFitH:
-		return drawing.DestFitH, true
-	case models.DestTypeFitV:
-		return drawing.DestFitV, true
-	case models.DestTypeXYZ:
-		return drawing.DestXYZ, true
-	case models.DestTypeFitR:
-		return drawing.DestFitR, true
-	}
-	return drawing.DestFit, false
-}
-
-// linkAnchorName 由目标位置推导锚点名。
-//
-// 名字必须由内容决定而不能来自自增序号：提取是逐页流式进行的，没有共享计数器，
-// 而同名锚点在名称树里会自动去重——指向同一位置的多个链接共用一个锚点正是想要
-// 的结果。名字只用字母数字与下划线，避免 PDF 名称对象的转义问题。
-func linkAnchorName(target drawing.LinkTarget) string {
-	hash := fnv.New64a()
-	var scratch [8]byte
-	for _, value := range []float64{
-		float64(target.Page), float64(target.Type),
-		target.Left, target.Top, target.Right, target.Bottom,
-		target.Zoom, target.PageHeight,
-	} {
-		binary.LittleEndian.PutUint64(scratch[:], math.Float64bits(value))
-		_, _ = hash.Write(scratch[:])
-	}
-	return fmt.Sprintf("ofd_%d_%016x", target.Page, hash.Sum64())
-}
-
-// linkBoundaryUsable 判断热区能否成为点击区域。
-//
-// 真实文档里存在负宽高（internal/models 的 Boundary 注释对此有说明），负宽高
-// 同样表示一个矩形，需在归一化时取绝对值；但宽高为零、非有限值则没有可点区域。
-func linkBoundaryUsable(boundary models.StBox) bool {
-	if !boundary.IsFinite() {
-		return false
-	}
-	return boundary.Width != 0 && boundary.Height != 0
-}
-
-// linkGraphicUnit 返回图元携带的图形单元（含 Actions 与 Boundary）。
-func linkGraphicUnit(item models.PageItem) *models.CTGraphicUnit {
-	switch item.Kind {
-	case models.PageItemText:
-		if item.Text != nil {
-			return &item.Text.CTGraphicUnit
-		}
-	case models.PageItemPath:
-		if item.Path != nil {
-			return &item.Path.CTGraphicUnit
-		}
-	case models.PageItemImage:
-		if item.Image != nil {
-			return &item.Image.CTGraphicUnit
-		}
-	case models.PageItemComposite:
-		if item.Composite != nil {
-			return &item.Composite.CTGraphicUnit
-		}
-	}
-	return nil
 }

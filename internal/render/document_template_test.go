@@ -10,6 +10,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/renderstate"
 )
 
 type templateTestFonts struct {
@@ -49,13 +50,11 @@ func (d *templateTestDrawer) DrawTemplateSurface(surface VectorSurface) bool {
 }
 
 func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
-	previous := newVectorSurface
-	t.Cleanup(func() { newVectorSurface = previous })
 	var builds atomic.Int32
-	newVectorSurface = func(_, _ float64, _ func(DrawContext)) VectorSurface {
+	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface {
 		builds.Add(1)
 		return &templateTestSurface{weight: 1024}
-	}
+	})
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
@@ -116,15 +115,13 @@ func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
 }
 
 func TestTemplateCacheBoundsRetentionAndRejectsStaleBuild(t *testing.T) {
-	previous := newVectorSurface
-	t.Cleanup(func() { newVectorSurface = previous })
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
 	weight := int64(2 << 20)
-	newVectorSurface = func(_, _ float64, _ func(DrawContext)) VectorSurface {
+	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface {
 		return &templateTestSurface{weight: weight}
-	}
+	})
 	var budget renderBudget
 	budget.reset()
 	ctx := &templateTestDrawer{}
@@ -138,10 +135,10 @@ func TestTemplateCacheBoundsRetentionAndRejectsStaleBuild(t *testing.T) {
 		t.Fatal("cache exceeded capacity or byte limit")
 	}
 	before := doc.templateScenes.Len()
-	newVectorSurface = func(_, _ float64, _ func(DrawContext)) VectorSurface {
+	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface {
 		fonts.generation.Add(1)
 		return &templateTestSurface{weight: weight}
-	}
+	})
 	if doc.drawCachedTemplate(ctx, &models.PageContent{Content: &models.Content{}}, box, &budget) || doc.templateScenes.Len() != before {
 		t.Fatal("font generation changed during build but stale surface was published")
 	}
@@ -153,9 +150,7 @@ func TestTemplateCacheHitStillConsumesPageBudget(t *testing.T) {
 	t.Cleanup(doc.Close)
 	content := &models.PageContent{Content: &models.Content{}}
 	box := models.StBox{Width: 20, Height: 20}
-	previous := newVectorSurface
-	t.Cleanup(func() { newVectorSurface = previous })
-	newVectorSurface = func(_, _ float64, _ func(DrawContext)) VectorSurface { return &templateTestSurface{weight: 1024} }
+	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface { return &templateTestSurface{weight: 1024} })
 	var budget renderBudget
 	budget.reset()
 	ctx := &templateTestDrawer{}
@@ -163,20 +158,34 @@ func TestTemplateCacheHitStillConsumesPageBudget(t *testing.T) {
 		t.Fatal("template build failed")
 	}
 	entry := doc.templateScenes.Values()[0]
-	entry.usage.compositeExpansions = 2
-	entry.usage.compositeResources[7] = 2
-	entry.usage.patternTiles = 3
-	entry.usage.offscreenPixels = 4
-	if !doc.drawCachedTemplate(ctx, content, box, &budget) || budget.compositeExpansions != 2 || budget.compositeResources[7] != 2 || budget.patternTiles != 3 || budget.offscreenPixels != 4 {
+	for range 2 {
+		if !entry.usage.AllowComposite(7) {
+			t.Fatal("模板复合用量准备失败")
+		}
+	}
+	if !entry.usage.AllowPatternTiles(3) || !entry.usage.AllowOffscreenPixels(4, 1, 25.4) {
+		t.Fatal("模板用量准备失败")
+	}
+	if !doc.drawCachedTemplate(ctx, content, box, &budget) || budget.Usage() != entry.usage.Usage() || budget.CompositeCount(7) != 2 {
 		t.Fatal("cache hit bypassed resource accounting")
 	}
-	for _, exhausted := range []renderBudget{
-		{compositeExpansions: maxCompositeExpansions},
-		{compositeResources: map[models.StID]int{7: maxCompositeResourceExpansions}},
-		{patternTiles: maxPatternTilesPerRender},
-		{offscreenPixels: maxOffscreenPixels},
+	for _, consume := range []func(*renderBudget){
+		func(b *renderBudget) {
+			for i := range renderstate.MaxCompositeExpansions {
+				b.AllowComposite(models.StID(i + 1))
+			}
+		},
+		func(b *renderBudget) {
+			for range renderstate.MaxCompositeResourceExpansions {
+				b.AllowComposite(7)
+			}
+		},
+		func(b *renderBudget) { b.AllowPatternTiles(renderstate.MaxPatternTiles) },
+		func(b *renderBudget) { b.AllowOffscreenPixels(renderstate.MaxOffscreenPixels, 1, 25.4) },
 	} {
-		exhausted.templateCacheable = true
+		var exhausted renderBudget
+		exhausted.reset()
+		consume(&exhausted)
 		if doc.drawCachedTemplate(ctx, content, box, &exhausted) {
 			t.Error("cache hit ignored exhausted page budget")
 		}
@@ -184,14 +193,12 @@ func TestTemplateCacheHitStillConsumesPageBudget(t *testing.T) {
 }
 
 func TestTemplateCacheCloseDoesNotPublishInFlightBuild(t *testing.T) {
-	previous := newVectorSurface
-	t.Cleanup(func() { newVectorSurface = previous })
 	building, release := make(chan struct{}), make(chan struct{})
-	newVectorSurface = func(_, _ float64, _ func(DrawContext)) VectorSurface {
+	setVectorSurfaceFactory(t, func(_, _ float64, _ func(DrawContext)) VectorSurface {
 		close(building)
 		<-release
 		return &templateTestSurface{weight: 1024}
-	}
+	})
 	fonts := &templateClosingFonts{closing: make(chan struct{})}
 	doc := &Document{fonts: fonts}
 	result := make(chan bool, 1)
@@ -215,8 +222,6 @@ func TestTemplateCacheCloseDoesNotPublishInFlightBuild(t *testing.T) {
 }
 
 func TestTemplateColdBuildDoesNotBlockOtherKeysOrCachedDraws(t *testing.T) {
-	previous := newVectorSurface
-	t.Cleanup(func() { newVectorSurface = previous })
 	fonts := &templateTestFonts{}
 	doc := &Document{fonts: fonts}
 	t.Cleanup(doc.Close)
@@ -224,13 +229,13 @@ func TestTemplateColdBuildDoesNotBlockOtherKeysOrCachedDraws(t *testing.T) {
 	building, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	newVectorSurface = func(w, _ float64, _ func(DrawContext)) VectorSurface {
+	setVectorSurfaceFactory(t, func(w, _ float64, _ func(DrawContext)) VectorSurface {
 		if w == 30 {
 			close(building)
 			<-release
 		}
 		return &templateTestSurface{weight: 1024}
-	}
+	})
 	draw := func(w float64) bool {
 		var budget renderBudget
 		budget.reset()

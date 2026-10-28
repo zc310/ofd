@@ -10,6 +10,7 @@ import (
 
 type resolutionTestContext struct {
 	DrawContext
+
 	resolution geom.Resolution
 }
 
@@ -36,13 +37,11 @@ func TestGradientOffscreenResolutionTracksDeviceAndTransform(t *testing.T) {
 			})
 		})
 	}
-	previous := newOffscreenSurfaceFactory
-	t.Cleanup(func() { newOffscreenSurfaceFactory = previous })
 	var requested geom.Resolution
-	newOffscreenSurfaceFactory = func(_, _ float64, resolution geom.Resolution) OffscreenSurface {
+	setOffscreenSurfaceFactory(t, func(_, _ float64, resolution geom.Resolution) OffscreenSurface {
 		requested = resolution
 		return nil
-	}
+	})
 	clipTestSurface(t, func(ctx DrawContext) {
 		var budget renderBudget
 		budget.reset()

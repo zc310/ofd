@@ -2,156 +2,18 @@ package render
 
 import (
 	"image"
-	"image/color"
-	"image/draw"
-	"math"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageops"
+	compositelayout "github.com/zc310/ofd/internal/render/layout/composite"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	"github.com/zc310/ofd/internal/render/pathbuild"
 )
 
 // maxCompositeDepth 限制复合图元的递归嵌套深度，防止循环引用导致无限递归。
-const maxCompositeDepth = 32
-
-// compositeAxisEpsilon 是判定 CTM 是否为轴向缩放的阈值。
-const compositeAxisEpsilon = 1e-9
-
-// compositeExtentTolerance 是声明尺寸与 Boundary/CTM 反推范围的相对误差上限，
-// 超过该比例即认为单元声明的 Width/Height 不可信。
-const compositeExtentTolerance = 0.1
-
-// 收缩离屏画布时给内容包围盒预留的边距：固定毫米数加自身尺寸的比例，
-// 用于容忍字形轮廓略微溢出 Boundary。
-const (
-	compositeInkMarginAbs   = 0.5
-	compositeInkMarginRatio = 0.02
-)
-
-// compositeInkMaxAreaRatio 是内容包围盒面积占整幅画布面积的上限。超过该比例
-// 时不收缩画布，因为此时节省的离屏像素有限，却引入了毫米取整误差。
-const compositeInkMaxAreaRatio = 0.5
-
-// compositeContentExtent 由 CompositeObject 的 Boundary 与 CTM 反推复合单元的
-// 内容范围，即单元坐标系里实际会被映射到 Boundary 的区域。无 CTM 时内容坐标系
-// 与对象坐标系重合，Boundary 本身就是内容范围；旋转或错切下 Boundary 与内容
-// 范围不再一一对应，此时不做反推。
-func compositeContentExtent(object models.CompositeObject) (width, height float64, ok bool) {
-	if object.CTM == nil {
-		width = object.Boundary.Width
-		height = object.Boundary.Height
-	} else {
-		ctm := *object.CTM
-		if !ctm.IsFinite() {
-			return 0, 0, false
-		}
-		if math.Abs(ctm[1]) > compositeAxisEpsilon || math.Abs(ctm[2]) > compositeAxisEpsilon {
-			return 0, 0, false
-		}
-		if ctm[0] == 0 || ctm[3] == 0 {
-			return 0, 0, false
-		}
-		width = object.Boundary.Width / math.Abs(ctm[0])
-		height = object.Boundary.Height / math.Abs(ctm[3])
-	}
-	if !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
-		return 0, 0, false
-	}
-	return width, height, true
-}
-
-// compositeExtentMismatch 判断声明尺寸与反推范围是否显著不符。
-func compositeExtentMismatch(declared, extent float64) bool {
-	if declared <= 0 {
-		return false
-	}
-	return math.Abs(extent/declared-1) > compositeExtentTolerance
-}
-
-// compositeInkRect 估算复合单元全部内容在单元画布中的包围盒（毫米，y 向下）。
-//
-// 路径按实际轮廓取包围盒：路径数据可能远超出声明的 Boundary，只信任
-// Boundary 会把可见内容裁掉。文字按 Boundary 估算并留出边距。只有可见范围
-// 能可靠推断、且绘制位置随离屏画布原点一起平移时才返回结果；描边、旋转和
-// 嵌套内容的实际绘制都可能越出推断范围，此时返回 ok=false，由调用方沿用
-// 整幅画布。
-func (p *Document) compositeInkRect(unit *models.CompositeGraphicUnit, w, h float64) (models.StBox, bool) {
-	if unit == nil || w <= 0 || h <= 0 {
-		return models.StBox{}, false
-	}
-	axisAligned := func(ctm *models.CTM) bool {
-		if ctm == nil {
-			return true
-		}
-		return ctm.IsFinite() && math.Abs(ctm[1]) <= compositeAxisEpsilon &&
-			math.Abs(ctm[2]) <= compositeAxisEpsilon
-	}
-	var (
-		x0, y0, x1, y1 float64
-		seen           bool
-	)
-	add := func(cx0, cy0, cx1, cy1 float64) {
-		if !seen {
-			x0, y0, x1, y1 = cx0, cy0, cx1, cy1
-			seen = true
-			return
-		}
-		x0, y0 = math.Min(x0, cx0), math.Min(y0, cy0)
-		x1, y1 = math.Max(x1, cx1), math.Max(y1, cy1)
-	}
-	for _, item := range unit.Content.Items {
-		switch item.Kind {
-		case models.PageItemText:
-			if item.Text == nil || !axisAligned(item.Text.CTM) || item.Text.Stroke ||
-				!item.Text.Boundary.IsFinite() {
-				return models.StBox{}, false
-			}
-			// 单元内容的 y 轴自下而上，单元画布的 y 轴自上而下。
-			b := item.Text.Boundary
-			add(b.X, h-b.Y-b.Height, b.X+b.Width, h-b.Y)
-		case models.PageItemPath:
-			if item.Path == nil || !axisAligned(item.Path.CTM) || item.Path.Stroke.Value(true) {
-				return models.StBox{}, false
-			}
-			// buildObjectPathWithTransform 已按 h 翻转 y 轴，得到的就是画布坐标。
-			bounds := p.buildObjectPathWithTransform(*item.Path, h, nil).Bounds()
-			if bounds.Empty() {
-				return models.StBox{}, false
-			}
-			add(bounds.X0, bounds.Y0, bounds.X1, bounds.Y1)
-		default:
-			// 嵌套块、嵌套复合图元和图片都不参与收缩。
-			//
-			// 图片由 ctx.RenderImage 配合 imageMatrix 放置，该矩阵直接由
-			// pb.Height 推导并已在矩阵内部完成 y 轴翻转，不经过离屏画布的
-			// 坐标系，因此 surface.Translate 无法移动它；收缩画布会把图片
-			// 推到画布之外。缩放方向也与文字/路径相反（文字/路径按
-			// h-坐标 定位，图片按 pb.Height-坐标 定位），同一单元内无法用
-			// 一次平移同时照顾两者。
-			return models.StBox{}, false
-		}
-	}
-	if !seen {
-		return models.StBox{}, false
-	}
-	// 留出安全边距：字形轮廓可能略微溢出文字 Boundary，边距同时覆盖栅格
-	// 取整误差。包围盒裁剪到画布内。
-	x0 -= compositeInkMarginAbs + compositeInkMarginRatio*(x1-x0)
-	x1 += compositeInkMarginAbs + compositeInkMarginRatio*(x1-x0)
-	y0 -= compositeInkMarginAbs + compositeInkMarginRatio*(y1-y0)
-	y1 += compositeInkMarginAbs + compositeInkMarginRatio*(y1-y0)
-	x0, y0 = math.Max(x0, 0), math.Max(y0, 0)
-	x1, y1 = math.Min(x1, w), math.Min(y1, h)
-	iw, ih := x1-x0, y1-y0
-	if !finiteFloat(iw) || !finiteFloat(ih) || iw <= 0 || ih <= 0 {
-		return models.StBox{}, false
-	}
-	// 收益过小时不收缩：离屏画布按毫米取整，略小于原画布反而可能带来
-	// 额外的取整误差。
-	if iw*ih > compositeInkMaxAreaRatio*w*h {
-		return models.StBox{}, false
-	}
-	return models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true
-}
+const maxCompositeDepth = content.MaxDepth
 
 // rasterizeCompositeUnit 在 canvasBox 指定的离屏画布上绘制复合单元内容。
 // canvasBox 可以只覆盖单元画布的一部分（tight 为 true），此时先平移坐标系，
@@ -207,8 +69,8 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		budget.diagnose("missing_composite", "找不到复合图元资源", models.StID(object.ResourceID))
 		return
 	}
-	budget.resourceID = models.StID(object.ResourceID)
-	if !budget.allowComposite(models.StID(object.ResourceID)) {
+	budget.ResourceID = models.StID(object.ResourceID)
+	if !budget.AllowComposite(models.StID(object.ResourceID)) {
 		return
 	}
 
@@ -223,8 +85,8 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	// 反推范围作为内容画布，并且不按透明像素裁剪，否则单元里的小图元会被拉伸
 	// 铺满整个 Boundary（y.ofd 每个单元只有一个字，裁剪后整页变成黑块）。
 	cropToInk := true
-	if extentW, extentH, ok := compositeContentExtent(object); ok &&
-		(compositeExtentMismatch(w, extentW) || compositeExtentMismatch(h, extentH)) {
+	if extentW, extentH, ok := compositelayout.ContentExtent(object); ok &&
+		(compositelayout.ExtentMismatch(w, extentW) || compositelayout.ExtentMismatch(h, extentH)) {
 		w, h = extentW, extentH
 		cropToInk = false
 	}
@@ -270,11 +132,11 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	canvasBox := models.StBox{Width: w, Height: h}
 	tight := false
 	if !cropToInk {
-		if rect, ok := p.compositeInkRect(unit, w, h); ok {
+		if rect, ok := compositelayout.InkRect(unit, w, h); ok {
 			canvasBox, tight = rect, true
 		}
 	}
-	if !budget.allowOffscreenPixels(canvasBox.Width, canvasBox.Height, dpi) {
+	if !budget.AllowOffscreenPixels(canvasBox.Width, canvasBox.Height, dpi) {
 		return
 	}
 
@@ -283,7 +145,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		// 包围盒推断与实际绘制范围不符时，收缩后的画布会整幅空白。回退到
 		// 整幅画布重新栅格化，保证收缩只是优化而不会丢内容。
 		canvasBox, tight = models.StBox{Width: w, Height: h}, false
-		if !budget.allowOffscreenPixels(w, h, dpi) {
+		if !budget.AllowOffscreenPixels(w, h, dpi) {
 			return
 		}
 		raster = p.rasterizeCompositeUnit(unit, dp, canvasBox, false, w, h, dpi, compositeDepth, budget)
@@ -324,7 +186,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 //
 // 这里用首遍栅格化实测的可见范围替代声明尺寸：画布收缩到该范围（离屏像素同时
 // 大幅下降），DPI 相应提高，使可见内容在页面上正好达到输出分辨率。首遍量到的范围
-// 来自真实绘制结果，因此带旋转 CTM、带描边的单元同样适用——compositeInkRect 对
+// 来自真实绘制结果，因此带旋转 CTM、带描边的单元同样适用——compositelayout.InkRect 对
 // 这些情况直接放弃推断，正是它接不了的活。
 //
 // 两处坐标系的差别容易踩：contentImageBounds 返回图像坐标（y 自顶端向下），而
@@ -342,46 +204,17 @@ func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit
 	raster image.Image, w, h, dpi float64, box models.StBox, outDPI float64,
 	compositeDepth int, budget *renderBudget) (image.Image, models.StBox, bool) {
 	cx0, cy0, cx1, cy1 := contentImageBounds(raster)
-	if cx1 <= cx0 || cy1 <= cy0 {
+	canvasBounds, next, ok := compositelayout.Resample(geom.Rect{X0: cx0, Y0: cy0, X1: cx1, Y1: cy1}, w, h, dpi, box, outDPI)
+	if !ok {
 		return nil, models.StBox{}, false
 	}
-	mmPerPx := 25.4 / dpi
-	inkWidth := (cx1 - cx0) * mmPerPx
-	inkHeight := (cy1 - cy0) * mmPerPx
-	inkX := cx0 * mmPerPx
-	// 图像坐标换算到画布坐标：y 由自顶端向下改为自底端向上。
-	inkY := h - cy1*mmPerPx
-	// 可见范围本就占满画布时没有可省的：重画只会白费一遍。
-	if inkWidth*inkHeight > compositeInkMaxAreaRatio*w*h {
-		return nil, models.StBox{}, false
-	}
-	// DPI 取「可见内容按 Boundary 宽铺开后仍等于输出分辨率」的值。
-	next := box.Width * outDPI / inkWidth
-	if !finiteFloat(next) || next <= 0 {
-		return nil, models.StBox{}, false
-	}
-	next = math.Min(next, 1200)
-	// 提升不足两成就不值得多画一遍。
-	if next < dpi*1.2 {
-		return nil, models.StBox{}, false
-	}
-	// 画布收缩到可见范围并留边距：字形轮廓可能略微溢出 Boundary，而首遍是低
-	// DPI 栅格，细笔画本身就可能被量化掉。
-	pad := compositeInkMarginAbs + compositeInkMarginRatio*math.Max(inkWidth, inkHeight)
-	x0 := math.Max(inkX-pad, 0)
-	y0 := math.Max(inkY-pad, 0)
-	x1 := math.Min(inkX+inkWidth+pad, w)
-	y1 := math.Min(inkY+inkHeight+pad, h)
-	iw, ih := x1-x0, y1-y0
-	if iw <= 0 || ih <= 0 || !finiteFloat(iw) || !finiteFloat(ih) {
-		return nil, models.StBox{}, false
-	}
+	canvasBox := models.StBox{X: canvasBounds.X0, Y: canvasBounds.Y0, Width: canvasBounds.W(), Height: canvasBounds.H()}
 	// 预算按两遍合计计费：首遍已经扣过一次，这里再扣收缩后这一遍。
-	if !budget.allowOffscreenPixels(iw, ih, next) {
+	if !budget.AllowOffscreenPixels(canvasBox.Width, canvasBox.Height, next) {
 		return nil, models.StBox{}, false
 	}
 	out := p.rasterizeCompositeUnit(unit, dp,
-		models.StBox{X: x0, Y: y0, Width: iw, Height: ih}, true, w, h, next, compositeDepth, budget)
+		canvasBox, true, w, h, next, compositeDepth, budget)
 	if compositeRasterBlank(out) {
 		return nil, models.StBox{}, false
 	}
@@ -392,7 +225,7 @@ func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit
 		return nil, models.StBox{}, false
 	}
 	step := 25.4 / next
-	source := models.StBox{X: x0 + nx0*step, Y: h - y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
+	source := models.StBox{X: canvasBounds.X0 + nx0*step, Y: h - canvasBounds.Y1 + ny0*step, Width: (nx1 - nx0) * step, Height: (ny1 - ny0) * step}
 	return cropImage(out, int(nx0), int(ny0), int(nx1), int(ny1)), source, true
 }
 
@@ -440,7 +273,7 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 	}
 	// 顶层 CompositeObject 的 Boundary 已经定义了页面尺寸；其 CTM 是
 	// 复合单元内容使用的内部变换，不能再次作为离屏图片的整体缩放。
-	m := imageMatrix(drawBox, img, ctm, pb.Height)
+	m := imagelayout.Matrix(drawBox, img, ctm, pb.Height)
 	if !finiteMatrix(m) {
 		return false
 	}
@@ -482,8 +315,8 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 	w, h, cropToInk := unit.Width, unit.Height, true
 	// 与 compositeWithBudget 的兼容处理一致：声明尺寸不可信时保留完整内容
 	// 坐标系，不能把单个小路径的墨迹包围盒拉伸铺满 Boundary。
-	if extentW, extentH, ok := compositeContentExtent(object); ok &&
-		(compositeExtentMismatch(w, extentW) || compositeExtentMismatch(h, extentH)) {
+	if extentW, extentH, ok := compositelayout.ContentExtent(object); ok &&
+		(compositelayout.ExtentMismatch(w, extentW) || compositelayout.ExtentMismatch(h, extentH)) {
 		w, h, cropToInk = extentW, extentH, false
 	}
 	pathObject := *unit.Content.Items[0].Path
@@ -491,7 +324,7 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 		return false
 	}
 
-	path := p.buildObjectPathWithTransform(pathObject, h, nil)
+	path := pathbuild.Object(pathObject, h, nil)
 	pathBounds := path.Bounds()
 	if pathBounds.Empty() || pathBounds.W() <= 0 || pathBounds.H() <= 0 ||
 		!finiteFloat(pathBounds.X0) || !finiteFloat(pathBounds.Y0) || !finiteFloat(pathBounds.X1) || !finiteFloat(pathBounds.Y1) {
@@ -501,13 +334,11 @@ func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.Co
 		pathBounds = geom.RectFromSize(0, 0, w, h)
 	}
 
-	widthScale := object.Boundary.Width / pathBounds.W()
-	heightScale := object.Boundary.Height / pathBounds.H()
-	matrix := geom.Matrix{
-		{widthScale, 0, object.Boundary.X - pathBounds.X0*widthScale},
-		{0, heightScale, pb.Height - object.Boundary.Y - object.Boundary.Height - pathBounds.Y0*heightScale},
-	}
-	if !finiteFloat(widthScale) || !finiteFloat(heightScale) || !finiteMatrix(matrix) {
+	matrix, ok := content.MapBox(
+		models.StBox{X: pathBounds.X0, Y: pathBounds.Y0, Width: pathBounds.W(), Height: pathBounds.H()},
+		models.StBox{X: object.Boundary.X, Y: pb.Height - object.Boundary.Y - object.Boundary.Height, Width: object.Boundary.Width, Height: object.Boundary.Height},
+	)
+	if !ok {
 		return false
 	}
 	path.Transform(matrix)
@@ -567,8 +398,10 @@ func (p *Document) renderCompositeVector(ctx DrawContext, object models.Composit
 	}
 
 	box := object.Boundary
-	matrix := imageMatrixWH(box, w, h, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
-	if !finiteMatrix(matrix) {
+	matrix, valid := content.MapBox(models.StBox{Width: w, Height: h}, models.StBox{
+		X: box.X, Y: pb.Height - box.Y - box.Height, Width: box.Width, Height: box.Height,
+	})
+	if !valid {
 		return false
 	}
 	ctx.Push()
@@ -654,149 +487,14 @@ func simpleCompositePath(object models.PathObject) bool {
 
 // contentImageBounds 返回离屏复合单元中非透明内容的像素包围盒。
 func contentImageBounds(img image.Image) (x0, y0, x1, y1 float64) {
-	b := img.Bounds()
-	switch src := img.(type) {
-	case *image.NRGBA:
-		return scanPixAlphaBounds(src.Pix, src.Stride, b)
-	case *image.RGBA:
-		return scanPixAlphaBounds(src.Pix, src.Stride, b)
-	default:
-		return scanImageAlphaBounds(img, b)
-	}
-}
-
-// scanPixAlphaBounds 在 4 字节/像素、alpha 位于第 4 字节的像素缓冲上求非透明
-// 内容包围盒。NRGBA 与 RGBA 的 alpha 位置与阈值判定一致，共用这一份扫描。
-func scanPixAlphaBounds(pix []byte, stride int, b image.Rectangle) (x0, y0, x1, y1 float64) {
-	minX, minY := b.Max.X, b.Max.Y
-	maxX, maxY := b.Min.X, b.Min.Y
-	found := false
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		row := pix[(y-b.Min.Y)*stride:]
-		for x := b.Min.X; x < b.Max.X; x++ {
-			if row[(x-b.Min.X)*4+3] <= 8 {
-				continue
-			}
-			found = true
-			if x < minX {
-				minX = x
-			}
-			if y < minY {
-				minY = y
-			}
-			if x > maxX {
-				maxX = x
-			}
-			if y > maxY {
-				maxY = y
-			}
-		}
-	}
-	if !found {
-		return 0, 0, 0, 0
-	}
-	return float64(minX), float64(minY), float64(maxX + 1), float64(maxY + 1)
-}
-
-// scanImageAlphaBounds 是任意 image.Image 的通用扫描，alpha 为 16 位值。
-func scanImageAlphaBounds(img image.Image, b image.Rectangle) (x0, y0, x1, y1 float64) {
-	minX, minY := b.Max.X, b.Max.Y
-	maxX, maxY := b.Min.X, b.Min.Y
-	found := false
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			if _, _, _, alpha := img.At(x, y).RGBA(); alpha <= 8*257 {
-				continue
-			}
-			found = true
-			if x < minX {
-				minX = x
-			}
-			if y < minY {
-				minY = y
-			}
-			if x > maxX {
-				maxX = x
-			}
-			if y > maxY {
-				maxY = y
-			}
-		}
-	}
-	if !found {
-		return 0, 0, 0, 0
-	}
-	return float64(minX), float64(minY), float64(maxX + 1), float64(maxY + 1)
+	return imageops.ContentBounds(img)
 }
 
 func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
-	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	draw.Draw(out, out.Bounds(), img, image.Point{X: x0, Y: y0}, draw.Src)
-	return out
+	return imageops.Crop(img, x0, y0, x1, y1)
 }
 
 // applyImageAlpha 将整张图片的透明度统一乘以 alpha。
 func applyImageAlpha(img image.Image, alpha uint8) image.Image {
-	if img == nil || alpha == 255 {
-		return img
-	}
-	bounds := img.Bounds()
-	out := image.NewNRGBA(bounds)
-	img = decodedImage(img)
-	switch src := img.(type) {
-	case *image.NRGBA:
-		for row := range bounds.Dy() {
-			y := bounds.Min.Y + row
-			si, oi := src.PixOffset(bounds.Min.X, y), out.PixOffset(bounds.Min.X, y)
-			source := src.Pix[si : si+4*bounds.Dx()]
-			target := out.Pix[oi : oi+4*bounds.Dx()]
-			copy(target, source)
-			for i := 3; i < len(target); i += 4 {
-				target[i] = alphaMul(source[i], alpha)
-			}
-		}
-		return out
-	case *image.RGBA:
-		for row := range bounds.Dy() {
-			y := bounds.Min.Y + row
-			si, oi := src.PixOffset(bounds.Min.X, y), out.PixOffset(bounds.Min.X, y)
-			source := src.Pix[si : si+4*bounds.Dx()]
-			target := out.Pix[oi : oi+4*bounds.Dx()]
-			for i := 0; i < len(target); i += 4 {
-				a := source[i+3]
-				switch a {
-				case 255:
-					copy(target[i:i+3], source[i:i+3])
-				case 0:
-					// 与 NRGBAModel 相同：全透明的预乘像素没有 RGB 可还原。
-				default:
-					for c := range 3 {
-						target[i+c] = uint8((uint32(source[i+c]) * 0xffff / uint32(a)) >> 8)
-					}
-				}
-				target[i+3] = alphaMul(a, alpha)
-			}
-		}
-		return out
-	case *image.YCbCr:
-		for row := range bounds.Dy() {
-			y := bounds.Min.Y + row
-			yi, oi := src.YOffset(bounds.Min.X, y), out.PixOffset(bounds.Min.X, y)
-			for col := range bounds.Dx() {
-				ci := src.COffset(bounds.Min.X+col, y)
-				r, g, b := color.YCbCrToRGB(src.Y[yi+col], src.Cb[ci], src.Cr[ci])
-				out.Pix[oi], out.Pix[oi+1], out.Pix[oi+2], out.Pix[oi+3] = r, g, b, alpha
-				oi += 4
-			}
-		}
-		return out
-	}
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			c.A = uint8(int(c.A) * int(alpha) / 255)
-			out.SetNRGBA(x, y, c)
-		}
-	}
-	return out
+	return imageops.ApplyAlpha(img, alpha)
 }

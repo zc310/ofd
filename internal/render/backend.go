@@ -29,7 +29,7 @@ func (p *Document) RasterizePage(page *parser.Page, backendName string, resoluti
 func (p *Document) RasterizePageWithReport(page *parser.Page, backendName string, resolution geom.Resolution) (*image.RGBA, Report, error) {
 	report := &renderReportBuilder{}
 	img, err := p.rasterizePageReport(page, backendName, resolution, report)
-	return img, report.snapshot(), err
+	return img, report.Snapshot(), err
 }
 
 func (p *Document) rasterizePageReport(page *parser.Page, backendName string, resolution geom.Resolution, report *renderReportBuilder) (*image.RGBA, error) {
@@ -46,7 +46,7 @@ func (p *Document) rasterizePageReport(page *parser.Page, backendName string, re
 	defer lease.Release()
 	var budget renderBudget
 	budget.reset()
-	budget.report = report
+	budget.Report = report
 	if report != nil {
 		report.PageID = page.ID
 	}

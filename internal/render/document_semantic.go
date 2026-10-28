@@ -3,6 +3,7 @@ package render
 import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 )
 
 // semanticOnlyContext 复用原文字排版，只向矢量输出提交不可见文字。
@@ -20,7 +21,7 @@ func (p *Document) drawCompositeSemanticText(ctx DrawContext, object models.Comp
 		return
 	}
 	box := object.Boundary
-	matrix := imageMatrixWH(box, w, h, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
+	matrix := imagelayout.MatrixWH(box, w, h, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
 	if !finiteMatrix(matrix) {
 		return
 	}

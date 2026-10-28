@@ -317,7 +317,7 @@ func colorLerp(c0, c1 color.RGBA, t float64) color.RGBA {
 // straightColor 把色标转为非预乘（straight）分量。A > 0 时按预乘值还原；
 // A == 0 时 NRGBAModel 会因除零保护把 RGB 归零（RGBA{255,0,0,0} 也变成
 // {0,0,0,0}），而规范的预乘值在 A == 0 时必为全 0，非 0 字段只可能是构造方
-// （render.premultiplied）保留的 straight 载体，此处按字段直读。
+// （paint 包颜色解析）保留的 straight 载体，此处按字段直读。
 func straightColor(c color.RGBA) color.NRGBA {
 	if c.A == 0 {
 		return color.NRGBA{R: c.R, G: c.G, B: c.B}

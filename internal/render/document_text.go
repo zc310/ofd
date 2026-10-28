@@ -2,14 +2,14 @@ package render
 
 import (
 	"image"
-	"math"
 	"strings"
-	"sync"
-	"unicode"
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/internal/render/paint"
 )
 
 func (p *Document) Text(ctx DrawContext, object models.TextObject, dp *models.DrawParam, pb models.StBox) {
@@ -58,7 +58,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 		budget.diagnose("font_unavailable", message, models.StID(object.Font))
 		return
 	}
-	if budget.report != nil {
+	if budget.Report != nil {
 		if fallback := p.fonts.FallbackFontFamily(object.Font); fallback != "" {
 			budget.diagnose("font_fallback", fallback, models.StID(object.Font))
 		}
@@ -73,10 +73,10 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	fill, stroke := p.updateDrawParams(ctx, dp)
 	if dp == nil {
-		ctx.SetStrokeWidth(defaultLineWidth)
+		ctx.SetStrokeWidth(paint.DefaultLineWidth)
 	}
 	// 字号保持 OFD 的原始 Size（对象坐标毫米）；CTM 的线性部分（缩放、旋转、
-	// 倾斜）统一由 textCTMLinearMatrix 作用到字形上，不能在这里再乘一次
+	// 倾斜）统一由 textlayout.CTMLinearMatrix 作用到字形上，不能在这里再乘一次
 	// CTM.YScale，否则缩放会被应用两次，文字明显变小。
 	if !finiteFloat(object.Size) {
 		return
@@ -85,19 +85,19 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if textFillDisabled(object) && object.Stroke {
 		fill = nil
 	} else {
-		if hasColorValue(object.FillColor) {
+		if paint.HasColorValue(object.FillColor) {
 			fill = p.updateCtColor(object.FillColor)
 		}
 	}
-	if hasColorValue(object.StrokeColor) {
+	if paint.HasColorValue(object.StrokeColor) {
 		stroke = p.updateCtColor(object.StrokeColor)
 	}
 	if object.Alpha != nil {
 		if fill != nil && fill.HasValue {
-			fill = &CTColor{Value: scaleAlpha(fill.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: fill.Gradient}
+			fill = &CTColor{Value: paint.ScaleAlpha(fill.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: fill.Gradient}
 		}
 		if stroke != nil && stroke.HasValue {
-			stroke = &CTColor{Value: scaleAlpha(stroke.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: stroke.Gradient}
+			stroke = &CTColor{Value: paint.ScaleAlpha(stroke.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: stroke.Gradient}
 		}
 	}
 	source := textFillColor(object, dp)
@@ -124,7 +124,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	nativeShadingText := false
 	if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && nativeShadingGradient(fill) {
 		nativeShadingText = !textNeedsPathDrawing(face, object) &&
-			nativeTextGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
+			paint.MapNativeGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
 	}
 	if isShadingColor(source) && !nativeShadingText {
 		if p.drawMeshText(ctx, face, source, object, pb, clip, budget) {
@@ -140,7 +140,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	} else {
 		ctx.SetStrokeColor(geom.Black)
 	}
-	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textHScale(object))
+	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textlayout.HScale(object))
 	faces.native = nativeShadingText
 	if clip != nil {
 		faces.clip = clip.Copy().Transform(ctx.CurrentMatrix())
@@ -158,7 +158,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 }
 
 func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
-	if hasColorValue(object.FillColor) {
+	if paint.HasColorValue(object.FillColor) {
 		return object.FillColor
 	}
 	if dp != nil {
@@ -187,7 +187,7 @@ func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
 	if face == nil {
 		return true
 	}
-	if object.Stroke || textCharDirectionDegrees(object) != 0 {
+	if object.Stroke || textlayout.CharDirection(object) != 0 {
 		return true
 	}
 	var text strings.Builder
@@ -197,7 +197,7 @@ func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
 		}
 		text.WriteString(code.Value)
 	}
-	if face.IsCFF() && !fontCanRenderText(face, text.String()) {
+	if face.IsCFF() && !textlayout.CanRenderText(face, text.String()) {
 		return true
 	}
 	return false
@@ -235,14 +235,14 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 		return false
 	}
 	resolution := p.paintResolution(ctx)
-	if !budget.allowOffscreenPixels(width, height, resolution.DPI()) {
+	if !budget.AllowOffscreenPixels(width, height, resolution.DPI()) {
 		return false
 	}
 	surface := newOffscreenSurface(width, height, resolution)
 	if surface == nil {
 		return false
 	}
-	surface.SetFillGradient(translateGradient(gradient, x0, y0))
+	surface.SetFillGradient(paint.TranslateGradient(gradient, x0, y0))
 	for _, code := range object.TextCode {
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue
@@ -254,7 +254,7 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 		return false
 	}
 	box := models.StBox{X: x0, Y: pb.Height - y1, Width: width, Height: height}
-	matrix := imageMatrix(box, textImage, models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
+	matrix := imagelayout.Matrix(box, textImage, models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
 	textImage = imageWithClipAlpha(textImage, clip, matrix, graphicOpacity(object.Alpha))
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
@@ -265,8 +265,8 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 }
 
 func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight, originX, originY float64) {
-	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		if value := visibleText(code.Value); value != "" {
+	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textlayout.DirectionsZero(object) {
+		if value := textlayout.VisibleText(code.Value); value != "" {
 			p.drawMeshTextGlyph(ctx, face, object, value, code.X, code.Y, pageHeight, originX, originY)
 		}
 		return
@@ -276,11 +276,11 @@ func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object model
 	runes := []rune(code.Value)
 	for i, r := range runes {
 		if i > 0 {
-			deltaX, deltaY := textAdvance(face.TextWidth(string(runes[i-1])), object, code, i-1)
+			deltaX, deltaY := textlayout.Advance(face.TextWidth(string(runes[i-1])), object, code, i-1)
 			posX += deltaX
 			posY += deltaY
 		}
-		if renderableTextRune(r) {
+		if textlayout.RenderableRune(r) {
 			p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, originX, originY)
 		}
 	}
@@ -308,13 +308,13 @@ func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object mode
 	}
 	matrix := geom.Identity.Translate(x+object.Boundary.X-originX, pageHeight-(y+object.Boundary.Y)-originY)
 	// 与原生文字分支一致：CTM 的线性部分整体参与变换，倾斜和缩放都不能丢。
-	if m := textCTMLinearMatrix(object.CTM); m != nil {
+	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 		matrix = matrix.Mul(*m)
 	}
-	if direction := textCharDirectionDegrees(object); direction != 0 {
+	if direction := textlayout.CharDirection(object); direction != 0 {
 		matrix = matrix.Rotate(-direction)
 	}
-	matrix = matrix.Scale(textHScale(object), 1)
+	matrix = matrix.Scale(textlayout.HScale(object), 1)
 	if !finiteMatrix(matrix) {
 		return
 	}
@@ -328,169 +328,9 @@ func textFillDisabled(object models.TextObject) bool {
 	return !object.Fill.Value(true)
 }
 
-// textHScale 返回文字水平方向缩放比例，缺省值为 1。
-func textHScale(object models.TextObject) float64 {
-	if object.HScale > 0 {
-		return object.HScale
-	}
-	return 1
-}
-
-// textAdvanceDiffers 判断显式步进是否无法用同一文本串的字体自然步进表达：
-// 纵向位移非零、横向明显回退（换行回到行首），或前进步进与字体自然步进相差
-// 过大。最后一种情况常见于嵌入式子集字体的 hmtx 只是占位宽度（例如全角），
-// 此时按字体字宽排版会忽略 TextCode 的 DeltaX，造成字距错误；小幅字距仍然
-// 合并，以保留整段绘制、避免文本提取时插入空格。
-func textAdvanceDiffers(deltaX, deltaY, naturalX float64) bool {
-	if math.Abs(deltaY) > 0.01 {
-		return true
-	}
-	if deltaX < -math.Max(math.Abs(naturalX), 0.01) {
-		return true
-	}
-	if deltaX > 0 && math.Abs(naturalX) > 0 {
-		if tolerance := math.Max(0.2, math.Abs(naturalX)*0.05); math.Abs(deltaX-naturalX) > tolerance {
-			return true
-		}
-	}
-	return false
-}
-
-func textAdvanceNeedsRunBreak(object models.TextObject, deltaX, deltaY, naturalX float64) bool {
-	if textAdvanceDiffers(deltaX, deltaY, naturalX) {
-		return true
-	}
-	if !hasCollapsedGlyphTransform(object.CGTransform) || math.Abs(deltaY) > 0.01 {
-		return false
-	}
-	return math.Abs(deltaX-naturalX) > 0.01
-}
-
-func hasCollapsedGlyphTransform(transforms []models.CTCGTransform) bool {
-	for _, transform := range transforms {
-		codeCount, glyphCount := transform.CodeCount, transform.GlyphCount
-		if codeCount <= 0 {
-			codeCount = 1
-		}
-		if glyphCount <= 0 {
-			glyphCount = len(transform.Glyphs)
-		}
-		if codeCount > glyphCount {
-			return true
-		}
-	}
-	return false
-}
-
-// normalizeTextDirection 将 OFD 方向归一化为最接近的标准象限方向。
-// OFD 标准使用 0、90、180、270 度；对非标准输入采用邻近象限，避免
-// 产生未定义的斜向排版结果。
-func normalizeTextDirection(direction int) int {
-	direction %= 360
-	if direction < 0 {
-		direction += 360
-	}
-	switch {
-	case direction >= 45 && direction < 135:
-		return 90
-	case direction >= 135 && direction < 225:
-		return 180
-	case direction >= 225 && direction < 315:
-		return 270
-	default:
-		return 0
-	}
-}
-
-func textDirectionsZero(object models.TextObject) bool {
-	return normalizeTextDirection(object.ReadDirection) == 0 && normalizeTextDirection(object.CharDirection) == 0
-}
-
-func textReadAdvance(advance float64, direction int) (float64, float64) {
-	switch normalizeTextDirection(direction) {
-	case 90:
-		return 0, advance
-	case 180:
-		return -advance, 0
-	case 270:
-		return 0, -advance
-	default:
-		return advance, 0
-	}
-}
-
-func textCharDirectionDegrees(object models.TextObject) float64 {
-	return float64(normalizeTextDirection(object.CharDirection))
-}
-
-// textAdvance 返回当前字形到下一个字形的 OFD 坐标增量。显式 DeltaX/
-// DeltaY 优先；两者都未指定时，按 ReadDirection 使用字体字宽作为默认步进。
-func textAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, index int) (float64, float64) {
-	if len(code.DeltaX) > 0 || len(code.DeltaY) > 0 {
-		var deltaX, deltaY float64
-		if len(code.DeltaX) > 0 {
-			deltaX = valueAt(code.DeltaX, index)
-		}
-		if len(code.DeltaY) > 0 {
-			deltaY = valueAt(code.DeltaY, index)
-		}
-		return deltaX, deltaY
-	}
-	return textReadAdvance(glyphWidth*textHScale(object), object.ReadDirection)
-}
-
-func textGlyphAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, previous, current textGlyph) (float64, float64) {
-	if current.codePosition > previous.codePosition && (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) {
-		var deltaX, deltaY float64
-		for index := previous.codePosition; index < current.codePosition; index++ {
-			if index < len(code.DeltaX) {
-				deltaX += code.DeltaX[index]
-			}
-			if index < len(code.DeltaY) {
-				deltaY += code.DeltaY[index]
-			}
-		}
-		return deltaX, deltaY
-	}
-	return textReadAdvance(glyphWidth*textHScale(object), object.ReadDirection)
-}
-
-// drawTextCode 按字符间距绘制一段文字。
-type textGlyph struct {
-	value         string
-	semantic      string
-	codePosition  int
-	glyphPosition int
-	glyphCount    int
-}
-
-// 表 46 按绘制字形给出定位。部分文档则保留变换前的字符增量；当队列长度
-// 明确对应变换后的字形数量时按字形索引，否则兼容既有的字符增量表示。
-func textCodeUsesGlyphDeltas(code models.TextCode, glyphs []textGlyph) bool {
-	if len(glyphs) == 0 {
-		return false
-	}
-	last := glyphs[len(glyphs)-1]
-	count := last.glyphPosition + last.glyphCount
-	if count == len([]rune(code.Value)) {
-		return false
-	}
-	return (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) &&
-		(len(code.DeltaX) == 0 || len(code.DeltaX) == count-1) &&
-		(len(code.DeltaY) == 0 || len(code.DeltaY) == count-1)
-}
-
-func textPositionedGlyphAdvance(width float64, object models.TextObject, code models.TextCode, previous, current textGlyph, glyphDeltas bool) (float64, float64) {
-	if glyphDeltas {
-		previous.codePosition = previous.glyphPosition
-		current.codePosition = current.glyphPosition
-	}
-	return textGlyphAdvance(width, object, code, previous, current)
-}
-
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
-	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textDirectionsZero(object) {
-		if value := visibleText(code.Value); value != "" {
+	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textlayout.DirectionsZero(object) {
+		if value := textlayout.VisibleText(code.Value); value != "" {
 			p.drawTextGlyph(ctx, faces, object, value, code.X, code.Y, pageHeight, parentCTM)
 		}
 		return
@@ -499,11 +339,11 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 	// 字形宽度与字形映射与填充无关，统一使用共享字体面。
 	face := faces.base
 	runes := []rune(code.Value)
-	glyphs := textCodeGlyphs(face, runes, object.CGTransform, codePosition)
+	glyphs := textlayout.CodeGlyphs(face, runes, object.CGTransform, codePosition)
 	if len(glyphs) == 0 {
 		return
 	}
-	glyphDeltas := textCodeUsesGlyphDeltas(code, glyphs)
+	glyphDeltas := textlayout.UsesGlyphDeltas(code, glyphs)
 
 	// 将可正常整形的连续字形合并为一个文本串一次性绘制。逐字调用 DrawText 会让
 	// PDF 中每个字成为独立定位的文本块，提取器会把这些文本块之间的间隙当成空格，
@@ -530,34 +370,34 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 	}
 	for i, glyph := range glyphs {
 		if i > 0 {
-			prevWidth := textGlyphWidth(face, glyphs[i-1])
+			prevWidth := face.TextWidth(glyphs[i-1].Value)
 			glyphWidth := 0.0
 			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
 				glyphWidth = prevWidth
 			}
-			deltaX, deltaY := textPositionedGlyphAdvance(glyphWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
+			deltaX, deltaY := textlayout.PositionedAdvance(glyphWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
 			posX += deltaX
 			posY += deltaY
 			if len(run) > 0 {
-				naturalX := prevWidth * textHScale(object)
-				if textAdvanceNeedsRunBreak(object, deltaX, deltaY, naturalX) {
+				naturalX := prevWidth * textlayout.HScale(object)
+				if textlayout.NeedsRunBreak(object, deltaX, deltaY, naturalX) {
 					flushRun()
 				}
 			}
 		}
 		// 控制字符没有可见字形，绘制时会被字体替换成 .notdef 方块；
 		// 这里跳过绘制但仍按前面的增量推进，保持后续字形位置不变。
-		if !renderableTextValue(glyph.value) {
+		if !textlayout.Renderable(glyph.Value) {
 			continue
 		}
-		if fontrepair.ContainsGlyphRune(glyph.value) {
+		if fontrepair.ContainsGlyphRune(glyph.Value) {
 			flushRun()
-			p.drawTextGlyph(ctx, faces, object, glyph.value, posX, posY, pageHeight, parentCTM)
-			if glyph.semantic != "" {
+			p.drawTextGlyph(ctx, faces, object, glyph.Value, posX, posY, pageHeight, parentCTM)
+			if glyph.Semantic != "" {
 				if len(semanticRun) == 0 {
 					semanticX, semanticY = posX, posY
 				}
-				semanticRun = append(semanticRun, []rune(glyph.semantic)...)
+				semanticRun = append(semanticRun, []rune(glyph.Semantic)...)
 			}
 			continue
 		}
@@ -565,145 +405,10 @@ func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models
 		if len(run) == 0 {
 			runX, runY = posX, posY
 		}
-		run = append(run, []rune(glyph.value)...)
+		run = append(run, []rune(glyph.Value)...)
 	}
 	flushSemanticRun()
 	flushRun()
-}
-
-// renderableTextValue 判断文字是否包含可见字符。C0/C1 控制字符、DEL 和
-// U+FFFD 替换符没有可见字形，交给字体绘制会显示成 .notdef 方块。
-func renderableTextValue(value string) bool {
-	for _, r := range value {
-		if renderableTextRune(r) {
-			return true
-		}
-	}
-	return false
-}
-
-func renderableTextRune(r rune) bool {
-	return r >= 0x20 && r != 0x7f && !(r >= 0x80 && r <= 0x9f) && r != '\uFFFD'
-}
-
-// visibleText 只过滤交给整串整形的文字，不改动源 TextCode 及其定位队列。
-func visibleText(value string) string {
-	if strings.IndexFunc(value, func(r rune) bool { return !renderableTextRune(r) }) < 0 {
-		return value
-	}
-	return strings.Map(func(r rune) rune {
-		if renderableTextRune(r) {
-			return r
-		}
-		return -1
-	}, value)
-}
-
-var transformMapPool = sync.Pool{
-	New: func() any {
-		return make(map[int]models.CTCGTransform)
-	},
-}
-
-func textCodeGlyphs(face FontFace, runes []rune, transforms []models.CTCGTransform, codePosition int) []textGlyph {
-	if len(transforms) == 0 {
-		glyphs := make([]textGlyph, len(runes))
-		for i, r := range runes {
-			glyphs[i] = textGlyph{value: string(r), codePosition: i, glyphPosition: i, glyphCount: 1}
-		}
-		return glyphs
-	}
-	byPosition := transformMapPool.Get().(map[int]models.CTCGTransform)
-	defer transformMapPool.Put(byPosition)
-	clear(byPosition)
-	for _, transform := range transforms {
-		byPosition[transform.CodePosition] = transform
-	}
-	glyphs := make([]textGlyph, 0, len(runes))
-	for i := 0; i < len(runes); {
-		transform, ok := byPosition[codePosition+i]
-		if !ok {
-			glyphs = append(glyphs, textGlyph{value: string(runes[i]), codePosition: i})
-			i++
-			continue
-		}
-		ids := transform.Glyphs
-		if transform.GlyphCount > 0 && transform.GlyphCount < len(ids) {
-			ids = ids[:transform.GlyphCount]
-		}
-		codeCount := transform.CodeCount
-		if codeCount <= 0 {
-			codeCount = 1
-		}
-		// GB/T 33190—2016 表 48 定义消耗的字符数量。对超出当前 TextCode
-		// 的错误描述，与文字层一致截到剩余字符；先做减法比较，避免 i+codeCount 溢出。
-		if remaining := len(runes) - i; codeCount > remaining {
-			codeCount = remaining
-		}
-		// 一对一变换（码位数与字形数相等）：字体修复可能重排内部 GID，因此只要
-		// Unicode 在修复后的字体中可用就保留原文；ASCII CFF 子集仍直接按 GID 绘制。
-		if codeCount == len(ids) {
-			for k := 0; k < codeCount; k++ {
-				id := ids[k]
-				if id < 0 || id > 0xffff {
-					continue
-				}
-				r := runes[i+k]
-				directCFFGlyph := face != nil && face.IsCFF() && r >= 0x21 && r <= 0x7e
-				// 组合符号的独立 Unicode 整形会插入 dotted circle。存在原始 GID
-				// 时直接绘制该字形，保留源字符供 PDF 语义层使用。
-				directMark := face != nil && unicode.IsMark(r) && face.GlyphIndex(fontrepair.GlyphRune(uint16(id))) != 0
-				if renderableTextValue(string(r)) && face != nil && !directCFFGlyph && !directMark && fontCanRenderRune(face, r) {
-					glyphs = append(glyphs, textGlyph{value: string(r), codePosition: i + k})
-					continue
-				}
-				semantic := ""
-				if renderableTextValue(string(r)) {
-					semantic = string(r)
-				}
-				glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i + k})
-			}
-		} else {
-			semantic := string(runes[i : i+codeCount])
-			for _, id := range ids {
-				if id >= 0 && id <= 0xffff {
-					glyphs = append(glyphs, textGlyph{value: string(fontrepair.GlyphRune(uint16(id))), semantic: semantic, codePosition: i})
-					semantic = ""
-				}
-			}
-		}
-		i += codeCount
-	}
-	for i := range glyphs {
-		glyphs[i].glyphPosition = i
-		glyphs[i].glyphCount = 1
-	}
-	// GID 只在原字体中有意义（11.4.1）。系统/浏览器替代字体没有修复字体的
-	// 私有码位时，多字符变换按源文本整形，避免画出 .notdef 或套用其他字体的 GID。
-	// 保留原字形位置与数量，后续步进仍消费原来的定位队列。
-	if face != nil {
-		out := glyphs[:0]
-		for i := 0; i < len(glyphs); {
-			glyph := glyphs[i]
-			end := i + 1
-			for end < len(glyphs) && glyphs[end].codePosition == glyph.codePosition {
-				end++
-			}
-			if fontrepair.ContainsGlyphRune(glyph.value) && glyph.semantic != "" &&
-				(len([]rune(glyph.semantic)) > 1 || end > i+1) &&
-				face.GlyphIndex([]rune(glyph.value)[0]) == 0 && fontCanRenderText(face, glyph.semantic) {
-				glyph.value, glyph.semantic = glyph.semantic, ""
-				glyph.glyphCount = end - i
-				out = append(out, glyph)
-				i = end
-			} else {
-				out = append(out, glyph)
-				i++
-			}
-		}
-		glyphs = out
-	}
-	return glyphs
 }
 
 type invisibleTextShaper interface {
@@ -737,17 +442,13 @@ func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object model
 	}
 	ctx.Push()
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if m := textCTMLinearMatrix(object.CTM); m != nil {
+	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 		ctx.Transform(*m)
 	}
-	ctx.Rotate(-textCharDirectionDegrees(object))
-	ctx.Scale(textHScale(object), 1)
+	ctx.Rotate(-textlayout.CharDirection(object))
+	ctx.Scale(textlayout.HScale(object), 1)
 	drawer.DrawSemanticTextLine(run)
 	ctx.Pop()
-}
-
-func textGlyphWidth(face FontFace, glyph textGlyph) float64 {
-	return face.TextWidth(glyph.value)
 }
 
 func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object models.TextObject, value string, x, y, pageHeight float64, parentCTM *models.CTM) {
@@ -758,7 +459,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 		}
 		return
 	}
-	hScale := textHScale(object)
+	hScale := textlayout.HScale(object)
 	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
@@ -767,7 +468,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	// 子集器，因此对无法按调用文本成形的文字保留路径回退；已经注入文档
 	// Unicode 映射、字体可以成形的文字走正常文字接口，以保留复制和搜索能力。
 	isEmbeddedFont := p.fonts.FallbackFontFamily(object.Font) == ""
-	if isEmbeddedFont && face.IsCFF() && !fontCanRenderText(face, value) {
+	if isEmbeddedFont && face.IsCFF() && !textlayout.CanRenderText(face, value) {
 		p.drawCFFTextPath(ctx, faces, object, value, x, y, pageHeight, parentCTM, hScale)
 		return
 	}
@@ -777,7 +478,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	}
 	// CharDirection 需要逐字旋转，Canvas 的文字排版接口不能对单个字形
 	// 应用该变换，因此退回到路径绘制。
-	if textCharDirectionDegrees(object) != 0 {
+	if textlayout.CharDirection(object) != 0 {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
 			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
@@ -804,10 +505,10 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 		// 对于 CellContent，Boundary 定义在父级坐标系中。
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-		if m := textCTMLinearMatrix(object.CTM); m != nil {
+		if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 			ctx.Transform(*m)
 		}
-		ctx.Rotate(-textCharDirectionDegrees(object))
+		ctx.Rotate(-textlayout.CharDirection(object))
 		ctx.Scale(hScale, 1)
 		p.drawTextInline(ctx, face, value, faces.clip)
 		ctx.Pop()
@@ -823,10 +524,10 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	// 水平倾斜（CTM="1 0 0.3 1 0 0"）和非等比缩放会被静默丢弃，字形仍是直立的。
 	ctx.Push()
 	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if m := textCTMLinearMatrix(object.CTM); m != nil {
+	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 		ctx.Transform(*m)
 	}
-	ctx.Rotate(-textCharDirectionDegrees(object))
+	ctx.Rotate(-textlayout.CharDirection(object))
 	ctx.Scale(hScale, 1)
 	p.drawTextInline(ctx, face, value, faces.clip)
 	ctx.Pop()
@@ -920,7 +621,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 		}
 		ctx.Push()
 		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-		if m := textCTMLinearMatrix(object.CTM); m != nil {
+		if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 			ctx.Transform(*m)
 		}
 		ctx.Scale(hScale, 1)
@@ -937,10 +638,10 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 	matrix := geom.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
 	// 与原生文字、网格文字分支保持一致：CTM 的线性部分整体参与变换，
 	// 只调用 Rotate 会把倾斜和非等比缩放静默丢弃。
-	if m := textCTMLinearMatrix(object.CTM); m != nil {
+	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 		matrix = matrix.Mul(*m)
 	}
-	if direction := textCharDirectionDegrees(object); direction != 0 {
+	if direction := textlayout.CharDirection(object); direction != 0 {
 		matrix = matrix.Rotate(-direction)
 	}
 	matrix = matrix.Scale(hScale, 1)
@@ -949,11 +650,11 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 	}
 	// 排版矩阵已烘焙进轮廓，后端按设备坐标取样渐变，因此画笔要用矩阵逆
 	// 映回 Boundary 空间；矩阵退化时退回 run 空间画笔。
-	paint, ok := faces.devicePaint(matrix, faces.runPaint(runX, runY, face.Fill()))
+	fillPaint, ok := faces.devicePaint(matrix, faces.runPaint(runX, runY, face.Fill()))
 	if !ok {
-		paint = faces.runPaint(runX, runY, face.Fill())
+		fillPaint = faces.runPaint(runX, runY, face.Fill())
 	}
-	p.applyTextPathFill(ctx, paint, object)
+	p.applyTextPathFill(ctx, fillPaint, object)
 	// path 可能来自字体轮廓缓存（同一字形/字体跨对象、跨页面复用），而
 	// Path.Transform 是原地修改。必须先复制，否则平移会累积到缓存对象上，
 	// 后续渲染同一字形时坐标持续偏移，最终移出页面。
@@ -961,7 +662,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 }
 
 // applyTextPathFill 设置走路径文字的填充与描边状态。
-func (p *Document) applyTextPathFill(ctx DrawContext, paint geom.Paint, object models.TextObject) {
+func (p *Document) applyTextPathFill(ctx DrawContext, fillPaint geom.Paint, object models.TextObject) {
 	// ToPath 只返回几何路径；与 DrawText 不同，它不会应用 FontFace 的画笔，
 	// 因此需要将文字填充样式复制到路径绘制状态。
 	if textFillDisabled(object) && object.Stroke {
@@ -969,7 +670,7 @@ func (p *Document) applyTextPathFill(ctx DrawContext, paint geom.Paint, object m
 		ctx.ClearFill()
 		return
 	}
-	ctx.SetFillPaint(paint)
+	ctx.SetFillPaint(fillPaint)
 	if !object.Stroke {
 		// 只有不描边的文字才清除描边。textWithBudget 已按 StrokeColor
 		// 设置好描边画笔与线宽，若在此清除，"填充+描边" 文字的描边会被
@@ -985,37 +686,4 @@ func finiteArray(values models.StArrayF) bool {
 		}
 	}
 	return true
-}
-
-func valueAt(values models.StArrayF, index int) float64 {
-	if index >= 0 && index < len(values) {
-		return values[index]
-	}
-	return 0
-}
-
-// textCTMLinearMatrix 返回图元 CTM 的线性部分（不含平移），供字形变换使用。
-// CTM 只变换文字原点时，倾斜与非等比缩放不会作用到字形轮廓上；字形必须
-// 显式乘上同一个线性部分。CTM 为 nil 或退化为单位变换时返回 nil。
-//
-// OFD 的 CTM 定义在对象空间（Y 轴向下），而字形轮廓是 font 的 Y 轴向上坐标，
-// 因此要把线性部分对 Y 翻转做一次共轭（F·L·F），即取反对角项的相反数，否则
-// 倾斜和旋转方向会被上下镜像：CTM="1 0 0.3 1 0 0" 会表现为上端偏右（应为上端
-// 偏左），旋转正角也会反向。
-func textCTMLinearMatrix(ctm *models.CTM) *geom.Matrix {
-	if ctm == nil {
-		return nil
-	}
-	a, b, c, d := (*ctm)[0], (*ctm)[1], (*ctm)[2], (*ctm)[3]
-	if !finiteFloat(a) || !finiteFloat(b) || !finiteFloat(c) || !finiteFloat(d) {
-		return nil
-	}
-	if a == 1 && b == 0 && c == 0 && d == 1 {
-		return nil
-	}
-	matrix := geom.Matrix{{a, -c, 0}, {-b, d, 0}}
-	if !finiteMatrix(matrix) {
-		return nil
-	}
-	return &matrix
 }

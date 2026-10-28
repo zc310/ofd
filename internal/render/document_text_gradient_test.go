@@ -3,7 +3,6 @@ package render
 import (
 	"bytes"
 	"image/color"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,28 +83,6 @@ func TestNativeTextGradientUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 				t.Fatal("原始渐变被修改")
 			}
 		})
-	}
-}
-
-func TestNativeRadialTextGradientRejectsEllipticalAndInvalidTransforms(t *testing.T) {
-	gradient := geom.NewRadialGradient(geom.Point{}, 0, geom.Point{}, 20)
-	for _, matrix := range []geom.Matrix{
-		geom.Identity.Scale(2, 1),
-		{{1, 0.5, 0}, {0, 1, 0}},
-		geom.Identity.Scale(0, 1),
-		geom.Identity.Scale(math.Inf(1), 1),
-	} {
-		if mapped := nativeTextGradient(gradient, matrix); mapped != nil {
-			t.Errorf("矩阵 %v 被错误地作为圆形径向渐变处理", matrix)
-		}
-	}
-	for _, gradient := range []*geom.RadialGradient{
-		geom.NewRadialGradient(geom.Point{}, 0, geom.Point{X: math.MaxFloat64}, 20),
-		geom.NewRadialGradient(geom.Point{}, 0, geom.Point{}, math.MaxFloat64),
-	} {
-		if mapped := nativeTextGradient(gradient, geom.Identity.Scale(0.5, 0.5)); mapped != nil {
-			t.Error("径向渐变换算溢出后仍被交给原生后端")
-		}
 	}
 }
 

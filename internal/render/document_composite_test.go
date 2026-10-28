@@ -4,12 +4,10 @@ import (
 	"archive/zip"
 	"fmt"
 	"image/color"
-	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -166,73 +164,5 @@ func TestCompositeUnitDeclaredSizeMatchKeepsInkCrop(t *testing.T) {
 	}
 	if abs(x0) > tol || abs(y0) > tol {
 		t.Errorf("铺满 Boundary 时左上角 (%.2f, %.2f)mm, want (0, 0)mm", x0, y0)
-	}
-}
-
-func TestCompositeContentExtent(t *testing.T) {
-	ctm := models.CTM{0.3528, 0, 0, 0.3528, 0, 0}
-	box := models.StBox{Width: 204.0008, Height: 264.0013}
-
-	w, h, ok := compositeContentExtent(models.CompositeObject{
-		CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{CTM: &ctm, Boundary: box}},
-	})
-	if !ok {
-		t.Fatal("轴向缩放的 CTM 应能反推内容范围")
-	}
-	if abs(w-578.2) > 0.5 || abs(h-748.3) > 0.5 {
-		t.Errorf("反推范围 = %.2fx%.2f, want 578.2x748.3", w, h)
-	}
-
-	// 无 CTM 时内容坐标系与对象坐标系重合，Boundary 本身就是内容范围。
-	// 火车票印章等把整页尺寸写进单元声明却只画一小块内容，需要据此识别
-	// 声明尺寸不可信并切换到按内容建画布。
-	now, noh, nok := compositeContentExtent(models.CompositeObject{
-		CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{Boundary: box}},
-	})
-	if !nok {
-		t.Fatal("无 CTM 时应以 Boundary 作为内容范围")
-	}
-	if now != box.Width || noh != box.Height {
-		t.Errorf("无 CTM 内容范围 = %.4fx%.4f, want %.4fx%.4f", now, noh, box.Width, box.Height)
-	}
-
-	for name, object := range map[string]models.CompositeObject{
-		"旋转 CTM": {CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{
-			CTM: &models.CTM{0.3528, 0.2, -0.2, 0.3528, 0, 0}, Boundary: box}}},
-		"零缩放": {CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{
-			CTM: &models.CTM{0, 0, 0, 0, 0, 0}, Boundary: box}}},
-	} {
-		if _, _, ok := compositeContentExtent(object); ok {
-			t.Errorf("%s 不应反推出内容范围", name)
-		}
-	}
-}
-
-func TestCompositeExtentMismatch(t *testing.T) {
-	cases := []struct {
-		declared, extent float64
-		want             bool
-	}{
-		{1639.19, 578.23, true}, // y.ofd：声明尺寸是反推范围的 2.83 倍
-		{2653.63, 936.08, true}, // intro.ofd：同样是 2.83 倍
-		{200, 200, false},       // 一致
-		{200, 198, false},       // 1% 误差仍视为一致
-		{200, 150, true},        // 明显偏小
-		{0, 578, false},         // 声明尺寸非法时不判定
-	}
-	for _, tc := range cases {
-		if got := compositeExtentMismatch(tc.declared, tc.extent); got != tc.want {
-			t.Errorf("compositeExtentMismatch(%g, %g) = %v, want %v", tc.declared, tc.extent, got, tc.want)
-		}
-	}
-}
-
-func TestCompositeContentExtentIgnoresNonFinite(t *testing.T) {
-	bad := models.CTM{1, 0, 0, 1, math.NaN(), 0}
-	if _, _, ok := compositeContentExtent(models.CompositeObject{
-		CtComposite: models.CtComposite{CTGraphicUnit: models.CTGraphicUnit{
-			CTM: &bad, Boundary: models.StBox{Width: 10, Height: 10}}},
-	}); ok {
-		t.Fatal("非有限 CTM 不应反推出内容范围")
 	}
 }

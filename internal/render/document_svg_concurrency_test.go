@@ -33,16 +33,14 @@ func (s *checkedSVGScene) Rasterize(resolution geom.Resolution) image.Image {
 }
 
 func TestDifferentSVGResourcesEmbedConcurrently(t *testing.T) {
-	previous := svgSceneFactory
-	defer func() { svgSceneFactory = previous }()
 	entered, resume := make(chan struct{}, 2), make(chan struct{})
 	release := sync.OnceFunc(func() { close(resume) })
-	svgSceneFactory = func([]byte) (SVGScene, error) {
+	setSVGSceneFactory(t, func([]byte) (SVGScene, error) {
 		return &checkedSVGScene{fakeSVGScene: fakeSVGScene{w: 10, h: 10}, vector: func() {
 			entered <- struct{}{}
 			<-resume
 		}}, nil
-	}
+	})
 	data, err := creator.Marshal(creator.Document{
 		ID: "svg-concurrency",
 		Media: []creator.Media{
@@ -85,8 +83,6 @@ func TestDifferentSVGResourcesEmbedConcurrently(t *testing.T) {
 }
 
 func TestSVGSceneSynchronizesRasterAndVectorTogether(t *testing.T) {
-	previous := svgSceneFactory
-	defer func() { svgSceneFactory = previous }()
 	var active atomic.Int32
 	check := func() {
 		if active.Add(1) != 1 {
@@ -95,9 +91,9 @@ func TestSVGSceneSynchronizesRasterAndVectorTogether(t *testing.T) {
 		runtime.Gosched()
 		active.Add(-1)
 	}
-	svgSceneFactory = func([]byte) (SVGScene, error) {
+	setSVGSceneFactory(t, func([]byte) (SVGScene, error) {
 		return &checkedSVGScene{vector: check, raster: func(geom.Resolution) image.Image { check(); return nil }}, nil
-	}
+	})
 	scene, err := parseSVGScene(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -112,16 +108,14 @@ func TestSVGSceneSynchronizesRasterAndVectorTogether(t *testing.T) {
 }
 
 func TestSVGSealCachesSceneAndRasterByResolution(t *testing.T) {
-	previous := svgSceneFactory
-	defer func() { svgSceneFactory = previous }()
 	var parses, rasters atomic.Int32
-	svgSceneFactory = func([]byte) (SVGScene, error) {
+	setSVGSceneFactory(t, func([]byte) (SVGScene, error) {
 		parses.Add(1)
 		return &checkedSVGScene{fakeSVGScene: fakeSVGScene{w: 10, h: 10}, raster: func(resolution geom.Resolution) image.Image {
 			rasters.Add(1)
 			return sealQuadrantImage(int(10 * resolution.DPMM()))
 		}}, nil
-	}
+	})
 	doc := &Document{}
 	defer doc.Close()
 	data := []byte("svg-seal")
@@ -157,43 +151,12 @@ func TestSVGSealCachesSceneAndRasterByResolution(t *testing.T) {
 	if err != nil || other == images[0] || other.Bounds() == images[0].Bounds() || parses.Load() != 1 || rasters.Load() != 2 {
 		t.Fatalf("不同实际分辨率共用了位图或重复解析场景：%v", err)
 	}
-	if doc.images.Len() != 2 || doc.svgCanvases.Len() != 1 || len(doc.imageLocks) != 0 {
-		t.Fatal("SVG 印章没有复用有界图片/场景缓存，或保留加载锁")
-	}
 	doc.Close()
-	if doc.images != nil || doc.svgCanvases != nil {
-		t.Fatal("关闭后保留 SVG 印章缓存")
-	}
 	if _, err := doc.decodeSVGSealImage(data, box); err == nil {
 		t.Fatal("关闭后重新加载 SVG 印章")
 	}
-}
-
-func TestCloseDuringSVGParseDoesNotRefillSceneCache(t *testing.T) {
-	previous := svgSceneFactory
-	defer func() { svgSceneFactory = previous }()
-	entered, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	release := sync.OnceFunc(func() { close(resume) })
-	svgSceneFactory = func([]byte) (SVGScene, error) {
-		close(entered)
-		<-resume
-		return fakeSVGScene{w: 10, h: 10}, nil
-	}
-	doc := &Document{}
-	defer doc.Close()
-	go func() {
-		defer close(done)
-		if _, err := doc.cachedSVGScene("slow.svg", func() ([]byte, error) { return nil, nil }); err != nil {
-			t.Error(err)
-		}
-	}()
-	defer func() { release(); <-done }()
-	awaitSealOperation(t, entered)
-	doc.Close()
-	release()
-	awaitSealOperation(t, done)
-	if doc.svgCanvases != nil || len(doc.imageLocks) != 0 {
-		t.Fatal("关闭后在途 SVG 解析重新填充了场景缓存")
+	if parses.Load() != 1 || rasters.Load() != 2 {
+		t.Fatal("关闭后再次解析或栅格化 SVG 印章")
 	}
 }
 

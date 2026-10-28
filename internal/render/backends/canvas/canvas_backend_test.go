@@ -10,6 +10,8 @@ import (
 	"github.com/zc310/canvas"
 	"golang.org/x/image/font/gofont/goregular"
 
+	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/testscene"
 )
@@ -19,12 +21,11 @@ func TestCanvasBackendDrawPreservesSharedFontOutline(t *testing.T) {
 	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
 		t.Fatal(err)
 	}
-	fonts := NewFonts(nil)
+	fonts := canvasfont.NewFonts(nil)
 	defer fonts.Close()
-	base := family.Face(24, canvas.Black)
-	face := canvasFontFace{fonts: fonts, face: base}
+	face := fonts.FaceObject(family, models.TextObject{CtText: models.CtText{Size: 24 / 2.83465}}, nil)
 	path := face.ToPath("HT")
-	if path == nil || path.Empty() || path != fonts.shapedTextPath(base, "HT") {
+	if path == nil || path.Empty() || path != face.ToPath("HT") {
 		t.Fatal("字体面未返回共享的整形轮廓")
 	}
 	wantPath := path.String()

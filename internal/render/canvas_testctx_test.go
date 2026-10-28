@@ -7,7 +7,7 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/rasterizer"
 
-	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"
+	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
 )
@@ -77,7 +77,7 @@ func (b *testCanvasBackend) StrokeJoiner() geom.Joiner {
 	return canvasconv.FromCanvasJoiner(b.ctx.Style.StrokeJoiner)
 }
 func (b *testCanvasBackend) SetFillRule(rule geom.FillRule) {
-	b.ctx.SetFillRule(canvasconv.ToCanvasFillRule(rule))
+	b.ctx.SetFillRule(rule)
 }
 
 func (b *testCanvasBackend) DrawPath(x, y float64, p *geom.Path) {

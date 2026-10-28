@@ -4,10 +4,8 @@ package render
 import (
 	"errors"
 	"fmt"
-	"image"
 	"image/color"
 	"log/slog"
-	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -15,7 +13,11 @@ import (
 	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/internal/render/content"
+	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -28,19 +30,12 @@ type Document struct {
 	fontOwner          *sharedFontEngine
 	fallbacks          []string
 	fallbackMu         sync.RWMutex
-	imageLocksMu       sync.Mutex
-	imageLocks         map[string]*imageKeyLock
-	images             *cache.LRU[string, image.Image]
-	svgCanvases        *cache.LRU[string, SVGScene]
+	assets             imageasset.Store
 	sealMu             sync.Mutex
 	sealDocs           *cache.LRU[[32]byte, *sealDocEntry]
 	sealClosed         bool
 	closeOnce          sync.Once
-	ctColorMu          sync.Mutex
-	ctColorCache       *cache.LRU[*models.CTColor, *CTColor]
-	ctColorBuilds      map[*models.CTColor]*ctColorBuild
-	colorSpacesMu      sync.Mutex
-	colorSpaces        map[*models.ColorSpace]*colorSpaceResources
+	colors             paint.Resolver
 	templateScenesMu   sync.Mutex
 	templateScenes     *cache.LRU[templateSceneKey, *templateScene]
 	templateBuilds     map[templateSceneKey]*templateSceneBuild
@@ -49,124 +44,7 @@ type Document struct {
 	closed atomic.Bool
 }
 
-type imageKeyLock struct {
-	mu   sync.Mutex
-	refs int
-}
-
-const (
-	maxCompositeExpansions         = 10000
-	maxCompositeResourceExpansions = 256
-	maxPatternTilesPerRender       = 100000
-	maxOffscreenPixels             = 200000000
-)
-
-const (
-	limitCompositeExpansions uint8 = 1 << iota
-	limitCompositeResource
-	limitPatternTiles
-	limitInvalidOffscreen
-	limitOffscreenPixels
-)
-
-type renderBudget struct {
-	visibility          PageVisibility
-	templateCacheable   bool
-	compositeExpansions int
-	compositeResources  map[models.StID]int
-	patternTiles        int
-	offscreenPixels     float64
-	reportedLimits      uint8
-	report              *renderReportBuilder
-	objectID            models.StID
-	resourceID          models.StID
-}
-
-func (b *renderBudget) reset() {
-	b.templateCacheable = true
-	b.compositeExpansions = 0
-
-	if b.compositeResources != nil {
-		clear(b.compositeResources)
-	} else {
-		b.compositeResources = make(map[models.StID]int)
-	}
-	b.patternTiles = 0
-	b.offscreenPixels = 0
-	b.reportedLimits = 0
-	b.report = nil
-	b.objectID, b.resourceID = 0, 0
-}
-
-func (b *renderBudget) allowComposite(resourceID models.StID) bool {
-	if b.compositeResources == nil {
-		b.compositeResources = make(map[models.StID]int)
-	}
-	if b.compositeExpansions >= maxCompositeExpansions {
-		b.reportLimit(limitCompositeExpansions, "composite_expansions", "resource_id", resourceID, "used", b.compositeExpansions, "limit", maxCompositeExpansions)
-		return false
-	}
-	if b.compositeResources[resourceID] >= maxCompositeResourceExpansions {
-		b.reportLimit(limitCompositeResource, "composite_resource_expansions", "resource_id", resourceID, "used", b.compositeResources[resourceID], "limit", maxCompositeResourceExpansions)
-		return false
-	}
-	b.compositeExpansions++
-	b.compositeResources[resourceID]++
-	if b.report != nil {
-		b.report.Stats.CompositeExpansions++
-	}
-	return true
-}
-
-func (b *renderBudget) allowPatternTiles(count int) bool {
-	if count < 0 || b.patternTiles > maxPatternTilesPerRender-count {
-		b.reportLimit(limitPatternTiles, "pattern_tiles", "used", b.patternTiles, "requested", count, "limit", maxPatternTilesPerRender)
-		return false
-	}
-	b.patternTiles += count
-	if b.report != nil {
-		b.report.Stats.PatternTiles += count
-	}
-	return true
-}
-
-func (b *renderBudget) allowOffscreenPixels(width, height, dpi float64) bool {
-	if width <= 0 || height <= 0 || dpi <= 0 || math.IsNaN(width) || math.IsInf(width, 0) ||
-		math.IsNaN(height) || math.IsInf(height, 0) || math.IsNaN(dpi) || math.IsInf(dpi, 0) {
-		b.reportLimit(limitInvalidOffscreen, "invalid_offscreen_size", "width", width, "height", height, "dpi", dpi)
-		return false
-	}
-	pixels := width * height * geom.DPI(dpi).DPMM() * geom.DPI(dpi).DPMM()
-	if math.IsNaN(pixels) || math.IsInf(pixels, 0) || b.offscreenPixels > maxOffscreenPixels-pixels {
-		b.reportLimit(limitOffscreenPixels, "offscreen_pixels", "used", b.offscreenPixels, "requested", pixels, "limit", maxOffscreenPixels)
-		return false
-	}
-	b.offscreenPixels += pixels
-	if b.report != nil {
-		b.report.Stats.OffscreenPixels += pixels
-	}
-	return true
-}
-
-// 每份绘制预算对每种拒绝原因只记录一次，避免异常文档逐图元刷屏。
-// 使用 Debug 级别，正常输出不增加日志；启用调试时可定位被跳过的内容。
-func (b *renderBudget) reportLimit(flag uint8, reason string, attrs ...any) {
-	b.diagnose("budget_"+reason, "绘制超出资源预算", b.resourceID)
-	if b.reportedLimits&flag != 0 {
-		return
-	}
-	b.reportedLimits |= flag
-	slog.Debug("渲染资源预算拒绝图元", append([]any{"budget", reason}, attrs...)...)
-}
-
-const (
-	imageCacheCapacity   = 128
-	imageCacheBytes      = 64 << 20
-	svgCacheCapacity     = 64
-	svgCacheBytes        = 16 << 20
-	defaultRenderDPI     = 96
-	ctColorCacheCapacity = 256
-)
+const defaultRenderDPI = 96
 
 // Close 释放文档持有的渲染期资源，最重要的是字体。
 //
@@ -180,6 +58,8 @@ func (p *Document) Close() {
 	}
 	p.closeOnce.Do(func() {
 		p.closed.Store(true)
+		p.colors.Close()
+		p.assets.Close()
 		p.sealMu.Lock()
 		p.sealClosed = true
 		var seals []*sealDocEntry
@@ -196,21 +76,10 @@ func (p *Document) Close() {
 		} else if p.fonts != nil {
 			p.fonts.Close()
 		}
-		p.ctColorMu.Lock()
-		p.ctColorCache = nil
-		p.ctColorBuilds = nil
-		p.ctColorMu.Unlock()
-		p.colorSpacesMu.Lock()
-		p.colorSpaces = nil
-		p.colorSpacesMu.Unlock()
 		p.templateScenesMu.Lock()
 		p.templateScenes = nil
 		p.templateBuilds = nil
 		p.templateScenesMu.Unlock()
-		p.imageLocksMu.Lock()
-		p.images = nil
-		p.svgCanvases = nil
-		p.imageLocksMu.Unlock()
 	})
 }
 
@@ -252,40 +121,11 @@ func newDocumentView(background color.Color, doc *parser.Document, dpi geom.Reso
 		dpi = geom.DPI(defaultRenderDPI)
 	}
 	return &Document{
-		background:  background,
-		dpi:         dpi,
-		fonts:       fonts.engine,
-		fontOwner:   fonts,
-		Document:    doc,
-		images:      cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil),
-		svgCanvases: cache.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil),
-		imageLocks:  make(map[string]*imageKeyLock),
-	}
-}
-
-func (p *Document) imageLock(key string) *imageKeyLock {
-	p.imageLocksMu.Lock()
-	defer p.imageLocksMu.Unlock()
-	if p.imageLocks == nil {
-		p.imageLocks = make(map[string]*imageKeyLock)
-	}
-	if lock := p.imageLocks[key]; lock != nil {
-		lock.refs++
-		return lock
-	}
-	lock := &imageKeyLock{refs: 1}
-	p.imageLocks[key] = lock
-	return lock
-}
-
-func (p *Document) releaseImageLock(key string, lock *imageKeyLock) {
-	p.imageLocksMu.Lock()
-	defer p.imageLocksMu.Unlock()
-	if lock.refs > 0 {
-		lock.refs--
-	}
-	if lock.refs == 0 && p.imageLocks[key] == lock {
-		delete(p.imageLocks, key)
+		background: background,
+		dpi:        dpi,
+		fonts:      fonts.engine,
+		fontOwner:  fonts,
+		Document:   doc,
 	}
 }
 
@@ -362,7 +202,7 @@ func (p *Document) HasLoadedEmbeddedFont(id models.StRefID) bool {
 
 // annotationVisible 判断注解是否可见。OFD 未指定 Visible 时默认为可见。
 func annotationVisible(annot *models.Annot) bool {
-	return annot != nil && annot.Visible.Value(true)
+	return content.AnnotationVisible(annot)
 }
 
 // Draw 将页面绘制到上下文；渲染文档已关闭时返回错误。
@@ -374,7 +214,7 @@ func (p *Document) Draw(ctx DrawContext, page *parser.Page) error {
 func (p *Document) DrawWithReport(ctx DrawContext, page *parser.Page) (Report, error) {
 	report := &renderReportBuilder{}
 	err := p.drawWithReport(ctx, page, report)
-	return report.snapshot(), err
+	return report.Snapshot(), err
 }
 
 func (p *Document) drawWithReport(ctx DrawContext, page *parser.Page, report *renderReportBuilder) error {
@@ -388,15 +228,15 @@ func (p *Document) drawWithReport(ctx DrawContext, page *parser.Page, report *re
 	defer lease.Release()
 	var budget renderBudget
 	budget.reset()
-	budget.report = report
+	budget.Report = report
 	if report != nil {
 		report.PageID = page.ID
 	}
-	content := lease.Content()
-	if content == nil {
+	pageContent := lease.Content()
+	if pageContent == nil {
 		return errors.New("页面内容为空")
 	}
-	p.drawPage(ctx, page, content, &budget)
+	p.drawPage(ctx, page, pageContent, &budget)
 	return nil
 }
 
@@ -406,10 +246,7 @@ func (p *Document) Page(page *parser.Page) (VectorSurface, error) {
 
 // PageVisibility 是一次页面输出的过滤设置；正文层与模板引用分别标识，避免 ID 混淆。
 // 同一模板在其他页面的引用不受影响。
-type PageVisibility struct {
-	HiddenLayers    map[models.StID]bool
-	HiddenTemplates map[models.StID]bool
-}
+type PageVisibility = content.Visibility
 
 // PageWithVisibility 过滤目标页正文图层及模板引用，保留注解和签章。
 // 过滤状态属于本次绘制，不修改共享页面或文档渲染上下文。
@@ -422,7 +259,7 @@ func (p *Document) PageWithVisibility(page *parser.Page, visibility PageVisibili
 func (p *Document) PageWithReport(page *parser.Page, visibility PageVisibility) (VectorSurface, Report, error) {
 	report := &renderReportBuilder{}
 	surface, err := p.pageWithReport(page, visibility, report)
-	return surface, report.snapshot(), err
+	return surface, report.Snapshot(), err
 }
 
 func (p *Document) pageWithReport(page *parser.Page, visibility PageVisibility, report *renderReportBuilder) (VectorSurface, error) {
@@ -437,26 +274,27 @@ func (p *Document) pageWithReport(page *parser.Page, visibility PageVisibility, 
 	var budget renderBudget
 	budget.reset()
 	budget.visibility = visibility
-	budget.report = report
+	budget.Report = report
 	if report != nil {
 		report.PageID = page.ID
 	}
-	content := lease.Content()
-	if content == nil {
+	pageContent := lease.Content()
+	if pageContent == nil {
 		return nil, errors.New("页面内容为空")
 	}
-	if newVectorSurface == nil {
+	factory := drawing.VectorSurfaceFactory()
+	if factory == nil {
 		return nil, errors.New("未注册矢量表面工厂（请空白导入 internal/render/backends/canvas 或注册自定义工厂）")
 	}
-	box := content.Area.PhysicalBox
-	return newVectorSurface(box.Width, box.Height, func(ctx DrawContext) {
-		p.drawPage(ctx, page, content, &budget)
+	box := pageContent.Area.PhysicalBox
+	return factory(box.Width, box.Height, func(ctx DrawContext) {
+		p.drawPage(ctx, page, pageContent, &budget)
 	}), nil
 }
 
 // drawPage 绘制页面背景及全部内容，供 Draw 与 Page 复用。
-func (p *Document) drawPage(ctx DrawContext, page *parser.Page, content *models.PageContent, budget *renderBudget) {
-	p.drawPageBackground(ctx, content.Area.PhysicalBox)
+func (p *Document) drawPage(ctx DrawContext, page *parser.Page, pageContent *models.PageContent, budget *renderBudget) {
+	p.drawPageBackground(ctx, pageContent.Area.PhysicalBox)
 	p.pageContent(ctx, page, true, budget)
 }
 
@@ -488,20 +326,20 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		return
 	}
 	defer lease.Release()
-	content := lease.Content()
-	if content == nil {
+	pageContent := lease.Content()
+	if pageContent == nil {
 		return
 	}
 	// 页面专属资源可能改变模板引用的字体、图片或绘制参数，不跨页复用。
-	budget.templateCacheable = len(content.PageRes) == 0
+	budget.templateCacheable = len(pageContent.PageRes) == 0
 	// 登记本页（含模板与注释）的 Unicode→字形映射，使缺少 Unicode cmap 的
 	// 内嵌子集字体也能按原始文本渲染，保留 PDF 文字可复制性。
 	if p.fonts != nil {
-		p.fonts.RegisterPageGlyphs(p.Document, page, content)
+		p.fonts.RegisterPageGlyphs(p.Document, page, pageContent)
 	}
-	pb := content.Area.PhysicalBox
+	pb := pageContent.Area.PhysicalBox
 	annots := p.Document.GetAnnotation(page.ID)
-	for _, template := range content.Template {
+	for _, template := range pageContent.Template {
 		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && !p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
@@ -514,14 +352,14 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 			}
 		}
 	}
-	if content.Content != nil {
-		layers := content.Content.Layer
+	if pageContent.Content != nil {
+		layers := pageContent.Content.Layer
 		if len(budget.visibility.HiddenLayers) > 0 {
 			layers = visiblePageLayers(layers, budget.visibility.HiddenLayers)
 		}
 		p.drawLayersWithBudget(ctx, layers, pb, budget)
 	}
-	for _, template := range content.Template {
+	for _, template := range pageContent.Template {
 		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
@@ -541,13 +379,7 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 }
 
 func visiblePageLayers(layers []*models.Layer, hidden map[models.StID]bool) []*models.Layer {
-	visible := make([]*models.Layer, 0, len(layers))
-	for _, layer := range layers {
-		if layer != nil && !hidden[layer.ID] {
-			visible = append(visible, layer)
-		}
-	}
-	return visible
+	return content.VisibleLayers(layers, hidden)
 }
 
 func (p *Document) Template(ctx DrawContext, template models.Template, pb models.StBox) {
@@ -571,17 +403,17 @@ func (p *Document) TemplateForeground(template models.Template) bool {
 }
 
 func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
-	content, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
+	templateContent, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
 	if err != nil {
 		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
 		budget.diagnose("template_load_failed", err.Error(), models.StID(template.TemplateID))
 		return
 	}
-	if content != nil && content.Content != nil {
-		if p.drawCachedTemplate(ctx, content, pb, budget) {
+	if templateContent != nil && templateContent.Content != nil {
+		if p.drawCachedTemplate(ctx, templateContent, pb, budget) {
 			return
 		}
-		p.drawLayersWithBudget(ctx, content.Content.Layer, pb, budget)
+		p.drawLayersWithBudget(ctx, templateContent.Content.Layer, pb, budget)
 	}
 }
 
@@ -653,11 +485,11 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 			budget.diagnose("missing_object", "图元种类缺少对应载荷", 0)
 			continue
 		}
-		oldObject, oldResource := budget.objectID, budget.resourceID
-		budget.objectID = pageItemID(item)
-		budget.resourceID = 0
-		if budget.report != nil {
-			budget.report.Stats.ObjectsVisited++
+		oldObject, oldResource := budget.ObjectID, budget.ResourceID
+		budget.ObjectID = pageItemID(item)
+		budget.ResourceID = 0
+		if budget.Report != nil {
+			budget.Report.Stats.ObjectsVisited++
 		}
 		switch item.Kind {
 		case models.PageItemPath:
@@ -671,7 +503,7 @@ func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageIt
 		case models.PageItemComposite:
 			p.compositeWithBudget(ctx, *item.Composite, p.objectDrawParam(item.Composite.DrawParam, dp), pb, parentCTM, parentClip, compositeDepth, budget)
 		}
-		budget.objectID, budget.resourceID = oldObject, oldResource
+		budget.ObjectID, budget.ResourceID = oldObject, oldResource
 	}
 }
 
@@ -708,7 +540,7 @@ func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb mode
 	var budget renderBudget
 	budget.reset()
 	if parent != nil {
-		budget.report = parent.report
+		budget.Report = parent.Report
 	}
 	box := *annot.Appearance.Boundary
 	highlight := annot.Type == models.AnnotTypeHighlight
@@ -725,12 +557,12 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 	if !pageItemPresent(item) {
 		return
 	}
-	oldObject, oldResource := budget.objectID, budget.resourceID
-	budget.objectID = pageItemID(item)
-	budget.resourceID = 0
-	defer func() { budget.objectID, budget.resourceID = oldObject, oldResource }()
-	if budget.report != nil {
-		budget.report.Stats.ObjectsVisited++
+	oldObject, oldResource := budget.ObjectID, budget.ResourceID
+	budget.ObjectID = pageItemID(item)
+	budget.ResourceID = 0
+	defer func() { budget.ObjectID, budget.ResourceID = oldObject, oldResource }()
+	if budget.Report != nil {
+		budget.Report.Stats.ObjectsVisited++
 	}
 	switch item.Kind {
 	case models.PageItemImage:
@@ -766,36 +598,11 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 
 // pageItemPresent 检查图元种类与载荷一致，缺失对象不参与绘制或文字收集。
 func pageItemPresent(item models.PageItem) bool {
-	switch item.Kind {
-	case models.PageItemPath:
-		return item.Path != nil
-	case models.PageItemImage:
-		return item.Image != nil
-	case models.PageItemText:
-		return item.Text != nil
-	case models.PageItemBlock:
-		return item.Block != nil
-	case models.PageItemComposite:
-		return item.Composite != nil
-	}
-	return false
+	return content.Present(item)
 }
 
 func pageItemID(item models.PageItem) models.StID {
-	if !pageItemPresent(item) {
-		return 0
-	}
-	switch item.Kind {
-	case models.PageItemText:
-		return item.Text.ID
-	case models.PageItemPath:
-		return item.Path.ID
-	case models.PageItemImage:
-		return item.Image.ID
-	case models.PageItemComposite:
-		return item.Composite.ID
-	}
-	return 0
+	return content.ItemID(item)
 }
 
 func (p *Document) checkOpen() error {

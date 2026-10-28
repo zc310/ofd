@@ -1,0 +1,134 @@
+package paint
+
+import (
+	"encoding/xml"
+	"fmt"
+	"image/color"
+	"strconv"
+	"testing"
+
+	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
+)
+
+func TestOFDLaGouraudRejectsOverflowingRowWidthFromXML(t *testing.T) {
+	for _, columns := range []int{int(1) << (strconv.IntSize - 2), int(^uint(0) >> 1)} {
+		t.Run(strconv.Itoa(columns), func(t *testing.T) {
+			var source models.CTColor
+			data := fmt.Sprintf(`<FillColor><LaGourandShd VerticesPerRow="%d"/></FillColor>`, columns)
+			if err := xml.Unmarshal([]byte(data), &source); err != nil {
+				t.Fatal(err)
+			}
+			doc := &Resolver{}
+			defer doc.Close()
+			if got := doc.Resolve(&source, nil); got == nil || got.Gradient != nil {
+				t.Fatal("空顶点列表与溢出的行宽应被拒绝，不能生成网格或触发分配")
+			}
+		})
+	}
+}
+
+// TestOFDGouraudEdgeFlag3ReusesFirstEdge 回归：规范只定义 EdgeFlag 0/1/2，
+// 个别文件沿用 PDF 语义使用 3（复用上一个三角形的 v0-v1 边）。此前
+// 网格构建曾直接丢弃该点导致三角形缺失，宽容处理后应正常覆盖。
+func TestOFDGouraudEdgeFlag3ReusesFirstEdge(t *testing.T) {
+	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
+	green := models.CTColor{Value: &models.Color{RGBA: color.RGBA{G: 255, A: 255}}}
+	blue := models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}
+	shd := &models.CTGouraudShd{
+		Point: []models.GouraudPoint{
+			{X: 0, Y: 0, Color: red},
+			{X: 10, Y: 0, Color: green},
+			{X: 0, Y: 10, Color: blue},
+			// flag 3 → {v0, v1, 新顶点} = {(0,0),(10,0),(10,10)}。
+			{X: 10, Y: 10, Color: red, EdgeFlag: 3},
+		},
+	}
+	identity := func(p models.StPos) geom.Point { return geom.Point{X: p.X, Y: p.Y} }
+	resolve := func(c models.CTColor) color.RGBA {
+		if c.Value != nil {
+			return c.Value.RGBA
+		}
+		return color.RGBA{A: 255}
+	}
+	gradient := NewGouraudGradient(shd, identity, nil, resolve)
+	if gradient == nil {
+		t.Fatal("NewGouraudGradient returned nil")
+	}
+	// (9,8) 位于 flag 3 三角形内部、三角形 1 之外，旧实现会因丢弃该点而透明。
+	got := gradient.At(9, 8)
+	if got.A == 0 {
+		t.Fatal("EdgeFlag=3 三角形未被覆盖（点被丢弃）")
+	}
+	// 三角形 1 内部的点仍应被覆盖。
+	first := gradient.At(1, 1)
+	if first.A == 0 {
+		t.Fatal("首个三角形未被覆盖")
+	}
+	// 两个三角形之外应保持透明（未开启 extend）。
+	if outside := gradient.At(50, 50); outside.A != 0 {
+		t.Fatalf("网格外点应透明, got %v", outside)
+	}
+}
+
+// TestOFDLaGouraudRejectsPartialTailRow 回归：规则网格的 Point 数量不是
+// VerticesPerRow 的整数倍时，此前网格构建用整除静默丢弃
+// 不完整的尾行（数据损坏时产出看似正常实则缺失的网格）。现在应整体拒绝。
+func TestOFDLaGouraudRejectsPartialTailRow(t *testing.T) {
+	red := models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}}
+	identity := func(p models.StPos) geom.Point { return geom.Point{X: p.X, Y: p.Y} }
+	resolve := func(c models.CTColor) color.RGBA {
+		if c.Value != nil {
+			return c.Value.RGBA
+		}
+		return color.RGBA{A: 255}
+	}
+	// 行优先 2×3：行 0 为 y=0，行 1 为 y=10，每行 x=0/10/20。
+	lp := func(x, y float64) models.LaGouraudPoint {
+		return models.LaGouraudPoint{X: x, Y: y, Color: red}
+	}
+	valid := &models.CTLaGouraudShd{
+		VerticesPerRow: 3,
+		Point: []models.LaGouraudPoint{
+			lp(0, 0), lp(10, 0), lp(20, 0),
+			lp(0, 10), lp(10, 10), lp(20, 10),
+		},
+	}
+	if gradient := NewLatticeGradient(valid, identity, nil, resolve); gradient == nil {
+		t.Fatal("完整 2×3 网格应生成渐变")
+	} else if got := gradient.At(8, 6); got.A == 0 {
+		t.Fatal("网格内部未被覆盖")
+	}
+	// 追加第 7 个点（残行）：应整体拒绝，而不是只渲染前两行。
+	broken := &models.CTLaGouraudShd{
+		VerticesPerRow: 3,
+		Point:          append(append([]models.LaGouraudPoint{}, valid.Point...), lp(30, 10)),
+	}
+	if gradient := NewLatticeGradient(broken, identity, nil, resolve); gradient != nil {
+		t.Fatal("含尾行的规则网格应整体拒绝，而不是静默丢弃尾行")
+	}
+}
+
+func TestMeshGradientHullMatchesTriangleBounds(t *testing.T) {
+	triangles := []ofdMeshTriangle{
+		{p0: geom.Point{X: 2, Y: 3}, p1: geom.Point{X: 8, Y: 1}, p2: geom.Point{X: 5, Y: 9}},
+		{p0: geom.Point{X: -4, Y: 6}, p1: geom.Point{X: 7, Y: -2}, p2: geom.Point{X: 1, Y: 4}},
+	}
+	gradient := newMeshGradient(triangles, nil, false, nil, nil).(*ofdMeshGradient)
+	want := geom.Rect{X0: -4, Y0: -2, X1: 8, Y1: 9}
+	if gradient.hull != want {
+		t.Fatalf("mesh hull = %+v, want %+v", gradient.hull, want)
+	}
+}
+
+func TestMeshZeroAlphaCarriersDoNotEscapeAsPixels(t *testing.T) {
+	red := premultiplied(255, 0, 0, 0)
+	blue := premultiplied(0, 0, 255, 255)
+	if got := interpolateMeshColor(red, blue, blue, .5, .5, 0); got != (color.RGBA{R: 63, B: 63, A: 127}) {
+		t.Fatalf("网格透明红蓝插值=%v", got)
+	}
+	gradient := &ofdMeshGradient{extend: true, backColor: red}
+	if got := gradient.At(100, 100); got != (color.RGBA{}) {
+		t.Fatalf("网格透明背景泄露RGB：%v", got)
+	}
+}

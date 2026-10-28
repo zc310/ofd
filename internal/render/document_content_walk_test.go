@@ -10,6 +10,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/renderstate"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -106,7 +107,7 @@ func TestRenderReportCollectsMissingResourcesAndIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Diagnostics) != maxRenderDiagnostics || report.Dropped != 200-maxRenderDiagnostics || report.Stats.ObjectsVisited != 200 {
+	if len(report.Diagnostics) != renderstate.MaxDiagnostics || report.Dropped != 200-renderstate.MaxDiagnostics || report.Stats.ObjectsVisited != 200 {
 		t.Fatalf("报告未限量：%+v", report)
 	}
 	if report.Diagnostics[0].Code != "missing_image" || report.Diagnostics[0].ObjectID != 1 || report.Diagnostics[0].ResourceID != 999 {
@@ -123,13 +124,15 @@ func TestRenderReportAggregatesBudgetRefusals(t *testing.T) {
 	report := &renderReportBuilder{}
 	var budget renderBudget
 	budget.reset()
-	budget.report = report
-	budget.objectID = 42
-	budget.patternTiles = maxPatternTilesPerRender
-	for range 10 {
-		budget.allowPatternTiles(1)
+	budget.Report = report
+	budget.ObjectID = 42
+	if !budget.AllowPatternTiles(renderstate.MaxPatternTiles) {
+		t.Fatal("预先消费图块预算失败")
 	}
-	got := report.snapshot()
+	for range 10 {
+		budget.AllowPatternTiles(1)
+	}
+	got := report.Snapshot()
 	if len(got.Diagnostics) != 1 || got.Diagnostics[0].Count != 10 || got.Diagnostics[0].ObjectID != 42 {
 		t.Fatalf("重复诊断未合并：%+v", got)
 	}
@@ -160,18 +163,17 @@ func TestInvisibleCompositeHotspotSurvivesEmptyRaster(t *testing.T) {
 func TestOFDSealTextUsesChildFontAndPagePlacement(t *testing.T) {
 	doc := &Document{}
 	defer doc.Close()
-	frame := contentFrame{document: doc, box: models.StBox{Width: 100, Height: 100}, matrix: geom.Identity}
 	info := &parser.SealInfo{SealData: &parser.SealData{FileType: "ofd", Data: concurrentSealData(t)}, StampAnnot: &models.StampAnnot{Boundary: models.StBox{X: 30, Y: 40, Width: 20, Height: 20}}}
 	var layouts []TextLayout
-	err := doc.walkSealText(frame, info, func(child contentFrame, item models.PageItem) {
+	err := doc.walkSealText(info, func(child contentFrame, item models.PageItem) {
 		if item.Kind != models.PageItemText {
 			return
 		}
 		var local []TextLayout
 		index := 0
-		collectObjectTextLayouts(*item.Text, &local, child.document, nil, &index)
+		collectObjectTextLayouts(*item.Text, &local, child.Scope.Document, nil, &index)
 		for _, layout := range local {
-			layouts = append(layouts, transformTextLayout(layout, child))
+			layouts = append(layouts, child.MapLayout(layout))
 		}
 	})
 	if err != nil || len(layouts) != 1 || layouts[0].Text != "Seal" || layouts[0].Source != TextSourceSeal || layouts[0].Font != 0 {

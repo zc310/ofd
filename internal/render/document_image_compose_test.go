@@ -1,35 +1,11 @@
 package render
 
 import (
-	"bytes"
 	"image"
 	"testing"
 
 	"github.com/zc310/ofd/internal/render/geom"
 )
-
-func TestImageMaskAlphaMatchesSeparatePasses(t *testing.T) {
-	for name, img := range alphaTestImages(t) {
-		t.Run(name, func(t *testing.T) {
-			bounds := img.Bounds()
-			mask := image.NewAlpha(image.Rect(7, 9, 7+bounds.Dx(), 9+bounds.Dy()))
-			for i := range mask.Pix {
-				mask.Pix[i] = uint8(i * 37)
-			}
-			before := referenceImageAlpha(img, 255)
-			for _, alpha := range []uint8{0, 1, 51, 128, 254, 255} {
-				want := referenceImageAlpha(applyImageMaskReference(img, mask), alpha)
-				got := applyImageMaskAlpha(img, mask, alpha).(*image.NRGBA)
-				if got.Rect != want.Rect || !bytes.Equal(got.Pix, want.Pix) {
-					t.Fatalf("合并掩码与Alpha=%d后与独立计算不一致", alpha)
-				}
-			}
-			if !bytes.Equal(before.Pix, referenceImageAlpha(img, 255).Pix) {
-				t.Fatal("修改了共享源图")
-			}
-		})
-	}
-}
 
 var composedImageBenchmark image.Image
 

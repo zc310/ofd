@@ -11,7 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
-	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 )
 
 type lifecycleFontEngine struct {
@@ -37,7 +37,7 @@ func trackLifecycleFontEngines(t *testing.T, onCreate func(int)) *[]*lifecycleFo
 	t.Helper()
 	var engines []*lifecycleFontEngine
 	render.RegisterFontEngineFactory(func(document *parser.Document) render.FontEngine {
-		engine := &lifecycleFontEngine{FontEngine: canvasbackend.NewFonts(document), document: document}
+		engine := &lifecycleFontEngine{FontEngine: canvasfont.NewFonts(document), document: document}
 		engines = append(engines, engine)
 		if onCreate != nil {
 			onCreate(len(engines))
@@ -46,7 +46,7 @@ func trackLifecycleFontEngines(t *testing.T, onCreate func(int)) *[]*lifecycleFo
 	})
 	t.Cleanup(func() {
 		render.RegisterFontEngineFactory(func(document *parser.Document) render.FontEngine {
-			return canvasbackend.NewFonts(document)
+			return canvasfont.NewFonts(document)
 		})
 	})
 	return &engines

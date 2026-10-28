@@ -6,6 +6,10 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	textlayout "github.com/zc310/ofd/internal/render/layout/text"
+	"github.com/zc310/ofd/internal/render/paint"
+	"github.com/zc310/ofd/internal/render/pathbuild"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -25,12 +29,12 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	}
 	ctx.Push()
 	defer ctx.Pop()
-	pa := p.buildObjectPathWithTransform(object, pb.Height, parentCTM)
+	pa := pathbuild.Object(object, pb.Height, parentCTM)
 	if pa.Empty() {
 		return
 	}
 
-	strokeStyle := p.updateCtPathStyle(ctx, &object.CtPath, dp, pathStrokeScale(object, parentCTM))
+	strokeStyle := p.updateCtPathStyle(ctx, &object.CtPath, dp, paint.StrokeScale(object.CTM, parentCTM))
 	fillGradient, strokeGradient := p.updatePathGradients(ctx, &object, dp, pb.Height)
 
 	clipPath := p.pathGraphicClip(object, pb.Height, parentCTM, parentClip, ctx)
@@ -48,7 +52,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	}
 	fillSource := resolvePathColor(object.FillColor, dpFillColor)
 	strokeSource := resolvePathColor(object.StrokeColor, dpStrokeColor)
-	fillIsMesh := isMeshColor(fillSource) || needsRasterGradient(fillGradient, object.Alpha)
+	fillIsMesh := isMeshColor(fillSource) || paint.NeedsRaster(fillGradient, object.Alpha)
 	var pattern *models.CtPattern
 	if fillSource != nil {
 		pattern = fillSource.Pattern
@@ -81,7 +85,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 			ctx.ClearFill()
 		}
 	}
-	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || needsRasterGradient(strokeGradient, object.Alpha))
+	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || paint.NeedsRaster(strokeGradient, object.Alpha))
 	if strokeRaster && object.Fill {
 		// 描边稍后会作为栅格图片绘制，且必须盖在填充之上。这里先把剩余的
 		// 实色/矢量填充画掉；否则最后的 ctx.DrawPath 会用填充盖住描边内侧，
@@ -136,53 +140,6 @@ func isShadingColor(color *models.CTColor) bool {
 	return isMeshColor(color) || (color != nil && (color.AxialShd != nil || color.RadialShd != nil))
 }
 
-// needsRasterGradient 判断渐变是否无法写成 PDF 原生 Shading。Repeat/Reflect、
-// 椭圆和焦点径向会栅格化；Extend=0/1/2 的轴向/径向路径渐变同样如此，因为
-// SVG 等矢量写入器无法表达单向延伸（文字另见 textShadingGradient）。
-// 半透明渐变（对象 Alpha<255 或色标带 Alpha）也必须栅格化：canvas 的 PDF
-// 写入器把渐变写成 Pattern/Shading 时只写 DeviceRGB，丢弃色标 Alpha。
-func needsRasterGradient(gradient geom.Gradient, objectAlpha *uint8) bool {
-	if gradient == nil {
-		return false
-	}
-	if graphicOpacity(objectAlpha) < 255 || gradientHasTransparency(gradient) {
-		return true
-	}
-	switch value := gradient.(type) {
-	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:
-		return true
-	case *geom.RadialGradient:
-		return geom.Equal(value.R0, 0) && value.C0 != value.C1
-	default:
-		return false
-	}
-}
-
-// gradientHasTransparency 判断渐变是否存在非完全不透明的色标。
-func gradientHasTransparency(gradient geom.Gradient) bool {
-	var stops geom.Grad
-	switch value := gradient.(type) {
-	case *geom.LinearGradient:
-		stops = value.Grad
-	case *geom.RadialGradient:
-		stops = value.Grad
-	case *ofdLinearGradient:
-		stops = value.stops
-	case *ofdRadialGradient:
-		stops = value.stops
-	case *ofdEllipticalGradient:
-		stops = value.stops
-	default:
-		return false
-	}
-	for _, stop := range stops {
-		if stop.Color.A != 255 {
-			return true
-		}
-	}
-	return false
-}
-
 // drawMeshPaint 将网格渐变先栅格化，再以图像方式绘制到目标画布。
 // PDF/SVG 等矢量输出不支持自定义渐变，使用图像回退可以保证
 // Gouraud/LaGourand 在不同输出格式下都能保留视觉效果。
@@ -216,14 +173,14 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 		!finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
 		return false
 	}
-	if !budget.allowOffscreenPixels(width, height, resolution.DPI()) {
+	if !budget.AllowOffscreenPixels(width, height, resolution.DPI()) {
 		return false
 	}
 	surface := newOffscreenSurface(width, height, resolution)
 	if surface == nil {
 		return false
 	}
-	surface.SetFillGradient(translateGradient(gradient, bounds.X0, bounds.Y0))
+	surface.SetFillGradient(paint.TranslateGradient(gradient, bounds.X0, bounds.Y0))
 	surface.DrawPath(0, 0, paintPath.Copy().Translate(-bounds.X0, -bounds.Y0))
 	var meshImage image.Image = surface.Raster()
 	if meshImage == nil || meshImage.Bounds().Empty() {
@@ -233,7 +190,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	if alpha != nil {
 		meshImage = applyImageAlpha(meshImage, graphicOpacity(alpha))
 	}
-	// imageMatrix 的 Y 坐标是图片左上角在 PDF 页面坐标中的位置；
+	// imagelayout.Matrix 的 Y 坐标是图片左上角在 PDF 页面坐标中的位置；
 	// bounds 使用的是画布左下角坐标，因此这里需要先翻转到页面顶部坐标。
 	box := models.StBox{
 		X:      bounds.X0,
@@ -241,7 +198,7 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 		Width:  width,
 		Height: height,
 	}
-	matrix := imageMatrix(box, meshImage,
+	matrix := imagelayout.Matrix(box, meshImage,
 		models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
 	matrix = ctx.CurrentMatrix().Mul(matrix)
 	if !finiteMatrix(matrix) {
@@ -249,17 +206,6 @@ func (p *Document) drawMeshPaintGradient(ctx DrawContext, paintPath *geom.Path, 
 	}
 	ctx.RenderImage(meshImage, matrix)
 	return true
-}
-
-// objectPointTransform 返回把对象局部坐标映射到画布坐标的变换：
-// 先应用对象 CTM，再叠加对象 Boundary 偏移并翻转 Y 轴。
-func objectPointTransform(object models.PathObject, pageHeight float64) func(models.StPos) geom.Point {
-	return func(point models.StPos) geom.Point {
-		if object.CTM != nil {
-			point.X, point.Y = object.CTM.TransformPoint(point)
-		}
-		return geom.Point{X: point.X + object.Boundary.X, Y: pageHeight - (point.Y + object.Boundary.Y)}
-	}
 }
 
 // gradientBoundaryTransform 返回把渐变坐标映射到画布坐标的变换。
@@ -270,62 +216,6 @@ func gradientBoundaryTransform(boundary models.StBox, pageHeight float64) func(m
 	return func(point models.StPos) geom.Point {
 		return geom.Point{X: point.X + boundary.X, Y: pageHeight - (point.Y + boundary.Y)}
 	}
-}
-
-// pathStrokeScale 返回路径图元描边属性相对对象坐标系的缩放系数。OFD 的线宽、
-// 虚线、斜接限制都定义在对象坐标系中，会随对象 CTM 一起缩放（与文字字号一致）；
-// 路径已展平到页面坐标，因此描边宽度需显式乘以 CTM 的缩放系数。均匀缩放下取
-// sqrt(|det|)，与参考实现（对象空间描边后再变换）一致。
-func pathStrokeScale(object models.PathObject, parentCTM *models.CTM) float64 {
-	var ctm *models.CTM
-	if parentCTM != nil {
-		ctm = parentCTM
-		if object.CTM != nil {
-			ctm = parentCTM.Multiply(object.CTM)
-			if !ctm.IsFinite() {
-				return 1
-			}
-		}
-	} else if object.CTM != nil {
-		ctm = object.CTM
-	}
-	if ctm == nil || !ctm.IsFinite() {
-		return 1
-	}
-	scale := math.Sqrt(math.Abs(ctm[0]*ctm[3] - ctm[1]*ctm[2]))
-	if !finiteFloat(scale) || scale <= 0 {
-		return 1
-	}
-	return scale
-}
-
-func (p *Document) buildObjectPathWithTransform(object models.PathObject, pageHeight float64, parentCTM *models.CTM) *geom.Path {
-	if !object.CTM.IsFinite() || !parentCTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
-		return &geom.Path{}
-	}
-	// Pattern 的 CellContent 边界属于父级图块的坐标系。
-	// 父级与对象矩阵只组合一次，避免每个点重复执行矩阵乘法与分配。
-	var ctm *models.CTM
-	if parentCTM != nil {
-		ctm = parentCTM
-		if object.CTM != nil {
-			ctm = parentCTM.Multiply(object.CTM)
-			if !ctm.IsFinite() {
-				return &geom.Path{}
-			}
-		}
-	}
-	box := object.Boundary
-	objectTransform := objectPointTransform(object, pageHeight)
-	transform := func(pt models.StPos) (float64, float64) {
-		if ctm != nil {
-			x, y := ctm.Transform(pt.X, pt.Y)
-			return x + box.X, pageHeight - (y + box.Y)
-		}
-		point := objectTransform(pt)
-		return point.X, point.Y
-	}
-	return p.newPath(&object.CtPath, transform)
 }
 
 func finiteFloat(value float64) bool {
@@ -382,7 +272,7 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 
 // buildTextClipPath 把文字裁剪区转成字形轮廓区域。字形轮廓以基线左端为原点、
 // y 轴向上，OFD 的文字原点和路径数据则使用 y 向下的对象坐标。
-// 基线原点经区域 CTM 后加 box 偏移并翻转 y；轮廓通过 textCTMLinearMatrix
+// 基线原点经区域 CTM 后加 box 偏移并翻转 y；轮廓通过 textlayout.CTMLinearMatrix
 // 转换 CTM 的线性部分，保持画布中 y 向上的字形方向。
 //
 // 字体缺失、字号非法或无法取得轮廓时返回 nil，由调用方按“该区域不可用”处理。
@@ -404,7 +294,7 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 	if face == nil {
 		return nil
 	}
-	hScale := textHScale(object)
+	hScale := textlayout.HScale(object)
 	if !finiteFloat(hScale) {
 		return nil
 	}
@@ -429,7 +319,7 @@ func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, bo
 		// CTM 线性部分和 hScale。
 		ox, oy := areaCTM.TransformPoint(models.StPos{X: originX, Y: originY})
 		matrix := geom.Identity.Translate(ox+box.X, pageHeight-(oy+box.Y))
-		if m := textCTMLinearMatrix(&areaCTM); m != nil {
+		if m := textlayout.CTMLinearMatrix(&areaCTM); m != nil {
 			matrix = matrix.Mul(*m)
 		}
 		matrix = matrix.Scale(hScale, 1)
@@ -485,7 +375,7 @@ func (p *Document) buildClipRegion(clip models.CtClip, transFlag *bool, objectCT
 				continue
 			}
 
-			areaPath = p.newPath(area.Path, func(pt models.StPos) (float64, float64) {
+			areaPath = pathbuild.New(area.Path, func(pt models.StPos) (float64, float64) {
 				pt.X += area.Path.Boundary.X
 				pt.Y += area.Path.Boundary.Y
 				x, y := pathCTM.TransformPoint(pt)
@@ -511,7 +401,7 @@ func (p *Document) drawClippedPath(ctx DrawContext, path, clip *geom.Path, objec
 }
 
 func dashedStrokePath(ctx DrawContext, path *geom.Path, style models.CTGraphicUnit) *geom.Path {
-	if validDashPattern(style.DashOffset, style.DashPattern) {
+	if paint.ValidDashPattern(style.DashOffset, style.DashPattern) {
 		path = path.Dash(style.DashOffset, (*style.DashPattern)...)
 	}
 	return path.Stroke(strokeOutlineWidth(ctx), ctx.StrokeCapper(), ctx.StrokeJoiner(), geom.Tolerance)
@@ -560,152 +450,16 @@ func (p *Document) updatePathGradients(ctx DrawContext, object *models.PathObjec
 	if object.Fill && fillColor != nil {
 		if gradient := p.pathGradient(fillColor, transform, gradientShadingArea(object.Boundary)); gradient != nil {
 			fillGradient = gradient
-			ctx.SetFillGradient(scaleGradientOpacity(gradient, graphicOpacity(object.Alpha)))
+			ctx.SetFillGradient(paint.ScaleOpacity(gradient, graphicOpacity(object.Alpha)))
 		}
 	}
 	if object.Stroke.Value(true) && strokeColor != nil {
 		if gradient := p.pathGradient(strokeColor, transform, gradientShadingArea(object.Boundary)); gradient != nil {
 			strokeGradient = gradient
-			ctx.SetStrokeGradient(scaleGradientOpacity(gradient, graphicOpacity(object.Alpha)))
+			ctx.SetStrokeGradient(paint.ScaleOpacity(gradient, graphicOpacity(object.Alpha)))
 		}
 	}
 	return fillGradient, strokeGradient
-}
-
-// pathGradient 构造渐变。area 是着色区域在渐变局部坐标下的范围，用于网格渐变
-// 在区域内按边缘颜色夹取；调用方不清楚局部坐标范围时传 nil。
-func (p *Document) pathGradient(ctColor *models.CTColor, transform func(models.StPos) geom.Point, area *geom.Rect) geom.Gradient {
-	if ctColor == nil {
-		return nil
-	}
-	var gradient geom.Gradient
-	if shd := ctColor.AxialShd; shd != nil {
-		gradient = newOFDLinearGradient(shd, transform, p.colorRGBA)
-	}
-	if shd := ctColor.RadialShd; shd != nil {
-		gradient = newOFDRadialGradient(shd, transform, p.colorRGBA)
-	}
-	if shd := ctColor.GouraudShd; shd != nil {
-		gradient = newOFDGouraudGradientArea(shd, transform, area, p.colorRGBA)
-	}
-	if shd := ctColor.LaGourandShd; shd != nil {
-		gradient = newOFDLaGouraudGradientArea(shd, transform, area, p.colorRGBA)
-	}
-	if shd := ctColor.LaGouraudShd; shd != nil {
-		gradient = newOFDLaGouraudGradientArea(shd, transform, area, p.colorRGBA)
-	}
-	if gradient == nil {
-		return nil
-	}
-	if ctColor.Alpha != nil {
-		gradient = scaleGradientOpacity(gradient, *ctColor.Alpha)
-	}
-	return gradient
-}
-
-func (p *Document) newPath(cp *models.CtPath, transform func(pt models.StPos) (float64, float64)) *geom.Path {
-	pa := &geom.Path{}
-	if cp == nil || transform == nil {
-		return pa
-	}
-	var current, start models.StPos
-	for _, cmd := range cp.AbbreviatedData {
-		switch cmd.Type {
-		case models.MoveTo, models.Start:
-			if len(cmd.Points) < 1 {
-				continue
-			}
-			x, y := transform(cmd.Points[0])
-			if !finiteFloat(x) || !finiteFloat(y) {
-				continue
-			}
-			pa.MoveTo(x, y)
-			current, start = cmd.Points[0], cmd.Points[0]
-
-		case models.LineTo:
-			if len(cmd.Points) < 1 {
-				continue
-			}
-			x, y := transform(cmd.Points[0])
-			if !finiteFloat(x) || !finiteFloat(y) {
-				continue
-			}
-			pa.LineTo(x, y)
-			current = cmd.Points[0]
-
-		case models.QuadTo:
-			if len(cmd.Points) < 2 {
-				continue
-			}
-			cpx, cpy := transform(cmd.Points[0])
-			x, y := transform(cmd.Points[1])
-			if !finiteFloat(cpx) || !finiteFloat(cpy) || !finiteFloat(x) || !finiteFloat(y) {
-				continue
-			}
-			pa.QuadTo(cpx, cpy, x, y)
-			current = cmd.Points[1]
-
-		case models.CubicBezier:
-			if len(cmd.Points) < 3 {
-				continue
-			}
-			x1, y1 := transform(cmd.Points[0])
-			x2, y2 := transform(cmd.Points[1])
-			x3, y3 := transform(cmd.Points[2])
-			if !finiteFloat(x1) || !finiteFloat(y1) || !finiteFloat(x2) || !finiteFloat(y2) || !finiteFloat(x3) || !finiteFloat(y3) {
-				continue
-			}
-			pa.CubeTo(x1, y1, x2, y2, x3, y3)
-			current = cmd.Points[2]
-
-		case models.ArcTo:
-			if cmd.Arc == nil {
-				continue
-			}
-			endX, endY := transform(cmd.Arc.EndPoint)
-			if !finiteFloat(cmd.Arc.RX) || !finiteFloat(cmd.Arc.RY) || !finiteFloat(cmd.Arc.XAxisRotation) || !finiteFloat(endX) || !finiteFloat(endY) {
-				continue
-			}
-			// GB/T 33190—2016 §8.1.5、§9.5：CTM作用于整条椭圆弧，
-			// 不仅是终点。先在局部空间构弧，再变换半径、轴向与扫掠方向。
-			arc := &geom.Path{}
-			arc.MoveTo(current.X, current.Y)
-			arc.ArcTo(cmd.Arc.RX, cmd.Arc.RY, cmd.Arc.XAxisRotation,
-				cmd.Arc.LargeArcFlag, cmd.Arc.SweepFlag, cmd.Arc.EndPoint.X, cmd.Arc.EndPoint.Y)
-			ox, oy := transform(models.StPos{})
-			xx, xy := transform(models.StPos{X: 1})
-			yx, yy := transform(models.StPos{Y: 1})
-			matrix := geom.Matrix{{xx - ox, yx - ox, ox}, {xy - oy, yy - oy, oy}}
-			if !finiteMatrix(matrix) {
-				continue
-			}
-			if geom.Equal(matrix.Det(), 0) {
-				arc = arc.ReplaceArcs()
-			}
-			arc.Transform(matrix)
-			scanner := arc.Scanner()
-			for scanner.Scan() {
-				switch scanner.Cmd() {
-				case geom.ArcToCmd:
-					rx, ry, angle, large, sweep := scanner.Arc()
-					if finiteFloat(rx) && finiteFloat(ry) && finiteFloat(angle) {
-						pa.ArcTo(rx, ry, angle, large, sweep, endX, endY)
-					}
-				case geom.CubeToCmd:
-					c1, c2, end := scanner.CP1(), scanner.CP2(), scanner.End()
-					pa.CubeTo(c1.X, c1.Y, c2.X, c2.Y, end.X, end.Y)
-				case geom.LineToCmd:
-					pa.LineTo(endX, endY)
-				}
-			}
-			current = cmd.Arc.EndPoint
-
-		case models.Close:
-			pa.Close()
-			current = start
-		}
-	}
-	return pa
 }
 
 // gradientShadingArea 返回对象 Boundary 在渐变局部坐标下的范围。

@@ -3,6 +3,8 @@ package render
 import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 )
 
 // textOutlineContext 只收集文字的填充轮廓；嵌入 DrawContext 保留原排版变换，
@@ -51,7 +53,7 @@ func (p *Document) patternTextOutline(ctx DrawContext, object models.TextObject,
 		return nil
 	}
 	collector := &textOutlineContext{DrawContext: ctx, inverse: matrix.Inv()}
-	faces := newTextFaces(p.fonts, family, object, fill, face, textHScale(object))
+	faces := newTextFaces(p.fonts, family, object, fill, face, textlayout.HScale(object))
 	object.CGTransform = models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	position := 0
 	for _, code := range object.TextCode {
@@ -79,7 +81,7 @@ func (p *Document) drawPatternText(ctx DrawContext, source *models.CTColor, obje
 	bounds := path.Bounds()
 	resolution := p.paintResolution(ctx)
 	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) ||
-		!budget.allowOffscreenPixels(bounds.W(), bounds.H(), resolution.DPI()) {
+		!budget.AllowOffscreenPixels(bounds.W(), bounds.H(), resolution.DPI()) {
 		return
 	}
 	surface := newOffscreenSurface(bounds.W(), bounds.H(), resolution)
@@ -96,7 +98,7 @@ func (p *Document) drawPatternText(ctx DrawContext, source *models.CTColor, obje
 		return
 	}
 	box := models.StBox{X: bounds.X0, Y: pb.Height - bounds.Y1, Width: bounds.W(), Height: bounds.H()}
-	placement := imageMatrix(box, img, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
+	placement := imagelayout.Matrix(box, img, models.CTM{box.Width, 0, 0, box.Height, 0, 0}, pb.Height)
 	opacity := graphicOpacity(compositeItemAlpha(source.Alpha, object.Alpha))
 	if opacity == 0 {
 		return

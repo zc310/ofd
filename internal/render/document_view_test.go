@@ -10,14 +10,12 @@ import (
 )
 
 func TestDocumentViewsShareFontsUntilLastViewCloses(t *testing.T) {
-	previous := newFontEngine
-	t.Cleanup(func() { newFontEngine = previous })
 	font := &closeTrackingFont{}
 	loads := 0
-	newFontEngine = func(*parser.Document) FontEngine {
+	setFontEngineFactory(t, func(*parser.Document) FontEngine {
 		loads++
 		return font
-	}
+	})
 	base := NewDocument(color.Transparent, &parser.Document{})
 	t.Cleanup(base.Close)
 	if err := base.UseFallbackFont("fallback"); err != nil {
@@ -49,10 +47,8 @@ func TestDocumentViewsShareFontsUntilLastViewCloses(t *testing.T) {
 }
 
 func TestDocumentViewCreationDuringCloseBalancesFontReferences(t *testing.T) {
-	previous := newFontEngine
-	t.Cleanup(func() { newFontEngine = previous })
 	font := &closeTrackingFont{}
-	newFontEngine = func(*parser.Document) FontEngine { return font }
+	setFontEngineFactory(t, func(*parser.Document) FontEngine { return font })
 	base := NewDocument(color.Transparent, nil)
 	var workers sync.WaitGroup
 	for range 16 {

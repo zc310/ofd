@@ -9,10 +9,10 @@ import (
 	"github.com/zc310/canvas"
 	cimage "github.com/zc310/canvas/image"
 
-	"github.com/zc310/ofd/internal/render"
-	"github.com/zc310/ofd/internal/render/backends/canvas/canvasconv"
+	"github.com/zc310/ofd/internal/render/backends/canvasconv"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
 )
 
 // canvasBackend 是 DrawContext 的 canvas 实现：将共享几何路径及适配后的
@@ -65,7 +65,7 @@ func (b *canvasBackend) Scale(sx, sy float64)   { b.ctx.Scale(sx, sy) }
 func (b *canvasBackend) Rotate(deg float64)     { b.ctx.Rotate(deg) }
 
 // Transform 右乘当前视图矩阵，与 canvas 的 ComposeView 语义一致。
-func (b *canvasBackend) Transform(m geom.Matrix) { b.ctx.ComposeView(canvasconv.ToCanvasMatrix(m)) }
+func (b *canvasBackend) Transform(m geom.Matrix) { b.ctx.ComposeView(m) }
 
 func (b *canvasBackend) CurrentMatrix() geom.Matrix {
 	return geom.Matrix(b.ctx.CoordSystemView().Mul(b.ctx.View()))
@@ -142,7 +142,7 @@ func (b *canvasBackend) StrokeJoiner() geom.Joiner {
 	return canvasconv.FromCanvasJoiner(b.ctx.Style.StrokeJoiner)
 }
 func (b *canvasBackend) SetFillRule(rule geom.FillRule) {
-	b.ctx.SetFillRule(canvasconv.ToCanvasFillRule(rule))
+	b.ctx.SetFillRule(rule)
 }
 
 func (b *canvasBackend) DrawPath(x, y float64, p *geom.Path) {
@@ -174,7 +174,7 @@ func (b *canvasBackend) RenderClippedImage(img image.Image, m geom.Matrix, clip 
 // 构造与缓存由 CanvasImageOnce 一起完成，因此并发渲染同一文档时只会构造一次，
 // 也不会出现读到写了一半的接口值。
 func canvasImage(img image.Image) image.Image {
-	lazy, ok := img.(*render.EncodedImage)
+	lazy, ok := img.(*imageasset.EncodedImage)
 	if !ok {
 		return img
 	}

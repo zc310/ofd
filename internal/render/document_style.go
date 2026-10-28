@@ -2,21 +2,11 @@ package render
 
 import (
 	"image/color"
-	"math"
-	"sync"
 
-	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/pkg/spec"
-)
-
-const (
-	defaultLineWidth  = 0.353
-	defaultMiterLimit = 3.528
-	maxStrokeValue    = 1000000
-	maxDashElements   = 1024
-	roundCapDotDash   = 0.001
 )
 
 func (p *Document) updateDrawParams(ctx DrawContext, dp *models.DrawParam) (*CTColor, *CTColor) {
@@ -31,89 +21,18 @@ func (p *Document) updateDrawParamStyle(ctx DrawContext, dp *models.DrawParam) {
 	if dp == nil {
 		return
 	}
-
 	if dp.StrokeColor != nil {
 		p.setColor(ctx.SetStrokeColor, dp.StrokeColor)
 	}
-	lineWidth := dp.LineWidth
-	lineWidth = normalizedLineWidth(lineWidth)
-	ctx.SetStrokeWidth(lineWidth)
-	dashPattern := preserveRoundCapDots(dp.DashPattern, dp.Cap)
-	if validDashPattern(dp.DashOffset, dashPattern) {
+	ctx.SetStrokeWidth(paint.NormalizeLineWidth(dp.LineWidth))
+	dashPattern := paint.PrepareDashPattern(dp.DashPattern, dp.Cap, 1)
+	if paint.ValidDashPattern(dp.DashOffset, dashPattern) {
 		ctx.SetDashes(dp.DashOffset, *dashPattern...)
 	} else {
 		ctx.SetDashes(0)
 	}
-
-	ctx.SetStrokeCapper(getLineCap(dp.Cap))
-	ctx.SetStrokeJoiner(getLineJoin(dp.Join))
-}
-
-// hasColorValue 判断颜色元素是否携带实际颜色信息。空元素（如 <StrokeColor/>）
-// 不带任何颜色值，等价于未指定，应回退到 DrawParam 的颜色而不是覆盖成黑色。
-func hasColorValue(source *models.CTColor) bool {
-	return source != nil && (source.Value != nil || source.ColorSpace != 0 || source.Index != 0 ||
-		source.GouraudShd != nil || source.LaGourandShd != nil || source.LaGouraudShd != nil ||
-		source.AxialShd != nil || source.RadialShd != nil || source.Pattern != nil)
-}
-
-// ctColorBuild 只合并同一颜色的在途构建；完成后从表中移除，结果由有界 LRU 持有。
-type ctColorBuild struct {
-	once  sync.Once
-	color CTColor
-}
-
-func (p *Document) updateCtColor(source *models.CTColor) *CTColor {
-	if source == nil {
-		return nil
-	}
-	p.ctColorMu.Lock()
-	if p.closed.Load() {
-		p.ctColorMu.Unlock()
-		return nil
-	}
-	if p.ctColorCache != nil {
-		if cc, ok := p.ctColorCache.Get(source); ok {
-			ctColor := *cc
-			p.ctColorMu.Unlock()
-			return &ctColor
-		}
-	}
-	build := p.ctColorBuilds[source]
-	if build == nil {
-		build = &ctColorBuild{}
-		if p.ctColorBuilds == nil {
-			p.ctColorBuilds = make(map[*models.CTColor]*ctColorBuild)
-		}
-		p.ctColorBuilds[source] = build
-	}
-	p.ctColorMu.Unlock()
-
-	// ICC 读取、转换及网格构建均在缓存锁外执行；等待相同颜色也不阻塞其他颜色。
-	build.once.Do(func() {
-		cc := &build.color
-		if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
-			cc.Value = p.colorRGBA(*source)
-			cc.HasValue = true
-		}
-		cc.Gradient = p.pathGradient(source, identityGradientTransform, nil)
-		p.ctColorMu.Lock()
-		defer p.ctColorMu.Unlock()
-		delete(p.ctColorBuilds, source)
-		if p.closed.Load() {
-			return
-		}
-		if p.ctColorCache == nil {
-			p.ctColorCache = cache.NewLRU[*models.CTColor, *CTColor](ctColorCacheCapacity, nil)
-		}
-		p.ctColorCache.Add(source, cc)
-	})
-	ctColor := build.color
-	return &ctColor
-}
-
-func identityGradientTransform(point models.StPos) geom.Point {
-	return geom.Point{X: point.X, Y: point.Y}
+	ctx.SetStrokeCapper(paint.LineCapper(dp.Cap))
+	ctx.SetStrokeJoiner(paint.LineJoiner(dp.Join))
 }
 
 // setColor 设置普通颜色。没有颜色值时保持当前绘制状态。
@@ -123,94 +42,29 @@ func (p *Document) setColor(set func(color.Color), source *models.CTColor) {
 	}
 }
 
-func getLineCap(capStr string) geom.Capper {
-	switch capStr {
-	case spec.LineCapRound:
-		return geom.RoundCap
-	case spec.LineCapSquare:
-		return geom.SquareCap
-	default:
-		return geom.ButtCap
-	}
-}
-func getLineJoin(joinStr string) geom.Joiner {
-	switch joinStr {
-	case spec.LineJoinRound:
-		return geom.RoundJoin
-	case spec.LineJoinBevel:
-		return geom.BevelJoin
-	default:
-		return geom.MiterJoin
-	}
-}
-
-// updateCtPathStyle 应用路径图元的绘制样式。strokeScale 是对象 CTM 对描边
-// 属性（线宽、虚线、斜接限制）的缩放系数：这些属性定义在对象坐标系中，而
-// 路径已被展平到页面坐标，因此需要显式换算，否则带缩放 CTM 的描边会过粗/过细。
+// updateCtPathStyle 将 paint 解析的有效路径样式应用到绘制上下文。
 func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp *models.DrawParam, strokeScale float64) models.CTGraphicUnit {
 	if object == nil {
 		return models.CTGraphicUnit{}
 	}
-	if !finiteFloat(strokeScale) || strokeScale <= 0 {
-		strokeScale = 1
-	}
 	p.updateDrawParamStyle(ctx, dp)
-	var fillSource, strokeSource *models.CTColor
-	if dp != nil {
-		fillSource, strokeSource = dp.FillColor, dp.StrokeColor
-	}
-	effective := *object
-	if effective.LineWidth == 0 {
-		if dp != nil && dp.LineWidth != 0 {
-			effective.LineWidth = dp.LineWidth
-		} else {
-			effective.LineWidth = defaultLineWidth
-		}
-	}
-	if effective.Cap == "" && dp != nil {
-		effective.Cap = dp.Cap
-	}
-	if effective.Join == "" && dp != nil {
-		effective.Join = dp.Join
-	}
-	if effective.MiterLimit == 0 && dp != nil {
-		effective.MiterLimit = dp.MiterLimit
-	}
-	if effective.DashPattern == nil && dp != nil {
-		effective.DashPattern = dp.DashPattern
-		effective.DashOffset = dp.DashOffset
-	}
-
-	if hasColorValue(object.FillColor) {
-		fillSource = object.FillColor
-	}
+	effective := paint.ResolvePathStyle(*object, dp, strokeScale)
 	if object.Fill {
-		p.applyFill(ctx, p.pathSolidColor(fillSource), object.Alpha)
+		p.applyFill(ctx, p.pathSolidColor(effective.FillColor), object.Alpha)
 		if object.Rule == spec.FillRuleEvenOdd {
 			ctx.SetFillRule(geom.EvenOdd)
 		}
 	} else {
 		ctx.ClearFill()
 	}
-
-	if hasColorValue(object.StrokeColor) {
-		strokeSource = object.StrokeColor
-	}
 	if object.Stroke.Value(true) {
-		effective.LineWidth = normalizedLineWidth(effective.LineWidth * strokeScale)
-		// MiterLimit 与 LineWidth 同属对象坐标系的绝对长度，同比缩放后
-		// applyStroke 里的斜接倍率（MiterLimit / (LineWidth/2)）保持不变。
-		effective.MiterLimit = normalizedMiterLimit(effective.MiterLimit * strokeScale)
-		effective.DashPattern = preserveRoundCapDots(scaledDashPattern(effective.DashPattern, strokeScale), effective.Cap)
-		effective.DashOffset *= strokeScale
 		ctx.SetStrokeWidth(effective.LineWidth)
-		p.applyStroke(ctx, p.pathSolidColor(strokeSource), &effective)
+		p.applyStroke(ctx, p.pathSolidColor(effective.StrokeColor), &effective)
 	} else {
 		ctx.ClearStroke()
 	}
-
 	if effective.DashPattern != nil {
-		if validDashPattern(effective.DashOffset, effective.DashPattern) {
+		if paint.ValidDashPattern(effective.DashOffset, effective.DashPattern) {
 			ctx.SetDashes(effective.DashOffset, *effective.DashPattern...)
 		} else {
 			ctx.SetDashes(0)
@@ -222,13 +76,7 @@ func (p *Document) updateCtPathStyle(ctx DrawContext, object *models.CtPath, dp 
 // 路径渐变由 updatePathGradients 按 Boundary 坐标构建，这里仅解析普通颜色。
 // 避免先构建一份无边界的网格/渐变，随后又被真正用于绘制的渐变覆盖。
 func (p *Document) pathSolidColor(source *models.CTColor) *CTColor {
-	if source == nil || !isShadingColor(source) {
-		return p.updateCtColor(source)
-	}
-	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
-		return &CTColor{Value: p.colorRGBA(*source), HasValue: true}
-	}
-	return nil
+	return p.colors.ResolveSolid(source, p.colorResources())
 }
 
 func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
@@ -239,7 +87,7 @@ func (p *Document) applyFill(ctx DrawContext, fill *CTColor, alpha *uint8) {
 	if fill.HasValue {
 		value := fill.Value
 		if alpha != nil {
-			value = scaleAlpha(value, graphicOpacity(alpha))
+			value = paint.ScaleAlpha(value, graphicOpacity(alpha))
 		}
 		ctx.SetFillColor(value)
 		return
@@ -262,88 +110,12 @@ func graphicOpacity(alpha *uint8) uint8 {
 
 func (p *Document) applyStroke(ctx DrawContext, stroke *CTColor, object *models.CtPath) {
 	if stroke == nil || (!stroke.HasValue && stroke.Gradient == nil) {
-		ctx.SetStrokeColor(scaleAlpha(geom.Black, graphicOpacity(object.Alpha)))
+		ctx.SetStrokeColor(paint.ScaleAlpha(geom.Black, graphicOpacity(object.Alpha)))
 	} else if stroke.Gradient != nil {
 		ctx.SetStrokeGradient(stroke.Gradient)
 	} else {
-		ctx.SetStrokeColor(scaleAlpha(stroke.Value, graphicOpacity(object.Alpha)))
+		ctx.SetStrokeColor(paint.ScaleAlpha(stroke.Value, graphicOpacity(object.Alpha)))
 	}
-	ctx.SetStrokeCapper(getLineCap(object.Cap))
-	joiner := getLineJoin(object.Join)
-	if _, isMiter := joiner.(geom.MiterJoiner); isMiter {
-		miterLimit := object.MiterLimit
-		miterLimit = normalizedMiterLimit(miterLimit)
-		// OFD 将 MiterLimit 定义为以毫米为单位的绝对长度。
-		// Canvas 使用相对于中心线测量的斜接长度进行比较，
-		// 因此这里需要换算为相对于半线宽的倍率。
-		lineWidth := ctx.StrokeWidth()
-		if lineWidth > 0 {
-			miterLimit /= lineWidth / 2
-		}
-		joiner = geom.MiterJoiner{GapJoiner: geom.BevelJoin, Limit: miterLimit}
-	}
-	ctx.SetStrokeJoiner(joiner)
-}
-
-func normalizedLineWidth(value float64) float64 {
-	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
-		return defaultLineWidth
-	}
-	return value
-}
-
-func normalizedMiterLimit(value float64) float64 {
-	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
-		return defaultMiterLimit
-	}
-	return value
-}
-
-// scaledDashPattern 按对象 CTM 缩放系数缩放虚线数组。虚线长度与线宽同属
-// 对象坐标系，需要一起换算到页面坐标。
-func scaledDashPattern(pattern *models.StArrayF, scale float64) *models.StArrayF {
-	if pattern == nil || scale == 1 {
-		return pattern
-	}
-	scaled := make(models.StArrayF, len(*pattern))
-	for i, value := range *pattern {
-		scaled[i] = value * scale
-	}
-	return &scaled
-}
-
-func preserveRoundCapDots(pattern *models.StArrayF, cap string) *models.StArrayF {
-	if pattern == nil || cap != spec.LineCapRound {
-		return pattern
-	}
-	var adjusted models.StArrayF
-	for index := 0; index < len(*pattern); index += 2 {
-		if (*pattern)[index] == 0 {
-			if adjusted == nil {
-				adjusted = append(models.StArrayF(nil), *pattern...)
-			}
-			adjusted[index] = roundCapDotDash
-		}
-	}
-	if adjusted == nil {
-		return pattern
-	}
-	return &adjusted
-}
-
-func validDashPattern(offset float64, pattern *models.StArrayF) bool {
-	if pattern == nil || len(*pattern) == 0 || len(*pattern) > maxDashElements ||
-		offset < 0 || math.IsNaN(offset) || math.IsInf(offset, 0) || offset > maxStrokeValue {
-		return false
-	}
-	hasLength := false
-	for _, value := range *pattern {
-		if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) || value > maxStrokeValue {
-			return false
-		}
-		if value > 0 {
-			hasLength = true
-		}
-	}
-	return hasLength
+	ctx.SetStrokeCapper(paint.LineCapper(object.Cap))
+	ctx.SetStrokeJoiner(paint.StrokeJoiner(object.Join, object.MiterLimit, ctx.StrokeWidth()))
 }

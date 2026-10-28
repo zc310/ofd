@@ -37,11 +37,8 @@ func (d *fakePDFDocument) Close() error { d.close++; return nil }
 // TestRegisterPDFDocumentFactory 验证 PDF 写入器可通过工厂替换，且
 // NewPDFDocument 会转发 AddPage/Close。
 func TestRegisterPDFDocumentFactory(t *testing.T) {
-	prev := newPDFDocument
-	defer func() { newPDFDocument = prev }()
-
 	fake := &fakePDFDocument{}
-	RegisterPDFDocumentFactory(func(w io.Writer, options PDFOptions) (PDFDocument, error) {
+	setPDFDocumentFactory(t, func(w io.Writer, _ PDFOptions) (PDFDocument, error) {
 		if w == nil {
 			t.Fatal("writer should be forwarded")
 		}
@@ -75,10 +72,7 @@ func (s fakeSVGScene) RenderVector(any, geom.Matrix) bool    { return false }
 
 // TestRegisterSVGSceneFactory 验证 SVG 解析器可替换。
 func TestRegisterSVGSceneFactory(t *testing.T) {
-	prev := svgSceneFactory
-	defer func() { svgSceneFactory = prev }()
-
-	RegisterSVGSceneFactory(func(data []byte) (SVGScene, error) {
+	setSVGSceneFactory(t, func(_ []byte) (SVGScene, error) {
 		return fakeSVGScene{w: 1, h: 2}, nil
 	})
 	scene, err := parseSVGScene([]byte("<svg/>"))
@@ -86,7 +80,7 @@ func TestRegisterSVGSceneFactory(t *testing.T) {
 		t.Fatalf("custom SVG parser not used: %v %v", scene, err)
 	}
 
-	svgSceneFactory = nil
+	setSVGSceneFactory(t, nil)
 	if _, err := parseSVGScene(nil); err == nil {
 		t.Fatal("unregistered SVG parser should return an error")
 	}
@@ -111,10 +105,7 @@ func (fakeFontEngine) HasLoadedEmbeddedFont(models.StRefID) bool { return false 
 
 // TestRegisterFontEngineFactory 验证字体引擎可替换。
 func TestRegisterFontEngineFactory(t *testing.T) {
-	prev := newFontEngine
-	defer func() { newFontEngine = prev }()
-
-	RegisterFontEngineFactory(func(*parser.Document) FontEngine { return fakeFontEngine{} })
+	setFontEngineFactory(t, func(*parser.Document) FontEngine { return fakeFontEngine{} })
 	doc := NewDocument(nil, &parser.Document{})
 	if _, ok := doc.fonts.(fakeFontEngine); !ok {
 		t.Fatalf("document font engine = %T, want fakeFontEngine", doc.fonts)

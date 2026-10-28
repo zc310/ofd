@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/imageasset"
 )
 
 // EncodedImage 的 canvas 缓存过去是一个裸字段，构造与读取分两步：先读缓存、
@@ -29,7 +29,7 @@ func TestCanvasImageConcurrentAccessIsRaceFree(t *testing.T) {
 		{"png", encodePNG(t)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lazy := render.NewEncodedImage(tc.name, tc.data)
+			lazy := imageasset.NewEncodedImage(tc.name, tc.data)
 
 			// 直接对 EncodedImage 施加并发压力：所有 goroutine 拿到同一个实例。
 			const goroutines = 16
@@ -66,7 +66,7 @@ func TestCanvasImageConcurrentAccessIsRaceFree(t *testing.T) {
 
 // CanvasImageOnce 必须把构造放进 sync.Once：并发调用只构造一次。
 func TestCanvasImageOnceBuildsExactlyOnce(t *testing.T) {
-	lazy := render.NewEncodedImage("png", encodePNG(t))
+	lazy := imageasset.NewEncodedImage("png", encodePNG(t))
 
 	var calls atomic.Int64
 	var wg sync.WaitGroup
@@ -108,7 +108,7 @@ func TestCanvasImageOnceBuildsExactlyOnce(t *testing.T) {
 // build 返回 nil 表示不走原字节内嵌快路径，该结果也必须被缓存，
 // 否则每次访问都会重新解码。
 func TestCanvasImageOnceCachesNegativeResult(t *testing.T) {
-	lazy := render.NewEncodedImage("png", encodePNG(t))
+	lazy := imageasset.NewEncodedImage("png", encodePNG(t))
 	var calls atomic.Int64
 	build := func() image.Image {
 		calls.Add(1)
@@ -135,7 +135,7 @@ func TestCanvasImageSkipsGrayFastPath(t *testing.T) {
 	if err := png.Encode(&buf, gray); err != nil {
 		t.Fatal(err)
 	}
-	lazy := render.NewEncodedImage("png", buf.Bytes())
+	lazy := imageasset.NewEncodedImage("png", buf.Bytes())
 	if lazy.ColorModel() != color.GrayModel {
 		t.Fatalf("样本颜色模型 = %v，期望灰度", lazy.ColorModel())
 	}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"image"
 	"image/color"
-	"image/draw"
 	"math"
 	"sync"
 
@@ -16,6 +15,9 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/internal/render/imageops"
+	seallayout "github.com/zc310/ofd/internal/render/layout/seal"
 )
 
 func (p *Document) Seal(ctx DrawContext, info *parser.SealInfo, pb models.StBox) error {
@@ -30,7 +32,7 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb mod
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
 		return nil
 	}
-	if isSVGFormat(info.SealData.FileType, "") {
+	if imageasset.IsSVG(info.SealData.FileType, "") {
 		return p.drawSVGSeal(ctx, info, pb)
 	}
 	if filetype.IsImage(info.SealData.Data) {
@@ -61,47 +63,20 @@ func (p *Document) decodeSealImage(data []byte) (image.Image, error) {
 		if err != nil {
 			return nil, err
 		}
-		return sealTransparentBackground(img), nil
+		return imageops.SealTransparentBackground(img), nil
 	})
-}
-
-// sealBackgroundCutoff 是判定印章纸张背景的通道阈值：R/G/B 均不低于该值
-// 视为白色背景。
-const sealBackgroundCutoff = 250
-
-// sealTransparentBackground 把不带透明通道的印章位图中的白色背景置为透明。
-// 电子印章是“墨水印记”，部分制章工具导出的图片没有透明通道、背景被压成不
-// 透明白色，直接叠加会在页面内容上留下白块（真实印章应透出底下的内容）。
-// 带透明通道的印章（绝大多数）保持原样，避免误删印章自身的不透明白色元素。
-func sealTransparentBackground(img image.Image) image.Image {
-	opaque, ok := img.(interface{ Opaque() bool })
-	if !ok || !opaque.Opaque() {
-		return img
-	}
-	b := img.Bounds()
-	dst := image.NewNRGBA(b)
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			r, g, bl, a := img.At(x, y).RGBA()
-			if r>>8 >= sealBackgroundCutoff && g>>8 >= sealBackgroundCutoff && bl>>8 >= sealBackgroundCutoff {
-				continue // 透明像素为零值，无需写入
-			}
-			dst.SetNRGBA(x, y, color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(bl >> 8), A: uint8(a >> 8)})
-		}
-	}
-	return dst
 }
 
 // drawRasterSeal 按 StampAnnot.Boundary 把印章位图绘制到页面上；存在
 // StampAnnot.Clip 时只绘制印章落在裁剪窗口内的部分。
 func (p *Document) drawRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
-	return p.drawPreparedRasterSeal(ctx, info, pb, sealTransparentBackground(img))
+	return p.drawPreparedRasterSeal(ctx, info, pb, imageops.SealTransparentBackground(img))
 }
 
 // drawPreparedRasterSeal 绘制已完成透明背景处理的印章，只为当前页裁剪和放置。
 func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo, pb models.StBox, img image.Image) error {
 	box := info.StampAnnot.Boundary
-	if dst, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
+	if dst, ok := seallayout.ClipBox(box, info.StampAnnot.Clip); ok {
 		img = cropSealImage(img, box, dst)
 		box = dst
 	}
@@ -117,69 +92,15 @@ func (p *Document) drawPreparedRasterSeal(ctx DrawContext, info *parser.SealInfo
 	return nil
 }
 
-// sealClipBox 把 StampAnnot.Clip 归一化为印章 Boundary 坐标系内的目标框。
-// Clip 是印章图上的裁剪窗口：骑缝章把同一枚印章按页切成若干条，每页用不同的
-// Clip 只显示其中一片（例如 h.ofd 的 5 页各取 8mm，统一贴在页面右缘拼回完整
-// 印章）。Clip 缺省（全零）或无效时返回 ok=false，按整枚印章绘制。
-func sealClipBox(boundary, clip models.StBox) (models.StBox, bool) {
-	if boundary.Width <= 0 || boundary.Height <= 0 {
-		return models.StBox{}, false
-	}
-	if clip.Width <= 0 || clip.Height <= 0 {
-		return models.StBox{}, false
-	}
-	// 裁剪窗口越出 Boundary 时先夹回 Boundary，避免盖住印章盒以外的页面内容。
-	x0 := math.Max(clip.X, 0)
-	y0 := math.Max(clip.Y, 0)
-	x1 := math.Min(clip.X+clip.Width, boundary.Width)
-	y1 := math.Min(clip.Y+clip.Height, boundary.Height)
-	if x1 <= x0 || y1 <= y0 {
-		return models.StBox{}, false
-	}
-	return models.StBox{
-		X:      boundary.X + x0,
-		Y:      boundary.Y + y0,
-		Width:  x1 - x0,
-		Height: y1 - y0,
-	}, true
-}
-
 // cropSealImage 按目标框在 Boundary 坐标系中的位置裁剪印章位图。dst 必须是
 // boundary 的子区域；印章位图顶部对应 Boundary 顶部，故源图按同一比例取子
 // 矩形，裁剪后保持原分辨率。
 func cropSealImage(img image.Image, boundary, dst models.StBox) image.Image {
-	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	if w <= 0 || h <= 0 || boundary.Width <= 0 || boundary.Height <= 0 {
+	region, ok := seallayout.CropRect(img.Bounds(), boundary, dst)
+	if !ok {
 		return img
 	}
-	sx := func(v float64) int { return clampInt(int(math.Round(float64(b.Min.X)+v)), b.Min.X, b.Max.X) }
-	sy := func(v float64) int { return clampInt(int(math.Round(float64(b.Min.Y)+v)), b.Min.Y, b.Max.Y) }
-	x0 := sx((dst.X - boundary.X) / boundary.Width * float64(w))
-	y0 := sy((dst.Y - boundary.Y) / boundary.Height * float64(h))
-	x1 := sx((dst.X + dst.Width - boundary.X) / boundary.Width * float64(w))
-	y1 := sy((dst.Y + dst.Height - boundary.Y) / boundary.Height * float64(h))
-	if x0 >= x1 || y0 >= y1 {
-		return img
-	}
-	if x0 == b.Min.X && y0 == b.Min.Y && x1 == b.Max.X && y1 == b.Max.Y {
-		return img // 整枚印章，无需复制
-	}
-	region := image.Rect(x0, y0, x1, y1)
-	cropped := image.NewNRGBA(image.Rect(0, 0, region.Dx(), region.Dy()))
-	draw.Draw(cropped, cropped.Bounds(), img, region.Min, draw.Src)
-	return cropped
-}
-
-// clampInt 把 v 夹到 [lo, hi]。
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
+	return imageops.CropNRGBA(img, region)
 }
 
 // sealDocEntry 是一个已解析并加载好字体的 OFD 印章文档。印章在同一文档的
@@ -327,7 +248,7 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 		return nil
 	}
 	box := info.StampAnnot.Boundary
-	if _, ok := sealClipBox(box, info.StampAnnot.Clip); ok {
+	if _, ok := seallayout.ClipBox(box, info.StampAnnot.Clip); ok {
 		// 矢量印章页没有可用的裁剪接口，带 Clip 时先把印章页栅格化再交给位图
 		// 路径，与 SVG 印章共用同一套 Clip 坐标映射。
 		img := rasterSealPageBudget(entry.doc, page, sealBox, box, parent)
@@ -343,7 +264,7 @@ func (p *Document) drawOFDSealBudget(ctx DrawContext, info *parser.SealInfo, pb 
 	var budget renderBudget
 	budget.reset()
 	if parent != nil {
-		budget.report = parent.report
+		budget.Report = parent.Report
 	}
 	entry.doc.pageContent(ctx, page, false, &budget)
 	return nil
@@ -363,7 +284,7 @@ func rasterSealPageBudget(doc *Document, page *parser.Page, sealBox, box models.
 	var budget renderBudget
 	budget.reset()
 	if parent != nil {
-		budget.report = parent.report
+		budget.Report = parent.Report
 	}
 	doc.pageContent(surface, page, false, &budget)
 	return surface.Raster()
@@ -404,7 +325,7 @@ func (p *Document) decodeSVGSealImage(data []byte, box models.StBox) (image.Imag
 		if img == nil || img.Bounds().Empty() {
 			return img, nil
 		}
-		return sealTransparentBackground(img), nil
+		return imageops.SealTransparentBackground(img), nil
 	})
 }
 

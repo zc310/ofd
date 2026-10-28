@@ -12,6 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -44,16 +45,16 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 		if code.Value != "Heaffixedhisfinesign." {
 			t.Fatalf("object %d text = %q; XML formatting must not consume a character", object.ID, code.Value)
 		}
-		glyphs := textCodeGlyphs(nil, []rune(code.Value), object.CGTransform, 0)
-		glyphDeltas := textCodeUsesGlyphDeltas(code, glyphs)
+		glyphs := textlayout.CodeGlyphs(nil, []rune(code.Value), object.CGTransform, 0)
+		glyphDeltas := textlayout.UsesGlyphDeltas(code, glyphs)
 		x := 0.0
 		for i, glyph := range glyphs {
 			if i > 0 {
-				dx, _ := textPositionedGlyphAdvance(0, object, code, glyphs[i-1], glyph, glyphDeltas)
+				dx, _ := textlayout.PositionedAdvance(0, object, code, glyphs[i-1], glyph, glyphDeltas)
 				x += dx
 			}
-			if math.Abs(x-wantX[glyph.codePosition]) > 1e-6 {
-				t.Errorf("object %d character %d x=%g, want %g", object.ID, glyph.codePosition, x, wantX[glyph.codePosition])
+			if math.Abs(x-wantX[glyph.CodePosition]) > 1e-6 {
+				t.Errorf("object %d character %d x=%g, want %g", object.ID, glyph.CodePosition, x, wantX[glyph.CodePosition])
 			}
 		}
 		layout := buildTextLayout(nil, object, code, 0)
@@ -119,13 +120,13 @@ func TestZPageTwoLigaturePositionsFollowGlyphDeltas(t *testing.T) {
 func TestLigatureUsesSourceTextWhenSubstituteFontHasNoGlyphMapping(t *testing.T) {
 	transform := []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{191}}}
 	face := testGlyphIndexFace{glyphs: map[rune]uint16{'f': 1, 'i': 2, 'A': 3}}
-	glyphs := textCodeGlyphs(face, []rune("fiA"), transform, 0)
-	if len(glyphs) != 2 || glyphs[0].value != "fi" || glyphs[0].semantic != "" || glyphs[1].glyphPosition != 1 {
+	glyphs := textlayout.CodeGlyphs(face, []rune("fiA"), transform, 0)
+	if len(glyphs) != 2 || glyphs[0].Value != "fi" || glyphs[0].Semantic != "" || glyphs[1].GlyphPosition != 1 {
 		t.Fatalf("substitute glyphs = %+v, want source fi followed by A", glyphs)
 	}
 	face.glyphs[fontrepair.GlyphRune(191)] = 191
-	glyphs = textCodeGlyphs(face, []rune("fiA"), transform, 0)
-	if len(glyphs) != 2 || glyphs[0].value != string(fontrepair.GlyphRune(191)) || glyphs[0].semantic != "fi" {
+	glyphs = textlayout.CodeGlyphs(face, []rune("fiA"), transform, 0)
+	if len(glyphs) != 2 || glyphs[0].Value != string(fontrepair.GlyphRune(191)) || glyphs[0].Semantic != "fi" {
 		t.Fatalf("embedded glyphs = %+v, want original mapped ligature and semantic fi", glyphs)
 	}
 }
@@ -133,11 +134,11 @@ func TestLigatureUsesSourceTextWhenSubstituteFontHasNoGlyphMapping(t *testing.T)
 func TestGlyphDeltasSupportExpandedGlyphsAndCharacterDeltas(t *testing.T) {
 	transforms := []models.CTCGTransform{{CodeCount: 1, GlyphCount: 2, Glyphs: models.StArrayI{1, 2}}}
 	code := models.TextCode{Value: "ab", DeltaX: models.StArrayF{2, 3}, DeltaY: models.StArrayF{1, -1}}
-	glyphs := textCodeGlyphs(nil, []rune(code.Value), transforms, 0)
-	if !textCodeUsesGlyphDeltas(code, glyphs) {
+	glyphs := textlayout.CodeGlyphs(nil, []rune(code.Value), transforms, 0)
+	if !textlayout.UsesGlyphDeltas(code, glyphs) {
 		t.Fatal("expected three glyph positions for two characters")
 	}
-	x, y := textPositionedGlyphAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], true)
+	x, y := textlayout.PositionedAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], true)
 	if x != 2 || y != 1 {
 		t.Fatalf("second glyph at (%g,%g), want (2,1)", x, y)
 	}
@@ -147,11 +148,11 @@ func TestGlyphDeltasSupportExpandedGlyphsAndCharacterDeltas(t *testing.T) {
 	}
 	// 保留已有的变换前字符增量表示：fi 两个码位的步进都要消费。
 	code = models.TextCode{Value: "fiA", DeltaX: models.StArrayF{3, 4}}
-	glyphs = textCodeGlyphs(nil, []rune(code.Value), []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{191}}}, 0)
-	if textCodeUsesGlyphDeltas(code, glyphs) {
+	glyphs = textlayout.CodeGlyphs(nil, []rune(code.Value), []models.CTCGTransform{{CodeCount: 2, GlyphCount: 1, Glyphs: models.StArrayI{191}}}, 0)
+	if textlayout.UsesGlyphDeltas(code, glyphs) {
 		t.Fatal("source character deltas were mistaken for glyph deltas")
 	}
-	x, _ = textPositionedGlyphAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], false)
+	x, _ = textlayout.PositionedAdvance(10, models.TextObject{}, code, glyphs[0], glyphs[1], false)
 	if x != 7 {
 		t.Fatalf("character delta advance = %g, want 7", x)
 	}
@@ -161,8 +162,8 @@ func TestCombiningMarkUsesMappedGlyphWithoutStandaloneShaping(t *testing.T) {
 	const mark = '\u0bcb'
 	const gid = 97
 	face := testGlyphIndexFace{glyphs: map[rune]uint16{mark: gid, fontrepair.GlyphRune(gid): gid}}
-	glyphs := textCodeGlyphs(face, []rune{mark}, []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{gid}}}, 0)
-	if len(glyphs) != 1 || glyphs[0].value != string(fontrepair.GlyphRune(gid)) || glyphs[0].semantic != string(mark) {
+	glyphs := textlayout.CodeGlyphs(face, []rune{mark}, []models.CTCGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: models.StArrayI{gid}}}, 0)
+	if len(glyphs) != 1 || glyphs[0].Value != string(fontrepair.GlyphRune(gid)) || glyphs[0].Semantic != string(mark) {
 		t.Fatalf("combining vowel = %+v, want original outline and source Unicode", glyphs)
 	}
 }
@@ -197,17 +198,17 @@ func TestZPagesThreeAndFourUseExplicitExpandedGlyphPositions(t *testing.T) {
 			if code.Value != tc.text {
 				t.Fatalf("object %d source = %q, want %q", tc.id, code.Value, tc.text)
 			}
-			glyphs := textCodeGlyphs(nil, []rune(code.Value), item.Text.CGTransform, 0)
-			if len(glyphs) != len(tc.gids) || !textCodeUsesGlyphDeltas(code, glyphs) {
+			glyphs := textlayout.CodeGlyphs(nil, []rune(code.Value), item.Text.CGTransform, 0)
+			if len(glyphs) != len(tc.gids) || !textlayout.UsesGlyphDeltas(code, glyphs) {
 				t.Fatalf("object %d glyphs = %+v, want expanded glyph positioning", tc.id, glyphs)
 			}
 			x := 0.0
 			for i, glyph := range glyphs {
 				if i > 0 {
-					dx, _ := textPositionedGlyphAdvance(0, *item.Text, code, glyphs[i-1], glyph, true)
+					dx, _ := textlayout.PositionedAdvance(0, *item.Text, code, glyphs[i-1], glyph, true)
 					x += dx
 				}
-				if math.Abs(x-tc.xs[i]) > 1e-9 || tc.gids[i] != 0 && glyph.value != string(fontrepair.GlyphRune(uint16(tc.gids[i]))) {
+				if math.Abs(x-tc.xs[i]) > 1e-9 || tc.gids[i] != 0 && glyph.Value != string(fontrepair.GlyphRune(uint16(tc.gids[i]))) {
 					t.Errorf("object %d glyph %d = %+v at %g, want GID %d at %g", tc.id, i, glyph, x, tc.gids[i], tc.xs[i])
 				}
 			}

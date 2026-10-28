@@ -1,23 +1,17 @@
 package render
 
 import (
-	"bytes"
-	"errors"
 	"image"
 	"image/color"
-	"image/draw"
 	"log/slog"
-	"math"
-	"runtime"
 	"strconv"
-	"strings"
-	"sync"
 
-	_ "github.com/dkrisman/gobig2"
-	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/media"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/internal/render/imageops"
+	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
+	"github.com/zc310/ofd/internal/render/paint"
 )
 
 func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
@@ -41,31 +35,45 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 		return
 	}
 
-	ctm := imageCTM(object)
+	ctm := imagelayout.CTM(object)
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
 		if !ctm.IsFinite() {
 			return
 		}
 	}
+	// 图片放置的缺省 CTM 以 Boundary 缩放单位图像；毫米裁剪只使用显式
+	// 对象 CTM 与父级变换（GB/T 33190—2016 §8.4 表34）。边框共用这份裁剪。
+	clipCTM := models.IdentityMatrix
+	if object.CTM != nil {
+		clipCTM = *object.CTM
+	}
+	if parentCTM != nil {
+		clipCTM = *parentCTM.Multiply(&clipCTM)
+		if !clipCTM.IsFinite() {
+			return
+		}
+	}
+	borderClip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
+	borderClip = intersectClips(borderClip, parentClip)
 
 	// SVG 向量嵌入：无裁剪时直接将 SVG 画布以矢量方式嵌入页面画布，
 	// 使 PDF 输出保持矢量（边框、文字等清晰），而非 96dpi 位图。
-	if isSVGFormat(resMedia.Format, resMedia.MediaFile) &&
+	if imageasset.IsSVG(resMedia.Format, resMedia.MediaFile) &&
 		(object.Clips == nil || len(object.Clips.Clip) == 0) && parentClip == nil &&
 		graphicOpacity(object.Alpha) == 255 && object.ImageMask == 0 {
 		if svg, err := p.decodeSVGScene(resMedia.MediaFile, resMedia.Format); err == nil && svg.Width() > 0 && svg.Height() > 0 {
-			// svg 画布为 y 向上、左下角原点坐标系，而 imageMatrixWH 面向
+			// svg 画布为 y 向上、左下角原点坐标系，而 imagelayout.MatrixWH 面向
 			// y 向下（图像像素）坐标系，需先翻转 y 轴再应用放置矩阵。
 			flip := geom.Matrix{{1, 0, 0}, {0, -1, svg.Height()}}
-			m := imageMatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm, pb.Height).Mul(flip)
+			m := imagelayout.MatrixWH(object.Boundary, svg.Width(), svg.Height(), ctm, pb.Height).Mul(flip)
 			bounds := geom.RectFromSize(0, 0, svg.Width(), svg.Height()).Transform(m)
 			if finiteMatrix(m) && clipContainsRect(graphicBoundaryClip(object.Boundary, pb.Height, parentCTM), bounds) {
 				m = ctx.CurrentMatrix().Mul(m)
 				if finiteMatrix(m) {
 					rendered := svg.RenderVector(ctx, m)
 					if rendered {
-						p.drawImageBorder(ctx, object, pb.Height)
+						p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
 						return
 					}
 					// 非矢量后端走下面的位图路径，按像素尺寸重新计算放置矩阵。
@@ -95,79 +103,57 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 	if object.ImageMask != 0 {
 		if maskMedia := p.Document.GetMedia(models.StID(object.ImageMask)); maskMedia != nil {
 			if mask, maskErr := p.decodeImage(maskMedia.MediaFile.Clean(), maskMedia.Format); maskErr == nil && mask != nil {
-				img = applyResourceImageMask(img, mask)
+				img = imageops.ApplyResourceMask(img, mask)
 			}
 		}
 	}
 
-	m := imageMatrix(object.Boundary, img, ctm, pb.Height)
+	m := imagelayout.Matrix(object.Boundary, img, ctm, pb.Height)
 	if !finiteMatrix(m) {
 		return
 	}
 
-	// 裁剪区域坐标是图元自身的毫米局部坐标，buildImageClip 只需 Boundary
-	// 偏移和 y 轴翻转。imageCTM 在图元未声明 CTM 时会按 Boundary 尺寸合成一个
-	// 缩放矩阵，该矩阵只用于图片放置；若把它当作裁剪的 objectCTM 传下去，裁剪
-	// 路径会再被放大 Boundary 倍，包围盒从 70mm×46mm 膨胀到数千毫米，表现为
-	// 图片被整体裁掉。因此裁剪使用显式对象 CTM，并保留容器的父级变换
-	// （GB/T 33190—2016 8.4、表 34 的对象空间与当前空间约定）。
-	clipCTM := models.IdentityMatrix
-	if object.CTM != nil {
-		clipCTM = *object.CTM
-	}
-	if parentCTM != nil {
-		clipCTM = *parentCTM.Multiply(&clipCTM)
-		if !clipCTM.IsFinite() {
-			return
-		}
-	}
-	clip := p.buildImageClip(object.Clips, pb.Height, object.Boundary.X, object.Boundary.Y, clipCTM)
-	clip = intersectClips(clip, graphicBoundaryClip(object.Boundary, pb.Height, parentCTM))
-	clip = intersectClips(clip, parentClip)
+	clip := intersectClips(borderClip, graphicBoundaryClip(object.Boundary, pb.Height, parentCTM))
 	imageMatrix := m
 	m = ctx.CurrentMatrix().Mul(imageMatrix)
 	if !finiteMatrix(m) {
 		return
 	}
-	// 矢量后端原生裁剪需要把裁剪路径从页面坐标变换回图片局部坐标。行列式为 0
-	// 的退化 CTM 无法求逆（canvas 的 Matrix.Inv 会 panic），这类图元必须回退到
-	// 烘焙掩码路径。
-	if clip != nil && !clip.Empty() && !geom.Equal(imageMatrix.Det(), 0) &&
-		!clipCoversImage(clip, imageMatrix, img.Bounds().Dx(), img.Bounds().Dy()) {
+	// 局部裁剪只计算一次，原生裁剪不支持时继续用同一条路径生成位图掩码。
+	localClip := imagelayout.Clip(clip, imageMatrix, img.Bounds().Dx(), img.Bounds().Dy())
+	if localClip != nil && !localClip.Empty() {
 		if clipped, ok := ctx.(interface {
 			RenderClippedImage(image.Image, geom.Matrix, *geom.Path) bool
 		}); ok {
-			clipInImage := clip.Copy().Transform(imageMatrix.Inv())
-			if clipped.RenderClippedImage(applyImageAlpha(img, graphicOpacity(object.Alpha)), m, clipInImage) {
-				p.drawImageBorder(ctx, object, pb.Height)
+			if clipped.RenderClippedImage(applyImageAlpha(img, graphicOpacity(object.Alpha)), m, localClip) {
+				p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
 				return
 			}
 		}
 	}
-	img = imageWithClipAlpha(img, clip, imageMatrix, graphicOpacity(object.Alpha))
+	img = imageWithLocalClipAlpha(img, localClip, graphicOpacity(object.Alpha))
 	ctx.RenderImage(img, m)
-	p.drawImageBorder(ctx, object, pb.Height)
+	p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
 }
 
-func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, pageHeight float64) {
+func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, pageHeight float64, parent *models.CTM, clip *geom.Path) {
 	border := object.Border
 	if border == nil || !object.Boundary.IsFinite() {
 		return
 	}
 	lineWidth := border.LineWidth
 	if lineWidth <= 0 {
-		lineWidth = defaultLineWidth
+		lineWidth = paint.DefaultLineWidth
 	}
-	box := object.Boundary
-	rx := border.HorizonalCornerRadius
-	ry := border.VerticalCornerRadius
-	if rx < 0 {
-		rx = 0
+	if !finiteFloat(lineWidth) {
+		return
 	}
-	if ry < 0 {
-		ry = 0
+	scale := paint.StrokeScale(nil, parent)
+	lineWidth *= scale
+	if !finiteFloat(lineWidth) {
+		return
 	}
-	path := roundedImageBorder(box.Width, box.Height, rx, ry)
+	path := imagelayout.BorderPath(object, pageHeight, parent)
 	if path.Empty() {
 		return
 	}
@@ -175,146 +161,36 @@ func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, p
 	defer ctx.Pop()
 	ctx.ClearFill()
 	ctx.SetStrokeWidth(lineWidth)
+	ctx.SetStrokeCapper(geom.ButtCap)
+	ctx.SetStrokeJoiner(geom.MiterJoin)
+	ctx.SetDashes(0)
+	style := models.CTGraphicUnit{}
 	if len(border.DashPattern) > 0 {
-		dashes := make([]float64, 0, len(border.DashPattern))
+		dashes := make(models.StArrayF, 0, len(border.DashPattern))
 		for _, value := range border.DashPattern {
 			parsed, err := strconv.ParseFloat(value, 64)
-			if err != nil || parsed < 0 {
+			if err != nil || !finiteFloat(parsed) || parsed < 0 {
 				dashes = nil
 				break
 			}
-			dashes = append(dashes, parsed)
+			dashes = append(dashes, parsed*scale)
 		}
-		if len(dashes) > 0 {
-			ctx.SetDashes(border.DashOffset, dashes...)
+		if paint.ValidDashPattern(border.DashOffset*scale, &dashes) {
+			style.DashOffset, style.DashPattern = border.DashOffset*scale, &dashes
+			ctx.SetDashes(style.DashOffset, dashes...)
 		}
 	}
 	stroke := color.RGBA{A: 255}
 	if border.BorderColor != nil {
 		stroke = p.colorRGBA(*border.BorderColor)
 	}
-	ctx.SetStrokeColor(scaleAlpha(stroke, graphicOpacity(object.Alpha)))
-	ctx.DrawPath(box.X, pageHeight-(box.Y+box.Height), path)
-}
-
-func roundedImageBorder(width, height, rx, ry float64) *geom.Path {
-	if width <= 0 || height <= 0 {
-		return &geom.Path{}
+	ctx.SetStrokeColor(paint.ScaleAlpha(stroke, graphicOpacity(object.Alpha)))
+	if clipContainsRect(clip, strokeBounds(ctx, path.Bounds())) {
+		ctx.DrawPath(0, 0, path)
+		return
 	}
-	if rx > width/2 {
-		rx = width / 2
-	}
-	if ry > height/2 {
-		ry = height / 2
-	}
-	if rx == 0 && ry == 0 {
-		return geom.Rectangle(width, height)
-	}
-	if rx == 0 {
-		rx = ry
-	}
-	if ry == 0 {
-		ry = rx
-	}
-	// 局部坐标 Y 向上，从左上角顺时针绕行。geom 的 sweep 语义与
-	// geom.RoundedRectangle 一致：sweep=true 只在逆时针绕行时得到凸弧，
-	// 顺时针绕行必须传 sweep=false，否则圆角会反向凹进图形内部。
-	path := &geom.Path{}
-	path.MoveTo(rx, height)
-	path.LineTo(width-rx, height)
-	path.ArcTo(rx, ry, 0, false, false, width, height-ry)
-	path.LineTo(width, ry)
-	path.ArcTo(rx, ry, 0, false, false, width-rx, 0)
-	path.LineTo(rx, 0)
-	path.ArcTo(rx, ry, 0, false, false, 0, ry)
-	path.LineTo(0, height-ry)
-	path.ArcTo(rx, ry, 0, false, false, rx, height)
-	path.Close()
-	return path
-}
-
-func applyResourceImageMask(img, mask image.Image) image.Image {
-	bounds := img.Bounds()
-	if bounds.Empty() || mask == nil || mask.Bounds().Empty() {
-		return img
-	}
-	src := decodedImage(img)
-	mask = decodedImage(mask)
-	out := image.NewNRGBA(bounds)
-	maskBounds := mask.Bounds()
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		my := maskBounds.Min.Y + (y-bounds.Min.Y)*maskBounds.Dy()/bounds.Dy()
-		if my >= maskBounds.Max.Y {
-			my = maskBounds.Max.Y - 1
-		}
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			mx := maskBounds.Min.X + (x-bounds.Min.X)*maskBounds.Dx()/bounds.Dx()
-			if mx >= maskBounds.Max.X {
-				mx = maskBounds.Max.X - 1
-			}
-			c := nrgbaAt(src, x, y)
-			mc := nrgbaAt(mask, mx, my)
-			luma := (299*uint32(mc.R) + 587*uint32(mc.G) + 114*uint32(mc.B)) / 1000
-			if mc.A == 0 {
-				luma = 0
-			}
-			c.A = uint8(uint32(c.A) * luma / 255)
-			out.SetNRGBA(x, y, c)
-		}
-	}
-	return out
-}
-
-func nrgbaAt(img image.Image, x, y int) color.NRGBA {
-	switch source := img.(type) {
-	case *image.NRGBA:
-		return source.NRGBAAt(x, y)
-	case *image.RGBA:
-		return color.NRGBAModel.Convert(source.RGBAAt(x, y)).(color.NRGBA)
-	default:
-		return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-	}
-}
-
-func decodedImage(img image.Image) image.Image {
-	type lazyImage interface {
-		Image() (image.Image, error)
-	}
-	for range 4 {
-		lazy, ok := img.(lazyImage)
-		if !ok {
-			return img
-		}
-		decoded, err := lazy.Image()
-		if err != nil || decoded == nil || decoded == img {
-			return img
-		}
-		img = decoded
-	}
-	return img
-}
-
-// imageCTM 返回图片对象使用的变换矩阵。
-func imageCTM(object models.ImageObject) models.CTM {
-	if object.CTM != nil {
-		return *object.CTM
-	}
-	return models.CTM{object.Boundary.Width, 0, 0, object.Boundary.Height, 0, 0}
-}
-
-// imageMatrix 将图片像素坐标映射到 OFD 页面坐标。
-func imageMatrix(box models.StBox, img image.Image, ctm models.CTM, pageHeight float64) geom.Matrix {
-	imgW := float64(img.Bounds().Dx())
-	imgH := float64(img.Bounds().Dy())
-	return imageMatrixWH(box, imgW, imgH, ctm, pageHeight)
-}
-
-// imageMatrixWH 将宽高为 (w, h) 的坐标空间映射到 OFD 页面坐标。
-func imageMatrixWH(box models.StBox, w, h float64, ctm models.CTM, pageHeight float64) geom.Matrix {
-	return geom.Matrix{
-		{ctm[0] / w, -ctm[2] / h, box.X + ctm[2] + ctm[4]},
-		{-ctm[1] / w, ctm[3] / h, pageHeight - box.Y - ctm[3] - ctm[5]},
-	}
+	// 描边在 Boundary 中心线上，保留自身外沿；对象及继承裁剪仍约束整条描边。
+	p.drawClippedPathStyle(ctx, path, clip, models.PathObject{CtPath: models.CtPath{Stroke: models.NewOptionalBool(true)}}, style)
 }
 
 func finiteMatrix(matrix geom.Matrix) bool {
@@ -326,183 +202,6 @@ func finiteMatrix(matrix geom.Matrix) bool {
 		}
 	}
 	return true
-}
-
-func isSVGFormat(format string, file models.StLoc) bool {
-	return strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg")
-}
-
-func (p *Document) decodeSVGScene(file models.StLoc, format string) (SVGScene, error) {
-	key := file.Clean().String()
-	return p.cachedSVGScene(key, func() ([]byte, error) {
-		if !isSVGFormat(format, file) {
-			return nil, errors.New("not SVG")
-		}
-		return p.Document.FileCache.Read(key)
-	})
-}
-
-// cachedSVGScene 复用已解析场景；加载与绘制都不持有文档范围的绘制锁。
-func (p *Document) cachedSVGScene(key string, load func() ([]byte, error)) (SVGScene, error) {
-	lockKey := "\x00svg-scene:" + key
-	imageLock := p.imageLock(lockKey)
-	defer p.releaseImageLock(lockKey, imageLock)
-	imageLock.mu.Lock()
-	defer imageLock.mu.Unlock()
-	p.imageLocksMu.Lock()
-	if p.closed.Load() {
-		p.imageLocksMu.Unlock()
-		return nil, errors.New("渲染文档已关闭")
-	}
-	if p.svgCanvases == nil {
-		p.svgCanvases = cache.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil)
-	}
-	cached, ok := p.svgCanvases.Get(key)
-	p.imageLocksMu.Unlock()
-	if ok {
-		return cached, nil
-	}
-	data, err := load()
-	if err != nil {
-		return nil, err
-	}
-	scene, err := parseSVGScene(data)
-	if err != nil {
-		return nil, err
-	}
-	p.imageLocksMu.Lock()
-	if !p.closed.Load() {
-		p.svgCanvases.AddWeighted(key, scene, svgCanvasWeight(data))
-	}
-	p.imageLocksMu.Unlock()
-	return scene, nil
-}
-
-// svgCanvasWeight 估算解析后 SVG 画布的内存占用。画布内部结构无法直接度量，
-// 使用源 SVG 字节数作为与复杂度相关的代理值，保证至少为 1。
-func svgCanvasWeight(data []byte) int64 {
-	if len(data) <= 0 {
-		return 1
-	}
-	return int64(len(data))
-}
-
-// imageCacheWeight 估算图片在缓存中的字节占用。懒加载图片同时保留压缩字节和
-// 按需解码后的像素，因此两者一并计入；其他图片按解码后的像素估算。
-func imageCacheWeight(img image.Image) int64 {
-	if img == nil {
-		return 1
-	}
-	if lazy, ok := img.(*EncodedImage); ok {
-		return lazy.Weight()
-	}
-	bounds := img.Bounds()
-	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-		return 1
-	}
-	return int64(bounds.Dx()) * int64(bounds.Dy()) * imageBytesPerPixel(img.ColorModel())
-}
-
-// imageBytesPerPixel 估算每种颜色模型的每像素字节数，用于图片缓存权重。
-func imageBytesPerPixel(model color.Model) int64 {
-	switch model {
-	case color.GrayModel, color.AlphaModel:
-		return 1
-	case color.Gray16Model, color.Alpha16Model, color.YCbCrModel:
-		return 2
-	case color.RGBA64Model, color.NRGBA64Model:
-		return 8
-	default:
-		return 4
-	}
-}
-
-func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
-	key := file.Clean().String()
-	return p.cachedImage(key, func() (image.Image, error) {
-		if isSVGFormat(format, file) {
-			scene, err := p.decodeSVGScene(file, format)
-			if err != nil {
-				return nil, err
-			}
-			return scene.Rasterize(geom.DPI(96)), nil
-		}
-		data, err := p.Document.FileCache.Read(key)
-		if err != nil {
-			return nil, err
-		}
-		return decodeRasterImage(data)
-	})
-}
-
-// cachedImage 让资源图片与内存印章共用有界 LRU，并按键合并并发加载。
-// 读盘和解码只持对应图片的锁，发布与关闭由 imageLocksMu 协调。
-func (p *Document) cachedImage(key string, load func() (image.Image, error)) (image.Image, error) {
-	imageLock := p.imageLock(key)
-	defer p.releaseImageLock(key, imageLock)
-	imageLock.mu.Lock()
-	defer imageLock.mu.Unlock()
-	p.imageLocksMu.Lock()
-	if p.closed.Load() {
-		p.imageLocksMu.Unlock()
-		return nil, errors.New("渲染文档已关闭")
-	}
-	if p.images == nil {
-		p.images = cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil)
-	}
-	cached, ok := p.images.Get(key)
-	p.imageLocksMu.Unlock()
-	if ok {
-		return cached, nil
-	}
-	img, err := load()
-	if err != nil {
-		return nil, err
-	}
-	weight := imageCacheWeight(img)
-	p.imageLocksMu.Lock()
-	if !p.closed.Load() {
-		p.images.AddWeighted(key, img, weight)
-	}
-	p.imageLocksMu.Unlock()
-	return img, nil
-}
-
-var pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-
-// decodeRasterImage 对 JPEG/PNG 使用懒解码并保留原始编码字节的
-// EncodedImage，供 canvas PDF 写入器等按原字节内嵌。
-// PDF 渲染器可以按原字节嵌入（DCT 等过滤），避免解码后重新转成 RGB 再 flate 压缩。
-func decodeRasterImage(data []byte) (image.Image, error) {
-	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
-		return newEncodedImage("jpeg", data), nil
-	}
-	if len(data) >= len(pngSignature) && bytes.Equal(data[:len(pngSignature)], pngSignature) {
-		return newEncodedImage("png", data), nil
-	}
-	img, err := media.DecodeBytes(data)
-	if err != nil {
-		return nil, err
-	}
-	return palettedToRGBA(img), nil
-}
-
-// palettedToRGBA 把调色板图像（GIF 等）一次性转换为 *image.RGBA。
-// x/image/draw 的缩放对 *image.RGBA 走专用快速路径；*image.Paletted 会退到
-// 通用的 RGBA64Image 路径，每个采样点都调用 Paletted.RGBA64At，整页大图放大
-// 时开销很大。转换结果随解码缓存复用，只在首次解码时付出一次成本。
-func palettedToRGBA(img image.Image) image.Image {
-	pal, ok := img.(*image.Paletted)
-	if !ok {
-		return img
-	}
-	bounds := pal.Bounds()
-	if bounds.Empty() {
-		return img
-	}
-	out := image.NewRGBA(bounds)
-	draw.Draw(out, bounds, pal, bounds.Min, draw.Src)
-	return out
 }
 
 func (p *Document) buildImageClip(clips *models.Clips, pageH, bx, by float64, objectCTM models.CTM) *geom.Path {
@@ -519,7 +218,11 @@ func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha u
 	if img == nil {
 		return nil
 	}
-	if clip == nil || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
+	return imageWithLocalClipAlpha(img, imagelayout.Clip(clip, m, img.Bounds().Dx(), img.Bounds().Dy()), alpha)
+}
+
+func imageWithLocalClipAlpha(img image.Image, clip *geom.Path, alpha uint8) image.Image {
+	if clip == nil {
 		return applyImageAlpha(img, alpha)
 	}
 	bounds := img.Bounds()
@@ -527,10 +230,10 @@ func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha u
 	if w == 0 || h == 0 {
 		return img
 	}
-	if clipCoversImage(clip, m, w, h) {
-		return applyImageAlpha(img, alpha)
+	if clip.Empty() {
+		return image.NewNRGBA(bounds)
 	}
-	mask := imageClipMask(clip, m, w, h)
+	mask := imageClipMask(clip, w, h)
 	if mask == nil {
 		// 无法实现裁剪时跳过图片内容，避免显示原本应被裁掉的区域。
 		return image.NewNRGBA(bounds)
@@ -538,91 +241,14 @@ func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha u
 	return applyImageMaskAlpha(img, mask, alpha)
 }
 
-// clipBleedMM 是允许忽略的裁剪内缩量，按毫米计。排版软件给出的出血边通常是
-// 零点几毫米，用物理尺寸衡量比用像素数衡量更稳定：同一张图缩放到不同分辨率
-// 后判定结果不会变，也避免高分辨率扫描件因为内缩折算出几十像素而被误判为
-// 真实裁切。
-const clipBleedMM = 0.5
-
-// clipCoversImage 判断裁剪路径在图像像素坐标下是否完全覆盖图像范围。
-// 常见的由生产者生成的 OFD 会为图片附上与原图等大的矩形裁切（多为版面出血
-// 裁切：贴边图四周留 1-3px 的出血边），此时掩码不会改变任何有效像素，跳过
-// 昂贵的全分辨率掩码合成，让 JPEG/PNG 源图可以按原字节直传 PDF。
-// 容差取图像短边的 1.5% 与 clipBleedMM 折算像素数中的较大者（下限 2px）：
-// 小图（短边 <~130px）仍走掩码路径，避免把真实内容裁切误判为可跳过。
-//
-// 跳过掩码还有一层必要性：烘焙出来的掩码会在图片四周留下内缩的一圈全透明
-// 像素，而 canvas 的 PDF 写入器对非不透明图片一律附加 SMask 并写死
-// /Interpolate true。渲染器按 /Interpolate 对 SMask 做双线性插值时，这圈透明
-// 像素会与内部像素混成一条半透明过渡带；源图在被裁掉的那圈里 RGB 通常是黑，
-// 两者叠加就是一圈贴着图元 Boundary 的灰色矩形框。官方 PDF 对同类裁剪用矢量
-// `re W n` 而不带 SMask，视觉上不会出现这条边。
-func clipCoversImage(clip *geom.Path, m geom.Matrix, width, height int) bool {
-	if clip == nil || width <= 0 || height <= 0 || !finiteMatrix(m) || geom.Equal(m.Det(), 0) {
-		return false
-	}
-	inverse := m.Inv()
-	if !finiteMatrix(inverse) {
-		return false
-	}
-	maskPath := clip.Copy().Transform(inverse)
-	b := maskPath.Bounds()
-	eps := math.Max(2.0, 0.015*float64(min(width, height)))
-	if perPx := millimeterPerPixel(m); perPx > 0 {
-		eps = math.Max(eps, clipBleedMM/perPx)
-	}
-	if b.X0 > eps || b.Y0 > eps || b.X1 < float64(width)-eps || b.Y1 < float64(height)-eps {
-		return false
-	}
-	area := polygonArea(maskPath.Coords())
-	boxArea := (b.X1 - b.X0) * (b.Y1 - b.Y0)
-	if boxArea <= 0 {
-		return false
-	}
-	return area >= 0.99*boxArea
-}
-
-// millimeterPerPixel 返回矩阵 m 下单个图像像素对应的页面毫米数，取两轴较小值，
-// 使按毫米折算出的像素容差在两轴上都偏保守。m 非有限或退化时返回 0。
-func millimeterPerPixel(m geom.Matrix) float64 {
-	if !finiteMatrix(m) {
-		return 0
-	}
-	sx := math.Hypot(m[0][0], m[1][0])
-	sy := math.Hypot(m[0][1], m[1][1])
-	scale := math.Min(sx, sy)
-	if !finiteFloat(scale) || scale <= 0 {
-		return 0
-	}
-	return scale
-}
-
-func polygonArea(points []geom.Point) float64 {
-	if len(points) < 3 {
-		return 0
-	}
-	var sum float64
-	last := points[len(points)-1]
-	for _, point := range points {
-		sum += last.X*point.Y - point.X*last.Y
-		last = point
-	}
-	return math.Abs(sum) / 2
-}
-
-// imageClipMask 将页面裁剪路径转换为图片像素掩码。
-func imageClipMask(clip *geom.Path, m geom.Matrix, width, height int) *image.Alpha {
-	inverse := m.Inv()
-	if !finiteMatrix(inverse) {
-		return image.NewAlpha(image.Rect(0, 0, width, height))
-	}
-	maskPath := clip.Copy().Transform(inverse)
+// imageClipMask 将图片局部裁剪路径栅格化为单通道覆盖率掩码。
+func imageClipMask(clip *geom.Path, width, height int) *image.Alpha {
 	surface := newAlphaMaskSurface(float64(width), float64(height), geom.DPMM(1))
 	if surface == nil {
 		return nil
 	}
 	surface.SetFillColor(color.White)
-	surface.DrawPath(0, 0, maskPath)
+	surface.DrawPath(0, 0, clip)
 	return surface.RasterAlpha()
 }
 
@@ -633,214 +259,5 @@ func applyImageMask(img image.Image, mask *image.Alpha) image.Image {
 }
 
 func applyImageMaskAlpha(img image.Image, mask *image.Alpha, alpha uint8) image.Image {
-	bounds := img.Bounds()
-	out := image.NewNRGBA(bounds)
-	src := img
-	if lazy, ok := img.(*EncodedImage); ok {
-		if decoded, err := lazy.Image(); err == nil {
-			src = decoded
-		}
-	}
-	switch source := src.(type) {
-	case *image.YCbCr:
-		applyMaskYCbCr(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
-	case *image.NRGBA:
-		applyMaskNRGBA(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
-	case *image.RGBA:
-		applyMaskRGBA(source, mask, out, bounds.Min, mask.Rect.Min, alpha)
-	default:
-		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-			for x := bounds.Min.X; x < bounds.Max.X; x++ {
-				c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
-				ma := mask.AlphaAt(x-bounds.Min.X+mask.Rect.Min.X, y-bounds.Min.Y+mask.Rect.Min.Y).A
-				c.A = alphaMul(alphaMul(c.A, ma), alpha)
-				out.SetNRGBA(x, y, c)
-			}
-		}
-	}
-	return out
-}
-
-// applyMaskYCbCr 用掩码 alpha 合成 YCbCr 图像。行首偏移只计算一次，
-// 之后按行内列号递推，省掉每个像素的 PixOffset 调用。
-func applyMaskYCbCr(src *image.YCbCr, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
-	width, height := src.Rect.Dx(), src.Rect.Dy()
-	if workers := maskRowWorkers(width, height); workers > 1 {
-		runMaskRows(workers, height, func(lo, hi int) {
-			maskYCbCrRows(src, mask, out, imgMin, maskMin, lo, hi, alpha)
-		})
-		return
-	}
-	maskYCbCrRows(src, mask, out, imgMin, maskMin, 0, height, alpha)
-}
-
-// maskYCbCrRows 合成 [lo,hi) 行区间的掩码 alpha。
-func maskYCbCrRows(src *image.YCbCr, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
-	width := src.Rect.Dx()
-	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := lo; row < hi; row++ {
-		y := src.Rect.Min.Y + row
-		yi := row * src.YStride
-		oi := out.PixOffset(src.Rect.Min.X, y)
-		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for col := range width {
-			// 子采样取样下标直接用标准库的 YOffset/COffset：它们按
-			// x/2-minX/2 这样的绝对换算，自行按 (x-minX)>>1 换算会在
-			// 图像原点非零时取到错误的色度。
-			x := src.Rect.Min.X + col
-			cidx := src.COffset(x, y)
-			r, g, b := color.YCbCrToRGB(src.Y[yi+col], src.Cb[cidx], src.Cr[cidx])
-			out.Pix[oi+0] = r
-			out.Pix[oi+1] = g
-			out.Pix[oi+2] = b
-			out.Pix[oi+3] = alphaMul(mask.Pix[mi], alpha)
-			oi += 4
-			mi++
-		}
-	}
-}
-
-// 掩码合成的并行参数。图案单元这类大尺寸图片的掩码合成是纯 CPU 的逐像素
-// 循环，按行分块后可以线性扩展到多核。
-const (
-	// maskParallelThreshold 是并行合成的最小像素数。低于该值时 goroutine
-	// 调度与闭包开销超过收益，保持串行。
-	maskParallelThreshold = 1 << 18
-	// maskParallelWorkers 限制单次合成的并发数。页面渲染本身已按页并行，
-	// 这里取小值以免与页面级并发叠加后过度订阅 CPU。
-	maskParallelWorkers = 4
-)
-
-// maskRowWorkers 返回本次掩码合成可用的并发数，返回 1 表示串行。
-// 像素数不足阈值时 goroutine 调度与闭包开销超过收益；页面渲染本身已按页
-// 并发，因此单次合成的并发数取小值，避免叠加后过度订阅 CPU。
-func maskRowWorkers(width, height int) int {
-	workers := maskParallelWorkers
-	if v := runtime.GOMAXPROCS(0); v < workers {
-		workers = v
-	}
-	if workers <= 1 || width*height < maskParallelThreshold {
-		return 1
-	}
-	return workers
-}
-
-// runMaskRows 把 [0,height) 的行区间分块交给多个 goroutine 执行，fn 负责
-// 处理分配到的 [lo,hi) 行。各块写入互不重叠的像素区间，可以安全并发。
-func runMaskRows(workers, height int, fn func(lo, hi int)) {
-	if workers <= 1 {
-		fn(0, height)
-		return
-	}
-	rows := (height + workers - 1) / workers
-	var wg sync.WaitGroup
-	for lo := 0; lo < height; lo += rows {
-		hi := min(lo+rows, height)
-		wg.Add(1)
-		go func(lo, hi int) {
-			defer wg.Done()
-			fn(lo, hi)
-		}(lo, hi)
-	}
-	wg.Wait()
-}
-
-// applyMaskNRGBA 用掩码 alpha 合成 NRGBA 图像。
-//
-// 图案单元等大尺寸图片会逐像素经过这里，是图片路径的主要开销，因此按行切片
-// 遍历：行首偏移只计算一次，之后每像素递增 4 字节，省掉每个像素三次
-// PixOffset 调用与重复的边界判断。
-func applyMaskNRGBA(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
-	width, height := src.Rect.Dx(), src.Rect.Dy()
-	if workers := maskRowWorkers(width, height); workers > 1 {
-		runMaskRows(workers, height, func(lo, hi int) {
-			maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, lo, hi, alpha)
-		})
-		return
-	}
-	maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, 0, height, alpha)
-}
-
-// maskNGBGARows 合成 [lo,hi) 行区间的掩码 alpha。行首偏移只计算一次，之后
-// 每像素递增 4 字节，省掉每个像素三次 PixOffset 调用与重复的边界判断。
-func maskNGBGARows(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int) {
-	maskNRGBARowsAlpha(src, mask, out, imgMin, maskMin, lo, hi, 255)
-}
-
-func maskNRGBARowsAlpha(src *image.NRGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
-	width := src.Rect.Dx()
-	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := lo; row < hi; row++ {
-		y := src.Rect.Min.Y + row
-		si := src.PixOffset(src.Rect.Min.X, y)
-		oi := out.PixOffset(src.Rect.Min.X, y)
-		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for range width {
-			out.Pix[oi+0] = src.Pix[si+0]
-			out.Pix[oi+1] = src.Pix[si+1]
-			out.Pix[oi+2] = src.Pix[si+2]
-			out.Pix[oi+3] = alphaMul(alphaMul(src.Pix[si+3], mask.Pix[mi]), alpha)
-			si += 4
-			oi += 4
-			mi++
-		}
-	}
-}
-
-// applyMaskRGBA 用掩码 alpha 合成预乘 RGBA 图像。行首偏移只计算一次，之后
-// 每像素递增 4 字节；分支不用 continue，保证下标推进不会被跳过。
-func applyMaskRGBA(src *image.RGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, alpha uint8) {
-	width, height := src.Rect.Dx(), src.Rect.Dy()
-	if workers := maskRowWorkers(width, height); workers > 1 {
-		runMaskRows(workers, height, func(lo, hi int) {
-			maskRGBARows(src, mask, out, imgMin, maskMin, lo, hi, alpha)
-		})
-		return
-	}
-	maskRGBARows(src, mask, out, imgMin, maskMin, 0, height, alpha)
-}
-
-// maskRGBARows 合成 [lo,hi) 行区间的掩码 alpha。分支不用 continue，保证
-// 下标推进不会被跳过。
-func maskRGBARows(src *image.RGBA, mask *image.Alpha, out *image.NRGBA, imgMin, maskMin image.Point, lo, hi int, alpha uint8) {
-	width := src.Rect.Dx()
-	maskX := src.Rect.Min.X - imgMin.X + maskMin.X
-	for row := lo; row < hi; row++ {
-		y := src.Rect.Min.Y + row
-		si := src.PixOffset(src.Rect.Min.X, y)
-		oi := out.PixOffset(src.Rect.Min.X, y)
-		mi := mask.PixOffset(maskX, y-imgMin.Y+maskMin.Y)
-		for range width {
-			ma := mask.Pix[mi]
-			r, g, b, a := src.Pix[si+0], src.Pix[si+1], src.Pix[si+2], src.Pix[si+3]
-			switch {
-			case a == 0xff:
-				// 完全不透明，颜色已是直通道径，直接透传并叠加掩码 alpha。
-				out.Pix[oi+0] = r
-				out.Pix[oi+1] = g
-				out.Pix[oi+2] = b
-				out.Pix[oi+3] = alphaMul(ma, alpha)
-			case a == 0:
-				// 全透明像素没有颜色可还原。
-				out.Pix[oi+0], out.Pix[oi+1], out.Pix[oi+2] = 0, 0, 0
-				out.Pix[oi+3] = 0
-			default:
-				// 与 color.NRGBAModel.Convert(color.RGBA) 一致：先去除预乘再叠加掩码。
-				out.Pix[oi+3] = alphaMul(alphaMul(a, ma), alpha)
-				r16 := uint32(r) * 0xffff / uint32(a)
-				g16 := uint32(g) * 0xffff / uint32(a)
-				b16 := uint32(b) * 0xffff / uint32(a)
-				out.Pix[oi+0] = uint8(r16 >> 8)
-				out.Pix[oi+1] = uint8(g16 >> 8)
-				out.Pix[oi+2] = uint8(b16 >> 8)
-			}
-			si += 4
-			oi += 4
-			mi++
-		}
-	}
-}
-
-func alphaMul(a, b uint8) uint8 {
-	return uint8(int(a) * int(b) / 255)
+	return imageops.ApplyMaskAlpha(img, mask, alpha)
 }

@@ -7,7 +7,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/imageasset"
 )
 
 func TestCanvasImageWrapsEncodedImage(t *testing.T) {
@@ -15,7 +15,7 @@ func TestCanvasImageWrapsEncodedImage(t *testing.T) {
 	if err := jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4)), nil); err != nil {
 		t.Fatal(err)
 	}
-	lazy := render.NewEncodedImage("jpeg", buf.Bytes())
+	lazy := imageasset.NewEncodedImage("jpeg", buf.Bytes())
 	converted := canvasImage(lazy)
 	if converted == image.Image(lazy) {
 		t.Fatal("EncodedImage 应被转换为 canvas/image.Image")
@@ -33,7 +33,7 @@ func TestCanvasImageKeepsGrayscaleImageUnwrapped(t *testing.T) {
 	if err := png.Encode(&gray, image.NewGray(image.Rect(0, 0, 4, 4))); err != nil {
 		t.Fatal(err)
 	}
-	lazyGray := render.NewEncodedImage("png", gray.Bytes())
+	lazyGray := imageasset.NewEncodedImage("png", gray.Bytes())
 	if converted := canvasImage(lazyGray); converted != image.Image(lazyGray) {
 		t.Fatal("灰度图片不应被转换为 canvas/image.Image")
 	}
@@ -42,7 +42,7 @@ func TestCanvasImageKeepsGrayscaleImageUnwrapped(t *testing.T) {
 	if err := png.Encode(&rgb, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
 		t.Fatal(err)
 	}
-	lazyRGB := render.NewEncodedImage("png", rgb.Bytes())
+	lazyRGB := imageasset.NewEncodedImage("png", rgb.Bytes())
 	if converted := canvasImage(lazyRGB); converted == image.Image(lazyRGB) {
 		t.Fatal("彩色图片应被转换为 canvas/image.Image")
 	}

@@ -725,9 +725,9 @@ func textPositionY(t *testing.T, position string) float64 {
 
 // TestCellBordersCoverEveryCell 确认每个放了票的格子都有一圈自己的裁切线。
 //
-// 转换层按 *geom.Path 指针缓存转换结果（canvasconv.ToCanvasPath），所以复用一个
-// Path 再 Reset 拿到的是首次的缓存，所有格子会画在第一格的位置——看上去就是
-// 只有第一张票有框。这条断言数的是"不同起点的裁切线有几个"，不是"有没有"。
+// 历史实现按路径指针缓存转换快照，复用 Path 再 Reset 会导致所有边框落到第一格。
+// 当前后端直接共享路径，提交后也应保持只读，每个格子使用独立路径。
+// 此处检查裁切线的不同起点数量，避免路径复用再次破坏格子边框。
 func TestCellBordersCoverEveryCell(t *testing.T) {
 	first := plainInvoice("a.ofd", "033001900111", "1", "2026-09-01")
 	first.pageWidth, first.pageHeight = 210, 140

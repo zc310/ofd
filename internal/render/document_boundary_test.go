@@ -8,6 +8,7 @@ import (
 	"github.com/zc310/canvas"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageops"
 )
 
 func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {
@@ -37,7 +38,7 @@ func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {
 					t.Fatalf("NRGBA=%v bounds=%v: got %v, want %v", nrgba, source.Bounds(), got, want)
 				}
 				var reference [4]float64
-				reference[0], reference[1], reference[2], reference[3] = scanImageAlphaBounds(source, source.Bounds())
+				reference[0], reference[1], reference[2], reference[3] = imageops.ContentBounds(genericBoundsImage{source})
 				if got != reference {
 					t.Fatalf("fast scan %v differs from generic %v", got, reference)
 				}
@@ -55,16 +56,14 @@ func TestContentImageBoundsSupportsOriginsAndSubimages(t *testing.T) {
 	}
 }
 
+type genericBoundsImage struct{ image.Image }
+
 func TestOffscreenUnavailableSkipsGradientAndClippedImage(t *testing.T) {
-	previous := newOffscreenSurfaceFactory
-	previousAlphaMask := newAlphaMaskSurfaceFactory
-	t.Cleanup(func() { newOffscreenSurfaceFactory = previous })
-	t.Cleanup(func() { newAlphaMaskSurfaceFactory = previousAlphaMask })
 	for _, factory := range []func(float64, float64, geom.Resolution) OffscreenSurface{
 		nil, func(float64, float64, geom.Resolution) OffscreenSurface { return nil },
 	} {
-		newOffscreenSurfaceFactory = factory
-		newAlphaMaskSurfaceFactory = nil
+		setOffscreenSurfaceFactory(t, factory)
+		setAlphaMaskSurfaceFactory(t, nil)
 		var doc Document
 		var budget renderBudget
 		budget.reset()
@@ -78,7 +77,7 @@ func TestOffscreenUnavailableSkipsGradientAndClippedImage(t *testing.T) {
 			img.Pix[i] = 255
 		}
 		clip := geom.Rectangle(5, 5)
-		if mask := imageClipMask(clip, geom.Identity, 20, 20); mask != nil {
+		if mask := imageClipMask(clip, 20, 20); mask != nil {
 			t.Fatal("unavailable surface produced a mask")
 		}
 		got := imageWithClip(img, clip, geom.Identity)

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/zc310/canvas"
-	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"golang.org/x/image/font/gofont/goregular"
@@ -55,31 +56,6 @@ func TestSVGTextKeepsSolidTextAndOutlinesGradients(t *testing.T) {
 	}
 }
 
-func TestDirectTextPathHandlesHighestGlyphAddresses(t *testing.T) {
-	base := canvas.NewFontFamily("glyph address source")
-	if err := base.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
-		t.Fatal(err)
-	}
-	glyph := base.Face(12, canvas.Black).Font.GlyphIndex('A')
-	fonts := NewFonts(nil)
-	defer fonts.Close()
-	for _, address := range []uint16{0xfffe, 0xffff} {
-		r := fontrepair.GlyphRune(address)
-		family, err := loadCachedEmbeddedFont(fonts, "high glyph address", goregular.TTF, FontRegular,
-			[]fontrepair.GlyphMapping{{Rune: r, Glyph: glyph}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		face := family.Face(12, canvas.Black)
-		if face.Font.GlyphIndex(r) == 0 {
-			t.Fatalf("测试字体缺少内部地址 %U", r)
-		}
-		if path := fonts.directTextPath(face, string(r)); path == nil || path.Empty() {
-			t.Errorf("内部地址 %U 未通过字形路径绘制", r)
-		}
-	}
-}
-
 func svgFontPrograms(t *testing.T, data []byte) map[string][]byte {
 	t.Helper()
 	result := make(map[string][]byte)
@@ -98,35 +74,11 @@ func svgFontPrograms(t *testing.T, data []byte) map[string][]byte {
 	return result
 }
 
-// 同一资源按不同文档映射修复后，需要独立CSS族名；否则浏览器会选中错误cmap。
-func TestSVGSeparatesSameNameEmbeddedGlyphMappings(t *testing.T) {
-	fonts := NewFonts(nil)
-	defer fonts.Close()
-	page := canvas.New(80, 30)
-	ctx := canvas.NewContext(page)
-	for i, mapping := range [][]fontrepair.GlyphMapping{
-		{{Rune: 'A', Glyph: 1}}, {{Rune: 'A', Glyph: 2}},
-	} {
-		family, err := loadCachedEmbeddedFont(fonts, "SameName", goregular.TTF, FontRegular, mapping)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx.DrawText(5+float64(i)*30, 15, canvas.NewTextLine(family.Face(12, canvas.Black), "A", canvas.Left))
-	}
-	var output bytes.Buffer
-	if err := (canvasVectorSurface{c: page}).Write(&output, "svg"); err != nil {
-		t.Fatal(err)
-	}
-	if count := len(svgFontPrograms(t, output.Bytes())); count != 2 {
-		t.Fatalf("SVG含%d个独立字体，应为2个", count)
-	}
-	if count := bytes.Count(output.Bytes(), []byte("<text")); count != 2 {
-		t.Fatalf("应保留两段原生文字，实际%d段", count)
-	}
-}
-
 func TestZsbkSecondPageSVGKeepsSameNameFontSubsetsSeparate(t *testing.T) {
 	ofd, err := parser.NewOFD("../../../../testdata/ofdrw/zsbk.ofd")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("缺少 fixture: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

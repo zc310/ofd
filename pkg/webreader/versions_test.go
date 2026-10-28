@@ -17,7 +17,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
-	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -165,11 +165,11 @@ func TestSelectVersionHandsOffDroppedFallbackFont(t *testing.T) {
 func TestSelectVersionFallbackFailureKeepsCurrentView(t *testing.T) {
 	reject := false
 	render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-		return &versionFallbackEngine{FontEngine: canvasbackend.NewFonts(doc), reject: &reject}
+		return &versionFallbackEngine{FontEngine: canvasfont.NewFonts(doc), reject: &reject}
 	})
 	t.Cleanup(func() {
 		render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-			return canvasbackend.NewFonts(doc)
+			return canvasfont.NewFonts(doc)
 		})
 	})
 	family := t.Name()

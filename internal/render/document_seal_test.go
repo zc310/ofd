@@ -3,6 +3,7 @@ package render
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"io"
@@ -15,42 +16,19 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageops"
 )
-
-// TestSealOpaqueWhiteBackgroundBecomesTransparent 回归：不带透明通道的印章
-// 位图必须把白色纸张背景置为透明，红色墨迹保留；已经带透明通道的印章不能
-// 被改写。
-func TestSealOpaqueWhiteBackgroundBecomesTransparent(t *testing.T) {
-	pal := color.Palette{color.RGBA{R: 255, G: 255, B: 255, A: 255}, color.RGBA{R: 223, G: 25, B: 29, A: 255}}
-	src := image.NewPaletted(image.Rect(0, 0, 4, 4), pal)
-	for i, idx := range []uint8{0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0} {
-		src.Pix[i] = idx
-	}
-	got := sealTransparentBackground(src)
-	if _, _, _, a := got.At(0, 0).RGBA(); a != 0 {
-		t.Fatalf("白色背景像素 alpha = %d, want 0", a>>8)
-	}
-	if _, _, _, a := got.At(1, 0).RGBA(); a != 0xffff {
-		t.Fatalf("红色墨迹像素 alpha = %d, want 255", a>>8)
-	}
-	if _, _, _, a := got.At(1, 1).RGBA(); a != 0xffff {
-		t.Fatalf("红色墨迹像素 alpha = %d, want 255", a>>8)
-	}
-
-	transparent := image.NewNRGBA(image.Rect(0, 0, 1, 1))
-	transparent.SetNRGBA(0, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 128})
-	if replaced := sealTransparentBackground(transparent); replaced != image.Image(transparent) {
-		t.Fatal("带透明通道的印章不应被改写")
-	}
-}
 
 // TestOpaqueSealFixtureBackgroundKeyedOut 用真实样例保护：签章内嵌的索引 PNG
 // 没有透明通道、背景为纯白，按键出白色后左上角背景必须透明。
 func TestOpaqueSealFixtureBackgroundKeyedOut(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "ofdrw", "不规范资源路径.ofd")
 	zr, err := zip.OpenReader(path)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		t.Skipf("样例不可用: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	defer zr.Close()
 
@@ -85,7 +63,7 @@ func TestOpaqueSealFixtureBackgroundKeyedOut(t *testing.T) {
 		t.Skip("签章本身带透明通道，本用例不适用")
 	}
 	b := img.Bounds()
-	if _, _, _, a := sealTransparentBackground(img).At(b.Min.X, b.Min.Y).RGBA(); a != 0 {
+	if _, _, _, a := imageops.SealTransparentBackground(img).At(b.Min.X, b.Min.Y).RGBA(); a != 0 {
 		t.Fatalf("样例签章左上角背景 alpha = %d, want 0", a>>8)
 	}
 }
@@ -341,58 +319,6 @@ func TestSealStraddleClipDrawsSliceOnly(t *testing.T) {
 				t.Errorf("取色点颜色 = %v, want %v", gotTint, tc.wantTint)
 			}
 		})
-	}
-}
-
-// TestSealClipBoxClamped 回归：Clip 越出 Boundary 时必须夹回印章盒，不能盖住
-// 印章盒以外的页面内容；缺省或无效的 Clip 一律按整枚印章绘制。
-func TestSealClipBoxClamped(t *testing.T) {
-	boundary := models.StBox{X: 100, Y: 50, Width: 40, Height: 40}
-	cases := []struct {
-		name   string
-		clip   models.StBox
-		want   models.StBox
-		wantOK bool
-	}{
-		{name: "缺省 Clip 按整枚印章", clip: models.StBox{}, wantOK: false},
-		{name: "零宽 Clip 无效", clip: models.StBox{X: 0, Y: 0, Width: 0, Height: 40}, wantOK: false},
-		{name: "零高 Clip 无效", clip: models.StBox{X: 0, Y: 0, Width: 8, Height: 0}, wantOK: false},
-		{name: "完全在盒外无效", clip: models.StBox{X: 50, Y: 0, Width: 8, Height: 8}, wantOK: false},
-		{
-			name: "右越界被夹住", clip: models.StBox{X: 36, Y: 0, Width: 8, Height: 40},
-			want: models.StBox{X: 136, Y: 50, Width: 4, Height: 40}, wantOK: true,
-		},
-		{
-			name: "左越界被夹住", clip: models.StBox{X: -8, Y: 0, Width: 16, Height: 40},
-			want: models.StBox{X: 100, Y: 50, Width: 8, Height: 40}, wantOK: true,
-		},
-		{
-			name: "盒内原样", clip: models.StBox{X: 8, Y: 4, Width: 8, Height: 20},
-			want: models.StBox{X: 108, Y: 54, Width: 8, Height: 20}, wantOK: true,
-		},
-		{
-			name: "整枚印章", clip: models.StBox{X: 0, Y: 0, Width: 40, Height: 40},
-			want: boundary, wantOK: true,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := sealClipBox(boundary, tc.clip)
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v, want %v (got %+v)", ok, tc.wantOK, got)
-			}
-			if !ok {
-				return
-			}
-			if abs(got.X-tc.want.X) > 1e-6 || abs(got.Y-tc.want.Y) > 1e-6 ||
-				abs(got.Width-tc.want.Width) > 1e-6 || abs(got.Height-tc.want.Height) > 1e-6 {
-				t.Fatalf("目标框 = %+v, want %+v", got, tc.want)
-			}
-		})
-	}
-
-	if _, ok := sealClipBox(models.StBox{}, models.StBox{X: 0, Y: 0, Width: 8, Height: 8}); ok {
-		t.Fatal("零尺寸 Boundary 不应产生裁剪")
 	}
 }
 

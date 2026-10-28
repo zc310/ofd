@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -253,9 +252,9 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 	})
 }
 
-func TestSealImageSharesPreparedRasterAndImageCacheBudget(t *testing.T) {
-	// 4x4 图片恰好占 64 字节，缓存只容纳一张；白底与墨迹便于核对预处理结果。
-	doc := &Document{images: cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, 64, nil)}
+func TestSealImageSharesPreparedRasterAndResourceCache(t *testing.T) {
+	// 白底与墨迹便于核对预处理结果；印章与普通资源必须共用有界图片缓存。
+	doc := &Document{}
 	defer doc.Close()
 	src := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	for y := range 4 {
@@ -294,70 +293,24 @@ func TestSealImageSharesPreparedRasterAndImageCacheBudget(t *testing.T) {
 	if r, _, _, alpha := results[0].At(1, 1).RGBA(); r != 65535 || alpha != 65535 {
 		t.Fatal("缓存印章丢失了红色墨迹")
 	}
-	if doc.images.Len() != 1 || doc.images.Weight() != 64 || len(doc.imageLocks) != 0 {
-		t.Fatal("印章没有进入文档图片预算，或保留了无用加载锁")
-	}
-	// 普通资源图片与印章共用预算，资源图进入后应淘汰旧印章。
-	if _, err := doc.cachedImage("resource.png", func() (image.Image, error) { return src, nil }); err != nil {
-		t.Fatal(err)
+	// 默认图片缓存最多保留 128 项。填满普通资源后，最旧的印章也应被淘汰。
+	for i := range 128 {
+		if _, err := doc.cachedImage(fmt.Sprintf("resource-%d.png", i), func() (image.Image, error) { return src, nil }); err != nil {
+			t.Fatal(err)
+		}
 	}
 	again, err := doc.decodeSealImage(encoded.Bytes())
-	if err != nil || again == results[0] || doc.images.Len() != 1 || doc.images.Weight() > 64 {
+	if err != nil || again == results[0] {
 		t.Fatalf("图片预算淘汰或重新加载印章失败：%v", err)
 	}
 	doc.Close()
-	if doc.images != nil {
-		t.Fatal("关闭后仍保留印章位图缓存")
-	}
-	if _, err := doc.decodeSealImage(encoded.Bytes()); err == nil || len(doc.imageLocks) != 0 {
-		t.Fatal("关闭后重新加载了印章或保留加载锁")
-	}
-}
-
-func TestSlowImageLoadDoesNotBlockOtherImagesOrRefillAfterClose(t *testing.T) {
-	doc := &Document{}
-	defer doc.Close()
-	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
-	if _, err := doc.cachedImage("hot", func() (image.Image, error) { return img, nil }); err != nil {
-		t.Fatal(err)
-	}
-	entered, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	release := sync.OnceFunc(func() { close(resume) })
-	go func() {
-		defer close(done)
-		if _, err := doc.cachedImage("slow", func() (image.Image, error) {
-			close(entered)
-			<-resume
-			return img, nil
-		}); err != nil {
-			t.Error(err)
-		}
-	}()
-	defer func() { release(); <-done }()
-	awaitSealOperation(t, entered)
-	available := make(chan struct{})
-	go func() {
-		defer close(available)
-		if got, err := doc.cachedImage("hot", func() (image.Image, error) {
-			t.Error("缓存命中重复加载")
-			return img, nil
-		}); err != nil || got != img {
-			t.Error("慢加载阻塞或破坏了其他缓存命中")
-		}
-		doc.Close()
-	}()
-	awaitSealOperation(t, available)
-	release()
-	awaitSealOperation(t, done)
-	if doc.images != nil || len(doc.imageLocks) != 0 {
-		t.Fatal("关闭后在途图片解码重新填回缓存或保留加载锁")
+	if _, err := doc.decodeSealImage(encoded.Bytes()); err == nil {
+		t.Fatal("关闭后重新加载了印章")
 	}
 }
 
 func TestSealDocumentCacheEvictsLeastRecentlyUsedAndWaitsForDrawing(t *testing.T) {
-	previous := newFontEngine
-	newFontEngine = func(*parser.Document) FontEngine { return &closeTrackingFont{} }
-	t.Cleanup(func() { newFontEngine = previous })
+	setFontEngineFactory(t, func(*parser.Document) FontEngine { return &closeTrackingFont{} })
 	doc := &Document{}
 	defer doc.Close()
 	data := make([][]byte, sealDocCacheCapacity+2)

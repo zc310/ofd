@@ -8,7 +8,7 @@ import (
 
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
-	canvasbackend "github.com/zc310/ofd/internal/render/backends/canvas"
+	"github.com/zc310/ofd/internal/render/backends/canvasfont"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -47,14 +47,14 @@ func TestUseFallbackFontConcurrentUnregisterDoesNotPartiallyApply(t *testing.T) 
 			})
 			t.Cleanup(func() {
 				render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-					return canvasbackend.NewFonts(doc)
+					return canvasfont.NewFonts(doc)
 				})
 			})
 			ready, proceed := make(chan struct{}), make(chan struct{})
 			pause := func() { close(ready); <-proceed }
 			var engines []*observedFallbackEngine
 			render.RegisterFontEngineFactory(func(doc *parser.Document) render.FontEngine {
-				engine := &observedFallbackEngine{FontEngine: canvasbackend.NewFonts(doc)}
+				engine := &observedFallbackEngine{FontEngine: canvasfont.NewFonts(doc)}
 				if len(engines) == 0 {
 					if point == "before first application" {
 						engine.before = pause

@@ -1,219 +1,32 @@
 package render
 
 import (
-	"math"
-	"strings"
-
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	patternlayout "github.com/zc310/ofd/internal/render/layout/pattern"
+	"github.com/zc310/ofd/internal/render/renderstate"
 )
 
-const maxPatternTiles = 100000
-
-// drawPatternPath 将 CellContent 直接作为矢量对象绘制。图案单元使用自身的
-// 左上角坐标系，而目标画布使用左下角坐标系；应用图块 CTM 后，页面高度转换
-// 由对象绘制函数完成。
+// drawPatternPath 按平铺计划直接绘制 CellContent 矢量对象。
 func (p *Document) drawPatternPath(ctx DrawContext, path *geom.Path, pattern *models.CtPattern, object models.PathObject, pb models.StBox, parentCTM *models.CTM, budget *renderBudget) bool {
-	if pattern == nil || pattern.Width <= 0 || pattern.Height <= 0 || !finiteFloat(pattern.Width) || !finiteFloat(pattern.Height) ||
-		!pb.IsFinite() || path == nil || len(pattern.CellContent.Items) == 0 {
+	if pattern == nil || path == nil || len(pattern.CellContent.Items) == 0 {
 		return false
 	}
-
-	xStep, yStep := patternSteps(pattern)
-	if xStep <= 0 || yStep <= 0 {
+	plan, status := patternlayout.New(pattern, object.CTGraphicUnit, pb, path.FastBounds(), parentCTM)
+	if status == patternlayout.LimitExceeded {
+		budget.ReportLimit(renderstate.LimitPatternTiles, "pattern_tiles", "columns", plan.Columns(), "rows", plan.Rows(), "limit", patternlayout.MaxTiles)
+	}
+	if status != patternlayout.Ready || !budget.AllowPatternTiles(plan.Columns()*plan.Rows()) {
 		return false
 	}
-
-	patternTransform, ok := patternCTM(pattern)
-	if !ok {
-		return false
-	}
-
-	originX, originY := object.Boundary.X, object.Boundary.Y
-	if strings.EqualFold(pattern.RelativeTo, "Page") {
-		originX, originY = 0, 0
-	}
-	base := models.IdentityMatrix
-	if parentCTM != nil {
-		base = *parentCTM
-	}
-	if object.CTM != nil {
-		base = *base.Multiply(object.CTM)
-		if !base.IsFinite() {
-			return false
-		}
-	}
-	// 对于 CellContent，Boundary 位于对象 CTM 之外，因此要在组合父级变换和
-	// 对象变换后再进行平移。
-	base = *translationMatrix(originX, originY).Multiply(&base)
-	base = *base.Multiply(&patternTransform)
-	if !base.IsFinite() {
-		return false
-	}
-	inverse, ok := invertCTM(base)
-	if !ok {
-		return false
-	}
-
-	// 将裁剪边界从画布坐标（Y 轴向上）转换为 OFD 坐标（Y 轴向下），然后在
-	// 单元坐标系中计算所需的图块索引。
-	bounds := path.FastBounds()
-	if !finiteFloat(bounds.X0) || !finiteFloat(bounds.Y0) || !finiteFloat(bounds.X1) || !finiteFloat(bounds.Y1) {
-		return false
-	}
-	points := []models.StPos{
-		{X: bounds.X0, Y: pb.Height - bounds.Y0},
-		{X: bounds.X1, Y: pb.Height - bounds.Y0},
-		{X: bounds.X1, Y: pb.Height - bounds.Y1},
-		{X: bounds.X0, Y: pb.Height - bounds.Y1},
-	}
-	minX, maxX := math.Inf(1), math.Inf(-1)
-	minY, maxY := math.Inf(1), math.Inf(-1)
-	for _, point := range points {
-		x, y := inverse.TransformPoint(point)
-		if !finiteFloat(x) || !finiteFloat(y) {
-			return false
-		}
-		minX = math.Min(minX, x)
-		maxX = math.Max(maxX, x)
-		minY = math.Min(minY, y)
-		maxY = math.Max(maxY, y)
-	}
-	startX, countX, okX := patternTileRange(minX, maxX, xStep)
-	startY, countY, okY := patternTileRange(minY, maxY, yStep)
-	if !okX || !okY || countX > maxPatternTiles/countY {
-		budget.reportLimit(limitPatternTiles, "pattern_tiles", "columns", countX, "rows", countY, "limit", maxPatternTiles)
-		return false
-	}
-	if !budget.allowPatternTiles(countX * countY) {
-		return false
-	}
-
-	// 翻转只由行列的奇偶决定，四个矩阵预先构造，避免逐图块转小写和求乘积。
-	var reflections [2][2]models.CTM
-	for ix := range 2 {
-		for iy := range 2 {
-			reflections[ix][iy] = patternReflection(pattern.ReflectMethod, pattern.Width, pattern.Height, ix, iy)
-		}
-	}
-	for xIndex := 0; xIndex < countX; xIndex++ {
-		ix := startX + xIndex
-		for yIndex := 0; yIndex < countY; yIndex++ {
-			iy := startY + yIndex
-			tile := patternTileTransform(base, reflections[ix&1][iy&1], float64(ix)*xStep, float64(iy)*yStep)
-			if !tile.IsFinite() {
+	for column := range plan.Columns() {
+		for row := range plan.Rows() {
+			tile, ok := plan.Tile(column, row)
+			if !ok {
 				return false
 			}
 			p.drawItemsWithTransform(ctx, pattern.CellContent.Items, nil, pb, &tile, path, 0, budget)
 		}
 	}
 	return true
-}
-
-// 在浮点转 int 前校验商、索引及数量。只检查 countX*countY 太晚：Inf 转换
-// 及索引加减可能已溢出；32位平台还必须避免末索引递增绕回负数。
-func patternTileRange(minimum, maximum, step float64) (start, count int, ok bool) {
-	if !finiteFloat(minimum) || !finiteFloat(maximum) || !finiteFloat(step) || step <= 0 || minimum > maximum {
-		return 0, 0, false
-	}
-	first, last := math.Floor(minimum/step), math.Ceil(maximum/step)
-	limit := math.Min(float64(int(^uint(0)>>1)-2), float64(1<<53-2))
-	if !finiteFloat(first) || !finiteFloat(last) || first < -limit || last > limit {
-		return 0, 0, false
-	}
-	tiles := last - first + 3
-	if tiles <= 0 || tiles > maxPatternTiles {
-		return 0, 0, false
-	}
-	return int(first) - 1, int(tiles), true
-}
-
-func patternTileTransform(base, reflection models.CTM, x, y float64) models.CTM {
-	// 平铺位移仍从索引直接计算，不累加步长，避免大量图块产生浮点漂移。
-	tx := base[0]*x + base[2]*y + base[4]
-	ty := base[1]*x + base[3]*y + base[5]
-	// patternReflection 只有轴向翻转和平移，按值组合，避免 Multiply 返回指针分配。
-	return models.CTM{
-		base[0] * reflection[0], base[1] * reflection[0],
-		base[2] * reflection[3], base[3] * reflection[3],
-		base[0]*reflection[4] + base[2]*reflection[5] + tx,
-		base[1]*reflection[4] + base[3]*reflection[5] + ty,
-	}
-}
-
-func patternSteps(pattern *models.CtPattern) (float64, float64) {
-	if pattern == nil {
-		return 0, 0
-	}
-	xStep, yStep := pattern.XStep, pattern.YStep
-	if xStep <= 0 || xStep < pattern.Width {
-		xStep = pattern.Width
-	}
-	if yStep <= 0 || yStep < pattern.Height {
-		yStep = pattern.Height
-	}
-	return xStep, yStep
-}
-
-func patternReflection(method string, width, height float64, ix, iy int) models.CTM {
-	flipX, flipY := false, false
-	switch strings.ToLower(method) {
-
-	case "row":
-		// 奇数行把单元上下镜像（y -> height-y），相邻两行内容互为上下翻转
-		flipY = iy&1 != 0
-	case "column":
-		// 奇数列把单元左右镜像（x -> width-x），相邻两列内容互为左右翻转
-		flipX = ix&1 != 0
-	case "rowandcolumn":
-		// 两个方向都翻转，产生四象限对称图案
-		flipX = ix&1 != 0
-		flipY = iy&1 != 0
-	}
-	reflection := models.IdentityMatrix
-	if flipX {
-		reflection = *reflection.Multiply(&models.CTM{-1, 0, 0, 1, width, 0})
-	}
-	if flipY {
-		reflection = *reflection.Multiply(&models.CTM{1, 0, 0, -1, 0, height})
-	}
-	return reflection
-}
-
-func translationMatrix(x, y float64) *models.CTM {
-	return &models.CTM{1, 0, 0, 1, x, y}
-}
-
-func patternCTM(pattern *models.CtPattern) (models.CTM, bool) {
-	// CTM 由 models.CTM 在 XML 解析时完成有限性校验；nil 表示未指定，按单位矩阵。
-	if pattern == nil || pattern.CTM == nil {
-		return models.IdentityMatrix, true
-	}
-	ctm := *pattern.CTM
-	if !ctm.IsInvertible() {
-		return models.IdentityMatrix, false
-	}
-	return ctm, true
-}
-
-func invertCTM(matrix models.CTM) (models.CTM, bool) {
-	if !matrix.IsFinite() {
-		return models.IdentityMatrix, false
-	}
-	determinant := matrix[0]*matrix[3] - matrix[1]*matrix[2]
-	if determinant == 0 || math.IsNaN(determinant) || math.IsInf(determinant, 0) {
-		return models.IdentityMatrix, false
-	}
-	inverse := models.CTM{
-		matrix[3] / determinant,
-		-matrix[1] / determinant,
-		-matrix[2] / determinant,
-		matrix[0] / determinant,
-		(matrix[2]*matrix[5] - matrix[3]*matrix[4]) / determinant,
-		(matrix[1]*matrix[4] - matrix[0]*matrix[5]) / determinant,
-	}
-	if !inverse.IsFinite() {
-		return models.IdentityMatrix, false
-	}
-	return inverse, true
 }

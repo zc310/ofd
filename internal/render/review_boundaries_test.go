@@ -7,6 +7,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/paint"
 )
 
 func TestPatternRejectsUnrepresentableTileIndexesBeforeChargingBudget(t *testing.T) {
@@ -17,8 +18,8 @@ func TestPatternRejectsUnrepresentableTileIndexesBeforeChargingBudget(t *testing
 	var budget renderBudget
 	budget.reset()
 	doc := &Document{}
-	if doc.drawPatternPath(nil, path, pattern, models.PathObject{}, models.StBox{Width: 100, Height: 100}, nil, &budget) || budget.patternTiles != 0 {
-		t.Fatalf("浮点索引溢出被误当作有效图块：tiles=%d", budget.patternTiles)
+	if doc.drawPatternPath(nil, path, pattern, models.PathObject{}, models.StBox{Width: 100, Height: 100}, nil, &budget) || budget.Usage().PatternTiles != 0 {
+		t.Fatalf("浮点索引溢出被误当作有效图块：tiles=%d", budget.Usage().PatternTiles)
 	}
 }
 
@@ -30,7 +31,14 @@ func TestZeroAlphaGradientEndpointsDoNotPaintColor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var gradient geom.Gradient = stops.ToLinear(geom.Point{X: 10}, geom.Point{X: 20})
 			if name == "sampled" {
-				gradient = &ofdLinearGradient{stops: stops, start: geom.Point{X: 10}, end: geom.Point{X: 20}, dx: 10, d2: 100, unit: 10, extend: 3}
+				alpha := uint8(0)
+				gradient = paint.NewLinearGradient(&models.CTAxialShd{
+					StartPoint: models.StPos{X: 10}, EndPoint: models.StPos{X: 20}, Extend: 1,
+					Segment: []models.Segment{
+						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{R: 255, A: 255}}, Alpha: &alpha}},
+						{Color: models.CTColor{Value: &models.Color{RGBA: color.RGBA{B: 255, A: 255}}}},
+					},
+				}, identityGradientTransform, nil)
 			}
 			ctx := newOffscreenSurface(30, 10, geom.DPMM(4))
 			ctx.SetFillColor(geom.Black)
@@ -68,35 +76,5 @@ func TestZeroAlphaGradientEndpointsDoNotPaintColor(t *testing.T) {
 				}
 			})
 		})
-	}
-}
-
-func TestPatternTileRangeRejectsOverflowAndKeepsNormalMargins(t *testing.T) {
-	if start, count, ok := patternTileRange(-2, 10, 2); !ok || start != -2 || count != 9 {
-		t.Fatalf("普通图块范围=%d,%d,%v", start, count, ok)
-	}
-	maximum := float64(int(^uint(0) >> 1))
-	for _, tc := range [][3]float64{
-		{1e300, 1e300, math.SmallestNonzeroFloat64},
-		{maximum, maximum, 1},
-		{-maximum, maximum, 1},
-		{math.NaN(), 1, 1},
-		{0, 1, 0},
-	} {
-		if _, _, ok := patternTileRange(tc[0], tc[1], tc[2]); ok {
-			t.Fatalf("越界索引未被拒绝：%v", tc)
-		}
-	}
-}
-
-func TestMeshZeroAlphaCarriersDoNotEscapeAsPixels(t *testing.T) {
-	red := premultiplied(255, 0, 0, 0)
-	blue := premultiplied(0, 0, 255, 255)
-	if got := interpolateMeshColor(red, blue, blue, .5, .5, 0); got != (color.RGBA{R: 63, B: 63, A: 127}) {
-		t.Fatalf("网格透明红蓝插值=%v", got)
-	}
-	gradient := &ofdMeshGradient{extend: true, backColor: red}
-	if got := gradient.At(100, 100); got != (color.RGBA{}) {
-		t.Fatalf("网格透明背景泄露RGB：%v", got)
 	}
 }

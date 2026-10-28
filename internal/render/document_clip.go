@@ -62,54 +62,13 @@ func graphicBoundaryClip(box models.StBox, pageHeight float64, parent *models.CT
 }
 
 func intersectClips(a, b *geom.Path) *geom.Path {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	if clipContainsRect(a, b.Bounds()) {
-		return b
-	}
-	if clipContainsRect(b, a.Bounds()) {
-		return a
-	}
-	return a.And(b)
+	return geom.IntersectClips(a, b)
 }
 
 // clipContainsRect 只对严格覆盖的轴对齐矩形走快路径，不能把带洞或近似
 // 矩形的裁剪当成完整覆盖。普通文字与路径无需因此执行昂贵的轮廓求交。
 func clipContainsRect(clip *geom.Path, bounds geom.Rect) bool {
-	if clip == nil {
-		return true
-	}
-	if clip.Empty() || !clip.Bounds().Contains(bounds) {
-		return false
-	}
-	scanner := clip.Scanner()
-	var start, previous geom.Point
-	edges, moves := 0, 0
-	closed := false
-	for scanner.Scan() {
-		end := scanner.End()
-		switch scanner.Cmd() {
-		case geom.MoveToCmd:
-			moves++
-			start = end
-		case geom.LineToCmd, geom.CloseCmd:
-			if previous.X != end.X && previous.Y != end.Y {
-				return false
-			}
-			if previous != end {
-				edges++
-			}
-			closed = scanner.Cmd() == geom.CloseCmd && end == start
-		default:
-			return false
-		}
-		previous = end
-	}
-	return moves == 1 && edges == 4 && closed
+	return geom.ClipContainsRect(clip, bounds)
 }
 
 // localTextClip 把在文字对象入口保存的设备空间裁剪映回当前字形空间。

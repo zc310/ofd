@@ -15,10 +15,10 @@ import (
 	"testing"
 
 	"github.com/zc310/canvas"
-	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/pkg/creator"
 )
@@ -196,7 +196,7 @@ func TestClipCoversImageSkipsFullRectangleClip(t *testing.T) {
 
 func TestImageClipMaskUsesSingleChannelCoverage(t *testing.T) {
 	path := geom.Rectangle(10, 8).Translate(2.25, 3.5)
-	mask := imageClipMask(path, geom.Identity, 20, 20)
+	mask := imageClipMask(path, 20, 20)
 	if mask == nil {
 		t.Fatal("裁剪掩码未生成")
 	}
@@ -309,11 +309,11 @@ func TestDecodeRasterImageKeepsRawJPEGBytes(t *testing.T) {
 	if err := jpeg.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 4, 4)), nil); err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := decodeRasterImage(buf.Bytes())
+	decoded, err := imageasset.Decode(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, ok := decoded.(*EncodedImage)
+	img, ok := decoded.(*imageasset.EncodedImage)
 	if !ok {
 		t.Fatalf("expected lazy EncodedImage for JPEG, got %T", decoded)
 	}
@@ -327,11 +327,11 @@ func TestDecodeRasterImageKeepsRawPNGBytes(t *testing.T) {
 	if err := png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 4, 4))); err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := decodeRasterImage(buf.Bytes())
+	decoded, err := imageasset.Decode(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	img, ok := decoded.(*EncodedImage)
+	img, ok := decoded.(*imageasset.EncodedImage)
 	if !ok {
 		t.Fatalf("expected lazy EncodedImage for PNG, got %T", decoded)
 	}
@@ -465,7 +465,7 @@ func BenchmarkDecodeRasterImage(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
-		if _, err := decodeRasterImage(data); err != nil {
+		if _, err := imageasset.Decode(data); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -493,7 +493,8 @@ func BenchmarkDocumentDecodeImageCold(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		b.StopTimer()
-		doc.images = cache.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		doc.assets.Close()
+		doc.assets = imageasset.Store{}
 		b.StartTimer()
 		if _, err := doc.decodeImage(media.file, media.format); err != nil {
 			b.Fatal(err)
@@ -561,7 +562,8 @@ func benchmarkColdImageDecodeParallel(b *testing.B, doc *Document, medias []benc
 	b.ResetTimer()
 	for round := 0; round < b.N; round++ {
 		b.StopTimer()
-		doc.images = cache.NewLRU[string, image.Image](imageCacheCapacity, nil)
+		doc.assets.Close()
+		doc.assets = imageasset.Store{}
 		start := make(chan struct{})
 		errs := make(chan error, workers)
 		var wg sync.WaitGroup
@@ -642,7 +644,8 @@ func BenchmarkDocumentDecodeSVGCanvasCold(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		b.StopTimer()
-		doc.svgCanvases = cache.NewLRU[string, SVGScene](svgCacheCapacity, nil)
+		doc.assets.Close()
+		doc.assets = imageasset.Store{}
 		b.StartTimer()
 		if _, err := doc.decodeSVGScene(media.file, media.format); err != nil {
 			b.Fatal(err)
@@ -722,7 +725,8 @@ func benchmarkColdSVGCanvasDecodeParallel(b *testing.B, doc *Document, medias []
 	b.ResetTimer()
 	for round := 0; round < b.N; round++ {
 		b.StopTimer()
-		doc.svgCanvases = cache.NewLRU[string, SVGScene](svgCacheCapacity, nil)
+		doc.assets.Close()
+		doc.assets = imageasset.Store{}
 		start := make(chan struct{})
 		errs := make(chan error, workers)
 		var wg sync.WaitGroup
@@ -922,142 +926,6 @@ func TestSVGImageRendersAsVector(t *testing.T) {
 	}
 }
 
-func TestImageMatrixWHVectorEmbedMatchesRasterPlacement(t *testing.T) {
-	box := models.StBox{X: 20, Y: 30, Width: 100, Height: 80}
-	ctm := models.CTM{2, 0.1, -0.05, 1.5, 5, -3}
-	pageHeight := 297.0
-	svgW := 100.0
-	svgH := 75.0
-	dpmm := geom.DPI(96).DPMM()
-	imgW := svgW * dpmm
-	imgH := svgH * dpmm
-	flip := geom.Matrix{{1, 0, 0}, {0, -1, svgH}}
-
-	mRaster := imageMatrixWH(box, imgW, imgH, ctm, pageHeight)
-	mVector := imageMatrixWH(box, svgW, svgH, ctm, pageHeight).Mul(flip)
-
-	corners := [][2]float64{
-		{0, 0},
-		{svgW, 0},
-		{0, svgH},
-		{svgW, svgH},
-	}
-	for _, corner := range corners {
-		canvasX, canvasY := corner[0], corner[1]
-		pixelX := canvasX * dpmm
-		pixelY := imgH - canvasY*dpmm
-
-		pageFromRasterX := mRaster[0][0]*pixelX + mRaster[0][1]*pixelY + mRaster[0][2]
-		pageFromRasterY := mRaster[1][0]*pixelX + mRaster[1][1]*pixelY + mRaster[1][2]
-
-		pageFromVectorX := mVector[0][0]*canvasX + mVector[0][1]*canvasY + mVector[0][2]
-		pageFromVectorY := mVector[1][0]*canvasX + mVector[1][1]*canvasY + mVector[1][2]
-
-		if math.Abs(pageFromRasterX-pageFromVectorX) > 1e-9 || math.Abs(pageFromRasterY-pageFromVectorY) > 1e-9 {
-			t.Fatalf("canvas (%.2f,%.2f): raster=(%.6f,%.6f) vector=(%.6f,%.6f) differ",
-				canvasX, canvasY, pageFromRasterX, pageFromRasterY, pageFromVectorX, pageFromVectorY)
-		}
-	}
-}
-
-func TestImageCacheWeightCountsLazyImageBytesAndPixels(t *testing.T) {
-	var encoded bytes.Buffer
-	source := image.NewRGBA(image.Rect(0, 0, 40, 30))
-	for y := 0; y < 30; y++ {
-		for x := 0; x < 40; x++ {
-			source.SetRGBA(x, y, color.RGBA{R: uint8(x * 6), G: uint8(y * 8), B: uint8((x + y) * 3), A: 255})
-		}
-	}
-	if err := jpeg.Encode(&encoded, source, nil); err != nil {
-		t.Fatal(err)
-	}
-	lazy := newEncodedImage("jpeg", encoded.Bytes())
-	weight := imageCacheWeight(lazy)
-	// 懒加载图片在缓存中同时保留压缩字节和按需解码后的像素，
-	// 权重必须大于压缩字节数，否则大图文档的驻留内存无法被限制。
-	if weight <= int64(len(encoded.Bytes())) {
-		t.Fatalf("imageCacheWeight = %d, 期望大于压缩字节 %d", weight, len(encoded.Bytes()))
-	}
-}
-
-func TestImageCacheEvictsByByteWeight(t *testing.T) {
-	const maxWeight = int64(1 << 20)
-	doc := &Document{images: cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, maxWeight, nil)}
-	for index := 0; index < 4; index++ {
-		// 每张 512x512 RGBA 约 1MiB，超过缓存上限后必须按字节淘汰。
-		img := image.NewRGBA(image.Rect(0, 0, 512, 512))
-		doc.images.AddWeighted(fmt.Sprintf("img-%d", index), img, imageCacheWeight(img))
-	}
-	if weight := doc.images.Weight(); weight > maxWeight {
-		t.Fatalf("图片缓存权重 = %d, 期望 <= %d", weight, maxWeight)
-	}
-	if length := doc.images.Len(); length > 1 {
-		t.Fatalf("图片缓存条目 = %d, 期望 <= 1", length)
-	}
-}
-
-func TestSVGCanvasWeightUsesSourceBytes(t *testing.T) {
-	if got := svgCanvasWeight(nil); got != 1 {
-		t.Fatalf("svgCanvasWeight(nil) = %d, 期望 1", got)
-	}
-	data := []byte("<svg/>")
-	if got := svgCanvasWeight(data); got != int64(len(data)) {
-		t.Fatalf("svgCanvasWeight = %d, 期望 %d", got, len(data))
-	}
-}
-
-// 圆角图片边框的圆弧必须凸出矩形，即圆弧落在弦（矩形边与角点之间的连线）的角点一侧。
-// 凹进矩形时圆弧以角点为圆心，弧线整体落到弦的另一侧。返回弧线相对弦的最大偏移，
-// 正值表示凸出角点。
-func roundedBorderCornerBulge(t *testing.T, width, height, rx, ry float64) float64 {
-	t.Helper()
-	path := roundedImageBorder(width, height, rx, ry)
-	if path.Empty() {
-		t.Fatalf("roundedImageBorder(%v, %v, %v, %v) 为空", width, height, rx, ry)
-	}
-	// 弦的两个端点为 (0, height-ry) 与 (rx, height)，法线取指向角点 (0, height) 的一侧。
-	norm := math.Hypot(rx, ry)
-	if norm == 0 {
-		t.Fatalf("圆角半径为 0，不应生成圆弧")
-	}
-	bulge := 0.0
-	for _, p := range path.Flatten(0.01).Coords() {
-		if p.X > rx || p.Y < height-ry {
-			continue
-		}
-		dist := (-ry*p.X + rx*(p.Y-(height-ry))) / norm
-		if dist > bulge {
-			bulge = dist
-		}
-	}
-	return bulge
-}
-
-func TestRoundedImageBorderCornersBulgeOutward(t *testing.T) {
-	cases := []struct {
-		width, height, rx, ry float64
-	}{
-		{20, 10, 2, 2},
-		{70, 46, 12, 12},
-		{40, 20, 6, 3},
-		{10, 10, 5, 5},
-	}
-	for _, c := range cases {
-		bulge := roundedBorderCornerBulge(t, c.width, c.height, c.rx, c.ry)
-		r := math.Min(math.Min(c.rx, c.width/2), math.Min(c.ry, c.height/2))
-		if bulge < 0.05*r {
-			t.Fatalf("圆角(%v,%v,%v,%v) 左上角弧线凸出量 = %.4f，期望正数（弧线凹进图形内部）",
-				c.width, c.height, c.rx, c.ry, bulge)
-		}
-	}
-}
-
-func TestRoundedImageBorderNoRadiusUsesRectangle(t *testing.T) {
-	if got := len(roundedImageBorder(20, 10, 0, 0).Flatten(0.01).Coords()); got != 5 {
-		t.Fatalf("无圆角边框顶点数 = %d，期望 5", got)
-	}
-}
-
 func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
 	const (
 		imgX, imgY = 20.0, 40.0
@@ -1118,7 +986,7 @@ func TestImageBorderRoundedCornerStrokedOutward(t *testing.T) {
 	}
 }
 
-// 图片裁剪区域使用图元自身的毫米局部坐标，不能套用 imageCTM 按 Boundary
+// 图片裁剪区域使用图元自身的毫米局部坐标，不能套用 imagelayout.CTM 按 Boundary
 // 尺寸合成的放置矩阵，否则裁剪路径被放大 Boundary 倍后整张图片消失。
 func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
 	const (
@@ -1128,7 +996,7 @@ func TestImageClipKeepsRoundedCornersWithinBoundary(t *testing.T) {
 		dpi        = 300.0
 	)
 	// sweep 取 0 才是凸圆角：裁剪路径在渲染时会被翻转 y 轴，
-	// 与 roundedImageBorder 使用的几何 sweep 相反。
+	// 与 imagelayout.Border 使用的几何 sweep 相反。
 	const roundedRect = "M 12 46 L 58 46 A 12 12 0 0 0 70 34 L 70 12 A 12 12 0 0 0 58 0 " +
 		"L 12 0 A 12 12 0 0 0 0 12 L 0 34 A 12 12 0 0 0 12 46 C"
 	photo := solidPNG(t, 80, 52, color.NRGBA{R: 40, G: 110, B: 200, A: 255})
@@ -1306,66 +1174,6 @@ func TestImageClipWithDegenerateCTMDoesNotPanic(t *testing.T) {
 	}
 	if _, err := doc.RasterizePage(doc.Pages[0], BackendCanvas, geom.DPI(96)); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// 掩码合成在像素数超过阈值时按行分块并发执行，各块写入互不重叠的像素区间。
-// 这里的图像刻意大于阈值，确保走到并行分支，结果必须与串行参考实现一致。
-func TestApplyImageMaskParallelMatchesReference(t *testing.T) {
-	// 宽高相乘需超过 maskParallelThreshold。
-	width, height := 520, 510
-	if width*height <= maskParallelThreshold {
-		t.Fatalf("测试图像 %dx%d 未超过并行阈值 %d", width, height, maskParallelThreshold)
-	}
-	if workers := maskRowWorkers(width, height); workers <= 1 {
-		t.Fatalf("该尺寸应触发并行，当前 workers=%d", workers)
-	}
-	// applyImageMask 的契约是 imgMin == img.Bounds().Min：离屏掩码与图像等大，
-	// 两者原点可以不同但尺寸必须一致，否则掩码下标会越界。
-	imgMin := image.Point{X: 2, Y: 5}
-	maskMin := image.Point{X: 1, Y: 1}
-	srcRect := image.Rect(imgMin.X, imgMin.Y, imgMin.X+width, imgMin.Y+height)
-	maskRect := image.Rect(maskMin.X, maskMin.Y, maskMin.X+width, maskMin.Y+height)
-	src := image.NewNRGBA(srcRect)
-	for i := range src.Pix {
-		src.Pix[i] = uint8(i*31 + 7)
-	}
-	mask := image.NewAlpha(maskRect)
-	for i := range mask.Pix {
-		mask.Pix[i] = uint8(i*17 + 3)
-	}
-
-	want := applyImageMaskReference(src, mask).(*image.NRGBA)
-	got := image.NewNRGBA(src.Rect)
-	maskNGBGARows(src, mask, got, imgMin, maskMin, 0, src.Rect.Dy())
-	if !bytes.Equal(want.Pix, got.Pix) {
-		t.Fatal("整段并行合成结果与参考实现不一致")
-	}
-	// 分块合成（模拟 runMaskRows 的切分）也必须一致。
-	chunked := image.NewNRGBA(src.Rect)
-	rows := src.Rect.Dy() / 3
-	for lo := 0; lo < src.Rect.Dy(); lo += rows {
-		hi := lo + rows
-		if hi > src.Rect.Dy() {
-			hi = src.Rect.Dy()
-		}
-		maskNGBGARows(src, mask, chunked, imgMin, maskMin, lo, hi)
-	}
-	if !bytes.Equal(want.Pix, chunked.Pix) {
-		t.Fatal("分块合成结果与参考实现不一致")
-	}
-}
-
-// maskRowWorkers 在小图或单核环境下必须退回串行。
-func TestMaskRowWorkersFallsBackToSerial(t *testing.T) {
-	if got := maskRowWorkers(16, 16); got != 1 {
-		t.Errorf("小图应串行，得到 %d", got)
-	}
-	if got := maskRowWorkers(1024, 1024); got < 1 {
-		t.Errorf("并发数至少为 1，得到 %d", got)
-	}
-	if got := maskRowWorkers(0, 0); got != 1 {
-		t.Errorf("空图应串行，得到 %d", got)
 	}
 }
 

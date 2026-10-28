@@ -5,6 +5,9 @@
 // 都实现它。后端插件通过 RegisterBackend 注册后，
 // 由 render.NewBackend 按名创建。把契约放在本包，使插件包只需依赖 geom 与
 // 本包，不必依赖 render。geom 几何类型复用 canvas，各后端自行实现绘制。
+//
+// 字体、PDF、矢量表面、离屏表面及 SVG 的工厂统一在本包注册。取得工厂快照后
+// 在锁外调用，主渲染包负责页面租约和文档资源生命周期，后端无需导入主渲染包。
 package drawing
 
 import (
@@ -21,6 +24,8 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/internal/render/paint"
 )
 
 // BackendCanvas 使用 tdewolff/canvas 光栅器，是供 render.NewBackend /
@@ -33,7 +38,7 @@ const (
 
 // DrawContext 是 OFD 页面绘制所依赖的最小操作面，使用 geom 的共享几何类型
 // 和 OFD 画笔。canvas 后端直接消费路径，其余后端扫描路径段并采样渐变。
-type DrawContext interface {
+type DrawContext interface { //nolint:interfacebloat // 后端必须实现完整绘制状态及图元操作，保持单一契约。
 	// Push/Pop 保存并恢复当前样式与变换。
 	Push()
 	Pop()
@@ -55,7 +60,7 @@ type DrawContext interface {
 	SetFillGradient(g geom.Gradient)
 
 	// SetFillPaint 设置填充画笔（颜色或渐变）。
-	SetFillPaint(paint geom.Paint)
+	SetFillPaint(fillPaint geom.Paint)
 
 	// ClearFill 清除填充。
 	ClearFill()
@@ -65,7 +70,7 @@ type DrawContext interface {
 	SetStrokeGradient(g geom.Gradient)
 
 	// SetStrokePaint 设置描边画笔（颜色或渐变）。
-	SetStrokePaint(paint geom.Paint)
+	SetStrokePaint(strokePaint geom.Paint)
 
 	// ClearStroke 清除描边。
 	ClearStroke()
@@ -76,7 +81,7 @@ type DrawContext interface {
 	// SetStrokeWidth 设置描边宽度。SetDashes 设置虚线数组。
 	SetStrokeWidth(w float64)
 	SetDashes(offset float64, dashes ...float64)
-	SetStrokeCapper(cap geom.Capper)
+	SetStrokeCapper(capper geom.Capper)
 	SetStrokeJoiner(join geom.Joiner)
 
 	// StrokeWidth/StrokeCapper/StrokeJoiner 读回当前描边样式。
@@ -113,23 +118,26 @@ type Backend interface {
 type BackendFactory func(width, height float64, resolution geom.Resolution) (Backend, error)
 
 var (
-	backendMu     sync.RWMutex
-	backendByName = map[string]BackendFactory{}
+	backendMu            sync.RWMutex
+	backendByName        = map[string]BackendFactory{}
+	errEmptyBackendName  = errors.New("渲染后端名称不能为空")
+	errNilBackendFactory = errors.New("的工厂函数为空")
+	errBackendRegistered = errors.New("已注册")
 )
 
 // RegisterBackend 注册一个可按名字创建的渲染后端，供 render.NewBackend 使用。
 // 插件包在自己的 init() 里调用本函数。重复注册同名后端返回错误。
 func RegisterBackend(name string, factory BackendFactory) error {
 	if name == "" {
-		return errors.New("渲染后端名称不能为空")
+		return errEmptyBackendName
 	}
 	if factory == nil {
-		return fmt.Errorf("渲染后端 %q 的工厂函数为空", name)
+		return fmt.Errorf("渲染后端 %q %w", name, errNilBackendFactory)
 	}
 	backendMu.Lock()
 	defer backendMu.Unlock()
 	if _, dup := backendByName[name]; dup {
-		return fmt.Errorf("渲染后端 %q 已注册", name)
+		return fmt.Errorf("渲染后端 %q %w", name, errBackendRegistered)
 	}
 	backendByName[name] = factory
 	return nil
@@ -139,10 +147,10 @@ func RegisterBackend(name string, factory BackendFactory) error {
 // 同名后端”的插件使用。
 func RegisterOrReplaceBackend(name string, factory BackendFactory) error {
 	if name == "" {
-		return errors.New("渲染后端名称不能为空")
+		return errEmptyBackendName
 	}
 	if factory == nil {
-		return fmt.Errorf("渲染后端 %q 的工厂函数为空", name)
+		return fmt.Errorf("渲染后端 %q %w", name, errNilBackendFactory)
 	}
 	backendMu.Lock()
 	defer backendMu.Unlock()
@@ -186,11 +194,7 @@ func JoinNames(names []string) string { return strings.Join(names, "、") }
 
 // CTColor 是解析后的绘制颜色：固定值颜色（HasValue）或渐变。Value 用值类型
 // 内联，避免每次 updateCtColor 都堆分配 *color.RGBA 与 *CTColor。
-type CTColor struct {
-	Value    color.RGBA
-	HasValue bool
-	Gradient geom.Gradient
-}
+type CTColor = paint.Color
 
 // FontFamily 是已解析的字体族句柄。具体字体引擎实现它；核心绘制代码只通过
 // 该句柄取字体面，不依赖具体引擎类型。
@@ -224,7 +228,7 @@ type FontFace interface {
 }
 
 // TextRun 是字体引擎整形的单行文本，对核心不透明。
-type TextRun interface{}
+type TextRun any
 
 // FontEngine 是文档字体解析与字体面创建的引擎接口。
 type FontEngine interface {
@@ -323,7 +327,7 @@ type PageLink struct {
 // PDF 坐标系原点在左下角且 y 向上，而 OFD 坐标距页顶向下；真实文档的 Boundary
 // 存在负宽高（internal/models 的 Boundary 注释对此有说明），换算时用 min/max
 // 归一化，不能直接交换两端。
-func (l PageLink) Rect(pageHeight float64) (x0, y0, x1, y1 float64) {
+func (l PageLink) Rect(pageHeight float64) (float64, float64, float64, float64) {
 	return math.Min(l.X, l.X+l.Width),
 		pageHeight - math.Max(l.Y, l.Y+l.Height),
 		math.Max(l.X, l.X+l.Width),
@@ -357,15 +361,7 @@ type PDFDocument interface {
 }
 
 // SVGScene 是与绘制库无关的已解析 SVG 场景。
-type SVGScene interface {
-	// Width/Height 返回 SVG 的原始画布尺寸（用户单位）。
-	Width() float64
-	Height() float64
-	// Rasterize 按分辨率栅格化为标准图像。
-	Rasterize(resolution geom.Resolution) image.Image
-	// RenderVector 尝试以矢量方式嵌入当前绘制上下文，返回是否完成。
-	RenderVector(ctx any, m geom.Matrix) bool
-}
+type SVGScene = imageasset.SVGScene
 
 // FontStyle 是与具体字体引擎无关的字重/斜体样式，取值与 canvas.FontStyle
 // 保持一致，便于无损转换。各引擎实现把它映射到自己的样式表示。
@@ -382,8 +378,10 @@ const (
 	FontBold
 	FontExtraBold
 	FontBlack
-	FontItalic FontStyle = 1 << 8
 )
+
+// FontItalic 是可与任意字重组合的斜体标记。
+const FontItalic FontStyle = 1 << 8
 
 // Italic 判断是否斜体。
 func (s FontStyle) Italic() bool { return s&FontItalic != 0 }
@@ -394,6 +392,8 @@ func (s FontStyle) Weight() FontStyle { return s & 0xFF }
 // CSS 返回对应的 CSS 字重值。
 func (s FontStyle) CSS() int {
 	switch s.Weight() {
+	case FontRegular, FontItalic:
+		return 400
 	case FontThin:
 		return 100
 	case FontExtraLight:

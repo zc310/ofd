@@ -152,28 +152,9 @@ func TestCompositeAlphaReusesColorsAndMultipliesChildAlpha(t *testing.T) {
 	if child != 128 || fill.Value.RGBA.A != 255 {
 		t.Fatal("resource model mutated")
 	}
-	if got := doc.ctColorCache.Len(); got != 1 {
-		t.Fatalf("color entries=%d, want 1", got)
-	}
-}
-
-func TestColorCacheIsBoundedAndReturnsIndependentPaint(t *testing.T) {
-	var doc Document
-	source := &models.CTColor{Value: &models.Color{RGBA: color.RGBA{A: 255}}}
-	first := doc.updateCtColor(source)
-	first.Value = color.RGBA{R: 255, A: 255}
-	if second := doc.updateCtColor(source); second.Value.R != 0 {
-		t.Fatal("caller modified cached paint")
-	}
-	for range ctColorCacheCapacity * 2 {
-		doc.updateCtColor(&models.CTColor{Value: &models.Color{RGBA: color.RGBA{A: 255}}})
-	}
-	if n := doc.ctColorCache.Len(); n > ctColorCacheCapacity {
-		t.Fatalf("cache=%d exceeds capacity", n)
-	}
 	doc.Close()
-	if doc.ctColorCache != nil {
-		t.Fatal("Close retained color cache")
+	if got := doc.updateCtColor(fill); got != nil {
+		t.Fatal("关闭后仍返回颜色画笔")
 	}
 }
 
@@ -202,9 +183,7 @@ func sealLifecycleData(t *testing.T) []byte {
 }
 
 func TestCloseReleasesSealDocumentsOnce(t *testing.T) {
-	previous := newFontEngine
-	newFontEngine = func(*parser.Document) FontEngine { return &closeTrackingFont{} }
-	t.Cleanup(func() { newFontEngine = previous })
+	setFontEngineFactory(t, func(*parser.Document) FontEngine { return &closeTrackingFont{} })
 	doc := NewDocument(color.Transparent, nil)
 	entry, err := doc.sealDocument(sealLifecycleData(t))
 	if err != nil {
@@ -225,10 +204,8 @@ func TestCloseReleasesSealDocumentsOnce(t *testing.T) {
 }
 
 func TestSealInitializationFailureReleasesFont(t *testing.T) {
-	previous := newFontEngine
 	font := &closeTrackingFont{fail: true}
-	newFontEngine = func(*parser.Document) FontEngine { return font }
-	t.Cleanup(func() { newFontEngine = previous })
+	setFontEngineFactory(t, func(*parser.Document) FontEngine { return font })
 	doc := &Document{fallbacks: []string{"missing"}}
 	if _, err := doc.sealDocument(sealLifecycleData(t)); err == nil {
 		t.Fatal("fallback error lost")
@@ -239,12 +216,11 @@ func TestSealInitializationFailureReleasesFont(t *testing.T) {
 }
 
 func TestConcurrentSealCreationReleasesDiscardedFonts(t *testing.T) {
-	previous := newFontEngine
 	var mu sync.Mutex
 	var fonts []*closeTrackingFont
 	ready := make(chan struct{}, 2)
 	release := make(chan struct{})
-	newFontEngine = func(*parser.Document) FontEngine {
+	setFontEngineFactory(t, func(*parser.Document) FontEngine {
 		f := &closeTrackingFont{}
 		mu.Lock()
 		fonts = append(fonts, f)
@@ -252,8 +228,7 @@ func TestConcurrentSealCreationReleasesDiscardedFonts(t *testing.T) {
 		ready <- struct{}{}
 		<-release
 		return f
-	}
-	t.Cleanup(func() { newFontEngine = previous })
+	})
 	doc := &Document{}
 	data := sealLifecycleData(t)
 	var wg sync.WaitGroup
@@ -282,15 +257,13 @@ func TestConcurrentSealCreationReleasesDiscardedFonts(t *testing.T) {
 }
 
 func TestSealCreationDuringCloseReleasesNewFont(t *testing.T) {
-	previous := newFontEngine
 	font := &closeTrackingFont{}
 	ready, release := make(chan struct{}), make(chan struct{})
-	newFontEngine = func(*parser.Document) FontEngine {
+	setFontEngineFactory(t, func(*parser.Document) FontEngine {
 		close(ready)
 		<-release
 		return font
-	}
-	t.Cleanup(func() { newFontEngine = previous })
+	})
 	doc := &Document{}
 	data := sealLifecycleData(t)
 	result := make(chan error, 1)
