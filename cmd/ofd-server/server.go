@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,6 +23,7 @@ import (
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
 	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/observe"
 	"github.com/zc310/ofd/internal/server/transfer"
 )
 
@@ -69,6 +68,9 @@ type Server struct {
 	// inlineFast 与 inlineHeavy 限制同步转换的并发，按通道分开。
 	inlineFast, inlineHeavy chan struct{}
 	inlineOnce              sync.Once
+	// metrics 收集耗时 histogram 与通知结果；NewServer 默认创建独立实例，
+	// main 会替换成与 runner 共享的实例。
+	metrics *observe.Registry
 }
 
 // NewServer 构造 HTTP 层。
@@ -82,7 +84,8 @@ func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, li
 	}
 	s := &Server{cfg: cfg, store: store, registry: registry, allowlist: list,
 		ftp: targets.FTP, s3: targets.S3, webdav: targets.WebDAV,
-		sftp: targets.SFTP, convert: convert, inlineRun: convert.Run, log: log}
+		sftp: targets.SFTP, convert: convert, inlineRun: convert.Run, log: log,
+		metrics: observe.NewRegistry()}
 	s.apiKey = []byte(cfg.APIKey)
 	s.startedAt = time.Now().UTC()
 	s.router = s.routes()
@@ -92,68 +95,99 @@ func NewServer(cfg *Config, store *jobstore.Store, registry *notify.Registry, li
 // SetReadyFunc 注入就绪探针。
 func (s *Server) SetReadyFunc(fn func() bool) { s.ready = fn }
 
+// SetMetrics 注入与 runner 共享的指标注册表。
+func (s *Server) SetMetrics(metrics *observe.Registry) {
+	if metrics != nil {
+		s.metrics = metrics
+	}
+}
+
 // Handler 返回服务的 HTTP 处理器。
 //
 // 在路由外面包一层做两件事：限制请求体大小，以及兜住处理函数里的 panic。
 // 两者都放在这里而不是各自分发器里，是因为它们对所有端点一视同仁。
+//
+// 这里只包 MaxBytesReader、不预读请求体：预读会发生在 requireAPIKey 之前，
+// 未认证的调用方只要发一个大 body 就能让服务把内容读进内存；而且
+// handleSubmit 随后还会再读一遍，峰值内存翻倍。限制是惰性的，只有真正
+// 读取 body 的处理函数才会触发。
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := requestID(r)
+		w.Header().Set(requestIDHeader, id)
+		sw := &statusWriter{ResponseWriter: w}
+		started := time.Now()
 		defer func() {
 			// 一个畸形请求的边界问题应该表现为 500，而不是整个进程退出。
 			if rec := recover(); rec != nil {
-				s.log.Error("请求处理 panic", "path", r.URL.Path, "panic", rec)
-				writeError(w, http.StatusInternalServerError, "internal_error", "服务内部错误")
+				s.log.Error("请求处理 panic", "path", r.URL.Path, "request_id", id, "panic", rec)
+				writeError(sw, http.StatusInternalServerError, "internal_error", "服务内部错误")
 			}
+			status := sw.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			s.log.Info("HTTP 请求",
+				"request_id", id,
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", status,
+				"bytes", sw.bytes,
+				"remote", r.RemoteAddr,
+				"duration_ms", time.Since(started).Milliseconds())
 		}()
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes))
-		if err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
-					fmt.Sprintf("请求体超过 %d 字节", s.cfg.MaxUploadBytes))
-				return
-			}
-			writeError(w, http.StatusBadRequest, "invalid_request", "读取请求体失败")
-			return
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(sw, r.Body, s.cfg.MaxUploadBytes)
 		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		s.router.ServeHTTP(w, r)
+		s.router.ServeHTTP(sw, r)
 	})
 }
 
 func (s *Server) routes() http.Handler {
 	r := http.NewServeMux()
-	method := func(want string, next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, req *http.Request) {
-			if req.Method != want {
-				writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "方法不允许")
-				return
-			}
-			next(w, req)
-		}
-	}
 	secured := func(next http.HandlerFunc) http.HandlerFunc {
 		return s.requireAPIKey(next)
 	}
-	r.HandleFunc("/healthz", method(http.MethodGet, s.handleHealth))
-	r.HandleFunc("/readyz", method(http.MethodGet, s.handleReady))
-	r.HandleFunc("/v1/convert", method(http.MethodPost, secured(s.handleSubmit)))
-	r.HandleFunc("/v1/jobs/{id}/content", method(http.MethodGet, secured(s.handleContent)))
-	r.HandleFunc("/v1/jobs/{id}/cancel", method(http.MethodPost, secured(s.handleCancelJob)))
-	r.HandleFunc("/v1/jobs/{id}", method(http.MethodGet, secured(s.handleGetJob)))
-	r.HandleFunc("/v1/stats", method(http.MethodGet, secured(s.handleStats)))
-	r.HandleFunc("/metrics", method(http.MethodGet, secured(s.handleMetrics)))
+	r.HandleFunc("/healthz", allowMethods(s.handleHealth, http.MethodGet))
+	r.HandleFunc("/readyz", allowMethods(s.handleReady, http.MethodGet))
+	r.HandleFunc("/v1/convert", allowMethods(secured(s.handleSubmit), http.MethodPost))
+	r.HandleFunc("/v1/formats", allowMethods(secured(s.handleFormats), http.MethodGet))
+	r.HandleFunc("/v1/jobs", allowMethods(secured(s.handleListJobs), http.MethodGet))
+	// content 支持 HEAD：调用方可以先拿大小/是否存在，不必下载整份产物。
+	r.HandleFunc("/v1/jobs/{id}/content", allowMethods(secured(s.handleContent), http.MethodGet, http.MethodHead))
+	r.HandleFunc("/v1/jobs/{id}/cancel", allowMethods(secured(s.handleCancelJob), http.MethodPost))
+	r.HandleFunc("/v1/jobs/{id}", allowMethods(secured(s.handleJob), http.MethodGet, http.MethodDelete))
+	r.HandleFunc("/v1/stats", allowMethods(secured(s.handleStats), http.MethodGet))
+	r.HandleFunc("/metrics", allowMethods(secured(s.handleMetrics), http.MethodGet))
 	r.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "未知路径")
 	})
 	return r
 }
 
+// allowMethods 只放行指定方法，并在 405 上按 RFC 7231 返回 Allow 头。
+func allowMethods(next http.HandlerFunc, allowed ...string) http.HandlerFunc {
+	allow := strings.Join(allowed, ", ")
+	return func(w http.ResponseWriter, r *http.Request) {
+		for _, method := range allowed {
+			if r.Method == method {
+				next(w, r)
+				return
+			}
+		}
+		w.Header().Set("Allow", allow)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "方法不允许")
+	}
+}
+
 // requireAPIKey 校验 Bearer 令牌，通过后转交 next。
 func (s *Server) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		presented := []byte(r.Header.Get("Authorization"))
-		if token, ok := bytes.CutPrefix(presented, []byte("Bearer ")); ok && s.apiKeyMatches(token) {
+		// Authorization 的 scheme 按 RFC 7235 不区分大小写；令牌本身仍按
+		// 原始字节比较。用 Fields 而不是 CutPrefix，同时容忍多个空格。
+		fields := strings.Fields(r.Header.Get("Authorization"))
+		if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") &&
+			s.apiKeyMatches([]byte(fields[1])) {
 			next(w, r)
 			return
 		}
@@ -209,27 +243,9 @@ type submitNotify struct {
 }
 
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	request, err := s.decodeSubmitRequest(r)
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large",
-				fmt.Sprintf("请求体超过 %d 字节", s.cfg.MaxUploadBytes))
-			return
-		}
-		writeError(w, http.StatusBadRequest, "invalid_request", "读取请求体失败")
-		return
-	}
-	if len(body) == 0 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "请求体为空")
-		return
-	}
-	var request submitRequest
-	// 未知字段报错，与配置文件同一套。请求体被静默忽略未知字段时代价特别大：
-	// 写错 file_name 会安静地退回默认产物名 output.pdf，调用方拿到的是
-	// "转换成功但名字不对"，排查起来比直接报错费时间得多。
-	if err := decodeStrictJSON(body, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "解析请求体失败: "+err.Error())
+		writeError(w, statusForRequestError(err), codeForRequestError(err), err.Error())
 		return
 	}
 	// 决定同步还是异步之前先规范化 output.kind。
@@ -246,24 +262,53 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Output.Kind = kind
 
-	if request.Output.Kind == convertersvc.OutputStream {
-		s.handleConvertInline(w, r, &request)
-		return
-	}
-
-	job, err := s.buildJob(&request)
+	key, err := idempotencyKey(r)
 	if err != nil {
 		writeError(w, statusForRequestError(err), codeForRequestError(err), err.Error())
 		return
 	}
-	if err := s.store.Enqueue(job); err != nil {
-		s.log.Error("入队失败", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "入队失败")
+	// 同步转换直接返回产物，没有“先受理、后再取”的语义，幂等键没法回放
+	// 一个流式响应，明确拒绝比悄悄忽略头更容易排查。
+	if request.Output.Kind == convertersvc.OutputStream {
+		if key != "" {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"Idempotency-Key 只支持异步任务，output.kind=stream 不能使用")
+			return
+		}
+		s.handleConvertInline(w, r, request)
 		return
+	}
+
+	// 指纹必须在 buildJob 之前算：buildJob 会把 output.dir 改写成服务端
+	// 绝对路径、补上 max_stream_bytes，重放时这些值相同，但若先改再算，
+	// 第一次与第二次的指纹输入就不一致，同键同请求会被误判成冲突。
+	var fingerprint string
+	if key != "" {
+		fingerprint, err = requestFingerprint(request)
+		if err != nil {
+			s.log.Error("计算幂等指纹失败", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "计算幂等指纹失败")
+			return
+		}
+	}
+	job, err := s.buildJob(request)
+	if err != nil {
+		writeError(w, statusForRequestError(err), codeForRequestError(err), err.Error())
+		return
+	}
+	var replayed bool
+	job, replayed, err = s.store.EnqueueGuarded(job, key, fingerprint, s.cfg.MaxQueueDepth)
+	if err != nil {
+		s.writeEnqueueError(w, err)
+		return
+	}
+	if replayed {
+		w.Header().Set("Idempotent-Replayed", "true")
 	}
 	s.log.Info("已受理", "job", job.ID, "lane", job.Lane, "to", job.To)
 	// 202：任务已受理但尚未开始。同步返回结果需要另一个端点，
 	// 而不是让这个请求挂着等——那会把 HTTP 连接数和队列深度绑在一起。
+	w.Header().Set("Location", "/v1/jobs/"+job.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"id":         job.ID,
 		"state":      job.State,
@@ -272,6 +317,19 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		"created_at": job.CreatedAt,
 		"status_url": "/v1/jobs/" + job.ID,
 	})
+}
+
+func (s *Server) writeEnqueueError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, jobstore.ErrQueueFull):
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "queue_full", "队列已满，请稍后重试")
+	case errors.Is(err, jobstore.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "idempotency_conflict", "同一个 Idempotency-Key 已用于不同请求")
+	default:
+		s.log.Error("入队失败", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "入队失败")
+	}
 }
 
 // buildJob 校验请求并生成任务记录。
@@ -503,12 +561,17 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Cancel(id); err != nil {
-		if strings.Contains(err.Error(), "任务不存在") {
+		switch {
+		case errors.Is(err, jobstore.ErrJobNotFound):
 			writeError(w, http.StatusNotFound, "job_not_found", "任务不存在")
-			return
+		case errors.Is(err, jobstore.ErrNotCancellable):
+			// 运行中或已终结的任务取消不了，属于调用方的状态判断问题。
+			writeError(w, http.StatusConflict, "not_cancellable", err.Error())
+		default:
+			// 数据库错误不是"不能取消"，回 409 会让调用方以为任务状态有问题。
+			s.log.Error("取消任务失败", "job", id, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "取消任务失败")
 		}
-		// 运行中或已终结的任务取消不了，属于调用方的状态判断问题。
-		writeError(w, http.StatusConflict, "not_cancellable", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "state": jobstore.StateCancelled})
@@ -527,12 +590,20 @@ func pathParam(r *http.Request, name string) (string, bool) {
 // 里面可能含调用方上传的内容，不该在状态查询时原样回显。
 func jobView(job *jobstore.Job) map[string]any {
 	view := map[string]any{
-		"id":         job.ID,
-		"state":      job.State,
-		"lane":       job.Lane,
-		"to":         job.To,
-		"created_at": job.CreatedAt,
-		"attempt":    job.Attempt,
+		"id":          job.ID,
+		"state":       job.State,
+		"lane":        job.Lane,
+		"from":        job.From,
+		"to":          job.To,
+		"input_bytes": job.InputBytes,
+		"created_at":  job.CreatedAt,
+		"attempt":     job.Attempt,
+	}
+	// FromActual 是服务端判定的实际格式，与调用方声明的 From 分开暴露：
+	// 两者在"内容与文件名不一致"时会不同。尚未判定时省略，而不是回一个
+	// 会被误读成格式名的空串。
+	if job.FromActual != "" {
+		view["from_actual"] = job.FromActual
 	}
 	if !job.StartedAt.IsZero() {
 		view["started_at"] = job.StartedAt
@@ -574,6 +645,32 @@ func codeForRequestError(err error) string {
 	return "invalid_request"
 }
 
+// statusAndCodeForConvertError 把转换阶段的错误映射成 HTTP 状态与错误码。
+//
+// 不能沿用 statusForRequestError 的默认 400：转换阶段的大部分失败不是
+// "请求写错了"。超限是 413，超时是 504，内部进程崩溃/磁盘错误是 500；
+// 统统回 400 会让调用方以为改参数就能成功，也会把服务端故障统计成客户端错误。
+func statusAndCodeForConvertError(err error) (int, string) {
+	var reqErr *requestError
+	if errors.As(err, &reqErr) {
+		return reqErr.status, reqErr.kind
+	}
+	switch {
+	case errors.Is(err, convertersvc.ErrBadRequest):
+		return http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, convertersvc.ErrUnsupported):
+		// 415 专指请求体的媒体类型；这里也可能是输出格式或格式组合不
+		// 支持，用 422 覆盖两者更准确。
+		return http.StatusUnprocessableEntity, "unsupported_format"
+	case errors.Is(err, convertersvc.ErrTooLarge):
+		return http.StatusRequestEntityTooLarge, "payload_too_large"
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout, "timeout"
+	default:
+		return http.StatusInternalServerError, "internal_error"
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -581,6 +678,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 		raw = []byte(`{"code":"internal_error","message":"响应序列化失败"}`)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// 任务详情和统计里含业务数据，不该被中间层缓存；令牌在请求里不代表
+	// 响应可以跨调用方复用。
+	w.Header().Set("Cache-Control", "no-store")
+	setWriteDeadline(w, responseWriteTimeout)
 	w.WriteHeader(status)
 	if _, err := w.Write(raw); err != nil {
 		return
@@ -657,6 +758,31 @@ func jobDirLevels(id string) []string {
 	return []string{id[split:], id[:split]}
 }
 
+const (
+	// responseWriteTimeout 是普通 JSON 响应的写超时。
+	responseWriteTimeout = 60 * time.Second
+)
+
+// setWriteDeadline 在写响应前设置 deadline。
+//
+// 对不支持 deadline 的 ResponseWriter（例如某些测试适配器）返回错误时忽略：
+// 那只是少了超时保护，不该让一个本来能成功的响应失败。
+func setWriteDeadline(w http.ResponseWriter, timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout))
+}
+
+// extendWriteDeadline 在开始写长响应前应用配置的流式写超时。
+//
+// 全局 WriteTimeout 不启用：它从读完请求头就开始计时，而请求体上传和同步
+// 转换都可能耗时很久。等真正要写响应时旧 deadline 早已过期，客户端只会
+// 收到 EOF。改为在每个响应开始写之前按用途设置 deadline。
+func (s *Server) extendWriteDeadline(w http.ResponseWriter) {
+	setWriteDeadline(w, s.cfg.HTTPStreamWriteTimeout.Duration())
+}
+
 // Start 监听并服务，直到 ctx 取消或监听失败。
 //
 // 停止时先停止接收新请求，再等在途请求结束，最后由调用方停 runner——
@@ -665,11 +791,15 @@ func (s *Server) Start(ctx context.Context) error {
 	server := &http.Server{
 		Addr:              s.cfg.Listen,
 		Handler:           s.Handler(),
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-		ReadTimeout:       30 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return context.WithoutCancel(ctx) },
+		ReadTimeout:       s.cfg.HTTPReadTimeout.Duration(),
 		ReadHeaderTimeout: 30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// 不设全局 WriteTimeout：它在读完请求头后就开始计时，会在大文件上传
+		// 或同步转换还没结束时先过期。各响应在写之前自行设置 deadline。
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
+		// net/http 自己的错误日志默认走标准库 log，会绕开结构化日志。
+		ErrorLog: slog.NewLogLogger(s.log.Handler(), slog.LevelError),
 	}
 	errCh := make(chan error, 1)
 	go func() {

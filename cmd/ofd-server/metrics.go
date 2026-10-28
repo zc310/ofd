@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/observe"
+	"github.com/zc310/ofd/internal/version"
 )
 
 // Prometheus 文本格式版本。改动这个值意味着所有采集端要同步升级解析器。
@@ -23,9 +25,9 @@ const promContentType = "text/plain; version=" + prometheusTextVersion + "; char
 
 // handleMetrics 输出 Prometheus 抓取用的累计计数。
 //
-// 标签只有 from、to、state 三个有限集合值，是刻意的约束。基数一旦随任务数
-// 或文件名增长，就是几百万条 series——那是把 Prometheus 和本服务一起拖垮的
-// 标准做法。单任务的明细在 jobstore 里，/metrics 只负责聚合。
+// 所有标签都来自有限集合（格式、通道、状态、目标名、事件、结果），是刻意的
+// 约束。基数一旦随任务数或文件名增长，就是几百万条 series——那是把 Prometheus
+// 和本服务一起拖垮的标准做法。单任务的明细在 jobstore 里，/metrics 只负责聚合。
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	snap, err := s.store.Snapshot()
 	if err != nil {
@@ -33,17 +35,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "读取统计失败")
 		return
 	}
-	// 队列深度是 gauge，每次抓取现算。读失败时仍然输出累计计数与运行时指标：
-	// 少几个 gauge 比整个端点 500 更有用——采集端能拿到历史数据补上这段时间，
-	// 端点失败则是一次空洞。
-	depth, err := s.store.QueueDepth()
-	if err != nil {
-		s.log.Error("读取队列深度失败", "err", err)
-		depth = nil
-	}
+	// 队列深度是 gauge，已在 Snapshot 的同一读事务里取得；累计计数与
+	// 深度因此来自同一时刻，不会出现撕裂快照。
 	w.Header().Set("Content-Type", promContentType)
+	setWriteDeadline(w, responseWriteTimeout)
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(renderMetrics(snap, depth, s.cfg.FastWorkers, s.cfg.HeavyWorkers, s.cfg.NotifyWorkers)); err != nil {
+	if _, err := w.Write(renderMetrics(snap, snap.Queue, s.cfg.FastWorkers, s.cfg.HeavyWorkers, s.cfg.NotifyWorkers, s.metrics, version.Version)); err != nil {
 		s.log.Debug("写 metrics 响应失败", "err", err)
 	}
 }
@@ -53,9 +50,14 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 // 格式要求先声明 HELP/TYPE 再输出样本，且同名指标的 HELP/TYPE 只能出现一次。
 // 样本行按标签值排序输出，让输出稳定可 diff——不稳定的顺序会让每次抓取的
 // 字节级对比、缓存与人工排查都变得困难。
-func renderMetrics(snap jobstore.StatsSnapshot, depth map[jobstore.State]int, fast, heavy, notifyWorkers int) []byte {
+func renderMetrics(snap jobstore.StatsSnapshot, depth map[jobstore.State]int, fast, heavy, notifyWorkers int, metrics *observe.Registry, buildVersion string) []byte {
 	var b strings.Builder
 	b.Grow(1024)
+
+	b.WriteString("# HELP ofd_server_info 服务版本与运行时版本。\n")
+	b.WriteString("# TYPE ofd_server_info gauge\n")
+	fmt.Fprintf(&b, "ofd_server_info{version=%s,go_version=%s} 1\n",
+		promLabel(buildVersion), promLabel(runtime.Version()))
 
 	b.WriteString("# HELP ofd_conversions_total 到达终态的转换任务数，按实际输入格式、输出格式与终态分类。\n")
 	b.WriteString("# TYPE ofd_conversions_total counter\n")
@@ -90,6 +92,18 @@ func renderMetrics(snap jobstore.StatsSnapshot, depth map[jobstore.State]int, fa
 		}
 	}
 
+	b.WriteString("# HELP ofd_queue_depth_by_lane 未终结任务数量，按通道与状态分类。\n")
+	b.WriteString("# TYPE ofd_queue_depth_by_lane gauge\n")
+	// 与 ofd_queue_depth 一样，读不到时整组不输出，避免把"未知"伪装成 0。
+	if snap.QueueByLane != nil {
+		for _, lane := range []jobstore.Lane{jobstore.LaneFast, jobstore.LaneHeavy} {
+			for _, state := range []jobstore.State{jobstore.StateQueued, jobstore.StateRunning} {
+				fmt.Fprintf(&b, "ofd_queue_depth_by_lane{lane=%s,state=%s} %d\n",
+					promLabel(string(lane)), promLabel(string(state)), snap.QueueByLane[lane][state])
+			}
+		}
+	}
+
 	b.WriteString("# HELP ofd_workers 各通道的 worker 数量。用于把 ofd_queue_depth 换算成利用率。\n")
 	b.WriteString("# TYPE ofd_workers gauge\n")
 	for _, w := range []struct {
@@ -98,6 +112,10 @@ func renderMetrics(snap jobstore.StatsSnapshot, depth map[jobstore.State]int, fa
 	}{{"fast", fast}, {"heavy", heavy}, {"notify", notifyWorkers}} {
 		fmt.Fprintf(&b, "ofd_workers{lane=%s} %d\n", promLabel(w.lane), w.count)
 	}
+
+	// 转换耗时 histogram 与通知结果来自内存注册表，进程重启后归零；
+	// 累计计数与队列深度来自 jobstore，重启后仍保留。
+	metrics.WritePrometheus(&b)
 
 	b.WriteString(renderRuntimeMetrics())
 	return []byte(b.String())
@@ -209,20 +227,97 @@ func renderRuntimeMetrics() string {
 	b.WriteString("# TYPE go_memstats_alloc_bytes_total counter\n")
 	fmt.Fprintf(&b, "go_memstats_alloc_bytes_total %d\n", stats.TotalAlloc)
 
+	// client_golang 的标准 memstats 指标。面板和 Recording Rule 通常直接
+	// 引用这些名字，自造名字会让现成仪表盘查不到数据。
+	counters := []struct {
+		name  string
+		help  string
+		value uint64
+	}{
+		{"go_memstats_mallocs_total", "累计分配的堆对象数。", stats.Mallocs},
+		{"go_memstats_frees_total", "累计释放的堆对象数。", stats.Frees},
+		{"go_memstats_lookups_total", "运行时指针查找次数。", stats.Lookups},
+	}
+	for _, m := range counters {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", m.name, m.help, m.name, m.name, m.value)
+	}
+
+	gauges := []struct {
+		name  string
+		help  string
+		value uint64
+	}{
+		{"go_memstats_gc_sys_bytes", "垃圾回收元数据占用的字节数。", stats.GCSys},
+		{"go_memstats_next_gc_bytes", "下一次垃圾回收的堆目标字节数。", stats.NextGC},
+	}
+	for _, m := range gauges {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", m.name, m.help, m.name, m.name, m.value)
+	}
+
+	b.WriteString("# HELP go_memstats_last_gc_time_seconds 最近一次垃圾回收完成时的 Unix 时间戳。\n")
+	b.WriteString("# TYPE go_memstats_last_gc_time_seconds gauge\n")
+	fmt.Fprintf(&b, "go_memstats_last_gc_time_seconds %g\n", float64(stats.LastGC)/1e9)
+
+	// 保留原有的 GC 计数与最近暂停时间；同时提供 client_golang 的
+	// go_gc_duration_seconds summary，避免现成面板与告警只能用非标准名字。
 	b.WriteString("# HELP go_memstats_gc_count 垃圾回收总次数。\n")
 	b.WriteString("# TYPE go_memstats_gc_count counter\n")
 	fmt.Fprintf(&b, "go_memstats_gc_count %d\n", stats.NumGC)
 
 	b.WriteString("# HELP go_gc_pause_seconds 最近一次垃圾回收的暂停秒数。\n")
 	b.WriteString("# TYPE go_gc_pause_seconds gauge\n")
-	// PauseNs 是环形缓冲，索引 0 是最近一次。
-	fmt.Fprintf(&b, "go_gc_pause_seconds %g\n", float64(stats.PauseNs[0])/1e9)
+	// PauseNs 是环形缓冲，索引 0 不是最近一次；最近一次用 NumGC 定位。
+	latestPause := stats.PauseNs[(stats.NumGC+uint32(len(stats.PauseNs))-1)%uint32(len(stats.PauseNs))]
+	fmt.Fprintf(&b, "go_gc_pause_seconds %g\n", float64(latestPause)/1e9)
+
+	b.WriteString(renderGCSummary(&stats))
 
 	b.WriteString("# HELP go_info Go 运行时版本信息，值恒为 1。\n")
 	b.WriteString("# TYPE go_info gauge\n")
 	fmt.Fprintf(&b, "go_info{version=%s} 1\n", promLabel(runtime.Version()))
 
 	b.WriteString(renderProcessMetrics())
+	return b.String()
+}
+
+// renderGCSummary 输出 client_golang 同名格式的 GC 暂停摘要。
+//
+// PauseNs 只保留最近 256 次（环形缓冲），而 _count/_sum 用运行时的累计值，
+// 所以超过 256 次 GC 后分位数是最近一段的样本，计数与总和仍是全程的——
+// 这与 client_golang 的行为一致。
+func renderGCSummary(stats *runtime.MemStats) string {
+	n := int(stats.NumGC)
+	if n > len(stats.PauseNs) {
+		n = len(stats.PauseNs)
+	}
+	pauses := make([]float64, 0, n)
+	for i := 0; i < n; i++ {
+		pauses = append(pauses, float64(stats.PauseNs[i])/1e9)
+	}
+	sort.Float64s(pauses)
+	quantile := func(q float64) float64 {
+		if len(pauses) == 0 {
+			return 0
+		}
+		index := int(q * float64(len(pauses)-1))
+		if index < 0 {
+			index = 0
+		}
+		if index >= len(pauses) {
+			index = len(pauses) - 1
+		}
+		return pauses[index]
+	}
+
+	var b strings.Builder
+	b.WriteString("# HELP go_gc_duration_seconds 一次垃圾回收的暂停时长摘要（秒）。\n")
+	b.WriteString("# TYPE go_gc_duration_seconds summary\n")
+	for _, q := range []float64{0, 0.25, 0.5, 0.75, 1} {
+		fmt.Fprintf(&b, "go_gc_duration_seconds{quantile=%q} %g\n",
+			strconv.FormatFloat(q, 'g', -1, 64), quantile(q))
+	}
+	fmt.Fprintf(&b, "go_gc_duration_seconds_sum %g\n", float64(stats.PauseTotalNs)/1e9)
+	fmt.Fprintf(&b, "go_gc_duration_seconds_count %d\n", stats.NumGC)
 	return b.String()
 }
 
@@ -256,6 +351,14 @@ func renderProcessMetrics() string {
 		fmt.Fprintf(&b, "process_max_fds %d\n", maxFDs)
 	}
 
+	// CPU 时间是 counter：面板上的 CPU 使用率由 rate() 算出。没有它，
+	// 容器 CPU 只能看宿主机，无法定位到本进程。
+	if cpu, ok := procCPUSeconds(); ok {
+		b.WriteString("# HELP process_cpu_seconds_total 进程累计使用的用户态与内核态 CPU 秒数。\n")
+		b.WriteString("# TYPE process_cpu_seconds_total counter\n")
+		fmt.Fprintf(&b, "process_cpu_seconds_total %g\n", cpu)
+	}
+
 	// 启动时间：没有它，重启之后 process_resident_memory_bytes 这类 gauge
 	// 的 rate() 会把重启前后拼成一段，算出根本不存在的速率。
 	if start, ok := procStartTime(); ok {
@@ -274,7 +377,10 @@ func renderProcessMetrics() string {
 const clockTicks = 100
 
 // pageSize 是 /proc/self/statm 换算字节数用的页大小。
-const pageSize = 4096
+//
+// 不能写死 4096：arm64 等平台可以用 16K/64K 页，写死会让 RSS 指标
+// 差一个数量级，而面板上看不出是单位错了。
+var pageSize = uint64(os.Getpagesize())
 
 func procMem() (rss, vsize uint64, ok bool) {
 	raw, err := os.ReadFile("/proc/self/statm")
@@ -291,6 +397,30 @@ func procMem() (rss, vsize uint64, ok bool) {
 		return 0, 0, false
 	}
 	return resident * pageSize, pages * pageSize, true
+}
+
+func procCPUSeconds() (float64, bool) {
+	raw, err := os.ReadFile("/proc/self/stat")
+	if err != nil {
+		return 0, false
+	}
+	text := string(raw)
+	end := strings.LastIndex(text, ")")
+	if end < 0 {
+		return 0, false
+	}
+	// 从 comm 之后数：state 是 fields[0]，utime/stime 是第 14/15 个字段，
+	// 即 fields[11]/fields[12]。
+	fields := strings.Fields(text[end+1:])
+	if len(fields) < 13 {
+		return 0, false
+	}
+	user, err1 := strconv.ParseUint(fields[11], 10, 64)
+	system, err2 := strconv.ParseUint(fields[12], 10, 64)
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	return float64(user+system) / clockTicks, true
 }
 
 func procOpenFDs() (uint64, bool) {

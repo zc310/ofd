@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,6 +80,65 @@ func TestContentServesSingleFile(t *testing.T) {
 	}
 	if cc := got.header("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q，产物不该被中间层缓存", cc)
+	}
+}
+
+// TestContentSupportsHeadAndRange 单文件产物应支持 HEAD 与 Range。
+//
+// 用 io.CopyN 手写下载时，HEAD 会返回完整 body，Range 被忽略；这两项是
+// 断点续传和"先看大小再决定下载"的基础。
+func TestContentSupportsHeadAndRange(t *testing.T) {
+	s, store, cfg := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	dir := filepath.Join(cfg.OutputDir, "range")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const content = "%PDF-1.7 fake"
+	seedFinished(t, store, "r1", dir, map[string]string{"INV-1.pdf": content})
+
+	request := func(method string, header map[string]string) (*http.Response, string) {
+		t.Helper()
+		req, err := http.NewRequest(method, client.baseURL+"/v1/jobs/r1/content", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+testAPIKey)
+		for key, value := range header {
+			req.Header.Set(key, value)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp, string(body)
+	}
+
+	resp, body := request(http.MethodHead, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HEAD 状态 = %d", resp.StatusCode)
+	}
+	if body != "" {
+		t.Errorf("HEAD 返回了响应体: %q", body)
+	}
+	if resp.ContentLength != int64(len(content)) {
+		t.Errorf("HEAD Content-Length = %d，期望 %d", resp.ContentLength, len(content))
+	}
+
+	resp, body = request(http.MethodGet, map[string]string{"Range": "bytes=0-3"})
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("Range 状态 = %d，期望 206", resp.StatusCode)
+	}
+	if body != content[:4] {
+		t.Errorf("Range body = %q，期望 %q", body, content[:4])
+	}
+	if got := resp.Header.Get("Content-Range"); got != fmt.Sprintf("bytes 0-3/%d", len(content)) {
+		t.Errorf("Content-Range = %q", got)
 	}
 }
 

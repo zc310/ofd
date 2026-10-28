@@ -20,6 +20,7 @@ package jobstore
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,6 +92,11 @@ var (
 	bucketHeavy   = []byte("queue_heavy")
 	bucketByState = []byte("jobs_by_state")
 	bucketDelayed = []byte("queue_delayed")
+	// bucketIdempotency 保存 Idempotency-Key 到任务 ID 的映射。
+	//
+	// 键是调用方提供的幂等键，值是 {job_id, fingerprint, created_at}。映射与
+	// 任务写在同一事务里，重放时不会出现“键已占住但任务没入队”的中间态。
+	bucketIdempotency = []byte("idempotency")
 	// bucketStats 存单调累计计数，不参与 Prune。
 	//
 	// 单独一个 bucket 是必须的：如果从 jobs 表现算，任务被清理后计数会
@@ -100,6 +106,18 @@ var (
 
 	schemaVersionKey = []byte("schema_version")
 	schemaVersion    = 1
+)
+
+// 面向 HTTP 层的哨兵错误。调用方用 errors.Is 判断，不再匹配错误字符串：
+// 文案会变，而且数据库错误不该被误判成"任务不可取消"。
+var (
+	ErrJobNotFound    = errors.New("任务不存在")
+	ErrNotCancellable = errors.New("任务不可取消")
+	ErrJobNotTerminal = errors.New("任务尚未终结")
+	// ErrQueueFull 表示排队任务已达到配置上限，调用方应稍后重试。
+	ErrQueueFull = errors.New("队列已满")
+	// ErrIdempotencyConflict 表示同一个 Idempotency-Key 被用于不同请求。
+	ErrIdempotencyConflict = errors.New("幂等键已用于其他请求")
 )
 
 func laneBucket(lane Lane) []byte {
@@ -211,7 +229,7 @@ func Open(path string) (*Store, error) {
 	}
 	store := &Store{path: path, db: db}
 	if err := db.Update(func(tx *bolt.Tx) error {
-		for _, name := range [][]byte{bucketMeta, bucketJobs, bucketFast, bucketHeavy, bucketByState, bucketDelayed, bucketDeliveries, bucketStats} {
+		for _, name := range [][]byte{bucketMeta, bucketJobs, bucketFast, bucketHeavy, bucketByState, bucketDelayed, bucketDeliveries, bucketStats, bucketIdempotency} {
 			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
 				return err
 			}
@@ -245,6 +263,17 @@ func (s *Store) Close() error {
 	err := s.db.Close()
 	s.db = nil
 	return err
+}
+
+// Ping 检查任务库是否仍可读。readiness 不应只看进程是否启动：数据库被
+// 关闭、文件损坏或所在盘掉线后，服务已经处理不了任何任务。
+func (s *Store) Ping() error {
+	return s.view(func(tx *bolt.Tx) error {
+		if tx.Bucket(bucketMeta) == nil {
+			return errors.New("任务库缺少 meta bucket")
+		}
+		return nil
+	})
 }
 
 func (s *Store) view(fn func(*bolt.Tx) error) error {
@@ -289,10 +318,83 @@ func stateIndexPrefix(state State) []byte {
 }
 
 // Enqueue 写入新任务并放入对应队列。与状态索引在同一事务内更新。
+//
+// 这个方法不检查队列上限，也不处理幂等键：它同时被 worker 的重试路径使用，
+// 已受理的任务不应因为队列满而失败。HTTP 入口使用 EnqueueGuarded。
 func (s *Store) Enqueue(job *Job) error {
 	if job == nil || job.ID == "" {
 		return fmt.Errorf("任务必须有 ID")
 	}
+	normalizeJob(job)
+	return s.update(func(tx *bolt.Tx) error {
+		return putQueuedJob(tx, job)
+	})
+}
+
+// EnqueueGuarded 是带入口保护的入队：队列上限与幂等键在同一个写事务里检查。
+//
+// 返回 replayed=true 表示幂等键已存在且请求指纹一致，stored 是第一次提交
+// 创建的任务，调用方应返回同一个任务而不是新建一个。key 为空表示不启用幂等。
+func (s *Store) EnqueueGuarded(job *Job, key, fingerprint string, maxQueued int) (stored *Job, replayed bool, err error) {
+	if job == nil || job.ID == "" {
+		return nil, false, fmt.Errorf("任务必须有 ID")
+	}
+	normalizeJob(job)
+	err = s.update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(bucketIdempotency)
+		if key != "" {
+			if raw := bucket.Get([]byte(key)); raw != nil {
+				var record idempotencyRecord
+				if err := json.Unmarshal(raw, &record); err != nil {
+					return err
+				}
+				if record.Fingerprint != fingerprint {
+					return fmt.Errorf("%w: %s", ErrIdempotencyConflict, key)
+				}
+				if existing, loadErr := loadJob(tx, record.JobID); loadErr == nil {
+					stored = existing
+					replayed = true
+					return nil
+				}
+				// 任务已被 retention 或 DELETE 清掉，旧映射是垃圾。
+				if err := bucket.Delete([]byte(key)); err != nil {
+					return err
+				}
+			}
+		}
+		if maxQueued > 0 && queuedCountTx(tx) >= maxQueued {
+			return ErrQueueFull
+		}
+		if err := putQueuedJob(tx, job); err != nil {
+			return err
+		}
+		if key != "" {
+			raw, err := json.Marshal(idempotencyRecord{
+				JobID:       job.ID,
+				Fingerprint: fingerprint,
+				CreatedAt:   job.CreatedAt,
+			})
+			if err != nil {
+				return err
+			}
+			if err := bucket.Put([]byte(key), raw); err != nil {
+				return err
+			}
+		}
+		stored = job
+		return nil
+	})
+	return stored, replayed, err
+}
+
+// idempotencyRecord 是 bucketIdempotency 的值。
+type idempotencyRecord struct {
+	JobID       string    `json:"job_id"`
+	Fingerprint string    `json:"fingerprint"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func normalizeJob(job *Job) {
 	if job.CreatedAt.IsZero() {
 		job.CreatedAt = time.Now().UTC()
 	}
@@ -300,21 +402,40 @@ func (s *Store) Enqueue(job *Job) error {
 		job.Lane = LaneFast
 	}
 	job.State = StateQueued
-	return s.update(func(tx *bolt.Tx) error {
-		raw, err := json.Marshal(job)
-		if err != nil {
-			return err
+}
+
+// putQueuedJob 把任务及其索引、队列键写入当前事务。
+func putQueuedJob(tx *bolt.Tx, job *Job) error {
+	raw, err := json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	if err := putJob(tx, job, raw); err != nil {
+		return err
+	}
+	// 未到期的任务先落在按到期时间排序的 delayed 队列里，到期后再被
+	// promoteDue 搬进通道队列。
+	if !job.DueAt.IsZero() && job.DueAt.After(time.Now()) {
+		return tx.Bucket(bucketDelayed).Put(delayedKey(job), []byte(job.ID))
+	}
+	return tx.Bucket(laneBucket(job.Lane)).Put(queueKey(job), []byte(job.ID))
+}
+
+// queuedCountTx 统计尚未进入 worker 的 queued 任务。
+//
+// 两个通道队列与 delayed 队列的键数相加即可，不需要读任务记录：这正是
+// 队列上限检查应走的快路径。running 不计入，因为 worker 已经在处理它。
+func queuedCountTx(tx *bolt.Tx) int {
+	total := 0
+	for _, name := range [][]byte{bucketFast, bucketHeavy} {
+		if bucket := tx.Bucket(name); bucket != nil {
+			total += bucket.Stats().KeyN
 		}
-		if err := putJob(tx, job, raw); err != nil {
-			return err
-		}
-		// 未到期的任务先落在按到期时间排序的 delayed 队列里，
-		// 到期后再被 promoteDue 搬进通道队列。
-		if !job.DueAt.IsZero() && job.DueAt.After(time.Now()) {
-			return tx.Bucket(bucketDelayed).Put(delayedKey(job), []byte(job.ID))
-		}
-		return tx.Bucket(laneBucket(job.Lane)).Put(queueKey(job), []byte(job.ID))
-	})
+	}
+	if delayed := tx.Bucket(bucketDelayed); delayed != nil {
+		total += delayed.Stats().KeyN
+	}
+	return total
 }
 
 // delayedKey 以到期时间为主序，让"取出全部到期任务"退化为一次前缀扫描。
@@ -581,7 +702,8 @@ func (s *Store) Cancel(id string) error {
 			return err
 		}
 		if job.State != StateQueued {
-			return fmt.Errorf("任务 %s 处于 %s，只有排队中的任务可以取消", id, job.State)
+			return fmt.Errorf("%w: 任务 %s 处于 %s，只有排队中的任务可以取消",
+				ErrNotCancellable, id, job.State)
 		}
 		// 从延迟队列与通道队列里摘掉，否则 Claim 之后还会把它取出来。
 		if err := tx.Bucket(bucketDelayed).Delete(delayedKey(job)); err != nil {
@@ -620,7 +742,7 @@ func (s *Store) Get(id string) (*Job, error) {
 func loadJob(tx *bolt.Tx, id string) (*Job, error) {
 	raw := tx.Bucket(bucketJobs).Get([]byte(id))
 	if raw == nil {
-		return nil, fmt.Errorf("任务不存在: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, id)
 	}
 	var job Job
 	if err := json.Unmarshal(raw, &job); err != nil {
@@ -654,6 +776,178 @@ func (s *Store) ListByState(state State, limit int) ([]Job, error) {
 		return nil
 	})
 	return result, err
+}
+
+// ListOptions 是任务列表的过滤条件。
+type ListOptions struct {
+	// State 为空表示不过滤状态。
+	State State
+	// Lane 为空表示不过滤通道。
+	Lane Lane
+	// Limit 是返回条数上限，0 时取 50，最大 200。
+	Limit int
+	// Cursor 是上一页返回的 next_cursor，空表示从最新一条开始。
+	Cursor string
+}
+
+// ListResult 是一页任务列表。
+type ListResult struct {
+	Jobs       []Job
+	NextCursor string
+}
+
+// List 按创建顺序倒序返回任务。任务 ID 是单调时间戳，因此直接按 ID 倒序
+// 扫描 jobs bucket 即可；状态与通道再在内存里过滤。
+//
+// 这里没有全局时间索引，扫描会随任务总数增长。retention 默认只有 7 天，
+// 且 limit 很小，换来的实现简单性比再加一个需要维护一致性的索引更划算。
+func (s *Store) List(opts ListOptions) (ListResult, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var result ListResult
+	err := s.view(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(bucketJobs)
+		if bucket == nil {
+			return nil
+		}
+		cursor := bucket.Cursor()
+		start := []byte(opts.Cursor)
+		var key, raw []byte
+		if len(start) == 0 {
+			key, raw = cursor.Last()
+		} else {
+			key, raw = cursor.Seek(start)
+			if key == nil {
+				key, raw = cursor.Last()
+			} else if bytes.Compare(key, start) >= 0 {
+				key, raw = cursor.Prev()
+			}
+		}
+		for ; key != nil; key, raw = cursor.Prev() {
+			var job Job
+			if err := json.Unmarshal(raw, &job); err != nil {
+				continue
+			}
+			if opts.State != "" && job.State != opts.State {
+				continue
+			}
+			if opts.Lane != "" && job.Lane != opts.Lane {
+				continue
+			}
+			result.Jobs = append(result.Jobs, job)
+			if len(result.Jobs) > limit {
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return ListResult{}, err
+	}
+	if len(result.Jobs) > limit {
+		result.Jobs = result.Jobs[:limit]
+		result.NextCursor = result.Jobs[len(result.Jobs)-1].ID
+	}
+	return result, nil
+}
+
+// Delete 删除一个已终结的任务记录及其索引。
+//
+// 产物文件不在这里删除：文件系统与 bbolt 无法放进同一个事务，由 HTTP 层在
+// 拿到 job 后按记录的清单处理。这里只保证任务记录本身不再可见。
+func (s *Store) Delete(id string) (*Job, error) {
+	var deleted *Job
+	err := s.update(func(tx *bolt.Tx) error {
+		job, err := loadJob(tx, id)
+		if err != nil {
+			return err
+		}
+		if !job.State.Terminal() {
+			return fmt.Errorf("%w: 任务 %s 处于 %s", ErrJobNotTerminal, id, job.State)
+		}
+		if err := tx.Bucket(bucketByState).Delete(stateKey(job.State, job.CreatedAt, job.ID)); err != nil {
+			return err
+		}
+		if err := tx.Bucket(bucketJobs).Delete([]byte(id)); err != nil {
+			return err
+		}
+		// 清掉可能残留的队列键；正常终态任务不会还在队列里，但取消与重启
+		// 路径曾留下过悬空键，顺手清理比让 Claim 反复跳过更干净。
+		if err := tx.Bucket(laneBucket(job.Lane)).Delete(queueKey(job)); err != nil {
+			return err
+		}
+		if err := tx.Bucket(bucketDelayed).Delete(delayedKey(job)); err != nil {
+			return err
+		}
+		if err := deleteIdempotencyForJob(tx, id); err != nil {
+			return err
+		}
+		if err := deleteDeliveriesForJob(tx, id); err != nil {
+			return err
+		}
+		deleted = job
+		return nil
+	})
+	return deleted, err
+}
+
+func deleteIdempotencyForJob(tx *bolt.Tx, id string) error {
+	bucket := tx.Bucket(bucketIdempotency)
+	if bucket == nil {
+		return nil
+	}
+	var stale [][]byte
+	err := bucket.ForEach(func(key, value []byte) error {
+		var record idempotencyRecord
+		if err := json.Unmarshal(value, &record); err != nil {
+			return nil
+		}
+		if record.JobID == id {
+			stale = append(stale, append([]byte(nil), key...))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, key := range stale {
+		if err := bucket.Delete(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deleteDeliveriesForJob(tx *bolt.Tx, id string) error {
+	bucket := tx.Bucket(bucketDeliveries)
+	if bucket == nil {
+		return nil
+	}
+	var stale [][]byte
+	err := bucket.ForEach(func(key, value []byte) error {
+		var delivery Delivery
+		if err := json.Unmarshal(value, &delivery); err != nil {
+			return nil
+		}
+		if delivery.JobID == id {
+			stale = append(stale, append([]byte(nil), key...))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, key := range stale {
+		if err := bucket.Delete(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Count 统计各状态的任务数量。
@@ -812,6 +1106,17 @@ type StatsSnapshot struct {
 	InputBytes map[string]uint64
 	// OutputBytes 按 输入格式 -> 输出格式 索引的输出字节总量。
 	OutputBytes map[StatsPair]uint64
+	// Queue 是读取累计计数的同一事务里看到的队列深度。
+	//
+	// 放在同一个事务里是为了让 /metrics 和 /v1/stats 的累计计数与瞬时深度
+	// 出自同一时刻。分两个事务读会出现"计数已加、深度还没减"的窗口，
+	// 抓取端不必知道这个窗口，却可能据此发出错误告警。
+	Queue map[State]int
+	// QueueByLane 是与 Queue 同一时刻、按通道拆开的深度。
+	//
+	// 总数无法回答"快路径堵了还是重路径堵了"：两条 lane 的 worker 数与
+	// 任务成本都不同，只告警总数会把两边的问题混在一起。
+	QueueByLane map[Lane]map[State]int
 }
 
 // StatsTriple 是转换计数的三个标签。
@@ -837,24 +1142,76 @@ type StatsPair struct {
 // 漏一处就是永久性错误数字，而漏了不会报错。扫描慢一点，但读到的数
 // 一定对。
 func (s *Store) QueueDepth() (map[State]int, error) {
-	depth := map[State]int{}
+	var depth map[State]int
 	err := s.view(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(bucketByState)
-		if bucket == nil {
-			return nil
-		}
-		for _, state := range []State{StateQueued, StateRunning} {
-			prefix := []byte{stateCode(state)}
-			count := 0
-			cursor := bucket.Cursor()
-			for key, _ := cursor.Seek(prefix); key != nil && bytes.HasPrefix(key, prefix); key, _ = cursor.Next() {
-				count++
-			}
-			depth[state] = count
-		}
-		return nil
+		var err error
+		depth, _, err = queueDepthTx(tx)
+		return err
 	})
 	return depth, err
+}
+
+func queueDepthTx(tx *bolt.Tx) (map[State]int, map[Lane]map[State]int, error) {
+	depth := map[State]int{}
+	byLane := map[Lane]map[State]int{
+		LaneFast:  {},
+		LaneHeavy: {},
+	}
+	jobs := tx.Bucket(bucketJobs)
+
+	// queued 不扫状态索引：就绪任务按 lane 分在两个队列 bucket 里，直接
+	// 数键即可。状态索引的条目数与全部积压任务数成正比，积压大时每次
+	// 抓取都全扫一遍，恰好会在最需要指标的时候拖慢 /metrics。
+	if q := tx.Bucket(bucketFast); q != nil {
+		byLane[LaneFast][StateQueued] = q.Stats().KeyN
+	}
+	if q := tx.Bucket(bucketHeavy); q != nil {
+		byLane[LaneHeavy][StateQueued] = q.Stats().KeyN
+	}
+	// 退避中的 queued 任务不在通道队列里，只能按 ID 读记录；这里只需
+	// lane 字段，用窄结构体避免把 Request 一并解出来。
+	if delayed := tx.Bucket(bucketDelayed); delayed != nil && jobs != nil {
+		cursor := delayed.Cursor()
+		for _, value := cursor.First(); value != nil; _, value = cursor.Next() {
+			addJobLane(jobs, value, StateQueued, byLane)
+		}
+	}
+	depth[StateQueued] = byLane[LaneFast][StateQueued] + byLane[LaneHeavy][StateQueued]
+
+	// running 必须走状态索引，但数量受 worker 数约束；逐条解码 lane 的
+	// 成本随并发数增长，不随积压增长。
+	running := 0
+	if bucket := tx.Bucket(bucketByState); bucket != nil {
+		prefix := []byte{stateCode(StateRunning)}
+		cursor := bucket.Cursor()
+		for key, _ := cursor.Seek(prefix); key != nil && bytes.HasPrefix(key, prefix); key, _ = cursor.Next() {
+			running++
+			if jobs != nil && len(key) > 1+8 {
+				addJobLane(jobs, key[1+8:], StateRunning, byLane)
+			}
+		}
+	}
+	depth[StateRunning] = running
+	return depth, byLane, nil
+}
+
+// addJobLane 只解码任务记录里的 lane 字段，并累加到对应通道。
+func addJobLane(jobs *bolt.Bucket, id []byte, state State, byLane map[Lane]map[State]int) {
+	raw := jobs.Get(id)
+	if raw == nil {
+		return
+	}
+	var meta struct {
+		Lane Lane `json:"lane"`
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return
+	}
+	lane := meta.Lane
+	if lane != LaneHeavy {
+		lane = LaneFast
+	}
+	byLane[lane][state]++
 }
 
 // Snapshot 读取全部累计计数。
@@ -871,7 +1228,7 @@ func (s *Store) Snapshot() (StatsSnapshot, error) {
 				snap.Since = since
 			}
 		}
-		return stats.ForEach(func(key, value []byte) error {
+		if err := stats.ForEach(func(key, value []byte) error {
 			if len(key) == 0 || len(value) != 8 {
 				// 不是本包写的键，跳过而不是报错：同一个库可能被别的工具
 				// 打开过，静默跳过比整个 /metrics 挂掉好。
@@ -901,7 +1258,12 @@ func (s *Store) Snapshot() (StatsSnapshot, error) {
 				snap.OutputBytes[StatsPair{labels[0], labels[1]}] = count
 			}
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
+		var err error
+		snap.Queue, snap.QueueByLane, err = queueDepthTx(tx)
+		return err
 	})
 	return snap, err
 }
@@ -938,9 +1300,41 @@ func (s *Store) Prune(cutoff time.Time) (int, error) {
 				removed++
 			}
 		}
-		return nil
+		return pruneIdempotencyTx(tx)
 	})
 	return removed, err
+}
+
+// pruneIdempotencyTx 清掉指向已不存在任务的幂等映射。
+//
+// 不按任务逐个扫描映射桶：一次遍历足够，且 Prune 本来就在写事务里。
+func pruneIdempotencyTx(tx *bolt.Tx) error {
+	bucket := tx.Bucket(bucketIdempotency)
+	if bucket == nil {
+		return nil
+	}
+	jobs := tx.Bucket(bucketJobs)
+	var stale [][]byte
+	err := bucket.ForEach(func(key, value []byte) error {
+		var record idempotencyRecord
+		if err := json.Unmarshal(value, &record); err != nil {
+			stale = append(stale, append([]byte(nil), key...))
+			return nil
+		}
+		if record.JobID == "" || jobs.Get([]byte(record.JobID)) == nil {
+			stale = append(stale, append([]byte(nil), key...))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, key := range stale {
+		if err := bucket.Delete(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 const (

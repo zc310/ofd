@@ -1,6 +1,7 @@
 package jobstore
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -441,6 +442,9 @@ func TestPersistenceAcrossReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := store.Ping(); err == nil {
+		t.Error("关闭后 Ping 应失败")
+	}
 	// 重复 Close 应当无害。
 	if err := store.Close(); err != nil {
 		t.Errorf("重复 Close: %v", err)
@@ -451,6 +455,9 @@ func TestPersistenceAcrossReopen(t *testing.T) {
 		t.Fatalf("重新打开失败: %v", err)
 	}
 	defer func() { _ = reopened.Close() }()
+	if err := reopened.Ping(); err != nil {
+		t.Errorf("重新打开后 Ping: %v", err)
+	}
 	job, err := reopened.Get("keep")
 	if err != nil || job == nil {
 		t.Fatalf("重开后读不到任务: %v", err)
@@ -944,6 +951,40 @@ func TestQueueDepthAcrossLanes(t *testing.T) {
 	}
 }
 
+// TestSnapshotQueueByLane 快照里的通道深度与总数必须来自同一时刻。
+func TestSnapshotQueueByLane(t *testing.T) {
+	store, _ := openStore(t)
+	for _, job := range []*Job{
+		{ID: "f1", Lane: LaneFast, To: "pdf"},
+		{ID: "h1", Lane: LaneHeavy, To: "pdf"},
+		{ID: "h2", Lane: LaneHeavy, To: "pdf"},
+		{ID: "h3", Lane: LaneHeavy, To: "pdf", DueAt: time.Now().Add(time.Hour)},
+	} {
+		if err := store.Enqueue(job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Claim(LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Queue[StateQueued] != 3 || snap.Queue[StateRunning] != 1 {
+		t.Errorf("Queue = %v，期望 queued=3 running=1", snap.Queue)
+	}
+	if got := snap.QueueByLane[LaneFast][StateRunning]; got != 1 {
+		t.Errorf("fast running = %d，期望 1", got)
+	}
+	if got := snap.QueueByLane[LaneHeavy][StateQueued]; got != 3 {
+		t.Errorf("heavy queued = %d，期望 3（含退避任务）", got)
+	}
+	if got := snap.QueueByLane[LaneFast][StateQueued]; got != 0 {
+		t.Errorf("fast queued = %d，期望 0", got)
+	}
+}
+
 // TestQueueDepthCancelledNotCounted 已取消的任务不该继续占着深度。
 func TestQueueDepthCancelledNotCounted(t *testing.T) {
 	store, _ := openStore(t)
@@ -959,5 +1000,165 @@ func TestQueueDepthCancelledNotCounted(t *testing.T) {
 	}
 	if depth[StateQueued] != 0 {
 		t.Errorf("取消后 queued = %d，期望 0", depth[StateQueued])
+	}
+}
+
+func TestListFiltersAndPaginates(t *testing.T) {
+	store, _ := openStore(t)
+	for _, id := range []string{"a", "b", "c", "d"} {
+		job := newJob(id, LaneFast, OrderNormal)
+		if id == "b" {
+			job.Lane = LaneHeavy
+		}
+		if err := store.Enqueue(job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Claim(LaneHeavy); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish("b", StateSucceeded, Output{}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := store.List(ListOptions{Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Jobs) != 2 || page.Jobs[0].ID != "d" || page.Jobs[1].ID != "c" {
+		t.Fatalf("第一页 = %+v", page.Jobs)
+	}
+	if page.NextCursor != "c" {
+		t.Errorf("next_cursor = %q，期望 c", page.NextCursor)
+	}
+	page, err = store.List(ListOptions{Limit: 2, Cursor: page.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Jobs) != 2 || page.Jobs[0].ID != "b" || page.Jobs[1].ID != "a" {
+		t.Fatalf("第二页 = %+v", page.Jobs)
+	}
+	if page.NextCursor != "" {
+		t.Errorf("最后一页不应再有 cursor，实际 %q", page.NextCursor)
+	}
+	page, err = store.List(ListOptions{State: StateSucceeded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Jobs) != 1 || page.Jobs[0].ID != "b" {
+		t.Errorf("状态过滤 = %+v", page.Jobs)
+	}
+	page, err = store.List(ListOptions{Lane: LaneHeavy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Jobs) != 1 || page.Jobs[0].ID != "b" {
+		t.Errorf("通道过滤 = %+v", page.Jobs)
+	}
+}
+
+func TestEnqueueGuardedReplaysAndConflicts(t *testing.T) {
+	store, _ := openStore(t)
+	first := newJob("first", LaneFast, OrderNormal)
+	stored, replayed, err := store.EnqueueGuarded(first, "key-1", "fp-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed || stored == nil || stored.ID != "first" {
+		t.Fatalf("首次入队 = %+v, replayed=%v", stored, replayed)
+	}
+	second := newJob("second", LaneFast, OrderNormal)
+	stored, replayed, err = store.EnqueueGuarded(second, "key-1", "fp-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed || stored.ID != "first" {
+		t.Errorf("同键同指纹应回放 first，实际 %+v, replayed=%v", stored, replayed)
+	}
+	if got, _ := store.Get("second"); got != nil {
+		t.Error("回放不应创建第二个任务")
+	}
+	if _, _, err := store.EnqueueGuarded(newJob("third", LaneFast, OrderNormal), "key-1", "fp-2", 0); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Errorf("同键不同指纹 err = %v，期望 ErrIdempotencyConflict", err)
+	}
+}
+
+func TestEnqueueGuardedQueueLimit(t *testing.T) {
+	store, _ := openStore(t)
+	if _, _, err := store.EnqueueGuarded(newJob("one", LaneFast, OrderNormal), "k1", "f1", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.EnqueueGuarded(newJob("two", LaneFast, OrderNormal), "k2", "f2", 1); !errors.Is(err, ErrQueueFull) {
+		t.Errorf("超过上限 err = %v，期望 ErrQueueFull", err)
+	}
+	if got, _ := store.Get("two"); got != nil {
+		t.Error("被拒任务不应写入")
+	}
+	// 回放已受理任务不受上限影响。
+	if _, replayed, err := store.EnqueueGuarded(newJob("ignored", LaneFast, OrderNormal), "k1", "f1", 1); err != nil || !replayed {
+		t.Errorf("上限满时回放 = replayed %v, err %v", replayed, err)
+	}
+	if _, err := store.Claim(LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish("one", StateSucceeded, Output{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.EnqueueGuarded(newJob("two", LaneFast, OrderNormal), "k2", "f2", 1); err != nil {
+		t.Errorf("释放槽位后仍被拒: %v", err)
+	}
+}
+
+func TestDeleteRemovesJobAndIdempotency(t *testing.T) {
+	store, _ := openStore(t)
+	job := newJob("del", LaneFast, OrderNormal)
+	if _, _, err := store.EnqueueGuarded(job, "key-del", "fp", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Delete("del"); !errors.Is(err, ErrJobNotTerminal) {
+		t.Errorf("删除排队任务 err = %v，期望 ErrJobNotTerminal", err)
+	}
+	if _, err := store.Claim(LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish("del", StateSucceeded, Output{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Delete("del"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.Get("del"); got != nil {
+		t.Error("任务应已删除")
+	}
+	if jobs, _ := store.ListByState(StateSucceeded, 0); len(jobs) != 0 {
+		t.Errorf("状态索引未清理: %+v", jobs)
+	}
+	if _, _, err := store.EnqueueGuarded(newJob("new", LaneFast, OrderNormal), "key-del", "fp", 0); err != nil {
+		t.Errorf("删除后同键应可重新受理: %v", err)
+	}
+	if _, err := store.Delete("missing"); !errors.Is(err, ErrJobNotFound) {
+		t.Errorf("删除不存在任务 err = %v，期望 ErrJobNotFound", err)
+	}
+}
+
+func TestPruneRemovesIdempotencyMappings(t *testing.T) {
+	store, _ := openStore(t)
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	job := newJob("old", LaneFast, OrderNormal)
+	job.CreatedAt = old
+	if _, _, err := store.EnqueueGuarded(job, "old-key", "fp", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(LaneFast); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish("old", StateSucceeded, Output{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Prune(time.Now().UTC().Add(-24 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, replayed, err := store.EnqueueGuarded(newJob("new", LaneFast, OrderNormal), "old-key", "fp", 0); err != nil || replayed {
+		t.Errorf("清理后同键应重新受理，replayed=%v err=%v", replayed, err)
 	}
 }

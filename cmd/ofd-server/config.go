@@ -114,6 +114,19 @@ type Config struct {
 	MaxUploadBytes int64 `json:"max_upload_bytes"`
 	// MaxStreamBytes 限制单次 stream 输出的内存占用，0 时取 64 MiB。
 	MaxStreamBytes int64 `json:"max_stream_bytes"`
+	// MaxQueueDepth 限制排队中的异步任务数，0 表示不限制。
+	//
+	// 超过上限时新提交返回 429，让调用方稍后重试；已受理任务的重试不受
+	// 此限制，否则积压时会把本该重试的任务直接判死。
+	MaxQueueDepth int `json:"max_queue_depth"`
+	// HTTPReadTimeout 是读取完整请求体的超时，0 时取默认 10 分钟。
+	//
+	// 不能沿用 net/http 的短默认值：Docker 配置允许 256 MiB 上传，
+	// 30 秒意味着至少要 68 Mbps 才能传完。
+	HTTPReadTimeout Duration `json:"http_read_timeout"`
+	// HTTPStreamWriteTimeout 是同步转换、产物下载与 ZIP 归档开始写响应后的超时。
+	// 0 时取默认 10 分钟。
+	HTTPStreamWriteTimeout Duration `json:"http_stream_write_timeout"`
 
 	// FastWorkers 是快速通道的并发数。
 	FastWorkers int `json:"fast_workers"`
@@ -414,6 +427,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.MaxStreamBytes <= 0 {
 		c.MaxStreamBytes = 64 << 20
+	}
+	if c.HTTPReadTimeout <= 0 {
+		c.HTTPReadTimeout = Duration(10 * time.Minute)
+	}
+	if c.HTTPStreamWriteTimeout <= 0 {
+		c.HTTPStreamWriteTimeout = Duration(10 * time.Minute)
 	}
 	if c.FastWorkers <= 0 {
 		c.FastWorkers = 4

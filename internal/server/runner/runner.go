@@ -25,6 +25,7 @@ import (
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
 	"github.com/zc310/ofd/internal/server/notify"
+	"github.com/zc310/ofd/internal/server/observe"
 	"github.com/zc310/ofd/internal/server/transfer"
 )
 
@@ -62,6 +63,8 @@ type Config struct {
 	Retention time.Duration
 	// NotifyBatch 是一次最多取多少条到期通知，0 时用 32。
 	NotifyBatch int
+	// Metrics 收集转换耗时与通知投递结果，可为 nil。
+	Metrics *observe.Registry
 }
 
 // withDefaults 补齐零值。
@@ -93,6 +96,7 @@ type Runner struct {
 	deliverer *notify.Deliverer
 	cfg       Config
 	log       *slog.Logger
+	metrics   *observe.Registry
 
 	// sem 是每条通道的令牌。heavy 单独一组，互不挤占。
 	fastSem  chan struct{}
@@ -115,6 +119,7 @@ func New(store *jobstore.Store, convert Converter, deliverer *notify.Deliverer, 
 		deliverer: deliverer,
 		cfg:       cfg,
 		log:       log,
+		metrics:   cfg.Metrics,
 		fastSem:   make(chan struct{}, cfg.FastWorkers),
 		heavySem:  make(chan struct{}, cfg.HeavyWorkers),
 	}
@@ -218,7 +223,9 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 		r.finish(job, jobstore.StateFailed, jobstore.Output{}, err.Error())
 		return
 	}
+	started := time.Now()
 	result, err := r.convert.Run(runCtx, spec)
+	took := time.Since(started)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil && !errors.Is(err, transfer.ErrRollback) {
 			// 服务正在关闭，不算这个任务失败。
@@ -230,6 +237,7 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 			return
 		}
 		log.Warn("转换失败", "attempt", job.Attempt, "err", err)
+		r.observeConversion(job, "", jobstore.StateFailed, took)
 		r.retryOrFail(job, err)
 		return
 	}
@@ -240,6 +248,7 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 		return
 	}
 	log.Info("转换完成", "format", result.Format, "took_ms", result.TookMs)
+	r.observeConversion(job, result.InputFormat, jobstore.StateSucceeded, took)
 	// 用量先记账再落终态：记账失败只记错误日志，不能因此把一个已经
 	// 成功、产物已经在磁盘上的任务判成 failed。
 	if err := r.store.RecordUsage(job.ID, result.InputFormat, result.InputBytes); err != nil {
@@ -253,6 +262,20 @@ func (r *Runner) execute(ctx context.Context, job *jobstore.Job) {
 		// 的话调用方得自己猜名字或去列目录。
 		Files: fileNames(result),
 	}, "")
+}
+
+// observeConversion 记录一次转换尝试的耗时。失败任务的 from 可能尚未判定，
+// 统一归到 unknown，避免把调用方声明值当成实际格式。
+func (r *Runner) observeConversion(job *jobstore.Job, from string, state jobstore.State, took time.Duration) {
+	if r.metrics == nil {
+		return
+	}
+	if from == "" {
+		from = "unknown"
+	}
+	r.metrics.ObserveConversion(observe.Conversion{
+		Lane: string(job.Lane), From: from, To: job.To, State: string(state),
+	}, took)
 }
 
 // retryOrFail 判断该重试还是直接判死。
@@ -407,21 +430,33 @@ func (r *Runner) deliverOne(ctx context.Context, item jobstore.Delivery) {
 	})
 	switch {
 	case err == nil:
+		r.observeNotification(item, observe.ResultSuccess)
 		if finishErr := r.store.CompleteDelivery(item.ID); finishErr != nil {
 			r.log.Error("标记通知完成失败", "delivery", item.ID, "err", finishErr)
 		}
 	case notify.Retryable(err):
+		r.observeNotification(item, observe.ResultFailure)
 		// 指数退避， Attempts 越大等得越久。
 		delay := r.backoff(item.Attempts)
 		if failErr := r.store.FailDelivery(item.ID, err.Error(), delay); failErr != nil {
 			r.log.Error("标记通知失败状态出错", "delivery", item.ID, "err", failErr)
 		}
 	default:
+		r.observeNotification(item, observe.ResultFailure)
 		// 不可重试：立刻判死，别再占用重试配额。
 		if failErr := r.store.FailDelivery(item.ID, err.Error(), 0); failErr != nil {
 			r.log.Error("放弃通知出错", "delivery", item.ID, "err", failErr)
 		}
 	}
+}
+
+func (r *Runner) observeNotification(item jobstore.Delivery, result string) {
+	if r.metrics == nil {
+		return
+	}
+	r.metrics.ObserveNotification(observe.Notification{
+		Target: item.Target, Event: item.Event, Result: result,
+	})
 }
 
 // pruneLoop 定期清理终态任务。

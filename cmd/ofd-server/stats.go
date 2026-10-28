@@ -24,14 +24,9 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "读取统计失败")
 		return
 	}
-	depth, err := s.store.QueueDepth()
-	if err != nil {
-		// 队列深度是附加信息，读不到不该让转换量统计整个失败——
-		// 调用方要的是那些累计数字，它们已经在手上了。
-		s.log.Error("读取队列深度失败", "err", err)
-		depth = nil
-	}
-	writeJSON(w, http.StatusOK, buildStatsView(snap, depth, s.cfg, s.startedAt))
+	// 深度与累计计数出自 Snapshot 的同一个读事务，避免"计数已加、
+	// 深度还没减"的撕裂快照。
+	writeJSON(w, http.StatusOK, buildStatsView(snap, snap.Queue, s.cfg, s.startedAt))
 }
 
 // statsView 是 /v1/stats 的响应体。
@@ -102,7 +97,9 @@ func buildStatsView(snap jobstore.StatsSnapshot, depth map[jobstore.State]int, c
 	}
 	// 运行时长在每次抓取时现算，不缓存：缓存下来的数字在响应里就是错的。
 	if !startedAt.IsZero() {
-		view.StartedAt = startedAt.Format("2006-01-02T15:04:05Z")
+		// 显式转 UTC：格式串里的 Z 表示 UTC，直接 Format 本地时间会
+		// 标着 Z 却输出本地墙钟时间。
+		view.StartedAt = startedAt.UTC().Format("2006-01-02T15:04:05Z")
 		if uptime := time.Since(startedAt).Seconds(); uptime >= 0 {
 			view.UptimeSeconds = math.Round(uptime*100) / 100
 		}

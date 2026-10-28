@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
+	"github.com/zc310/ofd/internal/server/observe"
 )
 
 // inlineWaitLimit 是等待同步转换槽位的上限。
@@ -83,21 +85,32 @@ func (s *Server) handleConvertInline(w http.ResponseWriter, r *http.Request, req
 	}
 	defer cancel()
 
+	started := time.Now()
 	result, runErr := s.inlineRun(runCtx, convertersvc.Spec{
 		Input:  request.Input,
 		Output: request.Output,
 	})
+	took := time.Since(started)
 	if runErr != nil {
-		s.finishInline(r.Context(), job, runErr)
+		state := s.finishInline(r.Context(), job, runErr)
+		s.observeInlineConversion(job, "", state, took)
 		if r.Context().Err() != nil {
 			// 客户端已经不在了，再写响应没有意义。
 			s.log.Info("同步转换因客户端断开而中止", "job", job.ID, "err", runErr)
 			return
 		}
-		writeError(w, statusForRequestError(runErr), codeForRequestError(runErr), runErr.Error())
+		status, code := statusAndCodeForConvertError(runErr)
+		message := runErr.Error()
+		if code == "internal_error" {
+			// 内部错误的具体信息可能含路径或外部进程输出，只进日志。
+			s.log.Error("同步转换失败", "job", job.ID, "err", runErr)
+			message = "转换失败"
+		}
+		writeError(w, status, code, message)
 		return
 	}
 
+	s.observeInlineConversion(job, result.InputFormat, jobstore.StateSucceeded, took)
 	if err := s.store.RecordUsage(job.ID, result.InputFormat, result.InputBytes); err != nil {
 		s.log.Error("记录输入用量失败", "job", job.ID, "err", err)
 	}
@@ -120,9 +133,11 @@ func (s *Server) handleConvertInline(w http.ResponseWriter, r *http.Request, req
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
-	if name := headerSafe(result.FileName); name != "" {
-		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	if disposition := attachmentDisposition(result.FileName); disposition != "" {
+		w.Header().Set("Content-Disposition", disposition)
 	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	s.extendWriteDeadline(w)
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(result.Bytes); err != nil {
 		s.log.Debug("写同步转换响应失败", "job", job.ID, "err", err)
@@ -133,7 +148,7 @@ func (s *Server) handleConvertInline(w http.ResponseWriter, r *http.Request, req
 //
 // 客户端主动断开导致的取消记为 cancelled 而不是 failed：那不是转换失败，
 // 混在一起会让失败率虚高——尤其在有人写脚本轮询大文件转换时。
-func (s *Server) finishInline(ctx context.Context, job *jobstore.Job, cause error) {
+func (s *Server) finishInline(ctx context.Context, job *jobstore.Job, cause error) jobstore.State {
 	state := jobstore.StateFailed
 	if ctx.Err() != nil || errors.Is(cause, context.Canceled) {
 		state = jobstore.StateCancelled
@@ -141,6 +156,19 @@ func (s *Server) finishInline(ctx context.Context, job *jobstore.Job, cause erro
 	if err := s.store.Finish(job.ID, state, jobstore.Output{}, cause.Error()); err != nil {
 		s.log.Error("写终态失败", "job", job.ID, "err", err)
 	}
+	return state
+}
+
+func (s *Server) observeInlineConversion(job *jobstore.Job, from string, state jobstore.State, took time.Duration) {
+	if s.metrics == nil {
+		return
+	}
+	if from == "" {
+		from = "unknown"
+	}
+	s.metrics.ObserveConversion(observe.Conversion{
+		Lane: string(job.Lane), From: from, To: job.To, State: string(state),
+	}, took)
 }
 
 // inlineSemaphore 返回某通道的同步转换信号量。
@@ -171,4 +199,20 @@ func (s *Server) inlineSemaphore(lane jobstore.Lane) chan struct{} {
 // （HTTP 响应拆分）。所以即便来源可控也过滤掉，成本是三行。
 func headerSafe(name string) string {
 	return strings.NewReplacer("\r", "", "\n", "", `"`, "").Replace(name)
+}
+
+// attachmentDisposition 生成符合 RFC 6266 的 Content-Disposition。
+//
+// 中文文件名不能直接塞进 filename="..."：非 ASCII 字节在部分客户端会乱码，
+// 也不是合法的 HTTP 头值。mime.FormatMediaType 会对非 ASCII 文件名使用
+// filename*=UTF-8”... 的编码形式。
+func attachmentDisposition(name string) string {
+	clean := headerSafe(name)
+	if clean == "" {
+		return ""
+	}
+	if value := mime.FormatMediaType("attachment", map[string]string{"filename": clean}); value != "" {
+		return value
+	}
+	return "attachment"
 }

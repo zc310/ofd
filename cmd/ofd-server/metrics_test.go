@@ -179,7 +179,7 @@ func TestRenderMetricsEscapesLabels(t *testing.T) {
 		InputBytes:  map[string]uint64{"ofd": 1},
 		OutputBytes: map[jobstore.StatsPair]uint64{{From: `x"y`, To: "pdf"}: 1},
 	}
-	out := string(renderMetrics(snap, testQueueDepth(), 4, 2, 4))
+	out := string(renderMetrics(snap, testQueueDepth(), 4, 2, 4, nil, "test"))
 	// 只检查带 label 的 ofd_ 样本行：运行时指标（go_goroutines 等）本来
 	// 就没有 label，不该套用同一套结构断言。
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -225,9 +225,9 @@ func TestRenderMetricsStableOrder(t *testing.T) {
 	}
 	// 只比较 ofd_ 计数部分：运行时指标（goroutine 数、堆水位）本来就该
 	// 每次都变，把它们算进"稳定"是要求水位不许动。
-	first := ofdSampleLines(renderMetrics(snap, testQueueDepth(), 4, 2, 4))
+	first := ofdSampleLines(renderMetrics(snap, testQueueDepth(), 4, 2, 4, nil, "test"))
 	for i := 0; i < 20; i++ {
-		if got := ofdSampleLines(renderMetrics(snap, testQueueDepth(), 4, 2, 4)); got != first {
+		if got := ofdSampleLines(renderMetrics(snap, testQueueDepth(), 4, 2, 4, nil, "test")); got != first {
 			t.Fatalf("第 %d 次渲染的计数部分不同:\n首次:\n%s\n本次:\n%s", i, first, got)
 		}
 	}
@@ -266,6 +266,8 @@ func TestRuntimeMetricsExposed(t *testing.T) {
 		"go_goroutines", "go_memstats_heap_alloc_bytes", "go_memstats_heap_inuse_bytes",
 		"go_memstats_sys_bytes", "go_memstats_stack_inuse_bytes",
 		"go_memstats_alloc_bytes_total", "go_memstats_gc_count",
+		"go_memstats_mallocs_total", "go_memstats_gc_sys_bytes",
+		"go_memstats_last_gc_time_seconds", "go_gc_duration_seconds",
 		"go_gc_pause_seconds", "go_info",
 	} {
 		if !strings.Contains(got.body, "\n"+name) && !strings.HasPrefix(got.body, name) {
@@ -291,6 +293,7 @@ func TestProcessMetricsExposed(t *testing.T) {
 	for _, name := range []string{
 		"process_resident_memory_bytes", "process_virtual_memory_bytes",
 		"process_open_fds", "process_max_fds", "process_start_time_seconds",
+		"process_cpu_seconds_total",
 	} {
 		if !strings.Contains(got.body, name+" ") {
 			t.Errorf("缺少指标 %s:\n%s", name, got.body)
@@ -443,6 +446,35 @@ func TestQueueDepthRendered(t *testing.T) {
 	}
 }
 
+// TestQueueDepthByLaneRendered 深度要能按通道拆开，才能判断哪条 lane 堵了。
+func TestQueueDepthByLaneRendered(t *testing.T) {
+	s, store, _ := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+	for _, job := range []*jobstore.Job{
+		{ID: "lane-fast", Lane: jobstore.LaneFast, To: "pdf"},
+		{ID: "lane-heavy", Lane: jobstore.LaneHeavy, To: "pdf"},
+	} {
+		if err := store.Enqueue(job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Claim(jobstore.LaneFast); err != nil {
+		t.Fatal(err)
+	}
+
+	got := do(t, client, fasthttp.MethodGet, "/metrics", "")
+	for _, want := range []string{
+		`ofd_queue_depth_by_lane{lane="fast",state="queued"} 0`,
+		`ofd_queue_depth_by_lane{lane="fast",state="running"} 1`,
+		`ofd_queue_depth_by_lane{lane="heavy",state="queued"} 1`,
+		`ofd_queue_depth_by_lane{lane="heavy",state="running"} 0`,
+	} {
+		if !strings.Contains(got.body, want) {
+			t.Errorf("缺少 %s:\n%s", want, got.body)
+		}
+	}
+}
+
 // TestWorkersRendered worker 数要输出，队列深度才能换算成利用率。
 func TestWorkersRendered(t *testing.T) {
 	s, _, _ := newTestServer(t)
@@ -463,9 +495,12 @@ func TestWorkersRendered(t *testing.T) {
 // TestQueueDepthOmittedWhenUnavailable 读不到深度时整组 gauge 不输出，
 // 而不是输出 0——后者会被告警读成"队列是空的"。
 func TestQueueDepthOmittedWhenUnavailable(t *testing.T) {
-	out := string(renderMetrics(jobstore.StatsSnapshot{}, nil, 4, 2, 4))
+	out := string(renderMetrics(jobstore.StatsSnapshot{}, nil, 4, 2, 4, nil, "test"))
 	if strings.Contains(out, "ofd_queue_depth{") {
 		t.Errorf("depth 为 nil 时不应输出样本行:\n%s", out)
+	}
+	if strings.Contains(out, "ofd_queue_depth_by_lane{") {
+		t.Errorf("通道深度不可用时不应输出样本行:\n%s", out)
 	}
 	// 但其它指标照常输出。
 	if !strings.Contains(out, "# TYPE ofd_queue_depth gauge") {

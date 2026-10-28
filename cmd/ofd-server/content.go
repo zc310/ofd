@@ -88,14 +88,14 @@ func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
 
 	requested := r.URL.Query().Get("name")
 	if requested != "" {
-		s.serveOneFile(w, dir, job, requested)
+		s.serveOneFile(w, r, dir, job, requested)
 		return
 	}
 	if len(job.Output.Files) == 1 {
-		s.serveOneFile(w, dir, job, job.Output.Files[0])
+		s.serveOneFile(w, r, dir, job, job.Output.Files[0])
 		return
 	}
-	s.serveArchive(w, dir, job)
+	s.serveArchive(w, r, dir, job)
 }
 
 // checkServableOutput 判断该任务的产物能否由本端点提供。
@@ -196,7 +196,7 @@ func rejectSymlinkPath(root *os.Root, path string) error {
 // output.dir 允许指向共享目录（显式指定时不追加任务 ID），同一个目录里可能
 // 躺着别的任务的产物。按记录清单做精确匹配既挡了 ../ 穿越，也挡了跨任务
 // 读取——清单是转换结束时由服务端写下的，调用方改不动。
-func (s *Server) serveOneFile(w http.ResponseWriter, dir *os.Root, job *jobstore.Job, name string) {
+func (s *Server) serveOneFile(w http.ResponseWriter, r *http.Request, dir *os.Root, job *jobstore.Job, name string) {
 	defer dir.Close()
 	target, ok := recordedFile(job.Output.Files, name)
 	if !ok {
@@ -222,22 +222,23 @@ func (s *Server) serveOneFile(w http.ResponseWriter, dir *os.Root, job *jobstore
 		return
 	}
 	w.Header().Set("Content-Type", contentTypeFor(target))
-	w.Header().Set("Content-Disposition",
-		`attachment; filename="`+headerSafe(target)+`"`)
+	if disposition := attachmentDisposition(target); disposition != "" {
+		w.Header().Set("Content-Disposition", disposition)
+	}
 	// 产物不该被中间层缓存住：任务同名重跑后内容会变，而 URL 不变。
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
-	w.WriteHeader(http.StatusOK)
-	if _, err := io.CopyN(w, file, info.Size()); err != nil {
-		s.log.Debug("传输产物失败", "job", job.ID, "file", target, "err", err)
-	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	s.extendWriteDeadline(w)
+	// ServeContent 负责 Content-Length、Last-Modified、Range 与 HEAD。
+	// 用 io.CopyN 手写这些会让断点续传和 HEAD 都无法支持。
+	http.ServeContent(w, r, target, info.ModTime(), file)
 }
 
 // serveArchive 把多个产物打成 zip 流式返回。
 //
 // 用流式而不是先读进内存：逐页 PNG 的产物动辄几百 MB，buffer 起来会随并发
 // 线性放大，而这里没有任何理由把它整份驻留。
-func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore.Job) {
+func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, dir *os.Root, job *jobstore.Job) {
 	files := job.Output.Files
 	if len(files) == 0 {
 		_ = dir.Close()
@@ -278,12 +279,17 @@ func (s *Server) serveArchive(w http.ResponseWriter, dir *os.Root, job *jobstore
 	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-	w.Header().Set("Content-Disposition",
-		`attachment; filename="`+headerSafe(job.ID)+`.zip"`)
+	if disposition := attachmentDisposition(job.ID + ".zip"); disposition != "" {
+		w.Header().Set("Content-Disposition", disposition)
+	}
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	s.extendWriteDeadline(w)
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.CopyN(w, archive, size); err != nil {
-		s.log.Debug("传输产物归档失败", "job", job.ID, "err", err)
+	if r.Method != http.MethodHead {
+		if _, err := io.CopyN(w, archive, size); err != nil {
+			s.log.Debug("传输产物归档失败", "job", job.ID, "err", err)
+		}
 	}
 	name := archive.Name()
 	_ = archive.Close()

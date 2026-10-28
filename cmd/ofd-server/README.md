@@ -34,6 +34,7 @@ EOF
 
 ./ofd-server --check-config -c ofd-server.json   # 先校验配置
 ./ofd-server -c ofd-server.json
+./ofd-server --version                            # 打印版本号
 ```
 
 不指定 `listen` 时默认监听 `:9705`。`db_path`、`output_dir` 与令牌必填。
@@ -92,6 +93,49 @@ X-OFD-Api-Key: <api_key>            # 浏览器页面
 
 令牌比较用 `crypto/subtle.ConstantTimeCompare`，逐字节提前返回的写法会把
 密钥前缀的信息泄进响应时间。
+
+### 请求 ID 与访问日志
+
+每个响应都带 `X-Request-Id`。调用方传入合法值（1–128 个可见 ASCII 字符）时
+原样复用，否则服务端生成随机 ID。访问日志记录方法、路径、状态码、耗时、响应
+字节数与同一个 `request_id`，排查一次请求时可直接用它在日志里定位。
+
+### `GET /v1/jobs`
+
+分页列出任务，需要令牌。按任务 ID 倒序，即大致按提交时间从新到旧。
+
+| 参数     | 说明                                                        |
+|----------|-------------------------------------------------------------|
+| `state`  | 可选：`queued` / `running` / `succeeded` / `failed` / `cancelled` |
+| `lane`   | 可选：`fast` / `heavy`                                      |
+| `limit`  | 可选，默认 50，最大 200                                     |
+| `cursor` | 上一页响应里的 `next_cursor`，不透明字符串                  |
+
+```jsonc
+{
+  "jobs": [ /* 与 GET /v1/jobs/{id} 相同结构 */ ],
+  "count": 50,
+  "next_cursor": "…"  // 没有更多时省略
+}
+```
+
+列表直接扫描任务 bucket 并在内存里过滤，没有维护额外的时间索引。任务按
+`retention` 清理，默认保留 7 天，因此扫描量有界；需要长期明细请用通知或外部
+归档，不应把列表接口当全量导出。
+
+### `GET /v1/formats`
+
+返回服务实际注册的输入与输出格式，需要令牌。格式来自转换库的注册表，不是
+README 里的静态表。
+
+```jsonc
+{
+  "input":  [{"name":"ofd","extensions":[".ofd"],"mime":"application/ofd","kind":"document"}],
+  "output": [{"name":"pdf","extensions":[".pdf"],"mime":"application/pdf","kind":"document","stream":true}]
+}
+```
+
+`stream` 只对输出格式有意义：逐页图像格式必须落盘，不能用同步 `stream`。
 
 ### `GET /v1/stats`
 
@@ -157,13 +201,18 @@ Prometheus 文本格式（`text/plain; version=0.0.4`），需要令牌。
 | `ofd_input_bytes_total`  | counter | `from`                | 输入字节总量                                    |
 | `ofd_output_bytes_total` | counter | `from`, `to`          | 输出字节总量                                    |
 | `ofd_queue_depth`        | gauge   | `state`               | 未终结任务数（`queued` / `running`）            |
+| `ofd_queue_depth_by_lane`| gauge   | `lane`, `state`       | 按通道拆开的未终结任务数                       |
 | `ofd_workers`            | gauge   | `lane`                | 各通道 worker 数（`fast` / `heavy` / `notify`） |
+| `ofd_conversion_duration_seconds` | histogram | `lane`, `from`, `to`, `state` | 每次转换尝试的耗时（秒）             |
+| `ofd_notifications_total`| counter | `target`, `event`, `result` | 通知投递尝试次数（`success` / `failure`） |
+| `ofd_server_info`        | gauge   | `version`, `go_version` | 服务版本与运行时版本，值恒为 1               |
 
 外加 Go 运行时与进程指标：`go_goroutines`、`go_threads`、
-`go_memstats_*`、`go_gc_pause_seconds`、`go_info`、
-`process_resident_memory_bytes`、`process_open_fds`、`process_max_fds`、
-`process_start_time_seconds`。命名与 `client_golang` 的 collector 一致，
-现成的 Grafana Go 面板可以直接用。
+`go_memstats_*`、`go_gc_duration_seconds`（summary）、`go_info`、
+`process_cpu_seconds_total`、`process_resident_memory_bytes`、
+`process_open_fds`、`process_max_fds`、`process_start_time_seconds`。
+关键指标名与 `client_golang` 的 collector 对齐，现成的 Grafana Go 面板可以
+直接查询。
 
 **计数独立于任务记录存在。** 终态任务会按 `retention` 清理，如果计数从
 任务表现算，清理后数值会往下掉——Prometheus 的 counter 一旦出现下降，
@@ -174,26 +223,40 @@ bbolt 的独立 bucket，在任务进入终态的同一个事务里累加，不�
 是 `queued` 但躺在 delayed 队列里，还没进通道队列。只数通道队列的话，一次大规模
 失败重试期间深度会显示为 0——而那正是最需要告警的时候。
 
-计数用状态索引的前缀扫描实现，成本是 O(该状态任务数)而非 O(全部任务)：索引键的
-首字节是状态码，同状态的任务在 B+ 树里连续。终态任务积到百万条也不影响耗时。
-刻意不维护"计数器自增自减"——那需要每个状态迁移点都记得同步，漏一处就是永久性
-错误数字且不报错。
+队列深度不扫全部任务：`queued` 直接数两条通道队列和 delayed 队列的键，
+`running` 才走状态索引前缀扫描，而其数量受 worker 数约束。delayed 任务需要读
+`lane` 字段，用窄结构体解码，不会把任务记录里的上传内容一并解出来。刻意不维护
+"计数器自增自减"——那需要每个状态迁移点都记得同步，漏一处就是永久性错误数字
+且不报错。
 
-`ofd_workers` 是为了让深度可判读：`ofd_queue_depth{state="running"}` 除以
-`ofd_workers{lane=...}` 才是利用率。深度 50 本身说明不了问题——并发配 4 还是
-50 完全不同。
+`ofd_queue_depth_by_lane` 按通道拆开，因为快路径与重路径的 worker 数、任务成本
+都不同：只看总数会把 LibreOffice 堵住和文本转换排队混成同一个告警。
+
+`ofd_workers` 是为了让深度可判读：`ofd_queue_depth_by_lane{state="running",lane=...}`
+除以对应 lane 的 `ofd_workers` 才是利用率。深度 50 本身说明不了问题——并发配 4
+还是 50 完全不同。
+
+`ofd_conversion_duration_seconds` 记录每次转换尝试，`state` 是这次尝试的结果；
+失败后重试会产生 `failed` 样本，最终成功的任务另有一条 `succeeded` 样本。`from`
+用实际输入格式，失败尝试尚未判定时归为 `unknown`。
+
+`ofd_notifications_total` 同样按尝试计数：一次可重试失败会先记 `failure`，重试
+成功后再记 `success`。它统计的是投递动作，不是“最终送达的任务数”。
+
+这三组内存指标在进程重启后归零；`ofd_conversions_total` 等来自 jobstore 的累计
+计数跨重启保留。
 
 队列深度与累计计数是两个生命周期不同的量：计数跨重启累计，深度每次抓取现算。
-读不到深度时整组 gauge 不输出而不是输出 0——输出缺失与值为 0 在 Prometheus 里
-是两件事，前者显示 `no data`，后者会被告警读成"队列是空的"。
+两者在同一个读事务里取得，抓取结果不会出现"计数已加、深度还没减"的撕裂状态；
+读事务失败时整个 `/metrics` 返回 500，而不是输出可能误导告警的 0。
 
 `from` 标签用服务端判定的实际格式，不是调用方声明的值。失败任务没有实际
 格式（转换没跑到判定那步），统一归到 `unknown`——不用声明值补，否则
 "没判出来"和"判成这个格式"会混成一类。
 
-标签只有 `from`、`to`、`state` 三个有限集合值。基数一旦随任务数或文件名
-增长就是几百万条 series，这是把 Prometheus 和本服务一起拖垮的标准做法。
-单任务明细在 `GET /v1/jobs/{id}`。
+所有指标标签都来自有限集合（格式、通道、状态、目标名、事件、结果）。基数一旦
+随任务数或文件名增长就是几百万条 series，这是把 Prometheus 和本服务一起拖垮
+的标准做法。单任务明细在 `GET /v1/jobs/{id}`。
 
 进程级指标从 `/proc` 读，非 Linux 或读不到时**不输出该指标**而不是让整个
 端点失败。输出缺失与值为 0 在 Prometheus 里是两件事，前者显示成 `no data`，
@@ -271,6 +334,54 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 `stream` 仅适用于可以生成单个文件的输出格式，逐页图像格式应使用 `dir` 或远程输出。
 详细规则见下文 [`stream` 是同步的，`dir` 才是异步的](#stream-是同步的dir-才是异步的)。
 
+#### 提交方式
+
+除 JSON 外，`POST /v1/convert` 还接受两种更适合大文件的请求体：
+
+| `Content-Type`         | 说明                                                                 |
+|------------------------|----------------------------------------------------------------------|
+| `application/json`     | 默认方式，`input.bytes` 为 base64。                                  |
+| `multipart/form-data`  | `request` 字段放上述 JSON；文件放在 `file` 或 `input` part。         |
+| `application/octet-stream` | 请求体就是文件，输出参数放 query。                               |
+
+multipart 示例：
+
+```bash
+curl -sS -H "$AUTH" \
+     -F 'request={"output":{"kind":"dir","format":"pdf"}};type=application/json' \
+     -F 'file=@sample.ofd' \
+     http://127.0.0.1:9705/v1/convert
+```
+
+裸上传用 query 指定最少参数；未写 `kind` 时与 JSON 一样默认 `stream`，异步请显式
+加 `kind=dir`：
+
+```bash
+curl -sS -H "$AUTH" -H 'Content-Type: application/octet-stream' \
+     --data-binary @sample.ofd \
+     'http://127.0.0.1:9705/v1/convert?to=pdf&kind=dir&file_name=result'
+```
+
+支持的 query 参数：`to`（必填，输出格式）、`kind`、`file_name`、`dir`、
+`input_format`、`input_file_name`、`remote_target`、`remote_path`、
+`notify_target`、`notify_events`（逗号分隔）、`high_priority`。复杂通知、
+远端目标或显式指定输入格式时，建议改用 JSON 或 multipart 的 `request` 字段。
+
+不带 `Content-Type` 仍按 JSON 解析，保持旧调用方兼容。
+
+#### `Idempotency-Key`
+
+异步提交可带 `Idempotency-Key` 请求头（1–128 个可见 ASCII 字符）。同一个键
+配同一个规范化请求时，服务端返回原任务，不重复入队，并在响应加
+`Idempotent-Replayed: true`。同一个键配不同请求返回 `409 idempotency_conflict`。
+
+幂等键只覆盖异步提交；`output.kind=stream` 带这个头会返回 `400`，因为流式响应
+无法回放。任务被 `retention` 清理或 `DELETE /v1/jobs/{id}` 删除后，旧键随之失效，
+可以重新使用。
+
+`max_queue_depth` 大于 0 时，排队任务达到上限会返回 `429 queue_full` 并带
+`Retry-After: 1`。已受理任务的重试不受入口上限影响。
+
 `input.bytes` 用 base64（JSON 里的 `[]byte` 标准编码）。注意 base64 会让
 请求体膨胀约 33%，`max_upload_bytes` 要按原始文档大小留够余量。
 
@@ -317,6 +428,7 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 |---------------------|------------------------------------------------|
 | `/content`          | 恰好一个产物时返回该文件；多个产物时打包成 zip |
 | `/content?name=xxx` | 返回指定的某个产物                             |
+| `HEAD /content`     | 与 GET 相同的状态和响应头，不返回响应体        |
 
 响应头带 `Content-Type`（按扩展名查转换库的格式注册表）、`Content-Disposition`
 与 `Cache-Control: no-store`。产物不该被中间层缓存：任务同名重跑后内容会变，
@@ -347,17 +459,30 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `404` | 任务不存在；`name` 不在产物清单内；文件已被外部清理         |
 | `409` | 任务未到终态；终态不是 `succeeded`；产物不是本地 `dir` 输出 |
 
-**不支持 Range 请求**，整个文件一次性返回。浏览器内置 PDF 阅读器对小文件会
-整份下载，所以够用；要支持断点续传得另做。
+单文件产物支持 `Range`、`If-Range`、`If-Modified-Since` 等标准请求头，
+可用于断点续传；多文件 ZIP 归档在响应前生成，不支持 Range。
 
 ### `POST /v1/jobs/{id}/cancel`
 
 取消**仍在排队**的任务，返回 `200`。已运行（正在转换）或已终结的任务返回
 `409`：正在跑的任务正占着外部进程，中途杀掉只会留下半截输出。
 
+### `DELETE /v1/jobs/{id}`
+
+删除一个**已终结**的任务记录，需要令牌，成功返回 `204`。排队中或运行中的任务
+返回 `409 job_not_finished`，避免删掉正在写产物的记录。
+
+本地 `dir` 产物按任务记录里的 `output.files` 清单逐个删除，不递归删除目录；
+显式共享的 `output.dir` 里其它任务的产物不会被误删。FTP/S3/WebDAV/SFTP 上的
+远端产物**不删除**：那属于外部存储的生命周期，服务端不应替对方做决定。
+
+删除后任务查询返回 `404`，对应幂等键也随记录一起清理。重复删除返回 `404`。
+`/v1/stats` 与 `/metrics` 的累计计数不随删除回退；它们本来就是历史累计量。
+
 ### `GET /healthz` / `GET /readyz`
 
-存活与就绪探针。`readyz` 返回 `503` 表示尚未就绪。
+存活与就绪探针。`readyz` 返回 `503` 表示尚未就绪；服务运行期间会检查任务库
+是否仍可读，数据库关闭或所在磁盘不可用时会回 `503`。
 
 ### 错误响应
 
@@ -369,10 +494,15 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `url_input_disabled`    | 403  | 未配置 `allow_input_url_hosts` |
 | `url_not_allowed`       | 403  | 主机/地址不在允许列表内        |
 | `unknown_notify_target` | 400  | 通知目标未注册                 |
-| `payload_too_large`     | 413  | 请求体超过 `max_upload_bytes`  |
+| `payload_too_large`     | 413  | 请求体或转换结果超过大小限制   |
+| `unsupported_format`    | 422  | 不支持声明的输入/输出格式      |
+| `timeout`               | 504  | 转换超时                       |
 | `job_not_found`         | 404  | 任务不存在                     |
+| `job_not_finished`      | 409  | 任务未到终态，不能删除         |
 | `not_cancellable`       | 409  | 任务运行中或已终结             |
-| `method_not_allowed`    | 405  | 方法不匹配                     |
+| `queue_full`            | 429  | 排队任务达到 `max_queue_depth` |
+| `idempotency_conflict`  | 409  | 同一个幂等键用于不同请求       |
+| `method_not_allowed`    | 405  | 方法不匹配，响应带 `Allow` 头  |
 | `internal_error`        | 500  | 服务内部错误                   |
 
 ## 配置
@@ -398,6 +528,9 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `log_to_stdout`                | 跟着 `log_dir` 走    | 是否同时写标准输出，见下                                 |
 | `max_upload_bytes`             | 64 MiB               | 请求体上限                                               |
 | `max_stream_bytes`             | 64 MiB               | stream 输出内存上限                                      |
+| `max_queue_depth`              | 0（不限）            | 排队任务上限，超过时新提交返回 `429`                     |
+| `http_read_timeout`            | `10m`                | 读取完整请求体的超时，覆盖大文件慢速上传                 |
+| `http_stream_write_timeout`    | `10m`                | 同步转换/产物下载开始写响应后的超时                       |
 | `fast_workers`                 | 4                    | 快速通道并发                                             |
 | `heavy_workers`                | 1                    | 重通道并发，见下                                         |
 | `notify_workers`               | 4                    | 通知投递并发                                             |
@@ -409,7 +542,7 @@ URL 输入仅接受白名单允许的 HTTP/HTTPS 主机，配置方式见[URL �
 | `url_timeout`                  | 30s                  | 拉取远程输入的超时                                       |
 | `notify_targets`               | `{}`                 | 预注册通知目标                                           |
 | `ftp_targets`                  | `{}`                 | 预注册 FTP/FTPS 目标                                     |
-| `s3_targets`                   | `{}`                 | 预注册 S3 兼容对象存储目标                               |
+| `s3_targets`                   | `{}`                 | 预注册 S3 兼容目标（MinIO/AWS/Ceph/RustFS/SeaweedFS 等） |
 | `webdav_targets`               | `{}`                 | 预注册 WebDAV 目标                                       |
 | `allow_insecure_ftp`           | `false`              | 允许明文 FTP                                             |
 | `allow_insecure_s3`            | `false`              | 允许 http 的对象存储                                     |
@@ -475,8 +608,9 @@ Courier New 的 metric 兼容替代，OFD 文档大量引用这些字体名。
 
 `2` 与 `1` 的界线是「命令行要不要改」：`2` 只由参数解析产生，进程还没读配置、
 没建目录、没开库；`1` 一律发生在启动阶段，错误信息里包含具体路径或配置项，
-`--check-config` 会把它们原样打印出来（注意 `--check-config` 仍会真的创建日志目录
-与轮转文件，不能拿 example-config.json 里的 `/var`、`/tmp` 绝对路径直接试）。
+`--check-config` 会把它们原样打印出来（注意 `--check-config` 仍会真的创建日志目录、
+输出目录与临时目录，并打开/关闭任务库，不能拿 example-config.json 里的 `/var`、
+`/tmp` 绝对路径直接试）。
 
 服务运行期间的转换失败**不影响进程退出码**：单个任务失败只体现在任务状态、错误
 信息和通知回调里，进程继续接受请求。退出码只描述这个进程自己的启动与退出。
@@ -722,9 +856,26 @@ FTP 与 SFTP 的连接由**连接池**持有，挂在注册目标上，`WithBase
 
 **S3 兼容对象存储**
 
+实现基于 `minio-go` 的标准 S3 API（SigV4），不绑定厂商私有接口。AWS S3 是商业
+服务；常见的开源自建实现：
+
+- [MinIO](https://github.com/minio/minio)：社区版已归档（只读），存量部署仍可接入。
+- [Ceph RGW](https://github.com/ceph/ceph)：Ceph 的 S3 对象网关。
+- [RustFS](https://github.com/rustfs/rustfs)：S3 兼容对象存储。
+- [SeaweedFS](https://github.com/seaweedfs/seaweedfs)：使用其 `weed s3` 网关。
+- [Garage](https://github.com/deuxfleurs-org/garage)：GitHub 镜像；
+  [主仓](https://git.deuxfleurs.fr/Deuxfleurs/garage) 在 GitLab。
+
+以上实现都按标准 S3 API 接入；本项目未在 CI 中对每个实现逐一做端到端验证，
+上线前请用实际端点跑一遍上传、同名对象探测和回滚删除。
+
+- `endpoint` 填 S3 API 地址，不是管理控制台。AWS S3 要填 `region`；自建实现通常
+  可留空，留空时 `minio-go` 会先查桶区域，所以网关需要支持 `GetBucketLocation`。
+- 用到的接口是 `HEAD Object`、`PUT Object`、`DELETE Object` 和按前缀写入；桶必须
+  已存在，本服务不负责建桶。未知长度的上传会使用流式 SigV4（`aws-chunked`），
+  网关必须支持该编码，否则上传会在写入阶段失败。
 - `secure: true` 走 https。S3 的签名本身防篡改，但流量与凭据仍是明文，http 需要
   显式打开 `allow_insecure_s3`。
-- 桶必须已存在，本服务不负责建桶。
 - 上传前先探测对象是否存在（不允许覆盖时）。认证或网络失败不会被当成"不存在"
   ——那会让覆盖检查变成假阳性，然后去覆盖别人的数据。
 

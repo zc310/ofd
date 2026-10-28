@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -381,8 +382,12 @@ func TestNotFoundAndMethodNotAllowed(t *testing.T) {
 		t.Errorf("GET /v1/convert 应返回 405，实际 %d", got.status)
 	}
 	got = do(t, client, fasthttp.MethodDelete, "/v1/jobs/abc", "")
+	if got.status != fasthttp.StatusNotFound {
+		t.Errorf("DELETE 不存在的任务应返回 404，实际 %d", got.status)
+	}
+	got = do(t, client, fasthttp.MethodPut, "/v1/jobs/abc", "")
 	if got.status != fasthttp.StatusMethodNotAllowed {
-		t.Errorf("DELETE 任务应返回 405，实际 %d", got.status)
+		t.Errorf("PUT 任务应返回 405，实际 %d", got.status)
 	}
 	// 尾斜杠不该被重定向：POST 重定向会丢请求体。
 	got = do(t, client, fasthttp.MethodPost, "/v1/convert/", submitBody(t, "pdf"))
@@ -409,6 +414,136 @@ func TestHealthAndReady(t *testing.T) {
 	s.SetReadyFunc(func() bool { return false })
 	if got := do(t, client, fasthttp.MethodGet, "/readyz", ""); got.status != fasthttp.StatusServiceUnavailable {
 		t.Errorf("未就绪时 readyz 应为 503，实际 %d", got.status)
+	}
+}
+
+// TestHandlerDoesNotReadBodyBeforeAuth 未认证请求不应把请求体读进内存。
+//
+// 这是拒绝服务防线：如果 Handler 在 requireAPIKey 之前 io.ReadAll，
+// 匿名调用方只要发大 body 就能消耗与上传大小成正比的内存。
+func TestHandlerDoesNotReadBodyBeforeAuth(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	body := &trackingReader{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/convert", body)
+	rec := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("状态 = %d，期望 401: %s", rec.Code, rec.Body.String())
+	}
+	if body.reads != 0 {
+		t.Errorf("未认证请求读取了 %d 次请求体，应在鉴权前保持零读取", body.reads)
+	}
+}
+
+type trackingReader struct {
+	reads int
+}
+
+func (r *trackingReader) Read([]byte) (int, error) {
+	r.reads++
+	return 0, errors.New("请求体不应被读取")
+}
+
+// TestMethodNotAllowedSetsAllow 405 必须带 Allow 头，否则调用方无法知道
+// 正确方法（RFC 7231 要求）。
+func TestMethodNotAllowedSetsAllow(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	client := newPipeServer(t, s.Handler())
+
+	got := do(t, client, fasthttp.MethodGet, "/v1/convert", "")
+	if got.status != fasthttp.StatusMethodNotAllowed {
+		t.Fatalf("状态 = %d，期望 405: %s", got.status, got.body)
+	}
+	if allow := got.header("Allow"); allow != http.MethodPost {
+		t.Errorf("Allow = %q，期望 POST", allow)
+	}
+	if got.decode(t)["code"] != "method_not_allowed" {
+		t.Errorf("错误码 = %v", got.decode(t)["code"])
+	}
+}
+
+// TestJobViewIncludesDocumentedFields 状态响应要暴露 README 承诺的字段。
+func TestJobViewIncludesDocumentedFields(t *testing.T) {
+	view := jobView(&jobstore.Job{
+		ID: "job-1", From: "ofd", FromActual: "ofd", To: "pdf", InputBytes: 42,
+	})
+	for key, want := range map[string]any{
+		"from": "ofd", "from_actual": "ofd", "to": "pdf",
+	} {
+		if view[key] != want {
+			t.Errorf("%s = %v，期望 %v", key, view[key], want)
+		}
+	}
+	if view["input_bytes"] != int64(42) {
+		t.Errorf("input_bytes = %v，期望 42", view["input_bytes"])
+	}
+	// 尚未判定实际格式时省略，而不是回空串。
+	empty := jobView(&jobstore.Job{ID: "job-2", To: "pdf"})
+	if _, ok := empty["from_actual"]; ok {
+		t.Error("FromActual 为空时不应输出 from_actual")
+	}
+	if empty["input_bytes"] != int64(0) {
+		t.Errorf("input_bytes = %v，期望稳定输出 0", empty["input_bytes"])
+	}
+}
+
+// TestConvertErrorMapping 转换阶段的错误不能一律变成 400。
+func TestConvertErrorMapping(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{fmt.Errorf("wrap: %w", convertersvc.ErrBadRequest), http.StatusBadRequest, "invalid_request"},
+		{fmt.Errorf("wrap: %w", convertersvc.ErrUnsupported), http.StatusUnprocessableEntity, "unsupported_format"},
+		{fmt.Errorf("wrap: %w", convertersvc.ErrTooLarge), http.StatusRequestEntityTooLarge, "payload_too_large"},
+		{context.DeadlineExceeded, http.StatusGatewayTimeout, "timeout"},
+		{errors.New("boom"), http.StatusInternalServerError, "internal_error"},
+	}
+	for _, tc := range cases {
+		status, code := statusAndCodeForConvertError(tc.err)
+		if status != tc.status || code != tc.code {
+			t.Errorf("%v -> (%d, %s)，期望 (%d, %s)", tc.err, status, code, tc.status, tc.code)
+		}
+	}
+}
+
+// deadlineRecorder 记录 net/http 设置的写 deadline。
+type deadlineRecorder struct {
+	httptest.ResponseRecorder
+	deadline time.Time
+}
+
+func (r *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	r.deadline = t
+	return nil
+}
+
+// TestResponsesSetWriteDeadline 确认不再依赖全局 WriteTimeout。
+//
+// 全局 WriteTimeout 从请求头读完就开始计时，慢上传或长转换会让它提前
+// 过期；响应必须在真正写之前按用途设置 deadline。
+func TestResponsesSetWriteDeadline(t *testing.T) {
+	w := &deadlineRecorder{}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "1"})
+	if w.deadline.IsZero() {
+		t.Fatal("JSON 响应没有设置写 deadline")
+	}
+	if d := time.Until(w.deadline); d <= 0 || d > responseWriteTimeout {
+		t.Errorf("JSON deadline 距现在 %v，期望 (0, %v]", d, responseWriteTimeout)
+	}
+
+	s, _, cfg := newTestServer(t)
+	cfg.HTTPStreamWriteTimeout = Duration(2 * time.Minute)
+	stream := &deadlineRecorder{}
+	s.extendWriteDeadline(stream)
+	if stream.deadline.IsZero() {
+		t.Fatal("流式响应没有设置写 deadline")
+	}
+	if d := time.Until(stream.deadline); d <= time.Minute || d > 2*time.Minute {
+		t.Errorf("流式 deadline 距现在 %v，期望约 2m", d)
 	}
 }
 
@@ -549,6 +684,8 @@ func TestConfigDefaults(t *testing.T) {
 		{"默认日志级别", cfg.LogLevel, "info"},
 		{"默认上传上限", cfg.MaxUploadBytes, int64(64 << 20)},
 		{"默认输出上限", cfg.MaxStreamBytes, int64(64 << 20)},
+		{"默认 HTTP 读超时", cfg.HTTPReadTimeout.Duration(), 10 * time.Minute},
+		{"默认流式写超时", cfg.HTTPStreamWriteTimeout.Duration(), 10 * time.Minute},
 		{"默认快通道并发", cfg.FastWorkers, 4},
 		// 重通道默认串行：每个 heavy 任务都会拉起外部进程。
 		{"默认重通道并发", cfg.HeavyWorkers, 1},
@@ -653,6 +790,8 @@ func TestConfigDurationParsing(t *testing.T) {
 		{"job_timeout", int64(2 * time.Minute), 2 * time.Minute},
 		{"url_timeout", "5m", 5 * time.Minute},
 		{"url_timeout", "1m30s", 90 * time.Second},
+		{"http_read_timeout", "2m", 2 * time.Minute},
+		{"http_stream_write_timeout", "15m", 15 * time.Minute},
 		// 空值与缺省一致：走默认值。0 与"未设"无法区分，而保留 0 也没有意义
 		//（retention=0 会让终态任务刚写完就被删掉）。
 		{"retention", "", week},
@@ -680,6 +819,10 @@ func TestConfigDurationParsing(t *testing.T) {
 				got = cfg.JobTimeout.Duration()
 			case "url_timeout":
 				got = cfg.URLTimeout.Duration()
+			case "http_read_timeout":
+				got = cfg.HTTPReadTimeout.Duration()
+			case "http_stream_write_timeout":
+				got = cfg.HTTPStreamWriteTimeout.Duration()
 			}
 			if got != tc.want {
 				t.Errorf("%s = %v，期望 %v", tc.field, got, tc.want)
@@ -748,6 +891,9 @@ func TestParseArgs(t *testing.T) {
 	}
 	if opts.configPath != "x.json" || !opts.checkConfig {
 		t.Errorf("解析结果 = %+v", opts)
+	}
+	if opts, err := parseArgs([]string{"--version"}); err != nil || !opts.version {
+		t.Errorf("--version 解析失败: %+v, %v", opts, err)
 	}
 	if opts, err := parseArgs([]string{"--help"}); err != nil || !opts.help {
 		t.Errorf("--help = %+v, %v", opts, err)
