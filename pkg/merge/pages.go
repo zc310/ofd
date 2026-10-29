@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,11 @@ const (
 	defaultPageTotalBytes  = int64(1024 << 20)
 	defaultPageCount       = 100000
 	defaultPageConcurrency = 4
+)
+
+var (
+	errPageCountLimit = errors.New("页码列表超过上限")
+	errMixedDocType   = errors.New("不能合并不同 DocType 的文档")
 )
 
 // PageOptions 控制模型级页面合并的输出方式。
@@ -144,14 +150,23 @@ func parsePageList(spec string) ([]int, error) {
 			if startErr != nil || endErr != nil || start < 1 || end < start {
 				return nil, fmt.Errorf("页码范围无效: %q", token)
 			}
-			for page := start; page <= end; page++ {
+			if end-start >= defaultPageCount-len(result) {
+				return nil, fmt.Errorf("%w %d", errPageCountLimit, defaultPageCount)
+			}
+			for page := start; ; page++ {
 				result = append(result, page)
+				if page == end {
+					break
+				}
 			}
 			continue
 		}
 		page, err := strconv.Atoi(token)
 		if err != nil || page < 1 {
 			return nil, fmt.Errorf("页码无效: %q", token)
+		}
+		if len(result) >= defaultPageCount {
+			return nil, fmt.Errorf("%w %d", errPageCountLimit, defaultPageCount)
 		}
 		result = append(result, page)
 	}
@@ -203,6 +218,11 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 			return fmt.Errorf("处理输入 %s 失败: %w", prepared[index].name, result.err)
 		}
 		for _, built := range result.documents {
+			if createOptions.DocType == "" {
+				createOptions.DocType = built.docType
+			} else if createOptions.DocType != built.docType {
+				return fmt.Errorf("%w: %s、%s", errMixedDocType, createOptions.DocType, built.docType)
+			}
 			for _, id := range built.signatures {
 				if options.OnSignature != nil {
 					options.OnSignature(SignatureEvent{Input: prepared[index].name, DocumentIndex: built.documentIndex, ID: id, Action: SignatureDropped})
@@ -331,6 +351,7 @@ type pageInput struct {
 
 type builtDocument struct {
 	document      creator.Document
+	docType       string
 	prefix        string
 	documentIndex int
 	signatures    []string
@@ -419,7 +440,11 @@ func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource
 			signatureIDs = append(signatureIDs, id)
 			return true
 		})
-		result.documents = append(result.documents, builtDocument{document: document, prefix: prefix, documentIndex: documentIndex, signatures: signatureIDs})
+		docType := strings.TrimSpace(ofd.DocType)
+		if docType == "" {
+			docType = "OFD"
+		}
+		result.documents = append(result.documents, builtDocument{document: document, docType: docType, prefix: prefix, documentIndex: documentIndex, signatures: signatureIDs})
 	}
 	return result
 }
@@ -484,6 +509,8 @@ func mergePageDocument(target *creator.Document, source creator.Document, first 
 		target.Title = source.Title
 		target.Author = source.Author
 		target.Subject = source.Subject
+		target.Cover, target.CoverName = source.Cover, source.CoverName
+		target.CoverData, target.CoverSource = source.CoverData, source.CoverSource
 		target.Abstract = source.Abstract
 		target.Creator = source.Creator
 		target.CreatorVersion = source.CreatorVersion
@@ -528,6 +555,11 @@ func mergePageDocument(target *creator.Document, source creator.Document, first 
 func remapDocumentGotos(document *creator.Document, pageMap map[int]int) {
 	document.Actions = filterGotoActions(document.Actions, pageMap)
 	document.Bookmarks = filterBookmarks(document.Bookmarks, pageMap)
+	bookmarks := make(map[string]bool, len(document.Bookmarks))
+	for _, bookmark := range document.Bookmarks {
+		bookmarks[bookmark.Name] = true
+	}
+	filterRemovedBookmarkActions(reflect.ValueOf(document), bookmarks)
 	document.Outlines = remapOutlineGotos(document.Outlines, pageMap)
 	for index := range document.Pages {
 		page := &document.Pages[index]
@@ -550,6 +582,54 @@ func remapDocumentGotos(document *creator.Document, pageMap map[int]int) {
 	for index := range document.Annotations {
 		for annotationIndex := range document.Annotations[index].Items {
 			remapItemGotos(document.Annotations[index].Items[annotationIndex].Items, pageMap)
+		}
+	}
+}
+
+// 同时清理图案、裁剪和嵌套图元中的书签动作，避免书签删除后留下悬空引用。
+func filterRemovedBookmarkActions(value reflect.Value, names map[string]bool) {
+	if !value.IsValid() {
+		return
+	}
+	if value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if !value.IsNil() {
+			if value.Kind() == reflect.Interface && !value.Elem().CanSet() && value.CanSet() {
+				copyValue := reflect.New(value.Elem().Type()).Elem()
+				copyValue.Set(value.Elem())
+				filterRemovedBookmarkActions(copyValue, names)
+				value.Set(copyValue)
+			} else {
+				filterRemovedBookmarkActions(value.Elem(), names)
+			}
+		}
+		return
+	}
+	if value.Type() == reflect.TypeFor[[]creator.Action]() && value.CanSet() {
+		actions, ok := reflect.TypeAssert[[]creator.Action](value)
+		if !ok {
+			return
+		}
+		kept := make([]creator.Action, 0, len(actions))
+		for _, action := range actions {
+			if action.Goto != nil && action.Goto.Bookmark != "" && !names[action.Goto.Bookmark] {
+				continue
+			}
+			kept = append(kept, action)
+		}
+		value.Set(reflect.ValueOf(kept))
+		return
+	}
+	if value.Kind() == reflect.Struct {
+		for _, field := range value.Fields() {
+			if field.CanSet() {
+				filterRemovedBookmarkActions(field, names)
+			}
+		}
+	} else if value.Kind() == reflect.Slice {
+		if value.Type().Elem().Kind() != reflect.Uint8 {
+			for i := 0; i < value.Len(); i++ {
+				filterRemovedBookmarkActions(value.Index(i), names)
+			}
 		}
 	}
 }

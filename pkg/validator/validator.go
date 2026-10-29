@@ -315,7 +315,7 @@ func (v *Validator) validateReader(ctx context.Context, reader io.Reader, report
 }
 
 func (v *Validator) validatePackage(ctx context.Context, packageReader *container.Package, report *Report) {
-	archive, err := v.indexArchive(packageReader, report)
+	archive, err := v.indexArchive(ctx, packageReader, report)
 	if err != nil {
 		report.setCheck("zip", "failed")
 		return
@@ -458,7 +458,7 @@ func (v *Validator) validatePackage(ctx context.Context, packageReader *containe
 }
 
 // indexArchive 使用 core 读取 ZIP 条目；条目限制、路径判断和问题报告由 validator 负责。
-func (v *Validator) indexArchive(packageReader *container.Package, report *Report) (*packageIndex, error) {
+func (v *Validator) indexArchive(ctx context.Context, packageReader *container.Package, report *Report) (*packageIndex, error) {
 	entries := packageReader.Entries()
 	if v.opts.MaxEntries > 0 && len(entries) > v.opts.MaxEntries {
 		err := fmt.Errorf("ZIP 包含 %d 个条目，不能超过 %d 个", len(entries), v.opts.MaxEntries)
@@ -470,6 +470,10 @@ func (v *Validator) indexArchive(packageReader *container.Package, report *Repor
 	var total uint64
 	hadError := false
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "validation.canceled", Message: fmt.Sprintf("校验已取消：%v", err)}, v.opts.MaxErrors)
+			return nil, err
+		}
 		name, nameErr := cleanEntryName(entry.Name)
 		if nameErr != nil {
 			hadError = true
@@ -531,6 +535,10 @@ func (v *Validator) indexArchive(packageReader *container.Package, report *Repor
 			return nil, fmt.Errorf("ZIP 实际解压后总大小超过上限")
 		}
 		index.files[name] = packageFile{name: name, data: content}
+	}
+	if err := ctx.Err(); err != nil {
+		report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "validation.canceled", Message: fmt.Sprintf("校验已取消：%v", err)}, v.opts.MaxErrors)
+		return nil, err
 	}
 	if hadError {
 		return nil, fmt.Errorf("ZIP 包含无效条目")

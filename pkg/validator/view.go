@@ -55,7 +55,7 @@ func (v *Validator) Validate(ctx context.Context, input any, name string) Report
 		physical, err = origin.OpenPhysicalPackage()
 		if err == nil {
 			defer physical.Close()
-			physicalIndex, err = v.indexArchive(physical, &report)
+			physicalIndex, err = v.indexArchive(ctx, physical, &report)
 		}
 		if err != nil {
 			report.addIssue(Issue{Severity: SeverityError, Stage: StageContainer, Code: "input.view_physical", Message: err.Error()}, v.opts.MaxErrors)

@@ -55,7 +55,8 @@ func (e *documentExporter) documentInfo() (manifest.Document, error) {
 			info.ModDate = docInfo.ModDate.Format(time.RFC3339)
 		}
 		if docInfo.Cover != nil && *docInfo.Cover != "" {
-			file := docInfo.Cover.Resolve(e.document.BaseLoc)
+			// Cover 位于 OFD.xml 的 DocInfo 中，按 §7.3、§7.4 相对于主入口解析。
+			file := docInfo.Cover.Resolve("")
 			data, err := e.document.FileCache.Read(file.String())
 			if err != nil {
 				return manifest.Document{}, fmt.Errorf("读取封面失败: %w", err)

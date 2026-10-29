@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **模型选页明确限制文档类型和表达式规模**：`merge.Pages` 和 `ofd-creator merge --pages`
+  保留输入的 `DocType`，不同类型输入现在返回错误。需要混合处理时先分别生成并校验
+  相同类型文档，或用 ZIP 级多文档打包；`ParsePages/ParsePageSelection` 的单段页码列表
+  最多展开 100000 项，超过时应缩小范围或分批处理。
+
 - **PDF 导入默认保存原始字体**：PDF→OFD 默认将解码后的原始内嵌字体程序写入包内。
   需要保持此前保存修复结果的行为时，CLI 添加 `--pdf-save-repaired-fonts`，Go API 设置
   `converter.PDFImportOptions{SaveRepairedFonts: true}`；同样适用于经 PDF 的 Office/HTML 等导入。

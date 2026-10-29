@@ -147,6 +147,7 @@ func main() {
 | 按页渲染、文字、搜索与导航 | [`pkg/webreader`](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)、[接入示例](docs/GO-API.md#接入按页阅读接口) |
 | 创建 OFD、自动排版与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md)、[`pkg/creator/flow` 流式创作](pkg/creator/flow/README.md) |
 | 多文档合并、拼页和重排 | [`pkg/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
+| 按范围、每 N 页或文档体拆分 | [`pkg/split` 库指南](pkg/split/README.md)、[拆分命令](cmd/ofd-creator/README.md#拆分-ofd) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |
 | 文档对比 | [`pkg/compare` 库指南](pkg/compare/README.md) |

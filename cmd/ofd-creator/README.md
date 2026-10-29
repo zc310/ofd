@@ -50,7 +50,7 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 以缩短 ZIP 条目和 XML 引用路径。字体名称、附件显示名称及显式指定的包内文件名会保留；
 具体规则见 [图片与资源](../../pkg/creator/README.md#图片与资源)。
 
-除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`replace`、`watermark`、`sign`、`remove-signatures` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、编辑条目、处理水印、独立签署、清理已有签名以及输出字段参考。详见下文各节。
+除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`split`、`replace`、`watermark`、`sign`、`remove-signatures` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、拆分 OFD、编辑条目、处理水印、独立签署、清理已有签名以及输出字段参考。详见下文各节。
 
 ## 流式创作
 
@@ -1000,6 +1000,61 @@ ofd-creator merge -o reversed.ofd --pages 2,1 input1.ofd input2.ofd
 
 模型级合并会自动重命名/重编号文档级资源（字体名、绘制参数名、图片/颜色空间/复合图元/模板 ID）并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。因此不能与 `--signatures`、`--orphans`、`--max-*` 同时使用。输出文档元数据默认沿用首个来源，可用 `--document-id`、`--title`、`--author` 覆盖；`--workers` 控制并行解析输入的并发数（默认 4），与 `ofd-converter --workers` 命名一致。
 
+选页保留首个来源的封面及相同的 `DocType`；不同 `DocType` 输入拒绝模型级合并。
+已删除书签对应的动作也会清理。页码表达式最多展开 100000 项。
+
+## 拆分 OFD
+
+```bash
+# 每页一个文件（省略 --every 时也是此行为）
+ofd-creator split input.ofd --every 1 --output-dir parts --validate
+
+# 每 10 页一份，最后一份允许不足 10 页
+ofd-creator split input.ofd --every 10 --output-dir parts
+
+# 分组取页，允许重排；同组不能重复，不同组可以重叠
+ofd-creator split input.ofd --ranges "1-3;4-8;10" --output-dir parts
+
+# 一个 DocBody 一份，保留原包内路径
+ofd-creator split input.ofd --by-document --output-dir documents
+
+# 多文档输入按页拆分时显式选择文档体（从 1 开始）
+ofd-creator split input.ofd --document 2 --every 5 --output-dir parts
+```
+
+`--every`、`--ranges`、`--by-document` 互斥。输出默认为 `input-001.ofd`、
+`input-002.ofd` 等，可用 `--prefix` 修改前缀。所有页码、分组和输出文件名在写入前检查；
+已有输出文件拒绝覆盖，包括符号链接。每份写入同目录临时文件，关闭并可选严格校验后，
+通过不覆盖已有路径的硬链接发布；输出文件系统需要支持硬链接。失败的临时文件会清理，
+已经完成的分卷保留，错误信息给出已完成数量。标准输出逐行列出成功文件路径，
+移除内容的提示和错误写入标准错误。批量输出不承诺跨文件事务。
+
+页面拆分保留页面内容、原 ID 和路径，递归保留必需模板与资源，清理分卷外跳转、
+无效书签/大纲及其他页的注解。元数据、封面、权限和 `DocType` 保留，新分卷生成新 DocID；
+`--deterministic` 固定 ZIP 时间并按来源 DocID、文档体和页序生成确定性标识。
+分卷的自定义元数据记录来源 DocID 和页序，便于后续追溯。
+保留的二进制资源整体复制，拆分不执行字体子集化或元数据清理。
+
+页面拆分默认移除整份附件、自定义标引、扩展、历史版本、数字签名及其印章外观，并报告。
+`--keep-attachments` 可保留整份附件集；普通页面图片不受签名移除影响。
+完整文档体拆分保留这些文档内容，默认 `--signatures preserve`：若签名保护了变化后的入口
+或分卷外文件则失败，可用 `--signatures drop` 明确移除。页面模式默认 drop，
+显式 preserve 遇到签名时失败。拆分后重签可调用 `ofd-creator sign`。
+
+加密输入先独立解密；发现完整性清单时必须用 `--drop-integrity` 明确允许移除，之后对结果
+重新签署并生成清单。`--validate` 在每份结果发布前执行严格校验；原文件的专用类型声明
+不会自动证明分卷满足 OFD-A/OFD-H 要求。
+
+默认限制：输入 512 MiB、输入/每份输出 10000 个 ZIP 条目、单条解压 64 MiB、输入/单份输出解压总量 512 MiB、
+最多 10000 份、每文档体/分卷 100000 页、累计压缩输出 2048 MiB。
+可通过 `--max-input-mb`、`--max-entry-mb`、`--max-total-mb`、`--max-parts`、
+`--max-pages`、`--max-entries`、`--max-output-mb` 调整。压缩配置复用 `--compression` 和 `--compression-level`。
+`--validate` 沿用配置的条目数、单条与总解压大小限制，输出压缩大小按累计输出上限检查。
+库接口和内存使用说明见 [`pkg/split`](../../pkg/split/README.md)。
+
+split 退出码：`0` 成功，`2` 参数/分组错误，`4` 输入解析、拆分生成或签名保护检查失败，
+`5` 输出目录、文件发布或结果列表写入失败，`6` 严格校验失败。
+
 ## 替换、新增与删除包内条目
 
 `replace` 子命令按包内路径替换、新增或删除条目，不解析页面或资源模型，其余条目原样搬运：
@@ -1269,7 +1324,7 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 
 | 退出码 | 含义                                                                                                      |
 |--------|-----------------------------------------------------------------------------------------------------------|
-| `0`    | 创建、导出、合并、替换、签名清理或校验成功；`--version` 输出版本号也算成功                                |
+| `0`    | 创建、导出、合并、拆分、替换、签名清理或校验成功；`--version` 输出版本号也算成功                                |
 | `2`    | 参数错误：未知选项、缺少必填项、`-i`/`-o` 组合非法、`--format` 取值不支持、`--shape` 非法、输出会覆盖输入 |
 | `3`    | 构建失败：manifest 已加载但无法生成 OFD（例如路径图元或资源不合法）                                       |
 | `4`    | 资源错误：输入资源读取、解析失败，模板绑定/文字容量检查失败，或签名移除的依赖与保护范围检查失败           |

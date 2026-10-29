@@ -2,14 +2,19 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"sync"
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/schema"
 	"github.com/zc310/ofd/pkg/spec"
 )
+
+var errReferenceContext = errors.New("引用分析上下文为空")
 
 // MissingReference 描述一处指向包内不存在文件的引用。
 type MissingReference struct {
@@ -106,6 +111,46 @@ func PackageReferencesWithOverrides(ctx context.Context, input any, overrides ma
 
 // packageReferences 执行引用闭包遍历。
 func (v *Validator) packageReferences(ctx context.Context, input any, overrides map[string][]byte) (*ReferenceIndex, error) {
+	resolver, err := v.newReferenceResolver(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return resolver.Resolve(ctx, overrides)
+}
+
+// ReferenceResolver 持有受规模限制的只读包索引，供批量变换重复分析文件引用。
+// 原始条目只解压一次，未修改的 XML 解析结果按文件及预期根类型缓存。
+// Resolve 可并发调用，内部串行处理；不持有输入文件句柄。
+type ReferenceResolver struct {
+	mu        sync.Mutex
+	validator *Validator
+	archive   *packageIndex
+	cache     map[[2]string]referenceParse
+}
+
+type referenceParse struct {
+	refs      []fileReference
+	valid     bool
+	validated bool
+}
+
+// NewReferenceResolver 建立批量引用分析器，输入类型与 PackageReferences 相同。
+// 只索引文件；每次 Resolve 仍须检查 Complete，不能根据不完整闭包删除条目。
+func NewReferenceResolver(ctx context.Context, input any, options ...Option) (*ReferenceResolver, error) {
+	v, err := New(options...)
+	if err != nil {
+		return nil, err
+	}
+	return v.newReferenceResolver(ctx, input)
+}
+
+func (v *Validator) newReferenceResolver(ctx context.Context, input any) (*ReferenceResolver, error) {
+	if ctx == nil {
+		return nil, errReferenceContext
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	v.opts.CheckXSD = true
 	if v.opts.Schemas == nil {
 		var err error
@@ -128,10 +173,30 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 
 	// 引用解析不产生报告，丢弃即可；此处只用它来满足 indexArchive 的签名。
 	discard := &Report{}
-	archive, err := v.indexArchive(pkg, discard)
+	archive, err := v.indexArchive(ctx, pkg, discard)
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &ReferenceResolver{validator: v, archive: archive, cache: make(map[[2]string]referenceParse)}, nil
+}
+
+// Resolve 以 overrides 中的内容替换既有文件后计算引用闭包，不改变原始索引。
+// 文件路径、大小及未知 XML 的处理与 PackageReferencesWithOverrides 一致。
+func (r *ReferenceResolver) Resolve(ctx context.Context, overrides map[string][]byte) (*ReferenceIndex, error) {
+	if ctx == nil {
+		return nil, errReferenceContext
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v := r.validator
+	archive := &packageIndex{files: maps.Clone(r.archive.files)}
+	discard := &Report{}
 	for name, data := range overrides {
 		if err := container.ValidateEntryName(name); err != nil {
 			return nil, err
@@ -185,18 +250,27 @@ func (v *Validator) packageReferences(ctx context.Context, input any, overrides 
 		if !ok {
 			continue
 		}
-		doc, refs, valid := v.parseXML(file, current.expected, "", "", discard)
-		if doc == nil || !valid {
+		key := [2]string{current.path, current.expected}
+		parsed, cached := r.cache[key]
+		_, changed := overrides[current.path]
+		if !cached || changed {
+			doc, refs, valid := v.parseXML(file, current.expected, "", "", discard)
+			parsed = referenceParse{refs: refs, valid: doc != nil && valid, validated: doc != nil && doc.validated}
+			if !changed {
+				r.cache[key] = parsed
+			}
+		}
+		if !parsed.valid {
 			// 根元素或命名空间不符时该文件的引用收集不到。记下来而不是当作
 			// 「无引用」——否则它引用的资源会被误判为无人引用。
 			index.Unparsed = append(index.Unparsed, current.path)
 			continue
 		}
-		if !doc.validated {
+		if !parsed.validated {
 			// 仍保留已识别引用以减少误导性候选，但不能给出完整闭包。
 			index.Unparsed = append(index.Unparsed, current.path)
 		}
-		for _, ref := range refs {
+		for _, ref := range parsed.refs {
 			resolved, resolveErr := resolvePackagePath(ref.base, ref.value)
 			if resolveErr != nil {
 				// 越界或非法路径：尝试产物怪癖的回退基准，仍失败则记为越界。

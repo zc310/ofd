@@ -265,8 +265,15 @@ PDF 导出同时保留内部跳转大纲与外部 URI 大纲。选页导出会�
 | 创建 OFD                 | `pkg/creator` 的 `CreateFile`、`Create`、`Marshal` 及流式页面接口；坐标、边界和字号以毫米计，见[创建器库指南](../pkg/creator/README.md)。           |
 | 打包多个文档体           | `pkg/merge.Files`、`Bytes`、`Sources` 保留文档体目录，签名处理由 `Options.Signatures` 控制。                                                        |
 | 拼页、选页和重排         | `pkg/merge.Pages` 解析并生成单文档 OFD，重映射资源与跳转引用；原签名和版本丢弃，见[合并命令与选页说明](../cmd/ofd-creator/README.md#合并多个-ofd)。 |
+| 按页或文档体拆分         | `pkg/split.Open(ctx, input, options)` 建立可复用会话，`Plan` 校验分组，`Write` 逐份写出；见[拆分库指南](../pkg/split/README.md)。 |
 | 外部命令签署             | `pkg/sign.Sign` 计算引用摘要，将 `Signature.xml` 交给外部命令，写回其输出的 `SignedValue.dat`。                                                     |
 | 生成印章与签章、完整验证 | `pkg/sign.CreateSeal`、`CreateSignedValue`、`Verify`，见[签署与验证指南](../pkg/sign/README.md)。                                                   |
+
+批量修改 XML 后检查文件依赖时，可用 `validator.NewReferenceResolver(ctx, input, options...)`
+建立一次解压索引，再调用 `Resolve(ctx, overrides)`。`overrides` 仅替换既有文件，调用之间
+互不影响；未修改 XML 的引用分析结果会缓存。只有返回索引的 `Complete()` 为真时，才可
+根据 `Reachable` 删除其他文件。该检查不验证对象 ID 语义、摘要或密码学签名，也不执行资源
+ID 粒度的裁剪；需要像拆分器一样先裁剪资源定义，再分析文件依赖。
 
 SES 完整验证区分通过、失败和证据不足，证书信任根、CRL 与印章状态由应用提供。
 分析报告和浏览器签名面板展示该结论，校验器通过 `--check-signatures` 启用对应检查。

@@ -1,7 +1,10 @@
 package validator
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -27,6 +30,43 @@ func TestReferenceOverridesEnforcePathsAndBudgets(t *testing.T) {
 				t.Fatalf("应拒绝非法替换或超限内容: %v", err)
 			}
 		})
+	}
+}
+
+func TestReferenceResolverOverridesAreIndependent(t *testing.T) {
+	source := buildOFDWithOrphan(t)
+	resolver, err := NewReferenceResolver(t.Context(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := resolver.Resolve(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken, err := resolver.Resolve(t.Context(), map[string][]byte{"Doc_0/Pages/Page_0/Content.xml": []byte("<broken")})
+	if err != nil || broken.Complete() {
+		t.Fatalf("未知 XML 未使闭包失效: %v", err)
+	}
+	again, err := resolver.Resolve(t.Context(), nil)
+	if err != nil || !reflect.DeepEqual(original, again) {
+		t.Fatalf("替换污染了缓存: %v", err)
+	}
+}
+
+func TestReferenceIndexCancellationDoesNotReportSuccess(t *testing.T) {
+	source := buildOFDWithOrphan(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := NewReferenceResolver(ctx, source); !errors.Is(err, context.Canceled) {
+		t.Fatalf("索引取消错误丢失: %v", err)
+	}
+	v, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := v.ValidateReader(ctx, bytes.NewReader(source), "canceled.ofd")
+	if !report.HasErrors() {
+		t.Fatal("索引中止后报告不应成功")
 	}
 }
 

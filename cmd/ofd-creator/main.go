@@ -81,6 +81,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && strings.EqualFold(args[0], "merge") {
 		return runMerge(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && strings.EqualFold(args[0], "split") {
+		return runSplit(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && strings.EqualFold(args[0], "replace") {
 		return runReplace(args[1:], stdout, stderr)
 	}
@@ -266,6 +269,7 @@ func parseArgs(args []string, output io.Writer) (*options, error) {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "子命令：")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  merge                           合并多个 OFD 为多文档 OFD")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  split                           按页范围、每 N 页或文档体拆分 OFD")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  replace                         替换、新增或删除 OFD 包内条目")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  sign                            签署 OFD 或追加普通数字签名")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  remove-signatures               移除全部或指定签名，清理签名残留")

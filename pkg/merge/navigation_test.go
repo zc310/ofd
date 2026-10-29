@@ -158,3 +158,29 @@ func TestPagesKeepsBookmarkActionWhenFirstPageUnselected(t *testing.T) {
 		t.Fatalf("指向保留书签的动作被删除: %+v", actions)
 	}
 }
+
+func TestPagesDropsActionsReferencingRemovedBookmarks(t *testing.T) {
+	data, err := creator.Marshal(creator.Document{ID: "removed-bookmark", PageSize: creator.A4,
+		Pages:     []creator.Page{{Actions: []creator.Action{{Goto: &creator.GotoAction{Bookmark: "removed"}}}}, {}},
+		Bookmarks: []creator.Bookmark{{Name: "removed", Goto: creator.GotoAction{Page: 1}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Pages([]Source{{Data: data}}, &out, PageOptions{Pages: []int{1}}); err != nil {
+		t.Fatal(err)
+	}
+	ofd, err := parser.NewOFD(out.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ofd.Close()
+	page := ofd.Documents[0].Pages[0]
+	if err := page.EnsureLoaded(); err != nil {
+		t.Fatal(err)
+	}
+	if actions := page.Actions(); actions != nil && len(actions.Action) != 0 {
+		t.Fatal("指向被删除书签的动作未移除")
+	}
+}
