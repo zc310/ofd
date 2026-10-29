@@ -2,6 +2,10 @@ package creator
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/zc310/ofd/internal/xmlcodec"
 )
@@ -14,8 +18,62 @@ func pageResourcePath(pageIndex, resourceIndex int) string {
 	return fmt.Sprintf("%s/Pages/Page_%d/PageRes_%d_%d.xml", docDir, pageIndex, pageIndex, resourceIndex)
 }
 
-func pageResourceImagePath(pageIndex int, imageID uint64, name string) string {
-	return fmt.Sprintf("%s/Pages/Page_%d/Images/%d-%s", docDir, pageIndex, imageID, name)
+func pageResourceImagePath(pageIndex int, name string) string {
+	return fmt.Sprintf("%s/Pages/Page_%d/Images/%s", docDir, pageIndex, name)
+}
+
+// resourceFileNames 同时预留显式名称和已分配的短名称，避免自动命名覆盖用户文件。
+type resourceFileNames map[string]bool
+
+func (names resourceFileNames) reserve(directory, name string) {
+	if name = strings.TrimSpace(name); name != "" {
+		names[path.Join(directory, name)] = true
+	}
+}
+
+func (names resourceFileNames) reserveDocument(document Document) {
+	names.reserve("Cover", document.CoverName)
+	for _, media := range document.Media {
+		names.reserve("Res/Media", media.Name)
+	}
+	for _, space := range document.ColorSpaces {
+		names.reserve("Res", space.Profile)
+	}
+	for _, attachment := range document.Attachments {
+		names.reserve("Attachments/Files", attachment.FileName)
+	}
+	for _, tag := range document.CustomTags {
+		names.reserve("CustomTags/Data", tag.DataName)
+		names.reserve("CustomTags/Schemas", tag.SchemaName)
+	}
+	for _, extension := range document.Extensions {
+		names.reserve("Extensions/Data", extension.DataName)
+	}
+	for _, resource := range document.PublicRes {
+		name := filepath.ToSlash(strings.TrimSpace(resource.Name))
+		names.reserve("", name)
+		for _, file := range resource.Files {
+			names.reserve(path.Dir(name), file.Path)
+		}
+	}
+}
+
+func (names resourceFileNames) allocate(prefix string, id uint64, format string) string {
+	for {
+		name := prefix + strconv.FormatUint(id, 10)
+		if format != "" {
+			name += "." + format
+		}
+		if !names[name] {
+			names[name] = true
+			return name
+		}
+		id++
+	}
+}
+
+func (s *buildState) resourceFileName(directory string, id uint64, format string) string {
+	return path.Base(s.fileNames.allocate(directory+"/", id, format))
 }
 
 func templatePath(index int) string {

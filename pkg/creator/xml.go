@@ -429,7 +429,7 @@ func pageResourceXML(resource pageResource, w *xmlcodec.Writer) ([]byte, error) 
 		w.AttrUint("ID", image.id)
 		w.Attr("Type", spec.MediaTypeImage)
 		w.Attr("Format", image.format)
-		w.Element("MediaFile", "Images/"+strconv.FormatUint(image.id, 10)+"-"+image.name)
+		w.Element("MediaFile", "Images/"+image.name)
 		w.End()
 	}
 	w.End()

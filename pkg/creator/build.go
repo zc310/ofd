@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path"
@@ -156,7 +155,7 @@ func generatePackage(state *buildState, sink entrySink) error {
 				}
 			}
 			for _, image := range resource.images {
-				if err := writeResource(sink, pageResourceImagePath(pageIndex, image.id, image.name), image.data, image.source); err != nil {
+				if err := writeResource(sink, pageResourceImagePath(pageIndex, image.name), image.data, image.source); err != nil {
 					return err
 				}
 			}
@@ -221,10 +220,15 @@ func generatePackage(state *buildState, sink entrySink) error {
 				return err
 			}
 		}
+		fontNames := make(map[string]bool, len(state.fonts))
 		for _, font := range state.fonts {
 			if !hasResource(font.data, font.source) {
 				continue
 			}
+			if fontNames[font.fileName] {
+				continue
+			}
+			fontNames[font.fileName] = true
 			if err := writeResource(sink, resDir+"/Fonts/"+font.fileName, font.data, font.source); err != nil {
 				return err
 			}
@@ -593,6 +597,9 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 		drawParamIDs:           make(map[string]uint64),
 		drawParamIndexes:       make(map[string]int),
 		fontIDs:                make(map[string]uint64),
+		fontFiles:              make(map[string]string),
+		fileNames:              make(resourceFileNames),
+		imageIDs:               make(map[string]uint64),
 		compositeIDs:           make(map[uint64]int),
 		nextID:                 1,
 		mediaIDs:               make(map[uint64]bool),
@@ -617,6 +624,7 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 			state.clearPatternCaches()
 		}
 	}()
+	state.fileNames.reserveDocument(document)
 	if err := state.collectPageImageIDs(pages); err != nil {
 		return nil, err
 	}
@@ -683,13 +691,9 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 			state.nextID = media.ID + 1
 		}
 		format := mediaFormat(media)
-		digest, digestErr := resourceDigest(media.Data, media.Source)
-		if digestErr != nil {
-			return nil, fmt.Errorf("多媒体资源 %d 摘要计算失败: %w", index+1, digestErr)
-		}
 		name := strings.TrimSpace(media.Name)
 		if name == "" {
-			name = digest + "." + format
+			name = state.resourceFileName("Res/Media", media.ID, format)
 		}
 		if seenMediaNames[name] {
 			return nil, fmt.Errorf("多媒体文件名重复: %s", name)
@@ -737,6 +741,7 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 			return nil, fmt.Errorf("字体资源 %d: %w", fontIndex+1, err)
 		}
 	}
+	profileDigests := make(map[[sha256.Size]byte]string)
 	for index, space := range document.ColorSpaces {
 		if err := validateColorSpace(space); err != nil {
 			return nil, fmt.Errorf("颜色空间资源 %d 无效: %w", index+1, err)
@@ -765,7 +770,11 @@ func prepare(document Document, pages PageProvider, options CreateOptions) (*bui
 			profileName := strings.TrimSpace(space.Profile)
 			if profileName == "" {
 				digest := sha256.Sum256(space.ProfileData)
-				profileName = "Profiles/" + hex.EncodeToString(digest[:]) + ".icc"
+				profileName = profileDigests[digest]
+				if profileName == "" {
+					profileName = "Profiles/" + state.resourceFileName("Res/Profiles", space.ID, "icc")
+					profileDigests[digest] = profileName
+				}
 			}
 			if strings.ContainsAny(profileName, "\\") || strings.HasPrefix(profileName, "/") || strings.Contains(profileName, "../") {
 				return nil, fmt.Errorf("颜色空间 Profile 路径无效: %q", profileName)
@@ -1057,14 +1066,7 @@ func (s *buildState) prepareAttachments(values []Attachment) error {
 		s.attachmentIDs[value.ID] = true
 		name := strings.TrimSpace(value.FileName)
 		if name == "" {
-			digest, digestErr := resourceDigest(value.Data, value.Source)
-			if digestErr != nil {
-				return fmt.Errorf("附件 %d 摘要计算失败: %w", index+1, digestErr)
-			}
-			name = digest
-			if value.Format != "" {
-				name += "." + attachmentFormat(value.Format)
-			}
+			name = s.resourceFileName("Attachments/Files", uint64(index+1), attachmentFormat(value.Format))
 		}
 		if seenNames[name] {
 			return fmt.Errorf("附件文件名重复: %s", name)
@@ -1101,15 +1103,11 @@ func (s *buildState) prepareMetadata() error {
 	}
 	name := strings.TrimSpace(value.CoverName)
 	if name == "" {
-		digest, digestErr := resourceDigest(value.CoverData, value.CoverSource)
-		if digestErr != nil {
-			return fmt.Errorf("封面摘要计算失败: %w", digestErr)
-		}
 		format := imageFormat(Image{Data: value.CoverData, Source: value.CoverSource})
 		if format == "" {
 			format = "bin"
 		}
-		name = digest + "." + strings.ToLower(format)
+		name = s.resourceFileName("Cover", 1, strings.ToLower(format))
 	}
 	if err := validateLeafFileName(name); err != nil {
 		return fmt.Errorf("Cover 文件名无效: %w", err)
@@ -1225,15 +1223,13 @@ func (s *buildState) prepareCustomTags(values []CustomTag) error {
 			return fmt.Errorf("自定义标签命名空间重复: %s", value.NameSpace)
 		}
 		seen[value.NameSpace] = true
-		digest := sha256.Sum256(value.Data)
 		dataName := strings.TrimSpace(value.DataName)
 		if dataName == "" {
-			dataName = hex.EncodeToString(digest[:]) + ".xml"
+			dataName = s.resourceFileName("CustomTags/Data", uint64(index+1), "xml")
 		}
 		schemaName := strings.TrimSpace(value.SchemaName)
 		if len(value.Schema) > 0 && schemaName == "" {
-			schemaDigest := sha256.Sum256(value.Schema)
-			schemaName = hex.EncodeToString(schemaDigest[:]) + ".xsd"
+			schemaName = s.resourceFileName("CustomTags/Schemas", uint64(index+1), "xsd")
 		}
 		if seenDataNames[dataName] {
 			return fmt.Errorf("自定义标签数据文件名重复: %s", dataName)
@@ -1261,11 +1257,7 @@ func (s *buildState) prepareExtensions(values []Extension) error {
 		}
 		name := strings.TrimSpace(value.DataName)
 		if hasResource(value.DataFile, value.DataFileSource) && name == "" {
-			digest, digestErr := resourceDigest(value.DataFile, value.DataFileSource)
-			if digestErr != nil {
-				return fmt.Errorf("扩展 %d 数据文件摘要计算失败: %w", index+1, digestErr)
-			}
-			name = digest + ".bin"
+			name = s.resourceFileName("Extensions/Data", uint64(index+1), "bin")
 		}
 		if name != "" {
 			if seenDataNames[name] {
@@ -1426,18 +1418,16 @@ func (s *buildState) preparePageResources(pageIndex int, resources []PageResourc
 				s.nextID = image.ID + 1
 			}
 			format := pageImageFormat(image)
-			digest, digestErr := resourceDigest(image.Data, image.Source)
-			if digestErr != nil {
-				return nil, fmt.Errorf("页面 %d 资源文件 %d 图片 %d 摘要计算失败: %w", pageIndex+1, resourceIndex+1, imageIndex+1, digestErr)
-			}
 			name := strings.TrimSpace(image.Name)
 			if name == "" {
-				name = digest + "." + format
+				name = s.resourceFileName(fmt.Sprintf("Pages/Page_%d/Images", pageIndex), image.ID, strings.ToLower(format))
+			} else {
+				if seenNames[name] {
+					return nil, fmt.Errorf("页面 %d 资源文件 %d 图片文件名重复: %s", pageIndex+1, resourceIndex+1, name)
+				}
+				seenNames[name] = true
+				name = strconv.FormatUint(image.ID, 10) + "-" + name
 			}
-			if seenNames[name] {
-				return nil, fmt.Errorf("页面 %d 资源文件 %d 图片文件名重复: %s", pageIndex+1, resourceIndex+1, name)
-			}
-			seenNames[name] = true
 			built.images = append(built.images, pageImageResource{id: image.ID, name: name, format: format, data: image.Data, source: image.Source})
 		}
 		result = append(result, built)
@@ -1452,6 +1442,14 @@ func (s *buildState) collectPageImageIDs(pages PageProvider) error {
 			return err
 		}
 		for resourceIndex, resource := range page.Resources {
+			for _, file := range resource.Files {
+				s.fileNames.reserve(fmt.Sprintf("Pages/Page_%d", pageIndex), file.Path)
+			}
+			for _, image := range resource.Images {
+				if name := strings.TrimSpace(image.Name); name != "" {
+					s.fileNames.reserve(fmt.Sprintf("Pages/Page_%d/Images", pageIndex), strconv.FormatUint(image.ID, 10)+"-"+name)
+				}
+			}
 			for imageIndex, image := range resource.Images {
 				if image.ID == 0 || image.ID > maxOFDID || image.ID == ^uint64(0) {
 					return fmt.Errorf("页面 %d 资源文件 %d 图片 %d ID 无效: %d", pageIndex+1, resourceIndex+1, imageIndex+1, image.ID)
@@ -2219,7 +2217,13 @@ func (s *buildState) addFont(font Font) (uint64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("字体资源 %q 摘要计算失败: %w", name, err)
 		}
-		resource.fileName = "font-" + digest + "." + strings.ToLower(fontFormat(font))
+		format := strings.ToLower(fontFormat(font))
+		key := digest + "." + format
+		resource.fileName = s.fontFiles[key]
+		if resource.fileName == "" {
+			resource.fileName = s.resourceFileName("Res/Fonts", id, format)
+			s.fontFiles[key] = resource.fileName
+		}
 	}
 	s.fontIDs[name] = id
 	s.fonts = append(s.fonts, resource)
@@ -2233,15 +2237,15 @@ func (s *buildState) imageID(image Image) (uint64, error) {
 	}
 	format := imageFormat(image)
 	fileFormat := strings.ToLower(format)
-	for _, resource := range s.images {
-		if resource.name == key+"."+fileFormat {
-			return resource.id, nil
-		}
+	key += "." + fileFormat
+	if id, ok := s.imageIDs[key]; ok {
+		return id, nil
 	}
 	id := s.allocate()
+	s.imageIDs[key] = id
 	s.images = append(s.images, imageResource{
 		id:     id,
-		name:   key + "." + fileFormat,
+		name:   s.resourceFileName("Res/Images", id, fileFormat),
 		data:   image.Data,
 		source: image.Source,
 		format: format,

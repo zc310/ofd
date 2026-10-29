@@ -24,7 +24,10 @@ type buildState struct {
 	drawParamIndexes       map[string]int
 	fonts                  []fontResource
 	fontIDs                map[string]uint64
+	fontFiles              map[string]string
+	fileNames              resourceFileNames
 	images                 []imageResource
+	imageIDs               map[string]uint64
 	pageImageIDs           map[uint64]bool
 	pendingPageImageIDs    map[uint64]bool
 	media                  []mediaResource

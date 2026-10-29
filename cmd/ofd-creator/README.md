@@ -46,6 +46,10 @@ ofd-creator -i document.yaml -o result.ofd --asset-root ./assets
 
 输出目录不存在时会自动创建。生成文件先写入同目录临时文件，成功后再原子替换目标文件。
 
+包内自动生成的字体、图片等资源文件名使用短数字编号，例如 `Res/Fonts/1.ttf`，
+以缩短 ZIP 条目和 XML 引用路径。字体名称、附件显示名称及显式指定的包内文件名会保留；
+具体规则见 [图片与资源](../../pkg/creator/README.md#图片与资源)。
+
 除创建外，`ofd-creator` 还提供 `export`、`export-all`、`template render`、`merge`、`replace`、`watermark`、`sign`、`remove-signatures` 和 `schema` 子命令，分别用于导出 manifest、批量导出、数据模板生成、合并 OFD、编辑条目、处理水印、独立签署、清理已有签名以及输出字段参考。详见下文各节。
 
 ## 流式创作
