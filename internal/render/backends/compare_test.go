@@ -342,12 +342,48 @@ func TestMinimumPositiveStrokeAcrossBackends(t *testing.T) {
 				for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
 					alpha += int(img.RGBAAt(100, y).A)
 				}
-				want := 254.0 / 150
+				want := 254.0 / 300
 				// 各光栅库的亚像素覆盖量化不同，允许小于1/4像素的误差。
 				if width := float64(alpha) / 255; math.Abs(width-want) > 0.25 {
 					t.Errorf("描边覆盖 %.3f 像素，期望%.3f像素", width, want)
 				}
 			})
+		}
+	}
+}
+
+// GBT_42133-2022表A.1的内部细线不能被预览下限加粗。
+// 透明背景上的累计Alpha表示实际覆盖宽度，避免依赖像素对齐位置。
+func TestTableStrokePreservesWidthAcrossBackends(t *testing.T) {
+	for _, name := range []string{render.BackendCanvas, drawing.BackendFTGG} {
+		for _, dpi := range []float64{96, 150, 300, 600} {
+			for _, scale := range []float64{0.5, 1, 2} {
+				t.Run(fmt.Sprintf("%s/%gDPI/scale%g", name, dpi, scale), func(t *testing.T) {
+					res := geom.DPI(dpi)
+					b, err := render.NewBackend(name, 20, 10, res)
+					if err != nil {
+						t.Fatal(err)
+					}
+					b.ClearFill()
+					b.SetStrokeColor(color.Black)
+					b.SetStrokeWidth(0.1154 / scale)
+					b.SetStrokeCapper(geom.ButtCap)
+					b.Scale(scale, scale)
+					path := &geom.Path{}
+					path.MoveTo(2/scale, 5/scale)
+					path.LineTo(18/scale, 5/scale)
+					b.DrawPath(0, 0, path)
+					img := b.Raster()
+					var alpha int
+					for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+						alpha += int(img.RGBAAt(int(10*res.DPMM()), y).A)
+					}
+					want := 0.1154 * res.DPMM()
+					if width := float64(alpha) / 255; math.Abs(width-want) > 0.03 {
+						t.Errorf("表格线覆盖 %.3f 像素，期望原线宽 %.3f 像素", width, want)
+					}
+				})
+			}
 		}
 	}
 }

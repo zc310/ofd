@@ -13,10 +13,10 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 )
 
-// 高DPI按设备下限绘制细线，低DPI按300 DPI参考设备换算。
+// 高DPI按设备下限绘制细线，低DPI按600 DPI参考设备换算。
 // 用透明背景上的累计覆盖率测量宽度，避免依赖线条恰好落在哪一行像素上。
 func TestRasterizerMinimumPositiveStrokeWidth(t *testing.T) {
-	for _, dpi := range []float64{72, 96, 150, 300, 600} {
+	for _, dpi := range []float64{72, 96, 150, 300, 600, 1200} {
 		for _, scale := range []float64{0.3528, 1, 9} {
 			resolution := canvas.DPI(dpi)
 			c := canvas.New(20, 10)
@@ -32,7 +32,7 @@ func TestRasterizerMinimumPositiveStrokeWidth(t *testing.T) {
 			ctx.DrawPath(0, 0, path)
 			img := rasterize(c, resolution, canvas.DefaultColorSpace)
 			coverage := strokeColumnCoverage(img, int(10*resolution.DPMM()))
-			want := min(2, dpi/150)
+			want := min(2, dpi/300)
 			if math.Abs(coverage-want) > 0.03 {
 				t.Errorf("DPI=%g 缩放=%g：描边覆盖宽度 %.3f 像素，期望%.3f像素", dpi, scale, coverage, want)
 			}
@@ -69,7 +69,7 @@ func TestMinimumStrokeKeepsDashLengthsAndSourceStyle(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolution := canvas.DPMM(10)
-	want := 254.0 / 150
+	want := 254.0 / 300
 	img := rasterize(c, resolution, canvas.DefaultColorSpace)
 	for _, x := range []int{30, 70, 110, 150} {
 		if got := strokeColumnCoverage(img, x); math.Abs(got-want) > 0.03 {

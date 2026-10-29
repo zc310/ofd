@@ -66,8 +66,11 @@ func TestSVGMinimumStrokeKeepsGeometryAndDashLengths(t *testing.T) {
 		name               string
 		width, scale, want float64
 	}{
-		{"缩小的字形轮廓", 0.002, 0.3528, 2 * 25.4 / 300},
-		{"放大的极细描边", 0.002, 9, 2 * 25.4 / 300},
+		{"缩小的字形轮廓", 0.002, 0.3528, 2 * 25.4 / 600},
+		{"放大的极细描边", 0.002, 9, 2 * 25.4 / 600},
+		// GBT_42133-2022表A.1的内部线宽为0.327pt，导入后为0.1154mm。
+		{"表格细线保留原宽", 0.1154, 1, 0.1154},
+		{"缩小的表格细线保留原宽", 0.2308, 0.5, 0.1154},
 		{"普通线宽", 0.5, 2, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,7 +144,7 @@ func TestZsbkFirstPageSVGKeepsLabelOutlinesVisible(t *testing.T) {
 		t.Fatal("SVG缺少首页文字轮廓描边")
 	}
 	for _, style := range styles {
-		if width := svgStrokeNumber(t, style, "stroke-width", 1); width > 0 && width < 2*25.4/300-1e-6 {
+		if width := svgStrokeNumber(t, style, "stroke-width", 1); width > 0 && width < 2*25.4/600-1e-6 {
 			t.Errorf("首页SVG仍存在几乎不可见的描边：%g", width)
 		}
 	}
