@@ -1361,7 +1361,11 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 				p.signedValueErrors[body.ID] = signedValueErr
 				slog.Warn("读取签名值失败", "signature", body.ID, "file", signedValuePath, "error", err)
 			} else if body.Type == spec.SigTypeSign {
-				signedValue = &SignedValue{Raw: signedValueBytes, Format: "GB/T 35275 SignedData"}
+				format := "CMS SignedData"
+				if sig.SignedInfo.SignatureMethod == sm2WithSM3OID {
+					format = "GB/T 35275 SignedData"
+				}
+				signedValue = &SignedValue{Raw: signedValueBytes, Format: format}
 				p.signedValues[body.ID] = signedValue
 			} else if signedValue, err = ParseSignedValue(signedValueBytes); err != nil {
 				// SignedValue 是二进制扩展点。非 ASN.1 生产者数据继续保持历史兼容，

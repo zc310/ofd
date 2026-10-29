@@ -755,7 +755,7 @@ func TestCreateSignaturesDefaultCheckMethodMatchesSchema(t *testing.T) {
 }
 
 func TestCreateSignaturesUseSelectedDigestMethod(t *testing.T) {
-	for _, method := range []string{"MD5", "SM3", "1.2.156.10197.1.401"} {
+	for _, method := range []string{"MD5", "SM3", "1.2.156.10197.1.401", "SHA256", "SHA384", "SHA512", "sha256"} {
 		t.Run(method, func(t *testing.T) {
 			data, err := Marshal(Document{
 				ID: "signature-digest-method",

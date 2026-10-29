@@ -787,7 +787,7 @@ func validateSignature(value Signature, pageCount int) error {
 		return errors.New("签名引用不能为空")
 	}
 	method := strings.ToUpper(strings.TrimSpace(value.CheckMethod))
-	if method != "" && method != "MD5" && method != "SHA1" && method != "SM3" && method != "1.2.156.10197.1.401" {
+	if method != "" && method != "MD5" && method != "SHA1" && method != "SHA256" && method != "SHA384" && method != "SHA512" && method != "SM3" && method != "1.2.156.10197.1.401" {
 		return fmt.Errorf("签名摘要算法无效: %q", value.CheckMethod)
 	}
 	for index, reference := range value.References {

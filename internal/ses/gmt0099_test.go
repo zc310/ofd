@@ -3,6 +3,8 @@ package ses_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -151,6 +153,59 @@ func TestGMT0099ReadsIndependentGMSMSignedDataAttachedAndDetached(t *testing.T) 
 		if err != nil || !result.Valid || !result.FullyValid() {
 			t.Fatalf("detached=%v result=%+v err=%v", detached, result, err)
 		}
+	}
+}
+
+// 文件引用使用 SHA-2 时，SignedData 仍使用 SM2/SM3；正文篡改必须使完整验证失败。
+func TestGMT0099SHA2ReferencesRemainIndependentOfSM2Signature(t *testing.T) {
+	f := newSigningFixture(t, false)
+	for _, method := range []string{"SHA256", "SHA384", "SHA512", "sha256"} {
+		t.Run(method, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := sign.Sign(t.Context(), gmtArchive(t, gmtFiles()), &out, sign.Options{
+				Type: "Sign", CheckMethod: method, Date: f.now, Sign: digitalSigner(t, f, false),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			files := gmtUnpack(t, out.Bytes())
+			var signature models.Signature
+			if err := xml.Unmarshal(files["Doc_0/Signatures/Signature_sign-1.xml"], &signature); err != nil {
+				t.Fatal(err)
+			}
+			if signature.SignedInfo.References.CheckMethod != strings.ToUpper(method) {
+				t.Fatal("引用摘要算法未正确写出")
+			}
+			for _, ref := range signature.SignedInfo.References.Reference {
+				if ref.FileRef != "/Doc_0/Document.xml" {
+					continue
+				}
+				data := files["Doc_0/Document.xml"]
+				var want []byte
+				switch strings.ToUpper(method) {
+				case "SHA256":
+					sum := sha256.Sum256(data)
+					want = sum[:]
+				case "SHA384":
+					sum := sha512.Sum384(data)
+					want = sum[:]
+				case "SHA512":
+					sum := sha512.Sum512(data)
+					want = sum[:]
+				}
+				if string(ref.CheckValue) != base64.StdEncoding.EncodeToString(want) {
+					t.Fatal("引用摘要与标准库计算结果不一致")
+				}
+			}
+			results, err := sign.Verify(t.Context(), out.Bytes(), *f.options)
+			if err != nil || len(results) != 1 || !results[0].DigestValid || !results[0].Result.FullyValid() {
+				t.Fatalf("SHA-2 引用完整验签失败: %+v %v", results, err)
+			}
+			files["Doc_0/Document.xml"] = append(files["Doc_0/Document.xml"], '\n')
+			results, err = sign.Verify(t.Context(), gmtArchive(t, files), *f.options)
+			if err != nil || len(results) != 1 || results[0].DigestValid || results[0].Result.Validation.Status != "invalid" || !results[0].Result.Valid {
+				t.Fatalf("正文篡改没有独立于数学签名判为失败: %+v %v", results, err)
+			}
+		})
 	}
 }
 

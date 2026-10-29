@@ -11,6 +11,8 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -56,7 +58,7 @@ type Options struct {
 	LockSignatures bool
 	// Sign 与 Command 二选一，适配进程或硬件服务；参数为完整 Signature.xml 字节。
 	Sign func(context.Context, []byte) ([]byte, error)
-	// Type 为 Seal（缺省，SES 电子签章）或 Sign（GB/T 35275 普通数字签名）。
+	// Type 为 Seal（缺省，SES 电子签章）或 Sign（GB/T 35275/CMS 普通数字签名）。
 	Type string
 	// UID 用于普通数字签名返回值的 SM2 原文校验，空值使用标准缺省标识。
 	UID             []byte
@@ -74,7 +76,8 @@ type Options struct {
 	Company         string
 	// SignatureMethod 是签名算法 OID，空值时使用 DefaultSignatureMethod。
 	SignatureMethod string
-	// CheckMethod 是摘要算法，空值时使用 DefaultCheckMethod。
+	// CheckMethod 是文件引用摘要算法，支持 MD5、SHA1、SHA256、SHA384、SHA512、SM3
+	// 和 SM3 OID；普通签名仅允许 SM3 或 SHA-2，空值使用 DefaultCheckMethod。
 	CheckMethod string
 	// Date 是签名时间，零值时使用当前时间。
 	Date time.Time
@@ -281,12 +284,19 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 	if signatureMethod == "" {
 		signatureMethod = DefaultSignatureMethod
 	}
-	checkMethod := strings.TrimSpace(options.CheckMethod)
+	checkMethod := strings.ToUpper(strings.TrimSpace(options.CheckMethod))
 	if checkMethod == "" {
 		checkMethod = DefaultCheckMethod
 	}
-	if options.Type == spec.SigTypeSign && (signatureMethod != DefaultSignatureMethod || (checkMethod != "SM3" && checkMethod != "1.2.156.10197.1.401")) {
-		return fmt.Errorf("普通数字签名仅支持 SM2-with-SM3 和 SM3 引用摘要")
+	if options.Type == spec.SigTypeSign {
+		if !signeddata.SupportsAlgorithm(signatureMethod) {
+			return fmt.Errorf("%w: 普通数字签名算法 %s", signeddata.ErrUnsupported, signatureMethod)
+		}
+		switch checkMethod {
+		case "SM3", "1.2.156.10197.1.401", "SHA256", "SHA384", "SHA512":
+		default:
+			return fmt.Errorf("%w: 普通数字签名仅支持 SM3 或 SHA256/SHA384/SHA512 引用摘要", signeddata.ErrUnsupported)
+		}
 	}
 	if options.Type == spec.SigTypeSign && options.References == nil {
 		options.References = &ReferenceOptions{RootDocument: true}
@@ -459,6 +469,9 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 			if proof.TimestampError != nil {
 				return proof.TimestampError
 			}
+			if proof.Algorithm != signatureMethod {
+				return fmt.Errorf("%w: 外部数字签名算法与 SignatureMethod 声明不一致", signeddata.ErrInvalid)
+			}
 			if proof.Timestamp != nil && proof.Timestamp.Time.Before(proof.SigningTime) {
 				return fmt.Errorf("时间戳早于签名时间")
 			}
@@ -603,6 +616,12 @@ func signatureDigest(method string, data []byte) ([]byte, error) {
 		newHash = md5.New
 	case "SHA1":
 		newHash = sha1.New
+	case "SHA256":
+		newHash = sha256.New
+	case "SHA384":
+		newHash = sha512.New384
+	case "SHA512":
+		newHash = sha512.New
 	case "SM3", "1.2.156.10197.1.401":
 		newHash = sm3.New
 	default:

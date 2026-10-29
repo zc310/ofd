@@ -39,6 +39,12 @@
                                             <xs:restriction base="xs:string">
                                                 <xs:enumeration value="MD5" />
                                                 <xs:enumeration value="SHA1" />
+                                                <!-- GB/T 33190 §18.2.2 表68按应用选择摘要；
+                                                     下列 SHA-2 与 SM3 是项目支持的扩展，
+                                                     原版附录 A 的枚举仅含 MD5/SHA1。 -->
+                                                <xs:enumeration value="SHA256" />
+                                                <xs:enumeration value="SHA384" />
+                                                <xs:enumeration value="SHA512" />
                                                 <xs:enumeration value="SM3" />
                                                 <xs:enumeration value="1.2.156.10197.1.401" />
                                             </xs:restriction>

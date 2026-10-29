@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -48,12 +50,21 @@ func protectedSignature(path, method string, digest []byte) []byte {
 }
 
 func TestPackageRoundTripPreservesSignatureReferenceDigests(t *testing.T) {
-	for _, method := range []string{"SM3", "1.2.156.10197.1.401", "SHA1", "MD5"} {
+	for _, method := range []string{"SM3", "1.2.156.10197.1.401", "SHA1", "MD5", "SHA256", "SHA384", "SHA512"} {
 		t.Run(method, func(t *testing.T) {
 			original := testPlainFiles()
 			payload := original["Doc_0/Res/data.bin"]
 			var digest []byte
 			switch method {
+			case "SHA256":
+				sum := sha256.Sum256(payload)
+				digest = sum[:]
+			case "SHA384":
+				sum := sha512.Sum384(payload)
+				digest = sum[:]
+			case "SHA512":
+				sum := sha512.Sum512(payload)
+				digest = sum[:]
 			case "SHA1":
 				sum := sha1.Sum(payload)
 				digest = sum[:]
@@ -75,7 +86,7 @@ func TestPackageRoundTripPreservesSignatureReferenceDigests(t *testing.T) {
 }
 
 func TestEncryptRejectsMismatchedOrUnsupportedProtectedDigests(t *testing.T) {
-	for _, method := range []string{"SM3", "SHA256"} {
+	for _, method := range []string{"SM3", "SHA256", "SHA384", "SHA512", "SHA224"} {
 		t.Run(method, func(t *testing.T) {
 			files := testPlainFiles()
 			files["Doc_0/Signature.xml"] = protectedSignature("Res/data.bin", method, make([]byte, 32))

@@ -610,7 +610,7 @@ func finishCoverage(p *packageData, covered map[string]bool, report *Report) {
 	}
 }
 
-// ProtectOptions 用外部签名器为最终清单提供带时间戳的 GB/T 35275 签名。
+// ProtectOptions 用外部签名器为最终清单提供带时间戳的 GB/T 35275/CMS 签名。
 type ProtectOptions struct {
 	Options
 	ID          string

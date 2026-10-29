@@ -3,6 +3,8 @@ package creator
 import (
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
 	"hash"
 	"strings"
@@ -17,6 +19,12 @@ func signatureDigest(method string, data []byte) ([]byte, error) {
 		newHash = md5.New
 	case "SHA1":
 		newHash = sha1.New
+	case "SHA256":
+		newHash = sha256.New
+	case "SHA384":
+		newHash = sha512.New384
+	case "SHA512":
+		newHash = sha512.New
 	case "SM3", "1.2.156.10197.1.401":
 		newHash = sm3.New
 	default:

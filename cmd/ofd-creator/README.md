@@ -902,7 +902,8 @@ ofd-creator merge -o signed.ofd --pages 1 --sign-cmd ./ofd-signer --sign-id sign
 - 元数据通过环境变量传入：`OFD_SIGN_DOCUMENT`、`OFD_SIGN_ID`、`OFD_SIGN_PROVIDER`、`OFD_SIGN_PROVIDER_VERSION`、`OFD_SIGN_COMPANY`、`OFD_SIGN_SIGNATURE_METHOD`、`OFD_SIGN_CHECK_METHOD`、`OFD_SIGN_TIME`；
 - 私钥和密码学算法由命令负责，`ofd-creator` 不接触密钥。`--sign-id` 必须是合法的 XML `xs:ID`（默认 `sign-1`）；
 - `--sign-provider`、`--sign-provider-version`、`--sign-company`、`--sign-method`、`--sign-check-method` 分别设置 `SignedInfo` 的 `Provider` 名称/版本/公司、`SignatureMethod`（默认 `1.2.156.10197.1.501`）和 `References@CheckMethod`（默认 `SM3`）；这些值同时通过上面的环境变量传给命令。
-- `--sign-type Seal|Sign` 缺省为 `Seal`；`Sign` 要求外部命令返回 GM/T 0099 / GB/T 35275 的普通 SM2/SM3 SignedData，环境变量 `OFD_SIGN_TYPE` 同步传递。普通签名缺省保护最终 OFD.xml 和当前签名列表，文档目录范围仍可通过引用选项控制。
+- `--sign-type Seal|Sign` 缺省为 `Seal`；`Sign` 要求外部命令返回 SM2/SM3 GB/T 35275 SignedData 或 RSA/ECDSA CMS SignedData，环境变量 `OFD_SIGN_TYPE` 同步传递。`--sign-method` 使用组合签名 OID，写入前校验其与实际 CMS 一致；算法表及签名器约定见 [签名 API](../../pkg/sign/README.md#rsaecdsa-普通数字签名)。普通签名缺省保护最终 OFD.xml 和当前签名列表，文档目录范围仍可通过引用选项控制。
+- `--sign-check-method` 支持 SHA256、SHA384、SHA512；普通签名还可用 SM3 及 SM3 OID，缺省仍为 SM3。文件引用摘要与 SignedData 内部摘要独立，算法名写出为大写。SHA-2/SM3 为内置 XSD 支持的扩展，原版 GB/T 33190 附录 A 枚举仅含 MD5/SHA1。
 - `--sign-image PATH` 写入 GM/T 0099 附录 B 的 `Seal/ImageLoc`，并将图片纳入摘要；配合 `--sign-stamp` 或骑缝章选项指定显示位置。校验这些扩展时使用 `ofd-validator --gmt0099`。
 - 重签会删除文档体已有的签名文件，包括当前布局的 `Signatures/` 和历史生产者使用的 `Signs/`（`Signatures.xml`/`Signs.xml` 及其目录），避免旧签名残留。
 - `--sign-stamp` 会在 `Signature.xml` 写入 `StampAnnot`，让阅读器把 `SignedValue.dat` 里的印章图片绘制到页面上；默认放在文档体首页右下角（40mm），可用 `--sign-stamp-page` 指定页面 ID、`--sign-stamp-boundary "x y width height"`（毫米）指定位置。真实印章图片来自签名值（外部命令输出的 `SES_ESPictrueInfo`），演示签名器 `ofd-signer-demo` 会运行时渲染带「非正式印章」声明的测试章 PNG。

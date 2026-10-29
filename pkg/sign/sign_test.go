@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"io"
 	"os"
 	"path/filepath"
@@ -73,6 +75,7 @@ func TestSignatureDigestSupportsDeclaredMethods(t *testing.T) {
 	data := []byte("signature digest test")
 	md5Sum := md5.Sum(data)
 	sha1Sum := sha1.Sum(data)
+	sha256Sum, sha384Sum, sha512Sum := sha256.Sum256(data), sha512.Sum384(data), sha512.Sum512(data)
 	sm3Hash := sm3.New()
 	_, _ = sm3Hash.Write(data)
 	sm3Sum := sm3Hash.Sum(nil)
@@ -82,6 +85,10 @@ func TestSignatureDigestSupportsDeclaredMethods(t *testing.T) {
 	}{
 		{method: "MD5", want: md5Sum[:]},
 		{method: "SHA1", want: sha1Sum[:]},
+		{method: "SHA256", want: sha256Sum[:]},
+		{method: "SHA384", want: sha384Sum[:]},
+		{method: "SHA512", want: sha512Sum[:]},
+		{method: " sha256 ", want: sha256Sum[:]},
 		{method: "SM3", want: sm3Sum},
 		{method: "1.2.156.10197.1.401", want: sm3Sum},
 	} {
@@ -94,7 +101,7 @@ func TestSignatureDigestSupportsDeclaredMethods(t *testing.T) {
 			t.Errorf("method=%s: digest = %x, want %x", test.method, got, test.want)
 		}
 	}
-	if _, err := signatureDigest("SHA256", data); err == nil {
+	if _, err := signatureDigest("SHA224", data); err == nil {
 		t.Fatal("不支持的摘要算法应返回错误")
 	}
 }

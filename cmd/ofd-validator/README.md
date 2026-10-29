@@ -2,7 +2,7 @@
 
 `--gmt0099` 显式启用 GM/T 0099-2020 附录 B/D 的签名与完整性清单扩展 XSD。
 默认基础 GB/T 33190 模式保持独立；XSD 通过不代表清单可信或没有夹带。
-`--check-signatures` 按签名列表 Type 验证 SES 或普通 SM2/SM3 SignedData，并检查 Relative
+`--check-signatures` 按签名列表 Type 验证 SES 或普通 SM2/RSA/ECDSA SignedData，并检查 Relative
 基础签名；缺少信任/状态证据仍为未完成。带证据的完整性协议验证使用
 [`ofd-crypt integrity verify`](../ofd-crypt/README.md)。
 
@@ -25,7 +25,7 @@ JSON、OFD、PDF 或 XLSX 报告。它适合文档排查、兼容性检查、问
 - 使用内置 XSD 校验 OFD、Document、Page、Res、Signature 等 XML 文件。
 - 校验 OFD 包内的文档、页面、资源、附件、注解和签名文件引用。
 - 校验 OFD 对象 ID 的重复声明和未解析引用。
-- 校验签名摘要，支持 MD5、SHA1、SM3 和 SM3 OID `1.2.156.10197.1.401`。
+- 校验签名摘要，支持 MD5、SHA1、SHA256、SHA384、SHA512、SM3 和 SM3 OID `1.2.156.10197.1.401`；内置 XSD 支持 SHA-2/SM3 扩展。
 - 可扫描未被主引用链直接引用的 OFD 命名空间 XML；外部命名空间 XML 内容不会参与 OFD
   引用和语义检查。
 - 输出中文文本、Markdown、JSON、OFD、PDF 和 XLSX 报告。

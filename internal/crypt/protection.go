@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -57,7 +59,11 @@ func (p *protection) observe(name string, data []byte) error {
 	}
 	if _, ok := p.restored[name]; ok {
 		md5sum, sha1sum, sm3sum := md5.Sum(data), sha1.Sum(data), sm3.Sum(data)
-		p.digests[name] = map[string][]byte{"MD5": md5sum[:], "SHA1": sha1sum[:], "SM3": sm3sum[:], "1.2.156.10197.1.401": sm3sum[:]}
+		sha256sum, sha384sum, sha512sum := sha256.Sum256(data), sha512.Sum384(data), sha512.Sum512(data)
+		p.digests[name] = map[string][]byte{
+			"MD5": md5sum[:], "SHA1": sha1sum[:], "SM3": sm3sum[:], "1.2.156.10197.1.401": sm3sum[:],
+			"SHA256": sha256sum[:], "SHA384": sha384sum[:], "SHA512": sha512sum[:],
+		}
 	}
 	trimmed := bytes.TrimSpace(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf}))
 	root, err := p.firstRoot(trimmed)

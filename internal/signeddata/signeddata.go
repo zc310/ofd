@@ -1,11 +1,9 @@
-// Package signeddata 实现 GB/T 35275 的 SM2/SM3 SignedData 与原文字节绑定。
+// Package signeddata 实现 SM2/SM3 GB/T 35275 和 RSA/ECDSA CMS SignedData 的原文字节绑定。
 package signeddata
 
 import (
 	"bytes"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
@@ -15,8 +13,6 @@ import (
 	"time"
 
 	"github.com/emmansun/gmsm/pkcs7"
-	"github.com/emmansun/gmsm/sm2"
-	"github.com/emmansun/gmsm/sm3"
 	"github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/internal/ses"
 )
@@ -60,6 +56,8 @@ type signedData struct {
 
 // Proof 只报告数学和字节绑定证据；证书信任及吊销状态由上层验证。
 type Proof struct {
+	Algorithm      string
+	Format         string
 	Signer         *smx509.Certificate
 	Certificates   []*smx509.Certificate
 	SigningTime    time.Time
@@ -104,12 +102,15 @@ func parse(value []byte) (*signedData, error) {
 	if !sd.Content.Type.Equal(pkcs7.SM2OIDData) && !sd.Content.Type.Equal(pkcs7.OIDData) {
 		return nil, invalid("签名内容类型必须为 Data")
 	}
-	if len(sd.Digests) != 1 || !sd.Digests[0].Algorithm.Equal(pkcs7.OIDDigestAlgorithmSM3) || !sd.Signers[0].Digest.Algorithm.Equal(pkcs7.OIDDigestAlgorithmSM3) {
-		return nil, fmt.Errorf("%w: SignedData 摘要必须一致地声明 SM3", ErrUnsupported)
+	if len(sd.Digests) != 1 || !sd.Digests[0].Algorithm.Equal(sd.Signers[0].Digest.Algorithm) || !nullOrAbsent(sd.Digests[0].Parameters) {
+		return nil, fmt.Errorf("%w: SignedData 摘要声明不一致或参数无效", ErrUnsupported)
 	}
-	algorithm := sd.Signers[0].Algorithm.Algorithm
-	if !algorithm.Equal(pkcs7.OIDDigestEncryptionAlgorithmSM2) && !algorithm.Equal(pkcs7.OIDDigestAlgorithmSM2SM3) {
-		return nil, fmt.Errorf("%w: 签名算法 %s", ErrUnsupported, algorithm)
+	algorithm, err := algorithmFromIdentifiers(sd.Signers[0].Digest, sd.Signers[0].Algorithm)
+	if err != nil {
+		return nil, err
+	}
+	if algorithm.kind != "SM2" && (envelope.Type.Equal(pkcs7.SM2OIDSignedData) || sd.Content.Type.Equal(pkcs7.SM2OIDData)) {
+		return nil, invalid("国际算法必须使用 CMS SignedData/Data 内容类型")
 	}
 	if len(sd.CRLs) != 0 {
 		// CRL 可随包携带，但不能替代调用方提供的受信吊销证据。
@@ -147,11 +148,15 @@ func Verify(value, original, uid []byte) (*Proof, error) {
 	if certificate == nil {
 		return nil, invalid("缺少签名者证书")
 	}
-	pub, ok := certificate.PublicKey.(*ecdsa.PublicKey)
-	if !ok || !sm2.IsSM2PublicKey(pub) {
-		return nil, invalid("签名者证书不是 SM2 公钥")
+	algorithm, err := algorithmFromIdentifiers(sd.Signers[0].Digest, sd.Signers[0].Algorithm)
+	if err != nil {
+		return nil, err
 	}
-	proof := &Proof{Signer: certificate, Certificates: p7.Certificates}
+	format := "CMS SignedData"
+	if algorithm.kind == "SM2" {
+		format = "GB/T 35275 SignedData"
+	}
+	proof := &Proof{Algorithm: algorithm.method, Format: format, Signer: certificate, Certificates: p7.Certificates}
 	si := &sd.Signers[0]
 	signed := original
 	if len(si.Signed) > 0 {
@@ -176,8 +181,8 @@ func Verify(value, original, uid []byte) (*Proof, error) {
 				}
 			case attr.Type.Equal(pkcs7.OIDAttributeMessageDigest):
 				var digest []byte
-				sum := sm3.Sum(original)
-				if err := valueOf(attr, &digest); err != nil || !bytes.Equal(digest, sum[:]) {
+				sum := algorithm.sum(original)
+				if err := valueOf(attr, &digest); err != nil || !bytes.Equal(digest, sum) {
 					return nil, invalid("messageDigest 与原文字节不匹配")
 				}
 			case attr.Type.Equal(pkcs7.OIDAttributeSigningTime):
@@ -196,8 +201,8 @@ func Verify(value, original, uid []byte) (*Proof, error) {
 			return nil, err
 		}
 	}
-	if !sm2.VerifyASN1WithSM2(pub, uid, signed, si.Signature) {
-		return nil, invalid("SM2 数学签名验证失败")
+	if err := algorithm.verify(certificate.PublicKey, signed, si.Signature, uid); err != nil {
+		return nil, err
 	}
 	if len(si.Unsigned) > 1 {
 		return nil, fmt.Errorf("%w: 未支持的或重复的非签名属性", ErrUnsupported)
@@ -220,23 +225,38 @@ func Verify(value, original, uid []byte) (*Proof, error) {
 
 // Options 由外部签名器或硬件适配器提供密钥及时间戳服务。
 type Options struct {
+	// Algorithm 为组合签名算法 OID；缺省 SM2WithSM3。RSA/ECDSA 对签名属性的
+	// SHA-2 摘要调用 Signer.Sign，SM2 则传完整属性和 SM2 专用签名选项。
+	Algorithm     string
 	Time          time.Time
 	UID           []byte
 	Intermediates [][]byte
 	Timestamp     func([]byte) ([]byte, error)
 }
 
-// Create 生成 detached GB/T 35275 SignedData；Signer.Sign 接收完整 DER 签名属性
-// 和 sm2.NewSM2SignerOption(true, UID)。函数不创建或保存私钥。
+// Create 生成 detached SignedData；SM2 使用 GB/T 35275，RSA/ECDSA 使用
+// RFC 5652 CMS。函数不创建或保存私钥，Signer.Sign 参数约定见 Options。
 func Create(original, certificateDER []byte, signer crypto.Signer, opt Options) ([]byte, error) {
+	method := opt.Algorithm
+	if method == "" {
+		method = SM2WithSM3
+	}
+	algorithm, err := lookupAlgorithm(method)
+	if err != nil {
+		return nil, err
+	}
 	certificate, err := smx509.ParseCertificate(certificateDER)
 	if err != nil || signer == nil {
-		return nil, invalid("需要 SM2 签名证书和 Signer")
+		return nil, invalid("需要签名证书和 Signer")
 	}
-	pub, ok := signer.Public().(*ecdsa.PublicKey)
-	certPub, certOK := certificate.PublicKey.(*ecdsa.PublicKey)
-	if !ok || !certOK || !sm2.IsSM2PublicKey(pub) || !pub.Equal(certPub) {
-		return nil, invalid("Signer 公钥与 SM2 证书不匹配")
+	if err := algorithm.checkPublicKey(certificate.PublicKey); err != nil {
+		return nil, err
+	}
+	pub, ok := signer.Public().(interface {
+		Equal(other crypto.PublicKey) bool
+	})
+	if !ok || !pub.Equal(certificate.PublicKey) {
+		return nil, invalid("Signer 公钥与证书不匹配")
 	}
 	if opt.Time.IsZero() {
 		opt.Time = time.Now()
@@ -248,13 +268,18 @@ func Create(original, certificateDER []byte, signer crypto.Signer, opt Options) 
 		data, err := asn1.Marshal(value)
 		return attribute{Type: oid, Values: asn1.RawValue{Tag: asn1.TagSet, IsCompound: true, Bytes: data}}, err
 	}
-	sum := sm3.Sum(original)
-	si := signerInfo{Version: 1, Digest: pkix.AlgorithmIdentifier{Algorithm: pkcs7.OIDDigestAlgorithmSM3}, Algorithm: pkix.AlgorithmIdentifier{Algorithm: pkcs7.OIDDigestEncryptionAlgorithmSM2}}
+	sum := algorithm.sum(original)
+	digestID, signatureID := algorithm.identifiers()
+	si := signerInfo{Version: 1, Digest: digestID, Algorithm: signatureID}
+	contentType, envelopeType := pkcs7.OIDData, pkcs7.OIDSignedData
+	if algorithm.kind == "SM2" {
+		contentType, envelopeType = pkcs7.SM2OIDData, pkcs7.SM2OIDSignedData
+	}
 	si.Issuer.Name, si.Issuer.Serial = asn1.RawValue{FullBytes: certificate.RawIssuer}, certificate.SerialNumber
 	for _, item := range []struct {
 		oid asn1.ObjectIdentifier
 		val any
-	}{{pkcs7.OIDAttributeContentType, pkcs7.SM2OIDData}, {pkcs7.OIDAttributeMessageDigest, sum[:]}, {pkcs7.OIDAttributeSigningTime, opt.Time.UTC().Truncate(time.Second)}} {
+	}{{pkcs7.OIDAttributeContentType, contentType}, {pkcs7.OIDAttributeMessageDigest, sum}, {pkcs7.OIDAttributeSigningTime, opt.Time.UTC().Truncate(time.Second)}} {
 		attr, err := makeAttribute(item.oid, item.val)
 		if err != nil {
 			return nil, err
@@ -271,7 +296,7 @@ func Create(original, certificateDER []byte, signer crypto.Signer, opt Options) 
 		b, _ := asn1.Marshal(si.Signed[j])
 		return bytes.Compare(a, b) < 0
 	})
-	si.Signature, err = signer.Sign(rand.Reader, attrs, sm2.NewSM2SignerOption(true, opt.UID))
+	si.Signature, err = algorithm.sign(signer, attrs, opt.UID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,12 +325,12 @@ func Create(original, certificateDER []byte, signer crypto.Signer, opt Options) 
 		certificates = append(certificates, data)
 	}
 	sort.Slice(certificates, func(i, j int) bool { return bytes.Compare(certificates[i], certificates[j]) < 0 })
-	sd := signedData{Version: 1, Digests: []pkix.AlgorithmIdentifier{si.Digest}, Content: contentInfo{Type: pkcs7.SM2OIDData}, Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: bytes.Join(certificates, nil)}, Signers: []signerInfo{si}}
+	sd := signedData{Version: 1, Digests: []pkix.AlgorithmIdentifier{si.Digest}, Content: contentInfo{Type: contentType}, Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: bytes.Join(certificates, nil)}, Signers: []signerInfo{si}}
 	data, err := asn1.Marshal(sd)
 	if err != nil {
 		return nil, err
 	}
-	value, err := asn1.Marshal(contentInfo{Type: pkcs7.SM2OIDSignedData, Content: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: data}})
+	value, err := asn1.Marshal(contentInfo{Type: envelopeType, Content: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: data}})
 	if err != nil {
 		return nil, err
 	}

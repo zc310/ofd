@@ -37,7 +37,7 @@ type Verification struct {
 	Error       string                       `json:"error,omitempty"`
 }
 
-// Verify 校验文件摘要，并按 Type 验证 SES 签章或 GM/T 0099 普通 SM2/SM3 SignedData。
+// Verify 校验文件摘要，并按 Type 验证 SES 签章或 SM2/RSA/ECDSA 普通 SignedData。
 // input 接受文件路径、[]byte 或 io.Reader。缺少信任、吊销或印章状态证据时，
 // Result.Validation.Status 为 incomplete；各类型的数学签名结果仍独立保留。
 // crypt.View 必须完整解锁；只检查原始密文包时使用 VerifyPhysical。

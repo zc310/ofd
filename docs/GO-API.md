@@ -63,7 +63,8 @@ err = converter.PDF(ctx, view, output)
 存在外层物理签名时，validator 在原包检查其引用和摘要，解密视图用于普通文档校验。
 `AllowPartial` 只用于明确检查已解锁条目，不能把部分视图交给普通渲染/验签链。
 
-`pkg/sign` 的 `Options.Type="Sign"` 接入 GM/T 0099 普通 SM2/SM3 SignedData 数字签名，
+`pkg/sign` 的 `Options.Type="Sign"` 接入 SM2/SM3 SignedData 或 RSA/ECDSA CMS 数字签名，
+`SignatureMethod` 与 `DigitalSigningOptions.Algorithm` 使用相同组合 OID；`CheckMethod` 可独立选择 SHA256/384/512，缺省 SM3。
 `Verify` 按 Type 验证普通签名或 SES，并检查 Relative 基础签名。`FullyValid()` 是完整结论。
 `sign.Sign(ctx, input, output, Options{Type: "Sign", Append: true})` 保留旧普通签名并增加记录，
 `Relative` 指定基础签名，最后用 `LockSignatures: true` 固定列表；已被摘要保护的列表拒绝追加。

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,8 +34,8 @@ func TestSignCLIAppendsWithExternalSignerAndKeepsFailedOutputUntouched(t *testin
 	first, final := filepath.Join(dir, "first.ofd"), filepath.Join(dir, "final.ofd")
 	var stdout, stderr bytes.Buffer
 	for _, args := range [][]string{
-		{"sign", "--append", "--sign-cmd", signer, "--validate", "-o", first, input},
-		{"sign", "--append", "--relative", "sign-1", "--lock-signatures", "--sign-cmd", signer, "--validate", "-o", final, first},
+		{"sign", "--append", "--sign-check-method", "SHA256", "--sign-cmd", signer, "--validate", "-o", first, input},
+		{"sign", "--append", "--relative", "sign-1", "--lock-signatures", "--sign-check-method", "SHA384", "--sign-cmd", signer, "--validate", "-o", final, first},
 	} {
 		if code := run(args, &stdout, &stderr); code != exitOK || stdout.Len() != 0 || stderr.Len() != 0 {
 			t.Fatalf("run(%v)=%d stdout=%s stderr=%s", args, code, &stdout, &stderr)
@@ -104,7 +105,7 @@ func TestSignCLIAppendsWithExternalSignerAndKeepsFailedOutputUntouched(t *testin
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"sign", "--physical", "--validate", "--sign-cmd", signer, "-o", physicalPath, encryptedPath}, &stdout, &stderr); code != exitOK || stdout.Len() != 0 || stderr.Len() != 0 {
+	if code := run([]string{"sign", "--physical", "--validate", "--sign-check-method", "SHA512", "--sign-cmd", signer, "-o", physicalPath, encryptedPath}, &stdout, &stderr); code != exitOK || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("物理签署 CLI 失败: %d %s", code, &stderr)
 	}
 	results, err = sign.VerifyPhysical(t.Context(), physicalPath, sign.VerificationOptions{})
@@ -117,6 +118,7 @@ func TestSignCLIRejectsInvalidArgumentsBeforeOpeningInput(t *testing.T) {
 	for _, args := range [][]string{
 		{"--relative", "base"}, {"--lock-signatures"}, {"--append", "--sign-type", "Seal"},
 		{"--sign-id", "../bad"}, {"--append", "--relative", "../bad"}, {"--sign-check-method", "SHA1"},
+		{"--sign-method", "1.2.840.113549.1.1.10"}, {"--sign-check-method", "SHA224"},
 		{"--physical", "--append"}, {"--physical", "--sign-type", "Seal"}, {"--physical", "--sign-exclude", "**"},
 		{"--input", "missing.ofd", "other.ofd"}, {"extra.ofd", "extra2.ofd"},
 	} {
@@ -133,6 +135,20 @@ func TestSignCLIRejectsInvalidArgumentsBeforeOpeningInput(t *testing.T) {
 	for _, flag := range []string{"--append", "--relative", "--lock-signatures", "--sign-cmd"} {
 		if !strings.Contains(stdout.String(), flag) {
 			t.Fatalf("帮助缺少 %s: %s", flag, &stdout)
+		}
+	}
+}
+
+func TestSignCLIAcceptsInternationalAlgorithmsAndSHA2References(t *testing.T) {
+	for _, method := range []string{sign.SHA256WithRSA, sign.SHA384WithRSA, sign.SHA512WithRSA, sign.ECDSAWithSHA256, sign.ECDSAWithSHA384, sign.ECDSAWithSHA512} {
+		for _, digest := range []string{"SHA256", "SHA384", "SHA512", "sha256"} {
+			opts, err := parseSignArgs([]string{"--sign-cmd", "external-signer", "--sign-method", method, "--sign-check-method", digest, "-o", "output.ofd", "input.ofd"}, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateSignOptions(opts); err != nil {
+				t.Fatalf("国际签名参数被拒绝: method=%s digest=%s err=%v", method, digest, err)
+			}
 		}
 	}
 }

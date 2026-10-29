@@ -450,7 +450,7 @@ signatures := []creator.Signature{{
 | Signature.ID | 合法 XML ID，不自动裁剪首尾空白。 |
 | Sign / Seal | Sign 必须提供 SignedValue；Seal 可提供 SealFile。 |
 | CheckValue | 为空时根据 CheckMethod 计算已存在目标条目的摘要；签名 XML 自身和尚未生成的签名条目不能作为自动摘要目标。 |
-| CheckMethod | MD5、SHA1、SM3 及对应国密 OID；缺省按 Schema 使用 MD5，大小写会规范化。 |
+| CheckMethod | MD5、SHA1、SHA256、SHA384、SHA512、SM3 及 SM3 OID；缺省按 Schema 使用 MD5，大小写会规范化。SHA-2/SM3 属于内置 XSD 支持的扩展。 |
 | SignatureReference.FileRef | 从签名目录解析，允许规范的 `../Document.xml`；目标必须存在。 |
 | Versions | 生成版本清单、版本描述和可选文档根文件；ID 与文件 ID 为合法 XML ID，Index 唯一，最多一个 Current 版本。 |
 | Version.Files | 列出该版本所需的全部文件，包括入口、页面和资源。输入路径相对于文档目录 `Doc_0`；输出到版本描述文件时自动转换为 `/Doc_0/...` 包内绝对路径。 |

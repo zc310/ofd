@@ -18,7 +18,7 @@
 | 只读解密视图 | `crypt.Open`                                            | 多层依赖、按操作/seed 提供凭据、部分解锁状态、租约与密钥释放                        |
 | 文档处理     | parser、converter、sign、analyzer、webreader、validator | 完全解锁视图直接接入；校验器分别检查物理容器与逻辑文档                              |
 | 图形阅读器 | `ofd-viewer`、WASM 阅读器及 `ofd.open` | 口令、UTF-8 口令文件或 SM2 私钥解锁，默认兼容读取；WASM 解锁后按文档体和当前版本执行打印、复制、导出权限检查，范围见 [文档权限](../cmd/ofd-wasm/web/README.md#文档权限) |
-| 普通数字签名 | `pkg/sign`、`ofd-creator sign`                          | SM2/SM3 SignedData、附录 B 扩展、普通签名追加及受限物理包签署                       |
+| 普通数字签名 | `pkg/sign`、`ofd-creator sign`                          | SM2/SM3 SignedData、RSA/ECDSA CMS、SHA-2 文件引用摘要、附录 B 扩展、普通签名追加及受限物理包签署 |
 | 完整性保护   | `pkg/integrity`、`ofd-crypt integrity`                  | 带时间戳清单签名、物理文件集合、引用闭包和内容签名覆盖检查                          |
 
 ### 加解密与逻辑视图
@@ -50,7 +50,9 @@ validator 使用 `Validate` 同时检查物理容器与逻辑文档。部分解�
 
 ### 数字签名与完整性保护
 
-普通 SM2/SM3 SignedData 签名实现 §7.2，支持附录 B 的 Type/Relative、
+普通签名实现 §7.2：SM2/SM3 使用 GB/T 35275，RSA PKCS#1 v1.5/ECDSA 使用 RFC 5652 CMS
+（§7.2.2 c），支持 SHA256/384/512。文件引用摘要独立选择 SM3 或 SHA-2，
+XML SignatureMethod 与实际 CMS 算法必须一致。支持附录 B 的 Type/Relative、
 ProtocolVer/ExtendData、Parameters、Seal/ImageLoc；SES 与普通签名按列表 Type 分派。
 每份普通 SignedData 限定为单一签名者及已解释的属性，多人签署使用多个 OFD 记录。
 
@@ -68,10 +70,11 @@ ProtocolVer/ExtendData、Parameters、Seal/ImageLoc；SES 与普通签名按列�
 
 ### 已知限制与验证范围
 
-- 普通数字签名不支持 RSA/ECDSA、内外签名混合编排或加密主入口的物理签名发现。
+- 普通数字签名暂不支持 RSA-PSS、多签名者 CMS、SubjectKeyIdentifier 签名者、内外签名混合编排或加密主入口的物理签名发现。
 - 固定 ofdrw 2.4.0 已完成单层、共用密钥、默认加密映射的双向互通；
   多层、独立条目 seed 和页面范围由构造样本及读写回归验证，不扩大该第三方互通结论。
-- 普通数字签名和完整性保护已有构造回归及完整 CLI 流程验证，尚未完成第三方协议互通；
+- RSA/ECDSA 的六种 SHA-2 CMS 组合已完成本地 OpenSSL 双向验证；普通数字签名和完整性保护
+  已有构造回归及完整 CLI 流程验证，尚未完成服务商、HSM 和具体 OFD 阅读器的协议互通；
   时间戳使用测试 CA 和独立编码令牌验证，尚未实测真实在线 TSA 服务。
 - 实现与测试结论限于本文范围，不代表标准全部能力覆盖或外部符合性认证。
 
@@ -209,7 +212,9 @@ CBC 原语失败时清零整个输入缓冲并返回空明文，成功缓冲由�
 ## 签名扩展与完整性清单格式
 
 附录 B/D 的 XSD 使用显式 `--gmt0099` / `WithGMT0099(true)` 扩展模式，基础 GB/T 33190
-模式保留。表 B.2 的 ImageLoc 类型误写 ST_Box，按图 B.2 的 ST_Loc 和“图片存储位置”
+结构模式保留。GB/T 33190 §18.2.2 表68允许按场景选择引用摘要；原版附录 A 的 CheckMethod
+枚举仅含 MD5/SHA1，项目内置基础 XSD 另接受 SHA256/384/512、SM3 及 SM3 OID，属于项目支持的扩展。
+表 B.2 的 ImageLoc 类型误写 ST_Box，按图 B.2 的 ST_Loc 和“图片存储位置”
 解释。图 B.2 的 Provider/ExtendData 是 Base64 子元素，ProtocolVer 才是属性。
 图 D.1 为 OFDEntries，表 D.1 为 DocEntries，两者均接受并记录差异；表中若干字段
 说明沿用了加密映射文字，ID 不用来推断加密操作。清单 FileList 不作为文档引用遍历入口。

@@ -72,8 +72,12 @@ value, err := sign.CreateSignedValue(signatureXML, seal, signerCertDER, signerKe
 ```
 
 上述代码中的证书、密钥、图片与 `signingOptions` 由应用提供。生成签名值时
-SM2 对原文使用 SM3，独立于 OFD `References.CheckMethod`；引用摘要支持 MD5、SHA1、SM3。
+SM2 对原文使用 SM3，独立于 OFD `References.CheckMethod`；引用摘要支持 MD5、SHA1、SHA256、SHA384、SHA512、SM3 及 SM3 OID。
 引用摘要可为 SHA1，而 SES `DataHash` 仍使用 SM3。
+
+`CheckMethod` 的算法名不区分大小写，写出时统一大写，`sign.Sign` 缺省仍为 SM3。
+GB/T 33190—2016 §18.2.2 表68允许按应用场景选择摘要；该版附录 A 的原始 XSD
+枚举仅有 MD5/SHA1，项目内置 XSD 另支持 SHA-2 与 SM3，外部校验器需支持对应扩展。
 
 ## 完整验证
 
@@ -138,7 +142,8 @@ TSA 专用关键 EKU、ESS 签名者证书摘要绑定、信任及整条证书�
 ## GM/T 0099 普通数字签名与附录 B
 
 `Sign(ctx, input, output, options)` 的 `Options.Type` 缺省为 `Seal`；设置 `Type: "Sign"` 时外部命令或
-`Options.Sign(ctx, signatureXML)` 回调应返回 GB/T 35275 的 SM2/SM3 SignedData。
+`Options.Sign(ctx, signatureXML)` 回调应返回 GB/T 35275 的 SM2/SM3 SignedData，
+或 RFC 5652 的 RSA/ECDSA CMS SignedData（GM/T 0099 §7.2.2 c）。
 外部命令仍从 stdin 读取完整 Signature.xml、向 stdout 返回 SignedValue.dat，
 环境变量 `OFD_SIGN_TYPE` 表明类型。上下文可取消外部进程，命令输出受大小限制。
 普通签名的输出会预检原文字节绑定和附加时间戳的数学有效性。
@@ -158,15 +163,54 @@ err := sign.Sign(ctx, input, output, sign.Options{
 ```
 
 `CreateDigitalSignedValue` 供外部签名器和硬件适配器使用，不生成或保存私钥。
-`crypto.Signer.Sign` 接收完整 DER 签名属性及 SM2 签名选项；可用 `DigitalSigningOptions.UID`
+SM2 的 `crypto.Signer.Sign` 接收完整 DER 签名属性及 SM2 签名选项；可用 `DigitalSigningOptions.UID`
 指定用户标识，包写入时相应设置 `Options.UID`。
 `VerifyDigitalSignedValue` 只验证单独消息，完整 OFD 应调用 `Verify` 同时检查 References。
 
 读取接受单一签名者的 v1 GB/T 35275 SignedData，也接受 SM2/SM3 的 CMS/PKCS#7 SignedData
 外层 OID。支持 detached/attached 原文、contentType/messageDigest/signingTime 签名属性和
 signatureTimeStampToken 非签名属性。原文使用文件原始字节，不规范化 XML。
-未知算法、未解释的签名属性和其他非签名属性保持未支持/未完成，不作 RSA/ECDSA 验证。
+另支持单一签名者的 v1 RSA/ECDSA CMS SignedData，具体算法见下表。
+未知算法、未解释的签名属性和其他非签名属性保持未支持/未完成。
 每份数字签名/XML 硬上限 4 MiB，证书数量上限 128。
+
+### RSA/ECDSA 普通数字签名
+
+`DigitalSigningOptions.Algorithm` 与 `Options.SignatureMethod` 使用相同的组合签名 OID，
+缺省均为 SM2/SM3。选择国际算法时需显式设置两处；写入与验签都会检查 XML 与 CMS 的算法一致性。
+文件引用的 `CheckMethod` 独立选择，普通签名支持 SM3、SM3 OID 或 SHA256/SHA384/SHA512。
+
+| Go 常量 | SignatureMethod | 签名方案 |
+|---|---|---|
+| `sign.SHA256WithRSA` | `1.2.840.113549.1.1.11` | RSA PKCS#1 v1.5 + SHA256 |
+| `sign.SHA384WithRSA` | `1.2.840.113549.1.1.12` | RSA PKCS#1 v1.5 + SHA384 |
+| `sign.SHA512WithRSA` | `1.2.840.113549.1.1.13` | RSA PKCS#1 v1.5 + SHA512 |
+| `sign.ECDSAWithSHA256` | `1.2.840.10045.4.3.2` | ECDSA + SHA256 |
+| `sign.ECDSAWithSHA384` | `1.2.840.10045.4.3.3` | ECDSA + SHA384 |
+| `sign.ECDSAWithSHA512` | `1.2.840.10045.4.3.4` | ECDSA + SHA512 |
+
+```go
+algorithm := sign.SHA256WithRSA
+err := sign.Sign(ctx, input, output, sign.Options{
+    Type: "Sign", SignatureMethod: algorithm, CheckMethod: "SHA256",
+    Sign: func(ctx context.Context, signatureXML []byte) ([]byte, error) {
+        return sign.CreateDigitalSignedValue(signatureXML, certificateDER, signer,
+            sign.DigitalSigningOptions{Algorithm: algorithm, Time: signingTime})
+    },
+    Date: signingTime,
+})
+```
+
+`certificateDER` 和 `signer` 由调用方提供，证书公钥必须与签名器匹配。
+RSA/ECDSA 的 `Signer.Sign` 接收 DER 签名属性的 SHA-2 摘要和对应 `crypto.Hash`；
+RSA 返回 PKCS#1 v1.5 签名，ECDSA 返回 DER `(r,s)`，支持 P-256/P-384/P-521。
+CMS 写出 RSA `rsaEncryption` OID，读入同时接受与摘要一致的 RSA 组合 OID；
+ECDSA 算法参数必须缺省。RSA-PSS、SubjectKeyIdentifier 签名者及多签名者 CMS 尚未支持。
+
+本地已与 OpenSSL 双向验证六种组合，覆盖 detached/attached 原文及无签名属性形式；
+OpenSSL 生成测试使用 `-nosmimecap`，尚未解释的 S/MIME 等签名属性仍报告未完成。
+OFD 回归覆盖证书链/CRL、测试时间戳、SM2 与国际算法混合追加和篡改拒绝。
+服务商签名接口、HSM、具体 OFD 阅读器及在线 TSA 的互操作需按实际目标单独验证。
 
 普通签名的 `Result.Kind=Sign`，`Result.Valid/Outer` 表示单层数学签名，`Seal` 不适用；
 SES 继续保留两层签名语义。两种类型都用 `FullyValid()` 判断完整结论。
@@ -218,8 +262,8 @@ OFD.xml、全部已有签名 XML、签名值及独立印章文件；不摘要仍
 ## 加密物理包签署
 
 `Options{Type: "Sign", Physical: true}` 对加密完成后的物理文件签署，覆盖输入的全部文件、
-更新后的明文 OFD.xml 和最终签名列表。使用标准 References/CheckValue 的 SM3 摘要，
-不增加清单格式字段。外部签名器仍返回绑定 Signature.xml 的 SM2/SM3 SignedData，
+更新后的明文 OFD.xml 和最终签名列表。使用标准 References/CheckValue，缺省 SM3 摘要，
+也可选择 SHA-2，不增加清单格式字段。外部签名器返回绑定 Signature.xml 的受支持 SignedData，
 命令环境变量 `OFD_SIGN_SCOPE=physical` 说明本次操作范围。
 
 ```go
@@ -244,7 +288,7 @@ OFD.xml 和外签元数据必须在解密后保持相同字节；映射覆盖这
 实现已通过临时测试 CA/CRL、独立编码测试时间戳及篡改回归，尚未做第三方 P4 产品互通。
 
 GM/T 0099 的 SM4 文档解密与只读视图由 [`pkg/crypt`](../crypt/README.md) 提供；
-可先恢复明文 OFD，再调用本包验签。本包不包含 RSA/ECDSA OFD 文档验签。标准支持范围及验证配置
+可先恢复明文 OFD，再调用本包验签。标准支持范围及验证配置
 应随使用场景声明；实现与回归测试不等同于外部符合性认证。
 
 `Verify` 也可直接接收完整解锁的 `crypt.View`，通过独立租约读取原始明文字节，无需创建

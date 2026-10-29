@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
 	"hash"
@@ -161,6 +163,13 @@ func signatureHash(method string) (func() hash.Hash, bool) {
 		return md5.New, true
 	case "SHA1":
 		return sha1.New, true
+	// GB/T 33190—2016 §18.2.2 表68允许按应用场景选择文件引用摘要算法。
+	case "SHA256":
+		return sha256.New, true
+	case "SHA384":
+		return sha512.New384, true
+	case "SHA512":
+		return sha512.New, true
 	case "SM3", "1.2.156.10197.1.401":
 		return sm3.New, true
 	default:

@@ -40,7 +40,7 @@ type Provider struct {
 }
 
 type References struct {
-	CheckMethod string      `xml:"CheckMethod,attr,omitempty"` // MD5, SHA1, SM3 或 SM3 OID
+	CheckMethod string      `xml:"CheckMethod,attr,omitempty"` // MD5、SHA1、SHA256、SHA384、SHA512、SM3 或 SM3 OID
 	Reference   []Reference `xml:"Reference"`
 }
 

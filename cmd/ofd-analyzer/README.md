@@ -5,7 +5,7 @@
 JSON 报告的 `schema_version` 保持为 `1`，签名项增加 `validation` 完整验证结论与检查明细。
 文本、Markdown、OFD、PDF 和 XLSX 报告也展示完整结论；两层数学签名通过不代表完整验证通过。
 
-普通 `Type=Sign` 按 GM/T 0099 的 SM2/SM3 SignedData 验证，`verification_valid` 表示单层
+普通 `Type=Sign` 验证 SM2/SM3 SignedData 或 RSA/ECDSA CMS，`verification_valid` 表示单层
 数学签名，`outer_verification` 记录其证书与签名结果，不生成 SES 印章内部签名结果。
 SES 继续保留两层语义。两种类型都需要检查 `validation` 的完整结论。
 

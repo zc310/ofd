@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -97,11 +98,16 @@ func validateSignOptions(opts *signOptions) error {
 		return fmt.Errorf("--relative 必须为合法 xs:IDREF")
 	}
 	if opts.signType == spec.SigTypeSign {
-		if method := strings.TrimSpace(opts.signMethod); method != "" && method != sign.DefaultSignatureMethod {
-			return fmt.Errorf("普通数字签名仅支持 SM2-with-SM3")
+		switch strings.TrimSpace(opts.signMethod) {
+		case "", sign.SM2WithSM3, sign.SHA256WithRSA, sign.SHA384WithRSA, sign.SHA512WithRSA,
+			sign.ECDSAWithSHA256, sign.ECDSAWithSHA384, sign.ECDSAWithSHA512:
+		default:
+			return fmt.Errorf("%w: 普通数字签名算法 %s", errors.ErrUnsupported, opts.signMethod)
 		}
-		if method := strings.TrimSpace(opts.signCheckMethod); method != "" && method != "SM3" && method != "1.2.156.10197.1.401" {
-			return fmt.Errorf("普通数字签名仅支持 SM3 引用摘要")
+		switch strings.ToUpper(strings.TrimSpace(opts.signCheckMethod)) {
+		case "", "SM3", "1.2.156.10197.1.401", "SHA256", "SHA384", "SHA512":
+		default:
+			return fmt.Errorf("%w: 普通数字签名仅支持 SM3 或 SHA256/SHA384/SHA512 引用摘要", errors.ErrUnsupported)
 		}
 	}
 	return nil

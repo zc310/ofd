@@ -17,7 +17,7 @@ import (
 	"github.com/zc310/ofd/pkg/spec"
 )
 
-// VerifyDigitalSignedValue 验证 GB/T 35275 SM2/SM3 SignedData 对完整文件字节的绑定。
+// VerifyDigitalSignedValue 验证 GB/T 35275/CMS SignedData 对完整文件字节的绑定。
 // 数学验证与完整结论分开；未提供信任或吊销证据时结果为 incomplete。
 func VerifyDigitalSignedValue(original, value []byte, options *SignatureVerificationOptions) (*SignatureVerificationResult, error) {
 	if options == nil {
@@ -40,8 +40,8 @@ func VerifyDigitalSignedValue(original, value []byte, options *SignatureVerifica
 	}
 	result.Valid = true
 	result.Outer.Valid = true
-	result.Outer.Algorithm = sm2WithSM3OID
-	result.Outer.SignatureFormat = "GB/T 35275 SignedData"
+	result.Outer.Algorithm = proof.Algorithm
+	result.Outer.SignatureFormat = proof.Format
 	result.Outer.Certificate = certificateInfo(proof.Signer)
 	v.check("signer.signature", nil)
 	v.check("document.binding", nil)
@@ -173,8 +173,14 @@ func VerifyDocumentSignature(ctx context.Context, pkg *container.Package, signat
 	if err := securexml.Decode(ctx, data, "Signature", &checked); err != nil {
 		return nil, err
 	}
-	if checked.SignedInfo.SignatureMethod != sm2WithSM3OID || (checked.SignedInfo.References.CheckMethod != "SM3" && checked.SignedInfo.References.CheckMethod != "1.2.156.10197.1.401") {
-		return nil, fmt.Errorf("普通数字签名仅支持 SM2-with-SM3 和 SM3 引用摘要")
+	if !signeddata.SupportsAlgorithm(checked.SignedInfo.SignatureMethod) {
+		return nil, fmt.Errorf("%w: 普通数字签名算法 %s", signeddata.ErrUnsupported, checked.SignedInfo.SignatureMethod)
+	}
+	// References 与 SignedData 内部摘要独立（GB/T 33190 §18.2.2 表68）。
+	switch normalizeDigestMethod(checked.SignedInfo.References.CheckMethod) {
+	case "SM3", "1.2.156.10197.1.401", "SHA256", "SHA384", "SHA512":
+	default:
+		return nil, fmt.Errorf("%w: 普通数字签名仅支持 SM3 或 SHA256/SHA384/SHA512 引用摘要", signeddata.ErrUnsupported)
 	}
 	if value == nil {
 		return nil, fmt.Errorf("缺少数字签名值")
@@ -197,6 +203,9 @@ func VerifyDocumentSignature(ctx context.Context, pkg *container.Package, signat
 	result, err := VerifyDigitalSignedValue(data, value.Raw, options)
 	if err != nil {
 		return nil, err
+	}
+	if result.Outer.Algorithm != "" && result.Outer.Algorithm != checked.SignedInfo.SignatureMethod {
+		result.Validation.set("document.signature_method", "invalid", "Signature.xml 与 SignedData 声明的签名算法不一致")
 	}
 	digest, err := VerifySignatureDigest(pkg, signature.FilePath, &checked, nil)
 	if err != nil {
