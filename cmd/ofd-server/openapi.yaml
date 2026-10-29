@@ -1,0 +1,994 @@
+openapi: 3.1.0
+info:
+  title: ofd-server API
+  version: v1
+  description: |
+    OFD 文档转换服务。output.kind 省略或为 stream 时同步返回文件；dir 和远端输出异步返回任务。
+    业务接口支持 Bearer 或 X-OFD-Api-Key，两种认证任选一种。Authorize 中的 Bearer 值只填写令牌本身。
+    所有响应带 X-Request-Id。文档不包含部署的目标地址、凭据或令牌。
+    本源文件的 version 标记接口代际；/openapi.json 在首次读取时替换为程序的发行版本。
+servers:
+  - url: ./
+    description: 当前服务；相对规范地址解析，支持反向代理路径前缀
+security:
+  - BearerAuth: []
+  - APIKeyAuth: []
+tags:
+  - name: 转换
+    description: 同步转换、异步任务提交与格式发现
+  - name: 任务
+    description: 查询、取消、删除任务与下载本地产物
+  - name: 运行状态
+    description: 健康探针、累计统计与 Prometheus 指标
+paths:
+  /v1/convert:
+    post:
+      operationId: convertDocument
+      tags: [转换]
+      summary: 转换文档或提交异步任务
+      description: |
+        output.kind 默认为 stream，转换完成后以 200 返回单个文件；dir/ftp/s3/webdav/sftp 以 202 返回任务信息。
+        图像等逐页输出格式不能使用 stream。输入和输出格式可通过 GET /v1/formats 查询。
+        同步任务也会记录状态，但文件仅在本次响应返回，之后不能从 content 端点下载。
+        同步请求不投递 notify 通知；通知只用于异步任务。high_priority 只影响异步排队。
+
+        JSON 中 input.bytes 使用标准 Base64。不带 Content-Type 时也按 JSON 解析。
+        multipart 中 request 是包含提交参数的 JSON 文本，文件 part 使用 file（推荐）或 input（别名）。
+        文件 part 会覆盖 request.input.kind/bytes，未显式指定 file_name 时使用上传文件名。
+        有 request 时转换参数取自该 JSON，query 参数不参与合并；没有 request 时改从 query 读取参数。
+        octet-stream 的 body 是原始文件，参数从 query 读取。
+
+        query 的 to 仅在 octet-stream 或没有 request 的 multipart 中必填，JSON 请求无需提供。
+        OpenAPI 无法表达 query 与媒体类型之间的条件必填关系，客户端需要按提交方式处理。
+        query 还接受以下别名（按列出顺序取第一个非空值）：
+        to/output.format/format、kind/output.kind、file_name/output.file_name、dir/output.dir、
+        input_format/input.format、input_file_name/input.file_name、remote_target/output.remote.target、
+        remote_path/output.remote.path、notify_target/notify.target。推荐使用下面列出的短参数。
+      parameters:
+        - $ref: '#/components/parameters/RequestID'
+        - name: Idempotency-Key
+          in: header
+          description: |
+            仅异步任务可用。去除首尾空白后为 1–128 个非空格可见 ASCII 字符。
+            同键同规范化请求返回原任务并带 Idempotent-Replayed；同键不同请求返回 409。
+            任务删除或过期清理后键失效。stream 请求带此头返回 400。
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: '^[!-~]+$'
+        - name: to
+          in: query
+          description: 裸上传的输出格式；仅在需要从 query 构建请求时必填
+          schema: {type: string}
+          example: pdf
+        - name: kind
+          in: query
+          description: 裸上传的输出种类，省略时同步返回文件；异步请显式指定 dir 或远端种类
+          schema:
+            $ref: '#/components/schemas/OutputKind'
+        - name: file_name
+          in: query
+          description: 产物基名，不含扩展名
+          schema: {type: string}
+        - name: dir
+          in: query
+          description: output_dir 下的相对子路径
+          schema: {type: string}
+        - name: input_format
+          in: query
+          description: 可选的输入格式声明
+          schema: {type: string}
+        - name: input_file_name
+          in: query
+          description: 输入文件名，用于格式识别，请填写实际文件名。裸上传省略时仅能靠魔数识别 OFD/PDF，其他格式需提供此参数或 input_format
+          schema: {type: string}
+        - name: remote_target
+          in: query
+          description: 已注册的远端目标名
+          schema: {type: string}
+        - name: remote_path
+          in: query
+          description: 远端目标下的相对子路径
+          schema: {type: string}
+        - name: notify_target
+          in: query
+          description: 已注册的通知目标名，仅对异步任务生效
+          schema: {type: string}
+        - name: notify_events
+          in: query
+          description: 逗号分隔的 succeeded、failed 或 *；仅在提供 notify_target 时使用
+          schema: {type: string}
+          example: succeeded,failed
+        - name: high_priority
+          in: query
+          description: 异步任务是否优先排队
+          schema: {type: boolean, default: false}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConvertRequest'
+            examples:
+              stream:
+                summary: 上传并同步返回 PDF（bytes 需要替换成实际 OFD 的 Base64）
+                value:
+                  input: {kind: upload, file_name: sample.ofd, bytes: UEsDBA==}
+                  output: {kind: stream, format: pdf}
+              queued:
+                summary: 上传并提交异步任务
+                value:
+                  input: {kind: upload, file_name: sample.ofd, bytes: UEsDBA==}
+                  output: {kind: dir, format: pdf}
+              url:
+                summary: 从白名单 URL 获取输入（需部署方启用）
+                value:
+                  input: {kind: url, url: 'https://files.example.com/sample.ofd'}
+                  output: {kind: dir, format: pdf}
+          multipart/form-data:
+            # request 使用普通文本表单字段。显式 encoding 会让 Swagger UI 将其转成带 filename 的 Blob。
+            schema:
+              type: object
+              properties:
+                request:
+                  type: string
+                  description: 提交参数的 JSON 文本；有此字段时不读取 query 转换参数
+                  default: '{"output":{"kind":"stream","format":"pdf"}}'
+                file:
+                  type: string
+                  format: binary
+                  description: 原始输入文件，推荐使用此 part
+                input:
+                  type: string
+                  format: binary
+                  description: file 的别名；两者都提供时优先使用 file
+          application/octet-stream:
+            schema:
+              description: 原始输入文件；必须通过 query 的 to 指定输出格式
+              format: binary
+      responses:
+        '200':
+          description: 同步转换成功，响应体是文件内容；实际 Content-Type 取决于输出格式
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+            X-OFD-Job-Id:
+              description: 可供事后查询状态和对账的任务 ID
+              schema: {type: string}
+            X-OFD-Took-Ms:
+              description: 转换耗时，单位毫秒
+              schema: {type: integer, format: int64}
+            Content-Disposition:
+              $ref: '#/components/headers/ContentDisposition'
+            Content-Length:
+              description: 文件字节数
+              schema: {type: integer, format: int64}
+          content:
+            application/pdf:
+              schema: {format: binary}
+            application/ofd:
+              schema: {format: binary}
+            text/plain:
+              schema: {type: string}
+            '*/*':
+              schema: {format: binary}
+        '202':
+          description: 异步任务已受理，或命中幂等重放；受理不代表转换成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+            Location:
+              description: 任务状态路径，例如 /v1/jobs/dlsk13t4bugl
+              schema: {type: string}
+            Idempotent-Replayed:
+              description: 命中幂等键时为 true，否则省略
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: URL 输入关闭或地址不在白名单内（url_input_disabled / url_not_allowed）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 同一个 Idempotency-Key 已用于不同请求（idempotency_conflict）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          description: 同步转换不支持输入/输出格式或格式组合（unsupported_format）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: 异步队列已满（queue_full）
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: 同步转换并发已满（server_busy），可稍后重试或指定 kind=dir 异步提交
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: 同步转换超时（timeout）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/formats:
+    get:
+      operationId: listFormats
+      tags: [转换]
+      summary: 列出当前服务注册的输入和输出格式
+      description: 格式来自转换注册表。输出 stream=true 表示允许同步单文件输出；字段省略表示 false。
+      responses:
+        '200':
+          description: 当前注册的格式列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Formats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/jobs:
+    get:
+      operationId: listJobs
+      tags: [任务]
+      summary: 按任务 ID 倒序分页查询任务
+      parameters:
+        - name: state
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobState'
+        - name: lane
+          in: query
+          schema:
+            $ref: '#/components/schemas/Lane'
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: cursor
+          in: query
+          description: 上一页的 next_cursor，不透明字符串
+          schema: {type: string}
+      responses:
+        '200':
+          description: 任务列表；没有更多数据时省略 next_cursor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/jobs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/JobID'
+    get:
+      operationId: getJob
+      tags: [任务]
+      summary: 查询任务状态
+      description: 原始请求和上传内容不会回显。任务可能已按 retention 清理；同步 stream 任务也可以查询。
+      responses:
+        '200':
+          description: 任务状态，只有终态包含 output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteJob
+      tags: [任务]
+      summary: 删除已终结的任务及其本地产物
+      description: |
+        仅删除清单中的本地文件，不递归删除共享目录，不删除远端产物。
+        对应的幂等键随记录一起删除；累计统计保留。重复删除返回 404。
+      responses:
+        '204':
+          description: 已删除，无响应体
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 任务尚未终结（job_not_finished）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/jobs/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/JobID'
+    post:
+      operationId: cancelJob
+      tags: [任务]
+      summary: 取消仍在排队的任务
+      description: 正在运行或已终结的任务不能取消。
+      responses:
+        '200':
+          description: 已取消
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, state]
+                additionalProperties: false
+                properties:
+                  id: {type: string}
+                  state: {type: string, const: cancelled}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 任务正在运行或已经终结（not_cancellable）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/jobs/{id}/content:
+    parameters:
+      - $ref: '#/components/parameters/JobID'
+      - name: name
+        in: query
+        description: 必须与 output.files 中的文件名精确匹配；省略时单文件直接返回，多文件生成 ZIP
+        schema: {type: string}
+    get:
+      operationId: downloadJobContent
+      tags: [任务]
+      summary: 下载成功的本地 dir 任务产物
+      description: |
+        仅成功的 dir 任务可下载；stream 和远端产物返回 409。
+        单文件支持 Range、If-Range、If-Modified-Since、If-Unmodified-Since 等标准请求头。
+        多文件 ZIP 在响应前完整生成，不支持 Range。实际 Content-Type 由产物格式决定。
+        文件传输的条件请求错误可能由标准库返回 text/plain，不能一律按 JSON 解析。
+      parameters:
+        - name: Range
+          in: header
+          description: 单文件的字节范围，例如 bytes=0-1023；下载完整文件时留空
+          schema: {type: string}
+        - name: If-Range
+          in: header
+          schema: {type: string}
+        - name: If-Modified-Since
+          in: header
+          schema: {type: string}
+        - name: If-Unmodified-Since
+          in: header
+          schema: {type: string}
+      responses:
+        '200':
+          $ref: '#/components/responses/FileContent'
+        '206':
+          description: 单文件的部分内容；多个范围可返回 multipart/byteranges
+          headers:
+            Content-Range:
+              description: 单个范围的起止位置与文件总长度
+              schema: {type: string}
+          content:
+            '*/*':
+              schema: {format: binary}
+        '304':
+          description: 单文件未修改，无响应体
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NotDownloadable'
+        '412':
+          description: 单文件条件请求的前置条件不成立
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '416':
+          description: 单文件 Range 不合法或不在文件范围内
+          headers:
+            Content-Range:
+              description: 无法满足范围时可能返回 bytes */总长度
+              schema: {type: string}
+          content:
+            text/plain:
+              schema: {type: string}
+        '500':
+          $ref: '#/components/responses/InternalError'
+    head:
+      operationId: headJobContent
+      tags: [任务]
+      summary: 查询产物是否可下载及其响应头
+      description: 与 GET 使用相同的产物校验，不返回响应体；多文件仍需先生成 ZIP 才能取得准确大小。
+      responses:
+        '200':
+          description: 产物可下载，无响应体
+          headers:
+            Content-Length:
+              description: 产物或 ZIP 的字节数
+              schema: {type: integer, format: int64}
+            Content-Disposition:
+              $ref: '#/components/headers/ContentDisposition'
+        '304':
+          description: 单文件未修改，无响应体
+        '401':
+          description: 缺少或无效的 API 令牌，无响应体
+        '404':
+          description: 任务或文件不存在，无响应体
+        '409':
+          description: 任务未成功、产物不可下载或归档期间文件变化，无响应体
+        '412':
+          description: 单文件条件请求的前置条件不成立，无响应体
+        '413':
+          description: 归档超过大小上限，无响应体
+        '500':
+          description: 查询或读取产物失败，无响应体
+  /v1/stats:
+    get:
+      operationId: getStats
+      tags: [运行状态]
+      summary: 查询累计转换统计和当前队列状态
+      description: |
+        累计计数跨重启保留，不受任务删除和 retention 影响，不含已取消任务。
+        from 使用实际判定格式；尚未判定的失败任务归为 unknown。
+        formats 每行的 input_bytes 为该输入格式的总输入量，同一输入格式的多行会重复，不应逐行求和。
+      responses:
+        '200':
+          description: 累计统计与瞬时队列状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [运行状态]
+      summary: 获取 Prometheus 文本指标
+      description: 需要业务令牌。进程指标在不支持的平台上可能省略；完整指标说明见 README。
+      responses:
+        '200':
+          description: Prometheus 文本格式，Content-Type 为 text/plain; version=0.0.4
+          content:
+            text/plain:
+              schema: {type: string}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [运行状态]
+      summary: 存活探针
+      security: []
+      responses:
+        '200':
+          description: 服务存活
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status: {type: string, const: ok}
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags: [运行状态]
+      summary: 就绪探针
+      security: []
+      responses:
+        '200':
+          description: 服务就绪
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status: {type: string, const: ready}
+        '503':
+          description: 服务尚未就绪或任务库不可读（not_ready）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+webhooks:
+  jobFinished:
+    post:
+      operationId: receiveJobNotification
+      tags: [任务]
+      summary: 接收异步任务的成功或失败通知
+      description: |
+        此接口由调用方实现，接收地址和共享密钥由部署方预先配置，转换请求只引用 notify.target。
+        仅异步任务投递通知。投递至少一次，以 X-OFD-Delivery 去重；转换 attempt 与通知投递次数不同。
+        2xx 表示接收成功；网络错误、408、429 和 5xx 会重试，其余状态终止重试。
+        配置了共享密钥时提供 X-OFD-Signature，其值为 v1= 加十六进制 HMAC-SHA256。
+        签名原文为 "v1." + X-OFD-Timestamp + "." + 原始请求体，不能解析后重新序列化再验签。
+        接收方还应按自身策略检查时间戳，防止过期通知被重放。
+      security: []
+      parameters:
+        - name: X-OFD-Delivery
+          in: header
+          required: true
+          description: 稳定的通知 ID，重试时保持不变
+          schema: {type: string}
+        - name: X-OFD-Event
+          in: header
+          required: true
+          schema: {type: string, enum: [succeeded, failed]}
+        - name: X-OFD-Job
+          in: header
+          required: true
+          schema: {type: string}
+        - name: X-OFD-Timestamp
+          in: header
+          required: true
+          description: 本次投递的 Unix 秒时间戳
+          schema: {type: integer, format: int64}
+        - name: X-OFD-Signature
+          in: header
+          description: 配置共享密钥时提供的 HMAC 签名
+          schema: {type: string, pattern: '^v1=[0-9a-f]{64}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobNotification'
+      responses:
+        '2XX':
+          description: 已接收，停止重试；响应体被忽略
+        '408':
+          description: 请求超时，将重试
+        '429':
+          description: 接收方限流，将重试
+        '5XX':
+          description: 接收方暂时失败，将重试
+        default:
+          description: 其他状态终止重试
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: 服务配置中的 API 令牌，填写时无需 Bearer 前缀
+    APIKeyAuth:
+      type: apiKey
+      in: header
+      name: X-OFD-Api-Key
+      description: 与 Bearer 等价的 API 令牌，任选一种
+  parameters:
+    RequestID:
+      name: X-Request-Id
+      in: header
+      description: 可选请求 ID，1–128 个非空格可见 ASCII 字符；非法或省略时由服务端生成
+      schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[!-~]+$'}
+    JobID:
+      name: id
+      in: path
+      required: true
+      description: 提交响应中的任务 ID，按不透明字符串使用
+      schema: {type: string}
+  headers:
+    RequestID:
+      description: 本次请求 ID；每个响应均提供
+      schema: {type: string}
+    ContentDisposition:
+      description: attachment 文件名，中文名使用 filename* 编码
+      schema: {type: string}
+    RetryAfter:
+      description: 建议等待的秒数
+      schema: {type: integer, minimum: 0}
+  responses:
+    BadRequest:
+      description: 请求或参数不合法，或引用了未注册的通知/远端目标
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: 缺少或无效的 API 令牌（unauthorized）
+      headers:
+        WWW-Authenticate:
+          description: Bearer 认证提示
+          schema: {type: string}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: 任务或产物文件不存在（job_not_found / file_not_found）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotDownloadable:
+      description: 任务未成功、产物不在本地或归档期间文件变化（job_not_finished / job_not_succeeded / not_downloadable / artifact_changed）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooLarge:
+      description: 请求、转换结果或归档超过上限（payload_too_large / file_too_large / archive_too_large）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: 服务内部错误（internal_error）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    FileContent:
+      description: 单个文件或完整 ZIP；实际 Content-Type 取决于产物格式
+      headers:
+        Content-Disposition:
+          $ref: '#/components/headers/ContentDisposition'
+        Content-Length:
+          description: 文件或 ZIP 的字节数
+          schema: {type: integer, format: int64}
+        Last-Modified:
+          description: 单文件的修改时间
+          schema: {type: string}
+        Accept-Ranges:
+          description: 单文件支持 bytes；多文件 ZIP 不提供此头
+          schema: {type: string}
+      content:
+        application/zip:
+          schema: {format: binary}
+        '*/*':
+          schema: {format: binary}
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: 机器可读错误码，具体值见对应响应说明
+          example: invalid_request
+        message:
+          type: string
+          description: 人类可读的错误说明
+    OutputKind:
+      type: string
+      enum: ['', stream, dir, ftp, s3, webdav, sftp]
+      default: stream
+      description: 空字符串或省略均按 stream 处理
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled]
+    Lane:
+      type: string
+      enum: [fast, heavy]
+      description: 通道由服务端决定，请求不能指定
+    ConvertRequest:
+      type: object
+      required: [input, output]
+      additionalProperties: false
+      properties:
+        input:
+          $ref: '#/components/schemas/Input'
+        output:
+          $ref: '#/components/schemas/Output'
+        notify:
+          $ref: '#/components/schemas/Notify'
+        high_priority:
+          type: boolean
+          default: false
+          description: 仅影响异步任务的排队优先级
+    Input:
+      type: object
+      additionalProperties: false
+      description: JSON 上传需提供非空 bytes；URL 输入需提供 url 且通过部署白名单
+      properties:
+        kind:
+          type: string
+          enum: ['', upload, url]
+          default: upload
+        format:
+          type: string
+          description: 可选格式声明，省略时由服务端判定；可用名称见 /v1/formats
+        file_name:
+          type: string
+          description: 上传文件名，用于识别格式；可识别的内容允许省略，建议提供
+        bytes:
+          type: string
+          contentEncoding: base64
+          description: upload 的原始文件内容，标准 Base64 编码
+        url:
+          type: string
+          description: URL 输入的 HTTP/HTTPS 地址，必须通过服务端白名单
+      allOf:
+        - if:
+            required: [kind]
+            properties:
+              kind: {const: url}
+          then:
+            required: [url]
+            properties:
+              url: {type: string, minLength: 1}
+          else:
+            required: [bytes]
+            properties:
+              bytes: {type: string, minLength: 1}
+    Output:
+      type: object
+      required: [format]
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: '#/components/schemas/OutputKind'
+        format:
+          type: string
+          minLength: 1
+          description: 输出格式名称，从 /v1/formats 获取；stream 不支持逐页图像格式
+          example: pdf
+        file_name:
+          type: string
+          description: 产物基名，不含扩展名，不能包含路径分隔符；省略时单文件用 output，逐页用 page
+        dir:
+          type: string
+          maxLength: 400
+          description: |
+            output_dir 下的相对子路径，长度最多 400 字节，不能包含 .. 段、NUL 或控制字符。
+            dir 输出省略时按任务 ID 隔离；显式指定时不追加任务 ID，调用方需自行避免文件名冲突。
+        remote:
+          $ref: '#/components/schemas/RemoteOutput'
+        max_stream_bytes:
+          type: integer
+          format: int64
+          deprecated: true
+          description: 兼容已有请求而接受，提交后总是被服务端配置覆盖，调用方无需提供
+      allOf:
+        - if:
+            required: [kind]
+            properties:
+              kind: {enum: [ftp, s3, webdav, sftp]}
+          then:
+            required: [remote]
+            properties:
+              remote:
+                required: [target]
+                properties:
+                  target: {type: string, minLength: 1}
+    RemoteOutput:
+      type: object
+      additionalProperties: false
+      description: 仅远端输出可使用非空目标或路径；地址和凭据只能由部署方配置
+      properties:
+        target:
+          type: string
+          description: 对应输出协议下已注册的目标名
+        path:
+          type: string
+          description: 目标下的相对子路径，不能包含 .. 段或绝对路径
+    Notify:
+      type: object
+      additionalProperties: false
+      description: 仅异步任务投递通知；target 为空时不启用通知
+      properties:
+        target:
+          type: string
+          description: 已注册的通知目标名
+        events:
+          type: array
+          description: 为空时沿用目标配置，否则与目标订阅集合取交集
+          items: {type: string, enum: [succeeded, failed, '*']}
+    AcceptedJob:
+      type: object
+      required: [id, state, lane, to, created_at, status_url]
+      additionalProperties: false
+      properties:
+        id: {type: string}
+        state:
+          $ref: '#/components/schemas/JobState'
+        lane:
+          $ref: '#/components/schemas/Lane'
+        to: {type: string}
+        created_at: {type: string, format: date-time}
+        status_url:
+          type: string
+          description: 任务查询路径
+      description: 幂等重放时返回原任务的当前状态，可能已运行或终结
+    Job:
+      type: object
+      required: [id, state, lane, from, to, input_bytes, created_at, attempt]
+      additionalProperties: false
+      properties:
+        id: {type: string}
+        state:
+          $ref: '#/components/schemas/JobState'
+        lane:
+          $ref: '#/components/schemas/Lane'
+        from:
+          type: string
+          description: 调用方声明的输入格式，允许为空
+        from_actual:
+          type: string
+          description: 实际判定的输入格式，尚未判定时省略
+        to: {type: string}
+        input_bytes: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        attempt: {type: integer}
+        output:
+          $ref: '#/components/schemas/JobOutput'
+        error:
+          type: string
+          description: 终态有错误说明时提供
+      allOf:
+        - if:
+            properties:
+              state: {enum: [succeeded, failed, cancelled]}
+          then:
+            required: [output]
+          else:
+            not:
+              anyOf:
+                - required: [output]
+                - required: [error]
+    JobOutput:
+      type: object
+      required: [kind, size]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          description: 输出种类，失败或取消且未产生结果时可能为空
+        path:
+          type: string
+          description: 本地目录或产物名称，取决于输出种类
+        bucket: {type: string}
+        key: {type: string}
+        url: {type: string}
+        size: {type: integer, format: int64}
+        files:
+          type: array
+          items: {type: string}
+          description: 产物文件名清单，可用于 content 的 name 参数
+    JobList:
+      type: object
+      required: [jobs, count]
+      additionalProperties: false
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        count: {type: integer, minimum: 0}
+        next_cursor: {type: string}
+    FormatInfo:
+      type: object
+      required: [name, extensions]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        extensions:
+          type: array
+          items: {type: string}
+        mime: {type: string}
+        kind: {type: string}
+        stream:
+          type: boolean
+          description: 只对输出有意义；省略时为 false
+    Formats:
+      type: object
+      required: [input, output]
+      additionalProperties: false
+      properties:
+        input:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormatInfo'
+        output:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormatInfo'
+    Counters:
+      type: object
+      required: [conversions, succeeded, failed, input_bytes, output_bytes]
+      properties:
+        conversions: {type: integer, minimum: 0}
+        succeeded: {type: integer, minimum: 0}
+        failed: {type: integer, minimum: 0}
+        input_bytes: {type: integer, minimum: 0}
+        output_bytes: {type: integer, minimum: 0}
+    Stats:
+      type: object
+      required: [started_at, uptime_seconds, note, totals, queue, formats]
+      additionalProperties: false
+      properties:
+        started_at: {type: string, format: date-time}
+        uptime_seconds: {type: number, minimum: 0}
+        since:
+          type: string
+          format: date-time
+          description: 首次记账时间，无转换时省略
+        note: {type: string}
+        totals:
+          $ref: '#/components/schemas/Counters'
+        queue:
+          type: object
+          required: [queued, running, workers]
+          additionalProperties: false
+          properties:
+            queued: {type: integer, minimum: 0}
+            running: {type: integer, minimum: 0}
+            workers:
+              type: object
+              required: [fast, heavy, notify]
+              additionalProperties: false
+              properties:
+                fast: {type: integer}
+                heavy: {type: integer}
+                notify: {type: integer}
+        formats:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Counters'
+              - type: object
+                required: [from, to]
+                properties:
+                  from: {type: string}
+                  to: {type: string}
+                  label_unknown: {type: boolean}
+    JobNotification:
+      type: object
+      required: [job_id, state, event, output, attempt]
+      additionalProperties: false
+      properties:
+        job_id: {type: string}
+        state: {type: string, enum: [succeeded, failed]}
+        event: {type: string, enum: [succeeded, failed]}
+        output:
+          $ref: '#/components/schemas/JobOutput'
+        attempt:
+          type: integer
+          description: 转换的尝试次数，与通知投递重试次数不同
+        error: {type: string}

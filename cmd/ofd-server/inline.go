@@ -63,7 +63,7 @@ func (s *Server) handleConvertInline(w http.ResponseWriter, r *http.Request, req
 	case <-time.After(inlineWaitLimit):
 		w.Header().Set("Retry-After", "5")
 		writeError(w, http.StatusServiceUnavailable, "server_busy",
-			"同步转换并发已满，请稍后重试；或去掉 output.kind 的 stream 走异步提交")
+			"同步转换并发已满，请稍后重试；或显式指定 output.kind=dir 走异步提交")
 		return
 	}
 

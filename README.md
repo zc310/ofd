@@ -98,7 +98,7 @@ GM/T 0099-2020 加解密使用不提供认证的 CBC；解密成功不证明内�
 | OFD 加解密 | [ofd-crypt](cmd/ofd-crypt/README.md) 与 [`pkg/crypt`](pkg/crypt/README.md)：口令/证书、多接收者、独立条目密钥、多层解密和只读解密视图；写端支持整包/条目/页面范围及追加加密层。 |
 | 普通数字签名与完整性保护 | [`pkg/sign`](pkg/sign/README.md) 支持 GM/T 0099 普通 SM2/SM3 SignedData、附录 B 扩展及普通多签追加；`ofd-creator sign --append` 保留旧签名，末次可锁定列表；`sign --physical` 支持主入口明文、没有已有签名入口的加密物理包。校验器分别检查物理签名和解密后的文档引用。[`pkg/integrity`](pkg/integrity/README.md) 和 `ofd-crypt integrity` 分别检查带时间戳清单、物理集合、内容覆盖及引用闭包。 |
 | 阅读器 | [ofd-viewer](cmd/ofd-viewer/README.md)：桌面、Android 与 Fyne Web 阅读器，Linux 提供 amd64/arm64 DEB、RPM 安装包及桌面集成；[ofd-wasm](cmd/ofd-wasm/README.md)：浏览器阅读器、WASM API 与 Worker 协议。 |
-| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务与远程产物传输。 |
+| HTTP 服务 | [ofd-server](cmd/ofd-server/README.md)：同步流输出、异步转换任务、远程产物传输及 OpenAPI 在线文档。 |
 | Linux 桌面集成 | [ofd-thumbnailer](cmd/ofd-thumbnailer/README.md)：文件管理器 OFD 首页及 ZIP 包内图片缩略图，加密 OFD 显示固定挂锁图案；提供 amd64/arm64 的 ZIP、DEB 和 RPM 安装包。 |
 
 ## Go API

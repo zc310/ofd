@@ -1,6 +1,6 @@
 # ofd-server
 
-异步 OFD 转换服务。HTTP 提交任务，后台队列执行，完成后回调通知。
+OFD 转换服务。HTTP 同步返回文件，或提交异步任务由后台队列执行并回调通知。
 
 本目录同时含 `Dockerfile`（Ubuntu 运行镜像）与 `docker-config.json`
 （镜像内置的容器默认配置）。
@@ -74,6 +74,31 @@ curl -sS -H "$AUTH" "http://127.0.0.1:9705/v1/jobs/$ID"
 ```
 
 ## API
+
+### OpenAPI 与在线文档
+
+启动服务后访问 `http://127.0.0.1:9705/docs/`，可查看 OpenAPI 3.1 文档并在线调用接口。
+Swagger UI 的 CSS、JS 和图标来自 `github.com/swaggo/files/v2`，随程序打包，
+仓库中没有对应的 `docs/` 实体目录，内网或离线部署无需访问 CDN。
+`GET /openapi.json` 提供机器可读规范，可导入 Apifox、Postman 或用于生成客户端；
+`HEAD /openapi.json` 可查询响应头。规范的 `info.version` 来自程序发行版本。
+
+文档页面和规范免认证，只包含接口定义，不含部署的令牌、目标地址或凭据。
+调用业务接口前，在页面的 **Authorize** 中填写 Bearer 令牌（只填令牌，不加 `Bearer `
+前缀），或填写 `X-OFD-Api-Key`，两种方式任选一种。页面刷新后不保留认证信息。
+
+上传文件可选择 `multipart/form-data`：`file` 选择文件，`request` 填写 JSON 文本，
+例如 `{"output":{"kind":"stream","format":"pdf"}}` 同步下载，
+或 `{"output":{"kind":"dir","format":"pdf"}}` 异步提交。
+使用 `application/octet-stream` 时必须在 query 的 `to` 中填写输出格式。
+`input_file_name` 请填写实际文件名，或用 `input_format` 显式声明格式；两者都省略时，
+裸上传仅能通过魔数识别 OFD/PDF。下载完整产物时，`Range` 请求头保持为空。
+query 的条件必填关系无法完整由 OpenAPI 表达，生成的客户端也需要按提交方式处理；
+同步响应是文件，异步响应是任务 JSON，需要按 `200` / `202` 区分。
+
+规范同时描述异步任务的 webhook 接收协议。接收端由调用方实现，地址和密钥由部署方
+预先配置；文档中的 webhook 不是本服务上的可调用路径。
+规范源文件为本目录的 `openapi.yaml`，接口变化时与 README 和契约测试同步维护。
 
 ### 认证
 
@@ -277,8 +302,8 @@ scrape_configs:
 
 ### `POST /v1/convert`
 
-受理转换，返回 `202` 与任务 ID。**不会挂起等待结果**——同步等待会把 HTTP
-连接数和队列深度绑在一起，一批慢任务就能耗尽连接数。
+`output.kind` 省略或为 `stream` 时同步转换，返回 `200` 与文件内容；
+`dir`、`ftp`、`s3`、`webdav`、`sftp` 则异步受理，返回 `202` 与任务 ID，后台执行转换。
 
 ```jsonc
 {
@@ -292,7 +317,7 @@ scrape_configs:
   "output": {
     "kind": "stream",         // "stream" | "dir"
     "format": "pdf",          // 也支持 ofd、text、markdown、docx、html、图片等
-    "dir": "/…/out/sub"       // 可选，只能在配置的 output_dir 之下
+    "dir": "out/sub",        // 可选，配置的 output_dir 之下的相对子路径
     "file_name": "INV-2026-0815",  // 可选，产物文件名的基名，不含扩展名
     "remote": {"target": "minio", "path": "incoming/2026/08"}  // 仅远端 kind
   },

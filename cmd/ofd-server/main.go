@@ -1,15 +1,15 @@
-// Command ofd-server 提供异步 OFD 转换的 HTTP 服务。
+// Command ofd-server 提供同步和异步 OFD 转换的 HTTP 服务。
 //
-//	POST   /v1/convert              提交转换，返回 202 与任务 ID
+//	POST   /v1/convert              同步返回文件，或异步返回 202 与任务 ID
 //	GET    /v1/jobs                 分页查询任务
 //	GET    /v1/jobs/{id}            查询任务状态
 //	DELETE /v1/jobs/{id}            删除终态任务与本地产物
 //	POST   /v1/jobs/{id}/cancel     取消仍在排队的任务
 //	GET    /v1/formats              查询支持的格式
+//	GET    /openapi.json /docs/     OpenAPI 规范与离线接口文档
 //	GET    /healthz /readyz         存活与就绪探针
 //
-// 转换在后台队列里执行，提交请求不会挂起等待——同步等待会把 HTTP 连接数
-// 和队列深度绑在一起，一批慢任务就能耗尽连接数。
+// stream 在请求内执行并直接返回产物；dir 和远端输出在后台队列执行，可回调通知。
 package main
 
 import (
@@ -60,7 +60,7 @@ type options struct {
 
 const usage = `用法: ofd-server [flags]
 
-以 HTTP 服务形式提供异步 OFD 转换。
+以 HTTP 服务形式提供同步和异步 OFD 转换，接口文档位于 /docs/。
 
 Flags:
   -c, --config <path>   配置文件路径（JSON）

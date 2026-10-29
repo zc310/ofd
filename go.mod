@@ -31,11 +31,13 @@ require (
 	github.com/pdfcpu/pdfcpu v0.16.3
 	github.com/pkg/sftp v1.13.12
 	github.com/rymdport/portal v0.4.2
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
+	github.com/swaggo/files/v2 v2.0.2
 	github.com/tdewolff/parse/v2 v2.8.20
 	github.com/valyala/fasthttp v1.77.0
 	github.com/woozymasta/png v1.2.0

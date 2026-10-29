@@ -150,6 +150,9 @@ func (s *Server) routes() http.Handler {
 	}
 	r.HandleFunc("/healthz", allowMethods(s.handleHealth, http.MethodGet))
 	r.HandleFunc("/readyz", allowMethods(s.handleReady, http.MethodGet))
+	r.HandleFunc("/openapi.json", allowMethods(handleOpenAPI, http.MethodGet, http.MethodHead))
+	r.HandleFunc("/docs", allowMethods(handleDocsRedirect, http.MethodGet, http.MethodHead))
+	r.HandleFunc("/docs/", allowMethods(docsHandler(), http.MethodGet, http.MethodHead))
 	r.HandleFunc("/v1/convert", allowMethods(secured(s.handleSubmit), http.MethodPost))
 	r.HandleFunc("/v1/formats", allowMethods(secured(s.handleFormats), http.MethodGet))
 	r.HandleFunc("/v1/jobs", allowMethods(secured(s.handleListJobs), http.MethodGet))
@@ -306,8 +309,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Idempotent-Replayed", "true")
 	}
 	s.log.Info("已受理", "job", job.ID, "lane", job.Lane, "to", job.To)
-	// 202：任务已受理但尚未开始。同步返回结果需要另一个端点，
-	// 而不是让这个请求挂着等——那会把 HTTP 连接数和队列深度绑在一起。
+	// 202：异步任务已受理；同步 stream 已在上面的分支处理。
 	w.Header().Set("Location", "/v1/jobs/"+job.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"id":         job.ID,
