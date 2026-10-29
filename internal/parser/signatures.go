@@ -2,11 +2,14 @@ package parser
 
 import (
 	"encoding/asn1"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 )
+
+var errInvalidSignatureID = errors.New("普通签名标识不是合法 xs:ID")
 
 // supportedTypes 支持的签章文件类型。
 var supportedTypes = map[string]bool{
@@ -16,6 +19,20 @@ var supportedTypes = map[string]bool{
 	"jpeg": true,
 	"bmp":  true,
 	"svg":  true,
+}
+
+// legacyNumericSignatureID 仅兼容真实旧文档使用的非空 ASCII 十进制标识。
+// 标识不转整数，避免丢失前导零或改变签名间的引用关系。
+func legacyNumericSignatureID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // SealData 存储提取的签章数据。

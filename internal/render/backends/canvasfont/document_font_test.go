@@ -2,6 +2,7 @@ package canvasfont
 
 import (
 	"crypto/sha256"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,8 +431,11 @@ func TestZsbkFooterKeepsSparseCIDDigitsAndChinese(t *testing.T) {
 // 页面字形映射。
 func TestImageNotFoundLeftTextFontLoads(t *testing.T) {
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "..", "..", "testdata", "ofdrw", "testImageNotFound.ofd"))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		t.Skipf("样例不可用: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	defer ofd.Close()
 

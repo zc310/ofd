@@ -1307,7 +1307,13 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 		}
 		ids[body.ID] = body.Relative
 		if body.Type == spec.SigTypeSign && !securexml.ValidID(body.ID) {
-			return fmt.Errorf("普通签名标识不是合法 xs:ID")
+			// GB/T 33190—2016 §18.1 表66 要求 xs:ID，但历史 Suwell 样例
+			// 使用纯数字 ID。阅读时保留原值，不修改被签名的 XML；格式合法性
+			// 仍由严格校验器检查，签名验证也不因兼容读取而跳过。
+			if !legacyNumericSignatureID(body.ID) {
+				return errInvalidSignatureID
+			}
+			slog.Warn("兼容读取非 xs:ID 的数字签名标识", "signature", body.ID, "file", file.String())
 		}
 	}
 	for id := range ids {
