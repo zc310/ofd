@@ -13,7 +13,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 	"github.com/zc310/ofd/pkg/spec"
 )
 

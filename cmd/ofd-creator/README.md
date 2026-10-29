@@ -981,7 +981,7 @@ ofd-creator merge -o merged.ofd --compression auto --deterministic --validate in
 
 为防止恶意或异常文档造成解压放大，合并默认限制条目数 10000、单条解压 64MB、解压总计 512MB，可分别用 `--max-entries`、`--max-entry-mb`、`--max-total-mb` 调整。
 
-合并逻辑同时以库的形式公开在 `pkg/merge`：`Files`（文件路径、输入按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回完整字节）。
+合并逻辑同时以库的形式公开在 `pkg/creator/merge`：`Files`（文件路径、输入按需读取）、`Bytes`（内存字节）、`Sources`（`Path`/`Data`/`io.ReaderAt` 三种来源）和 `Marshal`（返回完整字节）。
 
 ### 选页与重排
 
@@ -1050,7 +1050,7 @@ ofd-creator split input.ofd --document 2 --every 5 --output-dir parts
 可通过 `--max-input-mb`、`--max-entry-mb`、`--max-total-mb`、`--max-parts`、
 `--max-pages`、`--max-entries`、`--max-output-mb` 调整。压缩配置复用 `--compression` 和 `--compression-level`。
 `--validate` 沿用配置的条目数、单条与总解压大小限制，输出压缩大小按累计输出上限检查。
-库接口和内存使用说明见 [`pkg/split`](../../pkg/split/README.md)。
+库接口和内存使用说明见 [`pkg/creator/split`](../../pkg/creator/split/README.md)。
 
 split 退出码：`0` 成功，`2` 参数/分组错误，`4` 输入解析、拆分生成或签名保护检查失败，
 `5` 输出目录、文件发布或结果列表写入失败，`6` 严格校验失败。
@@ -1077,7 +1077,7 @@ ofd-creator replace -i in.ofd -o out.ofd \
 - 支持 `--compression`、`--deterministic`、`--validate`，以及 `--max-entries`/`--max-entry-mb`/`--max-total-mb` 解压规模限制。
 - `--output -` 可以把结果写入标准输出；`replace` 不支持从标准输入读取 OFD。
 
-替换逻辑同时以库的形式公开在 `pkg/replace`：`Files`（任意输入 + `[]Operation`）和 `Paths`（`name -> 本地文件` 映射，等价于一组 `set`）。
+替换逻辑同时以库的形式公开在 `pkg/creator/replace`：`Files`（任意输入 + `[]Operation`）和 `Paths`（`name -> 本地文件` 映射，等价于一组 `set`）。
 
 ## 添加、替换与删除水印
 
@@ -1117,7 +1117,7 @@ ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
 - 清理：`remove` 后某页无任何注解会删除该页注解文件，索引与 `Document.xml` 的 `<Annotations>` 同步清理。
 - 复用 `replace` 框架，因此 `--compression`/`--compression-level`/`--deterministic`/`--validate`/`--max-entries`/`--max-entry-mb`/`--max-total-mb`/`--signatures` 行为一致：任何修改都会使既有签名摘要失效，`--signatures` 默认 `drop`。也可以像 `replace`/`merge` 一样在修改后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-stamp-seams`/`--sign-stamp-seam-edge`/`--sign-stamp-seam-pages`/`--sign-stamp-seam-pieces`/`--sign-stamp-seam-size`/`--sign-stamp-seam-x`/`--sign-stamp-seam-y`/`--sign-seal`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge`/`replace` 的 `--sign-*` 一致；`--verify-signatures` 在写出前校验输出文档的签名摘要与密码学签名。`--output -` 写标准输出，不支持从标准输入读取。
 - 保留原始命名空间风格：默认 `xmlns` 文档的水印使用无前缀元素，`xmlns:ofd` 文档的新增索引/页面文件以及 `--appearance` 原始外观片段均套用 `ofd` 前缀；无既有注解索引时从 `Document.xml` 根元素继承前缀。自备外观片段无法解析时直接报错，不会静默写成空 `<Appearance/>`。
-- 水印编辑逻辑以库的形式公开在 `pkg/watermark`：`Add`、`Replace`、`Remove` 三个函数接收任意输入（路径/字节/`io.Reader`/`*container.Package`）与 `Target`，外观自动分配 ID；`Watermark.Appearance` 可直接放入原始 XML 片段，或用 `watermark.TextAppearance`/`watermark.ImageAppearance` 生成平铺/居中的文字或图片外观（`TextOptions.Rotation` 指定文字旋转角度，`TextOptions.CTM` 直接透传变换矩阵、优先级更高）；`Watermark.Image` 提供图片水印的资源嵌入能力。
+- 水印编辑逻辑以库的形式公开在 `pkg/creator/watermark`：`Add`、`Replace`、`Remove` 三个函数接收任意输入（路径/字节/`io.Reader`/`*container.Package`）与 `Target`，外观自动分配 ID；`Watermark.Appearance` 可直接放入原始 XML 片段，或用 `watermark.TextAppearance`/`watermark.ImageAppearance` 生成平铺/居中的文字或图片外观（`TextOptions.Rotation` 指定文字旋转角度，`TextOptions.CTM` 直接透传变换矩阵、优先级更高）；`Watermark.Image` 提供图片水印的资源嵌入能力。
 
 ## OFD profile（DocType）
 

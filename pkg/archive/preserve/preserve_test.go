@@ -12,7 +12,7 @@ import (
 )
 
 // fixtureOf 是测试样例在 testdata 里的路径。
-const fixtureOf = "../../testdata/"
+const fixtureOf = "../../../testdata/"
 
 func countOFDElements(t *testing.T, input, local string) int {
 	t.Helper()
@@ -531,7 +531,7 @@ func TestUnreferencedDeletedWhenOptedIn(t *testing.T) {
 // 即使显式要求删除也必须拒绝。testdata/ofdrw/intro.ofd 的命名空间缺 "/2016"
 // 后缀，其 123 个条目会全被误判为无人引用。
 func TestUnreferencedRefusedWhenClosureIncomplete(t *testing.T) {
-	const legacy = "../../testdata/ofdrw/intro.ofd"
+	const legacy = "../../../testdata/ofdrw/intro.ofd"
 	var warnings []string
 	var out bytes.Buffer
 	_, err := Apply(legacy, &out, Options{

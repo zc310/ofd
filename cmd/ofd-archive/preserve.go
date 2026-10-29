@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/zc310/ofd/pkg/archive"
-	"github.com/zc310/ofd/pkg/preserve"
+	"github.com/zc310/ofd/pkg/archive/preserve"
 )
 
 // runPreserve 执行 GB/T 42133 长期保存处理。转换只写 --output 指定的新文件，

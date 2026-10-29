@@ -1,5 +1,5 @@
 // Package entrywriter 提供带规模限制与确定性选项的 OFD ZIP 条目写入器，
-// 供 ZIP 级处理工具（如 pkg/merge、pkg/replace）复用。
+// 供 ZIP 级处理工具（如 pkg/creator/merge、pkg/creator/replace）复用。
 package entrywriter
 
 import (

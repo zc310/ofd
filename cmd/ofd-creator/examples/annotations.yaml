@@ -6,7 +6,7 @@
 #   - Path 路径注解以蓝色箭头指向右下角签章，与 Stamp 同层绘制于内容之上
 #   注：箭头占用 1 个单元 ID——箭头说明并入第 3 条正文而非新增对象，并从签章
 #   遮挡处移除 2 条水印文字（27→25），以保持内容对象数与 MaxUnitID=37 不变
-#   （pkg/watermark 的自动 ID 测试依赖该值）。
+#   （pkg/creator/watermark 的自动 ID 测试依赖该值）。
 # 生成：
 #   go run ./cmd/ofd-creator -i cmd/ofd-creator/examples/annotations.yaml -o testdata/annotations.ofd --format auto --deterministic --validate --complete-text-code-deltas
 

@@ -20,7 +20,7 @@ import (
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )

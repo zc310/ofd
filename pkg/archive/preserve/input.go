@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 )
 
 // inputPackage 在任何 XML 解压前检查整个输入的预算，并限制后续每次条目读取。

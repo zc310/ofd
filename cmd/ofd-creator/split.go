@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/split"
+	"github.com/zc310/ofd/pkg/creator/split"
 	"github.com/zc310/ofd/pkg/validator"
 )
 

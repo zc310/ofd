@@ -110,6 +110,9 @@ ofd-archive check --doc-type OFD-A document.ofd
 
 `preserve` 把 OFD 改造成符合 GB/T 42133 长期保存要求的文件。它与 `check` 的关系是：`check` 按 profile 规则判定并上报，`preserve` 执行标准要求的转换动作，转换后的文件再用 `check` 复核。
 
+Go 入口位于 `github.com/zc310/ofd/pkg/archive/preserve`：`Plan` 返回带标准条款的
+改动计划，`Apply` 执行转换并写出新的 OFD；归档预检与目录准备继续由 `pkg/archive` 提供。
+
 ```bash
 # 先看计划改动，不写文件
 ofd-archive preserve --doc-type OFD-A --dry-run document.ofd

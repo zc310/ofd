@@ -1,7 +1,7 @@
 // Package watermark 提供 OFD 水印注解的添加、替换与删除能力。
 //
 // 水印以页面注解文件（<PageAnnot>）中的 Type="Watermark" 注解表示。本包
-// 复用 pkg/replace 的 ZIP 重建框架：先按包内结构定位目标页面与注解文件，
+// 复用 pkg/creator/replace 的 ZIP 重建框架：先按包内结构定位目标页面与注解文件，
 // 计算出一组条目操作后交给 replace.Files 执行。
 //
 // 签名处理由内嵌的 replace.Options 决定，未额外包装。加水印会改动页面内容，
@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 )
 
 // Target 描述水印操作的目标范围。

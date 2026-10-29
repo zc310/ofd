@@ -8,6 +8,10 @@
 |------|------|
 | 最小创建示例 | [项目快速开始](../../README.md)、[Go 文档示例](example_test.go) |
 | 写出与配置 | [创建入口](#创建入口)、[生成选项](#生成选项) |
+| 合并、拼页与重排 | `pkg/creator/merge`：[合并与选页说明](../../cmd/ofd-creator/README.md#合并多个-ofd)。 |
+| 页面与文档体拆分 | [`pkg/creator/split`](split/README.md)：预先校验分组，递归裁剪资源并逐份写出。 |
+| 包内条目编辑 | `pkg/creator/replace`：[替换、新增与删除](../../cmd/ofd-creator/README.md#替换新增与删除包内条目)。 |
+| 水印注解编辑 | `pkg/creator/watermark`：[添加、替换与删除水印](../../cmd/ofd-creator/README.md#添加替换与删除水印)。 |
 | 坐标、页面和图层 | [坐标与页面组织](#坐标与页面组织) |
 | 文字与字形 | [文字定位与字体](#文字定位与字体) |
 | 路径、颜色与透明度 | [绘制样式与颜色](#绘制样式与颜色) |
@@ -33,6 +37,10 @@
 和页面的 `creator.Document` 后调用创建入口；`fontBytes`、`imageBytes`、`pngData`、
 `iccProfileData` 等变量需要由调用方提供真实资源。使用 `spec.` 常量时导入
 `github.com/zc310/ofd/pkg/spec`。
+
+主包负责文档模型和创建；合并、拆分、条目替换、水印编辑分别由子包提供。
+子包可以依赖主包，主包不反向导入操作子包。标准约束下的长期保存转换位于
+`pkg/archive/preserve`，签名、加密、完整性保护分别位于 `pkg/sign`、`pkg/crypt`、`pkg/integrity`。
 
 ## 创建入口
 

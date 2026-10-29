@@ -16,7 +16,7 @@ import (
 
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/creator/merge"
 )
 
 func TestMain(m *testing.M) {

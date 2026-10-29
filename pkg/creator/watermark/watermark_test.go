@@ -18,12 +18,12 @@ import (
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 func testdataPath(names ...string) string {
-	parts := append([]string{"..", "..", "testdata"}, names...)
+	parts := append([]string{"..", "..", "..", "testdata"}, names...)
 	return filepath.Join(parts...)
 }
 

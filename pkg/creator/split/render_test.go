@@ -38,7 +38,7 @@ func TestSplitPreservesRasterAppearanceAndPDFOutput(t *testing.T) {
 func TestSplitCreatorFixturesPreserveTextAndResourceDependencies(t *testing.T) {
 	for _, name := range []string{"helloworld.ofd", "cover-thumbnail.ofd", "default-cs.ofd", "pattern-fill.ofd", "clips.ofd", "media-actions.ofd", "color-spaces.ofd", "draw-params.ofd", "text-directions.ofd"} {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "testdata", "ofd-creator", name)
+			path := filepath.Join("..", "..", "..", "testdata", "ofd-creator", name)
 			data, err := os.ReadFile(path)
 			if errors.Is(err, os.ErrNotExist) {
 				t.Skipf("缺少样例 %s", path)

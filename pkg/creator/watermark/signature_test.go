@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // signedFixture 是带签名列表的样例。
-const signedFixture = "../../testdata/ofdrw/999.ofd"
+const signedFixture = "../../../testdata/ofdrw/999.ofd"
 
 // countSignatureEntries 统计输出包内的签名条目数。
 func countSignatureEntries(t *testing.T, data []byte) int {
@@ -47,7 +47,7 @@ func watermarkWithSignature(t *testing.T, mode creator.SignatureMode) ([]byte, [
 }
 
 // TestWatermarkPassesSignatureModeToReplace 确认签名处理方式能穿过内嵌的
-// replace.Options 传到 pkg/replace。包级文档依赖这一行为，必须固定下来：
+// replace.Options 传到 pkg/creator/replace。包级文档依赖这一行为，必须固定下来：
 // 一旦透传断掉，零值会退回 SignatureDrop 而调用方毫不知情。
 func TestWatermarkPassesSignatureModeToReplace(t *testing.T) {
 	kept, _ := watermarkWithSignature(t, creator.SignaturePreserve)

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/sign"
 )
 

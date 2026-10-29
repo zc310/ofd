@@ -406,7 +406,7 @@ func containsAnyKeyword(text string) bool {
 
 // parsePageNumbers 解析 "1,3-5" 形式的页码表达式，返回从 1 起的页序。
 //
-// 与 pkg/merge.ParsePages 同义，这里单独实现是为了不把 pkg/merge 整套
+// 与 pkg/creator/merge.ParsePages 同义，这里单独实现是为了不把 pkg/creator/merge 整套
 // （creator、manifest、export）拖进只做发票抽取的包。
 func parsePageNumbers(spec string) ([]int, error) {
 	var pages []int

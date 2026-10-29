@@ -146,12 +146,13 @@ func main() {
 | 导入 PDF、Markdown 等格式 | [按需注册导入器](docs/GO-API.md#导入其他格式) |
 | 按页渲染、文字、搜索与导航 | [`pkg/webreader`](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)、[接入示例](docs/GO-API.md#接入按页阅读接口) |
 | 创建 OFD、自动排版与流式写出 | [`pkg/creator` 库指南](pkg/creator/README.md)、[`pkg/creator/flow` 流式创作](pkg/creator/flow/README.md) |
-| 多文档合并、拼页和重排 | [`pkg/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
-| 按范围、每 N 页或文档体拆分 | [`pkg/split` 库指南](pkg/split/README.md)、[拆分命令](cmd/ofd-creator/README.md#拆分-ofd) |
+| 多文档合并、拼页和重排 | [`pkg/creator/merge`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/merge)、[合并与选页说明](cmd/ofd-creator/README.md#合并多个-ofd) |
+| 按范围、每 N 页或文档体拆分 | [`pkg/creator/split` 库指南](pkg/creator/split/README.md)、[拆分命令](cmd/ofd-creator/README.md#拆分-ofd) |
+| 条目编辑与水印 | [`pkg/creator/replace`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/replace)、[`pkg/creator/watermark`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/watermark) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |
 | 文档对比 | [`pkg/compare` 库指南](pkg/compare/README.md) |
-| 长期保存转换与改动计划 | [`pkg/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
+| 长期保存转换与改动计划 | [`pkg/archive/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/archive/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
 
 输入类型、页码、DPI、格式导入、缓存与字体等细节见 [Go API 使用指南](docs/GO-API.md)。
 

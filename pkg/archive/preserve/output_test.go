@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/pkg/replace"
+	"github.com/zc310/ofd/pkg/creator/replace"
 )
 
 type partialOutput struct {

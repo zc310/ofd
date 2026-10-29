@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **创建编辑与长期保存包调整导入路径**：将 `github.com/zc310/ofd/pkg/merge`、
+  `pkg/replace`、`pkg/watermark` 分别迁入 `pkg/creator/merge`、`pkg/creator/replace`、
+  `pkg/creator/watermark`，将 `pkg/preserve` 迁入 `pkg/archive/preserve`。
+  调用方需更新 import；包名、导出 API 和 CLI 命令保持一致，旧路径不再提供入口。
+
 - **模型选页明确限制文档类型和表达式规模**：`merge.Pages` 和 `ofd-creator merge --pages`
   保留输入的 `DocType`，不同类型输入现在返回错误。需要混合处理时先分别生成并校验
   相同类型文档，或用 ZIP 级多文档打包；`ParsePages/ParsePageSelection` 的单段页码列表
@@ -145,8 +150,8 @@
   `converter.WithPDFImportOptions`、PDF 包的 `ConvertWithOptions` 或 CLI 对应选项
   调整；当前默认值与配置方式见 [PDF 支持说明](docs/PDF-SUPPORT.md)。
 
-- **XML 写入前缀**：`pkg/creator` 自建元素、`pkg/merge` 生成的主入口和重写的签名、资源 XML，
-  以及 `pkg/preserve` 重写的 XML 中，OFD 元素统一输出 `ofd:` 前缀，并声明
+- **XML 写入前缀**：`pkg/creator` 自建元素、`pkg/creator/merge` 生成的主入口和重写的签名、资源 XML，
+  以及 `pkg/archive/preserve` 重写的 XML 中，OFD 元素统一输出 `ofd:` 前缀，并声明
   `xmlns:ofd="http://www.ofdspec.org/2016"`。按 XML 字节或标签前缀匹配的调用方
   需调整，建议按命名空间 URI 与本地名匹配。扩展 `DataXML` 和直接提供的资源 XML
   保留原有前缀与命名空间。

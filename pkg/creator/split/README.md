@@ -1,8 +1,8 @@
 # OFD 拆分
 
-`pkg/split` 按页范围、每 N 页或完整文档体拆分 OFD。保留原页面对象 ID、包内路径、
+`pkg/creator/split` 按页范围、每 N 页或完整文档体拆分 OFD。保留原页面对象 ID、包内路径、
 坐标和绘制内容；只改页面目录、导航及资源索引，未修改的文件保留原始字节。
-CLI 见 [ofd-creator split](../../cmd/ofd-creator/README.md#拆分-ofd)。
+CLI 见 [ofd-creator split](../../../cmd/ofd-creator/README.md#拆分-ofd)。
 
 ```go
 session, err := split.Open(ctx, "input.ofd", split.Options{Deterministic: true})
@@ -93,5 +93,5 @@ preserve 在写入前报错；不会静默输出失效签名。`Report.Signature
 底层 I/O 错误保留错误链，输入/分组/依赖限制错误可用 `errors.Is(err, split.ErrInvalid)` 判断。
 
 ```text
-go test ./pkg/split ./pkg/merge ./pkg/validator ./cmd/ofd-creator -count=1
+go test ./pkg/creator/split ./pkg/creator/merge ./pkg/validator ./cmd/ofd-creator -count=1
 ```

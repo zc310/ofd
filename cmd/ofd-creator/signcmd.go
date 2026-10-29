@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/spf13/pflag"
-	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/spec"
 )

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/split"
+	"github.com/zc310/ofd/pkg/creator/split"
 )
 
 func ExampleSession() {

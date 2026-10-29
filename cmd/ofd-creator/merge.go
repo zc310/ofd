@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/creator"
-	"github.com/zc310/ofd/pkg/merge"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/validator"
 )

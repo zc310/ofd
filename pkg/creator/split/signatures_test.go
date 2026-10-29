@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/crypt"
-	"github.com/zc310/ofd/pkg/merge"
 	"github.com/zc310/ofd/pkg/sign"
 )
 

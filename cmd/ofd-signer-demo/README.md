@@ -149,7 +149,7 @@ SignedData。`ofd-creator --sign-type Sign` 会传递该环境变量；此时不
 - 证书是每次运行随机生成的自签名证书，没有信任链，重新运行会得到不同的证书和签名；
 - 印章图片是 `internal/sealimg` 渲染的测试图（顶部「OFD 测试专用章」、底部「非正式印章」），不是有效签章；
 - 私钥不落盘、不持久化，验证方无法确认印章归属；
-- `--signatures drop` 后重签的文档只用于演示 `pkg/merge` 与 `pkg/sign` 的链路。
+- `--signatures drop` 后重签的文档只用于演示 `pkg/creator/merge` 与 `pkg/sign` 的链路。
 
 生产签名器需要接入受信任的证书、密钥管理（HSM/软证书）、时间戳与吊销信息，
 并按 `Signature.xml` 中声明的 `SignatureMethod`/`References@CheckMethod` 选择算法。
