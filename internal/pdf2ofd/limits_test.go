@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	jpeg2000 "github.com/mrjoshuak/go-jpeg2000"
+	"github.com/pdfcpu/pdfcpu/pkg/filter"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/zc310/ofd/internal/testutil"
 	"golang.org/x/image/font/gofont/goregular"
@@ -293,6 +294,72 @@ func TestPDFParserLimitAdapterKeepsOrdinaryErrors(t *testing.T) {
 	err := errors.New("unrelated metadata exceeds limit 123")
 	if got := control.parserError(err); got != err || control.check() != nil {
 		t.Fatalf("ordinary error mapped to %v", got)
+	}
+}
+
+// 构造 pdfcpu 的错误契约，避免为了验证错误分类而实际分配超过 1GiB 的解码数据。
+func TestPDFParserCumulativeDecodeLimitsKeepUpstreamBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name, prefix, resource string
+		maximum, actual        int64
+	}{
+		{"普通流累计", "stream", "parser_total_decoded_bytes", 1 << 30, (1 << 30) + 1},
+		{"对象流累计", "object stream", "parser_total_object_stream_decoded_bytes", 1 << 30, (1 << 30) + 1},
+		{"上游自定义预算", "stream", "parser_total_decoded_bytes", 3 << 30, (3 << 30) + 1},
+		{"最大整数不回绕", "object stream", "parser_total_object_stream_decoded_bytes", math.MaxInt64, math.MaxInt64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts, err := (Options{Limits: Limits{MaxTotalDecodedBytes: 8 << 30}}).Normalize()
+			if err != nil {
+				t.Fatal(err)
+			}
+			control := &conversionControl{ctx: t.Context(), options: opts}
+			upstream := fmt.Errorf("%s decoding exceeded %d-byte cumulative budget: %w", tc.prefix, tc.maximum, filter.ErrDecodeLimitExceeded)
+			original := fmt.Errorf("read object: %w", upstream)
+			got := control.parserError(original)
+			var limit *LimitError
+			if !errors.Is(got, ErrLimitExceeded) || !errors.As(got, &limit) {
+				t.Fatalf("没有返回资源限制错误: %v", got)
+			}
+			if limit.Resource != tc.resource || limit.Limit != tc.maximum || limit.Actual != tc.actual {
+				t.Fatalf("错误预算 = %+v，期望 %s 用量 %d、上限 %d", limit, tc.resource, tc.actual, tc.maximum)
+			}
+			if !errors.Is(got, original) || !errors.Is(got, filter.ErrDecodeLimitExceeded) || control.check() != got {
+				t.Fatalf("未保留上游错误链或转换终止状态: %v", got)
+			}
+		})
+	}
+}
+
+func TestPDFParserSingleStreamLimitKeepsConfiguredBudget(t *testing.T) {
+	opts, err := (Options{}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &conversionControl{ctx: t.Context(), options: opts}
+	original := fmt.Errorf("object stream decode exceeds %d-byte limit: %w", opts.Limits.MaxDecodedStreamBytes, filter.ErrDecodeLimitExceeded)
+	got := control.parserError(original)
+	var limit *LimitError
+	if !errors.As(got, &limit) || limit.Resource != "decoded_stream_bytes" ||
+		limit.Limit != opts.Limits.MaxDecodedStreamBytes || limit.Actual != limit.Limit+1 || !errors.Is(got, original) {
+		t.Fatalf("单流错误不应使用累计预算: %v", got)
+	}
+}
+
+func TestPDFParserCumulativeDecodeAdapterRejectsUnrelatedOrInvalidErrors(t *testing.T) {
+	opts, err := (Options{}).Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, original := range []error{
+		errors.New("stream decoding exceeded 1073741824-byte cumulative budget: filter decode limit exceeded"),
+		fmt.Errorf("stream decoding exceeded 9223372036854775808-byte cumulative budget: %w", filter.ErrDecodeLimitExceeded),
+		fmt.Errorf("object stream decoding exceeded 0-byte cumulative budget: %w", filter.ErrDecodeLimitExceeded),
+	} {
+		control := &conversionControl{ctx: t.Context(), options: opts}
+		if got := control.parserError(original); got != original || control.check() != nil {
+			t.Errorf("不应从无哨兵或无效上限的错误推断预算: %v", got)
+		}
 	}
 }
 

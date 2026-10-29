@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 
@@ -101,9 +102,10 @@ var parserObjectLimit = regexp.MustCompile(`(?:trailer Size|"Size"|object stream
 var parserXRefLimit = regexp.MustCompile(`xref (?:entry count|subsection object range) exceeds limit (\d+)`)
 var parserStreamLimit = regexp.MustCompile(`stream length (\d+) exceeds maximum supported length (\d+)`)
 var parserBlindStreamLimit = regexp.MustCompile(`stream content exceeds maximum blind read length (\d+)`)
+var parserCumulativeDecodeLimit = regexp.MustCompile(`(?:^|: )(object )?stream decoding exceeded (\d+)-byte cumulative budget:`)
 
-// parserError 适配 pdfcpu 尚未导出哨兵的 xref/流大小错误。仅匹配已知的格式，
-// 保留原始原因，避免把普通格式错误或不相关的库内限制误判为本次预算超限。
+// parserError 适配 pdfcpu 的资源限制错误。仅匹配已知格式并保留原始原因；
+// 解析器自身的累计解码预算使用上游报告的上限，与转换器的预算分开标识。
 func (c *conversionControl) parserError(err error) error {
 	if err == nil {
 		return nil
@@ -114,6 +116,21 @@ func (c *conversionControl) parserError(err error) error {
 	switch {
 	case errors.Is(err, filter.ErrDecodeLimitExceeded):
 		resource, actual, maximum = "decoded_stream_bytes", l.MaxDecodedStreamBytes+1, l.MaxDecodedStreamBytes
+		if match := parserCumulativeDecodeLimit.FindStringSubmatch(err.Error()); len(match) > 0 {
+			limit, parseErr := strconv.ParseInt(match[2], 10, 64)
+			if parseErr != nil || limit <= 0 {
+				return err
+			}
+			resource = "parser_total_decoded_bytes"
+			if match[1] != "" {
+				resource = "parser_total_object_stream_decoded_bytes"
+			}
+			maximum, actual = limit, limit
+			// 上游累计预算可能饱和为 MaxInt64，用量下界不能加一后回绕。
+			if actual < math.MaxInt64 {
+				actual++
+			}
+		}
 	case errors.Is(err, model.ErrMaxRecursionDepthExceeded):
 		resource, actual, maximum = "parser_depth", l.MaxDepth+1, l.MaxDepth
 	case errors.Is(err, model.ErrInputSizeLimit):

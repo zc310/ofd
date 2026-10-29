@@ -178,6 +178,12 @@ CLI 可通过 `--pdf-max-total-decoded-bytes` 调整累计解码字节预算。�
 
 这些预算限制对应的处理量，并不等同于进程峰值内存上限。
 
+pdfcpu 解析器另有普通流和惰性对象流两套独立的累计解码预算，每套为
+`max(1GiB, 2 × MaxDecodedStreamBytes)`，超大值饱和为 `MaxInt64`。
+它们不随 `MaxTotalDecodedBytes` 调整。触发时仍返回资源限制错误，Resource 分别为
+`parser_total_decoded_bytes` 和 `parser_total_object_stream_decoded_bytes`，Limit 使用
+解析器报告的实际预算；转换器自身的累计解码超限仍使用 `total_decoded_bytes`。
+
 ### 转换模式与失败处理
 
 | 情况 | 普通模式 | Strict 模式 |
@@ -209,7 +215,8 @@ err := converter.Convert(ctx, "pdf", "ofd", input, &output,
 ```
 
 `errors.As` 到 `*converter.PDFImportLimitError` 可取得 Resource、Limit 和 Actual。
-Actual 是已观察到的用量；提前终止解码时可能只表示超过上限的最小已知值。
+Actual 是已观察到的用量；提前终止解码时可能只表示超过上限的最小已知值，
+无法在 `int64` 中表示更大用量时饱和为 `MaxInt64`。
 
 直接 PDF 导入入口为 `ConvertWithOptions(ctx, input, writer, password, options)` 和
 `ConvertFileWithOptions(ctx, pdfPath, ofdPath, password, options)`。CLI 的预算选项和

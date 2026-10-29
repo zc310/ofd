@@ -8,7 +8,7 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.5
+	github.com/chromedp/cdproto v0.158.6
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.1
@@ -27,8 +27,8 @@ require (
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
 	github.com/natefinch/lumberjack/v3 v3.0.0-alpha
 	github.com/ncruces/zenity v0.10.15
-	github.com/nicksnyder/go-i18n/v2 v2.6.1
-	github.com/pdfcpu/pdfcpu v0.16.3
+	github.com/nicksnyder/go-i18n/v2 v2.7.0
+	github.com/pdfcpu/pdfcpu v0.16.4
 	github.com/pkg/sftp v1.13.12
 	github.com/rymdport/portal v0.4.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -49,7 +49,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/text v0.43.0
 )
 
