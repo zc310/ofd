@@ -23,6 +23,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 | 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases) |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 接入自己的 Go 项目 | [Go API](#go-api)、[库使用指南](docs/GO-API.md) |
+| 组合签名、加密与完整性保护 | [安全能力指南](docs/SECURITY.md) |
 | 从源码运行和打包 | [构建与打包](#构建与打包)、[构建指南](docs/BUILDING.md) |
 | 查询兼容性与标准资料 | [支持清单](#支持清单与工具文档)、[文档目录](docs/README.md) |
 
@@ -151,6 +152,7 @@ func main() {
 | 条目编辑与水印 | [`pkg/creator/replace`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/replace)、[`pkg/creator/watermark`](https://pkg.go.dev/github.com/zc310/ofd/pkg/creator/watermark) |
 | 签署、生成印章和验证 | [`pkg/sign` 库指南](pkg/sign/README.md) |
 | 检查加密元数据与加解密 OFD | [`pkg/crypt` 库指南](pkg/crypt/README.md)、[密码功能与实现约定](docs/OFD-CRYPTO.md) |
+| 整包完整性检查及安全能力组合 | [`pkg/integrity` 库指南](pkg/integrity/README.md)、[安全能力指南](docs/SECURITY.md) |
 | 文档对比 | [`pkg/compare` 库指南](pkg/compare/README.md) |
 | 长期保存转换与改动计划 | [`pkg/archive/preserve`](https://pkg.go.dev/github.com/zc310/ofd/pkg/archive/preserve)、[输入限制与处理边界](cmd/ofd-archive/README.md#长期保存处理preserve) |
 

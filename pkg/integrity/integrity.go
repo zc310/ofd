@@ -17,6 +17,7 @@ import (
 	"github.com/knroy/go-xml/v2/xdm"
 	"github.com/knroy/go-xml/v2/xsd"
 	"github.com/zc310/ofd/internal/container"
+	"github.com/zc310/ofd/internal/container/entrywriter"
 	protocol "github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
@@ -709,22 +710,31 @@ func Protect(ctx context.Context, input any, w io.Writer, options ProtectOptions
 	if len(p.names) > p.limits.MaxEntries-2 || int64(len(data)+len(value)) > p.limits.MaxTotalMetadataBytes {
 		return nil, crypt.ErrLimitExceeded
 	}
+	// 输出包含输入文件和新增元数据；预检保留公开的预算错误分类。
+	remaining := p.limits.MaxTotalBytes
+	for _, content := range p.files {
+		remaining -= int64(len(content))
+	}
+	for _, content := range [][]byte{data, value} {
+		if int64(len(content)) > p.limits.MaxEntryBytes || int64(len(content)) > remaining {
+			return nil, crypt.ErrLimitExceeded
+		}
+		remaining -= int64(len(content))
+	}
 	archive := zip.NewWriter(w)
-	var total int64
+	entries := entrywriter.New(archive, entrywriter.Config{
+		Compression: container.CompressionDeflate,
+		Limits: container.Limits{
+			MaxEntries:    p.limits.MaxEntries,
+			MaxEntryBytes: p.limits.MaxEntryBytes,
+			MaxTotalBytes: p.limits.MaxTotalBytes,
+		},
+	})
 	write := func(name string, data []byte) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if int64(len(data)) > p.limits.MaxEntryBytes || int64(len(data)) > p.limits.MaxTotalBytes-total {
-			return crypt.ErrLimitExceeded
-		}
-		total += int64(len(data))
-		entry, err := archive.Create(name)
-		if err != nil {
-			return err
-		}
-		_, err = entry.Write(data)
-		return err
+		return entries.Write(name, data)
 	}
 	for _, name := range p.names {
 		if err := write(name, p.files[name]); err != nil {

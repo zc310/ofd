@@ -5,6 +5,7 @@
 加密写端支持整包、显式条目或页面范围、逐条独立 FEK/IV，以及在已有线性加密链外追加一层。
 命令行见 [`ofd-crypt`](../../cmd/ofd-crypt/README.md)。
 标准条款、格式歧义、互通范围和已知限制见 [实现约定](../../docs/OFD-CRYPTO.md)。
+与签名、整包完整性保护的关系及操作顺序见 [安全能力指南](../../docs/SECURITY.md)。
 
 ```go
 info, err := crypt.Inspect(ctx, "encrypted.ofd", crypt.InspectOptions{

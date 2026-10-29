@@ -3,6 +3,7 @@
 `pkg/integrity` 实现 GM/T 0099-2020 §7.4、附录 D：检查或生成根目录
 `OFDEntries.xml`，验证其带时间戳的 SM2/SM3 SignedData 或 RSA/ECDSA CMS 签名，并分别检查物理文件集合、
 引用闭包和文件内容的签名覆盖。CLI 见 [ofd-crypt integrity](../../cmd/ofd-crypt/README.md)。
+与签名、加解密的关系及操作顺序见 [安全能力指南](../../docs/SECURITY.md)。
 
 ## 验证
 

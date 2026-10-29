@@ -4,12 +4,73 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/zc310/ofd/pkg/crypt"
 	"github.com/zc310/ofd/pkg/integrity"
 )
+
+// 新增清单和签名值也必须计入输出预算，且保留公开的超限错误分类。
+func TestGMT0099IntegrityProtectBudgetsIncludeManifestAndSignedValue(t *testing.T) {
+	f := newSigningFixture(t, false)
+	f.options.CurrentTime = f.now.Add(2 * time.Second)
+	files := gmtFiles()
+	input := gmtArchive(t, files)
+	options := integrity.ProtectOptions{
+		Date:    f.now,
+		Options: integrity.Options{Verification: *f.options},
+	}
+	signer := digitalSigner(t, f, true)
+	var manifest, value []byte
+	options.Sign = func(ctx context.Context, data []byte) ([]byte, error) {
+		if value == nil {
+			manifest = bytes.Clone(data)
+			var err error
+			value, err = signer(ctx, data)
+			return value, err
+		}
+		if !bytes.Equal(manifest, data) {
+			t.Fatal("预算设置改变了待签清单字节")
+		}
+		return bytes.Clone(value), nil
+	}
+	var output bytes.Buffer
+	if _, err := integrity.Protect(t.Context(), input, &output, options); err != nil {
+		t.Fatal(err)
+	}
+	protected := gmtUnpack(t, output.Bytes())
+	var total, largest int64
+	for name, content := range protected {
+		total += int64(len(content))
+		largest = max(largest, int64(len(content)))
+		if original, exists := files[name]; exists && !bytes.Equal(original, content) {
+			t.Fatalf("原文件字节发生变化: %s", name)
+		}
+	}
+	for _, test := range []struct {
+		name   string
+		limits crypt.Limits
+	}{
+		{"entries", crypt.Limits{MaxEntries: len(protected) - 1}},
+		{"entry_bytes", crypt.Limits{MaxEntryBytes: largest - 1}},
+		{"total_bytes", crypt.Limits{MaxTotalBytes: total - 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			opt := options
+			opt.Limits = test.limits
+			report, err := integrity.Protect(t.Context(), input, io.Discard, opt)
+			if !errors.Is(err, crypt.ErrLimitExceeded) || report != nil {
+				t.Fatalf("输出预算未生效或错误分类改变: report=%+v err=%v", report, err)
+			}
+		})
+	}
+	options.Limits = crypt.Limits{MaxEntries: len(protected), MaxEntryBytes: largest, MaxTotalBytes: total}
+	if _, err := integrity.Protect(t.Context(), input, io.Discard, options); err != nil {
+		t.Fatalf("恰好满足输出预算时应成功: %v", err)
+	}
+}
 
 func TestGMT0099IntegrityErrorsNeverReturnValidPartialReport(t *testing.T) {
 	f := newSigningFixture(t, false)

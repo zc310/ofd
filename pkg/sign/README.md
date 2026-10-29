@@ -1,5 +1,7 @@
 # OFD 签署与验证
 
+与加解密、整包完整性保护的关系及操作顺序见 [安全能力指南](../../docs/SECURITY.md)。
+
 `Sign` 为 OFD 文档计算引用摘要、生成 `Signature.xml`，把原始 XML 字节交给外部命令，
 并将命令输出的 `SignedValue.dat` 写回包中。外部命令协议见
 [ofd-creator](../../cmd/ofd-creator/README.md#外部命令重签名)。
