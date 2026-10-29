@@ -6,12 +6,11 @@ import (
 	"math"
 	"strings"
 
+	"github.com/zc310/ofd/internal/cache"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
-
-	"github.com/zc310/ofd/internal/cache"
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -100,25 +99,6 @@ func (r *Reader) Text(index int) ([]TextRun, error) {
 		return nil, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
 	}
 	return cloneTextRuns(runs), nil
-}
-
-func pageTextObjects(page *parser.Page) []*models.TextObject {
-	return pageTextObjectsWithHiddenLayers(page, nil)
-}
-
-func pageTextObjectsWithHiddenLayers(page *parser.Page, hidden map[models.StID]bool) []*models.TextObject {
-	var texts []*models.TextObject
-	for _, layer := range contentLayers(page) {
-		if layer != nil && !hidden[layer.ID] {
-			walkPageItems(layer.Items, func(item models.PageItem) bool {
-				if item.Kind == models.PageItemText && item.Text != nil {
-					texts = append(texts, item.Text)
-				}
-				return true
-			})
-		}
-	}
-	return texts
 }
 
 func pageTextObjectsFromLayers(layers []*models.Layer) []*models.TextObject {

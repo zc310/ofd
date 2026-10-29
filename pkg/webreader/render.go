@@ -17,6 +17,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+
 	// RenderPage 依赖 canvas 后端注册的矢量表面与栅格后端。
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 )
@@ -387,11 +388,11 @@ func opaqueImage(source image.Image, background color.Color) image.Image {
 
 // addClamped 返回 a+b，溢出 255 时收敛到 255。
 func addClamped(a, b int) uint8 {
-	if sum := a + b; sum > 255 {
+	sum := a + b
+	if sum > 255 {
 		return 255
-	} else {
-		return uint8(sum)
 	}
+	return uint8(sum)
 }
 
 // pageDocument 获取并持有页面对应的渲染视图；调用方必须持有 Reader 读锁，

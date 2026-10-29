@@ -80,10 +80,10 @@ func (r *Reader) computeCustomTags() ([]CustomTagTree, error) {
 		if err != nil {
 			return nil, fmt.Errorf("读取第 %d 个文档体自定义标签失败: %w", scope, err)
 		}
-		if value == nil || document.Document.CustomTags == nil {
+		if value == nil || document.CustomTags == nil {
 			continue
 		}
-		listPath := document.Document.CustomTags.Resolve(document.BaseLoc)
+		listPath := document.CustomTags.Resolve(document.BaseLoc)
 		for _, tag := range value.CustomTags {
 			path := tag.FileLoc.Resolve(listPath.Dir())
 			data, err := document.FileCache.ReadLimit(path.String(), customTagMaxBytes)
@@ -147,7 +147,7 @@ func parseCustomTag(data []byte) (*CustomTagNode, error) {
 	for {
 		token, err := decoder.Token()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil, errors.New("自定义标签缺少根元素")
 			}
 			return nil, err

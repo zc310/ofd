@@ -148,14 +148,14 @@ func (r *Reader) Attachments() ([]AttachmentInfo, error) {
 func (r *Reader) computeAttachments() ([]AttachmentInfo, error) {
 	infos := make([]AttachmentInfo, 0)
 	for scope, document := range r.ofd.Documents {
-		if document == nil || document.Document.Attachments == nil {
+		if document == nil || document.Attachments == nil {
 			continue
 		}
 		list := document.GetAttachments()
 		if list == nil {
 			continue
 		}
-		attachmentsPath := document.Document.Attachments.Resolve(document.BaseLoc).String()
+		attachmentsPath := document.Attachments.Resolve(document.BaseLoc).String()
 		for _, attachment := range list.Attachments {
 			info := AttachmentInfo{
 				Scope:   scope,
@@ -226,14 +226,14 @@ func (r *Reader) attachmentPath(scope int, id string) (*parser.Document, string,
 		return nil, "", false
 	}
 	document := r.ofd.Documents[scope]
-	if document == nil || document.Document.Attachments == nil {
+	if document == nil || document.Attachments == nil {
 		return nil, "", false
 	}
 	list := document.GetAttachments()
 	if list == nil {
 		return nil, "", false
 	}
-	attachmentsPath := document.Document.Attachments.Resolve(document.BaseLoc).String()
+	attachmentsPath := document.Attachments.Resolve(document.BaseLoc).String()
 	for _, attachment := range list.Attachments {
 		if attachment.ID != id {
 			continue
@@ -429,7 +429,7 @@ func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 				TargetPage: -1,
 			}
 			if !item.LastModDate.IsZero() {
-				info.LastModDate = item.LastModDate.Time.Format("2006-01-02")
+				info.LastModDate = item.LastModDate.Format("2006-01-02")
 			}
 			if item.Remark != nil {
 				info.Remark = *item.Remark
@@ -618,9 +618,9 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 			actions = append(actions, media)
 		}
 	}
-	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Document.Actions != nil {
+	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Actions != nil {
 		for _, event := range []models.ActionEvent{models.ActionEventDO, models.ActionEventPO} {
-			if media, ok := mediaAction(ref.document.Document.Actions.Actions, event); ok {
+			if media, ok := mediaAction(ref.document.Actions.Actions, event); ok {
 				media.Scope, media.Page = ref.fontScope, index
 				actions = append(actions, media)
 			}
@@ -673,8 +673,8 @@ func (r *Reader) PageEntryActionsForPage(index int) ([]PageLink, error) {
 	if pageActions := snapshot.actions; pageActions != nil {
 		appendEvents(pageActions.Action, models.ActionEventPO)
 	}
-	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Document.Actions != nil {
-		appendEvents(ref.document.Document.Actions.Actions, models.ActionEventDO, models.ActionEventPO)
+	if index == r.firstPageOfScope(ref.fontScope) && ref.document.Actions != nil {
+		appendEvents(ref.document.Actions.Actions, models.ActionEventDO, models.ActionEventPO)
 	}
 	return actions, nil
 }
@@ -719,7 +719,7 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		if r.hiddenLayers[index].HiddenTemplates[models.StID(tpl.TemplateID)] {
 			continue
 		}
-		template, loadErr := ref.document.Document.LoadTemplate(models.StID(tpl.TemplateID))
+		template, loadErr := ref.document.LoadTemplate(models.StID(tpl.TemplateID))
 		if loadErr != nil {
 			return nil, fmt.Errorf("读取第 %d 页模板 %d 失败: %w", index, tpl.TemplateID, loadErr)
 		}
@@ -777,10 +777,10 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 
 // appendDocumentClickLinksForTexts 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
 func appendDocumentClickLinksForTexts(ref pageRef, page int, pageIndex map[models.StID]int, links *[]PageLink, texts []*models.TextObject) {
-	if ref.document == nil || ref.document.Document == nil || ref.document.Document.Actions == nil || ref.page == nil {
+	if ref.document == nil || ref.document.Document == nil || ref.document.Actions == nil || ref.page == nil {
 		return
 	}
-	for _, action := range ref.document.Document.Actions.Actions {
+	for _, action := range ref.document.Actions.Actions {
 		if action.Event != models.ActionEventClick {
 			continue
 		}
@@ -793,8 +793,8 @@ func appendDocumentClickLinksForTexts(ref pageRef, page int, pageIndex map[model
 		case action.Goto != nil && action.Goto.Bookmark != nil && action.Goto.Bookmark.Name != "":
 			name := action.Goto.Bookmark.Name
 			text = textMatching(texts, name)
-			if ref.document.Document.Bookmarks != nil {
-				for _, bookmark := range ref.document.Document.Bookmarks.Bookmarks {
+			if ref.document.Bookmarks != nil {
+				for _, bookmark := range ref.document.Bookmarks.Bookmarks {
 					if bookmark.Name != name {
 						continue
 					}
@@ -944,12 +944,12 @@ func (r *Reader) computePageMediaActions() ([]PageLink, error) {
 				actions = append(actions, media)
 			}
 		}
-		if seenDocument[ref.fontScope] || ref.document.Document == nil || ref.document.Document.Actions == nil {
+		if seenDocument[ref.fontScope] || ref.document.Document == nil || ref.document.Actions == nil {
 			continue
 		}
 		seenDocument[ref.fontScope] = true
 		for _, event := range []models.ActionEvent{models.ActionEventDO, models.ActionEventPO} {
-			if media, ok := mediaAction(ref.document.Document.Actions.Actions, event); ok {
+			if media, ok := mediaAction(ref.document.Actions.Actions, event); ok {
 				media.Scope = ref.fontScope
 				media.Page = index
 				actions = append(actions, media)
