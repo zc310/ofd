@@ -25,7 +25,7 @@ func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.C
 			return true
 		}
 	}
-	gradient := p.pathGradient(source, gradientBoundaryTransform(object.Boundary, pb.Height), gradientShadingArea(object.Boundary))
+	gradient := p.textPageGradient(source, object.Boundary, pb.Height, parent)
 	return p.drawMeshPaintGradient(ctx, path, gradient, pb, object.Alpha, budget)
 }
 

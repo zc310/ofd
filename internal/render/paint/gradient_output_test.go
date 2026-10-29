@@ -108,3 +108,22 @@ func TestGradientHasTransparency(t *testing.T) {
 		t.Fatal("含 A=0 色标的渐变未被判定为透明")
 	}
 }
+
+func TestNeedsRasterPreservesMappedGradientSampling(t *testing.T) {
+	gradient := geom.NewRadialGradient(geom.Point{}, 0, geom.Point{}, 10)
+	gradient.Grad = geom.Grad{{Color: color.RGBA{R: 255, A: 255}}, {Offset: 1, Color: color.RGBA{B: 255, A: 255}}}
+	mapped, ok := DeviceGradient(gradient, geom.Identity.Scale(2, 1))
+	if !ok {
+		t.Fatal("无法准备非等比缩放渐变")
+	}
+	for _, sample := range []geom.Gradient{
+		mapped, TranslateGradient(gradient, 1, 2), TextRunGradient(gradient, geom.Point{}, 1),
+	} {
+		if !NeedsRaster(sample, nil) {
+			t.Fatalf("采样适配器 %T 不能交给原生 Shading", sample)
+		}
+	}
+	if NeedsRaster(gradient, nil) {
+		t.Fatal("未包装的同心径向渐变应保留原生输出")
+	}
+}

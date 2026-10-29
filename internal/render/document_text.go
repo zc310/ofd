@@ -31,8 +31,8 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if clip != nil && clip.Empty() {
 		return
 	}
-	// GB/T 33190—2016 §8.3：底纹也可用于文字填充。先单独绘制底纹，
-	// 再由原路径绘制描边；底纹单元可能包含同一字体的文字，不能持字体锁展开。
+	// GB/T 33190—2016 §8.3.3：先绘制底纹填充，再绘制描边。
+	// 底纹单元可能包含同一字体的文字，不能持字体锁展开。
 	patternFill := false
 	if source := textFillColor(object, dp); source != nil && source.Pattern != nil && !textFillDisabled(object) {
 		if _, semanticOnly := ctx.(semanticOnlyContext); !semanticOnly {
@@ -42,6 +42,21 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 				return
 			}
 			object.Fill.Set(false)
+		}
+	}
+
+	// 底纹描边先在字体锁内准备独立几何，填充结束并释放字体锁后再展开底纹。
+	// §8.3.3 同时允许文字底纹填充和勾边；单元可能再次引用当前字体。
+	if source := textStrokeColor(object, dp); object.Stroke && source != nil && source.Pattern != nil {
+		if _, semanticOnly := ctx.(semanticOnlyContext); !semanticOnly {
+			var outline *geom.Path
+			ctx.Push()
+			p.withTextOutlineFace(object, func(face FontFace) {
+				outline = p.textStrokeOutline(ctx, face, object, dp, pb, parentCTM, clip)
+			})
+			ctx.Pop()
+			defer p.drawPatternTextPath(ctx, source, object, outline, pb, parentCTM, budget, !patternFill && textFillDisabled(object))
+			object.Stroke = false
 		}
 	}
 
@@ -166,6 +181,16 @@ func textFillColor(object models.TextObject, dp *models.DrawParam) *models.CTCol
 	return nil
 }
 
+func textStrokeColor(object models.TextObject, dp *models.DrawParam) *models.CTColor {
+	if paint.HasColorValue(object.StrokeColor) {
+		return object.StrokeColor
+	}
+	if dp != nil {
+		return dp.StrokeColor
+	}
+	return nil
+}
+
 // nativeShadingGradient 判断填充渐变是否是可以直接写成 PDF 原生 Shading 的
 // Linear/RadialGradient（Extend=3、非焦点径向）。自定义渐变类型返回 false。
 func nativeShadingGradient(fill *CTColor) bool {
@@ -234,25 +259,16 @@ func (p *Document) drawSemanticText(ctx DrawContext, face FontFace, object model
 	if run == nil {
 		return
 	}
-	if parentCTM != nil {
-		if object.CTM != nil {
-			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
-		} else {
-			x, y = parentCTM.Transform(x, y)
-		}
-	} else if object.CTM != nil {
-		x, y = object.CTM.Transform(x, y)
+	transform := textPageTransform(object, pageHeight, parentCTM)
+	if transform == nil {
+		return
 	}
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) {
+	matrix := transform(x, y)
+	if !finiteMatrix(matrix) {
 		return
 	}
 	ctx.Push()
-	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-		ctx.Transform(*m)
-	}
-	ctx.Rotate(-textlayout.CharDirection(object))
-	ctx.Scale(textlayout.HScale(object), 1)
+	ctx.Transform(matrix)
 	drawer.DrawSemanticTextLine(run)
 	ctx.Pop()
 }
@@ -299,42 +315,16 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 			return
 		}
 	}
-	if parentCTM != nil {
-		if object.CTM != nil {
-			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
-		} else {
-			x, y = parentCTM.Transform(x, y)
-		}
-		if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
-			return
-		}
-		// 对于 CellContent，Boundary 定义在父级坐标系中。
-		ctx.Push()
-		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-		if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-			ctx.Transform(*m)
-		}
-		ctx.Rotate(-textlayout.CharDirection(object))
-		ctx.Scale(hScale, 1)
-		p.drawTextInline(ctx, face, value, faces.clip)
-		ctx.Pop()
+	transform := textPageTransform(object, pageHeight, parentCTM)
+	if transform == nil {
 		return
 	}
-	if object.CTM != nil {
-		x, y = object.CTM.Transform(x, y)
-	}
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
+	matrix := transform(x, y)
+	if !finiteMatrix(matrix) {
 		return
 	}
-	// CTM 的线性部分必须整体作用到字形上：只用 Rotate 只能表达纯旋转，
-	// 水平倾斜（CTM="1 0 0.3 1 0 0"）和非等比缩放会被静默丢弃，字形仍是直立的。
 	ctx.Push()
-	ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-		ctx.Transform(*m)
-	}
-	ctx.Rotate(-textlayout.CharDirection(object))
-	ctx.Scale(hScale, 1)
+	ctx.Transform(matrix)
 	p.drawTextInline(ctx, face, value, faces.clip)
 	ctx.Pop()
 }
@@ -405,54 +395,29 @@ func (p *Document) drawCFFTextPath(ctx DrawContext, faces *textFaces, object mod
 }
 
 func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Path, object models.TextObject, x, y, pageHeight float64, parentCTM *models.CTM, hScale float64) {
-	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变必须以它为基准还原
-	// 取样空间；后续分支会改写 x、y，因此先单独保留。
+	// runX/runY 是 run 起点在图元 Boundary 内的坐标，渐变以此还原取样空间。
 	runX, runY := x, y
 	face := faces.run(runX, runY)
 	if path == nil || !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) || !finiteFloat(hScale) ||
 		!object.Boundary.IsFinite() || !object.CTM.IsFinite() || !parentCTM.IsFinite() {
 		return
 	}
+	transform := textPageTransform(object, pageHeight, parentCTM)
+	if transform == nil {
+		return
+	}
+	matrix := transform(x, y)
+	if !finiteMatrix(matrix) {
+		return
+	}
 	if parentCTM != nil {
 		// 该分支用上下文变换绘制路径，后端在 run 排版空间中取样渐变，
 		// 与原生文字分支一致。
 		p.applyTextPathFill(ctx, faces.runPaint(runX, runY, face.Fill()), object)
-		if object.CTM != nil {
-			x, y = parentCTM.Multiply(object.CTM).Transform(x, y)
-		} else {
-			x, y = parentCTM.Transform(x, y)
-		}
-		if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
-			return
-		}
 		ctx.Push()
-		ctx.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-		if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-			ctx.Transform(*m)
-		}
-		ctx.Rotate(-textlayout.CharDirection(object))
-		ctx.Scale(hScale, 1)
+		ctx.Transform(matrix)
 		p.drawTextOutline(ctx, path, faces.clip, object)
 		ctx.Pop()
-		return
-	}
-	if object.CTM != nil {
-		x, y = object.CTM.Transform(x, y)
-	}
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
-		return
-	}
-	matrix := geom.Identity.Translate(x+object.Boundary.X, pageHeight-(y+object.Boundary.Y))
-	// 与原生文字、网格文字分支保持一致：CTM 的线性部分整体参与变换，
-	// 只调用 Rotate 会把倾斜和非等比缩放静默丢弃。
-	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-		matrix = matrix.Mul(*m)
-	}
-	if direction := textlayout.CharDirection(object); direction != 0 {
-		matrix = matrix.Rotate(-direction)
-	}
-	matrix = matrix.Scale(hScale, 1)
-	if !finiteMatrix(matrix) {
 		return
 	}
 	// 排版矩阵已烘焙进轮廓，后端按设备坐标取样渐变，因此画笔要用矩阵逆

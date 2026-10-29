@@ -200,6 +200,15 @@ func TestTextPatternKeepsColorsOpacityClipAndPDFText(t *testing.T) {
 }
 
 func TestTextPatternAllowsSameFontInsideCell(t *testing.T) {
+	for _, stroke := range []bool{false, true} {
+		t.Run(map[bool]string{false: "填充", true: "描边"}[stroke], func(t *testing.T) {
+			testTextPatternAllowsSameFontInsideCell(t, stroke)
+		})
+	}
+}
+
+func testTextPatternAllowsSameFontInsideCell(t *testing.T, stroke bool) {
+	t.Helper()
 	doc := clipTestDocument(t)
 	object := regressionTextObject()
 	cellText := object
@@ -211,6 +220,11 @@ func TestTextPatternAllowsSameFontInsideCell(t *testing.T) {
 			Items: []models.PageItem{{Kind: models.PageItemText, Text: &cellText}},
 		}},
 	}}
+	if stroke {
+		object.StrokeColor, object.Stroke, object.LineWidth = object.FillColor, true, 1
+		object.FillColor = nil
+		object.Fill.Set(false)
+	}
 	type result struct {
 		surface VectorSurface
 		err     error

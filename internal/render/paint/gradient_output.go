@@ -13,12 +13,13 @@ func NeedsRaster(gradient geom.Gradient, objectAlpha *uint8) bool {
 		return true
 	}
 	switch value := gradient.(type) {
-	case *ofdLinearGradient, *ofdRadialGradient, *ofdEllipticalGradient:
-		return true
+	case *geom.LinearGradient:
+		return false
 	case *geom.RadialGradient:
 		return geom.Equal(value.R0, 0) && value.C0 != value.C1
 	default:
-		return false
+		// 采样适配器、网格及其他自定义渐变都不能序列化为原生 Shading。
+		return true
 	}
 }
 

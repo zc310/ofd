@@ -9,13 +9,22 @@ import (
 // textOutline 在字体锁内构造可见轮廓，定位与正文共用 layout/text 的分段规则。
 // 裁剪和底纹只需要几何，Fill、Stroke、Alpha 不影响轮廓。
 func (p *Document) textOutline(object models.TextObject, transform func(x, y float64) geom.Matrix) *geom.Path {
+	var path *geom.Path
+	p.withTextOutlineFace(object, func(face FontFace) {
+		path = textlayout.Outline(face, object, transform)
+	})
+	return path
+}
+
+// withTextOutlineFace 只在轮廓访问期间持有字体锁；底纹内容必须在回调返回后绘制。
+func (p *Document) withTextOutlineFace(object models.TextObject, visit func(FontFace)) {
 	if p.fonts == nil || !object.Boundary.IsFinite() || !object.CTM.IsFinite() ||
 		!finiteFloat(object.Size) || object.Size <= 0 || !finiteFloat(textlayout.HScale(object)) {
-		return nil
+		return
 	}
 	family, err := p.fonts.LoadFont(object.Font)
 	if err != nil || family == nil {
-		return nil
+		return
 	}
 	lock := p.fonts.RenderLock(family)
 	lock.Lock()
@@ -24,9 +33,9 @@ func (p *Document) textOutline(object models.TextObject, transform func(x, y flo
 	object.Fill.Set(true)
 	face := p.fonts.FaceObject(family, object, &CTColor{Value: geom.Black, HasValue: true})
 	if face == nil {
-		return nil
+		return
 	}
-	return textlayout.Outline(face, object, transform)
+	visit(face)
 }
 
 // outlineRunMatrix 把 Y 向上的字形映射到画布，保持文字 CTM、字符方向与 HScale 的顺序。
@@ -70,8 +79,8 @@ func (p *Document) patternTextOutline(object models.TextObject, pageHeight float
 	return p.textOutline(object, transform)
 }
 
-// textPageTransform 与正文保持一致：父级 CTM 参与 run 原点定位，文字自身的
-// CTM 线性部分、字符方向和 HScale 作用于字形。返回值不含设备上下文变换。
+// textPageTransform 按 GB/T 33190—2016 §8.1.4/5、§8.3.3 将父级与文字 CTM
+// 同时作用于 run 原点和整个字形；再处理字符方向与 HScale。不含设备上下文变换。
 func textPageTransform(object models.TextObject, pageHeight float64, parent *models.CTM) func(x, y float64) geom.Matrix {
 	if !parent.IsFinite() || !object.CTM.IsFinite() || !object.Boundary.IsFinite() || !finiteFloat(pageHeight) {
 		return nil
@@ -90,6 +99,6 @@ func textPageTransform(object models.TextObject, pageHeight float64, parent *mod
 		if ctm != nil {
 			x, y = ctm.Transform(x, y)
 		}
-		return outlineRunMatrix(object, x+object.Boundary.X, pageHeight-(y+object.Boundary.Y), object.CTM)
+		return outlineRunMatrix(object, x+object.Boundary.X, pageHeight-(y+object.Boundary.Y), ctm)
 	}
 }

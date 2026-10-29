@@ -104,6 +104,25 @@ func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
 	return matrix.Translate(x, y).Scale(textlayout.HScale(object), -1)
 }
 
+// textPageGradient 按 §8.1.4/5、§8.3.4 将 Boundary 渐变随父级一起映射到画布。
+// 通过逆矩阵采样保留非等比缩放、倾斜下的等色线和径向渐变形状。
+func (p *Document) textPageGradient(source *models.CTColor, boundary models.StBox, pageHeight float64, parent *models.CTM) geom.Gradient {
+	gradient := p.pathGradient(source, gradientBoundaryTransform(boundary, pageHeight), gradientShadingArea(boundary))
+	if gradient == nil || parent == nil {
+		return gradient
+	}
+	base := geom.Matrix{{1, 0, boundary.X}, {0, -1, pageHeight - boundary.Y}}
+	matrix := base.Mul(geom.Matrix{{parent[0], parent[2], parent[4]}, {parent[1], parent[3], parent[5]}}).Mul(base.Inv())
+	mapped, ok := paint.DeviceGradient(gradient, matrix)
+	if !ok {
+		return nil
+	}
+	if native := paint.MapNativeGradient(gradient, matrix.Inv()); native != nil {
+		return native
+	}
+	return mapped
+}
+
 // runPaint 返回该 run 在其排版空间中取样的填充画笔，用于走路径绘制的文字。
 func (t *textFaces) runPaint(runX, runY float64, base geom.Paint) geom.Paint {
 	if t == nil || t.native {
