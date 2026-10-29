@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -19,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goccy/go-json"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/zc310/ofd/internal/server/convertersvc"

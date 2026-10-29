@@ -5,19 +5,19 @@ import (
 	"io"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 )
 
 func RenderJSON(writer io.Writer, report any, pretty bool) error {
 	if writer == nil {
 		return fmt.Errorf("归档报告输出为空")
 	}
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
+	var opts []json.Options
 	if pretty {
-		encoder.SetIndent("", "  ")
+		opts = append(opts, jsontext.WithIndent("  "))
 	}
-	return encoder.Encode(report)
+	return json.MarshalEncode(jsontext.NewEncoder(writer, opts...), report)
 }
 
 func RenderText(writer io.Writer, report Report) error {

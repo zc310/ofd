@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/pkg/analyzer"
@@ -132,7 +133,7 @@ func Prepare(ctx context.Context, input, output string, metadata Metadata, profi
 			manifest.Files[index] = item
 		}
 	}
-	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	manifestData, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return report, err
 	}

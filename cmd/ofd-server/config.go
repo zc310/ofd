@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/server/allowlist"
 	"github.com/zc310/ofd/internal/server/notify"

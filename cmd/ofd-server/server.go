@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/server/allowlist"
 	"github.com/zc310/ofd/internal/server/convertersvc"
@@ -235,7 +235,7 @@ type submitRequest struct {
 	// Notify 只允许引用已注册的目标名，不接受 URL 或密钥。
 	Notify *submitNotify `json:"notify,omitempty"`
 	// HighPriority 让任务插到普通任务之前。
-	HighPriority bool `json:"high_priority,omitempty"`
+	HighPriority bool `json:"high_priority,omitzero"`
 }
 
 type submitNotify struct {

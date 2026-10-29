@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 )
 
 // Decimal 表示精确的十进制数值（金额、数量、税率），基于任意精度的有理数。

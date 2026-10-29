@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
@@ -351,9 +352,8 @@ func execute(ctx context.Context, o *options, stdin io.Reader, stdout io.Writer)
 
 func render(w io.Writer, value any, format string) error {
 	if format == "json" {
-		encoder := json.NewEncoder(w)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(value)
+		encoder := jsontext.NewEncoder(w, jsontext.WithIndent("  "))
+		return json.MarshalEncode(encoder, value)
 	}
 	line := func(pattern string, values ...any) error { _, err := fmt.Fprintf(w, pattern, values...); return err }
 	if format == "markdown" {

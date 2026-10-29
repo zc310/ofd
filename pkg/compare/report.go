@@ -11,7 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 	comparelocalization "github.com/zc310/ofd/internal/localization/compare"
 )
 
@@ -55,9 +56,8 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 	view := reportView{report: report}
 	switch format {
 	case "json":
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(report)
+		enc := jsontext.NewEncoder(w, jsontext.WithIndent("  "))
+		return json.MarshalEncode(enc, report)
 	case "html":
 		localizer, err := comparelocalization.New(report.Options.Language)
 		if err != nil {

@@ -1,13 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/goccy/go-json"
 
 	"github.com/valyala/fasthttp"
 

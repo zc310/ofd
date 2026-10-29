@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"

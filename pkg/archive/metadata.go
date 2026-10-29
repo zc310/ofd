@@ -2,25 +2,26 @@ package archive
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"go.yaml.in/yaml/v3"
 )
 
 func jsonUnmarshalStrict(data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	decoder := jsontext.NewDecoder(bytes.NewReader(data), json.RejectUnknownMembers(true))
+	if err := json.UnmarshalDecode(decoder, target); err != nil {
 		return err
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := json.UnmarshalDecode(decoder, &extra); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("文件包含多个 JSON 值")
 	}
 	return nil

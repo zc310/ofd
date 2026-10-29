@@ -13,7 +13,7 @@ require (
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.1
 	github.com/go-text/typesetting v0.3.5
-	github.com/goccy/go-json v0.11.2
+	github.com/goccy/go-json v0.12.0
 	github.com/h2non/filetype v1.1.3
 	github.com/hack-pad/go-indexeddb v0.3.2
 	github.com/hack-pad/safejs v0.1.1

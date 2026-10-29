@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -41,7 +42,7 @@ type Delivery struct {
 	// Event 为 "succeeded" 或 "failed"。
 	Event string `json:"event"`
 	// Payload 是回调请求体，已序列化好的 JSON。
-	Payload json.RawMessage `json:"payload"`
+	Payload jsontext.Value `json:"payload"`
 	// Attempts 已经尝试的次数。
 	Attempts int `json:"attempts"`
 	// MaxAttempts 超过后转为 abandoned。

@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/media"
 )

@@ -13,7 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/manifest"
@@ -300,7 +301,7 @@ func marshalManifest(value manifest.Manifest, format string, jsonIndent bool) ([
 	case "json":
 		var data []byte
 		if jsonIndent {
-			data, err = json.MarshalIndent(value, "", "  ")
+			data, err = json.Marshal(value, jsontext.WithIndent("  "))
 		} else {
 			data, err = json.Marshal(value)
 		}
@@ -332,7 +333,7 @@ func marshalBundleIndex(value BundleIndex, format string, jsonIndent bool) ([]by
 	case "json":
 		var data []byte
 		if jsonIndent {
-			data, err = json.MarshalIndent(value, "", "  ")
+			data, err = json.Marshal(value, jsontext.WithIndent("  "))
 		} else {
 			data, err = json.Marshal(value)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -9,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/goccy/go-json"
 
 	"github.com/klauspost/compress/zip"
 

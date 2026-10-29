@@ -14,7 +14,7 @@ type formatInfo struct {
 	MIME       string   `json:"mime,omitempty"`
 	Kind       string   `json:"kind,omitempty"`
 	// Stream 仅对输出格式有意义：逐页图像必须落盘，不能用 stream。
-	Stream bool `json:"stream,omitempty"`
+	Stream bool `json:"stream,omitzero"`
 }
 
 type formatsView struct {

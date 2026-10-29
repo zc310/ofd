@@ -3,9 +3,9 @@ package viewerlocalization
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 
+	"github.com/goccy/go-json/v2"
 	"github.com/zc310/ofd/internal/localization"
 )
 

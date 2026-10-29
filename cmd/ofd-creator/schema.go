@@ -8,7 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/manifest"
 )
@@ -128,8 +129,8 @@ func schemaMarkdown(docs []manifest.TypeDoc) ([]byte, error) {
 	_, _ = fmt.Fprintln(&out, "因此每个结构体只列出一次，表中的路径是首次到达它的示例路径，字段的完整路径是在该路径后追加字段名，")
 	_, _ = fmt.Fprintln(&out, "结构体字段还要追加 `[]`，例如 `pages[].items[].fill_color.axial.segments[]`。")
 	_, _ = fmt.Fprintln(&out)
-	_, _ = fmt.Fprintln(&out, "表头中的“可省略”列表示该字段的 manifest tag 是否带 `omitempty`，它只描述序列化行为，")
-	_, _ = fmt.Fprintln(&out, "不等于“必填”：`version` 带 `omitempty`，但缺省或不是 1 仍会被拒绝。")
+	_, _ = fmt.Fprintln(&out, "表头中的“可省略”列表示该字段的 manifest tag 是否带 `omitempty` 或 `omitzero`，它只描述序列化行为，")
+	_, _ = fmt.Fprintln(&out, "不等于“必填”：`version` 带 `omitzero`，但缺省或不是 1 仍会被拒绝。")
 	_, _ = fmt.Fprintln(&out)
 	for _, typed := range docs {
 		_, _ = fmt.Fprintf(&out, "## %s\n\n", typed.Name)
@@ -152,7 +153,7 @@ func schemaMarkdown(docs []manifest.TypeDoc) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// requiredMark 把 omitempty 标记翻译成“可省略”列的取值。
+// requiredMark 把字段省略标记翻译成“可省略”列的取值。
 func requiredMark(optional bool) string {
 	if optional {
 		return "是"
@@ -172,7 +173,7 @@ func schemaJSON(docs []manifest.TypeDoc) ([]byte, error) {
 	type field struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
-		// OmitEmpty 表示 manifest tag 带 omitempty，即零值时可以不写。
+		// OmitEmpty 表示 manifest tag 带 omitempty 或 omitzero，满足条件时可以不写。
 		// 它只描述序列化行为，不代表字段必填。
 		OmitEmpty bool   `json:"omitempty"`
 		Doc       string `json:"doc,omitempty"`
@@ -193,7 +194,7 @@ func schemaJSON(docs []manifest.TypeDoc) ([]byte, error) {
 		list = append(list, entry)
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-	data, err := json.MarshalIndent(list, "", "  ")
+	data, err := json.Marshal(list, jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("编码 JSON 参考失败: %w", err)
 	}

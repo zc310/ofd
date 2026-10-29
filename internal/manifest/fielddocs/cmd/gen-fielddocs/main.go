@@ -57,7 +57,7 @@ func render(schema fielddocs.Schema) ([]byte, error) {
 	out.WriteString("\tType string\n")
 	out.WriteString("\t// Doc 是去掉字段名前缀后的字段说明。\n")
 	out.WriteString("\tDoc string\n")
-	out.WriteString("\t// Optional 表示该字段的 json tag 带 omitempty，未设置时零值即不输出。\n")
+	out.WriteString("\t// Optional 表示该字段的 json tag 带 omitempty 或 omitzero，满足省略条件时不输出。\n")
 	out.WriteString("\tOptional bool\n")
 	out.WriteString("}\n\n")
 	out.WriteString("// TypeDoc 是 manifest 里一个结构体的字段说明。\n")

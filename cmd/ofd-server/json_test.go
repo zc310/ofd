@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	jsonv2 "github.com/goccy/go-json/v2"
 	"github.com/valyala/fasthttp"
 
 	"github.com/zc310/ofd/internal/server/jobstore"
@@ -22,6 +24,8 @@ func TestDecodeStrictJSON(t *testing.T) {
 	}{
 		{name: "单段", body: `{"kind":"dir"}`, want: "dir"},
 		{name: "未知字段", body: `{"kinds":"dir"}`, wantErr: true},
+		{name: "字段名大小写不匹配", body: `{"Kind":"dir"}`, wantErr: true},
+		{name: "重复字段", body: `{"kind":"dir","kind":"stream"}`, wantErr: true},
 		{name: "语法错误", body: `{"kind":`, wantErr: true},
 		{name: "空体", body: ``, wantErr: true},
 		// 下面三条是重点：Decoder 只读第一个值，尾巴上挂什么它都不管。
@@ -81,9 +85,8 @@ func TestDecodeStrictJSONRejectsUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatal("未知字段被接受")
 	}
-	// 错误必须来自解码本身（"unknown field"），而不是尾随检查——后者会给出
-	// "只有一段"那种信息，与实际病因不符。
-	if !strings.Contains(err.Error(), "unknown field") {
+	// 使用 v2 的错误标识判断来源，避免依赖第三方库的错误文案。
+	if !errors.Is(err, jsonv2.ErrUnknownName) {
 		t.Errorf("错误应来自未知字段检查，实际: %v", err)
 	}
 }

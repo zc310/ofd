@@ -1,13 +1,15 @@
 package manifest
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
+
+	jsonv1 "github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 )
 
 var templateDecimalPattern = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
@@ -18,7 +20,7 @@ func parseTemplateDecimal(value any) (*big.Rat, error) {
 	switch value := value.(type) {
 	case string:
 		text = value
-	case json.Number:
+	case jsonv1.Number:
 		text = string(value)
 	default:
 		return nil, errors.New("求和字段必须为十进制字符串或 JSON 数字")

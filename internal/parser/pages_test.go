@@ -12,6 +12,22 @@ import (
 	"github.com/zc310/ofd/internal/models"
 )
 
+func TestPageContentSizeIncludesObjectsWithOptionalBooleans(t *testing.T) {
+	size := func(text string) int64 {
+		t.Helper()
+		data := `<Page><Content><Layer ID="1"><TextObject ID="2" Boundary="0 0 20 10" Visible="false" Fill="false"><TextCode X="0" Y="0">` + text + `</TextCode></TextObject></Layer></Content></Page>`
+		content, err := models.ParsePageContentXML([]byte(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pageContentSize(content)
+	}
+	small, large := size("A"), size(strings.Repeat("A", 10000))
+	if small <= 1 || large < small+9999 {
+		t.Fatalf("页面缓存估算未包含正文: 小页面=%d，大页面=%d", small, large)
+	}
+}
+
 func TestReadPagePhysicalBoxMetadataBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

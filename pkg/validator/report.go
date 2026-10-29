@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/version"
@@ -422,11 +423,11 @@ func checkStatusLabel(status string) string {
 // RenderJSON 将报告编码为 JSON；英文枚举用于机器处理，*_zh 字段提供中文标签。
 func RenderJSON(w io.Writer, report Report, pretty bool) error {
 	report.applyChineseLabels()
-	encoder := json.NewEncoder(w)
+	var opts []json.Options
 	if pretty {
-		encoder.SetIndent("", "  ")
+		opts = append(opts, jsontext.WithIndent("  "))
 	}
-	return encoder.Encode(report)
+	return json.MarshalEncode(jsontext.NewEncoder(w, opts...), report)
 }
 
 // RenderText 将报告输出为中文纯文本。

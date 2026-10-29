@@ -2,6 +2,7 @@ package export
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"os"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/parser"

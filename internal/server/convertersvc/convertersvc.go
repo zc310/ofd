@@ -26,6 +26,7 @@ import (
 	"github.com/zc310/ofd/internal/server/allowlist"
 	"github.com/zc310/ofd/internal/server/transfer"
 	"github.com/zc310/ofd/pkg/converter"
+
 	// 服务需要支持全部已注册格式，导入器靠 init() 注册，必须显式链接：
 	// 否则 ImporterByName 查不到 docx/pdf/html，请求会以"无法识别输入格式"被拒。
 	_ "github.com/zc310/ofd/pkg/converter/import/csv"      // CSV/TSV→OFD
@@ -108,7 +109,7 @@ type Output struct {
 	// Dir 是 Kind 为 OutputDir 时 output_dir 之下的相对子路径。
 	Dir string `json:"dir"`
 	// MaxStreamBytes 限制 stream 输出的内存占用，0 时取 DefaultStreamLimit。
-	MaxStreamBytes int64 `json:"max_stream_bytes,omitempty"`
+	MaxStreamBytes int64 `json:"max_stream_bytes,omitzero"`
 	// Remote 指向一个服务端预注册的远端目标，Kind 为远端类型时必填。
 	Remote RemoteOutput `json:"remote,omitempty"`
 }

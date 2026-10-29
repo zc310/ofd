@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"testing"
 )
@@ -82,5 +83,43 @@ func TestOptionalBool_XMLAttr(t *testing.T) {
 	}
 	if !s3.Visible.Value(true) {
 		t.Fatal("expected default true when not set")
+	}
+}
+
+func TestOptionalBoolJSONPreservesUnsetTrueAndFalse(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value OptionalBool
+		want  string
+	}{
+		{name: "未设置", want: "null"},
+		{name: "显式true", value: NewOptionalBool(true), want: "true"},
+		{name: "显式false", value: NewOptionalBool(false), want: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.value)
+			if err != nil || string(data) != tc.want {
+				t.Fatalf("编码 = %s, %v，期望 %s", data, err, tc.want)
+			}
+			got := NewOptionalBool(true)
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.IsSet() != tc.value.IsSet() || got.Value(false) != tc.value.Value(false) {
+				t.Fatalf("JSON 往返未保留可选布尔值: %+v", got)
+			}
+		})
+	}
+}
+
+func TestOptionalBoolJSONRejectsInvalidTypesWithoutChangingValue(t *testing.T) {
+	for _, data := range []string{`"false"`, `0`, `{}`, `[]`} {
+		value := NewOptionalBool(true)
+		if err := json.Unmarshal([]byte(data), &value); err == nil {
+			t.Fatalf("未拒绝非法布尔值 %s", data)
+		}
+		if !value.IsSet() || !value.Value(false) {
+			t.Fatalf("解析 %s 失败后原值被修改", data)
+		}
 	}
 }

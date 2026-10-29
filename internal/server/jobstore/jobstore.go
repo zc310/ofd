@@ -28,7 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -167,9 +168,9 @@ type Job struct {
 	// 提交时先记已收到的部分（上传的字节，URL 输入为 0），转换成功后用
 	// 实际落盘的尺寸覆盖，所以 URL 输入失败时这一项是 0——不是漏记，
 	// 是那时确实没有拿到完整内容。
-	InputBytes int64 `json:"input_bytes,omitempty"`
+	InputBytes int64 `json:"input_bytes,omitzero"`
 	// Request 是提交时的原始请求 JSON。
-	Request json.RawMessage `json:"request,omitempty"`
+	Request jsontext.Value `json:"request,omitempty"`
 	// Output 是终态时的结果位置。
 	Output Output `json:"output,omitempty"`
 	// Error 是失败原因，终态时对调用方可见。

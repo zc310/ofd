@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/parser"
@@ -157,7 +157,7 @@ func openSnapshot(ctx context.Context, filename string, options Options) (_ *sna
 				return nil, fmt.Errorf("第 %d 文档体第 %d 页: %w", di+1, pi+1, err)
 			}
 			content := lease.Content()
-			encoded, marshalErr := json.Marshal(content)
+			encoded, marshalErr := json.Marshal(content, json.Deterministic(true))
 			lease.Release()
 			if marshalErr != nil {
 				return nil, marshalErr
@@ -231,7 +231,7 @@ func (s *snapshot) xmlFields(ctx context.Context, f *File, options Options) (map
 		f.XMLNote = "XML 结构分析失败: " + err.Error()
 		return nil, nil, nil
 	}
-	encoded, _ := json.Marshal(fields)
+	encoded, _ := json.Marshal(fields, json.Deterministic(true))
 	f.XMLSHA256 = digest(encoded)
 	if len(data) > maxXMLViewSourceBytes {
 		data = nil

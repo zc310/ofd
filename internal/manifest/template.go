@@ -1,9 +1,7 @@
 package manifest
 
 import (
-	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	jsonv1 "github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 	"github.com/zc310/ofd/pkg/creator"
 	"golang.org/x/image/font/sfnt"
 )
@@ -56,16 +57,15 @@ func (m Manifest) RenderTemplate(data io.Reader, baseDir, assetRoot string, opts
 		opts.MaxPages = 10000
 	}
 	var root map[string]any
-	decoder := json.NewDecoder(data)
-	decoder.UseNumber()
-	if err := decoder.Decode(&root); err != nil {
+	decoder := jsontext.NewDecoder(data, json.WithUnmarshalers(json.UnmarshalFromFunc(unmarshalTemplateNumber)))
+	if err := json.UnmarshalDecode(decoder, &root); err != nil {
 		return creator.Document{}, fmt.Errorf("解析模板 JSON 数据: %w", err)
 	}
 	if root == nil {
 		return creator.Document{}, errors.New("模板数据必须是 JSON 对象")
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := json.UnmarshalDecode(decoder, &extra); !errors.Is(err, io.EOF) {
 		return creator.Document{}, errors.New("模板数据必须只有一个 JSON 对象")
 	}
 	copy, err := cloneTemplate(m)
@@ -222,6 +222,19 @@ func (m Manifest) RenderTemplate(data io.Reader, baseDir, assetRoot string, opts
 		}
 	}
 	return m.BuildWithOptions(baseDir, assetRoot, opts.BuildOptions)
+}
+
+// unmarshalTemplateNumber 保留数字原文，避免模板金额和大整数经过 float64 丢失精度。
+func unmarshalTemplateNumber(decoder *jsontext.Decoder, value *any) error {
+	if decoder.PeekKind() != '0' {
+		return errors.ErrUnsupported
+	}
+	token, err := decoder.ReadToken()
+	if err != nil {
+		return err
+	}
+	*value = jsonv1.Number(token.String())
+	return nil
 }
 
 func cloneTemplate[T any](value T) (T, error) {
@@ -446,7 +459,7 @@ func (r *templateRenderer) bindItem(item *Item, ctx templateContext) (bool, floa
 		switch value := data.(type) {
 		case string:
 			text = value
-		case json.Number:
+		case jsonv1.Number:
 			text = string(value)
 		case bool:
 			text = strconv.FormatBool(value)
@@ -471,16 +484,16 @@ func resolveTemplateValue(b Binding, ctx templateContext) (any, bool, error) {
 	}
 	switch b.Path {
 	case "@index":
-		return json.Number(strconv.Itoa(ctx.index)), true, nil
+		return jsonv1.Number(strconv.Itoa(ctx.index)), true, nil
 	case "@number":
-		return json.Number(strconv.Itoa(ctx.index + 1)), true, nil
+		return jsonv1.Number(strconv.Itoa(ctx.index + 1)), true, nil
 	case "@page":
 		if ctx.page < 0 {
 			return nil, false, errors.New("@page 只能用于页面或页面注解")
 		}
-		return json.Number(strconv.Itoa(ctx.page + 1)), true, nil
+		return jsonv1.Number(strconv.Itoa(ctx.page + 1)), true, nil
 	case "@pages":
-		return json.Number(strconv.Itoa(ctx.pages)), true, nil
+		return jsonv1.Number(strconv.Itoa(ctx.pages)), true, nil
 	case "@detail_page", "@detail_pages":
 		if ctx.detail == nil {
 			return nil, false, fmt.Errorf("%s 只能用于 paginate 页面或页面注解", b.Path)
@@ -489,7 +502,7 @@ func resolveTemplateValue(b Binding, ctx templateContext) (any, bool, error) {
 		if b.Path == "@detail_pages" {
 			value = ctx.detail.pages
 		}
-		return json.Number(strconv.Itoa(value)), true, nil
+		return jsonv1.Number(strconv.Itoa(value)), true, nil
 	}
 	var value any
 	var found bool
@@ -514,9 +527,7 @@ func (r *templateRenderer) bindImage(item *Item, value any) error {
 		if err != nil {
 			return err
 		}
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&image); err != nil {
+		if err := json.Unmarshal(data, &image, json.RejectUnknownMembers(true)); err != nil {
 			return fmt.Errorf("图片字段需要文件路径或 {file/data_base64, format}: %w", err)
 		}
 	}

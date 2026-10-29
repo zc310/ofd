@@ -11,7 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 )
 
 type byteBudget struct {
@@ -50,7 +51,8 @@ func reserveData(options Options, value any) error {
 	if options.dataBudget == nil {
 		return nil
 	}
-	return json.NewEncoder(budgetWriter{io.Discard, options.dataBudget}).Encode(value)
+	encoder := jsontext.NewEncoder(budgetWriter{io.Discard, options.dataBudget})
+	return json.MarshalEncode(encoder, value)
 }
 
 type imageStore struct {

@@ -15,7 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
@@ -310,10 +311,8 @@ func writeJSON(filename string, value any) error {
 	if err != nil {
 		return err
 	}
-	encoder := json.NewEncoder(file)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
+	encoder := jsontext.NewEncoder(file, jsontext.WithIndent("  "))
+	if err := json.MarshalEncode(encoder, value); err != nil {
 		_ = file.Close()
 		return err
 	}

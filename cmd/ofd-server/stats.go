@@ -79,7 +79,7 @@ type formatRow struct {
 	To   string `json:"to"`
 	// LabelUnknown 为真时 From 是 "unknown"，即失败任务——转换没跑到判定
 	// 格式那步，因此不知道真实输入是什么。调用方需要能把它与真实格式区分开。
-	LabelUnknown bool   `json:"label_unknown,omitempty"`
+	LabelUnknown bool   `json:"label_unknown,omitzero"`
 	Conversions  uint64 `json:"conversions"`
 	Succeeded    uint64 `json:"succeeded"`
 	Failed       uint64 `json:"failed"`

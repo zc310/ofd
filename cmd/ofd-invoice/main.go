@@ -14,7 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 	"github.com/spf13/cobra"
 	"github.com/zc310/ofd/internal/fileutil"
 	"github.com/zc310/ofd/internal/version"
@@ -435,7 +436,7 @@ func writeResult(opts *options, payload any, batch *invoice.Batch, stdout io.Wri
 		}
 	default:
 		if opts.pretty {
-			data, err = json.MarshalIndent(payload, "", "  ")
+			data, err = json.Marshal(payload, jsontext.WithIndent("  "))
 		} else {
 			data, err = json.Marshal(payload)
 		}

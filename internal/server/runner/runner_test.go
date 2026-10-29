@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/server/convertersvc"
 	"github.com/zc310/ofd/internal/server/jobstore"
@@ -50,7 +49,7 @@ func newRunner(t *testing.T, cfg Config) (*Runner, *jobstore.Store, string) {
 
 // requestFor 造一份可被 specFromJob 还原的请求体。
 // []byte 在 JSON 里编码为 base64，这里直接交给 json.Marshal 处理。
-func requestFor(t *testing.T, to string, body []byte) json.RawMessage {
+func requestFor(t *testing.T, to string, body []byte) []byte {
 	t.Helper()
 	request, err := json.Marshal(map[string]any{
 		"input":  map[string]any{"kind": "upload", "file_name": "a.ofd", "bytes": body},

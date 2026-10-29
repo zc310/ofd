@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/goccy/go-json"
 	"github.com/valyala/fasthttp"
 
 	"github.com/zc310/ofd/internal/server/convertersvc"

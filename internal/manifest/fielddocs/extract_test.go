@@ -22,9 +22,9 @@ const nestedSource = `package manifest
 // Manifest 是入口。
 type Manifest struct {
 	// Version 指定版本。
-	Version int ` + "`json:\"version,omitempty\"`" + `
-	// Document 定义文档。
-	Document Document ` + "`json:\"document\"`" + `
+	Version int ` + "`json:\"version,omitzero\"`" + `
+	// Doc 定义文档。
+	Doc Document ` + "`json:\"document\"`" + `
 	// Pages 定义页面。
 	Pages []Page ` + "`json:\"pages,omitempty\"`" + `
 }
@@ -130,10 +130,13 @@ func TestExtractFieldMetadata(t *testing.T) {
 		byName[field.Name] = field
 	}
 	if !byName["version"].Optional {
-		t.Fatal("version 带 omitempty，Optional 应为 true")
+		t.Fatal("version 带 omitzero，Optional 应为 true")
 	}
 	if byName["document"].Optional {
 		t.Fatal("document 没有 omitempty，Optional 应为 false")
+	}
+	if !byName["pages"].Optional {
+		t.Fatal("pages 带 omitempty，Optional 应为 true")
 	}
 	if byName["pages"].Type != "[]Page" {
 		t.Fatalf("pages 类型 = %q", byName["pages"].Type)

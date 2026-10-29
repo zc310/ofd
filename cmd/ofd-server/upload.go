@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/server/convertersvc"
 )
@@ -245,7 +245,7 @@ func idempotencyKey(r *http.Request) (string, error) {
 func requestFingerprint(request *submitRequest) (string, error) {
 	metadata := *request
 	metadata.Input.Bytes = nil
-	raw, err := json.Marshal(&metadata)
+	raw, err := json.Marshal(&metadata, json.Deterministic(true))
 	if err != nil {
 		return "", err
 	}

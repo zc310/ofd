@@ -154,6 +154,9 @@ func main() {
 
 输入类型、页码、DPI、格式导入、缓存与字体等细节见 [Go API 使用指南](docs/GO-API.md)。
 
+JSON 请求、配置和创建清单的字段名区分大小写，同一对象中的字段不能重复。
+JSON 报告与服务响应应按字段解析，map 键不保证输出顺序。
+
 按页阅读接口支持复合对象内文字的搜索、选取和链接定位；`SetTextOptions` 可选择
 加入批注、水印与 OFD 印章文字，`RenderPageWithReport` 返回有界的单次渲染诊断。
 PDF 导出保留内部跳转和外部 URI 大纲，示例见[按页阅读接口](docs/GO-API.md#接入按页阅读接口)。

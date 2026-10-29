@@ -14,7 +14,7 @@ import (
 // 格式、没写落点"。
 func withoutOutputKind(t *testing.T, to string) string {
 	t.Helper()
-	return strings.Replace(submitBodyWith(t, to, "dir"), `"kind":"dir"`, `"format":"`+to+`"`, 1)
+	return strings.Replace(submitBodyWith(t, to, "dir"), `,"kind":"dir"`, "", 1)
 }
 
 // TestSubmitOmittedOutputKindIsSynchronous 省略 output.kind 必须走同步路径。

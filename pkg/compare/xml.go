@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 )
 
 type xmlFrame struct {

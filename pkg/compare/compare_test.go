@@ -90,6 +90,35 @@ func TestRepackingDoesNotProduceContentDifferences(t *testing.T) {
 	}
 }
 
+func TestPageContentDigestDetectsVisibilityChanges(t *testing.T) {
+	base := testOFD(t, "same text")
+	withVisible := func(value string) string {
+		t.Helper()
+		changed := false
+		filename := rewrite(t, base, func(name string, data []byte) (string, []byte) {
+			if strings.HasSuffix(name, ".xml") && bytes.Contains(data, []byte("TextObject")) {
+				replacement := []byte(` Visible="` + value + `" Boundary=`)
+				updated := bytes.Replace(data, []byte(" Boundary="), replacement, 1)
+				changed = changed || !bytes.Equal(data, updated)
+				return name, updated
+			}
+			return name, data
+		})
+		if !changed {
+			t.Fatal("未找到待修改的文字图元")
+		}
+		return filename
+	}
+	visible, hidden := withVisible("true"), withVisible("false")
+	report, err := CompareFiles(t.Context(), []string{visible, hidden}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Inputs[0].Pages[0].ContentSHA256 == report.Inputs[1].Pages[0].ContentSHA256 {
+		t.Fatal("页面内容摘要未反映可见性变化")
+	}
+}
+
 func TestMultipleInputsRespectSelectedBaselineAndInsertedPages(t *testing.T) {
 	a := testOFD(t, "alpha", "beta")
 	b := testOFD(t, "alpha", "inserted", "beta")

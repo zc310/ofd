@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,6 +20,36 @@ func templateTestManifest() Manifest {
 		CGTransforms: []CGTransform{{CodeCount: 1, GlyphCount: 1, Glyphs: []int{3}}},
 		Bind:         &Binding{Path: "value"},
 	}}}}}
+}
+
+func TestTemplateClonePreservesExplicitEmptySectionOverrides(t *testing.T) {
+	empty := ""
+	disabled := false
+	section := FlowSection{
+		Header: &empty, Footer: &empty, PageNumberPrefix: &empty,
+		FirstPageHeader: &empty, FirstPageFooter: &empty,
+		PageNumbers: &disabled, Margins: &FlowMargins{}, Columns: &FlowColumns{},
+	}
+	cloned, err := cloneTemplate(section)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cloned, section) {
+		t.Fatalf("清单克隆丢失显式空值覆盖: %+v", cloned)
+	}
+}
+
+func TestTemplateEmptyDefaultRemovesOldContent(t *testing.T) {
+	m := templateTestManifest()
+	empty := ""
+	m.Pages[0].Items[0].Bind.Default = &empty
+	doc, err := m.RenderTemplate(strings.NewReader(`{}`), "", "", TemplateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Pages[0].Items) != 0 {
+		t.Fatalf("空字符串缺省值未清除旧内容: %+v", doc.Pages[0].Items)
+	}
 }
 
 func TestTemplateRepeatsPagesWithoutMutatingOriginalAndRemapsReferences(t *testing.T) {

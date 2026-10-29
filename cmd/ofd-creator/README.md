@@ -623,7 +623,7 @@ ofd-creator schema --format json
 
 字段的完整路径是在示例路径后追加字段名，结构体字段还要追加 `[]`，例如 `pages[].items[].fill_color.axial.segments[]`。
 
-“可省略”列表示 manifest tag 是否带 `omitempty`，它只描述序列化行为，不等于“必填”：`version` 带 `omitempty`，但缺省或不是 1 仍会被拒绝。
+“可省略”列表示 manifest tag 是否带 `omitempty` 或 `omitzero`，它只描述序列化行为，不等于“必填”：`version` 带 `omitzero`，但缺省或不是 1 仍会被拒绝。
 
 `--format json` 输出同样的内容，供其它工具消费，字段名使用 `omitempty` 而不是含义模糊的 `required`。
 

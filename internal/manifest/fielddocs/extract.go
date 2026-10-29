@@ -33,7 +33,7 @@ type Field struct {
 	Type string
 	// Doc 是去掉字段名前缀后的说明文本。
 	Doc string
-	// Optional 表示该字段的 json tag 带 omitempty，未设置时为零值即不输出。
+	// Optional 表示该字段的 json tag 带 omitempty 或 omitzero，满足省略条件时不输出。
 	Optional bool
 }
 
@@ -152,7 +152,7 @@ func expand(schema *Schema, declarations map[string]*ast.StructType, docs map[st
 					Name:     key,
 					Type:     typeString(member.Type),
 					Doc:      docText(member, ident.Name),
-					Optional: hasOmitEmpty(member),
+					Optional: hasOmitOption(member),
 				}
 				typed.Fields = append(typed.Fields, field)
 				nested, suffix, ok := nestedStruct(member.Type, declarations)
@@ -209,14 +209,14 @@ func jsonName(member *ast.Field) (string, bool) {
 	return name, true
 }
 
-// hasOmitEmpty 判断字段的 json tag 是否带 omitempty。
-func hasOmitEmpty(member *ast.Field) bool {
+// hasOmitOption 判断字段的 json tag 是否带 omitempty 或 omitzero。
+func hasOmitOption(member *ast.Field) bool {
 	raw, ok := tagValue(member)
 	if !ok {
 		return false
 	}
 	parts := strings.Split(reflect.StructTag(raw).Get("json"), ",")
-	return slices.Contains(parts[1:], "omitempty")
+	return slices.Contains(parts[1:], "omitempty") || slices.Contains(parts[1:], "omitzero")
 }
 
 // tagValue 取出字段的结构体 tag 原文。

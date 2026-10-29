@@ -6,7 +6,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/jsontext"
+	"github.com/goccy/go-json/v2"
 
 	"github.com/zc310/ofd/internal/crypt"
 	"github.com/zc310/ofd/internal/parser"
@@ -755,10 +756,9 @@ func RenderJSON(writer io.Writer, report Report, pretty bool) error {
 	if writer == nil {
 		return errors.New("分析报告输出为空")
 	}
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
+	var opts []json.Options
 	if pretty {
-		encoder.SetIndent("", "  ")
+		opts = append(opts, jsontext.WithIndent("  "))
 	}
-	return encoder.Encode(report)
+	return json.MarshalEncode(jsontext.NewEncoder(writer, opts...), report)
 }

@@ -1,18 +1,15 @@
 package invoice
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/goccy/go-json"
 )
 
 // 本文件锁定发票抽取结果的 JSON 形态。
 //
-// 本包用 github.com/goccy/go-json，与 internal/server/jobstore、internal/server/runner、
-// cmd/ofd-server 一致。go-json v0.11.2 起（#675）改为信任标准库实现的
-// Marshaler/Unmarshaler，而 Decimal 恰好实现了 json.Marshaler，所以这条路径的
-// 实际输出由那次变更决定，值得单独锁住。
+// 业务代码使用 github.com/goccy/go-json/v2；测试通过标准库验证 Decimal.MarshalJSON
+// 的输出契约，确保金额始终编码为精确的十进制字符串。
 //
 // Decimal 只实现了 MarshalJSON、没实现 UnmarshalJSON，因此 Invoice 是单向的：
 // 能序列化，不能反序列化。TestInvoiceJSONIsWriteOnly 记录这一事实，

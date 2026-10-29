@@ -2,12 +2,11 @@ package manifest
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/goccy/go-json"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"

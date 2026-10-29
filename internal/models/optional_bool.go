@@ -1,6 +1,10 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+
+	"github.com/goccy/go-json/v2"
+)
 
 // OptionalBool 表示一个可选的布尔值，用于处理 XML 属性中
 // 缺省时需要默认值为 true 的场景（如 OFD 的 Visible 属性）。
@@ -49,6 +53,21 @@ func (o *OptionalBool) Set(b bool) {
 // Reset 重置为未设置状态
 func (o *OptionalBool) Reset() {
 	o.v = nil
+}
+
+// MarshalJSON 将未设置、显式 true 和显式 false 分别编码为 null、true 和 false。
+func (o OptionalBool) MarshalJSON() ([]byte, error) {
+	return json.Marshal(o.v)
+}
+
+// UnmarshalJSON 读取可选布尔值，null 将其恢复为未设置状态。
+func (o *OptionalBool) UnmarshalJSON(data []byte) error {
+	var value *bool
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	o.v = value
+	return nil
 }
 
 // UnmarshalXMLAttr 实现 XML 属性反序列化

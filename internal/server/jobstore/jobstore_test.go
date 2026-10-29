@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -37,7 +35,7 @@ func newJob(id string, lane Lane, order Order) *Job {
 func TestEnqueueAndGet(t *testing.T) {
 	store, _ := openStore(t)
 	job := newJob("j1", LaneFast, OrderNormal)
-	job.Request = json.RawMessage(`{"from":"docx"}`)
+	job.Request = []byte(`{"from":"docx"}`)
 	if err := store.Enqueue(job); err != nil {
 		t.Fatal(err)
 	}

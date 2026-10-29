@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,8 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/goccy/go-json"
 )
 
 // logConfig 造一份走过 applyDefaults 的配置。

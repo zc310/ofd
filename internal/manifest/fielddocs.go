@@ -10,7 +10,7 @@ type FieldDoc struct {
 	Type string
 	// Doc 是去掉字段名前缀后的字段说明。
 	Doc string
-	// Optional 表示该字段的 json tag 带 omitempty，未设置时零值即不输出。
+	// Optional 表示该字段的 json tag 带 omitempty 或 omitzero，满足省略条件时不输出。
 	Optional bool
 }
 

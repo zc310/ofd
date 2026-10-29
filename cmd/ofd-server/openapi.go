@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/goccy/go-json"
+	"github.com/goccy/go-json/v2"
 	swaggerFiles "github.com/swaggo/files/v2"
 	"go.yaml.in/yaml/v3"
 
