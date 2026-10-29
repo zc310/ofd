@@ -220,7 +220,8 @@ Android、WASM、交叉编译、系统依赖与 Windows 7
 
 工具的参数与退出码见[功能表中的文档](#功能特性)。标准资料、截图与维护入口汇总在
 [文档目录](docs/README.md)；已发布接口的破坏性变更见 [CHANGELOG](CHANGELOG.md)。
-性能对比见 [ofd-benchmark](https://github.com/zc310/ofd-benchmark)，实际表现取决于
+指定版本的性能测试见 [ofd-performance](https://github.com/zc310/ofd-performance)，结果见[性能趋势](https://zc310.github.io/ofd-performance/)。
+交叉库性能对比见 [ofd-benchmark](https://github.com/zc310/ofd-benchmark)，实际表现取决于
 文档样本、字体、操作系统和运行环境。
 
 ## OFD 简介

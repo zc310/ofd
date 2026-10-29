@@ -23,6 +23,7 @@
 |-----------------------------------------------------------------------|-------------------------------------------------------------|
 | [Go API 使用指南](GO-API.md)                                          | 输入输出、格式导入、按页阅读、创建、合并、签章与字体说明。  |
 | [安全能力指南](SECURITY.md)                                          | 签名、加密、完整性结论的区别，以及签署和保护顺序。          |
+| [版本性能测试](https://github.com/zc310/ofd-performance)              | 指定 OFD 版本测量耗时、峰值内存和输出大小；[趋势页面](https://zc310.github.io/ofd-performance/)。 |
 | [转换 API 与示例](../pkg/converter/examples_test.go)                  | OFD 输出、格式导入、选页和 PDF 资源预算的可运行 Go 示例。   |
 | [按页阅读 API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader) | 页面渲染、文字、搜索、导航、版本与导出。                    |
 | [创建器库指南](../pkg/creator/README.md)                              | Go 创建 API、文字定位、资源、页面组织、附加结构和流式创建。 |
