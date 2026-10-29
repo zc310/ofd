@@ -13,9 +13,14 @@ import (
 //
 // 有有效页面目标或 URI 的条目均保留。无法解释的条目不留下层级空洞，子项上移。
 
+// maxOutlineDepth 是源树的最大访问层数（根项为第 1 层），避免异常模型耗尽调用栈。
+// GB/T 33190—2016 §7.8 表17允许子大纲嵌套，未规定层数；此处是资源保护上限。
+const maxOutlineDepth = 64
+
 // Outlines 返回文档大纲的扁平条目序列，按文档顺序排列。
 //
 // resolve 与 ActionLink 共用页面映射：目标页必须在输出里才能建立跳转。
+// 源树最多访问 64 层，超出部分跳过，不影响后续兄弟节点。
 func Outlines(source *models.OutlineList, bookmarkList *models.BookmarkList, resolve PageResolver) []drawing.PageOutline {
 	if source == nil {
 		return nil
@@ -29,17 +34,20 @@ func Outlines(source *models.OutlineList, bookmarkList *models.BookmarkList, res
 		}
 	}
 	outlines := make([]drawing.PageOutline, 0, len(source.OutlineElems))
-	collectOutlines(source.OutlineElems, resolve, bookmarks, 0, &outlines)
+	collectOutlines(source.OutlineElems, resolve, bookmarks, 0, 0, &outlines)
 	if len(outlines) == 0 {
 		return nil
 	}
 	return outlines
 }
 
-// collectOutlines 递归展平大纲树。level 是已实际输出的祖先数量，因此被丢弃的条目
-// 不会在层级里留下空洞。
+// collectOutlines 递归展平大纲树。depth 独立统计源树深度，包含被丢弃的祖先；
+// level 是已实际输出的祖先数量，因此被丢弃的条目不会在输出层级里留下空洞。
 func collectOutlines(elems []models.CTOutlineElem, resolve PageResolver,
-	bookmarks map[string]models.CtDest, level int, outlines *[]drawing.PageOutline) {
+	bookmarks map[string]models.CtDest, depth, level int, outlines *[]drawing.PageOutline) {
+	if depth >= maxOutlineDepth {
+		return
+	}
 	for i := range elems {
 		elem := &elems[i]
 		// 子项层级按本项是否输出来定，不能直接改 level——那是所有兄弟项共用的，
@@ -56,7 +64,7 @@ func collectOutlines(elems []models.CTOutlineElem, resolve PageResolver,
 			*outlines = append(*outlines, drawing.PageOutline{Title: elem.Title, Level: level, URI: uri})
 			childLevel = level + 1
 		}
-		collectOutlines(elem.OutlineElem, resolve, bookmarks, childLevel, outlines)
+		collectOutlines(elem.OutlineElem, resolve, bookmarks, depth+1, childLevel, outlines)
 	}
 }
 
