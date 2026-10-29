@@ -4,8 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"image"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -61,8 +64,7 @@ func legacyPrivateCFF() []byte {
 	return append(b, private...)
 }
 
-func assertPDFStoresRepairedFont(t *testing.T, data []byte, subtype string, cid bool) {
-	t.Helper()
+func fontStoragePDF(data []byte, subtype string, cid bool) []byte {
 	content := "BT /F1 12 Tf 20 100 Td (A) Tj ET"
 	font := "<< /Type /Font /Subtype /Type1 /BaseFont /LegacyFixture /Encoding /WinAnsiEncoding /FirstChar 65 /LastChar 65 /Widths [600] /FontDescriptor 6 0 R >>"
 	if cid {
@@ -81,82 +83,143 @@ func assertPDFStoresRepairedFont(t *testing.T, data []byte, subtype string, cid 
 	if cid {
 		objects = append(objects, "<< /Type /Font /Subtype /CIDFontType0 /BaseFont /LegacyFixture /CIDSystemInfo << /Registry (Founder) /Ordering (PKUE1) /Supplement 0 >> /DW 1000 /FontDescriptor 6 0 R >>")
 	}
+	return assemblePDF(objects)
+}
+
+func assertPDFFontStorageOptions(t *testing.T, data []byte, subtype string, cid bool) {
+	t.Helper()
+	input := fontStoragePDF(data, subtype, cid)
 	expected, err := fontrepair.Repair(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var output bytes.Buffer
-	if err := Convert(t.Context(), assemblePDF(objects), &output, ""); err != nil {
-		t.Fatal(err)
-	}
-	ofd, err := parser.NewOFD(output.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ofd.Close()
-	count := 0
-	ofd.Documents[0].ForEachFont(func(_ models.StID, font *models.Font) bool {
-		if font.FontFile == "" {
-			return true
-		}
-		stored, err := ofd.Documents[0].FileCache.Read(string(font.FontFile))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// 从 ZIP 直接读出的字节必须已修复，不经过 render.LoadFont。
-		if !bytes.Equal(stored, expected) {
-			t.Fatal("OFD 包内没有保存转换阶段修复后的字体字节")
-		}
-		again, err := fontrepair.Repair(stored)
-		if err != nil || !bytes.Equal(stored, again) {
-			t.Fatalf("包内字体仍需二次修复：%v", err)
-		}
-		parsed, err := fontparser.ParseSFNT(stored, 0)
-		if err != nil || parsed == nil || parsed.CFF == nil {
-			t.Fatalf("包内OTF字体无法直接解析：%v", err)
-		}
-		count++
-		return true
-	})
-	if count != 1 {
-		t.Fatalf("输出内嵌字体数=%d，期望1", count)
+	for _, repaired := range []bool{false, true} {
+		t.Run(fmt.Sprintf("修复后存储=%t", repaired), func(t *testing.T) {
+			var output bytes.Buffer
+			var err error
+			if repaired {
+				err = ConvertWithOptions(t.Context(), input, &output, "", Options{SaveRepairedFonts: true})
+			} else {
+				err = Convert(t.Context(), input, &output, "")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			ofd, err := parser.NewOFD(output.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ofd.Close()
+			count := 0
+			ofd.Documents[0].ForEachFont(func(_ models.StID, font *models.Font) bool {
+				if font.FontFile == "" {
+					return true
+				}
+				stored, err := ofd.Documents[0].FileCache.Read(string(font.FontFile))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := data
+				if repaired {
+					want = expected
+				}
+				if !bytes.Equal(stored, want) {
+					t.Fatal("OFD 包内字体不符合选定的存储策略")
+				}
+				again, err := fontrepair.Repair(stored)
+				if err != nil || !bytes.Equal(expected, again) {
+					t.Fatalf("存储的字体无法还原同一修复结果：%v", err)
+				}
+				parsed, err := fontparser.ParseSFNT(again, 0)
+				if err != nil || parsed == nil || parsed.CFF == nil {
+					t.Fatalf("修复后的字体无法解析：%v", err)
+				}
+				count++
+				return true
+			})
+			if count != 1 {
+				t.Fatalf("输出内嵌字体数=%d，期望1", count)
+			}
+		})
 	}
 }
 
-func TestPDFImportStoresRepairedCFFInOFD(t *testing.T) {
-	assertPDFStoresRepairedFont(t, legacyPrivateCFF(), "Type1C", false)
+func TestPDFImportCFFFontStorageOptions(t *testing.T) {
+	assertPDFFontStorageOptions(t, legacyPrivateCFF(), "Type1C", false)
 }
 
-func TestGB38540PDFImportStoresRepairedOpenTypeAndCIDCFF(t *testing.T) {
-	z, err := zip.OpenReader("../../testdata/pdf2ofd/GBT_38540-2020.ofd")
+func TestPDFFontStoragePreservesRenderingAndText(t *testing.T) {
+	for name, input := range map[string][]byte{
+		"CFF":      fontStoragePDF(legacyPrivateCFF(), "Type1C", false),
+		"TrueType": embeddedTextPDF("BT /F1 12 Tf 20 100 Td (A) Tj ET"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			var previous *image.RGBA
+			var previousText string
+			for _, repaired := range []bool{false, true} {
+				var output bytes.Buffer
+				if err := ConvertWithOptions(t.Context(), input, &output, "", Options{SaveRepairedFonts: repaired}); err != nil {
+					t.Fatal(err)
+				}
+				doc, err := parser.NewOFD(output.Bytes())
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = doc.Close() })
+				page := doc.Documents[0].Pages[0]
+				got := textFidelityRaster(t, doc, page)
+				if previous != nil && !bytes.Equal(previous.Pix, got.Pix) {
+					t.Fatal("字体存储选项改变了 OFD 光栅结果")
+				}
+				previous = got
+				pdf := textFidelityPDFOutput(t, doc, page)
+				text := strings.TrimSpace(textFidelityExtractPDF(t, pdf))
+				if text != "A" || previousText != "" && text != previousText {
+					t.Fatalf("往返 PDF 文字错误: %q", text)
+				}
+				previousText = text
+			}
+		})
+	}
+}
+
+func TestIntroPDFImportOpenTypeAndCIDCFFStorageOptions(t *testing.T) {
+	z, err := zip.OpenReader("../../testdata/ofdrw/intro.ofd")
 	if err != nil {
-		t.Skipf("可选真实字体样例不可用：%v", err)
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skip("缺少可选真实字体样例: ../../testdata/ofdrw/intro.ofd")
+		}
+		t.Fatal(err)
 	}
 	defer z.Close()
 	for _, file := range z.File {
-		if !strings.Contains(file.Name, "font-943540") {
+		// intro.ofd 的这个 .ttf 条目实际保存裸 CID CFF，不能按扩展名判断格式。
+		if file.Name != "Doc_0/Res/font_85_85.ttf" {
 			continue
 		}
 		r, err := file.Open()
 		if err != nil {
 			t.Fatal(err)
 		}
-		otf, err := io.ReadAll(r)
+		cff, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
-		var cff []byte
-		for i := 0; i < int(binary.BigEndian.Uint16(otf[4:])); i++ {
-			record := otf[12+16*i:]
-			if string(record[:4]) == "CFF " {
-				offset, size := binary.BigEndian.Uint32(record[8:]), binary.BigEndian.Uint32(record[12:])
-				cff = otf[offset : offset+size]
-			}
+		otf, err := fontrepair.Repair(cff)
+		if err != nil {
+			t.Fatal(err)
 		}
-		t.Run("OpenType", func(t *testing.T) { assertPDFStoresRepairedFont(t, otf, "OpenType", true) })
-		t.Run("CIDFontType0C", func(t *testing.T) { assertPDFStoresRepairedFont(t, cff, "CIDFontType0C", true) })
+		parsed, err := fontparser.ParseSFNT(otf, 0)
+		if err != nil || parsed == nil || parsed.CFF == nil {
+			t.Fatalf("intro.ofd 内嵌字体无法包装为 OpenType CFF: %v", err)
+		}
+		if _, _, _, cid := parsed.CFF.CIDSystemInfo(); !cid {
+			t.Fatal("intro.ofd 的目标字体不是 CID CFF")
+		}
+		t.Run("OpenType", func(t *testing.T) { assertPDFFontStorageOptions(t, otf, "OpenType", true) })
+		t.Run("CIDFontType0C", func(t *testing.T) { assertPDFFontStorageOptions(t, cff, "CIDFontType0C", true) })
 		return
 	}
-	t.Fatal("样例中没有找到目标字体")
+	t.Fatal("intro.ofd 中缺少 Doc_0/Res/font_85_85.ttf")
 }

@@ -31,18 +31,20 @@ type pdfPageInfo struct {
 }
 
 type pdfFontInfo struct {
-	widths      map[int]float64
-	defaultW    float64
-	toUnicode   map[uint32]string
-	cidToGID    map[uint16]uint16
-	codeBytes   int
-	familyName  string
-	encoding    string
-	format      string
-	data        []byte
-	codeToGID   map[uint32]uint16
-	glyphWidths map[uint16]float64
-	sfnt        *fontparser.SFNT
+	widths     map[int]float64
+	defaultW   float64
+	toUnicode  map[uint32]string
+	cidToGID   map[uint16]uint16
+	codeBytes  int
+	familyName string
+	encoding   string
+	format     string
+	data       []byte
+	// originalData 仅用于默认的原始字体存储；data 继续供字形解析和度量使用。
+	originalData []byte
+	codeToGID    map[uint32]uint16
+	glyphWidths  map[uint16]float64
+	sfnt         *fontparser.SFNT
 	// ascent、descent 保存基线上方和下方的字形范围，单位为千分之一 em，均为非负值。
 	ascent, descent float64
 	maxUnicodeBytes int64

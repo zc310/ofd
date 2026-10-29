@@ -3,7 +3,9 @@ package fontrepair
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
+	"os"
 	"slices"
 	"testing"
 )
@@ -131,15 +133,18 @@ func TestFixedDictIntegerDoesNotOverflowOriginalOperand(t *testing.T) {
 	}
 }
 
-func TestGB38540EmbeddedFontsRepairKeepsMetricsAndGlyphPrograms(t *testing.T) {
-	z, err := zip.OpenReader("../../testdata/pdf2ofd/GBT_38540-2020.ofd")
+func TestIntroEmbeddedFontsRepairKeepsMetricsAndGlyphPrograms(t *testing.T) {
+	z, err := zip.OpenReader("../../testdata/ofdrw/intro.ofd")
 	if err != nil {
-		t.Skipf("可选真实样例不可用：%v", err)
+		if errors.Is(err, os.ErrNotExist) {
+			t.Skip("缺少真实字体样例: ../../testdata/ofdrw/intro.ofd")
+		}
+		t.Fatal(err)
 	}
 	defer z.Close()
-	count := 0
+	count, cffCount := 0, 0
 	for _, file := range z.File {
-		if !bytes.HasSuffix([]byte(file.Name), []byte(".otf")) {
+		if !bytes.HasPrefix([]byte(file.Name), []byte("Doc_0/Res/font_")) {
 			continue
 		}
 		r, err := file.Open()
@@ -151,38 +156,82 @@ func TestGB38540EmbeddedFontsRepairKeepsMetricsAndGlyphPrograms(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixed, err := Repair(input)
-		if err != nil {
-			t.Fatal(err)
+		// 官方阅读器产物中的扩展名不总与字体格式对应，按数据识别。
+		original, source := input, input
+		var oldCFF, newCFF []byte
+		if isCFF(input) {
+			// 只清理 Private DICT 时，字形程序必须原样保留；完整裸 CFF 修复
+			// 另有 cntrmask 兼容改写，不能用它断言原始 CharStrings 字节不变。
+			oldCFF, newCFF = input, repairCFFPrivate(input)
+			original, err = Repair(input)
+			if err != nil {
+				t.Fatalf("字体 %s 包装失败: %v", file.Name, err)
+			}
+			source = newCFF
 		}
-		before, _ := readDirectory(input)
-		after, _ := readDirectory(fixed)
-		for _, tag := range []string{"hmtx", "hhea", "maxp"} {
+		fixed, err := Repair(source)
+		if err != nil {
+			t.Fatalf("字体 %s 修复失败: %v", file.Name, err)
+		}
+		before, err := readDirectory(original)
+		if err != nil {
+			t.Fatalf("字体 %s 原始 SFNT 无效: %v", file.Name, err)
+		}
+		after, err := readDirectory(fixed)
+		if err != nil {
+			t.Fatalf("字体 %s 修复后 SFNT 无效: %v", file.Name, err)
+		}
+		for _, tag := range []string{"hmtx", "hhea", "maxp", "glyf", "loca"} {
 			if !bytes.Equal(before.get(tag), after.get(tag)) {
 				t.Fatalf("字体%s的%s度量改变", file.Name, tag)
 			}
 		}
-		oldCFF, newCFF := before.get("CFF "), after.get("CFF ")
-		_, pos, _ := cffIndex(oldCFF, int(oldCFF[2]))
-		tops, _, _ := cffIndex(oldCFF, pos)
-		top, _ := parseDict(tops[0])
-		oldGlyphs, _, _ := cffIndex(oldCFF, top.integer(17))
-		newGlyphs, _, _ := cffIndex(newCFF, top.integer(17))
+		count++
+		if oldCFF == nil {
+			oldCFF, newCFF = before.get("CFF "), after.get("CFF ")
+		}
+		if len(oldCFF) == 0 {
+			continue
+		}
+		glyphs := func(data []byte) [][]byte {
+			t.Helper()
+			_, pos, err := cffIndex(data, int(data[2]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tops, _, err := cffIndex(data, pos)
+			if err != nil || len(tops) != 1 {
+				t.Fatalf("字体 %s 的 Top DICT 无效: %v", file.Name, err)
+			}
+			top, err := parseDict(tops[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			values, _, err := cffIndex(data, top.integer(17))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return values
+		}
+		oldGlyphs, newGlyphs := glyphs(oldCFF), glyphs(newCFF)
 		if !slices.EqualFunc(oldGlyphs, newGlyphs, bytes.Equal) {
 			t.Fatal("修复改变了字形程序")
 		}
 		for _, dict := range cffTestDictionaries(t, newCFF) {
 			fields, _ := parseDict(dict)
 			ref := fields[18]
+			if len(ref) != 2 {
+				continue
+			}
 			private, _ := parseDict(newCFF[int(ref[1]):int(ref[1]+ref[0])])
 			if private[0xc0f] != nil || private[0xc10] != nil {
 				t.Fatalf("%s仍含浏览器拒绝的私有项", file.Name)
 			}
 		}
-		count++
+		cffCount++
 	}
-	if count == 0 {
-		t.Fatal("样例没有内嵌OTF字体")
+	if cffCount == 0 || count == cffCount {
+		t.Fatalf("intro.ofd 未覆盖 TrueType 和 CFF 字体: 总计 %d，CFF %d", count, cffCount)
 	}
-	t.Logf("核对了%d份内嵌字体", count)
+	t.Logf("核对了 %d 份内嵌字体，其中 CFF %d 份", count, cffCount)
 }

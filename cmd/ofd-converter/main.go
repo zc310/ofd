@@ -111,6 +111,7 @@ type options struct {
 	allowRemote             bool
 	password                string
 	pdfStrict               bool
+	pdfSaveRepairedFonts    bool
 	pdfImageMode            string
 	pdfJPEGQuality          int
 	pdfJPXBackend           string
@@ -255,6 +256,7 @@ func parseArgs(args []string) (*options, error) {
 	flags.BoolVar(&opts.allowRemote, "allow-remote", false, "允许加载外部资源（HTML/MHTML/EML，默认禁止；SVG 使用自包含资源）")
 	flags.StringVar(&opts.password, "password", "", "加密输入文档的打开口令（目前仅 PDF）")
 	flags.BoolVar(&opts.pdfStrict, "pdf-strict", false, "PDF 导入遇到内容缺失或近似转换诊断时失败")
+	flags.BoolVar(&opts.pdfSaveRepairedFonts, "pdf-save-repaired-fonts", false, "PDF 转 OFD 保存修复后的内嵌字体；默认保存原始字体")
 	flags.StringVar(&opts.pdfImageMode, "pdf-image-mode", opts.pdfImageMode, "PDF 图片模式: compatible (默认，无损兼容) 或 compact (不透明 CMYK JPEG 转有损 RGB JPEG)")
 	flags.IntVar(&opts.pdfJPEGQuality, "pdf-jpeg-quality", opts.pdfJPEGQuality, "PDF compact 图片模式的 JPEG 质量 (1-100；0 使用默认 90)")
 	flags.StringVar(&opts.pdfJPXBackend, "pdf-jpx-backend", opts.pdfJPXBackend, "PDF JPX 解码器: go (默认) 或 openjpeg (需以 -tags openjpeg 构建并安装 libopenjp2)")
@@ -351,7 +353,7 @@ func normalizeConverterArgs(args []string) []string {
 		"allow-remote": true, "chrome-no-sandbox": true, "md-tables": true,
 		"no-docx-tables": true, "no-docx-images": true, "docx-annotations": true,
 		"password":   true,
-		"pdf-strict": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-jpx-backend": true, "pdf-max-input-bytes": true, "pdf-max-total-decoded-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
+		"pdf-strict": true, "pdf-save-repaired-fonts": true, "pdf-image-mode": true, "pdf-jpeg-quality": true, "pdf-jpx-backend": true, "pdf-max-input-bytes": true, "pdf-max-total-decoded-bytes": true, "pdf-max-image-pixels": true, "pdf-max-total-image-pixels": true, "pdf-max-operations": true,
 		"ocr": true, "ocr-language": true,
 		"csv-no-header": true, "csv-encoding": true, "csv-title": true, "csv-font": true,
 		"recursive": true, "overwrite": true, "skip-existing": true,
@@ -401,10 +403,11 @@ func (opts *options) pdfLimits() converter.PDFImportLimits {
 
 func (opts *options) pdfImportOptions() converter.PDFImportOptions {
 	return converter.PDFImportOptions{
-		Limits:      opts.pdfLimits(),
-		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
-		JPEGQuality: opts.pdfJPEGQuality,
-		JPXBackend:  converter.PDFJPXBackend(opts.pdfJPXBackend),
+		SaveRepairedFonts: opts.pdfSaveRepairedFonts,
+		Limits:            opts.pdfLimits(),
+		ImageMode:         converter.PDFImageMode(opts.pdfImageMode),
+		JPEGQuality:       opts.pdfJPEGQuality,
+		JPXBackend:        converter.PDFJPXBackend(opts.pdfJPXBackend),
 	}
 }
 
@@ -847,11 +850,12 @@ func convertImported(opts *options, from, to string) error {
 		diagnostics = os.Stderr
 	}
 	option = append(option, converter.WithPDFImportOptions(converter.PDFImportOptions{
-		Limits:      opts.pdfLimits(),
-		Strict:      opts.pdfStrict,
-		ImageMode:   converter.PDFImageMode(opts.pdfImageMode),
-		JPEGQuality: opts.pdfJPEGQuality,
-		JPXBackend:  converter.PDFJPXBackend(opts.pdfJPXBackend),
+		SaveRepairedFonts: opts.pdfSaveRepairedFonts,
+		Limits:            opts.pdfLimits(),
+		Strict:            opts.pdfStrict,
+		ImageMode:         converter.PDFImageMode(opts.pdfImageMode),
+		JPEGQuality:       opts.pdfJPEGQuality,
+		JPXBackend:        converter.PDFJPXBackend(opts.pdfJPXBackend),
 		OnDiagnostic: func(d converter.PDFImportDiagnostic) {
 			_, _ = fmt.Fprintf(diagnostics, "PDF 导入警告 [%s] %s 第 %d 页，对象 %d/%d，资源 %q：%s\n", d.Code, opts.input, d.Page, d.Object, d.Generation, d.Resource, d.Message)
 		},

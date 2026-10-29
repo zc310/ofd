@@ -278,11 +278,12 @@ func ExampleWithPDFImportOptions() {
 	var diagnostics []converter.PDFImportDiagnostic
 	err := converter.Convert(context.Background(), "pdf", "ofd", "../../testdata/libofd/sample0.pdf", &output,
 		converter.WithPDFImportOptions(converter.PDFImportOptions{
-			Limits:       converter.PDFImportLimits{MaxInputBytes: 32 << 20, MaxImagePixels: 20_000_000},
-			ImageMode:    converter.PDFImageModeCompact,
-			JPEGQuality:  converter.PDFDefaultJPEGQuality,
-			JPXBackend:   converter.PDFJPXBackendGo,
-			OnDiagnostic: func(d converter.PDFImportDiagnostic) { diagnostics = append(diagnostics, d) },
+			SaveRepairedFonts: true,
+			Limits:            converter.PDFImportLimits{MaxInputBytes: 32 << 20, MaxImagePixels: 20_000_000},
+			ImageMode:         converter.PDFImageModeCompact,
+			JPEGQuality:       converter.PDFDefaultJPEGQuality,
+			JPXBackend:        converter.PDFJPXBackendGo,
+			OnDiagnostic:      func(d converter.PDFImportDiagnostic) { diagnostics = append(diagnostics, d) },
 		}))
 	// Strict: true 可要求遇到已报告的内容缺失或近似转换时直接失败。
 	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("PK")))

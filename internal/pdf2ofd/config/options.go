@@ -74,12 +74,15 @@ type Diagnostic struct {
 // 不代表完整实现 PDF 规范。OnDiagnostic 在转换协程中同步执行；取消该转换的
 // context 会原样返回 ctx.Err()。并行转换共用回调时，调用方应自行同步共享数据。
 type Options struct {
-	Limits       Limits
-	Strict       bool
-	ImageMode    ImageMode
-	JPEGQuality  int
-	JPXBackend   JPXBackend
-	OnDiagnostic func(Diagnostic)
+	// SaveRepairedFonts 将修复后的内嵌字体写入 OFD；默认保存 PDF 解码后的原始字体程序。
+	// 转换中的字形解析和度量始终使用修复结果。
+	SaveRepairedFonts bool
+	Limits            Limits
+	Strict            bool
+	ImageMode         ImageMode
+	JPEGQuality       int
+	JPXBackend        JPXBackend
+	OnDiagnostic      func(Diagnostic)
 }
 
 // LimitError 可通过 errors.Is(err, ErrLimitExceeded) 和 errors.As 识别。

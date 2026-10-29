@@ -740,6 +740,7 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		return
 	}
 	data := append([]byte(nil), stream.Content...)
+	originalData := data
 	if format == "ttf" {
 		if normalized, normalizeErr := normalizeEmbeddedTrueType(data); normalizeErr == nil {
 			data = normalized
@@ -761,9 +762,11 @@ func (p *pdfInterpreter) loadEmbeddedFont(font *pdfFontInfo, descriptor types.Di
 		p.control.limit("font_bytes", int64(len(data)), maximum)
 		return
 	}
-	// 创建器直接将这份字节写入 OFD 资源。保留修复结果，避免把原始字体
-	// 再写回包内，使浏览器必须等到后续渲染时才能取得可用字体。
+	// 字形映射与度量继续使用修复结果，写包时按选项选择原始或修复后的字节。
 	font.data = data
+	if p.control == nil || !p.control.options.SaveRepairedFonts {
+		font.originalData = originalData
+	}
 }
 
 // normalizeEmbeddedTrueType 去掉损坏的 PDF 子集 hmtx 表尾部多余填充。少数

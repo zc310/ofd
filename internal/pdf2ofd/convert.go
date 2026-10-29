@@ -1060,27 +1060,31 @@ func (p *pdfInterpreter) ensureFont(resources types.Dict, name string) {
 	font.bold, font.italic, _, _ = pdfFontStyleFlags(family)
 	// PDF 未嵌入字体时保持逻辑字体，由阅读器按字体族名回退到本机字体。
 	p.fonts[name] = font
+	data := font.data
+	if len(font.originalData) > 0 {
+		data = font.originalData
+	}
 	documentName := name
 	for _, value := range p.document.Fonts {
 		if value.Name != name {
 			continue
 		}
-		if value.Format == font.format && bytes.Equal(value.Data, font.data) &&
-			(len(font.data) > 0 || (value.FamilyName == family && value.Bold == font.bold && value.Italic == font.italic)) {
+		if value.Format == font.format && bytes.Equal(value.Data, data) &&
+			(len(data) > 0 || (value.FamilyName == family && value.Bold == font.bold && value.Italic == font.italic)) {
 			return
 		}
 		// 资源名只在 PDF 页面内局部有效：同名资源在另一页可能指向不同的
 		// 内嵌字体，因此不能按名称合并字体。
 		identity := font.format + ":"
-		if len(font.data) == 0 {
+		if len(data) == 0 {
 			identity = fmt.Sprintf("%s:%s:%t:%t", font.format, family, font.bold, font.italic)
 		}
-		digest := sha256.Sum256(append([]byte(identity), font.data...))
+		digest := sha256.Sum256(append([]byte(identity), data...))
 		documentName = name + "-" + hex.EncodeToString(digest[:])[:12]
 		break
 	}
 	_, _, serif, fixedWidth := pdfFontStyleFlags(family)
-	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: font.data, Bold: font.bold, Italic: font.italic, Serif: serif, FixedWidth: fixedWidth}
+	current := creator.Font{Name: documentName, FamilyName: family, Charset: "unicode", Format: font.format, Data: data, Bold: font.bold, Italic: font.italic, Serif: serif, FixedWidth: fixedWidth}
 	// 复用已有等价字体：嵌入字体按数据去重；非嵌入字体 Data 为空，摘要固定，
 	// 必须按族名与样式去重，否则跨页（或注解外观）的同族逻辑字体会重复注册
 	// 同名资源 "name-<摘要>" 而报错。

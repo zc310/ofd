@@ -26,6 +26,7 @@
 | 预算与取消 | [control.go](control.go)、[config/options.go](config/options.go)、[image_control.go](image_control.go) | 分配/展开前预留预算；缓存命中不重复计算基础解码；取消原样返回 context 错误。预算不是峰值内存保证。 |
 | 页面和路径坐标 | [path.go](path.go)、[image.go](image.go) | PDF 使用点和左下原点，OFD 使用毫米和左上原点；同时处理 CTM、页面 Rotate、Box 原点及 UserUnit。Clips 的 TransFlag 不应重复施加图元 CTM。 |
 | 字体代码、CID 和 GID | [font.go](font.go)、[font_cmap.go](font_cmap.go)、[font_cmap_predefined.go](font_cmap_predefined.go) | 修复后的字体只解析一次，字形映射和字宽复用 font.sfnt。ToUnicode 查询源代码；嵌入 Encoding CMap 的代码还包含字节长度；W/W2、CIDToGIDMap 查询 CID，字体程序使用实际 GID。internal/fontrepair 私有区映射用于找字形，不能作为原文；CFF 包装的 unitsPerEm 必须与 FontMatrix 一致。 |
+| 字体存储 | [font.go](font.go)、[convert.go](convert.go)、[config/options.go](config/options.go) | 默认将解码后的原始字体程序写入包内；SaveRepairedFonts 开启时写入修复结果。原始数据只用于存储和资源身份判断，字形解析、字宽与裁剪始终使用修复后的 font.data/font.sfnt。 |
 | CMap 区间 | [font_cmap.go](font_cmap.go) | 保留继承、本地最后覆盖、notdef 和字典优先级；区间排序后查询，不展开巨大 CID 范围；损坏代码需保留后续有效代码。 |
 | 普通文字与裁剪 | [text.go](text.go)、[text_clip.go](text_clip.go) | 字形与推进共同处理 Tm/CTM/Tz/Ts；BT 内累积字形并集，ET 时与已有裁剪求交。Form 的文本、路径和资源状态与外层隔离。 |
 | 竖排 | [text_vertical.go](text_vertical.go)、[font_vertical_glyph.go](font_vertical_glyph.go) | 竖排 TJ 和 W2 原点偏移不额外乘 Tz；嵌入字体保留指定字形，替代字体优先 vrt2 再 vert，文字层保留源标点。 |

@@ -153,6 +153,10 @@ PDF 导入默认实施资源预算。可通过 `converter.WithPDFImportOptions` 
 `OnDiagnostic` 回调和 `Strict` 模式；这些设置也作用于 Office/HTML/XPS 转 OFD 的
 PDF 阶段。默认值、错误判断和示例见 [PDF 资源预算与诊断](PDF-SUPPORT.md#资源预算与诊断)。
 
+PDF 导入默认保存解码后的原始内嵌字体程序；设置
+`converter.PDFImportOptions{SaveRepairedFonts: true}` 可将修复结果写入 OFD 包。
+这项设置同样作用于经 PDF 的导入阶段，字形映射和度量始终使用修复后的字体。
+
 ## 接入按页阅读接口
 
 `pkg/webreader` 提供页面渲染、文字、搜索、导航与导出接口，供界面按需调用：

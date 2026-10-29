@@ -28,7 +28,7 @@ func (p *pdfImporter) Import(input any, output io.Writer, conv *converter.Conver
 	return pdf2ofd.ConvertWithOptions(conv.Context(), input, output, conv.InputPassword(), conv.PDFImportOptions())
 }
 
-// Options 控制资源预算、诊断回调和严格模式；零值使用默认预算。
+// Options 控制资源预算、字体存储、诊断回调和严格模式；零值使用默认预算并保存原始字体。
 type Options = converter.PDFImportOptions
 type Limits = converter.PDFImportLimits
 type Diagnostic = converter.PDFImportDiagnostic
@@ -40,7 +40,7 @@ var ErrUnsupported = converter.ErrPDFImportUnsupported
 // DefaultLimits 返回 PDF 导入的默认预算。
 func DefaultLimits() Limits { return converter.DefaultPDFImportLimits() }
 
-// ConvertWithOptions 使用指定的资源预算、诊断回调和严格模式转换 PDF。
+// ConvertWithOptions 使用指定的资源预算、字体存储策略、诊断回调和严格模式转换 PDF。
 func ConvertWithOptions(ctx context.Context, input any, output io.Writer, password string, options Options) error {
 	return pdf2ofd.ConvertWithOptions(ctx, input, output, password, options)
 }

@@ -29,7 +29,7 @@ const (
 	PDFJPXBackendOpenJPEG = config.JPXBackendOpenJPEG
 )
 
-// PDFImportOptions 设置 PDF 导入的预算、图片编码、JPX 解码后端、诊断回调和严格模式。
+// PDFImportOptions 设置 PDF 导入的预算、字体存储、图片编码、JPX 解码后端、诊断回调和严格模式。
 type PDFImportOptions = config.Options
 
 // PDFImportLimitError 包含超限的资源名称、上限和已观察到的用量。

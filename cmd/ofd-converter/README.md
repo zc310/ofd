@@ -70,6 +70,7 @@ ofd-converter --help
 | `-chrome-no-sandbox`   | 禁用 Chrome 沙箱（容器或 root 环境可能需要）；HTML/MHTML/EML/SVG 输入生效 |
 | `-password`            | 加密输入文档的打开口令；**目前仅 PDF 输入生效**，OFD 的包级加密尚不支持                                                                               |
 | `-pdf-strict`          | PDF 导入遇到已报告的内容缺失或近似转换时失败，默认关闭 |
+| `-pdf-save-repaired-fonts` | 将修复后的内嵌字体保存到 OFD，默认关闭；默认保存 PDF 解码后的原始字体程序 |
 | `-pdf-image-mode`      | PDF 图片模式：`compatible`（默认）或 `compact`；后者对不透明 CMYK JPEG 转为有损 RGB JPEG |
 | `-pdf-jpeg-quality`    | `compact` 模式的 JPEG 质量，范围 `1-100`；`0` 使用默认 `90`。带 Mask/SMask 的图片仍输出 PNG |
 | `-pdf-jpx-backend`     | JPX 解码器：`go`（默认）或 `openjpeg`；OpenJPEG 需要 Linux、CGO 和系统 `libopenjp2` 开发文件 |
@@ -114,7 +115,7 @@ ofd-converter --help
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-raster-backend`                                                        | OFD → PNG/JPG                     | 选择页面栅格化后端                                  |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
-| `-pdf-strict`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/EML/SVG/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；这些格式直接输出 PDF 时不生效 |
+| `-pdf-strict`、`-pdf-save-repaired-fonts`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/EML/SVG/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；这些格式直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
 
 需要注意：
@@ -180,6 +181,7 @@ ofd-converter --pdf-strict --pdf-max-input-bytes 33554432 input.pdf output.ofd
 ofd-converter --pdf-max-total-decoded-bytes 4GiB input.pdf output.ofd
 ofd-converter --pdf-image-mode compact --pdf-jpeg-quality 90 input.pdf compact.ofd
 ofd-converter --pdf-jpx-backend openjpeg input.pdf openjpeg.ofd
+ofd-converter --pdf-save-repaired-fonts input.pdf repaired-fonts.ofd
 ```
 
 OpenJPEG 是可选后端。启用前需安装 `libopenjp2` 开发包和 `pkg-config`，并在 Linux
@@ -189,6 +191,11 @@ OpenJPEG；非 Linux、禁用 CGO 或未启用构建标签时选择该后端会�
 `compatible` 保持默认图像兼容性和无损处理；`compact` 将无软蒙版/颜色键的 CMYK JPEG
 转为 RGB JPEG，以减小照片资源体积，可能产生有损画质变化。带 `Mask` 或 `SMask` 的图像
 仍采用 PNG，以保留透明边缘；此类页面及非 JPEG 图像不保证明显缩小。
+
+PDF 转 OFD 默认保存解码后的原始内嵌字体字节。需要把修复结果直接存入包内时启用
+`--pdf-save-repaired-fonts`；转换中的字形映射和度量始终使用修复后的字体。
+原始裸 CFF 也会原样保存；需要 OpenType 包装及旧式 CFF 私有字段清理时使用该开关。
+Type3 的语义字体和缺字体时生成的替代字体继续按转换结果保存。
 
 PDF 导入默认限制输入、页数、对象数、解压流、图片像素、字体、输出图元、处理量与
 递归深度。所有预算超限都会终止转换。CLI 可调整输入、累计解码字节和图片预算；完整默认值及库 API

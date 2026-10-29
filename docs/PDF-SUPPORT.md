@@ -74,7 +74,7 @@ EML 导入器在页面写出时另行提供原附件，由创建器写入 OFD �
 | XObject `Do` | Image 和 Form，包含 Form 的 Matrix、Resources 和隐式 BBox 裁剪。 | 其他子类型报告诊断；Form 嵌套受 MaxDepth 限制。 |
 | 线条样式 | `w/d/J/j/M` 及 ExtGState 的 `LW/LC/LJ/ML`。 | 按 CTM 换算线宽和虚线；0 线宽近似为 0.1mm，不能保持所有输出分辨率下的单像素语义。 |
 | 开放路径的透明填充和描边 | 保留 `B/B*` 的开放描边；半透明描边、非 Normal 混合或软掩码下，先合并填充与描边再应用外层效果。 | 以 300dpi 局部合成，报告 `graphics.path_fill_stroke`，Strict 失败；普通不透明路径继续使用矢量输出。 |
-| 内嵌字体 | TrueType、CFF 包装及实际字形映射；转换时将修复后的字体数据写入 OFD 包。CFF/OTF 中可安全清理的旧式 `ForceBoldThreshold`、`lenIV=-1` 私有字段会在写包前处理，避免导出 SVG 时被浏览器拒绝。 | 字体修复和特殊结构可能失败；创建器支持多 FD CFF 子集化，子集化错误直接返回；转回 PDF 时保留 OFD 中实际嵌入的 CFF 程序。 |
+| 内嵌字体 | TrueType、CFF 包装及实际字形映射；默认将 PDF 解码后的原始字体程序写入 OFD 包。启用 `SaveRepairedFonts`（CLI `--pdf-save-repaired-fonts`）后保存修复结果，包括 CFF 的 OpenType 包装、旧式 `ForceBoldThreshold` 和 `lenIV=-1` 私有字段清理。转换中的字形映射和度量始终使用修复后的数据。 | 原始裸 CFF 也会原样保存；需要包内字体已完成 OpenType 包装和清理时启用该选项。字体修复和特殊结构可能失败；转回 PDF 时保留 OFD 中实际嵌入的 CFF 程序。 |
 | 未嵌入字体 | 输出 OFD 逻辑字体，由阅读器替代。 | 字形和度量取决于可用字体；浏览器/Android 环境依赖嵌入或已注册的回退字体。 |
 | 竖排替代字形 | 内嵌字体保留指定字形；替代字体尝试 `vrt2/vert` 和 Unicode 竖排形式，文字层保留原始标点。 | 支持 SingleSubst 格式 1/2 与 Extension；缺字或缺少竖排轮廓会诊断，Strict 失败。 |
 | Type3 字体 | 执行 `d0/d1`、CharProcs 中的路径、图片及 Form；保留 FontMatrix、资源作用域、颜色和文字层。 | 复杂内容沿用内容流解释器的限制；Tr=3/7 不绘制，Tr=4–7 不增加字形裁剪。 |
