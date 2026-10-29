@@ -161,10 +161,16 @@ func fitTextBoundary(value *Text, face *canvas.FontFace) {
 	shift := newTop - oldTop
 	value.Y = newTop
 	value.Height = newBottom - newTop
+	if shift == 0 {
+		return
+	}
 	// 边界上沿移动后，码位原点要反向平移，保证各段基线仍落在原来的位置。
+	// 切片和 Y 指针都可能与调用方或其它分段共享，先复制再改写。
+	value.TextCodes = append([]TextCode(nil), value.TextCodes...)
 	for index := range value.TextCodes {
 		if y := value.TextCodes[index].Y; y != nil {
-			*y -= shift
+			adjustedY := *y - shift
+			value.TextCodes[index].Y = &adjustedY
 		}
 	}
 }

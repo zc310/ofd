@@ -576,7 +576,7 @@ func validateCGTransforms(values []CGTransform, codes []TextCode, value string) 
 		if transform.CodeCount < 0 || transform.GlyphCount < 0 {
 			return fmt.Errorf("CGTransform %d 的数量参数不能为负数", index+1)
 		}
-		if transform.CodeCount > 0 && transform.CodePosition+transform.CodeCount > totalCharacters {
+		if transform.CodeCount > totalCharacters-transform.CodePosition {
 			return fmt.Errorf("CGTransform %d 的 CodeCount 超出文字范围", index+1)
 		}
 		if transform.GlyphCount > len(transform.Glyphs) {
