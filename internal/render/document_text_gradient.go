@@ -96,6 +96,8 @@ func (t *textFaces) run(runX, runY float64) FontFace {
 
 // textRunBoundaryMatrix 把字体空间（基线为原点，y 向上）映射到 Boundary 空间。
 // GB/T 33190—2016 §8.1.5、§8.3.4.2：文字 CTM 变换字形，渐变按图元坐标取样。
+// 此处的 CTM 把取样点换算到 Boundary，不是再次变换渐变轴；配合字形绘制矩阵，
+// 与 textPageGradient 在同一页面位置取到相同颜色。
 func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
 	matrix := geom.Identity
 	if ctm := object.CTM; ctm != nil {
@@ -106,6 +108,8 @@ func textRunBoundaryMatrix(object models.TextObject, x, y float64) geom.Matrix {
 
 // textPageGradient 按 §8.1.4/5、§8.3.4 将 Boundary 渐变随父级一起映射到画布。
 // 通过逆矩阵采样保留非等比缩放、倾斜下的等色线和径向渐变形状。
+// 对象 CTM 已烘焙进文字轮廓，取样位置也已处于其变换后的 Boundary 空间；
+// 不能再把对象 CTM 叠加到渐变轴上，否则会与原生文字的 Boundary 取样不一致。
 func (p *Document) textPageGradient(source *models.CTColor, boundary models.StBox, pageHeight float64, parent *models.CTM) geom.Gradient {
 	gradient := p.pathGradient(source, gradientBoundaryTransform(boundary, pageHeight), gradientShadingArea(boundary))
 	if gradient == nil || parent == nil {
