@@ -45,7 +45,7 @@ func pageResourcePackage(t *testing.T) []byte {
 }
 
 func TestPageResourcesAreStableAcrossCacheEvictions(t *testing.T) {
-	r, err := OpenWithOptions(pageResourcePackage(t), OpenOptions{PageCacheCapacity: 1})
+	r, err := Open(pageResourcePackage(t), OpenOptions{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

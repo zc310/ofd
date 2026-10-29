@@ -27,7 +27,7 @@ func TestReaderOpensCryptViewAndReleasesOnlyItsLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	reader, err := webreader.OpenInput(view, webreader.OpenOptions{})
+	reader, err := webreader.Open(view)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestReaderOpensCryptViewAndReleasesOnlyItsLease(t *testing.T) {
 	if _, err := view.Read("OFD.xml"); err != nil {
 		t.Fatalf("reader closed view: %v", err)
 	}
-	reader, err = webreader.OpenInput(view, webreader.OpenOptions{})
+	reader, err = webreader.Open(view, webreader.OpenOptions{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

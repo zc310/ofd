@@ -27,7 +27,7 @@ func TestPageResourceLocationsStayStableAcrossEvictions(t *testing.T) {
 		"Doc_0/Pages/Page_0/First.xml":   `<Res xmlns="http://www.ofdspec.org/2016"/>`,
 		"Doc_0/Pages/Page_0/Second.xml":  `<Res xmlns="http://www.ofdspec.org/2016"/>`,
 	})
-	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	ofd, err := NewOFD(input, Options{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 		"Doc_0/Pages/Page_0/Res/audio.mp3": "audio",
 		"Doc_0/video.mp4":                  "video",
 	})
-	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	ofd, err := NewOFD(input, Options{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestPagesWithoutPageResourcesKeepDocumentResourcesAcrossEvictions(t *testin
 		"Doc_0/Pages/Page_0/Content.xml": `<Page><Content/></Page>`,
 		"Doc_0/Pages/Page_1/Content.xml": `<Page><Content/></Page>`,
 	})
-	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	ofd, err := NewOFD(input, Options{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestPageCacheRestoresShadowedDocumentResources(t *testing.T) {
 </Res>`,
 		"Doc_0/Pages/Page_1/Content.xml": `<Page><Content/></Page>`,
 	})
-	ofd, err := NewOFDWithOptions(input, Options{PageCacheCapacity: 1})
+	ofd, err := NewOFD(input, Options{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

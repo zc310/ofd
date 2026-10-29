@@ -188,7 +188,7 @@ err = converter.PDF(ctx, view, output)
 // v 为已有 *validator.Validator。
 report := v.Validate(ctx, view, "encrypted.ofd")
 results, err := sign.Verify(ctx, view, verificationOptions)
-reader, err := webreader.OpenInput(view, webreader.OpenOptions{})
+reader, err := webreader.Open(view)
 // reader 使用完毕后单独 Close。
 ```
 

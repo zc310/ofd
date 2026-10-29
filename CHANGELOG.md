@@ -7,6 +7,11 @@
 
 ## 未发布
 
+- **阅读器打开入口统一为 Open**：将 `webreader.OpenWithOptions(data, options)` 和
+  `webreader.OpenInput(input, options)` 改为 `webreader.Open(input, options)`。
+  省略选项时使用 `webreader.Open(input)`；输入支持 OFD 字节、文件路径、`io.Reader`
+  和已完全解锁的 `crypt.View`。原有 `Open(data)` 调用方式继续可用。
+
 - **创建编辑与长期保存包调整导入路径**：将 `github.com/zc310/ofd/pkg/merge`、
   `pkg/replace`、`pkg/watermark` 分别迁入 `pkg/creator/merge`、`pkg/creator/replace`、
   `pkg/creator/watermark`，将 `pkg/preserve` 迁入 `pkg/archive/preserve`。

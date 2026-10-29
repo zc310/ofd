@@ -616,7 +616,7 @@ func TestExportDoesNotDuplicatePageResourcesAfterReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := parser.NewOFDWithOptions(source, parser.Options{PageCacheCapacity: 1})
+	ofd, err := parser.NewOFD(source, parser.Options{PageCacheCapacity: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

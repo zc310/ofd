@@ -134,17 +134,17 @@ func findPathAt(items []models.PageItem, n int) *models.PathObject {
 	return nil
 }
 
-func TestNewOFDWithOptionsRejectsNegativeLimits(t *testing.T) {
-	if _, err := NewOFDWithOptions(nil, Options{MaxInputBytes: -1}); err == nil {
+func TestNewOFDRejectsNegativeLimits(t *testing.T) {
+	if _, err := NewOFD(nil, Options{MaxInputBytes: -1}); err == nil {
 		t.Fatal("负数输入大小应返回错误")
 	}
 }
 
-func TestNewOFDWithOptionsRejectsNegativeCacheLimits(t *testing.T) {
-	if _, err := NewOFDWithOptions(nil, Options{PageCacheCapacity: -1}); err == nil {
+func TestNewOFDRejectsNegativeCacheLimits(t *testing.T) {
+	if _, err := NewOFD(nil, Options{PageCacheCapacity: -1}); err == nil {
 		t.Fatal("负数页面缓存数量应返回错误")
 	}
-	if _, err := NewOFDWithOptions(nil, Options{PageCacheBytes: -1}); err == nil {
+	if _, err := NewOFD(nil, Options{PageCacheBytes: -1}); err == nil {
 		t.Fatal("负数页面缓存大小应返回错误")
 	}
 }

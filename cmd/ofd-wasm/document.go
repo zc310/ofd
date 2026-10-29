@@ -26,7 +26,8 @@ func openWASMDocument(ctx context.Context, data []byte, options webreader.OpenOp
 
 // openWASMDocumentSecurity 同时返回原文件的加密事实；只有完整解锁并成功创建 Reader 才返回 true。
 func openWASMDocumentSecurity(ctx context.Context, data []byte, options webreader.OpenOptions, credentials crypt.DecryptOptions) (*webreader.Reader, bool, error) {
-	reader, err := webreader.OpenWithOptions(data, options)
+	//nolint:contextcheck // Open 是同步解析接口；凭据解锁阶段继续使用 ctx。
+	reader, err := webreader.Open(data, options)
 	if !errors.Is(err, crypt.ErrLocked) {
 		return reader, false, err
 	}
@@ -52,7 +53,8 @@ func openWASMDocumentSecurity(ctx context.Context, data []byte, options webreade
 		return nil, false, err
 	}
 	defer view.Close()
-	reader, err = webreader.OpenInput(view, options)
+	//nolint:contextcheck // Open 是同步解析接口；凭据解锁阶段已使用 ctx。
+	reader, err = webreader.Open(view, options)
 	return reader, err == nil, err
 }
 

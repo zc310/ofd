@@ -9,18 +9,32 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-func exampleReader() *webreader.Reader {
+func exampleDocument() []byte {
 	data, err := creator.Marshal(creator.Document{ID: "reader-example", Fonts: []creator.Font{{Name: "Go", Data: goregular.TTF}}, Pages: []creator.Page{{Items: []creator.Item{
 		creator.Text{Width: 25, Height: 8, Font: "Go", Size: 4, Value: "Example"},
 	}}}})
 	if err != nil {
 		panic(err)
 	}
-	r, err := webreader.Open(data)
+	return data
+}
+
+func exampleReader() *webreader.Reader {
+	r, err := webreader.Open(exampleDocument())
 	if err != nil {
 		panic(err)
 	}
 	return r
+}
+
+func ExampleOpen() {
+	r, err := webreader.Open(exampleDocument(), webreader.OpenOptions{PageCacheCapacity: 8})
+	if err != nil {
+		panic(err)
+	}
+	defer r.Close()
+	fmt.Println(r.PageCount())
+	// Output: 1
 }
 
 func ExampleReader_SetTextOptions() {

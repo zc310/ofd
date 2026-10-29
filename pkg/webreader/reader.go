@@ -55,6 +55,12 @@ const (
 	searchCacheBytes = 16 << 20
 )
 
+var (
+	errTooManyOpenOptions = errors.New("最多传入一组 OpenOptions")
+	errEmptyInput         = errors.New("OFD 数据为空")
+	errInputTooLarge      = errors.New("OFD 数据超过大小限制")
+)
+
 const (
 	// RenderPNG 输出 PNG 位图。为空时也使用该格式。
 	RenderPNG RenderFormat = "png"
@@ -110,28 +116,31 @@ type Reader struct {
 	textOptions    TextOptions
 }
 
-// Open 从内存中的 OFD 数据创建浏览器文档引擎。
-func Open(data []byte) (*Reader, error) {
-	return OpenWithOptions(data, OpenOptions{})
-}
-
-// OpenWithOptions 从内存中的 OFD 数据创建浏览器文档引擎。
-func OpenWithOptions(data []byte, options OpenOptions) (*Reader, error) {
-	if len(data) == 0 {
-		return nil, errors.New("OFD 数据为空")
+// Open 从 OFD 字节、文件路径、io.Reader 或已完全解锁的 crypt.View 创建文档引擎。
+// 不传 options 时使用默认配置，最多传入一组 OpenOptions。
+// Reader.Close 仅释放 Reader 自身持有的资源或租约，不关闭调用方的输入。
+func Open(input any, options ...OpenOptions) (*Reader, error) {
+	if len(options) > 1 {
+		return nil, errTooManyOpenOptions
 	}
-	if len(data) > maxInputBytes {
-		return nil, fmt.Errorf("OFD 数据超过大小限制 %d MB", maxInputBytes>>20)
+	var config OpenOptions
+	if len(options) == 1 {
+		config = options[0]
 	}
-	return OpenInput(data, options)
-}
-
-// OpenInput 接受普通 OFD 输入或已完全解锁的 crypt.View，无需先序列化为明文 ZIP。
-// Reader.Close 仅释放 Reader 自身持有的租约。
-func OpenInput(input any, options OpenOptions) (*Reader, error) {
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
-		PageCacheCapacity: options.PageCacheCapacity,
-		PageCacheBytes:    options.PageCacheBytes,
+	if input == nil {
+		return nil, errEmptyInput
+	}
+	if data, ok := input.([]byte); ok {
+		if len(data) == 0 {
+			return nil, errEmptyInput
+		}
+		if len(data) > maxInputBytes {
+			return nil, fmt.Errorf("%w %d MB", errInputTooLarge, maxInputBytes>>20)
+		}
+	}
+	ofd, err := parser.NewOFD(input, parser.Options{
+		PageCacheCapacity: config.PageCacheCapacity,
+		PageCacheBytes:    config.PageCacheBytes,
 		MaxInputBytes:     maxInputBytes,
 	})
 	if err != nil {

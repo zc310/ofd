@@ -402,7 +402,7 @@ func parseRenderDocuments(input any, conv *Converter) ([]*render.Document, *pars
 	if reader, ok := input.(io.Reader); ok {
 		input = contextio.Reader(conv.Context(), reader)
 	}
-	ofd, err := parser.NewOFDWithOptions(input, parser.Options{
+	ofd, err := parser.NewOFD(input, parser.Options{
 		PageCacheCapacity: conv.pageCacheCapacity,
 		PageCacheBytes:    conv.pageCacheBytes,
 	})

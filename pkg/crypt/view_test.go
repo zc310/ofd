@@ -560,7 +560,7 @@ func TestViewCannotBypassConsumerInputLimitsAndExportCallbackMayCloseOwner(t *te
 		t.Fatal(err)
 	}
 	defer view.Close()
-	if _, err := parser.NewOFDWithOptions(view, parser.Options{MaxInputBytes: 1}); !errors.Is(err, parser.ErrInputTooLarge) {
+	if _, err := parser.NewOFD(view, parser.Options{MaxInputBytes: 1}); !errors.Is(err, parser.ErrInputTooLarge) {
 		t.Fatalf("parser input budget bypassed: %v", err)
 	}
 	v, _ := validator.New(validator.WithMaxInputSize(1))

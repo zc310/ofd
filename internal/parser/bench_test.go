@@ -70,7 +70,7 @@ func BenchmarkPageMetadata(b *testing.B) {
 // BenchmarkPageLoad 逐页加载页面 XML 并立即释放租约；以 1000 页循环确保
 // 页面缓存持续淘汰，测量冷加载路径而非同一页的缓存命中。
 func BenchmarkPageLoad(b *testing.B) {
-	ofd, err := NewOFDWithOptions(parserBenchFile(b, "ofd-creator/1000-pages.ofd"), Options{PageCacheCapacity: 1})
+	ofd, err := NewOFD(parserBenchFile(b, "ofd-creator/1000-pages.ofd"), Options{PageCacheCapacity: 1})
 	if err != nil {
 		b.Fatal(err)
 	}

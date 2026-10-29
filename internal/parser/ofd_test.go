@@ -98,7 +98,7 @@ func TestOFDInputSizeLimitAppliesToAllInputKinds(t *testing.T) {
 				} else if kind == "reader" {
 					input = bytes.NewReader(data)
 				}
-				ofd, err := NewOFDWithOptions(input, Options{MaxInputBytes: limit})
+				ofd, err := NewOFD(input, Options{MaxInputBytes: limit})
 				if ofd != nil {
 					defer ofd.Close()
 				}
@@ -116,7 +116,7 @@ func TestOFDInputSizeLimitAppliesToAllInputKinds(t *testing.T) {
 
 func TestOFDReaderStopsAfterInputLimitProbe(t *testing.T) {
 	reader := bytes.NewReader(make([]byte, 1024))
-	ofd, err := NewOFDWithOptions(reader, Options{MaxInputBytes: 64})
+	ofd, err := NewOFD(reader, Options{MaxInputBytes: 64})
 	if ofd != nil {
 		defer ofd.Close()
 	}
@@ -125,6 +125,17 @@ func TestOFDReaderStopsAfterInputLimitProbe(t *testing.T) {
 	}
 	if got := reader.Len(); got != 1024-65 {
 		t.Fatalf("剩余输入 = %d 字节，期望只读取上限加 1 字节", got)
+	}
+}
+
+func TestNewOFDRejectsMultipleOptionsBeforeReading(t *testing.T) {
+	input := &trackingReader{Reader: bytes.NewReader([]byte("unread"))}
+	ofd, err := NewOFD(input, Options{}, Options{})
+	if ofd != nil || !errors.Is(err, errTooManyOptions) {
+		t.Fatalf("NewOFD = (%v, %v)，期望拒绝多组选项", ofd, err)
+	}
+	if input.Len() != len("unread") || input.closed {
+		t.Fatal("选项校验失败不应读取或关闭调用方输入")
 	}
 }
 
@@ -158,7 +169,7 @@ func TestOFDReaderAcceptsMaxInt64InputLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ofd, err := NewOFDWithOptions(bytes.NewReader(data), Options{MaxInputBytes: 1<<63 - 1})
+	ofd, err := NewOFD(bytes.NewReader(data), Options{MaxInputBytes: 1<<63 - 1})
 	if err != nil {
 		t.Fatalf("最大 int64 上限不应溢出导致输入为空：%v", err)
 	}

@@ -57,7 +57,7 @@ defer view.Close()
 err = converter.PDF(ctx, view, output)
 ```
 
-`webreader.OpenInput(view, webreader.OpenOptions{})` 创建自己的读取租约，关闭阅读器不关闭
+`webreader.Open(view)` 创建自己的读取租约，关闭阅读器不关闭
 原视图。`validator.Validate(ctx, view, name)` 先检查原始物理条目，再检查逻辑文档，
 保留原始加密状态；`sign.Verify` 和 `analyzer.Analyze` 也直接接受完整视图。
 存在外层物理签名时，validator 在原包检查其引用和摘要，解密视图用于普通文档校验。
@@ -214,7 +214,8 @@ func main() {
 ```
 
 打开后调用 `Close` 释放资源。长文档可用
-`webreader.OpenWithOptions(data, webreader.OpenOptions{...})` 调整页面缓存；渲染 DPI
+`webreader.Open(input, webreader.OpenOptions{...})` 调整页面缓存，最多传一组选项，省略时使用默认值。
+`input` 支持 OFD 字节、文件路径、`io.Reader` 或已完全解锁的 `crypt.View`；渲染 DPI
 范围为 1–600，默认 96，单页还受像素预算限制。版本清单和切换由 `Versions`、
 `SelectVersion` 提供，切换成功后需重新读取页面、字体和导航信息。
 完整接口见 [webreader API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)。

@@ -41,7 +41,7 @@ func testMultiPageDocument(t *testing.T, minPages int) ([]*render.Document, int)
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		ofd, err := parser.NewOFDWithOptions(path, parser.Options{})
+		ofd, err := parser.NewOFD(path)
 		if err != nil {
 			continue
 		}

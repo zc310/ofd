@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,11 @@ const (
 
 const defaultMaxInputBytes = 512 << 20
 
+var (
+	errTooManyOptions = errors.New("最多传入一组 Options")
+	errNegativeLimits = errors.New("页面缓存和输入大小限制不能为负数")
+)
+
 // Options 控制解析器的页面缓存和输入大小限制。
 type Options struct {
 	// PageCacheCapacity 是页面缓存最多保留的页面数量，0 表示使用默认值。
@@ -39,21 +45,23 @@ type Options struct {
 	MaxInputBytes int64
 }
 
-// NewOFD 打开 OFD 文档并使用默认页面缓存配置。
-func NewOFD(input any) (*OFD, error) {
-	return NewOFDWithOptions(input, Options{})
-}
-
-// NewOFDWithOptions 打开 OFD 文档并使用指定的页面缓存配置。
-func NewOFDWithOptions(input any, options Options) (*OFD, error) {
-	if options.PageCacheCapacity < 0 || options.PageCacheBytes < 0 || options.MaxInputBytes < 0 {
-		return nil, fmt.Errorf("页面缓存和输入大小限制不能为负数")
+// NewOFD 打开 OFD 文档；省略 options 时使用默认配置，最多传入一组 Options。
+func NewOFD(input any, options ...Options) (*OFD, error) {
+	if len(options) > 1 {
+		return nil, errTooManyOptions
 	}
-	if options.MaxInputBytes == 0 {
-		options.MaxInputBytes = defaultMaxInputBytes
+	var config Options
+	if len(options) == 1 {
+		config = options[0]
+	}
+	if config.PageCacheCapacity < 0 || config.PageCacheBytes < 0 || config.MaxInputBytes < 0 {
+		return nil, errNegativeLimits
+	}
+	if config.MaxInputBytes == 0 {
+		config.MaxInputBytes = defaultMaxInputBytes
 	}
 	var ofd OFD
-	ofd.options = options
+	ofd.options = config
 	return &ofd, ofd.Open(input)
 }
 

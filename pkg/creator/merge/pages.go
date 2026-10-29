@@ -410,7 +410,7 @@ func buildPageSources(inputs []pageInput, limits PageLimits, concurrency int) []
 }
 
 func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource {
-	ofd, err := parser.NewOFDWithOptions(input.input, parser.Options{MaxInputBytes: limits.MaxInputBytes})
+	ofd, err := parser.NewOFD(input.input, parser.Options{MaxInputBytes: limits.MaxInputBytes})
 	if err != nil {
 		return builtSource{err: fmt.Errorf("打开 OFD 输入 %s 失败: %w", input.name, err)}
 	}
