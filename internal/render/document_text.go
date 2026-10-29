@@ -1,13 +1,11 @@
 package render
 
 import (
-	"image"
 	"strings"
 
 	"github.com/zc310/ofd/internal/fontrepair"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
-	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/internal/render/paint"
 )
@@ -35,9 +33,11 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	}
 	// GB/T 33190—2016 §8.3：底纹也可用于文字填充。先单独绘制底纹，
 	// 再由原路径绘制描边；底纹单元可能包含同一字体的文字，不能持字体锁展开。
+	patternFill := false
 	if source := textFillColor(object, dp); source != nil && source.Pattern != nil && !textFillDisabled(object) {
 		if _, semanticOnly := ctx.(semanticOnlyContext); !semanticOnly {
 			p.drawPatternText(ctx, source, object, pb, parentCTM, clip, budget)
+			patternFill = true
 			if !object.Stroke {
 				return
 			}
@@ -71,7 +71,7 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if textFillDisabled(object) && !object.Stroke {
 		return
 	}
-	fill, stroke := p.updateDrawParams(ctx, dp)
+	fill, _ := p.updateDrawParams(ctx, dp)
 	if dp == nil {
 		ctx.SetStrokeWidth(paint.DefaultLineWidth)
 	}
@@ -89,15 +89,9 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 			fill = p.updateCtColor(object.FillColor)
 		}
 	}
-	if paint.HasColorValue(object.StrokeColor) {
-		stroke = p.updateCtColor(object.StrokeColor)
-	}
 	if object.Alpha != nil {
 		if fill != nil && fill.HasValue {
 			fill = &CTColor{Value: paint.ScaleAlpha(fill.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: fill.Gradient}
-		}
-		if stroke != nil && stroke.HasValue {
-			stroke = &CTColor{Value: paint.ScaleAlpha(stroke.Value, graphicOpacity(object.Alpha)), HasValue: true, Gradient: stroke.Gradient}
 		}
 	}
 	source := textFillColor(object, dp)
@@ -116,32 +110,36 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	if face == nil {
 		return
 	}
-	if !face.Fill().Has() && !(textFillDisabled(object) && object.Stroke) {
+	if !face.Fill().Has() && !object.Stroke {
 		// 颜色透明（Alpha=0）时文字不可见，且 PDF 渲染器会因此输出非法的 NaN 颜色值
 		// 破坏内容流，直接跳过绘制。
 		return
 	}
-	nativeShadingText := false
-	if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && nativeShadingGradient(fill) {
-		nativeShadingText = !textNeedsPathDrawing(face, object) &&
-			paint.MapNativeGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
-	}
-	if isShadingColor(source) && !nativeShadingText {
-		if p.drawMeshText(ctx, face, source, object, pb, clip, budget) {
+	strokedText := object.Stroke
+	if strokedText {
+		// 描边在填充之后绘制，并在合并前分别扩展每个 run 的轮廓。此时仍持有
+		// 字体锁；函数返回前先执行描边，再释放字体锁和绘制上下文状态。
+		defer p.drawTextStroke(ctx, face, object, dp, pb, parentCTM, clip, !patternFill && textFillDisabled(object), budget)
+		object.Stroke = false
+		if textFillDisabled(object) {
 			return
 		}
 	}
-	if !object.Stroke {
-		ctx.ClearStroke()
-	} else if stroke != nil && stroke.Gradient != nil {
-		ctx.SetStrokeGradient(stroke.Gradient)
-	} else if stroke != nil && stroke.HasValue {
-		ctx.SetStrokeColor(stroke.Value)
-	} else {
-		ctx.SetStrokeColor(geom.Black)
+	nativeShadingText := false
+	if bt, ok := ctx.(shadingTextBackend); ok && bt.ShadingText() && nativeShadingGradient(fill) {
+		nativeShadingText = !strokedText && !textNeedsPathDrawing(face, object) &&
+			paint.MapNativeGradient(fill.Gradient, textRunBoundaryMatrix(object, 0, 0)) != nil
 	}
+	if !textFillDisabled(object) && isShadingColor(source) && !nativeShadingText {
+		if p.drawMeshText(ctx, face, source, object, pb, parentCTM, clip, budget) {
+			p.drawRasterTextSemantic(ctx, face, object, pb.Height, parentCTM)
+			return
+		}
+	}
+	ctx.ClearStroke()
 	faces := newTextFaces(p.fonts, fontFamily, object, fill, face, textlayout.HScale(object))
 	faces.native = nativeShadingText
+	faces.forcePath = strokedText
 	if clip != nil {
 		faces.clip = clip.Copy().Transform(ctx.CurrentMatrix())
 	}
@@ -149,11 +147,12 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	transforms := models.ExpandCGTransformPositions(object.TextCode, object.CGTransform)
 	object.CGTransform = transforms
 	for _, code := range object.TextCode {
+		position := codePosition
+		codePosition += len([]rune(code.Value))
 		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
 			continue
 		}
-		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, codePosition)
-		codePosition += len([]rune(code.Value))
+		p.drawTextCode(ctx, faces, object, code, pb.Height, parentCTM, position)
 	}
 }
 
@@ -203,212 +202,19 @@ func textNeedsPathDrawing(face FontFace, object models.TextObject) bool {
 	return false
 }
 
-// drawMeshText 将网格渐变文字先栅格化，避免 PDF/SVG 直接序列化不支持的自定义渐变。
-func (p *Document) drawMeshText(ctx DrawContext, face FontFace, source *models.CTColor, object models.TextObject, pb models.StBox, clip *geom.Path, budget *renderBudget) bool {
-	if pb.Width <= 0 || pb.Height <= 0 || !pb.IsFinite() || !object.Boundary.IsFinite() {
-		return false
-	}
-	transform := gradientBoundaryTransform(object.Boundary, pb.Height)
-	gradient := p.pathGradient(source, transform, gradientShadingArea(object.Boundary))
-	if gradient == nil {
-		return false
-	}
-	// 只为文字自身区域创建离屏画布：整页位图会让每个渐变文字对象都承担整页
-	// 栅格化成本。文字 Boundary 未必包含升/降部，向外留出一个字号避免裁字；
-	// 字号按 CTM 的 Y 轴缩放换算成页面毫米。
-	pad := object.Size
-	if object.CTM != nil {
-		if scale := object.CTM.YScale(); scale > 0 {
-			pad *= scale
-		}
-	}
-	if pad <= 0 || !finiteFloat(pad) {
-		pad = 1
-	}
-	x0 := object.Boundary.X - pad
-	x1 := object.Boundary.X + object.Boundary.Width + pad
-	// Boundary.Y 自页顶起算，画布坐标自底向上，先翻转再留余量。
-	y0 := pb.Height - (object.Boundary.Y + object.Boundary.Height) - pad
-	y1 := pb.Height - object.Boundary.Y + pad
-	width, height := x1-x0, y1-y0
-	if !finiteFloat(x0) || !finiteFloat(y0) || !finiteFloat(width) || !finiteFloat(height) || width <= 0 || height <= 0 {
-		return false
-	}
-	resolution := p.paintResolution(ctx)
-	if !budget.AllowOffscreenPixels(width, height, resolution.DPI()) {
-		return false
-	}
-	surface := newOffscreenSurface(width, height, resolution)
-	if surface == nil {
-		return false
-	}
-	surface.SetFillGradient(paint.TranslateGradient(gradient, x0, y0))
-	for _, code := range object.TextCode {
-		if !finiteFloat(code.X) || !finiteFloat(code.Y) || !finiteArray(code.DeltaX) || !finiteArray(code.DeltaY) {
-			continue
-		}
-		p.drawMeshTextCode(surface, face, object, code, pb.Height, x0, y0)
-	}
-	var textImage image.Image = surface.Raster()
-	if textImage == nil || textImage.Bounds().Empty() {
-		return false
-	}
-	box := models.StBox{X: x0, Y: pb.Height - y1, Width: width, Height: height}
-	matrix := imagelayout.Matrix(box, textImage, models.CTM{width, 0, 0, height, 0, 0}, pb.Height)
-	textImage = imageWithClipAlpha(textImage, clip, matrix, graphicOpacity(object.Alpha))
-	matrix = ctx.CurrentMatrix().Mul(matrix)
-	if !finiteMatrix(matrix) {
-		return false
-	}
-	ctx.RenderImage(textImage, matrix)
-	return true
-}
-
-func (p *Document) drawMeshTextCode(ctx DrawContext, face FontFace, object models.TextObject, code models.TextCode, pageHeight, originX, originY float64) {
-	if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textlayout.DirectionsZero(object) {
-		if value := textlayout.VisibleText(code.Value); value != "" {
-			p.drawMeshTextGlyph(ctx, face, object, value, code.X, code.Y, pageHeight, originX, originY)
-		}
-		return
-	}
-
-	posX, posY := code.X, code.Y
-	runes := []rune(code.Value)
-	for i, r := range runes {
-		if i > 0 {
-			deltaX, deltaY := textlayout.Advance(face.TextWidth(string(runes[i-1])), object, code, i-1)
-			posX += deltaX
-			posY += deltaY
-		}
-		if textlayout.RenderableRune(r) {
-			p.drawMeshTextGlyph(ctx, face, object, string(r), posX, posY, pageHeight, originX, originY)
-		}
-	}
-}
-
-// drawMeshTextGlyph 在离屏画布上绘制一个字形；originX/originY 是离屏画布原点
-// 在页面画布（自底向上）坐标中的位置，字形位置需整体减去它。
-func (p *Document) drawMeshTextGlyph(ctx DrawContext, face FontFace, object models.TextObject, value string, x, y, pageHeight, originX, originY float64) {
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(pageHeight) ||
-		!object.Boundary.IsFinite() || !object.CTM.IsFinite() {
-		return
-	}
-	path := face.DirectPath(value)
-	if path == nil {
-		path = face.ToPath(value)
-	}
-	if path == nil || path.Empty() {
-		return
-	}
-	if object.CTM != nil {
-		x, y = object.CTM.Transform(x, y)
-	}
-	if !finiteFloat(x) || !finiteFloat(y) || !finiteFloat(x+object.Boundary.X) || !finiteFloat(pageHeight-(y+object.Boundary.Y)) {
-		return
-	}
-	matrix := geom.Identity.Translate(x+object.Boundary.X-originX, pageHeight-(y+object.Boundary.Y)-originY)
-	// 与原生文字分支一致：CTM 的线性部分整体参与变换，倾斜和缩放都不能丢。
-	if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
-		matrix = matrix.Mul(*m)
-	}
-	if direction := textlayout.CharDirection(object); direction != 0 {
-		matrix = matrix.Rotate(-direction)
-	}
-	matrix = matrix.Scale(textlayout.HScale(object), 1)
-	if !finiteMatrix(matrix) {
-		return
-	}
-	// path 可能是字体轮廓缓存里的共享对象，Path.Transform 原地修改；不复制
-	// 会把平移累积到缓存上，同一字形在后续页面/重渲染时越偏越远。
-	ctx.DrawPath(0, 0, path.Copy().Transform(matrix))
-}
-
 // textFillDisabled 判断文字对象是否明确禁止填充。
 func textFillDisabled(object models.TextObject) bool {
 	return !object.Fill.Value(true)
 }
 
 func (p *Document) drawTextCode(ctx DrawContext, faces *textFaces, object models.TextObject, code models.TextCode, pageHeight float64, parentCTM *models.CTM, codePosition int) {
-	if len(object.CGTransform) == 0 && len(code.DeltaX) == 0 && len(code.DeltaY) == 0 && textlayout.DirectionsZero(object) {
-		if value := textlayout.VisibleText(code.Value); value != "" {
-			p.drawTextGlyph(ctx, faces, object, value, code.X, code.Y, pageHeight, parentCTM)
-		}
-		return
-	}
-
-	// 字形宽度与字形映射与填充无关，统一使用共享字体面。
-	face := faces.base
-	runes := []rune(code.Value)
-	glyphs := textlayout.CodeGlyphs(face, runes, object.CGTransform, codePosition)
-	if len(glyphs) == 0 {
-		return
-	}
-	glyphDeltas := textlayout.UsesGlyphDeltas(code, glyphs)
-
-	// 将可正常整形的连续字形合并为一个文本串一次性绘制。逐字调用 DrawText 会让
-	// PDF 中每个字成为独立定位的文本块，提取器会把这些文本块之间的间隙当成空格，
-	// 导致中文提取结果每个字之间插入空格。私有区字形无法参与正常整形，单独绘制并
-	// 断开当前文本串。
-	posX, posY := code.X, code.Y
-	var run []rune
-	runX, runY := posX, posY
-	var semanticRun []rune
-	semanticX, semanticY := posX, posY
-	flushRun := func() {
-		if len(run) == 0 {
+	textlayout.WalkRuns(faces.base, object, code, codePosition, func(run textlayout.Run) {
+		if run.SemanticOnly {
+			p.drawSemanticText(ctx, faces.base, object, run.Value, run.X, run.Y, pageHeight, parentCTM)
 			return
 		}
-		p.drawTextGlyph(ctx, faces, object, string(run), runX, runY, pageHeight, parentCTM)
-		run = run[:0]
-	}
-	flushSemanticRun := func() {
-		if len(semanticRun) == 0 {
-			return
-		}
-		p.drawSemanticText(ctx, faces.base, object, string(semanticRun), semanticX, semanticY, pageHeight, parentCTM)
-		semanticRun = semanticRun[:0]
-	}
-	for i, glyph := range glyphs {
-		if i > 0 {
-			prevWidth := face.TextWidth(glyphs[i-1].Value)
-			glyphWidth := 0.0
-			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-				glyphWidth = prevWidth
-			}
-			deltaX, deltaY := textlayout.PositionedAdvance(glyphWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
-			posX += deltaX
-			posY += deltaY
-			if len(run) > 0 {
-				naturalX := prevWidth * textlayout.HScale(object)
-				if textlayout.NeedsRunBreak(object, deltaX, deltaY, naturalX) {
-					flushRun()
-				}
-			}
-		}
-		// 控制字符没有可见字形，绘制时会被字体替换成 .notdef 方块；
-		// 这里跳过绘制但仍按前面的增量推进，保持后续字形位置不变。
-		if !textlayout.Renderable(glyph.Value) {
-			continue
-		}
-		if fontrepair.ContainsGlyphRune(glyph.Value) {
-			flushRun()
-			p.drawTextGlyph(ctx, faces, object, glyph.Value, posX, posY, pageHeight, parentCTM)
-			if glyph.Semantic != "" {
-				if len(semanticRun) == 0 {
-					semanticX, semanticY = posX, posY
-				}
-				semanticRun = append(semanticRun, []rune(glyph.Semantic)...)
-			}
-			continue
-		}
-		flushSemanticRun()
-		if len(run) == 0 {
-			runX, runY = posX, posY
-		}
-		run = append(run, []rune(glyph.Value)...)
-	}
-	flushSemanticRun()
-	flushRun()
+		p.drawTextGlyph(ctx, faces, object, run.Value, run.X, run.Y, pageHeight, parentCTM)
+	})
 }
 
 type invisibleTextShaper interface {
@@ -487,7 +293,7 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 	// 只要需要描边就必须走路径绘制：Canvas 的原生文字接口用 DefaultStyle
 	// 只复制 Fill（canvas/text.go 的 renderLineTo），FontFace 也没有描边字段，
 	// 因此 DrawText 会静默丢弃描边。空心字与"填充+描边"文字都受此限制。
-	if object.Stroke {
+	if object.Stroke || faces.forcePath {
 		if path := face.ToPath(value); path != nil && !path.Empty() {
 			p.drawTextPath(ctx, faces, path, object, x, y, pageHeight, parentCTM, hScale)
 			return
@@ -624,6 +430,7 @@ func (p *Document) drawTextPath(ctx DrawContext, faces *textFaces, path *geom.Pa
 		if m := textlayout.CTMLinearMatrix(object.CTM); m != nil {
 			ctx.Transform(*m)
 		}
+		ctx.Rotate(-textlayout.CharDirection(object))
 		ctx.Scale(hScale, 1)
 		p.drawTextOutline(ctx, path, faces.clip, object)
 		ctx.Pop()

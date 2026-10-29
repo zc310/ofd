@@ -7,7 +7,6 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
-	textlayout "github.com/zc310/ofd/internal/render/layout/text"
 	"github.com/zc310/ofd/internal/render/paint"
 	"github.com/zc310/ofd/internal/render/pathbuild"
 	"github.com/zc310/ofd/pkg/spec"
@@ -265,76 +264,6 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 			result = region
 		} else {
 			result = result.And(region)
-		}
-	}
-	return result
-}
-
-// buildTextClipPath 把文字裁剪区转成字形轮廓区域。字形轮廓以基线左端为原点、
-// y 轴向上，OFD 的文字原点和路径数据则使用 y 向下的对象坐标。
-// 基线原点经区域 CTM 后加 box 偏移并翻转 y；轮廓通过 textlayout.CTMLinearMatrix
-// 转换 CTM 的线性部分，保持画布中 y 向上的字形方向。
-//
-// 字体缺失、字号非法或无法取得轮廓时返回 nil，由调用方按“该区域不可用”处理。
-func (p *Document) buildTextClipPath(text *models.CtText, areaCTM models.CTM, box models.StBox, pageHeight float64) *geom.Path {
-	if text == nil || p.fonts == nil || !text.Boundary.IsFinite() || !finiteFloat(text.Size) || text.Size <= 0 {
-		return nil
-	}
-	family, err := p.fonts.LoadFont(text.Font)
-	if err != nil || family == nil {
-		return nil
-	}
-	// 与文字绘制一致：同一字体族的整形与取轮廓必须串行。
-	fontLock := p.fonts.RenderLock(family)
-	fontLock.Lock()
-	defer fontLock.Unlock()
-
-	object := models.TextObject{CtText: *text}
-	face := p.fonts.FaceObject(family, object, nil)
-	if face == nil {
-		return nil
-	}
-	hScale := textlayout.HScale(object)
-	if !finiteFloat(hScale) {
-		return nil
-	}
-
-	var result *geom.Path
-	for _, code := range text.TextCode {
-		if code.Value == "" {
-			continue
-		}
-		outline := face.DirectPath(code.Value)
-		if outline == nil {
-			outline = face.ToPath(code.Value)
-		}
-		if outline == nil || outline.Empty() {
-			continue
-		}
-		originX := code.X + text.Boundary.X
-		originY := code.Y + text.Boundary.Y
-		// 字形轮廓与画布都是 y 向上，不能对每个轮廓点套用 OFD 路径分支的
-		// pageHeight-(y+box.Y)，否则字形会上下颠倒。与 drawTextPath 一致，
-		// 只将基线原点从 OFD 的 y 向下坐标转换到画布坐标，再应用转换后的
-		// CTM 线性部分和 hScale。
-		ox, oy := areaCTM.TransformPoint(models.StPos{X: originX, Y: originY})
-		matrix := geom.Identity.Translate(ox+box.X, pageHeight-(oy+box.Y))
-		if m := textlayout.CTMLinearMatrix(&areaCTM); m != nil {
-			matrix = matrix.Mul(*m)
-		}
-		matrix = matrix.Scale(hScale, 1)
-		if !finiteMatrix(matrix) {
-			continue
-		}
-		region := outline.Copy().Transform(matrix)
-		if region == nil || region.Empty() {
-			continue
-		}
-		if result == nil {
-			result = region
-		} else {
-			// 同一区域内多个 TextCode 是并集关系。
-			result = result.Or(region)
 		}
 	}
 	return result

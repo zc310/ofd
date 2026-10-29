@@ -80,7 +80,11 @@ func localTextClip(ctx DrawContext, clip *geom.Path) *geom.Path {
 	if !finiteMatrix(matrix) || geom.Equal(matrix.Det(), 0) {
 		return &geom.Path{}
 	}
-	return clip.Copy().Transform(matrix.Inv())
+	inverse := matrix.Inv()
+	if !finiteMatrix(inverse) {
+		return &geom.Path{}
+	}
+	return clip.Copy().Transform(inverse)
 }
 
 func (p *Document) drawTextOutline(ctx DrawContext, path, clip *geom.Path, object models.TextObject) {

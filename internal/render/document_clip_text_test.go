@@ -1,8 +1,10 @@
 package render
 
 import (
+	"errors"
 	"image"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -65,8 +67,11 @@ func clipsInkBox(t *testing.T, img *image.RGBA, po *models.PathObject, dpi float
 func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *models.CtText, *image.RGBA, float64) {
 	t.Helper()
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/clips.ofd"))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		t.Skipf("样例不可用: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ofd.Close() })
 	doc := ofd.Documents[0]
@@ -75,7 +80,9 @@ func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *mod
 	if err != nil {
 		t.Fatal(err)
 	}
-	surface, err := NewDocument(canvas.White, doc).Page(page)
+	renderDoc := NewDocument(canvas.White, doc)
+	t.Cleanup(renderDoc.Close)
+	surface, err := renderDoc.Page(page)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,8 +196,11 @@ func TestBuildTextClipPathDoesNotMutateCachedOutline(t *testing.T) {
 	}
 	defer UnregisterFallbackFont(t.Name())
 	ofd, err := parser.NewOFD(filepath.Join("..", "..", "testdata", "ofd-creator/clips.ofd"))
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		t.Skipf("样例不可用: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
 	}
 	defer ofd.Close()
 

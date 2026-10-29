@@ -43,6 +43,8 @@ type textFaces struct {
 	native bool
 	// clip 位于设备空间，不随 run 内部的 Translate/Transform 改变。
 	clip *geom.Path
+	// forcePath 保留描边文字的轮廓填充，描边区域在填充之后独立绘制。
+	forcePath bool
 }
 
 // newTextFaces 建立按 run 提供字体面的辅助对象。fill 为 Boundary 空间的填充色。
