@@ -18,21 +18,36 @@ func (r *adaptiveRasterizer) RenderClippedText(text *canvas.Text, matrix canvas.
 	}
 	clip = clip.Copy().Transform(matrix)
 	// 先按实际设备分辨率展开文字，保留普通文字的设备像素对齐。
-	text.RenderTo(newRasterTextClip(r, clip), matrix, r.resolution)
+	newRasterTextClip(r, clip).render(text, matrix)
 }
 
 type rasterTextClip struct {
 	*adaptiveRasterizer
 
-	clip      *canvas.Path
-	bounds    canvas.Rect
-	rectangle bool
-	mask      *textClipMask
+	clip       *canvas.Path
+	bounds     canvas.Rect
+	rectangle  bool
+	mask       *textClipMask
+	textBounds canvas.Rect
 }
 
 func newRasterTextClip(r *adaptiveRasterizer, clip *canvas.Path) *rasterTextClip {
 	bounds := clip.Bounds()
 	return &rasterTextClip{adaptiveRasterizer: r, clip: clip, bounds: bounds, rectangle: geom.ClipContainsRect(clip, bounds)}
+}
+
+func (r *rasterTextClip) render(text *canvas.Text, matrix canvas.Matrix) {
+	spans := 0
+	text.WalkSpans(func(_, _ float64, _ canvas.TextSpan) { spans++ })
+	if _, ok := r.fastTarget(); !ok || spans < 2 {
+		text.RenderTo(r, matrix, r.resolution)
+		return
+	}
+	// 按设备分辨率只展开一次，收集整段实际轮廓范围后再回放，避免逐 span 扩容掩码。
+	paths := canvas.New(0, 0)
+	text.RenderTo(paths, matrix, r.resolution)
+	r.textBounds = r.bounds.And(paths.Bounds())
+	paths.RenderTo(r)
 }
 
 func (r *rasterTextClip) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
@@ -51,6 +66,12 @@ func (r *rasterTextClip) RenderPath(path *canvas.Path, style canvas.Style, matri
 		if target, ok := r.fastTarget(); ok && (style.Fill.IsColor() || style.Fill.IsGradient()) {
 			visible := r.bounds.And(bounds)
 			if r.mask == nil || !r.mask.bounds.Contains(visible) {
+				if !r.textBounds.Empty() {
+					visible = visible.Add(r.textBounds)
+				}
+				if r.mask != nil {
+					visible = r.mask.bounds.Add(visible)
+				}
 				r.mask = newTextClipMask(target, r.clip, visible, r.rectangle, r.resolution)
 			}
 			r.mask.render(path, style, matrix, r.resolution)
@@ -82,7 +103,7 @@ func (r *rasterTextClip) RenderClippedText(text *canvas.Text, matrix canvas.Matr
 		return
 	}
 	clip = geom.IntersectClips(r.clip, clip.Copy().Transform(matrix))
-	text.RenderTo(newRasterTextClip(r.adaptiveRasterizer, clip), matrix, r.resolution)
+	newRasterTextClip(r.adaptiveRasterizer, clip).render(text, matrix)
 }
 
 func (r *rasterTextClip) RenderImage(img image.Image, matrix canvas.Matrix) {
@@ -116,7 +137,16 @@ func newTextClipMask(target *image.RGBA, clip *canvas.Path, bounds canvas.Rect, 
 	result.spanner = scanx.NewImgSpanner(target)
 	result.spanner.Op = draw.Over
 	var spanner scanx.Spanner = result.spanner
-	if !rectangle || x0 != math.Round(x0) || y0 != math.Round(y0) || x1 != math.Round(x1) || y1 != math.Round(y1) {
+	// 字形范围的小数边界由字形扫描器保留覆盖率；只有裁剪边界需要 Alpha 掩码。
+	// GB/T 33190—2016 §8.4：快速路径仍须精确限制裁剪区外的绘制。
+	aligned := false
+	if rectangle {
+		clipBounds := clip.Bounds()
+		cx0, cy0 := clipBounds.X0*dpmm, float64(h)-clipBounds.Y1*dpmm
+		cx1, cy1 := clipBounds.X1*dpmm, float64(h)-clipBounds.Y0*dpmm
+		aligned = cx0 == math.Round(cx0) && cy0 == math.Round(cy0) && cx1 == math.Round(cx1) && cy1 == math.Round(cy1)
+	}
+	if !aligned {
 		surface := newAlphaMaskSurface(float64(rect.Dx())/dpmm, float64(rect.Dy())/dpmm, geom.Resolution(resolution))
 		surface.SetFillColor(color.White)
 		surface.DrawPath(-float64(rect.Min.X)/dpmm, -float64(h-rect.Max.Y)/dpmm, clip)

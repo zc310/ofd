@@ -165,6 +165,43 @@ func TestTextClipMaskKeepsFractionalCoverageAndPageBounds(t *testing.T) {
 	}
 }
 
+// 像素对齐的是裁剪矩形，字形边缘仍保留原本的分数覆盖率。
+func TestTextClipMaskAlignedRectangleKeepsFractionalGlyphEdges(t *testing.T) {
+	resolution := canvas.DPMM(5)
+	clip := canvas.Rectangle(12, 10).Translate(4, 3)
+	path := canvas.Circle(5.13).Translate(8.17, 8.23)
+	style := canvas.DefaultStyle
+	style.Fill = canvas.Paint{Color: color.RGBA{R: 128, A: 128}}
+	want, got := image.NewRGBA(image.Rect(0, 0, 120, 100)), image.NewRGBA(image.Rect(0, 0, 120, 100))
+	plain := rasterizer.FromImage(want, resolution, canvas.DefaultColorSpace)
+	plain.RenderPath(path, style, canvas.Identity)
+	plain.Close()
+	backend := &adaptiveRasterizer{Rasterizer: rasterizer.FromImage(got, resolution, canvas.DefaultColorSpace), resolution: resolution, fastImages: true}
+	newRasterTextClip(backend, clip).RenderPath(path, style, canvas.Identity)
+	backend.Close()
+	ink, fractional, removed := 0, 0, 0
+	for y := range 100 {
+		for x := range 120 {
+			expected := want.RGBAAt(x, y)
+			if x < 20 || x >= 80 || y < 35 || y >= 85 {
+				removed += int(expected.A)
+				expected = color.RGBA{}
+			} else {
+				ink += int(expected.A)
+				if expected.A > 0 && expected.A < 128 {
+					fractional++
+				}
+			}
+			if pixel := got.RGBAAt(x, y); pixel != expected {
+				t.Fatalf("像素(%d,%d)=%v，期望%v", x, y, pixel, expected)
+			}
+		}
+	}
+	if ink == 0 || fractional == 0 || removed == 0 {
+		t.Fatalf("样例未覆盖可见、抗锯齿和被裁剪部分：%d/%d/%d", ink, fractional, removed)
+	}
+}
+
 func TestRasterBackendRecordsNativeTextClip(t *testing.T) {
 	family := pdfTextTestFamily(t)
 	line := canvas.NewTextLine(family.Face(24, canvas.Black), "OOOO", canvas.Left)
@@ -190,14 +227,76 @@ func TestTextClipMaskLimitedToSpanBounds(t *testing.T) {
 	defer backend.Close()
 	clip := canvas.Rectangle(240, 320).Append(canvas.Circle(10).Translate(120, 160)).Settle(canvas.EvenOdd)
 	renderer := newRasterTextClip(backend, clip)
-	for _, x := range []float64{2, 40} {
+	path := canvas.Rectangle(12, 4).Translate(2, 20)
+	renderer.RenderPath(path, canvas.DefaultStyle, canvas.Identity)
+	if renderer.mask == nil || renderer.mask.bounds != path.Bounds() {
+		t.Fatalf("掩码没有限制在当前文字范围内: %v", renderer.mask)
+	}
+}
+
+func TestTextClipMaskGrowsAndReusesEarlierSpanBounds(t *testing.T) {
+	resolution := canvas.DPMM(5)
+	target := image.NewRGBA(image.Rect(0, 0, 1200, 1600))
+	backend := &adaptiveRasterizer{Rasterizer: rasterizer.FromImage(target, resolution, canvas.DefaultColorSpace), resolution: resolution, fastImages: true}
+	defer backend.Close()
+	clip := canvas.Rectangle(240, 320).Append(canvas.Circle(10).Translate(120, 160)).Settle(canvas.EvenOdd)
+	renderer := newRasterTextClip(backend, clip)
+	var expanded *textClipMask
+	for i, x := range []float64{2, 40, 2, 20, 40} {
 		path := canvas.Rectangle(12, 4).Translate(x, 20)
 		renderer.RenderPath(path, canvas.DefaultStyle, canvas.Identity)
-		if renderer.mask == nil || renderer.mask.bounds != path.Bounds() {
-			t.Fatalf("掩码没有限制在当前文字范围内: %v", renderer.mask)
+		if renderer.mask == nil || !renderer.mask.bounds.Contains(path.Bounds()) {
+			t.Fatal("掩码未包含当前 span")
+		}
+		if i == 1 {
+			expanded = renderer.mask
+			if expanded.bounds != (canvas.Rect{X0: 2, Y0: 20, X1: 52, Y1: 24}) {
+				t.Fatalf("掩码没有累积已有文字范围: %v", expanded.bounds)
+			}
+		} else if i > 1 && renderer.mask != expanded {
+			t.Fatal("返回已覆盖的 span 时不应重建掩码")
 		}
 		if target.RGBAAt(int((x+1)*5), 1600-21*5).A != 255 {
 			t.Fatal("后续 span 超出首个掩码范围时丢失")
 		}
+	}
+}
+
+func TestTextClipMaskReusesWholeTextOutlineBounds(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	rich := canvas.NewRichText(family.Face(20, canvas.Black))
+	for i := range 8 {
+		fill := canvas.Black
+		if i%2 == 0 {
+			fill = canvas.Red
+		}
+		rich.WriteFace(family.Face(20, fill), "OO ")
+	}
+	text := rich.ToText(80, 0, canvas.Left, canvas.Top, nil)
+	resolution := canvas.DPMM(5)
+	for _, matrix := range []canvas.Matrix{
+		canvas.Identity.Translate(5.37, 45.13),
+		canvas.Identity.Translate(2.37, 30.13).Rotate(15),
+	} {
+		target := image.NewRGBA(image.Rect(0, 0, 1200, 1600))
+		backend := &adaptiveRasterizer{Rasterizer: rasterizer.FromImage(target, resolution, canvas.DefaultColorSpace), resolution: resolution, fastImages: true}
+		clip := canvas.Rectangle(240, 320).Append(canvas.Circle(4).Translate(15, 40)).Settle(canvas.EvenOdd)
+		renderer := newRasterTextClip(backend, clip)
+		renderer.render(text, matrix)
+		mask := renderer.mask
+		if mask == nil || mask.bounds != renderer.textBounds || mask.bounds.W() >= 100 || mask.bounds.H() >= 100 {
+			t.Fatalf("掩码应只覆盖整段文字轮廓与裁剪的交集: %+v", mask)
+		}
+		before := append([]byte(nil), target.Pix...)
+		clear(target.Pix)
+		// 再次从首个 span 回放，每个 span 都应复用已有掩码，且绘制结果不变。
+		text.RenderTo(renderer, matrix, resolution)
+		if renderer.mask != mask {
+			t.Fatal("整段文字的掩码仍被逐 span 重建")
+		}
+		if !bytes.Equal(before, target.Pix) {
+			t.Fatal("收集整段轮廓改变了文字的像素对齐或绘制顺序")
+		}
+		backend.Close()
 	}
 }

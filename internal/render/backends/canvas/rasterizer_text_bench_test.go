@@ -31,6 +31,61 @@ func BenchmarkTextClipMaskBounds(b *testing.B) {
 	}
 }
 
+// 裁剪边界已对齐像素时，字形范围的小数边界不应迫使矩形裁剪生成 Alpha 掩码。
+func BenchmarkTextClipMaskRectangle(b *testing.B) {
+	resolution := canvas.DPMM(5)
+	target := image.NewRGBA(image.Rect(0, 0, 1200, 1600))
+	path := canvas.Circle(5.13).Translate(8.17, 8.23)
+	for _, tc := range []struct {
+		name string
+		clip *canvas.Path
+	}{
+		{"aligned", canvas.Rectangle(12, 10).Translate(4, 3)},
+		{"fractional", canvas.Rectangle(12, 10).Translate(4.13, 3.17)},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			bounds := tc.clip.Bounds().And(path.Bounds())
+			b.ReportAllocs()
+			for b.Loop() {
+				mask := newTextClipMask(target, tc.clip, bounds, true, resolution)
+				mask.render(path, canvas.DefaultStyle, canvas.Identity, resolution)
+			}
+		})
+	}
+}
+
+// 分组只需要容纳已有 span，不应为多 span 分组额外构造一个随后丢弃的单 span 文本。
+func BenchmarkClippedTextFragment(b *testing.B) {
+	family := canvas.NewFontFamily("fragment-benchmark")
+	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		b.Fatal(err)
+	}
+	rich := canvas.NewRichText(family.Face(20, canvas.Black))
+	for range 16 {
+		rich.WriteFace(family.Face(20, canvas.Black), "OO")
+	}
+	line := rich.ToText(0, 0, canvas.Left, canvas.Top, nil)
+	var spans []canvas.TextSpan
+	line.WalkLines(func(_ float64, values []canvas.TextSpan) { spans = values })
+	for _, tc := range []struct {
+		name  string
+		count int
+	}{
+		{"single", 1},
+		{"pair", 2},
+		{"many", 16},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := clippedTextFragment(line, spans[:tc.count]); !ok {
+					b.Fatal("分组构造失败")
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkClippedTextRaster(b *testing.B) {
 	family := canvas.NewFontFamily("clip-benchmark")
 	if err := family.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {

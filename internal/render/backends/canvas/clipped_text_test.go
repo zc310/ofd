@@ -9,6 +9,7 @@ import (
 
 	"github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/svg"
+	"github.com/zc310/font"
 	"github.com/zc310/ofd/internal/testutil"
 	"golang.org/x/image/font/gofont/goregular"
 )
@@ -114,6 +115,139 @@ func TestClippedTextFallsBackOnlyForEmptyOutlineSpan(t *testing.T) {
 		for _, value := range rasterize(semanticOnly, canvas.DPMM(5), canvas.DefaultColorSpace, nil).Pix {
 			if value != 0 {
 				t.Fatal("空轮廓语义 span 留下了可见像素")
+			}
+		}
+	}
+}
+
+// 混合语义字体不能拆散相邻可见 span，否则连续下划线会出现抗锯齿接缝。
+func TestClippedTextMixedEmptyOutlineKeepsContinuousDecorations(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	semanticFamily := canvas.NewFontFamily(t.Name() + "-semantic")
+	if err := semanticFamily.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	semantic := semanticFamily.Face(20, canvas.Paint{})
+	semantic.Font.Head.XMin, semantic.Font.Head.XMax, semantic.Font.Head.YMin, semantic.Font.Head.YMax = 0, 0, 0, 0
+	rich := canvas.NewRichText(family.Face(20, canvas.Black, canvas.FontUnderline))
+	rich.WriteString("LEFT")
+	rich.WriteFace(family.Face(20, canvas.Black, canvas.FontUnderline), "RIGHT")
+	rich.WriteFace(semantic, "SECRET")
+	rich.WriteFace(family.Face(20, canvas.Black, canvas.FontUnderline), "TAIL")
+	line := rich.ToText(100, 0, canvas.Left, canvas.Top, nil)
+	clip := canvas.Rectangle(80, 40).Translate(-1, -30)
+	for _, mode := range []canvas.WritingMode{canvas.HorizontalTB, canvas.VerticalRL} {
+		line.WritingMode = mode
+		matrix := canvas.Identity.Translate(7.37, 40.13)
+		want := canvas.New(100, 60)
+		want.RenderClippedText(line, matrix, clip)
+		capture := &clippedSpanCapture{Canvas: canvas.New(100, 60)}
+		backend := &canvasBackend{ctx: canvas.NewContext(capture), vector: true}
+		backend.Transform(matrix)
+		if !backend.DrawClippedTextLine(line, clip) || len(capture.calls) != 3 {
+			t.Fatalf("应保留连续可见 span、语义 span 和后续可见 span 三组: %+v", capture.calls)
+		}
+		capture.calls[0].text.WalkLines(func(_ float64, spans []canvas.TextSpan) {
+			if len(spans) != 2 || spans[0].Text != "LEFT" || spans[1].Text != "RIGHT" {
+				t.Fatal("相邻可见 span 被拆散或重排")
+			}
+		})
+		if got, expected := rasterize(capture.Canvas, canvas.DPMM(5), canvas.DefaultColorSpace, nil), rasterize(want, canvas.DPMM(5), canvas.DefaultColorSpace, nil); !bytes.Equal(got.Pix, expected.Pix) {
+			t.Fatalf("书写模式 %v 的跨 span 装饰线或字形发生变化", mode)
+		}
+		if mode != canvas.HorizontalTB {
+			continue
+		}
+		data := renderPDFText(t, 100, 60, func(r pdfTextRenderer) { capture.RenderTo(r) })
+		if tool, err := exec.LookPath("pdftoppm"); err == nil {
+			reference := renderPDFText(t, 100, 60, func(r pdfTextRenderer) { want.RenderTo(r) })
+			got, err := testutil.RasterizePDFPages(t.Context(), tool, data, 150)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected, err := testutil.RasterizePDFPages(t.Context(), tool, reference, 150)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got[0].Pix, expected[0].Pix) {
+				t.Fatal("PDF 中的跨 span 装饰线或可见字形发生变化")
+			}
+		}
+		if tool, err := exec.LookPath("pdftotext"); err == nil {
+			command := exec.CommandContext(t.Context(), tool, "-", "-")
+			command.Stdin = bytes.NewReader(data)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, word := range []string{"LEFT", "RIGHT", "SECRET", "TAIL"} {
+				if strings.Count(string(output), word) != 1 {
+					t.Fatalf("PDF 文字重复或丢失: %q", output)
+				}
+			}
+		}
+	}
+}
+
+// 多行分组重新设置基线后，旋转、缩放以及语义 span 的处理都不能改变可见文字。
+func TestClippedTextFragmentsPreserveMultilineTransforms(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	semanticFamily := canvas.NewFontFamily(t.Name() + "-semantic")
+	if err := semanticFamily.LoadFont(goregular.TTF, 0, canvas.FontRegular); err != nil {
+		t.Fatal(err)
+	}
+	// 与带 CTM 的 OFD 字体面一致，精确定位文字不再单独吸附设备像素。
+	semantic := semanticFamily.Face(20, canvas.Paint{}, font.NoHinting)
+	semantic.Font.Head.XMin, semantic.Font.Head.XMax, semantic.Font.Head.YMin, semantic.Font.Head.YMax = 0, 0, 0, 0
+	rich := canvas.NewRichText(family.Face(20, canvas.Black, canvas.FontUnderline, font.NoHinting))
+	for _, words := range [][3]string{{"TOP", " LINE", "HIDDEN\n"}, {"LOW", " ROW", "TEXT"}} {
+		rich.WriteFace(family.Face(20, canvas.Black, canvas.FontUnderline, font.NoHinting), words[0])
+		rich.WriteFace(family.Face(20, canvas.Black, canvas.FontUnderline, font.NoHinting), words[1])
+		rich.WriteFace(semantic, words[2])
+	}
+	line := rich.ToText(0, 0, canvas.Left, canvas.Top, nil)
+	if line.Lines() != 2 {
+		t.Fatalf("样例应有两行，实际 %d 行", line.Lines())
+	}
+	clip := canvas.Rectangle(60, 35).Translate(-2, -30)
+	for _, mode := range []canvas.WritingMode{canvas.HorizontalTB, canvas.VerticalRL} {
+		line.WritingMode = mode
+		for _, matrix := range []canvas.Matrix{
+			canvas.Identity.Translate(20, 50).Scale(.95, 1.1),
+			canvas.Identity.Translate(20, 50).Rotate(12),
+		} {
+			want := canvas.New(100, 80)
+			want.RenderClippedText(line, matrix, clip)
+			expected := rasterize(want, canvas.DPMM(5), canvas.DefaultColorSpace, nil)
+			ink := 0
+			for _, value := range expected.Pix {
+				ink += int(value)
+			}
+			if ink == 0 {
+				t.Fatalf("模式 %v，矩阵 %v 的样例没有可见文字", mode, matrix)
+			}
+			for _, vector := range []bool{false, true} {
+				page := canvas.New(100, 80)
+				backend := &canvasBackend{ctx: canvas.NewContext(page), vector: vector}
+				backend.Transform(matrix)
+				if !backend.DrawClippedTextLine(line, clip) {
+					t.Fatal("多行混合字体不应整段回退")
+				}
+				got := rasterize(page, canvas.DPMM(5), canvas.DefaultColorSpace, nil)
+				if !bytes.Equal(got.Pix, expected.Pix) {
+					differing, maxDelta := 0, 0
+					for i, value := range got.Pix {
+						delta := int(value) - int(expected.Pix[i])
+						if delta < 0 {
+							delta = -delta
+						}
+						if delta != 0 {
+							differing++
+							maxDelta = max(maxDelta, delta)
+						}
+					}
+					t.Fatalf("模式 %v，矩阵 %v，vector=%v：分组改变了 %d 个通道，最大差 %d", mode, matrix, vector, differing, maxDelta)
+				}
 			}
 		}
 	}

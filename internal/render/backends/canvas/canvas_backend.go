@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 
 	"github.com/zc310/canvas"
 	cimage "github.com/zc310/canvas/image"
@@ -241,35 +242,104 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 		return true
 	}
 	// 空轮廓只承载语义，不能放进 MuPDF 会剔除零面积字形的裁剪区。
-	// 逐 span 保留位置、原始整形和绘制顺序，其他 span 继续使用原生裁剪。
+	// 连续可见 span 保留在同一组，延续跨 span 的装饰线合并；空轮廓单独保留语义。
+	type fragmentCall struct {
+		text     *canvas.Text
+		matrix   canvas.Matrix
+		semantic bool
+	}
+	var calls []fragmentCall
+	valid := true
 	line.WalkLines(func(y float64, spans []canvas.TextSpan) {
 		x := 0.0
 		if line.WritingMode != canvas.HorizontalTB {
 			x, y = -y, 0
 		}
-		for _, span := range spans {
-			if emptyOutline(span) {
+		for first := 0; first < len(spans); {
+			last := first + 1
+			semantic := emptyOutline(spans[first])
+			if !semantic {
+				for last < len(spans) && !emptyOutline(spans[last]) {
+					last++
+				}
+			}
+			group := spans[first:last]
+			first = last
+			if semantic {
 				if !b.vector {
 					continue
 				}
+				span := group[0]
 				face := *span.Face
 				face.Fill, face.Deco, face.FauxBold = canvas.Paint{}, nil, 0
 				span.Face = &face
+				group = []canvas.TextSpan{span}
 			}
-			// 单个空格提供一行一个 span 的容器，随后完整复用已有字形，避免重新整形。
-			fragment := canvas.NewTextLine(span.Face, " ", canvas.Left)
-			fragment.Text = span.Text
-			fragment.WritingMode, fragment.TextOrientation = line.WritingMode, line.TextOrientation
-			fragment.WalkLines(func(_ float64, target []canvas.TextSpan) { target[0] = span })
-			matrix := b.CurrentMatrix().Translate(x, y)
-			if emptyOutline(span) {
-				b.ctx.RenderText(fragment, matrix)
-			} else {
-				renderer.RenderClippedText(fragment, matrix, clip.Copy().Translate(-x, -y))
+			fragment, offset, ok := clippedTextFragment(line, group)
+			if !ok {
+				valid = false
+				return
 			}
+			calls = append(calls, fragmentCall{fragment, canvas.Identity.Translate(x, y).Mul(offset), semantic})
 		}
 	})
+	if !valid {
+		return false
+	}
+	for _, call := range calls {
+		matrix := b.CurrentMatrix().Mul(call.matrix)
+		if call.semantic {
+			b.ctx.RenderText(call.text, matrix)
+		} else {
+			renderer.RenderClippedText(call.text, matrix, clip.Copy().Transform(call.matrix.Inv()))
+		}
+	}
 	return true
+}
+
+// clippedTextFragment 构造可独立回放的一行，完整复用原 span 的位置、字形与方向。
+func clippedTextFragment(line *canvas.Text, spans []canvas.TextSpan) (*canvas.Text, canvas.Matrix, bool) {
+	var fragment *canvas.Text
+	if len(spans) == 1 {
+		fragment = canvas.NewTextLine(spans[0].Face, " ", canvas.Left)
+	} else {
+		rich := canvas.NewRichText(spans[0].Face)
+		for _, span := range spans {
+			// 独立字体面让占位字符保持相同的 span 数量，随后替换为原始整形结果。
+			face := *span.Face
+			rich.WriteFace(&face, "x")
+		}
+		fragment = rich.ToText(0, 0, canvas.Left, canvas.Top, nil)
+	}
+	if fragment.Lines() != 1 {
+		return nil, canvas.Identity, false
+	}
+	var content strings.Builder
+	length := 0
+	for _, span := range spans {
+		length += len(span.Text)
+	}
+	content.Grow(length)
+	for _, span := range spans {
+		content.WriteString(span.Text)
+	}
+	fragment.Text = content.String()
+	fragment.WritingMode, fragment.TextOrientation = line.WritingMode, line.TextOrientation
+	valid := false
+	offset := canvas.Identity
+	fragment.WalkLines(func(y float64, target []canvas.TextSpan) {
+		if len(target) != len(spans) {
+			return
+		}
+		copy(target, spans)
+		valid = true
+		if line.WritingMode == canvas.HorizontalTB {
+			offset = canvas.Identity.Translate(0, -y)
+		} else {
+			offset = canvas.Identity.Translate(y, 0)
+		}
+	})
+	return fragment, offset, valid
 }
 
 func (b *canvasBackend) DrawSemanticTextLine(run drawing.TextRun) {
