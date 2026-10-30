@@ -43,7 +43,7 @@ require (
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 	github.com/yuin/goldmark/v2 v2.1.11
-	github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210
+	github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6
 	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5

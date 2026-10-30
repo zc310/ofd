@@ -3,16 +3,29 @@ package converter
 import (
 	"bytes"
 	"image"
+	"image/color"
 	"image/draw"
 	"io"
 	"testing"
 
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/creator"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 func TestImageWriterRetainedPagesStayIndependent(t *testing.T) {
-	input := conversionOutputFixture(t, 2)
+	document := creator.Document{ID: "retained-images", PageSize: creator.PageSize{Width: 20, Height: 20},
+		Fonts: []creator.Font{{Name: "Go", Data: goregular.TTF}}}
+	for _, value := range []string{"First", "Second"} {
+		document.Pages = append(document.Pages, creator.Page{Items: []creator.Item{
+			creator.Text{X: 1, Y: 1, Width: 18, Height: 6, Font: "Go", Size: 3, Value: value},
+		}})
+	}
+	input, err := creator.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, thumbnail := range []int{0, 8} {
 		for _, withFile := range []bool{false, true} {
 			var images []image.Image
@@ -35,12 +48,26 @@ func TestImageWriterRetainedPagesStayIndependent(t *testing.T) {
 			if len(images) != 2 || images[0] == images[1] {
 				t.Fatalf("thumbnail=%d file=%v：回调未得到两张独立图像", thumbnail, withFile)
 			}
+			if bytes.Equal(snapshots[0].Pix, snapshots[1].Pix) {
+				t.Fatal("留存样例的两页内容应不同")
+			}
 			for i, img := range images {
 				got := image.NewRGBA(img.Bounds())
 				draw.Draw(got, got.Bounds(), img, img.Bounds().Min, draw.Src)
 				if !bytes.Equal(got.Pix, snapshots[i].Pix) {
 					t.Fatalf("thumbnail=%d file=%v：第 %d 页图像被后续渲染改写", thumbnail, withFile, i+1)
 				}
+			}
+			// 即使两个 image 指针不同，也不能共享同一底层像素缓冲。
+			second, ok := images[1].(draw.Image)
+			if !ok {
+				t.Fatalf("回调图像不可写: %T", images[1])
+			}
+			draw.Draw(second, second.Bounds(), image.NewUniform(color.Black), image.Point{}, draw.Src)
+			first := image.NewRGBA(images[0].Bounds())
+			draw.Draw(first, first.Bounds(), images[0], images[0].Bounds().Min, draw.Src)
+			if !bytes.Equal(first.Pix, snapshots[0].Pix) {
+				t.Fatalf("thumbnail=%d file=%v：两页共享像素存储", thumbnail, withFile)
 			}
 		}
 	}

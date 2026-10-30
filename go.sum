@@ -272,6 +272,8 @@ github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9 h1:QyrmFvpXqxhWUS2o9H
 github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9/go.mod h1:HLOSZN23JZC4J1hA8BUb1SrCOZ8EIja70IWZPCKI4Z8=
 github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210 h1:YxBeF9VYLYS4qVe/Z8cWhp1pAzKmZjzJ0MTtvbFWQf4=
 github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210/go.mod h1:HVlrzE+L9eKdfiVTDIYLzRiUj8r04IfT5gCfAfuygDk=
+github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6 h1:4mWvyT5cSDtUxMBGSVnXT2cQmZ9wAn7kuJNkBGXp7Cc=
+github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6/go.mod h1:HVlrzE+L9eKdfiVTDIYLzRiUj8r04IfT5gCfAfuygDk=
 github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8 h1:q2ox3jV6BbmBrJPgFEkCm3N4YqMTmXK6XOQkk3uh2dk=
 github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8/go.mod h1:VQ4YmoaUs4VZq2YFVyhUwm34XxSFoZA7ksaYOVuP5nI=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=

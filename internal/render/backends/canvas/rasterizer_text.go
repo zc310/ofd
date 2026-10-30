@@ -49,8 +49,9 @@ func (r *rasterTextClip) RenderPath(path *canvas.Path, style canvas.Style, matri
 			return
 		}
 		if target, ok := r.fastTarget(); ok && (style.Fill.IsColor() || style.Fill.IsGradient()) {
-			if r.mask == nil {
-				r.mask = newTextClipMask(target, r.clip, r.bounds, r.rectangle, r.resolution)
+			visible := r.bounds.And(bounds)
+			if r.mask == nil || !r.mask.bounds.Contains(visible) {
+				r.mask = newTextClipMask(target, r.clip, visible, r.rectangle, r.resolution)
 			}
 			r.mask.render(path, style, matrix, r.resolution)
 			return
@@ -92,10 +93,11 @@ func (r *rasterTextClip) RenderImage(img image.Image, matrix canvas.Matrix) {
 }
 
 // textClipMask 在同一次文字回放中复用扫描器与裁剪覆盖率，不再逐 span 求轮廓交集。
-// 掩码只覆盖裁剪与页面相交的像素范围；像素对齐的矩形直接使用 scanner scissor。
+// 掩码只覆盖文字、裁剪与页面相交的像素范围；像素对齐的矩形直接使用 scanner scissor。
 // GB/T 33190—2016 §8.4：裁剪区外不受绘制影响；掩码逐 span 应用，保留叠加顺序。
 type textClipMask struct {
 	height  int
+	bounds  canvas.Rect
 	spanner *scanx.ImgSpanner
 	scanner *scanx.Scanner
 }
@@ -107,7 +109,7 @@ func newTextClipMask(target *image.RGBA, clip *canvas.Path, bounds canvas.Rect, 
 	x1, y1 := bounds.X1*dpmm, float64(h)-bounds.Y0*dpmm
 	rect := image.Rect(int(math.Floor(max(0, min(float64(w), x0)))), int(math.Floor(max(0, min(float64(h), y0)))),
 		int(math.Ceil(max(0, min(float64(w), x1)))), int(math.Ceil(max(0, min(float64(h), y1)))))
-	result := &textClipMask{height: h}
+	result := &textClipMask{height: h, bounds: bounds}
 	if rect.Empty() {
 		return result
 	}

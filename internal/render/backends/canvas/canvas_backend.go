@@ -223,18 +223,52 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 	if !ok || line == nil {
 		return false
 	}
-	// 空轮廓字体仅承载语义。MuPDF 会剔除裁剪区内零面积的字形，
-	// 因此交回核心的空轮廓回退，按不可见文字保留位置与提取能力。
-	for _, font := range line.Fonts() {
-		if font.Head.XMin == font.Head.XMax && font.Head.YMin == font.Head.YMax {
-			return false
-		}
-	}
 	renderer, ok := b.ctx.Renderer.(canvas.ClippedTextRenderer)
 	if !ok {
 		return false
 	}
-	renderer.RenderClippedText(line, b.CurrentMatrix(), clip)
+	emptyOutline := func(span canvas.TextSpan) bool {
+		if !span.IsText() {
+			return false
+		}
+		font := span.Face.Font
+		return font.Head.XMin == font.Head.XMax && font.Head.YMin == font.Head.YMax
+	}
+	hasEmpty := false
+	line.WalkSpans(func(_, _ float64, span canvas.TextSpan) { hasEmpty = hasEmpty || emptyOutline(span) })
+	if !hasEmpty {
+		renderer.RenderClippedText(line, b.CurrentMatrix(), clip)
+		return true
+	}
+	// 空轮廓只承载语义，不能放进 MuPDF 会剔除零面积字形的裁剪区。
+	// 逐 span 保留位置、原始整形和绘制顺序，其他 span 继续使用原生裁剪。
+	line.WalkLines(func(y float64, spans []canvas.TextSpan) {
+		x := 0.0
+		if line.WritingMode != canvas.HorizontalTB {
+			x, y = -y, 0
+		}
+		for _, span := range spans {
+			if emptyOutline(span) {
+				if !b.vector {
+					continue
+				}
+				face := *span.Face
+				face.Fill, face.Deco, face.FauxBold = canvas.Paint{}, nil, 0
+				span.Face = &face
+			}
+			// 单个空格提供一行一个 span 的容器，随后完整复用已有字形，避免重新整形。
+			fragment := canvas.NewTextLine(span.Face, " ", canvas.Left)
+			fragment.Text = span.Text
+			fragment.WritingMode, fragment.TextOrientation = line.WritingMode, line.TextOrientation
+			fragment.WalkLines(func(_ float64, target []canvas.TextSpan) { target[0] = span })
+			matrix := b.CurrentMatrix().Translate(x, y)
+			if emptyOutline(span) {
+				b.ctx.RenderText(fragment, matrix)
+			} else {
+				renderer.RenderClippedText(fragment, matrix, clip.Copy().Translate(-x, -y))
+			}
+		}
+	})
 	return true
 }
 

@@ -182,3 +182,22 @@ func TestRasterBackendRecordsNativeTextClip(t *testing.T) {
 		t.Fatal("直接栅格与矢量回放的文字裁剪像素不一致")
 	}
 }
+
+func TestTextClipMaskLimitedToSpanBounds(t *testing.T) {
+	resolution := canvas.DPMM(5)
+	target := image.NewRGBA(image.Rect(0, 0, 1200, 1600))
+	backend := &adaptiveRasterizer{Rasterizer: rasterizer.FromImage(target, resolution, canvas.DefaultColorSpace), resolution: resolution, fastImages: true}
+	defer backend.Close()
+	clip := canvas.Rectangle(240, 320).Append(canvas.Circle(10).Translate(120, 160)).Settle(canvas.EvenOdd)
+	renderer := newRasterTextClip(backend, clip)
+	for _, x := range []float64{2, 40} {
+		path := canvas.Rectangle(12, 4).Translate(x, 20)
+		renderer.RenderPath(path, canvas.DefaultStyle, canvas.Identity)
+		if renderer.mask == nil || renderer.mask.bounds != path.Bounds() {
+			t.Fatalf("掩码没有限制在当前文字范围内: %v", renderer.mask)
+		}
+		if target.RGBAAt(int((x+1)*5), 1600-21*5).A != 255 {
+			t.Fatal("后续 span 超出首个掩码范围时丢失")
+		}
+	}
+}

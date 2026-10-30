@@ -23,31 +23,5 @@ func ClipContainsRect(clip *Path, bounds Rect) bool {
 	if clip == nil {
 		return true
 	}
-	if clip.Empty() || !clip.Bounds().Contains(bounds) {
-		return false
-	}
-	scanner := clip.Scanner()
-	var start, previous Point
-	edges, moves := 0, 0
-	closed := false
-	for scanner.Scan() {
-		end := scanner.End()
-		switch scanner.Cmd() {
-		case MoveToCmd:
-			moves++
-			start = end
-		case LineToCmd, CloseCmd:
-			if previous.X != end.X && previous.Y != end.Y {
-				return false
-			}
-			if previous != end {
-				edges++
-			}
-			closed = scanner.Cmd() == CloseCmd && end == start
-		default:
-			return false
-		}
-		previous = end
-	}
-	return moves == 1 && edges == 4 && closed
+	return clip.IsAxisAlignedRect() && clip.Bounds().Contains(bounds)
 }
