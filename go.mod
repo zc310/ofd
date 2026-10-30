@@ -11,7 +11,7 @@ require (
 	github.com/chromedp/cdproto v0.158.6
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
-	github.com/emmansun/gmsm v0.45.1
+	github.com/emmansun/gmsm v0.45.2
 	github.com/go-text/typesetting v0.3.5
 	github.com/goccy/go-json v0.12.0
 	github.com/h2non/filetype v1.1.3
@@ -42,8 +42,8 @@ require (
 	github.com/valyala/fasthttp v1.77.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
-	github.com/yuin/goldmark/v2 v2.1.9
-	github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9
+	github.com/yuin/goldmark/v2 v2.1.11
+	github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210
 	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.5
@@ -109,7 +109,7 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
-	github.com/tdewolff/minify/v2 v2.24.23 // indirect
+	github.com/tdewolff/minify/v2 v2.24.24 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
