@@ -16,4 +16,4 @@ package version
 //
 // 未经 Makefile 构建时（go run、go test、IDE 内运行）使用这个兜底值，因此它必须
 // 与 Makefile 的 VERSION 保持一致——TestVersionMatchesMakefile 会守住这一点。
-var Version = "0.1.6"
+var Version = "0.1.7" //nolint:gochecknoglobals // 构建时通过 -X 注入发行版本号。

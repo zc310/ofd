@@ -7,6 +7,10 @@
 
 ## 未发布
 
+## 已发布
+
+### v0.1.7
+
 - **阅读器打开入口统一为 Open**：将 `webreader.OpenWithOptions(data, options)` 和
   `webreader.OpenInput(input, options)` 改为 `webreader.Open(input, options)`。
   省略选项时使用 `webreader.Open(input)`；输入支持 OFD 字节、文件路径、`io.Reader`
@@ -35,8 +39,6 @@
   `*float64`。调用方将 `LineWidth: 0.5` 改为先声明 `width := 0.5`，再设置
   `LineWidth: &width`；`nil` 沿用标准默认值 0.353mm，指向 `0` 明确关闭边框。
   JSON/YAML 的 `border.line_width: 0` 也会写出零线宽，不再被当作省略。
-
-## 已发布
 
 ### v0.1.6
 

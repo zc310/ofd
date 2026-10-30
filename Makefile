@@ -53,7 +53,7 @@ BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
 #
 # 注入值不带 v 前缀：前缀只属于展示层（查看器的关于对话框），报告和 OFD 元数据
 # 里的版本字段沿用无前缀形式。
-VERSION ?= 0.1.6
+VERSION ?= 0.1.7
 VERSION_LDFLAG := -X github.com/zc310/ofd/internal/version.Version=$(VERSION)
 GO_LDFLAGS := -s -w
 GO_BUILD_FLAGS := -trimpath -ldflags "$(GO_LDFLAGS) $(VERSION_LDFLAG)"
