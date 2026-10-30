@@ -130,6 +130,14 @@ func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {
 
 func checkPDFExtractedText(t *testing.T, surface VectorSurface, want string) {
 	t.Helper()
+	text := extractPDFText(t, surface)
+	if !strings.Contains(text, want) {
+		t.Fatalf("PDF 文字提取=%q，期望 %q", text, want)
+	}
+}
+
+func extractPDFText(t *testing.T, surface VectorSurface) string {
+	t.Helper()
 	tool, err := exec.LookPath("pdftotext")
 	if err != nil {
 		t.Skip("缺少 pdftotext")
@@ -139,9 +147,10 @@ func checkPDFExtractedText(t *testing.T, surface VectorSurface, want string) {
 		t.Fatal(err)
 	}
 	text, err := exec.CommandContext(t.Context(), tool, "-raw", path, "-").CombinedOutput()
-	if err != nil || !strings.Contains(string(text), want) {
-		t.Fatalf("PDF 文字提取=%q, err=%v，期望 %q", text, err, want)
+	if err != nil {
+		t.Fatalf("PDF 文字提取失败：%v，输出=%q", err, text)
 	}
+	return string(text)
 }
 
 func TestTextPatternKeepsColorsOpacityClipAndPDFText(t *testing.T) {
