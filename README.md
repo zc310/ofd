@@ -20,7 +20,7 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 | 想做什么 | 入口 |
 |---|---|
 | 在线体验 | [OFD Toolbox](https://zc310.github.io/ofd-toolbox/)（覆盖本库大部分功能）；[浏览器阅读器](https://zc310.github.io/ofd/wasm/)；[Fyne Web 阅读器](https://zc310.github.io/ofd/fyne/) |
-| 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases) |
+| 下载应用或命令行工具 | [GitHub Releases](https://github.com/zc310/ofd/releases)、[发布包下载指南](docs/RELEASE-ASSETS.md)（文件名、系统与架构对应表） |
 | 转换、创建和检查文档 | [快速开始](#快速开始)、[功能特性](#功能特性) |
 | 接入自己的 Go 项目 | [Go API](#go-api)、[库使用指南](docs/GO-API.md) |
 | 组合签名、加密与完整性保护 | [安全能力指南](docs/SECURITY.md) |
@@ -29,7 +29,9 @@ HTTP 服务，以及桌面、Android 和浏览器阅读器。
 
 ## 快速开始
 
-下载 [Release](https://github.com/zc310/ofd/releases) 中对应平台的命令行程序后运行：
+下载 [Release](https://github.com/zc310/ofd/releases) 中对应平台的命令行程序后运行；
+文件名中的 `darwin` 表示 macOS，`amd64` 适用于 Intel/AMD 64 位电脑，完整对应表见
+[发布包下载指南](docs/RELEASE-ASSETS.md)：
 
 ```bash
 # OFD 转 PDF

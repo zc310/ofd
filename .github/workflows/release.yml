@@ -364,4 +364,5 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" release-assets/* \
             --verify-tag \
+            --notes-file docs/RELEASE-ASSETS.md \
             --generate-notes
