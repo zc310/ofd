@@ -63,7 +63,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 			fillPath = fillPath.Settle(geom.EvenOdd)
 		}
 		if clipPath != nil {
-			fillPath = fillPath.And(clipPath)
+			fillPath = intersectClips(fillPath, clipPath)
 		}
 		if p.drawMeshPaint(ctx, fillPath, fillGradient, object, pb, budget) {
 			object.Fill = false
@@ -77,7 +77,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 			fillPath = fillPath.Settle(geom.EvenOdd)
 		}
 		if clipPath != nil {
-			fillPath = fillPath.And(clipPath)
+			fillPath = intersectClips(fillPath, clipPath)
 		}
 		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM, budget) {
 			object.Fill = false
@@ -105,7 +105,7 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 	if strokeRaster {
 		strokePath := dashedStrokePath(ctx, pa, strokeStyle)
 		if clipPath != nil {
-			strokePath = strokePath.And(clipPath)
+			strokePath = intersectClips(strokePath, clipPath)
 		}
 		if p.drawMeshPaint(ctx, strokePath, strokeGradient, object, pb, budget) {
 			object.Stroke.Set(false)
@@ -263,7 +263,7 @@ func (p *Document) buildPathClip(clips *models.Clips, box models.StBox, pageHeig
 		if result == nil {
 			result = region
 		} else {
-			result = result.And(region)
+			result = intersectClips(result, region)
 		}
 	}
 	return result
@@ -338,19 +338,25 @@ func dashedStrokePath(ctx DrawContext, path *geom.Path, style models.CTGraphicUn
 
 func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, object models.PathObject, style models.CTGraphicUnit) {
 	if object.Fill {
-		// OFD 允许填充路径省略末尾闭合命令，布尔运算前需要补齐。
-		fillPath := path.Copy()
-		fillPath.Close()
-		// Path.And 固定按 NonZero 规则求交，会把 Even-Odd 的洞当作填充区域。
-		// 先用 Even-Odd 规则整理轮廓方向（外圈 CCW、洞 CW），求交后再按
-		// NonZero 填充即可保留洞。
+		fillPath, rule := path, geom.NonZero
 		if object.Rule == spec.FillRuleEvenOdd {
-			fillPath = fillPath.Settle(geom.EvenOdd)
+			rule = geom.EvenOdd
+		}
+		// 填充与描边分别判断：填充已完整覆盖时保留原路径及填充规则，
+		// 无需因描边超出裁剪区而一同展开、整理和求交。
+		if !clipContainsRect(clip, path.Bounds()) {
+			fillPath = path.Copy()
+			fillPath.Close()
+			// Path.And 固定按 NonZero 求交，Even-Odd 先整理轮廓方向以保留洞。
+			if rule == geom.EvenOdd {
+				fillPath = fillPath.Settle(rule)
+			}
+			fillPath, rule = fillPath.And(clip), geom.NonZero
 		}
 		ctx.Push()
-		ctx.SetFillRule(geom.NonZero)
+		ctx.SetFillRule(rule)
 		ctx.SetStrokeColor(geom.Transparent)
-		ctx.DrawPath(0, 0, fillPath.And(clip))
+		ctx.DrawPath(0, 0, fillPath)
 		ctx.Pop()
 	}
 	if object.Stroke.Value(true) {
@@ -360,7 +366,7 @@ func (p *Document) drawClippedPathStyle(ctx DrawContext, path, clip *geom.Path, 
 		ctx.SetFillRule(geom.NonZero)
 		ctx.CopyStrokeToFill()
 		ctx.SetStrokeColor(geom.Transparent)
-		ctx.DrawPath(0, 0, strokePath.And(clip))
+		ctx.DrawPath(0, 0, intersectClips(strokePath, clip))
 		ctx.Pop()
 	}
 }

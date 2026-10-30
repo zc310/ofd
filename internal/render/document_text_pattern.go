@@ -11,7 +11,7 @@ import (
 func (p *Document) drawPatternText(ctx DrawContext, source *models.CTColor, object models.TextObject, pb models.StBox, parentCTM *models.CTM, clip *geom.Path, budget *renderBudget) {
 	path := p.patternTextOutline(object, pb.Height, parentCTM)
 	if path != nil && clip != nil {
-		path = path.And(clip)
+		path = intersectClips(path, clip)
 	}
 	p.drawPatternTextPath(ctx, source, object, path, pb, parentCTM, budget, true)
 }

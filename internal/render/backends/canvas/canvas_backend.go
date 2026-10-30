@@ -217,10 +217,10 @@ func (b *canvasBackend) DrawTextLine(run drawing.TextRun) {
 	b.ctx.DrawText(0, 0, line)
 }
 
-// DrawClippedTextLine 在矢量画布记录文字与裁剪，避免核心提前展开并求交字形。
+// DrawClippedTextLine 记录文字与裁剪，在矢量输出或栅格回放阶段处理，避免核心提前求交字形。
 func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path) bool {
 	line, ok := run.(*canvas.Text)
-	if !b.vector || !ok || line == nil {
+	if !ok || line == nil {
 		return false
 	}
 	// 空轮廓字体仅承载语义。MuPDF 会剔除裁剪区内零面积的字形，

@@ -3,10 +3,13 @@ package canvas
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"testing"
 
 	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers/rasterizer"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // 裁剪不能改变文字的设备像素对齐；同时核对跨字形裁剪、裁剪孔洞和共享轮廓。
@@ -76,5 +79,106 @@ func TestClippedTextRasterKeepsPixelAlignmentAndExactClip(t *testing.T) {
 				t.Fatal("裁剪改写了共享字形轮廓")
 			}
 		})
+	}
+}
+
+// 不把各 span 合成一个不透明度组：重叠的半透明实色与渐变仍分别按原顺序叠加。
+func TestClippedTextRasterPreservesOverlappingSpansAndGradientCoordinates(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	gradient := canvas.NewLinearGradient(canvas.Point{}, canvas.Point{X: 18})
+	gradient.Grad = canvas.Grad{{Offset: 0, Color: color.RGBA{R: 128, A: 128}}, {Offset: 1, Color: color.RGBA{B: 192, A: 192}}}
+	rich := canvas.NewRichText(family.Face(22, color.RGBA{G: 128, A: 128}))
+	rich.WriteString("OOOO")
+	rich.WriteFace(family.Face(22, gradient), "OOOO")
+	text := rich.ToText(50, 0, canvas.Left, canvas.Top, nil)
+	text.WalkLines(func(_ float64, spans []canvas.TextSpan) {
+		if len(spans) != 2 {
+			t.Fatalf("样例应有两个文字 span，实际 %d 个", len(spans))
+		}
+		spans[1].X = spans[0].X + 2
+	})
+	const width, height = 200, 120
+	resolution := canvas.DPMM(5)
+	clip := canvas.Rectangle(22, 14).Translate(4, 5)
+	for _, matrix := range []canvas.Matrix{
+		canvas.Identity.Translate(2.37, 16.13),
+		canvas.Identity.Translate(3.37, 13.13).Rotate(15).Scale(.9, 1.15),
+	} {
+		render := func(clipped bool) *image.RGBA {
+			page := canvas.New(width/5, height/5)
+			style := canvas.DefaultStyle
+			style.Fill, style.Stroke = canvas.Paint{Color: canvas.White}, canvas.Paint{}
+			page.RenderPath(canvas.Rectangle(width/5, height/5), style, canvas.Identity)
+			if clipped {
+				page.RenderClippedText(text, matrix, clip.Copy().Transform(matrix.Inv()))
+			} else {
+				page.RenderText(text, matrix)
+			}
+			return rasterize(page, resolution, canvas.DefaultColorSpace)
+		}
+		want, got := render(false), render(true)
+		ink := 0
+		for y := range height {
+			for x := range width {
+				expected := color.RGBA{255, 255, 255, 255}
+				// 矩形四边均落在设备像素边界上，裁剪应与逐像素 scissor 一致。
+				if x >= 20 && x < 130 && height-1-y >= 25 && height-1-y < 95 {
+					expected = want.RGBAAt(x, y)
+					if expected != (color.RGBA{255, 255, 255, 255}) {
+						ink++
+					}
+				}
+				if pixel := got.RGBAAt(x, y); pixel != expected {
+					t.Fatalf("矩阵%v，像素(%d,%d)=%v，期望%v", matrix, x, y, pixel, expected)
+				}
+			}
+		}
+		if ink < 100 {
+			t.Fatal("样例没有覆盖足够的可见文字")
+		}
+	}
+}
+
+func TestTextClipMaskKeepsFractionalCoverageAndPageBounds(t *testing.T) {
+	resolution := canvas.DPMM(5)
+	for _, clip := range []*canvas.Path{
+		canvas.Rectangle(13.27, 8.71).Translate(2.13, 3.17),
+		canvas.Rectangle(15, 8).Rotate(23).Translate(-2, 5),
+		canvas.Circle(7.13).Translate(17.17, 7.23),
+		canvas.Rectangle(10, 10).Translate(40, 40),
+	} {
+		want, got := image.NewRGBA(image.Rect(0, 0, 100, 100)), image.NewRGBA(image.Rect(0, 0, 100, 100))
+		style := canvas.DefaultStyle
+		style.Fill, style.Stroke = canvas.Paint{Color: color.RGBA{R: 128, A: 128}}, canvas.Paint{}
+		base := rasterizer.FromImage(want, resolution, canvas.DefaultColorSpace)
+		base.RenderPath(clip, style, canvas.Identity)
+		base.Close()
+		backend := &adaptiveRasterizer{Rasterizer: rasterizer.FromImage(got, resolution, canvas.DefaultColorSpace), resolution: resolution, fastImages: true}
+		newRasterTextClip(backend, clip).RenderPath(canvas.Rectangle(30, 30), style, canvas.Identity)
+		backend.Close()
+		for i, expected := range want.Pix {
+			// 单通道掩码保存为 8 位覆盖率，允许一次量化产生的一级误差。
+			if delta := int(got.Pix[i]) - int(expected); delta < -1 || delta > 1 {
+				t.Fatalf("裁剪%v，通道%d=%d，期望%d", clip.Bounds(), i, got.Pix[i], expected)
+			}
+		}
+	}
+}
+
+func TestRasterBackendRecordsNativeTextClip(t *testing.T) {
+	family := pdfTextTestFamily(t)
+	line := canvas.NewTextLine(family.Face(24, canvas.Black), "OOOO", canvas.Left)
+	clip := canvas.Rectangle(8.17, 12).Translate(0, -3)
+	resolution := geom.DPI(150)
+	backend := newCanvasRasterBackend(40, 25, resolution)
+	backend.Translate(4, 8)
+	if !backend.DrawClippedTextLine(line, clip) {
+		t.Fatal("canvas 栅格后端应推迟裁剪，避免核心对字形逐段求交")
+	}
+	page := canvas.New(40, 25)
+	page.RenderClippedText(line, canvas.Identity.Translate(4, 8), clip)
+	want := rasterize(page, canvas.Resolution(resolution), canvas.DefaultColorSpace)
+	if got := backend.Raster(); !bytes.Equal(got.Pix, want.Pix) {
+		t.Fatal("直接栅格与矢量回放的文字裁剪像素不一致")
 	}
 }
