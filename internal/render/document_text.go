@@ -333,8 +333,16 @@ func (p *Document) drawTextGlyph(ctx DrawContext, faces *textFaces, object model
 // 保留文字整形和 PDF 文字可复制性）。后端不支持时回退到字形轮廓路径。
 func (p *Document) drawTextInline(ctx DrawContext, face FontFace, value string, clip *geom.Path) {
 	if clip != nil {
-		path := face.ToPath(value)
 		local := localTextClip(ctx, clip)
+		// 原生裁剪无需预先构造字形轮廓或判断边缘误差，直接保留文字和精确裁剪。
+		if !local.Empty() {
+			if drawer, ok := ctx.(clippedTextDrawer); ok {
+				if run := face.ShapedRun(value); run != nil && drawer.DrawClippedTextLine(run, local) {
+					return
+				}
+			}
+		}
+		path := face.ToPath(value)
 		if path == nil || path.Empty() || local.Empty() {
 			p.drawInvisibleSemanticText(ctx, face, value)
 			return

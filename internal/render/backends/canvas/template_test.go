@@ -32,6 +32,13 @@ func (c directTemplateContext) DrawSemanticTextLine(run drawing.TextRun) {
 	c.DrawContext.(interface{ DrawSemanticTextLine(drawing.TextRun) }).DrawSemanticTextLine(run)
 }
 
+func (c directTemplateContext) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path) bool {
+	drawer, ok := c.DrawContext.(interface {
+		DrawClippedTextLine(run drawing.TextRun, clip *geom.Path) bool
+	})
+	return ok && drawer.DrawClippedTextLine(run, clip)
+}
+
 func TestTemplateFormsPreservePixelsTextLinksAndPageSizes(t *testing.T) {
 	box := func(x float64, fillColor creator.Color) creator.Path {
 		return creator.Path{X: x, Width: 10, Height: 10, Fill: true, FillColor: &fillColor, Data: "M 0 0 L 10 0 L 10 10 L 0 10 C"}

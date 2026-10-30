@@ -217,6 +217,20 @@ func (b *canvasBackend) DrawTextLine(run drawing.TextRun) {
 	b.ctx.DrawText(0, 0, line)
 }
 
+// DrawClippedTextLine 在矢量画布记录文字与裁剪，避免核心提前展开并求交字形。
+func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path) bool {
+	line, ok := run.(*canvas.Text)
+	if !b.vector || !ok || line == nil {
+		return false
+	}
+	renderer, ok := b.ctx.Renderer.(canvas.ClippedTextRenderer)
+	if !ok {
+		return false
+	}
+	renderer.RenderClippedText(line, b.CurrentMatrix(), clip)
+	return true
+}
+
 func (b *canvasBackend) DrawSemanticTextLine(run drawing.TextRun) {
 	if b.vector {
 		b.DrawTextLine(run)

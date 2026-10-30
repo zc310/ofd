@@ -50,6 +50,10 @@ type svgTextRenderer struct {
 	*svg.SVG
 }
 
+func (r svgTextRenderer) RenderClippedText(text *canvas.Text, matrix canvas.Matrix, clip *canvas.Path) {
+	r.RenderClippedTextWith(text, matrix, clip, func() { r.RenderText(text, matrix) })
+}
+
 func (r svgTextRenderer) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
 	// SVG没有固定输出DPI，细线按屏幕预览的参考设备换算；
 	// 与图片预览共用规则，避免字形轮廓描边在浏览器里几乎消失。

@@ -17,6 +17,10 @@ type pdfTextRenderer struct {
 	width, height float64
 }
 
+func (r pdfTextRenderer) RenderClippedText(text *canvas.Text, matrix canvas.Matrix, clip *canvas.Path) {
+	r.RenderClippedTextWith(text, matrix, clip, func() { r.RenderText(text, matrix) })
+}
+
 func (r pdfTextRenderer) RenderCanvas(scene *canvas.Canvas, matrix canvas.Matrix) {
 	r.PDF.RenderCanvasWith(scene, matrix, func() {
 		scene.RenderTo(pdfTextRenderer{PDF: r.PDF, width: scene.W, height: scene.H})

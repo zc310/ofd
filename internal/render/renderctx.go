@@ -2,6 +2,7 @@ package render
 
 import (
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // DrawContext 是 drawing.DrawContext 的别名，保持本包既有调用点可用。契约
@@ -15,6 +16,11 @@ type textDrawer interface {
 	// DrawTextLine 在 (0,0) 处绘制单行文本（glyph baseline 位于左下角，向 y
 	// 正方向延伸）。canvas 后端把它断言为 canvas 文本并原生绘制。
 	DrawTextLine(run TextRun)
+}
+
+// clippedTextDrawer 由支持原生文字裁剪的矢量后端实现；clip位于run局部坐标。
+type clippedTextDrawer interface {
+	DrawClippedTextLine(run TextRun, clip *geom.Path) bool
 }
 
 type semanticTextDrawer interface {
