@@ -141,9 +141,9 @@ func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
 	if textlayout.NeedsRunBreak(models.TextObject{}, 3.175, 0, 3.175) {
 		t.Fatal("horizontal advance should not break the run")
 	}
-	// 小负值字距不应断串。
-	if textlayout.NeedsRunBreak(models.TextObject{}, -0.1, 0, 3.175) {
-		t.Fatal("small negative kerning should not break the run")
+	// 显式回退也必须保留，不能交给自然前进的整串整形。
+	if !textlayout.NeedsRunBreak(models.TextObject{}, -0.1, 0, 3.175) {
+		t.Fatal("explicit negative advance should keep its position")
 	}
 	// 纵向位移（换行/基线调整）必须断串，否则多行文字会被合并成一行。
 	if !textlayout.NeedsRunBreak(models.TextObject{}, 0, 4.5, 3.175) {
@@ -158,9 +158,9 @@ func TestTextAdvanceDiffersDetectsLineBreaks(t *testing.T) {
 	if !textlayout.NeedsRunBreak(models.TextObject{}, 1.8486, 0, 3.4234) {
 		t.Fatal("explicit advance far from natural advance should break the run")
 	}
-	// 前进步进接近自然步进的微小差异（正常字距）不应断串。
-	if textlayout.NeedsRunBreak(models.TextObject{}, 3.175, 0, 3.2) {
-		t.Fatal("advance close to natural should not break the run")
+	// 小幅显式字距也必须保留，不能逐字累积成行末偏移。
+	if !textlayout.NeedsRunBreak(models.TextObject{}, 3.175, 0, 3.2) {
+		t.Fatal("small explicit spacing adjustment should keep its position")
 	}
 }
 
@@ -169,8 +169,8 @@ func TestTextAdvanceNeedsRunBreakPreservesExpandedGlyphSpacing(t *testing.T) {
 	if !textlayout.NeedsRunBreak(object, 3.1327, 0, 3.175) {
 		t.Fatal("expanded glyph with an explicit small spacing adjustment should keep its position")
 	}
-	if textlayout.NeedsRunBreak(models.TextObject{}, 3.1327, 0, 3.175) {
-		t.Fatal("ordinary text should continue merging small spacing adjustments")
+	if !textlayout.NeedsRunBreak(models.TextObject{}, 3.1327, 0, 3.175) {
+		t.Fatal("ordinary text must also preserve explicit spacing adjustments")
 	}
 }
 

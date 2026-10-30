@@ -31,6 +31,48 @@ func TestApplyCGTransformWidthsUsesMappedGlyphs(t *testing.T) {
 	}
 }
 
+type runPositionFace struct{}
+
+func (runPositionFace) TextWidth(value string) float64 {
+	return float64(len([]rune(value))) * 1.0000015277777778
+}
+func (runPositionFace) GlyphIndex(rune) uint16              { return 1 }
+func (runPositionFace) IsCFF() bool                         { return false }
+func (runPositionFace) VerticalMetrics() (float64, float64) { return .8, .2 }
+
+func TestWalkRunsPreservesSmallExplicitAdvancesBeforeCTM(t *testing.T) {
+	for _, delta := range []float64{.975, 1.025, 0, -.1} {
+		code := models.TextCode{Value: "方案的人工智能公司。", Y: .835}
+		for range len([]rune(code.Value)) - 1 {
+			code.DeltaX = append(code.DeltaX, delta)
+		}
+		object := models.TextObject{CtText: models.CtText{
+			Size: 1, TextCode: []models.TextCode{code},
+			CTGraphicUnit: models.CTGraphicUnit{CTM: &models.CTM{9.8778, 0, 0, 9.8778, 0, 0}},
+		}}
+		var runs []Run
+		WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
+		if len(runs) != len([]rune(code.Value)) {
+			t.Fatalf("字距 %g 合并后忽略了源定位: %+v", delta, runs)
+		}
+		for i, run := range runs {
+			if math.Abs(run.X-float64(i)*delta) > 1e-12 || run.Y != code.Y {
+				t.Fatalf("字距 %g 字符 %d 坐标=(%g,%g)，期望=(%g,%g)", delta, i, run.X, run.Y, float64(i)*delta, code.Y)
+			}
+		}
+	}
+}
+
+func TestWalkRunsKeepsNaturalAdvanceWithFontUnitRounding(t *testing.T) {
+	code := models.TextCode{Value: "ABC", DeltaX: models.StArrayF{1, 1}}
+	object := models.TextObject{CtText: models.CtText{Size: 1, TextCode: []models.TextCode{code}}}
+	var runs []Run
+	WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
+	if len(runs) != 1 || runs[0].Value != code.Value {
+		t.Fatalf("字号换算误差不应拆开自然步进: %+v", runs)
+	}
+}
+
 func TestTextCodeGlyphsClampsCodeCountBeforeMapping(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -15,50 +15,13 @@ func HScale(object models.TextObject) float64 {
 	return 1
 }
 
-// advanceDiffers 判断显式步进是否无法用同一文本串的字体自然步进表达。
-// 纵向位移和明显回退表示换行；子集字体的 hmtx 可能只是占位宽度，显式前进
-// 与自然字宽相差过大时也必须断串，否则整串整形会忽略源 TextCode 的字距。
-// 小幅字距仍合并，以保留整段绘制、避免 PDF 文字提取时插入空格。
-func advanceDiffers(deltaX, deltaY, naturalX float64) bool {
-	if math.Abs(deltaY) > 0.01 {
-		return true
-	}
-	if deltaX < -math.Max(math.Abs(naturalX), 0.01) {
-		return true
-	}
-	if deltaX > 0 && math.Abs(naturalX) > 0 {
-		if tolerance := math.Max(0.2, math.Abs(naturalX)*0.05); math.Abs(deltaX-naturalX) > tolerance {
-			return true
-		}
-	}
-	return false
-}
-
-// NeedsRunBreak 判断连续字形是否必须断开绘制，以保留换行和连字的显式定位。
+// NeedsRunBreak 仅在源步进能由字体自然步进表达时合并字形。
+// GB/T 33190—2016 §11.2 表46、图62规定 DeltaX/DeltaY 是相邻绘制点的精确偏移；
+// 小幅字距也不能忽略，否则误差逐字累积，放大 CTM 后可能把行末标点推到 Boundary 外。
+// 这里只容纳字号换算造成的十万分之一以内数值误差，不扩大任何裁剪边界。
 func NeedsRunBreak(object models.TextObject, deltaX, deltaY, naturalX float64) bool {
-	if advanceDiffers(deltaX, deltaY, naturalX) {
-		return true
-	}
-	if !hasCollapsedGlyphTransform(object.CGTransform) || math.Abs(deltaY) > 0.01 {
-		return false
-	}
-	return math.Abs(deltaX-naturalX) > 0.01
-}
-
-func hasCollapsedGlyphTransform(transforms []models.CTCGTransform) bool {
-	for _, transform := range transforms {
-		codeCount, glyphCount := transform.CodeCount, transform.GlyphCount
-		if codeCount <= 0 {
-			codeCount = 1
-		}
-		if glyphCount <= 0 {
-			glyphCount = len(transform.Glyphs)
-		}
-		if codeCount > glyphCount {
-			return true
-		}
-	}
-	return false
+	tolerance := math.Max(math.Abs(object.Size), math.Abs(naturalX)) * 1e-5
+	return math.Abs(deltaY) > tolerance || math.Abs(deltaX-naturalX) > tolerance
 }
 
 // normalizeDirection 将方向归一化为最接近的标准象限方向。
