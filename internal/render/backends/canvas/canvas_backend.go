@@ -223,6 +223,13 @@ func (b *canvasBackend) DrawClippedTextLine(run drawing.TextRun, clip *geom.Path
 	if !b.vector || !ok || line == nil {
 		return false
 	}
+	// 空轮廓字体仅承载语义。MuPDF 会剔除裁剪区内零面积的字形，
+	// 因此交回核心的空轮廓回退，按不可见文字保留位置与提取能力。
+	for _, font := range line.Fonts() {
+		if font.Head.XMin == font.Head.XMax && font.Head.YMin == font.Head.YMax {
+			return false
+		}
+	}
 	renderer, ok := b.ctx.Renderer.(canvas.ClippedTextRenderer)
 	if !ok {
 		return false

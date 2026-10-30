@@ -42,6 +42,56 @@ func (r *adaptiveRasterizer) RenderText(text *canvas.Text, matrix canvas.Matrix)
 	r.Rasterizer.RenderText(text, matrix)
 }
 
+func (r *adaptiveRasterizer) RenderClippedText(text *canvas.Text, matrix canvas.Matrix, clip *canvas.Path) {
+	if text == nil || text.Empty() || clip == nil || clip.Empty() {
+		return
+	}
+	// 先按实际设备分辨率展开文字，再裁剪对齐后的轮廓。通用裁剪回退
+	// 使用零分辨率，会让同一段文字仅因附带 Boundary 就改变栅格位置。
+	text.RenderTo(rasterTextClip{adaptiveRasterizer: r, clip: clip.Copy().Transform(matrix)}, matrix, r.resolution)
+}
+
+type rasterTextClip struct {
+	*adaptiveRasterizer
+
+	clip *canvas.Path
+}
+
+func (r rasterTextClip) RenderPath(path *canvas.Path, style canvas.Style, matrix canvas.Matrix) {
+	if path == nil || path.Empty() || canvas.Equal(matrix.Det(), 0) {
+		return
+	}
+	if !style.HasStroke() && geom.ClipContainsRect(r.clip, path.Bounds().Transform(matrix)) {
+		r.adaptiveRasterizer.RenderPath(path, style, matrix)
+		return
+	}
+	// 填充隐式闭合每个子路径；在副本上闭合，保留共享字形与字形孔洞。
+	var closed *canvas.Path
+	for _, subpath := range path.Split() {
+		closed = closed.Append(subpath.Copy())
+		closed.Close()
+	}
+	if style.FillRule == canvas.EvenOdd {
+		closed = closed.Settle(canvas.EvenOdd)
+	}
+	visible := closed.And(r.clip.Copy().Transform(matrix.Inv()))
+	style.FillRule = canvas.NonZero
+	if !visible.Empty() {
+		r.adaptiveRasterizer.RenderPath(visible, style, matrix)
+	}
+}
+
+func (r rasterTextClip) RenderText(text *canvas.Text, matrix canvas.Matrix) {
+	text.RenderTo(r, matrix, r.resolution)
+}
+
+func (r rasterTextClip) RenderImage(img image.Image, matrix canvas.Matrix) {
+	if canvas.Equal(matrix.Det(), 0) {
+		return
+	}
+	canvas.NewContext(r.adaptiveRasterizer).RenderClippedImage(img, matrix, r.clip.Copy().Transform(matrix.Inv()))
+}
+
 func (r *adaptiveRasterizer) RenderImage(img image.Image, m canvas.Matrix) {
 	if r.fastImages {
 		if decoded, err := decodedImageOf(img); err == nil {

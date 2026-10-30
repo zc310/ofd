@@ -740,7 +740,11 @@ func TestCellBordersCoverEveryCell(t *testing.T) {
 	}
 	body := sheetContentStream(t, MergeOptions{NUp: 4, CellBorder: true}, fixtures...)
 
-	starts := regexp.MustCompile(`([\d.]+) ([\d.]+) m [\d.]+ [\d.]+ l`).FindAllStringSubmatch(body, -1)
+	// 只统计闭合并描边的矩形；文字裁剪路径以 h W n 结束，不是裁切线。
+	starts := regexp.MustCompile(`([-\d.]+) ([-\d.]+) m(?: [-\d.]+ [-\d.]+ l){3} s`).FindAllStringSubmatch(body, -1)
+	if len(starts) != 4 {
+		t.Fatalf("四格应恰有 4 条矩形裁切线，实际 %d 条", len(starts))
+	}
 	unique := make(map[string]bool, len(starts))
 	for _, match := range starts {
 		unique[match[1]+","+match[2]] = true
