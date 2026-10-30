@@ -32,7 +32,7 @@ func TestClippedDashKeepsInheritedPatternAndPhase(t *testing.T) {
 			}
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -58,7 +58,7 @@ func TestTinyPositiveStrokeKeepsDashGapsInRasterAndPDF(t *testing.T) {
 			}
 		}
 	}
-	t.Run("Raster", func(t *testing.T) { check(t, surface.Rasterize(geom.DPMM(10))) })
+	t.Run("Raster", func(t *testing.T) { check(t, surface.Rasterize(geom.DPMM(10), nil)) })
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -75,7 +75,7 @@ func TestRasterGradientStrokeKeepsDashGaps(t *testing.T) {
 		},
 	}}
 	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Path(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
-	img := surface.Rasterize(geom.DPMM(10))
+	img := surface.Rasterize(geom.DPMM(10), nil)
 	if img.RGBAAt(20, 30).A < 120 || img.RGBAAt(40, 30).A != 0 {
 		t.Fatalf("渐变描边虚实错误：实线Alpha=%d，间隙Alpha=%d", img.RGBAAt(20, 30).A, img.RGBAAt(40, 30).A)
 	}

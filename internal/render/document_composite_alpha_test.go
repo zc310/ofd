@@ -41,7 +41,7 @@ func TestCompositeAlphaAppliesOnceToOverlappingChildren(t *testing.T) {
 	surface := clipTestSurface(t, func(ctx DrawContext) {
 		doc.Composite(ctx, object, nil, models.StBox{Width: 40, Height: 40})
 	})
-	img := surface.Rasterize(geom.DPMM(10))
+	img := surface.Rasterize(geom.DPMM(10), nil)
 	for _, x := range []int{20, 70, 120} {
 		if a := img.RGBAAt(x, 100).A; a != 128 {
 			t.Errorf("x=%d处组Alpha=%d，期望128", x, a)

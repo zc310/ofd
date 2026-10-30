@@ -31,11 +31,14 @@ func (f *templateTestFonts) CacheGeneration() uint64 { return f.generation.Load(
 
 type templateTestSurface struct{ weight int64 }
 
-func (*templateTestSurface) Width() float64                        { return 20 }
-func (*templateTestSurface) Height() float64                       { return 20 }
-func (*templateTestSurface) Write(io.Writer, string) error         { return nil }
-func (*templateTestSurface) Rasterize(geom.Resolution) *image.RGBA { return nil }
-func (s *templateTestSurface) Weight() int64                       { return s.weight }
+func (*templateTestSurface) Width() float64                { return 20 }
+func (*templateTestSurface) Height() float64               { return 20 }
+func (*templateTestSurface) Write(io.Writer, string) error { return nil }
+func (s *templateTestSurface) Weight() int64               { return s.weight }
+
+func (*templateTestSurface) Rasterize(geom.Resolution, *image.RGBA) *image.RGBA {
+	return nil
+}
 
 type templateTestDrawer struct {
 	DrawContext

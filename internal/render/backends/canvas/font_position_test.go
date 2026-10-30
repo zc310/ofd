@@ -38,8 +38,8 @@ func TestTransformedTextMatchesPositionedOutline(t *testing.T) {
 			native.RenderText(line, matrix)
 			outline := canvas.New(12, 10)
 			outline.RenderPath(path, canvas.DefaultStyle, matrix)
-			a := rasterize(native, canvas.DPI(dpi), canvas.DefaultColorSpace)
-			b := rasterize(outline, canvas.DPI(dpi), canvas.DefaultColorSpace)
+			a := rasterize(native, canvas.DPI(dpi), canvas.DefaultColorSpace, nil)
+			b := rasterize(outline, canvas.DPI(dpi), canvas.DefaultColorSpace, nil)
 			if !bytes.Equal(a.Pix, b.Pix) {
 				t.Errorf("DPI=%g 基线 y=%g：文字与原位轮廓发生错位", dpi, y)
 			}

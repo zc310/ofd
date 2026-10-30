@@ -49,7 +49,7 @@ func TestImageBorderFollowsParentTransformAndClip(t *testing.T) {
 					assertBorderPixel(t, img, 33, 15, false)
 				}
 			}
-			check(t, surface.Rasterize(geom.DPMM(10)))
+			check(t, surface.Rasterize(geom.DPMM(10), nil))
 			t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 		})
 	}
@@ -72,7 +72,7 @@ func TestImageBorderHonorsObjectClip(t *testing.T) {
 			assertBorderPixel(t, img, 17.5, 10, false)
 			assertBorderPixel(t, img, 20, 14, false)
 		}
-		check(t, surface.Rasterize(geom.DPMM(10)))
+		check(t, surface.Rasterize(geom.DPMM(10), nil))
 		t.Run(map[models.StRefID]string{30: "PNG", 31: "SVG"}[resource], func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 	}
 }
@@ -87,7 +87,7 @@ func TestImageBorderDoesNotInheritPreviousDashes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBorderPixel(t, surface.Rasterize(geom.DPMM(10)), 15, 10, true)
+	assertBorderPixel(t, surface.Rasterize(geom.DPMM(10), nil), 15, 10, true)
 	t.Run("PDF", func(t *testing.T) { assertBorderPixel(t, clipPDFImage(t, surface, 254), 15, 10, true) })
 }
 
@@ -109,7 +109,7 @@ func TestImageBorderDistinguishesDefaultAndZeroLineWidth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertBorderPixel(t, surface.Rasterize(geom.DPMM(10)), 15, 10, tc.visible)
+			assertBorderPixel(t, surface.Rasterize(geom.DPMM(10), nil), 15, 10, tc.visible)
 			t.Run("PDF", func(t *testing.T) { assertBorderPixel(t, clipPDFImage(t, surface, 254), 15, 10, tc.visible) })
 		})
 	}

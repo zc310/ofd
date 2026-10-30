@@ -125,7 +125,7 @@ func TestCoveredEvenOddFillAndClippedStrokeMatchPDF(t *testing.T) {
 			}
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF像素", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 

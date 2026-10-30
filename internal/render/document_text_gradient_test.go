@@ -148,7 +148,7 @@ func TestTranslucentGradientTextKeepsAlphaInRasterAndPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := surface.Rasterize(geom.DPI(144))
+	img := surface.Rasterize(geom.DPI(144), nil)
 	var maxAlpha uint8
 	for y := 0; y < img.Bounds().Dy(); y++ {
 		for x := 0; x < img.Bounds().Dx()/2; x++ {
@@ -170,7 +170,7 @@ func TestTranslucentGradientTextKeepsAlphaInRasterAndPDF(t *testing.T) {
 		if err := pdf.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(img.Pix, surface.Rasterize(geom.DPI(144)).Pix) {
+		if !bytes.Equal(img.Pix, surface.Rasterize(geom.DPI(144), nil).Pix) {
 			t.Fatal("PDF 输出改写了共享文字或渐变，导致后续栅格化变化")
 		}
 		var svg bytes.Buffer

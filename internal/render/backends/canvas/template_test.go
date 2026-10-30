@@ -94,7 +94,7 @@ func TestTemplateFormsPreservePixelsTextLinksAndPageSizes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rasters = append(rasters, surface.Rasterize(geom.DPI(96)))
+			rasters = append(rasters, surface.Rasterize(geom.DPI(96), nil))
 			if err := pdf.AddPage(surface, doc.PageExternalLinks(page)); err != nil {
 				t.Fatal(err)
 			}

@@ -225,7 +225,7 @@ func compareCFFPDFToOFD(t *testing.T, input, pdf []byte, expectedText string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raster := surface.Rasterize(geom.DPI(144))
+	raster := surface.Rasterize(geom.DPI(144), nil)
 	if dir := os.Getenv("OFD_CFF_EVIDENCE_DIR"); dir != "" {
 		file, err := os.Create(filepath.Join(dir, strings.ReplaceAll(t.Name(), "/", "-")+"-ofd.png"))
 		if err != nil {

@@ -41,7 +41,7 @@ func TestCreatedTTCFontRendersEmbeddedCJKText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered := page.Rasterize(geom.Resolution(canvas.DPI(36)))
+	rendered := page.Rasterize(geom.Resolution(canvas.DPI(36)), nil)
 	if rendered == nil || rendered.Bounds().Empty() {
 		t.Fatal("rendered page is empty")
 	}

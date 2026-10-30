@@ -80,7 +80,7 @@ func encodeTIFFDocuments(documents []*render.Document, output io.Writer, conv *C
 		if alpha == 0 {
 			background = color.White
 		}
-		images = append(images, opaqueImage(surface.Rasterize(conv.dpi), background))
+		images = append(images, opaqueImage(surface.Rasterize(conv.dpi, nil), background))
 	}
 	if err := conv.checkCancelled(); err != nil {
 		return err

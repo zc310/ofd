@@ -30,7 +30,7 @@ func TestRasterizerMinimumPositiveStrokeWidth(t *testing.T) {
 			path.MoveTo(2/scale, 5/scale)
 			path.LineTo(18/scale, 5/scale)
 			ctx.DrawPath(0, 0, path)
-			img := rasterize(c, resolution, canvas.DefaultColorSpace)
+			img := rasterize(c, resolution, canvas.DefaultColorSpace, nil)
 			coverage := strokeColumnCoverage(img, int(10*resolution.DPMM()))
 			want := min(2, dpi/300)
 			if math.Abs(coverage-want) > 0.03 {
@@ -70,7 +70,7 @@ func TestMinimumStrokeKeepsDashLengthsAndSourceStyle(t *testing.T) {
 	}
 	resolution := canvas.DPMM(10)
 	want := 254.0 / 300
-	img := rasterize(c, resolution, canvas.DefaultColorSpace)
+	img := rasterize(c, resolution, canvas.DefaultColorSpace, nil)
 	for _, x := range []int{30, 70, 110, 150} {
 		if got := strokeColumnCoverage(img, x); math.Abs(got-want) > 0.03 {
 			t.Errorf("虚线实线段 x=%d：覆盖 %.3f 像素，期望%.3f像素", x, got, want)
@@ -95,7 +95,7 @@ func TestMinimumStrokeKeepsDashLengthsAndSourceStyle(t *testing.T) {
 	phaseStyle := ctx.Style
 	phaseStyle.DashOffset = 1000 // 对应原始线宽下的2毫米。
 	phaseCanvas.RenderPath(path, phaseStyle, canvas.Identity)
-	phaseImage := rasterize(phaseCanvas, resolution, canvas.DefaultColorSpace)
+	phaseImage := rasterize(phaseCanvas, resolution, canvas.DefaultColorSpace, nil)
 	if strokeColumnCoverage(phaseImage, 30) != 0 || math.Abs(strokeColumnCoverage(phaseImage, 50)-want) > 0.03 {
 		t.Fatal("最小线宽改变了虚线相位")
 	}
@@ -106,7 +106,7 @@ func TestMinimumStrokeKeepsDashLengthsAndSourceStyle(t *testing.T) {
 	ctx.SetStrokeColor(canvas.Black)
 	ctx.SetStrokeWidth(0.5)
 	ctx.DrawPath(0, 0, path)
-	if got := strokeColumnCoverage(rasterize(c, resolution, canvas.DefaultColorSpace), 100); math.Abs(got-5) > 0.03 {
+	if got := strokeColumnCoverage(rasterize(c, resolution, canvas.DefaultColorSpace, nil), 100); math.Abs(got-5) > 0.03 {
 		t.Errorf("正常线宽被改写：覆盖 %.3f 像素，期望5像素", got)
 	}
 }

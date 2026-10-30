@@ -197,7 +197,7 @@ func TestConcurrentSealsKeepRasterPDFPixelsAndText(t *testing.T) {
 			if errors[i] != nil {
 				t.Fatal(errors[i])
 			}
-			images[i] = surface.Rasterize(geom.DPI(96))
+			images[i] = surface.Rasterize(geom.DPI(96), nil)
 			if err := pdf.AddPage(surface, nil); err != nil {
 				t.Fatal(err)
 			}

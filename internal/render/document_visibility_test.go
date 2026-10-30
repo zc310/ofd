@@ -121,7 +121,7 @@ func TestPageVisibilityKeepsRenderingTextAndLinksConsistent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			img := surface.Rasterize(geom.DPI(25.4)) // 1 px/mm，采样点远离文字和边缘。
+			img := surface.Rasterize(geom.DPI(25.4), nil) // 1 px/mm，采样点远离文字和边缘。
 			colors := []color.RGBA{{R: 255, A: 255}, {G: 255, A: 255}, {B: 255, A: 255}, {R: 255, B: 255, A: 255}}
 			for i, visible := range tc.visible {
 				want := colors[i]

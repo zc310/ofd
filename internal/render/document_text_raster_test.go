@@ -51,7 +51,7 @@ func TestRasterGradientTextUsesMappedGlyphsAndParentTransform(t *testing.T) {
 			t.Fatal("渐变文字仍绘制在原位置")
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -80,7 +80,7 @@ func TestRasterGradientTextKeepsStrokeAndPDFText(t *testing.T) {
 			t.Fatalf("渐变填充或描边丢失: stroke=%d fill=%d", green, colored)
 		}
 	}
-	t.Run("Raster", func(t *testing.T) { check(t, surface.Rasterize(geom.DPMM(10))) })
+	t.Run("Raster", func(t *testing.T) { check(t, surface.Rasterize(geom.DPMM(10), nil)) })
 	t.Run("PDF pixels", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 	t.Run("PDF text", func(t *testing.T) { checkPDFExtractedText(t, surface, "AB") })
 }
@@ -96,7 +96,7 @@ func TestRasterGradientTextAppliesAlphaOnceToOverlappingGlyphs(t *testing.T) {
 		Size:          6, TextCode: []models.TextCode{{X: 4, Y: 10, Value: "AA", DeltaX: models.StArrayF{0}}}, FillColor: source,
 	}}
 	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
-	img := surface.Rasterize(geom.DPMM(10))
+	img := surface.Rasterize(geom.DPMM(10), nil)
 	if a := img.RGBAAt(60, 80).A; a < 63 || a > 65 {
 		t.Fatalf("重叠字形 Alpha=%d，期望约64", a)
 	}
@@ -133,7 +133,7 @@ func TestRasterGradientTextHollowDoesNotPaintFill(t *testing.T) {
 			t.Fatal("空心字的描边丢失")
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -244,12 +244,12 @@ func TestRasterGradientTextMatchesSolidPositionsAndClipping(t *testing.T) {
 				t.Fatalf("渐变与实色字形位置不一致: direction=%d ink=%d mismatch=%d", direction, ink, mismatch)
 			}
 		}
-		before := gradient.Rasterize(geom.DPMM(10))
-		check(t, solid.Rasterize(geom.DPMM(10)), before)
+		before := gradient.Rasterize(geom.DPMM(10), nil)
+		check(t, solid.Rasterize(geom.DPMM(10), nil), before)
 		t.Run(map[int]string{0: "水平PDF", 90: "旋转PDF"}[direction], func(t *testing.T) {
 			check(t, clipPDFImage(t, solid, 254), clipPDFImage(t, gradient, 254))
 		})
-		if !bytes.Equal(before.Pix, gradient.Rasterize(geom.DPMM(10)).Pix) {
+		if !bytes.Equal(before.Pix, gradient.Rasterize(geom.DPMM(10), nil).Pix) {
 			t.Fatal("PDF 输出改写了共享字形或渐变")
 		}
 	}

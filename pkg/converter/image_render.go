@@ -29,7 +29,14 @@ func (c *Converter) useRasterBackend() bool {
 }
 
 // renderPage 渲染单个页面（默认路径：canvas 矢量表面光栅化）。
-func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err error) {
+func (c *Converter) renderPage(pageNumber int, page render.VectorSurface, reusable *image.RGBA) (err error) {
+	var rendered *image.RGBA
+	rasterize := func() *image.RGBA {
+		if rendered == nil {
+			rendered = page.Rasterize(c.dpi, reusable)
+		}
+		return rendered
+	}
 	if err := c.checkCancelled(); err != nil {
 		return err
 	}
@@ -50,7 +57,7 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err e
 
 		switch c.format {
 		case "png":
-			img := page.Rasterize(c.dpi)
+			img := rasterize()
 			if err := c.checkCancelled(); err != nil {
 				return err
 			}
@@ -58,7 +65,7 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err e
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		case "jpeg", "jpg":
-			img := opaqueImage(page.Rasterize(c.dpi), color.White)
+			img := opaqueImage(rasterize(), color.White)
 			if err := c.checkCancelled(); err != nil {
 				return err
 			}
@@ -76,7 +83,7 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err e
 		if err := c.checkCancelled(); err != nil {
 			return err
 		}
-		var img image.Image = page.Rasterize(c.dpi)
+		var img image.Image = rasterize()
 		if c.thumbnail > 0 {
 			img = c.resizeThumbnail(img)
 		}
@@ -177,6 +184,11 @@ func (c *Converter) renderDocuments(documents []*render.Document) error {
 	}
 	pages = pages[pageStart:pageEnd]
 
+	var reusable *image.RGBA
+	// 原尺寸图像可能被回调留存；缩略图有独立像素，因此可复用其原始页面缓冲。
+	if c.imageWriter == nil || c.thumbnail > 0 {
+		reusable = &image.RGBA{}
+	}
 	for _, page := range pages {
 		// 每页之前查一次取消：万页文档渲染到第 9999 页被取消，等于把
 		// 99.98% 的算力白扔了。
@@ -200,7 +212,7 @@ func (c *Converter) renderDocuments(documents []*render.Document) error {
 		if err != nil {
 			return fmt.Errorf("处理第%d页失败: %w", page.pageNumber, err)
 		}
-		if err := c.renderPage(page.pageNumber, surface); err != nil {
+		if err := c.renderPage(page.pageNumber, surface, reusable); err != nil {
 			return err
 		}
 	}

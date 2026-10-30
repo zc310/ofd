@@ -38,7 +38,7 @@ func TestTextParentTransformsWholeGlyphInRasterAndPDF(t *testing.T) {
 					t.Fatalf("父级变换未作用于字形内部: point=%v RGBA=(%d,%d)", tc.inside, r, a)
 				}
 			}
-			check(t, surface.Rasterize(geom.DPMM(10)))
+			check(t, surface.Rasterize(geom.DPMM(10), nil))
 			t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 		})
 	}
@@ -74,7 +74,7 @@ func TestTextGradientFollowsParentTranslation(t *testing.T) {
 					t.Fatalf("父级平移改变了渐变颜色: original=(%d,%d) shifted=(%d,%d)", r1>>8, b1>>8, r2>>8, b2>>8)
 				}
 			}
-			check(t, first.Rasterize(geom.DPMM(10)), shifted.Rasterize(geom.DPMM(10)))
+			check(t, first.Rasterize(geom.DPMM(10), nil), shifted.Rasterize(geom.DPMM(10), nil))
 			t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, first, 254), clipPDFImage(t, shifted, 254)) })
 		})
 	}
@@ -136,7 +136,7 @@ func TestTextParentMatchesWholeObjectTransformAndKeepsPDFText(t *testing.T) {
 						t.Fatalf("父级变换与整体变换不一致: ink=%d mismatch=%d colorMismatch=%d", ink, mismatch, colorMismatch)
 					}
 				}
-				compare(t, expected.Rasterize(geom.DPMM(10)), actual.Rasterize(geom.DPMM(10)))
+				compare(t, expected.Rasterize(geom.DPMM(10), nil), actual.Rasterize(geom.DPMM(10), nil))
 				t.Run("PDF pixels", func(t *testing.T) { compare(t, clipPDFImage(t, expected, 254), clipPDFImage(t, actual, 254)) })
 				t.Run("PDF text", func(t *testing.T) { checkPDFExtractedText(t, actual, "AB") })
 			})
@@ -189,7 +189,7 @@ func TestTextGradientColorsFollowAffineParent(t *testing.T) {
 							t.Fatalf("父级仿射变换改变了渐变颜色: original=%v transformed=%v", []uint32{r1, g1, b1, a1}, []uint32{r2, g2, b2, a2})
 						}
 					}
-					check(t, first.Rasterize(geom.DPMM(10)), transformed.Rasterize(geom.DPMM(10)))
+					check(t, first.Rasterize(geom.DPMM(10), nil), transformed.Rasterize(geom.DPMM(10), nil))
 					t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, first, 254), clipPDFImage(t, transformed, 254)) })
 				})
 			}

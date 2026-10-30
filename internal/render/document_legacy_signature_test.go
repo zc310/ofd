@@ -60,7 +60,7 @@ func TestLegacySignedFixturesRenderRasterPDFAndText(t *testing.T) {
 							t.Fatalf("页面墨迹仅%d像素，正文可能未绘制", ink)
 						}
 					}
-					check(t, surface.Rasterize(geom.DPI(96)))
+					check(t, surface.Rasterize(geom.DPI(96), nil))
 					if tc.file == "testImageNotFound.ofd" && i == 0 {
 						found := false
 						for _, diagnostic := range report.Diagnostics {

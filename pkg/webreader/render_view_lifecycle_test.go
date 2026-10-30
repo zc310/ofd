@@ -62,7 +62,7 @@ func TestPageDocumentStaysOpenWhileRenderingAcrossCacheEviction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := page.Rasterize(geom.DPI(25.4)).RGBAAt(10, 10)
+	got := page.Rasterize(geom.DPI(25.4), nil).RGBAAt(10, 10)
 	if want := (color.RGBA{R: 255, A: 255}); got != want {
 		t.Fatalf("视图仍在使用时被关闭，图片像素=%v，期望 %v", got, want)
 	}

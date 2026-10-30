@@ -30,7 +30,7 @@ func newCanvasRasterBackend(width, height float64, resolution geom.Resolution) *
 
 // Raster 按创建时指定的分辨率光栅化页面画布。
 func (b *canvasRasterBackend) Raster() *image.RGBA {
-	return rasterize(b.c, tcanvas.Resolution(b.resolution), tcanvas.DefaultColorSpace)
+	return rasterize(b.c, tcanvas.Resolution(b.resolution), tcanvas.DefaultColorSpace, nil)
 }
 
 func (b *canvasRasterBackend) RasterResolution() geom.Resolution { return b.resolution }

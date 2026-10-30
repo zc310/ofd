@@ -71,7 +71,7 @@ func (r pdfTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 			dpmm := min(300.0/25.4, math.Sqrt(4_000_000/width/height), 32768/width, 32768/height)
 			local := canvas.New(width, height)
 			local.RenderText(text, canvas.Identity.Translate(-bounds.X0, -bounds.Y0).Mul(matrix))
-			img := rasterize(local, canvas.DPMM(dpmm), canvas.DefaultColorSpace)
+			img := rasterize(local, canvas.DPMM(dpmm), canvas.DefaultColorSpace, nil)
 			if img.Bounds().Dx() > 0 && img.Bounds().Dy() > 0 {
 				r.PDF.RenderImage(img, canvas.Identity.Translate(bounds.X0, bounds.Y0).
 					Scale(width/float64(img.Bounds().Dx()), height/float64(img.Bounds().Dy())))

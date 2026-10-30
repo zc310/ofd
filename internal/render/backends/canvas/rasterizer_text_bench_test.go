@@ -35,7 +35,7 @@ func BenchmarkClippedTextRaster(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				rasterize(page, canvas.DPI(150), canvas.DefaultColorSpace)
+				rasterize(page, canvas.DPI(150), canvas.DefaultColorSpace, nil)
 			}
 		})
 	}

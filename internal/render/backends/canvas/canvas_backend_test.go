@@ -110,7 +110,7 @@ func drawPageDirect(t *testing.T, fontPath string) *image.RGBA {
 	ctx := canvas.NewContext(c)
 	ctx.SetCoordSystem(canvas.CartesianIV)
 	testscene.SceneDirect(t, ctx, fontPath)
-	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
+	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace, nil)
 }
 
 func drawPageBackend(t *testing.T, fontPath string) *image.RGBA {
@@ -118,7 +118,7 @@ func drawPageBackend(t *testing.T, fontPath string) *image.RGBA {
 	ctx := canvas.NewContext(c)
 	ctx.SetCoordSystem(canvas.CartesianIV)
 	testscene.SceneBackend(t, newCanvasBackend(ctx), fontPath)
-	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace)
+	return rasterize(c, canvas.DPI(96), canvas.DefaultColorSpace, nil)
 }
 
 // TestCanvasBackendSetDashesCompensatesStrokeWidth 保护 canvasBackend 对
@@ -194,7 +194,7 @@ func TestCanvasBackendSetDashesRendersAbsolutePeriod(t *testing.T) {
 	ctx.DrawPath(0, 0, p)
 
 	res := canvas.DPI(96)
-	img := rasterize(c, res, canvas.DefaultColorSpace)
+	img := rasterize(c, res, canvas.DefaultColorSpace, nil)
 
 	// 找墨水最多的行作为扫描线，再取该行上各段墨水的起点求周期。
 	best, bestCount := 0, 0

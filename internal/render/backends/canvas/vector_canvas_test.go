@@ -1,10 +1,15 @@
 package canvas
 
 import (
+	"bytes"
+	"image"
+	"image/color"
 	"testing"
 
+	canvaspkg "github.com/zc310/canvas"
 	"github.com/zc310/canvas/renderers/pdf"
 	"github.com/zc310/ofd/internal/render/drawing"
+	"github.com/zc310/ofd/internal/render/geom"
 )
 
 // TestDestSpecMapsEveryType 守住 OFD 的五种跳转类型逐类对应到 canvas 的目的地类型，
@@ -27,6 +32,40 @@ func TestDestSpecMapsEveryType(t *testing.T) {
 				t.Fatalf("目的地类型 = %v，期望 %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestRasterizeReusesAndClearsBuffer(t *testing.T) {
+	resolution := geom.DPMM(1)
+	var dst image.RGBA
+	for i, size := range []image.Point{{10, 10}, {10, 10}, {5, 8}, {8, 12}, {12, 12}, {10, 10}} {
+		var previous *byte
+		if len(dst.Pix) > 0 {
+			previous = &dst.Pix[0]
+		}
+		reuse := cap(dst.Pix) >= 4*size.X*size.Y
+		// 填满旧页，包括缩小后暂时不使用的区域，验证后续放大时也会清空。
+		for j := range dst.Pix[:cap(dst.Pix)] {
+			dst.Pix[:cap(dst.Pix)][j] = 0xff
+		}
+		page := canvaspkg.New(float64(size.X), float64(size.Y))
+		if i%2 == 0 {
+			ctx := canvaspkg.NewContext(page)
+			ctx.SetFillColor(color.RGBA{R: 100, A: 128})
+			ctx.DrawPath(1, 1, canvaspkg.Rectangle(2, 3))
+		}
+		surface := canvasVectorSurface{c: page}
+		want := surface.Rasterize(resolution, nil)
+		got := surface.Rasterize(resolution, &dst)
+		if got != &dst {
+			t.Fatalf("第 %d 页未返回传入的 RGBA", i+1)
+		}
+		if reuse && &got.Pix[0] != previous {
+			t.Fatalf("第 %d 页容量足够却重新分配像素缓冲", i+1)
+		}
+		if got.Bounds() != want.Bounds() || got.Stride != want.Stride || !bytes.Equal(got.Pix, want.Pix) {
+			t.Fatalf("第 %d 页复用结果与独立渲染不一致，尺寸 %v", i+1, size)
+		}
 	}
 }
 

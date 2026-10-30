@@ -94,7 +94,7 @@ func TestImageSmallClipFeaturesMatchRasterAndPDF(t *testing.T) {
 						t.Fatalf("裁剪内蓝色像素丢失: %v", inside)
 					}
 				}
-				check(t, surface.Rasterize(geom.DPMM(5)))
+				check(t, surface.Rasterize(geom.DPMM(5), nil))
 				t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 127)) })
 			})
 		}

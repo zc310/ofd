@@ -112,13 +112,13 @@ func TestMixedControlCharactersDoNotDrawNotdef(t *testing.T) {
 			render := func() VectorSurface {
 				return clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
 			}
-			clean := render().Rasterize(geom.DPI(254))
+			clean := render().Rasterize(geom.DPI(254), nil)
 			object.TextCode[0].Value = "A\x7f\u009b\uFFFDB"
 			if positioned {
 				object.TextCode[0].DeltaX = models.StArrayF{6, 0, 0, 0}
 			}
 			surface := render()
-			if mixed := surface.Rasterize(geom.DPI(254)); !bytes.Equal(clean.Pix, mixed.Pix) {
+			if mixed := surface.Rasterize(geom.DPI(254), nil); !bytes.Equal(clean.Pix, mixed.Pix) {
 				t.Fatalf("控制字符改变了可见文字：shading=%v positioned=%v", shading, positioned)
 			}
 			if !shading && !positioned {
@@ -196,12 +196,12 @@ func TestTextPatternKeepsColorsOpacityClipAndPDFText(t *testing.T) {
 			t.Fatalf("底纹退化为纯色：red=%d blue=%d", redCount, blueCount)
 		}
 	}
-	t.Run("Raster", func(t *testing.T) { checkColors(t, surface.Rasterize(geom.DPI(254)), false) })
+	t.Run("Raster", func(t *testing.T) { checkColors(t, surface.Rasterize(geom.DPI(254), nil), false) })
 	t.Run("PDF pixels", func(t *testing.T) { checkColors(t, clipPDFImage(t, surface, 254), true) })
 	t.Run("PDF text", func(t *testing.T) { checkPDFExtractedText(t, surface, "AB") })
 	object.Clips = rectangleClip(0.5, 30)
 	clipped := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
-	for _, value := range clipped.Rasterize(geom.DPI(254)).Pix {
+	for _, value := range clipped.Rasterize(geom.DPI(254), nil).Pix {
 		if value != 0 {
 			t.Fatal("与字形不相交的裁剪未清除底纹")
 		}
@@ -250,7 +250,7 @@ func testTextPatternAllowsSameFontInsideCell(t *testing.T, stroke bool) {
 		if got.err != nil {
 			t.Fatal(got.err)
 		}
-		_, _, x1, y1 := contentImageBounds(got.surface.Rasterize(geom.DPI(254)))
+		_, _, x1, y1 := contentImageBounds(got.surface.Rasterize(geom.DPI(254), nil))
 		if x1 <= 0 || y1 <= 0 {
 			t.Fatal("同字体底纹文字未绘制")
 		}
@@ -280,7 +280,7 @@ func TestTextPatternOutlineFollowsTextAndContainerTransforms(t *testing.T) {
 				budget.reset()
 				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, &models.CTM{1, 0, 0, 1, 2, 1}, nil, &budget)
 			})
-			return surface.Rasterize(geom.DPI(254))
+			return surface.Rasterize(geom.DPI(254), nil)
 		}
 		solid, patterned := render(nil), render(pattern)
 		sx0, sy0, sx1, sy1 := contentImageBounds(solid)

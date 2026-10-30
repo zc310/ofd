@@ -103,6 +103,7 @@ type Reader struct {
 	pages            []pageRef
 	renderDocs       *cache.LRU[renderDocumentKey, *render.Document]
 	renderDocUsers   map[*render.Document]int // 由 renderDocsMu 保护，仅登记正在使用的视图。
+	rasterBuffers    rasterBufferPool
 	fallbackFamily   string
 	fallbackFamilies []string
 	// 缓存指针由 mu 保护；LRU 的 Get/Add 自带锁，读操作可并发填充。

@@ -196,14 +196,14 @@ func TestSVGVectorEmbeddingKeepsParallelPixelsAndVectorOutput(t *testing.T) {
 	if bytes.Contains(svg.Bytes(), []byte("<image")) || !bytes.Contains(svg.Bytes(), []byte("<linearGradient")) {
 		t.Fatal("生产后端的 SVG 嵌入未保留矢量渐变")
 	}
-	want := baseline.Rasterize(geom.DPI(96))
+	want := baseline.Rasterize(geom.DPI(96), nil)
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			surface := draw()
-			if surface != nil && !bytes.Equal(want.Pix, surface.Rasterize(geom.DPI(96)).Pix) {
+			if surface != nil && !bytes.Equal(want.Pix, surface.Rasterize(geom.DPI(96), nil).Pix) {
 				t.Error("SVG 并发矢量嵌入改变了像素")
 			}
 		}()

@@ -301,7 +301,10 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 		}
 		return output.Bytes(), nil
 	}
-	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI))
+	buffer := r.rasterBuffers.get()
+	// 对外只返回编码字节；成功、编码失败或取消时都归还页面缓冲。
+	defer r.rasterBuffers.put(buffer)
+	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI), buffer)
 	if err := renderCheckpoint(ctx); err != nil {
 		return nil, err
 	}
@@ -480,6 +483,7 @@ func (r *Reader) Close() error {
 		return nil
 	}
 	r.closed = true
+	r.rasterBuffers.clear()
 	r.closeRenderDocumentsLocked()
 	r.text = nil
 	r.search = nil

@@ -97,7 +97,7 @@ func TestTextGradientFillAndStrokeSampleBoundaryAfterObjectCTM(t *testing.T) {
 						t.Fatalf("渐变未按变换后的 Boundary 位置取色: point=(%g,%g) got=%v want=%v", bx, by, got, want)
 					}
 				}
-				check(t, surface.Rasterize(geom.DPMM(10)))
+				check(t, surface.Rasterize(geom.DPMM(10), nil))
 				t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 			})
 		}

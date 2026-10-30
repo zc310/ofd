@@ -117,11 +117,11 @@ func htmlDocuments(documents []*render.Document, title string, output io.Writer,
 }
 
 func encodeHTMLPNG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {
-	return media.EncodePNG(output, page.Rasterize(dpi))
+	return media.EncodePNG(output, page.Rasterize(dpi, nil))
 }
 
 func encodeHTMLJPG(output io.Writer, page render.VectorSurface, dpi geom.Resolution) error {
-	return jpeg.Encode(output, opaqueImage(page.Rasterize(dpi), color.White), &jpeg.Options{Quality: 90})
+	return jpeg.Encode(output, opaqueImage(page.Rasterize(dpi, nil), color.White), &jpeg.Options{Quality: 90})
 }
 
 func opaqueImage(source image.Image, background color.Color) image.Image {

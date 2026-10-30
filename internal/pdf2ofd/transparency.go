@@ -180,7 +180,7 @@ func (p *pdfInterpreter) rasterTransparency(items []creator.Item, rect image.Rec
 	if err := p.control.check(); err != nil {
 		return nil, err
 	}
-	raster := surface.Rasterize(geom.DPI(300))
+	raster := surface.Rasterize(geom.DPI(300), nil)
 	output := image.NewNRGBA(rect)
 	for y := rect.Min.Y; y < rect.Max.Y; y++ {
 		if err := p.control.check(); err != nil {

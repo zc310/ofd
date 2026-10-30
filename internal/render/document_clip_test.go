@@ -86,7 +86,7 @@ func TestTextObjectAndParentClipHideDisjointGlyphs(t *testing.T) {
 				budget.reset()
 				doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, nil, parent, &budget)
 			})
-			img := surface.Rasterize(geom.DPMM(10))
+			img := surface.Rasterize(geom.DPMM(10), nil)
 			for i := 3; i < len(img.Pix); i += 4 {
 				if img.Pix[i] != 0 {
 					t.Fatal("不相交裁剪区之外仍有文字像素")
@@ -120,7 +120,7 @@ func TestPathBoundaryClipsOverflowInRasterAndPDF(t *testing.T) {
 			t.Fatalf("Boundary内外像素错误：inside=%v outside=%v", inside, outside)
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -180,7 +180,7 @@ func TestPartialTextClipKeepsVisiblePixelsAndPDFText(t *testing.T) {
 			t.Fatalf("裁剪区内文字丢失：%d像素", ink)
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF pixels", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 	t.Run("PDF text", func(t *testing.T) {
 		tool, err := exec.LookPath("pdftotext")
@@ -210,7 +210,7 @@ func TestSimpleCompositeHonorsOwnClipWithoutRasterizing(t *testing.T) {
 			t.Fatal("单纯填充路径应保留矢量")
 		}
 	})
-	img := surface.Rasterize(geom.DPMM(10))
+	img := surface.Rasterize(geom.DPMM(10), nil)
 	if img.RGBAAt(20, 100).A != 255 || img.RGBAAt(100, 100).A != 0 {
 		t.Fatal("复合对象自身的裁剪未生效")
 	}

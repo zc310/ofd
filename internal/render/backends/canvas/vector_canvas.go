@@ -87,8 +87,8 @@ func (r svgTextRenderer) RenderText(text *canvas.Text, matrix canvas.Matrix) {
 	r.SVG.RenderText(text, matrix)
 }
 
-func (s canvasVectorSurface) Rasterize(resolution geom.Resolution) *image.RGBA {
-	return rasterize(s.c, canvas.Resolution(resolution), canvas.DefaultColorSpace)
+func (s canvasVectorSurface) Rasterize(resolution geom.Resolution, dst *image.RGBA) *image.RGBA {
+	return rasterize(s.c, canvas.Resolution(resolution), canvas.DefaultColorSpace, dst)
 }
 
 type canvasPDFDocument struct {

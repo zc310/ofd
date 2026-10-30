@@ -199,7 +199,7 @@ func TestTextClipLayoutMatchesBodyInRasterAndPDF(t *testing.T) {
 					t.Fatalf("正文与文字裁剪不一致: ink=%d mismatch=%d", ink, mismatch)
 				}
 			}
-			compare(t, body.Rasterize(geom.DPMM(10)), clipped.Rasterize(geom.DPMM(10)))
+			compare(t, body.Rasterize(geom.DPMM(10), nil), clipped.Rasterize(geom.DPMM(10), nil))
 			t.Run("PDF", func(t *testing.T) { compare(t, clipPDFImage(t, body, 254), clipPDFImage(t, clipped, 254)) })
 		})
 	}

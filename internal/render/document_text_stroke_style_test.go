@@ -38,7 +38,7 @@ func TestTextStrokeObjectWidthOverridesDrawParam(t *testing.T) {
 			t.Fatal("图元 LineWidth=2 未覆盖引用参数 LineWidth=0.2")
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -63,7 +63,7 @@ func TestTextStrokeKeepsObjectDashesWhenClipped(t *testing.T) {
 			}
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -72,7 +72,7 @@ func TestTextStrokeDefaultBlackRespectsObjectAlpha(t *testing.T) {
 	object := strokeStyleText()
 	object.LineWidth, object.Alpha = 1, new(uint8(128))
 	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
-	if got := surface.Rasterize(geom.DPMM(10)).RGBAAt(100, 150).A; got < 127 || got > 129 {
+	if got := surface.Rasterize(geom.DPMM(10), nil).RGBAAt(100, 150).A; got < 127 || got > 129 {
 		t.Fatalf("缺省黑描边 Alpha=%d，期望128", got)
 	}
 	t.Run("PDF", func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestTextGradientStrokePreservesColorAlphaAndPDFText(t *testing.T) {
 	object.StrokeColor.Alpha = new(uint8(128))
 	surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
 	maxAlpha := uint8(0)
-	for i, value := range surface.Rasterize(geom.DPMM(10)).Pix {
+	for i, value := range surface.Rasterize(geom.DPMM(10), nil).Pix {
 		if i%4 == 3 {
 			maxAlpha = max(maxAlpha, value)
 		}
@@ -132,7 +132,7 @@ func TestTextGradientStrokeDrawsAboveSolidFill(t *testing.T) {
 			t.Fatal("渐变描边未覆盖填充内沿")
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -149,7 +149,7 @@ func TestTextStrokeCTMScaleIsSameWithIdentityParent(t *testing.T) {
 			budget.reset()
 			doc.textWithBudget(ctx, object, nil, models.StBox{Width: 40, Height: 40}, parent, nil, &budget)
 		})
-		img := surface.Rasterize(geom.DPMM(10))
+		img := surface.Rasterize(geom.DPMM(10), nil)
 		if first != nil && !bytes.Equal(first.Pix, img.Pix) {
 			t.Fatal("单位父级矩阵改变了文字描边宽度")
 		}
@@ -174,7 +174,7 @@ func TestTextStrokeKeepsOverlappingGlyphEdgesAndAppliesAlphaOnce(t *testing.T) {
 		object.TextCode = []models.TextCode{{X: 10, Y: 20, Value: "AA", DeltaX: models.StArrayF{delta}}}
 		surface := clipTestSurface(t, func(ctx DrawContext) { doc.Text(ctx, object, nil, models.StBox{Width: 40, Height: 40}) })
 		x := 100 + int(delta*10)
-		if a := surface.Rasterize(geom.DPMM(10)).RGBAAt(x, 150).A; a < 127 || a > 129 {
+		if a := surface.Rasterize(geom.DPMM(10), nil).RGBAAt(x, 150).A; a < 127 || a > 129 {
 			t.Fatalf("重叠字形内沿丢失或重复应用透明度: delta=%g alpha=%d", delta, a)
 		}
 		t.Run(map[bool]string{true: "完全重叠PDF", false: "部分重叠PDF"}[delta == 0], func(t *testing.T) {
@@ -206,7 +206,7 @@ func TestTextGradientStrokeUsesBoundaryCoordinatesAcrossRuns(t *testing.T) {
 			t.Fatalf("描边渐变在各 run 重置: first=(%d,%d) second=(%d,%d)", r1>>8, b1>>8, r2>>8, b2>>8)
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 
@@ -246,7 +246,7 @@ func TestTextPatternStrokeKeepsDashesClipOpacityAndPDFText(t *testing.T) {
 			}
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)), false)
+	check(t, surface.Rasterize(geom.DPMM(10), nil), false)
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254), true) })
 
 	// 真实字体核对空心底纹字的语义，不依赖测试轮廓支持文字整形。
@@ -287,7 +287,7 @@ func TestTextPatternStrokeDrawsAboveSolidFill(t *testing.T) {
 			t.Fatal("底纹描边覆盖了字形内部的填充")
 		}
 	}
-	check(t, surface.Rasterize(geom.DPMM(10)))
+	check(t, surface.Rasterize(geom.DPMM(10), nil))
 	t.Run("PDF", func(t *testing.T) { check(t, clipPDFImage(t, surface, 254)) })
 }
 

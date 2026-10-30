@@ -26,7 +26,7 @@ func TestPageBackgroundCoversFractionalPixelEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := canvasPage.Rasterize(geom.Resolution(dpi))
+	img := canvasPage.Rasterize(geom.Resolution(dpi), nil)
 	bounds := img.Bounds()
 	check := func(x, y int) {
 		t.Helper()

@@ -106,7 +106,7 @@ func TestPDFTextRendererRasterizesOnlyTranslucentGradients(t *testing.T) {
 			matrix := canvas.Identity.Translate(5, 10)
 			page := canvas.New(50, 25)
 			page.RenderText(text, matrix)
-			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace)
+			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace, nil)
 			data := renderPDFText(t, 50, 25, func(r pdfTextRenderer) { r.RenderText(text, matrix) })
 			images := pdfTextImages(t, data)
 			wantRaster := tc.alpha < 255 && tc.text != ""
@@ -123,7 +123,7 @@ func TestPDFTextRendererRasterizesOnlyTranslucentGradients(t *testing.T) {
 					t.Error("translucent text image lost its alpha mask")
 				}
 			}
-			if after := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace); !bytes.Equal(before.Pix, after.Pix) {
+			if after := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace, nil); !bytes.Equal(before.Pix, after.Pix) {
 				t.Error("PDF rendering modified shared text or gradient")
 			}
 			t.Run("text extraction", func(t *testing.T) {
@@ -255,7 +255,7 @@ func TestPDFSyntheticBoldMatchesRasterWeightAndKeepsText(t *testing.T) {
 			matrix := canvas.Identity.Translate(5, 10).Scale(tc.scale, tc.scale)
 			page := canvas.New(60, 30)
 			page.RenderText(text, matrix)
-			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace)
+			before := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace, nil)
 			data := renderPDFText(t, 60, 30, func(r pdfTextRenderer) { r.RenderText(text, matrix) })
 			if len(pdfTextImages(t, data)) != 0 {
 				t.Fatal("合成粗体不应被栅格化")
@@ -283,7 +283,7 @@ func TestPDFSyntheticBoldMatchesRasterWeightAndKeepsText(t *testing.T) {
 			if rasterInk == 0 || ratio < 0.85 || ratio > 1.15 {
 				t.Fatalf("PDF 与页面的字重不一致：用墨量比 %g", ratio)
 			}
-			if after := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace); !bytes.Equal(before.Pix, after.Pix) {
+			if after := rasterize(page, canvas.DPI(144), canvas.DefaultColorSpace, nil); !bytes.Equal(before.Pix, after.Pix) {
 				t.Fatal("PDF 输出修改了共享文字或字体面")
 			}
 			if extract, err := exec.LookPath("pdftotext"); err == nil {

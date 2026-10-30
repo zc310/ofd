@@ -261,8 +261,10 @@ type VectorSurface interface {
 	Height() float64
 	// Write 以 format 指定的矢量格式写出单页内容，支持 "svg"/"eps"/"tex"。
 	Write(w io.Writer, format string) error
-	// Rasterize 按分辨率把页面栅格化为标准 RGBA。
-	Rasterize(resolution geom.Resolution) *image.RGBA
+	// Rasterize 按分辨率栅格化为标准 RGBA。dst 非空时原地调整尺寸、清空
+	// 像素并按需扩容，返回 dst；为空时返回新图像。调用方负责独占 dst，
+	// 上一页图像使用完毕后才能将它用于下一页。
+	Rasterize(resolution geom.Resolution, dst *image.RGBA) *image.RGBA
 }
 
 // PDFOptions 控制 PDF 文档输出。

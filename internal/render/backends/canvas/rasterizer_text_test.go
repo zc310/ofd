@@ -24,7 +24,7 @@ func TestClippedTextRasterKeepsPixelAlignmentAndExactClip(t *testing.T) {
 			matrix := canvas.Identity.Translate(5.37/dpmm, 35.13/dpmm)
 			plain := canvas.New(width/dpmm, height/dpmm)
 			plain.RenderText(line, matrix)
-			want := rasterize(plain, resolution, canvas.DefaultColorSpace)
+			want := rasterize(plain, resolution, canvas.DefaultColorSpace, nil)
 			for _, kind := range []string{"完整覆盖", "部分裁剪", "裁剪孔洞"} {
 				t.Run(kind, func(t *testing.T) {
 					clip := canvas.Rectangle(width/dpmm, height/dpmm)
@@ -37,7 +37,7 @@ func TestClippedTextRasterKeepsPixelAlignmentAndExactClip(t *testing.T) {
 					before := clip.ToSVG()
 					page := canvas.New(width/dpmm, height/dpmm)
 					page.RenderClippedText(line, matrix, clip.Copy().Transform(matrix.Inv()))
-					got := rasterize(page, resolution, canvas.DefaultColorSpace)
+					got := rasterize(page, resolution, canvas.DefaultColorSpace, nil)
 					ink, removed := 0, 0
 					for y := range height {
 						for x := range width {
@@ -75,7 +75,7 @@ func TestClippedTextRasterKeepsPixelAlignmentAndExactClip(t *testing.T) {
 					}
 				})
 			}
-			if after := rasterize(plain, resolution, canvas.DefaultColorSpace); !bytes.Equal(after.Pix, want.Pix) {
+			if after := rasterize(plain, resolution, canvas.DefaultColorSpace, nil); !bytes.Equal(after.Pix, want.Pix) {
 				t.Fatal("裁剪改写了共享字形轮廓")
 			}
 		})
@@ -114,7 +114,7 @@ func TestClippedTextRasterPreservesOverlappingSpansAndGradientCoordinates(t *tes
 			} else {
 				page.RenderText(text, matrix)
 			}
-			return rasterize(page, resolution, canvas.DefaultColorSpace)
+			return rasterize(page, resolution, canvas.DefaultColorSpace, nil)
 		}
 		want, got := render(false), render(true)
 		ink := 0
@@ -177,7 +177,7 @@ func TestRasterBackendRecordsNativeTextClip(t *testing.T) {
 	}
 	page := canvas.New(40, 25)
 	page.RenderClippedText(line, canvas.Identity.Translate(4, 8), clip)
-	want := rasterize(page, canvas.Resolution(resolution), canvas.DefaultColorSpace)
+	want := rasterize(page, canvas.Resolution(resolution), canvas.DefaultColorSpace, nil)
 	if got := backend.Raster(); !bytes.Equal(got.Pix, want.Pix) {
 		t.Fatal("直接栅格与矢量回放的文字裁剪像素不一致")
 	}

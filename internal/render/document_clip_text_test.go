@@ -87,7 +87,7 @@ func clipsTextClipObject(t *testing.T, id models.StID) (*models.PathObject, *mod
 		t.Fatal(err)
 	}
 	const dpi = 150
-	img := surface.Rasterize(geom.DPI(dpi))
+	img := surface.Rasterize(geom.DPI(dpi), nil)
 	if img == nil {
 		t.Fatal("页面栅格化为空")
 	}
