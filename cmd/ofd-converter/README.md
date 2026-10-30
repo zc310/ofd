@@ -46,6 +46,7 @@ ofd-converter --help
 | `-from`                | 输入格式（可选）: `eml`, `svg`, `csv`, `tsv`, `png`, `jpg`, `tiff`, `pdf`, `xps`, `md`, `docx`, `doc`, `odt`, `rtf`, `wps`, `pptx`, `xlsx`, `mhtml`, `html` 等；缺省按输入文件扩展名推断 |
 | `-html-format`         | HTML 页面格式: `png`, `jpg` 或 `svg`，默认 `png`                                                                                                      |
 | `-dpi`                 | 输出分辨率 (1-1200)，默认 150                                                                                                                         |
+| `-png-compression-level` | PNG 无损压缩级别 `1-9`，默认 `7`；`1` 优先速度，`9` 优先压缩率，`0` 使用默认值 |
 | `-raster-backend`      | PNG/JPG 栅格后端：`canvas`（默认）、`ftgg` |
 | `-page`                | 指定全局页码 (从 1 开始)，0 表示全部文档体的页面；仅对 OFD 输入的 PDF/文本/Markdown/图片输出生效                                                      |
 | `-bg`                  | 背景颜色: `transparent`, `white`, `black`，默认 `white`                                                                                               |
@@ -114,6 +115,7 @@ ofd-converter --help
 | `-docx-annotations`                                                      | OFD → DOCX                        | 保留批注层文字（默认剔除）                           |
 | `-dpi`、`-bg`                                                            | OFD → 图片、OFD → HTML            | 渲染分辨率和背景色；PDF 为矢量输出，不受 `-dpi` 影响 |
 | `-raster-backend`                                                        | OFD → PNG/JPG                     | 选择页面栅格化后端                                  |
+| `-png-compression-level`                                                 | OFD → PNG                         | 调整 PNG 编码速度与体积，像素保持无损；单页、目录、ZIP 和批量输出均生效 |
 | `-ocr`、`-ocr-language`                                                  | 图片 → OFD                        | 启用 OCR 文字层并选择 Tesseract 语言                 |
 | `-pdf-strict`、`-pdf-save-repaired-fonts`、`-pdf-image-*`、`-pdf-jpx-backend`、`-pdf-max-*` | PDF 导入，以及 Office/HTML/EML/SVG/XPS → OFD 的 PDF 阶段 | 每次转换独立计数；这些格式直接输出 PDF 时不生效 |
 | `-html-format`                                                           | OFD → HTML                        | 选择内嵌 `png`/`jpg`/`svg`                           |
@@ -452,6 +454,7 @@ ofd-converter input.ofd - > output.pdf
 ofd-converter -format txt input.ofd - > output.txt
 ofd-converter -format md input.ofd - > output.md
 ofd-converter -format png -page 1 input.ofd - > page1.png
+ofd-converter -format png -page 1 --png-compression-level 1 input.ofd - > page1-fast.png
 ofd-converter -format tiff input.ofd - > pages.tiff
 ```
 

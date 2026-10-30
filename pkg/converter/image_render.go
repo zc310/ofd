@@ -54,7 +54,7 @@ func (c *Converter) renderPage(pageNumber int, page render.VectorSurface) (err e
 			if err := c.checkCancelled(); err != nil {
 				return err
 			}
-			if err := media.EncodePNGLevel(output, img, 7); err != nil {
+			if err := media.EncodePNGLevel(output, img, c.pngCompressionLevel); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		case "jpeg", "jpg":
@@ -113,7 +113,7 @@ func (c *Converter) renderRasterPage(pageNumber int, img image.Image) (err error
 
 		switch c.format {
 		case "png":
-			if err := media.EncodePNGLevel(output, img, 7); err != nil {
+			if err := media.EncodePNGLevel(output, img, c.pngCompressionLevel); err != nil {
 				return fmt.Errorf("写入第%d页失败: %w", pageNumber, err)
 			}
 		default: // jpeg / jpg

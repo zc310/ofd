@@ -18,34 +18,35 @@ type Converter struct {
 	imageOCREnabled  bool
 	imageOCRLanguage string
 	// inputPassword 是加密输入文档（目前只有 PDF）的打开口令，空表示未提供。
-	inputPassword     string
-	pdfImportOptions  PDFImportOptions
-	csvImportOptions  CSVImportOptions
-	rasterBackend     string // 非空时 PNG/JPG 走指定栅格后端
-	htmlImageFormat   string // png, svg
-	bgColor           color.Color
-	page              int
-	thumbnail         int
-	pageCacheCapacity int
-	pageCacheBytes    int64
-	pdfParallel       bool
-	imageWriter       func(page int, img image.Image) error
-	fileWriter        func(page int) (io.WriteCloser, error)
-	docTitle          string // 文档标题，由 HTML 等编码器使用
-	markdownTables    bool   // Markdown 输出是否识别表格
-	htmlTextLayerOff  bool   // HTML 输出关闭文字层；取反存储以取得默认开启的语义
-	docxTablesOff     bool   // DOCX 输出关闭表格识别；取反存储以取得默认开启的语义
-	docxImagesOff     bool   // DOCX 输出关闭图片内嵌
-	docxAnnotations   bool   // DOCX 输出保留批注层文字，默认剔除水印与印章
-	sofficePath       string
-	xpstopdfPath      string
-	officeTimeout     time.Duration
-	chromePath        string
-	paper             Paper
-	printBackground   bool
-	allowRemote       bool
-	noSandbox         bool
-	tempDir           string
+	inputPassword       string
+	pdfImportOptions    PDFImportOptions
+	csvImportOptions    CSVImportOptions
+	rasterBackend       string // 非空时 PNG/JPG 走指定栅格后端
+	pngCompressionLevel int
+	htmlImageFormat     string // png, svg
+	bgColor             color.Color
+	page                int
+	thumbnail           int
+	pageCacheCapacity   int
+	pageCacheBytes      int64
+	pdfParallel         bool
+	imageWriter         func(page int, img image.Image) error
+	fileWriter          func(page int) (io.WriteCloser, error)
+	docTitle            string // 文档标题，由 HTML 等编码器使用
+	markdownTables      bool   // Markdown 输出是否识别表格
+	htmlTextLayerOff    bool   // HTML 输出关闭文字层；取反存储以取得默认开启的语义
+	docxTablesOff       bool   // DOCX 输出关闭表格识别；取反存储以取得默认开启的语义
+	docxImagesOff       bool   // DOCX 输出关闭图片内嵌
+	docxAnnotations     bool   // DOCX 输出保留批注层文字，默认剔除水印与印章
+	sofficePath         string
+	xpstopdfPath        string
+	officeTimeout       time.Duration
+	chromePath          string
+	paper               Paper
+	printBackground     bool
+	allowRemote         bool
+	noSandbox           bool
+	tempDir             string
 
 	// ctx 是本次转换的取消信号。
 	//
@@ -74,19 +75,20 @@ func newConverter(ctx context.Context, options ...Option) *Converter {
 		ctx = context.Background()
 	}
 	conv := &Converter{
-		ctx:               ctx,
-		dpi:               defaultConverter.dpi,
-		format:            defaultConverter.format,
-		imageOCRLanguage:  "chi_sim+eng",
-		htmlImageFormat:   defaultConverter.htmlImageFormat,
-		bgColor:           defaultConverter.bgColor,
-		page:              defaultConverter.page,
-		thumbnail:         defaultConverter.thumbnail,
-		pageCacheCapacity: defaultConverter.pageCacheCapacity,
-		pageCacheBytes:    defaultConverter.pageCacheBytes,
-		pdfParallel:       false,
-		paper:             DefaultPaper(),
-		printBackground:   true,
+		ctx:                 ctx,
+		dpi:                 defaultConverter.dpi,
+		format:              defaultConverter.format,
+		imageOCRLanguage:    "chi_sim+eng",
+		htmlImageFormat:     defaultConverter.htmlImageFormat,
+		bgColor:             defaultConverter.bgColor,
+		page:                defaultConverter.page,
+		thumbnail:           defaultConverter.thumbnail,
+		pageCacheCapacity:   defaultConverter.pageCacheCapacity,
+		pageCacheBytes:      defaultConverter.pageCacheBytes,
+		pdfParallel:         false,
+		pngCompressionLevel: DefaultPNGCompressionLevel,
+		paper:               DefaultPaper(),
+		printBackground:     true,
 	}
 
 	for _, opt := range options {

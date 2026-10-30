@@ -157,6 +157,15 @@ func ExampleSVG() {
 	// Output: true
 }
 
+func ExamplePNGCompressionLevel() {
+	var output bytes.Buffer
+	err := converter.Convert(context.Background(), "ofd", "png",
+		"../../testdata/ofd-creator/helloworld.ofd", &output,
+		converter.Page(1), converter.DPI(96), converter.PNGCompressionLevel(1))
+	fmt.Println(err == nil && bytes.HasPrefix(output.Bytes(), []byte("\x89PNG\r\n\x1a\n")))
+	// Output: true
+}
+
 func ExampleHTML() {
 	// 转换入口的第一个参数是取消信号；命令行工具通常用 context.Background()，
 	// 长任务应传入带超时的 context。

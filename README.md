@@ -38,6 +38,9 @@ ofd-converter input.ofd output.pdf
 # 首页输出为 PNG；页码从 1 开始
 ofd-converter --page 1 --dpi 150 input.ofd page1.png
 
+# PNG 优先编码速度；压缩级别 1-9，默认 7，像素均为无损
+ofd-converter --page 1 --png-compression-level 1 input.ofd page1.png
+
 # 多页图片输出为 ZIP
 ofd-converter --format png input.ofd pages.zip
 

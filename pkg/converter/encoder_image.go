@@ -18,11 +18,16 @@ func init() {
 
 type pngEncoder struct{}
 
+var errPNGCompressionLevel = errors.New("PNG 压缩级别必须为 1-9（0 使用默认级别 7）")
+
 func (e *pngEncoder) Name() string         { return "png" }
 func (e *pngEncoder) Kind() Kind           { return KindImage }
 func (e *pngEncoder) Extensions() []string { return []string{".png"} }
 func (e *pngEncoder) MIME() string         { return "image/png" }
 func (e *pngEncoder) Encode(input any, output io.Writer, conv *Converter) error {
+	if conv.pngCompressionLevel < 1 || conv.pngCompressionLevel > 9 {
+		return errPNGCompressionLevel
+	}
 	conv.format = "png"
 	return encodeOFD(input, output, conv, encodeDocuments)
 }

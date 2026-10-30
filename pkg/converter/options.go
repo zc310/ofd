@@ -50,6 +50,21 @@ func DPI(dpi float64) Option {
 // PNG 设置为PNG格式
 func PNG() Option { return WithFormat("png") }
 
+// DefaultPNGCompressionLevel 是 PNG 输出的默认压缩级别。
+const DefaultPNGCompressionLevel = 7
+
+// PNGCompressionLevel 设置 PNG 输出的无损压缩级别：1 优先速度，9 优先压缩率，
+// 0 使用默认级别 7。超出 0–9 时，OFD 转 PNG 在解析输入及写出前返回错误。
+// 该选项作用于 PNG 字节输出；ImageWriter 回调接收的原始图像不受影响。
+func PNGCompressionLevel(level int) Option {
+	if level == 0 {
+		level = DefaultPNGCompressionLevel
+	}
+	return func(c *Converter) {
+		c.pngCompressionLevel = level
+	}
+}
+
 // JPG 设置为JPEG格式
 func JPG() Option { return WithFormat("jpeg") }
 

@@ -16,6 +16,9 @@
 Text、Markdown、DOCX 转换遇到无法读取的页面时返回包含全局页码的错误，不把损坏页
 当作空白页。逐页文字收集和 DOCX 图片提取都会响应取消。
 
+`converter.PNGCompressionLevel(level)` 设置 PNG 无损压缩级别：`1` 优先速度，`9` 优先压缩率，`0` 使用默认 `7`。
+适用于 `Convert`、`Encode`、`Image` 及已解析文档入口的 PNG 字节输出。
+
 `converter.Page(n)` 从 1 开始选择多文档体合并后的全局页码，`converter.DPI(dpi)`
 设置栅格输出分辨率。库默认使用 96 DPI 和透明背景；CLI 默认使用 150 DPI 和白色背景。
 
