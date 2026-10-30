@@ -24,11 +24,11 @@ WASM 默认使用兼容模式读取加密元数据，支持 ofdrw 的数字操�
 
 ## 截图
 
-![OFD WASM 网页阅读器](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_1.png)
+![OFD WASM 网页阅读器](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-reader_1.png)
 
-![OFD WASM 网页阅读器双页模式](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_2.png)
+![OFD WASM 网页阅读器双页模式](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-reader_2.png)
 
-![OFD WASM 网页阅读器资源列表](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-webreader_3.png)
+![OFD WASM 网页阅读器资源列表](https://github.com/zc310/ofd/releases/download/v0.1.4/ofd-wasm-reader_3.png)
 ## 快速开始
 
 在仓库根目录执行：

@@ -71,8 +71,8 @@
 
 ```sh
 go test -mod=readonly ./internal/pdf2ofd -count=1
-go test -mod=readonly ./pkg/converter ./pkg/converter/import/pdf ./pkg/creator ./pkg/webreader -count=1
-go vet -mod=readonly ./internal/pdf2ofd ./pkg/converter ./pkg/creator ./pkg/webreader
+go test -mod=readonly ./pkg/converter ./pkg/converter/import/pdf ./pkg/creator ./pkg/reader -count=1
+go vet -mod=readonly ./internal/pdf2ofd ./pkg/converter ./pkg/creator ./pkg/reader
 CGO_ENABLED=0 go test -mod=readonly -tags purego ./internal/pdf2ofd -run 'TestSemantic|TestType3|TestTextClipping|TestTransparency' -count=1
 go run ./cmd/ofd-validator --format text --mode strict /path/to/output.ofd
 ```

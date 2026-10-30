@@ -58,7 +58,7 @@ document:
       movie:
         resource_id: 22
         operator: Play
-    # GotoA 顺序有约束：webreader 按动作顺序生成热区，并以最后一条附件链接为准
+    # GotoA 顺序有约束：reader 按动作顺序生成热区，并以最后一条附件链接为准
     #（TestDocumentClickActionsMatchPageText 断言 demo-note），故 demo-ofd、demo-inline
     # 必须排在 demo-note 之前。
     - event: CLICK

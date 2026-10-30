@@ -19,8 +19,8 @@ import (
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/eml"
 	_ "github.com/zc310/ofd/pkg/converter/import/svg"
+	"github.com/zc310/ofd/pkg/reader"
 	"github.com/zc310/ofd/pkg/validator"
-	"github.com/zc310/ofd/pkg/webreader"
 )
 
 func browserImportOptions(t *testing.T) []converter.Option {
@@ -105,7 +105,7 @@ func TestSVGImportKeepsVectorPathsTextAndLandscapePaper(t *testing.T) {
 	if counts["PathObject"] == 0 || counts["TextObject"] == 0 || counts["ImageObject"] != 0 {
 		t.Fatalf("纯矢量 SVG 被栅格化或丢失图元: %v", counts)
 	}
-	r, err := webreader.Open(output.Bytes())
+	r, err := reader.Open(output.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestEMLImportKeepsHeadersSelectedBodyAndAttachmentList(t *testing.T) {
 	if strings.Count(normalized, "Projectdocumentsarereadyforreview.") != 1 || strings.Contains(normalized, "Reviewchecklist") {
 		t.Fatalf("重复输出备选正文或把附件内容当作正文: %s", normalized)
 	}
-	r, err := webreader.Open(output.Bytes())
+	r, err := reader.Open(output.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestEMLImportRendersEmbeddedPNG(t *testing.T) {
 	if counts := browserOFDObjects(t, output.Bytes()); counts["ImageObject"] != 1 {
 		t.Fatalf("CID PNG 未进入页面: %v", counts)
 	}
-	r, err := webreader.Open(output.Bytes())
+	r, err := reader.Open(output.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestEMLImportPreservesDuplicateNamesBinaryAndEmptyAttachments(t *testing.T)
 	if err := converter.Convert(t.Context(), "eml", "ofd", []byte(source.String()), &output, options...); err != nil {
 		t.Fatal(err)
 	}
-	r, err := webreader.Open(output.Bytes())
+	r, err := reader.Open(output.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,8 +24,8 @@ import (
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/converter"
 	"github.com/zc310/ofd/pkg/creator"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 	"github.com/zc310/ofd/pkg/validator"
-	"github.com/zc310/ofd/pkg/webreader"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -358,11 +358,11 @@ func TestPDFMultiFDCFFWebFallbackKeepsOtherFontSubset(t *testing.T) {
 		}
 	}
 	const family = "PDF-CFF-Test-Fallback"
-	if err := webreader.RegisterFallbackFont(webreader.FontSource{Family: family, Data: data}); err != nil {
+	if err := ofdreader.RegisterFallbackFont(ofdreader.FontSource{Family: family, Data: data}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = webreader.UnregisterFallbackFont(family) })
-	reader, err := webreader.Open(cffOFDTestDocument(t, nil, value, nil))
+	t.Cleanup(func() { _ = ofdreader.UnregisterFallbackFont(family) })
+	reader, err := ofdreader.Open(cffOFDTestDocument(t, nil, value, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestPDFMultiFDCFFWebFallbackKeepsOtherFontSubset(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, ofdreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
 		t.Fatal(err)
 	}
 	checkCFFPDFPrograms(t, output.Bytes(), sfnt.Tables["CFF "])
@@ -416,7 +416,7 @@ func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value str
 	t.Helper()
 	input := cffOFDTestDocument(t, data, value, glyphs)
 	wantCFF := embeddedCFFProgram(t, input)
-	for _, entrypoint := range []string{"converter", "webreader"} {
+	for _, entrypoint := range []string{"converter", "reader"} {
 		t.Run(entrypoint, func(t *testing.T) {
 			var output bytes.Buffer
 			if entrypoint == "converter" {
@@ -424,12 +424,12 @@ func runCFFPDFExport(t *testing.T, data []byte, sfnt *fontparser.SFNT, value str
 					t.Fatal(err)
 				}
 			} else {
-				reader, err := webreader.Open(input)
+				reader, err := ofdreader.Open(input)
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer reader.Close()
-				if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, webreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
+				if err := reader.RenderPDFTo(t.Context(), &output, []int{0, 1}, ofdreader.RenderOptions{DPI: 72, Background: color.White}); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -9,12 +9,12 @@ import (
 	"syscall/js"
 	"testing"
 
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
 func wasmRenderTestApp(t *testing.T) *wasmApp {
 	t.Helper()
-	reader, err := webreader.Open(wasmDocumentFixture(t))
+	reader, err := ofdreader.Open(wasmDocumentFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}

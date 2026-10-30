@@ -16,7 +16,7 @@ import (
 // OFD 允许用很小的 Size 配一个放大倍数的 CTM 来排大标题：testdata/ofdrw/intro.ofd
 // 第 14 页就是 Size="1" 配 CTM="9.8778 0 0 9.8778 0 0"，画出 9.88mm 的字。
 // buildTextLayout 早先把修正只用在 Height 上，Size 原样返回，消费方（HTML 文字层
-// 与 pkg/webreader）按它换算字号就会小近 10 倍——文字层缩成一条 1mm 的细线。
+// 与 pkg/reader）按它换算字号就会小近 10 倍——文字层缩成一条 1mm 的细线。
 func TestTextLayoutSizeFollowsCTMScale(t *testing.T) {
 	const declaredSize = 1.0
 	const scale = 9.8778

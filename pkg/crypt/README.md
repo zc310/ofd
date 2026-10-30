@@ -188,7 +188,7 @@ err = converter.PDF(ctx, view, output)
 // v 为已有 *validator.Validator。
 report := v.Validate(ctx, view, "encrypted.ofd")
 results, err := sign.Verify(ctx, view, verificationOptions)
-reader, err := webreader.Open(view)
+r, err := reader.Open(view)
 // reader 使用完毕后单独 Close。
 ```
 
@@ -201,7 +201,7 @@ reader, err := webreader.Open(view)
 `OpenPhysicalPackage` 可取得独立原始容器读取租约，保留 ZIP 压缩元数据，用后需关闭。
 它供容器审计使用，不是解密读取入口。
 
-视图传给 parser、converter、sign、analyzer、webreader 或 validator 时，消费方取得独立租约。
+视图传给 parser、converter、sign、analyzer、reader 或 validator 时，消费方取得独立租约。
 消费方关闭不会关闭原视图；视图所有者关闭后不再允许新读取/新租约，已取得的租约继续可用。
 最后一个租约关闭时释放输入文件并清零自持 FEK/IV。视图不会保存调用方的口令、私钥句柄或
 resolver 闭包；读取时不再调用私钥服务。创建上下文仅控制打开阶段；后续使用

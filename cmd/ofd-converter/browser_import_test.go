@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/convert/browser"
-	"github.com/zc310/ofd/pkg/webreader"
+	"github.com/zc310/ofd/pkg/reader"
 )
 
 func TestEMLAndSVGCLIRecognizeExternalImportsAndPreserveFailedOutput(t *testing.T) {
@@ -74,7 +74,7 @@ func TestEMLAndSVGCLIConvertWithBrowser(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := webreader.Open(data)
+		r, err := reader.Open(data)
 		if err != nil {
 			t.Fatal(err)
 		}

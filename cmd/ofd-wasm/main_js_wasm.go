@@ -19,14 +19,14 @@ import (
 
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/internal/version"
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
 type wasmApp struct {
 	mu            sync.Mutex
-	reader        *webreader.Reader
+	reader        *ofdreader.Reader
 	encrypted     bool // 原文件是否加密；仅在 Reader 成功打开后设置。
-	fallbackFonts []webreader.FontSource
+	fallbackFonts []ofdreader.FontSource
 	streamsMu     sync.Mutex
 	streams       map[uint64]*jsChunkWriter
 	requestsMu    sync.Mutex
@@ -127,7 +127,7 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 		return errorValue(err)
 	}
 	a.mu.Lock()
-	fallbackFonts := append([]webreader.FontSource(nil), a.fallbackFonts...)
+	fallbackFonts := append([]ofdreader.FontSource(nil), a.fallbackFonts...)
 	a.mu.Unlock()
 	for _, source := range fallbackFonts {
 		if err := reader.UseFallbackFont(source.Family); err != nil {
@@ -157,20 +157,20 @@ func (a *wasmApp) open(_ js.Value, args []js.Value) (result any) {
 	})
 }
 
-func openOptions(args []js.Value) (webreader.OpenOptions, error) {
+func openOptions(args []js.Value) (ofdreader.OpenOptions, error) {
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
-		return webreader.OpenOptions{}, nil
+		return ofdreader.OpenOptions{}, nil
 	}
 	if args[0].Type() != js.TypeObject {
-		return webreader.OpenOptions{}, errors.New("ofd.open 配置必须是对象")
+		return ofdreader.OpenOptions{}, errors.New("ofd.open 配置必须是对象")
 	}
 	value := args[0]
-	options := webreader.OpenOptions{}
+	options := ofdreader.OpenOptions{}
 	if capacity := value.Get("pageCacheCapacity"); !capacity.IsUndefined() && !capacity.IsNull() {
 		if capacity.Type() != js.TypeNumber || capacity.IsNaN() || math.IsInf(capacity.Float(), 0) ||
 			capacity.Float() != math.Trunc(capacity.Float()) ||
 			capacity.Float() < 0 || capacity.Float() > 1<<20 {
-			return webreader.OpenOptions{}, errors.New("pageCacheCapacity 必须是 0 到 1048576 之间的整数")
+			return ofdreader.OpenOptions{}, errors.New("pageCacheCapacity 必须是 0 到 1048576 之间的整数")
 		}
 		options.PageCacheCapacity = capacity.Int()
 	}
@@ -178,7 +178,7 @@ func openOptions(args []js.Value) (webreader.OpenOptions, error) {
 		if bytes.Type() != js.TypeNumber || bytes.IsNaN() || math.IsInf(bytes.Float(), 0) ||
 			bytes.Float() != math.Trunc(bytes.Float()) ||
 			bytes.Float() < 0 || bytes.Float() > 1<<40 {
-			return webreader.OpenOptions{}, errors.New("pageCacheBytes 必须是 0 到 1099511627776 之间的整数")
+			return ofdreader.OpenOptions{}, errors.New("pageCacheBytes 必须是 0 到 1099511627776 之间的整数")
 		}
 		options.PageCacheBytes = int64(bytes.Float())
 	}
@@ -196,7 +196,7 @@ func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
 	if args[1].Type() != js.TypeString || strings.TrimSpace(args[1].String()) == "" {
 		return errorValue(errors.New("字体族名必须是非空字符串"))
 	}
-	source := webreader.FontSource{Family: args[1].String(), Data: data}
+	source := ofdreader.FontSource{Family: args[1].String(), Data: data}
 	if len(args) >= 3 {
 		if args[2].Type() != js.TypeNumber || args[2].IsNaN() || math.IsInf(args[2].Float(), 0) {
 			return errorValue(errors.New("字体权重必须是有限数字"))
@@ -225,10 +225,10 @@ func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
 	a.fallbackFonts = append(a.fallbackFonts, cloneFontSource(source))
 	stored := a.fallbackFonts[len(a.fallbackFonts)-1]
 	a.mu.Unlock()
-	if err := webreader.RegisterFallbackFont(stored); err != nil {
+	if err := ofdreader.RegisterFallbackFont(stored); err != nil {
 		// 失败留下可重试状态：不把失败字体保留为已注册。
 		a.mu.Lock()
-		a.fallbackFonts[len(a.fallbackFonts)-1] = webreader.FontSource{}
+		a.fallbackFonts[len(a.fallbackFonts)-1] = ofdreader.FontSource{}
 		a.fallbackFonts = a.fallbackFonts[:len(a.fallbackFonts)-1]
 		a.mu.Unlock()
 		return errorValue(err)
@@ -241,7 +241,7 @@ func (a *wasmApp) addFallbackFont(_ js.Value, args []js.Value) any {
 	return nil
 }
 
-func containsFallbackFont(fonts []webreader.FontSource, source webreader.FontSource) bool {
+func containsFallbackFont(fonts []ofdreader.FontSource, source ofdreader.FontSource) bool {
 	for _, font := range fonts {
 		if font.Family == source.Family && font.Weight == source.Weight && font.Italic == source.Italic {
 			return true
@@ -278,15 +278,15 @@ func (a *wasmApp) removeFallbackFont(_ js.Value, args []js.Value) any {
 		}
 	}
 	if removed {
-		if err := webreader.UnregisterFallbackFont(family); err != nil {
+		if err := ofdreader.UnregisterFallbackFont(family); err != nil {
 			return errorValue(err)
 		}
 	}
 	return nil
 }
 
-func cloneFontSource(source webreader.FontSource) webreader.FontSource {
-	return webreader.FontSource{
+func cloneFontSource(source ofdreader.FontSource) ofdreader.FontSource {
+	return ofdreader.FontSource{
 		Family: source.Family,
 		Name:   source.Name,
 		Weight: source.Weight,
@@ -484,7 +484,7 @@ func (a *wasmApp) fontUsage(_ js.Value, args []js.Value) any {
 	if len(args) < 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeNumber {
 		return errorValue(errors.New("ofd.fontUsage 需要字体作用域和标识两个数字参数"))
 	}
-	ref := webreader.FontRef{Scope: int(args[0].Float()), ID: uint64(args[1].Float())}
+	ref := ofdreader.FontRef{Scope: int(args[0].Float()), ID: uint64(args[1].Float())}
 	usage, err := reader.FontUsage(ref, fontUsageOptions(args[2:]))
 	if err != nil {
 		return errorValue(err)
@@ -660,7 +660,7 @@ func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
 		return errorValue(errors.New("媒体用途仅支持 preview；下载时省略"))
 	}
 	if !preview {
-		if err := reader.CheckDocumentPermission(webreader.PermissionExport, int(args[0].Float())); err != nil {
+		if err := reader.CheckDocumentPermission(ofdreader.PermissionExport, int(args[0].Float())); err != nil {
 			return errorValue(err)
 		}
 	}
@@ -798,7 +798,7 @@ func (a *wasmApp) pageEntryActionsForPage(_ js.Value, args []js.Value) any {
 	return result
 }
 
-func pageLinkValue(link webreader.PageLink) map[string]any {
+func pageLinkValue(link ofdreader.PageLink) map[string]any {
 	value := map[string]any{
 		"scope":           link.Scope,
 		"page":            link.Page,
@@ -1146,7 +1146,7 @@ func (a *wasmApp) search(_ js.Value, args []js.Value) any {
 	}
 	query := args[0].String()
 	return a.renderAsync(id, func(ctx context.Context) (js.Value, error) {
-		report, searchErr := reader.Search(ctx, query, webreader.SearchOptions{
+		report, searchErr := reader.Search(ctx, query, ofdreader.SearchOptions{
 			MaxPages: wasmMaxSearchPages, MaxResults: wasmMaxSearchResults,
 		})
 		if searchErr != nil {
@@ -1243,15 +1243,15 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 		return errorValue(err)
 	}
 	// renderStream 始终为导出；单页和多页在写入任何结果之前统一检查。
-	options.Purpose = webreader.PermissionExport
-	if err := reader.CheckPermission(webreader.PermissionExport, indices); err != nil {
+	options.Purpose = ofdreader.PermissionExport
+	if err := reader.CheckPermission(ofdreader.PermissionExport, indices); err != nil {
 		return errorValue(err)
 	}
 	streamID, err := renderRequestID(args[min(len(args), 3):])
 	if err != nil {
 		return errorValue(err)
 	}
-	if options.Format != webreader.RenderFormat("pdf") && len(indices) == 1 {
+	if options.Format != ofdreader.RenderFormat("pdf") && len(indices) == 1 {
 		if len(args) > 2 && !args[2].IsNull() && !args[2].IsUndefined() {
 			return errorValue(errors.New("ofd.renderStream 单页时不需要输出回调"))
 		}
@@ -1265,10 +1265,10 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 			return result, nil
 		})
 	}
-	if options.Format != webreader.RenderFormat("pdf") && len(indices) < 2 {
+	if options.Format != ofdreader.RenderFormat("pdf") && len(indices) < 2 {
 		return errorValue(errors.New("ofd.renderStream 页面列表为空"))
 	}
-	if options.Format != webreader.RenderFormat("pdf") && options.Format != webreader.RenderPNG && options.Format != webreader.RenderJPG {
+	if options.Format != ofdreader.RenderFormat("pdf") && options.Format != ofdreader.RenderPNG && options.Format != ofdreader.RenderJPG {
 		return errorValue(errors.New("ofd.renderStream 多页时只支持 PDF、PNG 或 JPG"))
 	}
 	if len(args) < 3 || args[2].Type() != js.TypeFunction {
@@ -1297,7 +1297,7 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 			}
 		}()
 		var err error
-		if options.Format == webreader.RenderFormat("pdf") {
+		if options.Format == ofdreader.RenderFormat("pdf") {
 			err = reader.RenderPDFTo(writer.ctx, writer, indices, options)
 		} else {
 			archive := zip.NewWriter(writer)
@@ -1473,7 +1473,7 @@ func (a *wasmApp) streamAck(_ js.Value, args []js.Value) any {
 	return nil
 }
 
-func (a *wasmApp) currentReader() (*webreader.Reader, error) {
+func (a *wasmApp) currentReader() (*ofdreader.Reader, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.reader == nil {
@@ -1506,17 +1506,17 @@ func bytesFromJS(value js.Value) ([]byte, error) {
 	return result, nil
 }
 
-func renderOptions(args []js.Value) (webreader.RenderOptions, error) {
+func renderOptions(args []js.Value) (ofdreader.RenderOptions, error) {
 	return parseRenderOptions(args, false)
 }
 
-func renderStreamOptions(args []js.Value) (webreader.RenderOptions, error) {
+func renderStreamOptions(args []js.Value) (ofdreader.RenderOptions, error) {
 	return parseRenderOptions(args, true)
 }
 
-func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions, error) {
-	options := webreader.RenderOptions{
-		DPI: 72, Background: color.Transparent, Format: webreader.RenderPNG,
+func parseRenderOptions(args []js.Value, allowPDF bool) (ofdreader.RenderOptions, error) {
+	options := ofdreader.RenderOptions{
+		DPI: 72, Background: color.Transparent, Format: ofdreader.RenderPNG,
 		PNGCompressionLevel: 1,
 	}
 	if len(args) == 0 || args[0].IsUndefined() || args[0].IsNull() {
@@ -1530,7 +1530,7 @@ func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions
 		if purpose.Type() != js.TypeString || (purpose.String() != "export" && purpose.String() != "print") {
 			return options, errors.New("purpose 必须为 export 或 print；预览时省略")
 		}
-		options.Purpose = webreader.PermissionAction(purpose.String())
+		options.Purpose = ofdreader.PermissionAction(purpose.String())
 	}
 	if format := value.Get("format"); !format.IsUndefined() && !format.IsNull() {
 		if format.Type() != js.TypeString {
@@ -1541,13 +1541,13 @@ func parseRenderOptions(args []js.Value, allowPDF bool) (webreader.RenderOptions
 			if !allowPDF {
 				return options, errors.New("format 必须是 png、jpg 或 svg")
 			}
-			options.Format = webreader.RenderFormat("pdf")
-		case string(webreader.RenderPNG):
-			options.Format = webreader.RenderPNG
-		case string(webreader.RenderSVG):
-			options.Format = webreader.RenderSVG
-		case string(webreader.RenderJPG):
-			options.Format = webreader.RenderJPG
+			options.Format = ofdreader.RenderFormat("pdf")
+		case string(ofdreader.RenderPNG):
+			options.Format = ofdreader.RenderPNG
+		case string(ofdreader.RenderSVG):
+			options.Format = ofdreader.RenderSVG
+		case string(ofdreader.RenderJPG):
+			options.Format = ofdreader.RenderJPG
 		default:
 			return options, errors.New("format 必须是 pdf、png、jpg 或 svg")
 		}
@@ -1634,7 +1634,7 @@ func jsIndices(value js.Value, limit int) ([]int, error) {
 	return indices, nil
 }
 
-func pagesValue(pages []webreader.PageInfo) js.Value {
+func pagesValue(pages []ofdreader.PageInfo) js.Value {
 	result := js.Global().Get("Array").New(len(pages))
 	for index, page := range pages {
 		result.SetIndex(index, pageValue(page))
@@ -1642,7 +1642,7 @@ func pagesValue(pages []webreader.PageInfo) js.Value {
 	return result
 }
 
-func pageValue(page webreader.PageInfo) js.Value {
+func pageValue(page ofdreader.PageInfo) js.Value {
 	return objectValue(map[string]any{
 		"index":  page.Index,
 		"width":  page.Width,
@@ -1650,7 +1650,7 @@ func pageValue(page webreader.PageInfo) js.Value {
 	})
 }
 
-func outlineNodesValue(nodes []webreader.OutlineNode) js.Value {
+func outlineNodesValue(nodes []ofdreader.OutlineNode) js.Value {
 	result := js.Global().Get("Array").New(len(nodes))
 	for index, node := range nodes {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1665,7 +1665,7 @@ func outlineNodesValue(nodes []webreader.OutlineNode) js.Value {
 	return result
 }
 
-func outlineDestValue(dest *webreader.OutlineDest) any {
+func outlineDestValue(dest *ofdreader.OutlineDest) any {
 	if dest == nil {
 		return nil
 	}
@@ -1679,7 +1679,7 @@ func outlineDestValue(dest *webreader.OutlineDest) any {
 	})
 }
 
-func customTagNodeValue(node *webreader.CustomTagNode) any {
+func customTagNodeValue(node *ofdreader.CustomTagNode) any {
 	if node == nil {
 		return nil
 	}
@@ -1732,7 +1732,7 @@ func optionalBoolValue(value *bool) any {
 	return *value
 }
 
-func bookmarksValue(bookmarks []webreader.Bookmark) js.Value {
+func bookmarksValue(bookmarks []ofdreader.Bookmark) js.Value {
 	result := js.Global().Get("Array").New(len(bookmarks))
 	for index, bookmark := range bookmarks {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1744,7 +1744,7 @@ func bookmarksValue(bookmarks []webreader.Bookmark) js.Value {
 	return result
 }
 
-func textRunsValue(runs []webreader.TextRun) js.Value {
+func textRunsValue(runs []ofdreader.TextRun) js.Value {
 	result := js.Global().Get("Array").New(len(runs))
 	for index, run := range runs {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1768,7 +1768,7 @@ func textRunsValue(runs []webreader.TextRun) js.Value {
 	return result
 }
 
-func searchResultsValue(results []webreader.SearchResult) js.Value {
+func searchResultsValue(results []ofdreader.SearchResult) js.Value {
 	result := js.Global().Get("Array").New(len(results))
 	for index, match := range results {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1783,7 +1783,7 @@ func searchResultsValue(results []webreader.SearchResult) js.Value {
 	return result
 }
 
-func glyphsValue(glyphs []webreader.Glyph) js.Value {
+func glyphsValue(glyphs []ofdreader.Glyph) js.Value {
 	result := js.Global().Get("Array").New(len(glyphs))
 	for index, glyph := range glyphs {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1794,7 +1794,7 @@ func glyphsValue(glyphs []webreader.Glyph) js.Value {
 	return result
 }
 
-func rectsValue(rects []webreader.Rect) js.Value {
+func rectsValue(rects []ofdreader.Rect) js.Value {
 	result := js.Global().Get("Array").New(len(rects))
 	for index, rect := range rects {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1805,7 +1805,7 @@ func rectsValue(rects []webreader.Rect) js.Value {
 	return result
 }
 
-func fontsValue(fonts []webreader.FontResource) js.Value {
+func fontsValue(fonts []ofdreader.FontResource) js.Value {
 	result := js.Global().Get("Array").New(len(fonts))
 	for index, font := range fonts {
 		data := js.Global().Get("Uint8Array").New(len(font.Data))
@@ -1818,7 +1818,7 @@ func fontsValue(fonts []webreader.FontResource) js.Value {
 	return result
 }
 
-func fontListValue(fonts []webreader.FontInfo) js.Value {
+func fontListValue(fonts []ofdreader.FontInfo) js.Value {
 	result := js.Global().Get("Array").New(len(fonts))
 	for index, font := range fonts {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -1838,8 +1838,8 @@ func fontListValue(fonts []webreader.FontInfo) js.Value {
 }
 
 // fontUsageOptions 从 JS 参数读取字体统计上限；缺省或非数字时使用 Reader 默认值。
-func fontUsageOptions(args []js.Value) webreader.FontUsageOptions {
-	options := webreader.FontUsageOptions{}
+func fontUsageOptions(args []js.Value) ofdreader.FontUsageOptions {
+	options := ofdreader.FontUsageOptions{}
 	if len(args) > 0 && args[0].Type() == js.TypeNumber {
 		options.MaxScan = int(args[0].Float())
 	}

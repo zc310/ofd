@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
 func awaitRenderPromise(t *testing.T, value any) (js.Value, bool) {
@@ -81,7 +81,7 @@ func TestRenderStreamProcessesJSCancellationBeforeFirstChunk(t *testing.T) {
 	for _, format := range []string{"png", "jpg", "pdf"} {
 		for _, action := range []string{"cancel", "close"} {
 			t.Run(format+"/"+action, func(t *testing.T) {
-				reader, err := webreader.Open(wasmDocumentFixture(t))
+				reader, err := ofdreader.Open(wasmDocumentFixture(t))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -116,7 +116,7 @@ func TestRenderStreamProcessesJSCancellationBeforeFirstChunk(t *testing.T) {
 				if !rejected || chunks != 0 || len(app.streams) != 0 || len(app.requests) != 0 || closeErr != nil {
 					t.Fatalf("取消未及时结束: rejected=%v chunks=%d streams=%d closeErr=%v", rejected, chunks, len(app.streams), closeErr)
 				}
-				_, err = reader.RenderPage(t.Context(), 0, webreader.RenderOptions{DPI: 12})
+				_, err = reader.RenderPage(t.Context(), 0, ofdreader.RenderOptions{DPI: 12})
 				if action == "cancel" && err != nil {
 					t.Fatalf("取消后 Reader 不可复用: %v", err)
 				}
@@ -131,7 +131,7 @@ func TestRenderStreamProcessesJSCancellationBeforeFirstChunk(t *testing.T) {
 func TestRenderStreamCompletesWithACKs(t *testing.T) {
 	for _, format := range []string{"png", "jpg", "pdf"} {
 		t.Run(format, func(t *testing.T) {
-			reader, err := webreader.Open(wasmDocumentFixture(t))
+			reader, err := ofdreader.Open(wasmDocumentFixture(t))
 			if err != nil {
 				t.Fatal(err)
 			}

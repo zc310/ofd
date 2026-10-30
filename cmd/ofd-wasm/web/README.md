@@ -47,8 +47,8 @@ ofd.checkPermission('print', [0, 1]); // copy / export / print；成功 true，�
 准备打印时应传 `{purpose: 'print'}`。`ofd.mediaData(scope, id, maxBytes)` 默认检查导出权限；
 文档内播放或缩略图可传第四个参数 `'preview'`，该用途不提供独立文件下载入口。
 
-Go `webreader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermission()` 提供相同的快照和检查，
-可用 `errors.Is(err, webreader.ErrPermissionDenied)` 判断拒绝。`Reader.Text()`、`RenderPDF/RenderPDFTo()`、
+Go `reader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermission()` 提供相同的快照和检查，
+可用 `errors.Is(err, reader.ErrPermissionDenied)` 判断拒绝。`Reader.Text()`、`RenderPDF/RenderPDFTo()`、
 `AttachmentData()` 自动检查内容导出权限；保存图片或准备打印时为 `RenderOptions.Purpose` 设置
 `PermissionExport` / `PermissionPrint`。`Reader.MediaData()` 是供文档内播放的原始读取接口，下载资源前应检查文档体的导出权限。
 

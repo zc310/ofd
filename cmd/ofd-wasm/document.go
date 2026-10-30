@@ -10,7 +10,7 @@ import (
 	"github.com/emmansun/gmsm/pkcs8"
 	"github.com/emmansun/gmsm/sm2"
 	"github.com/zc310/ofd/pkg/crypt"
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
 const wasmMaxInputBytes = 256 << 20
@@ -19,15 +19,15 @@ const wasmMaxCredentialBytes = 4 << 20
 var errInvalidCredentials = errors.New("凭据参数无效")
 
 // openWASMDocument 复用只读解密视图；Reader 持有独立租约，关闭时释放解密资源。
-func openWASMDocument(ctx context.Context, data []byte, options webreader.OpenOptions, credentials crypt.DecryptOptions) (*webreader.Reader, error) {
+func openWASMDocument(ctx context.Context, data []byte, options ofdreader.OpenOptions, credentials crypt.DecryptOptions) (*ofdreader.Reader, error) {
 	reader, _, err := openWASMDocumentSecurity(ctx, data, options, credentials)
 	return reader, err
 }
 
 // openWASMDocumentSecurity 同时返回原文件的加密事实；只有完整解锁并成功创建 Reader 才返回 true。
-func openWASMDocumentSecurity(ctx context.Context, data []byte, options webreader.OpenOptions, credentials crypt.DecryptOptions) (*webreader.Reader, bool, error) {
+func openWASMDocumentSecurity(ctx context.Context, data []byte, options ofdreader.OpenOptions, credentials crypt.DecryptOptions) (*ofdreader.Reader, bool, error) {
 	//nolint:contextcheck // Open 是同步解析接口；凭据解锁阶段继续使用 ctx。
-	reader, err := webreader.Open(data, options)
+	reader, err := ofdreader.Open(data, options)
 	if !errors.Is(err, crypt.ErrLocked) {
 		return reader, false, err
 	}
@@ -54,7 +54,7 @@ func openWASMDocumentSecurity(ctx context.Context, data []byte, options webreade
 	}
 	defer view.Close()
 	//nolint:contextcheck // Open 是同步解析接口；凭据解锁阶段已使用 ctx。
-	reader, err = webreader.Open(view, options)
+	reader, err = ofdreader.Open(view, options)
 	return reader, err == nil, err
 }
 
@@ -78,7 +78,7 @@ func parseWASMPrivateKey(data, password []byte) (*sm2.PrivateKey, error) {
 // wasmErrorCode 将错误类型传递到 Worker 和页面，不依赖错误文案判断是否允许重试。
 func wasmErrorCode(err error) string {
 	switch {
-	case errors.Is(err, webreader.ErrPermissionDenied):
+	case errors.Is(err, ofdreader.ErrPermissionDenied):
 		return "permission_denied"
 	case errors.Is(err, errInvalidCredentials):
 		return "invalid_credentials"

@@ -570,7 +570,7 @@ const remoteFileTimeout = 120_000;
 // pdfExportDPI 固定为 72，用于 PDF 中复杂效果的内部离屏栅格化。
 // 文字与路径保留矢量，页面按物理尺寸输出，不随此 DPI 改变。
 const pdfExportDPI = 72;
-// exportDPIMax 必须与 webreader 的 maxDPI 一致，否则界面上填得进去、渲染时才报错。
+// exportDPIMax 必须与 reader 的 maxDPI 一致，否则界面上填得进去、渲染时才报错。
 const exportDPIMax = 600;
 // remoteFileMaxBytes 限制远程文档大小。地址由外部提供且不受本地文件选择器约束，
 // 超过上限时直接失败，避免把超大响应整体读进内存。

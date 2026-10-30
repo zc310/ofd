@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/pkg/webreader"
+	"github.com/zc310/ofd/pkg/reader"
 )
 
 func TestCSVAndTSVCLIImportAndBatch(t *testing.T) {
@@ -35,7 +35,7 @@ func TestCSVAndTSVCLIImportAndBatch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := webreader.Open(data)
+		r, err := reader.Open(data)
 		if err != nil {
 			t.Fatal(err)
 		}

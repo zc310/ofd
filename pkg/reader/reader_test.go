@@ -1,0 +1,1841 @@
+package reader
+
+import (
+	"bytes"
+	"errors"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/klauspost/compress/zip"
+
+	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
+)
+
+func TestVersionsListsPagesFromFileList(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/versions.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	versions, err := reader.Versions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("versions = %d, want 2", len(versions))
+	}
+	if versions[0].ID != "v1" || versions[0].Current || versions[0].Version != "1.0" || len(versions[0].Pages) != 1 || versions[0].Pages[0] != 0 {
+		t.Fatalf("v1 = %+v", versions[0])
+	}
+	if versions[1].ID != "v2" || !versions[1].Current || versions[1].Version != "1.0" || len(versions[1].Pages) != 2 || versions[1].Pages[1] != 1 {
+		t.Fatalf("v2 = %+v", versions[1])
+	}
+}
+
+func TestVersionPagesMatchActualPaths(t *testing.T) {
+	pagePaths := map[string][]int{
+		"/Doc_0/Pages/Page_7/Content.xml": {0},
+		"/Doc_0/Pages/Page_1/Content.xml": {1},
+		"/Doc_0/Pages/cover.xml":          {2},
+	}
+	for _, test := range []struct {
+		name  string
+		files []models.VersionFile
+		want  []int
+	}{
+		{name: "absolute_reordered_page", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "relative_path", files: []models.VersionFile{{Path: "../Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "same_directory_different_version", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_1/Content_1.xml"}}},
+		{name: "different_document", files: []models.VersionFile{{Path: "/Doc_1/Pages/Page_1/Content.xml"}}},
+		{name: "case_sensitive", files: []models.VersionFile{{Path: "/Doc_0/Pages/page_1/Content.xml"}}},
+		{name: "arbitrary_page_name", files: []models.VersionFile{{Path: "../Pages/cover.xml"}}, want: []int{2}},
+		{name: "resource_in_page_directory", files: []models.VersionFile{{Path: "../Pages/Page_1/PageRes.xml"}}},
+		{name: "sort_and_deduplicate", files: []models.VersionFile{{Path: "../Pages/Page_1/Content.xml"}, {Path: "../Pages/Page_7/Content.xml"}, {Path: "/Doc_0/Pages/Page_1/Content.xml"}}, want: []int{0, 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := versionPages(pagePaths, "/Doc_0/Versions", test.files)
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("version pages = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDocumentClickActionsMatchPageText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/actions.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uri, bookmark, movie, attachment *PageLink
+	for index := range links {
+		switch {
+		case links[index].URI != "":
+			uri = &links[index]
+		case links[index].TargetPage >= 0:
+			bookmark = &links[index]
+		case links[index].MediaKind == "movie":
+			movie = &links[index]
+		case links[index].AttachmentID != "":
+			attachment = &links[index]
+		}
+	}
+	if uri == nil || uri.URI != "https://github.com/zc310/ofd" || uri.Page != 0 {
+		t.Fatalf("URI 热区不符: %+v", uri)
+	}
+	if bookmark == nil || bookmark.TargetPage != 1 || bookmark.Page != 0 {
+		t.Fatalf("书签热区不符: %+v", bookmark)
+	}
+	if movie == nil || movie.MediaID != 22 || movie.Operator != spec.MovieOperatorPlay || movie.Page != 0 {
+		t.Fatalf("影片热区不符: %+v", movie)
+	}
+	if attachment == nil || attachment.AttachmentID != "demo-note" || attachment.AttachmentName != "说明.txt" || attachment.Page != 0 {
+		t.Fatalf("附件热区不符: %+v", attachment)
+	}
+	actions, err := reader.PageMediaActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].MediaKind != "sound" || actions[0].MediaID != 21 || actions[0].Event != spec.ActionEventPO || actions[0].Page != 0 {
+		t.Fatalf("进入页面声音不符: %+v", actions)
+	}
+}
+
+func TestOpenAndRenderPage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if reader.PageCount() <= 0 {
+		t.Fatalf("page count = %d, want a positive count", reader.PageCount())
+	}
+	page, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Width <= 0 || page.Height <= 0 {
+		t.Fatalf("invalid page size: %+v", page)
+	}
+	pngData, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pngData) == 0 || !bytes.HasPrefix(pngData, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatal("rendered data is not PNG")
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(pngData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Bounds().Empty() {
+		t.Fatal("rendered image is empty")
+	}
+	jpgData, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderJPG, DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jpgData) == 0 || !bytes.HasPrefix(jpgData, []byte{0xff, 0xd8, 0xff}) {
+		t.Fatal("rendered data is not JPG")
+	}
+	// 只验魔数不够：全白空页也是合法 JPG，opaqueImage 曾用 draw.Src 把内容
+	// 整体抹掉，这里必须解码后确认页面内容还在。
+	jpgImage, err := jpeg.Decode(bytes.NewReader(jpgData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nonWhitePixels(jpgImage) == 0 {
+		t.Fatal("JPG 渲染结果是一张全白空页，页面内容丢失")
+	}
+
+	svgData, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderSVG})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(svgData) == 0 || !bytes.Contains(svgData, []byte("<svg")) {
+		t.Fatal("rendered data is not SVG")
+	}
+
+	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderFormat("gif")}); err == nil {
+		t.Fatal("unsupported render format was accepted")
+	}
+
+	svgPages, err := reader.RenderPages(t.Context(), []int{0, 0}, RenderOptions{Format: RenderFormat("SVG")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, page := range svgPages {
+		if len(page) == 0 || !bytes.Contains(page, []byte("<svg")) {
+			t.Fatalf("rendered SVG page %d is empty or invalid", index)
+		}
+	}
+}
+
+func TestPagesUsesIntroPageMetadata(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/intro.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 42 {
+		t.Fatalf("page count = %d, want 42", len(pages))
+	}
+	for index, page := range pages {
+		if page.Index != index {
+			t.Errorf("Pages()[%d].Index = %d, want %d", index, page.Index, index)
+		}
+		if math.Abs(page.Width-320.0001) > 0.0001 || math.Abs(page.Height-240) > 0.0001 {
+			t.Errorf("Pages()[%d] = %+v, want page size 320.0001 x 240 mm", index, page)
+		}
+	}
+	actual, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(actual.Width-320.0001) > 0.0001 || math.Abs(actual.Height-240) > 0.0001 {
+		t.Fatalf("Page(0) = %+v, want 320.0001 x 240 mm", actual)
+	}
+}
+
+func TestPagesUsesPageMetadataAndPageLoadsRealSize(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pdf2ofd", "GBT_33190-2016.ofd"))
+	if os.IsNotExist(err) {
+		t.Skip("GBT_33190-2016.ofd  is unavailable")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != reader.PageCount() {
+		t.Fatalf("page count = %d, want %d", len(pages), reader.PageCount())
+	}
+	if pages[0].Width != 210 || pages[0].Height != 297 {
+		t.Fatalf("Pages()[0] = %+v, want page size 210 x 297", pages[0])
+	}
+	for index, page := range pages {
+		if page.Width != pages[0].Width || page.Height != pages[0].Height {
+			t.Fatalf("Pages()[%d] = %+v, want same page size", index, page)
+		}
+	}
+	actual, err := reader.Page(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.Width != 210 || actual.Height != 297 {
+		t.Fatalf("Page(0) = %+v, want physical size 210 x 297", actual)
+	}
+}
+
+func TestPagesUsesDocumentSizeWhenPageMetadataIsMissing(t *testing.T) {
+	data := makeMinimalOFDBundle(t)
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(pages))
+	}
+	if pages[1].Width != 210 || pages[1].Height != 297 {
+		t.Fatalf("Pages()[1] = %+v, want document size 210 x 297", pages[1])
+	}
+	if pages[0].Width != 100 || pages[0].Height != 200 {
+		t.Fatalf("Pages()[0] = %+v, want page size 100 x 200", pages[0])
+	}
+
+	actual, err := reader.Page(0)
+	if err != nil || actual.Width != 100 || actual.Height != 200 {
+		t.Fatalf("Page(0) = %+v, %v; want page size 100 x 200", actual, err)
+	}
+	if _, err := reader.Page(1); err == nil {
+		t.Fatal("Page(1) should parse the intentionally invalid full page content")
+	}
+}
+
+func makeMinimalOFDBundle(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	archive := zip.NewWriter(&data)
+	entries := map[string]string{
+		"OFD.xml":                `<OFD Version="1.1"><DocBody><DocRoot>Doc_0/Document.xml</DocRoot></DocBody></OFD>`,
+		"Doc_0/Document.xml":     `<Document><CommonData><PageArea><PhysicalBox>0 0 210 297</PhysicalBox></PageArea></CommonData><Pages><Page ID="1" BaseLoc="Pages/Page_0.xml"/><Page ID="2" BaseLoc="Pages/Page_1.xml"/></Pages></Document>`,
+		"Doc_0/Pages/Page_0.xml": `<Page><Area><PhysicalBox>0 0 100 200</PhysicalBox></Area><Content><Layer/></Content></Page>`,
+		"Doc_0/Pages/Page_1.xml": `<Page><Content>` + strings.Repeat("<Layer>", 2),
+	}
+	for name, content := range entries {
+		writer, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func TestRenderPageConcurrent(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	workers := reader.PageCount()
+	if workers > 4 {
+		workers = 4
+	}
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func(pageIndex int) {
+			defer wg.Done()
+			pngData, renderErr := reader.RenderPage(t.Context(), pageIndex, RenderOptions{DPI: 36})
+			if renderErr != nil {
+				errs <- renderErr
+				return
+			}
+			if len(pngData) == 0 || !bytes.HasPrefix(pngData, []byte("\x89PNG\r\n\x1a\n")) {
+				errs <- errors.New("并发渲染结果不是 PNG")
+			}
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestTextAndSearchConcurrent(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	const workers = 8
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			var operationErr error
+			switch index % 4 {
+			case 0:
+				_, operationErr = reader.Text(0)
+			case 1:
+				_, operationErr = reader.Search(t.Context(), "你", SearchOptions{})
+			case 2:
+				_, operationErr = reader.FontUsage(FontRef{Scope: 0, ID: 1}, FontUsageOptions{})
+			case 3:
+				_, operationErr = reader.FontUsageAll(FontUsageOptions{})
+			}
+			if operationErr != nil {
+				errs <- operationErr
+			}
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestPageDocumentReusesBackgroundCache(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.releasePageDocument(first)
+	second, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.releasePageDocument(second)
+	if first != second {
+		t.Fatal("相同背景未复用页面渲染文档")
+	}
+}
+
+func TestPageDocumentCacheHasBoundedCapacity(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	backgrounds := []color.Color{
+		color.RGBA{R: 255, A: 255},
+		color.RGBA{G: 255, A: 255},
+		color.RGBA{B: 255, A: 255},
+		color.RGBA{R: 255, G: 255, A: 255},
+		color.RGBA{R: 128, A: 255},
+	}
+	for _, background := range backgrounds {
+		document, err := reader.pageDocument(reader.pages[0], background, geom.DPI(96))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader.releasePageDocument(document)
+	}
+	if reader.renderDocs == nil {
+		t.Fatal("临时渲染文档缓存未初始化")
+	}
+	if got := reader.renderDocs.Len(); got != maxRenderDocs {
+		t.Fatalf("临时渲染文档缓存数量 = %d, want %d", got, maxRenderDocs)
+	}
+}
+
+func TestUseFallbackFontInvalidatesBackgroundCache(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.releasePageDocument(first)
+	if err := reader.UseFallbackFont("CacheInvalidationFallback"); err == nil {
+		t.Fatal("未注册回退字体应返回错误")
+	}
+	second, err := reader.pageDocument(reader.pages[0], color.White, geom.DPI(96))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.releasePageDocument(second)
+	if first != second {
+		t.Fatal("添加失败的回退字体不应清空有效缓存")
+	}
+}
+
+func TestRenderPages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pages, err := reader.RenderPages(t.Context(), []int{0, 0}, RenderOptions{DPI: 36})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("rendered pages = %d, want 2", len(pages))
+	}
+	for index, page := range pages {
+		if len(page) == 0 || !bytes.HasPrefix(page, []byte("\x89PNG\r\n\x1a\n")) {
+			t.Fatalf("rendered page %d is not PNG", index)
+		}
+	}
+	if _, err := reader.RenderPages(t.Context(), []int{-1}, RenderOptions{DPI: 36}); err == nil {
+		t.Fatal("negative page index was accepted")
+	}
+	indices := make([]int, 65)
+	if _, err := reader.RenderPages(t.Context(), indices, RenderOptions{DPI: 36}); err == nil {
+		t.Fatal("oversized page batch was accepted")
+	}
+}
+
+func TestRenderPDF(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	pdfData, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{Background: color.White})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pdfData) == 0 || !bytes.HasPrefix(pdfData, []byte("%PDF-")) {
+		t.Fatal("rendered data is not PDF")
+	}
+	if !bytes.HasSuffix(bytes.TrimSpace(pdfData), []byte("%%EOF")) {
+		t.Fatal("PDF has no EOF marker")
+	}
+	if !bytes.Contains(pdfData, []byte("/ToUnicode")) {
+		t.Fatal("PDF has no selectable text mapping")
+	}
+	highDPI, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 150, Background: color.White})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(highDPI, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(highDPI), []byte("%%EOF")) {
+		t.Fatal("high-DPI PDF is invalid")
+	}
+	if _, err := reader.RenderPDF(t.Context(), nil, RenderOptions{}); err == nil {
+		t.Fatal("empty PDF page list was accepted")
+	}
+	if _, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 601}); err == nil {
+		t.Fatal("excessive PDF DPI was accepted")
+	}
+}
+
+func TestRenderPDFToPreservesSelectableText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	var output bytes.Buffer
+	if err := reader.RenderPDFTo(t.Context(), &output, []int{0}, RenderOptions{Background: color.White}); err != nil {
+		t.Fatal(err)
+	}
+	outputData := output.Bytes()
+	if !bytes.HasPrefix(outputData, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(outputData), []byte("%%EOF")) {
+		t.Fatal("streamed PDF is invalid")
+	}
+	if !bytes.Contains(outputData, []byte("/ToUnicode")) {
+		t.Fatal("streamed PDF has no selectable text mapping")
+	}
+}
+
+func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	indices := make([]int, 65)
+	var output bytes.Buffer
+	if err := reader.RenderPDFTo(t.Context(), &output, indices, RenderOptions{DPI: 12, Background: color.White}); err != nil {
+		t.Fatalf("streamed PDF rejected oversized page batch: %v", err)
+	}
+	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(output.Bytes()), []byte("%%EOF")) {
+		t.Fatal("streamed PDF is invalid")
+	}
+}
+
+func TestRenderPageValidation(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.RenderPage(t.Context(), 3, RenderOptions{}); err == nil {
+		t.Fatal("out-of-range page was accepted")
+	}
+	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 601}); err == nil {
+		t.Fatal("excessive DPI was accepted")
+	}
+	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{PNGCompressionLevel: 10}); err == nil {
+		t.Fatal("invalid PNG compression level was accepted")
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Pages(); err == nil {
+		t.Fatal("closed reader returned pages")
+	}
+	if _, err := reader.Search(t.Context(), "", SearchOptions{}); err == nil {
+		t.Fatal("closed reader accepted an empty search")
+	}
+}
+
+func TestRenderPagePNGCompressionLevelsAreLossless(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	images := make([]image.Image, 2)
+	for index, level := range []int{1, 7} {
+		encoded, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4, PNGCompressionLevel: level})
+		if err != nil {
+			t.Fatal(err)
+		}
+		images[index], err = png.Decode(bytes.NewReader(encoded))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if images[0].Bounds() != images[1].Bounds() {
+		t.Fatalf("bounds differ: level 1 %v, level 7 %v", images[0].Bounds(), images[1].Bounds())
+	}
+	for y := images[0].Bounds().Min.Y; y < images[0].Bounds().Max.Y; y++ {
+		for x := images[0].Bounds().Min.X; x < images[0].Bounds().Max.X; x++ {
+			if a, b := color.NRGBAModel.Convert(images[0].At(x, y)), color.NRGBAModel.Convert(images[1].At(x, y)); a != b {
+				t.Fatalf("pixel (%d,%d) differs: level 1 %v, level 7 %v", x, y, a, b)
+			}
+		}
+	}
+}
+
+func TestFontsClosedReaderReturnsError(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Fonts(); err == nil {
+		t.Fatal("closed reader returned fonts")
+	}
+}
+
+func TestFontsExposeEmbeddedDataAndTextFamily(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.Fonts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("expected at least one embedded font")
+	}
+	for _, font := range fonts {
+		if font.Family == "" || len(font.Data) == 0 || font.Format == "" {
+			t.Fatalf("invalid embedded font resource: %+v", font)
+		}
+	}
+	fontFamilies := make(map[string]struct{}, len(fonts))
+	for _, font := range fonts {
+		fontFamilies[font.Family] = struct{}{}
+	}
+	foundRun := false
+	for page := 0; page < reader.PageCount(); page++ {
+		runs, textErr := reader.Text(page)
+		if textErr != nil {
+			t.Fatal(textErr)
+		}
+		if len(runs) > 0 {
+			foundRun = true
+			if runs[0].FontFamily == "" {
+				t.Fatalf("text run has no browser font family: %+v", runs)
+			}
+			if _, ok := fontFamilies[runs[0].FontFamily]; !ok {
+				t.Fatalf("text run references unknown browser font family %q", runs[0].FontFamily)
+			}
+			break
+		}
+	}
+	if !foundRun {
+		t.Log("embedded-font document has no text run on its parsed pages")
+	}
+}
+
+func TestFallbackFontInvalidatesTextFamily(t *testing.T) {
+	readData := func(name string) []byte {
+		data, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	embedded, err := Open(readData("ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer embedded.Close()
+	fonts, err := embedded.Fonts()
+	if err != nil || len(fonts) == 0 {
+		t.Fatalf("embedded fonts = %d, err = %v", len(fonts), err)
+	}
+
+	reader, err := Open(readData("ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := reader.Text(0); err != nil {
+		t.Fatal(err)
+	}
+	const family = "TestFallback"
+	if err := RegisterFallbackFont(FontSource{Family: family, Data: fonts[0].Data}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.UseFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("fallback document has no text runs")
+	}
+	if runs[0].FontFamily != family {
+		t.Fatalf("fallback family = %q, want %q", runs[0].FontFamily, family)
+	}
+	// 取消回退字体后，文字快照不再使用该族，恢复为默认族。
+	if err := reader.RemoveFallbackFont(family); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("document has no text runs after removing fallback")
+	}
+	if runs[0].FontFamily == family {
+		t.Fatalf("移除回退字体后仍使用 %q", family)
+	}
+}
+
+func TestTextAndSearch(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("page text is empty")
+	}
+	// 覆盖层的纵向行框取决于实际可用字体；只断言字体无关的起点与字号。
+	if text[0].X != 31.7 || text[0].Size != 3 {
+		t.Fatalf("invalid text geometry: %+v", text[0])
+	}
+	if len(text[0].Glyphs) != len([]rune(text[0].Text)) || text[0].Glyphs[0].X != text[0].X || text[0].Glyphs[0].Y != text[0].Y {
+		t.Fatalf("invalid glyph geometry: %+v", text[0].Glyphs)
+	}
+	if text[0].Height <= 0 || math.IsNaN(text[0].Height) || math.IsInf(text[0].Height, 0) || text[0].Height != text[0].Glyphs[0].Height {
+		t.Fatalf("文字层与字形行高不一致: run=%g glyph=%g", text[0].Height, text[0].Glyphs[0].Height)
+	}
+	if text[0].Glyphs[1].X != 34.7 || text[0].Glyphs[1].Y != text[0].Glyphs[0].Y {
+		t.Fatalf("second glyph geometry = %+v, want x=34.7 and the same row as the first glyph", text[0].Glyphs[1])
+	}
+	query := []rune(text[0].Text)
+	if len(query) == 0 {
+		t.Fatal("first text run is empty")
+	}
+	report, err := reader.Search(t.Context(), string(query[0]), SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := report.Results
+	if len(results) == 0 || results[0].Page != 0 {
+		t.Fatalf("search results = %+v, want a hit on page 0", results)
+	}
+	if results[0].End <= results[0].Start {
+		t.Fatalf("search range = %d:%d, want a non-empty range", results[0].Start, results[0].End)
+	}
+	if len(results[0].Rects) != results[0].End-results[0].Start {
+		t.Fatalf("search rects = %+v, want one rect per matched glyph", results[0].Rects)
+	}
+	wholeReport, err := reader.Search(t.Context(), text[0].Text, SearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wholeRun := wholeReport.Results
+	if len(wholeRun) == 0 || wholeRun[0].Start != 0 || wholeRun[0].End != len([]rune(text[0].Text)) {
+		t.Fatalf("whole-run search = %+v, want a match spanning the run", wholeRun)
+	}
+	if len(wholeRun[0].Rects) != len([]rune(text[0].Text)) {
+		t.Fatalf("whole-run rect count = %d, want %d", len(wholeRun[0].Rects), len([]rune(text[0].Text)))
+	}
+}
+
+func TestTextReturnsIndependentSnapshots(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	first, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalText, originalX := first[0].Text, first[0].Glyphs[0].X
+	first[0].Text = "changed"
+	first[0].Glyphs[0].X = -1
+
+	second, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second[0].Text != originalText || second[0].Glyphs[0].X != originalX {
+		t.Fatalf("text cache leaked mutations: got %+v", second[0])
+	}
+}
+
+func TestSearchCachesNormalizedPageText(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.Search(t.Context(), "你", SearchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	indexed, ok := reader.search.Get(0)
+	if !ok || indexed.Len() == 0 {
+		t.Fatalf("search index was not populated: %+v", indexed)
+	}
+	if len(indexed.Candidates('你')) == 0 {
+		t.Fatal("rune index was not populated")
+	}
+	firstRun := indexed.Run(0)
+	if len(firstRun) == 0 {
+		t.Fatal("first indexed run is empty")
+	}
+	if _, err := reader.Search(t.Context(), "好", SearchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	reused, ok := reader.search.Get(0)
+	if !ok || reused.Len() == 0 || len(reused.Run(0)) == 0 {
+		t.Fatal("search index was not reused")
+	}
+	if &reused.Run(0)[0] != &firstRun[0] {
+		t.Fatal("search index was rebuilt instead of reused")
+	}
+}
+
+func TestTextAndSearchCachesStayBounded(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator", "1000-pages.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	pageCount := reader.PageCount()
+	if pageCount <= textCacheCapacity {
+		t.Fatalf("测试文档页数 %d 未超过缓存上限 %d", pageCount, textCacheCapacity)
+	}
+	for index := 0; index < pageCount; index++ {
+		if _, err := reader.Text(index); err != nil {
+			t.Fatalf("读取第 %d 页文字失败: %v", index, err)
+		}
+	}
+	if length := reader.text.Len(); length > textCacheCapacity {
+		t.Fatalf("文字缓存条目 = %d, 期望 <= %d", length, textCacheCapacity)
+	}
+	if _, err := reader.Search(t.Context(), "the", SearchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if length := reader.search.Len(); length > searchCacheCapacity {
+		t.Fatalf("搜索缓存条目 = %d, 期望 <= %d", length, searchCacheCapacity)
+	}
+}
+
+func TestOutlineResolvesPageAndBookmark(t *testing.T) {
+	top := 20.0
+	zoom := 1.5
+	document := creator.Document{
+		ID:          "outline-test",
+		Title:       "大纲测试",
+		PageSize:    creator.A4,
+		Pages:       []creator.Page{{}, {}},
+		Preferences: &creator.ViewPreferences{PageMode: spec.PageModeUseOutlines},
+		Bookmarks:   []creator.Bookmark{{Name: "第三章", Goto: creator.GotoAction{Page: 1}}},
+		Outlines: []creator.Outline{
+			{
+				Title:   "第一章",
+				Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 0}}},
+				Children: []creator.Outline{
+					{Title: "1.1 节", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Page: 1, Type: spec.DestTypeXYZ, Top: &top, Zoom: &zoom}}}},
+				},
+			},
+			{Title: "书签跳转", Actions: []creator.Action{{Event: creator.ActionEventClick, Goto: &creator.GotoAction{Bookmark: "第三章"}}}},
+			{Title: "外部链接", Actions: []creator.Action{{Event: creator.ActionEventClick, URI: &creator.URIAction{URI: "https://example.com"}}}},
+		},
+	}
+	var buffer bytes.Buffer
+	if err := creator.Create(document, &buffer); err != nil {
+		t.Fatalf("创建测试 OFD 失败: %v", err)
+	}
+	reader, err := Open(buffer.Bytes())
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	tree, err := reader.Outline()
+	if err != nil {
+		t.Fatalf("读取大纲失败: %v", err)
+	}
+	if tree.PageMode != string(spec.PageModeUseOutlines) {
+		t.Fatalf("PageMode = %q, 期望 UseOutlines", tree.PageMode)
+	}
+	if len(tree.Nodes) != 3 {
+		t.Fatalf("顶层大纲项 = %d, 期望 3", len(tree.Nodes))
+	}
+	if tree.Nodes[0].Title != "第一章" || tree.Nodes[0].Page != 0 {
+		t.Fatalf("节点 0 = %+v", tree.Nodes[0])
+	}
+	child := tree.Nodes[0].Children
+	if len(child) != 1 || child[0].Page != 1 {
+		t.Fatalf("节点 0 子项 = %+v", child)
+	}
+	if child[0].Dest == nil || child[0].Dest.Top == nil || *child[0].Dest.Top != top || child[0].Dest.Zoom == nil || *child[0].Dest.Zoom != zoom {
+		t.Fatalf("子项目标位置/缩放未解析: %+v", child[0].Dest)
+	}
+	if tree.Nodes[1].Page != 1 || tree.Nodes[1].Dest == nil {
+		t.Fatalf("书签跳转节点 = %+v", tree.Nodes[1])
+	}
+	if tree.Nodes[2].URI != "https://example.com" || tree.Nodes[2].Page != -1 {
+		t.Fatalf("链接节点 = %+v", tree.Nodes[2])
+	}
+	if len(tree.Bookmarks) != 1 || tree.Bookmarks[0].Name != "第三章" || tree.Bookmarks[0].Page != 1 {
+		t.Fatalf("书签列表 = %+v", tree.Bookmarks)
+	}
+}
+
+func TestPreferencesExposeDocumentZoom(t *testing.T) {
+	openWithPreferences := func(t *testing.T, preferences *creator.ViewPreferences) *Reader {
+		t.Helper()
+		document := creator.Document{
+			ID:          "preferences-test",
+			Title:       "偏好测试",
+			PageSize:    creator.A4,
+			Pages:       []creator.Page{{}},
+			Preferences: preferences,
+		}
+		var buffer bytes.Buffer
+		if err := creator.Create(document, &buffer); err != nil {
+			t.Fatalf("创建测试 OFD 失败: %v", err)
+		}
+		reader, err := Open(buffer.Bytes())
+		if err != nil {
+			t.Fatalf("打开测试 OFD 失败: %v", err)
+		}
+		t.Cleanup(func() { _ = reader.Close() })
+		return reader
+	}
+
+	modeReader := openWithPreferences(t, &creator.ViewPreferences{ZoomMode: spec.ZoomModeFitWidth})
+	modePreferences, err := modeReader.Preferences()
+	if err != nil {
+		t.Fatalf("读取显示偏好失败: %v", err)
+	}
+	if modePreferences.ZoomMode != spec.ZoomModeFitWidth {
+		t.Fatalf("ZoomMode = %q, 期望 %q", modePreferences.ZoomMode, spec.ZoomModeFitWidth)
+	}
+
+	zoomValue := 1.75
+	zoomReader := openWithPreferences(t, &creator.ViewPreferences{Zoom: &zoomValue})
+	zoomPreferences, err := zoomReader.Preferences()
+	if err != nil {
+		t.Fatalf("读取显示偏好失败: %v", err)
+	}
+	if zoomPreferences.Zoom == nil || *zoomPreferences.Zoom != zoomValue {
+		t.Fatalf("Zoom = %v, 期望 %v", zoomPreferences.Zoom, zoomValue)
+	}
+}
+
+func TestFontListIncludesDeclaredFonts(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.FontList()
+	if err != nil {
+		t.Fatalf("读取字体列表失败: %v", err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("字体列表为空")
+	}
+	embedded := 0
+	for _, font := range fonts {
+		if font.Name == "" && font.Family == "" {
+			t.Fatalf("字体缺少名称: %+v", font)
+		}
+		if font.Embedded {
+			embedded++
+			if font.Format == "" {
+				t.Fatalf("嵌入字体缺少格式: %+v", font)
+			}
+		}
+	}
+	if embedded == 0 {
+		t.Fatal("没有识别到嵌入字体")
+	}
+}
+
+func TestFontUsageReportsPagesUsingFont(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计字体使用页失败: %v", err)
+	}
+	if usage.Scanned == 0 {
+		t.Fatal("未扫描任何页面")
+	}
+	found := false
+	for _, page := range usage.Pages {
+		if page == 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("使用页 %v 未包含第 0 页", usage.Pages)
+	}
+
+	missing, err := reader.FontUsage(FontRef{Scope: 0, ID: ^uint64(0)}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计未使用字体失败: %v", err)
+	}
+	if len(missing.Pages) != 0 {
+		t.Fatalf("未使用字体的页面列表应为空: %v", missing.Pages)
+	}
+
+	otherScope, err := reader.FontUsage(FontRef{Scope: text[0].Scope + 1, ID: text[0].Font}, FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("统计不同作用域字体失败: %v", err)
+	}
+	if len(otherScope.Pages) != 0 {
+		t.Fatalf("不同作用域的字体不应有使用页: %v", otherScope.Pages)
+	}
+}
+
+func TestFontUsageIsScopedPerDocument(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/multi_demo.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	fonts, err := reader.FontList()
+	if err != nil {
+		t.Fatalf("读取字体列表失败: %v", err)
+	}
+	if len(fonts) == 0 {
+		t.Fatal("字体列表为空")
+	}
+	scopes := make(map[int]bool)
+	for _, font := range fonts {
+		scopes[font.Scope] = true
+	}
+
+	checked := 0
+	for _, font := range fonts {
+		usage, err := reader.FontUsage(FontRef{Scope: font.Scope, ID: font.ID}, FontUsageOptions{})
+		if err != nil {
+			t.Fatalf("统计字体 %+v 失败: %v", font, err)
+		}
+		for _, page := range usage.Pages {
+			if page < 0 || page >= len(reader.pages) {
+				t.Fatalf("字体 %+v 的页面越界: %d", font, page)
+			}
+			if reader.pages[page].fontScope != font.Scope {
+				t.Fatalf("字体 %+v 的使用页 %d 属于作用域 %d", font, page, reader.pages[page].fontScope)
+			}
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("未校验任何字体")
+	}
+
+	if len(scopes) > 1 {
+		report, err := reader.FontUsageAll(FontUsageOptions{})
+		if err != nil {
+			t.Fatalf("批量统计字体失败: %v", err)
+		}
+		for _, summary := range report.Fonts {
+			for _, page := range summary.Pages {
+				if page < 0 || page >= len(reader.pages) {
+					t.Fatalf("批量统计页面越界: %d", page)
+				}
+				if reader.pages[page].fontScope != summary.Scope {
+					t.Fatalf("批量统计字体 %+v 的使用页 %d 属于作用域 %d", summary, page, reader.pages[page].fontScope)
+				}
+			}
+		}
+	}
+}
+
+func TestFontUsageAllAggregatesFonts(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	report, err := reader.FontUsageAll(FontUsageOptions{})
+	if err != nil {
+		t.Fatalf("批量统计字体使用页失败: %v", err)
+	}
+	if report.Scanned == 0 {
+		t.Fatal("未扫描任何页面")
+	}
+	if len(report.Fonts) == 0 {
+		t.Fatal("未统计到任何字体")
+	}
+	for index := 1; index < len(report.Fonts); index++ {
+		if report.Fonts[index-1].ID >= report.Fonts[index].ID {
+			t.Fatalf("字体未按 ID 升序排列: %+v", report.Fonts)
+		}
+	}
+	found := false
+	for _, summary := range report.Fonts {
+		if summary.Scope != text[0].Scope || summary.ID != text[0].Font {
+			continue
+		}
+		for _, page := range summary.Pages {
+			if page == 0 {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("字体 %d 的使用页未包含第 0 页: %+v", text[0].Font, report.Fonts)
+	}
+}
+
+func TestFontUsageOptionsLimitScanAndPages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator", "1000-pages.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	text, err := reader.Text(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) == 0 {
+		t.Fatal("页面文字为空")
+	}
+	usage, err := reader.FontUsage(FontRef{Scope: text[0].Scope, ID: text[0].Font}, FontUsageOptions{MaxScan: 3})
+	if err != nil {
+		t.Fatalf("按选项统计字体失败: %v", err)
+	}
+	if usage.Scanned != 3 {
+		t.Fatalf("扫描页数 = %d, 期望 3", usage.Scanned)
+	}
+	if !usage.Truncated {
+		t.Fatal("期望扫描上限被标记为截断")
+	}
+
+	report, err := reader.FontUsageAll(FontUsageOptions{MaxScan: 50, MaxPages: 2})
+	if err != nil {
+		t.Fatalf("按选项批量统计字体失败: %v", err)
+	}
+	if report.Scanned != 50 {
+		t.Fatalf("批量扫描页数 = %d, 期望 50", report.Scanned)
+	}
+	for _, summary := range report.Fonts {
+		if len(summary.Pages) > 2 {
+			t.Fatalf("字体 %d 返回 %d 页, 期望不超过 2", summary.ID, len(summary.Pages))
+		}
+	}
+	if !report.Truncated {
+		t.Fatal("批量统计期望被标记为截断")
+	}
+}
+
+func TestAttachmentsExposeMetadataAndData(t *testing.T) {
+	cases := []struct {
+		file string
+		name string
+	}{
+		{"ofd-creator/multi_demo.ofd", "original_invoice.xml"},
+		{"ofdrw/999.ofd", "original_invoice"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			infos, err := reader.Attachments()
+			if err != nil {
+				t.Fatalf("读取附件清单失败: %v", err)
+			}
+			if len(infos) == 0 {
+				t.Fatal("附件清单为空")
+			}
+			var found *AttachmentInfo
+			for index := range infos {
+				if infos[index].Name == tc.name {
+					found = &infos[index]
+					break
+				}
+			}
+			if found == nil {
+				t.Fatalf("未找到附件 %q: %+v", tc.name, infos)
+			}
+			if !found.Exists {
+				t.Fatalf("附件 %q 不存在: %+v", tc.name, found)
+			}
+			if found.ActualSize == 0 {
+				t.Fatalf("附件 %q 实际大小为 0", tc.name)
+			}
+			if found.Visible {
+				t.Fatalf("附件 %q 期望 Visible=false", tc.name)
+			}
+			if found.Format != "xml" {
+				t.Fatalf("附件 %q 格式 = %q, 期望 xml", tc.name, found.Format)
+			}
+			if !found.HasSize {
+				t.Fatalf("附件 %q 期望有声明大小", tc.name)
+			}
+
+			content, err := reader.AttachmentData(found.Scope, found.ID, 0)
+			if err != nil {
+				t.Fatalf("读取附件内容失败: %v", err)
+			}
+			if int64(len(content)) != found.ActualSize {
+				t.Fatalf("附件内容长度 = %d, 期望 %d", len(content), found.ActualSize)
+			}
+			if _, err := reader.AttachmentData(found.Scope, found.ID, 1); err == nil {
+				t.Fatal("超过读取上限时应返回错误")
+			}
+		})
+	}
+}
+
+func TestAttachmentDataRejectsUnknown(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	if _, err := reader.AttachmentData(0, "no-such-id", 0); err == nil {
+		t.Fatal("不存在的附件应返回错误")
+	}
+	if _, err := reader.AttachmentData(99, "8", 0); err == nil {
+		t.Fatal("越界作用域应返回错误")
+	}
+}
+
+func TestMediaExposeMetadataAndData(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/ano.ofd"))
+	if os.IsNotExist(err) {
+		t.Skip("ano.ofd  is unavailable")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Media()
+	if err != nil {
+		t.Fatalf("读取多媒体资源失败: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("多媒体资源为空")
+	}
+	images := 0
+	for _, info := range infos {
+		if info.Type == spec.MediaTypeImage {
+			images++
+		}
+		if !info.Exists {
+			t.Fatalf("多媒体资源不存在: %+v", info)
+		}
+		if info.Size <= 0 {
+			t.Fatalf("多媒体资源大小为 0: %+v", info)
+		}
+	}
+	if images == 0 {
+		t.Fatal("未识别到图片资源")
+	}
+
+	found := infos[0]
+	content, err := reader.MediaData(found.Scope, found.ID, 0)
+	if err != nil {
+		t.Fatalf("读取多媒体内容失败: %v", err)
+	}
+	if int64(len(content)) != found.Size {
+		t.Fatalf("多媒体内容长度 = %d, 期望 %d", len(content), found.Size)
+	}
+	if _, err := reader.MediaData(found.Scope, found.ID, 1); err == nil {
+		t.Fatal("超过读取上限时应返回错误")
+	}
+	if _, err := reader.MediaData(0, 1<<40, 0); err == nil {
+		t.Fatal("不存在的多媒体资源应返回错误")
+	}
+}
+
+func TestAnnotationsExposeMetadata(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Annotations()
+	if err != nil {
+		t.Fatalf("读取注解失败: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("注解列表为空")
+	}
+	var stamp *AnnotationInfo
+	for index := range infos {
+		if infos[index].Type == spec.AnnotationTypeStamp {
+			stamp = &infos[index]
+			break
+		}
+	}
+	if stamp == nil {
+		t.Fatalf("未找到图章注解: %+v", infos)
+	}
+	if stamp.Page < 0 {
+		t.Fatalf("注解页码无效: %+v", stamp)
+	}
+	if stamp.Boundary == nil {
+		t.Fatalf("图章注解缺少边界: %+v", stamp)
+	}
+	if !stamp.Visible {
+		t.Fatalf("未声明 Visible 时应默认为可见: %+v", stamp)
+	}
+}
+
+func TestAnnotationsExposeLinkTarget(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/links.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Annotations()
+	if err != nil {
+		t.Fatalf("读取注解失败: %v", err)
+	}
+	byID := make(map[string]AnnotationInfo, len(infos))
+	for _, info := range infos {
+		byID[info.ID] = info
+	}
+
+	// 内部跳转：动作挂在外观页面的图形对象上，目标页解析为全局页索引。
+	internal := byID["201"]
+	if internal.Type != spec.AnnotationTypeLink {
+		t.Fatalf("注解 201 类型 = %q, 期望 Link", internal.Type)
+	}
+	if internal.Boundary == nil || internal.Boundary.X != 30 || internal.Boundary.Y != 160 {
+		t.Fatalf("链接 201 边界 = %+v", internal.Boundary)
+	}
+	if internal.TargetPage != 1 {
+		t.Fatalf("链接 201 目标页 = %d, 期望 1", internal.TargetPage)
+	}
+	if internal.Dest == nil || internal.Dest.Type != spec.DestTypeXYZ || internal.Dest.Left == nil || *internal.Dest.Left != 0 {
+		t.Fatalf("链接 201 跳转目标 = %+v", internal.Dest)
+	}
+	if internal.URI != "" {
+		t.Fatalf("链接 201 不应有外部 URI: %+v", internal)
+	}
+
+	// 外部链接：只有 URI，没有页面目标。
+	external := byID["202"]
+	if external.URI != "https://github.com/zc310/ofd" {
+		t.Fatalf("链接 202 URI = %q", external.URI)
+	}
+	if external.TargetPage != -1 || external.Dest != nil {
+		t.Fatalf("外部链接不应有页面目标: %+v", external)
+	}
+
+	// 第二页的返回链接目标为全局页索引 0。
+	if back := byID["203"]; back.TargetPage != 0 || back.Page != 1 {
+		t.Fatalf("链接 203 = %+v, 期望 page=1 target=0", back)
+	}
+}
+
+func TestPageMediaActionsExposeSoundAndMovie(t *testing.T) {
+	volume := 80
+	repeat := true
+	data, err := creator.Marshal(creator.Document{
+		ID: "media-action-reader",
+		Media: []creator.Media{
+			{ID: 40, Type: spec.MediaTypeAudio, Format: "mp3", Data: []byte("audio")},
+			{ID: 41, Type: spec.MediaTypeVideo, Format: "mp4", Data: []byte("video")},
+		},
+		Actions: []creator.Action{
+			{Event: creator.ActionEventDO, Sound: &creator.SoundAction{ResourceID: 40, Volume: &volume, Repeat: &repeat}},
+		},
+		Pages: []creator.Page{{
+			Area: &creator.PageArea{PhysicalBox: &creator.Box{Width: 210, Height: 297}},
+			Actions: []creator.Action{
+				{Event: creator.ActionEventPO, Movie: &creator.MovieAction{ResourceID: 41, Operator: spec.MovieOperatorPlay}},
+			},
+			Items: []creator.Item{
+				creator.Path{
+					X: 10, Y: 20, Width: 40, Height: 30,
+					Data: "M 0 0 L 40 0 L 40 30 L 0 30 C",
+					Actions: []creator.Action{
+						{Event: creator.ActionEventClick, Sound: &creator.SoundAction{ResourceID: 40}},
+					},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	actions, err := reader.PageMediaActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("媒体动作数量 = %d, 期望 2: %+v", len(actions), actions)
+	}
+	var sound, movie *PageLink
+	for index := range actions {
+		switch actions[index].Event {
+		case spec.ActionEventDO:
+			sound = &actions[index]
+		case spec.ActionEventPO:
+			movie = &actions[index]
+		}
+	}
+	if sound == nil || sound.MediaKind != "sound" || sound.MediaID != 40 || sound.Volume == nil || *sound.Volume != 80 || !sound.Repeat || sound.Page != 0 {
+		t.Fatalf("文档声音动作不符: %+v", sound)
+	}
+	if movie == nil || movie.MediaKind != "movie" || movie.MediaID != 41 || movie.Operator != spec.MovieOperatorPlay || movie.Page != 0 {
+		t.Fatalf("页面影片动作不符: %+v", movie)
+	}
+
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].MediaKind != "sound" || links[0].MediaID != 40 || links[0].Event != spec.ActionEventClick {
+		t.Fatalf("点击声音热区不符: %+v", links)
+	}
+	if links[0].Boundary.Width != 40 || links[0].Boundary.Height != 30 {
+		t.Fatalf("点击热区边界不符: %+v", links[0].Boundary)
+	}
+}
+
+func TestPageLinksExposeGraphicUnitActions(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/project-showcase.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatalf("打开测试 OFD 失败: %v", err)
+	}
+	defer reader.Close()
+
+	links, err := reader.PageLinks()
+	if err != nil {
+		t.Fatalf("读取页面链接失败: %v", err)
+	}
+	var found *PageLink
+	for index := range links {
+		if links[index].URI == "https://github.com/zc310/ofd" {
+			found = &links[index]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("未找到正文图元上的外链: %+v", links)
+	}
+	// 该链接定义在页面模板上，模板图元会叠加到每个使用它的页面上。
+	if found.Page != 0 {
+		t.Fatalf("链接页码 = %d, 期望 0", found.Page)
+	}
+	if found.Boundary.Width <= 0 || found.Boundary.Height <= 0 {
+		t.Fatalf("链接边界无效: %+v", found.Boundary)
+	}
+	if found.TargetPage != -1 || found.Dest != nil {
+		t.Fatalf("外部链接不应有页面目标: %+v", found)
+	}
+}
+
+func TestSignaturesExposeMetadataAndSeals(t *testing.T) {
+	cases := []struct {
+		file    string
+		wantMin int
+		seals   bool
+		certs   bool
+	}{
+		{"ofdrw/zsbk.ofd", 1, true, true},
+		{"ofdrw/999.ofd", 1, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			infos, err := reader.Signatures()
+			if err != nil {
+				t.Fatalf("读取签名失败: %v", err)
+			}
+			if len(infos) < tc.wantMin {
+				t.Fatalf("签名数量 = %d, 期望至少 %d: %+v", len(infos), tc.wantMin, infos)
+			}
+			foundSeal := false
+			foundCert := false
+			foundRef := false
+			for _, info := range infos {
+				if info.Provider == "" {
+					t.Fatalf("签名缺少提供者: %+v", info)
+				}
+				if !info.HasDigest {
+					t.Fatalf("签名缺少摘要结果: %+v", info)
+				}
+				for _, reference := range info.References {
+					if reference.FileRef == "" {
+						t.Fatalf("签名引用缺少路径: %+v", reference)
+					}
+					foundRef = true
+				}
+				for _, cert := range info.Certificates {
+					if cert.Subject == "" {
+						if cert.Error == "" && cert.TrustError == "" && cert.RevocationError == "" {
+							t.Fatalf("证书缺少主体且无错误信息: %+v", cert)
+						}
+						continue
+					}
+					if cert.SerialNumber == "" {
+						t.Fatalf("证书缺少序列号: %+v", cert)
+					}
+					foundCert = true
+				}
+				for stampIndex, stamp := range info.Stamps {
+					if stamp.Page < 0 {
+						t.Fatalf("签章页码无效: %+v", stamp)
+					}
+					if !stamp.HasSeal {
+						continue
+					}
+					foundSeal = true
+					seal, sealType, err := reader.SignatureSeal(info.Scope, info.ID, stampIndex)
+					if err != nil {
+						t.Fatalf("读取印章失败: %v", err)
+					}
+					if len(seal) == 0 || sealType == "" {
+						t.Fatalf("印章数据为空: type=%q len=%d", sealType, len(seal))
+					}
+				}
+			}
+			if tc.seals && !foundSeal {
+				t.Fatalf("未找到印章数据: %+v", infos)
+			}
+			if tc.certs && !foundCert {
+				t.Fatalf("未找到证书详情: %+v", infos)
+			}
+			if !foundRef {
+				t.Fatalf("未找到签名引用: %+v", infos)
+			}
+		})
+	}
+}
+
+func TestStatsSummarizeResources(t *testing.T) {
+	cases := []struct {
+		file        string
+		attachments bool
+		media       bool
+		signatures  bool
+	}{
+		{"ofdrw/999.ofd", true, true, true},
+		{"ofdrw/zsbk.ofd", false, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "testdata", tc.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := Open(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+
+			stats, err := reader.Stats()
+			if err != nil {
+				t.Fatalf("读取资源统计失败: %v", err)
+			}
+			if stats.Fonts == 0 {
+				t.Fatalf("字体数为 0: %+v", stats)
+			}
+			if tc.attachments && stats.Attachments == 0 {
+				t.Fatalf("附件数为 0: %+v", stats)
+			}
+			if tc.media && stats.Media == 0 {
+				t.Fatalf("多媒体数为 0: %+v", stats)
+			}
+			if tc.signatures && stats.Signatures == 0 {
+				t.Fatalf("签名数为 0: %+v", stats)
+			}
+		})
+	}
+}
+
+func TestSignatureCertificateAndValueExport(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofdrw/999.ofd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	infos, err := reader.Signatures()
+	if err != nil || len(infos) == 0 {
+		t.Fatalf("签名列表为空: %v", err)
+	}
+	info := infos[0]
+	var slot string
+	for _, cert := range info.Certificates {
+		if cert.Subject != "" {
+			slot = cert.SlotKey
+			break
+		}
+	}
+	if slot == "" {
+		t.Fatalf("未找到有效证书: %+v", info.Certificates)
+	}
+	der, err := reader.SignatureCertificate(info.Scope, info.ID, slot)
+	if err != nil {
+		t.Fatalf("导出证书失败: %v", err)
+	}
+	if len(der) < 2 || der[0] != 0x30 {
+		t.Fatalf("证书 DER 无效: %x", der)
+	}
+
+	value, err := reader.SignatureValue(info.Scope, info.ID)
+	if err != nil {
+		t.Fatalf("导出签名值失败: %v", err)
+	}
+	if len(value) == 0 {
+		t.Fatal("签名值为空")
+	}
+
+	if _, err := reader.SignatureCertificate(info.Scope, info.ID, "unknown"); err == nil {
+		t.Fatal("未知证书层级应返回错误")
+	}
+}
+
+// nonWhitePixels 统计明显不是纯白的像素数，用于判断图像里是否真的有内容。
+// JPG 有损，不能要求逐字节相等，只用宽松阈值区分「有内容」与「全白空页」。
+func nonWhitePixels(img image.Image) int {
+	bounds := img.Bounds()
+	count := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0xf000 || g < 0xf000 || b < 0xf000 {
+				count++
+			}
+		}
+	}
+	return count
+}

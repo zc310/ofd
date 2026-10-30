@@ -16,8 +16,8 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/pkg/converter"
 	_ "github.com/zc310/ofd/pkg/converter/import/csv"
+	"github.com/zc310/ofd/pkg/reader"
 	"github.com/zc310/ofd/pkg/validator"
-	"github.com/zc310/ofd/pkg/webreader"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -25,7 +25,7 @@ import (
 
 func csvPageTexts(t *testing.T, data []byte) []string {
 	t.Helper()
-	r, err := webreader.Open(data)
+	r, err := reader.Open(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestTSVImportDetectsPathAndAppliesNoHeaderPaperAndTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := webreader.Open(output.Bytes())
+	r, err := reader.Open(output.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}

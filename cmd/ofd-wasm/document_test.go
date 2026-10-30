@@ -21,7 +21,7 @@ import (
 	"github.com/emmansun/gmsm/smx509"
 	_ "github.com/zc310/ofd/internal/render/backends/canvas"
 	"github.com/zc310/ofd/pkg/crypt"
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
 func wasmDocumentFixture(t *testing.T) []byte {
@@ -49,9 +49,9 @@ func wasmDocumentFixture(t *testing.T) []byte {
 	return output.Bytes()
 }
 
-func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, expected *webreader.Reader) {
+func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, expected *ofdreader.Reader) {
 	t.Helper()
-	reader, err := openWASMDocument(t.Context(), input, webreader.OpenOptions{}, options)
+	reader, err := openWASMDocument(t.Context(), input, ofdreader.OpenOptions{}, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,17 +66,17 @@ func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, e
 	if err != nil || wantErr != nil || len(text) == 0 || !reflect.DeepEqual(text, wantText) {
 		t.Fatalf("解锁后文字不一致: %v / %v", err, wantErr)
 	}
-	report, err := reader.Search(t.Context(), "Secret", webreader.SearchOptions{})
+	report, err := reader.Search(t.Context(), "Secret", ofdreader.SearchOptions{})
 	if err != nil || len(report.Results) == 0 {
 		t.Fatalf("解锁后无法搜索: %v", err)
 	}
-	image, err := reader.RenderPage(t.Context(), 0, webreader.RenderOptions{DPI: 24})
-	wantImage, wantErr := expected.RenderPage(t.Context(), 0, webreader.RenderOptions{DPI: 24})
+	image, err := reader.RenderPage(t.Context(), 0, ofdreader.RenderOptions{DPI: 24})
+	wantImage, wantErr := expected.RenderPage(t.Context(), 0, ofdreader.RenderOptions{DPI: 24})
 	if err != nil || wantErr != nil || len(image) == 0 || !bytes.Equal(image, wantImage) {
 		t.Fatalf("解锁后渲染不一致: %v / %v", err, wantErr)
 	}
 	var pdf bytes.Buffer
-	if err := reader.RenderPDFTo(t.Context(), &pdf, []int{0}, webreader.RenderOptions{}); err != nil || !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
+	if err := reader.RenderPDFTo(t.Context(), &pdf, []int{0}, ofdreader.RenderOptions{}); err != nil || !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("解锁后 PDF 导出失败: %v", err)
 	}
 	if err := reader.Close(); err != nil {
@@ -89,7 +89,7 @@ func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, e
 
 func TestWASMDocumentUnlocksPasswordsWithoutPlaintextZIP(t *testing.T) {
 	plain := wasmDocumentFixture(t)
-	expected, err := webreader.Open(plain)
+	expected, err := ofdreader.Open(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestWASMDocumentUnlocksPasswordsWithoutPlaintextZIP(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, opt := range []crypt.DecryptOptions{{}, {Password: []byte("wrong")}, {Password: []byte(test.password), UserName: "other"}} {
-				reader, err := openWASMDocument(t.Context(), encrypted.Bytes(), webreader.OpenOptions{}, opt)
+				reader, err := openWASMDocument(t.Context(), encrypted.Bytes(), ofdreader.OpenOptions{}, opt)
 				if reader != nil || (wasmErrorCode(err) != "credentials_required" && wasmErrorCode(err) != "decrypt_failed") {
 					t.Fatalf("错误凭据未拒绝: %v", err)
 				}
@@ -141,7 +141,7 @@ func TestWASMDocumentUnlocksSM2RecipientsWithPKCS8Keys(t *testing.T) {
 		t.Fatal(err)
 	}
 	plain := wasmDocumentFixture(t)
-	expected, err := webreader.Open(plain)
+	expected, err := ofdreader.Open(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestWASMDocumentUnlocksSM2RecipientsWithPKCS8Keys(t *testing.T) {
 		t.Fatalf("错误私钥密码未拒绝: %v", err)
 	}
 	compatible := wasmOFDRWMetadata(t, encrypted.Bytes(), "")
-	if reader, err := openWASMDocument(t.Context(), compatible, webreader.OpenOptions{}, crypt.DecryptOptions{}); reader != nil || wasmErrorCode(err) != "credentials_required" {
+	if reader, err := openWASMDocument(t.Context(), compatible, ofdreader.OpenOptions{}, crypt.DecryptOptions{}); reader != nil || wasmErrorCode(err) != "credentials_required" {
 		t.Fatalf("兼容证书包首次打开未请求凭据: %v", err)
 	}
 	checkWASMReader(t, compatible, crypt.DecryptOptions{PrivateKey: key}, expected)
@@ -181,7 +181,7 @@ func TestWASMDocumentUnlocksSM2RecipientsWithPKCS8Keys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader, err := openWASMDocument(t.Context(), encrypted.Bytes(), webreader.OpenOptions{}, crypt.DecryptOptions{PrivateKey: other}); reader != nil || !errors.Is(err, crypt.ErrDecryptFailed) {
+	if reader, err := openWASMDocument(t.Context(), encrypted.Bytes(), ofdreader.OpenOptions{}, crypt.DecryptOptions{PrivateKey: other}); reader != nil || !errors.Is(err, crypt.ErrDecryptFailed) {
 		t.Fatalf("错误 SM2 私钥未拒绝: %v", err)
 	}
 	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -249,7 +249,7 @@ func wasmOFDRWMetadata(t *testing.T, input []byte, scheme string) []byte {
 
 func TestWASMDocumentDefaultsToCompatAndSelectsOnlyMissingSchemes(t *testing.T) {
 	plain := wasmDocumentFixture(t)
-	expected, err := webreader.Open(plain)
+	expected, err := ofdreader.Open(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestWASMDocumentDefaultsToCompatAndSelectsOnlyMissingSchemes(t *testing.T) 
 		t.Fatalf("兼容样本未保留非标准 ID: %v", err)
 	}
 	for _, options := range []crypt.DecryptOptions{{}, {Password: []byte("wrong")}} {
-		reader, err := openWASMDocument(t.Context(), compatible, webreader.OpenOptions{}, options)
+		reader, err := openWASMDocument(t.Context(), compatible, ofdreader.OpenOptions{}, options)
 		want := "credentials_required"
 		if options.Password != nil {
 			want = "decrypt_failed"
@@ -275,7 +275,7 @@ func TestWASMDocumentDefaultsToCompatAndSelectsOnlyMissingSchemes(t *testing.T) 
 	checkWASMReader(t, compatible, crypt.DecryptOptions{Password: []byte("secret")}, expected)
 	checkWASMReader(t, wasmOFDRWMetadata(t, encrypted.Bytes(), crypt.PasswordScheme), crypt.DecryptOptions{Password: []byte("secret")}, expected)
 	for _, scheme := range []string{"9.9.9", crypt.CertificateScheme} {
-		reader, err := openWASMDocument(t.Context(), wasmOFDRWMetadata(t, encrypted.Bytes(), scheme), webreader.OpenOptions{}, crypt.DecryptOptions{Password: []byte("secret")})
+		reader, err := openWASMDocument(t.Context(), wasmOFDRWMetadata(t, encrypted.Bytes(), scheme), ofdreader.OpenOptions{}, crypt.DecryptOptions{Password: []byte("secret")})
 		if reader != nil || err == nil {
 			t.Fatalf("已声明方案 %s 被口令方案覆盖", scheme)
 		}

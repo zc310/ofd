@@ -7,6 +7,10 @@
 
 ## 未发布
 
+- **阅读器 API 调整导入路径**：将 `github.com/zc310/ofd/pkg/webreader` 改为
+  `github.com/zc310/ofd/pkg/reader`，包名从 `webreader` 改为 `reader`。调用方需更新
+  import 路径及包标识符。
+
 ## 已发布
 
 ### v0.1.7

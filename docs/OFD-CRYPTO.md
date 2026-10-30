@@ -18,7 +18,7 @@
 | 加解密       | `crypt.Encrypt/Decrypt`、`ofd-crypt encrypt/decrypt`    | 口令方案 `1.1.1`、SM2 证书方案 `1.1.2`、同方案多接收者、明文/密文映射、原始字节恢复 |
 | 加密范围     | `IndependentKeys`、`Append`、`Pages`                    | 独立条目密钥、线性链追加层、页面及关联资源范围                                      |
 | 只读解密视图 | `crypt.Open`                                            | 多层依赖、按操作/seed 提供凭据、部分解锁状态、租约与密钥释放                        |
-| 文档处理     | parser、converter、sign、analyzer、webreader、validator | 完全解锁视图直接接入；校验器分别检查物理容器与逻辑文档                              |
+| 文档处理     | parser、converter、sign、analyzer、reader、validator | 完全解锁视图直接接入；校验器分别检查物理容器与逻辑文档                              |
 | 图形阅读器 | `ofd-viewer`、WASM 阅读器及 `ofd.open` | 口令、UTF-8 口令文件或 SM2 私钥解锁，默认兼容读取；WASM 解锁后按文档体和当前版本执行打印、复制、导出权限检查，范围见 [文档权限](../cmd/ofd-wasm/web/README.md#文档权限) |
 | 普通数字签名 | `pkg/sign`、`ofd-creator sign`                          | SM2/SM3 SignedData、RSA/ECDSA CMS、SHA-2 文件引用摘要、附录 B 扩展、普通签名追加及受限物理包签署 |
 | 完整性保护   | `pkg/integrity`、`ofd-crypt integrity`                  | 带时间戳清单签名、物理文件集合、引用闭包和内容签名覆盖检查                          |
@@ -37,7 +37,7 @@ FEK 试解；遇到有效 UTF-8 且去除 BOM/空白后以 `<` 开头的内容�
 
 `Open` 建立只读逻辑视图，不保存明文 ZIP。打开时建立索引并预检已解锁条目，
 清理条目明文缓冲；后续每次读取重新解密。
-parser/converter/sign/analyzer 可直接接收完全解锁视图，webreader 使用 `OpenInput`，
+parser/converter/sign/analyzer 可直接接收完全解锁视图，reader 使用 `OpenInput`，
 validator 使用 `Validate` 同时检查物理容器与逻辑文档。部分解锁不允许占位内容回退。
 
 `IndependentKeys` 为每条目生成独立 FEK/IV/seed；`Append` 用旧凭据完整预检，

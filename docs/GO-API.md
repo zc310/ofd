@@ -60,7 +60,7 @@ defer view.Close()
 err = converter.PDF(ctx, view, output)
 ```
 
-`webreader.Open(view)` 创建自己的读取租约，关闭阅读器不关闭
+`reader.Open(view)` 创建自己的读取租约，关闭阅读器不关闭
 原视图。`validator.Validate(ctx, view, name)` 先检查原始物理条目，再检查逻辑文档，
 保留原始加密状态；`sign.Verify` 和 `analyzer.Analyze` 也直接接受完整视图。
 存在外层物理签名时，validator 在原包检查其引用和摘要，解密视图用于普通文档校验。
@@ -145,7 +145,7 @@ EML 与 SVG 先预处理为 HTML，再通过本机 Chrome/Chromium 转换；直�
 `converter.Convert(ctx, "eml", "ofd", input, output)` 或将 `from` 改为 `"svg"`，
 纸张、方向和浏览器选项沿用 `WithPaperSize`、`WithLandscape`、`WithChrome` 等公共配置。
 EML 输出邮件头、选中的正文、CID 图片和附件清单，OFD 中同时嵌入原附件，支持通过
-`webreader.Attachments` / `AttachmentData` 列出和读取；SVG 按纸张等比放置。
+`reader.Attachments` / `AttachmentData` 列出和读取；SVG 按纸张等比放置。
 详见 [EML 支持清单](EML-SUPPORT.md)、[SVG 支持清单](SVG-SUPPORT.md)。
 
 Office、HTML 转换会把调用方上下文传给外部进程，取消后结束处理并清理临时目录。
@@ -163,7 +163,7 @@ PDF 导入默认保存解码后的原始内嵌字体程序；设置
 
 ## 接入按页阅读接口
 
-`pkg/webreader` 提供页面渲染、文字、搜索、导航与导出接口，供界面按需调用：
+`pkg/reader` 提供页面渲染、文字、搜索、导航与导出接口，供界面按需调用：
 
 ```go
 package main
@@ -175,7 +175,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/zc310/ofd/pkg/webreader"
+	"github.com/zc310/ofd/pkg/reader"
 )
 
 func main() {
@@ -183,30 +183,30 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	reader, err := webreader.Open(data)
+	r, err := reader.Open(data)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer reader.Close()
+	defer r.Close()
 
-	fmt.Println("总页数：", reader.PageCount())
-	// webreader 的页索引从 0 开始。
-	png, err := reader.RenderPage(context.Background(), 0, webreader.RenderOptions{
-		DPI: 144, Background: color.White, Format: webreader.RenderPNG,
+	fmt.Println("总页数：", r.PageCount())
+	// reader 的页索引从 0 开始。
+	png, err := r.RenderPage(context.Background(), 0, reader.RenderOptions{
+		DPI: 144, Background: color.White, Format: reader.RenderPNG,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	_ = png // PNG 字节可交给界面显示。
 
-	runs, err := reader.Text(0)
+	runs, err := r.Text(0)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("首页文字段数：", len(runs))
 
 	// 长文档搜索可限制工作量，并用同一个 context 取消。
-	report, err := reader.Search(context.Background(), "关键词", webreader.SearchOptions{
+	report, err := r.Search(context.Background(), "关键词", reader.SearchOptions{
 		MaxPages: 2000, MaxResults: 5000,
 	})
 	if err != nil {
@@ -217,11 +217,11 @@ func main() {
 ```
 
 打开后调用 `Close` 释放资源。长文档可用
-`webreader.Open(input, webreader.OpenOptions{...})` 调整页面缓存，最多传一组选项，省略时使用默认值。
+`reader.Open(input, reader.OpenOptions{...})` 调整页面缓存，最多传一组选项，省略时使用默认值。
 `input` 支持 OFD 字节、文件路径、`io.Reader` 或已完全解锁的 `crypt.View`；渲染 DPI
 范围为 1–600，默认 96，单页还受像素预算限制。版本清单和切换由 `Versions`、
 `SelectVersion` 提供，切换成功后需重新读取页面、字体和导航信息。
-完整接口见 [webreader API](https://pkg.go.dev/github.com/zc310/ofd/pkg/webreader)。
+完整接口见 [reader API](https://pkg.go.dev/github.com/zc310/ofd/pkg/reader)。
 
 `RenderPage(ctx, index, options)`、`RenderPages(ctx, indices, options)`、
 `RenderPDF(ctx, indices, options)` 和 `RenderPDFTo(ctx, output, indices, options)`
@@ -239,14 +239,14 @@ func main() {
 `seal`；印章字体在子文档中解析，返回的印章 run 不借用父文档的字体 ID。
 
 ```go
-err := reader.SetTextOptions(webreader.TextOptions{
+err := r.SetTextOptions(reader.TextOptions{
     IncludeAnnotations: true,
     IncludeWatermarks:  false,
     IncludeSeals:       true,
 })
 if err != nil { return err }
 
-png, diagnostics, err := reader.RenderPageWithReport(ctx, 0, webreader.RenderOptions{DPI: 144})
+png, diagnostics, err := r.RenderPageWithReport(ctx, 0, reader.RenderOptions{DPI: 144})
 if err != nil { return err }
 _ = png
 for _, issue := range diagnostics.Diagnostics {

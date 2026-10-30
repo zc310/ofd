@@ -6,10 +6,10 @@ import (
 	"errors"
 	"syscall/js"
 
-	"github.com/zc310/ofd/pkg/webreader"
+	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
-func permissionsValue(permissions []webreader.DocumentPermissions) js.Value {
+func permissionsValue(permissions []ofdreader.DocumentPermissions) js.Value {
 	result := js.Global().Get("Array").New(len(permissions))
 	for index, permission := range permissions {
 		result.SetIndex(index, objectValue(map[string]any{
@@ -47,7 +47,7 @@ func (a *wasmApp) checkPermission(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errorValue(err)
 	}
-	if err := reader.CheckPermission(webreader.PermissionAction(args[0].String()), indices); err != nil {
+	if err := reader.CheckPermission(ofdreader.PermissionAction(args[0].String()), indices); err != nil {
 		return errorValue(err)
 	}
 	return js.ValueOf(true)
