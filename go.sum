@@ -146,8 +146,8 @@ github.com/klauspost/crc32 v1.3.0 h1:sSmTt3gUt81RP655XGZPElI0PelVTZ6YwCRnPSupoFM
 github.com/klauspost/crc32 v1.3.0/go.mod h1:D7kQaZhnkX/Y0tstFGf8VUzv2UofNGqCjnC3zdHB0Hw=
 github.com/klippa-app/go-pdfium v1.21.4 h1:CalrAbIUyPIBkGU9qJX2z7yGitDrcuJT62FQT5m5CPU=
 github.com/klippa-app/go-pdfium v1.21.4/go.mod h1:d55Qev3QNMBTjv/VKA7pAV9hSyN47WZqiHI7bGc8fbc=
-github.com/knroy/go-xml/v2 v2.0.1 h1:ftnXgPQhazVajf7NzspvVtJnEwpjm3mbGSCfoAxfAys=
-github.com/knroy/go-xml/v2 v2.0.1/go.mod h1:q3hL666HVFOGRuv+qwUQCyql/QteEB1qCk6EUdNk7pw=
+github.com/knroy/go-xml/v2 v2.0.3 h1:rkGQrLTUm3WC0uzpuHVh8YTArsvSaYeG5aEhTJ1g0LY=
+github.com/knroy/go-xml/v2 v2.0.3/go.mod h1:q3hL666HVFOGRuv+qwUQCyql/QteEB1qCk6EUdNk7pw=
 github.com/kovidgoyal/go-parallel v1.1.1 h1:1OzpNjtrUkBPq3UaqrnvOoB2F9RttSt811uiUXyI7ok=
 github.com/kovidgoyal/go-parallel v1.1.1/go.mod h1:BJNIbe6+hxyFWv7n6oEDPj3PA5qSw5OCtf0hcVxWJiw=
 github.com/kovidgoyal/go-shm v1.0.0 h1:HJEel9D1F9YhULvClEHJLawoRSj/1u/EDV7MJbBPgQo=
@@ -231,8 +231,6 @@ github.com/studio-b12/gowebdav v0.13.0 h1:OcwSg6IQHOFNdYHn3bPOHwSE8looG8N56Y5xTT
 github.com/studio-b12/gowebdav v0.13.0/go.mod h1:bHA7t77X/QFExdeAnDzK6vKM34kEZAcE1OX4MfiwjkE=
 github.com/swaggo/files/v2 v2.0.2 h1:Bq4tgS/yxLB/3nwOMcul5oLEUKa877Ykgz3CJMVbQKU=
 github.com/swaggo/files/v2 v2.0.2/go.mod h1:TVqetIzZsO9OhHX1Am9sRf9LdrFZqoK49N37KON/jr0=
-github.com/tdewolff/minify/v2 v2.24.23 h1:D9DRyU3donHF5ykg35azl73ij4bGfZMN3gCvOa/CzrQ=
-github.com/tdewolff/minify/v2 v2.24.23/go.mod h1:BYEE+vQMcMc8XacA2rmMUgw+WeN4K0XYZqYFECz4seg=
 github.com/tdewolff/minify/v2 v2.24.24 h1:8Cvt+W6vG3EHgRzl+1r/k5DeVSmaRWgLVFdHSSGF9Bk=
 github.com/tdewolff/minify/v2 v2.24.24/go.mod h1:BYEE+vQMcMc8XacA2rmMUgw+WeN4K0XYZqYFECz4seg=
 github.com/tdewolff/parse/v2 v2.8.20 h1:eU+UStwuoeHnXdaSBIoEfNnj33URx24gJDdNViHHYwM=
@@ -264,14 +262,8 @@ github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3i
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.8.6 h1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=
 github.com/yuin/goldmark v1.8.6/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
-github.com/yuin/goldmark/v2 v2.1.9 h1:C5AZWQOm71NKdpMapPEYEB/UIRHDiMb3h5AJRHxzkXQ=
-github.com/yuin/goldmark/v2 v2.1.9/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
-github.com/yuin/goldmark/v2 v2.1.11 h1:SPy9tHLsgxAZgBh+YDlx9R7LsKsykcM3nZTO8kjeS1A=
-github.com/yuin/goldmark/v2 v2.1.11/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
-github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9 h1:QyrmFvpXqxhWUS2o9HZuuo6D3W9vCNNZAf2brnt2bAU=
-github.com/zc310/canvas v0.0.0-20261024044947-d28fedae05a9/go.mod h1:HLOSZN23JZC4J1hA8BUb1SrCOZ8EIja70IWZPCKI4Z8=
-github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210 h1:YxBeF9VYLYS4qVe/Z8cWhp1pAzKmZjzJ0MTtvbFWQf4=
-github.com/zc310/canvas v0.0.0-20261030015332-93ad5f786210/go.mod h1:HVlrzE+L9eKdfiVTDIYLzRiUj8r04IfT5gCfAfuygDk=
+github.com/yuin/goldmark/v2 v2.1.13 h1:NCbQv+/Vv6UKjWFT9OORfOkMdUbayQz8lK3L18IsOI8=
+github.com/yuin/goldmark/v2 v2.1.13/go.mod h1:G6M4/qOFtfn01/o14BU1UR2Lo5N3S9Qo7xCuz/sHjGQ=
 github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6 h1:4mWvyT5cSDtUxMBGSVnXT2cQmZ9wAn7kuJNkBGXp7Cc=
 github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6/go.mod h1:HVlrzE+L9eKdfiVTDIYLzRiUj8r04IfT5gCfAfuygDk=
 github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8 h1:q2ox3jV6BbmBrJPgFEkCm3N4YqMTmXK6XOQkk3uh2dk=

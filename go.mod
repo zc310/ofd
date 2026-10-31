@@ -21,7 +21,7 @@ require (
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.3
 	github.com/klippa-app/go-pdfium v1.21.4
-	github.com/knroy/go-xml/v2 v2.0.1
+	github.com/knroy/go-xml/v2 v2.0.3
 	github.com/kovidgoyal/imaging v1.9.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mrjoshuak/go-jpeg2000 v1.5.12
@@ -34,6 +34,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
@@ -42,7 +43,7 @@ require (
 	github.com/valyala/fasthttp v1.77.0
 	github.com/woozymasta/png v1.2.0
 	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
-	github.com/yuin/goldmark/v2 v2.1.11
+	github.com/yuin/goldmark/v2 v2.1.13
 	github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6
 	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
@@ -108,7 +109,6 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
-	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/tdewolff/minify/v2 v2.24.24 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
