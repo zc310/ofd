@@ -63,6 +63,26 @@ func TestWalkRunsPreservesSmallExplicitAdvancesBeforeCTM(t *testing.T) {
 	}
 }
 
+func TestWalkRunsFallsBackToNaturalAdvanceAfterShortDeltaArray(t *testing.T) {
+	code := models.TextCode{Value: "重庆增值税电子普通发票", DeltaX: models.StArrayF{6.53}}
+	object := models.TextObject{CtText: models.CtText{
+		Size: 1, TextCode: []models.TextCode{code},
+	}}
+	var runs []Run
+	WalkRuns(runPositionFace{}, object, code, 0, func(run Run) { runs = append(runs, run) })
+	if len(runs) != 2 || runs[0].Value != "重" || runs[1].Value != "庆增值税电子普通发票" {
+		t.Fatalf("短 DeltaX 应只显式定位第一段，其余字符沿用自然字宽: %+v", runs)
+	}
+	if math.Abs(runs[1].X-6.53) > 1e-12 {
+		t.Fatalf("短 DeltaX 后续文字段起点=%g，期望=6.53", runs[1].X)
+	}
+	naturalWidth := (runPositionFace{}).TextWidth("庆")
+	dx, dy := Advance(naturalWidth, object, code, 1)
+	if dx != naturalWidth || dy != 0 {
+		t.Fatalf("短 DeltaX 后续字符步进=(%g,%g)，期望自然字宽=(%g,0)", dx, dy, naturalWidth)
+	}
+}
+
 func TestWalkRunsKeepsNaturalAdvanceWithFontUnitRounding(t *testing.T) {
 	code := models.TextCode{Value: "ABC", DeltaX: models.StArrayF{1, 1}}
 	object := models.TextObject{CtText: models.CtText{Size: 1, TextCode: []models.TextCode{code}}}

@@ -49,11 +49,7 @@ func WalkRuns(face Face, object models.TextObject, code models.TextCode, codePos
 	for i, glyph := range glyphs {
 		if i > 0 {
 			prevWidth := face.TextWidth(glyphs[i-1].Value)
-			glyphWidth := 0.0
-			if len(code.DeltaX) == 0 && len(code.DeltaY) == 0 {
-				glyphWidth = prevWidth
-			}
-			dx, dy := PositionedAdvance(glyphWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
+			dx, dy := PositionedAdvance(prevWidth, object, code, glyphs[i-1], glyph, glyphDeltas)
 			posX, posY = posX+dx, posY+dy
 			if len(run) > 0 && (CharDirection(object) != 0 || NeedsRunBreak(object, dx, dy, prevWidth*HScale(object))) {
 				flushRun()

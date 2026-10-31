@@ -67,25 +67,26 @@ func CharDirection(object models.TextObject) float64 {
 	return float64(normalizeDirection(object.CharDirection))
 }
 
-// Advance 返回源字符到下一字符的增量。显式 DeltaX/DeltaY 优先，两者均未指定
-// 时，按 ReadDirection 使用字体字宽和 HScale 计算。
+// Advance 返回源字符到下一字符的增量。显式 DeltaX/DeltaY 优先；短数组未覆盖的
+// 方向按 ReadDirection 使用字体字宽和 HScale 计算，以兼容仅提供部分定位数据的文档。
 func Advance(glyphWidth float64, object models.TextObject, code models.TextCode, index int) (float64, float64) {
-	if len(code.DeltaX) > 0 || len(code.DeltaY) > 0 {
-		return valueAt(code.DeltaX, index), valueAt(code.DeltaY, index)
+	naturalX, naturalY := ReadAdvance(glyphWidth*HScale(object), object.ReadDirection)
+	if index >= 0 && index < len(code.DeltaX) {
+		naturalX = code.DeltaX[index]
 	}
-	return ReadAdvance(glyphWidth*HScale(object), object.ReadDirection)
+	if index >= 0 && index < len(code.DeltaY) {
+		naturalY = code.DeltaY[index]
+	}
+	return naturalX, naturalY
 }
 
 func glyphAdvance(glyphWidth float64, object models.TextObject, code models.TextCode, previous, current Glyph) (float64, float64) {
 	if current.CodePosition > previous.CodePosition && (len(code.DeltaX) > 0 || len(code.DeltaY) > 0) {
 		var deltaX, deltaY float64
 		for index := previous.CodePosition; index < current.CodePosition; index++ {
-			if index < len(code.DeltaX) {
-				deltaX += code.DeltaX[index]
-			}
-			if index < len(code.DeltaY) {
-				deltaY += code.DeltaY[index]
-			}
+			dx, dy := Advance(glyphWidth, object, code, index)
+			deltaX += dx
+			deltaY += dy
 		}
 		return deltaX, deltaY
 	}
