@@ -22,6 +22,7 @@ class OFDWorkerClient {
 
   handleMessage(message) {
     if (message.type === 'ready') {
+      this.version = message.version || '';
       this.resolveReady();
       return;
     }
@@ -461,6 +462,7 @@ const aboutLink = document.querySelector('#about-link');
 const aboutDialog = document.querySelector('#about-dialog');
 const aboutClose = document.querySelector('#about-close');
 const aboutTitle = document.querySelector('#about-title');
+const versionLink = document.querySelector('#version-link');
 const pageURIDialog = document.querySelector('#page-uri-dialog');
 const pageURITarget = document.querySelector('#page-uri-target');
 const pageURIOpen = document.querySelector('#page-uri-open');
@@ -4683,9 +4685,15 @@ function closeExportDialog() {
 }
 
 function openAboutDialog() {
+  updateAboutVersion();
+  if (!engine.version) engine.ready.then(updateAboutVersion).catch(() => undefined);
   if (typeof aboutDialog.showModal === 'function') aboutDialog.showModal();
   else aboutDialog.setAttribute('open', '');
   aboutClose.focus();
+}
+
+function updateAboutVersion() {
+  if (engine.version) versionLink.textContent = `v${engine.version}`;
 }
 
 function closeAboutDialog() {

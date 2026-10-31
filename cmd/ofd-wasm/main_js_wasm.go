@@ -54,6 +54,7 @@ func main() {
 	console.Call("log", "%cGitHub: https://github.com/zc310/ofd", "color: #2f7d4a;")
 	app := &wasmApp{}
 	api := js.Global().Get("Object").New()
+	api.Set("version", version.Version)
 	api.Set("open", js.FuncOf(app.open))
 	api.Set("addFallbackFont", js.FuncOf(app.addFallbackFont))
 	api.Set("removeFallbackFont", js.FuncOf(app.removeFallbackFont))

@@ -75,7 +75,7 @@ async function start() {
     const waitForAPI = () => {
       if (self.ofd) {
         readyResolve();
-        self.postMessage({ type: 'ready' });
+        self.postMessage({ type: 'ready', version: self.ofd.version || '' });
         return;
       }
       setTimeout(waitForAPI, 0);

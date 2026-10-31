@@ -22,6 +22,7 @@ function workerState(startup = Promise.resolve()) {
     return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
   };
   const ofd = {
+    version: '9.8.7-test',
     search: (_query, id) => begin('search', id),
     renderPage: (_index, _options, id) => begin('renderPage', id),
     renderPages: (_indices, _options, id) => begin('renderPages', id),
@@ -45,6 +46,11 @@ function workerState(startup = Promise.resolve()) {
   });
   return { replies, calls, canceled, pending, send: message => self.onmessage({ data: message }) };
 }
+
+const versionState = workerState();
+await waitFor(() => versionState.replies.some(message => message.type === 'ready'));
+suite.check(versionState.replies.find(message => message.type === 'ready')?.version === '9.8.7-test',
+  'Worker ready 消息传递 WASM 注入版本号');
 
 for (const request of [
   { command: 'renderPage', index: 0 },
