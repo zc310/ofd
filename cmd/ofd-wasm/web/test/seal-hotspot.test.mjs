@@ -52,6 +52,7 @@ function baseState(overrides = {}) {
     pageCards: [],
     opened: [],
     closed: false,
+    hideLinkPreview: () => {},
     document: { createElement: tag => fakeElement(tag) },
     // handleSealPopoverScroll 用 `instanceof Node` 守卫，测试环境补一个构造器。
     Node: class FakeNode {},

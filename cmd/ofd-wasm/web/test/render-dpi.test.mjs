@@ -18,5 +18,6 @@ for (const [format, zoom, expected] of [
 suite.check(!/clarityPriority|ofd-clarity-priority/.test(viewerSource()), '清晰度优先开关与存储已移除');
 suite.check(/cacheKey\('thumbnail', index, generation, 30, format\)/.test(viewerSource()), '缩略图缓存键使用 30 DPI');
 suite.check(/format, dpi: 30, background: transparentRenderBackground/.test(viewerSource()), '缩略图按 30 DPI 渲染');
+suite.check(/const linkPreviewDPI = 96/.test(viewerSource()) && /dpi: linkPreviewDPI/.test(viewerSource()), '链接预览独立按 96 DPI 渲染');
 
 process.exitCode = suite.report() ? 1 : 0;

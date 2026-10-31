@@ -588,6 +588,15 @@
      .link-hotspot { position: absolute; box-sizing: border-box; margin: 0; padding: 0; border: none; background: transparent; pointer-events: auto; cursor: pointer; border-radius: 2px; }
      .link-hotspot:hover, .link-hotspot:focus-visible { background: #2476bd33; outline: 1px solid #2476bd99; }
      body.dark-reading .link-hotspot:hover, body.dark-reading .link-hotspot:focus-visible { background: #6fb3f033; outline: 1px solid #6fb3f099; }
+     .link-preview { position: fixed; z-index: 39; box-sizing: border-box; width: min(820px, calc(100vw - 24px)); height: min(45vh, 420px); overflow: hidden; border: 1px solid #aeb7c4; border-radius: 7px; background: #fff; box-shadow: 0 5px 18px #17203340; pointer-events: none; }
+     .link-preview[hidden] { display: none; }
+     .link-preview img { position: absolute; display: block; max-width: none; max-height: none; }
+     .link-preview-loading { position: absolute; inset: 0; display: grid; place-items: center; background: #fff; }
+     .link-preview-loading::before { width: 20px; height: 20px; border: 2px solid #ccd3dd; border-top-color: #4b83bd; border-radius: 50%; content: ""; animation: link-preview-spin .8s linear infinite; }
+     @keyframes link-preview-spin { to { transform: rotate(360deg); } }
+     body.dark-reading .link-preview { border-color: #536074; background: #252c38; color: #e6ebf2; }
+     body.dark-reading .link-preview-loading { background: #252c38; }
+     @media (hover: none), (max-width: 700px) { .link-preview { display: none !important; } }
      /* 签章热区放在链接热区之下（z-index 更小），重叠时链接优先。 */
      .seal-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
      .seal-hotspot { position: absolute; box-sizing: border-box; margin: 0; padding: 0; border: none; background: transparent; pointer-events: auto; cursor: pointer; border-radius: 2px; }
@@ -1054,6 +1063,7 @@
   <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
   <button id="sidebar-toggle" type="button" aria-pressed="true" aria-label="侧栏" title="侧栏">侧栏</button>
   <div id="seal-popover" class="seal-popover" role="dialog" aria-label="签章属性" hidden></div>
+  <div id="link-preview" class="link-preview" role="tooltip" aria-live="polite" hidden></div>
   <script src="viewer.js"></script>
 </body>
 </html>

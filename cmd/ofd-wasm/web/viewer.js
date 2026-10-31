@@ -525,6 +525,7 @@ const mediaElement = document.querySelector('#media');
 const annotationsElement = document.querySelector('#annotations');
 const signaturesElement = document.querySelector('#signatures');
 const sealPopoverElement = document.querySelector('#seal-popover');
+const linkPreviewElement = document.querySelector('#link-preview');
 const customTagsElement = document.querySelector('#custom-tags');
 const thumbnailToolbar = document.querySelector('#thumbnail-toolbar');
 const thumbnailSizeSlider = document.querySelector('#thumbnail-size-slider');
@@ -617,6 +618,8 @@ let activePageEntryURI = '';
 let mediaCatalog = [];
 const activeMedia = new Map();
 let linkRequest;
+let linkPreviewTimer;
+let linkPreviewToken = 0;
 let searchResults = [];
 let activeSearchResult = -1;
 const searchResultDOMLimit = 200;
@@ -647,6 +650,7 @@ let zoomGeneration = 0;
 const thumbnailsStorageKey = 'ofd-show-thumbnails';
 const renderFormatStorageKey = 'ofd-render-format';
 const thumbnailRenderFormat = 'png';
+const linkPreviewDPI = 96;
 let thumbnailsVisible = (() => {
   try {
     return localStorage.getItem(thumbnailsStorageKey) !== 'false';
@@ -4074,6 +4078,7 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  hideLinkPreview();
   resetDocumentInfo('正在读取文档信息…');
   setDocumentPermissions([]);
   closePrintDialog();
@@ -7688,6 +7693,103 @@ function loadPageLinks(index) {
   });
 }
 
+// linkPreviewEligible 仅为普通内部页链接预览目标页；媒体、附件和 URI 仍使用原有提示。
+function linkPreviewEligible(link) {
+  if (!link || link.uri || link.attachment_id || link.media_kind === 'sound' || link.media_kind === 'movie') return false;
+  const target = Number(link.target_page);
+  return Number.isInteger(target) && target >= 0 && target < pageInfos.length;
+}
+
+// positionLinkPreview 将预览放在链接附近，并把链接位置尽量放在预览区域偏上处。
+function positionLinkPreview(rect) {
+  if (!linkPreviewElement) return;
+  const bounds = linkPreviewElement.getBoundingClientRect();
+  const left = Math.max(12, Math.min((rect.left + rect.right - bounds.width) / 2, window.innerWidth - bounds.width - 12));
+  const above = rect.top - bounds.height - 12 >= 12;
+  const top = above ? rect.top - bounds.height - 12 : Math.min(rect.bottom + 12, window.innerHeight - bounds.height - 12);
+  linkPreviewElement.style.left = `${left}px`;
+  linkPreviewElement.style.top = `${Math.max(12, top)}px`;
+  return { left, top: Math.max(12, top), above };
+}
+
+// cropLinkPreview 以 Dest 为中心裁出目标页局部，和 GNOME Document Viewer 的链接预览相似。
+function cropLinkPreview(image, link, index) {
+  if (!image?.naturalWidth || !image?.naturalHeight || !linkPreviewElement) return;
+  const frameWidth = linkPreviewElement.clientWidth;
+  const frameHeight = linkPreviewElement.clientHeight;
+  const imageHeight = frameWidth * image.naturalHeight / image.naturalWidth;
+  image.style.width = `${frameWidth}px`;
+  image.style.height = `${imageHeight}px`;
+  const info = pageInfos[index];
+  const point = link.dest && info ? destPagePoint(info, link.dest) : null;
+  const xRatio = point && info.width > 0 ? Math.max(0, Math.min(1, point.x / info.width)) : 0.5;
+  const yRatio = point && info.height > 0 ? Math.max(0, Math.min(1, point.y / info.height)) : 0.5;
+  const imageWidth = frameWidth;
+  const left = Math.max(frameWidth - imageWidth, Math.min(0, frameWidth * 0.5 - xRatio * imageWidth));
+  const top = Math.max(frameHeight - imageHeight, Math.min(0, frameHeight * 0.3 - yRatio * imageHeight));
+  image.style.left = `${left}px`;
+  image.style.top = `${top}px`;
+}
+
+// hideLinkPreview 使尚未完成的悬停渲染失效，避免旧目标覆盖新目标。
+function hideLinkPreview() {
+  clearTimeout(linkPreviewTimer);
+  linkPreviewTimer = undefined;
+  linkPreviewToken++;
+  if (!linkPreviewElement) return;
+  linkPreviewElement.hidden = true;
+  linkPreviewElement.replaceChildren();
+}
+
+// showLinkPreview 延迟展示内部链接目标页，并复用高分辨率预览缓存。
+function showLinkPreview(link, anchor) {
+  hideLinkPreview();
+  if (!linkPreviewEligible(link) || !linkPreviewElement ||
+      !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  const token = linkPreviewToken;
+  const generation = documentGeneration;
+  const target = Number(link.target_page);
+  linkPreviewTimer = setTimeout(() => {
+    if (token !== linkPreviewToken || generation !== documentGeneration) return;
+    const loading = document.createElement('div');
+    loading.className = 'link-preview-loading';
+    linkPreviewElement.replaceChildren(loading);
+    linkPreviewElement.hidden = false;
+    positionLinkPreview(anchor.getBoundingClientRect());
+
+    const format = thumbnailRenderFormat;
+    const revision = pageLayerRevision(target);
+    const key = cacheKey('thumbnail', target, generation, linkPreviewDPI, format);
+    const cached = thumbnailCache.get(key);
+    const request = cached ? Promise.resolve(cached) : engine.renderPage(target, {
+      format,
+      dpi: linkPreviewDPI,
+      background: transparentRenderBackground,
+    }).then(data => {
+      if (generation !== documentGeneration || revision !== pageLayerRevision(target)) return null;
+      const url = URL.createObjectURL(new Blob([data], { type: renderMimeType(format) }));
+      thumbnailCache.set(key, url, data.byteLength);
+      return url;
+    });
+    Promise.resolve(request).then(url => {
+      if (!url || token !== linkPreviewToken || generation !== documentGeneration || linkPreviewElement.hidden) return;
+      const image = document.createElement('img');
+      image.alt = `第 ${target + 1} 页目标位置预览`;
+      image.addEventListener('load', () => {
+        if (token !== linkPreviewToken || linkPreviewElement.hidden) return;
+        positionLinkPreview(anchor.getBoundingClientRect());
+        cropLinkPreview(image, link, target);
+      }, { once: true });
+      image.src = url;
+      linkPreviewElement.replaceChildren(image);
+      positionLinkPreview(anchor.getBoundingClientRect());
+      cropLinkPreview(image, link, target);
+    }).catch(() => {
+      if (token === linkPreviewToken) hideLinkPreview();
+    });
+  }, 400);
+}
+
 // applyPageLinks 在指定页面上重建链接热区；不传页时重建所有已挂载页面。
 function applyPageLinks(index) {
   const targets = Number.isInteger(index) ? [index] : Array.from(pageLinks.keys());
@@ -7716,6 +7818,10 @@ function applyPageLinks(index) {
         : external ? link.uri : media ? (link.media_kind === 'sound' ? '播放声音' : '播放影片') : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
       hotspot.setAttribute('aria-label', hotspot.title);
       hotspot.addEventListener('click', () => openPageLink(link));
+      hotspot.addEventListener('pointerenter', () => showLinkPreview(link, hotspot));
+      hotspot.addEventListener('pointerleave', hideLinkPreview);
+      hotspot.addEventListener('focus', () => showLinkPreview(link, hotspot));
+      hotspot.addEventListener('blur', hideLinkPreview);
       layer.append(hotspot);
     });
   });
@@ -7856,6 +7962,7 @@ function positionSealPopover(anchorRect) {
 // handleSealPopoverScroll 在任何滚动（含页面横向平移）时收起弹层，避免它脱离
 // 签章位置；弹层内部的证书/引用列表滚动不触发收起。
 function handleSealPopoverScroll(event) {
+  hideLinkPreview();
   if (sealPopoverElement && event.target instanceof Node && sealPopoverElement.contains(event.target)) return;
   closeSealPopover();
 }
@@ -8059,6 +8166,7 @@ function reloadReader() {
 
 // openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。
 function openPageLink(link) {
+  hideLinkPreview();
   if (link.media_kind === 'sound' || link.media_kind === 'movie') {
     playMediaAction(link);
     return;
