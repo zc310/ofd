@@ -998,6 +998,24 @@ ofd-creator merge -o selected.ofd --pages "s1:2;s2" input1.ofd input2.ofd
 ofd-creator merge -o reversed.ofd --pages 2,1 input1.ofd input2.ofd
 ```
 
+`--compose` 将多张来源页叠加为一个输出页。每个输出页组用分号分隔，组内来源页用 `+` 分隔；来源和页码均从 `1` 开始，组内第一张是底页，后续页面按顺序叠加。页面区域沿用底页，内容不自动缩放或平移：
+
+```bash
+# 输出两页：分别叠加两个输入文档的第 1 页、第 2 页
+ofd-creator merge -o composed.ofd --compose "s1:1+s2:1;s1:2+s2:2" input1.ofd input2.ofd
+
+# 同一个文件的第 1、2 页叠加为一个输出页
+ofd-creator merge -o one-page.ofd --compose "s1:1+s1:2" input.ofd --validate
+
+# 三个输入文件的第 1 页叠加为一个输出页
+ofd-creator merge -o three-inputs-one-page.ofd --compose "s1:1+s2:1+s3:1" input1.ofd input2.ofd input3.ofd --validate
+
+# 三个输入文件的前两页分别叠加，输出两页
+ofd-creator merge -o three-inputs-two-pages.ofd --compose "s1:1+s2:1+s3:1;s1:2+s2:2+s3:2" input1.ofd input2.ofd input3.ofd --validate
+```
+
+`--compose` 与 `--pages` 互斥，二者都使用模型级合并，并受相同的签名、孤立条目和规模选项限制。
+
 模型级合并会自动重命名/重编号文档级资源（字体名、绘制参数名、图片/颜色空间/复合图元/模板 ID）并改写引用；签名和版本会丢弃，大纲、书签、动作和页面注解会保留并重写跳转页索引。因此不能与 `--signatures`、`--orphans`、`--max-*` 同时使用。输出文档元数据默认沿用首个来源，可用 `--document-id`、`--title`、`--author` 覆盖；`--workers` 控制并行解析输入的并发数（默认 4），与 `ofd-converter --workers` 命名一致。
 
 选页保留首个来源的封面及相同的 `DocType`；不同 `DocType` 输入拒绝模型级合并。

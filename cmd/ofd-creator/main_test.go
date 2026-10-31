@@ -17,6 +17,7 @@ import (
 	"github.com/beevik/etree"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/version"
+	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -297,6 +298,21 @@ func TestParseMergeArgs(t *testing.T) {
 	}
 }
 
+func TestParsePageCompositions(t *testing.T) {
+	compositions, err := parsePageCompositions("s1:1+s2:1;s1:2+s2:2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compositions) != 2 || len(compositions[0].Pages) != 2 || compositions[0].Pages[1] != (merge.PageRef{Source: 2, Page: 1}) || compositions[1].Pages[0] != (merge.PageRef{Source: 1, Page: 2}) {
+		t.Fatalf("页面组合解析错误: %+v", compositions)
+	}
+	for _, spec := range []string{"", "s1:1+", "s0:1", "s1:0", "s1", "s1:1;;s2:1"} {
+		if _, err := parsePageCompositions(spec); err == nil {
+			t.Fatalf("parsePageCompositions(%q) 应返回错误", spec)
+		}
+	}
+}
+
 func TestRunMergeWritesValidatedDocument(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
@@ -398,12 +414,32 @@ func TestRunMergePages(t *testing.T) {
 	}
 }
 
+func TestRunMergeComposePages(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "composed.ofd")
+	hello := filepath.Join("..", "..", "testdata", "ofd-creator/hello.ofd")
+	helloworld := filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"merge", "-i", hello, "-i", helloworld, "-o", output, "--compose", "s1:1+s2:1", "--validate"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("run merge --compose exit code = %d, stderr = %s", code, stderr.String())
+	}
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("页面叠加输出为空")
+	}
+}
+
 func TestRunMergePagesRejectsIncompatibleFlags(t *testing.T) {
 	directory := t.TempDir()
 	output := filepath.Join(directory, "merged.ofd")
 	hello := filepath.Join("..", "..", "testdata", "ofd-creator/hello.ofd")
 	cases := [][]string{
 		{"merge", "-i", hello, "-o", output, "--pages", "0"},
+		{"merge", "-i", hello, "-o", output, "--compose", "bad"},
+		{"merge", "-i", hello, "-o", output, "--pages", "1", "--compose", "s1:1"},
 		{"merge", "-i", hello, "-o", output, "--pages", "1", "--signatures", "rewrite"},
 		{"merge", "-i", hello, "-o", output, "--pages", "1", "--orphans", "ignore"},
 		{"merge", "-i", hello, "-o", output, "--pages", "1", "--max-entries", "5"},

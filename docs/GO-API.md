@@ -272,7 +272,7 @@ PDF 导出同时保留内部跳转大纲与外部 URI 大纲。选页导出会�
 |--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
 | 创建 OFD                 | `pkg/creator` 的 `CreateFile`、`Create`、`Marshal` 及流式页面接口；坐标、边界和字号以毫米计，见[创建器库指南](../pkg/creator/README.md)。           |
 | 打包多个文档体           | `pkg/creator/merge.Files`、`Bytes`、`Sources` 保留文档体目录，签名处理由 `Options.Signatures` 控制。                                                        |
-| 拼页、选页和重排         | `pkg/creator/merge.Pages` 解析并生成单文档 OFD，重映射资源与跳转引用；原签名和版本丢弃，见[合并命令与选页说明](../cmd/ofd-creator/README.md#合并多个-ofd)。 |
+| 拼页、选页、重排和页面叠加 | `pkg/creator/merge.Pages` 解析并生成单文档 OFD，重映射资源与跳转引用；可用 `PageOptions.Compositions` 将多张来源页按顺序叠加为一页；原签名和版本丢弃，见[合并命令与选页说明](../cmd/ofd-creator/README.md#合并多个-ofd)。 |
 | 按页或文档体拆分         | `pkg/creator/split.Open(ctx, input, options)` 建立可复用会话，`Plan` 校验分组，`Write` 逐份写出；见[拆分库指南](../pkg/creator/split/README.md)。 |
 | 条目编辑与水印           | `pkg/creator/replace.Files/Paths` 编辑包内条目，`pkg/creator/watermark.Add/Replace/Remove` 编辑水印注解。 |
 | 长期保存转换             | `pkg/archive/preserve.Plan/Apply` 生成与执行按标准条款记录的长期保存改动计划。 |

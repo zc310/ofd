@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,17 @@ import (
 	"github.com/zc310/ofd/pkg/creator/merge"
 	"github.com/zc310/ofd/pkg/sign"
 	"github.com/zc310/ofd/pkg/validator"
+)
+
+var (
+	errComposeAndPages     = errors.New("--pages 与 --compose 不能同时使用")
+	errComposeEmptyGroup   = errors.New("--compose 包含空页面组")
+	errComposeRefFormat    = errors.New("--compose 页面引用格式无效，要求 s来源:页码")
+	errComposeRefNumber    = errors.New("--compose 页面引用无效，来源和页码必须是正整数")
+	errModelSignatureFlags = errors.New("模型级合并不支持 --signatures")
+	errModelOrphanFlags    = errors.New("模型级合并不支持 --orphans")
+	errModelLimitFlags     = errors.New("模型级合并不支持 --max-entries/--max-entry-mb/--max-total-mb")
+	errModelOptionsOnly    = errors.New("--document-id/--title/--author/--workers 仅在设置 --pages 或 --compose 时可用")
 )
 
 func runMerge(args []string, stdout, stderr io.Writer) int {
@@ -50,12 +62,24 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 		OnSignature: collector.add,
 	}
 	run := func(w io.Writer) error {
-		if strings.TrimSpace(opts.pages) == "" {
+		if strings.TrimSpace(opts.pages) == "" && strings.TrimSpace(opts.compose) == "" {
 			return merge.Files(opts.inputs, w, mergeOptions)
 		}
-		pages, err := merge.ParsePageSelection(opts.pages)
-		if err != nil {
-			return err
+		var pages []merge.PageSelector
+		var compositions []merge.PageComposition
+		if strings.TrimSpace(opts.pages) != "" {
+			var err error
+			pages, err = merge.ParsePageSelection(opts.pages)
+			if err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(opts.compose) != "" {
+			var err error
+			compositions, err = parsePageCompositions(opts.compose)
+			if err != nil {
+				return err
+			}
 		}
 		sources := make([]merge.Source, 0, len(opts.inputs))
 		for _, input := range opts.inputs {
@@ -66,6 +90,7 @@ func runMerge(args []string, stdout, stderr io.Writer) int {
 			CompressionLevel: mergeOptions.CompressionLevel,
 			Deterministic:    mergeOptions.Deterministic,
 			Selectors:        pages,
+			Compositions:     compositions,
 			ID:               opts.documentID,
 			Title:            opts.title,
 			Author:           opts.author,
@@ -204,6 +229,7 @@ type mergeOptions struct {
 	signatures       string
 	orphans          string
 	pages            string
+	compose          string
 	documentID       string
 	title            string
 	author           string
@@ -238,7 +264,7 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	root.SetErr(output)
 	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		opts.help = true
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator merge - 合并多个 OFD 为多文档 OFD")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "ofd-creator merge - 合并多个 OFD")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "用法：ofd-creator merge -o merged.ofd input1.ofd input2.ofd")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout())
 		flags := cmd.Flags()
@@ -253,6 +279,7 @@ func parseMergeArgs(args []string, output io.Writer) (*mergeOptions, error) {
 	flags.StringVar(&opts.signatures, "signatures", opts.signatures, "签名处理方式：preserve、rewrite 或 drop")
 	flags.StringVar(&opts.orphans, "orphans", opts.orphans, "文档目录外条目处理方式：error、ignore 或 preserve")
 	flags.StringVar(&opts.pages, "pages", "", "选页并重排：全局 1,3-5 或按源 s1:1,3-5;s2:2；设置后使用模型级合并")
+	flags.StringVar(&opts.compose, "compose", "", "页面叠加：输出页用分号分组，组内用 + 连接来源页，如 s1:1+s2:1;s1:2+s2:2")
 	flags.StringVar(&opts.documentID, "document-id", "", "模型级合并输出文档 ID，默认沿用首源")
 	flags.StringVar(&opts.title, "title", "", "模型级合并输出文档标题，默认沿用首源")
 	flags.StringVar(&opts.author, "author", "", "模型级合并输出文档作者，默认沿用首源")
@@ -314,26 +341,68 @@ func validateMergeOptions(opts *mergeOptions) error {
 	if opts.maxEntries < 0 || opts.maxEntryMB < 0 || opts.maxTotalMB < 0 {
 		return errors.New("合并规模限制不能为负数")
 	}
-	if strings.TrimSpace(opts.pages) != "" {
-		if _, err := merge.ParsePageSelection(opts.pages); err != nil {
+	modelMerge := strings.TrimSpace(opts.pages) != "" || strings.TrimSpace(opts.compose) != ""
+	if strings.TrimSpace(opts.pages) != "" && strings.TrimSpace(opts.compose) != "" {
+		return errComposeAndPages
+	}
+	if strings.TrimSpace(opts.compose) != "" {
+		if _, err := parsePageCompositions(opts.compose); err != nil {
 			return err
+		}
+	}
+	if modelMerge {
+		if _, err := merge.ParsePageSelection(opts.pages); err != nil {
+			if strings.TrimSpace(opts.pages) != "" {
+				return err
+			}
 		}
 		signatures := creator.SignatureMode(strings.ToLower(strings.TrimSpace(opts.signatures)))
 		if signatures != "" && signatures != creator.SignaturePreserve {
-			return errors.New("--pages 使用模型级合并，不支持 --signatures")
+			return errModelSignatureFlags
 		}
 		orphans := merge.OrphanMode(strings.ToLower(strings.TrimSpace(opts.orphans)))
 		if orphans != "" && orphans != merge.OrphanError {
-			return errors.New("--pages 使用模型级合并，不支持 --orphans")
+			return errModelOrphanFlags
 		}
 		if opts.maxEntries != 0 || opts.maxEntryMB != 0 || opts.maxTotalMB != 0 {
-			return errors.New("--pages 使用模型级合并，不支持 --max-entries/--max-entry-mb/--max-total-mb")
+			return errModelLimitFlags
 		}
 		if opts.workers < 1 {
 			return errors.New("--workers 必须大于 0")
 		}
 	} else if opts.documentID != "" || opts.title != "" || opts.author != "" || opts.workers != defaultMergeWorkers {
-		return errors.New("--document-id/--title/--author/--workers 仅在设置 --pages 时可用")
+		return errModelOptionsOnly
 	}
 	return nil
+}
+
+// parsePageCompositions 解析“每组一张输出页、组内顺序叠加”的命令行表达式。
+// 例如 s1:1+s2:1;s1:2+s2:2 表示输出两页，分别叠加两个来源的对应页。
+func parsePageCompositions(spec string) ([]merge.PageComposition, error) {
+	var result []merge.PageComposition
+	for groupText := range strings.SplitSeq(strings.TrimSpace(spec), ";") {
+		groupText = strings.TrimSpace(groupText)
+		if groupText == "" {
+			return nil, errComposeEmptyGroup
+		}
+		group := merge.PageComposition{}
+		for refText := range strings.SplitSeq(groupText, "+") {
+			refText = strings.TrimSpace(refText)
+			if len(refText) < 4 || (refText[0] != 's' && refText[0] != 'S') {
+				return nil, fmt.Errorf("页面引用 %q: %w", refText, errComposeRefFormat)
+			}
+			separator := strings.IndexByte(refText, ':')
+			if separator < 2 || separator == len(refText)-1 || strings.IndexByte(refText[separator+1:], ':') >= 0 {
+				return nil, fmt.Errorf("页面引用 %q: %w", refText, errComposeRefFormat)
+			}
+			source, sourceErr := strconv.Atoi(refText[1:separator])
+			page, pageErr := strconv.Atoi(refText[separator+1:])
+			if sourceErr != nil || source < 1 || pageErr != nil || page < 1 {
+				return nil, fmt.Errorf("页面引用 %q: %w", refText, errComposeRefNumber)
+			}
+			group.Pages = append(group.Pages, merge.PageRef{Source: source, Page: page})
+		}
+		result = append(result, group)
+	}
+	return result, nil
 }

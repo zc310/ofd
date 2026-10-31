@@ -39,8 +39,12 @@ const (
 )
 
 var (
-	errPageCountLimit = errors.New("页码列表超过上限")
-	errMixedDocType   = errors.New("不能合并不同 DocType 的文档")
+	errPageCountLimit    = errors.New("页码列表超过上限")
+	errMixedDocType      = errors.New("不能合并不同 DocType 的文档")
+	errPageSelections    = errors.New("Pages、Selectors 与 Compositions 不能同时设置")
+	errEmptyComposition  = errors.New("页面组合不能为空")
+	errCompositionSource = errors.New("页面组合来源编号超出范围")
+	errCompositionPage   = errors.New("页面组合页码超出范围")
 )
 
 // PageOptions 控制模型级页面合并的输出方式。
@@ -58,6 +62,9 @@ type PageOptions struct {
 	// Selectors 按来源选页，元素为 1 起始的来源序号与该来源内 1 起始的页码；
 	// Source 为 0 表示全局页序。与 Pages 互斥。
 	Selectors []PageSelector
+	// Compositions 指定输出页的组成。每组第一张来源页作为底页，后续来源页
+	// 按顺序叠加；每组至少包含一页。与 Pages、Selectors 互斥。
+	Compositions []PageComposition
 	// Limits 限制输入字节数与输出页数，零值使用默认限制。
 	Limits PageLimits
 	// Concurrency 是并行解析/转换输入的并发数，0 表示默认 4，1 表示串行。
@@ -76,6 +83,18 @@ type PageOptions struct {
 type PageSelector struct {
 	Source int
 	Pages  []int
+}
+
+// PageComposition 描述一个输出页由哪些来源页组成。Pages 第一项是底页，后续
+// 项按顺序绘制在上层。来源编号和页码均从 1 开始。
+type PageComposition struct {
+	Pages []PageRef
+}
+
+// PageRef 引用某个输入来源中的页面。
+type PageRef struct {
+	Source int
+	Page   int
 }
 
 // ParsePages 解析 "1,3-5" 形式的全局页码表达式，返回从 1 开始的页序。
@@ -240,12 +259,50 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 	if len(merged.Pages) == 0 {
 		return errors.New("没有可合并的页面")
 	}
-	if len(options.Pages) > 0 && len(options.Selectors) > 0 {
-		return errors.New("Pages 与 Selectors 不能同时设置")
+	selectionModes := 0
+	if len(options.Pages) > 0 {
+		selectionModes++
+	}
+	if len(options.Selectors) > 0 {
+		selectionModes++
+	}
+	if len(options.Compositions) > 0 {
+		selectionModes++
+	}
+	if selectionModes > 1 {
+		return errPageSelections
 	}
 	totalPages := len(merged.Pages)
 	var selectedGlobal []int
+	var compositionGroups [][]int
 	switch {
+	case len(options.Compositions) > 0:
+		compositionGroups = make([][]int, len(options.Compositions))
+		starts := make([]int, len(sourcePages))
+		offset := 0
+		for index, count := range sourcePages {
+			starts[index] = offset
+			offset += count
+		}
+		selectedGlobal = make([]int, 0, len(options.Compositions))
+		for groupIndex, composition := range options.Compositions {
+			if len(composition.Pages) == 0 {
+				return errEmptyComposition
+			}
+			group := make([]int, 0, len(composition.Pages))
+			for _, ref := range composition.Pages {
+				if ref.Source < 1 || ref.Source > len(sourcePages) {
+					return fmt.Errorf("组合 %d 的来源编号 %d 超出范围，共 %d 个输入: %w", groupIndex+1, ref.Source, len(sourcePages), errCompositionSource)
+				}
+				count := sourcePages[ref.Source-1]
+				if ref.Page < 1 || ref.Page > count {
+					return fmt.Errorf("组合 %d 的来源 s%d 页码 %d 超出范围，共 %d 页: %w", groupIndex+1, ref.Source, ref.Page, count, errCompositionPage)
+				}
+				group = append(group, starts[ref.Source-1]+ref.Page-1)
+			}
+			compositionGroups[groupIndex] = group
+			selectedGlobal = append(selectedGlobal, group[0])
+		}
 	case len(options.Pages) > 0:
 		selectedGlobal = make([]int, 0, len(options.Pages))
 		for _, page := range options.Pages {
@@ -267,14 +324,26 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 		}
 	}
 	pageMap := make(map[int]int, len(selectedGlobal))
-	for outputIndex, globalIndex := range selectedGlobal {
-		pageMap[globalIndex] = outputIndex
+	if len(compositionGroups) > 0 {
+		for outputIndex, group := range compositionGroups {
+			for _, globalIndex := range group {
+				pageMap[globalIndex] = outputIndex
+			}
+		}
+	} else {
+		for outputIndex, globalIndex := range selectedGlobal {
+			pageMap[globalIndex] = outputIndex
+		}
 	}
 	// 先改写原始页面，再复制选页；重复页共享的对象只会被映射一次。
 	remapDocumentGotos(&merged, pageMap)
 	pages := make([]creator.Page, len(selectedGlobal))
 	for outputIndex, globalIndex := range selectedGlobal {
-		pages[outputIndex] = merged.Pages[globalIndex]
+		if len(compositionGroups) > 0 {
+			pages[outputIndex] = composePages(merged.Pages, compositionGroups[outputIndex])
+		} else {
+			pages[outputIndex] = merged.Pages[globalIndex]
+		}
 	}
 	merged.Pages = pages
 	if len(merged.Pages) > limits.MaxPages {
@@ -342,6 +411,29 @@ func selectGlobalPages(totalPages int, sourcePages []int, selectors []PageSelect
 		return nil, errors.New("选页结果为空")
 	}
 	return selected, nil
+}
+
+// composePages 以组内第一张页面为底页，按顺序追加其余页面的资源、模板、图层
+// 和动作。输出页面的区域属性沿用底页。
+func composePages(source []creator.Page, indexes []int) creator.Page {
+	result := source[indexes[0]]
+	result.Layers = append([]creator.Layer(nil), pageLayers(result)...)
+	result.Items = nil
+	for _, index := range indexes[1:] {
+		page := source[index]
+		result.Resources = append(result.Resources, page.Resources...)
+		result.Templates = append(result.Templates, page.Templates...)
+		result.Layers = append(result.Layers, pageLayers(page)...)
+		result.Actions = append(result.Actions, page.Actions...)
+	}
+	return result
+}
+
+func pageLayers(page creator.Page) []creator.Layer {
+	if len(page.Layers) > 0 {
+		return page.Layers
+	}
+	return []creator.Layer{{Type: page.LayerType, Items: page.Items}}
 }
 
 type pageInput struct {

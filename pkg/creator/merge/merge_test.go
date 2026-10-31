@@ -614,6 +614,50 @@ func TestPagesSelectsAndReorders(t *testing.T) {
 	}
 }
 
+func TestPagesComposesSourcesIntoOneOutputPage(t *testing.T) {
+	inputs := []Source{{Data: smallDocument(t, "compose-a")}, {Data: smallDocument(t, "compose-b")}}
+	var buffer bytes.Buffer
+	err := Pages(inputs, &buffer, PageOptions{Compositions: []PageComposition{{Pages: []PageRef{{Source: 1, Page: 1}, {Source: 2, Page: 1}}}}})
+	if err != nil {
+		t.Fatalf("页面叠加失败: %v", err)
+	}
+	ofd, err := parser.NewOFD(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ofd.Close() }()
+	if len(ofd.Documents) != 1 || len(ofd.Documents[0].Pages) != 1 {
+		t.Fatalf("输出应只有 1 页")
+	}
+	content := ofd.Documents[0].Pages[0].Content()
+	if content == nil || len(content.Layer) != 2 {
+		t.Fatalf("叠加后应保留底页和上层两个图层，实际内容: %+v", content)
+	}
+	instance, err := validator.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := instance.ValidateReader(context.Background(), bytes.NewReader(buffer.Bytes()), "composed.ofd"); report.HasErrors() {
+		var out strings.Builder
+		_ = validator.RenderText(&out, report)
+		t.Fatalf("叠加结果未通过严格校验:\n%s", out.String())
+	}
+}
+
+func TestPagesRejectsInvalidCompositions(t *testing.T) {
+	inputs := []Source{{Data: smallDocument(t, "compose-invalid")}}
+	for _, composition := range []PageComposition{
+		{},
+		{Pages: []PageRef{{Source: 0, Page: 1}}},
+		{Pages: []PageRef{{Source: 1, Page: 2}}},
+	} {
+		var buffer bytes.Buffer
+		if err := Pages(inputs, &buffer, PageOptions{Compositions: []PageComposition{composition}}); err == nil {
+			t.Fatalf("无效组合 %+v 应返回错误", composition)
+		}
+	}
+}
+
 func TestPagesRejectsOutOfRange(t *testing.T) {
 	inputs := []Source{{Path: testdataPath("ofd-creator/hello.ofd")}}
 	var buffer bytes.Buffer
