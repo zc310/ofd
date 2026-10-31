@@ -7,6 +7,10 @@
 
 ## 未发布
 
+## 已发布
+
+### v0.1.8
+
 - **阅读器 API 调整导入路径**：将 `github.com/zc310/ofd/pkg/webreader` 改为
   `github.com/zc310/ofd/pkg/reader`，包名从 `webreader` 改为 `reader`。调用方需更新
   import 路径及包标识符。
@@ -15,13 +19,11 @@
   `RenderPage(ctx context.Context, output io.Writer, index int, options RenderOptions) error`；
   `RenderPageWithReport` 同样接收 output writer；`RenderPDF` 接收 writer 并取代原
   `RenderPDFTo`；`RenderPages` 改为逐页调用
-  `RenderPageConsumer(ctx context.Context, position, pageIndex int, data []byte)`，不再返回
+  `RenderPageConsumer(ctx context.Context, position, pageIndex int, data []byte) error`，不再返回
   `[][]byte`，且移除 Reader API 的64页批量上限。
   多页回调中的页面字节只在回调期间有效，需保留时必须复制；回调在 Reader 读锁内执行，
   不得重入同一 Reader。调用方需传入上下文及对应 writer 或消费回调；取消返回原始
   `ctx.Err()`，失败时 writer 可能含部分数据，且多页回调已经消费的数据不会回滚。
-
-## 已发布
 
 ### v0.1.7
 
