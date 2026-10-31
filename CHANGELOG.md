@@ -11,6 +11,16 @@
   `github.com/zc310/ofd/pkg/reader`，包名从 `webreader` 改为 `reader`。调用方需更新
   import 路径及包标识符。
 
+- **阅读器渲染接口改为 writer 与逐页消费回调**：`reader.Reader.RenderPage` 改为
+  `RenderPage(ctx context.Context, output io.Writer, index int, options RenderOptions) error`；
+  `RenderPageWithReport` 同样接收 output writer；`RenderPDF` 接收 writer 并取代原
+  `RenderPDFTo`；`RenderPages` 改为逐页调用
+  `RenderPageConsumer(ctx context.Context, position, pageIndex int, data []byte)`，不再返回
+  `[][]byte`，且移除 Reader API 的64页批量上限。
+  多页回调中的页面字节只在回调期间有效，需保留时必须复制；回调在 Reader 读锁内执行，
+  不得重入同一 Reader。调用方需传入上下文及对应 writer 或消费回调；取消返回原始
+  `ctx.Err()`，失败时 writer 可能含部分数据，且多页回调已经消费的数据不会回滚。
+
 ## 已发布
 
 ### v0.1.7
@@ -91,17 +101,6 @@
   的错误，原先依赖空结果判定读取失败的调用方应处理返回错误。Office、HTML 的取消与
   超时返回标准上下文错误，依赖错误文案的调用方应改用 `errors.Is` 判断
   `context.Canceled` 或 `context.DeadlineExceeded`。
-
-- **阅读器渲染接口增加上下文参数**：`webreader.Reader.RenderPage` 改为
-  `RenderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error)`；
-  `RenderPages` 改为
-  `RenderPages(ctx context.Context, indices []int, options RenderOptions) ([][]byte, error)`；
-  `RenderPDF` 改为
-  `RenderPDF(ctx context.Context, indices []int, options RenderOptions) ([]byte, error)`；
-  `RenderPDFTo` 改为
-  `RenderPDFTo(ctx context.Context, output io.Writer, indices []int, options RenderOptions) error`。
-  调用方需在首个参数传入上下文；不需要取消控制时可用 `context.Background()`。
-  取消或超时返回原始 `ctx.Err()`，失败后应丢弃部分 PDF 输出。
 
 - **WASM 页面渲染改为异步**：直接调用 `ofd.renderPage`、`ofd.renderPages` 和单页
   `ofd.renderStream` 时，调用方需使用 `await` 获取结果，并处理渲染失败时的 Promise

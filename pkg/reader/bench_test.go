@@ -99,15 +99,16 @@ func benchmarkOpenStages(b *testing.B, filename string) {
 				r := benchReader(b, filename)
 				b.ReportAllocs()
 				b.ResetTimer()
+				var output bytes.Buffer
 				var outputSize int
 				for i := 0; i < b.N; i++ {
-					data, err := r.RenderPage(b.Context(), 0, RenderOptions{
+					output.Reset()
+					if err := r.RenderPage(b.Context(), &output, 0, RenderOptions{
 						DPI: 96, Format: RenderPNG, PNGCompressionLevel: level,
-					})
-					if err != nil {
+					}); err != nil {
 						b.Fatal(err)
 					}
-					outputSize = len(data)
+					outputSize = output.Len()
 				}
 				b.ReportMetric(float64(outputSize), "bytes/png")
 			})
@@ -262,8 +263,10 @@ func BenchmarkRenderPage(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Format: RenderPNG, Background: image.White}
 	b.ReportAllocs()
+	var output bytes.Buffer
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPage(b.Context(), i%20, opts); err != nil {
+		output.Reset()
+		if err := r.RenderPage(b.Context(), &output, i%20, opts); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -289,10 +292,11 @@ func BenchmarkRenderSVG(b *testing.B) {
 			}
 			defer r.Close()
 			options := RenderOptions{Format: RenderSVG, DPI: dpi}
-			warmup, err := r.RenderPage(b.Context(), 0, options)
-			if err != nil {
+			var output bytes.Buffer
+			if err := r.RenderPage(b.Context(), &output, 0, options); err != nil {
 				b.Fatal(err)
 			}
+			warmup := bytes.Clone(output.Bytes())
 			if !bytes.Contains(warmup, []byte("<svg")) || !bytes.Contains(warmup, []byte("<path")) {
 				b.Fatalf("SVG 输出缺少页面或矢量路径: %s", warmup)
 			}
@@ -300,14 +304,14 @@ func BenchmarkRenderSVG(b *testing.B) {
 			b.ResetTimer()
 			var outputSize int
 			for i := 0; i < b.N; i++ {
-				output, err := r.RenderPage(b.Context(), 0, options)
-				if err != nil {
+				output.Reset()
+				if err := r.RenderPage(b.Context(), &output, 0, options); err != nil {
 					b.Fatal(err)
 				}
-				if !bytes.Equal(output, warmup) {
+				if !bytes.Equal(output.Bytes(), warmup) {
 					b.Fatal("重复渲染的 SVG 内容发生变化")
 				}
-				outputSize = len(output)
+				outputSize = output.Len()
 			}
 			b.ReportMetric(float64(outputSize), "bytes/svg")
 		})
@@ -316,14 +320,16 @@ func BenchmarkRenderSVG(b *testing.B) {
 
 // BenchmarkRenderPDF 渲染单页为 PDF。矢量输出，供打印与导出。
 //
-// PDF 不在 RenderFormat 里：它走 RenderPDF/RenderPDFTo，页面主体保留文字与
+// PDF 不在 RenderFormat 里：它走 RenderPDF/RenderPDF，页面主体保留文字与
 // 矢量内容，与位图路径的成本结构完全不同，因此单列一项。
 func BenchmarkRenderPDF(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
+	var output bytes.Buffer
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPDF(b.Context(), []int{i % 20}, opts); err != nil {
+		output.Reset()
+		if err := r.RenderPDF(b.Context(), &output, []int{i % 20}, opts); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -334,8 +340,10 @@ func BenchmarkRenderPagesPDF(b *testing.B) {
 	r := benchReader(b, "ofd-creator/1000-pages.ofd")
 	opts := RenderOptions{DPI: 96, Background: image.White}
 	b.ReportAllocs()
+	var output bytes.Buffer
 	for i := 0; i < b.N; i++ {
-		if _, err := r.RenderPDF(b.Context(), []int{0, 1, 2, 3, 4}, opts); err != nil {
+		output.Reset()
+		if err := r.RenderPDF(b.Context(), &output, []int{0, 1, 2, 3, 4}, opts); err != nil {
 			b.Fatal(err)
 		}
 	}

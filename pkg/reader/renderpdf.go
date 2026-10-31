@@ -1,7 +1,6 @@
 package reader
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,18 +17,7 @@ import (
 // PDF 页面物理面积的上限，单位为平方点（1 点 = 1/72 英寸），不随输出 DPI 改变。
 const maxPDFPageAreaPoints = 50_000_000
 
-// RenderPDF 将多个页面按传入顺序写入一个保留文字和矢量内容的 PDF 文档。
-// 该接口会把完整 PDF 保存在内存中，需要导出大量页面时应使用 RenderPDFTo。
-func (r *Reader) RenderPDF(ctx context.Context, indices []int, options RenderOptions) (outputBytes []byte, err error) {
-	var output bytes.Buffer
-	err = r.RenderPDFTo(ctx, &output, indices, options)
-	if err != nil {
-		return nil, err
-	}
-	return output.Bytes(), nil
-}
-
-// RenderPDFTo 将多个页面按传入顺序写入 output，保留文字和矢量内容。
+// RenderPDF 将多个页面按传入顺序写入 output，保留文字和矢量内容。
 // output 会在 PDF 生成过程中接收数据，适合流式保存大 PDF，因此不限制页数。
 //
 // options.DPI 用于复杂效果的内部离屏栅格化，默认 96；文字和路径保留矢量。
@@ -38,7 +26,7 @@ func (r *Reader) RenderPDF(ctx context.Context, indices []int, options RenderOpt
 //
 // 在链接收集、页面绘制及写出之间响应取消。
 // 取消时返回 ctx.Err()；output 可能已包含不完整的 PDF，调用方应丢弃。
-func (r *Reader) RenderPDFTo(ctx context.Context, output io.Writer, indices []int, options RenderOptions) (err error) {
+func (r *Reader) RenderPDF(ctx context.Context, output io.Writer, indices []int, options RenderOptions) (err error) {
 	if r == nil {
 		return errors.New("文档引擎为空")
 	}

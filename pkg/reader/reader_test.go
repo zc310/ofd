@@ -146,7 +146,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 	if page.Width <= 0 || page.Height <= 0 {
 		t.Fatalf("invalid page size: %+v", page)
 	}
-	pngData, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 36})
+	pngData, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{DPI: 36})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 	if decoded.Bounds().Empty() {
 		t.Fatal("rendered image is empty")
 	}
-	jpgData, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderJPG, DPI: 36})
+	jpgData, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{Format: RenderJPG, DPI: 36})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestOpenAndRenderPage(t *testing.T) {
 		t.Fatal("JPG 渲染结果是一张全白空页，页面内容丢失")
 	}
 
-	svgData, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderSVG})
+	svgData, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{Format: RenderSVG})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,11 +185,11 @@ func TestOpenAndRenderPage(t *testing.T) {
 		t.Fatal("rendered data is not SVG")
 	}
 
-	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{Format: RenderFormat("gif")}); err == nil {
+	if _, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{Format: RenderFormat("gif")}); err == nil {
 		t.Fatal("unsupported render format was accepted")
 	}
 
-	svgPages, err := reader.RenderPages(t.Context(), []int{0, 0}, RenderOptions{Format: RenderFormat("SVG")})
+	svgPages, err := renderPagesBytes(t.Context(), reader, []int{0, 0}, RenderOptions{Format: RenderFormat("SVG")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestRenderPageConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(pageIndex int) {
 			defer wg.Done()
-			pngData, renderErr := reader.RenderPage(t.Context(), pageIndex, RenderOptions{DPI: 36})
+			pngData, renderErr := renderPageBytes(t.Context(), reader, pageIndex, RenderOptions{DPI: 36})
 			if renderErr != nil {
 				errs <- renderErr
 				return
@@ -507,7 +507,7 @@ func TestRenderPages(t *testing.T) {
 	}
 	defer reader.Close()
 
-	pages, err := reader.RenderPages(t.Context(), []int{0, 0}, RenderOptions{DPI: 36})
+	pages, err := renderPagesBytes(t.Context(), reader, []int{0, 0}, RenderOptions{DPI: 36})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,12 +519,8 @@ func TestRenderPages(t *testing.T) {
 			t.Fatalf("rendered page %d is not PNG", index)
 		}
 	}
-	if _, err := reader.RenderPages(t.Context(), []int{-1}, RenderOptions{DPI: 36}); err == nil {
+	if _, err := renderPagesBytes(t.Context(), reader, []int{-1}, RenderOptions{DPI: 36}); err == nil {
 		t.Fatal("negative page index was accepted")
-	}
-	indices := make([]int, 65)
-	if _, err := reader.RenderPages(t.Context(), indices, RenderOptions{DPI: 36}); err == nil {
-		t.Fatal("oversized page batch was accepted")
 	}
 }
 
@@ -538,7 +534,7 @@ func TestRenderPDF(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	pdfData, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{Background: color.White})
+	pdfData, err := renderPDFBytes(t.Context(), reader, []int{0}, RenderOptions{Background: color.White})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,22 +547,22 @@ func TestRenderPDF(t *testing.T) {
 	if !bytes.Contains(pdfData, []byte("/ToUnicode")) {
 		t.Fatal("PDF has no selectable text mapping")
 	}
-	highDPI, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 150, Background: color.White})
+	highDPI, err := renderPDFBytes(t.Context(), reader, []int{0}, RenderOptions{DPI: 150, Background: color.White})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(highDPI, []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(highDPI), []byte("%%EOF")) {
 		t.Fatal("high-DPI PDF is invalid")
 	}
-	if _, err := reader.RenderPDF(t.Context(), nil, RenderOptions{}); err == nil {
+	if _, err := renderPDFBytes(t.Context(), reader, nil, RenderOptions{}); err == nil {
 		t.Fatal("empty PDF page list was accepted")
 	}
-	if _, err := reader.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 601}); err == nil {
+	if _, err := renderPDFBytes(t.Context(), reader, []int{0}, RenderOptions{DPI: 601}); err == nil {
 		t.Fatal("excessive PDF DPI was accepted")
 	}
 }
 
-func TestRenderPDFToPreservesSelectableText(t *testing.T) {
+func TestRenderPDFPreservesSelectableText(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -578,7 +574,7 @@ func TestRenderPDFToPreservesSelectableText(t *testing.T) {
 	defer reader.Close()
 
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(t.Context(), &output, []int{0}, RenderOptions{Background: color.White}); err != nil {
+	if err := reader.RenderPDF(t.Context(), &output, []int{0}, RenderOptions{Background: color.White}); err != nil {
 		t.Fatal(err)
 	}
 	outputData := output.Bytes()
@@ -590,7 +586,7 @@ func TestRenderPDFToPreservesSelectableText(t *testing.T) {
 	}
 }
 
-func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
+func TestRenderPDFStreamsMoreThanBatchLimit(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "ofd-creator/helloworld.ofd"))
 	if err != nil {
 		t.Fatal(err)
@@ -603,7 +599,7 @@ func TestRenderPDFToStreamsMoreThanBatchLimit(t *testing.T) {
 
 	indices := make([]int, 65)
 	var output bytes.Buffer
-	if err := reader.RenderPDFTo(t.Context(), &output, indices, RenderOptions{DPI: 12, Background: color.White}); err != nil {
+	if err := reader.RenderPDF(t.Context(), &output, indices, RenderOptions{DPI: 12, Background: color.White}); err != nil {
 		t.Fatalf("streamed PDF rejected oversized page batch: %v", err)
 	}
 	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) || !bytes.HasSuffix(bytes.TrimSpace(output.Bytes()), []byte("%%EOF")) {
@@ -622,13 +618,13 @@ func TestRenderPageValidation(t *testing.T) {
 	}
 	defer reader.Close()
 
-	if _, err := reader.RenderPage(t.Context(), 3, RenderOptions{}); err == nil {
+	if _, err := renderPageBytes(t.Context(), reader, 3, RenderOptions{}); err == nil {
 		t.Fatal("out-of-range page was accepted")
 	}
-	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 601}); err == nil {
+	if _, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{DPI: 601}); err == nil {
 		t.Fatal("excessive DPI was accepted")
 	}
-	if _, err := reader.RenderPage(t.Context(), 0, RenderOptions{PNGCompressionLevel: 10}); err == nil {
+	if _, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{PNGCompressionLevel: 10}); err == nil {
 		t.Fatal("invalid PNG compression level was accepted")
 	}
 	if err := reader.Close(); err != nil {
@@ -655,7 +651,7 @@ func TestRenderPagePNGCompressionLevelsAreLossless(t *testing.T) {
 
 	images := make([]image.Image, 2)
 	for index, level := range []int{1, 7} {
-		encoded, err := reader.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4, PNGCompressionLevel: level})
+		encoded, err := renderPageBytes(t.Context(), reader, 0, RenderOptions{DPI: 25.4, PNGCompressionLevel: level})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -24,7 +24,6 @@ const (
 	maxInputBytes     = 256 << 20
 	maxRenderPixels   = 50_000_000
 	maxFontBytes      = 32 << 20
-	maxRenderPages    = 64
 	maxRenderDocs     = 4
 	// maxFontUsageScan 和 maxFontUsagePages 是按字体统计使用页面时的默认上限，
 	// 避免十万级页面文档在一次统计请求中解析全部页面布局。

@@ -31,6 +31,7 @@ type wasmApp struct {
 	streams       map[uint64]*jsChunkWriter
 	requestsMu    sync.Mutex
 	requests      map[*wasmRenderRequest]struct{}
+	renderBuffers sync.Pool
 }
 
 const (
@@ -1181,10 +1182,12 @@ func (a *wasmApp) renderPage(_ js.Value, args []js.Value) any {
 		return errorValue(err)
 	}
 	return a.renderAsync(id, func(ctx context.Context) (js.Value, error) {
-		data, err := reader.RenderPage(ctx, index, options)
-		if err != nil {
+		buffer := a.acquireWASMRenderBuffer()
+		defer a.releaseWASMRenderBuffer(buffer)
+		if err := reader.RenderPage(ctx, buffer, index, options); err != nil {
 			return js.Undefined(), err
 		}
+		data := buffer.Bytes()
 		result := js.Global().Get("Uint8Array").New(len(data))
 		js.CopyBytesToJS(result, data)
 		return result, nil
@@ -1212,15 +1215,15 @@ func (a *wasmApp) renderPages(_ js.Value, args []js.Value) any {
 		return errorValue(err)
 	}
 	return a.renderAsync(id, func(ctx context.Context) (js.Value, error) {
-		data, err := reader.RenderPages(ctx, indices, options)
-		if err != nil {
-			return js.Undefined(), err
-		}
-		result := js.Global().Get("Array").New(len(data))
-		for index, page := range data {
+		result := js.Global().Get("Array").New(len(indices))
+		err := reader.RenderPages(ctx, indices, options, func(_ context.Context, position, _ int, page []byte) error {
 			image := js.Global().Get("Uint8Array").New(len(page))
 			js.CopyBytesToJS(image, page)
-			result.SetIndex(index, image)
+			result.SetIndex(position, image)
+			return nil
+		})
+		if err != nil {
+			return js.Undefined(), err
 		}
 		return result, nil
 	})
@@ -1256,10 +1259,12 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 			return errorValue(errors.New("ofd.renderStream 单页时不需要输出回调"))
 		}
 		return a.renderAsync(streamID, func(ctx context.Context) (js.Value, error) {
-			data, err := reader.RenderPage(ctx, indices[0], options)
-			if err != nil {
+			buffer := a.acquireWASMRenderBuffer()
+			defer a.releaseWASMRenderBuffer(buffer)
+			if err := reader.RenderPage(ctx, buffer, indices[0], options); err != nil {
 				return js.Undefined(), err
 			}
+			data := buffer.Bytes()
 			result := js.Global().Get("Uint8Array").New(len(data))
 			js.CopyBytesToJS(result, data)
 			return result, nil
@@ -1298,15 +1303,14 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 		}()
 		var err error
 		if options.Format == ofdreader.RenderFormat("pdf") {
-			err = reader.RenderPDFTo(writer.ctx, writer, indices, options)
+			// writer.ctx derives from ctx and also cancels when the stream consumer fails.
+			//nolint:contextcheck
+			err = reader.RenderPDF(writer.ctx, writer, indices, options)
 		} else {
 			archive := zip.NewWriter(writer)
+			pageBuffer := a.acquireWASMRenderBuffer()
+			defer a.releaseWASMRenderBuffer(pageBuffer)
 			for position, index := range indices {
-				data, renderErr := reader.RenderPage(writer.ctx, index, options)
-				if renderErr != nil {
-					err = fmt.Errorf("处理图片第 %d 页失败: %w", position+1, renderErr)
-					return js.Undefined(), err
-				}
 				header := &zip.FileHeader{
 					Name:   fmt.Sprintf("page-%04d.%s", index+1, options.Format),
 					Method: zip.Store,
@@ -1316,7 +1320,14 @@ func (a *wasmApp) renderStream(_ js.Value, args []js.Value) any {
 					err = fmt.Errorf("创建图片 ZIP 条目失败: %w", createErr)
 					return js.Undefined(), err
 				}
-				if _, writeErr := entry.Write(data); writeErr != nil {
+				pageBuffer.Reset()
+				// writer.ctx derives from ctx and also cancels when the stream consumer fails.
+				//nolint:contextcheck
+				if renderErr := reader.RenderPage(writer.ctx, pageBuffer, index, options); renderErr != nil {
+					err = fmt.Errorf("处理图片第 %d 页失败: %w", position+1, renderErr)
+					return js.Undefined(), err
+				}
+				if _, writeErr := entry.Write(pageBuffer.Bytes()); writeErr != nil {
 					err = fmt.Errorf("写入图片 ZIP 条目失败: %w", writeErr)
 					return js.Undefined(), err
 				}

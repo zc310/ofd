@@ -68,17 +68,17 @@ func TestTextSourceOptionsUpdateCopySearchAndHighlightsTogether(t *testing.T) {
 
 func TestRenderPageWithReportPreservesCancellationAndPageOutput(t *testing.T) {
 	r := sourceOptionsReader(t)
-	data, report, err := r.RenderPageWithReport(t.Context(), 0, RenderOptions{DPI: 25.4})
+	data, report, err := renderPageWithReportBytes(t.Context(), r, 0, RenderOptions{DPI: 25.4})
 	if err != nil || len(data) == 0 || report.Stats.ObjectsVisited == 0 {
 		t.Fatalf("页面或报告缺失：%v %+v", err, report)
 	}
-	plain, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4})
+	plain, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 25.4})
 	if err != nil || !bytes.Equal(data, plain) {
 		t.Fatal("请求诊断改变了页面输出")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, _, err := r.RenderPageWithReport(ctx, 0, RenderOptions{}); !errors.Is(err, context.Canceled) {
+	if _, _, err := renderPageWithReportBytes(ctx, r, 0, RenderOptions{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("取消错误被改写：%v", err)
 	}
 }

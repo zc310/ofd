@@ -104,22 +104,22 @@ func TestPermissionsEnforceSelectedDocumentBeforeOutput(t *testing.T) {
 	if text, err := r.Text(1); err != nil || len(text) == 0 {
 		t.Fatalf("允许文字: %v %v", text, err)
 	}
-	if _, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 12}); err != nil {
+	if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 12}); err != nil {
 		t.Fatalf("普通预览被阻止: %v", err)
 	}
 	for _, purpose := range []PermissionAction{PermissionExport, PermissionPrint} {
-		if _, err := r.RenderPage(t.Context(), 0, RenderOptions{Purpose: purpose, DPI: 12}); !errors.Is(err, ErrPermissionDenied) {
+		if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{Purpose: purpose, DPI: 12}); !errors.Is(err, ErrPermissionDenied) {
 			t.Fatalf("用途 %s: %v", purpose, err)
 		}
-		if _, err := r.RenderPages(t.Context(), []int{1, 0}, RenderOptions{Purpose: purpose}); !errors.Is(err, ErrPermissionDenied) {
+		if _, err := renderPagesBytes(t.Context(), r, []int{1, 0}, RenderOptions{Purpose: purpose}); !errors.Is(err, ErrPermissionDenied) {
 			t.Fatalf("批量用途 %s: %v", purpose, err)
 		}
 	}
 	var output bytes.Buffer
-	if err := r.RenderPDFTo(t.Context(), &output, []int{1, 0}, RenderOptions{}); !errors.Is(err, ErrPermissionDenied) || output.Len() != 0 {
+	if err := r.RenderPDF(t.Context(), &output, []int{1, 0}, RenderOptions{}); !errors.Is(err, ErrPermissionDenied) || output.Len() != 0 {
 		t.Fatalf("混合 PDF: err=%v bytes=%d", err, output.Len())
 	}
-	if err := r.RenderPDFTo(t.Context(), &output, []int{1}, RenderOptions{}); err != nil || !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
+	if err := r.RenderPDF(t.Context(), &output, []int{1}, RenderOptions{}); err != nil || !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("允许 PDF: %v", err)
 	}
 	if _, err := r.AttachmentData(0, "note", 0); !errors.Is(err, ErrPermissionDenied) {

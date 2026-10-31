@@ -22,7 +22,7 @@ func TestPageViewsReuseEmbeddedFontsAcrossDPIAndCacheEviction(t *testing.T) {
 	defer reader.Close()
 	const page = 8
 	ref := reader.pages[page]
-	if _, err := reader.RenderPage(t.Context(), page, RenderOptions{DPI: 96, PNGCompressionLevel: 1}); err != nil {
+	if _, err := renderPageBytes(t.Context(), reader, page, RenderOptions{DPI: 96, PNGCompressionLevel: 1}); err != nil {
 		t.Fatal(err)
 	}
 	var loaded []models.StRefID

@@ -311,7 +311,16 @@ func colorLerp(c0, c1 color.RGBA, t float64) color.RGBA {
 		B: lerp(uint32(n0.B)*0x101, uint32(n1.B)*0x101, T),
 		A: lerp(uint32(n0.A)*0x101, uint32(n1.A)*0x101, T),
 	}
-	return color.RGBAModel.Convert(n).(color.RGBA)
+	return premultipliedColor(n)
+}
+
+func premultipliedColor(n color.NRGBA) color.RGBA {
+	return color.RGBA{
+		R: uint8(uint32(n.R) * 0x101 * uint32(n.A) / 0xff >> 8),
+		G: uint8(uint32(n.G) * 0x101 * uint32(n.A) / 0xff >> 8),
+		B: uint8(uint32(n.B) * 0x101 * uint32(n.A) / 0xff >> 8),
+		A: n.A,
+	}
 }
 
 // straightColor 把色标转为非预乘（straight）分量。A > 0 时按预乘值还原；
@@ -322,7 +331,13 @@ func straightColor(c color.RGBA) color.NRGBA {
 	if c.A == 0 {
 		return color.NRGBA{R: c.R, G: c.G, B: c.B}
 	}
-	return color.NRGBAModel.Convert(c).(color.NRGBA)
+	alpha := uint32(c.A)
+	return color.NRGBA{
+		R: uint8(uint32(c.R) * 0xffff / alpha >> 8),
+		G: uint8(uint32(c.G) * 0xffff / alpha >> 8),
+		B: uint8(uint32(c.B) * 0xffff / alpha >> 8),
+		A: c.A,
+	}
 }
 
 func lerp(a, b, t uint32) uint8 {

@@ -42,7 +42,7 @@ func TestRenderPDFKeepsPhysicalPageSizeAcrossDPI(t *testing.T) {
 			r := pdfSizeTestReader(t, size.width, size.height)
 			for _, dpi := range []float64{0, 72, 96, 150, 600} {
 				t.Run(fmt.Sprintf("DPI=%g", dpi), func(t *testing.T) {
-					data, err := r.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: dpi})
+					data, err := renderPDFBytes(t.Context(), r, []int{0}, RenderOptions{DPI: dpi})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -60,7 +60,7 @@ func TestRenderPDFKeepsPhysicalPageSizeAcrossDPI(t *testing.T) {
 				})
 			}
 			if size.name == "A3" {
-				if _, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 600}); err == nil {
+				if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 600}); err == nil {
 					t.Error("A3 的 600 DPI 位图输出仍应受像素上限限制")
 				}
 			}
@@ -72,7 +72,7 @@ func TestRenderPDFPageAreaLimitDoesNotDependOnDPI(t *testing.T) {
 	r := pdfSizeTestReader(t, 4000, 4000)
 	for _, dpi := range []float64{1, 72, 600} {
 		t.Run(fmt.Sprintf("DPI=%g", dpi), func(t *testing.T) {
-			if _, err := r.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: dpi}); err == nil {
+			if _, err := renderPDFBytes(t.Context(), r, []int{0}, RenderOptions{DPI: dpi}); err == nil {
 				t.Fatal("超大物理页面应始终拒绝，不能通过降低 DPI 绕过限制")
 			}
 		})

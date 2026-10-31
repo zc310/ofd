@@ -134,14 +134,14 @@ func TestLayerVisibilityRendersPNGSVGAndPDFWithoutChangingSource(t *testing.T) {
 	defer r.Close()
 	renderPNG := func() []byte {
 		t.Helper()
-		data, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 127, Background: color.White})
+		data, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 127, Background: color.White})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return data
 	}
 	baseline := renderPNG()
-	baselineSVG, err := r.RenderPage(t.Context(), 0, RenderOptions{Format: RenderSVG})
+	baselineSVG, err := renderPageBytes(t.Context(), r, 0, RenderOptions{Format: RenderSVG})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,14 +157,14 @@ func TestLayerVisibilityRendersPNGSVGAndPDFWithoutChangingSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkLayerPixels(t, img, 5)
-	svg, err := r.RenderPage(t.Context(), 0, RenderOptions{Format: RenderSVG})
+	svg, err := renderPageBytes(t.Context(), r, 0, RenderOptions{Format: RenderSVG})
 	if err != nil || bytes.Equal(svg, baselineSVG) {
 		t.Fatalf("SVG 未过滤: %v", err)
 	}
 	if links, err := r.pdfPageLinks(t.Context(), []int{0}); err != nil || len(links[0]) != 0 {
 		t.Fatalf("PDF 链接未过滤: %v", err)
 	}
-	pdf, err := r.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 72, Background: color.White})
+	pdf, err := renderPDFBytes(t.Context(), r, []int{0}, RenderOptions{DPI: 72, Background: color.White})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestLayerVisibilityConcurrentReaders(t *testing.T) {
 				if _, err := r.Search(t.Context(), "visible", SearchOptions{}); err != nil {
 					t.Error(err)
 				}
-				if _, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4}); err != nil {
+				if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 25.4}); err != nil {
 					t.Error(err)
 				}
 			}
@@ -384,7 +384,7 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 	if len(layers) != 4 || layers[2].Kind != "template" || layers[2].Type != "Background" || layers[3].Type != "Foreground" || layers[3].Name != "前景测试" {
 		t.Fatalf("正文与模板清单=%+v", layers)
 	}
-	baselineOther, err := r.RenderPage(t.Context(), 1, RenderOptions{DPI: 127, Background: color.White})
+	baselineOther, err := renderPageBytes(t.Context(), r, 1, RenderOptions{DPI: 127, Background: color.White})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 			if err := r.SetHiddenLayers(0, test.keys); err != nil {
 				t.Fatal(err)
 			}
-			data, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 127, Background: color.White})
+			data, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 127, Background: color.White})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -477,15 +477,15 @@ func checkTemplateVisibilityOutputs(t *testing.T) {
 			if len(links) != wantLinks || len(pdfLinks[0]) != wantLinks {
 				t.Fatalf("模板链接未同步过滤: %+v", links)
 			}
-			other, err := r.RenderPage(t.Context(), 1, RenderOptions{DPI: 127, Background: color.White})
+			other, err := renderPageBytes(t.Context(), r, 1, RenderOptions{DPI: 127, Background: color.White})
 			if err != nil || !bytes.Equal(other, baselineOther) {
 				t.Fatalf("模板设置影响了共用模板的另一页: %v", err)
 			}
-			svg, err := r.RenderPage(t.Context(), 0, RenderOptions{Format: RenderSVG})
+			svg, err := renderPageBytes(t.Context(), r, 0, RenderOptions{Format: RenderSVG})
 			if err != nil || len(svg) == 0 {
 				t.Fatalf("SVG 输出失败: %v", err)
 			}
-			pdf, err := r.RenderPDF(t.Context(), []int{0}, RenderOptions{DPI: 72, Background: color.White})
+			pdf, err := renderPDFBytes(t.Context(), r, []int{0}, RenderOptions{DPI: 72, Background: color.White})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -542,21 +542,21 @@ func TestInvoice999ListsBodyAndBackgroundTemplateOnEveryPage(t *testing.T) {
 			t.Fatalf("第 %d 页=%+v", index+1, layers)
 		}
 	}
-	before, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 50})
+	before, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := r.SetHiddenLayers(0, []string{"template:9"}); err != nil {
 		t.Fatal(err)
 	}
-	after, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 50})
+	after, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 50})
 	if err != nil || bytes.Equal(before, after) {
 		t.Fatalf("999.ofd 背景模板未隐藏: %v", err)
 	}
 	if err := r.SetHiddenLayers(0, nil); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 50})
+	restored, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 50})
 	if err != nil || !bytes.Equal(before, restored) {
 		t.Fatalf("999.ofd 模板未恢复: %v", err)
 	}

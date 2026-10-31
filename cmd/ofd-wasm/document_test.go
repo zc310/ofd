@@ -70,13 +70,14 @@ func checkWASMReader(t *testing.T, input []byte, options crypt.DecryptOptions, e
 	if err != nil || len(report.Results) == 0 {
 		t.Fatalf("解锁后无法搜索: %v", err)
 	}
-	image, err := reader.RenderPage(t.Context(), 0, ofdreader.RenderOptions{DPI: 24})
-	wantImage, wantErr := expected.RenderPage(t.Context(), 0, ofdreader.RenderOptions{DPI: 24})
-	if err != nil || wantErr != nil || len(image) == 0 || !bytes.Equal(image, wantImage) {
+	var image, wantImage bytes.Buffer
+	err = reader.RenderPage(t.Context(), &image, 0, ofdreader.RenderOptions{DPI: 24})
+	wantErr = expected.RenderPage(t.Context(), &wantImage, 0, ofdreader.RenderOptions{DPI: 24})
+	if err != nil || wantErr != nil || image.Len() == 0 || !bytes.Equal(image.Bytes(), wantImage.Bytes()) {
 		t.Fatalf("解锁后渲染不一致: %v / %v", err, wantErr)
 	}
 	var pdf bytes.Buffer
-	if err := reader.RenderPDFTo(t.Context(), &pdf, []int{0}, ofdreader.RenderOptions{}); err != nil || !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
+	if err := reader.RenderPDF(t.Context(), &pdf, []int{0}, ofdreader.RenderOptions{}); err != nil || !bytes.HasPrefix(pdf.Bytes(), []byte("%PDF-")) {
 		t.Fatalf("解锁后 PDF 导出失败: %v", err)
 	}
 	if err := reader.Close(); err != nil {

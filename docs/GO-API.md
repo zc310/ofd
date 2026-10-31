@@ -169,6 +169,7 @@ PDF 导入默认保存解码后的原始内嵌字体程序；设置
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image/color"
@@ -191,13 +192,14 @@ func main() {
 
 	fmt.Println("总页数：", r.PageCount())
 	// reader 的页索引从 0 开始。
-	png, err := r.RenderPage(context.Background(), 0, reader.RenderOptions{
+	var png bytes.Buffer
+	err = r.RenderPage(context.Background(), &png, 0, reader.RenderOptions{
 		DPI: 144, Background: color.White, Format: reader.RenderPNG,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	_ = png // PNG 字节可交给界面显示。
+	_ = png.Bytes() // PNG 字节可交给界面显示。
 
 	runs, err := r.Text(0)
 	if err != nil {
@@ -223,14 +225,16 @@ func main() {
 `SelectVersion` 提供，切换成功后需重新读取页面、字体和导航信息。
 完整接口见 [reader API](https://pkg.go.dev/github.com/zc310/ofd/pkg/reader)。
 
-`RenderPage(ctx, index, options)`、`RenderPages(ctx, indices, options)`、
-`RenderPDF(ctx, indices, options)` 和 `RenderPDFTo(ctx, output, indices, options)`
-均显式接收上下文。取消在页面加载、绘制、
+`RenderPage(ctx, output, index, options)` 和 `RenderPDF(ctx, output, indices, options)`
+将编码结果写入 `io.Writer`；`RenderPages(ctx, indices, options, consume)` 按页同步调用
+`consume(ctx, position, pageIndex, data)`，页数没有固定上限。回调参数中的 `data` 在回调
+返回后会复用，需要保留时必须复制。多页回调在 Reader 读锁内执行，不要在回调中重入同一 Reader。
+以上接口均显式接收上下文。取消在页面加载、绘制、
 栅格化、编码及页间的阶段边界生效，返回原始 `ctx.Err()`；单次底层绘制或编码仍需
-执行到阶段边界。PDF 输出可能不完整，失败后应丢弃。WASM 下可取消的调用会在
+执行到阶段边界。输出 writer 可能已写入不完整数据；多页消费回调此前已处理的数据不会回滚。
+WASM 下可取消的调用会在
 阶段边界让出浏览器事件循环，使取消消息不必等待输出分块才被处理。
-不需要取消或超时时，首参可传 `context.Background()`。`RenderPages` 和 `RenderPDF`
-失败时不返回部分结果；需要流式输出时使用 `RenderPDFTo`。
+不需要取消或超时时，首参可传 `context.Background()`。
 
 `Text` 和 `Search` 默认包含正文、模板及其复合对象内的文字；复合单元的缩放、偏移
 和裁边映射也用于字符高亮与链接热区。调用 `SetTextOptions` 可将水印、批注和 OFD

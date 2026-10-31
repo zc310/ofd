@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"io"
 	"math"
 	"strings"
 
@@ -40,28 +41,46 @@ type RenderOptions struct {
 // RenderReport 是单次绘制的用量与诊断快照，最多保存128种问题。
 type RenderReport = render.Report
 
+var (
+	errEmptyReader              = errors.New("文档引擎为空")
+	errEmptyRenderContext       = errors.New("渲染上下文为空")
+	errEmptyPageOutput          = errors.New("页面输出为空")
+	errEmptyPageConsumer        = errors.New("页面消费回调为空")
+	errReaderClosed             = errors.New("文档引擎已经关闭")
+	errRenderPageIndex          = errors.New("页面索引超出范围")
+	errRenderDPI                = errors.New("DPI 必须在 1 到 600 之间")
+	errUnsupportedRenderFormat  = errors.New("不支持的页面输出格式")
+	errInvalidPNGCompression    = errors.New("PNG 压缩级别必须在 1 到 9 之间")
+	errEmptyPageContent         = errors.New("页面内容为空")
+	errInvalidPageDimensions    = errors.New("尺寸无效")
+	errRenderDimensionsTooLarge = errors.New("渲染尺寸过大")
+)
+
 // RenderPageWithReport 与 RenderPage 使用相同权限和取消规则，另返回绘制诊断。
-func (r *Reader) RenderPageWithReport(ctx context.Context, index int, options RenderOptions) ([]byte, RenderReport, error) {
+func (r *Reader) RenderPageWithReport(ctx context.Context, output io.Writer, index int, options RenderOptions) (RenderReport, error) {
 	var report RenderReport
 	if r == nil {
-		return nil, report, errors.New("文档引擎为空")
+		return report, errEmptyReader
 	}
 	if ctx == nil {
-		return nil, report, errors.New("渲染上下文为空")
+		return report, errEmptyRenderContext
+	}
+	if output == nil {
+		return report, errEmptyPageOutput
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, report, err
+		return report, err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
-		return nil, report, errors.New("文档引擎已经关闭")
+		return report, errReaderClosed
 	}
 	if err := r.checkRenderPermissionLocked([]int{index}, options.Purpose); err != nil {
-		return nil, report, err
+		return report, err
 	}
-	data, err := r.renderPage(ctx, index, options, &report)
-	return data, report, err
+	err := r.renderPage(ctx, output, index, options, &report)
+	return report, err
 }
 
 type pageRef struct {
@@ -155,107 +174,132 @@ func (r *Reader) pageInfoLocked(index int) (PageInfo, error) {
 	return PageInfo{Index: index, Width: box.Width, Height: box.Height}, nil
 }
 
-// RenderPage 将指定页面渲染为 PNG、JPG 或 SVG 数据。
+// RenderPage 将指定页面渲染为 PNG、JPG 或 SVG 并写入 output。
 // 在页面加载、绘制、栅格化及编码的阶段边界响应取消。
-// 单次底层绘制或编码不会被强行中断；取消时返回 ctx.Err()。
-func (r *Reader) RenderPage(ctx context.Context, index int, options RenderOptions) ([]byte, error) {
+// 单次底层绘制或编码不会被强行中断；取消时返回 ctx.Err()。发生错误时 output
+// 可能已包含部分数据，调用方应丢弃。
+func (r *Reader) RenderPage(ctx context.Context, output io.Writer, index int, options RenderOptions) error {
 	if r == nil {
-		return nil, errors.New("文档引擎为空")
+		return errEmptyReader
+	}
+	if output == nil {
+		return errEmptyPageOutput
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
-		return nil, errors.New("文档引擎已经关闭")
+		return errReaderClosed
 	}
 	if err := r.checkRenderPermissionLocked([]int{index}, options.Purpose); err != nil {
-		return nil, err
+		return err
 	}
-	return r.renderPage(ctx, index, options)
+	return r.renderPage(ctx, output, index, options)
 }
 
-// RenderPages 将多个页面按传入顺序渲染为 PNG、JPG 或 SVG 数据。
-// 所有页面共享一次 Reader 锁和同一份文档状态；渲染本身仍按顺序执行。
-// 取消时返回 ctx.Err()，不返回已完成的部分页面。
-func (r *Reader) RenderPages(ctx context.Context, indices []int, options RenderOptions) ([][]byte, error) {
+// RenderPageConsumer 同步消费一个已编码页面。position 是请求中的结果位置，pageIndex 是文档页索引。
+// 回调接收本次渲染的 context；data 只在回调期间有效，需要保留时必须复制。
+type RenderPageConsumer func(ctx context.Context, position, pageIndex int, data []byte) error
+
+// RenderPages 按传入顺序渲染页面，并在每页完成后同步调用 consume；页数没有固定上限。
+// 页面数据在回调返回后复用；回调在 Reader 读锁内运行，不得重入调用此 Reader。
+// 所有页面共享同一份文档状态；取消或失败时，先前回调已消费的数据不会回滚。
+func (r *Reader) RenderPages(ctx context.Context, indices []int, options RenderOptions, consume RenderPageConsumer) error {
 	if r == nil {
-		return nil, errors.New("文档引擎为空")
+		return errEmptyReader
+	}
+	if consume == nil {
+		return errEmptyPageConsumer
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if len(indices) > maxRenderPages {
-		return nil, fmt.Errorf("批量渲染页面数量超过限制 %d", maxRenderPages)
+		return err
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
-		return nil, errors.New("文档引擎已经关闭")
-	}
-	results := make([][]byte, 0, len(indices))
-	if err := r.checkRenderPermissionLocked(indices, options.Purpose); err != nil {
-		return nil, err
+		return errReaderClosed
 	}
 	for _, index := range indices {
-		data, err := r.renderPage(ctx, index, options)
-		if err != nil {
-			return nil, err
+		if index < 0 || index >= len(r.pages) {
+			return fmt.Errorf("%w: %d", errRenderPageIndex, index)
 		}
-		results = append(results, data)
 	}
-	return results, nil
+	if err := r.checkRenderPermissionLocked(indices, options.Purpose); err != nil {
+		return err
+	}
+	if len(indices) == 0 {
+		return nil
+	}
+	var output bytes.Buffer
+	output.Grow(64 << 10)
+	for position, index := range indices {
+		output.Reset()
+		if err := r.renderPage(ctx, &output, index, options); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := consume(ctx, position, index, output.Bytes()); err != nil {
+			return fmt.Errorf("消费第 %d 页渲染结果失败: %w", position+1, err)
+		}
+		if err := renderCheckpoint(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// renderPage 将页面渲染为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
-func (r *Reader) renderPage(ctx context.Context, index int, options RenderOptions, reports ...*RenderReport) ([]byte, error) {
+// renderPage 将页面写为 PNG、JPG 或 SVG；调用方必须持有 Reader 读锁。
+func (r *Reader) renderPage(ctx context.Context, output io.Writer, index int, options RenderOptions, reports ...*RenderReport) error {
 	if err := renderCheckpoint(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	if index < 0 || index >= len(r.pages) {
-		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+		return fmt.Errorf("%w: %d", errRenderPageIndex, index)
 	}
 	if options.DPI == 0 {
 		options.DPI = defaultDPI
 	}
 	if options.DPI < 1 || options.DPI > maxDPI || math.IsNaN(options.DPI) || math.IsInf(options.DPI, 0) {
-		return nil, fmt.Errorf("DPI 必须在 1 到 %d 之间", maxDPI)
+		return errRenderDPI
 	}
 	format := RenderFormat(strings.ToLower(strings.TrimSpace(string(options.Format))))
 	if format == "" {
 		format = RenderPNG
 	}
 	if format != RenderPNG && format != RenderSVG && format != RenderJPG {
-		return nil, fmt.Errorf("不支持的页面输出格式: %q", format)
+		return fmt.Errorf("%w: %q", errUnsupportedRenderFormat, format)
 	}
 	pngCompressionLevel := options.PNGCompressionLevel
 	if pngCompressionLevel == 0 {
 		pngCompressionLevel = 7
 	}
 	if format == RenderPNG && (pngCompressionLevel < 1 || pngCompressionLevel > 9) {
-		return nil, fmt.Errorf("PNG 压缩级别必须在 1 到 9 之间")
+		return errInvalidPNGCompression
 	}
 
 	ref := r.pages[index]
 	lease, err := ref.page.AcquireLease()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer lease.Release()
 	if err := renderCheckpoint(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	content := lease.Content()
 	if content == nil {
-		return nil, fmt.Errorf("页面内容为空")
+		return errEmptyPageContent
 	}
 	box := content.Area.PhysicalBox
 	if !finitePositive(box.Width) || !finitePositive(box.Height) {
-		return nil, fmt.Errorf("第 %d 页尺寸无效", index)
+		return fmt.Errorf("第 %d 页%w", index, errInvalidPageDimensions)
 	}
 	if !validRasterDimensions(box.Width, box.Height, options.DPI) {
-		return nil, fmt.Errorf("第 %d 页渲染尺寸过大", index)
+		return fmt.Errorf("第 %d 页%w", index, errRenderDimensionsTooLarge)
 	}
 
 	background := options.Background
@@ -265,7 +309,7 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 	// NewDocument 保证页面背景和渲染内容使用同一个文档级渲染上下文。
 	document, err := r.pageDocument(ref, background, geom.DPI(options.DPI))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer r.releasePageDocument(document)
 	var page render.VectorSurface
@@ -275,62 +319,54 @@ func (r *Reader) renderPage(ctx context.Context, index int, options RenderOption
 		page, err = document.PageWithVisibility(ref.page, r.hiddenLayers[index])
 	}
 	if err != nil {
-		return nil, fmt.Errorf("渲染第 %d 页失败: %w", index, err)
+		return fmt.Errorf("渲染第 %d 页失败: %w", index, err)
 	}
 	if err := renderCheckpoint(ctx); err != nil {
-		return nil, err
+		return err
 	}
-
-	estimatedSize := 1024
-	if format != RenderSVG {
-		// 编码数据通常远小于 RGBA 像素，不同时预留第二份整页像素大小的缓冲。
-		estimatedSize = 64 << 10
-	}
-	// SVG 按实际内容增长，避免为矢量输出预留整页 RGBA 像素缓冲区。
-	output := bytes.NewBuffer(make([]byte, 0, estimatedSize))
 	writer := &renderWriter{ctx: ctx, out: output}
 	if format == RenderSVG {
 		if err := page.Write(writer, "svg"); err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return ctx.Err()
 			}
-			return nil, fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
+			return fmt.Errorf("编码第 %d 页 SVG 失败: %w", index, err)
 		}
 		if err := renderCheckpoint(ctx); err != nil {
-			return nil, err
+			return err
 		}
-		return output.Bytes(), nil
+		return writer.err
 	}
 	buffer := r.rasterBuffers.get()
 	// 对外只返回编码字节；成功、编码失败或取消时都归还页面缓冲。
 	defer r.rasterBuffers.put(buffer)
 	var rendered image.Image = page.Rasterize(geom.DPI(options.DPI), buffer)
 	if err := renderCheckpoint(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	if format == RenderJPG {
 		rendered = opaqueImage(rendered, color.White)
 		if err := jpeg.Encode(writer, rendered, &jpeg.Options{Quality: 90}); err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return ctx.Err()
 			}
-			return nil, fmt.Errorf("编码第 %d 页 JPG 失败: %w", index, err)
+			return fmt.Errorf("编码第 %d 页 JPG 失败: %w", index, err)
 		}
 		if err := renderCheckpoint(ctx); err != nil {
-			return nil, err
+			return err
 		}
-		return output.Bytes(), nil
+		return writer.err
 	}
 	if err := media.EncodePNGLevel(writer, rendered, pngCompressionLevel); err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
-		return nil, fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
+		return fmt.Errorf("编码第 %d 页 PNG 失败: %w", index, err)
 	}
 	if err := renderCheckpoint(ctx); err != nil {
-		return nil, err
+		return err
 	}
-	return output.Bytes(), nil
+	return writer.err
 }
 
 // validRasterDimensions 按 canvas 栅格后端的取整规则验证像素宽高。

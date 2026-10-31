@@ -46,7 +46,7 @@ func TestRasterBufferPoolLimitsIdleMemory(t *testing.T) {
 
 func TestRenderPagePoolClearsPreviousPixelsAndReleasesOnClose(t *testing.T) {
 	r := pdfSizeTestReader(t, 20, 20)
-	if _, err := r.RenderPage(t.Context(), 0, RenderOptions{Format: RenderJPG, DPI: 25.4}); err != nil {
+	if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{Format: RenderJPG, DPI: 25.4}); err != nil {
 		t.Fatal(err)
 	}
 	buffer := r.rasterBuffers.buffers[0]
@@ -54,7 +54,7 @@ func TestRenderPagePoolClearsPreviousPixelsAndReleasesOnClose(t *testing.T) {
 		t.Fatal("编码完成后没有归还 RGBA")
 	}
 	pixels := &buffer.Pix[0]
-	data, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4})
+	data, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 25.4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestConcurrentRenderPagePoolKeepsOutputsIndependent(t *testing.T) {
 	expected := make([][]byte, len(options))
 	for i, option := range options {
 		r.rasterBuffers.clear()
-		data, err := r.RenderPage(t.Context(), 0, option)
+		data, err := renderPageBytes(t.Context(), r, 0, option)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func TestConcurrentRenderPagePoolKeepsOutputsIndependent(t *testing.T) {
 		wg.Go(func() {
 			for round := range 8 {
 				index := (worker + round) % len(options)
-				data, err := r.RenderPage(t.Context(), 0, options[index])
+				data, err := renderPageBytes(t.Context(), r, 0, options[index])
 				if err != nil || !bytes.Equal(data, expected[index]) {
 					t.Errorf("并发渲染输出被覆盖：worker=%d options=%d err=%v", worker, index, err)
 					return
@@ -108,7 +108,7 @@ func TestConcurrentRenderPagePoolKeepsOutputsIndependent(t *testing.T) {
 	}
 	wg.Wait()
 	for i, option := range options {
-		data, err := r.RenderPage(t.Context(), 0, option)
+		data, err := renderPageBytes(t.Context(), r, 0, option)
 		if err != nil || !bytes.Equal(data, expected[i]) {
 			t.Fatalf("后续渲染改写了已返回的编码字节：options=%d err=%v", i, err)
 		}
@@ -135,20 +135,20 @@ func (c cancelBorrowedRasterContext) Err() error {
 func TestRenderPagePoolReturnsBufferOnCancellation(t *testing.T) {
 	r := pdfSizeTestReader(t, 20, 20)
 	options := RenderOptions{DPI: 25.4}
-	if _, err := r.RenderPage(t.Context(), 0, options); err != nil {
+	if _, err := renderPageBytes(t.Context(), r, 0, options); err != nil {
 		t.Fatal(err)
 	}
 	buffer := r.rasterBuffers.buffers[0]
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	observed := cancelBorrowedRasterContext{Context: ctx, pool: &r.rasterBuffers, cancel: cancel}
-	if data, err := r.RenderPage(observed, 0, options); !errors.Is(err, context.Canceled) || len(data) != 0 {
+	if data, err := renderPageBytes(observed, r, 0, options); !errors.Is(err, context.Canceled) || len(data) != 0 {
 		t.Fatalf("栅格化后取消：输出 %d 字节，错误 %v", len(data), err)
 	}
 	if r.rasterBuffers.buffers[0] != buffer {
 		t.Fatal("取消后没有归还借出的 RGBA")
 	}
-	if _, err := r.RenderPage(t.Context(), 0, options); err != nil {
+	if _, err := renderPageBytes(t.Context(), r, 0, options); err != nil {
 		t.Fatalf("取消后无法再次渲染：%v", err)
 	}
 }
@@ -167,7 +167,7 @@ func BenchmarkRenderPageRasterBuffer(b *testing.B) {
 			}
 			b.Cleanup(func() { _ = r.Close() })
 			options := RenderOptions{DPI: 150}
-			if _, err := r.RenderPage(b.Context(), 0, options); err != nil {
+			if _, err := renderPageBytes(b.Context(), r, 0, options); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
@@ -175,7 +175,7 @@ func BenchmarkRenderPageRasterBuffer(b *testing.B) {
 				if name == "fresh" {
 					r.rasterBuffers.clear()
 				}
-				if _, err := r.RenderPage(b.Context(), 0, options); err != nil {
+				if _, err := renderPageBytes(b.Context(), r, 0, options); err != nil {
 					b.Fatal(err)
 				}
 			}

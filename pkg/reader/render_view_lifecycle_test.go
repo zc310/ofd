@@ -210,9 +210,9 @@ func TestConcurrentRenderKeepsViewUntilOutputCompletes(t *testing.T) {
 				var data []byte
 				var err error
 				if format == "pdf" {
-					data, err = r.RenderPDF(t.Context(), []int{0}, options)
+					data, err = renderPDFBytes(t.Context(), r, []int{0}, options)
 				} else {
-					data, err = r.RenderPage(t.Context(), 0, options)
+					data, err = renderPageBytes(t.Context(), r, 0, options)
 				}
 				done <- result{data, err}
 			}()
@@ -222,7 +222,7 @@ func TestConcurrentRenderKeepsViewUntilOutputCompletes(t *testing.T) {
 				t.Fatal("渲染没有进入背景绘制")
 			}
 			for i := 0; i < maxRenderDocs+1; i++ {
-				if _, err := r.RenderPage(t.Context(), 0, RenderOptions{DPI: 25.4, Background: color.RGBA{B: uint8(i + 1), A: 255}}); err != nil {
+				if _, err := renderPageBytes(t.Context(), r, 0, RenderOptions{DPI: 25.4, Background: color.RGBA{B: uint8(i + 1), A: 255}}); err != nil {
 					t.Fatal(err)
 				}
 			}

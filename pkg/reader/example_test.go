@@ -1,6 +1,7 @@
 package reader_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -54,10 +55,11 @@ func ExampleReader_SetTextOptions() {
 func ExampleReader_RenderPageWithReport() {
 	r := exampleReader()
 	defer r.Close()
-	data, report, err := r.RenderPageWithReport(context.Background(), 0, reader.RenderOptions{DPI: 72})
+	var output bytes.Buffer
+	report, err := r.RenderPageWithReport(context.Background(), &output, 0, reader.RenderOptions{DPI: 72})
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(len(data) > 0, report.Stats.ObjectsVisited > 0, len(report.Diagnostics))
+	fmt.Println(output.Len() > 0, report.Stats.ObjectsVisited > 0, len(report.Diagnostics))
 	// Output: true true 0
 }
