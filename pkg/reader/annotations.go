@@ -8,6 +8,9 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/internal/render/content"
+	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/internal/render/navigation"
 )
 
 // AttachmentInfo 描述文档中的一个附件，只包含清单元数据。
@@ -70,6 +73,12 @@ type PageLink struct {
 	ID string
 	// Boundary 是图元边界（毫米）。
 	Boundary AnnotationBoundary
+	// Region 是相对 Boundary 归一化到 [0,1] 的 SVG 启动路径，空串表示矩形。
+	Region string
+	// AppearanceBoundary 是影片播放的图元外观区域，不随启动 Region 收缩。
+	AppearanceBoundary *AnnotationBoundary
+	// Actions 按原顺序保存同一图元的 CLICK 动作；为空时执行本条自身。
+	Actions []PageLink
 	// URI 是外部链接目标，非空时点击打开链接。
 	URI string
 	// TargetPage 是跳转目标页全局索引，-1 表示没有页面目标。
@@ -90,6 +99,8 @@ type PageLink struct {
 	Volume *int
 	// Repeat 表示声音是否循环。
 	Repeat bool
+	// Synchronous 表示非循环声音结束后才继续执行后续动作。
+	Synchronous bool
 	// Event 是触发事件：CLICK、PO（进入页面）、DO（文档打开）。
 	Event string
 }
@@ -485,7 +496,7 @@ func actionLink(actions models.Actions, pageIndex map[models.StID]int, bookmarks
 			continue
 		}
 		if action.URI != nil && action.URI.URI != "" {
-			return action.URI.URI, -1, nil, true
+			return navigation.URI(action.URI), -1, nil, true
 		}
 		if action.Goto != nil {
 			var target models.CtDest
@@ -531,6 +542,7 @@ func mediaAction(actions []models.CtAction, event models.ActionEvent) (PageLink,
 			if action.Sound.Repeat != nil {
 				link.Repeat = *action.Sound.Repeat
 			}
+			link.Synchronous = action.Sound.Synchronous != nil && *action.Sound.Synchronous
 			return link, true
 		}
 		if action.Movie != nil && action.Movie.ResourceID != 0 {
@@ -648,19 +660,17 @@ func (r *Reader) PageEntryActionsForPage(index int) ([]PageLink, error) {
 		return nil, nil
 	}
 	var actions []PageLink
+	pageIndex := r.pageIndexesByScope()[ref.fontScope]
+	bookmarks := r.navigationIndexes().bookmarks[ref.fontScope]
 	appendEvents := func(source []models.CtAction, events ...models.ActionEvent) {
 		for _, action := range source {
 			for _, event := range events {
 				if action.Event != event {
 					continue
 				}
-				if action.URI != nil && action.URI.URI != "" {
-					actions = append(actions, PageLink{Scope: ref.fontScope, Page: index, URI: action.URI.URI, Event: string(action.Event), TargetPage: -1})
-					break
-				}
-				if media, ok := mediaAction([]models.CtAction{action}, event); ok {
-					media.Scope, media.Page = ref.fontScope, index
-					actions = append(actions, media)
+				if link, ok := resolvedAction(action, pageIndex, bookmarks); ok {
+					link.Scope, link.Page = ref.fontScope, index
+					actions = append(actions, link)
 					break
 				}
 			}
@@ -728,28 +738,17 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		}
 		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, bookmarks, &links)
 	}
-	// 复合单元中的坐标含裁边和单元映射，由渲染层统一计算，避免浏览器热区偏移。
-	nested, err := ref.document.PageLinksWithVisibilityE(ref.page, func(id models.StID) (render.LinkTargetRef, bool) {
-		page, ok := pageIndex[id]
-		return render.LinkTargetRef{Index: page}, ok
-	}, r.hiddenLayers[index])
+	// 绘制层只负责复合单元映射，动作与正文共用解析，保留书签、附件、媒体和完整序列。
+	err = ref.document.WalkCompositeActions(ref.page, r.hiddenLayers[index], func(id models.StID, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path) {
+		link, ok := graphicActionLink(unit, pageIndex, bookmarks)
+		if !ok || !placePageLink(&link, ref.fontScope, index, matrix, clip) {
+			return
+		}
+		link.ID = formatStID(id)
+		links = append(links, link)
+	})
 	if err != nil {
 		return nil, err
-	}
-	for _, link := range nested {
-		if !link.InComposite {
-			continue
-		}
-		item := PageLink{Scope: ref.fontScope, Page: index, ID: formatStID(models.StID(link.ObjectID)), URI: link.URI, TargetPage: -1, Event: string(models.ActionEventClick),
-			Boundary: AnnotationBoundary{X: link.X, Y: link.Y, Width: link.Width, Height: link.Height}}
-		if target := link.Target; target != nil {
-			item.TargetPage = target.Page
-			kinds := []models.DestType{models.DestTypeFit, models.DestTypeFitH, models.DestTypeFitV, models.DestTypeXYZ, models.DestTypeFitR}
-			if int(target.Type) >= 0 && int(target.Type) < len(kinds) {
-				item.Dest = &OutlineDest{Type: string(kinds[target.Type]), Left: &target.Left, Top: &target.Top, Right: &target.Right, Bottom: &target.Bottom, Zoom: &target.Zoom}
-			}
-		}
-		links = append(links, item)
 	}
 	annot, err := ref.document.LoadAnnotation(ref.page.ID)
 	if err != nil {
@@ -760,19 +759,63 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 			if item == nil || item.Type != models.AnnotTypeLink || item.Appearance == nil || item.Appearance.Boundary == nil {
 				continue
 			}
-			uri, targetPage, dest := annotLinkAction(item, pageIndex, bookmarks)
-			if uri == "" && targetPage < 0 {
-				continue
-			}
 			boundary := item.Appearance.Boundary
-			links = append(links, PageLink{
-				Scope: ref.fontScope, Page: index, ID: item.ID,
-				Boundary: AnnotationBoundary{X: boundary.X, Y: boundary.Y, Width: boundary.Width, Height: boundary.Height},
-				URI:      uri, TargetPage: targetPage, Dest: dest,
+			collectPageBlockLinks(item.Appearance.Items, pageIndex, bookmarks, func(link PageLink) {
+				if link.URI == "" && link.TargetPage < 0 && link.AttachmentID == "" && link.MediaID == 0 {
+					return
+				}
+				if placePageLink(&link, ref.fontScope, index, geom.Identity.Translate(boundary.X, boundary.Y), nil) {
+					link.ID = item.ID
+					links = append(links, link)
+				}
 			})
 		}
 	}
-	return links, nil
+	clip := content.ApplicationClip(snapshot.area)
+	visible := links[:0]
+	for _, link := range links {
+		if placePageLink(&link, ref.fontScope, index, geom.Identity, clip) {
+			visible = append(visible, link)
+		}
+	}
+	return visible, nil
+}
+
+// placePageLink 同步变换根热区和动作序列，并限制到页面显示区域。
+func placePageLink(link *PageLink, scope, page int, matrix geom.Matrix, clip *geom.Path) bool {
+	path := geom.Rectangle(link.Boundary.Width, link.Boundary.Height)
+	if link.Region != "" {
+		path = geom.MustParseSVGPath(link.Region).Scale(link.Boundary.Width, link.Boundary.Height)
+	}
+	path = path.Translate(link.Boundary.X, link.Boundary.Y).Transform(matrix)
+	if clip != nil {
+		path = path.And(clip)
+	}
+	if path.Empty() {
+		return false
+	}
+	box := path.Bounds()
+	link.Boundary = AnnotationBoundary{X: box.X0, Y: box.Y0, Width: box.W(), Height: box.H()}
+	link.Region = navigation.NormalizedRegion(path)
+	link.Scope, link.Page = scope, page
+	if link.AppearanceBoundary != nil {
+		appearance := link.AppearanceBoundary
+		box := geom.RectFromSize(appearance.X, appearance.Y, appearance.Width, appearance.Height).Transform(matrix)
+		link.AppearanceBoundary = &AnnotationBoundary{X: box.X0, Y: box.Y0, Width: box.W(), Height: box.H()}
+	}
+	if len(link.Actions) > 0 {
+		visible := make([]PageLink, 0, len(link.Actions))
+		for _, action := range link.Actions {
+			if placePageLink(&action, scope, page, matrix, clip) {
+				visible = append(visible, action)
+			}
+		}
+		link.Actions = visible
+		if len(visible) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // appendDocumentClickLinksForTexts 把没有区域的文档级 CLICK 动作挂到第一页匹配的文字上。
@@ -789,7 +832,7 @@ func appendDocumentClickLinksForTexts(ref pageRef, page int, pageIndex map[model
 		switch {
 		case action.URI != nil && action.URI.URI != "":
 			text = textMatching(texts, action.URI.URI)
-			link.URI = action.URI.URI
+			link.URI = navigation.URI(action.URI)
 		case action.Goto != nil && action.Goto.Bookmark != nil && action.Goto.Bookmark.Name != "":
 			name := action.Goto.Bookmark.Name
 			text = textMatching(texts, name)
@@ -838,19 +881,6 @@ func appendDocumentClickLinksForTexts(ref pageRef, page int, pageIndex map[model
 	}
 }
 
-// attachmentAction 返回动作集合中首个附件动作（GotoA）的附件 ID。
-func attachmentAction(actions []models.CtAction, event models.ActionEvent) (string, bool) {
-	for _, action := range actions {
-		if event != "" && action.Event != event {
-			continue
-		}
-		if action.GotoA != nil && action.GotoA.AttachID != "" {
-			return action.GotoA.AttachID, true
-		}
-	}
-	return "", false
-}
-
 // attachmentName 按附件 ID 解析附件名称；文档或缺省时返回空串。
 func attachmentName(document *render.Document, id string) string {
 	if document == nil || id == "" {
@@ -892,38 +922,70 @@ func collectPageBlockLinks(items []models.PageItem, pageIndex map[models.StID]in
 		if unit.Boundary.Width <= 0 || unit.Boundary.Height <= 0 {
 			return true
 		}
-		id := itemID(item)
-		boundary := AnnotationBoundary{X: unit.Boundary.X, Y: unit.Boundary.Y, Width: unit.Boundary.Width, Height: unit.Boundary.Height}
-		uri, target, dest, found := actionLink(*unit.Actions, pageIndex, bookmarks)
-		if found {
-			emit(PageLink{
-				ID:         id,
-				Boundary:   boundary,
-				URI:        uri,
-				TargetPage: target,
-				Dest:       dest,
-				Event:      string(models.ActionEventClick),
-			})
-			return true
+		if link, ok := graphicActionLink(*unit, pageIndex, bookmarks); ok {
+			link.ID = itemID(item)
+			emit(link)
 		}
-		if attachID, ok := attachmentAction(unit.Actions.Action, models.ActionEventClick); ok {
-			emit(PageLink{
-				ID:           id,
-				Boundary:     boundary,
-				AttachmentID: attachID,
-				Event:        string(models.ActionEventClick),
-			})
-			return true
-		}
-		media, ok := mediaAction(unit.Actions.Action, models.ActionEventClick)
-		if !ok {
-			return true
-		}
-		media.ID = id
-		media.Boundary = boundary
-		emit(media)
 		return true
 	})
+}
+
+func resolvedAction(action models.CtAction, pages map[models.StID]int, bookmarks map[string]models.CtDest) (PageLink, bool) {
+	click := action
+	click.Event = models.ActionEventClick
+	uri, page, dest, found := actionLink(models.Actions{Action: []models.CtAction{click}}, pages, bookmarks)
+	if found {
+		if uri == "" && dest == nil {
+			return PageLink{}, false
+		}
+		return PageLink{URI: uri, TargetPage: page, Dest: dest, Event: string(action.Event)}, true
+	}
+	if action.GotoA != nil && action.GotoA.AttachID != "" {
+		return PageLink{AttachmentID: action.GotoA.AttachID, TargetPage: -1, Event: string(action.Event)}, true
+	}
+	return mediaAction([]models.CtAction{action}, action.Event)
+}
+
+func graphicActionLink(unit models.CTGraphicUnit, pages map[models.StID]int, bookmarks map[string]models.CtDest) (PageLink, bool) {
+	var actions []PageLink
+	var region *geom.Path
+	for _, action := range unit.Actions.Action {
+		if action.Event != models.ActionEventClick {
+			continue
+		}
+		link, ok := resolvedAction(action, pages, bookmarks)
+		if !ok {
+			continue
+		}
+		path := navigation.ActionRegion(action, unit)
+		if path.Empty() {
+			continue
+		}
+		box := path.Bounds()
+		link.Boundary = AnnotationBoundary{X: box.X0, Y: box.Y0, Width: box.W(), Height: box.H()}
+		link.Region = navigation.NormalizedRegion(path)
+		if link.MediaKind == "movie" {
+			box := unit.Boundary
+			link.AppearanceBoundary = &AnnotationBoundary{X: box.X, Y: box.Y, Width: box.Width, Height: box.Height}
+		}
+		actions = append(actions, link)
+		if region == nil {
+			region = path
+		} else {
+			region = region.Or(path)
+		}
+	}
+	if len(actions) == 0 {
+		return PageLink{}, false
+	}
+	root := actions[0]
+	if len(actions) > 1 {
+		root.Actions = actions
+		box := region.Bounds()
+		root.Boundary = AnnotationBoundary{X: box.X0, Y: box.Y0, Width: box.W(), Height: box.H()}
+		root.Region = navigation.NormalizedRegion(region)
+	}
+	return root, true
 }
 
 func (r *Reader) computePageMediaActions() ([]PageLink, error) {

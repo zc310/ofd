@@ -112,7 +112,7 @@ func (r *Reader) PageCount() int {
 }
 
 // Pages 返回所有页面的尺寸快照，尺寸单位为毫米。
-// 优先读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
+// 依次读取页面、模板和文档的 Area/PhysicalBox，不加载页面内容或资源。
 func (r *Reader) Pages() ([]PageInfo, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
@@ -129,7 +129,7 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 			return nil, fmt.Errorf("第 %d 页所属文档为空", index)
 		}
 		box := ref.document.CommonData.PageArea.PhysicalBox
-		pageBox, err := ref.page.PhysicalBoxMetadata()
+		pageBox, err := ref.page.EffectivePhysicalBoxMetadata()
 		if err == nil && finitePositive(pageBox.Width) && finitePositive(pageBox.Height) {
 			box = pageBox
 		}

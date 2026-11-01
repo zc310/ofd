@@ -109,7 +109,7 @@ func (f Frame[S]) MapLayout(layout textlayout.Layout) textlayout.Layout {
 	for i := range layout.Glyphs {
 		g := &layout.Glyphs[i]
 		r := mapBox(g.X, g.Y, g.Width, g.Height)
-		if f.Clip != nil {
+		if f.Clip != nil && !geom.ClipContainsRect(f.Clip, r) {
 			intersection := geom.Rectangle(r.W(), r.H()).Translate(r.X0, r.Y0).And(f.Clip)
 			if intersection.Empty() {
 				g.Width, g.Height = 0, 0

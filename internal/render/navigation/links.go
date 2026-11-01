@@ -119,7 +119,10 @@ func ActionLink(actions models.Actions, resolve PageResolver) (drawing.PageLink,
 			continue
 		}
 		if action.URI != nil && action.URI.URI != "" {
-			return drawing.PageLink{URI: action.URI.URI}, true
+			if uri := URI(action.URI); uri != "" {
+				return drawing.PageLink{URI: uri}, true
+			}
+			continue
 		}
 		if action.Goto == nil || action.Goto.Dest == nil {
 			continue

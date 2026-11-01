@@ -32,6 +32,27 @@ func (p *Document) sealWithBudget(ctx DrawContext, info *parser.SealInfo, pb mod
 	if info == nil || info.SealData == nil || info.StampAnnot == nil {
 		return nil
 	}
+	if parent != nil && parent.pageClip != nil {
+		// 显示区域为矩形，与骑缝章窗口求交后仍可复用原印章放置逻辑。
+		stamp := *info.StampAnnot
+		box := stamp.Boundary
+		visible := box
+		if cropped, ok := seallayout.ClipBox(box, stamp.Clip); ok {
+			visible = cropped
+		}
+		path := geom.Rectangle(visible.Width, visible.Height).Translate(visible.X, pb.Height-visible.Y-visible.Height)
+		if !clipContainsRect(parent.pageClip, path.Bounds()) {
+			path = path.And(parent.pageClip)
+			if path.Empty() {
+				return nil
+			}
+			bounds := path.Bounds()
+			stamp.Clip = models.StBox{X: bounds.X0 - box.X, Y: pb.Height - bounds.Y1 - box.Y, Width: bounds.W(), Height: bounds.H()}
+			clippedInfo := *info
+			clippedInfo.StampAnnot = &stamp
+			info = &clippedInfo
+		}
+	}
 	if imageasset.IsSVG(info.SealData.FileType, "") {
 		return p.drawSVGSeal(ctx, info, pb)
 	}

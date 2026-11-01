@@ -3008,18 +3008,50 @@ function setCurrent(index, syncThumbnail = true) {
   updateNavigation();
 }
 
-function runPageEntryActions(index) {
-  pageEntryActions.forEach(action => {
-    if (!action) return;
-    if (action.event !== 'PO' && action.event !== 'DO') return;
-    if (action.event === 'PO' && Number(action.page) !== index) return;
-    if (action.event === 'DO' && index !== 0) return;
-    if (typeof action.uri === 'string' && action.uri !== '') {
-      queuePageEntryURI(action.uri);
-    } else if (action.media_kind === 'sound' || action.media_kind === 'movie') {
-      playMediaAction(action);
+let pageEntryActionDepth = 0;
+let documentActionGeneration = -1;
+let completedDocumentActions = new Set();
+let pageEntryNavigationCount = 0;
+let pageEntryNavigationTarget = -1;
+
+async function runPageEntryActions(index) {
+  // 防止文档中的 PO 跳转环无限递归，不限制用户再次主动进入页面。
+  if (pageEntryActionDepth >= 32) return;
+  pageEntryActionDepth++;
+  const generation = documentGeneration;
+  if (documentActionGeneration !== generation) {
+    documentActionGeneration = generation;
+    completedDocumentActions = new Set();
+    pageEntryNavigationCount = 0;
+    pageEntryNavigationTarget = -1;
+  }
+  if (pageEntryNavigationTarget !== index) pageEntryNavigationCount = 0;
+  pageEntryNavigationTarget = -1;
+  try {
+    let ordinal = 0;
+    for (const action of pageEntryActions) {
+      if (generation !== documentGeneration || current !== index) break;
+      if (!action || (action.event !== 'PO' && action.event !== 'DO')) continue;
+      if (Number(action.page) !== index) continue;
+      const key = `${action.scope || 0}:${index}:${ordinal++}`;
+      if (action.event === 'DO') {
+        if (completedDocumentActions.has(key)) continue;
+        completedDocumentActions.add(key);
+      }
+      if (typeof action.uri === 'string' && action.uri !== '') {
+        queuePageEntryURI(action.uri);
+      } else {
+        if (Number.isInteger(action.target_page) && action.target_page >= 0) {
+          if (pageEntryNavigationCount >= 32) break;
+          pageEntryNavigationCount++;
+          pageEntryNavigationTarget = action.target_page;
+        }
+        await openPageLink(action);
+      }
     }
-  });
+  } finally {
+    pageEntryActionDepth--;
+  }
 }
 
 function queuePageEntryURI(uri) {
@@ -7801,7 +7833,7 @@ function applyPageLinks(index) {
     const info = pageInfos[pageIndex];
     const links = pageLinks.get(pageIndex);
     if (!info || info.width <= 0 || info.height <= 0 || !links) return;
-    links.forEach(link => {
+    links.forEach((link, linkIndex) => {
       const boundary = link.boundary;
       const hotspot = document.createElement('button');
       hotspot.type = 'button';
@@ -7810,6 +7842,23 @@ function applyPageLinks(index) {
       hotspot.style.top = `${(boundary.y / info.height) * 100}%`;
       hotspot.style.width = `${(boundary.width / info.width) * 100}%`;
       hotspot.style.height = `${(boundary.height / info.height) * 100}%`;
+      if (link.region) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('width', '0');
+        svg.setAttribute('height', '0');
+        svg.setAttribute('aria-hidden', 'true');
+        const clip = document.createElementNS(ns, 'clipPath');
+        const id = `ofd-link-region-${pageIndex}-${linkIndex}`;
+        clip.setAttribute('id', id);
+        clip.setAttribute('clipPathUnits', 'objectBoundingBox');
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', link.region);
+        clip.append(path);
+        svg.append(clip);
+        layer.append(svg);
+        hotspot.style.clipPath = `url(#${id})`;
+      }
       const external = typeof link.uri === 'string' && link.uri !== '';
       const media = link.media_kind === 'sound' || link.media_kind === 'movie';
       const attachment = typeof link.attachment_id === 'string' && link.attachment_id !== '';
@@ -7817,7 +7866,21 @@ function applyPageLinks(index) {
         ? `打开附件 ${link.attachment_name || link.attachment_id}`
         : external ? link.uri : media ? (link.media_kind === 'sound' ? '播放声音' : '播放影片') : `跳转到第 ${(Number(link.target_page) || 0) + 1} 页`;
       hotspot.setAttribute('aria-label', hotspot.title);
-      hotspot.addEventListener('click', () => openPageLink(link));
+      hotspot.addEventListener('click', event => {
+        let point = null;
+        if (event.detail > 0) {
+          const rect = hotspot.getBoundingClientRect();
+          // 页面旋转由 CSS 管理，映回页面坐标后再筛选每条动作的启动区域。
+          const rotation = ((Number(pageRotation) || 0) % 360 + 360) % 360;
+          let x = (event.clientX - rect.left) / rect.width;
+          let y = (event.clientY - rect.top) / rect.height;
+          if (rotation === 90) [x, y] = [y, 1 - x];
+          else if (rotation === 180) [x, y] = [1 - x, 1 - y];
+          else if (rotation === 270) [x, y] = [1 - y, x];
+          point = { x: boundary.x + x * boundary.width, y: boundary.y + y * boundary.height };
+        }
+        void openPageLink(link, point);
+      });
       hotspot.addEventListener('pointerenter', () => showLinkPreview(link, hotspot));
       hotspot.addEventListener('pointerleave', hideLinkPreview);
       hotspot.addEventListener('focus', () => showLinkPreview(link, hotspot));
@@ -7975,6 +8038,7 @@ function stopActiveMedia(key) {
   const entries = key ? [[key, activeMedia.get(key)]] : Array.from(activeMedia.entries());
   entries.forEach(([entryKey, entry]) => {
     if (!entry) return;
+    entry.completionWaiters?.forEach(done => done());
     entry.element.pause();
     entry.element.remove();
     if (entry.url) URL.revokeObjectURL(entry.url);
@@ -7994,7 +8058,7 @@ function rehomeEmbeddedMedia(pageIndex) {
 // mediaPlacementTarget 返回动作对应的嵌入式播放层；动作没有图元外观区域、
 // 页面未挂载或页面尺寸无效时返回 null，此时按规范改用弹出式窗口。
 function mediaPlacementTarget(action) {
-  const boundary = action?.boundary;
+  const boundary = action?.appearance_boundary || action?.boundary;
   if (!boundary || !Number.isFinite(boundary.x) || !Number.isFinite(boundary.y) ||
       !(boundary.width > 0) || !(boundary.height > 0)) return null;
   const index = Number(action.page);
@@ -8042,6 +8106,7 @@ function placeMediaElement(entry, action) {
 }
 
 async function ensureMediaElement(action) {
+  const generation = documentGeneration;
   const key = mediaActionKey(action);
   const existing = activeMedia.get(key);
   if (existing) {
@@ -8049,6 +8114,7 @@ async function ensureMediaElement(action) {
     return existing;
   }
   const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0, 'preview');
+  if (generation !== documentGeneration) throw new Error('文档已切换');
   if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
     throw new Error('媒体资源为空');
   }
@@ -8077,6 +8143,7 @@ async function playMediaAction(action) {
     stopActiveMedia(key);
     return;
   }
+  let cancelCompletion = null;
   try {
     const entry = await ensureMediaElement(action);
     if (operator === 'Pause') {
@@ -8089,9 +8156,28 @@ async function playMediaAction(action) {
       entry.element.loop = !!action.repeat;
     }
     if (operator === 'Play') entry.element.currentTime = 0;
+    let completion = null;
+    if (action.media_kind === 'sound' && action.synchronous && !action.repeat) {
+      completion = new Promise(resolve => {
+        const done = () => {
+          entry.element.removeEventListener('ended', done);
+          entry.element.removeEventListener('error', done);
+          entry.completionWaiters.delete(done);
+          resolve();
+        };
+        if (!entry.completionWaiters) entry.completionWaiters = new Set();
+        entry.completionWaiters.add(done);
+        entry.element.addEventListener('ended', done, { once: true });
+        entry.element.addEventListener('error', done, { once: true });
+        cancelCompletion = done;
+      });
+    }
     await entry.element.play();
+    if (completion) await completion;
   } catch (error) {
     setStatus(error?.message || '无法播放媒体');
+  } finally {
+    cancelCompletion?.();
   }
 }
 
@@ -8165,14 +8251,29 @@ function reloadReader() {
 }
 
 // openPageLink 处理链接点击：外部链接在新窗口打开，内部跳转按目标位置滚动。
-function openPageLink(link) {
+async function openPageLink(link, point = null) {
   hideLinkPreview();
+  if (Array.isArray(link.actions) && link.actions.length) {
+    const generation = documentGeneration;
+    for (const action of link.actions) {
+      if (generation !== documentGeneration) return;
+      if (point && action.boundary) {
+        const box = action.boundary;
+        const x = (point.x - box.x) / box.width;
+        const y = (point.y - box.y) / box.height;
+        if (x < 0 || x > 1 || y < 0 || y > 1) continue;
+        if (action.region && !document.createElement('canvas').getContext('2d').isPointInPath(new Path2D(action.region), x, y)) continue;
+      }
+      await openPageLink(action, point);
+    }
+    return;
+  }
   if (link.media_kind === 'sound' || link.media_kind === 'movie') {
-    playMediaAction(link);
+    await playMediaAction(link);
     return;
   }
   if (typeof link.attachment_id === 'string' && link.attachment_id !== '') {
-    openAttachmentLink(link);
+    await openAttachmentLink(link);
     return;
   }
   if (typeof link.uri === 'string' && link.uri !== '') {

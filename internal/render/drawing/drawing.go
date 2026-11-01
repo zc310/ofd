@@ -322,6 +322,8 @@ type PageLink struct {
 	Target *LinkTarget
 	// X、Y 为热区左上角距页顶的距离，Width、Height 为热区尺寸。
 	X, Y, Width, Height float64
+	// Region 是相对热区归一化的 SVG 路径；PDF 后端当前使用外接矩形。
+	Region string
 }
 
 // Rect 把热区换算成以页面左下角为原点、y 向上的矩形，宽高为正。

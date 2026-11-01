@@ -1364,7 +1364,7 @@ func (v *viewer) showAppInfo() {
 
 // pageSlotStates 计算每个页面的槽位参数。页面区域无法解析时仍然返回条目，
 // 保证槽位下标与全局页码一一对应；否则布局和跳转会访问空槽位而崩溃。
-// normalizePageBox 补齐页面物理尺寸。PhysicalBoxMetadata 不加载页面内容，
+// normalizePageBox 补齐页面物理尺寸。尺寸元数据查询不加载页面内容，
 // 页面没有有效尺寸时返回零值，此时回退到文档的公共页面区域，再回退到 A4。
 //
 // 与 parser 的差异：原实现会先对页面自己的 Area 调用 EnsurePhysicalBox，
@@ -1388,8 +1388,8 @@ func pageSlotStates(pages []viewerPage) []pageSlotState {
 		states[i] = pageSlotState{aspect: 1}
 		// 这里只需要宽高比和面积。用 PhysicalBox 会为每一页加载完整内容与
 		// 资源、并把页面塞进页面缓存，万页文档会在事件线程上卡住数秒。
-		// PhysicalBoxMetadata 只读页面 XML 的 Area，不占租约也不进缓存。
-		box, err := pageRef.page.PhysicalBoxMetadata()
+		// 有效尺寸元数据只读页面及模板的 Area，不占租约也不进页面缓存。
+		box, err := pageRef.page.EffectivePhysicalBoxMetadata()
 		if err != nil {
 			slog.Error("读取页面失败", "page", i, "error", err)
 			continue

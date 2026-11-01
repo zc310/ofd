@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/navigation"
 )
 
 // VersionInfo 描述文档体中的一个文档版本。
@@ -398,7 +399,7 @@ func outlineNodes(elems []models.CTOutlineElem, resolvePage func(models.CtDest) 
 			if elem.Actions != nil {
 				for _, action := range elem.Actions.Actions {
 					if action.URI != nil && action.URI.URI != "" && node.URI == "" {
-						node.URI = action.URI.URI
+						node.URI = navigation.URI(action.URI)
 					}
 					if action.Goto == nil {
 						continue

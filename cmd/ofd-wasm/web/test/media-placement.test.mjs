@@ -217,4 +217,14 @@ suite.group('声音动作不参与窗口摆放');
   suite.check(entry.placement === 'none', '不记录摆放方式', entry.placement);
 }
 
+suite.group('启动区域与影片播放窗口独立');
+{
+  const state = loaded(baseState());
+  const entry = { element: fakeElement('video'), placement: 'none', placementPage: -1 };
+  const action = objectAction({x:105,y:148.5,width:2,height:2});
+  action.appearance_boundary = {x:0,y:0,width:210,height:297};
+  state.placeMediaElement(entry,action);
+  suite.check(css(entry.element,'left')==='0%' && css(entry.element,'width')==='100%', '小 Region 只限制点击，不缩小原图元的影片窗口');
+}
+
 process.exit(suite.report());

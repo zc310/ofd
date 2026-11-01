@@ -149,20 +149,15 @@ func newPageLinkResolvers(selected []documentPage) map[*render.Document]render.P
 }
 
 // pageLinkTargetHeight 读取页面物理高度，用于把 OFD 的左上角坐标换算成 PDF 的
-// 左下角坐标。只读页面 Area，不加载页面内容或资源。
+// 左下角坐标。只读页面及模板的区域元数据，不加载页面内容或资源。
 //
-// 页面自身没有定义有效尺寸时回退到文档公共 PageArea，再回退 A4——少了这一步，
+// 页面缺省区域先继承模板，再回退文档公共 PageArea 和 A4——少了这一步，
 // 跳转坐标会以 0 参与换算，`Dest@Type="XYZ" Left="0" Top="0"` 这类落点会被误判成
 // 整页适配。
 func pageLinkTargetHeight(page documentPage) float64 {
-	box, err := page.page.PhysicalBoxMetadata()
-	if err == nil && box.Width > 0 && box.Height > 0 {
-		return box.Height
-	}
 	area := models.CtPageArea{}
 	if page.document != nil && page.document.Document != nil {
 		area = page.document.CommonData.PageArea
 	}
-	area.EnsurePhysicalBox()
-	return area.PhysicalBox.Height
+	return page.page.PhysicalBoxOr(area).Height
 }

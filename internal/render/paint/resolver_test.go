@@ -15,6 +15,7 @@ import (
 type testResources map[models.StID]*models.ColorSpace
 
 func (r testResources) GetColorSpace(id models.StID) *models.ColorSpace { return r[id] }
+func (r testResources) DefaultColorSpace() models.StRefID               { return 0 }
 func (r testResources) ReadColorProfile(string) ([]byte, error)         { return nil, nil }
 
 type colorCache struct {

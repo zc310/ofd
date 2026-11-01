@@ -2,6 +2,7 @@ package render
 
 import (
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
 )
 
@@ -11,10 +12,12 @@ type renderBudget struct {
 
 	visibility        PageVisibility
 	templateCacheable bool
+	pageClip          *geom.Path
 }
 
 func (b *renderBudget) reset() {
 	b.templateCacheable = true
+	b.pageClip = nil
 	b.Reset()
 }
 

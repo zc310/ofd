@@ -72,7 +72,7 @@ func outlineURI(elem models.CTOutlineElem) string {
 	if elem.Actions != nil {
 		for _, action := range elem.Actions.Actions {
 			if action.URI != nil && action.URI.URI != "" {
-				return action.URI.URI
+				return URI(action.URI)
 			}
 		}
 	}

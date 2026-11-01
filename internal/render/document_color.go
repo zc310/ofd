@@ -17,6 +17,13 @@ type colorResources struct {
 	*parser.Document
 }
 
+func (r colorResources) DefaultColorSpace() models.StRefID {
+	if r.CommonData.DefaultCS != nil {
+		return *r.CommonData.DefaultCS
+	}
+	return 0
+}
+
 func (r colorResources) ReadColorProfile(name string) ([]byte, error) {
 	if r.FileCache == nil {
 		return nil, nil

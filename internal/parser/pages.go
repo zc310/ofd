@@ -18,6 +18,12 @@ const (
 	maxPageMetadataXMLBytes = 1 << 20
 )
 
+var (
+	errEmptyPagePackage     = errors.New("页面文件包为空")
+	errPageMetadataTooLarge = errors.New("页面尺寸元数据超过大小限制")
+	errEmptyPage            = errors.New("页面为空")
+)
+
 type pageResources struct {
 	media       map[models.StID]*models.MultiMedia
 	drawParams  map[models.StID]*models.DrawParam
@@ -31,19 +37,23 @@ type Page struct {
 	ID          models.StID
 	pageResPath []models.StLoc
 
-	document       *Document
-	load           func(*Page) error
-	metadata       func() (models.StBox, error)
-	resources      pageResources
-	mu             sync.Mutex
-	metadataMu     sync.Mutex
-	metadataLoaded bool
-	metadataBox    models.StBox
-	metadataErr    error
-	loaded         bool
-	loadErr        error
-	pinCount       atomic.Int32
-	cacheSize      atomic.Int64
+	document          *Document
+	load              func(*Page) error
+	metadata          func() (models.StBox, error)
+	effectiveMetadata func() (models.StBox, error)
+	effectiveOnce     sync.Once
+	effectiveBox      models.StBox
+	effectiveErr      error
+	resources         pageResources
+	mu                sync.Mutex
+	metadataMu        sync.Mutex
+	metadataLoaded    bool
+	metadataBox       models.StBox
+	metadataErr       error
+	loaded            bool
+	loadErr           error
+	pinCount          atomic.Int32
+	cacheSize         atomic.Int64
 }
 
 // PhysicalBoxMetadata 只读取页面 XML 中的 Area/PhysicalBox，不加载页面内容或资源。
@@ -71,12 +81,21 @@ func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
 }
 
 func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (models.StBox, error) {
+	area, _, err := readPageAreaMetadata(fileCache, pagePath)
+	if area == nil {
+		return models.StBox{}, err
+	}
+	return area.PhysicalBox, err
+}
+
+// readPageAreaMetadata 只读页面头部，保留模板引用与 Area 是否缺省，不加载资源或正文。
+func readPageAreaMetadata(fileCache *container.Package, pagePath models.StLoc) (*models.CtPageArea, []models.Template, error) {
 	if fileCache == nil {
-		return models.StBox{}, errors.New("页面文件包为空")
+		return nil, nil, errEmptyPagePackage
 	}
 	reader, err := fileCache.Open(pagePath.String())
 	if err != nil {
-		return models.StBox{}, err
+		return nil, nil, err
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -89,11 +108,11 @@ func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (m
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if limited.N == 0 {
-					return models.StBox{}, errors.New("页面尺寸元数据超过大小限制")
+					return nil, nil, errPageMetadataTooLarge
 				}
-				return models.StBox{}, nil
+				return nil, nil, nil
 			}
-			return models.StBox{}, err
+			return nil, nil, err
 		}
 		if start, ok := token.(xml.StartElement); ok {
 			root = start.Name
@@ -101,41 +120,75 @@ func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (m
 		}
 	}
 
+	var templates []models.Template
 	for {
 		token, err = decoder.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if limited.N == 0 {
-					return models.StBox{}, errors.New("页面尺寸元数据超过大小限制")
+					return nil, nil, errPageMetadataTooLarge
 				}
-				return models.StBox{}, nil
+				return nil, templates, nil
 			}
-			return models.StBox{}, err
+			return nil, nil, err
 		}
 		switch value := token.(type) {
 		case xml.StartElement:
+			if value.Name.Local == "Template" {
+				var ref models.Template
+				if err := decoder.DecodeElement(&ref, &value); err != nil {
+					return nil, nil, err
+				}
+				templates = append(templates, ref)
+				continue
+			}
 			if value.Name.Local == "Area" {
-				var area struct {
-					PhysicalBox models.StBox `xml:"PhysicalBox"`
-				}
+				var area models.CtPageArea
 				if err := decoder.DecodeElement(&area, &value); err != nil {
-					return models.StBox{}, err
+					return nil, nil, err
 				}
-				return area.PhysicalBox, nil
+				return &area, templates, nil
 			}
 			// Content 通常是页面 XML 中最大的部分，之后不再需要查找页面区域。
 			if value.Name.Local == "Content" {
-				return models.StBox{}, nil
+				return nil, templates, nil
 			}
 			if err := decoder.Skip(); err != nil {
-				return models.StBox{}, err
+				return nil, nil, err
 			}
 		case xml.EndElement:
 			if value.Name == root {
-				return models.StBox{}, nil
+				return nil, templates, nil
 			}
 		}
 	}
+}
+
+// EffectivePhysicalBoxMetadata 按 §7.7 表12依次读取页面、模板和文档的物理区域。
+// 只访问元数据，不加载图元和资源；PhysicalBoxMetadata 仍只返回页面自己的声明。
+func (p *Page) EffectivePhysicalBoxMetadata() (models.StBox, error) {
+	if p == nil {
+		return models.StBox{}, errEmptyPage
+	}
+	p.effectiveOnce.Do(func() {
+		if p.effectiveMetadata != nil {
+			p.effectiveBox, p.effectiveErr = p.effectiveMetadata()
+		} else {
+			p.effectiveBox, p.effectiveErr = p.PhysicalBoxMetadata()
+		}
+	})
+	return p.effectiveBox, p.effectiveErr
+}
+
+// PhysicalBoxOr 返回页面有效物理区域；元数据缺失或无效时使用 fallback，仍无效则回退 A4。
+// 查询只读取页面与模板区域元数据，不加载页面内容或资源。
+func (p *Page) PhysicalBoxOr(fallback models.CtPageArea) models.StBox {
+	box, err := p.EffectivePhysicalBoxMetadata()
+	if err == nil && box.Width > 0 && box.Height > 0 {
+		return box
+	}
+	fallback.EnsurePhysicalBox()
+	return fallback.PhysicalBox
 }
 
 // PageLease 表示页面的一次使用租约。

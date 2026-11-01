@@ -816,6 +816,18 @@ func pageLinkValue(link ofdreader.PageLink) map[string]any {
 		"repeat":          link.Repeat,
 		"volume":          optionalIntValue(link.Volume),
 		"event":           link.Event,
+		"region":          link.Region,
+		"synchronous":     link.Synchronous,
+	}
+	if len(link.Actions) > 0 {
+		actions := js.Global().Get("Array").New(len(link.Actions))
+		for index, action := range link.Actions {
+			actions.SetIndex(index, objectValue(pageLinkValue(action)))
+		}
+		value["actions"] = actions
+	}
+	if boundary := link.AppearanceBoundary; boundary != nil {
+		value["appearance_boundary"] = objectValue(map[string]any{"x": boundary.X, "y": boundary.Y, "width": boundary.Width, "height": boundary.Height})
 	}
 	if link.Boundary.Width > 0 && link.Boundary.Height > 0 {
 		value["boundary"] = objectValue(map[string]any{

@@ -14,6 +14,7 @@ import (
 // Resources 提供当前文档的颜色空间和 Profile 原始数据。
 type Resources interface {
 	GetColorSpace(id models.StID) *models.ColorSpace
+	DefaultColorSpace() models.StRefID
 	ReadColorProfile(name string) ([]byte, error)
 }
 
@@ -79,7 +80,7 @@ func (p *Resolver) Resolve(source *models.CTColor, resources Resources) *Color {
 	// ICC 读取、转换及网格构建均在缓存锁外执行；等待相同颜色也不阻塞其他颜色。
 	build.once.Do(func() {
 		cc := &build.color
-		if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
+		if hasColorValue(source, resources) {
 			cc.Value = p.RGBA(*source, resources)
 			cc.HasValue = true
 		}
@@ -104,10 +105,15 @@ func (p *Resolver) ResolveSolid(source *models.CTColor, resources Resources) *Co
 	if source == nil || (source.AxialShd == nil && source.RadialShd == nil && source.GouraudShd == nil && source.LaGourandShd == nil && source.LaGouraudShd == nil) {
 		return p.Resolve(source, resources)
 	}
-	if source.Value != nil || source.ColorSpace != 0 || source.Index != 0 {
+	if hasColorValue(source, resources) {
 		return &Color{Value: p.RGBA(*source, resources), HasValue: true}
 	}
 	return nil
+}
+
+func hasColorValue(source *models.CTColor, resources Resources) bool {
+	return source.Value != nil || source.ColorSpace != 0 || source.Index != 0 ||
+		(resources != nil && resources.DefaultColorSpace() != 0)
 }
 
 // Gradient 构造渐变。transform 将局部控制点映射到采样空间，area 是局部着色区域，

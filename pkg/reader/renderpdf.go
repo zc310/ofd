@@ -218,20 +218,15 @@ func (r *Reader) pdfPageLinks(ctx context.Context, indices []int) ([][]drawing.P
 	return links, ctx.Err()
 }
 
-// pdfPageHeight 读取页面物理高度；只读页面 Area，不加载页面内容或资源。
+// pdfPageHeight 读取页面物理高度；只读页面及模板区域，不加载页面内容或资源。
 func (r *Reader) pdfPageHeight(ref pageRef) float64 {
-	box, err := ref.page.PhysicalBoxMetadata()
-	if err == nil && box.Width > 0 && box.Height > 0 {
-		return box.Height
-	}
 	// 页面自身没有定义有效尺寸时回退到文档公共 PageArea，再回退 A4。少了这一步，
 	// 跳转坐标会以 0 参与从页顶原点到页底原点的换算，落点会上下颠倒。
 	area := models.CtPageArea{}
 	if ref.document != nil && ref.document.Document != nil {
 		area = ref.document.CommonData.PageArea
 	}
-	area.EnsurePhysicalBox()
-	return area.PhysicalBox.Height
+	return ref.page.PhysicalBoxOr(area).Height
 }
 
 // addPDFPage 在页面加入 PDF 前持续持有渲染视图；调用方必须持有 Reader 读锁。

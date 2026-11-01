@@ -15,18 +15,11 @@ type PageResources interface {
 	TemplateForeground(template models.Template) bool
 }
 
-// WalkPage 按背景模板、水印、正文、前景模板、印章和其他批注的顺序遍历。
+// WalkPage 按 GB/T 33190—2016 §7.7 图16遍历模板与页面图层，再访问印章和批注。
 // page 和 annotations 必须在调用期间保持有效，seals 同步访问已固定的印章子文档。
 func WalkPage[S PageResources](frame Frame[S], page *models.PageContent, annotations *models.PageAnnot, visibility Visibility, options Options, seals func(Frame[S], Visitor[S]) error, visit Visitor[S]) error {
+	frame.Clip = geom.IntersectClips(frame.Clip, ApplicationClip(page.Area))
 	for _, foreground := range []bool{false, true} {
-		if foreground {
-			if options.IncludeWatermarks {
-				WalkAnnotations(frame, annotations, true, visit)
-			}
-			if page.Content != nil {
-				WalkLayers(frame, VisibleLayers(page.Content.Layer, visibility.HiddenLayers), visit)
-			}
-		}
 		for _, ref := range page.Template {
 			if visibility.HiddenTemplates[models.StID(ref.TemplateID)] || frame.Scope.TemplateForeground(ref) != foreground {
 				continue
@@ -41,6 +34,17 @@ func WalkPage[S PageResources](frame Frame[S], page *models.PageContent, annotat
 				WalkLayers(child, template.Content.Layer, visit)
 			}
 		}
+		if !foreground && options.IncludeWatermarks {
+			WalkAnnotations(frame, annotations, true, visit)
+		}
+		if page.Content != nil {
+			layers := VisibleLayers(page.Content.Layer, visibility.HiddenLayers)
+			for _, kind := range []string{spec.LayerBackground, spec.LayerBody, spec.LayerForeground} {
+				if (kind == spec.LayerForeground) == foreground {
+					WalkLayerType(frame, layers, kind, visit)
+				}
+			}
+		}
 	}
 	if options.IncludeSeals && seals != nil {
 		if err := seals(frame, visit); err != nil {
@@ -53,20 +57,51 @@ func WalkPage[S PageResources](frame Frame[S], page *models.PageContent, annotat
 	return nil
 }
 
-// WalkLayers 先遍历背景图层，再遍历其他图层，保留图层内的图元顺序。
-func WalkLayers[S Resources](frame Frame[S], layers []*models.Layer, visit Visitor[S]) {
-	for _, background := range []bool{true, false} {
-		for _, layer := range layers {
-			if layer == nil || (layer.Type == spec.LayerBackground) != background {
-				continue
-			}
-			child := frame
-			if layer.DrawParam > 0 {
-				child.DrawParam = frame.Scope.GetDrawParam(models.StID(layer.DrawParam))
-			}
-			WalkItems(child, layer.Items, visit)
-		}
+// LayerType 将缺省和自定义图层归入正文层，保留同类图层的文档顺序。
+func LayerType(layer *models.Layer) string {
+	if layer.Type == spec.LayerBackground || layer.Type == spec.LayerForeground {
+		return layer.Type
 	}
+	return spec.LayerBody
+}
+
+// WalkLayers 按背景、正文、前景遍历图层，保留同类图层和图元的原始顺序。
+func WalkLayers[S Resources](frame Frame[S], layers []*models.Layer, visit Visitor[S]) {
+	for _, kind := range []string{spec.LayerBackground, spec.LayerBody, spec.LayerForeground} {
+		WalkLayerType(frame, layers, kind, visit)
+	}
+}
+
+// WalkLayerType 只遍历指定类别的图层，供模板与页面图层交错使用。
+func WalkLayerType[S Resources](frame Frame[S], layers []*models.Layer, kind string, visit Visitor[S]) {
+	for _, layer := range layers {
+		if layer == nil || LayerType(layer) != kind {
+			continue
+		}
+		child := frame
+		if layer.DrawParam > 0 {
+			child.DrawParam = frame.Scope.GetDrawParam(models.StID(layer.DrawParam))
+		}
+		WalkItems(child, layer.Items, visit)
+	}
+}
+
+// ApplicationClip 按 §7.5 表7返回显示区域与物理页面的交集（左上原点）。
+// 缺省不裁剪；空交集必须保留空路径，不能回退为整页可见。
+func ApplicationClip(area *models.CtPageArea) *geom.Path {
+	if area == nil || area.ApplicationBox == nil {
+		return nil
+	}
+	box := *area.ApplicationBox
+	if !box.IsFinite() || box.Width <= 0 || box.Height <= 0 {
+		return &geom.Path{}
+	}
+	x0, y0 := max(0, box.X), max(0, box.Y)
+	x1, y1 := min(area.PhysicalBox.Width, box.X+box.Width), min(area.PhysicalBox.Height, box.Y+box.Height)
+	if x1 <= x0 || y1 <= y0 {
+		return &geom.Path{}
+	}
+	return geom.Rectangle(x1-x0, y1-y0).Translate(x0, y0)
 }
 
 // WalkItems 展开块和可见复合图元，传递单元坐标映射及父级裁剪。
@@ -84,6 +119,27 @@ func WalkItems[S Resources](frame Frame[S], items []models.PageItem, visit Visit
 			child.Depth++
 			WalkItems(child, item.Block.Items, visit)
 			continue
+		}
+		if frame.Clip != nil {
+			var box models.StBox
+			switch item.Kind {
+			case models.PageItemText:
+				box = item.Text.Boundary
+			case models.PageItemPath:
+				box = item.Path.Boundary
+			case models.PageItemImage:
+				box = item.Image.Boundary
+			case models.PageItemComposite:
+				box = item.Composite.Boundary
+			case models.PageItemBlock:
+				continue
+			}
+			if box.IsFinite() && box.Width > 0 && box.Height > 0 {
+				boundary := geom.Rectangle(box.Width, box.Height).Translate(box.X, box.Y).Transform(frame.Matrix)
+				if boundary.And(frame.Clip).Empty() {
+					continue
+				}
+			}
 		}
 		itemFrame := frame
 		if item.Kind == models.PageItemText && item.Text.Clips != nil {

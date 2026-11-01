@@ -671,6 +671,18 @@ func (p *Document) parse(body models.DocBody) error {
 			metadata: func() (models.StBox, error) {
 				return readPagePhysicalBox(p.FileCache, pagePath)
 			},
+			effectiveMetadata: func() (models.StBox, error) {
+				area, refs, err := readPageAreaMetadata(p.FileCache, pagePath)
+				if err != nil {
+					return models.StBox{}, err
+				}
+				area, err = p.inheritedPageArea(area, refs)
+				if err != nil {
+					return models.StBox{}, err
+				}
+				area.EnsurePhysicalBox()
+				return area.PhysicalBox, nil
+			},
 			document: p,
 			load: func(target *Page) error {
 				target.cacheSize.Store(0)
@@ -678,8 +690,9 @@ func (p *Document) parse(body models.DocBody) error {
 				if err != nil {
 					return err
 				}
-				if content.Area == nil {
-					content.Area = &p.CommonData.PageArea
+				content.Area, err = p.inheritedPageArea(content.Area, content.Template)
+				if err != nil {
+					return err
 				}
 				target.pageContent = *content
 				target.resources = pageResources{}
@@ -924,6 +937,32 @@ func (p *Document) LoadAttachments() (*models.Attachments, error) {
 func (p *Document) GetAttachments() *models.Attachments {
 	value, _ := p.LoadAttachments()
 	return value
+}
+
+// inheritedPageArea 按 §7.7 表12选择页面区域，返回副本以免规范化污染共享声明。
+// 多模板按引用顺序取首个显式 Area；模板自身的 Template 引用按表12无效，不递归。
+func (p *Document) inheritedPageArea(area *models.CtPageArea, refs []models.Template) (*models.CtPageArea, error) {
+	if area != nil {
+		result := *area
+		return &result, nil
+	}
+	for _, ref := range refs {
+		p.templateMu.Lock()
+		location, ok := p.templateLocations[models.StID(ref.TemplateID)]
+		p.templateMu.Unlock()
+		if !ok {
+			continue
+		}
+		value, _, err := readPageAreaMetadata(p.FileCache, location)
+		if err != nil {
+			return nil, fmt.Errorf("读取模板 %d 页面区域失败: %w", ref.TemplateID, err)
+		}
+		if value != nil {
+			return value, nil
+		}
+	}
+	result := p.CommonData.PageArea
+	return &result, nil
 }
 
 // LoadTemplate 按需读取并缓存指定模板页。

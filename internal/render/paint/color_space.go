@@ -32,10 +32,16 @@ type colorSpaceResources struct {
 }
 
 // RGBA 解析 CTColor。颜色空间为 GRAY/RGB/CMYK 时按对应分量解释，
-// 存在调色板且未给出 Value 时按 Index 取色。未引用颜色空间时沿用默认的
-// RGB/RGBA 语义。
+// 存在调色板且未给出 Value 时按 Index 取色。未引用颜色空间时按
+// GB/T 33190—2016 §7.5 表6使用 DefaultCS，未声明时才回退 RGB。
 func (p *Resolver) RGBA(source models.CTColor, resources Resources) color.RGBA {
-	if source.ColorSpace == 0 || resources == nil {
+	if resources == nil {
+		return ofdColorRGBA(source)
+	}
+	if source.ColorSpace == 0 {
+		source.ColorSpace = resources.DefaultColorSpace()
+	}
+	if source.ColorSpace == 0 {
 		return ofdColorRGBA(source)
 	}
 	space := resources.GetColorSpace(models.StID(source.ColorSpace))

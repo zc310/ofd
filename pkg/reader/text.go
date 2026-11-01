@@ -157,6 +157,7 @@ func textValue(text *models.TextObject) string {
 }
 
 type pageContentSnapshot struct {
+	area      *models.CtPageArea
 	layers    []*models.Layer
 	templates []models.Template
 	actions   *models.Actions
@@ -167,6 +168,10 @@ func loadPageContentSnapshot(page *parser.Page) (pageContentSnapshot, error) {
 	err := page.WithPageContent(func(content *models.PageContent) error {
 		if content == nil {
 			return nil
+		}
+		if content.Area != nil {
+			area := *content.Area
+			snapshot.area = &area
 		}
 		if content.Content != nil {
 			snapshot.layers = append(snapshot.layers, content.Content.Layer...)

@@ -338,6 +338,20 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		p.fonts.RegisterPageGlyphs(p.Document, page, pageContent)
 	}
 	pb := pageContent.Area.PhysicalBox
+	// 显示区域采用页面坐标，传给各图元的继承裁剪使用左下原点。
+	budget.pageClip = content.ApplicationClip(pageContent.Area)
+	if budget.pageClip != nil {
+		budget.pageClip = budget.pageClip.Transform(geom.Matrix{{1, 0, 0}, {0, -1, pb.Height}})
+		if budget.pageClip.Empty() {
+			return
+		}
+		if clipContainsRect(budget.pageClip, geom.RectFromSize(0, 0, pb.Width, pb.Height)) {
+			// 页面表面自身已限制物理尺寸，整页显示区无需让模板、SVG 和文字降级。
+			budget.pageClip = nil
+		} else {
+			budget.templateCacheable = false
+		}
+	}
 	annots := p.Document.GetAnnotation(page.ID)
 	for _, template := range pageContent.Template {
 		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && !p.TemplateForeground(template) {
@@ -357,12 +371,16 @@ func (p *Document) pageContent(ctx DrawContext, page *parser.Page, seal bool, bu
 		if len(budget.visibility.HiddenLayers) > 0 {
 			layers = visiblePageLayers(layers, budget.visibility.HiddenLayers)
 		}
-		p.drawLayersWithBudget(ctx, layers, pb, budget)
+		p.drawLayerType(ctx, layers, spec.LayerBackground, pb, budget)
+		p.drawLayerType(ctx, layers, spec.LayerBody, pb, budget)
 	}
 	for _, template := range pageContent.Template {
 		if !budget.visibility.HiddenTemplates[models.StID(template.TemplateID)] && p.TemplateForeground(template) {
 			p.template(ctx, template, pb, budget)
 		}
+	}
+	if pageContent.Content != nil {
+		p.drawLayerType(ctx, visiblePageLayers(pageContent.Content.Layer, budget.visibility.HiddenLayers), spec.LayerForeground, pb, budget)
 	}
 	if seal {
 		p.drawSealsWithBudget(ctx, page.ID, pb, budget)
@@ -417,7 +435,7 @@ func (p *Document) template(ctx DrawContext, template models.Template, pb models
 	}
 }
 
-// drawLayers 先绘制背景层，再绘制其他图层。
+// drawLayers 按背景、正文、前景绘制，同类图层保持原顺序。
 func (p *Document) drawLayers(ctx DrawContext, layers []*models.Layer, pb models.StBox) {
 	var budget renderBudget
 	budget.reset()
@@ -428,13 +446,14 @@ func (p *Document) drawLayersWithBudget(ctx DrawContext, layers []*models.Layer,
 	if len(layers) == 0 {
 		return
 	}
-	for _, layer := range layers {
-		if layer != nil && layer.Type == spec.LayerBackground {
-			p.layer(ctx, layer, pb, budget)
-		}
+	for _, kind := range []string{spec.LayerBackground, spec.LayerBody, spec.LayerForeground} {
+		p.drawLayerType(ctx, layers, kind, pb, budget)
 	}
+}
+
+func (p *Document) drawLayerType(ctx DrawContext, layers []*models.Layer, kind string, pb models.StBox, budget *renderBudget) {
 	for _, layer := range layers {
-		if layer != nil && layer.Type != spec.LayerBackground {
+		if layer != nil && content.LayerType(layer) == kind {
 			p.layer(ctx, layer, pb, budget)
 		}
 	}
@@ -473,7 +492,7 @@ func (p *Document) layer(ctx DrawContext, layer *models.Layer, pb models.StBox, 
 
 // drawItems 按文档顺序绘制页面块中的图形对象。
 func (p *Document) drawItems(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, budget *renderBudget) {
-	p.drawItemsWithTransform(ctx, items, dp, pb, nil, nil, 0, budget)
+	p.drawItemsWithTransform(ctx, items, dp, pb, nil, budget.pageClip, 0, budget)
 }
 
 func (p *Document) drawItemsWithTransform(ctx DrawContext, items []models.PageItem, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, compositeDepth int, budget *renderBudget) {
@@ -541,6 +560,7 @@ func (p *Document) annotWithBudget(ctx DrawContext, annot *models.Annot, pb mode
 	budget.reset()
 	if parent != nil {
 		budget.Report = parent.Report
+		budget.pageClip = parent.pageClip
 	}
 	box := *annot.Appearance.Boundary
 	highlight := annot.Type == models.AnnotTypeHighlight
@@ -569,22 +589,22 @@ func (p *Document) annotItem(ctx DrawContext, item models.PageItem, box models.S
 		object := *item.Image
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
-		p.imageWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
+		p.imageWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
 	case models.PageItemPath:
 		object := *item.Path
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
-		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
+		p.pathWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
 	case models.PageItemText:
 		object := *item.Text
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
-		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, budget)
+		p.textWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, budget)
 	case models.PageItemComposite:
 		object := *item.Composite
 		object.Boundary = object.Boundary.CopyAndShift(&box)
 		object.Alpha = highlightAnnotationAlpha(object.Alpha, highlight)
-		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, nil, 0, budget)
+		p.compositeWithBudget(ctx, object, p.objectDrawParam(object.DrawParam, nil), pb, nil, budget.pageClip, 0, budget)
 	case models.PageItemBlock:
 		if item.Block == nil {
 			return
