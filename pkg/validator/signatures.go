@@ -34,7 +34,7 @@ func (v *Validator) checkSignatures(ctx context.Context, documents map[string]*x
 		}
 		byID[name] = map[string]string{}
 		for _, item := range list.Signatures {
-			target := strings.TrimPrefix(item.BaseLoc.Resolve(models.StLoc(path.Dir(name))).String(), "/")
+			target := strings.TrimPrefix(item.BaseLoc.Resolve(spec.StLoc(path.Dir(name))).String(), "/")
 			types[target], listFor[target], byID[name][item.ID] = item, name, target
 		}
 	}
@@ -58,7 +58,7 @@ func (v *Validator) checkSignatures(ctx context.Context, documents map[string]*x
 			fail("signature.xml", err.Error())
 			continue
 		}
-		data, err := pkg.Read(signature.SignedValue.Resolve(models.StLoc(path.Dir(name))).String())
+		data, err := pkg.Read(signature.SignedValue.Resolve(spec.StLoc(path.Dir(name))).String())
 		if err != nil {
 			fail("signature.value_missing", err.Error())
 			continue

@@ -21,6 +21,7 @@ import (
 	"github.com/zc310/ofd/internal/render/imageasset"
 	"github.com/zc310/ofd/internal/testutil"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type recordingRenderer struct {
@@ -381,7 +382,7 @@ func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
 	}()
 
 	doc := NewDocument(color.Transparent, ofd.Documents[0])
-	var file models.StLoc
+	var file spec.StLoc
 	var format string
 	ofd.Documents[0].ForEachMedia(func(_ models.StID, media *models.MultiMedia) bool {
 		file = media.MediaFile.Clean()
@@ -427,7 +428,7 @@ func TestDocumentDecodeImageConcurrentByKey(t *testing.T) {
 }
 
 type benchmarkImageMedia struct {
-	file   models.StLoc
+	file   spec.StLoc
 	format string
 }
 
@@ -593,7 +594,7 @@ func benchmarkColdImageDecodeParallel(b *testing.B, doc *Document, medias []benc
 }
 
 type benchmarkSVGMedia struct {
-	file   models.StLoc
+	file   spec.StLoc
 	format string
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 const (
@@ -35,7 +36,7 @@ type pageResources struct {
 type Page struct {
 	pageContent models.PageContent
 	ID          models.StID
-	pageResPath []models.StLoc
+	pageResPath []spec.StLoc
 
 	document          *Document
 	load              func(*Page) error
@@ -80,7 +81,7 @@ func (p *Page) PhysicalBoxMetadata() (models.StBox, error) {
 	return p.metadataBox, p.metadataErr
 }
 
-func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (models.StBox, error) {
+func readPagePhysicalBox(fileCache *container.Package, pagePath spec.StLoc) (models.StBox, error) {
 	area, _, err := readPageAreaMetadata(fileCache, pagePath)
 	if area == nil {
 		return models.StBox{}, err
@@ -89,7 +90,7 @@ func readPagePhysicalBox(fileCache *container.Package, pagePath models.StLoc) (m
 }
 
 // readPageAreaMetadata 只读页面头部，保留模板引用与 Area 是否缺省，不加载资源或正文。
-func readPageAreaMetadata(fileCache *container.Package, pagePath models.StLoc) (*models.CtPageArea, []models.Template, error) {
+func readPageAreaMetadata(fileCache *container.Package, pagePath spec.StLoc) (*models.CtPageArea, []models.Template, error) {
 	if fileCache == nil {
 		return nil, nil, errEmptyPagePackage
 	}
@@ -313,8 +314,8 @@ func (p *Page) Template() []models.Template {
 }
 
 // PageRes 返回页面资源文件列表。
-func (p *Page) PageRes() []models.StLoc {
-	var resources []models.StLoc
+func (p *Page) PageRes() []spec.StLoc {
+	var resources []spec.StLoc
 	_ = p.WithPageContent(func(content *models.PageContent) error {
 		resources = content.PageRes
 		return nil
@@ -323,7 +324,7 @@ func (p *Page) PageRes() []models.StLoc {
 }
 
 // PageResourceLocations 返回已经解析为包内路径的页面资源文件位置。
-func (p *Page) PageResourceLocations() []models.StLoc {
+func (p *Page) PageResourceLocations() []spec.StLoc {
 	if p == nil {
 		return nil
 	}
@@ -332,7 +333,7 @@ func (p *Page) PageResourceLocations() []models.StLoc {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]models.StLoc(nil), p.pageResPath...)
+	return append([]spec.StLoc(nil), p.pageResPath...)
 }
 
 // Actions 返回页面动作集合。

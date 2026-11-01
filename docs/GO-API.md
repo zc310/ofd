@@ -3,7 +3,128 @@
 安装依赖与完整的 OFD 转 PDF 入门示例见[主 README](../README.md#go-api)。可运行的
 转换示例位于 [pkg/converter/examples_test.go](../pkg/converter/examples_test.go)。
 
+## 标准数据模型
+
+`pkg/spec` 提供标准常量和可公开使用的底层XML模型，已迁移：
+
+- 权限与日期：`Permissions`、`PrintSettings`、`ValidPeriod`、`DateTime`。
+- 主入口与元数据：`OFD`、`DocBody`、`DocInfo`、`Keywords`、`CustomDatas/CustomData`。
+- 版本声明：`Versions/Version`、`DocVersion`、`FileList/VersionFile`。
+- 包内路径：`StLoc` 及其词法路径操作。
+
+其余标准模型仍在逐步迁移；解析器、资源加载状态及渲染缓存不属于本包。
+以上类型可以直接使用 `encoding/xml`，不需要导入内部模型。主入口按§7.4表3/4、
+版本按§19表70/71保留字段和列表顺序，版本实际加载仍由解析器处理。
+`StLoc` 按§7.3表2使用包内斜杠路径，不依赖操作系统文件系统；`Resolve/Clean/Join`
+只做词法处理，XML解码不会提前规范化原始路径。它们和 `In/HasPrefix` 都不是安全校验，
+打开ZIP条目时仍须由容器检查穿越、预算及访问边界。
+可运行的主入口示例见 [pkg/spec/examples_test.go](../pkg/spec/examples_test.go)。
+
+`spec.Permissions` 保留布尔字段的省略/显式取值及有效期是否存在，可直接使用
+`encoding/xml` 解码。`nil`权限或空的Permissions对象默认允许，非nil的空ValidPeriod
+仍是非法期限，不能删掉该节点来改变原声明。`spec.PrintSettings` 的XML解码会应用
+`Printable=true, Copies=-1`缺省值；直接构造打印设置时应显式填写，零值表示禁止打印。
+`spec.DateTime{Time: t}` 可构造日期；XML解析保留既有UTC缺省、时区和纳秒精度。
+标准声明不等于业务授权，执行策略仍由 `pkg/permission` 负责。
+
+`Permissions.Clone()` 深拷贝所有可变字段且保留nil，用于长任务固定原始声明，
+不缓存授权结果。共享声明在检查期间不得并发修改。
+
 ## 转换与渲染
+
+### 阅读器权限策略
+
+`pkg/permission` 提供共用操作类型、`Policy.Check` 和 `DeniedError`。默认执行
+GB/T 33190—2016 §7.5 表8；`Copy` 使用 `Export` 声明，`Edit/Annot/Signature/Watermark`
+独立判断。`Policy.Check` 直接接收 `*spec.Permissions`，不需要另外构造归一化声明：
+`policy.Check(declaration, permission.Export, scope)`；nil声明及省略的布尔字段默认允许。
+`Policy` 零值执行声明并使用当前时间；`Now` 可注入测试时钟，须并发安全。
+可运行示例见 [pkg/permission/examples_test.go](../pkg/permission/examples_test.go)。
+
+`reader.Open(input, reader.OpenOptions{PermissionPolicy: policy})` 在创建Reader前检查有效期。
+reader在内容访问、缓存返回及目标版本发布前重查有效期；逐页操作检查所属文档体，全量接口
+检查全部文档体。批量输出先预检全部选页，再逐页复查，到期失败后已有部分输出应丢弃。
+起止时间包含端点；空或倒置期限拒绝。无时区时间沿用模型解析的UTC约定，不按客户端本地时区重解释。
+
+`CheckPermission`/`CheckDocumentPermission` 支持 `PermissionAccess/Copy/Export/Print/Edit/Annot/Signature/Watermark/PrintScreen`。
+普通Access不受导出/打印声明限制。`errors.Is(err, reader.ErrPermissionDenied)` 与
+`errors.Is(err, permission.ErrDenied)` 等价；`errors.As` 可取得 `*permission.DeniedError`
+中的 `Action/Scope/Reason`，原因包括 `forbidden/not_yet_valid/expired/invalid_period`。
+`Permissions()`、`PageCount()`、`Close()` 保留诊断和释放能力；快照 `Accessible/AccessReason`
+只代表调用时刻，不是永久授权。
+
+获明确授权的诊断/修复程序可设置 `permission.Policy{Mode: permission.IgnoreDeclarations}`，
+它同时忽略有效期和操作声明，不绕过未知操作或非法策略校验。WASM接口不提供该选项。
+权限声明不是加密/DRM，无法撤销已返回字节或可靠阻止系统截图，也不能单靠库控制系统打印份数。
+本共用层已接入reader/WASM、条目替换、水印、签署/签名移除，以及converter的OFD导出。
+ZIP级合并、拆分、模型级拼页与清单导出也已接入；归档按下述独立用途处理，其它未列出的加工入口不能视为全面门控。
+
+业务入口按表8的独立操作判断：`replace.Files/Paths` 检查所有原始文档体的 `Edit`；任意条目
+可能涉及共享资源，因此不猜测修改路径的归属。`watermark.Add/Replace/Remove` 只检查目标
+文档体的 `Watermark`，不额外要求 `Edit/Annot`；旧 `SkipPermissionsCheck` 仅跳过水印布尔声明，
+仍检查有效期。`sign.Sign` 在首次调用签名器前检查全部文档体的 `Signature`，每次签署前及
+输出前复查；`sign.Remove` 属于编辑操作，检查全部文档体的 `Edit`。移除签名归入Edit、
+水印替换/删除沿用Watermark均为本库入口策略，表8未另设删除权限。
+
+上述入口的 `Options.PermissionPolicy`（水印为内嵌replace.Options）可设置共用策略。
+权限以原始输入为准，不能靠本次替换后的声明给自己授权。有效期在缓冲结果发布前复查；
+外部签名器已经完成的调用无法撤销。物理签署若无法读取加密的DocRoot声明，默认失败，
+授权Go流程可明确使用 `IgnoreDeclarations`，不自动把物理签署视为豁免。
+
+`converter.WithPermissionPolicy(policy)` 配置所有内置OFD导出格式和已解析文档入口。
+导出始终要求 `Export`，不因图像、缩略图或文字格式改变语义；预览和打印使用reader的用途接口。
+输出前预检全部选页所属文档体，处理检查点复查；无关的未选文档体不会拒绝选页导出。
+拒绝发生在预检时不写输出，也不调用图像/文件Writer；运行中到期可能已有部分输出，应丢弃。
+非OFD外部工具的直接转换不涉及OFD声明，第三方自定义编码器须自行执行策略。
+
+`merge.Options.PermissionPolicy` 控制ZIP级 `Files/Bytes/Sources/Marshal`，全部输入文档体
+按 `Export` 和有效期预检；`Edit=false` 不额外禁止导出合并。这是本库依据表8制定的入口策略，
+标准未单独定义合并权限。合并保留同一批打开的输入直至结束，不在预检后重新打开文件路径；
+首个权限拒绝不产生输出或签名/警告回调，处理及底层写出前后重新评估时间。流式处理中
+到期可能已有部分字节，必须丢弃失败结果。
+
+`merge.PageOptions.PermissionPolicy` 控制模型级 `Pages`，也要求 `Export`，不额外要求Edit。
+当前拼页保留所有输入文档体的文档级资源、附件、动作等，即使使用 `Pages/Selectors/Compositions`
+只输出部分页面，也须检查全部输入文档体，而不是只看底页或所选页。所有来源处理完并预检后才
+触发用户签名事件回调；串行合并、回调后和实际输出期间复查。授权忽略策略传递到内部清单适配层。
+
+清单导出 `Options.PermissionPolicy` 默认检查目标文档体Export及有效期，包括复用已打开OFD的
+Build入口；单文档体导出不受其它文档体限制，WriteBundle在开始导出前预检全部文档体，
+发布目录前再次检查。逐页、逐模板、每个AssetSink调用前后及manifest写出前后复查。
+初始拒绝不输出manifest或资源；处理中到期可能已经交付部分资源或回调数据，应丢弃。
+批量导出使用临时目录，不在失败时发布最终目录。单边有效期及诊断导出的空有效期保留原声明，
+不能将缺失端点当作日期解析错误或把空期限静默改成没有期限。
+
+归档不是普通导出：`archive` 的检查、证据清点、Prepare原包保存及Verify固定性验证不执行
+文档Edit/Export或ValidPeriod声明，过期或禁止导出的原件仍可作为证据保存。Prepare保留原始
+OFD字节，包括原权限和签名；附件副本属于归档准备材料，由归档系统控制访问，不是公开下载授权。
+`archive/preserve.Plan/Apply` 是业务方主动发起的长期保存处理，也不要求原始Edit/Export或
+有效期有效。GB/T 42133—2022 §6.2.2 a)（标准第4页/PDF第8页）要求去除Permissions，
+因此Apply明确以归档用途调用底层条目重建，不让普通编辑门控反向阻止该处理。
+这不是全局忽略开关，不会改变reader/converter/replace的普通权限行为；业务归档授权和归档
+目录访问控制由调用方负责。不自动解密，不放宽资源预算或校验，不静默删除签名证据；
+preserve保留签名条目并报告摘要可能失效，始终输出新副本，原件应另行保存。
+从归档中进行普通阅读、内容提取或导出时，仍使用对应入口的权限策略。
+
+`split.Options.PermissionPolicy` 控制每次 `Session.Write` 对当前分卷来源文档体的 `Export`
+及有效期检查，页面分卷和完整文档体分卷一致，不额外要求 `Edit`。`Open/Documents/Plan`
+只提供结构与计划，不构成导出授权；未选中文档体的禁令不阻止当前分卷。写出期间逐条目和
+底层Writer前后复查，失败字节仍计入输出预算，但不计入成功分卷数。两种Options均可由
+获明确授权的Go诊断流程显式设置 `IgnoreDeclarations`，CLI不提供全部声明豁免。
+
+### 阅读偏好与页面内容
+
+`Reader.Preferences()` 返回首个声明阅读偏好的文档体设置。`TabDisplay` 缺省为
+`FileName`，`DocTitle` 使用同一文档体的 `DocumentTitle`，无标题时由展示端回退输入文件名。
+`HideToolbar`、`HideMenubar`、`HideWindowUI` 缺省为 `false`，是可被用户撤销的初始界面建议，
+不是访问权限。标题默认值依据 GB/T 33190—2016 §7.5 表9（与附录 schema 存在差异）。
+
+`Reader.AnnotationsForPage(index)` 只加载目标页注解；`Annotations()` 返回全量清单。
+读取或解析注解失败会返回错误，不把损坏注解当成不存在。
+`AnnotationInfo.Print/NoZoom/NoRotate/ReadOnly` 按 GB/T 33190—2016 §15 表61描述
+`Remark`，不控制 `Appearance`；缺省分别为 true/false/false/true。
+备注文本没有标准化的字号、面板尺寸或无外观时的定位，展示端应明确自身呈现约定。
+WASM阅读器提供独立可展开备注层，浏览器打印按页附备注清单；渲染和PDF导出仍保留原注释外观。
 
 阅读器 `PageLinksForPage` 返回的 `PageLink.Region` 是相对 `Boundary` 归一化到 `[0,1]`
 的 SVG 启动路径，不能只按外接矩形判断复杂热区。`Actions` 非空时按其顺序执行，
@@ -15,6 +136,21 @@
 `Synchronous=true` 的非循环声音应等待播放结束后继续，切换文档时取消旧序列。
 页面进入动作通过 `PageEntryActionsForPage` 读取，页码均从零开始；
 动作覆盖范围与 PDF 限制见 [标准支持清单](OFD-SUPPORT.md#标准语义与动作边界)。
+
+模板声明 `PageRes` 时使用独立资源视图，只继承公共/文档资源，不借用正文页资源。
+`TextRun`、`FontInfo`、`FontResource`、`FontRef`、`FontUsageSummary` 和 `PageLink` 的
+`TemplateID` 非零时标识该视图；字体用 `(Scope, TemplateID, ID)` 区分，浏览器使用返回的
+`FontFamily`。模板媒体动作调用 `TemplateMediaData(scope, templateID, mediaID, maxBytes)`；
+模板 ID 为零等同 `MediaData`。字体列表包含模板视图中的继承字体。
+模板解析视图按有界缓存保存；专属绘制上下文每次同步使用后释放，不与正文共用私有字体缓存，
+因此大量引用带专属字体的模板可能增加字体加载开销。
+
+图像替换依据 GB/T 33190—2016 §10 表43、§13 表50：按放置变换、容器变换及输出
+分辨率计算像素需求，而非固定 DPI 阈值。主图不足时才选择采样密度更高的 `Substitution`。
+复合图元优先使用足够清晰的 `Thumbnail`，其次 `Substitution`，都不足时绘制矢量内容；
+预览对应完整单元，不按矢量墨迹裁去透明边。文字和链接仍从矢量描述提取。
+直接光栅绘制读取后端实际分辨率；记录矢量表面时使用 `NewDocumentWithDPI` 的目标分辨率，
+之后仅对同一表面调用 `Rasterize` 不会重新选择资源，变更输出质量应重新绘制页面。
 
 `pkg/converter` 的转换入口首参为 `context.Context`。长任务可传入带取消或超时的
 上下文。`input` 支持文件路径、`*os.File` 或字节切片；写入调用方提供的文件后，

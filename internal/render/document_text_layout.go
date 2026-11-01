@@ -84,6 +84,10 @@ func (p *Document) textLayoutsOptions(page *parser.Page, selected map[int]struct
 		var local []TextLayout
 		collectObjectTextLayouts(*item.Text, &local, frame.Scope.Document, selected, &runIndex)
 		for _, layout := range local {
+			if frame.TemplateID != 0 {
+				layout.EmbeddedFontLoaded = frame.Scope.HasLoadedEmbeddedFont(models.StRefID(layout.Font))
+				layout.FallbackFontFamily = frame.Scope.FallbackFontFamily(models.StRefID(layout.Font))
+			}
 			layouts = append(layouts, frame.MapLayout(layout))
 		}
 	})

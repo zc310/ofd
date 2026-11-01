@@ -231,6 +231,9 @@ func (r *Reader) pdfPageHeight(ref pageRef) float64 {
 
 // addPDFPage 在页面加入 PDF 前持续持有渲染视图；调用方必须持有 Reader 读锁。
 func (r *Reader) addPDFPage(ctx context.Context, pdfDoc render.PDFDocument, index int, background color.Color, dpi geom.Resolution, links []drawing.PageLink) error {
+	if err := r.checkPermissionLocked(PermissionExport, []int{index}); err != nil {
+		return err
+	}
 	if err := renderCheckpoint(ctx); err != nil {
 		return err
 	}

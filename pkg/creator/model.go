@@ -1177,13 +1177,13 @@ type Annotation struct {
 	Visible *bool
 	// Subtype 是注解子类型。
 	Subtype string
-	// Print 指定注解是否随文档打印；为空时使用默认值。
+	// Print 指定 Remark 是否随文档打印；为空时默认 true，不控制 Appearance。
 	Print *bool
-	// NoZoom 指定注解是否不随页面缩放。
+	// NoZoom 指定 Remark 是否不随页面缩放。
 	NoZoom bool
-	// NoRotate 指定注解是否不随页面旋转。
+	// NoRotate 指定 Remark 是否不随页面旋转。
 	NoRotate bool
-	// ReadOnly 指定注解是否只读。
+	// ReadOnly 指定 Remark 是否只读。
 	ReadOnly bool
 	// ReadOnlyValue 用于显式写出 ReadOnly=false。为空时沿用 ReadOnly 的兼容行为。
 	ReadOnlyValue *bool

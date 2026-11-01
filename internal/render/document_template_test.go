@@ -11,6 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/renderstate"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 type templateTestFonts struct {
@@ -102,7 +103,7 @@ func TestTemplateCacheReusesSurfaceConcurrentlyAndInvalidates(t *testing.T) {
 	if !doc.drawCachedTemplate(ctx, content, box, &budget) || builds.Load() != 3 {
 		t.Fatal("page dimensions were omitted from template key")
 	}
-	content.PageRes = []models.StLoc{"PageRes.xml"}
+	content.PageRes = []spec.StLoc{"PageRes.xml"}
 	if doc.drawCachedTemplate(ctx, content, box, &budget) {
 		t.Fatal("template with page resources should draw directly")
 	}

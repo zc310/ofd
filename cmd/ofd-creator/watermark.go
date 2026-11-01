@@ -514,7 +514,7 @@ func resolveWatermarkFont(input string, docIndex int, want string) (string, erro
 		return "", fmt.Errorf("打开 %s 校验字体失败: %w", input, err)
 	}
 	defer func() { _ = pkg.Close() }()
-	var root models.OFD
+	var root spec.OFD
 	if err := pkg.ReadXML(spec.RootDocument, &root); err != nil {
 		return "", fmt.Errorf("读取 %s 失败: %w", spec.RootDocument, err)
 	}
@@ -533,13 +533,13 @@ func resolveWatermarkFont(input string, docIndex int, want string) (string, erro
 			return "", fmt.Errorf("文档体下标 %d 超出范围（共 %d 个）", bodyIndex, len(root.DocBodies))
 		}
 		docEntry := strings.TrimLeft(root.DocBodies[bodyIndex].DocRoot.Resolve("/").String(), "/")
-		baseLoc := models.StLoc(path.Dir(docEntry))
+		baseLoc := spec.StLoc(path.Dir(docEntry))
 		var document models.Document
 		if err := pkg.ReadXML(docEntry, &document); err != nil {
 			return "", fmt.Errorf("读取 %s 失败: %w", docEntry, err)
 		}
 		// PublicRes 与 DocumentRes 中的字体属于同一文档体，均需纳入。
-		resLocations := make([]models.StLoc, 0, len(document.CommonData.PublicRes)+len(document.CommonData.DocumentRes))
+		resLocations := make([]spec.StLoc, 0, len(document.CommonData.PublicRes)+len(document.CommonData.DocumentRes))
 		resLocations = append(resLocations, document.CommonData.PublicRes...)
 		resLocations = append(resLocations, document.CommonData.DocumentRes...)
 		for _, loc := range resLocations {

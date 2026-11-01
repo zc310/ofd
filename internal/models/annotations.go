@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/xml"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Annotations 注解列表容器
@@ -13,6 +15,6 @@ type Annotations struct {
 
 // AnnotPage 单个页面的注解文件引用
 type AnnotPage struct {
-	PageID  StRefID `xml:"PageID,attr"`
-	FileLoc StLoc   `xml:"FileLoc"`
+	PageID  StRefID    `xml:"PageID,attr"` //nolint:tagliatelle // OFD标准属性名为PageID。
+	FileLoc spec.StLoc `xml:"FileLoc"`
 }

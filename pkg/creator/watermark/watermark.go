@@ -16,6 +16,7 @@
 package watermark
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
+	"github.com/zc310/ofd/pkg/permission"
 )
 
 // Target 描述水印操作的目标范围。
@@ -90,7 +92,8 @@ type Image struct {
 type Options struct {
 	replace.Options
 
-	// SkipPermissionsCheck 跳过文档级水印权限检查（Permissions/Watermark=false 时默认拒绝）。
+	// SkipPermissionsCheck 仅跳过Watermark布尔声明，不忽略有效期。
+	// 授权诊断忽略全部声明请使用内嵌Options.PermissionPolicy。
 	SkipPermissionsCheck bool
 	// SkipReadOnlyCheck 跳过只读检查（ReadOnly 缺省或为 true 的水印默认拒绝 Replace/Remove）。
 	SkipReadOnlyCheck bool
@@ -115,7 +118,15 @@ func run(input any, target Target, wm Watermark, action actionKind, w io.Writer,
 	if w == nil {
 		return errors.New("OFD 输出写入器为空")
 	}
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	engine := &engine{options: options}
+	defer func() {
+		if engine.closePkg && engine.pkg != nil {
+			_ = engine.pkg.Close()
+		}
+	}()
 	if err := engine.run(input, target, wm, action); err != nil {
 		return err
 	}
@@ -126,7 +137,25 @@ func run(input any, target Target, wm Watermark, action actionKind, w io.Writer,
 	if len(operations) == 0 {
 		return errors.New("水印操作未产生任何修改")
 	}
-	return replace.Files(engine.filesInput, operations, w, options.Options)
+	// 水印是独立授权操作，底层ZIP重建不额外要求Edit。此处只忽略已由本入口检查的声明。
+	if err := engine.checkPermissions(); err != nil {
+		return err
+	}
+	rebuildOptions := options.Options
+	rebuildOptions.PermissionPolicy = permission.Policy{Mode: permission.IgnoreDeclarations}
+	var buffer bytes.Buffer
+	// 复用已预检的同一个包，不能重新按路径打开另一个可能已被替换的输入。
+	if err := replace.Files(engine.pkg, operations, &buffer, rebuildOptions); err != nil {
+		return err
+	}
+	if err := engine.checkPermissions(); err != nil {
+		return err
+	}
+	n, err := w.Write(buffer.Bytes())
+	if err == nil && n != buffer.Len() {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func defaultCreator() string { return "ofd-creator" }

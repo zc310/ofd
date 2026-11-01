@@ -472,9 +472,14 @@ func (a *wasmApp) preferences(_ js.Value, _ []js.Value) any {
 		return errorValue(err)
 	}
 	return objectValue(map[string]any{
-		"page_layout": preferences.PageLayout,
-		"zoom_mode":   preferences.ZoomMode,
-		"zoom":        optionalFloatValue(preferences.Zoom),
+		"page_layout":    preferences.PageLayout,
+		"tab_display":    preferences.TabDisplay,
+		"document_title": preferences.DocumentTitle,
+		"hide_toolbar":   preferences.HideToolbar,
+		"hide_menubar":   preferences.HideMenubar,
+		"hide_window_ui": preferences.HideWindowUI,
+		"zoom_mode":      preferences.ZoomMode,
+		"zoom":           optionalFloatValue(preferences.Zoom),
 	})
 }
 
@@ -487,6 +492,9 @@ func (a *wasmApp) fontUsage(_ js.Value, args []js.Value) any {
 		return errorValue(errors.New("ofd.fontUsage 需要字体作用域和标识两个数字参数"))
 	}
 	ref := ofdreader.FontRef{Scope: int(args[0].Float()), ID: uint64(args[1].Float())}
+	if len(args) > 4 && args[4].Type() == js.TypeNumber {
+		ref.TemplateID = uint64(args[4].Float())
+	}
 	usage, err := reader.FontUsage(ref, fontUsageOptions(args[2:]))
 	if err != nil {
 		return errorValue(err)
@@ -510,9 +518,10 @@ func (a *wasmApp) fontUsageAll(_ js.Value, args []js.Value) any {
 	fonts := js.Global().Get("Array").New(len(report.Fonts))
 	for index, summary := range report.Fonts {
 		fonts.SetIndex(index, objectValue(map[string]any{
-			"scope": summary.Scope,
-			"id":    summary.ID,
-			"pages": intSliceValue(summary.Pages),
+			"scope":       summary.Scope,
+			"template_id": summary.TemplateID,
+			"id":          summary.ID,
+			"pages":       intSliceValue(summary.Pages),
 		}))
 	}
 	return objectValue(map[string]any{
@@ -657,8 +666,8 @@ func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
 		maxBytes = int64(args[2].Float())
 	}
 	// 原始资源下载默认检查 Export；文档内预览/播放显式标记用途。
-	preview := len(args) == 4 && args[3].Type() == js.TypeString && args[3].String() == "preview"
-	if len(args) > 4 || (len(args) == 4 && !preview) {
+	preview := len(args) >= 4 && args[3].Type() == js.TypeString && args[3].String() == "preview"
+	if len(args) > 5 || (len(args) >= 4 && !preview) || (len(args) == 5 && args[4].Type() != js.TypeNumber) {
 		return errorValue(errors.New("媒体用途仅支持 preview；下载时省略"))
 	}
 	if !preview {
@@ -666,7 +675,11 @@ func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
 			return errorValue(err)
 		}
 	}
-	data, err := reader.MediaData(int(args[0].Float()), uint64(args[1].Float()), maxBytes)
+	templateID := uint64(0)
+	if len(args) == 5 {
+		templateID = uint64(args[4].Float())
+	}
+	data, err := reader.TemplateMediaData(int(args[0].Float()), templateID, uint64(args[1].Float()), maxBytes)
 	if err != nil {
 		return errorValue(err)
 	}
@@ -675,12 +688,22 @@ func (a *wasmApp) mediaData(_ js.Value, args []js.Value) any {
 	return result
 }
 
-func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
+var errAnnotationPageArgument = errors.New("ofd.annotations 的可选页码必须是非负整数")
+
+func (a *wasmApp) annotations(_ js.Value, args []js.Value) any {
 	reader, err := a.currentReader()
 	if err != nil {
 		return errorValue(err)
 	}
-	infos, err := reader.Annotations()
+	var infos []ofdreader.AnnotationInfo
+	if len(args) > 1 || (len(args) == 1 && args[0].Type() != js.TypeUndefined && (args[0].Type() != js.TypeNumber || args[0].IsNaN() || math.IsInf(args[0].Float(), 0) || args[0].Float() < 0 || args[0].Float() > math.MaxInt32 || args[0].Float() != math.Trunc(args[0].Float()))) {
+		return errorValue(errAnnotationPageArgument)
+	}
+	if len(args) == 1 && args[0].Type() == js.TypeNumber {
+		infos, err = reader.AnnotationsForPage(args[0].Int())
+	} else {
+		infos, err = reader.Annotations()
+	}
 	if err != nil {
 		return errorValue(err)
 	}
@@ -696,6 +719,10 @@ func (a *wasmApp) annotations(_ js.Value, _ []js.Value) any {
 			"last_mod_date": info.LastModDate,
 			"visible":       info.Visible,
 			"remark":        info.Remark,
+			"print":         info.Print,
+			"no_zoom":       info.NoZoom,
+			"no_rotate":     info.NoRotate,
+			"read_only":     info.ReadOnly,
 			"uri":           info.URI,
 			"target_page":   info.TargetPage,
 			"dest":          outlineDestValue(info.Dest),
@@ -803,6 +830,7 @@ func (a *wasmApp) pageEntryActionsForPage(_ js.Value, args []js.Value) any {
 func pageLinkValue(link ofdreader.PageLink) map[string]any {
 	value := map[string]any{
 		"scope":           link.Scope,
+		"template_id":     link.TemplateID,
 		"page":            link.Page,
 		"id":              link.ID,
 		"uri":             link.URI,
@@ -1778,6 +1806,7 @@ func textRunsValue(runs []ofdreader.TextRun) js.Value {
 			"width":         run.Width,
 			"height":        run.Height,
 			"scope":         run.Scope,
+			"template_id":   run.TemplateID,
 			"font":          run.Font,
 			"size":          run.Size,
 			"weight":        run.Weight,
@@ -1835,7 +1864,7 @@ func fontsValue(fonts []ofdreader.FontResource) js.Value {
 		data := js.Global().Get("Uint8Array").New(len(font.Data))
 		js.CopyBytesToJS(data, font.Data)
 		result.SetIndex(index, objectValue(map[string]any{
-			"id": font.ID, "family": font.Family, "name": font.Name,
+			"id": font.ID, "template_id": font.TemplateID, "family": font.Family, "name": font.Name,
 			"bold": font.Bold, "italic": font.Italic, "format": font.Format, "data": data,
 		}))
 	}
@@ -1848,6 +1877,7 @@ func fontListValue(fonts []ofdreader.FontInfo) js.Value {
 		result.SetIndex(index, objectValue(map[string]any{
 			"id":          font.ID,
 			"scope":       font.Scope,
+			"template_id": font.TemplateID,
 			"name":        font.Name,
 			"family":      font.Family,
 			"bold":        font.Bold,
@@ -1892,6 +1922,7 @@ func objectValue(values map[string]any) js.Value {
 func errorValue(err error) js.Value {
 	result := js.Global().Get("Object").New()
 	result.Set("error", err.Error())
+	permissionErrorDetails(result, err)
 	if code := wasmErrorCode(err); code != "" {
 		result.Set("code", code)
 	}

@@ -10,6 +10,7 @@ import (
 	txml "github.com/tdewolff/parse/v2/xml"
 
 	"github.com/zc310/ofd/internal/fastxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // 页面内容文件的快速解析路径。页面图层内的对象、字符、路径数据是解析量最大的部分，
@@ -82,7 +83,7 @@ children:
 				}
 				pc.Template = append(pc.Template, t)
 			case "PageRes":
-				var loc StLoc
+				var loc spec.StLoc
 				if err := r.DecodeSpan(start, &loc); err != nil {
 					return nil, err
 				}

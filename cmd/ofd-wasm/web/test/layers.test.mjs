@@ -198,6 +198,7 @@ function makeState() {
     layerUpdates: new Set(), layerRevisions: revisions, pageCache: cache, thumbnailCache: new Map(),
     pageRequests: new Map(), thumbnailRequests: new Map(), renderFormat: 'png', zoomGeneration: 0, documentGeneration: 1,
     pageDPI: () => 96, engine: { renderPage: () => pending.promise },
+    requirePagePermission() {},
     transparentRenderBackground: 'transparent', renderMimeType: () => 'image/png',
     URL: { createObjectURL: () => 'blob:old', revokeObjectURL() {} },
     showImageWhenReady() { throw new Error('不应显示旧图片'); }, markPageLoaded() { throw new Error('不应登记旧图片'); },

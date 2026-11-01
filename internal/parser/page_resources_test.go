@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPageResourceLocationsStayStableAcrossEvictions(t *testing.T) {
@@ -32,7 +33,7 @@ func TestPageResourceLocationsStayStableAcrossEvictions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ofd.Close()
-	want := [][]models.StLoc{
+	want := [][]spec.StLoc{
 		{"Doc_0/Pages/Page_0/First.xml", "Doc_0/Pages/Page_0/Second.xml"},
 		{"Doc_0/Pages/Page_0/Second.xml"},
 		nil,
@@ -58,7 +59,7 @@ func TestAbsolutePageResourceResolvesFromPackageRoot(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		resource string
-		want     models.StLoc
+		want     spec.StLoc
 	}{
 		{name: "document_directory", resource: "/Doc_0/PageRes.xml", want: "/Doc_0/PageRes.xml"},
 		{name: "shared_directory", resource: "/Shared/PageRes.xml", want: "/Shared/PageRes.xml"},
@@ -126,7 +127,7 @@ func TestSharedPageMediaPathsStayStableAfterReload(t *testing.T) {
 	}
 	defer ofd.Close()
 	doc := ofd.Documents[0]
-	wantPaths := map[models.StID]models.StLoc{
+	wantPaths := map[models.StID]spec.StLoc{
 		7: "Doc_0/Pages/Page_0/Res/image.png",
 		8: "Doc_0/Pages/Page_0/Res/audio.mp3",
 		9: "/Doc_0/video.mp4",

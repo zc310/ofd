@@ -16,8 +16,22 @@ import (
 	_ "github.com/zc310/ofd/pkg/converter/import/markdown"
 	pdfimport "github.com/zc310/ofd/pkg/converter/import/pdf"
 	_ "github.com/zc310/ofd/pkg/converter/import/svg"
+	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/crypt"
+	"github.com/zc310/ofd/pkg/permission"
 )
+
+func ExampleWithPermissionPolicy() {
+	data, err := creator.Marshal(creator.Document{ID: "policy-example", Pages: []creator.Page{{}}})
+	if err != nil {
+		panic(err)
+	}
+	var output bytes.Buffer
+	err = converter.Text(context.Background(), data, &output,
+		converter.WithPermissionPolicy(permission.Policy{}))
+	fmt.Println(err == nil)
+	// Output: true
+}
 
 type exampleBufferWriteCloser struct {
 	*bytes.Buffer

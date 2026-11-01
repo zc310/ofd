@@ -28,6 +28,12 @@ func (r *Reader) SelectVersion(scope int, id string) error {
 		}
 	}
 	err := r.ofd.SelectVersionPrepared(scope, id, func(documents []*parser.Document) error {
+		// 在解析器发布新视图前检查目标版本，失败不覆盖当前可用版本。
+		for scope, document := range documents {
+			if err := r.permissionPolicy.Check(document.Permissions, PermissionAccess, scope); err != nil {
+				return err
+			}
+		}
 		for documentIndex, document := range documents {
 			if len(document.Pages) == 0 {
 				continue

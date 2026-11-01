@@ -27,7 +27,7 @@ func (p *Fonts) RegisterPageGlyphs(doc *parser.Document, page *parser.Page, cont
 	collected := make(map[models.StRefID]map[rune]uint16)
 	for _, template := range content.Template {
 		templateContent, err := doc.LoadTemplate(models.StID(template.TemplateID))
-		if err != nil || templateContent == nil {
+		if err != nil || templateContent == nil || len(templateContent.PageRes) != 0 {
 			continue
 		}
 		mergeGlyphCollection(collected, p.contentGlyphs(templateContent.Content))

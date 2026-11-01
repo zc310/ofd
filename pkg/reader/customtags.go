@@ -62,6 +62,9 @@ func (r *Reader) CustomTags() ([]CustomTagTree, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.customTagsOnce.Do(func() {

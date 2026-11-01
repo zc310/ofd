@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/zc310/ofd/internal/parser"
 )
 
 func TestFontUsageTruncatesOnlyWhenPagesAreOmitted(t *testing.T) {
@@ -52,7 +54,7 @@ func TestFontUsageTruncatesOnlyWhenPagesAreOmitted(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// 统计直接消费已缓存的不可变文字快照，不涉及字体加载或页面解析。
-			r := &Reader{pages: make([]pageRef, len(tc.runs)), text: newTextCache()}
+			r := &Reader{ofd: &parser.OFD{Documents: []*parser.Document{{}}}, pages: make([]pageRef, len(tc.runs)), text: newTextCache()}
 			for index, runs := range tc.runs {
 				r.text.Add(index, runs)
 			}

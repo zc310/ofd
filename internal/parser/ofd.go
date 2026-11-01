@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 
 	"github.com/zc310/ofd/internal/container"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // OFD 表示一个OFD文档解析器
 type OFD struct {
-	models.OFD
+	spec.OFD
 
 	fileCache *container.Package
 
@@ -179,20 +178,20 @@ func (p *OFD) Close() error {
 	}
 	p.Documents = nil
 	p.mainDocuments = nil
-	p.OFD = models.OFD{}
+	p.OFD = spec.OFD{}
 	if err != nil {
 		return fmt.Errorf("关闭OFD文件失败: %w", err)
 	}
 	return nil
 }
 
-func parsePackage(fileCache *container.Package, options Options) (models.OFD, []*Document, error) {
+func parsePackage(fileCache *container.Package, options Options) (spec.OFD, []*Document, error) {
 	if err := checkEncryption(fileCache); err != nil {
-		return models.OFD{}, nil, err
+		return spec.OFD{}, nil, err
 	}
-	var root models.OFD
+	var root spec.OFD
 	if err := fileCache.ReadXML(rootDocument, &root); err != nil {
-		return models.OFD{}, nil, err
+		return spec.OFD{}, nil, err
 	}
 
 	documents := make([]*Document, 0, len(root.DocBodies))
@@ -203,10 +202,10 @@ func parsePackage(fileCache *container.Package, options Options) (models.OFD, []
 		}
 		document.Init(fileCache, body.DocRoot)
 		if err := document.parse(body); err != nil {
-			return models.OFD{}, nil, err
+			return spec.OFD{}, nil, err
 		}
 		if err := document.ParseSigns(body.Signatures); err != nil {
-			return models.OFD{}, nil, err
+			return spec.OFD{}, nil, err
 		}
 		documents = append(documents, document)
 	}

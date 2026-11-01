@@ -44,6 +44,9 @@ function unwrap(value) {
   if (value && value.error) {
     const error = new Error(value.error);
     if (value.code) error.code = value.code;
+    if (value.reason) error.reason = value.reason;
+    if (value.action) error.action = value.action;
+    if (Number.isInteger(value.scope)) error.scope = value.scope;
     throw error;
   }
   return value;
@@ -138,7 +141,7 @@ async function execute(message) {
     case 'preferences':
       return unwrap(self.ofd.preferences());
     case 'fontUsage':
-      return unwrap(self.ofd.fontUsage(message.scope, message.fontID, message.maxScan, message.maxPages));
+      return unwrap(self.ofd.fontUsage(message.scope, message.fontID, message.maxScan, message.maxPages, message.templateID));
     case 'fontUsageAll':
       return unwrap(self.ofd.fontUsageAll(message.maxScan, message.maxPages));
     case 'versions':
@@ -157,12 +160,16 @@ async function execute(message) {
     case 'mediaData': {
       const args = [message.scope, message.mediaID, message.maxBytes];
       if (message.purpose !== undefined) args.push(message.purpose);
+      if (message.templateID !== undefined) {
+        if (args.length === 3) args.push(undefined);
+        args.push(message.templateID);
+      }
       const result = unwrap(self.ofd.mediaData(...args));
       const data = new Uint8Array(result);
       return data.slice().buffer;
     }
     case 'annotations':
-      return unwrap(self.ofd.annotations());
+      return unwrap(self.ofd.annotations(message.index));
     case 'pageLinks':
       return unwrap(self.ofd.pageLinks());
     case 'pageLinksForPage':
@@ -257,7 +264,7 @@ async function drain() {
     } catch (error) {
       activeRequests.delete(message.id);
       if (isCancelled(message.id)) reply(message.id, false, null, '请求已取消');
-      else reply(message.id, false, null, errorText(error), error.code);
+      else reply(message.id, false, null, errorText(error), error.code, error);
     }
     // 让取消消息有机会在继续执行下一个同步 WASM 任务前被处理。
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -265,7 +272,7 @@ async function drain() {
   running = false;
 }
 
-function reply(id, ok, value, error, code) {
+function reply(id, ok, value, error, code, details) {
   if (ok && value instanceof ArrayBuffer) {
     self.postMessage({ id, ok: true, value }, [value]);
     return;
@@ -275,7 +282,8 @@ function reply(id, ok, value, error, code) {
     self.postMessage({ id, ok: true, value }, transfer);
     return;
   }
-  self.postMessage(ok ? { id, ok: true, value } : { id, ok: false, error, ...(code ? { code } : {}) });
+  const permission = details?.reason ? { reason: details.reason, action: details.action, scope: details.scope } : {};
+  self.postMessage(ok ? { id, ok: true, value } : { id, ok: false, error, ...(code ? { code } : {}), ...permission });
 }
 
 self.onmessage = event => {

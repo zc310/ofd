@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/cache"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func awaitLoad(t *testing.T, done <-chan struct{}) {
@@ -213,7 +213,7 @@ func TestLoadNormalizesPathsAndCoalescesConcurrentDecoding(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			file := models.StLoc("Res/picture.png")
+			file := spec.StLoc("Res/picture.png")
 			if i%2 == 0 {
 				file = "Res/unused/../picture.png"
 			}

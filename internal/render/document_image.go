@@ -26,21 +26,18 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
 		return
 	}
-	resMedia := p.Document.GetMedia(models.StID(object.ResourceID))
-	if resMedia == nil && object.Substitution != 0 {
-		resMedia = p.Document.GetMedia(models.StID(object.Substitution))
-	}
-	if resMedia == nil {
-		budget.diagnose("missing_image", "找不到图像资源", models.StID(object.ResourceID))
-		return
-	}
-
 	ctm := imagelayout.CTM(object)
 	if parentCTM != nil {
 		ctm = *parentCTM.Multiply(&ctm)
 		if !ctm.IsFinite() {
 			return
 		}
+	}
+	selected := p.selectImageResource(ctx, object.ResourceID, object.Substitution, ctm)
+	resMedia := p.GetMedia(models.StID(selected))
+	if resMedia == nil {
+		budget.diagnose("missing_image", "找不到图像资源", models.StID(object.ResourceID))
+		return
 	}
 	// 图片放置的缺省 CTM 以 Boundary 缩放单位图像；毫米裁剪只使用显式
 	// 对象 CTM 与父级变换（GB/T 33190—2016 §8.4 表34）。边框共用这份裁剪。

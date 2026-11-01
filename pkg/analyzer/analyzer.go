@@ -60,9 +60,9 @@ type signatureIndexFile struct {
 }
 
 type signatureIndex struct {
-	ID      string       `xml:"ID,attr"`
-	Type    string       `xml:"Type,attr"`
-	BaseLoc models.StLoc `xml:"BaseLoc,attr"`
+	ID      string     `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
+	Type    string     `xml:"Type,attr"`
+	BaseLoc spec.StLoc `xml:"BaseLoc,attr"`
 }
 
 // Analyze 分析一个 OFD 文件。输入支持文件路径、[]byte 和 io.Reader。
@@ -398,7 +398,7 @@ func (a *analyzer) analyzeDocuments(ofd *parser.OFD) {
 		if doc == nil {
 			continue
 		}
-		body := models.DocBody{}
+		body := spec.DocBody{}
 		if documentIndex < len(ofd.DocBodies) {
 			body = ofd.DocBodies[documentIndex]
 		}
@@ -438,7 +438,7 @@ func (a *analyzer) analyzeDocuments(ofd *parser.OFD) {
 	}
 }
 
-func makeDocumentInfo(index int, body models.DocBody, doc *parser.Document) DocumentInfo {
+func makeDocumentInfo(index int, body spec.DocBody, doc *parser.Document) DocumentInfo {
 	info := DocumentInfo{
 		Index:          index,
 		DocID:          body.DocInfo.DocID,
@@ -802,7 +802,7 @@ func (a *analyzer) registerPageResourceContent(documentIndex int, doc *parser.Do
 	if contentPath == "" {
 		return
 	}
-	baseDir := models.StLoc(path.Dir(contentPath))
+	baseDir := spec.StLoc(path.Dir(contentPath))
 	for _, location := range content.PageRes {
 		resourcePath := resolveFrom(baseDir, location)
 		exists := a.fileExists(resourcePath)
@@ -1088,7 +1088,7 @@ func (a *analyzer) analyzeAttachments(documentIndex int, doc *parser.Document) {
 	}
 }
 
-func (a *analyzer) resolveAttachmentAsset(doc *parser.Document, attachmentsPath string, value models.StLoc) string {
+func (a *analyzer) resolveAttachmentAsset(doc *parser.Document, attachmentsPath string, value spec.StLoc) string {
 	if value == "" {
 		return ""
 	}
@@ -1139,17 +1139,17 @@ func (a *analyzer) analyzeAnnotations(documentIndex int, doc *parser.Document) {
 	}
 }
 
-func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc *parser.Document) {
+func (a *analyzer) analyzeSignatures(documentIndex int, body spec.DocBody, doc *parser.Document) {
 	if body.Signatures == nil || doc.FileCache == nil {
 		return
 	}
-	indexPath := resolveFrom(models.StLoc("/"), *body.Signatures)
+	indexPath := resolveFrom(spec.StLoc("/"), *body.Signatures)
 	var index signatureIndexFile
 	if err := doc.FileCache.ReadXML(indexPath, &index); err != nil {
 		a.addWarning(fmt.Sprintf("读取签名清单失败(%s): %v", indexPath, err))
 		return
 	}
-	baseDir := models.StLoc(path.Dir(indexPath))
+	baseDir := spec.StLoc(path.Dir(indexPath))
 	for _, item := range index.Signatures {
 		signaturePath := item.BaseLoc.Resolve(baseDir).String()
 		var signature models.Signature
@@ -1163,7 +1163,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 				pages = appendUnique(pages, uint64(stamp.PageRef))
 			}
 		}
-		signedValue := resolveFrom(models.StLoc(path.Dir(signaturePath)), signature.SignedValue)
+		signedValue := resolveFrom(spec.StLoc(path.Dir(signaturePath)), signature.SignedValue)
 		info := SignatureInfo{DocumentIndex: documentIndex, ID: item.ID, Type: item.Type, Path: signaturePath, Provider: signature.SignedInfo.Provider.ProviderName, Company: signature.SignedInfo.Provider.Company, Version: signature.SignedInfo.Provider.Version, Method: signature.SignedInfo.SignatureMethod, Date: signature.SignedInfo.SignatureDateTime, CheckMethod: signature.SignedInfo.References.CheckMethod, ReferenceCount: len(signature.SignedInfo.References.Reference), StampCount: len(signature.SignedInfo.StampAnnot), Pages: pages, SignedValue: signedValue, SignedValueExists: a.fileExists(signedValue)}
 		if signedValueResult := doc.GetSignedValue(item.ID); signedValueResult != nil {
 			info.SignedValueFormat = signedValueResult.Format
@@ -1213,7 +1213,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 			info.VerificationError = verificationErr.Error()
 		}
 		if signature.SignedInfo.Seal != nil {
-			info.Seal = resolveFrom(models.StLoc(path.Dir(signaturePath)), signature.SignedInfo.Seal.BaseLoc)
+			info.Seal = resolveFrom(spec.StLoc(path.Dir(signaturePath)), signature.SignedInfo.Seal.BaseLoc)
 			info.SealExists = a.fileExists(info.Seal)
 		}
 		a.report.Signatures = append(a.report.Signatures, info)
@@ -1223,7 +1223,7 @@ func (a *analyzer) analyzeSignatures(documentIndex int, body models.DocBody, doc
 			a.addFileReference(signaturePath, "seal", info.Seal, info.SealExists)
 		}
 		for _, reference := range signature.SignedInfo.References.Reference {
-			resolved := resolveFrom(models.StLoc(path.Dir(signaturePath)), reference.FileRef)
+			resolved := resolveFrom(spec.StLoc(path.Dir(signaturePath)), reference.FileRef)
 			a.addFileReference(signaturePath, "signature-reference", resolved, a.fileExists(resolved))
 		}
 	}
@@ -1267,8 +1267,8 @@ func signatureSealInfo(value parser.SESealInfo) *SignatureSealInfo {
 	}
 }
 
-func (a *analyzer) addDocumentReferences(body models.DocBody, doc *parser.Document) {
-	documentPath := resolveFrom(models.StLoc("/"), body.DocRoot)
+func (a *analyzer) addDocumentReferences(body spec.DocBody, doc *parser.Document) {
+	documentPath := resolveFrom(spec.StLoc("/"), body.DocRoot)
 	a.addFileReference(spec.RootDocument, "document", documentPath, a.fileExists(documentPath))
 	for _, page := range doc.Document.Pages.Pages {
 		pagePath := resolveFrom(doc.BaseLoc, page.BaseLoc)
@@ -1298,7 +1298,7 @@ func (a *analyzer) addDocumentReferences(body models.DocBody, doc *parser.Docume
 		a.addFileReference(documentPath, "attachments", attachmentPath, a.fileExists(attachmentPath))
 	}
 	if a.options.IncludeSignatures && body.Signatures != nil {
-		signaturePath := resolveFrom(models.StLoc("/"), *body.Signatures)
+		signaturePath := resolveFrom(spec.StLoc("/"), *body.Signatures)
 		a.addFileReference(spec.RootDocument, "signatures", signaturePath, a.fileExists(signaturePath))
 	}
 }
@@ -1312,7 +1312,7 @@ func (a *analyzer) addAnnotationReferences(annotationPath string, doc *parser.Do
 		a.addWarning(fmt.Sprintf("读取注解清单失败(%s): %v", annotationPath, err))
 		return
 	}
-	baseDir := models.StLoc(path.Dir(annotationPath))
+	baseDir := spec.StLoc(path.Dir(annotationPath))
 	for _, page := range annotations.Pages {
 		pagePath := resolveFrom(baseDir, page.FileLoc)
 		exists := a.fileExists(pagePath)
@@ -1370,7 +1370,7 @@ func (a *analyzer) addMissingFileWarning(description, filename string) {
 	a.addWarning(fmt.Sprintf("%s(%s)", description, filename))
 }
 
-func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *models.Res, sourcePath string, value models.StLoc) string {
+func (a *analyzer) resolveResourceAsset(doc *parser.Document, resource *models.Res, sourcePath string, value spec.StLoc) string {
 	if value == "" {
 		return ""
 	}
@@ -1697,7 +1697,7 @@ func sortedEdges(values map[string]ReferenceEdge) []ReferenceEdge {
 	return result
 }
 
-func resolveFrom(base models.StLoc, value models.StLoc) string {
+func resolveFrom(base spec.StLoc, value spec.StLoc) string {
 	if value == "" {
 		return ""
 	}

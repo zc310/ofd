@@ -14,6 +14,7 @@ import (
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -29,10 +30,9 @@ const (
 
 // engine 收集水印编辑产生的包条目变更（新增/修改/删除），最后转换为 replace.Operation。
 type engine struct {
-	options Options
-	pkg     *container.Package
-	// filesInput 是传给 replace.Files 的原始输入（路径/字节/*container.Package）。
-	filesInput any
+	permissions map[int]*spec.Permissions
+	options     Options
+	pkg         *container.Package
 	// closePkg 表示本包是否负责关闭 pkg；*container.Package 输入由 replace.Files 负责关闭。
 	closePkg bool
 
@@ -46,22 +46,18 @@ type engine struct {
 }
 
 func (e *engine) run(input any, target Target, wm Watermark, action actionKind) error {
-	pkg, filesInput, closePkg, err := openAny(input)
+	pkg, _, closePkg, err := openAny(input)
 	if err != nil {
 		return err
 	}
 	e.pkg = pkg
-	e.filesInput = filesInput
 	e.closePkg = closePkg
 	e.changes = make(map[string][]byte)
 	e.deletes = make(map[string]bool)
 	e.newIDs = make(map[uint64]bool)
 	e.releasedMedia = make(map[uint64]bool)
-	if e.closePkg {
-		defer func() { _ = pkg.Close() }()
-	}
 
-	var root models.OFD
+	var root spec.OFD
 	if err := pkg.ReadXML(spec.RootDocument, &root); err != nil {
 		return fmt.Errorf("读取 %s 失败: %w", spec.RootDocument, err)
 	}
@@ -71,6 +67,19 @@ func (e *engine) run(input any, target Target, wm Watermark, action actionKind) 
 		return docBodyOutOfRange(target.Document, len(root.DocBodies))
 	}
 	matched := false
+	// 先检查所有目标文档体，避免前面的修改或警告回调发生后才发现后面的拒绝。
+	e.permissions = make(map[int]*spec.Permissions, len(bodyIndexes))
+	for _, scope := range bodyIndexes {
+		name := strings.TrimLeft(root.DocBodies[scope].DocRoot.Resolve("/").String(), "/")
+		var document models.Document
+		if err := pkg.ReadXML(name, &document); err != nil {
+			return err
+		}
+		e.permissions[scope] = document.Permissions
+	}
+	if err := e.checkPermissions(); err != nil {
+		return err
+	}
 	for _, bodyIndex := range bodyIndexes {
 		found, err := e.runDocBody(root.DocBodies[bodyIndex], target, wm, action)
 		if err != nil {
@@ -101,7 +110,7 @@ func (t Target) docBodyIndexes(count int) []int {
 }
 
 // runDocBody 处理单个文档体，返回本文档体内是否至少匹配到一处水印操作目标。
-func (e *engine) runDocBody(body models.DocBody, target Target, wm Watermark, action actionKind) (bool, error) {
+func (e *engine) runDocBody(body spec.DocBody, target Target, wm Watermark, action actionKind) (bool, error) {
 	docEntry := strings.TrimLeft(body.DocRoot.Resolve("/").String(), "/")
 	if docEntry == "" {
 		return false, fmt.Errorf("文档体 DocRoot 为空")
@@ -117,10 +126,8 @@ func (e *engine) runDocBody(body models.DocBody, target Target, wm Watermark, ac
 	// 使新建的索引与页面注解文件与文档体保持一致。
 	bodyPrefix := ofdPrefix
 
-	// 文档级水印权限检查。
-	if document.Permissions != nil && document.Permissions.Watermark != nil &&
-		!*document.Permissions.Watermark && !e.options.SkipPermissionsCheck {
-		return false, fmt.Errorf("文档禁止添加或修改水印（Permissions/Watermark=false）")
+	if err := e.checkPermissions(); err != nil {
+		return false, err
 	}
 
 	pageIDs, err := targetPageIDs(target, document)
@@ -154,6 +161,9 @@ func (e *engine) runDocBody(body models.DocBody, target Target, wm Watermark, ac
 	matched := false
 	touched := make([]*pageTree, 0, len(pageIDs))
 	for _, pageID := range pageIDs {
+		if err := e.checkPermissions(); err != nil {
+			return false, err
+		}
 		tree, err := index.loadPage(pageID)
 		if err != nil {
 			return false, err
@@ -184,6 +194,27 @@ func (e *engine) runDocBody(body models.DocBody, target Target, wm Watermark, ac
 		return false, err
 	}
 	return true, nil
+}
+
+func (e *engine) checkPermissions() error {
+	// 按文档体顺序稳定报告首个拒绝。
+	scopes := make([]int, 0, len(e.permissions))
+	for scope := range e.permissions {
+		scopes = append(scopes, scope)
+	}
+	sort.Ints(scopes)
+	for _, scope := range scopes {
+		declaration := e.permissions[scope]
+		if e.options.SkipPermissionsCheck && declaration != nil {
+			// 只豁免水印布尔声明，不能修改原声明或丢弃有效期。
+			declaration = declaration.Clone()
+			declaration.Watermark = nil
+		}
+		if err := e.options.PermissionPolicy.Check(declaration, permission.Watermark, scope); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // collectAnnotMedia 收集注解 Appearance 中 ImageObject 引用的图片资源 ID。
@@ -488,7 +519,7 @@ func (a *annotationIndex) load(document models.Document) error {
 	a.indexDir = a.baseLoc
 
 	if document.Annotations != nil {
-		loc := document.Annotations.Resolve(models.StLoc(a.baseLoc))
+		loc := document.Annotations.Resolve(spec.StLoc(a.baseLoc))
 		a.indexEntry = strings.TrimLeft(loc.String(), "/")
 		a.indexDir = path.Dir(a.indexEntry)
 	}
@@ -509,7 +540,7 @@ func (a *annotationIndex) load(document models.Document) error {
 		}
 		location := page.FileLoc
 		if !strings.HasPrefix(location.String(), "/") {
-			location = location.Resolve(models.StLoc(a.indexDir))
+			location = location.Resolve(spec.StLoc(a.indexDir))
 		}
 		a.pages[uint64(page.PageID)] = strings.TrimLeft(location.String(), "/")
 	}
@@ -811,7 +842,7 @@ func (a *annotationIndex) loadMediaIDs(document models.Document) map[uint64]bool
 	if len(document.CommonData.DocumentRes) == 0 {
 		return ids
 	}
-	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(models.StLoc(a.baseLoc)).String(), "/")
+	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(spec.StLoc(a.baseLoc)).String(), "/")
 	if resEntry == "" {
 		return ids
 	}
@@ -854,7 +885,7 @@ func (a *annotationIndex) addImageResource(document models.Document, img *Image,
 	if len(document.CommonData.DocumentRes) == 0 {
 		return nil, fmt.Errorf("文档没有文档级资源（DocumentRes），无法嵌入图片水印")
 	}
-	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(models.StLoc(a.baseLoc)).String(), "/")
+	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(spec.StLoc(a.baseLoc)).String(), "/")
 	if resEntry == "" {
 		return nil, fmt.Errorf("无法确定文档级资源文件位置")
 	}
@@ -999,7 +1030,7 @@ func (a *annotationIndex) reclaimMedia(document models.Document) error {
 	if len(document.CommonData.DocumentRes) == 0 {
 		return nil
 	}
-	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(models.StLoc(a.baseLoc)).String(), "/")
+	resEntry := strings.TrimLeft(document.CommonData.DocumentRes[0].Resolve(spec.StLoc(a.baseLoc)).String(), "/")
 	if resEntry == "" {
 		return nil
 	}

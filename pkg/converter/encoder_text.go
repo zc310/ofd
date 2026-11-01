@@ -90,6 +90,9 @@ func textFromRenderDocuments(documents []*render.Document, output io.Writer, con
 	if err := conv.checkCancelled(); err != nil {
 		return err
 	}
+	if err := conv.preparePermissions(documents); err != nil {
+		return err
+	}
 	pages, err := extractPageTexts(documents, conv.page, conv)
 	if err != nil {
 		return err

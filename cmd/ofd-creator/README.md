@@ -1131,7 +1131,7 @@ ofd-creator watermark remove -i in.ofd -o out.ofd --document 0 --match-id 6
 - 文字旋转：`--rotate` 以度为单位，让文字绕每个文本实例自身的中心倾斜，旋转时位置不偏移；正值屏幕顺时针（左边往上、右边往下，`\` 形），负值右端上抬（屏幕逆时针，`/` 形）。仅对 `--text` 生效。
 - 字体：文字水印的 `--font` 接受文档资源中（同一文档体的 `PublicRes` 与 `DocumentRes`）的字体 ID 或名称，命中名称时会解析为对应数值 ID 再写入外观；省略 `--font` 时自动选用文档中最小 ID 的字体。显式指定且文档中不存在时直接报错，不会写出非法的默认字体引用。
 - 注解属性：`--id`（0 自动分配，取 `MaxUnitID` 与页面内既有注解 ID 之后）、`--creator`、`--subtype`、`--visible`/`--print`/`--no-zoom`/`--no-rotate`、`--read-only`、`--remark`、`--parameter Name=Value`（可重复）。
-- 默认门控：文档 `Permissions/Watermark=false` 时拒绝任何修改（`--skip-permissions-check` 跳过）；`ReadOnly` 缺省或为 `true` 的水印拒绝 `replace`/`remove`（`--skip-readonly-check` 跳过）。本命令写出的水印显式标记 `ReadOnly=false`，可直接再删。
+- 默认门控：目标文档体 `Permissions/Watermark=false` 时拒绝水印修改（`--skip-permissions-check` 仅跳过该布尔声明），有效期仍执行；不额外要求 `Edit/Annot`。`ReadOnly` 缺省或为 `true` 的水印拒绝 `replace`/`remove`（`--skip-readonly-check` 跳过）。本命令写出的水印显式标记 `ReadOnly=false`，可直接再删。
 - 清理：`remove` 后某页无任何注解会删除该页注解文件，索引与 `Document.xml` 的 `<Annotations>` 同步清理。
 - 复用 `replace` 框架，因此 `--compression`/`--compression-level`/`--deterministic`/`--validate`/`--max-entries`/`--max-entry-mb`/`--max-total-mb`/`--signatures` 行为一致：任何修改都会使既有签名摘要失效，`--signatures` 默认 `drop`。也可以像 `replace`/`merge` 一样在修改后直接追加签名：`--sign-cmd` 调用外部命令为输出签名，`--sign-id`/`--sign-provider`/`--sign-provider-version`/`--sign-company`/`--sign-method`/`--sign-check-method`/`--sign-stamp`/`--sign-stamp-page`/`--sign-stamp-boundary`/`--sign-stamp-seams`/`--sign-stamp-seam-edge`/`--sign-stamp-seam-pages`/`--sign-stamp-seam-pieces`/`--sign-stamp-seam-size`/`--sign-stamp-seam-x`/`--sign-stamp-seam-y`/`--sign-seal`/`--sign-include`/`--sign-exclude`/`--sign-root` 的含义与 `merge`/`replace` 的 `--sign-*` 一致；`--verify-signatures` 在写出前校验输出文档的签名摘要与密码学签名。`--output -` 写标准输出，不支持从标准输入读取。
 - 保留原始命名空间风格：默认 `xmlns` 文档的水印使用无前缀元素，`xmlns:ofd` 文档的新增索引/页面文件以及 `--appearance` 原始外观片段均套用 `ofd` 前缀；无既有注解索引时从 `Document.xml` 根元素继承前缀。自备外观片段无法解析时直接报错，不会静默写成空 `<Appearance/>`。
@@ -1339,6 +1339,15 @@ TrueType 和 CFF（含多 Font DICT）按实际使用字形生成子集，并同
 输入格式支持 JSON 和 YAML；使用 `--format auto` 时根据 `.json`、`.yaml`、`.yml` 扩展名自动判断，标准输入或没有扩展名时默认按 YAML 解析。格式不支持时返回参数错误（退出码 `2`）。输入字段未知、资源路径越出资源根目录或资源文件不存在时，命令会失败并报告 manifest 字段位置。
 
 ## 退出码
+
+条目 `replace` 默认检查全部原始文档体的 `Edit` 与有效期；`sign` 检查 `Signature` 与有效期，
+移除签名检查 `Edit` 与有效期，拒绝属于输入/处理失败（退出 `4`）。物理签署如无法读取加密
+文档体中的权限声明也会失败；需要忽略声明的授权诊断流程使用Go API的 `PermissionPolicy`，
+CLI不开放全部声明豁免。ZIP级merge在首个输出前检查全部输入文档体的Export及有效期，
+split在每次写出时检查当前分卷来源文档体的Export及有效期；拒绝退出4。两者均不额外要求Edit，
+流式处理中到期需丢弃失败产物。模型级merge --pages/--compose也检查Export与有效期；它仍保留
+全部输入的文档级资源、附件和动作，因此选页也检查全部输入文档体。export按目标文档体检查
+Export及有效期，export-all预检全部文档体并在目录发布前复查；拒绝退出4，未开放CLI豁免。
 
 | 退出码 | 含义                                                                                                      |
 |--------|-----------------------------------------------------------------------------------------------------------|

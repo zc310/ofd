@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // PageAnnot 页面注解文件的根容器。
@@ -26,18 +28,18 @@ type Annot struct {
 	// Creator 创建该注解的软件或用户名称。
 	Creator string `xml:"Creator,attr"`
 	// LastModDate 注解最后修改时间。
-	LastModDate DateTime `xml:"LastModDate,attr"`
+	LastModDate spec.DateTime `xml:"LastModDate,attr"`
 	// Visible 表示该注释对象是否显示，未指定时默认为 true。
 	Visible OptionalBool `xml:"Visible,attr,omitempty"`
 	// Subtype 注解子类型。
 	Subtype string `xml:"Subtype,attr,omitempty"`
-	// Print 是否在打印文档时显示该注解。
+	// Print 是否随页面打印 Remark 信息，缺省为 true；不控制 Appearance（§15 表61）。
 	Print OptionalBool `xml:"Print,attr,omitempty"`
-	// NoZoom 是否在缩放页面时保持注解大小不变。
+	// NoZoom 是否在缩放页面时保持 Remark 显示大小不变。
 	NoZoom bool `xml:"NoZoom,attr,omitempty"`
-	// NoRotate 是否在旋转页面时保持注解方向不变。
+	// NoRotate 是否在旋转页面时保持 Remark 显示方向不变。
 	NoRotate bool `xml:"NoRotate,attr,omitempty"`
-	// ReadOnly 是否禁止修改该注解，未指定时按规范默认为 true。
+	// ReadOnly 是否禁止用户更改 Remark，未指定时按规范默认为 true。
 	ReadOnly OptionalBool `xml:"ReadOnly,attr,omitempty"`
 	// Remark 注解备注。
 	Remark *string `xml:"Remark,omitempty"`

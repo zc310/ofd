@@ -7,6 +7,36 @@
 
 ## 未发布
 
+- **模型级拼页与清单导出默认执行权限**：`merge.Pages` 通过 `PageOptions.PermissionPolicy`
+  检查全部输入文档体的Export和有效期（选页仍携带全部文档级资源），清单导出通过对应Options
+  检查目标文档体，批量导出预检全部文档体并在目录发布前复查。拒绝发生在用户回调及内容写出
+  前；处理中到期须丢弃部分资源/产物。creator的merge --pages/--compose、export/export-all
+  权限拒绝退出4；授权Go诊断程序可显式选择IgnoreDeclarations。
+
+- **ZIP级合并与拆分默认执行导出权限**：`merge.Files/Bytes/Sources/Marshal` 在输出前检查
+  全部输入文档体的 `Export` 及有效期；`split.Session.Write` 只检查当前分卷来源文档体，
+  同时覆盖页面和完整文档体分卷。流式处理中到期会返回拒绝，已写出的部分结果必须丢弃。
+  获明确授权的Go调用方可在对应Options.PermissionPolicy中显式设置IgnoreDeclarations；
+  CLI拒绝归入处理失败（退出4）。
+
+- **编辑、签名及转换默认执行权限声明**：`replace.Files/Paths` 和 `sign.Remove` 检查全部
+  原始文档体的 `Edit` 及有效期，`sign.Sign` 检查 `Signature`，水印操作独立检查 `Watermark`。
+  converter 的 OFD 导出（包括已解析文档入口）按实际选页检查 `Export` 及有效期，拒绝可由
+  `errors.Is(err, permission.ErrDenied)` 识别。获明确授权的 Go 诊断流程可设置各入口的
+  `PermissionPolicy`（converter 使用 `WithPermissionPolicy`）为 `IgnoreDeclarations`。
+  水印旧 `SkipPermissionsCheck` / CLI `--skip-permissions-check` 只跳过水印布尔声明，
+  不再代表全部权限豁免；物理签署若无法读取加密权限声明，须由 Go 调用方明确授权忽略。
+
+- **阅读器默认执行访问有效期**：`reader.Open` 拒绝未生效、已过期以及空/倒置的
+  `ValidPeriod`；已打开Reader的预览、文字/搜索、元数据/资源缓存和版本切换也重新检查
+  有效期，批量渲染逐页复查。调用方需处理可由 `errors.Is(err, reader.ErrPermissionDenied)`
+  识别的拒绝；获明确授权的Go诊断/修复流程可在 `OpenOptions.PermissionPolicy` 设置
+  `permission.IgnoreDeclarations`，WASM不开放此绕过。已交付的内容无法撤回。
+
+- **注解清单不再忽略解析错误**：`Reader.Annotations()` 和 WASM `ofd.annotations()` 遇到
+  注解文件读取或解析失败时返回错误，不再把损坏注解当作缺失。调用方应处理失败，
+  不应把错误结果展示为“没有注解”；需要仅加载目标页时使用 `AnnotationsForPage`。
+
 ## 已发布
 
 ### v0.1.8

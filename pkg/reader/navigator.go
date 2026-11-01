@@ -7,6 +7,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/navigation"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // VersionInfo 描述文档体中的一个文档版本。
@@ -96,6 +97,14 @@ type OutlineTree struct {
 
 // ViewPreferences 描述文档声明的阅读器显示偏好。
 type ViewPreferences struct {
+	// TabDisplay 是标题显示方式，缺省按 §7.5 表9使用 FileName。
+	TabDisplay string
+	// DocumentTitle 是声明偏好的文档体元数据标题，供 DocTitle 模式使用。
+	DocumentTitle string
+	// HideToolbar、HideMenubar、HideWindowUI 是初始界面隐藏建议，不是访问权限。
+	HideToolbar  bool
+	HideMenubar  bool
+	HideWindowUI bool
 	// PageLayout 是文档声明的页面布局方式，如 OneColumn、TwoPageL、TwoPageR。
 	PageLayout string
 	// ZoomMode 是文档声明的缩放模式，如 FitWidth、FitHeight、FitRect。
@@ -173,6 +182,9 @@ func (r *Reader) Info() (DocumentInfo, error) {
 	if r.closed {
 		return DocumentInfo{}, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return DocumentInfo{}, err
+	}
 	if r.ofd == nil || len(r.ofd.DocBodies) == 0 {
 		return DocumentInfo{}, nil
 	}
@@ -221,6 +233,9 @@ func (r *Reader) Outline() (OutlineTree, error) {
 	}
 	if r.ofd == nil {
 		return OutlineTree{}, nil
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return OutlineTree{}, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
@@ -323,7 +338,7 @@ func (r *Reader) computeOutline() OutlineTree {
 }
 
 // Preferences 返回文档声明的阅读器显示偏好（取第一个声明了偏好的文档体）。
-// 没有声明时返回零值。
+// 没有声明时 TabDisplay 为 FileName，其余字段为零值。
 // 返回值中的指针只读。
 func (r *Reader) Preferences() (ViewPreferences, error) {
 	if r == nil {
@@ -335,7 +350,10 @@ func (r *Reader) Preferences() (ViewPreferences, error) {
 		return ViewPreferences{}, errors.New("文档引擎已经关闭")
 	}
 	if r.ofd == nil {
-		return ViewPreferences{}, nil
+		return ViewPreferences{TabDisplay: "FileName"}, nil
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return ViewPreferences{}, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
@@ -346,12 +364,22 @@ func (r *Reader) Preferences() (ViewPreferences, error) {
 }
 
 func (r *Reader) computePreferences() ViewPreferences {
-	for _, document := range r.ofd.Documents {
+	for scope, document := range r.ofd.Documents {
 		if document == nil || document.VPreferences == nil {
 			continue
 		}
 		preferences := document.VPreferences
-		var result ViewPreferences
+		// 正文表9默认 FileName；附录 schema 的 DocTitle 默认值与正文不一致，按正文执行。
+		result := ViewPreferences{TabDisplay: "FileName"}
+		if preferences.TabDisplay != nil {
+			result.TabDisplay = string(*preferences.TabDisplay)
+		}
+		if scope < len(r.ofd.DocBodies) && r.ofd.DocBodies[scope].DocInfo.Title != nil {
+			result.DocumentTitle = *r.ofd.DocBodies[scope].DocInfo.Title
+		}
+		result.HideToolbar = preferences.HideToolbar != nil && *preferences.HideToolbar
+		result.HideMenubar = preferences.HideMenubar != nil && *preferences.HideMenubar
+		result.HideWindowUI = preferences.HideWindowUI != nil && *preferences.HideWindowUI
 		if preferences.PageLayout != nil {
 			result.PageLayout = string(*preferences.PageLayout)
 		}
@@ -363,7 +391,7 @@ func (r *Reader) computePreferences() ViewPreferences {
 		}
 		return result
 	}
-	return ViewPreferences{}
+	return ViewPreferences{TabDisplay: "FileName"}
 }
 
 // convertOutlineDest 把 OFD 目标转换为对调用方友好的位置与缩放描述。
@@ -445,6 +473,9 @@ func (r *Reader) Versions() ([]VersionInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.versionsOnce.Do(func() {
@@ -495,7 +526,7 @@ func (r *Reader) computeVersions() ([]VersionInfo, error) {
 }
 
 // GB/T 33190—2016 §7.3、§19.2：解析 File 的实际路径，不能用目录名推断页码。
-func versionPages(pagePaths map[string][]int, base models.StLoc, files []models.VersionFile) []int {
+func versionPages(pagePaths map[string][]int, base spec.StLoc, files []spec.VersionFile) []int {
 	seen := map[int]bool{}
 	result := make([]int, 0)
 	for _, file := range files {

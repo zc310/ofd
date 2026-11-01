@@ -2675,11 +2675,18 @@ func buildPermissions(value *Permissions) (*creator.Permissions, error) {
 		result.Print = &creator.PrintSettings{Printable: value.Print.Printable, Copies: value.Print.Copies}
 	}
 	if value.ValidPeriod != nil {
-		start, err := parseDate(value.ValidPeriod.Start)
+		// 表8的起止时间均可省略；保留空端点，不能将单边期限当作损坏日期。
+		parseEndpoint := func(value string) (time.Time, error) {
+			if strings.TrimSpace(value) == "" {
+				return time.Time{}, nil
+			}
+			return parseDate(value)
+		}
+		start, err := parseEndpoint(value.ValidPeriod.Start)
 		if err != nil {
 			return nil, fmt.Errorf("valid_period.start: %w", err)
 		}
-		end, err := parseDate(value.ValidPeriod.End)
+		end, err := parseEndpoint(value.ValidPeriod.End)
 		if err != nil {
 			return nil, fmt.Errorf("valid_period.end: %w", err)
 		}

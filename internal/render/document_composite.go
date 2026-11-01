@@ -85,7 +85,10 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 	// 反推范围作为内容画布，并且不按透明像素裁剪，否则单元里的小图元会被拉伸
 	// 铺满整个 Boundary（y.ofd 每个单元只有一个字，裁剪后整页变成黑块）。
 	cropToInk := true
-	if extentW, extentH, ok := compositelayout.ContentExtent(object); ok &&
+	if unit.Thumbnail != 0 || unit.Substitution != 0 {
+		cropToInk = false
+	}
+	if extentW, extentH, ok := compositelayout.ContentExtent(object); ok && unit.Thumbnail == 0 && unit.Substitution == 0 &&
 		(compositelayout.ExtentMismatch(w, extentW) || compositelayout.ExtentMismatch(h, extentH)) {
 		w, h = extentW, extentH
 		cropToInk = false
@@ -94,6 +97,11 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		if objectDP := p.Document.GetDrawParam(models.StID(object.DrawParam)); objectDP != nil {
 			dp = objectDP
 		}
+	}
+	// §13 表50：缩略图用于低像素需求输出，需求超过缩略图时尝试高分辨率替代图。
+	// 两者都不足或损坏时保留矢量内容，不用低清预览取代本可清晰输出的矢量图。
+	if p.renderCompositePreview(ctx, object, unit, dp, pb, parentCTM, parentClip, budget) {
+		return
 	}
 
 	if p.renderSimpleCompositeVector(ctx, object, unit, dp, pb, parentCTM, parentClip) {
@@ -309,7 +317,7 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 // 裁剪、图像、渐变、嵌套复合图元以及其他需要独立绘制表面的情况，
 // 仍然交由下面的栅格化回退逻辑处理。
 func (p *Document) renderSimpleCompositeVector(ctx DrawContext, object models.CompositeObject, unit *models.CompositeGraphicUnit, dp *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) bool {
-	if unit == nil || len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath || unit.Content.Items[0].Path == nil {
+	if unit == nil || unit.Thumbnail != 0 || unit.Substitution != 0 || len(unit.Content.Items) != 1 || unit.Content.Items[0].Kind != models.PageItemPath || unit.Content.Items[0].Path == nil {
 		return false
 	}
 	w, h, cropToInk := unit.Width, unit.Height, true

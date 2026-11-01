@@ -924,8 +924,8 @@ func TestCreateVersionReferencesUsePackageAbsolutePaths(t *testing.T) {
 				t.Fatal(err)
 			}
 			entries := make(map[string]bool)
-			var description models.DocVersion
-			var ofd models.OFD
+			var description spec.DocVersion
+			var ofd spec.OFD
 			const descriptionPath = "Doc_0/Versions/DocVersion_v1.xml"
 			for _, file := range archive.File {
 				entries[file.Name] = true
@@ -962,7 +962,7 @@ func TestCreateVersionReferencesUsePackageAbsolutePaths(t *testing.T) {
 				t.Fatal("version description omitted file entries")
 			}
 			for index, file := range description.FileList.Files {
-				target := strings.TrimPrefix(file.Path.Resolve(models.StLoc(path.Dir(descriptionPath))).String(), "/")
+				target := strings.TrimPrefix(file.Path.Resolve(spec.StLoc(path.Dir(descriptionPath))).String(), "/")
 				want := "Doc_0/" + version.Files[index].Path
 				if file.Path.String() != "/"+want || target != want || !entries[target] {
 					t.Errorf("File %q resolves to %q, want existing entry %q", file.Path, target, want)

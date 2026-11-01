@@ -30,10 +30,12 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
 	protocol "github.com/zc310/ofd/internal/crypt"
+	permissionmodel "github.com/zc310/ofd/internal/permission"
 	"github.com/zc310/ofd/internal/physicalsig"
 	"github.com/zc310/ofd/internal/securexml"
 	"github.com/zc310/ofd/internal/signeddata"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -46,6 +48,9 @@ const (
 
 // Options 控制外部命令签名。
 type Options struct {
+	// PermissionPolicy 默认检查所有文档体Signature和有效期，不额外要求Edit。
+	// 物理加密包若无法读取声明，须明确授权IgnoreDeclarations才可签署。
+	PermissionPolicy permission.Policy
 	// Physical 对加密后的物理条目签署，要求明文 OFD.xml 且没有已有签名入口。
 	// 仅支持普通签名，覆盖全部输入文件及最终入口/列表，不使用解密视图。
 	Physical bool
@@ -166,6 +171,9 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	if options.Type == "" {
 		options.Type = spec.SigTypeSeal
 	}
@@ -224,6 +232,9 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 		return fmt.Errorf("%w: 重签前需单独处理完整性清单", protocol.ErrProtectedContent)
 	}
 
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Signature, nil); err != nil {
+		return err
+	}
 	var entries []entry
 	if options.Append || options.Physical {
 		entries, err = readAppendEntries(ctx, pkg)
@@ -439,6 +450,12 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 		}
 
 		var signedValue []byte
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Signature, nil); err != nil {
+			return err
+		}
 		if options.Sign != nil {
 			signedValue, err = options.Sign(ctx, bytes.Clone(signatureXML))
 		} else {
@@ -489,6 +506,9 @@ func Sign(ctx context.Context, input any, w io.Writer, options Options) error {
 	}
 
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Signature, nil); err != nil {
 		return err
 	}
 	return writePackage(w, entries, added, updatedRoot, options.Deterministic, options.Append || options.Physical)

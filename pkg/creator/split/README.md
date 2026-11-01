@@ -33,6 +33,14 @@ for _, part := range parts {
 
 ## 输入和分组
 
+默认在每次 `Write` 前按GB/T 33190—2016表8检查所选文档体的 `Export` 与有效期，
+页面与完整文档体分卷一致，不额外要求 `Edit`。`Open/Documents/Plan` 只读取结构，
+不是永久导出授权；未选文档体不会阻止当前分卷。写出期间逐条目及底层Writer前后复查，
+运行中到期需丢弃部分输出；失败字节计入预算，但不计成功分卷数。拒绝可用
+`errors.Is(err, permission.ErrDenied)` 识别，`DeniedError.Scope` 为原始0起始文档体索引。
+获明确授权的Go诊断流程可设置 `Options.PermissionPolicy` 为
+`permission.Policy{Mode: permission.IgnoreDeclarations}`；CLI不提供此豁免。
+
 - `Open` 接受文件路径、完整 `[]byte` 或 `Source`。`Source` 的 `Path`、`Data`、
   `Reader` 必须且只能设置一个；随机访问 `Reader` 同时提供正数 `Size`，调用方负责关闭。
 - `Documents` 返回文档体序号、DocID、标题和页数。文档体序号、页码均从 **1** 开始。

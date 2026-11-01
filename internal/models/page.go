@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/xml"
 	"errors"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // PageBlock 的解析资源上限，不是 OFD 格式对嵌套层数的要求。
@@ -15,7 +17,7 @@ type Page struct {
 	// ID 页面标识，在文档内唯一。
 	ID StID `xml:"ID,attr"`
 	// BaseLoc 页面内容文件的位置。
-	BaseLoc StLoc `xml:"BaseLoc,attr"`
+	BaseLoc spec.StLoc `xml:"BaseLoc,attr"`
 }
 
 // PageContent OFD 页面内容，包含页面区域、资源、模板和内容对象。
@@ -23,7 +25,7 @@ type PageContent struct {
 	// Template 页面使用的模板页引用。
 	Template []Template `xml:"Template"`
 	// PageRes 页面级资源文件的位置。
-	PageRes []StLoc `xml:"PageRes"`
+	PageRes []spec.StLoc `xml:"PageRes"`
 	// Area 页面的区域定义。
 	Area *CtPageArea `xml:"Area"`
 	// Content 页面图层和页面对象内容。

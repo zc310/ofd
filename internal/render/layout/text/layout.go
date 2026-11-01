@@ -21,10 +21,15 @@ type Character struct {
 // Layout 描述一个 TextCode 及其源字符级几何信息。
 type Layout struct {
 	Source Source
-	Text   string
-	X      float64
-	Y      float64
-	Width  float64
+	// TemplateID 非零表示字体来自该模板的独立资源视图。
+	TemplateID uint64
+	// EmbeddedFontLoaded 和 FallbackFontFamily 保留当前资源视图的字体选择，供文字覆盖层使用。
+	EmbeddedFontLoaded bool
+	FallbackFontFamily string
+	Text               string
+	X                  float64
+	Y                  float64
+	Width              float64
 	// Height 为字体上伸与下延之和，无度量时使用 EM 高度。
 	Height        float64
 	Font          uint64

@@ -1,11 +1,15 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+
+	"github.com/zc310/ofd/pkg/spec"
+)
 
 // Res OFD 资源文件定义。
 type Res struct {
 	// BaseLoc 资源文件的基础路径。
-	BaseLoc StLoc `xml:"BaseLoc,attr"`
+	BaseLoc spec.StLoc `xml:"BaseLoc,attr"`
 	// ColorSpaces 颜色空间资源集合。
 	ColorSpaces *ColorSpaces `xml:"ColorSpaces"`
 	// DrawParams 绘制参数资源集合。
@@ -33,7 +37,7 @@ type ColorSpace struct {
 	// BitsPerComponent 每个颜色分量的位数。
 	BitsPerComponent int `xml:"BitsPerComponent,attr,omitempty"`
 	// Profile 颜色空间配置文件的位置。
-	Profile StLoc `xml:"Profile,attr,omitempty"`
+	Profile spec.StLoc `xml:"Profile,attr,omitempty"`
 	// Palette 颜色空间使用的调色板。
 	Palette *Palette `xml:"Palette"`
 }
@@ -172,7 +176,7 @@ type Font struct {
 	// FixedWidth 是否为等宽字体。
 	FixedWidth bool `xml:"FixedWidth,attr,omitempty"`
 	// FontFile 字体文件的位置。
-	FontFile StLoc `xml:"FontFile,omitempty"`
+	FontFile spec.StLoc `xml:"FontFile,omitempty"`
 }
 
 // MultiMedias 多媒体资源集合。
@@ -190,7 +194,7 @@ type MultiMedia struct {
 	// Format 多媒体文件格式。
 	Format string `xml:"Format,attr,omitempty"`
 	// MediaFile 多媒体文件的位置。
-	MediaFile StLoc `xml:"MediaFile"`
+	MediaFile spec.StLoc `xml:"MediaFile"`
 }
 
 // CompositeGraphicUnits 复合图形资源集合。

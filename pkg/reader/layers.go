@@ -37,6 +37,9 @@ func (r *Reader) layersLocked(index int) ([]LayerInfo, error) {
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
 	}
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
+	}
 	layers := make([]LayerInfo, 0)
 	err := r.pages[index].page.WithPageContent(func(content *models.PageContent) error {
 		if content == nil {

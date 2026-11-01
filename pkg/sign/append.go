@@ -218,7 +218,7 @@ func prepareAppend(ctx context.Context, pkg *container.Package, entries []entry,
 			signature.FilePath, signature.Type, signature.Relative = name, old.Type, old.Relative
 			previous = append(previous, signature)
 			plan.priorFiles = append(plan.priorFiles, name)
-			locations := []models.StLoc{signature.SignedValue}
+			locations := []spec.StLoc{signature.SignedValue}
 			if seal := signature.SignedInfo.Seal; seal != nil {
 				locations = append(locations, seal.BaseLoc, seal.ImageLoc)
 			}

@@ -1,6 +1,10 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+
+	"github.com/zc310/ofd/pkg/spec"
+)
 
 // Attachments 附件列表容器
 type Attachments struct {
@@ -11,13 +15,13 @@ type Attachments struct {
 
 // Attachment 单个附件定义
 type Attachment struct {
-	ID           string       `xml:"ID,attr"`
-	Name         string       `xml:"Name,attr"`
-	Format       *string      `xml:"Format,attr,omitempty"`
-	CreationDate DateTime     `xml:"CreationDate,attr,omitempty"`
-	ModDate      DateTime     `xml:"ModDate,attr,omitempty"`
-	Size         *float64     `xml:"Size,attr,omitempty"`
-	Visible      OptionalBool `xml:"Visible,attr,omitempty"`
-	Usage        string       `xml:"Usage,attr,omitempty"`
-	FileLoc      StLoc        `xml:"FileLoc"`
+	ID           string        `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
+	Name         string        `xml:"Name,attr"`
+	Format       *string       `xml:"Format,attr,omitempty"`
+	CreationDate spec.DateTime `xml:"CreationDate,attr,omitempty"`
+	ModDate      spec.DateTime `xml:"ModDate,attr,omitempty"`
+	Size         *float64      `xml:"Size,attr,omitempty"`
+	Visible      OptionalBool  `xml:"Visible,attr,omitempty"`
+	Usage        string        `xml:"Usage,attr,omitempty"`
+	FileLoc      spec.StLoc    `xml:"FileLoc"`
 }

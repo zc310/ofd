@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/xml"
 	"time"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Extensions 扩展列表容器
@@ -21,7 +23,7 @@ type Extension struct {
 	RefID      StRefID         `xml:"RefId,attr"`
 	Properties []ExtensionProp `xml:"Property,omitempty"`
 	Data       *interface{}    `xml:"Data,omitempty"`
-	ExtendData *StLoc          `xml:"ExtendData,omitempty"`
+	ExtendData *spec.StLoc     `xml:"ExtendData,omitempty"`
 }
 
 // ExtensionProp 扩展属性
@@ -78,7 +80,7 @@ func (e *Extension) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				e.Data = &data
 			case "ExtendData":
-				var loc StLoc
+				var loc spec.StLoc
 				if err := d.DecodeElement(&loc, &elem); err != nil {
 					return err
 				}

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/beevik/etree"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -30,7 +29,7 @@ func resourceEntries(pkg *inputPackage, docEntry string, contents []string, oper
 			if !matches || location == "" {
 				continue
 			}
-			name, err := resolveEntryLocation(models.StLoc(source).Dir(), location)
+			name, err := resolveEntryLocation(spec.StLoc(source).Dir(), location)
 			if err != nil {
 				return fmt.Errorf("%s 的资源路径 %q 无效: %w", source, location, err)
 			}

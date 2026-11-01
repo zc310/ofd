@@ -1,6 +1,9 @@
-package models
+package spec
 
-import "testing"
+import (
+	"encoding/xml"
+	"testing"
+)
 
 func TestStLoc(t *testing.T) {
 	tests := []struct {
@@ -100,5 +103,36 @@ func TestStLocMethods(t *testing.T) {
 	}
 	if path.HasPrefix("/Other") {
 		t.Errorf("HasPrefix 失败: 应为 false")
+	}
+}
+
+func TestStLocXMLPreservesOriginalElementAndAttributeText(t *testing.T) {
+	var value struct {
+		BaseLoc StLoc `xml:"BaseLoc,attr"`
+		FileLoc StLoc `xml:"FileLoc"`
+	}
+	if err := xml.Unmarshal([]byte(`<Reference BaseLoc="../Res/./Font.TTF"><FileLoc>/Doc_0/../Doc_1/Content.xml</FileLoc></Reference>`), &value); err != nil {
+		t.Fatal(err)
+	}
+	if value.BaseLoc != "../Res/./Font.TTF" || value.FileLoc != "/Doc_0/../Doc_1/Content.xml" {
+		t.Fatalf("XML解码提前规范化了路径：%+v", value)
+	}
+	if got := value.BaseLoc.Resolve("/Doc_0/Pages"); got != "/Doc_0/Res/Font.TTF" {
+		t.Fatalf("包内路径解析改变：%s", got)
+	}
+	if !StLoc("").IsEmpty() || StLoc("").String() != "" || StLoc("/x").IsEmpty() {
+		t.Fatal("空路径语义改变")
+	}
+	if !StLoc("/Doc_0/Page.xml").IsAbsolute() || StLoc("Doc_0/Page.xml").IsAbsolute() {
+		t.Fatal("绝对路径语义改变")
+	}
+	if got := StLoc("/Doc_0").Join("Pages", "../Res", "a.png"); got != "/Doc_0/Res/a.png" {
+		t.Fatalf("Join语义改变：%s", got)
+	}
+	if !StLoc("/Doc_0/Page.xml").In("/Doc_0") || StLoc("/Doc_01/Page.xml").In("/Doc_0") {
+		t.Fatal("目录前缀语义改变")
+	}
+	if got := StLoc("/Doc_0/Page.xml").TrimPrefix("/Doc_0/"); got != "Page.xml" {
+		t.Fatalf("TrimPrefix语义改变：%s", got)
 	}
 }

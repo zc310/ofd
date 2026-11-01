@@ -2,7 +2,7 @@
 import { sliceFunction, sliceFunctionUntil, load, createSuite } from './harness.mjs';
 
 const suite = createSuite('文档操作权限');
-const helpers = ['setDocumentPermissions', 'pagePermissionAllowed', 'requirePagePermission', 'blockRestrictedCopy', 'blockRestrictedPageSave'];
+const helpers = ['setDocumentPermissions', 'permissionAccessAllowed', 'pagePermissionAllowed', 'requirePagePermission', 'blockRestrictedCopy', 'blockRestrictedPageSave'];
 const actions = ['copyCurrentPageText', 'copyDocumentText', 'printSelectedPages', 'openPrintDialog', 'openExportDialog', 'exportDocumentPages', 'startExport', 'loadText', 'buildTextLayer'];
 function baseState() {
   const state = {
@@ -147,6 +147,25 @@ suite.group('打印正份额提示与缺省份额');
   suite.check(state.printPermissionNote.textContent.includes('2 份'), '选页显示正打印份额');
   state.selectedPrintIndexes = () => [0]; state.update();
   suite.check(state.printPermissionNote.textContent === '', '不限份额不显示错误限制');
+}
+
+suite.group('有效期独立于导出和打印声明，前端缓存不能当作永久授权');
+{
+  const state = baseState();
+  const start = '2026-01-01T00:00:00Z', end = '2026-01-02T00:00:00Z';
+  suite.check(state.permissionAccessAllowed({ start_date: start, end_date: end }, Date.parse(start)), '包含开始端点');
+  suite.check(!state.permissionAccessAllowed({ start_date: start, end_date: end }, Date.parse(start) - 1), '开始前拒绝访问');
+  suite.check(!state.permissionAccessAllowed({ start_date: start, end_date: end }, Date.parse(end) + 1), '结束后拒绝访问');
+  suite.check(!state.permissionAccessAllowed({ accessible: false }), '引擎已拒绝的快照不能恢复授权');
+  suite.check(!state.permissionAccessAllowed({ end_date: 'invalid' }), '非法期限拒绝');
+  state.setDocumentPermissions([{ pages: [0], export: false, printable: false, accessible: true }]);
+  suite.check(state.pagePermissionAllowed('access', [0]) && !state.pagePermissionAllowed('export', [0]), '普通预览不受Export限制');
+  state.setDocumentPermissions([{ pages: [0], export: true, printable: true, end_date: '2000-01-01T00:00:00Z' }]);
+  suite.check(!state.pagePermissionAllowed('access', [0]) && !state.documentPermissionSummary.export && !state.documentPermissionSummary.print, '到期后禁用内容操作');
+  load(state, sliceFunction('loadImage'), { expose: { loadImage: 'loadImage' } });
+  let denied = false;
+  try { await state.loadImage(0, 'page', 1, {}); } catch (error) { denied = error.code === 'permission_denied'; }
+  suite.check(denied, '缓存读取之前拒绝到期页面，无需触发渲染');
 }
 
 process.exitCode = suite.report() ? 1 : 0;

@@ -106,7 +106,7 @@ func Discover(ctx context.Context, pkg *container.Package, limits crypt.Limits) 
 	if err != nil {
 		return nil, err
 	}
-	var root models.OFD
+	var root spec.OFD
 	// 整包加密可使用不可解析的占位主入口，此时没有可发现的外层签名。
 	if err := securexml.Decode(ctx, data, "OFD", &root); err != nil {
 		if ctx.Err() != nil {

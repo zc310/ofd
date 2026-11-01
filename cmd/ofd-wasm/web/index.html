@@ -572,7 +572,14 @@
      .page-spread > .page-card, .page-spread .page-placeholder { flex: 0 0 auto; }
      .page-spread .page-placeholder { min-height: 180px; border-radius: 2px; background: transparent; }
      .page-card { position: relative; width: 820px; max-width: none; min-height: 180px; overflow: hidden; background: var(--document-background, #ffffff); box-shadow: 0 4px 20px #17203340; }
-    .page-card.loading::after { position: absolute; top: 50%; left: 50%; z-index: 1; padding: 5px 9px; border-radius: 4px; background: #ffffffcc; color: #667188; content: "正在渲染..."; font-size: 13px; transform: translate(-50%, -50%); }
+     .remark-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+     .annotation-note { position: absolute; width: max-content; max-width: 220px; transform-origin: 0 0; pointer-events: auto; color: #172033; font: 13px/1.5 system-ui, sans-serif; }
+     .annotation-note[hidden] { display: none; }
+     .annotation-note summary { padding: 2px 6px; border: 1px solid #b8942e; border-radius: 3px; background: #fff3bd; cursor: pointer; }
+     .annotation-note[open] { z-index: 1; }
+     .annotation-note-text { width: 220px; max-height: 200px; padding: 8px; border: 1px solid #b8942e; border-radius: 3px; background: #fff9de; box-shadow: 0 2px 8px #17203340; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; }
+     .annotation-note summary:focus-visible { outline: 2px solid #2476bd; outline-offset: 2px; }
+     .page-card.loading::after { position: absolute; top: 50%; left: 50%; z-index: 1; padding: 5px 9px; border-radius: 4px; background: #ffffffcc; color: #667188; content: "正在渲染..."; font-size: 13px; transform: translate(-50%, -50%); }
     .page-card.render-error { display: grid; place-items: center; padding: 24px; background: #f7eaea; }
     .page-error { display: grid; max-width: 90%; justify-items: center; gap: 8px; color: #9b3e3e; text-align: center; }
     .page-error strong { font-size: 15px; }
@@ -705,6 +712,22 @@
        #page-number { width: 50px; }
        #back-to-top { min-width: 40px; min-height: 40px; }
      }
+    /* 文档初始界面偏好只作用于阅读器自身，恢复按钮不属于可隐藏组件。 */
+    body.document-hide-toolbar header > .toolbar-group:not(.page-group),
+    body.document-hide-menubar header > .page-group,
+    body.document-hide-window-ui #sidebar,
+    body.document-hide-window-ui #sidebar-toggle,
+    body.document-hide-window-ui #sidebar-backdrop,
+    body.document-hide-window-ui .sidebar-resizer,
+    body.document-hide-window-ui #status,
+    body.document-hide-window-ui #page-pill,
+    body.document-hide-window-ui #back-to-top,
+    body.document-hide-window-ui #debug-panel { display: none !important; }
+    body.document-hide-window-ui .reader { grid-template-columns: minmax(0, 1fr); max-width: 100%; }
+    body.document-hide-window-ui .reader > #pages { grid-column: 1; }
+    #restore-document-ui { position: fixed; top: calc(8px + env(safe-area-inset-top)); right: 10px; z-index: 20; min-height: 38px; padding: 6px 12px; border: 1px solid #ffffff66; border-radius: 20px; background: #243247; color: #fff; box-shadow: 0 2px 8px #17203340; cursor: pointer; }
+    #restore-document-ui[hidden] { display: none; }
+    #restore-document-ui:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
     /* 浏览器菜单打印也必须经阅读器的选页与权限检查；正式打印使用独立窗口。 */
     @media print {
       body > * { display: none !important; }
@@ -825,7 +848,8 @@
         <button type="button" data-zoom="1.5">150%</button>
         <button type="button" data-zoom="2">200%</button>
         <button type="button" data-zoom="3">300%</button>
-        <button type="button" data-zoom-fit="width">适应宽度</button>
+         <button type="button" data-zoom-fit="width">适应宽度</button>
+         <button type="button" data-zoom-fit="height">适应高度</button>
         <button type="button" data-zoom-fit="page">适应页面</button>
       </div>
     </div>
@@ -839,6 +863,7 @@
       </div>
     </div>
   </header>
+  <button id="restore-document-ui" type="button" hidden title="取消文档建议的界面隐藏，恢复原有显示设置">恢复界面</button>
   <div id="status">
     <span id="status-message">正在加载 WASM Worker...</span>
      <progress id="render-progress" max="1" value="0" hidden></progress>

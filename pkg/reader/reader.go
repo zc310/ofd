@@ -14,6 +14,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
+	"github.com/zc310/ofd/pkg/permission"
 )
 
 const (
@@ -85,6 +86,8 @@ func (options FontUsageOptions) normalized() FontUsageOptions {
 
 // OpenOptions 配置 OFD 打开行为。
 type OpenOptions struct {
+	// PermissionPolicy 默认执行声明；忽略声明须由调用方明确授权，不能由文档自行请求。
+	PermissionPolicy permission.Policy
 	// PageCacheCapacity 是页面缓存最多保留的页面数量，0 表示使用默认值。
 	PageCacheCapacity int
 	// PageCacheBytes 是页面缓存允许使用的估算最大字节数，0 表示使用默认值。
@@ -98,6 +101,7 @@ type Reader struct {
 	renderDocsMu     sync.Mutex
 	metadataMu       sync.Mutex
 	closed           bool
+	permissionPolicy permission.Policy
 	ofd              *parser.OFD
 	pages            []pageRef
 	renderDocs       *cache.LRU[renderDocumentKey, *render.Document]
@@ -130,6 +134,9 @@ func Open(input any, options ...OpenOptions) (*Reader, error) {
 	if input == nil {
 		return nil, errEmptyInput
 	}
+	if err := config.PermissionPolicy.Validate(); err != nil {
+		return nil, err
+	}
 	if data, ok := input.([]byte); ok {
 		if len(data) == 0 {
 			return nil, errEmptyInput
@@ -148,9 +155,14 @@ func Open(input any, options ...OpenOptions) (*Reader, error) {
 	}
 
 	r := &Reader{
-		ofd:      ofd,
-		options:  RenderOptions{DPI: defaultDPI, Background: color.Transparent},
-		metadata: &readerMetadata{},
+		ofd:              ofd,
+		options:          RenderOptions{DPI: defaultDPI, Background: color.Transparent},
+		metadata:         &readerMetadata{},
+		permissionPolicy: config.PermissionPolicy,
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		_ = ofd.Close()
+		return nil, err
 	}
 	for documentIndex, document := range ofd.Documents {
 		// 无页文档体不会进入 r.pages，也就无法由 Reader.Close 追踪和关闭。
@@ -182,6 +194,9 @@ func (r *Reader) PageMediaActions() ([]PageLink, error) {
 	defer r.mu.RUnlock()
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()

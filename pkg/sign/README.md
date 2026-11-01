@@ -6,6 +6,14 @@
 并将命令输出的 `SignedValue.dat` 写回包中。外部命令协议见
 [ofd-creator](../../cmd/ofd-creator/README.md#外部命令重签名)。
 
+默认权限策略按GB/T 33190—2016表8执行：`Sign`在首次调用签名器之前预检全部文档体的
+`Signature`和有效期，不额外要求`Edit`；每次签署前及输出前复查。`Remove`按本库编辑策略
+检查全部文档体的`Edit`与有效期（表8未另设移除签名权限）。拒绝可由
+`errors.Is(err, permission.ErrDenied)`识别；`errors.As`可读取操作、文档体索引及原因。
+获明确授权的Go诊断流程可在`Options.PermissionPolicy`或`RemoveOptions.PermissionPolicy`
+设置`permission.Policy{Mode: permission.IgnoreDeclarations}`。物理签署若无法读取加密DocRoot
+声明，默认失败而非自动豁免。签名器已完成的调用无法撤销；运行中失败应丢弃部分输出。
+
 ## 移除与清理已有签名
 
 `Remove` 无需签名器，接受文件路径、`[]byte` 或 `io.Reader`，向指定 Writer 写出新 OFD：

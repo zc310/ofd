@@ -3,6 +3,7 @@ package watermark
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -19,6 +20,7 @@ import (
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -363,7 +365,7 @@ func TestPermissionsWatermarkFalseBlocks(t *testing.T) {
 
 	var blocked bytes.Buffer
 	err := Add(docData, Target{}, sampleWatermark(), &blocked, Options{})
-	if err == nil || !strings.Contains(err.Error(), "禁止") {
+	if !errors.Is(err, permission.ErrDenied) {
 		t.Fatalf("Permissions/Watermark=false 应拒绝, got %v", err)
 	}
 	var skipped bytes.Buffer

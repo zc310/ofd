@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/permission"
 )
 
 // Converter 配置转换器
 type Converter struct {
+	permissionPolicy permission.Policy
+	permissionScopes []permissionScope
 	dpi              geom.Resolution
 	format           string // png, jpeg, svg, eps, tex
 	imageOCREnabled  bool
@@ -130,18 +133,24 @@ func (c *Converter) Context() context.Context {
 	return c.ctx
 }
 
-// checkCancelled 返回取消错误，未取消时返回 nil。
+// checkCancelled 是处理检查点：优先原样返回取消错误，再复查本次选页的导出权限与有效期。
 //
 // 约定：取消类错误原样返回 ctx.Err()，不包装。调用方要区分 context.Canceled
 // （服务关停，任务该重排）与 context.DeadlineExceeded（任务超时，该重试），
 // 一旦被包成"转换失败: context canceled" 这个区分就没了。
 func (c *Converter) checkCancelled() error {
-	return c.Context().Err()
+	if err := c.Context().Err(); err != nil {
+		return err
+	}
+	if c == nil {
+		return nil
+	}
+	return c.checkPermissions()
 }
 
 // resultError 覆盖阶段内包装过的取消错误，也检查最后一次输出或关闭期间的取消。
 func (c *Converter) resultError(err error) error {
-	if canceled := c.checkCancelled(); canceled != nil {
+	if canceled := c.Context().Err(); canceled != nil {
 		return canceled
 	}
 	return err

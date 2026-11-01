@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/zc310/ofd/pkg/crypt"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/sign"
 )
 
@@ -105,10 +106,22 @@ func TestSignCLIAppendsWithExternalSignerAndKeepsFailedOutputUntouched(t *testin
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"sign", "--physical", "--validate", "--sign-check-method", "SHA512", "--sign-cmd", signer, "-o", physicalPath, encryptedPath}, &stdout, &stderr); code != exitOK || stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Fatalf("物理签署 CLI 失败: %d %s", code, &stderr)
+	if err := os.WriteFile(physicalPath, []byte("keep physical output"), 0600); err != nil {
+		t.Fatal(err)
 	}
-	results, err = sign.VerifyPhysical(t.Context(), physicalPath, sign.VerificationOptions{})
+	if code := run([]string{"sign", "--physical", "--validate", "--sign-check-method", "SHA512", "--sign-cmd", signer, "-o", physicalPath, encryptedPath}, &stdout, &stderr); code != exitResource || stdout.Len() != 0 || !strings.Contains(stderr.String(), "权限") {
+		t.Fatalf("不可读的加密权限被物理签署隐式豁免: %d %s", code, &stderr)
+	}
+	data, err = os.ReadFile(physicalPath)
+	if err != nil || string(data) != "keep physical output" {
+		t.Fatalf("权限拒绝覆盖了输出：%q %v", data, err)
+	}
+	// 获明确授权的Go诊断流程仍能执行物理签署，不把--physical本身视为授权。
+	var physical bytes.Buffer
+	if err := sign.Sign(t.Context(), encrypted.Bytes(), &physical, sign.Options{Physical: true, Type: "Sign", CheckMethod: "SHA512", Command: signer, PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations}}); err != nil {
+		t.Fatal(err)
+	}
+	results, err = sign.VerifyPhysical(t.Context(), physical.Bytes(), sign.VerificationOptions{})
 	if err != nil || len(results) != 1 || !results[0].DigestValid || !results[0].Result.Valid || results[0].Result.FullyValid() {
 		t.Fatalf("物理签名结果错误: %+v %v", results, err)
 	}

@@ -21,7 +21,7 @@ type PageLinkResolver = navigation.PageResolver
 // CompositeActionVisitor 同步读取复合资源内部的图元动作。
 // unit 及其嵌套数据只读；matrix 将局部 OFD 坐标映射到页面，clip 为页面坐标裁剪。
 // 回调只能在调用期间访问数据，不能保存模型指针或修改共享路径。
-type CompositeActionVisitor func(id models.StID, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path)
+type CompositeActionVisitor func(id models.StID, templateID uint64, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path)
 
 var (
 	errEmptyCompositeActionInput = errors.New("复合动作的文档、页面或回调为空")
@@ -53,7 +53,7 @@ func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibi
 		}
 		unit := navigation.GraphicUnit(item)
 		if unit != nil && unit.Actions != nil && navigation.BoundaryUsable(unit.Boundary) {
-			visit(pageItemID(item), *unit, frame.Matrix, frame.Clip)
+			visit(pageItemID(item), frame.TemplateID, *unit, frame.Matrix, frame.Clip)
 		}
 	}
 	if pageContent.Content != nil {
@@ -63,13 +63,19 @@ func (p *Document) WalkCompositeActions(page *parser.Page, visibility PageVisibi
 		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
 			continue
 		}
-		template, err := p.LoadTemplate(models.StID(ref.TemplateID))
+		template, scope, release, err := p.templateScope(models.StID(ref.TemplateID))
 		if err != nil {
 			return fmt.Errorf("加载模板 %d 失败: %w", ref.TemplateID, err)
 		}
 		if template != nil && template.Content != nil {
-			content.WalkLayers(frame, template.Content.Layer, visitor)
+			child := frame
+			child.Scope = &contentSource{Document: scope, budget: &budget}
+			if len(template.PageRes) != 0 {
+				child.TemplateID = uint64(ref.TemplateID)
+			}
+			content.WalkLayers(child, template.Content.Layer, visitor)
 		}
+		release()
 	}
 	annotations, err := p.LoadAnnotation(page.ID)
 	if err != nil {
@@ -127,14 +133,18 @@ func (p *Document) PageLinksWithVisibilityE(page *parser.Page, resolve PageLinkR
 		if visibility.HiddenTemplates[models.StID(ref.TemplateID)] {
 			continue
 		}
-		template, loadErr := p.LoadTemplate(models.StID(ref.TemplateID))
+		template, scope, release, loadErr := p.templateScope(models.StID(ref.TemplateID))
 		if loadErr != nil {
 			return nil, fmt.Errorf("加载模板 %d 失败: %w", ref.TemplateID, loadErr)
 		}
 		if template == nil || template.Content == nil {
+			release()
 			continue
 		}
-		content.WalkLayers(frame, template.Content.Layer, visit)
+		child := frame
+		child.Scope = &contentSource{Document: scope, budget: &budget}
+		content.WalkLayers(child, template.Content.Layer, visit)
+		release()
 	}
 	annotation, err := p.LoadAnnotation(page.ID)
 	if err != nil {

@@ -200,6 +200,13 @@ func canvasImage(img image.Image) image.Image {
 		if lazy.ColorModel() == color.GrayModel {
 			return nil
 		}
+		// canvas 的延迟解码字段没有锁；必须在 Once 发布共享包装前完成解码，
+		// 避免不同页面或矢量表面并发栅格化时写入同一图片。原编码字节仍供 PDF 内嵌。
+		if wrapped, ok := out.(*cimage.Image); ok {
+			if _, err := wrapped.Image(); err != nil {
+				return nil
+			}
+		}
 		return out
 	})
 	if ci == nil {

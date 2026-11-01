@@ -8,6 +8,26 @@ import (
 	"github.com/zc310/ofd/internal/render/drawing"
 )
 
+// templateScope 为专属资源创建短生命周期绘制上下文，字体、颜色和图像缓存不与正文共用。
+// 原文档页面租约由调用方持有；关闭只释放绘制资源，不关闭借用的解析视图与 ZIP。
+func (p *Document) templateScope(id models.StID) (*models.PageContent, *Document, func(), error) {
+	content, resources, err := p.LoadTemplateResources(id)
+	if err != nil || resources == nil {
+		return content, p, func() {}, err
+	}
+	scope := NewDocumentWithDPI(p.background, resources, p.dpi)
+	for _, family := range p.fallbackFontFamilies() {
+		if err := scope.UseFallbackFont(family); err != nil {
+			scope.Close()
+			return nil, nil, func() {}, err
+		}
+	}
+	if scope.fonts != nil {
+		scope.fonts.RegisterPageGlyphs(resources, nil, content)
+	}
+	return content, scope, scope.Close, nil
+}
+
 // templateSurfaceDrawer 是可选接口：栅格后端直接绘制，
 // 矢量后端可保留并复用只读的模板表面。
 type templateSurfaceDrawer interface {

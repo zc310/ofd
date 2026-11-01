@@ -17,7 +17,6 @@ import (
 
 	"github.com/klauspost/compress/zip"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/spec"
@@ -56,17 +55,17 @@ func TestVersionPagesMatchActualPaths(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name  string
-		files []models.VersionFile
+		files []spec.VersionFile
 		want  []int
 	}{
-		{name: "absolute_reordered_page", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_7/Content.xml"}}, want: []int{0}},
-		{name: "relative_path", files: []models.VersionFile{{Path: "../Pages/Page_7/Content.xml"}}, want: []int{0}},
-		{name: "same_directory_different_version", files: []models.VersionFile{{Path: "/Doc_0/Pages/Page_1/Content_1.xml"}}},
-		{name: "different_document", files: []models.VersionFile{{Path: "/Doc_1/Pages/Page_1/Content.xml"}}},
-		{name: "case_sensitive", files: []models.VersionFile{{Path: "/Doc_0/Pages/page_1/Content.xml"}}},
-		{name: "arbitrary_page_name", files: []models.VersionFile{{Path: "../Pages/cover.xml"}}, want: []int{2}},
-		{name: "resource_in_page_directory", files: []models.VersionFile{{Path: "../Pages/Page_1/PageRes.xml"}}},
-		{name: "sort_and_deduplicate", files: []models.VersionFile{{Path: "../Pages/Page_1/Content.xml"}, {Path: "../Pages/Page_7/Content.xml"}, {Path: "/Doc_0/Pages/Page_1/Content.xml"}}, want: []int{0, 1}},
+		{name: "absolute_reordered_page", files: []spec.VersionFile{{Path: "/Doc_0/Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "relative_path", files: []spec.VersionFile{{Path: "../Pages/Page_7/Content.xml"}}, want: []int{0}},
+		{name: "same_directory_different_version", files: []spec.VersionFile{{Path: "/Doc_0/Pages/Page_1/Content_1.xml"}}},
+		{name: "different_document", files: []spec.VersionFile{{Path: "/Doc_1/Pages/Page_1/Content.xml"}}},
+		{name: "case_sensitive", files: []spec.VersionFile{{Path: "/Doc_0/Pages/page_1/Content.xml"}}},
+		{name: "arbitrary_page_name", files: []spec.VersionFile{{Path: "../Pages/cover.xml"}}, want: []int{2}},
+		{name: "resource_in_page_directory", files: []spec.VersionFile{{Path: "../Pages/Page_1/PageRes.xml"}}},
+		{name: "sort_and_deduplicate", files: []spec.VersionFile{{Path: "../Pages/Page_1/Content.xml"}, {Path: "../Pages/Page_7/Content.xml"}, {Path: "/Doc_0/Pages/Page_1/Content.xml"}}, want: []int{0, 1}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := versionPages(pagePaths, "/Doc_0/Versions", test.files)

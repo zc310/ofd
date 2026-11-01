@@ -18,6 +18,7 @@ function baseState() {
       return { pages: id ? [{ index: 0, width: 99 }] : [{ index: 0 }, { index: 1 }], permissions: [{ export: !!id, printable: true }] };
     } },
     clearDocumentView: () => { state.clears++; },
+    applyDocumentPreferences: async () => { state.preferencesApplied = true; },
     clearInjectedFonts: () => { state.fontsCleared = true; },
     loadEmbeddedFonts: generation => { state.fontLoadGeneration = generation; },
     saveReadingPosition: () => {}, restorePageRotation: () => {},
@@ -47,6 +48,7 @@ suite.group('独立历史页面无需出现在主文档页面清单中');
   suite.check(state.calls[0][1] === 'v1' && state.pageInfos.length === 1 && state.pageInfos[0].width === 99, '加载历史页面尺寸');
   suite.check(state.selectedVersionID === 'v1' && state.current === 0, '记录版本并从首页阅读');
   suite.check(state.appliedPermissions[0].export === true, '版本切换同步更新权限');
+  suite.check(state.preferencesApplied, '版本切换重新应用文档偏好');
   suite.check(state.fontsCleared && state.fontLoadGeneration === state.documentGeneration && state.clears === 1, '替换字体并清理旧视图');
   suite.check(state.outlineReloaded && state.linksReloaded && state.signaturesReloaded, '重新读取导航、动作和签章');
   suite.check(state.currentDocumentKey === 'doc:version:0:v1', '阅读记录按版本隔离');

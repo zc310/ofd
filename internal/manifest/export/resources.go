@@ -12,6 +12,7 @@ import (
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func (e *documentExporter) exportDrawParams(result *manifest.Manifest) error {
@@ -378,7 +379,7 @@ func (e *documentExporter) exportPageResources(index int, page *parser.Page, tar
 	return nil
 }
 
-func (e *documentExporter) pageResourceData(location models.StLoc) []byte {
+func (e *documentExporter) pageResourceData(location spec.StLoc) []byte {
 	for _, source := range e.pageResources {
 		if source.path == location {
 			return append([]byte(nil), source.data...)
@@ -467,7 +468,7 @@ func (e *documentExporter) normalizeResourceXML(root *etree.Element) {
 	walk(root)
 }
 
-func (e *documentExporter) exportResourceFiles(root *etree.Element, source models.StLoc, resourceDir string) ([]exportedResourceFile, error) {
+func (e *documentExporter) exportResourceFiles(root *etree.Element, source spec.StLoc, resourceDir string) ([]exportedResourceFile, error) {
 	base := source.Dir()
 	baseLoc := root.SelectAttrValue("BaseLoc", ".")
 	if baseLoc == "" {

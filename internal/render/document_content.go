@@ -36,6 +36,14 @@ type contentSource struct {
 type contentFrame = content.Frame[*contentSource]
 type contentVisitor = content.Visitor[*contentSource]
 
+func (s *contentSource) templateScope(id models.StID) (*contentSource, func(), error) {
+	_, scope, release, err := s.Document.templateScope(id)
+	if err != nil {
+		return nil, release, err
+	}
+	return &contentSource{Document: scope, budget: s.budget}, release, nil
+}
+
 func (s *contentSource) ResolveComposite(object models.CompositeObject, inherited *models.DrawParam, depth int) (content.Composite, bool) {
 	unit := s.GetCompositeUnit(models.StID(object.ResourceID))
 	if unit == nil || !s.budget.AllowComposite(models.StID(object.ResourceID)) {
@@ -80,6 +88,7 @@ func (p *Document) walkPageText(page *parser.Page, visibility PageVisibility, op
 		Scope: &contentSource{Document: p, budget: &budget}, Box: pageContent.Area.PhysicalBox,
 		Matrix: geom.Identity, Source: TextSourcePage,
 	}
+	frame.TemplateScope = frame.Scope.templateScope
 	var annotations *models.PageAnnot
 	if options.IncludeAnnotations || options.IncludeWatermarks {
 		annotations, err = p.LoadAnnotation(page.ID)

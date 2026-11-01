@@ -88,6 +88,8 @@ Go `reader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermissio
 
 - 附带时间戳时，明细中的“时间戳时刻的签章者证书”（`timestamp.signing_time`）检查签章者证书在该时刻的有效期和吊销状态。显式编码扩展默认值 `critical=FALSE` 会导致完整格式检查失败，原始数学签名结果仍单独展示。
 - 注解页签按页列出文档注解（类型/子类型、创建者、日期、备注与隐藏徽标），点击跳转到对应页面的注解位置。
+- 有外观定位的可见 `Remark` 在页面独立备注层显示“备注”按钮，点击或键盘展开；标准表61的 `NoZoom/NoRotate` 只控制备注面板，不改变图像中的 `Appearance`。锚点随页面位置旋转，备注本身可保持固定大小或朝向。无定位的备注仍可在注解页签阅读。面板基准为100%时220px宽、13px字号，是阅读器呈现约定，不是OFD规定的排版。
+- 浏览器打印在对应原始页面后附可见且 `Print=true` 的备注清单（缺省 true，包括没有外观定位的备注），不依赖备注是否展开；`Print=false` 不会删除原注释外观。长备注可续页。打印不复用屏幕缩放/旋转，备注以正常打印字号输出；PNG/PDF/SVG导出仍输出原外观，不额外烘焙阅读器备注面板。备注为只读展示，不提供编辑。
 
 - “更多 → 图层”以页面为父节点、正文 `Content/Layer` 及背景/前景模板引用为子节点展示树形列表。点击小三角展开/折叠，点击页名定位，勾选子节点控制显示；模板名称和 ID 可用于辨认内容，对象数量放在悬停提示中。默认展开当前页，其他页展开时才加载；超过 100 页时按组展示，可用顶部“上一组”“下一组”和“当前页”导航。每页独立保留当前会话中的设置；关闭某页模板不会影响其他共用该模板的页面。仅有一个正文层的文档会整体显示/隐藏该层。注解和电子签章不属于此列表。
 - 切换正文层或模板会刷新该页及缩略图，其中的文字不再参与选择、复制或搜索，链接/媒体点击热区也会移除；已有搜索结果清除后需重新搜索。PNG/JPG/SVG、PDF、TXT 导出及打印使用各页当前显示设置。源 OFD 不改写；重新打开或成功切换版本后恢复全部显示，版本切换失败时保留原设置。
@@ -95,12 +97,16 @@ Go `reader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermissio
 - 大纲项带目标位置时按 `Dest` 的 `Top`/`Left`/`Zoom` 定位，`FitR` 先按矩形适配缩放，并按当前页面旋转换算坐标；带 URI 的条目在新标签页打开链接。
 - 页面上的可点击链接会叠加半透明热区：链接来自注解（`Type="Link"`）与页面正文/模板图元的 `CLICK` 动作；桌面端鼠标悬停或键盘聚焦内部链接约 400 ms 后，在链接附近以 GNOME Document Viewer 风格显示目标页局部预览；有 `Dest` 时围绕目标位置取景，无目标位置时预览页面中部，按需以 96 DPI 渲染并复用缓存，独立于低分辨率侧栏缩略图。外部链接在新标签页打开，内部跳转按目标页与 `Dest` 定位，附件动作（`GotoA`）对图片/PDF/文本/音视频等可预览类型在新标签页打开、其它类型下载，并随页面旋转/缩放重新布局。触屏设备不显示悬停预览，点击行为不变。
 - 页面上的签章图片可点击：签名清单里每个带有效位置的签章会在对应页面的印章区域叠加热区，点击弹出“签章属性”浮层，内容与签名页签一致（提供者/公司、算法、签名时间、摘要/验签/可信徽标、签名范围、证书详情、导出签名值），并按页面旋转/缩放重新布局；骑缝章的点击热区和侧栏跳转高亮仅覆盖当前页经 `Clip` 裁剪后可见的切片。热区位于链接热区之下，重叠时链接优先。移动端浮层为底部抽屉；滚动、缩放、切换页面或文档时自动收起。
+
+权限执行使用共用评估层：打开和每次内容访问检查 `ValidPeriod`，包括普通预览、缓存返回和版本切换；空/倒置期限、尚未生效或已过期均拒绝，起止端点包含在有效期中。WASM `permission_denied` 同时返回 `reason/action/scope`（适用于同步接口），Worker传给页面调用方。权限快照增加 `accessible/access_reason`，仅供界面提示，实际操作仍由引擎复查。`ofd.checkPermission` 支持 `access/copy/export/print/edit/annot/signature/watermark/print_screen`；检查某操作不代表阅读器提供该编辑/签名功能。WASM不开放忽略声明选项。已发送到浏览器的图片、文字或资源无法撤回，不宣称能阻止操作系统截图；仍不保证实际打印份数。
 - 文档声明 `PageMode=UseOutlines` / `UseBookmarks` 且对应内容存在时默认打开相应页签；页签选择保存在浏览器本地。
 - 没有大纲或书签的文档在对应页签显示占位提示（页签始终可用，不会自动跳回缩略图），无跳转目标的大纲项不可点击；当前阅读页对应的大纲项/书签会高亮。
 - 侧栏宽度可用分隔条拖拽调整并保存在本地；大纲/书签条目右侧显示目标页码，并支持按标题过滤（保留命中项及其祖先）。
 - 大纲项按文档声明的 `Expanded` 决定默认展开状态，用户手动折叠/展开会按文档保存在本地并覆盖声明值；大纲页签提供“展开全部/折叠全部”（过滤时禁用），大纲/书签面板支持方向键与 Home/End 移动焦点，页签支持左右方向键切换。
 - 打开字体页签时会批量统计所有字体的使用页数并显示在“定位使用页”按钮上，无需逐个点击；统计结果按文档缓存。
-- 用户尚未保存布局/缩放偏好时，采用文档声明的 `PageLayout`（OneColumn/TwoPageL/TwoPageR 等近似映射为单页/双页）和 `ZoomMode`/自定义 `Zoom`；`FitHeight`/`FitRect` 近似为“适应页面”。用户保存过的偏好优先。
+- 用户尚未保存布局/缩放偏好时，采用文档声明的 `PageLayout`（OneColumn/TwoPageL/TwoPageR 等近似映射为单页/双页）和 `ZoomMode`/自定义 `Zoom`。`FitHeight` 精确适配当前页组高度，允许横向滚动；`FitRect` 完整容纳当前页组物理页面区域。表9的 `FitRect` 没有矩形坐标，不等同于带显式目标区域的 `Dest/FitR`。旋转、双页间距、异尺寸页与空白配页均计入适配尺寸。
+- 自动适配共用可用视口计算，扣除阅读器工具栏、状态栏、阅读区内边距及实际横向滚动条；窗口、侧栏、工具栏展开及全屏变化时重算，手动缩放后退出自动适配。普通滚动切页不突然改变缩放；首次打开、布局变化或重新选择适配时按当前页组计算，适应宽度仍以文档最宽页组为基准。自动适配比例不被手动缩放范围截断，位图渲染 DPI 仍受 96–300 上限约束。
+- 用户保存过的偏好优先；仅显式选择自动缩放模式才保存全局偏好，文档初始偏好和窗口重算不会写入存储。
 
 ### 键盘快捷键
 
@@ -122,7 +128,7 @@ Go `reader.Reader.Permissions()`、`CheckPermission()`、`CheckDocumentPermissio
 - PNG/JPG 正文始终按缩放比例提高渲染 DPI（96–300），放大时会重新栅格化；SVG 保持矢量渲染。
 - 页面渲染格式可选 PNG 位图、JPG 图片或 SVG 矢量，默认使用 PNG；JPG 不支持透明度，透明区域使用白色。
 - 设置文档背景色，支持白色、透明、自定义颜色以及暗夜紫灰、晨雾暖沙、复古深棕、极光钢蓝、柔光羊皮、半岛墨蓝和晴空浅灰主题。
-- 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应页面）。
+- 点击工具栏的缩放比例可打开预设缩放菜单（50%–300%、适应宽度、适应高度、适应页面）。
 - 底部页码胶囊包含上一页、页码输入/总页数、下一页，可直接输入页码跳转；可在“显示设置”中隐藏，或点击胶囊上的关闭按钮隐藏。
 - 打印、导出、复制当前页文字、复制全文收在工具栏最右侧的“文档操作”菜单（`more_vert` 图标）中；移动端该按钮固定在最右侧一行。
 - 文档信息面板分为“基本信息 / 安全信息 / 字体”三个 Tab，资源统计放在基本信息底部。面板高度受视口限制，只有内容区滚动，标题与 Tab 栏始终可见；支持方向键和 Home/End 切换 Tab。同一文档重开面板保留页签与滚动位置，打开新文件回到基本信息，切换历史版本保留 Tab 并更新内容。
@@ -335,7 +341,8 @@ ofd.preferences()
 ofd.text(0)
 ofd.search('关键词')
 ofd.pageLinks() // 页面正文图元上的可点击链接
-ofd.annotations() // 注解清单（含 Link 注解的 uri/target_page/dest）
+ofd.annotations() // 全量注解清单（含 Link 注解的 uri/target_page/dest）
+ofd.annotations(0) // 仅第一页，避免全量扫描
 await ofd.renderPage(0, { format: 'png', dpi: 72, background: '#00000000' })
 await ofd.renderPage(0, { format: 'jpg', dpi: 72 })
 await ofd.renderPage(0, { format: 'svg' })
@@ -411,7 +418,9 @@ make test-wasm-web
 - `ofd.outline()` 返回 `{ page_mode, nodes, bookmarks }`：`nodes` 是文档大纲树，每个节点为 `{ title, page, uri, dest, expanded, children }`；`page` 是从 0 开始的全局页索引，无法解析的目标为 `-1`；`uri` 是外部链接；`dest` 为 `{ type, left, top, right, bottom, zoom }`（未指定的字段为 `null`）；`expanded` 为文档声明的默认展开状态（`null` 表示未声明，按展开处理）。`bookmarks` 是 `{ name, page, dest }` 列表；`page_mode` 是文档声明的显示模式（如 `UseOutlines`）。
 - `ofd.customTags()` 返回自定义标签 XML 树。每个标签为 `{ namespace, path, root }`，节点为 `{ name, namespace, attributes, text, children, target }`；符合 `ObjectRef PageRef="...">对象 ID</ObjectRef>` 的节点会带有 `{ page, page_id, object_id, x, y, width, height, object_text }` 定位目标，`page` 是从 0 开始的全局页索引。
 - 大纲跳转目标优先取 `Goto.Dest` 的页面引用，其次按 `Goto.Bookmark` 的书签名称解析，没有页面目标时回退到 URI；没有大纲或书签时对应数组为空。
-- `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom }`：分别是文档声明的页面布局、缩放模式和自定义缩放比例；未声明时为空串或 `null`。
+- `ofd.preferences()` 返回 `{ page_layout, zoom_mode, zoom, tab_display, document_title, hide_toolbar, hide_menubar, hide_window_ui }`。布局、缩放模式和比例未声明时为空串或 `null`；`tab_display` 缺省为 `FileName`，隐藏标志缺省为 `false`。偏好和 `document_title` 来自同一文档体（首个声明偏好的文档体）。
+- 示例阅读器按 `TabDisplay` 设置页面标题与阅读器文档标签；`DocTitle` 无标题时回退文件名。按 GB/T 33190—2016 §7.5 表9采用 `FileName` 默认值，不采用附录 schema 中不一致的 `DocTitle` 默认值。元数据标题仅作为纯文本显示。
+- `HideToolbar` 隐藏阅读器工具组，`HideMenubar` 隐藏文档操作菜单组，`HideWindowUI` 隐藏侧栏、状态栏和浮动导航等辅助组件；不会隐藏浏览器自身界面或权限/凭据对话框。右上角始终保留“恢复界面”按钮，可撤销本次隐藏，不修改用户保存的显示设置；打开、取消、失败或切换版本时重新应用/清理文档偏好。这些只是初始视图建议，不构成权限限制。
 - `ofd.info()` 在文档元数据之外返回 `fonts`：`{ id, scope, name, family, bold, italic, serif, fixed_width, format, embedded }`，包含没有嵌入文件的逻辑字体，且不传输字体二进制数据；`scope` 是字体所属文档体索引，与 `id` 一起唯一标识一个字体。
 - `ofd.info()` 同时返回 `security: {encrypted, state}` 和 `permissions`（结构见[文档权限](#文档权限)）。`encrypted` 描述原文件，`state` 为普通文件的 `none` 或成功解锁后的 `unlocked`；版本切换保留原文件的加密事实，权限从当前版本重新读取。关闭文档或打开失败后不保留旧安全状态。返回值不包含口令或私钥，解锁状态不表示签名或完整性验证已通过。
 - `ofd.fontUsage(scope, fontID, maxScan, maxPages)` 返回 `{ pages, scanned, truncated }`：`pages` 是使用该字体的页面索引（升序），`scanned` 是实际扫描的页数，`truncated` 表示因扫描页数或结果上限而可能不完整。`ofd.fontUsageAll(maxScan, maxPages)` 一次扫描返回 `{ fonts: [{ scope, id, pages }], scanned, truncated }`。两个上限都可省略，默认 `maxScan=10000`、`maxPages=500`，绝对上限为 `100000`/`5000`；示例阅读器按文档页数选择扫描上限。按 `(scope, id)` 匹配可避免多文档体之间字体 ID 冲突。
@@ -447,7 +456,15 @@ make test-wasm-web
 - `ofd.attachments()` 返回附件清单：`{ scope, id, name, format, size, has_size, actual_size, usage, visible, exists }`；`size` 是声明的字节数（`has_size=false` 时无效），`actual_size` 是包内实际字节数（文件缺失或未知时为 0），`visible` 未声明时为 true。
 - `ofd.attachmentData(scope, id, maxBytes)` 读取附件二进制内容（返回可转移的 `ArrayBuffer`）；`maxBytes` 省略时默认 32 MiB，硬上限 128 MiB，超过上限返回错误。
 - `ofd.media()` 返回多媒体资源清单：`{ scope, id, name, type, format, size, exists }`；`type` 通常为 `Image`/`Audio`/`Video`，`name` 是资源文件名。`ofd.mediaData(scope, id, maxBytes)` 读取资源二进制内容，大小限制同附件。
-- `ofd.annotations()` 返回注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, uri, target_page, dest, boundary }`；`page` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。`Link` 注解的 `uri` 是外部链接（无则空串），`target_page` 是跳转目标页全局索引（无页面目标为 `-1`），`dest` 为 `{ type, left, top, right, bottom, zoom }`（无位置信息为 `null`）。
+
+模板带 `PageRes` 时，其文字、字体清单、字体使用统计及动作携带 `template_id`。
+字体统计按 `(scope, template_id, id)` 区分；单字体查询使用
+`ofd.fontUsage(scope, fontID, maxScan, maxPages, templateID)`，正文模板 ID 为零。
+文字层直接使用返回的 `fontFamily`，不要自行仅按字体 ID 拼接。
+模板媒体预览使用 `ofd.mediaData(scope, id, maxBytes, 'preview', templateID)`；
+第五参数只允许显式预览用途，省略用途不能绕过下载权限检查。
+`ofd.media()` 仍为正文资源目录，模板动作不从中借用同 ID 的格式信息。
+- `ofd.annotations([index])` 返回全量或指定页的注解清单：`{ scope, page, id, type, subtype, creator, last_mod_date, visible, remark, print, no_zoom, no_rotate, read_only, uri, target_page, dest, boundary }`；`page`/`index` 是从 0 开始的全局页索引，`boundary` 为 `{ x, y, width, height }`（毫米）或 `null`。`print/read_only` 缺省 true，`no_zoom/no_rotate` 缺省 false，均作用于 `Remark`。`Link` 注解的 `uri` 是外部链接（无则空串），`target_page` 是跳转目标页全局索引（无页面目标为 `-1`），`dest` 为 `{ type, left, top, right, bottom, zoom }`（无位置信息为 `null`）。加载错误会返回失败，不当作空清单；页面备注按需读取，前端缓存最多128项，并防止旧文档或已回收页面被异步响应填回。
 - `ofd.pageLinks()` 返回页面正文图元上的可点击链接清单：`{ scope, page, id, uri, target_page, dest, boundary, attachment_id, attachment_name, media_id, media_kind, operator, repeat, volume, event }`。链接可能定义在页面的模板页上，会叠加到每个使用该模板的页面；承载链接的图元不可见时仍可点击。`media_kind` 为 `sound` 或 `movie` 时表示点击播放声音或影片，`media_id` 对应 `ofd.media()` 的资源 ID，`operator` 为影片的 `Play`/`Stop`/`Pause`/`Resume`，`volume` 为 0 到 100 或 `null`。`attachment_id` 非空时表示附件动作（`GotoA`），点击后按 `ofd.attachmentData()` 读取：可预览类型在新标签页打开、其它类型下载，`attachment_name` 是附件名称（可能为空）。
 - `ofd.pageLinksForPage(index)` 返回指定页面的可点击链接，字段与 `ofd.pageLinks()` 相同；网页阅读器按页面挂载懒加载此接口，避免打开大文档时扫描全部页面。
 - `ofd.pageMediaActions()` 返回进入页面（`PO`）和打开文档（`DO`）时执行的声音、影片动作，字段与 `pageLinks` 的媒体字段相同，`event` 为 `PO` 或 `DO`。
@@ -477,12 +494,12 @@ layers     index: number
 setHiddenLayers index: number, ids: string[]
 outline
 preferences
-fontUsage  scope: number, fontID: number[, maxScan, maxPages]
+fontUsage  scope: number, fontID: number[, maxScan, maxPages, templateID]
 fontUsageAll [maxScan, maxPages]
 attachments
 attachmentData scope: number, id: number[, maxBytes]
 media
-mediaData  scope: number, id: number[, maxBytes]
+mediaData  scope: number, id: number[, maxBytes, 'preview', templateID]
 pageLinks
 pageMediaActions
 annotations

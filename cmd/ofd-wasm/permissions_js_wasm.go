@@ -6,6 +6,7 @@ import (
 	"errors"
 	"syscall/js"
 
+	"github.com/zc310/ofd/pkg/permission"
 	ofdreader "github.com/zc310/ofd/pkg/reader"
 )
 
@@ -14,6 +15,7 @@ func permissionsValue(permissions []ofdreader.DocumentPermissions) js.Value {
 	for index, permission := range permissions {
 		result.SetIndex(index, objectValue(map[string]any{
 			"scope": permission.Scope, "pages": intSliceValue(permission.Pages), "declared": permission.Declared,
+			"accessible": permission.Accessible, "access_reason": string(permission.AccessReason),
 			"edit": permission.Edit, "annot": permission.Annot, "export": permission.Export,
 			"signature": permission.Signature, "watermark": permission.Watermark, "print_screen": permission.PrintScreen,
 			"printable": permission.Printable, "print_copies": permission.PrintCopies,
@@ -21,6 +23,15 @@ func permissionsValue(permissions []ofdreader.DocumentPermissions) js.Value {
 		}))
 	}
 	return result
+}
+
+// permissionErrorValue补充稳定原因，浏览器无需解析中文错误文案。
+func permissionErrorDetails(result js.Value, err error) {
+	if denied, ok := errors.AsType[*permission.DeniedError](err); ok {
+		result.Set("action", string(denied.Action))
+		result.Set("scope", denied.Scope)
+		result.Set("reason", string(denied.Reason))
+	}
 }
 
 func (a *wasmApp) permissions(_ js.Value, _ []js.Value) any {

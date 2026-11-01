@@ -8,7 +8,7 @@ require (
 	github.com/ajroetker/go-jpeg2000 v0.0.2
 	github.com/beevik/etree v1.8.1
 	github.com/benoitkugler/textlayout v0.3.2
-	github.com/chromedp/cdproto v0.158.6
+	github.com/chromedp/cdproto v0.159.0
 	github.com/chromedp/chromedp v0.21.0
 	github.com/dkrisman/gobig2 v0.0.0-20260513123937-51e39052fde6
 	github.com/emmansun/gmsm v0.45.2
@@ -47,7 +47,7 @@ require (
 	github.com/zc310/canvas v0.0.0-20261030055158-bb04d3078fd6
 	github.com/zc310/font v0.0.0-20261026065017-4183c2ebf1c8
 	go.etcd.io/bbolt v1.5.0
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.62.0

@@ -10,6 +10,11 @@ import (
 
 func (e *documentExporter) exportPages(result *manifest.Manifest) error {
 	for index, page := range e.document.Pages {
+		if e.checkPermission != nil {
+			if err := e.checkPermission(); err != nil {
+				return err
+			}
+		}
 		if page == nil {
 			continue
 		}
@@ -35,6 +40,11 @@ func (e *documentExporter) exportPages(result *manifest.Manifest) error {
 
 func (e *documentExporter) exportTemplates(result *manifest.Manifest) error {
 	for _, definition := range e.document.CommonData.TemplatePages {
+		if e.checkPermission != nil {
+			if err := e.checkPermission(); err != nil {
+				return err
+			}
+		}
 		content, err := e.document.LoadTemplate(definition.ID)
 		if err != nil {
 			return fmt.Errorf("加载模板页 %d 失败: %w", definition.ID, err)

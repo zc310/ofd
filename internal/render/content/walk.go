@@ -31,7 +31,18 @@ func WalkPage[S PageResources](frame Frame[S], page *models.PageContent, annotat
 			if template != nil && template.Content != nil {
 				child := frame
 				child.Source = SourceTemplate
+				release := func() {}
+				if frame.TemplateScope != nil {
+					child.Scope, release, err = frame.TemplateScope(models.StID(ref.TemplateID))
+					if err != nil {
+						return fmt.Errorf("绑定模板 %d 资源失败: %w", ref.TemplateID, err)
+					}
+				}
+				if len(template.PageRes) != 0 {
+					child.TemplateID = uint64(ref.TemplateID)
+				}
 				WalkLayers(child, template.Content.Layer, visit)
+				release()
 			}
 		}
 		if !foreground && options.IncludeWatermarks {

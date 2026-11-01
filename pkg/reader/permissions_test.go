@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -59,7 +59,7 @@ func TestPermissionsDefaultsAndPrintCopies(t *testing.T) {
 		{`<Permissions><Print Printable="true" Copies="2"/></Permissions>`, true, 2},
 		{`<Permissions><Print Printable="false" Copies="2"/></Permissions>`, false, 2},
 	} {
-		var value models.CT_Permission
+		var value spec.Permissions
 		if err := xml.Unmarshal([]byte(test.xml), &value); err != nil {
 			t.Fatal(err)
 		}

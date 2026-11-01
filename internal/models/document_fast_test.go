@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // documentXMLFromOFD 从 OFD 包中取出文档主体 XML 的原始字节。
@@ -98,4 +99,28 @@ func BenchmarkParseDocumentXML(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestParseDocumentXMLUsesSpecPermissionsInBothDecodePaths(t *testing.T) {
+	for _, permissions := range []string{
+		"",
+		`<Permissions/>`,
+		`<Permissions><Edit>false</Edit><Print/><ValidPeriod/></Permissions>`,
+		`<Permissions><Export>false</Export><Print Printable="false" Copies="0"/><ValidPeriod EndDate="2026-01-02T03:04:05.123456789+08:00"/></Permissions>`,
+	} {
+		raw := []byte(`<Document xmlns="http://www.ofdspec.org/2016"><Pages/>` + permissions + `</Document>`)
+		var standard struct {
+			Permissions *spec.Permissions `xml:"Permissions"`
+		}
+		if err := xml.Unmarshal(raw, &standard); err != nil {
+			t.Fatal(err)
+		}
+		fast, err := ParseDocumentXML(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(fast.Permissions, standard.Permissions) {
+			t.Fatalf("迁移后快速/标准解析不一致：%s", permissions)
+		}
+	}
 }

@@ -21,7 +21,7 @@ import (
 type Document struct {
 	models.Document
 
-	BaseLoc         models.StLoc
+	BaseLoc         spec.StLoc
 	FileCache       *container.Package
 	Pages           []*Page
 	pageCacheMu     sync.Mutex
@@ -35,9 +35,10 @@ type Document struct {
 	resourceErrors  *cache.LRU[string, error]
 
 	templateMu          sync.Mutex
-	templateLocations   map[models.StID]models.StLoc
+	templateLocations   map[models.StID]spec.StLoc
 	templateCache       *cache.LRU[models.StID, *models.PageContent]
 	templates           map[models.StID]*models.PageContent
+	templateResources   map[models.StID]*Document
 	templateErrors      map[models.StID]error
 	drawParams          map[models.StID]*models.DrawParam
 	res                 map[models.StID]*models.MultiMedia
@@ -59,25 +60,25 @@ type Document struct {
 	verificationErrors  map[string]error
 	seals               map[models.StID][]*SealInfo
 	annotations         map[models.StID]*models.PageAnnot
-	annotationLocations map[models.StID]models.StLoc
+	annotationLocations map[models.StID]spec.StLoc
 	annotationLoaded    map[models.StID]bool
 	annotationErrors    map[models.StID]error
 	annotationMu        sync.Mutex
 	attachments         *models.Attachments
-	attachmentsPath     models.StLoc
+	attachmentsPath     spec.StLoc
 	attachmentsLoaded   bool
 	attachmentsErr      error
 	attachmentsMu       sync.Mutex
 	customTags          *models.CustomTags
-	customTagsPath      models.StLoc
+	customTagsPath      spec.StLoc
 	customTagsLoaded    bool
 	customTagsErr       error
 	extensions          *models.Extensions
-	extensionsPath      models.StLoc
+	extensionsPath      spec.StLoc
 	extensionsLoaded    bool
 	extensionsErr       error
-	versions            map[string]*models.DocVersion
-	versionLocations    map[string]models.StLoc
+	versions            map[string]*spec.DocVersion
+	versionLocations    map[string]spec.StLoc
 	versionLoaded       map[string]bool
 	versionErrors       map[string]error
 	metadataMu          sync.Mutex
@@ -87,9 +88,9 @@ type Document struct {
 
 const maxPageXMLBytes = 64 << 20
 
-func (p *Document) Init(fileCache *container.Package, dir models.StLoc) {
+func (p *Document) Init(fileCache *container.Package, dir spec.StLoc) {
 	p.FileCache = fileCache
-	p.BaseLoc = models.StLoc(path.Dir(dir.String()))
+	p.BaseLoc = spec.StLoc(path.Dir(dir.String()))
 }
 
 func (p *Document) clearCaches() {
@@ -128,6 +129,7 @@ func (p *Document) clearCaches() {
 	p.templateMu.Lock()
 	p.templateCache = nil
 	p.templates = nil
+	p.templateResources = nil
 	p.templateErrors = nil
 	p.templateLocations = nil
 	p.templateMu.Unlock()
@@ -272,11 +274,11 @@ func (p *Document) parseDocumentRes() error {
 // parseResourceFile 解析单个资源文件，并把其中的图片、复合图元、绘制参数与字体登记到
 // 对应表中。resolveMedia 控制是否把图片的相对路径转换为绝对路径（Document 资源需要，
 // Public 资源不需要）。
-func (p *Document) parseResourceFile(res models.StLoc, resolveMedia bool) (*models.Res, error) {
+func (p *Document) parseResourceFile(res spec.StLoc, resolveMedia bool) (*models.Res, error) {
 	return p.parseResourceFilePath(res.Resolve(p.BaseLoc), resolveMedia)
 }
 
-func (p *Document) parsePageResourceFilePath(filePath models.StLoc, resolveMedia bool, resources *pageResources) (*models.Res, error) {
+func (p *Document) parsePageResourceFilePath(filePath spec.StLoc, resolveMedia bool, resources *pageResources) (*models.Res, error) {
 	p.resourceCacheMu.Lock()
 	defer p.resourceCacheMu.Unlock()
 	if p.resourceCache == nil {
@@ -308,14 +310,14 @@ func (p *Document) parsePageResourceFilePath(filePath models.StLoc, resolveMedia
 
 // resourceBase 返回资源文件中相对路径的基准目录：资源文件所在目录加上资源自身的
 // BaseLoc。空 BaseLoc 与 "." 都会落在资源文件所在目录上，交给 path.Join 清理。
-func resourceBase(filePath models.StLoc, baseLoc models.StLoc) models.StLoc {
+func resourceBase(filePath spec.StLoc, baseLoc spec.StLoc) spec.StLoc {
 	return filePath.Dir().Join(string(baseLoc))
 }
 
 // collectResource 把资源文件里的图片、复合图元、绘制参数、字体和颜色空间登记到
 // 文档级索引；collected 非 nil 时同时登记到页面级索引，供页面淘汰时按归属撤销。
 // resolveMedia 控制是否把图片的相对路径转换为绝对路径（Public 资源不需要）。
-func (p *Document) collectResource(resource *models.Res, filePath models.StLoc, resolveMedia bool, collected *pageResources) {
+func (p *Document) collectResource(resource *models.Res, filePath spec.StLoc, resolveMedia bool, collected *pageResources) {
 	if resource == nil {
 		return
 	}
@@ -375,7 +377,7 @@ func (p *Document) collectResource(resource *models.Res, filePath models.StLoc, 
 	}
 }
 
-func (p *Document) registerPageResource(resource *models.Res, filePath models.StLoc, resolveMedia bool, resources *pageResources) {
+func (p *Document) registerPageResource(resource *models.Res, filePath spec.StLoc, resolveMedia bool, resources *pageResources) {
 	if resource == nil || resources == nil {
 		return
 	}
@@ -409,7 +411,7 @@ func resourceSize(resource *models.Res) int64 {
 
 // pageArchiveSize 汇总页面内容文件与已解析的页面资源文件在包内占用的字节数。
 // pageResources 必须是包内路径，由 resolvePageResourcePath 解析后传入。
-func pageArchiveSize(fileCache *container.Package, pagePath models.StLoc, pageResources []models.StLoc) int64 {
+func pageArchiveSize(fileCache *container.Package, pagePath spec.StLoc, pageResources []spec.StLoc) int64 {
 	if fileCache == nil {
 		return 0
 	}
@@ -433,7 +435,7 @@ func pageArchiveSize(fileCache *container.Package, pagePath models.StLoc, pageRe
 	return int64(size)
 }
 
-func (p *Document) parseResourceFilePath(path models.StLoc, resolveMedia bool) (*models.Res, error) {
+func (p *Document) parseResourceFilePath(path spec.StLoc, resolveMedia bool) (*models.Res, error) {
 	var pr models.Res
 	if err := p.FileCache.ReadXML(path.String(), &pr); err != nil {
 		return nil, err
@@ -646,7 +648,7 @@ func (p *Document) ensurePageLoaded(page *Page) error {
 	return nil
 }
 
-func (p *Document) parse(body models.DocBody) error {
+func (p *Document) parse(body spec.DocBody) error {
 	var err error
 	docPath := body.DocRoot.Resolve("/").String()
 	var docLimit int64
@@ -707,7 +709,7 @@ func (p *Document) parse(body models.DocBody) error {
 					}
 				}
 				// 重载时重建路径列表，避免把上次加载的资源再次追加进来。
-				target.pageResPath = make([]models.StLoc, 0, len(content.PageRes))
+				target.pageResPath = make([]spec.StLoc, 0, len(content.PageRes))
 				for _, resource := range content.PageRes {
 					resourcePath := p.resolvePageResourcePath(pagePath.Dir(), resource)
 					target.pageResPath = append(target.pageResPath, resourcePath)
@@ -755,8 +757,8 @@ func (p *Document) parse(body models.DocBody) error {
 	if p.Document.Extensions != nil {
 		p.extensionsPath = p.Document.Extensions.Resolve(p.BaseLoc)
 	}
-	p.versions = make(map[string]*models.DocVersion)
-	p.versionLocations = make(map[string]models.StLoc)
+	p.versions = make(map[string]*spec.DocVersion)
+	p.versionLocations = make(map[string]spec.StLoc)
 	p.versionLoaded = make(map[string]bool)
 	p.versionErrors = make(map[string]error)
 	if body.Versions != nil {
@@ -770,12 +772,12 @@ func (p *Document) parse(body models.DocBody) error {
 
 // resolvePagePath 与 StLoc.Resolve 保持相同的规范化语义，但相对路径只需
 // 一次 path.Join。页面目录在打开时逐页解析，该路径避免每页重复创建 Join 参数切片。
-func resolvePagePath(base, location models.StLoc) models.StLoc {
+func resolvePagePath(base, location spec.StLoc) spec.StLoc {
 	value := location.String()
 	if strings.HasPrefix(value, "/") {
-		return models.StLoc(path.Clean(value))
+		return spec.StLoc(path.Clean(value))
 	}
-	return models.StLoc(strings.TrimPrefix(path.Join(base.String(), value), "./"))
+	return spec.StLoc(strings.TrimPrefix(path.Join(base.String(), value), "./"))
 }
 
 // resolvePageResourcePath 先按页面内容文件所在目录解析 PageRes，这是规范约定的
@@ -784,7 +786,7 @@ func resolvePagePath(base, location models.StLoc) models.StLoc {
 // 存在时返回页面目录下的路径，让错误信息继续反映规范基准。
 // 只在渲染与转换链路上回退，校验器与分析器仍按规范基准报错。
 // 绝对路径按 GB/T 33190—2016 §7.3 表 2 的 ST_Loc 约定从包根节点解析。
-func (p *Document) resolvePageResourcePath(pageDir models.StLoc, resource models.StLoc) models.StLoc {
+func (p *Document) resolvePageResourcePath(pageDir spec.StLoc, resource spec.StLoc) spec.StLoc {
 	resolved := resource.Resolve(pageDir)
 	if resource.IsAbsolute() || p.FileCache == nil {
 		return resolved
@@ -802,7 +804,7 @@ func (p *Document) resolvePageResourcePath(pageDir models.StLoc, resource models
 func (p *Document) parseTemplates() error {
 	p.templates = make(map[models.StID]*models.PageContent)
 	p.templateErrors = make(map[models.StID]error)
-	p.templateLocations = make(map[models.StID]models.StLoc, len(p.Document.CommonData.TemplatePages))
+	p.templateLocations = make(map[models.StID]spec.StLoc, len(p.CommonData.TemplatePages))
 	for _, page := range p.Document.CommonData.TemplatePages {
 		p.templateLocations[page.ID] = page.BaseLoc.Resolve(p.BaseLoc)
 	}
@@ -878,7 +880,7 @@ func (p *Document) GetExtensions() *models.Extensions {
 }
 
 // LoadVersion 按需读取指定版本。
-func (p *Document) LoadVersion(id string) (*models.DocVersion, error) {
+func (p *Document) LoadVersion(id string) (*spec.DocVersion, error) {
 	p.metadataMu.Lock()
 	defer p.metadataMu.Unlock()
 	if p.versionLoaded == nil {
@@ -886,7 +888,7 @@ func (p *Document) LoadVersion(id string) (*models.DocVersion, error) {
 		p.versionErrors = make(map[string]error)
 	}
 	if p.versions == nil {
-		p.versions = make(map[string]*models.DocVersion)
+		p.versions = make(map[string]*spec.DocVersion)
 	}
 	if p.versionLoaded[id] {
 		return p.versions[id], p.versionErrors[id]
@@ -896,7 +898,7 @@ func (p *Document) LoadVersion(id string) (*models.DocVersion, error) {
 	if !ok {
 		return nil, nil
 	}
-	var value models.DocVersion
+	var value spec.DocVersion
 	if err := p.FileCache.ReadXML(location.String(), &value); err != nil {
 		p.versionErrors[id] = err
 		slog.Warn("读取文档版本失败", "version_id", id, "file", location.String(), "error", err)
@@ -907,7 +909,7 @@ func (p *Document) LoadVersion(id string) (*models.DocVersion, error) {
 }
 
 // GetVersion 返回指定版本，读取失败时返回 nil。
-func (p *Document) GetVersion(id string) *models.DocVersion {
+func (p *Document) GetVersion(id string) *spec.DocVersion {
 	value, _ := p.LoadVersion(id)
 	return value
 }
@@ -969,6 +971,10 @@ func (p *Document) inheritedPageArea(area *models.CtPageArea, refs []models.Temp
 func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 	p.templateMu.Lock()
 	defer p.templateMu.Unlock()
+	return p.loadTemplateLocked(id)
+}
+
+func (p *Document) loadTemplateLocked(id models.StID) (*models.PageContent, error) {
 	if content, ok := p.templates[id]; ok && content != nil {
 		if p.templateCache != nil {
 			_, _ = p.templateCache.Get(id)
@@ -992,17 +998,30 @@ func (p *Document) LoadTemplate(id models.StID) (*models.PageContent, error) {
 		slog.Warn("读取模板页失败", "template_id", id, "file", location.String(), "error", err)
 		return nil, err
 	}
+	scope, resourceBytes, err := p.loadTemplateResources(content, location)
+	if err != nil {
+		p.templateErrors[id] = err
+		return nil, err
+	}
 	if p.templateCache == nil {
 		p.templateCache = cache.NewWeightedLRU[models.StID, *models.PageContent](32, 32<<20, func(id models.StID, _ *models.PageContent) {
 			delete(p.templates, id)
+			delete(p.templateResources, id)
 		})
 	}
 	p.templates[id] = content
+	if scope != nil {
+		if p.templateResources == nil {
+			p.templateResources = make(map[models.StID]*Document)
+		}
+		p.templateResources[id] = scope
+	}
 	// 与普通页面一致，优先用 ZIP 解压大小记账，避免为估算权重序列化整页 JSON。
 	weight := int64(min(entrySize, 1<<63-1))
 	if weight == 0 {
 		weight = pageContentSize(content)
 	}
+	weight += min(resourceBytes, (1<<63-1)-weight)
 	p.templateCache.AddWeighted(id, content, weight)
 	return content, nil
 }
@@ -1311,7 +1330,7 @@ func (p *Document) resolveDrawParam(id models.StID, resolving map[models.StID]bo
 	}
 	return &result
 }
-func (p *Document) ParseSigns(file *models.StLoc) error {
+func (p *Document) ParseSigns(file *spec.StLoc) error {
 	p.signs = make(map[string]*models.Signature)
 	p.signedValues = make(map[string]*SignedValue)
 	p.signedValueErrors = make(map[string]error)
@@ -1458,7 +1477,7 @@ func (p *Document) ParseSigns(file *models.StLoc) error {
 // 直接 return err，一份坏印章会让整份文档打不开（转换、分析和阅读器全部失败），
 // 而同一段代码里 SignedValue 缺失只是告警——两者不对称，坏印章的破坏力被放大了。
 // 包是否合法仍由 pkg/validator 的 reference.missing 判定，解析侧只负责尽力渲染。
-func (p *Document) loadSeals(signatureID string, sig *models.Signature, seDir models.StLoc) {
+func (p *Document) loadSeals(signatureID string, sig *models.Signature, seDir spec.StLoc) {
 	if len(sig.SignedInfo.StampAnnot) == 0 {
 		return
 	}
@@ -1511,7 +1530,7 @@ func (p *Document) registerSeal(sig *models.Signature, sealData *SealData) {
 
 func (p *Document) parseAnnotations() error {
 	p.annotations = make(map[models.StID]*models.PageAnnot)
-	p.annotationLocations = make(map[models.StID]models.StLoc)
+	p.annotationLocations = make(map[models.StID]spec.StLoc)
 	p.annotationLoaded = make(map[models.StID]bool)
 	if p.Document.Annotations == nil {
 		return nil
@@ -1532,7 +1551,7 @@ func (p *Document) parseAnnotations() error {
 	for _, page := range annot.Pages {
 		location := page.FileLoc
 		if !strings.HasPrefix(location.String(), "/") {
-			location = models.StLoc.Join(dir, location.String())
+			location = spec.StLoc.Join(dir, location.String())
 		}
 		p.annotationLocations[models.StID(page.PageID)] = location
 	}
@@ -1593,10 +1612,10 @@ type Signatures struct {
 	Signatures []Signature `xml:"Signature,omitempty"`
 }
 type Signature struct {
-	ID       string       `xml:"ID,attr"`
-	BaseLoc  models.StLoc `xml:"BaseLoc,attr"`
-	Type     string       `xml:"Type,attr"`
-	Relative string       `xml:"Relative,attr"`
+	ID       string     `xml:"ID,attr"` //nolint:tagliatelle // OFD标准属性名为大写ID。
+	BaseLoc  spec.StLoc `xml:"BaseLoc,attr"`
+	Type     string     `xml:"Type,attr"`
+	Relative string     `xml:"Relative,attr"`
 }
 
 // VerifySignature 连同 Relative 指定的基础签名验证，最多递归 32 层。

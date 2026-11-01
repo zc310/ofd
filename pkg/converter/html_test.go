@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestHTMLDocumentsEmbedsPNGPage(t *testing.T) {
@@ -79,7 +79,7 @@ func TestHTMLDocumentsSupportsSinglePage(t *testing.T) {
 
 func TestHTMLDocumentTitleUsesOFDMetadata(t *testing.T) {
 	title := `报告 <2026>`
-	ofd := &parser.OFD{OFD: models.OFD{DocBodies: []models.DocBody{{DocInfo: models.DocInfo{Title: &title}}}}}
+	ofd := &parser.OFD{OFD: spec.OFD{DocBodies: []spec.DocBody{{DocInfo: spec.DocInfo{Title: &title}}}}}
 	if got := documentTitle(ofd); got != title {
 		t.Fatalf("documentTitle() = %q, want %q", got, title)
 	}
@@ -90,7 +90,7 @@ func TestHTMLDocumentTitleUsesOFDMetadata(t *testing.T) {
 
 func TestHTMLDocumentTitleFallsBackWhenMetadataIsEmpty(t *testing.T) {
 	empty := "  "
-	ofd := &parser.OFD{OFD: models.OFD{DocBodies: []models.DocBody{{DocInfo: models.DocInfo{Title: &empty}}}}}
+	ofd := &parser.OFD{OFD: spec.OFD{DocBodies: []spec.DocBody{{DocInfo: spec.DocInfo{Title: &empty}}}}}
 	if got := documentTitle(ofd); got != "OFD 文档" {
 		t.Fatalf("documentTitle() = %q, want default title", got)
 	}

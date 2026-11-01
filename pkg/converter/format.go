@@ -384,6 +384,9 @@ func encodeOFD(input any, output io.Writer, conv *Converter, encode func([]*rend
 	if ofd != nil {
 		conv.docTitle = documentTitle(ofd)
 	}
+	if err := conv.preparePermissions(documents); err != nil {
+		return err
+	}
 	return encode(documents, output, conv)
 }
 

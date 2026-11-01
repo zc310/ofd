@@ -19,6 +19,8 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/permission"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // PageLimits 限制模型级合并的输入规模。
@@ -49,6 +51,8 @@ var (
 
 // PageOptions 控制模型级页面合并的输出方式。
 type PageOptions struct {
+	// PermissionPolicy 检查全部输入文档体Export及有效期；选页不裁剪全部文档级资源。
+	PermissionPolicy permission.Policy
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
 	Compression creator.CompressionMode
 	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
@@ -203,6 +207,9 @@ func parsePageList(spec string) ([]int, error) {
 // 创建器报错。签名和版本不会保留；大纲、书签、动作和页面注解会保留，并按其
 // 来源与最终页序重写跳转页索引，目标页未被保留的动作或注解会被丢弃。
 func Pages(inputs []Source, w io.Writer, options PageOptions) error {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	if w == nil {
 		return errors.New("OFD 输出写入器为空")
 	}
@@ -226,7 +233,26 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 	if err != nil {
 		return err
 	}
-	results := buildPageSources(prepared, limits, resolvePageConcurrency(options.Concurrency, len(prepared)))
+	results := buildPageSources(prepared, limits, resolvePageConcurrency(options.Concurrency, len(prepared)), options.PermissionPolicy)
+	// 所有输入均预检完成后才允许用户回调；不能前面的来源已发事件才发现后面的禁令。
+	for index, result := range results {
+		if result.err != nil {
+			return fmt.Errorf("处理输入 %s 失败: %w", prepared[index].name, result.err)
+		}
+	}
+	check := func() error {
+		for index, result := range results {
+			for _, built := range result.documents {
+				if err := options.PermissionPolicy.Check(built.permission, permission.Export, built.documentIndex); err != nil {
+					return fmt.Errorf("输入 %s: %w", prepared[index].name, err)
+				}
+			}
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return err
+	}
 
 	merged := creator.Document{}
 	ids := newIDRemap()
@@ -237,6 +263,9 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 			return fmt.Errorf("处理输入 %s 失败: %w", prepared[index].name, result.err)
 		}
 		for _, built := range result.documents {
+			if err := check(); err != nil {
+				return err
+			}
 			if createOptions.DocType == "" {
 				createOptions.DocType = built.docType
 			} else if createOptions.DocType != built.docType {
@@ -364,7 +393,13 @@ func Pages(inputs []Source, w io.Writer, options PageOptions) error {
 	if strings.TrimSpace(merged.ID) == "" {
 		merged.ID = "merged-ofd"
 	}
-	return creator.CreateWithOptions(merged, w, createOptions)
+	if err := check(); err != nil {
+		return err
+	}
+	if err := creator.CreateWithOptions(merged, &permissionWriter{output: w, check: check}, createOptions); err != nil {
+		return err
+	}
+	return check()
 }
 
 // selectGlobalPages 按来源或全局页序返回选中的全局页索引（0 起始）。
@@ -442,6 +477,7 @@ type pageInput struct {
 }
 
 type builtDocument struct {
+	permission    *spec.Permissions
 	document      creator.Document
 	docType       string
 	prefix        string
@@ -478,11 +514,11 @@ func preparePageInputs(inputs []Source, limits PageLimits) ([]pageInput, error) 
 
 // buildPageSources 并行（或串行）解析并转换每个输入；结果按输入顺序返回，保证
 // 合并阶段的资源编号与输出可复现。
-func buildPageSources(inputs []pageInput, limits PageLimits, concurrency int) []builtSource {
+func buildPageSources(inputs []pageInput, limits PageLimits, concurrency int, policy permission.Policy) []builtSource {
 	results := make([]builtSource, len(inputs))
 	if concurrency <= 1 {
 		for index, input := range inputs {
-			results[index] = buildSourcePages(index, input, limits)
+			results[index] = buildSourcePages(index, input, limits, policy)
 		}
 		return results
 	}
@@ -494,14 +530,14 @@ func buildPageSources(inputs []pageInput, limits PageLimits, concurrency int) []
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[index] = buildSourcePages(index, input, limits)
+			results[index] = buildSourcePages(index, input, limits, policy)
 		}(index, input)
 	}
 	wg.Wait()
 	return results
 }
 
-func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource {
+func buildSourcePages(index int, input pageInput, limits PageLimits, policy permission.Policy) builtSource {
 	ofd, err := parser.NewOFD(input.input, parser.Options{MaxInputBytes: limits.MaxInputBytes})
 	if err != nil {
 		return builtSource{err: fmt.Errorf("打开 OFD 输入 %s 失败: %w", input.name, err)}
@@ -522,7 +558,7 @@ func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource
 			}
 			return data, nil
 		}
-		document, err := buildPageDocument(ofd, documentIndex, prefix, assets, loadAsset)
+		document, err := buildPageDocumentWithPolicy(ofd, documentIndex, prefix, assets, loadAsset, policy)
 		if err != nil {
 			return builtSource{err: fmt.Errorf("转换 %s 的文档体 %d 失败: %w", input.name, documentIndex, err)}
 		}
@@ -536,7 +572,7 @@ func buildSourcePages(index int, input pageInput, limits PageLimits) builtSource
 		if docType == "" {
 			docType = "OFD"
 		}
-		result.documents = append(result.documents, builtDocument{document: document, docType: docType, prefix: prefix, documentIndex: documentIndex, signatures: signatureIDs})
+		result.documents = append(result.documents, builtDocument{permission: ofd.Documents[documentIndex].Permissions.Clone(), document: document, docType: docType, prefix: prefix, documentIndex: documentIndex, signatures: signatureIDs})
 	}
 	return result
 }
@@ -580,8 +616,13 @@ func pageCreateOptions(options PageOptions) (creator.CreateOptions, error) {
 
 // buildPageDocument 把单个文档体导出为 creator 文档，资源收集到 assets。
 func buildPageDocument(ofd *parser.OFD, index int, prefix string, assets map[string][]byte, loadAsset func(string) ([]byte, error)) (creator.Document, error) {
+	return buildPageDocumentWithPolicy(ofd, index, prefix, assets, loadAsset, permission.Policy{})
+}
+
+func buildPageDocumentWithPolicy(ofd *parser.OFD, index int, prefix string, assets map[string][]byte, loadAsset func(string) ([]byte, error), policy permission.Policy) (creator.Document, error) {
 	value, err := export.BuildManifestFromOFD(ofd, index, export.Options{
-		AssetPrefix: prefix,
+		PermissionPolicy: policy,
+		AssetPrefix:      prefix,
 		AssetSink: func(name string, data []byte) error {
 			assets[path.Join(prefix, name)] = data
 			return nil

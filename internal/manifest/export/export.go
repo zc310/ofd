@@ -20,11 +20,15 @@ import (
 	"github.com/zc310/ofd/internal/manifest"
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/permission"
+	"github.com/zc310/ofd/pkg/spec"
 	"go.yaml.in/yaml/v3"
 )
 
 // Options 控制 OFD manifest 导出。
 type Options struct {
+	// PermissionPolicy 默认执行目标文档体Export及有效期；忽略声明须明确授权。
+	PermissionPolicy permission.Policy
 	// AssetRoot 是导出二进制资源的实际目录。
 	AssetRoot string
 	// AssetPrefix 是 manifest 中相对于 manifest 文件的资源目录前缀。
@@ -72,6 +76,9 @@ func WriteDocumentManifest(input any, index int, output io.Writer, options Optio
 // WriteBundle 将 OFD 的全部文档体写入一个目录包。
 // 每个文档体拥有独立的 manifest 和资源目录，根目录下同时写入索引文件。
 func WriteBundle(input any, outputDir string, options Options) error {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(outputDir) == "" {
 		return errors.New("未设置批量导出目录")
 	}
@@ -106,6 +113,9 @@ func WriteBundle(input any, outputDir string, options Options) error {
 	if len(ofd.Documents) == 0 {
 		return errors.New("没有文档体")
 	}
+	if err := checkAllPermissions(ofd, options.PermissionPolicy); err != nil {
+		return err
+	}
 	index := BundleIndex{Version: 1, Documents: make([]BundleDocument, 0, len(ofd.Documents))}
 	extension := format
 	for documentIndex, document := range ofd.Documents {
@@ -113,10 +123,11 @@ func WriteBundle(input any, outputDir string, options Options) error {
 			return fmt.Errorf("文档体为空: %d", documentIndex)
 		}
 		manifestData, documentInfo, err := exportDocument(ofd, documentIndex, Options{
-			AssetRoot:   filepath.Join(temporary, "documents", fmt.Sprintf("%03d-assets", documentIndex)),
-			AssetPrefix: fmt.Sprintf("%03d-assets", documentIndex),
-			Format:      format,
-			JSONIndent:  options.JSONIndent,
+			PermissionPolicy: options.PermissionPolicy,
+			AssetRoot:        filepath.Join(temporary, "documents", fmt.Sprintf("%03d-assets", documentIndex)),
+			AssetPrefix:      fmt.Sprintf("%03d-assets", documentIndex),
+			Format:           format,
+			JSONIndent:       options.JSONIndent,
 		})
 		if err != nil {
 			return fmt.Errorf("导出文档体 %d 失败: %w", documentIndex, err)
@@ -141,6 +152,9 @@ func WriteBundle(input any, outputDir string, options Options) error {
 	if err := os.WriteFile(filepath.Join(temporary, "index."+extension), indexData, 0644); err != nil {
 		return fmt.Errorf("写出批量导出索引失败: %w", err)
 	}
+	if err := checkAllPermissions(ofd, options.PermissionPolicy); err != nil {
+		return err
+	}
 	if err := os.Rename(temporary, root); err != nil {
 		return fmt.Errorf("替换批量导出目录失败: %w", err)
 	}
@@ -148,6 +162,9 @@ func WriteBundle(input any, outputDir string, options Options) error {
 }
 
 func export(input any, output io.Writer, options Options, documentIndex *int) error {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	if output == nil {
 		return errors.New("未设置 manifest 输出参数")
 	}
@@ -185,15 +202,21 @@ func export(input any, output io.Writer, options Options, documentIndex *int) er
 	if err != nil {
 		return err
 	}
+	if err := permissionCheck(ofd, index, options.PermissionPolicy)(); err != nil {
+		return err
+	}
 	if _, err := output.Write(data); err != nil {
 		return fmt.Errorf("写入 manifest 失败: %w", err)
 	}
-	return nil
+	return permissionCheck(ofd, index, options.PermissionPolicy)()
 }
 
 // BuildManifest 将指定文档体导出为 manifest 结构，并把二进制资源交给
 // Options.AssetSink（或写入 AssetRoot）。用于在内存中继续合并或转换。
 func BuildManifest(input any, index int, options Options) (manifest.Manifest, error) {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return manifest.Manifest{}, err
+	}
 	ofd, err := parser.NewOFD(input)
 	if err != nil {
 		return manifest.Manifest{}, fmt.Errorf("解析 OFD 失败: %w", err)
@@ -233,7 +256,14 @@ func exportDocument(ofd *parser.OFD, index int, options Options) ([]byte, manife
 
 func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manifest, error) {
 	document := ofd.Documents[index]
+	check := permissionCheck(ofd, index, options.PermissionPolicy)
+	if err := check(); err != nil {
+		return manifest.Manifest{}, err
+	}
 	for _, page := range document.Pages {
+		if err := check(); err != nil {
+			return manifest.Manifest{}, err
+		}
 		if page == nil {
 			continue
 		}
@@ -248,6 +278,7 @@ func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manife
 		}
 	}
 	exporter := &documentExporter{
+		checkPermission:   check,
 		ofd:               ofd,
 		document:          document,
 		documentIndex:     index,
@@ -276,6 +307,9 @@ func buildManifest(ofd *parser.OFD, index int, options Options) (manifest.Manife
 	}
 	result, err := exporter.build()
 	if err != nil {
+		return manifest.Manifest{}, err
+	}
+	if err := check(); err != nil {
 		return manifest.Manifest{}, err
 	}
 	return result, nil
@@ -351,6 +385,7 @@ func marshalBundleIndex(value BundleIndex, format string, jsonIndent bool) ([]by
 }
 
 type documentExporter struct {
+	checkPermission         func() error
 	ofd                     *parser.OFD
 	document                *parser.Document
 	documentIndex           int
@@ -381,7 +416,7 @@ type documentExporter struct {
 
 type resourceSource struct {
 	value *models.Res
-	path  models.StLoc
+	path  spec.StLoc
 	data  []byte
 }
 
@@ -557,8 +592,19 @@ func (e *documentExporter) assetPath(file string) string {
 }
 
 func (e *documentExporter) writeAsset(file string, data []byte) error {
+	if e.checkPermission != nil {
+		if err := e.checkPermission(); err != nil {
+			return err
+		}
+	}
 	if e.assetSink != nil {
-		return e.assetSink(file, data)
+		if err := e.assetSink(file, data); err != nil {
+			return err
+		}
+		if e.checkPermission != nil {
+			return e.checkPermission()
+		}
+		return nil
 	}
 	name := filepath.Join(e.assetRoot, filepath.FromSlash(file))
 	if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {

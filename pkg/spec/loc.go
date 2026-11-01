@@ -1,4 +1,4 @@
-package models
+package spec
 
 import (
 	pp "path"
@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// StLoc 位置字符串类型
+// StLoc 是 GB/T 33190—2016 §7.3 表2的包内位置字符串，区分大小写，使用斜杠分隔。
+// 路径操作只做词法处理，不验证ZIP条目安全性，也不授权访问文件系统。
 type StLoc string
 
 // NewStLoc 创建 StLoc
@@ -31,7 +32,8 @@ func (p StLoc) IsAbsolute() bool {
 
 // Join 拼接路径
 func (p StLoc) Join(elem ...string) StLoc {
-	parts := []string{string(p)}
+	parts := make([]string, 1, 1+len(elem))
+	parts[0] = string(p)
 	parts = append(parts, elem...)
 	return StLoc(pp.Join(parts...))
 }
@@ -82,7 +84,7 @@ func (p StLoc) TrimPrefix(prefix StLoc) StLoc {
 	return StLoc(strings.TrimPrefix(string(p), string(prefix)))
 }
 
-// In 判断路径是否在指定目录下
+// In 按字符串前缀判断是否位于目录下；不清理路径，不能用于安全校验。
 func (p StLoc) In(dir StLoc) bool {
 	return strings.HasPrefix(string(p), string(dir)+"/")
 }

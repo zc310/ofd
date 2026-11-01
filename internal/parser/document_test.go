@@ -14,12 +14,13 @@ import (
 
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestResolvePagePathMatchesStLocResolve(t *testing.T) {
 	for _, test := range []struct {
-		base     models.StLoc
-		location models.StLoc
+		base     spec.StLoc
+		location spec.StLoc
 	}{
 		{base: "Doc_0", location: "Pages/Page_0/Content.xml"},
 		{base: "Doc_0/Pages", location: "../Shared/Page.xml"},
@@ -234,11 +235,11 @@ func TestPageArchiveSizeIncludesUniqueResourceXML(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fileCache.Close()
-	pagePath := models.StLoc("Doc_0/Pages/Page_0/Content.xml")
+	pagePath := spec.StLoc("Doc_0/Pages/Page_0/Content.xml")
 	resourceSize := int64(len("resource"))
 	want := int64(len("page-content")) + resourceSize
-	resourcePath := models.StLoc("Doc_0/Pages/Page_0/Res.xml")
-	if got := pageArchiveSize(fileCache, pagePath, []models.StLoc{resourcePath, resourcePath}); got != want {
+	resourcePath := spec.StLoc("Doc_0/Pages/Page_0/Res.xml")
+	if got := pageArchiveSize(fileCache, pagePath, []spec.StLoc{resourcePath, resourcePath}); got != want {
 		t.Fatalf("页面归档权重 = %d, want %d", got, want)
 	}
 }
@@ -361,7 +362,7 @@ func TestReadPagePhysicalBoxOnlyReadsArea(t *testing.T) {
 	}
 	defer fileCache.Close()
 
-	box, err := readPagePhysicalBox(fileCache, models.StLoc("Pages/Page_0/Content.xml"))
+	box, err := readPagePhysicalBox(fileCache, spec.StLoc("Pages/Page_0/Content.xml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +695,7 @@ func TestAttachmentsLoadOnDemand(t *testing.T) {
 func TestAnnotationsLoadOnDemand(t *testing.T) {
 	doc := &Document{
 		annotations:         make(map[models.StID]*models.PageAnnot),
-		annotationLocations: make(map[models.StID]models.StLoc),
+		annotationLocations: make(map[models.StID]spec.StLoc),
 	}
 	if got := doc.GetAnnotation(1); got != nil {
 		t.Fatalf("未登记注解页面返回 = %+v", got)

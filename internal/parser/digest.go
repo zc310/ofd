@@ -15,6 +15,7 @@ import (
 	"github.com/emmansun/gmsm/sm3"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // SignatureDigestResult 是一个签名的摘要校验结果。
@@ -88,7 +89,7 @@ func VerifySignatureDigest(fileCache *container.Package, signaturePath string, s
 		return result, nil
 	}
 
-	baseDir := models.StLoc(path.Dir(signaturePath))
+	baseDir := spec.StLoc(path.Dir(signaturePath))
 	for _, reference := range signature.SignedInfo.References.Reference {
 		item := ReferenceDigestResult{FileRef: reference.FileRef.String()}
 		expected, decodeErr := decodeCheckValue(reference.CheckValue)
@@ -140,7 +141,7 @@ func VerifySignatureDigest(fileCache *container.Package, signaturePath string, s
 		// OFD 接入约定 PropertyInfo 指向受保护的 Signature.xml；其他厂商的
 		// 元数据编码保留解析，但必须由适配层解释后才能得出完整验证结论。
 		scope := signedValue.SES.TBS.PropertyInfo
-		item.ScopeMatch = scope != "" && models.StLoc(scope).Resolve(baseDir).String() == models.StLoc(signaturePath).Resolve("/").String()
+		item.ScopeMatch = scope != "" && spec.StLoc(scope).Resolve(baseDir).String() == spec.StLoc(signaturePath).Resolve("/").String()
 		if !item.ScopeMatch {
 			item.ScopeError = "未确认 PropertyInfo 与当前 Signature.xml 的保护范围绑定"
 		}

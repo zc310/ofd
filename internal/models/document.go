@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/xml"
+
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Document OFD 文档主体定义。
@@ -17,7 +19,7 @@ type Document struct {
 	// Outlines 文档大纲。
 	Outlines *OutlineList `xml:"Outlines,omitempty"`
 	// Permissions 文档权限设置。
-	Permissions *CT_Permission `xml:"Permissions,omitempty"`
+	Permissions *spec.Permissions `xml:"Permissions,omitempty"`
 	// Actions 文档级动作集合。
 	Actions *ActionList `xml:"Actions,omitempty"`
 	// VPreferences 文档视图首选项。
@@ -25,13 +27,13 @@ type Document struct {
 	// Bookmarks 文档书签列表。
 	Bookmarks *BookmarkList `xml:"Bookmarks,omitempty"`
 	// Annotations 注解文件的位置。
-	Annotations *StLoc `xml:"Annotations,omitempty"`
+	Annotations *spec.StLoc `xml:"Annotations,omitempty"`
 	// CustomTags 自定义标签文件的位置。
-	CustomTags *StLoc `xml:"CustomTags,omitempty"`
+	CustomTags *spec.StLoc `xml:"CustomTags,omitempty"`
 	// Attachments 附件文件的位置。
-	Attachments *StLoc `xml:"Attachments,omitempty"`
+	Attachments *spec.StLoc `xml:"Attachments,omitempty"`
 	// Extensions 扩展文件的位置。
-	Extensions *StLoc `xml:"Extensions,omitempty"`
+	Extensions *spec.StLoc `xml:"Extensions,omitempty"`
 }
 
 // CommonData 文档公共数据定义。
@@ -41,9 +43,9 @@ type CommonData struct {
 	// PageArea 文档页面区域定义。
 	PageArea CtPageArea `xml:"PageArea"`
 	// PublicRes 公共资源文件的位置列表。
-	PublicRes []StLoc `xml:"PublicRes,omitempty"`
+	PublicRes []spec.StLoc `xml:"PublicRes,omitempty"`
 	// DocumentRes 文档资源文件的位置列表。
-	DocumentRes []StLoc `xml:"DocumentRes,omitempty"`
+	DocumentRes []spec.StLoc `xml:"DocumentRes,omitempty"`
 	// TemplatePages 文档模板页列表。
 	TemplatePages []TemplatePage `xml:"TemplatePage,omitempty"`
 	// DefaultCS 文档默认颜色空间资源引用。
@@ -59,7 +61,7 @@ type TemplatePage struct {
 	// ZOrder 模板页的叠放顺序。
 	ZOrder ZOrder `xml:"ZOrder,attr,omitempty"`
 	// BaseLoc 模板页内容文件的位置。
-	BaseLoc StLoc `xml:"BaseLoc,attr"`
+	BaseLoc spec.StLoc `xml:"BaseLoc,attr"`
 }
 
 // PageList 文档页面列表。
@@ -78,53 +80,6 @@ type OutlineList struct {
 type BookmarkList struct {
 	// Bookmarks 书签列表。
 	Bookmarks []CTBookmark `xml:"Bookmark"`
-}
-
-// CT_Permission 文档权限定义。
-type CT_Permission struct {
-	// Edit 是否允许编辑文档内容。
-	Edit *bool `xml:"Edit,omitempty"`
-	// Annot 是否允许添加或修改注解。
-	Annot *bool `xml:"Annot,omitempty"`
-	// Export 是否允许导出文档内容。
-	Export *bool `xml:"Export,omitempty"`
-	// Signature 是否允许签名。
-	Signature *bool `xml:"Signature,omitempty"`
-	// Watermark 是否允许添加或修改水印。
-	Watermark *bool `xml:"Watermark,omitempty"`
-	// PrintScreen 是否允许截屏。
-	PrintScreen *bool `xml:"PrintScreen,omitempty"`
-	// Print 文档打印权限设置。
-	Print *PrintSettings `xml:"Print,omitempty"`
-	// ValidPeriod 权限有效期。
-	ValidPeriod *ValidPeriod `xml:"ValidPeriod,omitempty"`
-}
-
-// PrintSettings 文档打印权限设置。
-type PrintSettings struct {
-	// Printable 是否允许打印。
-	Printable bool `xml:"Printable,attr"`
-	// Copies 允许打印的份数。
-	Copies int `xml:"Copies,attr"`
-}
-
-// UnmarshalXML 按 GB/T 33190—2016 表 8 保留缺省的允许打印、份数不限语义。
-func (p *PrintSettings) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	type settings PrintSettings
-	value := settings{Printable: true, Copies: -1}
-	if err := d.DecodeElement(&value, &start); err != nil {
-		return err
-	}
-	*p = PrintSettings(value)
-	return nil
-}
-
-// ValidPeriod 权限有效期定义。
-type ValidPeriod struct {
-	// StartDate 权限生效时间。
-	StartDate DateTime `xml:"StartDate,attr,omitempty"`
-	// EndDate 权限失效时间。
-	EndDate DateTime `xml:"EndDate,attr,omitempty"`
 }
 
 // CT_VPreferences 文档视图首选项定义。
@@ -235,7 +190,7 @@ type CustomTag struct {
 	// TypeID 兼容历史生产者使用的类型标识属性。
 	TypeID string `xml:"TypeID,attr,omitempty"`
 	// SchemaLoc 自定义标签模式文件的位置。
-	SchemaLoc *StLoc `xml:"SchemaLoc,omitempty"`
+	SchemaLoc *spec.StLoc `xml:"SchemaLoc,omitempty"`
 	// FileLoc 自定义标签数据文件的位置。
-	FileLoc StLoc `xml:"FileLoc"`
+	FileLoc spec.StLoc `xml:"FileLoc"`
 }

@@ -9,9 +9,10 @@ import (
 )
 
 type scopedFont struct {
-	scope int
-	id    models.StID
-	font  *models.Font
+	scope      int
+	templateID uint64
+	id         models.StID
+	font       *models.Font
 }
 
 type scopedMedia struct {
@@ -58,10 +59,25 @@ func (r *Reader) computeResourceCatalog() (resourceCatalog, error) {
 				catalog.media = append(catalog.media, scopedMedia{scope: scope, id: id, media: item, document: document})
 			}
 		}
+		for _, definition := range document.CommonData.TemplatePages {
+			_, view, err := document.LoadTemplateResources(definition.ID)
+			if err != nil {
+				return resourceCatalog{}, fmt.Errorf("读取文档体 %d 模板 %d 资源失败: %w", scope, definition.ID, err)
+			}
+			if view != nil {
+				view.ForEachFont(func(id models.StID, font *models.Font) bool {
+					catalog.fonts = append(catalog.fonts, scopedFont{scope: scope, templateID: uint64(definition.ID), id: id, font: font})
+					return true
+				})
+			}
+		}
 	}
 	sort.Slice(catalog.fonts, func(i, j int) bool {
 		if catalog.fonts[i].scope != catalog.fonts[j].scope {
 			return catalog.fonts[i].scope < catalog.fonts[j].scope
+		}
+		if catalog.fonts[i].templateID != catalog.fonts[j].templateID {
+			return catalog.fonts[i].templateID < catalog.fonts[j].templateID
 		}
 		return catalog.fonts[i].id < catalog.fonts[j].id
 	})

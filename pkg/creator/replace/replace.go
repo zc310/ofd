@@ -22,7 +22,9 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/container/entrywriter"
+	permissionmodel "github.com/zc310/ofd/internal/permission"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -54,6 +56,8 @@ type Operation struct {
 
 // Options 控制替换输出方式。
 type Options struct {
+	// PermissionPolicy 默认检查全部原始文档体的Edit及有效期；不根据替换后的声明授权。
+	PermissionPolicy permission.Policy
 	// Compression 是输出 ZIP 的压缩策略，空值时按条目类型自动选择。
 	Compression creator.CompressionMode
 	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
@@ -97,6 +101,9 @@ func Files(input any, operations []Operation, w io.Writer, options Options) erro
 	if err != nil {
 		return err
 	}
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Edit, nil); err != nil {
+		return err
+	}
 	var buffer bytes.Buffer
 	if err := rebuild(pkg, plan, options, &buffer); err != nil {
 		return err
@@ -105,6 +112,9 @@ func Files(input any, operations []Operation, w io.Writer, options Options) erro
 		if err := validateBytes(buffer.Bytes()); err != nil {
 			return err
 		}
+	}
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Edit, nil); err != nil {
+		return err
 	}
 	if _, err := w.Write(buffer.Bytes()); err != nil {
 		return fmt.Errorf("写入输出失败: %w", err)
@@ -253,6 +263,9 @@ func (options Options) checkXMLWellFormed(name string, data []byte) error {
 }
 
 func normalizeOptions(options Options) (Options, error) {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return Options{}, err
+	}
 	compression, level, err := entrywriter.NormalizeOptions(options.Compression, options.CompressionLevel, options.Limits)
 	if err != nil {
 		return Options{}, err

@@ -1,12 +1,14 @@
 package models
 
+import "github.com/zc310/ofd/pkg/spec"
+
 type Signature struct {
 	ID          string     `xml:"ID,attr,omitempty"`
 	Type        string     `xml:"-"`
 	Relative    string     `xml:"-"`
 	FilePath    string     `xml:"-"`
 	SignedInfo  SignedInfo `xml:"SignedInfo"`
-	SignedValue StLoc      `xml:"SignedValue"`
+	SignedValue spec.StLoc `xml:"SignedValue"`
 }
 
 type SignedInfo struct {
@@ -45,8 +47,8 @@ type References struct {
 }
 
 type Reference struct {
-	FileRef    StLoc  `xml:"FileRef,attr"`
-	CheckValue []byte `xml:"CheckValue"`
+	FileRef    spec.StLoc `xml:"FileRef,attr"`
+	CheckValue []byte     `xml:"CheckValue"`
 }
 
 type StampAnnot struct {
@@ -61,7 +63,7 @@ type StampAnnot struct {
 }
 
 type Seal struct {
-	BaseLoc StLoc `xml:"BaseLoc,omitempty"`
+	BaseLoc spec.StLoc `xml:"BaseLoc,omitempty"`
 	// ImageLoc 按图 B.2 的 ST_Loc 解释；表 B.2 的 ST_Box 与“图片存储位置”文字矛盾。
-	ImageLoc StLoc `xml:"ImageLoc,omitempty"`
+	ImageLoc spec.StLoc `xml:"ImageLoc,omitempty"`
 }

@@ -10,13 +10,17 @@ import (
 
 	"github.com/beevik/etree"
 	protocol "github.com/zc310/ofd/internal/crypt"
+	permissionmodel "github.com/zc310/ofd/internal/permission"
 	"github.com/zc310/ofd/internal/securexml"
 	"github.com/zc310/ofd/internal/xmlcodec"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
 // RemoveOptions 控制签名移除；不提供 IDs 时移除所有文档体的全部签名。
 type RemoveOptions struct {
+	// PermissionPolicy 默认按Edit检查签名移除；Signature仅控制进行数字签名。
+	PermissionPolicy permission.Policy
 	// IDs 在各文档体中选择签名；每个 ID 至少应在一个列表中存在。
 	IDs []string
 	// Cleanup 仅用于全部移除：额外删除 Signatures/、Signs/ 及惯用签名文件名的条目，
@@ -45,6 +49,9 @@ func Remove(ctx context.Context, input any, w io.Writer, options RemoveOptions) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return err
+	}
 	if w == nil {
 		return fmt.Errorf("签名清理输出写入器为空")
 	}
@@ -65,6 +72,9 @@ func Remove(ctx context.Context, input any, w io.Writer, options RemoveOptions) 
 	defer func() { _ = pkg.Close() }()
 	if protocol.Present(pkg) || pkg.Has(spec.IntegrityEntryPoint) {
 		return fmt.Errorf("%w: 清理签名前需单独处理加密包或完整性清单", protocol.ErrProtectedContent)
+	}
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Edit, nil); err != nil {
+		return err
 	}
 	entries, err := readAppendEntries(ctx, pkg)
 	if err != nil {
@@ -218,6 +228,12 @@ func Remove(ctx context.Context, input any, w io.Writer, options RemoveOptions) 
 	rootData := index[spec.RootDocument]
 	if rootChanged {
 		rootData = changed[spec.RootDocument]
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := permissionmodel.CheckPackage(pkg, options.PermissionPolicy, permission.Edit, nil); err != nil {
+		return err
 	}
 	return writePackage(removalWriter{ctx, w}, kept, nil, rootData, options.Deterministic, true)
 }

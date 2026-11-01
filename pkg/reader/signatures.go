@@ -199,6 +199,9 @@ func (r *Reader) Signatures() ([]SignatureInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.signaturesOnce.Do(func() {
@@ -300,6 +303,9 @@ func (r *Reader) SignatureSeal(scope int, signatureID string, stampIndex int) ([
 	if scope < 0 || scope >= len(r.ofd.Documents) {
 		return nil, "", fmt.Errorf("签名作用域超出范围: %d", scope)
 	}
+	if err := r.checkDocumentPermissionLocked(PermissionAccess, scope); err != nil {
+		return nil, "", err
+	}
 	document := r.ofd.Documents[scope]
 	if document == nil {
 		return nil, "", errors.New("签名所属文档为空")
@@ -338,6 +344,9 @@ func (r *Reader) Stats() (DocumentStats, error) {
 	defer r.mu.RUnlock()
 	if r.closed {
 		return DocumentStats{}, errors.New("文档引擎已经关闭")
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return DocumentStats{}, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
@@ -387,6 +396,9 @@ func (r *Reader) SignatureCertificate(scope int, signatureID string, slot string
 	if scope < 0 || scope >= len(r.ofd.Documents) {
 		return nil, fmt.Errorf("签名作用域超出范围: %d", scope)
 	}
+	if err := r.checkDocumentPermissionLocked(PermissionAccess, scope); err != nil {
+		return nil, err
+	}
 	document := r.ofd.Documents[scope]
 	if document == nil {
 		return nil, errors.New("签名所属文档为空")
@@ -422,6 +434,9 @@ func (r *Reader) SignatureValue(scope int, signatureID string) ([]byte, error) {
 	}
 	if scope < 0 || scope >= len(r.ofd.Documents) {
 		return nil, fmt.Errorf("签名作用域超出范围: %d", scope)
+	}
+	if err := r.checkDocumentPermissionLocked(PermissionAccess, scope); err != nil {
+		return nil, err
 	}
 	document := r.ofd.Documents[scope]
 	if document == nil {

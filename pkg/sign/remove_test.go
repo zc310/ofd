@@ -25,7 +25,7 @@ func removalFixture() map[string]string {
 	}
 	return map[string]string{
 		"OFD.xml":                  xml("OFD", `<DocBody><DocInfo><DocID>original</DocID></DocInfo><DocRoot>Work/Document.xml</DocRoot><Signatures>Work/custom-list.xml</Signatures></DocBody>`),
-		"Work/Document.xml":        "unchanged document",
+		"Work/Document.xml":        xml("Document", ""),
 		"Work/Pages/page.xml":      "unchanged page",
 		"Work/attachment.bin":      "attachment bytes",
 		"Work/custom-list.xml":     xml("Signatures", `<Signature ID="s1" BaseLoc="custom/a.xml"/><Signature ID="s2" BaseLoc="custom/b.xml"/>`),
@@ -253,7 +253,7 @@ func TestRemoveHandlesMultipleBodiesAndUnsignedInput(t *testing.T) {
 	files := removalFixture()
 	body := `<DocBody><DocRoot>Other/Document.xml</DocRoot><Signatures>Other/list.xml</Signatures></DocBody>`
 	files["OFD.xml"] = strings.Replace(files["OFD.xml"], "</OFD>", body+"</OFD>", 1)
-	files["Other/Document.xml"] = "second document"
+	files["Other/Document.xml"] = `<Document xmlns="http://www.ofdspec.org/2016"/>`
 	files["Other/list.xml"] = fmt.Sprintf(`<Signatures xmlns="%s"><Signature ID="s1" BaseLoc="/Work/custom/a.xml"/></Signatures>`, spec.Namespace)
 	var output bytes.Buffer
 	if err := Remove(t.Context(), removalZIP(t, files), &output, RemoveOptions{}); err != nil {
@@ -297,7 +297,7 @@ func TestRemoveRejectsChangingRootProtectedByAnotherBody(t *testing.T) {
 	files["Work/custom/a.xml"] = fmt.Sprintf(`<Signature xmlns="%s"><SignedInfo><References><Reference FileRef="/OFD.xml"/></References></SignedInfo><SignedValue>a.dat</SignedValue></Signature>`, spec.Namespace)
 	body := `<DocBody><DocRoot>Other/Document.xml</DocRoot><Signatures>Other/list.xml</Signatures></DocBody>`
 	files["OFD.xml"] = strings.Replace(files["OFD.xml"], "</OFD>", body+"</OFD>", 1)
-	files["Other/Document.xml"] = "second document"
+	files["Other/Document.xml"] = `<Document xmlns="http://www.ofdspec.org/2016"/>`
 	files["Other/list.xml"] = fmt.Sprintf(`<Signatures xmlns="%s"><Signature ID="s3" BaseLoc="/Work/custom/b.xml"/></Signatures>`, spec.Namespace)
 	var output bytes.Buffer
 	if err := Remove(t.Context(), removalZIP(t, files), &output, RemoveOptions{IDs: []string{"s3"}}); !errors.Is(err, protocol.ErrProtectedContent) || output.Len() != 0 {

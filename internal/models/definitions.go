@@ -9,7 +9,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/zc310/ofd/pkg/spec"
 )
@@ -275,92 +274,6 @@ type Path struct {
 	RotationAngle  *float64 `xml:"RotationAngle,attr,omitempty"`
 	EllipseSize    *StArray `xml:"EllipseSize,attr,omitempty"`
 	EndPoint       *StPos   `xml:"EndPoint,attr,omitempty"`
-}
-
-// CustomDatas 自定义数据集合
-type CustomDatas struct {
-	CustomData []CustomData `xml:"CustomData"`
-}
-
-// CustomData 自定义数据
-type CustomData struct {
-	Name  string `xml:"Name,attr"`
-	Value string `xml:",chardata"`
-}
-
-// DateTime 自定义时间类型，用于解析OFD中的时间格式
-type DateTime struct {
-	time.Time
-}
-
-// UnmarshalXML 自定义XML元素解析方法
-func (t *DateTime) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	var v string
-	err := d.DecodeElement(&v, &start)
-	if err != nil {
-		return err
-	}
-	return t.parseTime(v)
-}
-
-// UnmarshalXMLAttr 自定义XML属性解析方法
-func (t *DateTime) UnmarshalXMLAttr(attr xml.Attr) error {
-	return t.parseTime(attr.Value)
-}
-
-// parseTime 解析时间的通用方法
-func (t *DateTime) parseTime(v string) error {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		*t = DateTime{}
-		return nil
-	}
-	// 尝试解析多种可能的时间格式
-	formats := []string{
-		// OFD 元数据最常见的日期格式。
-		"2006-01-02",
-
-		// OFD dateTime 常见格式：无时区，或使用 RFC3339 时区。
-		"2006-01-02T15:04:05",
-		"2006-01-02 15:04:05",
-		time.RFC3339,
-		time.RFC3339Nano,
-
-		// 带毫秒 / 微秒 / 纳秒的非标准变体。
-		"2006-01-02T15:04:05.999999999Z07:00",
-		"2006-01-02T15:04:05.999999Z07:00",
-		"2006-01-02T15:04:05.999Z07:00",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05.999999",
-		"2006-01-02 15:04:05.999",
-
-		// 去零格式。
-		"2006-1-2 15:4:5",
-		"2006-1-2",
-
-		// 斜杠分隔格式。
-		"2006/01/02 15:04:05",
-		"2006/1/02 15:04:05",
-		"2006/1/2 15:4:5",
-		"2006/1/2",
-		"01/02/2006 3:04:05 PM",
-		"01/02/2006 15:04:05",
-
-		// 紧凑格式，作为最后的兼容兜底。
-		"20060102",
-		"20060102150405",
-		"200601021504",
-		"2006-01-02-15-04-05",
-	}
-
-	for _, format := range formats {
-		if parsedTime, err := time.Parse(format, v); err == nil {
-			*t = DateTime{parsedTime}
-			return nil
-		}
-	}
-
-	return fmt.Errorf("无法解析时间: %s", v)
 }
 
 type Color struct {

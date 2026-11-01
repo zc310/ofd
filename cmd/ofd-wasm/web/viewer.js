@@ -42,6 +42,9 @@ class OFDWorkerClient {
     else {
       const error = new Error(message.error);
       if (message.code) error.code = message.code;
+      if (message.reason) error.reason = message.reason;
+      if (message.action) error.action = message.action;
+      if (Number.isInteger(message.scope)) error.scope = message.scope;
       if (message.error === '请求已取消') error.name = 'AbortError';
       request.reject(error);
     }
@@ -148,7 +151,7 @@ class OFDWorkerClient {
   }
 
   fontUsage(scope, fontID, options = {}) {
-    return this.request('fontUsage', { scope, fontID, maxScan: options.maxScan, maxPages: options.maxPages });
+    return this.request('fontUsage', { scope, fontID, maxScan: options.maxScan, maxPages: options.maxPages, templateID: options.templateID });
   }
 
   fontUsageAll(options = {}) {
@@ -175,12 +178,12 @@ class OFDWorkerClient {
     return this.request('media');
   }
 
-  mediaData(scope, mediaID, maxBytes, purpose) {
-    return this.request('mediaData', { scope, mediaID, maxBytes, purpose });
+  mediaData(scope, mediaID, maxBytes, purpose, templateID) {
+    return this.request('mediaData', { scope, mediaID, maxBytes, purpose, templateID });
   }
 
-  annotations() {
-    return this.request('annotations');
+  annotations(index) {
+    return this.request('annotations', { index });
   }
 
   pageLinks() {
@@ -372,6 +375,9 @@ const startupProgress = document.querySelector('#startup-progress');
 const startupProgressLabel = document.querySelector('#startup-progress-label');
 const file = document.querySelector('#file');
 const documentName = document.querySelector('#document-name');
+
+const restoreDocumentUI = document.querySelector('#restore-document-ui');
+const applicationTitle = document.title;
 const refreshButton = document.querySelector('#refresh-button');
 const updateBanner = document.querySelector('#update-banner');
 const updateBannerReload = document.querySelector('#update-banner-reload');
@@ -616,6 +622,8 @@ let pageEntryActions = [];
 let pendingPageEntryURIs = [];
 let activePageEntryURI = '';
 let mediaCatalog = [];
+const annotationInfos = new Map();
+const annotationsPromises = new Map();
 const activeMedia = new Map();
 let linkRequest;
 let linkPreviewTimer;
@@ -632,7 +640,7 @@ const zoomModeStorageKey = 'ofd-zoom-mode';
 let zoomMode = (() => {
   try {
     const value = localStorage.getItem(zoomModeStorageKey);
-    return ['fit', 'page'].includes(value) ? value : 'fit';
+    return ['fit', 'height', 'page'].includes(value) ? value : 'fit';
   } catch (_) {
     return 'fit';
   }
@@ -813,6 +821,8 @@ let copyFeedbackTimer;
 let statusBeforeCopy;
 let recentFiles = [];
 let currentDocumentKey = '';
+// 文件名独立于可变的显示标题，版本切换时仍沿用原文件名。
+let currentDocumentFileName = '';
 let pageSpreads = [];
 let widestSpreadBaseWidth = 0;
 let mountedPageSpreads = new Set();
@@ -949,7 +959,6 @@ function layoutBaseWidth() {
 
 const basePagePixels = 820;
 const referencePageWidthMM = 210;
-const minFitZoom = 0.05;
 
 function pageBaseDimensions(info) {
   if (!info || !(info.width > 0) || !(info.height > 0)) {
@@ -1344,6 +1353,8 @@ function mountPageSpread(position) {
     sealLayer.className = 'seal-layer';
     const mediaLayer = document.createElement('div');
     mediaLayer.className = 'media-layer';
+    const remarkLayer = document.createElement('div');
+    remarkLayer.className = 'remark-layer';
     image.addEventListener('load', () => {
       image.classList.add('loaded');
       clearPageLoading(card, image);
@@ -1356,7 +1367,7 @@ function mountPageSpread(position) {
       showPageError(index, '页面图片加载失败');
     });
     surface.append(image, sealLayer, textLayer, linkLayer, mediaLayer);
-    card.append(surface);
+    card.append(surface, remarkLayer);
     element.append(card);
     pageCards[index] = card;
     applyCustomTagHighlights(index);
@@ -1367,6 +1378,7 @@ function mountPageSpread(position) {
     schedulePageMetadata(index);
     applyPageLinks(index);
     applySealHotspots(index);
+    void applyAnnotationRemarks(index);
   });
   applyPageWidthToSpread(spread);
   spread.pages.forEach(index => {
@@ -1439,6 +1451,7 @@ function applyPageWidthToSpread(spread) {
     card.style.width = `${dimensions.width * zoom}px`;
     card.style.minHeight = `${dimensions.height * zoom}px`;
     card.style.aspectRatio = rotated ? `${info.height} / ${info.width}` : `${info.width} / ${info.height}`;
+    positionAnnotationRemarks(index);
     const surface = card.querySelector('.page-surface');
     if (surface) {
       surface.className = 'page-surface';
@@ -2757,22 +2770,36 @@ function setDocumentPermissions(permissions) {
     for (const index of permission.pages || []) pagePermissions.set(index, permission);
   }
   documentPermissionSummary = {
-    print: [...pagePermissions.values()].some(permission => permission.printable),
-    export: [...pagePermissions.values()].some(permission => permission.export),
-    copy: pageInfos.length > 0 && pageInfos.every((_, index) => pagePermissions.get(index)?.export === true),
+    print: [...pagePermissions.values()].some(permission => permissionAccessAllowed(permission) && permission.printable),
+    export: [...pagePermissions.values()].some(permission => permissionAccessAllowed(permission) && permission.export),
+    copy: pageInfos.length > 0 && pageInfos.every((_, index) => pagePermissionAllowed('copy', [index])),
   };
+}
+
+// 快照只辅助界面与前端缓存；实际操作仍由WASM按当前时间和当前版本检查。
+function permissionAccessAllowed(permission, now = Date.now()) {
+  if (!permission || permission.accessible === false) return false;
+  const start = permission.start_date ? Date.parse(permission.start_date) : null;
+  const end = permission.end_date ? Date.parse(permission.end_date) : null;
+  if ((start !== null && !Number.isFinite(start)) || (end !== null && !Number.isFinite(end))) return false;
+  if (start !== null && end !== null && start > end) return false;
+  return (start === null || now >= start) && (end === null || now <= end);
 }
 
 function pagePermissionAllowed(action, indices) {
   return indices.length > 0 && indices.every(index => {
     const permission = pagePermissions.get(index);
-    return action === 'print' ? permission?.printable === true : permission?.export === true;
+    if (!permissionAccessAllowed(permission)) return false;
+    if (action === 'access') return true;
+    if (action === 'print') return permission.printable === true;
+    if (action === 'copy' || action === 'export') return permission.export === true;
+    return false;
   });
 }
 
 function requirePagePermission(action, indices) {
   if (pagePermissionAllowed(action, indices)) return;
-  const label = action === 'print' ? '打印' : action === 'copy' ? '复制' : '导出';
+  const label = action === 'access' ? '访问（可能不在有效期内）' : action === 'print' ? '打印' : action === 'copy' ? '复制' : '导出';
   const error = new Error(`所选页面的文档权限禁止${label}`);
   error.code = 'permission_denied';
   throw error;
@@ -3123,19 +3150,35 @@ function applyPageWidth() {
   });
 }
 
-function setZoom(value, mode = 'manual') {
-	if (!pageInfos.length) return;
-	const target = Math.max(mode === 'fit' || mode === 'page' ? minFitZoom : 0.5, Math.min(3, value));
-	if (mode === 'fit' || mode === 'page') {
-		try {
-			localStorage.setItem(zoomModeStorageKey, mode);
-		} catch (_) {}
-	}
-	if (target === zoom && mode === zoomMode) return;
-	const previousDPI = pageDPI();
+function setZoom(value, mode = 'manual', persist = true) {
+  if (!pageInfos.length || !Number.isFinite(value) || value <= 0) return;
+  // 自动适配使用真实比例，不受手动缩放50%—300%的范围限制。
+  const automatic = ['fit', 'height', 'page'].includes(mode);
+  const target = automatic || mode === 'destination' ? value : Math.max(0.5, Math.min(3, value));
+  if (automatic && persist) {
+    try {
+      localStorage.setItem(zoomModeStorageKey, mode);
+    } catch (_) {}
+  }
+  if (target === zoom && mode === zoomMode) return;
+  const previousDPI = pageDPI();
   zoom = target;
   zoomMode = mode;
   applyPageWidth();
+  if (automatic) {
+    // 放大可能新增横向滚动条，缩小也可能移除它；布局后再核对真实视口。
+    // 临界宽高下滚动条可能反复出现/消失，遇到重复比例取较小值避免裁去页面。
+    const tried = new Set([zoom]);
+    for (let pass = 0; pass < 3; pass++) {
+      const fitted = fittedZoom(mode);
+      if (!(fitted > 0) || Math.abs(fitted - zoom) <= Math.max(zoom, fitted) * 1e-10) break;
+      const repeated = tried.has(fitted);
+      zoom = repeated ? Math.min(...tried) : fitted;
+      tried.add(zoom);
+      applyPageWidth();
+      if (repeated) break;
+    }
+  }
   if (previousDPI !== pageDPI()) reloadPageImages();
   else pageCards.forEach((card, index) => {
     if (textCache.has(index)) buildTextLayer(index);
@@ -3160,22 +3203,55 @@ function reloadPageImages() {
   });
 }
 
-function fitWidthZoom() {
-  if (!pageInfos.length || !pagesElement.clientWidth) return;
-  const width = layoutBaseWidth();
-  setZoom(Math.max(minFitZoom, Math.min(3, pagesElement.clientWidth / width)), 'fit');
+// 可用区域统一扣除阅读区内边距、固定栏及实际横向滚动条，不使用魔法留白常数。
+function fitViewport() {
+  const readerStyle = getComputedStyle(readerElement);
+  const pagesStyle = getComputedStyle(pagesElement);
+  const pixels = value => Number.parseFloat(value) || 0;
+  const verticalPadding = pixels(readerStyle.paddingTop) + pixels(readerStyle.paddingBottom) + pixels(pagesStyle.paddingTop) + pixels(pagesStyle.paddingBottom);
+  const horizontalPadding = pixels(pagesStyle.paddingLeft) + pixels(pagesStyle.paddingRight);
+  const borders = pixels(pagesStyle.borderTopWidth) + pixels(pagesStyle.borderBottomWidth);
+  const scrollbar = Math.max(0, (pagesElement.offsetHeight || 0) - (pagesElement.clientHeight || 0) - borders);
+  return {
+    width: Math.max(0, pagesElement.clientWidth - horizontalPadding),
+    height: Math.max(0, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - scrollbar),
+  };
 }
 
-function fitPageZoom() {
+// §7.5 表9的 FitRect 不提供矩形坐标；这里适配当前页组完整物理页面区域。
+// Dest/FitR 的显式目标矩形另行计算，但共用视口及比例算法。
+function fitScale(mode, target, viewport) {
+  if (![target.width, target.height, viewport.width, viewport.height].every(value => Number.isFinite(value) && value > 0)) return 0;
+  const width = viewport.width / target.width;
+  const height = viewport.height / target.height;
+  const scale = mode === 'fit' ? width : mode === 'height' ? height : mode === 'page' ? Math.min(width, height) : 0;
+  return Number.isFinite(scale) && scale > 0 ? scale : 0;
+}
+
+function fittedZoom(mode) {
+  if (!pageInfos.length) return 0;
   const dimensions = spreadDimensions(currentSpreadPosition());
-  if (!dimensions.height || !pagesElement.clientWidth) return;
-  const readerStyle = getComputedStyle(document.querySelector('.reader'));
-  const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
-  const availableWidth = Math.max(1, pagesElement.clientWidth);
-  const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
-  const spreadRatio = dimensions.width / dimensions.height;
-  const spreadWidth = Math.min(availableWidth, availableHeight * spreadRatio);
-  setZoom(Math.max(minFitZoom, Math.min(3, spreadWidth / dimensions.width)), 'page');
+  const target = mode === 'fit' ? { width: layoutBaseWidth(), height: dimensions.height } : dimensions;
+  return fitScale(mode, target, fitViewport());
+}
+
+function fitWidthZoom(persist = true) {
+  setZoom(fittedZoom('fit'), 'fit', persist);
+}
+
+function fitHeightZoom(persist = true) {
+  setZoom(fittedZoom('height'), 'height', persist);
+}
+
+function fitPageZoom(persist = true) {
+  setZoom(fittedZoom('page'), 'page', persist);
+}
+
+// 重算不是用户选择，不把文档初始偏好写成全局偏好；手动缩放后不再自动适配。
+function refitZoom() {
+  if (zoomMode === 'fit') fitWidthZoom(false);
+  else if (zoomMode === 'height') fitHeightZoom(false);
+  else if (zoomMode === 'page') fitPageZoom(false);
 }
 
 function rotationStorageKey() {
@@ -3196,8 +3272,7 @@ function rotatePage() {
   if (!pageInfos.length) return;
   pageRotation = (pageRotation + 90) % 360;
   applyPageWidth();
-  if (zoomMode === 'fit') fitWidthZoom();
-  else if (zoomMode === 'page') fitPageZoom();
+  refitZoom();
   try {
     localStorage.setItem(rotationStorageKey(), String(pageRotation));
   } catch (_) {}
@@ -3221,7 +3296,7 @@ function pageHorizontalOverflow() {
 // 文本，链接触发区要能点开，控件同理。
 function panPointerBlocked(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest('.text-run, a, button, input, select, textarea, [role="button"]'));
+  return Boolean(target.closest('.text-run, .annotation-note, a, button, input, select, textarea, [role="button"]'));
 }
 
 function handlePanPointerDown(event) {
@@ -3541,6 +3616,7 @@ function renderMimeType(format) {
 }
 
 function loadImage(index, kind, generation, imageElement, card) {
+  try { requirePagePermission('access', [index]); } catch (error) { return Promise.reject(error); }
   if (layerUpdates.has(index)) return Promise.resolve(null);
   const cache = kind === 'page' ? pageCache : thumbnailCache;
   const requests = kind === 'page' ? pageRequests : thumbnailRequests;
@@ -3691,8 +3767,7 @@ function loadActualPageInfo(index) {
       pageInfos[index] = info;
       updatePageVirtualMetrics();
       applyPageWidth();
-      if (zoomMode === 'fit') fitWidthZoom();
-      else if (zoomMode === 'page' && pageSpreadPositionForPage(index) === currentSpreadPosition()) fitPageZoom();
+      if (zoomMode === 'fit' || pageSpreadPositionForPage(index) === currentSpreadPosition()) refitZoom();
       if (pageCards[index]) buildTextLayer(index);
     })
     .catch(() => undefined)
@@ -3869,10 +3944,8 @@ function buildPages() {
       if (runs) buildTextLayer(index);
     }
   });
-  if (zoomMode === 'fit') {
-    const available = pagesElement.clientWidth;
-    if (available > 0) zoom = Math.max(minFitZoom, Math.min(3, available / layoutBaseWidth()));
-  }
+  const fitted = fittedZoom(zoomMode);
+  if (fitted > 0) zoom = fitted;
   applyPageWidth();
   updatePageVirtualWindow(false);
   updateThumbnailVirtualWindow();
@@ -4110,6 +4183,9 @@ function clearFileDropState() {
 
 // 打开文件和切换版本共用视图清理，避免页码复用时混入旧页面、文字或资源。
 function clearDocumentView() {
+  annotationInfos.clear();
+  annotationsPromises.clear();
+  resetDocumentPreferences();
   hideLinkPreview();
   resetDocumentInfo('正在读取文档信息…');
   setDocumentPermissions([]);
@@ -4386,6 +4462,7 @@ async function openSelectedFile(selected, options = {}) {
     localFontsSelect.disabled = true;
     applyLocalFontsIntent();
   }
+  currentDocumentFileName = selected.name;
   clearDocumentView();
   setInfoTab('basic');
   documentName.textContent = selected.name;
@@ -4484,6 +4561,8 @@ async function openSelectedFile(selected, options = {}) {
     current = 0;
     updateNavigation();
     setStatus(`打开失败：${error.message}`);
+    currentDocumentFileName = '';
+    resetDocumentPreferences();
     // 打开失败时地址栏不应继续指向打不开的远程文档。keepURL 表示这条历史记录
     // 不是本次加载创建的（前进/后退），改写它会让返回目标失去意义。
     currentRemoteSource = undefined;
@@ -4502,6 +4581,10 @@ async function openSelectedFile(selected, options = {}) {
 
 function cancelOpening() {
   if (!opening) return;
+  annotationInfos.clear();
+  annotationsPromises.clear();
+  currentDocumentFileName = '';
+  resetDocumentPreferences();
   documentGeneration++;
   finishUnlockPrompt(null);
   layerRevisions.clear();
@@ -5412,6 +5495,8 @@ async function printSelectedPages(indexes) {
   try {
     await engine.checkPermission('print', indexes);
     throwIfDocumentActionCancelled(generation);
+    const annotations = (await Promise.all(indexes.map(index => loadAnnotationInfos(index)))).flat();
+    throwIfDocumentActionCancelled(generation);
     const images = await Promise.all(indexes.map(async index => {
       const image = document.createElement('img');
       const src = await loadImage(index, 'page', generation, image);
@@ -5421,10 +5506,10 @@ async function printSelectedPages(indexes) {
     throwIfDocumentActionCancelled(generation);
     const title = escapeHTML(documentName.textContent || 'OFD 文档');
     const imageMarkup = images.map(image =>
-      `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${image.index + 1} 页"></section>`
+      `<section class="page"><img src="${escapeHTML(image.src)}" alt="第 ${image.index + 1} 页">${printAnnotationRemarks(annotations, image.index)}</section>`
     ).join('');
     printWindow.document.open();
-    printWindow.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}</style></head><body>${imageMarkup}</body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title} - 打印</title><style>@page{margin:0}html,body{margin:0}.page{display:flex;flex-direction:column;min-height:100vh;align-items:center;justify-content:center;break-after:page;page-break-after:always}.page:last-child{break-after:auto;page-break-after:auto}img{display:block;max-width:100%;max-height:100vh;object-fit:contain}.print-remarks{align-self:stretch;padding:4mm 8mm;font:10pt/1.5 sans-serif;overflow-wrap:anywhere;white-space:pre-wrap}.print-remarks h2{font-size:11pt}.print-remarks li{margin-bottom:2mm}</style></head><body>${imageMarkup}</body></html>`);
     printWindow.document.close();
     printWindow.onload = async () => {
       try {
@@ -5477,6 +5562,7 @@ function setReadingMode(enabled) {
   } else if (!enabled && document.fullscreenElement && document.exitFullscreen) {
     document.exitFullscreen().catch(() => {});
   }
+  requestAnimationFrame(refitZoom);
 }
 
 function setViewPanelOpen(open) {
@@ -5518,7 +5604,10 @@ function setMobileToolbarExpanded(expanded) {
     setRecentPanelOpen(false);
     setViewPanelOpen(false);
   }
-  requestAnimationFrame(() => headerHeight());
+  requestAnimationFrame(() => {
+    headerHeight();
+    refitZoom();
+  });
   mobileToolbarToggle?.setAttribute('aria-expanded', String(expanded));
   if (mobileToolbarToggle) {
     mobileToolbarToggle.title = expanded ? '收起工具栏' : '展开工具栏';
@@ -5747,8 +5836,7 @@ function finishSidebarResize() {
   persistSidebarWidth();
   updateThumbnailMetrics();
   updatePageVirtualMetrics();
-  if (zoomMode === 'fit') fitWidthZoom();
-  else if (zoomMode === 'page') fitPageZoom();
+  refitZoom();
   scheduleVirtualUpdate();
 }
 
@@ -5777,8 +5865,7 @@ function setThumbnailsVisible(visible) {
   updateThumbnailMetrics();
   scheduleVirtualUpdate();
   requestAnimationFrame(() => {
-    if (zoomMode === 'fit') fitWidthZoom();
-    else if (zoomMode === 'page') fitPageZoom();
+    refitZoom();
   });
 }
 
@@ -5807,12 +5894,13 @@ function mapDocumentPageLayout(value) {
   }
 }
 
-// 文档声明的缩放模式映射；FitHeight/FitRect 暂用“适应页面”近似。
+// 文档声明的缩放模式映射，FitHeight独立适配高度，FitRect完整容纳当前页组。
 function mapDocumentZoomMode(value) {
   switch (String(value)) {
     case 'FitWidth':
       return 'fit';
     case 'FitHeight':
+      return 'height';
     case 'FitRect':
       return 'page';
     default:
@@ -5829,13 +5917,16 @@ function normalizeDocumentZoom(value) {
 
 // applyDocumentPreferences 在用户没有显式保存偏好时，应用文档声明的布局与初始缩放。
 async function applyDocumentPreferences() {
+  const generation = documentGeneration;
   let preferences = null;
   try {
     preferences = await engine.preferences();
   } catch (_) {
     return;
   }
-  if (!preferences) return;
+  if (generation !== documentGeneration || !preferences) return;
+  applyDocumentTitle(preferences);
+  setDocumentUIHidden(preferences);
   if (!hasSavedPreference(pageLayoutStorageKey)) {
     const layout = mapDocumentPageLayout(preferences.page_layout);
     if (layout) {
@@ -5853,6 +5944,43 @@ async function applyDocumentPreferences() {
       if (mode) zoomMode = mode;
     }
   }
+}
+
+// §7.5 表9：默认显示文件名；DocTitle 缺失或空白时仍回退文件名。
+function applyDocumentTitle(preferences = {}) {
+  const title = preferences.tab_display === 'DocTitle' ? String(preferences.document_title || '').trim() : '';
+  const label = title || currentDocumentFileName;
+  documentName.textContent = label || '未打开文档';
+  documentName.title = label;
+  document.title = label ? `${label} — ${applicationTitle}` : applicationTitle;
+}
+
+// 隐藏只是初始显示建议：不写用户设置，不隐藏浏览器自身界面或恢复按钮。
+function setDocumentUIHidden(preferences = {}) {
+  const toolbar = preferences.hide_toolbar === true;
+  const menubar = preferences.hide_menubar === true;
+  const windowUI = preferences.hide_window_ui === true;
+  document.body.classList.toggle('document-hide-toolbar', toolbar);
+  document.body.classList.toggle('document-hide-menubar', menubar);
+  document.body.classList.toggle('document-hide-window-ui', windowUI);
+  restoreDocumentUI.hidden = !(toolbar || menubar || windowUI);
+  if (toolbar) {
+    setViewPanelOpen(false);
+    setZoomMenuOpen(false);
+    setInfoPanelOpen(false);
+    setRecentPanelOpen(false);
+  }
+  if (menubar) setDocumentMenuOpen(false);
+  requestAnimationFrame(() => {
+    headerHeight();
+    scheduleVirtualUpdate();
+    refitZoom();
+  });
+}
+
+function resetDocumentPreferences() {
+  setDocumentUIHidden();
+  applyDocumentTitle();
 }
 
 async function loadOutline() {
@@ -6264,9 +6392,10 @@ function fontUsageLabel(usage) {
   return count ? `${count} 页` : '未使用';
 }
 
-// 字体作用域 + ID 唯一标识一个字体，避免多文档体之间字体 ID 冲突。
+// 文档体、模板资源视图与 ID 共同标识字体。
 function fontUsageKey(font) {
-  return `${Number(font?.scope) || 0}:${Number(font?.id)}`;
+  const base = `${Number(font?.scope) || 0}:${Number(font?.id)}`;
+  return font?.template_id ? `${base}:template:${Number(font.template_id)}` : base;
 }
 
 // fontUsageLimits 按文档规模选择统计扫描上限：小文档全量，大文档限制自动统计的扫描成本。
@@ -6334,7 +6463,7 @@ async function toggleFontUsage(font, wrap, button) {
     button.disabled = true;
     button.textContent = '查找中…';
     try {
-      usage = await engine.fontUsage(Number(font.scope) || 0, Number(font.id), fontUsageLimits(false));
+      usage = await engine.fontUsage(Number(font.scope) || 0, Number(font.id), { ...fontUsageLimits(false), templateID: Number(font.template_id) || 0 });
     } catch (_) {
       usage = null;
     }
@@ -6651,6 +6780,8 @@ async function switchDocumentVersion(item) {
     currentDocumentKey = id ? `${mainKey}:version:${item.scope}:${id}` : mainKey;
     pageInfos = result.pages;
     setDocumentPermissions(result.permissions);
+    await applyDocumentPreferences();
+    if (generation !== documentGeneration) return false;
     const savedPage = readReadingPositions()[currentDocumentKey]?.page;
     current = Number.isInteger(savedPage) ? Math.max(0, Math.min(pageInfos.length - 1, savedPage)) : 0;
     sidebarScroll = readSidebarScroll();
@@ -6664,6 +6795,8 @@ async function switchDocumentVersion(item) {
     if (generation !== documentGeneration || isCancelledError(error)) return false;
     if (!pageInfos.length) pageInfos = previousPages;
     setDocumentPermissions(previousPermissions);
+    await applyDocumentPreferences();
+    if (generation !== documentGeneration) return false;
     current = Math.min(previousPage, pageInfos.length - 1);
     buildPages();
     setStatus(`版本切换失败：${error.message}`);
@@ -7193,6 +7326,94 @@ function buildAnnotationItem(info) {
   return item;
 }
 
+// 元数据按文档生命周期缓存；过期请求不能填充新文档缓存。
+async function loadAnnotationInfos(index) {
+  const key = Number.isInteger(index) ? index : 'all';
+  if (annotationInfos.has(key)) return annotationInfos.get(key);
+  if (annotationsPromises.has(key)) return annotationsPromises.get(key);
+  const generation = documentGeneration;
+  const request = engine.annotations(index).then(list => {
+    if (generation !== documentGeneration) throw new Error('文档已切换');
+    const infos = Array.isArray(list) ? list : [];
+    annotationInfos.set(key, infos);
+    if (annotationInfos.size > 128) annotationInfos.delete(annotationInfos.keys().next().value);
+    return infos;
+  });
+  annotationsPromises.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (annotationsPromises.get(key) === request) annotationsPromises.delete(key);
+  }
+}
+
+// Remark 没有规范化的字体/尺寸；本阅读器以220px、13px字号作为100%时的备注面板。
+// 锚点始终随页面位置/旋转变化，NoZoom/NoRotate只控制锚点之后的局部变换。
+function annotationRemarkPlacement(info, page, scale = zoom, rotation = pageRotation) {
+  const box = info?.boundary;
+  if (!box || ![box.x, box.y, page?.width, page?.height, scale].every(Number.isFinite) || page.width <= 0 || page.height <= 0 || scale <= 0) return null;
+  const base = basePagePixels / referencePageWidthMM;
+  const angle = ((rotation % 360) + 360) % 360;
+  let x = box.x, y = box.y;
+  if (angle === 90) { x = page.height - box.y; y = box.x; }
+  else if (angle === 180) { x = page.width - box.x; y = page.height - box.y; }
+  else if (angle === 270) { x = box.y; y = page.width - box.x; }
+  return { x: x * base * scale, y: y * base * scale, scale: info.no_zoom ? 1 : scale, rotation: info.no_rotate ? 0 : angle };
+}
+
+function positionAnnotationRemarks(index) {
+  const card = pageCards[index];
+  if (!card) return;
+  card.querySelectorAll('.annotation-note').forEach(note => {
+    const info = note.annotationInfo;
+    const placement = annotationRemarkPlacement(info, pageInfos[index]);
+    note.hidden = !placement;
+    if (!placement) return;
+    note.style.left = `${placement.x}px`;
+    note.style.top = `${placement.y}px`;
+    note.style.transform = `rotate(${placement.rotation}deg) scale(${placement.scale})`;
+  });
+}
+
+async function applyAnnotationRemarks(index) {
+  const card = pageCards[index];
+  const layer = card?.querySelector('.remark-layer');
+  if (!layer) return;
+  const generation = documentGeneration;
+  try {
+    const infos = await loadAnnotationInfos(index);
+    if (generation !== documentGeneration || pageCards[index] !== card) return;
+    layer.replaceChildren();
+    infos.forEach((info, position) => {
+      if (info.page !== index || info.visible === false || !String(info.remark || '').trim() || !annotationRemarkPlacement(info, pageInfos[index])) return;
+      const note = document.createElement('details');
+      note.className = 'annotation-note';
+      note.dataset.annotation = position;
+      note.annotationInfo = info;
+      const summary = document.createElement('summary');
+      summary.textContent = '备注';
+      summary.title = info.creator ? `备注：${info.creator}` : '展开备注';
+      const text = document.createElement('div');
+      text.className = 'annotation-note-text';
+      text.textContent = info.remark;
+      note.append(summary, text);
+      layer.append(note);
+    });
+    positionAnnotationRemarks(index);
+  } catch (error) {
+    if (generation === documentGeneration && pageCards[index] === card) layer.title = `备注读取失败：${error.message}`;
+  }
+}
+
+// 打印在对应原始页面后附备注清单，不复用屏幕弹层或当前缩放/旋转。
+// Print=false只排除Remark；页面图像中的Appearance仍照常输出。
+function printAnnotationRemarks(infos, index) {
+  const remarks = infos.filter(info => info.page === index && info.visible !== false && info.print !== false && String(info.remark || '').trim());
+  if (!remarks.length) return '';
+  const items = remarks.map(info => `<li>${escapeHTML(info.remark)}</li>`).join('');
+  return `<aside class="print-remarks"><h2>第 ${index + 1} 页备注</h2><ol>${items}</ol></aside>`;
+}
+
 function renderAnnotations() {
   if (!annotationsElement) return;
   const generation = documentGeneration;
@@ -7202,7 +7423,7 @@ function renderAnnotations() {
     return;
   }
   annotationsElement.append(outlineEmptyMessage('正在读取注解...'));
-  engine.annotations().then(list => {
+  loadAnnotationInfos().then(list => {
     if (generation !== documentGeneration) return;
     const annotations = Array.isArray(list) ? list : [];
     annotationsElement.replaceChildren();
@@ -7641,11 +7862,7 @@ function fitRectZoom(info, dest) {
   const rotation = ((pageRotation % 360) + 360) % 360;
   const displayWidth = (rotation % 180 === 0 ? rectWidth : rectHeight) * base;
   const displayHeight = (rotation % 180 === 0 ? rectHeight : rectWidth) * base;
-  const readerStyle = getComputedStyle(readerElement);
-  const verticalPadding = parseFloat(readerStyle.paddingTop) + parseFloat(readerStyle.paddingBottom);
-  const availableWidth = Math.max(1, pagesElement.clientWidth);
-  const availableHeight = Math.max(1, window.innerHeight - headerHeight() - status.offsetHeight - verticalPadding - 24);
-  return Math.max(minFitZoom, Math.min(3, Math.min(availableWidth / displayWidth, availableHeight / displayHeight)));
+  return fitScale('page', { width: displayWidth, height: displayHeight }, fitViewport());
 }
 
 // scrollToDestinationX 让目标横向位置对齐到阅读区左边缘（存在横向溢出时才生效）。
@@ -8031,7 +8248,7 @@ function handleSealPopoverScroll(event) {
 }
 
 function mediaActionKey(action) {
-  return `${action.scope}:${action.media_id}`;
+  return action.template_id ? `${action.scope}:template:${action.template_id}:${action.media_id}` : `${action.scope}:${action.media_id}`;
 }
 
 function stopActiveMedia(key) {
@@ -8113,13 +8330,13 @@ async function ensureMediaElement(action) {
     placeMediaElement(existing, action);
     return existing;
   }
-  const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0, 'preview');
+  const data = await engine.mediaData(Number(action.scope) || 0, Number(action.media_id), 0, 'preview', Number(action.template_id) || 0);
   if (generation !== documentGeneration) throw new Error('文档已切换');
   if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
     throw new Error('媒体资源为空');
   }
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const described = mediaCatalog.find(item => Number(item.scope) === (Number(action.scope) || 0) && Number(item.id) === Number(action.media_id));
+  const described = action.template_id ? null : mediaCatalog.find(item => Number(item.scope) === (Number(action.scope) || 0) && Number(item.id) === Number(action.media_id));
   const mime = mediaMime(described || { type: action.media_kind === 'sound' ? 'Audio' : 'Video' });
   const url = URL.createObjectURL(new Blob([bytes], { type: mime || (action.media_kind === 'sound' ? 'audio/mpeg' : 'video/mp4') }));
   const element = document.createElement(action.media_kind === 'sound' ? 'audio' : 'video');
@@ -8328,7 +8545,7 @@ function goToDestination(index, dest) {
   const type = String(dest.type || '').toUpperCase();
   if (type === 'FITR') {
     const fit = fitRectZoom(info, dest);
-    if (fit) setZoom(fit, 'manual');
+    if (fit) setZoom(fit, 'destination');
   } else {
     const destZoom = normalizeDestZoom(dest.zoom);
     if (destZoom) setZoom(destZoom, 'manual');
@@ -8606,11 +8823,16 @@ zoomMenu.addEventListener('click', event => {
   if (!button) return;
   if (button.dataset.zoom) setZoom(Number(button.dataset.zoom), 'manual');
   else if (button.dataset.zoomFit === 'width') fitWidthZoom();
+  else if (button.dataset.zoomFit === 'height') fitHeightZoom();
   else if (button.dataset.zoomFit === 'page') fitPageZoom();
   setZoomMenuOpen(false);
 });
 rotatePageButton.addEventListener('click', rotatePage);
 readingMode.addEventListener('click', () => setReadingMode(!document.body.classList.contains('reading-mode')));
+restoreDocumentUI.addEventListener('click', () => {
+  setDocumentUIHidden();
+  viewToggle.focus();
+});
 viewToggle.addEventListener('click', () => setViewPanelOpen(viewPanel.hidden));
 mobileToolbarToggle.addEventListener('click', () => {
   setMobileToolbarExpanded(!mobileToolbarToggle.matches('[aria-expanded="true"]'));
@@ -8769,8 +8991,7 @@ window.addEventListener('resize', () => {
   applySidebarPanels();
   updateThumbnailMetrics();
   updatePageVirtualMetrics();
-  if (zoomMode === 'fit') fitWidthZoom();
-  else if (zoomMode === 'page') fitPageZoom();
+  refitZoom();
   scheduleVirtualUpdate();
   closeSealPopover();
 });
@@ -8853,6 +9074,7 @@ document.addEventListener('fullscreenchange', () => {
     readingMode.title = '阅读模式';
     readingMode.setAttribute('aria-label', '阅读模式');
   }
+  requestAnimationFrame(refitZoom);
 });
 function handleDocumentKeyDown(event) {
   const target = event.target;

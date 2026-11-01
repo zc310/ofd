@@ -12,6 +12,7 @@ import (
 	gmx509 "github.com/emmansun/gmsm/smx509"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestParseSignedValueSES(t *testing.T) {
@@ -186,11 +187,11 @@ func TestFullValidationRejectsExplicitDefaultInSealAndTBSExtensions(t *testing.T
 }
 
 func TestSignedValuePathResolvesRelativeAndAbsoluteLocations(t *testing.T) {
-	base := models.NewStLoc("/Doc_0/Signs/Sign_0")
-	if got := models.NewStLoc("SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
+	base := spec.NewStLoc("/Doc_0/Signs/Sign_0")
+	if got := spec.NewStLoc("SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
 		t.Fatalf("relative SignedValue path = %q", got)
 	}
-	if got := models.NewStLoc("/Doc_0/Signs/Sign_0/SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
+	if got := spec.NewStLoc("/Doc_0/Signs/Sign_0/SignedValue.dat").Resolve(base); got != "/Doc_0/Signs/Sign_0/SignedValue.dat" {
 		t.Fatalf("absolute SignedValue path = %q", got)
 	}
 }

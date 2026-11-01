@@ -14,20 +14,24 @@ import (
 // FontResource 描述文档中可注入浏览器的嵌入字体。
 // Data 为空表示该字体只声明了名称，没有嵌入字体文件。
 type FontResource struct {
-	ID     uint64
-	Family string
-	Name   string
-	Bold   bool
-	Italic bool
-	Format string
-	Data   []byte
+	// TemplateID 非零表示该字体族绑定到模板独立资源视图。
+	TemplateID uint64
+	ID         uint64
+	Family     string
+	Name       string
+	Bold       bool
+	Italic     bool
+	Format     string
+	Data       []byte
 }
 
 // FontInfo 描述文档声明的一个字体，不包含嵌入字体数据。
 type FontInfo struct {
+	// TemplateID 非零表示模板资源视图，与 Scope、ID 共同标识字体。
+	TemplateID uint64
 	// ID 是字体在所属文档内的标识。
 	ID uint64
-	// Scope 是字体所属文档体的索引，与 ID 一起唯一标识一个字体。
+	// Scope 是字体所属文档体的索引，与 TemplateID、ID 一起唯一标识一个字体。
 	Scope int
 	// Name 是 OFD 声明的字体名称（FontName）。
 	Name string
@@ -47,6 +51,8 @@ type FontInfo struct {
 
 // FontRef 唯一标识一个文档作用域内的字体。
 type FontRef struct {
+	// TemplateID 为零表示正文资源，否则表示模板独立资源视图。
+	TemplateID uint64
 	// Scope 是字体所属文档体的索引。
 	Scope int
 	// ID 是字体在所属文档内的标识。
@@ -74,6 +80,7 @@ type FontUsage struct {
 
 // FontUsageSummary 描述一个字体在文档中的使用页面。
 type FontUsageSummary struct {
+	TemplateID uint64
 	// Scope 是字体所属文档体的索引。
 	Scope int
 	// ID 是字体在所属文档内的标识。
@@ -240,6 +247,9 @@ func (r *Reader) Fonts() ([]FontResource, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.fontsOnce.Do(func() {
@@ -260,7 +270,7 @@ func (r *Reader) computeFonts() ([]FontResource, error) {
 		if font == nil || font.FontFile == "" {
 			continue
 		}
-		key := fmt.Sprintf("%d:%d:%s", item.scope, item.id, font.FontFile)
+		key := fmt.Sprintf("%d:%d:%d:%s", item.scope, item.templateID, item.id, font.FontFile)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -273,8 +283,12 @@ func (r *Reader) computeFonts() ([]FontResource, error) {
 		if fixed, fixErr := fontrepair.Repair(data); fixErr == nil {
 			data = fixed
 		}
+		family := browserFontFamily(item.scope, uint64(item.id))
+		if item.templateID != 0 {
+			family = templateFontFamily(item.scope, item.templateID, uint64(item.id))
+		}
 		resources = append(resources, FontResource{
-			ID: uint64(item.id), Family: browserFontFamily(item.scope, uint64(item.id)), Name: font.FontName,
+			TemplateID: item.templateID, ID: uint64(item.id), Family: family, Name: font.FontName,
 			Bold: font.Bold, Italic: font.Italic, Format: fontFormat(font.FontFile), Data: data,
 		})
 	}
@@ -294,6 +308,9 @@ func (r *Reader) FontList() ([]FontInfo, error) {
 	}
 	if r.ofd == nil {
 		return nil, nil
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
@@ -317,6 +334,7 @@ func (r *Reader) computeFontList() ([]FontInfo, error) {
 			format = fontFormat(font.FontFile)
 		}
 		fonts = append(fonts, FontInfo{
+			TemplateID: item.templateID,
 			ID:         uint64(item.id),
 			Scope:      item.scope,
 			Name:       font.FontName,
@@ -356,7 +374,7 @@ func (r *Reader) FontUsage(ref FontRef, options FontUsageOptions) (FontUsage, er
 			return FontUsage{}, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
 		}
 		for _, run := range runs {
-			if run.Scope != ref.Scope || run.Font != ref.ID {
+			if run.Scope != ref.Scope || run.Font != ref.ID || run.TemplateID != ref.TemplateID {
 				continue
 			}
 			if len(usage.Pages) >= options.MaxPages {
@@ -398,7 +416,7 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 			return FontUsageReport{}, fmt.Errorf("读取第 %d 页文字失败: %w", index, err)
 		}
 		for _, run := range runs {
-			ref := FontRef{Scope: run.Scope, ID: run.Font}
+			ref := FontRef{Scope: run.Scope, ID: run.Font, TemplateID: run.TemplateID}
 			pages := byFont[ref]
 			if len(pages) > 0 && pages[len(pages)-1] == index {
 				continue
@@ -421,11 +439,14 @@ func (r *Reader) FontUsageAll(options FontUsageOptions) (FontUsageReport, error)
 		if refs[i].Scope != refs[j].Scope {
 			return refs[i].Scope < refs[j].Scope
 		}
+		if refs[i].TemplateID != refs[j].TemplateID {
+			return refs[i].TemplateID < refs[j].TemplateID
+		}
 		return refs[i].ID < refs[j].ID
 	})
 	for _, ref := range refs {
 		pages := byFont[ref]
-		report.Fonts = append(report.Fonts, FontUsageSummary{Scope: ref.Scope, ID: ref.ID, Pages: pages})
+		report.Fonts = append(report.Fonts, FontUsageSummary{Scope: ref.Scope, ID: ref.ID, TemplateID: ref.TemplateID, Pages: pages})
 	}
 	return report, nil
 }

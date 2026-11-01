@@ -61,9 +61,12 @@ type Frame[S Resources] struct {
 	Matrix      geom.Matrix
 	Clip        *geom.Path
 	Source      Source
+	TemplateID  uint64
 	DrawParam   *models.DrawParam
 	Depth       int
 	InComposite bool
+	// TemplateScope 在模板遍历期间绑定资源作用域；返回的释放函数必须同步调用。
+	TemplateScope func(models.StID) (S, func(), error)
 }
 
 // Visitor 同步访问一个图元及其资源作用域、坐标和裁剪。
@@ -102,6 +105,7 @@ func (f Frame[S]) MapLayout(layout textlayout.Layout) textlayout.Layout {
 		return geom.RectFromSize(x, y, w, h).Transform(f.Matrix)
 	}
 	layout.Source = f.Source
+	layout.TemplateID = f.TemplateID
 	bounds := mapBox(layout.X, layout.Y, layout.Width, layout.Height)
 	layout.X, layout.Y, layout.Width, layout.Height = bounds.X0, bounds.Y0, bounds.W(), bounds.H()
 	layout.Size *= math.Hypot(f.Matrix[0][1], f.Matrix[1][1])

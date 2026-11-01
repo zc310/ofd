@@ -18,6 +18,7 @@ import (
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // extractionDocument 在内存中构造带模板、批注、字体、图片及复合对象的最小 OFD，
@@ -290,7 +291,7 @@ func TestTextWidthFallbackAndRasterFormatFiltering(t *testing.T) {
 		{"PNG", "Res/image.PNG", "png"}, {"JPEG", "Res/photo.JPEG", "jpeg"}, {"", "Res/photo.jpg", "jpg"},
 		{"SVG", "Res/image.png", ""}, {"PNG", "Res/image.svg", ""}, {"", "Res/no-extension", ""},
 	} {
-		got, ok := rasterExtension(test.format, models.StLoc(test.path))
+		got, ok := rasterExtension(test.format, spec.StLoc(test.path))
 		if got != test.want || ok != (test.want != "") {
 			t.Errorf("图片格式过滤 %q/%q = %q, %t", test.format, test.path, got, ok)
 		}

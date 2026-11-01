@@ -11,6 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/render/content"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/render/navigation"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // AttachmentInfo 描述文档中的一个附件，只包含清单元数据。
@@ -65,6 +66,8 @@ type AnnotationBoundary struct {
 // PageLink 描述页面正文图元上的可点击链接。与 AnnotationInfo 中的 Link 注解
 // 不同，这类链接直接挂在页面内容（图层）的文字、路径、图像或复合图元上。
 type PageLink struct {
+	// TemplateID 非零表示媒体资源应从该模板的 PageRes 视图读取。
+	TemplateID uint64
 	// Scope 是链接所属文档体的索引。
 	Scope int
 	// Page 是链接所在页面的全局索引。
@@ -124,6 +127,13 @@ type AnnotationInfo struct {
 	Visible bool
 	// Remark 是注解备注，未声明时为空。
 	Remark string
+	// Print 表示 Remark 是否随页打印，缺省 true；不控制注解 Appearance。
+	Print bool
+	// NoZoom、NoRotate 分别表示 Remark 不随页面缩放或旋转，缺省 false。
+	NoZoom   bool
+	NoRotate bool
+	// ReadOnly 表示禁止更改 Remark，缺省 true。
+	ReadOnly bool
 	// Boundary 是注解外观边界，未声明时为 nil。
 	Boundary *AnnotationBoundary
 	// URI 是链接注解的外部链接目标，非空时点击打开链接。
@@ -147,6 +157,9 @@ func (r *Reader) Attachments() ([]AttachmentInfo, error) {
 	}
 	if r.ofd == nil {
 		return nil, nil
+	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
 	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
@@ -256,15 +269,15 @@ func (r *Reader) attachmentPath(scope int, id string) (*parser.Document, string,
 
 // resolveAttachmentAsset 解析附件文件在包内的路径：优先相对附件清单所在目录，
 // 其次相对文档 BaseLoc，与 analyzer 的解析保持一致。
-func resolveAttachmentAsset(document *parser.Document, attachmentsPath string, value models.StLoc) string {
+func resolveAttachmentAsset(document *parser.Document, attachmentsPath string, value spec.StLoc) string {
 	if value.IsEmpty() {
 		return ""
 	}
 	if value.IsAbsolute() {
-		return models.StLoc(value.String()).Clean().String()
+		return spec.StLoc(value.String()).Clean().String()
 	}
-	candidates := []models.StLoc{
-		models.StLoc(attachmentsPath).Dir().Join(value.String()).Clean(),
+	candidates := []spec.StLoc{
+		spec.StLoc(attachmentsPath).Dir().Join(value.String()).Clean(),
 	}
 	if document != nil {
 		candidates = append(candidates, document.BaseLoc.Join(value.String()).Clean())
@@ -297,6 +310,9 @@ func (r *Reader) Media() ([]MediaInfo, error) {
 	if r.ofd == nil {
 		return nil, nil
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.mediaOnce.Do(func() {
@@ -316,7 +332,7 @@ func (r *Reader) computeMedia() ([]MediaInfo, error) {
 		info := MediaInfo{Scope: item.scope, ID: uint64(item.id), Type: media.Type, Format: media.Format}
 		path := media.MediaFile.String()
 		if path != "" {
-			info.Name = models.StLoc(path).Base()
+			info.Name = spec.StLoc(path).Base()
 		}
 		if path != "" && item.document.FileCache != nil {
 			if entry, ok := item.document.FileCache.Lookup(path); ok && !entry.IsDir {
@@ -341,6 +357,11 @@ func (r *Reader) computeMedia() ([]MediaInfo, error) {
 // MediaData 读取指定多媒体资源的二进制内容。maxBytes 为 0 时使用默认上限，
 // 超过 maxAttachmentBytesHard 时按硬上限处理。
 func (r *Reader) MediaData(scope int, mediaID uint64, maxBytes int64) ([]byte, error) {
+	return r.TemplateMediaData(scope, 0, mediaID, maxBytes)
+}
+
+// TemplateMediaData 读取模板独立资源视图的媒体；templateID 为零时等同 MediaData。
+func (r *Reader) TemplateMediaData(scope int, templateID, mediaID uint64, maxBytes int64) ([]byte, error) {
 	if r == nil {
 		return nil, errors.New("文档引擎为空")
 	}
@@ -361,6 +382,9 @@ func (r *Reader) MediaData(scope int, mediaID uint64, maxBytes int64) ([]byte, e
 	if document == nil {
 		return nil, errors.New("多媒体所属文档为空")
 	}
+	if err := r.checkDocumentPermissionLocked(PermissionAccess, scope); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	catalog, catalogErr := r.resourceCatalogLocked()
 	r.metadataMu.Unlock()
@@ -368,8 +392,17 @@ func (r *Reader) MediaData(scope int, mediaID uint64, maxBytes int64) ([]byte, e
 		return nil, catalogErr
 	}
 	var media *models.MultiMedia
+	if templateID != 0 {
+		_, view, err := document.LoadTemplateResources(models.StID(templateID))
+		if err != nil {
+			return nil, err
+		}
+		if view != nil {
+			media = view.GetMedia(models.StID(mediaID))
+		}
+	}
 	for _, item := range catalog.media {
-		if item.scope == scope && uint64(item.id) == mediaID {
+		if templateID == 0 && item.scope == scope && uint64(item.id) == mediaID {
 			media = item.media
 			break
 		}
@@ -406,6 +439,9 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.annotationsOnce.Do(func() {
@@ -415,13 +451,45 @@ func (r *Reader) Annotations() ([]AnnotationInfo, error) {
 }
 
 func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
+	indices := make([]int, len(r.pages))
+	for index := range indices {
+		indices[index] = index
+	}
+	return r.computeAnnotationsForPages(indices)
+}
+
+// AnnotationsForPage 只加载指定页的注解，避免页面备注层触发整份文档扫描。
+// index 为从零开始的全局页码；返回独立切片及只读嵌套数据。
+func (r *Reader) AnnotationsForPage(index int) ([]AnnotationInfo, error) {
+	if r == nil {
+		return nil, errEmptyReader
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return nil, errReaderClosed
+	}
+	if index < 0 || index >= len(r.pages) {
+		return nil, fmt.Errorf("%w: %d", errRenderPageIndex, index)
+	}
+	return r.computeAnnotationsForPages([]int{index})
+}
+
+func (r *Reader) computeAnnotationsForPages(indices []int) ([]AnnotationInfo, error) {
 	infos := make([]AnnotationInfo, 0)
 	pageIndexes := r.pageIndexesByScope()
-	for index, ref := range r.pages {
+	for _, index := range indices {
+		if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+			return nil, err
+		}
+		ref := r.pages[index]
 		if ref.page == nil || ref.document == nil {
 			continue
 		}
-		annot := ref.document.GetAnnotation(ref.page.ID)
+		annot, err := ref.document.LoadAnnotation(ref.page.ID)
+		if err != nil {
+			return nil, fmt.Errorf("读取第 %d 页注解失败: %w", index, err)
+		}
 		if annot == nil {
 			continue
 		}
@@ -437,6 +505,10 @@ func (r *Reader) computeAnnotations() ([]AnnotationInfo, error) {
 				Subtype:    item.Subtype,
 				Creator:    item.Creator,
 				Visible:    item.Visible.Value(true),
+				Print:      item.Print.Value(true),
+				NoZoom:     item.NoZoom,
+				NoRotate:   item.NoRotate,
+				ReadOnly:   item.ReadOnly.Value(true),
 				TargetPage: -1,
 			}
 			if !item.LastModDate.IsZero() {
@@ -574,6 +646,9 @@ func (r *Reader) PageLinks() ([]PageLink, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 	r.metadataMu.Lock()
 	defer r.metadataMu.Unlock()
 	r.metadata.pageLinksOnce.Do(func() {
@@ -613,6 +688,9 @@ func (r *Reader) PageMediaActionsForPage(index int) ([]PageLink, error) {
 	}
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
 	}
 	ref := r.pages[index]
 	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
@@ -654,6 +732,9 @@ func (r *Reader) PageEntryActionsForPage(index int) ([]PageLink, error) {
 	}
 	if index < 0 || index >= len(r.pages) {
 		return nil, fmt.Errorf("页面索引超出范围: %d", index)
+	}
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
 	}
 	ref := r.pages[index]
 	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
@@ -709,6 +790,9 @@ func (r *Reader) computePageLinksForPage(index int) ([]PageLink, error) {
 }
 
 func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[models.StID]int) ([]PageLink, error) {
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
+	}
 	ref := r.pages[index]
 	if ref.page == nil || ref.document == nil || ref.document.Document == nil {
 		return nil, nil
@@ -736,15 +820,22 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		if template == nil || template.Content == nil {
 			continue
 		}
+		templateStart := len(links)
 		appendLayerLinks(template.Content.Layer, ref.fontScope, index, pageIndex, bookmarks, &links)
+		if len(template.PageRes) != 0 {
+			for i := templateStart; i < len(links); i++ {
+				setLinkTemplate(&links[i], uint64(tpl.TemplateID))
+			}
+		}
 	}
 	// 绘制层只负责复合单元映射，动作与正文共用解析，保留书签、附件、媒体和完整序列。
-	err = ref.document.WalkCompositeActions(ref.page, r.hiddenLayers[index], func(id models.StID, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path) {
+	err = ref.document.WalkCompositeActions(ref.page, r.hiddenLayers[index], func(id models.StID, templateID uint64, unit models.CTGraphicUnit, matrix geom.Matrix, clip *geom.Path) {
 		link, ok := graphicActionLink(unit, pageIndex, bookmarks)
 		if !ok || !placePageLink(&link, ref.fontScope, index, matrix, clip) {
 			return
 		}
 		link.ID = formatStID(id)
+		setLinkTemplate(&link, templateID)
 		links = append(links, link)
 	})
 	if err != nil {
@@ -779,6 +870,13 @@ func (r *Reader) computePageLinksForPageWithIndex(index int, pageIndex map[model
 		}
 	}
 	return visible, nil
+}
+
+func setLinkTemplate(link *PageLink, templateID uint64) {
+	link.TemplateID = templateID
+	for i := range link.Actions {
+		setLinkTemplate(&link.Actions[i], templateID)
+	}
 }
 
 // placePageLink 同步变换根热区和动作序列，并限制到页面显示区域。

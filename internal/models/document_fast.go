@@ -10,6 +10,7 @@ import (
 	txml "github.com/tdewolff/parse/v2/xml"
 
 	"github.com/zc310/ofd/internal/fastxml"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // ParseDocumentXML 解析 OFD 文档主体 XML。页面列表（Pages/Page）是打开文档时
@@ -84,7 +85,7 @@ children:
 					return nil, err
 				}
 			case "Permissions":
-				doc.Permissions = new(CT_Permission)
+				doc.Permissions = new(spec.Permissions)
 				if err := r.DecodeSpan(start, doc.Permissions); err != nil {
 					return nil, err
 				}
@@ -104,22 +105,22 @@ children:
 					return nil, err
 				}
 			case "Annotations":
-				doc.Annotations = new(StLoc)
+				doc.Annotations = new(spec.StLoc)
 				if err := r.DecodeSpan(start, doc.Annotations); err != nil {
 					return nil, err
 				}
 			case "CustomTags":
-				doc.CustomTags = new(StLoc)
+				doc.CustomTags = new(spec.StLoc)
 				if err := r.DecodeSpan(start, doc.CustomTags); err != nil {
 					return nil, err
 				}
 			case "Attachments":
-				doc.Attachments = new(StLoc)
+				doc.Attachments = new(spec.StLoc)
 				if err := r.DecodeSpan(start, doc.Attachments); err != nil {
 					return nil, err
 				}
 			case "Extensions":
-				doc.Extensions = new(StLoc)
+				doc.Extensions = new(spec.StLoc)
 				if err := r.DecodeSpan(start, doc.Extensions); err != nil {
 					return nil, err
 				}
@@ -189,7 +190,7 @@ func (p *pageLexer) parsePageAttrs() (Page, bool, error) {
 			case "ID":
 				page.ID = parseStIDBytes(fastxml.Unquote(p.AttrVal()))
 			case "BaseLoc":
-				page.BaseLoc = StLoc(string(fastxml.Unquote(p.AttrVal())))
+				page.BaseLoc = spec.StLoc(string(fastxml.Unquote(p.AttrVal())))
 			}
 		case txml.StartTagCloseToken:
 			return page, false, nil

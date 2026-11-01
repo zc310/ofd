@@ -22,11 +22,11 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"github.com/klauspost/compress/zip"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/render/geom"
 	"github.com/zc310/ofd/internal/version"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func TestPageAtCenter(t *testing.T) {
@@ -2099,8 +2099,8 @@ func TestPageSlotStatesTracksPageArea(t *testing.T) {
 
 func TestDocumentTitlePrefersMetadataAndFallsBackToFileName(t *testing.T) {
 	title := "文档标题"
-	ofd := &parser.OFD{OFD: models.OFD{
-		DocBodies: []models.DocBody{{DocInfo: models.DocInfo{Title: &title}}},
+	ofd := &parser.OFD{OFD: spec.OFD{
+		DocBodies: []spec.DocBody{{DocInfo: spec.DocInfo{Title: &title}}},
 	}}
 	if got := documentTitle(ofd, "document.ofd"); got != title {
 		t.Fatalf("document title = %q, want %q", got, title)

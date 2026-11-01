@@ -445,13 +445,13 @@ func extensionDataXML(data []byte, wanted int) string {
 	}
 }
 
-func exportPermissions(value *models.CT_Permission) *manifest.Permissions {
+func exportPermissions(value *spec.Permissions) *manifest.Permissions {
 	result := &manifest.Permissions{Edit: value.Edit, Annot: value.Annot, Export: value.Export, Signature: value.Signature, Watermark: value.Watermark, PrintScreen: value.PrintScreen}
 	if value.Print != nil {
 		copies := value.Print.Copies
 		result.Print = &manifest.PrintSettings{Printable: value.Print.Printable, Copies: &copies}
 	}
-	if value.ValidPeriod != nil && (!value.ValidPeriod.StartDate.IsZero() || !value.ValidPeriod.EndDate.IsZero()) {
+	if value.ValidPeriod != nil {
 		result.ValidPeriod = &manifest.ValidPeriod{Start: formatDateTime(value.ValidPeriod.StartDate), End: formatDateTime(value.ValidPeriod.EndDate)}
 	}
 	return result
@@ -508,11 +508,11 @@ func safeExtension(name string) string {
 
 // readDocumentFile 同时支持现有 OFD 生产者使用的相对于文档根目录的路径，
 // 以及 creator 生成的相对于清单文件的路径。
-func (e *documentExporter) readDocumentFile(location models.StLoc, listPath models.StLoc) (models.StLoc, []byte, error) {
+func (e *documentExporter) readDocumentFile(location spec.StLoc, listPath spec.StLoc) (spec.StLoc, []byte, error) {
 	if location == "" {
 		return "", nil, errors.New("资源文件位置为空")
 	}
-	candidates := []models.StLoc{location.Resolve(e.document.BaseLoc)}
+	candidates := []spec.StLoc{location.Resolve(e.document.BaseLoc)}
 	listRelative := location.Resolve(listPath.Dir())
 	if listRelative != candidates[0] {
 		candidates = append(candidates, listRelative)
@@ -528,7 +528,7 @@ func (e *documentExporter) readDocumentFile(location models.StLoc, listPath mode
 	return candidates[0], nil, lastErr
 }
 
-func formatDateTime(value models.DateTime) string {
+func formatDateTime(value spec.DateTime) string {
 	if value.IsZero() {
 		return ""
 	}

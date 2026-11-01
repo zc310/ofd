@@ -88,7 +88,8 @@ func NewDocument(background color.Color, doc *parser.Document) *Document {
 }
 
 // NewDocumentWithDPI 创建带有输出分辨率的渲染文档。
-// dpi 用于复合图元等内部离屏栅格化，不改变页面的物理尺寸。
+// dpi 用于离屏栅格化及记录矢量表面时的替代图像选择，不改变页面物理尺寸。
+// 后续以不同分辨率 Rasterize 同一表面不会重新选择图像资源。
 func NewDocumentWithDPI(background color.Color, doc *parser.Document, dpi geom.Resolution) *Document {
 	fonts := NewFontEngine(doc)
 	return newDocumentView(background, doc, dpi, &sharedFontEngine{engine: fonts, refs: 1})
@@ -421,17 +422,18 @@ func (p *Document) TemplateForeground(template models.Template) bool {
 }
 
 func (p *Document) template(ctx DrawContext, template models.Template, pb models.StBox, budget *renderBudget) {
-	templateContent, err := p.Document.LoadTemplate(models.StID(template.TemplateID))
+	templateContent, scope, release, err := p.templateScope(models.StID(template.TemplateID))
 	if err != nil {
 		slog.Warn("读取模板页失败", "template_id", template.TemplateID, "error", err)
 		budget.diagnose("template_load_failed", err.Error(), models.StID(template.TemplateID))
 		return
 	}
+	defer release()
 	if templateContent != nil && templateContent.Content != nil {
-		if p.drawCachedTemplate(ctx, templateContent, pb, budget) {
+		if scope.drawCachedTemplate(ctx, templateContent, pb, budget) {
 			return
 		}
-		p.drawLayersWithBudget(ctx, templateContent.Content.Layer, pb, budget)
+		scope.drawLayersWithBudget(ctx, templateContent.Content.Layer, pb, budget)
 	}
 }
 

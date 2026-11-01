@@ -10,8 +10,8 @@ import (
 
 	_ "github.com/dkrisman/gobig2"
 	"github.com/zc310/ofd/internal/media"
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // Reader 按文档内的规范化路径读取资源字节。
@@ -20,12 +20,12 @@ type Reader interface {
 }
 
 // IsSVG 判断声明格式或资源扩展名是否表示 SVG。
-func IsSVG(format string, file models.StLoc) bool {
+func IsSVG(format string, file spec.StLoc) bool {
 	return strings.EqualFold(format, "SVG") || strings.EqualFold(file.Ext(), ".svg")
 }
 
 // Load 返回缓存图片。JPEG/PNG 保留原编码并懒解码；SVG 的位图回退使用 96 DPI。
-func (s *Store) Load(file models.StLoc, format string, source Reader, parse SVGParser) (image.Image, error) {
+func (s *Store) Load(file spec.StLoc, format string, source Reader, parse SVGParser) (image.Image, error) {
 	key := file.Clean().String()
 	return s.Image(key, func() (image.Image, error) {
 		if IsSVG(format, file) {
@@ -47,7 +47,7 @@ func (s *Store) Load(file models.StLoc, format string, source Reader, parse SVGP
 }
 
 // LoadSVG 返回规范化资源路径对应的缓存场景。
-func (s *Store) LoadSVG(file models.StLoc, format string, source Reader, parse SVGParser) (SVGScene, error) {
+func (s *Store) LoadSVG(file spec.StLoc, format string, source Reader, parse SVGParser) (SVGScene, error) {
 	key := file.Clean().String()
 	return s.SVG(key, func() ([]byte, error) {
 		if !IsSVG(format, file) {

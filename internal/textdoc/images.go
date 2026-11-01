@@ -170,7 +170,7 @@ func imageOf(doc *parser.Document, object *models.ImageObject) (Image, bool) {
 }
 
 // rasterExtension 返回可内嵌的栅格格式扩展名，不含点。
-func rasterExtension(format string, location models.StLoc) (string, bool) {
+func rasterExtension(format string, location spec.StLoc) (string, bool) {
 	if strings.EqualFold(format, "SVG") {
 		return "", false
 	}

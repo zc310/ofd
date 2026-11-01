@@ -6,10 +6,33 @@ import (
 	"bytes"
 	"syscall/js"
 	"testing"
+	"time"
 
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/crypt"
 )
+
+func TestWASMRejectsExpiredDocumentAndPreservesPermissionReason(t *testing.T) {
+	data, err := creator.Marshal(creator.Document{ID: "expired", Pages: []creator.Page{{}}, Permissions: &creator.Permissions{ValidPeriod: &creator.ValidPeriod{End: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &wasmApp{}
+	t.Cleanup(func() {
+		if err := app.closeCurrentReader(); err != nil {
+			t.Error(err)
+		}
+	})
+	input := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(input, data)
+	value, ok := app.open(js.Undefined(), []js.Value{input}).(js.Value)
+	if !ok || value.Get("code").String() != "permission_denied" || value.Get("reason").String() != "expired" || value.Get("action").String() != "access" || value.Get("scope").Int() != 0 {
+		t.Fatalf("有效期拒绝信息丢失：%v", value)
+	}
+	if app.reader != nil {
+		t.Fatal("打开失败仍保留Reader")
+	}
+}
 
 func TestWASMPermissionsForPlainAndEncryptedDocuments(t *testing.T) {
 	denied := false

@@ -6,6 +6,9 @@
 // 转换使用 internal/xmlcodec 读取和写出，使用 etree API 对既有 XML 做定点编辑。
 // 重写的 OFD 元素统一使用 ofd: 前缀，并保留扩展命名空间与混合内容；
 // 未发生改动的条目继续逐字节复制。
+// 调用Plan/Apply表示由业务方发起归档处理，不按Edit/Export或ValidPeriod拒绝；
+// GB/T 42133—2022 §6.2.2 a)要求去除权限声明。业务授权由调用方负责，
+// 本用途不授予普通阅读/导出权限，也不关闭资源预算、校验及签名证据处理。
 package preserve
 
 import (
@@ -24,6 +27,7 @@ import (
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
 	"github.com/zc310/ofd/pkg/creator/replace"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 	"github.com/zc310/ofd/pkg/validator"
 )
@@ -360,7 +364,11 @@ func Apply(input any, w io.Writer, options Options) (Result, error) {
 	// 不让 replace 自己做严格校验：它要求输出零错误，会把「输入本来就不合规」
 	// 误判成转换失败。改为写出后与基线比对，见 verifyNoRegression。
 	if err := replace.Files(src.pkg.Package, operations, &buffer, replace.Options{
-		Limits: options.Limits,
+		// 归档用途的固定策略，不是从输入文档或宽松参数推导的通用权限豁免。
+		// §6.2.2 a)（标准第4页/PDF第8页）要求去除Permissions，底层ZIP重建
+		// 不能再用原始Edit或有效期阻断该动作；其他重建/保护检查保持不变。
+		PermissionPolicy: permission.Policy{Mode: permission.IgnoreDeclarations},
+		Limits:           options.Limits,
 		// 必须显式指定：replace 的零值会归一化成 SignatureDrop，即删除全部
 		// 签名条目。归档件应当保留签名作为证据，只提示摘要可能失效。
 		Signatures: creator.SignaturePreserve,
@@ -663,7 +671,7 @@ func contentEntries(pkg *inputPackage, docEntry, selector string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	base := models.StLoc(docEntry).Dir()
+	base := spec.StLoc(docEntry).Dir()
 	var out []string
 	for _, el := range doc.Root().FindElements(selector) {
 		if el.NamespaceURI() != doc.Root().NamespaceURI() {
@@ -690,8 +698,8 @@ func contentEntries(pkg *inputPackage, docEntry, selector string) ([]string, err
 }
 
 // resolveEntryLocation 把 ST_Loc 引用规范化为安全的 ZIP 条目名。
-func resolveEntryLocation(base models.StLoc, location string) (string, error) {
-	name := strings.TrimPrefix(string(models.StLoc(strings.TrimSpace(location)).Resolve(base)), "/")
+func resolveEntryLocation(base spec.StLoc, location string) (string, error) {
+	name := strings.TrimPrefix(string(spec.StLoc(strings.TrimSpace(location)).Resolve(base)), "/")
 	if err := container.ValidateEntryName(name); err != nil {
 		return "", err
 	}

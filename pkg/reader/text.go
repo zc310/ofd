@@ -11,6 +11,7 @@ import (
 	"github.com/zc310/ofd/internal/parser"
 	"github.com/zc310/ofd/internal/render"
 	"github.com/zc310/ofd/internal/search"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // PageInfo 描述一个可渲染页面。尺寸单位为毫米。
@@ -31,8 +32,10 @@ type TextRun struct {
 	Width  float64
 	// Height 是字体排版行高，可与 Size 不同；与字符框使用相同的纵向度量。
 	Height float64
-	// Scope 是文字所属文档体的索引，与 Font 一起唯一标识使用的字体。
-	Scope         int
+	// Scope 是文字所属文档体的索引，与 TemplateID、Font 一起标识使用的字体。
+	Scope int
+	// TemplateID 非零时字体属于该模板资源视图，不能借用正文同 ID 的字体。
+	TemplateID    uint64
 	Font          uint64
 	Size          float64
 	Weight        int
@@ -197,7 +200,11 @@ func browserFontFamily(scope int, id uint64) string {
 	return fmt.Sprintf("OFDFont-%d-%d", scope, id)
 }
 
-func fontFormat(file models.StLoc) string {
+func templateFontFamily(scope int, templateID, id uint64) string {
+	return fmt.Sprintf("OFDFont-%d-template-%d-%d", scope, templateID, id)
+}
+
+func fontFormat(file spec.StLoc) string {
 	name := strings.ToLower(string(file))
 	if index := strings.LastIndexByte(name, '.'); index >= 0 {
 		return name[index+1:]
@@ -224,6 +231,15 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 			CharDirection: layout.CharDirection, FontFamily: textFontFamily(document, fontScope, layout.Font, fallbackFamily),
 			Bold: layout.Bold, Italic: layout.Italic,
 		}
+		if layout.TemplateID != 0 {
+			run.TemplateID = layout.TemplateID
+			run.FontFamily = fallbackFamily
+			if layout.FallbackFontFamily != "" {
+				run.FontFamily = layout.FallbackFontFamily
+			} else if layout.EmbeddedFontLoaded {
+				run.FontFamily = templateFontFamily(fontScope, layout.TemplateID, layout.Font)
+			}
+		}
 		for _, glyph := range layout.Glyphs {
 			run.Glyphs = append(run.Glyphs, Glyph{Text: glyph.Text, X: glyph.X, Y: glyph.Y, Width: glyph.Width, Height: glyph.Height, Angle: glyph.Angle})
 		}
@@ -235,6 +251,9 @@ func textRunsWithFallback(document *render.Document, page *parser.Page, fontScop
 // textAt 在持有 Reader 锁时缓存不可变的文档布局。
 // 向外部返回结果的调用方必须先复制结果。
 func (r *Reader) textAt(index int) ([]TextRun, error) {
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
+	}
 	if runs, ok := r.text.Get(index); ok {
 		return runs, nil
 	}

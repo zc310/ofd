@@ -5,59 +5,68 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zc310/ofd/internal/models"
+	"github.com/zc310/ofd/pkg/permission"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 // ErrPermissionDenied 表示文档声明禁止本次操作。
-var ErrPermissionDenied = errors.New("文档权限不允许此操作")
+var ErrPermissionDenied = permission.ErrDenied
 
 // PermissionAction 是阅读器可检查的操作。复制按 Export 权限执行，不增加非标准 Copy 字段。
-type PermissionAction string
+type PermissionAction = permission.Action
 
 const (
-	PermissionCopy   PermissionAction = "copy"
-	PermissionExport PermissionAction = "export"
-	PermissionPrint  PermissionAction = "print"
+	PermissionAccess      = permission.Access
+	PermissionCopy        = permission.Copy
+	PermissionExport      = permission.Export
+	PermissionPrint       = permission.Print
+	PermissionEdit        = permission.Edit
+	PermissionAnnot       = permission.Annot
+	PermissionSignature   = permission.Signature
+	PermissionWatermark   = permission.Watermark
+	PermissionPrintScreen = permission.PrintScreen
 )
 
 // DocumentPermissions 是当前版本的文档体权限快照。布尔字段已应用表 8 的默认 true；
-// PrintCopies 小于零表示不限份数，零表示禁止打印。有效期为原声明，调用方可用于访问策略。
+// PrintCopies 小于零表示不限份数，零表示禁止打印。时间字段保留声明，访问时重新评估。
 type DocumentPermissions struct {
-	Scope       int
-	Pages       []int
-	Declared    bool
-	Edit        bool
-	Annot       bool
-	Export      bool
-	Signature   bool
-	Watermark   bool
-	PrintScreen bool
-	Printable   bool
-	PrintCopies int
-	StartDate   string
-	EndDate     string
+	// Accessible/AccessReason是本次快照时的访问判断，不应缓存为永久授权。
+	Accessible   bool
+	AccessReason permission.Reason
+	Scope        int
+	Pages        []int
+	Declared     bool
+	Edit         bool
+	Annot        bool
+	Export       bool
+	Signature    bool
+	Watermark    bool
+	PrintScreen  bool
+	Printable    bool
+	PrintCopies  int
+	StartDate    string
+	EndDate      string
 }
 
-func documentPermissions(scope int, value *models.CT_Permission) DocumentPermissions {
-	result := DocumentPermissions{Scope: scope, Edit: true, Annot: true, Export: true,
+func documentPermissions(scope int, value *spec.Permissions) DocumentPermissions {
+	result := DocumentPermissions{Scope: scope, Declared: value != nil, Edit: true, Annot: true, Export: true,
 		Signature: true, Watermark: true, PrintScreen: true, Printable: true, PrintCopies: -1}
 	if value == nil {
 		return result
 	}
-	result.Declared = true
 	allowed := func(value *bool) bool { return value == nil || *value }
 	result.Edit, result.Annot, result.Export = allowed(value.Edit), allowed(value.Annot), allowed(value.Export)
 	result.Signature, result.Watermark, result.PrintScreen = allowed(value.Signature), allowed(value.Watermark), allowed(value.PrintScreen)
 	if value.Print != nil {
-		result.PrintCopies = value.Print.Copies
 		result.Printable = value.Print.Printable && value.Print.Copies != 0
+		result.PrintCopies = value.Print.Copies
 	}
 	if value.ValidPeriod != nil {
 		if !value.ValidPeriod.StartDate.IsZero() {
-			result.StartDate = value.ValidPeriod.StartDate.Format(time.RFC3339)
+			result.StartDate = value.ValidPeriod.StartDate.Format(time.RFC3339Nano)
 		}
 		if !value.ValidPeriod.EndDate.IsZero() {
-			result.EndDate = value.ValidPeriod.EndDate.Format(time.RFC3339)
+			result.EndDate = value.ValidPeriod.EndDate.Format(time.RFC3339Nano)
 		}
 	}
 	return result
@@ -76,6 +85,11 @@ func (r *Reader) Permissions() ([]DocumentPermissions, error) {
 	result := make([]DocumentPermissions, len(r.ofd.Documents))
 	for scope, document := range r.ofd.Documents {
 		result[scope] = documentPermissions(scope, document.Permissions)
+		accessErr := r.checkDocumentPermissionLocked(PermissionAccess, scope)
+		result[scope].Accessible = accessErr == nil
+		if denied, ok := errors.AsType[*permission.DeniedError](accessErr); ok {
+			result[scope].AccessReason = denied.Reason
+		}
 	}
 	for index, ref := range r.pages {
 		result[ref.fontScope].Pages = append(result[ref.fontScope].Pages, index)
@@ -111,34 +125,29 @@ func (r *Reader) CheckDocumentPermission(action PermissionAction, scope int) err
 }
 
 func (r *Reader) checkDocumentPermissionLocked(action PermissionAction, scope int) error {
-	if action != PermissionCopy && action != PermissionExport && action != PermissionPrint {
-		return fmt.Errorf("未知权限操作: %q", action)
+	if r.ofd == nil {
+		return errEmptyReader
 	}
 	if scope < 0 || scope >= len(r.ofd.Documents) {
 		return fmt.Errorf("文档体索引超出范围: %d", scope)
 	}
-	permission := documentPermissions(scope, r.ofd.Documents[scope].Permissions)
-	if action == PermissionPrint && !permission.Printable {
-		return fmt.Errorf("%w：文档体 %d 禁止打印", ErrPermissionDenied, scope)
-	}
-	if (action == PermissionCopy || action == PermissionExport) && !permission.Export {
-		return fmt.Errorf("%w：文档体 %d 禁止复制或导出内容", ErrPermissionDenied, scope)
-	}
-	return nil
+	return r.permissionPolicy.Check(r.ofd.Documents[scope].Permissions, action, scope)
 }
 
 func (r *Reader) checkPermissionLocked(action PermissionAction, indices []int) error {
-	if action != PermissionCopy && action != PermissionExport && action != PermissionPrint {
-		return fmt.Errorf("未知权限操作: %q", action)
+	if !permission.ValidAction(action) {
+		return fmt.Errorf("%w: %q", permission.ErrAction, action)
 	}
 	if len(indices) == 0 {
 		return errors.New("权限检查页面列表为空")
 	}
-	seen := make(map[int]bool)
 	for _, index := range indices {
 		if index < 0 || index >= len(r.pages) {
-			return fmt.Errorf("页面索引超出范围: %d", index)
+			return fmt.Errorf("%w: %d", errRenderPageIndex, index)
 		}
+	}
+	seen := make(map[int]bool)
+	for _, index := range indices {
 		ref := r.pages[index]
 		if seen[ref.fontScope] {
 			continue
@@ -154,10 +163,27 @@ func (r *Reader) checkPermissionLocked(action PermissionAction, indices []int) e
 func (r *Reader) checkRenderPermissionLocked(indices []int, purpose PermissionAction) error {
 	if purpose == "" {
 		// 普通页面预览不受导出、打印权限影响。
-		return nil
+		if len(indices) == 0 {
+			return nil
+		}
+		return r.checkPermissionLocked(PermissionAccess, indices)
 	}
 	if purpose != PermissionExport && purpose != PermissionPrint {
 		return fmt.Errorf("无效的渲染用途: %q", purpose)
 	}
 	return r.checkPermissionLocked(purpose, indices)
+}
+
+// checkAccessLocked 在缓存读取前检查全部文档体；逐页接口改用对应页面作用域检查。
+// Permissions、PageCount及Close不经过此门控，便于诊断与资源释放。
+func (r *Reader) checkAccessLocked() error {
+	if r.ofd == nil {
+		return nil
+	}
+	for scope := range r.ofd.Documents {
+		if err := r.checkDocumentPermissionLocked(PermissionAccess, scope); err != nil {
+			return err
+		}
+	}
+	return nil
 }

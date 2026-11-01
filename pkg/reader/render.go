@@ -122,6 +122,9 @@ func (r *Reader) Pages() ([]PageInfo, error) {
 	if r.closed {
 		return nil, errors.New("文档引擎已经关闭")
 	}
+	if err := r.checkAccessLocked(); err != nil {
+		return nil, err
+	}
 
 	pages := make([]PageInfo, len(r.pages))
 	for index, ref := range r.pages {
@@ -160,6 +163,9 @@ func (r *Reader) Page(index int) (PageInfo, error) {
 }
 
 func (r *Reader) pageInfoLocked(index int) (PageInfo, error) {
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return PageInfo{}, err
+	}
 	ref := r.pages[index]
 	if ref.page == nil {
 		return PageInfo{}, fmt.Errorf("第 %d 页为空", index)
@@ -259,6 +265,9 @@ func (r *Reader) renderPage(ctx context.Context, output io.Writer, index int, op
 	}
 	if index < 0 || index >= len(r.pages) {
 		return fmt.Errorf("%w: %d", errRenderPageIndex, index)
+	}
+	if err := r.checkRenderPermissionLocked([]int{index}, options.Purpose); err != nil {
+		return err
 	}
 	if options.DPI == 0 {
 		options.DPI = defaultDPI

@@ -149,7 +149,7 @@ func (r *Reader) Search(ctx context.Context, query string, options SearchOptions
 				Start: found.start, End: found.end,
 			}
 			// 禁止导出的页面仍可定位命中，但不借搜索结果返回整个文字对象。
-			if !documentPermissions(r.pages[pageIndex].fontScope, r.pages[pageIndex].document.Permissions).Export {
+			if r.checkDocumentPermissionLocked(PermissionExport, r.pages[pageIndex].fontScope) != nil {
 				result.Text = query
 				result.Start, result.End = 0, len([]rune(query))
 			}
@@ -181,6 +181,9 @@ func minInt(left, right int) int {
 }
 
 func (r *Reader) searchAt(index int) (*search.Index, error) {
+	if err := r.checkPermissionLocked(PermissionAccess, []int{index}); err != nil {
+		return nil, err
+	}
 	if indexed, ok := r.search.Get(index); ok {
 		return indexed, nil
 	}

@@ -18,7 +18,9 @@ import (
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/container/entrywriter"
 	"github.com/zc310/ofd/internal/crypt"
+	permissionmodel "github.com/zc310/ofd/internal/permission"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/validator"
 )
 
@@ -35,6 +37,8 @@ type Limits struct {
 
 // Options 控制拆分输出。页面拆分移除签名、版本、自定义标引和扩展并报告。
 type Options struct {
+	// PermissionPolicy 在Write时检查当前分卷来源文档体Export及有效期。
+	PermissionPolicy permission.Policy
 	Compression      creator.CompressionMode
 	CompressionLevel int
 	Deterministic    bool
@@ -336,6 +340,28 @@ func (s *Session) Write(ctx context.Context, part Part, w io.Writer) (Report, er
 			return Report{}, err
 		}
 	}
+	var declarations []permissionmodel.ScopedDeclaration
+	if s.options.PermissionPolicy.Mode != permission.IgnoreDeclarations {
+		var err error
+		declarations, err = permissionmodel.ReadPackage(s.pkg, []int{part.Document - 1}, s.options.Limits.MaxEntryBytes)
+		if err != nil {
+			return Report{}, err
+		}
+	}
+	check := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for _, d := range declarations {
+			if err := s.options.PermissionPolicy.Check(d.Value, permission.Export, d.Scope); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return Report{}, err
+	}
 	report, overrides, err := s.prepare(ctx, part)
 	if err != nil {
 		return Report{}, err
@@ -352,12 +378,15 @@ func (s *Session) Write(ctx context.Context, part Part, w io.Writer) (Report, er
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	budget := &outputWriter{check: ctx.Err, writer: w, remaining: s.options.Limits.MaxOutputBytes - s.written}
+	if err := check(); err != nil {
+		return Report{}, err
+	}
+	budget := &outputWriter{check: check, writer: w, remaining: s.options.Limits.MaxOutputBytes - s.written}
 	defer func() { s.written += budget.written }()
 	archive := zip.NewWriter(budget)
 	writer := entrywriter.New(archive, entrywriter.Config{Compression: s.options.Compression, CompressionLevel: s.options.CompressionLevel, Deterministic: s.options.Deterministic, Limits: container.Limits{MaxEntries: s.options.Limits.MaxEntries, MaxEntryBytes: s.options.Limits.MaxEntryBytes, MaxTotalBytes: s.options.Limits.MaxTotalBytes}})
 	for _, name := range names {
-		if err := ctx.Err(); err != nil {
+		if err := check(); err != nil {
 			_ = archive.Close()
 			return Report{}, err
 		}
@@ -374,7 +403,7 @@ func (s *Session) Write(ctx context.Context, part Part, w io.Writer) (Report, er
 	if err := archive.Close(); err != nil {
 		return Report{}, err
 	}
-	if err := ctx.Err(); err != nil {
+	if err := check(); err != nil {
 		return Report{}, err
 	}
 	s.parts++
@@ -405,6 +434,9 @@ func (w *outputWriter) Write(data []byte) (int, error) {
 }
 
 func normalizeOptions(options Options) (Options, error) {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return Options{}, err
+	}
 	l := &options.Limits
 	if l.MaxInputBytes < 0 || l.MaxEntries < 0 || l.MaxEntryBytes < 0 || l.MaxTotalBytes < 0 || l.MaxParts < 0 || l.MaxPages < 0 || l.MaxOutputBytes < 0 {
 		return options, invalid("拆分规模限制不能为负数")

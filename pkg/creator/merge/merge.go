@@ -23,8 +23,10 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/zc310/ofd/internal/container"
 	"github.com/zc310/ofd/internal/container/entrywriter"
+	permissionmodel "github.com/zc310/ofd/internal/permission"
 	"github.com/zc310/ofd/internal/xmlcodec"
 	"github.com/zc310/ofd/pkg/creator"
+	"github.com/zc310/ofd/pkg/permission"
 	"github.com/zc310/ofd/pkg/spec"
 )
 
@@ -69,6 +71,8 @@ type SignatureEvent struct {
 
 // Options 控制 ZIP 级合并的输出方式。
 type Options struct {
+	// PermissionPolicy 默认按Export及有效期检查所有输入文档体，不额外要求Edit。
+	PermissionPolicy permission.Policy
 	// Compression 是输出 ZIP 的压缩策略，空值时使用 creator.CompressionAuto。
 	Compression creator.CompressionMode
 	// CompressionLevel 是 DEFLATE 压缩级别，0 使用默认级别 5，显式范围
@@ -171,8 +175,9 @@ func Marshal(paths []string, options Options) ([]byte, error) {
 
 // source 描述一个 OFD 输入，open 返回可读取的内部包，由调用方负责关闭。
 type source struct {
-	name string
-	open func() (*container.Package, error)
+	prepared *container.Package
+	name     string
+	open     func() (*container.Package, error)
 }
 
 func fileSource(path string) source {
@@ -228,7 +233,37 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 	if err != nil {
 		return err
 	}
-	archive := zip.NewWriter(w)
+	// 保留同一批打开的输入；预检后不能重新按路径打开可能已被替换的文件。
+	sources = append([]source(nil), sources...)
+	declarations := make([][]permissionmodel.ScopedDeclaration, len(sources))
+	for i := range sources {
+		pkg, err := sources[i].open()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = pkg.Close() }()
+		sources[i].prepared = pkg
+		if options.PermissionPolicy.Mode != permission.IgnoreDeclarations {
+			declarations[i], err = permissionmodel.ReadPackage(pkg, nil, permissionReadLimit(options))
+			if err != nil {
+				return fmt.Errorf("读取 %s 权限失败: %w", sources[i].name, err)
+			}
+		}
+	}
+	check := func() error {
+		for i, list := range declarations {
+			for _, d := range list {
+				if err := options.PermissionPolicy.Check(d.Value, permission.Export, d.Scope); err != nil {
+					return fmt.Errorf("输入 %s: %w", sources[i].name, err)
+				}
+			}
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return err
+	}
+	archive := zip.NewWriter(&permissionWriter{output: w, check: check})
 	state := &mergeState{
 		writer:     entrywriter.New(archive, entrywriter.Config{Compression: options.Compression, CompressionLevel: options.CompressionLevel, Deterministic: options.Deterministic, Limits: options.Limits, OnWarning: options.OnWarning}),
 		options:    options,
@@ -236,6 +271,10 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 	}
 
 	for _, src := range sources {
+		if err := check(); err != nil {
+			_ = archive.Close()
+			return err
+		}
 		if err := mergeSource(state, src); err != nil {
 			_ = archive.Close()
 			return err
@@ -264,7 +303,30 @@ func mergeSources(sources []source, w io.Writer, options Options) error {
 	if err := archive.Close(); err != nil {
 		return fmt.Errorf("关闭 OFD ZIP 包失败: %w", err)
 	}
-	return nil
+	return check()
+}
+
+func permissionReadLimit(options Options) int64 {
+	if options.Limits.MaxEntryBytes > 0 {
+		return options.Limits.MaxEntryBytes
+	}
+	return 64 << 20
+}
+
+type permissionWriter struct {
+	output io.Writer
+	check  func() error
+}
+
+func (w *permissionWriter) Write(data []byte) (int, error) {
+	if err := w.check(); err != nil {
+		return 0, err
+	}
+	n, err := w.output.Write(data)
+	if err == nil {
+		err = w.check()
+	}
+	return n, err
 }
 
 // mergeState 汇总一次合并过程中的输出写入器与累计状态。
@@ -286,6 +348,9 @@ func (state *mergeState) emit(event SignatureEvent) {
 }
 
 func normalizeOptions(options Options) (Options, error) {
+	if err := options.PermissionPolicy.Validate(); err != nil {
+		return Options{}, err
+	}
 	compression, level, err := entrywriter.NormalizeOptions(options.Compression, options.CompressionLevel, options.Limits)
 	if err != nil {
 		return Options{}, err
@@ -318,11 +383,15 @@ type rootAttrs struct {
 // mergeSource 处理单个输入：解析 OFD.xml、规划目录改名、搬运目录树并
 // 收集改写后的文档体元素。
 func mergeSource(state *mergeState, src source) error {
-	pkg, err := src.open()
-	if err != nil {
-		return fmt.Errorf("打开 OFD 输入 %s 失败: %w", src.name, err)
+	pkg := src.prepared
+	if pkg == nil {
+		var err error
+		pkg, err = src.open()
+		if err != nil {
+			return fmt.Errorf("打开 OFD 输入 %s 失败: %w", src.name, err)
+		}
+		defer func() { _ = pkg.Close() }()
 	}
-	defer func() { _ = pkg.Close() }()
 
 	rootData, err := pkg.ReadLimit(spec.RootDocument, state.writer.MaxEntryBytes())
 	if err != nil {

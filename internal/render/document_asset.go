@@ -3,9 +3,9 @@ package render
 import (
 	"image"
 
-	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/drawing"
 	"github.com/zc310/ofd/internal/render/imageasset"
+	"github.com/zc310/ofd/pkg/spec"
 )
 
 func (p *Document) imageResources() imageasset.Reader {
@@ -15,11 +15,11 @@ func (p *Document) imageResources() imageasset.Reader {
 	return p.FileCache
 }
 
-func (p *Document) decodeImage(file models.StLoc, format string) (image.Image, error) {
+func (p *Document) decodeImage(file spec.StLoc, format string) (image.Image, error) {
 	return p.assets.Load(file, format, p.imageResources(), drawing.SVGSceneFactory())
 }
 
-func (p *Document) decodeSVGScene(file models.StLoc, format string) (SVGScene, error) {
+func (p *Document) decodeSVGScene(file spec.StLoc, format string) (SVGScene, error) {
 	return p.assets.LoadSVG(file, format, p.imageResources(), drawing.SVGSceneFactory())
 }
 

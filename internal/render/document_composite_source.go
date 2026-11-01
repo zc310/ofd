@@ -14,6 +14,10 @@ func (p *Document) compositeContentSource(object models.CompositeObject, unit *m
 	if !object.Boundary.IsFinite() || !object.CTM.IsFinite() || w <= 0 || h <= 0 || !finiteFloat(w) || !finiteFloat(h) || object.Boundary.Width <= 0 || object.Boundary.Height <= 0 {
 		return models.StBox{}, 0, 0, false
 	}
+	// 带预览的资源以完整单元生成缩略图，语义映射不能裁去矢量内容透明边。
+	if unit.Thumbnail != 0 || unit.Substitution != 0 {
+		return models.StBox{Width: w, Height: h}, w, h, true
+	}
 	if ew, eh, ok := compositelayout.ContentExtent(object); ok && (compositelayout.ExtentMismatch(w, ew) || compositelayout.ExtentMismatch(h, eh)) {
 		return models.StBox{Width: ew, Height: eh}, ew, eh, true
 	}
