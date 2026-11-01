@@ -100,9 +100,9 @@ func TestColorSpaceComponentsNormalizesGrayAndRGB(t *testing.T) {
 	}
 }
 
-// TestResolveColorSpaceColorCMYKChannelOrder 守住 GB/T 33190 表 27 规定的 OFD
-// CMYK 通道顺序：依次是青、黄、品红、黑。顺序错成青、品红、黄、黑（PDF 的
-// DeviceCMYK 顺序）时黄会画成品红、品红会画成黄。
+// TestResolveColorSpaceColorCMYKChannelOrder 守住 OFD CMYK 的 C-M-Y-K 顺序。
+// GB/T 33190 第 4 章缩略语与表 27 对通道顺序存在矛盾；此处按缩略语和通行约定，
+// 验证品红、黄色通道不会被互换。
 func TestResolveColorSpaceColorCMYKChannelOrder(t *testing.T) {
 	space := cmykSpace(8)
 	cases := []struct {
@@ -111,11 +111,11 @@ func TestResolveColorSpaceColorCMYKChannelOrder(t *testing.T) {
 		note  string
 	}{
 		{"255 0 0 0", color.RGBA{G: 173, B: 239, A: 255}, "通道 1 满值应为青"},
-		{"0 255 0 0", color.RGBA{R: 255, G: 242, A: 255}, "通道 2 满值应为黄"},
-		{"0 0 255 0", color.RGBA{R: 236, B: 140, A: 255}, "通道 3 满值应为品红"},
+		{"0 255 0 0", color.RGBA{R: 236, B: 140, A: 255}, "通道 2 满值应为品红"},
+		{"0 0 255 0", color.RGBA{R: 255, G: 242, A: 255}, "通道 3 满值应为黄"},
 		{"0 0 0 255", color.RGBA{R: 35, G: 31, B: 32, A: 255}, "通道 4 满值应为黑"},
-		{"255 255 0 0", color.RGBA{G: 166, B: 80, A: 255}, "青+黄 叠印为绿"},
-		{"255 0 255 0", color.RGBA{R: 46, G: 49, B: 146, A: 255}, "青+品红 叠印为蓝"},
+		{"255 255 0 0", color.RGBA{R: 46, G: 49, B: 146, A: 255}, "青+品红 叠印为蓝"},
+		{"255 0 255 0", color.RGBA{G: 166, B: 80, A: 255}, "青+黄 叠印为绿"},
 		{"0 255 255 0", color.RGBA{R: 237, G: 28, B: 36, A: 255}, "黄+品红 叠印为红"},
 		{"0 0 0 0", color.RGBA{R: 255, G: 255, B: 255, A: 255}, "全 0 无油墨为纯白"},
 	}
@@ -147,30 +147,6 @@ func TestResolveColorSpaceColorCMYKAcrossBitsPerComponent(t *testing.T) {
 	zero := resolveColorSpaceColor(cmykSpace(1), models.CTColor{Value: colorValue(t, "0 0 0 0")}, nil)
 	if outOfRange != zero {
 		t.Errorf("BPC=1 越界值 2 → %v，期望按默认颜色处理得到 %v", outOfRange, zero)
-	}
-}
-
-// TestTransformerOrderComponentsSwapsYellowAndMagenta coloricc 与 ICC 转换器都按
-// PDF 的青、品红、黄、黑解释四分量，两条渲染路径都必须换序，否则同一份 OFD 在
-// 有无 CMYK ICC 配置的机器上画出不同颜色。
-func TestTransformerOrderComponentsSwapsYellowAndMagenta(t *testing.T) {
-	// OFD 顺序的青、黄、品红、黑。
-	ofdOrder := []uint8{10, 20, 30, 40}
-	got := transformerOrderComponents(cmykSpace(8), ofdOrder)
-	want := []uint8{10, 30, 20, 40} // PDF 顺序：青、品红、黄、黑
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("换序结果 = %v，期望 %v", got, want)
-		}
-	}
-	// GRAY 与 RGB 不换序。
-	rgb := []uint8{1, 2, 3}
-	if out := transformerOrderComponents(rgbSpace(8), rgb); out[0] != 1 || out[1] != 2 || out[2] != 3 {
-		t.Errorf("RGB 分量不应换序，得到 %v", out)
-	}
-	gray := []uint8{9}
-	if out := transformerOrderComponents(graySpace(8), gray); len(out) != 1 || out[0] != 9 {
-		t.Errorf("GRAY 分量不应换序，得到 %v", out)
 	}
 }
 

@@ -45,7 +45,7 @@ func (p *Resolver) RGBA(source models.CTColor, resources Resources) color.RGBA {
 	palette, transformer := p.colorSpaceResources(space, resources)
 	if transformer != nil {
 		if components, ok := colorSpaceComponents8(source, space, palette); ok {
-			r, g, b := transformer.ToRGB(transformerOrderComponents(space, components))
+			r, g, b := transformer.ToRGB(components)
 			alpha := uint8(255)
 			if source.Alpha != nil {
 				alpha = *source.Alpha
@@ -274,19 +274,6 @@ func paletteEntry(index int, space *models.ColorSpace, profile []uint8, channels
 	return result, true
 }
 
-// transformerOrderComponents 把分量重排成 coloricc 与 ICC 转换器约定的顺序。
-//
-// coloricc.DeviceCMYK8ToRGB 与 ICC 转换器都按 PDF DeviceCMYK 的青、品红、黄、
-// 黑解释四分量，而 GB/T 33190 表 27 规定的 OFD CMYK 顺序是青、黄、品红、黑。
-// 两条路径（ICC 与内置油墨模型）都必须在这里换序，否则同一份 OFD 在有无 CMYK
-// ICC 配置的机器上会画出不同的颜色。
-func transformerOrderComponents(space *models.ColorSpace, components []uint8) []uint8 {
-	if len(components) < 4 || !strings.EqualFold(strings.TrimSpace(space.Type), "CMYK") {
-		return components
-	}
-	return []uint8{components[0], components[2], components[1], components[3]}
-}
-
 // resolveColorSpaceColor 按颜色空间类型把 CTColor 的分量转换为 RGBA。
 func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor, profile []uint8) color.RGBA {
 	components, ok := colorSpaceComponents8(source, space, profile)
@@ -302,13 +289,11 @@ func resolveColorSpaceColor(space *models.ColorSpace, source models.CTColor, pro
 		value := components[0]
 		return premultiplied(value, value, value, alpha)
 	case "CMYK":
-		// OFD 的 CMYK 通道顺序是青、黄、品红、黑（GB/T 33190 表 27），与 PDF 的
-		// DeviceCMYK 相反，换序后交给按 PDF 顺序实现的油墨模型。
+		// OFD CMYK 使用青、品红、黄、黑顺序，与第 4 章缩略语一致。
 		if len(components) < 4 {
 			return ofdColorRGBA(source)
 		}
-		ink := transformerOrderComponents(space, components)
-		r, g, b := cmykInkToRGB(ink[0], ink[1], ink[2], ink[3])
+		r, g, b := cmykInkToRGB(components[0], components[1], components[2], components[3])
 		return premultiplied(r, g, b, alpha)
 	default:
 		if len(components) < 3 {
