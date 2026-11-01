@@ -9,14 +9,14 @@
 |---|---|---|
 | Windows，Intel 或 AMD 64 位电脑 | `ofd-viewer-windows-amd64.zip` | 解压后运行 `ofd-viewer.exe` |
 | Windows，ARM64 电脑，例如搭载骁龙处理器的设备 | `ofd-viewer-windows-arm64.zip` | 解压后运行 `ofd-viewer.exe` |
-| Mac，Apple Silicon（M 系列芯片） | `ofd-viewer-darwin-arm64.zip` | 解压后运行 `ofd-viewer` |
-| Mac，Intel 处理器 | `ofd-viewer-darwin-amd64.zip` | 解压后运行 `ofd-viewer` |
+| Mac，Apple Silicon（M 系列芯片） | `ofd-viewer-darwin-arm64.dmg` | 打开 DMG，将 OFD Viewer 拖到 Applications |
+| Mac，Intel 处理器 | `ofd-viewer-darwin-amd64.dmg` | 打开 DMG，将 OFD Viewer 拖到 Applications |
 | Linux，Intel 或 AMD 64 位电脑 | `ofd-viewer-linux-amd64.zip` | 解压后运行 `ofd-viewer`；也可选下面的 DEB/RPM 安装包 |
 | Linux，ARM64 设备 | `ofd-viewer-linux-arm64.zip` | 解压后运行 `ofd-viewer`；也可选下面的 DEB/RPM 安装包 |
 | Android 手机或平板 | `ofd-viewer-android.apk` | 下载后安装 APK |
 | 使用浏览器阅读 | 无需下载桌面包 | 打开[在线阅读器](https://zc310.github.io/ofd/wasm/) |
 
-桌面 ZIP 包内是可执行程序和工具说明；macOS 包内提供 `ofd-viewer` 可执行文件。
+桌面 ZIP 包内是可执行程序和工具说明；macOS 另提供 DMG 应用镜像，也保留 ZIP 可执行程序包。
 Linux 桌面阅读器需要 OpenGL、X11/Wayland 等运行库；DEB/RPM 安装包会声明相应依赖，
 适合通过系统包管理器安装。系统要求和完整用法见[阅读器说明](https://github.com/zc310/ofd/blob/main/cmd/ofd-viewer/README.md)。
 

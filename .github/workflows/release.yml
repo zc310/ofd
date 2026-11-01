@@ -242,13 +242,43 @@ jobs:
           go-version: "stable"
           cache: true
 
-      - name: Build macOS viewer
-        run: make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+      - name: Install Fyne packaging tool
+        run: |
+          go install fyne.io/tools/cmd/fyne@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build macOS viewer ZIP and app bundle
+        run: |
+          make package-viewer GOOS=darwin GOARCH=${{ matrix.arch }} CGO_ENABLED=1 VERSION="${RELEASE_TAG#v}"
+          cd cmd/ofd-viewer
+          fyne package \
+            -os darwin \
+            -appID io.github.zc310.ofd \
+            -name "OFD Viewer" \
+            -icon Icon.png \
+            -appVersion "${RELEASE_TAG#v}"
+
+      - name: Create macOS DMG
+        run: |
+          APP_PATH="$GITHUB_WORKSPACE/cmd/ofd-viewer/OFD Viewer.app"
+          test -d "$APP_PATH"
+          STAGING_DIR="$RUNNER_TEMP/ofd-viewer-dmg"
+          mkdir -p "$STAGING_DIR" /tmp/ofd/dist
+          cp -R "$APP_PATH" "$STAGING_DIR/"
+          ln -s /Applications "$STAGING_DIR/Applications"
+          hdiutil create \
+            -volname "OFD Viewer" \
+            -srcfolder "$STAGING_DIR" \
+            -ov \
+            -format UDZO \
+            "/tmp/ofd/dist/ofd-viewer-darwin-${{ matrix.arch }}.dmg"
 
       - uses: actions/upload-artifact@v7
         with:
           name: darwin-viewer-${{ matrix.arch }}
-          path: /tmp/ofd/dist/*.zip
+          path: |
+            /tmp/ofd/dist/*.zip
+            /tmp/ofd/dist/*.dmg
           if-no-files-found: error
           retention-days: 1
 
