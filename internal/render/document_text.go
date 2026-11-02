@@ -36,12 +36,16 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 	patternFill := false
 	if source := textFillColor(object, dp); source != nil && source.Pattern != nil && !textFillDisabled(object) {
 		if _, semanticOnly := ctx.(semanticOnlyContext); !semanticOnly {
-			p.drawPatternText(ctx, source, object, pb, parentCTM, clip, budget)
-			patternFill = true
-			if !object.Stroke {
-				return
+			patternFill = p.drawPatternText(ctx, source, object, pb, parentCTM, clip, budget)
+			if patternFill {
+				if !object.Stroke {
+					return
+				}
+				object.Fill.Set(false)
+			} else {
+				budget.diagnose("pattern_fill_failed", "文字底纹绘制失败，回退普通填充", 0)
+				object.FillColor = patternFallbackColor(source)
 			}
-			object.Fill.Set(false)
 		}
 	}
 
@@ -55,7 +59,19 @@ func (p *Document) textWithBudget(ctx DrawContext, object models.TextObject, dp 
 				outline = p.textStrokeOutline(ctx, face, object, dp, pb, parentCTM, clip)
 			})
 			ctx.Pop()
-			defer p.drawPatternTextPath(ctx, source, object, outline, pb, parentCTM, budget, !patternFill && textFillDisabled(object))
+			strokeObject := object
+			semantic := !patternFill && textFillDisabled(object)
+			defer func() {
+				if p.drawPatternTextPath(ctx, source, strokeObject, outline, pb, parentCTM, budget, semantic) {
+					return
+				}
+				budget.diagnose("pattern_stroke_failed", "文字底纹描边失败，回退普通描边", 0)
+				strokeObject.StrokeColor = patternFallbackColor(source)
+				// 此时正文的字体锁已经释放，重新取锁绘制回退描边，保持叠放顺序。
+				p.withTextOutlineFace(strokeObject, func(face FontFace) {
+					p.drawTextStroke(ctx, face, strokeObject, dp, pb, parentCTM, clip, semantic, budget)
+				})
+			}()
 			object.Stroke = false
 		}
 	}

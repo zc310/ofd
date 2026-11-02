@@ -1,9 +1,10 @@
 package render
 
 import (
+	"errors"
+	"fmt"
 	"image"
 	"image/color"
-	"log/slog"
 
 	"github.com/zc310/ofd/internal/models"
 	"github.com/zc310/ofd/internal/render/geom"
@@ -12,6 +13,8 @@ import (
 	imagelayout "github.com/zc310/ofd/internal/render/layout/image"
 	"github.com/zc310/ofd/internal/render/paint"
 )
+
+var errMissingImageMask = errors.New("找不到图像掩码资源")
 
 func (p *Document) Image(ctx DrawContext, object models.ImageObject, dp *models.DrawParam, pb models.StBox) {
 	p.image(ctx, object, dp, pb, nil, nil)
@@ -22,7 +25,14 @@ func (p *Document) image(ctx DrawContext, object models.ImageObject, _ *models.D
 }
 
 func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _ *models.DrawParam, pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) {
+	if budget == nil {
+		budget = &renderBudget{}
+		budget.reset()
+	}
 	if !drawableGraphicUnit(object.VisibleValue(), object.CTM, parentCTM, object.Boundary, pb) {
+		return
+	}
+	if !finiteMatrix(ctx.CurrentMatrix()) {
 		return
 	}
 	ctm := imagelayout.CTM(object)
@@ -32,7 +42,7 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 			return
 		}
 	}
-	selected := p.selectImageResource(ctx, object.ResourceID, object.Substitution, ctm)
+	selected := p.selectImageResourceWithBudget(ctx, object.ResourceID, object.Substitution, ctm, budget)
 	resMedia := p.GetMedia(models.StID(selected))
 	if resMedia == nil {
 		budget.diagnose("missing_image", "找不到图像资源", models.StID(object.ResourceID))
@@ -79,17 +89,17 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 		// 向量嵌入失败时回退到位图路径
 	}
 
-	img, err := p.decodeImage(resMedia.MediaFile.Clean(), resMedia.Format)
+	width, height := p.imagePixelDemand(ctx, ctm)
+	img, err := p.decodeImageWithBudget(resMedia.MediaFile.Clean(), resMedia.Format, width, height, budget)
 	if (err != nil || img == nil || img.Bounds().Empty()) && object.Substitution != 0 && models.StID(object.Substitution) != resMedia.ID {
 		if fallback := p.Document.GetMedia(models.StID(object.Substitution)); fallback != nil {
-			if decoded, decodeErr := p.decodeImage(fallback.MediaFile.Clean(), fallback.Format); decodeErr == nil && decoded != nil && !decoded.Bounds().Empty() {
+			if decoded, decodeErr := p.decodeImageWithBudget(fallback.MediaFile.Clean(), fallback.Format, width, height, budget); decodeErr == nil && decoded != nil && !decoded.Bounds().Empty() {
 				img = decoded
 				err = nil
 			}
 		}
 	}
 	if err != nil {
-		slog.Error("decode image failed", "file", resMedia.MediaFile, "error", err)
 		budget.diagnose("image_decode_failed", err.Error(), models.StID(object.ResourceID))
 		return
 	}
@@ -97,11 +107,12 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 		return
 	}
 	if object.ImageMask != 0 {
-		if maskMedia := p.Document.GetMedia(models.StID(object.ImageMask)); maskMedia != nil {
-			if mask, maskErr := p.decodeImage(maskMedia.MediaFile.Clean(), maskMedia.Format); maskErr == nil && mask != nil {
-				img = imageops.ApplyResourceMask(img, mask)
-			}
+		masked, maskErr := p.maskedImage(img, object.ImageMask, budget)
+		if maskErr != nil {
+			budget.diagnose("image_mask_failed", maskErr.Error(), models.StID(object.ImageMask))
+			return
 		}
+		img = masked
 	}
 
 	m := imagelayout.Matrix(object.Boundary, img, ctm, pb.Height)
@@ -117,19 +128,67 @@ func (p *Document) imageWithBudget(ctx DrawContext, object models.ImageObject, _
 	}
 	// 局部裁剪只计算一次，原生裁剪不支持时继续用同一条路径生成位图掩码。
 	localClip := imagelayout.Clip(clip, imageMatrix, img.Bounds().Dx(), img.Bounds().Dy())
+	if localClip != nil && localClip.Empty() {
+		p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+		return
+	}
+	opacity := graphicOpacity(object.Alpha)
+	if opacity == 0 {
+		return
+	}
+	if opacity != 255 {
+		if !allowImageAllocation(img, 1, budget) {
+			return
+		}
+		img = applyImageAlpha(img, opacity)
+	}
 	if localClip != nil && !localClip.Empty() {
 		if clipped, ok := ctx.(interface {
 			RenderClippedImage(image.Image, geom.Matrix, *geom.Path) bool
 		}); ok {
-			if clipped.RenderClippedImage(applyImageAlpha(img, graphicOpacity(object.Alpha)), m, localClip) {
+			if clipped.RenderClippedImage(img, m, localClip) {
 				p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
 				return
 			}
 		}
+		// 软件裁剪会同时创建覆盖率掩码和输出像素，必须先为两份分配预留额度。
+		if !allowImageAllocation(img, 2, budget) {
+			return
+		}
 	}
-	img = imageWithLocalClipAlpha(img, localClip, graphicOpacity(object.Alpha))
+	img = imageWithLocalClipAlpha(img, localClip, 255)
 	ctx.RenderImage(img, m)
 	p.drawImageBorder(ctx, object, pb.Height, parentCTM, borderClip)
+}
+
+// maskedImage 对显式指定但不可用的掩码采用关闭式失败，禁止显示无遮罩的原图。
+func (p *Document) maskedImage(img image.Image, resource models.StRefID, budget *renderBudget) (image.Image, error) {
+	media := p.GetMedia(models.StID(resource))
+	if media == nil {
+		return nil, fmt.Errorf("%w %d", errMissingImageMask, resource)
+	}
+	mask, err := p.decodeImageWithBudget(media.MediaFile.Clean(), media.Format, float64(img.Bounds().Dx()), float64(img.Bounds().Dy()), budget)
+	if err != nil {
+		return nil, err
+	}
+	mask, err = imageasset.Decoded(mask)
+	if err != nil {
+		return nil, err
+	}
+	img, err = imageasset.Decoded(img)
+	if err != nil {
+		return nil, err
+	}
+	if !allowImageAllocation(img, 1, budget) {
+		return nil, imageasset.ErrPixelBudget
+	}
+	return imageops.ApplyResourceMask(img, mask), nil
+}
+
+func allowImageAllocation(img image.Image, copies int, budget *renderBudget) bool {
+	bounds := img.Bounds()
+	return imageasset.CheckSize(bounds.Dx(), bounds.Dy()) == nil &&
+		budget.AllowOffscreenPixels(float64(bounds.Dx()), float64(bounds.Dy())*float64(copies), 25.4)
 }
 
 func (p *Document) drawImageBorder(ctx DrawContext, object models.ImageObject, pageHeight float64, parent *models.CTM, clip *geom.Path) {
@@ -218,6 +277,9 @@ func imageWithClipAlpha(img image.Image, clip *geom.Path, m geom.Matrix, alpha u
 }
 
 func imageWithLocalClipAlpha(img image.Image, clip *geom.Path, alpha uint8) image.Image {
+	if img == nil || imageasset.CheckSize(img.Bounds().Dx(), img.Bounds().Dy()) != nil {
+		return image.NewNRGBA(image.Rectangle{})
+	}
 	if clip == nil {
 		return applyImageAlpha(img, alpha)
 	}
@@ -239,6 +301,9 @@ func imageWithLocalClipAlpha(img image.Image, clip *geom.Path, alpha uint8) imag
 
 // imageClipMask 将图片局部裁剪路径栅格化为单通道覆盖率掩码。
 func imageClipMask(clip *geom.Path, width, height int) *image.Alpha {
+	if imageasset.CheckSize(width, height) != nil {
+		return nil
+	}
 	surface := newAlphaMaskSurface(float64(width), float64(height), geom.DPMM(1))
 	if surface == nil {
 		return nil

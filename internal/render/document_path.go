@@ -79,9 +79,11 @@ func (p *Document) pathWithBudget(ctx DrawContext, object models.PathObject, dp 
 		if clipPath != nil {
 			fillPath = intersectClips(fillPath, clipPath)
 		}
-		if p.drawPatternPath(ctx, fillPath, pattern, object, pb, parentCTM, budget) {
+		if p.drawPatternPaint(ctx, fillPath, fillSource, object, pb, parentCTM, budget) {
 			object.Fill = false
 			ctx.ClearFill()
+		} else {
+			budget.diagnose("pattern_fill_failed", "路径底纹绘制失败，回退普通填充", 0)
 		}
 	}
 	strokeRaster := object.Stroke.Value(true) && (isMeshColor(strokeSource) || paint.NeedsRaster(strokeGradient, object.Alpha))

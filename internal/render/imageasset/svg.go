@@ -22,6 +22,8 @@ type SVGScene interface {
 // SVGParser 将 SVG 数据解析为可栅格化或矢量嵌入的场景。
 type SVGParser func([]byte) (SVGScene, error)
 
+var errEmptySVG = errors.New("SVG 解析器未返回场景")
+
 type synchronizedSVGScene struct {
 	SVGScene
 
@@ -46,8 +48,11 @@ func ParseSVG(data []byte, parse SVGParser) (SVGScene, error) {
 		return nil, errors.New("未注册 SVG 场景解析器（请空白导入 internal/render/backends/canvas 或注册自定义工厂）")
 	}
 	scene, err := parse(data)
-	if err != nil || scene == nil {
+	if err != nil {
 		return scene, err
+	}
+	if scene == nil {
+		return nil, errEmptySVG
 	}
 	return &synchronizedSVGScene{SVGScene: scene}, nil
 }

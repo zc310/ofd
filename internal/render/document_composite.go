@@ -176,7 +176,7 @@ func (p *Document) compositeWithBudget(ctx DrawContext, object models.CompositeO
 		return
 	}
 
-	if p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip) && semanticGroup {
+	if p.placeCompositeImage(ctx, object, raster, canvasBox, tight, w, h, cropToInk, pb, parentCTM, parentClip, budget) && semanticGroup {
 		if items, ok := copyCompositeVectorItems(unit.Content.Items, nil, 0); ok {
 			p.drawCompositeSemanticText(ctx, object, items, dp, pb, w, h, budget)
 		}
@@ -247,7 +247,7 @@ func (p *Document) resampleCompositeUnitSource(unit *models.CompositeGraphicUnit
 // 可见面板铺满 Boundary。
 func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeObject, raster image.Image,
 	canvasBox models.StBox, tight bool, w, h float64, cropToInk bool,
-	pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path) bool {
+	pb models.StBox, parentCTM *models.CTM, parentClip *geom.Path, budget *renderBudget) bool {
 	// CompositeGraphicUnit 经常使用比实际内容更大的坐标系。去掉单元四周的
 	// 透明区域后，才能把实际可见面板映射到 CompositeObject 的 Boundary。
 	// 声明尺寸与 Boundary/CTM 不符时画布本身已是内容范围，无需再裁剪。
@@ -304,7 +304,20 @@ func (p *Document) placeCompositeImage(ctx DrawContext, object models.CompositeO
 	clip := p.buildImageClip(object.Clips, pb.Height, box.X, box.Y, clipCTM)
 	clip = intersectClips(clip, parentClip)
 	clip = intersectClips(clip, graphicBoundaryClip(box, pb.Height, parentCTM))
-	img = imageWithClipAlpha(img, clip, m, graphicOpacity(object.Alpha))
+	localClip := imagelayout.Clip(clip, m, img.Bounds().Dx(), img.Bounds().Dy())
+	if localClip != nil && localClip.Empty() {
+		return true
+	}
+	copies := 0
+	if localClip != nil {
+		copies = 2
+	} else if graphicOpacity(object.Alpha) != 255 {
+		copies = 1
+	}
+	if copies > 0 && !allowImageAllocation(img, copies, budget) {
+		return false
+	}
+	img = imageWithLocalClipAlpha(img, localClip, graphicOpacity(object.Alpha))
 	m = ctx.CurrentMatrix().Mul(m)
 	if !finiteMatrix(m) {
 		return false

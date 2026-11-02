@@ -41,6 +41,15 @@ func (e *EncodedImage) Image() (image.Image, error) {
 		return nil, nil
 	}
 	e.once.Do(func() {
+		bounds := e.Bounds()
+		if e.configErr != nil {
+			e.err = e.configErr
+			return
+		}
+		if err := CheckSize(bounds.Dx(), bounds.Dy()); err != nil {
+			e.err = err
+			return
+		}
 		decoded, _, err := image.Decode(bytes.NewReader(e.Data))
 		e.img, e.err = decoded, err
 	})

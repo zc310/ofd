@@ -59,7 +59,7 @@ func TestCompositeVectorSharesPatternAndOffscreenBudget(t *testing.T) {
 		{X: 70, Y: 50, Color: basicMeshColor(color.RGBA{G: 255, A: 255})},
 		{X: 50, Y: 70, Color: basicMeshColor(color.RGBA{B: 255, A: 255})},
 	}}}
-	if !budget.AllowOffscreenPixels(renderstate.MaxOffscreenPixels, 1, 25.4) {
+	if !budget.AllowOffscreenPixels(renderstate.MaxOffscreenPixels-budget.Usage().OffscreenPixels, 1, 25.4) {
 		t.Fatal("预先消费离屏预算失败")
 	}
 	doc.compositeWithBudget(ctx, object, nil, pb, nil, nil, 0, &budget)

@@ -1,8 +1,11 @@
 package imageasset
 
 import (
+	"context"
 	"errors"
 	"image"
+	"log/slog"
+	"os"
 	"sync"
 
 	"github.com/zc310/ofd/internal/cache"
@@ -13,6 +16,8 @@ const (
 	imageCacheBytes    = 64 << 20
 	svgCacheCapacity   = 64
 	svgCacheBytes      = 16 << 20
+	// 单条大图单独保留，既不冲掉普通 LRU，也不以编码字节掩盖解码后的内存。
+	largeImageBytes = 256 << 20
 )
 
 // Store 持有单个文档视图的图片和 SVG 场景缓存，零值可用且支持并发调用。
@@ -22,6 +27,9 @@ type Store struct {
 	keyLocks    map[string]*keyLock
 	images      *cache.LRU[string, image.Image]
 	svgCanvases *cache.LRU[string, SVGScene]
+	failures    *cache.LRU[string, error]
+	largeKey    string
+	largeImage  image.Image
 	closed      bool
 }
 
@@ -38,6 +46,8 @@ func (s *Store) Close() {
 	s.closed = true
 	s.images = nil
 	s.svgCanvases = nil
+	s.failures = nil
+	s.largeKey, s.largeImage = "", nil
 }
 
 func (s *Store) lockKey(key string) *keyLock {
@@ -76,6 +86,17 @@ func (s *Store) Image(key string, load func() (image.Image, error)) (image.Image
 		s.mu.Unlock()
 		return nil, errors.New("渲染文档已关闭")
 	}
+	if s.largeImage != nil && s.largeKey == key {
+		img := s.largeImage
+		s.mu.Unlock()
+		return img, nil
+	}
+	if s.failures != nil {
+		if err, ok := s.failures.Get(key); ok {
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
 	if s.images == nil {
 		s.images = cache.NewWeightedLRU[string, image.Image](imageCacheCapacity, imageCacheBytes, nil)
 	}
@@ -86,12 +107,17 @@ func (s *Store) Image(key string, load func() (image.Image, error)) (image.Image
 	}
 	img, err := load()
 	if err != nil {
+		s.rememberFailure(key, err)
 		return nil, err
 	}
 	weight := imageCacheWeight(img)
 	s.mu.Lock()
 	if !s.closed {
-		s.images.AddWeighted(key, img, weight)
+		if weight <= imageCacheBytes {
+			s.images.AddWeighted(key, img, weight)
+		} else if weight <= largeImageBytes {
+			s.largeKey, s.largeImage = key, img
+		}
 	}
 	s.mu.Unlock()
 	return img, nil
@@ -108,6 +134,12 @@ func (s *Store) SVG(key string, load func() ([]byte, error), parse SVGParser) (S
 		s.mu.Unlock()
 		return nil, errors.New("渲染文档已关闭")
 	}
+	if s.failures != nil {
+		if err, ok := s.failures.Get(lockKey); ok {
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
 	if s.svgCanvases == nil {
 		s.svgCanvases = cache.NewWeightedLRU[string, SVGScene](svgCacheCapacity, svgCacheBytes, nil)
 	}
@@ -118,10 +150,15 @@ func (s *Store) SVG(key string, load func() ([]byte, error), parse SVGParser) (S
 	}
 	data, err := load()
 	if err != nil {
+		s.rememberFailure(lockKey, err)
 		return nil, err
 	}
 	scene, err := ParseSVG(data, parse)
 	if err != nil {
+		if parse != nil {
+			err = permanentError{err}
+		}
+		s.rememberFailure(lockKey, err)
 		return nil, err
 	}
 	s.mu.Lock()
@@ -130,4 +167,27 @@ func (s *Store) SVG(key string, load func() ([]byte, error), parse SVGParser) (S
 	}
 	s.mu.Unlock()
 	return scene, nil
+}
+
+// permanentError 只标记固定资源本身的错误，调用方预算和临时读取失败不能污染共享缓存。
+type permanentError struct{ error }
+
+func (e permanentError) Unwrap() error { return e.error }
+
+func (s *Store) rememberFailure(key string, err error) {
+	var permanent permanentError
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrPixelBudget) ||
+		(!errors.As(err, &permanent) && !errors.Is(err, os.ErrNotExist)) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	if s.failures == nil {
+		s.failures = cache.NewLRU[string, error](imageCacheCapacity, nil)
+	}
+	s.failures.Add(key, err)
+	slog.Debug("图像资源加载失败，已缓存失败结果", "resource", key, "error", err)
 }

@@ -28,12 +28,12 @@ func imageSampleQuality(img image.Image, width, height float64) float64 {
 	return min(float64(img.Bounds().Dx())/width, float64(img.Bounds().Dy())/height)
 }
 
-func (p *Document) substitutionImage(id models.StRefID) image.Image {
+func (p *Document) substitutionImageWithBudget(id models.StRefID, budget *renderBudget) image.Image {
 	media := p.GetMedia(models.StID(id))
 	if media == nil {
 		return nil
 	}
-	img, err := p.decodeImage(media.MediaFile.Clean(), media.Format)
+	img, err := p.decodeImageWithBudget(media.MediaFile.Clean(), media.Format, 0, 0, budget)
 	if err != nil || img == nil || img.Bounds().Empty() {
 		return nil
 	}
@@ -43,17 +43,23 @@ func (p *Document) substitutionImage(id models.StRefID) image.Image {
 // selectImageResource 不改变资源索引；原图够用时不读取替代图。
 // SVG 保留矢量路径，不能因其预览位图尺寸较小而换成栅格图。
 func (p *Document) selectImageResource(ctx DrawContext, primary, substitution models.StRefID, ctm models.CTM) models.StRefID {
+	var budget renderBudget
+	budget.reset()
+	return p.selectImageResourceWithBudget(ctx, primary, substitution, ctm, &budget)
+}
+
+func (p *Document) selectImageResourceWithBudget(ctx DrawContext, primary, substitution models.StRefID, ctm models.CTM, budget *renderBudget) models.StRefID {
 	media := p.GetMedia(models.StID(primary))
 	if substitution == 0 || substitution == primary || (media != nil && imageasset.IsSVG(media.Format, media.MediaFile)) {
 		return primary
 	}
 	width, height := p.imagePixelDemand(ctx, ctm)
-	original := p.substitutionImage(primary)
+	original := p.substitutionImageWithBudget(primary, budget)
 	quality := imageSampleQuality(original, width, height)
 	if quality >= 1 {
 		return primary
 	}
-	replacement := p.substitutionImage(substitution)
+	replacement := p.substitutionImageWithBudget(substitution, budget)
 	if replacement != nil && (original == nil || imageSampleQuality(replacement, width, height) > quality) {
 		return substitution
 	}
@@ -69,14 +75,14 @@ func (p *Document) renderCompositePreview(ctx DrawContext, object models.Composi
 		ctm = *parent.Multiply(&ctm)
 	}
 	width, height := p.imagePixelDemand(ctx, ctm)
-	img := p.substitutionImage(unit.Thumbnail)
+	img := p.substitutionImageWithBudget(unit.Thumbnail, budget)
 	if imageSampleQuality(img, width, height) < 1 {
-		img = p.substitutionImage(unit.Substitution)
+		img = p.substitutionImageWithBudget(unit.Substitution, budget)
 	}
 	if imageSampleQuality(img, width, height) < 1 {
 		return false
 	}
-	if !p.placeCompositeImage(ctx, object, img, models.StBox{Width: unit.Width, Height: unit.Height}, false, unit.Width, unit.Height, false, pb, parent, clip) {
+	if !p.placeCompositeImage(ctx, object, img, models.StBox{Width: unit.Width, Height: unit.Height}, false, unit.Width, unit.Height, false, pb, parent, clip, budget) {
 		return false
 	}
 	p.drawCompositePreviewText(ctx, object, unit, dp, pb, parent, clip, budget)

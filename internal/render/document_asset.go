@@ -19,6 +19,13 @@ func (p *Document) decodeImage(file spec.StLoc, format string) (image.Image, err
 	return p.assets.Load(file, format, p.imageResources(), drawing.SVGSceneFactory())
 }
 
+func (p *Document) decodeImageWithBudget(file spec.StLoc, format string, width, height float64, budget *renderBudget) (image.Image, error) {
+	return p.assets.LoadWithOptions(file, format, p.imageResources(), drawing.SVGSceneFactory(), imageasset.LoadOptions{
+		TargetWidth: width, TargetHeight: height,
+		AllowPixels: func(w, h int) bool { return budget.AllowOffscreenPixels(float64(w), float64(h), 25.4) },
+	})
+}
+
 func (p *Document) decodeSVGScene(file spec.StLoc, format string) (SVGScene, error) {
 	return p.assets.LoadSVG(file, format, p.imageResources(), drawing.SVGSceneFactory())
 }
